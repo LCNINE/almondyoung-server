@@ -2,6 +2,7 @@
 
 import Image from "next/image"
 import { ShoppingCart } from "lucide-react"
+import { useTranslations } from "next-intl"
 
 type ProductThumbnailProps = {
   src: string
@@ -26,6 +27,7 @@ export const ProductThumbnail = ({
   className = "",
   action,
 }: ProductThumbnailProps) => {
+  const t = useTranslations("productCard")
   return (
     <div
       className={`group relative aspect-3/4 overflow-hidden rounded-tl-sm rounded-tr-xl rounded-br-xl rounded-bl-md bg-gray-100 ${className}`}
@@ -68,7 +70,7 @@ export const ProductThumbnail = ({
                 event.preventDefault()
                 onCartClick?.()
               }}
-              aria-label="장바구니 담기"
+              aria-label={t("addToCartAria")}
               className="absolute right-2 bottom-2 inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/90 shadow transition hover:bg-white"
             >
               <ShoppingCart className="h-4 w-4 text-gray-700" />

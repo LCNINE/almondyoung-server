@@ -18,9 +18,11 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { Lock } from "lucide-react"
+import { useTranslations } from "next-intl"
 
 import type { Question } from "@/lib/types/ui/ugc"
 import { cn } from "@/lib/utils"
+import { DATE_FORMATS, formatDate as formatDateUtil } from "@/lib/utils/format-date"
 
 type Props = {
   question: Question
@@ -39,11 +41,7 @@ function maskNickname(nickname: string): string {
 }
 
 function formatDate(dateStr: string): string {
-  const date = new Date(dateStr)
-  const year = date.getFullYear()
-  const month = date.getMonth() + 1
-  const day = date.getDate()
-  return `${year}.${month}.${day}`
+  return formatDateUtil(dateStr, DATE_FORMATS.KO_DOT)
 }
 
 export function QnaCard({
@@ -55,6 +53,7 @@ export function QnaCard({
   onEdit,
   onDelete,
 }: Props) {
+  const t = useTranslations("productDetail.qna")
   const isAnswered = question.status === "answered"
 
   return (
@@ -78,7 +77,7 @@ export function QnaCard({
                       : "bg-gray-100 text-gray-500 hover:bg-gray-100"
                   }
                 >
-                  {isAnswered ? "답변완료" : "답변대기"}
+                  {isAnswered ? t("answered") : t("pendingAnswer")}
                 </Badge>
                 {question.isSecret && (
                   <Lock className="h-3.5 w-3.5 text-gray-400" />
@@ -104,7 +103,7 @@ export function QnaCard({
                     disabled={isDeleting}
                     onClick={onEdit}
                   >
-                    수정
+                    {t("edit")}
                   </button>
                 )}
                 <AlertDialog>
@@ -114,21 +113,20 @@ export function QnaCard({
                       className="cursor-pointer underline hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
                       disabled={isDeleting}
                     >
-                      {isDeleting ? "삭제 중..." : "삭제"}
+                      {isDeleting ? t("deleting") : t("delete")}
                     </button>
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
-                      <AlertDialogTitle>문의 삭제</AlertDialogTitle>
+                      <AlertDialogTitle>{t("deleteDialogTitle")}</AlertDialogTitle>
                       <AlertDialogDescription>
-                        이 문의를 삭제하시겠습니까? 삭제된 문의는 복구할 수
-                        없습니다.
+                        {t("deleteDialogDescription")}
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                      <AlertDialogCancel>취소</AlertDialogCancel>
+                      <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
                       <AlertDialogAction onClick={onDelete}>
-                        삭제
+                        {t("delete")}
                       </AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
@@ -142,7 +140,7 @@ export function QnaCard({
       <CollapsibleContent>
         {question.answer && (
           <div className="bg-gray-10 px-5 py-6">
-            <p className="mb-4 text-base font-bold text-gray-900">답변</p>
+            <p className="mb-4 text-base font-bold text-gray-900">{t("answer")}</p>
             <p className="text-[14px] leading-relaxed whitespace-pre-line text-gray-700">
               {question.answer.content}
             </p>

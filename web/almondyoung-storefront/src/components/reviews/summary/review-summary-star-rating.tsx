@@ -1,3 +1,7 @@
+"use client"
+
+import { useTranslations } from "next-intl"
+
 type Props = {
   rating: number
 }
@@ -8,6 +12,7 @@ type Props = {
  * 데스크탑: 큰 크기 (233x43px)
  */
 export function ReviewSummaryStarRating({ rating }: Props) {
+  const t = useTranslations("productDetail.review")
   const fullStars = Math.floor(rating)
   const hasHalfStar = rating % 1 >= 0.5
   const emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0)
@@ -15,7 +20,7 @@ export function ReviewSummaryStarRating({ rating }: Props) {
   return (
     <div
       className="flex items-center gap-0.5 md:gap-[3.5px]"
-      aria-label={`평점 ${rating}점 / 5점 만점`}
+      aria-label={t("starAria", { rating })}
       role="img"
     >
       {/* 꽉 찬 별 */}

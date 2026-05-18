@@ -11,6 +11,7 @@ import {
   startOfMonth,
 } from "date-fns"
 import { CalendarRange, ChevronLeft, ChevronRight, X } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useMemo, useState } from "react"
 import { PointHistoryDateSheet } from "./date-sheet"
@@ -33,7 +34,10 @@ function parseDateSafe(value: string | null): Date | null {
   return isValid(d) ? d : null
 }
 
-function deriveView(params: URLSearchParams): FilterView {
+function deriveView(
+  params: URLSearchParams,
+  formatYearMonth: (year: number, month: number) => string
+): FilterView {
   const now = new Date()
   const currentMonthStart = startOfMonth(now)
 
@@ -69,7 +73,7 @@ function deriveView(params: URLSearchParams): FilterView {
     month,
     dateFrom: monthStart.toISOString(),
     dateTo: endOfMonth(monthStart).toISOString(),
-    label: `${year}년 ${month}월`,
+    label: formatYearMonth(year, month),
     isAtCurrentMonth: monthStart.getTime() >= currentMonthStart.getTime(),
   }
 }
@@ -78,11 +82,18 @@ export function PointHistoryFilterBar() {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
+  const t = useTranslations("mypage.point")
+  const formatYearMonth = (year: number, month: number) =>
+    t("yearMonthFormat", { year, month })
   const [sheetOpen, setSheetOpen] = useState(false)
 
   const view = useMemo(
-    () => deriveView(new URLSearchParams(searchParams.toString())),
-    [searchParams]
+    () =>
+      deriveView(
+        new URLSearchParams(searchParams.toString()),
+        formatYearMonth
+      ),
+    [searchParams, formatYearMonth]
   )
 
   const pushParams = (mutate: (params: URLSearchParams) => void) => {
@@ -149,7 +160,7 @@ export function PointHistoryFilterBar() {
               type="button"
               onClick={handleClearRange}
               className="text-gray-40 hover:text-gray-70 ml-auto inline-flex size-7 shrink-0 items-center justify-center rounded-full transition-colors"
-              aria-label="기간 필터 해제"
+              aria-label={t("filterClear")}
             >
               <X className="size-4" />
             </button>
@@ -159,7 +170,7 @@ export function PointHistoryFilterBar() {
             <button
               type="button"
               onClick={handlePrev}
-              aria-label="이전 달"
+              aria-label={t("prevMonth")}
               className="text-gray-70 hover:bg-gray-5 inline-flex size-9 items-center justify-center rounded-full transition-colors"
             >
               <ChevronLeft className="size-5" />
@@ -171,7 +182,7 @@ export function PointHistoryFilterBar() {
               type="button"
               onClick={handleNext}
               disabled={view.isAtCurrentMonth}
-              aria-label="다음 달"
+              aria-label={t("nextMonth")}
               className={cn(
                 "text-gray-70 hover:bg-gray-5 inline-flex size-9 items-center justify-center rounded-full transition-colors",
                 view.isAtCurrentMonth &&
@@ -186,7 +197,7 @@ export function PointHistoryFilterBar() {
         <button
           type="button"
           onClick={() => setSheetOpen(true)}
-          aria-label="기간 직접 선택"
+          aria-label={t("selectPeriod")}
           className={cn(
             "text-gray-70 hover:bg-gray-5 inline-flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors",
             isRangeMode && "text-primary"

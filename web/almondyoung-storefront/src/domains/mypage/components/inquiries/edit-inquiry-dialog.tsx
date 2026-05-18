@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react"
 import { Lock } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
@@ -30,6 +31,7 @@ export function EditInquiryDialog({
   question,
   onSuccess,
 }: EditInquiryDialogProps) {
+  const t = useTranslations("mypage.inquiry")
   const [content, setContent] = useState("")
   const [isSecret, setIsSecret] = useState(true)
   const [isPending, startTransition] = useTransition()
@@ -51,7 +53,7 @@ export function EditInquiryDialog({
           content,
           isSecret,
         })
-        toast.success("문의가 수정되었습니다.")
+        toast.success(t("editSuccess"))
         onOpenChange(false)
         onSuccess?.()
       } catch (error: unknown) {
@@ -59,7 +61,7 @@ export function EditInquiryDialog({
         if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
           throw error
         }
-        toast.error("문의 수정에 실패했습니다. 다시 시도해주세요.")
+        toast.error(t("editFail"))
       }
     })
   }
@@ -76,13 +78,13 @@ export function EditInquiryDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-h-[90vh] gap-0 overflow-y-auto p-6 sm:max-w-[480px]">
         <DialogHeader className="mb-5">
-          <DialogTitle className="text-lg font-bold">문의 수정하기</DialogTitle>
+          <DialogTitle className="text-lg font-bold">{t("editDialogTitle")}</DialogTitle>
         </DialogHeader>
 
         {/* 문의 입력 */}
         <div className="relative mb-4">
           <Textarea
-            placeholder="문의 내용을 입력해 주세요"
+            placeholder={t("editPlaceholder")}
             value={content}
             onChange={(e) => {
               if (e.target.value.length <= MAX_LENGTH) {
@@ -107,7 +109,7 @@ export function EditInquiryDialog({
             disabled={isPending}
           />
           <Lock className="h-4 w-4 text-gray-500" />
-          <span className="text-[14px] text-gray-700">비밀글로 문의하기</span>
+          <span className="text-[14px] text-gray-700">{t("secretLabel")}</span>
         </label>
 
         {/* 수정 버튼 */}
@@ -116,7 +118,7 @@ export function EditInquiryDialog({
           disabled={!content.trim() || isPending}
           onClick={handleSubmit}
         >
-          {isPending ? "수정 중..." : "수정하기"}
+          {isPending ? t("editing") : t("editButton")}
         </Button>
       </DialogContent>
     </Dialog>

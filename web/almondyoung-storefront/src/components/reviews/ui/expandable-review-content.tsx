@@ -2,12 +2,14 @@
 
 import { cn } from "@/lib/utils"
 import { useEffect, useRef, useState } from "react"
+import { useTranslations } from "next-intl"
 
 type Props = {
   content: string
 }
 
 export function ExpandableReviewContent({ content }: Props) {
+  const t = useTranslations("productDetail.review")
   const [isExpanded, setIsExpanded] = useState(false)
   const [isClamped, setIsClamped] = useState(false)
   const contentRef = useRef<HTMLParagraphElement>(null)
@@ -37,7 +39,7 @@ export function ExpandableReviewContent({ content }: Props) {
           onClick={() => setIsExpanded(true)}
           className="mt-1 text-xs font-medium text-gray-400"
         >
-          ... 더 보기
+          {t("expandLong")}
         </button>
       )}
     </div>

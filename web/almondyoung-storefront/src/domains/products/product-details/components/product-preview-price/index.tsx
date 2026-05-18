@@ -1,6 +1,9 @@
+"use client"
+
 import { ProductMembershipBadge } from "@/components/shared/badges/product-membership-badge"
 import { getProductPrice } from "@/lib/utils/get-product-price"
 import { HttpTypes } from "@medusajs/types"
+import { useTranslations } from "next-intl"
 
 interface Props {
   hasMembership: boolean
@@ -8,6 +11,7 @@ interface Props {
 }
 
 export default function ProductPreviewPrice({ hasMembership, product }: Props) {
+  const t = useTranslations("productDetail.price")
   const { cheapestPrice } = getProductPrice({ product })
 
   if (!cheapestPrice) return null
@@ -64,9 +68,9 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
       <div className="flex flex-col gap-2 py-2">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
-            <ProductMembershipBadge size="md" label="멤버십할인가" />
+            <ProductMembershipBadge size="md" label={t("membershipBadgeLabel")} />
             <span className="text-primary text-lg font-bold">
-              멤버십 회원 공개
+              {t("membershipOnlyPrice")}
             </span>
           </div>
         </div>
@@ -86,20 +90,22 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
       {/* 최종 가격 */}
       {isMembershipApplied ? (
         <div className="flex flex-col gap-2">
-          <ProductMembershipBadge size="md" label="멤버십할인가" />
+          <ProductMembershipBadge size="md" label={t("membershipBadgeLabel")} />
           <div className="flex items-center gap-2">
             <span className="text-xl font-semibold text-red-500">
               {memberActualDiscount}%
             </span>
             <span className="text-xl font-bold">
-              {cheapestPrice.calculated_price_number.toLocaleString()}원
+              {cheapestPrice.calculated_price_number.toLocaleString()}
+              {t("won")}
             </span>
           </div>
         </div>
       ) : (
         <div className="flex items-center gap-2">
           <span className="text-xl font-bold">
-            {cheapestPrice.calculated_price_number.toLocaleString()}원
+            {cheapestPrice.calculated_price_number.toLocaleString()}
+            {t("won")}
           </span>
 
           {cheapestPrice.percentage_diff &&
@@ -111,20 +117,21 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
         </div>
       )}
 
-      {/* 비멤버에게 멤버십 가격 프로모션 - 할인이 있을 때만 표시 */}
+      {/* 비멤버에게 멤버십 가격 프로모션 */}
       {!hasMembership && hasMembershipPrice && membershipDiscountRate > 0 && (
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
-            <ProductMembershipBadge size="md" label="멤버십할인가" />
+            <ProductMembershipBadge size="md" label={t("membershipBadgeLabel")} />
             <span className="text-primary text-sm font-semibold">
               {membershipDiscountRate}% OFF
             </span>
             <span className="text-primary text-lg font-bold">
-              {membershipPrice.toLocaleString()}원
+              {membershipPrice.toLocaleString()}
+              {t("won")}
             </span>
           </div>
           <p className="text-primary text-xs font-medium">
-            멤버십 가입 시 {membershipSavings.toLocaleString()}원 절약
+            {t("memberSavings", { amount: membershipSavings.toLocaleString() })}
           </p>
         </div>
       )}

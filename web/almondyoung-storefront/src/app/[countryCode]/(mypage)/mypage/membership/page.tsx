@@ -4,14 +4,15 @@ import { WithHeaderLayout } from "@components/layout"
 import {
   getCancellationReasons,
   getCurrentCycleBenefit,
+  getCurrentMonthSavings,
   getCurrentSubscription,
   getCycleBenefitHistory,
   getPlans,
+  getRangeSavings,
   getSubscriptionHistory,
 } from "@lib/api/membership"
-import { getCurrentMonthSavings, getRangeSavings } from "@lib/api/membership"
-import { fetchMe } from "@lib/api/users/me"
 import { getCafe24LinkInfo } from "@lib/api/users/cafe24"
+import { fetchMe } from "@lib/api/users/me"
 import type {
   CancellationReasonDto,
   CycleBenefitDto,
@@ -20,8 +21,10 @@ import type {
   SubscriptionHistoryItemDto,
 } from "@lib/types/dto/membership"
 import type { PlanWithTier } from "@lib/types/membership"
+import { getTranslations } from "next-intl/server"
 
 export default async function MembershipPage() {
+  const t = await getTranslations("mypage.menu")
   const [user, subscription, plans, cafe24Info] = await Promise.all([
     fetchMe().catch(() => null),
     getCurrentSubscription().catch(() => null),
@@ -78,7 +81,7 @@ export default async function MembershipPage() {
         showDesktopHeader: true,
         showMobileHeader: false,
         showMobileSubBackHeader: true,
-        mobileSubBackHeaderTitle: "아몬드영 멤버십",
+        mobileSubBackHeaderTitle: t("membership"),
       }}
     >
       <MypageLayout>

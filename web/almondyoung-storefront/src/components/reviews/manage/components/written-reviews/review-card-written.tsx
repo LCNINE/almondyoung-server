@@ -1,5 +1,6 @@
 import Image from "next/image"
 import { Star } from "lucide-react"
+import { getTranslations } from "next-intl/server"
 import {
   Card,
   CardHeader,
@@ -8,6 +9,7 @@ import {
 } from "@components/common/ui/card"
 import { Separator } from "@components/common/ui/separator"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
+import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
 import { ReviewThumbnailGallery } from "@/components/reviews/ui/review-thumbnail-gallery"
 import type { WrittenReview } from "../../types"
 
@@ -15,8 +17,9 @@ interface ReviewCardWrittenProps {
   review: WrittenReview
 }
 
-export const ReviewCardWritten = ({ review }: ReviewCardWrittenProps) => {
-  const formattedDate = new Date(review.createdAt).toLocaleDateString("ko-KR")
+export const ReviewCardWritten = async ({ review }: ReviewCardWrittenProps) => {
+  const t = await getTranslations("mypage.reviews")
+  const formattedDate = formatDate(review.createdAt, DATE_FORMATS.KO_DOT)
   const hasMedia = review.mediaFileIds.length > 0
 
   return (
@@ -26,7 +29,7 @@ export const ReviewCardWritten = ({ review }: ReviewCardWrittenProps) => {
           <figure className="relative h-20 w-20 shrink-0 overflow-hidden rounded-md border border-[#F0F0F0]">
             <Image
               src={getThumbnailUrl(review.productImage)}
-              alt={`${review.productName} 썸네일`}
+              alt={t("thumbnailAlt", { name: review.productName })}
               width={80}
               height={80}
               className="object-cover"

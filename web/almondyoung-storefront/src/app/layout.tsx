@@ -11,6 +11,8 @@ import { CustomThemeProvider } from "@lib/providers/custom-theme-provider"
 import { ThemeProvider } from "@lib/providers/theme-provider"
 import { getSEOTags, renderSchemaTags } from "@lib/seo"
 import { Metadata } from "next"
+import { NextIntlClientProvider } from "next-intl"
+import { getLocale, getMessages } from "next-intl/server"
 import { OverlayProvider } from "overlay-kit"
 import { Toaster } from "sonner"
 
@@ -30,42 +32,46 @@ export const metadata: Metadata = getSEOTags({
 })
 
 export default async function RootLayout(props: { children: React.ReactNode }) {
-  const [userDetailInfo, cart] = await Promise.all([
+  const [userDetailInfo, cart, locale, messages] = await Promise.all([
     getMyProfile().catch(() => null),
     retrieveCart(undefined, undefined, "no-store").catch(() => null),
+    getLocale(),
+    getMessages(),
   ])
 
   return (
-    <html lang="ko" suppressHydrationWarning>
+    <html lang={locale} suppressHydrationWarning>
       <body
         suppressHydrationWarning
         className="overflow-x-clip [scrollbar-gutter:stable_both-edges]"
       >
-        <OverlayProvider>
-          <UserProvider initialUser={userDetailInfo}>
-            <PushNotificationProvider />
-            <CartProvider initialCart={cart}>
-              <ThemeProvider
-                attribute="class"
-                defaultTheme="light"
-                enableSystem={false}
-                disableTransitionOnChange
-              >
-                <CustomThemeProvider>
-                  <div className="relative">
-                    {props.children}
+        <NextIntlClientProvider locale={locale} messages={messages}>
+          <OverlayProvider>
+            <UserProvider initialUser={userDetailInfo}>
+              <PushNotificationProvider />
+              <CartProvider initialCart={cart}>
+                <ThemeProvider
+                  attribute="class"
+                  defaultTheme="light"
+                  enableSystem={false}
+                  disableTransitionOnChange
+                >
+                  <CustomThemeProvider>
+                    <div className="relative">
+                      {props.children}
 
-                    <FloatingButtons />
-                  </div>
-                  <Toaster />
-                </CustomThemeProvider>
-              </ThemeProvider>
-              <BottomNavigation />
-            </CartProvider>
-          </UserProvider>
-          <Footer />
-          {renderSchemaTags()}
-        </OverlayProvider>
+                      <FloatingButtons />
+                    </div>
+                    <Toaster />
+                  </CustomThemeProvider>
+                </ThemeProvider>
+                <BottomNavigation />
+              </CartProvider>
+            </UserProvider>
+            <Footer />
+            {renderSchemaTags()}
+          </OverlayProvider>
+        </NextIntlClientProvider>
       </body>
     </html>
   )

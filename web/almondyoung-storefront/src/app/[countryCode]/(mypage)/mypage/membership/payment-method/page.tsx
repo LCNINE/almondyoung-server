@@ -10,6 +10,7 @@ import type { BillingAgreementDto, BillingMethodDto } from "@lib/types/dto/walle
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
+import { useTranslations } from "next-intl"
 import { MembershipPaymentMethodSkeleton } from "@/components/skeletons/page-skeletons"
 import { providerLabel } from "@lib/utils/billing-provider"
 import { formatDate } from "@lib/utils/format-date"
@@ -41,11 +42,11 @@ export default function MembershipPaymentMethodPage() {
   const params = useParams()
   const countryCode = typeof params.countryCode === "string" ? params.countryCode : "kr"
   const searchParams = useSearchParams()
+  const t = useTranslations("mypage.membershipPaymentMethod")
 
   const planId = searchParams.get("planId")
   const redirect = searchParams.get("redirect")
   const isSubscribeFlow = redirect === "subscribe" && !!planId
-  // 카드 등록 후 subscribe flow로 돌아온 경우 — URL 정리 전에 캡처
   const autoSubscribeOnLoad = useRef(isSubscribeFlow && searchParams.get("cardChanged") === "1")
 
   const [isLoading, setIsLoading] = useState(true)
@@ -62,13 +63,13 @@ export default function MembershipPaymentMethodPage() {
   useEffect(() => {
     if (searchParams.get("cardChanged") === "1") {
       if (!isSubscribeFlow) {
-        toast.success("결제 수단이 변경되었습니다.")
+        toast.success(t("changeSuccess"))
       }
       const url = new URL(window.location.href)
       url.searchParams.delete("cardChanged")
       window.history.replaceState(null, "", url.toString())
     }
-  }, [searchParams, isSubscribeFlow])
+  }, [searchParams, isSubscribeFlow, t])
 
   useEffect(() => {
     async function load() {
@@ -89,13 +90,14 @@ export default function MembershipPaymentMethodPage() {
         setAllMethods(methods.filter((m) => m.status === "ACTIVE"))
         setNextBillingDate(subscription?.nextBillingDate ?? null)
       } catch {
-        toast.error("결제 수단 정보를 불러오는데 실패했습니다.")
+        toast.error(t("loadError"))
       } finally {
         setIsLoading(false)
       }
     }
 
     load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleChangeMethod = async (billingMethodId: string) => {
@@ -104,10 +106,10 @@ export default function MembershipPaymentMethodPage() {
     try {
       setIsChanging(billingMethodId)
       await updateBillingAgreementMethod(agreement.id, billingMethodId)
-      toast.success("결제 수단이 변경되었습니다.")
+      toast.success(t("changeSuccess"))
       setAgreement({ ...agreement, billingMethodId })
     } catch {
-      toast.error("결제 수단 변경에 실패했습니다.")
+      toast.error(t("changeFail"))
     } finally {
       setIsChanging(null)
     }
@@ -119,10 +121,10 @@ export default function MembershipPaymentMethodPage() {
     try {
       setIsChanging(billingMethodId)
       await subscribeWithBillingMethod(planId, billingMethodId, "recurring")
-      toast.success("7일 무료 체험이 시작되었습니다! 체험 종료 후 자동으로 결제됩니다.")
+      toast.success(t("trialStartedSuccess"))
       router.push(`/${countryCode}/mypage/membership/subscribe/success`)
     } catch {
-      toast.error("구독 등록에 실패했습니다.")
+      toast.error(t("subscribeFail"))
     } finally {
       setIsChanging(null)
     }
@@ -137,12 +139,11 @@ export default function MembershipPaymentMethodPage() {
     window.location.href = `${walletWebUrl}/billing-change?${params}`
   }
 
-  // 카드 등록 후 subscribe flow 복귀 시 자동 구독
   useEffect(() => {
     if (!autoSubscribeOnLoad.current || isLoading || otherMethods.length === 0) return
     autoSubscribeOnLoad.current = false
     handleSubscribeWithMethod(otherMethods[0].id)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, otherMethods])
 
   if (isLoading || (autoSubscribeOnLoad.current && otherMethods.length === 0)) {
@@ -158,7 +159,7 @@ export default function MembershipPaymentMethodPage() {
         <header className="flex w-full shrink-0 items-center border-b border-gray-200 px-3 py-4 md:px-6 md:py-3">
           <div className="flex-1">
             <button
-              aria-label="뒤로 가기"
+              aria-label={t("backAria")}
               className="-m-2 p-2 text-black"
               onClick={() => router.back()}
             >
@@ -166,7 +167,7 @@ export default function MembershipPaymentMethodPage() {
             </button>
           </div>
           <h1 className="flex-1 text-center text-base font-bold text-black">
-            멤버십 결제 수단 관리
+            {t("pageTitle")}
           </h1>
           <div className="flex-1" />
         </header>
@@ -182,7 +183,7 @@ export default function MembershipPaymentMethodPage() {
                     id="current-method-title"
                     className="text-xs font-bold leading-4 text-black"
                   >
-                    현재 정기결제 카드
+                    {t("currentCardTitle")}
                   </h2>
                   <div className="mt-3">
                     {currentMethod ? (
@@ -190,7 +191,7 @@ export default function MembershipPaymentMethodPage() {
                         <IconCheckCircle />
                         <div className="flex flex-1 flex-col gap-0.5">
                           <p className="text-sm font-semibold text-black">
-                            {currentMethod.displayName ?? "등록된 카드"}
+                            {currentMethod.displayName ?? t("registeredCard")}
                           </p>
                           <span className="w-fit rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
                             {providerLabel(currentMethod.providerType)}
@@ -201,8 +202,8 @@ export default function MembershipPaymentMethodPage() {
                       <div className="rounded-md bg-gray-100 p-4">
                         <p className="text-xs leading-4 text-gray-600">
                           {agreement
-                            ? "결제 수단 정보를 불러올 수 없습니다."
-                            : "등록된 정기결제 수단이 없습니다."}
+                            ? t("cardLoadError")
+                            : t("noRecurringMethod")}
                         </p>
                       </div>
                     )}
@@ -210,13 +211,19 @@ export default function MembershipPaymentMethodPage() {
                 </section>
 
                 {/* 결제 안내 */}
-                <section aria-label="결제 안내">
+                <section aria-label={t("billingAriaLabel")}>
                   <p className="text-xs font-medium leading-relaxed text-gray-600">
                     {formattedNextBillingDate
-                      ? <>다음 결제일은 <strong className="text-black">{formattedNextBillingDate}</strong>입니다.</>
-                      : "다음 결제일 정보를 불러올 수 없습니다."}
+                      ? t.rich("nextBillingDateNotice", {
+                          strong: () => (
+                            <strong className="text-black">
+                              {formattedNextBillingDate}
+                            </strong>
+                          ),
+                        })
+                      : t("nextBillingUnavailable")}
                     <br />
-                    결제 실패 시 등록된 다른 카드로 순서대로 결제를 시도합니다.
+                    {t("billingFailureNotice")}
                   </p>
                 </section>
               </>
@@ -224,11 +231,11 @@ export default function MembershipPaymentMethodPage() {
 
             {otherMethods.length > 0 && (
               <section
-                aria-label={isSubscribeFlow ? "등록된 카드 목록" : "다른 카드로 변경"}
+                aria-label={isSubscribeFlow ? t("registeredCardsList") : t("changeOtherCard")}
                 className="flex flex-col gap-3"
               >
                 <h2 className="text-xs font-bold leading-4 text-black">
-                  {isSubscribeFlow ? "등록된 카드 목록" : "다른 카드로 변경"}
+                  {isSubscribeFlow ? t("registeredCardsList") : t("changeOtherCard")}
                 </h2>
                 {otherMethods.map((method) => (
                   <div
@@ -237,7 +244,7 @@ export default function MembershipPaymentMethodPage() {
                   >
                     <div className="flex flex-col gap-0.5">
                       <p className="text-sm font-medium text-black">
-                        {method.displayName ?? "등록된 카드"}
+                        {method.displayName ?? t("registeredCard")}
                       </p>
                       <span className="w-fit rounded bg-gray-200 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
                         {providerLabel(method.providerType)}
@@ -253,10 +260,10 @@ export default function MembershipPaymentMethodPage() {
                       disabled={isChanging === method.id || !!isChanging}
                     >
                       {isChanging === method.id
-                        ? "처리 중..."
+                        ? t("processing")
                         : isSubscribeFlow
-                          ? "이 카드로 구독하기"
-                          : "이 카드로 변경"}
+                          ? t("subscribeWithCard")
+                          : t("changeToCard")}
                     </button>
                   </div>
                 ))}
@@ -273,7 +280,7 @@ export default function MembershipPaymentMethodPage() {
               onClick={handleRegisterNewCard}
               disabled={!!isChanging}
             >
-              새로운 카드 등록하기
+              {t("registerNewCard")}
             </button>
           </div>
         </footer>

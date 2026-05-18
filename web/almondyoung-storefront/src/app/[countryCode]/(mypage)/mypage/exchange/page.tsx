@@ -1,22 +1,26 @@
+import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { getSEOTags } from "@/lib/seo"
 import { WithHeaderLayout } from "@components/layout"
-import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
+import { getTranslations } from "next-intl/server"
 import { ExchangeClient } from "../../../../../domains/order/exchange/exchange-client"
 
-export const metadata = getSEOTags({
-  title: "취소/교환/반품",
-  description: "주문 취소, 교환, 반품 내역을 확인하세요",
-  openGraph: {},
-})
+export async function generateMetadata() {
+  const t = await getTranslations("mypage.menu")
+  return getSEOTags({
+    title: t("exchange"),
+    openGraph: {},
+  })
+}
 
-export default function ExchangePage() {
+export default async function ExchangePage() {
+  const t = await getTranslations("mypage.menu")
   return (
     <WithHeaderLayout
       config={{
         showDesktopHeader: true,
         showMobileHeader: false,
         showMobileSubBackHeader: true,
-        mobileSubBackHeaderTitle: "취소/교환/반품",
+        mobileSubBackHeaderTitle: t("exchange"),
       }}
     >
       <MypageLayout>

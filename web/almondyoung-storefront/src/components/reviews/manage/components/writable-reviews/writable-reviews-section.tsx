@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
+import { useTranslations } from "next-intl"
 import type { WritableReview, ReviewInfo } from "../../types"
 import type { RewardPolicy } from "@/lib/types/ui/ugc"
 import { createReview } from "@/lib/api/ugc/reviews"
@@ -25,6 +26,7 @@ export const WritableReviewsSection = ({
   totalPages,
   rewardPolicies,
 }: WritableReviewsSectionProps) => {
+  const t = useTranslations("mypage.reviews")
   const [editingReviewId, setEditingReviewId] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
@@ -44,28 +46,18 @@ export const WritableReviewsSection = ({
         if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
           throw error
         }
-        toast.error("리뷰 등록에 실패했습니다. 다시 시도해주세요.")
+        toast.error(t("createFail"))
       }
     })
   }
 
   return (
     <section>
-      <ReviewListHeader
-        title="리뷰"
-        count={totalCount}
-        tooltipContent={
-          <p className="text-xs text-[#333333]">
-            리뷰 작성은{" "}
-            <span className="font-medium text-green-600">구매확정 후 15일</span>
-            까지 가능해요
-          </p>
-        }
-      />
+      <ReviewListHeader count={totalCount} showTooltip />
 
       {reviews.length === 0 ? (
         <p className="py-10 text-center text-gray-500">
-          작성 가능한 리뷰가 없습니다.
+          {t("writableEmpty")}
         </p>
       ) : (
         <>

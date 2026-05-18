@@ -1,20 +1,15 @@
+"use client"
+
 import React from "react"
 import { differenceInCalendarDays } from "date-fns"
+import { useTranslations } from "next-intl"
+import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
 import type {
   CycleBenefitDto,
   SubscriptionDetailsDto,
 } from "@lib/types/dto/membership"
 import type { MonthlySavingsDto } from "@lib/types/dto/membership-savings"
 
-/**
- * 멤버십 가입자 상세 정보
- *
- * 가입자에게 보여지는 정보:
- * - 다음 결제 예정일
- * - 멤버십 태그 및 플랜
- * - 이번달 절약 금액
- * - 통계 정보
- */
 interface MemberDetailsProps {
   membershipData: SubscriptionDetailsDto | null
   currentSavings: MonthlySavingsDto | null
@@ -26,7 +21,8 @@ export default function MemberDetails({
   currentSavings,
   currentBenefit,
 }: MemberDetailsProps) {
-  // -- 대시보드용 StatCard (Helper Component) --
+  const t = useTranslations("mypage.membership")
+
   function StatCard({
     label,
     value,
@@ -49,16 +45,7 @@ export default function MemberDetails({
     )
   }
 
-  const formatDate = (value?: string | null) => {
-    if (!value) return "-"
-    const date = new Date(value)
-    if (Number.isNaN(date.getTime())) return "-"
-    return date.toLocaleDateString("ko-KR", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    })
-  }
+  const fmt = (d?: string | null) => formatDate(d, DATE_FORMATS.KO_LONG)
 
   const today = new Date()
   const billingDate = membershipData?.billingDate ? new Date(membershipData.billingDate) : null
@@ -74,7 +61,7 @@ export default function MemberDetails({
   const tierCode =
     membershipData?.tier?.code ?? membershipData?.plan?.tier?.code ?? "-"
   const tierName =
-    membershipData?.tier?.name ?? membershipData?.plan?.tier?.name ?? "멤버십"
+    membershipData?.tier?.name ?? membershipData?.plan?.tier?.name ?? t("defaultTierName")
 
   const savingsTotal = currentSavings?.totalSavings ?? 0
   const savingsOrders = currentSavings?.orderCount ?? 0
@@ -82,24 +69,25 @@ export default function MemberDetails({
   const cycleOrders = currentBenefit?.orderCount ?? 0
   const daysRemaining = currentBenefit?.daysRemaining
 
-  // -- 렌더링 --
   return (
     <div className="flex w-full flex-col items-center gap-4">
       {/* 1. 계정 상태 및 플랜 관리 */}
       {isInTrial ? (
         <figcaption className="flex flex-col items-center gap-1.5 font-['Pretendard']">
           <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
-            무료 체험 중 · {trialDaysRemaining}일 남음
+            {t("subscription.freeTrialRemaining", { days: trialDaysRemaining })}
           </span>
           <p className="text-center text-sm text-gray-600">
-            체험 종료 후 자동 결제 시작일:{" "}
-            <strong className="text-black">{formatDate(nextBillingDate)}</strong>
+            {t("billing.trialEndAutoStartLabel")}:{" "}
+            <strong className="text-black">{fmt(nextBillingDate)}</strong>
           </p>
         </figcaption>
       ) : (
         <figcaption className="text-center font-['Pretendard'] text-sm font-normal text-black">
-          다음 결제 예정일은{" "}
-          <strong>{formatDate(nextBillingDate)}</strong> 입니다
+          {t.rich("billing.nextBillingNotice", {
+            date: fmt(nextBillingDate),
+            strong: (chunks) => <strong>{chunks}</strong>,
+          })}
         </figcaption>
       )}
       <div className="flex items-center gap-2">
@@ -119,7 +107,7 @@ export default function MemberDetails({
           type="button"
           className="text-xs font-medium text-amber-500 underline"
         >
-          변경
+          {t("stats.change")}
         </button>
       </div>
 
@@ -129,36 +117,36 @@ export default function MemberDetails({
       {/* 3. 통계 대시보드 (이제 이 컴포넌트의 일부) */}
       <article className="flex w-full flex-col justify-center gap-2 rounded-xl bg-amber-50 py-6">
         <h3 className="text-center text-sm font-normal text-gray-800">
-          이번달 멤버십으로 절약한 금액
+          {t("stats.monthlySavings")}
         </h3>
         <div className="flex items-end justify-center gap-1">
           <span className="text-2xl font-bold text-black">
             {savingsTotal.toLocaleString()}
           </span>
-          <span className="text-xs leading-5 text-gray-900">원</span>
+          <span className="text-xs leading-5 text-gray-900">{t("stats.unitWon")}</span>
         </div>
       </article>
 
       <div className="flex w-full flex-col items-stretch gap-4 md:flex-row md:flex-wrap">
         <StatCard
-          label="이번달 주문 건수"
+          label={t("stats.monthlyOrders")}
           value={savingsOrders.toLocaleString()}
-          unit="건"
+          unit={t("stats.unitCount")}
         />
         <StatCard
-          label="이번 주기 절약 금액"
+          label={t("stats.cycleSavings")}
           value={cycleSavingsTotal.toLocaleString()}
-          unit="원"
+          unit={t("stats.unitWon")}
         />
         <StatCard
-          label="주기 내 주문 건수"
+          label={t("stats.cycleOrders")}
           value={cycleOrders.toLocaleString()}
-          unit="건"
+          unit={t("stats.unitCount")}
         />
         <StatCard
-          label="주기 종료까지"
+          label={t("stats.cycleRemaining")}
           value={daysRemaining != null ? daysRemaining.toLocaleString() : "-"}
-          unit="일"
+          unit={t("stats.unitDay")}
         />
       </div>
     </div>

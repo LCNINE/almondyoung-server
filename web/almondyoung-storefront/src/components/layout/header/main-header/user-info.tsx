@@ -3,11 +3,13 @@
 import { Spinner } from "@/components/shared/spinner"
 import { useUser } from "@/contexts/user-context"
 import { signout } from "@/lib/api/users/signout"
+import { useTranslations } from "next-intl"
 import { useTransition } from "react"
 
 export function UserInfo() {
   const [isPending, startTransition] = useTransition()
   const { user, setUser } = useUser()
+  const t = useTranslations("header.userInfo")
 
   const handleLogout = () => {
     startTransition(async () => {
@@ -32,7 +34,7 @@ export function UserInfo() {
         disabled={isPending}
         className="cursor-pointer disabled:opacity-50"
       >
-        {isPending ? <Spinner size="sm" color="gray" /> : "로그아웃"}
+        {isPending ? <Spinner size="sm" color="gray" /> : t("logout")}
       </button>
     </div>
   )

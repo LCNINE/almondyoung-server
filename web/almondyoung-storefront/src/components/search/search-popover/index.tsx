@@ -9,6 +9,7 @@ import { useSearchHistory } from "@/hooks/ui/use-search-history"
 import { useSearchSheetStore } from "@/hooks/ui/use-search-sheet-store"
 import { useParams, useRouter } from "next/navigation"
 import { X } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { SearchHotKeyword } from "../search-hot-keyword"
 
 export function SearchPopover({
@@ -53,6 +54,7 @@ function SearchHistory({
   suggestions: string[]
   onClose: () => void
 }) {
+  const t = useTranslations("search.popover")
   const {
     keywords: history,
     removeKeyword,
@@ -91,7 +93,7 @@ function SearchHistory({
         {suggestions.length > 0 && (
           <div className="mb-6">
             <h3 className="mb-5 text-[17px] font-bold text-gray-900">
-              검색어 추천
+              {t("suggestionsTitle")}
             </h3>
             <ul className="space-y-4">
               {suggestions.map((keyword, i) => (
@@ -108,11 +110,11 @@ function SearchHistory({
         )}
 
         <h3 className="mb-5 text-[17px] font-bold text-gray-900">
-          최근 검색어
+          {t("historyTitle")}
         </h3>
         {disableSave ? (
           <p className="mt-10 text-sm text-gray-400">
-            검색어 저장 기능을 껐어요.
+            {t("historyDisabled")}
           </p>
         ) : history.length > 0 ? (
           <ul className="space-y-4">
@@ -139,7 +141,7 @@ function SearchHistory({
           </ul>
         ) : (
           <p className="mt-10 text-left text-sm text-gray-400">
-            최근 검색어가 없어요.
+            {t("historyEmpty")}
           </p>
         )}
       </div>
@@ -150,14 +152,14 @@ function SearchHistory({
           className="cursor-pointer transition-colors hover:text-gray-600"
           onClick={clearAll}
         >
-          전체 삭제
+          {t("clearAll")}
         </button>
         <button
           type="button"
           className="cursor-pointer transition-colors hover:text-gray-600"
           onClick={() => setDisableSave(!disableSave)}
         >
-          {disableSave ? "검색어 저장 켜기" : "검색어 저장 끄기"}
+          {disableSave ? t("saveOn") : t("saveOff")}
         </button>
       </div>
     </div>

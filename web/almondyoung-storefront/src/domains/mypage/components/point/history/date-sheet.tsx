@@ -17,6 +17,7 @@ import {
   subMonths,
 } from "date-fns"
 import { ko } from "date-fns/locale"
+import { useTranslations } from "next-intl"
 import { useEffect, useMemo, useState } from "react"
 import type { DateRange } from "react-day-picker"
 
@@ -46,11 +47,11 @@ function getPresetRange(key: PresetKey): { from: Date; to: Date } {
   }
 }
 
-const PRESETS: { key: PresetKey; label: string }[] = [
-  { key: "thisMonth", label: "이번 달" },
-  { key: "lastMonth", label: "지난 달" },
-  { key: "last3Months", label: "최근 3개월" },
-  { key: "last6Months", label: "최근 6개월" },
+const PRESET_KEYS: PresetKey[] = [
+  "thisMonth",
+  "lastMonth",
+  "last3Months",
+  "last6Months",
 ]
 
 export function PointHistoryDateSheet({
@@ -60,6 +61,7 @@ export function PointHistoryDateSheet({
   initialTo,
   onApply,
 }: PointHistoryDateSheetProps) {
+  const t = useTranslations("mypage.point.dateSheet")
   const initialRange = useMemo<DateRange | undefined>(() => {
     if (!initialFrom || !initialTo) return undefined
     const from = new Date(initialFrom)
@@ -77,8 +79,10 @@ export function PointHistoryDateSheet({
 
   const canApply = !!range?.from && !!range.to
 
-  const fromLabel = range?.from ? format(range.from, "yyyy / MM / dd") : "시작일"
-  const toLabel = range?.to ? format(range.to, "yyyy / MM / dd") : "종료일"
+  const fromLabel = range?.from
+    ? format(range.from, "yyyy / MM / dd")
+    : t("startDate")
+  const toLabel = range?.to ? format(range.to, "yyyy / MM / dd") : t("endDate")
 
   const handleApply = () => {
     if (!range?.from || !range.to) return
@@ -98,30 +102,30 @@ export function PointHistoryDateSheet({
       >
         <SheetHeader className="border-gray-10 border-b px-5 pt-5 pb-4">
           <SheetTitle className="text-gray-90 text-center text-base font-bold">
-            기간 선택
+            {t("title")}
           </SheetTitle>
           <SheetDescription className="sr-only">
-            포인트 내역을 조회할 기간을 선택하세요.
+            {t("description")}
           </SheetDescription>
         </SheetHeader>
 
         <div className="flex-1 overflow-y-auto px-5 py-5">
           <div className="flex flex-wrap justify-center gap-2">
-            {PRESETS.map((preset) => (
+            {PRESET_KEYS.map((key) => (
               <button
-                key={preset.key}
+                key={key}
                 type="button"
-                onClick={() => setRange(getPresetRange(preset.key))}
+                onClick={() => setRange(getPresetRange(key))}
                 className="border-gray-20 text-gray-70 hover:border-primary hover:text-primary rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors"
               >
-                {preset.label}
+                {t(key)}
               </button>
             ))}
           </div>
 
           <div className="border-gray-10 bg-gray-50 mt-4 grid grid-cols-[1fr_auto_1fr] items-center gap-2 rounded-xl border p-3">
             <div className="text-center">
-              <p className="text-gray-40 text-[11px]">시작일</p>
+              <p className="text-gray-40 text-[11px]">{t("startDate")}</p>
               <p
                 className={cn(
                   "mt-0.5 text-sm font-semibold tabular-nums",
@@ -133,7 +137,7 @@ export function PointHistoryDateSheet({
             </div>
             <span className="text-gray-40 text-sm">~</span>
             <div className="text-center">
-              <p className="text-gray-40 text-[11px]">종료일</p>
+              <p className="text-gray-40 text-[11px]">{t("endDate")}</p>
               <p
                 className={cn(
                   "mt-0.5 text-sm font-semibold tabular-nums",
@@ -169,14 +173,14 @@ export function PointHistoryDateSheet({
             variant="outline"
             onClick={() => setRange(undefined)}
           >
-            초기화
+            {t("reset")}
           </Button>
           <Button
             type="button"
             disabled={!canApply}
             onClick={handleApply}
           >
-            조회하기
+            {t("apply")}
           </Button>
         </div>
       </SheetContent>

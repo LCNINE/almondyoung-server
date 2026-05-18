@@ -1,9 +1,10 @@
 "use client"
 
+import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { useUser } from "@/contexts/user-context"
 import { signout } from "@lib/api/users/signout"
 import { ChevronRight } from "lucide-react"
-import Link from "next/link"
+import { useTranslations } from "next-intl"
 import { useRouter } from "next/navigation"
 import { useTransition } from "react"
 import type { MenuItem, MenuSection } from "../../types/mypage-types"
@@ -16,6 +17,7 @@ export function MenuList({ sections }: MenuListProps) {
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
   const { setUser } = useUser()
+  const t = useTranslations()
 
   const handleLogout = () => {
     startTransition(async () => {
@@ -44,7 +46,7 @@ export function MenuList({ sections }: MenuListProps) {
         >
           <span className="text-lg">{item.icon}</span>
           <span className="flex-1 text-left text-sm text-gray-700">
-            {item.label}
+            {t(item.label)}
           </span>
           <ChevronRight className="h-4 w-4 text-gray-400" />
         </button>
@@ -52,16 +54,16 @@ export function MenuList({ sections }: MenuListProps) {
     }
 
     return (
-      <Link href={item.path ?? "#"} className={itemClassName}>
+      <LocalizedClientLink href={item.path ?? "#"} className={itemClassName}>
         <span className="text-lg">{item.icon}</span>
-        <span className="flex-1 text-sm text-gray-700">{item.label}</span>
+        <span className="flex-1 text-sm text-gray-700">{t(item.label)}</span>
         <ChevronRight className="h-4 w-4 text-gray-400" />
-      </Link>
+      </LocalizedClientLink>
     )
   }
 
   return (
-    <nav aria-label="마이페이지 메뉴" className="space-y-4 px-4 py-4">
+    <nav aria-label={t("mypage.menu.home")} className="space-y-4 px-4 py-4">
       {sections.map((section, sectionIndex) => (
         <div
           key={sectionIndex}
@@ -69,7 +71,7 @@ export function MenuList({ sections }: MenuListProps) {
         >
           <div className="border-b border-gray-100 px-4 py-2.5">
             <h3 className="text-xs font-semibold tracking-wider uppercase">
-              {section.title}
+              {t(section.title)}
             </h3>
           </div>
           <ul>

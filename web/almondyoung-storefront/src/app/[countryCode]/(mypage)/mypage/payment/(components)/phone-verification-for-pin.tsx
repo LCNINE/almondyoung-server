@@ -10,6 +10,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useState } from "react"
 import { Controller, useForm } from "react-hook-form"
 import { toast } from "sonner"
+import { useTranslations } from "next-intl"
 import useTwilio from "domains/payment/components/hooks/use-twilio"
 import { forgetPinSchema, type ForgetPinSchema } from "domains/payment/components/forget-pin/schema"
 import PinSetupForm from "domains/payment/components/security-pin/pin-setup-form"
@@ -19,6 +20,7 @@ export default function PhoneVerificationForPin({
 }: {
   redirectTo: string
 }) {
+  const t = useTranslations("mypage.phoneVerifyForPin")
   const [isLoading, setIsLoading] = useState(false)
 
   const form = useForm<ForgetPinSchema>({
@@ -51,7 +53,7 @@ export default function PhoneVerificationForPin({
         })
 
         form.setValue("verificationCode", "")
-        toast.success("인증번호가 발송되었습니다")
+        toast.success(t("codeSent"))
 
         setTimeout(() => {
           setIsLoading(false)
@@ -59,7 +61,7 @@ export default function PhoneVerificationForPin({
         }, 1000)
       } catch (error) {
         console.error("Failed to send code:", error)
-        toast.error("인증번호 발송에 실패했습니다. 잠시 후 다시 시도해주세요.")
+        toast.error(t("codeSendFail"))
         setIsLoading(false)
       }
     } else if (step === "verify") {
@@ -70,17 +72,16 @@ export default function PhoneVerificationForPin({
           code: data.verificationCode,
         })
 
-        // 전화번호를 프로필에 저장
         await updateProfile({ phoneNumber: data.phoneNumber })
 
         setTimeout(() => {
           setIsLoading(false)
-          toast.success("전화번호 인증이 완료되었습니다")
+          toast.success(t("phoneVerified"))
           form.setValue("step", "success")
         }, 1000)
       } catch (error) {
         console.error("Failed to verify code:", error)
-        toast.error("인증번호가 올바르지 않습니다")
+        toast.error(t("codeInvalid"))
         setIsLoading(false)
       }
     }
@@ -95,11 +96,11 @@ export default function PhoneVerificationForPin({
       })
 
       form.setValue("verificationCode", "")
-      toast.success("인증번호가 재전송되었습니다")
+      toast.success(t("codeResent"))
       setIsLoading(false)
     } catch (error) {
       console.error("Failed to resend code:", error)
-      toast.error("인증번호 재전송에 실패했습니다")
+      toast.error(t("codeResendFail"))
       setIsLoading(false)
     }
   }
@@ -115,13 +116,11 @@ export default function PhoneVerificationForPin({
         <div className="overflow-hidden rounded-2xl border border-slate-200/60 bg-white shadow-xl">
           <div className="border-b border-slate-100 px-8 pt-8 pb-6">
             <h2 className="text-2xl font-semibold tracking-tight text-slate-900">
-              전화번호 인증
+              {t("title")}
             </h2>
             <p className="mt-2 text-sm leading-relaxed text-slate-600">
-              {step === "phone" &&
-                "비밀번호 설정을 위해 휴대폰 인증이 필요합니다"}
-              {step === "verify" &&
-                "문자로 받으신 6자리 인증번호를 입력해주세요"}
+              {step === "phone" && t("descPhone")}
+              {step === "verify" && t("descVerify")}
             </p>
           </div>
 
@@ -137,7 +136,7 @@ export default function PhoneVerificationForPin({
                       htmlFor="phone"
                       className="text-sm font-medium text-slate-700"
                     >
-                      휴대폰 번호
+                      {t("phoneLabel")}
                     </Label>
 
                     <Controller
@@ -149,7 +148,7 @@ export default function PhoneVerificationForPin({
                           onChange={field.onChange}
                           countryCode={form.watch("countryCode") as string}
                           className="h-12 border-slate-200 text-base placeholder:text-xs focus:border-slate-400 focus:ring-slate-400/20"
-                          placeholder="010-0000-0000"
+                          placeholder={t("phonePlaceholder")}
                         />
                       )}
                     />
@@ -166,7 +165,7 @@ export default function PhoneVerificationForPin({
                     disabled={!phoneNumber || isLoading}
                     className="h-12 w-full cursor-pointer rounded-lg font-medium transition-colors hover:opacity-95"
                   >
-                    {isLoading ? "전송 중..." : "인증번호 받기"}
+                    {isLoading ? t("sending") : t("sendCode")}
                   </Button>
                 </div>
               )}
@@ -178,7 +177,7 @@ export default function PhoneVerificationForPin({
                       htmlFor="code"
                       className="text-sm font-medium text-slate-700"
                     >
-                      인증번호
+                      {t("verifyLabel")}
                     </Label>
                     <Controller
                       name="verificationCode"
@@ -187,7 +186,7 @@ export default function PhoneVerificationForPin({
                         <Input
                           id="code"
                           type="text"
-                          placeholder="000000"
+                          placeholder={t("verifyPlaceholder")}
                           maxLength={6}
                           value={field.value}
                           onChange={(e) =>
@@ -215,7 +214,7 @@ export default function PhoneVerificationForPin({
                       }}
                       className="font-medium text-slate-600 transition-colors hover:text-slate-900"
                     >
-                      번호 변경
+                      {t("changeNumber")}
                     </button>
                   </div>
 
@@ -224,7 +223,7 @@ export default function PhoneVerificationForPin({
                     disabled={verificationCode.length !== 6 || isLoading}
                     className="h-12 w-full cursor-pointer rounded-lg font-medium transition-colors hover:opacity-95"
                   >
-                    {isLoading ? "확인 중..." : "인증하기"}
+                    {isLoading ? t("verifying") : t("verify")}
                   </Button>
 
                   <button
@@ -233,7 +232,7 @@ export default function PhoneVerificationForPin({
                     disabled={isLoading}
                     className="w-full text-sm font-medium text-slate-600 transition-colors hover:text-slate-900 disabled:opacity-50"
                   >
-                    인증번호 재전송
+                    {t("resend")}
                   </button>
                 </div>
               )}

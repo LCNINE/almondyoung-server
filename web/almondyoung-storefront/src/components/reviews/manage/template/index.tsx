@@ -1,4 +1,5 @@
 import { Suspense } from "react"
+import { getTranslations } from "next-intl/server"
 import { PageTitle } from "@/components/shared/page-title"
 import { MypageReviewsSkeleton } from "@/components/skeletons/page-skeletons"
 import { ReviewsTabs } from "../components/reviews-tabs"
@@ -12,15 +13,16 @@ type Props = {
 }
 
 export const ReviewsTemplate = async ({ params, searchParams }: Props) => {
+  const t = await getTranslations("mypage.reviews")
   return (
     <main className="bg-white px-3 py-4 md:min-h-screen md:px-6">
-      <PageTitle>리뷰</PageTitle>
+      <PageTitle>{t("pageTitle")}</PageTitle>
       <ReviewsTabs
         writableContent={
           <ErrorBoundary
             fallback={
               <p className="py-10 text-center text-sm text-gray-500">
-                리뷰를 불러오는 중 오류가 발생했습니다.
+                {t("loadError")}
               </p>
             }
           >
@@ -36,7 +38,7 @@ export const ReviewsTemplate = async ({ params, searchParams }: Props) => {
           <ErrorBoundary
             fallback={
               <p className="py-10 text-center text-sm text-gray-500">
-                리뷰를 불러오는 중 오류가 발생했습니다.
+                {t("loadError")}
               </p>
             }
           >

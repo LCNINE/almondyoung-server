@@ -1,27 +1,29 @@
-import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { PageTitle } from "@/components/shared/page-title"
-import { Metadata } from "next"
 import { Cafe24LinkSection } from "@/domains/mypage/components/account/cafe24-link-section"
+import { WithHeaderLayout } from "@components/layout"
+import { Metadata } from "next"
+import { getTranslations } from "next-intl/server"
 
-export const metadata: Metadata = {
-  title: "기존 아몬드영 계정 연결/이관",
-  description: "기존 아몬드영 계정을 연결하고 이관 정보를 확인하세요",
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getTranslations("mypage.page")
+  return { title: t("cafe24Migrate") }
 }
 
-export default function Cafe24AccountPage() {
+export default async function Cafe24AccountPage() {
+  const t = await getTranslations("mypage.page")
   return (
     <WithHeaderLayout
       config={{
         showDesktopHeader: true,
         showMobileHeader: false,
         showMobileSubBackHeader: true,
-        mobileSubBackHeaderTitle: "기존 아몬드영 계정 연결/이관",
+        mobileSubBackHeaderTitle: t("cafe24Migrate"),
       }}
     >
       <MypageLayout>
         <div className="bg-white px-3 py-4 md:min-h-screen md:px-6">
-          <PageTitle>기존 아몬드영 계정 연결/이관</PageTitle>
+          <PageTitle>{t("cafe24Migrate")}</PageTitle>
           <Cafe24LinkSection />
         </div>
       </MypageLayout>

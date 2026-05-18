@@ -1,15 +1,17 @@
-import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
+import { WithHeaderLayout } from "@components/layout"
+import { getTranslations } from "next-intl/server"
 import PaymentManager from "domains/payment/payment-management"
 
-export default function PaymentPage() {
+export default async function PaymentPage() {
+  const t = await getTranslations("mypage.page")
   return (
     <WithHeaderLayout
       config={{
         showDesktopHeader: true,
         showMobileHeader: false,
         showMobileSubBackHeader: true,
-        mobileSubBackHeaderTitle: "결제수단 관리",
+        mobileSubBackHeaderTitle: t("paymentSettings"),
       }}
     >
       <MypageLayout>

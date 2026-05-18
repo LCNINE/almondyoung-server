@@ -14,9 +14,11 @@ import {
 } from "@lib/api/pim/search"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useSearchSheetStore } from "@/hooks/ui/use-search-sheet-store"
+import { useTranslations } from "next-intl"
 
 export function SearchPopularKeyword() {
   const router = useRouter()
+  const t = useTranslations("search.popularKeywords")
   const { setSearchTerm, onClose } = useSearchSheetStore()
   const params = useParams<{ countryCode?: string }>()
   const countryCode =
@@ -34,7 +36,7 @@ export function SearchPopularKeyword() {
           setKeywords(result.data.keywords)
         }
       } catch (error) {
-        console.error("추천 검색어 로드 실패:", error)
+        console.error(t("loadFail"), error)
       } finally {
         setIsLoading(false)
       }
@@ -56,7 +58,7 @@ export function SearchPopularKeyword() {
     return (
       <>
         <h3 className="text-base leading-none font-bold text-gray-900">
-          추천 검색어
+          {t("title")}
         </h3>
         <div className="flex gap-2 py-4">
           {Array.from({ length: 6 }).map((_, idx) => (
@@ -74,7 +76,7 @@ export function SearchPopularKeyword() {
   return (
     <>
       <h3 className="text-base leading-none font-bold text-gray-900">
-        추천 검색어
+        {t("title")}
       </h3>
       <Carousel opts={{ align: "start", dragFree: true }} className="w-full">
         <CarouselContent className="-ml-2 py-4">

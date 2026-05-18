@@ -24,6 +24,7 @@ import { Link2, Link2Off, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
+import { useTranslations } from "next-intl"
 import {
   linkSocialAccountAction,
   unlinkSocialAccountAction,
@@ -36,16 +37,16 @@ import type {
 
 const PROVIDER_INFO: Record<
   SocialProvider,
-  { label: string; bgColor: string; textColor: string; icon: string }
+  { labelKey: "providerKakao" | "providerNaver"; bgColor: string; textColor: string; icon: string }
 > = {
   kakao: {
-    label: "카카오",
+    labelKey: "providerKakao",
     bgColor: "bg-[#FEE500]",
     textColor: "text-[#191919]",
     icon: "K",
   },
   naver: {
-    label: "네이버",
+    labelKey: "providerNaver",
     bgColor: "bg-[#03C75A]",
     textColor: "text-white",
     icon: "N",
@@ -71,6 +72,7 @@ interface SocialLinkSectionProps {
 
 export function SocialLinkSection({ identitiesState }: SocialLinkSectionProps) {
   const router = useRouter()
+  const t = useTranslations("mypage.socialLink")
   const [isPending, startTransition] = useTransition()
   const [redirectingProvider, setRedirectingProvider] =
     useState<SocialProvider | null>(null)
@@ -105,37 +107,38 @@ export function SocialLinkSection({ identitiesState }: SocialLinkSectionProps) {
           window.location.href = result.redirectUrl
           return
         } else if (!result.success) {
-          toast.error(result.error || "연동 시작 중 오류가 발생했습니다.")
+          toast.error(result.error || t("linkStartError"))
         }
       } catch (error: unknown) {
         const err = error as Error & { digest?: string }
         if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
           throw error
         }
-        toast.error("연동 시작 중 오류가 발생했습니다.")
+        toast.error(t("linkStartError"))
       }
     })
   }
 
   const handleUnlink = (provider: SocialProvider) => {
     const info = PROVIDER_INFO[provider]
+    const providerLabel = t(info.labelKey)
 
     startTransition(async () => {
       try {
         const result = await unlinkSocialAccountAction(provider)
 
         if (result.success) {
-          toast.success(`${info.label} 계정 연동이 해제되었습니다.`)
+          toast.success(t("unlinkSuccess", { provider: providerLabel }))
           router.refresh()
         } else {
-          toast.error(result.error || "연동 해제 중 오류가 발생했습니다.")
+          toast.error(result.error || t("unlinkError"))
         }
       } catch (error: unknown) {
         const err = error as Error & { digest?: string }
         if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
           throw error
         }
-        toast.error("연동 해제 중 오류가 발생했습니다.")
+        toast.error(t("unlinkError"))
       }
     })
   }
@@ -143,9 +146,9 @@ export function SocialLinkSection({ identitiesState }: SocialLinkSectionProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg">소셜 계정 연동</CardTitle>
+        <CardTitle className="text-lg">{t("title")}</CardTitle>
         <CardDescription>
-          소셜 계정을 연동하면 간편하게 로그인할 수 있습니다.
+          {t("description")}
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -163,20 +166,20 @@ export function SocialLinkSection({ identitiesState }: SocialLinkSectionProps) {
                   <SocialProviderIcon provider={account.provider} />
                   <div className="flex flex-col">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">{info.label}</span>
+                      <span className="text-sm font-medium">{t(info.labelKey)}</span>
                       {account.linked ? (
                         <Badge
                           variant="outline"
                           className="border-green-200 bg-green-100 text-green-700"
                         >
-                          연동됨
+                          {t("linked")}
                         </Badge>
                       ) : (
                         <Badge
                           variant="outline"
                           className="border-gray-200 bg-gray-100 text-gray-600"
                         >
-                          미연동
+                          {t("notLinked")}
                         </Badge>
                       )}
                     </div>
@@ -199,7 +202,7 @@ export function SocialLinkSection({ identitiesState }: SocialLinkSectionProps) {
                         disabled={isPending || isOnlyLoginMethod}
                         title={
                           isOnlyLoginMethod
-                            ? "마지막 로그인 수단은 해제할 수 없습니다"
+                            ? t("lastLoginMethodTitle")
                             : undefined
                         }
                       >
@@ -208,26 +211,25 @@ export function SocialLinkSection({ identitiesState }: SocialLinkSectionProps) {
                         ) : (
                           <Link2Off className="size-3.5" />
                         )}
-                        연동 해제
+                        {t("unlink")}
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
                         <AlertDialogTitle>
-                          {info.label} 연동 해제
+                          {t("unlinkConfirmTitle", { provider: t(info.labelKey) })}
                         </AlertDialogTitle>
                         <AlertDialogDescription>
-                          {info.label} 계정 연동을 해제하시겠습니까? 해제 후에도
-                          다시 연동할 수 있습니다.
+                          {t("unlinkConfirmDescription", { provider: t(info.labelKey) })}
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
-                        <AlertDialogCancel>취소</AlertDialogCancel>
+                        <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
                         <AlertDialogAction
                           onClick={() => handleUnlink(account.provider)}
                           disabled={isPending}
                         >
-                          {isPending ? "처리 중..." : "연동 해제"}
+                          {isPending ? t("processing") : t("unlink")}
                         </AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>
@@ -247,8 +249,8 @@ export function SocialLinkSection({ identitiesState }: SocialLinkSectionProps) {
                       <Link2 className="size-3.5" />
                     )}
                     {redirectingProvider === account.provider
-                      ? "연동 중..."
-                      : "연동하기"}
+                      ? t("linking")
+                      : t("link")}
                   </Button>
                 )}
               </div>
@@ -258,8 +260,7 @@ export function SocialLinkSection({ identitiesState }: SocialLinkSectionProps) {
 
         {!canUnlink && linkedCount > 0 && (
           <p className="mt-4 text-xs text-amber-600">
-            비밀번호가 설정되어 있지 않고 연동된 소셜 계정이 1개뿐이면 해제할 수
-            없습니다.
+            {t("warningNoUnlink")}
           </p>
         )}
       </CardContent>

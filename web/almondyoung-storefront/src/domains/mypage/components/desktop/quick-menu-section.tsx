@@ -1,41 +1,43 @@
-import Link from "next/link"
-import { Package, Heart, ShoppingBag, Eye } from "lucide-react"
+"use client"
+
+import LocalizedClientLink from "@/components/shared/localized-client-link"
+import { Eye, Heart, Package, ShoppingBag } from "lucide-react"
+import { useTranslations } from "next-intl"
 
 export function QuickMenuSection() {
+  const t = useTranslations("mypage.quickLink")
+
   const menuItems = [
     {
-      label: "주문목록",
+      label: t("orderList"),
       icon: <Package size={32} className="text-amber-500" />,
-      href: "/kr/mypage/order/list",
+      href: "/mypage/order/list",
     },
     {
-      label: "찜한상품",
+      label: t("wish"),
       icon: <Heart size={32} className="text-amber-500" />,
-      href: "/kr/mypage/wish",
+      href: "/mypage/wish",
     },
     {
-      label: "자주산상품",
+      label: t("rebuy"),
       icon: <ShoppingBag size={32} className="text-amber-500" />,
-      href: "/kr/mypage/rebuy",
+      href: "/mypage/rebuy",
     },
     {
-      label: "최근 본 상품",
+      label: t("recent"),
       icon: <Eye size={32} className="text-amber-500" />,
-      href: "/kr/mypage/recent",
+      href: "/mypage/recent",
     },
   ]
 
   return (
     <nav className="rounded-lg bg-white">
-      {/* Outer Container - 최대 좌우 여백 제한 */}
       <div className="px-5 py-4">
-        {/* Inner Container - 아이콘 그룹 최대 너비 제한 + 중앙 정렬 */}
         <div className="mx-auto max-w-[600px]">
-          {/* Menu List - gap으로 고정 간격 */}
           <ul className="grid grid-cols-4 gap-8">
             {menuItems.map((item) => (
               <li key={item.label}>
-                <Link
+                <LocalizedClientLink
                   href={item.href}
                   className="flex w-full flex-col items-center gap-2 transition-opacity hover:opacity-70"
                 >
@@ -45,7 +47,7 @@ export function QuickMenuSection() {
                   <span className="font-['Pretendard'] text-sm font-medium text-black">
                     {item.label}
                   </span>
-                </Link>
+                </LocalizedClientLink>
               </li>
             ))}
           </ul>

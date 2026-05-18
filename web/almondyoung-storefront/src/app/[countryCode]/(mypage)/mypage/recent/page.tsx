@@ -1,5 +1,6 @@
-import { WithHeaderLayout } from "@components/layout"
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
+import { WithHeaderLayout } from "@components/layout"
+import { getTranslations } from "next-intl/server"
 import { fetchRecentViewItems } from "domains/recent-views/actions"
 import { RecentViewsTemplate } from "domains/recent-views/templates"
 
@@ -16,6 +17,7 @@ export default async function RecentPage({
   params,
   searchParams,
 }: RecentPageProps) {
+  const t = await getTranslations("mypage.menu")
   const { countryCode } = await params
   const { page } = await searchParams
   const currentPage = Math.max(1, parseInt(page || "1", 10))
@@ -27,7 +29,7 @@ export default async function RecentPage({
         showDesktopHeader: true,
         showMobileHeader: false,
         showMobileSubBackHeader: true,
-        mobileSubBackHeaderTitle: "최근 본 상품",
+        mobileSubBackHeaderTitle: t("recent"),
       }}
     >
       <MypageLayout>
