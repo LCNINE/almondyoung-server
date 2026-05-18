@@ -73,21 +73,23 @@ npm run test:bnpl:itdoc
 ```
 
 ### Database (Drizzle)
-Each service has its own schema and drizzle config:
+Each service has its own schema and drizzle config. Workflow: edit `schema.ts` → generate SQL migration → migrate is applied by `db:setup` (or in autodeploy).
 ```bash
-# Core (catalog + inventory 통합)
-npm run db:generate:core      # Generate migrations
-npm run db:push:core          # Push schema
+# Generate a new migration from current schema.ts (--name is required)
+npm run db:generate:core -- --name <kebab-description>
+npm run db:generate:wallet -- --name <kebab-description>
+npm run db:generate:user-service -- --name <kebab-description>
+npm run db:generate:notification -- --name <kebab-description>
+npm run db:generate:channel-adapter -- --name <kebab-description>
+npm run db:generate:analytics -- --name <kebab-description>
+npm run db:generate:file-service -- --name <kebab-description>
+npm run db:generate:ugc-service -- --name <kebab-description>
+npm run db:generate:membership -- --name <kebab-description>
 
-# Other services
-npm run db:push:wallet
-npm run db:push:user-service
-npm run db:push:notification
-npm run db:push:channel-adapter
-npm run db:push:analytics
-npm run db:push:file-service
-npm run db:push:ugc-service
+# Apply migrations (runs across all registered services). See ADR-0005.
+npm run db:setup -- --stage dev
 ```
+`drizzle-kit push` is intentionally not used — see `docs/adr/0005-drizzle-migration-and-autodeploy.md`.
 
 ### Adding New Microservices/Libraries
 ```bash

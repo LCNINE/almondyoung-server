@@ -110,12 +110,6 @@ template-data.json
 *_EXAMPLES.md
 final-summary.md
 
-# Drizzle ORM migration files
-apps/*/database/drizzle/*.sql
-**/drizzle/*.sql
-**/meta/
-**/*.sql
-
 # Cursor Rules (personal settings)
 .cursor/
 **/*.mdc
@@ -132,6 +126,17 @@ apps/*/database/drizzle/*.sql
 *.sql
 *.dump
 *.backup
+
+# Drizzle migrations are source of truth — keep them tracked despite *.sql above.
+!apps/**/drizzle/*.sql
+!apps/**/drizzle/meta/
+!apps/**/drizzle/meta/*.json
+!apps/**/migrations/*.sql
+!apps/**/migrations/meta/
+!apps/**/migrations/meta/*.json
+!apps/ugc-service/src/db/*.sql
+!apps/ugc-service/src/db/meta/
+!apps/ugc-service/src/db/meta/*.json
 
 # SSL certificates
 *.pem

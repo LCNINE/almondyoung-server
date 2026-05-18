@@ -2,7 +2,7 @@ import { defineConfig } from 'drizzle-kit';
 import { join } from 'path';
 import { config } from 'dotenv';
 
-config({ path: join(__dirname, '../../../.env') });
+config({ path: join(__dirname, '.env') });
 console.log('DATABASE_URL', process.env.DATABASE_URL);
 
 export default defineConfig({
@@ -12,12 +12,11 @@ export default defineConfig({
     'libs/events/src/tracking/tracking.schema.ts',
     'libs/authorization/src/database/auth.schema.ts',
   ],
-  out: 'apps/file-service/src/database/drizzle/migrations',
+  out: 'apps/file-service/drizzle',
   dialect: 'postgresql',
   dbCredentials: {
     url: process.env.DATABASE_URL ?? '',
   },
   schemaFilter: ['public', 'event', 'auth'],
-  verbose: true,
-  strict: true,
+  migrations: { prefix: 'supabase' },
 });
