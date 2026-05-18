@@ -23,17 +23,17 @@ export class BillingOutcomeHandler {
   ) {}
 
   async handleSuccess(contractId: string, amount: number | null): Promise<void> {
-    await this.dbService.db.transaction(async (tx) => {
+    const renewedUserId = await this.dbService.db.transaction(async (tx) => {
       const row = await this.getContractWithPlan(tx, contractId);
       if (!row) {
         this.logger.warn(`handleSuccess: contract not found (${contractId})`);
-        return;
+        return null;
       }
 
       const entitlement = await this.getActiveEntitlement(tx, row.userId);
       if (!entitlement) {
         this.logger.warn(`handleSuccess: active entitlement not found (userId=${row.userId})`);
-        return;
+        return null;
       }
 
       const [countRow] = await tx
@@ -87,8 +87,28 @@ export class BillingOutcomeHandler {
         { amount, newEndsAt: newEndsAtStr },
         'SYSTEM', row.userId, batch.id,
       );
+
+      return row.userId;
     });
+
+    // Medusa 고객 그룹 재동기화 보장 (dunning 중 일시 desync 복구 포함)
+    if (renewedUserId) {
+      this.membershipEventPublisher
+        .publishStatusChanged({
+          userId: renewedUserId,
+          status: 'ACTIVE',
+          occurredAt: new Date().toISOString(),
+          contractId,
+        })
+        .catch((e) => this.logger.warn(`Kafka 발행 실패 (ACTIVE/renewal): ${e?.message}`));
+    }
   }
+
+  // 결제수단 자체가 없는 경우: 재시도해도 동일 결과이므로 dunning 없이 즉시 해지
+  private static readonly NO_PAYMENT_METHOD_ERRORS = new Set([
+    'BILLING_AGREEMENT_NOT_FOUND',
+    'BILLING_METHOD_NOT_ACTIVE',
+  ]);
 
   async handleFailure(contractId: string, errorCode: string | null, errorMessage: string | null): Promise<void> {
     const terminatedUserId = await this.dbService.db.transaction(async (tx) => {
@@ -99,6 +119,14 @@ export class BillingOutcomeHandler {
         .limit(1);
 
       if (!contract) return null;
+
+      if (errorCode && BillingOutcomeHandler.NO_PAYMENT_METHOD_ERRORS.has(errorCode)) {
+        this.logger.log(
+          `[handleFailure] 결제수단 없음(${errorCode}) — dunning 생략, 즉시 해지: contractId=${contractId}`,
+        );
+        await this.terminateSubscription(tx, contractId, contract.userId, errorCode);
+        return contract.userId;
+      }
 
       const [dunning] = await tx
         .select()
