@@ -53,13 +53,19 @@ export function MainLayout({ children }: MainLayoutProps) {
 
   return (
     <SidebarProvider defaultOpen={true}>
-      <AppSidebar
-        activeMenu={activeMenu}
-        activeItem={activeItem}
-        onItemClick={handleItemClick}
-      />
+      <div className="hidden lg:flex">
+        <AppSidebar
+          activeMenu={activeMenu}
+          activeItem={activeItem}
+          onItemClick={handleItemClick}
+        />
+      </div>
       <div className="flex flex-col flex-1 min-w-0">
-        <Header activeMenu={activeMenu} onMenuChange={handleMenuChange} />
+        <Header
+          activeMenu={activeMenu}
+          activeItem={activeItem ?? undefined}
+          onMenuChange={handleMenuChange}
+        />
         <main className="flex-1 bg-white overflow-y-auto">{children}</main>
       </div>
     </SidebarProvider>
