@@ -16,7 +16,7 @@ import { ChevronDown, Globe } from "lucide-react"
 import { useLocale, useTranslations } from "next-intl"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 
-type Variant = "header" | "sheet"
+type Variant = "header" | "sheet" | "iconButton"
 
 interface LanguageSwitcherProps {
   variant?: Variant
@@ -53,10 +53,18 @@ export function LanguageSwitcher({
     router.refresh()
   }
 
-  const triggerClassName =
-    variant === "header"
-      ? "flex cursor-pointer items-center gap-1 text-xs text-white/80 transition-colors hover:text-white outline-none"
-      : "flex cursor-pointer items-center gap-1 text-sm text-foreground transition-colors hover:text-primary outline-none"
+  const triggerClassName = (() => {
+    switch (variant) {
+      case "header":
+        return "flex cursor-pointer items-center gap-1 text-xs text-white/80 transition-colors hover:text-white outline-none"
+      case "sheet":
+        return "flex cursor-pointer items-center gap-1 text-sm text-foreground transition-colors hover:text-primary outline-none"
+      case "iconButton":
+        return "flex cursor-pointer flex-col items-center gap-1 text-white outline-none"
+    }
+  })()
+
+  const isIconButton = variant === "iconButton"
 
   return (
     <DropdownMenu>
@@ -64,9 +72,15 @@ export function LanguageSwitcher({
         aria-label={t("label")}
         className={cn(triggerClassName, className)}
       >
-        <Globe className="h-3.5 w-3.5" />
-        <span>{locale.toUpperCase()}</span>
-        <ChevronDown className="h-3 w-3" />
+        {isIconButton ? (
+          <Globe className="h-6 w-6 md:h-8 md:w-8" />
+        ) : (
+          <>
+            <Globe className="h-3.5 w-3.5" />
+            <span>{locale.toUpperCase()}</span>
+            <ChevronDown className="h-3 w-3" />
+          </>
+        )}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-[8rem]">
         {SUPPORTED_LOCALES.map((l) => (

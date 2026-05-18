@@ -392,6 +392,66 @@ formatDate(maybeNull, DATE_FORMATS.KO_LONG, "")
 - 지원 입력: `string | number | Date | null | undefined` (ISO 문자열/타임스탬프/Date 모두 허용)
 - 공용 프리셋(`DATE_FORMATS`): `KO_LONG`, `KO_DOT`, `ISO_DATE`, `KO_DOT_TIME`, `KO_LONG_WEEKDAY` — 필요한 프리셋이 없다면 `DATE_FORMATS`에 추가한 뒤 사용하세요
 
+### 11. 다국어 처리 (i18n)
+
+- **사용자에게 노출되는 모든 텍스트는 반드시 다국어 처리해야 합니다.** 한국어 문자열을 JSX/문자열 리터럴로 하드코딩하지 마세요.
+- 라이브러리는 `next-intl` (no-i18n-routing 모드). locale 은 URL 의 `[countryCode]` 에서 자동 매핑 (`/kr↔ko`, `/jp↔ja`, `/us↔en`).
+- 지원 locale: `ko`, `en`, `ja`. 메시지 파일은 `src/i18n/messages/{ko,en,ja}.json` — **세 파일을 항상 같이 수정**해야 키 누락이 없습니다.
+
+#### 사용 방법
+
+```tsx
+// 서버 컴포넌트
+import { getTranslations } from "next-intl/server"
+const t = await getTranslations("productDetail.qna")
+return <h2>{t("title")}</h2>
+
+// 클라이언트 컴포넌트
+"use client"
+import { useTranslations } from "next-intl"
+const t = useTranslations("productDetail.qna")
+return <button>{t("write")}</button>
+```
+
+#### 키 네이밍 컨벤션
+
+- 형식: `<namespace>.<group>.<key>`, camelCase, dot-separated (예: `productDetail.qna.title`)
+- ICU 변수: `{name}`, `{count}` 같이 placeholder 사용 — `t("greeting", { name })`
+- 리치 텍스트(`<strong>` 등 마크업 포함): `t.rich("totalCount", { count, strong: (chunks) => <span>{chunks}</span> })`
+
+#### 사용자 입력 / 동적 텍스트도 누락하지 않기
+
+- toast 메시지, alert/confirm, aria-label, placeholder, validation error 메시지(zod) 모두 번역 대상
+- zod 스키마는 빌더 함수 패턴으로 만들고 호출부에서 `useTranslations` 메시지를 주입 (`buildXxxSchema(messages)`)
+
+#### 범위 외 (현재 다국어화 대상 아님)
+
+- API 응답 데이터(상품명, 카테고리명, 상품 설명) — 백엔드에서 locale 별 컬럼이 준비되기 전까지 그대로 표시
+- 가격 단위/포맷 — region 따라 그대로 노출
+- 회사 정보 일부(사업자등록번호 등) — 한국 법인 고유 라벨이므로 의미 보존 표기
+
+#### ICU MessageFormat 주의 — 단일 따옴표 이스케이프
+
+ICU MessageFormat 에서 single quote `'` 는 placeholder 이스케이프 문자입니다. 값에 `'{x}' 검색결과` 처럼 작은따옴표로 placeholder 를 감싸면 placeholder 가 동작하지 않고 `{x}` 그대로 출력됩니다.
+
+```jsonc
+// ❌ 잘못됨 — {keyword} 가 치환되지 않음
+"title": "'{keyword}' 검색결과"
+
+// ✅ 올바름 — 시각적 따옴표를 원하면 유니코드 따옴표 사용
+"title": "‘{keyword}’ 검색결과"   // ko/en
+"title": "「{keyword}」 検索結果"  // ja
+
+// 또는 작은따옴표를 두 번 적어 literal 로 처리 (가독성 떨어져 비권장)
+"title": "''{keyword}'' 검색결과"
+```
+
+#### LanguageSwitcher / 신규 page 추가 시
+
+- 헤더(`main-header`)와 모바일 카테고리 시트에 `<LanguageSwitcher />` 가 이미 있으므로 새 페이지에서 별도 배치 불필요
+- 신규 페이지/컴포넌트에 텍스트를 추가하면 **항상** 세 메시지 파일에 키 추가 후 `t()` 로 참조
+- 기존 페이지에 텍스트를 새로 넣을 때도 같은 namespace 안에 추가 (예: `productDetail.summary.*` 에 새 키 더하기)
+
 ## 경로 Alias
 
 ```typescript
@@ -441,6 +501,7 @@ products.map((product) => ({
 4. **`fetch()`를 직접 호출하지 마세요.** 백엔드 API 요청은 반드시 `api()` 함수(`@/lib/api/api`)를 사용합니다.
 5. **`next/link`의 `Link`를 직접 사용하지 마세요.** 내부 링크는 반드시 `LocalizedClientLink`(`@/components/shared/localized-client-link`)를 사용합니다.
 6. **날짜 포맷팅 시 `toLocaleDateString`, `Intl.DateTimeFormat`, `date-fns`의 `format()`을 직접 호출하지 마세요.** 반드시 `formatDate`(`@/lib/utils/format-date`)를 사용합니다.
+7. **한국어 문자열을 하드코딩하지 마세요.** 사용자에게 노출되는 모든 텍스트(JSX, toast, aria-label, placeholder, zod 에러 메시지 포함)는 `next-intl` 의 `t()` 로 참조하고 `src/i18n/messages/{ko,en,ja}.json` 세 파일에 모두 키를 추가합니다.
 
 ## 참고 문서
 
