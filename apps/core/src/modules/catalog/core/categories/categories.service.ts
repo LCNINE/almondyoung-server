@@ -259,15 +259,18 @@ export class ProductCategoriesService {
     return responseDto;
   }
 
-  async getCategoryTree(maxDepth?: number, tx?: DbTransaction): Promise<CategoryTreeResponseDto> {
+  async getCategoryTree(
+    maxDepth?: number,
+    includeInactive?: boolean,
+    tx?: DbTransaction,
+  ): Promise<CategoryTreeResponseDto> {
     const client = this.getClient(tx);
 
-    // Get all categories
-    const allCategories = await client
-      .select()
-      .from(pimSchema.productCategories)
-      .where(eq(pimSchema.productCategories.isActive, true))
-      .orderBy(pimSchema.productCategories.level, pimSchema.productCategories.sortOrder);
+    const baseQuery = client.select().from(pimSchema.productCategories);
+    const allCategories = await (includeInactive
+      ? baseQuery
+      : baseQuery.where(eq(pimSchema.productCategories.isActive, true))
+    ).orderBy(pimSchema.productCategories.level, pimSchema.productCategories.sortOrder);
 
     // Build tree structure
     const categoryMap = new Map<string, CategoryTreeNodeDto>();

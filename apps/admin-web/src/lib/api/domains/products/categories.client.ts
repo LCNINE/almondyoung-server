@@ -19,10 +19,22 @@ export const categoriesClient = {
     return response.data;
   },
 
-  getTree: async (maxDepth?: number): Promise<CategoryTreeResponseDto> => {
-    const params = maxDepth ? { maxDepth } : {};
+  getTree: async (options?: {
+    maxDepth?: number;
+    includeInactive?: boolean;
+  }): Promise<CategoryTreeResponseDto> => {
+    const params: Record<string, string | number> = {};
+    if (options?.maxDepth !== undefined) params.maxDepth = options.maxDepth;
+    if (options?.includeInactive) params.includeInactive = 'true';
     const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/categories`, { params });
     return response.data;
+  },
+
+  reorder: async (parentId: UUID | null, categoryIds: UUID[]): Promise<void> => {
+    await client.post(`${ALMONDYOUNG_API_BASE_URL}/categories/reorder`, {
+      parentId,
+      categoryIds,
+    });
   },
 
   get: async (id: UUID): Promise<CategoryDto> => {

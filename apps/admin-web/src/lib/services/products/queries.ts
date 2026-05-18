@@ -29,18 +29,26 @@ import type {
   NoticeListQuery,
 } from '@/lib/types/dto/products';
 import type { BatchVariantInfo } from '@/lib/api/domains/products/variants.client';
+import type {
+  ProductMasterDetail,
+  ProductVariantsResponse,
+} from './products-detail.types';
 
 // ===== 카테고리 관련 쿼리 =====
 
 /**
  * 카테고리 트리 조회
+ * - includeInactive: 어드민 트리에서 비활성 카테고리까지 노출하려면 true.
  */
-export const useCategoryTree = (maxDepth?: number) => {
+export const useCategoryTree = (options?: {
+  maxDepth?: number;
+  includeInactive?: boolean;
+}) => {
   return useQuery({
-    queryKey: productQueryKeys.categoryTree(),
-    queryFn: () => products.categories.getTree(maxDepth),
-    staleTime: 5 * 60 * 1000, // 5분
-    gcTime: 10 * 60 * 1000, // 10분
+    queryKey: productQueryKeys.categoryTree(options),
+    queryFn: () => products.categories.getTree(options),
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
   });
 };
 
@@ -124,6 +132,21 @@ export const useMaster = (id: string) => {
 };
 
 /**
+ * 제품 마스터 상세 조회 (Suspense).
+ * products-detail 페이지 전용. 글로벌 MasterDto 가 백엔드 응답과 어긋나있어
+ * 로컬 ProductMasterDetail 타입으로 받는다. 정합 정비는 별도 PR.
+ */
+export const useMasterSuspense = (id: string) => {
+  return useSuspenseQuery({
+    queryKey: productQueryKeys.master(id),
+    queryFn: async () =>
+      (await products.masters.get(id)) as unknown as ProductMasterDetail,
+    staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+};
+
+/**
  * 제품 마스터 ID 목록으로 배치 조회 (썸네일/이름 lookup용)
  */
 export const useMastersByIds = (ids: string[]) => {
@@ -173,6 +196,28 @@ export const useVariantsByMaster = (query: VariantsQuery) => {
     queryKey: productQueryKeys.variantsByMaster(query.masterId, query),
     queryFn: () => products.variants.getByMaster(query.masterId, query),
     enabled: !!query.masterId,
+    staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+};
+
+/**
+ * 마스터별 제품 변형 조회 (Suspense).
+ * products-detail 페이지 전용. 글로벌 VariantDto 가 백엔드 응답과 어긋나있어
+ * 로컬 ProductVariantsResponse 타입으로 받는다. 정합 정비는 별도 PR.
+ */
+export const useVariantsByMasterSuspense = (
+  masterId: string,
+  limit = 100,
+) => {
+  const query = { masterId, page: 1, limit };
+  return useSuspenseQuery({
+    queryKey: productQueryKeys.variantsByMaster(masterId, query),
+    queryFn: async () =>
+      (await products.variants.getByMaster(
+        masterId,
+        query,
+      )) as unknown as ProductVariantsResponse,
     staleTime: 30 * 1000,
     gcTime: 5 * 60 * 1000,
   });
@@ -355,6 +400,31 @@ export const useMasterVersions = (masterId: string) => {
     queryFn: () => products.versions.listByMaster(masterId),
     enabled: !!masterId,
     staleTime: 30 * 1000,
+  });
+};
+
+/**
+ * 버전 트리 조회 (Suspense). 버전 트리 페이지 전용.
+ * 백엔드가 parent→children 재귀 트리로 응답한다.
+ */
+export const useVersionTreeSuspense = (masterId: string) => {
+  return useSuspenseQuery({
+    queryKey: productQueryKeys.masterVersions(masterId),
+    queryFn: () => products.versions.listByMaster(masterId),
+    staleTime: 30 * 1000,
+  });
+};
+
+/**
+ * 특정 버전 상세 조회 (Suspense). products-detail 페이지가 ?versionId 로 진입했을 때 사용.
+ * MasterDto/VersionDetailDto 정합 정비 전까지는 로컬 타입으로 받는다.
+ */
+export const useVersionDetailSuspense = (masterId: string, versionId: string) => {
+  return useSuspenseQuery({
+    queryKey: productQueryKeys.versionDetail(masterId, versionId),
+    queryFn: () => products.versions.getById(masterId, versionId),
+    staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
   });
 };
 
