@@ -6,10 +6,12 @@ import { Container } from '@/components/admin-ui-experimental/common/container';
 import { Header } from '@/components/admin-ui-experimental/common/header';
 import { Badge } from '@/components/ui/badge';
 import { Spinner } from '@/components/ui/spinner';
-import { useMasterSuspense } from '@/lib/services/products/queries';
+import { useProductDetailSuspense } from '@/lib/services/products/use-product-detail';
 
-function ProductDetailOptionsContent({ masterId }: { masterId: string }) {
-  const { data } = useMasterSuspense(masterId);
+type Props = { masterId: string; versionId: string | null };
+
+function ProductDetailOptionsContent({ masterId, versionId }: Props) {
+  const { data } = useProductDetailSuspense(masterId, versionId);
   const groups = data.optionGroups;
 
   if (groups.length === 0) {
@@ -36,7 +38,7 @@ function ProductDetailOptionsContent({ masterId }: { masterId: string }) {
   );
 }
 
-export function ProductDetailOptions({ masterId }: { masterId: string }) {
+export function ProductDetailOptions({ masterId, versionId }: Props) {
   return (
     <Container>
       <Header title="옵션" />
@@ -48,7 +50,7 @@ export function ProductDetailOptions({ masterId }: { masterId: string }) {
             </div>
           }
         >
-          <ProductDetailOptionsContent masterId={masterId} />
+          <ProductDetailOptionsContent masterId={masterId} versionId={versionId} />
         </Suspense>
       </CardErrorBoundary>
     </Container>

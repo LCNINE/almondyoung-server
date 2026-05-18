@@ -5,7 +5,7 @@ import { CardErrorBoundary } from '@/components/admin-ui-experimental/common/car
 import { Container } from '@/components/admin-ui-experimental/common/container';
 import { Header } from '@/components/admin-ui-experimental/common/header';
 import { Spinner } from '@/components/ui/spinner';
-import { useMasterSuspense } from '@/lib/services/products/queries';
+import { useProductDetailSuspense } from '@/lib/services/products/use-product-detail';
 
 const STATUS_LABELS: Record<string, string> = {
   active: '활성',
@@ -24,8 +24,10 @@ function formatStatus(s: string | null): string {
   return STATUS_LABELS[s] ?? s;
 }
 
-function ProductDetailGeneralContent({ masterId }: { masterId: string }) {
-  const { data } = useMasterSuspense(masterId);
+type Props = { masterId: string; versionId: string | null };
+
+function ProductDetailGeneralContent({ masterId, versionId }: Props) {
+  const { data } = useProductDetailSuspense(masterId, versionId);
 
   const rows: { key: string; value: string }[] = [
     { key: '이름', value: data.name },
@@ -50,7 +52,7 @@ function ProductDetailGeneralContent({ masterId }: { masterId: string }) {
   );
 }
 
-export function ProductDetailGeneral({ masterId }: { masterId: string }) {
+export function ProductDetailGeneral({ masterId, versionId }: Props) {
   return (
     <Container>
       <Header title="기본 정보" />
@@ -62,7 +64,7 @@ export function ProductDetailGeneral({ masterId }: { masterId: string }) {
             </div>
           }
         >
-          <ProductDetailGeneralContent masterId={masterId} />
+          <ProductDetailGeneralContent masterId={masterId} versionId={versionId} />
         </Suspense>
       </CardErrorBoundary>
     </Container>

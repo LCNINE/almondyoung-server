@@ -402,6 +402,31 @@ export const useMasterVersions = (masterId: string) => {
   });
 };
 
+/**
+ * 버전 트리 조회 (Suspense). 버전 트리 페이지 전용.
+ * 백엔드가 parent→children 재귀 트리로 응답한다.
+ */
+export const useVersionTreeSuspense = (masterId: string) => {
+  return useSuspenseQuery({
+    queryKey: productQueryKeys.masterVersions(masterId),
+    queryFn: () => products.versions.listByMaster(masterId),
+    staleTime: 30 * 1000,
+  });
+};
+
+/**
+ * 특정 버전 상세 조회 (Suspense). products-detail 페이지가 ?versionId 로 진입했을 때 사용.
+ * MasterDto/VersionDetailDto 정합 정비 전까지는 로컬 타입으로 받는다.
+ */
+export const useVersionDetailSuspense = (masterId: string, versionId: string) => {
+  return useSuspenseQuery({
+    queryKey: productQueryKeys.versionDetail(masterId, versionId),
+    queryFn: () => products.versions.getById(masterId, versionId),
+    staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+};
+
 // ===== 가격 관리 관련 쿼리 =====
 
 export const useVersionPricingRules = (versionId: string) => {

@@ -8,33 +8,36 @@ import { Spinner } from '@/components/ui/spinner';
 import { DataTable } from '@/components/data-table';
 import { useDataTable } from '@/hooks/use-data-table';
 import { useProductVariantsTableColumns } from '@/hooks/table/columns/use-product-variants-table-columns';
-import {
-  useMasterSuspense,
-  useVariantsByMasterSuspense,
-} from '@/lib/services/products/queries';
+import { useVariantsByMasterSuspense } from '@/lib/services/products/queries';
+import { useProductDetailSuspense } from '@/lib/services/products/use-product-detail';
+import type { ProductVariantRow } from '@/lib/services/products/products-detail.types';
 
 const PAGE_SIZE = 100;
 
-function ProductDetailVariantsContent({ masterId }: { masterId: string }) {
-  const { data } = useVariantsByMasterSuspense(masterId, PAGE_SIZE);
-  // master 도 옆 Options 카드가 이미 호출 중 — React Query 캐시 공유.
-  const { data: master } = useMasterSuspense(masterId);
-  const columns = useProductVariantsTableColumns(master.optionGroups);
+type Props = { masterId: string; versionId: string | null };
 
-  // 서버 정렬 미지원 — client 에서 displayOrder asc, tie-breaker createdAt asc.
-  const rows = useMemo(() => {
-    return [...data.data].sort((a, b) => {
+function VariantsTable({
+  rows,
+  optionGroups,
+}: {
+  rows: ProductVariantRow[];
+  optionGroups: ReturnType<typeof useProductDetailSuspense>['data']['optionGroups'];
+}) {
+  const columns = useProductVariantsTableColumns(optionGroups);
+
+  const sorted = useMemo(() => {
+    return [...rows].sort((a, b) => {
       const ao = a.displayOrder ?? Number.POSITIVE_INFINITY;
       const bo = b.displayOrder ?? Number.POSITIVE_INFINITY;
       if (ao !== bo) return ao - bo;
       return a.createdAt.localeCompare(b.createdAt);
     });
-  }, [data.data]);
+  }, [rows]);
 
   const { table } = useDataTable({
-    data: rows,
+    data: sorted,
     columns,
-    count: rows.length,
+    count: sorted.length,
     pageSize: PAGE_SIZE,
     getRowId: (row) => row.id,
   });
@@ -42,14 +45,33 @@ function ProductDetailVariantsContent({ masterId }: { masterId: string }) {
   return (
     <DataTable
       table={table}
-      count={rows.length}
+      count={sorted.length}
       pageSize={PAGE_SIZE}
       noRecords={{ message: '품목이 없습니다.' }}
     />
   );
 }
 
-export function ProductDetailVariants({ masterId }: { masterId: string }) {
+function VariantsFromMaster({ masterId }: { masterId: string }) {
+  const { data: detail } = useProductDetailSuspense(masterId, null);
+  const { data: variants } = useVariantsByMasterSuspense(masterId, PAGE_SIZE);
+  return <VariantsTable rows={variants.data} optionGroups={detail.optionGroups} />;
+}
+
+function VariantsFromVersion({ masterId, versionId }: { masterId: string; versionId: string }) {
+  const { data: detail } = useProductDetailSuspense(masterId, versionId);
+  const rows = detail.variantsInline ?? [];
+  return <VariantsTable rows={rows} optionGroups={detail.optionGroups} />;
+}
+
+function ProductDetailVariantsContent({ masterId, versionId }: Props) {
+  if (versionId) {
+    return <VariantsFromVersion masterId={masterId} versionId={versionId} />;
+  }
+  return <VariantsFromMaster masterId={masterId} />;
+}
+
+export function ProductDetailVariants({ masterId, versionId }: Props) {
   return (
     <Container>
       <Header title="품목 (Variants)" />
@@ -61,7 +83,7 @@ export function ProductDetailVariants({ masterId }: { masterId: string }) {
             </div>
           }
         >
-          <ProductDetailVariantsContent masterId={masterId} />
+          <ProductDetailVariantsContent masterId={masterId} versionId={versionId} />
         </Suspense>
       </CardErrorBoundary>
     </Container>

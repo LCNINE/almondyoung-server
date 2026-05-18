@@ -68,3 +68,41 @@ export type ProductVariantsResponse = {
   page: number;
   limit: number;
 };
+
+// 백엔드 GET /masters/:masterId/versions/:versionId 응답.
+// 출처: apps/core/.../mappers/product-version.mapper.ts (toDetailResponseDto)
+// 페이지가 실제로 소비하는 필드만 기록 (master 와 겹치는 핵심 + version 식별 필드).
+// 글로벌 정합 정비는 별도 PR.
+export type MasterVersionDetailDto = {
+  id: string;
+  masterId: string;
+  version: number;
+  status: 'draft' | 'active' | 'inactive';
+  name: string;
+  description: string | null;
+  brand: string | null;
+  seoTitle: string | null;
+  seoDescription: string | null;
+  seoKeywords: string[] | null;
+  isWholesaleOnly: boolean | null;
+  isMembershipOnly: boolean | null;
+  parentVersionId: string | null;
+  draftOwnerId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  images: ProductImage[];
+  optionGroups: ProductOptionGroup[];
+  variants: Array<{
+    id: string;
+    masterId?: string;
+    variantName: string | null;
+    imageId: string | null;
+    displayOrder: number | null;
+    status: string | null;
+    isDefault: boolean | null;
+    createdAt: string;
+    updatedAt: string;
+    optionValues: Array<{ id: string; optionGroupId: string }>;
+    price?: number;
+  }>;
+};

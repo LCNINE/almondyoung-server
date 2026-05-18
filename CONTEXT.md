@@ -10,6 +10,8 @@
 - 스키마: `apps/core/src/modules/catalog/schema/catalog.schema.ts` 의 `productVariants` 테이블 외.
 - 핵심 속성(variant): `variantCode` (unique), `variantName`, `displayOrder`, `status`, `isDefault`, `imageId`.
 - **가격은 판매상품의 본질 속성이 아니다.** master/variant 어느 단위에도 가격 컬럼이 묶여있지 않고, 가격은 별도 pricing 모듈(버전 + 규칙)이 관장한다. UI 에서 master 의 "기본 정보" 와 "가격" 은 다른 카드/페이지로 분리되는 게 도메인적으로 자연스럽다.
+- **마스터는 항상 버전을 통해 수정된다.** `productMasterVersions` (draft/active) 가 진실의 source. 마스터 자체에는 PATCH 엔드포인트가 없고, 편집은 `POST versions → PUT versions/:id → PATCH versions/:id/publish` 흐름. 운영자 UI 는 세 모드로 갈라진다: (1) **active 보기** — `…/[masterId]` 기본; (2) **draft 편집** — status='draft' 인 버전만 PUT 가능; (3) **이전 버전 둘러보기** — `…/[masterId]/versions` 트리에서 inactive 를 골라 `…/[masterId]?versionId=…` 로 read-only 열람. inactive 에서도 "이 버전 기반 새 draft 만들기" 는 허용 (API 가 임의 parentVersionId 받으므로 fork 가 정상 시나리오). publish 로 inactive→active 롤백도 API 는 지원하지만, 운영 정책상 어드민 UI 의 별도 액션으로 다룬다.
+- **상품 상세설명**: `descriptionHtml` (text) 가 실데이터. 평문 `description` 컬럼은 현재 항상 NULL — 미래 용도 미정. 스토어프론트는 `prose` 컨테이너에 `dangerouslySetInnerHTML` 로 렌더 (sanitize 없음). 데이터 모양은 카페24/NNEditor 마이그레이션 출신의 **이미지 스택 HTML** (`<img>` 나열 + 인라인 style) 이 주류.
 - 변화 동인: 상품 등록/판매 시작·종료/이미지 변경.
 
 ### 재고상품 (SKU) — WMS 출신
