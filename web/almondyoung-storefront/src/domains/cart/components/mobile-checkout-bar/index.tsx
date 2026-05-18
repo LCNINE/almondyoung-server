@@ -10,6 +10,7 @@ import { formatPrice } from "@/lib/utils/price-utils"
 
 import PriceErrorNotice from "../price-error-notice"
 import { calculateCartDiscount } from "../../utils/calculate-discount"
+import { FreeShippingProgress } from "../free-shipping-progress"
 
 type MobileCheckoutBarProps = {
   cart: HttpTypes.StoreCart & {
@@ -42,6 +43,11 @@ export default function MobileCheckoutBar({
   // 선택된 아이템의 합계 계산
   const selectedTotal = selectedItems.reduce(
     (sum, item) => sum + (item.total ?? 0),
+    0
+  )
+
+  const selectedItemSubtotal = selectedItems.reduce(
+    (sum, item) => sum + (item.unit_price ?? 0) * (item.quantity ?? 0),
     0
   )
 
@@ -180,6 +186,10 @@ export default function MobileCheckoutBar({
                 )}
               </div>
             </div>
+
+            {selectedCount > 0 && (
+              <FreeShippingProgress itemSubtotal={selectedItemSubtotal} className="mb-3" />
+            )}
 
             {/* 구매 버튼 */}
             <Button
