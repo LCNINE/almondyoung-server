@@ -4,7 +4,13 @@
 export const productQueryKeys = {
   // 카테고리 관련
   categories: ['categories'] as const,
-  categoryTree: () => [...productQueryKeys.categories, 'tree'] as const,
+  categoryTree: (options?: { maxDepth?: number; includeInactive?: boolean }) =>
+    [
+      ...productQueryKeys.categories,
+      'tree',
+      options?.maxDepth ?? 'all',
+      options?.includeInactive ? 'all-states' : 'active-only',
+    ] as const,
   category: (id: string) => [...productQueryKeys.categories, id] as const,
   categoryChildren: (id: string) =>
     [...productQueryKeys.category(id), 'children'] as const,
@@ -106,6 +112,8 @@ export const productQueryKeys = {
 
   // 버전 관련
   masterVersions: (masterId: string) => ['master-versions', masterId] as const,
+  versionDetail: (masterId: string, versionId: string) =>
+    ['master-versions', masterId, 'detail', versionId] as const,
 
   // 채널 리스팅 관련
   channelListingsByVariant: (variantId: string) =>
