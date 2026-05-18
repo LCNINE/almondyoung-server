@@ -14,8 +14,9 @@ import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/s
 import { User } from '@app/authorization';
 import { ProductVersionsService } from '../services/product-versions.service';
 import { ProductMastersService } from '../services/product-masters.service';
+import { ProductVariantsService } from '../services/product-variants.service';
 import { CreateDraftVersionDto, VersionTreeResponseDto, VersionDiffItemDto } from '../dto/versions';
-import { UpdateProductMasterDto } from '../dto';
+import { UpdateProductMasterDto, UpdateProductVariantDto, UpdateVariantBulkDto } from '../dto';
 import { ProductVersionMapper } from '../mappers/product-version.mapper';
 
 @ApiTags('Product Versions With Master')
@@ -24,6 +25,7 @@ export class ProductMasterVersionsController {
   constructor(
     private readonly productVersionsService: ProductVersionsService,
     private readonly productMastersService: ProductMastersService,
+    private readonly productVariantsService: ProductVariantsService,
   ) {}
 
   @Get()
@@ -223,6 +225,56 @@ export class ProductMasterVersionsController {
     @Param('compareVersionId') compareVersionId: string,
   ): Promise<VersionDiffItemDto[]> {
     return this.productVersionsService.compareVersions(versionId, compareVersionId);
+  }
+
+  @Put(':versionId/variants/bulk')
+  @ApiOperation({
+    summary: 'Draft 버전의 variant 일괄 편집 (CoW)',
+    description:
+      '여러 variant 를 한 트랜잭션 안에서 편집한다. 공유된 variant 는 copy-on-write 로 격리되고, 관련 pricing rule 도 cascading CoW. draft 가 아닌 버전은 거부.',
+  })
+  @ApiParam({ name: 'masterId', description: 'Master ID' })
+  @ApiParam({ name: 'versionId', description: 'Version ID (draft)' })
+  @ApiBody({ type: UpdateVariantBulkDto })
+  @ApiResponse({ status: 200, description: '일괄 편집 성공' })
+  @ApiResponse({ status: 400, description: 'Draft 가 아닌 버전' })
+  @ApiResponse({ status: 404, description: '버전 또는 매핑된 variant 를 찾을 수 없음' })
+  async bulkUpdateVariantsInDraft(
+    @Param('masterId') masterId: string,
+    @Param('versionId') versionId: string,
+    @Body() body: UpdateVariantBulkDto,
+  ) {
+    const results = await this.productVariantsService.bulkUpdateVariantsInDraft(
+      masterId,
+      versionId,
+      body.updates,
+    );
+    return { results };
+  }
+
+  @Put(':versionId/variants/:variantId')
+  @ApiOperation({
+    summary: 'Draft 버전 컨텍스트에서 variant 편집 (CoW)',
+    description:
+      'variant 가 draft 외 다른 버전과 공유되면 copy-on-write 로 새 row 를 만들고 draft 의 정션만 repoint. 같은 트랜잭션에서 그 variantId 를 참조하는 pricing rule 도 cascading CoW. 단독 매핑이면 in-place. docs/adr/0004 참조.',
+  })
+  @ApiParam({ name: 'masterId', description: 'Master ID' })
+  @ApiParam({ name: 'versionId', description: 'Version ID (draft)' })
+  @ApiParam({ name: 'variantId', description: 'Variant ID' })
+  @ApiBody({ type: UpdateProductVariantDto })
+  @ApiResponse({
+    status: 200,
+    description: '편집 성공. CoW 발생 시 응답의 variantId 가 새 ID 로 바뀜.',
+  })
+  @ApiResponse({ status: 400, description: 'Draft 가 아닌 버전이거나 master/version 불일치' })
+  @ApiResponse({ status: 404, description: '버전 또는 매핑된 variant 를 찾을 수 없음' })
+  async updateVariantInDraft(
+    @Param('masterId') masterId: string,
+    @Param('versionId') versionId: string,
+    @Param('variantId') variantId: string,
+    @Body() body: UpdateProductVariantDto,
+  ) {
+    return this.productVariantsService.updateVariantInDraft(masterId, versionId, variantId, body);
   }
 
   @Delete(':versionId')

@@ -416,7 +416,12 @@ export const productVariants = pgTable(
     isDefault: boolean('is_default').default(false).notNull(), // 옵션 없는 경우의 기본 품목
 
     // Phase 1 new fields
-    variantCode: varchar('variant_code', { length: 100 }).unique(),
+    // variantCode 는 외부 식별자(채널 어댑터에서 Medusa barcode 로 매핑)이고, 같은 master 의
+    // active variant 와 draft variant 가 같은 물리적 상품을 가리키므로 의도적으로 코드를 공유한다.
+    // "현재 active 버전에 매달린 variant 끼리만 unique" 는 정션 join 이 필요해 partial index 로
+    // 표현 불가 — 따라서 DB 강제는 없고, publishVersion 이 publish 직전에 검증한다.
+    // 자세한 결정은 docs/adr/0004-variant-draft-scoped-edit-cow.md.
+    variantCode: varchar('variant_code', { length: 100 }),
 
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
