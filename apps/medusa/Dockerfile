@@ -2,6 +2,7 @@ FROM node:22-alpine
 
 # Build-time env for Vite-powered admin bundle
 ARG VITE_USER_SERVICE_URL
+ARG MEDUSA_BACKEND_URL
 
 # 기본 런타임 설정
 ENV PORT=9000
@@ -39,6 +40,7 @@ RUN if [ -f src/data/core-snapshots.json.gz ]; then \
 # 4) 애플리케이션 빌드 (Medusa CLI가 빌드 수행)
 # Vite envs must be present at build time to be baked into the admin bundle
 ENV VITE_USER_SERVICE_URL=$VITE_USER_SERVICE_URL
+ENV MEDUSA_BACKEND_URL=$MEDUSA_BACKEND_URL
 RUN yarn build
 
 # DEBUG: 빌드 후 디렉토리 구조 확인
@@ -76,4 +78,5 @@ EXPOSE 9000
 
 # 외부 인프라는 환경 변수로 주입 (DATABASE_URL, REDIS_URL, KAFKA_BROKERS 등)
 # .medusa/server 디렉토리에서 실행
-CMD ["sh", "-c", "yarn medusa db:migrate && yarn start"]
+# --execute-safe-links: link sync 가 interactive prompt 에서 멈추지 않도록 안전한 액션만 자동 실행
+CMD ["sh", "-c", "yarn medusa db:migrate --execute-safe-links && yarn start"]
