@@ -124,6 +124,27 @@ export const useMoveCategory = () => {
   });
 };
 
+/**
+ * 카테고리 순서 변경 (동일 부모 내)
+ * 부모 변경은 useMoveCategory 호출 후 이 훅으로 새 부모의 형제 순서를 잡는다.
+ */
+export const useReorderCategories = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      parentId,
+      categoryIds,
+    }: {
+      parentId: string | null;
+      categoryIds: string[];
+    }) => products.categories.reorder(parentId, categoryIds),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.categories });
+    },
+  });
+};
+
 // ===== 제품 마스터 관련 뮤테이션 =====
 
 /**

@@ -3,6 +3,7 @@
 import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import { client } from '../../client';
 import type { MasterVersionDto, CreateDraftVersionDto } from '../../../types/dto/products';
+import type { MasterVersionDetailDto } from '@/lib/services/products/products-detail.types';
 
 const base = (masterId: string) =>
   `${ALMONDYOUNG_API_BASE_URL}/masters/${masterId}/versions`;
@@ -13,6 +14,12 @@ export const versionsClient = {
 
   getActive: async (masterId: string): Promise<MasterVersionDto> =>
     (await client.get(`${base(masterId)}/active`)).data,
+
+  getById: async (
+    masterId: string,
+    versionId: string,
+  ): Promise<MasterVersionDetailDto> =>
+    (await client.get(`${base(masterId)}/${versionId}`)).data,
 
   createDraft: async (
     masterId: string,

@@ -62,6 +62,7 @@ export function ProductsListTable() {
         pageSize={PAGE_SIZE}
         filters={filters}
         search
+        navigateTo={(row) => `/mall/products-list/${row.original.masterId}`}
         noRecords={{ message: '상품 데이터가 없습니다.' }}
       />
     </div>
