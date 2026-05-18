@@ -7,15 +7,17 @@ import { Container } from '@/components/admin-ui-experimental/common/container';
 import { Header } from '@/components/admin-ui-experimental/common/header';
 import { Spinner } from '@/components/ui/spinner';
 import { FILE_SERVICE_BASE_URL } from '@/const/api-const';
-import { useMasterSuspense } from '@/lib/services/products/queries';
+import { useProductDetailSuspense } from '@/lib/services/products/use-product-detail';
 import type { ProductImage } from '@/lib/services/products/products-detail.types';
+
+type Props = { masterId: string; versionId: string | null };
 
 function resolveImageSrc(fileId: string): string {
   return `${FILE_SERVICE_BASE_URL}/files/public/${fileId}`;
 }
 
-function ProductDetailImagesContent({ masterId }: { masterId: string }) {
-  const { data } = useMasterSuspense(masterId);
+function ProductDetailImagesContent({ masterId, versionId }: Props) {
+  const { data } = useProductDetailSuspense(masterId, versionId);
 
   const { primary, rest } = useMemo(() => {
     const sorted = [...data.images].sort((a, b) => {
@@ -68,7 +70,7 @@ function ProductDetailImagesContent({ masterId }: { masterId: string }) {
   );
 }
 
-export function ProductDetailImages({ masterId }: { masterId: string }) {
+export function ProductDetailImages({ masterId, versionId }: Props) {
   return (
     <Container>
       <Header title="이미지" />
@@ -80,7 +82,7 @@ export function ProductDetailImages({ masterId }: { masterId: string }) {
             </div>
           }
         >
-          <ProductDetailImagesContent masterId={masterId} />
+          <ProductDetailImagesContent masterId={masterId} versionId={versionId} />
         </Suspense>
       </CardErrorBoundary>
     </Container>

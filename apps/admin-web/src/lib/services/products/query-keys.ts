@@ -105,6 +105,8 @@ export const productQueryKeys = {
   // 버전 관련
   masterVersions: (masterId: string) =>
     ['master-versions', masterId] as const,
+  versionDetail: (masterId: string, versionId: string) =>
+    ['master-versions', masterId, 'detail', versionId] as const,
 
   // 채널 리스팅 관련
   channelListingsByVariant: (variantId: string) =>
