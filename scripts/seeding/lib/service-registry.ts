@@ -16,7 +16,7 @@ const ROOT_REGISTRY: ServiceConfig[] = [
   { name: 'notification', database: 'notification', drizzleConfig: 'apps/notification/database/drizzle/drizzle.config.ts', hasSeedStep: true },
   { name: 'ugc-service', database: 'ugc', drizzleConfig: 'apps/ugc-service/src/db/drizzle.config.ts', hasSeedStep: false },
   { name: 'wallet', database: 'wallet', drizzleConfig: 'apps/wallet/drizzle.config.ts', hasSeedStep: false },
-  { name: 'file-service', database: 'file_service', drizzleConfig: 'apps/file-service/src/database/drizzle/drizzle.config.ts', hasSeedStep: true },
+  { name: 'file-service', database: 'file_service', drizzleConfig: 'apps/file-service/drizzle.config.ts', hasSeedStep: true },
   { name: 'medusa', database: 'medusa', hasSeedStep: false },
 ];
 
@@ -42,7 +42,7 @@ const LCNINE_SERVICES_REGISTRY: ServiceConfig[] = [
   { name: 'notification', database: 'notification', drizzleConfig: 'apps/notification/database/drizzle/drizzle.config.ts', hasSeedStep: true },
   { name: 'ugc-service', database: 'ugc', drizzleConfig: 'apps/ugc-service/src/db/drizzle.config.ts', hasSeedStep: false },
   { name: 'wallet', database: 'wallet', drizzleConfig: 'apps/wallet/drizzle.config.ts', hasSeedStep: false },
-  { name: 'file-service', database: 'file_service', drizzleConfig: 'apps/file-service/src/database/drizzle/drizzle.config.ts', hasSeedStep: true },
+  { name: 'file-service', database: 'file_service', drizzleConfig: 'apps/file-service/drizzle.config.ts', hasSeedStep: true },
   { name: 'medusa', database: 'medusa', hasSeedStep: false },
 ];
 
