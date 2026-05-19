@@ -87,9 +87,24 @@ npm run db:generate:ugc-service -- --name <kebab-description>
 npm run db:generate:membership -- --name <kebab-description>
 
 # Apply migrations (runs across all registered services). See ADR-0005.
-npm run db:setup -- --stage dev
+npm run db:setup -- --stage dev --deployment lcnine-services --yes --group baseline
+# user-service is owned by the lcnine-auth deployment, so its schema changes need a separate run:
+npm run db:setup -- --stage dev --deployment lcnine-auth --yes --group baseline
 ```
 `drizzle-kit push` is intentionally not used — see `docs/adr/0005-drizzle-migration-and-autodeploy.md`.
+
+**Daily cycle for a schema change:**
+1. Edit `schema.ts` (or the file referenced by that service's `drizzle.config.ts`).
+2. `npm run db:generate:<svc> -- --name <kebab-description>` — name describes intent (`add-foo-column`, `drop-deprecated-bar`), not auto-generated nonsense.
+3. Review the generated SQL in `apps/<svc>/drizzle/<timestamp>_*.sql`. If it looks wrong, `git rm` it and fix `schema.ts` before regenerating — never hand-edit a generated migration that's already been applied.
+4. `npm run db:setup -- --stage dev --deployment lcnine-services --yes --group baseline` to apply locally.
+5. Commit `schema.ts` + the new `drizzle/<timestamp>_*.sql` + `drizzle/meta/` updates **in a single commit**. Splitting them desynchronizes other people's checkouts.
+
+**After pulling someone else's schema change:** rerun the `db:setup` line — Phase 2 applies new migrations only and skips already-applied ones.
+
+**Rename caveat:** `drizzle-kit generate` cannot detect column/table renames automatically — it emits `DROP` + `ADD` (data loss). When you intend a rename, drizzle-kit prompts interactively on generate; this means **generate must run on a dev machine, never in CI**. Migrate (applying SQL) is non-interactive and safe to automate.
+
+**Destructive changes** (column drop / rename / type narrow) on data with operational value: split into two PRs — additive first, contract later. See ADR-0005 §5.
 
 ### Adding New Microservices/Libraries
 ```bash
