@@ -6,6 +6,30 @@ import type { HttpTypes } from "@medusajs/types"
 import type { ProductSortBy, ProductSortOrder } from "@/lib/types/common/filter"
 import { getRegion, retrieveRegion } from "./regions"
 
+export const getProductForQuickAdd = async (
+  productId: string,
+  countryCode: string
+): Promise<HttpTypes.StoreProduct | null> => {
+  const region = await getRegion(countryCode)
+  if (!region) return null
+
+  const headers = { ...(await getAuthHeaders()) }
+
+  return sdk.client
+    .fetch<{ products: HttpTypes.StoreProduct[] }>(`/store/products`, {
+      method: "GET",
+      query: {
+        id: [productId],
+        region_id: region.id,
+        fields:
+          "*variants.calculated_price,+variants.inventory_quantity,*variants.options,+variants.manage_inventory,+variants.allow_backorder,*options",
+      },
+      headers,
+    })
+    .then(({ products }) => products[0] ?? null)
+    .catch(() => null)
+}
+
 export const listProducts = async ({
   pageParam = 1,
   queryParams,
