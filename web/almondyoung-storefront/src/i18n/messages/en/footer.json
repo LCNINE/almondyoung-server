@@ -1,0 +1,31 @@
+{
+  "csTitle": "Customer Service {phone}",
+  "callPhone": "Call",
+  "kakaoChat": "KakaoChat",
+  "kakaoChatAdd": "Add KakaoChat Channel",
+  "instagram": "Instagram",
+  "company": "About",
+  "terms": "Terms of Service",
+  "privacy": "Privacy Policy",
+  "guide": "Guide",
+  "businessInfo": "Almondyoung Business Info",
+  "copyright": "Copyright © Almondyoung. All rights reserved.",
+  "business": {
+    "companyAndCeo": "Company: LCNINE Co., Ltd. | CEO: Harry KWON",
+    "bizNo": "Business Registration No.: 467-86-01638",
+    "mailOrderNo": "Mail-Order Sales Reg. No.: 2019-Seoul Yeongdeungpo-1446",
+    "phone": "Phone: 1877-7184",
+    "address": "Address: 4F LCNINE, 42 Pyeongcheonro 832beon-gil, Dodong, Bucheon-si, Gyeonggi-do 14521, Korea",
+    "medicalTarget": "Training target: Medical professionals | Other training target: Medical professionals",
+    "medicalInstitution": "Medical institution: Heartwell Clinic",
+    "medicalAddress": "Institution address: 201-202, Theleave Sejong Tower, 126 Achasan-ro, Seongdong-gu, Seoul",
+    "medicalSubjects": "Departments: Dermatology, Plastic Surgery, etc.",
+    "medicalDirector": "Director: Roh Hwan-gyu | License No.: 30722",
+    "privacyOfficer": "Privacy Officer: LCNINE Co., Ltd. (hello@lcnine.kr)",
+    "mobileCompany": "LCNINE Co., Ltd. | CEO: Harry KWON",
+    "mobileBizNo": "Business Reg. No.: 467-86-01638",
+    "mobileMailOrderNo": "Mail-Order Reg. No.: 2019-Seoul Yeongdeungpo-1446",
+    "mobilePhone": "Phone: 1877-7184",
+    "mobileAddress": "4F, 42 Pyeongcheonro 832beon-gil, Dodong, Bucheon-si, Gyeonggi-do"
+  }
+}

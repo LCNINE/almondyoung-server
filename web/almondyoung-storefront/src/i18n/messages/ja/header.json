@@ -1,0 +1,12 @@
+{
+  "utility": {
+    "shipping": "注文・配送",
+    "support": "カスタマーサポート"
+  },
+  "userInfo": {
+    "logout": "ログアウト"
+  },
+  "categoryDropdown": {
+    "trigger": "カテゴリ"
+  }
+}

@@ -7,6 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { useTranslations } from "next-intl"
 
 export type SortOptions =
   | "created_at"
@@ -20,30 +21,32 @@ type SortProductsProps = {
   setQueryParams: (name: string, value: SortOptions) => void
 }
 
-const sortOptions = [
-  { value: "created_at", label: "최신순" },
-  { value: "sales_desc", label: "인기순" },
-  { value: "price_asc", label: "낮은가격순" },
-  { value: "price_desc", label: "높은가격순" },
-  { value: "review_count_desc", label: "리뷰많은순" },
+const sortOptions: { value: SortOptions; labelKey: string }[] = [
+  { value: "created_at", labelKey: "createdAt" },
+  { value: "sales_desc", labelKey: "salesDesc" },
+  { value: "price_asc", labelKey: "priceAsc" },
+  { value: "price_desc", labelKey: "priceDesc" },
+  { value: "review_count_desc", labelKey: "reviewCountDesc" },
 ]
 
 const SortProducts = ({ sortBy, setQueryParams }: SortProductsProps) => {
+  const t = useTranslations("category.sort")
+
   const handleChange = (value: string) => {
     setQueryParams("sortBy", value as SortOptions)
   }
 
-  const selectedLabel = sortOptions.find((opt) => opt.value === sortBy)?.label
+  const selectedKey = sortOptions.find((opt) => opt.value === sortBy)?.labelKey
 
   return (
     <Select value={sortBy} onValueChange={handleChange}>
       <SelectTrigger className="h-8 w-auto cursor-pointer gap-1 border-none bg-transparent px-2 text-sm font-medium shadow-none">
-        <SelectValue>{selectedLabel}</SelectValue>
+        <SelectValue>{selectedKey ? t(selectedKey) : null}</SelectValue>
       </SelectTrigger>
       <SelectContent align="end">
         {sortOptions.map((item) => (
           <SelectItem key={item.value} value={item.value}>
-            {item.label}
+            {t(item.labelKey)}
           </SelectItem>
         ))}
       </SelectContent>

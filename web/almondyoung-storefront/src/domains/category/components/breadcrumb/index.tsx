@@ -1,5 +1,6 @@
 import * as React from "react"
 import type { HttpTypes } from "@medusajs/types"
+import { useTranslations } from "next-intl"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import {
   Breadcrumb,
@@ -15,6 +16,7 @@ interface CategoryBreadcrumbProps {
 }
 
 export function CategoryBreadcrumb({ category }: CategoryBreadcrumbProps) {
+  const t = useTranslations("category.breadcrumb")
   // 브레드크럼 데이터 생성 (부모 → 현재 카테고리 순서)
   const items: { name: string; handle: string }[] = []
   let current: HttpTypes.StoreProductCategory | null | undefined = category
@@ -32,7 +34,7 @@ export function CategoryBreadcrumb({ category }: CategoryBreadcrumbProps) {
       <BreadcrumbList>
         <BreadcrumbItem>
           <BreadcrumbLink asChild>
-            <LocalizedClientLink href="/">홈</LocalizedClientLink>
+            <LocalizedClientLink href="/">{t("home")}</LocalizedClientLink>
           </BreadcrumbLink>
         </BreadcrumbItem>
         {items.map((item, index) => {

@@ -1,5 +1,6 @@
 import { Suspense } from "react"
 import type { HttpTypes } from "@medusajs/types"
+import { useTranslations } from "next-intl"
 import { CategoryBreadcrumb } from "../components/breadcrumb"
 import RefinementList from "../components/refinement-list"
 import { SortOptions } from "../components/refinement-list/sort-products"
@@ -22,6 +23,7 @@ export function CategoryTemplate({
   category?: HttpTypes.StoreProductCategory
   segments?: string[]
 }) {
+  const t = useTranslations("category.products")
   const pageNumber = page ? parseInt(page) : 1
   const sort = sortBy || "created_at"
 
@@ -67,7 +69,7 @@ export function CategoryTemplate({
       </div>
 
       <div className="w-full">
-        <ErrorBoundary fallback={<div>상품 목록을 불러오지 못했습니다.</div>}>
+        <ErrorBoundary fallback={<div>{t("loadFailed")}</div>}>
           <Suspense fallback={<ProductsSkeleton />}>
             <PaginatedProducts
               sortBy={sort}

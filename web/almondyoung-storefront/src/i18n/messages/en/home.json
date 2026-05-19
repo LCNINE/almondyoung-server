@@ -1,0 +1,40 @@
+{
+  "interestBanner": {
+    "title": "What treatment areas are you interested in?",
+    "description": "Select up to 3. We'll show the best products from your selected categories first.",
+    "dismiss": "Hide for a week",
+    "save": "Save",
+    "saving": "Saving...",
+    "needAtLeastOne": "Please select at least one",
+    "saved": "Interests saved",
+    "saveFail": "Failed to save. Please try again.",
+    "dismissFail": "Failed to process",
+    "maxSelectable": "You can select up to {max}"
+  },
+  "interestEdit": {
+    "trigger": "Edit",
+    "sheetTitle": "Change interests",
+    "sheetDescription": "Select up to 3.",
+    "cancel": "Cancel",
+    "save": "Save",
+    "saving": "Saving...",
+    "updated": "Interests updated"
+  },
+  "categoryBest": {
+    "titleFirst": "Category",
+    "titleSecond": "Best",
+    "emptyTitle": "No products",
+    "emptyDescription": "No products are registered in this category.",
+    "interestTitleSuffix": "Best"
+  },
+  "survey": {
+    "mobileText": "Get personalized recommendations",
+    "desktopTitle": "We'll find the perfect products for you",
+    "desktopDescription": "Take a 1-minute survey to receive personalized recommendations",
+    "configure": "Personalize",
+    "later": "Later",
+    "close": "Close",
+    "processing": "Processing...",
+    "logoAlt": "Almondyoung logo"
+  }
+}

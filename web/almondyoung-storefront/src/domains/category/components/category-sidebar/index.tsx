@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { usePathname } from "next/navigation"
 import { ChevronRight } from "lucide-react"
+import { useTranslations } from "next-intl"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import {
   Collapsible,
@@ -17,6 +18,7 @@ interface CategorySidebarProps {
 }
 
 export function CategorySidebar({ categories }: CategorySidebarProps) {
+  const t = useTranslations("category.sidebar")
   const pathname = usePathname()
   // /kr/category/handle 또는 /kr/category/parent/child 에서 마지막 segment 추출
   const segments = pathname.split("/").filter(Boolean)
@@ -29,7 +31,7 @@ export function CategorySidebar({ categories }: CategorySidebarProps) {
   return (
     <nav className="border-border w-full rounded-2xl border p-6 px-7 py-10 font-['Pretendard']">
       <h2 className="self-stretch text-lg font-bold text-stone-900">
-        카테고리
+        {t("title")}
       </h2>
       <ul className="mt-2 pl-4">
         {categories.map((category) => (
@@ -52,6 +54,7 @@ interface CategoryItemProps {
 }
 
 function CategoryItem({ category, currentHandle, depth }: CategoryItemProps) {
+  const t = useTranslations("category.sidebar")
   const hasChildren =
     category.category_children && category.category_children.length > 0
   const isActive = currentHandle === category.handle
@@ -105,7 +108,7 @@ function CategoryItem({ category, currentHandle, depth }: CategoryItemProps) {
           <CollapsibleTrigger asChild>
             <button
               className="flex h-7 w-7 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
-              aria-label={isOpen ? "접기" : "펼치기"}
+              aria-label={isOpen ? t("collapse") : t("expand")}
             >
               <ChevronRight
                 className={cn(

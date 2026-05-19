@@ -1,0 +1,163 @@
+{
+  "metaTitle": "カスタマーサポート",
+  "header": {
+    "title": "カスタマーサポート",
+    "subtitle": "ご不明な点がございましたらお気軽にお問い合わせください。",
+    "hours": "平日 09:00 - 18:00 (土日祝休)"
+  },
+  "tabs": {
+    "faq": "FAQ",
+    "inquiry": "1:1 お問い合わせ",
+    "notice": "お知らせ"
+  },
+  "faq": {
+    "title": "よくある質問",
+    "items": {
+      "1": {
+        "category": "配送",
+        "question": "配送はどのくらいかかりますか?",
+        "answer": "ご注文後、平均2-3日以内に配送が完了します。離島・山間地域は追加で1-2日かかる場合があります。"
+      },
+      "2": {
+        "category": "配送",
+        "question": "配送状況はどこで確認できますか?",
+        "answer": "マイページ > 注文・配送照会でリアルタイムの配送状況を確認できます。注文時に入力された連絡先に配送関連の通知もお送りします。"
+      },
+      "3": {
+        "category": "交換・返品",
+        "question": "交換・返品はどのように行いますか?",
+        "answer": "商品受け取りから7日以内に、マイページ > 注文・配送照会から交換・返品申請が可能です。お客様都合の場合、返品送料が発生することがあります。"
+      },
+      "4": {
+        "category": "交換・返品",
+        "question": "返品時の返金はいつ行われますか?",
+        "answer": "返品商品が物流センターに入荷し、商品状態の確認後 1-2日以内に返金処理されます。決済手段により返金所要時間が異なる場合があります。"
+      },
+      "5": {
+        "category": "会員",
+        "question": "会員退会はどのように行いますか?",
+        "answer": "マイページ > 会員情報修正 > 会員退会から進められます。退会するとお持ちのポイント・クーポンはすべて消滅します。"
+      },
+      "6": {
+        "category": "決済",
+        "question": "利用できる決済方法は?",
+        "answer": "クレジットカード、デビットカード、リアルタイム口座振替、仮想口座、Kakao Pay、Naver Pay、Toss Payなど、さまざまな決済手段に対応しています。"
+      },
+      "7": {
+        "category": "ポイント",
+        "question": "ポイントはどのように使いますか?",
+        "answer": "注文時の決済画面でお持ちのポイントを利用できます。1,000ウォン以上から利用可能で、一部の商品はポイント利用が制限される場合があります。"
+      },
+      "8": {
+        "category": "商品",
+        "question": "売り切れ商品の再入荷はいつですか?",
+        "answer": "再入荷の予定は商品によって異なります。商品詳細ページで再入荷通知をリクエストすると、入荷時にお知らせします。"
+      }
+    }
+  },
+  "notice": {
+    "title": "お知らせ",
+    "loadFail": "お知らせを読み込めませんでした。",
+    "emptyAll": "登録されたお知らせはありません。",
+    "emptyCategory": "選択した分類のお知らせはありません。",
+    "backToList": "一覧に戻る",
+    "ariaCategory": "お知らせ分類",
+    "pinAria": "上部固定",
+    "badge": {
+      "important": "重要",
+      "urgent": "緊急",
+      "new": "NEW"
+    },
+    "categories": {
+      "all": "全体",
+      "general": "一般",
+      "event": "イベント",
+      "delivery": "配送",
+      "service": "サービス"
+    }
+  },
+  "inquiry": {
+    "title": "1:1 お問い合わせ",
+    "subtitle": "お問い合わせ内容に迅速にお答えいたします。",
+    "footerNotice": "営業時間: 平日 09:00 - 18:00 (土日祝休) | 受付順に回答し、最大3営業日かかります。",
+    "successToast": "お問い合わせを受け付けました。",
+    "successDesc": "最大3営業日以内に回答いたします。",
+    "successAction": "自分の問い合わせを見る",
+    "submitFail": "お問い合わせの登録に失敗しました。もう一度お試しください。",
+    "uploadFail": "画像のアップロードに失敗しました。もう一度お試しください。",
+    "fileSizeOver": "{name} のサイズが {size}MB を超えています。",
+    "defaultNickname": "お客様",
+    "form": {
+      "productLabel": "お問い合わせ商品",
+      "categoryLabel": "お問い合わせ種別",
+      "titleLabel": "件名",
+      "titlePlaceholder": "件名を入力してください",
+      "contentLabel": "お問い合わせ内容",
+      "contentPlaceholder": "お問い合わせ内容を入力してください。(最低 {min} 文字)",
+      "imageSectionLabel": "画像添付",
+      "categoryPlaceholder": "お問い合わせ種別を選択",
+      "subCategoryPlaceholder": "詳細種別を選択",
+      "subCategorySelectFirst": "先にお問い合わせ種別を選択",
+      "addPhoto": "写真を添付",
+      "addPhotoHint": "最大 {max} 枚、各 {sizeMB}MB 以下",
+      "photoCount": "写真 {count}/{max}",
+      "photoAlt": "添付画像",
+      "processing": "処理中...",
+      "submit": "問い合わせる",
+      "validation": {
+        "categoryRequired": "お問い合わせ種別を選択してください。",
+        "subCategoryRequired": "詳細種別を選択してください。",
+        "titleRequired": "件名を入力してください。",
+        "titleMax": "件名は {max} 文字以下で入力してください。",
+        "contentMin": "最低 {min} 文字以上入力してください。",
+        "contentMax": "最大 {max} 文字まで入力できます。"
+      }
+    },
+    "categories": {
+      "delivery": "配送",
+      "order": "注文・決済",
+      "exchange": "交換・返品",
+      "product": "商品",
+      "account": "会員・アカウント",
+      "etc": "その他"
+    },
+    "subCategories": {
+      "delivery": {
+        "status": "配送状況のお問い合わせ",
+        "address_change": "配送先変更",
+        "delay": "配送遅延",
+        "etc": "その他"
+      },
+      "order": {
+        "cancel": "注文キャンセル",
+        "change": "注文変更",
+        "payment_error": "決済エラー",
+        "refund": "返金のお問い合わせ",
+        "etc": "その他"
+      },
+      "exchange": {
+        "exchange_request": "交換申請",
+        "return_request": "返品申請",
+        "exchange_status": "交換・返品状況",
+        "etc": "その他"
+      },
+      "product": {
+        "info": "商品情報のお問い合わせ",
+        "restock": "再入荷のお問い合わせ",
+        "defect": "不良・破損のお問い合わせ",
+        "etc": "その他"
+      },
+      "account": {
+        "info_change": "会員情報変更",
+        "withdraw": "会員退会",
+        "point": "ポイントのお問い合わせ",
+        "etc": "その他"
+      },
+      "etc": {
+        "suggestion": "サービス改善提案",
+        "partnership": "提携・協力のお問い合わせ",
+        "etc": "その他"
+      }
+    }
+  }
+}

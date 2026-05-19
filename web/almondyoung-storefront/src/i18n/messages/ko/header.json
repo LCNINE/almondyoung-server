@@ -1,0 +1,12 @@
+{
+  "utility": {
+    "shipping": "주문배송",
+    "support": "고객센터"
+  },
+  "userInfo": {
+    "logout": "로그아웃"
+  },
+  "categoryDropdown": {
+    "trigger": "카테고리"
+  }
+}

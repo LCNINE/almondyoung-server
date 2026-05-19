@@ -1,0 +1,31 @@
+{
+  "csTitle": "カスタマーサポート {phone}",
+  "callPhone": "電話する",
+  "kakaoChat": "カカオチャット",
+  "kakaoChatAdd": "カカオチャット チャンネル追加",
+  "instagram": "Instagram",
+  "company": "会社紹介",
+  "terms": "利用規約",
+  "privacy": "プライバシーポリシー",
+  "guide": "ご利用ガイド",
+  "businessInfo": "アーモンドヨン 事業者情報",
+  "copyright": "Copyright © Almondyoung. All rights reserved.",
+  "business": {
+    "companyAndCeo": "会社:株式会社エルシーナイン | 代表取締役:Harry KWON",
+    "bizNo": "事業者登録番号:467-86-01638",
+    "mailOrderNo": "通信販売業届出:2019-ソウル永登浦-1446",
+    "phone": "電話:1877-7184",
+    "address": "住所:[14521] 京畿道富川市平川路832番ギル42(道堂洞)4階 エルシーナイン",
+    "medicalTarget": "教育対象:医療従事者 | その他教育対象:医療従事者",
+    "medicalInstitution": "医療機関:ハートウェル医院",
+    "medicalAddress": "医療機関所在地:ソウル特別市城東区峨嵯山路126 ザ・リーブ世宗タワー201,202号",
+    "medicalSubjects": "診療科目:皮膚科、形成外科 など",
+    "medicalDirector": "代表院長:ノ・ファンギュ | 免許番号:第30722号",
+    "privacyOfficer": "個人情報保護責任者:株式会社エルシーナイン(hello@lcnine.kr)",
+    "mobileCompany": "株式会社エルシーナイン | 代表取締役:Harry KWON",
+    "mobileBizNo": "事業者登録番号:467-86-01638",
+    "mobileMailOrderNo": "通信販売業届出:2019-ソウル永登浦-1446",
+    "mobilePhone": "電話:1877-7184",
+    "mobileAddress": "京畿道富川市平川路832番ギル42(道堂洞)4階"
+  }
+}

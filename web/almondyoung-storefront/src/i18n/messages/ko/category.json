@@ -1,0 +1,30 @@
+{
+  "sidebar": {
+    "title": "카테고리",
+    "collapse": "접기",
+    "expand": "펼치기",
+    "errorTitle": "카테고리를 불러오지 못했어요",
+    "retry": "다시 시도"
+  },
+  "breadcrumb": {
+    "home": "홈"
+  },
+  "products": {
+    "loadFailed": "상품 목록을 불러오지 못했습니다.",
+    "emptyTitle": "상품이 없습니다",
+    "emptyDescription": "조건에 맞는 상품을 찾을 수 없어요"
+  },
+  "sort": {
+    "createdAt": "최신순",
+    "salesDesc": "인기순",
+    "priceAsc": "낮은가격순",
+    "priceDesc": "높은가격순",
+    "reviewCountDesc": "리뷰많은순"
+  },
+  "pillDropdown": {
+    "eyelash": "속눈썹",
+    "nail": "네일",
+    "hair": "헤어",
+    "waxing": "왁싱"
+  }
+}

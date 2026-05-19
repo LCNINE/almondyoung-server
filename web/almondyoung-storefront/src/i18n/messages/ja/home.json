@@ -1,0 +1,40 @@
+{
+  "interestBanner": {
+    "title": "どの施術分野に興味がありますか?",
+    "description": "最大3つまで選択できます。選択したカテゴリのベスト商品を優先表示します。",
+    "dismiss": "1週間表示しない",
+    "save": "保存",
+    "saving": "保存中...",
+    "needAtLeastOne": "1つ以上選択してください",
+    "saved": "関心カテゴリを保存しました",
+    "saveFail": "保存に失敗しました。もう一度お試しください。",
+    "dismissFail": "処理に失敗しました",
+    "maxSelectable": "最大{max}個まで選択できます"
+  },
+  "interestEdit": {
+    "trigger": "編集",
+    "sheetTitle": "関心カテゴリを変更",
+    "sheetDescription": "最大3つまで選択できます。",
+    "cancel": "キャンセル",
+    "save": "保存",
+    "saving": "保存中...",
+    "updated": "関心カテゴリを変更しました"
+  },
+  "categoryBest": {
+    "titleFirst": "カテゴリ",
+    "titleSecond": "ベスト",
+    "emptyTitle": "商品がありません",
+    "emptyDescription": "このカテゴリには登録された商品がありません。",
+    "interestTitleSuffix": "ベスト"
+  },
+  "survey": {
+    "mobileText": "おすすめ商品を受け取ろう",
+    "desktopTitle": "院長様にぴったりの商品をお探しします",
+    "desktopDescription": "1分で終わる簡単なアンケートで、おすすめ商品をお届けします",
+    "configure": "設定する",
+    "later": "あとで",
+    "close": "閉じる",
+    "processing": "処理中...",
+    "logoAlt": "アモンドヤン ロゴ"
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "company": {
+    "title": "About",
+    "companyName": "LCNINE Co., Ltd.",
+    "intro": "Almondyoung is a B2B beauty wholesale platform operated by LCNINE Co., Ltd.",
+    "sectionTitle": "Business Info",
+    "fieldCompanyName": "Company",
+    "fieldCeo": "CEO",
+    "ceoName": "Harry KWON",
+    "fieldBizNo": "Business Registration No.",
+    "fieldMailOrderNo": "Mail-Order Sales Reg. No.",
+    "fieldPhone": "Phone",
+    "fieldAddress": "Address",
+    "fieldPrivacyOfficer": "Privacy Officer"
+  },
+  "terms": {
+    "title": "Terms of Service",
+    "almondTerms": "Almondyoung Terms of Service",
+    "electronicTransaction": "Electronic Financial Transaction Terms"
+  },
+  "privacy": {
+    "title": "Privacy Policy",
+    "collection": "Collection & Use of Personal Information",
+    "thirdParty": "Sharing Personal Information with Third Parties"
+  },
+  "guide": {
+    "title": "Guide",
+    "payment": {
+      "title": "Orders & Payment",
+      "item1": "Add the items you want to your cart and proceed to checkout.",
+      "item2": "Payment methods: Credit card, bank transfer, virtual account, simple pay",
+      "item3": "Shipping starts once your payment is confirmed."
+    },
+    "shipping": {
+      "title": "Shipping",
+      "item1": "Shipping fee: Varies by product (see product page)",
+      "item2": "Delivery time: 1–3 business days after payment confirmation",
+      "item3": "Tracking: Real-time tracking is available on My Page"
+    },
+    "return": {
+      "title": "Exchanges & Returns",
+      "item1": "You may request an exchange or return within 7 days of delivery",
+      "item2": "Shipping fees are covered by the company for defective items",
+      "item3": "Shipping fees are covered by the customer for change of mind",
+      "item4": "Used or damaged items cannot be exchanged or returned."
+    },
+    "cs": {
+      "title": "Customer Service",
+      "item1": "Phone: 1877-7184",
+      "item2": "KakaoTalk Channel: Almondyoung",
+      "item3": "Email: hello@lcnine.kr"
+    }
+  }
+}

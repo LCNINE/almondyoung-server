@@ -1,0 +1,163 @@
+{
+  "metaTitle": "Customer Service",
+  "header": {
+    "title": "Customer Service",
+    "subtitle": "If you have any questions, feel free to contact us anytime.",
+    "hours": "Weekdays 09:00 - 18:00 (closed on weekends/holidays)"
+  },
+  "tabs": {
+    "faq": "FAQ",
+    "inquiry": "1:1 Inquiry",
+    "notice": "Notices"
+  },
+  "faq": {
+    "title": "Frequently Asked Questions",
+    "items": {
+      "1": {
+        "category": "Shipping",
+        "question": "How long does delivery take?",
+        "answer": "On average, delivery is completed within 2-3 days. Remote/island areas may take an additional 1-2 days."
+      },
+      "2": {
+        "category": "Shipping",
+        "question": "Where can I track my delivery?",
+        "answer": "Check real-time delivery status in My Page > Orders/Delivery. We also send delivery notifications to the contact you provided at checkout."
+      },
+      "3": {
+        "category": "Exchange/Return",
+        "question": "How do I exchange or return an item?",
+        "answer": "You can request an exchange/return within 7 days of delivery from My Page > Orders/Delivery. Return shipping costs may apply for change-of-mind returns."
+      },
+      "4": {
+        "category": "Exchange/Return",
+        "question": "When will I get my refund?",
+        "answer": "After the returned item arrives at our warehouse and is inspected, refunds are processed within 1-2 days. The refund time may vary depending on the payment method."
+      },
+      "5": {
+        "category": "Membership",
+        "question": "How do I withdraw my membership?",
+        "answer": "You can withdraw at My Page > Edit Profile > Withdraw. All accumulated points and coupons will be forfeited."
+      },
+      "6": {
+        "category": "Payment",
+        "question": "What payment methods are available?",
+        "answer": "We support credit/debit card, real-time bank transfer, virtual account, KakaoPay, NaverPay, TossPay, and more."
+      },
+      "7": {
+        "category": "Points",
+        "question": "How do I use my points?",
+        "answer": "Points can be used at checkout. They are available from 1,000 KRW, with restrictions on some products."
+      },
+      "8": {
+        "category": "Product",
+        "question": "When will out-of-stock items be restocked?",
+        "answer": "Restock schedules vary by product. You can request a restock alert on the product detail page to be notified."
+      }
+    }
+  },
+  "notice": {
+    "title": "Notices",
+    "loadFail": "Failed to load notices.",
+    "emptyAll": "No notices registered.",
+    "emptyCategory": "No notices in the selected category.",
+    "backToList": "Back to list",
+    "ariaCategory": "Notice category",
+    "pinAria": "Pinned",
+    "badge": {
+      "important": "Important",
+      "urgent": "Urgent",
+      "new": "NEW"
+    },
+    "categories": {
+      "all": "All",
+      "general": "General",
+      "event": "Event",
+      "delivery": "Shipping",
+      "service": "Service"
+    }
+  },
+  "inquiry": {
+    "title": "1:1 Inquiry",
+    "subtitle": "We will respond to your inquiry as quickly as possible.",
+    "footerNotice": "Hours: Weekdays 09:00 - 18:00 (closed weekends/holidays) | We respond in order, taking up to 3 business days.",
+    "successToast": "Your inquiry has been received.",
+    "successDesc": "We will respond within 3 business days.",
+    "successAction": "View my inquiries",
+    "submitFail": "Failed to submit inquiry. Please try again.",
+    "uploadFail": "Failed to upload images. Please try again.",
+    "fileSizeOver": "{name} exceeds {size}MB.",
+    "defaultNickname": "Customer",
+    "form": {
+      "productLabel": "Product",
+      "categoryLabel": "Inquiry type",
+      "titleLabel": "Title",
+      "titlePlaceholder": "Enter a title",
+      "contentLabel": "Inquiry",
+      "contentPlaceholder": "Please describe your inquiry. (min {min} chars)",
+      "imageSectionLabel": "Attach images",
+      "categoryPlaceholder": "Select inquiry type",
+      "subCategoryPlaceholder": "Select sub type",
+      "subCategorySelectFirst": "Select inquiry type first",
+      "addPhoto": "Attach photos",
+      "addPhotoHint": "Up to {max} photos, each under {sizeMB}MB",
+      "photoCount": "Photos {count}/{max}",
+      "photoAlt": "Attached image",
+      "processing": "Processing...",
+      "submit": "Submit",
+      "validation": {
+        "categoryRequired": "Please select an inquiry type.",
+        "subCategoryRequired": "Please select a sub-type.",
+        "titleRequired": "Please enter a title.",
+        "titleMax": "Title must be {max} characters or fewer.",
+        "contentMin": "Please enter at least {min} characters.",
+        "contentMax": "You can enter up to {max} characters."
+      }
+    },
+    "categories": {
+      "delivery": "Shipping",
+      "order": "Order/Payment",
+      "exchange": "Exchange/Return",
+      "product": "Product",
+      "account": "Account",
+      "etc": "Other"
+    },
+    "subCategories": {
+      "delivery": {
+        "status": "Delivery status",
+        "address_change": "Address change",
+        "delay": "Delivery delay",
+        "etc": "Other"
+      },
+      "order": {
+        "cancel": "Cancel order",
+        "change": "Change order",
+        "payment_error": "Payment error",
+        "refund": "Refund inquiry",
+        "etc": "Other"
+      },
+      "exchange": {
+        "exchange_request": "Exchange request",
+        "return_request": "Return request",
+        "exchange_status": "Exchange/return status",
+        "etc": "Other"
+      },
+      "product": {
+        "info": "Product info inquiry",
+        "restock": "Restock inquiry",
+        "defect": "Defect/damage inquiry",
+        "etc": "Other"
+      },
+      "account": {
+        "info_change": "Update info",
+        "withdraw": "Withdraw membership",
+        "point": "Points inquiry",
+        "etc": "Other"
+      },
+      "etc": {
+        "suggestion": "Service suggestion",
+        "partnership": "Partnership inquiry",
+        "etc": "Other"
+      }
+    }
+  }
+}
