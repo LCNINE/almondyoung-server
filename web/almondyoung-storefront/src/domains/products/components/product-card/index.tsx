@@ -166,6 +166,8 @@ export default function ProductCard({
           <ProductQuickActions
             productId={product.id ?? ""}
             productHandle={product.handle ?? ""}
+            productTitle={product.title ?? ""}
+            productImage={product.thumbnail ?? undefined}
             variantId={product.variants?.[0]?.id}
             isSingleOption={isSingleOption}
             countryCode={countryCode}

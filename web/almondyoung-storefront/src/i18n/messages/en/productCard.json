@@ -7,5 +7,12 @@
   "loginRequired": "Login required.",
   "wishlistError": "An error occurred.",
   "productNotFound": "Product not found.",
-  "welcomeMembershipLimit": "Only 1 welcome-membership item can be purchased"
+  "welcomeMembershipLimit": "Only 1 welcome-membership item can be purchased",
+  "quickAddTitle": "Select Options",
+  "quickAddOutOfStock": "Sold Out",
+  "quickAddTotal": "Total",
+  "quickAddToCart": "Add to Cart",
+  "quickAddToCartWithPrice": "Add to Cart · {price}",
+  "quickAddSelect": "Please select options",
+  "quickAddError": "Could not load product options."
 }

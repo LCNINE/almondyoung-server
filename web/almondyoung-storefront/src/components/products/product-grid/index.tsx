@@ -11,7 +11,6 @@ interface ProductGridProps {
   className?: string
   thumbnailClassName?: string
   countryCode?: string
-  isLoggedIn?: boolean
 }
 
 export function ProductGrid({
@@ -21,7 +20,6 @@ export function ProductGrid({
   className,
   thumbnailClassName,
   countryCode,
-  isLoggedIn = false,
 }: ProductGridProps) {
   return (
     <div
@@ -46,9 +44,10 @@ export function ProductGrid({
                   <ProductCard.QuickActions
                     productId={product.id}
                     productHandle={product.handle}
+                    productTitle={product.title}
+                    productImage={product.imageSrc}
                     variantId={product.optionMeta?.defaultVariantId}
                     isSingleOption={product.optionMeta?.isSingle ?? false}
-                    isLoggedIn={isLoggedIn}
                     countryCode={countryCode}
                     isWelcomeMembership={product.isWelcomeMembership}
                   />
