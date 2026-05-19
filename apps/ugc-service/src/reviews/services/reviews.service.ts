@@ -530,13 +530,13 @@ export class ReviewsService {
       if (query.type === 'photo') {
         conditions.push(
           exists(
-            tx.select({ one: reviewMedia.reviewId }).from(reviewMedia).where(eq(reviewMedia.reviewId, reviews.id)),
+            tx.select({ _: sql`1` }).from(reviewMedia).where(eq(reviewMedia.reviewId, reviews.id)),
           ),
         );
       } else if (query.type === 'text') {
         conditions.push(
           notExists(
-            tx.select({ one: reviewMedia.reviewId }).from(reviewMedia).where(eq(reviewMedia.reviewId, reviews.id)),
+            tx.select({ _: sql`1` }).from(reviewMedia).where(eq(reviewMedia.reviewId, reviews.id)),
           ),
         );
       }
@@ -622,13 +622,13 @@ export class ReviewsService {
       if (query.hasComment === 'true') {
         conditions.push(
           exists(
-            tx.select({ one: reviewComments.id }).from(reviewComments).where(eq(reviewComments.reviewId, reviews.id)),
+            tx.select({ _: sql`1` }).from(reviewComments).where(eq(reviewComments.reviewId, reviews.id)),
           ),
         );
       } else if (query.hasComment === 'false') {
         conditions.push(
           notExists(
-            tx.select({ one: reviewComments.id }).from(reviewComments).where(eq(reviewComments.reviewId, reviews.id)),
+            tx.select({ _: sql`1` }).from(reviewComments).where(eq(reviewComments.reviewId, reviews.id)),
           ),
         );
       }
@@ -754,6 +754,20 @@ export class ReviewsService {
         } else {
           conditions.push(eq(reviews.rating, Number(query.rating)));
         }
+      }
+
+      if (query.type === 'photo') {
+        conditions.push(
+          exists(
+            tx.select({ _: sql`1` }).from(reviewMedia).where(eq(reviewMedia.reviewId, reviews.id)),
+          ),
+        );
+      } else if (query.type === 'text') {
+        conditions.push(
+          notExists(
+            tx.select({ _: sql`1` }).from(reviewMedia).where(eq(reviewMedia.reviewId, reviews.id)),
+          ),
+        );
       }
 
       const whereClause = conditions.length > 0 ? and(...conditions) : undefined;

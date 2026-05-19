@@ -18,6 +18,7 @@ import { SectionTabPanel } from "../components/section-nav"
 import { ProductSummary } from "../components/product-summary"
 import ProductActionsWrapper from "./product-actions-wrappers/product-actions-wrapper"
 import { ProductDetailInfoWrapper } from "./product-actions-wrappers/product-detail-info-wrapper"
+import { ReviewPreviewWrapper } from "./product-actions-wrappers/review-preview-wrapper"
 import { ReviewSectionWrapper } from "./product-actions-wrappers/review-section-wrapper"
 import { SectionTabsWrapper } from "./product-actions-wrappers/section-tabs-wrapper"
 
@@ -63,6 +64,12 @@ export async function ProductTemplate({
                 />
               </ProductSummary>
             </div>
+
+            <Suspense fallback={null}>
+              <ReviewPreviewWrapper
+                productId={product.metadata?.pimMasterId as string}
+              />
+            </Suspense>
 
             <SectionTabsWrapper
               productId={product.metadata?.pimMasterId as string}

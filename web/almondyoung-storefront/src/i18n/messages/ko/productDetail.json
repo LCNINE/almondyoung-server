@@ -172,6 +172,14 @@
     "imageAlt": "리뷰 이미지 {index}",
     "imagesMore": "더보기",
     "imagesMoreAlt": "리뷰 사진 더보기",
-    "modalTitle": "리뷰 이미지"
+    "modalTitle": "리뷰 이미지",
+    "previewTitle": "최신 리뷰",
+    "previewHighRating": "4점 이상 리뷰가 {percent}%예요",
+    "previewViewAll": "리뷰 전체보기",
+    "previewCardContent": "리뷰 내용",
+    "sortRatingHigh": "별점높은순",
+    "sortRatingLow": "별점낮은순",
+    "sortSelectAria": "리뷰 정렬 기준 선택",
+    "filterPhotoOnly": "포토리뷰만 보기"
   }
 }

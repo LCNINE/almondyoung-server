@@ -1,6 +1,7 @@
 import {
   ReviewRatingFilter,
   ReviewSortOption,
+  ReviewTypeOption,
   QnaSortOption,
   QnaAnswerStatusFilter,
 } from "../common/filter"
@@ -42,6 +43,7 @@ interface ReviewListQueryDto {
   productId: string
   rating?: ReviewRatingFilter
   sort?: ReviewSortOption
+  type?: ReviewTypeOption
   page?: number
   limit?: number
 }

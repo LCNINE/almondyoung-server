@@ -172,6 +172,14 @@
     "imageAlt": "レビュー画像 {index}",
     "imagesMore": "もっと見る",
     "imagesMoreAlt": "レビュー写真をもっと見る",
-    "modalTitle": "レビュー画像"
+    "modalTitle": "レビュー画像",
+    "previewTitle": "最新レビュー",
+    "previewHighRating": "4点以上のレビューが{percent}%です",
+    "previewViewAll": "レビューをすべて見る",
+    "previewCardContent": "レビュー内容",
+    "sortRatingHigh": "評価高い順",
+    "sortRatingLow": "評価低い順",
+    "sortSelectAria": "レビュー並び順を選択",
+    "filterPhotoOnly": "写真レビューのみ"
   }
 }

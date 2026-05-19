@@ -1,13 +1,10 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsOptional, IsUUID } from 'class-validator';
 import { PaginationQueryDto } from '@app/shared/dto';
-import { REVIEW_SORT_OPTIONS, type ReviewSortOption } from './review-list-query.dto';
+import { REVIEW_SORT_OPTIONS, REVIEW_TYPE_OPTIONS, type ReviewSortOption, type ReviewTypeOption } from './review-list-query.dto';
 
 export const REVIEW_PERIOD_OPTIONS = ['6months', '1year', 'all'] as const;
 export type ReviewPeriodOption = (typeof REVIEW_PERIOD_OPTIONS)[number];
-
-export const REVIEW_TYPE_OPTIONS = ['all', 'photo', 'text'] as const;
-export type ReviewTypeOption = (typeof REVIEW_TYPE_OPTIONS)[number];
 
 export class MyReviewListQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({
