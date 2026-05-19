@@ -16,9 +16,13 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
   try {
     const { actor_type, auth_provider } = req.params;
 
+    console.log('메두사 회원가입 요청!!!!!');
+
     // actor_type이 customer인 경우
     if (actor_type === 'customer') {
       const body = req.body as RegisterCustomerInput;
+
+      console.log('메두사 회원가입 요청 body:!!!!', body);
 
       const { result } = await registerCustomerWorkflow(req.scope).run({
         input: {
