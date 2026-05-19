@@ -17,6 +17,7 @@ import {
 } from "@/lib/utils/price-utils"
 import { MobileCTA, PCFixedCTA } from "domains/checkout/components/cta"
 import { MobileHeader, PCHeader } from "domains/checkout/components/header"
+import { useTranslations } from "next-intl"
 import { useParams, useRouter } from "next/navigation"
 import { useCallback, useMemo, useState } from "react"
 import { toast } from "sonner"
@@ -36,6 +37,7 @@ export default function CheckoutTemplate({
   shipping,
   promotions,
 }: CheckoutTemplateProps) {
+  const tProcess = useTranslations("checkout.process")
   const router = useRouter()
   const params = useParams()
   const countryCode = params.countryCode as string
@@ -109,10 +111,10 @@ export default function CheckoutTemplate({
 
   const handlePayment = async () => {
     if (!cart?.shipping_address?.address_1) {
-      return toast.error("배송지를 설정해주세요.")
+      return toast.error(tProcess("toasts.setShipping"))
     }
     if (!shippingMemo.type) {
-      return toast.error("배송 메모를 선택해주세요.")
+      return toast.error(tProcess("toasts.selectMemo"))
     }
     // 문 앞 선택 + 공동현관 있음 체크 시 비밀번호 필수
     if (
@@ -120,7 +122,7 @@ export default function CheckoutTemplate({
       shippingMemo.hasEntrance &&
       !shippingMemo.entrancePassword.trim()
     ) {
-      return toast.error("공동현관 비밀번호를 입력해주세요.")
+      return toast.error(tProcess("toasts.enterEntrancePw"))
     }
     processPayment()
   }
@@ -131,9 +133,7 @@ export default function CheckoutTemplate({
       setError(null)
 
       if (selectedItems.length === 0) {
-        setError(
-          "결제할 상품이 없습니다. 장바구니로 돌아가 상품을 선택해주세요."
-        )
+        setError(tProcess("toasts.noItems"))
         setLoading(false)
         return
       }
@@ -159,11 +159,14 @@ export default function CheckoutTemplate({
       const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
 
       const payLineItems = selectedItems
-      const firstTitle = payLineItems[0]?.title ?? "상품"
+      const firstTitle = payLineItems[0]?.title ?? tProcess("productFallback")
       const orderName =
         payLineItems.length <= 1
-          ? `아몬드영 - ${firstTitle}`
-          : `아몬드영 - ${firstTitle} 외 ${payLineItems.length - 1}개`
+          ? tProcess("orderNameSingle", { title: firstTitle })
+          : tProcess("orderNameMultiple", {
+              title: firstTitle,
+              count: payLineItems.length - 1,
+            })
 
       const paymentItems = buildPaymentItems(
         payLineItems,
@@ -182,7 +185,7 @@ export default function CheckoutTemplate({
         >
       )?.intentId as string | undefined
 
-      if (!intentId) throw new Error("결제 세션 초기화에 실패했습니다.")
+      if (!intentId) throw new Error(tProcess("toasts.paymentInitFailed"))
       setCheckoutCartByIntent(intentId, checkoutCartId)
 
       const walletWebUrl =
@@ -190,7 +193,7 @@ export default function CheckoutTemplate({
       window.location.href = `${walletWebUrl}/pay/${intentId}`
     } catch (err) {
       console.error("결제 처리 실패:", err)
-      setError(err instanceof Error ? err.message : "알 수 없는 오류")
+      setError(err instanceof Error ? err.message : tProcess("toasts.unknownError"))
       setLoading(false)
     }
   }
@@ -236,7 +239,7 @@ export default function CheckoutTemplate({
         <div className="fixed top-20 left-1/2 z-50 mx-4 w-full max-w-md -translate-x-1/2">
           <div className="rounded-lg border border-red-400 bg-red-100 p-4 text-red-700 shadow-lg">
             <div className="flex items-center justify-between">
-              <strong>오류:</strong>
+              <strong>{tProcess("errorPrefix")}</strong>
               <button
                 onClick={() => setError(null)}
                 className="text-red-700 hover:text-red-900"

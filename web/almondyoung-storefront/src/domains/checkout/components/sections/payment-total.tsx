@@ -4,12 +4,14 @@ import { PriceRow } from "@/domains/checkout/components/shared/price-row"
 import { CheckoutMembershipTagIcon } from "@/icons/membership-tag-icon"
 import type { CartTotals } from "@/lib/types/ui/cart"
 import { convertToLocale } from "@/lib/utils/price-utils"
+import { useTranslations } from "next-intl"
 
 interface PaymentTotalSectionProps {
   totals: CartTotals
 }
 
 export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
+  const t = useTranslations("checkout.paymentTotal")
   const {
     currency_code,
     original_item_subtotal,
@@ -25,13 +27,13 @@ export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
   return (
     <section className="mb-8">
       <h2 className="mb-3 text-base font-bold text-gray-900 lg:text-xl">
-        결제 정보
+        {t("title")}
       </h2>
 
       <div className="overflow-hidden rounded-md border border-gray-200 bg-white lg:rounded-[10px]">
         <div className="space-y-3 p-4 lg:p-6">
           <PriceRow>
-            <PriceRow.Label size="sm">상품 금액</PriceRow.Label>
+            <PriceRow.Label size="sm">{t("itemAmount")}</PriceRow.Label>
             <PriceRow.Value
               className="text-[13px] lg:text-sm"
               data-testid="cart-subtotal"
@@ -42,7 +44,7 @@ export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
           </PriceRow>
 
           <PriceRow>
-            <PriceRow.Label size="sm">배송비</PriceRow.Label>
+            <PriceRow.Label size="sm">{t("shipping")}</PriceRow.Label>
             <PriceRow.Value
               className="text-[13px] lg:text-sm"
               data-testid="cart-shipping"
@@ -61,7 +63,7 @@ export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
                 className="flex items-center gap-1"
               >
                 <CheckoutMembershipTagIcon />
-                멤버십 할인
+                {t("membershipDiscount")}
               </PriceRow.Label>
               <PriceRow.Value
                 tone="discount"
@@ -80,9 +82,9 @@ export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
                 size="sm"
                 className="inline-flex items-baseline gap-1"
               >
-                할인
+                {t("discount")}
                 <span className="text-[10px] font-normal text-gray-400 lg:text-[11px]">
-                  (쿠폰·기타)
+                  {t("couponEtc")}
                 </span>
               </PriceRow.Label>
               <PriceRow.Value
@@ -98,7 +100,7 @@ export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
         </div>
         <PriceRow highlight="beige">
           <PriceRow.Label size="base" weight="semibold">
-            총 주문 금액
+            {t("totalAmount")}
           </PriceRow.Label>
           <PriceRow.Value
             size="lg"

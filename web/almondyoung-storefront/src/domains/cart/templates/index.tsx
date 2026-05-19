@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { CartHeader } from "@/domains/cart/components/header"
 import { createCheckoutCartFromLineItems, refreshCartPrices } from "@/lib/api/medusa/cart"
 import { HttpTypes } from "@medusajs/types"
+import { useTranslations } from "next-intl"
 import { useParams, useRouter } from "next/navigation"
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 
@@ -19,6 +20,7 @@ export default function CartTemplate({ cart }: Props) {
   const router = useRouter()
   const params = useParams()
   const countryCode = (params.countryCode as string) || "kr"
+  const t = useTranslations("cart.summary")
 
   const cartItems = cart?.items
   const sortedItems = useMemo(
@@ -87,10 +89,10 @@ export default function CartTemplate({ cart }: Props) {
       } catch (error) {
         console.error("Failed to create checkout cart:", error)
         const { toast } = await import("sonner")
-        toast.error("주문 진행에 실패했습니다. 다시 시도해주세요.")
+        toast.error(t("checkoutFailed"))
       }
     })
-  }, [selectedIds, sortedItems, countryCode, router])
+  }, [selectedIds, sortedItems, countryCode, router, t])
 
   useEffect(() => {
     refreshCartPrices().then(() => router.refresh()).catch(() => {})

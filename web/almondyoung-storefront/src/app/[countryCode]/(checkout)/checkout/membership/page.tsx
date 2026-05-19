@@ -3,6 +3,7 @@ import ProtectedRoute from "@components/protected-route"
 import { fetchMe } from "@lib/api/users/me"
 import { getPlans } from "@lib/api/membership"
 import MembershipCheckoutTemplate from "@/domains/checkout/templates/membership-checkout-template"
+import { getTranslations } from "next-intl/server"
 
 export default async function MembershipCheckoutPage({
   params,
@@ -13,6 +14,7 @@ export default async function MembershipCheckoutPage({
 }) {
   const { countryCode } = await params
   const { planId } = await searchParams
+  const t = await getTranslations("checkout.membership")
 
   if (!planId) {
     return (
@@ -21,16 +23,14 @@ export default async function MembershipCheckoutPage({
           showDesktopHeader: true,
           showMobileHeader: false,
           showMobileSubBackHeader: true,
-          mobileSubBackHeaderTitle: "멤버십 결제",
+          mobileSubBackHeaderTitle: t("headerTitle"),
         }}
       >
         <section className="mx-auto max-w-xl rounded-lg border border-gray-200 bg-white p-6 text-center">
           <h2 className="text-lg font-semibold text-gray-900">
-            멤버십 플랜 정보가 없습니다.
+            {t("missingPlanTitle")}
           </h2>
-          <p className="mt-2 text-sm text-gray-500">
-            멤버십 신청 페이지에서 다시 시도해주세요.
-          </p>
+          <p className="mt-2 text-sm text-gray-500">{t("missingPlanDesc")}</p>
         </section>
       </WithHeaderLayout>
     )
@@ -46,16 +46,14 @@ export default async function MembershipCheckoutPage({
           showDesktopHeader: true,
           showMobileHeader: false,
           showMobileSubBackHeader: true,
-          mobileSubBackHeaderTitle: "멤버십 결제",
+          mobileSubBackHeaderTitle: t("headerTitle"),
         }}
       >
         <section className="mx-auto max-w-xl rounded-lg border border-gray-200 bg-white p-6 text-center">
           <h2 className="text-lg font-semibold text-gray-900">
-            멤버십 플랜을 찾을 수 없습니다.
+            {t("planNotFoundTitle")}
           </h2>
-          <p className="mt-2 text-sm text-gray-500">
-            다른 플랜으로 다시 시도해주세요.
-          </p>
+          <p className="mt-2 text-sm text-gray-500">{t("planNotFoundDesc")}</p>
         </section>
       </WithHeaderLayout>
     )
@@ -68,13 +66,13 @@ export default async function MembershipCheckoutPage({
           showDesktopHeader: true,
           showMobileHeader: false,
           showMobileSubBackHeader: true,
-          mobileSubBackHeaderTitle: "멤버십 결제",
+          mobileSubBackHeaderTitle: t("headerTitle"),
         }}
       >
         <MembershipCheckoutTemplate
           user={user}
           planId={selectedPlan.plan.id}
-          planName={selectedPlan.tier?.name ?? "멤버십"}
+          planName={selectedPlan.tier?.name ?? t("fallbackPlanName")}
           price={selectedPlan.plan.price}
         />
       </WithHeaderLayout>

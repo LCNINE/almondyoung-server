@@ -491,7 +491,327 @@
   "cart": {
     "emptyTitle": "Your cart is empty",
     "emptyDescription": "Add the products you want to your cart.",
-    "shopNow": "Continue shopping"
+    "shopNow": "Continue shopping",
+    "notFound": {
+      "metaTitle": "Cart not found",
+      "metaDescription": "The cart you requested could not be found",
+      "title": "Cart not found",
+      "description": "The cart you requested does not exist or has expired.",
+      "backHome": "Continue shopping"
+    },
+    "header": {
+      "title": "Cart",
+      "stepCheckout": "Checkout",
+      "stepDone": "Done"
+    },
+    "items": {
+      "tableProduct": "Product",
+      "tableQuantity": "Quantity",
+      "tableUnitPrice": "Unit price",
+      "tableTotal": "Total",
+      "deleteSelected": "Delete selected",
+      "deleteSelectedCount": "Delete selected ({count})",
+      "deleteSelectedSuccess": "{count} item(s) deleted.",
+      "deleteSelectedError": "Failed to delete. Please try again.",
+      "deleteAria": "Delete",
+      "noImage": "No image",
+      "quantityUpdateFail": "Failed to update quantity",
+      "deleteItemError": "A temporary error occurred. Please try again later.",
+      "quantityMinError": "Quantity must be at least 1.",
+      "quantityDialogTitle": "Enter quantity",
+      "cancel": "Cancel",
+      "confirm": "Confirm"
+    },
+    "summary": {
+      "title": "Order summary",
+      "subtotal": "Subtotal",
+      "membershipDiscount": "Membership discount",
+      "couponDiscount": "Coupon / Promotion",
+      "shipping": "Shipping",
+      "totalPayment": "Total",
+      "selectItems": "Please select items to purchase.",
+      "checkout": "Checkout",
+      "checkoutWithCount": "Checkout ({count} items)",
+      "checkoutFailed": "Failed to proceed to checkout. Please try again."
+    },
+    "mobileBar": {
+      "discountTotal": "{amount} KRW off",
+      "selectItems": "Please select items",
+      "checkout": "Checkout",
+      "checkoutWithCount": "Checkout ({count} items)"
+    },
+    "freeShipping": {
+      "reached": "Free shipping applied!",
+      "remaining": "Add {amount} KRW more for free shipping"
+    },
+    "priceError": {
+      "message": "Couldn't load the amount",
+      "refresh": "Refresh",
+      "inquiry": "Contact us"
+    },
+    "won": "KRW"
+  },
+  "checkout": {
+    "metaTitle": "Order / Payment",
+    "logoAlt": "Almond logo",
+    "logoAltAlmondyoung": "Almondyoung",
+    "header": {
+      "title": "Order / Payment",
+      "breadcrumbCurrent": "Order / Payment",
+      "breadcrumbDone": "Done",
+      "mobileTitle": "Order details",
+      "closeAria": "Close"
+    },
+    "cta": {
+      "mobileAgreement": "I have reviewed the order details and consent to the use of my information.",
+      "pcAgreement": "I have reviewed the terms and order details and consent to the use of my information.",
+      "processing": "Processing...",
+      "pay": "Pay now",
+      "payWithAmount": "Pay {amount}"
+    },
+    "shipping": {
+      "title": "Shipping address",
+      "defaultBadge": "Default address",
+      "contact": "Phone",
+      "postalCode": "Postal code",
+      "address1": "Address",
+      "address2": "Address detail",
+      "change": "Change",
+      "empty": {
+        "title": "No shipping address",
+        "description": "Please register a shipping address.",
+        "savedAddress": "Saved addresses",
+        "addNew": "Add new address"
+      },
+      "memo": {
+        "legend": "Delivery memo",
+        "selectAria": "Select delivery memo",
+        "placeholder": "Select a delivery memo",
+        "options": {
+          "door": "Leave at the door",
+          "security": "Leave at security",
+          "parcelBox": "Place in the parcel box",
+          "direct": "I'll receive it in person",
+          "other": "Other (custom input)"
+        },
+        "entrance": {
+          "heading": "Building entrance code",
+          "hasEntrance": "There is a building entrance code",
+          "passwordPlaceholder": "e.g. #1234",
+          "noEntrance": "Entry without a code",
+          "notice": "The entrance code is used only for delivery and is deleted after delivery is complete."
+        },
+        "customPlaceholder": "Enter delivery requests",
+        "customAria": "Custom delivery memo"
+      },
+      "selector": {
+        "title": "Select shipping address",
+        "loading": "Loading...",
+        "emptySaved": "No saved shipping addresses.",
+        "selectDone": "Confirm",
+        "changing": "Updating...",
+        "cancel": "Cancel",
+        "addNew": "Add new address",
+        "edit": "Edit",
+        "setDefault": "Set as default",
+        "delete": "Delete",
+        "deleteDialog": {
+          "title": "Delete shipping address",
+          "description": "Delete this address? Deleted addresses cannot be restored.",
+          "cancel": "Cancel",
+          "confirm": "Delete"
+        },
+        "toasts": {
+          "changed": "Shipping address updated.",
+          "changeFailed": "Failed to update the shipping address.",
+          "defaultSet": "Set as the default shipping address.",
+          "defaultSetFailed": "Failed to set the default address.",
+          "deleted": "Shipping address deleted.",
+          "deleteFailed": "Failed to delete the shipping address."
+        }
+      }
+    },
+    "orderProducts": {
+      "title": "Order items",
+      "empty": "There are no order items.",
+      "selectAll": "Select all ({selected}/{total})",
+      "deleteSelected": "Delete selected",
+      "deleteSelectedDialog": {
+        "title": "Delete selected items",
+        "description": "Delete {count} selected item(s) from the cart?",
+        "cancel": "Cancel",
+        "confirm": "Delete",
+        "deleting": "Deleting..."
+      },
+      "deleteSingleDialog": {
+        "title": "Delete item",
+        "description": "Delete {title} from the cart?",
+        "cancel": "Cancel",
+        "confirm": "Delete",
+        "deleting": "Deleting..."
+      },
+      "optionBadge": "Option",
+      "optionDefault": "Default",
+      "optionLine": "{value} | {quantity} pcs",
+      "quantityChange": "Change",
+      "quantityDialogTitle": "Change quantity",
+      "quantityExpected": "Estimated total:",
+      "save": "Save",
+      "saving": "Saving...",
+      "cancel": "Cancel",
+      "shippingFee": "Shipping {amount} KRW",
+      "amountWon": "{amount} KRW",
+      "toasts": {
+        "deletedCount": "{count} item(s) deleted.",
+        "deleteFailed": "Failed to delete the item.",
+        "deletedSingle": "Item deleted.",
+        "quantityChanged": "Quantity updated.",
+        "quantityChangeFailed": "Failed to update the quantity.",
+        "welcomeOneOnly": "Welcome membership product is limited to one per person."
+      }
+    },
+    "discount": {
+      "title": "Discounts / Additional payments",
+      "totalLabel": "Total discount",
+      "zero": "0 KRW",
+      "amountMinusWon": "-{amount} KRW",
+      "couponLabel": "Coupon",
+      "available": "Available",
+      "availableCount": "Available ({count})",
+      "percentDiscount": "{value}% off",
+      "amountDiscount": "{amount} KRW off",
+      "applying": "Applying coupon...",
+      "noCoupons": "No coupons available",
+      "selectPlaceholder": "Select a coupon ({count})",
+      "removeAria": "Remove coupon",
+      "membershipDiscount": "Membership discount",
+      "couponDiscount": "Coupon discount",
+      "toasts": {
+        "couponApplyFailed": "Failed to apply the coupon. Please try again later."
+      }
+    },
+    "paymentTotal": {
+      "title": "Payment summary",
+      "itemAmount": "Subtotal",
+      "shipping": "Shipping",
+      "free": "Free",
+      "membershipDiscount": "Membership discount",
+      "discount": "Discount",
+      "couponEtc": "(Coupons / etc.)",
+      "totalAmount": "Order total"
+    },
+    "mobileSummary": {
+      "title": "Order summary",
+      "itemAmount": "Items",
+      "shipping": "Shipping",
+      "free": "Free",
+      "discountSubsidies": "Discounts / Additional payments",
+      "membership": "Membership",
+      "totalAmount": "Order total"
+    },
+    "detailSidebar": {
+      "title": "Payment details",
+      "itemAmount": "Subtotal",
+      "shipping": "Shipping",
+      "free": "Free",
+      "membershipDiscount": "Membership discount",
+      "discount": "Discount",
+      "total": "Total payment"
+    },
+    "process": {
+      "shippingFallback": "Shipping",
+      "productFallback": "Product",
+      "orderNameSingle": "Almondyoung - {title}",
+      "orderNameMultiple": "Almondyoung - {title} + {count} more",
+      "errorPrefix": "Error:",
+      "toasts": {
+        "setShipping": "Please set a shipping address.",
+        "selectMemo": "Please select a delivery memo.",
+        "enterEntrancePw": "Please enter the building entrance code.",
+        "noItems": "There are no items to pay for. Go back to the cart and select items.",
+        "paymentInitFailed": "Failed to initialize the payment session.",
+        "unknownError": "An unknown error occurred"
+      }
+    },
+    "membership": {
+      "headerTitle": "Membership checkout",
+      "missingPlanTitle": "No membership plan information.",
+      "missingPlanDesc": "Please try again from the membership signup page.",
+      "planNotFoundTitle": "Membership plan not found.",
+      "planNotFoundDesc": "Please try again with a different plan.",
+      "fallbackPlanName": "Membership",
+      "planSectionTitle": "Membership plan",
+      "selectedPlanLabel": "Selected plan",
+      "priceWon": "{amount} KRW",
+      "noticeTitle": "Payment notice",
+      "oneTimeHeader": "📌 One-time payment (no auto-billing)",
+      "oneTimeNoAutoPay": "This is a one-time payment with no auto-billing.",
+      "immediateNoRefundPrefix": "Service starts immediately upon payment, and ",
+      "immediateNoRefundEmphasis": "refunds are not allowed after use begins",
+      "immediateNoRefundSuffix": ".",
+      "paidPeriodAccess": "Service is available for the paid period.",
+      "refundPolicyTitle": "[Refund policy]",
+      "refund1": "· Refunds for buyer's remorse are not allowed.",
+      "refund2": "· If normal use is not possible due to service outages or technical errors, a partial refund may be processed for the unused period.",
+      "refund3": "· Refund eligibility and amount are determined by internal policy.",
+      "agree": "I have reviewed the payment and refund policy and agree to it.",
+      "toasts": {
+        "agreeRequired": "Please agree to the payment and refund policy.",
+        "loginRequired": "Login is required.",
+        "paymentRequestFailed": "Payment request failed."
+      }
+    },
+    "success": {
+      "completedHighlight": "Order complete",
+      "completedSuffix": ".",
+      "noOrder": {
+        "completed": "Your order has been completed successfully.",
+        "detailsInMypage": "You can view the order details on My Page.",
+        "orderListBtn": "View order history"
+      },
+      "orderNumberLabel": "Order number",
+      "orderItemsCount": "{count} order item(s)",
+      "orderDetailsFallback": "Order details will be shown here.",
+      "orderDetailBtn": "View order details",
+      "quantityLabel": "Quantity: {quantity}",
+      "priceFormat": "{amount} KRW",
+      "mainImageAlt": "Order item primary image",
+      "fallbackName": "—",
+      "sr": {
+        "recipient": "Recipient",
+        "contact": "Phone",
+        "address": "Shipping address"
+      },
+      "review": {
+        "ratingTitle": "How was your shopping experience?"
+      }
+    },
+    "fail": {
+      "loading": "Loading error information...",
+      "title": "Payment failed",
+      "description": "An issue occurred while processing the payment.",
+      "unknownError": "An unknown error occurred.",
+      "commonCausesTitle": "Common causes",
+      "causes": {
+        "limitExceeded": "Payment limit exceeded",
+        "cardError": "Card information error",
+        "lowBalance": "Insufficient balance",
+        "userCancel": "Payment cancelled by user",
+        "networkError": "Network error"
+      },
+      "retry": "Try again",
+      "goBack": "Back to previous page"
+    },
+    "callback": {
+      "paymentFailed": "Payment failed.",
+      "missingParams": "No payment information found.",
+      "membershipFailFallback": "Membership signup processing failed",
+      "membershipCallbackError": "An error occurred while processing the membership payment.",
+      "processingTitle": "Processing payment",
+      "processingDesc": "Processing your payment...",
+      "waitLine1": "Please wait a moment.",
+      "waitLine2": "Do not close or refresh the page."
+    }
   },
   "policies": {
     "company": {

@@ -12,6 +12,7 @@ import {
 import { deleteLineItems } from "@/lib/api/medusa/cart"
 import { HttpTypes } from "@medusajs/types"
 import { Loader2 } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { useTransition } from "react"
 import { toast } from "sonner"
 
@@ -33,6 +34,7 @@ export default function Items({
   onSelectItem,
 }: ItemsProps) {
   const [isPending, startTransition] = useTransition()
+  const t = useTranslations("cart.items")
 
   const handleDeleteSelected = () => {
     if (selectedIds.size === 0) return
@@ -40,9 +42,9 @@ export default function Items({
     startTransition(async () => {
       try {
         await deleteLineItems(Array.from(selectedIds))
-        toast.success(`${selectedIds.size}개 상품이 삭제되었습니다.`)
+        toast.success(t("deleteSelectedSuccess", { count: selectedIds.size }))
       } catch {
-        toast.error("삭제에 실패했습니다. 다시 시도해주세요.")
+        toast.error(t("deleteSelectedError"))
       }
     })
   }
@@ -61,7 +63,9 @@ export default function Items({
             {isPending ? (
               <Loader2 className="mr-1 h-4 w-4 animate-spin" />
             ) : null}
-            선택 삭제{selectedIds.size > 0 && ` (${selectedIds.size})`}
+            {selectedIds.size > 0
+              ? t("deleteSelectedCount", { count: selectedIds.size })
+              : t("deleteSelected")}
           </Button>
         </div>
       )}
@@ -100,11 +104,13 @@ export default function Items({
                   disabled={isPending}
                 />
               </TableHead>
-              <TableHead className="w-24 pl-0">상품</TableHead>
+              <TableHead className="w-24 pl-0">{t("tableProduct")}</TableHead>
               <TableHead></TableHead>
-              <TableHead className="w-28">수량</TableHead>
-              <TableHead className="hidden w-20 xl:table-cell">단가</TableHead>
-              <TableHead className="w-20 text-right">합계</TableHead>
+              <TableHead className="w-28">{t("tableQuantity")}</TableHead>
+              <TableHead className="hidden w-20 xl:table-cell">
+                {t("tableUnitPrice")}
+              </TableHead>
+              <TableHead className="w-20 text-right">{t("tableTotal")}</TableHead>
               <TableHead className="w-10 pr-0"></TableHead>
             </TableRow>
           </TableHeader>
