@@ -24,7 +24,7 @@ export function ExpandableReviewContent({ content }: Props) {
     <div className="relative">
       <p
         ref={contentRef}
-        className={cn("text-xs text-black", !isExpanded && "line-clamp-4")}
+        className={cn("text-xs text-foreground", !isExpanded && "line-clamp-4")}
       >
         {content.split("\n").map((line, i) => (
           <span key={i} className="block">
@@ -37,7 +37,7 @@ export function ExpandableReviewContent({ content }: Props) {
         <button
           type="button"
           onClick={() => setIsExpanded(true)}
-          className="mt-1 text-xs font-medium text-gray-400"
+          className="mt-1 text-xs font-medium text-primary"
         >
           {t("expandLong")}
         </button>

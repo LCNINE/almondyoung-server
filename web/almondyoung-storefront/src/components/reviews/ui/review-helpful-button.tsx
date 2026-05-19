@@ -1,9 +1,12 @@
 "use client"
 
+import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 import { ApiAuthError } from "@/lib/api/api-error"
 import { toggleReviewReaction } from "@/lib/api/ugc"
 import { siteConfig } from "@/lib/config/site"
 import { getPathWithoutCountry } from "@/lib/utils/get-path-without-country"
+import { Heart } from "lucide-react"
 import { useRef, useState } from "react"
 import { useTranslations } from "next-intl"
 
@@ -13,9 +16,6 @@ type Props = {
   initialLikeCount: number
 }
 
-/**
- * @description '도움이 되었어요' 버튼 및 좋아요 카운트
- */
 export function ReviewHelpfulButton({
   countryCode,
   reviewId,
@@ -31,12 +31,10 @@ export function ReviewHelpfulButton({
     isPending.current = true
 
     const prevLiked = liked
-
     setLiked(!liked)
 
     try {
       const result = await toggleReviewReaction(reviewId, { type: "helpful" })
-
       if (result) {
         setLiked(result.marked)
         setLikeCount(result.count)
@@ -64,21 +62,30 @@ export function ReviewHelpfulButton({
 
   return (
     <footer className="flex items-center gap-3 pt-2">
-      <button
-        type="button"
+      <Button
+        variant="outline"
+        size="sm"
         onClick={handleLikeClick}
-        className={`h-[27px] rounded border bg-white px-2.5 py-1 text-xs transition-colors ${
-          liked
-            ? "border-amber-600 bg-orange-50 text-orange-600"
-            : "border-amber-500 text-orange-500 hover:bg-orange-50"
-        }`}
         aria-pressed={liked}
+        className={cn(
+          "h-7 px-3 text-xs font-normal transition-colors",
+          liked
+            ? "border-primary bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary"
+            : "text-muted-foreground hover:border-primary hover:text-primary"
+        )}
       >
         {t("helpful")}
-      </button>
-      <p className="flex items-center gap-1 text-xs text-gray-500">
-        <span aria-label={t("likeAria")}>♥</span> {likeCount}
-      </p>
+      </Button>
+
+      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+        <Heart
+          className={cn(
+            "h-3 w-3 transition-colors",
+            liked ? "fill-primary text-primary" : "text-muted-foreground"
+          )}
+        />
+        {likeCount}
+      </span>
     </footer>
   )
 }
