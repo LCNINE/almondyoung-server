@@ -14,13 +14,8 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: t("profile") }
 }
 
-export default async function AccountProfilePage({
-  params,
-}: {
-  params: Promise<{ countryCode: string }>
-}) {
+export default async function AccountProfilePage() {
   const t = await getTranslations("mypage.menu")
-  const { countryCode } = await params
 
   const [userData, identitiesState] = await Promise.all([
     getMyProfile(),
@@ -41,7 +36,6 @@ export default async function AccountProfilePage({
           <PageTitle>{t("profile")}</PageTitle>
           <ProfileEdit
             userData={userData}
-            countryCode={countryCode}
             identitiesState={identitiesState}
           />
         </div>

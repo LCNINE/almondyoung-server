@@ -8,6 +8,7 @@ import { signout } from "@lib/api/users/signout"
 import { ChevronRight, Coins, Crown, User } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { useTransition } from "react"
+import { Button } from "@/components/ui/button"
 
 interface UserProfileSectionProps {
   userName: string
@@ -56,14 +57,18 @@ export function UserProfileSection({
               <LocalizedClientLink href="/mypage/membership">
                 <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-[#FF9500] transition-opacity hover:opacity-80">
                   <Crown className="size-4" aria-hidden />
-                  <span className="text-base font-bold">{t("membershipMember")}</span>
+                  <span className="text-base font-bold">
+                    {t("membershipMember")}
+                  </span>
                 </span>
               </LocalizedClientLink>
             ) : (
               <LocalizedClientLink href="/mypage/membership/subscribe/payment">
                 <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-3 py-1 whitespace-nowrap text-amber-700 transition-colors hover:bg-amber-200">
                   <Crown className="size-4" aria-hidden />
-                  <span className="text-sm font-bold">{t("membershipJoin")}</span>
+                  <span className="text-sm font-bold">
+                    {t("membershipJoin")}
+                  </span>
                 </span>
               </LocalizedClientLink>
             )}
@@ -74,24 +79,15 @@ export function UserProfileSection({
             <ul className="flex items-center gap-2">
               <li>
                 <LocalizedClientLink href="/mypage/account/profile">
-                  <CustomButton
-                    className="text-gray-90 border-gray-90 hover:border-gray-90 cursor-pointer whitespace-nowrap hover:bg-gray-100"
-                    variant="outline"
-                    size="sm"
-                  >
+                  <Button className="cursor-pointer" variant="outline">
                     {t("profileEdit")}
-                  </CustomButton>
+                  </Button>
                 </LocalizedClientLink>
               </li>
               <li>
-                <CustomButton
-                  className="text-gray-90 border-gray-90 hover:border-gray-90 cursor-pointer whitespace-nowrap hover:bg-gray-100"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleLogout}
-                >
+                <Button className="cursor-pointer" variant="outline">
                   {isPending ? <Spinner size="sm" color="gray" /> : t("logout")}
-                </CustomButton>
+                </Button>
               </li>
             </ul>
           </nav>
