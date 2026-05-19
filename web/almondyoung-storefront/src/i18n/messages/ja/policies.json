@@ -1,0 +1,54 @@
+{
+  "company": {
+    "title": "会社紹介",
+    "companyName": "株式会社エルシーナイン",
+    "intro": "アーモンドヨンは株式会社エルシーナインが運営するB2Bビューティ卸売プラットフォームです。",
+    "sectionTitle": "事業者情報",
+    "fieldCompanyName": "会社名",
+    "fieldCeo": "代表取締役",
+    "ceoName": "Harry KWON",
+    "fieldBizNo": "事業者登録番号",
+    "fieldMailOrderNo": "通信販売業届出",
+    "fieldPhone": "電話",
+    "fieldAddress": "住所",
+    "fieldPrivacyOfficer": "個人情報保護責任者"
+  },
+  "terms": {
+    "title": "利用規約",
+    "almondTerms": "アーモンドヨン 利用規約",
+    "electronicTransaction": "電子金融取引 利用規約"
+  },
+  "privacy": {
+    "title": "プライバシーポリシー",
+    "collection": "個人情報の収集および利用",
+    "thirdParty": "個人情報の第三者提供"
+  },
+  "guide": {
+    "title": "ご利用ガイド",
+    "payment": {
+      "title": "注文・お支払い",
+      "item1": "ご希望の商品をカートに入れてからお支払いを進めてください。",
+      "item2": "お支払い方法:クレジットカード、銀行振込、仮想口座、簡単決済",
+      "item3": "お支払いが確認されると配送が開始されます。"
+    },
+    "shipping": {
+      "title": "配送のご案内",
+      "item1": "配送料:商品ごとに異なります(商品ページで確認)",
+      "item2": "配送期間:お支払い完了後、営業日基準1〜3日",
+      "item3": "配送照会:マイページでリアルタイム追跡が可能"
+    },
+    "return": {
+      "title": "交換・返品",
+      "item1": "商品受領後7日以内に交換・返品の申請が可能",
+      "item2": "商品不良の場合、送料は当社負担",
+      "item3": "お客様都合の場合、送料はお客様負担",
+      "item4": "使用または破損した商品は交換・返品できません。"
+    },
+    "cs": {
+      "title": "カスタマーサポート",
+      "item1": "電話:1877-7184",
+      "item2": "カカオトーク チャンネル:アーモンドヨン",
+      "item3": "メール:hello@lcnine.kr"
+    }
+  }
+}

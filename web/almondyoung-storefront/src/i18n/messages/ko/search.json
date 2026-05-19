@@ -1,0 +1,53 @@
+{
+  "inputPlaceholder": "오늘 뭐 살까? 아몬드영",
+  "sheetTitle": "아몬드영 검색",
+  "back": "뒤로 가기",
+  "popover": {
+    "suggestionsTitle": "검색어 추천",
+    "historyTitle": "최근 검색어",
+    "historyDisabled": "검색어 저장 기능을 껐어요.",
+    "historyEmpty": "최근 검색어가 없어요.",
+    "clearAll": "전체 삭제",
+    "saveOff": "검색어 저장 끄기",
+    "saveOn": "검색어 저장 켜기"
+  },
+  "history": {
+    "title": "최근 검색어",
+    "clearAll": "전체삭제"
+  },
+  "hotKeywords": {
+    "title": "급상승 검색어",
+    "updatedAt": "{time} 기준",
+    "loadFail": "급상승 검색어 로드 실패:",
+    "statusNew": "NEW"
+  },
+  "popularKeywords": {
+    "title": "추천 검색어",
+    "loadFail": "추천 검색어 로드 실패:"
+  },
+  "result": {
+    "title": "‘{keyword}’ 검색결과",
+    "totalCount": "총 <strong>{count}</strong>개의 상품",
+    "pageInfo": "{current}/{total} 페이지",
+    "loadFail": "[SearchContainer] 검색 실패:"
+  },
+  "sort": {
+    "relevance": "관련도순",
+    "priceAsc": "낮은가격순",
+    "priceDesc": "높은가격순",
+    "newest": "최신순"
+  },
+  "empty": {
+    "title": "‘{keyword}’에 대한 검색결과가 없습니다",
+    "subtitle": "다른 검색어로 다시 검색해 보세요",
+    "tip1": "단어의 철자가 정확한지 확인해 보세요",
+    "tip2": "검색어를 줄이거나 다른 검색어로 검색해 보세요",
+    "tip3": "일반적인 검색어로 다시 검색해 보세요"
+  },
+  "pagination": {
+    "ariaLabel": "페이지네이션",
+    "prevPage": "이전 페이지",
+    "nextPage": "다음 페이지",
+    "pageAria": "{page} 페이지"
+  }
+}

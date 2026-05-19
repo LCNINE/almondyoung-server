@@ -23,5 +23,14 @@
   },
   "[html]": {
     "editor.defaultFormatter": "vscode.html-language-features"
-  }
+  },
+  "i18n-ally.localesPaths": ["web/almondyoung-storefront/src/i18n/messages"],
+  "i18n-ally.keystyle": "nested",
+  "i18n-ally.sourceLanguage": "ko",
+  "i18n-ally.displayLanguage": "ko",
+  "i18n-ally.enabledFrameworks": ["next-intl"],
+  "i18n-ally.namespace": true,
+  "i18n-ally.pathMatcher": "{locale}/{namespaces}.json",
+  "i18n-ally.editor.preferEditor": true,
+  "i18n-ally.extract.autoDetect": true
 }

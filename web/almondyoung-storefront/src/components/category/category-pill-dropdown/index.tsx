@@ -8,17 +8,16 @@ import {
   DropdownMenuTrigger,
 } from "@components/ui/dropdown-menu"
 import React from "react"
-import { cn } from "@lib/utils" // (cn 유틸리티를 사용해 클래스를 병합합니다)
+import { useTranslations } from "next-intl"
+import { cn } from "@lib/utils"
 
-// 드롭다운 리스트에 표시될 목업(Mock) 데이터
 const categoryOptions = [
-  { id: "eyelash", label: "속눈썹" },
-  { id: "nail", label: "네일" },
-  { id: "hair", label: "헤어" },
-  { id: "waxing", label: "왁싱" },
-]
+  { id: "eyelash", labelKey: "eyelash" },
+  { id: "nail", labelKey: "nail" },
+  { id: "hair", labelKey: "hair" },
+  { id: "waxing", labelKey: "waxing" },
+] as const
 
-// [신규] 스타일 변수화 (DRY 원칙)
 const triggerFont = "font-['Pretendard'] text-xs"
 const triggerColor = "text-[#ffa500]"
 const triggerBorder = "border border-[#ffa500]"
@@ -26,9 +25,14 @@ const triggerBg = "bg-white"
 const hoverBg = "hover:bg-orange-50"
 
 export default function CategoryPillDropdown() {
-  const [selectedLabel, setSelectedLabel] = React.useState(
-    categoryOptions[0].label
-  )
+  const t = useTranslations("category.pillDropdown")
+  const [selectedId, setSelectedId] = React.useState<
+    (typeof categoryOptions)[number]["id"]
+  >(categoryOptions[0].id)
+
+  const selectedKey =
+    categoryOptions.find((opt) => opt.id === selectedId)?.labelKey ??
+    categoryOptions[0].labelKey
 
   return (
     <DropdownMenu>
@@ -45,7 +49,7 @@ export default function CategoryPillDropdown() {
             hoverBg
           )}
         >
-          <span>{selectedLabel}</span>
+          <span>{t(selectedKey)}</span>
           <Triangle
             className="h-2.5 w-2.5 rotate-180"
             fill="#FFA500"
@@ -54,26 +58,24 @@ export default function CategoryPillDropdown() {
         </button>
       </DropdownMenuTrigger>
 
-      {/* [수정] DropdownMenuContent에 스타일을 적용합니다. */}
       <DropdownMenuContent
         className={cn(
-          "min-w-[var(--radix-dropdown-menu-trigger-width)]", // 트리거와 너비를 맞춥니다
-          triggerBorder, // 트리거와 동일한 테두리
-          triggerBg // 트리거와 동일한 배경
+          "min-w-[var(--radix-dropdown-menu-trigger-width)]",
+          triggerBorder,
+          triggerBg
         )}
       >
         {categoryOptions.map((option) => (
           <DropdownMenuItem
             key={option.id}
-            onSelect={() => setSelectedLabel(option.label)}
-            // [수정] DropdownMenuItem에 스타일을 적용합니다.
+            onSelect={() => setSelectedId(option.id)}
             className={cn(
-              "focus:bg-orange-50", // shadcn의 기본 focus 스타일 오버라이드
-              triggerFont, // 트리거와 동일한 폰트/크기
-              "text-black" // (활성/비활성 텍스트 색상)
+              "focus:bg-orange-50",
+              triggerFont,
+              "text-black"
             )}
           >
-            {option.label}
+            {t(option.labelKey)}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>

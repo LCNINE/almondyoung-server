@@ -4,6 +4,7 @@ import {
   countryCodeToLocale,
   extractCountryCodeFromPath,
 } from "@/lib/utils/locale-path"
+import { loadMessages } from "./load-messages"
 
 export default getRequestConfig(async () => {
   const headerStore = await headers()
@@ -12,6 +13,6 @@ export default getRequestConfig(async () => {
 
   return {
     locale,
-    messages: (await import(`./messages/${locale}.json`)).default,
+    messages: await loadMessages(locale),
   }
 })

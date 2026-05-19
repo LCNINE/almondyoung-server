@@ -1,0 +1,53 @@
+{
+  "inputPlaceholder": "今日は何を買う? アモンドヤン",
+  "sheetTitle": "アモンドヤン 検索",
+  "back": "戻る",
+  "popover": {
+    "suggestionsTitle": "おすすめキーワード",
+    "historyTitle": "最近の検索",
+    "historyDisabled": "検索履歴の保存をオフにしました。",
+    "historyEmpty": "最近の検索はありません。",
+    "clearAll": "全て削除",
+    "saveOff": "履歴保存をオフ",
+    "saveOn": "履歴保存をオン"
+  },
+  "history": {
+    "title": "最近の検索",
+    "clearAll": "全削除"
+  },
+  "hotKeywords": {
+    "title": "急上昇検索",
+    "updatedAt": "{time} 時点",
+    "loadFail": "急上昇キーワードの読み込みに失敗:",
+    "statusNew": "NEW"
+  },
+  "popularKeywords": {
+    "title": "おすすめ検索",
+    "loadFail": "おすすめキーワードの読み込みに失敗:"
+  },
+  "result": {
+    "title": "「{keyword}」の検索結果",
+    "totalCount": "合計 <strong>{count}</strong> 件の商品",
+    "pageInfo": "{current}/{total} ページ",
+    "loadFail": "[SearchContainer] 検索失敗:"
+  },
+  "sort": {
+    "relevance": "関連度順",
+    "priceAsc": "価格の安い順",
+    "priceDesc": "価格の高い順",
+    "newest": "新着順"
+  },
+  "empty": {
+    "title": "「{keyword}」の検索結果がありません",
+    "subtitle": "別のキーワードでもう一度検索してみてください",
+    "tip1": "綴りが正しいか確認してください",
+    "tip2": "キーワードを短くしたり別のキーワードで検索してください",
+    "tip3": "より一般的なキーワードで検索してください"
+  },
+  "pagination": {
+    "ariaLabel": "ページネーション",
+    "prevPage": "前のページ",
+    "nextPage": "次のページ",
+    "pageAria": "{page} ページ"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "utility": {
+    "shipping": "Orders & Shipping",
+    "support": "Support"
+  },
+  "userInfo": {
+    "logout": "Log out"
+  },
+  "categoryDropdown": {
+    "trigger": "Categories"
+  }
+}

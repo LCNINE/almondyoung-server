@@ -396,7 +396,28 @@ formatDate(maybeNull, DATE_FORMATS.KO_LONG, "")
 
 - **사용자에게 노출되는 모든 텍스트는 반드시 다국어 처리해야 합니다.** 한국어 문자열을 JSX/문자열 리터럴로 하드코딩하지 마세요.
 - 라이브러리는 `next-intl` (no-i18n-routing 모드). locale 은 URL 의 `[countryCode]` 에서 자동 매핑 (`/kr↔ko`, `/jp↔ja`, `/us↔en`).
-- 지원 locale: `ko`, `en`, `ja`. 메시지 파일은 `src/i18n/messages/{ko,en,ja}.json` — **세 파일을 항상 같이 수정**해야 키 누락이 없습니다.
+- 지원 locale: `ko`, `en`, `ja`.
+
+#### 메시지 파일 구조 (namespace 별 분리)
+
+```
+src/i18n/
+├── request.ts            # next-intl entry point
+├── load-messages.ts      # namespace 파일들을 merge 해서 로드
+└── messages/
+    ├── ko/{header,cart,checkout,productDetail,...}.json
+    ├── en/{header,cart,checkout,productDetail,...}.json
+    └── ja/{header,cart,checkout,productDetail,...}.json
+```
+
+- 메시지는 **namespace 단위로 파일이 쪼개져** 있습니다. 거대한 단일 JSON 이 아니라 도메인별로 작은 파일로 관리됩니다.
+- 키 추가/편집 시 해당 namespace 의 ko/en/ja 3개 파일을 **항상 같이 수정**해야 키 누락이 없습니다.
+- 새 namespace 가 필요하면:
+  1) `messages/ko/<새이름>.json` 파일 생성
+  2) `messages/en/<새이름>.json` 파일 생성
+  3) `messages/ja/<새이름>.json` 파일 생성
+  4) `src/i18n/load-messages.ts` 의 `MESSAGE_NAMESPACES` 배열에 namespace 이름 추가
+- 키 자동완성 / 누락 키 검출은 VSCode i18n-ally 확장으로 처리합니다 (워크스페이스 설정 `.vscode/settings.json` 에 포함). 별도의 typed 메시지 코드는 두지 않습니다.
 
 #### 사용 방법
 
@@ -416,6 +437,7 @@ return <button>{t("write")}</button>
 #### 키 네이밍 컨벤션
 
 - 형식: `<namespace>.<group>.<key>`, camelCase, dot-separated (예: `productDetail.qna.title`)
+- 코드에서 사용할 때의 `<namespace>` 는 메시지 파일명과 동일 (`productDetail.json` → `t("productDetail...")`)
 - ICU 변수: `{name}`, `{count}` 같이 placeholder 사용 — `t("greeting", { name })`
 - 리치 텍스트(`<strong>` 등 마크업 포함): `t.rich("totalCount", { count, strong: (chunks) => <span>{chunks}</span> })`
 
@@ -449,8 +471,8 @@ ICU MessageFormat 에서 single quote `'` 는 placeholder 이스케이프 문자
 #### LanguageSwitcher / 신규 page 추가 시
 
 - 헤더(`main-header`)와 모바일 카테고리 시트에 `<LanguageSwitcher />` 가 이미 있으므로 새 페이지에서 별도 배치 불필요
-- 신규 페이지/컴포넌트에 텍스트를 추가하면 **항상** 세 메시지 파일에 키 추가 후 `t()` 로 참조
-- 기존 페이지에 텍스트를 새로 넣을 때도 같은 namespace 안에 추가 (예: `productDetail.summary.*` 에 새 키 더하기)
+- 신규 페이지/컴포넌트에 텍스트를 추가하면 **항상** 해당 namespace 의 ko/en/ja 3개 파일에 키 추가 후 `t()` 로 참조
+- 기존 페이지에 텍스트를 새로 넣을 때도 같은 namespace 파일 안에 추가 (예: `messages/{ko,en,ja}/productDetail.json` 의 `summary.*` 에 새 키 더하기)
 
 ## 경로 Alias
 
@@ -501,7 +523,7 @@ products.map((product) => ({
 4. **`fetch()`를 직접 호출하지 마세요.** 백엔드 API 요청은 반드시 `api()` 함수(`@/lib/api/api`)를 사용합니다.
 5. **`next/link`의 `Link`를 직접 사용하지 마세요.** 내부 링크는 반드시 `LocalizedClientLink`(`@/components/shared/localized-client-link`)를 사용합니다.
 6. **날짜 포맷팅 시 `toLocaleDateString`, `Intl.DateTimeFormat`, `date-fns`의 `format()`을 직접 호출하지 마세요.** 반드시 `formatDate`(`@/lib/utils/format-date`)를 사용합니다.
-7. **한국어 문자열을 하드코딩하지 마세요.** 사용자에게 노출되는 모든 텍스트(JSX, toast, aria-label, placeholder, zod 에러 메시지 포함)는 `next-intl` 의 `t()` 로 참조하고 `src/i18n/messages/{ko,en,ja}.json` 세 파일에 모두 키를 추가합니다.
+7. **한국어 문자열을 하드코딩하지 마세요.** 사용자에게 노출되는 모든 텍스트(JSX, toast, aria-label, placeholder, zod 에러 메시지 포함)는 `next-intl` 의 `t()` 로 참조하고 `src/i18n/messages/{ko,en,ja}/<namespace>.json` 세 파일에 모두 키를 추가합니다 (namespace 단위로 파일이 분리되어 있음).
 
 ## 참고 문서
 

@@ -1,0 +1,30 @@
+{
+  "sidebar": {
+    "title": "カテゴリー",
+    "collapse": "折りたたむ",
+    "expand": "展開する",
+    "errorTitle": "カテゴリーを取得できませんでした",
+    "retry": "再試行"
+  },
+  "breadcrumb": {
+    "home": "ホーム"
+  },
+  "products": {
+    "loadFailed": "商品リストを取得できませんでした。",
+    "emptyTitle": "商品がありません",
+    "emptyDescription": "条件に合う商品が見つかりません"
+  },
+  "sort": {
+    "createdAt": "新着順",
+    "salesDesc": "人気順",
+    "priceAsc": "価格が安い順",
+    "priceDesc": "価格が高い順",
+    "reviewCountDesc": "レビューが多い順"
+  },
+  "pillDropdown": {
+    "eyelash": "まつ毛",
+    "nail": "ネイル",
+    "hair": "ヘア",
+    "waxing": "ワックス"
+  }
+}

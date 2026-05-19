@@ -1,0 +1,63 @@
+{
+  "emptyTitle": "Your cart is empty",
+  "emptyDescription": "Add the products you want to your cart.",
+  "shopNow": "Continue shopping",
+  "notFound": {
+    "metaTitle": "Cart not found",
+    "metaDescription": "The cart you requested could not be found",
+    "title": "Cart not found",
+    "description": "The cart you requested does not exist or has expired.",
+    "backHome": "Continue shopping"
+  },
+  "header": {
+    "title": "Cart",
+    "stepCheckout": "Checkout",
+    "stepDone": "Done"
+  },
+  "items": {
+    "tableProduct": "Product",
+    "tableQuantity": "Quantity",
+    "tableUnitPrice": "Unit price",
+    "tableTotal": "Total",
+    "deleteSelected": "Delete selected",
+    "deleteSelectedCount": "Delete selected ({count})",
+    "deleteSelectedSuccess": "{count} item(s) deleted.",
+    "deleteSelectedError": "Failed to delete. Please try again.",
+    "deleteAria": "Delete",
+    "noImage": "No image",
+    "quantityUpdateFail": "Failed to update quantity",
+    "deleteItemError": "A temporary error occurred. Please try again later.",
+    "quantityMinError": "Quantity must be at least 1.",
+    "quantityDialogTitle": "Enter quantity",
+    "cancel": "Cancel",
+    "confirm": "Confirm"
+  },
+  "summary": {
+    "title": "Order summary",
+    "subtotal": "Subtotal",
+    "membershipDiscount": "Membership discount",
+    "couponDiscount": "Coupon / Promotion",
+    "shipping": "Shipping",
+    "totalPayment": "Total",
+    "selectItems": "Please select items to purchase.",
+    "checkout": "Checkout",
+    "checkoutWithCount": "Checkout ({count} items)",
+    "checkoutFailed": "Failed to proceed to checkout. Please try again."
+  },
+  "mobileBar": {
+    "discountTotal": "{amount} KRW off",
+    "selectItems": "Please select items",
+    "checkout": "Checkout",
+    "checkoutWithCount": "Checkout ({count} items)"
+  },
+  "freeShipping": {
+    "reached": "Free shipping applied!",
+    "remaining": "Add {amount} KRW more for free shipping"
+  },
+  "priceError": {
+    "message": "Couldn't load the amount",
+    "refresh": "Refresh",
+    "inquiry": "Contact us"
+  },
+  "won": "KRW"
+}

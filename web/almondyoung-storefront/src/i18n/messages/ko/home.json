@@ -1,0 +1,40 @@
+{
+  "interestBanner": {
+    "title": "어떤 시술 분야에 관심 있으세요?",
+    "description": "최대 3개까지 선택할 수 있어요. 선택하신 카테고리의 베스트 상품을 먼저 보여드릴게요.",
+    "dismiss": "1주일간 보지 않기",
+    "save": "저장",
+    "saving": "저장 중...",
+    "needAtLeastOne": "1개 이상 선택해주세요",
+    "saved": "관심 카테고리가 저장됐어요",
+    "saveFail": "저장에 실패했어요. 다시 시도해주세요.",
+    "dismissFail": "처리에 실패했어요",
+    "maxSelectable": "최대 {max}개까지 선택할 수 있어요"
+  },
+  "interestEdit": {
+    "trigger": "편집",
+    "sheetTitle": "관심 카테고리 변경",
+    "sheetDescription": "최대 3개까지 선택할 수 있어요.",
+    "cancel": "취소",
+    "save": "저장",
+    "saving": "저장 중...",
+    "updated": "관심 카테고리가 변경됐어요"
+  },
+  "categoryBest": {
+    "titleFirst": "카테고리",
+    "titleSecond": "베스트",
+    "emptyTitle": "상품이 없습니다",
+    "emptyDescription": "이 카테고리에 등록된 상품이 없습니다.",
+    "interestTitleSuffix": "베스트"
+  },
+  "survey": {
+    "mobileText": "맞춤 상품을 추천받아보세요",
+    "desktopTitle": "원장님께 딱 맞는 상품을 찾아드릴게요",
+    "desktopDescription": "1분이면 끝나는 간단한 설문으로 맞춤 상품을 추천받아보세요",
+    "configure": "맞춤 설정하기",
+    "later": "나중에 할게요",
+    "close": "닫기",
+    "processing": "처리 중...",
+    "logoAlt": "아몬드영 로고"
+  }
+}

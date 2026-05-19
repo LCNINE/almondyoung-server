@@ -1,0 +1,30 @@
+{
+  "sidebar": {
+    "title": "Categories",
+    "collapse": "Collapse",
+    "expand": "Expand",
+    "errorTitle": "Could not load categories",
+    "retry": "Try again"
+  },
+  "breadcrumb": {
+    "home": "Home"
+  },
+  "products": {
+    "loadFailed": "Could not load the product list.",
+    "emptyTitle": "No products",
+    "emptyDescription": "No products match the current filters"
+  },
+  "sort": {
+    "createdAt": "Newest",
+    "salesDesc": "Most popular",
+    "priceAsc": "Price: low to high",
+    "priceDesc": "Price: high to low",
+    "reviewCountDesc": "Most reviews"
+  },
+  "pillDropdown": {
+    "eyelash": "Eyelash",
+    "nail": "Nail",
+    "hair": "Hair",
+    "waxing": "Waxing"
+  }
+}
