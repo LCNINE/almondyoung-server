@@ -184,6 +184,7 @@ export class UserServiceSsoProviderService extends AbstractAuthModuleProvider {
       email_verified: claims.email_verified,
       name: claims.name,
       login_id: claims.preferred_username ?? claims.login_id,
+      user_id: entity_id,
     };
 
     // id_token 클레임이 비어 있으면 userinfo로 보충
