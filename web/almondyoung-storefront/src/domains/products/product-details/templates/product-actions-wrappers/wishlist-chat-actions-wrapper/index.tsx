@@ -11,7 +11,7 @@ export async function WishlistChatActionsWrapper({
   productId,
   countryCode,
 }: Props) {
-  const wishlist = await getWishlistByProductId(productId).catch(() => null)
+  const wishlist = await getWishlistByProductId(productId).catch(null)
 
   return (
     <div className="flex items-center gap-2">
