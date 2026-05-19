@@ -25,6 +25,7 @@ export const getReviewsByProductId = async ({
   productId,
   rating,
   sort,
+  type,
   page,
   limit,
 }: ReviewListQueryDto): Promise<PaginatedResponseDto<ReviewResponseDto>> => {
@@ -34,6 +35,7 @@ export const getReviewsByProductId = async ({
 
   if (rating) params.rating = rating
   if (sort) params.sort = sort
+  if (type && type !== "all") params.type = type
   if (page) params.page = String(page)
   if (limit) params.limit = String(limit)
 

@@ -12,7 +12,7 @@ export type ReviewSummaryProps = {
  * 데스크탑: 큰 크기
  */
 export function ReviewSummary({
-  totalReviews,
+  totalReviews: _totalReviews,
   averageRating,
   summaryTags,
 }: ReviewSummaryProps) {

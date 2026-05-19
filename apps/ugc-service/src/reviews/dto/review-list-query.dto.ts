@@ -11,6 +11,9 @@ export const REVIEW_SORT_OPTIONS = ['latest', 'oldest', 'rating_high', 'rating_l
 
 export type ReviewSortOption = (typeof REVIEW_SORT_OPTIONS)[number];
 
+export const REVIEW_TYPE_OPTIONS = ['all', 'photo', 'text'] as const;
+export type ReviewTypeOption = (typeof REVIEW_TYPE_OPTIONS)[number];
+
 export const REVIEW_STATUS_FILTERS = ['active', 'hidden', 'deleted'] as const;
 
 export const REVIEW_HAS_COMMENT_FILTERS = ['true', 'false'] as const;
@@ -42,6 +45,15 @@ export class ReviewListQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsIn(REVIEW_SORT_OPTIONS)
   sort?: ReviewSortOption;
+
+  @ApiPropertyOptional({
+    description: '리뷰 타입 필터 (photo: 사진 포함, text: 텍스트만)',
+    enum: REVIEW_TYPE_OPTIONS,
+    default: 'all',
+  })
+  @IsOptional()
+  @IsIn(REVIEW_TYPE_OPTIONS)
+  type?: ReviewTypeOption;
 }
 
 // 관리자용 전체 리뷰 조회

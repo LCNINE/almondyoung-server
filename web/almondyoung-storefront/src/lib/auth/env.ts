@@ -12,7 +12,7 @@ function optional(name: string, fallback: string): string {
 
 export const authEnv = {
   userServiceUrl: required("USER_SERVICE_URL"),
-  parentCookieDomain: required("PARENT_COOKIE_DOMAIN"),
+  parentCookieDomain: optional("PARENT_COOKIE_DOMAIN", ""),
   parentCookieSecure: optional("PARENT_COOKIE_SECURE", "true") === "true",
   parentCookieSameSite: optional("PARENT_COOKIE_SAMESITE", "lax") as
     | "lax"

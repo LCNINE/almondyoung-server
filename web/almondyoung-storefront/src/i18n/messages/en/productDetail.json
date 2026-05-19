@@ -172,6 +172,14 @@
     "imageAlt": "Review image {index}",
     "imagesMore": "More",
     "imagesMoreAlt": "More review photos",
-    "modalTitle": "Review image"
+    "modalTitle": "Review image",
+    "previewTitle": "Recent Reviews",
+    "previewHighRating": "{percent}% of reviews are 4 stars or above",
+    "previewViewAll": "See all reviews",
+    "previewCardContent": "Review content",
+    "sortRatingHigh": "Highest rated",
+    "sortRatingLow": "Lowest rated",
+    "sortSelectAria": "Select review sort order",
+    "filterPhotoOnly": "Photo reviews only"
   }
 }
