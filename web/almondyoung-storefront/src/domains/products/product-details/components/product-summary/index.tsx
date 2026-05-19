@@ -1,4 +1,5 @@
 import { RatingSkeleton } from "@/components/skeletons/product-detail-skeletons"
+import { Customer } from "@/lib/types/ui/medusa"
 import { Suspense } from "react"
 import { RatingActionsWrapper } from "../../templates/product-actions-wrappers/rating-actions-wrapper"
 import { WishlistChatActionsWrapper } from "../../templates/product-actions-wrappers/wishlist-chat-actions-wrapper"
@@ -10,6 +11,7 @@ interface Props {
   productId: string
   pimMasterId: string
   countryCode: string
+  customer: Customer | null
   children?: React.ReactNode
 }
 
@@ -20,6 +22,7 @@ export function ProductSummary({
   productId,
   pimMasterId,
   countryCode,
+  customer,
   children,
 }: Props) {
   return (
@@ -46,6 +49,7 @@ export function ProductSummary({
             <WishlistChatActionsWrapper
               productId={productId}
               countryCode={countryCode}
+              customer={customer}
             />
           </Suspense>
         </div>

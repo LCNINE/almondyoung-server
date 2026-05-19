@@ -57,6 +57,7 @@ export async function ProductTemplate({
                 productId={product.id}
                 pimMasterId={product.metadata?.pimMasterId as string}
                 countryCode={countryCode}
+                customer={customer}
               >
                 <ProductPreviewPrice
                   hasMembership={isMembershipGroup(customer?.groups)}
@@ -116,6 +117,7 @@ export async function ProductTemplate({
                 productId={product.id}
                 pimMasterId={product.metadata?.pimMasterId as string}
                 countryCode={countryCode}
+                customer={customer}
               />
             </div>
 
