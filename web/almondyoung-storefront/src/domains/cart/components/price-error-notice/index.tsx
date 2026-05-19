@@ -1,11 +1,13 @@
 "use client"
 
+import { useTranslations } from "next-intl"
 import { useRouter } from "next/navigation"
 
 const KAKAO_CHANNEL_URL = "https://pf.kakao.com/_xaxgxazs"
 
 export default function PriceErrorNotice() {
   const router = useRouter()
+  const t = useTranslations("cart.priceError")
 
   const handleRefresh = () => {
     router.refresh()
@@ -13,13 +15,13 @@ export default function PriceErrorNotice() {
 
   return (
     <div className="flex items-center justify-between text-sm text-gray-400">
-      <span>금액을 불러오지 못했어요</span>
+      <span>{t("message")}</span>
       <div className="flex gap-3">
         <button
           onClick={handleRefresh}
           className="underline underline-offset-2 hover:text-gray-600"
         >
-          새로고침
+          {t("refresh")}
         </button>
         <a
           href={KAKAO_CHANNEL_URL}
@@ -27,7 +29,7 @@ export default function PriceErrorNotice() {
           rel="noopener noreferrer"
           className="underline underline-offset-2 hover:text-gray-600"
         >
-          문의
+          {t("inquiry")}
         </a>
       </div>
     </div>

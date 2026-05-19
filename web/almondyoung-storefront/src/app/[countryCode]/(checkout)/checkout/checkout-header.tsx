@@ -2,8 +2,10 @@
 
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import Image from "next/image"
+import { useTranslations } from "next-intl"
 
 export default function CheckoutHeader({ title }: { title: string }) {
+  const t = useTranslations("checkout")
   return (
     <header className="flex w-full items-center justify-center self-stretch bg-white px-4 py-3 shadow-sm sm:px-10 sm:py-5">
       <div className="flex w-full max-w-6xl items-center justify-between">
@@ -13,7 +15,7 @@ export default function CheckoutHeader({ title }: { title: string }) {
             width={218}
             height={29}
             className="h-5 w-auto object-contain sm:h-[29px] sm:w-[218px]"
-            alt="아몬드 로고"
+            alt={t("logoAlt")}
           />
         </LocalizedClientLink>
 

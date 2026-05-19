@@ -6,6 +6,7 @@ import CartTotals from "@/components/shared/cart-totals"
 import Divider from "@/components/shared/divider"
 import { buildCartSummaryTotals } from "@/domains/cart/utils/build-cart-summary-totals"
 import { Loader2 } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { useMemo } from "react"
 
 import PriceErrorNotice from "../components/price-error-notice"
@@ -26,6 +27,7 @@ export default function Summary({
   onCheckout,
   isPendingCheckout,
 }: SummaryProps) {
+  const t = useTranslations("cart.summary")
   const selectedCount = selectedIds.size
   const totalsPreview = useMemo(
     () => buildCartSummaryTotals(cart, selectedIds),
@@ -40,7 +42,7 @@ export default function Summary({
 
   return (
     <div className="flex flex-col gap-y-4">
-      <h2 className="text-2xl font-semibold">주문 예상 금액</h2>
+      <h2 className="text-2xl font-semibold">{t("title")}</h2>
 
       {selectedCount > 0 && (
         <FreeShippingProgress itemSubtotal={totalsPreview.item_subtotal ?? 0} />
@@ -52,9 +54,7 @@ export default function Summary({
       {hasError && <PriceErrorNotice />}
 
       {selectedCount === 0 && !hasError && (
-        <p className="text-sm text-muted-foreground">
-          구매할 상품을 선택해주세요.
-        </p>
+        <p className="text-sm text-muted-foreground">{t("selectItems")}</p>
       )}
 
       <Button
@@ -66,7 +66,9 @@ export default function Summary({
         {isPendingCheckout && (
           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
         )}
-        {selectedCount > 0 ? `${selectedCount}개 상품 구매하기` : "구매하기"}
+        {selectedCount > 0
+          ? t("checkoutWithCount", { count: selectedCount })
+          : t("checkout")}
       </Button>
     </div>
   )
