@@ -46,6 +46,7 @@ export function WishlistButton({
       setOptimisticWishlisted(nextWishlisted)
       try {
         await toggleWishlist(productId)
+        router.refresh()
         if (nextWishlisted) {
           showActionToast({
             icon: (
