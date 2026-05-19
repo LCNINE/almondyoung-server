@@ -6,16 +6,18 @@ import { cn } from "@/lib/utils"
 import { showActionToast } from "@/components/shared/action-toast"
 import { AnimatedHeart } from "@/components/shared/animated-heart"
 import { Check, Heart, Minus, Plus, ShoppingCart } from "lucide-react"
-import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
 import { useTranslations } from "next-intl"
 import { Spinner } from "@/components/shared/spinner"
 import { toggleWishlist } from "@lib/api/users/wishlist"
+import { QuickAddDrawer } from "../quick-add-drawer"
 
 interface ProductQuickActionsProps {
   productId: string
   productHandle: string
+  productTitle?: string
+  productImage?: string
   variantId?: string
   isSingleOption: boolean
   isWishlisted?: boolean
@@ -31,7 +33,9 @@ interface ProductQuickActionsProps {
  */
 export function ProductQuickActions({
   productId,
-  productHandle,
+  productHandle: _productHandle,
+  productTitle = "",
+  productImage,
   variantId,
   isSingleOption,
   isWishlisted: initialWishlisted = false,
@@ -39,7 +43,6 @@ export function ProductQuickActions({
   onWishlistChange,
   isWelcomeMembership = false,
 }: ProductQuickActionsProps) {
-  const router = useRouter()
   const t = useTranslations("productCard")
   const [isPending, startTransition] = useTransition()
   const { addToCart, isLoading: isCartLoading } = useAddToCart()
@@ -48,6 +51,7 @@ export function ProductQuickActions({
   const [quantity, setQuantity] = useState(1)
   const [isAddedToCart, setIsAddedToCart] = useState(false)
   const [isWishlisted, setIsWishlisted] = useState(initialWishlisted)
+  const [showQuickAddDrawer, setShowQuickAddDrawer] = useState(false)
 
   // 찜하기 토글
   const handleWishlistToggle = (e: React.MouseEvent) => {
@@ -103,8 +107,8 @@ export function ProductQuickActions({
     e.stopPropagation()
 
     if (!isSingleOption) {
-      // 다중 옵션: 상세페이지로 이동
-      router.push(`/${countryCode}/products/${productHandle}`)
+      // 다중 옵션: 퀵 옵션 선택 Drawer
+      setShowQuickAddDrawer(true)
       return
     }
 
@@ -159,6 +163,16 @@ export function ProductQuickActions({
   }
 
   return (
+    <>
+    <QuickAddDrawer
+      open={showQuickAddDrawer}
+      onOpenChange={setShowQuickAddDrawer}
+      productId={productId}
+      productTitle={productTitle}
+      productImage={productImage}
+      countryCode={countryCode}
+      isWelcomeMembership={isWelcomeMembership}
+    />
     <div className="absolute right-2 bottom-2 flex flex-col items-end gap-1.5">
       {/* 찜하기 버튼 - 모바일에서는 항상 표시, 데스크탑에서는 호버 시 표시 */}
       <Button
@@ -249,5 +263,6 @@ export function ProductQuickActions({
         </div>
       )}
     </div>
+    </>
   )
 }

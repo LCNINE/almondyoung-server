@@ -7,5 +7,12 @@
   "loginRequired": "ログインが必要です。",
   "wishlistError": "処理中にエラーが発生しました。",
   "productNotFound": "商品情報が見つかりません。",
-  "welcomeMembershipLimit": "ウェルカム メンバーシップ商品は1個のみ購入可能です"
+  "welcomeMembershipLimit": "ウェルカム メンバーシップ商品は1個のみ購入可能です",
+  "quickAddTitle": "オプション選択",
+  "quickAddOutOfStock": "売り切れ",
+  "quickAddTotal": "合計金額",
+  "quickAddToCart": "カートに追加",
+  "quickAddToCartWithPrice": "{price} カートに追加",
+  "quickAddSelect": "オプションを選択してください",
+  "quickAddError": "オプション情報を読み込めませんでした。"
 }
