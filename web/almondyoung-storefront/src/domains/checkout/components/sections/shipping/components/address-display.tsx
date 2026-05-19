@@ -1,6 +1,7 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
+import { useTranslations } from "next-intl"
 
 interface AddressDisplayProps {
   addressName?: string | null
@@ -26,6 +27,7 @@ export function AddressDisplay({
   fullAddress,
   onChangeClick,
 }: AddressDisplayProps) {
+  const t = useTranslations("checkout.shipping")
   const hasNameInfo = addressName || name
   const hasAddressInfo = postalCode || address1 || address2 || fullAddress
 
@@ -36,23 +38,23 @@ export function AddressDisplay({
           <p className="mb-3 flex flex-col gap-2 text-[15px] font-semibold text-gray-900 lg:flex-row lg:items-center lg:text-lg">
             <AddressNameDisplay addressName={addressName} name={name} />
             <span className="hidden rounded bg-[#e8f6ea] px-2 py-[2px] text-[11px] font-semibold text-[#2ba24c] lg:inline">
-              기본 배송지
+              {t("defaultBadge")}
             </span>
           </p>
         )}
 
         {(phone || hasAddressInfo) && (
           <dl className="space-y-1.5 text-[13px] text-gray-700 lg:text-base">
-            <AddressRow label="연락처" value={phone} />
-            <AddressRow label="우편번호" value={postalCode} />
-            <AddressRow label="기본주소" value={address1 || fullAddress} />
-            <AddressRow label="상세주소" value={address2} />
+            <AddressRow label={t("contact")} value={phone} />
+            <AddressRow label={t("postalCode")} value={postalCode} />
+            <AddressRow label={t("address1")} value={address1 || fullAddress} />
+            <AddressRow label={t("address2")} value={address2} />
           </dl>
         )}
       </div>
 
       <Button type="button" variant="outline" onClick={onChangeClick}>
-        변경
+        {t("change")}
       </Button>
     </div>
   )

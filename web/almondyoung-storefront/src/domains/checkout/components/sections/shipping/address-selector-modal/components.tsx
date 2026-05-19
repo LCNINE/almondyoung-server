@@ -18,22 +18,25 @@ import {
   Star,
   Trash2,
 } from "lucide-react"
+import { useTranslations } from "next-intl"
 import type { AddressCardProps } from "./types"
 import { buildFullAddress, buildFullName } from "./utils"
 
 export function EmptyState() {
+  const t = useTranslations("checkout.shipping.selector")
   return (
     <div className="flex flex-col items-center justify-center py-8">
       <MapPin className="mb-2 h-8 w-8 text-gray-400" />
-      <p className="text-gray-500">저장된 배송지가 없습니다.</p>
+      <p className="text-gray-500">{t("emptySaved")}</p>
     </div>
   )
 }
 
 export function LoadingState() {
+  const t = useTranslations("checkout.shipping.selector")
   return (
     <div className="flex items-center justify-center py-8">
-      <div className="text-gray-500">불러오는 중...</div>
+      <div className="text-gray-500">{t("loading")}</div>
     </div>
   )
 }
@@ -47,6 +50,8 @@ export function AddressCard({
   onSetDefault,
   onDelete,
 }: AddressCardProps) {
+  const t = useTranslations("checkout.shipping.selector")
+  const tShipping = useTranslations("checkout.shipping")
   const fullAddress = buildFullAddress(address)
   const name = buildFullName(address)
   const addressName =
@@ -83,7 +88,7 @@ export function AddressCard({
             </span>
             {address.is_default_shipping ? (
               <span className="rounded bg-[#e8f6ea] px-2 py-0.5 text-[11px] font-semibold text-[#2ba24c]">
-                기본 배송지
+                {tShipping("defaultBadge")}
               </span>
             ) : null}
           </div>
@@ -93,9 +98,12 @@ export function AddressCard({
             </p>
           ) : null}
           <dl className="mt-1 space-y-1 text-sm text-gray-600">
-            <AddressRow label="우편번호" value={postalCode} />
-            <AddressRow label="기본주소" value={address1 || fullAddress} />
-            <AddressRow label="상세주소" value={address2} />
+            <AddressRow label={tShipping("postalCode")} value={postalCode} />
+            <AddressRow
+              label={tShipping("address1")}
+              value={address1 || fullAddress}
+            />
+            <AddressRow label={tShipping("address2")} value={address2} />
           </dl>
         </div>
 
@@ -116,12 +124,12 @@ export function AddressCard({
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={onEdit}>
                 <Pencil className="mr-2 h-4 w-4" />
-                수정
+                {t("edit")}
               </DropdownMenuItem>
               {!address.is_default_shipping ? (
                 <DropdownMenuItem onClick={onSetDefault}>
                   <Star className="mr-2 h-4 w-4" />
-                  기본 배송지로 설정
+                  {t("setDefault")}
                 </DropdownMenuItem>
               ) : null}
               <DropdownMenuItem
@@ -129,7 +137,7 @@ export function AddressCard({
                 className="text-red-600 focus:text-red-600"
               >
                 <Trash2 className="mr-2 h-4 w-4" />
-                삭제
+                {t("delete")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -153,6 +161,7 @@ interface AddNewAddressButtonProps {
 }
 
 export function AddNewAddressButton({ onClick }: AddNewAddressButtonProps) {
+  const t = useTranslations("checkout.shipping.selector")
   return (
     <Button
       type="button"
@@ -160,7 +169,8 @@ export function AddNewAddressButton({ onClick }: AddNewAddressButtonProps) {
       className="w-full"
       onClick={onClick}
     >
-      <Plus className="mr-2 h-4 w-4" />새 배송지 추가
+      <Plus className="mr-2 h-4 w-4" />
+      {t("addNew")}
     </Button>
   )
 }

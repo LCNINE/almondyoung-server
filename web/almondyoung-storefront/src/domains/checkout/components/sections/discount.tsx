@@ -16,6 +16,7 @@ import {
 import type { ShippingInfo } from "@/lib/types/ui/cart"
 import type { Promotion } from "@/lib/types/ui/promotion"
 import { formatPrice } from "@/lib/utils/price-utils"
+import { useTranslations } from "next-intl"
 import { useCallback, useState, useTransition } from "react"
 import { toast } from "sonner"
 
@@ -40,6 +41,7 @@ export const DiscountSection = ({
   appliedPromotionCode,
   onCouponApplied,
 }: DiscountSectionProps) => {
+  const t = useTranslations("checkout.discount")
   const [isPending, startTransition] = useTransition()
   const [selectedCoupon, setSelectedCoupon] = useState<string>(
     appliedPromotionCode ?? ""
@@ -61,11 +63,11 @@ export const DiscountSection = ({
           onCouponApplied?.()
         } catch (error) {
           console.error("쿠폰 적용 실패:", error)
-          toast.error("쿠폰 적용에 실패했습니다. 잠시 후 다시 시도해주세요.")
+          toast.error(t("toasts.couponApplyFailed"))
         }
       })
     },
-    [cartId, selectedCoupon, onCouponApplied]
+    [cartId, selectedCoupon, onCouponApplied, t]
   )
 
   const handleCouponRemove = useCallback(() => {
@@ -98,18 +100,23 @@ export const DiscountSection = ({
   // 총 할인 금액 = 멤버십 할인 + 쿠폰 할인
   const totalDiscount = membershipDiscount + couponDiscount
 
+  const formatPromoLabel = (promo: Promotion) =>
+    promo.application_method.type === "percentage"
+      ? t("percentDiscount", { value: promo.application_method.value })
+      : t("amountDiscount", { amount: formatPrice(promo.application_method.value) })
+
   return (
     <section aria-labelledby="discount-heading" className="mb-8">
       <h2
         id="discount-heading"
         className="mb-3 text-base font-bold text-gray-900 lg:text-xl"
       >
-        할인 / 부가결제
+        {t("title")}
       </h2>
 
       <div className="flex w-full flex-col gap-5 rounded-md border border-gray-200 bg-white p-4 lg:gap-6 lg:rounded-[10px] lg:p-6">
         <DiscountRow
-          label="총 할인 금액"
+          label={t("totalLabel")}
           isMembership={isMembership}
           totalDiscount={totalDiscount}
           membershipDiscount={membershipDiscount}
@@ -124,10 +131,12 @@ export const DiscountSection = ({
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-gray-900 lg:text-sm">
-              쿠폰
+              {t("couponLabel")}
             </span>
             <span className="text-xs text-gray-500 lg:text-sm">
-              사용가능 {promotions.length > 0 && `(${promotions.length})`}
+              {promotions.length > 0
+                ? t("availableCount", { count: promotions.length })
+                : t("available")}
             </span>
           </div>
 
@@ -141,9 +150,7 @@ export const DiscountSection = ({
                       (p) => p.code === selectedCoupon
                     )
                     if (!promo) return selectedCoupon
-                    return promo.application_method.type === "percentage"
-                      ? `${promo.application_method.value}% 할인`
-                      : `${formatPrice(promo.application_method.value)}원 할인`
+                    return formatPromoLabel(promo)
                   })()}
                 </span>
                 <span className="text-[10px] text-gray-500 lg:text-xs">
@@ -155,7 +162,7 @@ export const DiscountSection = ({
                 onClick={handleCouponRemove}
                 disabled={isPending}
                 className="flex h-5 w-5 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-200 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
-                aria-label="쿠폰 제거"
+                aria-label={t("removeAria")}
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -178,19 +185,17 @@ export const DiscountSection = ({
                 <SelectValue
                   placeholder={
                     isPending
-                      ? "쿠폰 적용 중..."
+                      ? t("applying")
                       : promotions.length === 0
-                        ? "사용 가능한 쿠폰이 없습니다"
-                        : `쿠폰을 선택해주세요 (${promotions.length})`
+                        ? t("noCoupons")
+                        : t("selectPlaceholder", { count: promotions.length })
                   }
                 />
               </SelectTrigger>
               <SelectContent>
                 {promotions.map((promo) => (
                   <SelectItem key={promo.id} value={promo.code}>
-                    {promo.application_method.type === "percentage"
-                      ? `${promo.application_method.value}% 할인`
-                      : `${formatPrice(promo.application_method.value)}원 할인`}
+                    {formatPromoLabel(promo)}
                     {promo.code && ` (${promo.code})`}
                   </SelectItem>
                 ))}
@@ -219,9 +224,9 @@ const DiscountRow = ({
   totalDiscount,
   membershipDiscount,
   couponDiscount,
-  shipping,
   appliedPromotion,
 }: DiscountRowProps) => {
+  const t = useTranslations("checkout.discount")
   const hasMembershipDiscount = isMembership && membershipDiscount > 0
   const hasDiscount = totalDiscount > 0
   const hasCouponDiscount = couponDiscount > 0
@@ -233,7 +238,9 @@ const DiscountRow = ({
           {label}
         </PriceRow.Label>
         <PriceRow.Value size="base" weight="semibold">
-          {hasDiscount ? `-${formatPrice(totalDiscount)}원` : "0원"}
+          {hasDiscount
+            ? t("amountMinusWon", { amount: formatPrice(totalDiscount) })
+            : t("zero")}
         </PriceRow.Value>
       </PriceRow>
 
@@ -246,25 +253,21 @@ const DiscountRow = ({
             className="flex items-center gap-1"
           >
             <CheckoutMembershipTagIcon />
-            멤버십 할인
+            {t("membershipDiscount")}
           </PriceRow.Label>
           <PriceRow.Value size="xs" tone="membership" weight="medium">
-            -{formatPrice(membershipDiscount)}원
+            {t("amountMinusWon", { amount: formatPrice(membershipDiscount) })}
           </PriceRow.Value>
         </PriceRow>
       )}
 
       {hasCouponDiscount && appliedPromotion && (
         <PriceRow>
-          <PriceRow.Label
-            size="xs"
-            tone="accent"
-            weight="medium"
-          >
-            쿠폰 할인
+          <PriceRow.Label size="xs" tone="accent" weight="medium">
+            {t("couponDiscount")}
           </PriceRow.Label>
           <PriceRow.Value size="xs" tone="discount" weight="medium">
-            -{formatPrice(couponDiscount)}원
+            {t("amountMinusWon", { amount: formatPrice(couponDiscount) })}
           </PriceRow.Value>
         </PriceRow>
       )}

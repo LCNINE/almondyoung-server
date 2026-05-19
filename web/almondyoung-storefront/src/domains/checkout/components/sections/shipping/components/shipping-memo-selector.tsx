@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
+import { useTranslations } from "next-intl"
 import { SHIPPING_MEMO_OPTIONS } from "../constants"
 import type { ShippingMemo } from "../types"
 
@@ -26,6 +27,7 @@ export function ShippingMemoSelector({
   shippingMemo,
   onShippingMemoChange,
 }: ShippingMemoSelectorProps) {
+  const t = useTranslations("checkout.shipping.memo")
   const { type, custom, hasEntrance, entrancePassword } = shippingMemo
 
   const updateMemo = (updates: Partial<ShippingMemo>) => {
@@ -44,7 +46,7 @@ export function ShippingMemoSelector({
 
   return (
     <fieldset className="mt-4 space-y-3">
-      <legend className="sr-only">배송 메모</legend>
+      <legend className="sr-only">{t("legend")}</legend>
 
       {/* 메모 타입 선택 */}
       <Select value={type} onValueChange={handleTypeChange}>
@@ -53,9 +55,9 @@ export function ShippingMemoSelector({
             "h-auto w-full rounded border border-gray-300 bg-white px-3 py-2.5 text-[13px] text-gray-700 lg:rounded-[5px] lg:px-4 lg:py-3.5 lg:text-sm",
             !type && "text-gray-400"
           )}
-          aria-label="배송메모 선택"
+          aria-label={t("selectAria")}
         >
-          <SelectValue placeholder="배송메모를 선택해주세요" />
+          <SelectValue placeholder={t("placeholder")} />
         </SelectTrigger>
         <SelectContent>
           {SHIPPING_MEMO_OPTIONS.map((option) => (
@@ -64,7 +66,7 @@ export function ShippingMemoSelector({
               value={option.value}
               className="cursor-pointer py-2.5 text-[13px] lg:text-sm"
             >
-              {option.label}
+              {t(`options.${option.labelKey}`)}
             </SelectItem>
           ))}
         </SelectContent>
@@ -110,10 +112,11 @@ function EntranceSection({
   onHasEntranceChange: (checked: boolean) => void
   onPasswordChange: (value: string) => void
 }) {
+  const t = useTranslations("checkout.shipping.memo.entrance")
   return (
     <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
       <h4 className="mb-3 text-[13px] font-semibold text-gray-900 lg:text-sm">
-        공동현관 출입번호
+        {t("heading")}
       </h4>
 
       <RadioGroup
@@ -129,7 +132,7 @@ function EntranceSection({
               htmlFor="entrance-yes"
               className="cursor-pointer text-[13px] font-normal text-gray-700 lg:text-sm"
             >
-              공동현관 출입비밀번호가 있어요
+              {t("hasEntrance")}
             </Label>
           </div>
 
@@ -139,7 +142,7 @@ function EntranceSection({
               type="text"
               value={entrancePassword}
               onChange={(e) => onPasswordChange(e.target.value)}
-              placeholder="예: #1234"
+              placeholder={t("passwordPlaceholder")}
               maxLength={20}
               className="bg-background ml-6 h-auto w-[calc(100%-24px)] rounded border border-gray-300 px-3 py-2.5 text-[13px] placeholder:text-gray-400 focus:border-gray-400 focus:bg-white lg:rounded-[5px] lg:px-4 lg:py-3.5 lg:text-sm"
             />
@@ -153,14 +156,13 @@ function EntranceSection({
             htmlFor="entrance-no"
             className="cursor-pointer text-[13px] font-normal text-gray-700 lg:text-sm"
           >
-            비밀번호없이 출입 가능해요
+            {t("noEntrance")}
           </Label>
         </div>
       </RadioGroup>
 
       <p className="mt-3 text-[11px] leading-relaxed text-gray-500 lg:text-xs">
-        공동현관 출입번호는 주문하신 상품을 배송하는 용도로 이용되며, 정보는
-        배송 완료 후 삭제됩니다.
+        {t("notice")}
       </p>
     </div>
   )
@@ -176,16 +178,17 @@ function CustomMemoInput({
   value: string
   onChange: (value: string) => void
 }) {
+  const t = useTranslations("checkout.shipping.memo")
   return (
     <div className="relative">
       <Input
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="배송 시 요청사항을 입력해주세요"
+        placeholder={t("customPlaceholder")}
         maxLength={50}
         className="h-auto w-full rounded border border-gray-300 px-3 py-2.5 pr-14 text-[13px] text-gray-700 placeholder:text-gray-400 focus:border-gray-400 focus:bg-white lg:rounded-[5px] lg:px-4 lg:py-3.5 lg:text-sm"
-        aria-label="배송메모 직접 입력"
+        aria-label={t("customAria")}
       />
       <span className="absolute top-1/2 right-3 -translate-y-1/2 text-[11px] text-gray-400 lg:text-xs">
         {value.length}/50

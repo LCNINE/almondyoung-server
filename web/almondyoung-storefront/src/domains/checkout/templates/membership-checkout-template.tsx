@@ -11,6 +11,7 @@ import { MobileOrderSummary } from "domains/checkout/components/order-summary"
 import { PaymentDetailSidebar } from "domains/checkout/components/payment-detail-sidebar"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
+import { useTranslations } from "next-intl"
 import { useParams, useRouter } from "next/navigation"
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
@@ -28,6 +29,7 @@ export default function MembershipCheckoutTemplate({
   planId,
   price,
 }: MembershipCheckoutTemplateProps) {
+  const t = useTranslations("checkout.membership")
   const router = useRouter()
   const params = useParams()
   const countryCode = params.countryCode as string
@@ -61,11 +63,11 @@ export default function MembershipCheckoutTemplate({
 
   const handlePayment = async () => {
     if (!agreed) {
-      toast.error("결제 및 환불 정책에 동의해주세요.")
+      toast.error(t("toasts.agreeRequired"))
       return
     }
     if (!user?.id) {
-      toast.error("로그인이 필요합니다.")
+      toast.error(t("toasts.loginRequired"))
       return
     }
 
@@ -102,13 +104,19 @@ export default function MembershipCheckoutTemplate({
           setLoading(false)
           const retryErr = retryError as Error
           console.error("멤버십 결제 재시도 실패:", retryError)
-          toast.error(retryErr instanceof Error ? retryErr.message : "결제 요청에 실패했습니다.")
+          toast.error(
+            retryErr instanceof Error
+              ? retryErr.message
+              : t("toasts.paymentRequestFailed")
+          )
         }
         return
       }
 
       console.error("멤버십 결제 요청 실패:", error)
-      toast.error(err instanceof Error ? err.message : "결제 요청에 실패했습니다.")
+      toast.error(
+        err instanceof Error ? err.message : t("toasts.paymentRequestFailed")
+      )
     }
   }
 
@@ -124,38 +132,52 @@ export default function MembershipCheckoutTemplate({
           <div className="lg:max-w-[820px] lg:min-w-[420px] lg:flex-1">
             {/* 멤버십 플랜 요약 */}
             <section className="mb-4 rounded-[10px] border border-gray-200 bg-white p-6">
-              <h2 className="text-lg font-bold text-gray-900">멤버십 플랜</h2>
+              <h2 className="text-lg font-bold text-gray-900">
+                {t("planSectionTitle")}
+              </h2>
               <div className="mt-3 flex items-baseline justify-between">
                 <div>
-                  <p className="text-sm text-gray-500">선택한 플랜</p>
+                  <p className="text-sm text-gray-500">
+                    {t("selectedPlanLabel")}
+                  </p>
                   <p className="text-lg font-semibold text-gray-900">{planName}</p>
                 </div>
                 <p className="text-xl font-bold text-[#F29219]">
-                  {price.toLocaleString()}원
+                  {t("priceWon", { amount: price.toLocaleString() })}
                 </p>
               </div>
             </section>
 
             {/* 결제 정책 */}
             <section className="mb-4 rounded-[10px] border border-gray-200 bg-white p-6">
-              <h2 className="mb-3 text-base font-bold text-gray-900">결제 안내</h2>
+              <h2 className="mb-3 text-base font-bold text-gray-900">
+                {t("noticeTitle")}
+              </h2>
 
               <div className="space-y-2 text-sm text-gray-600">
-                <p className="font-medium text-gray-800">📌 1회 결제 (자동결제 없음)</p>
+                <p className="font-medium text-gray-800">{t("oneTimeHeader")}</p>
                 <ul className="ml-4 list-disc space-y-1 text-gray-600">
-                  <li>1회 결제로, 자동결제는 진행되지 않습니다.</li>
-                  <li>결제 즉시 이용이 시작되며, <span className="font-medium text-gray-800">이용 시작 후 환불은 불가</span>합니다.</li>
-                  <li>결제한 기간 동안 서비스 이용이 가능합니다.</li>
+                  <li>{t("oneTimeNoAutoPay")}</li>
+                  <li>
+                    {t("immediateNoRefundPrefix")}
+                    <span className="font-medium text-gray-800">
+                      {t("immediateNoRefundEmphasis")}
+                    </span>
+                    {t("immediateNoRefundSuffix")}
+                  </li>
+                  <li>{t("paidPeriodAccess")}</li>
                 </ul>
               </div>
 
               {/* 환불 정책 공통 */}
               <div className="mt-4 rounded-lg bg-gray-50 p-3 text-xs text-gray-500">
-                <p className="mb-1 font-semibold text-gray-600">[환불 정책]</p>
+                <p className="mb-1 font-semibold text-gray-600">
+                  {t("refundPolicyTitle")}
+                </p>
                 <ul className="space-y-0.5">
-                  <li>· 단순 변심에 의한 환불은 불가합니다.</li>
-                  <li>· 서비스 장애, 기술적 오류 등으로 정상적인 이용이 어려운 경우, 이용하지 못한 기간에 대해 일부 환불이 진행될 수 있습니다.</li>
-                  <li>· 환불 여부 및 금액은 내부 정책에 따라 산정됩니다.</li>
+                  <li>{t("refund1")}</li>
+                  <li>{t("refund2")}</li>
+                  <li>{t("refund3")}</li>
                 </ul>
               </div>
 
@@ -171,7 +193,7 @@ export default function MembershipCheckoutTemplate({
                   htmlFor="policy-agree"
                   className="cursor-pointer text-sm leading-snug text-gray-700"
                 >
-                  결제 및 환불 정책을 확인하였으며 이에 동의합니다.
+                  {t("agree")}
                 </Label>
               </div>
             </section>

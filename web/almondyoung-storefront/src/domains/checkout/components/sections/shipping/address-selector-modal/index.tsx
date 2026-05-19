@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
+import { useTranslations } from "next-intl"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,6 +53,7 @@ export function ShippingAddressSelectorModal({
   onEditAddress,
   currentAddressId,
 }: ShippingAddressSelectorProps) {
+  const t = useTranslations("checkout.shipping.selector")
   const router = useRouter()
   const isDesktop = useMediaQuery("(min-width: 768px)")
   const [addresses, setAddresses] = useState<HttpTypes.StoreCustomerAddress[]>(
@@ -119,16 +121,16 @@ export function ShippingAddressSelectorModal({
         cartId
       )
 
-      toast.success("배송지가 변경되었습니다.")
+      toast.success(t("toasts.changed"))
       onOpenChange(false)
       router.refresh()
     } catch (error) {
       console.error("배송지 변경 실패:", error)
-      toast.error("배송지 변경에 실패했습니다.")
+      toast.error(t("toasts.changeFailed"))
     } finally {
       setIsSubmitting(false)
     }
-  }, [selectedId, addresses, onOpenChange, router, cartId])
+  }, [selectedId, addresses, onOpenChange, router, cartId, t])
 
   const handleEdit = useCallback(
     (e: React.MouseEvent, address: HttpTypes.StoreCustomerAddress) => {
@@ -148,19 +150,19 @@ export function ShippingAddressSelectorModal({
         const result = await setDefaultShippingAddress(addressId)
 
         if (result.success) {
-          toast.success("기본 배송지로 설정되었습니다.")
+          toast.success(t("toasts.defaultSet"))
           await fetchAddresses()
         } else {
-          toast.error("기본 배송지 설정에 실패했습니다.")
+          toast.error(t("toasts.defaultSetFailed"))
         }
       } catch (error) {
         console.error("기본 배송지 설정 실패:", error)
-        toast.error("기본 배송지 설정에 실패했습니다.")
+        toast.error(t("toasts.defaultSetFailed"))
       } finally {
         setActionLoading(null)
       }
     },
-    [fetchAddresses]
+    [fetchAddresses, t]
   )
 
   const handleDeleteClick = useCallback(
@@ -181,21 +183,21 @@ export function ShippingAddressSelectorModal({
       const result = await deleteCustomerAddress(deleteConfirmId)
 
       if (result.success) {
-        toast.success("배송지가 삭제되었습니다.")
+        toast.success(t("toasts.deleted"))
         if (selectedId === deleteConfirmId) {
           setSelectedId(null)
         }
         await fetchAddresses()
       } else {
-        toast.error("배송지 삭제에 실패했습니다.")
+        toast.error(t("toasts.deleteFailed"))
       }
     } catch (error) {
       console.error("배송지 삭제 실패:", error)
-      toast.error("배송지 삭제에 실패했습니다.")
+      toast.error(t("toasts.deleteFailed"))
     } finally {
       setActionLoading(null)
     }
-  }, [deleteConfirmId, selectedId, fetchAddresses])
+  }, [deleteConfirmId, selectedId, fetchAddresses, t])
 
   const handleAddNew = useCallback(() => {
     onOpenChange(false)
@@ -245,18 +247,18 @@ export function ShippingAddressSelectorModal({
     >
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>배송지 삭제</AlertDialogTitle>
+          <AlertDialogTitle>{t("deleteDialog.title")}</AlertDialogTitle>
           <AlertDialogDescription>
-            이 배송지를 삭제하시겠습니까? 삭제된 배송지는 복구할 수 없습니다.
+            {t("deleteDialog.description")}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>취소</AlertDialogCancel>
+          <AlertDialogCancel>{t("deleteDialog.cancel")}</AlertDialogCancel>
           <AlertDialogAction
             onClick={handleDeleteConfirm}
             className="bg-red-600 hover:bg-red-700"
           >
-            삭제
+            {t("deleteDialog.confirm")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -269,7 +271,7 @@ export function ShippingAddressSelectorModal({
         <Dialog open={open} onOpenChange={onOpenChange}>
           <DialogContent className="sm:max-w-[425px]">
             <DialogHeader>
-              <DialogTitle>배송지 선택</DialogTitle>
+              <DialogTitle>{t("title")}</DialogTitle>
             </DialogHeader>
             <div className="py-4">{content}</div>
             <div className="flex justify-end gap-2">
@@ -279,14 +281,14 @@ export function ShippingAddressSelectorModal({
                 onClick={() => onOpenChange(false)}
                 disabled={isSubmitting}
               >
-                취소
+                {t("cancel")}
               </Button>
               <Button
                 type="button"
                 onClick={handleSelect}
                 disabled={isSelectDisabled}
               >
-                {isSubmitting ? "변경 중..." : "선택 완료"}
+                {isSubmitting ? t("changing") : t("selectDone")}
               </Button>
             </div>
           </DialogContent>
@@ -301,7 +303,7 @@ export function ShippingAddressSelectorModal({
       <Drawer open={open} onOpenChange={onOpenChange}>
         <DrawerContent>
           <DrawerHeader className="text-left">
-            <DrawerTitle>배송지 선택</DrawerTitle>
+            <DrawerTitle>{t("title")}</DrawerTitle>
           </DrawerHeader>
           <div className="px-4">{content}</div>
           <DrawerFooter className="pt-4">
@@ -310,11 +312,11 @@ export function ShippingAddressSelectorModal({
               onClick={handleSelect}
               disabled={isSelectDisabled}
             >
-              {isSubmitting ? "변경 중..." : "선택 완료"}
+              {isSubmitting ? t("changing") : t("selectDone")}
             </Button>
             <DrawerClose asChild>
               <Button variant="outline" disabled={isSubmitting}>
-                취소
+                {t("cancel")}
               </Button>
             </DrawerClose>
           </DrawerFooter>

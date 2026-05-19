@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { ChevronUp, Loader2 } from "lucide-react"
 import { AnimatePresence, motion } from "framer-motion"
+import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
 import { HttpTypes } from "@medusajs/types"
@@ -27,6 +28,9 @@ export default function MobileCheckoutBar({
   onCheckout,
   isPendingCheckout,
 }: MobileCheckoutBarProps) {
+  const t = useTranslations("cart")
+  const tBar = useTranslations("cart.mobileBar")
+  const tSummary = useTranslations("cart.summary")
   const [isExpanded, setIsExpanded] = useState(false)
   const [showScrollFade, setShowScrollFade] = useState(false)
 
@@ -96,24 +100,24 @@ export default function MobileCheckoutBar({
           >
             <div className="px-4 py-3 text-sm">
               <div className="flex justify-between">
-                <span className="text-gray-600">멤버십 할인</span>
+                <span className="text-gray-600">{tSummary("membershipDiscount")}</span>
                 <span className="text-destructive">
-                  -{formatPrice(membershipDiscount)}원
+                  -{formatPrice(membershipDiscount)}{t("won")}
                 </span>
               </div>
               {(cart.discount_total ?? 0) > 0 && (
                 <div className="mt-1 flex justify-between">
-                  <span className="text-gray-600">쿠폰/프로모션</span>
+                  <span className="text-gray-600">{tSummary("couponDiscount")}</span>
                   <span className="text-destructive">
-                    -{formatPrice(cart.discount_total ?? 0)}원
+                    -{formatPrice(cart.discount_total ?? 0)}{t("won")}
                   </span>
                 </div>
               )}
               <div className="mt-1 flex justify-between">
-                <span className="text-gray-600">배송비</span>
+                <span className="text-gray-600">{tSummary("shipping")}</span>
                 <span>
                   {cart.shipping_total != null
-                    ? `${formatPrice(cart.shipping_total)}원`
+                    ? `${formatPrice(cart.shipping_total)}${t("won")}`
                     : "-"}
                 </span>
               </div>
@@ -130,7 +134,7 @@ export default function MobileCheckoutBar({
               <PriceErrorNotice />
             </div>
             <Button className="h-12 w-full" disabled>
-              구매하기
+              {tBar("checkout")}
             </Button>
           </>
         ) : (
@@ -146,7 +150,7 @@ export default function MobileCheckoutBar({
                       : "text-destructive active:bg-destructive/5"
                   }`}
                 >
-                  총 {formatPrice(membershipDiscount)}원 할인
+                  {tBar("discountTotal", { amount: formatPrice(membershipDiscount) })}
                   <motion.span
                     animate={{ rotate: isExpanded ? 180 : 0 }}
                     transition={{ duration: 0.2 }}
@@ -165,23 +169,23 @@ export default function MobileCheckoutBar({
                     <div className="flex items-baseline gap-2">
                       {membershipDiscount > 0 && (
                         <span className="text-sm text-gray-400 line-through">
-                          {formatPrice(originalTotal)}원
+                          {formatPrice(originalTotal)}{t("won")}
                         </span>
                       )}
                       <span className="text-xl font-bold">
-                        {formatPrice(selectedTotal)}원
+                        {formatPrice(selectedTotal)}{t("won")}
                       </span>
                     </div>
                     <span className="text-xs text-gray-500">
-                      배송비{" "}
+                      {tSummary("shipping")}{" "}
                       {cart.shipping_total != null
-                        ? `${formatPrice(cart.shipping_total)}원`
+                        ? `${formatPrice(cart.shipping_total)}${t("won")}`
                         : "-"}
                     </span>
                   </>
                 ) : (
                   <span className="text-sm text-muted-foreground">
-                    상품을 선택해주세요
+                    {tBar("selectItems")}
                   </span>
                 )}
               </div>
@@ -201,8 +205,8 @@ export default function MobileCheckoutBar({
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               )}
               {selectedCount > 0
-                ? `총 ${selectedCount}개 상품 구매하기`
-                : "구매하기"}
+                ? tBar("checkoutWithCount", { count: selectedCount })
+                : tBar("checkout")}
             </Button>
           </>
         )}

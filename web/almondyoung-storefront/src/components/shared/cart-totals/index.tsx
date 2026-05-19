@@ -2,6 +2,7 @@
 
 import { formatPrice } from "@/lib/utils/price-utils"
 import { calculateCartDiscount } from "domains/cart/utils/calculate-discount"
+import { useTranslations } from "next-intl"
 import React from "react"
 
 type CartItem = {
@@ -22,13 +23,16 @@ type CartTotalsProps = {
   }
 }
 
-/** 금액을 안전하게 포맷 (값이 없으면 "-" 반환) */
-const safeFormatPrice = (value: number | null | undefined): string => {
-  if (value === null || value === undefined) return "-"
-  return `${formatPrice(value)}원`
-}
-
 const CartTotals: React.FC<CartTotalsProps> = ({ totals }) => {
+  const t = useTranslations("cart")
+  const ts = useTranslations("cart.summary")
+
+  /** 금액을 안전하게 포맷 (값이 없으면 "-" 반환) */
+  const safeFormatPrice = (value: number | null | undefined): string => {
+    if (value === null || value === undefined) return "-"
+    return `${formatPrice(value)}${t("won")}`
+  }
+
   const {
     total, // 최종 결제 금액
     item_subtotal, // 총 상품 가격
@@ -43,7 +47,7 @@ const CartTotals: React.FC<CartTotalsProps> = ({ totals }) => {
     <div>
       <div className="txt-medium text-ui-fg-subtle flex flex-col gap-y-2">
         <div className="flex items-center justify-between">
-          <span>총 상품 가격</span>
+          <span>{ts("subtotal")}</span>
           <span data-testid="cart-subtotal" data-value={item_subtotal ?? ""}>
             {safeFormatPrice(item_subtotal)}
           </span>
@@ -51,32 +55,32 @@ const CartTotals: React.FC<CartTotalsProps> = ({ totals }) => {
 
         {membershipDiscount > 0 && (
           <div className="flex items-center justify-between">
-            <span>멤버십 할인</span>
+            <span>{ts("membershipDiscount")}</span>
             <span
               className="text-destructive"
               data-testid="cart-membership-discount"
               data-value={membershipDiscount}
             >
-              -{formatPrice(membershipDiscount)}원
+              -{formatPrice(membershipDiscount)}{t("won")}
             </span>
           </div>
         )}
 
         {!!discount_total && (
           <div className="flex items-center justify-between">
-            <span>쿠폰/프로모션 할인</span>
+            <span>{ts("couponDiscount")}</span>
             <span
               className="text-destructive"
               data-testid="cart-discount"
               data-value={discount_total}
             >
-              -{formatPrice(discount_total)}원
+              -{formatPrice(discount_total)}{t("won")}
             </span>
           </div>
         )}
 
         <div className="flex items-center justify-between">
-          <span>배송비</span>
+          <span>{ts("shipping")}</span>
           <span data-testid="cart-shipping" data-value={shipping_total ?? ""}>
             {safeFormatPrice(shipping_total)}
           </span>
@@ -84,7 +88,7 @@ const CartTotals: React.FC<CartTotalsProps> = ({ totals }) => {
       </div>
       <div className="my-4 h-px w-full border-b border-gray-200" />
       <div className="text-ui-fg-base txt-medium mb-2 flex items-center justify-between">
-        <span>총 결제 금액</span>
+        <span>{ts("totalPayment")}</span>
         <span
           className="txt-xlarge-plus"
           data-testid="cart-total"

@@ -491,7 +491,327 @@
   "cart": {
     "emptyTitle": "カートに商品がありません",
     "emptyDescription": "お気に入りの商品をカートに入れてください。",
-    "shopNow": "商品を探しに行く"
+    "shopNow": "商品を探しに行く",
+    "notFound": {
+      "metaTitle": "カートが見つかりません",
+      "metaDescription": "ご指定のカートは見つかりませんでした",
+      "title": "カートが見つかりません",
+      "description": "ご指定のカートは存在しないか、有効期限が切れています。",
+      "backHome": "ショッピングを続ける"
+    },
+    "header": {
+      "title": "カート",
+      "stepCheckout": "注文・決済",
+      "stepDone": "完了"
+    },
+    "items": {
+      "tableProduct": "商品",
+      "tableQuantity": "数量",
+      "tableUnitPrice": "単価",
+      "tableTotal": "小計",
+      "deleteSelected": "選択削除",
+      "deleteSelectedCount": "選択削除 ({count})",
+      "deleteSelectedSuccess": "{count}件の商品を削除しました。",
+      "deleteSelectedError": "削除に失敗しました。もう一度お試しください。",
+      "deleteAria": "削除",
+      "noImage": "画像なし",
+      "quantityUpdateFail": "数量の変更に失敗しました",
+      "deleteItemError": "一時的なエラーが発生しました。しばらくしてから再度お試しください。",
+      "quantityMinError": "数量は1以上にしてください。",
+      "quantityDialogTitle": "数量を入力してください",
+      "cancel": "キャンセル",
+      "confirm": "確認"
+    },
+    "summary": {
+      "title": "ご注文金額",
+      "subtotal": "商品合計",
+      "membershipDiscount": "メンバーシップ割引",
+      "couponDiscount": "クーポン・プロモーション",
+      "shipping": "送料",
+      "totalPayment": "お支払い合計",
+      "selectItems": "ご購入される商品を選択してください。",
+      "checkout": "購入する",
+      "checkoutWithCount": "{count}点の商品を購入する",
+      "checkoutFailed": "注文の進行に失敗しました。もう一度お試しください。"
+    },
+    "mobileBar": {
+      "discountTotal": "合計{amount}ウォン割引",
+      "selectItems": "商品を選択してください",
+      "checkout": "購入する",
+      "checkoutWithCount": "合計{count}点を購入する"
+    },
+    "freeShipping": {
+      "reached": "送料無料が適用されます!",
+      "remaining": "あと{amount}ウォンで送料無料"
+    },
+    "priceError": {
+      "message": "金額を取得できませんでした",
+      "refresh": "再読み込み",
+      "inquiry": "お問い合わせ"
+    },
+    "won": "ウォン"
+  },
+  "checkout": {
+    "metaTitle": "注文・決済",
+    "logoAlt": "アーモンドロゴ",
+    "logoAltAlmondyoung": "アーモンドヤング",
+    "header": {
+      "title": "注文・決済",
+      "breadcrumbCurrent": "注文・決済",
+      "breadcrumbDone": "完了",
+      "mobileTitle": "注文書作成",
+      "closeAria": "閉じる"
+    },
+    "cta": {
+      "mobileAgreement": "注文内容を確認し、情報提供に同意します。",
+      "pcAgreement": "規約および注文内容を確認し、情報提供等に同意します。",
+      "processing": "処理中...",
+      "pay": "決済する",
+      "payWithAmount": "{amount} 決済する"
+    },
+    "shipping": {
+      "title": "配送先",
+      "defaultBadge": "基本配送先",
+      "contact": "連絡先",
+      "postalCode": "郵便番号",
+      "address1": "基本住所",
+      "address2": "詳細住所",
+      "change": "変更",
+      "empty": {
+        "title": "配送先情報がありません",
+        "description": "配送先を登録してください。",
+        "savedAddress": "保存済みの配送先",
+        "addNew": "新しい配送先を追加"
+      },
+      "memo": {
+        "legend": "配送メモ",
+        "selectAria": "配送メモ選択",
+        "placeholder": "配送メモを選択してください",
+        "options": {
+          "door": "玄関前に置いてください",
+          "security": "守衛室に預けてください",
+          "parcelBox": "宅配ボックスに入れてください",
+          "direct": "直接受け取ります",
+          "other": "その他(直接入力)"
+        },
+        "entrance": {
+          "heading": "共同玄関の暗証番号",
+          "hasEntrance": "共同玄関の暗証番号があります",
+          "passwordPlaceholder": "例: #1234",
+          "noEntrance": "暗証番号なしで入れます",
+          "notice": "共同玄関の暗証番号は配送のためにのみ利用され、配送完了後に削除されます。"
+        },
+        "customPlaceholder": "配送時のご要望を入力してください",
+        "customAria": "配送メモ直接入力"
+      },
+      "selector": {
+        "title": "配送先選択",
+        "loading": "読み込み中...",
+        "emptySaved": "保存された配送先がありません。",
+        "selectDone": "選択完了",
+        "changing": "変更中...",
+        "cancel": "キャンセル",
+        "addNew": "新しい配送先を追加",
+        "edit": "編集",
+        "setDefault": "基本配送先に設定",
+        "delete": "削除",
+        "deleteDialog": {
+          "title": "配送先削除",
+          "description": "この配送先を削除しますか? 削除した配送先は復元できません。",
+          "cancel": "キャンセル",
+          "confirm": "削除"
+        },
+        "toasts": {
+          "changed": "配送先を変更しました。",
+          "changeFailed": "配送先の変更に失敗しました。",
+          "defaultSet": "基本配送先に設定しました。",
+          "defaultSetFailed": "基本配送先の設定に失敗しました。",
+          "deleted": "配送先を削除しました。",
+          "deleteFailed": "配送先の削除に失敗しました。"
+        }
+      }
+    },
+    "orderProducts": {
+      "title": "注文商品",
+      "empty": "注文商品がありません。",
+      "selectAll": "全選択 ({selected}/{total})",
+      "deleteSelected": "選択削除",
+      "deleteSelectedDialog": {
+        "title": "選択商品の削除",
+        "description": "選択した{count}件の商品をカートから削除しますか?",
+        "cancel": "キャンセル",
+        "confirm": "削除",
+        "deleting": "削除中..."
+      },
+      "deleteSingleDialog": {
+        "title": "商品削除",
+        "description": "{title} をカートから削除しますか?",
+        "cancel": "キャンセル",
+        "confirm": "削除",
+        "deleting": "削除中..."
+      },
+      "optionBadge": "オプション",
+      "optionDefault": "基本",
+      "optionLine": "{value} | {quantity}点",
+      "quantityChange": "変更",
+      "quantityDialogTitle": "数量変更",
+      "quantityExpected": "予想金額:",
+      "save": "保存",
+      "saving": "保存中...",
+      "cancel": "キャンセル",
+      "shippingFee": "送料 {amount}ウォン",
+      "amountWon": "{amount}ウォン",
+      "toasts": {
+        "deletedCount": "{count}件の商品を削除しました。",
+        "deleteFailed": "商品の削除に失敗しました。",
+        "deletedSingle": "商品を削除しました。",
+        "quantityChanged": "数量を変更しました。",
+        "quantityChangeFailed": "数量の変更に失敗しました。",
+        "welcomeOneOnly": "ウェルカムメンバーシップ商品はお一人様1点まで購入可能です。"
+      }
+    },
+    "discount": {
+      "title": "割引・付加決済",
+      "totalLabel": "総割引金額",
+      "zero": "0ウォン",
+      "amountMinusWon": "-{amount}ウォン",
+      "couponLabel": "クーポン",
+      "available": "利用可能",
+      "availableCount": "利用可能 ({count})",
+      "percentDiscount": "{value}% 割引",
+      "amountDiscount": "{amount}ウォン 割引",
+      "applying": "クーポン適用中...",
+      "noCoupons": "利用可能なクーポンがありません",
+      "selectPlaceholder": "クーポンを選択してください ({count})",
+      "removeAria": "クーポン削除",
+      "membershipDiscount": "メンバーシップ割引",
+      "couponDiscount": "クーポン割引",
+      "toasts": {
+        "couponApplyFailed": "クーポンの適用に失敗しました。しばらくしてから再度お試しください。"
+      }
+    },
+    "paymentTotal": {
+      "title": "決済情報",
+      "itemAmount": "商品金額",
+      "shipping": "送料",
+      "free": "無料",
+      "membershipDiscount": "メンバーシップ割引",
+      "discount": "割引",
+      "couponEtc": "(クーポン・その他)",
+      "totalAmount": "注文金額合計"
+    },
+    "mobileSummary": {
+      "title": "注文概要",
+      "itemAmount": "注文商品",
+      "shipping": "送料",
+      "free": "無料",
+      "discountSubsidies": "割引・付加決済",
+      "membership": "メンバーシップ",
+      "totalAmount": "注文金額合計"
+    },
+    "detailSidebar": {
+      "title": "決済詳細",
+      "itemAmount": "商品金額",
+      "shipping": "送料",
+      "free": "無料",
+      "membershipDiscount": "メンバーシップ割引",
+      "discount": "割引",
+      "total": "お支払い合計"
+    },
+    "process": {
+      "shippingFallback": "配送",
+      "productFallback": "商品",
+      "orderNameSingle": "アーモンドヤング - {title}",
+      "orderNameMultiple": "アーモンドヤング - {title} 他 {count}点",
+      "errorPrefix": "エラー:",
+      "toasts": {
+        "setShipping": "配送先を設定してください。",
+        "selectMemo": "配送メモを選択してください。",
+        "enterEntrancePw": "共同玄関の暗証番号を入力してください。",
+        "noItems": "決済する商品がありません。カートに戻って商品を選択してください。",
+        "paymentInitFailed": "決済セッションの初期化に失敗しました。",
+        "unknownError": "不明なエラー"
+      }
+    },
+    "membership": {
+      "headerTitle": "メンバーシップ決済",
+      "missingPlanTitle": "メンバーシッププラン情報がありません。",
+      "missingPlanDesc": "メンバーシップ申込ページからもう一度お試しください。",
+      "planNotFoundTitle": "メンバーシッププランが見つかりません。",
+      "planNotFoundDesc": "別のプランでもう一度お試しください。",
+      "fallbackPlanName": "メンバーシップ",
+      "planSectionTitle": "メンバーシッププラン",
+      "selectedPlanLabel": "選択したプラン",
+      "priceWon": "{amount}ウォン",
+      "noticeTitle": "決済のご案内",
+      "oneTimeHeader": "📌 1回決済(自動決済なし)",
+      "oneTimeNoAutoPay": "1回決済で、自動決済は行われません。",
+      "immediateNoRefundPrefix": "決済直後に利用が開始され、",
+      "immediateNoRefundEmphasis": "利用開始後の返金は不可",
+      "immediateNoRefundSuffix": "です。",
+      "paidPeriodAccess": "決済した期間中、サービスをご利用いただけます。",
+      "refundPolicyTitle": "[返金ポリシー]",
+      "refund1": "· 単純な変心による返金はできません。",
+      "refund2": "· サービス障害、技術的な不具合等により正常に利用できない場合、利用できなかった期間について一部返金が行われる場合があります。",
+      "refund3": "· 返金の可否および金額は社内ポリシーに従って算定されます。",
+      "agree": "決済および返金ポリシーを確認し、同意します。",
+      "toasts": {
+        "agreeRequired": "決済および返金ポリシーに同意してください。",
+        "loginRequired": "ログインが必要です。",
+        "paymentRequestFailed": "決済リクエストに失敗しました。"
+      }
+    },
+    "success": {
+      "completedHighlight": "注文完了",
+      "completedSuffix": "しました。",
+      "noOrder": {
+        "completed": "注文が正常に完了しました。",
+        "detailsInMypage": "注文の詳細はマイページからご確認いただけます。",
+        "orderListBtn": "注文履歴を見る"
+      },
+      "orderNumberLabel": "注文番号",
+      "orderItemsCount": "注文商品 {count}件",
+      "orderDetailsFallback": "注文商品の詳細はこちらに表示されます。",
+      "orderDetailBtn": "注文詳細を見る",
+      "quantityLabel": "数量: {quantity}",
+      "priceFormat": "{amount}ウォン",
+      "mainImageAlt": "注文商品の代表画像",
+      "fallbackName": "—",
+      "sr": {
+        "recipient": "受取人",
+        "contact": "連絡先",
+        "address": "配送先住所"
+      },
+      "review": {
+        "ratingTitle": "ご購入体験はいかがでしたか?"
+      }
+    },
+    "fail": {
+      "loading": "エラー情報を読み込み中...",
+      "title": "決済失敗",
+      "description": "決済処理中に問題が発生しました。",
+      "unknownError": "不明なエラーが発生しました。",
+      "commonCausesTitle": "よくあるエラーの原因",
+      "causes": {
+        "limitExceeded": "決済限度額超過",
+        "cardError": "カード情報エラー",
+        "lowBalance": "残高不足",
+        "userCancel": "ユーザーによる決済キャンセル",
+        "networkError": "ネットワークエラー"
+      },
+      "retry": "再試行する",
+      "goBack": "前のページに戻る"
+    },
+    "callback": {
+      "paymentFailed": "決済に失敗しました。",
+      "missingParams": "決済情報がありません。",
+      "membershipFailFallback": "メンバーシップ加入処理失敗",
+      "membershipCallbackError": "メンバーシップ決済処理中にエラーが発生しました。",
+      "processingTitle": "決済処理中",
+      "processingDesc": "決済を処理しています...",
+      "waitLine1": "しばらくお待ちください。",
+      "waitLine2": "ページを閉じたり再読み込みしないでください。"
+    }
   },
   "policies": {
     "company": {

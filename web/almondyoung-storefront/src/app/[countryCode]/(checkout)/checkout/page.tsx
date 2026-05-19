@@ -10,6 +10,7 @@ import type { ShippingInfo } from "@/lib/types/ui/cart"
 import { getMembershipGroupIdFromEnv } from "@/lib/utils/membership-group"
 import ProtectedRoute from "@components/protected-route"
 import CheckoutTemplate from "domains/checkout/templates/checkout-template"
+import { getTranslations } from "next-intl/server"
 import { notFound } from "next/navigation"
 
 export default async function CheckoutPage({
@@ -61,9 +62,10 @@ async function CheckoutManager({ cartId }: { cartId?: string }) {
 
   // 배송료 정보
   const shippingMethod = shippingMethods?.[0]
+  const tProcess = await getTranslations("checkout.process")
   const shipping: ShippingInfo = {
     amount: shippingMethod?.amount ?? 0,
-    name: shippingMethod?.name ?? "배송",
+    name: shippingMethod?.name ?? tProcess("shippingFallback"),
     description: shippingMethod?.type?.description ?? "",
   }
 

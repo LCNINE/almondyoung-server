@@ -5,6 +5,7 @@ import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import type { IntentDto } from "@/lib/types/dto/wallet"
 import { notFound } from "next/navigation"
 import Link from "next/link"
+import { getTranslations } from "next-intl/server"
 import { ChevronDownIcon, ReviewPromptCard } from "../_components"
 import { HttpTypes } from "@medusajs/types"
 import { buildAddressLine } from "@/lib/utils/address-line"
@@ -36,6 +37,7 @@ export default async function CheckoutSuccessPage({
   const { orderId } = await searchParams
 
   const intent = await getIntent(intentId)
+  const t = await getTranslations("checkout")
 
   console.log("============== 주문완료 페이지 디버그 ==============")
   console.log("intentId:", intentId)
@@ -79,10 +81,11 @@ export default async function CheckoutSuccessPage({
   return (
     <main className="flex min-h-screen w-full flex-col items-center gap-[41px] bg-[#f8f8f8] pb-20">
       {/* 헤더 컴포넌트 */}
-      <CheckoutHeader title="주문/결제" />
+      <CheckoutHeader title={t("header.title")} />
 
       <h1 className="text-center text-2xl font-bold text-black">
-        <span className="text-[#ffa500]">주문완료</span> 되었습니다.
+        <span className="text-[#ffa500]">{t("success.completedHighlight")}</span>
+        {t("success.completedSuffix")}
       </h1>
 
       {/* 주문 요약 카드 */}
@@ -107,23 +110,21 @@ async function OrderSummaryCard({
   order: HttpTypes.StoreOrder | null
   countryCode: string
 }) {
+  const t = await getTranslations("checkout.success")
+  const tCart = await getTranslations("cart")
   // todo: 소유권 불일치 문제 해결되면 지울것
   // order가 없으면 (소유권 불일치 등) 간단한 안내 카드 표시,
   if (!order) {
     return (
       <section className="w-full max-w-[816px] overflow-hidden rounded-[10px] border-[0.5px] border-[#d9d9d9] bg-white">
         <div className="flex flex-col items-center gap-4 p-8">
-          <p className="text-lg text-black">
-            주문이 정상적으로 완료되었습니다.
-          </p>
-          <p className="text-sm text-gray-500">
-            주문 상세 내역은 마이페이지에서 확인하실 수 있습니다.
-          </p>
+          <p className="text-lg text-black">{t("noOrder.completed")}</p>
+          <p className="text-sm text-gray-500">{t("noOrder.detailsInMypage")}</p>
           <Link
             href={`/${countryCode}/mypage/order/list`}
             className="mt-4 flex h-[60px] w-full items-center justify-center rounded-[5px] bg-[#fff7e5] text-center text-[19px] font-bold text-[#ffa500] transition-colors hover:bg-[#ffedcc]"
           >
-            주문내역 보기
+            {t("noOrder.orderListBtn")}
           </Link>
         </div>
       </section>
@@ -150,7 +151,7 @@ async function OrderSummaryCard({
       <div className="flex flex-col divide-y-[0.5px] divide-[#d9d9d9]">
         <header className="flex items-center justify-between px-8 pt-8 pb-6">
           <h2 className="text-lg text-black">
-            <span className="font-bold">주문번호 </span>
+            <span className="font-bold">{t("orderNumberLabel")} </span>
             <span>#{order.display_id}</span>
           </h2>
         </header>
@@ -159,20 +160,20 @@ async function OrderSummaryCard({
         <div className="px-8 py-6">
           <dl>
             <div className="flex items-center justify-between">
-              <dt className="sr-only">수령인</dt>
+              <dt className="sr-only">{t("sr.recipient")}</dt>
               <dd className="text-lg font-bold text-black">
-                {recipientName ?? "—"}
+                {recipientName ?? t("fallbackName")}
               </dd>
             </div>
             {address?.phone && (
               <div className="mt-4">
-                <dt className="sr-only">연락처</dt>
+                <dt className="sr-only">{t("sr.contact")}</dt>
                 <dd className="text-base text-black">{address.phone}</dd>
               </div>
             )}
             {addressLine && (
               <div className="mt-2">
-                <dt className="sr-only">배송 주소</dt>
+                <dt className="sr-only">{t("sr.address")}</dt>
                 <dd className="text-base text-black">{addressLine}</dd>
               </div>
             )}
@@ -186,12 +187,14 @@ async function OrderSummaryCard({
                 <img
                   className="h-[99px] w-[99px] rounded-[5px] object-cover"
                   src={firstThumbnail}
-                  alt="주문 상품 대표 이미지"
+                  alt={t("mainImageAlt")}
                 />
               ) : (
                 <div className="h-[99px] w-[99px] rounded-[5px] bg-gray-100" />
               )}
-              <p className="text-lg text-black">주문상품 {items.length}건</p>
+              <p className="text-lg text-black">
+                {t("orderItemsCount", { count: items.length })}
+              </p>
             </div>
             <ChevronDownIcon className="transition-transform group-open:rotate-180" />
           </summary>
@@ -214,12 +217,12 @@ async function OrderSummaryCard({
                           {item.title}
                         </span>
                         <span className="text-sm text-gray-500">
-                          수량: {item.quantity}
+                          {t("quantityLabel", { quantity: item.quantity })}
                         </span>
                       </div>
                       {item.unit_price != null && (
                         <span className="text-sm font-medium text-black">
-                          {item.unit_price.toLocaleString("ko-KR")}원
+                          {`${item.unit_price.toLocaleString("ko-KR")}${tCart("won")}`}
                         </span>
                       )}
                     </li>
@@ -228,7 +231,7 @@ async function OrderSummaryCard({
               </ul>
             ) : (
               <div className="rounded bg-gray-100 p-4">
-                <p>주문 상품 상세 내역이 여기에 표시됩니다.</p>
+                <p>{t("orderDetailsFallback")}</p>
               </div>
             )}
           </div>
@@ -239,7 +242,7 @@ async function OrderSummaryCard({
             href={`/${countryCode}/mypage/order/details?orderId=${order.id}`}
             className="flex h-[60px] w-full items-center justify-center rounded-[5px] bg-[#fff7e5] text-center text-[19px] font-bold text-[#ffa500] transition-colors hover:bg-[#ffedcc]"
           >
-            주문 상세보기
+            {t("orderDetailBtn")}
           </Link>
         </div>
       </div>

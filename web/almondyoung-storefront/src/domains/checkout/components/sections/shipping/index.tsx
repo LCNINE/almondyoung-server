@@ -1,6 +1,7 @@
 "use client"
 
 import { HttpTypes } from "@medusajs/types"
+import { useTranslations } from "next-intl"
 import { useCallback, useMemo, useState } from "react"
 import { ShippingAddressModal } from "../../../../../components/address"
 import { ShippingAddressSelectorModal } from "./address-selector-modal"
@@ -19,6 +20,7 @@ export const ShippingSection = ({
   shippingMemo,
   onShippingMemoChange,
 }: ShippingSectionProps) => {
+  const t = useTranslations("checkout.shipping")
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isSelectorOpen, setIsSelectorOpen] = useState(false)
   const [modalMode, setModalMode] = useState<"create" | "edit">("create")
@@ -108,7 +110,7 @@ export const ShippingSection = ({
         id="shipping-heading"
         className="mb-3 text-base font-bold text-gray-900 lg:text-xl"
       >
-        배송지
+        {t("title")}
       </h2>
       <div className="rounded-md border border-gray-200 bg-white px-[14px] py-[18px] lg:rounded-[10px] lg:px-10 lg:py-8">
         {renderContent()}

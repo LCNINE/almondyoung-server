@@ -18,6 +18,7 @@ import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { formatPrice } from "@/lib/utils/price-utils"
 import { HttpTypes } from "@medusajs/types"
 import { Loader2, Minus, Plus, Trash2 } from "lucide-react"
+import { useTranslations } from "next-intl"
 import Image from "next/image"
 import { cloneElement, ReactElement, useState, useTransition } from "react"
 import { toast } from "sonner"
@@ -60,6 +61,7 @@ function Item({
   onSelectChange,
   selectDisabled,
 }: ItemProps) {
+  const t = useTranslations("cart.items")
   const [isPending, startTransition] = useTransition()
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -73,7 +75,7 @@ function Item({
         await updateLineItem({ lineId: item.id, quantity })
       } catch (err) {
         const message =
-          err instanceof Error ? err.message : "수량 변경에 실패했습니다"
+          err instanceof Error ? err.message : t("quantityUpdateFail")
         toast.error(message)
         setError(message)
       }
@@ -85,7 +87,7 @@ function Item({
     try {
       await deleteLineItem(item.id)
     } catch {
-      toast.error("일시적인 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.")
+      toast.error(t("deleteItemError"))
     } finally {
       setDeleting(false)
     }
@@ -139,6 +141,8 @@ function DesktopItem({
   onSelectChange,
   selectDisabled,
 }: DesktopItemProps) {
+  const t = useTranslations("cart.items")
+  const tCart = useTranslations("cart")
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [inputQuantity, setInputQuantity] = useState("")
 
@@ -153,7 +157,7 @@ function DesktopItem({
     const num = parseInt(inputQuantity)
 
     if (isNaN(num) || num < 1) {
-      return toast.error("수량은 1개 이상이어야 합니다.")
+      return toast.error(t("quantityMinError"))
     }
 
     await changeQuantity?.(num)
@@ -191,7 +195,7 @@ function DesktopItem({
             />
           ) : (
             <div className="bg-muted flex aspect-square w-full items-center justify-center rounded-md">
-              <span className="text-muted-foreground text-xs">No image</span>
+              <span className="text-muted-foreground text-xs">{t("noImage")}</span>
             </div>
           )}
         </LocalizedClientLink>
@@ -254,7 +258,7 @@ function DesktopItem({
             <DialogContent showCloseButton={false} className="max-w-xs">
               <DialogHeader>
                 <DialogTitle className="text-center">
-                  수량을 입력해주세요
+                  {t("quantityDialogTitle")}
                 </DialogTitle>
               </DialogHeader>
               <Input
@@ -271,10 +275,10 @@ function DesktopItem({
                   className="h-11"
                   onClick={() => setIsModalOpen(false)}
                 >
-                  취소
+                  {t("cancel")}
                 </Button>
                 <Button className="h-11" onClick={handleConfirm}>
-                  확인
+                  {t("confirm")}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -297,14 +301,14 @@ function DesktopItem({
             {(discountPercentage ?? 0) > 0 && (
               <div className="flex items-center gap-1">
                 <span className="text-muted-foreground text-xs line-through">
-                  {formatPrice(compareAtUnitPrice!)}원
+                  {formatPrice(compareAtUnitPrice!)}{tCart("won")}
                 </span>
                 <span className="text-destructive text-xs font-medium">
                   {discountPercentage}%
                 </span>
               </div>
             )}
-            <span className="text-sm">{formatPrice(unitPrice ?? 0)}원</span>
+            <span className="text-sm">{formatPrice(unitPrice ?? 0)}{tCart("won")}</span>
           </div>
         </TableCell>
       )}
@@ -319,13 +323,15 @@ function DesktopItem({
           {type === "preview" && (
             <span className="flex gap-x-1">
               <span className="text-muted-foreground">{item.quantity}x</span>
-              <span className="text-sm">{formatPrice(unitPrice ?? 0)}원</span>
+              <span className="text-sm">
+                {formatPrice(unitPrice ?? 0)}{tCart("won")}
+              </span>
             </span>
           )}
           {(discountPercentage ?? 0) > 0 && (
             <div className="flex items-center gap-1">
               <span className="text-muted-foreground text-xs line-through">
-                {formatPrice(compareAtTotalPrice ?? 0)}원
+                {formatPrice(compareAtTotalPrice ?? 0)}{tCart("won")}
               </span>
               <span className="text-destructive text-xs font-medium">
                 {discountPercentage}%
@@ -333,7 +339,7 @@ function DesktopItem({
             </div>
           )}
           <span className="text-sm font-medium">
-            {formatPrice(totalPrice ?? 0)}원
+            {formatPrice(totalPrice ?? 0)}{tCart("won")}
           </span>
         </div>
       </TableCell>
@@ -370,6 +376,8 @@ function MobileItem({
   changeQuantity,
   handleDelete,
 }: MobileItemProps) {
+  const t = useTranslations("cart.items")
+  const tCart = useTranslations("cart")
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [inputQuantity, setInputQuantity] = useState("")
 
@@ -384,7 +392,7 @@ function MobileItem({
     const num = parseInt(inputQuantity)
 
     if (isNaN(num) || num < 1) {
-      return toast.error("수량은 1개 이상이어야 합니다.")
+      return toast.error(t("quantityMinError"))
     }
 
     await changeQuantity?.(num)
@@ -408,7 +416,7 @@ function MobileItem({
           />
         ) : (
           <div className="bg-muted flex h-[72px] w-[72px] items-center justify-center rounded-md">
-            <span className="text-muted-foreground text-xs">No image</span>
+            <span className="text-muted-foreground text-xs">{t("noImage")}</span>
           </div>
         )}
       </LocalizedClientLink>
@@ -485,7 +493,7 @@ function MobileItem({
             <DialogContent showCloseButton={false} className="max-w-xs">
               <DialogHeader>
                 <DialogTitle className="text-center">
-                  수량을 입력해주세요
+                  {t("quantityDialogTitle")}
                 </DialogTitle>
               </DialogHeader>
               <Input
@@ -502,10 +510,10 @@ function MobileItem({
                   className="h-11"
                   onClick={() => setIsModalOpen(false)}
                 >
-                  취소
+                  {t("cancel")}
                 </Button>
                 <Button className="h-11" onClick={handleConfirm}>
-                  확인
+                  {t("confirm")}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -518,7 +526,7 @@ function MobileItem({
               </span>
             )}
             <span className="text-sm font-semibold">
-              {formatPrice(totalPrice ?? 0)}원
+              {formatPrice(totalPrice ?? 0)}{tCart("won")}
             </span>
           </div>
         </div>

@@ -27,6 +27,7 @@ import { calcItemPrice, formatPrice } from "@/lib/utils/price-utils"
 import { StoreCart, StoreCartLineItem } from "@medusajs/types"
 import { Minus, Plus, Trash2, X } from "lucide-react"
 import Image from "next/image"
+import { useTranslations } from "next-intl"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
 
@@ -45,6 +46,7 @@ export const OrderProductsSection = ({
   selectedIds,
   onSelectedIdsChange,
 }: OrderProductsSectionProps) => {
+  const t = useTranslations("checkout.orderProducts")
   const [isPending, startTransition] = useTransition()
 
   if (!products?.length) {
@@ -54,10 +56,10 @@ export const OrderProductsSection = ({
           id="order-heading"
           className="mb-3 text-base font-bold text-gray-900 lg:text-xl"
         >
-          주문 상품
+          {t("title")}
         </h2>
         <article className="rounded-md border border-gray-200 bg-white p-4 lg:rounded-[10px] lg:p-10">
-          <p className="text-center text-gray-500">주문 상품이 없습니다.</p>
+          <p className="text-center text-gray-500">{t("empty")}</p>
         </article>
       </section>
     )
@@ -95,10 +97,10 @@ export const OrderProductsSection = ({
         await Promise.all(
           Array.from(selectedIds).map((id) => deleteLineItem(id, cartId))
         )
-        toast.success(`${selectedIds.size}개 상품이 삭제되었습니다.`)
+        toast.success(t("toasts.deletedCount", { count: selectedIds.size }))
         onSelectedIdsChange(new Set())
       } catch {
-        toast.error("상품 삭제에 실패했습니다.")
+        toast.error(t("toasts.deleteFailed"))
       }
     })
   }
@@ -109,7 +111,7 @@ export const OrderProductsSection = ({
         id="order-heading"
         className="mb-3 text-base font-bold text-gray-900 lg:text-xl"
       >
-        주문 상품
+        {t("title")}
       </h2>
       <article className="rounded-md border border-gray-200 bg-white lg:rounded-[10px]">
         {/* 전체 선택 & 선택 삭제 헤더 */}
@@ -121,7 +123,10 @@ export const OrderProductsSection = ({
               disabled={isPending}
             />
             <span className="text-[12px] text-gray-700 lg:text-sm">
-              전체 선택 ({selectedIds.size}/{products.length})
+              {t("selectAll", {
+                selected: selectedIds.size,
+                total: products.length,
+              })}
             </span>
           </label>
           <AlertDialog>
@@ -133,25 +138,32 @@ export const OrderProductsSection = ({
                 disabled={!someSelected || isPending}
               >
                 <Trash2 className="h-3.5 w-3.5" />
-                선택 삭제
+                {t("deleteSelected")}
               </Button>
             </AlertDialogTrigger>
             <AlertDialogContent>
               <AlertDialogHeader>
-                <AlertDialogTitle>선택 상품 삭제</AlertDialogTitle>
+                <AlertDialogTitle>
+                  {t("deleteSelectedDialog.title")}
+                </AlertDialogTitle>
                 <AlertDialogDescription>
-                  선택한 {selectedIds.size}개의 상품을 장바구니에서
-                  삭제하시겠습니까?
+                  {t("deleteSelectedDialog.description", {
+                    count: selectedIds.size,
+                  })}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>취소</AlertDialogCancel>
+                <AlertDialogCancel>
+                  {t("deleteSelectedDialog.cancel")}
+                </AlertDialogCancel>
                 <AlertDialogAction
                   className="bg-red-500 hover:bg-red-600"
                   onClick={handleDeleteSelected}
                   disabled={isPending}
                 >
-                  {isPending ? "삭제중..." : "삭제"}
+                  {isPending
+                    ? t("deleteSelectedDialog.deleting")
+                    : t("deleteSelectedDialog.confirm")}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
@@ -184,7 +196,7 @@ export const OrderProductsSection = ({
             />
           )}
           <p className="text-right text-[12px] text-gray-600 lg:text-sm">
-            배송비 {formatPrice(shipping)}원
+            {t("shippingFee", { amount: formatPrice(shipping) })}
           </p>
         </div>
       </article>
@@ -207,6 +219,7 @@ function ProductItem({
   onToggle: () => void
   disabled?: boolean
 }) {
+  const t = useTranslations("checkout.orderProducts")
   const [isPending, startTransition] = useTransition()
   const {
     thumbnail,
@@ -228,9 +241,9 @@ function ProductItem({
     startTransition(async () => {
       try {
         await deleteLineItem(id, cartId)
-        toast.success("상품이 삭제되었습니다.")
+        toast.success(t("toasts.deletedSingle"))
       } catch {
-        toast.error("상품 삭제에 실패했습니다.")
+        toast.error(t("toasts.deleteFailed"))
       }
     })
   }
@@ -269,19 +282,23 @@ function ProductItem({
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>상품 삭제</AlertDialogTitle>
+              <AlertDialogTitle>{t("deleteSingleDialog.title")}</AlertDialogTitle>
               <AlertDialogDescription>
-                {productTitle} 상품을 장바구니에서 삭제하시겠습니까?
+                {t("deleteSingleDialog.description", { title: productTitle })}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>취소</AlertDialogCancel>
+              <AlertDialogCancel>
+                {t("deleteSingleDialog.cancel")}
+              </AlertDialogCancel>
               <AlertDialogAction
                 className="bg-yellow-30 hover:bg-yellow-40"
                 onClick={handleDelete}
                 disabled={isPending}
               >
-                {isPending ? "삭제중..." : "삭제"}
+                {isPending
+                  ? t("deleteSingleDialog.deleting")
+                  : t("deleteSingleDialog.confirm")}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
@@ -294,10 +311,13 @@ function ProductItem({
               variant="outline"
               className="rounded-[2px] border-gray-200 bg-white px-1 py-0 text-[11px] font-medium text-gray-600"
             >
-              옵션
+              {t("optionBadge")}
             </Badge>
             <span className="text-[12px] text-gray-600 lg:text-sm">
-              {variant_title ?? subtitle ?? "기본"} | {quantity}개
+              {t("optionLine", {
+                value: variant_title ?? subtitle ?? t("optionDefault"),
+                quantity,
+              })}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -333,6 +353,7 @@ function QuantityEditPopover({
   unitPrice: number
   isWelcomeMembership?: boolean
 }) {
+  const t = useTranslations("checkout.orderProducts")
   const [open, setOpen] = useState(false)
   const [quantity, setQuantity] = useState(currentQuantity)
   const [isPending, startTransition] = useTransition()
@@ -347,10 +368,10 @@ function QuantityEditPopover({
     startTransition(async () => {
       try {
         await updateLineItem({ lineId: itemId, quantity, cartId })
-        toast.success("수량이 변경되었습니다.")
+        toast.success(t("toasts.quantityChanged"))
         setOpen(false)
       } catch {
-        toast.error("수량 변경에 실패했습니다.")
+        toast.error(t("toasts.quantityChangeFailed"))
       }
     })
   }
@@ -363,11 +384,11 @@ function QuantityEditPopover({
           size="sm"
           className="h-6 px-2 text-[11px] text-gray-600"
         >
-          변경
+          {t("quantityChange")}
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-56 space-y-3 p-3">
-        <p className="text-sm font-medium">수량 변경</p>
+        <p className="text-sm font-medium">{t("quantityDialogTitle")}</p>
         <div className="flex items-center justify-center gap-3">
           <Button
             variant="outline"
@@ -387,7 +408,7 @@ function QuantityEditPopover({
             className="h-8 w-8"
             onClick={() => {
               if (isWelcomeMembership) {
-                toast.error("웰컴 멤버십 상품은 1인당 1개 구매")
+                toast.error(t("toasts.welcomeOneOnly"))
                 return
               }
               setQuantity((q) => q + 1)
@@ -398,9 +419,9 @@ function QuantityEditPopover({
           </Button>
         </div>
         <p className="text-center text-sm text-gray-500">
-          예상 금액:{" "}
+          {t("quantityExpected")}{" "}
           <span className="font-medium text-gray-900">
-            {formatPrice(unitPrice * quantity)}원
+            {t("amountWon", { amount: formatPrice(unitPrice * quantity) })}
           </span>
         </p>
         <div className="flex gap-2">
@@ -411,7 +432,7 @@ function QuantityEditPopover({
             onClick={() => setOpen(false)}
             disabled={isPending}
           >
-            취소
+            {t("cancel")}
           </Button>
           <Button
             size="sm"
@@ -419,7 +440,7 @@ function QuantityEditPopover({
             onClick={handleSave}
             disabled={isPending}
           >
-            {isPending ? "저장중..." : "저장"}
+            {isPending ? t("saving") : t("save")}
           </Button>
         </div>
       </PopoverContent>
@@ -436,6 +457,7 @@ function PriceDisplay({
   originalPrice?: number | null
   price: number
 }) {
+  const t = useTranslations("checkout.orderProducts")
   return (
     <div className="flex items-center gap-1.5 text-right">
       {hasDiscount && (
@@ -444,7 +466,7 @@ function PriceDisplay({
         </span>
       )}
       <span className="text-[13px] font-medium text-gray-900 lg:text-base">
-        {formatPrice(price)}원
+        {t("amountWon", { amount: formatPrice(price) })}
       </span>
     </div>
   )

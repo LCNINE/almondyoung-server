@@ -1,6 +1,9 @@
+"use client"
+
 import { PriceRow } from "@/domains/checkout/components/shared/price-row"
 import type { CartTotals } from "@/lib/types/ui/cart"
 import { convertToLocale } from "@/lib/utils/price-utils"
+import { useTranslations } from "next-intl"
 
 // PC 결제 상세 사이드바
 export const PaymentDetailSidebar = ({
@@ -12,6 +15,7 @@ export const PaymentDetailSidebar = ({
   setIsOpen: (open: boolean) => void
   totals: CartTotals
 }) => {
+  const t = useTranslations("checkout.detailSidebar")
   const {
     currency_code,
     original_item_subtotal,
@@ -31,7 +35,7 @@ export const PaymentDetailSidebar = ({
   return (
     <section className="hidden lg:block lg:w-[412px] lg:min-w-[320px] lg:flex-1">
       <div className="flex items-center justify-between">
-        <h2 className="mb-3 text-xl font-bold text-gray-900">결제 상세</h2>
+        <h2 className="mb-3 text-xl font-bold text-gray-900">{t("title")}</h2>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setIsOpen(!isOpen)}
@@ -58,7 +62,7 @@ export const PaymentDetailSidebar = ({
           <div className="p-7">
             <PriceRow className="mb-4">
               <PriceRow.Label size="base" tone="muted">
-                상품금액
+                {t("itemAmount")}
               </PriceRow.Label>
               <PriceRow.Value size="base" weight="semibold">
                 {formatAmount(original_item_subtotal)}
@@ -66,17 +70,17 @@ export const PaymentDetailSidebar = ({
             </PriceRow>
             <PriceRow className="mb-4">
               <PriceRow.Label size="base" tone="muted">
-                배송비
+                {t("shipping")}
               </PriceRow.Label>
               <PriceRow.Value size="base" weight="semibold">
-                {shipping > 0 ? formatAmount(shipping) : "무료"}
+                {shipping > 0 ? formatAmount(shipping) : t("free")}
               </PriceRow.Value>
             </PriceRow>
 
             {membershipDiscount > 0 && (
               <PriceRow className="mb-4">
                 <PriceRow.Label size="base" tone="muted">
-                  멤버십 할인
+                  {t("membershipDiscount")}
                 </PriceRow.Label>
                 <PriceRow.Value size="base" weight="semibold">
                   {`-${formatAmount(membershipDiscount)}`}
@@ -87,7 +91,7 @@ export const PaymentDetailSidebar = ({
             {totalDiscount > 0 && (
               <PriceRow className="mb-4">
                 <PriceRow.Label size="base" tone="muted">
-                  할인
+                  {t("discount")}
                 </PriceRow.Label>
                 <PriceRow.Value size="base" weight="semibold">
                   {`-${formatAmount(totalDiscount)}`}
@@ -97,7 +101,7 @@ export const PaymentDetailSidebar = ({
             <hr className="-mx-7 my-4 border-gray-200" />
             <PriceRow>
               <PriceRow.Label size="lg" weight="bold">
-                총 결제금액
+                {t("total")}
               </PriceRow.Label>
               <PriceRow.Value size="lg" weight="bold" tone="discount">
                 {formatAmount(finalTotal)}
