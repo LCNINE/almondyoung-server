@@ -52,6 +52,11 @@ export const MENU_SECTIONS: MenuSection[] = [
       { label: "mypage.menu.password", icon: "🔒", path: "/mypage/account/password" },
       { label: "mypage.menu.orderLegacyShort", icon: "🔗", path: "/mypage/account/cafe24" },
       { label: "mypage.menu.shopSetting", icon: "👀", path: "/mypage/shop-setting" },
+      {
+        label: "mypage.menu.withdraw",
+        icon: "🚫",
+        path: "/mypage/account/withdraw",
+      },
       { label: "mypage.menu.logout", icon: "🚪", action: "logout" },
     ],
   },
@@ -130,6 +135,11 @@ export const SIDEBAR_MENU_ITEMS = [
         id: "account-cafe24",
         label: "mypage.menu.cafe24",
         path: "/mypage/account/cafe24",
+      },
+      {
+        id: "account-withdraw",
+        label: "mypage.menu.withdraw",
+        path: "/mypage/account/withdraw",
       },
     ],
   },

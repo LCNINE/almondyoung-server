@@ -30,7 +30,8 @@
     "point": "Reward Points",
     "payment": "Payment Methods",
     "coupon": "Coupons",
-    "logout": "Log out"
+    "logout": "Log out",
+    "withdraw": "Delete Account"
   },
   "quickLink": {
     "orderList": "Orders",
@@ -195,11 +196,24 @@
       "birthdayPlaceholder": "YYYYMMDD (e.g. 19900101)",
       "save": "Save",
       "saving": "Saving...",
-      "savedSuccess": "Your profile has been updated.",
-      "withdraw": "Delete account",
-      "withdrawing": "Processing...",
-      "withdrawConfirm": "Are you sure you want to delete your account? Recovery may not be possible.",
-      "withdrawError": "An error occurred while processing your account deletion."
+      "savedSuccess": "Your profile has been updated."
+    },
+    "withdraw": {
+      "pageTitle": "Delete Account",
+      "description": "Please review the following before deleting your account.",
+      "noticeTitle": "Before you delete your account",
+      "notice1": "Your account info and order/review/inquiry history cannot be recovered.",
+      "notice2": "All points, coupons, and membership benefits will expire immediately.",
+      "notice3": "Re-registration with the same email/ID may be restricted for a period of time.",
+      "notice4": "If you have ongoing orders/shipments, we recommend deleting after they are completed.",
+      "agreement": "I have read all the notices above and agree to delete my account.",
+      "submit": "Delete My Account",
+      "submitting": "Processing...",
+      "cancel": "Cancel",
+      "error": "An error occurred while processing your account deletion.",
+      "confirmTitle": "Are you sure you want to delete your account?",
+      "confirmDescription": "Your account and all activity history cannot be recovered after deletion. Do you want to continue?",
+      "confirmAction": "Delete"
     },
     "password": {
       "description": "Enter your current password and a new password to change it.",

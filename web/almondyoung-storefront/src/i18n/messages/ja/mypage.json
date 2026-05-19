@@ -30,7 +30,8 @@
     "point": "ポイント",
     "payment": "お支払い方法",
     "coupon": "クーポン",
-    "logout": "ログアウト"
+    "logout": "ログアウト",
+    "withdraw": "退会"
   },
   "quickLink": {
     "orderList": "注文履歴",
@@ -195,11 +196,24 @@
       "birthdayPlaceholder": "YYYYMMDD (例: 19900101)",
       "save": "保存",
       "saving": "保存中...",
-      "savedSuccess": "会員情報を変更しました。",
-      "withdraw": "退会",
-      "withdrawing": "退会処理中...",
-      "withdrawConfirm": "本当に退会しますか?退会後はアカウントの復旧が困難な場合があります。",
-      "withdrawError": "退会処理中にエラーが発生しました。"
+      "savedSuccess": "会員情報を変更しました。"
+    },
+    "withdraw": {
+      "pageTitle": "退会",
+      "description": "退会前に以下の内容を必ずご確認ください。",
+      "noticeTitle": "退会前のご案内",
+      "notice1": "アカウント情報および注文・レビュー・問い合わせ履歴は復旧できません。",
+      "notice2": "保有中のポイント・クーポン・メンバーシップ特典は即時失効します。",
+      "notice3": "同一のメール/IDでの再登録が一定期間制限される場合があります。",
+      "notice4": "進行中の注文・配送がある場合は、完了後の退会をおすすめします。",
+      "agreement": "上記の内容をすべて確認し、退会に同意します。",
+      "submit": "退会する",
+      "submitting": "退会処理中...",
+      "cancel": "キャンセル",
+      "error": "退会処理中にエラーが発生しました。",
+      "confirmTitle": "本当に退会しますか?",
+      "confirmDescription": "退会後はアカウントとすべての利用履歴を復旧できません。続行しますか?",
+      "confirmAction": "退会する"
     },
     "password": {
       "description": "パスワードを変更するには、現在のパスワードと新しいパスワードを入力してください。",

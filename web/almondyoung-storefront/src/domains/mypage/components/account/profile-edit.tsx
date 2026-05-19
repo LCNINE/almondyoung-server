@@ -21,15 +21,13 @@ import { Separator } from "@/components/ui/separator"
 import { zodResolver } from "@hookform/resolvers/zod"
 import type { UserDetail } from "@lib/types/ui/user"
 import type { SocialIdentitiesState } from "@/lib/types/ui/social-identity"
-import { toLocalizedPath } from "@lib/utils/locale-path"
 import { useTranslations } from "next-intl"
-import { useActionState, useEffect, useMemo, useTransition } from "react"
+import { useActionState, useEffect, useMemo } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 import { profileSchema, type ProfileSchema } from "../../schemas/profile-schema"
 import {
   updateProfileAction,
-  withdrawUserAction,
   type ProfileActionState,
 } from "../actions/profile"
 import { AddressBookSection } from "./address-book-section"
@@ -51,18 +49,14 @@ function RequiredLabel({ children }: { children: React.ReactNode }) {
 
 interface ProfileEditProps {
   userData: UserDetail
-  countryCode: string
   identitiesState: SocialIdentitiesState
 }
 
 export function ProfileEdit({
   userData,
-  countryCode,
   identitiesState,
 }: ProfileEditProps) {
-  const t = useTranslations("mypage.account.profile")
-  const tLabels = useTranslations("mypage.account.labels")
-  const [isWithdrawPending, startWithdrawTransition] = useTransition()
+  const t = useTranslations("mypage.account")
 
   const initialValues = useMemo(() => {
     const birthDateStr = userData.profile?.birthDate
@@ -96,37 +90,17 @@ export function ProfileEdit({
 
   useEffect(() => {
     if (state?.success) {
-      toast.success(t("savedSuccess"))
+      toast.success(t("profile.savedSuccess"))
     }
   }, [state, t])
-
-  const handleWithdraw = () => {
-    const isConfirmed = window.confirm(t("withdrawConfirm"))
-
-    if (!isConfirmed) return
-
-    startWithdrawTransition(async () => {
-      try {
-        await withdrawUserAction()
-
-        window.location.replace(toLocalizedPath(countryCode, "/"))
-      } catch (error) {
-        const message =
-          error instanceof Error && error.message
-            ? error.message
-            : t("withdrawError")
-        toast.error(message)
-      }
-    })
-  }
 
   return (
     <div className="space-y-6 py-2 md:py-4">
       {/* 기본 정보 */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-lg">{t("sectionTitle")}</CardTitle>
-          <CardDescription>{t("sectionDescription")}</CardDescription>
+          <CardTitle className="text-lg">{t("profile.sectionTitle")}</CardTitle>
+          <CardDescription>{t("profile.sectionDescription")}</CardDescription>
         </CardHeader>
         <CardContent>
           <Form {...form}>
@@ -136,12 +110,12 @@ export function ProfileEdit({
                 name="username"
                 render={({ field }) => (
                   <FormItem>
-                    <RequiredLabel>{tLabels("name")}</RequiredLabel>
+                    <RequiredLabel>{t("labels.name")}</RequiredLabel>
                     <FormControl>
                       <Input
                         {...field}
                         autoComplete="name"
-                        placeholder={t("namePlaceholder")}
+                        placeholder={t("profile.namePlaceholder")}
                         className={INPUT_CLASSNAME}
                       />
                     </FormControl>
@@ -152,7 +126,7 @@ export function ProfileEdit({
 
               {/* 아이디 (읽기 전용) */}
               <div className="space-y-2">
-                <Label className="text-sm font-medium">{tLabels("id")}</Label>
+                <Label className="text-sm font-medium">{t("labels.id")}</Label>
                 <div className="relative">
                   <Input
                     value={userData.loginId || ""}
@@ -166,7 +140,7 @@ export function ProfileEdit({
               {/* 이메일 (읽기 전용) */}
               <div className="space-y-2">
                 <Label className="text-sm font-medium">
-                  {tLabels("email")}
+                  {t("labels.email")}
                 </Label>
                 <div className="relative">
                   <Input
@@ -183,12 +157,12 @@ export function ProfileEdit({
                 name="nickname"
                 render={({ field }) => (
                   <FormItem>
-                    <RequiredLabel>{tLabels("nickname")}</RequiredLabel>
+                    <RequiredLabel>{t("labels.nickname")}</RequiredLabel>
                     <FormControl>
                       <Input
                         {...field}
                         autoComplete="nickname"
-                        placeholder={t("nicknamePlaceholder")}
+                        placeholder={t("profile.nicknamePlaceholder")}
                         className={INPUT_CLASSNAME}
                       />
                     </FormControl>
@@ -203,12 +177,12 @@ export function ProfileEdit({
                 render={({ field }) => (
                   <FormItem>
                     <Label className="text-sm font-medium">
-                      {tLabels("birthdate")}
+                      {t("labels.birthdate")}
                     </Label>
                     <FormControl>
                       <Input
                         {...field}
-                        placeholder={t("birthdayPlaceholder")}
+                        placeholder={t("profile.birthdayPlaceholder")}
                         autoComplete="bday"
                         maxLength={8}
                         inputMode="numeric"
@@ -235,7 +209,7 @@ export function ProfileEdit({
                     }
                     className="px-8"
                   >
-                    {isPending ? t("saving") : t("save")}
+                    {isPending ? t("profile.saving") : t("profile.save")}
                   </CustomButton>
                 </div>
               </div>
@@ -261,17 +235,6 @@ export function ProfileEdit({
 
       {/* 배송지 관리 */}
       <AddressBookSection />
-
-      <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={handleWithdraw}
-          disabled={isWithdrawPending}
-          className="text-xs text-gray-500 underline underline-offset-2 transition-colors hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {isWithdrawPending ? t("withdrawing") : t("withdraw")}
-        </button>
-      </div>
     </div>
   )
 }
