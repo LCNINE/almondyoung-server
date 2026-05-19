@@ -33,7 +33,7 @@ COPY package*.json ./
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/libs ./libs
 # Drizzle 설정 및 마이그레이션 파일 복사
-COPY --from=builder /app/apps/file-service/src/database/drizzle ./apps/file-service/src/database/drizzle
+COPY --from=builder /app/apps/file-service/drizzle ./apps/file-service/drizzle
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nestjs
