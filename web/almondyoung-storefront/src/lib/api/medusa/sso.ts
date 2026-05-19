@@ -88,6 +88,7 @@ type DecodedToken = {
     name?: string
     login_id?: string
     email_verified?: boolean
+    user_id?: string
   }
 }
 
@@ -157,6 +158,10 @@ export async function oidcCallback(args: {
         email,
         ...(firstName ? { first_name: firstName } : {}),
         ...(lastName ? { last_name: lastName } : {}),
+        metadata: {
+          almond_user_id: decoded.user_metadata?.user_id,
+          almond_login_id: decoded.user_metadata?.login_id,
+        },
       }),
     })
 
