@@ -88,8 +88,8 @@ export function CategorySheet({ trigger }: CategorySheetProps) {
               strokeWidth={1.5}
             />
             <p className="text-[12px] leading-relaxed text-gray-400">
-              카테고리를 불러오는 중<br />
-              에러가 발생했습니다.
+              {t("errorLine1")}<br />
+              {t("errorLine2")}
             </p>
           </div>
         ) : isPending && categories.length === 0 ? (

@@ -1,0 +1,63 @@
+{
+  "emptyTitle": "カートに商品がありません",
+  "emptyDescription": "お気に入りの商品をカートに入れてください。",
+  "shopNow": "商品を探しに行く",
+  "notFound": {
+    "metaTitle": "カートが見つかりません",
+    "metaDescription": "ご指定のカートは見つかりませんでした",
+    "title": "カートが見つかりません",
+    "description": "ご指定のカートは存在しないか、有効期限が切れています。",
+    "backHome": "ショッピングを続ける"
+  },
+  "header": {
+    "title": "カート",
+    "stepCheckout": "注文・決済",
+    "stepDone": "完了"
+  },
+  "items": {
+    "tableProduct": "商品",
+    "tableQuantity": "数量",
+    "tableUnitPrice": "単価",
+    "tableTotal": "小計",
+    "deleteSelected": "選択削除",
+    "deleteSelectedCount": "選択削除 ({count})",
+    "deleteSelectedSuccess": "{count}件の商品を削除しました。",
+    "deleteSelectedError": "削除に失敗しました。もう一度お試しください。",
+    "deleteAria": "削除",
+    "noImage": "画像なし",
+    "quantityUpdateFail": "数量の変更に失敗しました",
+    "deleteItemError": "一時的なエラーが発生しました。しばらくしてから再度お試しください。",
+    "quantityMinError": "数量は1以上にしてください。",
+    "quantityDialogTitle": "数量を入力してください",
+    "cancel": "キャンセル",
+    "confirm": "確認"
+  },
+  "summary": {
+    "title": "ご注文金額",
+    "subtotal": "商品合計",
+    "membershipDiscount": "メンバーシップ割引",
+    "couponDiscount": "クーポン・プロモーション",
+    "shipping": "送料",
+    "totalPayment": "お支払い合計",
+    "selectItems": "ご購入される商品を選択してください。",
+    "checkout": "購入する",
+    "checkoutWithCount": "{count}点の商品を購入する",
+    "checkoutFailed": "注文の進行に失敗しました。もう一度お試しください。"
+  },
+  "mobileBar": {
+    "discountTotal": "合計{amount}ウォン割引",
+    "selectItems": "商品を選択してください",
+    "checkout": "購入する",
+    "checkoutWithCount": "合計{count}点を購入する"
+  },
+  "freeShipping": {
+    "reached": "送料無料が適用されます!",
+    "remaining": "あと{amount}ウォンで送料無料"
+  },
+  "priceError": {
+    "message": "金額を取得できませんでした",
+    "refresh": "再読み込み",
+    "inquiry": "お問い合わせ"
+  },
+  "won": "ウォン"
+}

@@ -7,6 +7,7 @@ import ProductCard from "@/domains/products/components/product-card"
 import { SortOptions } from "../components/refinement-list/sort-products"
 import { getWishlist } from "@lib/api/users/wishlist"
 import { PackageX } from "lucide-react"
+import { getTranslations } from "next-intl/server"
 
 const PRODUCT_LIMIT = 12
 
@@ -77,14 +78,15 @@ export default async function PaginatedProducts({
   const wishlistIds = new Set(wishlist.map((item) => item.productId))
 
   if (products.length === 0) {
+    const t = await getTranslations("category.products")
     return (
       <div className="flex min-h-[360px] flex-col items-center justify-center text-center">
         <PackageX className="mb-4 h-12 w-12 text-gray-300" strokeWidth={1.5} />
         <p className="text-[15px] font-medium text-gray-700">
-          상품이 없습니다
+          {t("emptyTitle")}
         </p>
         <p className="mt-1.5 text-[13px] text-gray-400">
-          조건에 맞는 상품을 찾을 수 없어요
+          {t("emptyDescription")}
         </p>
       </div>
     )

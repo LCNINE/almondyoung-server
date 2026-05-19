@@ -1,0 +1,53 @@
+{
+  "inputPlaceholder": "What will you buy today? Almondyoung",
+  "sheetTitle": "Almondyoung Search",
+  "back": "Back",
+  "popover": {
+    "suggestionsTitle": "Suggested keywords",
+    "historyTitle": "Recent searches",
+    "historyDisabled": "Saving search history is turned off.",
+    "historyEmpty": "No recent searches.",
+    "clearAll": "Clear all",
+    "saveOff": "Turn off history saving",
+    "saveOn": "Turn on history saving"
+  },
+  "history": {
+    "title": "Recent searches",
+    "clearAll": "Clear all"
+  },
+  "hotKeywords": {
+    "title": "Trending searches",
+    "updatedAt": "As of {time}",
+    "loadFail": "Failed to load trending keywords:",
+    "statusNew": "NEW"
+  },
+  "popularKeywords": {
+    "title": "Suggested searches",
+    "loadFail": "Failed to load popular keywords:"
+  },
+  "result": {
+    "title": "Search results for ‘{keyword}’",
+    "totalCount": "<strong>{count}</strong> products",
+    "pageInfo": "Page {current}/{total}",
+    "loadFail": "[SearchContainer] search failed:"
+  },
+  "sort": {
+    "relevance": "Relevance",
+    "priceAsc": "Lowest price",
+    "priceDesc": "Highest price",
+    "newest": "Newest"
+  },
+  "empty": {
+    "title": "No results for ‘{keyword}’",
+    "subtitle": "Please try a different search",
+    "tip1": "Check the spelling",
+    "tip2": "Shorten the keyword or try a different one",
+    "tip3": "Try more general keywords"
+  },
+  "pagination": {
+    "ariaLabel": "Pagination",
+    "prevPage": "Previous page",
+    "nextPage": "Next page",
+    "pageAria": "Page {page}"
+  }
+}

@@ -86,10 +86,10 @@ const MobileActions: React.FC<MobileActionsProps> = ({
           {isSimple && !inStock ? (
             <Button
               variant="default"
-              className="h-12 w-full cursor-pointer gap-2 text-base font-medium"
+              className="w-full h-12 gap-2 text-base font-medium cursor-pointer"
               data-testid="restock-alert-button"
             >
-              <Bell className="h-5 w-5" />
+              <Bell className="w-5 h-5" />
               재입고 알림 받기
             </Button>
           ) : ( ... )} */}
@@ -154,7 +154,9 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                     option={option}
                     current={options[option.id]}
                     updateOption={setOptionValue}
-                    title={t("optionSelectTitle", { title: option.title ?? "" })}
+                    title={t("optionSelectTitle", {
+                      title: option.title ?? "",
+                    })}
                     variants={product.variants}
                     selectedOptions={options}
                     selectedValues={selectedValuesMap[option.id]}
@@ -188,7 +190,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                           <input
                             ref={(el) => {
                               if (el) {
-                                (el as any)._variantId = item.variantId
+                                ;(el as any)._variantId = item.variantId
                               }
                             }}
                             type="text"
@@ -274,10 +276,10 @@ const MobileActions: React.FC<MobileActionsProps> = ({
               {!inStock && selectedItems.length > 0 ? (
                 <Button
                   variant="default"
-                  className="h-12 w-full cursor-pointer gap-2 text-base font-medium"
+                  className="w-full h-12 gap-2 text-base font-medium cursor-pointer"
                   data-testid="restock-alert-button"
                 >
-                  <Bell className="h-5 w-5" />
+                  <Bell className="w-5 h-5" />
                   재입고 알림 받기
                 </Button>
               ) : ( ... )} */}

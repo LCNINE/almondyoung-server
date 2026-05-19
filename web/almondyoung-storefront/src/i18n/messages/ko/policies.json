@@ -1,0 +1,54 @@
+{
+  "company": {
+    "title": "회사소개",
+    "companyName": "주식회사 엘씨나인",
+    "intro": "아몬드영은 주식회사 엘씨나인이 운영하는 B2B 뷰티 도매 플랫폼입니다.",
+    "sectionTitle": "사업자 정보",
+    "fieldCompanyName": "회사명",
+    "fieldCeo": "대표이사",
+    "ceoName": "권흥철",
+    "fieldBizNo": "사업자등록번호",
+    "fieldMailOrderNo": "통신판매업신고",
+    "fieldPhone": "전화",
+    "fieldAddress": "주소",
+    "fieldPrivacyOfficer": "개인정보보호책임자"
+  },
+  "terms": {
+    "title": "이용약관",
+    "almondTerms": "아몬드영 이용약관",
+    "electronicTransaction": "전자금융거래 이용약관"
+  },
+  "privacy": {
+    "title": "개인정보처리방침",
+    "collection": "개인정보 수집 및 이용",
+    "thirdParty": "개인정보 제3자 제공"
+  },
+  "guide": {
+    "title": "이용안내",
+    "payment": {
+      "title": "주문 및 결제",
+      "item1": "원하시는 상품을 장바구니에 담은 후 결제를 진행해주세요.",
+      "item2": "결제 수단: 신용카드, 계좌이체, 가상계좌, 간편결제",
+      "item3": "주문 후 결제가 확인되면 배송이 시작됩니다."
+    },
+    "shipping": {
+      "title": "배송 안내",
+      "item1": "배송비: 상품별 상이 (상품 페이지에서 확인)",
+      "item2": "배송 기간: 결제 완료 후 영업일 기준 1~3일",
+      "item3": "배송 조회: 마이페이지에서 실시간 배송 추적 가능"
+    },
+    "return": {
+      "title": "교환 및 반품",
+      "item1": "상품 수령 후 7일 이내 교환/반품 신청 가능",
+      "item2": "상품 하자 시 배송비는 회사 부담",
+      "item3": "단순 변심 시 배송비는 고객 부담",
+      "item4": "사용하거나 훼손된 상품은 교환/반품이 불가합니다."
+    },
+    "cs": {
+      "title": "고객센터",
+      "item1": "전화: 1877-7184",
+      "item2": "카카오톡 채널: 아몬드영",
+      "item3": "이메일: hello@lcnine.kr"
+    }
+  }
+}
