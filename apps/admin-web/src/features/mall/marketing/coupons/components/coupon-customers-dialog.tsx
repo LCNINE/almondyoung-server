@@ -13,14 +13,11 @@ import { useCouponCustomers, useRevokeCouponFromCustomer } from '@/lib/services/
 import { toast } from 'sonner';
 import { Users, UserMinus, Loader2 } from 'lucide-react';
 import type { CouponCustomer } from '@/lib/api/domains/medusa/promotions';
+import { formatCouponDate } from '../coupon-helpers';
 
 function formatCustomerName(c: CouponCustomer) {
   const name = [c.first_name, c.last_name].filter(Boolean).join(' ');
   return name || c.email;
-}
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString('ko-KR', { year: '2-digit', month: '2-digit', day: '2-digit' });
 }
 
 export function CouponCustomersDialog({
@@ -87,7 +84,7 @@ export function CouponCustomersDialog({
                 </div>
                 <div className="flex items-center gap-2 shrink-0 ml-3">
                   <Badge variant="outline" className="text-[10px] text-muted-foreground shrink-0">
-                    {formatDate(customer.created_at)}
+                    {formatCouponDate(customer.created_at)}
                   </Badge>
                   <Button
                     size="sm"
