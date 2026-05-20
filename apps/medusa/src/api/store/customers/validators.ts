@@ -1,4 +1,4 @@
-import { z } from '@medusajs/framework/zod';
+import { z } from 'zod';
 import { AddressPayload } from '../../utils/common-validators';
 import { createFindParams, createSelectParams } from 'src/utils/validators';
 

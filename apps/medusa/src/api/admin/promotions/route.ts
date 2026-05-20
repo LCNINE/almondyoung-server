@@ -2,11 +2,16 @@ import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/
 import { ContainerRegistrationKeys, MedusaError } from '@medusajs/framework/utils';
 import { createPromotionsWorkflow } from '@medusajs/core-flows';
 import { PROMOTION_META_MODULE } from '../../../modules/promotion-meta';
+import type PromotionMetaModuleService from '../../../modules/promotion-meta/service';
 import { PROMOTION_FIELDS, toMetadataShape } from './helpers';
+
+type PromotionMutationBody = Record<string, unknown> & {
+  additional_data?: Record<string, unknown>;
+};
 
 export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
-  const promotionMetaService = req.scope.resolve(PROMOTION_META_MODULE);
+  const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
 
   const limit = Math.min(parseInt(req.query.limit as string) || 20, 500);
   const offset = parseInt(req.query.offset as string) || 0;
@@ -41,16 +46,16 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
 
 export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const promotionMetadata = (req as any).promotionMetadata as Record<string, unknown> | undefined;
-  const { additional_data, ...rest } = req.validatedBody;
+  const { additional_data, ...rest } = req.validatedBody as PromotionMutationBody;
 
   const { result } = await createPromotionsWorkflow(req.scope).run({
-    input: { promotionsData: [rest], additional_data },
+    input: { promotionsData: [rest as any], additional_data },
   });
 
   const promotionId = result[0].id;
 
   if (promotionMetadata && Object.keys(promotionMetadata).length > 0) {
-    const promotionMetaService = req.scope.resolve(PROMOTION_META_MODULE);
+    const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
     await promotionMetaService.upsert({ promotion_id: promotionId, ...promotionMetadata });
   }
 

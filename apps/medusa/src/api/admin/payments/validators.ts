@@ -1,5 +1,5 @@
 import { createSelectParams } from '../../../utils/validators';
-import { z } from '@medusajs/framework/zod';
+import { z } from 'zod';
 
 export type AdminGetPaymentParamsType = z.infer<typeof AdminGetPaymentParams>;
 export const AdminGetPaymentParams = createSelectParams();
