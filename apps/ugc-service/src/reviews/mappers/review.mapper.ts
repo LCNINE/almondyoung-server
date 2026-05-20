@@ -17,6 +17,7 @@ export class ReviewMapper {
       likeCount: entity.likeCount,
       dislikeCount: entity.dislikeCount,
       status: entity.status,
+      deletedAt: entity.deletedAt?.toISOString() ?? null,
       createdAt: entity.createdAt.toISOString(),
       updatedAt: entity.updatedAt.toISOString(),
       adminComment: entity.adminComment ? ReviewMapper.toCommentResponse(entity.adminComment) : null,

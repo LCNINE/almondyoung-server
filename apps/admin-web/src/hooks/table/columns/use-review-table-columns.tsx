@@ -104,7 +104,12 @@ export const useReviewTableColumns = ({
       }),
       columnHelper.accessor('status', {
         header: '상태',
-        cell: ({ getValue }) => <ReviewStatusCell value={getValue()} />,
+        cell: ({ row }) => (
+          <ReviewStatusCell
+            status={row.original.status}
+            deletedAt={row.original.deletedAt}
+          />
+        ),
       }),
       columnHelper.accessor('createdAt', {
         header: '작성일',

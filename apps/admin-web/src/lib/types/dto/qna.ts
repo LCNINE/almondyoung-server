@@ -1,8 +1,12 @@
 // Q&A 관련 DTO 타입 정의
 
-// 질문 상태
-export const QUESTION_STATUSES = ['active', 'answered', 'deleted'] as const;
+// 질문 상태 (백엔드 enum 미러)
+export const QUESTION_STATUSES = ['active', 'answered'] as const;
 export type QuestionStatus = (typeof QUESTION_STATUSES)[number];
+
+// 어드민 목록 필터 옵션 ('deleted'는 deletedAt 기반 삭제됨 필터)
+export const QUESTION_STATUS_FILTERS = ['active', 'answered', 'deleted'] as const;
+export type QuestionStatusFilter = (typeof QUESTION_STATUS_FILTERS)[number];
 
 // 질문 카테고리
 export const QUESTION_CATEGORIES = [
@@ -41,6 +45,7 @@ export interface QuestionDto {
   content: string;
   isSecret: boolean;
   status: QuestionStatus;
+  deletedAt: string | null;
   mediaFileIds: string[];
   answer: AnswerDto | null;
   createdAt: string;
@@ -53,7 +58,7 @@ export interface QnaListQuery {
   limit?: number;
   productId?: string;
   category?: QuestionCategory;
-  status?: QuestionStatus;
+  status?: QuestionStatusFilter;
   sort?: QuestionSortOption;
   q?: string;
 }
@@ -82,7 +87,7 @@ export const CATEGORY_LABELS: Record<QuestionCategory, string> = {
 };
 
 // 상태 라벨 매핑
-export const STATUS_LABELS: Record<QuestionStatus, string> = {
+export const STATUS_LABELS: Record<QuestionStatusFilter, string> = {
   active: '대기중',
   answered: '답변완료',
   deleted: '삭제됨',

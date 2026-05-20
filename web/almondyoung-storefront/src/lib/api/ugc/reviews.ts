@@ -179,7 +179,7 @@ export const updateReview = async (
 
 /**
  * 리뷰 삭제
- * 소프트 삭제 - status가 'deleted'로 변경됨
+ * 소프트 삭제 - deletedAt 이 설정됨
  */
 export const deleteReview = async (id: string): Promise<void> => {
   await api("ugc", `/reviews/${id}`, {

@@ -24,6 +24,7 @@ import {
 import { LockIcon } from 'lucide-react';
 import { FILE_SERVICE_BASE_URL } from '@/const/api-const';
 import Image from 'next/image';
+import { QuestionDeleteButton } from '../question-delete-button';
 
 function QuestionDetailContent({ questionId }: { questionId: string }) {
   const { data } = useQuestion(questionId);
@@ -63,16 +64,10 @@ function QuestionDetailContent({ questionId }: { questionId: string }) {
     },
     {
       key: '상태',
-      value: (
-        <Badge
-          variant={
-            data.status === 'answered'
-              ? 'default'
-              : data.status === 'deleted'
-                ? 'destructive'
-                : 'secondary'
-          }
-        >
+      value: data.deletedAt ? (
+        <Badge variant="destructive">{STATUS_LABELS.deleted}</Badge>
+      ) : (
+        <Badge variant={data.status === 'answered' ? 'default' : 'secondary'}>
           {STATUS_LABELS[data.status]}
         </Badge>
       ),
@@ -158,7 +153,10 @@ function QuestionDetailContent({ questionId }: { questionId: string }) {
 export function QuestionDetail({ questionId }: { questionId: string }) {
   return (
     <Container className="divide-y">
-      <Header title="문의 상세" />
+      <Header
+        title="문의 상세"
+        right={<QuestionDeleteButton questionId={questionId} />}
+      />
       <Suspense
         fallback={
           <div className="flex justify-center p-4">
