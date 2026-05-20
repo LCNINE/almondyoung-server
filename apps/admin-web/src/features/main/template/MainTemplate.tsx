@@ -55,7 +55,7 @@ const QUICK_ACTIONS = [
   { label: '매칭', icon: Boxes, path: '/order/matching', iconColor: 'text-orange-600', bg: 'bg-orange-50' },
   { label: '재고 현황', icon: Warehouse, path: '/inventory/status', iconColor: 'text-green-600', bg: 'bg-green-50' },
   { label: 'QnA', icon: MessageSquare, path: '/cs/qna', iconColor: 'text-purple-600', bg: 'bg-purple-50' },
-  { label: '회원 관리', icon: Users, path: '/users', iconColor: 'text-pink-600', bg: 'bg-pink-50' },
+  { label: '회원 관리', icon: Users, path: '/account/customer', iconColor: 'text-pink-600', bg: 'bg-pink-50' },
   { label: '판매처', icon: Store, path: '/account/sales-channel', iconColor: 'text-teal-600', bg: 'bg-teal-50' },
   { label: '멤버십', icon: Crown, path: '/membership/members', iconColor: 'text-yellow-600', bg: 'bg-yellow-50' },
   { label: '쿠폰', icon: Tag, path: '/mall/marketing/coupons', iconColor: 'text-red-600', bg: 'bg-red-50' },
@@ -97,7 +97,7 @@ export default function MainTemplate() {
       icon: Users,
       iconBg: 'bg-green-50',
       iconColor: 'text-green-600',
-      path: '/users',
+      path: '/account/customer',
     },
     {
       label: '미답변 문의',

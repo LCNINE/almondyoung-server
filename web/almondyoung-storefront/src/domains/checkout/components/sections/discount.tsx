@@ -101,9 +101,9 @@ export const DiscountSection = ({
   const totalDiscount = membershipDiscount + couponDiscount
 
   const formatPromoLabel = (promo: Promotion) =>
-    promo.application_method.type === "percentage"
+    promo.application_method?.type === "percentage"
       ? t("percentDiscount", { value: promo.application_method.value })
-      : t("amountDiscount", { amount: formatPrice(promo.application_method.value) })
+      : t("amountDiscount", { amount: formatPrice(promo.application_method?.value ?? 0) })
 
   return (
     <section aria-labelledby="discount-heading" className="mb-8">
