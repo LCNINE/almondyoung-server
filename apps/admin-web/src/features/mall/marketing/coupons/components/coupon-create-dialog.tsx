@@ -41,6 +41,8 @@ export function CouponCreateDialog({
   const [value, setValue] = useState<number | ''>('');
   const [startsAt, setStartsAt] = useState('');
   const [endsAt, setEndsAt] = useState('');
+  const [minOrderAmount, setMinOrderAmount] = useState<number | ''>('');
+  const [usageLimit, setUsageLimit] = useState<number | ''>('');
 
   const createMutation = useCreateCoupon();
 
@@ -48,7 +50,8 @@ export function CouponCreateDialog({
     if (!code.trim() || !value || (value as number) <= 0) return;
     if (discountType === 'percentage' && (value as number) > 100) return;
 
-    const hasCampaign = startsAt || endsAt;
+    const hasCampaign = startsAt || endsAt || usageLimit;
+    const campaignIdentifier = `CAMP_${code.trim().toUpperCase()}`;
 
     try {
       await createMutation.mutateAsync({
@@ -64,10 +67,24 @@ export function CouponCreateDialog({
         ...(hasCampaign
           ? {
               campaign: {
-                campaign_identifier: `CAMP_${code.trim().toUpperCase()}`,
+                campaign_identifier: campaignIdentifier,
                 ...(startsAt ? { starts_at: new Date(startsAt).toISOString() } : {}),
                 ...(endsAt ? { ends_at: new Date(endsAt).toISOString() } : {}),
+                ...(usageLimit
+                  ? { budget: { type: 'usage' as const, limit: Number(usageLimit) } }
+                  : {}),
               },
+            }
+          : {}),
+        ...(minOrderAmount
+          ? {
+              rules: [
+                {
+                  attribute: 'subtotal',
+                  operator: 'gte',
+                  values: [String(minOrderAmount)],
+                },
+              ],
             }
           : {}),
       });
@@ -84,23 +101,28 @@ export function CouponCreateDialog({
     setValue('');
     setStartsAt('');
     setEndsAt('');
+    setMinOrderAmount('');
+    setUsageLimit('');
     onOpenChange(false);
   };
 
-  const isValid = code.trim() && value && (value as number) > 0 &&
+  const isValid =
+    code.trim() &&
+    value &&
+    (value as number) > 0 &&
     !(discountType === 'percentage' && (value as number) > 100);
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>쿠폰 생성</DialogTitle>
-          <DialogDescription>새 쿠폰 코드와 할인 정보를 입력하세요.</DialogDescription>
+          <DialogDescription>새 쿠폰 코드와 할인 조건을 설정하세요.</DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="space-y-5">
           <div className="space-y-2">
-            <Label>쿠폰 코드</Label>
+            <Label>쿠폰 코드 <span className="text-destructive">*</span></Label>
             <div className="flex gap-2">
               <Input
                 value={code}
@@ -113,6 +135,7 @@ export function CouponCreateDialog({
                 variant="outline"
                 size="icon"
                 onClick={() => setCode(generateCode())}
+                title="자동 생성"
               >
                 <RefreshCw className="h-4 w-4" />
               </Button>
@@ -121,7 +144,7 @@ export function CouponCreateDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label>할인 유형</Label>
+              <Label>할인 유형 <span className="text-destructive">*</span></Label>
               <Select value={discountType} onValueChange={(v) => setDiscountType(v as 'percentage' | 'fixed')}>
                 <SelectTrigger>
                   <SelectValue />
@@ -133,7 +156,10 @@ export function CouponCreateDialog({
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>할인 {discountType === 'percentage' ? '율 (%)' : '금액 (원)'}</Label>
+              <Label>
+                할인 {discountType === 'percentage' ? '율 (%)' : '금액 (원)'}{' '}
+                <span className="text-destructive">*</span>
+              </Label>
               <Input
                 type="number"
                 min={1}
@@ -145,9 +171,34 @@ export function CouponCreateDialog({
             </div>
           </div>
 
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs">
+              <span className="bg-background px-2 text-muted-foreground">사용 조건 (선택)</span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>최소 주문 금액 (원)</Label>
+            <Input
+              type="number"
+              min={0}
+              value={minOrderAmount}
+              onChange={(e) => setMinOrderAmount(e.target.value ? Number(e.target.value) : '')}
+              placeholder="예: 50000 (5만원 이상 구매 시 사용 가능)"
+            />
+            {!!minOrderAmount && (
+              <p className="text-xs text-muted-foreground">
+                {minOrderAmount.toLocaleString('ko-KR')}원 이상 구매 시 사용 가능
+              </p>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label>시작일 (선택)</Label>
+              <Label>시작일</Label>
               <Input
                 type="datetime-local"
                 value={startsAt}
@@ -155,7 +206,7 @@ export function CouponCreateDialog({
               />
             </div>
             <div className="space-y-2">
-              <Label>만료일 (선택)</Label>
+              <Label>만료일</Label>
               <Input
                 type="datetime-local"
                 value={endsAt}
@@ -163,14 +214,29 @@ export function CouponCreateDialog({
               />
             </div>
           </div>
+
+          <div className="space-y-2">
+            <Label>총 사용 횟수 제한</Label>
+            <Input
+              type="number"
+              min={1}
+              value={usageLimit}
+              onChange={(e) => setUsageLimit(e.target.value ? Number(e.target.value) : '')}
+              placeholder="예: 100 (100회 사용 후 자동 만료)"
+            />
+            {!!usageLimit && (
+              <p className="text-xs text-muted-foreground">
+                전체 {usageLimit.toLocaleString('ko-KR')}회 사용 후 자동 비활성화
+              </p>
+            )}
+          </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={handleClose}>취소</Button>
-          <Button
-            onClick={handleSubmit}
-            disabled={createMutation.isPending || !isValid}
-          >
+          <Button variant="outline" onClick={handleClose}>
+            취소
+          </Button>
+          <Button onClick={handleSubmit} disabled={createMutation.isPending || !isValid}>
             {createMutation.isPending ? '생성 중...' : '생성'}
           </Button>
         </DialogFooter>

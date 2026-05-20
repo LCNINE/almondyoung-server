@@ -45,3 +45,15 @@ export const useAssignCoupon = () => {
     },
   });
 };
+
+export const useRevokeCouponFromCustomer = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ promotionId, customerIds }: { promotionId: string; customerIds: string[] }) =>
+      medusaPromotionsApi.revokeFromCustomer(promotionId, customerIds),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: couponQueryKeys.customers(variables.promotionId) });
+      queryClient.invalidateQueries({ queryKey: couponQueryKeys.all });
+    },
+  });
+};

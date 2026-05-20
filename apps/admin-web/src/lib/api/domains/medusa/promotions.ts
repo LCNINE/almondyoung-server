@@ -3,6 +3,12 @@
 import { MEDUSA_BASE_URL } from '@/const';
 import { client } from '../../client';
 
+export interface PromotionRule {
+  attribute: string;
+  operator: string;
+  values: string[];
+}
+
 export interface MedusaPromotion {
   id: string;
   code: string;
@@ -14,6 +20,11 @@ export interface MedusaPromotion {
     campaign_identifier: string;
     starts_at: string | null;
     ends_at: string | null;
+    budget?: {
+      type: string;
+      limit: number | null;
+      used: number;
+    } | null;
   } | null;
   application_method?: {
     id: string;
@@ -21,7 +32,9 @@ export interface MedusaPromotion {
     value: number;
     target_type: string;
     currency_code: string | null;
+    max_quantity: number | null;
   } | null;
+  rules?: PromotionRule[];
   created_at: string;
   updated_at: string;
 }
@@ -49,14 +62,32 @@ export interface CreatePromotionPayload {
     ends_at?: string;
     budget?: { type: 'usage'; limit: number };
   };
+  rules?: PromotionRule[];
+}
+
+export interface CouponCustomer {
+  id: string;
+  email: string;
+  first_name: string | null;
+  last_name: string | null;
+  created_at: string;
+}
+
+export interface CouponCustomersResponse {
+  promotion_id: string;
+  customers: CouponCustomer[];
+  count: number;
+  offset: number;
+  limit: number;
 }
 
 export const medusaPromotionsApi = {
-  list: async (params: { limit?: number; offset?: number; q?: string } = {}) => {
+  list: async (params: { limit?: number; offset?: number; q?: string; status?: string } = {}) => {
     const p = new URLSearchParams();
     if (params.limit !== undefined) p.append('limit', String(params.limit));
     if (params.offset !== undefined) p.append('offset', String(params.offset));
     if (params.q) p.append('q', params.q);
+    if (params.status) p.append('status', params.status);
     const qs = p.toString();
     const res = await client.get<MedusaPromotionListResponse>(
       `${MEDUSA_BASE_URL}/admin/promotions${qs ? `?${qs}` : ''}`
@@ -72,8 +103,9 @@ export const medusaPromotionsApi = {
     return res.data.promotion;
   },
 
+  // Medusa V2 표준은 PATCH
   updateStatus: async (id: string, status: 'active' | 'inactive') => {
-    const res = await client.post<{ promotion: MedusaPromotion }>(
+    const res = await client.patch<{ promotion: MedusaPromotion }>(
       `${MEDUSA_BASE_URL}/admin/promotions/${id}`,
       { status }
     );
@@ -88,6 +120,24 @@ export const medusaPromotionsApi = {
     await client.post(
       `${MEDUSA_BASE_URL}/admin/customers/${medusaCustomerId}/promotions`,
       { promotion_ids: promotionIds }
+    );
+  },
+
+  getCustomers: async (promotionId: string, params: { limit?: number; offset?: number } = {}) => {
+    const p = new URLSearchParams();
+    if (params.limit !== undefined) p.append('limit', String(params.limit));
+    if (params.offset !== undefined) p.append('offset', String(params.offset));
+    const qs = p.toString();
+    const res = await client.get<CouponCustomersResponse>(
+      `${MEDUSA_BASE_URL}/admin/promotions/${promotionId}/customers${qs ? `?${qs}` : ''}`
+    );
+    return res.data;
+  },
+
+  revokeFromCustomer: async (promotionId: string, customerIds: string[]) => {
+    await client.delete(
+      `${MEDUSA_BASE_URL}/admin/promotions/${promotionId}/customers`,
+      { data: { customer_ids: customerIds } }
     );
   },
 };
