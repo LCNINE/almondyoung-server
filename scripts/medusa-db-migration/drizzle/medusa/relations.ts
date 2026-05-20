@@ -109,15 +109,6 @@ export const relations = defineRelations(schema, (r) => ({
 			to: r.customer.id.through(r.customerGroupCustomer.customerId)
 		}),
 	},
-	digitalAssetLicense: {
-		digitalAsset: r.one.digitalAsset({
-			from: r.digitalAssetLicense.digitalAssetId,
-			to: r.digitalAsset.id
-		}),
-	},
-	digitalAsset: {
-		digitalAssetLicenses: r.many.digitalAssetLicense(),
-	},
 	fulfillment: {
 		fulfillmentAddress: r.one.fulfillmentAddress({
 			from: r.fulfillment.deliveryAddressId,
