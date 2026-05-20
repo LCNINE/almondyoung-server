@@ -11,34 +11,40 @@ interface RevokeBody {
 export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   const promotionId = req.params.id;
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
+  const link = req.scope.resolve(ContainerRegistrationKeys.LINK);
 
   const limit = parseInt(req.query.limit as string) || 20;
   const offset = parseInt(req.query.offset as string) || 0;
 
-  const { data: promotions } = await query.graph({
-    entity: 'promotion',
-    fields: [
-      'id',
-      'customers.id',
-      'customers.email',
-      'customers.first_name',
-      'customers.last_name',
-      'customers.created_at',
-    ],
-    filters: { id: promotionId },
-  });
+  // customer-promotion 링크 테이블에서 customer ID 목록 조회
+  // query.graph({ entity: 'promotion', fields: ['customers.*'] })는 MikroORM이
+  // Promotion 엔티티에 customers relation이 없다고 오류를 낸다 — remote link는
+  // LINK.getLinkModule().list()로 직접 조회해야 한다.
+  const linkService = link.getLinkModule(Modules.CUSTOMER, 'customer_id', Modules.PROMOTION, 'promotion_id');
+  const allLinks = await (linkService as any).list(
+    { promotion_id: promotionId },
+    { select: ['customer_id'] },
+  );
 
-  if (!promotions || promotions.length === 0) {
-    throw new MedusaError(MedusaError.Types.NOT_FOUND, 'Promotion not found');
+  const customerIds = allLinks.map((l: any) => l.customer_id);
+  const count = customerIds.length;
+
+  const paginatedIds = customerIds.slice(offset, offset + limit);
+
+  let customers: any[] = [];
+  if (paginatedIds.length > 0) {
+    const { data } = await query.graph({
+      entity: 'customer',
+      fields: ['id', 'email', 'first_name', 'last_name', 'created_at'],
+      filters: { id: paginatedIds },
+    });
+    customers = data;
   }
-
-  const allCustomers = (promotions[0].customers as any[]) ?? [];
-  const paginatedCustomers = allCustomers.slice(offset, offset + limit);
 
   return res.status(200).json({
     promotion_id: promotionId,
-    customers: paginatedCustomers,
-    count: allCustomers.length,
+    customers,
+    count,
     offset,
     limit,
   });
