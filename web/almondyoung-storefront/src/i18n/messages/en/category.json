@@ -12,7 +12,11 @@
   "products": {
     "loadFailed": "Could not load the product list.",
     "emptyTitle": "No products",
-    "emptyDescription": "No products match the current filters"
+    "emptyDescription": "No products match the current filters",
+    "loadingMore": "Loading more products...",
+    "noMore": "You've reached the end",
+    "loadMoreFailed": "Couldn't load more",
+    "retry": "Retry"
   },
   "sort": {
     "createdAt": "Newest",
