@@ -8,6 +8,7 @@ import { getMyProfile } from "@/lib/api/users/profile"
 import "@/styles/globals.css"
 import { retrieveCart } from "@lib/api/medusa/cart"
 import { CustomThemeProvider } from "@lib/providers/custom-theme-provider"
+import { QueryProvider } from "@lib/providers/query-provider"
 import { ThemeProvider } from "@lib/providers/theme-provider"
 import { getSEOTags, renderSchemaTags } from "@lib/seo"
 import { Metadata } from "next"
@@ -46,31 +47,33 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
         className="overflow-x-clip [scrollbar-gutter:stable_both-edges]"
       >
         <NextIntlClientProvider locale={locale} messages={messages}>
-          <OverlayProvider>
-            <UserProvider initialUser={userDetailInfo}>
-              <PushNotificationProvider />
-              <CartProvider initialCart={cart}>
-                <ThemeProvider
-                  attribute="class"
-                  defaultTheme="light"
-                  enableSystem={false}
-                  disableTransitionOnChange
-                >
-                  <CustomThemeProvider>
-                    <div className="relative">
-                      {props.children}
+          <QueryProvider>
+            <OverlayProvider>
+              <UserProvider initialUser={userDetailInfo}>
+                <PushNotificationProvider />
+                <CartProvider initialCart={cart}>
+                  <ThemeProvider
+                    attribute="class"
+                    defaultTheme="light"
+                    enableSystem={false}
+                    disableTransitionOnChange
+                  >
+                    <CustomThemeProvider>
+                      <div className="relative">
+                        {props.children}
 
-                      <FloatingButtons />
-                    </div>
-                    <Toaster />
-                  </CustomThemeProvider>
-                </ThemeProvider>
-                <BottomNavigation />
-              </CartProvider>
-            </UserProvider>
-            <Footer />
-            {renderSchemaTags()}
-          </OverlayProvider>
+                        <FloatingButtons />
+                      </div>
+                      <Toaster />
+                    </CustomThemeProvider>
+                  </ThemeProvider>
+                  <BottomNavigation />
+                </CartProvider>
+              </UserProvider>
+              <Footer />
+              {renderSchemaTags()}
+            </OverlayProvider>
+          </QueryProvider>
         </NextIntlClientProvider>
       </body>
     </html>
