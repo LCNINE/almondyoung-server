@@ -15,10 +15,16 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   const limit = parseInt(req.query.limit as string) || 20;
   const offset = parseInt(req.query.offset as string) || 0;
 
-  //프로모션 존재 확인
   const { data: promotions } = await query.graph({
     entity: 'promotion',
-    fields: ['id'],
+    fields: [
+      'id',
+      'customers.id',
+      'customers.email',
+      'customers.first_name',
+      'customers.last_name',
+      'customers.created_at',
+    ],
     filters: { id: promotionId },
   });
 
@@ -26,19 +32,13 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     throw new MedusaError(MedusaError.Types.NOT_FOUND, 'Promotion not found');
   }
 
-  // 이 프로모션에 연결된 고객을 DB 레벨에서 페이지네이션
-  // query.graph의 pagination은 최상위 엔티티에 적용되므로 customer 기준으로 조회
-  const { data: customers, metadata } = await query.graph({
-    entity: 'customer',
-    fields: ['id', 'email', 'first_name', 'last_name', 'created_at'],
-    filters: { promotions: { id: promotionId } },
-    pagination: { take: limit, skip: offset },
-  });
+  const allCustomers = (promotions[0].customers as any[]) ?? [];
+  const paginatedCustomers = allCustomers.slice(offset, offset + limit);
 
   return res.status(200).json({
     promotion_id: promotionId,
-    customers: customers ?? [],
-    count: (metadata as any)?.count ?? (customers ?? []).length,
+    customers: paginatedCustomers,
+    count: allCustomers.length,
     offset,
     limit,
   });

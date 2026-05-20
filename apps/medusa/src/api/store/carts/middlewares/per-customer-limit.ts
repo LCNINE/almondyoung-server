@@ -1,4 +1,5 @@
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
+import { PROMOTION_META_MODULE } from '../../../../modules/promotion-meta';
 
 interface AddPromotionsBody {
   promo_codes?: string[];
@@ -12,18 +13,20 @@ export const perCustomerLimitMiddleware = async (req: any, res: any, next: any) 
   if (promoCodes.length === 0) return next();
 
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
+  const promotionMetaService = req.scope.resolve(PROMOTION_META_MODULE);
 
   for (const code of promoCodes) {
     const { data: promotions } = await query.graph({
       entity: 'promotion',
-      fields: ['id', 'metadata'],
+      fields: ['id'],
       filters: { code },
     });
 
     if (!promotions?.length) continue;
     const promotion = promotions[0];
 
-    const maxUses = Number((promotion.metadata as Record<string, unknown>)?.max_uses_per_customer);
+    const meta = await promotionMetaService.getByPromotionId(promotion.id);
+    const maxUses = meta?.max_uses_per_customer ? Number(meta.max_uses_per_customer) : 0;
     if (!maxUses || maxUses <= 0) continue;
 
     // Fetch only enough records to decide — avoids loading entire order history.
