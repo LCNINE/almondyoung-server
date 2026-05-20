@@ -65,15 +65,6 @@ export function CategorySheet({ trigger }: CategorySheetProps) {
         side="left"
         className="flex w-[85%] max-w-[400px] flex-col border-none bg-white p-0 outline-none"
       >
-        {/*
-         * 상단 탭 영역
-         * 현재는 "카테고리" 단일 헤더만 노출.
-         * TODO: 추후 확장 예정
-         *   - [ ] 브랜드 탭 추가 (브랜드 데이터 API 연동 필요)
-         *   - [ ] 서비스 탭 추가 (서비스 메뉴 데이터 확정 필요)
-         * 확장 시 <SheetHeader>를 탭 컴포넌트(shadcn Tabs)로 교체하고,
-         * 각 탭별 컨텐츠 영역을 switch/render 하는 구조로 변경.
-         */}
         <SheetHeader className="border-b border-gray-100 px-5 py-4 text-left">
           <SheetTitle className="text-[17px] font-bold">
             {t("title")}
@@ -88,7 +79,8 @@ export function CategorySheet({ trigger }: CategorySheetProps) {
               strokeWidth={1.5}
             />
             <p className="text-[12px] leading-relaxed text-gray-400">
-              {t("errorLine1")}<br />
+              {t("errorLine1")}
+              <br />
               {t("errorLine2")}
             </p>
           </div>
@@ -103,10 +95,7 @@ export function CategorySheet({ trigger }: CategorySheetProps) {
               activeId={activeId}
               onSelect={handleTabSelect}
             />
-            <main
-              ref={scrollRef}
-              className="flex-1 overflow-y-auto bg-white"
-            >
+            <main ref={scrollRef} className="flex-1 overflow-y-auto bg-white">
               {categories.map((cat) => (
                 <CategorySection
                   key={cat.id}

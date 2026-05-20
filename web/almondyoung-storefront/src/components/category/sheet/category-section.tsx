@@ -1,4 +1,6 @@
 import LocalizedClientLink from "@/components/shared/localized-client-link"
+import { CategoryThumbnail } from "@/domains/category/components/category-thumbnail"
+import { getCategoryThumbnail } from "@/domains/category/utils/category-thumbnail"
 import { StoreProductCategoryTree } from "@/lib/types/medusa-category"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { ChevronRight } from "lucide-react"
@@ -15,17 +17,17 @@ export function CategorySection({
 }: CategorySectionProps) {
   const handle = category.handle || category.id
   const children = category.category_children || []
-  const imageSrc = getCategoryImageSrc(category)
+  const imageSrc = getCategoryThumbnail(category)
 
   return (
     <section
       data-section-id={category.id}
-      className="scroll-mt-2 border-b border-gray-100 pt-1 pb-4 first:pt-0 last:border-0"
+      className="scroll-mt-2 border-b border-gray-100 pt-1 pb-5 first:pt-0 last:border-0"
     >
       <LocalizedClientLink
         href={`/category/${handle}`}
         onClick={onNavigate}
-        className="mb-2 flex items-center gap-2 rounded-lg px-3 py-2"
+        className="mb-3 flex items-center gap-2 rounded-lg px-3 py-2"
       >
         <div className="relative flex h-7 w-7 items-center justify-center overflow-hidden rounded-md bg-white">
           {imageSrc ? (
@@ -47,18 +49,19 @@ export function CategorySection({
       </LocalizedClientLink>
 
       {children.length > 0 && (
-        <ul className="flex flex-col px-4">
+        <ul className="grid grid-cols-3 gap-x-2 gap-y-4 px-3">
           {children.map((sub) => {
             const subHandle = sub.handle || sub.id
             return (
               <li key={sub.id}>
-                <LocalizedClientLink
+                <CategoryThumbnail
+                  name={sub.name}
                   href={`/category/${handle}/${subHandle}`}
-                  onClick={onNavigate}
-                  className="block py-2.5 text-[13px] text-gray-700 hover:text-black"
-                >
-                  {sub.name}
-                </LocalizedClientLink>
+                  imageUrl={getCategoryThumbnail(sub)}
+                  variant="square"
+                  sizes="96px"
+                  onNavigate={onNavigate}
+                />
               </li>
             )
           })}
@@ -66,14 +69,4 @@ export function CategorySection({
       )}
     </section>
   )
-}
-
-const getCategoryImageSrc = (category: StoreProductCategoryTree) => {
-  const metadata = category.metadata as
-    | { imageUrl?: unknown; image_url?: unknown; image?: unknown }
-    | null
-    | undefined
-  const image =
-    metadata?.imageUrl || metadata?.image_url || metadata?.image || null
-  return typeof image === "string" ? image : null
 }
