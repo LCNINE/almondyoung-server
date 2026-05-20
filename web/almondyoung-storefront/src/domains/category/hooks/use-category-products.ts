@@ -10,7 +10,7 @@ import type { HttpTypes } from "@medusajs/types"
 import { useInfiniteQuery } from "@tanstack/react-query"
 import { useMemo } from "react"
 
-const PRODUCT_LIMIT = 12
+export const PRODUCT_LIMIT = 12
 
 type ProductPage = {
   response: { products: HttpTypes.StoreProduct[]; count: number }
