@@ -33,7 +33,7 @@ export function BottomNavigation() {
   ]
 
   return (
-    <nav className="bg-background pb-safe fixed right-0 bottom-0 left-0 z-50 flex h-16 items-center justify-around border-t px-2 md:hidden">
+    <nav className="bg-background pb-safe fixed right-0 bottom-0 left-0 z-50 flex min-h-16 items-center justify-around border-t px-2 md:hidden">
       {navItems.map((item) => {
         const isActive = item.href ? pathname === item.href : false
         const commonClassName = cn(
