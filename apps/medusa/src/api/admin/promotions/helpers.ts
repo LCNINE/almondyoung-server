@@ -1,4 +1,4 @@
-import { ContainerRegistrationKeys, MedusaError } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, MedusaError, remoteQueryObjectFromString } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../modules/promotion-meta';
 
 export const PROMOTION_FIELDS = [
@@ -13,6 +13,19 @@ export const PROMOTION_FIELDS = [
   'rules.id', 'rules.attribute', 'rules.operator', 'rules.values.value',
 ];
 
+const META_KEYS = ['name', 'max_discount_amount', 'max_uses_per_customer', 'created_by'] as const;
+
+export function extractMetaFromAdditionalData(
+  additional_data: Record<string, unknown> | undefined | null,
+): Record<string, unknown> | null {
+  if (!additional_data) return null;
+  const result: Record<string, unknown> = {};
+  for (const key of META_KEYS) {
+    if (additional_data[key] != null) result[key] = additional_data[key];
+  }
+  return Object.keys(result).length > 0 ? result : null;
+}
+
 export function toMetadataShape(record: any): Record<string, unknown> | null {
   if (!record) return null;
   const result: Record<string, unknown> = {};
@@ -23,13 +36,23 @@ export function toMetadataShape(record: any): Record<string, unknown> | null {
   return Object.keys(result).length > 0 ? result : null;
 }
 
+async function remoteQueryPromotions(
+  scope: any,
+  variables: Record<string, unknown>,
+): Promise<any[]> {
+  const remoteQuery = scope.resolve(ContainerRegistrationKeys.REMOTE_QUERY);
+  const queryObject = remoteQueryObjectFromString({
+    entryPoint: 'promotion',
+    variables,
+    fields: PROMOTION_FIELDS,
+  });
+  return remoteQuery(queryObject);
+}
+
 export async function fetchPromotionWithMeta(id: string, scope: any) {
-  const query = scope.resolve(ContainerRegistrationKeys.QUERY);
   const promotionMetaService = scope.resolve(PROMOTION_META_MODULE);
 
-  const { data: promotions } = await query.graph({
-    entity: 'promotion',
-    fields: PROMOTION_FIELDS,
+  const promotions = await remoteQueryPromotions(scope, {
     filters: { $or: [{ id }, { code: id }] },
   });
 
@@ -37,7 +60,9 @@ export async function fetchPromotionWithMeta(id: string, scope: any) {
     throw new MedusaError(MedusaError.Types.NOT_FOUND, `Promotion with id or code: ${id} was not found`);
   }
 
-  const promotion = (promotions as any[])[0];
+  const promotion = promotions[0];
   const meta = await promotionMetaService.getByPromotionId(promotion.id);
   return { ...promotion, metadata: toMetadataShape(meta) };
 }
+
+export { remoteQueryPromotions };

@@ -2,7 +2,7 @@ import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/
 import { updatePromotionsWorkflow, deletePromotionsWorkflow } from '@medusajs/core-flows';
 import { PROMOTION_META_MODULE } from '../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../modules/promotion-meta/service';
-import { fetchPromotionWithMeta } from '../helpers';
+import { fetchPromotionWithMeta, extractMetaFromAdditionalData } from '../helpers';
 
 type PromotionMutationBody = Record<string, unknown> & {
   additional_data?: Record<string, unknown>;
@@ -14,14 +14,14 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
 }
 
 export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
-  const promotionMetadata = (req as any).promotionMetadata as Record<string, unknown> | undefined;
   const { additional_data, ...rest } = req.validatedBody as PromotionMutationBody;
+  const promotionMetadata = extractMetaFromAdditionalData(additional_data);
 
   await updatePromotionsWorkflow(req.scope).run({
     input: { promotionsData: [{ id: req.params.id, ...rest }], additional_data },
   });
 
-  if (promotionMetadata && Object.keys(promotionMetadata).length > 0) {
+  if (promotionMetadata) {
     const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
     await promotionMetaService.upsert({ promotion_id: req.params.id, ...promotionMetadata });
   }

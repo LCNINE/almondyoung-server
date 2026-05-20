@@ -185,11 +185,11 @@ export function CouponCreateDialog({
     if (discountType === 'percentage' && (value as number) > 100) return;
     if (targetType === 'items' && targetItems.length === 0) return;
 
-    const metadata: Record<string, unknown> = {};
-    if (trimmedName) metadata.name = trimmedName;
-    if (discountType === 'percentage' && maxDiscountAmount) metadata.max_discount_amount = Number(maxDiscountAmount);
-    if (maxUsesPerCustomer) metadata.max_uses_per_customer = Number(maxUsesPerCustomer);
-    if (me) metadata.created_by = me.email || me.username;
+    const additional_data: Record<string, unknown> = {};
+    if (trimmedName) additional_data.name = trimmedName;
+    if (discountType === 'percentage' && maxDiscountAmount) additional_data.max_discount_amount = Number(maxDiscountAmount);
+    if (maxUsesPerCustomer) additional_data.max_uses_per_customer = Number(maxUsesPerCustomer);
+    if (me) additional_data.created_by = me.email || me.username;
 
     const hasCampaign = startsAt || endsAt || usageLimit;
     const campaignIdentifier = `CAMP_${code.trim().toUpperCase()}`;
@@ -226,7 +226,7 @@ export function CouponCreateDialog({
               rules: [{ attribute: 'subtotal', operator: 'gte', values: [String(minOrderAmount)] }],
             }
           : {}),
-        ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
+        ...(Object.keys(additional_data).length > 0 ? { additional_data } : {}),
       });
       toast.success('쿠폰이 생성되었습니다.');
       handleClose();
