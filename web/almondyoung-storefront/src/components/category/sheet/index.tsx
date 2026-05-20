@@ -63,7 +63,7 @@ export function CategorySheet({ trigger }: CategorySheetProps) {
 
       <SheetContent
         side="left"
-        className="flex w-[85%] max-w-[400px] flex-col border-none bg-white p-0 outline-none"
+        className="z-999 flex w-[85%] max-w-[400px] flex-col border-none bg-white p-0 outline-none"
       >
         <SheetHeader className="border-b border-gray-100 px-5 py-4 text-left">
           <SheetTitle className="text-[17px] font-bold">
