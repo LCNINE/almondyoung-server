@@ -72,7 +72,7 @@ export interface CreatePromotionPayload {
     budget?: { type: 'usage'; limit: number };
   };
   rules?: PromotionRule[];
-  metadata?: Record<string, unknown>;
+  additional_data?: Record<string, unknown>;
 }
 
 export interface CouponCustomer {

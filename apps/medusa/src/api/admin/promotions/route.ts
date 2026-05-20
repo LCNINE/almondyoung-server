@@ -1,16 +1,16 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
-import { ContainerRegistrationKeys, MedusaError } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, MedusaError, remoteQueryObjectFromString } from '@medusajs/framework/utils';
 import { createPromotionsWorkflow } from '@medusajs/core-flows';
 import { PROMOTION_META_MODULE } from '../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../modules/promotion-meta/service';
-import { PROMOTION_FIELDS, toMetadataShape } from './helpers';
+import { PROMOTION_FIELDS, toMetadataShape, extractMetaFromAdditionalData } from './helpers';
 
 type PromotionMutationBody = Record<string, unknown> & {
   additional_data?: Record<string, unknown>;
 };
 
 export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
-  const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
+  const remoteQuery = req.scope.resolve(ContainerRegistrationKeys.REMOTE_QUERY);
   const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
 
   const limit = Math.min(parseInt(req.query.limit as string) || 20, 500);
@@ -20,33 +20,38 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   const filters: Record<string, unknown> = {};
   if (q) filters.code = { $ilike: `%${q}%` };
 
-  const { data: promotions, metadata: queryMeta } = await query.graph({
-    entity: 'promotion',
+  const queryObject = remoteQueryObjectFromString({
+    entryPoint: 'promotion',
+    variables: {
+      filters: Object.keys(filters).length > 0 ? filters : undefined,
+      take: limit,
+      skip: offset,
+    },
     fields: PROMOTION_FIELDS,
-    filters: Object.keys(filters).length > 0 ? filters : undefined,
-    pagination: { take: limit, skip: offset },
   });
 
-  const promotionIds = (promotions as any[]).map((p) => p.id);
-  const metas = await promotionMetaService.getByPromotionIds(promotionIds);
-  const metaMap = new Map((metas as any[]).map((m) => [m.promotion_id, m]));
+  const { rows: promotions, metadata } = await remoteQuery(queryObject);
 
-  const promotionsWithMeta = (promotions as any[]).map((p) => ({
+  const promotionIds = (promotions as any[]).map((p: any) => p.id);
+  const metas = await promotionMetaService.getByPromotionIds(promotionIds);
+  const metaMap = new Map((metas as any[]).map((m: any) => [m.promotion_id, m]));
+
+  const promotionsWithMeta = (promotions as any[]).map((p: any) => ({
     ...p,
     metadata: toMetadataShape(metaMap.get(p.id)),
   }));
 
   return res.json({
     promotions: promotionsWithMeta,
-    count: (queryMeta as any)?.count ?? promotions.length,
+    count: (metadata as any)?.count ?? promotions.length,
     offset,
     limit,
   });
 }
 
 export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
-  const promotionMetadata = (req as any).promotionMetadata as Record<string, unknown> | undefined;
   const { additional_data, ...rest } = req.validatedBody as PromotionMutationBody;
+  const promotionMetadata = extractMetaFromAdditionalData(additional_data);
 
   const { result } = await createPromotionsWorkflow(req.scope).run({
     input: { promotionsData: [rest as any], additional_data },
@@ -54,25 +59,22 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
   const promotionId = result[0].id;
 
-  if (promotionMetadata && Object.keys(promotionMetadata).length > 0) {
+  if (promotionMetadata) {
     const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
     await promotionMetaService.upsert({ promotion_id: promotionId, ...promotionMetadata });
   }
 
-  const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
-  const { data: promotions } = await query.graph({
-    entity: 'promotion',
+  const remoteQuery = req.scope.resolve(ContainerRegistrationKeys.REMOTE_QUERY);
+  const queryObject = remoteQueryObjectFromString({
+    entryPoint: 'promotion',
+    variables: { filters: { id: promotionId } },
     fields: PROMOTION_FIELDS,
-    filters: { id: promotionId },
   });
+  const promotions = await remoteQuery(queryObject);
 
   if (!promotions?.length) {
     throw new MedusaError(MedusaError.Types.NOT_FOUND, `Promotion ${promotionId} not found after creation`);
   }
 
-  const meta = promotionMetadata && Object.keys(promotionMetadata).length > 0
-    ? promotionMetadata
-    : null;
-
-  return res.status(200).json({ promotion: { ...(promotions as any[])[0], metadata: meta } });
+  return res.status(200).json({ promotion: { ...promotions[0], metadata: toMetadataShape(promotionMetadata) } });
 }
