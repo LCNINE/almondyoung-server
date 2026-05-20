@@ -44,7 +44,6 @@
     "@mikro-orm/migrations": "6.4.16",
     "@mikro-orm/postgresql": "6.4.16",
     "@radix-ui/react-visually-hidden": "^1.1.1",
-    "almond-digital-asset-plugin": "0.0.32",
     "awilix": "^8.0.1",
     "axios": "^1.10.0",
     "jose": "^5.9.6",

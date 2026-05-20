@@ -256,9 +256,5 @@ module.exports = defineConfig({
       resolve: '@medusajs/draft-order',
       options: {},
     },
-    // {
-    //   resolve: 'almond-digital-asset-plugin',
-    //   options: {},
-    // },
   ],
 });
