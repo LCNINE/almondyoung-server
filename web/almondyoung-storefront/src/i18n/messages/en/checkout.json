@@ -134,7 +134,8 @@
     "membershipDiscount": "Membership discount",
     "couponDiscount": "Coupon discount",
     "toasts": {
-      "couponApplyFailed": "Failed to apply the coupon. Please try again later."
+      "couponApplyFailed": "Failed to apply the coupon. Please try again later.",
+      "couponLimitExceeded": "You have reached the usage limit for this coupon."
     }
   },
   "paymentTotal": {

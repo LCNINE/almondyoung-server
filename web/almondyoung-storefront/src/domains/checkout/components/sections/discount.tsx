@@ -51,19 +51,22 @@ export const DiscountSection = ({
     (code: string) => {
       startTransition(async () => {
         try {
-          // 기존 쿠폰이 있으면 제거
           if (selectedCoupon) {
             await removePromotionFromCart(cartId, [selectedCoupon])
           }
-          // 새 쿠폰 적용
           if (code) {
             await addPromotionToCart(cartId, [code])
           }
           setSelectedCoupon(code)
           onCouponApplied?.()
         } catch (error) {
-          console.error("쿠폰 적용 실패:", error)
-          toast.error(t("toasts.couponApplyFailed"))
+          const err = error as Error & { digest?: string }
+          if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") throw error
+          if (err.digest === "COUPON_LIMIT_EXCEEDED") {
+            toast.error(t("toasts.couponLimitExceeded"))
+          } else {
+            toast.error(t("toasts.couponApplyFailed"))
+          }
         }
       })
     },

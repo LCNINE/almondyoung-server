@@ -2,6 +2,7 @@
 
 import { sdk } from "@/lib/config/medusa"
 import { getAuthHeaders, getCacheTag } from "@/lib/data/cookies"
+import { HttpApiError } from "@/lib/api/api-error"
 import medusaError from "@/lib/utils/medusa-error"
 import { HttpTypes } from "@medusajs/types"
 import { revalidateTag } from "next/cache"
@@ -61,7 +62,16 @@ export const addPromotionToCart = async (
       revalidateTag(cartCacheTag)
       return cart
     })
-    .catch(medusaError)
+    .catch((error) => {
+      // The Medusa JS SDK throws the response body when status is not 2xx.
+      // Detect our per-customer limit middleware error so the client can show a specific message.
+      if (error?.code === "COUPON_LIMIT_EXCEEDED") {
+        const e = new HttpApiError(error.message ?? "쿠폰 사용 한도 초과", 400, "BAD_REQUEST")
+        e.digest = "COUPON_LIMIT_EXCEEDED"
+        throw e
+      }
+      medusaError(error)
+    })
 }
 
 export const removePromotionFromCart = async (

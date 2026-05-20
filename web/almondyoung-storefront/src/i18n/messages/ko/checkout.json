@@ -134,7 +134,8 @@
     "membershipDiscount": "멤버십 할인",
     "couponDiscount": "쿠폰 할인",
     "toasts": {
-      "couponApplyFailed": "쿠폰 적용에 실패했습니다. 잠시 후 다시 시도해주세요."
+      "couponApplyFailed": "쿠폰 적용에 실패했습니다. 잠시 후 다시 시도해주세요.",
+      "couponLimitExceeded": "이 쿠폰은 1인당 사용 한도에 도달했습니다."
     }
   },
   "paymentTotal": {
