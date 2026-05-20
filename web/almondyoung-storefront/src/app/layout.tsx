@@ -11,7 +11,7 @@ import { CustomThemeProvider } from "@lib/providers/custom-theme-provider"
 import { QueryProvider } from "@lib/providers/query-provider"
 import { ThemeProvider } from "@lib/providers/theme-provider"
 import { getSEOTags, renderSchemaTags } from "@lib/seo"
-import { Metadata } from "next"
+import { Metadata, Viewport } from "next"
 import { NextIntlClientProvider } from "next-intl"
 import { getLocale, getMessages } from "next-intl/server"
 import { OverlayProvider } from "overlay-kit"
@@ -31,6 +31,12 @@ export const metadata: Metadata = getSEOTags({
     manifest: "/site.webmanifest",
   },
 })
+
+// viewport-fit=cover: fixed bottom-0 요소가 홈 인디케이터 영역까지 덮도록 +
+// env(safe-area-inset-*) 값이 실제로 채워지도록 함
+export const viewport: Viewport = {
+  viewportFit: "cover",
+}
 
 export default async function RootLayout(props: { children: React.ReactNode }) {
   const [userDetailInfo, cart, locale, messages] = await Promise.all([
