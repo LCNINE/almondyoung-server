@@ -66,3 +66,17 @@ export const useDeleteReviewComment = (reviewId: string) => {
     },
   });
 };
+
+export const useDeleteReview = (reviewId: string) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => reviewApi.deleteReview(reviewId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: reviewQueryKeys.review(reviewId),
+      });
+      queryClient.invalidateQueries({ queryKey: reviewQueryKeys.all });
+    },
+  });
+};

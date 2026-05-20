@@ -12,19 +12,22 @@ const statusConfig: Record<
 > = {
   active: { label: STATUS_LABELS.active, variant: 'secondary' },
   answered: { label: STATUS_LABELS.answered, variant: 'default' },
-  deleted: { label: STATUS_LABELS.deleted, variant: 'destructive' },
 };
 
 type QnaStatusCellProps = {
-  value: string | null | undefined;
+  status: string | null | undefined;
+  deletedAt?: string | null;
 };
 
-export function QnaStatusCell({ value }: QnaStatusCellProps) {
-  if (!value) return <span className="text-muted-foreground">-</span>;
-  const config = statusConfig[value as QuestionStatus];
+export function QnaStatusCell({ status, deletedAt }: QnaStatusCellProps) {
+  if (deletedAt) {
+    return <Badge variant="destructive">{STATUS_LABELS.deleted}</Badge>;
+  }
+  if (!status) return <span className="text-muted-foreground">-</span>;
+  const config = statusConfig[status as QuestionStatus];
   return (
     <Badge variant={config?.variant ?? 'outline'}>
-      {config?.label ?? value}
+      {config?.label ?? status}
     </Badge>
   );
 }

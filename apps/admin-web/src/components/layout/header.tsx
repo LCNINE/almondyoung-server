@@ -163,12 +163,17 @@ export function Header({ activeMenu, activeItem, onMenuChange }: HeaderProps) {
         />
 
         {/* 로고 */}
-        <Link href="/" className="flex items-center mx-3 lg:mr-6 lg:mx-0 shrink-0">
-          <span className="text-lg font-bold text-blue-600 tracking-tight">LCNINE</span>
+        <Link
+          href="/"
+          className="flex items-center mx-3 lg:mr-6 lg:mx-0 shrink-0"
+        >
+          <span className="text-lg font-bold tracking-tight text-blue-600">
+            LCNINE
+          </span>
         </Link>
 
         {/* 메인 메뉴 (데스크톱) */}
-        <nav className="hidden lg:flex items-center space-x-3 flex-1">
+        <nav className="items-center flex-1 hidden space-x-3 lg:flex">
           {mainMenus.map((menu) => {
             const IconComponent = iconMap[menu.icon as keyof typeof iconMap];
             const isActive = activeMenu === menu.id;
@@ -199,12 +204,12 @@ export function Header({ activeMenu, activeItem, onMenuChange }: HeaderProps) {
                 {/* 호버 드롭다운 - 아코디언 형태 */}
                 {isHovered && isDropdownOpen && (
                   <div
-                    className="absolute top-full left-0 mt-2 w-96 bg-white border border-gray-200 rounded-lg shadow-xl z-50"
+                    className="absolute left-0 z-50 mt-2 bg-white border border-gray-200 rounded-lg shadow-xl top-full w-96"
                     onMouseEnter={() => handleMouseEnter(menu.id)}
                     onMouseLeave={handleMouseLeave}
                   >
                     <div className="p-4">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                      <h3 className="mb-4 text-lg font-semibold text-gray-900">
                         {menu.title}
                       </h3>
                       <Accordion type="single" collapsible className="w-full">
@@ -245,7 +250,7 @@ export function Header({ activeMenu, activeItem, onMenuChange }: HeaderProps) {
                                   {item.children.map((subItem) => (
                                     <div
                                       key={subItem.id}
-                                      className="flex items-center p-2 rounded hover:bg-gray-50 cursor-pointer"
+                                      className="flex items-center p-2 rounded cursor-pointer hover:bg-gray-50"
                                       onClick={() =>
                                         subItem.path &&
                                         handleDropdownItemClick(
@@ -293,7 +298,7 @@ export function Header({ activeMenu, activeItem, onMenuChange }: HeaderProps) {
                 ) : (
                   <Avatar className="w-8 h-8">
                     <AvatarImage src="/placeholder-avatar.jpg" />
-                    <AvatarFallback className="bg-blue-100 text-blue-600 text-sm">
+                    <AvatarFallback className="text-sm text-blue-600 bg-blue-100">
                       {getUserDisplayName().charAt(0).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
@@ -307,16 +312,18 @@ export function Header({ activeMenu, activeItem, onMenuChange }: HeaderProps) {
               </div>
               <DropdownMenuSeparator />
               <DropdownMenuItem>
-                <User className="mr-2 h-4 w-4" />
-                프로필 설정
+                <Link
+                  href="/company/my-account"
+                  className="flex items-center w-full gap-2"
+                >
+                  <User className="w-4 h-4 mr-2" />
+                  프로필 설정
+                </Link>
               </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Settings className="mr-2 h-4 w-4" />
-                계정 설정
-              </DropdownMenuItem>
+
               <DropdownMenuSeparator />
               <DropdownMenuItem className="text-red-600" onClick={handleLogout}>
-                <LogOut className="mr-2 h-4 w-4" />
+                <LogOut className="w-4 h-4 mr-2" />
                 로그아웃
               </DropdownMenuItem>
             </DropdownMenuContent>

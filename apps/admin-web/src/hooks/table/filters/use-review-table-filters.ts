@@ -3,7 +3,7 @@ import {
   HAS_COMMENT_LABELS,
   REVIEW_HAS_COMMENT_OPTIONS,
   REVIEW_RATINGS,
-  REVIEW_STATUSES,
+  REVIEW_STATUS_FILTERS,
   STATUS_LABELS,
 } from '@/lib/types/dto/review';
 
@@ -13,7 +13,7 @@ export function useReviewTableFilters(): Filter[] {
       key: 'status',
       label: '상태',
       type: 'select',
-      options: REVIEW_STATUSES.map((status) => ({
+      options: REVIEW_STATUS_FILTERS.map((status) => ({
         label: STATUS_LABELS[status],
         value: status,
       })),

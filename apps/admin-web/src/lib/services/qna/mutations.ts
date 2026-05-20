@@ -46,3 +46,17 @@ export const useDeleteAnswer = (questionId: string) => {
     },
   });
 };
+
+export const useDeleteQuestion = (questionId: string) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => qnaApi.deleteQuestion(questionId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: qnaQueryKeys.question(questionId),
+      });
+      queryClient.invalidateQueries({ queryKey: qnaQueryKeys.all });
+    },
+  });
+};

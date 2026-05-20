@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { and, asc, count, desc, eq, inArray, lt, ne, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, lt, sql, type SQL } from 'drizzle-orm';
 import { answers, questionMedia, questions, type UgcServiceSchema } from '../db/schema';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateQuestionDto } from './dto/update-question.dto';
@@ -14,7 +14,7 @@ import { QuestionListQueryDto, MyQuestionListQueryDto } from './dto/question-lis
 import { CreateAnswerDto } from './dto/create-answer.dto';
 import { type AnswerEntity, type QuestionEntity, type QuestionWithDetailsEntity } from './types';
 import { PaginatedResponseDto } from '@app/shared/dto';
-import { MAX_QUESTION_MEDIA_COUNT, type QuestionStatus, type QuestionCategory } from './constants';
+import { MAX_QUESTION_MEDIA_COUNT, type QuestionCategory } from './constants';
 import { isNotNull } from 'drizzle-orm';
 
 type DbTransaction = Parameters<Parameters<DbService<UgcServiceSchema>['db']['transaction']>[0]>[0];
@@ -168,7 +168,7 @@ export class QnaService {
       const [existing] = await tx
         .select({ id: questions.id })
         .from(questions)
-        .where(and(eq(questions.id, id), eq(questions.userId, userId), ne(questions.status, 'deleted')));
+        .where(and(eq(questions.id, id), eq(questions.userId, userId), isNull(questions.deletedAt)));
 
       if (!existing) {
         throw new NotFoundException('Question not found');
@@ -205,8 +205,25 @@ export class QnaService {
     return this.inTx(async (tx) => {
       const [question] = await tx
         .update(questions)
-        .set({ status: 'deleted', updatedAt: new Date() })
-        .where(and(eq(questions.id, id), eq(questions.userId, userId), ne(questions.status, 'deleted')))
+        .set({ deletedAt: new Date(), updatedAt: new Date() })
+        .where(and(eq(questions.id, id), eq(questions.userId, userId), isNull(questions.deletedAt)))
+        .returning({ id: questions.id });
+
+      if (!question) {
+        throw new NotFoundException('Question not found');
+      }
+
+      // 질문에 달린 답변도 함께 삭제
+      await tx.delete(answers).where(eq(answers.questionId, id));
+    }, tx);
+  }
+
+  async deleteQuestionByAdmin(id: string, tx?: DbTransaction): Promise<void> {
+    return this.inTx(async (tx) => {
+      const [question] = await tx
+        .update(questions)
+        .set({ deletedAt: new Date(), updatedAt: new Date() })
+        .where(and(eq(questions.id, id), isNull(questions.deletedAt)))
         .returning({ id: questions.id });
 
       if (!question) {
@@ -228,7 +245,7 @@ export class QnaService {
       const [question] = await tx
         .select()
         .from(questions)
-        .where(and(eq(questions.id, id), ne(questions.status, 'deleted')));
+        .where(and(eq(questions.id, id), isNull(questions.deletedAt)));
 
       if (!question) {
         throw new NotFoundException('Question not found');
@@ -265,7 +282,7 @@ export class QnaService {
         return { data: [], total: 0, page, limit };
       }
 
-      const conditions: SQL[] = [ne(questions.status, 'deleted')];
+      const conditions: SQL[] = [isNull(questions.deletedAt)];
 
       // productId가 있으면 상품별 조회, 없으면 전체 조회 (productId가 있는 것만)
       if (query.productId) {
@@ -338,7 +355,7 @@ export class QnaService {
       page?: number;
       limit?: number;
       category?: QuestionCategory;
-      status?: QuestionStatus;
+      status?: 'active' | 'answered' | 'deleted';
       sort?: string;
       q?: string;
     },
@@ -351,11 +368,14 @@ export class QnaService {
 
       const conditions: SQL[] = [];
 
-      // 상태 필터 (기본값: 삭제된 것 제외)
-      if (query.status) {
-        conditions.push(eq(questions.status, query.status as QuestionStatus));
+      // 상태 필터 (기본값: 삭제된 것 제외, deleted 지정 시 삭제됨만)
+      if (query.status === 'deleted') {
+        conditions.push(isNotNull(questions.deletedAt));
+      } else if (query.status) {
+        conditions.push(eq(questions.status, query.status));
+        conditions.push(isNull(questions.deletedAt));
       } else {
-        conditions.push(ne(questions.status, 'deleted' as QuestionStatus));
+        conditions.push(isNull(questions.deletedAt));
       }
 
       // 카테고리 필터
@@ -414,7 +434,7 @@ export class QnaService {
       const limit = query.limit ?? 20;
       const offset = (page - 1) * limit;
 
-      const conditions: SQL[] = [eq(questions.userId, userId), ne(questions.status, 'deleted')];
+      const conditions: SQL[] = [eq(questions.userId, userId), isNull(questions.deletedAt)];
 
       if (query.category) {
         conditions.push(eq(questions.category, query.category));
@@ -459,7 +479,7 @@ export class QnaService {
 
     const deleted = await this.client
       .delete(questions)
-      .where(and(eq(questions.status, 'deleted'), lt(questions.updatedAt, threshold)))
+      .where(and(isNotNull(questions.deletedAt), lt(questions.deletedAt, threshold)))
       .returning({ id: questions.id });
 
     return deleted.length;
@@ -472,7 +492,7 @@ export class QnaService {
       const rows = await tx
         .select({ status: questions.status, count: count() })
         .from(questions)
-        .where(and(eq(questions.productId, productId), ne(questions.status, 'deleted')))
+        .where(and(eq(questions.productId, productId), isNull(questions.deletedAt)))
         .groupBy(questions.status);
 
       let answeredCount = 0;
@@ -507,7 +527,7 @@ export class QnaService {
       const [question] = await tx
         .select({ id: questions.id })
         .from(questions)
-        .where(and(eq(questions.id, questionId), ne(questions.status, 'deleted')));
+        .where(and(eq(questions.id, questionId), isNull(questions.deletedAt)));
 
       if (!question) {
         throw new NotFoundException('Question not found');

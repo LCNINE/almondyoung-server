@@ -1,7 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsOptional, IsUUID } from 'class-validator';
 import { PaginationQueryDto } from '@app/shared/dto';
-import { type ReviewStatus } from '../types';
 
 export const REVIEW_RATING_FILTERS = ['1', '2', '3', '4', '5', 'positive', 'negative'] as const;
 
@@ -14,7 +13,9 @@ export type ReviewSortOption = (typeof REVIEW_SORT_OPTIONS)[number];
 export const REVIEW_TYPE_OPTIONS = ['all', 'photo', 'text'] as const;
 export type ReviewTypeOption = (typeof REVIEW_TYPE_OPTIONS)[number];
 
+// 'deleted'는 enum 값이 아니라 어드민 목록의 필터 옵션(삭제됨=deletedAt IS NOT NULL)
 export const REVIEW_STATUS_FILTERS = ['active', 'hidden', 'deleted'] as const;
+export type ReviewStatusFilter = (typeof REVIEW_STATUS_FILTERS)[number];
 
 export const REVIEW_HAS_COMMENT_FILTERS = ['true', 'false'] as const;
 export type ReviewHasCommentFilter = (typeof REVIEW_HAS_COMMENT_FILTERS)[number];
@@ -59,12 +60,12 @@ export class ReviewListQueryDto extends PaginationQueryDto {
 // 관리자용 전체 리뷰 조회
 export class AdminReviewListQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({
-    description: '상태 필터 (미지정 시 deleted 제외)',
+    description: '상태 필터 (미지정 시 삭제됨 제외, deleted 지정 시 삭제됨만)',
     enum: REVIEW_STATUS_FILTERS,
   })
   @IsOptional()
   @IsIn(REVIEW_STATUS_FILTERS)
-  status?: ReviewStatus;
+  status?: ReviewStatusFilter;
 
   @ApiPropertyOptional({
     description: '평점 필터 (1~5 또는 positive/negative)',

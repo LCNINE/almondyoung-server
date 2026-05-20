@@ -47,6 +47,13 @@ export class ReviewResponseDto {
   status: string;
 
   @ApiProperty({
+    description: '삭제일시 (ISO 8601 형식, 미삭제 시 null)',
+    nullable: true,
+    example: null,
+  })
+  deletedAt: string | null;
+
+  @ApiProperty({
     description: '생성일시 (ISO 8601 형식)',
     example: '2025-12-05T10:30:00.000Z',
   })

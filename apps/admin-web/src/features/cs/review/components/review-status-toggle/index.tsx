@@ -91,8 +91,6 @@ function ReviewStatusToggleContent({ reviewId }: { reviewId: string }) {
             <AlertDialogDescription>
               상태를 &quot;{pendingStatus && STATUS_LABELS[pendingStatus]}&quot;
               (으)로 변경하시겠습니까?
-              {pendingStatus === 'deleted' &&
-                ' 삭제된 리뷰는 사용자에게 더 이상 노출되지 않습니다.'}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
