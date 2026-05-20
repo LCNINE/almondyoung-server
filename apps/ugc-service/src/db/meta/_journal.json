@@ -8,6 +8,13 @@
       "when": 1779113592014,
       "tag": "20260518141312_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1779244739804,
+      "tag": "20260520023859_review-question-soft-delete",
+      "breakpoints": true
     }
   ]
 }

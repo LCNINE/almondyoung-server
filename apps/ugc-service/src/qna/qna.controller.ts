@@ -192,6 +192,17 @@ export class QnaController {
     return QnaMapper.toQuestionResponse(question);
   }
 
+  @Delete('admin/questions/:id')
+  @RequireScopes('admin:ugc:modify')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: '문의 삭제 (관리자, soft delete)' })
+  @ApiParam({ name: 'id', description: '질문 ID (UUID)' })
+  @ApiResponse({ status: HttpStatus.NO_CONTENT, description: '문의 삭제 성공' })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: '문의를 찾을 수 없음' })
+  async deleteQuestionByAdmin(@Param('id') id: string): Promise<void> {
+    await this.qnaService.deleteQuestionByAdmin(id);
+  }
+
   // ─── 답변 (관리자) ───
 
   @Post('questions/:id/answer')

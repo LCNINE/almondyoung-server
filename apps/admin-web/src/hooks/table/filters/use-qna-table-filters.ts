@@ -3,7 +3,7 @@ import {
   CATEGORY_LABELS,
   STATUS_LABELS,
   QUESTION_CATEGORIES,
-  QUESTION_STATUSES,
+  QUESTION_STATUS_FILTERS,
 } from '@/lib/types/dto/qna';
 
 export function useQnaTableFilters(): Filter[] {
@@ -21,7 +21,7 @@ export function useQnaTableFilters(): Filter[] {
       key: 'status',
       label: '상태',
       type: 'select',
-      options: QUESTION_STATUSES.map((status) => ({
+      options: QUESTION_STATUS_FILTERS.map((status) => ({
         label: STATUS_LABELS[status],
         value: status,
       })),

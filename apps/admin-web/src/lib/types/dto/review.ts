@@ -1,7 +1,12 @@
 // 리뷰 관련 DTO 타입 정의
 
-export const REVIEW_STATUSES = ['active', 'hidden', 'deleted'] as const;
+// 리뷰 상태 (백엔드 enum 미러)
+export const REVIEW_STATUSES = ['active', 'hidden'] as const;
 export type ReviewStatus = (typeof REVIEW_STATUSES)[number];
+
+// 어드민 목록 필터 옵션 ('deleted'는 deletedAt 기반 삭제됨 필터)
+export const REVIEW_STATUS_FILTERS = ['active', 'hidden', 'deleted'] as const;
+export type ReviewStatusFilter = (typeof REVIEW_STATUS_FILTERS)[number];
 
 export const REVIEW_RATINGS = ['1', '2', '3', '4', '5'] as const;
 export type ReviewRating = (typeof REVIEW_RATINGS)[number];
@@ -33,6 +38,7 @@ export interface ReviewDto {
   likeCount: number;
   dislikeCount: number;
   status: ReviewStatus;
+  deletedAt: string | null;
   createdAt: string;
   updatedAt: string;
   adminComment: AdminCommentDto | null;
@@ -41,7 +47,7 @@ export interface ReviewDto {
 export interface ReviewListQuery {
   page?: number;
   limit?: number;
-  status?: ReviewStatus;
+  status?: ReviewStatusFilter;
   rating?: ReviewRating;
   productId?: string;
   hasComment?: ReviewHasCommentOption;
@@ -64,7 +70,7 @@ export interface CreateReviewCommentDto {
   content: string;
 }
 
-export const STATUS_LABELS: Record<ReviewStatus, string> = {
+export const STATUS_LABELS: Record<ReviewStatusFilter, string> = {
   active: '공개',
   hidden: '비공개',
   deleted: '삭제됨',

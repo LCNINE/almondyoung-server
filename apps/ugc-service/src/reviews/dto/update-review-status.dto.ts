@@ -2,7 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { IsIn } from 'class-validator';
 import { type ReviewStatus } from '../types';
 
-export const REVIEW_STATUS_VALUES = ['active', 'hidden', 'deleted'] as const;
+export const REVIEW_STATUS_VALUES = ['active', 'hidden'] as const;
 
 export class UpdateReviewStatusDto {
   @ApiProperty({

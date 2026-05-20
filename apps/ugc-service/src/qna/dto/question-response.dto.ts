@@ -32,6 +32,13 @@ export class QuestionResponseDto {
   @ApiProperty({ description: '상태', example: 'active' })
   status: string;
 
+  @ApiProperty({
+    description: '삭제일시 (ISO 8601, 미삭제 시 null)',
+    nullable: true,
+    example: null,
+  })
+  deletedAt: string | null;
+
   @ApiProperty({ description: '첨부 미디어 파일 ID 목록', type: [String] })
   mediaFileIds: string[];
 

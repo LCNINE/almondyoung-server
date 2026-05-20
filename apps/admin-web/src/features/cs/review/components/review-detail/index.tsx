@@ -7,7 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { useReview } from '@/lib/services/review';
 import { useMastersByIdsSuspense } from '@/lib/services/products/queries';
-import { useAdminUser } from '@/lib/services/users/queries';
+import { useOptionalAdminUser } from '@/lib/services/users/queries';
 import { STATUS_LABELS, ReviewStatus } from '@/lib/types/dto/review';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
@@ -22,6 +22,7 @@ import {
 import { StarIcon } from 'lucide-react';
 import { FILE_SERVICE_BASE_URL } from '@/const/api-const';
 import Image from 'next/image';
+import { ReviewDeleteButton } from '../review-delete-button';
 
 function buildProductThumbnailSrc(thumbnail: string | null | undefined) {
   if (!thumbnail) return '/placeholder.svg';
@@ -56,7 +57,6 @@ function statusVariant(
 ): 'default' | 'secondary' | 'destructive' | 'outline' {
   if (status === 'active') return 'default';
   if (status === 'hidden') return 'secondary';
-  if (status === 'deleted') return 'destructive';
   return 'outline';
 }
 
@@ -65,8 +65,8 @@ function ProductCardSkeleton() {
     <div className="flex items-center gap-3">
       <Skeleton className="w-16 h-16 rounded shrink-0" />
       <div className="min-w-0 space-y-1.5">
-        <Skeleton className="h-4 w-40" />
-        <Skeleton className="h-3 w-56" />
+        <Skeleton className="w-40 h-4" />
+        <Skeleton className="w-56 h-3" />
       </div>
     </div>
   );
@@ -100,8 +100,13 @@ function ReviewProductCard({ productId }: { productId: string }) {
 }
 
 function ReviewAuthorName({ userId }: { userId: string }) {
-  const { data: author } = useAdminUser(userId);
-  return <span>{author.nickname ?? author.username ?? userId}</span>;
+  const { data: author, isLoading, error } = useOptionalAdminUser(userId);
+
+  if (error) {
+    return <span className="text-muted-foreground">{userId}</span>;
+  }
+
+  return <span>{author?.nickname ?? author?.username ?? userId}</span>;
 }
 
 function ReviewDetailContent({ reviewId }: { reviewId: string }) {
@@ -122,7 +127,7 @@ function ReviewDetailContent({ reviewId }: { reviewId: string }) {
   const authorNode: React.ReactNode = data.legacy_author_name ? (
     <span>{data.legacy_author_name}</span>
   ) : data.userId ? (
-    <Suspense fallback={<Skeleton className="h-4 w-24" />}>
+    <Suspense fallback={<Skeleton className="w-24 h-4" />}>
       <ReviewAuthorName userId={data.userId} />
     </Suspense>
   ) : (
@@ -143,7 +148,9 @@ function ReviewDetailContent({ reviewId }: { reviewId: string }) {
     { key: '별점', value: ratingStars(data.rating) },
     {
       key: '상태',
-      value: (
+      value: data.deletedAt ? (
+        <Badge variant="destructive">{STATUS_LABELS.deleted}</Badge>
+      ) : (
         <Badge variant={statusVariant(data.status)}>
           {STATUS_LABELS[data.status]}
         </Badge>
@@ -237,7 +244,10 @@ function ReviewDetailContent({ reviewId }: { reviewId: string }) {
 export function ReviewDetail({ reviewId }: { reviewId: string }) {
   return (
     <Container className="divide-y">
-      <Header title="리뷰 상세" />
+      <Header
+        title="리뷰 상세"
+        right={<ReviewDeleteButton reviewId={reviewId} />}
+      />
       <Suspense
         fallback={
           <div className="flex justify-center p-4">

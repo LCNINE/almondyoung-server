@@ -21,7 +21,7 @@ const timestampColumns = {
 
 export const reviewRewardPolicyTypeEnum = pgEnum('review_reward_policy_type', ['TEXT', 'PHOTO']);
 
-export const reviewStatusEnum = pgEnum('review_status', ['active', 'hidden', 'deleted']);
+export const reviewStatusEnum = pgEnum('review_status', ['active', 'hidden']);
 
 export const reviewRewardPolicies = pgTable(
   'review_reward_policies',
@@ -65,6 +65,8 @@ export const reviews = pgTable(
     legacySourceOrderId: varchar('legacy_source_order_id', { length: 50 }),
     legacyImportedAt: timestamp('legacy_imported_at'),
     legacyPayload: jsonb('legacy_payload'),
+
+    deletedAt: timestamp('deleted_at'),
 
     ...timestampColumns,
   },
@@ -127,7 +129,7 @@ export const reviewComments = pgTable(
   (table) => [uniqueIndex('review_comments_review_id_unique').on(table.reviewId)],
 );
 
-export const questionStatusEnum = pgEnum('question_status', ['active', 'answered', 'deleted']);
+export const questionStatusEnum = pgEnum('question_status', ['active', 'answered']);
 
 export const questionCategoryEnum = pgEnum('question_category', [
   'product',
@@ -151,6 +153,7 @@ export const questions = pgTable(
     content: text('content').notNull(),
     isSecret: boolean('is_secret').notNull().default(false),
     status: questionStatusEnum('status').notNull().default('active'),
+    deletedAt: timestamp('deleted_at'),
     ...timestampColumns,
   },
   (table) => [

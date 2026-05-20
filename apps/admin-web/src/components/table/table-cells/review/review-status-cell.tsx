@@ -12,19 +12,22 @@ const statusConfig: Record<
 > = {
   active: { label: STATUS_LABELS.active, variant: 'default' },
   hidden: { label: STATUS_LABELS.hidden, variant: 'secondary' },
-  deleted: { label: STATUS_LABELS.deleted, variant: 'destructive' },
 };
 
 type ReviewStatusCellProps = {
-  value: string | null | undefined;
+  status: string | null | undefined;
+  deletedAt?: string | null;
 };
 
-export function ReviewStatusCell({ value }: ReviewStatusCellProps) {
-  if (!value) return <span className="text-muted-foreground">-</span>;
-  const config = statusConfig[value as ReviewStatus];
+export function ReviewStatusCell({ status, deletedAt }: ReviewStatusCellProps) {
+  if (deletedAt) {
+    return <Badge variant="destructive">{STATUS_LABELS.deleted}</Badge>;
+  }
+  if (!status) return <span className="text-muted-foreground">-</span>;
+  const config = statusConfig[status as ReviewStatus];
   return (
     <Badge variant={config?.variant ?? 'outline'}>
-      {config?.label ?? value}
+      {config?.label ?? status}
     </Badge>
   );
 }

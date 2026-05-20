@@ -69,4 +69,11 @@ export const qnaApi = {
       `${UGC_SERVICE_BASE_URL}/qna/questions/${questionId}/answer`
     );
   },
+
+  // 질문 삭제 (관리자, soft delete)
+  deleteQuestion: async (questionId: string): Promise<void> => {
+    await client.delete(
+      `${UGC_SERVICE_BASE_URL}/qna/admin/questions/${questionId}`
+    );
+  },
 };

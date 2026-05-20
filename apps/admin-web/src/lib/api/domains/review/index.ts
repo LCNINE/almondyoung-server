@@ -82,4 +82,11 @@ export const reviewApi = {
       `${UGC_SERVICE_BASE_URL}/reviews/${reviewId}/comment`
     );
   },
+
+  // 리뷰 삭제 (관리자, soft delete)
+  deleteReview: async (reviewId: string): Promise<void> => {
+    await client.delete(
+      `${UGC_SERVICE_BASE_URL}/reviews/admin/reviews/${reviewId}`
+    );
+  },
 };

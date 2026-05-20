@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { and, asc, count, desc, eq, exists, gte, inArray, isNull, ne, notExists, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, exists, gte, inArray, isNotNull, isNull, notExists, sql, type SQL } from 'drizzle-orm';
 import {
   reviewComments,
   reviewEligibilities,
@@ -175,7 +175,7 @@ export class ReviewsService {
       const [review] = await tx
         .select({ id: reviews.id })
         .from(reviews)
-        .where(and(eq(reviews.id, reviewId), eq(reviews.status, 'active')));
+        .where(and(eq(reviews.id, reviewId), eq(reviews.status, 'active'), isNull(reviews.deletedAt)));
 
       if (!review) {
         throw new NotFoundException('Review not found');
@@ -252,7 +252,7 @@ export class ReviewsService {
       const [review] = await tx
         .select({ id: reviews.id, userId: reviews.userId })
         .from(reviews)
-        .where(and(eq(reviews.id, reviewId), eq(reviews.status, 'active')));
+        .where(and(eq(reviews.id, reviewId), eq(reviews.status, 'active'), isNull(reviews.deletedAt)));
 
       if (!review) {
         throw new NotFoundException('Review not found');
@@ -461,10 +461,31 @@ export class ReviewsService {
       const [review] = await tx
         .update(reviews)
         .set({
-          status: 'deleted',
+          deletedAt: new Date(),
           updatedAt: new Date(),
         })
-        .where(and(eq(reviews.id, id), eq(reviews.userId, userId), eq(reviews.sourceSystem, SOURCE_SYSTEM)))
+        .where(
+          and(
+            eq(reviews.id, id),
+            eq(reviews.userId, userId),
+            eq(reviews.sourceSystem, SOURCE_SYSTEM),
+            isNull(reviews.deletedAt),
+          ),
+        )
+        .returning({ id: reviews.id });
+
+      if (!review) {
+        throw new NotFoundException('Review not found');
+      }
+    }, tx);
+  }
+
+  async deleteByAdmin(id: string, tx?: DbTransaction): Promise<void> {
+    return this.inTx(async (tx) => {
+      const [review] = await tx
+        .update(reviews)
+        .set({ deletedAt: new Date(), updatedAt: new Date() })
+        .where(and(eq(reviews.id, id), isNull(reviews.deletedAt)))
         .returning({ id: reviews.id });
 
       if (!review) {
@@ -478,7 +499,7 @@ export class ReviewsService {
       const rows = await tx
         .select({ rating: reviews.rating, count: count() })
         .from(reviews)
-        .where(and(eq(reviews.productId, productId), eq(reviews.status, 'active')))
+        .where(and(eq(reviews.productId, productId), eq(reviews.status, 'active'), isNull(reviews.deletedAt)))
         .groupBy(reviews.rating);
 
       const distribution: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
@@ -512,7 +533,7 @@ export class ReviewsService {
       const limit = query.limit ?? 20;
       const offset = (page - 1) * limit;
 
-      const conditions: SQL[] = [eq(reviews.userId, userId), eq(reviews.status, 'active')];
+      const conditions: SQL[] = [eq(reviews.userId, userId), eq(reviews.status, 'active'), isNull(reviews.deletedAt)];
 
       if (query.productId) {
         conditions.push(eq(reviews.productId, query.productId));
@@ -598,10 +619,13 @@ export class ReviewsService {
 
       const conditions: SQL[] = [];
 
-      if (query.status) {
+      if (query.status === 'deleted') {
+        conditions.push(isNotNull(reviews.deletedAt));
+      } else if (query.status) {
         conditions.push(eq(reviews.status, query.status));
+        conditions.push(isNull(reviews.deletedAt));
       } else {
-        conditions.push(ne(reviews.status, 'deleted'));
+        conditions.push(isNull(reviews.deletedAt));
       }
 
       if (query.rating) {
@@ -744,7 +768,7 @@ export class ReviewsService {
       const limit = query.limit ?? 20;
       const offset = (page - 1) * limit;
 
-      const conditions: SQL[] = [eq(reviews.productId, query.productId), eq(reviews.status, 'active')];
+      const conditions: SQL[] = [eq(reviews.productId, query.productId), eq(reviews.status, 'active'), isNull(reviews.deletedAt)];
 
       if (query.rating) {
         if (query.rating === 'positive') {

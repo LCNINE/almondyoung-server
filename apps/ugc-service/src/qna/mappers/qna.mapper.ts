@@ -20,6 +20,7 @@ export class QnaMapper {
       content: isHidden ? '' : entity.content,
       isSecret: entity.isSecret,
       status: entity.status,
+      deletedAt: entity.deletedAt?.toISOString() ?? null,
       mediaFileIds: isHidden ? [] : entity.mediaFileIds,
       answer: entity.answer ? QnaMapper.toAnswerResponse(entity.answer) : null,
       createdAt: entity.createdAt.toISOString(),

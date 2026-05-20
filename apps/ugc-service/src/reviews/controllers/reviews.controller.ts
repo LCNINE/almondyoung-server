@@ -197,7 +197,7 @@ export class ReviewsController {
 
   @Patch('admin/reviews/:id/status')
   @RequireScopes('admin:ugc:modify')
-  @ApiOperation({ summary: '리뷰 상태 변경 (활성/숨김/삭제)' })
+  @ApiOperation({ summary: '리뷰 상태 변경 (활성/숨김)' })
   @ApiParam({ name: 'id', description: '리뷰 ID (UUID)' })
   @ApiBody({ type: UpdateReviewStatusDto })
   @ApiResponse({ status: HttpStatus.OK, description: '상태 변경 성공', type: ReviewResponseDto })
@@ -205,6 +205,17 @@ export class ReviewsController {
   async updateReviewStatus(@Param('id') id: string, @Body() dto: UpdateReviewStatusDto): Promise<ReviewResponseDto> {
     const review = await this.reviewsService.updateStatus(id, dto.status);
     return ReviewMapper.toResponse(review);
+  }
+
+  @Delete('admin/reviews/:id')
+  @RequireScopes('admin:ugc:modify')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: '리뷰 삭제 (관리자, soft delete)' })
+  @ApiParam({ name: 'id', description: '리뷰 ID (UUID)' })
+  @ApiResponse({ status: HttpStatus.NO_CONTENT, description: '리뷰 삭제 성공' })
+  @ApiResponse({ status: HttpStatus.NOT_FOUND, description: '리뷰를 찾을 수 없음' })
+  async deleteByAdmin(@Param('id') id: string): Promise<void> {
+    await this.reviewsService.deleteByAdmin(id);
   }
 
   @Patch(':id')

@@ -127,7 +127,7 @@ interface RewardPolicyResponseDto {
 
 // ─── Q&A ───
 
-type QuestionStatus = "active" | "answered" | "deleted"
+type QuestionStatus = "active" | "answered"
 
 type QuestionCategory =
   | "product"

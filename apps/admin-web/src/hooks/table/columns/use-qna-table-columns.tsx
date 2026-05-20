@@ -29,7 +29,12 @@ export const useQnaTableColumns = () => {
       }),
       columnHelper.accessor('status', {
         header: '상태',
-        cell: ({ getValue }) => <QnaStatusCell value={getValue()} />,
+        cell: ({ row }) => (
+          <QnaStatusCell
+            status={row.original.status}
+            deletedAt={row.original.deletedAt}
+          />
+        ),
       }),
       columnHelper.accessor('createdAt', {
         header: '작성일',
