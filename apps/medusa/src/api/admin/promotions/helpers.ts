@@ -39,22 +39,25 @@ export function toMetadataShape(record: any): Record<string, unknown> | null {
 async function remoteQueryPromotions(
   scope: any,
   variables: Record<string, unknown>,
+  fields: string[] = PROMOTION_FIELDS,
 ): Promise<any[]> {
   const remoteQuery = scope.resolve(ContainerRegistrationKeys.REMOTE_QUERY);
   const queryObject = remoteQueryObjectFromString({
     entryPoint: 'promotion',
     variables,
-    fields: PROMOTION_FIELDS,
+    fields,
   });
   return remoteQuery(queryObject);
 }
 
-export async function fetchPromotionWithMeta(id: string, scope: any) {
+export async function fetchPromotionWithMeta(id: string, scope: any, fields?: string[]) {
   const promotionMetaService = scope.resolve(PROMOTION_META_MODULE);
 
-  const promotions = await remoteQueryPromotions(scope, {
-    filters: { $or: [{ id }, { code: id }] },
-  });
+  const promotions = await remoteQueryPromotions(
+    scope,
+    { filters: { $or: [{ id }, { code: id }] } },
+    fields,
+  );
 
   if (!promotions?.length) {
     throw new MedusaError(MedusaError.Types.NOT_FOUND, `Promotion with id or code: ${id} was not found`);
