@@ -1,8 +1,8 @@
-import { CategoryThumbnail } from "@/domains/category/components/category-thumbnail"
 import { getCategoryThumbnail } from "@/domains/category/utils/category-thumbnail"
 import { getCategoryFallbackThumbnail } from "@/lib/api/pim/search"
 import type { StoreProductCategoryTree } from "@/lib/types/medusa-category"
 import { collectCategoryIds } from "@/lib/utils/collect-category-ids"
+import { SubCategoryNavList } from "./sub-category-nav-list"
 
 interface SubCategoryNavProps {
   categories: StoreProductCategoryTree[]
@@ -29,23 +29,14 @@ export async function SubCategoryNav({
 
   const thumbnails = await Promise.all(categories.map(resolveThumbnail))
 
-  return (
-    <div className="flex flex-wrap gap-6">
-      {categories.map((category, index) => {
-        const href = parentHandle
-          ? `/category/${parentHandle}/${category.handle}`
-          : `/category/${category.handle}`
+  const items = categories.map((category, index) => ({
+    id: category.id,
+    name: category.name,
+    href: parentHandle
+      ? `/category/${parentHandle}/${category.handle}`
+      : `/category/${category.handle}`,
+    imageUrl: thumbnails[index],
+  }))
 
-        return (
-          <CategoryThumbnail
-            key={category.id}
-            name={category.name}
-            href={href}
-            imageUrl={thumbnails[index]}
-            variant="circle"
-          />
-        )
-      })}
-    </div>
-  )
+  return <SubCategoryNavList items={items} />
 }
