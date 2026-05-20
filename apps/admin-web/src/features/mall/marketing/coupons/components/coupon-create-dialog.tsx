@@ -230,8 +230,9 @@ export function CouponCreateDialog({
       });
       toast.success('쿠폰이 생성되었습니다.');
       handleClose();
-    } catch {
-      toast.error('쿠폰 생성에 실패했습니다.');
+    } catch (e: unknown) {
+      const msg = (e as any)?.response?.data?.message ?? (e as any)?.message ?? '쿠폰 생성에 실패했습니다.';
+      toast.error(msg);
     }
   };
 

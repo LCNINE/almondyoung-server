@@ -9,7 +9,8 @@ type PromotionMutationBody = Record<string, unknown> & {
 };
 
 export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
-  const promotion = await fetchPromotionWithMeta(req.params.id, req.scope);
+  const fields = (req as any).queryConfig?.fields;
+  const promotion = await fetchPromotionWithMeta(req.params.id, req.scope, fields);
   return res.status(200).json({ promotion });
 }
 
@@ -26,7 +27,8 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     await promotionMetaService.upsert({ promotion_id: req.params.id, ...promotionMetadata });
   }
 
-  const promotion = await fetchPromotionWithMeta(req.params.id, req.scope);
+  const fields = (req as any).queryConfig?.fields;
+  const promotion = await fetchPromotionWithMeta(req.params.id, req.scope, fields);
   return res.status(200).json({ promotion });
 }
 

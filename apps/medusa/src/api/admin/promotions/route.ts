@@ -20,6 +20,9 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   const filters: Record<string, unknown> = {};
   if (q) filters.code = { $ilike: `%${q}%` };
 
+  // validateAndTransformQuery 미들웨어가 *campaign 등을 올바르게 처리한 fields를 제공
+  const fields = (req as any).queryConfig?.fields ?? PROMOTION_FIELDS;
+
   const queryObject = remoteQueryObjectFromString({
     entryPoint: 'promotion',
     variables: {
@@ -27,7 +30,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       take: limit,
       skip: offset,
     },
-    fields: PROMOTION_FIELDS,
+    fields,
   });
 
   const { rows: promotions, metadata } = await remoteQuery(queryObject);
@@ -64,11 +67,17 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     await promotionMetaService.upsert({ promotion_id: promotionId, ...promotionMetadata });
   }
 
+  // POST 응답에는 *campaign 같은 wildcard 없이 기본 필드만. GET 목록 갱신 시 queryConfig.fields를 씀
+  const fields = (req as any).queryConfig?.fields ?? [
+    'id', 'code', 'is_automatic', 'type', 'status', 'campaign_id',
+    'created_at', 'updated_at',
+  ];
+
   const remoteQuery = req.scope.resolve(ContainerRegistrationKeys.REMOTE_QUERY);
   const queryObject = remoteQueryObjectFromString({
     entryPoint: 'promotion',
     variables: { filters: { id: promotionId } },
-    fields: PROMOTION_FIELDS,
+    fields,
   });
   const promotions = await remoteQuery(queryObject);
 
