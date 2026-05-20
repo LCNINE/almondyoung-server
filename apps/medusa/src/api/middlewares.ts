@@ -1,5 +1,6 @@
 import { authenticate, defineMiddlewares } from '@medusajs/framework/http';
 import { adminRouteMiddlewares } from './admin/middlewares';
+import { perCustomerLimitMiddleware } from './store/carts/middlewares/per-customer-limit';
 
 // 프로파일링용 타이밍 미들웨어
 const timingMiddleware = (req: any, res: any, next: any) => {
@@ -26,6 +27,11 @@ export default defineMiddlewares({
       middlewares: [timingMiddleware],
     },
     ...adminRouteMiddlewares,
+    {
+      matcher: '/store/carts/:id/promotions',
+      method: 'POST',
+      middlewares: [perCustomerLimitMiddleware],
+    },
     {
       matcher: '/store/customers/me/promotions',
       middlewares: [authenticate('customer', ['session', 'bearer'])],

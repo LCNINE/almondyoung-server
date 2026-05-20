@@ -9,6 +9,12 @@ export interface PromotionRule {
   values: string[];
 }
 
+export interface PromotionTargetRule {
+  attribute: 'product_id' | 'product_category_id' | 'product_collection_id' | 'product_type_id';
+  operator: 'in';
+  values: string[];
+}
+
 export interface MedusaPromotion {
   id: string;
   code: string;
@@ -30,11 +36,13 @@ export interface MedusaPromotion {
     id: string;
     type: 'percentage' | 'fixed';
     value: number;
-    target_type: string;
+    target_type: 'order' | 'items';
     currency_code: string | null;
     max_quantity: number | null;
+    target_rules?: PromotionTargetRule[];
   } | null;
   rules?: PromotionRule[];
+  metadata?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }
@@ -53,8 +61,9 @@ export interface CreatePromotionPayload {
   application_method: {
     type: 'percentage' | 'fixed';
     value: number;
-    target_type: 'order';
+    target_type: 'order' | 'items';
     currency_code?: string;
+    target_rules?: PromotionTargetRule[];
   };
   campaign?: {
     campaign_identifier: string;
@@ -63,6 +72,7 @@ export interface CreatePromotionPayload {
     budget?: { type: 'usage'; limit: number };
   };
   rules?: PromotionRule[];
+  metadata?: Record<string, unknown>;
 }
 
 export interface CouponCustomer {
