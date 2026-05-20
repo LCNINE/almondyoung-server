@@ -5,26 +5,23 @@ import { CategoryBreadcrumb } from "../components/breadcrumb"
 import RefinementList from "../components/refinement-list"
 import { SortOptions } from "../components/refinement-list/sort-products"
 import { SubCategoryNav } from "../components/sub-category-nav"
-import PaginatedProducts from "./paginated-products"
+import CategoryProducts from "./category-products"
 import { ProductsSkeleton } from "../../../components/skeletons/products-skeleton"
 import { ErrorBoundary } from "@/components/shared/error-boundary"
 import { collectCategoryIds } from "@/lib/utils/collect-category-ids"
 
 export function CategoryTemplate({
   sortBy,
-  page,
   countryCode,
   category,
   segments,
 }: {
   sortBy?: SortOptions
-  page?: string
   countryCode: string
   category?: HttpTypes.StoreProductCategory
   segments?: string[]
 }) {
   const t = useTranslations("category.products")
-  const pageNumber = page ? parseInt(page) : 1
   const sort = sortBy || "created_at"
 
   const hasChildren =
@@ -71,9 +68,8 @@ export function CategoryTemplate({
       <div className="w-full">
         <ErrorBoundary fallback={<div>{t("loadFailed")}</div>}>
           <Suspense fallback={<ProductsSkeleton />}>
-            <PaginatedProducts
+            <CategoryProducts
               sortBy={sort}
-              page={pageNumber}
               countryCode={countryCode}
               categoryIds={category ? collectCategoryIds(category) : undefined}
             />
