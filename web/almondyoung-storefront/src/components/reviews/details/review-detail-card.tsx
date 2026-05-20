@@ -19,7 +19,7 @@ export function ReviewDetailCard({ countryCode, review }: Props) {
   )
 
   return (
-    <article className="w-full space-y-3 border-t border-border py-6">
+    <article className="border-border w-full space-y-3 border-t py-6">
       <header className="space-y-1.5">
         <ReviewAuthor author={authorName} tags={[]} />
 
@@ -27,7 +27,7 @@ export function ReviewDetailCard({ countryCode, review }: Props) {
           <StarRating rating={review.rating} />
           <time
             dateTime={review.createdAt}
-            className="text-xs text-muted-foreground"
+            className="text-muted-foreground text-xs"
           >
             {formatDate(review.createdAt, DATE_FORMATS.KO_DOT)}
           </time>

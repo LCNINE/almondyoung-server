@@ -70,18 +70,18 @@ export function ReviewHelpfulButton({
         className={cn(
           "h-7 px-3 text-xs font-normal transition-colors",
           liked
-            ? "border-primary bg-primary/10 text-primary hover:bg-primary/15 hover:text-primary"
-            : "text-muted-foreground hover:border-primary hover:text-primary"
+            ? "border-rose-200 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-600"
+            : "text-muted-foreground hover:border-rose-200 hover:text-rose-500"
         )}
       >
         {t("helpful")}
       </Button>
 
-      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+      <span className="text-muted-foreground flex items-center gap-1 text-xs">
         <Heart
           className={cn(
             "h-3 w-3 transition-colors",
-            liked ? "fill-primary text-primary" : "text-muted-foreground"
+            liked ? "fill-rose-500 text-rose-500" : "text-muted-foreground"
           )}
         />
         {likeCount}
