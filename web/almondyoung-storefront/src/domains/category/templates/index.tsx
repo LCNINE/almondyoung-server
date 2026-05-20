@@ -40,11 +40,11 @@ export function CategoryTemplate({
         <div className="mb-8">
           <Suspense
             fallback={
-              <div className="flex flex-wrap gap-6">
+              <div className="flex flex-wrap gap-1">
                 {category!.category_children!.map((child) => (
                   <div
                     key={child.id}
-                    className="flex flex-col items-center gap-2"
+                    className="flex flex-col items-center gap-2 rounded-2xl px-4 pb-3 pt-4"
                   >
                     <div className="h-24 w-24 animate-pulse rounded-full bg-gray-200" />
                     <span className="text-sm text-gray-700">{child.name}</span>
