@@ -1,14 +1,13 @@
 "use client"
 
 import LocalizedClientLink from "@/components/shared/localized-client-link"
-import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
 import { Spinner } from "@/components/shared/spinner"
+import { Button } from "@/components/ui/button"
 import { useUser } from "@/contexts/user-context"
 import { signout } from "@lib/api/users/signout"
 import { ChevronRight, Coins, Crown, User } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { useTransition } from "react"
-import { Button } from "@/components/ui/button"
 
 interface UserProfileSectionProps {
   userName: string
@@ -85,7 +84,11 @@ export function UserProfileSection({
                 </LocalizedClientLink>
               </li>
               <li>
-                <Button className="cursor-pointer" variant="outline">
+                <Button
+                  className="cursor-pointer"
+                  variant="outline"
+                  onClick={handleLogout}
+                >
                   {isPending ? <Spinner size="sm" color="gray" /> : t("logout")}
                 </Button>
               </li>
