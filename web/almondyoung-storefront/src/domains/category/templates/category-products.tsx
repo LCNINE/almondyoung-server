@@ -2,14 +2,13 @@ import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import { listProducts, listProductsSorted } from "@/lib/api/medusa/products"
 import { getRegion } from "@/lib/api/medusa/regions"
 import { isMembershipGroup } from "@/lib/utils/membership-group"
-import { SortOptions } from "../components/refinement-list/sort-products"
-import { isSortedOption, mapSortParams } from "../utils/sort-mapping"
-import InfiniteProducts from "./infinite-products"
 import { getWishlist } from "@lib/api/users/wishlist"
 import { PackageX } from "lucide-react"
 import { getTranslations } from "next-intl/server"
-
-const PRODUCT_LIMIT = 12
+import { SortOptions } from "../components/refinement-list/sort-products"
+import { PRODUCT_LIMIT } from "../hooks/use-category-products"
+import { isSortedOption, mapSortParams } from "../utils/sort-mapping"
+import InfiniteProducts from "./infinite-products"
 
 export default async function CategoryProducts({
   sortBy,
@@ -67,7 +66,7 @@ export default async function CategoryProducts({
     const t = await getTranslations("category.products")
     return (
       <div className="flex min-h-[360px] flex-col items-center justify-center text-center">
-        <PackageX className="mb-4 h-12 w-12 text-gray-300" strokeWidth={1.5} />
+        <PackageX className="w-12 h-12 mb-4 text-gray-300" strokeWidth={1.5} />
         <p className="text-[15px] font-medium text-gray-700">
           {t("emptyTitle")}
         </p>
