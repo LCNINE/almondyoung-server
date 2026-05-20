@@ -4,12 +4,21 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { medusaPromotionsApi } from '@/lib/api/domains/medusa/promotions';
 import { couponQueryKeys } from './query-keys';
 
-export const useCouponList = (params: { limit?: number; offset?: number; q?: string; status?: string } = {}) => {
+export const useCouponList = (params: { limit?: number; offset?: number; q?: string } = {}) => {
   return useQuery({
     queryKey: couponQueryKeys.list(params),
     queryFn: () => medusaPromotionsApi.list(params),
     staleTime: 30 * 1000,
     placeholderData: keepPreviousData,
+  });
+};
+
+export const useGetCoupon = (id: string | null) => {
+  return useQuery({
+    queryKey: couponQueryKeys.detail(id ?? ''),
+    queryFn: () => medusaPromotionsApi.get(id!),
+    enabled: !!id,
+    staleTime: 30 * 1000,
   });
 };
 

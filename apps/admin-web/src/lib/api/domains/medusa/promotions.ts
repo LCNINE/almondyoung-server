@@ -92,17 +92,23 @@ export interface CouponCustomersResponse {
 }
 
 export const medusaPromotionsApi = {
-  list: async (params: { limit?: number; offset?: number; q?: string; status?: string } = {}) => {
+  list: async (params: { limit?: number; offset?: number; q?: string } = {}) => {
     const p = new URLSearchParams();
     if (params.limit !== undefined) p.append('limit', String(params.limit));
     if (params.offset !== undefined) p.append('offset', String(params.offset));
     if (params.q) p.append('q', params.q);
-    if (params.status) p.append('status', params.status);
     const qs = p.toString();
     const res = await client.get<MedusaPromotionListResponse>(
       `${MEDUSA_BASE_URL}/admin/promotions${qs ? `?${qs}` : ''}`
     );
     return res.data;
+  },
+
+  get: async (id: string) => {
+    const res = await client.get<{ promotion: MedusaPromotion }>(
+      `${MEDUSA_BASE_URL}/admin/promotions/${id}`
+    );
+    return res.data.promotion;
   },
 
   create: async (payload: CreatePromotionPayload) => {
@@ -113,9 +119,9 @@ export const medusaPromotionsApi = {
     return res.data.promotion;
   },
 
-  // Medusa V2 표준은 PATCH
+  // Medusa V2: POST /admin/promotions/:id (not PATCH)
   updateStatus: async (id: string, status: 'active' | 'inactive') => {
-    const res = await client.patch<{ promotion: MedusaPromotion }>(
+    const res = await client.post<{ promotion: MedusaPromotion }>(
       `${MEDUSA_BASE_URL}/admin/promotions/${id}`,
       { status }
     );

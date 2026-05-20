@@ -5,7 +5,6 @@ import { Container } from '@/components/admin-ui-experimental/common/container/c
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
 import { Table } from '@/components/admin-ui-experimental/common/table/table';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -23,31 +22,24 @@ import { CouponCreateDialog } from '../components/coupon-create-dialog';
 import { CouponAssignDialog } from '../components/coupon-assign-dialog';
 import { CouponDeleteDialog } from '../components/coupon-delete-dialog';
 import { CouponCustomersDialog } from '../components/coupon-customers-dialog';
+import { CouponDetailDialog } from '../components/coupon-detail-dialog';
 import type { MedusaPromotion } from '@/lib/api/domains/medusa/promotions';
 import { toast } from 'sonner';
-import { Gift, Tag, Users, Search, X } from 'lucide-react';
+import { Gift, Tag, Users, Search, X, Eye } from 'lucide-react';
+import { formatPeriod, getCouponMeta, StatusBadge } from '../coupon-helpers';
 
 const PAGE_SIZE = 20;
-
-function formatDate(iso: string | null | undefined) {
-  if (!iso) return null;
-  return new Date(iso).toLocaleDateString('ko-KR', { year: '2-digit', month: '2-digit', day: '2-digit' });
-}
-
-function formatPeriod(coupon: MedusaPromotion) {
-  if (!coupon.campaign) return '무기한';
-  const start = formatDate(coupon.campaign.starts_at);
-  const end = formatDate(coupon.campaign.ends_at);
-  if (start && end) return `${start} ~ ${end}`;
-  if (end) return `~ ${end}`;
-  if (start) return `${start} ~`;
-  return '무기한';
-}
 
 function formatDiscount(coupon: MedusaPromotion) {
   const m = coupon.application_method;
   if (!m) return '-';
-  return m.type === 'percentage' ? `${m.value}%` : `${m.value.toLocaleString('ko-KR')}원`;
+  if (m.type === 'percentage') {
+    const { maxDiscountAmount } = getCouponMeta(coupon);
+    return maxDiscountAmount
+      ? `${m.value}% (최대 ${maxDiscountAmount.toLocaleString('ko-KR')}원)`
+      : `${m.value}%`;
+  }
+  return `${m.value.toLocaleString('ko-KR')}원`;
 }
 
 function formatConditions(coupon: MedusaPromotion) {
@@ -63,16 +55,9 @@ function formatConditions(coupon: MedusaPromotion) {
   return parts.length > 0 ? parts.join(' · ') : '-';
 }
 
-function StatusBadge({ status }: { status: string }) {
-  if (status === 'active') return <Badge className="bg-green-100 text-green-700 border-0">활성</Badge>;
-  if (status === 'inactive') return <Badge className="bg-gray-100 text-gray-500 border-0">비활성</Badge>;
-  if (status === 'draft') return <Badge className="bg-yellow-100 text-yellow-700 border-0">초안</Badge>;
-  if (status === 'expired') return <Badge className="bg-red-100 text-red-500 border-0">만료</Badge>;
-  return <Badge variant="outline">{status}</Badge>;
-}
-
 interface CouponRowProps {
   coupon: MedusaPromotion;
+  onDetail: (coupon: MedusaPromotion) => void;
   onAssign: (coupon: MedusaPromotion) => void;
   onViewCustomers: (coupon: MedusaPromotion) => void;
   onToggleStatus: (coupon: MedusaPromotion) => void;
@@ -81,13 +66,21 @@ interface CouponRowProps {
   isDeleting: boolean;
 }
 
-function CouponRow({ coupon, onAssign, onViewCustomers, onToggleStatus, onDelete, isToggling, isDeleting }: CouponRowProps) {
+function CouponRow({ coupon, onDetail, onAssign, onViewCustomers, onToggleStatus, onDelete, isToggling, isDeleting }: CouponRowProps) {
   const canToggle = coupon.status === 'active' || coupon.status === 'inactive';
+  const { name } = getCouponMeta(coupon);
 
   return (
     <tr className="border-b last:border-0 hover:bg-muted/30 transition-colors">
       <td className="px-4 py-3">
-        <span className="font-mono text-sm font-semibold">{coupon.code}</span>
+        <button
+          type="button"
+          className="text-left hover:underline focus:outline-none"
+          onClick={() => onDetail(coupon)}
+        >
+          {name && <div className="text-xs text-muted-foreground">{name}</div>}
+          <span className="font-mono text-sm font-semibold">{coupon.code}</span>
+        </button>
       </td>
       <td className="px-4 py-3 text-sm">
         <div className="flex flex-col">
@@ -108,6 +101,16 @@ function CouponRow({ coupon, onAssign, onViewCustomers, onToggleStatus, onDelete
       </td>
       <td className="px-4 py-3">
         <div className="flex items-center gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs"
+            onClick={() => onDetail(coupon)}
+            title="상세 보기"
+          >
+            <Eye className="h-3.5 w-3.5 mr-1" />
+            상세
+          </Button>
           <Button
             size="sm"
             variant="ghost"
@@ -157,6 +160,7 @@ function CouponRow({ coupon, onAssign, onViewCustomers, onToggleStatus, onDelete
 
 export default function MarketingCouponsTemplate() {
   const [createOpen, setCreateOpen] = useState(false);
+  const [detailTarget, setDetailTarget] = useState<MedusaPromotion | null>(null);
   const [assignTarget, setAssignTarget] = useState<MedusaPromotion | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<MedusaPromotion | null>(null);
   const [customersTarget, setCustomersTarget] = useState<MedusaPromotion | null>(null);
@@ -167,17 +171,19 @@ export default function MarketingCouponsTemplate() {
   const updateStatus = useUpdateCouponStatus();
   const deleteCoupon = useDeleteCoupon();
 
+  // Medusa V2 promotions list doesn't accept status as a filter param — fetch a wider batch and filter client-side
   const { data, isLoading } = useCouponList({
-    limit: PAGE_SIZE,
-    offset,
+    limit: statusFilter ? 500 : PAGE_SIZE,
+    offset: statusFilter ? 0 : offset,
     q: search || undefined,
-    status: statusFilter || undefined,
   });
 
-  const coupons = data?.promotions ?? [];
-  const total = data?.count ?? 0;
+  const allCoupons = data?.promotions ?? [];
+  const filtered = statusFilter ? allCoupons.filter((c) => c.status === statusFilter) : allCoupons;
+  const total = statusFilter ? filtered.length : (data?.count ?? 0);
   const pageIndex = Math.floor(offset / PAGE_SIZE);
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const coupons = statusFilter ? filtered.slice(offset, offset + PAGE_SIZE) : filtered;
 
   const handleSearch = (v: string) => {
     setSearch(v);
@@ -290,6 +296,7 @@ export default function MarketingCouponsTemplate() {
                     <CouponRow
                       key={coupon.id}
                       coupon={coupon}
+                      onDetail={setDetailTarget}
                       onAssign={setAssignTarget}
                       onViewCustomers={setCustomersTarget}
                       onToggleStatus={handleToggleStatus}
@@ -315,6 +322,12 @@ export default function MarketingCouponsTemplate() {
           </>
         )}
       </Container>
+
+      <CouponDetailDialog
+        open={!!detailTarget}
+        onOpenChange={(open: boolean) => { if (!open) setDetailTarget(null); }}
+        coupon={detailTarget}
+      />
 
       <CouponCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
 

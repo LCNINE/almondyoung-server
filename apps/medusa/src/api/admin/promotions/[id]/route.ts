@@ -1,0 +1,37 @@
+import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
+import { updatePromotionsWorkflow, deletePromotionsWorkflow } from '@medusajs/core-flows';
+import { PROMOTION_META_MODULE } from '../../../../modules/promotion-meta';
+import { fetchPromotionWithMeta } from '../helpers';
+
+export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
+  const promotion = await fetchPromotionWithMeta(req.params.id, req.scope);
+  return res.status(200).json({ promotion });
+}
+
+export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
+  const promotionMetadata = (req as any).promotionMetadata as Record<string, unknown> | undefined;
+  const { additional_data, ...rest } = req.validatedBody;
+
+  await updatePromotionsWorkflow(req.scope).run({
+    input: { promotionsData: [{ id: req.params.id, ...rest }], additional_data },
+  });
+
+  if (promotionMetadata && Object.keys(promotionMetadata).length > 0) {
+    const promotionMetaService = req.scope.resolve(PROMOTION_META_MODULE);
+    await promotionMetaService.upsert({ promotion_id: req.params.id, ...promotionMetadata });
+  }
+
+  const promotion = await fetchPromotionWithMeta(req.params.id, req.scope);
+  return res.status(200).json({ promotion });
+}
+
+export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
+  const id = req.params.id;
+
+  await deletePromotionsWorkflow(req.scope).run({ input: { ids: [id] } });
+
+  const promotionMetaService = req.scope.resolve(PROMOTION_META_MODULE);
+  await promotionMetaService.deleteByPromotionId(id);
+
+  return res.status(200).json({ id, object: 'promotion', deleted: true });
+}

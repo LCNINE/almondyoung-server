@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { useCreateCoupon } from '@/lib/services/coupons';
+import { useMe } from '@/lib/services/users';
 import { useProductSearch, useCategoryList, useCollectionList } from '@/lib/services/catalog';
 import type { PromotionTargetRule } from '@/lib/api/domains/medusa/promotions';
 import { toast } from 'sonner';
@@ -155,9 +156,11 @@ export function CouponCreateDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const [name, setName] = useState('');
   const [code, setCode] = useState('');
   const [discountType, setDiscountType] = useState<'percentage' | 'fixed'>('percentage');
   const [value, setValue] = useState<number | ''>('');
+  const [maxDiscountAmount, setMaxDiscountAmount] = useState<number | ''>('');
   const [startsAt, setStartsAt] = useState('');
   const [endsAt, setEndsAt] = useState('');
   const [minOrderAmount, setMinOrderAmount] = useState<number | ''>('');
@@ -168,6 +171,7 @@ export function CouponCreateDialog({
   const [targetItems, setTargetItems] = useState<SelectedItem[]>([]);
 
   const createMutation = useCreateCoupon();
+  const { data: me } = useMe();
 
   const handleToggleTargetItem = (item: SelectedItem) => {
     setTargetItems((prev) =>
@@ -176,9 +180,16 @@ export function CouponCreateDialog({
   };
 
   const handleSubmit = async () => {
+    const trimmedName = name.trim();
     if (!code.trim() || !value || (value as number) <= 0) return;
     if (discountType === 'percentage' && (value as number) > 100) return;
     if (targetType === 'items' && targetItems.length === 0) return;
+
+    const metadata: Record<string, unknown> = {};
+    if (trimmedName) metadata.name = trimmedName;
+    if (discountType === 'percentage' && maxDiscountAmount) metadata.max_discount_amount = Number(maxDiscountAmount);
+    if (maxUsesPerCustomer) metadata.max_uses_per_customer = Number(maxUsesPerCustomer);
+    if (me) metadata.created_by = me.email || me.username;
 
     const hasCampaign = startsAt || endsAt || usageLimit;
     const campaignIdentifier = `CAMP_${code.trim().toUpperCase()}`;
@@ -215,9 +226,7 @@ export function CouponCreateDialog({
               rules: [{ attribute: 'subtotal', operator: 'gte', values: [String(minOrderAmount)] }],
             }
           : {}),
-        ...(maxUsesPerCustomer
-          ? { metadata: { max_uses_per_customer: Number(maxUsesPerCustomer) } }
-          : {}),
+        ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
       });
       toast.success('쿠폰이 생성되었습니다.');
       handleClose();
@@ -227,9 +236,11 @@ export function CouponCreateDialog({
   };
 
   const handleClose = () => {
+    setName('');
     setCode('');
     setDiscountType('percentage');
     setValue('');
+    setMaxDiscountAmount('');
     setStartsAt('');
     setEndsAt('');
     setMinOrderAmount('');
@@ -257,6 +268,15 @@ export function CouponCreateDialog({
         </DialogHeader>
 
         <div className="space-y-5">
+          <div className="space-y-2">
+            <Label>쿠폰 이름</Label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="예: 신규 회원 할인 쿠폰"
+            />
+          </div>
+
           <div className="space-y-2">
             <Label>쿠폰 코드 <span className="text-destructive">*</span></Label>
             <div className="flex gap-2">
@@ -306,6 +326,24 @@ export function CouponCreateDialog({
               />
             </div>
           </div>
+
+          {discountType === 'percentage' && (
+            <div className="space-y-2">
+              <Label>최대 할인 금액 (원)</Label>
+              <Input
+                type="number"
+                min={0}
+                value={maxDiscountAmount}
+                onChange={(e) => setMaxDiscountAmount(e.target.value ? Number(e.target.value) : '')}
+                placeholder="예: 10000 (최대 1만원까지 할인)"
+              />
+              {!!maxDiscountAmount && (
+                <p className="text-xs text-muted-foreground">
+                  최대 {(maxDiscountAmount as number).toLocaleString('ko-KR')}원까지 할인
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="space-y-2">
             <Label>쿠폰 적용 대상</Label>

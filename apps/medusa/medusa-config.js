@@ -177,6 +177,9 @@ module.exports = defineConfig({
       resolve: './src/modules/product-sorting',
     },
     {
+      resolve: './src/modules/promotion-meta',
+    },
+    {
       resolve: '@medusajs/medusa/promotion',
     },
     {
