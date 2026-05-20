@@ -1,29 +1,22 @@
-import LocalizedClientLink from "@/components/shared/localized-client-link"
+import { CategoryThumbnail } from "@/domains/category/components/category-thumbnail"
+import { getCategoryThumbnail } from "@/domains/category/utils/category-thumbnail"
 import { getCategoryFallbackThumbnail } from "@/lib/api/pim/search"
-import { CATEGORY_FALLBACK_THUMBNAILS } from "@/lib/constants/category-thumbnails"
 import type { StoreProductCategoryTree } from "@/lib/types/medusa-category"
 import { collectCategoryIds } from "@/lib/utils/collect-category-ids"
-import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
-import Image from "next/image"
 
 interface SubCategoryNavProps {
   categories: StoreProductCategoryTree[]
   parentHandle?: string
 }
 
+// 동기 소스(metadata/폴백 맵)로 못 찾으면 PIM API 폴백까지 시도(서버 컴포넌트 전용).
 async function resolveThumbnail(
   category: StoreProductCategoryTree
 ): Promise<string | null> {
-  const metaThumb = (category.metadata?.thumbnail as string) || null
-  if (metaThumb) return metaThumb
+  const sync = getCategoryThumbnail(category)
+  if (sync) return sync
 
-  const ids = collectCategoryIds(category)
-  for (const id of ids) {
-    const hardcoded = CATEGORY_FALLBACK_THUMBNAILS[id]
-    if (hardcoded) return hardcoded
-  }
-
-  return await getCategoryFallbackThumbnail(ids)
+  return await getCategoryFallbackThumbnail(collectCategoryIds(category))
 }
 
 export async function SubCategoryNav({
@@ -39,32 +32,18 @@ export async function SubCategoryNav({
   return (
     <div className="flex flex-wrap gap-6">
       {categories.map((category, index) => {
-        const imageUrl = thumbnails[index]
         const href = parentHandle
           ? `/category/${parentHandle}/${category.handle}`
           : `/category/${category.handle}`
 
         return (
-          <LocalizedClientLink
+          <CategoryThumbnail
             key={category.id}
+            name={category.name}
             href={href}
-            className="flex flex-col items-center gap-2"
-          >
-            <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full bg-gray-200">
-              {imageUrl ? (
-                <Image
-                  src={getThumbnailUrl(imageUrl)}
-                  alt={category.name}
-                  width={96}
-                  height={96}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <span className="text-xs text-gray-400">No Image</span>
-              )}
-            </div>
-            <span className="text-sm text-gray-700">{category.name}</span>
-          </LocalizedClientLink>
+            imageUrl={thumbnails[index]}
+            variant="circle"
+          />
         )
       })}
     </div>

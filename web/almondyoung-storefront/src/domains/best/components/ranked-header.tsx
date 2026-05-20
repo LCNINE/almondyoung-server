@@ -1,5 +1,4 @@
 import CategoryPillDropdown from "@/components/category/category-pill-dropdown"
-import RankedKeywordList, { Keyword } from "./ranked-keyword-list"
 
 export default function RankedHeader({ title }: { title: string }) {
   return (
