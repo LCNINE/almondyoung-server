@@ -2,7 +2,10 @@
 
 import { Spinner } from "@/components/shared/spinner"
 import { SortOptions } from "@/domains/category/components/refinement-list/sort-products"
-import { useCategoryProducts } from "@/domains/category/hooks/use-category-products"
+import {
+  PRODUCT_LIMIT,
+  useCategoryProducts,
+} from "@/domains/category/hooks/use-category-products"
 import { useProductGridVirtualizer } from "@/domains/category/hooks/use-product-grid-virtualizer"
 import { useWishlistIds } from "@/domains/category/hooks/use-wishlist-ids"
 import ProductCard from "@/domains/products/components/product-card"
@@ -53,7 +56,6 @@ export default function InfiniteProducts({
       initialNextPage,
       totalCount,
     })
-
   const wishlistSet = useWishlistIds({ isLoggedIn, initialWishlistIds })
 
   const { listRef, virtualizer, virtualItems, columns, rowCount, rowHeight } =
@@ -131,8 +133,8 @@ export default function InfiniteProducts({
         })}
       </div>
 
-      {!hasNextPage && allProducts.length > 0 && (
-        <p className="py-8 text-center text-sm text-gray-500">{t("noMore")}</p>
+      {!hasNextPage && allProducts.length > PRODUCT_LIMIT && (
+        <p className="py-8 text-sm text-center text-gray-500">{t("noMore")}</p>
       )}
     </>
   )
