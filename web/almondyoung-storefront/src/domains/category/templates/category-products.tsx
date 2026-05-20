@@ -6,9 +6,10 @@ import { getWishlist } from "@lib/api/users/wishlist"
 import { PackageX } from "lucide-react"
 import { getTranslations } from "next-intl/server"
 import { SortOptions } from "../components/refinement-list/sort-products"
-import { PRODUCT_LIMIT } from "../hooks/use-category-products"
 import { isSortedOption, mapSortParams } from "../utils/sort-mapping"
 import InfiniteProducts from "./infinite-products"
+
+const PRODUCT_LIMIT = 12
 
 export default async function CategoryProducts({
   sortBy,
