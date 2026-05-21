@@ -877,7 +877,7 @@ export interface InboundsResponseDto {
 
 // ===== 자동재고매칭 관련 타입들 =====
 // 상품구분 타입
-export type ProductType = '일반상품' | '세트상품' | '디지털상품';
+export type ProductType = '일반상품' | '세트상품';
 
 // 재고소유 타입
 export type StockOwnerType = '자사' | '위탁' | '직송';
