@@ -7,7 +7,6 @@ import {
   boolean,
   timestamp,
   index,
-  uniqueIndex,
   jsonb,
 } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
@@ -50,9 +49,6 @@ export const uploads = pgTable(
       .notNull()
       .references(() => fileContexts.id, { onDelete: 'restrict' }),
 
-    relatedType: varchar('related_type', { length: 50 }),
-    relatedId: uuid('related_id'),
-
     metadata: jsonb('metadata').$type<{
       width?: number;
       height?: number;
@@ -72,32 +68,8 @@ export const uploads = pgTable(
   (table) => [
     index('idx_uploads_status').on(table.status),
     index('idx_uploads_context_id').on(table.contextId),
-    index('idx_uploads_related').on(table.relatedType, table.relatedId),
     index('idx_uploads_uploaded_by').on(table.uploadedBy),
     index('idx_uploads_created_at').on(table.createdAt),
-  ],
-);
-
-export const fileReferences = pgTable(
-  'file_references',
-  {
-    id: uuid('id')
-      .primaryKey()
-      .$defaultFn(() => uuidv7()),
-    uploadId: uuid('upload_id')
-      .notNull()
-      .references(() => uploads.id, { onDelete: 'cascade' }),
-
-    serviceType: varchar('service_type', { length: 50 }).notNull(),
-    entityType: varchar('entity_type', { length: 50 }).notNull(),
-    entityId: uuid('entity_id').notNull(),
-
-    createdAt: timestamp('created_at').defaultNow().notNull(),
-  },
-  (table) => [
-    index('idx_file_refs_upload').on(table.uploadId),
-    index('idx_file_refs_entity').on(table.serviceType, table.entityType, table.entityId),
-    uniqueIndex('unique_file_reference').on(table.uploadId, table.serviceType, table.entityType, table.entityId),
   ],
 );
 
@@ -115,7 +87,6 @@ export const uploadsRelations = relations(uploads, ({ one }) => ({
 export const fileServiceSchema = {
   fileContexts,
   uploads,
-  fileReferences,
   // Auth Schema (from @app/authorization)
   ...authorizationSchema,
 } as const;
