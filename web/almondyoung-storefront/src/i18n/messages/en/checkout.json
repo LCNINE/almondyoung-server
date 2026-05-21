@@ -76,6 +76,46 @@
         "deleted": "Shipping address deleted.",
         "deleteFailed": "Failed to delete the shipping address."
       }
+    },
+    "form": {
+      "title": { "create": "Add shipping address", "edit": "Edit shipping address" },
+      "submit": { "create": "Save", "edit": "Update" },
+      "submitting": { "create": "Saving...", "edit": "Updating..." },
+      "cancel": "Cancel",
+      "search": "Search address",
+      "fields": {
+        "addressName": "Address label (optional, e.g. Home, Office)",
+        "name": "Recipient name",
+        "firstName": "First name",
+        "lastName": "Last name",
+        "phone": "Phone number",
+        "postalCode": "ZIP / Postal code",
+        "address1": "Address line 1",
+        "address2": "Address line 2 (optional)",
+        "city": "City",
+        "province": "State / Province"
+      },
+      "errors": {
+        "name": "Please enter the recipient name",
+        "firstName": "Please enter your first name",
+        "lastName": "Please enter your last name",
+        "phoneRequired": "Please enter a phone number",
+        "phoneInvalid": "Please enter a valid phone number",
+        "postalCode": "Please enter a ZIP / postal code",
+        "address1": "Please enter your address",
+        "city": "Please enter a city",
+        "province": "Please enter a state / province"
+      },
+      "saveAsDefault": { "create": "Save as default address", "edit": "Set as default address" },
+      "toasts": {
+        "created": "Shipping address registered.",
+        "createdDefault": "Registered as your default shipping address.",
+        "createFailed": "Failed to register the shipping address.",
+        "updated": "Shipping address updated.",
+        "updateFailed": "Failed to update the shipping address.",
+        "saveFailed": "Failed to save the shipping address. Please try again.",
+        "postcodeLoading": "Loading the postal code search service. Please try again shortly."
+      }
     }
   },
   "orderProducts": {

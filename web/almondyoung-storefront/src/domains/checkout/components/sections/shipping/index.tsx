@@ -50,13 +50,19 @@ export const ShippingSection = ({
         address,
         defaultValues: {
           addressName: address.address_name ?? "",
+          // ko 는 단일 name, en/ja 는 분리 필드를 사용한다.
+          // 모달이 locale config 에 따라 필요한 필드만 쓰므로 둘 다 채워둔다.
           name: [address.first_name, address.last_name]
             .filter(Boolean)
             .join(" "),
+          firstName: address.first_name ?? "",
+          lastName: address.last_name ?? "",
           phone: address.phone ?? "",
           postalCode: address.postal_code ?? "",
           address1: address.address_1 ?? "",
           address2: address.address_2 ?? "",
+          city: address.city ?? "",
+          province: address.province ?? "",
           isDefaultShipping: address.is_default_shipping ?? false,
           metadata: address.metadata ?? {},
         },

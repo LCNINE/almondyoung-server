@@ -1,6 +1,5 @@
 "use server"
 
-import { transformFormDataToAddress } from "@/components/address/utils"
 import { sdk } from "@/lib/config/medusa"
 import { StoreCustomerWithGroupsResDto } from "@/lib/types/dto/medusa"
 import medusaError from "@lib/utils/medusa-error"
@@ -162,37 +161,17 @@ export const addCustomerAddress = async (
     })
 }
 
-export const createCustomerShippingAddress = async (address: {
-  first_name: string
-  last_name?: string
-  address_1: string
-  address_2?: string
-  city: string
-  postal_code: string
-  province: string
-  country_code: string
-  phone?: string
-  is_default_shipping?: boolean
-  address_name?: string
-}): Promise<{ success: boolean; error: string | null }> => {
+export const createCustomerShippingAddress = async (
+  address: HttpTypes.StoreCreateCustomerAddress
+): Promise<{ success: boolean; error: string | null }> => {
   const headers = {
     ...(await getAuthHeaders()),
   }
 
-  const transformedAddress = transformFormDataToAddress({
-    name: `${address.first_name} ${address.last_name}`,
-    phone: address.phone ?? "",
-    postalCode: address.postal_code,
-    address1: address.address_1,
-    addressName: address.address_name,
-    address2: address.address_2,
-    saveAsDefault: address.is_default_shipping ?? false,
-  })
-
   return await sdk.store.customer
     .createAddress(
       {
-        ...transformedAddress,
+        ...address,
         is_default_shipping: address.is_default_shipping ?? true,
       },
       {},
@@ -284,34 +263,14 @@ export const setDefaultShippingAddress = async (
 
 export const updateCustomerShippingAddress = async (
   addressId: string,
-  address: {
-    first_name: string
-    last_name?: string
-    address_1: string
-    address_2?: string
-    city: string
-    postal_code: string
-    province: string
-    country_code: string
-    phone?: string
-    is_default_shipping?: boolean
-    address_name?: string
-  }
+  address: HttpTypes.StoreUpdateCustomerAddress
 ): Promise<{ success: boolean; error: string | null }> => {
   const headers = {
     ...(await getAuthHeaders()),
   }
 
   return sdk.store.customer
-    .updateAddress(
-      addressId,
-      {
-        ...address,
-        metadata: { shipping_address_name: address.address_name || null },
-      },
-      {},
-      headers
-    )
+    .updateAddress(addressId, address, {}, headers)
     .then(async () => {
       const customerCacheTag = await getCacheTag("customers")
       revalidateTag(customerCacheTag)

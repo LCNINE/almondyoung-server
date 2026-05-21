@@ -76,6 +76,46 @@
         "deleted": "配送先を削除しました。",
         "deleteFailed": "配送先の削除に失敗しました。"
       }
+    },
+    "form": {
+      "title": { "create": "配送先を登録", "edit": "配送先を編集" },
+      "submit": { "create": "保存", "edit": "修正" },
+      "submitting": { "create": "保存中...", "edit": "修正中..." },
+      "cancel": "キャンセル",
+      "search": "住所検索",
+      "fields": {
+        "addressName": "配送先名(任意)(例: 自宅、会社)",
+        "name": "受取人氏名",
+        "firstName": "名",
+        "lastName": "姓",
+        "phone": "電話番号",
+        "postalCode": "郵便番号",
+        "address1": "町名・番地",
+        "address2": "建物名・部屋番号(任意)",
+        "city": "市区町村",
+        "province": "都道府県"
+      },
+      "errors": {
+        "name": "受取人氏名を入力してください",
+        "firstName": "名を入力してください",
+        "lastName": "姓を入力してください",
+        "phoneRequired": "電話番号を入力してください",
+        "phoneInvalid": "正しい電話番号を入力してください",
+        "postalCode": "郵便番号を入力してください",
+        "address1": "町名・番地を入力してください",
+        "city": "市区町村を入力してください",
+        "province": "都道府県を入力してください"
+      },
+      "saveAsDefault": { "create": "基本配送先として保存", "edit": "基本配送先に設定" },
+      "toasts": {
+        "created": "配送先を登録しました。",
+        "createdDefault": "基本配送先として登録しました。",
+        "createFailed": "配送先の登録に失敗しました。",
+        "updated": "配送先を修正しました。",
+        "updateFailed": "配送先の修正に失敗しました。",
+        "saveFailed": "配送先の保存に失敗しました。もう一度お試しください。",
+        "postcodeLoading": "郵便番号検索サービスを読み込んでいます。しばらくしてからもう一度お試しください。"
+      }
     }
   },
   "orderProducts": {
