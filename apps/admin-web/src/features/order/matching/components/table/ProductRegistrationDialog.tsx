@@ -183,7 +183,6 @@ export function ProductRegistrationDialog({ isOpen, onClose, line }: ProductRegi
             ignore: false,
             strategy: 'variant',
             stockPolicy: {
-              inventoryManagement: true,
               preStockSellable: true,
               alwaysSellableZeroStock: false,
             },
@@ -198,7 +197,7 @@ export function ProductRegistrationDialog({ isOpen, onClose, line }: ProductRegi
           data: {
             ignore: false,
             strategy: 'void', // 우선 재고 미사용으로 저장 (필요 시 'variant'로 교체)
-            stockPolicy: { inventoryManagement: false, preStockSellable: true, alwaysSellableZeroStock: false },
+            stockPolicy: { preStockSellable: true, alwaysSellableZeroStock: false },
             isGift: false,
           },
         });

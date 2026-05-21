@@ -14,11 +14,6 @@ export class MatchingLinkDto {
 }
 
 export class MatchingPolicyDto {
-  @ApiProperty({ description: '재고 관리 여부', required: false, example: true })
-  @IsOptional()
-  @IsBoolean()
-  inventoryManagement?: boolean;
-
   @ApiProperty({ description: '선입고 판매 가능 여부', required: false, example: false })
   @IsOptional()
   @IsBoolean()

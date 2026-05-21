@@ -102,7 +102,6 @@ export const transformMatchingsForTable = (response: MatchingsResponseDto) => {
  * 재고 정책을 기본값으로 초기화
  */
 export const createDefaultStockPolicy = (): StockPolicyDto => ({
-  inventoryManagement: true,
   preStockSellable: true,
   alwaysSellableZeroStock: false,
 });

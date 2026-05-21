@@ -385,7 +385,6 @@ export class ProductVersionsService {
         priority: typeof productMatchings.$inferSelect.priority;
         strategy: typeof productMatchings.$inferSelect.strategy;
         isResolved: boolean;
-        inventoryManagement: boolean;
         preStockSellable: boolean;
         alwaysSellableZeroStock: boolean;
       }
@@ -402,7 +401,6 @@ export class ProductVersionsService {
             priority: productMatchings.priority,
             strategy: productMatchings.strategy,
             isResolved: productMatchings.isResolved,
-            inventoryManagement: productMatchings.inventoryManagement,
             preStockSellable: productMatchings.preStockSellable,
             alwaysSellableZeroStock: productMatchings.alwaysSellableZeroStock,
           })
@@ -432,7 +430,6 @@ export class ProductVersionsService {
         priority: prevMatching.priority,
         strategy: prevMatching.strategy,
         isResolved: prevMatching.isResolved,
-        inventoryManagement: prevMatching.inventoryManagement,
         preStockSellable: prevMatching.preStockSellable,
         alwaysSellableZeroStock: prevMatching.alwaysSellableZeroStock,
       });
