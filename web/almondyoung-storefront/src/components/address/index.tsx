@@ -21,13 +21,20 @@ import {
   createCustomerShippingAddress,
   updateCustomerShippingAddress,
 } from "@/lib/api/medusa/customer"
+import { formatPhoneNumber } from "@/lib/utils/format-phone-number"
+import {
+  DEFAULT_LOCALE,
+  isSupportedLocale,
+  type SupportedLocale,
+} from "@/lib/utils/locale-path"
 import { zodResolver } from "@hookform/resolvers/zod"
+import { useLocale, useTranslations } from "next-intl"
 import { useRouter } from "next/navigation"
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 
-import { formatPhoneNumber } from "@/lib/utils/format-phone-number"
+import { getAddressConfig, type AddressFieldKey } from "./field-config"
 import {
   FormTextField,
   PhoneField,
@@ -35,9 +42,10 @@ import {
   SaveAsDefaultField,
 } from "./form-fields"
 import {
-  shippingAddressSchema,
+  buildShippingAddressSchema,
   type ShippingAddressFormData,
   type ShippingAddressModalProps,
+  type ShippingFormErrorMessages,
 } from "./schema"
 import { transformFormDataToAddress } from "./utils"
 
@@ -53,25 +61,52 @@ export function ShippingAddressModal({
   const isDesktop = useMediaQuery("(min-width: 768px)")
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  const rawLocale = useLocale()
+  const locale: SupportedLocale = isSupportedLocale(rawLocale)
+    ? rawLocale
+    : DEFAULT_LOCALE
+  const config = getAddressConfig(locale)
+  const t = useTranslations("checkout.shipping.form")
+
   const isEditMode = mode === "edit"
-  const modalTitle = isEditMode ? "배송지 수정" : "배송지 등록"
+  const modalTitle = t(isEditMode ? "title.edit" : "title.create")
   const submitButtonText = isSubmitting
-    ? isEditMode
-      ? "수정 중..."
-      : "저장 중..."
-    : isEditMode
-      ? "수정"
-      : "저장"
+    ? t(isEditMode ? "submitting.edit" : "submitting.create")
+    : t(isEditMode ? "submit.edit" : "submit.create")
+
+  const errorMessages: ShippingFormErrorMessages = useMemo(
+    () => ({
+      name: t("errors.name"),
+      firstName: t("errors.firstName"),
+      lastName: t("errors.lastName"),
+      phoneRequired: t("errors.phoneRequired"),
+      phoneInvalid: t("errors.phoneInvalid"),
+      postalCode: t("errors.postalCode"),
+      address1: t("errors.address1"),
+      city: t("errors.city"),
+      province: t("errors.province"),
+    }),
+    [t]
+  )
+
+  const resolver = useMemo(
+    () => zodResolver(buildShippingAddressSchema(locale, errorMessages)),
+    [locale, errorMessages]
+  )
 
   const form = useForm<ShippingAddressFormData>({
-    resolver: zodResolver(shippingAddressSchema),
+    resolver,
     defaultValues: {
       addressName: "",
       name: "",
+      firstName: "",
+      lastName: "",
       phone: "",
       postalCode: "",
       address1: "",
       address2: "",
+      city: "",
+      province: "",
       saveAsDefault: defaultValues?.isDefaultShipping ?? false,
     },
   })
@@ -80,58 +115,68 @@ export function ShippingAddressModal({
   useEffect(() => {
     if (!open) return
 
+    const rawPhone = defaultValues?.phone ?? ""
     form.reset({
       addressName: defaultValues?.addressName ?? "",
       name: defaultValues?.name ?? "",
-      phone: defaultValues?.phone ? formatPhoneNumber(defaultValues.phone) : "",
+      firstName: defaultValues?.firstName ?? "",
+      lastName: defaultValues?.lastName ?? "",
+      phone: rawPhone
+        ? config.phoneAutoFormat
+          ? formatPhoneNumber(rawPhone)
+          : rawPhone
+        : "",
       postalCode: defaultValues?.postalCode ?? "",
       address1: defaultValues?.address1 ?? "",
       address2: defaultValues?.address2 ?? "",
+      city: defaultValues?.city ?? "",
+      province: defaultValues?.province ?? "",
       saveAsDefault: defaultValues?.isDefaultShipping ?? false,
     })
-  }, [open, defaultValues, form, isEditMode])
+  }, [open, defaultValues, form, config.phoneAutoFormat])
 
   // 배송지 수정
   const handleUpdate = useCallback(
     async (data: ShippingAddressFormData) => {
       if (!addressId) return false
 
-      const addressData = transformFormDataToAddress(data)
+      const addressData = transformFormDataToAddress(data, locale)
       const result = await updateCustomerShippingAddress(addressId, {
         ...addressData,
         is_default_shipping: data.saveAsDefault,
       })
 
       if (!result.success) {
-        toast.error("배송지 수정에 실패했습니다.")
+        toast.error(t("toasts.updateFailed"))
         return false
       }
 
-      toast.success("배송지가 수정되었습니다.")
+      toast.success(t("toasts.updated"))
       return true
     },
-    [addressId]
+    [addressId, locale, t]
   )
 
-  const handleCreate = useCallback(async (data: ShippingAddressFormData) => {
-    const addressData = transformFormDataToAddress(data)
-    const result = await createCustomerShippingAddress({
-      ...addressData,
-      is_default_shipping: data.saveAsDefault ?? false,
-    })
+  const handleCreate = useCallback(
+    async (data: ShippingAddressFormData) => {
+      const addressData = transformFormDataToAddress(data, locale)
+      const result = await createCustomerShippingAddress({
+        ...addressData,
+        is_default_shipping: data.saveAsDefault ?? false,
+      })
 
-    if (!result.success) {
-      toast.error("배송지 등록에 실패했습니다.")
-      return false
-    }
+      if (!result.success) {
+        toast.error(t("toasts.createFailed"))
+        return false
+      }
 
-    toast.success(
-      data.saveAsDefault
-        ? "배송지가 기본 배송지로 등록되었습니다."
-        : "배송지가 등록되었습니다."
-    )
-    return true
-  }, [])
+      toast.success(
+        data.saveAsDefault ? t("toasts.createdDefault") : t("toasts.created")
+      )
+      return true
+    },
+    [locale, t]
+  )
 
   const handleSubmit = useCallback(
     async (data: ShippingAddressFormData) => {
@@ -149,15 +194,15 @@ export function ShippingAddressModal({
         }
       } catch (error) {
         console.error("배송지 저장 실패:", error)
-        toast.error("배송지 저장에 실패했습니다. 다시 시도해주세요.")
+        toast.error(t("toasts.saveFailed"))
       } finally {
         setIsSubmitting(false)
       }
     },
-    [isEditMode, handleUpdate, handleCreate, onOpenChange, router, onSuccess]
+    [isEditMode, handleUpdate, handleCreate, onOpenChange, router, onSuccess, t]
   )
 
-  // 우편번호 검색
+  // 우편번호 검색 (ko 전용)
   const handleOpenPostcode = useCallback(() => {
     if (typeof window === "undefined") return
 
@@ -176,9 +221,7 @@ export function ShippingAddressModal({
     ).daum
 
     if (!daum?.Postcode) {
-      toast.error(
-        "우편번호 검색 서비스를 불러오는 중입니다. 잠시 후 다시 시도해주세요."
-      )
+      toast.error(t("toasts.postcodeLoading"))
       return
     }
 
@@ -189,7 +232,57 @@ export function ShippingAddressModal({
         form.clearErrors(["postalCode", "address1"])
       },
     }).open()
-  }, [form])
+  }, [form, t])
+
+  const renderField = (key: AddressFieldKey) => {
+    switch (key) {
+      case "postalCode":
+        return config.postalCodeSearch ? (
+          <PostalCodeField
+            key={key}
+            control={form.control}
+            placeholder={t("fields.postalCode")}
+            searchLabel={t("search")}
+            onOpenPostcode={handleOpenPostcode}
+          />
+        ) : (
+          <FormTextField
+            key={key}
+            control={form.control}
+            name="postalCode"
+            placeholder={t("fields.postalCode")}
+          />
+        )
+      case "phone":
+        return (
+          <PhoneField
+            key={key}
+            control={form.control}
+            placeholder={t("fields.phone")}
+            autoFormat={config.phoneAutoFormat}
+          />
+        )
+      case "address1":
+        return (
+          <FormTextField
+            key={key}
+            control={form.control}
+            name="address1"
+            placeholder={t("fields.address1")}
+            readOnly={config.address1ReadOnly}
+          />
+        )
+      default:
+        return (
+          <FormTextField
+            key={key}
+            control={form.control}
+            name={key}
+            placeholder={t(`fields.${key}`)}
+          />
+        )
+    }
+  }
 
   const formContent = (
     <Form {...form}>
@@ -198,33 +291,11 @@ export function ShippingAddressModal({
         className="space-y-4"
         id="address-form"
       >
-        <FormTextField
+        {config.fields.map(renderField)}
+        <SaveAsDefaultField
           control={form.control}
-          name="addressName"
-          placeholder="배송지명(선택사항) (예: 집, 회사)"
+          label={t(isEditMode ? "saveAsDefault.edit" : "saveAsDefault.create")}
         />
-        <FormTextField
-          control={form.control}
-          name="name"
-          placeholder="받는 분 이름"
-        />
-        <PhoneField control={form.control} />
-        <PostalCodeField
-          control={form.control}
-          onOpenPostcode={handleOpenPostcode}
-        />
-        <FormTextField
-          control={form.control}
-          name="address1"
-          placeholder="기본주소"
-          readOnly
-        />
-        <FormTextField
-          control={form.control}
-          name="address2"
-          placeholder="상세주소 (선택)"
-        />
-        <SaveAsDefaultField control={form.control} isEditMode={isEditMode} />
       </form>
     </Form>
   )
@@ -245,7 +316,7 @@ export function ShippingAddressModal({
               onClick={() => onOpenChange(false)}
               disabled={isSubmitting}
             >
-              취소
+              {t("cancel")}
             </Button>
             <Button type="submit" form="address-form" disabled={isSubmitting}>
               {submitButtonText}
@@ -270,7 +341,7 @@ export function ShippingAddressModal({
           </Button>
           <DrawerClose asChild>
             <Button variant="outline" disabled={isSubmitting}>
-              취소
+              {t("cancel")}
             </Button>
           </DrawerClose>
         </DrawerFooter>

@@ -11,7 +11,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { formatPhoneNumber } from "@/lib/utils/format-phone-number"
 import { Control } from "react-hook-form"
-import { INPUT_CLASSNAME, PHONE_MAX_LENGTH } from "./constants"
+import { PHONE_MAX_LENGTH } from "./constants"
 import type { ShippingAddressFormData } from "./schema"
 
 interface FormTextFieldProps {
@@ -46,13 +46,13 @@ export function FormTextField({
           <FormControl>
             <Input
               placeholder={placeholder}
-              className={INPUT_CLASSNAME}
+              className="h-12 rounded-md border border-gray-300 px-4 aria-[invalid=true]:border-red-500"
               type={type}
               inputMode={inputMode}
               maxLength={maxLength}
               readOnly={readOnly}
               {...field}
-              value={field.value as string}
+              value={(field.value as string) ?? ""}
               onChange={(e) => {
                 const value = onChange
                   ? onChange(e.target.value)
@@ -70,11 +70,16 @@ export function FormTextField({
 
 interface PostalCodeFieldProps {
   control: Control<ShippingAddressFormData>
+  placeholder: string
+  searchLabel: string
   onOpenPostcode: () => void
 }
 
+/** ko 전용: 우편번호 검색(Daum) 버튼이 붙은 read-only 입력 */
 export function PostalCodeField({
   control,
+  placeholder,
+  searchLabel,
   onOpenPostcode,
 }: PostalCodeFieldProps) {
   return (
@@ -82,7 +87,7 @@ export function PostalCodeField({
       <FormTextField
         control={control}
         name="postalCode"
-        placeholder="우편번호"
+        placeholder={placeholder}
         readOnly
         className="flex-1"
       />
@@ -92,7 +97,7 @@ export function PostalCodeField({
         className="h-12 shrink-0 px-4"
         onClick={onOpenPostcode}
       >
-        주소 검색
+        {searchLabel}
       </Button>
     </div>
   )
@@ -100,31 +105,31 @@ export function PostalCodeField({
 
 interface PhoneFieldProps {
   control: Control<ShippingAddressFormData>
+  placeholder: string
+  /** ko: 자동 하이픈 포맷팅 + 길이 제한. en/ja: 자유 입력 */
+  autoFormat: boolean
 }
 
-export function PhoneField({ control }: PhoneFieldProps) {
+export function PhoneField({ control, placeholder, autoFormat }: PhoneFieldProps) {
   return (
     <FormTextField
       control={control}
       name="phone"
-      placeholder="휴대폰 번호"
+      placeholder={placeholder}
       type="tel"
-      inputMode="numeric"
-      maxLength={PHONE_MAX_LENGTH}
-      onChange={formatPhoneNumber}
+      inputMode={autoFormat ? "numeric" : "tel"}
+      maxLength={autoFormat ? PHONE_MAX_LENGTH : undefined}
+      onChange={autoFormat ? formatPhoneNumber : undefined}
     />
   )
 }
 
 interface SaveAsDefaultFieldProps {
   control: Control<ShippingAddressFormData>
-  isEditMode: boolean
+  label: string
 }
 
-export function SaveAsDefaultField({
-  control,
-  isEditMode,
-}: SaveAsDefaultFieldProps) {
+export function SaveAsDefaultField({ control, label }: SaveAsDefaultFieldProps) {
   return (
     <FormField
       control={control}
@@ -138,7 +143,7 @@ export function SaveAsDefaultField({
             className="cursor-pointer text-sm text-gray-700"
             onClick={() => field.onChange(!field.value)}
           >
-            {isEditMode ? "기본 배송지로 설정" : "기본 배송지로 저장"}
+            {label}
           </label>
         </FormItem>
       )}
