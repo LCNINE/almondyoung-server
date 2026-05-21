@@ -34,7 +34,7 @@ function isDemoGroup(group: string): boolean {
 
 function isProdStage(): boolean {
   const stage = process.env.SST_STAGE ?? '';
-  return /^(prod|production)$/i.test(stage);
+  return /^(prod|production|live)$/i.test(stage);
 }
 
 async function resolveGroup(
