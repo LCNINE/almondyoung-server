@@ -20,10 +20,14 @@ export interface EditAddressState {
   defaultValues: {
     addressName?: string
     name: string
+    firstName?: string
+    lastName?: string
     phone: string
     postalCode: string
     address1: string
     address2: string
+    city?: string
+    province?: string
     isDefaultShipping: boolean
     metadata: Record<string, unknown>
   }

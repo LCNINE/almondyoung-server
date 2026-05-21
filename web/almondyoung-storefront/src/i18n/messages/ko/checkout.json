@@ -76,6 +76,46 @@
         "deleted": "배송지가 삭제되었습니다.",
         "deleteFailed": "배송지 삭제에 실패했습니다."
       }
+    },
+    "form": {
+      "title": { "create": "배송지 등록", "edit": "배송지 수정" },
+      "submit": { "create": "저장", "edit": "수정" },
+      "submitting": { "create": "저장 중...", "edit": "수정 중..." },
+      "cancel": "취소",
+      "search": "주소 검색",
+      "fields": {
+        "addressName": "배송지명(선택사항) (예: 집, 회사)",
+        "name": "받는 분 이름",
+        "firstName": "이름",
+        "lastName": "성",
+        "phone": "휴대폰 번호",
+        "postalCode": "우편번호",
+        "address1": "기본주소",
+        "address2": "상세주소 (선택)",
+        "city": "시/군/구",
+        "province": "시/도"
+      },
+      "errors": {
+        "name": "받는 분 이름을 입력해주세요",
+        "firstName": "이름을 입력해주세요",
+        "lastName": "성을 입력해주세요",
+        "phoneRequired": "휴대폰 번호를 입력해주세요",
+        "phoneInvalid": "올바른 휴대폰 번호를 입력해주세요",
+        "postalCode": "우편번호를 입력해주세요",
+        "address1": "기본주소를 입력해주세요",
+        "city": "시/군/구를 입력해주세요",
+        "province": "시/도를 입력해주세요"
+      },
+      "saveAsDefault": { "create": "기본 배송지로 저장", "edit": "기본 배송지로 설정" },
+      "toasts": {
+        "created": "배송지가 등록되었습니다.",
+        "createdDefault": "배송지가 기본 배송지로 등록되었습니다.",
+        "createFailed": "배송지 등록에 실패했습니다.",
+        "updated": "배송지가 수정되었습니다.",
+        "updateFailed": "배송지 수정에 실패했습니다.",
+        "saveFailed": "배송지 저장에 실패했습니다. 다시 시도해주세요.",
+        "postcodeLoading": "우편번호 검색 서비스를 불러오는 중입니다. 잠시 후 다시 시도해주세요."
+      }
     }
   },
   "orderProducts": {
