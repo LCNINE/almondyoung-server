@@ -986,6 +986,9 @@ export const salesOrders = pgTable(
     status: orderStatusEnum('status').notNull().default('pending'),
 
     // 고객 정보
+    // customerId: storefront 계정의 user id (JWT sub). 비-로그인 채널 (Naver, Coupang)은 NULL.
+    // 디지털 ownership grant 및 본인 ownership 조회의 키.
+    customerId: uuid('customer_id'),
     customerName: varchar('customer_name', { length: 255 }),
     customerEmail: varchar('customer_email', { length: 255 }),
     customerPhone: varchar('customer_phone', { length: 50 }),

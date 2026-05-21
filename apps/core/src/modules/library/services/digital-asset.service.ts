@@ -163,6 +163,63 @@ export class DigitalAssetService {
     }, tx);
   }
 
+  /**
+   * 자산의 currentFileVersionId 를 과거 file version 으로 되돌린다 (rollback).
+   *
+   * - 옛 file version row 는 그대로 보존 (immutable history). file-service 의 fileId 도 삭제하지 않음.
+   * - 운영자가 잘못 올린 새 파일을 운영 중에 빠르게 되돌리는 용도. 후속 ownership 보유자의
+   *   다운로드는 즉시 옛 파일을 받게 된다.
+   *
+   * @throws NotFoundError asset 또는 versionId 가 없거나 asset 에 속하지 않을 때
+   * @throws BadRequestError 이미 그 version 이 current 일 때 (no-op 차단)
+   */
+  async rollbackToFileVersion(
+    assetId: string,
+    versionId: string,
+    operatorId: string | undefined,
+    tx?: Tx,
+  ): Promise<DigitalAssetResponseDto> {
+    return this.inTx(async (trx) => {
+      const [assetRow] = await trx
+        .select()
+        .from(digitalAssets)
+        .where(eq(digitalAssets.id, assetId));
+      if (!assetRow || assetRow.deletedAt) {
+        throw new NotFoundError(`Digital asset not found: ${assetId}`);
+      }
+
+      const [versionRow] = await trx
+        .select({
+          id: digitalAssetFileVersions.id,
+          assetId: digitalAssetFileVersions.assetId,
+        })
+        .from(digitalAssetFileVersions)
+        .where(eq(digitalAssetFileVersions.id, versionId));
+      if (!versionRow || versionRow.assetId !== assetId) {
+        throw new NotFoundError(
+          `File version ${versionId} does not belong to asset ${assetId}`,
+        );
+      }
+
+      if (assetRow.currentFileVersionId === versionId) {
+        throw new BadRequestError(
+          `File version ${versionId} is already the current version of asset ${assetId}`,
+        );
+      }
+
+      await trx
+        .update(digitalAssets)
+        .set({
+          currentFileVersionId: versionId,
+          updatedAt: new Date(),
+          updatedBy: operatorId,
+        })
+        .where(eq(digitalAssets.id, assetId));
+
+      return this._loadAssetOrThrow(assetId, trx);
+    }, tx);
+  }
+
   // ── private ────────────────────────────────────────────────────────────────
 
   private async _insertFileVersion(

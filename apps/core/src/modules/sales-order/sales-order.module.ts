@@ -5,6 +5,7 @@ import { ORDER_STREAM } from '@packages/event-contracts';
 import { CoreInventoryModule } from '../inventory/core/inventory.module';
 import { SharedModule } from '../inventory/shared/shared.module';
 import { ProductMatchingModule } from '../product-matching/product-matching.module';
+import { LibraryModule } from '../library/library.module';
 
 import { SalesOrdersController } from './controllers/sales-orders.controller';
 import { OrderEventsConsumer } from './consumers/order-events.consumer';
@@ -30,6 +31,9 @@ import { PoliciesService } from './services/policies.service';
 
     // ProductSkuMappingService (confirm 시 mapping snapshot 생성)
     ProductMatchingModule,
+
+    // LibraryService (OrderConfirmed/Cancelled 시 디지털 ownership grant/revoke — ADR-0006)
+    LibraryModule,
   ],
   controllers: [
     SalesOrdersController,
