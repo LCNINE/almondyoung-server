@@ -94,4 +94,17 @@ export class DigitalAssetController {
   ): Promise<DigitalAssetFileVersionDto> {
     return this.service.addFileVersion(id, dto, req.user?.id);
   }
+
+  @Post(':id/file-versions/:versionId/rollback')
+  @ApiOperation({
+    summary: '자산의 현재 파일 버전을 과거 버전으로 되돌리기 (rollback)',
+  })
+  @ApiResponse({ status: 200, type: DigitalAssetResponseDto })
+  async rollbackToFileVersion(
+    @Param('id') id: string,
+    @Param('versionId') versionId: string,
+    @Req() req: any,
+  ): Promise<DigitalAssetResponseDto> {
+    return this.service.rollbackToFileVersion(id, versionId, req.user?.id);
+  }
 }
