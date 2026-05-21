@@ -62,7 +62,6 @@ export const transformMatchingsForTable = (response: MatchingsResponseDto) => ({
 });
 
 export const createDefaultStockPolicy = (): StockPolicyDto => ({
-  inventoryManagement: true,
   preStockSellable: true,
   alwaysSellableZeroStock: false,
 });

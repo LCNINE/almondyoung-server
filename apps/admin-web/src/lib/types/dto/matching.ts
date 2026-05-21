@@ -6,7 +6,6 @@ export type MatchingStrategy = 'void' | 'variant' | 'option';
 export type MatchingPriority = 'normal' | 'high';
 
 export interface StockPolicyDto {
-  inventoryManagement: boolean;
   preStockSellable: boolean;
   alwaysSellableZeroStock: boolean;
 }

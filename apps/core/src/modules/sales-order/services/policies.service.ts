@@ -22,7 +22,6 @@ export class PoliciesService {
         inventoryManagement: false,
         preStockSellable: false,
         alwaysSellableZeroStock: false,
-        fulfillmentMode: null,
         effectiveFrom: null,
         effectiveTo: null,
         updatedBy: null,

@@ -130,7 +130,6 @@ export const useIgnoreMatching = () => {
           ignore: true,
           strategy: 'variant',
           stockPolicy: stockPolicy ?? {
-            inventoryManagement: true,
             preStockSellable: true,
             alwaysSellableZeroStock: false,
           },
@@ -164,7 +163,6 @@ export const useCompleteMatching = () => {
           ignore: false,
           strategy: 'variant',
           stockPolicy: stockPolicy ?? {
-            inventoryManagement: true,
             preStockSellable: true,
             alwaysSellableZeroStock: false,
           },
