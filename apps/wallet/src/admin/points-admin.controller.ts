@@ -1,5 +1,6 @@
 import { Body, Controller, Get, HttpCode, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiProperty, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import { IsArray, IsDateString, IsIn, IsInt, IsNotEmpty, IsOptional, IsPositive, IsString, IsUUID, Min } from 'class-validator';
 import { PaginationQueryDto } from '@app/shared';
 import { PointsAdminService } from './points-admin.service';
@@ -132,6 +133,7 @@ class BatchEarnDto {
 class TopUsersQueryDto {
   @ApiPropertyOptional({ description: 'Number of top users to return (default: 20, max: 100)' })
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   @IsPositive()
   limit?: number;
