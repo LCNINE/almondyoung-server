@@ -46,7 +46,9 @@ function formatConditions(coupon: MedusaPromotion) {
   const parts: string[] = [];
   const minOrder = coupon.rules?.find((r) => r.attribute === 'subtotal' && r.operator === 'gte');
   if (minOrder) {
-    parts.push(`${Number(minOrder.values[0]).toLocaleString('ko-KR')}원 이상`);
+    const rawVal = minOrder.values[0];
+    const minOrderNum = Number((rawVal as any)?.value ?? rawVal);
+    parts.push(`${minOrderNum.toLocaleString('ko-KR')}원 이상`);
   }
   const budget = coupon.campaign?.budget;
   if (budget?.limit) {
@@ -67,7 +69,7 @@ interface CouponRowProps {
 }
 
 function CouponRow({ coupon, onDetail, onAssign, onViewCustomers, onToggleStatus, onDelete, isToggling, isDeleting }: CouponRowProps) {
-  const canToggle = coupon.status === 'active' || coupon.status === 'inactive';
+  const canToggle = coupon.status === 'active' || coupon.status === 'inactive' || coupon.status === 'draft';
   const { name } = getCouponMeta(coupon);
 
   return (
@@ -207,7 +209,7 @@ export default function MarketingCouponsTemplate() {
     const next = coupon.status === 'active' ? 'inactive' : 'active';
     try {
       await updateStatus.mutateAsync({ id: coupon.id, status: next });
-      toast.success(next === 'active' ? '쿠폰을 활성화했습니다.' : '쿠폰을 비활성화했습니다.');
+      toast.success(next === 'active' ? '쿠폰이 활성화되었습니다.' : '쿠폰이 비활성화되었습니다.');
     } catch {
       toast.error('상태 변경에 실패했습니다.');
     }

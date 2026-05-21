@@ -198,6 +198,7 @@ export function CouponCreateDialog({
       targetType === 'items' && targetItems.length > 0
         ? [{ attribute: targetAttribute, operator: 'in', values: targetItems.map((i) => i.id) }]
         : undefined;
+    const allocation = targetType === 'items' ? 'each' : undefined;
 
     try {
       await createMutation.mutateAsync({
@@ -209,11 +210,13 @@ export function CouponCreateDialog({
           value: value as number,
           target_type: targetType,
           ...(discountType === 'fixed' ? { currency_code: 'krw' } : {}),
+          ...(allocation ? { allocation } : {}),
           ...(targetRules ? { target_rules: targetRules } : {}),
         },
         ...(hasCampaign
           ? {
               campaign: {
+                name: trimmedName || code.trim().toUpperCase(),
                 campaign_identifier: campaignIdentifier,
                 ...(startsAt ? { starts_at: new Date(startsAt).toISOString() } : {}),
                 ...(endsAt ? { ends_at: new Date(endsAt).toISOString() } : {}),
