@@ -165,8 +165,9 @@ export function CouponCreateDialog({
   const [endsAt, setEndsAt] = useState('');
   const [minOrderAmount, setMinOrderAmount] = useState<number | ''>('');
   const [usageLimit, setUsageLimit] = useState<number | ''>('');
+  const [spendLimit, setSpendLimit] = useState<number | ''>('');
   const [maxUsesPerCustomer, setMaxUsesPerCustomer] = useState<number | ''>('');
-  const [targetType, setTargetType] = useState<'order' | 'items'>('order');
+  const [targetType, setTargetType] = useState<'order' | 'items' | 'shipping'>('order');
   const [targetAttribute, setTargetAttribute] = useState<TargetAttribute>('product_id');
   const [targetItems, setTargetItems] = useState<SelectedItem[]>([]);
 
@@ -191,7 +192,7 @@ export function CouponCreateDialog({
     if (maxUsesPerCustomer) additional_data.max_uses_per_customer = Number(maxUsesPerCustomer);
     if (me) additional_data.created_by = me.email || me.username;
 
-    const hasCampaign = startsAt || endsAt || usageLimit;
+    const hasCampaign = startsAt || endsAt || usageLimit || spendLimit;
     const campaignIdentifier = `CAMP_${code.trim().toUpperCase()}`;
 
     const targetRules: PromotionTargetRule[] | undefined =
@@ -199,6 +200,12 @@ export function CouponCreateDialog({
         ? [{ attribute: targetAttribute, operator: 'in', values: targetItems.map((i) => i.id) }]
         : undefined;
     const allocation = targetType === 'items' ? 'across' : undefined;
+
+    const campaignBudget = usageLimit
+      ? { type: 'usage' as const, limit: Number(usageLimit) }
+      : spendLimit
+      ? { type: 'spend' as const, limit: Number(spendLimit) }
+      : undefined;
 
     try {
       await createMutation.mutateAsync({
@@ -220,7 +227,7 @@ export function CouponCreateDialog({
                 campaign_identifier: campaignIdentifier,
                 ...(startsAt ? { starts_at: new Date(startsAt).toISOString() } : {}),
                 ...(endsAt ? { ends_at: new Date(endsAt).toISOString() } : {}),
-                ...(usageLimit ? { budget: { type: 'usage' as const, limit: Number(usageLimit) } } : {}),
+                ...(campaignBudget ? { budget: campaignBudget } : {}),
               },
             }
           : {}),
@@ -249,6 +256,7 @@ export function CouponCreateDialog({
     setEndsAt('');
     setMinOrderAmount('');
     setUsageLimit('');
+    setSpendLimit('');
     setMaxUsesPerCustomer('');
     setTargetType('order');
     setTargetAttribute('product_id');
@@ -261,7 +269,7 @@ export function CouponCreateDialog({
     value &&
     (value as number) > 0 &&
     !(discountType === 'percentage' && (value as number) > 100) &&
-    (targetType === 'order' || targetItems.length > 0);
+    (targetType === 'order' || targetType === 'shipping' || targetItems.length > 0);
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -361,6 +369,7 @@ export function CouponCreateDialog({
               <SelectContent>
                 <SelectItem value="order">전체 주문 (주문 금액 할인)</SelectItem>
                 <SelectItem value="items">특정 상품/카테고리/컬렉션</SelectItem>
+                <SelectItem value="shipping">배송비 할인</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -445,8 +454,12 @@ export function CouponCreateDialog({
                 type="number"
                 min={1}
                 value={usageLimit}
-                onChange={(e) => setUsageLimit(e.target.value ? Number(e.target.value) : '')}
+                onChange={(e) => {
+                  setUsageLimit(e.target.value ? Number(e.target.value) : '');
+                  if (e.target.value) setSpendLimit('');
+                }}
                 placeholder="예: 100"
+                disabled={!!spendLimit}
               />
               {!!usageLimit && (
                 <p className="text-xs text-muted-foreground">
@@ -455,6 +468,28 @@ export function CouponCreateDialog({
               )}
             </div>
             <div className="space-y-2">
+              <Label>총 할인금액 한도 (원)</Label>
+              <Input
+                type="number"
+                min={1}
+                value={spendLimit}
+                onChange={(e) => {
+                  setSpendLimit(e.target.value ? Number(e.target.value) : '');
+                  if (e.target.value) setUsageLimit('');
+                }}
+                placeholder="예: 5000000"
+                disabled={!!usageLimit}
+              />
+              {!!spendLimit && (
+                <p className="text-xs text-muted-foreground">
+                  최대 {(spendLimit as number).toLocaleString('ko-KR')}원까지 할인 지급
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2 space-y-2">
               <Label>1인당 사용 횟수 제한</Label>
               <Input
                 type="number"

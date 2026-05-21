@@ -25,15 +25,22 @@ export function PointsEarnDialog({
 }) {
   const [amount, setAmount] = useState<number | ''>('');
   const [reasonCode, setReasonCode] = useState('');
+  const [expiresAt, setExpiresAt] = useState('');
   const earnMutation = useEarnPoints();
 
   const handleEarn = async () => {
     if (!amount || amount <= 0) return;
     try {
-      await earnMutation.mutateAsync({ userId, amount: amount as number, reasonCode: reasonCode || undefined });
+      await earnMutation.mutateAsync({
+        userId,
+        amount: amount as number,
+        reasonCode: reasonCode || undefined,
+        expiresAt: expiresAt ? new Date(expiresAt).toISOString() : undefined,
+      });
       toast.success(`적립금 ${(amount as number).toLocaleString('ko-KR')}원 적립 완료`);
       setAmount('');
       setReasonCode('');
+      setExpiresAt('');
       onOpenChange(false);
     } catch {
       toast.error('적립금 적립 실패');
@@ -63,6 +70,14 @@ export function PointsEarnDialog({
               value={reasonCode}
               onChange={(e) => setReasonCode(e.target.value)}
               placeholder="ADMIN_EARN"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>만료일 (선택)</Label>
+            <Input
+              type="datetime-local"
+              value={expiresAt}
+              onChange={(e) => setExpiresAt(e.target.value)}
             />
           </div>
         </div>

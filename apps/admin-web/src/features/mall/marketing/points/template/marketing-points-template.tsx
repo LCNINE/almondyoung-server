@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
 import { Button } from '@/components/ui/button';
-import { usePointsStats } from '@/lib/services/wallet';
+import { usePointsStats, useTopPointUsers } from '@/lib/services/wallet';
 import { PointsEventsFilterBox } from '../components/filter-box';
 import { PointsEventsTable } from '../components/table';
 import { PointsBatchEarnDialog } from '../components/points-batch-earn-dialog';
@@ -33,6 +33,44 @@ function PointsStatsCards() {
   );
 }
 
+function TopPointUsersCard() {
+  const { data: users, isLoading } = useTopPointUsers(10);
+
+  return (
+    <Container className="divide-y-0">
+      <div className="px-4 pt-4 pb-2">
+        <p className="text-sm font-medium">잔액 상위 10명</p>
+      </div>
+      <div className="px-4 pb-4">
+        {isLoading ? (
+          <p className="text-xs text-muted-foreground py-2">불러오는 중...</p>
+        ) : !users?.length ? (
+          <p className="text-xs text-muted-foreground py-2">데이터 없음</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-xs text-muted-foreground">
+                <th className="py-1.5 text-left font-medium w-8">#</th>
+                <th className="py-1.5 text-left font-medium">사용자 ID</th>
+                <th className="py-1.5 text-right font-medium">잔액</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((u, i) => (
+                <tr key={u.userId} className="border-b last:border-0">
+                  <td className="py-2 text-muted-foreground">{i + 1}</td>
+                  <td className="py-2 font-mono text-xs">{u.userId}</td>
+                  <td className="py-2 text-right font-semibold">{u.balance.toLocaleString('ko-KR')}원</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </Container>
+  );
+}
+
 export default function MarketingPointsTemplate() {
   const [batchEarnOpen, setBatchEarnOpen] = useState(false);
 
@@ -51,12 +89,15 @@ export default function MarketingPointsTemplate() {
         <PointsStatsCards />
       </Container>
 
-      <Container className="divide-y-0">
-        <div className="p-4">
-          <PointsEventsFilterBox />
-          <PointsEventsTable />
-        </div>
-      </Container>
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4 items-start">
+        <Container className="divide-y-0">
+          <div className="p-4">
+            <PointsEventsFilterBox />
+            <PointsEventsTable />
+          </div>
+        </Container>
+        <TopPointUsersCard />
+      </div>
 
       <PointsBatchEarnDialog open={batchEarnOpen} onOpenChange={setBatchEarnOpen} />
     </div>

@@ -396,6 +396,7 @@ export const pointEvents = pgTable(
       .$type<Record<string, unknown>>()
       .notNull()
       .default(sql`'{}'::jsonb`),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -411,6 +412,7 @@ export const pointEvents = pgTable(
     uniqueIndex('uq_point_events_provider_idempotency_key').on(table.providerIdempotencyKey),
     index('idx_point_events_user_created_at').on(table.userId, table.createdAt),
     index('idx_point_events_intent_leg_created_at').on(table.intentId, table.legId, table.createdAt),
+    index('idx_point_events_expires_at').on(table.expiresAt),
   ],
 );
 

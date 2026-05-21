@@ -36,7 +36,7 @@ export interface MedusaPromotion {
     id: string;
     type: 'percentage' | 'fixed';
     value: number;
-    target_type: 'order' | 'items';
+    target_type: 'order' | 'items' | 'shipping';
     currency_code: string | null;
     max_quantity: number | null;
     target_rules?: PromotionTargetRule[];
@@ -61,7 +61,7 @@ export interface CreatePromotionPayload {
   application_method: {
     type: 'percentage' | 'fixed';
     value: number;
-    target_type: 'order' | 'items';
+    target_type: 'order' | 'items' | 'shipping';
     currency_code?: string;
     allocation?: 'each' | 'across' | 'once';
     target_rules?: PromotionTargetRule[];
@@ -71,7 +71,7 @@ export interface CreatePromotionPayload {
     campaign_identifier: string;
     starts_at?: string;
     ends_at?: string;
-    budget?: { type: 'usage'; limit: number };
+    budget?: { type: 'usage' | 'spend'; limit: number };
   };
   rules?: PromotionRule[];
   additional_data?: Record<string, unknown>;

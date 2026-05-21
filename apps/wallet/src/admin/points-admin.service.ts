@@ -1,7 +1,7 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { PaginatedResponseDto } from '@app/shared';
-import { and, count, desc, eq, gte, lte, sql, SQL } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, isNotNull, lt, lte, sql, SQL, sum } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { pointEventDetails, pointEvents, pointHolds, PointEventType, WalletSchema } from '../schema';
 import { DbTx } from '../types';
@@ -31,11 +31,19 @@ export interface PointsEventRow {
   amount: number;
   originalEventId: string | null;
   reasonCode: string | null;
+  expiresAt: Date | null;
   createdAt: Date;
+}
+
+export interface TopPointUser {
+  userId: string;
+  balance: number;
 }
 
 @Injectable()
 export class PointsAdminService {
+  private readonly logger = new Logger(PointsAdminService.name);
+
   constructor(private readonly dbService: DbService<WalletSchema>) {}
 
   async getBalance(userId: string): Promise<PointsBalance> {
@@ -68,6 +76,7 @@ export class PointsAdminService {
         amount: pointEvents.amount,
         originalEventId: pointEvents.originalEventId,
         reasonCode: pointEvents.reasonCode,
+        expiresAt: pointEvents.expiresAt,
         createdAt: pointEvents.createdAt,
       })
       .from(pointEvents)
@@ -108,6 +117,7 @@ export class PointsAdminService {
         amount: pointEvents.amount,
         originalEventId: pointEvents.originalEventId,
         reasonCode: pointEvents.reasonCode,
+        expiresAt: pointEvents.expiresAt,
         createdAt: pointEvents.createdAt,
       })
       .from(pointEvents)
@@ -124,6 +134,7 @@ export class PointsAdminService {
     amount: number,
     reasonCode?: string,
     idempotencyKey?: string,
+    expiresAt?: Date,
   ): Promise<{ eventId: string }> {
     if (amount <= 0) {
       throw new BadRequestException('amount must be greater than 0');
@@ -140,6 +151,7 @@ export class PointsAdminService {
         amount,
         providerIdempotencyKey: idempotencyKey ?? `admin:earn:${eventId}`,
         reasonCode: reasonCode ?? null,
+        expiresAt: expiresAt ?? null,
       });
 
       await tx.insert(pointEventDetails).values({
@@ -318,6 +330,7 @@ export class PointsAdminService {
           amount: pointEvents.amount,
           originalEventId: pointEvents.originalEventId,
           reasonCode: pointEvents.reasonCode,
+          expiresAt: pointEvents.expiresAt,
           createdAt: pointEvents.createdAt,
         })
         .from(pointEvents)
@@ -334,6 +347,7 @@ export class PointsAdminService {
     userIds: string[],
     amount: number,
     reasonCode?: string,
+    expiresAt?: Date,
   ): Promise<BatchEarnResult> {
     if (amount <= 0) throw new BadRequestException('amount must be greater than 0');
     if (!userIds.length) throw new BadRequestException('userIds must not be empty');
@@ -362,6 +376,7 @@ export class PointsAdminService {
               amount,
               providerIdempotencyKey: `admin:batch-earn:${r.id}`,
               reasonCode: reasonCode ?? null,
+              expiresAt: expiresAt ?? null,
             })),
           );
 
@@ -386,5 +401,109 @@ export class PointsAdminService {
     }
 
     return { succeeded, failed };
+  }
+
+  async processExpiredPoints(): Promise<{ processed: number; cancelled: number }> {
+    const db = this.dbService.db;
+    const now = new Date();
+
+    const expiredEarns = await db
+      .select({
+        id: pointEvents.id,
+        userId: pointEvents.userId,
+        amount: pointEvents.amount,
+      })
+      .from(pointEvents)
+      .where(
+        and(
+          eq(pointEvents.eventType, 'EARN'),
+          isNotNull(pointEvents.expiresAt),
+          lt(pointEvents.expiresAt, now),
+        ),
+      );
+
+    if (expiredEarns.length === 0) return { processed: 0, cancelled: 0 };
+
+    const earnIds = expiredEarns.map((e) => e.id);
+    const uniqueUserIds = [...new Set(expiredEarns.map((e) => e.userId))];
+
+    const [cancelledRows, balanceRows] = await Promise.all([
+      db
+        .select({
+          originalEventId: pointEvents.originalEventId,
+          total: sql<number>`coalesce(sum(abs(${pointEvents.amount})), 0)`,
+        })
+        .from(pointEvents)
+        .where(and(eq(pointEvents.eventType, 'EARN_CANCEL'), inArray(pointEvents.originalEventId, earnIds)))
+        .groupBy(pointEvents.originalEventId),
+      db
+        .select({
+          userId: pointEvents.userId,
+          balance: sql<number>`coalesce(sum(${pointEvents.amount}), 0)`,
+        })
+        .from(pointEvents)
+        .where(inArray(pointEvents.userId, uniqueUserIds))
+        .groupBy(pointEvents.userId),
+    ]);
+
+    const cancelledByEarnId = new Map(cancelledRows.map((r) => [r.originalEventId, Number(r.total)]));
+    const balanceByUserId = new Map(balanceRows.map((r) => [r.userId, Number(r.balance)]));
+
+    let processed = 0;
+    let cancelled = 0;
+
+    for (const earn of expiredEarns) {
+      try {
+        const alreadyCancelled = cancelledByEarnId.get(earn.id) ?? 0;
+        const remaining = earn.amount - alreadyCancelled;
+        if (remaining <= 0) continue;
+
+        const userBalance = balanceByUserId.get(earn.userId) ?? 0;
+        const cancelAmount = Math.min(remaining, userBalance);
+        if (cancelAmount <= 0) continue;
+
+        const cancelEventId = randomUUID();
+        await db.transaction(async (tx: DbTx) => {
+          await tx.insert(pointEvents).values({
+            id: cancelEventId,
+            userId: earn.userId,
+            eventType: 'EARN_CANCEL',
+            amount: -cancelAmount,
+            originalEventId: earn.id,
+            providerIdempotencyKey: `expiry:${earn.id}`,
+            reasonCode: 'POINT_EXPIRED',
+          });
+
+          await tx.insert(pointEventDetails).values({
+            id: randomUUID(),
+            pointEventId: cancelEventId,
+            userId: earn.userId,
+            eventType: 'EARN_CANCEL',
+            amount: -cancelAmount,
+            originalEventDetailId: null,
+          });
+        });
+
+        cancelled++;
+        processed++;
+      } catch (err) {
+        this.logger.warn(`Failed to expire EARN event ${earn.id}: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+
+    return { processed, cancelled };
+  }
+
+  async getTopUsersByBalance(limit: number): Promise<TopPointUser[]> {
+    const balanceExpr = sql<number>`coalesce(sum(${pointEvents.amount}), 0)`;
+    const rows = await this.dbService.db
+      .select({ userId: pointEvents.userId, balance: balanceExpr })
+      .from(pointEvents)
+      .groupBy(pointEvents.userId)
+      .having(sql`${balanceExpr} > 0`)
+      .orderBy(desc(balanceExpr))
+      .limit(limit);
+
+    return rows.map((r) => ({ userId: r.userId, balance: Number(r.balance) }));
   }
 }

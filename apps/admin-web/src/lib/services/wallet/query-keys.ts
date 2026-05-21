@@ -34,4 +34,6 @@ export const walletQueryKeys = {
     [...walletQueryKeys.points(), 'stats', params] as const,
   allPointsEvents: (params: object) =>
     [...walletQueryKeys.points(), 'events', 'all', params] as const,
+  topUsers: (limit?: number) =>
+    [...walletQueryKeys.points(), 'users', 'top', { limit }] as const,
 } as const;

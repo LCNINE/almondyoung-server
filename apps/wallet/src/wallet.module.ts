@@ -69,6 +69,7 @@ import { BankTransferAdminService } from './admin/bank-transfer-admin.service';
 // Messaging + Jobs
 import { OutboxDispatcherService } from './messaging/outbox-dispatcher.service';
 import { ExpirationJob } from './jobs/expiration.job';
+import { PointsExpirationJob } from './jobs/points-expiration.job';
 
 // Webhooks
 import { TossWebhookController } from './webhooks/toss-webhook.controller';
@@ -464,6 +465,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     // Messaging + Jobs
     OutboxDispatcherService,
     ExpirationJob,
+    PointsExpirationJob,
   ],
 })
 export class WalletModule {}
