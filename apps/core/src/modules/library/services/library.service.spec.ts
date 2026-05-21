@@ -1,3 +1,5 @@
+import { PgDialect } from 'drizzle-orm/pg-core';
+
 import { LibraryService } from './library.service';
 import { digitalAssetOwnerships } from '../schema/library.schema';
 
@@ -21,7 +23,7 @@ describe('LibraryService', () => {
 
   function makeFakeTx(rows: FakeRows) {
     const inserts: Array<{ table: any; values: any; conflictTarget?: any }> = [];
-    const updates: Array<{ table: any; set: any; returning: any[] }> = [];
+    const updates: Array<{ table: any; set: any; where: any; returning: any[] }> = [];
 
     // sequence of select() calls: order → lines → links
     let selectCallCount = 0;
@@ -60,10 +62,10 @@ describe('LibraryService', () => {
       }),
       update: (table: any) => ({
         set: (set: any) => ({
-          where: (_w: any) => ({
+          where: (whereExpr: any) => ({
             returning: () => {
               const returned = [{ id: 'r-1' }, { id: 'r-2' }];
-              updates.push({ table, set, returning: returned });
+              updates.push({ table, set, where: whereExpr, returning: returned });
               return returned;
             },
           }),
@@ -156,5 +158,24 @@ describe('LibraryService', () => {
     expect(updates[0].table).toBe(digitalAssetOwnerships);
     expect(updates[0].set.revokedReason).toBe('CUSTOMER_REQUEST');
     expect(updates[0].set.revokedAt).toBeInstanceOf(Date);
+  });
+
+  // 이슈 #353: exercise 후 ownership 은 회수되지 않아야 한다 (환불 가부는 결제 측이 결정).
+  // fake tx 가 SQL 평가를 흉내내지 못하므로, drizzle 의 PgDialect 로 WHERE 절을 실제 SQL
+  // 문자열로 풀어서 `exercised_at is null` predicate 가 포함됐는지 검증한다 —
+  // 이게 빠지면 exercise 된 row 도 update 대상이 된다.
+  it('revoke — WHERE 절이 (salesOrderId 일치 AND exercised_at IS NULL AND revoked_at IS NULL) 로 빌드된다', async () => {
+    const svc = makeService();
+    const { tx, updates } = makeFakeTx({});
+
+    await svc.revokeOwnershipsForOrder('so-1', 'CUSTOMER_REQUEST', tx);
+
+    expect(updates).toHaveLength(1);
+    const { sql } = new PgDialect().sqlToQuery(updates[0].where);
+    // 정규화: drizzle 가 column 을 따옴표로 감싸 출력. 공백 변동에 관대하게.
+    const normalized = sql.replace(/\s+/g, ' ');
+    expect(normalized).toMatch(/"sales_order_id"\s*=\s*\$\d+/);
+    expect(normalized).toMatch(/"exercised_at"\s+is\s+null/i);
+    expect(normalized).toMatch(/"revoked_at"\s+is\s+null/i);
   });
 });

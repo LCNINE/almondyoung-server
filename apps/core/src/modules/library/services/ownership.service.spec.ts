@@ -1,3 +1,5 @@
+import { PgDialect } from 'drizzle-orm/pg-core';
+
 import { OwnershipService } from './ownership.service';
 
 /**
@@ -146,5 +148,81 @@ describe('OwnershipService.getDownloadable — currentFileVersionId 라우팅 (�
     await expect(service.getDownloadable(OWNERSHIP_ID, CUSTOMER, tx)).rejects.toThrow(
       /has been revoked/,
     );
+  });
+});
+
+/**
+ * 이슈 #353: storefront read API (`listForCustomer`) 는 revoke 된 ownership 을
+ * 절대 노출하면 안 된다. fake tx 가 SQL 평가는 못 하므로 captured WHERE 절을 실제
+ * SQL 로 풀어서 `revoked_at is null` predicate 가 들어있는지 검증한다.
+ */
+describe('OwnershipService.listForCustomer — revokedAt IS NULL 필터 (이슈 #353)', () => {
+  function makeFakeTxCapturingWhere() {
+    const captured: { count?: any; list?: any } = {};
+    const tx: any = {
+      select: (_cols?: any) => ({
+        from: (_t: any) => ({
+          // count() select chain
+          where: (whereExpr: any) => {
+            captured.count = whereExpr;
+            return [{ value: 0 }];
+          },
+          // list select chain
+          innerJoin: () => ({
+            where: (whereExpr: any) => ({
+              orderBy: () => ({
+                limit: () => ({
+                  offset: () => [],
+                }),
+              }),
+              _captured: (captured.list = whereExpr),
+            }),
+          }),
+        }),
+      }),
+    };
+    return { tx, captured };
+  }
+
+  function makeService(): OwnershipService {
+    const fakeDb: any = { db: {} };
+    return new OwnershipService(fakeDb);
+  }
+
+  it("필터 'all' — WHERE 가 customer 일치 AND revoked_at IS NULL 을 포함", async () => {
+    const service = makeService();
+    const { tx, captured } = makeFakeTxCapturingWhere();
+
+    await service.listForCustomer('c-1', { filter: 'all' }, tx);
+
+    const dialect = new PgDialect();
+    for (const w of [captured.count, captured.list]) {
+      expect(w).toBeDefined();
+      const sql = dialect.sqlToQuery(w).sql.replace(/\s+/g, ' ');
+      expect(sql).toMatch(/"customer_id"\s*=\s*\$\d+/);
+      expect(sql).toMatch(/"revoked_at"\s+is\s+null/i);
+    }
+  });
+
+  it("필터 'new' — revoked_at IS NULL 과 exercised_at IS NULL 이 모두 포함", async () => {
+    const service = makeService();
+    const { tx, captured } = makeFakeTxCapturingWhere();
+
+    await service.listForCustomer('c-1', { filter: 'new' }, tx);
+
+    const sql = new PgDialect().sqlToQuery(captured.list).sql.replace(/\s+/g, ' ');
+    expect(sql).toMatch(/"revoked_at"\s+is\s+null/i);
+    expect(sql).toMatch(/"exercised_at"\s+is\s+null/i);
+  });
+
+  it("필터 'used' — revoked_at IS NULL 과 exercised_at IS NOT NULL 이 모두 포함", async () => {
+    const service = makeService();
+    const { tx, captured } = makeFakeTxCapturingWhere();
+
+    await service.listForCustomer('c-1', { filter: 'used' }, tx);
+
+    const sql = new PgDialect().sqlToQuery(captured.list).sql.replace(/\s+/g, ' ');
+    expect(sql).toMatch(/"revoked_at"\s+is\s+null/i);
+    expect(sql).toMatch(/"exercised_at"\s+is\s+not\s+null/i);
   });
 });
