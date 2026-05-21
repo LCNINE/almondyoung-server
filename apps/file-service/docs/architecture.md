@@ -95,10 +95,6 @@ file-service/
   // 컨텍스트
   context: varchar(50)             // 'product-image', 'invoice' 등
   
-  // 연관 정보 (업로드 시 설정 가능)
-  relatedType: varchar(50)         // 'product', 'user' 등 (nullable)
-  relatedId: uuid                  // 연관 엔티티 ID (nullable)
-  
   // 메타데이터
   metadata: jsonb                  // width, height, duration 등
   
@@ -114,20 +110,7 @@ file-service/
 }
 ```
 
-### fileReferences 테이블
-```typescript
-{
-  id: uuid (PK)
-  uploadId: uuid (FK → uploads.id)
-  
-  // 참조 정보
-  serviceType: varchar(50)         // 'pim', 'wms', 'wallet'
-  entityType: varchar(50)          // 'product', 'invoice'
-  entityId: uuid                   // 엔티티 ID
-  
-  createdAt: timestamp
-}
-```
+> **참조 방향**: 어떤 도메인의 어떤 엔티티가 이 파일을 가리키는지는 file-service 가 추적하지 않는다. 호출 도메인 (catalog, library 등) 이 자기 스키마에서 `uploads.id` 를 FK 로 참조한다. 자세한 근거는 [docs/adr/0009-file-service-no-inbound-reference-tracking.md](../../../docs/adr/0009-file-service-no-inbound-reference-tracking.md).
 
 ## 파일 경로 전략
 

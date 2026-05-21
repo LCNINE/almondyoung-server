@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
-import { fileServiceSchema, uploads, fileReferences } from '../../database/schema';
-import { eq, and, lt } from 'drizzle-orm';
-import { NewUpload, UpdateUpload, NewFileReference } from '../types/file.types';
+import { fileServiceSchema, uploads } from '../../database/schema';
+import { eq } from 'drizzle-orm';
+import { NewUpload, UpdateUpload } from '../types/file.types';
 
 type FileServiceDb = typeof fileServiceSchema;
 
@@ -56,14 +56,5 @@ export class FileRepository {
 
   async hardDelete(id: string) {
     await this.db.delete(uploads).where(eq(uploads.id, id));
-  }
-
-  async addReference(data: NewFileReference) {
-    const [ref] = await this.db.insert(fileReferences).values(data).returning();
-    return ref;
-  }
-
-  async findReferences(uploadId: string) {
-    return this.db.select().from(fileReferences).where(eq(fileReferences.uploadId, uploadId));
   }
 }
