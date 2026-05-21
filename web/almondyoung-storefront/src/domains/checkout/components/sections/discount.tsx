@@ -25,6 +25,7 @@ interface DiscountSectionProps {
   isMembership: boolean
   membershipDiscount: number
   itemSubtotal: number
+  cartDiscountTotal?: number
   shipping: ShippingInfo
   promotions: Promotion[]
   appliedPromotionCode?: string | null
@@ -36,6 +37,7 @@ export const DiscountSection = ({
   isMembership = false,
   membershipDiscount,
   itemSubtotal,
+  cartDiscountTotal,
   shipping,
   promotions,
   appliedPromotionCode,
@@ -93,11 +95,12 @@ export const DiscountSection = ({
     : null
 
   const couponDiscount = appliedPromotion
-    ? appliedPromotion.application_method?.type === "percentage"
-      ? Math.floor(
-          itemSubtotal * (appliedPromotion.application_method.value / 100)
-        )
-      : (appliedPromotion.application_method?.value ?? 0)
+    ? cartDiscountTotal ??
+      (appliedPromotion.application_method?.type === "percentage"
+        ? Math.floor(
+            itemSubtotal * (appliedPromotion.application_method.value / 100)
+          )
+        : (appliedPromotion.application_method?.value ?? 0))
     : 0
 
   // 총 할인 금액 = 멤버십 할인 + 쿠폰 할인
