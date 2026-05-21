@@ -941,7 +941,6 @@ export const productMatchings = pgTable(
     strategy: matchingStrategyEnum('strategy'), // 매칭 전략 (void, variant, option)
     isResolved: boolean('is_resolved').notNull().default(false), // 매칭이 해결되었는지
     // 재고 정책 필드들 (skus에서 이동)
-    inventoryManagement: boolean('inventory_management').notNull().default(false), // true: 물리적 재고 관리, false: 디지털
     preStockSellable: boolean('pre_stock_sellable').notNull().default(true), // 재고 0이어도 선판매 가능한지 여부 (default true로 변경)
     alwaysSellableZeroStock: boolean('always_sellable_zero_stock').notNull().default(false), // 재고 0이어도 항상 판매 가능한 상품 (직배/신상품)
 
@@ -1291,7 +1290,6 @@ export const salesVariantPolicies = pgTable('sales_variant_policies', {
   inventoryManagement: boolean('inventory_management').notNull().default(false),
   preStockSellable: boolean('pre_stock_sellable').notNull().default(false),
   alwaysSellableZeroStock: boolean('always_sellable_zero_stock').notNull().default(false),
-  fulfillmentMode: fulfillmentModeEnum('fulfillment_mode'),
   effectiveFrom: timestamp('effective_from', { withTimezone: true }),
   effectiveTo: timestamp('effective_to', { withTimezone: true }),
   updatedBy: uuid('updated_by'),

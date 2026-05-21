@@ -16,11 +16,6 @@ export class SkuMappingDto {
 }
 
 export class StockPolicyDto {
-  @ApiProperty({ description: '재고 관리 여부 (true: 물리적 재고, false: 디지털)', default: true })
-  @IsBoolean()
-  @IsOptional()
-  inventoryManagement?: boolean = true;
-
   @ApiProperty({ description: '재고 0이어도 선판매 가능 여부', default: true })
   @IsBoolean()
   @IsOptional()

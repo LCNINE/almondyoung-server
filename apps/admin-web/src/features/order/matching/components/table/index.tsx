@@ -315,7 +315,6 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
         ignore: true,
         strategy: 'void',
         stockPolicy: {
-          inventoryManagement: false,
           preStockSellable: true,
           alwaysSellableZeroStock: false,
         },

@@ -30,35 +30,6 @@ export class FulfillmentsService {
     return tx ? fn(tx) : this.db.db.transaction(fn);
   }
 
-  private async determineModeFromSalesOrder(
-    trx: DbTx,
-    salesOrderId: string,
-  ): Promise<'in_house' | '3pl' | 'drop_ship' | 'mixed'> {
-    type FulfillmentMode = 'in_house' | '3pl' | 'drop_ship';
-    const lines = await trx
-      .select()
-      .from(wmsTables.salesOrderLines)
-      .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrderId));
-    if (lines.length === 0) return 'in_house';
-
-    const modes = new Set<FulfillmentMode>();
-    for (const sl of lines) {
-      const policy = await this.policies.getVariantPolicy(sl.variantId, trx);
-      const mode: FulfillmentMode = (policy?.fulfillmentMode as FulfillmentMode) ?? 'in_house';
-      modes.add(mode);
-    }
-
-    if (modes.size > 1) return 'mixed';
-    const [only] = Array.from(modes);
-    return only;
-  }
-
-  private async isDropShipFo(trx: DbTx, fo: { salesOrderId: string | null }): Promise<boolean> {
-    if (!fo.salesOrderId) return false;
-    const mode = await this.determineModeFromSalesOrder(trx, fo.salesOrderId);
-    return mode === 'drop_ship';
-  }
-
   async create(dto: CreateFulfillmentOrderDto, tx?: DbTx) {
     return this.inTx(async (trx) => {
       try {
@@ -182,14 +153,6 @@ export class FulfillmentsService {
             })),
           );
         } else if (dto.salesOrderId) {
-          const mode = await this.determineModeFromSalesOrder(trx, dto.salesOrderId);
-          if (mode === 'mixed') {
-            throw new BadRequestException('MIXED_FULFILLMENT_MODE_NOT_SUPPORTED');
-          }
-          if (mode === '3pl' && !dto.ownerId) {
-            throw new BadRequestException('OWNER_REQUIRED_FOR_3PL');
-          }
-
           const soLines = await trx
             .select()
             .from(wmsTables.salesOrderLines)
@@ -318,8 +281,7 @@ export class FulfillmentsService {
       .limit(1);
     if (!fo) return false;
 
-    const isDrop = await this.isDropShipFo(trx, { salesOrderId: fo.salesOrderId });
-    if (isDrop) return true;
+    if (fo.fulfillmentMode === 'drop_ship') return true;
 
     if (!warehouseId) return false;
 
