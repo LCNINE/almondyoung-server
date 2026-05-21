@@ -8,6 +8,13 @@
       "when": 1779113759202,
       "tag": "20260518141559_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1779299748786,
+      "tag": "20260520175548_drop-fulfillment-mode-and-inventory-management",
+      "breakpoints": true
     }
   ]
 }
