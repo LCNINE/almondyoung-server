@@ -74,7 +74,13 @@ export function CouponDetailDialog({
           </Row>
           <Row label="적용 대상">
             <div className="flex flex-col gap-1">
-              <span>{m?.target_type === 'order' ? '전체 주문' : '특정 상품/카테고리'}</span>
+              <span>
+                {m?.target_type === 'order'
+                  ? '전체 주문'
+                  : m?.target_type === 'shipping'
+                  ? '배송비'
+                  : '특정 상품/카테고리'}
+              </span>
               {targetRules.map((rule, i) => (
                 <span key={i} className="text-xs text-muted-foreground">
                   {TARGET_ATTR_LABEL[rule.attribute] ?? rule.attribute}: {rule.values.length}개 선택
@@ -84,12 +90,14 @@ export function CouponDetailDialog({
           </Row>
           {minOrder && (
             <Row label="최소 주문 금액">
-              {Number(minOrder.values[0]).toLocaleString('ko-KR')}원 이상
+              {Number((minOrder.values[0] as any)?.value ?? minOrder.values[0]).toLocaleString('ko-KR')}원 이상
             </Row>
           )}
           {budget?.limit && (
             <Row label="총 사용 한도">
-              {budget.limit.toLocaleString('ko-KR')}회 (사용: {budget.used})
+              {budget.type === 'spend'
+                ? `${budget.limit.toLocaleString('ko-KR')}원 (사용: ${budget.used.toLocaleString('ko-KR')}원)`
+                : `${budget.limit.toLocaleString('ko-KR')}회 (사용: ${budget.used}회)`}
             </Row>
           )}
           {maxUsesPerCustomer && (

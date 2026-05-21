@@ -141,7 +141,13 @@ export interface PointsEventDto {
   amount: number;
   originalEventId: string | null;
   reasonCode: string | null;
+  expiresAt: string | null;
   createdAt: string;
+}
+
+export interface TopPointUserDto {
+  userId: string;
+  balance: number;
 }
 
 // ─── Points Stats ────────────────────────────────────────────────────────────

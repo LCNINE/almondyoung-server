@@ -27,6 +27,7 @@ import type { MedusaPromotion } from '@/lib/api/domains/medusa/promotions';
 import { toast } from 'sonner';
 import { Gift, Tag, Users, Search, X, Eye } from 'lucide-react';
 import { formatPeriod, getCouponMeta, StatusBadge } from '../coupon-helpers';
+import MarketingCampaignsTemplate from '../../campaigns/template/marketing-campaigns-template';
 
 const PAGE_SIZE = 20;
 
@@ -52,7 +53,11 @@ function formatConditions(coupon: MedusaPromotion) {
   }
   const budget = coupon.campaign?.budget;
   if (budget?.limit) {
-    parts.push(`최대 ${budget.limit.toLocaleString('ko-KR')}회`);
+    parts.push(
+      budget.type === 'spend'
+        ? `최대 ${budget.limit.toLocaleString('ko-KR')}원 한도`
+        : `최대 ${budget.limit.toLocaleString('ko-KR')}회`
+    );
   }
   return parts.length > 0 ? parts.join(' · ') : '-';
 }
@@ -88,7 +93,11 @@ function CouponRow({ coupon, onDetail, onAssign, onViewCustomers, onToggleStatus
         <div className="flex flex-col">
           <span className="font-medium">{formatDiscount(coupon)}</span>
           <span className="text-xs text-muted-foreground">
-            {coupon.application_method?.type === 'percentage' ? '정률' : '정액'}
+            {coupon.application_method?.target_type === 'shipping'
+              ? '배송비'
+              : coupon.application_method?.type === 'percentage'
+              ? '정률'
+              : '정액'}
           </span>
         </div>
       </td>
@@ -161,6 +170,7 @@ function CouponRow({ coupon, onDetail, onAssign, onViewCustomers, onToggleStatus
 }
 
 export default function MarketingCouponsTemplate() {
+  const [tab, setTab] = useState<'coupons' | 'campaigns'>('coupons');
   const [createOpen, setCreateOpen] = useState(false);
   const [detailTarget, setDetailTarget] = useState<MedusaPromotion | null>(null);
   const [assignTarget, setAssignTarget] = useState<MedusaPromotion | null>(null);
@@ -230,18 +240,46 @@ export default function MarketingCouponsTemplate() {
     <div className="space-y-4">
       <Container className="divide-y-0">
         <Header
-          title="쿠폰 관리"
-          subtitle="쿠폰을 생성하고 고객에게 발급합니다."
+          title="쿠폰 / 캠페인"
+          subtitle="쿠폰을 생성·발급하고, 캠페인으로 묶어 관리합니다."
           right={
-            <Button onClick={() => setCreateOpen(true)} className="bg-orange-500 text-white hover:bg-orange-600">
-              <Tag className="h-4 w-4 mr-1.5" />
-              쿠폰 생성
-            </Button>
+            tab === 'coupons' ? (
+              <Button onClick={() => setCreateOpen(true)} className="bg-orange-500 text-white hover:bg-orange-600">
+                <Tag className="h-4 w-4 mr-1.5" />
+                쿠폰 생성
+              </Button>
+            ) : undefined
           }
         />
+        <div className="flex gap-0 border-b px-4">
+          <button
+            type="button"
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              tab === 'coupons'
+                ? 'border-orange-500 text-orange-600'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+            onClick={() => setTab('coupons')}
+          >
+            쿠폰
+          </button>
+          <button
+            type="button"
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              tab === 'campaigns'
+                ? 'border-orange-500 text-orange-600'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+            onClick={() => setTab('campaigns')}
+          >
+            캠페인
+          </button>
+        </div>
       </Container>
 
-      <Container className="divide-y-0">
+      {tab === 'campaigns' && <MarketingCampaignsTemplate />}
+
+      {tab === 'coupons' && <Container className="divide-y-0">
         <div className="flex items-center gap-3 px-4 pt-4 pb-3 border-b">
           <div className="relative flex-1 max-w-xs">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
@@ -323,7 +361,7 @@ export default function MarketingCouponsTemplate() {
             />
           </>
         )}
-      </Container>
+      </Container>}
 
       <CouponDetailDialog
         open={!!detailTarget}

@@ -8,6 +8,13 @@
       "when": 1779113556587,
       "tag": "20260518141236_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1779337183125,
+      "tag": "20260521041943_add-point-expiry",
+      "breakpoints": true
     }
   ]
 }
