@@ -63,9 +63,11 @@ export interface CreatePromotionPayload {
     value: number;
     target_type: 'order' | 'items';
     currency_code?: string;
+    allocation?: 'each' | 'across' | 'once';
     target_rules?: PromotionTargetRule[];
   };
   campaign?: {
+    name: string;
     campaign_identifier: string;
     starts_at?: string;
     ends_at?: string;
