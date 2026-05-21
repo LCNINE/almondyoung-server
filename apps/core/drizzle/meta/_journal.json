@@ -22,6 +22,13 @@
       "when": 1779334433698,
       "tag": "20260521033353_add-library-tables",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1779337063388,
+      "tag": "20260521041743_add-customer-id-to-sales-orders",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,7 @@
 export type BackendService =
   | "channelAdapter"
   | "fs"
+  | "library"
   | "medusa"
   | "membership"
   | "notification"
@@ -17,6 +18,7 @@ const SERVICE_SUBDOMAINS: Record<BackendService, string> = {
   wms: "core",
   channelAdapter: "channel-adapter",
   fs: "file",
+  library: "core",
   medusa: "medusa",
   membership: "membership",
   notification: "notification",
@@ -32,6 +34,7 @@ const LEGACY_SERVICE_PATHS: Record<BackendService, string> = {
   wms: "wms",
   channelAdapter: "channel-adapter",
   fs: "fs",
+  library: "pim",
   medusa: "medusa",
   membership: "membership",
   notification: "notification",
@@ -47,6 +50,7 @@ const LOCAL_SERVICE_URLS: Record<BackendService, string> = {
   wms: "http://localhost:3000", // core (pim+wms 통합)
   channelAdapter: "http://localhost:3003",
   fs: "http://localhost:3000", // file-service
+  library: "http://localhost:3000", // core (라이브러리 모듈)
   medusa: "http://localhost:8080",
   membership: "http://localhost:3001",
   notification: "http://localhost:5001",
