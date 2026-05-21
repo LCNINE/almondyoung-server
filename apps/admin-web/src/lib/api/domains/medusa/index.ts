@@ -54,7 +54,7 @@ export const medusaCustomerApi = {
     email: string
   ): Promise<AdminCustomerListResponse> => {
     const response = await client.get<AdminCustomerListResponse>(
-      `${MEDUSA_BASE_URL}/admin/customers?q=${encodeURIComponent(email)}&limit=1`
+      `${MEDUSA_BASE_URL}/admin/customers?email=${encodeURIComponent(email)}&limit=1`
     );
     return response.data;
   },

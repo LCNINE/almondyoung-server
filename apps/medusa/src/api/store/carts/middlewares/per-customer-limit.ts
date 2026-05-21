@@ -29,7 +29,7 @@ export const perCustomerLimitMiddleware = async (req: any, res: any, next: any) 
     const maxUses = meta?.max_uses_per_customer ? Number(meta.max_uses_per_customer) : 0;
     if (!maxUses || maxUses <= 0) continue;
 
-    // Fetch only enough records to decide — avoids loading entire order history.
+    // cart-add 시점 선제 차단; order-complete 시점에 complete-cart hook에서 재검증으로 race window 차단.
     const { data: orders } = await query.graph({
       entity: 'order',
       fields: ['id'],

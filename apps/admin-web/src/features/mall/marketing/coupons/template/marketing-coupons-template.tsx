@@ -35,10 +35,7 @@ function formatDiscount(coupon: MedusaPromotion) {
   const m = coupon.application_method;
   if (!m) return '-';
   if (m.type === 'percentage') {
-    const { maxDiscountAmount } = getCouponMeta(coupon);
-    return maxDiscountAmount
-      ? `${m.value}% (최대 ${maxDiscountAmount.toLocaleString('ko-KR')}원)`
-      : `${m.value}%`;
+    return `${m.value}%`;
   }
   return `${m.value.toLocaleString('ko-KR')}원`;
 }
@@ -93,7 +90,7 @@ function CouponRow({ coupon, onDetail, onAssign, onViewCustomers, onToggleStatus
         <div className="flex flex-col">
           <span className="font-medium">{formatDiscount(coupon)}</span>
           <span className="text-xs text-muted-foreground">
-            {coupon.application_method?.target_type === 'shipping'
+            {coupon.application_method?.target_type === 'shipping_methods'
               ? '배송비'
               : coupon.application_method?.type === 'percentage'
               ? '정률'
@@ -191,7 +188,17 @@ export default function MarketingCouponsTemplate() {
   });
 
   const allCoupons = data?.promotions ?? [];
-  const filtered = statusFilter ? allCoupons.filter((c) => c.status === statusFilter) : allCoupons;
+  const filtered = statusFilter
+    ? allCoupons.filter((c) => {
+        if (statusFilter === 'expired') {
+          return (
+            c.status === 'expired' ||
+            (c.campaign?.ends_at != null && new Date(c.campaign.ends_at) < new Date())
+          );
+        }
+        return c.status === statusFilter;
+      })
+    : allCoupons;
   const total = statusFilter ? filtered.length : (data?.count ?? 0);
   const pageIndex = Math.floor(offset / PAGE_SIZE);
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
