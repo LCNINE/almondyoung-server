@@ -77,7 +77,6 @@ RUN yarn cache clean
 EXPOSE 9000
 
 # 외부 인프라는 환경 변수로 주입 (DATABASE_URL, REDIS_URL, KAFKA_BROKERS 등)
-# .medusa/server 디렉토리에서 실행. Migration 은 ADR-0005 §5 에 따라 SST autodeploy
-# workflow 의 별도 step (`medusa db:migrate --execute-safe-links` = predeploy 스크립트) 이
-# 책임. container 부팅 시 자체 migration 은 race / 부팅 latency 격리 이유로 제거.
-CMD ["yarn", "start"]
+# .medusa/server 디렉토리에서 실행
+# --execute-safe-links: link sync 가 interactive prompt 에서 멈추지 않도록 안전한 액션만 자동 실행
+CMD ["sh", "-c", "yarn medusa db:migrate --execute-safe-links && yarn start"]
