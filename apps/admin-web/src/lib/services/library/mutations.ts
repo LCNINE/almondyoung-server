@@ -54,6 +54,18 @@ export const useAddFileVersion = () => {
   });
 };
 
+export const useRollbackFileVersion = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, versionId }: { id: string; versionId: string }) =>
+      digitalAssetsClient.rollbackToFileVersion(id, versionId),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: libraryQueryKeys.digitalAsset(vars.id) });
+      qc.invalidateQueries({ queryKey: libraryQueryKeys.digitalAssetFileVersions(vars.id) });
+    },
+  });
+};
+
 export const useSetVariantAssetLinks = () => {
   const qc = useQueryClient();
   return useMutation({

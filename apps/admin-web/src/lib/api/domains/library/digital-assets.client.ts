@@ -48,4 +48,9 @@ export const digitalAssetsClient = {
     const response = await client.post(`${BASE}/${id}/file-versions`, dto);
     return response.data;
   },
+
+  rollbackToFileVersion: async (id: string, versionId: string): Promise<DigitalAssetDto> => {
+    const response = await client.post(`${BASE}/${id}/file-versions/${versionId}/rollback`);
+    return response.data;
+  },
 };
