@@ -33,7 +33,7 @@ export async function forwardRequest(
   const search = request.nextUrl.search;
   const url = `${targetBaseUrl}/${targetPath}${search}`;
 
-  const hasBody = !['GET', 'HEAD', 'DELETE'].includes(request.method);
+  const hasBody = !['GET', 'HEAD'].includes(request.method);
   const body = hasBody ? await request.arrayBuffer() : undefined;
 
   const headers = new Headers();
