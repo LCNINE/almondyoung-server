@@ -20,7 +20,6 @@ export default function ProductRegistrationClient() {
   const [activeTab, setActiveTab] = useState<
     'individual' | 'csv' | 'smartstore'
   >('individual');
-  const [isDigitalProduct, setIsDigitalProduct] = useState(false);
   const [isMembershipOnly, setIsMembershipOnly] = useState(false);
   const [isDisplayEnabled, setIsDisplayEnabled] = useState(true);
   const [isSaleEnabled, setIsSaleEnabled] = useState(true);
@@ -223,14 +222,6 @@ export default function ProductRegistrationClient() {
                 placeholder="태그를 입력하세요 (#으로 구문입력)"
               />
             </FormField>
-
-            <div className="flex items-center">
-              <FormCheckbox
-                label="디지털 상품 포함"
-                checked={isDigitalProduct}
-                onCheckedChange={setIsDigitalProduct}
-              />
-            </div>
           </FormLayout>
         </FormSection>
 
