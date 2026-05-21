@@ -49,7 +49,9 @@
     "exclusive": "전용 쿠폰",
     "unlimited": "기간 무제한",
     "percentDiscount": "{value}% 할인",
-    "wonDiscount": "{value}원 할인"
+    "wonDiscount": "{value}원 할인",
+    "assignedSection": "발급받은 쿠폰",
+    "publicSection": "공개 쿠폰"
   },
   "point": {
     "historyTitle": "포인트 내역",

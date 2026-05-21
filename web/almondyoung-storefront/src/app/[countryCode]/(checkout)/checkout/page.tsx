@@ -30,7 +30,7 @@ export default async function CheckoutPage({
 async function CheckoutManager({ cartId }: { cartId?: string }) {
   let cart = (await retrieveCart(
     cartId,
-    "*items, *items.product, *items.product.tags, *items.variant, *region, *customer, *shipping_methods, +item_subtotal, +shipping_total, +total, +payment_collection.id, +currency_code",
+    "*items, *items.product, *items.product.tags, *items.variant, *region, *customer, *shipping_methods, *promotions, +item_subtotal, +shipping_total, +total, +discount_total, +items.discount_total, +shipping_methods.discount_total, +payment_collection.id, +currency_code",
     "no-store"
   )) as CartResponseDto["cart"]
 

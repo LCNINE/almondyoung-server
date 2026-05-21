@@ -2,11 +2,41 @@ import { MedusaError, Modules } from '@medusajs/framework/utils';
 import { completeCartWorkflow } from '@medusajs/medusa/core-flows';
 import { getVariantAvailability, ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { ICartModuleService } from '@medusajs/framework/types';
+import { PROMOTION_META_MODULE } from '../../../modules/promotion-meta';
+import PromotionMetaModuleService from '../../../modules/promotion-meta/service';
+import { toMetadataShape } from '../../../api/admin/promotions/helpers';
 
 type QueryParam = Parameters<typeof getVariantAvailability>[0];
 
 completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
   const query = container.resolve<QueryParam>(ContainerRegistrationKeys.QUERY);
+
+  // 1인당 사용 횟수 제한 재검증 — 장바구니 쿠폰 추가 시점과 주문 완료 시점 사이의 race window 차단
+  if (cart.customer_id && (cart as any).promotions?.length) {
+    const promotionMetaService = container.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
+    const promotions: Array<{ id: string }> = (cart as any).promotions;
+
+    for (const promo of promotions) {
+      const meta = await promotionMetaService.getByPromotionId(promo.id);
+      const metaShape = toMetadataShape(meta);
+      const maxUses = metaShape?.max_uses_per_customer ? Number(metaShape.max_uses_per_customer) : 0;
+      if (!maxUses || maxUses <= 0) continue;
+
+      const { data: orders } = await query.graph({
+        entity: 'order',
+        fields: ['id'],
+        filters: { customer_id: cart.customer_id, promotions: { id: promo.id } },
+        pagination: { take: maxUses },
+      });
+
+      if ((orders?.length ?? 0) >= maxUses) {
+        throw new MedusaError(
+          MedusaError.Types.INVALID_DATA,
+          `이 쿠폰은 1인당 ${maxUses}회까지 사용할 수 있습니다.`,
+        );
+      }
+    }
+  }
 
   // cart.email이 없고 customer_id가 있으면 customer.email로 자동 채우기
   if (!cart.email && cart.customer_id) {

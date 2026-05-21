@@ -39,6 +39,13 @@ export function computeDateRange(preset: DatePreset): { from: string; to: string
   }
 }
 
+/** datetime-local input의 min 값으로 사용할 현재 로컬 시각 (UTC 기준이면 time zone shift 발생하므로 offset 보정) */
+export function nowDatetimeLocalMin(): string {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
 /**
  * 날짜를 한국어 형식으로 포맷팅 (년월일)
  * @example "2024년 3월 27일"

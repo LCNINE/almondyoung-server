@@ -20,9 +20,11 @@ export async function CouponTemplate() {
   }))
 
   const coupons = data.promotions as Promotion[]
+  const assignedCoupons = coupons.filter((p) => p.is_assigned)
+  const publicCoupons = coupons.filter((p) => !p.is_assigned)
 
-  const expiryByCoupon = await Promise.all(
-    coupons.map((p) => formatExpiry(p))
+  const expiryById = new Map(
+    await Promise.all(coupons.map(async (p) => [p.id, await formatExpiry(p)] as const))
   )
 
   return (
@@ -33,7 +35,7 @@ export async function CouponTemplate() {
         </h1>
         <p className="text-sm text-stone-500">
           {t.rich("totalCount", {
-            count: coupons.length,
+            count: assignedCoupons.length,
             strong: (chunks) => (
               <span className="font-semibold text-stone-800">{chunks}</span>
             ),
@@ -41,7 +43,7 @@ export async function CouponTemplate() {
         </p>
       </header>
 
-      {coupons.length === 0 ? (
+      {assignedCoupons.length === 0 ? (
         <div className="flex min-h-[200px] flex-col items-center justify-center rounded-2xl border border-dashed border-stone-200 bg-stone-50 p-10 text-center">
           <p className="text-base font-medium text-stone-500">
             {t("emptyTitle")}
@@ -50,14 +52,31 @@ export async function CouponTemplate() {
         </div>
       ) : (
         <ul className="flex flex-col gap-3">
-          {coupons.map((promo, idx) => (
+          {assignedCoupons.map((promo) => (
             <CouponCard
               key={promo.id}
               promo={promo}
-              expiry={expiryByCoupon[idx]}
+              expiry={expiryById.get(promo.id) ?? ""}
             />
           ))}
         </ul>
+      )}
+
+      {publicCoupons.length > 0 && (
+        <div className="mt-8">
+          <h2 className="mb-3 text-sm font-semibold text-stone-500">
+            {t("publicSection")}
+          </h2>
+          <ul className="flex flex-col gap-3">
+            {publicCoupons.map((promo) => (
+              <CouponCard
+                key={promo.id}
+                promo={promo}
+                expiry={expiryById.get(promo.id) ?? ""}
+              />
+            ))}
+          </ul>
+        </div>
       )}
     </section>
   )

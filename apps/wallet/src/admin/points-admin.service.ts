@@ -229,13 +229,24 @@ export class PointsAdminService {
       throw new BadRequestException(`Event ${earnEventId} does not belong to user ${userId}`);
     }
 
-    const cancelAmount = amount ?? originalEvent.amount;
+    const [existingCancelRow] = await db
+      .select({ total: sql<number>`coalesce(sum(abs(${pointEvents.amount})), 0)` })
+      .from(pointEvents)
+      .where(and(eq(pointEvents.eventType, 'EARN_CANCEL'), eq(pointEvents.originalEventId, earnEventId)));
+    const alreadyCancelled = Number(existingCancelRow?.total ?? 0);
+    const maxCancellable = originalEvent.amount - alreadyCancelled;
+
+    if (maxCancellable <= 0) {
+      throw new BadRequestException(`Event ${earnEventId} has already been fully cancelled`);
+    }
+
+    const cancelAmount = amount ?? maxCancellable;
     if (cancelAmount <= 0) {
       throw new BadRequestException('cancel amount must be greater than 0');
     }
-    if (cancelAmount > originalEvent.amount) {
+    if (cancelAmount > maxCancellable) {
       throw new BadRequestException(
-        `Cancel amount ${cancelAmount} exceeds original EARN amount ${originalEvent.amount}`,
+        `Cancel amount ${cancelAmount} exceeds remaining cancellable amount ${maxCancellable} (original: ${originalEvent.amount}, already cancelled: ${alreadyCancelled})`,
       );
     }
 
@@ -449,6 +460,11 @@ export class PointsAdminService {
     const cancelledByEarnId = new Map(cancelledRows.map((r) => [r.originalEventId, Number(r.total)]));
     const balanceByUserId = new Map(balanceRows.map((r) => [r.userId, Number(r.balance)]));
 
+    // 이번 실행에서 유저별 누적 취소액 (동일 유저의 여러 만료 건 과차감 방지)
+    const cancelledThisRun = new Map<string, number>();
+    // 일별 멱등성 키: 당일 재실행 시 중복 방지, 익일 잔여 처리 가능
+    const today = new Date().toISOString().slice(0, 10);
+
     let processed = 0;
     let cancelled = 0;
 
@@ -459,8 +475,11 @@ export class PointsAdminService {
         if (remaining <= 0) continue;
 
         const userBalance = balanceByUserId.get(earn.userId) ?? 0;
-        const cancelAmount = Math.min(remaining, userBalance);
+        const cancelledSoFar = cancelledThisRun.get(earn.userId) ?? 0;
+        const cancelAmount = Math.min(remaining, userBalance - cancelledSoFar);
         if (cancelAmount <= 0) continue;
+
+        cancelledThisRun.set(earn.userId, cancelledSoFar + cancelAmount);
 
         const cancelEventId = randomUUID();
         await db.transaction(async (tx: DbTx) => {
@@ -470,7 +489,7 @@ export class PointsAdminService {
             eventType: 'EARN_CANCEL',
             amount: -cancelAmount,
             originalEventId: earn.id,
-            providerIdempotencyKey: `expiry:${earn.id}`,
+            providerIdempotencyKey: `expiry:${earn.id}:${today}`,
             reasonCode: 'POINT_EXPIRED',
           });
 

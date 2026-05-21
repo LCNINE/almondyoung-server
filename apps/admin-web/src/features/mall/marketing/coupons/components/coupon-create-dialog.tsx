@@ -160,14 +160,13 @@ export function CouponCreateDialog({
   const [code, setCode] = useState('');
   const [discountType, setDiscountType] = useState<'percentage' | 'fixed'>('percentage');
   const [value, setValue] = useState<number | ''>('');
-  const [maxDiscountAmount, setMaxDiscountAmount] = useState<number | ''>('');
   const [startsAt, setStartsAt] = useState('');
   const [endsAt, setEndsAt] = useState('');
   const [minOrderAmount, setMinOrderAmount] = useState<number | ''>('');
   const [usageLimit, setUsageLimit] = useState<number | ''>('');
   const [spendLimit, setSpendLimit] = useState<number | ''>('');
   const [maxUsesPerCustomer, setMaxUsesPerCustomer] = useState<number | ''>('');
-  const [targetType, setTargetType] = useState<'order' | 'items' | 'shipping'>('order');
+  const [targetType, setTargetType] = useState<'order' | 'items' | 'shipping_methods'>('order');
   const [targetAttribute, setTargetAttribute] = useState<TargetAttribute>('product_id');
   const [targetItems, setTargetItems] = useState<SelectedItem[]>([]);
 
@@ -188,7 +187,6 @@ export function CouponCreateDialog({
 
     const additional_data: Record<string, unknown> = {};
     if (trimmedName) additional_data.name = trimmedName;
-    if (discountType === 'percentage' && maxDiscountAmount) additional_data.max_discount_amount = Number(maxDiscountAmount);
     if (maxUsesPerCustomer) additional_data.max_uses_per_customer = Number(maxUsesPerCustomer);
     if (me) additional_data.created_by = me.email || me.username;
 
@@ -251,7 +249,6 @@ export function CouponCreateDialog({
     setCode('');
     setDiscountType('percentage');
     setValue('');
-    setMaxDiscountAmount('');
     setStartsAt('');
     setEndsAt('');
     setMinOrderAmount('');
@@ -269,7 +266,7 @@ export function CouponCreateDialog({
     value &&
     (value as number) > 0 &&
     !(discountType === 'percentage' && (value as number) > 100) &&
-    (targetType === 'order' || targetType === 'shipping' || targetItems.length > 0);
+    (targetType === 'order' || targetType === 'shipping_methods' || targetItems.length > 0);
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -339,23 +336,6 @@ export function CouponCreateDialog({
             </div>
           </div>
 
-          {discountType === 'percentage' && (
-            <div className="space-y-2">
-              <Label>최대 할인 금액 (원)</Label>
-              <Input
-                type="number"
-                min={0}
-                value={maxDiscountAmount}
-                onChange={(e) => setMaxDiscountAmount(e.target.value ? Number(e.target.value) : '')}
-                placeholder="예: 10000 (최대 1만원까지 할인)"
-              />
-              {!!maxDiscountAmount && (
-                <p className="text-xs text-muted-foreground">
-                  최대 {(maxDiscountAmount as number).toLocaleString('ko-KR')}원까지 할인
-                </p>
-              )}
-            </div>
-          )}
 
           <div className="space-y-2">
             <Label>쿠폰 적용 대상</Label>
@@ -369,7 +349,7 @@ export function CouponCreateDialog({
               <SelectContent>
                 <SelectItem value="order">전체 주문 (주문 금액 할인)</SelectItem>
                 <SelectItem value="items">특정 상품/카테고리/컬렉션</SelectItem>
-                <SelectItem value="shipping">배송비 할인</SelectItem>
+                <SelectItem value="shipping_methods">배송비 할인</SelectItem>
               </SelectContent>
             </Select>
           </div>

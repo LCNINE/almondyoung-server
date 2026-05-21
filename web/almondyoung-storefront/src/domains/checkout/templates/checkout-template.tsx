@@ -62,10 +62,10 @@ export default function CheckoutTemplate({
       return acc + (item.unit_price ?? 0) * (item.quantity ?? 0)
     }, 0)
 
-    // 선택된 아이템 기준 프로모션 할인 계산
-    const discount_subtotal = selectedItems.reduce((acc, item) => {
-      return acc + (item.discount_total ?? 0)
-    }, 0)
+    // cart.discount_total은 cart 전체 기준이므로 부분 선택 시 item 단위 합산 필수.
+    const itemDiscount = selectedItems.reduce((acc, item) => acc + (item.discount_total ?? 0), 0)
+    const shippingDiscount = cart.shipping_methods?.reduce((acc, sm) => acc + (sm.discount_total ?? 0), 0) ?? 0
+    const discount_subtotal = itemDiscount + shippingDiscount
 
     const membershipDiscount =
       isMembership && selectedItems.length > 0

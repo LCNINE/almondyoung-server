@@ -12,6 +12,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { useEarnPoints } from '@/lib/services/wallet';
+import { nowDatetimeLocalMin } from '@/lib/utils/date';
 import { toast } from 'sonner';
 
 export function PointsEarnDialog({
@@ -77,6 +78,7 @@ export function PointsEarnDialog({
             <Input
               type="datetime-local"
               value={expiresAt}
+              min={nowDatetimeLocalMin()}
               onChange={(e) => setExpiresAt(e.target.value)}
             />
           </div>
