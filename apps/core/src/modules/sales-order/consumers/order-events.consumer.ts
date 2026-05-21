@@ -11,6 +11,7 @@ import {
 } from '@packages/event-contracts';
 import { MessageEnvelope } from '@packages/event-contracts/types';
 import { SalesOrdersService } from '../services/sales-orders.service';
+import { LibraryService } from '../../library/services/library.service';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { eq } from 'drizzle-orm';
 
@@ -30,6 +31,7 @@ export class OrderEventsConsumer {
 
   constructor(
     private readonly salesOrdersService: SalesOrdersService,
+    private readonly libraryService: LibraryService,
     @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
   ) {}
@@ -140,6 +142,10 @@ export class OrderEventsConsumer {
         }
 
         await this.salesOrdersService.confirm(payload.orderId, undefined, tx);
+
+        // ADR-0006: 디지털 ownership 발급은 SO confirmed 와 같은 트랜잭션. 부분 실패 방지.
+        await this.libraryService.grantOwnershipsForOrder(payload.orderId, tx);
+
         this.logger.log(`[OrderConfirmed] Confirmed sales order: ${payload.orderId}`);
       });
     } catch (error) {
@@ -181,6 +187,10 @@ export class OrderEventsConsumer {
         }
 
         await this.salesOrdersService.cancel(payload.orderId, tx);
+
+        // ADR-0006: exercise 전 디지털 ownership 만 회수. exercise 된 것은 환불 측이 결정.
+        await this.libraryService.revokeOwnershipsForOrder(payload.orderId, payload.reason, tx);
+
         this.logger.log(
           `[OrderCancelled] Cancelled sales order: ${payload.orderId}, reason: ${payload.reason}`,
         );

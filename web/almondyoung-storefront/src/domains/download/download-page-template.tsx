@@ -7,29 +7,21 @@ import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import { DownloadCard } from "./components/download-card"
 import { DownloadFilters } from "./components/download-filters"
-import type { DigitalAssetLicense } from "@lib/types/ui/digital-aseet.ui"
+import type { DigitalAssetOwnership } from "@lib/types/ui/library.ui"
 
 interface DownloadPageTemplateProps {
   user: UserDetail
-  digitalAssets: DigitalAssetLicense[]
+  ownerships: DigitalAssetOwnership[]
+  total: number
   currentPage: number
   itemsPerPage: number
   is_exercised: string | null
 }
 
-export interface DigitalAssetsResponse {
-  success: boolean
-  data: {
-    licenses: DigitalAssetLicense[]
-    count: number
-    skip: number
-    take: number
-  }
-}
-
 export default function DownloadPageTemplate({
   user,
-  digitalAssets,
+  ownerships,
+  total,
   currentPage,
   itemsPerPage,
   is_exercised,
@@ -48,15 +40,8 @@ export default function DownloadPageTemplate({
     )
   }, [is_exercised])
 
-  const filteredDigitalAssets = digitalAssets?.filter(
-    (asset: DigitalAssetLicense) => {
-      if (filter === "new") return !asset.is_exercised
-      if (filter === "used") return asset.is_exercised
-      return true
-    }
-  )
-
-  const totalPages = Math.ceil(digitalAssets.length / itemsPerPage)
+  // 서버 측에서 이미 filter 가 적용된 결과를 받으므로 클라이언트 추가 필터는 불필요.
+  const totalPages = Math.max(1, Math.ceil(total / itemsPerPage))
 
   const handlePageChange = (page: number) => {
     router.push(
@@ -80,32 +65,30 @@ export default function DownloadPageTemplate({
           <div className="mb-6 flex items-center justify-between">
             <div className="text-muted-foreground text-sm">
               총{" "}
-              <span className="text-foreground font-semibold">
-                {digitalAssets.length}
-              </span>
+              <span className="text-foreground font-semibold">{total}</span>
               개의 상품
             </div>
             <DownloadFilters
               currentFilter={filter}
-              onFilterChange={(filter) => {
-                setFilter(filter)
+              onFilterChange={(next) => {
+                setFilter(next)
 
                 router.push(
-                  `${pathname}?page=${currentPage}&is_exercised=${filter === "new" ? "false" : filter === "used" ? "true" : ""}`
+                  `${pathname}?page=1&is_exercised=${next === "new" ? "false" : next === "used" ? "true" : ""}`
                 )
               }}
             />
           </div>
 
           {/* Products Grid */}
-          {filteredDigitalAssets?.length > 0 ? (
+          {ownerships.length > 0 ? (
             <>
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                {filteredDigitalAssets.map((filteredDigitalAsset) => (
+                {ownerships.map((ownership) => (
                   <DownloadCard
-                    key={filteredDigitalAsset.id}
-                    digitalAsset={filteredDigitalAsset}
-                    isExercised={filteredDigitalAsset.is_exercised}
+                    key={ownership.id}
+                    ownership={ownership}
+                    isExercised={!!ownership.exercisedAt}
                   />
                 ))}
               </div>
@@ -126,7 +109,6 @@ export default function DownloadPageTemplate({
                   <div className="flex items-center gap-1">
                     {Array.from({ length: totalPages }, (_, i) => i + 1).map(
                       (page) => {
-                        // 현재 페이지 주변만 표시
                         if (
                           page === 1 ||
                           page === totalPages ||

@@ -1,9 +1,10 @@
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { getSEOTags } from "@/lib/seo"
 import { WithHeaderLayout } from "@components/layout"
-import { getDigitalAssets } from "@lib/api/medusa/digital-asset"
+import { getOwnerships } from "@lib/api/library/library-api"
 import { fetchMe } from "@lib/api/users/me"
 import { UserDetail } from "@lib/types/ui/user"
+import type { OwnershipFilter } from "@lib/types/dto/library.dto"
 import { AlertCircle } from "lucide-react"
 import { getTranslations } from "next-intl/server"
 import DownloadPageTemplate from "domains/download/download-page-template"
@@ -29,11 +30,11 @@ export default async function DownloadPage({
   const skip = (page - 1) * take
   const is_exercised = params.is_exercised ?? null
 
+  const filter: OwnershipFilter =
+    is_exercised === "false" ? "new" : is_exercised === "true" ? "used" : "all"
+
   try {
-    const digitalAssets = await getDigitalAssets({
-      skip: skip.toString(),
-      take: take.toString(),
-    })
+    const ownerships = await getOwnerships({ skip, take, filter })
 
     return (
       <WithHeaderLayout
@@ -47,7 +48,8 @@ export default async function DownloadPage({
         <MypageLayout>
           <DownloadPageTemplate
             user={currentUser as UserDetail}
-            digitalAssets={digitalAssets.licenses}
+            ownerships={ownerships.data}
+            total={ownerships.total}
             currentPage={page}
             itemsPerPage={take}
             is_exercised={is_exercised}
@@ -55,7 +57,7 @@ export default async function DownloadPage({
         </MypageLayout>
       </WithHeaderLayout>
     )
-  } catch (err) {
+  } catch {
     return (
       <WithHeaderLayout
         config={{

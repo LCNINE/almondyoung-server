@@ -59,6 +59,7 @@ export class SalesOrdersService {
           channelOrderId: dto.channelOrderId,
           salesChannel: dto.salesChannel as 'naver' | 'medusa' | 'coupang' | '3pl',
           status: 'pending' as const,
+          customerId: dto.customer?.id ?? null,
           customerName: dto.customer?.name ?? null,
           customerEmail: dto.customer?.email ?? null,
           customerPhone: dto.customer?.phone ?? null,
@@ -617,6 +618,7 @@ export class SalesOrdersService {
       channelOrderId: payload.externalOrderId ?? payload.orderId,
       salesChannel: payload.salesChannel,
       customer: {
+        id: payload.customerId,
         name: payload.shippingAddress.recipientName,
         phone: payload.shippingAddress.phone,
       },
