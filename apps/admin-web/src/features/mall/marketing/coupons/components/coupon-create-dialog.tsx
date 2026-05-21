@@ -198,7 +198,7 @@ export function CouponCreateDialog({
       targetType === 'items' && targetItems.length > 0
         ? [{ attribute: targetAttribute, operator: 'in', values: targetItems.map((i) => i.id) }]
         : undefined;
-    const allocation = targetType === 'items' ? 'each' : undefined;
+    const allocation = targetType === 'items' ? 'across' : undefined;
 
     try {
       await createMutation.mutateAsync({
