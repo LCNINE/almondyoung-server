@@ -13,6 +13,7 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 import { ProductMatchingModule } from './modules/product-matching/product-matching.module';
 import { SalesOrderModule } from './modules/sales-order/sales-order.module';
 import { FulfillmentModule } from './modules/fulfillment/fulfillment.module';
+import { LibraryModule } from './modules/library/library.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { FulfillmentModule } from './modules/fulfillment/fulfillment.module';
     ProductMatchingModule,
     SalesOrderModule,
     FulfillmentModule,
+    LibraryModule,
   ],
   controllers: [AppController],
   providers: [{ provide: APP_GUARD, useClass: JwtAuthGuard }],

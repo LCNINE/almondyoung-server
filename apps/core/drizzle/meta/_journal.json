@@ -15,6 +15,13 @@
       "when": 1779299748786,
       "tag": "20260520175548_drop-fulfillment-mode-and-inventory-management",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779334433698,
+      "tag": "20260521033353_add-library-tables",
+      "breakpoints": true
     }
   ]
 }

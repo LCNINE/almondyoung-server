@@ -30,6 +30,7 @@ import {
 import { SkuLookupSection } from '@/features/matching/products/components/variant-editor-dialog/sku-lookup-section';
 import { StrategySection } from '@/features/matching/products/components/variant-editor-dialog/strategy-section';
 import { StockPolicySection } from '@/features/matching/products/components/variant-editor-dialog/stock-policy-section';
+import { VariantAssetSection } from '@/features/matching/products/components/variant-editor-dialog/asset-section';
 
 interface VariantMatchingEditorDialogProps {
   matching: MatchingDto | null;
@@ -145,6 +146,10 @@ export function VariantMatchingEditorDialog({
             )}
 
             <SkuLookupSection links={links} onChange={setLinks} />
+
+            <Separator />
+
+            {matching?.variantId && <VariantAssetSection variantId={matching.variantId} />}
 
             <Separator />
 

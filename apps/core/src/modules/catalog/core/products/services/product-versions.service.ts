@@ -6,6 +6,7 @@ import { ProductEvents, PRODUCT_STREAM, ProductSnapshot } from '@packages/event-
 import { PricingValidatorService } from '../../pricing/pricing-validator.service';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
 import { ProductReadAssembler } from '../assemblers/product-read.assembler';
+import { VariantAssetLinkService } from '../../../../library/services/variant-asset-link.service';
 import {
   ProductMasterVersion,
   DbTransaction,
@@ -38,6 +39,7 @@ import {
   productMatchings,
   productVariantSkuLinks,
 } from '../../../../inventory/schema/inventory.schema';
+import { productVariantDigitalAssetLinks } from '../../../../library/schema/library.schema';
 import { eq, and, sql, max as drizzleMax, isNull, inArray, asc, desc } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
@@ -52,6 +54,7 @@ export class ProductVersionsService {
     private readonly pricingValidator: PricingValidatorService,
     private readonly productReadAssembler: ProductReadAssembler,
     private readonly priceCacheService: VariantPriceCacheService,
+    private readonly variantAssetLinkService: VariantAssetLinkService,
   ) {}
 
   private get dbConn() {
@@ -291,6 +294,9 @@ export class ProductVersionsService {
       // matching+links 를 인계 (inventory 모듈 직접 접근 — docs/adr/0004 참조)
       await this._reconcileMatchingsAfterPublish(version.id, previousActiveVersion?.id ?? null, tx);
 
+      // Library 의 variant↔asset 매칭도 같은 패턴으로 인계 (옵션 조합 일치 시)
+      await this._reconcileAssetLinksAfterPublish(version.id, previousActiveVersion?.id ?? null, tx);
+
       // 이벤트 발행: 추가/삭제된 variant
       await this._publishVariantChangeEvents(version, previousActiveVersion, tx);
 
@@ -458,6 +464,59 @@ export class ProductVersionsService {
     if (inheritedCount > 0) {
       this.logger.log(
         `Matching reconciliation: inherited ${inheritedCount}/${unmatched.length} variant matchings from version ${previousActiveVersionId} to ${newVersionId}`,
+      );
+    }
+  }
+
+  /**
+   * 새 active 버전의 variant 중 library.productVariantDigitalAssetLinks 가 없는 것에 대해,
+   * 이전 active 의 같은 옵션 조합 variant 의 asset 매칭을 clone. SKU 매칭 인계와 대칭 패턴.
+   * 자세한 결정은 docs/adr/0004 와 CONTEXT.md "라이브러리".
+   */
+  private async _reconcileAssetLinksAfterPublish(
+    newVersionId: string,
+    previousActiveVersionId: string | null,
+    tx: DbTransaction,
+  ): Promise<void> {
+    if (!previousActiveVersionId) {
+      return;
+    }
+
+    const newVariants = await this._getVersionVariantsWithOptionValues(newVersionId, tx);
+    if (newVariants.length === 0) return;
+
+    const newVariantIds = newVariants.map((v) => v.variantId);
+
+    // 이미 asset 매칭 있는 variant 제외
+    const existingLinks = await tx
+      .selectDistinct({ variantId: productVariantDigitalAssetLinks.variantId })
+      .from(productVariantDigitalAssetLinks)
+      .where(inArray(productVariantDigitalAssetLinks.variantId, newVariantIds));
+    const alreadyLinked = new Set<string>(existingLinks.map((r) => r.variantId));
+    const unmatched = newVariants.filter((v) => !alreadyLinked.has(v.variantId));
+    if (unmatched.length === 0) return;
+
+    const prevVariants = await this._getVersionVariantsWithOptionValues(previousActiveVersionId, tx);
+    if (prevVariants.length === 0) return;
+
+    const prevByComboKey = new Map<string, string>();
+    for (const pv of prevVariants) {
+      prevByComboKey.set(this._comboKey(pv.optionValueIds), pv.variantId);
+    }
+
+    const plan: Array<{ newVariantId: string; previousVariantId: string }> = [];
+    for (const nv of unmatched) {
+      const twinVariantId = prevByComboKey.get(this._comboKey(nv.optionValueIds));
+      if (!twinVariantId) continue;
+      plan.push({ newVariantId: nv.variantId, previousVariantId: twinVariantId });
+    }
+
+    if (plan.length === 0) return;
+
+    const inheritedCount = await this.variantAssetLinkService.inheritLinksFromTwins(plan, tx);
+    if (inheritedCount > 0) {
+      this.logger.log(
+        `Asset link reconciliation: inherited ${inheritedCount}/${unmatched.length} variant asset matchings from version ${previousActiveVersionId} to ${newVersionId}`,
       );
     }
   }
