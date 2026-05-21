@@ -12,9 +12,10 @@ import { ProductReadAssembler } from './assemblers/product-read.assembler';
 import { OptionReadLoader } from './loaders/option-read.loader';
 import { TagReadLoader } from './loaders/tag-read.loader';
 import { ProductMatchingModule } from '../../../product-matching/product-matching.module';
+import { LibraryModule } from '../../../library/library.module';
 
 @Module({
-  imports: [PricingModule, forwardRef(() => ProductMatchingModule)],
+  imports: [PricingModule, forwardRef(() => ProductMatchingModule), LibraryModule],
   controllers: [
     ProductMastersController,
     ProductVariantsController,

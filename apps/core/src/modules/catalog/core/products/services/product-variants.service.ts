@@ -22,6 +22,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { UpdateProductVariantDto, UpdateVariantBulkDto } from '../dto';
 import { ProductVersionsService } from './product-versions.service';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
+import { VariantAssetLinkService } from '../../../../library/services/variant-asset-link.service';
 
 type VariantDetailKeysParam = { variantId: string; versionId: string } | { variantId: string; masterId: string };
 type VariantOptionsKeysParam = { variantId: string; versionId: string } | { variantId: string; masterId: string };
@@ -32,6 +33,7 @@ export class ProductVariantsService {
     @InjectDb() private readonly db: DbService<PimSchema>,
     private readonly productVersionsService: ProductVersionsService,
     private readonly priceCacheService: VariantPriceCacheService,
+    private readonly variantAssetLinkService: VariantAssetLinkService,
   ) {}
 
   private getClient(tx?: DbTransaction) {
@@ -420,6 +422,8 @@ export class ProductVariantsService {
         );
 
       await this._cascadeVariantCoWToPricingRules(masterId, versionId, variantId, newVariantId, trx);
+      // Library asset 매칭 정션도 함께 clone (docs/adr/0004 의 pricing cascading 과 같은 패턴)
+      await this.variantAssetLinkService.cloneLinksForVariant(variantId, newVariantId, trx);
       await this._applyVariantUpdate(newVariantId, data, trx);
 
       return { variantId: newVariantId, cowed: true };
