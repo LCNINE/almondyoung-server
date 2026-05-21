@@ -1,0 +1,132 @@
+name: Migration safety check
+
+# PR 의 새로 추가된 drizzle migration 안에 destructive 패턴이 있으면
+# `destructive-migration` 라벨 부착 + 체크리스트 코멘트.
+# ADR-0005 §5 의 expand-contract 컨벤션을 PR 리뷰 시점에 surface 한다.
+#
+# 차단(fail)이 아니라 *flagging* — 정당한 destructive (이전 phase 가 이미 deploy 된 contract PR)
+# 도 있어서 사람 confirm 이 필요하지 자동 거부할 일이 아님.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - "apps/*/drizzle/*.sql"
+
+jobs:
+  destructive-sql-detect:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect destructive SQL in newly-added migrations
+        id: detect
+        run: |
+          set -euo pipefail
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+
+          ADDED=$(git diff --name-only --diff-filter=A "$BASE_SHA" "$HEAD_SHA" \
+                  | grep -E '^apps/[^/]+/drizzle/[0-9]+_.*\.sql$' || true)
+
+          if [ -z "$ADDED" ]; then
+            echo "No newly-added migration files in this PR."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Newly-added migration files:"
+          echo "$ADDED"
+          echo
+
+          # ADR-0005 §5 의 destructive 패턴
+          PATTERN='DROP COLUMN|DROP TABLE|ALTER COLUMN .* TYPE|SET NOT NULL|RENAME COLUMN|RENAME TO'
+          MATCHES=$(echo "$ADDED" | xargs grep -niE "$PATTERN" || true)
+
+          if [ -n "$MATCHES" ]; then
+            echo "Destructive patterns found:"
+            echo "$MATCHES"
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            {
+              echo 'matches<<DESTRUCTIVE_EOF'
+              echo "$MATCHES"
+              echo 'DESTRUCTIVE_EOF'
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "Only additive migrations — safe."
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Apply label + checklist comment
+        if: steps.detect.outputs.found == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = context.payload.pull_request.number;
+            const labelName = 'destructive-migration';
+
+            try {
+              await github.rest.issues.getLabel({ ...context.repo, name: labelName });
+            } catch {
+              await github.rest.issues.createLabel({
+                ...context.repo,
+                name: labelName,
+                color: 'D93F0B',
+                description: 'Migration 안에 DROP / RENAME / TYPE-NARROW / NOT-NULL 패턴이 있음 (ADR-0005 §5)',
+              });
+            }
+
+            await github.rest.issues.addLabels({
+              ...context.repo,
+              issue_number: prNumber,
+              labels: [labelName],
+            });
+
+            // 동일 마커가 들어간 기존 코멘트가 있으면 update, 없으면 새로.
+            const MARKER = '<!-- migration-safety:destructive -->';
+            const matches = `${{ steps.detect.outputs.matches }}`;
+            const body = [
+              MARKER,
+              '### ⚠ Destructive migration detected',
+              '',
+              '본 PR 의 새 마이그레이션 SQL 에 destructive 패턴이 있습니다. **ADR-0005 §5** 의 expand-contract 컨벤션을 확인하세요.',
+              '',
+              '**체크리스트:**',
+              '- [ ] 이전 phase (expand 또는 코드 사용 중단) PR 이 *이미 deploy 끝남*',
+              '- [ ] 적어도 한 번의 deploy 가 PR 사이에 있었음 (이전 PR 머지 직후 본 PR 머지가 아님)',
+              '- [ ] dual-write / read fallback 같은 임시 코드는 본 PR 에서 제거',
+              '',
+              '**감지된 패턴:**',
+              '```',
+              matches.trim(),
+              '```',
+              '',
+              '— 자동 검사 (.github/workflows/migration-safety.yml). 정당한 contract PR 이면 위 체크리스트 확인 후 머지.',
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              ...context.repo,
+              issue_number: prNumber,
+              per_page: 100,
+            });
+            const existing = comments.find((c) => c.body && c.body.includes(MARKER));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                ...context.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                ...context.repo,
+                issue_number: prNumber,
+                body,
+              });
+            }

@@ -110,19 +110,21 @@ npm run db:seed:demo  -- --stage <stage> --deployment <name> --yes  # demo- pref
 4. `npm run db:setup -- --stage dev --deployment lcnine-services` to apply locally (인터랙티브 — 시드 그룹 선택 등 prompt 응답).
 5. Commit `schema.ts` + the new `drizzle/<timestamp>_*.sql` + `drizzle/meta/` updates **in a single commit**. Splitting them desynchronizes other people's checkouts.
 
-**⚠ Medusa schema 변경 시 (P3 autodeploy 활성화 전까지의 임시 절차):** Medusa container 가 더이상 부팅 시 자체 `medusa db:migrate` 를 돌리지 않으므로 (ADR-0005 §5), Medusa 모듈 / link / data-model 변경분을 live 또는 dev 환경에 반영하려면 배포 후 한 번 수동 호출이 필요하다:
-
-```bash
-sst shell --stage <stage> -- bash -lc "cd apps/medusa && yarn predeploy"
-```
-
-P3 PR 머지 후엔 autodeploy workflow 가 자동 호출하므로 이 단계는 사라진다.
+**Medusa schema 적용**: Medusa container 가 부팅 시 자체 `medusa db:migrate --execute-safe-links` 를 부른다 (Dockerfile CMD). 즉 `sst deploy` 가 새 Medusa task 를 띄우면 schema migration + module link sync 가 자동 적용. drizzle 서비스들은 자체 migration 없이 사람이 `db:migrate` 를 명시 호출.
 
 **After pulling someone else's schema change:** rerun the `db:setup` line — Phase 2 applies new migrations only and skips already-applied ones.
 
 **Rename caveat:** `drizzle-kit generate` cannot detect column/table renames automatically — it emits `DROP` + `ADD` (data loss). When you intend a rename, drizzle-kit prompts interactively on generate; this means **generate must run on a dev machine, never in CI**. Migrate (applying SQL) is non-interactive and safe to automate.
 
-**Destructive changes** (column drop / rename / type narrow) on data with operational value: split into two PRs — additive first, contract later. See ADR-0005 §5.
+**Destructive changes — expand-contract 컨벤션 (ADR-0005 §5):** column drop / rename / type narrow / NOT NULL 추가 등 *destructive* schema 변경은 코드 변경과 같은 PR 에 묶지 않는다. 대신 phase 별 PR 분할:
+
+- **새 추가 (column/table/index/NULLABLE FK)** → 1 PR (코드 변경과 같이 가능)
+- **Column drop** → 2 PR: (1) 코드에서 사용 중단 (2) `DROP COLUMN`
+- **Rename / type narrow / NOT NULL 추가** → 3 PR: (1) 새 컬럼 + dual write (2) backfill + read 전환 (3) 옛 컬럼 drop
+
+**PR 사이에 deploy 가 끝나야 한다** — PR #1 머지 직후 PR #2 머지를 연속으로 해버리면 한 deploy 안에 두 phase 가 묶여 컨벤션 무력화. 적어도 한 번의 deploy 완료가 PR 사이에 필요.
+
+autodeploy 의 `sst deploy → migrate` 순서가 contract phase 의 race (옛 task 가 destructive migration 만나는 사고) 를 자동으로 막는다. expand phase 의 race 는 컨벤션 (additive 만 expand) 이 막는다. 둘이 짝.
 
 ### Adding New Microservices/Libraries
 ```bash
