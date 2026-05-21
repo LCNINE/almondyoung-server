@@ -260,7 +260,6 @@ export class ProductMatchingService {
               priority: 'normal',
               strategy: 'void',
               isResolved: true,
-              inventoryManagement: false,
               preStockSellable: true,
               alwaysSellableZeroStock: false,
             });
@@ -290,7 +289,6 @@ export class ProductMatchingService {
               priority: 'normal',
               strategy: 'variant',
               isResolved: true,
-              inventoryManagement: true,
               preStockSellable: true,
               alwaysSellableZeroStock: false,
             })
@@ -517,7 +515,6 @@ export class ProductMatchingService {
               status: 'ignored',
               strategy: 'void',
               isResolved: true,
-              inventoryManagement: false,
               preStockSellable: true,
               alwaysSellableZeroStock: false,
               updatedAt: new Date(),
@@ -560,7 +557,6 @@ export class ProductMatchingService {
         await matchingStrategy.create(context, mappings, trx);
 
         const finalStockPolicy = {
-          inventoryManagement: stockPolicy?.inventoryManagement ?? true,
           preStockSellable: stockPolicy?.preStockSellable ?? true,
           alwaysSellableZeroStock: stockPolicy?.alwaysSellableZeroStock ?? false,
         };
@@ -769,7 +765,6 @@ export class ProductMatchingService {
     variantId: string,
     tx?: DbTx,
   ): Promise<{
-    inventoryManagement: boolean;
     preStockSellable: boolean;
     alwaysSellableZeroStock: boolean;
   } | null> {
@@ -787,7 +782,6 @@ export class ProductMatchingService {
     }
 
     return {
-      inventoryManagement: matching.inventoryManagement,
       preStockSellable: matching.preStockSellable,
       alwaysSellableZeroStock: matching.alwaysSellableZeroStock,
     };

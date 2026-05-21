@@ -416,7 +416,6 @@ export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatc
             ignore: false,
             strategy: 'variant',
             stockPolicy: {
-              inventoryManagement: true,
               preStockSellable: true,
               alwaysSellableZeroStock: false,
             },
@@ -442,7 +441,6 @@ export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatc
               ignore: false,
               strategy: 'variant',
               stockPolicy: {
-                inventoryManagement: true,
                 preStockSellable: true,
                 alwaysSellableZeroStock: false,
               },
@@ -463,7 +461,6 @@ export function InventoryMatchingDialog({ isOpen, onClose, line }: InventoryMatc
             ignore: false,
             strategy: 'void',
             stockPolicy: {
-              inventoryManagement: false,
               preStockSellable: true,
               alwaysSellableZeroStock: false,
             },

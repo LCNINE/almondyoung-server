@@ -44,7 +44,6 @@ export class ProductSkuMappingService {
         priority: 'normal' as const,
         strategy: 'variant' as const,
         isResolved: true,
-        inventoryManagement: dto.policy?.inventoryManagement ?? false,
         preStockSellable: dto.policy?.preStockSellable ?? true,
         alwaysSellableZeroStock: dto.policy?.alwaysSellableZeroStock ?? false,
       };
