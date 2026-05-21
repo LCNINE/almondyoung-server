@@ -20,16 +20,6 @@ export function StockPolicySection({ value, onChange }: StockPolicySectionProps)
       <div className="space-y-2 rounded-md border p-3">
         <div className="flex items-center gap-2">
           <Checkbox
-            id="inventoryManagement"
-            checked={value.inventoryManagement}
-            onCheckedChange={(c) => set('inventoryManagement')(!!c)}
-          />
-          <Label htmlFor="inventoryManagement" className="cursor-pointer text-sm">
-            재고 관리 (물리적 재고 추적)
-          </Label>
-        </div>
-        <div className="flex items-center gap-2">
-          <Checkbox
             id="preStockSellable"
             checked={value.preStockSellable}
             onCheckedChange={(c) => set('preStockSellable')(!!c)}
