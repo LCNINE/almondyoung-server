@@ -27,6 +27,7 @@ export function PointsBatchEarnDialog({
   const [rawUserIds, setRawUserIds] = useState('');
   const [amount, setAmount] = useState<number | ''>('');
   const [reasonCode, setReasonCode] = useState('');
+  const [expiresAt, setExpiresAt] = useState('');
   const [result, setResult] = useState<{ succeeded: string[]; failed: Array<{ userId: string; reason: string }> } | null>(null);
 
   const batchMutation = useBatchEarnPoints();
@@ -43,6 +44,7 @@ export function PointsBatchEarnDialog({
         userIds,
         amount: amount as number,
         reasonCode: reasonCode || undefined,
+        expiresAt: expiresAt ? new Date(expiresAt).toISOString() : undefined,
       });
       setResult(res);
       toast.success(`${res.succeeded.length}명 지급 완료${res.failed.length ? `, ${res.failed.length}명 실패` : ''}`);
@@ -55,6 +57,7 @@ export function PointsBatchEarnDialog({
     setRawUserIds('');
     setAmount('');
     setReasonCode('');
+    setExpiresAt('');
     setResult(null);
     onOpenChange(false);
   };
@@ -102,6 +105,15 @@ export function PointsBatchEarnDialog({
                 value={reasonCode}
                 onChange={(e) => setReasonCode(e.target.value)}
                 placeholder="PROMOTION_EVENT"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>만료일 (선택)</Label>
+              <Input
+                type="datetime-local"
+                value={expiresAt}
+                onChange={(e) => setExpiresAt(e.target.value)}
               />
             </div>
           </div>

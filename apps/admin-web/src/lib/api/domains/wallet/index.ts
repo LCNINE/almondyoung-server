@@ -13,6 +13,7 @@ import {
   PointsEventDto,
   PointsStatsDto,
   BatchEarnResultDto,
+  TopPointUserDto,
   PaginatedResponse,
 } from '@/lib/types/dto/wallet';
 import { client } from '../../client';
@@ -138,9 +139,22 @@ export const walletApi = {
   batchEarnPoints: async (
     userIds: string[],
     amount: number,
-    reasonCode?: string
+    reasonCode?: string,
+    expiresAt?: string
   ): Promise<BatchEarnResultDto> => {
-    const res = await client.post(`${BASE}/v1/admin/points/earn/batch`, { userIds, amount, reasonCode }, {
+    const res = await client.post(`${BASE}/v1/admin/points/earn/batch`, { userIds, amount, reasonCode, expiresAt }, {
+      headers: { 'Idempotency-Key': crypto.randomUUID() },
+    });
+    return res.data;
+  },
+
+  getTopPointUsers: async (limit?: number): Promise<TopPointUserDto[]> => {
+    const res = await client.get(`${BASE}/v1/admin/points/users/top`, { params: { limit } });
+    return res.data;
+  },
+
+  processExpiredPoints: async (): Promise<{ processed: number; cancelled: number }> => {
+    const res = await client.post(`${BASE}/v1/admin/points/expire`, undefined, {
       headers: { 'Idempotency-Key': crypto.randomUUID() },
     });
     return res.data;
@@ -166,9 +180,10 @@ export const walletApi = {
   earnPoints: async (
     userId: string,
     amount: number,
-    reasonCode?: string
+    reasonCode?: string,
+    expiresAt?: string
   ): Promise<void> => {
-    await client.post(`${BASE}/v1/admin/points/earn`, { userId, amount, reasonCode }, {
+    await client.post(`${BASE}/v1/admin/points/earn`, { userId, amount, reasonCode, expiresAt }, {
       headers: { 'Idempotency-Key': crypto.randomUUID() },
     });
   },

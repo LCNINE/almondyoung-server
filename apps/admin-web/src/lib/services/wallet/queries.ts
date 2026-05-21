@@ -109,3 +109,11 @@ export const useAllPointsEvents = (params: {
     placeholderData: keepPreviousData,
   });
 };
+
+export const useTopPointUsers = (limit?: number) => {
+  return useQuery({
+    queryKey: walletQueryKeys.topUsers(limit),
+    queryFn: () => walletApi.getTopPointUsers(limit),
+    staleTime: 60 * 1000,
+  });
+};

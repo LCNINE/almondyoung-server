@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiProperty, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
-import { IsArray, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { IsArray, IsDateString, IsIn, IsInt, IsNotEmpty, IsOptional, IsPositive, IsString, IsUUID, Min } from 'class-validator';
 import { PaginationQueryDto } from '@app/shared';
 import { PointsAdminService } from './points-admin.service';
 import { WalletAdminAuth } from '../wallet-admin-auth.decorator';
@@ -20,6 +20,11 @@ class EarnPointsDto {
   @IsOptional()
   @IsString()
   reasonCode?: string;
+
+  @ApiPropertyOptional({ description: 'Expiry date (ISO 8601). Points auto-cancelled on expiry.' })
+  @IsOptional()
+  @IsDateString()
+  expiresAt?: string;
 }
 
 class DeductPointsDto {
@@ -81,24 +86,24 @@ class AllEventsQueryDto extends PaginationQueryDto {
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsString()
+  @IsDateString()
   dateFrom?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsString()
+  @IsDateString()
   dateTo?: string;
 }
 
 class StatsQueryDto {
   @ApiPropertyOptional()
   @IsOptional()
-  @IsString()
+  @IsDateString()
   dateFrom?: string;
 
   @ApiPropertyOptional()
   @IsOptional()
-  @IsString()
+  @IsDateString()
   dateTo?: string;
 }
 
@@ -117,6 +122,19 @@ class BatchEarnDto {
   @IsOptional()
   @IsString()
   reasonCode?: string;
+
+  @ApiPropertyOptional({ description: 'Expiry date (ISO 8601). Points auto-cancelled on expiry.' })
+  @IsOptional()
+  @IsDateString()
+  expiresAt?: string;
+}
+
+class TopUsersQueryDto {
+  @ApiPropertyOptional({ description: 'Number of top users to return (default: 20, max: 100)' })
+  @IsOptional()
+  @IsInt()
+  @IsPositive()
+  limit?: number;
 }
 
 @ApiTags('Admin - Points')
@@ -154,18 +172,34 @@ export class PointsAdminController {
     });
   }
 
+  @Get('users/top')
+  @ApiOperation({ summary: 'Get top users by points balance' })
+  async getTopUsers(@Query() query: TopUsersQueryDto) {
+    const limit = Math.min(query.limit ?? 20, 100);
+    return this.service.getTopUsersByBalance(limit);
+  }
+
   @Post('earn')
   @HttpCode(201)
   @ApiOperation({ summary: 'Earn points for a user (admin)' })
   async earn(@Body() dto: EarnPointsDto) {
-    return this.service.earn(dto.userId, dto.amount, dto.reasonCode);
+    const expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : undefined;
+    return this.service.earn(dto.userId, dto.amount, dto.reasonCode, undefined, expiresAt);
   }
 
   @Post('earn/batch')
   @HttpCode(200)
   @ApiOperation({ summary: 'Batch earn points for multiple users (admin)' })
   async batchEarn(@Body() dto: BatchEarnDto) {
-    return this.service.batchEarn(dto.userIds, dto.amount, dto.reasonCode);
+    const expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : undefined;
+    return this.service.batchEarn(dto.userIds, dto.amount, dto.reasonCode, expiresAt);
+  }
+
+  @Post('expire')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Process expired EARN events — creates EARN_CANCEL for unredeemed expired points' })
+  async processExpired() {
+    return this.service.processExpiredPoints();
   }
 
   @Post('deduct')

@@ -84,11 +84,13 @@ export const useEarnPoints = () => {
       userId,
       amount,
       reasonCode,
+      expiresAt,
     }: {
       userId: string;
       amount: number;
       reasonCode?: string;
-    }) => walletApi.earnPoints(userId, amount, reasonCode),
+      expiresAt?: string;
+    }) => walletApi.earnPoints(userId, amount, reasonCode, expiresAt),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({
         queryKey: walletQueryKeys.pointsBalance(variables.userId),
@@ -105,11 +107,13 @@ export const useBatchEarnPoints = () => {
       userIds,
       amount,
       reasonCode,
+      expiresAt,
     }: {
       userIds: string[];
       amount: number;
       reasonCode?: string;
-    }) => walletApi.batchEarnPoints(userIds, amount, reasonCode),
+      expiresAt?: string;
+    }) => walletApi.batchEarnPoints(userIds, amount, reasonCode, expiresAt),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: walletQueryKeys.points() });
     },
@@ -132,6 +136,16 @@ export const useDeductPoints = () => {
       queryClient.invalidateQueries({
         queryKey: walletQueryKeys.pointsBalance(variables.userId),
       });
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.points() });
+    },
+  });
+};
+
+export const useProcessExpiredPoints = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => walletApi.processExpiredPoints(),
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: walletQueryKeys.points() });
     },
   });
