@@ -3,10 +3,15 @@ import { useMemo } from 'react';
 import type { PaymentIntentListItem } from '@/lib/types/dto/wallet';
 import { IdCell, DateCell } from '@/components/table/table-cells/common';
 import { StatusBadgeCell, AmountCell, PaymentMethodTypeCell } from '@/components/table/table-cells/wallet';
+import type { UserInfo } from '@/hooks/use-user-names';
 
 const columnHelper = createColumnHelper<PaymentIntentListItem>();
 
-export const usePaymentIntentTableColumns = () => {
+type UseColumnsOptions = {
+  userMap?: Record<string, UserInfo>;
+};
+
+export const usePaymentIntentTableColumns = ({ userMap = {} }: UseColumnsOptions = {}) => {
   return useMemo(
     () => [
       columnHelper.accessor('id', {
@@ -14,8 +19,19 @@ export const usePaymentIntentTableColumns = () => {
         cell: ({ getValue }) => <IdCell value={getValue()} />,
       }),
       columnHelper.accessor('userId', {
-        header: '사용자 ID',
-        cell: ({ getValue }) => <IdCell value={getValue()} />,
+        header: '사용자',
+        cell: ({ getValue }) => {
+          const userId = getValue();
+          const username = userId ? userMap[userId]?.username : undefined;
+          return (
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm">
+                {username || <span className="text-muted-foreground">-</span>}
+              </span>
+              <IdCell value={userId} />
+            </div>
+          );
+        },
       }),
       columnHelper.accessor('payableAmount', {
         header: '결제 금액',
@@ -36,6 +52,6 @@ export const usePaymentIntentTableColumns = () => {
         cell: ({ getValue }) => <DateCell value={getValue()} />,
       }),
     ],
-    [],
+    [userMap],
   );
 };
