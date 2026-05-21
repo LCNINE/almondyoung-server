@@ -432,6 +432,7 @@ export const mainMenus: MainMenu[] = [
             path: '/mall/csv',
           },
           { id: 'product-audit', title: '감사 이력/승인', path: '/mall/audit' },
+          { id: 'digital-assets', title: '디지털 자산', path: '/mall/digital-assets' },
         ],
       },
       {
