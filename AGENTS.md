@@ -12,7 +12,7 @@ Use Yarn at the repository root.
 - `yarn format`: apply Prettier to TypeScript files under `apps/` and `libs/`.
 - `yarn test`, `yarn test:cov`: run the default Jest suite or coverage.
 - `yarn test:user-service`, `yarn test:membership`: run targeted suites.
-- `yarn db:setup`: seed shared local data; service-specific DB tasks are exposed as `db:push:*`, `db:generate:*`, and `db:seed:*`.
+- `npm run db:setup`: interactive dev wrapper that bootstraps logical DBs, runs `drizzle-kit migrate`, and seeds. For non-interactive / deploy paths use the split commands `db:bootstrap` / `db:migrate` / `db:seed:ref` / `db:seed:demo` (see ADR-0005). Service-specific drizzle generation is exposed as `db:generate:*`.
 
 ## Coding Style & Naming Conventions
 TypeScript is the default language. Prettier enforces single quotes, trailing commas, 120-character lines, and standard 2-space indentation. Follow existing naming patterns: kebab-case filenames like `channel-adapter.service.ts`, PascalCase classes, and camelCase functions and variables. Prefer workspace aliases such as `@app/*` and `@packages/*` over deep relative imports.

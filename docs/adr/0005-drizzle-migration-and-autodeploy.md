@@ -27,11 +27,15 @@
 | `db:seed:ref` | 운영에 필요한 reference data (코드 테이블, 시스템 user 등). | 포함 | 필수 (UPSERT / `ON CONFLICT DO NOTHING`) |
 | `db:seed:demo` | 데모/개발용 sample data. | **금지** (live 흘러가면 사고) | 불요 |
 
-`db:setup` 은 위 넷을 인터랙티브로 묶는 dev 편의 wrapper 로만 유지. 새로 추가되는 기능 없음. `--allow-demo-in-prod` 같은 negative-flag 안전장치는 명령 자체를 분리하면서 사라진다.
+ref / demo 의 구분은 `03-seed-orchestrator.ts` 가 이미 들고 있는 `DEMO_GROUP_PREFIX = 'demo-'` 위에 그대로 얹는다 — `db:seed:ref` 는 비-demo 그룹, `db:seed:demo` 는 demo- 그룹만 본다. `--allow-demo-in-prod` 같은 negative-flag 안전장치는 명령 자체를 분리하면서 사라진다 (`db:seed:demo` 가 `isProdStage()` 면 인자 검사로 거부, `db:seed:ref` 는 demo- 그룹을 *볼* 일 자체가 없음).
+
+`db:setup` 은 위 넷을 묶는 wrapper 로 남기되, **interactive dev 도구로 정체성을 한정**한다 — `--yes` / `--non-interactive` 거부, `SST_STAGE === 'live'` 거부. 동시에 비대화식 진입점이었던 `db:setup:ci` alias 는 제거. autodeploy 는 wrapper 를 거치지 않고 4개 명령을 *직접* 호출한다. 이 정체성 분리로 "autodeploy 가 실수로 wrapper 를 비대화식으로 부르는 경로" 자체가 문법상 사라진다.
+
+각 신규 명령은 현 `scripts/seeding/index.ts` 의 sst shell 재진입 로직을 `scripts/seeding/lib/sst-shell-relaunch.ts` 로 추출해 공유한다. 4개 entry 가 동일한 재진입 진입점을 거치므로 local dev (`sst shell` 밖) 와 autodeploy (`sst shell` 안) 양쪽에서 동작.
 
 ### 4. SST Console autodeploy workflow 의 명령 순서
 
-`deployments/lcnine/services/sst.config.ts` 와 `deployments/lcnine/auth/sst.config.ts` 양쪽에 `console.autodeploy` 블록 추가:
+`deployments/lcnine/services/sst.config.ts` 와 `deployments/lcnine/auth/sst.config.ts` 양쪽에 `console.autodeploy` 블록 추가. 두 stack 은 서로 다른 RDS 를 갖기 때문에 workflow 간 ordering 강제는 불요 — 각자 자기 deployment 의 logical DB 만 책임:
 
 ```ts
 console: {
@@ -40,6 +44,11 @@ console: {
       if (event.type !== "branch") return;
       if (event.branch === "main") return { stage: "live" };
       if (event.branch === "develop") return { stage: "dev" };
+    },
+    runner: {
+      // RDS 는 platform VPC 의 private subnet 안에 있으므로 runner 도 그 VPC 에 attach.
+      // /lcnine-platform/<stage>/vpc-id 를 SSM 으로 읽어 사용.
+      vpc: { /* platform VPC subnet + RDS access SG */ },
     },
     async workflow({ $, event }) {
       const stage = event.branch === "main" ? "live" : "dev";
@@ -50,6 +59,8 @@ console: {
       await $`npx sst shell --stage ${stage} -- npm run db:bootstrap -- --deployment ${deployment} --yes`;
       await $`npx sst shell --stage ${stage} -- npm run db:migrate -- --deployment ${deployment} --yes`;
       await $`npx sst shell --stage ${stage} -- npm run db:seed:ref -- --deployment ${deployment} --yes`;
+      // services 만: Medusa 자체 migration (schema + link sync). data migration script 는 별도 운영.
+      await $`npx sst shell --stage ${stage} -- npm -w apps/medusa run predeploy`;
     },
   },
 }
@@ -57,11 +68,16 @@ console: {
 
 **`sst deploy` 이후에 migration 이 돌도록** 의도적으로 잡았다 — `sst.aws.Postgres("Db")` 가 services stack 안에 있어 첫 배포에는 deploy 전에 RDS 가 존재하지 않기 때문. 평소 deploy 에서는 짧은 window 동안 새 service task 가 미적용 schema 를 보는 상황이 가능하지만, 아래 컨벤션 2 개가 지켜지면 무해하다.
 
+**runner 의 VPC 접근에 따라오는 인프라 작업** (autodeploy 활성화 PR 안에 묶임):
+- `console.autodeploy.runner.vpc` 가 platform VPC private subnet 에 attach. cross-stack 이라 SSM (`/lcnine-platform/<stage>/vpc-id`) 를 읽는다 — runner 의 IAM role 에 `ssm:GetParameter` 명시 권한 부여.
+- `Db` SG 의 inbound 룰에 *runner SG* 추가. wildcard ALB SG 와는 별개 룰. auth stack 의 `IdpDb` SG 도 동일 처리.
+- RDS publicly accessible 로 푸는 우회는 *기본값의 일부* 가 되기 쉬워 채택하지 않음 (한 번 풀면 안 닫히는 카테고리).
+
 ### 5. 보조 컨벤션
 
 - **Migration 은 additive 또는 expand-contract.** column drop / rename / type-narrow 을 같은 PR 의 코드 변경과 묶지 않는다. drop 은 (a) 코드에서 사용 중단 → ship → 운영 → (b) 후속 PR 에서 drop migration. autodeploy 의 "migration 이 deploy 뒤에 돈다" 가 안전한 전제.
 - **`db:seed:ref` 의 모든 seed 는 idempotent.** UPSERT 또는 `ON CONFLICT DO NOTHING`. 매 deploy 마다 돌아도 데이터가 변하지 않아야 한다.
-- **Medusa 는 별도 step.** drizzle 이 아니라 Medusa 자체 migration 시스템이므로 같은 workflow 안에서 `npx sst shell --stage ${stage} -- npx medusa db:migrate` 로 호출. Container entrypoint 안에서 자체 migration 돌리는 옵션은 다중 task 동시 부팅 시 race 위험이 있어 채택 안 함.
+- **Medusa 는 별도 step.** drizzle 이 아니라 Medusa 자체 migration 시스템이므로 같은 workflow 안에서 별도 step 으로 호출 — 공식 `predeploy` 권장과 일치. 명령 표면은 `medusa db:migrate --execute-safe-links` 한 줄이며 schema migration + module link sync 를 함께 처리한다 (data migration scripts 는 application 코드가 작성하는 별개 영역이라 자동 step 대상 아님). 컨테이너 entrypoint 안에서 자체 migration 돌리는 옵션은 (i) 다중 task 동시 부팅 시 race 가능, (ii) 부팅 latency 가 migration 에 묶여 single-instance Medusa 에서 health check stall 위험, (iii) Medusa 공식 권장 자체가 `predeploy` 외부 호출이라는 이유로 채택하지 않는다. 현 `apps/medusa/Dockerfile` 의 `CMD ["sh", "-c", "yarn medusa db:migrate --execute-safe-links && yarn start"]` 는 이 결정 이전 패턴이므로 동일 PR 안에서 CMD 의 migrate 부분 제거 + `apps/medusa/package.json` 에 `predeploy` 스크립트 노출로 정렬.
 
 ### 6. Baseline 전환 작업 (one-time)
 
@@ -91,3 +107,4 @@ baseline PR 머지가 곧 push 패턴의 EOL.
 - **`db:seed:demo` 가 의도치 않게 live 에 흘러가는 것을 방어하는 책임은 운영자에게 남는다.** 명령이 분리되어 있어 `npx sst shell --stage live -- npm run db:seed:demo` 를 직접 치지 않는 한 호출되지 않지만, 그 한 줄을 막는 자동 장치는 없음. 필요시 `db:seed:demo` 안에서 `SST_STAGE === 'live'` 면 거부하는 가드를 추가.
 - **Medusa migration 의 실패가 다른 서비스의 정상 배포를 막을지 여부는 별도 결정.** workflow 안에서 `await` 순서로 묶으면 한쪽 실패가 전체 실패. 분리 실행이 필요하면 별도 step 으로 isolation.
 - **baseline 전환 PR 이 머지되는 순간 모든 개발자의 로컬 dev DB 가 한 번 wipe 되어야 한다.** PR description 에 명시. 머지 후 첫 pull 한 사람이 자기 logical DB 들을 drop & recreate 하고 `db:setup` 재실행.
+- **분리 PR (script 분리 + Medusa Dockerfile 정렬) 머지 시점부터 P3 (autodeploy workflow 활성화) 머지까지 사이에는, Medusa schema 변경분이 자동 적용되지 않는다.** 본 ADR 의 결정에 따라 Medusa Dockerfile CMD 에서 자체 `medusa db:migrate --execute-safe-links` 호출이 제거되었기 때문. 그 사이 운영자는 매 Medusa 배포 후 수동으로 `sst shell --stage <stage> -- bash -lc "cd apps/medusa && yarn predeploy"` 를 호출해야 한다. drizzle 서비스 측 schema 적용은 *원래도* 사람이 `db:setup` / 분리 후엔 `db:migrate` 를 명시 호출하던 흐름이라 이 갭은 Medusa 한정.

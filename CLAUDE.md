@@ -73,7 +73,7 @@ npm run test:bnpl:itdoc
 ```
 
 ### Database (Drizzle)
-Each service has its own schema and drizzle config. Workflow: edit `schema.ts` → generate SQL migration → migrate is applied by `db:setup` (or in autodeploy).
+Each service has its own schema and drizzle config. Workflow: edit `schema.ts` → generate SQL migration → migrate is applied by `db:setup` (dev) 또는 autodeploy workflow (배포).
 ```bash
 # Generate a new migration from current schema.ts (--name is required)
 npm run db:generate:core -- --name <kebab-description>
@@ -86,19 +86,37 @@ npm run db:generate:file-service -- --name <kebab-description>
 npm run db:generate:ugc-service -- --name <kebab-description>
 npm run db:generate:membership -- --name <kebab-description>
 
-# Apply migrations (runs across all registered services). See ADR-0005.
-npm run db:setup -- --stage dev --deployment lcnine-services --yes --group baseline
-# user-service is owned by the lcnine-auth deployment, so its schema changes need a separate run:
-npm run db:setup -- --stage dev --deployment lcnine-auth --yes --group baseline
+# Dev 머신에서 마이그레이션 적용 (인터랙티브). 한 명령에 bootstrap → migrate → seed 가 묶여있음.
+npm run db:setup -- --stage dev --deployment lcnine-services
+# user-service is owned by the lcnine-auth deployment:
+npm run db:setup -- --stage dev --deployment lcnine-auth
 ```
+
+`db:setup` 은 **interactive dev 전용 wrapper** 다 — `--yes` / `--non-interactive` 거부, `--stage live` / `SST_STAGE=live` 거부. 비대화식·배포 경로에선 분리된 4개 명령을 *직접* 호출 (ADR-0005 §3):
+
+```bash
+npm run db:bootstrap  -- --stage <stage> --deployment <name> --yes  # 누락된 logical DB 생성
+npm run db:migrate    -- --stage <stage> --deployment <name> --yes  # drizzle-kit migrate
+npm run db:seed:ref   -- --stage <stage> --deployment <name> --yes  # 비-demo 그룹 reference seed
+npm run db:seed:demo  -- --stage <stage> --deployment <name> --yes  # demo- prefix 그룹 (live 거부)
+```
+
 `drizzle-kit push` is intentionally not used — see `docs/adr/0005-drizzle-migration-and-autodeploy.md`.
 
 **Daily cycle for a schema change:**
 1. Edit `schema.ts` (or the file referenced by that service's `drizzle.config.ts`).
 2. `npm run db:generate:<svc> -- --name <kebab-description>` — name describes intent (`add-foo-column`, `drop-deprecated-bar`), not auto-generated nonsense.
 3. Review the generated SQL in `apps/<svc>/drizzle/<timestamp>_*.sql`. If it looks wrong, `git rm` it and fix `schema.ts` before regenerating — never hand-edit a generated migration that's already been applied.
-4. `npm run db:setup -- --stage dev --deployment lcnine-services --yes --group baseline` to apply locally.
+4. `npm run db:setup -- --stage dev --deployment lcnine-services` to apply locally (인터랙티브 — 시드 그룹 선택 등 prompt 응답).
 5. Commit `schema.ts` + the new `drizzle/<timestamp>_*.sql` + `drizzle/meta/` updates **in a single commit**. Splitting them desynchronizes other people's checkouts.
+
+**⚠ Medusa schema 변경 시 (P3 autodeploy 활성화 전까지의 임시 절차):** Medusa container 가 더이상 부팅 시 자체 `medusa db:migrate` 를 돌리지 않으므로 (ADR-0005 §5), Medusa 모듈 / link / data-model 변경분을 live 또는 dev 환경에 반영하려면 배포 후 한 번 수동 호출이 필요하다:
+
+```bash
+sst shell --stage <stage> -- bash -lc "cd apps/medusa && yarn predeploy"
+```
+
+P3 PR 머지 후엔 autodeploy workflow 가 자동 호출하므로 이 단계는 사라진다.
 
 **After pulling someone else's schema change:** rerun the `db:setup` line — Phase 2 applies new migrations only and skips already-applied ones.
 
