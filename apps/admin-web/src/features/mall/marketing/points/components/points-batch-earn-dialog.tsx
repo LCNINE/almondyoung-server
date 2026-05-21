@@ -14,6 +14,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { useBatchEarnPoints } from '@/lib/services/wallet';
+import { nowDatetimeLocalMin } from '@/lib/utils/date';
 import { toast } from 'sonner';
 import { CheckCircle2, XCircle } from 'lucide-react';
 
@@ -39,6 +40,10 @@ export function PointsBatchEarnDialog({
 
   const handleSubmit = async () => {
     if (!amount || amount <= 0 || userIds.length === 0) return;
+    if (userIds.length > 1000) {
+      toast.error('최대 1,000명까지 일괄 지급할 수 있습니다.');
+      return;
+    }
     try {
       const res = await batchMutation.mutateAsync({
         userIds,
@@ -113,6 +118,7 @@ export function PointsBatchEarnDialog({
               <Input
                 type="datetime-local"
                 value={expiresAt}
+                min={nowDatetimeLocalMin()}
                 onChange={(e) => setExpiresAt(e.target.value)}
               />
             </div>

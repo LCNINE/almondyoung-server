@@ -49,7 +49,9 @@
     "exclusive": "Exclusive coupon",
     "unlimited": "No expiry",
     "percentDiscount": "{value}% off",
-    "wonDiscount": "{value} KRW off"
+    "wonDiscount": "{value} KRW off",
+    "assignedSection": "My Assigned Coupons",
+    "publicSection": "Public Coupons"
   },
   "point": {
     "historyTitle": "Point History",

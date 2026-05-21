@@ -4,6 +4,16 @@ import { useState } from 'react';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useCampaignList, useDeleteCampaign } from '@/lib/services/campaigns';
 import { CampaignCreateDialog } from '../components/campaign-create-dialog';
 import { CampaignDetailDialog } from '../components/campaign-detail-dialog';
@@ -55,19 +65,22 @@ function CampaignStatusBadge({ campaign }: { campaign: MedusaCampaign }) {
 export default function MarketingCampaignsTemplate() {
   const [createOpen, setCreateOpen] = useState(false);
   const [detailTarget, setDetailTarget] = useState<MedusaCampaign | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<MedusaCampaign | null>(null);
 
   const { data, isLoading } = useCampaignList({ limit: 100 });
   const deleteCampaign = useDeleteCampaign();
 
   const campaigns = data?.campaigns ?? [];
 
-  const handleDelete = async (campaign: MedusaCampaign) => {
-    if (!confirm(`'${campaign.name}' 캠페인을 삭제하시겠습니까?`)) return;
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
     try {
-      await deleteCampaign.mutateAsync(campaign.id);
+      await deleteCampaign.mutateAsync(deleteTarget.id);
       toast.success('캠페인이 삭제되었습니다.');
     } catch {
       toast.error('캠페인 삭제에 실패했습니다.');
+    } finally {
+      setDeleteTarget(null);
     }
   };
 
@@ -148,7 +161,7 @@ export default function MarketingCampaignsTemplate() {
                           size="sm"
                           variant="ghost"
                           className="h-7 w-7 p-0 text-destructive hover:text-destructive"
-                          onClick={() => handleDelete(campaign)}
+                          onClick={() => setDeleteTarget(campaign)}
                           disabled={deleteCampaign.isPending}
                           title="삭제"
                         >
@@ -170,6 +183,27 @@ export default function MarketingCampaignsTemplate() {
         onOpenChange={(open) => { if (!open) setDetailTarget(null); }}
         campaign={detailTarget}
       />
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>캠페인 삭제</AlertDialogTitle>
+            <AlertDialogDescription>
+              <span className="font-semibold">&apos;{deleteTarget?.name}&apos;</span> 캠페인을 삭제하시겠습니까?
+              삭제된 캠페인은 복구할 수 없습니다.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              삭제
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

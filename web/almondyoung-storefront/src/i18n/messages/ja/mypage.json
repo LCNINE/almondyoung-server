@@ -49,7 +49,9 @@
     "exclusive": "専用クーポン",
     "unlimited": "期間無制限",
     "percentDiscount": "{value}% 割引",
-    "wonDiscount": "{value} ウォン割引"
+    "wonDiscount": "{value} ウォン割引",
+    "assignedSection": "発行済みクーポン",
+    "publicSection": "公開クーポン"
   },
   "point": {
     "historyTitle": "ポイント履歴",

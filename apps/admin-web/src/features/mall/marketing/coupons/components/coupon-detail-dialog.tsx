@@ -41,13 +41,11 @@ export function CouponDetailDialog({
 
   if (!c) return null;
 
-  const { name, maxDiscountAmount, maxUsesPerCustomer, createdBy } = getCouponMeta(c);
+  const { name, maxUsesPerCustomer, createdBy } = getCouponMeta(c);
   const m = c.application_method;
   const discountStr = m
     ? m.type === 'percentage'
-      ? maxDiscountAmount
-        ? `${m.value}% (최대 ${maxDiscountAmount.toLocaleString('ko-KR')}원)`
-        : `${m.value}%`
+      ? `${m.value}%`
       : `${m.value.toLocaleString('ko-KR')}원`
     : '-';
 
@@ -77,7 +75,7 @@ export function CouponDetailDialog({
               <span>
                 {m?.target_type === 'order'
                   ? '전체 주문'
-                  : m?.target_type === 'shipping'
+                  : m?.target_type === 'shipping_methods'
                   ? '배송비'
                   : '특정 상품/카테고리'}
               </span>
