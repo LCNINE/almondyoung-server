@@ -29,6 +29,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { SkuLookupSection } from './sku-lookup-section';
 import { StrategySection } from './strategy-section';
 import { StockPolicySection } from './stock-policy-section';
+import { VariantAssetSection } from './asset-section';
 
 interface VariantEditorDialogProps {
   master: MasterDto | null;
@@ -111,6 +112,10 @@ function VariantPanel({ variant, masterId, onSaved }: VariantPanelProps) {
       </div>
 
       <SkuLookupSection links={links} onChange={setLinks} />
+
+      <Separator />
+
+      <VariantAssetSection variantId={variant.id} />
 
       <Separator />
 
