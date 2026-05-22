@@ -1,6 +1,5 @@
 'use client';
 
-import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
@@ -9,6 +8,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { QuickActionsCard } from '@/features/main/quick-actions/QuickActionsCard';
 import { useOrderStats, useSalesOrders, usePendingMatchings } from '@/lib/services/orders';
 import { useQuestions } from '@/lib/services/qna';
 import { useAllUserCount } from '@/lib/services/users';
@@ -17,15 +17,10 @@ import {
   Boxes,
   CheckCircle,
   ChevronRight,
-  Crown,
   Headphones,
-  MessageSquare,
   Package,
   ShoppingBag,
-  Store,
-  Tag,
   Users,
-  Warehouse,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -49,17 +44,6 @@ const STATUS_COLOR: Record<SalesOrderStatus, string> = {
   cancelled: 'bg-red-100 text-red-600',
   timeout: 'bg-gray-100 text-gray-600',
 };
-
-const QUICK_ACTIONS = [
-  { label: '주문 이력', icon: Package, path: '/order/history', iconColor: 'text-blue-600', bg: 'bg-blue-50' },
-  { label: '매칭', icon: Boxes, path: '/order/matching', iconColor: 'text-orange-600', bg: 'bg-orange-50' },
-  { label: '재고 현황', icon: Warehouse, path: '/inventory/status', iconColor: 'text-green-600', bg: 'bg-green-50' },
-  { label: 'QnA', icon: MessageSquare, path: '/cs/qna', iconColor: 'text-purple-600', bg: 'bg-purple-50' },
-  { label: '회원 관리', icon: Users, path: '/account/customer', iconColor: 'text-pink-600', bg: 'bg-pink-50' },
-  { label: '판매처', icon: Store, path: '/account/sales-channel', iconColor: 'text-teal-600', bg: 'bg-teal-50' },
-  { label: '멤버십', icon: Crown, path: '/membership/members', iconColor: 'text-yellow-600', bg: 'bg-yellow-50' },
-  { label: '쿠폰', icon: Tag, path: '/mall/marketing/coupons', iconColor: 'text-red-600', bg: 'bg-red-50' },
-];
 
 export default function MainTemplate() {
   const router = useRouter();
@@ -234,34 +218,7 @@ export default function MainTemplate() {
           </CardContent>
         </Card>
 
-        <Card className="bg-white border border-gray-200 shadow-sm">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-gray-900 text-base">빠른 액션</CardTitle>
-            <CardDescription className="text-gray-500 text-xs mt-0.5">
-              자주 사용하는 메뉴
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-4 gap-2">
-              {QUICK_ACTIONS.map((action) => {
-                const Icon = action.icon;
-                return (
-                  <Button
-                    key={action.path}
-                    variant="ghost"
-                    className="flex flex-col items-center gap-2 h-20 rounded-xl hover:bg-gray-50 border border-transparent hover:border-gray-200"
-                    onClick={() => router.push(action.path)}
-                  >
-                    <div className={`p-2 rounded-lg ${action.bg}`}>
-                      <Icon className={`w-4 h-4 ${action.iconColor}`} />
-                    </div>
-                    <span className="text-xs text-gray-600 font-normal">{action.label}</span>
-                  </Button>
-                );
-              })}
-            </div>
-          </CardContent>
-        </Card>
+        <QuickActionsCard />
       </div>
     </div>
   );
