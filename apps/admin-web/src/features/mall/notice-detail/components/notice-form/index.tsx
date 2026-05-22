@@ -5,7 +5,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
+import {
+  RichTextEditor,
+  isEmptyHtml,
+} from '@/features/mall/notices/components/rich-text-editor';
 import {
   Select,
   SelectContent,
@@ -16,9 +19,12 @@ import {
 import { useUpdateNotice } from '@/lib/services/products';
 import type { NoticeDto, UpdateNoticeDto } from '@/lib/types/dto/products';
 import { toast } from 'sonner';
+import { localInputToIso } from '@/lib/utils/datetime';
 
 type Props = {
   notice: NoticeDto;
+  onCancel?: () => void;
+  onSaved?: () => void;
 };
 
 const NONE_VALUE = '__none__';
@@ -31,7 +37,7 @@ const toLocalInput = (iso: string | null): string => {
   return local.toISOString().slice(0, 16);
 };
 
-export function NoticeForm({ notice }: Props) {
+export function NoticeForm({ notice, onCancel, onSaved }: Props) {
   const [form, setForm] = useState<UpdateNoticeDto>({});
   const updateMutation = useUpdateNotice();
 
@@ -67,13 +73,21 @@ export function NoticeForm({ notice }: Props) {
       toast.error('제목을 입력해 주세요.');
       return;
     }
-    if (!form.content?.trim()) {
+    if (isEmptyHtml(form.content ?? '')) {
       toast.error('본문을 입력해 주세요.');
       return;
     }
     try {
-      await updateMutation.mutateAsync({ id: notice.id, dto: form });
+      await updateMutation.mutateAsync({
+        id: notice.id,
+        dto: {
+          ...form,
+          displayStartAt: localInputToIso(form.displayStartAt),
+          displayEndAt: localInputToIso(form.displayEndAt),
+        },
+      });
       toast.success('공지사항이 수정되었습니다.');
+      onSaved?.();
     } catch {
       toast.error('수정에 실패했습니다.');
     }
@@ -93,7 +107,10 @@ export function NoticeForm({ notice }: Props) {
           <Label htmlFor="content">
             본문 <span className="text-destructive">*</span>
           </Label>
-          <Textarea id="content" rows={10} value={form.content ?? ''} onChange={set('content')} />
+          <RichTextEditor
+            value={form.content ?? ''}
+            onChange={(html) => setForm((prev) => ({ ...prev, content: html }))}
+          />
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -190,7 +207,16 @@ export function NoticeForm({ notice }: Props) {
           </div>
         </div>
 
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          {onCancel && (
+            <Button
+              variant="outline"
+              onClick={onCancel}
+              disabled={updateMutation.isPending}
+            >
+              취소
+            </Button>
+          )}
           <Button onClick={handleSave} disabled={updateMutation.isPending}>
             저장
           </Button>
