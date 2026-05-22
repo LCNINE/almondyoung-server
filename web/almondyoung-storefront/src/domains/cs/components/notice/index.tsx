@@ -7,6 +7,7 @@ import { useTranslations } from "next-intl"
 import { Skeleton } from "@/components/ui/skeleton"
 import { listPublicNotices } from "@/lib/api/pim/notices"
 import { cn } from "@/lib/utils"
+import { sanitizeNoticeHtml } from "@/lib/utils/sanitize-html"
 import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
 import type { NoticeBadge, NoticeCategory } from "@/lib/types/dto/notice"
 import type { NoticeCategoryFilter, NoticeItem } from "@/lib/types/ui/notice"
@@ -194,9 +195,12 @@ export function Notice() {
             <NoticeMetaRow item={selectedItem} badgeSize="md" />
           </div>
           <h2 className="mb-4 text-lg font-bold">{selectedItem.title}</h2>
-          <p className="text-sm leading-relaxed text-gray-600 whitespace-pre-line">
-            {selectedItem.content}
-          </p>
+          <div
+            className="notice-content text-sm leading-relaxed text-gray-600"
+            dangerouslySetInnerHTML={{
+              __html: sanitizeNoticeHtml(selectedItem.content),
+            }}
+          />
         </div>
       </div>
     )

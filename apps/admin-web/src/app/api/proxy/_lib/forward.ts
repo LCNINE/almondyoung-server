@@ -34,11 +34,13 @@ export async function forwardRequest(
   const url = `${targetBaseUrl}/${targetPath}${search}`;
 
   const hasBody = !['GET', 'HEAD'].includes(request.method);
-  const body = hasBody ? await request.arrayBuffer() : undefined;
+  const rawBody = hasBody ? await request.arrayBuffer() : undefined;
+  // 삭제할때 body값이 빈값으로되면 에러남
+  const body = rawBody && rawBody.byteLength > 0 ? rawBody : undefined;
 
   const headers = new Headers();
 
-  if (hasBody) {
+  if (body) {
     headers.set(
       'Content-Type',
       request.headers.get('Content-Type') ?? 'application/json'

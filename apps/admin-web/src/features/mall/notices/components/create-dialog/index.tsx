@@ -13,7 +13,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
+import {
+  RichTextEditor,
+  isEmptyHtml,
+} from '@/features/mall/notices/components/rich-text-editor';
 import {
   Select,
   SelectContent,
@@ -24,6 +27,7 @@ import {
 import { useCreateNotice } from '@/lib/services/products';
 import type { CreateNoticeDto } from '@/lib/types/dto/products';
 import { toast } from 'sonner';
+import { localInputToIso } from '@/lib/utils/datetime';
 
 type Props = {
   open: boolean;
@@ -46,9 +50,9 @@ export function NoticeCreateDialog({ open, onOpenChange }: Props) {
   const [form, setForm] = useState<CreateNoticeDto>(EMPTY);
   const createMutation = useCreateNotice();
   const titleLength = form.title?.length ?? 0;
-  const contentLength = form.content?.length ?? 0;
   const canSubmit =
-    Boolean(form.title?.trim() && form.content?.trim()) &&
+    Boolean(form.title?.trim()) &&
+    !isEmptyHtml(form.content ?? '') &&
     !createMutation.isPending;
 
   const set =
@@ -69,12 +73,16 @@ export function NoticeCreateDialog({ open, onOpenChange }: Props) {
       toast.error('제목을 입력해 주세요.');
       return;
     }
-    if (!form.content?.trim()) {
+    if (isEmptyHtml(form.content ?? '')) {
       toast.error('본문을 입력해 주세요.');
       return;
     }
     try {
-      await createMutation.mutateAsync(form);
+      await createMutation.mutateAsync({
+        ...form,
+        displayStartAt: localInputToIso(form.displayStartAt),
+        displayEndAt: localInputToIso(form.displayEndAt),
+      });
       toast.success('공지사항이 등록되었습니다.');
       handleClose();
     } catch {
@@ -84,15 +92,15 @@ export function NoticeCreateDialog({ open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-h-[90vh] w-[calc(100vw-2rem)] gap-0 overflow-hidden p-0 sm:max-w-[720px]">
-        <DialogHeader className="border-b px-6 py-5">
+      <DialogContent className="flex max-h-[90vh] w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[720px]">
+        <DialogHeader className="shrink-0 border-b px-6 py-5">
           <DialogTitle>공지사항 등록</DialogTitle>
           <DialogDescription>
             고객에게 노출되는 쇼핑몰 공지를 작성합니다.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid max-h-[calc(90vh-132px)] gap-5 overflow-y-auto px-6 py-5">
+        <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto px-6 py-5">
           <div className="grid gap-2">
             <div className="flex items-center justify-between gap-3">
               <Label htmlFor="title">
@@ -106,26 +114,20 @@ export function NoticeCreateDialog({ open, onOpenChange }: Props) {
               id="title"
               className="h-11"
               placeholder="예: 설 연휴 배송 일정 안내"
-              value={form.title}
+              value={form.title ?? ''}
               onChange={set('title')}
             />
           </div>
 
           <div className="grid gap-2">
-            <div className="flex items-center justify-between gap-3">
-              <Label htmlFor="content">
-                본문 <span className="text-destructive">*</span>
-              </Label>
-              <span className="text-xs text-muted-foreground">
-                {contentLength}자
-              </span>
-            </div>
-            <Textarea
-              id="content"
-              className="min-h-[220px] resize-none leading-6"
-              placeholder="공지 본문을 입력하세요."
-              value={form.content}
-              onChange={set('content')}
+            <Label htmlFor="content">
+              본문 <span className="text-destructive">*</span>
+            </Label>
+            <RichTextEditor
+              value={form.content ?? ''}
+              onChange={(html) =>
+                setForm((prev) => ({ ...prev, content: html }))
+              }
             />
           </div>
 
@@ -235,7 +237,7 @@ export function NoticeCreateDialog({ open, onOpenChange }: Props) {
           </div>
         </div>
 
-        <DialogFooter className="border-t bg-background px-6 py-4">
+        <DialogFooter className="shrink-0 border-t bg-background px-6 py-4">
           <Button variant="outline" onClick={handleClose}>
             취소
           </Button>
