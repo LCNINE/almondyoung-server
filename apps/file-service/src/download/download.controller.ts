@@ -8,30 +8,23 @@ import {
   ParseIntPipe,
   DefaultValuePipe,
   Res,
-  ForbiddenException,
-  NotFoundException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiBearerAuth, ApiSecurity } from '@nestjs/swagger';
-import { RequireScopes, Public, User } from '@app/authorization';
-import { JwtPayload } from '../shared/types/jwt-payload.interface';
+import { Public, User } from '@app/authorization';
 import { Response } from 'express';
 import { DownloadService } from './download.service';
 import { SignedUrlResponseDto } from './dto/signed-url-response.dto';
 import { FileMetadataResponseDto } from './dto/file-metadata-response.dto';
-import { FileRepository } from '../shared/repositories/file.repository';
+import { JwtPayload } from '../shared/types/jwt-payload.interface';
 
 @ApiTags('Download')
 @ApiBearerAuth()
 @ApiSecurity('cookie')
 @Controller('files')
 export class DownloadController {
-  constructor(
-    private readonly downloadService: DownloadService,
-    private readonly fileRepository: FileRepository,
-  ) {}
+  constructor(private readonly downloadService: DownloadService) {}
 
   @Get(':fileId/download')
-  // @RequireScopes('file:read')
   @ApiOperation({ summary: 'Get signed URL for file download' })
   @ApiParam({ name: 'fileId', description: 'File ID', type: 'string' })
   @ApiQuery({
@@ -43,7 +36,6 @@ export class DownloadController {
   })
   @ApiResponse({ status: 200, description: 'Signed URL generated', type: SignedUrlResponseDto })
   @ApiResponse({ status: 404, description: 'File not found' })
-  @ApiResponse({ status: 400, description: 'File is not active' })
   @ApiResponse({ status: 403, description: 'Not authorized to access this file' })
   async getSignedUrl(
     @Param('fileId', ParseUUIDPipe) fileId: string,
@@ -54,7 +46,6 @@ export class DownloadController {
   }
 
   @Get(':fileId/metadata')
-  // @RequireScopes('file:read')
   @ApiOperation({ summary: 'Get file metadata' })
   @ApiParam({ name: 'fileId', description: 'File ID', type: 'string' })
   @ApiResponse({ status: 200, description: 'File metadata', type: FileMetadataResponseDto })
@@ -75,24 +66,10 @@ export class DownloadController {
   })
   @ApiParam({ name: 'fileId', description: 'File UUID' })
   @ApiResponse({ status: 302, description: 'Redirects to S3 public URL' })
-  @ApiResponse({ status: 403, description: 'File is not public' })
-  @ApiResponse({ status: 404, description: 'File not found or inactive' })
+  @ApiResponse({ status: 404, description: 'File not found or not public' })
   async servePublicFile(@Param('fileId', ParseUUIDPipe) fileId: string, @Res() res: Response) {
-    const file = await this.fileRepository.findById(fileId);
-
-    if (!file) {
-      throw new NotFoundException('File not found');
-    }
-
-    if (!file.isPublic) {
-      throw new ForbiddenException('File is not public');
-    }
-
-    if (file.status !== 'active') {
-      throw new NotFoundException('File not available');
-    }
-
-    return res.redirect(302, file.url);
+    const url = await this.downloadService.resolvePublicUrl(fileId);
+    return res.redirect(302, url);
   }
 
   @Head('public/:fileId')
@@ -100,14 +77,9 @@ export class DownloadController {
   @ApiOperation({ summary: 'Check if public file exists' })
   @ApiParam({ name: 'fileId', description: 'File UUID' })
   @ApiResponse({ status: 200, description: 'File exists and is public' })
-  @ApiResponse({ status: 404, description: 'File not found, not public, or inactive' })
+  @ApiResponse({ status: 404, description: 'File not found or not public' })
   async checkPublicFile(@Param('fileId', ParseUUIDPipe) fileId: string) {
-    const file = await this.fileRepository.findById(fileId);
-
-    if (!file || !file.isPublic || file.status !== 'active') {
-      throw new NotFoundException();
-    }
-
+    await this.downloadService.resolvePublicUrl(fileId);
     return { exists: true };
   }
 }
