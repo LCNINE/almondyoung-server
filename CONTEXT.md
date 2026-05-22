@@ -74,7 +74,7 @@
 - 정의: 업로드된 단일 물리적 파일. file-service 가 소유하는 가장 작은 단위.
 - 스키마: `apps/file-service/src/database/schema.ts` 의 `uploads` 테이블. 핵심 컬럼: `id`, `mimeType`, `size`, `filePath`, `url`, `status` (`active` | `deleted` — 두 개뿐), `isPublic`, `uploadedBy`, `contextId`.
 - **책임 경계는 "파일 자체" 까지.** file-service 는 inbound reference 를 추적하지 않는다 — 참조 방향은 호출 도메인 → `uploads.id` 단일. 자세한 결정은 ADR-0009.
-- **파일 접근 결정의 single port = `FileAccess`** (`apps/file-service`). 권한(`isPublic` / `uploadedBy` / `master` scope) + status + read/delete 라이프사이클의 모든 결정이 이 모듈 안. 호출자는 세 메서드로만 진입 — `loadReadable(id, user)`, `loadPublicServable(id)`, `delete(id, user)`. `FileRepository` 는 모듈 내부에 은닉되어 외부 노출 안 함.
+- **파일 접근 결정의 single port = `FileAccess`** (`apps/file-service`). 권한(`isPublic` / `uploadedBy` / `master` scope) + status + delete 라이프사이클의 모든 *결정* 이 이 모듈 안. 호출자는 세 메서드로만 진입 — `loadReadable(id, user)`, `loadPublicServable(id)`, `delete(id, user)`. `FileRepository` 의 read 와 권한 결부 write (softDelete) 는 이 모듈 안에서만 호출 — Upload 의 row 생성처럼 권한 결정이 결부되지 않는 write 는 호출자가 직접 사용.
 - **호출 도메인은 자기 권한 검사를 file-service 에 전가하지 않는다.** Library 의 ownership 검사는 core 안에서 끝나고, core 가 master scope JWT 위임으로 file-service 호출. file-service 는 library/ownership 의 존재를 모름. 같은 분리가 다른 calling domain 에도 적용.
 
 ## 출신 시스템
