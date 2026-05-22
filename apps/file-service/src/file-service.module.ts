@@ -12,7 +12,6 @@ import { StorageModule } from './storage/storage.module';
 import { UploadModule } from './upload/upload.module';
 import { LifecycleModule } from './lifecycle/lifecycle.module';
 import { DownloadModule } from './download/download.module';
-import { FILE_SERVICE_SCOPES } from './auth/file-service.scopes';
 
 @Module({
   imports: [
@@ -23,7 +22,7 @@ import { FILE_SERVICE_SCOPES } from './auth/file-service.scopes';
     }),
     AuthorizationModule.forRoot({
       microserviceName: 'file-service',
-      scopes: FILE_SERVICE_SCOPES,
+      scopes: [],
     }),
     DbModule.forRoot({
       config: {
