@@ -1,4 +1,5 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { BadRequestError } from '@app/shared';
 import { FileContext } from '../types/file.types';
 
 @Injectable()
@@ -10,7 +11,7 @@ export class FileContextValidator {
     const { allowPublic, allowPrivate } = context;
 
     if (!allowPublic && !allowPrivate) {
-      throw new BadRequestException(`${context.name} does not allow any uploads`);
+      throw new BadRequestError(`${context.name} does not allow any uploads`);
     }
 
     if (allowPublic && !allowPrivate) {
@@ -28,17 +29,17 @@ export class FileContextValidator {
     const policy = this.getPublicAccessPolicy(context);
 
     if (policy.required && requestedIsPublic === undefined) {
-      throw new BadRequestException(`${context.name} requires explicit isPublic value`);
+      throw new BadRequestError(`${context.name} requires explicit isPublic value`);
     }
 
     const isPublic = requestedIsPublic ?? policy.default!;
 
     if (isPublic && !context.allowPublic) {
-      throw new BadRequestException(`${context.name} does not allow public uploads`);
+      throw new BadRequestError(`${context.name} does not allow public uploads`);
     }
 
     if (!isPublic && !context.allowPrivate) {
-      throw new BadRequestException(`${context.name} does not allow private uploads`);
+      throw new BadRequestError(`${context.name} does not allow private uploads`);
     }
 
     return isPublic;
@@ -80,7 +81,7 @@ export class FileContextValidator {
     const isAllowed = context.allowedMimeTypes.some((pattern) => this.matchesMimeType(mimeType, pattern));
 
     if (!isAllowed) {
-      throw new BadRequestException(
+      throw new BadRequestError(
         `Invalid file type for ${context.name}. ` +
           `Allowed: ${context.allowedMimeTypes.join(', ')}. ` +
           `Got: ${mimeType}`,
@@ -101,7 +102,7 @@ export class FileContextValidator {
 
   validateFileSize(context: FileContext, size: number): void {
     if (size > context.maxFileSize) {
-      throw new BadRequestException(
+      throw new BadRequestError(
         `File size too large for ${context.name}. ` + `Max: ${(context.maxFileSize / 1024 / 1024).toFixed(1)}MB`,
       );
     }
