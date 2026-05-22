@@ -1,12 +1,14 @@
 import './tracing';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { GlobalExceptionFilter } from '@app/shared';
 import { FileServiceModule } from './file-service.module';
 import * as cookieParser from 'cookie-parser';
 
 async function bootstrap() {
   const app = await NestFactory.create(FileServiceModule);
 
+  app.useGlobalFilters(new GlobalExceptionFilter());
   app.use(cookieParser());
 
   const config = new DocumentBuilder()
