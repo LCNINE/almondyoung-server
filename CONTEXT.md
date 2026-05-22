@@ -70,6 +70,13 @@
 - **Grant 경로는 결제 단일.** 멤버십 자격에 의한 자동 grant 경로는 두지 않는다. 멤버십 베네핏 형태의 무료/할인 제공은 **pricing 모듈의 멤버십가** (0 원 포함) 로 표현 — 0 원 결제도 같은 SO/ownership 흐름을 타므로 모델 일관성 유지, 동시에 "원치 않는 콘텐츠가 라이브러리에 자동으로 쌓이는" 문제도 자연 회피.
 - 파일 저장 자체는 `apps/file-service` 위임 — library 모듈은 메타데이터 + 소유권만 관리.
 
+### 파일 (File / file-service)
+- 정의: 업로드된 단일 물리적 파일. file-service 가 소유하는 가장 작은 단위.
+- 스키마: `apps/file-service/src/database/schema.ts` 의 `uploads` 테이블. 핵심 컬럼: `id`, `mimeType`, `size`, `filePath`, `url`, `status` (`active` | `deleted` — 두 개뿐), `isPublic`, `uploadedBy`, `contextId`.
+- **책임 경계는 "파일 자체" 까지.** file-service 는 inbound reference 를 추적하지 않는다 — 참조 방향은 호출 도메인 → `uploads.id` 단일. 자세한 결정은 ADR-0009.
+- **파일 접근 결정의 single port = `FileAccess`** (`apps/file-service`). 권한(`isPublic` / `uploadedBy` / `master` scope) + status + read/delete 라이프사이클의 모든 결정이 이 모듈 안. 호출자는 세 메서드로만 진입 — `loadReadable(id, user)`, `loadPublicServable(id)`, `delete(id, user)`. `FileRepository` 는 모듈 내부에 은닉되어 외부 노출 안 함.
+- **호출 도메인은 자기 권한 검사를 file-service 에 전가하지 않는다.** Library 의 ownership 검사는 core 안에서 끝나고, core 가 master scope JWT 위임으로 file-service 호출. file-service 는 library/ownership 의 존재를 모름. 같은 분리가 다른 calling domain 에도 적용.
+
 ## 출신 시스템
 
 `apps/core` 는 한때 분리되어 있던 WMS와 PIM이 통합된 앱이다. 자세한 맥락은 메모리 [[project-core-wms-pim-merge]].
