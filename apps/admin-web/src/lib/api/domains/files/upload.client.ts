@@ -15,16 +15,17 @@ export type FileUploadResponse = {
   isPublic: boolean;
 };
 
-const NOTICE_CONTENT_IMAGE_CONTEXT_ID = 'notice-content-image';
-
 /**
- * 공지 본문 이미지를 file-service 에 업로드하고 공개 URL 을 반환한다.
- * contextId 는 file_contexts 시드(notice-content-image)와 일치해야 한다.
+ * 리치 텍스트 본문 이미지를 file-service 에 업로드하고 공개 URL 을 반환한다.
+ * contextId 는 해당 도메인의 file_contexts 시드(예: notice-content-image)와 일치해야 한다.
  */
-export async function uploadNoticeImage(file: File): Promise<FileUploadResponse> {
+export async function uploadRichTextImage(
+  file: File,
+  contextId: string
+): Promise<FileUploadResponse> {
   const formData = new FormData();
   formData.append('file', file);
-  formData.append('contextId', NOTICE_CONTENT_IMAGE_CONTEXT_ID);
+  formData.append('contextId', contextId);
   formData.append('isPublic', 'true');
 
   const res = await fetch('/api/proxy/file/files/upload', {

@@ -29,59 +29,59 @@ input[type="search"]::-webkit-search-results-decoration {
   margin: 8px 0;
 }
 
-/* 공지 본문 HTML 스타일 — 어드민 Tiptap 에디터와 동일 클래스(.notice-content).
+/* 리치 텍스트 본문 HTML 스타일 — 어드민 Tiptap 에디터와 동일 클래스(.rich-text-content).
    Tailwind v4 preflight 가 list-style/margin 을 reset 하므로 명시적으로 복원한다. */
-.notice-content {
+.rich-text-content {
   line-height: 1.6;
 }
-.notice-content h1 {
+.rich-text-content h1 {
   font-size: 1.5rem;
   font-weight: 700;
   margin: 0.75em 0 0.5em;
 }
-.notice-content h2 {
+.rich-text-content h2 {
   font-size: 1.25rem;
   font-weight: 700;
   margin: 0.75em 0 0.5em;
 }
-.notice-content h3 {
+.rich-text-content h3 {
   font-size: 1.125rem;
   font-weight: 600;
   margin: 0.75em 0 0.4em;
 }
-.notice-content p {
+.rich-text-content p {
   margin: 0.5em 0;
 }
-.notice-content ul {
+.rich-text-content ul {
   list-style: disc;
   padding-left: 1.5em;
   margin: 0.5em 0;
 }
-.notice-content ol {
+.rich-text-content ol {
   list-style: decimal;
   padding-left: 1.5em;
   margin: 0.5em 0;
 }
-.notice-content li {
+.rich-text-content li {
   margin: 0.2em 0;
 }
-.notice-content a {
+.rich-text-content a {
   color: #2563eb;
   text-decoration: underline;
 }
-.notice-content img {
+.rich-text-content img {
   max-width: 100%;
   height: auto;
   border-radius: 8px;
   margin: 8px 0;
 }
-.notice-content blockquote {
+.rich-text-content blockquote {
   border-left: 3px solid #d1d5db;
   padding-left: 1em;
   color: #6b7280;
   margin: 0.5em 0;
 }
-.notice-content strong {
+.rich-text-content strong {
   font-weight: 700;
 }
 

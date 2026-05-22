@@ -5,10 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import {
-  RichTextEditor,
-  isEmptyHtml,
-} from '@/features/mall/notices/components/rich-text-editor';
+import { RichTextEditor, isEmptyHtml } from '@/components/common/rich-text-editor';
 import {
   Select,
   SelectContent,
@@ -110,6 +107,8 @@ export function NoticeForm({ notice, onCancel, onSaved }: Props) {
           <RichTextEditor
             value={form.content ?? ''}
             onChange={(html) => setForm((prev) => ({ ...prev, content: html }))}
+            imageContextId="notice-content-image"
+            placeholder="공지 본문을 입력하세요."
           />
         </div>
 

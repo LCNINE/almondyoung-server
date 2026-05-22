@@ -3,12 +3,13 @@
 import { type ChangeEvent, useCallback, useRef, useState } from 'react';
 import type { Editor } from '@tiptap/react';
 import { toast } from 'sonner';
-import { uploadNoticeImage } from '@/lib/api/domains/files/upload.client';
+import { uploadRichTextImage } from '@/lib/api/domains/files/upload.client';
 
 /**
  * 툴바 이미지 버튼 → 파일 선택 → file-service 업로드 → 에디터에 <img> 삽입.
+ * contextId 는 사용처 도메인의 file_contexts 시드와 일치해야 한다.
  */
-export function useImageUpload(editor: Editor | null) {
+export function useImageUpload(editor: Editor | null, contextId: string) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -24,7 +25,7 @@ export function useImageUpload(editor: Editor | null) {
 
       setUploading(true);
       try {
-        const { url } = await uploadNoticeImage(file);
+        const { url } = await uploadRichTextImage(file, contextId);
         editor.chain().focus().setImage({ src: url, alt: file.name }).run();
       } catch (err) {
         toast.error(
@@ -34,7 +35,7 @@ export function useImageUpload(editor: Editor | null) {
         setUploading(false);
       }
     },
-    [editor]
+    [editor, contextId]
   );
 
   return { inputRef, uploading, openPicker, onFileChange };

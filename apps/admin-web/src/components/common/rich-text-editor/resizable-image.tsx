@@ -72,7 +72,7 @@ function ResizableImageView({
 /**
  * 기본 Image 확장에 width 속성 + 드래그 리사이즈 NodeView 를 추가한다.
  * width 는 px 정수로 <img width="..."> 속성에 저장된다(스토어프론트 sanitize 의 width 허용과 일치).
- * 본문 너비를 넘는 값은 .notice-content img { max-width: 100% } 가 시각적으로 제한한다.
+ * 본문 너비를 넘는 값은 .rich-text-content img { max-width: 100% } 가 시각적으로 제한한다.
  */
 export const ResizableImage = Image.extend({
   addAttributes() {

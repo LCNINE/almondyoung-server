@@ -70,7 +70,7 @@ export function NoticeView({ notice, onEdit }: Props) {
       </div>
 
       <article
-        className="notice-content max-w-3xl text-sm leading-6"
+        className="rich-text-content max-w-3xl text-sm leading-6"
         dangerouslySetInnerHTML={{ __html: sanitizeNoticeHtml(notice.content) }}
       />
     </div>
