@@ -14,6 +14,8 @@ describe('FileAccess', () => {
   const ownerUser: JwtPayload = { userId: 'owner-1', email: 'o@x', roles: [] };
   const otherUser: JwtPayload = { userId: 'other-1', email: 'oo@x', roles: [] };
   const masterUser: JwtPayload = { userId: 'master-1', email: 'm@x', roles: ['master'] };
+  // Service-to-service 위임 토큰 (예: core 의 FileServiceClient): roles 없이 scopes 만.
+  const serviceTokenUser: JwtPayload = { userId: 'core-library-service', email: '', roles: [], scopes: ['master'] };
 
   const baseFile = {
     id: 'file-1',
@@ -85,6 +87,11 @@ describe('FileAccess', () => {
       await expect(fileAccess.loadReadable('file-1', masterUser)).resolves.toMatchObject({ id: 'file-1' });
     });
 
+    it('returns private file to service token (scopes-only, no roles)', async () => {
+      repo.findById.mockResolvedValue(baseFile);
+      await expect(fileAccess.loadReadable('file-1', serviceTokenUser)).resolves.toMatchObject({ id: 'file-1' });
+    });
+
     it('throws ForbiddenError when private file requested by non-owner non-master', async () => {
       repo.findById.mockResolvedValue(baseFile);
       await expect(fileAccess.loadReadable('file-1', otherUser)).rejects.toBeInstanceOf(ForbiddenError);
@@ -134,6 +141,12 @@ describe('FileAccess', () => {
     it('soft-deletes when called by master scope holder', async () => {
       repo.findById.mockResolvedValue(baseFile);
       await expect(fileAccess.delete('file-1', masterUser)).resolves.toMatchObject({ success: true });
+      expect(repo.softDelete).toHaveBeenCalledWith('file-1');
+    });
+
+    it('soft-deletes when called via service token (scopes-only)', async () => {
+      repo.findById.mockResolvedValue(baseFile);
+      await expect(fileAccess.delete('file-1', serviceTokenUser)).resolves.toMatchObject({ success: true });
       expect(repo.softDelete).toHaveBeenCalledWith('file-1');
     });
 
