@@ -71,6 +71,17 @@ const FILE_CONTEXTS: FileContextSeed[] = [
     isActive: true,
   },
   {
+    id: 'notice-content-image',
+    name: 'Notice Content Image',
+    description: '공지사항 본문 이미지',
+    allowPublic: true,
+    allowPrivate: false,
+    allowedMimeTypes: ['image/*'],
+    maxFileSize: 10485760,
+    pathPrefix: 'notices/content-image',
+    isActive: true,
+  },
+  {
     id: 'product-description-image',
     name: 'Product Description Image',
     description: '상품 상세설명 본문 이미지',
