@@ -27,8 +27,9 @@ export async function runSchemaSync(options: { yes: boolean; deployment?: string
         env: { ...process.env, DATABASE_URL: url },
       });
       synced.push(svc.name);
-    } catch {
+    } catch (e) {
       logger.error(`Failed to migrate: ${svc.name}`);
+      console.error(e);
     }
   }
   return synced;

@@ -1,4 +1,5 @@
-import { Injectable, BadRequestException, HttpStatus, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestError, NotFoundError } from '@app/shared';
 import { StorageService } from '../storage/storage.service';
 import { PathBuilderService } from '../storage/path-builder.service';
 import { FileRepository } from '../shared/repositories/file.repository';
@@ -24,101 +25,88 @@ export class UploadService {
 
   async uploadFile(file: Express.Multer.File, dto: UploadFileDto, userId: string): Promise<UploadResponseDto> {
     if (!file) {
-      throw new BadRequestException('File is required');
+      throw new BadRequestError('File is required');
     }
-    try {
-      const context = await this.fileContextRepository.findById(dto.contextId);
 
-      if (!context) {
-        throw new NotFoundException(`Context ${dto.contextId} not found`);
+    const context = await this.fileContextRepository.findById(dto.contextId);
+
+    if (!context) {
+      throw new NotFoundError(`Context ${dto.contextId} not found`);
+    }
+
+    if (!context.isActive) {
+      throw new BadRequestError(`${context.name} is currently disabled`);
+    }
+
+    this.contextValidator.validateFileSize(context, file.size);
+
+    const normalizedClientMimeType = this.fileTypeDetector.normalizeClientMimeType(file.mimetype);
+
+    const detectedMimeType = await this.fileTypeDetector.detectMimeType(file.buffer);
+
+    if (detectedMimeType) {
+      this.contextValidator.validateMimeType(context, detectedMimeType);
+
+      const clientValid = this.contextValidator.isValidMimeType(context, normalizedClientMimeType);
+      if (!clientValid) {
+        this.logger.warn(
+          `Client MIME type not in whitelist - ` +
+            `Client: ${normalizedClientMimeType} (original: ${file.mimetype}), Detected: ${detectedMimeType}. ` +
+            `File: ${file.originalname}, User: ${userId}, Context: ${context.id}`,
+        );
       }
+    } else {
+      this.contextValidator.validateMimeType(context, normalizedClientMimeType);
+      this.logger.debug(`Using client Content-Type (normalized): ${normalizedClientMimeType}`);
+    }
 
-      if (!context.isActive) {
-        throw new BadRequestException(`${context.name} is currently disabled`);
-      }
+    const isPublic = this.contextValidator.resolveIsPublic(context, dto.isPublic);
 
-      this.contextValidator.validateFileSize(context, file.size);
+    const fileId = uuidv7();
+    const extension = this.getFileExtension(file.originalname);
 
-      const normalizedClientMimeType = this.fileTypeDetector.normalizeClientMimeType(file.mimetype);
+    const filePath = this.pathBuilder.buildPath({
+      prefix: context.pathPrefix,
+      fileId,
+      extension,
+    });
 
-      const detectedMimeType = await this.fileTypeDetector.detectMimeType(file.buffer);
-
-      if (detectedMimeType) {
-        this.contextValidator.validateMimeType(context, detectedMimeType);
-
-        const clientValid = this.contextValidator.isValidMimeType(context, normalizedClientMimeType);
-        if (!clientValid) {
-          this.logger.warn(
-            `Client MIME type not in whitelist - ` +
-              `Client: ${normalizedClientMimeType} (original: ${file.mimetype}), Detected: ${detectedMimeType}. ` +
-              `File: ${file.originalname}, User: ${userId}, Context: ${context.id}`,
-          );
-        }
-      } else {
-        this.contextValidator.validateMimeType(context, normalizedClientMimeType);
-        this.logger.debug(`Using client Content-Type (normalized): ${normalizedClientMimeType}`);
-      }
-
-      const isPublic = this.contextValidator.resolveIsPublic(context, dto.isPublic);
-
-      const fileId = uuidv7();
-      const extension = this.getFileExtension(file.originalname);
-
-      const filePath = this.pathBuilder.buildPath({
-        prefix: context.pathPrefix,
-        fileId,
-        extension,
-      });
-
-      const uploadResult = await this.storageService.upload({
-        key: filePath,
-        buffer: file.buffer,
-        contentType: normalizedClientMimeType,
-        isPublic,
-        metadata: {
-          uploadedBy: userId,
-          contextId: dto.contextId,
-        },
-      });
-
-      const fileRecord = await this.fileRepository.create({
-        id: fileId,
-        fileName: `${fileId}.${extension}`,
-        originalName: file.originalname,
-        filePath: uploadResult.key,
-        url: uploadResult.url,
-        size: file.size,
-        mimeType: normalizedClientMimeType,
-        status: 'active',
-        contextId: dto.contextId,
+    const uploadResult = await this.storageService.upload({
+      key: filePath,
+      buffer: file.buffer,
+      contentType: normalizedClientMimeType,
+      isPublic,
+      metadata: {
         uploadedBy: userId,
-        storageProvider: uploadResult.provider.toLowerCase(),
-        isPublic,
-        metadata: dto.metadata,
-        activatedAt: new Date(),
-      });
+        contextId: dto.contextId,
+      },
+    });
 
-      return {
-        id: fileRecord.id,
-        url: fileRecord.url,
-        fileName: fileRecord.fileName,
-        size: fileRecord.size,
-        status: fileRecord.status,
-        isPublic: fileRecord.isPublic,
-      };
-    } catch (error) {
-      console.error('파일업로드 에러 :', error);
+    const fileRecord = await this.fileRepository.create({
+      id: fileId,
+      fileName: `${fileId}.${extension}`,
+      originalName: file.originalname,
+      filePath: uploadResult.key,
+      url: uploadResult.url,
+      size: file.size,
+      mimeType: normalizedClientMimeType,
+      status: 'active',
+      contextId: dto.contextId,
+      uploadedBy: userId,
+      storageProvider: uploadResult.provider.toLowerCase(),
+      isPublic,
+      metadata: dto.metadata,
+      activatedAt: new Date(),
+    });
 
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-
-      throw new BadRequestException({
-        message: error.message ?? '파일 업로드 중 오류가 발생했습니다.',
-        errorCode: error.errorCode ?? 'FILE_UPLOAD_FAILED',
-        httpStatus: HttpStatus.BAD_REQUEST,
-      });
-    }
+    return {
+      id: fileRecord.id,
+      url: fileRecord.url,
+      fileName: fileRecord.fileName,
+      size: fileRecord.size,
+      status: fileRecord.status,
+      isPublic: fileRecord.isPublic,
+    };
   }
 
   async batchUploadFiles(
@@ -127,7 +115,7 @@ export class UploadService {
     userId: string,
   ): Promise<BatchUploadResponseDto> {
     if (!files || files.length === 0) {
-      throw new BadRequestException('At least one file is required');
+      throw new BadRequestError('At least one file is required');
     }
 
     const uploadPromises = files.map((file) => this.uploadFile(file, dto, userId));
