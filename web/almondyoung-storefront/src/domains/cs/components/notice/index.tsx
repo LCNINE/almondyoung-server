@@ -196,7 +196,7 @@ export function Notice() {
           </div>
           <h2 className="mb-4 text-lg font-bold">{selectedItem.title}</h2>
           <div
-            className="notice-content text-sm leading-relaxed text-gray-600"
+            className="rich-text-content text-sm leading-relaxed text-gray-600"
             dangerouslySetInnerHTML={{
               __html: sanitizeNoticeHtml(selectedItem.content),
             }}

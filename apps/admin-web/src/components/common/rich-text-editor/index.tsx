@@ -14,17 +14,20 @@ export { isEmptyHtml } from './is-empty-html';
 type Props = {
   value: string;
   onChange: (html: string) => void;
+  /** 이미지 업로드 시 file-service 로 보낼 contextId. 사용처 도메인의 file_contexts 시드와 일치해야 한다. */
+  imageContextId: string;
   placeholder?: string;
   className?: string;
 };
 
 /**
- * 공지 본문 리치 텍스트 에디터(Tiptap v3). 본문은 HTML 문자열로 다룬다.
+ * 리치 텍스트 에디터(Tiptap v3). 본문은 HTML 문자열로 다룬다.
  * StarterKit 가 Link/Underline 을 이미 포함하므로 Link 는 옵션으로만 설정한다.
  */
 export function RichTextEditor({
   value,
   onChange,
+  imageContextId,
   placeholder,
   className,
 }: Props) {
@@ -39,14 +42,14 @@ export function RichTextEditor({
       }),
       ResizableImage.configure({ inline: false }),
       Placeholder.configure({
-        placeholder: placeholder ?? '공지 본문을 입력하세요.',
+        placeholder: placeholder ?? '내용을 입력하세요.',
       }),
     ],
     content: value,
     editorProps: {
       attributes: {
         class: cn(
-          'notice-content min-h-[220px] w-full px-3 py-2.5 leading-6 focus:outline-none',
+          'rich-text-content min-h-[220px] w-full px-3 py-2.5 leading-6 focus:outline-none',
           className
         ),
       },
@@ -54,8 +57,10 @@ export function RichTextEditor({
     onUpdate: ({ editor }) => onChange(editor.getHTML()),
   });
 
-  const { inputRef, uploading, openPicker, onFileChange } =
-    useImageUpload(editor);
+  const { inputRef, uploading, openPicker, onFileChange } = useImageUpload(
+    editor,
+    imageContextId
+  );
 
   // 외부 value 변경(수정폼 로딩 등) 동기화 — 현재 HTML 과 다를 때만 setContent (커서 리셋 방지)
   useEffect(() => {
