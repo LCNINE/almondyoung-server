@@ -68,24 +68,6 @@ export interface OrderCreatedPayload {
 }
 
 /**
- * 주문 확정 이벤트 (결제 완료)
- */
-export interface OrderConfirmedPayload {
-  orderId: string;
-  confirmedAt: string;
-  confirmedBy: string;
-
-  // 재고 차감 결과
-  stockDeductionResults: Array<{
-    orderItemId: string;
-    skuId: string;
-    requestedQty: number;
-    deductedQty: number;
-    stockEventId?: string;
-  }>;
-}
-
-/**
  * 주문 수정 이벤트
  */
 export interface OrderModifiedPayload {
@@ -232,19 +214,6 @@ const OrderCreatedSchema = z.object({
   createdAt: z.string().datetime(),
 });
 
-const OrderConfirmedSchema = z.object({
-  orderId: z.string().min(1),
-  confirmedAt: z.string().datetime(),
-  confirmedBy: z.string().min(1),
-  stockDeductionResults: z.array(z.object({
-    orderItemId: z.string().min(1),
-    skuId: z.string().min(1),
-    requestedQty: z.number().int().positive(),
-    deductedQty: z.number().int().nonnegative(),
-    stockEventId: z.string().optional(),
-  })),
-});
-
 const OrderModifiedSchema = z.object({
   orderId: z.string().min(1),
   changes: z.object({
@@ -324,7 +293,6 @@ export const ORDER_STREAM = stream({
   aggregateType: 'Order',
   events: {
     OrderCreated: event<'OrderCreated', OrderCreatedPayload>('OrderCreated', OrderCreatedSchema),
-    OrderConfirmed: event<'OrderConfirmed', OrderConfirmedPayload>('OrderConfirmed', OrderConfirmedSchema),
     OrderModified: event<'OrderModified', OrderModifiedPayload>('OrderModified', OrderModifiedSchema),
     OrderCancelled: event<'OrderCancelled', OrderCancelledPayload>('OrderCancelled', OrderCancelledSchema),
     OrderPaymentCompleted: event<'OrderPaymentCompleted', OrderPaymentCompletedPayload>('OrderPaymentCompleted', OrderPaymentCompletedSchema),

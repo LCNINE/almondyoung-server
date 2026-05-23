@@ -32,7 +32,7 @@ import { PoliciesService } from './services/policies.service';
     // ProductSkuMappingService (confirm 시 mapping snapshot 생성)
     ProductMatchingModule,
 
-    // LibraryService (OrderConfirmed/Cancelled 시 디지털 ownership grant/revoke — ADR-0006)
+    // LibraryService (OrderCreated(payment-confirmed)/Cancelled 시 디지털 ownership grant/revoke — ADR-0010)
     LibraryModule,
   ],
   controllers: [

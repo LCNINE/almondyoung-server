@@ -1,5 +1,7 @@
 # Library ownership 의 grant 경로는 결제 단일 — 멤버십 베네핏은 pricing 으로 표현
 
+> **Update (ADR-0010)**: 본 ADR 의 "0 원 결제도 같은 `OrderConfirmed → SO confirmed → grantOwnershipsForOrder` 흐름" 표현은 ADR-0010 으로 명확화됨. 0 원 결제도 같은 `OrderCreated (status='confirmed') → grantOwnershipsForOrder` 흐름을 그대로 탄다. 본 ADR 의 본질적 결정(grant 단일 경로 = 결제, 멤버십 베네핏은 pricing 0 원으로 표현)은 그대로 유지.
+
 라이브러리 ownership 의 grant 경로를 어디까지 인정할지가 모델 모양을 크게 가른다. Storefront i18n 잔재에 "멤버십만을 위한 다양한 무료 디지털 템플릿 무제한 다운로드" (`benefit07`) 같은 마케팅 카피가 있고, 멤버십 자격에 의한 자동 ownership 부여가 자연스러운 옵션처럼 보인다. 이 ADR 은 그 경로를 의도적으로 배제한다.
 
 ## Decision

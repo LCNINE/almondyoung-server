@@ -1,5 +1,7 @@
 # 디지털 fulfillment 와 fulfillment_orders 의 책임 경계
 
+> **Update (ADR-0010)**: 본 ADR 의 "Grant 시점은 SO confirmed (결제 완료)" / "OrderConfirmed Kafka 이벤트 핸들러" 표현은 ADR-0010 으로 명확화됨. Grant 트리거는 `OrderCreated` 이벤트 도착 + `payload.status === 'confirmed'` 가드이며, 별도 `OrderConfirmed` Kafka 이벤트는 폐기. 본 ADR 의 본질적 결정(디지털은 fulfillment_orders 를 거치지 않음, 같은 tx 에서 부분실패 방지)은 그대로 유지.
+
 Core 에 라이브러리(Library) 모듈을 도입하면서 "디지털 상품의 fulfillment 를 어떻게 추적할 것인가" 가 분기점이 된다. WMS 의 `fulfillment_orders` 는 SKU 의 출고 흐름(picking / inspection / labelling / shipping)을 추적하는 테이블이고, 컬럼·인덱스·상태 머신이 모두 물리적 재고 출고에 묶여 있다. 디지털 상품에는 출고 개념이 없고, "재고주문" 단계 자체가 존재하지 않는다. 이 ADR 은 디지털 fulfillment 가 별도 트랙으로 진행됨을 못 박는다.
 
 ## Decision
