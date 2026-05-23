@@ -206,17 +206,6 @@ export class SalesOrdersService {
 
       const updated = await this.getOne(id, trx);
 
-      await this.outbox.enqueue(
-        {
-          eventType: ORDER_EVENTS.CONFIRMED,
-          aggregateType: 'order',
-          aggregateId: id,
-          partitionKey: id,
-          payload: { orderId: id, warehouseId },
-        },
-        trx,
-      );
-
       return updated;
     }, tx);
   }
