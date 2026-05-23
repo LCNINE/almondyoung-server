@@ -5,7 +5,6 @@ import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import {
   OrderCreatedPayload,
-  OrderConfirmedPayload,
   OrderCancelledPayload,
   OrderModifiedPayload,
 } from '@packages/event-contracts';
@@ -88,68 +87,33 @@ export class OrderEventsConsumer {
           tx,
         );
 
-        if (existing) {
-          this.logger.log(`[OrderCreated] Order already exists: ${existing.id}`);
-          return;
+        // ADR-0010: existing SO 라도 grant 누락 가능성을 메우기 위해 한 번 더 시도.
+        // grantOwnershipsForOrder 는 (customerId, assetId, salesOrderId) unique index 로 idempotent —
+        // 배포 윈도우 안의 Kafka redelivery race / 외부 데이터 import 같은 경위로 SO 가 grant 없이
+        // 존재하는 시나리오를 자가치유.
+        const salesOrder = existing ?? (await this.salesOrdersService.createFromEvent(payload, tx));
+
+        if (!existing) {
+          await tx.insert(wmsTables.orderEvents).values({
+            eventId: envelope.messageId,
+            orderId: salesOrder.id,
+            eventType: 'ORDER_CREATED',
+            payload: payload as any,
+          });
+          this.logger.log(`[OrderCreated] Created SO: ${salesOrder.id}`);
+        } else {
+          this.logger.log(`[OrderCreated] Order already exists: ${existing.id}, retrying grant`);
         }
 
-        const salesOrder = await this.salesOrdersService.createFromEvent(payload, tx);
-
-        await tx.insert(wmsTables.orderEvents).values({
-          eventId: envelope.messageId,
-          orderId: salesOrder.id,
-          eventType: 'ORDER_CREATED',
-          payload: payload as any,
-        });
-
-        this.logger.log(`[OrderCreated] Created SO: ${salesOrder.id}`);
+        // ADR-0010: 채널이 payment-confirmed 주문만 넘기는 것이 현재 invariant 지만,
+        // grant 는 fail-closed 로 명시 가드 (미래의 미결제 채널 도입 대비).
+        const isPaymentConfirmed = payload.status === 'confirmed';
+        if (isPaymentConfirmed) {
+          await this.libraryService.grantOwnershipsForOrder(salesOrder.id, tx);
+        }
       });
     } catch (error) {
       this.logger.error(`[OrderCreated] Failed to process: ${payload.orderId}`, error.stack);
-      throw error;
-    }
-  }
-
-  @OnEvent('orders.events.v1', 'OrderConfirmed')
-  async handleOrderConfirmed(
-    @EventPayload() payload: OrderConfirmedPayload,
-    @EventEnvelope() envelope: MessageEnvelope<OrderConfirmedPayload>,
-  ) {
-    this.logger.log(`[OrderConfirmed] Received: orderId=${payload.orderId}`, {
-      correlationId: envelope.correlationId,
-    });
-
-    try {
-      await this.inTx(async (tx) => {
-        const salesOrder = await this.salesOrdersService.getOne(payload.orderId, tx);
-        if (!salesOrder) {
-          this.logger.warn(`[OrderConfirmed] Sales order not found, skipping: ${payload.orderId}`);
-          return;
-        }
-
-        const alreadyProcessed = await this.checkAndRecordEvent(
-          envelope.messageId,
-          payload.orderId,
-          'ORDER_CONFIRMED',
-          payload,
-          tx,
-        );
-        if (alreadyProcessed) return;
-
-        if (salesOrder.status !== 'pending') {
-          this.logger.log(`[OrderConfirmed] Order already in status: ${salesOrder.status}, skipping`);
-          return;
-        }
-
-        await this.salesOrdersService.confirm(payload.orderId, undefined, tx);
-
-        // ADR-0006: 디지털 ownership 발급은 SO confirmed 와 같은 트랜잭션. 부분 실패 방지.
-        await this.libraryService.grantOwnershipsForOrder(payload.orderId, tx);
-
-        this.logger.log(`[OrderConfirmed] Confirmed sales order: ${payload.orderId}`);
-      });
-    } catch (error) {
-      this.logger.error(`[OrderConfirmed] Failed to process: ${payload.orderId}`, error.stack);
       throw error;
     }
   }

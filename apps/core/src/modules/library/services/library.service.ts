@@ -16,12 +16,13 @@ import {
 /**
  * Library 도메인의 사용권(ownership) 발급/회수 서비스.
  *
- * - grantOwnershipsForOrder: ADR-0006 단일 grant 경로. OrderConfirmed (결제 완료) 시
+ * - grantOwnershipsForOrder: ADR-0008 단일 grant 경로. OrderCreated (payment-confirmed) 시
  *   같은 트랜잭션에서 호출되어, SO line 의 variant 매칭 asset 별로 ownership row 를 만든다.
+ *   트리거 매커니즘은 ADR-0010 참고 (WMS 의 SO confirmed 상태 전이와 무관).
  * - revokeOwnershipsForOrder: OrderCancelled 시 exercise 전인 ownership 만 회수. exercise
  *   된 것은 회수하지 않으며 환불 가부는 결제 측이 결정.
  *
- * 0 원 결제도 같은 OrderConfirmed 경로를 통과한다 (ADR-0008).
+ * 0 원 결제도 같은 OrderCreated(status='confirmed') 경로를 통과한다 (ADR-0008).
  */
 @Injectable()
 export class LibraryService {
@@ -44,7 +45,7 @@ export class LibraryService {
    * SO 의 모든 line 의 variant 에 매칭된 모든 asset 에 대해 ownership 을 발급.
    *
    * 멱등성: `(customerId, assetId, salesOrderId)` 의 unique index 를 통해 중복 insert
-   * 는 ON CONFLICT DO NOTHING 으로 흡수. 같은 OrderConfirmed 이벤트가 재처리돼도 안전.
+   * 는 ON CONFLICT DO NOTHING 으로 흡수. 같은 OrderCreated 이벤트가 재처리돼도 안전.
    *
    * @returns 새로 생성된 ownership 수.
    */
