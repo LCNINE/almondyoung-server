@@ -1,14 +1,4 @@
-import {
-  pgTable,
-  uuid,
-  varchar,
-  text,
-  integer,
-  boolean,
-  timestamp,
-  index,
-  jsonb,
-} from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, bigint, boolean, timestamp, index, jsonb } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 import { authorizationSchema } from '@app/authorization';
@@ -20,7 +10,7 @@ export const fileContexts = pgTable('file_contexts', {
   allowPublic: boolean('allow_public').default(false).notNull(),
   allowPrivate: boolean('allow_private').default(true).notNull(),
   allowedMimeTypes: jsonb('allowed_mime_types').$type<string[]>(),
-  maxFileSize: integer('max_file_size').notNull(),
+  maxFileSize: bigint('max_file_size', { mode: 'number' }).notNull(),
   pathPrefix: varchar('path_prefix', { length: 100 }).notNull(),
   isActive: boolean('is_active').default(true).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -37,7 +27,7 @@ export const uploads = pgTable(
     fileName: varchar('file_name', { length: 255 }).notNull(),
     originalName: varchar('original_name', { length: 255 }).notNull(),
     mimeType: varchar('mime_type', { length: 100 }).notNull(),
-    size: integer('size').notNull(),
+    size: bigint('size', { mode: 'number' }).notNull(),
 
     filePath: text('file_path').notNull(),
     url: text('url').notNull(),
