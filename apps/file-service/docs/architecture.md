@@ -87,7 +87,7 @@ file-service/
   mimeType: varchar(100)           // MIME 타입
   filePath: text                   // 스토리지 전체 경로
   url: text                        // 접근 가능한 URL
-  size: integer                    // 파일 크기 (bytes)
+  size: bigint                     // 파일 크기 (bytes)
   
   // 상태 관리
   status: varchar(20)              // 'active', 'deleted'
@@ -241,4 +241,3 @@ STORAGE_PROVIDER=S3
 ## 참고 문서
 - [Storage Provider Pattern](./storage-provider-pattern.md) - Provider 패턴 가이드
 - [Deployment Guide](./deployment-guide.md) - 배포 가이드
-
