@@ -34,7 +34,9 @@ import type {
   DigitalAssetFileVersionDto,
   UpdateDigitalAssetDto,
 } from '@/lib/types/dto/library';
+import { FileUp } from 'lucide-react';
 import { toast } from 'sonner';
+import { DigitalAssetFileUploadDialog } from '../file-upload-dialog';
 
 type Props = { assetId: string };
 
@@ -48,6 +50,7 @@ export function DigitalAssetEditForm({ assetId }: Props) {
   const [form, setForm] = useState<UpdateDigitalAssetDto>({});
   const [newFileId, setNewFileId] = useState('');
   const [newReleaseNote, setNewReleaseNote] = useState('');
+  const [uploadOpen, setUploadOpen] = useState(false);
   const [pendingRollback, setPendingRollback] =
     useState<DigitalAssetFileVersionDto | null>(null);
 
@@ -63,7 +66,9 @@ export function DigitalAssetEditForm({ assetId }: Props) {
   }, [asset]);
 
   if (isLoading || !asset) {
-    return <div className="p-6 text-sm text-muted-foreground">불러오는 중…</div>;
+    return (
+      <div className="p-6 text-sm text-muted-foreground">불러오는 중…</div>
+    );
   }
 
   const handleSave = async () => {
@@ -77,7 +82,10 @@ export function DigitalAssetEditForm({ assetId }: Props) {
 
   const handleRollback = async (version: DigitalAssetFileVersionDto) => {
     try {
-      await rollbackMutation.mutateAsync({ id: assetId, versionId: version.id });
+      await rollbackMutation.mutateAsync({
+        id: assetId,
+        versionId: version.id,
+      });
       toast.success(`v${version.version} 로 되돌렸습니다.`);
       setPendingRollback(null);
     } catch {
@@ -93,7 +101,10 @@ export function DigitalAssetEditForm({ assetId }: Props) {
     try {
       await addVersionMutation.mutateAsync({
         id: assetId,
-        dto: { fileId: newFileId.trim(), releaseNote: newReleaseNote.trim() || undefined },
+        dto: {
+          fileId: newFileId.trim(),
+          releaseNote: newReleaseNote.trim() || undefined,
+        },
       });
       setNewFileId('');
       setNewReleaseNote('');
@@ -124,7 +135,9 @@ export function DigitalAssetEditForm({ assetId }: Props) {
             id="description"
             className="min-h-[80px]"
             value={form.description ?? ''}
-            onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
+            onChange={(e) =>
+              setForm((p) => ({ ...p, description: e.target.value }))
+            }
           />
         </div>
 
@@ -134,7 +147,9 @@ export function DigitalAssetEditForm({ assetId }: Props) {
             <Input
               id="mimeType"
               value={form.mimeType ?? ''}
-              onChange={(e) => setForm((p) => ({ ...p, mimeType: e.target.value }))}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, mimeType: e.target.value }))
+              }
             />
           </div>
           <div className="grid gap-2">
@@ -142,7 +157,9 @@ export function DigitalAssetEditForm({ assetId }: Props) {
             <Input
               id="thumbnailUrl"
               value={form.thumbnailUrl ?? ''}
-              onChange={(e) => setForm((p) => ({ ...p, thumbnailUrl: e.target.value }))}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, thumbnailUrl: e.target.value }))
+              }
             />
           </div>
         </div>
@@ -169,19 +186,32 @@ export function DigitalAssetEditForm({ assetId }: Props) {
         <div className="grid gap-3 rounded-md border bg-muted/20 p-4">
           <h3 className="text-sm font-medium">새 파일 버전 등록 (파일 교체)</h3>
           <p className="text-xs text-muted-foreground">
-            file-service 에 새 파일을 업로드한 뒤 그 파일 ID 를 입력하세요. 모든 ownership 보유자가 자동으로 최신 버전을 받습니다.
+            파일을 업로드하면 file-service 파일 ID 가 자동으로 채워집니다. 모든
+            ownership 보유자가 자동으로 최신 버전을 받습니다.
           </p>
           <p className="text-xs text-amber-700">
-            ⚠️ 큰 변경(다른 상품 수준의 변경)은 <strong>새 자산</strong>으로 등록하고, 사소한 수정(오타·이미지 교체·재인쇄)만 같은 자산의 새 버전으로 올려주세요.
+            ⚠️ 큰 변경(다른 상품 수준의 변경)은 <strong>새 자산</strong>으로
+            등록하고, 사소한 수정(오타·이미지 교체·재인쇄)만 같은 자산의 새
+            버전으로 올려주세요.
           </p>
           <div className="grid gap-2">
             <Label htmlFor="newFileId">file-service 파일 ID</Label>
-            <Input
-              id="newFileId"
-              placeholder="00000000-0000-0000-0000-000000000000"
-              value={newFileId}
-              onChange={(e) => setNewFileId(e.target.value)}
-            />
+            <div className="flex gap-2">
+              <Input
+                id="newFileId"
+                placeholder="00000000-0000-0000-0000-000000000000"
+                value={newFileId}
+                onChange={(e) => setNewFileId(e.target.value)}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setUploadOpen(true)}
+              >
+                <FileUp data-icon="inline-start" />
+                업로드
+              </Button>
+            </div>
           </div>
           <div className="grid gap-2">
             <Label htmlFor="newReleaseNote">릴리즈 노트</Label>
@@ -216,7 +246,10 @@ export function DigitalAssetEditForm({ assetId }: Props) {
           <TableBody>
             {(versions ?? []).length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
+                <TableCell
+                  colSpan={5}
+                  className="py-8 text-center text-sm text-muted-foreground"
+                >
                   등록된 파일 버전이 없습니다.
                 </TableCell>
               </TableRow>
@@ -233,8 +266,12 @@ export function DigitalAssetEditForm({ assetId }: Props) {
                         </span>
                       )}
                     </TableCell>
-                    <TableCell className="font-mono text-xs">{v.fileId}</TableCell>
-                    <TableCell className="text-xs">{v.releaseNote ?? '—'}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {v.fileId}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {v.releaseNote ?? '—'}
+                    </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {new Date(v.releasedAt).toLocaleString()}
                     </TableCell>
@@ -280,7 +317,9 @@ export function DigitalAssetEditForm({ assetId }: Props) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={rollbackMutation.isPending}>취소</AlertDialogCancel>
+            <AlertDialogCancel disabled={rollbackMutation.isPending}>
+              취소
+            </AlertDialogCancel>
             <AlertDialogAction
               disabled={rollbackMutation.isPending}
               onClick={(e) => {
@@ -295,6 +334,18 @@ export function DigitalAssetEditForm({ assetId }: Props) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <DigitalAssetFileUploadDialog
+        open={uploadOpen}
+        onOpenChange={setUploadOpen}
+        onUploaded={(upload, file) => {
+          setNewFileId(upload.id);
+          setNewReleaseNote((prev) => prev || `${file.name} 업로드`);
+          setForm((prev) => ({
+            ...prev,
+            mimeType: prev.mimeType || file.type || undefined,
+          }));
+        }}
+      />
     </div>
   );
 }

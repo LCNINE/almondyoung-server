@@ -15,18 +15,27 @@ export type FileUploadResponse = {
   isPublic: boolean;
 };
 
-/**
- * 리치 텍스트 본문 이미지를 file-service 에 업로드하고 공개 URL 을 반환한다.
- * contextId 는 해당 도메인의 file_contexts 시드(예: notice-content-image)와 일치해야 한다.
- */
-export async function uploadRichTextImage(
+export const DIGITAL_ASSET_FILE_CONTEXT_ID = 'digital-asset-file';
+
+type UploadFileOptions = {
+  contextId: string;
+  isPublic?: boolean;
+  metadata?: Record<string, unknown>;
+};
+
+export async function uploadFileToFileService(
   file: File,
-  contextId: string
+  { contextId, isPublic, metadata }: UploadFileOptions
 ): Promise<FileUploadResponse> {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('contextId', contextId);
-  formData.append('isPublic', 'true');
+  if (isPublic !== undefined) {
+    formData.append('isPublic', String(isPublic));
+  }
+  if (metadata !== undefined) {
+    formData.append('metadata', JSON.stringify(metadata));
+  }
 
   const res = await fetch('/api/proxy/file/files/upload', {
     method: 'POST',
@@ -35,8 +44,19 @@ export async function uploadRichTextImage(
   });
 
   if (!res.ok) {
-    throw new Error(`이미지 업로드에 실패했습니다. (status: ${res.status})`);
+    throw new Error(`파일 업로드에 실패했습니다. (status: ${res.status})`);
   }
 
   return (await res.json()) as FileUploadResponse;
+}
+
+/**
+ * 리치 텍스트 본문 이미지를 file-service 에 업로드하고 공개 URL 을 반환한다.
+ * contextId 는 해당 도메인의 file_contexts 시드(예: notice-content-image)와 일치해야 한다.
+ */
+export async function uploadRichTextImage(
+  file: File,
+  contextId: string
+): Promise<FileUploadResponse> {
+  return uploadFileToFileService(file, { contextId, isPublic: true });
 }

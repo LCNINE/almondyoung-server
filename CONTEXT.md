@@ -50,7 +50,7 @@
 - 한 variant 가 여러 SKU 와 연결될 수 있고 그 반대도 가능.
 
 ### 라이브러리 (Library) — 디지털 fulfillment 의 한 종류 *(설계 중, 미구현)*
-- 정의: **디지털 자산(DigitalAsset)** 과 그 **소유권(Ownership)** 을 관리하는 새 Core 모듈. 위치: `apps/core/src/modules/library`. Storefront 노출 path: `/library/*`. Storefront BackendService enum 의 새 항목 `library` (subdomain 은 `core` 공유).
+- 정의: **디지털 자산(DigitalAsset)** 과 그 **소유권(Ownership)** 을 관리하는 새 Core 모듈. 위치: `apps/core/src/modules/library`. 운영자 관리 surface 는 `apps/admin-web` 의 mall 영역이고, customer-facing surface 는 storefront 의 다운로드/사용 처리 화면이다. Storefront BackendService enum 의 `library` 항목은 core subdomain 을 공유한다.
 - 핵심 명사:
   - **DigitalAsset** (`digitalAssets`) — 1 row = 1 파일. 메타데이터 + `file-service` 의 fileId.
   - **Ownership** (`digitalAssetOwnerships`) — 고객의 1 개 자산에 대한 영구 소유권. `License` 가 아닌 이유: 본 모델은 영구 소유이며 SaaS 적 라이선스 의미와 다름.

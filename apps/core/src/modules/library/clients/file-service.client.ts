@@ -64,9 +64,7 @@ export class FileServiceClient {
     });
     if (!metaRes.ok) {
       const body = await metaRes.text().catch(() => '');
-      throw new Error(
-        `file-service download endpoint failed: ${metaRes.status} ${metaRes.statusText} — ${body}`,
-      );
+      throw new Error(`file-service download endpoint failed: ${metaRes.status} ${metaRes.statusText} — ${body}`);
     }
     const meta = (await metaRes.json()) as { signedUrl: string };
     if (!meta.signedUrl) {
@@ -75,9 +73,7 @@ export class FileServiceClient {
 
     const fileRes = await fetch(meta.signedUrl, { method: 'GET' });
     if (!fileRes.ok) {
-      throw new Error(
-        `signed URL fetch failed: ${fileRes.status} ${fileRes.statusText} — ${meta.signedUrl}`,
-      );
+      throw new Error(`signed URL fetch failed: ${fileRes.status} ${fileRes.statusText} — ${meta.signedUrl}`);
     }
     if (!fileRes.body) {
       throw new Error('signed URL response has no body');
@@ -97,6 +93,8 @@ export class FileServiceClient {
     fileName: string;
     originalName: string | null;
     mimeType: string | null;
+    status: string | null;
+    contextId: string | null;
   }> {
     const token = this.mintServiceToken();
     const res = await fetch(`${this.baseUrl()}/files/${fileId}/metadata`, {
@@ -105,19 +103,21 @@ export class FileServiceClient {
     });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
-      throw new Error(
-        `file-service metadata endpoint failed: ${res.status} ${res.statusText} — ${body}`,
-      );
+      throw new Error(`file-service metadata endpoint failed: ${res.status} ${res.statusText} — ${body}`);
     }
     const meta = (await res.json()) as {
       fileName?: string;
       originalName?: string;
       mimeType?: string;
+      status?: string;
+      contextId?: string;
     };
     return {
       fileName: meta.fileName ?? meta.originalName ?? fileId,
       originalName: meta.originalName ?? null,
       mimeType: meta.mimeType ?? null,
+      status: meta.status ?? null,
+      contextId: meta.contextId ?? null,
     };
   }
 }

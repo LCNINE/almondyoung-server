@@ -110,14 +110,14 @@ export async function api<T>(
 
     const json = await response.json()
 
-    //Pagination 응답 (data, total, page, limit이 모두 있으면) 전체 반환
+    // Pagination 응답은 전체 반환. 일부 core 목록 API는 page/limit 대신 skip/take를 쓴다.
     if (
       json &&
       typeof json === "object" &&
       "data" in json &&
       "total" in json &&
-      "page" in json &&
-      "limit" in json
+      (("page" in json && "limit" in json) ||
+        ("skip" in json && "take" in json))
     ) {
       return json // Pagination 응답은 전체 반환
     }
