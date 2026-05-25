@@ -5,7 +5,9 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import fastifyCookie from '@fastify/cookie';
 import fastifyMultipart from '@fastify/multipart';
+import { EventsModule } from '@app/events';
 import { GlobalExceptionFilter } from '@app/shared';
+import { ORDER_STREAM } from '@packages/event-contracts';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -81,12 +83,12 @@ async function bootstrap() {
     });
 
   // Phase 5+: Kafka consumer 연결
-  // const consumerOptions = EventsModule.forConsumer({
-  //   streams: [ORDER_STREAM],
-  //   groupId: 'almondyoung-order-consumer',
-  // });
-  // app.connectMicroservice(consumerOptions);
-  // await app.startAllMicroservices();
+  const consumerOptions = EventsModule.forConsumer({
+    streams: [ORDER_STREAM],
+    groupId: 'almondyoung-order-consumer',
+  });
+  app.connectMicroservice(consumerOptions);
+  await app.startAllMicroservices();
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port, '0.0.0.0');
