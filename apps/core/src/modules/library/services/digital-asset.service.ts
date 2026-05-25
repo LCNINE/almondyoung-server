@@ -1,14 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { NotFoundError, BadRequestError } from '@app/shared';
-import { and, asc, count, desc, eq, ilike, isNull, max as drizzleMax, sql } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, isNull, max as drizzleMax, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
-import {
-  type LibrarySchema,
-  digitalAssets,
-  digitalAssetFileVersions,
-} from '../schema/library.schema';
+import { type LibrarySchema, digitalAssets, digitalAssetFileVersions } from '../schema/library.schema';
 import { CreateDigitalAssetDto } from '../dto/create-digital-asset.dto';
 import { UpdateDigitalAssetDto } from '../dto/update-digital-asset.dto';
 import { CreateFileVersionDto } from '../dto/create-file-version.dto';
@@ -17,14 +13,19 @@ import {
   DigitalAssetListResponseDto,
   DigitalAssetResponseDto,
 } from '../dto/digital-asset-response.dto';
+import { FileServiceClient } from '../clients/file-service.client';
 
 type Tx = Parameters<Parameters<DbService<LibrarySchema>['db']['transaction']>[0]>[0];
+const DIGITAL_ASSET_FILE_CONTEXT_ID = 'digital-asset-file';
 
 @Injectable()
 export class DigitalAssetService {
   private readonly logger = new Logger(DigitalAssetService.name);
 
-  constructor(@InjectDb() private readonly dbService: DbService<LibrarySchema>) {}
+  constructor(
+    @InjectDb() private readonly dbService: DbService<LibrarySchema>,
+    @Optional() private readonly fileServiceClient?: FileServiceClient,
+  ) {}
 
   private get db() {
     return this.dbService.db;
@@ -39,6 +40,10 @@ export class DigitalAssetService {
     operatorId: string | undefined,
     tx?: Tx,
   ): Promise<DigitalAssetResponseDto> {
+    if (dto.initialFileId) {
+      await this._assertFileReferenceUsable(dto.initialFileId);
+    }
+
     return this.inTx(async (trx) => {
       const assetId = uuidv7();
       await trx.insert(digitalAssets).values({
@@ -73,7 +78,10 @@ export class DigitalAssetService {
     return this.inTx(async (trx) => {
       await this._assertAssetExists(assetId, trx);
 
-      const patch: Partial<typeof digitalAssets.$inferInsert> = { updatedAt: new Date(), updatedBy: operatorId };
+      const patch: Partial<typeof digitalAssets.$inferInsert> = {
+        updatedAt: new Date(),
+        updatedBy: operatorId,
+      };
       if (dto.name !== undefined) patch.name = dto.name;
       if (dto.description !== undefined) patch.description = dto.description;
       if (dto.mimeType !== undefined) patch.mimeType = dto.mimeType;
@@ -111,10 +119,7 @@ export class DigitalAssetService {
         ? and(isNull(digitalAssets.deletedAt), ilike(digitalAssets.name, `%${filters.q}%`))
         : isNull(digitalAssets.deletedAt);
 
-      const [{ value: total }] = await trx
-        .select({ value: count() })
-        .from(digitalAssets)
-        .where(whereExpr);
+      const [{ value: total }] = await trx.select({ value: count() }).from(digitalAssets).where(whereExpr);
 
       const rows = await trx
         .select()
@@ -144,6 +149,8 @@ export class DigitalAssetService {
     operatorId: string | undefined,
     tx?: Tx,
   ): Promise<DigitalAssetFileVersionDto> {
+    await this._assertFileReferenceUsable(dto.fileId);
+
     return this.inTx(async (trx) => {
       await this._assertAssetExists(assetId, trx);
       const row = await this._insertFileVersion(assetId, dto, operatorId, trx);
@@ -180,10 +187,7 @@ export class DigitalAssetService {
     tx?: Tx,
   ): Promise<DigitalAssetResponseDto> {
     return this.inTx(async (trx) => {
-      const [assetRow] = await trx
-        .select()
-        .from(digitalAssets)
-        .where(eq(digitalAssets.id, assetId));
+      const [assetRow] = await trx.select().from(digitalAssets).where(eq(digitalAssets.id, assetId));
       if (!assetRow || assetRow.deletedAt) {
         throw new NotFoundError(`Digital asset not found: ${assetId}`);
       }
@@ -196,15 +200,11 @@ export class DigitalAssetService {
         .from(digitalAssetFileVersions)
         .where(eq(digitalAssetFileVersions.id, versionId));
       if (!versionRow || versionRow.assetId !== assetId) {
-        throw new NotFoundError(
-          `File version ${versionId} does not belong to asset ${assetId}`,
-        );
+        throw new NotFoundError(`File version ${versionId} does not belong to asset ${assetId}`);
       }
 
       if (assetRow.currentFileVersionId === versionId) {
-        throw new BadRequestError(
-          `File version ${versionId} is already the current version of asset ${assetId}`,
-        );
+        throw new BadRequestError(`File version ${versionId} is already the current version of asset ${assetId}`);
       }
 
       await trx
@@ -246,13 +246,14 @@ export class DigitalAssetService {
 
     await trx
       .update(digitalAssets)
-      .set({ currentFileVersionId: versionId, updatedAt: new Date(), updatedBy: operatorId })
+      .set({
+        currentFileVersionId: versionId,
+        updatedAt: new Date(),
+        updatedBy: operatorId,
+      })
       .where(eq(digitalAssets.id, assetId));
 
-    const [row] = await trx
-      .select()
-      .from(digitalAssetFileVersions)
-      .where(eq(digitalAssetFileVersions.id, versionId));
+    const [row] = await trx.select().from(digitalAssetFileVersions).where(eq(digitalAssetFileVersions.id, versionId));
     if (!row) {
       throw new Error(`Inserted file version row not found: ${versionId}`);
     }
@@ -283,6 +284,27 @@ export class DigitalAssetService {
       .where(eq(digitalAssets.id, assetId));
     if (!row || row.deletedAt) {
       throw new NotFoundError(`Digital asset not found: ${assetId}`);
+    }
+  }
+
+  private async _assertFileReferenceUsable(fileId: string): Promise<void> {
+    if (!this.fileServiceClient) return;
+
+    let metadata: Awaited<ReturnType<FileServiceClient['fetchMetadata']>>;
+    try {
+      metadata = await this.fileServiceClient.fetchMetadata(fileId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`file-service metadata validation failed for ${fileId}: ${message}`);
+      throw new BadRequestError(`file-service file not found or not readable: ${fileId}`);
+    }
+
+    if (metadata.status !== 'active') {
+      throw new BadRequestError(`file-service file is not active: ${fileId}`);
+    }
+
+    if (metadata.contextId !== DIGITAL_ASSET_FILE_CONTEXT_ID) {
+      throw new BadRequestError(`file-service file must use context ${DIGITAL_ASSET_FILE_CONTEXT_ID}: ${fileId}`);
     }
   }
 
