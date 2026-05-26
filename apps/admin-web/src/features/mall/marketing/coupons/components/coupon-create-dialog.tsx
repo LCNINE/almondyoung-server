@@ -530,7 +530,7 @@ export function CouponCreateDialog({
             </Select>
             {visibility === 'claimable' && (
               <p className="text-xs text-muted-foreground">
-                마이페이지에서 "발급받기" 버튼으로 고객이 직접 발급받을 수 있습니다.
+                마이페이지에서 &ldquo;발급받기&rdquo; 버튼으로 고객이 직접 발급받을 수 있습니다.
               </p>
             )}
             {visibility === 'claimable' && (
