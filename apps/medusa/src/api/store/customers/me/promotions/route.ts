@@ -1,5 +1,8 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
+import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
+import PromotionMetaModuleService from '../../../../../modules/promotion-meta/service';
+import { toMetadataShape } from '../../../../admin/promotions/helpers';
 
 /**
  * GET /store/customers/me/promotions
@@ -24,8 +27,8 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   }
 
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
+  const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
 
-  // Query parameters for pagination
   const limit = parseInt(req.query.limit as string) || 20;
   const offset = parseInt(req.query.offset as string) || 0;
 
@@ -46,12 +49,15 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     'application_method.target_type',
     'application_method.max_quantity',
     'application_method.currency_code',
+    'rules.attribute',
+    'rules.operator',
+    'rules.values.value',
   ];
 
-  //  고객에게 직접 발급된 프로모션 조회
+  //  고객에게 직접 발급된 프로모션 조회 (groups.id로 그룹 rule 검증에 활용)
   const { data: customers } = await query.graph({
     entity: 'customer',
-    fields: ['id', ...promotionFields.map((f) => `promotions.${f}`)],
+    fields: ['id', 'groups.id', ...promotionFields.map((f) => `promotions.${f}`)],
     filters: { id: customerId },
   });
 
@@ -102,6 +108,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     is_automatic: promo.is_automatic,
     is_assigned: isAssigned,
     metadata: promo.metadata ?? null,
+    visibility: visibilityById.get(promo.id) ?? 'public',
     application_method: promo.application_method
       ? {
           id: promo.application_method.id,
@@ -121,7 +128,18 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       : null,
   });
 
-  // 직접 발급된 프로모션 ID Set (중복 제거용)
+  // 모든 프로모션의 visibility 일괄 조회
+  const allPromoIds = [
+    ...(customers?.[0]?.promotions ?? []).map((p: any) => p.id),
+    ...(allPromotions ?? []).map((p: any) => p.id),
+  ];
+  const metas = allPromoIds.length > 0
+    ? await promotionMetaService.getByPromotionIds([...new Set(allPromoIds)])
+    : [];
+  const visibilityById = new Map<string, string>(
+    metas.map((m: any) => [m.promotion_id, toMetadataShape(m)?.visibility as string ?? 'public'])
+  );
+
   const assignedPromotionIds = new Set<string>();
   const customer = customers?.[0];
   const assignedPromotions = (customer?.promotions || []).filter(isValidPromotion).map((promo: any) => {
@@ -129,9 +147,36 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     return formatPromotion(promo, true);
   });
 
-  // 일반 프로모션 (직접 발급된 것 제외, 중복 방지)
+  // visibility에 따라 분류: assigned_only/claimable(발급된 것)은 목록 제외, public만 공개 목록
   const publicPromotions = (allPromotions || [])
-    .filter((promo: any) => !assignedPromotionIds.has(promo.id) && isValidPromotion(promo))
+    .filter((promo: any) =>
+      !assignedPromotionIds.has(promo.id) &&
+      isValidPromotion(promo) &&
+      (visibilityById.get(promo.id) ?? 'public') === 'public'
+    )
+    .map((promo: any) => formatPromotion(promo, false));
+
+  const customerGroupIds = new Set<string>((customers?.[0]?.groups ?? []).map((g: any) => g.id));
+
+  function meetsGroupRule(promo: any): boolean {
+    const groupRule = (promo.rules ?? []).find(
+      (r: any) => r.attribute === 'customer.groups.id' && r.operator === 'in',
+    );
+    if (!groupRule) return true;
+    const requiredIds = (groupRule.values ?? []).map((v: any) => (typeof v === 'string' ? v : v?.value));
+    return requiredIds.some((gid: string) => customerGroupIds.has(gid));
+  }
+
+  // claimable: 아직 발급받지 않은 활성 claimable 쿠폰 (최대 50개 고정; 대량 운영 시 별도 pagination 필요)
+  const CLAIMABLE_LIMIT = 50;
+  const claimablePromotions = (allPromotions || [])
+    .filter((promo: any) =>
+      !assignedPromotionIds.has(promo.id) &&
+      isValidPromotion(promo) &&
+      visibilityById.get(promo.id) === 'claimable' &&
+      meetsGroupRule(promo)
+    )
+    .slice(0, CLAIMABLE_LIMIT)
     .map((promo: any) => formatPromotion(promo, false));
 
   // 합치기: 직접 발급된 것 먼저, 그 다음 일반 프로모션
@@ -142,6 +187,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
 
   return res.status(200).json({
     promotions: paginatedPromotions,
+    claimable_promotions: claimablePromotions,
     count: combinedPromotions.length,
     offset,
     limit,

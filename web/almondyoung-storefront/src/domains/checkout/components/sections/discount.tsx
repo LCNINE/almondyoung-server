@@ -67,7 +67,9 @@ export const DiscountSection = ({
           const err = error as Error & { digest?: string }
           if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED")
             throw error
-          if (err.digest === "COUPON_LIMIT_EXCEEDED") {
+          if (err.digest === "COUPON_NOT_ASSIGNED") {
+            toast.error(t("toasts.couponNotAssigned"))
+          } else if (err.digest === "COUPON_LIMIT_EXCEEDED") {
             toast.error(t("toasts.couponLimitExceeded"))
           } else {
             toast.error(t("toasts.couponApplyFailed"))

@@ -4,7 +4,7 @@
 export type ApplicationMethodDto = {
   type: "percentage" | "fixed"
   value: number
-  target_type: "order" | "items" | "shipping"
+  target_type: "order" | "items" | "shipping_methods"
   max_quantity: number | null
   currency_code: string | null
 }
@@ -28,6 +28,7 @@ export type PromotionDto = {
   status: string
   is_automatic: boolean
   is_assigned: boolean
+  visibility?: "public" | "claimable" | "assigned_only"
   application_method: ApplicationMethodDto
   campaign: PromotionCampaignDto | null
   metadata: Record<string, unknown> | null
@@ -38,6 +39,7 @@ export type PromotionDto = {
  *──────────────────────────*/
 export type PromotionsResponseDto = {
   promotions: PromotionDto[]
+  claimable_promotions: PromotionDto[]
   count: number
   offset: number
   limit: number

@@ -1470,6 +1470,30 @@ export class MedusaClient {
     }
   }
 
+  async issuePromotionsByTrigger(
+    customerId: string,
+    trigger: 'customer_registered' | 'membership_activated' | 'birthday',
+  ): Promise<{ issued: number; skipped: number }> {
+    try {
+      const result = await this.sdk.client.fetch<{ issued: any[]; skipped: any[] }>(
+        `/admin/customers/${customerId}/issue-coupons`,
+        { method: 'POST', body: { trigger } },
+      );
+      const issued = result?.issued?.length ?? 0;
+      const skipped = result?.skipped?.length ?? 0;
+      if (issued > 0) {
+        this.logger.log(`Auto-issued ${issued} coupon(s) to customer ${customerId} via trigger=${trigger}`);
+      }
+      return { issued, skipped };
+    } catch (error) {
+      const fetchError = error as FetchError;
+      this.logger.warn(
+        `issuePromotionsByTrigger failed (customerId=${customerId}, trigger=${trigger}): ${fetchError.message}`,
+      );
+      throw new Error(`Medusa issuePromotionsByTrigger failed: ${fetchError.message}`);
+    }
+  }
+
   /**
    * 카트 가격 재계산 (fire-and-forget).
    * 카트는 아이템 추가 시점 가격이 lock-in되므로, 멤버십 그룹 변경 후 수동 갱신 필요.

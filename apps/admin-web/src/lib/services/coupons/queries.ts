@@ -2,6 +2,8 @@
 
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { medusaPromotionsApi } from '@/lib/api/domains/medusa/promotions';
+import { client } from '@/lib/api/client';
+import { MEDUSA_BASE_URL } from '@/const';
 import { couponQueryKeys } from './query-keys';
 
 export const useCouponList = (
@@ -32,5 +34,18 @@ export const useCouponCustomers = (promotionId: string | null, params: { limit?:
     queryFn: () => medusaPromotionsApi.getCustomers(promotionId!, params),
     enabled: !!promotionId,
     staleTime: 30 * 1000,
+  });
+};
+
+export const useCustomerGroupList = () => {
+  return useQuery({
+    queryKey: ['medusa', 'customer-groups'],
+    queryFn: async () => {
+      const res = await client.get<{ customer_groups: { id: string; name: string }[] }>(
+        `${MEDUSA_BASE_URL}/admin/customer-groups?limit=100`,
+      );
+      return res.data.customer_groups ?? [];
+    },
+    staleTime: 60 * 1000,
   });
 };
