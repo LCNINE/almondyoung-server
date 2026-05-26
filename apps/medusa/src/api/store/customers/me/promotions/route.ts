@@ -2,7 +2,7 @@ import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
 import PromotionMetaModuleService from '../../../../../modules/promotion-meta/service';
-import { toMetadataShape } from '../../../../admin/promotions/helpers';
+import { toMetadataShape, meetsGroupRule } from '../../../../admin/promotions/helpers';
 
 /**
  * GET /store/customers/me/promotions
@@ -147,25 +147,17 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     return formatPromotion(promo, true);
   });
 
+  const customerGroupIds = new Set<string>((customers?.[0]?.groups ?? []).map((g: any) => g.id));
+
   // visibility에 따라 분류: assigned_only/claimable(발급된 것)은 목록 제외, public만 공개 목록
   const publicPromotions = (allPromotions || [])
     .filter((promo: any) =>
       !assignedPromotionIds.has(promo.id) &&
       isValidPromotion(promo) &&
-      (visibilityById.get(promo.id) ?? 'public') === 'public'
+      (visibilityById.get(promo.id) ?? 'public') === 'public' &&
+      meetsGroupRule(promo, customerGroupIds)
     )
     .map((promo: any) => formatPromotion(promo, false));
-
-  const customerGroupIds = new Set<string>((customers?.[0]?.groups ?? []).map((g: any) => g.id));
-
-  function meetsGroupRule(promo: any): boolean {
-    const groupRule = (promo.rules ?? []).find(
-      (r: any) => r.attribute === 'customer.groups.id' && r.operator === 'in',
-    );
-    if (!groupRule) return true;
-    const requiredIds = (groupRule.values ?? []).map((v: any) => (typeof v === 'string' ? v : v?.value));
-    return requiredIds.some((gid: string) => customerGroupIds.has(gid));
-  }
 
   // claimable: 아직 발급받지 않은 활성 claimable 쿠폰 (최대 50개 고정; 대량 운영 시 별도 pagination 필요)
   const CLAIMABLE_LIMIT = 50;
@@ -174,7 +166,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       !assignedPromotionIds.has(promo.id) &&
       isValidPromotion(promo) &&
       visibilityById.get(promo.id) === 'claimable' &&
-      meetsGroupRule(promo)
+      meetsGroupRule(promo, customerGroupIds)
     )
     .slice(0, CLAIMABLE_LIMIT)
     .map((promo: any) => formatPromotion(promo, false));
