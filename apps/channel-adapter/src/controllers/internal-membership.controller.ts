@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
 import { InboxService } from '../services/inbox.service';
 import { MembershipDailySyncService } from '../services/membership-daily-sync.service';
+import { CouponIssueReconciliationService } from '../services/coupon-issue-reconciliation.service';
 import { UserServiceClient } from '../services/user-service.client';
 import { cafe24MemberMappings } from '../schema';
 import type { ChannelAdapterSchema } from '../types';
@@ -26,6 +27,7 @@ export class InternalMembershipController {
     private readonly inboxService: InboxService,
     private readonly configService: ConfigService,
     private readonly membershipDailySyncService: MembershipDailySyncService,
+    private readonly couponIssueReconciliationService: CouponIssueReconciliationService,
     private readonly userServiceClient: UserServiceClient,
     private readonly dbService: DbService<ChannelAdapterSchema>,
   ) {}
@@ -81,6 +83,24 @@ export class InternalMembershipController {
     this.verifyInternalKey(authorization);
     this.logger.log('멤버십 일일 정합성 수동 실행 요청');
     return this.membershipDailySyncService.runManually();
+  }
+
+  /**
+   * 쿠폰 자동 발급 보정 수동 실행
+   * POST /internal/membership/run-coupon-reconciliation
+   *
+   * failed 상태의 UserEmailVerified / MembershipStatusChanged inbox 이벤트를 재처리합니다.
+   * - UserEmailVerified: Medusa customer가 생성됐으면 직접 발급 후 published 처리
+   * - MembershipStatusChanged: pending으로 리셋하여 inbox worker가 재시도
+   */
+  @Post('run-coupon-reconciliation')
+  @HttpCode(HttpStatus.OK)
+  async runCouponReconciliation(
+    @Headers('authorization') authorization: string,
+  ): Promise<{ directIssued: number; reset: number; skipped: number }> {
+    this.verifyInternalKey(authorization);
+    this.logger.log('쿠폰 발급 보정 수동 실행 요청');
+    return this.couponIssueReconciliationService.runManually();
   }
 
   /**
