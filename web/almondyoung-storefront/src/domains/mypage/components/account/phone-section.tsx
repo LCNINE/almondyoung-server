@@ -124,8 +124,9 @@ export function PhoneSection({ initialPhoneNumber }: PhoneSectionProps) {
 
   const handleChangePhone = useCallback(() => {
     startUpdateTransition(async () => {
-      const executeChange = async () => {
+      try {
         const result = await updatePhoneNumberAction(newPhone)
+
         if (result.success) {
           toast.success(t("changed"))
           setCurrentPhone(newPhone.replace(/\D/g, ""))
@@ -134,25 +135,12 @@ export function PhoneSection({ initialPhoneNumber }: PhoneSectionProps) {
         } else {
           toast.error(result.error || t("changeFailed"))
         }
-      }
-
-      try {
-        await executeChange()
       } catch (error: unknown) {
         const err = error as Error & { digest?: string }
-        if (err.digest !== "UNAUTHORIZED" && err.message !== "UNAUTHORIZED") {
-          toast.error(t("changeFailed"))
-          return
+        if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
+          throw error
         }
-        // 토큰 만료 → 자동 갱신 후 즉시 재시도
-        const res = await fetch("/api/auth/restore-token", {
-          method: "POST",
-          credentials: "include",
-        })
-        if (!res.ok) {
-          throw error // 갱신 실패 → error.tsx에서 로그인 처리
-        }
-        await executeChange()
+        toast.error(t("changeFailed"))
       }
     })
   }, [newPhone, handleReset, t])
