@@ -72,6 +72,7 @@ import { FirebaseMembershipSyncService } from './adapters/medusa/firebase-member
 import { AlmondAuthClient } from './adapters/almond-auth/almond-auth.client';
 import { UserServiceClient } from './services/user-service.client';
 import { MembershipDailySyncService } from './services/membership-daily-sync.service';
+import { CouponIssueReconciliationService } from './services/coupon-issue-reconciliation.service';
 import { InternalMembershipController } from './controllers/internal-membership.controller';
 import { CHANNEL_ORDER_PROVIDER } from './services/order-collection/channel-order-provider.interface';
 import { MedusaOrderProvider } from './services/order-collection/medusa-order.provider';
@@ -193,6 +194,7 @@ import { OrderPollerOrchestrator } from './services/order-collection/order-polle
     UserServiceClient,
     FirebaseMembershipSyncService,
     MembershipDailySyncService,
+    CouponIssueReconciliationService,
 
     // Event Chain Tracking (환경 무관하게 항상 등록)
     EventChainService,

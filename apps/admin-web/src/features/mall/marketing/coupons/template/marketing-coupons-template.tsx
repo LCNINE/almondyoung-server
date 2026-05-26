@@ -50,11 +50,15 @@ function formatConditions(coupon: MedusaPromotion) {
   }
   const budget = coupon.campaign?.budget;
   if (budget?.limit) {
-    parts.push(
-      budget.type === 'spend'
-        ? `최대 ${budget.limit.toLocaleString('ko-KR')}원 한도`
-        : `최대 ${budget.limit.toLocaleString('ko-KR')}회`
-    );
+    if (budget.type === 'spend') {
+      parts.push(`총 ${budget.limit.toLocaleString('ko-KR')}원 한도`);
+    } else if (budget.type === 'use_by_attribute') {
+      parts.push(`1인당 ${budget.limit.toLocaleString('ko-KR')}회`);
+    } else if (budget.type === 'usage') {
+      parts.push(`전체 ${budget.limit.toLocaleString('ko-KR')}회`);
+    } else {
+      parts.push(`예산 ${budget.limit.toLocaleString('ko-KR')}`);
+    }
   }
   return parts.length > 0 ? parts.join(' · ') : '-';
 }

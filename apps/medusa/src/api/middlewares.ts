@@ -36,6 +36,13 @@ export default defineMiddlewares({
       ],
     },
     {
+      matcher: '/store/coupons/preview',
+      method: 'GET',
+      middlewares: [
+        authenticate('customer', ['session', 'bearer'], { allowUnauthenticated: true }),
+      ],
+    },
+    {
       matcher: '/store/customers/me/promotions',
       middlewares: [authenticate('customer', ['session', 'bearer'])],
     },
