@@ -1,12 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import {
-  wmsTables,
-  wmsSchema,
-  auditEventTypeEnum,
-  auditSeverityEnum,
-  DbTx,
-} from '../../schema/inventory.schema';
+import { wmsTables, wmsSchema, auditEventTypeEnum, auditSeverityEnum, DbTx } from '../../schema/inventory.schema';
 import { DbService } from '@app/db';
 import { nowSeoul } from './time.util';
 import { eq, gte, lte, desc, and } from 'drizzle-orm';

@@ -1,19 +1,8 @@
-export const UNBOUNDED_SELLABLE_QUANTITY = 99_999_999;
+import { type ProductSellableQuantityReason } from '@packages/event-contracts';
 
-export type ProductSellableQuantityReason =
-  | 'SELLABLE'
-  | 'PRE_STOCK_SELLABLE'
-  | 'ALWAYS_SELLABLE_ZERO_STOCK'
-  | 'NOT_ACTIVE_VERSION'
-  | 'VARIANT_INACTIVE'
-  | 'SALES_NOT_STARTED'
-  | 'SALES_ENDED'
-  | 'MATCHING_MISSING'
-  | 'MATCHING_PENDING'
-  | 'MATCHING_IGNORED'
-  | 'MATCHING_STRATEGY_UNSUPPORTED'
-  | 'MATCHING_LINK_MISSING'
-  | 'INSUFFICIENT_COMPONENT_STOCK';
+export type { ProductSellableQuantityReason } from '@packages/event-contracts';
+
+export const UNBOUNDED_SELLABLE_QUANTITY = 99_999_999;
 
 export interface ProductSellableQuantityComponentInput {
   skuId: string;

@@ -15,18 +15,17 @@ import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
 import { MergeSalesOrdersDto } from '../dto/merge-sales-orders.dto';
 import { SalesOrderFilterDto } from '../dto/sales-order-filter.dto';
 import { AddressDto } from '../dto/address.dto';
-import {
-  OrderCreatedPayload,
-  OrderModifiedPayload,
-  ShippingAddress,
-  OrderItem,
-} from '@packages/event-contracts';
+import { OrderCreatedPayload, OrderModifiedPayload, ShippingAddress, OrderItem } from '@packages/event-contracts';
+import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 
 type SalesOrderLineInsert = InferInsertModel<typeof wmsTables.salesOrderLines>;
 
 /** Phase 6에서 FulfillmentsService로 교체된다 */
 interface IFulfillmentsService {
-  create(dto: { salesOrderId: string; warehouseId?: string; shippingAddress: any; lines: any[] }, tx?: DbTx): Promise<any>;
+  create(
+    dto: { salesOrderId: string; warehouseId?: string; shippingAddress: any; lines: any[] },
+    tx?: DbTx,
+  ): Promise<any>;
 }
 
 @Injectable()
@@ -40,6 +39,7 @@ export class SalesOrdersService {
     private readonly outbox: OutboxService,
     private readonly reservationLifecycle: ReservationLifecycleService,
     private readonly productSkuMapping: ProductSkuMappingService,
+    private readonly productSellableQuantity: ProductSellableQuantityService,
     @Optional() private readonly audit?: AuditService,
     @Optional() private readonly metrics?: MetricsService,
     @Optional() private readonly fulfillments?: IFulfillmentsService,
@@ -181,20 +181,14 @@ export class SalesOrdersService {
 
       if (warehouseId && lines.length > 0) {
         for (const line of lines) {
-          const snapshotId = await this.productSkuMapping.createSnapshotForVariant(
-            line.variantId,
-            warehouseId,
-            trx,
-          );
+          const snapshotId = await this.productSkuMapping.createSnapshotForVariant(line.variantId, warehouseId, trx);
           if (snapshotId) {
             await trx
               .update(wmsTables.salesOrderLines)
               .set({ mappingSnapshotId: snapshotId })
               .where(eq(wmsTables.salesOrderLines.id, line.id));
           } else {
-            this.logger.warn(
-              `No mapping found for variantId=${line.variantId} in warehouseId=${warehouseId}`,
-            );
+            this.logger.warn(`No mapping found for variantId=${line.variantId} in warehouseId=${warehouseId}`);
           }
         }
       }
@@ -238,12 +232,7 @@ export class SalesOrdersService {
         if (fo.status === 'canceled') continue;
 
         try {
-          await this.reservationLifecycle.handleFulfillmentOrderStatusChange(
-            fo.id,
-            fo.status,
-            'canceled',
-            trx,
-          );
+          await this.reservationLifecycle.handleFulfillmentOrderStatusChange(fo.id, fo.status, 'canceled', trx);
         } catch (error) {
           this.logger.error(`Failed to release reservations for FO ${fo.id}:`, error);
         }
@@ -256,10 +245,7 @@ export class SalesOrdersService {
         this.logger.log(`Cancelled fulfillment order: ${fo.id}`);
       }
 
-      await trx
-        .update(wmsTables.salesOrders)
-        .set({ status: 'cancelled' })
-        .where(eq(wmsTables.salesOrders.id, id));
+      await trx.update(wmsTables.salesOrders).set({ status: 'cancelled' }).where(eq(wmsTables.salesOrders.id, id));
 
       const updated = await this.getOne(id, trx);
 
@@ -287,9 +273,7 @@ export class SalesOrdersService {
         trx,
       );
 
-      this.logger.log(
-        `Successfully cancelled sales order ${id} and ${fulfillmentOrders.length} fulfillment orders`,
-      );
+      this.logger.log(`Successfully cancelled sales order ${id} and ${fulfillmentOrders.length} fulfillment orders`);
       return updated;
     }, tx);
   }
@@ -369,10 +353,14 @@ export class SalesOrdersService {
           .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fo.id));
         const foiIds = fois.map((item) => item.id);
         if (foiIds.length > 0) {
+          const skuIds = [...new Set(fois.map((item) => item.skuId))];
           await trx
             .update(wmsTables.stockReservations)
             .set({ status: 'released' })
             .where(inArray(wmsTables.stockReservations.fulfillmentOrderItemId, foiIds));
+          for (const skuId of skuIds) {
+            await this.productSellableQuantity.recalculateAndPublishForSku(skuId, trx);
+          }
           await trx
             .update(wmsTables.fulfillmentOrderItems)
             .set({ reservedQty: 0, updatedAt: new Date() })
@@ -424,11 +412,7 @@ export class SalesOrdersService {
 
   async getOne(id: string, tx?: DbTx) {
     const db = tx ?? this.db.db;
-    const [order] = await db
-      .select()
-      .from(wmsTables.salesOrders)
-      .where(eq(wmsTables.salesOrders.id, id))
-      .limit(1);
+    const [order] = await db.select().from(wmsTables.salesOrders).where(eq(wmsTables.salesOrders.id, id)).limit(1);
     if (!order) return null;
     const lines = await db
       .select()
@@ -437,11 +421,7 @@ export class SalesOrdersService {
     return { ...order, lines };
   }
 
-  async findByChannelOrderId(
-    salesChannel: 'medusa' | 'naver' | 'coupang' | '3pl',
-    channelOrderId: string,
-    tx?: DbTx,
-  ) {
+  async findByChannelOrderId(salesChannel: 'medusa' | 'naver' | 'coupang' | '3pl', channelOrderId: string, tx?: DbTx) {
     const db = tx ?? this.db.db;
     return db.query.salesOrders.findFirst({
       where: (o, { eq, and }) => and(eq(o.salesChannel, salesChannel), eq(o.channelOrderId, channelOrderId)),
@@ -471,10 +451,7 @@ export class SalesOrdersService {
       const limit = params.limit ?? 20;
       const offset = params.offset ?? 0;
 
-      const [{ total }] = await trx
-        .select({ total: count() })
-        .from(wmsTables.salesOrders)
-        .where(where);
+      const [{ total }] = await trx.select({ total: count() }).from(wmsTables.salesOrders).where(where);
 
       const orders = await trx
         .select()
@@ -592,13 +569,13 @@ export class SalesOrdersService {
       .where(eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'drop_ship'));
 
     return {
-      todayCount:        Number(todayResult.cnt),
+      todayCount: Number(todayResult.cnt),
       outboundRequested: byStatus('confirmed'),
-      directShip:        directShipRows.length,
-      cannotShip:        cannotShipRows.length,
-      partialOutbound:   partialOutboundCount,
-      waitingMatching:   waitingMatchRows.length,
-      outboundComplete:  byStatus('processing') + byStatus('shipped') + byStatus('delivered'),
+      directShip: directShipRows.length,
+      cannotShip: cannotShipRows.length,
+      partialOutbound: partialOutboundCount,
+      waitingMatching: waitingMatchRows.length,
+      outboundComplete: byStatus('processing') + byStatus('shipped') + byStatus('delivered'),
     };
   }
 

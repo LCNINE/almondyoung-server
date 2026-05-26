@@ -3,6 +3,7 @@ import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { eq, and } from 'drizzle-orm';
 import { UnifiedReservationService } from '../../inventory/shared/services/unified-reservation.service';
+import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 
 @Injectable()
 export class FulfillmentReservationsFacade {
@@ -11,6 +12,7 @@ export class FulfillmentReservationsFacade {
   constructor(
     private readonly db: DbService<typeof wmsSchema>,
     private readonly unified: UnifiedReservationService,
+    private readonly productSellableQuantity: ProductSellableQuantityService,
   ) {}
 
   private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
@@ -96,6 +98,9 @@ export class FulfillmentReservationsFacade {
       }
 
       const released = dto.quantity - Math.max(0, remaining);
+      if (released > 0) {
+        await this.productSellableQuantity.recalculateAndPublishForSku(foi.skuId, trx);
+      }
 
       await trx
         .update(wmsTables.fulfillmentOrderItems)

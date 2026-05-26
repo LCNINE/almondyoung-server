@@ -335,7 +335,8 @@ export class ConsolidationService {
     if (timeDiff > rule.criteria.timeWindow * 60 * 60 * 1000) return false;
     if (rule.criteria.customerMatch && primary.customerId !== candidate.customerId) return false;
     if (rule.criteria.serviceMatch && primary.deliveryService !== candidate.deliveryService) return false;
-    if (!this.matchesAddress(primary.shippingAddress, candidate.shippingAddress, rule.criteria.addressMatch)) return false;
+    if (!this.matchesAddress(primary.shippingAddress, candidate.shippingAddress, rule.criteria.addressMatch))
+      return false;
     if (rule.constraints.requireSamePriority && primary.priority !== candidate.priority) return false;
     return true;
   }

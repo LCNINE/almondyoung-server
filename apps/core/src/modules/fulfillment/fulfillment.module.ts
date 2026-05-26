@@ -6,6 +6,7 @@ import { CoreInventoryModule } from '../inventory/core/inventory.module';
 import { SharedModule } from '../inventory/shared/shared.module';
 import { ProductMatchingModule } from '../product-matching/product-matching.module';
 import { SalesOrderModule } from '../sales-order/sales-order.module';
+import { ProductSellableQuantityModule } from '../inventory/product-sellable-quantity/product-sellable-quantity.module';
 
 // Outbox
 import { OutboxService } from './outbox/outbox.service';
@@ -56,6 +57,8 @@ import { LocationOptimizationController } from './controllers/location-optimizat
 
     // SalesOrdersService (SO 취소), SalesOrderQueryService (SO/라인 조회)
     SalesOrderModule,
+
+    ProductSellableQuantityModule,
   ],
   controllers: [
     FulfillmentsController,

@@ -3,11 +3,7 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
-import {
-  OrderCreatedPayload,
-  OrderCancelledPayload,
-  OrderModifiedPayload,
-} from '@packages/event-contracts';
+import { OrderCreatedPayload, OrderCancelledPayload, OrderModifiedPayload } from '@packages/event-contracts';
 import { MessageEnvelope } from '@packages/event-contracts/types';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { LibraryService } from '../../library/services/library.service';
@@ -81,11 +77,7 @@ export class OrderEventsConsumer {
     try {
       await this.inTx(async (tx) => {
         const externalOrderId = payload.externalOrderId ?? payload.orderId;
-        const existing = await this.salesOrdersService.findByChannelOrderId(
-          payload.salesChannel,
-          externalOrderId,
-          tx,
-        );
+        const existing = await this.salesOrdersService.findByChannelOrderId(payload.salesChannel, externalOrderId, tx);
 
         // ADR-0010: existing SO 라도 grant 누락 가능성을 메우기 위해 한 번 더 시도.
         // grantOwnershipsForOrder 는 (customerId, assetId, salesOrderId) unique index 로 idempotent —
@@ -123,10 +115,9 @@ export class OrderEventsConsumer {
     @EventPayload() payload: OrderCancelledPayload,
     @EventEnvelope() envelope: MessageEnvelope<OrderCancelledPayload>,
   ) {
-    this.logger.log(
-      `[OrderCancelled] Received: orderId=${payload.orderId}, reason=${payload.reason}`,
-      { correlationId: envelope.correlationId },
-    );
+    this.logger.log(`[OrderCancelled] Received: orderId=${payload.orderId}, reason=${payload.reason}`, {
+      correlationId: envelope.correlationId,
+    });
 
     try {
       await this.inTx(async (tx) => {
@@ -155,9 +146,7 @@ export class OrderEventsConsumer {
         // ADR-0006: exercise 전 디지털 ownership 만 회수. exercise 된 것은 환불 측이 결정.
         await this.libraryService.revokeOwnershipsForOrder(payload.orderId, payload.reason, tx);
 
-        this.logger.log(
-          `[OrderCancelled] Cancelled sales order: ${payload.orderId}, reason: ${payload.reason}`,
-        );
+        this.logger.log(`[OrderCancelled] Cancelled sales order: ${payload.orderId}, reason: ${payload.reason}`);
       });
     } catch (error) {
       this.logger.error(`[OrderCancelled] Failed to process: ${payload.orderId}`, error.stack);

@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, ConflictException, Logger } from '@nes
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { eq, and, inArray, sum, sql, lt, isNotNull } from 'drizzle-orm';
+import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 
 export interface ReserveStockDto {
   targetType: 'FULFILLMENT_ORDER' | 'MOVEMENT_TASK';
@@ -44,7 +45,10 @@ export interface ReservationSummary {
 export class UnifiedReservationService {
   private readonly logger = new Logger(UnifiedReservationService.name);
 
-  constructor(private readonly db: DbService<typeof wmsSchema>) {}
+  constructor(
+    private readonly db: DbService<typeof wmsSchema>,
+    private readonly productSellableQuantity: ProductSellableQuantityService,
+  ) {}
 
   private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
     return tx ? fn(tx) : this.db.db.transaction(fn);
@@ -80,6 +84,8 @@ export class UnifiedReservationService {
 
       this.logger.log(`Reserved ${dto.quantity} units of SKU ${dto.skuId} for ${dto.targetType}:${dto.targetId}`);
 
+      await this.productSellableQuantity.recalculateAndPublishForSku(dto.skuId, trx);
+
       return reservation satisfies Reservation;
     }, tx);
   }
@@ -101,6 +107,8 @@ export class UnifiedReservationService {
       if (!updated) {
         throw new BadRequestException(`Reservation ${id} not found`);
       }
+
+      await this.productSellableQuantity.recalculateAndPublishForSku(updated.skuId, trx);
 
       this.logger.log(`Released reservation ${id}`);
     }, tx);
@@ -294,6 +302,11 @@ export class UnifiedReservationService {
           ),
         )
         .returning();
+
+      const skuIds = [...new Set(result.map((reservation) => reservation.skuId))];
+      for (const skuId of skuIds) {
+        await this.productSellableQuantity.recalculateAndPublishForSku(skuId, trx);
+      }
 
       this.logger.log(`Released ${result.length} expired reservations`);
       return result.length;

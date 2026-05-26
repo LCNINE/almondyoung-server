@@ -1,7 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { and, or, eq, gte, lte, like, isNull, desc, asc, inArray, sql, SQL } from 'drizzle-orm';
-import { type PimSchema, productMasters, productMasterVersions, productMasterCategories } from '../../../schema/catalog.schema';
+import {
+  type PimSchema,
+  productMasters,
+  productMasterVersions,
+  productMasterCategories,
+} from '../../../schema/catalog.schema';
 import { ProductQueryDto } from '../dto';
 import { DbTransaction } from '../../../catalog.types';
 

@@ -139,10 +139,7 @@ export class ProductMasterVersionsController {
   @ApiParam({ name: 'masterId', description: 'Master ID' })
   @ApiResponse({ status: 201, description: '빈 Draft 버전 생성 성공' })
   @ApiResponse({ status: 404, description: '마스터를 찾을 수 없음' })
-  async createEmptyDraftVersion(
-    @Param('masterId') masterId: string,
-    @User() user: { userId: string },
-  ) {
+  async createEmptyDraftVersion(@Param('masterId') masterId: string, @User() user: { userId: string }) {
     const version = await this.productVersionsService.createInitialDraftVersion(masterId, user.userId);
     return {
       ...version,
@@ -244,11 +241,7 @@ export class ProductMasterVersionsController {
     @Param('versionId') versionId: string,
     @Body() body: UpdateVariantBulkDto,
   ) {
-    const results = await this.productVariantsService.bulkUpdateVariantsInDraft(
-      masterId,
-      versionId,
-      body.updates,
-    );
+    const results = await this.productVariantsService.bulkUpdateVariantsInDraft(masterId, versionId, body.updates);
     return { results };
   }
 

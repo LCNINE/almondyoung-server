@@ -23,6 +23,7 @@ import { UpdateProductVariantDto, UpdateVariantBulkDto } from '../dto';
 import { ProductVersionsService } from './product-versions.service';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
 import { VariantAssetLinkService } from '../../../../library/services/variant-asset-link.service';
+import { ProductSellableQuantityService } from '../../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 
 type VariantDetailKeysParam = { variantId: string; versionId: string } | { variantId: string; masterId: string };
 type VariantOptionsKeysParam = { variantId: string; versionId: string } | { variantId: string; masterId: string };
@@ -34,6 +35,7 @@ export class ProductVariantsService {
     private readonly productVersionsService: ProductVersionsService,
     private readonly priceCacheService: VariantPriceCacheService,
     private readonly variantAssetLinkService: VariantAssetLinkService,
+    private readonly productSellableQuantity: ProductSellableQuantityService,
   ) {}
 
   private getClient(tx?: DbTransaction) {
@@ -394,12 +396,7 @@ export class ProductVariantsService {
       const [sharedMapping] = await trx
         .select({ versionId: productMasterVariants.versionId })
         .from(productMasterVariants)
-        .where(
-          and(
-            eq(productMasterVariants.variantId, variantId),
-            ne(productMasterVariants.versionId, versionId),
-          ),
-        )
+        .where(and(eq(productMasterVariants.variantId, variantId), ne(productMasterVariants.versionId, versionId)))
         .limit(1);
 
       if (!sharedMapping) {
@@ -464,14 +461,14 @@ export class ProductVariantsService {
     if (data.variantCode !== undefined) updateData.variantCode = data.variantCode;
 
     await tx.update(productVariants).set(updateData).where(eq(productVariants.id, variantId));
+
+    if (data.status !== undefined) {
+      await this.productSellableQuantity.recalculateAndPublishForVariant(variantId, tx);
+    }
   }
 
   private async _cloneVariant(sourceVariantId: string, tx: DbTransaction): Promise<string> {
-    const [source] = await tx
-      .select()
-      .from(productVariants)
-      .where(eq(productVariants.id, sourceVariantId))
-      .limit(1);
+    const [source] = await tx.select().from(productVariants).where(eq(productVariants.id, sourceVariantId)).limit(1);
     if (!source) {
       throw new NotFoundException(`Variant ${sourceVariantId} not found`);
     }

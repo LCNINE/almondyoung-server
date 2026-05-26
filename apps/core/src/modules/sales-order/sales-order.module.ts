@@ -6,6 +6,7 @@ import { CoreInventoryModule } from '../inventory/core/inventory.module';
 import { SharedModule } from '../inventory/shared/shared.module';
 import { ProductMatchingModule } from '../product-matching/product-matching.module';
 import { LibraryModule } from '../library/library.module';
+import { ProductSellableQuantityModule } from '../inventory/product-sellable-quantity/product-sellable-quantity.module';
 
 import { SalesOrdersController } from './controllers/sales-orders.controller';
 import { OrderEventsConsumer } from './consumers/order-events.consumer';
@@ -34,19 +35,14 @@ import { PoliciesService } from './services/policies.service';
 
     // LibraryService (OrderCreated(payment-confirmed)/Cancelled 시 디지털 ownership grant/revoke — ADR-0010)
     LibraryModule,
+
+    ProductSellableQuantityModule,
   ],
-  controllers: [
-    SalesOrdersController,
-    OrderEventsConsumer,
-  ],
-  providers: [
-    SalesOrdersService,
-    SalesOrderQueryService,
-    PoliciesService,
-  ],
+  controllers: [SalesOrdersController, OrderEventsConsumer],
+  providers: [SalesOrdersService, SalesOrderQueryService, PoliciesService],
   exports: [
-    SalesOrdersService,      // Fulfillment BC (cancel, merge 시 SO 상태 변경)
-    SalesOrderQueryService,  // Fulfillment BC (FO 생성 시 SO/라인 조회)
+    SalesOrdersService, // Fulfillment BC (cancel, merge 시 SO 상태 변경)
+    SalesOrderQueryService, // Fulfillment BC (FO 생성 시 SO/라인 조회)
   ],
 })
 export class SalesOrderModule {}

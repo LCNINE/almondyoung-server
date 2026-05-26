@@ -1,13 +1,6 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import {
-  wmsTables,
-  wmsSchema,
-  DbTx,
-  LocationRack,
-  LocationColumn,
-  Location,
-} from '../../schema/inventory.schema';
+import { wmsTables, wmsSchema, DbTx, LocationRack, LocationColumn, Location } from '../../schema/inventory.schema';
 import { TypedDatabase, DbService } from '@app/db';
 import { eq, and, like, desc, asc, count, sql } from 'drizzle-orm';
 import {

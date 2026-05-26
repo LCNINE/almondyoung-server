@@ -40,15 +40,15 @@ export class SkuCatalogManager {
         .returning();
 
       if (supplierIds && supplierIds.length > 0) {
-        await trx.insert(wmsTables.skuSuppliers).values(
-          supplierIds.map((supplierId) => ({ skuId: newSku.id, supplierId })),
-        );
+        await trx
+          .insert(wmsTables.skuSuppliers)
+          .values(supplierIds.map((supplierId) => ({ skuId: newSku.id, supplierId })));
       }
 
       if (categoryIds && categoryIds.length > 0) {
-        await trx.insert(wmsTables.skuCategories).values(
-          categoryIds.map((categoryId) => ({ skuId: newSku.id, categoryId })),
-        );
+        await trx
+          .insert(wmsTables.skuCategories)
+          .values(categoryIds.map((categoryId) => ({ skuId: newSku.id, categoryId })));
       }
 
       if (imageUploadIds && imageUploadIds.length > 0) {
@@ -89,9 +89,7 @@ export class SkuCatalogManager {
         await trx.delete(wmsTables.skuSuppliers).where(eq(wmsTables.skuSuppliers.skuId, skuId));
 
         if (supplierIds.length > 0) {
-          await trx.insert(wmsTables.skuSuppliers).values(
-            supplierIds.map((supplierId) => ({ skuId, supplierId })),
-          );
+          await trx.insert(wmsTables.skuSuppliers).values(supplierIds.map((supplierId) => ({ skuId, supplierId })));
         }
       }
 
@@ -99,9 +97,7 @@ export class SkuCatalogManager {
         await trx.delete(wmsTables.skuCategories).where(eq(wmsTables.skuCategories.skuId, skuId));
 
         if (categoryIds.length > 0) {
-          await trx.insert(wmsTables.skuCategories).values(
-            categoryIds.map((categoryId) => ({ skuId, categoryId })),
-          );
+          await trx.insert(wmsTables.skuCategories).values(categoryIds.map((categoryId) => ({ skuId, categoryId })));
         }
       }
 
@@ -162,9 +158,7 @@ export class SkuCatalogManager {
       const reservations = await trx
         .select({ id: wmsTables.stockReservations.id })
         .from(wmsTables.stockReservations)
-        .where(
-          and(eq(wmsTables.stockReservations.skuId, skuId), eq(wmsTables.stockReservations.status, 'confirmed')),
-        );
+        .where(and(eq(wmsTables.stockReservations.skuId, skuId), eq(wmsTables.stockReservations.status, 'confirmed')));
 
       if (reservations.length > 0) {
         throw new ConflictError(

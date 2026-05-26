@@ -15,12 +15,14 @@ import { ChannelProductWithChannelDto } from './dto';
 import { ChannelProductMapper } from './mappers';
 import { ChannelProductEntity, SalesChannelEntity } from '../../schema/catalog.schema.types';
 import { ProductReadAssembler } from '../products/assemblers/product-read.assembler';
+import { ProductSellableQuantityService } from '../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 
 @Injectable()
 export class ChannelProductsService {
   constructor(
     @InjectDb() private readonly db: DbService<PimSchema>,
     private readonly productReadAssembler: ProductReadAssembler,
+    private readonly productSellableQuantity: ProductSellableQuantityService,
   ) {}
 
   private getClient(tx?: DbTransaction) {
@@ -57,7 +59,9 @@ export class ChannelProductsService {
     // 3. 중복 확인
     const alreadyExists = await this.existsChannelProduct(data.masterId, data.channelId, tx);
     if (alreadyExists) {
-      throw new ConflictError(`Channel product already exists for master ${data.masterId} and channel ${data.channelId}`);
+      throw new ConflictError(
+        `Channel product already exists for master ${data.masterId} and channel ${data.channelId}`,
+      );
     }
 
     // 4. 채널 상품 생성
@@ -74,6 +78,8 @@ export class ChannelProductsService {
     if (result.length === 0) {
       throw new Error('Failed to create channel product');
     }
+
+    await this.productSellableQuantity.recalculateAndPublishForMaster(data.masterId, tx);
 
     return result[0];
   }
@@ -288,6 +294,8 @@ export class ChannelProductsService {
       throw new Error(`Failed to update channel product: ${channelProductId}`);
     }
 
+    await this.productSellableQuantity.recalculateAndPublishForMaster(existing.masterId, tx);
+
     return result[0];
   }
 
@@ -306,6 +314,7 @@ export class ChannelProductsService {
 
     // 2. 삭제 실행
     await client.delete(channelProducts).where(eq(channelProducts.id, channelProductId));
+    await this.productSellableQuantity.recalculateAndPublishForMaster(existing.masterId, tx);
   }
 
   async getMergedChannelProduct(
@@ -423,6 +432,8 @@ export class ChannelProductsService {
         updatedAt: new Date(),
       })
       .where(eq(channelProducts.id, channelProductId));
+
+    await this.productSellableQuantity.recalculateAndPublishForMaster(existing.masterId, tx);
   }
 
   async setChannelSpecificData(channelProductId: string, data: any, tx?: DbTransaction): Promise<void> {

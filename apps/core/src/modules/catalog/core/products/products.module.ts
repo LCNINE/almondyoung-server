@@ -13,9 +13,10 @@ import { OptionReadLoader } from './loaders/option-read.loader';
 import { TagReadLoader } from './loaders/tag-read.loader';
 import { ProductMatchingModule } from '../../../product-matching/product-matching.module';
 import { LibraryModule } from '../../../library/library.module';
+import { ProductSellableQuantityModule } from '../../../inventory/product-sellable-quantity/product-sellable-quantity.module';
 
 @Module({
-  imports: [PricingModule, forwardRef(() => ProductMatchingModule), LibraryModule],
+  imports: [PricingModule, forwardRef(() => ProductMatchingModule), LibraryModule, ProductSellableQuantityModule],
   controllers: [
     ProductMastersController,
     ProductVariantsController,

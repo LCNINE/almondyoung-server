@@ -1,7 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { DbService, InjectTypedDb } from '@app/db';
 import { TypedDatabase } from '@app/db/types';
-import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
+import { ProductSellableQuantityChangedPayload } from '@packages/event-contracts';
 import { MergedSchema } from '../../../../platform/database/merged-schema';
 import {
   productMasters,
@@ -10,6 +12,7 @@ import {
   productVariants,
 } from '../../../catalog/schema/catalog.schema';
 import { stockSummary, wmsTables } from '../../schema/inventory.schema';
+import { OutboxService } from '../../shared/outbox/outbox.service';
 import {
   calculateProductSellableQuantity,
   ProductSellableQuantityInput,
@@ -20,9 +23,13 @@ type ProductSellableQuantityDbTx = Parameters<Parameters<TypedDatabase<MergedSch
 
 @Injectable()
 export class ProductSellableQuantityService {
+  private readonly logger = new Logger(ProductSellableQuantityService.name);
+  private isRefreshingSalesPeriodProjections = false;
+
   constructor(
     @InjectTypedDb<MergedSchema>()
     private readonly dbService: DbService<MergedSchema>,
+    private readonly outbox: OutboxService,
   ) {}
 
   private get db() {
@@ -34,6 +41,10 @@ export class ProductSellableQuantityService {
     tx?: ProductSellableQuantityDbTx,
   ): Promise<T> {
     return tx ? fn(tx) : this.db.transaction(fn);
+  }
+
+  private asTx(tx?: unknown): ProductSellableQuantityDbTx | undefined {
+    return tx as ProductSellableQuantityDbTx | undefined;
   }
 
   async getByVariantId(variantId: string, tx?: ProductSellableQuantityDbTx): Promise<ProductSellableQuantityResult> {
@@ -192,4 +203,264 @@ export class ProductSellableQuantityService {
         .filter((projection): projection is ProductSellableQuantityResult => projection !== null);
     }, tx);
   }
+
+  async recalculateAndPublishForVariant(
+    variantId: string,
+    tx?: unknown,
+  ): Promise<{ projection: ProductSellableQuantityResult | null; published: boolean }> {
+    return this.inTx(async (trx) => {
+      await trx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${variantId}))`);
+
+      let projection: ProductSellableQuantityResult;
+      try {
+        projection = await this.getByVariantId(variantId, trx);
+      } catch (error) {
+        if (error instanceof NotFoundException) {
+          return { projection: null, published: false };
+        }
+        throw error;
+      }
+
+      const previous = await trx.query.productSellableQuantityProjections.findFirst({
+        where: eq(wmsTables.productSellableQuantityProjections.variantId, variantId),
+      });
+
+      if (previous && !hasProductSellableQuantityProjectionChanged(projection, previous)) {
+        return { projection, published: false };
+      }
+
+      const now = new Date();
+      await trx
+        .insert(wmsTables.productSellableQuantityProjections)
+        .values({
+          variantId: projection.variantId,
+          masterId: projection.masterId,
+          versionId: projection.versionId,
+          matchingId: projection.matchingId,
+          sellableQuantity: projection.sellableQuantity,
+          stockBoundQuantity: projection.stockBoundQuantity,
+          isSellable: projection.isSellable,
+          reason: projection.reason,
+          calculatedAt: projection.calculatedAt,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: wmsTables.productSellableQuantityProjections.variantId,
+          set: {
+            masterId: projection.masterId,
+            versionId: projection.versionId,
+            matchingId: projection.matchingId,
+            sellableQuantity: projection.sellableQuantity,
+            stockBoundQuantity: projection.stockBoundQuantity,
+            isSellable: projection.isSellable,
+            reason: projection.reason,
+            calculatedAt: projection.calculatedAt,
+            updatedAt: now,
+          },
+        });
+
+      await this.outbox.enqueue(
+        {
+          eventType: 'ProductSellableQuantityChanged',
+          aggregateType: 'ProductSellableQuantity',
+          aggregateId: projection.variantId,
+          partitionKey: projection.variantId,
+          payload: toProductSellableQuantityChangedPayload(projection),
+        },
+        trx as unknown as Parameters<OutboxService['enqueue']>[1],
+      );
+
+      return { projection, published: true };
+    }, this.asTx(tx));
+  }
+
+  async recalculateAndPublishForVariants(
+    variantIds: string[],
+    tx?: unknown,
+  ): Promise<Array<{ projection: ProductSellableQuantityResult | null; published: boolean }>> {
+    const uniqueVariantIds = [...new Set(variantIds.filter(Boolean))].sort((a, b) => a.localeCompare(b));
+
+    if (uniqueVariantIds.length === 0) {
+      return [];
+    }
+
+    return this.inTx(async (trx) => {
+      const results: Array<{ projection: ProductSellableQuantityResult | null; published: boolean }> = [];
+      for (const variantId of uniqueVariantIds) {
+        results.push(await this.recalculateAndPublishForVariant(variantId, trx));
+      }
+      return results;
+    }, this.asTx(tx));
+  }
+
+  async recalculateAndPublishForVersion(
+    versionId: string,
+    tx?: unknown,
+  ): Promise<Array<{ projection: ProductSellableQuantityResult | null; published: boolean }>> {
+    return this.inTx(async (trx) => {
+      const rows = await trx
+        .select({ variantId: productMasterVariants.variantId })
+        .from(productMasterVariants)
+        .where(eq(productMasterVariants.versionId, versionId));
+
+      return this.recalculateAndPublishForVariants(
+        rows.map((row) => row.variantId),
+        trx,
+      );
+    }, this.asTx(tx));
+  }
+
+  async recalculateAndPublishForSku(
+    skuId: string,
+    tx?: unknown,
+  ): Promise<Array<{ projection: ProductSellableQuantityResult | null; published: boolean }>> {
+    return this.inTx(async (trx) => {
+      const rows = await trx
+        .select({ variantId: wmsTables.productMatchings.variantId })
+        .from(wmsTables.productVariantSkuLinks)
+        .innerJoin(
+          wmsTables.productMatchings,
+          eq(wmsTables.productVariantSkuLinks.productMatchingId, wmsTables.productMatchings.id),
+        )
+        .where(eq(wmsTables.productVariantSkuLinks.skuId, skuId));
+
+      return this.recalculateAndPublishForVariants(
+        rows.map((row) => row.variantId),
+        trx,
+      );
+    }, this.asTx(tx));
+  }
+
+  async recalculateAndPublishForMaster(
+    masterId: string,
+    tx?: unknown,
+  ): Promise<Array<{ projection: ProductSellableQuantityResult | null; published: boolean }>> {
+    return this.inTx(async (trx) => {
+      const rows = await trx
+        .select({ variantId: productMasterVariants.variantId })
+        .from(productMasterVariants)
+        .where(eq(productMasterVariants.masterId, masterId));
+
+      return this.recalculateAndPublishForVariants(
+        rows.map((row) => row.variantId),
+        trx,
+      );
+    }, this.asTx(tx));
+  }
+
+  @Cron(CronExpression.EVERY_MINUTE, {
+    name: 'product-sellable-quantity-sales-period-refresh',
+  })
+  async refreshSalesPeriodProjectionsCron(): Promise<void> {
+    if (this.isRefreshingSalesPeriodProjections) {
+      return;
+    }
+
+    this.isRefreshingSalesPeriodProjections = true;
+
+    try {
+      const results = await this.refreshSalesPeriodProjections();
+      const publishedCount = results.filter((result) => result.published).length;
+
+      if (results.length > 0) {
+        this.logger.log(`Refreshed sales-period sellable projections: ${publishedCount}/${results.length} published`);
+      }
+    } catch (error) {
+      this.logger.error(
+        'Failed to refresh sales-period sellable projections',
+        error instanceof Error ? error.stack : String(error),
+      );
+    } finally {
+      this.isRefreshingSalesPeriodProjections = false;
+    }
+  }
+
+  async refreshSalesPeriodProjections(
+    now = new Date(),
+    limit = 500,
+    tx?: unknown,
+  ): Promise<Array<{ projection: ProductSellableQuantityResult | null; published: boolean }>> {
+    return this.inTx(async (trx) => {
+      const rows = await trx
+        .select({ variantId: productMasterVariants.variantId })
+        .from(productMasterVariants)
+        .innerJoin(productMasterVersions, eq(productMasterVariants.versionId, productMasterVersions.id))
+        .innerJoin(productMasters, eq(productMasterVariants.masterId, productMasters.id))
+        .leftJoin(
+          wmsTables.productSellableQuantityProjections,
+          eq(wmsTables.productSellableQuantityProjections.variantId, productMasterVariants.variantId),
+        )
+        .where(
+          and(
+            eq(productMasterVersions.status, 'active'),
+            isNull(productMasterVersions.deletedAt),
+            isNull(productMasters.deletedAt),
+            or(
+              and(
+                isNotNull(productMasterVersions.salesStartDate),
+                lte(productMasterVersions.salesStartDate, now),
+                or(
+                  isNull(wmsTables.productSellableQuantityProjections.calculatedAt),
+                  sql`${wmsTables.productSellableQuantityProjections.calculatedAt} < ${productMasterVersions.salesStartDate}`,
+                ),
+              ),
+              and(
+                isNotNull(productMasterVersions.salesEndDate),
+                lte(productMasterVersions.salesEndDate, now),
+                or(
+                  isNull(wmsTables.productSellableQuantityProjections.calculatedAt),
+                  sql`${wmsTables.productSellableQuantityProjections.calculatedAt} < ${productMasterVersions.salesEndDate}`,
+                ),
+              ),
+            ),
+          ),
+        )
+        .orderBy(productMasterVariants.variantId)
+        .limit(limit);
+
+      return this.recalculateAndPublishForVariants(
+        rows.map((row) => row.variantId),
+        trx,
+      );
+    }, this.asTx(tx));
+  }
+}
+
+export function toProductSellableQuantityChangedPayload(
+  projection: ProductSellableQuantityResult,
+): ProductSellableQuantityChangedPayload {
+  return {
+    variantId: projection.variantId,
+    masterId: projection.masterId,
+    versionId: projection.versionId,
+    matchingId: projection.matchingId,
+    sellableQuantity: projection.sellableQuantity,
+    stockBoundQuantity: projection.stockBoundQuantity,
+    isSellable: projection.isSellable,
+    reason: projection.reason,
+    calculatedAt: projection.calculatedAt.toISOString(),
+  };
+}
+
+export function hasProductSellableQuantityProjectionChanged(
+  current: ProductSellableQuantityResult,
+  previous: {
+    masterId: string | null;
+    versionId: string | null;
+    matchingId: string | null;
+    sellableQuantity: number;
+    stockBoundQuantity: number;
+    isSellable: boolean;
+    reason: string;
+  },
+): boolean {
+  return (
+    current.masterId !== previous.masterId ||
+    current.versionId !== previous.versionId ||
+    current.matchingId !== previous.matchingId ||
+    current.sellableQuantity !== previous.sellableQuantity ||
+    current.stockBoundQuantity !== previous.stockBoundQuantity ||
+    current.isSellable !== previous.isSellable ||
+    current.reason !== previous.reason
+  );
 }

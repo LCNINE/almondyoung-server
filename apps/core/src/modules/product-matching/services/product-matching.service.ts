@@ -11,6 +11,7 @@ import { SkuCreationSource } from '../../inventory/sku-catalog/dto/create-sku.dt
 import { MatchingStrategy, MatchingContext, SkuQuantityMapping } from '../strategies/matching-strategy.interface';
 import { VoidMatchingStrategy } from '../strategies/void-matching.strategy';
 import { VariantMatchingStrategy } from '../strategies/variant-matching.strategy';
+import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 
 export interface PimSkuComponent {
   skuId: string;
@@ -42,6 +43,7 @@ export class ProductMatchingService {
     private readonly skuCatalogService: SkuCatalogService,
     private readonly stockEventService: StockEventService,
     private readonly warehouseService: WarehouseService,
+    private readonly productSellableQuantity: ProductSellableQuantityService,
   ) {
     this.strategies = new Map();
     this.strategies.set('void', new VoidMatchingStrategy(dbService));
@@ -217,6 +219,7 @@ export class ProductMatchingService {
           this.logger.log(
             `Product matching pending created for variant ${variant.id}, matchingId: ${newProductMatching.id}`,
           );
+          await this.productSellableQuantity.recalculateAndPublishForVariant(variant.id, trx);
           created++;
         } catch (error) {
           this.logger.error(`Failed to create manual matching for variant ${variant.id}:`, error);
@@ -263,6 +266,7 @@ export class ProductMatchingService {
               preStockSellable: true,
               alwaysSellableZeroStock: false,
             });
+            await this.productSellableQuantity.recalculateAndPublishForVariant(variant.id, trx);
             this.logger.log(`Variant ${variant.id} is not inventory managed. Marked as ignored with void strategy.`);
             created++;
             continue;
@@ -326,6 +330,7 @@ export class ProductMatchingService {
             productMatchingId: newProductMatching.id,
           };
           await strategy.create(context, mappings, trx);
+          await this.productSellableQuantity.recalculateAndPublishForVariant(variant.id, trx);
 
           this.logger.log(
             `Auto-matched variant ${variant.id} with ${variant.components.length} SKUs using variant strategy.`,
@@ -524,6 +529,7 @@ export class ProductMatchingService {
         tx,
       ).then((r) => r);
       this.logger.log(`Product matching ${matchingId} resolved as 'ignored' with void strategy.`);
+      await this.productSellableQuantity.recalculateAndPublishForVariant(productMatching.variantId, tx);
       return updatedMatching;
     } else if ((skuIds && skuIds.length > 0) || (skuMappings && skuMappings.length > 0)) {
       return this.inTx(async (trx) => {
@@ -577,6 +583,7 @@ export class ProductMatchingService {
           `Product matching ${matchingId} resolved as 'matched' with ${strategy} strategy. ` +
             `SKUs: ${mappings.length}, Stock Policy: ${JSON.stringify(finalStockPolicy)}`,
         );
+        await this.productSellableQuantity.recalculateAndPublishForVariant(productMatching.variantId, trx);
         return updatedMatching;
       }, tx);
     } else {
@@ -632,16 +639,16 @@ export class ProductMatchingService {
         };
         await strategy.delete(context, trx);
         await trx.delete(wmsTables.productMatchings).where(eq(wmsTables.productMatchings.id, productMatching.id));
+        await this.productSellableQuantity.recalculateAndPublishForVariant(variantId, trx);
         this.logger.log(
           `Deleted product matching and links for variantId: ${variantId} using ${productMatching.strategy} strategy`,
         );
       }, tx);
     } else {
-      await this.inTx(
-        async (trx) =>
-          trx.delete(wmsTables.productMatchings).where(eq(wmsTables.productMatchings.id, productMatching.id)),
-        tx,
-      );
+      await this.inTx(async (trx) => {
+        await trx.delete(wmsTables.productMatchings).where(eq(wmsTables.productMatchings.id, productMatching.id));
+        await this.productSellableQuantity.recalculateAndPublishForVariant(variantId, trx);
+      }, tx);
       this.logger.log(`Deleted ${productMatching.status} product matching for variantId: ${variantId}`);
     }
   }
@@ -727,6 +734,8 @@ export class ProductMatchingService {
         .set({ strategy: newStrategy, updatedAt: new Date() })
         .where(eq(wmsTables.productMatchings.id, matchingId));
 
+      await this.productSellableQuantity.recalculateAndPublishForVariant(productMatching.variantId, trx);
+
       this.logger.log(`Changed matching strategy for ${matchingId} from ${productMatching.strategy} to ${newStrategy}`);
     }, tx);
   }
@@ -803,6 +812,7 @@ export class ProductMatchingService {
     }
 
     this.logger.log(`Updated stock policy for matching ${matchingId}: ${JSON.stringify(stockPolicy)}`);
+    await this.productSellableQuantity.recalculateAndPublishForVariant(updated.variantId, tx);
     return updated;
   }
 }

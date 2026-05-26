@@ -253,6 +253,33 @@ export interface StockReworkedPayload {
   reworkedBy: string;
 }
 
+export type ProductSellableQuantityReason =
+  | 'SELLABLE'
+  | 'PRE_STOCK_SELLABLE'
+  | 'ALWAYS_SELLABLE_ZERO_STOCK'
+  | 'NOT_ACTIVE_VERSION'
+  | 'VARIANT_INACTIVE'
+  | 'SALES_NOT_STARTED'
+  | 'SALES_ENDED'
+  | 'MATCHING_MISSING'
+  | 'MATCHING_PENDING'
+  | 'MATCHING_IGNORED'
+  | 'MATCHING_STRATEGY_UNSUPPORTED'
+  | 'MATCHING_LINK_MISSING'
+  | 'INSUFFICIENT_COMPONENT_STOCK';
+
+export interface ProductSellableQuantityChangedPayload {
+  variantId: string;
+  masterId?: string | null;
+  versionId?: string | null;
+  matchingId?: string | null;
+  sellableQuantity: number;
+  stockBoundQuantity?: number;
+  isSellable: boolean;
+  reason?: ProductSellableQuantityReason;
+  calculatedAt: string;
+}
+
 // ===== Zod 스키마 정의 =====
 
 const InboundTypeSchema = z.enum(['DOMESTIC', 'OVERSEAS', 'RETURN', 'GENERAL']);
@@ -419,6 +446,34 @@ const StockReworkedSchema = z.object({
   reworkedBy: z.string().min(1),
 });
 
+const ProductSellableQuantityReasonSchema = z.enum([
+  'SELLABLE',
+  'PRE_STOCK_SELLABLE',
+  'ALWAYS_SELLABLE_ZERO_STOCK',
+  'NOT_ACTIVE_VERSION',
+  'VARIANT_INACTIVE',
+  'SALES_NOT_STARTED',
+  'SALES_ENDED',
+  'MATCHING_MISSING',
+  'MATCHING_PENDING',
+  'MATCHING_IGNORED',
+  'MATCHING_STRATEGY_UNSUPPORTED',
+  'MATCHING_LINK_MISSING',
+  'INSUFFICIENT_COMPONENT_STOCK',
+]);
+
+const ProductSellableQuantityChangedSchema = z.object({
+  variantId: z.string().min(1),
+  masterId: z.string().nullable().optional(),
+  versionId: z.string().nullable().optional(),
+  matchingId: z.string().nullable().optional(),
+  sellableQuantity: z.number().int().nonnegative(),
+  stockBoundQuantity: z.number().int().nonnegative().optional(),
+  isSellable: z.boolean(),
+  reason: ProductSellableQuantityReasonSchema.optional(),
+  calculatedAt: z.string().datetime(),
+});
+
 // ===== Stream Config (타입 안전 버전) =====
 
 export const INVENTORY_STREAM = stream({
@@ -438,6 +493,10 @@ export const INVENTORY_STREAM = stream({
     StockDisposed: event('StockDisposed', StockDisposedSchema),
     StockDefectMarked: event('StockDefectMarked', StockDefectMarkedSchema),
     StockReworked: event('StockReworked', StockReworkedSchema),
+    ProductSellableQuantityChanged: event<'ProductSellableQuantityChanged', ProductSellableQuantityChangedPayload>(
+      'ProductSellableQuantityChanged',
+      ProductSellableQuantityChangedSchema,
+    ),
   },
 });
 

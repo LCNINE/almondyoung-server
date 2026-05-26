@@ -1,8 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { UnifiedReservationService } from './unified-reservation.service';
+import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 
 @Injectable()
 export class ReservationLifecycleService {
@@ -11,10 +12,15 @@ export class ReservationLifecycleService {
   constructor(
     private readonly db: DbService<typeof wmsSchema>,
     private readonly unifiedReservation: UnifiedReservationService,
+    private readonly productSellableQuantity: ProductSellableQuantityService,
   ) {}
 
   private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
     return tx ? fn(tx) : this.db.db.transaction(fn);
+  }
+
+  private async recalculateSellableQuantityForReservationSku(reservation: { skuId: string }, tx: DbTx): Promise<void> {
+    await this.productSellableQuantity.recalculateAndPublishForSku(reservation.skuId, tx);
   }
 
   /**
@@ -165,6 +171,8 @@ export class ReservationLifecycleService {
                 updatedAt: new Date(),
               })
               .where(eq(wmsTables.stockReservations.id, reservation.id));
+
+            await this.recalculateSellableQuantityForReservationSku(reservation, tx);
           }
 
           remainingToRelease -= releaseQuantity;
@@ -201,7 +209,11 @@ export class ReservationLifecycleService {
           await this.unifiedReservation.releaseReservation(reservation.id, trx);
           releasedCount++;
         } catch (error) {
-          this.logger.warn(`Failed to release expired reservation ${reservation.id}: ${error.message}`);
+          this.logger.warn(
+            `Failed to release expired reservation ${reservation.id}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
         }
       }
 
@@ -273,6 +285,8 @@ export class ReservationLifecycleService {
                   updatedAt: new Date(),
                 })
                 .where(eq(wmsTables.stockReservations.id, reservation.id));
+
+              await this.recalculateSellableQuantityForReservationSku(reservation, trx);
             }
 
             remainingToSplit -= splitReservationQty;
@@ -372,6 +386,8 @@ export class ReservationLifecycleService {
               updatedAt: new Date(),
             })
             .where(eq(wmsTables.stockReservations.id, reservation.id));
+
+          await this.recalculateSellableQuantityForReservationSku(reservation, trx);
         }
 
         remainingToTransfer -= transferReservationQty;
@@ -440,6 +456,8 @@ export class ReservationLifecycleService {
                 updatedAt: new Date(),
               })
               .where(eq(wmsTables.stockReservations.id, reservation.id));
+
+            await this.recalculateSellableQuantityForReservationSku(reservation, trx);
           }
 
           remainingToRelease -= releaseQuantity;

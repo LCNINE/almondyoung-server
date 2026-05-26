@@ -5,11 +5,7 @@ import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { CreateSkuGroupDto, UpdateSkuGroupDto } from '../dto/create-sku-group.dto';
 import { AddSkuToGroupDto, BulkAddSkusToGroupDto } from '../dto/manage-group-members.dto';
-import {
-  SkuGroupResponseDto,
-  BulkAddSkusResponseDto,
-  BulkAddResultItemDto,
-} from '../dto/sku-group-response.dto';
+import { SkuGroupResponseDto, BulkAddSkusResponseDto, BulkAddResultItemDto } from '../dto/sku-group-response.dto';
 import { SkuGroupReader } from './sku-group.reader';
 
 @Injectable()
@@ -134,11 +130,7 @@ export class SkuGroupManager {
     }, tx);
   }
 
-  async bulkAddSkus(
-    groupId: string,
-    bulkDto: BulkAddSkusToGroupDto,
-    tx?: DbTx,
-  ): Promise<BulkAddSkusResponseDto> {
+  async bulkAddSkus(groupId: string, bulkDto: BulkAddSkusToGroupDto, tx?: DbTx): Promise<BulkAddSkusResponseDto> {
     return this.inTx(async (trx) => {
       const results: BulkAddResultItemDto[] = [];
       let successCount = 0;

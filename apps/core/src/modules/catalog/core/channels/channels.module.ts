@@ -8,9 +8,10 @@ import { ChannelProductsService } from './channel-products.service';
 import { ChannelCategoriesService } from './channel-categories.service';
 import { ChannelListingService } from './channel-listing.service';
 import { ProductsModule } from '../products/products.module';
+import { ProductSellableQuantityModule } from '../../../inventory/product-sellable-quantity/product-sellable-quantity.module';
 
 @Module({
-  imports: [ProductsModule],
+  imports: [ProductsModule, ProductSellableQuantityModule],
   controllers: [
     SalesChannelsController,
     ChannelProductsController,
