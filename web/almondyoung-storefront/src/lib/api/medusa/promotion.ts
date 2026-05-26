@@ -1,7 +1,7 @@
 "use server"
 
 import { sdk } from "@/lib/config/medusa"
-import { getAuthHeaders, getCacheOptions } from "@lib/data/cookies"
+import { getAuthHeaders } from "@lib/data/cookies"
 import type { PromotionsResponseDto } from "@lib/types/dto/promotion"
 import medusaError from "@lib/utils/medusa-error"
 
