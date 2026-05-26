@@ -1,5 +1,10 @@
 import { OrderPollerOrchestrator } from './order-poller.orchestrator';
-import type { ChannelOrderProvider, OrderFetchItem } from './channel-order-provider.interface';
+import {
+  CHANNEL_PRODUCT_IDENTIFICATION_FAILED,
+  ChannelOrderProvider,
+  OrderCollectionFailureItem,
+  OrderFetchItem,
+} from './channel-order-provider.interface';
 
 describe('OrderPollerOrchestrator', () => {
   it('does not create a duplicate Core order when a Medusa order changes from authorized to captured', async () => {
@@ -8,18 +13,20 @@ describe('OrderPollerOrchestrator', () => {
       channel: 'medusa',
       fetchOrders: jest
         .fn()
-        .mockResolvedValueOnce({ orders: [makeOrder('2026-05-26T01:00:00.000Z')], skipped: 0 })
-        .mockResolvedValueOnce({ orders: [makeOrder('2026-05-26T01:10:00.000Z')], skipped: 0 }),
+        .mockResolvedValueOnce({ orders: [makeOrder('2026-05-26T01:00:00.000Z')], failures: [] })
+        .mockResolvedValueOnce({ orders: [makeOrder('2026-05-26T01:10:00.000Z')], failures: [] }),
     };
     const syncStatus = makeSyncStatus();
     const inbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const hashes = makeHashService();
+    const failures = makeFailureService();
 
     const orchestrator = new OrderPollerOrchestrator(
       [provider],
       syncStatus as any,
       inbox as any,
       hashes as any,
+      failures as any,
       db as any,
     );
 
@@ -42,17 +49,19 @@ describe('OrderPollerOrchestrator', () => {
     const db = makeDb();
     const provider: ChannelOrderProvider = {
       channel: 'medusa',
-      fetchOrders: jest.fn().mockResolvedValue({ orders: [makeOrder('2026-05-26T01:00:00.000Z')], skipped: 0 }),
+      fetchOrders: jest.fn().mockResolvedValue({ orders: [makeOrder('2026-05-26T01:00:00.000Z')], failures: [] }),
     };
     const syncStatus = makeSyncStatus();
     const inbox = { enqueue: jest.fn().mockRejectedValue(new Error('enqueue failed')) };
     const hashes = makeHashService();
+    const failures = makeFailureService();
 
     const orchestrator = new OrderPollerOrchestrator(
       [provider],
       syncStatus as any,
       inbox as any,
       hashes as any,
+      failures as any,
       db as any,
     );
 
@@ -68,17 +77,19 @@ describe('OrderPollerOrchestrator', () => {
     const db = makeDb({ conflictOnInsert: true });
     const provider: ChannelOrderProvider = {
       channel: 'medusa',
-      fetchOrders: jest.fn().mockResolvedValue({ orders: [makeOrder('2026-05-26T01:00:00.000Z')], skipped: 0 }),
+      fetchOrders: jest.fn().mockResolvedValue({ orders: [makeOrder('2026-05-26T01:00:00.000Z')], failures: [] }),
     };
     const syncStatus = makeSyncStatus();
     const inbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const hashes = makeHashService();
+    const failures = makeFailureService();
 
     const orchestrator = new OrderPollerOrchestrator(
       [provider],
       syncStatus as any,
       inbox as any,
       hashes as any,
+      failures as any,
       db as any,
     );
 
@@ -94,6 +105,86 @@ describe('OrderPollerOrchestrator', () => {
         watermark: new Date('2026-05-26T01:00:00.000Z'),
       }),
     );
+  });
+
+  it('retains a mixed valid/invalid Medusa order as a failure without emitting OrderCreated', async () => {
+    const db = makeDb();
+    const provider: ChannelOrderProvider = {
+      channel: 'medusa',
+      fetchOrders: jest.fn().mockResolvedValue({
+        orders: [],
+        failures: [makeFailure('2026-05-26T01:00:00.000Z')],
+      }),
+    };
+    const syncStatus = makeSyncStatus();
+    const inbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const hashes = makeHashService();
+    const failures = makeFailureService();
+
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider],
+      syncStatus as any,
+      inbox as any,
+      hashes as any,
+      failures as any,
+      db as any,
+    );
+
+    await orchestrator.poll();
+
+    expect(inbox.enqueue).not.toHaveBeenCalled();
+    expect(failures.recordFailure).toHaveBeenCalledWith(
+      'medusa',
+      expect.objectContaining({
+        externalOrderId: 'medusa_order_1',
+        reason: CHANNEL_PRODUCT_IDENTIFICATION_FAILED,
+        affectedLineIds: ['item_missing'],
+      }),
+    );
+    expect(syncStatus.recordSyncComplete).toHaveBeenCalledWith(
+      'medusa',
+      'orders',
+      expect.objectContaining({
+        eventCount: 0,
+        watermark: new Date('2026-05-26T01:00:00.000Z'),
+      }),
+    );
+    expect(failures.recordFailure.mock.invocationCallOrder[0]).toBeLessThan(
+      syncStatus.recordSyncComplete.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('does not advance the polling watermark when failure quarantine storage fails', async () => {
+    const db = makeDb();
+    const provider: ChannelOrderProvider = {
+      channel: 'medusa',
+      fetchOrders: jest.fn().mockResolvedValue({
+        orders: [],
+        failures: [makeFailure('2026-05-26T01:00:00.000Z')],
+      }),
+    };
+    const syncStatus = makeSyncStatus();
+    const inbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const hashes = makeHashService();
+    const failures = makeFailureService();
+    failures.recordFailure.mockRejectedValue(new Error('quarantine failed'));
+
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider],
+      syncStatus as any,
+      inbox as any,
+      hashes as any,
+      failures as any,
+      db as any,
+    );
+
+    await orchestrator.poll();
+
+    expect(syncStatus.recordSyncComplete).not.toHaveBeenCalled();
+    expect(syncStatus.recordSyncFailure).toHaveBeenCalledWith('medusa', 'orders', {
+      message: 'quarantine failed',
+    });
+    expect(syncStatus.lastSyncAt()).toBeNull();
   });
 });
 
@@ -145,6 +236,28 @@ function makeOrder(sourceUpdatedAt: string): OrderFetchItem {
   };
 }
 
+function makeFailure(sourceUpdatedAt: string): OrderCollectionFailureItem {
+  return {
+    externalOrderId: 'medusa_order_1',
+    sourceUpdatedAt,
+    reason: CHANNEL_PRODUCT_IDENTIFICATION_FAILED,
+    affectedLineIds: ['item_missing'],
+    rawOrder: {
+      id: 'medusa_order_1',
+      items: [
+        {
+          id: 'item_valid',
+          variant: { metadata: { pimVariantId: 'pim_variant_1' } },
+        },
+        {
+          id: 'item_missing',
+          variant: { metadata: {} },
+        },
+      ],
+    },
+  };
+}
+
 function makeSyncStatus() {
   let lastSyncAt: Date | null = null;
 
@@ -173,6 +286,29 @@ function makeHashService() {
     upsert: jest.fn(async (source: string, resourceType: string, resourceId: string, hash: string) => {
       hashes.set(key(source, resourceType, resourceId), hash);
     }),
+  };
+}
+
+function makeFailureService() {
+  return {
+    recordFailure: jest.fn(async (_channel: string, failure: OrderCollectionFailureItem) => ({
+      id: 'failure_1',
+      channel: 'medusa',
+      externalOrderId: failure.externalOrderId,
+      reason: failure.reason,
+      affectedLineIds: failure.affectedLineIds,
+      rawOrder: failure.rawOrder,
+      sourceUpdatedAt: new Date(failure.sourceUpdatedAt),
+      status: 'quarantined',
+      replayedAt: null,
+      replayedWmsOrderId: null,
+      errorMessage: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    })),
+    findById: jest.fn(),
+    list: jest.fn(),
+    markReplayed: jest.fn(),
   };
 }
 

@@ -9,6 +9,7 @@ import {
   syncStatuses,
   wmsOrderMappings,
   pendingOrders,
+  orderCollectionFailures,
   inboxEvents,
   pimMedusaMappings,
   cafe24MemberMappings,
@@ -49,6 +50,13 @@ export type NewPendingOrder = InferInsertModel<typeof pendingOrders>;
 export type UpdatePendingOrder = Partial<Omit<NewPendingOrder, 'id' | 'createdAt'>>;
 
 export type PendingOrderStatus = 'pending_mapping' | 'processing' | 'completed' | 'failed';
+
+// ORDER COLLECTION FAILURES 타입 (주문 수집 실패 격리)
+export type OrderCollectionFailure = InferSelectModel<typeof orderCollectionFailures>;
+export type NewOrderCollectionFailure = InferInsertModel<typeof orderCollectionFailures>;
+export type UpdateOrderCollectionFailure = Partial<Omit<NewOrderCollectionFailure, 'id' | 'createdAt'>>;
+
+export type OrderCollectionFailureStatus = 'quarantined' | 'replayed';
 
 // INBOX EVENTS 타입 (Kafka 이벤트 수신 처리)
 export type InboxEvent = InferSelectModel<typeof inboxEvents>;
