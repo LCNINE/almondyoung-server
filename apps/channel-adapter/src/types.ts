@@ -702,6 +702,12 @@ export interface MedusaProduct {
     manage_inventory?: boolean | null;
     inventory_items?: Array<{
       inventory_item_id?: string;
+      required_quantity?: number;
+      inventory?: {
+        id?: string;
+        sku?: string | null;
+        metadata?: Record<string, unknown> | null;
+      };
     }>;
     metadata?: {
       pimVariantId?: string;

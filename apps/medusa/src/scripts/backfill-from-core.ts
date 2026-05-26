@@ -36,6 +36,7 @@ import {
   type PimProductSnapshot,
 } from './lib/transformer';
 import { toWorkflowInput } from './lib/payload-to-workflow-input';
+import { ensureSellableInventoryProjectionLinks } from './lib/sellable-inventory-projection';
 
 interface Bundle {
   meta: {
@@ -230,9 +231,7 @@ export default async function backfill({ container }: ExecArgs) {
       const created = await productModule.createProductTags(missing.map((value) => ({ value })));
       for (const t of created) tagCache.set(t.value, t.id);
     }
-    logger.info(
-      `[backfill] Tag cache primed: ${tagCache.size} tags total (${missing.length} created).`,
-    );
+    logger.info(`[backfill] Tag cache primed: ${tagCache.size} tags total (${missing.length} created).`);
   }
 
   // ── 3. 이미 처리된 master 식별 (handle 로 product 존재 검사 + checkpoint 파일) ──
@@ -301,25 +300,23 @@ export default async function backfill({ container }: ExecArgs) {
       return toWorkflowInput(payload, { resolveTagId: (value) => tagCache.get(value) });
     });
 
+    const markProjectionLinksForHandles = async (handles: string[]) => {
+      const ensured = await ensureSellableInventoryProjectionLinks(container, {
+        productHandles: handles,
+        logger,
+      });
+      return new Set(
+        ensured.products.map((product: { handle?: string | null }) => product.handle).filter(Boolean) as string[],
+      );
+    };
+
     // 4c. createProductsWorkflow 일괄 호출
     try {
-      const { result } = await createProductsWorkflow(container).run({
+      await createProductsWorkflow(container).run({
         input: { products: inputs as any },
       });
-      const created = (result || []) as Array<{ id: string; handle?: string }>;
-      const createdHandles = new Set(created.map((p) => p.handle).filter(Boolean) as string[]);
-
-      for (const s of valid) {
-        if (createdHandles.has(s.masterId)) {
-          success += 1;
-          processed.add(s.masterId);
-        } else {
-          failed += 1;
-          await appendFailure(s.masterId, new Error('Workflow returned no product for this handle'));
-        }
-      }
     } catch (err: any) {
-      logger.error(`[backfill] Batch ${i}-${i + slice.length} failed wholesale: ${err?.message}`);
+      logger.error(`[backfill] Batch ${i}-${i + slice.length} product creation failed wholesale: ${err?.message}`);
       // 개별 단위 fallback — 어떤 1건이 batch 전체를 망가뜨렸을 수 있음
       for (const snapshot of valid) {
         const medusaCategoryIds = (snapshot.categoryIds || [])
@@ -332,6 +329,42 @@ export default async function backfill({ container }: ExecArgs) {
         const workflowInput = toWorkflowInput(payload, { resolveTagId: (value) => tagCache.get(value) });
         try {
           await createProductsWorkflow(container).run({ input: { products: [workflowInput as any] } });
+          const linkedHandles = await markProjectionLinksForHandles([snapshot.masterId]);
+          if (!linkedHandles.has(snapshot.masterId)) {
+            throw new Error('Projection link repair returned no product for this handle');
+          }
+          success += 1;
+          processed.add(snapshot.masterId);
+        } catch (perItemError: any) {
+          logger.warn(`[backfill] Failed ${snapshot.masterId}: ${perItemError?.message}`);
+          failed += 1;
+          await appendFailure(snapshot.masterId, perItemError);
+        }
+      }
+      continue;
+    }
+
+    try {
+      const linkedHandles = await markProjectionLinksForHandles(valid.map((snapshot) => snapshot.masterId));
+
+      for (const s of valid) {
+        if (linkedHandles.has(s.masterId)) {
+          success += 1;
+          processed.add(s.masterId);
+        } else {
+          failed += 1;
+          await appendFailure(s.masterId, new Error('Projection link repair returned no product for this handle'));
+        }
+      }
+    } catch (err: any) {
+      logger.error(`[backfill] Batch ${i}-${i + slice.length} projection link repair failed: ${err?.message}`);
+      // 상품 생성은 이미 성공했으므로 product creation 을 재시도하지 않고 projection link 만 개별 재시도한다.
+      for (const snapshot of valid) {
+        try {
+          const linkedHandles = await markProjectionLinksForHandles([snapshot.masterId]);
+          if (!linkedHandles.has(snapshot.masterId)) {
+            throw new Error('Projection link repair returned no product for this handle');
+          }
           success += 1;
           processed.add(snapshot.masterId);
         } catch (perItemError: any) {

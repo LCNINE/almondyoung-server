@@ -5,3 +5,4 @@
  */
 
 export * from './channel-adapter.types';
+export * from './medusa-inventory-projection';
