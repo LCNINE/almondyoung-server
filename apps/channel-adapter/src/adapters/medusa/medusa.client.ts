@@ -9,6 +9,17 @@ import type { PimCategoryDetail } from './pim.client';
 
 export interface MedusaOrder {
   id: string;
+  payment_status?:
+    | 'not_paid'
+    | 'awaiting'
+    | 'authorized'
+    | 'partially_authorized'
+    | 'captured'
+    | 'partially_captured'
+    | 'partially_refunded'
+    | 'refunded'
+    | 'requires_action'
+    | 'canceled';
   email?: string;
   customer_id?: string;
   currency_code?: string;
@@ -42,6 +53,19 @@ export interface MedusaOrder {
     address_1?: string;
     address_2?: string;
   };
+  payment_collections?: Array<{
+    id?: string;
+    payments?: Array<{
+      id?: string;
+      captures?: Array<{ id?: string }>;
+    }>;
+  }>;
+}
+
+const PAYMENT_ACCEPTED_STATUSES = new Set<MedusaOrder['payment_status']>(['authorized', 'captured']);
+
+function isPaymentAcceptedOrder(order: MedusaOrder): boolean {
+  return PAYMENT_ACCEPTED_STATUSES.has(order.payment_status);
 }
 
 @Injectable()
@@ -1217,7 +1241,7 @@ export class MedusaClient {
   /**
    * 결제 완료된 Medusa 주문 목록 조회 (증분 처리)
    *
-   * - payment_status: 'captured' | 'completed' (결제 완료된 주문만)
+   * - payment_status 기반으로 Payment Accepted 상태(authorized/captured)만 클라이언트 필터링
    * - updated_at[gt]: since (신규 + 변경 주문 모두 포함하는 증분 처리)
    * - line_items.variant.metadata, line_items.variant.product.metadata 포함
    */
@@ -1228,6 +1252,7 @@ export class MedusaClient {
 
     const fields = [
       'id',
+      'payment_status',
       'email',
       'customer_id',
       'currency_code',
@@ -1249,6 +1274,9 @@ export class MedusaClient {
       '+items.variant.product',
       '+items.variant.product.metadata',
       '*shipping_address',
+      'payment_collections.id',
+      'payment_collections.payments.id',
+      'payment_collections.payments.captures.id',
     ].join(',');
 
     while (true) {
@@ -1256,7 +1284,6 @@ export class MedusaClient {
         limit,
         offset,
         fields,
-        payment_status: ['captured', 'completed'],
       };
 
       if (params.since) {
@@ -1269,7 +1296,7 @@ export class MedusaClient {
       });
 
       const orders = result?.orders ?? [];
-      allOrders.push(...orders);
+      allOrders.push(...orders.filter(isPaymentAcceptedOrder));
 
       if (offset + orders.length >= (result?.count ?? 0) || orders.length < limit) {
         break;

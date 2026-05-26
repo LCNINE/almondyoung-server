@@ -2,18 +2,17 @@ import { OrderCreatedPayload, OrderItem, ShippingAddress } from '@packages/event
 
 export const CHANNEL_ORDER_PROVIDER = Symbol('CHANNEL_ORDER_PROVIDER');
 
-export type OrderFetchItem =
-  | { eventType: 'OrderCreated'; payload: OrderCreatedPayload }
-  | {
-      eventType: 'OrderModified';
-      externalOrderId: string;
-      changes: {
-        items: OrderItem[];
-        shippingAddress: ShippingAddress;
-        totalAmount: number;
-      };
-      modifiedAt: string;
-    };
+export interface OrderFetchItem {
+  externalOrderId: string;
+  sourceUpdatedAt: string;
+  createPayload: OrderCreatedPayload;
+  changes: {
+    items: OrderItem[];
+    shippingAddress: ShippingAddress;
+    totalAmount: number;
+  };
+  modifiedAt: string;
+}
 
 export interface FetchOrdersResult {
   orders: OrderFetchItem[];
