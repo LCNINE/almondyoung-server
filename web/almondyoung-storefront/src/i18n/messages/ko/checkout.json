@@ -175,7 +175,8 @@
     "couponDiscount": "쿠폰 할인",
     "toasts": {
       "couponApplyFailed": "쿠폰 적용에 실패했습니다. 잠시 후 다시 시도해주세요.",
-      "couponLimitExceeded": "이 쿠폰은 1인당 사용 한도에 도달했습니다."
+      "couponLimitExceeded": "이 쿠폰은 1인당 사용 한도에 도달했습니다.",
+      "couponNotAssigned": "이 쿠폰은 발급된 고객만 사용할 수 있습니다."
     }
   },
   "paymentTotal": {

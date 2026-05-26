@@ -175,7 +175,8 @@
     "couponDiscount": "Coupon discount",
     "toasts": {
       "couponApplyFailed": "Failed to apply the coupon. Please try again later.",
-      "couponLimitExceeded": "You have reached the usage limit for this coupon."
+      "couponLimitExceeded": "You have reached the usage limit for this coupon.",
+      "couponNotAssigned": "This coupon is only available for customers it was issued to."
     }
   },
   "paymentTotal": {

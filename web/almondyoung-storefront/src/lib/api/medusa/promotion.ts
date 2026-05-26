@@ -1,7 +1,7 @@
 "use server"
 
 import { sdk } from "@/lib/config/medusa"
-import { getAuthHeaders, getCacheOptions } from "@lib/data/cookies"
+import { getAuthHeaders } from "@lib/data/cookies"
 import type { PromotionsResponseDto } from "@lib/types/dto/promotion"
 import medusaError from "@lib/utils/medusa-error"
 
@@ -27,6 +27,23 @@ export async function getMyPromotions(params?: {
       query,
       headers,
       cache: "no-store",
+    })
+    .catch(medusaError)
+}
+
+/**
+ * 쿠폰 발급받기 (claimable 쿠폰만 가능)
+ * POST /store/customers/me/promotions/:id/claim
+ */
+export async function claimCoupon(promotionId: string): Promise<void> {
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  await sdk.client
+    .fetch(`/store/customers/me/promotions/${promotionId}/claim`, {
+      method: "POST",
+      headers,
     })
     .catch(medusaError)
 }

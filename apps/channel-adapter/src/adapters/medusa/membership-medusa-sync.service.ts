@@ -88,6 +88,11 @@ export class MembershipMedusaSyncService {
       if (addStatuses.has(status)) {
         await this.medusaClient.addCustomerToGroup(customer.id, membershipGroupId);
         this.refreshCartPricesAfterGroupChange(customer.id, userId);
+        // ACTIVE 전환 시 membership_activated 트리거 쿠폰 자동 발급.
+        // await해서 실패 시 membership inbox event가 재시도되도록 함.
+        if (status === 'ACTIVE') {
+          await this.medusaClient.issuePromotionsByTrigger(customer.id, 'membership_activated');
+        }
         await this.eventTrackingService
           .trackEffect({
             resourceType: 'MedusaCustomer',
