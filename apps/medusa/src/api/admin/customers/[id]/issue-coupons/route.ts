@@ -3,6 +3,7 @@ import { ContainerRegistrationKeys, Modules, MedusaError } from '@medusajs/frame
 import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
 import type PromotionMetaModuleService from '../../../../../modules/promotion-meta/service';
 import type { AutoIssueTrigger } from '../../../../../modules/promotion-meta/service';
+import { meetsGroupRule } from '../../../promotions/helpers';
 
 const VALID_TRIGGERS: AutoIssueTrigger[] = ['customer_registered', 'membership_activated', 'birthday'];
 
@@ -28,13 +29,17 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
   const { data: customers } = await query.graph({
     entity: 'customer',
-    fields: ['id'],
+    fields: ['id', 'groups.id'],
     filters: { id: customerId },
   });
 
   if (!customers?.length) {
     throw new MedusaError(MedusaError.Types.NOT_FOUND, `Customer ${customerId} not found`);
   }
+
+  const customerGroupIds = new Set<string>(
+    (customers[0].groups ?? []).map((g: any) => g.id as string),
+  );
 
   const metaRecords = await promotionMetaService.getByAutoIssueTrigger(trigger);
   if (!metaRecords.length) {
@@ -44,12 +49,17 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   const promotionIds = metaRecords.map((m: any) => m.promotion_id);
   const { data: promotions } = await query.graph({
     entity: 'promotion',
-    fields: ['id', 'code', 'status', 'is_automatic', 'campaign.starts_at', 'campaign.ends_at'],
+    fields: [
+      'id', 'code', 'status', 'is_automatic',
+      'campaign.starts_at', 'campaign.ends_at',
+      'rules.attribute', 'rules.operator', 'rules.values.value',
+    ],
     filters: { id: promotionIds, status: 'active', is_automatic: false },
   });
 
   const now = new Date();
   const validPromotions = (promotions as any[]).filter((p) => {
+    if (!meetsGroupRule(p, customerGroupIds)) return false;
     if (!p.campaign) return true;
     const starts = p.campaign.starts_at ? new Date(p.campaign.starts_at) : null;
     const ends = p.campaign.ends_at ? new Date(p.campaign.ends_at) : null;
