@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { useCreateCoupon } from '@/lib/services/coupons';
+import { useCreateCoupon, useCustomerGroupList } from '@/lib/services/coupons';
 import { useMe } from '@/lib/services/users';
 import { useProductSearch, useCategoryList, useCollectionList } from '@/lib/services/catalog';
 import type { PromotionTargetRule } from '@/lib/api/domains/medusa/promotions';
@@ -37,6 +37,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils/cn';
 import { useDebounced } from '@/hooks/use-debounced';
+import { type AutoIssueTrigger, AUTO_ISSUE_TRIGGER_LABELS } from '../coupon-helpers';
 
 function generateCode() {
   const bytes = new Uint8Array(6);
@@ -166,12 +167,17 @@ export function CouponCreateDialog({
   const [usageLimit, setUsageLimit] = useState<number | ''>('');
   const [spendLimit, setSpendLimit] = useState<number | ''>('');
   const [maxUsesPerCustomer, setMaxUsesPerCustomer] = useState<number | ''>('');
+  const [maxClaims, setMaxClaims] = useState<number | ''>('');
+  const [visibility, setVisibility] = useState<'public' | 'claimable' | 'assigned_only'>('public');
+  const [autoIssueTrigger, setAutoIssueTrigger] = useState<AutoIssueTrigger | ''>('');
+  const [customerGroupIds, setCustomerGroupIds] = useState<string[]>([]);
   const [targetType, setTargetType] = useState<'order' | 'items' | 'shipping_methods'>('order');
   const [targetAttribute, setTargetAttribute] = useState<TargetAttribute>('product_id');
   const [targetItems, setTargetItems] = useState<SelectedItem[]>([]);
 
   const createMutation = useCreateCoupon();
   const { data: me } = useMe();
+  const { data: allCustomerGroups = [] } = useCustomerGroupList();
 
   const handleToggleTargetItem = (item: SelectedItem) => {
     setTargetItems((prev) =>
@@ -187,19 +193,27 @@ export function CouponCreateDialog({
 
     const additional_data: Record<string, unknown> = {};
     if (trimmedName) additional_data.name = trimmedName;
-    if (maxUsesPerCustomer) additional_data.max_uses_per_customer = Number(maxUsesPerCustomer);
+    if (visibility === 'claimable' && maxClaims) additional_data.max_claims = Number(maxClaims);
     if (me) additional_data.created_by = me.email || me.username;
+    additional_data.visibility = visibility;
+    if (autoIssueTrigger) additional_data.auto_issue_trigger = autoIssueTrigger;
 
-    const hasCampaign = startsAt || endsAt || usageLimit || spendLimit;
+    const hasCampaign = startsAt || endsAt || usageLimit || spendLimit || maxUsesPerCustomer;
     const campaignIdentifier = `CAMP_${code.trim().toUpperCase()}`;
 
     const targetRules: PromotionTargetRule[] | undefined =
       targetType === 'items' && targetItems.length > 0
         ? [{ attribute: targetAttribute, operator: 'in', values: targetItems.map((i) => i.id) }]
         : undefined;
+
+    const promotionRules = customerGroupIds.length > 0
+      ? [{ attribute: 'customer.groups.id', operator: 'in', values: customerGroupIds }]
+      : undefined;
     const allocation = targetType === 'items' ? 'across' : undefined;
 
-    const campaignBudget = usageLimit
+    const campaignBudget = maxUsesPerCustomer
+      ? { type: 'use_by_attribute' as const, attribute: 'customer_id', limit: Number(maxUsesPerCustomer) }
+      : usageLimit
       ? { type: 'usage' as const, limit: Number(usageLimit) }
       : spendLimit
       ? { type: 'spend' as const, limit: Number(spendLimit) }
@@ -234,6 +248,7 @@ export function CouponCreateDialog({
               rules: [{ attribute: 'subtotal', operator: 'gte', values: [String(minOrderAmount)] }],
             }
           : {}),
+        ...(promotionRules ? { rules: promotionRules } : {}),
         ...(Object.keys(additional_data).length > 0 ? { additional_data } : {}),
       });
       toast.success('쿠폰이 생성되었습니다.');
@@ -255,6 +270,10 @@ export function CouponCreateDialog({
     setUsageLimit('');
     setSpendLimit('');
     setMaxUsesPerCustomer('');
+    setMaxClaims('');
+    setVisibility('public');
+    setAutoIssueTrigger('');
+    setCustomerGroupIds([]);
     setTargetType('order');
     setTargetAttribute('product_id');
     setTargetItems([]);
@@ -340,7 +359,7 @@ export function CouponCreateDialog({
           <div className="space-y-2">
             <Label>쿠폰 적용 대상</Label>
             <Select value={targetType} onValueChange={(v) => {
-              setTargetType(v as 'order' | 'items');
+              setTargetType(v as 'order' | 'items' | 'shipping_methods');
               setTargetItems([]);
             }}>
               <SelectTrigger className="h-9 text-sm">
@@ -439,11 +458,16 @@ export function CouponCreateDialog({
                   if (e.target.value) setSpendLimit('');
                 }}
                 placeholder="예: 100"
-                disabled={!!spendLimit}
+                disabled={!!spendLimit || !!maxUsesPerCustomer}
               />
-              {!!usageLimit && (
+              {!!usageLimit && !maxUsesPerCustomer && (
                 <p className="text-xs text-muted-foreground">
                   전체 {usageLimit.toLocaleString('ko-KR')}회 (선착순)
+                </p>
+              )}
+              {!!maxUsesPerCustomer && (
+                <p className="text-xs text-muted-foreground text-amber-600">
+                  1인당 제한 설정 시 총 횟수 제한은 무시됩니다
                 </p>
               )}
             </div>
@@ -458,9 +482,9 @@ export function CouponCreateDialog({
                   if (e.target.value) setUsageLimit('');
                 }}
                 placeholder="예: 5000000"
-                disabled={!!usageLimit}
+                disabled={!!usageLimit || !!maxUsesPerCustomer}
               />
-              {!!spendLimit && (
+              {!!spendLimit && !maxUsesPerCustomer && (
                 <p className="text-xs text-muted-foreground">
                   최대 {(spendLimit as number).toLocaleString('ko-KR')}원까지 할인 지급
                 </p>
@@ -484,6 +508,106 @@ export function CouponCreateDialog({
                 </p>
               )}
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>발급 방식</Label>
+            <Select value={visibility} onValueChange={(v) => setVisibility(v as 'public' | 'claimable' | 'assigned_only')}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="public">공개 — 모든 로그인 고객에게 노출</SelectItem>
+                <SelectItem value="claimable">발급받기 — 고객이 직접 발급받아야 사용 가능</SelectItem>
+                <SelectItem value="assigned_only">발급 고객 전용 — 관리자가 발급한 고객만 사용 가능</SelectItem>
+              </SelectContent>
+            </Select>
+            {visibility === 'claimable' && (
+              <p className="text-xs text-muted-foreground">
+                마이페이지에서 "발급받기" 버튼으로 고객이 직접 발급받을 수 있습니다.
+              </p>
+            )}
+            {visibility === 'claimable' && (
+              <div className="mt-3 space-y-2">
+                <Label>총 발급 가능 수량</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={maxClaims}
+                  onChange={(e) => setMaxClaims(e.target.value ? Number(e.target.value) : '')}
+                  placeholder="예: 100 (비워두면 무제한)"
+                />
+                {!!maxClaims && (
+                  <p className="text-xs text-muted-foreground">
+                    최대 {maxClaims.toLocaleString('ko-KR')}명까지 발급받을 수 있습니다.
+                  </p>
+                )}
+              </div>
+            )}
+            {visibility === 'assigned_only' && (
+              <p className="text-xs text-muted-foreground">
+                고객 발급 탭에서 직접 발급한 고객만 마이페이지에서 보이고 사용할 수 있습니다.
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label>대상 고객 그룹 (선택)</Label>
+            {allCustomerGroups.length === 0 ? (
+              <p className="text-xs text-muted-foreground">등록된 고객 그룹이 없습니다.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {allCustomerGroups.map((group) => {
+                  const isSelected = customerGroupIds.includes(group.id);
+                  return (
+                    <button
+                      key={group.id}
+                      type="button"
+                      onClick={() =>
+                        setCustomerGroupIds((prev) =>
+                          isSelected ? prev.filter((id) => id !== group.id) : [...prev, group.id],
+                        )
+                      }
+                      className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                        isSelected
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'border-border bg-background text-muted-foreground hover:border-primary hover:text-foreground'
+                      }`}
+                    >
+                      {group.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {customerGroupIds.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                선택된 그룹에 속한 고객만 이 쿠폰을 발급받거나 사용할 수 있습니다.
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label>자동 발급 트리거</Label>
+            <Select
+              value={autoIssueTrigger || 'none'}
+              onValueChange={(v) => setAutoIssueTrigger(v === 'none' ? '' : (v as AutoIssueTrigger))}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">없음 (수동 발급만)</SelectItem>
+                {(Object.entries(AUTO_ISSUE_TRIGGER_LABELS) as [AutoIssueTrigger, string][]).map(([key, label]) => (
+                  <SelectItem key={key} value={key}>{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {autoIssueTrigger && (
+              <p className="text-xs text-muted-foreground">
+                조건 충족 고객에게 시스템이 자동으로 발급합니다.
+              </p>
+            )}
           </div>
         </div>
 

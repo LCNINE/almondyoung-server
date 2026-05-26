@@ -13,7 +13,7 @@ export const PROMOTION_FIELDS = [
   'rules.id', 'rules.attribute', 'rules.operator', 'rules.values.value',
 ];
 
-const META_KEYS = ['name', 'max_discount_amount', 'max_uses_per_customer', 'created_by'] as const;
+const META_KEYS = ['name', 'max_discount_amount', 'created_by', 'visibility', 'max_claims', 'auto_issue_trigger'] as const;
 
 export function extractMetaFromAdditionalData(
   additional_data: Record<string, unknown> | undefined | null,
@@ -31,8 +31,10 @@ export function toMetadataShape(record: any): Record<string, unknown> | null {
   const result: Record<string, unknown> = {};
   if (record.name != null) result.name = record.name;
   if (record.max_discount_amount != null) result.max_discount_amount = record.max_discount_amount;
-  if (record.max_uses_per_customer != null) result.max_uses_per_customer = record.max_uses_per_customer;
   if (record.created_by != null) result.created_by = record.created_by;
+  result.visibility = record.visibility ?? 'public';
+  if (record.max_claims != null) result.max_claims = record.max_claims;
+  if (record.auto_issue_trigger != null) result.auto_issue_trigger = record.auto_issue_trigger;
   return Object.keys(result).length > 0 ? result : null;
 }
 

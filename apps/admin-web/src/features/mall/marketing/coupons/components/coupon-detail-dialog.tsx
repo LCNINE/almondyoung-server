@@ -16,6 +16,7 @@ import {
   getCouponMeta,
   StatusBadge,
   TARGET_ATTR_LABEL,
+  AUTO_ISSUE_TRIGGER_LABELS,
 } from '../coupon-helpers';
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -41,7 +42,7 @@ export function CouponDetailDialog({
 
   if (!c) return null;
 
-  const { name, maxUsesPerCustomer, createdBy } = getCouponMeta(c);
+  const { name, maxClaims, createdBy, visibility, autoIssueTrigger } = getCouponMeta(c);
   const m = c.application_method;
   const discountStr = m
     ? m.type === 'percentage'
@@ -52,6 +53,7 @@ export function CouponDetailDialog({
   const targetRules = m?.target_rules ?? [];
   const minOrder = c.rules?.find((r) => r.attribute === 'subtotal' && r.operator === 'gte');
   const budget = c.campaign?.budget;
+  const perCustomerLimit = (budget as any)?.type === 'use_by_attribute' ? Number((budget as any).limit) : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -91,15 +93,28 @@ export function CouponDetailDialog({
               {Number((minOrder.values[0] as any)?.value ?? minOrder.values[0]).toLocaleString('ko-KR')}원 이상
             </Row>
           )}
-          {budget?.limit && (
+          {budget?.limit && (budget as any)?.type !== 'use_by_attribute' && (
             <Row label="총 사용 한도">
               {budget.type === 'spend'
                 ? `${budget.limit.toLocaleString('ko-KR')}원 (사용: ${budget.used.toLocaleString('ko-KR')}원)`
                 : `${budget.limit.toLocaleString('ko-KR')}회 (사용: ${budget.used}회)`}
             </Row>
           )}
-          {maxUsesPerCustomer && (
-            <Row label="1인당 사용 한도">{maxUsesPerCustomer}회</Row>
+          {perCustomerLimit && (
+            <Row label="1인당 사용 한도">{perCustomerLimit}회</Row>
+          )}
+          <Row label="발급 방식">
+            {visibility === 'assigned_only' ? '발급 고객 전용' : visibility === 'claimable' ? '발급받기' : '공개'}
+          </Row>
+          {visibility === 'claimable' && (
+            <Row label="총 발급 수량">
+              {maxClaims ? `${maxClaims.toLocaleString('ko-KR')}명 한정` : '무제한'}
+            </Row>
+          )}
+          {autoIssueTrigger && (
+            <Row label="자동 발급">
+              {AUTO_ISSUE_TRIGGER_LABELS[autoIssueTrigger]}
+            </Row>
           )}
           <Row label="유효 기간">{formatPeriod(c)}</Row>
           <Row label="생성일">{formatCouponDateTime(c.created_at) ?? '-'}</Row>

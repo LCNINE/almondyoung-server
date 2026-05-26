@@ -30,10 +30,18 @@ export default defineMiddlewares({
     {
       matcher: '/store/carts/:id/promotions',
       method: 'POST',
-      middlewares: [perCustomerLimitMiddleware],
+      middlewares: [
+        authenticate('customer', ['session', 'bearer'], { allowUnauthenticated: true }),
+        perCustomerLimitMiddleware,
+      ],
     },
     {
       matcher: '/store/customers/me/promotions',
+      middlewares: [authenticate('customer', ['session', 'bearer'])],
+    },
+    {
+      matcher: '/store/customers/me/promotions/:id/claim',
+      method: 'POST',
       middlewares: [authenticate('customer', ['session', 'bearer'])],
     },
     {

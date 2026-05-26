@@ -30,3 +30,20 @@ export async function getMyPromotions(params?: {
     })
     .catch(medusaError)
 }
+
+/**
+ * 쿠폰 발급받기 (claimable 쿠폰만 가능)
+ * POST /store/customers/me/promotions/:id/claim
+ */
+export async function claimCoupon(promotionId: string): Promise<void> {
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  await sdk.client
+    .fetch(`/store/customers/me/promotions/${promotionId}/claim`, {
+      method: "POST",
+      headers,
+    })
+    .catch(medusaError)
+}

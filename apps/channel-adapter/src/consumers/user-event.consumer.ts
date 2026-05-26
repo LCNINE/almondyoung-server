@@ -3,7 +3,11 @@ import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { DbService } from '@app/db';
 import { DomainEvent } from '@packages/event-contracts/types';
-import type { Cafe24LinkedPayload, Cafe24UnlinkedPayload } from '@packages/event-contracts/streams/user.stream';
+import type {
+  Cafe24LinkedPayload,
+  Cafe24UnlinkedPayload,
+  UserEmailVerifiedPayload,
+} from '@packages/event-contracts/streams/user.stream';
 import { processedEvents, inboxEvents, cafe24MemberMappings } from '../schema';
 import { eq } from 'drizzle-orm';
 import type { ChannelAdapterSchema } from '../types';
@@ -20,6 +24,63 @@ export class UserEventConsumer {
   private readonly logger = new Logger(UserEventConsumer.name);
 
   constructor(private readonly dbService: DbService<ChannelAdapterSchema>) {}
+
+  @OnEvent('users.events.v1', 'UserEmailVerified')
+  async onUserEmailVerified(
+    @EventEnvelope() envelope: DomainEvent<UserEmailVerifiedPayload>,
+    @EventPayload() payload: UserEmailVerifiedPayload,
+  ): Promise<void> {
+    const { userId } = payload;
+    const idempotencyKey = envelope.messageId || `UserEmailVerified:${userId}`;
+
+    this.logger.log(`[User] UserEmailVerified 수신: userId=${userId}`);
+
+    try {
+      const db = this.dbService.db;
+
+      const [existing] = await db
+        .select()
+        .from(processedEvents)
+        .where(eq(processedEvents.idempotencyKey, idempotencyKey))
+        .limit(1);
+
+      if (existing) {
+        this.logger.debug(`[User] 이미 처리된 이벤트 스킵: ${idempotencyKey}`);
+        return;
+      }
+
+      await db.insert(processedEvents).values({
+        idempotencyKey,
+        source: 'users.events.v1',
+        eventType: 'UserEmailVerified',
+        resourceId: userId,
+        eventVersion: envelope.messageId || new Date().toISOString(),
+        status: 'PROCESSED',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      await db.insert(inboxEvents).values({
+        eventType: 'UserEmailVerified',
+        aggregateType: 'User',
+        aggregateId: userId,
+        partitionKey: userId,
+        payload,
+        metadata: {
+          correlationId: envelope.correlationId,
+          messageId: envelope.messageId,
+          chainId: envelope.chainId,
+        },
+        status: 'pending',
+        createdAt: new Date(),
+      });
+
+      this.logger.log(`[User] UserEmailVerified Inbox 저장 완료: userId=${userId}`);
+    } catch (error) {
+      this.logger.error(`[User] UserEmailVerified Inbox 저장 실패: userId=${userId}`, error?.message);
+      throw error;
+    }
+  }
 
   @OnEvent('users.events.v1', 'Cafe24Linked')
   async onCafe24Linked(
