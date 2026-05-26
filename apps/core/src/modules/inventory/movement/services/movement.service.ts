@@ -202,10 +202,7 @@ export class MovementService {
 
     return this.db.transaction(async (tx) => {
       const occurredAt = new Date();
-      const [journal] = await tx
-        .insert(wmsTables.stockJournals)
-        .values({ sourceType: 'MOVEMENT' })
-        .returning();
+      const [journal] = await tx.insert(wmsTables.stockJournals).values({ sourceType: 'MOVEMENT' }).returning();
 
       // warehouseId = toWarehouseId: completeInterWarehouseMovement에서 destination plan 조회 기준
       const [job] = await tx
@@ -299,7 +296,6 @@ export class MovementService {
             .where(eq(wmsTables.inboundPlans.id, plan.id));
         }
       }
-
     });
   }
 }

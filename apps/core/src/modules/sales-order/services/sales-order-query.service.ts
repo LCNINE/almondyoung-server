@@ -20,11 +20,7 @@ export class SalesOrderQueryService {
   /** SO + 라인 단건 조회 (Fulfillment이 FO 생성 시 사용) */
   async getSalesOrder(id: string, tx?: DbTx) {
     const db = tx ?? this.db.db;
-    const [order] = await db
-      .select()
-      .from(wmsTables.salesOrders)
-      .where(eq(wmsTables.salesOrders.id, id))
-      .limit(1);
+    const [order] = await db.select().from(wmsTables.salesOrders).where(eq(wmsTables.salesOrders.id, id)).limit(1);
     if (!order) return null;
     const lines = await db
       .select()
@@ -36,9 +32,6 @@ export class SalesOrderQueryService {
   /** SO 라인만 조회 */
   async getSalesOrderLines(salesOrderId: string, tx?: DbTx) {
     const db = tx ?? this.db.db;
-    return db
-      .select()
-      .from(wmsTables.salesOrderLines)
-      .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrderId));
+    return db.select().from(wmsTables.salesOrderLines).where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrderId));
   }
 }

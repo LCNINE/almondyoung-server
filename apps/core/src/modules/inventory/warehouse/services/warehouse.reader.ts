@@ -7,9 +7,7 @@ import { WAREHOUSE_CONSTANTS, WarehouseType } from '../../core/constants/warehou
 
 @Injectable()
 export class WarehouseReader {
-  constructor(
-    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
-  ) {}
+  constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
 
   private get db() {
     return this.dbService.db;

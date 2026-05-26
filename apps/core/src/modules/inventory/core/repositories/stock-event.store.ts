@@ -5,6 +5,7 @@ import { DbService } from '@app/db';
 import { and, or, eq, lte, gte, isNull } from 'drizzle-orm';
 import { sql } from 'drizzle-orm/sql';
 import { StockStateEnum } from '../../schema/enum-values';
+import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 
 // TransitionType alias for strong typing
 type TransitionType = (typeof wmsTables.stockEvents.$inferInsert)['transitionType'];
@@ -33,7 +34,10 @@ type CreateEventInput = {
 export class StockEventStore {
   private readonly logger = new Logger(StockEventStore.name);
 
-  constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
+  constructor(
+    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
+    private readonly productSellableQuantity: ProductSellableQuantityService,
+  ) {}
 
   private get db() {
     return this.dbService.db;
@@ -95,6 +99,8 @@ export class StockEventStore {
         toState: event.toState,
         quantity: event.quantity,
       });
+
+      await this.productSellableQuantity.recalculateAndPublishForSku(event.skuId, trx);
 
       this.logger.debug(`Created ${event.transitionType} ev#${event.id} sku=${event.skuId} qty=${event.quantity}`);
       return event;
@@ -343,6 +349,8 @@ export class StockEventStore {
         toState: rev.toState,
         quantity: rev.quantity,
       });
+
+      await this.productSellableQuantity.recalculateAndPublishForSku(rev.skuId, trx);
 
       this.logger.log(`Reversed event#${eventId} with new event#${rev.id} (${reverseType})`);
       return rev;

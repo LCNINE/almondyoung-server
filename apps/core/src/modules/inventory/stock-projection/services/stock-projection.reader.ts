@@ -153,10 +153,7 @@ export class StockProjectionReader {
         throw new NotFoundError(`SKU with ID ${skuId} not found`);
       }
 
-      const summaries = await trx
-        .select()
-        .from(wmsSchema.stockSummary)
-        .where(eq(wmsSchema.stockSummary.skuId, skuId));
+      const summaries = await trx.select().from(wmsSchema.stockSummary).where(eq(wmsSchema.stockSummary.skuId, skuId));
 
       const warehouseIds = summaries.map((s) => s.warehouseId);
       const warehouses = warehouseIds.length

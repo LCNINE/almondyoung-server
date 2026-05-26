@@ -371,7 +371,12 @@ export class InspectionService {
     rejectionRate: number;
     avgInspectionTime: number;
     commonIssues: Array<{ type: string; count: number; percentage: number }>;
-    inspectorPerformance: Array<{ inspectorUserId: string; inspections: number; approvalRate: number; avgTime: number }>;
+    inspectorPerformance: Array<{
+      inspectorUserId: string;
+      inspections: number;
+      approvalRate: number;
+      avgTime: number;
+    }>;
   }> {
     return {
       totalInspections: 0,

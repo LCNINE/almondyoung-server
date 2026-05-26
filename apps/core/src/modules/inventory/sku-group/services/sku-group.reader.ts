@@ -3,11 +3,7 @@ import { eq, isNull, desc, count } from 'drizzle-orm';
 import { NotFoundError } from '@app/shared';
 import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
-import {
-  SkuGroupResponseDto,
-  SkuGroupMemberDto,
-  SkuGroupMembersResponseDto,
-} from '../dto/sku-group-response.dto';
+import { SkuGroupResponseDto, SkuGroupMemberDto, SkuGroupMembersResponseDto } from '../dto/sku-group-response.dto';
 
 @Injectable()
 export class SkuGroupReader {
@@ -34,10 +30,7 @@ export class SkuGroupReader {
         throw new NotFoundError(`SKU group ${groupId} not found`);
       }
 
-      const [memberCountResult] = await trx
-        .select({ count: count() })
-        .from(skus)
-        .where(eq(skus.groupId, groupId));
+      const [memberCountResult] = await trx.select({ count: count() }).from(skus).where(eq(skus.groupId, groupId));
 
       return {
         id: group.id,

@@ -131,7 +131,7 @@ export class OutboxDispatcherService implements OnModuleInit {
     attempts: number;
   }) {
     try {
-      if (event.aggregate_type === 'Stock') {
+      if (event.aggregate_type === 'Stock' || event.aggregate_type === 'ProductSellableQuantity') {
         await this.inventoryPublisher.publishEvent({
           eventType: event.event_type as keyof InventoryEvents,
           aggregateId: event.aggregate_id,

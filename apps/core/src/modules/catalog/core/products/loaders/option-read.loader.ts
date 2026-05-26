@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { and, asc, eq, inArray } from 'drizzle-orm';
-import { DbTransaction, OptionGroupReadModel, OptionValueReadModel, VariantOptionValueReadModel } from '../../../catalog.types';
+import {
+  DbTransaction,
+  OptionGroupReadModel,
+  OptionValueReadModel,
+  VariantOptionValueReadModel,
+} from '../../../catalog.types';
 import {
   productMasterOptionGroups,
   productOptionGroups,

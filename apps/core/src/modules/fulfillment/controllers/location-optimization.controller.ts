@@ -34,7 +34,13 @@ export class LocationOptimizationController {
   async getZoneConfiguration() {
     return {
       zones: [
-        { zoneCode: 'A', name: 'Fast Moving', type: 'fast_moving', priority: 1, description: 'High-velocity items for quick picking' },
+        {
+          zoneCode: 'A',
+          name: 'Fast Moving',
+          type: 'fast_moving',
+          priority: 1,
+          description: 'High-velocity items for quick picking',
+        },
         { zoneCode: 'B', name: 'Standard', type: 'standard', priority: 2, description: 'Regular inventory items' },
         { zoneCode: 'C', name: 'Bulk Storage', type: 'bulk', priority: 3, description: 'Slow-moving and bulk items' },
       ],
