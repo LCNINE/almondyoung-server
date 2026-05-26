@@ -7,12 +7,17 @@ import { v7 } from 'uuid';
 import { PimMedusaSyncService } from './pim-medusa-sync.service';
 import { MembershipMedusaSyncService } from './membership-medusa-sync.service';
 import { FirebaseMembershipSyncService } from './firebase-membership-sync.service';
+import { MedusaClient } from './medusa.client';
 import { AlmondAuthClient } from '../almond-auth/almond-auth.client';
 import { EventChainService, generateMessageId } from '@app/events';
 import type { PimActiveVersionChangedEvent, ChannelAdapterSchema } from '../../types';
 import type { CategoryChangedPayload } from '@packages/event-contracts/streams/product.stream';
 import type { MembershipStatusChangedPayload } from '@packages/event-contracts/streams/membership.stream';
-import type { Cafe24LinkedPayload, Cafe24UnlinkedPayload } from '@packages/event-contracts/streams/user.stream';
+import type {
+  Cafe24LinkedPayload,
+  Cafe24UnlinkedPayload,
+  UserEmailVerifiedPayload,
+} from '@packages/event-contracts/streams/user.stream';
 
 @Injectable()
 export class InboxWorkerService implements OnModuleInit {
@@ -28,6 +33,7 @@ export class InboxWorkerService implements OnModuleInit {
     private readonly syncService: PimMedusaSyncService,
     private readonly membershipSyncService: MembershipMedusaSyncService,
     private readonly firebaseMembershipSyncService: FirebaseMembershipSyncService,
+    private readonly medusaClient: MedusaClient,
     private readonly almondAuthClient: AlmondAuthClient,
     private readonly configService: ConfigService,
     private readonly eventChainService: EventChainService,
@@ -170,6 +176,20 @@ export class InboxWorkerService implements OnModuleInit {
           const membershipPayload: MembershipStatusChangedPayload = event.payload;
           await this.membershipSyncService.handleMembershipStatusChanged(membershipPayload);
           break;
+
+        case 'UserEmailVerified': {
+          const userPayload: UserEmailVerifiedPayload = event.payload;
+          const customer = await this.medusaClient.findCustomerByAlmondUserId(userPayload.userId);
+          if (!customer) {
+            // Medusa customer는 첫 storefront 로그인 시 생성됨 → 이메일 인증 직후엔 없을 수 있음.
+            // 에러를 throw해 inbox가 재시도하도록 한다 (maxRetries 초과 시 failed 상태로 남음).
+            throw new Error(
+              `[UserEmailVerified] No Medusa customer found for userId=${userPayload.userId}; will retry`,
+            );
+          }
+          await this.medusaClient.issuePromotionsByTrigger(customer.id, 'customer_registered');
+          break;
+        }
 
         case 'Cafe24Linked': {
           const linkedPayload: Cafe24LinkedPayload = event.payload;
