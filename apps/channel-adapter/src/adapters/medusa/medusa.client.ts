@@ -6,6 +6,12 @@ import type { HttpTypes } from '@medusajs/types';
 import { createMedusaSdk } from './medusa-sdk.config';
 import type { MedusaProductPayload, MedusaProduct } from '../../types';
 import type { PimCategoryDetail } from './pim.client';
+import {
+  isMedusaProductSellableInventoryItem,
+  shouldManageMedusaInventoryForSellableProjection,
+  toMedusaProductSellableInventorySku,
+} from '@packages/domain-types';
+import type { ProductSellableQuantityChangedPayload } from '@packages/event-contracts';
 
 export interface MedusaOrder {
   id: string;
@@ -110,6 +116,7 @@ export class MedusaClient {
   private readonly tagCache = new Map<string, string>(); // key: value
   private readonly typeCache = new Map<string, string>(); // key: value
   private readonly salesChannelCache = new Map<string, string>(); // key: name
+  private projectionStockLocationId?: string;
   // 대용량 상품일 때 한번에 보내는 variants 수를 제한 (unknown_error 완화 목적)
   private readonly MAX_VARIANTS_PER_REQUEST = 30;
 
@@ -867,7 +874,9 @@ export class MedusaClient {
   private async getProductWithVariantDetails(productId: string): Promise<MedusaProduct> {
     const { product } = await this.sdk.admin.product.retrieve(productId, {
       fields:
-        'id,*variants,+variants.metadata,+variants.manage_inventory,+variants.sku,+variants.title,+variants.inventory_items',
+        'id,*variants,+variants.metadata,+variants.manage_inventory,+variants.sku,+variants.title,' +
+        '+variants.inventory_items,+variants.inventory_items.inventory.id,+variants.inventory_items.inventory.sku,' +
+        '+variants.inventory_items.inventory.metadata',
     });
     return product as MedusaProduct;
   }
@@ -883,30 +892,39 @@ export class MedusaClient {
     const existingProduct = await this.getProductWithVariantDetails(productId);
     const existingVariants = existingProduct.variants || [];
 
-    const pimVariantIdToVariantId = new Map<string, string>();
-    const skuToVariantId = new Map<string, string>();
+    type PayloadVariant = NonNullable<MedusaProductPayload['variants']>[number];
+    type ExistingVariant = NonNullable<MedusaProduct['variants']>[number];
+    const pimVariantIdToVariant = new Map<string, ExistingVariant>();
+    const skuToVariant = new Map<string, ExistingVariant>();
     for (const variant of existingVariants) {
       const pimVariantId = variant.metadata?.pimVariantId;
       if (pimVariantId) {
-        pimVariantIdToVariantId.set(pimVariantId, variant.id);
+        pimVariantIdToVariant.set(pimVariantId, variant);
       }
       if (variant.sku) {
-        skuToVariantId.set(variant.sku, variant.id);
+        skuToVariant.set(variant.sku, variant);
       }
     }
 
     const variants = payload.variants.map((variant) => {
       const pimVariantId = variant.metadata?.pimVariantId;
-      const matchedId =
-        (pimVariantId ? pimVariantIdToVariantId.get(pimVariantId) : undefined) ||
-        (variant.sku ? skuToVariantId.get(variant.sku) : undefined);
+      const matchedVariant =
+        (pimVariantId ? pimVariantIdToVariant.get(pimVariantId) : undefined) ||
+        (variant.sku ? skuToVariant.get(variant.sku) : undefined);
 
-      return {
+      if (!matchedVariant) {
+        return variant;
+      }
+
+      const enriched: PayloadVariant = {
         ...variant,
-        // 동기화 대상 variant는 임시로 재고 관리 비활성화
-        manage_inventory: false,
-        ...(matchedId ? { id: matchedId } : {}),
+        id: matchedVariant.id,
       };
+      if (typeof matchedVariant.manage_inventory === 'boolean') {
+        enriched.manage_inventory = matchedVariant.manage_inventory;
+      }
+
+      return enriched;
     });
 
     return {
@@ -915,10 +933,15 @@ export class MedusaClient {
     };
   }
 
-  private async getOrCreateInventoryItemBySku(sku: string, title: string): Promise<string> {
+  private async getOrCreateSellableProjectionInventoryItem(params: {
+    pimVariantId: string;
+    title: string;
+  }): Promise<string> {
+    const sku = toMedusaProductSellableInventorySku(params.pimVariantId);
     const existing = await this.sdk.admin.inventoryItem.list({
       sku,
       limit: 1,
+      fields: 'id,sku,metadata',
     });
     const existingItemId = existing.inventory_items?.[0]?.id;
     if (existingItemId) {
@@ -928,7 +951,13 @@ export class MedusaClient {
     try {
       const created = await this.sdk.admin.inventoryItem.create({
         sku,
-        title,
+        title: params.title,
+        requires_shipping: true,
+        metadata: {
+          projectionType: 'product_sellable_quantity',
+          projectionSource: 'core',
+          pimVariantId: params.pimVariantId,
+        },
       });
       if (!created.inventory_item?.id) {
         throw new Error('Medusa API returned no inventory item id');
@@ -954,80 +983,16 @@ export class MedusaClient {
     }
   }
 
-  // SKU 다수를 한 번의 LIST 호출로 inventory_item id 매핑.
-  // SDK 가 sku 배열 필터를 받아주지 않으면 50개 청크 단위로 LIST + q 검색 fallback.
-  private async bulkSkuToInventoryItemId(skus: string[]): Promise<Map<string, string>> {
-    const result = new Map<string, string>();
-    if (skus.length === 0) return result;
-    const uniqueSkus = Array.from(new Set(skus));
-    const chunkSize = 50;
-    for (let i = 0; i < uniqueSkus.length; i += chunkSize) {
-      const chunk = uniqueSkus.slice(i, i + chunkSize);
-      try {
-        // Medusa v2 가 array filter 를 받으면 한 번에, 아니면 fallback 으로 분기.
-        const { inventory_items } = await this.sdk.admin.inventoryItem.list({
-          sku: chunk,
-          limit: chunk.length,
-        } as any);
-        for (const item of inventory_items || []) {
-          if (item.sku && item.id) result.set(item.sku, item.id);
-        }
-      } catch (error) {
-        const fetchError = error as FetchError;
-        this.logger.warn(
-          `Bulk SKU lookup failed (${chunk.length} skus), falling back to per-sku LIST: ${fetchError.message}`,
-        );
-        // 개별 LIST fallback — 이 경로는 비상시에만 타지만 그래도 N 회는 직렬보다 병렬로.
-        const found = await Promise.all(
-          chunk.map(async (sku) => {
-            try {
-              const { inventory_items } = await this.sdk.admin.inventoryItem.list({ sku, limit: 1 });
-              const id = inventory_items?.[0]?.id;
-              return id ? { sku, id } : null;
-            } catch {
-              return null;
-            }
-          }),
-        );
-        for (const entry of found) {
-          if (entry) result.set(entry.sku, entry.id);
-        }
-      }
-    }
-    return result;
-  }
-
-  // 누락된 SKU 들에 대해 inventory_item 을 약한 동시성(기본 5)으로 생성.
-  private async createMissingInventoryItems(
-    items: Array<{ sku: string; title: string }>,
-    concurrency = 5,
-  ): Promise<Map<string, string>> {
-    const created = new Map<string, string>();
-    for (let i = 0; i < items.length; i += concurrency) {
-      const slice = items.slice(i, i + concurrency);
-      const results = await Promise.all(
-        slice.map(async (x) => {
-          const id = await this.getOrCreateInventoryItemBySku(x.sku, x.title);
-          return { sku: x.sku, id };
-        }),
-      );
-      for (const { sku, id } of results) created.set(sku, id);
-    }
-    return created;
-  }
-
-  // variant ↔ inventory_item link 보장.
-  // - latestProduct 를 옵셔널로 받아 caller(`upsertProduct`)가 갖고 있는 객체를 재사용 가능.
-  //   (단, SDK 응답이 +variants.inventory_items 를 포함하지 않으면 내부에서 재조회.)
-  // - SKU 일괄 lookup + 단일 batchVariantInventoryItems 호출로 variant 수에 무관하게
-  //   1~3 회 round-trip 으로 끝낸다.
+  // PIM variant ↔ Medusa-local Product Sellable Quantity inventory item link 보장.
+  // inventory_item 은 Core SKU 정체성이 아니라 Medusa checkout projection 저장소다.
   private async ensureVariantInventoryLinks(
     productId: string,
     sourceVariants: MedusaProductPayload['variants'],
     latestProduct?: MedusaProduct,
-  ): Promise<void> {
+  ): Promise<Map<string, { variantId: string; inventoryItemId: string }>> {
+    const ensured = new Map<string, { variantId: string; inventoryItemId: string }>();
     if (!sourceVariants || sourceVariants.length === 0) {
-      return;
+      return ensured;
     }
 
     // inventory_items 까지 포함된 product 가 필요. 없으면 한 번 fetch.
@@ -1059,72 +1024,110 @@ export class MedusaClient {
         ? sourceByPimVariantId.get(medusaVariant.metadata.pimVariantId)
         : undefined) || (medusaVariant.sku ? sourceBySku.get(medusaVariant.sku) : undefined);
 
-    // ── 1. manage_inventory 강제 ON 대상 수집 → 단일 batchVariants 호출 ──
-    const variantsToForceManageInventory = medusaVariants
-      .filter((medusaVariant) => {
-        const src = matchSrc(medusaVariant);
-        if (!src || src.manage_inventory === false) return false;
-        return medusaVariant.manage_inventory !== true;
-      })
-      .map((medusaVariant) => ({ id: medusaVariant.id, manage_inventory: true }));
+    type LinkTarget = {
+      variantId: string;
+      pimVariantId: string;
+      title: string;
+      projectionInventoryItemId?: string;
+      staleInventoryItemIds: string[];
+    };
+    const linkTargets: LinkTarget[] = [];
 
-    if (variantsToForceManageInventory.length > 0) {
-      await this.sdk.admin.product.batchVariants(productId, {
-        update: variantsToForceManageInventory,
+    for (const medusaVariant of medusaVariants) {
+      const src = matchSrc(medusaVariant);
+      const pimVariantId = src?.metadata?.pimVariantId || medusaVariant.metadata?.pimVariantId;
+      if (!src || !pimVariantId) continue;
+
+      const inventoryLinks = Array.isArray((medusaVariant as any).inventory_items)
+        ? ((medusaVariant as any).inventory_items as any[])
+        : [];
+      const projectionSku = toMedusaProductSellableInventorySku(pimVariantId);
+      const projectionLink = inventoryLinks.find((link) => {
+        const inventory = link.inventory as
+          | { sku?: string | null; metadata?: Record<string, unknown> | null }
+          | undefined;
+        return (
+          link.inventory_item_id &&
+          (inventory?.sku === projectionSku ||
+            ((inventory?.metadata as Record<string, unknown> | null | undefined)?.pimVariantId === pimVariantId &&
+              isMedusaProductSellableInventoryItem(inventory)))
+        );
+      });
+      const staleInventoryItemIds = inventoryLinks
+        .filter((link) => link.inventory_item_id && link.inventory_item_id !== projectionLink?.inventory_item_id)
+        .map((link) => link.inventory_item_id as string);
+
+      linkTargets.push({
+        variantId: medusaVariant.id,
+        pimVariantId,
+        title: medusaVariant.title || src.title || projectionSku,
+        projectionInventoryItemId: projectionLink?.inventory_item_id,
+        staleInventoryItemIds,
       });
     }
 
-    // ── 2. inventory link 가 필요한 variant 만 추림 ──
-    type LinkTarget = { variantId: string; sku: string; title: string };
-    const linkTargets: LinkTarget[] = [];
-    for (const medusaVariant of medusaVariants) {
-      const src = matchSrc(medusaVariant);
-      if (!src || src.manage_inventory === false) continue;
+    if (linkTargets.length === 0) return ensured;
 
-      const hasInventoryLink =
-        Array.isArray((medusaVariant as any).inventory_items) && (medusaVariant as any).inventory_items.length > 0;
-      if (hasInventoryLink) continue;
+    const createPayload: Array<{ inventory_item_id: string; variant_id: string; required_quantity: number }> = [];
+    const updatePayload: Array<{ inventory_item_id: string; variant_id: string; required_quantity: number }> = [];
+    const deletePayload: Array<{ inventory_item_id: string; variant_id: string }> = [];
 
-      const pimVariantId = src.metadata?.pimVariantId || medusaVariant.id;
-      const sku = medusaVariant.sku || src.sku || `pim-${pimVariantId}`;
-      const title = medusaVariant.title || src.title || sku;
-      linkTargets.push({ variantId: medusaVariant.id, sku, title });
-    }
+    for (const target of linkTargets) {
+      const inventoryItemId =
+        target.projectionInventoryItemId ??
+        (await this.getOrCreateSellableProjectionInventoryItem({
+          pimVariantId: target.pimVariantId,
+          title: target.title,
+        }));
 
-    if (linkTargets.length === 0) return;
+      ensured.set(target.pimVariantId, { variantId: target.variantId, inventoryItemId });
 
-    // ── 3. SKU 일괄 lookup → 누락 SKU 만 동시 create ──
-    const skuToItemId = await this.bulkSkuToInventoryItemId(linkTargets.map((t) => t.sku));
-    const missing = linkTargets.filter((t) => !skuToItemId.has(t.sku));
-    if (missing.length > 0) {
-      const created = await this.createMissingInventoryItems(missing.map((m) => ({ sku: m.sku, title: m.title })));
-      for (const [sku, id] of created.entries()) skuToItemId.set(sku, id);
-    }
-
-    // ── 4. 모든 link 를 단일 batchVariantInventoryItems 호출로 ──
-    const createPayload = linkTargets
-      .map((t) => {
-        const inventoryItemId = skuToItemId.get(t.sku);
-        if (!inventoryItemId) return null;
-        return {
+      if (!target.projectionInventoryItemId) {
+        createPayload.push({
           inventory_item_id: inventoryItemId,
-          variant_id: t.variantId,
+          variant_id: target.variantId,
           required_quantity: 1,
-        };
-      })
-      .filter((x): x is NonNullable<typeof x> => x !== null);
+        });
+      } else {
+        const link = (medusaVariants.find((variant) => variant.id === target.variantId) as any)?.inventory_items?.find(
+          (item: any) => item.inventory_item_id === inventoryItemId,
+        );
+        if (link?.required_quantity !== undefined && link.required_quantity !== 1) {
+          updatePayload.push({
+            inventory_item_id: inventoryItemId,
+            variant_id: target.variantId,
+            required_quantity: 1,
+          });
+        }
+      }
 
-    if (createPayload.length === 0) return;
+      for (const staleInventoryItemId of target.staleInventoryItemIds) {
+        deletePayload.push({
+          inventory_item_id: staleInventoryItemId,
+          variant_id: target.variantId,
+        });
+      }
+    }
+
+    if (createPayload.length === 0 && updatePayload.length === 0 && deletePayload.length === 0) {
+      return ensured;
+    }
 
     try {
-      await this.sdk.admin.product.batchVariantInventoryItems(productId, { create: createPayload });
-      this.logger.log(`Linked ${createPayload.length} variant inventory items in one batch (product ${productId})`);
+      await this.sdk.admin.product.batchVariantInventoryItems(productId, {
+        create: createPayload,
+        update: updatePayload,
+        delete: deletePayload,
+      });
+      this.logger.log(
+        `Ensured ${ensured.size} sellable projection inventory links for product ${productId} ` +
+          `(created=${createPayload.length}, updated=${updatePayload.length}, removed=${deletePayload.length})`,
+      );
     } catch (error) {
       const fetchError = error as FetchError;
       const isConflict = fetchError.status === 409 || /already exists/i.test(fetchError.message || '');
       if (!isConflict) throw error;
 
-      // 일부 link 가 race condition 으로 이미 존재. variant 단위 재시도(skip 가능 한 것은 skip).
       this.logger.warn(
         `batchVariantInventoryItems hit conflict; retrying per-variant for ${createPayload.length} entries`,
       );
@@ -1143,7 +1146,152 @@ export class MedusaClient {
           throw perItemError;
         }
       }
+      if (deletePayload.length > 0) {
+        await this.sdk.admin.product.batchVariantInventoryItems(productId, { delete: deletePayload });
+      }
+      if (updatePayload.length > 0) {
+        await this.sdk.admin.product.batchVariantInventoryItems(productId, { update: updatePayload });
+      }
     }
+
+    return ensured;
+  }
+
+  private async getProjectionStockLocationId(): Promise<string> {
+    if (this.projectionStockLocationId) {
+      return this.projectionStockLocationId;
+    }
+
+    const defaultSalesChannelId = await this.getDefaultSalesChannel();
+    const configuredId = this.configService.get<string>('MEDUSA_INVENTORY_PROJECTION_STOCK_LOCATION_ID');
+    if (configuredId) {
+      const { stock_location: configuredLocation } = await this.sdk.admin.stockLocation.retrieve(configuredId, {
+        fields: 'id,name,*sales_channels',
+      });
+      if (!configuredLocation?.id) {
+        throw new Error(`Configured Medusa stock location not found: ${configuredId}`);
+      }
+      await this.ensureStockLocationSalesChannelLink(configuredLocation, defaultSalesChannelId);
+      this.projectionStockLocationId = configuredId;
+      return configuredId;
+    }
+
+    const preferredName =
+      this.configService.get<string>('MEDUSA_INVENTORY_PROJECTION_STOCK_LOCATION_NAME') || '한국 물류창고';
+
+    const { stock_locations: stockLocations } = await this.sdk.admin.stockLocation.list({
+      limit: 100,
+      fields: 'id,name,*sales_channels',
+    } as any);
+
+    let stockLocation =
+      stockLocations?.find((location) =>
+        location.sales_channels?.some((channel) => channel.id === defaultSalesChannelId),
+      ) ??
+      stockLocations?.find((location) => location.name === preferredName) ??
+      stockLocations?.[0];
+
+    if (!stockLocation) {
+      const created = await this.sdk.admin.stockLocation.create(
+        {
+          name: preferredName,
+          address: { country_code: 'kr', address_1: '' },
+        } as any,
+        { fields: 'id,name,*sales_channels' },
+      );
+      stockLocation = created.stock_location;
+    }
+
+    await this.ensureStockLocationSalesChannelLink(stockLocation, defaultSalesChannelId);
+
+    this.projectionStockLocationId = stockLocation.id;
+    return stockLocation.id;
+  }
+
+  private async ensureStockLocationSalesChannelLink(
+    stockLocation: { id: string; sales_channels?: Array<{ id?: string | null }> },
+    defaultSalesChannelId: string,
+  ): Promise<void> {
+    const linkedToDefaultSalesChannel = stockLocation.sales_channels?.some(
+      (channel) => channel.id === defaultSalesChannelId,
+    );
+    if (!linkedToDefaultSalesChannel) {
+      await this.sdk.admin.stockLocation.updateSalesChannels(stockLocation.id, {
+        add: [defaultSalesChannelId],
+      });
+    }
+  }
+
+  private async upsertProjectionInventoryLevel(inventoryItemId: string, stockedQuantity: number): Promise<void> {
+    const locationId = await this.getProjectionStockLocationId();
+    const { inventory_levels: levels } = await this.sdk.admin.inventoryItem.listLevels(inventoryItemId, {
+      location_id: locationId,
+      limit: 1,
+    } as any);
+
+    const normalizedQuantity = Math.max(0, Math.trunc(stockedQuantity || 0));
+    if (levels?.[0]) {
+      await this.sdk.admin.inventoryItem.updateLevel(inventoryItemId, locationId, {
+        stocked_quantity: normalizedQuantity,
+      });
+      return;
+    }
+
+    await this.sdk.admin.inventoryItem.batchInventoryItemLocationLevels(inventoryItemId, {
+      create: [{ location_id: locationId, stocked_quantity: normalizedQuantity }],
+      update: [],
+      delete: [],
+    });
+  }
+
+  async applyProductSellableQuantityProjection(
+    input: ProductSellableQuantityChangedPayload & {
+      medusaProductId: string;
+    },
+  ): Promise<void> {
+    const product = await this.getProductWithVariantDetails(input.medusaProductId);
+    const medusaVariant = product.variants?.find((variant) => variant.metadata?.pimVariantId === input.variantId);
+
+    if (!medusaVariant) {
+      throw new Error(
+        `Medusa variant with pimVariantId=${input.variantId} not found on product ${input.medusaProductId}`,
+      );
+    }
+
+    const ensuredLinks = await this.ensureVariantInventoryLinks(
+      product.id,
+      [
+        {
+          id: medusaVariant.id,
+          title: medusaVariant.title,
+          sku: medusaVariant.sku,
+          metadata: { pimVariantId: input.variantId },
+        },
+      ],
+      product,
+    );
+    const ensuredLink = ensuredLinks.get(input.variantId);
+    if (!ensuredLink) {
+      throw new Error(`Failed to ensure sellable projection inventory link for pimVariantId=${input.variantId}`);
+    }
+
+    const shouldManageInventory = shouldManageMedusaInventoryForSellableProjection(input);
+    if (medusaVariant.manage_inventory !== shouldManageInventory) {
+      await this.sdk.admin.product.batchVariants(product.id, {
+        update: [{ id: medusaVariant.id, manage_inventory: shouldManageInventory }],
+      });
+    }
+
+    await this.upsertProjectionInventoryLevel(
+      ensuredLink.inventoryItemId,
+      shouldManageInventory ? input.sellableQuantity : 0,
+    );
+
+    this.logger.log(
+      `Applied Product Sellable Quantity projection: pimVariantId=${input.variantId}, ` +
+        `medusaVariant=${medusaVariant.id}, manage_inventory=${shouldManageInventory}, ` +
+        `stocked_quantity=${shouldManageInventory ? input.sellableQuantity : 0}, reason=${input.reason ?? 'unknown'}`,
+    );
   }
 
   private async safeDeleteProduct(productId: string): Promise<void> {

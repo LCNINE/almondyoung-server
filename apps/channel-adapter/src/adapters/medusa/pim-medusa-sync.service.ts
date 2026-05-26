@@ -8,6 +8,7 @@ import type { PimActiveVersionChangedEvent, PimProductSnapshot, MedusaProduct } 
 // PIMCLIENT: Type import removed
 // import type { PimCategoryDetail } from './pim.client';
 import type { CategoryChangedPayload } from '@packages/event-contracts/streams/product.stream';
+import type { ProductSellableQuantityChangedPayload } from '@packages/event-contracts/streams/inventory.stream';
 
 export interface SyncResult {
   success: boolean;
@@ -468,6 +469,35 @@ export class PimMedusaSyncService {
       default:
         this.logger.warn(`Unknown changeReason: ${changeReason}`);
     }
+  }
+
+  async handleProductSellableQuantityChanged(payload: ProductSellableQuantityChangedPayload): Promise<void> {
+    if (!payload.masterId) {
+      throw new Error(
+        `ProductSellableQuantityChanged missing masterId for variant ${payload.variantId}; cannot resolve Medusa product`,
+      );
+    }
+
+    let medusaProductId: string | undefined;
+    const mapping = await this.mappingRepo.findByPimMasterId(payload.masterId);
+    if (mapping?.medusaProductId) {
+      medusaProductId = mapping.medusaProductId;
+    } else {
+      const product = await this.medusaClient.findProductByHandle(payload.masterId);
+      medusaProductId = product?.id;
+    }
+
+    if (!medusaProductId) {
+      throw new Error(
+        `Medusa product not found for ProductSellableQuantityChanged masterId=${payload.masterId}, ` +
+          `variantId=${payload.variantId}`,
+      );
+    }
+
+    await this.medusaClient.applyProductSellableQuantityProjection({
+      ...payload,
+      medusaProductId,
+    });
   }
 
   // PIMCLIENT: PIM health check removed - only check Medusa (external dependency)

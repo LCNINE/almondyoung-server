@@ -26,6 +26,7 @@ import {
   ORDER_STREAM,
   FULFILLMENT_STREAM,
   PRODUCT_STREAM,
+  INVENTORY_STREAM,
   MEMBERSHIP_STREAM,
   USER_STREAM,
   PAYMENT_STREAM,
@@ -65,6 +66,7 @@ import { PimMedusaSyncService } from './adapters/medusa/pim-medusa-sync.service'
 import { MembershipMedusaSyncService } from './adapters/medusa/membership-medusa-sync.service';
 import { PimProductEventConsumer } from './consumers/pim-product-event.consumer';
 import { PimCategoryConsumer } from './consumers/pim-category.consumer';
+import { ProductSellableQuantityConsumer } from './consumers/product-sellable-quantity.consumer';
 import { MembershipEventConsumer } from './consumers/membership-event.consumer';
 import { PimMedusaMappingRepository } from './adapters/medusa/pim-medusa-mapping.repository';
 import { InboxWorkerService } from './adapters/medusa/inbox-worker.service';
@@ -107,6 +109,7 @@ import { OrderPollerOrchestrator } from './services/order-collection/order-polle
               ORDER_STREAM,
               FULFILLMENT_STREAM,
               PRODUCT_STREAM,
+              INVENTORY_STREAM,
               MEMBERSHIP_STREAM,
               USER_STREAM,
               PAYMENT_STREAM,
@@ -128,6 +131,7 @@ import { OrderPollerOrchestrator } from './services/order-collection/order-polle
     FulfillmentEventsConsumer,
     PimProductEventConsumer,
     PimCategoryConsumer,
+    ProductSellableQuantityConsumer,
     MembershipEventConsumer,
     UserEventConsumer,
     PaymentEventsConsumer,
@@ -179,6 +183,7 @@ import { OrderPollerOrchestrator } from './services/order-collection/order-polle
     MembershipMedusaSyncService,
     PimProductEventConsumer,
     PimCategoryConsumer,
+    ProductSellableQuantityConsumer,
     MembershipEventConsumer,
     PimMedusaMappingRepository,
     InboxWorkerService,

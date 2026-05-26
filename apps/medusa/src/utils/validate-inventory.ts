@@ -1,5 +1,6 @@
 import { MedusaError, Modules, ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { IInventoryService, IProductModuleService } from '@medusajs/framework/types';
+import { isMedusaProductSellableInventoryItem } from './medusa-inventory-projection';
 
 export type ValidateInventoryInput = {
   items: {
@@ -38,7 +39,7 @@ export const validateInventoryForItems = async (input: ValidateInventoryInput, c
   // Query로 variant -> inventory_item 연결 조회
   const { data: variantInventoryData } = await query.graph({
     entity: 'product_variant',
-    fields: ['id', 'inventory_items.*'],
+    fields: ['id', 'inventory_items.*', 'inventory_items.inventory.sku', 'inventory_items.inventory.metadata'],
     filters: {
       id: variantIds,
     },
@@ -48,7 +49,10 @@ export const validateInventoryForItems = async (input: ValidateInventoryInput, c
   const variantToInventoryMap = new Map<string, string>();
   for (const variantData of variantInventoryData) {
     if (variantData.inventory_items?.length) {
-      variantToInventoryMap.set(variantData.id, variantData.inventory_items[0].inventory_item_id);
+      const projectionInventoryItem =
+        variantData.inventory_items.find((item: any) => isMedusaProductSellableInventoryItem(item.inventory)) ??
+        variantData.inventory_items[0];
+      variantToInventoryMap.set(variantData.id, projectionInventoryItem.inventory_item_id);
     }
   }
 
@@ -100,7 +104,6 @@ export const validateInventoryForItems = async (input: ValidateInventoryInput, c
             totalAvailable === 0
               ? `${productName}: 품절된 상품입니다.`
               : `${productName}: 최대 ${totalAvailable}개까지 구매 가능합니다.`;
-          console.log('messagemessagemessagemessage', message);
           errors.push(new MedusaError(MedusaError.Types.NOT_ALLOWED, message));
         }
       } catch (error: any) {
