@@ -30,12 +30,10 @@ function hasStock(variant: HttpTypes.StoreProductVariant): boolean {
 
 function getButtonStyle(
   isCurrent: boolean,
-  isSelected: boolean,
   isOutOfStock: boolean
 ): string {
   if (isOutOfStock) return "border-gray-200 bg-gray-100 text-gray-400"
   if (isCurrent) return "border-primary bg-primary text-primary-foreground"
-  if (isSelected) return "border-primary text-primary"
   return "border-gray-200 hover:border-gray-400"
 }
 
@@ -86,7 +84,6 @@ export default function OptionSelect({
       <div className="flex flex-wrap gap-2">
         {visibleValues.map((v) => {
           const isOutOfStock = outOfStockSet.has(v)
-          const isSelected = selectedValues?.has(v) ?? false
           const isCurrent = v === current
           const isDisabled = disabled || isOutOfStock
 
@@ -97,7 +94,7 @@ export default function OptionSelect({
               disabled={isDisabled}
               className={cn(
                 "rounded-full border px-4 py-2 text-sm transition-colors",
-                getButtonStyle(isCurrent, isSelected, isOutOfStock),
+                getButtonStyle(isCurrent, isOutOfStock),
                 isDisabled && "pointer-events-none"
               )}
               data-testid="option-button"

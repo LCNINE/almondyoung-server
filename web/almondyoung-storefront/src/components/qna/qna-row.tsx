@@ -28,7 +28,7 @@ type Props = {
   onDelete?: () => void
 }
 
-const COLS =
+const DESKTOP_COLS =
   "grid grid-cols-[110px_1fr_140px_120px] items-center gap-3 px-2 py-4"
 
 function maskNickname(nickname: string): string {
@@ -62,38 +62,68 @@ export function QnaRow({
         type="button"
         onClick={canExpand ? onToggle : undefined}
         className={cn(
-          COLS,
           "w-full text-left",
           canExpand && "cursor-pointer hover:bg-gray-50"
         )}
       >
-        <span
-          className={cn(
-            "text-sm",
-            isAnswered ? "text-gray-900" : "text-gray-400"
-          )}
-        >
-          {isAnswered ? t("answered") : t("unanswered")}
-        </span>
+        {/* 모바일 레이아웃 */}
+        <div className="px-3 py-3 md:hidden">
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <span
+              className={cn(
+                "text-xs font-medium",
+                isAnswered ? "text-gray-900" : "text-gray-400"
+              )}
+            >
+              {isAnswered ? t("answered") : t("unanswered")}
+            </span>
+            <span className="text-xs text-gray-400">
+              {formatDate(question.createdAt)}
+            </span>
+          </div>
+          <div className="flex items-start gap-1.5">
+            <span className="line-clamp-2 text-sm text-gray-900">
+              {displayTitle}
+            </span>
+            {question.isSecret && (
+              <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gray-400" />
+            )}
+          </div>
+          <div className="mt-1 text-xs text-gray-400">
+            {maskNickname(question.nickname)}
+          </div>
+        </div>
 
-        <span className="flex items-center gap-1.5 truncate text-sm text-gray-900">
-          <span className="truncate">{displayTitle}</span>
-          {question.isSecret && (
-            <Lock className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-          )}
-        </span>
+        {/* 데스크탑 레이아웃 */}
+        <div className={cn("hidden md:grid", DESKTOP_COLS)}>
+          <span
+            className={cn(
+              "text-sm",
+              isAnswered ? "text-gray-900" : "text-gray-400"
+            )}
+          >
+            {isAnswered ? t("answered") : t("unanswered")}
+          </span>
 
-        <span className="text-right text-sm text-gray-500">
-          {maskNickname(question.nickname)}
-        </span>
+          <span className="flex items-center gap-1.5 truncate text-sm text-gray-900">
+            <span className="truncate">{displayTitle}</span>
+            {question.isSecret && (
+              <Lock className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+            )}
+          </span>
 
-        <span className="text-right text-sm text-gray-500">
-          {formatDate(question.createdAt)}
-        </span>
+          <span className="text-right text-sm text-gray-500">
+            {maskNickname(question.nickname)}
+          </span>
+
+          <span className="text-right text-sm text-gray-500">
+            {formatDate(question.createdAt)}
+          </span>
+        </div>
       </button>
 
       {isExpanded && (
-        <div className="space-y-4 bg-gray-50 px-6 py-6">
+        <div className="space-y-4 bg-gray-50 px-4 py-4 md:px-6 md:py-6">
           {!isSecretMasked && (
             <div>
               <p className="mb-2 text-xs font-bold text-gray-500">Q</p>
@@ -160,4 +190,4 @@ export function QnaRow({
   )
 }
 
-export const QNA_ROW_COLS = COLS
+export const QNA_ROW_COLS = `hidden md:grid ${DESKTOP_COLS}`

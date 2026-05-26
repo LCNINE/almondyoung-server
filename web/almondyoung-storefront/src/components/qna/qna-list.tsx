@@ -3,6 +3,7 @@
 import { SharedPagination } from "@/components/shared/pagination"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Switch } from "@/components/ui/switch"
 import {
   Select,
   SelectContent,
@@ -173,14 +174,13 @@ export function QnaList({ productId, productName, productThumbnail }: Props) {
   }
 
   return (
-    <section className="space-y-0">
-      <Separator className="mb-7" />
+    <section>
+      <Separator className="mb-6" />
 
-      <h4 className="font-bold">{t("title")}</h4>
+      <h4 className="mb-2 text-base font-bold">{t("title")}</h4>
 
-      <p className="text-gray-500">
-        {t("intro")}
-        <br />
+      <p className="text-sm leading-relaxed text-gray-500">
+        {t("intro")}{" "}
         {t("csLinkPrefix")}
         <button
           type="button"
@@ -192,60 +192,58 @@ export function QnaList({ productId, productName, productThumbnail }: Props) {
         {t("csLinkSuffix")}
       </p>
 
-      {/* 툴바: 좌측 액션 버튼 / 우측 필터 */}
-      <div className="flex flex-wrap items-center justify-between gap-3 py-4">
-        <div className="flex gap-3">
-          <Button
-            variant="default"
-            className="cursor-pointer rounded-none bg-[rgb(51,51,51)] text-white hover:bg-[rgb(51,51,51)]"
-            onClick={handleWriteQnaClick}
-          >
-            {t("writeQna")}
-          </Button>
-          <Button
-            variant={mineOnly ? "default" : "outline"}
-            className={
-              mineOnly
-                ? "cursor-pointer rounded-none bg-[rgb(51,51,51)] text-white hover:bg-[rgb(51,51,51)]"
-                : "cursor-pointer rounded-none"
-            }
-            onClick={handleMyQnaToggle}
-          >
-            {mineOnly ? t("viewAll") : t("viewMine")}
-          </Button>
-        </div>
+      {/* 툴바 */}
+      <div className="mt-4 flex flex-col gap-0 md:flex-row md:items-center md:gap-4">
+        {/* Q&A 작성 버튼 */}
+        <Button
+          variant="default"
+          className="w-full cursor-pointer rounded-sm bg-[rgb(51,51,51)] text-sm text-white hover:bg-[rgb(51,51,51)] md:w-auto md:shrink-0"
+          onClick={handleWriteQnaClick}
+        >
+          {t("writeQna")}
+        </Button>
 
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-gray-600">
-          <label className="flex cursor-pointer items-center gap-2">
-            <Checkbox
-              checked={excludeSecret}
-              onCheckedChange={(checked) => setExcludeSecret(checked === true)}
+        {/* 필터 영역 */}
+        <div className="flex flex-col md:ml-auto md:flex-row md:items-center md:gap-5">
+          {/* 내 Q&A만 보기 토글 */}
+          <div className="flex items-center justify-between border-b border-gray-100 py-3 md:border-0 md:py-0 md:gap-2">
+            <span className="text-sm text-gray-700">{t("viewMine")}</span>
+            <Switch
+              checked={mineOnly}
+              onCheckedChange={() => handleMyQnaToggle()}
             />
-            {t("excludeSecret")}
-          </label>
+          </div>
 
-          {mounted ? (
-            <Select
-              value={statusFilter}
-              onValueChange={(v) =>
-                setStatusFilter(v as AnswerStatusSelectValue)
-              }
-            >
-              <SelectTrigger className="h-9 w-[140px] cursor-pointer rounded-none">
-                <SelectValue placeholder={t("statusPlaceholder")} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t("statusAll")}</SelectItem>
-                <SelectItem value="answered">{t("statusAnswered")}</SelectItem>
-                <SelectItem value="unanswered">{t("statusUnanswered")}</SelectItem>
-              </SelectContent>
-            </Select>
-          ) : (
-            <div
-              aria-hidden
-              className="border-input h-9 w-[140px] rounded-none border bg-white"
-            />
-          )}
+          {/* 비밀글 제외 + 답변 상태 */}
+          <div className="flex items-center justify-between border-b border-gray-100 py-3 md:border-0 md:py-0 md:gap-4">
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-600">
+              <Checkbox
+                checked={excludeSecret}
+                onCheckedChange={(checked) => setExcludeSecret(checked === true)}
+              />
+              {t("excludeSecret")}
+            </label>
+
+            {mounted ? (
+              <Select
+                value={statusFilter}
+                onValueChange={(v) =>
+                  setStatusFilter(v as AnswerStatusSelectValue)
+                }
+              >
+                <SelectTrigger className="h-8 w-32 cursor-pointer rounded-sm text-sm">
+                  <SelectValue placeholder={t("statusPlaceholder")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("statusAll")}</SelectItem>
+                  <SelectItem value="answered">{t("statusAnswered")}</SelectItem>
+                  <SelectItem value="unanswered">{t("statusUnanswered")}</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <div aria-hidden className="border-input h-8 w-32 rounded-sm border bg-white" />
+            )}
+          </div>
         </div>
       </div>
 
@@ -254,12 +252,12 @@ export function QnaList({ productId, productName, productThumbnail }: Props) {
         <ProductQnaSkeleton />
       ) : (
         <div
-          className={`border-t border-gray-300 transition-opacity duration-150 ${
+          className={`transition-opacity duration-150 ${
             isLoading ? "pointer-events-none opacity-50" : "opacity-100"
           }`}
           aria-busy={isLoading}
         >
-          {/* 헤더 */}
+          {/* 데스크탑 헤더 (모바일에서는 QNA_ROW_COLS가 hidden md:grid라 자동 숨김) */}
           <div
             className={`${QNA_ROW_COLS} border-b border-gray-200 text-sm font-medium text-gray-700`}
           >

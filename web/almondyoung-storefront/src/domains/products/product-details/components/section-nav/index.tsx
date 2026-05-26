@@ -64,11 +64,7 @@ export function SectionTabs({
   const didInitialScroll = useRef(false)
   useEffect(() => {
     if (didInitialScroll.current) return
-    if (
-      !tabParam ||
-      !VALID_TABS.includes(tabParam) ||
-      tabParam === "detail"
-    ) {
+    if (!tabParam || !VALID_TABS.includes(tabParam) || tabParam === "detail") {
       didInitialScroll.current = true
       return
     }
