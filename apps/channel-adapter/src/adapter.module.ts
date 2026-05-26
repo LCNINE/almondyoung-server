@@ -74,8 +74,10 @@ import { UserServiceClient } from './services/user-service.client';
 import { MembershipDailySyncService } from './services/membership-daily-sync.service';
 import { CouponIssueReconciliationService } from './services/coupon-issue-reconciliation.service';
 import { InternalMembershipController } from './controllers/internal-membership.controller';
+import { OrderCollectionFailuresController } from './controllers/order-collection-failures.controller';
 import { CHANNEL_ORDER_PROVIDER } from './services/order-collection/channel-order-provider.interface';
 import { MedusaOrderProvider } from './services/order-collection/medusa-order.provider';
+import { OrderCollectionFailureService } from './services/order-collection/order-collection-failure.service';
 import { OrderPollerOrchestrator } from './services/order-collection/order-poller.orchestrator';
 
 @Module({
@@ -129,6 +131,7 @@ import { OrderPollerOrchestrator } from './services/order-collection/order-polle
     MembershipEventConsumer,
     UserEventConsumer,
     PaymentEventsConsumer,
+    OrderCollectionFailuresController,
   ],
   providers: [
     ChannelAdapterService,
@@ -188,6 +191,7 @@ import { OrderPollerOrchestrator } from './services/order-collection/order-polle
       inject: [MedusaOrderProvider],
     },
     OrderPollerOrchestrator,
+    OrderCollectionFailureService,
 
     // Firebase 멤버십 동기화
     AlmondAuthClient,
