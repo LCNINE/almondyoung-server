@@ -51,37 +51,35 @@ export class MedusaOrderProvider implements ChannelOrderProvider {
         detailAddress: addr?.address_2 ?? '',
       };
 
-      const isNew = !since || new Date(order.created_at ?? 0) > since;
+      const sourceUpdatedAt = order.updated_at ?? order.created_at ?? new Date().toISOString();
 
-      if (isNew) {
-        const payload: OrderCreatedPayload = {
-          orderId: uuidv4(),
-          externalOrderId: order.id,
-          salesChannel: 'medusa',
-          customerId: order.customer_id ?? order.email ?? 'guest',
+      const createPayload: OrderCreatedPayload = {
+        orderId: uuidv4(),
+        externalOrderId: order.id,
+        salesChannel: 'medusa',
+        customerId: order.customer_id ?? order.email ?? 'guest',
+        items,
+        totalAmount: order.total ?? 0,
+        subtotalAmount: order.subtotal ?? 0,
+        shippingAmount: order.shipping_total ?? 0,
+        discountAmount: order.discount_total ?? 0,
+        currency: order.currency_code ?? 'KRW',
+        shippingAddress,
+        status: 'confirmed',
+        createdAt: order.created_at ?? new Date().toISOString(),
+      };
+
+      orders.push({
+        externalOrderId: order.id,
+        sourceUpdatedAt,
+        createPayload,
+        changes: {
           items,
-          totalAmount: order.total ?? 0,
-          subtotalAmount: order.subtotal ?? 0,
-          shippingAmount: order.shipping_total ?? 0,
-          discountAmount: order.discount_total ?? 0,
-          currency: order.currency_code ?? 'KRW',
           shippingAddress,
-          status: 'confirmed',
-          createdAt: order.created_at ?? new Date().toISOString(),
-        };
-        orders.push({ eventType: 'OrderCreated', payload });
-      } else {
-        orders.push({
-          eventType: 'OrderModified',
-          externalOrderId: order.id,
-          changes: {
-            items,
-            shippingAddress,
-            totalAmount: order.total ?? 0,
-          },
-          modifiedAt: order.updated_at ?? new Date().toISOString(),
-        });
-      }
+          totalAmount: order.total ?? 0,
+        },
+        modifiedAt: sourceUpdatedAt,
+      });
     }
 
     return { orders, skipped };
