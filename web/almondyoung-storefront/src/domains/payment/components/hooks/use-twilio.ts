@@ -29,6 +29,7 @@ export const useTwilio = () => {
         setIsCodeSent(true)
         setTimer(180)
       } else {
+        console.error("인증번호 발송 실패:", result.error)
         toast.error(result.error.message)
       }
     })
