@@ -277,6 +277,7 @@
       "changeConfirm": "{phone} に変更しますか?",
       "expired": "認証時間が経過しました",
       "verified": "認証が完了しました。",
+      "confirmModalTitle": "番号変更の確認",
       "resend": "再送信",
       "resendCountdown": "{timer}秒後に再送信できます。",
       "cancel": "キャンセル",
