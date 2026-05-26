@@ -48,7 +48,6 @@ export class SyncStatusService {
       // sync_statuses 테이블에서 기존 레코드 조회 또는 생성
       await this.upsertSyncStatus(channel, dataType, {
         status: 'in_progress',
-        lastSyncAt: new Date(),
       });
 
       this.logger.debug(`🚀 동기화 시작 기록: ${sessionId}`);
@@ -73,6 +72,7 @@ export class SyncStatusService {
       eventCount: number;
       processingTime: number;
       sessionId?: string;
+      watermark?: Date | null;
     },
   ): Promise<void> {
     try {
@@ -88,16 +88,21 @@ export class SyncStatusService {
           )
         : result.processingTime;
 
-      // sync_statuses 테이블 업데이트
-      await this.upsertSyncStatus(channel, dataType, {
+      const updates: Partial<UpdateSyncStatus> = {
         status: 'success',
-        lastSyncAt: new Date(),
         lastEventCount: result.eventCount,
         totalSyncs: newTotalSyncs,
         successfulSyncs: (currentStats?.successfulSyncs || 0) + 1,
         avgProcessingTimeMs: newAvgProcessingTime,
         lastErrorMessage: null, // 성공 시 에러 메시지 클리어
-      });
+      };
+
+      if (result.watermark !== null) {
+        updates.lastSyncAt = result.watermark ?? new Date();
+      }
+
+      // sync_statuses 테이블 업데이트
+      await this.upsertSyncStatus(channel, dataType, updates);
 
       this.logger.debug(
         `✅ 동기화 완료 기록: ${channel}/${dataType} - ${result.eventCount}건 (${result.processingTime}ms)`,
@@ -141,7 +146,6 @@ export class SyncStatusService {
       // sync_statuses 테이블 업데이트
       await this.upsertSyncStatus(channel, dataType, {
         status: 'failed',
-        lastSyncAt: new Date(),
         totalSyncs: newTotalSyncs,
         failedSyncs: (currentStats?.failedSyncs || 0) + 1,
         avgProcessingTimeMs: newAvgProcessingTime,
