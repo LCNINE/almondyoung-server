@@ -19,7 +19,7 @@ export function SubCategoryNavList({ items }: { items: SubCategoryNavItem[] }) {
   const clear = (id: string) => setActiveId((cur) => (cur === id ? null : cur))
 
   return (
-    <div className="relative isolate flex flex-wrap gap-1">
+    <div className="relative isolate grid grid-cols-3 gap-1 sm:flex sm:flex-wrap">
       {items.map((item) => (
         <div
           key={item.id}
@@ -27,7 +27,7 @@ export function SubCategoryNavList({ items }: { items: SubCategoryNavItem[] }) {
           onMouseLeave={() => clear(item.id)}
           onFocus={() => setActiveId(item.id)}
           onBlur={() => clear(item.id)}
-          className="relative rounded-2xl px-4 pt-4 pb-3 transition-transform duration-300 ease-out focus-within:-translate-y-1.5 hover:-translate-y-1.5"
+          className="relative rounded-2xl px-2 pt-2 pb-2 transition-transform duration-300 ease-out focus-within:-translate-y-1.5 hover:-translate-y-1.5 sm:px-4 sm:pt-4 sm:pb-3"
         >
           {/* hover한 카드를 스프링으로 따라가는 글래스 백드롭 */}
           {activeId === item.id && (
