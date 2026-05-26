@@ -24,6 +24,11 @@
 - 핵심 속성: `code` (unique), `holderId`(소유자), `stockType`, `safetyStock`, 물리 속성(무게/치수/소재), `moq`.
 - 변화 동인: 입고/이동/실측/재고 보정.
 
+### 재고상품 재고량 (SKU Stock Quantity)
+- 정의: 특정 재고상품(SKU)이 물류 관점에서 보유·예약·판매 가능 상태로 가진 수량.
+- 재고상품 재고량은 물리 재고의 진실이며, 판매상품의 판매 가능 수량과 1:1로 같다고 가정하지 않는다.
+- _Avoid_: 판매상품 재고량과 같은 말로 쓰기.
+
 ### 상품 카테고리 (Product Category) — 고객 노출용 분류 트리
 - 정의: 쇼핑몰에서 **고객이 상품을 탐색**할 때 쓰는 단일 분류 트리. 운영/집계용 내부 분류가 아니라 노출 메뉴.
 - 스키마: `apps/core/src/modules/catalog/schema/catalog.schema.ts` 의 `productCategories` (`product_categories`).
@@ -38,6 +43,53 @@
 - 스키마: 같은 파일의 `channelCategories` (`channel_categories`). `salesChannels.categoryId` 가 이걸 참조.
 - 상품 카테고리와 혼동 금지 — UI 도 모듈도 분리되어 있음 (`channel-categories.controller.ts`).
 
+### 판매 채널 (Sales Channel)
+- 정의: 고객 주문을 수집하는 판매 접점이며, Core 는 판매 채널을 자기 내부 모델로 직접 신뢰하지 않고 channel-adapter 를 통해 번역된 주문만 받는다.
+- **Medusa 는 자사몰 판매 채널이다.** Naver/Coupang 과 소유 구조는 다르지만 Core 관점에서는 같은 외부 주문 출처로 취급한다.
+- **Medusa order id 는 채널 주문 ID다.** Core 의 `sales_orders.id` 와 같은 정체성이 아니며, Core 에서는 `(salesChannel, channelOrderId)` 로 참조한다.
+- 판매채널은 Core/관련 백엔드 SoT 의 projection 을 보유한다. 상품, 가격, 판매가능수량 등은 SoT 에서 계산되어 channel-adapter 를 통해 판매채널에 반영된다.
+- Medusa 는 WMS/재고 판단을 위해 Core API 를 직접 호출하지 않는다. 꼭 필요한 예외가 아니라면 Medusa 와 Core 의 commerce 경계는 channel-adapter 를 통해 연결한다.
+- _Avoid_: Medusa 를 Core 의 주문 하위 모듈처럼 취급하기, Medusa order id 를 Core sales order id 로 재사용하기, Medusa 에서 Core WMS/availability API 를 직접 호출하기.
+
+### Payment Accepted — 채널 주문 수락 기준
+- 정의: 판매 채널이 결제 실패 위험을 벗어나 Core 주문 처리 대상으로 넘길 수 있다고 판단한 결제 상태.
+- Medusa/Wallet 에서는 `AUTHORIZED` 또는 `CAPTURED` 가 Payment Accepted 이다. Core 판매주문 생성 기준은 `AUTHORIZED` 이며, `CAPTURED` 는 `AUTHORIZED` 를 이미 만족한 더 강한 정산 상태일 뿐 생성 게이트가 아니다.
+- `CREATED`, `PROCESSING`, `REQUIRES_ACTION`, `FAILED`, `CANCELED` 주문/결제는 Core 판매주문 생성 대상이 아니다.
+- _Avoid_: `authorized` 라는 특정 provider 상태명을 Core 주문 생성의 도메인 용어로 쓰기.
+
+### 판매주문 (Core Sales Order)
+- 정의: Payment Accepted 된 채널 주문을 Core 의 주문 처리 모델로 번역해 기록한 주문.
+- 판매주문 생성은 아직 창고 출고가 가능하다는 뜻이 아니다. 판매상품 중 재고상품 매칭이 없으면 이후 출고주문 생성이 실패하거나 대기할 수 있다.
+- 같은 채널 주문의 결제 상태가 `AUTHORIZED` 에서 `CAPTURED` 로 강해져도 새 판매주문을 만들지 않는다. Core 판매주문 정체성은 `(salesChannel, channelOrderId)` 이며, 결제 상태 변화는 같은 주문의 update 다.
+- _Avoid_: Medusa order 를 판매주문과 같은 정체성으로 보기, 판매주문 생성을 "재고주문 생성"이라고 부르기.
+
+### 출고주문 (Fulfillment Order)
+- 정의: 판매주문 전체 또는 일부를 창고 작업과 재고 차감 대상으로 넘기기 위해 만든 WMS/Core 객체.
+- 출고주문 생성은 판매상품 ↔ 재고상품 매칭을 필요로 하며, 매칭이 없으면 판매주문이 존재해도 출고주문으로 전환될 수 없다.
+- 매칭이 있으면 출고주문 자체는 생성될 수 있다. 실제 재고 부족은 reservation 단계에서 막히며, 이 경우 출고주문은 존재하지만 출고 불가 상태로 남는다.
+- _Avoid_: 판매주문과 출고주문을 둘 다 "재고주문"이라고 부르기.
+
+### 재고예약 (Reservation)
+- 정의: 특정 출고주문 또는 이동 작업을 위해 SKU 의 판매 가능 재고 일부를 점유하는 행위.
+- 재고예약 성공은 출고주문 생성의 필수 성공 조건이 아니다. 출고주문은 매칭된 SKU 구성으로 생성되고, 재고 부족은 재고예약 단계의 실패/대기 상태로 표현한다.
+- _Avoid_: 출고주문 생성 실패와 재고예약 실패를 같은 사건으로 취급하기.
+
+### 주문 전환 용어
+- **채널 주문 수집/번역**: Medusa/Naver/Coupang 주문을 Core 판매주문으로 만드는 전이.
+- **출고주문 생성**: Core 판매주문을 WMS/Core 출고주문으로 넘기는 전이.
+- _Avoid_: source 와 target 없이 "주문 변환"이라고만 쓰기.
+
+### 채널 주문 수집 신뢰성
+- 정의: Payment Accepted 된 채널 주문을 Core 판매주문 후보로 빠짐없이 전달해야 하는 운영 보장.
+- 주문 수집에서는 중복보다 누락이 더 큰 장애다. 중복은 `(salesChannel, channelOrderId)` 멱등성으로 흡수하고, 수집 기준점은 durable 하게 기록된 주문 범위까지만 전진해야 한다.
+- _Avoid_: polling 시작/실패 시점을 성공 기준점처럼 취급하기.
+
+### 채널 상품 식별 실패
+- 정의: 채널 주문 라인이 Core 판매상품 variant 로 식별되지 않아 판매주문 라인으로 번역할 수 없는 운영 예외.
+- Medusa 주문 라인에 `pimVariantId` 가 없으면 SKU 매칭 없음이 아니라 채널 상품 식별 실패다. 보통 Core Catalog 를 통하지 않고 Medusa 관리자에서 직접 만든 상품이 주문된 경우다.
+- 채널 상품 식별 실패 주문은 정상 판매주문으로 조용히 생성하지 않는다. 운영자가 확인할 수 있도록 격리되어야 한다.
+- _Avoid_: SKU 매칭 없음과 혼동하기, 유료 주문을 silent skip 하기.
+
 ### SKU Group — 재고상품의 느슨한 묶음
 - 정의: 매우 유사한 SKU들의 묶음 (예: 같은 제품인데 색만 다른 색연필).
 - 스키마: `apps/core/src/modules/inventory/schema/inventory.schema.ts` 의 `skuGroups` 테이블, `skus.groupId` (nullable).
@@ -49,6 +101,20 @@
 - 링크 테이블: `productVariantSkuLinks` (현재 `wmsTables` 스키마 그룹에 묶여있는 것은 [[project-core-wms-pim-merge]] 통합 흔적).
 - 한 variant 가 여러 SKU 와 연결될 수 있고 그 반대도 가능.
 
+### 판매상품 판매가능수량 (Product Sellable Quantity)
+- 정의: 특정 판매상품 variant 를 고객에게 몇 개까지 판매할 수 있는지 나타내는 판매 관점의 수량.
+- 판매상품 판매가능수량은 재고상품 재고량에 판매상품↔재고상품 매칭과 구성 수량을 적용해 산출한다. 예: 1호~4호 립스틱 SKU 를 각 1개씩 쓰는 세트 variant 의 판매가능수량은 네 SKU 의 판매가능 재고 중 최솟값이다.
+- SKU 재고, 판매상품↔재고상품 매칭, variant 활성 상태, 채널 노출 정책 등 의존 데이터 변경으로 판매가능수량이 달라지면 Core 는 판매상품 판매가능수량 변경 이벤트를 발행한다.
+- 판매상품 판매가능수량 변경 이벤트는 원인 이벤트가 아니라 state projection 이벤트다. 소비자는 왜 바뀌었는지가 아니라 현재 최종 판매가능수량을 받는다.
+- _Avoid_: SKU 하나의 물리 재고량을 그대로 판매상품 재고량으로 노출하기.
+
+### 판매채널 재고 Projection
+- 정의: 판매채널이 checkout 시 자기 로컬 데이터만으로 판매 가능 여부를 판단하도록 Core 가 계산해 전달하는 판매상품별 판매가능수량.
+- Medusa inventory module 에는 Core 의 재고상품(SKU) 그래프를 복제하지 않는다. Medusa variant 의 inventory quantity 는 해당 판매상품 variant 의 Product Sellable Quantity projection 이다.
+- Medusa 의 bundled product / variant-inventory M:M 기능은 Core 의 판매상품↔재고상품 매칭과 의미가 완전히 일치하지 않으므로 Core 매칭 모델을 그대로 투영하지 않는다.
+- 판매채널별 재고 할당은 하지 않는다. 모든 판매채널은 같은 Product Sellable Quantity projection 을 공유하며, race condition 에 의한 일부 초과판매 위험을 감수한다.
+- _Avoid_: Medusa inventory item 을 Core SKU 와 같은 정체성으로 취급하기, channel-adapter 에서 SKU 매칭/세트 재고 계산 로직을 재구현하기, 채널별 수량 배분을 기본 모델로 되돌리기.
+
 ### 라이브러리 (Library) — 디지털 fulfillment 의 한 종류 *(설계 중, 미구현)*
 - 정의: **디지털 자산(DigitalAsset)** 과 그 **소유권(Ownership)** 을 관리하는 새 Core 모듈. 위치: `apps/core/src/modules/library`. 운영자 관리 surface 는 `apps/admin-web` 의 mall 영역이고, customer-facing surface 는 storefront 의 다운로드/사용 처리 화면이다. Storefront BackendService enum 의 `library` 항목은 core subdomain 을 공유한다.
 - 핵심 명사:
@@ -59,7 +125,7 @@
 - **fulfillment 방식은 catalog 의 책임이 아니다.** variant/master 에 fulfillment mode 컬럼을 두지 않는다. **매칭의 존재 자체가** fulfillment 방식을 결정. 잔재의 `salesVariantPolicies.fulfillmentMode` 와 `productMatchings.inventoryManagement` (`true: 물리, false: 디지털` 주석) 는 폐기 대상.
 - 매칭 단위: **variant ↔ digital asset (M:M)**. SKU 매칭(`productVariantSkuLinks`)과 같은 단위. 정션 테이블 가칭 `productVariantAssetLinks`. variant 별로 콘텐츠가 다를 수 있음 (예: 시술동의서 양식 + 컬러 옵션은 컬러마다 다른 파일).
 - 매칭은 **master 버전 격리 (CoW) 대상.** variant 가 CoW 로 clone 되면 asset 정션도 함께 clone — pricing rule cascading 과 동일 패턴. publish 시 옵션 조합이 같으면 자동 승계, 정체성이 다르면 unmatched 로 남김 (SKU 매칭의 publish-time clone 과 대칭).
-- **Ownership grant 시점: `OrderCreated` 이벤트 도착 + `payload.status === 'confirmed'` (= 채널이 결제완료된 주문을 우리에게 넘긴 시점).** `handleOrderCreated` 의 같은 트랜잭션 안에서 ownership row 작성. WMS 의 `pending → confirmed` 상태 전이(`POST /sales-orders/:id/confirm`, 운영자의 출고확정 액션) 와 무관 — 그건 별개 사건. 디지털은 **`fulfillment_orders` 를 거치지 않는다** — fulfillment_orders 는 sku/출고에 깊게 묶인 WMS 의 객체이고, 디지털은 "재고주문" 단계 자체가 존재하지 않음. 자세한 매커니즘은 ADR-0010.
+- **Ownership grant 시점: `OrderCreated` 이벤트 도착 + Payment Accepted 상태.** `handleOrderCreated` 의 같은 트랜잭션 안에서 ownership row 작성. WMS 의 `pending → confirmed` 상태 전이(`POST /sales-orders/:id/confirm`, 운영자의 출고확정 액션) 와 무관 — 그건 별개 사건. 디지털은 **`fulfillment_orders` 를 거치지 않는다** — fulfillment_orders 는 sku/출고에 깊게 묶인 WMS 의 객체이고, 디지털은 "재고주문" 단계 자체가 존재하지 않음. 자세한 매커니즘은 ADR-0010.
 - **"Confirmed" 용어의 두 의미 (혼동 주의).** 코드/도메인 어휘에서 *결제 확정* (채널이 PAYED 상태로 주문을 넘기는 시점, `OrderCreated.status === 'confirmed'` 로 표현) 과 *출고 확정* (운영자가 어드민 화면에서 SO 를 창고에 보내겠다고 결정, `salesOrders.status = 'confirmed'` 로 표현) 는 다른 사건. library grant 는 *결제 확정* 시점에 일어남.
 - **두 fulfillment track 은 평행하다.** 한 SO 가 동시에 (WMS) fulfillment_order 와 (library) ownership 두 trail 을 trigger 할 수 있고, 두 track 은 비동기·독립으로 진행.
 - **Asset 정체성: 1 DigitalAsset = 1 파일** (단, 파일은 version history 를 가짐 — 아래 항목 참고). 묶음은 매칭 단의 M:M 으로 자연 표현 (한 variant 에 여러 asset 매칭). 진짜 묶음 운영 편의가 필요해지면 별도 bundle 레이어 도입, 첫 구현에는 없음.
