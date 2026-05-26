@@ -70,4 +70,15 @@ export async function fetchPromotionWithMeta(id: string, scope: any, fields?: st
   return { ...promotion, metadata: toMetadataShape(meta) };
 }
 
+export function meetsGroupRule(promotion: any, customerGroupIds: Set<string>): boolean {
+  const groupRule = (promotion.rules ?? []).find(
+    (r: any) => r.attribute === 'customer.groups.id' && r.operator === 'in',
+  );
+  if (!groupRule) return true;
+  const requiredIds = (groupRule.values ?? []).map((v: any) =>
+    typeof v === 'string' ? v : (v?.value as string),
+  );
+  return requiredIds.some((gid: string) => customerGroupIds.has(gid));
+}
+
 export { remoteQueryPromotions };

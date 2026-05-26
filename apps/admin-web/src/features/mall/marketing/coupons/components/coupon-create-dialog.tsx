@@ -206,9 +206,14 @@ export function CouponCreateDialog({
         ? [{ attribute: targetAttribute, operator: 'in', values: targetItems.map((i) => i.id) }]
         : undefined;
 
-    const promotionRules = customerGroupIds.length > 0
-      ? [{ attribute: 'customer.groups.id', operator: 'in', values: customerGroupIds }]
-      : undefined;
+    const promotionRules = [
+      ...(minOrderAmount
+        ? [{ attribute: 'subtotal', operator: 'gte', values: [String(minOrderAmount)] }]
+        : []),
+      ...(customerGroupIds.length > 0
+        ? [{ attribute: 'customer.groups.id', operator: 'in', values: customerGroupIds }]
+        : []),
+    ];
     const allocation = targetType === 'items' ? 'across' : undefined;
 
     const campaignBudget = maxUsesPerCustomer
@@ -243,12 +248,7 @@ export function CouponCreateDialog({
               },
             }
           : {}),
-        ...(minOrderAmount
-          ? {
-              rules: [{ attribute: 'subtotal', operator: 'gte', values: [String(minOrderAmount)] }],
-            }
-          : {}),
-        ...(promotionRules ? { rules: promotionRules } : {}),
+        ...(promotionRules.length > 0 ? { rules: promotionRules } : {}),
         ...(Object.keys(additional_data).length > 0 ? { additional_data } : {}),
       });
       toast.success('쿠폰이 생성되었습니다.');
@@ -446,6 +446,15 @@ export function CouponCreateDialog({
             </div>
           </div>
 
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs">
+              <span className="bg-background px-2 text-muted-foreground">캠페인 예산 제한 (하나만 선택)</span>
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label>총 사용 횟수 제한</Label>
@@ -455,19 +464,14 @@ export function CouponCreateDialog({
                 value={usageLimit}
                 onChange={(e) => {
                   setUsageLimit(e.target.value ? Number(e.target.value) : '');
-                  if (e.target.value) setSpendLimit('');
+                  if (e.target.value) { setSpendLimit(''); setMaxUsesPerCustomer(''); }
                 }}
                 placeholder="예: 100"
                 disabled={!!spendLimit || !!maxUsesPerCustomer}
               />
-              {!!usageLimit && !maxUsesPerCustomer && (
+              {!!usageLimit && (
                 <p className="text-xs text-muted-foreground">
                   전체 {usageLimit.toLocaleString('ko-KR')}회 (선착순)
-                </p>
-              )}
-              {!!maxUsesPerCustomer && (
-                <p className="text-xs text-muted-foreground text-amber-600">
-                  1인당 제한 설정 시 총 횟수 제한은 무시됩니다
                 </p>
               )}
             </div>
@@ -479,12 +483,12 @@ export function CouponCreateDialog({
                 value={spendLimit}
                 onChange={(e) => {
                   setSpendLimit(e.target.value ? Number(e.target.value) : '');
-                  if (e.target.value) setUsageLimit('');
+                  if (e.target.value) { setUsageLimit(''); setMaxUsesPerCustomer(''); }
                 }}
                 placeholder="예: 5000000"
                 disabled={!!usageLimit || !!maxUsesPerCustomer}
               />
-              {!!spendLimit && !maxUsesPerCustomer && (
+              {!!spendLimit && (
                 <p className="text-xs text-muted-foreground">
                   최대 {(spendLimit as number).toLocaleString('ko-KR')}원까지 할인 지급
                 </p>
@@ -492,22 +496,24 @@ export function CouponCreateDialog({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="col-span-2 space-y-2">
-              <Label>1인당 사용 횟수 제한</Label>
-              <Input
-                type="number"
-                min={1}
-                value={maxUsesPerCustomer}
-                onChange={(e) => setMaxUsesPerCustomer(e.target.value ? Number(e.target.value) : '')}
-                placeholder="예: 1"
-              />
-              {!!maxUsesPerCustomer && (
-                <p className="text-xs text-muted-foreground">
-                  1인당 {maxUsesPerCustomer.toLocaleString('ko-KR')}회 사용 가능
-                </p>
-              )}
-            </div>
+          <div className="space-y-2">
+            <Label>1인당 사용 횟수 제한</Label>
+            <Input
+              type="number"
+              min={1}
+              value={maxUsesPerCustomer}
+              onChange={(e) => {
+                setMaxUsesPerCustomer(e.target.value ? Number(e.target.value) : '');
+                if (e.target.value) { setUsageLimit(''); setSpendLimit(''); }
+              }}
+              placeholder="예: 1"
+              disabled={!!usageLimit || !!spendLimit}
+            />
+            {!!maxUsesPerCustomer && (
+              <p className="text-xs text-muted-foreground">
+                1인당 {maxUsesPerCustomer.toLocaleString('ko-KR')}회 사용 가능
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
@@ -599,7 +605,7 @@ export function CouponCreateDialog({
               <SelectContent>
                 <SelectItem value="none">없음 (수동 발급만)</SelectItem>
                 {(Object.entries(AUTO_ISSUE_TRIGGER_LABELS) as [AutoIssueTrigger, string][]).map(([key, label]) => (
-                  <SelectItem key={key} value={key}>{label}</SelectItem>
+                  <SelectItem key={key} value={key} disabled={key === 'birthday'}>{label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
