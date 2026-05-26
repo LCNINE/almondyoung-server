@@ -49,8 +49,6 @@ export const DiscountSection = ({
     appliedPromotionCode ?? ""
   )
 
-  console.log("promotions:", promotions)
-
   const handleCouponChange = useCallback(
     (code: string) => {
       startTransition(async () => {
