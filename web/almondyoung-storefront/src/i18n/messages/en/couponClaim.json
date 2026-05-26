@@ -1,0 +1,24 @@
+{
+  "pageTitle": "Get Coupon",
+  "couponNotFound": "This coupon is not valid.",
+  "couponInactive": "This coupon is currently unavailable.",
+  "couponExpired": "This coupon has expired.",
+  "couponGroupRestricted": "This coupon is only available to eligible customers.",
+  "discountPercent": "{value}% off",
+  "discountAmount": "{amount} KRW off",
+  "expiresAt": "Valid until {date}",
+  "unlimited": "No expiry",
+  "claimButton": "Get Coupon",
+  "claiming": "Processing...",
+  "loginToClaim": "Log in to get this coupon",
+  "alreadyClaimed": "Already in your coupons",
+  "claimSuccess": "Coupon claimed!",
+  "goToCoupons": "View my coupons",
+  "hint": "Claimed coupons can be found in My Page > Coupons and applied at checkout.",
+  "limitBadge": "Limited to {count}",
+  "toasts": {
+    "claimSuccess": "Coupon claimed!",
+    "claimFailed": "Failed to claim coupon. Please try again later.",
+    "groupRestricted": "This coupon is only available to eligible customers."
+  }
+}

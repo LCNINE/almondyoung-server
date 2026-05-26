@@ -82,12 +82,8 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     }
 
     if (meta.max_claims != null) {
-      const { data: linkedCustomers } = await query.graph({
-        entity: 'customer',
-        fields: ['id'],
-        filters: { promotions: { id: promo.id } },
-      });
-      if ((linkedCustomers?.length ?? 0) >= Number(meta.max_claims)) {
+      const slot = await promotionMetaService.reserveClaimSlot(promo.id, Number(meta.max_claims));
+      if (slot === 'exhausted') {
         skipped.push({ promotion_id: promo.id, reason: 'max_claims_exceeded' });
         continue;
       }
@@ -103,9 +99,11 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     } catch (e: any) {
       const isDuplicate = e?.code === '23505' || e?.message?.includes('unique') || e?.message?.includes('duplicate');
       if (isDuplicate) {
+        if (meta.max_claims != null) await promotionMetaService.releaseClaimSlot(promo.id).catch(() => {});
         await promotionMetaService.recordIssue(customerId, promo.id, trigger).catch(() => {});
         skipped.push({ promotion_id: promo.id, reason: 'already_issued' });
       } else {
+        if (meta.max_claims != null) await promotionMetaService.releaseClaimSlot(promo.id).catch(() => {});
         // Transient DB/Link error → 500으로 올려서 channel-adapter가 재시도하게 함.
         // isAlreadyIssued 체크로 재시도는 멱등하게 처리됨.
         throw e;

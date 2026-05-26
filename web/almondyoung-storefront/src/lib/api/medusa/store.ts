@@ -104,3 +104,55 @@ export const removePromotionFromCart = async (
     })
     .catch(medusaError)
 }
+
+export type CouponPreviewResult = {
+  valid: boolean
+  claimable?: boolean
+  reason?: string
+  message?: string
+  is_assigned?: boolean
+  promotion?: {
+    id: string
+    code: string
+    visibility: string
+    discount: {
+      type: string
+      value: number
+      target_type: string
+      currency_code?: string
+    } | null
+    expires_at: string | null
+    promotion_id_to_claim?: string
+  }
+}
+
+export const previewCouponCode = async (
+  code: string
+): Promise<CouponPreviewResult> => {
+  const headers = {
+    ...(await getAuthHeaders()),
+    "x-publishable-api-key": process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY!,
+  }
+  return sdk.client.fetch<CouponPreviewResult>(
+    `/store/coupons/preview?code=${encodeURIComponent(code.trim().toUpperCase())}`,
+    { method: "GET", headers }
+  )
+}
+
+export const claimCoupon = async (promotionId: string): Promise<void> => {
+  const headers = {
+    ...(await getAuthHeaders()),
+    "x-publishable-api-key": process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY!,
+  }
+  if (!("authorization" in headers)) {
+    const e = new HttpApiError("로그인이 필요합니다.", 401, "UNAUTHORIZED")
+    e.digest = "UNAUTHORIZED"
+    throw e
+  }
+  await sdk.client
+    .fetch<unknown>(`/store/customers/me/promotions/${promotionId}/claim`, {
+      method: "POST",
+      headers,
+    })
+    .catch(medusaError)
+}

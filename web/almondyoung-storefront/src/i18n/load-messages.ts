@@ -33,6 +33,7 @@ export const MESSAGE_NAMESPACES = [
   "footer",
   "languageSwitcher",
   "mypage",
+  "couponClaim",
 ] as const
 
 export type MessageNamespace = (typeof MESSAGE_NAMESPACES)[number]

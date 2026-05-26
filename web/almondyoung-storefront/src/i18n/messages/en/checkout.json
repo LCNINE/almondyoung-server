@@ -173,10 +173,38 @@
     "removeAria": "Remove coupon",
     "membershipDiscount": "Membership discount",
     "couponDiscount": "Coupon discount",
+    "directInput": {
+      "tabLabel": "Enter code",
+      "placeholder": "Enter coupon code",
+      "checkButton": "Check",
+      "checking": "Checking...",
+      "applyButton": "Apply",
+      "applying": "Applying...",
+      "claimButton": "Claim",
+      "claiming": "Processing...",
+      "confirmed": "Coupon verified",
+      "confirmHint": "Actual discount may vary based on cart conditions.",
+      "claimableHint": "Will be applied immediately after claiming.",
+      "expiresAt": "Valid until {date}",
+      "discountSuffix": " off",
+      "alreadyApplied": "This coupon is already applied.",
+      "errors": {
+        "COUPON_NOT_FOUND": "This coupon code does not exist.",
+        "COUPON_INACTIVE": "This coupon is not available.",
+        "COUPON_EXPIRED": "This coupon has expired.",
+        "COUPON_NOT_STARTED": "This coupon is not yet active.",
+        "COUPON_GROUP_RESTRICTED": "This coupon is only available to eligible customers.",
+        "COUPON_NOT_ASSIGNED": "This coupon is only available to customers it was issued to.",
+        "LOGIN_REQUIRED": "Please log in to use this coupon.",
+        "UNKNOWN": "This coupon cannot be used."
+      }
+    },
     "toasts": {
       "couponApplyFailed": "Failed to apply the coupon. Please try again later.",
       "couponLimitExceeded": "You have reached the usage limit for this coupon.",
-      "couponNotAssigned": "This coupon is only available for customers it was issued to."
+      "couponNotAssigned": "This coupon is only available for customers it was issued to.",
+      "claimAndApplyFailed": "Failed to claim the coupon. Please try again later.",
+      "claimSuccessApplyFailed": "Coupon claimed, but it could not be applied to the current cart. Check your coupons page to use it."
     }
   },
   "paymentTotal": {

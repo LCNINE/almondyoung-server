@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -7,10 +8,10 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 import { useGetCoupon } from '@/lib/services/coupons';
 import type { MedusaPromotion } from '@/lib/api/domains/medusa/promotions';
 import {
-  formatCouponDate,
   formatCouponDateTime,
   formatPeriod,
   getCouponMeta,
@@ -18,6 +19,7 @@ import {
   TARGET_ATTR_LABEL,
   AUTO_ISSUE_TRIGGER_LABELS,
 } from '../coupon-helpers';
+import { Link, Check } from 'lucide-react';
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -39,10 +41,20 @@ export function CouponDetailDialog({
 }) {
   const { data: fresh } = useGetCoupon(coupon?.id ?? null);
   const c = fresh ?? coupon;
+  const [linkCopied, setLinkCopied] = useState(false);
 
   if (!c) return null;
 
   const { name, maxClaims, createdBy, visibility, autoIssueTrigger } = getCouponMeta(c);
+
+  const storefrontUrl = process.env.NEXT_PUBLIC_STOREFRONT_URL ?? '';
+  const defaultCountry = process.env.NEXT_PUBLIC_STOREFRONT_DEFAULT_COUNTRY ?? 'kr';
+  const handleCopyClaimLink = async () => {
+    const url = `${storefrontUrl}/${defaultCountry}/coupons/claim?code=${encodeURIComponent(c.code)}`;
+    await navigator.clipboard.writeText(url);
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 2000);
+  };
   const m = c.application_method;
   const discountStr = m
     ? m.type === 'percentage'
@@ -109,6 +121,28 @@ export function CouponDetailDialog({
           {visibility === 'claimable' && (
             <Row label="총 발급 수량">
               {maxClaims ? `${maxClaims.toLocaleString('ko-KR')}명 한정` : '무제한'}
+            </Row>
+          )}
+          {visibility === 'claimable' && (
+            <Row label="발급 링크">
+              {storefrontUrl ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 px-2 text-xs gap-1"
+                  onClick={handleCopyClaimLink}
+                >
+                  {linkCopied ? (
+                    <><Check className="h-3 w-3 text-green-600" />복사됨</>
+                  ) : (
+                    <><Link className="h-3 w-3" />링크 복사</>
+                  )}
+                </Button>
+              ) : (
+                <span className="text-xs text-muted-foreground">
+                  NEXT_PUBLIC_STOREFRONT_URL 환경변수 필요
+                </span>
+              )}
             </Row>
           )}
           {autoIssueTrigger && (
