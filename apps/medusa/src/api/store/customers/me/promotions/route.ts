@@ -35,6 +35,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     'type',
     'status',
     'is_automatic',
+    'metadata',
     'campaign_id',
     'campaign.campaign_identifier',
     'campaign.starts_at',
@@ -99,7 +100,8 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     type: promo.type,
     status: promo.status,
     is_automatic: promo.is_automatic,
-    is_assigned: isAssigned, // 직접 발급 여부
+    is_assigned: isAssigned,
+    metadata: promo.metadata ?? null,
     application_method: promo.application_method
       ? {
           id: promo.application_method.id,

@@ -30,6 +30,7 @@ export type PromotionDto = {
   is_assigned: boolean
   application_method: ApplicationMethodDto
   campaign: PromotionCampaignDto | null
+  metadata: Record<string, unknown> | null
 }
 
 /*───────────────────────────
