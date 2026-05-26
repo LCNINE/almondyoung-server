@@ -94,9 +94,7 @@ export class InvoiceService {
         .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId))
         .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId));
 
-      const salesOrderLineIds = foiRows
-        .map((row) => row.salesOrderLineId)
-        .filter((id): id is string => id !== null);
+      const salesOrderLineIds = foiRows.map((row) => row.salesOrderLineId).filter((id): id is string => id !== null);
       const salesOrderLines =
         salesOrderLineIds.length === 0
           ? []
@@ -294,10 +292,7 @@ export class InvoiceService {
         }
       }
 
-      await trx
-        .update(wmsTables.invoices)
-        .set({ status: 'canceled' })
-        .where(eq(wmsTables.invoices.id, invoiceId));
+      await trx.update(wmsTables.invoices).set({ status: 'canceled' }).where(eq(wmsTables.invoices.id, invoiceId));
 
       await trx
         .update(wmsTables.fulfillmentOrders)
@@ -348,9 +343,7 @@ export class InvoiceService {
         .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId))
         .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, invoice.fulfillmentOrderId));
 
-      const salesOrderLineIds = foiRows
-        .map((r) => r.salesOrderLineId)
-        .filter((id): id is string => id !== null);
+      const salesOrderLineIds = foiRows.map((r) => r.salesOrderLineId).filter((id): id is string => id !== null);
       const priceMap =
         salesOrderLineIds.length === 0
           ? new Map<string, number>()

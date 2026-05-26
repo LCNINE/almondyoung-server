@@ -95,11 +95,7 @@ export class FulfillmentsService {
             if (!item.skuId || !item.quantity || item.quantity <= 0) {
               throw new BadRequestException(`Invalid item data: skuId and positive quantity are required`);
             }
-            const [sku] = await trx
-              .select()
-              .from(wmsTables.skus)
-              .where(eq(wmsTables.skus.id, item.skuId))
-              .limit(1);
+            const [sku] = await trx.select().from(wmsTables.skus).where(eq(wmsTables.skus.id, item.skuId)).limit(1);
             if (!sku) {
               throw new BadRequestException(`SKU ${item.skuId} not found`);
             }
@@ -127,11 +123,7 @@ export class FulfillmentsService {
             if (!line.skuId || !line.quantity || line.quantity <= 0) {
               throw new BadRequestException(`Invalid line data: skuId and positive quantity are required`);
             }
-            const [sku] = await trx
-              .select()
-              .from(wmsTables.skus)
-              .where(eq(wmsTables.skus.id, line.skuId))
-              .limit(1);
+            const [sku] = await trx.select().from(wmsTables.skus).where(eq(wmsTables.skus.id, line.skuId)).limit(1);
             if (!sku) {
               throw new BadRequestException(`SKU ${line.skuId} not found`);
             }
@@ -232,10 +224,7 @@ export class FulfillmentsService {
             .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fo.id));
           const skuIds = fois.map((item) => item.skuId);
           if (skuIds.length > 0) {
-            const skuRows = await trx
-              .select()
-              .from(wmsTables.skus)
-              .where(inArray(wmsTables.skus.id, skuIds));
+            const skuRows = await trx.select().from(wmsTables.skus).where(inArray(wmsTables.skus.id, skuIds));
             const mismatched = skuRows.find((s) => s.holderId !== fo.ownerId);
             if (mismatched) {
               throw new BadRequestException('SKU_HOLDER_MISMATCH_FOR_3PL');

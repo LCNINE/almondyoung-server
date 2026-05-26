@@ -50,11 +50,7 @@ describe('OrderEventsConsumer.handleOrderCreated', () => {
   }
 
   function makeConsumer(mocks: Mocks): OrderEventsConsumer {
-    return new OrderEventsConsumer(
-      mocks.salesOrders as any,
-      mocks.library as any,
-      mocks.dbService as any,
-    );
+    return new OrderEventsConsumer(mocks.salesOrders as any, mocks.library as any, mocks.dbService as any);
   }
 
   function makePayload(overrides: Partial<OrderCreatedPayload> = {}): OrderCreatedPayload {

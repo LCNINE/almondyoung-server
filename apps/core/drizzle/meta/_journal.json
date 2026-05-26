@@ -29,6 +29,13 @@
       "when": 1779337063388,
       "tag": "20260521041743_add-customer-id-to-sales-orders",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1779795134965,
+      "tag": "20260526113214_add-product-sellable-quantity-projections",
+      "breakpoints": true
     }
   ]
 }

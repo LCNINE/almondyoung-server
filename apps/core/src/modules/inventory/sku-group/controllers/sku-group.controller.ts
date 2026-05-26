@@ -5,11 +5,7 @@ import { ApiOperation, ApiParam, ApiProperty, ApiResponse, ApiTags } from '@nest
 import { SkuGroupService } from '../services/sku-group.service';
 import { CreateSkuGroupDto, UpdateSkuGroupDto } from '../dto/create-sku-group.dto';
 import { AddSkuToGroupDto, BulkAddSkusToGroupDto } from '../dto/manage-group-members.dto';
-import {
-  BulkAddSkusResponseDto,
-  SkuGroupMembersResponseDto,
-  SkuGroupResponseDto,
-} from '../dto/sku-group-response.dto';
+import { BulkAddSkusResponseDto, SkuGroupMembersResponseDto, SkuGroupResponseDto } from '../dto/sku-group-response.dto';
 
 class UngroupedQueryDto {
   @ApiProperty({ description: '조회 개수 (Limit)', required: false, default: 50, minimum: 1, maximum: 200 })
@@ -108,10 +104,7 @@ export class SkuGroupController {
   @ApiOperation({ summary: '여러 SKU를 그룹에 일괄 추가' })
   @ApiParam({ name: 'id', description: 'Group ID' })
   @ApiResponse({ status: 200, description: '일괄 추가가 완료되었습니다.', type: BulkAddSkusResponseDto })
-  async bulkAddSkus(
-    @Param('id') groupId: string,
-    @Body() dto: BulkAddSkusToGroupDto,
-  ): Promise<BulkAddSkusResponseDto> {
+  async bulkAddSkus(@Param('id') groupId: string, @Body() dto: BulkAddSkusToGroupDto): Promise<BulkAddSkusResponseDto> {
     return this.skuGroupService.bulkAddSkus(groupId, dto);
   }
 

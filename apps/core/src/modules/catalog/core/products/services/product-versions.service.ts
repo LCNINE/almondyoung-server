@@ -35,11 +35,9 @@ import {
   tagValues,
   productImages,
 } from '../../../schema/catalog.schema';
-import {
-  productMatchings,
-  productVariantSkuLinks,
-} from '../../../../inventory/schema/inventory.schema';
+import { productMatchings, productVariantSkuLinks } from '../../../../inventory/schema/inventory.schema';
 import { productVariantDigitalAssetLinks } from '../../../../library/schema/library.schema';
+import { ProductSellableQuantityService } from '../../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { eq, and, sql, max as drizzleMax, isNull, inArray, asc, desc } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
@@ -55,6 +53,7 @@ export class ProductVersionsService {
     private readonly productReadAssembler: ProductReadAssembler,
     private readonly priceCacheService: VariantPriceCacheService,
     private readonly variantAssetLinkService: VariantAssetLinkService,
+    private readonly productSellableQuantity: ProductSellableQuantityService,
   ) {}
 
   private get dbConn() {
@@ -158,7 +157,10 @@ export class ProductVersionsService {
 
   async createInitialDraftVersion(masterId: string, userId: string, tx?: DbTransaction): Promise<ProductMasterVersion> {
     return this.inTx(async (tx) => {
-      const [master] = await tx.select({ id: productMasters.id }).from(productMasters).where(eq(productMasters.id, masterId));
+      const [master] = await tx
+        .select({ id: productMasters.id })
+        .from(productMasters)
+        .where(eq(productMasters.id, masterId));
 
       if (!master) {
         throw new NotFoundException(`Master ${masterId} not found`);
@@ -302,6 +304,14 @@ export class ProductVersionsService {
 
       await this._emitActiveVersionChangedEvent(version, previousActiveVersion, 'active', tx);
 
+      const variantIdsToRecalculate = [
+        ...(await this.getVersionVariants(version.masterId, version.id, tx)),
+        ...(previousActiveVersion
+          ? await this.getVersionVariants(previousActiveVersion.masterId, previousActiveVersion.id, tx)
+          : []),
+      ];
+      await this.productSellableQuantity.recalculateAndPublishForVariants(variantIdsToRecalculate, tx);
+
       this.logger.log(`Published version ${version.id} of master ${version.masterId} as active`);
     }, tx);
   }
@@ -331,9 +341,7 @@ export class ProductVersionsService {
     }
 
     if (dups.size > 0) {
-      throw new BadRequestException(
-        `Duplicate variantCode in version ${versionId}: ${Array.from(dups).join(', ')}`,
-      );
+      throw new BadRequestException(`Duplicate variantCode in version ${versionId}: ${Array.from(dups).join(', ')}`);
     }
   }
 
@@ -567,6 +575,9 @@ export class ProductVersionsService {
         .where(eq(productMasterVersions.id, activeVersion.id));
 
       await this._emitActiveVersionChangedEvent(activeVersion, activeVersion, 'inactive', tx);
+
+      const variantIds = await this.getVersionVariants(activeVersion.masterId, activeVersion.id, tx);
+      await this.productSellableQuantity.recalculateAndPublishForVariants(variantIds, tx);
 
       this.logger.log(`Unpublished master ${masterId} (version ${activeVersion.version} → inactive)`);
     }, tx);

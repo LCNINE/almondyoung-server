@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { SharedModule } from '../shared/shared.module';
+import { ProductSellableQuantityModule } from '../product-sellable-quantity/product-sellable-quantity.module';
 
 // Controllers (Phase 3 scope — product-matching is Phase 4)
 import { InventoryController } from './controllers/inventory.controller';
@@ -33,10 +34,7 @@ import { StockEventStore } from './repositories/stock-event.store';
 import { OutboxService } from '../shared/outbox/outbox.service';
 
 @Module({
-  imports: [
-    ScheduleModule.forRoot(),
-    SharedModule,
-  ],
+  imports: [ScheduleModule.forRoot(), SharedModule, ProductSellableQuantityModule],
   controllers: [
     InventoryController,
     LocationController,

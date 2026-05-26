@@ -48,10 +48,7 @@ export class StockProjectionController {
   @ApiOperation({ summary: 'SKU별 특정 창고 재고 상세 조회' })
   @ApiParam({ name: 'skuId', description: 'SKU ID' })
   @ApiParam({ name: 'warehouseId', description: '창고 ID' })
-  async getStockBySkuAndWarehouse(
-    @Param('skuId') skuId: string,
-    @Param('warehouseId') warehouseId: string,
-  ) {
+  async getStockBySkuAndWarehouse(@Param('skuId') skuId: string, @Param('warehouseId') warehouseId: string) {
     return this.stockProjection.getBySkuAndWarehouse(skuId, warehouseId);
   }
 

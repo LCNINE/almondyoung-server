@@ -3,6 +3,10 @@ import {
   ProductSellableQuantityInput,
   UNBOUNDED_SELLABLE_QUANTITY,
 } from './product-sellable-quantity.calculator';
+import {
+  hasProductSellableQuantityProjectionChanged,
+  toProductSellableQuantityChangedPayload,
+} from './product-sellable-quantity.service';
 
 describe('calculateProductSellableQuantity', () => {
   const now = new Date('2026-05-26T00:00:00.000Z');
@@ -136,5 +140,37 @@ describe('calculateProductSellableQuantity', () => {
     expect(result.sellableQuantity).toBe(UNBOUNDED_SELLABLE_QUANTITY);
     expect(result.stockBoundQuantity).toBe(0);
     expect(result.reason).toBe('PRE_STOCK_SELLABLE');
+  });
+
+  it('ProductSellableQuantityChanged payload는 원인 없이 현재 projection 상태를 담는다', () => {
+    const projection = calculateProductSellableQuantity(makeInput(), { now });
+
+    expect(toProductSellableQuantityChangedPayload(projection)).toEqual({
+      variantId: 'variant-1',
+      masterId: 'master-1',
+      versionId: 'version-1',
+      matchingId: 'matching-1',
+      sellableQuantity: 10,
+      stockBoundQuantity: 10,
+      isSellable: true,
+      reason: 'SELLABLE',
+      calculatedAt: now.toISOString(),
+    });
+  });
+
+  it('projection 비교는 calculatedAt 변화만으로 변경됐다고 보지 않는다', () => {
+    const projection = calculateProductSellableQuantity(makeInput(), { now });
+
+    expect(
+      hasProductSellableQuantityProjectionChanged(projection, {
+        masterId: projection.masterId,
+        versionId: projection.versionId,
+        matchingId: projection.matchingId,
+        sellableQuantity: projection.sellableQuantity,
+        stockBoundQuantity: projection.stockBoundQuantity,
+        isSellable: projection.isSellable,
+        reason: projection.reason,
+      }),
+    ).toBe(false);
   });
 });

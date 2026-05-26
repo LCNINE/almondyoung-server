@@ -1,4 +1,12 @@
-import { Injectable, Logger, forwardRef, Inject, Optional, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  forwardRef,
+  Inject,
+  Optional,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { InjectStreamPublisher, StreamPublisher } from '@app/events';
 import { PRODUCT_STREAM, ProductEvents } from '@packages/event-contracts';
@@ -45,6 +53,7 @@ import { MasterProductWithPrimaryVersionDto } from '../dto/products/product-resp
 import { ProductMasterVersionEntity } from '../../../schema/catalog.schema.types';
 import { ProductReadAssembler } from '../assemblers/product-read.assembler';
 import { ProductMatchingService } from '../../../../product-matching/services/product-matching.service';
+import { ProductSellableQuantityService } from '../../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 
 type VersionOptionValueDisplay = {
   optionValueId: string;
@@ -93,6 +102,7 @@ export class ProductMastersService {
     private readonly productReadAssembler: ProductReadAssembler,
     private readonly pricingCalculatorService: PricingCalculatorService,
     private readonly priceCacheService: VariantPriceCacheService,
+    private readonly productSellableQuantity: ProductSellableQuantityService,
 
     @Optional()
     private readonly productMatchingService: ProductMatchingService | null,
@@ -613,14 +623,8 @@ export class ProductMastersService {
           : trx
               .select({ c: count() })
               .from(productMasters)
-              .innerJoin(
-                rankedVersionsSubquery!,
-                eq(productMasters.id, rankedVersionsSubquery!.masterId),
-              )
-              .innerJoin(
-                productMasterVersions,
-                eq(rankedVersionsSubquery!.versionId, productMasterVersions.id),
-              );
+              .innerJoin(rankedVersionsSubquery!, eq(productMasters.id, rankedVersionsSubquery!.masterId))
+              .innerJoin(productMasterVersions, eq(rankedVersionsSubquery!.versionId, productMasterVersions.id));
 
       const countQuery =
         categoryIds && categoryIds.length > 0
@@ -646,14 +650,8 @@ export class ProductMastersService {
           : trx
               .select()
               .from(productMasters)
-              .innerJoin(
-                rankedVersionsSubquery!,
-                eq(productMasters.id, rankedVersionsSubquery!.masterId),
-              )
-              .innerJoin(
-                productMasterVersions,
-                eq(rankedVersionsSubquery!.versionId, productMasterVersions.id),
-              );
+              .innerJoin(rankedVersionsSubquery!, eq(productMasters.id, rankedVersionsSubquery!.masterId))
+              .innerJoin(productMasterVersions, eq(rankedVersionsSubquery!.versionId, productMasterVersions.id));
 
       const dataQueryWithCategory =
         categoryIds && categoryIds.length > 0
@@ -667,9 +665,7 @@ export class ProductMastersService {
             )
           : dataBaseQuery;
 
-      const filteredDataQuery = whereClause
-        ? dataQueryWithCategory.where(whereClause)
-        : dataQueryWithCategory;
+      const filteredDataQuery = whereClause ? dataQueryWithCategory.where(whereClause) : dataQueryWithCategory;
       const orderedQuery = filteredDataQuery.orderBy(desc(productMasterVersions.createdAt));
 
       const rawData = await (returnAll ? orderedQuery : orderedQuery.limit(limit).offset(offset));
@@ -1188,6 +1184,8 @@ export class ProductMastersService {
         await this._emitMasterDeletedEvent(product.masterId);
       }
 
+      await this.productSellableQuantity.recalculateAndPublishForVersion(id, tx);
+
       return deleted;
     }, tx);
 
@@ -1230,6 +1228,8 @@ export class ProductMastersService {
         },
         tx,
       );
+
+      await this.productSellableQuantity.recalculateAndPublishForVersion(id, tx);
 
       return restored;
     }, tx);
@@ -1275,6 +1275,8 @@ export class ProductMastersService {
         await this._emitMasterDeletedEvent(masterId);
       }
 
+      await this.productSellableQuantity.recalculateAndPublishForMaster(masterId, tx);
+
       return deletedMaster;
     }, tx);
   }
@@ -1304,6 +1306,8 @@ export class ProductMastersService {
         })
         .where(eq(productMasters.id, masterId))
         .returning();
+
+      await this.productSellableQuantity.recalculateAndPublishForMaster(masterId, tx);
 
       return restoredMaster;
     }, tx);

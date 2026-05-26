@@ -8,9 +8,7 @@ import { AdvancedInventoryFiltersDto, StockDisplayMode } from '../dto/advanced-f
 
 @Injectable()
 export class SkuCatalogReader {
-  constructor(
-    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
-  ) {}
+  constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
 
   private get db() {
     return this.dbService.db;
@@ -297,13 +295,12 @@ export class SkuCatalogReader {
         );
       }
 
-      const stockSummaryJoinCondition =
-        filters.warehouseId
-          ? and(
-              eq(wmsTables.skus.id, wmsSchema.stockSummary.skuId),
-              eq(wmsSchema.stockSummary.warehouseId, filters.warehouseId),
-            )
-          : eq(wmsTables.skus.id, wmsSchema.stockSummary.skuId);
+      const stockSummaryJoinCondition = filters.warehouseId
+        ? and(
+            eq(wmsTables.skus.id, wmsSchema.stockSummary.skuId),
+            eq(wmsSchema.stockSummary.warehouseId, filters.warehouseId),
+          )
+        : eq(wmsTables.skus.id, wmsSchema.stockSummary.skuId);
 
       const skuIdQuery = trx
         .selectDistinct({ skuId: wmsTables.skus.id })

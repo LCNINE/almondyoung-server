@@ -973,6 +973,27 @@ export const productVariantSkuLinks = pgTable(
   }),
 );
 
+export const productSellableQuantityProjections = pgTable(
+  'product_sellable_quantity_projections',
+  {
+    variantId: uuid('variant_id').primaryKey(),
+    masterId: uuid('master_id'),
+    versionId: uuid('version_id'),
+    matchingId: uuid('matching_id'),
+    sellableQuantity: integer('sellable_quantity').notNull().default(0),
+    stockBoundQuantity: integer('stock_bound_quantity').notNull().default(0),
+    isSellable: boolean('is_sellable').notNull().default(false),
+    reason: varchar('reason', { length: 64 }).notNull(),
+    calculatedAt: timestamp('calculated_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxSellable: index('idx_product_sellable_qty_sellable').on(t.isSellable),
+    idxUpdatedAt: index('idx_product_sellable_qty_updated_at').on(t.updatedAt),
+  }),
+);
+
 /*───────────────────────────
  * ORDER MANAGEMENT
  *──────────────────────────*/
@@ -1966,6 +1987,7 @@ export const wmsTables = {
   stockLedgers,
   productMatchings,
   productVariantSkuLinks,
+  productSellableQuantityProjections,
   salesOrders,
   salesOrderLines,
   orderEvents,
@@ -2947,6 +2969,9 @@ export type NewProductMatching = InferInsertModel<typeof productMatchings>;
 
 export type ProductVariantSkuLink = InferSelectModel<typeof productVariantSkuLinks>;
 export type NewProductVariantSkuLink = InferInsertModel<typeof productVariantSkuLinks>;
+
+export type ProductSellableQuantityProjection = InferSelectModel<typeof productSellableQuantityProjections>;
+export type NewProductSellableQuantityProjection = InferInsertModel<typeof productSellableQuantityProjections>;
 
 // Sales Order Types
 export type SalesOrder = InferSelectModel<typeof salesOrders>;

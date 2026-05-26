@@ -3,6 +3,7 @@ import { DbService, InjectTypedDb } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { eq, inArray, sql, and, desc, isNull } from 'drizzle-orm';
 import { UpsertMatchingDto } from '../dto/upsert-matching.dto';
+import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 
 @Injectable()
 export class ProductSkuMappingService {
@@ -11,6 +12,7 @@ export class ProductSkuMappingService {
   constructor(
     @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
+    private readonly productSellableQuantity: ProductSellableQuantityService,
   ) {}
 
   private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
@@ -79,6 +81,8 @@ export class ProductSkuMappingService {
         .set({ productMatchingId: matchingId })
         .where(eq(wmsTables.salesOrderLines.variantId, variantId));
 
+      await this.productSellableQuantity.recalculateAndPublishForVariant(variantId, trx);
+
       return this.getByVariant(variantId, trx);
     }, tx);
   }
@@ -138,7 +142,9 @@ export class ProductSkuMappingService {
             })
             .returning();
 
-          this.logger.log(`Created fallback snapshot from global matching for variantId=${variantId}: snapshotId=${snapshot.id}`);
+          this.logger.log(
+            `Created fallback snapshot from global matching for variantId=${variantId}: snapshotId=${snapshot.id}`,
+          );
           return snapshot.id;
         }
 

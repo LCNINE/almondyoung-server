@@ -12,6 +12,7 @@ import {
 } from '../../schema/catalog.schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { ChannelVariantListingEntity, SalesChannelEntity } from '../../schema/catalog.schema.types';
+import { ProductSellableQuantityService } from '../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 
 export interface LookupVariantResult {
   masterId: string;
@@ -39,7 +40,10 @@ export interface CreateChannelListingDto {
 
 @Injectable()
 export class ChannelListingService {
-  constructor(@InjectDb() private readonly db: DbService<PimSchema>) {}
+  constructor(
+    @InjectDb() private readonly db: DbService<PimSchema>,
+    private readonly productSellableQuantity: ProductSellableQuantityService,
+  ) {}
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.db.db;
@@ -169,6 +173,8 @@ export class ChannelListingService {
       })
       .returning();
 
+    await this.productSellableQuantity.recalculateAndPublishForVariant(dto.variantId, tx);
+
     return listing;
   }
 
@@ -190,6 +196,10 @@ export class ChannelListingService {
       })
       .where(eq(channelVariantListings.id, listingId))
       .returning();
+
+    if (updated) {
+      await this.productSellableQuantity.recalculateAndPublishForVariant(updated.variantId, tx);
+    }
 
     return updated ?? null;
   }
@@ -260,10 +270,15 @@ export class ChannelListingService {
   async deactivateListing(listingId: string, tx?: DbTransaction): Promise<void> {
     const client = this.getClient(tx);
 
-    await client
+    const [updated] = await client
       .update(channelVariantListings)
       .set({ isActive: false, updatedAt: new Date() })
-      .where(eq(channelVariantListings.id, listingId));
+      .where(eq(channelVariantListings.id, listingId))
+      .returning();
+
+    if (updated) {
+      await this.productSellableQuantity.recalculateAndPublishForVariant(updated.variantId, tx);
+    }
   }
 
   /**
@@ -272,10 +287,15 @@ export class ChannelListingService {
   async activateListing(listingId: string, tx?: DbTransaction): Promise<void> {
     const client = this.getClient(tx);
 
-    await client
+    const [updated] = await client
       .update(channelVariantListings)
       .set({ isActive: true, updatedAt: new Date() })
-      .where(eq(channelVariantListings.id, listingId));
+      .where(eq(channelVariantListings.id, listingId))
+      .returning();
+
+    if (updated) {
+      await this.productSellableQuantity.recalculateAndPublishForVariant(updated.variantId, tx);
+    }
   }
 
   /**
@@ -284,7 +304,12 @@ export class ChannelListingService {
   async deleteListing(listingId: string, tx?: DbTransaction): Promise<void> {
     const client = this.getClient(tx);
 
+    const existing = await this.getListingById(listingId, tx);
     await client.delete(channelVariantListings).where(eq(channelVariantListings.id, listingId));
+
+    if (existing) {
+      await this.productSellableQuantity.recalculateAndPublishForVariant(existing.variantId, tx);
+    }
   }
 
   /**

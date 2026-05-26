@@ -11,9 +11,10 @@ import { ReservationLifecycleService } from './services/reservation-lifecycle.se
 import { MetricsController } from './controllers/metrics.controller';
 import { HealthController } from './controllers/health.controller';
 import { BarcodeGenerationController } from './controllers/barcode-generation.controller';
+import { ProductSellableQuantityModule } from '../product-sellable-quantity/product-sellable-quantity.module';
 
 @Module({
-  imports: [],
+  imports: [ProductSellableQuantityModule],
   controllers: [MetricsController, HealthController, BarcodeGenerationController],
   providers: [
     BarcodeService,

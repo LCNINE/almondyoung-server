@@ -111,7 +111,10 @@ export class DirectShipService {
       // directShipStatus가 null인 레코드는 'pending'으로 간주 (마이그레이션 전 데이터 호환)
       if (filters.status === 'pending') {
         whereConditions.push(
-          or(eq(wmsTables.fulfillmentOrders.directShipStatus, 'pending'), isNull(wmsTables.fulfillmentOrders.directShipStatus))!,
+          or(
+            eq(wmsTables.fulfillmentOrders.directShipStatus, 'pending'),
+            isNull(wmsTables.fulfillmentOrders.directShipStatus),
+          )!,
         );
       } else {
         whereConditions.push(eq(wmsTables.fulfillmentOrders.directShipStatus, filters.status));
@@ -176,10 +179,7 @@ export class DirectShipService {
               foId: wmsTables.fulfillmentOrderItems.fulfillmentOrderId,
             })
             .from(wmsTables.salesOrders)
-            .innerJoin(
-              wmsTables.salesOrderLines,
-              eq(wmsTables.salesOrderLines.salesOrderId, wmsTables.salesOrders.id),
-            )
+            .innerJoin(wmsTables.salesOrderLines, eq(wmsTables.salesOrderLines.salesOrderId, wmsTables.salesOrders.id))
             .innerJoin(
               wmsTables.fulfillmentOrderItems,
               eq(wmsTables.fulfillmentOrderItems.salesOrderLineId, wmsTables.salesOrderLines.id),
@@ -188,7 +188,12 @@ export class DirectShipService {
 
     const customerInfoByFoId = new Map<
       string,
-      { customerName: string | null; customerEmail: string | null; customerPhone: string | null; shippingAddress: unknown }
+      {
+        customerName: string | null;
+        customerEmail: string | null;
+        customerPhone: string | null;
+        shippingAddress: unknown;
+      }
     >();
     for (const row of salesOrderRows) {
       if (!customerInfoByFoId.has(row.foId)) {
@@ -292,7 +297,9 @@ export class DirectShipService {
         })
         .where(inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds));
 
-      this.logger.log(`Forwarded ${fulfillmentOrderIds.length} orders to company: ${companyName} (holderId: ${holderId})`);
+      this.logger.log(
+        `Forwarded ${fulfillmentOrderIds.length} orders to company: ${companyName} (holderId: ${holderId})`,
+      );
     });
   }
 

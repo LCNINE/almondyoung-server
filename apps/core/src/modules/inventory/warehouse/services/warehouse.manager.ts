@@ -94,10 +94,7 @@ export class WarehouseManager {
 
   async ensureDefaultsExist(): Promise<void> {
     try {
-      const defaults = [
-        WAREHOUSE_CONSTANTS.DEFAULT_DOMESTIC_WAREHOUSE,
-        WAREHOUSE_CONSTANTS.DEFAULT_OVERSEAS_WAREHOUSE,
-      ];
+      const defaults = [WAREHOUSE_CONSTANTS.DEFAULT_DOMESTIC_WAREHOUSE, WAREHOUSE_CONSTANTS.DEFAULT_OVERSEAS_WAREHOUSE];
 
       for (const data of defaults) {
         const existing = await this.reader.findOneOrNull(data.id);
