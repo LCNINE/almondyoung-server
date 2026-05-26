@@ -168,7 +168,11 @@ export async function middleware(request: NextRequest) {
   const accessToken = request.cookies.get("accessToken")?.value
   const refreshToken = request.cookies.get("refreshToken")?.value
 
-  if (refreshToken && isJwtExpired(accessToken)) {
+  // Server Action 요청은 내부에서 ApiAuthError를 직접 throw하므로
+  // 미들웨어 리다이렉트 대상에서 제외한다. 리다이렉트하면 Next.js 클라이언트가
+  // Server Action 응답으로 파싱 실패해서 일반 에러가 error.tsx로 흘러 UNAUTHORIZED 처리가 안 된다.
+  const isServerAction = request.headers.has("Next-Action")
+  if (!isServerAction && refreshToken && isJwtExpired(accessToken)) {
     return buildRestoreTokenRedirect(request)
   }
 
