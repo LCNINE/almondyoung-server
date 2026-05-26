@@ -277,6 +277,7 @@
       "changed": "Mobile number changed.",
       "changeFailed": "Failed to change mobile number.",
       "verified": "Verification complete.",
+      "confirmModalTitle": "Confirm Number Change",
       "resend": "Resend",
       "resendCountdown": "You can resend in {timer}s.",
       "cancel": "Cancel",

@@ -277,6 +277,7 @@
       "changed": "휴대폰 번호가 변경되었습니다.",
       "changeFailed": "휴대폰 번호 변경에 실패했습니다.",
       "verified": "인증이 완료되었습니다.",
+      "confirmModalTitle": "번호 변경 확인",
       "resend": "재전송",
       "resendCountdown": "{timer}초 후에 재전송할 수 있습니다.",
       "cancel": "취소",
