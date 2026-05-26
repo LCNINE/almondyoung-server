@@ -12,6 +12,7 @@ import { AlmondAuthClient } from '../almond-auth/almond-auth.client';
 import { EventChainService, generateMessageId } from '@app/events';
 import type { PimActiveVersionChangedEvent, ChannelAdapterSchema } from '../../types';
 import type { CategoryChangedPayload } from '@packages/event-contracts/streams/product.stream';
+import type { ProductSellableQuantityChangedPayload } from '@packages/event-contracts/streams/inventory.stream';
 import type { MembershipStatusChangedPayload } from '@packages/event-contracts/streams/membership.stream';
 import type {
   Cafe24LinkedPayload,
@@ -170,6 +171,11 @@ export class InboxWorkerService implements OnModuleInit {
         case 'CategoryChanged':
           const categoryPayload: CategoryChangedPayload = event.payload;
           await this.syncService.handleCategoryChanged(categoryPayload);
+          break;
+
+        case 'ProductSellableQuantityChanged':
+          const sellableQuantityPayload: ProductSellableQuantityChangedPayload = event.payload;
+          await this.syncService.handleProductSellableQuantityChanged(sellableQuantityPayload);
           break;
 
         case 'MembershipStatusChanged':

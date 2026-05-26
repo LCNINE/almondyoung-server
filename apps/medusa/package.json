@@ -17,6 +17,7 @@
     "seed": "medusa exec ./src/scripts/seed.ts",
     "seed:shipping": "medusa exec ./src/scripts/seed-shipping.ts",
     "backfill:run": "medusa exec ./src/scripts/backfill-from-core.ts",
+    "backfill:sellable-inventory": "medusa exec ./src/scripts/backfill-sellable-inventory-projections.ts",
     "repair:product-links": "medusa exec ./src/scripts/repair-product-links.ts",
     "disable-inventory": "medusa exec ./src/scripts/disable-inventory-management.ts",
     "fetch:sellmate": "medusa exec ./src/scripts/fetch-orders-sellmate.ts",
