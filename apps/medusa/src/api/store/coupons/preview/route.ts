@@ -95,10 +95,20 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   };
 
   if (!customerId) {
+    const hasGroupRule = (promotion.rules ?? []).some(
+      (r: any) => r.attribute === 'customer.groups.id',
+    );
+    if (visibility !== 'public' || hasGroupRule) {
+      return res.status(200).json({
+        valid: false,
+        reason: 'LOGIN_REQUIRED',
+        message: '로그인 후 확인 가능한 쿠폰입니다.',
+        promotion: baseInfo,
+      });
+    }
     return res.status(200).json({
-      valid: visibility === 'public',
-      reason: visibility === 'public' ? null : 'LOGIN_REQUIRED',
-      message: visibility === 'public' ? null : '로그인 후 확인 가능한 쿠폰입니다.',
+      valid: true,
+      claimable: false,
       promotion: baseInfo,
     });
   }

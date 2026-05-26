@@ -3,6 +3,8 @@ import PromotionMeta from './models/promotion-meta';
 import PromotionIssueLog from './models/promotion-issue-log';
 
 export type AutoIssueTrigger = 'customer_registered' | 'membership_activated' | 'birthday';
+export type AdminIssueTrigger = 'admin_manual' | 'admin_force' | 'customer_claim';
+export type IssueTrigger = AutoIssueTrigger | AdminIssueTrigger;
 
 export type PromotionMetaData = {
   promotion_id: string;
@@ -55,13 +57,48 @@ class PromotionMetaModuleService extends MedusaService({ PromotionMeta, Promotio
     return records.length > 0;
   }
 
-  async recordIssue(customerId: string, promotionId: string, trigger: AutoIssueTrigger): Promise<void> {
+  async recordIssue(customerId: string, promotionId: string, trigger: IssueTrigger): Promise<void> {
     try {
       await (this as any).createPromotionIssueLogs({ customer_id: customerId, promotion_id: promotionId, trigger });
     } catch (e: any) {
       const isDuplicate = e?.code === '23505' || e?.message?.includes('unique') || e?.message?.includes('duplicate');
       if (!isDuplicate) throw e;
     }
+  }
+
+  /**
+   * Atomically reserve a claim slot. Returns 'ok' if a slot was reserved, 'exhausted' if maxClaims reached.
+   * Uses UPDATE ... WHERE issued_count < maxClaims to prevent concurrent overclaims.
+   * Note: issued_count starts at 0 post-migration. For promotions created before this migration
+   * with existing remote links, run a manual backfill:
+   *   UPDATE promotion_meta SET issued_count = <existing_link_count> WHERE promotion_id = '<id>';
+   */
+  async reserveClaimSlot(promotionId: string, maxClaims: number): Promise<'ok' | 'exhausted'> {
+    const em = (this as any).baseRepository_.manager_;
+    const result = await em.execute(
+      `UPDATE "promotion_meta" SET "issued_count" = "issued_count" + 1
+       WHERE "promotion_id" = ? AND "issued_count" < ?
+       RETURNING "id"`,
+      [promotionId, maxClaims],
+    );
+    return (result?.length ?? 0) > 0 ? 'ok' : 'exhausted';
+  }
+
+  async releaseClaimSlot(promotionId: string): Promise<void> {
+    const em = (this as any).baseRepository_.manager_;
+    await em.execute(
+      `UPDATE "promotion_meta" SET "issued_count" = GREATEST("issued_count" - 1, 0)
+       WHERE "promotion_id" = ?`,
+      [promotionId],
+    );
+  }
+
+  async incrementIssuedCount(promotionId: string): Promise<void> {
+    const em = (this as any).baseRepository_.manager_;
+    await em.execute(
+      `UPDATE "promotion_meta" SET "issued_count" = "issued_count" + 1 WHERE "promotion_id" = ?`,
+      [promotionId],
+    );
   }
 }
 

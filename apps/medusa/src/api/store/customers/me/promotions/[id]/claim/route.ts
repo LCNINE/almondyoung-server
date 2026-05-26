@@ -86,10 +86,18 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     return res.status(200).json({ success: true, promotion_id: promotionId });
   }
 
-  // max_claims 검증 (단순 count 방식 — 고트래픽 선착순 쿠폰은 별도 atomic counter 필요)
   const maxClaims = metaShape?.max_claims != null ? Number(metaShape.max_claims) : null;
-  if (maxClaims !== null && allLinks.length >= maxClaims) {
-    throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '발급 수량이 모두 소진되었습니다.');
+
+  if (maxClaims !== null) {
+    // Fast check: catch already-exhausted promotions (covers pre-migration links)
+    if (allLinks.length >= maxClaims) {
+      throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '발급 수량이 모두 소진되었습니다.');
+    }
+    // Atomic slot reservation: prevents concurrent overclaims
+    const slot = await promotionMetaService.reserveClaimSlot(promotionId, maxClaims);
+    if (slot === 'exhausted') {
+      throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '발급 수량이 모두 소진되었습니다.');
+    }
   }
 
   try {
@@ -101,8 +109,18 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     // unique constraint violation → 동시 요청에서 이미 발급 처리된 경우, idempotent하게 성공 반환
     const isUniqueViolation =
       e?.code === '23505' || e?.message?.includes('unique') || e?.message?.includes('duplicate');
-    if (!isUniqueViolation) throw e;
+    if (!isUniqueViolation) {
+      // Link creation failed — release the reserved slot so it doesn't block future claims
+      if (maxClaims !== null) await promotionMetaService.releaseClaimSlot(promotionId).catch(() => {});
+      throw e;
+    }
+    // Duplicate = already claimed by this customer → release the pre-reserved slot
+    if (maxClaims !== null) await promotionMetaService.releaseClaimSlot(promotionId).catch(() => {});
+    return res.status(200).json({ success: true, promotion_id: promotionId });
   }
+
+  // Audit log: customer self-claim
+  await promotionMetaService.recordIssue(customerId, promotionId, 'customer_claim').catch(() => {});
 
   return res.status(200).json({ success: true, promotion_id: promotionId });
 }

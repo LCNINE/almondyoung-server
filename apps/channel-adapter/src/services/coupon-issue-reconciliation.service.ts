@@ -1,14 +1,17 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { DbService } from '@app/db';
-import { and, eq, gte, inArray } from 'drizzle-orm';
+import { and, eq, gte } from 'drizzle-orm';
 import { inboxEvents } from '../schema';
 import { MedusaClient } from '../adapters/medusa/medusa.client';
 import type { ChannelAdapterSchema } from '../types';
 import type { UserEmailVerifiedPayload } from '@packages/event-contracts/streams/user.stream';
 
 const COUPON_TRIGGER_TYPES = ['UserEmailVerified', 'MembershipStatusChanged'] as const;
-const LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
+// UserEmailVerified: long window — customer may take months to first log in to the storefront
+const LOOKBACK_MS_REGISTRATION = 365 * 24 * 60 * 60 * 1000;
+// MembershipStatusChanged: short window — transient failures requeue via resetToPending
+const LOOKBACK_MS_MEMBERSHIP = 30 * 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class CouponIssueReconciliationService {
@@ -31,17 +34,33 @@ export class CouponIssueReconciliationService {
   private async run(): Promise<{ directIssued: number; reset: number; skipped: number }> {
     this.logger.log('쿠폰 자동 발급 보정 시작');
 
-    const since = new Date(Date.now() - LOOKBACK_MS);
-    const failed = await this.dbService.db
-      .select()
-      .from(inboxEvents)
-      .where(
-        and(
-          eq(inboxEvents.status, 'failed'),
-          inArray(inboxEvents.eventType, [...COUPON_TRIGGER_TYPES]),
-          gte(inboxEvents.createdAt, since),
+    const sinceRegistration = new Date(Date.now() - LOOKBACK_MS_REGISTRATION);
+    const sinceMembership = new Date(Date.now() - LOOKBACK_MS_MEMBERSHIP);
+
+    const [registrationFailed, membershipFailed] = await Promise.all([
+      this.dbService.db
+        .select()
+        .from(inboxEvents)
+        .where(
+          and(
+            eq(inboxEvents.status, 'failed'),
+            eq(inboxEvents.eventType, 'UserEmailVerified'),
+            gte(inboxEvents.createdAt, sinceRegistration),
+          ),
         ),
-      );
+      this.dbService.db
+        .select()
+        .from(inboxEvents)
+        .where(
+          and(
+            eq(inboxEvents.status, 'failed'),
+            eq(inboxEvents.eventType, 'MembershipStatusChanged'),
+            gte(inboxEvents.createdAt, sinceMembership),
+          ),
+        ),
+    ]);
+
+    const failed = [...registrationFailed, ...membershipFailed];
 
     if (failed.length === 0) {
       this.logger.log('보정 대상 없음');

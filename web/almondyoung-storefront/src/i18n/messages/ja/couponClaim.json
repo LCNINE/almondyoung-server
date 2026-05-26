@@ -1,0 +1,24 @@
+{
+  "pageTitle": "クーポン受け取り",
+  "couponNotFound": "有効なクーポンではありません。",
+  "couponInactive": "現在ご利用いただけないクーポンです。",
+  "couponExpired": "有効期限が切れたクーポンです。",
+  "couponGroupRestricted": "このクーポンは対象のお客様のみご利用いただけます。",
+  "discountPercent": "{value}% 割引",
+  "discountAmount": "{amount}ウォン 割引",
+  "expiresAt": "{date} まで有効",
+  "unlimited": "有効期限なし",
+  "claimButton": "クーポンを受け取る",
+  "claiming": "処理中...",
+  "loginToClaim": "ログインしてクーポンを受け取る",
+  "alreadyClaimed": "すでに保有中のクーポン",
+  "claimSuccess": "クーポンを受け取りました！",
+  "goToCoupons": "マイクーポンを確認",
+  "hint": "受け取ったクーポンはマイページ > クーポンで確認し、注文時に利用できます。",
+  "limitBadge": "{count}名限定",
+  "toasts": {
+    "claimSuccess": "クーポンを受け取りました！",
+    "claimFailed": "クーポンの受け取りに失敗しました。しばらくしてから再度お試しください。",
+    "groupRestricted": "このクーポンは対象のお客様のみご利用いただけます。"
+  }
+}
