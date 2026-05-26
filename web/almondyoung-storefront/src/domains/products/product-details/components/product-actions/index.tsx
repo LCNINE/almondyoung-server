@@ -12,7 +12,7 @@ import {
 } from "@/lib/utils/membership-group"
 import { HttpTypes } from "@medusajs/types"
 import { isEqual } from "lodash"
-import { Minus, Plus, X } from "lucide-react"
+import { Loader2, Minus, Plus, X } from "lucide-react"
 import {
   useParams,
   usePathname,
@@ -60,7 +60,10 @@ const optionsAsKeymap = (
   }, {})
 }
 
-const getVariantLabel = (variant: HttpTypes.StoreProductVariant, fallback: string) => {
+const getVariantLabel = (
+  variant: HttpTypes.StoreProductVariant,
+  fallback: string
+) => {
   return (
     variant.options?.map((o: any) => o.value).join(" / ") ||
     variant.title ||
@@ -515,20 +518,28 @@ export default function ProductActions({
               <Button
                 variant="outline"
                 onClick={handleAddToCart}
-                disabled={!!disabledLabel || !!disabled}
+                disabled={!!disabledLabel || !!disabled || isPending}
                 className="border-yellow-30 text-yellow-30 hover:text-primary h-12 w-full flex-1 cursor-pointer text-base hover:bg-transparent"
                 data-testid="add-product-button"
               >
-                {disabledLabel ?? t("addToCart")}
+                {isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  (disabledLabel ?? t("addToCart"))
+                )}
               </Button>
 
               <Button
                 onClick={handleBuyNow}
-                disabled={!!disabledLabel || !!disabled}
+                disabled={!!disabledLabel || !!disabled || isPending}
                 className="h-12 w-full flex-1 cursor-pointer text-base"
                 data-testid="buy-now-button"
               >
-                {disabledLabel ?? t("buyNow")}
+                {isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  (disabledLabel ?? t("buyNow"))
+                )}
               </Button>
             </>
           )}
