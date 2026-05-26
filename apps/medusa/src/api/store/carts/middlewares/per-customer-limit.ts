@@ -1,5 +1,6 @@
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../modules/promotion-meta';
+import { toMetadataShape } from '../../../admin/promotions/helpers';
 
 interface AddPromotionsBody {
   promo_codes?: string[];
@@ -7,7 +8,6 @@ interface AddPromotionsBody {
 
 export const perCustomerLimitMiddleware = async (req: any, res: any, next: any) => {
   const customerId = req.auth_context?.actor_id;
-  if (!customerId) return next();
 
   const promoCodes: string[] = (req.body as AddPromotionsBody)?.promo_codes ?? [];
   if (promoCodes.length === 0) return next();
@@ -26,26 +26,29 @@ export const perCustomerLimitMiddleware = async (req: any, res: any, next: any) 
     const promotion = promotions[0];
 
     const meta = await promotionMetaService.getByPromotionId(promotion.id);
-    const maxUses = meta?.max_uses_per_customer ? Number(meta.max_uses_per_customer) : 0;
-    if (!maxUses || maxUses <= 0) continue;
+    const metaShape = toMetadataShape(meta);
 
-    // cart-add 시점 선제 차단; order-complete 시점에 complete-cart hook에서 재검증으로 race window 차단.
-    const { data: orders } = await query.graph({
-      entity: 'order',
-      fields: ['id'],
-      filters: {
-        customer_id: customerId,
-        promotions: { id: promotion.id },
-      },
-      pagination: { take: maxUses },
-    });
-
-    if ((orders?.length ?? 0) >= maxUses) {
-      return res.status(400).json({
-        message: `이 쿠폰은 1인당 ${maxUses}회까지 사용할 수 있습니다.`,
-        code: 'COUPON_LIMIT_EXCEEDED',
+    if (metaShape?.visibility === 'assigned_only' || metaShape?.visibility === 'claimable') {
+      if (!customerId) {
+        return res.status(400).json({
+          message: '이 쿠폰은 발급된 고객만 사용할 수 있습니다.',
+          code: 'COUPON_NOT_ASSIGNED',
+        });
+      }
+      const { data: customers } = await query.graph({
+        entity: 'customer',
+        fields: ['id', 'promotions.id'],
+        filters: { id: customerId },
       });
+      const isAssigned = (customers?.[0]?.promotions ?? []).some((p: any) => p.id === promotion.id);
+      if (!isAssigned) {
+        return res.status(400).json({
+          message: '이 쿠폰은 발급된 고객만 사용할 수 있습니다.',
+          code: 'COUPON_NOT_ASSIGNED',
+        });
+      }
     }
+
   }
 
   next();

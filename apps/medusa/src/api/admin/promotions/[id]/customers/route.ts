@@ -1,8 +1,5 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys, Modules, MedusaError } from '@medusajs/framework/utils';
-import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
-import PromotionMetaModuleService from '../../../../../modules/promotion-meta/service';
-import { toMetadataShape } from '../../helpers';
 
 interface RevokeBody {
   customer_ids: string[];
@@ -12,14 +9,16 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   const promotionId = req.params.id;
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
   const link = req.scope.resolve(ContainerRegistrationKeys.LINK);
-  const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
 
   const limit = parseInt(req.query.limit as string) || 20;
   const offset = parseInt(req.query.offset as string) || 0;
 
-  const [{ data: promotions }, meta, allLinks] = await Promise.all([
-    query.graph({ entity: 'promotion', fields: ['id', 'code'], filters: { id: promotionId } }),
-    promotionMetaService.getByPromotionId(promotionId),
+  const [{ data: promotions }, allLinks] = await Promise.all([
+    query.graph({
+      entity: 'promotion',
+      fields: ['id', 'code', 'campaign.budget.type', 'campaign.budget.limit'],
+      filters: { id: promotionId },
+    }),
     // linkService에는 typed interface가 없어 any cast 불가피
     (link.getLinkModule(Modules.CUSTOMER, 'customer_id', Modules.PROMOTION, 'promotion_id') as any)
       .list({ promotion_id: promotionId }, { select: ['customer_id', 'created_at'] }) as Promise<any[]>,
@@ -30,9 +29,9 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     throw new MedusaError(MedusaError.Types.NOT_FOUND, `Promotion ${promotionId} not found`);
   }
 
-  const metaShape = toMetadataShape(meta);
-  const maxUsesPerCustomer = metaShape?.max_uses_per_customer != null
-    ? Number(metaShape.max_uses_per_customer)
+  const budget = (promotion as any).campaign?.budget;
+  const maxUsesPerCustomer = budget?.type === 'use_by_attribute' && budget?.limit != null
+    ? Number(budget.limit)
     : null;
 
   const issuedAtMap = new Map<string, string>(

@@ -70,6 +70,11 @@ export const addPromotionToCart = async (
         e.digest = "COUPON_LIMIT_EXCEEDED"
         throw e
       }
+      if (error?.code === "COUPON_NOT_ASSIGNED") {
+        const e = new HttpApiError(error.message ?? "발급된 고객 전용 쿠폰", 400, "BAD_REQUEST")
+        e.digest = "COUPON_NOT_ASSIGNED"
+        throw e
+      }
       medusaError(error)
     })
 }

@@ -51,7 +51,16 @@
     "percentDiscount": "{value}% 割引",
     "wonDiscount": "{value} ウォン割引",
     "assignedSection": "発行済みクーポン",
-    "publicSection": "公開クーポン"
+    "claimSection": "受け取り可能なクーポン",
+    "claimButton": "受け取る",
+    "claiming": "受け取り中...",
+    "claimed": "受け取り済み",
+    "copyAria": "クーポンコードをコピー",
+    "publicSection": "公開クーポン",
+    "toasts": {
+      "claimSuccess": "クーポンを受け取りました。",
+      "claimFailed": "クーポンの受け取りに失敗しました。しばらくしてから再度お試しください。"
+    }
   },
   "point": {
     "historyTitle": "ポイント履歴",

@@ -49,6 +49,8 @@ export const DiscountSection = ({
     appliedPromotionCode ?? ""
   )
 
+  console.log("promotions:", promotions)
+
   const handleCouponChange = useCallback(
     (code: string) => {
       startTransition(async () => {
@@ -63,8 +65,11 @@ export const DiscountSection = ({
           onCouponApplied?.()
         } catch (error) {
           const err = error as Error & { digest?: string }
-          if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") throw error
-          if (err.digest === "COUPON_LIMIT_EXCEEDED") {
+          if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED")
+            throw error
+          if (err.digest === "COUPON_NOT_ASSIGNED") {
+            toast.error(t("toasts.couponNotAssigned"))
+          } else if (err.digest === "COUPON_LIMIT_EXCEEDED") {
             toast.error(t("toasts.couponLimitExceeded"))
           } else {
             toast.error(t("toasts.couponApplyFailed"))
@@ -95,12 +100,12 @@ export const DiscountSection = ({
     : null
 
   const couponDiscount = appliedPromotion
-    ? cartDiscountTotal ??
+    ? (cartDiscountTotal ??
       (appliedPromotion.application_method?.type === "percentage"
         ? Math.floor(
             itemSubtotal * (appliedPromotion.application_method.value / 100)
           )
-        : (appliedPromotion.application_method?.value ?? 0))
+        : (appliedPromotion.application_method?.value ?? 0)))
     : 0
 
   // 총 할인 금액 = 멤버십 할인 + 쿠폰 할인
@@ -109,7 +114,9 @@ export const DiscountSection = ({
   const formatPromoLabel = (promo: Promotion) =>
     promo.application_method?.type === "percentage"
       ? t("percentDiscount", { value: promo.application_method.value })
-      : t("amountDiscount", { amount: formatPrice(promo.application_method?.value ?? 0) })
+      : t("amountDiscount", {
+          amount: formatPrice(promo.application_method?.value ?? 0),
+        })
 
   return (
     <section aria-labelledby="discount-heading" className="mb-8">

@@ -11,30 +11,43 @@ type QueryParam = Parameters<typeof getVariantAvailability>[0];
 completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
   const query = container.resolve<QueryParam>(ContainerRegistrationKeys.QUERY);
 
-  // 1인당 사용 횟수 제한 재검증 — 장바구니 쿠폰 추가 시점과 주문 완료 시점 사이의 race window 차단
-  if (cart.customer_id && (cart as any).promotions?.length) {
-    const promotionMetaService = container.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
-    const promotions: Array<{ id: string }> = (cart as any).promotions;
+  // 쿠폰 정책 재검증 — cart-add 이후 주문 완료 사이 race window 차단
+  // promotions relation은 validate hook 인자에 보장되지 않으므로 cart.id로 명시 재조회
+  const { data: cartsWithPromos } = await query.graph({
+    entity: 'cart',
+    fields: ['id', 'promotions.id'],
+    filters: { id: cart.id },
+  });
+  const cartPromos: Array<{ id: string }> = (cartsWithPromos?.[0] as any)?.promotions ?? [];
 
-    for (const promo of promotions) {
+  if (cartPromos.length) {
+    const promotionMetaService = container.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
+
+    for (const promo of cartPromos) {
       const meta = await promotionMetaService.getByPromotionId(promo.id);
       const metaShape = toMetadataShape(meta);
-      const maxUses = metaShape?.max_uses_per_customer ? Number(metaShape.max_uses_per_customer) : 0;
-      if (!maxUses || maxUses <= 0) continue;
 
-      const { data: orders } = await query.graph({
-        entity: 'order',
-        fields: ['id'],
-        filters: { customer_id: cart.customer_id, promotions: { id: promo.id } },
-        pagination: { take: maxUses },
-      });
-
-      if ((orders?.length ?? 0) >= maxUses) {
-        throw new MedusaError(
-          MedusaError.Types.INVALID_DATA,
-          `이 쿠폰은 1인당 ${maxUses}회까지 사용할 수 있습니다.`,
-        );
+      if (metaShape?.visibility === 'assigned_only' || metaShape?.visibility === 'claimable') {
+        if (!cart.customer_id) {
+          throw new MedusaError(
+            MedusaError.Types.INVALID_DATA,
+            '이 쿠폰은 발급된 고객만 사용할 수 있습니다.',
+          );
+        }
+        const { data: customers } = await query.graph({
+          entity: 'customer',
+          fields: ['id', 'promotions.id'],
+          filters: { id: cart.customer_id },
+        });
+        const isAssigned = (customers?.[0]?.promotions ?? []).some((p: any) => p.id === promo.id);
+        if (!isAssigned) {
+          throw new MedusaError(
+            MedusaError.Types.INVALID_DATA,
+            '이 쿠폰은 발급된 고객만 사용할 수 있습니다.',
+          );
+        }
       }
+
     }
   }
 

@@ -1,4 +1,4 @@
-import { getMyPromotions } from "@/lib/api/medusa/promotion"
+import { claimCoupon, getMyPromotions } from "@/lib/api/medusa/promotion"
 import type { Promotion } from "@/lib/types/ui/promotion"
 import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
 import { getTranslations } from "next-intl/server"
@@ -14,17 +14,20 @@ export async function CouponTemplate() {
   const t = await getTranslations("mypage.coupon")
   const data = await getMyPromotions({ limit: 50 }).catch(() => ({
     promotions: [],
+    claimable_promotions: [],
     count: 0,
     offset: 0,
     limit: 50,
   }))
 
   const coupons = data.promotions as Promotion[]
+  const claimableCoupons = (data.claimable_promotions ?? []) as Promotion[]
   const assignedCoupons = coupons.filter((p) => p.is_assigned)
   const publicCoupons = coupons.filter((p) => !p.is_assigned)
 
+  const allForExpiry = [...coupons, ...claimableCoupons]
   const expiryById = new Map(
-    await Promise.all(coupons.map(async (p) => [p.id, await formatExpiry(p)] as const))
+    await Promise.all(allForExpiry.map(async (p) => [p.id, await formatExpiry(p)] as const))
   )
 
   return (
@@ -60,6 +63,24 @@ export async function CouponTemplate() {
             />
           ))}
         </ul>
+      )}
+
+      {claimableCoupons.length > 0 && (
+        <div className="mt-8">
+          <h2 className="mb-3 text-sm font-semibold text-stone-500">
+            {t("claimSection")}
+          </h2>
+          <ul className="flex flex-col gap-3">
+            {claimableCoupons.map((promo) => (
+              <CouponCard
+                key={promo.id}
+                promo={promo}
+                expiry={expiryById.get(promo.id) ?? ""}
+                onClaim={claimCoupon.bind(null, promo.id)}
+              />
+            ))}
+          </ul>
+        </div>
       )}
 
       {publicCoupons.length > 0 && (
