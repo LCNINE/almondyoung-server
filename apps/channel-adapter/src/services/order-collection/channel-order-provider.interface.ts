@@ -1,6 +1,17 @@
 import { OrderCreatedPayload, OrderItem, ShippingAddress } from '@packages/event-contracts/streams';
 
 export const CHANNEL_ORDER_PROVIDER = Symbol('CHANNEL_ORDER_PROVIDER');
+export const CHANNEL_PRODUCT_IDENTIFICATION_FAILED = 'channel_product_identification_failed' as const;
+
+export type OrderCollectionFailureReason = typeof CHANNEL_PRODUCT_IDENTIFICATION_FAILED;
+
+export interface OrderCollectionFailureItem {
+  externalOrderId: string;
+  sourceUpdatedAt: string;
+  reason: OrderCollectionFailureReason;
+  affectedLineIds: string[];
+  rawOrder: Record<string, unknown>;
+}
 
 export interface OrderFetchItem {
   externalOrderId: string;
@@ -16,7 +27,15 @@ export interface OrderFetchItem {
 
 export interface FetchOrdersResult {
   orders: OrderFetchItem[];
-  skipped: number;
+  failures: OrderCollectionFailureItem[];
+}
+
+export type OrderFetchOutcome =
+  | { kind: 'order'; order: OrderFetchItem }
+  | { kind: 'failure'; failure: OrderCollectionFailureItem };
+
+export interface ReplayableChannelOrderProvider extends ChannelOrderProvider {
+  fetchOrder(externalOrderId: string): Promise<OrderFetchOutcome | null>;
 }
 
 export interface ChannelOrderProvider {

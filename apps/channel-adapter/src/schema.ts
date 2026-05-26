@@ -212,6 +212,40 @@ export const pendingOrders = pgTable(
   ],
 );
 
+// 🔹 주문 수집 실패 격리 테이블
+// Payment Accepted 주문이 Core 판매주문으로 번역될 수 없을 때 durable 하게 보관한다.
+// 예: Medusa 주문 라인에 pimVariantId가 없어 채널 상품을 Core catalog variant로 식별하지 못한 경우.
+export const orderCollectionFailures = pgTable(
+  'order_collection_failures',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+
+    channel: varchar('channel', { length: 50 }).notNull(),
+    externalOrderId: varchar('external_order_id', { length: 255 }).notNull(),
+    reason: varchar('reason', { length: 100 }).notNull(),
+    affectedLineIds: jsonb('affected_line_ids').$type<string[]>().notNull(),
+    rawOrder: jsonb('raw_order').$type<Record<string, unknown>>().notNull(),
+    sourceUpdatedAt: timestamp('source_updated_at').notNull(),
+
+    status: varchar('status', { length: 30 }).notNull().default('quarantined'),
+    // 'quarantined' | 'replayed'
+    replayedAt: timestamp('replayed_at'),
+    replayedWmsOrderId: uuid('replayed_wms_order_id'),
+    errorMessage: text('error_message'),
+
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uq_order_collection_failure').on(table.channel, table.externalOrderId, table.reason),
+    index('idx_order_collection_failures_status').on(table.status),
+    index('idx_order_collection_failures_channel').on(table.channel),
+    index('idx_order_collection_failures_source_updated').on(table.sourceUpdatedAt),
+  ],
+);
+
 // ⚠️ IMPORTANT: This is the INBOX pattern (event reception/processing)
 // NOT to be confused with the shared Outbox pattern (libs/events/src/outbox/)
 //
@@ -428,6 +462,7 @@ export const channelAdapterSchema = {
   wmsOrderMappings,
   syncStatuses,
   pendingOrders,
+  orderCollectionFailures,
   inboxEvents,
   pimMedusaMappings,
   migrationProgress,

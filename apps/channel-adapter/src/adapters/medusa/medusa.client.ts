@@ -68,6 +68,35 @@ function isPaymentAcceptedOrder(order: MedusaOrder): boolean {
   return PAYMENT_ACCEPTED_STATUSES.has(order.payment_status);
 }
 
+const ORDER_FIELDS = [
+  'id',
+  'payment_status',
+  'email',
+  'customer_id',
+  'currency_code',
+  'total',
+  'subtotal',
+  'shipping_total',
+  'discount_total',
+  'created_at',
+  'updated_at',
+  '*items',
+  'items.id',
+  'items.title',
+  'items.quantity',
+  'items.unit_price',
+  'items.variant_id',
+  '+items.variant',
+  '+items.variant.metadata',
+  '+items.variant.title',
+  '+items.variant.product',
+  '+items.variant.product.metadata',
+  '*shipping_address',
+  'payment_collections.id',
+  'payment_collections.payments.id',
+  'payment_collections.payments.captures.id',
+].join(',');
+
 @Injectable()
 export class MedusaClient {
   private readonly logger = new Logger(MedusaClient.name);
@@ -572,11 +601,9 @@ export class MedusaClient {
     // (product.update({ categories }) 는 product record만 업데이트하고 조인 테이블을 갱신하지 않음)
     const attachResults = await Promise.allSettled(
       unique.map((catId) =>
-        this.sdk.admin.productCategory
-          .updateProducts(catId, { add: [productId] } as any)
-          .then(() => {
-            this.logger.debug(`Attached product ${productId} to category ${catId}`);
-          }),
+        this.sdk.admin.productCategory.updateProducts(catId, { add: [productId] } as any).then(() => {
+          this.logger.debug(`Attached product ${productId} to category ${catId}`);
+        }),
       ),
     );
     for (let i = 0; i < attachResults.length; i++) {
@@ -691,9 +718,7 @@ export class MedusaClient {
       }
     }
     if (misses.length === 0) return hits;
-    const ensured = await Promise.all(
-      misses.map(async (value) => ({ value, id: await this.ensureTag(value) })),
-    );
+    const ensured = await Promise.all(misses.map(async (value) => ({ value, id: await this.ensureTag(value) })));
     return [...hits, ...ensured];
   }
 
@@ -797,10 +822,7 @@ export class MedusaClient {
       const chunkSize = 10;
       for (let i = 0; i < rest.length; i += chunkSize) {
         const chunk = rest.slice(i, i + chunkSize);
-        const updated = await this.addVariants(
-          latest.id,
-          chunk as unknown as HttpTypes.AdminCreateProductVariant[],
-        );
+        const updated = await this.addVariants(latest.id, chunk as unknown as HttpTypes.AdminCreateProductVariant[]);
         if (updated) latest = updated;
       }
     } catch (err) {
@@ -1111,8 +1133,7 @@ export class MedusaClient {
           await this.sdk.admin.product.batchVariantInventoryItems(productId, { create: [entry] });
         } catch (perItemError) {
           const perItemFetch = perItemError as FetchError;
-          const perItemConflict =
-            perItemFetch.status === 409 || /already exists/i.test(perItemFetch.message || '');
+          const perItemConflict = perItemFetch.status === 409 || /already exists/i.test(perItemFetch.message || '');
           if (perItemConflict) {
             this.logger.debug(
               `Variant inventory link already exists: variant=${entry.variant_id}, inventory_item=${entry.inventory_item_id}`,
@@ -1250,40 +1271,11 @@ export class MedusaClient {
     const allOrders: MedusaOrder[] = [];
     let offset = 0;
 
-    const fields = [
-      'id',
-      'payment_status',
-      'email',
-      'customer_id',
-      'currency_code',
-      'total',
-      'subtotal',
-      'shipping_total',
-      'discount_total',
-      'created_at',
-      'updated_at',
-      '*items',
-      'items.id',
-      'items.title',
-      'items.quantity',
-      'items.unit_price',
-      'items.variant_id',
-      '+items.variant',
-      '+items.variant.metadata',
-      '+items.variant.title',
-      '+items.variant.product',
-      '+items.variant.product.metadata',
-      '*shipping_address',
-      'payment_collections.id',
-      'payment_collections.payments.id',
-      'payment_collections.payments.captures.id',
-    ].join(',');
-
     while (true) {
       const query: Record<string, unknown> = {
         limit,
         offset,
-        fields,
+        fields: ORDER_FIELDS,
       };
 
       if (params.since) {
@@ -1306,6 +1298,31 @@ export class MedusaClient {
     }
 
     return allOrders;
+  }
+
+  async retrieveOrder(orderId: string): Promise<MedusaOrder | null> {
+    try {
+      const result = await this.sdk.client.fetch<{ order?: MedusaOrder }>(
+        `/admin/orders/${encodeURIComponent(orderId)}`,
+        {
+          method: 'GET',
+          query: { fields: ORDER_FIELDS },
+        },
+      );
+
+      const order = result?.order;
+      if (!order || !isPaymentAcceptedOrder(order)) {
+        return null;
+      }
+      return order;
+    } catch (error) {
+      const fetchError = error as FetchError;
+      if (fetchError.status === 404) {
+        return null;
+      }
+      this.logger.error(`Failed to retrieve Medusa order: ${orderId}`, fetchError.message);
+      throw new Error(`Medusa retrieveOrder failed: ${fetchError.message}`);
+    }
   }
 
   // 헬스 체크: medusa api 연결 확인
