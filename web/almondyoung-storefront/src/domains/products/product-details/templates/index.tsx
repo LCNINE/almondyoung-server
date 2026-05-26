@@ -109,7 +109,7 @@ export async function ProductTemplate({
             </SectionTabsWrapper>
           </main>
 
-          <div className="lg:sticky lg:top-0 lg:max-h-screen lg:w-full lg:max-w-[480px] lg:min-w-[383px] lg:overflow-y-auto">
+          <div className="lg:sticky lg:top-0 lg:max-h-screen lg:w-full lg:max-w-[480px] lg:min-w-[383px] lg:overflow-hidden">
             <div className="hidden lg:block">
               <ProductSummary
                 brand={(product.metadata?.brand as string) ?? ""}
