@@ -51,7 +51,16 @@
     "percentDiscount": "{value}% 할인",
     "wonDiscount": "{value}원 할인",
     "assignedSection": "발급받은 쿠폰",
-    "publicSection": "공개 쿠폰"
+    "claimSection": "발급받기 가능한 쿠폰",
+    "claimButton": "발급받기",
+    "claiming": "발급 중...",
+    "claimed": "발급 완료",
+    "copyAria": "쿠폰 코드 복사",
+    "publicSection": "공개 쿠폰",
+    "toasts": {
+      "claimSuccess": "쿠폰이 발급되었습니다.",
+      "claimFailed": "쿠폰 발급에 실패했습니다. 잠시 후 다시 시도해주세요."
+    }
   },
   "point": {
     "historyTitle": "포인트 내역",

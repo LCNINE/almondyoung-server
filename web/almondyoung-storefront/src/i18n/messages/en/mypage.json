@@ -51,7 +51,16 @@
     "percentDiscount": "{value}% off",
     "wonDiscount": "{value} KRW off",
     "assignedSection": "My Assigned Coupons",
-    "publicSection": "Public Coupons"
+    "claimSection": "Available to Claim",
+    "claimButton": "Claim",
+    "claiming": "Claiming...",
+    "claimed": "Claimed",
+    "copyAria": "Copy coupon code",
+    "publicSection": "Public Coupons",
+    "toasts": {
+      "claimSuccess": "Coupon claimed successfully.",
+      "claimFailed": "Failed to claim the coupon. Please try again later."
+    }
   },
   "point": {
     "historyTitle": "Point History",

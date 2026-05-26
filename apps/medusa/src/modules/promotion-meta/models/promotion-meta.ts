@@ -8,8 +8,10 @@ const PromotionMeta = model
       promotion_id: model.text(),
       name: model.text().nullable(),
       max_discount_amount: model.number().nullable(),
-      max_uses_per_customer: model.number().nullable(),
       created_by: model.text().nullable(),
+      visibility: model.text().default('public').nullable(),
+      max_claims: model.number().nullable(),
+      auto_issue_trigger: model.text().nullable(),
     },
   )
   .indexes([

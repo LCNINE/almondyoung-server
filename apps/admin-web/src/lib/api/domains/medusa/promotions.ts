@@ -71,7 +71,7 @@ export interface CreatePromotionPayload {
     campaign_identifier: string;
     starts_at?: string;
     ends_at?: string;
-    budget?: { type: 'usage' | 'spend'; limit: number };
+    budget?: { type: 'usage' | 'spend'; limit: number } | { type: 'use_by_attribute' | 'spend_by_attribute'; attribute: string; limit: number };
   };
   rules?: PromotionRule[];
   additional_data?: Record<string, unknown>;

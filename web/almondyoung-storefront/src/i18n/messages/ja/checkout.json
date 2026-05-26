@@ -175,7 +175,8 @@
     "couponDiscount": "クーポン割引",
     "toasts": {
       "couponApplyFailed": "クーポンの適用に失敗しました。しばらくしてから再度お試しください。",
-      "couponLimitExceeded": "このクーポンの1人あたりの使用上限に達しました。"
+      "couponLimitExceeded": "このクーポンの1人あたりの使用上限に達しました。",
+      "couponNotAssigned": "このクーポンは発行済みのお客様のみご利用いただけます。"
     }
   },
   "paymentTotal": {
