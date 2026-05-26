@@ -7,18 +7,54 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 import { PriceRow } from "@/domains/checkout/components/shared/price-row"
 import { CheckoutMembershipTagIcon } from "@/icons/membership-tag-icon"
 import {
   addPromotionToCart,
   removePromotionFromCart,
+  previewCouponCode,
+  claimCoupon,
+  type CouponPreviewResult,
 } from "@/lib/api/medusa/store"
 import type { ShippingInfo } from "@/lib/types/ui/cart"
 import type { Promotion } from "@/lib/types/ui/promotion"
 import { formatPrice } from "@/lib/utils/price-utils"
+import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
 import { useTranslations } from "next-intl"
 import { useCallback, useState, useTransition } from "react"
+import { useParams } from "next/navigation"
 import { toast } from "sonner"
+
+const PREVIEW_REASON_KEYS = [
+  "COUPON_NOT_FOUND",
+  "COUPON_INACTIVE",
+  "COUPON_EXPIRED",
+  "COUPON_NOT_STARTED",
+  "COUPON_GROUP_RESTRICTED",
+  "COUPON_NOT_ASSIGNED",
+  "LOGIN_REQUIRED",
+] as const
+type PreviewReasonKey = (typeof PREVIEW_REASON_KEYS)[number]
+
+function isKnownReason(r: string | undefined): r is PreviewReasonKey {
+  return PREVIEW_REASON_KEYS.includes(r as PreviewReasonKey)
+}
+
+async function tryRestoreTokenAndRedirect(countryCode: string): Promise<boolean> {
+  try {
+    const res = await fetch("/api/auth/restore-token", {
+      method: "POST",
+      credentials: "include",
+    })
+    if (res.ok) return true
+  } catch {}
+  window.location.href = `/${countryCode}/login?redirect_to=${encodeURIComponent(
+    window.location.pathname + window.location.search
+  )}`
+  return false
+}
 
 interface DiscountSectionProps {
   cartId: string
@@ -44,6 +80,8 @@ export const DiscountSection = ({
   onCouponApplied,
 }: DiscountSectionProps) => {
   const t = useTranslations("checkout.discount")
+  const params = useParams()
+  const countryCode = params.countryCode as string
   const [isPending, startTransition] = useTransition()
   const [selectedCoupon, setSelectedCoupon] = useState<string>(
     appliedPromotionCode ?? ""
@@ -63,8 +101,10 @@ export const DiscountSection = ({
           onCouponApplied?.()
         } catch (error) {
           const err = error as Error & { digest?: string }
-          if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED")
-            throw error
+          if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
+            await tryRestoreTokenAndRedirect(countryCode)
+            return
+          }
           if (err.digest === "COUPON_NOT_ASSIGNED") {
             toast.error(t("toasts.couponNotAssigned"))
           } else if (err.digest === "COUPON_LIMIT_EXCEEDED") {
@@ -75,7 +115,7 @@ export const DiscountSection = ({
         }
       })
     },
-    [cartId, selectedCoupon, onCouponApplied, t]
+    [cartId, countryCode, selectedCoupon, onCouponApplied, t]
   )
 
   const handleCouponRemove = useCallback(() => {
@@ -151,9 +191,9 @@ export const DiscountSection = ({
             </span>
           </div>
 
-          {/* 적용된 쿠폰이 있을 때 */}
+          {/* 적용된 쿠폰 표시 */}
           {selectedCoupon ? (
-            <div className="bg-gray-0 flex items-center justify-between rounded-[5px] border border-[#F29219] px-3 py-2.5">
+            <div className="flex items-center justify-between rounded-[5px] border border-[#F29219] px-3 py-2.5">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-medium text-[#F29219] lg:text-sm">
                   {(() => {
@@ -213,6 +253,16 @@ export const DiscountSection = ({
               </SelectContent>
             </Select>
           )}
+
+          {/* 코드 직접 입력 */}
+          <DirectCouponInput
+            cartId={cartId}
+            selectedCoupon={selectedCoupon}
+            onApplied={(code) => {
+              setSelectedCoupon(code)
+              onCouponApplied?.()
+            }}
+          />
         </div>
       </div>
     </section>
@@ -281,6 +331,254 @@ const DiscountRow = ({
             {t("amountMinusWon", { amount: formatPrice(couponDiscount) })}
           </PriceRow.Value>
         </PriceRow>
+      )}
+    </div>
+  )
+}
+
+/*──────────────────────────────────────────────────────────────
+ * DirectCouponInput — 쿠폰 코드 직접 입력 + 미리보기 + 적용
+ *──────────────────────────────────────────────────────────────*/
+interface DirectCouponInputProps {
+  cartId: string
+  selectedCoupon: string
+  onApplied: (code: string) => void
+}
+
+const DirectCouponInput = ({
+  cartId,
+  selectedCoupon,
+  onApplied,
+}: DirectCouponInputProps) => {
+  const t = useTranslations("checkout.discount")
+  const td = useTranslations("checkout.discount.directInput")
+  const params = useParams()
+  const countryCode = params.countryCode as string
+  const [open, setOpen] = useState(false)
+  const [code, setCode] = useState("")
+  const [preview, setPreview] = useState<CouponPreviewResult | null>(null)
+  const [isPreviewing, startPreviewing] = useTransition()
+  const [isApplying, startApplying] = useTransition()
+
+  const upperCode = code.trim().toUpperCase()
+
+  const handleUnauthorized = async () => {
+    const restored = await tryRestoreTokenAndRedirect(countryCode)
+    if (!restored) return
+    // 토큰 복구 성공 시 재시도 없이 사용자에게 다시 버튼을 누르게 함
+    toast.error(t("toasts.couponApplyFailed"))
+  }
+
+  const handleCheck = () => {
+    if (!upperCode) return
+    setPreview(null)
+    startPreviewing(async () => {
+      try {
+        const result = await previewCouponCode(upperCode)
+        setPreview(result)
+      } catch {
+        setPreview({ valid: false, reason: "COUPON_NOT_FOUND" })
+      }
+    })
+  }
+
+  const handleApply = () => {
+    if (upperCode === selectedCoupon) {
+      toast.error(td("alreadyApplied"))
+      return
+    }
+    startApplying(async () => {
+      try {
+        if (selectedCoupon) {
+          await removePromotionFromCart(cartId, [selectedCoupon])
+        }
+        await addPromotionToCart(cartId, [upperCode])
+        onApplied(upperCode)
+        setCode("")
+        setPreview(null)
+        setOpen(false)
+      } catch (error) {
+        const err = error as Error & { digest?: string }
+        if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
+          // 기존 쿠폰이 제거됐을 수 있으므로 cart refresh
+          onApplied("")
+          await handleUnauthorized()
+          return
+        }
+        // 새 쿠폰 적용 실패 → 기존 쿠폰 rollback 시도
+        if (selectedCoupon) {
+          try {
+            await addPromotionToCart(cartId, [selectedCoupon])
+          } catch {
+            // rollback 실패 시 cart refresh로 상태 동기화
+            onApplied("")
+          }
+        }
+        if (err.digest === "COUPON_NOT_ASSIGNED") {
+          toast.error(t("toasts.couponNotAssigned"))
+        } else if (err.digest === "COUPON_LIMIT_EXCEEDED") {
+          toast.error(t("toasts.couponLimitExceeded"))
+        } else {
+          toast.error(t("toasts.couponApplyFailed"))
+        }
+      }
+    })
+  }
+
+  const handleClaim = () => {
+    const promotionId =
+      preview?.promotion?.promotion_id_to_claim ?? preview?.promotion?.id
+    if (!promotionId) return
+    startApplying(async () => {
+      let claimSucceeded = false
+      try {
+        await claimCoupon(promotionId)
+        claimSucceeded = true
+        if (selectedCoupon) {
+          await removePromotionFromCart(cartId, [selectedCoupon])
+        }
+        await addPromotionToCart(cartId, [upperCode])
+        onApplied(upperCode)
+        setCode("")
+        setPreview(null)
+        setOpen(false)
+      } catch (error) {
+        const err = error as Error & { digest?: string }
+        if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
+          await handleUnauthorized()
+          return
+        }
+        // 새 쿠폰 적용 실패 → 기존 쿠폰 rollback 시도
+        if (selectedCoupon) {
+          try {
+            await addPromotionToCart(cartId, [selectedCoupon])
+          } catch {
+            onApplied("")
+          }
+        }
+        toast.error(
+          claimSucceeded
+            ? t("toasts.claimSuccessApplyFailed")
+            : t("toasts.claimAndApplyFailed")
+        )
+      }
+    })
+  }
+
+  // known reason map — 동적 key 대신 안전한 정적 매핑
+  const previewError: string | null = (() => {
+    if (!preview || preview.valid || preview.claimable) return null
+    const reason = preview.reason
+    if (isKnownReason(reason)) return td(`errors.${reason}`)
+    return td("errors.UNKNOWN")
+  })()
+
+  const discountLabel = preview?.promotion?.discount
+    ? preview.promotion.discount.type === "percentage"
+      ? `${preview.promotion.discount.value}%${td("discountSuffix")}`
+      : `${formatPrice(preview.promotion.discount.value)}원${td("discountSuffix")}`
+    : null
+
+  return (
+    <div className="flex flex-col gap-2">
+      <button
+        type="button"
+        onClick={() => {
+          setOpen((v) => !v)
+          setCode("")
+          setPreview(null)
+        }}
+        className="self-start text-xs text-gray-500 underline underline-offset-2 hover:text-gray-700"
+      >
+        {td("tabLabel")}
+      </button>
+
+      {open && (
+        <div className="flex flex-col gap-2">
+          {/* 입력 행 */}
+          <div className="flex gap-2">
+            <Input
+              value={code}
+              onChange={(e) => {
+                setCode(e.target.value.toUpperCase())
+                setPreview(null)
+              }}
+              onKeyDown={(e) => e.key === "Enter" && handleCheck()}
+              placeholder={td("placeholder")}
+              className="h-10 flex-1 text-sm uppercase placeholder:normal-case placeholder:text-gray-400"
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleCheck}
+              disabled={!upperCode || isPreviewing}
+              className="h-10 shrink-0 px-4 text-xs"
+            >
+              {isPreviewing ? td("checking") : td("checkButton")}
+            </Button>
+          </div>
+
+          {/* 미리보기 카드 */}
+          {preview && (
+            <div
+              className={`rounded-[5px] border px-3 py-2.5 text-xs ${
+                preview.valid || preview.claimable
+                  ? "border-green-200 bg-green-50"
+                  : "border-red-200 bg-red-50"
+              }`}
+            >
+              {preview.valid || preview.claimable ? (
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="font-medium text-green-800">
+                      {discountLabel ?? td("confirmed")}
+                    </span>
+                    {!preview.claimable && (
+                      <span className="text-xs text-green-600">{td("confirmHint")}</span>
+                    )}
+                    {preview.claimable && (
+                      <span className="text-green-700">{td("claimableHint")}</span>
+                    )}
+                    {preview.promotion?.expires_at && (
+                      <span className="text-green-600">
+                        {td("expiresAt", {
+                          date: formatDate(
+                            preview.promotion.expires_at,
+                            DATE_FORMATS.KO_DOT
+                          ),
+                        })}
+                      </span>
+                    )}
+                  </div>
+                  {preview.claimable ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleClaim}
+                      disabled={isApplying}
+                      className="h-8 shrink-0 bg-green-700 px-3 text-xs hover:bg-green-800"
+                    >
+                      {isApplying ? td("claiming") : td("claimButton")}
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleApply}
+                      disabled={isApplying}
+                      className="h-8 shrink-0 bg-green-700 px-3 text-xs hover:bg-green-800"
+                    >
+                      {isApplying ? td("applying") : td("applyButton")}
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <span className="text-red-700">{previewError}</span>
+              )}
+            </div>
+          )}
+        </div>
       )}
     </div>
   )

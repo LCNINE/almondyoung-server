@@ -1,0 +1,24 @@
+{
+  "pageTitle": "쿠폰 받기",
+  "couponNotFound": "유효하지 않은 쿠폰입니다.",
+  "couponInactive": "현재 사용할 수 없는 쿠폰입니다.",
+  "couponExpired": "기간이 만료된 쿠폰입니다.",
+  "couponGroupRestricted": "이 쿠폰은 대상 고객만 받을 수 있습니다.",
+  "discountPercent": "{value}% 할인",
+  "discountAmount": "{amount}원 할인",
+  "expiresAt": "~ {date} 까지",
+  "unlimited": "기간 무제한",
+  "claimButton": "발급받기",
+  "claiming": "처리 중...",
+  "loginToClaim": "로그인하고 발급받기",
+  "alreadyClaimed": "이미 보유 중인 쿠폰",
+  "claimSuccess": "쿠폰이 발급됐습니다!",
+  "goToCoupons": "내 쿠폰함 확인",
+  "hint": "발급받은 쿠폰은 마이페이지 > 쿠폰함에서 확인하고 결제 시 사용할 수 있습니다.",
+  "limitBadge": "{count}명 한정",
+  "toasts": {
+    "claimSuccess": "쿠폰이 발급됐습니다!",
+    "claimFailed": "쿠폰 발급에 실패했습니다. 잠시 후 다시 시도해주세요.",
+    "groupRestricted": "이 쿠폰은 대상 고객만 받을 수 있습니다."
+  }
+}

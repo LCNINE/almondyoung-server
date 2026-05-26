@@ -173,10 +173,38 @@
     "removeAria": "쿠폰 제거",
     "membershipDiscount": "멤버십 할인",
     "couponDiscount": "쿠폰 할인",
+    "directInput": {
+      "tabLabel": "코드 직접 입력",
+      "placeholder": "쿠폰 코드를 입력하세요",
+      "checkButton": "확인",
+      "checking": "확인 중...",
+      "applyButton": "적용",
+      "applying": "적용 중...",
+      "claimButton": "발급받기",
+      "claiming": "처리 중...",
+      "confirmed": "확인된 쿠폰",
+      "confirmHint": "적용 후 실제 할인은 장바구니 조건에 따라 달라질 수 있습니다.",
+      "claimableHint": "발급받기 후 바로 적용됩니다.",
+      "expiresAt": "~{date} 까지",
+      "discountSuffix": " 할인",
+      "alreadyApplied": "이미 적용된 쿠폰입니다.",
+      "errors": {
+        "COUPON_NOT_FOUND": "존재하지 않는 쿠폰 코드입니다.",
+        "COUPON_INACTIVE": "현재 사용할 수 없는 쿠폰입니다.",
+        "COUPON_EXPIRED": "기간이 만료된 쿠폰입니다.",
+        "COUPON_NOT_STARTED": "아직 사용 기간이 아닌 쿠폰입니다.",
+        "COUPON_GROUP_RESTRICTED": "이 쿠폰은 대상 고객만 사용할 수 있습니다.",
+        "COUPON_NOT_ASSIGNED": "발급된 고객만 사용할 수 있는 쿠폰입니다.",
+        "LOGIN_REQUIRED": "로그인 후 확인 가능한 쿠폰입니다.",
+        "UNKNOWN": "사용할 수 없는 쿠폰입니다."
+      }
+    },
     "toasts": {
       "couponApplyFailed": "쿠폰 적용에 실패했습니다. 잠시 후 다시 시도해주세요.",
       "couponLimitExceeded": "이 쿠폰은 1인당 사용 한도에 도달했습니다.",
-      "couponNotAssigned": "이 쿠폰은 발급된 고객만 사용할 수 있습니다."
+      "couponNotAssigned": "이 쿠폰은 발급된 고객만 사용할 수 있습니다.",
+      "claimAndApplyFailed": "쿠폰 발급에 실패했습니다. 잠시 후 다시 시도해주세요.",
+      "claimSuccessApplyFailed": "쿠폰이 발급됐지만 현재 장바구니에 적용할 수 없습니다. 쿠폰함에서 확인 후 사용해 주세요."
     }
   },
   "paymentTotal": {

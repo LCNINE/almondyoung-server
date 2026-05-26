@@ -173,10 +173,38 @@
     "removeAria": "クーポン削除",
     "membershipDiscount": "メンバーシップ割引",
     "couponDiscount": "クーポン割引",
+    "directInput": {
+      "tabLabel": "コードを入力",
+      "placeholder": "クーポンコードを入力してください",
+      "checkButton": "確認",
+      "checking": "確認中...",
+      "applyButton": "適用",
+      "applying": "適用中...",
+      "claimButton": "受け取る",
+      "claiming": "処理中...",
+      "confirmed": "確認済みクーポン",
+      "confirmHint": "実際の割引はカートの条件によって異なる場合があります。",
+      "claimableHint": "受け取り後すぐに適用されます。",
+      "expiresAt": "{date} まで有効",
+      "discountSuffix": " 割引",
+      "alreadyApplied": "すでに適用済みのクーポンです。",
+      "errors": {
+        "COUPON_NOT_FOUND": "存在しないクーポンコードです。",
+        "COUPON_INACTIVE": "現在ご利用いただけないクーポンです。",
+        "COUPON_EXPIRED": "有効期限が切れたクーポンです。",
+        "COUPON_NOT_STARTED": "まだご利用期間ではありません。",
+        "COUPON_GROUP_RESTRICTED": "このクーポンは対象のお客様のみご利用いただけます。",
+        "COUPON_NOT_ASSIGNED": "発行済みのお客様のみご利用いただけます。",
+        "LOGIN_REQUIRED": "ログイン後にご確認いただけます。",
+        "UNKNOWN": "ご利用いただけないクーポンです。"
+      }
+    },
     "toasts": {
       "couponApplyFailed": "クーポンの適用に失敗しました。しばらくしてから再度お試しください。",
       "couponLimitExceeded": "このクーポンの1人あたりの使用上限に達しました。",
-      "couponNotAssigned": "このクーポンは発行済みのお客様のみご利用いただけます。"
+      "couponNotAssigned": "このクーポンは発行済みのお客様のみご利用いただけます。",
+      "claimAndApplyFailed": "クーポンの発行に失敗しました。しばらくしてから再度お試しください。",
+      "claimSuccessApplyFailed": "クーポンは発行されましたが、現在のカートに適用できませんでした。クーポン一覧でご確認のうえご利用ください。"
     }
   },
   "paymentTotal": {

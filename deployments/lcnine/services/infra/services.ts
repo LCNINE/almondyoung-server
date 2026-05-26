@@ -385,6 +385,8 @@ export function setup(infra: SharedInfra) {
       OIDC_REDIRECT_URI: $interpolate`${url("admin")}/auth/callback`,
       OIDC_POST_LOGOUT_REDIRECT_URI: $interpolate`${url("admin")}/login`,
       OAUTH_JWKS_URL: $interpolate`${idpUserServiceUrl}/.well-known/jwks.json`,
+      NEXT_PUBLIC_STOREFRONT_URL: url("www"),
+      NEXT_PUBLIC_STOREFRONT_DEFAULT_COUNTRY: "kr",
     },
   });
 

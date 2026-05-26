@@ -11,6 +11,7 @@ const PromotionMeta = model
       created_by: model.text().nullable(),
       visibility: model.text().default('public').nullable(),
       max_claims: model.number().nullable(),
+      issued_count: model.number().default(0),
       auto_issue_trigger: model.text().nullable(),
     },
   )
