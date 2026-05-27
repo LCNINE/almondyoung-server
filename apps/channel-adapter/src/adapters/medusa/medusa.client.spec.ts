@@ -277,6 +277,33 @@ describe('MedusaClient product sellable inventory projection', () => {
     expect(upsertProjectionInventoryLevel).toHaveBeenCalledWith('iitem_projection', 7);
   });
 
+  it('throws when no Medusa variant has the matching pimVariantId', async () => {
+    const client = Object.create(MedusaClient.prototype) as MedusaClient;
+    (client as any).getProductWithVariantDetails = jest.fn().mockResolvedValue({
+      id: 'prod_1',
+      variants: [
+        {
+          id: 'variant_medusa_1',
+          title: 'Red',
+          sku: 'SKU-1',
+          metadata: { pimVariantId: 'other-pim-var' },
+        },
+      ],
+    });
+
+    await expect(
+      client.applyProductSellableQuantityProjection({
+        medusaProductId: 'prod_1',
+        variantId: 'pim-var-1',
+        masterId: 'master-1',
+        sellableQuantity: 7,
+        isSellable: true,
+        reason: 'SELLABLE',
+        calculatedAt: '2026-05-27T00:00:00.000Z',
+      }),
+    ).rejects.toThrow('Medusa variant with pimVariantId=pim-var-1 not found on product prod_1');
+  });
+
   it('links configured projection stock location to the default sales channel', async () => {
     const retrieve = jest.fn().mockResolvedValue({
       stock_location: {

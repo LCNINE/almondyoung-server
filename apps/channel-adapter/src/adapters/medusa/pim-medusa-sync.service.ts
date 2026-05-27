@@ -494,10 +494,22 @@ export class PimMedusaSyncService {
       );
     }
 
+    this.logger.log(
+      `Applying ProductSellableQuantityChanged to Medusa: masterId=${payload.masterId}, ` +
+        `variantId=${payload.variantId}, medusaProductId=${medusaProductId}, ` +
+        `sellableQuantity=${payload.sellableQuantity}, reason=${payload.reason ?? 'unknown'}`,
+    );
+
     await this.medusaClient.applyProductSellableQuantityProjection({
       ...payload,
       medusaProductId,
     });
+
+    this.logger.log(
+      `ProductSellableQuantityChanged synced to Medusa: masterId=${payload.masterId}, ` +
+        `variantId=${payload.variantId}, medusaProductId=${medusaProductId}, ` +
+        `sellableQuantity=${payload.sellableQuantity}`,
+    );
   }
 
   // PIMCLIENT: PIM health check removed - only check Medusa (external dependency)

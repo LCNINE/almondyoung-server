@@ -103,6 +103,8 @@ export function setup(infra: SharedInfra) {
     link: [db],
     environment: {
       DATABASE_URL: dbUrl("channel_adapter"),
+      // 2026-05-27: this is the intended durable consumer group for channel-adapter.
+      // Existing Kafka backlog is disposable, so no offset migration is required.
       ...kafkaEnv("channel-adapter", "channel-adapter-group"),
       CHANNEL_ADAPTER_INTERNAL_KEY: channelAdapterInternalKey.value,
       MEDUSA_API_KEY: medusaApiKey.value,
