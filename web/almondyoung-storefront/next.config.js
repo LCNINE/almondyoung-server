@@ -128,6 +128,11 @@ const nextConfig = {
         protocol: "https",
         hostname: "almondyoung.s3.ap-northeast-2.amazonaws.com",
       },
+      {
+        protocol: "https",
+        hostname: "almondyoung-demo.s3.ap-northeast-2.amazonaws.com",
+        pathname: "/**",
+      },
       // 디지털 자산 썸네일은 Core 의 file-service 가 서빙한다 (#346, #351).
       // 기존 medusa-digital-asset 버킷은 폐기 — `file.{backendDomain}` 항목이 이를 대체.
       {

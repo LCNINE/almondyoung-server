@@ -36,7 +36,7 @@ function getDbCredentials() {
 
 export function buildDatabaseUrl(dbName: string): string {
   const { username, password, host, port } = getDbCredentials();
-  return `postgresql://${username}:${password}@${host}:${port}/${dbName}`;
+  return `postgresql://${username}:${password}@${host}:${port}/${dbName}?sslmode=require&uselibpqcompat=true`;
 }
 
 /** Connect to the default `postgres` database for admin operations (CREATE DATABASE, etc.) */

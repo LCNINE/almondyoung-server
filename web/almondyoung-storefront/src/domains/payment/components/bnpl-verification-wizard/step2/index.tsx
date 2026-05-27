@@ -122,7 +122,7 @@ function BusinessForm({
         const formData = new FormData()
 
         formData.append("file", form.watch("file")!)
-        formData.append("context", "business-verification-file")
+        formData.append("contextId", "business-verification-file")
 
         try {
           fileRes = await uploadFile(formData)

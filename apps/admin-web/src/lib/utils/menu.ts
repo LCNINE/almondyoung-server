@@ -345,6 +345,11 @@ export const mainMenus: MainMenu[] = [
         path: '/cs/qna',
       },
       {
+        id: 'business-license-management',
+        title: '사업자 인증 검토',
+        path: '/cs/business-licenses',
+      },
+      {
         id: 'chatbot-settings',
         title: '챗봇 설정',
         isComingSoon: true,

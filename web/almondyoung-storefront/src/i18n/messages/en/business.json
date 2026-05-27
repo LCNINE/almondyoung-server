@@ -1,0 +1,55 @@
+{
+  "form": {
+    "businessNumberLabel": "Business Registration Number",
+    "businessNumberPlaceholder": "000-00-00000",
+    "businessNumberRequiredError": "Please enter the business registration number.",
+    "businessNumberLengthError": "Business registration number must be 10 digits.",
+    "representativeNameLabel": "Representative Name",
+    "representativeNamePlaceholder": "Enter representative name",
+    "representativeNameRequiredError": "Please enter the representative name.",
+    "representativeNameMismatchError": "Representative name does not match.",
+    "lookupButton": "Look up",
+    "lookupPending": "Looking up...",
+    "lookupSuccess": "Business info retrieved. Press \"Register\" below to save.",
+    "lookupStatusSuccess": "Verified",
+    "lookupStatusFailed": "Failed",
+    "lookupStatusNone": "Not checked",
+    "cancelButton": "Cancel",
+    "registerButton": "Register",
+    "editButton": "Edit",
+    "registerPending": "Registering...",
+    "fileRequiredError": "Please look up business info or attach a file.",
+    "uploadError": "An error occurred while uploading the file.",
+    "notFoundError": "Business info not found.",
+    "genericError": "An error occurred.",
+    "lookupError": "An error occurred during lookup.",
+    "registerSuccess": "Business info has been registered.",
+    "editSuccess": "Business info has been updated.",
+    "fileUploadSuccess": "New file uploaded. It will be approved after admin review."
+  },
+  "fileManager": {
+    "noBusinessTitle": "No business registration? Or can't look it up?",
+    "toggleLabel": "Toggle",
+    "fileAlternative": "You can submit a file instead.",
+    "fileTypeHint": "Only PDF, JPG, PNG files are allowed. (Max 10MB)",
+    "fileSelectButton": "Select File"
+  },
+  "display": {
+    "statusLabel": "Status:",
+    "businessNumberLabel": "Business Number:",
+    "representativeNameLabel": "Representative:",
+    "fileLabel": "Business License:",
+    "fileAlt": "Business license",
+    "fileDialogTitle": "View Business License",
+    "fileDialogDescription": "View the full business license image.",
+    "editButton": "Edit Info",
+    "statusApproved": "Approved",
+    "statusUnderReview": "Under Review",
+    "statusRejected": "Rejected",
+    "statusNone": "None"
+  },
+  "empty": {
+    "title": "No business info registered",
+    "registerButton": "Register Business Info"
+  }
+}

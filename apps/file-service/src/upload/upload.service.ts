@@ -28,10 +28,16 @@ export class UploadService {
       throw new BadRequestError('File is required');
     }
 
-    const context = await this.fileContextRepository.findById(dto.contextId);
+    const contextId = dto.contextId ?? dto.context;
+
+    if (!contextId) {
+      throw new BadRequestError('contextId is required');
+    }
+
+    const context = await this.fileContextRepository.findById(contextId);
 
     if (!context) {
-      throw new NotFoundError(`Context ${dto.contextId} not found`);
+      throw new NotFoundError(`Context ${contextId} not found`);
     }
 
     if (!context.isActive) {
@@ -78,7 +84,7 @@ export class UploadService {
       isPublic,
       metadata: {
         uploadedBy: userId,
-        contextId: dto.contextId,
+        contextId,
       },
     });
 
@@ -91,7 +97,7 @@ export class UploadService {
       size: file.size,
       mimeType: normalizedClientMimeType,
       status: 'active',
-      contextId: dto.contextId,
+      contextId,
       uploadedBy: userId,
       storageProvider: uploadResult.provider.toLowerCase(),
       isPublic,

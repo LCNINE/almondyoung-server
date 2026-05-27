@@ -29,6 +29,7 @@ export const MENU_ITEMS: MenuItem[] = [
     path: "/mypage/account/cafe24",
   },
   { label: "mypage.menu.coupon", icon: "🏷️", path: "/mypage/coupons" },
+  { label: "mypage.menu.business", icon: "💼", path: "/mypage/business" },
   { label: "mypage.menu.logout", icon: "🚪", action: "logout" },
 ]
 
@@ -52,6 +53,7 @@ export const MENU_SECTIONS: MenuSection[] = [
       { label: "mypage.menu.password", icon: "🔒", path: "/mypage/account/password" },
       { label: "mypage.menu.orderLegacyShort", icon: "🔗", path: "/mypage/account/cafe24" },
       { label: "mypage.menu.shopSetting", icon: "👀", path: "/mypage/shop-setting" },
+      { label: "mypage.menu.business", icon: "💼", path: "/mypage/business" },
       {
         label: "mypage.menu.withdraw",
         icon: "🚫",
@@ -184,6 +186,12 @@ export const SIDEBAR_MENU_ITEMS = [
     label: "mypage.menu.coupon",
     hasSubMenu: false,
     path: "/mypage/coupons",
+  },
+  {
+    id: "business",
+    label: "mypage.menu.business",
+    hasSubMenu: false,
+    path: "/mypage/business",
   },
 ]
 

@@ -1,0 +1,55 @@
+{
+  "form": {
+    "businessNumberLabel": "事業者登録番号",
+    "businessNumberPlaceholder": "000-00-00000",
+    "businessNumberRequiredError": "事業者登録番号を入力してください。",
+    "businessNumberLengthError": "事業者登録番号は10桁でなければなりません。",
+    "representativeNameLabel": "代表者名",
+    "representativeNamePlaceholder": "代表者名を入力してください",
+    "representativeNameRequiredError": "代表者名を入力してください。",
+    "representativeNameMismatchError": "代表者名が一致しません。",
+    "lookupButton": "照会する",
+    "lookupPending": "照会中...",
+    "lookupSuccess": "事業者情報の照会が完了しました。下の「登録する」ボタンを押して登録してください。",
+    "lookupStatusSuccess": "照会完了",
+    "lookupStatusFailed": "照会失敗",
+    "lookupStatusNone": "未照会",
+    "cancelButton": "キャンセル",
+    "registerButton": "登録する",
+    "editButton": "修正する",
+    "registerPending": "登録中...",
+    "fileRequiredError": "事業者を照会するか、ファイルを添付してください。",
+    "uploadError": "ファイルのアップロード中にエラーが発生しました。",
+    "notFoundError": "事業者情報が見つかりません。",
+    "genericError": "エラーが発生しました。",
+    "lookupError": "照会中にエラーが発生しました。",
+    "registerSuccess": "事業者情報が登録されました。",
+    "editSuccess": "事業者情報が更新されました。",
+    "fileUploadSuccess": "新しいファイルがアップロードされました。管理者の審査後に承認されます。"
+  },
+  "fileManager": {
+    "noBusinessTitle": "事業者登録がないですか？または照会できませんか？",
+    "toggleLabel": "Toggle",
+    "fileAlternative": "ファイルで代わりに提出できます。",
+    "fileTypeHint": "PDF、JPG、PNGファイルのみアップロード可能です。（最大10MB）",
+    "fileSelectButton": "ファイルを選択"
+  },
+  "display": {
+    "statusLabel": "認証状態：",
+    "businessNumberLabel": "事業者登録番号：",
+    "representativeNameLabel": "代表者名：",
+    "fileLabel": "事業者登録証：",
+    "fileAlt": "事業者登録証",
+    "fileDialogTitle": "事業者登録証を全画面表示",
+    "fileDialogDescription": "事業者登録証の画像を大きく表示します",
+    "editButton": "情報を修正",
+    "statusApproved": "承認済み",
+    "statusUnderReview": "審査中",
+    "statusRejected": "却下",
+    "statusNone": "なし"
+  },
+  "empty": {
+    "title": "登録された事業者情報がありません",
+    "registerButton": "事業者情報を登録"
+  }
+}
