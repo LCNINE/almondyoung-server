@@ -60,6 +60,20 @@ export class CmsSettlementPollerService {
     }
   }
 
+  /**
+   * 특정 cms_withdrawal UUID로 단건 폴링 (admin trigger).
+   */
+  async pollWithdrawalById(id: string): Promise<void> {
+    const rows = await this.dbService.db
+      .select()
+      .from(cmsWithdrawals)
+      .where(eq(cmsWithdrawals.id, id))
+      .limit(1);
+    const withdrawal = rows[0];
+    if (!withdrawal) throw new Error('CMS withdrawal not found: ' + id);
+    await this.processWithdrawal(withdrawal);
+  }
+
   private async processWithdrawal(withdrawal: CmsWithdrawal): Promise<void> {
     const result = await this.cmsApi.getWithdrawal(withdrawal.transactionId);
     if (!result.ok) {
