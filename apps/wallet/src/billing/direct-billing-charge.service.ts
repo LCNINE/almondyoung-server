@@ -54,6 +54,10 @@ export class DirectBillingChargeService {
     if (billingMethod.userId !== params.userId) {
       throw new Error('billing method does not belong to user');
     }
+    // CMS_BATCH는 효성 배치 출금 방식이라 즉시 SUCCEEDED가 불가 — 토스 결제창으로 유도해야 함
+    if (billingMethod.providerType === 'CMS_BATCH') {
+      throw new Error('CMS_BATCH billing method cannot be used for immediate charges; use Toss payment flow instead');
+    }
 
     const provider = this.providerRegistry.getProviderOrThrow(billingMethod.providerType);
     const paymentMethod = await this.billingMethodService.findOrCreateForBilling(

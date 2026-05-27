@@ -89,17 +89,27 @@ export class BillingMethodController {
   @ApiOperation({ summary: 'List billing methods for the authenticated user' })
   async list(@Req() req: AuthenticatedRequest): Promise<BillingMethodResponseDto[]> {
     const userId = req.jwtUserId!;
-    const methods = await this.service.getUserBillingMethods(userId);
-    return methods.map((m) => this.toResponse(m));
+    const [methods, cmsMembers] = await Promise.all([
+      this.service.getUserBillingMethods(userId),
+      this.cmsMemberService.findByUserId(userId),
+    ]);
+    // CMS_BATCH는 효성 회원 등록 확정(REGISTERED) 전까지 사용 불가 — PENDING/FAILED는 제외
+    const confirmedCmsIds = new Set(
+      cmsMembers.filter((m) => m.status === 'REGISTERED').map((m) => m.billingMethodId),
+    );
+    return methods
+      .filter((m) => m.providerType !== 'CMS_BATCH' || confirmedCmsIds.has(m.id))
+      .map((m) => this.toResponse(m));
   }
 
   @Delete(':id')
   @HttpCode(204)
   @WalletJwtAuth()
   @ApiOperation({ summary: 'Revoke a billing method' })
-  async revoke(@Param('id') id: string): Promise<void> {
+  async revoke(@Param('id') id: string, @Req() req: AuthenticatedRequest): Promise<void> {
     try {
-      await this.service.revoke(id);
+      const userId = req.jwtUserId!;
+      await this.service.revoke(id, userId);
     } catch (e: any) {
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('not found')) throw new NotFoundException(e.message);

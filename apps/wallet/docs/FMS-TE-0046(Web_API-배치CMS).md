@@ -273,7 +273,7 @@ Location: https://api.hyosungcms.co.kr/v1/members/MEMBER-01
 - 회원등록 중이거나, 출금내역이 완료되지 않은 경우(출금중, 출금대기) 결제정보를 변경할 수 없습니다.
 
 #### (1) Request
-
+고
 ##### ① Request 샘플
 
 ```http

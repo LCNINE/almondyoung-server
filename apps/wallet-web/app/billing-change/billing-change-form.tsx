@@ -18,6 +18,7 @@ interface BillingChangeFormProps {
 
 export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: BillingChangeFormProps) {
   const router = useRouter();
+  const isRegister = !billingMethodId;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(initialError ?? null);
   const [done, setDone] = useState(false);
@@ -27,31 +28,47 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
   const [payerNumber, setPayerNumber] = useState('');
   const [paymentNumber, setPaymentNumber] = useState('');
 
+  const returnUrlWithFlag = (() => {
+    try {
+      const url = new URL(returnUrl);
+      url.searchParams.set('cardChanged', '1');
+      return url.toString();
+    } catch {
+      const sep = returnUrl.includes('?') ? '&' : '?';
+      return `${returnUrl}${sep}cardChanged=1`;
+    }
+  })();
+
   const handleSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!billingMethodId) return;
-
     setLoading(true);
     setError(null);
 
     try {
-      const res = await fetch(`/api/billing/cms-update/${billingMethodId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ paymentCompany, payerName, payerNumber, paymentNumber }),
-      });
+      const res = isRegister
+        ? await fetch('/api/billing/cms-register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ paymentCompany, payerName, payerNumber, paymentNumber }),
+          })
+        : await fetch(`/api/billing/cms-update/${billingMethodId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ paymentCompany, payerName, payerNumber, paymentNumber }),
+          });
 
       const data = await res.json().catch(() => ({})) as { error?: string };
 
       if (!res.ok) {
-        setError(data.error ?? '계좌 변경에 실패했습니다. 정보를 다시 확인해주세요.');
+        setError(data.error ?? (isRegister ? '계좌 등록에 실패했습니다. 정보를 다시 확인해주세요.' : '계좌 변경에 실패했습니다. 정보를 다시 확인해주세요.'));
         return;
       }
 
       setDone(true);
     } catch {
-      setError('계좌 변경 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+      setError(isRegister ? '계좌 등록 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' : '계좌 변경 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
     } finally {
       setLoading(false);
     }
@@ -67,37 +84,33 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
               <CardContent className="flex items-start gap-3 p-6">
                 <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-500" />
                 <div>
-                  <p className="text-sm font-semibold text-emerald-800">계좌 변경이 접수되었습니다</p>
+                  <p className="text-sm font-semibold text-emerald-800">
+                    {isRegister ? '계좌 등록이 접수되었습니다' : '계좌 변경이 접수되었습니다'}
+                  </p>
                   <p className="mt-1 text-xs text-emerald-700">
                     효성 CMS 심사 후 1~2 영업일 내 최종 확정됩니다.
-                    다음 결제부터 새 계좌로 자동 출금됩니다.
+                    {isRegister ? ' 등록 완료 시 정기결제가 자동으로 시작됩니다.' : ' 다음 결제부터 새 계좌로 자동 출금됩니다.'}
                   </p>
                 </div>
               </CardContent>
             </Card>
-            <Button onClick={() => router.replace(returnUrl)} className="w-full h-11 font-semibold">
+            <Button onClick={() => router.replace(returnUrlWithFlag)} className="w-full h-11 font-semibold">
               확인
             </Button>
           </>
-        ) : !billingMethodId ? (
-          <Card className="shadow-sm">
-            <CardContent className="p-6 text-center">
-              <CreditCard className="mx-auto mb-3 h-8 w-8 text-muted-foreground/50" />
-              <p className="text-sm text-muted-foreground">등록된 CMS 자동이체 계좌가 없습니다.</p>
-              <Button onClick={() => router.replace(returnUrl)} variant="outline" className="mt-4 w-full">
-                돌아가기
-              </Button>
-            </CardContent>
-          </Card>
         ) : (
           <Card className="shadow-sm">
             <CardContent className="p-6">
               <div className="mb-5 flex items-center gap-2">
                 <CreditCard className="h-4 w-4 text-muted-foreground" />
-                <h2 className="text-sm font-semibold">정기결제 계좌 변경</h2>
+                <h2 className="text-sm font-semibold">
+                  {isRegister ? '자동이체 계좌 등록' : '정기결제 계좌 변경'}
+                </h2>
               </div>
               <p className="mb-5 text-xs text-muted-foreground">
-                새로 등록한 계좌로 다음 결제부터 자동 출금됩니다.
+                {isRegister
+                  ? '등록한 계좌로 정기결제가 자동 출금됩니다.'
+                  : '새로 등록한 계좌로 다음 결제부터 자동 출금됩니다.'}
               </p>
 
               <form onSubmit={handleSubmit} className="space-y-4">
@@ -169,7 +182,7 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
                       처리 중...
                     </span>
                   ) : (
-                    '계좌 변경하기'
+                    isRegister ? '자동이체 계좌 등록하기' : '계좌 변경하기'
                   )}
                 </Button>
               </form>

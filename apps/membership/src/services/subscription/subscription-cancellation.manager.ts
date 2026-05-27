@@ -2,12 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
-import { eq, and } from 'drizzle-orm';
-import { addDays, differenceInHours } from 'date-fns';
+import { and, eq } from 'drizzle-orm';
 import { ContractEventManager } from './contract-event.manager';
 import { DrizzleTransaction } from '../../shared/schemas/types';
-import { MembershipPolicyService } from '../membership-policy.service';
-import { SubscriptionContractReader } from './subscription-contract.reader';
 
 type Contract = typeof schema.subscriptionContracts.$inferSelect;
 type Plan = typeof schema.plan.$inferSelect;
@@ -46,14 +43,12 @@ export class SubscriptionCancellationManager {
   constructor(
     private readonly dbService: DbService<typeof membershipSchema>,
     private readonly contractEventManager: ContractEventManager,
-    private readonly policyService: MembershipPolicyService,
-    private readonly contractReader: SubscriptionContractReader,
   ) {}
 
   /**
    * 환불 가능 여부 판단 (정책 기반)
    */
-  async checkRefundEligibility(contract: Contract, plan: Plan): Promise<RefundEligibility> {
+  checkRefundEligibility(contract: Contract, plan: Plan): RefundEligibility {
     // 검증: 계약과 플랜 존재 확인
     if (!contract) {
       throw new Error('Contract not found');
@@ -62,78 +57,11 @@ export class SubscriptionCancellationManager {
       throw new Error('Plan not found');
     }
 
-    // 1. 무료 체험 환불 정책 확인
-    const trialRefundEnabled = await this.policyService.getBooleanPolicy(
-      'TRIAL_REFUND_ENABLED',
-      'enabled',
-      plan.tierId,
-      true, // 기본값: 활성화
-    );
-
-    if (trialRefundEnabled && (await this.isInTrialPeriod(contract, plan))) {
-      return {
-        eligible: true,
-        reason: '무료 체험 기간 중 취소',
-        amount: plan.price,
-      };
-    }
-
-    // 2. 재구독 환불 정책 확인
-    const refundWindowHours = await this.policyService.getNumberPolicy(
-      'RESUBSCRIPTION_REFUND_WINDOW_HOURS',
-      'hours',
-      plan.tierId,
-      24, // 기본값: 24시간
-    );
-
-    const hoursSinceCreation = differenceInHours(new Date(), contract.createdAt);
-
-    if (hoursSinceCreation < refundWindowHours) {
-      const isResubscription = await this.isRecentResubscription(contract);
-
-      if (isResubscription) {
-        // 3. 혜택 사용 영향 정책 확인
-        const benefitAffectsRefund = await this.policyService.getBooleanPolicy(
-          'BENEFIT_USAGE_AFFECTS_REFUND',
-          'enabled',
-          plan.tierId,
-          true, // 기본값: 혜택 사용 시 환불 영향
-        );
-
-        if (benefitAffectsRefund) {
-          const hasBenefitUsage = await this.hasBenefitUsage(contract.id);
-
-          if (!hasBenefitUsage) {
-            return {
-              eligible: true,
-              reason: `재구독 후 ${refundWindowHours}시간 이내 + 혜택 미사용`,
-              amount: plan.price,
-            };
-          } else {
-            // 부분 환불
-            const usedAmount = await this.calculateUsedBenefitAmount(contract.id);
-            const refundAmount = Math.max(0, plan.price - usedAmount);
-
-            return {
-              eligible: refundAmount > 0,
-              reason: '재구독 후 혜택 사용 - 부분 환불',
-              amount: refundAmount,
-            };
-          }
-        } else {
-          // 혜택 사용 여부 무시
-          return {
-            eligible: true,
-            reason: `재구독 후 ${refundWindowHours}시간 이내`,
-            amount: plan.price,
-          };
-        }
-      }
-    }
-
+    // 고객 셀프 해지는 자동 환불을 만들지 않는다.
+    // 서비스 장애/기술 오류 예외 환불은 어드민 강제 취소 경로에서 금액을 산정해 처리한다.
     return {
       eligible: false,
-      reason: '환불 가능 기간이 지났습니다',
+      reason: '이용 시작 후 환불 불가',
       amount: 0,
     };
   }
@@ -218,7 +146,7 @@ export class SubscriptionCancellationManager {
         refundEligible: eligibility.eligible,
         refundAmount: eligibility.amount,
         refundStatus: eligibility.eligible ? 'PENDING' : 'NOT_APPLICABLE',
-        message: '구독이 즉시 취소되었습니다. 환불이 처리됩니다.',
+        message: '구독이 즉시 취소되었습니다.',
       };
     });
   }
@@ -409,74 +337,6 @@ export class SubscriptionCancellationManager {
         refundStatus: refundAmount > 0 ? 'PENDING' : 'NOT_APPLICABLE',
       };
     });
-  }
-
-  /**
-   * 무료 체험 기간 확인 (정책 기반)
-   */
-  private async isInTrialPeriod(contract: Contract, plan: Plan): Promise<boolean> {
-    // 정책에서 체험 기간 조회
-    const trialDays = await this.policyService.getNumberPolicy(
-      'TRIAL_DURATION_DAYS',
-      'days',
-      plan.tierId,
-      plan.trialDays || 0, // 기본값: 플랜의 체험 기간
-    );
-
-    if (!trialDays || trialDays === 0) {
-      return false;
-    }
-
-    const trialEndDate = addDays(new Date(contract.billingDate), trialDays);
-    const now = new Date();
-
-    return now < trialEndDate;
-  }
-
-  /**
-   * 재구독 여부 확인
-   */
-  private async isRecentResubscription(contract: Contract): Promise<boolean> {
-    // 이전 구독 이력이 있는지 확인
-    const allContracts = await this.contractReader.findContractsByUserId(contract.userId);
-
-    // 현재 계약 제외하고 이전 계약이 있으면 재구독
-    return allContracts.length > 1;
-  }
-
-  /**
-   * 혜택 사용 여부 확인
-   */
-  private async hasBenefitUsage(contractId: string): Promise<boolean> {
-    const [usage] = await this.dbService.db
-      .select()
-      .from(schema.membershipDiscountEvents)
-      .where(
-        and(
-          eq(schema.membershipDiscountEvents.subscriptionId, contractId),
-          eq(schema.membershipDiscountEvents.isCancelled, false),
-        ),
-      )
-      .limit(1);
-
-    return !!usage;
-  }
-
-  /**
-   * 사용한 혜택 금액 계산
-   */
-  private async calculateUsedBenefitAmount(contractId: string): Promise<number> {
-    const usages = await this.dbService.db
-      .select()
-      .from(schema.membershipDiscountEvents)
-      .where(
-        and(
-          eq(schema.membershipDiscountEvents.subscriptionId, contractId),
-          eq(schema.membershipDiscountEvents.isCancelled, false),
-        ),
-      );
-
-    return usages.reduce((sum, usage) => sum + (usage.discountAmount || 0), 0);
   }
 
   /**
