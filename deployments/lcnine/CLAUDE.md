@@ -82,7 +82,7 @@ cross-stack: `/lcnine-auth/<stage>/user-service-url`, `/auth-web-url`, (TEMP) `a
 
 `apps/core` (= 배포 이름 **Core**, hostname `core.…`) 는 **wms 와 pim 의 도메인을 모두 포함하는 통합 백엔드**. legacy `apps/wms`, `apps/pim` 은 제거됨 — 신규 도메인 로직은 모두 Core 에 추가.
 
-다른 서비스 환경변수에서 wms/pim 을 참조하던 자리(예: ChannelAdapter 의 `PIM_API_URL`, Medusa 의 `WMS_API_URL`)는 모두 `url("core")` 로 통합되어 있음.
+다른 서비스 환경변수에서 wms/pim 을 참조하던 자리(예: ChannelAdapter 의 `PIM_API_URL`)는 `url("core")` 로 통합되어 있음. Medusa checkout 은 Core/WMS URL 을 받지 않고 Medusa local inventory projection 으로 재고를 판단한다.
 
 ## 핵심 설계 포인트
 
