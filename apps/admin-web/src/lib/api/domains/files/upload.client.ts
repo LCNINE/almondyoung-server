@@ -15,6 +15,11 @@ export type FileUploadResponse = {
   isPublic: boolean;
 };
 
+export type FileSignedUrlResponse = {
+  signedUrl: string;
+  expiresAt: string;
+};
+
 export const DIGITAL_ASSET_FILE_CONTEXT_ID = 'digital-asset-file';
 
 type UploadFileOptions = {
@@ -59,4 +64,23 @@ export async function uploadRichTextImage(
   contextId: string
 ): Promise<FileUploadResponse> {
   return uploadFileToFileService(file, { contextId, isPublic: true });
+}
+
+export async function getFileSignedUrlFromFileService(
+  fileId: string,
+  expiresIn = 300
+): Promise<FileSignedUrlResponse> {
+  const res = await fetch(
+    `/api/proxy/file/files/${encodeURIComponent(fileId)}/download?expiresIn=${expiresIn}`,
+    {
+      method: 'GET',
+      credentials: 'include',
+    }
+  );
+
+  if (!res.ok) {
+    throw new Error(`파일 URL 생성에 실패했습니다. (status: ${res.status})`);
+  }
+
+  return (await res.json()) as FileSignedUrlResponse;
 }

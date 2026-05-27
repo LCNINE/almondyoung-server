@@ -31,7 +31,8 @@
     "payment": "결제수단",
     "coupon": "쿠폰",
     "logout": "로그아웃",
-    "withdraw": "회원탈퇴"
+    "withdraw": "회원탈퇴",
+    "business": "사업자 정보"
   },
   "quickLink": {
     "orderList": "주문목록",
@@ -674,6 +675,7 @@
     "pointEarn": "포인트 적립",
     "subscribeManage": "구독 관리",
     "download": "다운로드",
+    "business": "사업자 정보",
     "membershipJoin": "멤버십 가입",
     "membershipSubscribe": "멤버십 구독",
     "cafe24Migrate": "기존 아몬드영 계정 연결/이관"

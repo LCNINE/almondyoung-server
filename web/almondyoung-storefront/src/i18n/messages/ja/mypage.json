@@ -31,7 +31,8 @@
     "payment": "お支払い方法",
     "coupon": "クーポン",
     "logout": "ログアウト",
-    "withdraw": "退会"
+    "withdraw": "退会",
+    "business": "事業者情報"
   },
   "quickLink": {
     "orderList": "注文履歴",
@@ -846,6 +847,7 @@
     "pointEarn": "ポイント",
     "subscribeManage": "サブスク管理",
     "download": "ダウンロード",
+    "business": "事業者情報",
     "membershipJoin": "メンバーシップ加入",
     "membershipSubscribe": "メンバーシップ購読",
     "cafe24Migrate": "旧アカウント連携 / 移行"

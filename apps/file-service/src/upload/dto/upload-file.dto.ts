@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsObject, IsArray, IsBoolean } from 'class-validator';
+import { IsString, IsOptional, IsObject, IsBoolean } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 
@@ -7,8 +7,18 @@ export class UploadFileDto {
     description: 'File context ID (validated against file_contexts table)',
     example: 'product-image',
   })
+  @IsOptional()
   @IsString()
-  contextId: string;
+  contextId?: string;
+
+  @ApiProperty({
+    description: 'Legacy file context field. Use contextId instead.',
+    required: false,
+    deprecated: true,
+  })
+  @IsOptional()
+  @IsString()
+  context?: string;
 
   @ApiProperty({
     description:
