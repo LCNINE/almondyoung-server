@@ -118,7 +118,7 @@ export function setup(infra: IdpInfra) {
       // CAFE24_CLIENT_SECRET: cafe24ClientSecret.value,
       // CAFE24_SERVICE_KEY: cafe24ServiceKey.value,
       // CAFE24_MALL_ID: "lcnine",
-      // BIZNO_URL: "https://bizno.net/article",
+      BIZNO_URL: 'https://bizno.net/article',
       // AWS_ACCESS_KEY_ID: awsS3AccessKeyId.value,
       // AWS_SECRET_ACCESS_KEY: awsS3SecretAccessKey.value,
     },
