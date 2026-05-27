@@ -152,6 +152,9 @@ export const paymentIntents = pgTable(
     uniqueIndex('uq_payment_intents_client_secret').on(table.clientSecret),
     index('idx_payment_intents_status_expires_at').on(table.status, table.expiresAt),
     index('idx_payment_intents_user_created_at').on(table.userId, table.createdAt),
+    uniqueIndex('idx_payment_intents_billing_idempotency_key')
+      .on(sql`(${table.metadata}->>'idempotencyKey')`)
+      .where(sql`${table.metadata}->>'idempotencyKey' IS NOT NULL`),
   ],
 );
 

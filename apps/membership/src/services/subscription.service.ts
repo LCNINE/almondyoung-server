@@ -314,6 +314,7 @@ export class SubscriptionService {
     email: string,
     billingMethodId: string,
     billingMode: 'one_time' | 'recurring' = 'one_time',
+    checkoutAttemptId?: string,
   ) {
     const existing = await this.entitlementService.getUserEntitlement(userId);
     if (existing) throw new ActiveSubscriptionExistsException();
@@ -324,13 +325,16 @@ export class SubscriptionService {
 
     let initialPaymentIntentId: string | undefined;
     if (billingMode === 'one_time') {
+      if (!checkoutAttemptId) {
+        throw new SubscriptionBadRequestException('one_time 결제 시 checkoutAttemptId는 필수입니다');
+      }
       const chargeResult = await this.paymentClientService.directCharge({
         userId,
         billingMethodId,
         amount: planDetails.plan.price,
         currency: planDetails.plan.currency ?? 'KRW',
         metadata: { planId: planDetails.plan.id, type: 'MEMBERSHIP_FEE', email },
-        idempotencyKey: `membership:subscribe:${userId}:${planId}:${Date.now()}`,
+        idempotencyKey: `membership:subscribe:${userId}:${planId}:${billingMethodId}:${checkoutAttemptId}`,
       });
       if (chargeResult.status === 'FAILED') {
         throw new SubscriptionBadRequestException('결제에 실패했습니다. 카드 정보를 확인해주세요.');

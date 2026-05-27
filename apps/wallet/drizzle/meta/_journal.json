@@ -15,6 +15,13 @@
       "when": 1779337183125,
       "tag": "20260521041943_add-point-expiry",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779768000000,
+      "tag": "20260527120000_add-billing-idempotency-index",
+      "breakpoints": true
     }
   ]
 }

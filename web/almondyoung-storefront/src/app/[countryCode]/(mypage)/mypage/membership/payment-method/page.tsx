@@ -120,7 +120,7 @@ export default function MembershipPaymentMethodPage() {
 
     try {
       setIsChanging(billingMethodId)
-      await subscribeWithBillingMethod(planId, billingMethodId, "recurring")
+      await subscribeWithBillingMethod(planId, billingMethodId, "recurring", crypto.randomUUID())
       toast.success(t("trialStartedSuccess"))
       router.push(`/${countryCode}/mypage/membership/subscribe/success`)
     } catch {
