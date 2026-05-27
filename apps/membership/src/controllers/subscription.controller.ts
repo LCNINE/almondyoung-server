@@ -7,7 +7,6 @@ import {
   HttpCode,
   HttpStatus,
   UseGuards,
-  Req,
   NotFoundException,
   BadRequestException,
   InternalServerErrorException,
@@ -31,6 +30,8 @@ import {
   DowngradeSubscriptionRequest,
   CancelSubscriptionRequestSchema,
   CancelSubscriptionRequest,
+  SubscribeWithMethodRequestSchema,
+  SubscribeWithMethodRequest,
 } from '../shared/schemas';
 
 import {
@@ -47,10 +48,8 @@ import {
   UpgradeSubscriptionRequestDto,
   DowngradeSubscriptionRequestDto,
   CancelSubscriptionRequestDto,
-  SubscribeWithMethodRequestDto,
 } from '../shared/dto/request.dto';
 import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
-import { FastifyRequest } from 'fastify';
 import { JwtAuthGuard, User } from '@app/authorization';
 /**
  * 구독 관리 컨트롤러
@@ -186,7 +185,13 @@ export class SubscriptionController {
       throw new BadRequestException('userId가 필요합니다');
     }
 
-    return this.subscriptionService.createCheckoutIntent(userId, dto.planId, dto.returnUrl, user?.email, dto.billingMode);
+    return this.subscriptionService.createCheckoutIntent(
+      userId,
+      dto.planId,
+      dto.returnUrl,
+      user?.email,
+      dto.billingMode,
+    );
   }
 
   /**
@@ -382,13 +387,20 @@ export class SubscriptionController {
   @UseGuards(JwtAuthGuard)
   async subscribeWithMethod(
     @User() user: { userId: string; email?: string },
-    @Body() body: SubscribeWithMethodRequestDto,
+    @Body(new ZodValidationPipe(SubscribeWithMethodRequestSchema)) body: SubscribeWithMethodRequest,
   ) {
     const userId = user?.userId;
     const email = user?.email ?? '';
     if (!userId) throw new BadRequestException('userId가 필요합니다');
     try {
-      return await this.subscriptionService.subscribeWithBillingMethod(userId, body.planId, email, body.billingMethodId, body.billingMode ?? 'one_time');
+      return await this.subscriptionService.subscribeWithBillingMethod(
+        userId,
+        body.planId,
+        email,
+        body.billingMethodId,
+        body.billingMode ?? 'one_time',
+        body.checkoutAttemptId,
+      );
     } catch (e: any) {
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('already') || msg.includes('exists')) throw new BadRequestException(e.message);

@@ -178,7 +178,8 @@ export function MembershipForm({
           toast.error("결제 및 환불 정책에 동의해주세요.")
           return
         }
-        await subscribeWithBillingMethod(selectedPlanId, selectedBillingMethodId, billingMode)
+        const attemptId = crypto.randomUUID()
+        await subscribeWithBillingMethod(selectedPlanId, selectedBillingMethodId, billingMode, attemptId)
         if (billingMode === "recurring") {
           toast.success("7일 무료 체험이 시작되었습니다! 체험 종료 후 자동으로 결제됩니다.")
         } else {
