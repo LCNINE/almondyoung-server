@@ -28,7 +28,6 @@ docker build -t almondyoung/medusa -f apps/medusa/Dockerfile .
 docker run -p 9000:9000 \
   -e DATABASE_URL="postgresql://postgres:postgres@host.docker.internal:5432/postgres" \
   -e REDIS_URL="redis://host.docker.internal:6379" \
-  -e WMS_API_URL="http://host.docker.internal:3001" \
   almondyoung/medusa
 ```
 
@@ -42,7 +41,6 @@ docker run -p 9000:9000 \
 |--------|------|--------|
 | `DATABASE_URL` | PostgreSQL 연결 문자열 | - |
 | `REDIS_URL` | Redis 연결 문자열 | 없으면 메모리 기반 사용 |
-| `WMS_API_URL` | WMS 서비스 API 엔드포인트 | `http://localhost:3001` |
 
 ### 선택적 환경변수
 
@@ -87,14 +85,6 @@ Dockerfile은 다음 단계로 빌드됩니다:
 **원인**: 빌드 후 `yarn install --production` 재실행으로 빌드 결과물 손상
 
 **해결**: 이미 수정됨. Dockerfile에서 빌드 후 재설치 단계 제거됨.
-
-### 에러: `WMS Module requires an apiKey option`
-
-**원인**: `WMS_API_URL` 환경변수가 제공되지 않음
-
-**해결**: 
-- 로컬: 자동으로 `http://localhost:3001` 사용
-- 프로덕션: `-e WMS_API_URL="http://wms-service:3001"` 추가
 
 ### 경고: Kafka 연결 실패
 
@@ -155,4 +145,3 @@ docker rmi almondyoung/medusa
 - **프로덕션 권장**: Redis, Kafka 등 외부 인프라 사용
 - **보안**: JWT_SECRET, COOKIE_SECRET은 반드시 프로덕션에서 변경
 - **모니터링**: Admin UI는 `http://localhost:9000/app` 에서 접근
-

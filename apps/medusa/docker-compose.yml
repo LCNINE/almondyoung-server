@@ -54,8 +54,6 @@ services:
       # Kafka 사용 설정
       USE_KAFKA: "1" 
       KAFKA_BROKERS: kafka:29092 
-      # WMS API 설정
-      WMS_API_URL: http://host.docker.internal:3001
       # Kafka 경고 숨기기
       KAFKAJS_NO_PARTITIONER_WARNING: "1"
       # 기타 설정

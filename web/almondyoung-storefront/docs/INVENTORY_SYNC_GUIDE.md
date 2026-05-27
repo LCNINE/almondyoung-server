@@ -1,20 +1,22 @@
-# 재고 동기화 가이드 (셀메이트 → WMS → Medusa)
+# 재고 동기화 가이드 (셀메이트 → Core/WMS)
 
 ## 📋 개요
 
-이 문서는 셀메이트에서 다운로드한 재고 엑셀 파일을 업로드하여 WMS를 통해 Medusa 재고를 업데이트하는 프로세스를 설명합니다.
+이 문서는 셀메이트에서 다운로드한 재고 엑셀 파일을 업로드하여 운영자 도구에서 Core/WMS 재고를 조정하는 프로세스를 설명합니다.
+
+> Checkout 경로 예외 아님: 이 문서의 WMS 호출은 스토어프론트 관리자 재고 조정 도구에서만 사용한다. 일반 상품 조회, cart, checkout, order creation 경로는 Core/WMS availability API를 직접 호출하지 않고 Medusa inventory에 반영된 Product Sellable Quantity projection을 사용한다.
 
 ## 🔄 재고 동기화 흐름
 
 ```
 ┌──────────────┐      ┌──────────────┐      ┌──────────────┐      ┌──────────────┐
 │              │      │              │      │              │      │              │
-│  셀메이트     │─────▶│ 스토어프론트  │─────▶│     WMS      │─────▶│   Medusa     │
-│   (엑셀)     │      │  (업로드)     │      │  (재고조정)   │      │  (재고반영)   │
+│  셀메이트     │─────▶│ 스토어프론트  │─────▶│   Core/WMS   │─────▶│channel-adapter│
+│   (엑셀)     │      │  (운영자 업로드)│      │  (재고조정)   │      │  (projection) │
 │              │      │              │      │              │      │              │
 └──────────────┘      └──────────────┘      └──────────────┘      └──────────────┘
-   자체상품코드           자체상품코드          WMS SKU ID           Medusa Variant
-   현재재고               현재재고              Delta 계산           재고 업데이트
+   자체상품코드           자체상품코드          WMS SKU ID           Medusa inventory
+   현재재고               현재재고              Delta 계산           sellable projection
 ```
 
 ### 단계별 설명
@@ -25,9 +27,9 @@
    - 자체상품코드로 WMS SKU 조회
    - 현재 재고와 비교하여 Delta 계산
    - `/wms/inventory/stocks/adjust` API 호출
-4. **Medusa 재고 반영**: 
-   - WMS가 재고 변동 이벤트 발행 (Kafka)
-   - Medusa가 이벤트 수신하여 재고 업데이트
+4. **Medusa 재고 반영**:
+   - Core가 Product Sellable Quantity 변경 이벤트 발행
+   - channel-adapter가 이벤트를 수신해 Medusa inventory projection 업데이트
 
 ## 📁 셀메이트 엑셀 양식
 
@@ -92,101 +94,19 @@ NEXT_PUBLIC_WMS_URL=http://localhost:3001  # WMS 서버 URL
 
 ### 3. Medusa (재고 반영)
 
-**파일**: `apps/medusa/src/modules/events/service.ts`
+Medusa는 Core SKU 그래프를 직접 복제하지 않는다. channel-adapter가 Core의 `ProductSellableQuantityChanged` projection 이벤트를 받아 Medusa variant의 inventory item/level에 현재 sellable quantity를 반영한다.
 
-**이벤트 구독**: `inventory.events.v1` 토픽
-- `StockReceived` (입고)
-- `StockShipped` (출고)
-- `StockAdjusted` (조정)
+## Commerce 경계
 
-**처리 로직**:
-1. Kafka에서 재고 이벤트 수신
-2. SKU로 Medusa Variant 조회
-3. Inventory Item ID 조회
-4. Stock Location 조회
-5. Inventory Level 업데이트
+스토어프론트의 고객 구매 경로는 이 관리자 도구를 호출하지 않는다. 고객용 상품 상세, 장바구니, checkout, 주문 생성은 Medusa Store API만 호출하고, Medusa는 자기 local inventory projection으로 재고를 판단한다.
 
-## ⚠️ 현재 문제점
+Core/WMS 직접 호출은 아래 운영자 재고 조정 경로에만 허용한다.
 
-### 🔴 WMS → Medusa 이벤트 발행 미구현
+| 호출 위치 | 대상 | 허용 이유 |
+| --- | --- | --- |
+| `src/lib/api/admin/inventory.ts` | Core/WMS `/wms/*` | 셀메이트 엑셀 기준으로 물리 재고를 조정하는 운영자 전용 도구. checkout availability 판단이 아니다. |
 
-**문제**: WMS의 `inventory` 모듈이 재고 조정 시 Kafka 이벤트를 발행하지 않음
-
-**증상**:
-- WMS에서 재고 조정 성공
-- Stock Event는 생성됨
-- Outbox에 이벤트가 추가되지 않음
-- Medusa 재고가 업데이트되지 않음
-
-**원인**:
-- `inventory-command.service.ts`에서 `adjustUp`/`adjustDown` 호출 시
-- Outbox Service를 호출하지 않음
-- Event Publishing 로직 누락
-
-**해결 방법** (서버 수정 필요):
-
-```typescript
-// apps/wms/src/inventory/services/inventory-command.service.ts
-
-import { OutboxService } from '../../order/shared/services/outbox.service';
-
-@Injectable()
-export class InventoryCommandService {
-  constructor(
-    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
-    private readonly eventStore: StockEventStore,
-    private readonly outboxService: OutboxService,  // ✅ 추가
-  ) {}
-
-  async adjustUp(input: { ... }, tx?: DbTx) {
-    if (input.quantity <= 0) throw new BadRequestException('quantity must be positive');
-    const exec = async (trx: DbTx) => {
-      // 1. Stock Event 생성
-      const event = await this.eventStore.createEvent({
-        skuId: input.skuId,
-        toWarehouseId: input.warehouseId,
-        toLocationId: input.locationId ?? null,
-        toState: 'ON_HAND',
-        transitionType: 'ADJUST_UP',
-        quantity: input.quantity,
-        occurredAt: input.occurredAt ?? new Date(),
-        idempotencyKey: input.idempotencyKey,
-        reason: input.reason,
-      }, trx);
-
-      // 2. Outbox에 이벤트 추가 ✅
-      await this.outboxService.enqueue({
-        eventType: 'StockAdjusted',
-        aggregateType: 'Stock',
-        aggregateId: event.id,
-        partitionKey: input.skuId,
-        payload: {
-          skuCode: input.skuId,  // TODO: SKU name 조회
-          quantity: input.quantity,
-          deltaQuantity: input.quantity,
-          afterQuantity: input.quantity,  // TODO: 실제 재고 조회
-          warehouseId: input.warehouseId,
-          reason: input.reason,
-        },
-      }, trx);
-
-      return { eventId: event?.id ?? null };
-    };
-    return tx ? exec(tx) : this.db.transaction(exec);
-  }
-
-  async adjustDown(input: { ... }, tx?: DbTx) {
-    // adjustUp과 동일한 패턴으로 수정
-    // ...
-  }
-}
-```
-
-**추가 작업**:
-1. `InventoryCommandService`에 `OutboxService` 주입
-2. `adjustUp`, `adjustDown`, `receive`, `ship` 메서드에 Outbox 추가
-3. SKU ID → SKU name 조회 로직 추가
-4. 현재 재고 조회 로직 추가
+Core에서 재고 변경이 확정되면 Core가 최종 Product Sellable Quantity를 계산하고, channel-adapter가 해당 projection을 Medusa inventory item/level에 반영한다. channel-adapter나 Medusa는 Core SKU 매칭 그래프를 재구현하지 않는다.
 
 ## ✅ 테스트 방법
 
@@ -200,7 +120,7 @@ export class InventoryCommandService {
 ### 2. WMS 재고 확인
 
 ```bash
-# WMS API로 재고 조회
+# Core/WMS API로 재고 조회
 GET http://localhost:3001/wms/inventory/stocks/summary?skuId={skuId}
 ```
 
@@ -211,33 +131,22 @@ GET http://localhost:3001/wms/inventory/stocks/summary?skuId={skuId}
 GET http://localhost:9000/admin/inventory-items/{inventoryItemId}
 ```
 
-### 4. Kafka 이벤트 확인
+### 4. Projection 반영 확인
 
-```bash
-# Kafka 토픽 확인
-kafka-console-consumer --bootstrap-server localhost:9092 \
-  --topic inventory.events.v1 \
-  --from-beginning
-```
+channel-adapter 로그에서 `ProductSellableQuantityChanged` 처리와 Medusa inventory level 업데이트 성공 여부를 확인한다.
 
 ## 📝 로그 확인
 
-### WMS 로그
+### Core/WMS 로그
 ```bash
 # 재고 조정 이벤트 생성 확인
 [InventoryCommandService] Created ADJUST_UP ev#123 sku=abc-123 qty=10
-
-# Outbox 이벤트 추가 확인 (수정 후)
-[OutboxService] Enqueued StockAdjusted event for sku=abc-123
 ```
 
-### Medusa 로그
+### channel-adapter 로그
 ```bash
-# Kafka 이벤트 수신 확인
-📦 Received inventory event: StockAdjusted { skuCode: 'abc-123', deltaQuantity: 10 }
-
-# 재고 업데이트 확인
-Inventory updated: SKU=abc-123, qty=110
+ProductSellableQuantityChanged handled variantId=...
+Medusa inventory level updated inventoryItemId=... sellableQuantity=...
 ```
 
 ## 🚀 향후 개선 사항
@@ -254,15 +163,14 @@ Inventory updated: SKU=abc-123, qty=110
 - `src/lib/api/admin/inventory.ts` - 재고 업로드 API
 - `src/app/[countryCode]/(mypage)/mypage/admin/inventory/page.tsx` - 관리자 페이지
 
-### WMS
-- `apps/wms/src/inventory/controllers/inventory.controller.ts`
-- `apps/wms/src/inventory/services/inventory-command.service.ts`
-- `apps/wms/src/inventory/repositories/stock-event.store.ts`
+### Core/WMS
+- `apps/core/src/modules/inventory` - 재고 조정 및 재고 이벤트
+- `apps/core/src/modules/product-matching` - 판매상품 ↔ 재고상품 매칭
 
-### Medusa
-- `apps/medusa/src/modules/events/service.ts` - Kafka 이벤트 구독
+### channel-adapter / Medusa
+- `apps/channel-adapter` - Product Sellable Quantity projection → Medusa inventory 반영
+- `apps/medusa/src/scripts/backfill-sellable-inventory-projections.ts` - 기존 Medusa variant inventory projection link 보강
 
 ## 📞 문의
 
 재고 동기화 관련 문의는 개발팀에 연락하세요.
-
