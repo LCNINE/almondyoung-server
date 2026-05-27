@@ -11,7 +11,12 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { join } from 'path';
 import { writeFileSync, mkdirSync } from 'fs';
 import { EventsModule, createKafkaConfigFromEnv } from '@app/events';
-import { FULFILLMENT_STREAM, PRODUCT_STREAM, MEMBERSHIP_STREAM } from '@packages/event-contracts/streams';
+import {
+  FULFILLMENT_STREAM,
+  INVENTORY_STREAM,
+  PRODUCT_STREAM,
+  MEMBERSHIP_STREAM,
+} from '@packages/event-contracts/streams';
 
 async function bootstrap() {
   const app = await NestFactory.create(
@@ -103,17 +108,20 @@ async function bootstrap() {
   if (process.env.NODE_ENV !== 'test') {
     // 로컬 개발 시 별도 Consumer Group 사용 (Railway와 파티션 충돌 방지)
     const isLocal = !process.env.RAILWAY_ENVIRONMENT;
-    const groupId = isLocal ? 'channel-adapter-consumer-local' : 'channel-adapter-consumer';
+    const fallbackGroupId = isLocal ? 'channel-adapter-consumer-local' : 'channel-adapter-consumer';
+    // KAFKA_GROUP_ID is the durable offset identity. For lcnine, we intentionally use
+    // channel-adapter-group because the existing broker backlog is disposable.
+    const groupId = process.env.KAFKA_GROUP_ID || fallbackGroupId;
 
     const consumerOptions = EventsModule.forConsumer({
-      streams: [FULFILLMENT_STREAM, PRODUCT_STREAM, MEMBERSHIP_STREAM],
-      groupId: 'channel-adapter-consumer',
+      streams: [FULFILLMENT_STREAM, PRODUCT_STREAM, INVENTORY_STREAM, MEMBERSHIP_STREAM],
+      groupId,
       kafka: createKafkaConfigFromEnv()!,
     });
 
     app.connectMicroservice(consumerOptions);
     await app.startAllMicroservices();
-    console.log('🚚 Kafka Consumer 연결 완료 (FULFILLMENT_STREAM 구독)');
+    console.log(`Kafka Consumer connected: groupId=${groupId}, streams=fulfillment,product,inventory,membership`);
   }
 
   const port = process.env.PORT ?? 3003;

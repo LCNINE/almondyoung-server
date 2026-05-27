@@ -24,7 +24,7 @@ import type {
 export class InboxWorkerService implements OnModuleInit {
   private readonly logger = new Logger(InboxWorkerService.name);
   private isRunning = false;
-  private intervalId: NodeJS.Timeout | null = null;
+  private intervalId: ReturnType<typeof setInterval> | null = null;
   private readonly pollIntervalMs: number;
   private readonly batchSize: number;
   private readonly maxRetries: number;
