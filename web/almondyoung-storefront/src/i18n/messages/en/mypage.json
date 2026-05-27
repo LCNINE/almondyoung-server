@@ -31,7 +31,8 @@
     "payment": "Payment Methods",
     "coupon": "Coupons",
     "logout": "Log out",
-    "withdraw": "Delete Account"
+    "withdraw": "Delete Account",
+    "business": "Business Info"
   },
   "quickLink": {
     "orderList": "Orders",
@@ -846,6 +847,7 @@
     "pointEarn": "Reward Points",
     "subscribeManage": "Subscription",
     "download": "Downloads",
+    "business": "Business Info",
     "membershipJoin": "Join Membership",
     "membershipSubscribe": "Membership Subscription",
     "cafe24Migrate": "Link / Migrate Legacy Account"
