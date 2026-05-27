@@ -1,0 +1,12 @@
+-- 운영 DB 적용 전 중복 확인 필요:
+-- select metadata->>'idempotencyKey' as key, count(*)
+-- from payment_intents
+-- where metadata->>'idempotencyKey' is not null
+-- group by 1 having count(*) > 1;
+--
+-- CONCURRENTLY는 트랜잭션 밖에서 실행되어야 합니다.
+-- 드리즐 마이그레이션 러너가 트랜잭션으로 감싸는 경우, 운영 반영 전 수동 실행:
+-- CREATE UNIQUE INDEX CONCURRENTLY "idx_payment_intents_billing_idempotency_key"
+--   ON "payment_intents" ((metadata->>'idempotencyKey'))
+--   WHERE metadata->>'idempotencyKey' IS NOT NULL;
+CREATE UNIQUE INDEX "idx_payment_intents_billing_idempotency_key" ON "payment_intents" ((metadata->>'idempotencyKey')) WHERE metadata->>'idempotencyKey' IS NOT NULL;

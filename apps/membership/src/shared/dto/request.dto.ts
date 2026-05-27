@@ -1,4 +1,4 @@
-import { IsIn, IsNotEmpty, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsIn, IsNotEmpty, IsString, IsUUID } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { createZodDto } from 'nestjs-zod';
 import {
@@ -17,6 +17,7 @@ import {
   UpgradeSubscriptionRequestSchema,
   DowngradeSubscriptionRequestSchema,
   CancelSubscriptionRequestSchema,
+  SubscribeWithMethodRequestSchema,
 
   // Pause Operations
   PauseSubscriptionRequestSchema,
@@ -42,6 +43,7 @@ export class ConfirmCheckoutIntentRequestDto extends createZodDto(ConfirmCheckou
 export class UpgradeSubscriptionRequestDto extends createZodDto(UpgradeSubscriptionRequestSchema) {}
 export class DowngradeSubscriptionRequestDto extends createZodDto(DowngradeSubscriptionRequestSchema) {}
 export class CancelSubscriptionRequestDto extends createZodDto(CancelSubscriptionRequestSchema) {}
+export class SubscribeWithMethodRequestDto extends createZodDto(SubscribeWithMethodRequestSchema) {}
 
 // ===== Pause Operations Request DTOs =====
 
@@ -67,20 +69,4 @@ export class AdminSubscribeUserRequestDto {
   @ApiProperty({ description: '결제 방식', enum: ['one_time', 'recurring'], default: 'recurring' })
   @IsIn(['one_time', 'recurring'])
   billingMode: 'one_time' | 'recurring';
-}
-
-export class SubscribeWithMethodRequestDto {
-  @ApiProperty({ description: 'Plan ID to subscribe to' })
-  @IsString()
-  @IsNotEmpty()
-  planId: string;
-
-  @ApiProperty({ description: 'Billing method ID to charge' })
-  @IsUUID()
-  billingMethodId: string;
-
-  @ApiProperty({ description: '결제 방식. recurring=7일 무료체험 후 자동결제, one_time=즉시결제', enum: ['one_time', 'recurring'], default: 'one_time' })
-  @IsOptional()
-  @IsIn(['one_time', 'recurring'])
-  billingMode?: 'one_time' | 'recurring';
 }

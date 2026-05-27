@@ -107,6 +107,24 @@ export const GetBulkSubscriptionsRequestSchema = z.object({
   id: z.array(z.string({ error: '사용자 ID는 필수입니다' })),
 });
 
+export const SubscribeWithMethodRequestSchema = z
+  .object({
+    planId: z.string().min(1, { error: 'planId는 필수입니다' }),
+    billingMethodId: z.uuid({ error: '유효한 UUID 형식이어야 합니다' }),
+    billingMode: z.enum(['one_time', 'recurring']).optional(),
+    checkoutAttemptId: z.uuid({ error: '유효한 UUID 형식이어야 합니다' }).optional(),
+  })
+  .superRefine((data, ctx) => {
+    const effectiveMode = data.billingMode ?? 'one_time';
+    if (effectiveMode === 'one_time' && !data.checkoutAttemptId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['checkoutAttemptId'],
+        message: 'one_time 결제 시 checkoutAttemptId는 필수입니다',
+      });
+    }
+  });
+
 // Type exports - Controller에서만 사용
 export type CreateTierRequest = z.infer<typeof CreateTierRequestSchema>;
 export type UpdateTierRequest = z.infer<typeof UpdateTierRequestSchema>;
@@ -121,6 +139,7 @@ export type DowngradeSubscriptionRequest = z.infer<typeof DowngradeSubscriptionR
 export type PauseSubscriptionRequest = z.infer<typeof PauseSubscriptionRequestSchema>;
 export type ResumeSubscriptionRequest = z.infer<typeof ResumeSubscriptionRequestSchema>;
 export type CancelSubscriptionRequest = z.infer<typeof CancelSubscriptionRequestSchema>;
+export type SubscribeWithMethodRequest = z.infer<typeof SubscribeWithMethodRequestSchema>;
 
 // =================================================================
 // Policy Management - 정책 관리 요청 검증용

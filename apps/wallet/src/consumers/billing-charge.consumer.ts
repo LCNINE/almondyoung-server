@@ -5,13 +5,8 @@ import { BillingChargePayload } from '@packages/event-contracts/streams/wallet-c
 import { DomainEvent } from '@packages/event-contracts/types';
 import { DbService } from '@app/db';
 import { randomBytes } from 'node:crypto';
-import { sql } from 'drizzle-orm';
-import {
-  WalletSchema,
-  paymentIntents,
-  outboxEvents,
-  IntentPurpose,
-} from '../schema';
+import { and, eq, sql } from 'drizzle-orm';
+import { WalletSchema, paymentIntents, outboxEvents, IntentPurpose } from '../schema';
 import { BillingAgreementService } from '../billing/billing-agreement.service';
 import { BillingMethodService } from '../billing/billing-method.service';
 import { ProviderRegistry } from '../providers/provider.registry';
@@ -24,7 +19,7 @@ import {
   buildPaymentIntentEventPayload,
 } from '../messaging/gateway-event.builder';
 import { buildOutboxInsertValues } from '../messaging/outbox-event.util';
-import { ChargeResult } from '../providers/payment-provider.interface';
+import { PaymentProvider, ChargeResult } from '../providers/payment-provider.interface';
 
 const DEFAULT_INTENT_EXPIRY_MINUTES = 60 * 24; // 24 hours
 
@@ -77,21 +72,14 @@ export class BillingChargeConsumer {
     // 2. billingMethod 조회
     const billingMethod = await this.billingMethodService.findById(agreement.billingMethodId);
     if (!billingMethod || billingMethod.status !== 'ACTIVE') {
-      this.logger.error(
-        `[BillingCharge] Billing method inactive: billingMethodId=${agreement.billingMethodId}`,
-      );
-      await this.emitFailedEvent(
-        correlationId,
-        payload,
-        'BILLING_METHOD_NOT_ACTIVE',
-        'Billing method is not active',
-      );
+      this.logger.error(`[BillingCharge] Billing method inactive: billingMethodId=${agreement.billingMethodId}`);
+      await this.emitFailedEvent(correlationId, payload, 'BILLING_METHOD_NOT_ACTIVE', 'Billing method is not active');
       return;
     }
 
     // 3. Provider 결정
     const providerType = billingMethod.providerType; // 'TOSS_BILLING' | 'CMS_BATCH'
-    let provider;
+    let provider: PaymentProvider;
     try {
       provider = this.providerRegistry.getProviderOrThrow(providerType);
     } catch {
@@ -114,16 +102,102 @@ export class BillingChargeConsumer {
 
     // 5. PaymentIntent 생성 — idempotency: 같은 key로 이미 처리된 intent가 있으면 skip
     const [existingIntent] = await this.dbService.db
-      .select({ id: paymentIntents.id, status: paymentIntents.status })
+      .select({
+        id: paymentIntents.id,
+        status: paymentIntents.status,
+        updatedAt: paymentIntents.updatedAt,
+        userId: paymentIntents.userId,
+      })
       .from(paymentIntents)
       .where(sql`${paymentIntents.metadata}->>'idempotencyKey' = ${payload.idempotencyKey}`)
       .limit(1);
 
     if (existingIntent) {
-      this.logger.log(
-        `[BillingCharge] Duplicate command skipped (idempotencyKey=${payload.idempotencyKey}): intentId=${existingIntent.id}, status=${existingIntent.status}`,
-      );
-      return;
+      const { id: existingId, status: existingStatus, updatedAt, userId: existingUserId } = existingIntent;
+      switch (existingStatus) {
+        case 'AUTHORIZED':
+        case 'CAPTURED':
+        case 'SUCCEEDED':
+        case 'PENDING_SETTLEMENT':
+          this.logger.log(`[BillingCharge] Already processed (${existingStatus}): intentId=${existingId}, skip`);
+          return;
+
+        case 'FAILED': {
+          // 4xx 경로는 이미 outbox에 FAILED 이벤트가 기록됨.
+          // 5xx 경로는 outbox 이벤트가 없을 수 있으므로 존재 여부를 확인 후 없을 때만 재발행.
+          const [existingFailedEvent] = await this.dbService.db
+            .select({ id: outboxEvents.id })
+            .from(outboxEvents)
+            .where(
+              and(eq(outboxEvents.aggregateId, existingId), eq(outboxEvents.eventType, GatewayEventType.INTENT_FAILED)),
+            )
+            .limit(1);
+
+          if (existingFailedEvent) {
+            this.logger.log(`[BillingCharge] FAILED intent with existing outbox event (intentId=${existingId}), skip`);
+            return;
+          }
+
+          this.logger.warn(`[BillingCharge] FAILED intent without outbox event (intentId=${existingId}), re-emitting`);
+          await this.emitFailedEvent(
+            correlationId,
+            payload,
+            'BILLING_CHARGE_PREVIOUS_ATTEMPT_FAILED',
+            'Previous charge attempt failed',
+            existingId,
+          );
+          return;
+        }
+
+        case 'CREATED':
+        case 'PROCESSING': {
+          // 동시 중복 전달(concurrent delivery)인지, 진짜 stuck인지 updatedAt으로 판별.
+          const STUCK_THRESHOLD_MS = 15 * 60 * 1000; // 15분
+          const isStuck = Date.now() - new Date(updatedAt).getTime() > STUCK_THRESHOLD_MS;
+          if (!isStuck) {
+            // 첫 번째 consumer가 아직 처리 중일 가능성 높음 — 조용히 skip
+            this.logger.warn(`[BillingCharge] Concurrent delivery (${existingStatus}): intentId=${existingId}, skip`);
+            return;
+          }
+          // 15분 이상 갱신 없음 → 진짜 stuck: FAILED로 전이 + outbox 동시 기록
+          // 상태를 FAILED로 바꿔야 이후 재전달이 CREATED/PROCESSING으로 다시 들어오지 않음
+          this.logger.warn(
+            `[BillingCharge] Stuck intent (${existingStatus}, updatedAt=${new Date(updatedAt).toISOString()}): intentId=${existingId}, transitioning to FAILED`,
+          );
+          await this.stateTransitionService.transitionIntent(existingId, 'FAILED', {
+            correlationId,
+            reasonCode: 'BILLING_CHARGE_STUCK',
+            reasonMessage: `Intent stuck in ${existingStatus} state for > 15 minutes`,
+            outboxEvent: {
+              eventType: GatewayEventType.INTENT_FAILED,
+              aggregateType: GATEWAY_AGGREGATE_TYPE,
+              aggregateId: existingId,
+              payload: buildPaymentIntentEventPayload({
+                intentId: existingId,
+                userId: existingUserId ?? '',
+                status: 'FAILED',
+                payableAmount: payload.amount,
+                currency: payload.currency.toUpperCase(),
+                occurredAt: new Date().toISOString(),
+                extra: {
+                  purpose: payload.purpose,
+                  subscriberRef: payload.subscriberRef,
+                  subscriberType: payload.subscriberType,
+                  errorCode: 'BILLING_CHARGE_STUCK',
+                  errorMessage: `Intent stuck in ${existingStatus} state for > 15 minutes`,
+                },
+              }),
+            },
+          });
+          return;
+        }
+
+        default:
+          this.logger.warn(
+            `[BillingCharge] Unexpected intent status (${existingStatus}): intentId=${existingId}, skip`,
+          );
+          return;
+      }
     }
 
     const clientSecret = randomBytes(32).toString('hex');
@@ -186,6 +260,13 @@ export class BillingChargeConsumer {
       });
       intentId = intent.id;
     } catch (err) {
+      // Unique index violation = concurrent duplicate command; first writer wins
+      if ((err as { code?: string })?.code === '23505') {
+        this.logger.log(
+          `[BillingCharge] Duplicate intent blocked by unique index (idempotencyKey=${payload.idempotencyKey})`,
+        );
+        return;
+      }
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`[BillingCharge] Intent creation failed: ${msg}`);
       throw err; // 재시도 (DLQ)
@@ -273,10 +354,15 @@ export class BillingChargeConsumer {
       case 'SUCCEEDED': {
         // charge → SUCCEEDED, intent → AUTHORIZED → auto-capture
         await this.dbService.db.transaction(async (tx) => {
-          await this.chargesService.updateStatus(chargeId, 'SUCCEEDED', {
-            providerTransactionId: result.providerTransactionId,
-            responsePayload: result.raw,
-          }, tx);
+          await this.chargesService.updateStatus(
+            chargeId,
+            'SUCCEEDED',
+            {
+              providerTransactionId: result.providerTransactionId,
+              responsePayload: result.raw,
+            },
+            tx,
+          );
 
           await this.stateTransitionService.transitionIntent(
             intentId,
@@ -311,9 +397,7 @@ export class BillingChargeConsumer {
         // Auto-capture
         await this.autoCaptureService.attemptAutoCapture(intentId, correlationId);
 
-        this.logger.log(
-          `[BillingCharge] Succeeded: intentId=${intentId}, subscriberRef=${payload.subscriberRef}`,
-        );
+        this.logger.log(`[BillingCharge] Succeeded: intentId=${intentId}, subscriberRef=${payload.subscriberRef}`);
         return;
       }
 
@@ -339,11 +423,16 @@ export class BillingChargeConsumer {
       default: {
         // FAILED — 4xx/비즈니스 오류: 즉시 실패 이벤트, 재시도 없음
         await this.dbService.db.transaction(async (tx) => {
-          await this.chargesService.updateStatus(chargeId, 'FAILED', {
-            errorCode: result.errorCode ?? 'PROVIDER_FAILED',
-            errorMessage: result.errorMessage ?? 'Provider authorization failed',
-            responsePayload: result.raw,
-          }, tx);
+          await this.chargesService.updateStatus(
+            chargeId,
+            'FAILED',
+            {
+              errorCode: result.errorCode ?? 'PROVIDER_FAILED',
+              errorMessage: result.errorMessage ?? 'Provider authorization failed',
+              responsePayload: result.raw,
+            },
+            tx,
+          );
 
           await this.stateTransitionService.transitionIntent(
             intentId,
@@ -399,6 +488,7 @@ export class BillingChargeConsumer {
     payload: BillingChargePayload,
     errorCode: string,
     errorMessage: string,
+    intentId?: string,
   ): Promise<void> {
     const now = new Date().toISOString();
     try {
@@ -406,7 +496,7 @@ export class BillingChargeConsumer {
         buildOutboxInsertValues({
           eventType: GatewayEventType.INTENT_FAILED,
           aggregateType: GATEWAY_AGGREGATE_TYPE,
-          aggregateId: `billing-charge:${payload.idempotencyKey}`,
+          aggregateId: intentId ?? `billing-charge:${payload.idempotencyKey}`,
           partitionKey: `${payload.subscriberType}:${payload.subscriberRef}`,
           payload: {
             subscriberRef: payload.subscriberRef,

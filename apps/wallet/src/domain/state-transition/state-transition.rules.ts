@@ -17,9 +17,9 @@ type TransitionRules<TStatus extends string> = Partial<Record<TStatus, readonly 
 // AUTHORIZED → CAPTURED (terminal) | PARTIALLY_CAPTURED | CANCELED (terminal)
 // PARTIALLY_CAPTURED → CAPTURED (admin resolve) | CANCELED (admin cancel)
 // SUCCEEDED → CAPTURED | CANCELED  (backward compat: legacy data)
-// CREATED → CANCELED
+// CREATED → CANCELED | FAILED (stuck intent 강제 종료)
 const paymentIntentTransitionRules: TransitionRules<PaymentIntentStatus> = {
-  CREATED: ['PROCESSING', 'CANCELED'],
+  CREATED: ['PROCESSING', 'FAILED', 'CANCELED'],
   PROCESSING: ['AUTHORIZED', 'FAILED', 'REQUIRES_ACTION', 'PENDING_SETTLEMENT', 'CREATED', 'CANCELED'],
   REQUIRES_ACTION: ['PROCESSING', 'AUTHORIZED', 'FAILED', 'CREATED', 'CANCELED'],
   PENDING_SETTLEMENT: ['AUTHORIZED', 'FAILED', 'CANCELED'],

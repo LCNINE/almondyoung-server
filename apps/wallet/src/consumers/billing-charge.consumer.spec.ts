@@ -82,17 +82,19 @@ describe('BillingChargeConsumer', () => {
     const mockTx = {
       insert: jest.fn().mockReturnValue({
         values: jest.fn().mockReturnValue({
-          returning: jest.fn().mockResolvedValue([{
-            id: 'intent-001',
-            payableAmount: 29900,
-            currency: 'KRW',
-            status: 'CREATED',
-            purpose: 'SUBSCRIPTION',
-            userId: 'user-001',
-            clientSecret: 'secret',
-            expiresAt: new Date(),
-            version: 0,
-          }]),
+          returning: jest.fn().mockResolvedValue([
+            {
+              id: 'intent-001',
+              payableAmount: 29900,
+              currency: 'KRW',
+              status: 'CREATED',
+              purpose: 'SUBSCRIPTION',
+              userId: 'user-001',
+              clientSecret: 'secret',
+              expiresAt: new Date(),
+              version: 0,
+            },
+          ]),
         }),
       }),
     };
@@ -102,12 +104,14 @@ describe('BillingChargeConsumer', () => {
         transaction: jest.fn().mockImplementation(async (fn: Function) => fn(mockTx)),
         insert: jest.fn().mockReturnValue({
           values: jest.fn().mockReturnValue({
-            returning: jest.fn().mockResolvedValue([{
-              id: 'pm-billing-001',
-              userId: 'user-001',
-              type: 'TOSS_BILLING',
-              providerData: { billingMethodId: 'bm-001' },
-            }]),
+            returning: jest.fn().mockResolvedValue([
+              {
+                id: 'pm-billing-001',
+                userId: 'user-001',
+                type: 'TOSS_BILLING',
+                providerData: { billingMethodId: 'bm-001' },
+              },
+            ]),
           }),
         }),
         select: jest.fn().mockReturnValue({
@@ -259,10 +263,7 @@ describe('BillingChargeConsumer', () => {
     );
 
     // Verify auto-capture triggered
-    expect(autoCaptureService.attemptAutoCapture).toHaveBeenCalledWith(
-      'intent-001',
-      expect.any(String),
-    );
+    expect(autoCaptureService.attemptAutoCapture).toHaveBeenCalledWith('intent-001', expect.any(String));
   });
 
   // ─── Happy path: CMS Batch (PENDING) ───────────────────────────────────
@@ -335,6 +336,147 @@ describe('BillingChargeConsumer', () => {
 
     // Auto-capture should NOT be called for PENDING
     expect(autoCaptureService.attemptAutoCapture).not.toHaveBeenCalled();
+  });
+
+  // ─── Existing intent status-aware handling ────────────────────────────
+
+  function mockSelectOnce(result: unknown[]) {
+    return {
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          limit: jest.fn().mockResolvedValue(result),
+        }),
+      }),
+    };
+  }
+
+  function setupAgreementAndMethod() {
+    billingAgreementService.findBySubscriberRef.mockResolvedValue({
+      id: 'ba-001',
+      userId: 'user-001',
+      billingMethodId: 'bm-001',
+      subscriberRef: 'sub-001',
+      subscriberType: 'MEMBERSHIP',
+      status: 'ACTIVE',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    billingMethodService.findById.mockResolvedValue({
+      id: 'bm-001',
+      userId: 'user-001',
+      providerType: 'TOSS_BILLING',
+      billingKey: 'key',
+      customerKey: 'ckey',
+      cmsMemberId: null,
+      displayName: null,
+      method: null,
+      status: 'ACTIVE',
+      expiresAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+  }
+
+  it('기존 SUCCEEDED intent → idempotent skip (outbox insert 없음)', async () => {
+    const payload = createPayload();
+    setupAgreementAndMethod();
+
+    dbService.db.select.mockReturnValueOnce(
+      mockSelectOnce([{ id: 'intent-existing', status: 'SUCCEEDED', updatedAt: new Date() }]),
+    );
+
+    await consumer.onBillingCharge(createMockEnvelope(payload), payload);
+
+    expect(mockProvider.authorize).not.toHaveBeenCalled();
+    expect(dbService.db.insert).not.toHaveBeenCalled();
+  });
+
+  it('기존 PENDING_SETTLEMENT intent → idempotent skip', async () => {
+    const payload = createPayload();
+    setupAgreementAndMethod();
+
+    dbService.db.select.mockReturnValueOnce(
+      mockSelectOnce([{ id: 'intent-existing', status: 'PENDING_SETTLEMENT', updatedAt: new Date() }]),
+    );
+
+    await consumer.onBillingCharge(createMockEnvelope(payload), payload);
+
+    expect(mockProvider.authorize).not.toHaveBeenCalled();
+    expect(dbService.db.insert).not.toHaveBeenCalled();
+  });
+
+  it('기존 FAILED intent (5xx) + outbox 이벤트 없음 → FAILED 이벤트 재발행', async () => {
+    const payload = createPayload();
+    setupAgreementAndMethod();
+
+    // 1st select: existing FAILED intent
+    // 2nd select: no outbox event found
+    dbService.db.select
+      .mockReturnValueOnce(mockSelectOnce([{ id: 'intent-existing', status: 'FAILED', updatedAt: new Date() }]))
+      .mockReturnValueOnce(mockSelectOnce([])); // outbox event not found
+
+    await consumer.onBillingCharge(createMockEnvelope(payload), payload);
+
+    expect(mockProvider.authorize).not.toHaveBeenCalled();
+    expect(dbService.db.insert).toHaveBeenCalled(); // emitFailedEvent
+  });
+
+  it('기존 FAILED intent (4xx) + outbox 이벤트 있음 → skip (재발행 없음)', async () => {
+    const payload = createPayload();
+    setupAgreementAndMethod();
+
+    // 1st select: existing FAILED intent
+    // 2nd select: outbox event already exists
+    dbService.db.select
+      .mockReturnValueOnce(mockSelectOnce([{ id: 'intent-existing', status: 'FAILED', updatedAt: new Date() }]))
+      .mockReturnValueOnce(mockSelectOnce([{ id: 'outbox-001' }])); // outbox event found
+
+    await consumer.onBillingCharge(createMockEnvelope(payload), payload);
+
+    expect(mockProvider.authorize).not.toHaveBeenCalled();
+    expect(dbService.db.insert).not.toHaveBeenCalled();
+  });
+
+  it('기존 CREATED intent (15분 경과 stuck) → FAILED 전이 + outbox 기록', async () => {
+    const payload = createPayload();
+    setupAgreementAndMethod();
+
+    const stuckAt = new Date(Date.now() - 20 * 60 * 1000); // 20분 전
+    dbService.db.select.mockReturnValueOnce(
+      mockSelectOnce([{ id: 'intent-stuck', status: 'CREATED', updatedAt: stuckAt, userId: 'user-001' }]),
+    );
+
+    await consumer.onBillingCharge(createMockEnvelope(payload), payload);
+
+    expect(mockProvider.authorize).not.toHaveBeenCalled();
+    // emitFailedEvent(outbox insert) 대신 stateTransitionService.transitionIntent 로 FAILED 전이
+    expect(stateTransitionService.transitionIntent).toHaveBeenCalledWith(
+      'intent-stuck',
+      'FAILED',
+      expect.objectContaining({
+        reasonCode: 'BILLING_CHARGE_STUCK',
+        outboxEvent: expect.objectContaining({
+          aggregateId: 'intent-stuck',
+        }),
+      }),
+    );
+    // db.insert는 호출되지 않아야 함 (transition이 outbox를 책임짐)
+    expect(dbService.db.insert).not.toHaveBeenCalled();
+  });
+
+  it('기존 CREATED intent (방금 생성, concurrent delivery) → 조용히 skip', async () => {
+    const payload = createPayload();
+    setupAgreementAndMethod();
+
+    const recentAt = new Date(Date.now() - 5 * 1000); // 5초 전
+    dbService.db.select.mockReturnValueOnce(
+      mockSelectOnce([{ id: 'intent-existing', status: 'CREATED', updatedAt: recentAt }]),
+    );
+
+    await consumer.onBillingCharge(createMockEnvelope(payload), payload);
+
+    expect(mockProvider.authorize).not.toHaveBeenCalled();
+    expect(dbService.db.insert).not.toHaveBeenCalled(); // FAILED 이벤트 발행 없음
   });
 
   // ─── Billing agreement not found ───────────────────────────────────────
@@ -517,9 +659,9 @@ describe('BillingChargeConsumer', () => {
     mockProvider.authorize.mockRejectedValue(new Error('Toss billing API 5xx: INTERNAL_SERVER_ERROR'));
 
     // 5xx should propagate as exception for DLQ retry
-    await expect(
-      consumer.onBillingCharge(createMockEnvelope(payload), payload),
-    ).rejects.toThrow('Toss billing API 5xx');
+    await expect(consumer.onBillingCharge(createMockEnvelope(payload), payload)).rejects.toThrow(
+      'Toss billing API 5xx',
+    );
 
     // Charge should be marked FAILED
     expect(chargesService.updateStatus).toHaveBeenCalledWith(
