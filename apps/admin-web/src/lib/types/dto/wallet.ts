@@ -193,3 +193,66 @@ export interface PaginatedResponse<T> {
   page: number;
   limit: number;
 }
+
+// ── Recurring Billing Admin ──────────────────────────────────────────────────
+
+export type AdminRecurringBillingIssueType = 'PROVIDER_METHOD' | 'PROVIDER_MANDATE' | 'PROVIDER_CHARGE' | 'PAYMENT_INTENT' | 'CONTRACT';
+
+export interface AdminRecurringBillingRow {
+  issueType: AdminRecurringBillingIssueType;
+  severity: 'INFO' | 'WARNING' | 'CRITICAL';
+  needsAction: boolean;
+  userId: string;
+  providerType: string;
+  billingMethodId?: string;
+  billingAgreementId?: string;
+  subscriberRef?: string;
+  subscriberType?: string;
+  amount?: number;
+  actualAmount?: number | null;
+  paymentIntentId?: string;
+  paymentIntentStatus?: string;
+  chargeId?: string;
+  chargeStatus?: string;
+  providerState?: {
+    cmsMemberId?: string;
+    cmsMemberRowId?: string;
+    cmsMemberStatus?: 'PENDING' | 'REGISTERED' | 'FAILED' | 'DELETED';
+    agreementStatus?: string | null;
+    withdrawalId?: string;
+    transactionId?: string;
+    withdrawalStatus?: 'REQUESTED' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED' | 'DELETED';
+    paymentDate?: string;
+    resultCode?: string | null;
+    resultMessage?: string | null;
+    rawStatus?: string | null;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminRecurringBillingOverview {
+  needsAction: number;
+  memberPending: number;
+  memberFailed: number;
+  withdrawalRequested: number;
+  settlementPending: number;
+  withdrawalFailed: number;
+}
+
+export interface AdminRecurringBillingListQuery {
+  page?: number;
+  limit?: number;
+  view?: 'needs-action' | 'members' | 'withdrawals' | 'contracts';
+  dateType?: 'updatedAt' | 'createdAt' | 'paymentDate' | 'nextBillingDate';
+  dateFrom?: string;
+  dateTo?: string;
+  cmsMemberStatus?: 'PENDING' | 'REGISTERED' | 'FAILED' | 'DELETED';
+  withdrawalStatus?: 'REQUESTED' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED' | 'DELETED';
+  userId?: string;
+  contractId?: string;
+  cmsMemberId?: string;
+  transactionId?: string;
+  paymentIntentId?: string;
+  providerType?: 'CMS_BATCH' | 'TOSS_BILLING' | 'NICEPAY_BILLING';
+}

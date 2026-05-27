@@ -350,11 +350,24 @@ export class SubscriptionService {
       billingMode,
     );
 
-    Promise.all([
-      ...(billingMode === 'recurring'
-        ? [this.paymentClientService.createBillingAgreement(userId, result.contractId, billingMethodId)]
-        : []),
-      this.membershipEventPublisher.publishStatusChanged({
+    if (billingMode === 'recurring') {
+      try {
+        await this.createBillingAgreementWithRetry(userId, result.contractId, billingMethodId);
+      } catch (err: unknown) {
+        this.logger.error(
+          `billing_agreement 생성 실패 — 구독 보상 처리 시작 (userId=${userId}, contractId=${result.contractId})`,
+          err instanceof Error ? err.stack : String(err),
+        );
+        const contract = await this.contractReader.findById(result.contractId);
+        if (contract) {
+          await this.subscriptionManager.voidSubscription(userId, contract, '정기결제 설정 실패');
+        }
+        throw new SubscriptionBadRequestException('정기결제 설정에 실패했습니다. 잠시 후 다시 시도해주세요.');
+      }
+    }
+
+    this.membershipEventPublisher
+      .publishStatusChanged({
         userId,
         email,
         status: 'ACTIVE',
@@ -362,12 +375,37 @@ export class SubscriptionService {
         contractId: result.contractId,
         planId: planDetails.plan.id,
         tierId: planDetails.tier.id,
-      }),
-    ]).catch((err: Error) =>
-      this.logger.error(`post-subscribe fire-and-forget 실패 (userId=${userId}): ${err?.message}`, err?.stack),
-    );
+      })
+      .catch((err: Error) =>
+        this.logger.error(`MembershipStatusChanged Kafka 발행 실패 (userId=${userId}): ${err?.message}`, err?.stack),
+      );
 
     return result;
+  }
+
+  private async createBillingAgreementWithRetry(
+    userId: string,
+    contractId: string,
+    billingMethodId?: string,
+    maxAttempts = 2,
+  ): Promise<void> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await this.paymentClientService.createBillingAgreement(userId, contractId, billingMethodId);
+        return;
+      } catch (err: unknown) {
+        lastError = err;
+        this.logger.warn(
+          `billing_agreement 생성 시도 ${attempt}/${maxAttempts} 실패 (userId=${userId}, contractId=${contractId})`,
+          err instanceof Error ? err.message : String(err),
+        );
+        if (attempt < maxAttempts) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 1000 * attempt));
+        }
+      }
+    }
+    throw lastError;
   }
 
   /**

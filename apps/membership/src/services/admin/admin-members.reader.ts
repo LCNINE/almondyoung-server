@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { membershipSchema } from '../../shared/schemas/entities/schema';
+import { membershipSchema, pauseEvents } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
 import { eq, and, desc, asc, ilike, gte, lte, inArray, SQL, count, isNull, isNotNull } from 'drizzle-orm';
 import { endOfDay } from 'date-fns';
@@ -116,6 +116,53 @@ export interface AdminBillingHistoryResponse {
   limit: number;
 }
 
+export interface AdminRecurringContractSummary {
+  contractId: string;
+  userId: string;
+  status: string;
+  planId: string;
+  tierCode: string;
+  planDurationDays: number;
+  autoRenewal: boolean;
+  nextBillingDate: string | null;
+  startsAt: string | null;
+  endsAt: string | null;
+  lastPaymentIntentId: string | null;
+}
+
+export interface AdminRecurringContractsQuery {
+  page?: number;
+  limit?: number;
+  userId?: string;
+  contractId?: string;
+  status?: string;
+  dateType?: 'updatedAt' | 'createdAt' | 'nextBillingDate';
+  dateFrom?: string;
+  dateTo?: string;
+}
+
+export interface AdminRecurringContractListItem {
+  contractId: string;
+  userId: string;
+  status: string;
+  tierCode: string;
+  planDurationDays: number;
+  autoRenewal: boolean;
+  nextBillingDate: string | null;
+  startsAt: string | null;
+  endsAt: string | null;
+  lastPaymentIntentId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminRecurringContractsResponse {
+  data: AdminRecurringContractListItem[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 @Injectable()
 export class AdminMembersReader {
   constructor(
@@ -137,9 +184,10 @@ export class AdminMembersReader {
       baseConditions.push(inArray(schema.subscriptionContracts.userId, userIds));
     }
 
-    const dateField = dateCriteria === 'cancelledAt'
-      ? schema.subscriptionContracts.cancelledAt
-      : schema.subscriptionContracts.createdAt;
+    const dateField =
+      dateCriteria === 'cancelledAt'
+        ? schema.subscriptionContracts.cancelledAt
+        : schema.subscriptionContracts.createdAt;
 
     if (dateFrom) {
       baseConditions.push(gte(dateField, new Date(dateFrom)));
@@ -195,12 +243,7 @@ export class AdminMembersReader {
 
     const [[{ total }], rows] = await Promise.all([
       this.dbService.db.select({ total: count() }).from(latestPerUser),
-      this.dbService.db
-        .select()
-        .from(latestPerUser)
-        .orderBy(desc(latestPerUser.createdAt))
-        .limit(limit)
-        .offset(offset),
+      this.dbService.db.select().from(latestPerUser).orderBy(desc(latestPerUser.createdAt)).limit(limit).offset(offset),
     ]);
 
     const data: AdminMemberListItem[] = rows.map((r) => {
@@ -268,13 +311,9 @@ export class AdminMembersReader {
 
     const pauseCountResult = await this.dbService.db
       .select({ count: count() })
-      .from(schema.pauseEvents)
-      .where(
-        and(
-          eq(schema.pauseEvents.userId, userId),
-          eq(schema.pauseEvents.eventType, 'START'),
-        ),
-      );
+      .from(pauseEvents)
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- same as above
+      .where(and(eq(pauseEvents.userId, userId), eq(pauseEvents.eventType, 'START')));
     const pauseCount = Number(pauseCountResult[0]?.count ?? 0);
 
     const firstContractResult = await this.dbService.db
@@ -283,8 +322,7 @@ export class AdminMembersReader {
       .where(eq(schema.subscriptionContracts.userId, userId))
       .orderBy(asc(schema.subscriptionContracts.createdAt))
       .limit(1);
-    const firstContractCreatedAt =
-      firstContractResult[0]?.createdAt?.toISOString() ?? r.createdAt.toISOString();
+    const firstContractCreatedAt = firstContractResult[0]?.createdAt?.toISOString() ?? r.createdAt.toISOString();
 
     let computedStatus = r.contractStatus;
     if (r.contractStatus === 'ACTIVE' && r.pausedAt !== null) {
@@ -377,11 +415,28 @@ export class AdminMembersReader {
     };
   }
 
-  private toBillingEventItem(r: { id: string; contractId: string; eventType: string; attemptNo: number | null; amount: number | null; errorCode: string | null; errorMessage: string | null; createdAt: Date }): BillingEventItem {
+  private toBillingEventItem(r: {
+    id: string;
+    contractId: string;
+    eventType: string;
+    attemptNo: number | null;
+    amount: number | null;
+    errorCode: string | null;
+    errorMessage: string | null;
+    createdAt: Date;
+  }): BillingEventItem {
     return { ...r, createdAt: r.createdAt.toISOString() };
   }
 
-  private toContractEventItem(r: { id: number; contractId: string; eventType: string; userId: string; causedBy: string; causedByUserId: string | null; createdAt: Date }): ContractEventItem {
+  private toContractEventItem(r: {
+    id: number;
+    contractId: string;
+    eventType: string;
+    userId: string;
+    causedBy: string;
+    causedByUserId: string | null;
+    createdAt: Date;
+  }): ContractEventItem {
     return { ...r, createdAt: r.createdAt.toISOString() };
   }
 
@@ -451,6 +506,57 @@ export class AdminMembersReader {
     };
   }
 
+  async findRecurringContractsByIds(contractIds: string[]): Promise<AdminRecurringContractSummary[]> {
+    if (!contractIds.length) return [];
+
+    const entitlementConditions = and(
+      eq(schema.subscriptionEntitlement.userId, schema.subscriptionContracts.userId),
+      eq(schema.subscriptionEntitlement.isCurrent, true),
+    );
+
+    const rows = await this.dbService.db
+      .select({
+        contractId: schema.subscriptionContracts.id,
+        userId: schema.subscriptionContracts.userId,
+        contractStatus: schema.subscriptionContracts.status,
+        planId: schema.subscriptionContracts.planId,
+        autoRenewal: schema.subscriptionContracts.autoRenewal,
+        nextBillingDate: schema.subscriptionContracts.nextBillingDate,
+        lastPaymentIntentId: schema.subscriptionContracts.lastPaymentIntentId,
+        planDurationDays: schema.plan.durationDays,
+        tierCode: schema.tiers.code,
+        startsAt: schema.subscriptionEntitlement.startsAt,
+        endsAt: schema.subscriptionEntitlement.endsAt,
+        pausedAt: schema.subscriptionEntitlement.pausedAt,
+      })
+      .from(schema.subscriptionContracts)
+      .innerJoin(schema.plan, eq(schema.subscriptionContracts.planId, schema.plan.id))
+      .innerJoin(schema.tiers, eq(schema.plan.tierId, schema.tiers.id))
+      .leftJoin(schema.subscriptionEntitlement, entitlementConditions)
+      .where(inArray(schema.subscriptionContracts.id, contractIds));
+
+    return rows.map((r) => {
+      let computedStatus = r.contractStatus;
+      if (r.contractStatus === 'ACTIVE' && r.pausedAt !== null) {
+        computedStatus = 'PAUSED';
+      }
+
+      return {
+        contractId: r.contractId,
+        userId: r.userId,
+        status: computedStatus,
+        planId: r.planId,
+        tierCode: r.tierCode,
+        planDurationDays: r.planDurationDays,
+        autoRenewal: r.autoRenewal,
+        nextBillingDate: r.nextBillingDate,
+        startsAt: r.startsAt,
+        endsAt: r.endsAt,
+        lastPaymentIntentId: r.lastPaymentIntentId,
+      };
+    });
+  }
+
   async updateAutoRenewal(contractId: string, autoRenewal: boolean, adminId: string): Promise<void> {
     await this.dbService.db.transaction(async (tx) => {
       const [batch] = await tx
@@ -474,5 +580,89 @@ export class AdminMembersReader {
         adminId,
       );
     });
+  }
+  async findRecurringContracts(query: AdminRecurringContractsQuery): Promise<AdminRecurringContractsResponse> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const offset = (page - 1) * limit;
+
+    const conditions: SQL[] = [eq(schema.subscriptionContracts.autoRenewal, true)];
+    if (query.userId) conditions.push(eq(schema.subscriptionContracts.userId, query.userId));
+    if (query.contractId) conditions.push(eq(schema.subscriptionContracts.id, query.contractId));
+    if (query.status) conditions.push(eq(schema.subscriptionContracts.status, query.status));
+    const dateField =
+      query.dateType === 'createdAt'
+        ? schema.subscriptionContracts.createdAt
+        : query.dateType === 'nextBillingDate'
+          ? schema.subscriptionContracts.nextBillingDate
+          : schema.subscriptionContracts.updatedAt;
+    if (query.dateFrom) {
+      conditions.push(
+        query.dateType === 'nextBillingDate'
+          ? gte(schema.subscriptionContracts.nextBillingDate, query.dateFrom)
+          : gte(dateField as typeof schema.subscriptionContracts.updatedAt, new Date(query.dateFrom)),
+      );
+    }
+    if (query.dateTo) {
+      conditions.push(
+        query.dateType === 'nextBillingDate'
+          ? lte(schema.subscriptionContracts.nextBillingDate, query.dateTo)
+          : lte(dateField as typeof schema.subscriptionContracts.updatedAt, endOfDay(new Date(query.dateTo))),
+      );
+    }
+
+    const whereClause = and(...conditions);
+
+    const entitlementConditions = and(
+      eq(schema.subscriptionEntitlement.userId, schema.subscriptionContracts.userId),
+      eq(schema.subscriptionEntitlement.isCurrent, true),
+    );
+
+    const [[{ total }], rows] = await Promise.all([
+      this.dbService.db.select({ total: count() }).from(schema.subscriptionContracts).where(whereClause),
+      this.dbService.db
+        .select({
+          contractId: schema.subscriptionContracts.id,
+          userId: schema.subscriptionContracts.userId,
+          status: schema.subscriptionContracts.status,
+          autoRenewal: schema.subscriptionContracts.autoRenewal,
+          nextBillingDate: schema.subscriptionContracts.nextBillingDate,
+          lastPaymentIntentId: schema.subscriptionContracts.lastPaymentIntentId,
+          createdAt: schema.subscriptionContracts.createdAt,
+          updatedAt: schema.subscriptionContracts.updatedAt,
+          tierCode: schema.tiers.code,
+          planDurationDays: schema.plan.durationDays,
+          startsAt: schema.subscriptionEntitlement.startsAt,
+          endsAt: schema.subscriptionEntitlement.endsAt,
+        })
+        .from(schema.subscriptionContracts)
+        .innerJoin(schema.plan, eq(schema.subscriptionContracts.planId, schema.plan.id))
+        .innerJoin(schema.tiers, eq(schema.plan.tierId, schema.tiers.id))
+        .leftJoin(schema.subscriptionEntitlement, entitlementConditions)
+        .where(whereClause)
+        .orderBy(desc(schema.subscriptionContracts.updatedAt))
+        .limit(limit)
+        .offset(offset),
+    ]);
+
+    return {
+      data: rows.map((r) => ({
+        contractId: r.contractId,
+        userId: r.userId,
+        status: r.status,
+        tierCode: r.tierCode,
+        planDurationDays: r.planDurationDays,
+        autoRenewal: r.autoRenewal,
+        nextBillingDate: r.nextBillingDate,
+        startsAt: r.startsAt ?? null,
+        endsAt: r.endsAt ?? null,
+        lastPaymentIntentId: r.lastPaymentIntentId,
+        createdAt: r.createdAt.toISOString(),
+        updatedAt: r.updatedAt.toISOString(),
+      })),
+      total,
+      page,
+      limit,
+    };
   }
 }

@@ -519,6 +519,11 @@ export const mainMenus: MainMenu[] = [
             path: '/membership/members',
           },
           {
+            id: 'recurring-billing',
+            title: '정기결제 관리',
+            path: '/membership/recurring-billing',
+          },
+          {
             id: 'payment-history',
             title: '결제 내역 조회',
             path: '/membership/billing-history',

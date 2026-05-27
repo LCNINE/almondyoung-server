@@ -65,6 +65,8 @@ import { RefundAdminController } from './admin/refund-admin.controller';
 // Points (user-facing)
 import { PointsController } from './points/points.controller';
 import { BankTransferAdminService } from './admin/bank-transfer-admin.service';
+import { RecurringBillingAdminService } from './admin/recurring-billing-admin.service';
+import { RecurringBillingAdminController } from './admin/recurring-billing-admin.controller';
 
 // Messaging + Jobs
 import { OutboxDispatcherService } from './messaging/outbox-dispatcher.service';
@@ -364,6 +366,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     DirectBillingChargeController,
     CheckoutSessionController,
     CmsAgreementController,
+    RecurringBillingAdminController,
     UgcCommandConsumer,
     BillingChargeConsumer,
   ],
@@ -440,6 +443,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     PointsAdminService,
     BankTransferAdminService,
     PaymentIntentAdminService,
+    RecurringBillingAdminService,
 
     // Billing
     BillingMethodService,

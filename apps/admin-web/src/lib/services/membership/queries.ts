@@ -2,6 +2,8 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { membershipApi, AdminMembersQuery, AdminBillingHistoryQuery, AdminTierWithPlans } from '@/lib/api/domains/membership';
+import { walletApi } from '@/lib/api/domains/wallet';
+import { AdminRecurringBillingListQuery } from '@/lib/types/dto/wallet';
 import { membershipQueryKeys } from './query-keys';
 
 export const useMembershipMembers = (
@@ -193,3 +195,39 @@ export const useRetryBilling = () => {
     },
   });
 };
+
+export function useRecurringBillingOverview() {
+  return useQuery({
+    queryKey: membershipQueryKeys.recurringBillingOverview(),
+    queryFn: () => walletApi.getRecurringBillingOverview(),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useRecurringBillingItems(query: AdminRecurringBillingListQuery) {
+  return useQuery({
+    queryKey: membershipQueryKeys.recurringBillingList(query as Record<string, unknown>),
+    queryFn: () => walletApi.listRecurringBillingItems(query),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function usePollCmsMember() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => walletApi.pollCmsMember(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: membershipQueryKeys.recurringBilling() });
+    },
+  });
+}
+
+export function usePollCmsWithdrawal() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => walletApi.pollCmsWithdrawal(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: membershipQueryKeys.recurringBilling() });
+    },
+  });
+}

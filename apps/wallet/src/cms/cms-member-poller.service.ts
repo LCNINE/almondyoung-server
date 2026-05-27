@@ -1,5 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { DbService } from '@app/db';
+import { eq } from 'drizzle-orm';
+import { WalletSchema, cmsMembers } from '../schema';
 import { CmsMemberService } from './cms-member.service';
 import { CmsApiClient } from './cms-api.client';
 
@@ -10,7 +13,22 @@ export class CmsMemberPollerService {
   constructor(
     private readonly cmsMemberService: CmsMemberService,
     private readonly cmsApi: CmsApiClient,
+    private readonly dbService: DbService<WalletSchema>,
   ) {}
+
+  /**
+   * 특정 cms_member UUID로 단건 폴링 (admin trigger).
+   */
+  async pollMemberById(id: string): Promise<void> {
+    const rows = await this.dbService.db
+      .select()
+      .from(cmsMembers)
+      .where(eq(cmsMembers.id, id))
+      .limit(1);
+    const member = rows[0];
+    if (!member) throw new Error('CMS member not found: ' + id);
+    await this.pollOneMember(member);
+  }
 
   /**
    * 회원등록 결과 폴링.
