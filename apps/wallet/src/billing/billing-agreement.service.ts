@@ -67,7 +67,7 @@ export class BillingAgreementService {
     const billingMethodId = latestMethods[0].id;
     if (existing) {
       if (existing.billingMethodId !== billingMethodId) {
-        await this.updateBillingMethod(existing.id, billingMethodId);
+        await this.updateBillingMethod(existing.id, billingMethodId, userId);
         return { ...existing, billingMethodId };
       }
       return existing;
@@ -98,22 +98,23 @@ export class BillingAgreementService {
       .where(and(eq(billingAgreements.userId, userId), eq(billingAgreements.status, 'ACTIVE')));
   }
 
-  async updateBillingMethod(agreementId: string, newBillingMethodId: string): Promise<void> {
-    // Verify new billing method exists and is active
+  async updateBillingMethod(agreementId: string, newBillingMethodId: string, userId: string): Promise<void> {
+    // Verify new billing method belongs to userId and is active
     const methods = await this.dbService.db
-      .select({ id: billingMethods.id, userId: billingMethods.userId })
+      .select({ id: billingMethods.id })
       .from(billingMethods)
-      .where(and(eq(billingMethods.id, newBillingMethodId), eq(billingMethods.status, 'ACTIVE')))
+      .where(and(eq(billingMethods.id, newBillingMethodId), eq(billingMethods.userId, userId), eq(billingMethods.status, 'ACTIVE')))
       .limit(1);
 
     if (methods.length === 0) {
       throw new Error('new billing method not found or inactive');
     }
 
+    // Update only if the agreement belongs to userId
     const rows = await this.dbService.db
       .update(billingAgreements)
       .set({ billingMethodId: newBillingMethodId, updatedAt: new Date() })
-      .where(and(eq(billingAgreements.id, agreementId), eq(billingAgreements.status, 'ACTIVE')))
+      .where(and(eq(billingAgreements.id, agreementId), eq(billingAgreements.userId, userId), eq(billingAgreements.status, 'ACTIVE')))
       .returning({ id: billingAgreements.id });
 
     if (rows.length === 0) {
@@ -121,11 +122,11 @@ export class BillingAgreementService {
     }
   }
 
-  async revoke(agreementId: string): Promise<void> {
+  async revoke(agreementId: string, userId: string): Promise<void> {
     const rows = await this.dbService.db
       .update(billingAgreements)
       .set({ status: 'REVOKED', updatedAt: new Date() })
-      .where(and(eq(billingAgreements.id, agreementId), eq(billingAgreements.status, 'ACTIVE')))
+      .where(and(eq(billingAgreements.id, agreementId), eq(billingAgreements.userId, userId), eq(billingAgreements.status, 'ACTIVE')))
       .returning({ id: billingAgreements.id });
 
     if (rows.length === 0) {

@@ -146,8 +146,26 @@ export default function MembershipPaymentMethodPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, otherMethods])
 
-  if (isLoading || (autoSubscribeOnLoad.current && otherMethods.length === 0)) {
+  if (isLoading) {
     return <MembershipPaymentMethodSkeleton />
+  }
+
+  // CMS 등록 직후 돌아왔으나 심사 대기 중이라 사용 가능한 수단이 없는 경우 — 무한 스켈레톤 방지
+  if (autoSubscribeOnLoad.current && otherMethods.length === 0) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-white px-6 font-['Pretendard']">
+        <div className="w-full max-w-md rounded-md bg-amber-50 border border-amber-200 p-6 text-center">
+          <p className="text-sm font-semibold text-amber-800">{t("cmsPendingTitle")}</p>
+          <p className="mt-2 text-xs leading-relaxed text-amber-700">{t("cmsPendingDesc")}</p>
+          <button
+            className="mt-4 rounded-md bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600"
+            onClick={() => router.push(`/${countryCode}/mypage/membership`)}
+          >
+            {t("backAria")}
+          </button>
+        </div>
+      </div>
+    )
   }
 
   const formattedNextBillingDate = formatDate(nextBillingDate, undefined, "")

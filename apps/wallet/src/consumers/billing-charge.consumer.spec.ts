@@ -134,6 +134,12 @@ describe('BillingChargeConsumer', () => {
           provide: BillingMethodService,
           useValue: {
             findById: jest.fn(),
+            findOrCreateForBilling: jest.fn().mockResolvedValue({
+              id: 'pm-billing-001',
+              userId: 'user-001',
+              type: 'TOSS_BILLING',
+              providerData: { billingMethodId: 'bm-001' },
+            }),
           },
         },
         {

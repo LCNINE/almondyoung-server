@@ -106,7 +106,7 @@ export class CheckoutSessionService {
         this.logger.warn(`Billing agreement already exists for subscriberRef=${subscriberRef}, updating billing method`);
         const existing = await this.billingAgreementService.findBySubscriberRef(subscriberType, subscriberRef);
         if (existing) {
-          await this.billingAgreementService.updateBillingMethod(existing.id, billingMethodId);
+          await this.billingAgreementService.updateBillingMethod(existing.id, billingMethodId, session.userId);
         }
       }
     }

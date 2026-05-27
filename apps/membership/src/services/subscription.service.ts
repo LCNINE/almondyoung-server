@@ -22,24 +22,6 @@ import { PaymentClientService, WalletPaymentIntentResponse } from './billing/pay
  * - Reader/Creator/Manager를 중계
  */
 
-interface BulkSubscriptionResponse {
-  id: string;
-  membership: {
-    tierId: string;
-    tierCode: string;
-    tierPriority: number;
-    planId: string;
-    planPrice: number;
-    planDuration: number;
-    startsAt: string;
-    endsAt: string;
-    contractId: string;
-    billingDate: Date;
-    nextBillingDate: Date | null;
-    isPaused: boolean;
-  };
-}
-
 type CreateSubscriptionOptions = {
   initialPaymentIntentId?: string;
   initialPaymentAttemptId?: string;
@@ -59,7 +41,7 @@ export class SubscriptionService {
     private readonly subscriptionManager: SubscriptionManager,
     private readonly membershipEventPublisher: MembershipEventPublisher,
     private readonly paymentClientService: PaymentClientService,
-  ) { }
+  ) {}
 
   /**
    * 현재 구독 상태 조회
@@ -103,20 +85,19 @@ export class SubscriptionService {
     );
 
     // 실패 시 로그만 남기고 구독 생성 자체는 성공으로 처리
-    this.membershipEventPublisher.publishStatusChanged({
-      userId,
-      email,
-      status: 'ACTIVE',
-      occurredAt: new Date().toISOString(),
-      contractId: result.contractId,
-      planId: planDetails.plan.id,
-      tierId: planDetails.tier.id,
-    }).catch((err: Error) =>
-      this.logger.error(
-        `MembershipStatusChanged Kafka 발행 실패 (userId=${userId}): ${err?.message}`,
-        err?.stack,
-      )
-    );
+    this.membershipEventPublisher
+      .publishStatusChanged({
+        userId,
+        email,
+        status: 'ACTIVE',
+        occurredAt: new Date().toISOString(),
+        contractId: result.contractId,
+        planId: planDetails.plan.id,
+        tierId: planDetails.tier.id,
+      })
+      .catch((err: Error) =>
+        this.logger.error(`MembershipStatusChanged Kafka 발행 실패 (userId=${userId}): ${err?.message}`, err?.stack),
+      );
 
     return result;
   }
@@ -167,20 +148,28 @@ export class SubscriptionService {
       throw new SubscriptionBadRequestException('payment intent metadata에 userId 또는 planId가 없습니다.');
     }
 
-    const result = await this.createSubscription(userId, planId, email, {
-      initialPaymentIntentId: intentId,
-      initialWalletReferenceId: this.extractWalletReference(intent),
-      initialPaymentAmount: intent.payableAmount,
-    }, billingMode);
+    const result = await this.createSubscription(
+      userId,
+      planId,
+      email,
+      {
+        initialPaymentIntentId: intentId,
+        initialWalletReferenceId: this.extractWalletReference(intent),
+        initialPaymentAmount: intent.payableAmount,
+      },
+      billingMode,
+    );
 
-    this.paymentClientService
-      .createBillingAgreement(userId, result.contractId)
-      .catch((err: Error) =>
-        this.logger.error(
-          `billing_agreement 생성 실패 (userId=${userId}, contractId=${result.contractId}): ${err?.message}`,
-          err?.stack,
-        ),
-      );
+    if (billingMode === 'recurring') {
+      this.paymentClientService
+        .createBillingAgreement(userId, result.contractId)
+        .catch((err: Error) =>
+          this.logger.error(
+            `billing_agreement 생성 실패 (userId=${userId}, contractId=${result.contractId}): ${err?.message}`,
+            err?.stack,
+          ),
+        );
+    }
 
     return result;
   }
@@ -358,7 +347,9 @@ export class SubscriptionService {
     );
 
     Promise.all([
-      this.paymentClientService.createBillingAgreement(userId, result.contractId, billingMethodId),
+      ...(billingMode === 'recurring'
+        ? [this.paymentClientService.createBillingAgreement(userId, result.contractId, billingMethodId)]
+        : []),
       this.membershipEventPublisher.publishStatusChanged({
         userId,
         email,
@@ -369,10 +360,7 @@ export class SubscriptionService {
         tierId: planDetails.tier.id,
       }),
     ]).catch((err: Error) =>
-      this.logger.error(
-        `post-subscribe fire-and-forget 실패 (userId=${userId}): ${err?.message}`,
-        err?.stack,
-      ),
+      this.logger.error(`post-subscribe fire-and-forget 실패 (userId=${userId}): ${err?.message}`, err?.stack),
     );
 
     return result;
@@ -381,11 +369,7 @@ export class SubscriptionService {
   /**
    * 관리자 직접 구독 등록 (무료체험 미적용, 즉시 결제 없음)
    */
-  async adminCreateSubscription(
-    userId: string,
-    planId: string,
-    billingMode: 'one_time' | 'recurring',
-  ) {
+  async adminCreateSubscription(userId: string, planId: string, billingMode: 'one_time' | 'recurring') {
     const [existing, planDetails] = await Promise.all([
       this.entitlementService.getUserEntitlement(userId),
       this.planService.getPlanDetails(planId),
@@ -403,20 +387,19 @@ export class SubscriptionService {
       true,
     );
 
-    this.membershipEventPublisher.publishStatusChanged({
-      userId,
-      email: '',
-      status: 'ACTIVE',
-      occurredAt: new Date().toISOString(),
-      contractId: result.contractId,
-      planId: planDetails.plan.id,
-      tierId: planDetails.tier.id,
-    }).catch((err: Error) =>
-      this.logger.error(
-        `MembershipStatusChanged Kafka 발행 실패 (userId=${userId}): ${err?.message}`,
-        err?.stack,
-      )
-    );
+    this.membershipEventPublisher
+      .publishStatusChanged({
+        userId,
+        email: '',
+        status: 'ACTIVE',
+        occurredAt: new Date().toISOString(),
+        contractId: result.contractId,
+        planId: planDetails.plan.id,
+        tierId: planDetails.tier.id,
+      })
+      .catch((err: Error) =>
+        this.logger.error(`MembershipStatusChanged Kafka 발행 실패 (userId=${userId}): ${err?.message}`, err?.stack),
+      );
 
     return result;
   }

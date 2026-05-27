@@ -199,7 +199,13 @@ export class PaymentClientService {
           subscriberType: 'MEMBERSHIP',
           ...(billingMethodId ? { billingMethodId } : {}),
         },
-        { headers: { Authorization: `Bearer ${walletApiKey}`, 'Content-Type': 'application/json' } },
+        {
+          headers: {
+            Authorization: `Bearer ${walletApiKey}`,
+            'Content-Type': 'application/json',
+            'Idempotency-Key': `membership:billing-agreement:${userId}:${contractId}`,
+          },
+        },
       ),
     );
   }
@@ -216,7 +222,13 @@ export class PaymentClientService {
       this.httpService.post(
         `${walletApiUrl}/v1/payment-intents/${intentId}/refund`,
         { amount, reasonCode, reasonMessage },
-        { headers: { Authorization: `Bearer ${walletApiKey}`, 'Content-Type': 'application/json' } },
+        {
+          headers: {
+            Authorization: `Bearer ${walletApiKey}`,
+            'Content-Type': 'application/json',
+            'Idempotency-Key': `membership:refund:${intentId}:${amount}`,
+          },
+        },
       ),
     );
   }
@@ -227,7 +239,12 @@ export class PaymentClientService {
     await firstValueFrom(
       this.httpService.delete(
         `${walletApiUrl}/v1/billing-agreements/by-subscriber?subscriberType=MEMBERSHIP&subscriberRef=${encodeURIComponent(contractId)}`,
-        { headers: { Authorization: `Bearer ${walletApiKey}` } },
+        {
+          headers: {
+            Authorization: `Bearer ${walletApiKey}`,
+            'Idempotency-Key': `membership:revoke-agreement:MEMBERSHIP:${contractId}`,
+          },
+        },
       ),
     );
   }
@@ -242,6 +259,8 @@ export class PaymentClientService {
   }): Promise<{ intentId: string; status: string }> {
     const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
 
+    const idempotencyKey = params.idempotencyKey ?? `membership:direct-charge:${params.userId}:${params.billingMethodId}:${params.amount}`;
+
     const response = await firstValueFrom(
       this.httpService.post<{ intentId: string; status: string }>(
         `${walletApiUrl}/v1/direct-billing-charges`,
@@ -252,9 +271,15 @@ export class PaymentClientService {
           currency: params.currency ?? 'KRW',
           purpose: 'SUBSCRIPTION',
           metadata: params.metadata ?? {},
-          idempotencyKey: params.idempotencyKey,
+          idempotencyKey,
         },
-        { headers: { Authorization: `Bearer ${walletApiKey}`, 'Content-Type': 'application/json' } },
+        {
+          headers: {
+            Authorization: `Bearer ${walletApiKey}`,
+            'Content-Type': 'application/json',
+            'Idempotency-Key': idempotencyKey,
+          },
+        },
       ),
     );
 

@@ -40,7 +40,9 @@ export class BillingManager {
       if (!plan) throw new Error(`Plan not found: ${contract.planId}`);
       if (!plan.plan.isActive) throw new Error(`Plan is not active: ${contract.planId}`);
 
-      const idempotencyKey = `membership:billing:${contract.id}:${new Date().toISOString().split('T')[0]}`;
+      // idempotencyKey를 today 기반이 아닌 nextBillingDate 기반으로 고정:
+      // wallet의 idempotency_keys가 같은 billing 주기(nextBillingDate)의 중복 커맨드를 막는다.
+      const idempotencyKey = `membership:billing:${contract.id}:${contract.nextBillingDate}`;
 
       await this.walletCommandPublisher.publishBillingCharge({
         subscriberRef: contract.id,
@@ -53,7 +55,9 @@ export class BillingManager {
       });
 
       // BillingCharge 커맨드 발행 즉시 nextBillingDate를 다음 주기로 진행시켜
-      // 스케줄러 재실행 시 동일 계약에 대해 중복 발행되는 것을 방지
+      // 스케줄러 재실행 시 동일 계약에 대해 중복 발행되는 것을 방지.
+      // TODO: nextBillingDate는 wallet 결제 성공 이벤트 수신 후 이동하는 것이 정확하다.
+      //       현재는 커맨드 발행 시 이동하므로 결제 실패 시 운영 화면에서 날짜가 틀릴 수 있다.
       const nextBillingDate = format(addDays(new Date(), plan.plan.durationDays), 'yyyy-MM-dd');
       await this.dbService.db
         .update(schema.subscriptionContracts)

@@ -121,6 +121,8 @@ export class CmsSettlementPollerService {
       return;
     }
 
+    const intentMeta = (intent.metadata as Record<string, unknown>) ?? {};
+
     await this.dbService.db.transaction(async (tx) => {
       await this.stateTransitionService.transitionIntent(
         withdrawal.intentId,
@@ -141,6 +143,11 @@ export class CmsSettlementPollerService {
               payableAmount: intent.payableAmount,
               currency: intent.currency,
               occurredAt: now,
+              extra: {
+                subscriberRef: intentMeta.subscriberRef as string | undefined,
+                subscriberType: intentMeta.subscriberType as string | undefined,
+                purpose: intentMeta.purpose as string | undefined,
+              },
             }),
           },
         },
@@ -185,6 +192,8 @@ export class CmsSettlementPollerService {
       return;
     }
 
+    const intentMeta = (intent.metadata as Record<string, unknown>) ?? {};
+
     await this.dbService.db.transaction(async (tx) => {
       await this.stateTransitionService.transitionIntent(
         withdrawal.intentId,
@@ -205,6 +214,13 @@ export class CmsSettlementPollerService {
               payableAmount: intent.payableAmount,
               currency: intent.currency,
               occurredAt: now,
+              extra: {
+                subscriberRef: intentMeta.subscriberRef as string | undefined,
+                subscriberType: intentMeta.subscriberType as string | undefined,
+                purpose: intentMeta.purpose as string | undefined,
+                errorCode: apiData.result?.code,
+                errorMessage: apiData.result?.message,
+              },
             }),
           },
         },

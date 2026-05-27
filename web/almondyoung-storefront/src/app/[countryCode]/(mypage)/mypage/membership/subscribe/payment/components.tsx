@@ -21,7 +21,6 @@ import {
   FormMessage,
 } from "@/components/ui/form"
 import { Label } from "@/components/ui/label"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { HttpApiError } from "@lib/api/api-error"
@@ -220,6 +219,9 @@ export function MembershipForm({
 
   useEffect(() => {
     setPolicyAgreed(false)
+    if (billingMode === "one_time") {
+      setSelectedBillingMethodId(null)
+    }
   }, [billingMode])
 
   function getSubmitButtonLabel() {
@@ -266,23 +268,17 @@ export function MembershipForm({
                 render={({ field }) => (
                   <FormItem className="space-y-3">
                     <FormControl>
-                      <RadioGroup
-                        onValueChange={field.onChange}
-                        value={field.value ?? ""}
-                        className="flex flex-col"
-                      >
+                      <div className="flex flex-col">
                         <FormItem className="flex flex-col items-center">
                           <FormControl>
-                            <Label
-                              htmlFor="monthly"
-                              className="bg-popover hover:bg-accent hover:text-accent-foreground has-checked:border-primary flex w-full items-center justify-between rounded-md border-2 p-3"
+                            <button
+                              type="button"
+                              className={cn(
+                                "bg-popover hover:bg-accent hover:text-accent-foreground flex w-full items-center justify-between rounded-md border-2 p-3 text-left",
+                                field.value === "monthly" ? "border-primary bg-primary/5" : "border-border"
+                              )}
                               onClick={() => field.onChange("monthly")}
                             >
-                              <RadioGroupItem
-                                hidden
-                                id="monthly"
-                                value="monthly"
-                              />
                               <div className="flex flex-row items-center gap-2">
                                 <div className="flex flex-row items-center gap-4">
                                   <Calendar className="h-5 w-5" />
@@ -297,20 +293,18 @@ export function MembershipForm({
                                   </div>
                                 </div>
                               </div>
-                            </Label>
+                            </button>
                           </FormControl>
 
                           <FormControl>
-                            <Label
-                              htmlFor="yearly"
-                              className="bg-popover hover:bg-accent hover:text-accent-foreground has-checked:border-primary flex w-full items-center justify-between rounded-md border-2 p-3"
+                            <button
+                              type="button"
+                              className={cn(
+                                "bg-popover hover:bg-accent hover:text-accent-foreground flex w-full items-center justify-between rounded-md border-2 p-3 text-left",
+                                field.value === "yearly" ? "border-primary bg-primary/5" : "border-border"
+                              )}
                               onClick={() => field.onChange("yearly")}
                             >
-                              <RadioGroupItem
-                                hidden
-                                id="yearly"
-                                value="yearly"
-                              />
                               <div className="flex w-full flex-row items-center justify-between gap-2">
                                 <div className="flex flex-row items-center gap-4">
                                   <Calendar className="h-5 w-5" />
@@ -327,10 +321,10 @@ export function MembershipForm({
 
                                 <Badge>2달 무료</Badge>
                               </div>
-                            </Label>
+                            </button>
                           </FormControl>
                         </FormItem>
-                      </RadioGroup>
+                      </div>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -363,18 +357,16 @@ export function MembershipForm({
                 render={({ field }) => (
                   <FormItem>
                     <FormControl>
-                      <RadioGroup
-                        onValueChange={field.onChange}
-                        value={field.value}
-                        className="flex flex-col gap-2"
-                      >
-                        <Label
-                          htmlFor="recurring"
-                          className="bg-popover hover:bg-accent has-checked:border-primary flex cursor-pointer flex-col rounded-md border-2 p-3"
+                      <div className="flex flex-col gap-2">
+                        <button
+                          type="button"
+                          className={cn(
+                            "bg-popover hover:bg-accent flex cursor-pointer flex-col rounded-md border-2 p-3 text-left",
+                            field.value === "recurring" ? "border-primary bg-primary/5" : "border-border"
+                          )}
                           onClick={() => field.onChange("recurring")}
                         >
                           <div className="flex items-center gap-3">
-                            <RadioGroupItem hidden id="recurring" value="recurring" />
                             <Gift className="h-5 w-5 shrink-0 text-emerald-500" />
                             <div className="flex flex-col">
                               <p className="text-sm font-bold">정기결제 (자동갱신)</p>
@@ -384,14 +376,16 @@ export function MembershipForm({
                             </div>
                             <Badge className="ml-auto shrink-0 bg-emerald-500 text-white">추천</Badge>
                           </div>
-                        </Label>
-                        <Label
-                          htmlFor="one_time"
-                          className="bg-popover hover:bg-accent has-checked:border-primary flex cursor-pointer flex-col rounded-md border-2 p-3"
+                        </button>
+                        <button
+                          type="button"
+                          className={cn(
+                            "bg-popover hover:bg-accent flex cursor-pointer flex-col rounded-md border-2 p-3 text-left",
+                            field.value === "one_time" ? "border-primary bg-primary/5" : "border-border"
+                          )}
                           onClick={() => field.onChange("one_time")}
                         >
                           <div className="flex items-center gap-3">
-                            <RadioGroupItem hidden id="one_time" value="one_time" />
                             <Calendar className="h-5 w-5 shrink-0 text-gray-500" />
                             <div className="flex flex-col">
                               <p className="text-sm font-bold">한번만 결제</p>
@@ -400,8 +394,8 @@ export function MembershipForm({
                               </p>
                             </div>
                           </div>
-                        </Label>
-                      </RadioGroup>
+                        </button>
+                      </div>
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -465,14 +459,14 @@ export function MembershipForm({
             </CardContent>
           </Card>
 
-          {billingMethods.length > 0 && (
+          {billingMode === "recurring" && billingMethods.length > 0 && (
             <Card>
               <CardHeader>
                 <CardTitle>결제 수단</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
                 <p className="text-muted-foreground text-sm">
-                  등록된 카드로 바로 결제하거나, 새 카드를 등록할 수 있습니다.
+                  등록된 정기결제 수단으로 무료체험을 시작하거나, 새 결제수단을 등록할 수 있습니다.
                 </p>
                 {billingMethods.map((method) => (
                   <div
@@ -828,7 +822,7 @@ function TermsAndConditions({
 
         <h3 className="mt-3 mb-1 text-base font-bold">제 1조 목적</h3>
         <p>
-          본 약관은 아몬드영 멤버십 서비스(이하 "서비스")를 이용함에 있어 회원과
+          본 약관은 아몬드영 멤버십 서비스(이하 &quot;서비스&quot;)를 이용함에 있어 회원과
           회사 간의 권리·의무 및 책임 사항을 규정함을 목적으로 합니다.
         </p>
 

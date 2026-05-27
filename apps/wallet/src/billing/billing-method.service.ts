@@ -29,16 +29,16 @@ export class BillingMethodService {
     return rows[0];
   }
 
-  async revoke(billingMethodId: string): Promise<void> {
+  async revoke(billingMethodId: string, userId: string): Promise<void> {
     const existing = await this.findById(billingMethodId);
-    if (!existing || existing.status !== 'ACTIVE') {
+    if (!existing || existing.status !== 'ACTIVE' || existing.userId !== userId) {
       throw new Error('billing method not found or already inactive');
     }
 
     const updated = await this.dbService.db
       .update(billingMethods)
       .set({ status: 'REVOKED', updatedAt: new Date() })
-      .where(and(eq(billingMethods.id, billingMethodId), eq(billingMethods.status, 'ACTIVE')))
+      .where(and(eq(billingMethods.id, billingMethodId), eq(billingMethods.userId, userId), eq(billingMethods.status, 'ACTIVE')))
       .returning({ id: billingMethods.id });
 
     if (updated.length === 0) {
