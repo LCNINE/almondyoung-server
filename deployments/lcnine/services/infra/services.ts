@@ -345,7 +345,6 @@ export function setup(infra: SharedInfra) {
       SSO_DEFAULT_CALLBACK_URL: $interpolate`${url("www")}/kr/callback/oidc`,
       WALLET_BASE_URL: url("wallet"),
       WALLET_API_KEY: walletApiKey.value,
-      WMS_API_URL: url("core"),
       ALMOND_PAYMENT_ENDPOINT: url("wallet"),
       MEMBERSHIP_SERVICE_URL: url("membership"),
       UGC_SERVICE_URL: url("ugc"),
