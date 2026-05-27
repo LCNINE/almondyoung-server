@@ -56,9 +56,11 @@ export class BillingAgreementController {
   async updateBillingMethod(
     @Param('id') id: string,
     @Body() dto: UpdateBillingMethodDto,
+    @Req() req: AuthenticatedRequest,
   ): Promise<void> {
     try {
-      await this.service.updateBillingMethod(id, dto.billingMethodId);
+      const userId = req.jwtUserId!;
+      await this.service.updateBillingMethod(id, dto.billingMethodId, userId);
     } catch (e: any) {
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('not found')) throw new NotFoundException(e.message);
@@ -85,9 +87,10 @@ export class BillingAgreementController {
   @HttpCode(204)
   @WalletJwtAuth()
   @ApiOperation({ summary: 'Revoke a billing agreement' })
-  async revoke(@Param('id') id: string): Promise<void> {
+  async revoke(@Param('id') id: string, @Req() req: AuthenticatedRequest): Promise<void> {
     try {
-      await this.service.revoke(id);
+      const userId = req.jwtUserId!;
+      await this.service.revoke(id, userId);
     } catch (e: any) {
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('not found')) throw new NotFoundException(e.message);

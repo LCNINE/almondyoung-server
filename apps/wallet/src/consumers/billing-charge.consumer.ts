@@ -5,6 +5,7 @@ import { BillingChargePayload } from '@packages/event-contracts/streams/wallet-c
 import { DomainEvent } from '@packages/event-contracts/types';
 import { DbService } from '@app/db';
 import { randomBytes } from 'node:crypto';
+import { sql } from 'drizzle-orm';
 import {
   WalletSchema,
   paymentIntents,
@@ -111,7 +112,20 @@ export class BillingChargeConsumer {
       billingMethod.id,
     );
 
-    // 5. PaymentIntent 생성
+    // 5. PaymentIntent 생성 — idempotency: 같은 key로 이미 처리된 intent가 있으면 skip
+    const [existingIntent] = await this.dbService.db
+      .select({ id: paymentIntents.id, status: paymentIntents.status })
+      .from(paymentIntents)
+      .where(sql`${paymentIntents.metadata}->>'idempotencyKey' = ${payload.idempotencyKey}`)
+      .limit(1);
+
+    if (existingIntent) {
+      this.logger.log(
+        `[BillingCharge] Duplicate command skipped (idempotencyKey=${payload.idempotencyKey}): intentId=${existingIntent.id}, status=${existingIntent.status}`,
+      );
+      return;
+    }
+
     const clientSecret = randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + DEFAULT_INTENT_EXPIRY_MINUTES * 60 * 1000);
     const now = new Date().toISOString();
@@ -186,7 +200,7 @@ export class BillingChargeConsumer {
       });
 
       // Create AUTHORIZE charge record
-      const idempotencyKey = `wallet:authorize:${intentId}:${paymentMethod.id}:${Date.now()}`;
+      const idempotencyKey = `wallet:authorize:${intentId}:${paymentMethod.id}`;
       const charge = await this.chargesService.create({
         intentId,
         paymentMethodId: paymentMethod.id,

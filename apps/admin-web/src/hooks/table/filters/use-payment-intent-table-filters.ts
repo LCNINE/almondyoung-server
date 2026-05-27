@@ -16,6 +16,7 @@ export function usePaymentIntentTableFilters(): Filter[] {
         { label: '취소', value: 'CANCELED' },
         { label: '실패', value: 'FAILED' },
         { label: '만료', value: 'EXPIRED' },
+        { label: '정산대기', value: 'PENDING_SETTLEMENT' },
       ],
     },
     {
@@ -24,6 +25,8 @@ export function usePaymentIntentTableFilters(): Filter[] {
       type: 'select',
       options: [
         { label: '토스페이먼츠', value: 'TOSS' },
+        { label: '토스 빌링', value: 'TOSS_BILLING' },
+        { label: 'CMS 자동이체', value: 'CMS_BATCH' },
         { label: '포인트', value: 'POINTS' },
         { label: '무통장입금', value: 'BANK_TRANSFER' },
       ],
