@@ -16,6 +16,7 @@ export class BusinessLicenseException extends ApplicationException {
   }) {
     super(message);
     this.httpStatus = httpStatus;
+    this.errorCode = errorCode;
   }
 
   getErrorCode(): string {

@@ -92,7 +92,25 @@ export class BusinessLicensesService {
     const { businessNumber, representativeName } = fetchBusinessLicenseDto;
 
     const baseUrl = this.configService.get<string>('BIZNO_URL');
-    const response = await firstValueFrom(this.httpService.get(`${baseUrl}/${businessNumber}`));
+
+    if (!baseUrl) {
+      throw new BusinessLicenseException({
+        message: '사업자 조회 서비스가 설정되지 않았습니다.',
+        errorCode: 'BUSINESS_LICENSE_FETCH_NOT_CONFIGURED',
+        httpStatus: HttpStatus.SERVICE_UNAVAILABLE,
+      });
+    }
+
+    let response: { data: string };
+    try {
+      response = await firstValueFrom(this.httpService.get(`${baseUrl}/${businessNumber}`));
+    } catch {
+      throw new BusinessLicenseException({
+        message: '사업자 정보 조회 중 외부 서비스 오류가 발생했습니다.',
+        errorCode: 'BUSINESS_LICENSE_FETCH_EXTERNAL_ERROR',
+        httpStatus: HttpStatus.BAD_GATEWAY,
+      });
+    }
 
     const $ = cheerio.load(response.data);
 
