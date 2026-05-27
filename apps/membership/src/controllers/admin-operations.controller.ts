@@ -19,6 +19,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
 import { AdminOperationsService } from '../services/admin-operations.service';
+import { AdminMembersReader } from '../services/admin/admin-members.reader';
 import { SubscriptionCancellationService } from '../services/subscription-cancellation.service';
 import { ContractEventManager } from '../services/subscription/contract-event.manager';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
@@ -63,32 +64,29 @@ export class AdminOperationsController {
     private readonly subscriptionService: SubscriptionService,
     private readonly cancellationService: SubscriptionCancellationService,
     private readonly contractEventManager: ContractEventManager,
+    private readonly adminMembersReader: AdminMembersReader,
   ) {}
 
-  /**
-   * 공통 에러 처리 헬퍼 메서드
-   */
-  private handleError(error: any, operation: string, context?: string): never {
+  private handleError(error: unknown, operation: string, context?: string): never {
+    const msg = error instanceof Error ? error.message : String(error);
     const contextInfo = context ? ` (${context})` : '';
-    this.logger.error(`❌ ${operation} 실패${contextInfo}:`, error.message);
+    this.logger.error(`❌ ${operation} 실패${contextInfo}:`, msg);
 
-    // CTO 스타일: 에러 메시지 패턴 기반 HTTP 응답 변환
-    if (error.message.includes('not found') || error.message.includes('찾을 수 없')) {
+    if (msg.includes('not found') || msg.includes('찾을 수 없')) {
       throw new HttpException(`요청한 리소스를 찾을 수 없습니다.`, HttpStatus.NOT_FOUND);
     }
 
     if (
-      error.message.includes('already exists') ||
-      error.message.includes('already') ||
-      error.message.includes('invalid') ||
-      error.message.includes('잘못된') ||
-      error.message.includes('exceeds') ||
-      error.message.includes('required')
+      msg.includes('already exists') ||
+      msg.includes('already') ||
+      msg.includes('invalid') ||
+      msg.includes('잘못된') ||
+      msg.includes('exceeds') ||
+      msg.includes('required')
     ) {
-      throw new HttpException(`잘못된 요청입니다: ${error.message}`, HttpStatus.BAD_REQUEST);
+      throw new HttpException(`잘못된 요청입니다: ${msg}`, HttpStatus.BAD_REQUEST);
     }
 
-    // 기타 모든 오류는 500으로 처리
     throw new HttpException(`${operation} 중 오류가 발생했습니다.`, HttpStatus.INTERNAL_SERVER_ERROR);
   }
 
@@ -643,16 +641,9 @@ export class AdminOperationsController {
   @ApiOperation({ summary: '관리자 신규 회원 구독 등록' })
   @ApiBody({ type: AdminSubscribeUserRequestDto })
   @UseGuards(JwtAuthGuard)
-  async adminSubscribeUser(
-    @User('userId') adminId: string,
-    @Body() dto: AdminSubscribeUserRequestDto,
-  ) {
+  async adminSubscribeUser(@User('userId') adminId: string, @Body() dto: AdminSubscribeUserRequestDto) {
     try {
-      const result = await this.adminOperationsService.adminSubscribeUser(
-        dto.userId,
-        dto.planId,
-        dto.billingMode,
-      );
+      const result = await this.adminOperationsService.adminSubscribeUser(dto.userId, dto.planId, dto.billingMode);
       return { success: true, data: result };
     } catch (error) {
       this.handleError(error, '신규 회원 구독 등록', dto.userId);
@@ -718,9 +709,7 @@ export class AdminOperationsController {
     @Query('dateCriteria') dateCriteria?: 'createdAt' | 'cancelledAt',
   ) {
     try {
-      const normalizedUserIds = userIds
-        ? (Array.isArray(userIds) ? userIds : [userIds])
-        : undefined;
+      const normalizedUserIds = userIds ? (Array.isArray(userIds) ? userIds : [userIds]) : undefined;
       const result = await this.adminOperationsService.getMembersList({
         page: page ? Number(page) : 1,
         limit: limit ? Number(limit) : 20,
@@ -766,10 +755,7 @@ export class AdminOperationsController {
   @Get('billing-events')
   @ApiOperation({ summary: '멤버십 결제 이벤트 조회' })
   @UseGuards(JwtAuthGuard)
-  async getMemberBillingEvents(
-    @Query('userId') userId?: string,
-    @Query('contractId') contractId?: string,
-  ) {
+  async getMemberBillingEvents(@Query('userId') userId?: string, @Query('contractId') contractId?: string) {
     if (!userId && !contractId) throw new BadRequestException('userId or contractId is required');
     try {
       if (userId) {
@@ -791,10 +777,7 @@ export class AdminOperationsController {
   @Get('contract-events')
   @ApiOperation({ summary: '멤버십 계약 이벤트 로그 조회' })
   @UseGuards(JwtAuthGuard)
-  async getMemberContractEvents(
-    @Query('userId') userId?: string,
-    @Query('contractId') contractId?: string,
-  ) {
+  async getMemberContractEvents(@Query('userId') userId?: string, @Query('contractId') contractId?: string) {
     if (!userId && !contractId) throw new BadRequestException('userId or contractId is required');
     try {
       if (userId) {
@@ -859,6 +842,58 @@ export class AdminOperationsController {
       return { success: true, data: { contractId, autoRenewal } };
     } catch (error) {
       this.handleError(error, '자동 연장 설정 변경', contractId);
+    }
+  }
+
+  /**
+   * 정기결제(autoRenewal=true) 계약 목록 조회
+   *
+   * GET /admin/recurring-contracts?page=1&limit=20&userId=xxx&contractId=xxx&status=ACTIVE
+   */
+  @Get('recurring-contracts')
+  @ApiOperation({ summary: '정기결제 계약 목록 조회 (autoRenewal=true)' })
+  @UseGuards(JwtAuthGuard)
+  async getRecurringContracts(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('userId') userId?: string,
+    @Query('contractId') contractId?: string,
+    @Query('status') status?: string,
+    @Query('dateType') dateType?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
+    try {
+      return await this.adminMembersReader.findRecurringContracts({
+        page: page ? Number(page) : 1,
+        limit: limit ? Number(limit) : 20,
+        userId,
+        contractId,
+        status,
+        dateType: dateType === 'createdAt' || dateType === 'nextBillingDate' ? dateType : 'updatedAt',
+        dateFrom,
+        dateTo,
+      });
+    } catch (error) {
+      this.handleError(error, '정기결제 계약 목록 조회');
+    }
+  }
+
+  /**
+   * 정기결제 계약 ID 목록으로 계약 요약 일괄 조회
+   *
+   * GET /admin/recurring-contracts/by-ids?contractId=xxx&contractId=yyy
+   */
+  @Get('recurring-contracts/by-ids')
+  @ApiOperation({ summary: '정기결제 계약 요약 일괄 조회 (by contractId[])' })
+  @UseGuards(JwtAuthGuard)
+  async getRecurringContractsByIds(@Query('contractId') contractIds: string | string[] | undefined) {
+    const ids = contractIds ? (Array.isArray(contractIds) ? contractIds : [contractIds]) : [];
+    if (!ids.length) return [];
+    try {
+      return await this.adminMembersReader.findRecurringContractsByIds(ids);
+    } catch (error) {
+      this.handleError(error, '정기결제 계약 요약 조회');
     }
   }
 }

@@ -1,6 +1,7 @@
 'use client';
 
 import { MEMBERSHIP_SERVICE_BASE_URL } from '@/const';
+import { AdminRecurringContractSummary } from '@/lib/types/dto/membership';
 import { client } from '../../client';
 
 export interface AdminMembersQuery {
@@ -279,5 +280,37 @@ export const membershipApi = {
       days,
       memo,
     });
+  },
+
+  getRecurringContractsByIds: async (contractIds: string[]): Promise<AdminRecurringContractSummary[]> => {
+    if (!contractIds.length) return [];
+    const params = new URLSearchParams();
+    contractIds.forEach((id) => params.append('contractId', id));
+    const res = await client.get(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/recurring-contracts/by-ids?${params.toString()}`);
+    return res.data;
+  },
+
+  getRecurringContracts: async (query: {
+    page?: number;
+    limit?: number;
+    userId?: string;
+    contractId?: string;
+    status?: string;
+    dateType?: string;
+    dateFrom?: string;
+    dateTo?: string;
+  }): Promise<import('@/lib/types/dto/membership').AdminRecurringContractsResponse> => {
+    const params = new URLSearchParams();
+    if (query.page) params.set('page', String(query.page));
+    if (query.limit) params.set('limit', String(query.limit));
+    if (query.userId) params.set('userId', query.userId);
+    if (query.contractId) params.set('contractId', query.contractId);
+    if (query.status) params.set('status', query.status);
+    if (query.dateType) params.set('dateType', query.dateType);
+    if (query.dateFrom) params.set('dateFrom', query.dateFrom);
+    if (query.dateTo) params.set('dateTo', query.dateTo);
+    const qs = params.toString();
+    const res = await client.get(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/recurring-contracts${qs ? `?${qs}` : ''}`);
+    return res.data;
   },
 };

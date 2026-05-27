@@ -15,6 +15,9 @@ import {
   BatchEarnResultDto,
   TopPointUserDto,
   PaginatedResponse,
+  AdminRecurringBillingOverview,
+  AdminRecurringBillingRow,
+  AdminRecurringBillingListQuery,
 } from '@/lib/types/dto/wallet';
 import { client } from '../../client';
 
@@ -212,5 +215,40 @@ export const walletApi = {
     }, {
       headers: { 'Idempotency-Key': crypto.randomUUID() },
     });
+  },
+
+  // ── Recurring Billing Admin ──────────────────────────────────────────────────
+
+  getRecurringBillingOverview: async (): Promise<AdminRecurringBillingOverview> => {
+    const res = await client.get(`${BASE}/v1/admin/recurring-billing/overview`);
+    return res.data;
+  },
+
+  listRecurringBillingItems: async (query: AdminRecurringBillingListQuery): Promise<PaginatedResponse<AdminRecurringBillingRow>> => {
+    const qs = buildQueryString(query as Record<string, unknown>);
+    const res = await client.get(`${BASE}/v1/admin/recurring-billing/items${qs ? `?${qs}` : ''}`);
+    return res.data;
+  },
+
+  pollCmsMember: async (id: string): Promise<AdminRecurringBillingRow> => {
+    const res = await client.post(`${BASE}/v1/admin/recurring-billing/providers/cms/members/${id}/poll`, undefined, {
+      headers: { 'Idempotency-Key': crypto.randomUUID() },
+    });
+    return res.data;
+  },
+
+  pollCmsWithdrawal: async (id: string): Promise<AdminRecurringBillingRow> => {
+    const res = await client.post(`${BASE}/v1/admin/recurring-billing/providers/cms/withdrawals/${id}/poll`, undefined, {
+      headers: { 'Idempotency-Key': crypto.randomUUID() },
+    });
+    return res.data;
+  },
+
+  getAgreementStateByRefs: async (refs: string[]): Promise<Record<string, import('@/lib/types/dto/membership').AgreementStateEntry | null>> => {
+    if (!refs.length) return {};
+    const params = new URLSearchParams();
+    refs.forEach((r) => params.append('refs', r));
+    const res = await client.get(`${BASE}/v1/admin/recurring-billing/agreement-state-by-refs?${params.toString()}`);
+    return res.data;
   },
 };

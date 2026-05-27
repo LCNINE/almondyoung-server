@@ -12,4 +12,7 @@ export const membershipQueryKeys = {
   billingHistory: (query: AdminBillingHistoryQuery) =>
     [...membershipQueryKeys.all, 'billingHistory', query] as const,
   tiersWithPlans: () => [...membershipQueryKeys.all, 'tiersWithPlans'] as const,
+  recurringBilling: () => [...membershipQueryKeys.all, 'recurringBilling'] as const,
+  recurringBillingOverview: () => [...membershipQueryKeys.all, 'recurringBilling', 'overview'] as const,
+  recurringBillingList: (query: Record<string, unknown>) => [...membershipQueryKeys.all, 'recurringBilling', 'list', query] as const,
 };

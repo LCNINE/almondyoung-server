@@ -199,6 +199,10 @@ export class SubscriptionManager {
           isVoided: true,
           voidedAt: now,
           reason,
+          status: 'CANCELLED',
+          cancelledAt: now,
+          autoRenewal: false,
+          nextBillingDate: null,
         })
         .where(eq(schema.subscriptionContracts.id, contract.id));
 
