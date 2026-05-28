@@ -1,12 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { randomBytes } from 'node:crypto';
-import {
-  WalletSchema,
-  paymentIntents,
-  outboxEvents,
-  IntentPurpose,
-} from '../schema';
+import { sql } from 'drizzle-orm';
+import { WalletSchema, paymentIntents, outboxEvents, IntentPurpose } from '../schema';
 import { BillingMethodService } from './billing-method.service';
 import { ProviderRegistry } from '../providers/provider.registry';
 import { ChargesService } from '../charges/charges.service';
@@ -57,6 +53,31 @@ export class DirectBillingChargeService {
     // CMS_BATCH는 효성 배치 출금 방식이라 즉시 SUCCEEDED가 불가 — 토스 결제창으로 유도해야 함
     if (billingMethod.providerType === 'CMS_BATCH') {
       throw new Error('CMS_BATCH billing method cannot be used for immediate charges; use Toss payment flow instead');
+    }
+
+    // 멱등성: 동일 idempotencyKey의 기존 intent가 있으면 현재 상태 반환
+    const [existingIntent] = await this.dbService.db
+      .select({ id: paymentIntents.id, status: paymentIntents.status })
+      .from(paymentIntents)
+      .where(sql`${paymentIntents.metadata}->>'idempotencyKey' = ${params.idempotencyKey}`)
+      .limit(1);
+
+    if (existingIntent) {
+      this.logger.log(
+        `[DirectBillingCharge] idempotent return: key=${params.idempotencyKey} intentId=${existingIntent.id} status=${existingIntent.status}`,
+      );
+      const successStatuses = new Set(['AUTHORIZED', 'CAPTURED', 'SUCCEEDED']);
+      const failedStatuses = new Set(['FAILED', 'CANCELED']);
+      if (successStatuses.has(existingIntent.status)) {
+        return { intentId: existingIntent.id, status: 'AUTHORIZED' };
+      }
+      if (failedStatuses.has(existingIntent.status)) {
+        return { intentId: existingIntent.id, status: 'FAILED' };
+      }
+      // CREATED / PROCESSING / REQUIRES_ACTION / PENDING_SETTLEMENT — 아직 처리 중
+      throw new Error(
+        `결제가 아직 처리 중입니다. 잠시 후 다시 시도해주세요. (intentId=${existingIntent.id}, status=${existingIntent.status})`,
+      );
     }
 
     const provider = this.providerRegistry.getProviderOrThrow(billingMethod.providerType);
@@ -165,7 +186,11 @@ export class DirectBillingChargeService {
         await this.chargesService.updateStatus(
           charge.id,
           'FAILED',
-          { errorCode: result.errorCode ?? 'PROVIDER_FAILED', errorMessage: result.errorMessage, responsePayload: result.raw },
+          {
+            errorCode: result.errorCode ?? 'PROVIDER_FAILED',
+            errorMessage: result.errorMessage,
+            responsePayload: result.raw,
+          },
           tx,
         );
         await this.stateTransitionService.transitionIntent(

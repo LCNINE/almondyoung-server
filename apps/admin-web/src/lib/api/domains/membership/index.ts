@@ -153,48 +153,64 @@ function buildQueryString(query: Record<string, unknown>): string {
 }
 
 export const membershipApi = {
-  getAdminMembers: async (query: AdminMembersQuery): Promise<AdminMembersResponse> => {
+  getAdminMembers: async (
+    query: AdminMembersQuery
+  ): Promise<AdminMembersResponse> => {
     const qs = buildQueryString(query as Record<string, unknown>);
     const res = await client.get(
-      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/members${qs ? `?${qs}` : ''}`,
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/members${qs ? `?${qs}` : ''}`
     );
     return res.data;
   },
 
   getMemberDetail: async (userId: string): Promise<AdminMemberDetail> => {
     const res = await client.get(
-      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/members/${encodeURIComponent(userId)}`,
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/members/${encodeURIComponent(userId)}`
     );
     return res.data;
   },
 
-  getMemberBillingEvents: async (userId: string): Promise<BillingEventItem[]> => {
+  getMemberBillingEvents: async (
+    userId: string
+  ): Promise<BillingEventItem[]> => {
     const res = await client.get(
-      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/billing-events?userId=${encodeURIComponent(userId)}`,
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/billing-events?userId=${encodeURIComponent(userId)}`
     );
     return res.data;
   },
 
-  getMemberContractEvents: async (userId: string): Promise<ContractEventItem[]> => {
+  getMemberContractEvents: async (
+    userId: string
+  ): Promise<ContractEventItem[]> => {
     const res = await client.get(
-      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/contract-events?userId=${encodeURIComponent(userId)}`,
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/contract-events?userId=${encodeURIComponent(userId)}`
     );
     return res.data;
   },
 
-  setAutoRenewal: async (contractId: string, autoRenewal: boolean): Promise<void> => {
+  setAutoRenewal: async (
+    contractId: string,
+    autoRenewal: boolean
+  ): Promise<void> => {
     await client.put(
       `${MEMBERSHIP_SERVICE_BASE_URL}/admin/contracts/${encodeURIComponent(contractId)}/auto-renewal`,
-      { autoRenewal },
+      { autoRenewal }
     );
   },
 
-  adjustEntitlement: async (userId: string, days: number, reason: string): Promise<void> => {
-    await client.post(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/entitlements/adjust`, {
-      userId,
-      days,
-      reason,
-    });
+  adjustEntitlement: async (
+    userId: string,
+    days: number,
+    reason: string
+  ): Promise<void> => {
+    await client.post(
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/entitlements/adjust`,
+      {
+        userId,
+        days,
+        reason,
+      }
+    );
   },
 
   getAllTiersWithPlans: async (): Promise<AdminTierWithPlans[]> => {
@@ -202,12 +218,21 @@ export const membershipApi = {
     return res.data;
   },
 
-  createTier: async (body: { code: string; priorityLevel: number }): Promise<void> => {
+  createTier: async (body: {
+    code: string;
+    priorityLevel: number;
+  }): Promise<void> => {
     await client.post(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/tiers`, body);
   },
 
-  updateTier: async (tierId: string, body: { priorityLevel?: number }): Promise<void> => {
-    await client.put(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/tiers/${encodeURIComponent(tierId)}`, body);
+  updateTier: async (
+    tierId: string,
+    body: { priorityLevel?: number }
+  ): Promise<void> => {
+    await client.put(
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/tiers/${encodeURIComponent(tierId)}`,
+      body
+    );
   },
 
   createPlan: async (body: {
@@ -220,24 +245,35 @@ export const membershipApi = {
     await client.post(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/plans`, body);
   },
 
-  updatePlan: async (planId: string, body: {
-    price?: number;
-    durationDays?: number;
-    trialDays?: number;
-  }): Promise<void> => {
-    await client.put(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/plans/${encodeURIComponent(planId)}`, body);
+  updatePlan: async (
+    planId: string,
+    body: {
+      price?: number;
+      durationDays?: number;
+      trialDays?: number;
+    }
+  ): Promise<void> => {
+    await client.put(
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/plans/${encodeURIComponent(planId)}`,
+      body
+    );
   },
 
   deactivatePlan: async (planId: string, reason: string): Promise<void> => {
-    await client.delete(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/plans/${encodeURIComponent(planId)}`, {
-      data: { reason },
-    });
+    await client.delete(
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/plans/${encodeURIComponent(planId)}`,
+      {
+        data: { reason },
+      }
+    );
   },
 
-  getAllBillingHistory: async (query: AdminBillingHistoryQuery): Promise<AdminBillingHistoryResponse> => {
+  getAllBillingHistory: async (
+    query: AdminBillingHistoryQuery
+  ): Promise<AdminBillingHistoryResponse> => {
     const qs = buildQueryString(query as Record<string, unknown>);
     const res = await client.get(
-      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/billing-history${qs ? `?${qs}` : ''}`,
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/billing-history${qs ? `?${qs}` : ''}`
     );
     return res.data;
   },
@@ -249,17 +285,21 @@ export const membershipApi = {
       refundType: 'FULL' | 'PARTIAL' | 'NONE';
       refundAmount?: number;
       adminNote?: string;
-    },
-  ): Promise<{ refundStatus: 'COMPLETED' | 'FAILED' | 'PENDING' | 'NOT_APPLICABLE' }> => {
+    }
+  ): Promise<{
+    refundStatus: 'COMPLETED' | 'FAILED' | 'PENDING' | 'NOT_APPLICABLE';
+  }> => {
     const res = await client.post(
       `${MEMBERSHIP_SERVICE_BASE_URL}/admin/subscriptions/${encodeURIComponent(contractId)}/force-cancel`,
-      body,
+      body
     );
     return res.data;
   },
 
   activatePlan: async (planId: string): Promise<void> => {
-    await client.patch(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/plans/${encodeURIComponent(planId)}/activate`);
+    await client.patch(
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/plans/${encodeURIComponent(planId)}/activate`
+    );
   },
 
   adminSubscribeUser: async (body: {
@@ -267,26 +307,42 @@ export const membershipApi = {
     planId: string;
     billingMode: 'one_time' | 'recurring';
   }): Promise<{ contractId: string; entitlementId: string }> => {
-    const res = await client.post(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/members/subscribe`, body);
+    const res = await client.post(
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/members/subscribe`,
+      body
+    );
     return res.data;
   },
 
   retryBilling: async (contractId: string): Promise<void> => {
-    await client.post(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/billing/retry/${encodeURIComponent(contractId)}`);
+    await client.post(
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/billing/retry/${encodeURIComponent(contractId)}`
+    );
   },
 
-  grantSubscriptionByDays: async (userId: string, days: number, memo?: string): Promise<void> => {
-    await client.post(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/members/${encodeURIComponent(userId)}/grant`, {
-      days,
-      memo,
-    });
+  grantSubscriptionByDays: async (
+    userId: string,
+    days: number,
+    memo?: string
+  ): Promise<void> => {
+    await client.post(
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/members/${encodeURIComponent(userId)}/grant`,
+      {
+        days,
+        memo,
+      }
+    );
   },
 
-  getRecurringContractsByIds: async (contractIds: string[]): Promise<AdminRecurringContractSummary[]> => {
+  getRecurringContractsByIds: async (
+    contractIds: string[]
+  ): Promise<AdminRecurringContractSummary[]> => {
     if (!contractIds.length) return [];
     const params = new URLSearchParams();
     contractIds.forEach((id) => params.append('contractId', id));
-    const res = await client.get(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/recurring-contracts/by-ids?${params.toString()}`);
+    const res = await client.get(
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/recurring-contracts/by-ids?${params.toString()}`
+    );
     return res.data;
   },
 
@@ -299,7 +355,9 @@ export const membershipApi = {
     dateType?: string;
     dateFrom?: string;
     dateTo?: string;
-  }): Promise<import('@/lib/types/dto/membership').AdminRecurringContractsResponse> => {
+  }): Promise<
+    import('@/lib/types/dto/membership').AdminRecurringContractsResponse
+  > => {
     const params = new URLSearchParams();
     if (query.page) params.set('page', String(query.page));
     if (query.limit) params.set('limit', String(query.limit));
@@ -310,7 +368,31 @@ export const membershipApi = {
     if (query.dateFrom) params.set('dateFrom', query.dateFrom);
     if (query.dateTo) params.set('dateTo', query.dateTo);
     const qs = params.toString();
-    const res = await client.get(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/recurring-contracts${qs ? `?${qs}` : ''}`);
+    const res = await client.get(
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/recurring-contracts${qs ? `?${qs}` : ''}`
+    );
+    return res.data;
+  },
+
+  getStuckBillingContracts: async (
+    thresholdHours = 48
+  ): Promise<
+    import('@/lib/types/dto/membership').StuckBillingContractsResponse
+  > => {
+    const res = await client.get(
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/stuck-billing-contracts?thresholdHours=${thresholdHours}`
+    );
+    return res.data;
+  },
+
+  resetBillingInProgress: async (
+    contractId: string,
+    reason: string
+  ): Promise<{ contractId: string; reset: boolean }> => {
+    const res = await client.post(
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/contracts/${encodeURIComponent(contractId)}/reset-billing-progress`,
+      { reason }
+    );
     return res.data;
   },
 };

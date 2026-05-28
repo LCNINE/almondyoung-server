@@ -1,0 +1,1 @@
+ALTER TABLE "subscription_contracts" ADD COLUMN "billing_started_at" timestamp with time zone;

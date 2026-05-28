@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { eq, and, lte, lt, notInArray, isNull } from 'drizzle-orm';
+import { eq, and, lte, lt, notInArray, isNull, not, exists } from 'drizzle-orm';
 import * as schema from '../../shared/schemas/entities/schema';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 
@@ -70,26 +70,58 @@ export class BillingReader {
         and(
           eq(schema.subscriptionContracts.isVoided, false),
           eq(schema.subscriptionContracts.autoRenewal, true),
+          eq(schema.subscriptionContracts.billingInProgress, false),
           isNull(schema.subscriptionEntitlement.pausedAt),
           lte(schema.subscriptionContracts.nextBillingDate, date),
+          // dunning 처리 중인 계약은 dunning 스케줄러가 담당 — 메인 스케줄러 제외
+          not(
+            exists(
+              this.dbService.db
+                .select()
+                .from(schema.membershipDunningQueue)
+                .where(eq(schema.membershipDunningQueue.contractId, schema.subscriptionContracts.id)),
+            ),
+          ),
         ),
       );
   }
 
   /**
    * Dunning 큐 조회 (재시도 대상)
+   * billingInProgress=true인 계약은 제외 — 이전 커맨드 결과 이벤트 대기 중
    */
   async findDunningItems(now: Date): Promise<DunningItem[]> {
     return this.dbService.db
-      .select()
+      .select({
+        id: schema.membershipDunningQueue.id,
+        contractId: schema.membershipDunningQueue.contractId,
+        nextRetryAt: schema.membershipDunningQueue.nextRetryAt,
+        attempts: schema.membershipDunningQueue.attempts,
+        maxAttempts: schema.membershipDunningQueue.maxAttempts,
+        lastErrorCode: schema.membershipDunningQueue.lastErrorCode,
+        lastErrorMessage: schema.membershipDunningQueue.lastErrorMessage,
+        createdAt: schema.membershipDunningQueue.createdAt,
+        updatedAt: schema.membershipDunningQueue.updatedAt,
+      })
       .from(schema.membershipDunningQueue)
-      .where(lte(schema.membershipDunningQueue.nextRetryAt, now));
+      .innerJoin(
+        schema.subscriptionContracts,
+        eq(schema.subscriptionContracts.id, schema.membershipDunningQueue.contractId),
+      )
+      .where(
+        and(
+          lte(schema.membershipDunningQueue.nextRetryAt, now),
+          eq(schema.subscriptionContracts.billingInProgress, false),
+        ),
+      );
   }
 
   /**
    * 만료된 권한 조회 (autoRenewal=false, endsAt < today, isCurrent=true)
    */
-  async findExpiredEntitlements(today: string): Promise<{ entitlementId: string; userId: string; contractId: string }[]> {
+  async findExpiredEntitlements(
+    today: string,
+  ): Promise<{ entitlementId: string; userId: string; contractId: string }[]> {
     return this.dbService.db
       .select({
         entitlementId: schema.subscriptionEntitlement.id,
@@ -116,7 +148,7 @@ export class BillingReader {
    * autoRenewal=true인데 endsAt이 지나고 dunning 항목도 없는 "stuck" 권한 조회
    *
    * BillingCharge Kafka 커맨드 발행 후 wallet이 결제 결과 이벤트를 발행하지 못한 경우(wallet 장애, Kafka 단절 등)
-   * 이 경우 nextBillingDate만 앞당겨지고 entitlement는 isCurrent=true로 남음
+   * billingInProgress=true는 제외 — CMS처럼 결과가 다음 영업일에 오는 경우 만료 처리하면 안 됨
    */
   async findStuckEntitlements(today: string): Promise<{ entitlementId: string; userId: string; contractId: string }[]> {
     return this.dbService.db
@@ -139,6 +171,7 @@ export class BillingReader {
           eq(schema.subscriptionEntitlement.isCurrent, true),
           eq(schema.subscriptionContracts.autoRenewal, true),
           eq(schema.subscriptionContracts.isVoided, false),
+          eq(schema.subscriptionContracts.billingInProgress, false),
           lt(schema.subscriptionEntitlement.endsAt, today),
           notInArray(schema.subscriptionContracts.status, ['EXPIRED', 'CANCELLED']),
           isNull(schema.membershipDunningQueue.id),
