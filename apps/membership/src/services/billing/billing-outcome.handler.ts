@@ -11,7 +11,6 @@ import { DrizzleTransaction } from '../../shared/schemas/types';
 const DUNNING_MAX_ATTEMPTS = 3;
 const DUNNING_RETRY_HOURS = 72; // 3일 후 재시도
 
-
 @Injectable()
 export class BillingOutcomeHandler {
   private readonly logger = new Logger(BillingOutcomeHandler.name);
@@ -32,7 +31,13 @@ export class BillingOutcomeHandler {
 
       const entitlement = await this.getActiveEntitlement(tx, row.userId);
       if (!entitlement) {
-        this.logger.warn(`handleSuccess: active entitlement not found (userId=${row.userId})`);
+        this.logger.warn(
+          `handleSuccess: active entitlement not found (userId=${row.userId}) — clearing billingInProgress`,
+        );
+        await tx
+          .update(schema.subscriptionContracts)
+          .set({ billingInProgress: false, billingStartedAt: null, updatedAt: new Date() })
+          .where(eq(schema.subscriptionContracts.id, contractId));
         return null;
       }
 
@@ -40,7 +45,7 @@ export class BillingOutcomeHandler {
         .select({ count: count() })
         .from(schema.billingEvents)
         .where(eq(schema.billingEvents.contractId, contractId));
-      const attemptNo = (Number(countRow?.count ?? 0)) + 1;
+      const attemptNo = Number(countRow?.count ?? 0) + 1;
 
       const [batch] = await tx
         .insert(schema.eventBatches)
@@ -75,17 +80,19 @@ export class BillingOutcomeHandler {
 
       await tx
         .update(schema.subscriptionContracts)
-        .set({ nextBillingDate: newEndsAtStr, updatedAt: new Date() })
+        .set({ nextBillingDate: newEndsAtStr, billingInProgress: false, billingStartedAt: null, updatedAt: new Date() })
         .where(eq(schema.subscriptionContracts.id, contractId));
 
-      await tx
-        .delete(schema.membershipDunningQueue)
-        .where(eq(schema.membershipDunningQueue.contractId, contractId));
+      await tx.delete(schema.membershipDunningQueue).where(eq(schema.membershipDunningQueue.contractId, contractId));
 
       await this.contractEventManager.addEvent(
-        tx, contractId, 'BILLING_SUCCESS',
+        tx,
+        contractId,
+        'BILLING_SUCCESS',
         { amount, newEndsAt: newEndsAtStr },
-        'SYSTEM', row.userId, batch.id,
+        'SYSTEM',
+        row.userId,
+        batch.id,
       );
 
       return row.userId;
@@ -100,7 +107,7 @@ export class BillingOutcomeHandler {
           occurredAt: new Date().toISOString(),
           contractId,
         })
-        .catch((e) => this.logger.warn(`Kafka 발행 실패 (ACTIVE/renewal): ${e?.message}`));
+        .catch((e: unknown) => this.logger.warn(`Kafka 발행 실패 (ACTIVE/renewal): ${e instanceof Error ? e.message : String(e)}`));
     }
   }
 
@@ -153,6 +160,10 @@ export class BillingOutcomeHandler {
           lastErrorCode: errorCode,
           lastErrorMessage: errorMessage,
         });
+        await tx
+          .update(schema.subscriptionContracts)
+          .set({ billingInProgress: false, billingStartedAt: null, updatedAt: new Date() })
+          .where(eq(schema.subscriptionContracts.id, contractId));
 
         await this.recordBillingFailedEvent(tx, contractId, contract.userId, errorCode, 1);
       } else if (dunning.attempts < dunning.maxAttempts) {
@@ -167,8 +178,18 @@ export class BillingOutcomeHandler {
         });
         await tx
           .update(schema.membershipDunningQueue)
-          .set({ attempts: newAttempts, nextRetryAt, lastErrorCode: errorCode, lastErrorMessage: errorMessage, updatedAt: new Date() })
+          .set({
+            attempts: newAttempts,
+            nextRetryAt,
+            lastErrorCode: errorCode,
+            lastErrorMessage: errorMessage,
+            updatedAt: new Date(),
+          })
           .where(eq(schema.membershipDunningQueue.id, dunning.id));
+        await tx
+          .update(schema.subscriptionContracts)
+          .set({ billingInProgress: false, billingStartedAt: null, updatedAt: new Date() })
+          .where(eq(schema.subscriptionContracts.id, contractId));
 
         await this.recordBillingFailedEvent(tx, contractId, contract.userId, errorCode, newAttempts);
       } else {
@@ -182,8 +203,13 @@ export class BillingOutcomeHandler {
 
     if (terminatedUserId) {
       this.membershipEventPublisher
-        .publishStatusChanged({ userId: terminatedUserId, status: 'CANCELLED', occurredAt: new Date().toISOString(), contractId })
-        .catch((e) => this.logger.warn(`Kafka 발행 실패 (CANCELLED/dunning): ${e?.message}`));
+        .publishStatusChanged({
+          userId: terminatedUserId,
+          status: 'CANCELLED',
+          occurredAt: new Date().toISOString(),
+          contractId,
+        })
+        .catch((e: unknown) => this.logger.warn(`Kafka 발행 실패 (CANCELLED/dunning): ${e instanceof Error ? e.message : String(e)}`));
     }
   }
 
@@ -205,15 +231,19 @@ export class BillingOutcomeHandler {
         .where(eq(schema.subscriptionContracts.id, contractId));
 
       await this.contractEventManager.addEvent(
-        tx, contractId, 'EXPIRED',
+        tx,
+        contractId,
+        'EXPIRED',
         { reason: 'NATURAL_EXPIRATION' },
-        'SYSTEM', userId, batch.id,
+        'SYSTEM',
+        userId,
+        batch.id,
       );
     });
 
     this.membershipEventPublisher
       .publishStatusChanged({ userId, status: 'EXPIRED', occurredAt: new Date().toISOString(), contractId })
-      .catch((e) => this.logger.warn(`Kafka 발행 실패 (EXPIRED): ${e?.message}`));
+      .catch((e: unknown) => this.logger.warn(`Kafka 발행 실패 (EXPIRED): ${e instanceof Error ? e.message : String(e)}`));
   }
 
   private async terminateSubscription(
@@ -230,25 +260,26 @@ export class BillingOutcomeHandler {
     await tx
       .update(schema.subscriptionEntitlement)
       .set({ isCurrent: false, closedAt: new Date(), closedBatchId: batch.id })
-      .where(and(
-        eq(schema.subscriptionEntitlement.userId, userId),
-        eq(schema.subscriptionEntitlement.isCurrent, true),
-      ));
+      .where(
+        and(eq(schema.subscriptionEntitlement.userId, userId), eq(schema.subscriptionEntitlement.isCurrent, true)),
+      );
 
     await tx
       .update(schema.subscriptionContracts)
-      .set({ status: 'CANCELLED', cancelledAt: new Date(), autoRenewal: false, nextBillingDate: null, updatedAt: new Date() })
+      .set({
+        status: 'CANCELLED',
+        cancelledAt: new Date(),
+        autoRenewal: false,
+        nextBillingDate: null,
+        billingInProgress: false,
+        billingStartedAt: null,
+        updatedAt: new Date(),
+      })
       .where(eq(schema.subscriptionContracts.id, contractId));
 
-    await tx
-      .delete(schema.membershipDunningQueue)
-      .where(eq(schema.membershipDunningQueue.contractId, contractId));
+    await tx.delete(schema.membershipDunningQueue).where(eq(schema.membershipDunningQueue.contractId, contractId));
 
-    await this.contractEventManager.addEvent(
-      tx, contractId, 'TERMINATED',
-      { reason },
-      'SYSTEM', userId, batch.id,
-    );
+    await this.contractEventManager.addEvent(tx, contractId, 'TERMINATED', { reason }, 'SYSTEM', userId, batch.id);
   }
 
   private async recordBillingFailedEvent(
@@ -264,9 +295,13 @@ export class BillingOutcomeHandler {
       .returning();
 
     await this.contractEventManager.addEvent(
-      tx, contractId, 'BILLING_FAILED',
+      tx,
+      contractId,
+      'BILLING_FAILED',
       { errorCode, attemptNo },
-      'SYSTEM', userId, batch.id,
+      'SYSTEM',
+      userId,
+      batch.id,
     );
   }
 
@@ -288,10 +323,7 @@ export class BillingOutcomeHandler {
     const [entitlement] = await tx
       .select()
       .from(schema.subscriptionEntitlement)
-      .where(and(
-        eq(schema.subscriptionEntitlement.userId, userId),
-        eq(schema.subscriptionEntitlement.isCurrent, true),
-      ))
+      .where(and(eq(schema.subscriptionEntitlement.userId, userId), eq(schema.subscriptionEntitlement.isCurrent, true)))
       .limit(1);
 
     return entitlement ?? null;
