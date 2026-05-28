@@ -20,7 +20,17 @@ export function setup(opts?: { baseDomain?: string }) {
   }).value;
 
   const vpc = sst.aws.Vpc.get("Vpc", platformVpcId);
-  const cluster = new sst.aws.Cluster("Cluster", { vpc });
+  const cluster = new sst.aws.Cluster("Cluster", {
+    vpc: {
+      id: vpc.id,
+      securityGroups: vpc.securityGroups,
+      publicSubnets: vpc.publicSubnets,
+      loadBalancerSubnets: vpc.publicSubnets,
+      containerSubnets: vpc.privateSubnets,
+      cloudmapNamespaceId: vpc.nodes.cloudmapNamespace.id,
+      cloudmapNamespaceName: vpc.nodes.cloudmapNamespace.name,
+    },
+  });
 
   // ─── Domain helper ───
   const baseDomain = opts?.baseDomain ?? "lcnine-dev.com";
@@ -168,6 +178,21 @@ export function setup(opts?: { baseDomain?: string }) {
       },
       transform: {
         ...opts.transform,
+        service: (args: Record<string, any>) => {
+          // Route outbound traffic through NAT EC2 (fixed EIP) instead of per-task public IP.
+          // SST defaults to public subnets + assignPublicIp=true for its own Vpc; override here.
+          args.networkConfiguration = vpc.privateSubnets.apply((subnets) =>
+            vpc.securityGroups.apply((sgs) => ({
+              assignPublicIp: false,
+              subnets,
+              securityGroups: sgs,
+            })),
+          );
+          // Forward any caller-provided transform.service (function or partial object)
+          const orig = opts.transform?.service;
+          if (typeof orig === "function") orig(args);
+          else if (orig != null) Object.assign(args, orig);
+        },
         listenerRule: (args: Record<string, any>) => {
           args.conditions = [
             { hostHeader: { values: [domain(opts.domainSlug)] } },
