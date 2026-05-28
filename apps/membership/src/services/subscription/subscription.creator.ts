@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
+import { BadRequestError } from '@app/shared';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
 import { eq } from 'drizzle-orm';
@@ -7,6 +8,9 @@ import { addDays } from 'date-fns';
 import { ContractEventManager } from './contract-event.manager';
 import { EntitlementManager } from '../entitlement/entitlement.manager';
 import { MembershipPolicyService } from '../membership-policy.service';
+
+// 정기결제는 월간 플랜(최대 31일)만 허용. 연간 플랜은 1회 결제 전용.
+const RECURRING_MAX_DURATION_DAYS = 31;
 
 type Plan = typeof schema.plan.$inferSelect;
 type Tier = typeof schema.tiers.$inferSelect;
@@ -45,6 +49,12 @@ export class SubscriptionCreator {
     billingMode: 'one_time' | 'recurring' = 'one_time',
     skipTrial = false,
   ): Promise<{ contractId: string; entitlementId: string }> {
+    if (billingMode === 'recurring' && plan.durationDays > RECURRING_MAX_DURATION_DAYS) {
+      throw new BadRequestError(
+        `정기결제는 월간 플랜(최대 ${RECURRING_MAX_DURATION_DAYS}일)만 지원합니다. (durationDays=${plan.durationDays})`,
+      );
+    }
+
     return await this.dbService.db.transaction(async (tx) => {
       const now = new Date();
       const startsAt = now;
