@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   ForbiddenException,
   HttpCode,
@@ -36,6 +37,7 @@ export class DirectBillingChargeController {
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('not found') || msg.includes('inactive')) throw new NotFoundException(e.message);
       if (msg.includes('does not belong')) throw new ForbiddenException(e.message);
+      if (msg.includes('처리 중')) throw new ConflictException(e.message);
       if (msg.match(/invalid|failed/)) throw new BadRequestException(e.message);
       throw new InternalServerErrorException(e.message);
     }
