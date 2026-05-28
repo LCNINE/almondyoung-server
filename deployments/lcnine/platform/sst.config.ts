@@ -25,6 +25,9 @@ export default $config({
     return {
       vpcId: infra.vpc.id,
       kafkaBrokers: infra.kafkaBrokers,
+      natPublicIps: infra.vpc.nodes.elasticIps.apply((ips) =>
+        ips.map((ip) => ip.publicIp),
+      ),
     };
   },
 });
