@@ -123,15 +123,15 @@ export class CmsApiClient {
   }
 
   private get swKey(): string {
-    return process.env.HYOSUNG_CMS_SW_KEY ?? '';
+    return process.env.HYOSUNG_CMS_SW_KEY ?? process.env.SW_KEY ?? '';
   }
 
   private get custKey(): string {
-    return process.env.HYOSUNG_CMS_CUST_KEY ?? '';
+    return process.env.HYOSUNG_CMS_CUST_KEY ?? process.env.CUST_KEY ?? '';
   }
 
   private get custId(): string {
-    return process.env.HYOSUNG_CMS_CUST_ID ?? '';
+    return process.env.HYOSUNG_CMS_CUST_ID ?? process.env.CUST_ID ?? '';
   }
 
   // ─── 회원관리 ──────────────────────────────────────────────────────────────
@@ -210,6 +210,10 @@ export class CmsApiClient {
   // ─── HTTP helpers ──────────────────────────────────────────────────────────
 
   private authHeaders(): Record<string, string> {
+    if (!this.swKey || !this.custKey) {
+      throw new Error('HYOSUNG_CMS_SW_KEY/HYOSUNG_CMS_CUST_KEY is not configured');
+    }
+
     return {
       Authorization: `VAN ${this.swKey}:${this.custKey}`,
     };

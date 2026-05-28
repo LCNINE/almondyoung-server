@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     return Response.json(method, { status: 201 });
   } catch (err) {
     const message = err instanceof Error ? err.message : '계좌 등록 중 오류가 발생했습니다.';
-    const status = message.includes('(4') ? 400 : 502;
+    const status = /\b4\d{2}\b/.test(message) ? 400 : 502;
     return Response.json({ error: message }, { status });
   }
 }

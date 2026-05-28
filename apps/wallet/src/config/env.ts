@@ -38,6 +38,10 @@ export const walletEnvSchema = z.object({
   HYOSUNG_CMS_SW_KEY: z.string().min(1).optional(),
   HYOSUNG_CMS_CUST_KEY: z.string().min(1).optional(),
   HYOSUNG_CMS_CUST_ID: z.string().min(1).optional(),
+  // Legacy deployment secret names. Prefer HYOSUNG_CMS_* for new environments.
+  SW_KEY: z.string().min(1).optional(),
+  CUST_KEY: z.string().min(1).optional(),
+  CUST_ID: z.string().min(1).optional(),
 });
 
 export type WalletEnvConfig = z.infer<typeof walletEnvSchema>;
