@@ -181,15 +181,16 @@ export function MembershipForm({
         const attemptId = crypto.randomUUID()
         await subscribeWithBillingMethod(selectedPlanId, selectedBillingMethodId, billingMode, attemptId)
         if (billingMode === "recurring") {
-          toast.success("7일 무료 체험이 시작되었습니다! 체험 종료 후 자동으로 결제됩니다.")
+          const trialMsg = totalTrialDays > 0 ? `${totalTrialDays}일 무료 체험이 시작되었습니다! 체험 종료 후 자동으로 결제됩니다.` : "정기결제가 시작되었습니다."
+          toast.success(trialMsg)
         } else {
           toast.success("멤버십 가입이 완료되었습니다.")
         }
         router.push(`/${countryCode}/mypage/membership/subscribe/success`)
       } else {
-        // 신규 카드: 정기결제는 카드 먼저 등록 필요, 한번만결제는 wallet-web으로 바로 이동
+        // 신규 결제수단: 정기결제는 자동이체 수단 먼저 등록 필요, 한번만결제는 wallet-web으로 바로 이동
         if (billingMode === "recurring") {
-          toast.info("정기결제 무료체험을 시작하려면 먼저 카드를 등록해주세요.")
+          toast.info("정기결제를 시작하려면 먼저 자동이체 수단을 등록해주세요.")
           router.push(`/${countryCode}/mypage/membership/payment-method?redirect=subscribe&planId=${selectedPlanId}`)
         } else {
           if (!policyAgreed) {
@@ -217,6 +218,7 @@ export function MembershipForm({
   const discountCount = discountBenefits.length
 
   const billingMode = form.watch("billingMode")
+  const subscriptionType = form.watch("subscriptionType")
 
   useEffect(() => {
     setPolicyAgreed(false)
@@ -225,18 +227,22 @@ export function MembershipForm({
     }
   }, [billingMode])
 
+  useEffect(() => {
+    if (subscriptionType === "yearly") {
+      form.setValue("billingMode", "one_time")
+    }
+  }, [subscriptionType, form])
+
   function getSubmitButtonLabel() {
     if (!form.watch("agreement")) return "약관에 동의해주세요"
     if (billingMode === "one_time" && !policyAgreed) return "결제 및 환불 정책에 동의해주세요"
+    const trialLabel = totalTrialDays > 0 ? `${totalTrialDays}일 무료체험` : "자동이체"
     if (selectedBillingMethodId) {
-      return billingMode === "recurring" ? "7일 무료체험 시작하기" : "이 카드로 구독하기"
+      return billingMode === "recurring" ? `${trialLabel} 시작하기` : "이 결제수단으로 구독하기"
     }
-    return billingMode === "recurring" ? "카드 등록 후 무료체험 시작하기" : "새 카드로 결제하기"
+    return billingMode === "recurring" ? `자동이체 등록 후 ${trialLabel} 시작하기` : "새 결제수단으로 결제하기"
   }
-  const hasPrice =
-    form.watch("subscriptionType") == "monthly" ||
-    form.watch("subscriptionType") == "yearly"
-  const subscriptionType = form.watch("subscriptionType")
+  const hasPrice = subscriptionType == "monthly" || subscriptionType == "yearly"
   let firstPrice =
     subscriptionType === "monthly"
       ? monthlyPlan.plan.price
@@ -361,23 +367,35 @@ export function MembershipForm({
                       <div className="flex flex-col gap-2">
                         <button
                           type="button"
+                          disabled={subscriptionType === "yearly"}
                           className={cn(
-                            "bg-popover hover:bg-accent flex cursor-pointer flex-col rounded-md border-2 p-3 text-left",
-                            field.value === "recurring" ? "border-primary bg-primary/5" : "border-border"
+                            "flex cursor-pointer flex-col rounded-md border-2 p-3 text-left",
+                            subscriptionType === "yearly"
+                              ? "cursor-not-allowed border-border bg-muted opacity-50"
+                              : field.value === "recurring"
+                                ? "bg-primary/5 border-primary"
+                                : "bg-popover hover:bg-accent border-border"
                           )}
-                          onClick={() => field.onChange("recurring")}
+                          onClick={() => subscriptionType !== "yearly" && field.onChange("recurring")}
                         >
                           <div className="flex items-center gap-3">
                             <Gift className="h-5 w-5 shrink-0 text-emerald-500" />
                             <div className="flex flex-col">
                               <p className="text-sm font-bold">정기결제 (자동갱신)</p>
                               <p className="text-muted-foreground text-xs">
-                                7일 무료 체험 후 등록하신 카드로 자동 결제
+                                {totalTrialDays > 0 ? `${totalTrialDays}일 무료 체험 후 ` : ""}등록하신 자동이체 수단으로 매월 결제
                               </p>
                             </div>
-                            <Badge className="ml-auto shrink-0 bg-emerald-500 text-white">추천</Badge>
+                            {subscriptionType !== "yearly" && (
+                              <Badge className="ml-auto shrink-0 bg-emerald-500 text-white">추천</Badge>
+                            )}
                           </div>
                         </button>
+                        {subscriptionType === "yearly" && (
+                          <p className="text-muted-foreground text-xs px-1">
+                            연간 플랜은 1회 결제만 지원합니다.
+                          </p>
+                        )}
                         <button
                           type="button"
                           className={cn(
@@ -487,7 +505,7 @@ export function MembershipForm({
                     <CreditCard className="h-5 w-5 shrink-0 text-gray-500" />
                     <div className="flex flex-1 flex-col gap-0.5">
                       <p className="text-sm font-semibold">
-                        {method.displayName ?? "등록된 카드"}
+                        {method.displayName ?? "등록된 자동이체 수단"}
                       </p>
                       <span className="w-fit rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
                         {providerLabel(method.providerType)}
@@ -509,7 +527,7 @@ export function MembershipForm({
                 >
                   <CreditCard className="h-5 w-5 shrink-0 text-gray-400" />
                   <p className="text-sm text-gray-600">
-                    {billingMode === "recurring" ? "새 카드 등록 후 무료체험 시작" : "새 카드로 결제하기"}
+                    {billingMode === "recurring" ? "새 자동이체 수단 등록 후 시작" : "새 결제수단으로 결제하기"}
                   </p>
                   {selectedBillingMethodId === null && (
                     <span className="text-primary ml-auto text-xs font-semibold">선택됨</span>
@@ -766,17 +784,16 @@ function TermsAndConditions({
             본 서비스는 매월 정기적인 금액 결제를 통해 서비스 구독 및 제공을
             목적으로 합니다.
           </li>
-          <li>신용카드 결제를 통해 진행됩니다.</li>
+          <li>자동이체(CMS)를 통해 진행됩니다.</li>
         </ul>
       </div>
 
       <div>
         <h2 className="mb-2 text-lg font-bold">결제 주기 및 금액</h2>
         <ul className="list-disc space-y-1 pl-5">
-          <li>결제 주기: 매월 또는 매년 구독 기간이 하루 남았을 때 1회</li>
+          <li>결제 주기: 매월 구독 기간이 하루 남았을 때 1회 (정기결제 기준)</li>
           <li>
-            결제 금액: 매월 {monthlyPrice.toLocaleString()}원 또는 매년{" "}
-            {yearlyPrice.toLocaleString()}원
+            결제 금액: 월간 정기결제 {monthlyPrice.toLocaleString()}원 / 연간 1회 결제 {yearlyPrice.toLocaleString()}원
           </li>
           <li>결제 금액은 동의 없이 변경되지 않습니다.</li>
         </ul>
@@ -786,7 +803,7 @@ function TermsAndConditions({
         <h2 className="mb-2 text-lg font-bold">결제 정보 수집 항목</h2>
         <ul className="list-disc space-y-1 pl-5">
           <li>결제자 정보: 이름, 연락처, 생년월일</li>
-          <li>결제 수단 정보: 카드번호, 유효기간, 비밀번호 앞 2자리</li>
+          <li>결제 수단 정보: 계좌번호, 은행명, 예금주명, 생년월일(개인) 또는 사업자번호(법인)</li>
         </ul>
       </div>
 
@@ -834,11 +851,11 @@ function TermsAndConditions({
             불가능합니다.
           </li>
           <li>
-            회원은 결제일로부터 7일 이내에 서비스가 제공되지 않은 경우에 한해
-            결제를 취소할 수 있습니다.
+            서비스 장애, 기술적 오류 등으로 정상 이용이 어려운 경우, 이용하지
+            못한 기간에 대해 예외적으로 환불이 검토될 수 있습니다.
           </li>
           <li>
-            구독은 매월 또는 매년 자동 갱신되며, 회원이 해지를 요청하지 않는 한
+            정기결제는 매월 자동 갱신되며, 회원이 해지를 요청하지 않는 한
             갱신된 결제 건에 대해 환불이 제공되지 않습니다.
           </li>
         </ul>
