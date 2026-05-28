@@ -44,6 +44,11 @@ function classifyCmsRow(input: ClassifyInput): ClassifyResult {
     return { severity: 'CRITICAL', needsAction: true };
   }
 
+  // REGISTERED 상태인데 동의자료가 미등록/실패인 경우: 출금 시 거부될 수 있으므로 처리 필요
+  if (input.cmsMemberStatus === 'REGISTERED' && input.agreementStatus !== '등록') {
+    return { severity: 'WARNING', needsAction: true };
+  }
+
   if (input.agreementStatus !== '등록' && input.cmsMemberStatus === 'PENDING') {
     return { severity: 'WARNING', needsAction: true };
   }
@@ -101,35 +106,24 @@ export class RecurringBillingAdminService {
   // ── Overview ────────────────────────────────────────────────────────────────
 
   async getOverview(): Promise<AdminRecurringBillingOverviewDto> {
-    const [
-      memberPendingResult,
-      memberFailedResult,
-      withdrawalRequestedResult,
-      withdrawalProcessingResult,
-      withdrawalFailedResult,
-    ] = await Promise.all([
-      this.db.select({ value: count() }).from(cmsMembers).where(eq(cmsMembers.status, 'PENDING')),
-      this.db.select({ value: count() }).from(cmsMembers).where(eq(cmsMembers.status, 'FAILED')),
-      this.db.select({ value: count() }).from(cmsWithdrawals).where(eq(cmsWithdrawals.status, 'REQUESTED')),
-      this.db.select({ value: count() }).from(cmsWithdrawals).where(eq(cmsWithdrawals.status, 'PROCESSING')),
-      this.db.select({ value: count() }).from(cmsWithdrawals).where(eq(cmsWithdrawals.status, 'FAILED')),
-    ]);
-
-    const memberPending = memberPendingResult[0]?.value ?? 0;
-    const memberFailed = memberFailedResult[0]?.value ?? 0;
-    const withdrawalRequested = withdrawalRequestedResult[0]?.value ?? 0;
-    const withdrawalProcessing = withdrawalProcessingResult[0]?.value ?? 0;
-    const withdrawalFailed = withdrawalFailedResult[0]?.value ?? 0;
-
-    const needsAction = memberFailed + withdrawalFailed + withdrawalProcessing;
+    // needsAction count는 listNeedsAction과 동일한 데이터 소스에서 가져와야 카드 숫자와 목록이 일치한다.
+    const [needsActionRows, memberPendingResult, memberFailedResult, withdrawalRequestedResult, withdrawalProcessingResult, withdrawalFailedResult] =
+      await Promise.all([
+        this.fetchNeedsActionRows(),
+        this.db.select({ value: count() }).from(cmsMembers).where(eq(cmsMembers.status, 'PENDING')),
+        this.db.select({ value: count() }).from(cmsMembers).where(eq(cmsMembers.status, 'FAILED')),
+        this.db.select({ value: count() }).from(cmsWithdrawals).where(eq(cmsWithdrawals.status, 'REQUESTED')),
+        this.db.select({ value: count() }).from(cmsWithdrawals).where(eq(cmsWithdrawals.status, 'PROCESSING')),
+        this.db.select({ value: count() }).from(cmsWithdrawals).where(eq(cmsWithdrawals.status, 'FAILED')),
+      ]);
 
     return {
-      needsAction,
-      memberPending,
-      memberFailed,
-      withdrawalRequested,
-      settlementPending: withdrawalProcessing,
-      withdrawalFailed,
+      needsAction: needsActionRows.length,
+      memberPending: memberPendingResult[0]?.value ?? 0,
+      memberFailed: memberFailedResult[0]?.value ?? 0,
+      withdrawalRequested: withdrawalRequestedResult[0]?.value ?? 0,
+      settlementPending: withdrawalProcessingResult[0]?.value ?? 0,
+      withdrawalFailed: withdrawalFailedResult[0]?.value ?? 0,
     };
   }
 
@@ -161,6 +155,14 @@ export class RecurringBillingAdminService {
     const limit = query.limit ?? 20;
     const offset = (page - 1) * limit;
 
+    const rows = await this.fetchNeedsActionRows();
+    const total = rows.length;
+    const data = rows.slice(offset, offset + limit);
+
+    return { data, total, page, limit };
+  }
+
+  private async fetchNeedsActionRows(): Promise<AdminRecurringBillingRowDto[]> {
     // Query 1: FAILED cms_members
     const failedMembers = await this.db
       .select({
@@ -232,7 +234,7 @@ export class RecurringBillingAdminService {
       .leftJoin(paymentIntents, eq(paymentIntents.id, cmsWithdrawals.intentId))
       .where(and(eq(cmsWithdrawals.status, 'PROCESSING'), lte(cmsWithdrawals.updatedAt, thirtyMinAgo)));
 
-    // Query 4: PENDING members with incomplete agreement
+    // Query 4: PENDING members (agreement check follows)
     const pendingMembers = await this.db
       .select({
         cmsMember: cmsMembers,
@@ -251,15 +253,37 @@ export class RecurringBillingAdminService {
       )
       .where(eq(cmsMembers.status, 'PENDING'));
 
-    // Load agreements for pending members
-    const pendingMemberIds = pendingMembers.map((r) => r.cmsMember.cmsMemberId);
-    const agreementsForPending =
-      pendingMemberIds.length > 0
-        ? await this.db.select().from(cmsAgreements).where(inArray(cmsAgreements.cmsMemberId, pendingMemberIds))
+    // Query 5: REGISTERED members (may still have incomplete agreement)
+    const registeredMembers = await this.db
+      .select({
+        cmsMember: cmsMembers,
+        billingMethod: billingMethods,
+        billingAgreement: billingAgreements,
+      })
+      .from(cmsMembers)
+      .leftJoin(billingMethods, eq(billingMethods.id, cmsMembers.billingMethodId))
+      .leftJoin(
+        billingAgreements,
+        and(
+          eq(billingAgreements.billingMethodId, cmsMembers.billingMethodId),
+          eq(billingAgreements.status, 'ACTIVE'),
+          eq(billingAgreements.subscriberType, 'MEMBERSHIP'),
+        ),
+      )
+      .where(eq(cmsMembers.status, 'REGISTERED'));
+
+    // Load agreements for pending + registered members
+    const allMemberIds = [
+      ...pendingMembers.map((r) => r.cmsMember.cmsMemberId),
+      ...registeredMembers.map((r) => r.cmsMember.cmsMemberId),
+    ];
+    const agreementsForAll =
+      allMemberIds.length > 0
+        ? await this.db.select().from(cmsAgreements).where(inArray(cmsAgreements.cmsMemberId, allMemberIds))
         : [];
 
     const agreementsByMemberId = new Map<string, string[]>();
-    for (const ag of agreementsForPending) {
+    for (const ag of agreementsForAll) {
       const existing = agreementsByMemberId.get(ag.cmsMemberId) ?? [];
       existing.push(ag.status);
       agreementsByMemberId.set(ag.cmsMemberId, existing);
@@ -287,7 +311,20 @@ export class RecurringBillingAdminService {
       const aggStatus = aggregateAgreementStatus(statuses);
       if (aggStatus !== '등록') {
         seen.add(key);
-        rows.push(this.buildMemberRow(r.cmsMember, r.billingMethod, r.billingAgreement, aggStatus, 'PROVIDER_METHOD'));
+        rows.push(this.buildMemberRow(r.cmsMember, r.billingMethod, r.billingAgreement, aggStatus, 'PROVIDER_MANDATE'));
+      }
+    }
+
+    // REGISTERED members with incomplete agreement (동의자료 미등록/실패)
+    for (const r of registeredMembers) {
+      const key = `member:${r.cmsMember.id}`;
+      if (seen.has(key)) continue;
+
+      const statuses = agreementsByMemberId.get(r.cmsMember.cmsMemberId) ?? [];
+      const aggStatus = aggregateAgreementStatus(statuses);
+      if (aggStatus !== '등록') {
+        seen.add(key);
+        rows.push(this.buildMemberRow(r.cmsMember, r.billingMethod, r.billingAgreement, aggStatus, 'PROVIDER_MANDATE'));
       }
     }
 
@@ -313,10 +350,7 @@ export class RecurringBillingAdminService {
       );
     }
 
-    const total = rows.length;
-    const data = rows.slice(offset, offset + limit);
-
-    return { data, total, page, limit };
+    return rows;
   }
 
   // ── members view ─────────────────────────────────────────────────────────────

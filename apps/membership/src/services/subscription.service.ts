@@ -109,6 +109,12 @@ export class SubscriptionService {
     email?: string,
     billingMode?: 'one_time' | 'recurring',
   ): Promise<{ intentId: string }> {
+    if (billingMode === 'recurring') {
+      throw new SubscriptionBadRequestException(
+        'checkout 결제 경로는 recurring 모드를 지원하지 않습니다. billingMode를 생략하거나 one_time을 사용하세요.',
+      );
+    }
+
     const existing = await this.entitlementService.getUserEntitlement(userId);
     if (existing) throw new ActiveSubscriptionExistsException();
 
@@ -161,14 +167,12 @@ export class SubscriptionService {
     );
 
     if (billingMode === 'recurring') {
-      this.paymentClientService
-        .createBillingAgreement(userId, result.contractId)
-        .catch((err: Error) =>
-          this.logger.error(
-            `billing_agreement 생성 실패 (userId=${userId}, contractId=${result.contractId}): ${err?.message}`,
-            err?.stack,
-          ),
-        );
+      // checkout 경로는 billingMethodId가 없어 recurring 설정 불가.
+      // createCheckoutIntent에서 이미 차단되므로 여기에 도달하면 이상 상태.
+      this.logger.warn(
+        `confirmCheckoutIntent: intentId=${intentId}에 recurring billingMode가 설정되어 있으나 billing agreement를 생성할 수 없습니다. ` +
+          `(checkout 경로는 billingMethodId가 없음) — 구독은 생성되었으나 정기결제 설정 없이 처리됩니다.`,
+      );
     }
 
     return result;

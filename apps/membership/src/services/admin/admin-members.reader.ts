@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { membershipSchema, pauseEvents } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
-import { eq, and, desc, asc, ilike, gte, lte, inArray, SQL, count, isNull, isNotNull } from 'drizzle-orm';
+import { eq, and, desc, asc, ilike, gte, lte, inArray, SQL, count, isNull, isNotNull, notInArray, sql } from 'drizzle-orm';
 import { endOfDay } from 'date-fns';
 import { ContractEventManager } from '../subscription/contract-event.manager';
 
@@ -152,6 +152,8 @@ export interface AdminRecurringContractListItem {
   startsAt: string | null;
   endsAt: string | null;
   lastPaymentIntentId: string | null;
+  billingInProgress: boolean;
+  billingStartedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -161,6 +163,20 @@ export interface AdminRecurringContractsResponse {
   total: number;
   page: number;
   limit: number;
+}
+
+export interface StuckBillingContractItem {
+  contractId: string;
+  userId: string;
+  planId: string;
+  nextBillingDate: string | null;
+  billingInProgressSince: string;
+  hoursElapsed: number;
+}
+
+export interface StuckBillingContractsResponse {
+  data: StuckBillingContractItem[];
+  total: number;
 }
 
 @Injectable()
@@ -628,6 +644,8 @@ export class AdminMembersReader {
           autoRenewal: schema.subscriptionContracts.autoRenewal,
           nextBillingDate: schema.subscriptionContracts.nextBillingDate,
           lastPaymentIntentId: schema.subscriptionContracts.lastPaymentIntentId,
+          billingInProgress: schema.subscriptionContracts.billingInProgress,
+          billingStartedAt: schema.subscriptionContracts.billingStartedAt,
           createdAt: schema.subscriptionContracts.createdAt,
           updatedAt: schema.subscriptionContracts.updatedAt,
           tierCode: schema.tiers.code,
@@ -657,6 +675,8 @@ export class AdminMembersReader {
         startsAt: r.startsAt ?? null,
         endsAt: r.endsAt ?? null,
         lastPaymentIntentId: r.lastPaymentIntentId,
+        billingInProgress: r.billingInProgress,
+        billingStartedAt: r.billingStartedAt?.toISOString() ?? null,
         createdAt: r.createdAt.toISOString(),
         updatedAt: r.updatedAt.toISOString(),
       })),
@@ -664,5 +684,112 @@ export class AdminMembersReader {
       page,
       limit,
     };
+  }
+
+  /**
+   * billingInProgress=true 상태가 thresholdHours 이상 지속 중인 계약 조회.
+   * CMS는 결과가 다음 영업일에 오므로 기본 48시간. 이 이상이면 관리자 확인 필요.
+   * billingStartedAt이 있으면 그 값을, 없으면 updatedAt을 fallback으로 사용.
+   */
+  async findStuckBillingContracts(thresholdHours = 48): Promise<StuckBillingContractsResponse> {
+    const thresholdAt = new Date(Date.now() - thresholdHours * 60 * 60 * 1000);
+
+    const rows = await this.dbService.db
+      .select({
+        id: schema.subscriptionContracts.id,
+        userId: schema.subscriptionContracts.userId,
+        planId: schema.subscriptionContracts.planId,
+        nextBillingDate: schema.subscriptionContracts.nextBillingDate,
+        billingStartedAt: schema.subscriptionContracts.billingStartedAt,
+        updatedAt: schema.subscriptionContracts.updatedAt,
+      })
+      .from(schema.subscriptionContracts)
+      .where(
+        and(
+          eq(schema.subscriptionContracts.billingInProgress, true),
+          notInArray(schema.subscriptionContracts.status, ['CANCELLED', 'EXPIRED']),
+          sql`COALESCE(${schema.subscriptionContracts.billingStartedAt}, ${schema.subscriptionContracts.updatedAt}) <= ${thresholdAt}`,
+        ),
+      )
+      .orderBy(asc(schema.subscriptionContracts.billingStartedAt));
+
+    const now = Date.now();
+
+    return {
+      data: rows.map((r) => {
+        const since = r.billingStartedAt ?? r.updatedAt;
+        return {
+          contractId: r.id,
+          userId: r.userId,
+          planId: r.planId,
+          nextBillingDate: r.nextBillingDate ?? null,
+          billingInProgressSince: since.toISOString(),
+          hoursElapsed: Math.floor((now - since.getTime()) / (1000 * 60 * 60)),
+        };
+      }),
+      total: rows.length,
+    };
+  }
+
+  /**
+   * 관리자 수동 조작: billingInProgress 플래그 해제.
+   * wallet 결과 이벤트가 영구적으로 오지 않는 경우 관리자가 직접 해제하여 다음 주기 결제가 가능하게 함.
+   * 감사 이벤트(BILLING_PROGRESS_RESET_BY_ADMIN)를 트랜잭션 안에 기록하여 조작 이력을 남긴다.
+   * 서버 측에서도 48h 경과 조건을 강제한다 — UI 제한만으로는 API 직접 호출을 막을 수 없다.
+   */
+  async resetBillingInProgress(
+    contractId: string,
+    adminId: string,
+    reason: string,
+  ): Promise<{ contractId: string; reset: boolean }> {
+    const THRESHOLD_HOURS = 48;
+    const thresholdAt = new Date(Date.now() - THRESHOLD_HOURS * 60 * 60 * 1000);
+
+    const reset = await this.dbService.db.transaction(async (tx) => {
+      const [contract] = await tx
+        .select({
+          userId: schema.subscriptionContracts.userId,
+          billingStartedAt: schema.subscriptionContracts.billingStartedAt,
+          updatedAt: schema.subscriptionContracts.updatedAt,
+        })
+        .from(schema.subscriptionContracts)
+        .where(
+          and(
+            eq(schema.subscriptionContracts.id, contractId),
+            eq(schema.subscriptionContracts.billingInProgress, true),
+          ),
+        )
+        .limit(1);
+
+      if (!contract) return false;
+
+      const since = contract.billingStartedAt ?? contract.updatedAt;
+      const elapsedHours = Math.floor((Date.now() - since.getTime()) / (1000 * 60 * 60));
+      if (since > thresholdAt) {
+        throw new Error(
+          `잘못된 요청: billingInProgress 경과 시간(${elapsedHours}h)이 기준(${THRESHOLD_HOURS}h) 미만입니다. 정상 결제 처리 중일 수 있습니다.`,
+        );
+      }
+
+      await tx
+        .update(schema.subscriptionContracts)
+        .set({ billingInProgress: false, billingStartedAt: null, updatedAt: new Date() })
+        .where(eq(schema.subscriptionContracts.id, contractId));
+
+      await this.contractEventManager.addEvent(
+        tx,
+        contractId,
+        'BILLING_PROGRESS_RESET_BY_ADMIN',
+        { reason },
+        'ADMIN',
+        contract.userId,
+        undefined,
+        adminId,
+      );
+
+      return true;
+    });
+
+    return { contractId, reset };
   }
 }

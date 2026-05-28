@@ -1,11 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import * as schema from '../../shared/schemas/entities/schema';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import { PlanService } from '../plan.service';
 import { WalletCommandPublisher } from './wallet-command.publisher';
-import { addDays, format } from 'date-fns';
+import { DueContract } from './billing.reader';
 
 export interface BillingResult {
   contractId: string;
@@ -32,7 +32,25 @@ export class BillingManager {
     private readonly planService: PlanService,
   ) {}
 
-  async processSingleBilling(contract: any): Promise<BillingResult> {
+  async processSingleBilling(contract: DueContract): Promise<BillingResult> {
+    // 동시 스케줄러 실행 대비: billingInProgress=false 조건부 선점 업데이트
+    // RETURNING id — 다른 인스턴스가 먼저 선점했으면 빈 배열 반환 → 스킵
+    const [locked] = await this.dbService.db
+      .update(schema.subscriptionContracts)
+      .set({ billingInProgress: true, billingStartedAt: new Date(), updatedAt: new Date() })
+      .where(
+        and(
+          eq(schema.subscriptionContracts.id, contract.id),
+          eq(schema.subscriptionContracts.billingInProgress, false),
+        ),
+      )
+      .returning({ id: schema.subscriptionContracts.id });
+
+    if (!locked) {
+      this.logger.warn(`[billing] Contract ${contract.id} already billingInProgress — skipped`);
+      return { contractId: contract.id, success: true };
+    }
+
     try {
       this.logger.log(`Processing billing for contract: ${contract.id}`);
 
@@ -40,8 +58,8 @@ export class BillingManager {
       if (!plan) throw new Error(`Plan not found: ${contract.planId}`);
       if (!plan.plan.isActive) throw new Error(`Plan is not active: ${contract.planId}`);
 
-      // idempotencyKey를 today 기반이 아닌 nextBillingDate 기반으로 고정:
-      // wallet의 idempotency_keys가 같은 billing 주기(nextBillingDate)의 중복 커맨드를 막는다.
+      // idempotencyKey를 nextBillingDate 기반으로 고정:
+      // wallet의 idempotency_keys가 같은 billing 주기의 중복 커맨드를 막는다.
       const idempotencyKey = `membership:billing:${contract.id}:${contract.nextBillingDate}`;
 
       await this.walletCommandPublisher.publishBillingCharge({
@@ -54,26 +72,21 @@ export class BillingManager {
         metadata: { planId: contract.planId, contractId: contract.id },
       });
 
-      // BillingCharge 커맨드 발행 즉시 nextBillingDate를 다음 주기로 진행시켜
-      // 스케줄러 재실행 시 동일 계약에 대해 중복 발행되는 것을 방지.
-      // TODO: nextBillingDate는 wallet 결제 성공 이벤트 수신 후 이동하는 것이 정확하다.
-      //       현재는 커맨드 발행 시 이동하므로 결제 실패 시 운영 화면에서 날짜가 틀릴 수 있다.
-      const nextBillingDate = format(addDays(new Date(), plan.plan.durationDays), 'yyyy-MM-dd');
+      this.logger.log(`BillingCharge published for contract: ${contract.id}, billingInProgress=true`);
+      return { contractId: contract.id, success: true };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Error processing billing for contract ${contract.id}: ${msg}`);
+      // Publish 실패 시 플래그 복구 — 다음 스케줄러가 재시도 가능하도록
       await this.dbService.db
         .update(schema.subscriptionContracts)
-        .set({ nextBillingDate })
+        .set({ billingInProgress: false, billingStartedAt: null, updatedAt: new Date() })
         .where(eq(schema.subscriptionContracts.id, contract.id));
-
-      this.logger.log(`BillingCharge published for contract: ${contract.id}, nextBillingDate advanced to ${nextBillingDate}`);
-
-      return { contractId: contract.id, success: true };
-    } catch (error) {
-      this.logger.error(`Error processing billing for contract ${contract.id}: ${error.message}`);
       return {
         contractId: contract.id,
         success: false,
         errorCode: 'BILLING_COMMAND_FAILED',
-        errorMessage: error.message,
+        errorMessage: msg,
       };
     }
   }

@@ -149,6 +149,10 @@ export const subscriptionContracts = pgTable(
     }),
     recurringCancellationReasonCode: text('recurring_cancellation_reason_code'),
     autoRenewal: boolean('auto_renewal').notNull().default(true),
+    // 결제 커맨드 발행 후 결과 이벤트 수신 전까지 true — 스케줄러 중복 실행 방지
+    billingInProgress: boolean('billing_in_progress').notNull().default(false),
+    // billingInProgress=true로 전환된 시각. updatedAt은 다른 업데이트에 의해 덮힐 수 있어 별도 컬럼으로 관리
+    billingStartedAt: timestamp('billing_started_at', { withTimezone: true }),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index('idx_subscription_billing_date').on(table.billingDate)],

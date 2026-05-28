@@ -94,9 +94,18 @@ export class CmsBatchProvider implements PaymentProvider {
       };
     }
 
+    // 4. 이미 출금신청이 있으면 기존 상태 반환 (authorize 재시도 idempotency)
+    const existingTransactionId = await this.getTransactionId(params.chargeId);
+    if (existingTransactionId) {
+      this.logger.log(
+        `[CmsBatchProvider] idempotent return for chargeId=${params.chargeId}, transactionId=${existingTransactionId}`,
+      );
+      return { status: 'PENDING', providerTransactionId: existingTransactionId, raw: {} };
+    }
+
     const paymentDate = nextCmsPaymentDate();
 
-    // 5. transactionId 생성
+    // 5. transactionId 생성 (chargeId 기반 결정론적 — 재시도 시 동일 ID 보장)
     const transactionId = this.generateTransactionId(params.chargeId);
 
     // 6. 효성 출금신청 API 호출
@@ -146,8 +155,8 @@ export class CmsBatchProvider implements PaymentProvider {
   }
 
   async cancel(params: ChargeParams): Promise<ChargeResult> {
-    const transactionId = params.providerData?.transactionId as string | undefined
-      ?? await this.getTransactionId(params.chargeId);
+    const transactionId =
+      (params.providerData?.transactionId as string | undefined) ?? (await this.getTransactionId(params.chargeId));
 
     if (!transactionId) {
       return {
@@ -213,10 +222,9 @@ export class CmsBatchProvider implements PaymentProvider {
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
   private generateTransactionId(chargeId: string): string {
-    // chargeId(UUID)에서 하이픈 제거 후 앞 20자 + 타임스탬프 뒤 10자 = 최대 30자
-    const prefix = chargeId.replace(/-/g, '').slice(0, 20);
-    const suffix = String(Date.now()).slice(-10);
-    return `${prefix}${suffix}`;
+    // chargeId UUID 기반 결정론적 생성 (CMS varchar(30) 제한)
+    // 재시도 시 동일한 transactionId → CMS API 멱등 처리 가능
+    return chargeId.replace(/-/g, '').slice(0, 30);
   }
 
   private async getTransactionId(chargeId: string): Promise<string | undefined> {

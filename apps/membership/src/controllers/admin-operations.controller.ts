@@ -896,4 +896,48 @@ export class AdminOperationsController {
       this.handleError(error, '정기결제 계약 요약 조회');
     }
   }
+
+  /**
+   * billingInProgress=true가 thresholdHours 이상 지속 중인 계약 목록.
+   * wallet 결과 이벤트가 오지 않아 플래그가 고착된 계약을 관리자가 확인.
+   *
+   * GET /admin/stuck-billing-contracts?thresholdHours=48
+   */
+  @Get('stuck-billing-contracts')
+  @ApiOperation({ summary: '결제 대기 장기화 계약 목록 (billingInProgress 고착)' })
+  @UseGuards(JwtAuthGuard)
+  async getStuckBillingContracts(@Query('thresholdHours') thresholdHours?: string) {
+    try {
+      const parsed = thresholdHours ? Number(thresholdHours) : NaN;
+      const hours = Number.isFinite(parsed) ? Math.max(1, parsed) : 48;
+      return await this.adminMembersReader.findStuckBillingContracts(hours);
+    } catch (error) {
+      this.handleError(error, '결제 대기 장기화 계약 조회');
+    }
+  }
+
+  /**
+   * 관리자 수동 조작: billingInProgress 플래그 해제.
+   * wallet 결과 이벤트가 영구적으로 오지 않는 경우 사용.
+   * 감사 이벤트(BILLING_PROGRESS_RESET_BY_ADMIN)를 남기고 reason 필수.
+   *
+   * POST /admin/contracts/:contractId/reset-billing-progress
+   */
+  @Post('contracts/:contractId/reset-billing-progress')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '결제 대기 플래그 수동 해제 (billingInProgress=false)' })
+  @UseGuards(JwtAuthGuard)
+  async resetBillingInProgress(
+    @Param('contractId') contractId: string,
+    @Body('reason') reason: string,
+    @User('userId') adminId: string,
+  ) {
+    if (!contractId) throw new BadRequestException('contractId is required');
+    if (!reason?.trim()) throw new BadRequestException('reason is required');
+    try {
+      return await this.adminMembersReader.resetBillingInProgress(contractId, adminId, reason.trim());
+    } catch (error) {
+      this.handleError(error, '결제 대기 플래그 해제');
+    }
+  }
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "subscription_contracts" ADD COLUMN "billing_in_progress" boolean DEFAULT false NOT NULL;

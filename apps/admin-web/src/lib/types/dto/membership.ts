@@ -23,6 +23,8 @@ export interface AdminRecurringContractListItem {
   startsAt: string | null;
   endsAt: string | null;
   lastPaymentIntentId: string | null;
+  billingInProgress: boolean;
+  billingStartedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -32,6 +34,20 @@ export interface AdminRecurringContractsResponse {
   total: number;
   page: number;
   limit: number;
+}
+
+export interface StuckBillingContractItem {
+  contractId: string;
+  userId: string;
+  planId: string;
+  nextBillingDate: string | null;
+  billingInProgressSince: string;
+  hoursElapsed: number;
+}
+
+export interface StuckBillingContractsResponse {
+  data: StuckBillingContractItem[];
+  total: number;
 }
 
 export interface AgreementStateEntry {
