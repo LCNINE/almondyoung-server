@@ -15,7 +15,12 @@ export function setup() {
   // ─── VPC (auth/services가 Vpc.get(id)로 공유) ───
   // bastion은 dev/live 모두 상시 ON: IdP DB 등 VPC 내부 리소스에
   // 시딩/점검 목적으로 `sst tunnel` 접근이 필요. t4g.nano 1대 비용(월 ~$3).
-  const vpc = new sst.aws.Vpc("PlatformVpc", { bastion: true });
+  const vpc = new sst.aws.Vpc("PlatformVpc", {
+    bastion: true,
+    // dev 효성CMS 테스트 API는 등록된 outbound IP만 접근 가능하므로 SST가 관리하는 NAT EIP를 사용한다.
+    // "ec2"는 fck-nat 기반으로 managed NAT Gateway보다 저렴해 dev 테스트 목적에 적합하다.
+    nat: "ec2",
+  });
 
   // ─── Redpanda 1-노드 EC2 + EBS 영속 ───
   // Fargate/EFS는 Seastar AIO 미지원이라 불가 → EC2(t4g.micro) + EBS(gp3) 선택.
