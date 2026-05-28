@@ -239,6 +239,8 @@ export function setup(infra: SharedInfra) {
       NICEPAY_CLIENT_KEY: nicepayClientKey.value,
       NICEPAY_SECRET_KEY: nicepaySecretKey.value,
       WALLET_API_KEY: walletApiKey.value,
+      HYOSUNG_CMS_API_URL: isDev ? "https://api-test.hyosungcms.co.kr" : "https://api.hyosungcms.co.kr",
+      HYOSUNG_CMS_ADD_URL: isDev ? "https://add-test.hyosungcms.co.kr" : "https://add.hyosungcms.co.kr",
       HYOSUNG_CMS_CUST_KEY: custKey.value,
       HYOSUNG_CMS_SW_KEY: swKey.value,
       SERVICE_NAME: "wallet",
