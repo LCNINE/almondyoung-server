@@ -39,15 +39,16 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     const request = context.switchToHttp().getRequest();
     const authHeader = request.headers['authorization'];
     const cookieToken = request?.cookies?.accessToken;
+    const cookieNames = Object.keys(request.cookies || {});
 
-    this.logger.debug(`Authorization Header: ${authHeader}`);
+    this.logger.debug(`Authorization Header: ${authHeader ? 'present' : 'missing'}`);
     this.logger.debug(`Cookie accessToken: ${cookieToken ? 'present' : 'missing'}`);
-    this.logger.debug(`All cookies: ${JSON.stringify(request.cookies || {})}`);
+    this.logger.debug(`Cookie names: ${cookieNames.length > 0 ? cookieNames.join(',') : 'none'}`);
 
     return super.canActivate(context);
   }
   handleRequest(err: any, user: any, info: any) {
-    console.log('🛡️ [JwtAuthGuard] handleRequest:', {
+    this.logger.debug({
       hasError: !!err,
       hasUser: !!user,
       info: info?.message || info,
@@ -55,7 +56,7 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     });
 
     if (err || !user) {
-      console.error('❌ [JwtAuthGuard] Authentication failed:', {
+      this.logger.warn({
         error: err?.message || err,
         info: info?.message || info,
       });
