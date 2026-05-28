@@ -113,6 +113,7 @@ export interface SearchCmsWithdrawalsParams {
 @Injectable()
 export class CmsApiClient {
   private readonly logger = new Logger(CmsApiClient.name);
+  private readonly timeoutMs = Number(process.env.HYOSUNG_CMS_TIMEOUT_MS ?? 15_000);
 
   private get apiUrl(): string {
     return process.env.HYOSUNG_CMS_API_URL ?? 'https://api.hyosungcms.co.kr';
@@ -164,13 +165,11 @@ export class CmsApiClient {
     formData.append('fileExtension', fileExtension);
     formData.append('file', new Blob([new Uint8Array(file)]), `agreement.${fileExtension}`);
 
-    const res = await fetch(url, {
+    return this.request<CmsAgreementResponse>(url, {
       method: 'POST',
       headers: this.authHeaders(),
       body: formData,
     });
-
-    return this.handleResponse<CmsAgreementResponse>(res);
   }
 
   async getAgreement(agreementKey: string): Promise<CmsApiResult<CmsAgreementResponse>> {
@@ -228,40 +227,54 @@ export class CmsApiClient {
 
   private async post<T>(url: string, body: object): Promise<CmsApiResult<T>> {
     this.logger.debug(`POST ${url}`);
-    const res = await fetch(url, {
+    return this.request<T>(url, {
       method: 'POST',
       headers: this.jsonHeaders(),
       body: JSON.stringify(body),
     });
-    return this.handleResponse<T>(res);
   }
 
   private async put<T>(url: string, body: object): Promise<CmsApiResult<T>> {
     this.logger.debug(`PUT ${url}`);
-    const res = await fetch(url, {
+    return this.request<T>(url, {
       method: 'PUT',
       headers: this.jsonHeaders(),
       body: JSON.stringify(body),
     });
-    return this.handleResponse<T>(res);
   }
 
   private async del<T>(url: string): Promise<CmsApiResult<T>> {
     this.logger.debug(`DELETE ${url}`);
-    const res = await fetch(url, {
+    return this.request<T>(url, {
       method: 'DELETE',
       headers: this.authHeaders(),
     });
-    return this.handleResponse<T>(res);
   }
 
   private async get<T>(url: string): Promise<CmsApiResult<T>> {
     this.logger.debug(`GET ${url}`);
-    const res = await fetch(url, {
+    return this.request<T>(url, {
       method: 'GET',
       headers: this.authHeaders(),
     });
-    return this.handleResponse<T>(res);
+  }
+
+  private async request<T>(url: string, init: RequestInit): Promise<CmsApiResult<T>> {
+    try {
+      const res = await fetch(url, {
+        ...init,
+        signal: AbortSignal.timeout(this.timeoutMs),
+      });
+      return this.handleResponse<T>(res);
+    } catch (err) {
+      const message = this.describeFetchError(err);
+      this.logger.error(`CMS API network error: ${message} url=${url}`);
+      return {
+        ok: false,
+        error: { code: 'CMS_NETWORK_ERROR', message },
+        statusCode: 503,
+      };
+    }
   }
 
   private async handleResponse<T>(res: Response): Promise<CmsApiResult<T>> {
@@ -281,5 +294,19 @@ export class CmsApiClient {
     };
     this.logger.error(`CMS API error: ${res.status} ${JSON.stringify(error)}`);
     return { ok: false, error, statusCode: res.status };
+  }
+
+  private describeFetchError(err: unknown): string {
+    if (!(err instanceof Error)) {
+      return String(err);
+    }
+
+    const cause = err.cause;
+    if (cause instanceof Error) {
+      const causeCode = 'code' in cause ? ` ${(cause as Error & { code?: string }).code}` : '';
+      return `${err.name}: ${err.message}; cause=${cause.name}${causeCode}: ${cause.message}`;
+    }
+
+    return `${err.name}: ${err.message}`;
   }
 }
