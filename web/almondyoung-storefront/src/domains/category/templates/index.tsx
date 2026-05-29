@@ -3,12 +3,13 @@ import type { HttpTypes } from "@medusajs/types"
 import { useTranslations } from "next-intl"
 import { CategoryBreadcrumb } from "../components/breadcrumb"
 import RefinementList from "../components/refinement-list"
-import { SortOptions } from "../components/refinement-list/sort-products"
+import type { SortOptions } from "../components/refinement-list/sort-products"
 import { SubCategoryNav } from "../components/sub-category-nav"
 import CategoryProducts from "./category-products"
 import { ProductsSkeleton } from "../../../components/skeletons/products-skeleton"
 import { ErrorBoundary } from "@/components/shared/error-boundary"
 import { collectCategoryIds } from "@/lib/utils/collect-category-ids"
+import { normalizeCategorySort } from "../utils/sort-mapping"
 
 export function CategoryTemplate({
   sortBy,
@@ -22,7 +23,7 @@ export function CategoryTemplate({
   segments?: string[]
 }) {
   const t = useTranslations("category.products")
-  const sort = sortBy || "created_at"
+  const sort = normalizeCategorySort(sortBy)
 
   const hasChildren =
     category?.category_children && category.category_children.length > 0
@@ -44,7 +45,7 @@ export function CategoryTemplate({
                 {category!.category_children!.map((child) => (
                   <div
                     key={child.id}
-                    className="flex flex-col items-center gap-2 rounded-2xl px-4 pb-3 pt-4"
+                    className="flex flex-col items-center gap-2 rounded-2xl px-4 pt-4 pb-3"
                   >
                     <div className="h-24 w-24 animate-pulse rounded-full bg-gray-200" />
                     <span className="text-sm text-gray-700">{child.name}</span>

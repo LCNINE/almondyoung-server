@@ -22,8 +22,7 @@
     "createdAt": "Newest",
     "salesDesc": "Most popular",
     "priceAsc": "Price: low to high",
-    "priceDesc": "Price: high to low",
-    "reviewCountDesc": "Most reviews"
+    "priceDesc": "Price: high to low"
   },
   "pillDropdown": {
     "eyelash": "Eyelash",

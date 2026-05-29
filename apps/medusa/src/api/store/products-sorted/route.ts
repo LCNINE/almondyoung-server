@@ -35,8 +35,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const sortingService = req.scope.resolve<ProductSortingService>(PRODUCT_SORTING_MODULE);
     const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
 
-    const sortBy = (req.query.sort_by as SortBy) || 'min_price';
-    const order = (req.query.order as SortOrder) || 'asc';
+    const sortBy = (req.query.sort_by as SortBy) || 'sales_count';
+    const order = (req.query.order as SortOrder) || 'desc';
     const limit = parseInt(req.query.limit as string) || 20;
     const offset = parseInt(req.query.offset as string) || 0;
     const currencyCode = (req.query.currency_code as string) || 'krw';

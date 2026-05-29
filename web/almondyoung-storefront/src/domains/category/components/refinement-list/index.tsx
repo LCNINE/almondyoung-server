@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 
-import SortProducts, { SortOptions } from "./sort-products"
+import SortProducts, { type SortOptions } from "./sort-products"
 
 type RefinementListProps = {
   sortBy: SortOptions

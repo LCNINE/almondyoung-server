@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import { SortOptions } from "@/domains/category/components/refinement-list/sort-products"
+import type { SortOptions } from "@/domains/category/components/refinement-list/sort-products"
 import { CategoryTemplate } from "@/domains/category/templates"
 import { siteConfig } from "@/lib/config/site"
 import { getCategoryByHandle } from "@/lib/api/medusa/categories"

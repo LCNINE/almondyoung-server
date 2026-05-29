@@ -1,16 +1,30 @@
 import type { ProductSortBy, ProductSortOrder } from "@/lib/types/common/filter"
 import type { SortOptions } from "@/domains/category/components/refinement-list/sort-products"
 
+export const DEFAULT_CATEGORY_SORT: SortOptions = "sales_desc"
+
+const CATEGORY_SORT_OPTIONS = new Set<SortOptions>([
+  "sales_desc",
+  "price_asc",
+  "price_desc",
+  "created_at",
+])
+
+export function normalizeCategorySort(sortBy?: string): SortOptions {
+  if (sortBy && CATEGORY_SORT_OPTIONS.has(sortBy as SortOptions)) {
+    return sortBy as SortOptions
+  }
+
+  return DEFAULT_CATEGORY_SORT
+}
+
 /**
  * 정렬 옵션이 서버의 정렬 엔드포인트(/store/products-sorted)를 타야 하는지 여부.
- * created_at(기본 최신순)은 일반 listProducts 로 처리한다.
+ * created_at(최신순)은 일반 listProducts 로 처리한다.
  */
 export function isSortedOption(sortBy?: SortOptions): boolean {
   return (
-    sortBy === "price_asc" ||
-    sortBy === "price_desc" ||
-    sortBy === "sales_desc" ||
-    sortBy === "review_count_desc"
+    sortBy === "price_asc" || sortBy === "price_desc" || sortBy === "sales_desc"
   )
 }
 
@@ -27,9 +41,7 @@ export function mapSortParams(sortBy: SortOptions): {
       ? "min_price"
       : sortBy === "price_desc"
         ? "max_price"
-        : sortBy === "review_count_desc"
-          ? "review_count"
-          : "sales_count"
+        : "sales_count"
 
   const order: ProductSortOrder = sortBy === "price_asc" ? "asc" : "desc"
 

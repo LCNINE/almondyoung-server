@@ -22,8 +22,7 @@
     "createdAt": "新着順",
     "salesDesc": "人気順",
     "priceAsc": "価格が安い順",
-    "priceDesc": "価格が高い順",
-    "reviewCountDesc": "レビューが多い順"
+    "priceDesc": "価格が高い順"
   },
   "pillDropdown": {
     "eyelash": "まつ毛",
