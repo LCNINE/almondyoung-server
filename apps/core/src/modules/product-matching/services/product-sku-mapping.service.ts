@@ -41,7 +41,7 @@ export class ProductSkuMappingService {
       });
       const base = {
         variantId: variantId,
-        masterId: dto.masterId ?? null,
+        masterId: dto.masterId ?? existing?.masterId ?? null,
         status: 'matched' as const,
         priority: 'normal' as const,
         strategy: 'variant' as const,
@@ -278,9 +278,34 @@ export class ProductSkuMappingService {
           totalVariants: sql<number>`count(*)::int`,
           matchedVariants: sql<number>`count(*) FILTER (
             WHERE ${wmsTables.productMatchings.status} = 'matched'
-              AND ${wmsTables.productMatchings.strategy} IN ('variant', 'void')
+              AND (
+                ${wmsTables.productMatchings.strategy} = 'void'
+                OR (
+                  ${wmsTables.productMatchings.strategy} = 'variant'
+                  AND EXISTS (
+                    SELECT 1
+                    FROM ${wmsTables.productVariantSkuLinks}
+                    WHERE ${wmsTables.productVariantSkuLinks.productMatchingId} = ${wmsTables.productMatchings.id}
+                  )
+                )
+              )
           )::int`,
-          pendingVariants: sql<number>`count(*) FILTER (WHERE ${wmsTables.productMatchings.status} = 'pending')::int`,
+          pendingVariants: sql<number>`count(*) FILTER (
+            WHERE ${wmsTables.productMatchings.status} = 'pending'
+              OR (
+                ${wmsTables.productMatchings.status} = 'matched'
+                AND ${wmsTables.productMatchings.strategy} IS NULL
+              )
+              OR (
+                ${wmsTables.productMatchings.status} = 'matched'
+                AND ${wmsTables.productMatchings.strategy} = 'variant'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM ${wmsTables.productVariantSkuLinks}
+                  WHERE ${wmsTables.productVariantSkuLinks.productMatchingId} = ${wmsTables.productMatchings.id}
+                )
+              )
+          )::int`,
           ignoredVariants: sql<number>`count(*) FILTER (WHERE ${wmsTables.productMatchings.status} = 'ignored')::int`,
         })
         .from(wmsTables.productMatchings)

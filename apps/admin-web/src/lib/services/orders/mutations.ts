@@ -108,7 +108,9 @@ export const useStartIndividualPicking = () => {
   return useMutation({
     mutationFn: (foId: string) => orders.picking.startIndividualPicking(foId),
     onSuccess: (_, foId) => {
-      queryClient.invalidateQueries({ queryKey: orderQueryKeys.pickingSession(foId) });
+      queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.pickingSession(foId),
+      });
     },
   });
 };
@@ -116,8 +118,13 @@ export const useStartIndividualPicking = () => {
 export const usePickIndividualItem = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ foiId, data }: { foiId: string; data: PickIndividualItemRequest }) =>
-      orders.picking.pickIndividualItem(foiId, data),
+    mutationFn: ({
+      foiId,
+      data,
+    }: {
+      foiId: string;
+      data: PickIndividualItemRequest;
+    }) => orders.picking.pickIndividualItem(foiId, data),
     onSuccess: (_, { foiId }) => {
       queryClient.invalidateQueries({ queryKey: orderQueryKeys.pickings });
     },
@@ -127,9 +134,12 @@ export const usePickIndividualItem = () => {
 export const useCompleteIndividualPicking = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (foId: string) => orders.picking.completeIndividualPicking(foId),
+    mutationFn: (foId: string) =>
+      orders.picking.completeIndividualPicking(foId),
     onSuccess: (_, foId) => {
-      queryClient.invalidateQueries({ queryKey: orderQueryKeys.pickingSession(foId) });
+      queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.pickingSession(foId),
+      });
     },
   });
 };
@@ -154,13 +164,15 @@ export const useScanBarcode = () => {
 
 export const usePickByBarcode = () => {
   return useMutation({
-    mutationFn: (data: PickByBarcodeRequest) => orders.picking.pickByBarcodeScan(data),
+    mutationFn: (data: PickByBarcodeRequest) =>
+      orders.picking.pickByBarcodeScan(data),
   });
 };
 
 export const useGenerateBarcode = () => {
   return useMutation({
-    mutationFn: (data: GenerateBarcodeRequest) => orders.picking.generateBarcode(data),
+    mutationFn: (data: GenerateBarcodeRequest) =>
+      orders.picking.generateBarcode(data),
   });
 };
 
@@ -169,7 +181,8 @@ export const useGenerateBarcode = () => {
 export const useStartInspection = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: StartInspectionRequest) => orders.inspection.startSession(data),
+    mutationFn: (data: StartInspectionRequest) =>
+      orders.inspection.startSession(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inspection'] });
     },
@@ -179,8 +192,13 @@ export const useStartInspection = () => {
 export const useCompleteInspectionSession = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ sessionId, data }: { sessionId: string; data: CompleteInspectionSessionRequest }) =>
-      orders.inspection.completeSession(sessionId, data),
+    mutationFn: ({
+      sessionId,
+      data,
+    }: {
+      sessionId: string;
+      data: CompleteInspectionSessionRequest;
+    }) => orders.inspection.completeSession(sessionId, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inspection'] });
     },
@@ -190,10 +208,15 @@ export const useCompleteInspectionSession = () => {
 export const useInspectItem = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: InspectItemRequest) => orders.inspection.inspectItem(data),
+    mutationFn: (data: InspectItemRequest) =>
+      orders.inspection.inspectItem(data),
     onSuccess: (_, data) => {
-      queryClient.invalidateQueries({ queryKey: orderQueryKeys.inspectionSummary(data.sessionId) });
-      queryClient.invalidateQueries({ queryKey: orderQueryKeys.inspectionHistory(data.foiId) });
+      queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.inspectionSummary(data.sessionId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.inspectionHistory(data.foiId),
+      });
     },
   });
 };
@@ -201,24 +224,33 @@ export const useInspectItem = () => {
 export const useForceShipment = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: ForceShipmentRequest) => orders.inspection.forceShipment(data),
+    mutationFn: (data: ForceShipmentRequest) =>
+      orders.inspection.forceShipment(data),
     onSuccess: (_, data) => {
-      queryClient.invalidateQueries({ queryKey: orderQueryKeys.inspectionHistory(data.foiId) });
+      queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.inspectionHistory(data.foiId),
+      });
     },
   });
 };
 
 export const useResetInspection = () => {
   return useMutation({
-    mutationFn: ({ foiId, inspectorUserId }: { foiId: string; inspectorUserId: string }) =>
-      orders.inspection.resetInspection(foiId, inspectorUserId),
+    mutationFn: ({
+      foiId,
+      inspectorUserId,
+    }: {
+      foiId: string;
+      inspectorUserId: string;
+    }) => orders.inspection.resetInspection(foiId, inspectorUserId),
   });
 };
 
 export const useBulkApprove = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: BulkApproveRequest) => orders.inspection.bulkApprove(data),
+    mutationFn: (data: BulkApproveRequest) =>
+      orders.inspection.bulkApprove(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inspection'] });
     },
@@ -266,7 +298,7 @@ export const useCancelInvoice = () => {
 // ===== 매칭 관련 뮤테이션 (WMS API 스펙 기반) =====
 
 /**
- * 매칭 대기 해소 (SKU와 매칭 또는 무시)
+ * 전략 미결정 해소 (SKU 구성 매칭 또는 재고상품 비매칭)
  */
 export const useResolveMatching = () => {
   const queryClient = useQueryClient();
@@ -327,7 +359,7 @@ export const useResolveOptionMatching = () => {
 };
 
 /**
- * 매칭 대기 우선순위 설정
+ * 전략 미결정 우선순위 설정
  */
 export const useSetMatchingPriority = () => {
   const queryClient = useQueryClient();
@@ -429,7 +461,7 @@ export const useUpdateVariantMatching = () => {
 };
 
 /**
- * 매칭 무시 처리 (편의 함수)
+ * 재고상품 비매칭 처리 (하위 호환 편의 함수)
  */
 export const useIgnoreMatching = () => {
   const resolveMatching = useResolveMatching();
@@ -445,8 +477,9 @@ export const useIgnoreMatching = () => {
       resolveMatching.mutateAsync({
         id,
         data: {
-          ignore: true,
-          strategy: 'variant',
+          ignore: false,
+          resolveAsVoid: true,
+          strategy: 'void',
           stockPolicy: stockPolicy || {
             preStockSellable: true,
             alwaysSellableZeroStock: false,
@@ -458,7 +491,7 @@ export const useIgnoreMatching = () => {
 };
 
 /**
- * 매칭 완료 처리 (편의 함수)
+ * SKU 구성 매칭 처리 (편의 함수)
  */
 export const useCompleteMatching = () => {
   const resolveMatching = useResolveMatching();
@@ -499,9 +532,12 @@ export const useCompleteMatching = () => {
 export const useCreateOutboundBatch = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: CreateOutboundBatchRequest) => orders.outboundBatches.create(data),
+    mutationFn: (data: CreateOutboundBatchRequest) =>
+      orders.outboundBatches.create(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: orderQueryKeys.outboundBatches });
+      queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.outboundBatches,
+      });
     },
   });
 };
@@ -512,8 +548,12 @@ export const useAddFOsToBatch = (batchId: string) => {
     mutationFn: (data: AddFOsToBatchRequest) =>
       orders.outboundBatches.addFulfillmentOrders(batchId, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: orderQueryKeys.outboundBatch(batchId) });
-      queryClient.invalidateQueries({ queryKey: orderQueryKeys.outboundBatches });
+      queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.outboundBatch(batchId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.outboundBatches,
+      });
     },
   });
 };
@@ -521,10 +561,15 @@ export const useAddFOsToBatch = (batchId: string) => {
 export const useRemoveFOFromBatch = (batchId: string) => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (foId: string) => orders.outboundBatches.removeFulfillmentOrder(batchId, foId),
+    mutationFn: (foId: string) =>
+      orders.outboundBatches.removeFulfillmentOrder(batchId, foId),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: orderQueryKeys.outboundBatch(batchId) });
-      queryClient.invalidateQueries({ queryKey: orderQueryKeys.outboundBatches });
+      queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.outboundBatch(batchId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.outboundBatches,
+      });
     },
   });
 };
@@ -532,10 +577,15 @@ export const useRemoveFOFromBatch = (batchId: string) => {
 export const useStartBatchPicking = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (batchId: string) => orders.outboundBatches.startPicking(batchId),
+    mutationFn: (batchId: string) =>
+      orders.outboundBatches.startPicking(batchId),
     onSuccess: (_, batchId) => {
-      queryClient.invalidateQueries({ queryKey: orderQueryKeys.outboundBatch(batchId) });
-      queryClient.invalidateQueries({ queryKey: orderQueryKeys.outboundBatches });
+      queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.outboundBatch(batchId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.outboundBatches,
+      });
     },
   });
 };
@@ -545,8 +595,12 @@ export const useCompleteBatch = () => {
   return useMutation({
     mutationFn: (batchId: string) => orders.outboundBatches.complete(batchId),
     onSuccess: (_, batchId) => {
-      queryClient.invalidateQueries({ queryKey: orderQueryKeys.outboundBatch(batchId) });
-      queryClient.invalidateQueries({ queryKey: orderQueryKeys.outboundBatches });
+      queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.outboundBatch(batchId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.outboundBatches,
+      });
     },
   });
 };
@@ -556,8 +610,12 @@ export const useCancelBatch = () => {
   return useMutation({
     mutationFn: (batchId: string) => orders.outboundBatches.cancel(batchId),
     onSuccess: (_, batchId) => {
-      queryClient.invalidateQueries({ queryKey: orderQueryKeys.outboundBatch(batchId) });
-      queryClient.invalidateQueries({ queryKey: orderQueryKeys.outboundBatches });
+      queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.outboundBatch(batchId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.outboundBatches,
+      });
     },
   });
 };
@@ -588,7 +646,8 @@ export const useCompleteDirectShipOrders = () => {
 
 export const useExportDirectShipFile = () => {
   return useMutation({
-    mutationFn: (companyName: string) => orders.directShip.exportFile(companyName),
+    mutationFn: (companyName: string) =>
+      orders.directShip.exportFile(companyName),
   });
 };
 
@@ -609,6 +668,7 @@ export const useAnalyzeConsolidation = (warehouseId: string) => {
 export const useAutoConsolidate = () => {
   // ⚠️ STUB — 실제 FO 머지 안 함. UI에서 stub 경고 표시 필수
   return useMutation({
-    mutationFn: (groupId: string) => orders.consolidation.autoConsolidate(groupId),
+    mutationFn: (groupId: string) =>
+      orders.consolidation.autoConsolidate(groupId),
   });
 };

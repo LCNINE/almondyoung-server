@@ -20,8 +20,15 @@ export const useResolveMatching = () => {
       matchingClient.resolveMatching(id, data),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: matchingQueryKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: matchingQueryKeys.detail(variables.id) });
-      queryClient.invalidateQueries({ queryKey: matchingQueryKeys.variantMatchings() });
+      queryClient.invalidateQueries({
+        queryKey: matchingQueryKeys.detail(variables.id),
+      });
+      queryClient.invalidateQueries({
+        queryKey: matchingQueryKeys.variantMatchings(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: matchingQueryKeys.orderLineLists(),
+      });
       queryClient.invalidateQueries({ queryKey: matchingQueryKeys.all });
     },
   });
@@ -30,11 +37,19 @@ export const useResolveMatching = () => {
 export const useResolveOptionMatching = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: ResolveOptionMatchingDto }) =>
-      matchingClient.resolveOptionMatching(id, data),
+    mutationFn: ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: ResolveOptionMatchingDto;
+    }) => matchingClient.resolveOptionMatching(id, data),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: matchingQueryKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: matchingQueryKeys.detail(variables.id) });
+      queryClient.invalidateQueries({
+        queryKey: matchingQueryKeys.detail(variables.id),
+      });
+      queryClient.invalidateQueries({ queryKey: matchingQueryKeys.all });
     },
   });
 };
@@ -46,7 +61,9 @@ export const useSetMatchingPriority = () => {
       matchingClient.setMatchingPriority(id, data),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: matchingQueryKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: matchingQueryKeys.detail(variables.id) });
+      queryClient.invalidateQueries({
+        queryKey: matchingQueryKeys.detail(variables.id),
+      });
     },
   });
 };
@@ -58,7 +75,12 @@ export const useChangeMatchingStrategy = () => {
       matchingClient.changeMatchingStrategy(id, data),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: matchingQueryKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: matchingQueryKeys.detail(variables.id) });
+      queryClient.invalidateQueries({
+        queryKey: matchingQueryKeys.detail(variables.id),
+      });
+      queryClient.invalidateQueries({
+        queryKey: matchingQueryKeys.orderLineLists(),
+      });
     },
   });
 };
@@ -70,8 +92,12 @@ export const useUpdateMatchingStockPolicy = () => {
       matchingClient.updateMatchingStockPolicy(id, data),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: matchingQueryKeys.lists() });
-      queryClient.invalidateQueries({ queryKey: matchingQueryKeys.detail(variables.id) });
-      queryClient.invalidateQueries({ queryKey: matchingQueryKeys.stockPolicies() });
+      queryClient.invalidateQueries({
+        queryKey: matchingQueryKeys.detail(variables.id),
+      });
+      queryClient.invalidateQueries({
+        queryKey: matchingQueryKeys.stockPolicies(),
+      });
     },
   });
 };
@@ -91,6 +117,10 @@ export const useUpdateVariantMatching = () => {
         queryKey: matchingQueryKeys.variantMatching(variables.variantId),
       });
       queryClient.invalidateQueries({ queryKey: matchingQueryKeys.lists() });
+      queryClient.invalidateQueries({
+        queryKey: matchingQueryKeys.orderLineLists(),
+      });
+      queryClient.invalidateQueries({ queryKey: matchingQueryKeys.all });
     },
   });
 };
@@ -110,6 +140,10 @@ export const useUpsertVariantMatching = () => {
         queryKey: matchingQueryKeys.variantMatching(variables.variantId),
       });
       queryClient.invalidateQueries({ queryKey: matchingQueryKeys.lists() });
+      queryClient.invalidateQueries({
+        queryKey: matchingQueryKeys.orderLineLists(),
+      });
+      queryClient.invalidateQueries({ queryKey: matchingQueryKeys.all });
     },
   });
 };
@@ -127,8 +161,9 @@ export const useIgnoreMatching = () => {
       resolveMatching.mutateAsync({
         id,
         data: {
-          ignore: true,
-          strategy: 'variant',
+          ignore: false,
+          resolveAsVoid: true,
+          strategy: 'void',
           stockPolicy: stockPolicy ?? {
             preStockSellable: true,
             alwaysSellableZeroStock: false,

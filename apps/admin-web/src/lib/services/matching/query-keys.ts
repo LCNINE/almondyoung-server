@@ -6,8 +6,9 @@ export const matchingQueryKeys = {
   lists: () => [...matchingQueryKeys.all, 'list'] as const,
   list: (query: unknown) => [...matchingQueryKeys.lists(), query] as const,
 
+  orderLineLists: () => [...matchingQueryKeys.all, 'order-lines'] as const,
   orderLines: (query: unknown) =>
-    [...matchingQueryKeys.all, 'order-lines', query] as const,
+    [...matchingQueryKeys.orderLineLists(), query] as const,
 
   details: () => [...matchingQueryKeys.all, 'detail'] as const,
   detail: (id: string) => [...matchingQueryKeys.details(), id] as const,

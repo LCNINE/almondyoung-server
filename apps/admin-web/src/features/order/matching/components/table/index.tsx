@@ -9,9 +9,12 @@ import { ProductRegistrationDialog } from './ProductRegistrationDialog';
 import { InventoryMatchingDialog } from './InventoryMatchingDialog';
 import { useVariantsBatch } from '@/lib/services/products';
 import type { BatchVariantInfo } from '@/lib/api/domains/products/variants.client';
-import { SalesChannelMark, type SalesChannelType } from '@/components/common/sales-channel-mark';
+import {
+  SalesChannelMark,
+  type SalesChannelType,
+} from '@/components/common/sales-channel-mark';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useResolveMatching } from '@/lib/services/matching';
+import { useChangeMatchingStrategy } from '@/lib/services/matching';
 import { RefreshCw } from 'lucide-react';
 
 interface MatchingTableProps {
@@ -23,11 +26,16 @@ interface MatchingTableProps {
 // WMS salesChannelEnum → SalesChannelType
 function toChannelType(salesChannel: string): SalesChannelType {
   switch (salesChannel) {
-    case 'medusa': return 'almondyoung';
-    case 'naver': return 'naver_smartstore';
-    case 'coupang': return 'coupang';
-    case '3pl': return 'phone_order';
-    default: return 'other';
+    case 'medusa':
+      return 'almondyoung';
+    case 'naver':
+      return 'naver_smartstore';
+    case 'coupang':
+      return 'coupang';
+    case '3pl':
+      return 'phone_order';
+    default:
+      return 'other';
   }
 }
 
@@ -38,14 +46,14 @@ function MatchingContent({
   line,
   onInventoryMatching,
   onProductRegistration,
-  onIgnore,
-  isIgnoring,
+  onResolveAsVoid,
+  isResolvingAsVoid,
 }: {
   line: OrderLineDto;
   onInventoryMatching: (line: OrderLineDto) => void;
   onProductRegistration: (line: OrderLineDto) => void;
-  onIgnore: (matchingId: string) => void;
-  isIgnoring: boolean;
+  onResolveAsVoid: (matchingId: string) => void;
+  isResolvingAsVoid: boolean;
 }) {
   // 외부채널 + PIM 미등록 → 상품 생성 필요
   if (!line.matchingId && line.salesChannel !== 'medusa') {
@@ -63,36 +71,96 @@ function MatchingContent({
     );
   }
 
-  // 매칭 대기 (matchingId 없거나 pending)
-  if (!line.matchingId || !line.matchingStatus || line.matchingStatus === 'pending') {
+  // 전략 미결정 (matchingId 없거나 pending)
+  if (
+    !line.matchingId ||
+    !line.matchingStatus ||
+    line.matchingStatus === 'pending'
+  ) {
     return (
       <div className="flex items-center gap-3 py-1">
-        <span className="text-red-500 font-bold text-sm">매칭 재고상품 없음</span>
+        <span className="text-red-500 font-bold text-sm">전략 미결정</span>
         <Button
           size="sm"
           onClick={() => onInventoryMatching(line)}
           className="bg-orange-500 hover:bg-orange-600 text-white h-7 px-3 text-xs flex items-center gap-1"
         >
           <RefreshCw className="w-3 h-3" />
-          재고매칭
+          SKU 구성 매칭
         </Button>
       </div>
     );
   }
 
-  // 매칭 완료 (matched)
+  // 전략 결정 완료 (matched)
   if (line.matchingStatus === 'matched') {
+    if (line.matchingStrategy === 'void') {
+      return (
+        <div className="flex items-center gap-3 py-1">
+          <span className="text-gray-500 text-sm">재고상품 비매칭</span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => onInventoryMatching(line)}
+            className="h-7 px-3 text-xs flex items-center gap-1"
+          >
+            <RefreshCw className="w-3 h-3" />
+            SKU 구성 매칭
+          </Button>
+        </div>
+      );
+    }
+
+    if (line.matchingStrategy !== 'variant') {
+      return (
+        <div className="flex items-center gap-3 py-1">
+          <span className="text-orange-600 text-sm">전략 미결정</span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => onInventoryMatching(line)}
+            className="h-7 px-3 text-xs flex items-center gap-1"
+          >
+            <RefreshCw className="w-3 h-3" />
+            SKU 구성 매칭
+          </Button>
+        </div>
+      );
+    }
+
+    if (line.matchedSkus.length === 0) {
+      return (
+        <div className="flex items-center gap-3 py-1">
+          <span className="text-orange-600 text-sm">SKU 구성 매칭 불완전</span>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => onInventoryMatching(line)}
+            className="h-7 px-3 text-xs flex items-center gap-1"
+          >
+            <RefreshCw className="w-3 h-3" />
+            SKU 구성 매칭
+          </Button>
+        </div>
+      );
+    }
+
     return (
       <div className="space-y-0">
         {/* 각 SKU 행 */}
         {line.matchedSkus.map((sku) => (
-          <div key={sku.skuId} className="py-1 border-b border-gray-100 last:border-b-0">
+          <div
+            key={sku.skuId}
+            className="py-1 border-b border-gray-100 last:border-b-0"
+          >
             {/* SKU 이름 + 버튼 */}
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm font-medium text-gray-800">
                 {sku.skuName}
                 {sku.quantity > 1 && (
-                  <span className="text-gray-500 ml-1 text-xs">(수량: ×{sku.quantity})</span>
+                  <span className="text-gray-500 ml-1 text-xs">
+                    (수량: ×{sku.quantity})
+                  </span>
                 )}
               </span>
               <div className="flex items-center gap-1 shrink-0">
@@ -103,7 +171,7 @@ function MatchingContent({
                   className="h-6 px-2 text-xs flex items-center gap-1"
                 >
                   <RefreshCw className="w-3 h-3" />
-                  재매칭
+                  SKU 재매칭
                 </Button>
                 <Button
                   size="sm"
@@ -111,27 +179,29 @@ function MatchingContent({
                   onClick={() => onInventoryMatching(line)}
                   className="h-6 px-2 text-xs"
                 >
-                  매칭수정
+                  SKU 구성 수정
                 </Button>
               </div>
             </div>
             {/* 바코드/수량 정보 */}
             <div className="text-xs text-gray-500 mt-0.5">
               • 주문수량 × {sku.quantity} = {line.quantity * sku.quantity}
-              {sku.skuCode && <span className="ml-2">[바코드: {sku.skuCode}]</span>}
+              {sku.skuCode && (
+                <span className="ml-2">[바코드: {sku.skuCode}]</span>
+              )}
             </div>
           </div>
         ))}
-        {/* 매칭삭제 + 가격 */}
+        {/* 재고상품 비매칭 전환 + 가격 */}
         <div className="flex items-center gap-3 pt-1.5">
           <Button
             size="sm"
             variant="outline"
-            onClick={() => line.matchingId && onIgnore(line.matchingId)}
-            disabled={isIgnoring}
+            onClick={() => line.matchingId && onResolveAsVoid(line.matchingId)}
+            disabled={isResolvingAsVoid}
             className="h-6 px-2 text-xs text-gray-600 border-gray-300"
           >
-            매칭삭제
+            재고상품 비매칭
           </Button>
           {line.unitPrice != null && (
             <span className="text-xs text-gray-500">
@@ -143,11 +213,11 @@ function MatchingContent({
     );
   }
 
-  // 무시됨 (ignored / 재고사용 안함)
+  // 레거시 ignored는 완료가 아니라 감사 대상으로 노출한다.
   if (line.matchingStatus === 'ignored') {
     return (
       <div className="flex items-center gap-3 py-1">
-        <span className="text-gray-500 text-sm">재고사용 안함 상품</span>
+        <span className="text-gray-500 text-sm">레거시 감사 대상</span>
         <Button
           size="sm"
           variant="outline"
@@ -155,7 +225,7 @@ function MatchingContent({
           className="h-7 px-3 text-xs flex items-center gap-1"
         >
           <RefreshCw className="w-3 h-3" />
-          재매칭
+          SKU 구성 매칭
         </Button>
       </div>
     );
@@ -176,8 +246,8 @@ function OrderLineRows({
   onRowSelect,
   onInventoryMatching,
   onProductRegistration,
-  onIgnore,
-  isIgnoring,
+  onResolveAsVoid,
+  isResolvingAsVoid,
 }: {
   line: OrderLineDto;
   index: number;
@@ -187,11 +257,13 @@ function OrderLineRows({
   onRowSelect: (id: string, checked: boolean) => void;
   onInventoryMatching: (line: OrderLineDto) => void;
   onProductRegistration: (line: OrderLineDto) => void;
-  onIgnore: (matchingId: string) => void;
-  isIgnoring: boolean;
+  onResolveAsVoid: (matchingId: string) => void;
+  isResolvingAsVoid: boolean;
 }) {
-  const displayName = variantInfo?.masterName || line.productName || '상품명 없음';
-  const optionLabel = variantInfo?.optionLabel || variantInfo?.variantName || '';
+  const displayName =
+    variantInfo?.masterName || line.productName || '상품명 없음';
+  const optionLabel =
+    variantInfo?.optionLabel || variantInfo?.variantName || '';
 
   return (
     <>
@@ -243,8 +315,8 @@ function OrderLineRows({
             line={line}
             onInventoryMatching={onInventoryMatching}
             onProductRegistration={onProductRegistration}
-            onIgnore={onIgnore}
-            isIgnoring={isIgnoring}
+            onResolveAsVoid={onResolveAsVoid}
+            isResolvingAsVoid={isResolvingAsVoid}
           />
         </td>
       </tr>
@@ -282,18 +354,22 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
   const [showProductDialog, setShowProductDialog] = useState(false);
   const [currentLine, setCurrentLine] = useState<OrderLineDto | null>(null);
 
-  const resolveMatching = useResolveMatching();
-  const isIgnoring = resolveMatching.isPending;
+  const changeMatchingStrategy = useChangeMatchingStrategy();
+  const isResolvingAsVoid = changeMatchingStrategy.isPending;
 
   const variantIds = useMemo(
     () => [...new Set(data.map((l) => l.variantId).filter(Boolean))],
-    [data],
+    [data]
   );
   const { data: variantMap } = useVariantsBatch(variantIds);
 
   const handleRowSelect = (id: string, checked: boolean) => {
     const next = new Set(selectedRows);
-    checked ? next.add(id) : next.delete(id);
+    if (checked) {
+      next.add(id);
+    } else {
+      next.delete(id);
+    }
     setSelectedRows(next);
   };
 
@@ -307,26 +383,25 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
     setShowProductDialog(true);
   };
 
-  const handleIgnore = async (matchingId: string) => {
-    if (!confirm('현재 매칭을 삭제하고 재고사용 안함으로 변경하시겠습니까?')) return;
-    await resolveMatching.mutateAsync({
+  const handleResolveAsVoid = async (matchingId: string) => {
+    if (
+      !confirm(
+        '현재 SKU 구성을 삭제하고 재고상품 비매칭 전략으로 변경하시겠습니까?'
+      )
+    )
+      return;
+    await changeMatchingStrategy.mutateAsync({
       id: matchingId,
-      data: {
-        ignore: true,
-        strategy: 'void',
-        stockPolicy: {
-          preStockSellable: true,
-          alwaysSellableZeroStock: false,
-        },
-        isGift: false,
-      },
+      data: { strategy: 'void' },
     });
   };
 
   if (error) {
     return (
       <div className="flex items-center justify-center h-64 border rounded-lg bg-white">
-        <div className="text-red-500 text-sm">오류가 발생했습니다: {error.message}</div>
+        <div className="text-red-500 text-sm">
+          오류가 발생했습니다: {error.message}
+        </div>
       </div>
     );
   }
@@ -344,7 +419,7 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
                   checked={selectedRows.size === data.length && data.length > 0}
                   onCheckedChange={(checked) => {
                     setSelectedRows(
-                      checked ? new Set(data.map((l) => l.id)) : new Set(),
+                      checked ? new Set(data.map((l) => l.id)) : new Set()
                     );
                   }}
                 />
@@ -365,18 +440,27 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
               Array.from({ length: SKELETON_ROWS }).map((_, i) => (
                 <React.Fragment key={`skeleton-${i}`}>
                   <tr className="bg-white">
-                    <td rowSpan={2} className="px-3 py-3 border-b border-gray-200 align-top w-12">
+                    <td
+                      rowSpan={2}
+                      className="px-3 py-3 border-b border-gray-200 align-top w-12"
+                    >
                       <Skeleton className="h-4 w-4 mx-auto mb-1" />
                       <Skeleton className="h-3 w-4 mx-auto" />
                     </td>
-                    <td rowSpan={2} className="px-3 py-3 border-b border-gray-200 align-top">
+                    <td
+                      rowSpan={2}
+                      className="px-3 py-3 border-b border-gray-200 align-top"
+                    >
                       <Skeleton className="h-8 w-24 mx-auto" />
                     </td>
                     <td className="px-4 pt-3 pb-1">
                       <Skeleton className="h-4 w-48 mb-1" />
                       <Skeleton className="h-3 w-24" />
                     </td>
-                    <td rowSpan={2} className="px-4 py-3 border-b border-gray-200 align-top w-[380px]">
+                    <td
+                      rowSpan={2}
+                      className="px-4 py-3 border-b border-gray-200 align-top w-[380px]"
+                    >
                       <Skeleton className="h-6 w-32 mb-2" />
                       <Skeleton className="h-6 w-20" />
                     </td>
@@ -395,7 +479,8 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
                   colSpan={4}
                   className="px-4 py-16 text-center text-gray-400 text-sm"
                 >
-                  데이터가 없습니다. 필터 조건을 설정하고 검색 버튼을 눌러주세요.
+                  데이터가 없습니다. 필터 조건을 설정하고 검색 버튼을
+                  눌러주세요.
                 </td>
               </tr>
             ) : (
@@ -410,8 +495,8 @@ export function MatchingTable({ data, isLoading, error }: MatchingTableProps) {
                   onRowSelect={handleRowSelect}
                   onInventoryMatching={handleInventoryMatching}
                   onProductRegistration={handleProductRegistration}
-                  onIgnore={handleIgnore}
-                  isIgnoring={isIgnoring}
+                  onResolveAsVoid={handleResolveAsVoid}
+                  isResolvingAsVoid={isResolvingAsVoid}
                 />
               ))
             )}

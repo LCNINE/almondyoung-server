@@ -13,15 +13,19 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import type { MasterDto, VariantDto } from '@/lib/types/dto/products';
-import type { MatchingStrategy, MatchingPriority, StockPolicyDto } from '@/lib/types/dto/matching';
+import type {
+  MatchingStrategy,
+  MatchingPriority,
+  StockPolicyDto,
+} from '@/lib/types/dto/matching';
 import type { SkuLinkState } from '@/lib/types/ui/matching';
 import {
   useVariantMatching,
   useUpsertVariantMatching,
   useSetMatchingPriority,
   useChangeMatchingStrategy,
-  getMatchingStatusLabel,
-  getMatchingStatusColor,
+  getMatchingStrategyDecisionLabel,
+  getMatchingStrategyDecisionColor,
   createDefaultStockPolicy,
 } from '@/lib/services/matching';
 import { matchingQueryKeys } from '@/lib/services/matching';
@@ -43,6 +47,13 @@ interface VariantPanelProps {
   onSaved: () => void;
 }
 
+const getCurrentSkuLinks = (
+  source?: {
+    matchedSkus?: SkuLinkState[];
+    links?: SkuLinkState[];
+  } | null
+) => (source?.matchedSkus?.length ? source.matchedSkus : (source?.links ?? []));
+
 function VariantPanel({ variant, masterId, onSaved }: VariantPanelProps) {
   const { data: current } = useVariantMatching(variant.id);
   const upsert = useUpsertVariantMatching();
@@ -53,22 +64,43 @@ function VariantPanel({ variant, masterId, onSaved }: VariantPanelProps) {
   const [links, setLinks] = useState<SkuLinkState[]>([]);
   const [strategy, setStrategyState] = useState<MatchingStrategy>('variant');
   const [priority, setPriorityState] = useState<MatchingPriority>('normal');
-  const [stockPolicy, setStockPolicy] = useState<StockPolicyDto>(createDefaultStockPolicy());
+  const [stockPolicy, setStockPolicy] = useState<StockPolicyDto>(
+    createDefaultStockPolicy()
+  );
 
   useEffect(() => {
     if (current) {
-      setLinks(current.matchedSkus?.map((s) => ({ skuId: s.skuId, quantity: s.quantity })) ?? []);
+      const currentSkuLinks = getCurrentSkuLinks(current);
+      setLinks(
+        currentSkuLinks.map((s) => ({
+          skuId: s.skuId,
+          quantity: s.quantity,
+        })) ?? []
+      );
+      setStrategyState(current.strategy ?? 'variant');
+      setPriorityState(current.priority ?? 'normal');
       setStockPolicy(current.stockPolicy ?? createDefaultStockPolicy());
     }
   }, [current]);
 
   const handleSave = async () => {
-    const changedLinks = JSON.stringify(links) !== JSON.stringify(
-      current?.matchedSkus?.map((s) => ({ skuId: s.skuId, quantity: s.quantity })) ?? []
-    );
-    const changedPolicy = JSON.stringify(stockPolicy) !== JSON.stringify(current?.stockPolicy);
-    const changedStrategy = strategy !== (current as { strategy?: MatchingStrategy } | undefined)?.strategy;
-    const changedPriority = priority !== (current as { priority?: MatchingPriority } | undefined)?.priority;
+    const currentSkuLinks = getCurrentSkuLinks(current);
+    const changedLinks =
+      JSON.stringify(links) !==
+      JSON.stringify(
+        currentSkuLinks.map((s) => ({
+          skuId: s.skuId,
+          quantity: s.quantity,
+        })) ?? []
+      );
+    const changedPolicy =
+      JSON.stringify(stockPolicy) !== JSON.stringify(current?.stockPolicy);
+    const changedStrategy =
+      strategy !==
+      (current as { strategy?: MatchingStrategy } | undefined)?.strategy;
+    const changedPriority =
+      priority !==
+      (current as { priority?: MatchingPriority } | undefined)?.priority;
 
     const promises: Promise<unknown>[] = [];
 
@@ -82,31 +114,53 @@ function VariantPanel({ variant, masterId, onSaved }: VariantPanelProps) {
     }
     if (changedStrategy && current && 'id' in current) {
       promises.push(
-        setStrategy.mutateAsync({ id: (current as { id: string }).id, data: { strategy } })
+        setStrategy.mutateAsync({
+          id: (current as { id: string }).id,
+          data: { strategy },
+        })
       );
     }
     if (changedPriority && current && 'id' in current) {
       promises.push(
-        setPriority.mutateAsync({ id: (current as { id: string }).id, data: { priority } })
+        setPriority.mutateAsync({
+          id: (current as { id: string }).id,
+          data: { priority },
+        })
       );
     }
 
     if (promises.length > 0) {
       await Promise.all(promises);
-      queryClient.invalidateQueries({ queryKey: matchingQueryKeys.mastersBatchStats([masterId]) });
+      queryClient.invalidateQueries({
+        queryKey: matchingQueryKeys.mastersBatchStats([masterId]),
+      });
       onSaved();
     }
   };
 
-  const isLoading = upsert.isPending || setPriority.isPending || setStrategy.isPending;
+  const isLoading =
+    upsert.isPending || setPriority.isPending || setStrategy.isPending;
 
   return (
     <div className="space-y-4 py-2">
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium">{variant.name}</span>
         {current?.status && (
-          <Badge className={`text-xs ${getMatchingStatusColor(current.status)}`} variant="outline">
-            {getMatchingStatusLabel(current.status)}
+          <Badge
+            className={`text-xs ${getMatchingStrategyDecisionColor({
+              status: current.status,
+              strategy: current.strategy,
+              matchedSkus: current.matchedSkus,
+              links: current.links,
+            })}`}
+            variant="outline"
+          >
+            {getMatchingStrategyDecisionLabel({
+              status: current.status,
+              strategy: current.strategy,
+              matchedSkus: current.matchedSkus,
+              links: current.links,
+            })}
           </Badge>
         )}
       </div>
@@ -137,8 +191,14 @@ function VariantPanel({ variant, masterId, onSaved }: VariantPanelProps) {
   );
 }
 
-export function VariantEditorDialog({ master, open, onOpenChange }: VariantEditorDialogProps) {
-  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
+export function VariantEditorDialog({
+  master,
+  open,
+  onOpenChange,
+}: VariantEditorDialogProps) {
+  const [selectedVariantId, setSelectedVariantId] = useState<string | null>(
+    null
+  );
 
   useEffect(() => {
     if (open && master?.variants?.length) {
@@ -158,7 +218,9 @@ export function VariantEditorDialog({ master, open, onOpenChange }: VariantEdito
 
         <div className="flex gap-4" style={{ minHeight: 400 }}>
           <div className="w-40 shrink-0">
-            <p className="mb-2 text-xs font-medium text-muted-foreground">Variant 목록</p>
+            <p className="mb-2 text-xs font-medium text-muted-foreground">
+              Variant 목록
+            </p>
             <ScrollArea className="h-[360px]">
               <div className="space-y-1 pr-1">
                 {variants.map((v) => (
