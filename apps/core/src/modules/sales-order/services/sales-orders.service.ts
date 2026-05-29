@@ -2,13 +2,14 @@ import { Injectable, Logger, Optional } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
-import { eq, inArray, desc, and, gte, lte, count, isNull, type InferInsertModel, type SQL } from 'drizzle-orm';
+import { eq, inArray, desc, and, gte, lte, count, sql, type InferInsertModel, type SQL } from 'drizzle-orm';
 import { PoliciesService } from './policies.service';
 import { OutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { MetricsService } from '../../inventory/shared/services/metrics.service';
 import { ProductSkuMappingService } from '../../product-matching/services/product-sku-mapping.service';
+import { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
 import { ORDER_EVENTS } from '../common/events';
 import { CreateSalesOrderDto } from '../dto/create-sales-order.dto';
 import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
@@ -40,6 +41,7 @@ export class SalesOrdersService {
     private readonly reservationLifecycle: ReservationLifecycleService,
     private readonly productSkuMapping: ProductSkuMappingService,
     private readonly productSellableQuantity: ProductSellableQuantityService,
+    private readonly fulfillmentBacklog: FulfillmentOrderCreationBacklogService,
     @Optional() private readonly audit?: AuditService,
     @Optional() private readonly metrics?: MetricsService,
     @Optional() private readonly fulfillments?: IFulfillmentsService,
@@ -208,6 +210,13 @@ export class SalesOrdersService {
     return this.inTx(async (trx) => {
       this.logger.log(`Cancelling sales order: ${id}`);
 
+      await trx.execute(sql`
+        SELECT id
+        FROM ${wmsTables.salesOrders}
+        WHERE ${wmsTables.salesOrders.id} = ${id}
+        FOR UPDATE
+      `);
+
       const salesOrder = await trx
         .select()
         .from(wmsTables.salesOrders)
@@ -218,6 +227,7 @@ export class SalesOrdersService {
       if (!salesOrder) throw new Error(`Sales order ${id} not found`);
       if (salesOrder.status === 'cancelled') {
         this.logger.warn(`Sales order ${id} is already cancelled`);
+        await this.fulfillmentBacklog.closeOpenForSalesOrder(id, trx);
         return salesOrder;
       }
 
@@ -246,6 +256,7 @@ export class SalesOrdersService {
       }
 
       await trx.update(wmsTables.salesOrders).set({ status: 'cancelled' }).where(eq(wmsTables.salesOrders.id, id));
+      await this.fulfillmentBacklog.closeOpenForSalesOrder(id, trx);
 
       const updated = await this.getOne(id, trx);
 
@@ -514,17 +525,19 @@ export class SalesOrdersService {
     const byStatus = (s: string) => Number(statusCounts.find((r) => r.status === s)?.cnt ?? 0);
 
     const waitingMatchRows = await db
-      .select({ id: wmsTables.salesOrders.id })
-      .from(wmsTables.salesOrders)
-      .innerJoin(wmsTables.salesOrderLines, eq(wmsTables.salesOrderLines.salesOrderId, wmsTables.salesOrders.id))
+      .select({ id: wmsTables.fulfillmentOrderCreationBacklogs.salesOrderId })
+      .from(wmsTables.fulfillmentOrderCreationBacklogs)
+      .innerJoin(
+        wmsTables.salesOrders,
+        eq(wmsTables.salesOrders.id, wmsTables.fulfillmentOrderCreationBacklogs.salesOrderId),
+      )
       .where(
         and(
           gte(wmsTables.salesOrders.orderDate, fourteenDaysAgo),
-          eq(wmsTables.salesOrders.status, 'pending'),
-          isNull(wmsTables.salesOrderLines.productMatchingId),
+          eq(wmsTables.fulfillmentOrderCreationBacklogs.status, 'awaiting_matching'),
         ),
       )
-      .groupBy(wmsTables.salesOrders.id);
+      .groupBy(wmsTables.fulfillmentOrderCreationBacklogs.salesOrderId);
 
     const cannotShipRows = await db
       .select({ id: wmsTables.salesOrders.id })

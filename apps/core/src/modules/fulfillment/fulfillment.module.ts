@@ -7,6 +7,8 @@ import { SharedModule } from '../inventory/shared/shared.module';
 import { ProductMatchingModule } from '../product-matching/product-matching.module';
 import { SalesOrderModule } from '../sales-order/sales-order.module';
 import { ProductSellableQuantityModule } from '../inventory/product-sellable-quantity/product-sellable-quantity.module';
+import { WarehouseModule } from '../inventory/warehouse/warehouse.module';
+import { FulfillmentOrderCreationBacklogModule } from './backlog/fulfillment-order-creation-backlog.module';
 
 // Outbox
 import { OutboxService } from './outbox/outbox.service';
@@ -14,6 +16,7 @@ import { OutboxDispatcherService } from './outbox/outbox-dispatcher.service';
 
 // Services
 import { FulfillmentsService } from './services/fulfillments.service';
+import { FulfillmentOrderCreationBacklogWorker } from './services/fulfillment-order-creation-backlog.worker';
 import { FulfillmentOrderTransactionService } from './services/fulfillment-order-transaction.service';
 import { FulfillmentReservationsFacade } from './services/fulfillment-reservations.facade';
 import { AvailabilityService } from './services/availability.service';
@@ -59,6 +62,9 @@ import { LocationOptimizationController } from './controllers/location-optimizat
     SalesOrderModule,
 
     ProductSellableQuantityModule,
+
+    WarehouseModule,
+    FulfillmentOrderCreationBacklogModule,
   ],
   controllers: [
     FulfillmentsController,
@@ -78,6 +84,7 @@ import { LocationOptimizationController } from './controllers/location-optimizat
 
     // Core fulfillment services
     FulfillmentsService,
+    FulfillmentOrderCreationBacklogWorker,
     FulfillmentOrderTransactionService,
     FulfillmentReservationsFacade,
     AvailabilityService,

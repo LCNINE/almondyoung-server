@@ -1,7 +1,8 @@
 import { OrderEventsConsumer } from './order-events.consumer';
 import type { SalesOrdersService } from '../services/sales-orders.service';
 import type { LibraryService } from '../../library/services/library.service';
-import type { OrderCreatedPayload } from '@packages/event-contracts';
+import type { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
+import type { OrderCancelledPayload, OrderCreatedPayload } from '@packages/event-contracts';
 import type { MessageEnvelope } from '@packages/event-contracts/types';
 
 /**
@@ -11,10 +12,15 @@ import type { MessageEnvelope } from '@packages/event-contracts/types';
  * `LibraryService.grantOwnershipsForOrder` 단위 테스트로는 같은 종류 (wiring drift) 의 재발을
  * 잡을 수 없으므로 consumer 단에서 grant 호출 여부 / 호출 인자 / tx 전파를 직접 검증한다.
  */
-describe('OrderEventsConsumer.handleOrderCreated', () => {
+describe('OrderEventsConsumer', () => {
   type Mocks = {
-    salesOrders: jest.Mocked<Pick<SalesOrdersService, 'findByChannelOrderId' | 'createFromEvent'>>;
-    library: jest.Mocked<Pick<LibraryService, 'grantOwnershipsForOrder'>>;
+    salesOrders: jest.Mocked<
+      Pick<SalesOrdersService, 'findByChannelOrderId' | 'createFromEvent' | 'getOne' | 'cancel'>
+    >;
+    library: jest.Mocked<Pick<LibraryService, 'grantOwnershipsForOrder' | 'revokeOwnershipsForOrder'>>;
+    backlog: jest.Mocked<
+      Pick<FulfillmentOrderCreationBacklogService, 'enqueueForSalesOrder' | 'closeOpenForSalesOrder'>
+    >;
     txInserts: Array<{ table: unknown; values: unknown }>;
     fakeTx: any;
     dbService: any;
@@ -23,6 +29,11 @@ describe('OrderEventsConsumer.handleOrderCreated', () => {
   function makeMocks(): Mocks {
     const txInserts: Array<{ table: unknown; values: unknown }> = [];
     const fakeTx: any = {
+      query: {
+        orderEvents: {
+          findFirst: jest.fn().mockResolvedValue(undefined),
+        },
+      },
       insert: (table: unknown) => ({
         values: (values: unknown) => {
           txInserts.push({ table, values });
@@ -39,9 +50,16 @@ describe('OrderEventsConsumer.handleOrderCreated', () => {
       salesOrders: {
         findByChannelOrderId: jest.fn(),
         createFromEvent: jest.fn(),
+        getOne: jest.fn(),
+        cancel: jest.fn(),
       } as any,
       library: {
         grantOwnershipsForOrder: jest.fn().mockResolvedValue(0),
+        revokeOwnershipsForOrder: jest.fn().mockResolvedValue(0),
+      } as any,
+      backlog: {
+        enqueueForSalesOrder: jest.fn().mockResolvedValue({ id: 'backlog-1' }),
+        closeOpenForSalesOrder: jest.fn().mockResolvedValue(0),
       } as any,
       txInserts,
       fakeTx,
@@ -50,7 +68,12 @@ describe('OrderEventsConsumer.handleOrderCreated', () => {
   }
 
   function makeConsumer(mocks: Mocks): OrderEventsConsumer {
-    return new OrderEventsConsumer(mocks.salesOrders as any, mocks.library as any, mocks.dbService as any);
+    return new OrderEventsConsumer(
+      mocks.salesOrders as any,
+      mocks.library as any,
+      mocks.backlog as any,
+      mocks.dbService as any,
+    );
   }
 
   function makePayload(overrides: Partial<OrderCreatedPayload> = {}): OrderCreatedPayload {
@@ -89,6 +112,7 @@ describe('OrderEventsConsumer.handleOrderCreated', () => {
     await consumer.handleOrderCreated(makePayload(), envelope);
 
     expect(mocks.salesOrders.createFromEvent).toHaveBeenCalledTimes(1);
+    expect(mocks.backlog.enqueueForSalesOrder).toHaveBeenCalledWith('so-new-1', mocks.fakeTx);
     expect(mocks.library.grantOwnershipsForOrder).toHaveBeenCalledTimes(1);
     expect(mocks.library.grantOwnershipsForOrder).toHaveBeenCalledWith('so-new-1', mocks.fakeTx);
     expect(mocks.txInserts).toHaveLength(1); // orderEvents 로그
@@ -103,6 +127,7 @@ describe('OrderEventsConsumer.handleOrderCreated', () => {
     await consumer.handleOrderCreated(makePayload({ status: 'pending' }), envelope);
 
     expect(mocks.salesOrders.createFromEvent).toHaveBeenCalledTimes(1);
+    expect(mocks.backlog.enqueueForSalesOrder).not.toHaveBeenCalled();
     expect(mocks.library.grantOwnershipsForOrder).not.toHaveBeenCalled();
   });
 
@@ -115,6 +140,7 @@ describe('OrderEventsConsumer.handleOrderCreated', () => {
 
     expect(mocks.salesOrders.createFromEvent).not.toHaveBeenCalled();
     expect(mocks.txInserts).toHaveLength(0); // orderEvents insert 안 함
+    expect(mocks.backlog.enqueueForSalesOrder).toHaveBeenCalledWith('so-existing-1', mocks.fakeTx);
     expect(mocks.library.grantOwnershipsForOrder).toHaveBeenCalledTimes(1);
     expect(mocks.library.grantOwnershipsForOrder).toHaveBeenCalledWith('so-existing-1', mocks.fakeTx);
   });
@@ -128,6 +154,7 @@ describe('OrderEventsConsumer.handleOrderCreated', () => {
 
     expect(mocks.salesOrders.createFromEvent).not.toHaveBeenCalled();
     expect(mocks.txInserts).toHaveLength(0);
+    expect(mocks.backlog.enqueueForSalesOrder).not.toHaveBeenCalled();
     expect(mocks.library.grantOwnershipsForOrder).not.toHaveBeenCalled();
   });
 
@@ -139,5 +166,27 @@ describe('OrderEventsConsumer.handleOrderCreated', () => {
 
     const consumer = makeConsumer(mocks);
     await expect(consumer.handleOrderCreated(makePayload(), envelope)).rejects.toThrow('grant boom');
+  });
+
+  it('OrderCancelled 재전송이 이미 cancelled 주문을 만나도 open backlog를 닫는다', async () => {
+    const mocks = makeMocks();
+    const consumer = makeConsumer(mocks);
+    const payload = {
+      orderId: 'so-cancelled-1',
+      reason: 'CUSTOMER_REQUEST',
+      cancelledBy: 'customer',
+      cancelledAt: new Date().toISOString(),
+      refundRequired: false,
+    } as OrderCancelledPayload;
+    const cancelledEnvelope = {
+      messageId: 'cancel-msg-1',
+      correlationId: 'corr-1',
+    } as MessageEnvelope<OrderCancelledPayload>;
+    mocks.salesOrders.getOne.mockResolvedValue({ id: payload.orderId, status: 'cancelled' } as any);
+
+    await consumer.handleOrderCancelled(payload, cancelledEnvelope);
+
+    expect(mocks.salesOrders.cancel).not.toHaveBeenCalled();
+    expect(mocks.backlog.closeOpenForSalesOrder).toHaveBeenCalledWith(payload.orderId, mocks.fakeTx);
   });
 });
