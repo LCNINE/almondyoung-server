@@ -36,6 +36,7 @@ export class FulfillmentOrderResponseDto {
       'created',
       'reserving',
       'ready',
+      'unfulfillable',
       'labeled',
       'shipped',
       'canceled',
@@ -68,6 +69,12 @@ export class FulfillmentOrderResponseDto {
 
   @ApiProperty({ description: '총 예약 수량' })
   totalReservedQty: number;
+
+  @ApiProperty({ description: '예약 실패 사유', nullable: true })
+  reservationFailureReason: string | null;
+
+  @ApiProperty({ description: '예약 실패 상세', nullable: true })
+  reservationFailureDetails: unknown | null;
 
   @ApiProperty({ description: '할당 일시', nullable: true })
   allocatedAt: Date | null;

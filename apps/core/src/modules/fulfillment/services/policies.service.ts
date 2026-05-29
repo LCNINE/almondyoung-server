@@ -15,7 +15,7 @@ export class PoliciesService {
     if (!policy) {
       return {
         variantId,
-        inventoryManagement: false,
+        inventoryManagement: true,
         preStockSellable: false,
         alwaysSellableZeroStock: false,
         effectiveFrom: null,

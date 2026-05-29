@@ -1,24 +1,7 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UsePipes } from '@nestjs/common';
+import { Controller, Post, Put, Delete, Body, Param, UsePipes, GoneException } from '@nestjs/common';
 import { FulfillmentOrderTransactionService } from '../services/fulfillment-order-transaction.service';
 import { ZodValidationPipe } from '@app/shared/pipes/zod-validation.pipe';
 import { z } from 'zod';
-
-const CreateFulfillmentOrderSchema = z.object({
-  warehouseId: z.string().uuid(),
-  fulfillmentMode: z.enum(['in_house', '3pl', 'drop_ship']),
-  priority: z.enum(['normal', 'high', 'urgent']).default('normal'),
-  items: z
-    .array(
-      z.object({
-        salesOrderId: z.string(),
-        salesOrderLineId: z.string(),
-        productId: z.string(),
-        variantId: z.string(),
-        qty: z.number().int().positive(),
-      }),
-    )
-    .min(1),
-});
 
 const UpdatePrioritySchema = z.object({
   priority: z.enum(['normal', 'high', 'urgent']),
@@ -33,9 +16,8 @@ export class FulfillmentOrderController {
   constructor(private readonly fulfillmentOrderTransactionService: FulfillmentOrderTransactionService) {}
 
   @Post()
-  @UsePipes(new ZodValidationPipe(CreateFulfillmentOrderSchema))
-  async createFulfillmentOrder(@Body() dto: z.infer<typeof CreateFulfillmentOrderSchema>) {
-    return this.fulfillmentOrderTransactionService.createFulfillmentOrder(dto);
+  async createFulfillmentOrder() {
+    throw new GoneException('POST /fulfillment-orders is deprecated. Use POST /fulfillments as the canonical path.');
   }
 
   @Delete(':id')
