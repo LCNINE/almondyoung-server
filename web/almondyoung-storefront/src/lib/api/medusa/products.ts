@@ -112,13 +112,13 @@ export const listProducts = async ({
  * 정렬된 상품 목록 조회 API
  * 서버의 /store/products-sorted 엔드포인트를 호출합니다.
  *
- * @param sortBy - 정렬 기준 (min_price, max_price, sales_count)
+ * @param sortBy - 정렬 기준 (min_price, max_price, sales_count, review_count)
  * @param order - 정렬 순서 (asc, desc)
  */
 export const listProductsSorted = async ({
   pageParam = 1,
-  sortBy = "min_price",
-  order = "asc",
+  sortBy = "sales_count",
+  order = "desc",
   countryCode,
   regionId,
   categoryId,

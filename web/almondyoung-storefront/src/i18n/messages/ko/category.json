@@ -21,9 +21,8 @@
   "sort": {
     "createdAt": "최신순",
     "salesDesc": "인기순",
-    "priceAsc": "낮은가격순",
-    "priceDesc": "높은가격순",
-    "reviewCountDesc": "리뷰많은순"
+    "priceAsc": "낮은 가격순",
+    "priceDesc": "높은 가격순"
   },
   "pillDropdown": {
     "eyelash": "속눈썹",
