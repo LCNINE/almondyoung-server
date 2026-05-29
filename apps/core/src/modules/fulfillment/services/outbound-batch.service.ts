@@ -132,7 +132,7 @@ export class OutboundBatchService {
         .where(
           and(
             inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds),
-            eq(wmsTables.fulfillmentOrders.status, 'pending'),
+            inArray(wmsTables.fulfillmentOrders.status, ['ready', 'pending']),
             isNull(wmsTables.fulfillmentOrders.batchId),
           ),
         );
@@ -214,7 +214,7 @@ export class OutboundBatchService {
       await trx
         .update(wmsTables.fulfillmentOrders)
         .set({
-          status: 'pending',
+          status: 'ready',
           batchId: null,
           allocatedAt: null,
         })
@@ -347,7 +347,7 @@ export class OutboundBatchService {
       await trx
         .update(wmsTables.fulfillmentOrders)
         .set({
-          status: 'pending',
+          status: 'ready',
           batchId: null,
           allocatedAt: null,
         })
@@ -536,7 +536,7 @@ export class OutboundBatchService {
         .where(
           and(
             eq(wmsTables.fulfillmentOrders.warehouseId, warehouseId),
-            eq(wmsTables.fulfillmentOrders.status, 'pending'),
+            inArray(wmsTables.fulfillmentOrders.status, ['ready', 'pending']),
             isNull(wmsTables.fulfillmentOrders.batchId),
           ),
         )

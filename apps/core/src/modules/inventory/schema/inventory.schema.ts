@@ -183,6 +183,7 @@ export const fulfillmentStatusEnum = pgEnum('fulfillment_status', [
   'created',
   'reserving',
   'ready',
+  'unfulfillable',
   'labeled',
   'shipped',
   'canceled',
@@ -1125,6 +1126,8 @@ export const fulfillmentOrders = pgTable('fulfillment_orders', {
   totalItems: integer('total_items').notNull().default(0),
   totalQty: integer('total_qty').notNull().default(0),
   totalReservedQty: integer('total_reserved_qty').notNull().default(0),
+  reservationFailureReason: text('reservation_failure_reason'),
+  reservationFailureDetails: jsonb('reservation_failure_details'),
 
   // 타임스탬프 필드들
   allocatedAt: timestamp('allocated_at', { withTimezone: true }),

@@ -1,17 +1,48 @@
-import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
-import { and, eq, inArray, desc } from 'drizzle-orm';
+import { eq, inArray, desc } from 'drizzle-orm';
 import { PoliciesService } from './policies.service';
 import { AvailabilityService } from './availability.service';
 import { FULFILLMENT_EVENTS } from '../events';
 import { OutboxService } from '../outbox/outbox.service';
 import { ProductSkuMappingService } from '../../product-matching/services/product-sku-mapping.service';
 import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
+import { UnifiedReservationService } from '../../inventory/shared/services/unified-reservation.service';
 import { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
 import { SplitFulfillmentOrderDto } from '../dto/split-fulfillment-order.dto';
 import { AssignShipmentDto } from '../dto/assign-shipment.dto';
 import { FulfillmentShippedPayload, FulfillmentCancelledPayload, Carrier } from '@packages/event-contracts/streams';
+
+type FulfillmentOrderItemInsert = {
+  fulfillmentOrderId: string;
+  salesOrderId: string | null;
+  salesOrderLineId: string | null;
+  mappingSnapshotId: string | null;
+  variantId: string | null;
+  skuId: string;
+  qty: number;
+  reservedQty: number;
+  pickedQty: number;
+  shippedQty: number;
+  status: string;
+};
+
+type UnmatchedSalesOrderLine = {
+  salesOrderLineId: string;
+  variantId: string;
+  reason: string;
+};
+
+type ReservationFailureDetail = {
+  fulfillmentOrderItemId: string;
+  salesOrderLineId: string | null;
+  variantId: string | null;
+  skuId: string;
+  requiredQty: number;
+  availableQty: number;
+  reason: string;
+};
 
 @Injectable()
 export class FulfillmentsService {
@@ -22,6 +53,7 @@ export class FulfillmentsService {
     private readonly policies: PoliciesService,
     private readonly availability: AvailabilityService,
     private readonly reservationLifecycle: ReservationLifecycleService,
+    private readonly unifiedReservation: UnifiedReservationService,
     private readonly productSkuMapping: ProductSkuMappingService,
     private readonly outbox: OutboxService,
   ) {}
@@ -60,13 +92,90 @@ export class FulfillmentsService {
 
         this.logger.log(`Creating fulfillment order for SO: ${dto.salesOrderId || 'standalone'}`);
 
+        const requestedItems = Array.isArray(dto.items) ? dto.items : [];
+        const legacyLines = Array.isArray(dto.lines) ? dto.lines : [];
+
+        if (dto.salesOrderId && (requestedItems.length > 0 || legacyLines.length > 0)) {
+          throw new BadRequestException({
+            code: 'SALES_ORDER_ITEMS_DERIVED_FROM_MATCHING',
+            message:
+              'Fulfillment items for a sales order must be derived from product-SKU matching. Omit items and lines when salesOrderId is provided.',
+          });
+        }
+
+        let itemsToInsert: Omit<FulfillmentOrderItemInsert, 'fulfillmentOrderId'>[];
+        if (requestedItems.length > 0) {
+          const itemWithSalesOrderReference = requestedItems.find((item) => item.salesOrderId || item.salesOrderLineId);
+          if (itemWithSalesOrderReference) {
+            throw new BadRequestException({
+              code: 'FULFILLMENT_ITEM_SO_REFERENCE_NOT_ALLOWED',
+              message:
+                'Explicit fulfillment items are for standalone orders only. Omit item-level sales order references.',
+            });
+          }
+
+          itemsToInsert = requestedItems.map((item) => {
+            if (!item.skuId || !item.quantity || item.quantity <= 0) {
+              throw new BadRequestException(`Invalid item data: skuId and positive quantity are required`);
+            }
+            return {
+              salesOrderId: null,
+              salesOrderLineId: null,
+              mappingSnapshotId: item.mappingSnapshotId ?? null,
+              variantId: item.variantId ?? null,
+              skuId: item.skuId,
+              qty: item.quantity,
+              reservedQty: 0,
+              pickedQty: 0,
+              shippedQty: 0,
+              status: 'pending',
+            };
+          });
+        } else if (legacyLines.length > 0) {
+          this.logger.warn(`[create] Using deprecated 'lines' field for FO creation. Please use 'items' instead.`);
+          itemsToInsert = legacyLines.map((line) => {
+            if (!line.skuId || !line.quantity || line.quantity <= 0) {
+              throw new BadRequestException(`Invalid line data: skuId and positive quantity are required`);
+            }
+            return {
+              salesOrderId: dto.salesOrderId ?? null,
+              salesOrderLineId: null,
+              mappingSnapshotId: null,
+              variantId: null,
+              skuId: line.skuId,
+              qty: line.quantity,
+              reservedQty: 0,
+              pickedQty: 0,
+              shippedQty: 0,
+              status: 'pending',
+            };
+          });
+        } else if (dto.salesOrderId) {
+          itemsToInsert = await this.buildItemsFromSalesOrder(dto.salesOrderId, trx);
+        } else {
+          throw new BadRequestException('Fulfillment order requires items or salesOrderId');
+        }
+
+        if (itemsToInsert.length === 0) {
+          throw new BadRequestException('Fulfillment order items cannot be empty');
+        }
+
+        await this.validateSkuRows(itemsToInsert, dto.ownerId ?? null, trx);
+
         const [fo] = await trx
           .insert(wmsTables.fulfillmentOrders)
           .values({
             salesOrderId: dto.salesOrderId ?? null,
             warehouseId: dto.warehouseId ?? null,
             ownerId: dto.ownerId ?? null,
+            fulfillmentMode: dto.fulfillmentMode ?? null,
+            priority: dto.priority ?? 'normal',
             status: 'created',
+            totalItems: itemsToInsert.length,
+            totalQty: itemsToInsert.reduce((sum, item) => sum + item.qty, 0),
+            totalReservedQty: 0,
+            reservationFailureReason: null,
+            reservationFailureDetails: null,
             shippingAddress: dto.shippingAddress ?? null,
             labelNo: null,
           })
@@ -87,157 +196,27 @@ export class FulfillmentsService {
           trx,
         );
 
-        const items = Array.isArray(dto.items) ? dto.items : [];
-        const legacyLines = Array.isArray(dto.lines) ? dto.lines : [];
+        const insertedItems = await trx
+          .insert(wmsTables.fulfillmentOrderItems)
+          .values(itemsToInsert.map((item) => ({ ...item, fulfillmentOrderId: fo.id })))
+          .returning();
+        this.logger.log(`Created ${insertedItems.length} fulfillment order items`);
 
-        if (items.length > 0) {
-          for (const item of items) {
-            if (!item.skuId || !item.quantity || item.quantity <= 0) {
-              throw new BadRequestException(`Invalid item data: skuId and positive quantity are required`);
-            }
-            const [sku] = await trx.select().from(wmsTables.skus).where(eq(wmsTables.skus.id, item.skuId)).limit(1);
-            if (!sku) {
-              throw new BadRequestException(`SKU ${item.skuId} not found`);
-            }
-          }
+        const reservationResult =
+          dto.fulfillmentMode === 'drop_ship'
+            ? { status: 'ready' as const, totalReservedQty: 0, failures: [] }
+            : await this.tryReserveItems(fo.id, dto.warehouseId ?? null, insertedItems, trx);
 
-          await trx.insert(wmsTables.fulfillmentOrderItems).values(
-            items.map((item) => ({
-              fulfillmentOrderId: fo.id,
-              salesOrderId: dto.salesOrderId ?? null,
-              salesOrderLineId: item.salesOrderLineId ?? null,
-              mappingSnapshotId: item.mappingSnapshotId ?? null,
-              variantId: item.variantId ?? null,
-              skuId: item.skuId,
-              qty: item.quantity,
-              reservedQty: 0,
-              pickedQty: 0,
-              shippedQty: 0,
-              status: 'pending',
-            })),
-          );
-        } else if (legacyLines.length > 0) {
-          this.logger.warn(`[create] Using deprecated 'lines' field for FO creation. Please use 'items' instead.`);
-
-          for (const line of legacyLines) {
-            if (!line.skuId || !line.quantity || line.quantity <= 0) {
-              throw new BadRequestException(`Invalid line data: skuId and positive quantity are required`);
-            }
-            const [sku] = await trx.select().from(wmsTables.skus).where(eq(wmsTables.skus.id, line.skuId)).limit(1);
-            if (!sku) {
-              throw new BadRequestException(`SKU ${line.skuId} not found`);
-            }
-          }
-
-          await trx.insert(wmsTables.fulfillmentOrderItems).values(
-            legacyLines.map((l) => ({
-              fulfillmentOrderId: fo.id,
-              salesOrderId: dto.salesOrderId ?? null,
-              salesOrderLineId: null,
-              mappingSnapshotId: null,
-              variantId: null,
-              skuId: l.skuId,
-              qty: l.quantity,
-              reservedQty: 0,
-              pickedQty: 0,
-              shippedQty: 0,
-              status: 'pending',
-            })),
-          );
-        } else if (dto.salesOrderId) {
-          const soLines = await trx
-            .select()
-            .from(wmsTables.salesOrderLines)
-            .where(eq(wmsTables.salesOrderLines.salesOrderId, dto.salesOrderId));
-
-          const itemsToInsert: Array<{
-            fulfillmentOrderId: string;
-            salesOrderId: string;
-            salesOrderLineId: string;
-            mappingSnapshotId: string | null;
-            variantId: string;
-            skuId: string;
-            qty: number;
-            reservedQty: number;
-            pickedQty: number;
-            shippedQty: number;
-            status: string;
-          }> = [];
-
-          for (const sl of soLines) {
-            if (sl.mappingSnapshotId) {
-              const snapshot = await this.productSkuMapping.getMappingSnapshot(sl.mappingSnapshotId, trx);
-              if (snapshot && snapshot.mappings.length > 0) {
-                for (const mapping of snapshot.mappings) {
-                  const qty = sl.quantity * Math.max(1, mapping.quantity);
-                  itemsToInsert.push({
-                    fulfillmentOrderId: fo.id,
-                    salesOrderId: dto.salesOrderId,
-                    salesOrderLineId: sl.id,
-                    mappingSnapshotId: sl.mappingSnapshotId,
-                    variantId: sl.variantId,
-                    skuId: mapping.skuId,
-                    qty,
-                    reservedQty: 0,
-                    pickedQty: 0,
-                    shippedQty: 0,
-                    status: 'pending',
-                  });
-                }
-                continue;
-              }
-            }
-
-            // Fallback: realtime matching
-            const matching = await this.productSkuMapping.getByVariant(sl.variantId, trx);
-            if (matching && Array.isArray((matching as { links?: unknown[] }).links)) {
-              const links = (matching as { links: Array<{ skuId: string; quantity: number }> }).links;
-              for (const link of links) {
-                const qty = sl.quantity * Math.max(1, link.quantity || 1);
-                itemsToInsert.push({
-                  fulfillmentOrderId: fo.id,
-                  salesOrderId: dto.salesOrderId,
-                  salesOrderLineId: sl.id,
-                  mappingSnapshotId: null,
-                  variantId: sl.variantId,
-                  skuId: link.skuId,
-                  qty,
-                  reservedQty: 0,
-                  pickedQty: 0,
-                  shippedQty: 0,
-                  status: 'pending',
-                });
-              }
-            }
-          }
-
-          if (itemsToInsert.length > 0) {
-            await trx.insert(wmsTables.fulfillmentOrderItems).values(itemsToInsert);
-            this.logger.log(`Created ${itemsToInsert.length} fulfillment order items`);
-          }
-        }
-
-        if (fo.ownerId) {
-          const fois = await trx
-            .select()
-            .from(wmsTables.fulfillmentOrderItems)
-            .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fo.id));
-          const skuIds = fois.map((item) => item.skuId);
-          if (skuIds.length > 0) {
-            const skuRows = await trx.select().from(wmsTables.skus).where(inArray(wmsTables.skus.id, skuIds));
-            const mismatched = skuRows.find((s) => s.holderId !== fo.ownerId);
-            if (mismatched) {
-              throw new BadRequestException('SKU_HOLDER_MISMATCH_FOR_3PL');
-            }
-          }
-        }
-
-        const allFulfillable = await this.evaluateFulfillability(trx, fo.id, dto.warehouseId ?? null);
-
-        if (allFulfillable) {
+        if (reservationResult.status === 'ready') {
           await trx
             .update(wmsTables.fulfillmentOrders)
-            .set({ status: 'ready' })
+            .set({
+              status: 'ready',
+              totalReservedQty: reservationResult.totalReservedQty,
+              reservationFailureReason: null,
+              reservationFailureDetails: null,
+              updatedAt: new Date(),
+            })
             .where(eq(wmsTables.fulfillmentOrders.id, fo.id));
           await this.outbox.enqueue(
             {
@@ -249,11 +228,31 @@ export class FulfillmentsService {
             },
             trx,
           );
+        } else if (reservationResult.status === 'unfulfillable') {
+          await trx
+            .update(wmsTables.fulfillmentOrders)
+            .set({
+              status: 'unfulfillable',
+              totalReservedQty: reservationResult.totalReservedQty,
+              reservationFailureReason: 'RESERVATION_FAILED',
+              reservationFailureDetails: {
+                attemptedAt: new Date().toISOString(),
+                failedItems: reservationResult.failures,
+              },
+              updatedAt: new Date(),
+            })
+            .where(eq(wmsTables.fulfillmentOrders.id, fo.id));
+        } else if (reservationResult.totalReservedQty > 0) {
+          await trx
+            .update(wmsTables.fulfillmentOrders)
+            .set({
+              totalReservedQty: reservationResult.totalReservedQty,
+              updatedAt: new Date(),
+            })
+            .where(eq(wmsTables.fulfillmentOrders.id, fo.id));
         }
 
-        this.logger.log(
-          `Fulfillment order ${fo.id} created successfully with status: ${allFulfillable ? 'ready' : 'created'}`,
-        );
+        this.logger.log(`Fulfillment order ${fo.id} created successfully with status: ${reservationResult.status}`);
         return this.getOne(fo.id, trx);
       } catch (error) {
         this.logger.error(`Failed to create fulfillment order for SO ${dto.salesOrderId}:`, error);
@@ -262,41 +261,193 @@ export class FulfillmentsService {
     }, tx);
   }
 
-  private async evaluateFulfillability(trx: DbTx, foId: string, warehouseId: string | null): Promise<boolean> {
-    const [fo] = await trx
+  private async buildItemsFromSalesOrder(
+    salesOrderId: string,
+    trx: DbTx,
+  ): Promise<Omit<FulfillmentOrderItemInsert, 'fulfillmentOrderId'>[]> {
+    const soLines = await trx
       .select()
-      .from(wmsTables.fulfillmentOrders)
-      .where(eq(wmsTables.fulfillmentOrders.id, foId))
-      .limit(1);
-    if (!fo) return false;
+      .from(wmsTables.salesOrderLines)
+      .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrderId));
 
-    if (fo.fulfillmentMode === 'drop_ship') return true;
-
-    if (!warehouseId) return false;
-
-    const items = await trx
-      .select()
-      .from(wmsTables.fulfillmentOrderItems)
-      .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, foId));
-
-    if (items.length === 0) return true;
-
-    for (const item of items) {
-      const onHand = await this.availability.getAvailableQuantity(item.skuId, warehouseId, trx);
-      const policy = item.variantId ? await this.policies.getVariantPolicy(item.variantId, trx) : null;
-      const canFulfill = this.policies.evaluateFulfillability(
-        {
-          inventoryManagement: policy?.inventoryManagement ?? true,
-          preStockSellable: policy?.preStockSellable ?? false,
-          alwaysSellableZeroStock: policy?.alwaysSellableZeroStock ?? false,
-        },
-        onHand,
-        item.qty,
-      );
-      if (!canFulfill) return false;
+    if (soLines.length === 0) {
+      throw new BadRequestException(`Sales order ${salesOrderId} has no lines`);
     }
 
-    return true;
+    const itemsToInsert: Omit<FulfillmentOrderItemInsert, 'fulfillmentOrderId'>[] = [];
+    const missingLines: UnmatchedSalesOrderLine[] = [];
+
+    for (const sl of soLines) {
+      const snapshotMappings = sl.mappingSnapshotId
+        ? (await this.productSkuMapping.getMappingSnapshot(sl.mappingSnapshotId, trx)).mappings
+        : [];
+
+      if (snapshotMappings.length > 0) {
+        for (const mapping of snapshotMappings) {
+          itemsToInsert.push({
+            salesOrderId,
+            salesOrderLineId: sl.id,
+            mappingSnapshotId: sl.mappingSnapshotId,
+            variantId: sl.variantId,
+            skuId: mapping.skuId,
+            qty: sl.quantity * Math.max(1, mapping.quantity || 1),
+            reservedQty: 0,
+            pickedQty: 0,
+            shippedQty: 0,
+            status: 'pending',
+          });
+        }
+        continue;
+      }
+
+      const matching = await this.productSkuMapping.getByVariant(sl.variantId, trx);
+      const links =
+        matching && Array.isArray((matching as { links?: unknown[] }).links)
+          ? (matching as { links: Array<{ skuId: string; quantity: number }> }).links
+          : [];
+
+      if (links.length === 0) {
+        missingLines.push({
+          salesOrderLineId: sl.id,
+          variantId: sl.variantId,
+          reason: 'NO_PRODUCT_SKU_MATCHING',
+        });
+        continue;
+      }
+
+      for (const link of links) {
+        itemsToInsert.push({
+          salesOrderId,
+          salesOrderLineId: sl.id,
+          mappingSnapshotId: null,
+          variantId: sl.variantId,
+          skuId: link.skuId,
+          qty: sl.quantity * Math.max(1, link.quantity || 1),
+          reservedQty: 0,
+          pickedQty: 0,
+          shippedQty: 0,
+          status: 'pending',
+        });
+      }
+    }
+
+    if (missingLines.length > 0) {
+      throw new BadRequestException({
+        code: 'PRODUCT_SKU_MATCHING_REQUIRED',
+        message: 'Cannot create fulfillment order because some sales order lines have no SKU matching',
+        missingLines,
+      });
+    }
+
+    if (itemsToInsert.length === 0) {
+      throw new BadRequestException('Fulfillment order items cannot be empty');
+    }
+
+    return itemsToInsert;
+  }
+
+  private async validateSkuRows(
+    items: Array<Pick<FulfillmentOrderItemInsert, 'skuId'>>,
+    ownerId: string | null,
+    trx: DbTx,
+  ): Promise<void> {
+    const skuIds = [...new Set(items.map((item) => item.skuId))];
+    const skuRows = await trx.select().from(wmsTables.skus).where(inArray(wmsTables.skus.id, skuIds));
+
+    const foundSkuIds = new Set(skuRows.map((sku) => sku.id));
+    const missingSkuId = skuIds.find((skuId) => !foundSkuIds.has(skuId));
+    if (missingSkuId) {
+      throw new BadRequestException(`SKU ${missingSkuId} not found`);
+    }
+
+    if (ownerId) {
+      const mismatched = skuRows.find((sku) => sku.holderId !== ownerId);
+      if (mismatched) {
+        throw new BadRequestException('SKU_HOLDER_MISMATCH_FOR_3PL');
+      }
+    }
+  }
+
+  private async tryReserveItems(
+    fulfillmentOrderId: string,
+    warehouseId: string | null,
+    items: Array<{
+      id: string;
+      salesOrderLineId: string | null;
+      variantId: string | null;
+      skuId: string;
+      qty: number;
+    }>,
+    trx: DbTx,
+  ): Promise<{
+    status: 'created' | 'ready' | 'unfulfillable';
+    totalReservedQty: number;
+    failures: ReservationFailureDetail[];
+  }> {
+    if (!warehouseId) {
+      return { status: 'created', totalReservedQty: 0, failures: [] };
+    }
+
+    let totalReservedQty = 0;
+    const failures: ReservationFailureDetail[] = [];
+
+    for (const item of items) {
+      const requiresStockReservation = await this.requiresStockReservation(item.variantId, trx);
+      if (!requiresStockReservation) {
+        continue;
+      }
+
+      const availableQty = await this.availability.getAvailableQuantity(item.skuId, warehouseId, trx);
+
+      try {
+        await this.unifiedReservation.reserveStock(
+          {
+            targetType: 'FULFILLMENT_ORDER',
+            targetId: fulfillmentOrderId,
+            fulfillmentOrderItemId: item.id,
+            skuId: item.skuId,
+            warehouseId,
+            quantity: item.qty,
+            reason: 'Fulfillment order item reservation',
+          },
+          trx,
+        );
+
+        await trx
+          .update(wmsTables.fulfillmentOrderItems)
+          .set({ reservedQty: item.qty, updatedAt: new Date() })
+          .where(eq(wmsTables.fulfillmentOrderItems.id, item.id));
+
+        totalReservedQty += item.qty;
+      } catch (error) {
+        if (!(error instanceof ConflictException)) {
+          throw error;
+        }
+
+        failures.push({
+          fulfillmentOrderItemId: item.id,
+          salesOrderLineId: item.salesOrderLineId,
+          variantId: item.variantId,
+          skuId: item.skuId,
+          requiredQty: item.qty,
+          availableQty,
+          reason: error.message,
+        });
+      }
+    }
+
+    return {
+      status: failures.length > 0 ? 'unfulfillable' : 'ready',
+      totalReservedQty,
+      failures,
+    };
+  }
+
+  private async requiresStockReservation(variantId: string | null, trx: DbTx): Promise<boolean> {
+    if (!variantId) return true;
+
+    const policy = await this.policies.getVariantPolicy(variantId, trx);
+    return policy.inventoryManagement;
   }
 
   async split(id: string, dto: SplitFulfillmentOrderDto, tx?: DbTx) {
@@ -322,6 +473,8 @@ export class FulfillmentsService {
 
       const itemMoves = dto?.items ?? [];
       const legacyMoves = dto?.lines ?? [];
+      let splitItemCount = 0;
+      let splitTotalQty = 0;
 
       if (itemMoves.length > 0) {
         const splitItems: Array<{
@@ -373,6 +526,8 @@ export class FulfillmentsService {
             splitQuantity: moveQty,
             originalQuantity: item.qty,
           });
+          splitItemCount += 1;
+          splitTotalQty += moveQty;
         }
 
         if (splitItems.length > 0) {
@@ -430,6 +585,8 @@ export class FulfillmentsService {
             splitQuantity: moveQty,
             originalQuantity: item.qty,
           });
+          splitItemCount += 1;
+          splitTotalQty += moveQty;
         }
 
         if (splitItems.length > 0) {
@@ -437,7 +594,20 @@ export class FulfillmentsService {
         }
       }
 
-      return newFo;
+      if (splitItemCount === 0) {
+        throw new BadRequestException('Fulfillment order split requires at least one movable item');
+      }
+
+      await trx
+        .update(wmsTables.fulfillmentOrders)
+        .set({ totalItems: splitItemCount, totalQty: splitTotalQty, updatedAt: new Date() })
+        .where(eq(wmsTables.fulfillmentOrders.id, newFo.id));
+
+      return {
+        ...newFo,
+        totalItems: splitItemCount,
+        totalQty: splitTotalQty,
+      };
     }, tx);
   }
 
@@ -500,8 +670,10 @@ export class FulfillmentsService {
 
       await trx
         .update(wmsTables.fulfillmentOrders)
-        .set({ status: 'shipped' })
+        .set({ status: 'shipped', updatedAt: new Date() })
         .where(eq(wmsTables.fulfillmentOrders.id, id));
+
+      await this.reservationLifecycle.handleFulfillmentOrderStatusChange(id, fo.status, 'shipped', trx);
 
       const shippedPayload: FulfillmentShippedPayload = {
         fulfillmentId: id,
@@ -556,8 +728,10 @@ export class FulfillmentsService {
 
       await trx
         .update(wmsTables.fulfillmentOrders)
-        .set({ status: 'canceled' })
+        .set({ status: 'canceled', updatedAt: new Date() })
         .where(eq(wmsTables.fulfillmentOrders.id, id));
+
+      await this.reservationLifecycle.handleFulfillmentOrderStatusChange(id, fo.status, 'canceled', trx);
 
       const cancelledPayload: FulfillmentCancelledPayload = {
         fulfillmentId: id,
@@ -663,21 +837,29 @@ export class FulfillmentsService {
         .from(wmsTables.fulfillmentOrderItems)
         .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId));
 
-      if (items.length === 0) return { ready: true };
+      if (items.length === 0) return { ready: false };
 
+      const availableQtyBySku = new Map<string, number>();
       for (const item of items) {
-        const onHand = await this.availability.getAvailableQuantity(item.skuId, fo.warehouseId, trx);
         const policy = item.variantId ? await this.policies.getVariantPolicy(item.variantId, trx) : null;
-        const canFulfill = this.policies.evaluateFulfillability(
-          {
-            inventoryManagement: policy?.inventoryManagement ?? true,
-            preStockSellable: policy?.preStockSellable ?? false,
-            alwaysSellableZeroStock: policy?.alwaysSellableZeroStock ?? false,
-          },
-          onHand,
-          item.qty,
-        );
+        const stockPolicy = {
+          inventoryManagement: policy?.inventoryManagement ?? true,
+          preStockSellable: policy?.preStockSellable ?? false,
+          alwaysSellableZeroStock: policy?.alwaysSellableZeroStock ?? false,
+        };
+        const remainingRequiredQty = Math.max(0, item.qty - (item.reservedQty || 0));
+        if (!stockPolicy.inventoryManagement || remainingRequiredQty === 0) {
+          continue;
+        }
+
+        let availableQty = availableQtyBySku.get(item.skuId);
+        if (availableQty === undefined) {
+          availableQty = await this.availability.getAvailableQuantity(item.skuId, fo.warehouseId, trx);
+        }
+
+        const canFulfill = this.policies.evaluateFulfillability(stockPolicy, availableQty, remainingRequiredQty);
         if (!canFulfill) return { ready: false };
+        availableQtyBySku.set(item.skuId, availableQty - remainingRequiredQty);
       }
 
       return { ready: true };
