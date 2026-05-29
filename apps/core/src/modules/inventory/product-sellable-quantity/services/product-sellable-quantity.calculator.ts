@@ -102,6 +102,17 @@ export function calculateProductSellableQuantity(
     return zero('MATCHING_IGNORED');
   }
 
+  if (input.matching.strategy === 'void') {
+    return {
+      ...base,
+      sellableQuantity: unboundedQuantity,
+      stockBoundQuantity: unboundedQuantity,
+      isSellable: true,
+      reason: 'SELLABLE',
+      components: componentResults(input.components, unboundedQuantity),
+    };
+  }
+
   if (input.matching.strategy !== 'variant') {
     return zero('MATCHING_STRATEGY_UNSUPPORTED');
   }

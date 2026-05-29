@@ -9,6 +9,7 @@ import {
   NotFoundException,
   BadRequestException,
   InternalServerErrorException,
+  HttpException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { ProductMatchingService } from '../services/product-matching.service';
@@ -59,17 +60,19 @@ export class ProductMatchingController {
         offset: offset ? parseInt(offset, 10) : 0,
       });
     } catch (e: any) {
+      if (e instanceof HttpException) throw e;
       throw new InternalServerErrorException(e.message);
     }
   }
 
   @Patch(':id/resolve')
-  @ApiOperation({ summary: '매칭 대기 해소 (SKU와 매칭 또는 무시)' })
+  @ApiOperation({ summary: '매칭 대기 해소 (SKU 구성 매칭 또는 void 전략)' })
   @ApiResponse({ status: 200, description: '매칭 대기가 성공적으로 해소되었습니다.' })
   async resolveMatchingPending(@Param('id') matchingId: string, @Body() resolveDto: ResolveMatchingDto) {
     try {
       return await this.productMatchingService.resolveMatchingPending(matchingId, resolveDto);
     } catch (e: any) {
+      if (e instanceof HttpException) throw e;
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('not found')) throw new NotFoundException(e.message);
       if (msg.match(/already|invalid|failed|required|exceed/)) throw new BadRequestException(e.message);
@@ -84,6 +87,7 @@ export class ProductMatchingController {
     try {
       return await this.productMatchingService.setMatchingPriority(matchingId, priorityDto.priority);
     } catch (e: any) {
+      if (e instanceof HttpException) throw e;
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('not found')) throw new NotFoundException(e.message);
       throw new InternalServerErrorException(e.message);
@@ -97,6 +101,7 @@ export class ProductMatchingController {
     try {
       return await this.productMatchingService.changeMatchingStrategy(matchingId, changeStrategyDto.strategy);
     } catch (e: any) {
+      if (e instanceof HttpException) throw e;
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('not found')) throw new NotFoundException(e.message);
       if (msg.match(/already|invalid|failed|required|exceed/)) throw new BadRequestException(e.message);
@@ -113,6 +118,7 @@ export class ProductMatchingController {
     try {
       return await this.productMatchingService.updateStockPolicy(matchingId, stockPolicyDto);
     } catch (e: any) {
+      if (e instanceof HttpException) throw e;
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('not found')) throw new NotFoundException(e.message);
       throw new InternalServerErrorException(e.message);

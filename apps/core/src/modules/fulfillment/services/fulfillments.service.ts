@@ -34,6 +34,8 @@ type UnmatchedSalesOrderLine = {
   reason: string;
 };
 
+type VariantSkuMatching = Awaited<ReturnType<ProductSkuMappingService['getByVariant']>>;
+
 type ReservationFailureDetail = {
   fulfillmentOrderItemId: string;
   salesOrderLineId: string | null;
@@ -156,11 +158,15 @@ export class FulfillmentsService {
           throw new BadRequestException('Fulfillment order requires items or salesOrderId');
         }
 
-        if (itemsToInsert.length === 0) {
+        if (itemsToInsert.length === 0 && !dto.salesOrderId) {
           throw new BadRequestException('Fulfillment order items cannot be empty');
         }
 
-        await this.validateSkuRows(itemsToInsert, dto.ownerId ?? null, trx);
+        if (itemsToInsert.length > 0) {
+          await this.validateSkuRows(itemsToInsert, dto.ownerId ?? null, trx);
+        }
+
+        const initialStatus = dto.salesOrderId && itemsToInsert.length === 0 ? 'completed' : 'created';
 
         const [fo] = await trx
           .insert(wmsTables.fulfillmentOrders)
@@ -170,7 +176,7 @@ export class FulfillmentsService {
             ownerId: dto.ownerId ?? null,
             fulfillmentMode: dto.fulfillmentMode ?? null,
             priority: dto.priority ?? 'normal',
-            status: 'created',
+            status: initialStatus,
             totalItems: itemsToInsert.length,
             totalQty: itemsToInsert.reduce((sum, item) => sum + item.qty, 0),
             totalReservedQty: 0,
@@ -196,11 +202,19 @@ export class FulfillmentsService {
           trx,
         );
 
-        const insertedItems = await trx
-          .insert(wmsTables.fulfillmentOrderItems)
-          .values(itemsToInsert.map((item) => ({ ...item, fulfillmentOrderId: fo.id })))
-          .returning();
+        const insertedItems =
+          itemsToInsert.length > 0
+            ? await trx
+                .insert(wmsTables.fulfillmentOrderItems)
+                .values(itemsToInsert.map((item) => ({ ...item, fulfillmentOrderId: fo.id })))
+                .returning()
+            : [];
         this.logger.log(`Created ${insertedItems.length} fulfillment order items`);
+
+        if (insertedItems.length === 0) {
+          this.logger.log(`Fulfillment order ${fo.id} completed without physical items`);
+          return this.getOne(fo.id, trx);
+        }
 
         const reservationResult =
           dto.fulfillmentMode === 'drop_ship'
@@ -301,6 +315,10 @@ export class FulfillmentsService {
       }
 
       const matching = await this.productSkuMapping.getByVariant(sl.variantId, trx);
+      if (this.isVoidMatching(matching)) {
+        continue;
+      }
+
       const links =
         matching && Array.isArray((matching as { links?: unknown[] }).links)
           ? (matching as { links: Array<{ skuId: string; quantity: number }> }).links
@@ -339,11 +357,11 @@ export class FulfillmentsService {
       });
     }
 
-    if (itemsToInsert.length === 0) {
-      throw new BadRequestException('Fulfillment order items cannot be empty');
-    }
-
     return itemsToInsert;
+  }
+
+  private isVoidMatching(matching: VariantSkuMatching): boolean {
+    return matching?.status === 'matched' && matching.strategy === 'void';
   }
 
   private async validateSkuRows(

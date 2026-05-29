@@ -50,13 +50,26 @@ export class ResolveMatchingDto {
   @IsOptional()
   skuMappings?: SkuMappingDto[];
 
-  @ApiProperty({ description: '매칭을 무시할지 여부 (true인 경우 ignored 상태로 전환)' })
+  @ApiProperty({
+    description: 'Deprecated compatibility input. true이면 재고상품 비매칭(void) 전략으로 해소합니다.',
+    required: false,
+    deprecated: true,
+  })
   @IsBoolean()
   @IsOptional()
   ignore?: boolean;
 
   @ApiProperty({
-    description: '매칭 전략',
+    description: '재고상품과 매칭하지 않는 void 전략으로 해소할지 여부',
+    required: false,
+    default: false,
+  })
+  @IsBoolean()
+  @IsOptional()
+  resolveAsVoid?: boolean;
+
+  @ApiProperty({
+    description: '매칭 전략. void는 SKU 링크 없이 재고상품 비매칭 전략으로 해소합니다.',
     enum: matchingStrategyEnum.enumValues,
     default: 'variant',
   })
