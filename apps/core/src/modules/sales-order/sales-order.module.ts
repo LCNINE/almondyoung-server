@@ -7,6 +7,7 @@ import { SharedModule } from '../inventory/shared/shared.module';
 import { ProductMatchingModule } from '../product-matching/product-matching.module';
 import { LibraryModule } from '../library/library.module';
 import { ProductSellableQuantityModule } from '../inventory/product-sellable-quantity/product-sellable-quantity.module';
+import { FulfillmentOrderCreationBacklogModule } from '../fulfillment/backlog/fulfillment-order-creation-backlog.module';
 
 import { SalesOrdersController } from './controllers/sales-orders.controller';
 import { OrderEventsConsumer } from './consumers/order-events.consumer';
@@ -35,6 +36,9 @@ import { PoliciesService } from './services/policies.service';
 
     // LibraryService (OrderCreated(payment-confirmed)/Cancelled 시 디지털 ownership grant/revoke — ADR-0010)
     LibraryModule,
+
+    // OrderCreated 처리 후 출고주문 생성 시도를 durable backlog 로 기록 — ADR-0014
+    FulfillmentOrderCreationBacklogModule,
 
     ProductSellableQuantityModule,
   ],

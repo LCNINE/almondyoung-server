@@ -1,7 +1,7 @@
 import { Injectable, Logger, BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
-import { eq, inArray, desc } from 'drizzle-orm';
+import { eq, inArray, desc, sql } from 'drizzle-orm';
 import { PoliciesService } from './policies.service';
 import { AvailabilityService } from './availability.service';
 import { FULFILLMENT_EVENTS } from '../events';
@@ -64,10 +64,24 @@ export class FulfillmentsService {
     return tx ? fn(tx) : this.db.db.transaction(fn);
   }
 
+  async requiresPhysicalFulfillmentOrder(salesOrderId: string, tx?: DbTx): Promise<boolean> {
+    return this.inTx(async (trx) => {
+      const items = await this.buildItemsFromSalesOrder(salesOrderId, trx);
+      return items.length > 0;
+    }, tx);
+  }
+
   async create(dto: CreateFulfillmentOrderDto, tx?: DbTx) {
     return this.inTx(async (trx) => {
       try {
         if (dto.salesOrderId) {
+          await trx.execute(sql`
+            SELECT id
+            FROM ${wmsTables.salesOrders}
+            WHERE ${wmsTables.salesOrders.id} = ${dto.salesOrderId}
+            FOR UPDATE
+          `);
+
           const [salesOrder] = await trx
             .select()
             .from(wmsTables.salesOrders)
@@ -78,6 +92,19 @@ export class FulfillmentsService {
           }
           if (salesOrder.status === 'cancelled') {
             throw new BadRequestException(`Cannot create fulfillment for cancelled sales order ${dto.salesOrderId}`);
+          }
+
+          const [existingFulfillmentOrder] = await trx
+            .select()
+            .from(wmsTables.fulfillmentOrders)
+            .where(eq(wmsTables.fulfillmentOrders.salesOrderId, dto.salesOrderId))
+            .limit(1);
+
+          if (existingFulfillmentOrder) {
+            this.logger.log(
+              `Fulfillment order ${existingFulfillmentOrder.id} already exists for SO ${dto.salesOrderId}, returning existing order`,
+            );
+            return this.getOne(existingFulfillmentOrder.id, trx);
           }
         }
 
@@ -319,16 +346,13 @@ export class FulfillmentsService {
         continue;
       }
 
-      const links =
-        matching && Array.isArray((matching as { links?: unknown[] }).links)
-          ? (matching as { links: Array<{ skuId: string; quantity: number }> }).links
-          : [];
+      const links = this.getPhysicalSkuLinks(matching);
 
       if (links.length === 0) {
         missingLines.push({
           salesOrderLineId: sl.id,
           variantId: sl.variantId,
-          reason: 'NO_PRODUCT_SKU_MATCHING',
+          reason: this.getMatchingFailureReason(matching),
         });
         continue;
       }
@@ -362,6 +386,36 @@ export class FulfillmentsService {
 
   private isVoidMatching(matching: VariantSkuMatching): boolean {
     return matching?.status === 'matched' && matching.strategy === 'void';
+  }
+
+  private getPhysicalSkuLinks(matching: VariantSkuMatching): Array<{ skuId: string; quantity: number }> {
+    if (matching?.status !== 'matched' || matching.strategy !== 'variant') {
+      return [];
+    }
+
+    return Array.isArray((matching as { links?: unknown[] }).links)
+      ? (matching as { links: Array<{ skuId: string; quantity: number }> }).links
+      : [];
+  }
+
+  private getMatchingFailureReason(matching: VariantSkuMatching): string {
+    if (!matching) {
+      return 'NO_PRODUCT_SKU_MATCHING';
+    }
+
+    if (matching.status === 'ignored') {
+      return 'LEGACY_PRODUCT_MATCHING_IGNORED';
+    }
+
+    if (matching.status !== 'matched') {
+      return 'PRODUCT_MATCHING_UNRESOLVED';
+    }
+
+    if (matching.strategy !== 'variant') {
+      return 'PRODUCT_MATCHING_STRATEGY_UNRESOLVED';
+    }
+
+    return 'NO_PRODUCT_SKU_MATCHING';
   }
 
   private async validateSkuRows(
