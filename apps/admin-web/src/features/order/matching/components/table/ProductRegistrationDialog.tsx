@@ -1,20 +1,30 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   FormField,
   FormInput,
   FormNumberInput,
   FormSelect,
   FormCheckbox,
-  FormLayout
+  FormLayout,
 } from '@/components/common';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { OrderLineDto } from '@/lib/types/dto/orders';
@@ -26,10 +36,10 @@ import { cn } from '@/lib/utils/cn';
 
 /** 옵션 1개 형태 */
 type LocalOption = {
-  id: string;              // 로컬 키
+  id: string; // 로컬 키
   name: string;
-  quantity: number;        // 주문 수량/묶음 수량
-  price: number;           // 옵션가
+  quantity: number; // 주문 수량/묶음 수량
+  price: number; // 옵션가
   status: '판매' | '판매중단';
   // 재고 연결
   skuId?: string;
@@ -53,7 +63,11 @@ interface ProductRegistrationDialogProps {
 }
 
 /** 외부채널 매칭용 상품 등록 다이얼로그 */
-export function ProductRegistrationDialog({ isOpen, onClose, line }: ProductRegistrationDialogProps) {
+export function ProductRegistrationDialog({
+  isOpen,
+  onClose,
+  line,
+}: ProductRegistrationDialogProps) {
   const resolveMatching = useResolveMatching();
   const createChannelProduct = useCreateChannelProduct();
 
@@ -103,14 +117,22 @@ export function ProductRegistrationDialog({ isOpen, onClose, line }: ProductRegi
   const addOption = () =>
     setOptions((prev) => [
       ...prev,
-      { id: crypto.randomUUID(), name: '', quantity: 0, price: 0, status: '판매' },
+      {
+        id: crypto.randomUUID(),
+        name: '',
+        quantity: 0,
+        price: 0,
+        status: '판매',
+      },
     ]);
 
   const removeOption = (idx: number) =>
     setOptions((prev) => prev.filter((_, i) => i !== idx));
 
   const updateOption = (idx: number, patch: Partial<LocalOption>) =>
-    setOptions((prev) => prev.map((o, i) => (i === idx ? { ...o, ...patch } : o)));
+    setOptions((prev) =>
+      prev.map((o, i) => (i === idx ? { ...o, ...patch } : o))
+    );
 
   /** 재고연결 */
   const startLink = (idx: number) => {
@@ -118,7 +140,8 @@ export function ProductRegistrationDialog({ isOpen, onClose, line }: ProductRegi
     setActiveTab('stock');
   };
 
-  const clearLink = (idx: number) => updateOption(idx, { skuId: undefined, skuName: undefined });
+  const clearLink = (idx: number) =>
+    updateOption(idx, { skuId: undefined, skuName: undefined });
 
   const attachSku = (skuId: string, skuName: string) => {
     if (linkingIndex == null) return;
@@ -191,13 +214,17 @@ export function ProductRegistrationDialog({ isOpen, onClose, line }: ProductRegi
           },
         });
       } else {
-        // 재고연결 없으면 “재고사용 안함” 또는 자동전략 중 택1
+        // 재고연결 없으면 재고상품 비매칭 또는 자동전략 중 택1
         await resolveMatching.mutateAsync({
           id: line.matchingId!,
           data: {
             ignore: false,
-            strategy: 'void', // 우선 재고 미사용으로 저장 (필요 시 'variant'로 교체)
-            stockPolicy: { preStockSellable: true, alwaysSellableZeroStock: false },
+            resolveAsVoid: true,
+            strategy: 'void',
+            stockPolicy: {
+              preStockSellable: true,
+              alwaysSellableZeroStock: false,
+            },
             isGift: false,
           },
         });
@@ -235,11 +262,21 @@ export function ProductRegistrationDialog({ isOpen, onClose, line }: ProductRegi
         {/* 안내 박스 */}
         <div className="rounded-md border p-3 bg-amber-50 text-[13px] leading-5 mb-4">
           <div className="font-medium">외부채널 매칭용 상품등록</div>
-          <div>외부 판매채널에서 들어온 주문을 매칭하기 위해 상품 정보를 생성하고, 옵션별로 재고상품을 연결해 바로 매칭까지 등록합니다.</div>
-          <div className="mt-1 text-amber-700">중요: 필수 항목(상품명, 옵션 수량, 재고연결 시 수량)을 확인해 주세요.</div>
+          <div>
+            외부 판매채널에서 들어온 주문을 매칭하기 위해 상품 정보를 생성하고,
+            옵션별로 재고상품을 연결해 바로 매칭까지 등록합니다.
+          </div>
+          <div className="mt-1 text-amber-700">
+            중요: 필수 항목(상품명, 옵션 수량, 재고연결 시 수량)을 확인해
+            주세요.
+          </div>
         </div>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="w-full">
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => setActiveTab(v as any)}
+          className="w-full"
+        >
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="opts">상품/옵션</TabsTrigger>
             <TabsTrigger value="stock">재고연결</TabsTrigger>
@@ -258,10 +295,7 @@ export function ProductRegistrationDialog({ isOpen, onClose, line }: ProductRegi
                 </div>
               </FormField>
               <FormField label="판매처 상품코드">
-                <FormInput
-                  value={line.channelOrderId || ''}
-                  readOnly
-                />
+                <FormInput value={line.channelOrderId || ''} readOnly />
               </FormField>
             </FormLayout>
 
@@ -276,7 +310,9 @@ export function ProductRegistrationDialog({ isOpen, onClose, line }: ProductRegi
                     maxLength={250}
                     className="flex-1"
                   />
-                  <span className="text-sm text-gray-500">[{productName.length}/250]</span>
+                  <span className="text-sm text-gray-500">
+                    [{productName.length}/250]
+                  </span>
                 </div>
                 <FormCheckbox
                   label="주문명과 동일"
@@ -301,13 +337,20 @@ export function ProductRegistrationDialog({ isOpen, onClose, line }: ProductRegi
               <Label>옵션정보</Label>
               <div className="mt-2 space-y-3">
                 {options.map((opt, idx) => (
-                  <div key={opt.id} className="grid grid-cols-12 items-center gap-2 p-3 border rounded">
-                    <div className="col-span-1 text-sm font-medium">{idx + 1}</div>
+                  <div
+                    key={opt.id}
+                    className="grid grid-cols-12 items-center gap-2 p-3 border rounded"
+                  >
+                    <div className="col-span-1 text-sm font-medium">
+                      {idx + 1}
+                    </div>
 
                     <div className="col-span-3">
                       <FormInput
                         value={opt.name}
-                        onChange={(e) => updateOption(idx, { name: e.target.value })}
+                        onChange={(e) =>
+                          updateOption(idx, { name: e.target.value })
+                        }
                         placeholder="옵션명"
                       />
                     </div>
@@ -316,7 +359,11 @@ export function ProductRegistrationDialog({ isOpen, onClose, line }: ProductRegi
                       <Button
                         size="icon"
                         variant="outline"
-                        onClick={() => updateOption(idx, { quantity: Math.max(0, (opt.quantity || 0) - 1) })}
+                        onClick={() =>
+                          updateOption(idx, {
+                            quantity: Math.max(0, (opt.quantity || 0) - 1),
+                          })
+                        }
                         aria-label="decrease"
                       >
                         -
@@ -324,12 +371,23 @@ export function ProductRegistrationDialog({ isOpen, onClose, line }: ProductRegi
                       <FormNumberInput
                         className="w-20 text-center"
                         value={String(opt.quantity)}
-                        onChange={(e) => updateOption(idx, { quantity: Math.max(0, parseInt(e.target.value || '0', 10)) })}
+                        onChange={(e) =>
+                          updateOption(idx, {
+                            quantity: Math.max(
+                              0,
+                              parseInt(e.target.value || '0', 10)
+                            ),
+                          })
+                        }
                       />
                       <Button
                         size="icon"
                         variant="outline"
-                        onClick={() => updateOption(idx, { quantity: (opt.quantity || 0) + 1 })}
+                        onClick={() =>
+                          updateOption(idx, {
+                            quantity: (opt.quantity || 0) + 1,
+                          })
+                        }
                         aria-label="increase"
                       >
                         +
@@ -340,7 +398,11 @@ export function ProductRegistrationDialog({ isOpen, onClose, line }: ProductRegi
                       <FormNumberInput
                         className="text-right"
                         value={String(opt.price)}
-                        onChange={(e) => updateOption(idx, { price: parseInt(e.target.value || '0', 10) })}
+                        onChange={(e) =>
+                          updateOption(idx, {
+                            price: parseInt(e.target.value || '0', 10),
+                          })
+                        }
                         placeholder="0"
                         suffix="원"
                       />
@@ -349,20 +411,33 @@ export function ProductRegistrationDialog({ isOpen, onClose, line }: ProductRegi
                     <div className="col-span-2">
                       <FormSelect
                         options={[
-                          { value: "판매", label: "판매" },
-                          { value: "판매중단", label: "판매중단" }
+                          { value: '판매', label: '판매' },
+                          { value: '판매중단', label: '판매중단' },
                         ]}
                         value={opt.status}
-                        onValueChange={(v) => updateOption(idx, { status: v as '판매' | '판매중단' })}
+                        onValueChange={(v) =>
+                          updateOption(idx, {
+                            status: v as '판매' | '판매중단',
+                          })
+                        }
                       />
                     </div>
 
                     <div className="col-span-1 flex justify-end gap-1">
-                      <Button variant="outline" size="sm" onClick={() => startLink(idx)}>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => startLink(idx)}
+                      >
                         <Link2 className="w-4 h-4 mr-1" />
                         재고연결
                       </Button>
-                      <Button variant="ghost" size="icon" onClick={() => removeOption(idx)} aria-label="remove">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeOption(idx)}
+                        aria-label="remove"
+                      >
                         <Trash2 className="w-4 h-4" />
                       </Button>
                     </div>
@@ -371,7 +446,12 @@ export function ProductRegistrationDialog({ isOpen, onClose, line }: ProductRegi
                     {opt.skuId && (
                       <div className="col-span-12 text-xs text-gray-600 pl-8">
                         연결된 재고: <b>{opt.skuName ?? opt.skuId}</b>{' '}
-                        <Button variant="ghost" size="sm" className="h-6 px-1" onClick={() => clearLink(idx)}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 px-1"
+                          onClick={() => clearLink(idx)}
+                        >
                           <X className="w-3 h-3" /> 해제
                         </Button>
                       </div>
@@ -380,7 +460,9 @@ export function ProductRegistrationDialog({ isOpen, onClose, line }: ProductRegi
                 ))}
 
                 <div className="pt-1">
-                  <Button variant="outline" onClick={addOption}>옵션 추가</Button>
+                  <Button variant="outline" onClick={addOption}>
+                    옵션 추가
+                  </Button>
                 </div>
               </div>
             </div>
@@ -395,7 +477,9 @@ export function ProductRegistrationDialog({ isOpen, onClose, line }: ProductRegi
                 onClick={onSave}
                 disabled={isSaving}
               >
-                {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                {isSaving ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : null}
                 상품등록
               </Button>
             </div>
@@ -404,9 +488,14 @@ export function ProductRegistrationDialog({ isOpen, onClose, line }: ProductRegi
           {/* 재고연결 탭 */}
           <TabsContent value="stock" className="mt-4 space-y-3">
             <div className="text-sm text-gray-600">
-              {linkingIndex == null ? '왼쪽 옵션의 [재고연결] 버튼을 눌러 연결할 옵션을 선택하세요.' : (
+              {linkingIndex == null ? (
+                '왼쪽 옵션의 [재고연결] 버튼을 눌러 연결할 옵션을 선택하세요.'
+              ) : (
                 <>
-                  연결 대상 옵션: <b>{options[linkingIndex]?.name || `옵션 ${linkingIndex + 1}`}</b>
+                  연결 대상 옵션:{' '}
+                  <b>
+                    {options[linkingIndex]?.name || `옵션 ${linkingIndex + 1}`}
+                  </b>
                 </>
               )}
             </div>
@@ -426,7 +515,10 @@ export function ProductRegistrationDialog({ isOpen, onClose, line }: ProductRegi
                   <Button variant="outline" onClick={() => setSkuSearch('')}>
                     초기화
                   </Button>
-                  <Button variant="outline" onClick={() => setActiveTab('opts')}>
+                  <Button
+                    variant="outline"
+                    onClick={() => setActiveTab('opts')}
+                  >
                     옵션으로 돌아가기
                   </Button>
                 </div>
@@ -436,11 +528,16 @@ export function ProductRegistrationDialog({ isOpen, onClose, line }: ProductRegi
             <div className="border rounded-lg p-3">
               <div className="flex items-center justify-between mb-2">
                 <h4 className="font-medium text-sm">검색 결과</h4>
-                {searching && <Loader2 className="w-4 h-4 animate-spin text-gray-500" />}
+                {searching && (
+                  <Loader2 className="w-4 h-4 animate-spin text-gray-500" />
+                )}
               </div>
 
               <div className="space-y-2 max-h-[320px] overflow-y-auto">
-                {((skuResults as any)?.items ?? (Array.isArray(skuResults) ? skuResults : [])).map((s: any) => (
+                {(
+                  (skuResults as any)?.items ??
+                  (Array.isArray(skuResults) ? skuResults : [])
+                ).map((s: any) => (
                   <div
                     key={s.id}
                     className={cn(
@@ -448,8 +545,12 @@ export function ProductRegistrationDialog({ isOpen, onClose, line }: ProductRegi
                     )}
                   >
                     <div className="min-w-0">
-                      <div className="font-medium text-sm truncate">{s.name}</div>
-                      <div className="text-xs text-gray-500 truncate">{s.id}</div>
+                      <div className="font-medium text-sm truncate">
+                        {s.name}
+                      </div>
+                      <div className="text-xs text-gray-500 truncate">
+                        {s.id}
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <Button
@@ -463,12 +564,19 @@ export function ProductRegistrationDialog({ isOpen, onClose, line }: ProductRegi
                     </div>
                   </div>
                 ))}
-                {!searching && ((skuResults as any)?.items?.length ?? (Array.isArray(skuResults) ? skuResults.length : 0)) === 0 && (
-                  <div className="text-sm text-gray-500 p-2">검색 결과가 없습니다.</div>
-                )}
+                {!searching &&
+                  ((skuResults as any)?.items?.length ??
+                    (Array.isArray(skuResults) ? skuResults.length : 0)) ===
+                    0 && (
+                    <div className="text-sm text-gray-500 p-2">
+                      검색 결과가 없습니다.
+                    </div>
+                  )}
               </div>
 
-              <div className="text-center text-xs text-gray-400 mt-2">페이지 네이션</div>
+              <div className="text-center text-xs text-gray-400 mt-2">
+                페이지 네이션
+              </div>
             </div>
           </TabsContent>
         </Tabs>

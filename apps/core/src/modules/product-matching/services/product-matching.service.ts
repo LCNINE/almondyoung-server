@@ -2,7 +2,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { DbService } from '@app/db';
-import { and, eq, desc, count, inArray, isNull, or, ne, gte, lte, ilike, SQL } from 'drizzle-orm';
+import { and, eq, desc, count, inArray, isNull, or, ne, gte, lte, ilike, SQL, sql } from 'drizzle-orm';
 import { StockEventService } from '../../inventory/core/services/stock-event.service';
 import { WarehouseService } from '../../inventory/warehouse/services/warehouse.service';
 import { SkuCatalogService } from '../../inventory/sku-catalog/services/sku-catalog.service';
@@ -393,7 +393,20 @@ export class ProductMatchingService {
       } else if (matchingStatus) {
         conditions.push(eq(productMatchings.status, matchingStatus));
       } else if (excludeMatched) {
-        const cond = or(isNull(productMatchings.id), ne(productMatchings.status, 'matched'));
+        const cond = or(
+          isNull(productMatchings.id),
+          ne(productMatchings.status, 'matched'),
+          and(eq(productMatchings.status, 'matched'), isNull(productMatchings.strategy)),
+          and(
+            eq(productMatchings.status, 'matched'),
+            eq(productMatchings.strategy, 'variant'),
+            sql`NOT EXISTS (
+              SELECT 1
+              FROM ${productVariantSkuLinks}
+              WHERE ${productVariantSkuLinks.productMatchingId} = ${productMatchings.id}
+            )`,
+          ),
+        );
         if (cond) conditions.push(cond);
       }
 
@@ -447,6 +460,7 @@ export class ProductMatchingService {
           orderDate: salesOrders.orderDate,
           matchingId: productMatchings.id,
           matchingStatus: productMatchings.status,
+          matchingStrategy: productMatchings.strategy,
         })
         .from(salesOrderLines)
         .innerJoin(salesOrders, eq(salesOrderLines.salesOrderId, salesOrders.id))
@@ -499,6 +513,7 @@ export class ProductMatchingService {
         orderDate: row.orderDate.toISOString(),
         matchingId: row.matchingId ?? undefined,
         matchingStatus: row.matchingStatus ?? undefined,
+        matchingStrategy: row.matchingStrategy ?? undefined,
         matchedSkus: row.matchingId
           ? (skusByMatchingId.get(row.matchingId) ?? []).map((s) => ({
               skuId: s.skuId,

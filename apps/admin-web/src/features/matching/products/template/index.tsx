@@ -8,8 +8,8 @@ export default function ProductsMatchingTemplate() {
   return (
     <Container className="divide-y-0">
       <Header
-        title="상품 매칭"
-        subtitle="마스터(상품)별 variant ↔ SKU 매핑 룰을 관리합니다."
+        title="상품매칭 전략"
+        subtitle="마스터(상품)별 SKU 구성 매칭과 재고상품 비매칭 전략을 관리합니다."
       />
       <ProductsMatchingTable />
     </Container>

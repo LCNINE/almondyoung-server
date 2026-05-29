@@ -68,7 +68,8 @@ export const useOutboundBatchPickingList = (id: string) => {
 export const useAvailableFulfillmentOrders = (warehouseId: string) => {
   return useQuery({
     queryKey: orderQueryKeys.availableFulfillmentOrders(warehouseId),
-    queryFn: () => orders.outboundBatches.getAvailableFulfillmentOrders(warehouseId),
+    queryFn: () =>
+      orders.outboundBatches.getAvailableFulfillmentOrders(warehouseId),
     enabled: !!warehouseId,
   });
 };
@@ -126,7 +127,10 @@ export const useConsolidationLive = (warehouseId: string) => {
   });
 };
 
-export const useConsolidationSavings = (warehouseId: string, days: number = 30) => {
+export const useConsolidationSavings = (
+  warehouseId: string,
+  days: number = 30
+) => {
   return useQuery({
     queryKey: orderQueryKeys.consolidationSavings(warehouseId, days),
     queryFn: () => orders.consolidation.getSavingsProjection(warehouseId, days),
@@ -371,7 +375,7 @@ export const useConfirmSalesOrder = () => {
 // ===== 매칭 관련 쿼리 (WMS API 스펙 기반) =====
 
 /**
- * 매칭 대기 목록 조회
+ * 전략 미결정 목록 조회
  */
 export const useMatchings = (query: MatchingsQuery = {}) => {
   return useQuery({
@@ -443,7 +447,7 @@ export const useVariantSkuLookup = (
 };
 
 /**
- * 매칭 대기 상태인 항목들만 조회 (기본 필터)
+ * 전략 미결정 상태인 항목들만 조회 (기본 필터)
  */
 export const usePendingMatchings = (
   query: Omit<MatchingsQuery, 'status'> = {}

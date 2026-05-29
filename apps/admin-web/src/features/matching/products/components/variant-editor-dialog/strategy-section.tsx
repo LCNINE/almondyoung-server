@@ -1,6 +1,9 @@
 'use client';
 
-import type { MatchingStrategy, MatchingPriority } from '@/lib/types/dto/matching';
+import type {
+  MatchingStrategy,
+  MatchingPriority,
+} from '@/lib/types/dto/matching';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -26,21 +29,26 @@ export function StrategySection({
   return (
     <div className="flex gap-4">
       <div className="flex-1 space-y-1.5">
-        <Label className="text-xs text-muted-foreground">매칭 전략</Label>
-        <Select value={strategy} onValueChange={(v) => onStrategyChange(v as MatchingStrategy)}>
+        <Label className="text-xs text-muted-foreground">상품매칭 전략</Label>
+        <Select
+          value={strategy}
+          onValueChange={(v) => onStrategyChange(v as MatchingStrategy)}
+        >
           <SelectTrigger className="h-8 text-sm">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="void">무효</SelectItem>
-            <SelectItem value="variant">Variant</SelectItem>
-            <SelectItem value="option">옵션별</SelectItem>
+            <SelectItem value="variant">SKU 구성 매칭</SelectItem>
+            <SelectItem value="void">재고상품 비매칭</SelectItem>
           </SelectContent>
         </Select>
       </div>
       <div className="flex-1 space-y-1.5">
         <Label className="text-xs text-muted-foreground">우선순위</Label>
-        <Select value={priority} onValueChange={(v) => onPriorityChange(v as MatchingPriority)}>
+        <Select
+          value={priority}
+          onValueChange={(v) => onPriorityChange(v as MatchingPriority)}
+        >
           <SelectTrigger className="h-8 text-sm">
             <SelectValue />
           </SelectTrigger>

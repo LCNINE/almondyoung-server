@@ -4,12 +4,12 @@ export function useVariantsMatchingTableFilters(): Filter[] {
   return [
     {
       key: 'status',
-      label: '상태',
+      label: '원본 상태',
       type: 'select',
       options: [
-        { label: '매칭 대기', value: 'pending' },
-        { label: '매칭 완료', value: 'matched' },
-        { label: '무시됨', value: 'ignored' },
+        { label: 'pending', value: 'pending' },
+        { label: 'matched', value: 'matched' },
+        { label: 'ignored', value: 'ignored' },
       ],
     },
   ];
