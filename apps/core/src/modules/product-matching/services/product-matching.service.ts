@@ -12,6 +12,7 @@ import { MatchingStrategy, MatchingContext, SkuQuantityMapping } from '../strate
 import { VoidMatchingStrategy } from '../strategies/void-matching.strategy';
 import { VariantMatchingStrategy } from '../strategies/variant-matching.strategy';
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
+import { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
 
 export interface PimSkuComponent {
   skuId: string;
@@ -44,6 +45,7 @@ export class ProductMatchingService {
     private readonly stockEventService: StockEventService,
     private readonly warehouseService: WarehouseService,
     private readonly productSellableQuantity: ProductSellableQuantityService,
+    private readonly fulfillmentBacklog: FulfillmentOrderCreationBacklogService,
   ) {
     this.strategies = new Map();
     this.strategies.set('void', new VoidMatchingStrategy(dbService));
@@ -269,6 +271,7 @@ export class ProductMatchingService {
                 .where(eq(wmsTables.productMatchings.id, existing.id));
 
               await this.productSellableQuantity.recalculateAndPublishForVariant(variant.id, trx);
+              await this.fulfillmentBacklog.wakeBacklogsWaitingForVariant(variant.id, trx);
               this.logger.log(`Variant ${variant.id} existing matching resolved with void strategy.`);
               created++;
               continue;
@@ -285,6 +288,7 @@ export class ProductMatchingService {
               alwaysSellableZeroStock: false,
             });
             await this.productSellableQuantity.recalculateAndPublishForVariant(variant.id, trx);
+            await this.fulfillmentBacklog.wakeBacklogsWaitingForVariant(variant.id, trx);
             this.logger.log(`Variant ${variant.id} is not inventory managed. Resolved with void strategy.`);
             created++;
             continue;
@@ -299,6 +303,29 @@ export class ProductMatchingService {
           if (existing) {
             this.logger.log(`Variant ${variant.id} matching already exists, skipping.`);
             skipped++;
+            continue;
+          }
+
+          if (!Array.isArray(variant.components) || variant.components.length === 0) {
+            const [newProductMatching] = await trx
+              .insert(wmsTables.productMatchings)
+              .values({
+                variantId: variant.id,
+                masterId: payload.masterId,
+                status: 'pending',
+                priority: 'high',
+                strategy: null,
+                isResolved: false,
+              })
+              .returning();
+
+            if (!newProductMatching) {
+              throw new Error(`Product matching entry(pending) 생성에 실패했습니다. (variantId: ${variant.id})`);
+            }
+
+            await this.productSellableQuantity.recalculateAndPublishForVariant(variant.id, trx);
+            this.logger.log(`Variant ${variant.id} requires manual SKU matching; created pending matching record.`);
+            created++;
             continue;
           }
 
@@ -349,6 +376,7 @@ export class ProductMatchingService {
           };
           await strategy.create(context, mappings, trx);
           await this.productSellableQuantity.recalculateAndPublishForVariant(variant.id, trx);
+          await this.fulfillmentBacklog.wakeBacklogsWaitingForVariant(variant.id, trx);
 
           this.logger.log(
             `Auto-matched variant ${variant.id} with ${variant.components.length} SKUs using variant strategy.`,
@@ -612,6 +640,7 @@ export class ProductMatchingService {
             `SKUs: ${mappings.length}, Stock Policy: ${JSON.stringify(finalStockPolicy)}`,
         );
         await this.productSellableQuantity.recalculateAndPublishForVariant(productMatching.variantId, trx);
+        await this.fulfillmentBacklog.wakeBacklogsWaitingForVariant(productMatching.variantId, trx);
         return updatedMatching;
       }, tx);
     } else {
@@ -643,6 +672,7 @@ export class ProductMatchingService {
           `Stock Policy: ${JSON.stringify(finalStockPolicy)}`,
       );
       await this.productSellableQuantity.recalculateAndPublishForVariant(variantId, trx);
+      await this.fulfillmentBacklog.wakeBacklogsWaitingForVariant(variantId, trx);
       return updatedMatching;
     }, tx);
   }

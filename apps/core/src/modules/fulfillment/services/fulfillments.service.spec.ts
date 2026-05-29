@@ -43,6 +43,7 @@ describe('FulfillmentsService', () => {
     };
 
     const tx: any = {
+      execute: jest.fn().mockResolvedValue([]),
       select: jest.fn(() => ({
         from: (table: unknown) => ({
           where: (_where: unknown) => rows(selectRowsFor(table)),
@@ -233,6 +234,30 @@ describe('FulfillmentsService', () => {
     expect(state.fulfillmentOrderItems).toHaveLength(0);
   });
 
+  it('legacy ignored 매칭은 SKU link가 있어도 미해결로 보고 FO를 만들지 않는다', async () => {
+    const { service, state } = makeService({
+      matching: {
+        status: 'ignored',
+        strategy: 'variant',
+        links: [{ skuId, quantity: 1 }],
+      },
+    });
+
+    try {
+      await service.create({ salesOrderId, warehouseId });
+      fail('expected create to throw');
+    } catch (error) {
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).getResponse()).toMatchObject({
+        code: 'PRODUCT_SKU_MATCHING_REQUIRED',
+        missingLines: [{ salesOrderLineId, variantId, reason: 'LEGACY_PRODUCT_MATCHING_IGNORED' }],
+      });
+    }
+
+    expect(state.fulfillmentOrders).toHaveLength(0);
+    expect(state.fulfillmentOrderItems).toHaveLength(0);
+  });
+
   it('salesOrderId와 explicit items를 함께 보내면 매칭 검증 우회를 막는다', async () => {
     const { service, state, productSkuMapping } = makeService({ links: null });
 
@@ -274,6 +299,27 @@ describe('FulfillmentsService', () => {
     expect(productSkuMapping.getByVariant).not.toHaveBeenCalled();
     expect(state.fulfillmentOrders).toHaveLength(0);
     expect(state.fulfillmentOrderItems).toHaveLength(0);
+  });
+
+  it('salesOrderId에 대한 FO가 이미 있으면 새 FO를 만들지 않고 기존 FO를 반환한다', async () => {
+    const { service, state, productSkuMapping, unifiedReservation } = makeService({
+      fulfillmentOrders: [
+        {
+          id: 'fo-existing-1',
+          salesOrderId,
+          warehouseId,
+          status: 'ready',
+        },
+      ],
+    });
+
+    const result = await service.create({ salesOrderId, warehouseId });
+
+    expect(result).toMatchObject({ id: 'fo-existing-1', salesOrderId, status: 'ready' });
+    expect(state.fulfillmentOrders).toHaveLength(1);
+    expect(state.fulfillmentOrderItems).toHaveLength(0);
+    expect(productSkuMapping.getByVariant).not.toHaveBeenCalled();
+    expect(unifiedReservation.reserveStock).not.toHaveBeenCalled();
   });
 
   it('매칭은 있지만 재고 예약이 실패하면 FO와 item을 남기고 unfulfillable 상태로 둔다', async () => {
@@ -328,6 +374,61 @@ describe('FulfillmentsService', () => {
       expect.anything(),
     );
     expect(outbox.enqueue.mock.calls.map(([event]) => event.eventType)).toContain('FulfillmentReady');
+  });
+
+  it('matched + void line만 있는 sales order는 물리 FO가 필요 없다고 판별한다', async () => {
+    const { service, state, unifiedReservation, outbox } = makeService({
+      matching: {
+        status: 'matched',
+        strategy: 'void',
+        links: [],
+      },
+    });
+
+    await expect(service.requiresPhysicalFulfillmentOrder(salesOrderId)).resolves.toBe(false);
+
+    expect(state.fulfillmentOrders).toHaveLength(0);
+    expect(state.fulfillmentOrderItems).toHaveLength(0);
+    expect(unifiedReservation.reserveStock).not.toHaveBeenCalled();
+    expect(outbox.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('matched + void line과 variant line이 섞이면 물리 FO가 필요하다고 판별한다', async () => {
+    const { service, state } = makeService({
+      lines: [
+        {
+          id: salesOrderLineId,
+          salesOrderId,
+          variantId,
+          quantity: 1,
+          mappingSnapshotId: null,
+        },
+        {
+          id: voidSalesOrderLineId,
+          salesOrderId,
+          variantId: voidVariantId,
+          quantity: 3,
+          mappingSnapshotId: null,
+        },
+      ],
+      matchingsByVariant: {
+        [variantId]: {
+          status: 'matched',
+          strategy: 'variant',
+          links: [{ skuId, quantity: 2 }],
+        },
+        [voidVariantId]: {
+          status: 'matched',
+          strategy: 'void',
+          links: [],
+        },
+      },
+    });
+
+    await expect(service.requiresPhysicalFulfillmentOrder(salesOrderId)).resolves.toBe(true);
+
+    expect(state.fulfillmentOrders).toHaveLength(0);
+    expect(state.fulfillmentOrderItems).toHaveLength(0);
   });
 
   it('matched + void sales order line은 물리 출고 item 없이 제외한다', async () => {

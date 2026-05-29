@@ -7,6 +7,7 @@ import { OrderCreatedPayload, OrderCancelledPayload, OrderModifiedPayload } from
 import { MessageEnvelope } from '@packages/event-contracts/types';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { LibraryService } from '../../library/services/library.service';
+import { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { eq } from 'drizzle-orm';
 
@@ -27,6 +28,7 @@ export class OrderEventsConsumer {
   constructor(
     private readonly salesOrdersService: SalesOrdersService,
     private readonly libraryService: LibraryService,
+    private readonly fulfillmentBacklog: FulfillmentOrderCreationBacklogService,
     @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
   ) {}
@@ -101,6 +103,7 @@ export class OrderEventsConsumer {
         // grant 는 fail-closed 로 명시 가드 (미래의 미결제 채널 도입 대비).
         const isPaymentConfirmed = payload.status === 'confirmed';
         if (isPaymentConfirmed) {
+          await this.fulfillmentBacklog.enqueueForSalesOrder(salesOrder.id, tx);
           await this.libraryService.grantOwnershipsForOrder(salesOrder.id, tx);
         }
       });
@@ -138,6 +141,7 @@ export class OrderEventsConsumer {
 
         if (salesOrder.status === 'cancelled') {
           this.logger.log(`[OrderCancelled] Order already cancelled: ${payload.orderId}`);
+          await this.fulfillmentBacklog.closeOpenForSalesOrder(payload.orderId, tx);
           return;
         }
 

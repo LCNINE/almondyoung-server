@@ -4,6 +4,7 @@ import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.sch
 import { eq, inArray, sql, and, desc, isNull } from 'drizzle-orm';
 import { UpsertMatchingDto } from '../dto/upsert-matching.dto';
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
+import { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
 
 @Injectable()
 export class ProductSkuMappingService {
@@ -13,6 +14,7 @@ export class ProductSkuMappingService {
     @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
     private readonly productSellableQuantity: ProductSellableQuantityService,
+    private readonly fulfillmentBacklog: FulfillmentOrderCreationBacklogService,
   ) {}
 
   private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
@@ -35,6 +37,9 @@ export class ProductSkuMappingService {
   async upsert(variantId: string, dto: UpsertMatchingDto, tx?: DbTx) {
     return this.inTx(async (trx) => {
       if (!variantId) throw new BadRequestException('variantId required');
+      if (!Array.isArray(dto.links) || dto.links.length === 0) {
+        throw new BadRequestException('variant strategy requires at least one SKU link');
+      }
 
       const existing = await trx.query.productMatchings.findFirst({
         where: (m, { eq }) => eq(m.variantId, variantId),
@@ -82,6 +87,7 @@ export class ProductSkuMappingService {
         .where(eq(wmsTables.salesOrderLines.variantId, variantId));
 
       await this.productSellableQuantity.recalculateAndPublishForVariant(variantId, trx);
+      await this.fulfillmentBacklog.wakeBacklogsWaitingForVariant(variantId, trx);
 
       return this.getByVariant(variantId, trx);
     }, tx);

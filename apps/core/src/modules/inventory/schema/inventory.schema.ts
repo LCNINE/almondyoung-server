@@ -198,6 +198,14 @@ export const fulfillmentStatusEnum = pgEnum('fulfillment_status', [
   'forwarded',
 ]);
 export const fulfillmentModeEnum = pgEnum('fulfillment_mode', ['in_house', '3pl', 'drop_ship']);
+export const fulfillmentOrderCreationBacklogStatusEnum = pgEnum('fulfillment_order_creation_backlog_status', [
+  'pending',
+  'processing',
+  'awaiting_matching',
+  'completed',
+  'not_required',
+  'failed',
+]);
 export const directShipStatusEnum = pgEnum('direct_ship_status', ['pending', 'forwarded', 'completed', 'canceled']);
 export const outboxStatusEnum = pgEnum('outbox_status', ['pending', 'published', 'failed']);
 
@@ -1073,6 +1081,7 @@ export const salesOrderLines = pgTable(
   },
   (t) => ({
     idxMappingSnapshot: index('idx_sales_order_lines_snapshot').on(t.mappingSnapshotId),
+    idxVariant: index('idx_sales_order_lines_variant').on(t.variantId),
   }),
 );
 
@@ -1146,6 +1155,35 @@ export const fulfillmentOrders = pgTable('fulfillment_orders', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const fulfillmentOrderCreationBacklogs = pgTable(
+  'fulfillment_order_creation_backlogs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    salesOrderId: uuid('sales_order_id')
+      .references(() => salesOrders.id, { onDelete: 'cascade' })
+      .notNull(),
+    fulfillmentOrderId: uuid('fulfillment_order_id').references(() => fulfillmentOrders.id, { onDelete: 'set null' }),
+    status: fulfillmentOrderCreationBacklogStatusEnum('status').notNull().default('pending'),
+    waitingVariantIds: jsonb('waiting_variant_ids')
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    failureReason: varchar('failure_reason', { length: 128 }),
+    failureDetails: jsonb('failure_details'),
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).notNull().defaultNow(),
+    lockedAt: timestamp('locked_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uniqueSalesOrder: unique().on(t.salesOrderId),
+    idxStatusNextAttempt: index('idx_fo_creation_backlogs_status_next_attempt').on(t.status, t.nextAttemptAt),
+    idxFulfillmentOrder: index('idx_fo_creation_backlogs_fulfillment_order').on(t.fulfillmentOrderId),
+    idxWaitingVariantIds: index('idx_fo_creation_backlogs_waiting_variant_ids').using('gin', t.waitingVariantIds),
+  }),
+);
 
 export const fulfillmentOrderLines = pgTable('fulfillment_order_lines', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -1997,6 +2035,7 @@ export const wmsTables = {
   mergeGroups,
   stockReservations,
   fulfillmentOrders,
+  fulfillmentOrderCreationBacklogs,
   fulfillmentOrderLines,
   outboundTasks,
   outboundTaskOrders,
@@ -2373,6 +2412,7 @@ export const productVariantSkuLinksRelations = relations(productVariantSkuLinks,
 export const salesOrdersRelations = relations(salesOrders, ({ many }) => ({
   lines: many(salesOrderLines),
   fulfillmentOrders: many(fulfillmentOrders),
+  fulfillmentOrderCreationBacklogs: many(fulfillmentOrderCreationBacklogs),
   orderEvents: many(orderEvents),
   outboundTaskOrders: many(outboundTaskOrders),
   returns: many(returns),
@@ -2420,9 +2460,21 @@ export const fulfillmentOrdersRelations = relations(fulfillmentOrders, ({ one, m
   }),
   lines: many(fulfillmentOrderLines),
   items: many(fulfillmentOrderItems),
+  creationBacklogs: many(fulfillmentOrderCreationBacklogs),
   shipments: many(shipments),
   fulfillmentOrderBatches: many(fulfillmentOrderBatches),
   invoices: many(invoices),
+}));
+
+export const fulfillmentOrderCreationBacklogsRelations = relations(fulfillmentOrderCreationBacklogs, ({ one }) => ({
+  salesOrder: one(salesOrders, {
+    fields: [fulfillmentOrderCreationBacklogs.salesOrderId],
+    references: [salesOrders.id],
+  }),
+  fulfillmentOrder: one(fulfillmentOrders, {
+    fields: [fulfillmentOrderCreationBacklogs.fulfillmentOrderId],
+    references: [fulfillmentOrders.id],
+  }),
 }));
 
 export const fulfillmentOrderLinesRelations = relations(fulfillmentOrderLines, ({ one }) => ({
@@ -2834,6 +2886,7 @@ export const wmsRelations = {
 
   // Fulfillment Order Relations
   fulfillmentOrdersRelations,
+  fulfillmentOrderCreationBacklogsRelations,
   fulfillmentOrderLinesRelations,
   fulfillmentOrderItemsRelations,
 
@@ -2996,6 +3049,9 @@ export type NewStockReservation = InferInsertModel<typeof stockReservations>;
 // Fulfillment Types
 export type FulfillmentOrder = InferSelectModel<typeof fulfillmentOrders>;
 export type NewFulfillmentOrder = InferInsertModel<typeof fulfillmentOrders>;
+
+export type FulfillmentOrderCreationBacklog = InferSelectModel<typeof fulfillmentOrderCreationBacklogs>;
+export type NewFulfillmentOrderCreationBacklog = InferInsertModel<typeof fulfillmentOrderCreationBacklogs>;
 
 export type FulfillmentOrderLine = InferSelectModel<typeof fulfillmentOrderLines>;
 export type NewFulfillmentOrderLine = InferInsertModel<typeof fulfillmentOrderLines>;

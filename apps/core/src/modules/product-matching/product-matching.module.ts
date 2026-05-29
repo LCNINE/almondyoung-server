@@ -3,6 +3,7 @@ import { CoreInventoryModule } from '../inventory/core/inventory.module';
 import { WarehouseModule } from '../inventory/warehouse/warehouse.module';
 import { SkuCatalogModule } from '../inventory/sku-catalog/sku-catalog.module';
 import { ProductSellableQuantityModule } from '../inventory/product-sellable-quantity/product-sellable-quantity.module';
+import { FulfillmentOrderCreationBacklogModule } from '../fulfillment/backlog/fulfillment-order-creation-backlog.module';
 import { ProductMatchingController } from './controllers/product-matching.controller';
 import { ProductSkuMappingController } from './controllers/product-sku-mapping.controller';
 import { ProductMatchingService } from './services/product-matching.service';
@@ -14,6 +15,7 @@ import { ProductSkuMappingService } from './services/product-sku-mapping.service
     WarehouseModule, // WarehouseService 의존
     SkuCatalogModule, // SkuCatalogService 의존
     ProductSellableQuantityModule,
+    FulfillmentOrderCreationBacklogModule,
   ],
   controllers: [ProductMatchingController, ProductSkuMappingController],
   providers: [ProductMatchingService, ProductSkuMappingService],
