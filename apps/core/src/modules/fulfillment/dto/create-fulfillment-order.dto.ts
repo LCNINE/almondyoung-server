@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsUUID, IsNotEmpty, IsOptional, IsArray, IsNumber, Min, ValidateNested } from 'class-validator';
+import { IsUUID, IsNotEmpty, IsOptional, IsArray, IsNumber, Min, ValidateNested, IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
 import { AddressDto } from './address.dto';
 
@@ -19,10 +19,21 @@ export class CreateFulfillmentOrderItemDto {
   @IsOptional()
   variantId?: string;
 
-  @ApiProperty({ description: 'Sales Order Line ID', required: false })
+  @ApiProperty({
+    description: 'Not accepted for explicit item creation. Sales-order fulfillments derive items from matching.',
+    required: false,
+  })
   @IsUUID()
   @IsOptional()
   salesOrderLineId?: string;
+
+  @ApiProperty({
+    description: 'Not accepted for explicit item creation. Use top-level salesOrderId without items.',
+    required: false,
+  })
+  @IsUUID()
+  @IsOptional()
+  salesOrderId?: string;
 
   @ApiProperty({ description: 'Mapping Snapshot ID', required: false })
   @IsUUID()
@@ -59,13 +70,27 @@ export class CreateFulfillmentOrderDto {
   @IsOptional()
   ownerId?: string;
 
+  @ApiProperty({ description: 'Fulfillment Mode', enum: ['in_house', '3pl', 'drop_ship'], required: false })
+  @IsIn(['in_house', '3pl', 'drop_ship'])
+  @IsOptional()
+  fulfillmentMode?: 'in_house' | '3pl' | 'drop_ship';
+
+  @ApiProperty({ description: 'Priority', enum: ['normal', 'high', 'urgent'], required: false })
+  @IsIn(['normal', 'high', 'urgent'])
+  @IsOptional()
+  priority?: 'normal' | 'high' | 'urgent';
+
   @ApiProperty({ description: 'Shipping address', type: AddressDto, required: false })
   @ValidateNested()
   @Type(() => AddressDto)
   @IsOptional()
   shippingAddress?: AddressDto;
 
-  @ApiProperty({ description: 'Order items', type: [CreateFulfillmentOrderItemDto], required: false })
+  @ApiProperty({
+    description: 'Order items for standalone fulfillment orders. Omit when salesOrderId is provided.',
+    type: [CreateFulfillmentOrderItemDto],
+    required: false,
+  })
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => CreateFulfillmentOrderItemDto)
@@ -74,7 +99,7 @@ export class CreateFulfillmentOrderDto {
 
   /** @deprecated Use items instead */
   @ApiProperty({
-    description: 'Order lines (deprecated, use items instead)',
+    description: 'Order lines for standalone fulfillment orders (deprecated, use items instead)',
     type: [CreateFulfillmentOrderLineDto],
     required: false,
     deprecated: true,

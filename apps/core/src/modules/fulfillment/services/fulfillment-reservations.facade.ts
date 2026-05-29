@@ -4,6 +4,9 @@ import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.sch
 import { eq, and } from 'drizzle-orm';
 import { UnifiedReservationService } from '../../inventory/shared/services/unified-reservation.service';
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
+import { FULFILLMENT_EVENTS } from '../events';
+import { OutboxService } from '../outbox/outbox.service';
+import { PoliciesService } from './policies.service';
 
 @Injectable()
 export class FulfillmentReservationsFacade {
@@ -13,6 +16,8 @@ export class FulfillmentReservationsFacade {
     private readonly db: DbService<typeof wmsSchema>,
     private readonly unified: UnifiedReservationService,
     private readonly productSellableQuantity: ProductSellableQuantityService,
+    private readonly policies: PoliciesService,
+    private readonly outbox: OutboxService,
   ) {}
 
   private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
@@ -45,6 +50,7 @@ export class FulfillmentReservationsFacade {
           skuId: foi.skuId,
           warehouseId: fo.warehouseId,
           quantity: dto.quantity,
+          fulfillmentOrderItemId: foi.id,
           reason: 'Fulfillment order item reservation',
         },
         trx,
@@ -59,6 +65,8 @@ export class FulfillmentReservationsFacade {
         .update(wmsTables.fulfillmentOrders)
         .set({ totalReservedQty: (fo.totalReservedQty || 0) + dto.quantity, updatedAt: new Date() })
         .where(eq(wmsTables.fulfillmentOrders.id, fo.id));
+
+      await this.refreshReservationStatus(fo.id, trx);
 
       this.logger.log(`Reserved ${dto.quantity} of SKU ${foi.skuId} for FO ${fo.id} (FOI ${foi.id})`);
       return reservation;
@@ -112,6 +120,8 @@ export class FulfillmentReservationsFacade {
         .set({ totalReservedQty: Math.max(0, (fo.totalReservedQty || 0) - released), updatedAt: new Date() })
         .where(eq(wmsTables.fulfillmentOrders.id, fo.id));
 
+      await this.refreshReservationStatus(fo.id, trx);
+
       this.logger.log(`Unreserved ${released}/${dto.quantity} of SKU ${foi.skuId} for FO ${fo.id} (FOI ${foi.id})`);
     }, tx);
   }
@@ -150,6 +160,7 @@ export class FulfillmentReservationsFacade {
           skuId: to.skuId,
           warehouseId: toFo.warehouseId,
           quantity: dto.quantity,
+          fulfillmentOrderItemId: to.id,
           reason: `Transfer from FOI ${from.id} to ${to.id}`,
         },
         trx,
@@ -167,7 +178,77 @@ export class FulfillmentReservationsFacade {
         .set({ totalReservedQty: (toFo.totalReservedQty || 0) + dto.quantity, updatedAt: new Date() })
         .where(eq(wmsTables.fulfillmentOrders.id, toFo.id));
 
+      await this.refreshReservationStatus(toFo.id, trx);
+
       this.logger.log(`Transferred ${dto.quantity} from FOI ${from.id} to FOI ${to.id}`);
     }, tx);
+  }
+
+  private async refreshReservationStatus(fulfillmentOrderId: string, trx: DbTx): Promise<void> {
+    const fo = await trx.query.fulfillmentOrders.findFirst({
+      where: eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId),
+    });
+    if (!fo) return;
+
+    if (
+      [
+        'labeled',
+        'allocated',
+        'picking',
+        'picked',
+        'inspecting',
+        'invoiced',
+        'completed',
+        'forwarded',
+        'shipped',
+        'canceled',
+      ].includes(fo.status)
+    ) {
+      return;
+    }
+
+    const items = await trx.query.fulfillmentOrderItems.findMany({
+      where: eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId),
+    });
+    if (items.length === 0) return;
+
+    const totalReservedQty = items.reduce((sum, item) => sum + (item.reservedQty || 0), 0);
+    const reservationRequirements = await Promise.all(
+      items.map((item) => this.requiresStockReservation(item.variantId, trx)),
+    );
+    const allReserved = items.every(
+      (item, index) => !reservationRequirements[index] || (item.reservedQty || 0) >= item.qty,
+    );
+
+    await trx
+      .update(wmsTables.fulfillmentOrders)
+      .set({
+        status: allReserved ? 'ready' : ['ready', 'pending'].includes(fo.status) ? 'created' : fo.status,
+        totalReservedQty,
+        reservationFailureReason: allReserved ? null : fo.reservationFailureReason,
+        reservationFailureDetails: allReserved ? null : fo.reservationFailureDetails,
+        updatedAt: new Date(),
+      })
+      .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
+
+    if (allReserved && fo.status !== 'ready') {
+      await this.outbox.enqueue(
+        {
+          eventType: FULFILLMENT_EVENTS.READY,
+          aggregateType: 'fulfillment',
+          aggregateId: fulfillmentOrderId,
+          partitionKey: fulfillmentOrderId,
+          payload: { fulfillmentOrderId },
+        },
+        trx,
+      );
+    }
+  }
+
+  private async requiresStockReservation(variantId: string | null | undefined, trx: DbTx): Promise<boolean> {
+    if (!variantId) return true;
+
+    const policy = await this.policies.getVariantPolicy(variantId, trx);
+    return policy.inventoryManagement;
   }
 }

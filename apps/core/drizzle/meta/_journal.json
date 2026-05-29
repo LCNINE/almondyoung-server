@@ -36,6 +36,13 @@
       "when": 1779795134965,
       "tag": "20260526113214_add-product-sellable-quantity-projections",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1779873211058,
+      "tag": "20260527091331_add-fulfillment-reservation-failure-state",
+      "breakpoints": true
     }
   ]
 }

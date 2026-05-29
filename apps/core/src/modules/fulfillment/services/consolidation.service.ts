@@ -187,7 +187,7 @@ export class ConsolidationService {
       .where(
         and(
           eq(wmsTables.fulfillmentOrders.warehouseId, warehouseId),
-          eq(wmsTables.fulfillmentOrders.status, 'pending'),
+          inArray(wmsTables.fulfillmentOrders.status, ['ready', 'pending']),
           isNull(wmsTables.fulfillmentOrders.batchId),
           eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'in_house'),
         ),

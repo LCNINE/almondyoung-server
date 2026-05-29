@@ -305,8 +305,8 @@ export class FulfillmentOrderTransactionService {
         throw new BadRequestException(`Fulfillment order ${fulfillmentOrderId} not found`);
       }
 
-      if (fulfillmentOrder.status !== 'pending') {
-        throw new ConflictException(`FO must be in pending status. Current: ${fulfillmentOrder.status}`);
+      if (!['ready', 'pending'].includes(fulfillmentOrder.status)) {
+        throw new ConflictException(`FO must be ready for allocation. Current: ${fulfillmentOrder.status}`);
       }
 
       const batchRows = await trx
