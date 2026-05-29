@@ -94,7 +94,7 @@ export class ProductMatchingService {
           ],
         });
         this.logger.log(
-          `Created auto-ignored matching for ${payload.variantId}: ${result.created} created, ${result.skipped} skipped`,
+          `Created auto-void matching for ${payload.variantId}: ${result.created} created, ${result.skipped} skipped`,
         );
       } else {
         const result = await this.handleManualMatchingRequest({
@@ -251,15 +251,33 @@ export class ProductMatchingService {
               .limit(1);
 
             if (existing) {
-              this.logger.log(`Variant ${variant.id} matching already exists, skipping.`);
-              skipped++;
+              await trx
+                .delete(wmsTables.productVariantSkuLinks)
+                .where(eq(wmsTables.productVariantSkuLinks.productMatchingId, existing.id));
+
+              await trx
+                .update(wmsTables.productMatchings)
+                .set({
+                  masterId: payload.masterId,
+                  status: 'matched',
+                  strategy: 'void',
+                  isResolved: true,
+                  preStockSellable: true,
+                  alwaysSellableZeroStock: false,
+                  updatedAt: new Date(),
+                })
+                .where(eq(wmsTables.productMatchings.id, existing.id));
+
+              await this.productSellableQuantity.recalculateAndPublishForVariant(variant.id, trx);
+              this.logger.log(`Variant ${variant.id} existing matching resolved with void strategy.`);
+              created++;
               continue;
             }
 
             await trx.insert(wmsTables.productMatchings).values({
               variantId: variant.id,
               masterId: payload.masterId,
-              status: 'ignored',
+              status: 'matched',
               priority: 'normal',
               strategy: 'void',
               isResolved: true,
@@ -267,7 +285,7 @@ export class ProductMatchingService {
               alwaysSellableZeroStock: false,
             });
             await this.productSellableQuantity.recalculateAndPublishForVariant(variant.id, trx);
-            this.logger.log(`Variant ${variant.id} is not inventory managed. Marked as ignored with void strategy.`);
+            this.logger.log(`Variant ${variant.id} is not inventory managed. Resolved with void strategy.`);
             created++;
             continue;
           }
@@ -496,7 +514,16 @@ export class ProductMatchingService {
   }
 
   async resolveMatchingPending(matchingId: string, resolveDto: ResolveMatchingDto, tx?: DbTx) {
-    const { skuIds, skuMappings, ignore, strategy = 'variant', stockPolicy, isGift = false } = resolveDto;
+    const {
+      skuIds,
+      skuMappings,
+      ignore,
+      resolveAsVoid,
+      strategy = 'variant',
+      stockPolicy,
+      isGift = false,
+    } = resolveDto;
+    const hasSkuMappings = Boolean((skuIds && skuIds.length > 0) || (skuMappings && skuMappings.length > 0));
 
     const productMatching = await this.inTx(async (trx) => {
       const [row] = await trx
@@ -511,27 +538,13 @@ export class ProductMatchingService {
       throw new NotFoundException(`Product matching with ID ${matchingId} not found or already resolved.`);
     }
 
-    if (ignore) {
-      const [updatedMatching] = await this.inTx(
-        async (trx) =>
-          trx
-            .update(wmsTables.productMatchings)
-            .set({
-              status: 'ignored',
-              strategy: 'void',
-              isResolved: true,
-              preStockSellable: true,
-              alwaysSellableZeroStock: false,
-              updatedAt: new Date(),
-            })
-            .where(eq(wmsTables.productMatchings.id, matchingId))
-            .returning(),
-        tx,
-      ).then((r) => r);
-      this.logger.log(`Product matching ${matchingId} resolved as 'ignored' with void strategy.`);
-      await this.productSellableQuantity.recalculateAndPublishForVariant(productMatching.variantId, tx);
-      return updatedMatching;
-    } else if ((skuIds && skuIds.length > 0) || (skuMappings && skuMappings.length > 0)) {
+    if (!ignore && (resolveAsVoid || strategy === 'void') && hasSkuMappings) {
+      throw new BadRequestException('void strategy does not accept SKU mappings.');
+    }
+
+    if (ignore || resolveAsVoid || strategy === 'void') {
+      return this.resolveMatchingAsVoid(matchingId, productMatching.variantId, stockPolicy, tx);
+    } else if (hasSkuMappings) {
       return this.inTx(async (trx) => {
         let mappings: SkuQuantityMapping[];
 
@@ -587,8 +600,36 @@ export class ProductMatchingService {
         return updatedMatching;
       }, tx);
     } else {
-      throw new BadRequestException('매칭할 SKU 정보를 제공하거나, 무시 옵션을 선택해야 합니다.');
+      throw new BadRequestException('매칭할 SKU 정보를 제공하거나, void 전략으로 해소해야 합니다.');
     }
+  }
+
+  private async resolveMatchingAsVoid(matchingId: string, variantId: string, stockPolicy?: StockPolicyDto, tx?: DbTx) {
+    const finalStockPolicy = {
+      preStockSellable: stockPolicy?.preStockSellable ?? true,
+      alwaysSellableZeroStock: stockPolicy?.alwaysSellableZeroStock ?? false,
+    };
+
+    return this.inTx(async (trx) => {
+      const [updatedMatching] = await trx
+        .update(wmsTables.productMatchings)
+        .set({
+          status: 'matched',
+          strategy: 'void',
+          isResolved: true,
+          ...finalStockPolicy,
+          updatedAt: new Date(),
+        })
+        .where(eq(wmsTables.productMatchings.id, matchingId))
+        .returning();
+
+      this.logger.log(
+        `Product matching ${matchingId} resolved as 'matched' with void strategy. ` +
+          `Stock Policy: ${JSON.stringify(finalStockPolicy)}`,
+      );
+      await this.productSellableQuantity.recalculateAndPublishForVariant(variantId, trx);
+      return updatedMatching;
+    }, tx);
   }
 
   async setMatchingPriority(matchingId: string, priority: 'normal' | 'high', tx?: DbTx) {
