@@ -60,14 +60,19 @@
 ### 판매주문 (Core Sales Order)
 - 정의: Payment Accepted 된 채널 주문을 Core 의 주문 처리 모델로 번역해 기록한 주문.
 - 판매주문 생성은 아직 창고 출고가 가능하다는 뜻이 아니다. 판매상품 중 재고상품 매칭이 없으면 이후 출고주문 생성이 실패하거나 대기할 수 있다.
+- Payment Accepted 된 채널 주문이 Core 에 들어오면 Core 는 판매주문 생성 뒤 출고주문 생성까지 자동으로 시도한다. 판매채널이 Core/WMS 를 직접 호출하지 않게 격리하는 대신, Core 내부 전환이 자동으로 이어져야 한다.
 - 같은 채널 주문의 결제 상태가 `AUTHORIZED` 에서 `CAPTURED` 로 강해져도 새 판매주문을 만들지 않는다. Core 판매주문 정체성은 `(salesChannel, channelOrderId)` 이며, 결제 상태 변화는 같은 주문의 update 다.
-- _Avoid_: Medusa order 를 판매주문과 같은 정체성으로 보기, 판매주문 생성을 "재고주문 생성"이라고 부르기.
+- _Avoid_: Medusa order 를 판매주문과 같은 정체성으로 보기, 판매주문 생성을 출고주문/재고주문 생성이라고 부르기.
 
-### 출고주문 (Fulfillment Order)
+### 출고주문 (Fulfillment Order / 재고주문)
 - 정의: 판매주문 전체 또는 일부를 창고 작업과 재고 차감 대상으로 넘기기 위해 만든 WMS/Core 객체.
+- `재고주문`은 별도 도메인 객체가 아니라 출고주문의 현장/레거시 별칭이다. 문서와 코드에서는 가능하면 `출고주문`을 canonical term 으로 쓴다.
 - 출고주문 생성은 판매상품 ↔ 재고상품 매칭을 필요로 하며, 매칭이 없으면 판매주문이 존재해도 출고주문으로 전환될 수 없다.
+- Payment Accepted 주문의 최초 출고주문 생성이 매칭 누락 때문에 실패했다면, 실패는 운영자가 볼 수 있는 **출고주문 생성 대기** 상태로 남아야 한다. 이후 해당 판매상품 ↔ 재고상품 매칭이 등록되면 Core 는 관련 판매주문의 출고주문 생성을 다시 자동 시도한다.
+- 출고주문 생성 대기는 암묵적으로 오래된 판매주문을 다시 훑는 규칙이 아니라, 어떤 판매주문이 어떤 variant 매칭을 기다리는지 추적되는 durable backlog 여야 한다.
+- SKU 링크가 없다는 사실만으로 "물리 출고 불필요" 라고 판단하지 않는다. 판매상품의 상품매칭 전략이 명시적으로 재고상품 비매칭이면 출고주문 라인에서 제외하고, 상품매칭 전략 자체가 없거나 미해결이면 출고주문 생성 대기/매칭 누락으로 남긴다.
 - 매칭이 있으면 출고주문 자체는 생성될 수 있다. 실제 재고 부족은 reservation 단계에서 막히며, 이 경우 출고주문은 존재하지만 출고 불가 상태로 남는다.
-- _Avoid_: 판매주문과 출고주문을 둘 다 "재고주문"이라고 부르기.
+- _Avoid_: 판매주문을 재고주문이라고 부르기.
 
 ### 재고예약 (Reservation)
 - 정의: 특정 출고주문 또는 이동 작업을 위해 SKU 의 판매 가능 재고 일부를 점유하는 행위.
@@ -100,10 +105,18 @@
 - 둘 사이 매핑은 `apps/core/src/modules/product-matching/` 모듈이 전담한다.
 - 링크 테이블: `productVariantSkuLinks` (현재 `wmsTables` 스키마 그룹에 묶여있는 것은 [[project-core-wms-pim-merge]] 통합 흔적).
 - 한 variant 가 여러 SKU 와 연결될 수 있고 그 반대도 가능.
+- 모든 판매상품 variant 는 궁극적으로 상품매칭 전략을 가져야 한다. 전략은 두 부류다: (1) **SKU 구성 매칭** — 재고상품과 구성 수량을 명시한다. (2) **재고상품 비매칭** — 이 판매상품은 재고상품과 매칭되지 않음을 명시한다.
+- 상품매칭 전략이 없거나 아직 결정되지 않은 판매상품은 미매칭이다. 유료 주문 라인이 미매칭이면 조용히 제외하지 않고 출고주문 생성 대기/매칭 누락으로 남긴다.
+- 상품매칭의 canonical 상태는 `status` 보다 `strategy` 로 해석한다. `strategy='variant'` + SKU links 는 SKU 구성 매칭, `strategy='void'` 는 재고상품 비매칭 명시, `pending` 또는 전략 없음은 미결정이다.
+- 현재 스키마에서는 전략 결정 완료를 `status='matched'` 로 저장한다. 따라서 SKU 구성 매칭은 `status='matched'` + `strategy='variant'`, 재고상품 비매칭은 `status='matched'` + `strategy='void'` 로 기록한다. 이때 `matched` 는 "SKU 와 매칭됨" 이 아니라 legacy 필드의 "전략 결정 완료" 의미다.
+- `void` 전략은 재고상품과의 매칭이 없음을 명시하므로 SKU 재고에 구애받지 않고 판매 가능하다.
+- `void` 는 철저히 재고상품 매칭 전략이며 digital asset 매칭과 무관하다. 디지털/서비스/기타 비물리 이행 여부는 SKU 매칭의 `void` 여부가 아니라 해당 도메인의 매칭/정책이 따로 결정한다.
+- `ignored` 는 기존 코드의 legacy 상태명이며 canonical 도메인 용어로 쓰지 않는다. 의도상 매칭대기 목록에서 잠시 치우는 운영 상태였고, 상품매칭 결정으로는 `pending` 과 동일한 미결정이다. 이런 숨김 기능이 필요하면 매칭 상태값이 아니라 별도 운영 플래그로 둔다.
 
 ### 판매상품 판매가능수량 (Product Sellable Quantity)
 - 정의: 특정 판매상품 variant 를 고객에게 몇 개까지 판매할 수 있는지 나타내는 판매 관점의 수량.
 - 판매상품 판매가능수량은 재고상품 재고량에 판매상품↔재고상품 매칭과 구성 수량을 적용해 산출한다. 예: 1호~4호 립스틱 SKU 를 각 1개씩 쓰는 세트 variant 의 판매가능수량은 네 SKU 의 판매가능 재고 중 최솟값이다.
+- 판매상품의 상품매칭 전략이 재고상품 비매칭(`void`)이면 SKU 재고에 묶이지 않으므로 판매가능수량은 무제한으로 본다. 단, 상품 활성 상태와 판매기간 같은 판매 조건은 여전히 적용된다.
 - SKU 재고, 판매상품↔재고상품 매칭, variant 활성 상태, 채널 노출 정책 등 의존 데이터 변경으로 판매가능수량이 달라지면 Core 는 판매상품 판매가능수량 변경 이벤트를 발행한다.
 - 판매상품 판매가능수량 변경 이벤트는 원인 이벤트가 아니라 state projection 이벤트다. 소비자는 왜 바뀌었는지가 아니라 현재 최종 판매가능수량을 받는다.
 - _Avoid_: SKU 하나의 물리 재고량을 그대로 판매상품 재고량으로 노출하기.
@@ -123,6 +136,7 @@
   - 매칭 정션 (`productVariantDigitalAssetLinks`) — variant ↔ asset M:M. SKU 매칭의 `productVariantSkuLinks` 와 대칭.
 - **fulfillment 의 한 수단이지 새로운 "상품 종류" 가 아니다.** WMS 의 "택배" 와 동격: 같은 variant 가 SKU 매칭이 있으면 택배 fulfillment, asset 매칭이 있으면 라이브러리 fulfillment. 둘 다 있으면 둘 다 발생 (예: 장치 + 사용법 강의 동영상).
 - **fulfillment 방식은 catalog 의 책임이 아니다.** variant/master 에 fulfillment mode 컬럼을 두지 않는다. **매칭의 존재 자체가** fulfillment 방식을 결정. 잔재의 `salesVariantPolicies.fulfillmentMode` 와 `productMatchings.inventoryManagement` (`true: 물리, false: 디지털` 주석) 는 폐기 대상.
+- SKU 매칭의 `void` 는 digital asset 매칭을 뜻하지 않는다. 물리 SKU 출고가 필요 없다는 뜻일 뿐이며, 라이브러리 fulfillment 는 `productVariantDigitalAssetLinks` 로 별도 결정된다.
 - 매칭 단위: **variant ↔ digital asset (M:M)**. SKU 매칭(`productVariantSkuLinks`)과 같은 단위. 정션 테이블 가칭 `productVariantAssetLinks`. variant 별로 콘텐츠가 다를 수 있음 (예: 시술동의서 양식 + 컬러 옵션은 컬러마다 다른 파일).
 - 매칭은 **master 버전 격리 (CoW) 대상.** variant 가 CoW 로 clone 되면 asset 정션도 함께 clone — pricing rule cascading 과 동일 패턴. publish 시 옵션 조합이 같으면 자동 승계, 정체성이 다르면 unmatched 로 남김 (SKU 매칭의 publish-time clone 과 대칭).
 - **Ownership grant 시점: `OrderCreated` 이벤트 도착 + Payment Accepted 상태.** `handleOrderCreated` 의 같은 트랜잭션 안에서 ownership row 작성. WMS 의 `pending → confirmed` 상태 전이(`POST /sales-orders/:id/confirm`, 운영자의 출고확정 액션) 와 무관 — 그건 별개 사건. 디지털은 **`fulfillment_orders` 를 거치지 않는다** — fulfillment_orders 는 sku/출고에 깊게 묶인 WMS 의 객체이고, 디지털은 "재고주문" 단계 자체가 존재하지 않음. 자세한 매커니즘은 ADR-0010.

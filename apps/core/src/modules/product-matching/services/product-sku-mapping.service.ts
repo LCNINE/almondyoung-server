@@ -276,7 +276,10 @@ export class ProductSkuMappingService {
         .select({
           masterId: wmsTables.productMatchings.masterId,
           totalVariants: sql<number>`count(*)::int`,
-          matchedVariants: sql<number>`count(*) FILTER (WHERE ${wmsTables.productMatchings.isResolved} = true)::int`,
+          matchedVariants: sql<number>`count(*) FILTER (
+            WHERE ${wmsTables.productMatchings.status} = 'matched'
+              AND ${wmsTables.productMatchings.strategy} IN ('variant', 'void')
+          )::int`,
           pendingVariants: sql<number>`count(*) FILTER (WHERE ${wmsTables.productMatchings.status} = 'pending')::int`,
           ignoredVariants: sql<number>`count(*) FILTER (WHERE ${wmsTables.productMatchings.status} = 'ignored')::int`,
         })

@@ -9,6 +9,8 @@ describe('FulfillmentsService', () => {
   const warehouseId = '33333333-3333-3333-3333-333333333333';
   const variantId = '44444444-4444-4444-4444-444444444444';
   const skuId = '55555555-5555-5555-5555-555555555555';
+  const voidVariantId = '66666666-6666-6666-6666-666666666666';
+  const voidSalesOrderLineId = '77777777-7777-7777-7777-777777777777';
 
   type FakeState = {
     salesOrders: Array<Record<string, any>>;
@@ -91,6 +93,8 @@ describe('FulfillmentsService', () => {
     options: {
       lines?: Array<Record<string, any>>;
       links?: Array<{ skuId: string; quantity: number }> | null;
+      matching?: Record<string, any> | null;
+      matchingsByVariant?: Record<string, Record<string, any> | null>;
       policy?: {
         inventoryManagement: boolean;
         preStockSellable: boolean;
@@ -124,13 +128,25 @@ describe('FulfillmentsService', () => {
     const tx = makeTx(state);
     const db = { db: { transaction: jest.fn((fn) => fn(tx)) } };
     const productSkuMapping = {
-      getByVariant: jest.fn().mockResolvedValue(
-        options.links === null
-          ? null
-          : {
-              links: options.links ?? [{ skuId, quantity: 2 }],
-            },
-      ),
+      getByVariant: jest.fn().mockImplementation((requestedVariantId: string) => {
+        if (options.matchingsByVariant && requestedVariantId in options.matchingsByVariant) {
+          return Promise.resolve(options.matchingsByVariant[requestedVariantId]);
+        }
+
+        if (options.matching !== undefined) {
+          return Promise.resolve(options.matching);
+        }
+
+        return Promise.resolve(
+          options.links === null
+            ? null
+            : {
+                status: 'matched',
+                strategy: 'variant',
+                links: options.links ?? [{ skuId, quantity: 2 }],
+              },
+        );
+      }),
       getMappingSnapshot: jest.fn(),
     };
     const availability = {
@@ -312,6 +328,80 @@ describe('FulfillmentsService', () => {
       expect.anything(),
     );
     expect(outbox.enqueue.mock.calls.map(([event]) => event.eventType)).toContain('FulfillmentReady');
+  });
+
+  it('matched + void sales order line은 물리 출고 item 없이 제외한다', async () => {
+    const { service, state, unifiedReservation, outbox } = makeService({
+      matching: {
+        status: 'matched',
+        strategy: 'void',
+        links: [],
+      },
+    });
+
+    const result = await service.create({ salesOrderId, warehouseId });
+
+    expect(result).toMatchObject({
+      id: 'fo-1',
+      status: 'completed',
+      totalItems: 0,
+      totalQty: 0,
+      totalReservedQty: 0,
+    });
+    expect(state.fulfillmentOrderItems).toHaveLength(0);
+    expect(unifiedReservation.reserveStock).not.toHaveBeenCalled();
+    expect(outbox.enqueue.mock.calls.map(([event]) => event.eventType)).toEqual(['FulfillmentCreated']);
+  });
+
+  it('matched + void line과 variant line이 섞인 주문은 물리 출고 item만 생성한다', async () => {
+    const { service, state, unifiedReservation } = makeService({
+      lines: [
+        {
+          id: salesOrderLineId,
+          salesOrderId,
+          variantId,
+          quantity: 1,
+          mappingSnapshotId: null,
+        },
+        {
+          id: voidSalesOrderLineId,
+          salesOrderId,
+          variantId: voidVariantId,
+          quantity: 3,
+          mappingSnapshotId: null,
+        },
+      ],
+      matchingsByVariant: {
+        [variantId]: {
+          status: 'matched',
+          strategy: 'variant',
+          links: [{ skuId, quantity: 2 }],
+        },
+        [voidVariantId]: {
+          status: 'matched',
+          strategy: 'void',
+          links: [],
+        },
+      },
+    });
+
+    const result = await service.create({ salesOrderId, warehouseId });
+
+    expect(result).toMatchObject({
+      id: 'fo-1',
+      status: 'ready',
+      totalItems: 1,
+      totalQty: 2,
+      totalReservedQty: 2,
+    });
+    expect(state.fulfillmentOrderItems).toHaveLength(1);
+    expect(state.fulfillmentOrderItems[0]).toMatchObject({
+      salesOrderLineId,
+      variantId,
+      skuId,
+      qty: 2,
+    });
+    expect(unifiedReservation.reserveStock).toHaveBeenCalledTimes(1);
   });
 
   it('inventoryManagement=false variant는 물리 재고 예약 없이 ready로 전환한다', async () => {

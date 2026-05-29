@@ -434,16 +434,29 @@ export class ProductVersionsService {
       const prevMatching = prevMatchingsByVariantId.get(twin.variantId);
       if (!prevMatching) continue;
 
+      const inheritedMatchingState =
+        prevMatching.status === 'ignored'
+          ? {
+              status: 'pending' as const,
+              strategy: null,
+              isResolved: false,
+            }
+          : {
+              status: prevMatching.status,
+              strategy: prevMatching.strategy,
+              isResolved: prevMatching.isResolved,
+            };
+
       const newMatchingId = uuidv7();
       await tx.insert(productMatchings).values({
         id: newMatchingId,
         variantId: nv.variantId,
         masterId: null,
         skuGroupId: prevMatching.skuGroupId,
-        status: prevMatching.status,
+        status: inheritedMatchingState.status,
         priority: prevMatching.priority,
-        strategy: prevMatching.strategy,
-        isResolved: prevMatching.isResolved,
+        strategy: inheritedMatchingState.strategy,
+        isResolved: inheritedMatchingState.isResolved,
         preStockSellable: prevMatching.preStockSellable,
         alwaysSellableZeroStock: prevMatching.alwaysSellableZeroStock,
       });
@@ -456,7 +469,7 @@ export class ProductVersionsService {
         .from(productVariantSkuLinks)
         .where(eq(productVariantSkuLinks.productMatchingId, prevMatching.id));
 
-      if (prevLinks.length > 0) {
+      if (prevMatching.status !== 'ignored' && prevLinks.length > 0) {
         await tx.insert(productVariantSkuLinks).values(
           prevLinks.map((l) => ({
             productMatchingId: newMatchingId,

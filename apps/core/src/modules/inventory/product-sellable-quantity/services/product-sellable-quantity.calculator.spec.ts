@@ -39,6 +39,52 @@ describe('calculateProductSellableQuantity', () => {
     expect(result.reason).toBe('SELLABLE');
   });
 
+  it('matched + void 전략은 SKU 링크 없이 재고 비제한 판매가능수량으로 계산한다', () => {
+    const result = calculateProductSellableQuantity(
+      makeInput({
+        matching: {
+          id: 'matching-1',
+          status: 'matched',
+          strategy: 'void',
+          preStockSellable: false,
+          alwaysSellableZeroStock: false,
+        },
+        components: [],
+      }),
+      { now },
+    );
+
+    expect(result.sellableQuantity).toBe(UNBOUNDED_SELLABLE_QUANTITY);
+    expect(result.stockBoundQuantity).toBe(UNBOUNDED_SELLABLE_QUANTITY);
+    expect(result.isSellable).toBe(true);
+    expect(result.reason).toBe('SELLABLE');
+  });
+
+  it('matched + void 전략도 판매기간 전이면 판매불가로 계산한다', () => {
+    const result = calculateProductSellableQuantity(
+      makeInput({
+        activeVersion: {
+          masterId: 'master-1',
+          versionId: 'version-1',
+          salesStartDate: new Date('2026-06-01T00:00:00.000Z'),
+        },
+        matching: {
+          id: 'matching-1',
+          status: 'matched',
+          strategy: 'void',
+          preStockSellable: false,
+          alwaysSellableZeroStock: false,
+        },
+        components: [],
+      }),
+      { now },
+    );
+
+    expect(result.sellableQuantity).toBe(0);
+    expect(result.isSellable).toBe(false);
+    expect(result.reason).toBe('SALES_NOT_STARTED');
+  });
+
   it('multi-SKU 세트 매칭은 가장 부족한 컴포넌트 수량으로 제한된다', () => {
     const result = calculateProductSellableQuantity(
       makeInput({
@@ -61,6 +107,46 @@ describe('calculateProductSellableQuantity', () => {
     expect(result.sellableQuantity).toBe(0);
     expect(result.isSellable).toBe(false);
     expect(result.reason).toBe('MATCHING_MISSING');
+  });
+
+  it('pending 매칭은 전략 미결정 상태로 판매불가 0을 반환한다', () => {
+    const result = calculateProductSellableQuantity(
+      makeInput({
+        matching: {
+          id: 'matching-1',
+          status: 'pending',
+          strategy: null,
+          preStockSellable: true,
+          alwaysSellableZeroStock: false,
+        },
+        components: [],
+      }),
+      { now },
+    );
+
+    expect(result.sellableQuantity).toBe(0);
+    expect(result.isSellable).toBe(false);
+    expect(result.reason).toBe('MATCHING_PENDING');
+  });
+
+  it('legacy ignored 매칭은 void 전략이 있어도 미해결 상태로 판매불가 0을 반환한다', () => {
+    const result = calculateProductSellableQuantity(
+      makeInput({
+        matching: {
+          id: 'matching-1',
+          status: 'ignored',
+          strategy: 'void',
+          preStockSellable: true,
+          alwaysSellableZeroStock: false,
+        },
+        components: [],
+      }),
+      { now },
+    );
+
+    expect(result.sellableQuantity).toBe(0);
+    expect(result.isSellable).toBe(false);
+    expect(result.reason).toBe('MATCHING_IGNORED');
   });
 
   it('컴포넌트 재고가 0이면 판매가능수량 0으로 제한된다', () => {
