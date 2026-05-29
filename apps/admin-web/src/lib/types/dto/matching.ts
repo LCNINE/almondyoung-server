@@ -2,7 +2,7 @@
 // 상품 매칭 관련 DTO 타입 정의
 
 export type MatchingStatus = 'pending' | 'matched' | 'ignored';
-export type MatchingStrategy = 'void' | 'variant' | 'option';
+export type MatchingStrategy = 'void' | 'variant';
 export type MatchingPriority = 'normal' | 'high';
 
 export interface StockPolicyDto {
@@ -24,8 +24,9 @@ export interface OptionMappingDto {
 export interface ResolveMatchingDto {
   skuIds?: string[];
   skuMappings?: SkuMappingDto[];
-  ignore: boolean;
-  strategy: MatchingStrategy;
+  ignore?: boolean;
+  resolveAsVoid?: boolean;
+  strategy?: MatchingStrategy;
   stockPolicy: StockPolicyDto;
   isGift: boolean;
 }
@@ -79,6 +80,7 @@ export interface MatchingDto {
     customerPhone?: string;
   };
   matchedSkus?: SkuMappingDto[];
+  links?: SkuMappingDto[];
   variant?: {
     id: string;
     name: string;
@@ -129,6 +131,7 @@ export interface OrderLineDto {
   orderDate: string;
   matchingId?: string;
   matchingStatus?: MatchingStatus;
+  matchingStrategy?: MatchingStrategy;
   matchedSkus: OrderLineMatchedSku[];
 }
 
@@ -152,11 +155,15 @@ export interface OrderLinesQuery {
 }
 
 export interface VariantMatchingDto {
+  id?: string;
   variantId: string;
   status: MatchingStatus;
+  strategy?: MatchingStrategy;
+  priority?: MatchingPriority;
   stockPolicy: StockPolicyDto;
   isGift: boolean;
   matchedSkus?: SkuMappingDto[];
+  links?: SkuMappingDto[];
   createdAt: string;
   updatedAt: string;
 }

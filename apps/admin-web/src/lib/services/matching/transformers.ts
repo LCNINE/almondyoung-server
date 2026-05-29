@@ -1,21 +1,36 @@
 // src/lib/services/matching/transformers.ts
 
-import type { MatchingDto, MatchingsResponseDto, ResolveMatchingDto, StockPolicyDto } from '@/lib/types/dto/matching';
+import type {
+  MatchingDto,
+  MatchingsResponseDto,
+  ResolveMatchingDto,
+  StockPolicyDto,
+} from '@/lib/types/dto/matching';
+import {
+  getMatchingStrategyDecisionLabel,
+  getMatchingStrategyDecisionColor,
+} from './strategy-decision';
+
+export {
+  getMatchingStrategyDecision,
+  getMatchingStrategyDecisionLabel,
+  getMatchingStrategyDecisionColor,
+  isMatchingStrategyDecisionComplete,
+} from './strategy-decision';
 
 export const getMatchingStatusLabel = (status: string): string => {
   const map: Record<string, string> = {
-    pending: '매칭 대기',
-    matched: '매칭 완료',
-    ignored: '무시됨',
+    pending: '전략 미결정',
+    matched: '전략 결정 완료',
+    ignored: '레거시 감사 대상',
   };
   return map[status] ?? status;
 };
 
 export const getMatchingStrategyLabel = (strategy: string): string => {
   const map: Record<string, string> = {
-    void: '무효',
-    variant: 'Variant',
-    option: '옵션별',
+    void: '재고상품 비매칭',
+    variant: 'SKU 구성 매칭',
   };
   return map[strategy] ?? strategy;
 };
@@ -44,6 +59,7 @@ export const transformMatchingForTable = (matching: MatchingDto) => ({
   ...matching,
   statusLabel: getMatchingStatusLabel(matching.status),
   strategyLabel: getMatchingStrategyLabel(matching.strategy),
+  decisionLabel: getMatchingStrategyDecisionLabel(matching),
   priorityLabel: getPriorityLabel(matching.priority),
   salesChannelLabel: matching.order?.salesChannel
     ? getSalesChannelLabel(matching.order.salesChannel)
@@ -81,6 +97,8 @@ export const getMatchingStatusColor = (status: string): string => {
   };
   return map[status] ?? 'text-neutral-600 bg-neutral-100';
 };
+
+export const getMatchingDecisionColor = getMatchingStrategyDecisionColor;
 
 export const getPriorityColor = (priority: string): string => {
   const map: Record<string, string> = {

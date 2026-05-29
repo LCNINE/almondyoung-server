@@ -22,9 +22,9 @@ export const transformInvoice = (dto: any) => dto;
  */
 export const getMatchingStatusLabel = (status: string): string => {
   const statusMap: Record<string, string> = {
-    pending: '매칭 대기',
-    matched: '매칭 완료',
-    ignored: '무시됨',
+    pending: '전략 미결정',
+    matched: '전략 결정 완료',
+    ignored: '레거시 감사 대상',
   };
   return statusMap[status] || status;
 };
@@ -34,9 +34,8 @@ export const getMatchingStatusLabel = (status: string): string => {
  */
 export const getMatchingStrategyLabel = (strategy: string): string => {
   const strategyMap: Record<string, string> = {
-    void: '무효',
-    variant: 'Variant',
-    option: '옵션별',
+    void: '재고상품 비매칭',
+    variant: 'SKU 구성 매칭',
   };
   return strategyMap[strategy] || strategy;
 };

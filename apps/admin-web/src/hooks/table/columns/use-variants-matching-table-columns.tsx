@@ -6,8 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import type { MatchingDto } from '@/lib/types/dto/matching';
 import {
-  getMatchingStatusLabel,
-  getMatchingStatusColor,
+  getMatchingStrategyDecisionLabel,
+  getMatchingStrategyDecisionColor,
   getMatchingStrategyLabel,
   getPriorityLabel,
   getPriorityColor,
@@ -57,15 +57,25 @@ export const useVariantsMatchingTableColumns = (actions: RowActions) => {
         },
       }),
       columnHelper.accessor('status', {
-        header: '상태',
-        cell: ({ getValue }) => {
-          const status = getValue();
+        header: '전략 결정',
+        cell: ({ row }) => {
+          const { status, strategy, matchedSkus, links } = row.original;
           return (
             <Badge
-              className={`text-xs ${getMatchingStatusColor(status)}`}
+              className={`text-xs ${getMatchingStrategyDecisionColor({
+                status,
+                strategy,
+                matchedSkus,
+                links,
+              })}`}
               variant="outline"
             >
-              {getMatchingStatusLabel(status)}
+              {getMatchingStrategyDecisionLabel({
+                status,
+                strategy,
+                matchedSkus,
+                links,
+              })}
             </Badge>
           );
         },
@@ -85,7 +95,7 @@ export const useVariantsMatchingTableColumns = (actions: RowActions) => {
         },
       }),
       columnHelper.accessor('strategy', {
-        header: '전략',
+        header: '매칭 전략',
         cell: ({ getValue }) => (
           <span className="text-xs text-muted-foreground">
             {getMatchingStrategyLabel(getValue())}
@@ -94,7 +104,18 @@ export const useVariantsMatchingTableColumns = (actions: RowActions) => {
       }),
       columnHelper.accessor('matchedSkus', {
         header: 'SKU 매핑',
-        cell: ({ getValue }) => {
+        cell: ({ getValue, row }) => {
+          if (
+            row.original.status === 'matched' &&
+            row.original.strategy === 'void'
+          ) {
+            return (
+              <span className="text-xs text-muted-foreground">
+                SKU 연결 불필요
+              </span>
+            );
+          }
+
           const skus = getValue();
           if (!skus?.length)
             return (

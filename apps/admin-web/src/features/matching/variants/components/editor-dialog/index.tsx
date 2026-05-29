@@ -23,8 +23,8 @@ import {
   useUpsertVariantMatching,
   useSetMatchingPriority,
   useChangeMatchingStrategy,
-  getMatchingStatusLabel,
-  getMatchingStatusColor,
+  getMatchingStrategyDecisionLabel,
+  getMatchingStrategyDecisionColor,
   createDefaultStockPolicy,
 } from '@/lib/services/matching';
 import { SkuLookupSection } from '@/features/matching/products/components/variant-editor-dialog/sku-lookup-section';
@@ -37,6 +37,13 @@ interface VariantMatchingEditorDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
+
+const getCurrentSkuLinks = (
+  source?: {
+    matchedSkus?: SkuLinkState[];
+    links?: SkuLinkState[];
+  } | null
+) => (source?.matchedSkus?.length ? source.matchedSkus : (source?.links ?? []));
 
 export function VariantMatchingEditorDialog({
   matching,
@@ -56,11 +63,12 @@ export function VariantMatchingEditorDialog({
 
   useEffect(() => {
     if (matching) {
+      const currentSkuLinks = getCurrentSkuLinks(matching);
       setLinks(
-        matching.matchedSkus?.map((s) => ({
+        currentSkuLinks.map((s) => ({
           skuId: s.skuId,
           quantity: s.quantity,
-        })) ?? []
+        }))
       );
       setStrategyState(matching.strategy ?? 'variant');
       setPriorityState(matching.priority ?? 'normal');
@@ -71,13 +79,14 @@ export function VariantMatchingEditorDialog({
   const handleSave = async () => {
     if (!matching) return;
 
+    const currentSkuLinks = getCurrentSkuLinks(matching);
     const changedLinks =
       JSON.stringify(links) !==
       JSON.stringify(
-        matching.matchedSkus?.map((s) => ({
+        currentSkuLinks.map((s) => ({
           skuId: s.skuId,
           quantity: s.quantity,
-        })) ?? []
+        }))
       );
     const changedPolicy =
       JSON.stringify(stockPolicy) !== JSON.stringify(matching.stockPolicy);
@@ -138,10 +147,20 @@ export function VariantMatchingEditorDialog({
           <div className="space-y-4 py-2">
             {matching?.status && (
               <Badge
-                className={`text-xs ${getMatchingStatusColor(matching.status)}`}
+                className={`text-xs ${getMatchingStrategyDecisionColor({
+                  status: matching.status,
+                  strategy: matching.strategy,
+                  matchedSkus: matching.matchedSkus,
+                  links: matching.links,
+                })}`}
                 variant="outline"
               >
-                {getMatchingStatusLabel(matching.status)}
+                {getMatchingStrategyDecisionLabel({
+                  status: matching.status,
+                  strategy: matching.strategy,
+                  matchedSkus: matching.matchedSkus,
+                  links: matching.links,
+                })}
               </Badge>
             )}
 
@@ -149,7 +168,9 @@ export function VariantMatchingEditorDialog({
 
             <Separator />
 
-            {matching?.variantId && <VariantAssetSection variantId={matching.variantId} />}
+            {matching?.variantId && (
+              <VariantAssetSection variantId={matching.variantId} />
+            )}
 
             <Separator />
 
