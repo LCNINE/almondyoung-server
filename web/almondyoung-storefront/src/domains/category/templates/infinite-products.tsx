@@ -1,7 +1,7 @@
 "use client"
 
 import { Spinner } from "@/components/shared/spinner"
-import { SortOptions } from "@/domains/category/components/refinement-list/sort-products"
+import type { SortOptions } from "@/domains/category/components/refinement-list/sort-products"
 import {
   PRODUCT_LIMIT,
   useCategoryProducts,

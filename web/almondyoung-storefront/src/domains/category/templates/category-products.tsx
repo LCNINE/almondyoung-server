@@ -5,8 +5,12 @@ import { isMembershipGroup } from "@/lib/utils/membership-group"
 import { getWishlist } from "@lib/api/users/wishlist"
 import { PackageX } from "lucide-react"
 import { getTranslations } from "next-intl/server"
-import { SortOptions } from "../components/refinement-list/sort-products"
-import { isSortedOption, mapSortParams } from "../utils/sort-mapping"
+import type { SortOptions } from "../components/refinement-list/sort-products"
+import {
+  isSortedOption,
+  mapSortParams,
+  normalizeCategorySort,
+} from "../utils/sort-mapping"
 import InfiniteProducts from "./infinite-products"
 
 const PRODUCT_LIMIT = 12
@@ -30,7 +34,7 @@ export default async function CategoryProducts({
     return null
   }
 
-  const effectiveSortBy: SortOptions = sortBy ?? "created_at"
+  const effectiveSortBy = normalizeCategorySort(sortBy)
 
   // SSR 첫 페이지(page 1)만 서버에서 조회. 이후 페이지는 클라이언트 무한 로드가 담당한다.
   const {
@@ -67,7 +71,7 @@ export default async function CategoryProducts({
     const t = await getTranslations("category.products")
     return (
       <div className="flex min-h-[360px] flex-col items-center justify-center text-center">
-        <PackageX className="w-12 h-12 mb-4 text-gray-300" strokeWidth={1.5} />
+        <PackageX className="mb-4 h-12 w-12 text-gray-300" strokeWidth={1.5} />
         <p className="text-[15px] font-medium text-gray-700">
           {t("emptyTitle")}
         </p>

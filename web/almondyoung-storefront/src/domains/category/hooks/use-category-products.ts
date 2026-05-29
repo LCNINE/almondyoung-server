@@ -1,6 +1,6 @@
 "use client"
 
-import { SortOptions } from "@/domains/category/components/refinement-list/sort-products"
+import type { SortOptions } from "@/domains/category/components/refinement-list/sort-products"
 import {
   isSortedOption,
   mapSortParams,
