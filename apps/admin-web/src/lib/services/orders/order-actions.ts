@@ -1,39 +1,30 @@
 // src/lib/services/orders/order-actions.ts
 // 주문 관련 액션 헬퍼 함수들
 
-// TODO: WMS API 추가 필요
+// TODO: Core 주문 후속 사건 API 추가 필요
 // ================================================================================================
-// 현재 WMS의 PATCH /sales-orders/:id (UpdateSalesOrderDto)는 다음 필드만 지원:
-//   - customer (CustomerDto)
-//   - shippingAddress (AddressDto)
-//   - totalAmount (number)
-//   - shippingFee (number)
+// 현재 Core의 PATCH /sales-orders/:id (UpdateSalesOrderDto)는 운영 메모처럼 계약 외 필드만 수정한다.
+// Payment Accepted 이후 SalesOrder의 고객/배송지/금액/원 라인은 수락 당시 계약 스냅샷이므로 직접
+// 수정하지 않는다.
+//
+// 현재 지원 필드:
 //   - processedAt (string)
 //   - memo (string)
 //
-// ❌ items/lines 필드가 없어서 주문 상품 추가/삭제/수정이 불가능합니다.
+// ❌ 수락된 주문의 items/lines 추가/삭제/수정은 SalesOrder 자체 PATCH 대상이 아닙니다.
 //
-// 필요한 WMS API 추가 사항:
+// 필요한 Core API/워크플로우:
 // ------------------------------------------------------------------------------------------------
-// 1. PATCH /sales-orders/:id/lines
-//    - 주문 라인(상품) 전체를 교체하는 API
-//    - Request Body: { lines: CreateSalesOrderLineDto[] }
-//    - 기존 라인을 모두 삭제하고 새 라인으로 교체
-//    - 또는 개별 라인 추가/삭제/수정 API를 분리해도 됨
+// 1. POST /sales-order-amendments
+//    - Payment Accepted 이후 상품 추가/대체/수량/금액 보정 사건 기록
+//    - 원 sales_order_lines는 보존하고 delta와 후속 출고/환불/CS 연결을 생성
 //
-// 2. POST /sales-orders/:id/lines
-//    - 개별 상품 추가 API
-//    - Request Body: CreateSalesOrderLineDto
+// 2. POST /order-cancellations
+//    - 전체/부분 취소 lifecycle 기록
+//    - 출고 조정, 예약 해제, 환불은 별도 업무 연결로 추적
 //
-// 3. PATCH /sales-orders/:id/lines/:lineId
-//    - 개별 상품 수량/가격 수정 API
-//    - Request Body: { quantity?: number; unitPrice?: number }
-//
-// 4. DELETE /sales-orders/:id/lines/:lineId
-//    - 개별 상품 삭제 API
-//
-// 5. POST /sales-orders/:id/split
-//    - 주문 분할 전용 API (원자적 처리)
+// 3. POST /sales-orders/:id/split 또는 출고 조정 워크플로우
+//    - 계약 라인 수정이 아니라 운영상 분할/출고 조정 전용 처리
 //    - Request Body: { lineIds: string[] } or { lines: Array<{ lineId: string; quantity: number }> }
 //    - 응답: { originalOrder: SalesOrder; newOrder: SalesOrder }
 //
@@ -41,150 +32,51 @@
 // ================================================================================================
 
 import { orders } from '@/lib/api/domains';
-import type { UpdateSalesOrderDto, CreateSalesOrderDto } from '@/lib/types/dto/orders';
+import type { UpdateSalesOrderDto } from '@/lib/types/dto/orders';
 
 /**
  * 주문 분할 (나누기)
  * 한 주문을 여러 주문으로 분할
  * - 동일한 주문번호 유지 (channelOrderId는 동일)
  * - 수령자명 뒤에 -1, -2 등 추가
- * 
- * TODO: WMS에 POST /sales-orders/:id/split API 추가 필요
+ *
+ * TODO: Core에 주문 분할/출고 조정 워크플로우 추가 필요
  */
 export const splitOrder = async (params: {
   orderId: string;
   selectedLineIds: string[];
   originalOrder: any;
 }): Promise<{ success: boolean; newOrderId?: string; error?: string }> => {
-  // TODO: WMS API 추가 후 구현
-  return { 
-    success: false, 
-    error: 'WMS API 추가 필요: POST /sales-orders/:id/split' 
+  // TODO: Core 워크플로우 API 추가 후 구현
+  return {
+    success: false,
+    error: 'Core API 추가 필요: 주문 분할/출고 조정 워크플로우',
   };
-
-  /* 구현 예정 코드 (WMS API 추가 후)
-  const { orderId, selectedLineIds, originalOrder } = params;
-
-  try {
-    const selectedLines = originalOrder.lines.filter((line: any) =>
-      selectedLineIds.includes(line.id)
-    );
-
-    if (selectedLines.length === 0) {
-      return { success: false, error: '분할할 상품을 선택해주세요.' };
-    }
-
-    const newOrderData: CreateSalesOrderDto = {
-      customerId: originalOrder.customerId,
-      warehouseId: originalOrder.warehouseId || 'WH001',
-      items: selectedLines.map((line: any) => ({
-        skuId: line.skuId || line.variantId,
-        quantity: line.quantity,
-        unitPrice: line.unitPrice || 0,
-      })),
-      memo: `${originalOrder.channelOrderId} 분할 주문`,
-    };
-
-    const newOrder = await orders.salesOrders.createSalesOrder(newOrderData);
-
-    const remainingLines = originalOrder.lines.filter(
-      (line: any) => !selectedLineIds.includes(line.id)
-    );
-
-    if (remainingLines.length > 0) {
-      await orders.salesOrders.updateSalesOrder(orderId, {
-        items: remainingLines.map((line: any) => ({
-          skuId: line.skuId || line.variantId,
-          quantity: line.quantity,
-          unitPrice: line.unitPrice || 0,
-        })),
-      });
-    }
-
-    return { success: true, newOrderId: newOrder.id };
-  } catch (error: any) {
-    return { success: false, error: error.message || '주문 분할 중 오류가 발생했습니다.' };
-  }
-  */
 };
 
 /**
  * 수량 나누기
  * 특정 상품의 수량을 새 주문으로 분리
- * 
- * TODO: WMS에 POST /sales-orders/:id/split API 또는 PATCH /sales-orders/:id/lines API 추가 필요
+ *
+ * TODO: Core에 주문 분할/출고 조정 워크플로우 추가 필요
  */
 export const splitQuantity = async (params: {
   orderId: string;
   splits: Array<{ lineId: string; splitQty: number }>;
   originalOrder: any;
 }): Promise<{ success: boolean; newOrderId?: string; error?: string }> => {
-  // TODO: WMS API 추가 후 구현
-  return { 
-    success: false, 
-    error: 'WMS API 추가 필요: PATCH /sales-orders/:id/lines' 
+  // TODO: Core 워크플로우 API 추가 후 구현
+  return {
+    success: false,
+    error: 'Core API 추가 필요: 주문 분할/출고 조정 워크플로우',
   };
-
-  /* 구현 예정 코드 (WMS API 추가 후)
-  const { orderId, splits, originalOrder } = params;
-
-  try {
-    const itemsToSplit = splits.filter((s) => s.splitQty > 0);
-    
-    if (itemsToSplit.length === 0) {
-      return { success: false, error: '분리할 수량을 입력해주세요.' };
-    }
-
-    const newOrderLines: any[] = [];
-    originalOrder.lines.forEach((line: any) => {
-      const split = itemsToSplit.find((s) => s.lineId === line.id);
-      if (split && split.splitQty > 0) {
-        newOrderLines.push({
-          skuId: line.skuId || line.variantId,
-          quantity: split.splitQty,
-          unitPrice: line.unitPrice || 0,
-        });
-      }
-    });
-
-    const newOrderData: CreateSalesOrderDto = {
-      customerId: originalOrder.customerId,
-      warehouseId: originalOrder.warehouseId || 'WH001',
-      items: newOrderLines,
-      memo: `${originalOrder.channelOrderId} 수량 분리`,
-    };
-
-    const newOrder = await orders.salesOrders.createSalesOrder(newOrderData);
-
-    const updatedLines = originalOrder.lines.map((line: any) => {
-      const split = itemsToSplit.find((s) => s.lineId === line.id);
-      const remainQty = split ? line.quantity - split.splitQty : line.quantity;
-      
-      return {
-        skuId: line.skuId || line.variantId,
-        quantity: Math.max(0, remainQty),
-        unitPrice: line.unitPrice || 0,
-      };
-    }).filter((item: any) => item.quantity > 0);
-
-    if (updatedLines.length > 0) {
-      await orders.salesOrders.updateSalesOrder(orderId, {
-        items: updatedLines,
-      });
-    }
-
-    return { success: true, newOrderId: newOrder.id };
-  } catch (error: any) {
-    return { success: false, error: error.message || '수량 분리 중 오류가 발생했습니다.' };
-  }
-  */
 };
 
 /**
  * 주문 정보 수정 (입력확인)
- * 
+ *
  * 현재는 메모만 수정 가능
- * TODO: WMS에 PATCH /sales-orders/:id/lines API 추가되면 상품 수정도 지원
+ * 상품/수량/금액 보정은 SalesOrderAmendment 워크플로우가 생긴 뒤 별도 액션으로 지원
  */
 export const updateOrderDetails = async (params: {
   orderId: string;
@@ -198,63 +90,30 @@ export const updateOrderDetails = async (params: {
       memo: updatedOrder.memo,
     });
 
-    // TODO: WMS API 추가 후 items도 수정 가능하도록
-    // await orders.salesOrders.updateSalesOrderLines(orderId, {
-    //   items: updatedOrder.lines.map((line: any) => ({
-    //     skuId: line.skuId || line.variantId,
-    //     quantity: line.quantity,
-    //     unitPrice: line.unitPrice || 0,
-    //   })),
-    // });
+    // TODO: SalesOrderAmendment API 추가 후 상품/수량/금액 보정 액션 연결
 
     return { success: true };
   } catch (error: any) {
-    return { success: false, error: error.message || '주문 수정 중 오류가 발생했습니다.' };
+    return {
+      success: false,
+      error: error.message || '주문 수정 중 오류가 발생했습니다.',
+    };
   }
 };
 
 /**
  * 주문에 상품 추가
- * 
- * TODO: WMS에 POST /sales-orders/:id/lines API 추가 필요
+ *
+ * TODO: SalesOrderAmendment API 추가 필요
  */
 export const addOrderItem = async (params: {
   orderId: string;
   newItem: { skuId: string; quantity: number; unitPrice?: number };
   originalOrder: any;
 }): Promise<{ success: boolean; error?: string }> => {
-  // TODO: WMS API 추가 후 구현
-  return { 
-    success: false, 
-    error: 'WMS API 추가 필요: POST /sales-orders/:id/lines' 
+  // TODO: SalesOrderAmendment API 추가 후 구현
+  return {
+    success: false,
+    error: 'Core API 추가 필요: SalesOrderAmendment',
   };
-
-  /* 구현 예정 코드 (WMS API 추가 후)
-  const { orderId, newItem, originalOrder } = params;
-
-  try {
-    const existingLines = originalOrder.lines.map((line: any) => ({
-      skuId: line.skuId || line.variantId,
-      quantity: line.quantity,
-      unitPrice: line.unitPrice || 0,
-    }));
-
-    const updatedLines = [
-      ...existingLines,
-      {
-        skuId: newItem.skuId,
-        quantity: newItem.quantity,
-        unitPrice: newItem.unitPrice || 0,
-      },
-    ];
-
-    await orders.salesOrders.updateSalesOrder(orderId, {
-      items: updatedLines,
-    });
-
-    return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error.message || '상품 추가 중 오류가 발생했습니다.' };
-  }
-  */
 };

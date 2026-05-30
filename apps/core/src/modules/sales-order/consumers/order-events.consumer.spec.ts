@@ -2,7 +2,7 @@ import { OrderEventsConsumer } from './order-events.consumer';
 import type { SalesOrdersService } from '../services/sales-orders.service';
 import type { LibraryService } from '../../library/services/library.service';
 import type { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
-import type { OrderCancelledPayload, OrderCreatedPayload } from '@packages/event-contracts';
+import type { OrderCancelledPayload, OrderCreatedPayload, OrderModifiedPayload } from '@packages/event-contracts';
 import type { MessageEnvelope } from '@packages/event-contracts/types';
 
 /**
@@ -15,7 +15,7 @@ import type { MessageEnvelope } from '@packages/event-contracts/types';
 describe('OrderEventsConsumer', () => {
   type Mocks = {
     salesOrders: jest.Mocked<
-      Pick<SalesOrdersService, 'findByChannelOrderId' | 'createFromEvent' | 'getOne' | 'cancel'>
+      Pick<SalesOrdersService, 'findByChannelOrderId' | 'createFromEvent' | 'getOne' | 'cancel' | 'updateFromEvent'>
     >;
     library: jest.Mocked<Pick<LibraryService, 'grantOwnershipsForOrder' | 'revokeOwnershipsForOrder'>>;
     backlog: jest.Mocked<
@@ -52,6 +52,7 @@ describe('OrderEventsConsumer', () => {
         createFromEvent: jest.fn(),
         getOne: jest.fn(),
         cancel: jest.fn(),
+        updateFromEvent: jest.fn(),
       } as any,
       library: {
         grantOwnershipsForOrder: jest.fn().mockResolvedValue(0),
@@ -188,5 +189,55 @@ describe('OrderEventsConsumer', () => {
 
     expect(mocks.salesOrders.cancel).not.toHaveBeenCalled();
     expect(mocks.backlog.closeOpenForSalesOrder).toHaveBeenCalledWith(payload.orderId, mocks.fakeTx);
+  });
+
+  it('OrderModified 는 수락된 판매주문 계약 데이터를 업데이트하지 않고 처리 이력만 남긴다', async () => {
+    const mocks = makeMocks();
+    const consumer = makeConsumer(mocks);
+    const payload = {
+      orderId: 'so-accepted-1',
+      changes: {
+        totalAmount: 12000,
+        shippingAddress: {
+          recipientName: 'R',
+          phone: '',
+          postalCode: '',
+          roadAddress: 'Changed',
+          detailAddress: '',
+        },
+        items: [
+          {
+            orderItemId: 'line-1',
+            skuId: 'variant-1',
+            masterId: 'master-1',
+            versionId: 'version-1',
+            variantId: 'variant-1',
+            productName: 'Changed Product',
+            channelProductId: 'variant-1',
+            quantity: 2,
+            unitPrice: 6000,
+            totalPrice: 12000,
+          },
+        ],
+      },
+      modifiedBy: 'ADMIN',
+      modifiedAt: new Date().toISOString(),
+      reason: 'post-acceptance change',
+    } as OrderModifiedPayload;
+    const modifiedEnvelope = {
+      messageId: 'modified-msg-1',
+      correlationId: 'corr-1',
+    } as MessageEnvelope<OrderModifiedPayload>;
+    mocks.salesOrders.getOne.mockResolvedValue({ id: payload.orderId, status: 'pending' } as any);
+
+    await consumer.handleOrderModified(payload, modifiedEnvelope);
+
+    expect(mocks.salesOrders.updateFromEvent).not.toHaveBeenCalled();
+    expect(mocks.txInserts).toHaveLength(1);
+    expect(mocks.txInserts[0].values).toMatchObject({
+      eventId: 'modified-msg-1',
+      orderId: payload.orderId,
+      eventType: 'ORDER_MODIFIED',
+    });
   });
 });

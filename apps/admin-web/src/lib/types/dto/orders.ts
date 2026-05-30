@@ -278,9 +278,7 @@ export interface InvoicesResponseDto {
 
 // ===== 누락된 타입들 추가 =====
 export interface UpdateSalesOrderDto {
-  customerId?: string;
-  warehouseId?: string;
-  items?: SalesOrderItemDto[];
+  processedAt?: string;
   memo?: string;
 }
 
