@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Patch, Body, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { SalesOrdersService } from '../services/sales-orders.service';
+import { SalesOrderAmendmentsService } from '../services/sales-order-amendments.service';
 import { CreateSalesOrderDto } from '../dto/create-sales-order.dto';
 import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
 import { MergeSalesOrdersDto } from '../dto/merge-sales-orders.dto';
@@ -11,7 +12,10 @@ import { CreateBusinessLinkDto } from '../dto/create-business-link.dto';
 @ApiTags('Sales Orders')
 @Controller('sales-orders')
 export class SalesOrdersController {
-  constructor(private readonly service: SalesOrdersService) {}
+  constructor(
+    private readonly service: SalesOrdersService,
+    private readonly amendments: SalesOrderAmendmentsService,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: '판매 주문 생성' })
@@ -49,6 +53,13 @@ export class SalesOrdersController {
   @ApiResponse({ status: 201, description: '업무 연결 생성 성공' })
   createBusinessLink(@Param('id') id: string, @Body() dto: CreateBusinessLinkDto) {
     return this.service.createBusinessLink(id, dto);
+  }
+
+  @Get(':id/amendments')
+  @ApiOperation({ summary: '판매 주문 정정 목록 조회' })
+  @ApiParam({ name: 'id', description: '판매 주문 ID' })
+  listAmendments(@Param('id') id: string) {
+    return this.amendments.listForSalesOrder(id);
   }
 
   @Post('merge')

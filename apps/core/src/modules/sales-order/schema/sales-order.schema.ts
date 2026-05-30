@@ -11,6 +11,7 @@ export {
   salesOrderLines,
   orderEvents,
   mergeGroups,
+  salesOrderAmendments,
   orderStatusEnum,
   orderItemStatusEnum,
   salesChannelEnum,
@@ -21,6 +22,8 @@ export {
   type NewSalesOrderLine,
   type OrderEvent,
   type NewOrderEvent,
+  type SalesOrderAmendment,
+  type NewSalesOrderAmendment,
   type MergeGroup,
   type NewMergeGroup,
 } from '../../inventory/schema/inventory.schema';

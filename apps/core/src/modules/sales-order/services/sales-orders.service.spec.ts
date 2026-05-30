@@ -1,4 +1,5 @@
 import { wmsTables } from '../../inventory/schema/inventory.schema';
+import { SalesOrderAmendmentsService } from './sales-order-amendments.service';
 import { SalesOrdersService } from './sales-orders.service';
 
 describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
@@ -256,6 +257,157 @@ describe('SalesOrdersService.update accepted contract immutability', () => {
     expect(state.salesOrders[0].totalAmount).toBe(10000);
     expect(state.salesOrderLines[0].quantity).toBe(1);
     expect(outbox.enqueue).not.toHaveBeenCalled();
+  });
+});
+
+describe('SalesOrderAmendmentsService.create', () => {
+  const salesOrderId = '33333333-3333-4333-8333-333333333333';
+  const lineId = '44444444-4444-4444-8444-444444444444';
+  const amendmentId = '55555555-5555-4555-8555-555555555555';
+
+  function rows<T>(value: T[]): T[] & { limit: (count: number) => Promise<T[]> } {
+    const result = [...value] as T[] & { limit: (count: number) => Promise<T[]> };
+    result.limit = (count: number) => Promise.resolve(result.slice(0, count));
+    return result;
+  }
+
+  function makeService() {
+    const now = new Date('2026-05-30T05:30:00.000Z');
+    const state = {
+      salesOrders: [{ id: salesOrderId, status: 'confirmed' }],
+      salesOrderLines: [
+        {
+          id: lineId,
+          salesOrderId,
+          variantId: '66666666-6666-4666-8666-666666666666',
+          productName: 'Accepted Product',
+          quantity: 2,
+          unitPrice: 5000,
+          totalPrice: 10000,
+        },
+      ] as Array<Record<string, any>>,
+      salesOrderAmendments: [] as Array<Record<string, any>>,
+      businessLinks: [] as Array<Record<string, any>>,
+    };
+
+    const selectRowsFor = (table: unknown) => {
+      if (table === wmsTables.salesOrders) return state.salesOrders;
+      if (table === wmsTables.salesOrderLines) return state.salesOrderLines;
+      if (table === wmsTables.salesOrderAmendments) return state.salesOrderAmendments;
+      return [];
+    };
+
+    const tx: any = {
+      select: jest.fn(() => ({
+        from: (table: unknown) => ({
+          where: () => rows(selectRowsFor(table)),
+        }),
+      })),
+      insert: jest.fn((table: unknown) => ({
+        values: (values: Record<string, any>) => {
+          if (table === wmsTables.salesOrderAmendments) {
+            const row = {
+              id: amendmentId,
+              ...values,
+              occurredAt: values.occurredAt ?? now,
+              createdAt: now,
+              updatedAt: now,
+            };
+            state.salesOrderAmendments.push(row);
+            return { returning: jest.fn().mockResolvedValue([row]) };
+          }
+          if (table === wmsTables.businessLinks) {
+            state.businessLinks.push({ id: 'business-link-1', ...values });
+            return Promise.resolve();
+          }
+          return { returning: jest.fn().mockResolvedValue([]) };
+        },
+      })),
+      update: jest.fn(),
+    };
+
+    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) } };
+    const service = new SalesOrderAmendmentsService(db as any);
+
+    return { service, state, tx };
+  }
+
+  it('records typed deltas and links the amendment without mutating original SalesOrder lines', async () => {
+    const { service, state, tx } = makeService();
+    const originalLines = state.salesOrderLines.map((line) => ({ ...line }));
+
+    const amendment = await service.create({
+      salesOrderId,
+      amendmentKind: 'commercial',
+      decision: 'approved',
+      reasonCode: 'CS_PRODUCT_SWAP',
+      deltas: [
+        {
+          type: 'quantity_correction',
+          salesOrderLineId: lineId,
+          quantityDelta: -1,
+          reason: 'Customer requested quantity correction',
+        },
+      ],
+    });
+
+    expect(amendment).toMatchObject({
+      id: amendmentId,
+      salesOrderId,
+      amendmentKind: 'commercial',
+      decision: 'approved',
+      deltas: [expect.objectContaining({ type: 'quantity_correction', salesOrderLineId: lineId })],
+    });
+    expect(state.salesOrderLines).toEqual(originalLines);
+    expect(tx.update).not.toHaveBeenCalled();
+    expect(state.businessLinks).toEqual([
+      expect.objectContaining({
+        sourceType: 'sales_order',
+        sourceId: salesOrderId,
+        targetType: 'sales_order_amendment',
+        targetId: amendmentId,
+        relationName: 'opened_amendment',
+        metadata: expect.objectContaining({
+          amendmentKind: 'commercial',
+          deltaTypes: ['quantity_correction'],
+        }),
+      }),
+    ]);
+  });
+
+  it('rejects commercial deltas in fulfillment-only amendments', async () => {
+    const { service } = makeService();
+
+    await expect(
+      service.create({
+        salesOrderId,
+        amendmentKind: 'fulfillment_only',
+        deltas: [
+          {
+            type: 'amount_correction',
+            amountDelta: -1000,
+          },
+        ],
+      }),
+    ).rejects.toThrow('fulfillment_only amendments cannot include amount_correction deltas');
+  });
+
+  it('rejects commercial fields on fulfillment-only correction deltas', async () => {
+    const { service } = makeService();
+
+    await expect(
+      service.create({
+        salesOrderId,
+        amendmentKind: 'fulfillment_only',
+        deltas: [
+          {
+            type: 'fulfillment_only_correction',
+            fulfillmentInstruction: 'Ship the accepted line separately',
+            amountDelta: -1000,
+          },
+        ],
+      }),
+    ).rejects.toThrow('fulfillment_only amendments cannot include commercial fields: amountDelta');
   });
 });
 

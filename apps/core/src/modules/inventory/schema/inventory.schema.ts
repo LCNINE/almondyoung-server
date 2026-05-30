@@ -1135,6 +1135,42 @@ export const businessLinks = pgTable(
   }),
 );
 
+export const salesOrderAmendments = pgTable(
+  'sales_order_amendments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    salesOrderId: uuid('sales_order_id')
+      .references(() => salesOrders.id, { onDelete: 'cascade' })
+      .notNull(),
+    amendmentKind: varchar('amendment_kind', { length: 32 }).$type<'commercial' | 'fulfillment_only'>().notNull(),
+    decision: varchar('decision', { length: 32 }).notNull().default('approved'),
+    reasonCode: varchar('reason_code', { length: 96 }),
+    note: text('note'),
+    deltas: jsonb('deltas').notNull(),
+    metadata: jsonb('metadata')
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    createdBy: uuid('created_by'),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxSalesOrderId: index('idx_sales_order_amendments_sales_order_id').on(t.salesOrderId),
+    idxAmendmentKind: index('idx_sales_order_amendments_kind').on(t.amendmentKind),
+    idxOccurredAt: index('idx_sales_order_amendments_occurred_at').on(t.occurredAt),
+    amendmentKindCheck: check(
+      'sales_order_amendments_kind_check',
+      sql`${t.amendmentKind} IN ('commercial', 'fulfillment_only')`,
+    ),
+    decisionCheck: check(
+      'sales_order_amendments_decision_check',
+      sql`${t.decision} IN ('approved', 'rejected', 'pending')`,
+    ),
+    deltasArrayCheck: check('sales_order_amendments_deltas_array_check', sql`jsonb_typeof(${t.deltas}) = 'array'`),
+  }),
+);
+
 // 합배송 그룹 테이블 추가
 export const mergeGroups = pgTable('merge_groups', {
   id: varchar('id', { length: 64 }).primaryKey(), // G-{sequence} 형태
@@ -2069,6 +2105,7 @@ export const wmsTables = {
   salesOrderLines,
   orderEvents,
   businessLinks,
+  salesOrderAmendments,
   mergeGroups,
   stockReservations,
   fulfillmentOrders,
@@ -3078,6 +3115,9 @@ export type NewOrderEvent = InferInsertModel<typeof orderEvents>;
 
 export type BusinessLink = InferSelectModel<typeof businessLinks>;
 export type NewBusinessLink = InferInsertModel<typeof businessLinks>;
+
+export type SalesOrderAmendment = InferSelectModel<typeof salesOrderAmendments>;
+export type NewSalesOrderAmendment = InferInsertModel<typeof salesOrderAmendments>;
 
 export type MergeGroup = InferSelectModel<typeof mergeGroups>;
 export type NewMergeGroup = InferInsertModel<typeof mergeGroups>;
