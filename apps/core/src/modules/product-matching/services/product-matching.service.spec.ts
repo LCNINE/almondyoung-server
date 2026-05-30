@@ -15,6 +15,9 @@ describe('ProductMatchingService strategy semantics', () => {
     const fulfillmentBacklog = {
       wakeBacklogsWaitingForVariant: jest.fn().mockResolvedValue(0),
     };
+    const auditService = {
+      log: jest.fn().mockResolvedValue(undefined),
+    };
     const stockEventService = {
       createStockEntryBySkuId: jest.fn().mockImplementation(async ({ quantity }) => {
         if (quantity <= 0) {
@@ -46,9 +49,18 @@ describe('ProductMatchingService strategy semantics', () => {
       warehouseService as never,
       productSellableQuantity as never,
       fulfillmentBacklog as never,
+      auditService as never,
     );
 
-    return { service, productSellableQuantity, fulfillmentBacklog, stockEventService, warehouseService, dbService };
+    return {
+      service,
+      productSellableQuantity,
+      fulfillmentBacklog,
+      stockEventService,
+      warehouseService,
+      dbService,
+      auditService,
+    };
   }
 
   function makeTx(selectRowsQueue: unknown[][] = [[]]) {
@@ -70,7 +82,12 @@ describe('ProductMatchingService strategy semantics', () => {
         const builder: Record<string, jest.Mock> = {};
         builder.from = jest.fn(() => builder);
         builder.where = jest.fn(() => builder);
-        builder.limit = jest.fn().mockResolvedValue(rows);
+        builder.leftJoin = jest.fn(() => builder);
+        builder.orderBy = jest.fn(() => builder);
+        builder.limit = jest.fn(() => builder);
+        builder.offset = jest.fn(() => builder);
+        builder.then = jest.fn((resolve, reject) => Promise.resolve(rows).then(resolve, reject));
+        builder.catch = jest.fn((reject) => Promise.resolve(rows).catch(reject));
         return builder;
       }),
       insert: jest.fn(() => ({
@@ -357,5 +374,180 @@ describe('ProductMatchingService strategy semantics', () => {
     ).rejects.toThrow('void strategy does not accept SKU mappings');
 
     expect(tx.updates).toHaveLength(0);
+  });
+
+  it('lists legacy ignored matchings with variant identity, product name, and SKU link state', async () => {
+    const { service } = makeService();
+    const createdAt = new Date('2026-05-01T00:00:00.000Z');
+    const updatedAt = new Date('2026-05-02T00:00:00.000Z');
+    const tx = makeTx([
+      [{ total: 1 }],
+      [
+        {
+          ...matching,
+          status: 'ignored',
+          priority: 'normal',
+          strategy: 'variant',
+          preStockSellable: true,
+          alwaysSellableZeroStock: false,
+          createdAt,
+          updatedAt,
+        },
+      ],
+      [
+        {
+          productMatchingId: matching.id,
+          skuId: '44444444-4444-4444-4444-444444444444',
+          quantity: 2,
+          skuName: 'SKU A',
+          skuCode: 'SKU-A',
+        },
+      ],
+      [
+        {
+          id: matching.variantId,
+          variantName: '옵션 A',
+          variantCode: 'VAR-A',
+        },
+      ],
+      [
+        {
+          masterId: matching.masterId,
+          versionId: '55555555-5555-5555-5555-555555555555',
+          name: '상품 A',
+          status: 'active',
+          updatedAt,
+          createdAt,
+        },
+      ],
+    ]);
+
+    const result = await service.getLegacyIgnoredMatchings({ limit: 20, offset: 0 }, tx as never);
+
+    expect(result).toMatchObject({
+      total: 1,
+      data: [
+        {
+          id: matching.id,
+          variantId: matching.variantId,
+          status: 'ignored',
+          strategy: 'variant',
+          skuLinkCount: 1,
+          hasSkuLinks: true,
+          master: {
+            id: matching.masterId,
+            name: '상품 A',
+          },
+          variant: {
+            id: matching.variantId,
+            name: '옵션 A',
+          },
+          matchedSkus: [
+            {
+              skuId: '44444444-4444-4444-4444-444444444444',
+              skuName: 'SKU A',
+              skuCode: 'SKU-A',
+              quantity: 2,
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it('resolves legacy ignored matching back to pending and records audit log', async () => {
+    const { service, auditService, productSellableQuantity, fulfillmentBacklog } = makeService();
+    const ignoredMatching = {
+      ...matching,
+      status: 'ignored',
+      strategy: 'variant',
+      isResolved: false,
+      preStockSellable: true,
+      alwaysSellableZeroStock: false,
+    };
+    const tx = makeTx([[ignoredMatching], [{ skuId: '44444444-4444-4444-4444-444444444444', quantity: 1 }]]);
+
+    const result = await service.resolveLegacyIgnoredMatching(
+      matching.id,
+      { target: 'pending' },
+      { userId: 'operator-1' },
+      tx as never,
+    );
+
+    expect(tx.deletes).toHaveLength(1);
+    expect(tx.updates[0]).toMatchObject({
+      status: 'pending',
+      strategy: null,
+      isResolved: false,
+    });
+    expect(result).toMatchObject({ status: 'pending', strategy: null, isResolved: false });
+    expect(auditService.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'USER_ACTION',
+        action: 'legacy_ignored_to_pending',
+        resourceId: matching.id,
+        changesBefore: expect.objectContaining({
+          status: 'ignored',
+          skuLinks: [{ skuId: '44444444-4444-4444-4444-444444444444', quantity: 1 }],
+        }),
+        changesAfter: expect.objectContaining({
+          status: 'pending',
+          strategy: null,
+          skuLinks: [],
+        }),
+      }),
+      { userId: 'operator-1' },
+      tx,
+    );
+    expect(productSellableQuantity.recalculateAndPublishForVariant).toHaveBeenCalledWith(matching.variantId, tx);
+    expect(fulfillmentBacklog.wakeBacklogsWaitingForVariant).not.toHaveBeenCalled();
+  });
+
+  it('resolves legacy ignored matching to matched + void and wakes waiting fulfillment backlog', async () => {
+    const { service, auditService, fulfillmentBacklog } = makeService();
+    const ignoredMatching = {
+      ...matching,
+      status: 'ignored',
+      strategy: null,
+      isResolved: false,
+      preStockSellable: false,
+      alwaysSellableZeroStock: false,
+    };
+    const tx = makeTx([[ignoredMatching], []]);
+
+    const result = await service.resolveLegacyIgnoredMatching(
+      matching.id,
+      {
+        target: 'void',
+        stockPolicy: {
+          preStockSellable: true,
+          alwaysSellableZeroStock: false,
+        },
+      },
+      { userId: 'operator-1' },
+      tx as never,
+    );
+
+    expect(tx.updates[0]).toMatchObject({
+      status: 'matched',
+      strategy: 'void',
+      isResolved: true,
+      preStockSellable: true,
+      alwaysSellableZeroStock: false,
+    });
+    expect(result).toMatchObject({ status: 'matched', strategy: 'void', isResolved: true });
+    expect(auditService.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'legacy_ignored_to_void',
+        changesAfter: expect.objectContaining({
+          status: 'matched',
+          strategy: 'void',
+          isResolved: true,
+        }),
+      }),
+      { userId: 'operator-1' },
+      tx,
+    );
+    expect(fulfillmentBacklog.wakeBacklogsWaitingForVariant).toHaveBeenCalledWith(matching.variantId, tx);
   });
 });

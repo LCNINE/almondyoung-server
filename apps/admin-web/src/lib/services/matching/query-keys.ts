@@ -6,6 +6,11 @@ export const matchingQueryKeys = {
   lists: () => [...matchingQueryKeys.all, 'list'] as const,
   list: (query: unknown) => [...matchingQueryKeys.lists(), query] as const,
 
+  legacyIgnoredLists: () =>
+    [...matchingQueryKeys.all, 'legacy-ignored'] as const,
+  legacyIgnoredList: (query: unknown) =>
+    [...matchingQueryKeys.legacyIgnoredLists(), query] as const,
+
   orderLineLists: () => [...matchingQueryKeys.all, 'order-lines'] as const,
   orderLines: (query: unknown) =>
     [...matchingQueryKeys.orderLineLists(), query] as const,

@@ -4,11 +4,15 @@ import { createColumnHelper } from '@tanstack/react-table';
 import { useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import type { MatchingDto } from '@/lib/types/dto/matching';
+import type {
+  LegacyIgnoredResolutionTarget,
+  MatchingDto,
+} from '@/lib/types/dto/matching';
 import {
   getMatchingStrategyDecisionLabel,
   getMatchingStrategyDecisionColor,
   getMatchingStrategyLabel,
+  getMatchingStatusLabel,
   getPriorityLabel,
   getPriorityColor,
 } from '@/lib/services/matching';
@@ -17,6 +21,11 @@ const columnHelper = createColumnHelper<MatchingDto>();
 
 type RowActions = {
   onEdit: (row: MatchingDto) => void;
+  onResolveLegacyIgnored: (
+    row: MatchingDto,
+    target: LegacyIgnoredResolutionTarget
+  ) => void;
+  isResolvingLegacyIgnored?: boolean;
 };
 
 export const useVariantsMatchingTableColumns = (actions: RowActions) => {
@@ -56,6 +65,14 @@ export const useVariantsMatchingTableColumns = (actions: RowActions) => {
           );
         },
       }),
+      columnHelper.accessor('variantId', {
+        header: 'Variant ID',
+        cell: ({ getValue }) => (
+          <span className="font-mono text-[11px] text-muted-foreground">
+            {getValue()}
+          </span>
+        ),
+      }),
       columnHelper.accessor('status', {
         header: '전략 결정',
         cell: ({ row }) => {
@@ -80,6 +97,18 @@ export const useVariantsMatchingTableColumns = (actions: RowActions) => {
           );
         },
       }),
+      columnHelper.accessor('status', {
+        id: 'sourceStatus',
+        header: '현재 상태',
+        cell: ({ row }) => (
+          <span className="text-xs text-muted-foreground">
+            {getMatchingStatusLabel(row.original.status)}
+            {row.original.strategy
+              ? ` / ${getMatchingStrategyLabel(row.original.strategy)}`
+              : ''}
+          </span>
+        ),
+      }),
       columnHelper.accessor('priority', {
         header: '우선순위',
         cell: ({ getValue }) => {
@@ -98,7 +127,7 @@ export const useVariantsMatchingTableColumns = (actions: RowActions) => {
         header: '매칭 전략',
         cell: ({ getValue }) => (
           <span className="text-xs text-muted-foreground">
-            {getMatchingStrategyLabel(getValue())}
+            {getValue() ? getMatchingStrategyLabel(getValue()) : '전략 미결정'}
           </span>
         ),
       }),
@@ -145,18 +174,52 @@ export const useVariantsMatchingTableColumns = (actions: RowActions) => {
       columnHelper.display({
         id: 'actions',
         header: '액션',
-        cell: ({ row }) => (
-          <div onClick={(e) => e.stopPropagation()}>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs"
-              onClick={() => actions.onEdit(row.original)}
+        cell: ({ row }) => {
+          const isLegacyIgnored = row.original.status === 'ignored';
+
+          return (
+            <div
+              className="flex flex-wrap gap-1"
+              onClick={(e) => e.stopPropagation()}
             >
-              편집
-            </Button>
-          </div>
-        ),
+              {isLegacyIgnored ? (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    disabled={actions.isResolvingLegacyIgnored}
+                    onClick={() =>
+                      actions.onResolveLegacyIgnored(row.original, 'pending')
+                    }
+                  >
+                    전략 미결정
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    disabled={actions.isResolvingLegacyIgnored}
+                    onClick={() =>
+                      actions.onResolveLegacyIgnored(row.original, 'void')
+                    }
+                  >
+                    재고상품 비매칭
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => actions.onEdit(row.original)}
+                >
+                  편집
+                </Button>
+              )}
+            </div>
+          );
+        },
       }),
     ],
     [actions]

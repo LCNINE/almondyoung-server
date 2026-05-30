@@ -10,6 +10,7 @@ import type {
   MatchingsResponseDto,
   ResolveMatchingDto,
   ResolveMatchingResponseDto,
+  ResolveLegacyIgnoredMatchingDto,
   ResolveOptionMatchingDto,
   SetMatchingPriorityDto,
   SetMatchingPriorityResponseDto,
@@ -31,12 +32,15 @@ export const matchingClient = {
    * 매칭 대기 목록 조회
    * GET /matchings
    */
-  getMatchings: async (query: MatchingsQuery = {}): Promise<MatchingsResponseDto> => {
+  getMatchings: async (
+    query: MatchingsQuery = {}
+  ): Promise<MatchingsResponseDto> => {
     const params = new URLSearchParams();
 
     if (query.status) params.append('status', query.status);
     if (query.limit !== undefined) params.append('limit', String(query.limit));
-    if (query.offset !== undefined) params.append('offset', String(query.offset));
+    if (query.offset !== undefined)
+      params.append('offset', String(query.offset));
 
     const response = await client.get(
       `${ALMONDYOUNG_API_BASE_URL}/matchings?${params.toString()}`
@@ -45,13 +49,35 @@ export const matchingClient = {
   },
 
   /**
+   * 레거시 ignored 상품매칭 감사 목록 조회
+   * GET /matchings/legacy-ignored
+   */
+  getLegacyIgnoredMatchings: async (
+    query: Omit<MatchingsQuery, 'status'> = {}
+  ): Promise<MatchingsResponseDto> => {
+    const params = new URLSearchParams();
+
+    if (query.limit !== undefined) params.append('limit', String(query.limit));
+    if (query.offset !== undefined)
+      params.append('offset', String(query.offset));
+
+    const response = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/matchings/legacy-ignored?${params.toString()}`
+    );
+    return response.data;
+  },
+
+  /**
    * 주문 라인별 매칭 현황 조회
    * GET /matchings/order-lines
    */
-  getOrderLines: async (query: OrderLinesQuery = {}): Promise<OrderLinesResponseDto> => {
+  getOrderLines: async (
+    query: OrderLinesQuery = {}
+  ): Promise<OrderLinesResponseDto> => {
     const params = new URLSearchParams();
 
-    if (query.matchingStatus) params.append('matchingStatus', query.matchingStatus);
+    if (query.matchingStatus)
+      params.append('matchingStatus', query.matchingStatus);
     if (query.excludeMatched) params.append('excludeMatched', 'true');
     if (query.salesChannel) params.append('salesChannel', query.salesChannel);
     if (query.startDate) params.append('startDate', query.startDate);
@@ -59,7 +85,8 @@ export const matchingClient = {
     if (query.keyword) params.append('keyword', query.keyword);
     if (query.keywordType) params.append('keywordType', query.keywordType);
     if (query.limit !== undefined) params.append('limit', String(query.limit));
-    if (query.offset !== undefined) params.append('offset', String(query.offset));
+    if (query.offset !== undefined)
+      params.append('offset', String(query.offset));
 
     const response = await client.get(
       `${ALMONDYOUNG_API_BASE_URL}/matchings/order-lines?${params.toString()}`
@@ -77,6 +104,21 @@ export const matchingClient = {
   ): Promise<ResolveMatchingResponseDto> => {
     const response = await client.patch(
       `${ALMONDYOUNG_API_BASE_URL}/matchings/${id}/resolve`,
+      data
+    );
+    return response.data;
+  },
+
+  /**
+   * 레거시 ignored 상품매칭 정리
+   * POST /matchings/{id}/legacy-ignored/resolve
+   */
+  resolveLegacyIgnoredMatching: async (
+    id: string,
+    data: ResolveLegacyIgnoredMatchingDto
+  ): Promise<ResolveMatchingResponseDto> => {
+    const response = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/matchings/${id}/legacy-ignored/resolve`,
       data
     );
     return response.data;
@@ -172,7 +214,9 @@ export const matchingClient = {
    * Variant별 매칭 조회
    * GET /matchings/{variantId}
    */
-  getVariantMatching: async (variantId: string): Promise<VariantMatchingDto> => {
+  getVariantMatching: async (
+    variantId: string
+  ): Promise<VariantMatchingDto> => {
     const response = await client.get(
       `${ALMONDYOUNG_API_BASE_URL}/matchings/${variantId}`
     );

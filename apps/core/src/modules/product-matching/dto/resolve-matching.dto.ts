@@ -87,3 +87,21 @@ export class ResolveMatchingDto {
   @IsOptional()
   isGift?: boolean = false;
 }
+
+export const legacyIgnoredResolutionTargets = ['pending', 'void'] as const;
+export type LegacyIgnoredResolutionTarget = (typeof legacyIgnoredResolutionTargets)[number];
+
+export class ResolveLegacyIgnoredMatchingDto {
+  @ApiProperty({
+    description: '레거시 ignored 매칭 정리 대상. pending은 전략 미결정으로, void는 matched + void로 정리합니다.',
+    enum: legacyIgnoredResolutionTargets,
+  })
+  @IsEnum(legacyIgnoredResolutionTargets)
+  target: LegacyIgnoredResolutionTarget;
+
+  @ApiProperty({ description: 'void 전략으로 정리할 때 적용할 재고 정책', type: StockPolicyDto, required: false })
+  @ValidateNested()
+  @Type(() => StockPolicyDto)
+  @IsOptional()
+  stockPolicy?: StockPolicyDto;
+}
