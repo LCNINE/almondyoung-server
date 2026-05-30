@@ -10,18 +10,21 @@ import { AuditService } from '../../inventory/shared/services/audit.service';
 import { MetricsService } from '../../inventory/shared/services/metrics.service';
 import { ProductSkuMappingService } from '../../product-matching/services/product-sku-mapping.service';
 import { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
+import { LibraryService } from '../../library/services/library.service';
 import { ORDER_EVENTS } from '../common/events';
 import { CreateSalesOrderDto } from '../dto/create-sales-order.dto';
 import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
 import { MergeSalesOrdersDto } from '../dto/merge-sales-orders.dto';
 import { SalesOrderFilterDto } from '../dto/sales-order-filter.dto';
 import { BusinessLinkReferenceDto, CreateBusinessLinkDto } from '../dto/create-business-link.dto';
+import { CancelSalesOrderDto } from '../dto/cancel-sales-order.dto';
 import { AddressDto } from '../dto/address.dto';
 import { OrderCreatedPayload, OrderModifiedPayload, ShippingAddress, OrderItem } from '@packages/event-contracts';
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 
 type SalesOrderLineInsert = InferInsertModel<typeof wmsTables.salesOrderLines>;
 type BusinessLinkInsert = InferInsertModel<typeof wmsTables.businessLinks>;
+type SalesOrderCancellationInsert = InferInsertModel<typeof wmsTables.salesOrderCancellations>;
 type BusinessLinkRow = typeof wmsTables.businessLinks.$inferSelect;
 type BusinessLinkReference = {
   type: string;
@@ -37,6 +40,15 @@ type SalesOrderContractField =
   | 'items'
   | 'lines';
 type SalesOrderPatchInput = UpdateSalesOrderDto & Partial<Record<SalesOrderContractField, unknown>>;
+type CancelSalesOrderOptions = CancelSalesOrderDto;
+type CancellationEffect = {
+  type: string;
+  targetType?: string;
+  targetId?: string;
+  targetExternalRef?: string;
+  count?: number;
+  metadata?: Record<string, unknown>;
+};
 
 const ACCEPTED_CONTRACT_CHANNELS = new Set(['medusa', 'naver', 'coupang']);
 const CONTRACT_PATCH_FIELDS: SalesOrderContractField[] = [
@@ -48,6 +60,21 @@ const CONTRACT_PATCH_FIELDS: SalesOrderContractField[] = [
   'items',
   'lines',
 ];
+const SALES_ORDER_REF_TYPE = 'sales_order';
+const ORDER_CANCELLATION_REF_TYPE = 'order_cancellation';
+const CANCELLABLE_FULFILLMENT_STATUSES = new Set([
+  'created',
+  'reserving',
+  'ready',
+  'unfulfillable',
+  'labeled',
+  'pending',
+  'allocated',
+  'picking',
+  'picked',
+  'inspecting',
+  'invoiced',
+]);
 
 /** Phase 6에서 FulfillmentsService로 교체된다 */
 interface IFulfillmentsService {
@@ -73,6 +100,7 @@ export class SalesOrdersService {
     @Optional() private readonly audit?: AuditService,
     @Optional() private readonly metrics?: MetricsService,
     @Optional() private readonly fulfillments?: IFulfillmentsService,
+    @Optional() private readonly library?: LibraryService,
   ) {}
 
   private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
@@ -253,7 +281,9 @@ export class SalesOrdersService {
     }, tx);
   }
 
-  async cancel(id: string, tx?: DbTx) {
+  async cancel(id: string, optionsOrTx?: CancelSalesOrderOptions | DbTx, tx?: DbTx) {
+    const { options, tx: explicitTx } = this.normalizeCancelArgs(optionsOrTx, tx);
+
     return this.inTx(async (trx) => {
       this.logger.log(`Cancelling sales order: ${id}`);
 
@@ -271,12 +301,36 @@ export class SalesOrdersService {
         .limit(1)
         .then((r) => r[0]);
 
-      if (!salesOrder) throw new Error(`Sales order ${id} not found`);
-      if (salesOrder.status === 'cancelled') {
-        this.logger.warn(`Sales order ${id} is already cancelled`);
-        await this.fulfillmentBacklog.closeOpenForSalesOrder(id, trx);
-        return salesOrder;
+      if (!salesOrder) throw new NotFoundException(`Sales order ${id} not found`);
+
+      const existingCancellation = await trx
+        .select()
+        .from(wmsTables.salesOrderCancellations)
+        .where(
+          and(
+            eq(wmsTables.salesOrderCancellations.salesOrderId, id),
+            eq(wmsTables.salesOrderCancellations.cancellationScope, 'full'),
+          ),
+        )
+        .limit(1)
+        .then((r) => r[0]);
+
+      if (existingCancellation) {
+        this.logger.warn(`Sales order ${id} already has full cancellation ${existingCancellation.id}`);
+        if (salesOrder.status !== 'cancelled') {
+          await trx
+            .update(wmsTables.salesOrders)
+            .set({ status: 'cancelled', updatedAt: new Date() })
+            .where(eq(wmsTables.salesOrders.id, id));
+        }
+        await this.closeOpenFulfillmentBacklogEffects(id, trx);
+        return this.getOne(id, trx);
       }
+
+      const originalLines = await trx
+        .select()
+        .from(wmsTables.salesOrderLines)
+        .where(eq(wmsTables.salesOrderLines.salesOrderId, id));
 
       const fulfillmentOrders = await trx
         .select()
@@ -285,8 +339,11 @@ export class SalesOrdersService {
 
       this.logger.log(`Found ${fulfillmentOrders.length} fulfillment orders for SO ${id}`);
 
+      const effects: CancellationEffect[] = [];
+      const cancelledFulfillmentOrderIds: string[] = [];
+
       for (const fo of fulfillmentOrders) {
-        if (fo.status === 'canceled') continue;
+        if (!CANCELLABLE_FULFILLMENT_STATUSES.has(fo.status)) continue;
 
         try {
           await this.reservationLifecycle.handleFulfillmentOrderStatusChange(fo.id, fo.status, 'canceled', trx);
@@ -296,14 +353,73 @@ export class SalesOrdersService {
 
         await trx
           .update(wmsTables.fulfillmentOrders)
-          .set({ status: 'canceled' })
+          .set({ status: 'canceled', canceledAt: new Date(), updatedAt: new Date() })
           .where(eq(wmsTables.fulfillmentOrders.id, fo.id));
 
+        cancelledFulfillmentOrderIds.push(fo.id);
+        effects.push({
+          type: 'cancelled_fulfillment_order',
+          targetType: 'fulfillment_order',
+          targetId: fo.id,
+          metadata: { previousStatus: fo.status },
+        });
         this.logger.log(`Cancelled fulfillment order: ${fo.id}`);
       }
 
-      await trx.update(wmsTables.salesOrders).set({ status: 'cancelled' }).where(eq(wmsTables.salesOrders.id, id));
-      await this.fulfillmentBacklog.closeOpenForSalesOrder(id, trx);
+      const closedBacklog = await this.closeOpenFulfillmentBacklogEffects(id, trx);
+      for (const backlogId of closedBacklog.backlogIds) {
+        effects.push({
+          type: 'closed_fulfillment_creation_backlog',
+          targetType: 'fulfillment_order_creation_backlog',
+          targetId: backlogId,
+        });
+      }
+      if (closedBacklog.closedCount > 0 && closedBacklog.backlogIds.length === 0) {
+        effects.push({
+          type: 'closed_fulfillment_creation_backlog',
+          targetType: 'fulfillment_order_creation_backlog',
+          targetExternalRef: `sales_order:${id}:fulfillment_creation_backlog`,
+          count: closedBacklog.closedCount,
+        });
+      }
+
+      const digitalRevocation = await this.revokeDigitalOwnershipEffects(id, options.reasonCode ?? null, trx);
+      for (const ownershipId of digitalRevocation.ownershipIds) {
+        effects.push({
+          type: 'revoked_digital_ownership',
+          targetType: 'digital_asset_ownership',
+          targetId: ownershipId,
+        });
+      }
+      if (digitalRevocation.revokedCount > 0 && digitalRevocation.ownershipIds.length === 0) {
+        effects.push({
+          type: 'revoked_digital_ownership',
+          targetType: 'digital_asset_ownership',
+          targetExternalRef: `sales_order:${id}:digital_ownerships`,
+          count: digitalRevocation.revokedCount,
+        });
+      }
+
+      const occurredAt = options.occurredAt ? new Date(options.occurredAt) : new Date();
+      const cancellationValues: SalesOrderCancellationInsert = {
+        salesOrderId: id,
+        cancellationScope: 'full',
+        status: 'applied',
+        reasonCode: options.reasonCode ?? null,
+        reasonDetail: options.reasonDetail ?? null,
+        cancelledBy: options.cancelledBy ?? null,
+        effects,
+        metadata: options.metadata ?? {},
+        occurredAt,
+      };
+      const [cancellation] = await trx.insert(wmsTables.salesOrderCancellations).values(cancellationValues).returning();
+
+      await trx
+        .update(wmsTables.salesOrders)
+        .set({ status: 'cancelled', updatedAt: new Date() })
+        .where(eq(wmsTables.salesOrders.id, id));
+
+      await this.linkCancellationEffects(id, cancellation.id, effects, occurredAt, trx);
 
       const updated = await this.getOne(id, trx);
 
@@ -313,7 +429,13 @@ export class SalesOrdersService {
           aggregateType: 'order',
           aggregateId: id,
           partitionKey: id,
-          payload: { orderId: id, cancelledFulfillmentOrderIds: fulfillmentOrders.map((fo) => fo.id) },
+          payload: {
+            orderId: id,
+            orderCancellationId: cancellation.id,
+            cancelledFulfillmentOrderIds,
+            closedFulfillmentCreationBacklogIds: closedBacklog.backlogIds,
+            revokedDigitalOwnershipIds: digitalRevocation.ownershipIds,
+          },
         },
         trx,
       );
@@ -326,14 +448,21 @@ export class SalesOrdersService {
         id,
         `Sales Order ${salesOrder.channelOrderId || id}`,
         { status: salesOrder.status },
-        { status: 'cancelled' },
+        {
+          status: 'cancelled',
+          orderCancellationId: cancellation.id,
+          originalLineCount: originalLines.length,
+          effectTypes: effects.map((effect) => effect.type),
+        },
         undefined,
         trx,
       );
 
-      this.logger.log(`Successfully cancelled sales order ${id} and ${fulfillmentOrders.length} fulfillment orders`);
+      this.logger.log(
+        `Successfully cancelled sales order ${id} and ${cancelledFulfillmentOrderIds.length} fulfillment orders`,
+      );
       return updated;
-    }, tx);
+    }, explicitTx);
   }
 
   async merge(dto: MergeSalesOrdersDto, tx?: DbTx) {
@@ -718,6 +847,110 @@ export class SalesOrdersService {
       );
       return this.getOne(id, trx);
     }, tx);
+  }
+
+  private normalizeCancelArgs(
+    optionsOrTx?: CancelSalesOrderOptions | DbTx,
+    tx?: DbTx,
+  ): { options: CancelSalesOrderOptions; tx?: DbTx } {
+    if (this.isDbTx(optionsOrTx)) {
+      return { options: {}, tx: optionsOrTx };
+    }
+    return { options: optionsOrTx ?? {}, tx };
+  }
+
+  private isDbTx(value: unknown): value is DbTx {
+    return Boolean(value && typeof value === 'object' && 'select' in value && 'insert' in value);
+  }
+
+  private async closeOpenFulfillmentBacklogEffects(
+    salesOrderId: string,
+    trx: DbTx,
+  ): Promise<{ closedCount: number; backlogIds: string[] }> {
+    const backlogWithDetails = this.fulfillmentBacklog as FulfillmentOrderCreationBacklogService & {
+      closeOpenForSalesOrderDetailed?: (
+        salesOrderId: string,
+        tx?: DbTx,
+      ) => Promise<{ closedCount: number; backlogIds: string[] }>;
+    };
+
+    if (typeof backlogWithDetails.closeOpenForSalesOrderDetailed === 'function') {
+      return backlogWithDetails.closeOpenForSalesOrderDetailed(salesOrderId, trx);
+    }
+
+    const closedCount = await this.fulfillmentBacklog.closeOpenForSalesOrder(salesOrderId, trx);
+    return { closedCount, backlogIds: [] };
+  }
+
+  private async revokeDigitalOwnershipEffects(
+    salesOrderId: string,
+    reason: string | null,
+    trx: DbTx,
+  ): Promise<{ revokedCount: number; ownershipIds: string[] }> {
+    if (!this.library) {
+      return { revokedCount: 0, ownershipIds: [] };
+    }
+
+    const libraryWithDetails = this.library as LibraryService & {
+      revokeOwnershipsForOrderDetailed?: (
+        salesOrderId: string,
+        reason: string | null,
+        tx?: DbTx,
+      ) => Promise<{ revokedCount: number; ownershipIds: string[] }>;
+    };
+
+    if (typeof libraryWithDetails.revokeOwnershipsForOrderDetailed === 'function') {
+      return libraryWithDetails.revokeOwnershipsForOrderDetailed(salesOrderId, reason, trx);
+    }
+
+    const revokedCount = await this.library.revokeOwnershipsForOrder(salesOrderId, reason, trx);
+    return { revokedCount, ownershipIds: [] };
+  }
+
+  private async linkCancellationEffects(
+    salesOrderId: string,
+    cancellationId: string,
+    effects: CancellationEffect[],
+    occurredAt: Date,
+    trx: DbTx,
+  ) {
+    const links: BusinessLinkInsert[] = [
+      {
+        sourceType: SALES_ORDER_REF_TYPE,
+        sourceId: salesOrderId,
+        sourceExternalRef: null,
+        targetType: ORDER_CANCELLATION_REF_TYPE,
+        targetId: cancellationId,
+        targetExternalRef: null,
+        relationName: 'opened_cancellation',
+        metadata: {
+          cancellationScope: 'full',
+          effectTypes: effects.map((effect) => effect.type),
+        },
+        occurredAt,
+      },
+    ];
+
+    for (const effect of effects) {
+      if (!effect.targetType || (!effect.targetId && !effect.targetExternalRef)) continue;
+      links.push({
+        sourceType: SALES_ORDER_REF_TYPE,
+        sourceId: salesOrderId,
+        sourceExternalRef: null,
+        targetType: effect.targetType,
+        targetId: effect.targetId ?? null,
+        targetExternalRef: effect.targetExternalRef ?? null,
+        relationName: `cancellation_${effect.type}`,
+        metadata: {
+          orderCancellationId: cancellationId,
+          ...effect.metadata,
+          ...(effect.count !== undefined ? { count: effect.count } : {}),
+        },
+        occurredAt,
+      });
+    }
+
+    await trx.insert(wmsTables.businessLinks).values(links);
   }
 
   private assertAcceptedContractIsNotPatched(salesOrder: { salesChannel: string }, dto: SalesOrderPatchInput): void {

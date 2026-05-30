@@ -139,16 +139,22 @@ export class OrderEventsConsumer {
         );
         if (alreadyProcessed) return;
 
-        if (salesOrder.status === 'cancelled') {
-          this.logger.log(`[OrderCancelled] Order already cancelled: ${payload.orderId}`);
-          await this.fulfillmentBacklog.closeOpenForSalesOrder(payload.orderId, tx);
-          return;
-        }
-
-        await this.salesOrdersService.cancel(payload.orderId, tx);
-
-        // ADR-0006: exercise 전 디지털 ownership 만 회수. exercise 된 것은 환불 측이 결정.
-        await this.libraryService.revokeOwnershipsForOrder(payload.orderId, payload.reason, tx);
+        await this.salesOrdersService.cancel(
+          payload.orderId,
+          {
+            reasonCode: payload.reason,
+            reasonDetail: payload.reasonDetail,
+            cancelledBy: payload.cancelledBy,
+            occurredAt: payload.cancelledAt,
+            metadata: {
+              refundRequired: payload.refundRequired,
+              refundAmount: payload.refundAmount,
+              stockRestorationResults: payload.stockRestorationResults ?? [],
+              sourceEventId: envelope.messageId,
+            },
+          },
+          tx,
+        );
 
         this.logger.log(`[OrderCancelled] Cancelled sales order: ${payload.orderId}, reason: ${payload.reason}`);
       });

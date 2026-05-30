@@ -169,7 +169,7 @@ describe('OrderEventsConsumer', () => {
     await expect(consumer.handleOrderCreated(makePayload(), envelope)).rejects.toThrow('grant boom');
   });
 
-  it('OrderCancelled 재전송이 이미 cancelled 주문을 만나도 open backlog를 닫는다', async () => {
+  it('OrderCancelled 재전송도 OrderCancellation lifecycle 경로로 위임한다', async () => {
     const mocks = makeMocks();
     const consumer = makeConsumer(mocks);
     const payload = {
@@ -187,8 +187,22 @@ describe('OrderEventsConsumer', () => {
 
     await consumer.handleOrderCancelled(payload, cancelledEnvelope);
 
-    expect(mocks.salesOrders.cancel).not.toHaveBeenCalled();
-    expect(mocks.backlog.closeOpenForSalesOrder).toHaveBeenCalledWith(payload.orderId, mocks.fakeTx);
+    expect(mocks.salesOrders.cancel).toHaveBeenCalledWith(
+      payload.orderId,
+      expect.objectContaining({
+        reasonCode: 'CUSTOMER_REQUEST',
+        cancelledBy: 'customer',
+        occurredAt: payload.cancelledAt,
+        metadata: expect.objectContaining({
+          refundRequired: false,
+          stockRestorationResults: [],
+          sourceEventId: 'cancel-msg-1',
+        }),
+      }),
+      mocks.fakeTx,
+    );
+    expect(mocks.backlog.closeOpenForSalesOrder).not.toHaveBeenCalled();
+    expect(mocks.library.revokeOwnershipsForOrder).not.toHaveBeenCalled();
   });
 
   it('OrderModified 는 수락된 판매주문 계약 데이터를 업데이트하지 않고 처리 이력만 남긴다', async () => {

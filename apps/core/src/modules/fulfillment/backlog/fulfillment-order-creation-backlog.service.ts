@@ -163,6 +163,14 @@ export class FulfillmentOrderCreationBacklogService {
   }
 
   async closeOpenForSalesOrder(salesOrderId: string, tx?: DbTx): Promise<number> {
+    const result = await this.closeOpenForSalesOrderDetailed(salesOrderId, tx);
+    return result.closedCount;
+  }
+
+  async closeOpenForSalesOrderDetailed(
+    salesOrderId: string,
+    tx?: DbTx,
+  ): Promise<{ closedCount: number; backlogIds: string[] }> {
     return this.inTx(async (trx) => {
       const updated = await trx
         .update(wmsTables.fulfillmentOrderCreationBacklogs)
@@ -187,7 +195,7 @@ export class FulfillmentOrderCreationBacklogService {
         this.logger.log(`Closed ${updated.length} fulfillment creation backlog(s) for cancelled order ${salesOrderId}`);
       }
 
-      return updated.length;
+      return { closedCount: updated.length, backlogIds: updated.map((row) => row.id) };
     }, tx);
   }
 

@@ -11,17 +11,50 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
     return result;
   }
 
-  function makeService(status: 'confirmed' | 'cancelled') {
+  function makeService(status: 'confirmed' | 'cancelled', options: { existingCancellation?: boolean } = {}) {
     const state = {
       salesOrders: [{ id: salesOrderId, status, channelOrderId: 'channel-order-1' }],
-      salesOrderLines: [] as Array<Record<string, any>>,
-      fulfillmentOrders: [] as Array<Record<string, any>>,
+      salesOrderLines: [
+        {
+          id: 'line-1',
+          salesOrderId,
+          variantId: 'variant-1',
+          productName: 'Accepted Product',
+          quantity: 2,
+          unitPrice: 5000,
+          totalPrice: 10000,
+        },
+      ] as Array<Record<string, any>>,
+      fulfillmentOrders: [
+        {
+          id: 'fo-1',
+          salesOrderId,
+          status: 'ready',
+        },
+      ] as Array<Record<string, any>>,
+      salesOrderCancellations: options.existingCancellation
+        ? [
+            {
+              id: 'cancellation-1',
+              salesOrderId,
+              cancellationScope: 'full',
+              status: 'applied',
+              effects: [],
+              metadata: {},
+              occurredAt: new Date('2026-05-30T01:00:00.000Z'),
+              createdAt: new Date('2026-05-30T01:00:00.000Z'),
+            },
+          ]
+        : ([] as Array<Record<string, any>>),
+      businessLinks: [] as Array<Record<string, any>>,
     };
 
     const selectRowsFor = (table: unknown) => {
       if (table === wmsTables.salesOrders) return state.salesOrders;
       if (table === wmsTables.salesOrderLines) return state.salesOrderLines;
       if (table === wmsTables.fulfillmentOrders) return state.fulfillmentOrders;
+      if (table === wmsTables.salesOrderCancellations) return state.salesOrderCancellations;
+      if (table === wmsTables.businessLinks) return state.businessLinks;
       return [];
     };
 
@@ -45,6 +78,32 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
           },
         }),
       })),
+      insert: jest.fn((table: unknown) => ({
+        values: (values: Record<string, any> | Array<Record<string, any>>) => {
+          const insertedValues = Array.isArray(values) ? values : [values];
+          if (table === wmsTables.salesOrderCancellations) {
+            const inserted = insertedValues.map((value, index) => ({
+              id: `cancellation-${state.salesOrderCancellations.length + index + 1}`,
+              ...value,
+              createdAt: new Date('2026-05-30T01:00:00.000Z'),
+              updatedAt: new Date('2026-05-30T01:00:00.000Z'),
+            }));
+            state.salesOrderCancellations.push(...inserted);
+            return { returning: jest.fn().mockResolvedValue(inserted) };
+          }
+          if (table === wmsTables.businessLinks) {
+            const inserted = insertedValues.map((value, index) => ({
+              id: `business-link-${state.businessLinks.length + index + 1}`,
+              ...value,
+              createdAt: new Date('2026-05-30T01:00:00.000Z'),
+              updatedAt: new Date('2026-05-30T01:00:00.000Z'),
+            }));
+            state.businessLinks.push(...inserted);
+            return Promise.resolve();
+          }
+          return { returning: jest.fn().mockResolvedValue([]) };
+        },
+      })),
     };
 
     const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) } };
@@ -55,6 +114,11 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
     const backlog = {
       closeOpenForSalesOrder: jest.fn().mockResolvedValue(1),
     };
+    const library = {
+      revokeOwnershipsForOrderDetailed: jest
+        .fn()
+        .mockResolvedValue({ revokedCount: 1, ownershipIds: ['77777777-7777-4777-8777-777777777777'] }),
+    };
 
     const service = new SalesOrdersService(
       db as any,
@@ -64,28 +128,64 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
       {} as any,
       {} as any,
       backlog as any,
+      undefined,
+      undefined,
+      undefined,
+      library as any,
     );
 
-    return { service, tx, state, outbox, backlog };
+    return { service, tx, state, outbox, backlog, library };
   }
 
-  it('closes open fulfillment creation backlog when cancelling an active order', async () => {
+  it('records full cancellation effects and closes open fulfillment creation backlog', async () => {
     const { service, tx, state, backlog } = makeService('confirmed');
+    const originalLines = state.salesOrderLines.map((line) => ({ ...line }));
 
-    await service.cancel(salesOrderId);
+    const updated = await service.cancel(salesOrderId, {
+      reasonCode: 'CUSTOMER_REQUEST',
+      cancelledBy: 'admin-1',
+    });
 
     expect(tx.execute).toHaveBeenCalledTimes(1);
     expect(state.salesOrders[0].status).toBe('cancelled');
+    expect(state.salesOrderLines).toEqual(originalLines);
+    expect(state.salesOrderCancellations).toEqual([
+      expect.objectContaining({
+        id: 'cancellation-1',
+        salesOrderId,
+        cancellationScope: 'full',
+        reasonCode: 'CUSTOMER_REQUEST',
+        cancelledBy: 'admin-1',
+        effects: expect.arrayContaining([
+          expect.objectContaining({ type: 'cancelled_fulfillment_order', targetId: 'fo-1' }),
+          expect.objectContaining({ type: 'closed_fulfillment_creation_backlog' }),
+          expect.objectContaining({ type: 'revoked_digital_ownership' }),
+        ]),
+      }),
+    ]);
     expect(backlog.closeOpenForSalesOrder).toHaveBeenCalledWith(salesOrderId, tx);
+    expect(updated?.businessTimeline).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          relationName: 'opened_cancellation',
+          linkedEntity: { type: 'order_cancellation', id: 'cancellation-1', externalRef: null },
+        }),
+        expect.objectContaining({
+          relationName: 'cancellation_cancelled_fulfillment_order',
+          linkedEntity: { type: 'fulfillment_order', id: 'fo-1', externalRef: null },
+        }),
+      ]),
+    );
   });
 
-  it('also closes open backlog when cancel is retried for an already-cancelled order', async () => {
-    const { service, tx, backlog, outbox } = makeService('cancelled');
+  it('is idempotent when full cancellation is retried for an already-cancelled order', async () => {
+    const { service, tx, backlog, outbox, state } = makeService('cancelled', { existingCancellation: true });
 
     await service.cancel(salesOrderId);
 
     expect(tx.execute).toHaveBeenCalledTimes(1);
     expect(backlog.closeOpenForSalesOrder).toHaveBeenCalledWith(salesOrderId, tx);
+    expect(state.salesOrderCancellations).toHaveLength(1);
     expect(outbox.enqueue).not.toHaveBeenCalled();
   });
 });
