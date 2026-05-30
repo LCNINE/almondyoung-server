@@ -51,6 +51,11 @@
 - Medusa 는 WMS/재고 판단을 위해 Core API 를 직접 호출하지 않는다. 꼭 필요한 예외가 아니라면 Medusa 와 Core 의 commerce 경계는 channel-adapter 를 통해 연결한다.
 - _Avoid_: Medusa 를 Core 의 주문 하위 모듈처럼 취급하기, Medusa order id 를 Core sales order id 로 재사용하기, Medusa 에서 Core WMS/availability API 를 직접 호출하기.
 
+### 채널주문 (Channel Order)
+- 정의: Medusa/Naver/Coupang 같은 판매 채널이 자기 주문 모델과 ID 체계로 보유하는 원천 주문.
+- 채널주문은 Core 판매주문의 live projection 대상이 아니다. Payment Accepted 시점에 channel-adapter 가 채널주문을 Core 판매주문 처리 계약으로 번역한다.
+- _Avoid_: 채널주문과 Core 판매주문을 같은 주문 row 의 두 표현으로 보기.
+
 ### Payment Accepted — 채널 주문 수락 기준
 - 정의: 판매 채널이 결제 실패 위험을 벗어나 Core 주문 처리 대상으로 넘길 수 있다고 판단한 결제 상태.
 - Medusa/Wallet 에서는 `AUTHORIZED` 또는 `CAPTURED` 가 Payment Accepted 이다. Core 판매주문 생성 기준은 `AUTHORIZED` 이며, `CAPTURED` 는 `AUTHORIZED` 를 이미 만족한 더 강한 정산 상태일 뿐 생성 게이트가 아니다.
@@ -59,11 +64,34 @@
 
 ### 판매주문 (Core Sales Order)
 - 정의: Payment Accepted 된 채널 주문을 Core 의 주문 처리 모델로 번역해 기록한 주문.
+- 판매주문은 채널주문의 live projection 이 아니라, Payment Accepted 시점에 Core 가 수락한 독립 처리 계약이다.
+- 판매주문의 원 line 은 수락 당시 계약 스냅샷이다. Payment Accepted 이후 상품 추가/대체/수량 보정은 원 line 을 직접 수정하지 않고 별도 주문정정으로 기록한다.
 - 판매주문 생성은 아직 창고 출고가 가능하다는 뜻이 아니다. 판매상품 중 재고상품 매칭이 없으면 이후 출고주문 생성이 실패하거나 대기할 수 있다.
 - Payment Accepted 된 채널 주문이 Core 에 들어오면 Core 는 판매주문 생성 뒤 출고주문 생성까지 자동으로 시도한다. 판매채널이 Core/WMS 를 직접 호출하지 않게 격리하는 대신, Core 내부 전환이 자동으로 이어져야 한다.
 - 같은 채널 주문의 결제 상태가 `AUTHORIZED` 에서 `CAPTURED` 로 강해져도 새 판매주문을 만들지 않는다. Core 판매주문 정체성은 `(salesChannel, channelOrderId)` 이며, 결제 상태 변화는 같은 주문의 update 다.
-- channel-adapter 가 한 번 수집한 Medusa 주문은 Core 처리 계약으로 고정된다. 이후 Medusa 쪽 주문 변경은 Core 판매주문에 자동 반영하지 않고 운영 예외로 격리한다. 상품 추가/제거 같은 CS 정정은 별도 주문 정정/추가출고 워크플로우로 다룬다.
-- _Avoid_: Medusa order 를 판매주문과 같은 정체성으로 보기, 판매주문 생성을 출고주문/재고주문 생성이라고 부르기.
+- channel-adapter 가 한 번 수집한 Medusa 주문은 Core 처리 계약으로 고정된다. 이후 Medusa 쪽 주문 변경은 Core 판매주문에 자동 반영하지 않고 운영 예외로 격리한다. 상품 추가/대체 같은 CS 정정은 별도 주문정정/추가출고 워크플로우로 다루고, 취소는 별도 주문취소 lifecycle 로 다룬다.
+- _Avoid_: Medusa order 를 판매주문과 같은 정체성으로 보기, 판매주문 생성을 출고주문/재고주문 생성이라고 부르기, 수락된 판매주문 line 을 사후 수정 이력 없이 덮어쓰기.
+
+### 주문정정 (SalesOrderAmendment)
+- 정의: Payment Accepted 이후 원 판매주문 계약과 달라지는 상품/수량/금액/이행 의사결정을 기록하는 별도 사건.
+- 주문정정은 원 판매주문 line 의 revision 이나 단순 값 변경이 아니다. 추가출고, 보상출고, 추가 결제/환불 같은 후속 workflow 의 입력이 되는 정정 결정과 delta 기록이다.
+- 금액이 바뀌는 상업적 주문정정과 고객 청구액이 바뀌지 않는 이행 정정은 구분한다. 무료 증정/누락 보상/CS 보상출고를 단순히 `unitPrice=0` 주문 line 추가로 표현하지 않는다.
+- 이미 만들어진 출고주문/예약/피킹 단의 상태 조정은 주문정정에서 파생될 수 있지만, 그 자체가 원 판매주문 계약 변경은 아니다. 실제 출고 조정은 아직 출고되지 않은 수량에만 적용한다.
+- 이미 출고된 수량은 출고주문에서 제거하지 않는다. 부분 취소/라인 제거 정정이 출고 이후에 발생하면 반품/회수/환불/보상 정책으로 넘어간다.
+- Medusa 의 OrderChange 와 유사하게 정정 사건을 원 주문 옆에 누적하지만, Core 의 canonical term 은 주문정정이다.
+- _Avoid_: 주문정정을 채널주문 재수집으로 처리하기, 원 판매주문 line 을 직접 PATCH/DELETE 하는 API 로 표현하기, 주문취소를 모든 line 제거 정정으로 환원하기.
+
+### 주문취소 (OrderCancellation)
+- 정의: 수락된 판매주문의 남은 청구/이행 의무를 전체 또는 일부 범위에서 더 이상 진행하지 않기로 하는 lifecycle 사건.
+- 주문취소는 주문정정의 하위 타입이 아니다. 전체 취소는 모든 line 을 제거하는 주문정정을 만들지 않고, 원 판매주문 line 을 보존한 채 남은 의무를 취소 상태/효과로 닫는다.
+- 부분 취소는 line 과 수량 범위를 가진 주문취소다. 아직 출고되지 않은 수량은 출고 조정/예약 해제로 이어지고, 이미 출고된 수량은 반품/회수/환불/보상 정책으로 이어진다.
+- _Avoid_: 주문취소를 원 판매주문 line 삭제로 표현하기, 환불 완료만으로 주문취소가 완료됐다고 보기.
+
+### 업무 연결 (Business Link)
+- 정의: CS 사건, 주문정정, 결제/환불, 출고/반품 같은 독립 도메인 사건 사이의 원인/파급효과 관계.
+- CS Case, 주문정정, Wallet 결제/환불, 출고주문/반품은 서로를 소유하지 않는다. 관리자가 한 주문의 전체 파급효과를 조회할 수 있도록 명시적인 업무 연결로 묶는다.
+- 업무 연결은 `주문정정 → 환불`, `주문정정 → 출고 조정`, `CS Case → 주문정정`, `환불 → 판매주문` 같은 관계를 표현한다. 각 대상의 상태와 감사 로그는 대상 도메인이 소유한다.
+- _Avoid_: 주문정정 row 에 환불/출고/CS 세부 상태를 내장하기, 결제/CS/출고 엔티티를 주문정정의 하위 엔티티로 만들기.
 
 ### 출고주문 (Fulfillment Order / 재고주문)
 - 정의: 판매주문 전체 또는 일부를 창고 작업과 재고 차감 대상으로 넘기기 위해 만든 WMS/Core 객체.

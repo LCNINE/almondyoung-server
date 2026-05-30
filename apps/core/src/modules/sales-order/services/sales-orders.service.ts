@@ -1,4 +1,4 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
@@ -20,6 +20,26 @@ import { OrderCreatedPayload, OrderModifiedPayload, ShippingAddress, OrderItem }
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 
 type SalesOrderLineInsert = InferInsertModel<typeof wmsTables.salesOrderLines>;
+type SalesOrderContractField =
+  | 'customer'
+  | 'customerId'
+  | 'shippingAddress'
+  | 'totalAmount'
+  | 'shippingFee'
+  | 'items'
+  | 'lines';
+type SalesOrderPatchInput = UpdateSalesOrderDto & Partial<Record<SalesOrderContractField, unknown>>;
+
+const ACCEPTED_CONTRACT_CHANNELS = new Set(['medusa', 'naver', 'coupang']);
+const CONTRACT_PATCH_FIELDS: SalesOrderContractField[] = [
+  'customer',
+  'customerId',
+  'shippingAddress',
+  'totalAmount',
+  'shippingFee',
+  'items',
+  'lines',
+];
 
 /** Phase 6에서 FulfillmentsService로 교체된다 */
 interface IFulfillmentsService {
@@ -146,30 +166,49 @@ export class SalesOrdersService {
 
   async update(id: string, dto: UpdateSalesOrderDto, tx?: DbTx) {
     return this.inTx(async (trx) => {
-      await trx
-        .update(wmsTables.salesOrders)
-        .set({
-          customerName: dto.customer?.name ?? null,
-          customerEmail: dto.customer?.email ?? null,
-          customerPhone: dto.customer?.phone ?? null,
-          shippingAddress: dto.shippingAddress,
-          totalAmount: dto.totalAmount ?? null,
-          shippingFee: dto.shippingFee ?? 0,
-          processedAt: dto.processedAt ? new Date(dto.processedAt) : null,
-          memo: dto.memo ?? null,
-        })
-        .where(eq(wmsTables.salesOrders.id, id));
+      const [salesOrder] = await trx
+        .select()
+        .from(wmsTables.salesOrders)
+        .where(eq(wmsTables.salesOrders.id, id))
+        .limit(1);
+      if (!salesOrder) {
+        throw new NotFoundException(`Sales order ${id} not found`);
+      }
+
+      this.assertAcceptedContractIsNotPatched(salesOrder, dto);
+
+      const updateData: Record<string, unknown> = {};
+
+      if (dto.customer) {
+        if ('name' in dto.customer) updateData.customerName = dto.customer.name ?? null;
+        if ('email' in dto.customer) updateData.customerEmail = dto.customer.email ?? null;
+        if ('phone' in dto.customer) updateData.customerPhone = dto.customer.phone ?? null;
+      }
+      if (dto.shippingAddress !== undefined) updateData.shippingAddress = dto.shippingAddress;
+      if (dto.totalAmount !== undefined) updateData.totalAmount = dto.totalAmount;
+      if (dto.shippingFee !== undefined) updateData.shippingFee = dto.shippingFee;
+      if (dto.processedAt !== undefined) updateData.processedAt = dto.processedAt ? new Date(dto.processedAt) : null;
+      if (dto.memo !== undefined) updateData.memo = dto.memo;
+
+      if (Object.keys(updateData).length > 0) {
+        await trx
+          .update(wmsTables.salesOrders)
+          .set({ ...updateData, updatedAt: new Date() })
+          .where(eq(wmsTables.salesOrders.id, id));
+
+        await this.outbox.enqueue(
+          {
+            eventType: ORDER_EVENTS.MODIFIED,
+            aggregateType: 'order',
+            aggregateId: id,
+            partitionKey: id,
+            payload: { orderId: id },
+          },
+          trx,
+        );
+      }
+
       const updated = await this.getOne(id, trx);
-      await this.outbox.enqueue(
-        {
-          eventType: ORDER_EVENTS.MODIFIED,
-          aggregateType: 'order',
-          aggregateId: id,
-          partitionKey: id,
-          payload: { orderId: id },
-        },
-        trx,
-      );
       return updated;
     }, tx);
   }
@@ -612,39 +651,29 @@ export class SalesOrdersService {
 
   async updateFromEvent(id: string, changes: OrderModifiedPayload['changes'], tx?: DbTx) {
     return this.inTx(async (trx) => {
-      const updateData: Record<string, any> = {};
-
-      if (changes.shippingAddress) {
-        updateData.shippingAddress = this.convertShippingAddress(changes.shippingAddress);
-      }
-      if (changes.totalAmount !== undefined) {
-        updateData.totalAmount = changes.totalAmount;
-      }
-
-      if (Object.keys(updateData).length > 0) {
-        await trx
-          .update(wmsTables.salesOrders)
-          .set({ ...updateData, updatedAt: new Date() })
-          .where(eq(wmsTables.salesOrders.id, id));
-      }
-
-      if (changes.items && changes.items.length > 0) {
-        this.logger.warn(`[updateFromEvent] Item changes not yet implemented for order ${id}`);
-      }
-
-      const updated = await this.getOne(id, trx);
-      await this.outbox.enqueue(
-        {
-          eventType: ORDER_EVENTS.MODIFIED,
-          aggregateType: 'order',
-          aggregateId: id,
-          partitionKey: id,
-          payload: { orderId: id, changes },
-        },
-        trx,
+      this.logger.warn(
+        `[updateFromEvent] Ignored post-acceptance OrderModified for sales order ${id}; ` +
+          'use SalesOrderAmendment or OrderCancellation workflows for contract changes.',
       );
-      return updated;
+      return this.getOne(id, trx);
     }, tx);
+  }
+
+  private assertAcceptedContractIsNotPatched(salesOrder: { salesChannel: string }, dto: SalesOrderPatchInput): void {
+    if (!ACCEPTED_CONTRACT_CHANNELS.has(salesOrder.salesChannel)) {
+      return;
+    }
+
+    const attemptedContractFields = CONTRACT_PATCH_FIELDS.filter((field) => dto[field] !== undefined);
+    if (attemptedContractFields.length === 0) {
+      return;
+    }
+
+    throw new BadRequestException(
+      `Accepted SalesOrder contract fields are immutable: ${attemptedContractFields.join(
+        ', ',
+      )}. Use SalesOrderAmendment or OrderCancellation workflows for post-acceptance changes.`,
+    );
   }
 
   private convertShippingAddress(address: ShippingAddress): AddressDto {
