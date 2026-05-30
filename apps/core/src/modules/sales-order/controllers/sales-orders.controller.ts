@@ -6,6 +6,7 @@ import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
 import { MergeSalesOrdersDto } from '../dto/merge-sales-orders.dto';
 import { SalesOrderResponseDto } from '../dto/sales-order-response.dto';
 import { SalesOrderFilterDto } from '../dto/sales-order-filter.dto';
+import { CreateBusinessLinkDto } from '../dto/create-business-link.dto';
 
 @ApiTags('Sales Orders')
 @Controller('sales-orders')
@@ -40,6 +41,14 @@ export class SalesOrdersController {
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
   cancel(@Param('id') id: string) {
     return this.service.cancel(id);
+  }
+
+  @Post(':id/business-links')
+  @ApiOperation({ summary: '판매 주문 업무 연결 생성' })
+  @ApiParam({ name: 'id', description: '판매 주문 ID' })
+  @ApiResponse({ status: 201, description: '업무 연결 생성 성공' })
+  createBusinessLink(@Param('id') id: string, @Body() dto: CreateBusinessLinkDto) {
+    return this.service.createBusinessLink(id, dto);
   }
 
   @Post('merge')

@@ -46,7 +46,7 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
       })),
     };
 
-    const db = { db: { transaction: jest.fn((fn) => fn(tx)) } };
+    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) } };
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const reservationLifecycle = {
       handleFulfillmentOrderStatusChange: jest.fn().mockResolvedValue(undefined),
@@ -160,7 +160,7 @@ describe('SalesOrdersService.update accepted contract immutability', () => {
       })),
     };
 
-    const db = { db: { transaction: jest.fn((fn) => fn(tx)) } };
+    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) } };
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const service = new SalesOrdersService(
       db as any,
@@ -256,5 +256,116 @@ describe('SalesOrdersService.update accepted contract immutability', () => {
     expect(state.salesOrders[0].totalAmount).toBe(10000);
     expect(state.salesOrderLines[0].quantity).toBe(1);
     expect(outbox.enqueue).not.toHaveBeenCalled();
+  });
+});
+
+describe('SalesOrdersService business links', () => {
+  const salesOrderId = '33333333-3333-4333-8333-333333333333';
+  const amendmentId = '44444444-4444-4444-8444-444444444444';
+
+  function rows<T>(value: T[]): T[] & { limit: (count: number) => Promise<T[]> } {
+    const result = [...value] as T[] & { limit: (count: number) => Promise<T[]> };
+    result.limit = (count: number) => Promise.resolve(result.slice(0, count));
+    return result;
+  }
+
+  function makeService() {
+    const state = {
+      salesOrders: [
+        {
+          id: salesOrderId,
+          status: 'confirmed',
+          salesChannel: 'medusa',
+          channelOrderId: 'medusa_order_2',
+          shippingAddress: {},
+          orderDate: new Date('2026-05-30T00:00:00.000Z'),
+        },
+      ] as Array<Record<string, any>>,
+      salesOrderLines: [] as Array<Record<string, any>>,
+      businessLinks: [] as Array<Record<string, any>>,
+    };
+
+    const selectRowsFor = (table: unknown) => {
+      if (table === wmsTables.salesOrders) return state.salesOrders;
+      if (table === wmsTables.salesOrderLines) return state.salesOrderLines;
+      if (table === wmsTables.businessLinks) return state.businessLinks;
+      return [];
+    };
+
+    const tx: any = {
+      select: jest.fn(() => ({
+        from: (table: unknown) => ({
+          where: () => rows(selectRowsFor(table)),
+        }),
+      })),
+      insert: jest.fn((table: unknown) => ({
+        values: (values: Record<string, unknown>) => ({
+          returning: () => {
+            if (table !== wmsTables.businessLinks) return [];
+            const inserted = {
+              id: `business-link-${state.businessLinks.length + 1}`,
+              ...values,
+              createdAt: new Date(`2026-05-30T00:0${state.businessLinks.length}:00.000Z`),
+              updatedAt: new Date(`2026-05-30T00:0${state.businessLinks.length}:00.000Z`),
+            };
+            state.businessLinks.push(inserted);
+            return [inserted];
+          },
+        }),
+      })),
+    };
+
+    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) } };
+    const service = new SalesOrdersService(db as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any);
+
+    return { service, state, tx };
+  }
+
+  it('links different entity types to the same SalesOrder without foreign-key ownership', async () => {
+    const { service, state } = makeService();
+
+    await service.createBusinessLink(salesOrderId, {
+      relationName: 'opened_amendment',
+      target: { type: 'sales_order_amendment', id: amendmentId },
+      occurredAt: '2026-05-30T01:00:00.000Z',
+      metadata: { reason: 'customer_request' },
+    });
+    await service.createBusinessLink(salesOrderId, {
+      relationName: 'caused_refund',
+      target: { type: 'wallet_refund', externalRef: 'wallet:refund:rf_123' },
+      occurredAt: '2026-05-30T02:00:00.000Z',
+      metadata: { amount: 3000 },
+    });
+
+    expect(state.businessLinks).toHaveLength(2);
+    expect(state.businessLinks[0]).toMatchObject({
+      sourceType: 'sales_order',
+      sourceId: salesOrderId,
+      targetType: 'sales_order_amendment',
+      targetId: amendmentId,
+      targetExternalRef: null,
+    });
+    expect(state.businessLinks[1]).toMatchObject({
+      sourceType: 'sales_order',
+      sourceId: salesOrderId,
+      targetType: 'wallet_refund',
+      targetId: null,
+      targetExternalRef: 'wallet:refund:rf_123',
+    });
+
+    const detail = await service.getOne(salesOrderId);
+
+    expect(detail?.businessTimeline).toEqual([
+      expect.objectContaining({
+        relationName: 'opened_amendment',
+        direction: 'outbound',
+        linkedEntity: { type: 'sales_order_amendment', id: amendmentId, externalRef: null },
+      }),
+      expect.objectContaining({
+        relationName: 'caused_refund',
+        direction: 'outbound',
+        linkedEntity: { type: 'wallet_refund', id: null, externalRef: 'wallet:refund:rf_123' },
+      }),
+    ]);
   });
 });

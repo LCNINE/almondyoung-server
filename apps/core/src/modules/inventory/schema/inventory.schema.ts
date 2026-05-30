@@ -1099,6 +1099,42 @@ export const orderEvents = pgTable('order_events', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const businessLinks = pgTable(
+  'business_links',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    sourceType: varchar('source_type', { length: 64 }).notNull(),
+    sourceId: uuid('source_id'),
+    sourceExternalRef: varchar('source_external_ref', { length: 255 }),
+    targetType: varchar('target_type', { length: 64 }).notNull(),
+    targetId: uuid('target_id'),
+    targetExternalRef: varchar('target_external_ref', { length: 255 }),
+    relationName: varchar('relation_name', { length: 96 }).notNull(),
+    metadata: jsonb('metadata')
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxSourceId: index('idx_business_links_source_id').on(t.sourceType, t.sourceId),
+    idxSourceExternalRef: index('idx_business_links_source_external_ref').on(t.sourceType, t.sourceExternalRef),
+    idxTargetId: index('idx_business_links_target_id').on(t.targetType, t.targetId),
+    idxTargetExternalRef: index('idx_business_links_target_external_ref').on(t.targetType, t.targetExternalRef),
+    idxRelationName: index('idx_business_links_relation_name').on(t.relationName),
+    idxOccurredAt: index('idx_business_links_occurred_at').on(t.occurredAt),
+    sourceReferenceRequired: check(
+      'business_links_source_ref_required',
+      sql`${t.sourceId} IS NOT NULL OR ${t.sourceExternalRef} IS NOT NULL`,
+    ),
+    targetReferenceRequired: check(
+      'business_links_target_ref_required',
+      sql`${t.targetId} IS NOT NULL OR ${t.targetExternalRef} IS NOT NULL`,
+    ),
+  }),
+);
+
 // 합배송 그룹 테이블 추가
 export const mergeGroups = pgTable('merge_groups', {
   id: varchar('id', { length: 64 }).primaryKey(), // G-{sequence} 형태
@@ -2032,6 +2068,7 @@ export const wmsTables = {
   salesOrders,
   salesOrderLines,
   orderEvents,
+  businessLinks,
   mergeGroups,
   stockReservations,
   fulfillmentOrders,
@@ -3038,6 +3075,9 @@ export type NewSalesOrderLine = InferInsertModel<typeof salesOrderLines>;
 
 export type OrderEvent = InferSelectModel<typeof orderEvents>;
 export type NewOrderEvent = InferInsertModel<typeof orderEvents>;
+
+export type BusinessLink = InferSelectModel<typeof businessLinks>;
+export type NewBusinessLink = InferInsertModel<typeof businessLinks>;
 
 export type MergeGroup = InferSelectModel<typeof mergeGroups>;
 export type NewMergeGroup = InferInsertModel<typeof mergeGroups>;

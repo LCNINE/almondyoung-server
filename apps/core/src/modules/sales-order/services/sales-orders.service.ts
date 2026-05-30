@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException, Optional } 
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
-import { eq, inArray, desc, and, gte, lte, count, sql, type InferInsertModel, type SQL } from 'drizzle-orm';
+import { eq, inArray, desc, and, or, gte, lte, count, sql, type InferInsertModel, type SQL } from 'drizzle-orm';
 import { PoliciesService } from './policies.service';
 import { OutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
@@ -15,11 +15,19 @@ import { CreateSalesOrderDto } from '../dto/create-sales-order.dto';
 import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
 import { MergeSalesOrdersDto } from '../dto/merge-sales-orders.dto';
 import { SalesOrderFilterDto } from '../dto/sales-order-filter.dto';
+import { BusinessLinkReferenceDto, CreateBusinessLinkDto } from '../dto/create-business-link.dto';
 import { AddressDto } from '../dto/address.dto';
 import { OrderCreatedPayload, OrderModifiedPayload, ShippingAddress, OrderItem } from '@packages/event-contracts';
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 
 type SalesOrderLineInsert = InferInsertModel<typeof wmsTables.salesOrderLines>;
+type BusinessLinkInsert = InferInsertModel<typeof wmsTables.businessLinks>;
+type BusinessLinkRow = typeof wmsTables.businessLinks.$inferSelect;
+type BusinessLinkReference = {
+  type: string;
+  id: string | null;
+  externalRef: string | null;
+};
 type SalesOrderContractField =
   | 'customer'
   | 'customerId'
@@ -468,7 +476,60 @@ export class SalesOrdersService {
       .select()
       .from(wmsTables.salesOrderLines)
       .where(eq(wmsTables.salesOrderLines.salesOrderId, id));
-    return { ...order, lines };
+    const businessLinks = await db
+      .select()
+      .from(wmsTables.businessLinks)
+      .where(
+        or(
+          and(eq(wmsTables.businessLinks.sourceType, 'sales_order'), eq(wmsTables.businessLinks.sourceId, id)),
+          and(eq(wmsTables.businessLinks.targetType, 'sales_order'), eq(wmsTables.businessLinks.targetId, id)),
+        ),
+      );
+    return { ...order, lines, businessTimeline: this.toBusinessTimeline(id, businessLinks) };
+  }
+
+  async createBusinessLink(id: string, dto: CreateBusinessLinkDto, tx?: DbTx) {
+    return this.inTx(async (trx) => {
+      const [order] = await trx
+        .select({ id: wmsTables.salesOrders.id })
+        .from(wmsTables.salesOrders)
+        .where(eq(wmsTables.salesOrders.id, id))
+        .limit(1);
+      if (!order) {
+        throw new NotFoundException(`Sales order ${id} not found`);
+      }
+      if (!dto.target) {
+        throw new BadRequestException('Business link target is required');
+      }
+
+      const source = this.normalizeBusinessLinkRef(dto.source ?? { type: 'sales_order', id });
+      const target = this.normalizeBusinessLinkRef(dto.target);
+
+      if (!this.hasBusinessLinkRef(source)) {
+        throw new BadRequestException('Business link source must include id or externalRef');
+      }
+      if (!this.hasBusinessLinkRef(target)) {
+        throw new BadRequestException('Business link target must include id or externalRef');
+      }
+      if (!this.referencesSalesOrder(source, id) && !this.referencesSalesOrder(target, id)) {
+        throw new BadRequestException('Business link must reference the requested SalesOrder as source or target');
+      }
+
+      const values: BusinessLinkInsert = {
+        sourceType: source.type,
+        sourceId: source.id,
+        sourceExternalRef: source.externalRef,
+        targetType: target.type,
+        targetId: target.id,
+        targetExternalRef: target.externalRef,
+        relationName: dto.relationName,
+        metadata: dto.metadata ?? {},
+        occurredAt: dto.occurredAt ? new Date(dto.occurredAt) : new Date(),
+      };
+
+      const [businessLink] = await trx.insert(wmsTables.businessLinks).values(values).returning();
+      return this.toBusinessTimelineItem(id, businessLink);
+    }, tx);
   }
 
   async findByChannelOrderId(salesChannel: 'medusa' | 'naver' | 'coupang' | '3pl', channelOrderId: string, tx?: DbTx) {
@@ -674,6 +735,54 @@ export class SalesOrdersService {
         ', ',
       )}. Use SalesOrderAmendment or OrderCancellation workflows for post-acceptance changes.`,
     );
+  }
+
+  private normalizeBusinessLinkRef(ref: BusinessLinkReferenceDto): BusinessLinkReference {
+    return {
+      type: ref.type,
+      id: ref.id ?? null,
+      externalRef: ref.externalRef ?? null,
+    };
+  }
+
+  private hasBusinessLinkRef(ref: BusinessLinkReference): boolean {
+    return Boolean(ref.id || ref.externalRef);
+  }
+
+  private referencesSalesOrder(ref: BusinessLinkReference, salesOrderId: string): boolean {
+    return ref.type === 'sales_order' && ref.id === salesOrderId;
+  }
+
+  private toBusinessTimeline(salesOrderId: string, links: BusinessLinkRow[]) {
+    return links
+      .map((link) => this.toBusinessTimelineItem(salesOrderId, link))
+      .sort((a, b) => {
+        const occurred = a.occurredAt.getTime() - b.occurredAt.getTime();
+        if (occurred !== 0) return occurred;
+        return a.createdAt.getTime() - b.createdAt.getTime();
+      });
+  }
+
+  private toBusinessTimelineItem(salesOrderId: string, link: BusinessLinkRow) {
+    const source = this.toBusinessLinkRef(link.sourceType, link.sourceId, link.sourceExternalRef);
+    const target = this.toBusinessLinkRef(link.targetType, link.targetId, link.targetExternalRef);
+    const direction = this.referencesSalesOrder(source, salesOrderId) ? 'outbound' : 'inbound';
+
+    return {
+      id: link.id,
+      relationName: link.relationName,
+      direction,
+      source,
+      target,
+      linkedEntity: direction === 'outbound' ? target : source,
+      metadata: (link.metadata ?? {}) as Record<string, unknown>,
+      occurredAt: link.occurredAt,
+      createdAt: link.createdAt,
+    };
+  }
+
+  private toBusinessLinkRef(type: string, id: string | null, externalRef: string | null): BusinessLinkReference {
+    return { type, id, externalRef };
   }
 
   private convertShippingAddress(address: ShippingAddress): AddressDto {
