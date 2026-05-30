@@ -2,8 +2,11 @@ import { OrderCreatedPayload, OrderItem, ShippingAddress } from '@packages/event
 
 export const CHANNEL_ORDER_PROVIDER = Symbol('CHANNEL_ORDER_PROVIDER');
 export const CHANNEL_PRODUCT_IDENTIFICATION_FAILED = 'channel_product_identification_failed' as const;
+export const COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED = 'collected_order_modification_not_accepted' as const;
 
-export type OrderCollectionFailureReason = typeof CHANNEL_PRODUCT_IDENTIFICATION_FAILED;
+export type OrderCollectionFailureReason =
+  | typeof CHANNEL_PRODUCT_IDENTIFICATION_FAILED
+  | typeof COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED;
 
 export interface OrderCollectionFailureItem {
   externalOrderId: string;

@@ -2,7 +2,8 @@
 
 Payment Accepted channel orders must not disappear from the order polling flow. If a Medusa order line cannot be
 identified as a Core catalog variant, the channel adapter records the order in `order_collection_failures` instead of
-publishing a normal `OrderCreated` event.
+publishing a normal `OrderCreated` event. The same quarantine table is also used when a Medusa order changes after the
+channel adapter has already collected it.
 
 ## Failure Reason
 
@@ -10,6 +11,13 @@ publishing a normal `OrderCreated` event.
 
 This means at least one Medusa order line is missing `variant.metadata.pimVariantId`. It is not SKU matching failure.
 SKU matching happens later, after Core has a sales order.
+
+`collected_order_modification_not_accepted`
+
+This means the channel adapter has already collected the Medusa order and later observed a changed order payload. Core
+treats the collected Payment Accepted order as the sales-order processing contract, so Medusa-side order changes are not
+published as `OrderModified`. Handle CS item additions/removals through a separate Core order amendment or extra shipment
+workflow.
 
 ## Operator API
 
@@ -29,7 +37,7 @@ The record contains:
 
 - `externalOrderId`: raw Medusa order id.
 - `affectedLineIds`: Medusa line item ids missing `pimVariantId`.
-- `reason`: `channel_product_identification_failed`.
+- `reason`: `channel_product_identification_failed` or `collected_order_modification_not_accepted`.
 - `rawOrder`: Medusa order payload retained for investigation.
 
 ## Replay Path
@@ -45,5 +53,8 @@ POST /adapter/order-collection-failures/:id/replay
 Replay fetches the current Medusa order by `externalOrderId` and runs it through the normal order collection path.
 If any line still lacks `pimVariantId`, the failure remains `quarantined` and no `OrderCreated` is emitted. If the
 order is now identifiable, the adapter enqueues the normal `OrderCreated` event and marks the failure `replayed`.
+
+`collected_order_modification_not_accepted` is not replayable. It is an operator signal that Medusa changed an already
+collected order; do not try to make Core accept the change through polling.
 
 Do not move the polling watermark backward for this case. The quarantine row is the durable handle for recovery.

@@ -9,15 +9,16 @@ import { ChannelType } from '../../adapters/channel-adapter.factory';
 import {
   CHANNEL_ORDER_PROVIDER,
   ChannelOrderProvider,
+  COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED,
   OrderCollectionFailureItem,
   OrderFetchItem,
   ReplayableChannelOrderProvider,
 } from './channel-order-provider.interface';
-import { OrderModifiedPayload } from '@packages/event-contracts/streams';
 import { channelAdapterSchema, wmsOrderMappings } from '../../schema';
 import { OrderCollectionFailureService } from './order-collection-failure.service';
 
 const POLLING_RESOURCE_TYPE_ORDER = 'order';
+const WATERMARK_LOOKBACK_MS = 2 * 60 * 1000;
 
 type OrderedPollItem = { kind: 'order'; item: OrderFetchItem } | { kind: 'failure'; item: OrderCollectionFailureItem };
 
@@ -42,7 +43,7 @@ export class OrderPollerOrchestrator {
 
       try {
         const syncStatus = await this.syncStatusService.getSyncStatus(channelType, 'orders');
-        const since = syncStatus?.lastSyncAt ?? null;
+        const since = this.applyWatermarkLookback(syncStatus?.lastSyncAt ?? null);
 
         await this.syncStatusService.recordSyncStart(channelType, 'orders');
 
@@ -97,7 +98,7 @@ export class OrderPollerOrchestrator {
   }
 
   async replayFailure(failureId: string): Promise<{
-    status: 'replayed' | 'already_processed' | 'still_quarantined' | 'not_found_or_not_payment_accepted';
+    status: 'replayed' | 'already_processed' | 'still_quarantined' | 'not_found_or_not_payment_accepted' | 'not_replayable';
     failureId: string;
     externalOrderId: string;
     emitted: number;
@@ -106,6 +107,16 @@ export class OrderPollerOrchestrator {
     const failure = await this.orderCollectionFailureService.findById(failureId);
     if (!failure) {
       return null;
+    }
+
+    if (failure.reason === COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED) {
+      return {
+        status: 'not_replayable',
+        failureId,
+        externalOrderId: failure.externalOrderId,
+        emitted: 0,
+        dedupedUnchanged: 0,
+      };
     }
 
     const provider = this.providers.find((candidate) => candidate.channel === failure.channel);
@@ -225,8 +236,8 @@ export class OrderPollerOrchestrator {
       };
     }
 
-    // OrderModified
-    // 외부 시스템이 무의미하게 updated_at만 bump한 경우(상태머신 부수효과 등)를 거른다.
+    // 이미 Core로 넘긴 Medusa 주문 변경은 자동 반영하지 않는다.
+    // 무의미한 updated_at bump는 hash로 거르고, 실제 변경은 운영 예외로 격리한다.
     const newHash = this.pollingHashService.computeHash(item.changes);
     const storedHash = await this.pollingHashService.getStoredHash(
       provider.channel,
@@ -241,33 +252,26 @@ export class OrderPollerOrchestrator {
       };
     }
 
-    const modifiedPayload: OrderModifiedPayload = {
-      orderId: mapping[0].wmsOrderId,
-      changes: item.changes,
-      modifiedBy: 'medusa',
-      modifiedAt: item.modifiedAt,
-    };
-
     await this.db.db.transaction(async (tx) => {
-      await this.inboxService.enqueue(
+      await this.orderCollectionFailureService.recordFailure(
+        provider.channel,
         {
-          eventType: 'OrderModified',
-          aggregateId: item.externalOrderId,
-          aggregateType: 'ChannelAdapter',
-          partitionKey: provider.channel,
-          payload: modifiedPayload,
-          metadata: {
-            salesChannel: provider.channel,
-            causedBy: {
-              resourceType: 'MEDUSA_ORDER',
-              resourceId: item.externalOrderId,
-            },
+          externalOrderId: item.externalOrderId,
+          sourceUpdatedAt: item.sourceUpdatedAt,
+          reason: COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED,
+          affectedLineIds: item.changes.items.map((line) => line.orderItemId),
+          rawOrder: {
+            externalOrderId: item.externalOrderId,
+            wmsOrderId: mapping[0].wmsOrderId,
+            modifiedAt: item.modifiedAt,
+            changes: item.changes,
+            policy: 'Medusa order changes are not accepted after channel-adapter has collected the order.',
           },
         },
         tx,
       );
 
-      // enqueue 성공 후에만 갱신 — 도중 실패 시 다음 폴링에서 재시도되도록
+      // 격리 저장 성공 후에만 갱신 — 도중 실패 시 다음 폴링에서 재시도되도록
       await this.pollingHashService.upsert(
         provider.channel,
         POLLING_RESOURCE_TYPE_ORDER,
@@ -278,7 +282,7 @@ export class OrderPollerOrchestrator {
     });
 
     return {
-      emitted: 1,
+      emitted: 0,
       dedupedUnchanged: 0,
       wmsOrderId: mapping[0].wmsOrderId,
     };
@@ -286,6 +290,14 @@ export class OrderPollerOrchestrator {
 
   private isReplayableProvider(provider: ChannelOrderProvider): provider is ReplayableChannelOrderProvider {
     return typeof (provider as ReplayableChannelOrderProvider).fetchOrder === 'function';
+  }
+
+  private applyWatermarkLookback(since: Date | null): Date | null {
+    if (!since) {
+      return null;
+    }
+
+    return new Date(Math.max(0, since.getTime() - WATERMARK_LOOKBACK_MS));
   }
 
   private maxDate(current: Date | null, value: string): Date | null {

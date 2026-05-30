@@ -62,6 +62,7 @@
 - 판매주문 생성은 아직 창고 출고가 가능하다는 뜻이 아니다. 판매상품 중 재고상품 매칭이 없으면 이후 출고주문 생성이 실패하거나 대기할 수 있다.
 - Payment Accepted 된 채널 주문이 Core 에 들어오면 Core 는 판매주문 생성 뒤 출고주문 생성까지 자동으로 시도한다. 판매채널이 Core/WMS 를 직접 호출하지 않게 격리하는 대신, Core 내부 전환이 자동으로 이어져야 한다.
 - 같은 채널 주문의 결제 상태가 `AUTHORIZED` 에서 `CAPTURED` 로 강해져도 새 판매주문을 만들지 않는다. Core 판매주문 정체성은 `(salesChannel, channelOrderId)` 이며, 결제 상태 변화는 같은 주문의 update 다.
+- channel-adapter 가 한 번 수집한 Medusa 주문은 Core 처리 계약으로 고정된다. 이후 Medusa 쪽 주문 변경은 Core 판매주문에 자동 반영하지 않고 운영 예외로 격리한다. 상품 추가/제거 같은 CS 정정은 별도 주문 정정/추가출고 워크플로우로 다룬다.
 - _Avoid_: Medusa order 를 판매주문과 같은 정체성으로 보기, 판매주문 생성을 출고주문/재고주문 생성이라고 부르기.
 
 ### 출고주문 (Fulfillment Order / 재고주문)
@@ -87,6 +88,8 @@
 ### 채널 주문 수집 신뢰성
 - 정의: Payment Accepted 된 채널 주문을 Core 판매주문 후보로 빠짐없이 전달해야 하는 운영 보장.
 - 주문 수집에서는 중복보다 누락이 더 큰 장애다. 중복은 `(salesChannel, channelOrderId)` 멱등성으로 흡수하고, 수집 기준점은 durable 하게 기록된 주문 범위까지만 전진해야 한다.
+- 증분 수집은 watermark 경계 직전의 짧은 overlap window 를 다시 읽을 수 있다. 이때 중복은 멱등성으로 흡수하고, 경계 timestamp 주문 누락을 피하는 쪽을 우선한다.
+- Medusa 주문 수집의 canonical 경로는 channel-adapter 의 내부 `OrderPollerOrchestrator` 다. legacy REST `/adapter/poll` 은 Medusa 주문 수집 경로가 아니며, 수동 재처리가 필요하면 같은 durable collection 경로를 재사용해야 한다.
 - _Avoid_: polling 시작/실패 시점을 성공 기준점처럼 취급하기.
 
 ### 채널 상품 식별 실패
