@@ -514,6 +514,7 @@ describe('SalesOrderAmendmentsService.create', () => {
 describe('SalesOrdersService business links', () => {
   const salesOrderId = '33333333-3333-4333-8333-333333333333';
   const amendmentId = '44444444-4444-4444-8444-444444444444';
+  const cancellationId = '55555555-5555-4555-8555-555555555555';
 
   function rows<T>(value: T[]): T[] & { limit: (count: number) => Promise<T[]> } {
     const result = [...value] as T[] & { limit: (count: number) => Promise<T[]> };
@@ -534,12 +535,16 @@ describe('SalesOrdersService business links', () => {
         },
       ] as Array<Record<string, any>>,
       salesOrderLines: [] as Array<Record<string, any>>,
+      salesOrderAmendments: [{ id: amendmentId, salesOrderId }] as Array<Record<string, any>>,
+      salesOrderCancellations: [{ id: cancellationId, salesOrderId }] as Array<Record<string, any>>,
       businessLinks: [] as Array<Record<string, any>>,
     };
 
     const selectRowsFor = (table: unknown) => {
       if (table === wmsTables.salesOrders) return state.salesOrders;
       if (table === wmsTables.salesOrderLines) return state.salesOrderLines;
+      if (table === wmsTables.salesOrderAmendments) return state.salesOrderAmendments;
+      if (table === wmsTables.salesOrderCancellations) return state.salesOrderCancellations;
       if (table === wmsTables.businessLinks) return state.businessLinks;
       return [];
     };
@@ -617,6 +622,77 @@ describe('SalesOrdersService business links', () => {
         relationName: 'caused_refund',
         direction: 'outbound',
         linkedEntity: { type: 'wallet_refund', id: null, externalRef: 'wallet:refund:rf_123' },
+      }),
+    ]);
+  });
+
+  it('links a cancellation-caused Wallet refund into the SalesOrder timeline without owning Wallet data', async () => {
+    const { service, state } = makeService();
+
+    await service.createBusinessLink(salesOrderId, {
+      source: { type: 'order_cancellation', id: cancellationId },
+      relationName: 'caused_refund',
+      target: { type: 'wallet_refund', externalRef: 'wallet:refund:rf_cancel_1' },
+      occurredAt: '2026-05-30T03:00:00.000Z',
+      metadata: { amount: 5000, currency: 'KRW', refundStatus: 'SUCCEEDED' },
+    });
+
+    expect(state.businessLinks).toEqual([
+      expect.objectContaining({
+        sourceType: 'order_cancellation',
+        sourceId: cancellationId,
+        targetType: 'wallet_refund',
+        targetId: null,
+        targetExternalRef: 'wallet:refund:rf_cancel_1',
+      }),
+    ]);
+
+    const detail = await service.getOne(salesOrderId);
+
+    expect(detail?.businessTimeline).toEqual([
+      expect.objectContaining({
+        relationName: 'caused_refund',
+        direction: 'outbound',
+        source: { type: 'order_cancellation', id: cancellationId, externalRef: null },
+        linkedEntity: { type: 'wallet_refund', id: null, externalRef: 'wallet:refund:rf_cancel_1' },
+        effectStatus: { owner: 'wallet', value: 'SUCCEEDED' },
+      }),
+    ]);
+  });
+
+  it('links an independent Wallet refund to a SalesOrder after creation for operator traceability', async () => {
+    const { service, state } = makeService();
+
+    await service.createBusinessLink(salesOrderId, {
+      relationName: 'linked_independent_refund',
+      target: { type: 'wallet_refund', externalRef: 'wallet:refund:rf_manual_1' },
+      occurredAt: '2026-05-30T04:00:00.000Z',
+      metadata: {
+        amount: 1200,
+        currency: 'KRW',
+        refundStatus: 'PENDING',
+        linkReason: 'operator_traceability',
+      },
+    });
+
+    expect(state.businessLinks).toEqual([
+      expect.objectContaining({
+        sourceType: 'sales_order',
+        sourceId: salesOrderId,
+        targetType: 'wallet_refund',
+        targetExternalRef: 'wallet:refund:rf_manual_1',
+      }),
+    ]);
+
+    const detail = await service.getOne(salesOrderId);
+
+    expect(detail?.businessTimeline).toEqual([
+      expect.objectContaining({
+        relationName: 'linked_independent_refund',
+        direction: 'outbound',
+        linkedEntity: { type: 'wallet_refund', id: null, externalRef: 'wallet:refund:rf_manual_1' },
+        effectStatus: { owner: 'wallet', value: 'PENDING' },
+        metadata: expect.objectContaining({ linkReason: 'operator_traceability' }),
       }),
     ]);
   });
