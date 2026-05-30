@@ -505,6 +505,49 @@ describe('FulfillmentsService', () => {
     expect(unifiedReservation.reserveStock).toHaveBeenCalledTimes(1);
   });
 
+  it('void 매칭 라인과 미해결 라인이 섞이면 void 라인은 제외하고 남은 라인만 awaiting_matching 사유로 남긴다', async () => {
+    const { service, state } = makeService({
+      lines: [
+        {
+          id: salesOrderLineId,
+          salesOrderId,
+          variantId,
+          quantity: 1,
+          mappingSnapshotId: null,
+        },
+        {
+          id: voidSalesOrderLineId,
+          salesOrderId,
+          variantId: voidVariantId,
+          quantity: 3,
+          mappingSnapshotId: null,
+        },
+      ],
+      matchingsByVariant: {
+        [variantId]: null,
+        [voidVariantId]: {
+          status: 'matched',
+          strategy: 'void',
+          links: [],
+        },
+      },
+    });
+
+    try {
+      await service.create({ salesOrderId, warehouseId });
+      fail('expected create to throw');
+    } catch (error) {
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).getResponse()).toMatchObject({
+        code: 'PRODUCT_SKU_MATCHING_REQUIRED',
+        missingLines: [{ salesOrderLineId, variantId, reason: 'NO_PRODUCT_SKU_MATCHING' }],
+      });
+    }
+
+    expect(state.fulfillmentOrders).toHaveLength(0);
+    expect(state.fulfillmentOrderItems).toHaveLength(0);
+  });
+
   it('inventoryManagement=false variant는 물리 재고 예약 없이 ready로 전환한다', async () => {
     const { service, state, availability, unifiedReservation, outbox } = makeService({
       availableQty: 0,
