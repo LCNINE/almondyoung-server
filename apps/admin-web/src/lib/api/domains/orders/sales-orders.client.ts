@@ -7,12 +7,14 @@ import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import type {
   CancelSalesOrderResponseDto,
   ConfirmSalesOrderResponseDto,
+  CreateBusinessLinkDto,
   CreateSalesOrderDto,
   CreateSalesOrderResponseDto,
   MergeSalesOrdersDto,
   MergeSalesOrdersResponseDto,
   OrderStatsDto,
   SalesOrderDto,
+  SalesOrderBusinessTimelineItemDto,
   SalesOrdersQuery,
   SalesOrdersResponseDto,
   UpdateSalesOrderDto,
@@ -95,9 +97,22 @@ export const salesOrders = {
     return response.data;
   },
 
+  createBusinessLink: async (
+    id: string,
+    data: CreateBusinessLinkDto
+  ): Promise<SalesOrderBusinessTimelineItemDto> => {
+    const response = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/sales-orders/${encodeURIComponent(id)}/business-links`,
+      data
+    );
+    return response.data;
+  },
+
   // 주문 현황 통계
   getStats: async (): Promise<OrderStatsDto> => {
-    const response = await client.get(`${ALMONDYOUNG_API_BASE_URL}/sales-orders/stats`);
+    const response = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/sales-orders/stats`
+    );
     return response.data;
   },
 

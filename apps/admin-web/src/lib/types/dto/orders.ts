@@ -95,8 +95,43 @@ export interface SalesOrderDto {
     unitPrice?: number;
     totalPrice?: number;
   }[];
+  businessTimeline?: SalesOrderBusinessTimelineItemDto[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface BusinessLinkReferenceDto {
+  type: string;
+  id: string | null;
+  externalRef: string | null;
+}
+
+export interface SalesOrderBusinessTimelineItemDto {
+  id: string;
+  relationName: string;
+  direction: 'outbound' | 'inbound';
+  source: BusinessLinkReferenceDto;
+  target: BusinessLinkReferenceDto;
+  linkedEntity: BusinessLinkReferenceDto;
+  metadata: Record<string, unknown>;
+  occurredAt: string;
+  createdAt: string;
+}
+
+export interface CreateBusinessLinkDto {
+  relationName: string;
+  source?: {
+    type: string;
+    id?: string;
+    externalRef?: string;
+  };
+  target: {
+    type: string;
+    id?: string;
+    externalRef?: string;
+  };
+  occurredAt?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface OrderSalesChannel {
