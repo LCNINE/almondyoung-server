@@ -10,8 +10,10 @@ import { ProductSellableQuantityModule } from '../inventory/product-sellable-qua
 import { FulfillmentOrderCreationBacklogModule } from '../fulfillment/backlog/fulfillment-order-creation-backlog.module';
 
 import { SalesOrdersController } from './controllers/sales-orders.controller';
+import { SalesOrderAmendmentsController } from './controllers/sales-order-amendments.controller';
 import { OrderEventsConsumer } from './consumers/order-events.consumer';
 import { SalesOrdersService } from './services/sales-orders.service';
+import { SalesOrderAmendmentsService } from './services/sales-order-amendments.service';
 import { SalesOrderQueryService } from './services/sales-order-query.service';
 import { PoliciesService } from './services/policies.service';
 
@@ -42,10 +44,11 @@ import { PoliciesService } from './services/policies.service';
 
     ProductSellableQuantityModule,
   ],
-  controllers: [SalesOrdersController, OrderEventsConsumer],
-  providers: [SalesOrdersService, SalesOrderQueryService, PoliciesService],
+  controllers: [SalesOrdersController, SalesOrderAmendmentsController, OrderEventsConsumer],
+  providers: [SalesOrdersService, SalesOrderAmendmentsService, SalesOrderQueryService, PoliciesService],
   exports: [
     SalesOrdersService, // Fulfillment BC (cancel, merge 시 SO 상태 변경)
+    SalesOrderAmendmentsService,
     SalesOrderQueryService, // Fulfillment BC (FO 생성 시 SO/라인 조회)
   ],
 })
