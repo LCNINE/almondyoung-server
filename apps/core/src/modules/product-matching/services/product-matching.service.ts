@@ -68,6 +68,39 @@ export class ProductMatchingService {
     return strategy;
   }
 
+  private async createVariantSkuMappingsFromComponents(
+    variantId: string,
+    productMatchingId: string,
+    components: PimSkuComponent[],
+    tx: DbTx,
+  ): Promise<SkuQuantityMapping[]> {
+    const strategy = this.getStrategy('variant');
+    const mappings: SkuQuantityMapping[] = [];
+
+    for (const component of components) {
+      const sku = await tx.query.skus.findFirst({
+        where: eq(wmsTables.skus.id, component.skuId),
+      });
+
+      if (!sku) {
+        throw new BadRequestException(`SKU not found: ${component.skuId}`);
+      }
+
+      mappings.push({
+        skuId: component.skuId,
+        quantity: 1,
+      });
+    }
+
+    const context: MatchingContext = {
+      variantId,
+      productMatchingId,
+    };
+    await strategy.create(context, mappings, tx);
+
+    return mappings;
+  }
+
   /**
    * variant 생성 이벤트 핸들러 — Catalog BC에서 직접 호출
    * (기존 ProductEventConsumer.onProductVariantCreated 로직)
@@ -301,8 +334,43 @@ export class ProductMatchingService {
             .limit(1);
 
           if (existing) {
-            this.logger.log(`Variant ${variant.id} matching already exists, skipping.`);
-            skipped++;
+            if (!Array.isArray(variant.components) || variant.components.length === 0 || existing.isResolved) {
+              this.logger.log(`Variant ${variant.id} matching already exists, skipping.`);
+              skipped++;
+              continue;
+            }
+
+            await trx
+              .delete(wmsTables.productVariantSkuLinks)
+              .where(eq(wmsTables.productVariantSkuLinks.productMatchingId, existing.id));
+
+            const mappings = await this.createVariantSkuMappingsFromComponents(
+              variant.id,
+              existing.id,
+              variant.components,
+              trx,
+            );
+
+            await trx
+              .update(wmsTables.productMatchings)
+              .set({
+                masterId: payload.masterId,
+                status: 'matched',
+                priority: 'normal',
+                strategy: 'variant',
+                isResolved: true,
+                preStockSellable: true,
+                alwaysSellableZeroStock: false,
+                updatedAt: new Date(),
+              })
+              .where(eq(wmsTables.productMatchings.id, existing.id));
+
+            await this.productSellableQuantity.recalculateAndPublishForVariant(variant.id, trx);
+            await this.fulfillmentBacklog.wakeBacklogsWaitingForVariant(variant.id, trx);
+            this.logger.log(
+              `Resolved existing matching for variant ${variant.id} with ${mappings.length} SKUs using variant strategy.`,
+            );
+            created++;
             continue;
           }
 
@@ -347,40 +415,16 @@ export class ProductMatchingService {
             throw new Error(`Product matching entry(matched) 생성에 실패했습니다. (variantId: ${variant.id})`);
           }
 
-          const warehouseId = this.warehouseService.getDefaultId();
-          const strategy = this.getStrategy('variant');
-          const mappings: SkuQuantityMapping[] = [];
-
-          for (const component of variant.components) {
-            const newStock = await this.stockEventService.createStockEntryBySkuId(
-              {
-                skuId: component.skuId,
-                variantId: variant.id,
-                warehouseId,
-                quantity: 0,
-                stockType: 'physical',
-                reason: `auto_matching_for_variant_${variant.id}`,
-              },
-              trx,
-            );
-
-            mappings.push({
-              skuId: newStock.skuId,
-              quantity: 1,
-            });
-          }
-
-          const context: MatchingContext = {
-            variantId: variant.id,
-            productMatchingId: newProductMatching.id,
-          };
-          await strategy.create(context, mappings, trx);
+          const mappings = await this.createVariantSkuMappingsFromComponents(
+            variant.id,
+            newProductMatching.id,
+            variant.components,
+            trx,
+          );
           await this.productSellableQuantity.recalculateAndPublishForVariant(variant.id, trx);
           await this.fulfillmentBacklog.wakeBacklogsWaitingForVariant(variant.id, trx);
 
-          this.logger.log(
-            `Auto-matched variant ${variant.id} with ${variant.components.length} SKUs using variant strategy.`,
-          );
+          this.logger.log(`Auto-matched variant ${variant.id} with ${mappings.length} SKUs using variant strategy.`);
           created++;
         } catch (error) {
           this.logger.error(`Failed to auto-match variant ${variant.id}:`, error);
