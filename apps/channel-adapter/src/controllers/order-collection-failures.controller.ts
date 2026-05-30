@@ -4,6 +4,7 @@ import { OrderCollectionFailureService } from '../services/order-collection/orde
 import { OrderPollerOrchestrator } from '../services/order-collection/order-poller.orchestrator';
 import {
   CHANNEL_PRODUCT_IDENTIFICATION_FAILED,
+  COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED,
   OrderCollectionFailureReason,
 } from '../services/order-collection/channel-order-provider.interface';
 import { OrderCollectionFailureStatus } from '../types';
@@ -22,7 +23,7 @@ export class OrderCollectionFailuresController {
   @ApiQuery({
     name: 'reason',
     required: false,
-    enum: [CHANNEL_PRODUCT_IDENTIFICATION_FAILED],
+    enum: [CHANNEL_PRODUCT_IDENTIFICATION_FAILED, COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED],
   })
   @ApiQuery({ name: 'status', required: false, enum: ['quarantined', 'replayed'] })
   @ApiQuery({ name: 'limit', required: false })
@@ -62,7 +63,10 @@ export class OrderCollectionFailuresController {
       success: true,
       data: failure,
       replayPath: {
-        fix: 'Set pimVariantId on the affected Medusa variant metadata, then replay this failure.',
+        fix:
+          failure.reason === CHANNEL_PRODUCT_IDENTIFICATION_FAILED
+            ? 'Set pimVariantId on the affected Medusa variant metadata, then replay this failure.'
+            : 'Collected Medusa order changes are not replayable. Handle this as a separate CS/order amendment workflow.',
         endpoint: `POST /adapter/order-collection-failures/${id}/replay`,
       },
       timestamp: new Date().toISOString(),

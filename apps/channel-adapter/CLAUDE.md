@@ -75,8 +75,11 @@ Kafka Consumer → inbox_events 테이블 저장 (빠른 ACK) → InboxWorkerSer
 OrderPollerOrchestrator (@Cron 5분) → ChannelOrderProvider[] → InboxService.enqueue()
 ```
 - `CHANNEL_ORDER_PROVIDER` 토큰에 Provider 배열 주입
-- 현재 `MedusaOrderProvider`만 등록 (Medusa 주문 → `OrderCreated`/`OrderModified` 이벤트)
+- 현재 `MedusaOrderProvider`만 등록 (Medusa 신규 주문 → `OrderCreated`, 수집 후 변경 → 격리)
 - Provider 추가로 다른 채널 주문 수집 확장 가능
+- Medusa 주문 수집은 이 orchestrator 가 canonical 경로다. legacy `/adapter/poll` 은 Naver/Coupang adapter 조회용 경로이며 Medusa 주문 수집에 사용하지 않는다.
+- 증분 수집은 `sync_statuses.lastSyncAt` 에서 2분을 되감아 조회한다. 중복은 `wms_order_mappings`와 change hash로 흡수하고, `updated_at` 경계 주문 누락을 피하는 것이 우선이다.
+- Medusa 주문이 한 번 수집된 뒤 변경되면 `OrderModified`를 발행하지 않는다. 변경은 `collected_order_modification_not_accepted` 로 격리하고, CS 주문 정정/추가출고는 별도 Core workflow 에서 다룬다.
 
 ### 3-6. Core(legacy PIM) → Medusa 상품 동기화 흐름
 ```
