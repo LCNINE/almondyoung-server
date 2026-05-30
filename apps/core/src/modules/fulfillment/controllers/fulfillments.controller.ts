@@ -1,14 +1,18 @@
 import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
+import { User } from '@app/authorization';
 import { FulfillmentsService } from '../services/fulfillments.service';
 import { FulfillmentReservationsFacade } from '../services/fulfillment-reservations.facade';
 import { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
+import { CreateCompensationShipmentDto } from '../dto/create-compensation-shipment.dto';
 import { SplitFulfillmentOrderDto } from '../dto/split-fulfillment-order.dto';
 import { AssignShipmentDto } from '../dto/assign-shipment.dto';
 import { ReserveDto } from '../dto/reserve.dto';
 import { UnreserveDto } from '../dto/unreserve.dto';
 import { TransferReservationDto } from '../dto/transfer-reservation.dto';
 import { FulfillmentOrderResponseDto } from '../dto/fulfillment-order-response.dto';
+
+type AuthenticatedUser = { id?: string; userId?: string; sub?: string } | undefined;
 
 @ApiTags('Fulfillments')
 @Controller('fulfillments')
@@ -23,6 +27,12 @@ export class FulfillmentsController {
   @ApiResponse({ status: 201, description: '주문처리 생성 성공' })
   create(@Body() dto: CreateFulfillmentOrderDto) {
     return this.service.create(dto);
+  }
+
+  @Post('compensation-shipments')
+  @ApiOperation({ summary: 'Create or link a fulfillment-only CS compensation shipment' })
+  createCompensationShipment(@Body() dto: CreateCompensationShipmentDto, @User() user: AuthenticatedUser) {
+    return this.service.createCompensationShipment(dto, this.getUserId(user));
   }
 
   @Post(':id/split')
@@ -99,5 +109,9 @@ export class FulfillmentsController {
   @ApiBody({ type: TransferReservationDto })
   transfer(@Param('id') id: string, @Body() dto: TransferReservationDto) {
     return this.reservations.transferReservation(dto);
+  }
+
+  private getUserId(user: AuthenticatedUser): string | undefined {
+    return user?.id ?? user?.userId ?? user?.sub;
   }
 }

@@ -1,4 +1,11 @@
-import { Injectable, Logger, BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  NotFoundException,
+  ConflictException,
+  Optional,
+} from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { eq, inArray, desc, sql } from 'drizzle-orm';
@@ -10,9 +17,12 @@ import { ProductSkuMappingService } from '../../product-matching/services/produc
 import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
 import { UnifiedReservationService } from '../../inventory/shared/services/unified-reservation.service';
 import { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
+import { CreateCompensationShipmentDto, CompensationShipmentItemDto } from '../dto/create-compensation-shipment.dto';
 import { SplitFulfillmentOrderDto } from '../dto/split-fulfillment-order.dto';
 import { AssignShipmentDto } from '../dto/assign-shipment.dto';
 import { FulfillmentShippedPayload, FulfillmentCancelledPayload, Carrier } from '@packages/event-contracts/streams';
+import { SalesOrderAmendmentsService } from '../../sales-order/services/sales-order-amendments.service';
+import { SalesOrderAmendmentDeltaDto } from '../../sales-order/dto/create-sales-order-amendment.dto';
 
 type FulfillmentOrderItemInsert = {
   fulfillmentOrderId: string;
@@ -27,6 +37,8 @@ type FulfillmentOrderItemInsert = {
   shippedQty: number;
   status: string;
 };
+
+type FulfillmentOrderRow = typeof wmsTables.fulfillmentOrders.$inferSelect;
 
 type UnmatchedSalesOrderLine = {
   salesOrderLineId: string;
@@ -46,6 +58,11 @@ type ReservationFailureDetail = {
   reason: string;
 };
 
+const SALES_ORDER_REF_TYPE = 'sales_order';
+const AMENDMENT_REF_TYPE = 'sales_order_amendment';
+const FULFILLMENT_ORDER_REF_TYPE = 'fulfillment_order';
+const COMPENSATION_ALLOWED_SALES_ORDER_STATUSES = new Set(['confirmed', 'processing', 'shipped', 'delivered']);
+
 @Injectable()
 export class FulfillmentsService {
   private readonly logger = new Logger(FulfillmentsService.name);
@@ -58,6 +75,7 @@ export class FulfillmentsService {
     private readonly unifiedReservation: UnifiedReservationService,
     private readonly productSkuMapping: ProductSkuMappingService,
     private readonly outbox: OutboxService,
+    @Optional() private readonly salesOrderAmendments?: SalesOrderAmendmentsService,
   ) {}
 
   private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
@@ -108,16 +126,7 @@ export class FulfillmentsService {
           }
         }
 
-        if (dto.warehouseId) {
-          const [warehouse] = await trx
-            .select()
-            .from(wmsTables.warehouses)
-            .where(eq(wmsTables.warehouses.id, dto.warehouseId))
-            .limit(1);
-          if (!warehouse) {
-            throw new BadRequestException(`Warehouse ${dto.warehouseId} not found`);
-          }
-        }
+        await this.validateWarehouseExists(dto.warehouseId, trx);
 
         this.logger.log(`Creating fulfillment order for SO: ${dto.salesOrderId || 'standalone'}`);
 
@@ -189,117 +198,268 @@ export class FulfillmentsService {
           throw new BadRequestException('Fulfillment order items cannot be empty');
         }
 
-        if (itemsToInsert.length > 0) {
-          await this.validateSkuRows(itemsToInsert, dto.ownerId ?? null, trx);
-        }
-
-        const initialStatus = dto.salesOrderId && itemsToInsert.length === 0 ? 'completed' : 'created';
-
-        const [fo] = await trx
-          .insert(wmsTables.fulfillmentOrders)
-          .values({
-            salesOrderId: dto.salesOrderId ?? null,
-            warehouseId: dto.warehouseId ?? null,
-            ownerId: dto.ownerId ?? null,
-            fulfillmentMode: dto.fulfillmentMode ?? null,
-            priority: dto.priority ?? 'normal',
-            status: initialStatus,
-            totalItems: itemsToInsert.length,
-            totalQty: itemsToInsert.reduce((sum, item) => sum + item.qty, 0),
-            totalReservedQty: 0,
-            reservationFailureReason: null,
-            reservationFailureDetails: null,
-            shippingAddress: dto.shippingAddress ?? null,
-            labelNo: null,
-          })
-          .returning();
-
-        if (!fo) {
-          throw new Error('Failed to create fulfillment order');
-        }
-
-        await this.outbox.enqueue(
-          {
-            eventType: FULFILLMENT_EVENTS.CREATED,
-            aggregateType: 'fulfillment',
-            aggregateId: fo.id,
-            partitionKey: fo.id,
-            payload: { fulfillmentOrderId: fo.id },
-          },
-          trx,
-        );
-
-        const insertedItems =
-          itemsToInsert.length > 0
-            ? await trx
-                .insert(wmsTables.fulfillmentOrderItems)
-                .values(itemsToInsert.map((item) => ({ ...item, fulfillmentOrderId: fo.id })))
-                .returning()
-            : [];
-        this.logger.log(`Created ${insertedItems.length} fulfillment order items`);
-
-        if (insertedItems.length === 0) {
-          this.logger.log(`Fulfillment order ${fo.id} completed without physical items`);
-          return this.getOne(fo.id, trx);
-        }
-
-        const reservationResult =
-          dto.fulfillmentMode === 'drop_ship'
-            ? { status: 'ready' as const, totalReservedQty: 0, failures: [] }
-            : await this.tryReserveItems(fo.id, dto.warehouseId ?? null, insertedItems, trx);
-
-        if (reservationResult.status === 'ready') {
-          await trx
-            .update(wmsTables.fulfillmentOrders)
-            .set({
-              status: 'ready',
-              totalReservedQty: reservationResult.totalReservedQty,
-              reservationFailureReason: null,
-              reservationFailureDetails: null,
-              updatedAt: new Date(),
-            })
-            .where(eq(wmsTables.fulfillmentOrders.id, fo.id));
-          await this.outbox.enqueue(
-            {
-              eventType: FULFILLMENT_EVENTS.READY,
-              aggregateType: 'fulfillment',
-              aggregateId: fo.id,
-              partitionKey: fo.id,
-              payload: { fulfillmentOrderId: fo.id },
-            },
-            trx,
-          );
-        } else if (reservationResult.status === 'unfulfillable') {
-          await trx
-            .update(wmsTables.fulfillmentOrders)
-            .set({
-              status: 'unfulfillable',
-              totalReservedQty: reservationResult.totalReservedQty,
-              reservationFailureReason: 'RESERVATION_FAILED',
-              reservationFailureDetails: {
-                attemptedAt: new Date().toISOString(),
-                failedItems: reservationResult.failures,
-              },
-              updatedAt: new Date(),
-            })
-            .where(eq(wmsTables.fulfillmentOrders.id, fo.id));
-        } else if (reservationResult.totalReservedQty > 0) {
-          await trx
-            .update(wmsTables.fulfillmentOrders)
-            .set({
-              totalReservedQty: reservationResult.totalReservedQty,
-              updatedAt: new Date(),
-            })
-            .where(eq(wmsTables.fulfillmentOrders.id, fo.id));
-        }
-
-        this.logger.log(`Fulfillment order ${fo.id} created successfully with status: ${reservationResult.status}`);
-        return this.getOne(fo.id, trx);
+        return this.createFulfillmentOrderFromItems(dto, itemsToInsert, trx);
       } catch (error) {
         this.logger.error(`Failed to create fulfillment order for SO ${dto.salesOrderId}:`, error);
         throw error;
       }
     }, tx);
+  }
+
+  async createCompensationShipment(dto: CreateCompensationShipmentDto, operatorId?: string, tx?: DbTx) {
+    if (!this.salesOrderAmendments) {
+      throw new Error('SalesOrderAmendmentsService is required to create compensation shipments');
+    }
+    const salesOrderAmendments = this.salesOrderAmendments;
+
+    return this.inTx(async (trx) => {
+      if (dto.fulfillmentOrderId && dto.items?.length) {
+        throw new BadRequestException(
+          'Use fulfillmentOrderId to link an existing effect or items to create one, not both',
+        );
+      }
+      if (!dto.fulfillmentOrderId && !dto.items?.length) {
+        throw new BadRequestException('Compensation shipment requires fulfillmentOrderId or items');
+      }
+
+      const [salesOrder] = await trx
+        .select()
+        .from(wmsTables.salesOrders)
+        .where(eq(wmsTables.salesOrders.id, dto.salesOrderId))
+        .limit(1);
+      if (!salesOrder) {
+        throw new NotFoundException(`Sales order ${dto.salesOrderId} not found`);
+      }
+      if (!COMPENSATION_ALLOWED_SALES_ORDER_STATUSES.has(salesOrder.status)) {
+        throw new BadRequestException(
+          `Cannot create compensation shipment for SalesOrder ${dto.salesOrderId} in status ${salesOrder.status}`,
+        );
+      }
+
+      let fulfillmentOrder: FulfillmentOrderRow | null;
+      if (dto.fulfillmentOrderId) {
+        fulfillmentOrder = await this.getOne(dto.fulfillmentOrderId, trx);
+        if (!fulfillmentOrder) {
+          throw new NotFoundException(`Fulfillment order ${dto.fulfillmentOrderId} not found`);
+        }
+        if (fulfillmentOrder.salesOrderId) {
+          throw new BadRequestException('Compensation shipment can only link standalone fulfillment orders');
+        }
+      } else {
+        await this.validateWarehouseExists(dto.warehouseId, trx);
+        const itemsToInsert = await this.buildItemsFromCompensationItems(dto.salesOrderId, dto.items ?? [], trx);
+        fulfillmentOrder = await this.createFulfillmentOrderFromItems(
+          {
+            warehouseId: dto.warehouseId,
+            ownerId: dto.ownerId,
+            fulfillmentMode: dto.fulfillmentMode,
+            priority: dto.priority,
+            shippingAddress: dto.shippingAddress ?? (salesOrder.shippingAddress as any),
+          },
+          itemsToInsert,
+          trx,
+        );
+      }
+      if (!fulfillmentOrder) {
+        throw new Error('Failed to create or link fulfillment order');
+      }
+
+      const amendment = await salesOrderAmendments.create(
+        {
+          salesOrderId: dto.salesOrderId,
+          amendmentKind: 'fulfillment_only',
+          decision: 'approved',
+          reasonCode: dto.reasonCode,
+          note: dto.note,
+          occurredAt: dto.occurredAt,
+          metadata: {
+            ...(dto.metadata ?? {}),
+            compensationShipment: {
+              fulfillmentOrderId: fulfillmentOrder.id,
+              linkedExistingFulfillmentOrder: Boolean(dto.fulfillmentOrderId),
+              items: dto.items ?? [],
+            },
+          },
+          deltas: this.buildCompensationDeltas(dto),
+        },
+        operatorId,
+        trx,
+      );
+
+      await this.linkCompensationFulfillment({
+        salesOrderId: dto.salesOrderId,
+        amendmentId: amendment.id,
+        fulfillmentOrderId: fulfillmentOrder.id,
+        occurredAt: dto.occurredAt ? new Date(dto.occurredAt) : new Date(),
+        metadata: {
+          reasonCode: dto.reasonCode ?? null,
+          linkedExistingFulfillmentOrder: Boolean(dto.fulfillmentOrderId),
+        },
+        trx,
+      });
+
+      return { amendment, fulfillmentOrder };
+    }, tx);
+  }
+
+  private async validateWarehouseExists(warehouseId: string | undefined, trx: DbTx) {
+    if (!warehouseId) {
+      return;
+    }
+
+    const [warehouse] = await trx
+      .select()
+      .from(wmsTables.warehouses)
+      .where(eq(wmsTables.warehouses.id, warehouseId))
+      .limit(1);
+    if (!warehouse) {
+      throw new BadRequestException(`Warehouse ${warehouseId} not found`);
+    }
+  }
+
+  private buildCompensationDeltas(dto: CreateCompensationShipmentDto): SalesOrderAmendmentDeltaDto[] {
+    const baseInstruction =
+      dto.fulfillmentInstruction ??
+      (dto.fulfillmentOrderId
+        ? `Link compensation fulfillment order ${dto.fulfillmentOrderId}`
+        : 'Create compensation shipment');
+
+    if (!dto.items?.length) {
+      return [
+        {
+          type: 'fulfillment_only_correction',
+          fulfillmentInstruction: baseInstruction,
+          reason: dto.reasonCode,
+        },
+      ];
+    }
+
+    return dto.items.map((item) => ({
+      type: 'fulfillment_only_correction',
+      salesOrderLineId: item.salesOrderLineId,
+      fulfillmentInstruction: baseInstruction,
+      reason: dto.reasonCode,
+      metadata: {
+        variantId: item.variantId,
+        quantity: item.quantity,
+      },
+    }));
+  }
+
+  private async createFulfillmentOrderFromItems(
+    dto: Pick<
+      CreateFulfillmentOrderDto,
+      'salesOrderId' | 'warehouseId' | 'ownerId' | 'fulfillmentMode' | 'priority' | 'shippingAddress'
+    >,
+    itemsToInsert: Omit<FulfillmentOrderItemInsert, 'fulfillmentOrderId'>[],
+    trx: DbTx,
+  ) {
+    if (itemsToInsert.length > 0) {
+      await this.validateSkuRows(itemsToInsert, dto.ownerId ?? null, trx);
+    }
+
+    const initialStatus = dto.salesOrderId && itemsToInsert.length === 0 ? 'completed' : 'created';
+
+    const [fo] = await trx
+      .insert(wmsTables.fulfillmentOrders)
+      .values({
+        salesOrderId: dto.salesOrderId ?? null,
+        warehouseId: dto.warehouseId ?? null,
+        ownerId: dto.ownerId ?? null,
+        fulfillmentMode: dto.fulfillmentMode ?? null,
+        priority: dto.priority ?? 'normal',
+        status: initialStatus,
+        totalItems: itemsToInsert.length,
+        totalQty: itemsToInsert.reduce((sum, item) => sum + item.qty, 0),
+        totalReservedQty: 0,
+        reservationFailureReason: null,
+        reservationFailureDetails: null,
+        shippingAddress: dto.shippingAddress ?? null,
+        labelNo: null,
+      })
+      .returning();
+
+    if (!fo) {
+      throw new Error('Failed to create fulfillment order');
+    }
+
+    await this.outbox.enqueue(
+      {
+        eventType: FULFILLMENT_EVENTS.CREATED,
+        aggregateType: 'fulfillment',
+        aggregateId: fo.id,
+        partitionKey: fo.id,
+        payload: { fulfillmentOrderId: fo.id },
+      },
+      trx,
+    );
+
+    const insertedItems =
+      itemsToInsert.length > 0
+        ? await trx
+            .insert(wmsTables.fulfillmentOrderItems)
+            .values(itemsToInsert.map((item) => ({ ...item, fulfillmentOrderId: fo.id })))
+            .returning()
+        : [];
+    this.logger.log(`Created ${insertedItems.length} fulfillment order items`);
+
+    if (insertedItems.length === 0) {
+      this.logger.log(`Fulfillment order ${fo.id} completed without physical items`);
+      return this.getOne(fo.id, trx);
+    }
+
+    const reservationResult =
+      dto.fulfillmentMode === 'drop_ship'
+        ? { status: 'ready' as const, totalReservedQty: 0, failures: [] }
+        : await this.tryReserveItems(fo.id, dto.warehouseId ?? null, insertedItems, trx);
+
+    if (reservationResult.status === 'ready') {
+      await trx
+        .update(wmsTables.fulfillmentOrders)
+        .set({
+          status: 'ready',
+          totalReservedQty: reservationResult.totalReservedQty,
+          reservationFailureReason: null,
+          reservationFailureDetails: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(wmsTables.fulfillmentOrders.id, fo.id));
+      await this.outbox.enqueue(
+        {
+          eventType: FULFILLMENT_EVENTS.READY,
+          aggregateType: 'fulfillment',
+          aggregateId: fo.id,
+          partitionKey: fo.id,
+          payload: { fulfillmentOrderId: fo.id },
+        },
+        trx,
+      );
+    } else if (reservationResult.status === 'unfulfillable') {
+      await trx
+        .update(wmsTables.fulfillmentOrders)
+        .set({
+          status: 'unfulfillable',
+          totalReservedQty: reservationResult.totalReservedQty,
+          reservationFailureReason: 'RESERVATION_FAILED',
+          reservationFailureDetails: {
+            attemptedAt: new Date().toISOString(),
+            failedItems: reservationResult.failures,
+          },
+          updatedAt: new Date(),
+        })
+        .where(eq(wmsTables.fulfillmentOrders.id, fo.id));
+    } else if (reservationResult.totalReservedQty > 0) {
+      await trx
+        .update(wmsTables.fulfillmentOrders)
+        .set({
+          totalReservedQty: reservationResult.totalReservedQty,
+          updatedAt: new Date(),
+        })
+        .where(eq(wmsTables.fulfillmentOrders.id, fo.id));
+    }
+
+    this.logger.log(`Fulfillment order ${fo.id} created successfully with status: ${reservationResult.status}`);
+    return this.getOne(fo.id, trx);
   }
 
   private async buildItemsFromSalesOrder(
@@ -382,6 +542,140 @@ export class FulfillmentsService {
     }
 
     return itemsToInsert;
+  }
+
+  private async buildItemsFromCompensationItems(
+    salesOrderId: string,
+    items: CompensationShipmentItemDto[],
+    trx: DbTx,
+  ): Promise<Omit<FulfillmentOrderItemInsert, 'fulfillmentOrderId'>[]> {
+    const originalLines = await trx
+      .select()
+      .from(wmsTables.salesOrderLines)
+      .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrderId));
+    const originalLineIds = new Set(originalLines.map((line) => line.id));
+    const originalLineById = new Map(originalLines.map((line) => [line.id, line]));
+    const referencedLineIds = items
+      .map((item) => item.salesOrderLineId)
+      .filter((lineId): lineId is string => Boolean(lineId));
+    const missingSourceLineId = referencedLineIds.find((lineId) => !originalLineIds.has(lineId));
+    if (missingSourceLineId) {
+      throw new BadRequestException(`SalesOrder line ${missingSourceLineId} does not belong to the target SalesOrder`);
+    }
+
+    const itemsToInsert: Omit<FulfillmentOrderItemInsert, 'fulfillmentOrderId'>[] = [];
+    const missingItems: Array<{ variantId: string; reason: string }> = [];
+
+    for (const item of items) {
+      const sourceLine = item.salesOrderLineId ? originalLineById.get(item.salesOrderLineId) : undefined;
+      if (sourceLine && sourceLine.variantId !== item.variantId) {
+        throw new BadRequestException(
+          `Compensation item variant ${item.variantId} does not match SalesOrder line ${sourceLine.id} variant ${sourceLine.variantId}`,
+        );
+      }
+
+      const snapshotMappings = sourceLine?.mappingSnapshotId
+        ? (await this.productSkuMapping.getMappingSnapshot(sourceLine.mappingSnapshotId, trx)).mappings
+        : [];
+
+      if (sourceLine && snapshotMappings.length > 0) {
+        for (const mapping of snapshotMappings) {
+          itemsToInsert.push({
+            salesOrderId,
+            salesOrderLineId: sourceLine.id,
+            mappingSnapshotId: sourceLine.mappingSnapshotId,
+            variantId: sourceLine.variantId,
+            skuId: mapping.skuId,
+            qty: item.quantity * Math.max(1, mapping.quantity || 1),
+            reservedQty: 0,
+            pickedQty: 0,
+            shippedQty: 0,
+            status: 'pending',
+          });
+        }
+        continue;
+      }
+
+      const matching = await this.productSkuMapping.getByVariant(item.variantId, trx);
+      if (this.isVoidMatching(matching)) {
+        continue;
+      }
+
+      const links = this.getPhysicalSkuLinks(matching);
+      if (links.length === 0) {
+        missingItems.push({ variantId: item.variantId, reason: this.getMatchingFailureReason(matching) });
+        continue;
+      }
+
+      for (const link of links) {
+        itemsToInsert.push({
+          salesOrderId,
+          salesOrderLineId: item.salesOrderLineId ?? null,
+          mappingSnapshotId: null,
+          variantId: item.variantId,
+          skuId: link.skuId,
+          qty: item.quantity * Math.max(1, link.quantity || 1),
+          reservedQty: 0,
+          pickedQty: 0,
+          shippedQty: 0,
+          status: 'pending',
+        });
+      }
+    }
+
+    if (missingItems.length > 0) {
+      throw new BadRequestException({
+        code: 'PRODUCT_SKU_MATCHING_REQUIRED',
+        message: 'Cannot create compensation fulfillment order because some variants have no SKU matching',
+        missingItems,
+      });
+    }
+
+    if (itemsToInsert.length === 0) {
+      throw new BadRequestException({
+        code: 'COMPENSATION_SHIPMENT_REQUIRES_PHYSICAL_ITEMS',
+        message: 'Compensation shipment requires at least one physically fulfilled item',
+      });
+    }
+
+    return itemsToInsert;
+  }
+
+  private async linkCompensationFulfillment(input: {
+    salesOrderId: string;
+    amendmentId: string;
+    fulfillmentOrderId: string;
+    occurredAt: Date;
+    metadata: Record<string, unknown>;
+    trx: DbTx;
+  }) {
+    await input.trx.insert(wmsTables.businessLinks).values([
+      {
+        sourceType: AMENDMENT_REF_TYPE,
+        sourceId: input.amendmentId,
+        sourceExternalRef: null,
+        targetType: FULFILLMENT_ORDER_REF_TYPE,
+        targetId: input.fulfillmentOrderId,
+        targetExternalRef: null,
+        relationName: 'caused_compensation_fulfillment',
+        metadata: input.metadata,
+        occurredAt: input.occurredAt,
+      },
+      {
+        sourceType: SALES_ORDER_REF_TYPE,
+        sourceId: input.salesOrderId,
+        sourceExternalRef: null,
+        targetType: FULFILLMENT_ORDER_REF_TYPE,
+        targetId: input.fulfillmentOrderId,
+        targetExternalRef: null,
+        relationName: 'caused_compensation_fulfillment',
+        metadata: {
+          ...input.metadata,
+          amendmentId: input.amendmentId,
+        },
+        occurredAt: input.occurredAt,
+      },
+    ]);
   }
 
   private isVoidMatching(matching: VariantSkuMatching): boolean {

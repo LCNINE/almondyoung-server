@@ -6,9 +6,13 @@ import { FulfillmentsService } from './fulfillments.service';
 describe('FulfillmentsService', () => {
   const salesOrderId = '11111111-1111-1111-1111-111111111111';
   const salesOrderLineId = '22222222-2222-2222-2222-222222222222';
+  const secondSalesOrderLineId = '22222222-2222-2222-2222-222222222223';
   const warehouseId = '33333333-3333-3333-3333-333333333333';
   const variantId = '44444444-4444-4444-4444-444444444444';
+  const secondVariantId = '44444444-4444-4444-4444-444444444445';
   const skuId = '55555555-5555-5555-5555-555555555555';
+  const snapshotSkuId = '55555555-5555-5555-5555-555555555556';
+  const mappingSnapshotId = '88888888-8888-8888-8888-888888888888';
   const voidVariantId = '66666666-6666-6666-6666-666666666666';
   const voidSalesOrderLineId = '77777777-7777-7777-7777-777777777777';
 
@@ -21,6 +25,8 @@ describe('FulfillmentsService', () => {
     fulfillmentOrderItems: Array<Record<string, any>>;
     shipments: Array<Record<string, any>>;
     reservations: Array<Record<string, any>>;
+    salesOrderAmendments: Array<Record<string, any>>;
+    businessLinks: Array<Record<string, any>>;
   };
 
   function rows<T>(value: T[]): T[] & { limit: (count: number) => T[] } {
@@ -39,6 +45,8 @@ describe('FulfillmentsService', () => {
       if (table === wmsTables.fulfillmentOrderItems) return state.fulfillmentOrderItems;
       if (table === wmsTables.shipments) return state.shipments;
       if (table === wmsTables.invoices) return [];
+      if (table === wmsTables.salesOrderAmendments) return state.salesOrderAmendments;
+      if (table === wmsTables.businessLinks) return state.businessLinks;
       return [];
     };
 
@@ -50,27 +58,41 @@ describe('FulfillmentsService', () => {
         }),
       })),
       insert: jest.fn((table: unknown) => ({
-        values: (value: any) => ({
-          returning: () => {
-            if (table === wmsTables.fulfillmentOrders) {
-              const row = { id: `fo-${state.fulfillmentOrders.length + 1}`, ...value };
-              state.fulfillmentOrders.push(row);
-              return [row];
-            }
+        values: (value: any) => {
+          if (table === wmsTables.businessLinks) {
+            const values = Array.isArray(value) ? value : [value];
+            const inserted = values.map((link, index) => ({
+              id: `business-link-${state.businessLinks.length + index + 1}`,
+              ...link,
+              createdAt: new Date('2026-05-30T00:00:00.000Z'),
+              updatedAt: new Date('2026-05-30T00:00:00.000Z'),
+            }));
+            state.businessLinks.push(...inserted);
+            return { returning: () => inserted };
+          }
 
-            if (table === wmsTables.fulfillmentOrderItems) {
-              const values = Array.isArray(value) ? value : [value];
-              const inserted = values.map((item, index) => ({
-                id: `foi-${state.fulfillmentOrderItems.length + index + 1}`,
-                ...item,
-              }));
-              state.fulfillmentOrderItems.push(...inserted);
-              return inserted;
-            }
+          return {
+            returning: () => {
+              if (table === wmsTables.fulfillmentOrders) {
+                const row = { id: `fo-${state.fulfillmentOrders.length + 1}`, ...value };
+                state.fulfillmentOrders.push(row);
+                return [row];
+              }
 
-            return [];
-          },
-        }),
+              if (table === wmsTables.fulfillmentOrderItems) {
+                const values = Array.isArray(value) ? value : [value];
+                const inserted = values.map((item, index) => ({
+                  id: `foi-${state.fulfillmentOrderItems.length + index + 1}`,
+                  ...item,
+                }));
+                state.fulfillmentOrderItems.push(...inserted);
+                return inserted;
+              }
+
+              return [];
+            },
+          };
+        },
       })),
       update: jest.fn((table: unknown) => ({
         set: (set: Record<string, any>) => ({
@@ -92,10 +114,14 @@ describe('FulfillmentsService', () => {
 
   function makeService(
     options: {
+      salesOrderStatus?: string;
+      warehouses?: Array<Record<string, any>>;
       lines?: Array<Record<string, any>>;
+      skus?: Array<Record<string, any>>;
       links?: Array<{ skuId: string; quantity: number }> | null;
       matching?: Record<string, any> | null;
       matchingsByVariant?: Record<string, Record<string, any> | null>;
+      mappingSnapshots?: Record<string, { mappings: Array<{ skuId: string; quantity: number }> }>;
       policy?: {
         inventoryManagement: boolean;
         preStockSellable: boolean;
@@ -106,11 +132,13 @@ describe('FulfillmentsService', () => {
       fulfillmentOrders?: Array<Record<string, any>>;
       fulfillmentOrderItems?: Array<Record<string, any>>;
       shipments?: Array<Record<string, any>>;
+      salesOrderAmendments?: Array<Record<string, any>>;
+      businessLinks?: Array<Record<string, any>>;
     } = {},
   ) {
     const state: FakeState = {
-      salesOrders: [{ id: salesOrderId, status: 'confirmed' }],
-      warehouses: [{ id: warehouseId }],
+      salesOrders: [{ id: salesOrderId, status: options.salesOrderStatus ?? 'confirmed' }],
+      warehouses: options.warehouses ?? [{ id: warehouseId }],
       salesOrderLines: options.lines ?? [
         {
           id: salesOrderLineId,
@@ -120,11 +148,13 @@ describe('FulfillmentsService', () => {
           mappingSnapshotId: null,
         },
       ],
-      skus: [{ id: skuId, holderId: null }],
+      skus: options.skus ?? [{ id: skuId, holderId: null }],
       fulfillmentOrders: options.fulfillmentOrders ?? [],
       fulfillmentOrderItems: options.fulfillmentOrderItems ?? [],
       shipments: options.shipments ?? [],
       reservations: [],
+      salesOrderAmendments: options.salesOrderAmendments ?? [],
+      businessLinks: options.businessLinks ?? [],
     };
     const tx = makeTx(state);
     const db = { db: { transaction: jest.fn((fn) => fn(tx)) } };
@@ -148,7 +178,9 @@ describe('FulfillmentsService', () => {
               },
         );
       }),
-      getMappingSnapshot: jest.fn(),
+      getMappingSnapshot: jest.fn().mockImplementation((requestedSnapshotId: string) =>
+        Promise.resolve(options.mappingSnapshots?.[requestedSnapshotId] ?? { mappings: [] }),
+      ),
     };
     const availability = {
       getAvailableQuantity: jest.fn().mockResolvedValue(options.availableQty ?? 10),
@@ -192,6 +224,38 @@ describe('FulfillmentsService', () => {
       ),
     };
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const salesOrderAmendments = {
+      create: jest.fn().mockImplementation(async (dto, operatorId) => {
+        const row = {
+          id: `amendment-${state.salesOrderAmendments.length + 1}`,
+          ...dto,
+          createdBy: operatorId ?? null,
+          occurredAt: dto.occurredAt ? new Date(dto.occurredAt) : new Date('2026-05-30T00:00:00.000Z'),
+          createdAt: new Date('2026-05-30T00:00:00.000Z'),
+          updatedAt: new Date('2026-05-30T00:00:00.000Z'),
+        };
+        state.salesOrderAmendments.push(row);
+        state.businessLinks.push({
+          id: `business-link-${state.businessLinks.length + 1}`,
+          sourceType: 'sales_order',
+          sourceId: dto.salesOrderId,
+          sourceExternalRef: null,
+          targetType: 'sales_order_amendment',
+          targetId: row.id,
+          targetExternalRef: null,
+          relationName: 'opened_amendment',
+          metadata: {
+            amendmentKind: dto.amendmentKind,
+            decision: dto.decision,
+            deltaTypes: dto.deltas.map((delta) => delta.type),
+          },
+          occurredAt: row.occurredAt,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+        });
+        return row;
+      }),
+    };
 
     const service = new FulfillmentsService(
       db as any,
@@ -201,6 +265,7 @@ describe('FulfillmentsService', () => {
       unifiedReservation as any,
       productSkuMapping as any,
       outbox as any,
+      salesOrderAmendments as any,
     );
 
     return {
@@ -213,6 +278,7 @@ describe('FulfillmentsService', () => {
       unifiedReservation,
       policies,
       outbox,
+      salesOrderAmendments,
     };
   }
 
@@ -374,6 +440,366 @@ describe('FulfillmentsService', () => {
       expect.anything(),
     );
     expect(outbox.enqueue.mock.calls.map(([event]) => event.eventType)).toContain('FulfillmentReady');
+  });
+
+  it('CS 보상 출고는 fulfillment-only amendment와 별도 FO를 만들고 원 SalesOrder line을 바꾸지 않는다', async () => {
+    const { service, state, unifiedReservation, salesOrderAmendments } = makeService();
+    const originalLines = state.salesOrderLines.map((line) => ({ ...line }));
+
+    const result = await service.createCompensationShipment(
+      {
+        salesOrderId,
+        warehouseId,
+        reasonCode: 'CS_COMPENSATION_GIFT',
+        fulfillmentInstruction: 'Ship free gift for CS compensation',
+        items: [{ variantId, quantity: 1, salesOrderLineId }],
+      },
+      '99999999-9999-9999-9999-999999999999',
+    );
+
+    expect(result.amendment).toMatchObject({
+      id: 'amendment-1',
+      salesOrderId,
+      amendmentKind: 'fulfillment_only',
+      decision: 'approved',
+      reasonCode: 'CS_COMPENSATION_GIFT',
+      deltas: [
+        expect.objectContaining({
+          type: 'fulfillment_only_correction',
+          salesOrderLineId,
+          fulfillmentInstruction: 'Ship free gift for CS compensation',
+        }),
+      ],
+    });
+    expect(result.fulfillmentOrder).toMatchObject({
+      id: 'fo-1',
+      salesOrderId: null,
+      status: 'ready',
+      totalQty: 2,
+      totalReservedQty: 2,
+    });
+    expect(state.fulfillmentOrderItems[0]).toMatchObject({
+      salesOrderId,
+      salesOrderLineId,
+      variantId,
+      skuId,
+      qty: 2,
+      reservedQty: 2,
+    });
+    expect(state.salesOrderLines).toEqual(originalLines);
+    expect(salesOrderAmendments.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amendmentKind: 'fulfillment_only',
+        metadata: expect.objectContaining({
+          compensationShipment: expect.objectContaining({
+            fulfillmentOrderId: 'fo-1',
+            items: [{ variantId, quantity: 1, salesOrderLineId }],
+          }),
+        }),
+      }),
+      '99999999-9999-9999-9999-999999999999',
+      expect.anything(),
+    );
+    expect(unifiedReservation.reserveStock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetType: 'FULFILLMENT_ORDER',
+        targetId: 'fo-1',
+        fulfillmentOrderItemId: 'foi-1',
+        skuId,
+        warehouseId,
+        quantity: 2,
+      }),
+      expect.anything(),
+    );
+    expect(state.businessLinks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceType: 'sales_order',
+          sourceId: salesOrderId,
+          targetType: 'sales_order_amendment',
+          targetId: 'amendment-1',
+          relationName: 'opened_amendment',
+        }),
+        expect.objectContaining({
+          sourceType: 'sales_order_amendment',
+          sourceId: 'amendment-1',
+          targetType: 'fulfillment_order',
+          targetId: 'fo-1',
+          relationName: 'caused_compensation_fulfillment',
+        }),
+        expect.objectContaining({
+          sourceType: 'sales_order',
+          sourceId: salesOrderId,
+          targetType: 'fulfillment_order',
+          targetId: 'fo-1',
+          relationName: 'caused_compensation_fulfillment',
+          metadata: expect.objectContaining({ amendmentId: 'amendment-1' }),
+        }),
+      ]),
+    );
+  });
+
+  it('CS 보상 출고는 참조한 원 주문 라인의 mapping snapshot을 우선 사용한다', async () => {
+    const { service, state, productSkuMapping, unifiedReservation } = makeService({
+      lines: [
+        {
+          id: salesOrderLineId,
+          salesOrderId,
+          variantId,
+          quantity: 1,
+          mappingSnapshotId,
+        },
+      ],
+      skus: [
+        { id: skuId, holderId: null },
+        { id: snapshotSkuId, holderId: null },
+      ],
+      links: [{ skuId, quantity: 9 }],
+      mappingSnapshots: {
+        [mappingSnapshotId]: {
+          mappings: [{ skuId: snapshotSkuId, quantity: 3 }],
+        },
+      },
+    });
+
+    const result = await service.createCompensationShipment({
+      salesOrderId,
+      warehouseId,
+      reasonCode: 'MISSED_ITEM',
+      items: [{ variantId, quantity: 2, salesOrderLineId }],
+    });
+
+    expect(result.fulfillmentOrder).toMatchObject({
+      id: 'fo-1',
+      status: 'ready',
+      totalQty: 6,
+      totalReservedQty: 6,
+    });
+    expect(productSkuMapping.getMappingSnapshot).toHaveBeenCalledWith(mappingSnapshotId, expect.anything());
+    expect(productSkuMapping.getByVariant).not.toHaveBeenCalled();
+    expect(state.fulfillmentOrderItems[0]).toMatchObject({
+      salesOrderId,
+      salesOrderLineId,
+      mappingSnapshotId,
+      variantId,
+      skuId: snapshotSkuId,
+      qty: 6,
+      reservedQty: 6,
+    });
+    expect(unifiedReservation.reserveStock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fulfillmentOrderItemId: 'foi-1',
+        skuId: snapshotSkuId,
+        warehouseId,
+        quantity: 6,
+      }),
+      expect.anything(),
+    );
+  });
+
+  it('CS 보상 출고는 accepted 상태가 아닌 SalesOrder에는 만들 수 없다', async () => {
+    const { service, state, productSkuMapping } = makeService({ salesOrderStatus: 'pending' });
+
+    await expect(
+      service.createCompensationShipment({
+        salesOrderId,
+        warehouseId,
+        reasonCode: 'MISSED_ITEM',
+        items: [{ variantId, quantity: 1, salesOrderLineId }],
+      }),
+    ).rejects.toThrow(`Cannot create compensation shipment for SalesOrder ${salesOrderId} in status pending`);
+
+    expect(productSkuMapping.getByVariant).not.toHaveBeenCalled();
+    expect(productSkuMapping.getMappingSnapshot).not.toHaveBeenCalled();
+    expect(state.fulfillmentOrders).toHaveLength(0);
+    expect(state.fulfillmentOrderItems).toHaveLength(0);
+    expect(state.salesOrderAmendments).toHaveLength(0);
+    expect(state.businessLinks).toHaveLength(0);
+  });
+
+  it('CS 보상 출고는 참조한 원 주문 라인과 요청 variant가 다르면 snapshot을 사용하지 않는다', async () => {
+    const { service, state, productSkuMapping } = makeService({
+      lines: [
+        {
+          id: salesOrderLineId,
+          salesOrderId,
+          variantId,
+          quantity: 1,
+          mappingSnapshotId,
+        },
+      ],
+      mappingSnapshots: {
+        [mappingSnapshotId]: {
+          mappings: [{ skuId: snapshotSkuId, quantity: 1 }],
+        },
+      },
+    });
+
+    await expect(
+      service.createCompensationShipment({
+        salesOrderId,
+        warehouseId,
+        reasonCode: 'MISSED_ITEM',
+        items: [{ variantId: secondVariantId, quantity: 1, salesOrderLineId }],
+      }),
+    ).rejects.toThrow(
+      `Compensation item variant ${secondVariantId} does not match SalesOrder line ${salesOrderLineId} variant ${variantId}`,
+    );
+
+    expect(productSkuMapping.getMappingSnapshot).not.toHaveBeenCalled();
+    expect(productSkuMapping.getByVariant).not.toHaveBeenCalled();
+    expect(state.fulfillmentOrders).toHaveLength(0);
+    expect(state.fulfillmentOrderItems).toHaveLength(0);
+    expect(state.salesOrderAmendments).toHaveLength(0);
+    expect(state.businessLinks).toHaveLength(0);
+  });
+
+  it('CS 보상 출고는 새 FO 생성 전에 warehouse 존재 여부를 검증한다', async () => {
+    const missingWarehouseId = '99999999-9999-9999-9999-999999999999';
+    const { service, state, productSkuMapping } = makeService({ warehouses: [] });
+
+    await expect(
+      service.createCompensationShipment({
+        salesOrderId,
+        warehouseId: missingWarehouseId,
+        reasonCode: 'MISSED_ITEM',
+        items: [{ variantId, quantity: 1, salesOrderLineId }],
+      }),
+    ).rejects.toThrow(`Warehouse ${missingWarehouseId} not found`);
+
+    expect(productSkuMapping.getByVariant).not.toHaveBeenCalled();
+    expect(state.fulfillmentOrders).toHaveLength(0);
+    expect(state.fulfillmentOrderItems).toHaveLength(0);
+    expect(state.salesOrderAmendments).toHaveLength(0);
+    expect(state.businessLinks).toHaveLength(0);
+  });
+
+  it('CS 보상 출고는 여러 보상 라인을 amendment delta에 모두 남긴다', async () => {
+    const { service } = makeService({
+      lines: [
+        {
+          id: salesOrderLineId,
+          salesOrderId,
+          variantId,
+          quantity: 1,
+          mappingSnapshotId: null,
+        },
+        {
+          id: secondSalesOrderLineId,
+          salesOrderId,
+          variantId: secondVariantId,
+          quantity: 1,
+          mappingSnapshotId: null,
+        },
+      ],
+      matchingsByVariant: {
+        [variantId]: {
+          status: 'matched',
+          strategy: 'variant',
+          links: [{ skuId, quantity: 1 }],
+        },
+        [secondVariantId]: {
+          status: 'matched',
+          strategy: 'variant',
+          links: [{ skuId, quantity: 1 }],
+        },
+      },
+    });
+
+    const result = await service.createCompensationShipment({
+      salesOrderId,
+      warehouseId,
+      reasonCode: 'MISSED_ITEMS',
+      items: [
+        { variantId, quantity: 1, salesOrderLineId },
+        { variantId: secondVariantId, quantity: 2, salesOrderLineId: secondSalesOrderLineId },
+      ],
+    });
+
+    expect(result.amendment.deltas).toEqual([
+      expect.objectContaining({
+        type: 'fulfillment_only_correction',
+        salesOrderLineId,
+        metadata: { variantId, quantity: 1 },
+      }),
+      expect.objectContaining({
+        type: 'fulfillment_only_correction',
+        salesOrderLineId: secondSalesOrderLineId,
+        metadata: { variantId: secondVariantId, quantity: 2 },
+      }),
+    ]);
+  });
+
+  it('CS 보상 출고는 기존 FO를 amendment에 링크할 수 있다', async () => {
+    const { service, state, productSkuMapping, unifiedReservation } = makeService({
+      fulfillmentOrders: [
+        {
+          id: 'fo-existing-1',
+          salesOrderId: null,
+          warehouseId,
+          status: 'ready',
+          totalItems: 1,
+          totalQty: 1,
+        },
+      ],
+    });
+    const originalLines = state.salesOrderLines.map((line) => ({ ...line }));
+
+    const result = await service.createCompensationShipment({
+      salesOrderId,
+      fulfillmentOrderId: 'fo-existing-1',
+      reasonCode: 'MISSED_ITEM',
+    });
+
+    expect(result.fulfillmentOrder).toMatchObject({ id: 'fo-existing-1', status: 'ready' });
+    expect(state.fulfillmentOrders).toHaveLength(1);
+    expect(state.fulfillmentOrderItems).toHaveLength(0);
+    expect(state.salesOrderLines).toEqual(originalLines);
+    expect(productSkuMapping.getByVariant).not.toHaveBeenCalled();
+    expect(unifiedReservation.reserveStock).not.toHaveBeenCalled();
+    expect(state.businessLinks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceType: 'sales_order_amendment',
+          targetType: 'fulfillment_order',
+          targetId: 'fo-existing-1',
+          relationName: 'caused_compensation_fulfillment',
+        }),
+        expect.objectContaining({
+          sourceType: 'sales_order',
+          sourceId: salesOrderId,
+          targetType: 'fulfillment_order',
+          targetId: 'fo-existing-1',
+          relationName: 'caused_compensation_fulfillment',
+        }),
+      ]),
+    );
+  });
+
+  it('CS 보상 출고는 주문에 연결된 기존 FO를 링크하지 않는다', async () => {
+    const { service, state } = makeService({
+      fulfillmentOrders: [
+        {
+          id: 'fo-regular-1',
+          salesOrderId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+          warehouseId,
+          status: 'ready',
+          totalItems: 1,
+          totalQty: 1,
+        },
+      ],
+    });
+
+    await expect(
+      service.createCompensationShipment({
+        salesOrderId,
+        fulfillmentOrderId: 'fo-regular-1',
+        reasonCode: 'MISSED_ITEM',
+      }),
+    ).rejects.toThrow('Compensation shipment can only link standalone fulfillment orders');
+
+    expect(state.salesOrderAmendments).toHaveLength(0);
+    expect(state.businessLinks).toHaveLength(0);
   });
 
   it('matched + void line만 있는 sales order는 물리 FO가 필요 없다고 판별한다', async () => {
