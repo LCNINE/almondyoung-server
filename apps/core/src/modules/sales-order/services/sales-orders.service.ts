@@ -26,10 +26,21 @@ type SalesOrderLineInsert = InferInsertModel<typeof wmsTables.salesOrderLines>;
 type BusinessLinkInsert = InferInsertModel<typeof wmsTables.businessLinks>;
 type SalesOrderCancellationInsert = InferInsertModel<typeof wmsTables.salesOrderCancellations>;
 type BusinessLinkRow = typeof wmsTables.businessLinks.$inferSelect;
+type WmsDb = DbService<typeof wmsSchema>['db'];
 type BusinessLinkReference = {
   type: string;
   id: string | null;
   externalRef: string | null;
+};
+type SalesOrderTimelineContext = {
+  salesOrderId: string;
+  cancellationIds: Set<string>;
+  amendmentIds: Set<string>;
+  csCaseIds: Set<string>;
+};
+type TimelineEffectStatus = {
+  owner: string;
+  value: string;
 };
 type SalesOrderContractField =
   | 'customer'
@@ -62,6 +73,14 @@ const CONTRACT_PATCH_FIELDS: SalesOrderContractField[] = [
 ];
 const SALES_ORDER_REF_TYPE = 'sales_order';
 const ORDER_CANCELLATION_REF_TYPE = 'order_cancellation';
+const SALES_ORDER_AMENDMENT_REF_TYPE = 'sales_order_amendment';
+const CS_CASE_REF_TYPE = 'cs_case';
+const WALLET_EFFECT_REF_TYPES = new Set([
+  'wallet_refund',
+  'wallet_payment_effect',
+  'wallet_payment_intent',
+  'wallet_charge',
+]);
 const CANCELLABLE_FULFILLMENT_STATUSES = new Set([
   'created',
   'reserving',
@@ -605,16 +624,8 @@ export class SalesOrdersService {
       .select()
       .from(wmsTables.salesOrderLines)
       .where(eq(wmsTables.salesOrderLines.salesOrderId, id));
-    const businessLinks = await db
-      .select()
-      .from(wmsTables.businessLinks)
-      .where(
-        or(
-          and(eq(wmsTables.businessLinks.sourceType, 'sales_order'), eq(wmsTables.businessLinks.sourceId, id)),
-          and(eq(wmsTables.businessLinks.targetType, 'sales_order'), eq(wmsTables.businessLinks.targetId, id)),
-        ),
-      );
-    return { ...order, lines, businessTimeline: this.toBusinessTimeline(id, businessLinks) };
+    const { links: businessLinks, context } = await this.loadBusinessTimelineLinks(id, db);
+    return { ...order, lines, businessTimeline: this.toBusinessTimeline(context, businessLinks) };
   }
 
   async createBusinessLink(id: string, dto: CreateBusinessLinkDto, tx?: DbTx) {
@@ -640,8 +651,12 @@ export class SalesOrdersService {
       if (!this.hasBusinessLinkRef(target)) {
         throw new BadRequestException('Business link target must include id or externalRef');
       }
-      if (!this.referencesSalesOrder(source, id) && !this.referencesSalesOrder(target, id)) {
-        throw new BadRequestException('Business link must reference the requested SalesOrder as source or target');
+      const sourceBelongsToTimeline = await this.referencesSalesOrderTimeline(source, id, trx);
+      const targetBelongsToTimeline = await this.referencesSalesOrderTimeline(target, id, trx);
+      if (!sourceBelongsToTimeline && !targetBelongsToTimeline) {
+        throw new BadRequestException(
+          'Business link must reference the requested SalesOrder or a lifecycle entity linked to it',
+        );
       }
 
       const values: BusinessLinkInsert = {
@@ -657,7 +672,14 @@ export class SalesOrdersService {
       };
 
       const [businessLink] = await trx.insert(wmsTables.businessLinks).values(values).returning();
-      return this.toBusinessTimelineItem(id, businessLink);
+      const context = await this.loadBusinessTimelineContext(id, trx);
+      if (sourceBelongsToTimeline) {
+        this.collectTimelineCsCaseId(context, source.type, source.id);
+      }
+      if (targetBelongsToTimeline) {
+        this.collectTimelineCsCaseId(context, target.type, target.id);
+      }
+      return this.toBusinessTimelineItem(context, businessLink);
     }, tx);
   }
 
@@ -986,9 +1008,204 @@ export class SalesOrdersService {
     return ref.type === 'sales_order' && ref.id === salesOrderId;
   }
 
-  private toBusinessTimeline(salesOrderId: string, links: BusinessLinkRow[]) {
+  private async referencesSalesOrderTimeline(ref: BusinessLinkReference, salesOrderId: string, trx: DbTx) {
+    if (this.referencesSalesOrder(ref, salesOrderId)) {
+      return true;
+    }
+    if (!ref.id) {
+      return false;
+    }
+
+    if (ref.type === ORDER_CANCELLATION_REF_TYPE) {
+      const [cancellation] = await trx
+        .select({ id: wmsTables.salesOrderCancellations.id })
+        .from(wmsTables.salesOrderCancellations)
+        .where(
+          and(
+            eq(wmsTables.salesOrderCancellations.id, ref.id),
+            eq(wmsTables.salesOrderCancellations.salesOrderId, salesOrderId),
+          ),
+        )
+        .limit(1);
+      return Boolean(cancellation);
+    }
+
+    if (ref.type === SALES_ORDER_AMENDMENT_REF_TYPE) {
+      const [amendment] = await trx
+        .select({ id: wmsTables.salesOrderAmendments.id })
+        .from(wmsTables.salesOrderAmendments)
+        .where(
+          and(
+            eq(wmsTables.salesOrderAmendments.id, ref.id),
+            eq(wmsTables.salesOrderAmendments.salesOrderId, salesOrderId),
+          ),
+        )
+        .limit(1);
+      return Boolean(amendment);
+    }
+
+    if (ref.type === CS_CASE_REF_TYPE) {
+      const context = await this.loadBusinessTimelineContext(salesOrderId, trx);
+      const lifecycleAnchorFilters = [
+        and(
+          eq(wmsTables.businessLinks.targetType, SALES_ORDER_REF_TYPE),
+          eq(wmsTables.businessLinks.targetId, salesOrderId),
+        ),
+        and(
+          eq(wmsTables.businessLinks.sourceType, SALES_ORDER_REF_TYPE),
+          eq(wmsTables.businessLinks.sourceId, salesOrderId),
+        ),
+        ...[...context.cancellationIds].flatMap((cancellationId) => [
+          and(
+            eq(wmsTables.businessLinks.targetType, ORDER_CANCELLATION_REF_TYPE),
+            eq(wmsTables.businessLinks.targetId, cancellationId),
+          ),
+          and(
+            eq(wmsTables.businessLinks.sourceType, ORDER_CANCELLATION_REF_TYPE),
+            eq(wmsTables.businessLinks.sourceId, cancellationId),
+          ),
+        ]),
+        ...[...context.amendmentIds].flatMap((amendmentId) => [
+          and(
+            eq(wmsTables.businessLinks.targetType, SALES_ORDER_AMENDMENT_REF_TYPE),
+            eq(wmsTables.businessLinks.targetId, amendmentId),
+          ),
+          and(
+            eq(wmsTables.businessLinks.sourceType, SALES_ORDER_AMENDMENT_REF_TYPE),
+            eq(wmsTables.businessLinks.sourceId, amendmentId),
+          ),
+        ]),
+      ].filter((filter): filter is SQL => Boolean(filter));
+      const linkedSalesOrderRefs = await trx
+        .select({ id: wmsTables.businessLinks.id })
+        .from(wmsTables.businessLinks)
+        .where(
+          and(
+            or(
+              and(
+                eq(wmsTables.businessLinks.sourceType, CS_CASE_REF_TYPE),
+                eq(wmsTables.businessLinks.sourceId, ref.id),
+              ),
+              and(
+                eq(wmsTables.businessLinks.targetType, CS_CASE_REF_TYPE),
+                eq(wmsTables.businessLinks.targetId, ref.id),
+              ),
+            ),
+            or(...lifecycleAnchorFilters),
+          ),
+        )
+        .limit(1);
+      return linkedSalesOrderRefs.length > 0;
+    }
+
+    return false;
+  }
+
+  private async loadBusinessTimelineContext(
+    salesOrderId: string,
+    db: DbTx | WmsDb,
+  ): Promise<SalesOrderTimelineContext> {
+    const [cancellations, amendments] = await Promise.all([
+      db
+        .select({ id: wmsTables.salesOrderCancellations.id })
+        .from(wmsTables.salesOrderCancellations)
+        .where(eq(wmsTables.salesOrderCancellations.salesOrderId, salesOrderId)),
+      db
+        .select({ id: wmsTables.salesOrderAmendments.id })
+        .from(wmsTables.salesOrderAmendments)
+        .where(eq(wmsTables.salesOrderAmendments.salesOrderId, salesOrderId)),
+    ]);
+
+    return {
+      salesOrderId,
+      cancellationIds: new Set(cancellations.map((row) => row.id)),
+      amendmentIds: new Set(amendments.map((row) => row.id)),
+      csCaseIds: new Set(),
+    };
+  }
+
+  private async loadBusinessTimelineLinks(salesOrderId: string, db: DbTx | WmsDb) {
+    const context = await this.loadBusinessTimelineContext(salesOrderId, db);
+    const anchorFilters: SQL[] = [
+      and(
+        eq(wmsTables.businessLinks.sourceType, SALES_ORDER_REF_TYPE),
+        eq(wmsTables.businessLinks.sourceId, salesOrderId),
+      )!,
+      and(
+        eq(wmsTables.businessLinks.targetType, SALES_ORDER_REF_TYPE),
+        eq(wmsTables.businessLinks.targetId, salesOrderId),
+      )!,
+    ];
+
+    for (const cancellationId of context.cancellationIds) {
+      anchorFilters.push(
+        and(
+          eq(wmsTables.businessLinks.sourceType, ORDER_CANCELLATION_REF_TYPE),
+          eq(wmsTables.businessLinks.sourceId, cancellationId),
+        )!,
+        and(
+          eq(wmsTables.businessLinks.targetType, ORDER_CANCELLATION_REF_TYPE),
+          eq(wmsTables.businessLinks.targetId, cancellationId),
+        )!,
+      );
+    }
+
+    for (const amendmentId of context.amendmentIds) {
+      anchorFilters.push(
+        and(
+          eq(wmsTables.businessLinks.sourceType, SALES_ORDER_AMENDMENT_REF_TYPE),
+          eq(wmsTables.businessLinks.sourceId, amendmentId),
+        )!,
+        and(
+          eq(wmsTables.businessLinks.targetType, SALES_ORDER_AMENDMENT_REF_TYPE),
+          eq(wmsTables.businessLinks.targetId, amendmentId),
+        )!,
+      );
+    }
+
+    const directLinks = await db
+      .select()
+      .from(wmsTables.businessLinks)
+      .where(or(...anchorFilters));
+
+    for (const link of directLinks) {
+      this.collectTimelineCsCaseId(context, link.sourceType, link.sourceId);
+      this.collectTimelineCsCaseId(context, link.targetType, link.targetId);
+    }
+
+    if (context.csCaseIds.size === 0) {
+      return { links: directLinks, context };
+    }
+
+    const csCaseFilters: SQL[] = [];
+    for (const csCaseId of context.csCaseIds) {
+      csCaseFilters.push(
+        and(eq(wmsTables.businessLinks.sourceType, CS_CASE_REF_TYPE), eq(wmsTables.businessLinks.sourceId, csCaseId))!,
+        and(eq(wmsTables.businessLinks.targetType, CS_CASE_REF_TYPE), eq(wmsTables.businessLinks.targetId, csCaseId))!,
+      );
+    }
+    const csCaseLinks = await db
+      .select()
+      .from(wmsTables.businessLinks)
+      .where(or(...csCaseFilters));
+
+    const linksById = new Map<string, BusinessLinkRow>();
+    for (const link of [...directLinks, ...csCaseLinks]) {
+      linksById.set(link.id, link);
+    }
+
+    return { links: [...linksById.values()], context };
+  }
+
+  private collectTimelineCsCaseId(context: SalesOrderTimelineContext, type: string, id: string | null) {
+    if (type === CS_CASE_REF_TYPE && id) {
+      context.csCaseIds.add(id);
+    }
+  }
+
+  private toBusinessTimeline(context: SalesOrderTimelineContext, links: BusinessLinkRow[]) {
     return links
-      .map((link) => this.toBusinessTimelineItem(salesOrderId, link))
+      .map((link) => this.toBusinessTimelineItem(context, link))
       .sort((a, b) => {
         const occurred = a.occurredAt.getTime() - b.occurredAt.getTime();
         if (occurred !== 0) return occurred;
@@ -996,10 +1213,15 @@ export class SalesOrdersService {
       });
   }
 
-  private toBusinessTimelineItem(salesOrderId: string, link: BusinessLinkRow) {
+  private toBusinessTimelineItem(context: SalesOrderTimelineContext, link: BusinessLinkRow) {
     const source = this.toBusinessLinkRef(link.sourceType, link.sourceId, link.sourceExternalRef);
     const target = this.toBusinessLinkRef(link.targetType, link.targetId, link.targetExternalRef);
-    const direction = this.referencesSalesOrder(source, salesOrderId) ? 'outbound' : 'inbound';
+    const direction =
+      this.referencesSalesOrder(source, context.salesOrderId) ||
+      (!this.referencesSalesOrder(target, context.salesOrderId) && this.isTimelineAnchorRef(source, context))
+        ? 'outbound'
+        : 'inbound';
+    const linkedEntity = direction === 'outbound' ? target : source;
 
     return {
       id: link.id,
@@ -1007,11 +1229,43 @@ export class SalesOrdersService {
       direction,
       source,
       target,
-      linkedEntity: direction === 'outbound' ? target : source,
+      linkedEntity,
       metadata: (link.metadata ?? {}) as Record<string, unknown>,
+      effectStatus: this.toTimelineEffectStatus(linkedEntity, (link.metadata ?? {}) as Record<string, unknown>),
       occurredAt: link.occurredAt,
       createdAt: link.createdAt,
     };
+  }
+
+  private isTimelineAnchorRef(ref: BusinessLinkReference, context: SalesOrderTimelineContext): boolean {
+    if (this.referencesSalesOrder(ref, context.salesOrderId)) {
+      return true;
+    }
+    if (!ref.id) {
+      return false;
+    }
+    if (ref.type === ORDER_CANCELLATION_REF_TYPE) {
+      return context.cancellationIds.has(ref.id);
+    }
+    if (ref.type === SALES_ORDER_AMENDMENT_REF_TYPE) {
+      return context.amendmentIds.has(ref.id);
+    }
+    if (ref.type === CS_CASE_REF_TYPE) {
+      return context.csCaseIds.has(ref.id);
+    }
+    return false;
+  }
+
+  private toTimelineEffectStatus(
+    linkedEntity: BusinessLinkReference,
+    metadata: Record<string, unknown>,
+  ): TimelineEffectStatus | null {
+    if (!WALLET_EFFECT_REF_TYPES.has(linkedEntity.type)) {
+      return null;
+    }
+
+    const value = metadata.walletStatus ?? metadata.refundStatus ?? metadata.paymentStatus ?? metadata.status;
+    return typeof value === 'string' && value.length > 0 ? { owner: 'wallet', value } : null;
   }
 
   private toBusinessLinkRef(type: string, id: string | null, externalRef: string | null): BusinessLinkReference {

@@ -61,6 +61,14 @@ export class BusinessLinkReferenceResponseDto {
   externalRef: string | null;
 }
 
+export class BusinessTimelineEffectStatusDto {
+  @ApiProperty({ description: '상태 소유 도메인. 예: wallet' })
+  owner: string;
+
+  @ApiProperty({ description: '소유 도메인이 제공한 상태값. 예: SUCCEEDED, FAILED, PENDING' })
+  value: string;
+}
+
 export class SalesOrderBusinessTimelineItemDto {
   @ApiProperty({ description: 'Business Link ID' })
   id: string;
@@ -82,6 +90,13 @@ export class SalesOrderBusinessTimelineItemDto {
 
   @ApiProperty({ description: '부가 정보' })
   metadata: Record<string, unknown>;
+
+  @ApiProperty({
+    description: '연결된 효과의 상태. 주문 lifecycle 상태와 별도로 대상 도메인이 소유한다.',
+    type: BusinessTimelineEffectStatusDto,
+    nullable: true,
+  })
+  effectStatus: BusinessTimelineEffectStatusDto | null;
 
   @ApiProperty({ description: '업무 사건 발생 시각' })
   occurredAt: Date;
