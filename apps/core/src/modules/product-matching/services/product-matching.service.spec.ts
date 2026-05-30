@@ -15,23 +15,40 @@ describe('ProductMatchingService strategy semantics', () => {
     const fulfillmentBacklog = {
       wakeBacklogsWaitingForVariant: jest.fn().mockResolvedValue(0),
     };
+    const stockEventService = {
+      createStockEntryBySkuId: jest.fn().mockImplementation(async ({ quantity }) => {
+        if (quantity <= 0) {
+          throw new Error('quantity must be positive');
+        }
+
+        return { skuId: 'unused' };
+      }),
+    };
+    const warehouseService = {
+      getDefaultId: jest.fn(() => '44444444-4444-4444-4444-444444444444'),
+    };
     const transactionTxs = [...(options.transactionTxs ?? [])];
     const dbService = {
       db: {
         transaction: jest.fn(async (fn) => fn(transactionTxs.shift() ?? makeTx())),
+        query: {
+          skus: {
+            findFirst: jest.fn().mockResolvedValue({ id: '44444444-4444-4444-4444-444444444444' }),
+          },
+        },
       },
     };
 
     const service = new ProductMatchingService(
       dbService as never,
       {} as never,
-      {} as never,
-      {} as never,
+      stockEventService as never,
+      warehouseService as never,
       productSellableQuantity as never,
       fulfillmentBacklog as never,
     );
 
-    return { service, productSellableQuantity, fulfillmentBacklog, dbService };
+    return { service, productSellableQuantity, fulfillmentBacklog, stockEventService, warehouseService, dbService };
   }
 
   function makeTx(selectRowsQueue: unknown[][] = [[]]) {
@@ -43,6 +60,11 @@ describe('ProductMatchingService strategy semantics', () => {
       inserts,
       updates,
       deletes,
+      query: {
+        skus: {
+          findFirst: jest.fn().mockResolvedValue({ id: '44444444-4444-4444-4444-444444444444' }),
+        },
+      },
       select: jest.fn(() => {
         const rows = selectRowsQueue.shift() ?? [];
         const builder: Record<string, jest.Mock> = {};
@@ -56,6 +78,7 @@ describe('ProductMatchingService strategy semantics', () => {
           inserts.push(values);
           return {
             returning: jest.fn().mockResolvedValue([{ ...matching, ...(values as object) }]),
+            onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
           };
         }),
       })),
@@ -117,6 +140,38 @@ describe('ProductMatchingService strategy semantics', () => {
       strategy: 'void',
       isResolved: true,
     });
+  });
+
+  it('resolves SKU 구성 매칭 and wakes waiting fulfillment backlog', async () => {
+    const { service, fulfillmentBacklog } = makeService();
+    const tx = makeTx([[matching]]);
+    const skuId = '44444444-4444-4444-4444-444444444444';
+
+    const result = await service.resolveMatchingPending(
+      matching.id,
+      {
+        strategy: 'variant',
+        skuMappings: [{ skuId, quantity: 2 }],
+      } as ResolveMatchingDto,
+      tx as never,
+    );
+
+    expect(tx.inserts[0]).toMatchObject({
+      productMatchingId: matching.id,
+      skuId,
+      quantity: 2,
+    });
+    expect(tx.updates[0]).toMatchObject({
+      status: 'matched',
+      strategy: 'variant',
+      isResolved: true,
+    });
+    expect(result).toMatchObject({
+      id: matching.id,
+      status: 'matched',
+      strategy: 'variant',
+    });
+    expect(fulfillmentBacklog.wakeBacklogsWaitingForVariant).toHaveBeenCalledWith(matching.variantId, tx);
   });
 
   it('uses one transaction for void update and sellable projection recalculation', async () => {
@@ -240,6 +295,53 @@ describe('ProductMatchingService strategy semantics', () => {
     });
     expect(productSellableQuantity.recalculateAndPublishForVariant).toHaveBeenCalledWith(matching.variantId, tx);
     expect(fulfillmentBacklog.wakeBacklogsWaitingForVariant).not.toHaveBeenCalled();
+  });
+
+  it('resolves existing pending automatic SKU 구성 matching without stock entry and wakes waiting fulfillment backlog', async () => {
+    const { service, fulfillmentBacklog, stockEventService, warehouseService } = makeService();
+    const skuId = '55555555-5555-5555-5555-555555555555';
+    const tx = makeTx([
+      [
+        {
+          ...matching,
+          status: 'pending',
+          strategy: null,
+          isResolved: false,
+        },
+      ],
+    ]);
+
+    const result = await service.handleAutomaticMatchingRequest(
+      {
+        masterId: matching.masterId,
+        name: 'Product',
+        variants: [
+          {
+            id: matching.variantId,
+            name: 'Variant',
+            inventoryManagement: true,
+            components: [{ skuId, skuName: 'SKU' }],
+          },
+        ],
+      },
+      tx as never,
+    );
+
+    expect(result).toEqual({ created: 1, skipped: 0 });
+    expect(tx.deletes).toHaveLength(1);
+    expect(tx.inserts[0]).toMatchObject({
+      productMatchingId: matching.id,
+      skuId,
+      quantity: 1,
+    });
+    expect(tx.updates[0]).toMatchObject({
+      status: 'matched',
+      strategy: 'variant',
+      isResolved: true,
+    });
+    expect(warehouseService.getDefaultId).not.toHaveBeenCalled();
+    expect(stockEventService.createStockEntryBySkuId).not.toHaveBeenCalled();
+    expect(fulfillmentBacklog.wakeBacklogsWaitingForVariant).toHaveBeenCalledWith(matching.variantId, tx);
   });
 
   it('rejects SKU mappings when resolving explicitly as void', async () => {
