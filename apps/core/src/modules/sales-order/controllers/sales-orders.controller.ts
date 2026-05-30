@@ -8,6 +8,7 @@ import { MergeSalesOrdersDto } from '../dto/merge-sales-orders.dto';
 import { SalesOrderResponseDto } from '../dto/sales-order-response.dto';
 import { SalesOrderFilterDto } from '../dto/sales-order-filter.dto';
 import { CreateBusinessLinkDto } from '../dto/create-business-link.dto';
+import { CancelSalesOrderDto } from '../dto/cancel-sales-order.dto';
 
 @ApiTags('Sales Orders')
 @Controller('sales-orders')
@@ -43,8 +44,8 @@ export class SalesOrdersController {
   @Post(':id/cancel')
   @ApiOperation({ summary: '판매 주문 취소' })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
-  cancel(@Param('id') id: string) {
-    return this.service.cancel(id);
+  cancel(@Param('id') id: string, @Body() dto: CancelSalesOrderDto = {}) {
+    return this.service.cancel(id, dto);
   }
 
   @Post(':id/business-links')

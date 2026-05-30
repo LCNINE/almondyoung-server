@@ -17,6 +17,7 @@ import {
   decimal,
   date,
   index,
+  uniqueIndex,
   check,
   AnyPgColumn,
 } from 'drizzle-orm/pg-core';
@@ -1171,6 +1172,50 @@ export const salesOrderAmendments = pgTable(
   }),
 );
 
+export const salesOrderCancellations = pgTable(
+  'sales_order_cancellations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    salesOrderId: uuid('sales_order_id')
+      .references(() => salesOrders.id, { onDelete: 'cascade' })
+      .notNull(),
+    cancellationScope: varchar('cancellation_scope', { length: 32 })
+      .$type<'full' | 'partial'>()
+      .notNull()
+      .default('full'),
+    status: varchar('status', { length: 32 }).$type<'applied'>().notNull().default('applied'),
+    reasonCode: varchar('reason_code', { length: 96 }),
+    reasonDetail: text('reason_detail'),
+    cancelledBy: varchar('cancelled_by', { length: 128 }),
+    effects: jsonb('effects')
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    metadata: jsonb('metadata')
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxSalesOrderId: index('idx_sales_order_cancellations_sales_order_id').on(t.salesOrderId),
+    idxScope: index('idx_sales_order_cancellations_scope').on(t.cancellationScope),
+    idxOccurredAt: index('idx_sales_order_cancellations_occurred_at').on(t.occurredAt),
+    uniqueFullCancellation: uniqueIndex('uniq_sales_order_full_cancellation')
+      .on(t.salesOrderId)
+      .where(sql`${t.cancellationScope} = 'full'`),
+    cancellationScopeCheck: check(
+      'sales_order_cancellations_scope_check',
+      sql`${t.cancellationScope} IN ('full', 'partial')`,
+    ),
+    statusCheck: check('sales_order_cancellations_status_check', sql`${t.status} IN ('applied')`),
+    effectsArrayCheck: check(
+      'sales_order_cancellations_effects_array_check',
+      sql`jsonb_typeof(${t.effects}) = 'array'`,
+    ),
+  }),
+);
+
 // 합배송 그룹 테이블 추가
 export const mergeGroups = pgTable('merge_groups', {
   id: varchar('id', { length: 64 }).primaryKey(), // G-{sequence} 형태
@@ -2106,6 +2151,7 @@ export const wmsTables = {
   orderEvents,
   businessLinks,
   salesOrderAmendments,
+  salesOrderCancellations,
   mergeGroups,
   stockReservations,
   fulfillmentOrders,
@@ -2488,6 +2534,7 @@ export const salesOrdersRelations = relations(salesOrders, ({ many }) => ({
   fulfillmentOrders: many(fulfillmentOrders),
   fulfillmentOrderCreationBacklogs: many(fulfillmentOrderCreationBacklogs),
   orderEvents: many(orderEvents),
+  cancellations: many(salesOrderCancellations),
   outboundTaskOrders: many(outboundTaskOrders),
   returns: many(returns),
 }));
@@ -2506,6 +2553,13 @@ export const salesOrderLinesRelations = relations(salesOrderLines, ({ one }) => 
 export const orderEventsRelations = relations(orderEvents, ({ one }) => ({
   order: one(salesOrders, {
     fields: [orderEvents.orderId],
+    references: [salesOrders.id],
+  }),
+}));
+
+export const salesOrderCancellationsRelations = relations(salesOrderCancellations, ({ one }) => ({
+  salesOrder: one(salesOrders, {
+    fields: [salesOrderCancellations.salesOrderId],
     references: [salesOrders.id],
   }),
 }));
@@ -2956,6 +3010,7 @@ export const wmsRelations = {
   salesOrdersRelations,
   salesOrderLinesRelations,
   orderEventsRelations,
+  salesOrderCancellationsRelations,
   mergeGroupsRelations,
 
   // Fulfillment Order Relations
@@ -3118,6 +3173,9 @@ export type NewBusinessLink = InferInsertModel<typeof businessLinks>;
 
 export type SalesOrderAmendment = InferSelectModel<typeof salesOrderAmendments>;
 export type NewSalesOrderAmendment = InferInsertModel<typeof salesOrderAmendments>;
+
+export type SalesOrderCancellation = InferSelectModel<typeof salesOrderCancellations>;
+export type NewSalesOrderCancellation = InferInsertModel<typeof salesOrderCancellations>;
 
 export type MergeGroup = InferSelectModel<typeof mergeGroups>;
 export type NewMergeGroup = InferInsertModel<typeof mergeGroups>;

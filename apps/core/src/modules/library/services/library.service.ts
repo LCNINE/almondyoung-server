@@ -3,15 +3,8 @@ import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 
-import {
-  wmsTables,
-  wmsSchema,
-  DbTx,
-} from '../../inventory/schema/inventory.schema';
-import {
-  digitalAssetOwnerships,
-  productVariantDigitalAssetLinks,
-} from '../schema/library.schema';
+import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
+import { digitalAssetOwnerships, productVariantDigitalAssetLinks } from '../schema/library.schema';
 
 /**
  * Library 도메인의 사용권(ownership) 발급/회수 서비스.
@@ -65,9 +58,7 @@ export class LibraryService {
       }
       if (!order.customerId) {
         // 디지털 트랙은 customerId 가 필수. 비-로그인 채널(Naver, Coupang)은 그냥 no-op.
-        this.logger.log(
-          `[grantOwnershipsForOrder] SO has no customerId, skipping digital grant: ${salesOrderId}`,
-        );
+        this.logger.log(`[grantOwnershipsForOrder] SO has no customerId, skipping digital grant: ${salesOrderId}`);
         return 0;
       }
 
@@ -119,11 +110,16 @@ export class LibraryService {
    * OrderCancelled 시 호출. exercise 전 (exercisedAt IS NULL) ownership 만 회수한다.
    * exercise 된 것은 회수하지 않음 (ADR-0006).
    */
-  async revokeOwnershipsForOrder(
+  async revokeOwnershipsForOrder(salesOrderId: string, reason: string | null, tx?: DbTx): Promise<number> {
+    const result = await this.revokeOwnershipsForOrderDetailed(salesOrderId, reason, tx);
+    return result.revokedCount;
+  }
+
+  async revokeOwnershipsForOrderDetailed(
     salesOrderId: string,
     reason: string | null,
     tx?: DbTx,
-  ): Promise<number> {
+  ): Promise<{ revokedCount: number; ownershipIds: string[] }> {
     return this.inTx(async (trx) => {
       const updated = await trx
         .update(digitalAssetOwnerships)
@@ -138,11 +134,9 @@ export class LibraryService {
         .returning({ id: digitalAssetOwnerships.id });
 
       if (updated.length > 0) {
-        this.logger.log(
-          `[revokeOwnershipsForOrder] SO=${salesOrderId} revoked ${updated.length} ownership(s)`,
-        );
+        this.logger.log(`[revokeOwnershipsForOrder] SO=${salesOrderId} revoked ${updated.length} ownership(s)`);
       }
-      return updated.length;
+      return { revokedCount: updated.length, ownershipIds: updated.map((row) => row.id) };
     }, tx);
   }
 }
