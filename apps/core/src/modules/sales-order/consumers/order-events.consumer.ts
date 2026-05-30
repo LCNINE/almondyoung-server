@@ -184,14 +184,9 @@ export class OrderEventsConsumer {
         );
         if (alreadyProcessed) return;
 
-        const nonModifiableStatuses = ['processing', 'shipped', 'cancelled'];
-        if (nonModifiableStatuses.includes(salesOrder.status)) {
-          this.logger.warn(`[OrderModified] Cannot modify order in status: ${salesOrder.status}`);
-          return;
-        }
-
-        await this.salesOrdersService.updateFromEvent(payload.orderId, payload.changes, tx);
-        this.logger.log(`[OrderModified] Updated sales order: ${payload.orderId}`);
+        this.logger.warn(
+          `[OrderModified] Ignored post-acceptance contract mutation for sales order: ${payload.orderId}`,
+        );
       });
     } catch (error) {
       this.logger.error(`[OrderModified] Failed to process: ${payload.orderId}`, error.stack);
