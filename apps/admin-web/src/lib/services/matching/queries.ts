@@ -18,6 +18,17 @@ export const useMatchings = (query: MatchingsQuery = {}) => {
   });
 };
 
+export const useLegacyIgnoredMatchings = (
+  query: Omit<MatchingsQuery, 'status'> = {}
+) => {
+  return useQuery({
+    queryKey: matchingQueryKeys.legacyIgnoredList(query),
+    queryFn: () => matchingClient.getLegacyIgnoredMatchings(query),
+    staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+};
+
 export const useMatching = (id: string) => {
   return useQuery({
     queryKey: matchingQueryKeys.detail(id),
@@ -84,14 +95,17 @@ export const useMastersBatchStats = (masterIds: string[]) => {
   });
 };
 
-export const usePendingMatchings = (query: Omit<MatchingsQuery, 'status'> = {}) =>
-  useMatchings({ ...query, status: 'pending' });
+export const usePendingMatchings = (
+  query: Omit<MatchingsQuery, 'status'> = {}
+) => useMatchings({ ...query, status: 'pending' });
 
-export const useMatchedMatchings = (query: Omit<MatchingsQuery, 'status'> = {}) =>
-  useMatchings({ ...query, status: 'matched' });
+export const useMatchedMatchings = (
+  query: Omit<MatchingsQuery, 'status'> = {}
+) => useMatchings({ ...query, status: 'matched' });
 
-export const useIgnoredMatchings = (query: Omit<MatchingsQuery, 'status'> = {}) =>
-  useMatchings({ ...query, status: 'ignored' });
+export const useIgnoredMatchings = (
+  query: Omit<MatchingsQuery, 'status'> = {}
+) => useMatchings({ ...query, status: 'ignored' });
 
 export const useMatchingsWithOrders = (query: MatchingsQuery = {}) =>
   useMatchings(query);

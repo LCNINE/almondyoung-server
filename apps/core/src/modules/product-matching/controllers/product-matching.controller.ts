@@ -12,8 +12,9 @@ import {
   HttpException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBody } from '@nestjs/swagger';
+import { User } from '@app/authorization';
 import { ProductMatchingService } from '../services/product-matching.service';
-import { ResolveMatchingDto, StockPolicyDto } from '../dto/resolve-matching.dto';
+import { ResolveLegacyIgnoredMatchingDto, ResolveMatchingDto, StockPolicyDto } from '../dto/resolve-matching.dto';
 import { SetMatchingPriorityDto } from '../dto/set-matching-priority.dto';
 import { ChangeStrategyDto } from '../dto/change-strategy.dto';
 import { VariantSkuLookupDto } from '../dto/variant-sku-lookup.dto';
@@ -23,6 +24,46 @@ import { matchingStatusEnum } from '../schema/matching.schema';
 @Controller('matchings')
 export class ProductMatchingController {
   constructor(private readonly productMatchingService: ProductMatchingService) {}
+
+  @Get()
+  @ApiOperation({ summary: '상품매칭 목록 조회' })
+  @ApiQuery({ name: 'status', required: false, enum: matchingStatusEnum.enumValues })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'offset', required: false, type: Number })
+  @ApiResponse({ status: 200, description: '상품매칭 목록을 반환합니다.' })
+  async getMatchings(
+    @Query('status') status?: 'pending' | 'matched' | 'ignored',
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    try {
+      return await this.productMatchingService.getMatchings({
+        status,
+        limit: limit ? parseInt(limit, 10) : 50,
+        offset: offset ? parseInt(offset, 10) : 0,
+      });
+    } catch (e: any) {
+      if (e instanceof HttpException) throw e;
+      throw new InternalServerErrorException(e.message);
+    }
+  }
+
+  @Get('legacy-ignored')
+  @ApiOperation({ summary: '레거시 ignored 상품매칭 감사 목록 조회' })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'offset', required: false, type: Number })
+  @ApiResponse({ status: 200, description: '레거시 ignored 상품매칭 목록을 반환합니다.' })
+  async getLegacyIgnoredMatchings(@Query('limit') limit?: string, @Query('offset') offset?: string) {
+    try {
+      return await this.productMatchingService.getLegacyIgnoredMatchings({
+        limit: limit ? parseInt(limit, 10) : 50,
+        offset: offset ? parseInt(offset, 10) : 0,
+      });
+    } catch (e: any) {
+      if (e instanceof HttpException) throw e;
+      throw new InternalServerErrorException(e.message);
+    }
+  }
 
   @Get('order-lines')
   @ApiOperation({ summary: '주문 라인별 매칭 현황 조회' })
@@ -76,6 +117,30 @@ export class ProductMatchingController {
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('not found')) throw new NotFoundException(e.message);
       if (msg.match(/already|invalid|failed|required|exceed/)) throw new BadRequestException(e.message);
+      throw new InternalServerErrorException(e.message);
+    }
+  }
+
+  @Post(':id/legacy-ignored/resolve')
+  @ApiOperation({ summary: '레거시 ignored 상품매칭 정리' })
+  @ApiBody({ type: ResolveLegacyIgnoredMatchingDto })
+  @ApiResponse({ status: 200, description: '레거시 ignored 상품매칭이 명시적으로 정리되었습니다.' })
+  async resolveLegacyIgnoredMatching(
+    @Param('id') matchingId: string,
+    @Body() dto: ResolveLegacyIgnoredMatchingDto,
+    @User() user: { userId?: string; sub?: string } | undefined,
+  ) {
+    try {
+      return await this.productMatchingService.resolveLegacyIgnoredMatching(matchingId, dto, {
+        userId: user?.userId ?? user?.sub,
+      });
+    } catch (e: any) {
+      if (e instanceof HttpException) throw e;
+      const msg = (e?.message ?? '').toLowerCase();
+      if (msg.includes('not found')) throw new NotFoundException(e.message);
+      if (msg.match(/already|invalid|failed|required|exceed|legacy|ignored/)) {
+        throw new BadRequestException(e.message);
+      }
       throw new InternalServerErrorException(e.message);
     }
   }

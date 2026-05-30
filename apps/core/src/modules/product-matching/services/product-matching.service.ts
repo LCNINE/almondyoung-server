@@ -6,13 +6,15 @@ import { and, eq, desc, count, inArray, isNull, or, ne, gte, lte, ilike, SQL, sq
 import { StockEventService } from '../../inventory/core/services/stock-event.service';
 import { WarehouseService } from '../../inventory/warehouse/services/warehouse.service';
 import { SkuCatalogService } from '../../inventory/sku-catalog/services/sku-catalog.service';
-import { ResolveMatchingDto, StockPolicyDto } from '../dto/resolve-matching.dto';
+import { ResolveLegacyIgnoredMatchingDto, ResolveMatchingDto, StockPolicyDto } from '../dto/resolve-matching.dto';
 import { SkuCreationSource } from '../../inventory/sku-catalog/dto/create-sku.dto';
 import { MatchingStrategy, MatchingContext, SkuQuantityMapping } from '../strategies/matching-strategy.interface';
 import { VoidMatchingStrategy } from '../strategies/void-matching.strategy';
 import { VariantMatchingStrategy } from '../strategies/variant-matching.strategy';
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
+import { AuditContext, AuditService } from '../../inventory/shared/services/audit.service';
+import { productMasterVersions, productVariants } from '../../catalog/schema/catalog.schema';
 
 export interface PimSkuComponent {
   skuId: string;
@@ -34,6 +36,25 @@ export interface PimProductPayload {
   variants: PimVariantPayload[];
 }
 
+export interface ProductMatchingsQuery {
+  status?: 'pending' | 'matched' | 'ignored';
+  limit?: number;
+  offset?: number;
+}
+
+type ProductMatchingListRow = {
+  id: string;
+  variantId: string;
+  masterId: string | null;
+  status: 'pending' | 'matched' | 'ignored';
+  priority: 'normal' | 'high';
+  strategy: 'void' | 'variant' | null;
+  preStockSellable: boolean;
+  alwaysSellableZeroStock: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 @Injectable()
 export class ProductMatchingService {
   private readonly logger = new Logger(ProductMatchingService.name);
@@ -46,6 +67,7 @@ export class ProductMatchingService {
     private readonly warehouseService: WarehouseService,
     private readonly productSellableQuantity: ProductSellableQuantityService,
     private readonly fulfillmentBacklog: FulfillmentOrderCreationBacklogService,
+    private readonly auditService: AuditService,
   ) {
     this.strategies = new Map();
     this.strategies.set('void', new VoidMatchingStrategy(dbService));
@@ -437,6 +459,178 @@ export class ProductMatchingService {
     }, tx);
   }
 
+  async getMatchings(params: ProductMatchingsQuery = {}, tx?: DbTx) {
+    const limit = params.limit ?? 50;
+    const offset = params.offset ?? 0;
+
+    return this.inTx(async (trx) => {
+      const conditions: SQL<unknown>[] = [];
+      if (params.status) {
+        conditions.push(eq(wmsTables.productMatchings.status, params.status));
+      }
+      const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const [{ total }] = await trx.select({ total: count() }).from(wmsTables.productMatchings).where(where);
+
+      const rows = (await trx
+        .select({
+          id: wmsTables.productMatchings.id,
+          variantId: wmsTables.productMatchings.variantId,
+          masterId: wmsTables.productMatchings.masterId,
+          status: wmsTables.productMatchings.status,
+          priority: wmsTables.productMatchings.priority,
+          strategy: wmsTables.productMatchings.strategy,
+          preStockSellable: wmsTables.productMatchings.preStockSellable,
+          alwaysSellableZeroStock: wmsTables.productMatchings.alwaysSellableZeroStock,
+          createdAt: wmsTables.productMatchings.createdAt,
+          updatedAt: wmsTables.productMatchings.updatedAt,
+        })
+        .from(wmsTables.productMatchings)
+        .where(where)
+        .orderBy(desc(wmsTables.productMatchings.updatedAt))
+        .limit(limit)
+        .offset(offset)) as ProductMatchingListRow[];
+
+      const data = await this.hydrateMatchingRows(rows, trx);
+      const totalPages = Math.ceil(total / limit);
+      const page = Math.floor(offset / limit) + 1;
+
+      return {
+        data,
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNext: page < totalPages,
+        hasPrev: page > 1,
+      };
+    }, tx);
+  }
+
+  async getLegacyIgnoredMatchings(params: Omit<ProductMatchingsQuery, 'status'> = {}, tx?: DbTx) {
+    return this.getMatchings({ ...params, status: 'ignored' }, tx);
+  }
+
+  private async hydrateMatchingRows(rows: ProductMatchingListRow[], trx: DbTx) {
+    if (rows.length === 0) {
+      return [];
+    }
+
+    const matchingIds = rows.map((row) => row.id);
+    const variantIds = [...new Set(rows.map((row) => row.variantId))];
+    const masterIds = [...new Set(rows.map((row) => row.masterId).filter((id): id is string => Boolean(id)))];
+
+    const skuLinks =
+      matchingIds.length > 0
+        ? await trx
+            .select({
+              productMatchingId: wmsTables.productVariantSkuLinks.productMatchingId,
+              skuId: wmsTables.productVariantSkuLinks.skuId,
+              quantity: wmsTables.productVariantSkuLinks.quantity,
+              skuName: wmsTables.skus.name,
+              skuCode: wmsTables.skus.code,
+            })
+            .from(wmsTables.productVariantSkuLinks)
+            .leftJoin(wmsTables.skus, eq(wmsTables.productVariantSkuLinks.skuId, wmsTables.skus.id))
+            .where(inArray(wmsTables.productVariantSkuLinks.productMatchingId, matchingIds))
+        : [];
+
+    const variants =
+      variantIds.length > 0
+        ? await (trx as any)
+            .select({
+              id: productVariants.id,
+              variantName: productVariants.variantName,
+              variantCode: productVariants.variantCode,
+            })
+            .from(productVariants)
+            .where(inArray(productVariants.id, variantIds))
+        : [];
+
+    const masterVersions =
+      masterIds.length > 0
+        ? await (trx as any)
+            .select({
+              masterId: productMasterVersions.masterId,
+              versionId: productMasterVersions.id,
+              name: productMasterVersions.name,
+              status: productMasterVersions.status,
+              updatedAt: productMasterVersions.updatedAt,
+              createdAt: productMasterVersions.createdAt,
+            })
+            .from(productMasterVersions)
+            .where(and(inArray(productMasterVersions.masterId, masterIds), isNull(productMasterVersions.deletedAt)))
+            .orderBy(desc(productMasterVersions.updatedAt), desc(productMasterVersions.createdAt))
+        : [];
+
+    const skuLinksByMatchingId = new Map<string, (typeof skuLinks)[number][]>();
+    for (const link of skuLinks) {
+      const links = skuLinksByMatchingId.get(link.productMatchingId) ?? [];
+      links.push(link);
+      skuLinksByMatchingId.set(link.productMatchingId, links);
+    }
+
+    const variantsById = new Map<string, (typeof variants)[number]>();
+    for (const variant of variants) {
+      variantsById.set(variant.id, variant);
+    }
+
+    const masterVersionByMasterId = new Map<string, (typeof masterVersions)[number]>();
+    for (const version of masterVersions) {
+      const current = masterVersionByMasterId.get(version.masterId);
+      if (!current || (version.status === 'active' && current.status !== 'active')) {
+        masterVersionByMasterId.set(version.masterId, version);
+      }
+    }
+
+    return rows.map((row) => {
+      const links = skuLinksByMatchingId.get(row.id) ?? [];
+      const variant = variantsById.get(row.variantId);
+      const masterVersion = row.masterId ? masterVersionByMasterId.get(row.masterId) : undefined;
+      const variantName = variant?.variantName ?? variant?.variantCode ?? row.variantId;
+
+      return {
+        id: row.id,
+        variantId: row.variantId,
+        status: row.status,
+        priority: row.priority,
+        strategy: row.strategy ?? undefined,
+        stockPolicy: {
+          preStockSellable: row.preStockSellable,
+          alwaysSellableZeroStock: row.alwaysSellableZeroStock,
+        },
+        isGift: false,
+        createdAt: row.createdAt.toISOString(),
+        updatedAt: row.updatedAt.toISOString(),
+        skuLinkCount: links.length,
+        hasSkuLinks: links.length > 0,
+        matchedSkus: links.map((link) => ({
+          skuId: link.skuId,
+          skuName: link.skuName ?? undefined,
+          skuCode: link.skuCode ?? undefined,
+          quantity: link.quantity,
+        })),
+        links: links.map((link) => ({
+          skuId: link.skuId,
+          skuName: link.skuName ?? undefined,
+          skuCode: link.skuCode ?? undefined,
+          quantity: link.quantity,
+        })),
+        variant: {
+          id: row.variantId,
+          name: variantName,
+          masterId: row.masterId ?? '',
+        },
+        master: row.masterId
+          ? {
+              id: row.masterId,
+              name: masterVersion?.name ?? row.masterId,
+            }
+          : undefined,
+      };
+    });
+  }
+
   async getOrderLines(
     params: {
       matchingStatus?: 'pending' | 'matched' | 'ignored' | 'unregistered';
@@ -717,6 +911,113 @@ export class ProductMatchingService {
       );
       await this.productSellableQuantity.recalculateAndPublishForVariant(variantId, trx);
       await this.fulfillmentBacklog.wakeBacklogsWaitingForVariant(variantId, trx);
+      return updatedMatching;
+    }, tx);
+  }
+
+  async resolveLegacyIgnoredMatching(
+    matchingId: string,
+    dto: ResolveLegacyIgnoredMatchingDto,
+    auditContext?: AuditContext,
+    tx?: DbTx,
+  ) {
+    return this.inTx(async (trx) => {
+      const [productMatching] = await trx
+        .select()
+        .from(wmsTables.productMatchings)
+        .where(eq(wmsTables.productMatchings.id, matchingId))
+        .limit(1);
+
+      if (!productMatching) {
+        throw new NotFoundException(`Product matching with ID ${matchingId} not found.`);
+      }
+
+      if (productMatching.status !== 'ignored') {
+        throw new BadRequestException(`Product matching ${matchingId} is not a legacy ignored matching.`);
+      }
+
+      const existingLinks = await trx
+        .select({
+          skuId: wmsTables.productVariantSkuLinks.skuId,
+          quantity: wmsTables.productVariantSkuLinks.quantity,
+        })
+        .from(wmsTables.productVariantSkuLinks)
+        .where(eq(wmsTables.productVariantSkuLinks.productMatchingId, matchingId));
+
+      if (existingLinks.length > 0) {
+        await trx
+          .delete(wmsTables.productVariantSkuLinks)
+          .where(eq(wmsTables.productVariantSkuLinks.productMatchingId, matchingId));
+      }
+
+      const now = new Date();
+      const nextState =
+        dto.target === 'pending'
+          ? {
+              status: 'pending' as const,
+              strategy: null,
+              isResolved: false,
+              updatedAt: now,
+            }
+          : {
+              status: 'matched' as const,
+              strategy: 'void' as const,
+              isResolved: true,
+              preStockSellable: dto.stockPolicy?.preStockSellable ?? productMatching.preStockSellable,
+              alwaysSellableZeroStock:
+                dto.stockPolicy?.alwaysSellableZeroStock ?? productMatching.alwaysSellableZeroStock,
+              updatedAt: now,
+            };
+
+      const [updatedMatching] = await trx
+        .update(wmsTables.productMatchings)
+        .set(nextState)
+        .where(eq(wmsTables.productMatchings.id, matchingId))
+        .returning();
+
+      await this.auditService.log(
+        {
+          eventType: 'USER_ACTION',
+          severity: 'INFO',
+          action: `legacy_ignored_to_${dto.target}`,
+          module: 'product-matching',
+          resourceType: 'product_matching',
+          resourceId: matchingId,
+          resourceName: productMatching.variantId,
+          description: `Legacy ignored product matching ${matchingId} resolved to ${dto.target}`,
+          changesBefore: {
+            status: productMatching.status,
+            strategy: productMatching.strategy,
+            isResolved: productMatching.isResolved,
+            preStockSellable: productMatching.preStockSellable,
+            alwaysSellableZeroStock: productMatching.alwaysSellableZeroStock,
+            skuLinks: existingLinks,
+          },
+          changesAfter: {
+            status: updatedMatching.status,
+            strategy: updatedMatching.strategy,
+            isResolved: updatedMatching.isResolved,
+            preStockSellable: updatedMatching.preStockSellable,
+            alwaysSellableZeroStock: updatedMatching.alwaysSellableZeroStock,
+            skuLinks: [],
+          },
+          metadata: {
+            target: dto.target,
+            variantId: productMatching.variantId,
+            masterId: productMatching.masterId,
+            removedSkuLinkCount: existingLinks.length,
+          },
+        },
+        auditContext,
+        trx,
+      );
+
+      await this.productSellableQuantity.recalculateAndPublishForVariant(productMatching.variantId, trx);
+      if (dto.target === 'void') {
+        await this.fulfillmentBacklog.wakeBacklogsWaitingForVariant(productMatching.variantId, trx);
+      }
+
+      this.logger.log(`Legacy ignored product matching ${matchingId} resolved to ${dto.target}.`);
       return updatedMatching;
     }, tx);
   }
