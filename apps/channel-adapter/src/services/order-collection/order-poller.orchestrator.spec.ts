@@ -1,6 +1,7 @@
 import { OrderPollerOrchestrator } from './order-poller.orchestrator';
 import {
   CHANNEL_PRODUCT_IDENTIFICATION_FAILED,
+  COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED,
   ChannelOrderProvider,
   OrderCollectionFailureItem,
   OrderFetchItem,
@@ -45,6 +46,56 @@ describe('OrderPollerOrchestrator', () => {
     expect(syncStatus.recordSyncComplete).toHaveBeenCalledTimes(2);
   });
 
+  it('quarantines collected Medusa order modifications instead of emitting OrderModified', async () => {
+    const db = makeDb();
+    const provider: ChannelOrderProvider = {
+      channel: 'medusa',
+      fetchOrders: jest
+        .fn()
+        .mockResolvedValueOnce({ orders: [makeOrder('2026-05-26T01:00:00.000Z')], failures: [] })
+        .mockResolvedValueOnce({
+          orders: [makeOrder('2026-05-26T01:10:00.000Z', { totalAmount: 12000 })],
+          failures: [],
+        })
+        .mockResolvedValueOnce({
+          orders: [makeOrder('2026-05-26T01:10:00.000Z', { totalAmount: 12000 })],
+          failures: [],
+        }),
+    };
+    const syncStatus = makeSyncStatus();
+    const inbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const hashes = makeHashService();
+    const failures = makeFailureService();
+
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider],
+      syncStatus as any,
+      inbox as any,
+      hashes as any,
+      failures as any,
+      db as any,
+    );
+
+    await orchestrator.poll();
+    await orchestrator.poll();
+    await orchestrator.poll();
+
+    expect(inbox.enqueue).toHaveBeenCalledTimes(1);
+    expect(inbox.enqueue).not.toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'OrderModified' }),
+      expect.anything(),
+    );
+    expect(failures.recordFailure).toHaveBeenCalledTimes(1);
+    expect(failures.recordFailure).toHaveBeenCalledWith(
+      'medusa',
+      expect.objectContaining({
+        externalOrderId: 'medusa_order_1',
+        reason: COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED,
+      }),
+      expect.anything(),
+    );
+  });
+
   it('does not advance the polling watermark when processing fails before completion', async () => {
     const db = makeDb();
     const provider: ChannelOrderProvider = {
@@ -71,6 +122,31 @@ describe('OrderPollerOrchestrator', () => {
     expect(syncStatus.recordSyncFailure).toHaveBeenCalledWith('medusa', 'orders', { message: 'enqueue failed' });
     expect(syncStatus.lastSyncAt()).toBeNull();
     expect(db.mappings.size).toBe(0);
+  });
+
+  it('rewinds the existing watermark by two minutes when fetching incremental orders', async () => {
+    const db = makeDb();
+    const provider: ChannelOrderProvider = {
+      channel: 'medusa',
+      fetchOrders: jest.fn().mockResolvedValue({ orders: [], failures: [] }),
+    };
+    const syncStatus = makeSyncStatus(new Date('2026-05-26T01:10:00.000Z'));
+    const inbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const hashes = makeHashService();
+    const failures = makeFailureService();
+
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider],
+      syncStatus as any,
+      inbox as any,
+      hashes as any,
+      failures as any,
+      db as any,
+    );
+
+    await orchestrator.poll();
+
+    expect(provider.fetchOrders).toHaveBeenCalledWith(new Date('2026-05-26T01:08:00.000Z'));
   });
 
   it('uses the mapping insert as the OrderCreated idempotency gate', async () => {
@@ -188,7 +264,8 @@ describe('OrderPollerOrchestrator', () => {
   });
 });
 
-function makeOrder(sourceUpdatedAt: string): OrderFetchItem {
+function makeOrder(sourceUpdatedAt: string, overrides: { totalAmount?: number } = {}): OrderFetchItem {
+  const totalAmount = overrides.totalAmount ?? 10000;
   const item = {
     orderItemId: 'item_1',
     skuId: 'pim_variant_1',
@@ -199,7 +276,7 @@ function makeOrder(sourceUpdatedAt: string): OrderFetchItem {
     channelProductId: 'variant_1',
     quantity: 1,
     unitPrice: 10000,
-    totalPrice: 10000,
+    totalPrice: totalAmount,
   };
   const shippingAddress = {
     recipientName: 'Jane Kim',
@@ -218,8 +295,8 @@ function makeOrder(sourceUpdatedAt: string): OrderFetchItem {
       salesChannel: 'medusa',
       customerId: 'cus_1',
       items: [item],
-      totalAmount: 10000,
-      subtotalAmount: 10000,
+      totalAmount,
+      subtotalAmount: totalAmount,
       shippingAmount: 0,
       discountAmount: 0,
       currency: 'KRW',
@@ -230,7 +307,7 @@ function makeOrder(sourceUpdatedAt: string): OrderFetchItem {
     changes: {
       items: [item],
       shippingAddress,
-      totalAmount: 10000,
+      totalAmount,
     },
     modifiedAt: sourceUpdatedAt,
   };
@@ -258,8 +335,8 @@ function makeFailure(sourceUpdatedAt: string): OrderCollectionFailureItem {
   };
 }
 
-function makeSyncStatus() {
-  let lastSyncAt: Date | null = null;
+function makeSyncStatus(initialLastSyncAt: Date | null = null) {
+  let lastSyncAt: Date | null = initialLastSyncAt;
 
   return {
     getSyncStatus: jest.fn().mockImplementation(async () => (lastSyncAt ? { lastSyncAt } : null)),

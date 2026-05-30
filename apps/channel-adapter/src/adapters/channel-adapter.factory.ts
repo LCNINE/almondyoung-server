@@ -8,8 +8,10 @@ import { CoupangAdapter } from './coupang/coupang.adapter';
  *
  * - `naver_smartstore`: 네이버 스마트스토어
  * - `coupang`: 쿠팡
+ * - `medusa`: 자사몰 채널. 주문 수집은 이 factory 가 아니라 OrderPollerOrchestrator provider 경로를 사용한다.
  */
 export type ChannelType = 'naver_smartstore' | 'coupang' | 'medusa';
+export type LegacyAdapterChannelType = Exclude<ChannelType, 'medusa'>;
 
 /**
  * 채널 어댑터 팩토리 서비스
@@ -90,8 +92,8 @@ export class ChannelAdapterFactory {
    * }
    * ```
    */
-  getSupportedChannels(): ChannelType[] {
-    return ['naver_smartstore', 'coupang', 'medusa'];
+  getSupportedChannels(): LegacyAdapterChannelType[] {
+    return ['naver_smartstore', 'coupang'];
   }
 
   /**
@@ -111,8 +113,8 @@ export class ChannelAdapterFactory {
    * }
    * ```
    */
-  isChannelSupported(channelType: string): channelType is ChannelType {
-    return this.getSupportedChannels().includes(channelType as ChannelType);
+  isChannelSupported(channelType: string): channelType is LegacyAdapterChannelType {
+    return this.getSupportedChannels().includes(channelType as LegacyAdapterChannelType);
   }
 
   /**

@@ -44,7 +44,8 @@ export class ChannelAdapterController {
   @ApiOperation({ summary: '채널 데이터 폴링' })
   @ApiQuery({
     name: 'channel',
-    enum: ['naver_smartstore', 'coupang', 'medusa'],
+    enum: ['naver_smartstore', 'coupang'],
+    description: 'Medusa 주문 수집은 내부 OrderPollerOrchestrator 경로를 사용합니다.',
   })
   @ApiQuery({
     name: 'type',
@@ -52,6 +53,8 @@ export class ChannelAdapterController {
   })
   @ApiResponse({ status: 200, description: '폴링 성공', type: PollResponseDto })
   async poll(@Query('channel') channel: ChannelType, @Query('type') dataType: DataType): Promise<PollResponseDto> {
+    this.ensureLegacyAdapterChannel(channel);
+
     const result = await this.channelAdapterService.poll(channel, dataType);
     return {
       success: true,
@@ -65,6 +68,7 @@ export class ChannelAdapterController {
 
   @Post('sync/:channel/:dataType')
   @ApiOperation({ summary: '데이터 동기화' })
+  @ApiParam({ name: 'channel', enum: ['naver_smartstore', 'coupang'] })
   @ApiResponse({
     status: 201,
     description: '동기화 완료',
@@ -74,6 +78,8 @@ export class ChannelAdapterController {
     @Param('channel') channel: ChannelType,
     @Param('dataType') dataType: DataType,
   ): Promise<SyncResponseDto> {
+    this.ensureLegacyAdapterChannel(channel);
+
     await this.channelAdapterService.poll(channel, dataType);
     return {
       success: true,
@@ -84,6 +90,7 @@ export class ChannelAdapterController {
 
   @Post('sync-to/:channel')
   @ApiOperation({ summary: '내부 데이터를 외부 채널로 동기화' })
+  @ApiParam({ name: 'channel', enum: ['naver_smartstore', 'coupang'] })
   @ApiResponse({
     status: 201,
     description: '동기화 완료',
@@ -94,6 +101,8 @@ export class ChannelAdapterController {
     @Body(new ZodValidationPipe(SyncToChannelPayloadSchema))
     payload: SyncToChannelPayload,
   ): Promise<SyncResponseDto> {
+    this.ensureLegacyAdapterChannel(channel);
+
     await this.channelAdapterService.syncToChannel(channel, payload);
     return {
       success: true,
@@ -118,6 +127,8 @@ export class ChannelAdapterController {
     @Param('channel') channel: ChannelType,
     @Body() cmd: ChannelCommand,
   ): Promise<CommandResponseDto> {
+    this.ensureLegacyAdapterChannel(channel);
+
     const result = await this.channelAdapterService.command(channel, cmd);
     return {
       success: true,
@@ -134,12 +145,15 @@ export class ChannelAdapterController {
 
   @Get(':channel/query/:queryType/:identifier')
   @ApiOperation({ summary: '채널별 주문 조회' })
+  @ApiParam({ name: 'channel', enum: ['naver_smartstore', 'coupang'] })
   @ApiResponse({ status: 200, description: '조회 성공' })
   async queryOrders(
     @Param('channel') channel: ChannelType,
     @Param('queryType') queryType: 'ordersheet' | 'ordersheet-by-orderid',
     @Param('identifier') identifier: string,
   ) {
+    this.ensureLegacyAdapterChannel(channel);
+
     const query: OrderQuery = this.mapQueryTypeToOrderQuery(queryType, identifier);
     const orders = await this.channelAdapterService.findOrders(channel, query);
 
@@ -159,6 +173,7 @@ export class ChannelAdapterController {
 
   @Get(':channel/query/exchange-requests')
   @ApiOperation({ summary: '교환 요청 목록 조회' })
+  @ApiParam({ name: 'channel', enum: ['naver_smartstore', 'coupang'] })
   @ApiQuery({ name: 'dateFrom', required: true })
   @ApiQuery({ name: 'dateTo', required: true })
   @ApiQuery({ name: 'status', required: false })
@@ -173,6 +188,8 @@ export class ChannelAdapterController {
     @Param('channel') channel: ChannelType,
     @Query() query: ExchangeRequestsQueryDto,
   ): Promise<ExchangeRequestsResponseDto> {
+    this.ensureLegacyAdapterChannel(channel);
+
     const { dateFrom, dateTo, status, orderId, pageSize } = query;
     if (!dateFrom || !dateTo) {
       throw new BadRequestException('dateFrom과 dateTo는 필수입니다');
@@ -231,6 +248,14 @@ export class ChannelAdapterController {
         return { by: 'channelOrderId', id: identifier };
       default:
         throw new BadRequestException(`지원하지 않는 queryType: ${queryType}`);
+    }
+  }
+
+  private ensureLegacyAdapterChannel(channel: ChannelType): void {
+    if (channel === 'medusa') {
+      throw new BadRequestException(
+        'Medusa 주문 수집은 내부 OrderPollerOrchestrator 경로를 사용합니다. /adapter REST 경로는 naver_smartstore, coupang 어댑터만 지원합니다.',
+      );
     }
   }
 }
