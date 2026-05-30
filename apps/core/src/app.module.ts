@@ -14,6 +14,7 @@ import { ProductMatchingModule } from './modules/product-matching/product-matchi
 import { SalesOrderModule } from './modules/sales-order/sales-order.module';
 import { FulfillmentModule } from './modules/fulfillment/fulfillment.module';
 import { LibraryModule } from './modules/library/library.module';
+import { CustomerServiceModule } from './modules/customer-service/customer-service.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { LibraryModule } from './modules/library/library.module';
     SalesOrderModule,
     FulfillmentModule,
     LibraryModule,
+    CustomerServiceModule,
   ],
   controllers: [AppController],
   providers: [{ provide: APP_GUARD, useClass: JwtAuthGuard }],
