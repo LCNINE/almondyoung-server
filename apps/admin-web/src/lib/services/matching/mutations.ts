@@ -5,6 +5,7 @@ import { matchingQueryKeys } from './query-keys';
 import { matchingClient } from '@/lib/api/domains/matching';
 import type {
   ResolveMatchingDto,
+  ResolveLegacyIgnoredMatchingDto,
   ResolveOptionMatchingDto,
   SetMatchingPriorityDto,
   ChangeStrategyDto,
@@ -20,6 +21,35 @@ export const useResolveMatching = () => {
       matchingClient.resolveMatching(id, data),
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: matchingQueryKeys.lists() });
+      queryClient.invalidateQueries({
+        queryKey: matchingQueryKeys.detail(variables.id),
+      });
+      queryClient.invalidateQueries({
+        queryKey: matchingQueryKeys.variantMatchings(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: matchingQueryKeys.orderLineLists(),
+      });
+      queryClient.invalidateQueries({ queryKey: matchingQueryKeys.all });
+    },
+  });
+};
+
+export const useResolveLegacyIgnoredMatching = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      data,
+    }: {
+      id: string;
+      data: ResolveLegacyIgnoredMatchingDto;
+    }) => matchingClient.resolveLegacyIgnoredMatching(id, data),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: matchingQueryKeys.lists() });
+      queryClient.invalidateQueries({
+        queryKey: matchingQueryKeys.legacyIgnoredLists(),
+      });
       queryClient.invalidateQueries({
         queryKey: matchingQueryKeys.detail(variables.id),
       });

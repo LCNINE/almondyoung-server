@@ -4,6 +4,7 @@
 export type MatchingStatus = 'pending' | 'matched' | 'ignored';
 export type MatchingStrategy = 'void' | 'variant';
 export type MatchingPriority = 'normal' | 'high';
+export type LegacyIgnoredResolutionTarget = 'pending' | 'void';
 
 export interface StockPolicyDto {
   preStockSellable: boolean;
@@ -43,6 +44,11 @@ export interface ChangeStrategyDto {
   strategy: MatchingStrategy;
 }
 
+export interface ResolveLegacyIgnoredMatchingDto {
+  target: LegacyIgnoredResolutionTarget;
+  stockPolicy?: StockPolicyDto;
+}
+
 export interface SelectedOptionDto {
   optionName: string;
   optionValue: string;
@@ -57,10 +63,12 @@ export interface MatchingDto {
   variantId: string;
   status: MatchingStatus;
   priority: MatchingPriority;
-  strategy: MatchingStrategy;
+  strategy?: MatchingStrategy;
   stockPolicy: StockPolicyDto;
   isGift: boolean;
   orderCount?: number;
+  skuLinkCount?: number;
+  hasSkuLinks?: boolean;
   createdAt: string;
   updatedAt: string;
   order?: {

@@ -281,6 +281,11 @@ export const mainMenus: MainMenu[] = [
         path: '/matching/variants',
       },
       {
+        id: 'legacy-ignored-matching',
+        title: '레거시 매칭 감사',
+        path: '/matching/legacy-ignored',
+      },
+      {
         id: 'product-registration',
         title: '상품 등록',
         path: '/inventory/product-registration',
@@ -437,7 +442,11 @@ export const mainMenus: MainMenu[] = [
             path: '/mall/csv',
           },
           { id: 'product-audit', title: '감사 이력/승인', path: '/mall/audit' },
-          { id: 'digital-assets', title: '디지털 자산', path: '/mall/digital-assets' },
+          {
+            id: 'digital-assets',
+            title: '디지털 자산',
+            path: '/mall/digital-assets',
+          },
         ],
       },
       {

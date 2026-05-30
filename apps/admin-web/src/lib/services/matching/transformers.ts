@@ -27,7 +27,9 @@ export const getMatchingStatusLabel = (status: string): string => {
   return map[status] ?? status;
 };
 
-export const getMatchingStrategyLabel = (strategy: string): string => {
+export const getMatchingStrategyLabel = (strategy?: string | null): string => {
+  if (!strategy) return '전략 미결정';
+
   const map: Record<string, string> = {
     void: '재고상품 비매칭',
     variant: 'SKU 구성 매칭',
