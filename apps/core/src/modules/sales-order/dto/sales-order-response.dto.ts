@@ -50,6 +50,46 @@ export class SalesOrderLineResponseDto {
   updatedAt: Date;
 }
 
+export class BusinessLinkReferenceResponseDto {
+  @ApiProperty({ description: '도메인 엔티티 타입' })
+  type: string;
+
+  @ApiProperty({ description: 'Core 내부 UUID', nullable: true })
+  id: string | null;
+
+  @ApiProperty({ description: '외부 서비스 안정 참조값', nullable: true })
+  externalRef: string | null;
+}
+
+export class SalesOrderBusinessTimelineItemDto {
+  @ApiProperty({ description: 'Business Link ID' })
+  id: string;
+
+  @ApiProperty({ description: '관계명' })
+  relationName: string;
+
+  @ApiProperty({ description: 'SalesOrder 기준 방향', enum: ['outbound', 'inbound'] })
+  direction: 'outbound' | 'inbound';
+
+  @ApiProperty({ description: 'source 참조', type: BusinessLinkReferenceResponseDto })
+  source: BusinessLinkReferenceResponseDto;
+
+  @ApiProperty({ description: 'target 참조', type: BusinessLinkReferenceResponseDto })
+  target: BusinessLinkReferenceResponseDto;
+
+  @ApiProperty({ description: 'SalesOrder 반대편 엔티티 참조', type: BusinessLinkReferenceResponseDto })
+  linkedEntity: BusinessLinkReferenceResponseDto;
+
+  @ApiProperty({ description: '부가 정보' })
+  metadata: Record<string, unknown>;
+
+  @ApiProperty({ description: '업무 사건 발생 시각' })
+  occurredAt: Date;
+
+  @ApiProperty({ description: '링크 생성 시각' })
+  createdAt: Date;
+}
+
 export class SalesOrderResponseDto {
   @ApiProperty({ description: '판매 주문 ID' })
   id: string;
@@ -113,4 +153,7 @@ export class SalesOrderResponseDto {
 
   @ApiProperty({ description: '주문 라인 목록', type: [SalesOrderLineResponseDto] })
   lines: SalesOrderLineResponseDto[];
+
+  @ApiProperty({ description: '업무 연결 timeline', type: [SalesOrderBusinessTimelineItemDto] })
+  businessTimeline: SalesOrderBusinessTimelineItemDto[];
 }
