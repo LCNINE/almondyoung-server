@@ -101,6 +101,15 @@ export function setup(infra: SharedInfra) {
     port: 3000,
     priority: 120,
     link: [db],
+    loadBalancerHealth: {
+      "3000/http": {
+        path: "/health",
+        interval: "30 seconds",
+        timeout: "5 seconds",
+        healthyThreshold: 2,
+        unhealthyThreshold: 5,
+      },
+    },
     environment: {
       DATABASE_URL: dbUrl("channel_adapter"),
       // 2026-05-27: this is the intended durable consumer group for channel-adapter.
@@ -154,6 +163,15 @@ export function setup(infra: SharedInfra) {
     port: 3000,
     priority: 140,
     link: [db],
+    loadBalancerHealth: {
+      "3000/http": {
+        path: "/health",
+        interval: "30 seconds",
+        timeout: "5 seconds",
+        healthyThreshold: 2,
+        unhealthyThreshold: 5,
+      },
+    },
     environment: {
       DATABASE_URL: dbUrl("notification"),
       ...kafkaEnv("notification", "notification-group"),
@@ -275,6 +293,15 @@ export function setup(infra: SharedInfra) {
     domainSlug: "search",
     port: 3000,
     priority: 200,
+    loadBalancerHealth: {
+      "3000/http": {
+        path: "/health",
+        interval: "30 seconds",
+        timeout: "5 seconds",
+        healthyThreshold: 2,
+        unhealthyThreshold: 5,
+      },
+    },
     environment: {
       // TEMP: AWS OpenSearch(VPC) 연결 트러블슈팅 동안 Railway 자체호스팅 인스턴스로 폴백.
       //       복구되면 opensearch.url/username/password 로 되돌릴 것.

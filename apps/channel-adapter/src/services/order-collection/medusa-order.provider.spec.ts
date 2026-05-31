@@ -171,6 +171,68 @@ describe('MedusaOrderProvider', () => {
     });
   });
 
+  it('quarantines a Medusa order when line item PIM master or version metadata is missing', async () => {
+    const rawOrder = {
+      id: 'order_missing_product_identity_1',
+      payment_status: 'authorized',
+      customer_id: 'cus_1',
+      currency_code: 'KRW',
+      total: 12000,
+      subtotal: 10000,
+      shipping_total: 2000,
+      discount_total: 0,
+      created_at: '2026-05-26T01:00:00.000Z',
+      updated_at: '2026-05-26T01:05:00.000Z',
+      items: [
+        {
+          id: 'item_missing_master',
+          title: 'Missing Master Product',
+          quantity: 1,
+          unit_price: 5000,
+          variant_id: 'variant_missing_master',
+          variant: {
+            metadata: { pimVariantId: 'pim_variant_1' },
+            product: { metadata: { pimVersionId: 'version_1' } },
+          },
+        },
+        {
+          id: 'item_missing_version',
+          title: 'Missing Version Product',
+          quantity: 1,
+          unit_price: 5000,
+          variant_id: 'variant_missing_version',
+          variant: {
+            metadata: { pimVariantId: 'pim_variant_2' },
+            product: { metadata: { pimMasterId: 'master_2' } },
+          },
+        },
+      ],
+      shipping_address: {
+        first_name: 'Jane',
+        last_name: 'Kim',
+        phone: '010-0000-0000',
+        postal_code: '12345',
+        address_1: 'Seoul',
+        address_2: '101',
+      },
+    };
+    const provider = new MedusaOrderProvider({
+      listOrders: jest.fn().mockResolvedValue([rawOrder]),
+    } as any);
+
+    const result = await provider.fetchOrders(null);
+
+    expect(result.orders).toHaveLength(0);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]).toMatchObject({
+      externalOrderId: 'order_missing_product_identity_1',
+      sourceUpdatedAt: '2026-05-26T01:05:00.000Z',
+      reason: CHANNEL_PRODUCT_IDENTIFICATION_FAILED,
+      affectedLineIds: ['item_missing_master', 'item_missing_version'],
+      rawOrder,
+    });
+  });
+
   it('extracts cancellation and refund lifecycle events without requiring an order candidate', async () => {
     const provider = new MedusaOrderProvider({
       listOrders: jest.fn().mockResolvedValue([
