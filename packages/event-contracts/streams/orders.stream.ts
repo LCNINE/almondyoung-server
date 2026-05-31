@@ -191,10 +191,10 @@ const OrderItemSchema = z.object({
 
 const ShippingAddressSchema = z.object({
   recipientName: z.string().min(1),
-  phone: z.string().min(1),
-  postalCode: z.string().min(1),
-  roadAddress: z.string().min(1),
-  detailAddress: z.string().min(1),
+  phone: z.string(),
+  postalCode: z.string(),
+  roadAddress: z.string(),
+  detailAddress: z.string(),
   deliveryNote: z.string().optional(),
 });
 
