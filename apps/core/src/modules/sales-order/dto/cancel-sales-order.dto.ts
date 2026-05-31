@@ -1,6 +1,17 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsDateString, IsInt, IsObject, IsOptional, IsString, Min, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsDateString,
+  IsIn,
+  IsInt,
+  IsObject,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 
 export class CancelSalesOrderLineDto {
   @ApiProperty({ description: '부분 취소할 SalesOrder line ID' })
@@ -46,6 +57,47 @@ export class CancelSalesOrderWalletRefundDto {
   metadata?: Record<string, unknown>;
 }
 
+export class CancelSalesOrderPostShipmentHandoffDto {
+  @ApiProperty({
+    description: '출고 후 취소 수량을 넘길 후속 정책/workflow 종류',
+    enum: ['return', 'recovery', 'refund', 'compensation'],
+    required: false,
+    default: 'recovery',
+  })
+  @IsString()
+  @IsIn(['return', 'recovery', 'refund', 'compensation'])
+  @IsOptional()
+  type?: 'return' | 'recovery' | 'refund' | 'compensation';
+
+  @ApiProperty({ description: '후속 workflow 내부 ID. UUID일 때만 사용한다.', required: false })
+  @IsString()
+  @IsUUID()
+  @IsOptional()
+  id?: string;
+
+  @ApiProperty({
+    description: '후속 workflow 안정 외부 참조값',
+    required: false,
+    example: 'return:request:ret_123',
+  })
+  @IsString()
+  @IsOptional()
+  externalRef?: string;
+
+  @ApiProperty({
+    description: '후속 workflow 소유 도메인의 상태 스냅샷. 예: requested, pending_policy_decision',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  status?: string;
+
+  @ApiProperty({ description: '후속 workflow 연결 메타데이터', required: false })
+  @IsObject()
+  @IsOptional()
+  metadata?: Record<string, unknown>;
+}
+
 export class CancelSalesOrderDto {
   @ApiProperty({
     description: '부분 취소 line/quantity 범위. 생략하면 전체 취소로 처리한다.',
@@ -67,6 +119,16 @@ export class CancelSalesOrderDto {
   @Type(() => CancelSalesOrderWalletRefundDto)
   @IsOptional()
   walletRefund?: CancelSalesOrderWalletRefundDto;
+
+  @ApiProperty({
+    description: '출고된 수량에 대한 반품/회수/환불정책/보상 handoff. Core는 참조와 상태 스냅샷만 저장한다.',
+    required: false,
+    type: CancelSalesOrderPostShipmentHandoffDto,
+  })
+  @ValidateNested()
+  @Type(() => CancelSalesOrderPostShipmentHandoffDto)
+  @IsOptional()
+  postShipmentHandoff?: CancelSalesOrderPostShipmentHandoffDto;
 
   @ApiProperty({
     description: '취소 사유 코드',

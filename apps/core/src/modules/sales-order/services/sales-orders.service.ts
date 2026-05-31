@@ -82,6 +82,12 @@ type FulfillmentAdjustmentEffect = CancellationEffect & {
     newStatus: string;
   };
 };
+type PostShipmentHandoffType = 'return' | 'recovery' | 'refund' | 'compensation';
+type PostShipmentHandoffOptions = NonNullable<CancelSalesOrderOptions['postShipmentHandoff']>;
+type PriorPartialCancellationContext = {
+  cancelledByLine: Map<string, number>;
+  preservedShippedByFulfillmentItem: Map<string, number>;
+};
 
 const ACCEPTED_CONTRACT_CHANNELS = new Set(['medusa', 'naver', 'coupang']);
 const CONTRACT_PATCH_FIELDS: SalesOrderContractField[] = [
@@ -103,7 +109,10 @@ const WALLET_EFFECT_REF_TYPES = new Set([
   'wallet_payment_intent',
   'wallet_charge',
 ]);
+const LOGISTICS_EFFECT_REF_TYPES = new Set(['return', 'return_handoff']);
+const OPERATIONS_EFFECT_REF_TYPES = new Set(['recovery_handoff', 'refund_policy_handoff', 'compensation_handoff']);
 const OPEN_FULFILLMENT_BACKLOG_STATUSES = new Set(['pending', 'failed', 'processing', 'awaiting_matching']);
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CANCELLABLE_FULFILLMENT_STATUSES = new Set([
   'created',
   'reserving',
@@ -957,7 +966,7 @@ export class SalesOrdersService {
       .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrderId));
     const lineById = new Map(originalLines.map((line) => [line.id, line]));
 
-    const priorCancelledByLine = await this.loadPriorPartialCancelledQuantities(salesOrderId, trx);
+    const priorCancellationContext = await this.loadPriorPartialCancellationContext(salesOrderId, trx);
     for (const request of requestedLines) {
       const line = lineById.get(request.salesOrderLineId);
       if (!line) {
@@ -965,7 +974,7 @@ export class SalesOrdersService {
           `Sales order line ${request.salesOrderLineId} does not belong to ${salesOrderId}`,
         );
       }
-      const remainingQuantity = line.quantity - (priorCancelledByLine.get(line.id) ?? 0);
+      const remainingQuantity = line.quantity - (priorCancellationContext.cancelledByLine.get(line.id) ?? 0);
       if (request.quantity > remainingQuantity) {
         throw new BadRequestException(
           `Cannot cancel ${request.quantity} units from line ${line.id}; only ${remainingQuantity} remain cancellable`,
@@ -1007,7 +1016,7 @@ export class SalesOrdersService {
     const fulfillmentDeltas = new Map<string, { quantity: number; reserved: number }>();
     for (const request of requestedLines) {
       const line = lineById.get(request.salesOrderLineId)!;
-      const remainingLineQuantity = line.quantity - (priorCancelledByLine.get(line.id) ?? 0);
+      const remainingLineQuantity = line.quantity - (priorCancellationContext.cancelledByLine.get(line.id) ?? 0);
       const lineItems = fulfillmentOrderItems.filter((item) => item.salesOrderLineId === line.id && item.qty > 0);
       const adjustmentEffects = await this.adjustFulfillmentForPartialCancellation(
         line.id,
@@ -1016,6 +1025,8 @@ export class SalesOrdersService {
         lineItems,
         fulfillmentOrderById,
         fulfillmentDeltas,
+        priorCancellationContext.preservedShippedByFulfillmentItem,
+        options.postShipmentHandoff,
         trx,
       );
 
@@ -1112,6 +1123,10 @@ export class SalesOrdersService {
             .filter((effect) => effect.type === 'adjusted_fulfillment_order_item' && effect.targetId)
             .map((effect) => effect.targetId),
           walletRefundRef: walletRefundEffect?.targetExternalRef ?? walletRefundEffect?.targetId ?? null,
+          postShipmentHandoffRefs: effects
+            .filter((effect) => effect.type.startsWith('linked_post_shipment_'))
+            .map((effect) => effect.targetExternalRef ?? effect.targetId)
+            .filter(Boolean),
         },
       },
       trx,
@@ -1154,9 +1169,15 @@ export class SalesOrdersService {
     return [...byLineId.entries()].map(([salesOrderLineId, quantity]) => ({ salesOrderLineId, quantity }));
   }
 
-  private async loadPriorPartialCancelledQuantities(salesOrderId: string, trx: DbTx): Promise<Map<string, number>> {
+  private async loadPriorPartialCancellationContext(
+    salesOrderId: string,
+    trx: DbTx,
+  ): Promise<PriorPartialCancellationContext> {
     const cancellations = await trx
-      .select({ metadata: wmsTables.salesOrderCancellations.metadata })
+      .select({
+        effects: wmsTables.salesOrderCancellations.effects,
+        metadata: wmsTables.salesOrderCancellations.metadata,
+      })
       .from(wmsTables.salesOrderCancellations)
       .where(
         and(
@@ -1166,6 +1187,7 @@ export class SalesOrdersService {
       );
 
     const cancelledByLine = new Map<string, number>();
+    const preservedShippedByFulfillmentItem = new Map<string, number>();
     for (const cancellation of cancellations) {
       const metadata = (cancellation.metadata ?? {}) as Record<string, unknown>;
       const cancelledLines = Array.isArray(metadata.cancelledLines) ? metadata.cancelledLines : [];
@@ -1177,8 +1199,27 @@ export class SalesOrdersService {
           cancelledByLine.set(salesOrderLineId, (cancelledByLine.get(salesOrderLineId) ?? 0) + quantity);
         }
       }
+
+      const effects = Array.isArray(cancellation.effects) ? cancellation.effects : [];
+      for (const effect of effects) {
+        if (!effect || typeof effect !== 'object') continue;
+        const effectRecord = effect as Record<string, unknown>;
+        if (effectRecord.type !== 'preserved_shipped_fulfillment_order_item') continue;
+        const fulfillmentOrderItemId = effectRecord.targetId;
+        const effectMetadata =
+          effectRecord.metadata && typeof effectRecord.metadata === 'object'
+            ? (effectRecord.metadata as Record<string, unknown>)
+            : {};
+        const affectedShippedQuantity = effectMetadata.affectedShippedQuantity;
+        if (typeof fulfillmentOrderItemId === 'string' && typeof affectedShippedQuantity === 'number') {
+          preservedShippedByFulfillmentItem.set(
+            fulfillmentOrderItemId,
+            (preservedShippedByFulfillmentItem.get(fulfillmentOrderItemId) ?? 0) + affectedShippedQuantity,
+          );
+        }
+      }
     }
-    return cancelledByLine;
+    return { cancelledByLine, preservedShippedByFulfillmentItem };
   }
 
   private async loadOpenFulfillmentBacklogs(salesOrderId: string, trx: DbTx) {
@@ -1225,8 +1266,10 @@ export class SalesOrdersService {
     fulfillmentOrderItems: Array<typeof wmsTables.fulfillmentOrderItems.$inferSelect>,
     fulfillmentOrderById: Map<string, typeof wmsTables.fulfillmentOrders.$inferSelect>,
     fulfillmentDeltas: Map<string, { quantity: number; reserved: number }>,
+    priorPreservedShippedByFulfillmentItem: Map<string, number>,
+    postShipmentHandoff: PostShipmentHandoffOptions | undefined,
     trx: DbTx,
-  ): Promise<FulfillmentAdjustmentEffect[]> {
+  ): Promise<CancellationEffect[]> {
     if (remainingLineQuantity <= 0 || fulfillmentOrderItems.length === 0) {
       return [];
     }
@@ -1239,27 +1282,39 @@ export class SalesOrdersService {
       itemsBySku.set(key, group);
     }
 
-    const effects: FulfillmentAdjustmentEffect[] = [];
+    const effects: CancellationEffect[] = [];
     for (const [skuId, items] of itemsBySku) {
       const totalCurrentQty = items.reduce((sum, item) => sum + item.qty, 0);
-      if (totalCurrentQty <= 0) continue;
-      if (totalCurrentQty % remainingLineQuantity !== 0) {
+      const priorPreservedShippedQty = items.reduce(
+        (sum, item) => sum + (priorPreservedShippedByFulfillmentItem.get(item.id) ?? 0),
+        0,
+      );
+      const totalUncancelledQty = totalCurrentQty - priorPreservedShippedQty;
+      if (totalUncancelledQty <= 0) continue;
+      if (totalUncancelledQty % remainingLineQuantity !== 0) {
         throw new BadRequestException(
-          `Cannot derive SKU ${skuId} fulfillment quantity for line ${salesOrderLineId}; current quantity ${totalCurrentQty} is not divisible by remaining line quantity ${remainingLineQuantity}`,
+          `Cannot derive SKU ${skuId} fulfillment quantity for line ${salesOrderLineId}; current quantity ${totalUncancelledQty} is not divisible by remaining line quantity ${remainingLineQuantity}`,
         );
       }
 
-      const skuQtyPerLineUnit = totalCurrentQty / remainingLineQuantity;
-      let remainingFulfillmentQtyToCancel = cancelledLineQuantity * skuQtyPerLineUnit;
+      const skuQtyPerLineUnit = totalUncancelledQty / remainingLineQuantity;
+      const fulfillmentQtyToCancel = cancelledLineQuantity * skuQtyPerLineUnit;
+      let remainingFulfillmentQtyToCancel = fulfillmentQtyToCancel;
       const cancellableUnprocessedQty = items.reduce((sum, item) => {
         const fo = fulfillmentOrderById.get(item.fulfillmentOrderId);
         if (!fo || !CANCELLABLE_FULFILLMENT_STATUSES.has(fo.status)) {
           return sum;
         }
-        return sum + this.getCancellableUnprocessedFulfillmentQty(item);
+        return sum + this.getCancellableUnprocessedFulfillmentQty(item, fo);
       }, 0);
+      const shippedEvidenceQty = items.reduce((sum, item) => {
+        const fo = fulfillmentOrderById.get(item.fulfillmentOrderId);
+        const priorPreservedQty = priorPreservedShippedByFulfillmentItem.get(item.id) ?? 0;
+        return sum + Math.max(0, this.getEffectiveShippedFulfillmentQty(item, fo).quantity - priorPreservedQty);
+      }, 0);
+      const postShipmentQty = Math.max(0, remainingFulfillmentQtyToCancel - cancellableUnprocessedQty);
 
-      if (remainingFulfillmentQtyToCancel > cancellableUnprocessedQty) {
+      if (postShipmentQty > shippedEvidenceQty) {
         throw new BadRequestException(
           `Cannot cancel ${cancelledLineQuantity} units from line ${salesOrderLineId}; affected fulfillment quantity has already been picked or shipped`,
         );
@@ -1270,7 +1325,7 @@ export class SalesOrdersService {
         const fo = fulfillmentOrderById.get(item.fulfillmentOrderId);
         if (!fo || !CANCELLABLE_FULFILLMENT_STATUSES.has(fo.status)) continue;
 
-        const availableToReduce = this.getCancellableUnprocessedFulfillmentQty(item);
+        const availableToReduce = this.getCancellableUnprocessedFulfillmentQty(item, fo);
         if (availableToReduce <= 0) continue;
 
         const quantityToReduce = Math.min(availableToReduce, remainingFulfillmentQtyToCancel);
@@ -1320,16 +1375,50 @@ export class SalesOrdersService {
 
         remainingFulfillmentQtyToCancel -= quantityToReduce;
       }
+
+      if (postShipmentQty > 0) {
+        effects.push(
+          ...this.toPostShipmentCancellationEffects(
+            salesOrderLineId,
+            skuId,
+            fulfillmentQtyToCancel,
+            postShipmentQty,
+            items,
+            fulfillmentOrderById,
+            priorPreservedShippedByFulfillmentItem,
+            postShipmentHandoff,
+          ),
+        );
+      }
     }
 
     return effects;
   }
 
-  private getCancellableUnprocessedFulfillmentQty(item: typeof wmsTables.fulfillmentOrderItems.$inferSelect): number {
+  private getCancellableUnprocessedFulfillmentQty(
+    item: typeof wmsTables.fulfillmentOrderItems.$inferSelect,
+    fulfillmentOrder: typeof wmsTables.fulfillmentOrders.$inferSelect | undefined,
+  ): number {
     const pickedQty = item.pickedQty || 0;
-    const shippedQty = item.shippedQty || 0;
+    const shippedQty = this.getEffectiveShippedFulfillmentQty(item, fulfillmentOrder).quantity;
     const warehouseEvidenceQty = Math.max(pickedQty, shippedQty);
     return Math.max(0, item.qty - warehouseEvidenceQty);
+  }
+
+  private getEffectiveShippedFulfillmentQty(
+    item: typeof wmsTables.fulfillmentOrderItems.$inferSelect,
+    fulfillmentOrder: typeof wmsTables.fulfillmentOrders.$inferSelect | undefined,
+  ): { quantity: number; source: 'fulfillment_order_item_shipped_qty' | 'fulfillment_order_shipped_state' | 'none' } {
+    if (fulfillmentOrder?.status === 'shipped' || fulfillmentOrder?.shippedAt) {
+      return { quantity: item.qty, source: 'fulfillment_order_shipped_state' };
+    }
+
+    const itemShippedQty = Math.min(item.shippedQty || 0, item.qty);
+    if (itemShippedQty > 0) {
+      return { quantity: itemShippedQty, source: 'fulfillment_order_item_shipped_qty' };
+    }
+
+    return { quantity: 0, source: 'none' };
   }
 
   private async releaseFulfillmentOrderItemReservations(
@@ -1374,6 +1463,118 @@ export class SalesOrdersService {
     }
 
     return released;
+  }
+
+  private toPostShipmentCancellationEffects(
+    salesOrderLineId: string,
+    skuId: string,
+    requestedFulfillmentQuantity: number,
+    affectedShippedQuantity: number,
+    items: Array<typeof wmsTables.fulfillmentOrderItems.$inferSelect>,
+    fulfillmentOrderById: Map<string, typeof wmsTables.fulfillmentOrders.$inferSelect>,
+    priorPreservedShippedByFulfillmentItem: Map<string, number>,
+    handoff: PostShipmentHandoffOptions | undefined,
+  ): CancellationEffect[] {
+    const effects: CancellationEffect[] = [];
+    let remaining = affectedShippedQuantity;
+
+    for (const item of items) {
+      if (remaining <= 0) break;
+      const fo = fulfillmentOrderById.get(item.fulfillmentOrderId);
+      const shippedEvidence = this.getEffectiveShippedFulfillmentQty(item, fo);
+      const shippedQty = shippedEvidence.quantity;
+      const priorPreservedQty = priorPreservedShippedByFulfillmentItem.get(item.id) ?? 0;
+      const availableShippedQty = Math.max(0, shippedQty - priorPreservedQty);
+      if (availableShippedQty <= 0) continue;
+
+      const preservedQty = Math.min(availableShippedQty, remaining);
+      effects.push({
+        type: 'preserved_shipped_fulfillment_order_item',
+        targetType: 'fulfillment_order_item',
+        targetId: item.id,
+        metadata: {
+          fulfillmentOrderId: item.fulfillmentOrderId,
+          fulfillmentOrderStatus: fo?.status ?? null,
+          salesOrderLineId,
+          skuId,
+          requestedFulfillmentQuantity,
+          affectedShippedQuantity: preservedQty,
+          currentQty: item.qty,
+          currentReservedQty: item.reservedQty || 0,
+          pickedQty: item.pickedQty || 0,
+          shippedQty: item.shippedQty || 0,
+          itemShippedQty: item.shippedQty || 0,
+          effectiveShippedQuantity: shippedQty,
+          shippedEvidenceSource: shippedEvidence.source,
+          previouslyPreservedShippedQuantity: priorPreservedQty,
+          reason: 'affected_quantity_already_shipped',
+          preservationPolicy: 'do_not_reduce_or_rewrite_shipped_fulfillment_evidence',
+        },
+      });
+      remaining -= preservedQty;
+    }
+
+    effects.push(this.toPostShipmentHandoffEffect(salesOrderLineId, skuId, affectedShippedQuantity, handoff));
+    return effects;
+  }
+
+  private toPostShipmentHandoffEffect(
+    salesOrderLineId: string,
+    skuId: string,
+    affectedShippedQuantity: number,
+    handoff: PostShipmentHandoffOptions | undefined,
+  ): CancellationEffect {
+    const handoffType = handoff?.type ?? 'recovery';
+    const targetType = this.toPostShipmentHandoffTargetType(handoffType);
+    const externalRef =
+      handoff?.externalRef ?? `sales_order_line:${salesOrderLineId}:sku:${skuId}:post_shipment_${handoffType}_handoff`;
+    const status = handoff?.status ?? this.defaultPostShipmentHandoffStatus(handoffType);
+    const statusKey = this.toPostShipmentHandoffStatusKey(handoffType);
+    if (handoff?.id && !UUID_PATTERN.test(handoff.id)) {
+      throw new BadRequestException('postShipmentHandoff.id must be a UUID; use externalRef for external workflow IDs');
+    }
+
+    return {
+      type: `linked_post_shipment_${handoffType}_handoff`,
+      targetType,
+      targetId: handoff?.id,
+      targetExternalRef: externalRef,
+      metadata: {
+        handoffType,
+        owner: this.toPostShipmentHandoffOwner(handoffType),
+        [statusKey]: status,
+        salesOrderLineId,
+        skuId,
+        affectedShippedQuantity,
+        reason: 'cancellation_affects_shipped_quantity',
+        ...(handoff?.metadata ?? {}),
+      },
+    };
+  }
+
+  private toPostShipmentHandoffTargetType(type: PostShipmentHandoffType): string {
+    if (type === 'return') return 'return_handoff';
+    if (type === 'refund') return 'refund_policy_handoff';
+    return `${type}_handoff`;
+  }
+
+  private toPostShipmentHandoffOwner(type: PostShipmentHandoffType): string {
+    if (type === 'return') return 'logistics';
+    if (type === 'refund') return 'wallet';
+    if (type === 'compensation') return 'fulfillment';
+    return 'operations';
+  }
+
+  private defaultPostShipmentHandoffStatus(type: PostShipmentHandoffType): string {
+    if (type === 'return') return 'requested';
+    return 'pending_policy_decision';
+  }
+
+  private toPostShipmentHandoffStatusKey(type: PostShipmentHandoffType): string {
+    if (type === 'return') return 'returnStatus';
+    if (type === 'refund') return 'refundStatus';
+    if (type === 'compensation') return 'compensationStatus';
+    return 'recoveryStatus';
   }
 
   private toWalletRefundEffect(options: CancelSalesOrderOptions): CancellationEffect | null {
@@ -1774,12 +1975,23 @@ export class SalesOrdersService {
     linkedEntity: BusinessLinkReference,
     metadata: Record<string, unknown>,
   ): TimelineEffectStatus | null {
-    if (!WALLET_EFFECT_REF_TYPES.has(linkedEntity.type)) {
-      return null;
+    if (WALLET_EFFECT_REF_TYPES.has(linkedEntity.type)) {
+      const value = metadata.walletStatus ?? metadata.refundStatus ?? metadata.paymentStatus ?? metadata.status;
+      return typeof value === 'string' && value.length > 0 ? { owner: 'wallet', value } : null;
     }
 
-    const value = metadata.walletStatus ?? metadata.refundStatus ?? metadata.paymentStatus ?? metadata.status;
-    return typeof value === 'string' && value.length > 0 ? { owner: 'wallet', value } : null;
+    if (LOGISTICS_EFFECT_REF_TYPES.has(linkedEntity.type)) {
+      const value = metadata.logisticsStatus ?? metadata.returnStatus ?? metadata.status;
+      return typeof value === 'string' && value.length > 0 ? { owner: 'logistics', value } : null;
+    }
+
+    if (OPERATIONS_EFFECT_REF_TYPES.has(linkedEntity.type)) {
+      const value = metadata.recoveryStatus ?? metadata.refundStatus ?? metadata.compensationStatus ?? metadata.status;
+      const owner = typeof metadata.owner === 'string' && metadata.owner.length > 0 ? metadata.owner : 'operations';
+      return typeof value === 'string' && value.length > 0 ? { owner, value } : null;
+    }
+
+    return null;
   }
 
   private toBusinessLinkRef(type: string, id: string | null, externalRef: string | null): BusinessLinkReference {
