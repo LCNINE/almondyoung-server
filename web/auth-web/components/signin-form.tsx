@@ -31,6 +31,10 @@ export function SignInForm({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const isReauth = reauthUserId.length > 0;
+  // 재인증이고 loginId 를 이미 아는 경우 아이디 필드를 노출하지 않는다. hidden 으로만 제출해
+  // 자동완성이 다른 계정 아이디로 덮어써 expectUserId 매칭이 깨지는 사고를 막는다.
+  // (서버는 reauthUserId 로 엄격 매칭하므로 hidden 값 변조도 차단된다.)
+  const hasPrefilledLoginId = isReauth && prefilledLoginId.length > 0;
 
   const onSubmit = (formData: FormData) => {
     setError(null);
@@ -44,20 +48,23 @@ export function SignInForm({
     <form action={onSubmit} className="flex flex-col gap-4">
       <input type="hidden" name="redirectTo" value={redirectTo} />
       <input type="hidden" name="reauthUserId" value={reauthUserId} />
-      <Field>
-        <FieldLabel htmlFor="loginId">아이디</FieldLabel>
-        <Input
-          id="loginId"
-          name="loginId"
-          autoComplete="username"
-          required
-          minLength={4}
-          maxLength={20}
-          pattern="[a-z0-9]+"
-          defaultValue={prefilledLoginId}
-          readOnly={isReauth && prefilledLoginId.length > 0}
-        />
-      </Field>
+      {hasPrefilledLoginId ? (
+        <input type="hidden" name="loginId" value={prefilledLoginId} />
+      ) : (
+        <Field>
+          <FieldLabel htmlFor="loginId">아이디</FieldLabel>
+          <Input
+            id="loginId"
+            name="loginId"
+            autoComplete="username"
+            required
+            minLength={4}
+            maxLength={20}
+            pattern="[a-z0-9]+"
+            defaultValue={prefilledLoginId}
+          />
+        </Field>
+      )}
       <Field>
         <FieldLabel htmlFor="password">비밀번호</FieldLabel>
         <Input
