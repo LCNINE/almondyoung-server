@@ -6,7 +6,7 @@ jest.mock('./medusa-sdk.config', () => ({
 import { MedusaClient } from './medusa.client';
 
 describe('MedusaClient.listOrders', () => {
-  it('filters Payment Accepted orders client-side without unsupported payment_status query filters', async () => {
+  it('keeps Payment Accepted and lifecycle orders client-side without unsupported payment_status query filters', async () => {
     const authorizedOrder = {
       id: 'order_authorized',
       payment_status: 'authorized',
@@ -25,17 +25,33 @@ describe('MedusaClient.listOrders', () => {
     const refundedOrderWithPayment = {
       id: 'order_refunded',
       payment_status: 'refunded',
-      payment_collections: [{ payments: [{ id: 'pay_refunded', captures: [{ id: 'cap_refunded' }] }] }],
+      payment_collections: [
+        {
+          payments: [
+            {
+              id: 'pay_refunded',
+              captures: [{ id: 'cap_refunded' }],
+              refunds: [{ id: 'ref_1', amount: 5000 }],
+            },
+          ],
+        },
+      ],
     };
-    const fetch = jest
-      .fn()
-      .mockResolvedValue({ orders: [authorizedOrder, capturedOrder, unpaidOrder, refundedOrderWithPayment], count: 4 });
+    const canceledOrder = {
+      id: 'order_canceled',
+      status: 'canceled',
+      payment_status: 'canceled',
+    };
+    const fetch = jest.fn().mockResolvedValue({
+      orders: [authorizedOrder, capturedOrder, unpaidOrder, refundedOrderWithPayment, canceledOrder],
+      count: 5,
+    });
     const client = Object.create(MedusaClient.prototype) as MedusaClient;
     (client as any).sdk = { client: { fetch } };
 
     const orders = await client.listOrders({ since: new Date('2026-05-26T00:00:00.000Z') });
 
-    expect(orders).toEqual([authorizedOrder, capturedOrder]);
+    expect(orders).toEqual([authorizedOrder, capturedOrder, refundedOrderWithPayment, canceledOrder]);
 
     expect(fetch).toHaveBeenCalledWith(
       '/admin/orders',
@@ -48,7 +64,9 @@ describe('MedusaClient.listOrders', () => {
     );
     const query = fetch.mock.calls[0][1].query;
     expect(query.fields).toContain('payment_status');
+    expect(query.fields).toContain('status');
     expect(query.fields).toContain('payment_collections.payments.captures.id');
+    expect(query.fields).toContain('transactions.reference_id');
     expect(query).not.toHaveProperty('payment_status');
   });
 });

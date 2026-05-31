@@ -1,0 +1,1 @@
+ALTER TYPE "public"."event_type_order" ADD VALUE IF NOT EXISTS 'ORDER_REFUND_CREATED';

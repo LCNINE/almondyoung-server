@@ -2,9 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 import { OrderCreatedPayload, OrderItem, ShippingAddress } from '@packages/event-contracts/streams';
 import { MedusaClient, MedusaOrder } from '../../adapters/medusa/medusa.client';
+import { LIFECYCLE_PAYMENT_STATUSES, PAYMENT_ACCEPTED_STATUSES } from '../../adapters/medusa/medusa-order-status';
 import {
   CHANNEL_PRODUCT_IDENTIFICATION_FAILED,
   FetchOrdersResult,
+  OrderLifecycleEventItem,
   OrderCollectionFailureItem,
   OrderFetchItem,
   OrderFetchOutcome,
@@ -23,9 +25,15 @@ export class MedusaOrderProvider implements ReplayableChannelOrderProvider {
 
     const orders: OrderFetchItem[] = [];
     const failures: OrderCollectionFailureItem[] = [];
+    const lifecycleEvents: OrderLifecycleEventItem[] = [];
 
     for (const order of rawOrders) {
+      lifecycleEvents.push(...this.buildLifecycleEvents(order));
+
       const outcome = this.buildFetchOutcome(order);
+      if (!outcome) {
+        continue;
+      }
       if (outcome.kind === 'failure') {
         failures.push(outcome.failure);
       } else {
@@ -33,7 +41,7 @@ export class MedusaOrderProvider implements ReplayableChannelOrderProvider {
       }
     }
 
-    return { orders, failures };
+    return { orders, failures, lifecycleEvents };
   }
 
   async fetchOrder(externalOrderId: string): Promise<OrderFetchOutcome | null> {
@@ -44,13 +52,25 @@ export class MedusaOrderProvider implements ReplayableChannelOrderProvider {
     return this.buildFetchOutcome(order);
   }
 
-  private buildFetchOutcome(order: MedusaOrder): OrderFetchOutcome {
+  private buildFetchOutcome(order: MedusaOrder): OrderFetchOutcome | null {
+    // A canceled order must never seed a brand-new Core SalesOrder: the lifecycle path
+    // attaches cancellation/refund only to already-collected orders, so an uncollected
+    // canceled snapshot (even one whose payment is still authorized/captured) is observed
+    // for lifecycle but is not eligible for OrderCreated.
+    const eligibleForOrderCreation =
+      PAYMENT_ACCEPTED_STATUSES.has(order.payment_status) && order.status !== 'canceled';
+    const lifecycleStatusSnapshot = this.isLifecycleStatusSnapshot(order);
+    const hasLifecycleObservation = lifecycleStatusSnapshot || this.hasLifecycleObservation(order);
+    if (!eligibleForOrderCreation && !hasLifecycleObservation) {
+      return null;
+    }
+
     const lineItems = order.items ?? [];
     const missingPimVariantLineIds = lineItems.filter((item) => !this.getPimVariantId(item)).map((item) => item.id);
 
     const sourceUpdatedAt = this.getSourceUpdatedAt(order);
 
-    if (missingPimVariantLineIds.length > 0) {
+    if (eligibleForOrderCreation && missingPimVariantLineIds.length > 0) {
       this.logger.warn(`Quarantining Medusa order ${order.id}: one or more line items missing pimVariantId`);
       return {
         kind: 'failure',
@@ -65,7 +85,7 @@ export class MedusaOrderProvider implements ReplayableChannelOrderProvider {
     }
 
     const items: OrderItem[] = lineItems.map((item) => {
-      const pimVariantId = this.getPimVariantId(item)!;
+      const pimVariantId = this.getPimVariantId(item) ?? '';
       return {
         orderItemId: item.id,
         skuId: pimVariantId,
@@ -110,6 +130,7 @@ export class MedusaOrderProvider implements ReplayableChannelOrderProvider {
       order: {
         externalOrderId: order.id,
         sourceUpdatedAt,
+        eligibleForOrderCreation,
         createPayload,
         changes: {
           items,
@@ -131,5 +152,149 @@ export class MedusaOrderProvider implements ReplayableChannelOrderProvider {
 
   private getSourceUpdatedAt(order: MedusaOrder): string {
     return order.updated_at ?? order.created_at ?? new Date().toISOString();
+  }
+
+  private hasLifecycleObservation(order: MedusaOrder): boolean {
+    return this.buildLifecycleEvents(order).length > 0;
+  }
+
+  private isLifecycleStatusSnapshot(order: MedusaOrder): boolean {
+    return order.status === 'canceled' || LIFECYCLE_PAYMENT_STATUSES.has(order.payment_status);
+  }
+
+  private buildLifecycleEvents(order: MedusaOrder): OrderLifecycleEventItem[] {
+    const sourceUpdatedAt = this.getSourceUpdatedAt(order);
+    const events: OrderLifecycleEventItem[] = [];
+
+    if (order.status === 'canceled' || order.payment_status === 'canceled') {
+      const cancelledAt = order.canceled_at ?? sourceUpdatedAt;
+      events.push({
+        externalOrderId: order.id,
+        sourceUpdatedAt,
+        eventType: 'OrderCancelled',
+        eventKey: 'cancelled',
+        payload: {
+          reason: 'ADMIN_CANCEL',
+          reasonDetail: 'Medusa order cancellation collected',
+          cancelledBy: 'medusa',
+          cancelledAt,
+          refundRequired: false,
+        },
+        rawEvent: {
+          externalOrderId: order.id,
+          cancelledAt,
+        },
+      });
+    }
+
+    const refundEvents = this.getRefundEvents(order);
+    for (const refund of refundEvents) {
+      events.push({
+        externalOrderId: order.id,
+        sourceUpdatedAt,
+        eventType: 'OrderRefundCreated',
+        eventKey: `refund:${refund.refundId}`,
+        payload: {
+          refundId: refund.refundId,
+          paymentId: refund.paymentId,
+          amount: refund.amount,
+          currency: refund.currency,
+          reason: refund.reason,
+          note: refund.note,
+          createdBy: 'medusa',
+          createdAt: refund.createdAt,
+        },
+        rawEvent: {
+          externalOrderId: order.id,
+          refundId: refund.refundId,
+          paymentId: refund.paymentId,
+          amount: refund.amount,
+          currency: refund.currency,
+          source: refund.source,
+        },
+      });
+    }
+
+    return events;
+  }
+
+  private getRefundEvents(order: MedusaOrder): Array<{
+    refundId: string;
+    paymentId: string;
+    amount: number;
+    currency: string;
+    reason: string;
+    note?: string;
+    createdAt: string;
+    source: string;
+  }> {
+    const currency = order.currency_code ?? 'KRW';
+    const sourceUpdatedAt = this.getSourceUpdatedAt(order);
+    const events: Array<{
+      refundId: string;
+      paymentId: string;
+      amount: number;
+      currency: string;
+      reason: string;
+      note?: string;
+      createdAt: string;
+      source: string;
+    }> = [];
+
+    for (const transaction of order.transactions ?? []) {
+      if (transaction.reference !== 'refund' && Number(transaction.amount) >= 0) {
+        continue;
+      }
+      const amount = Math.abs(Number(transaction.amount ?? 0));
+      if (amount <= 0) {
+        continue;
+      }
+      const refundId = transaction.reference_id ?? transaction.id;
+      if (!refundId) {
+        continue;
+      }
+      events.push({
+        refundId,
+        paymentId: this.getFirstPaymentId(order) ?? transaction.reference ?? 'refund',
+        amount,
+        currency: transaction.currency_code ?? currency,
+        reason: 'MEDUSA_REFUND',
+        createdAt: transaction.created_at ?? sourceUpdatedAt,
+        source: 'order_transaction',
+      });
+    }
+
+    for (const collection of order.payment_collections ?? []) {
+      for (const payment of collection.payments ?? []) {
+        for (const refund of payment.refunds ?? []) {
+          const amount = Number(refund.amount ?? 0);
+          if (!refund.id || amount <= 0 || events.some((event) => event.refundId === refund.id)) {
+            continue;
+          }
+          events.push({
+            refundId: refund.id,
+            paymentId: payment.id ?? collection.id ?? 'unknown',
+            amount,
+            currency,
+            reason: 'MEDUSA_REFUND',
+            createdAt: refund.created_at ?? sourceUpdatedAt,
+            source: 'payment_refund',
+          });
+        }
+      }
+    }
+
+    return events;
+  }
+
+  private getFirstPaymentId(order: MedusaOrder): string | null {
+    for (const collection of order.payment_collections ?? []) {
+      for (const payment of collection.payments ?? []) {
+        if (payment.id) {
+          return payment.id;
+        }
+      }
+    }
+    return null;
   }
 }
