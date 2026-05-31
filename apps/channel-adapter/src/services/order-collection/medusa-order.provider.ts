@@ -57,28 +57,28 @@ export class MedusaOrderProvider implements ReplayableChannelOrderProvider {
     // attaches cancellation/refund only to already-collected orders, so an uncollected
     // canceled snapshot (even one whose payment is still authorized/captured) is observed
     // for lifecycle but is not eligible for OrderCreated.
-    const eligibleForOrderCreation =
-      PAYMENT_ACCEPTED_STATUSES.has(order.payment_status) && order.status !== 'canceled';
+    const eligibleForOrderCreation = PAYMENT_ACCEPTED_STATUSES.has(order.payment_status) && order.status !== 'canceled';
     const lifecycleStatusSnapshot = this.isLifecycleStatusSnapshot(order);
     const hasLifecycleObservation = lifecycleStatusSnapshot || this.hasLifecycleObservation(order);
     if (!eligibleForOrderCreation && !hasLifecycleObservation) {
       return null;
     }
 
-    const lineItems = order.items ?? [];
-    const missingPimVariantLineIds = lineItems.filter((item) => !this.getPimVariantId(item)).map((item) => item.id);
-
     const sourceUpdatedAt = this.getSourceUpdatedAt(order);
+    const lineItems = order.items ?? [];
+    const missingPimIdentityLineIds = lineItems
+      .filter((item) => !this.hasRequiredPimIdentity(item))
+      .map((item) => item.id);
 
-    if (eligibleForOrderCreation && missingPimVariantLineIds.length > 0) {
-      this.logger.warn(`Quarantining Medusa order ${order.id}: one or more line items missing pimVariantId`);
+    if (eligibleForOrderCreation && missingPimIdentityLineIds.length > 0) {
+      this.logger.warn(`Quarantining Medusa order ${order.id}: one or more line items missing PIM identity metadata`);
       return {
         kind: 'failure',
         failure: {
           externalOrderId: order.id,
           sourceUpdatedAt,
           reason: CHANNEL_PRODUCT_IDENTIFICATION_FAILED,
-          affectedLineIds: missingPimVariantLineIds,
+          affectedLineIds: missingPimIdentityLineIds,
           rawOrder: order as unknown as Record<string, unknown>,
         },
       };
@@ -86,13 +86,15 @@ export class MedusaOrderProvider implements ReplayableChannelOrderProvider {
 
     const items: OrderItem[] = lineItems.map((item) => {
       const pimVariantId = this.getPimVariantId(item) ?? '';
+      const pimMasterId = this.getPimMasterId(item) ?? '';
+      const pimVersionId = this.getPimVersionId(item) ?? '';
       return {
         orderItemId: item.id,
         skuId: pimVariantId,
-        masterId: (item.variant?.product?.metadata?.pimMasterId as string) ?? '',
-        versionId: (item.variant?.product?.metadata?.pimVersionId as string) ?? '',
+        masterId: pimMasterId,
+        versionId: pimVersionId,
         variantId: pimVariantId,
-        productName: item.title ?? item.variant?.title ?? '',
+        productName: item.title ?? item.variant?.title ?? item.variant_id ?? item.id,
         channelProductId: item.variant_id ?? item.id,
         quantity: item.quantity ?? 1,
         unitPrice: item.unit_price ?? 0,
@@ -142,12 +144,30 @@ export class MedusaOrderProvider implements ReplayableChannelOrderProvider {
     };
   }
 
+  private hasRequiredPimIdentity(item: NonNullable<MedusaOrder['items']>[number]): boolean {
+    return Boolean(this.getPimVariantId(item) && this.getPimMasterId(item) && this.getPimVersionId(item));
+  }
+
   private getPimVariantId(item: NonNullable<MedusaOrder['items']>[number]): string | null {
     const pimVariantId = item.variant?.metadata?.pimVariantId;
-    if (typeof pimVariantId !== 'string' || pimVariantId.trim() === '') {
+    return this.getStringMetadataValue(pimVariantId);
+  }
+
+  private getPimMasterId(item: NonNullable<MedusaOrder['items']>[number]): string | null {
+    const pimMasterId = item.variant?.product?.metadata?.pimMasterId;
+    return this.getStringMetadataValue(pimMasterId);
+  }
+
+  private getPimVersionId(item: NonNullable<MedusaOrder['items']>[number]): string | null {
+    const pimVersionId = item.variant?.product?.metadata?.pimVersionId;
+    return this.getStringMetadataValue(pimVersionId);
+  }
+
+  private getStringMetadataValue(value: unknown): string | null {
+    if (typeof value !== 'string' || value.trim() === '') {
       return null;
     }
-    return pimVariantId;
+    return value;
   }
 
   private getSourceUpdatedAt(order: MedusaOrder): string {

@@ -6,6 +6,7 @@ import { ConfigModule } from '@nestjs/config';
 import { DbModule } from '@app/db';
 import { validateNotificationEnv } from './config/env.validation';
 import { notificationTables, NotificationSchema } from '../database/schemas/notification-schema';
+import { HealthController } from './health.controller';
 
 // Core modules
 import { SharedModule } from './shared/shared.module';
@@ -48,5 +49,6 @@ import { DeviceModule } from './device/device.module';
     BulkModule,
     DeviceModule,
   ],
+  controllers: [HealthController],
 })
 export class NotificationModule {}
