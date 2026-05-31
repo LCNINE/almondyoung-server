@@ -2,6 +2,32 @@ import { wmsTables } from '../../inventory/schema/inventory.schema';
 import { SalesOrderAmendmentsService } from './sales-order-amendments.service';
 import { SalesOrdersService } from './sales-orders.service';
 
+function collectSqlFragments(value: unknown, seen = new WeakSet<object>()): string[] {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value.flatMap((item) => collectSqlFragments(item, seen));
+  if (!value || typeof value !== 'object') return [];
+
+  if (seen.has(value)) return [];
+  seen.add(value);
+
+  const record = value as Record<string, unknown>;
+  if (Array.isArray(record.queryChunks)) return collectSqlFragments(record.queryChunks, seen);
+  if (Array.isArray(record.chunks)) return collectSqlFragments(record.chunks, seen);
+  if (typeof record.sql === 'string') return [record.sql];
+  if (Array.isArray(record.value) || typeof record.value === 'string') {
+    return collectSqlFragments(record.value, seen);
+  }
+
+  return [];
+}
+
+function rejectRawDeleteSql(statement: unknown) {
+  const sqlText = collectSqlFragments(statement).join(' ');
+  if (/\bdelete\b/i.test(sqlText)) {
+    throw new Error(`Unexpected raw DELETE SQL in SalesOrder cancellation test: ${sqlText}`);
+  }
+}
+
 describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
   const salesOrderId = '11111111-1111-1111-1111-111111111111';
 
@@ -59,7 +85,10 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
     };
 
     const tx: any = {
-      execute: jest.fn().mockResolvedValue([]),
+      execute: jest.fn((statement: unknown) => {
+        rejectRawDeleteSql(statement);
+        return Promise.resolve([]);
+      }),
       select: jest.fn(() => ({
         from: (table: unknown) => ({
           where: () => rows(selectRowsFor(table)),
@@ -104,6 +133,7 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
           return { returning: jest.fn().mockResolvedValue([]) };
         },
       })),
+      delete: jest.fn(() => ({ where: () => [] })),
     };
 
     const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) } };
@@ -175,6 +205,39 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
           linkedEntity: { type: 'fulfillment_order', id: 'fo-1', externalRef: null },
         }),
       ]),
+    );
+  });
+
+  it('preserves the accepted sales order contract and lines instead of hard-deleting evidence', async () => {
+    const { service, tx, state } = makeService('confirmed');
+    const originalOrder = { ...state.salesOrders[0] };
+    const originalLines = state.salesOrderLines.map((line) => ({ ...line }));
+
+    await service.cancel(salesOrderId, {
+      reasonCode: 'CUSTOMER_REQUEST',
+      cancelledBy: 'admin-1',
+    });
+
+    // ADR-0016: cancellation never hard-deletes accepted SalesOrder evidence.
+    expect(tx.delete).not.toHaveBeenCalled();
+
+    // The original contract row survives as an audit record; only status transitions.
+    expect(state.salesOrders).toHaveLength(1);
+    expect(state.salesOrders[0]).toEqual(
+      expect.objectContaining({
+        id: originalOrder.id,
+        channelOrderId: originalOrder.channelOrderId,
+        status: 'cancelled',
+      }),
+    );
+
+    // The original contract lines remain intact for audit.
+    expect(state.salesOrderLines).toEqual(originalLines);
+
+    // The action is recorded as an explicit lifecycle event, not a deletion.
+    expect(state.salesOrderCancellations).toHaveLength(1);
+    expect(state.salesOrderCancellations[0]).toEqual(
+      expect.objectContaining({ salesOrderId, cancellationScope: 'full', status: 'applied' }),
     );
   });
 
