@@ -1,5 +1,6 @@
 "use server"
 
+import { cookies } from "next/headers"
 import { PaginatedResponseDto } from "@/lib/types/common/pagination"
 import type {
   AuthorizePaymentDto,
@@ -8,10 +9,12 @@ import type {
   BillingAgreementDto,
   BillingMethodDto,
   BnplHistoryDto,
+  BnplProfileDto,
   BnplSummaryDto,
   CreateIntentRequestDto,
   CreateIntentResponseDto,
   IntentDto,
+  OnboardHmsBnplResponse,
   PointsBalanceDto,
   PointsEventRowDto,
   TaxInvoiceData,
@@ -19,6 +22,8 @@ import type {
 } from "@lib/types/dto/wallet"
 import { api } from "../api"
 import { HttpApiError } from "../api-error"
+
+const DEFAULT_BNPL_PROFILE_COOKIE = "wallet_default_bnpl_profile_id"
 
 // ==========================================
 // PIN 상태 관련 타입
@@ -44,6 +49,48 @@ export interface PinErrorResponse {
   data?: {
     currentFailureCount?: number
     maxFailureCount?: number
+  }
+}
+
+type BnplActionState =
+  | (OnboardHmsBnplResponse & { success: true })
+  | { success: false; message: string }
+
+const getFormString = (formData: FormData, key: string) => {
+  const value = formData.get(key)
+  return typeof value === "string" ? value.trim() : ""
+}
+
+const mapBillingMethodToBnplProfile = (
+  method: BillingMethodDto,
+  isDefault: boolean
+): BnplProfileDto => {
+  const rawMethod = method.method ?? {}
+  const paymentCompany =
+    typeof rawMethod.paymentCompany === "string"
+      ? rawMethod.paymentCompany
+      : null
+  const paymentNumber =
+    typeof rawMethod.paymentNumber === "string" ? rawMethod.paymentNumber : null
+
+  return {
+    id: method.id,
+    kind: "BANK_ACCOUNT",
+    provider: "HMS_BNPL",
+    status: method.status,
+    name: method.displayName ?? "등록 계좌",
+    isDefault,
+    createdAt: method.createdAt,
+    details: {
+      paymentCompany,
+      paymentCompanyName: method.displayName ?? "등록 계좌",
+      paymentNumber,
+      cardLast4: null,
+      cardBrand: null,
+      payerName: method.displayName ?? null,
+      phoneMask: null,
+      cmsStatus: method.status,
+    },
   }
 }
 
@@ -94,15 +141,43 @@ export async function getBillingMethods(): Promise<BillingMethodDto[]> {
 }
 
 /**
+ * 레거시 BNPL profile 화면이 현재 wallet의 CMS billing method API를 사용할 수 있도록 변환합니다.
+ */
+export async function getBnplProfiles(): Promise<BnplProfileDto[]> {
+  const methods = await getBillingMethods()
+  const cookieStore = await cookies()
+  const defaultProfileId = cookieStore.get(DEFAULT_BNPL_PROFILE_COOKIE)?.value
+
+  const profiles = methods
+    .filter((method) => method.providerType === "CMS_BATCH")
+    .sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    )
+
+  const effectiveDefaultId =
+    profiles.find((method) => method.id === defaultProfileId)?.id ??
+    profiles[0]?.id
+
+  return profiles.map((method) =>
+    mapBillingMethodToBnplProfile(method, method.id === effectiveDefaultId)
+  )
+}
+
+/**
  * 빌링 어그리먼트(구독-카드 연결) 목록 조회
  */
 export async function getBillingAgreements(): Promise<BillingAgreementDto[]> {
   try {
-    return await api<BillingAgreementDto[]>("wallet", "/v1/billing-agreements", {
-      method: "GET",
-      cache: "no-store",
-      withAuth: true,
-    })
+    return await api<BillingAgreementDto[]>(
+      "wallet",
+      "/v1/billing-agreements",
+      {
+        method: "GET",
+        cache: "no-store",
+        withAuth: true,
+      }
+    )
   } catch {
     return []
   }
@@ -115,39 +190,130 @@ export async function getBillingAgreements(): Promise<BillingAgreementDto[]> {
  */
 export async function updateBillingAgreementMethod(
   agreementId: string,
-  billingMethodId: string,
+  billingMethodId: string
 ): Promise<void> {
-  await api<void>("wallet", `/v1/billing-agreements/${agreementId}/billing-method`, {
-    method: "PUT",
-    body: { billingMethodId },
-    withAuth: true,
-  })
+  await api<void>(
+    "wallet",
+    `/v1/billing-agreements/${agreementId}/billing-method`,
+    {
+      method: "PUT",
+      body: { billingMethodId },
+      withAuth: true,
+    }
+  )
 }
 
 export async function getBnplSummary(): Promise<BnplSummaryDto> {
-  const result = await api<BnplSummaryDto>("wallet", "/payments/bnpl/summary", {
-    method: "GET",
-    cache: "no-store",
-    withAuth: true,
-  })
+  try {
+    return await api<BnplSummaryDto>("wallet", "/payments/bnpl/summary", {
+      method: "GET",
+      cache: "no-store",
+      withAuth: true,
+    })
+  } catch {
+    const profiles = await getBnplProfiles()
 
-  return result
+    return {
+      hasAccount: profiles.length > 0,
+      creditLimit: null,
+      availableLimit: null,
+      usedAmount: 0,
+      nextBillingDate: null,
+      dDay: null,
+      targetYear: null,
+      targetMonth: null,
+    }
+  }
 }
 
 /**
  * 빌링 수단 삭제
  * @param billingMethodId 삭제할 billing_method ID
  */
-export async function deleteBillingMethod(billingMethodId: string): Promise<void> {
+export async function deleteBillingMethod(
+  billingMethodId: string
+): Promise<void> {
   await api<void>("wallet", `/v1/billing-methods/${billingMethodId}`, {
     method: "DELETE",
     withAuth: true,
   })
 }
 
+export async function deletePaymentProfile(profileId: string): Promise<void> {
+  await deleteBillingMethod(profileId)
+
+  const cookieStore = await cookies()
+  if (cookieStore.get(DEFAULT_BNPL_PROFILE_COOKIE)?.value === profileId) {
+    cookieStore.delete(DEFAULT_BNPL_PROFILE_COOKIE)
+  }
+}
+
+export async function setDefaultPaymentProfile(
+  profileId: string
+): Promise<void> {
+  const cookieStore = await cookies()
+  cookieStore.set(DEFAULT_BNPL_PROFILE_COOKIE, profileId, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 365,
+  })
+}
+
 // ==========================================
 // BNPL 관련 API
 // ==========================================
+
+export async function onboardHmsBnpl(
+  _prevState: BnplActionState | null,
+  formData: FormData
+): Promise<BnplActionState> {
+  try {
+    const paymentCompany = getFormString(formData, "paymentCompany")
+    const payerName = getFormString(formData, "payerName")
+    const payerNumber = getFormString(formData, "payerNumber")
+    const paymentNumber = getFormString(formData, "paymentNumber")
+
+    if (!paymentCompany || !payerName || !payerNumber || !paymentNumber) {
+      return {
+        success: false,
+        message: "계좌 등록에 필요한 정보가 부족합니다.",
+      }
+    }
+
+    const billingMethod = await api<BillingMethodDto>(
+      "wallet",
+      "/v1/billing-methods/cms/register",
+      {
+        method: "POST",
+        body: {
+          paymentCompany,
+          payerName,
+          payerNumber,
+          paymentNumber,
+        },
+        withAuth: true,
+      }
+    )
+
+    await setDefaultPaymentProfile(billingMethod.id)
+
+    return {
+      success: true,
+      profileId: billingMethod.id,
+      memberId: billingMethod.id,
+    }
+  } catch (error) {
+    return {
+      success: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "정기결제 신청에 실패했습니다.",
+    }
+  }
+}
 
 /**
  * 나중결제 내역 조회
@@ -156,16 +322,23 @@ export async function getBnplHistory(
   year: number,
   month: number
 ): Promise<BnplHistoryDto> {
-  const result = await api<BnplHistoryDto>(
-    "wallet",
-    `/payments/bnpl/history?year=${year}&month=${month}`,
-    {
-      method: "GET",
-      withAuth: true,
+  try {
+    return await api<BnplHistoryDto>(
+      "wallet",
+      `/payments/bnpl/history?year=${year}&month=${month}`,
+      {
+        method: "GET",
+        withAuth: true,
+      }
+    )
+  } catch {
+    return {
+      events: [],
+      month,
+      totalAmount: 0,
+      year,
     }
-  )
-
-  return result
+  }
 }
 
 // ==========================================

@@ -4,6 +4,7 @@ jest.mock('../../adapters/medusa/medusa.client', () => ({
 
 import { MedusaOrderProvider } from './medusa-order.provider';
 import { CHANNEL_PRODUCT_IDENTIFICATION_FAILED } from './channel-order-provider.interface';
+import { ORDER_STREAM } from '@packages/event-contracts/streams';
 
 describe('MedusaOrderProvider', () => {
   it('builds a Payment Accepted order candidate from an authorized Medusa order', async () => {
@@ -60,6 +61,52 @@ describe('MedusaOrderProvider', () => {
         totalAmount: 12000,
       },
     });
+  });
+
+  it('builds an OrderCreated payload that passes stream validation when optional address details are blank', async () => {
+    const provider = new MedusaOrderProvider({
+      listOrders: jest.fn().mockResolvedValue([
+        {
+          id: 'order_blank_address_1',
+          payment_status: 'authorized',
+          customer_id: 'cus_1',
+          currency_code: 'KRW',
+          total: 12000,
+          subtotal: 10000,
+          shipping_total: 2000,
+          discount_total: 0,
+          created_at: '2026-05-26T01:00:00.000Z',
+          updated_at: '2026-05-26T01:05:00.000Z',
+          items: [
+            {
+              id: 'item_1',
+              title: 'Product',
+              quantity: 2,
+              unit_price: 5000,
+              variant_id: 'variant_1',
+              variant: {
+                metadata: { pimVariantId: '11111111-1111-4111-8111-111111111111' },
+                product: { metadata: { pimMasterId: 'master_1', pimVersionId: 'version_1' } },
+              },
+            },
+          ],
+          shipping_address: {
+            first_name: 'Jane',
+            last_name: 'Kim',
+            phone: '010-0000-0000',
+            postal_code: '12345',
+            address_1: 'Seoul',
+            address_2: '',
+          },
+        },
+      ]),
+    } as any);
+
+    const result = await provider.fetchOrders(null);
+    const payload = result.orders[0].createPayload;
+    const schema = ORDER_STREAM.events.OrderCreated.schema;
+
+    expect(schema?.safeParse(payload).success).toBe(true);
   });
 
   it('quarantines a mixed valid/invalid Medusa order when any line item lacks pimVariantId', async () => {
