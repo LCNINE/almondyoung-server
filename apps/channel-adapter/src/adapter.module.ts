@@ -17,6 +17,7 @@ import { OrderEventPublisher } from './services/order-event.publisher';
 import { ChannelAdapterFactory } from './adapters/channel-adapter.factory';
 import { SyncStatusService } from './services/sync-status.service';
 import { ChannelAdapterController } from './controllers/channel-adapter.controller';
+import { HealthController } from './controllers/health.controller';
 import { SyncStatusController } from './controllers/sync-status.controller';
 import { ChannelAdapterService } from './services/channel-adapter.service';
 import { NullEventPublisher } from './services/null-event-publisher.service';
@@ -125,6 +126,7 @@ import { OrderPollerOrchestrator } from './services/order-collection/order-polle
       : []),
   ],
   controllers: [
+    HealthController,
     ChannelAdapterController,
     SyncStatusController,
     InternalMembershipController,

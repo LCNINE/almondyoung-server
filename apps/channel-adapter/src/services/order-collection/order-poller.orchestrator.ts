@@ -150,7 +150,7 @@ export class OrderPollerOrchestrator {
 
         if (quarantined > 0) {
           this.logger.warn(
-            `[${provider.channel}] Quarantined ${quarantined} order collection failures due to missing pimVariantId`,
+            `[${provider.channel}] Quarantined ${quarantined} order collection failures due to missing PIM identity metadata`,
           );
         }
 
