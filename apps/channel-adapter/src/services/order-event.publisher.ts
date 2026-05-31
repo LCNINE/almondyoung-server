@@ -148,7 +148,8 @@ export class OrderEventPublisher {
       orderId,
       externalOrderId: orderEvent.externalOrderId,
       salesChannel,
-      customerId: orderEvent.buyer?.name ?? 'guest',
+      // 비-로그인 외부 채널(Naver/Coupang)은 내부 user-service 계정이 없다. 이름은 customerId 가 아니므로 null.
+      customerId: null,
       items,
       totalAmount: orderEvent.priceAmount ?? 0,
       subtotalAmount: orderEvent.priceAmount ?? 0,

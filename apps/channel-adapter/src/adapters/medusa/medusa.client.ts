@@ -30,6 +30,11 @@ export interface MedusaOrder {
     | 'canceled';
   email?: string;
   customer_id?: string;
+  // customer.metadata.almond_user_id = 내부 user-service 사용자 UUID (가입 시 stamp). cus_ id 는 core 로 내보내지 않는다.
+  customer?: {
+    id?: string;
+    metadata?: Record<string, unknown> | null;
+  };
   currency_code?: string;
   total?: number;
   subtotal?: number;
@@ -118,6 +123,8 @@ const ORDER_FIELDS = [
   'payment_status',
   'email',
   'customer_id',
+  'customer.id',
+  '+customer.metadata',
   'currency_code',
   'total',
   'subtotal',
