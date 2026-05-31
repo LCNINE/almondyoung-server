@@ -102,6 +102,11 @@ export class MedusaOrderProvider implements ReplayableChannelOrderProvider {
       };
     });
 
+    // Medusa cus_ id 는 core(uuid)로 내보내지 않는다. 가입 시 stamp 된 user-service UUID 를 customer.metadata 에서 해석.
+    // 미링크 고객(레거시) 이나 값 부재 시 null — core sales_orders.customer_id 는 nullable uuid 다.
+    const almondUserId = order.customer?.metadata?.almond_user_id;
+    const customerId = typeof almondUserId === 'string' && almondUserId.length > 0 ? almondUserId : null;
+
     const addr = order.shipping_address;
     const shippingAddress: ShippingAddress = {
       recipientName: [addr?.first_name, addr?.last_name].filter(Boolean).join(' ') || 'Unknown',
@@ -115,7 +120,7 @@ export class MedusaOrderProvider implements ReplayableChannelOrderProvider {
       orderId: uuidv4(),
       externalOrderId: order.id,
       salesChannel: 'medusa',
-      customerId: order.customer_id ?? order.email ?? 'guest',
+      customerId,
       items,
       totalAmount: order.total ?? 0,
       subtotalAmount: order.subtotal ?? 0,

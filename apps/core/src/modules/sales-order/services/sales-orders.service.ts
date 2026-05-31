@@ -892,7 +892,8 @@ export class SalesOrdersService {
       channelOrderId: payload.externalOrderId ?? payload.orderId,
       salesChannel: payload.salesChannel,
       customer: {
-        id: payload.customerId,
+        // 미링크/비-로그인 주문은 customerId=null → DTO(id?: string)는 undefined로. 하위에서 ?? null 로 nullable 컬럼에 저장.
+        id: payload.customerId ?? undefined,
         name: payload.shippingAddress.recipientName,
         phone: payload.shippingAddress.phone,
       },

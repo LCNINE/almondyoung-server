@@ -34,6 +34,12 @@ export class OrderEventConsumer {
   ) {
     this.logger.log(`[Event] Received OrderCreated: ${payload.orderId} (correlationId: ${envelope.correlationId})`);
     try {
+      // 비-로그인 채널/미링크 고객 주문은 내부 user(=customerId)가 없어 알림 대상이 없다. 스킵.
+      if (!payload.customerId) {
+        this.logger.warn(`Skipping ORDER_CREATED notification: no customerId (order ${payload.orderId})`);
+        return;
+      }
+
       const eventMapping = await this.eventMappingService.getEventMapping('ORDER_CREATED');
       if (!eventMapping || !eventMapping.isActive) {
         this.logger.warn(`Event mapping for ORDER_CREATED not found or inactive.`);

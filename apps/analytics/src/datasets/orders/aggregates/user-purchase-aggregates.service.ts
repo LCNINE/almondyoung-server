@@ -24,7 +24,7 @@ export class UserPurchaseAggregatesService {
   }
 
   async applyOrderCreated(
-    customerId: string,
+    customerId: string | null,
     items: OrderItem[],
     occurredAt: Date,
     tx?: DbTx,
