@@ -56,14 +56,14 @@ export const useUpdateSalesOrder = () => {
   });
 };
 
-export const useDeleteSalesOrder = () => {
+export const useCancelSalesOrder = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (id: string) => orders.salesOrders.cancelSalesOrder(id),
     onSuccess: (_, id) => {
       queryClient.invalidateQueries({ queryKey: orderQueryKeys.orders });
-      queryClient.removeQueries({ queryKey: orderQueryKeys.order(id) });
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.order(id) });
     },
   });
 };
