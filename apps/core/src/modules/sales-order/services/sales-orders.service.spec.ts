@@ -360,6 +360,522 @@ describe('SalesOrdersService.update accepted contract immutability', () => {
   });
 });
 
+describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
+  const salesOrderId = '22222222-2222-4222-8222-222222222222';
+  const salesOrderLineId = '33333333-3333-4333-8333-333333333333';
+  const fulfillmentOrderId = '44444444-4444-4444-8444-444444444444';
+  const fulfillmentOrderItemId = '55555555-5555-4555-8555-555555555555';
+  const reservationId = '66666666-6666-4666-8666-666666666666';
+
+  function rows<T>(value: T[]): T[] & { limit: (count: number) => Promise<T[]> } {
+    const result = [...value] as T[] & { limit: (count: number) => Promise<T[]> };
+    result.limit = (count: number) => Promise.resolve(result.slice(0, count));
+    return result;
+  }
+
+  function makeService(
+    options: {
+      fulfillmentOrders?: Array<Record<string, any>>;
+      fulfillmentOrderItems?: Array<Record<string, any>>;
+      fulfillmentOrderCreationBacklogs?: Array<Record<string, any>>;
+    } = {},
+  ) {
+    const state = {
+      salesOrders: [
+        {
+          id: salesOrderId,
+          status: 'confirmed',
+          salesChannel: 'medusa',
+          channelOrderId: 'medusa_order_partial_1',
+          shippingAddress: {},
+          orderDate: new Date('2026-05-30T00:00:00.000Z'),
+        },
+      ] as Array<Record<string, any>>,
+      salesOrderLines: [
+        {
+          id: salesOrderLineId,
+          salesOrderId,
+          variantId: '77777777-7777-4777-8777-777777777777',
+          productName: 'Accepted Product',
+          quantity: 3,
+          unitPrice: 5000,
+          totalPrice: 15000,
+        },
+      ] as Array<Record<string, any>>,
+      fulfillmentOrders:
+        options.fulfillmentOrders ??
+        ([
+          {
+            id: fulfillmentOrderId,
+            salesOrderId,
+            status: 'ready',
+            totalItems: 1,
+            totalQty: 3,
+            totalReservedQty: 3,
+            canceledAt: null,
+          },
+        ] as Array<Record<string, any>>),
+      fulfillmentOrderItems:
+        options.fulfillmentOrderItems ??
+        ([
+          {
+            id: fulfillmentOrderItemId,
+            fulfillmentOrderId,
+            salesOrderId,
+            salesOrderLineId,
+            skuId: '88888888-8888-4888-8888-888888888888',
+            qty: 3,
+            reservedQty: 3,
+            shippedQty: 0,
+            status: 'pending',
+          },
+        ] as Array<Record<string, any>>),
+      stockReservations: [
+        {
+          id: reservationId,
+          targetType: 'FULFILLMENT_ORDER',
+          targetId: fulfillmentOrderId,
+          fulfillmentOrderItemId,
+          skuId: '88888888-8888-4888-8888-888888888888',
+          warehouseId: '99999999-9999-4999-8999-999999999999',
+          quantity: 3,
+          status: 'confirmed',
+        },
+      ] as Array<Record<string, any>>,
+      fulfillmentOrderCreationBacklogs: options.fulfillmentOrderCreationBacklogs ?? ([] as Array<Record<string, any>>),
+      salesOrderCancellations: [] as Array<Record<string, any>>,
+      businessLinks: [] as Array<Record<string, any>>,
+    };
+
+    const selectRowsFor = (table: unknown) => {
+      if (table === wmsTables.salesOrders) return state.salesOrders;
+      if (table === wmsTables.salesOrderLines) return state.salesOrderLines;
+      if (table === wmsTables.fulfillmentOrders) return state.fulfillmentOrders;
+      if (table === wmsTables.fulfillmentOrderItems) return state.fulfillmentOrderItems;
+      if (table === wmsTables.stockReservations) return state.stockReservations;
+      if (table === wmsTables.fulfillmentOrderCreationBacklogs) return state.fulfillmentOrderCreationBacklogs;
+      if (table === wmsTables.salesOrderCancellations) return state.salesOrderCancellations;
+      if (table === wmsTables.businessLinks) return state.businessLinks;
+      return [];
+    };
+
+    const tx: any = {
+      execute: jest.fn().mockResolvedValue([]),
+      select: jest.fn(() => ({
+        from: (table: unknown) => ({
+          where: () => rows(selectRowsFor(table)),
+        }),
+      })),
+      update: jest.fn((table: unknown) => ({
+        set: (set: Record<string, unknown>) => ({
+          where: () => {
+            if (table === wmsTables.fulfillmentOrderItems) {
+              state.fulfillmentOrderItems = state.fulfillmentOrderItems.map((row) => ({ ...row, ...set }));
+            }
+            if (table === wmsTables.fulfillmentOrders) {
+              state.fulfillmentOrders = state.fulfillmentOrders.map((row) => ({ ...row, ...set }));
+            }
+            if (table === wmsTables.stockReservations) {
+              state.stockReservations = state.stockReservations.map((row) => ({ ...row, ...set }));
+            }
+            if (table === wmsTables.fulfillmentOrderCreationBacklogs) {
+              state.fulfillmentOrderCreationBacklogs = state.fulfillmentOrderCreationBacklogs.map((row) => ({
+                ...row,
+                ...set,
+              }));
+            }
+            return [];
+          },
+        }),
+      })),
+      insert: jest.fn((table: unknown) => ({
+        values: (values: Record<string, any> | Array<Record<string, any>>) => {
+          const insertedValues = Array.isArray(values) ? values : [values];
+          if (table === wmsTables.salesOrderCancellations) {
+            const inserted = insertedValues.map((value, index) => ({
+              id: `cancellation-${state.salesOrderCancellations.length + index + 1}`,
+              ...value,
+              createdAt: new Date('2026-05-30T01:00:00.000Z'),
+              updatedAt: new Date('2026-05-30T01:00:00.000Z'),
+            }));
+            state.salesOrderCancellations.push(...inserted);
+            return { returning: jest.fn().mockResolvedValue(inserted) };
+          }
+          if (table === wmsTables.businessLinks) {
+            const inserted = insertedValues.map((value, index) => ({
+              id: `business-link-${state.businessLinks.length + index + 1}`,
+              ...value,
+              createdAt: new Date(`2026-05-30T01:0${state.businessLinks.length + index}:00.000Z`),
+              updatedAt: new Date(`2026-05-30T01:0${state.businessLinks.length + index}:00.000Z`),
+            }));
+            state.businessLinks.push(...inserted);
+            return Promise.resolve();
+          }
+          return { returning: jest.fn().mockResolvedValue([]) };
+        },
+      })),
+    };
+
+    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) } };
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const productSellableQuantity = { recalculateAndPublishForSku: jest.fn().mockResolvedValue(undefined) };
+    const service = new SalesOrdersService(
+      db as any,
+      {} as any,
+      outbox as any,
+      {} as any,
+      {} as any,
+      productSellableQuantity as any,
+      {} as any,
+    );
+
+    return { service, state, tx, outbox, productSellableQuantity };
+  }
+
+  it('records a line-scoped cancellation, reduces ready fulfillment quantity, releases reservations, and links refund', async () => {
+    const { service, state, tx, outbox, productSellableQuantity } = makeService();
+    const originalLines = state.salesOrderLines.map((line) => ({ ...line }));
+
+    const updated = await service.cancel(salesOrderId, {
+      lines: [{ salesOrderLineId, quantity: 1 }],
+      reasonCode: 'CUSTOMER_REQUEST',
+      cancelledBy: 'admin-1',
+      walletRefund: {
+        externalRef: 'wallet:refund:rf_partial_1',
+        amount: 5000,
+        currency: 'KRW',
+        refundStatus: 'PENDING',
+      },
+      occurredAt: '2026-05-30T01:00:00.000Z',
+    });
+
+    expect(state.salesOrders[0].status).toBe('confirmed');
+    expect(state.salesOrderLines).toEqual(originalLines);
+    expect(state.fulfillmentOrderItems[0]).toMatchObject({
+      id: fulfillmentOrderItemId,
+      qty: 2,
+      reservedQty: 2,
+      status: 'pending',
+    });
+    expect(state.fulfillmentOrders[0]).toMatchObject({
+      totalQty: 2,
+      totalReservedQty: 2,
+      status: 'ready',
+    });
+    expect(state.stockReservations[0]).toMatchObject({
+      id: reservationId,
+      quantity: 2,
+      status: 'confirmed',
+    });
+    expect(productSellableQuantity.recalculateAndPublishForSku).toHaveBeenCalledWith(
+      '88888888-8888-4888-8888-888888888888',
+      tx,
+    );
+    expect(state.salesOrderCancellations).toEqual([
+      expect.objectContaining({
+        id: 'cancellation-1',
+        salesOrderId,
+        cancellationScope: 'partial',
+        reasonCode: 'CUSTOMER_REQUEST',
+        metadata: expect.objectContaining({
+          cancelledLines: [{ salesOrderLineId, quantity: 1 }],
+        }),
+        effects: expect.arrayContaining([
+          expect.objectContaining({
+            type: 'adjusted_fulfillment_order_item',
+            targetType: 'fulfillment_order_item',
+            targetId: fulfillmentOrderItemId,
+            metadata: expect.objectContaining({
+              previousQty: 3,
+              newQty: 2,
+              releasedReservationQty: 1,
+            }),
+          }),
+          expect.objectContaining({
+            type: 'linked_wallet_refund',
+            targetType: 'wallet_refund',
+            targetExternalRef: 'wallet:refund:rf_partial_1',
+          }),
+        ]),
+      }),
+    ]);
+    expect(outbox.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: expect.any(String),
+        payload: expect.objectContaining({
+          orderCancellationId: 'cancellation-1',
+          cancellationScope: 'partial',
+          cancelledLines: [{ salesOrderLineId, quantity: 1 }],
+          walletRefundRef: 'wallet:refund:rf_partial_1',
+        }),
+      }),
+      tx,
+    );
+    expect(updated?.businessTimeline).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          relationName: 'opened_cancellation',
+          linkedEntity: { type: 'order_cancellation', id: 'cancellation-1', externalRef: null },
+          metadata: expect.objectContaining({ cancellationScope: 'partial' }),
+        }),
+        expect.objectContaining({
+          relationName: 'cancellation_adjusted_fulfillment_order_item',
+          linkedEntity: { type: 'fulfillment_order_item', id: fulfillmentOrderItemId, externalRef: null },
+        }),
+        expect.objectContaining({
+          relationName: 'cancellation_linked_wallet_refund',
+          linkedEntity: { type: 'wallet_refund', id: null, externalRef: 'wallet:refund:rf_partial_1' },
+          effectStatus: { owner: 'wallet', value: 'PENDING' },
+        }),
+      ]),
+    );
+  });
+
+  it('rejects an explicit empty line array instead of falling through to full cancellation', async () => {
+    const { service, state, outbox } = makeService();
+
+    await expect(service.cancel(salesOrderId, { lines: [] })).rejects.toThrow(
+      'Partial cancellation lines cannot be empty',
+    );
+
+    expect(state.salesOrders[0].status).toBe('confirmed');
+    expect(state.salesOrderCancellations).toHaveLength(0);
+    expect(outbox.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('records backlog quantity reduction instead of no-physical adjustment when FO creation is still pending', async () => {
+    const backlogId = '99999999-9999-4999-8999-999999999999';
+    const { service, state } = makeService({
+      fulfillmentOrders: [],
+      fulfillmentOrderItems: [],
+      fulfillmentOrderCreationBacklogs: [
+        {
+          id: backlogId,
+          salesOrderId,
+          status: 'awaiting_matching',
+        },
+      ],
+    });
+
+    await service.cancel(salesOrderId, {
+      lines: [{ salesOrderLineId, quantity: 1 }],
+      reasonCode: 'CUSTOMER_REQUEST',
+    });
+
+    expect(state.salesOrderCancellations[0]).toMatchObject({
+      cancellationScope: 'partial',
+      effects: expect.arrayContaining([
+        expect.objectContaining({
+          type: 'reduced_pending_fulfillment_quantity',
+          targetType: 'fulfillment_order_creation_backlog',
+          targetId: backlogId,
+          metadata: expect.objectContaining({
+            salesOrderLineId,
+            cancelledQuantity: 1,
+            backlogStatus: 'awaiting_matching',
+          }),
+        }),
+      ]),
+    });
+    expect(state.salesOrderCancellations[0].effects).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: 'no_physical_fulfillment_adjustment_required' })]),
+    );
+    expect(state.fulfillmentOrderCreationBacklogs[0]).toMatchObject({
+      id: backlogId,
+      status: 'pending',
+      waitingVariantIds: [],
+      failureReason: null,
+      failureDetails: null,
+      lockedAt: null,
+    });
+  });
+
+  it('rejects partial cancellation when requested fulfillment quantity has already shipped', async () => {
+    const { service, state, outbox } = makeService({
+      fulfillmentOrders: [
+        {
+          id: fulfillmentOrderId,
+          salesOrderId,
+          status: 'shipped',
+          totalItems: 1,
+          totalQty: 3,
+          totalReservedQty: 0,
+          canceledAt: null,
+        },
+      ],
+      fulfillmentOrderItems: [
+        {
+          id: fulfillmentOrderItemId,
+          fulfillmentOrderId,
+          salesOrderId,
+          salesOrderLineId,
+          skuId: '88888888-8888-4888-8888-888888888888',
+          qty: 3,
+          reservedQty: 0,
+          shippedQty: 3,
+          status: 'shipped',
+        },
+      ],
+    });
+
+    await expect(
+      service.cancel(salesOrderId, {
+        lines: [{ salesOrderLineId, quantity: 1 }],
+        reasonCode: 'CUSTOMER_REQUEST',
+      }),
+    ).rejects.toThrow('affected fulfillment quantity has already been picked or shipped');
+
+    expect(state.salesOrderCancellations).toHaveLength(0);
+    expect(outbox.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('rejects partial cancellation that would reduce fulfillment quantity below picked quantity', async () => {
+    const { service, state, outbox } = makeService({
+      fulfillmentOrders: [
+        {
+          id: fulfillmentOrderId,
+          salesOrderId,
+          status: 'picking',
+          totalItems: 1,
+          totalQty: 3,
+          totalReservedQty: 3,
+          canceledAt: null,
+        },
+      ],
+      fulfillmentOrderItems: [
+        {
+          id: fulfillmentOrderItemId,
+          fulfillmentOrderId,
+          salesOrderId,
+          salesOrderLineId,
+          skuId: '88888888-8888-4888-8888-888888888888',
+          qty: 3,
+          reservedQty: 3,
+          pickedQty: 3,
+          shippedQty: 0,
+          status: 'picking',
+        },
+      ],
+    });
+
+    await expect(
+      service.cancel(salesOrderId, {
+        lines: [{ salesOrderLineId, quantity: 1 }],
+        reasonCode: 'CUSTOMER_REQUEST',
+      }),
+    ).rejects.toThrow('affected fulfillment quantity has already been picked or shipped');
+
+    expect(state.fulfillmentOrderItems[0]).toMatchObject({
+      qty: 3,
+      pickedQty: 3,
+      reservedQty: 3,
+    });
+    expect(state.salesOrderCancellations).toHaveLength(0);
+    expect(outbox.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('allows reducing only unpicked fulfillment quantity and preserves picked quantity invariants', async () => {
+    const { service, state } = makeService({
+      fulfillmentOrders: [
+        {
+          id: fulfillmentOrderId,
+          salesOrderId,
+          status: 'picking',
+          totalItems: 1,
+          totalQty: 3,
+          totalReservedQty: 3,
+          canceledAt: null,
+        },
+      ],
+      fulfillmentOrderItems: [
+        {
+          id: fulfillmentOrderItemId,
+          fulfillmentOrderId,
+          salesOrderId,
+          salesOrderLineId,
+          skuId: '88888888-8888-4888-8888-888888888888',
+          qty: 3,
+          reservedQty: 3,
+          pickedQty: 1,
+          shippedQty: 0,
+          status: 'picking',
+        },
+      ],
+    });
+
+    await service.cancel(salesOrderId, {
+      lines: [{ salesOrderLineId, quantity: 2 }],
+      reasonCode: 'CUSTOMER_REQUEST',
+    });
+
+    expect(state.fulfillmentOrderItems[0]).toMatchObject({
+      qty: 1,
+      pickedQty: 1,
+      reservedQty: 1,
+      status: 'picking',
+    });
+    expect(state.fulfillmentOrders[0]).toMatchObject({
+      totalQty: 1,
+      totalReservedQty: 1,
+      status: 'picking',
+    });
+    expect(state.stockReservations[0]).toMatchObject({
+      quantity: 1,
+      status: 'confirmed',
+    });
+  });
+
+  it('releases reservations against the remaining unshipped quantity for partially shipped items', async () => {
+    const { service, state } = makeService({
+      fulfillmentOrders: [
+        {
+          id: fulfillmentOrderId,
+          salesOrderId,
+          status: 'ready',
+          totalItems: 1,
+          totalQty: 3,
+          totalReservedQty: 2,
+          canceledAt: null,
+        },
+      ],
+      fulfillmentOrderItems: [
+        {
+          id: fulfillmentOrderItemId,
+          fulfillmentOrderId,
+          salesOrderId,
+          salesOrderLineId,
+          skuId: '88888888-8888-4888-8888-888888888888',
+          qty: 3,
+          reservedQty: 2,
+          pickedQty: 0,
+          shippedQty: 1,
+          status: 'pending',
+        },
+      ],
+    });
+    state.stockReservations[0].quantity = 2;
+
+    await service.cancel(salesOrderId, {
+      lines: [{ salesOrderLineId, quantity: 1 }],
+      reasonCode: 'CUSTOMER_REQUEST',
+    });
+
+    expect(state.fulfillmentOrderItems[0]).toMatchObject({
+      qty: 2,
+      reservedQty: 1,
+      shippedQty: 1,
+    });
+    expect(state.fulfillmentOrders[0]).toMatchObject({
+      totalQty: 2,
+      totalReservedQty: 1,
+    });
+    expect(state.stockReservations[0]).toMatchObject({
+      quantity: 1,
+      status: 'confirmed',
+    });
+  });
+});
+
 describe('SalesOrderAmendmentsService.create', () => {
   const salesOrderId = '33333333-3333-4333-8333-333333333333';
   const lineId = '44444444-4444-4444-8444-444444444444';

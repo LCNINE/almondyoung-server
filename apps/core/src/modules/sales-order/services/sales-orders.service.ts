@@ -52,6 +52,10 @@ type SalesOrderContractField =
   | 'lines';
 type SalesOrderPatchInput = UpdateSalesOrderDto & Partial<Record<SalesOrderContractField, unknown>>;
 type CancelSalesOrderOptions = CancelSalesOrderDto;
+type PartialCancellationLine = {
+  salesOrderLineId: string;
+  quantity: number;
+};
 type CancellationEffect = {
   type: string;
   targetType?: string;
@@ -59,6 +63,24 @@ type CancellationEffect = {
   targetExternalRef?: string;
   count?: number;
   metadata?: Record<string, unknown>;
+};
+type FulfillmentAdjustmentEffect = CancellationEffect & {
+  type: 'adjusted_fulfillment_order_item';
+  targetType: 'fulfillment_order_item';
+  targetId: string;
+  metadata: {
+    fulfillmentOrderId: string;
+    salesOrderLineId: string;
+    skuId: string;
+    previousQty: number;
+    newQty: number;
+    quantityDelta: number;
+    previousReservedQty: number;
+    newReservedQty: number;
+    releasedReservationQty: number;
+    previousStatus: string;
+    newStatus: string;
+  };
 };
 
 const ACCEPTED_CONTRACT_CHANNELS = new Set(['medusa', 'naver', 'coupang']);
@@ -81,6 +103,7 @@ const WALLET_EFFECT_REF_TYPES = new Set([
   'wallet_payment_intent',
   'wallet_charge',
 ]);
+const OPEN_FULFILLMENT_BACKLOG_STATUSES = new Set(['pending', 'failed', 'processing', 'awaiting_matching']);
 const CANCELLABLE_FULFILLMENT_STATUSES = new Set([
   'created',
   'reserving',
@@ -322,6 +345,14 @@ export class SalesOrdersService {
 
       if (!salesOrder) throw new NotFoundException(`Sales order ${id} not found`);
 
+      if (Array.isArray(options.lines) && options.lines.length === 0) {
+        throw new BadRequestException('Partial cancellation lines cannot be empty; omit lines for full cancellation');
+      }
+
+      if (this.hasPartialCancellationLines(options)) {
+        return this.cancelPartial(id, salesOrder, options, trx);
+      }
+
       const existingCancellation = await trx
         .select()
         .from(wmsTables.salesOrderCancellations)
@@ -418,6 +449,10 @@ export class SalesOrdersService {
           count: digitalRevocation.revokedCount,
         });
       }
+      const walletRefundEffect = this.toWalletRefundEffect(options);
+      if (walletRefundEffect) {
+        effects.push(walletRefundEffect);
+      }
 
       const occurredAt = options.occurredAt ? new Date(options.occurredAt) : new Date();
       const cancellationValues: SalesOrderCancellationInsert = {
@@ -438,7 +473,7 @@ export class SalesOrdersService {
         .set({ status: 'cancelled', updatedAt: new Date() })
         .where(eq(wmsTables.salesOrders.id, id));
 
-      await this.linkCancellationEffects(id, cancellation.id, effects, occurredAt, trx);
+      await this.linkCancellationEffects(id, cancellation.id, 'full', effects, occurredAt, trx);
 
       const updated = await this.getOne(id, trx);
 
@@ -885,6 +920,484 @@ export class SalesOrdersService {
     return Boolean(value && typeof value === 'object' && 'select' in value && 'insert' in value);
   }
 
+  private hasPartialCancellationLines(options: CancelSalesOrderOptions): options is CancelSalesOrderOptions & {
+    lines: PartialCancellationLine[];
+  } {
+    return Array.isArray(options.lines) && options.lines.length > 0;
+  }
+
+  private async cancelPartial(
+    salesOrderId: string,
+    salesOrder: typeof wmsTables.salesOrders.$inferSelect,
+    options: CancelSalesOrderOptions & { lines: PartialCancellationLine[] },
+    trx: DbTx,
+  ) {
+    if (salesOrder.status === 'cancelled') {
+      throw new BadRequestException(`Sales order ${salesOrderId} is already fully cancelled`);
+    }
+
+    const [fullCancellation] = await trx
+      .select({ id: wmsTables.salesOrderCancellations.id })
+      .from(wmsTables.salesOrderCancellations)
+      .where(
+        and(
+          eq(wmsTables.salesOrderCancellations.salesOrderId, salesOrderId),
+          eq(wmsTables.salesOrderCancellations.cancellationScope, 'full'),
+        ),
+      )
+      .limit(1);
+    if (fullCancellation) {
+      throw new BadRequestException(`Sales order ${salesOrderId} already has full cancellation ${fullCancellation.id}`);
+    }
+
+    const requestedLines = this.normalizePartialCancellationLines(options.lines);
+    const originalLines = await trx
+      .select()
+      .from(wmsTables.salesOrderLines)
+      .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrderId));
+    const lineById = new Map(originalLines.map((line) => [line.id, line]));
+
+    const priorCancelledByLine = await this.loadPriorPartialCancelledQuantities(salesOrderId, trx);
+    for (const request of requestedLines) {
+      const line = lineById.get(request.salesOrderLineId);
+      if (!line) {
+        throw new BadRequestException(
+          `Sales order line ${request.salesOrderLineId} does not belong to ${salesOrderId}`,
+        );
+      }
+      const remainingQuantity = line.quantity - (priorCancelledByLine.get(line.id) ?? 0);
+      if (request.quantity > remainingQuantity) {
+        throw new BadRequestException(
+          `Cannot cancel ${request.quantity} units from line ${line.id}; only ${remainingQuantity} remain cancellable`,
+        );
+      }
+    }
+
+    await trx.execute(sql`
+      SELECT id
+      FROM ${wmsTables.fulfillmentOrders}
+      WHERE ${wmsTables.fulfillmentOrders.salesOrderId} = ${salesOrderId}
+      FOR UPDATE
+    `);
+
+    const fulfillmentOrders = await trx
+      .select()
+      .from(wmsTables.fulfillmentOrders)
+      .where(eq(wmsTables.fulfillmentOrders.salesOrderId, salesOrderId));
+    const fulfillmentOrderById = new Map(fulfillmentOrders.map((fo) => [fo.id, fo]));
+    const fulfillmentOrderIds = fulfillmentOrders.map((fo) => fo.id);
+    if (fulfillmentOrderIds.length > 0) {
+      await trx.execute(sql`
+        SELECT id
+        FROM ${wmsTables.fulfillmentOrderItems}
+        WHERE ${inArray(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderIds)}
+        FOR UPDATE
+      `);
+    }
+    const fulfillmentOrderItems =
+      fulfillmentOrderIds.length > 0
+        ? await trx
+            .select()
+            .from(wmsTables.fulfillmentOrderItems)
+            .where(inArray(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderIds))
+        : [];
+    const openFulfillmentBacklogs = await this.loadOpenFulfillmentBacklogs(salesOrderId, trx);
+
+    const effects: CancellationEffect[] = [];
+    const fulfillmentDeltas = new Map<string, { quantity: number; reserved: number }>();
+    for (const request of requestedLines) {
+      const line = lineById.get(request.salesOrderLineId)!;
+      const remainingLineQuantity = line.quantity - (priorCancelledByLine.get(line.id) ?? 0);
+      const lineItems = fulfillmentOrderItems.filter((item) => item.salesOrderLineId === line.id && item.qty > 0);
+      const adjustmentEffects = await this.adjustFulfillmentForPartialCancellation(
+        line.id,
+        remainingLineQuantity,
+        request.quantity,
+        lineItems,
+        fulfillmentOrderById,
+        fulfillmentDeltas,
+        trx,
+      );
+
+      effects.push(...adjustmentEffects);
+      if (adjustmentEffects.length === 0) {
+        if (openFulfillmentBacklogs.length > 0) {
+          await this.requeueAwaitingMatchingFulfillmentBacklogs(salesOrderId, openFulfillmentBacklogs, trx);
+          for (const backlog of openFulfillmentBacklogs) {
+            effects.push({
+              type: 'reduced_pending_fulfillment_quantity',
+              targetType: 'fulfillment_order_creation_backlog',
+              targetId: backlog.id,
+              metadata: {
+                salesOrderLineId: line.id,
+                cancelledQuantity: request.quantity,
+                remainingLineQuantity,
+                backlogStatus: backlog.status,
+                ...(backlog.status === 'awaiting_matching' ? { newBacklogStatus: 'pending' } : {}),
+              },
+            });
+          }
+        } else {
+          effects.push({
+            type: 'no_physical_fulfillment_adjustment_required',
+            targetType: 'sales_order_line',
+            targetId: line.id,
+            metadata: {
+              cancelledQuantity: request.quantity,
+              remainingLineQuantity,
+            },
+          });
+        }
+      }
+    }
+
+    for (const [fulfillmentOrderId, delta] of fulfillmentDeltas) {
+      const fo = fulfillmentOrderById.get(fulfillmentOrderId);
+      if (!fo) continue;
+      const newTotalQty = Math.max(0, (fo.totalQty ?? 0) - delta.quantity);
+      const newTotalReservedQty = Math.max(0, (fo.totalReservedQty ?? 0) - delta.reserved);
+      const shouldCancelFo = newTotalQty === 0 && CANCELLABLE_FULFILLMENT_STATUSES.has(fo.status);
+      await trx
+        .update(wmsTables.fulfillmentOrders)
+        .set({
+          totalQty: newTotalQty,
+          totalReservedQty: newTotalReservedQty,
+          status: shouldCancelFo ? 'canceled' : fo.status,
+          canceledAt: shouldCancelFo ? new Date() : fo.canceledAt,
+          updatedAt: new Date(),
+        })
+        .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
+    }
+
+    const walletRefundEffect = this.toWalletRefundEffect(options);
+    if (walletRefundEffect) {
+      effects.push(walletRefundEffect);
+    }
+
+    const occurredAt = options.occurredAt ? new Date(options.occurredAt) : new Date();
+    const cancelledLines = requestedLines.map((line) => ({
+      salesOrderLineId: line.salesOrderLineId,
+      quantity: line.quantity,
+    }));
+    const cancellationValues: SalesOrderCancellationInsert = {
+      salesOrderId,
+      cancellationScope: 'partial',
+      status: 'applied',
+      reasonCode: options.reasonCode ?? null,
+      reasonDetail: options.reasonDetail ?? null,
+      cancelledBy: options.cancelledBy ?? null,
+      effects,
+      metadata: {
+        ...(options.metadata ?? {}),
+        cancelledLines,
+      },
+      occurredAt,
+    };
+    const [cancellation] = await trx.insert(wmsTables.salesOrderCancellations).values(cancellationValues).returning();
+
+    await this.linkCancellationEffects(salesOrderId, cancellation.id, 'partial', effects, occurredAt, trx);
+
+    await this.outbox.enqueue(
+      {
+        eventType: ORDER_EVENTS.CANCELLED,
+        aggregateType: 'order',
+        aggregateId: salesOrderId,
+        partitionKey: salesOrderId,
+        payload: {
+          orderId: salesOrderId,
+          orderCancellationId: cancellation.id,
+          cancellationScope: 'partial',
+          cancelledLines,
+          adjustedFulfillmentOrderItemIds: effects
+            .filter((effect) => effect.type === 'adjusted_fulfillment_order_item' && effect.targetId)
+            .map((effect) => effect.targetId),
+          walletRefundRef: walletRefundEffect?.targetExternalRef ?? walletRefundEffect?.targetId ?? null,
+        },
+      },
+      trx,
+    );
+
+    await this.audit?.logResourceChange(
+      'ORDER_CANCELLED',
+      'cancel_partial',
+      'order',
+      'salesOrder',
+      salesOrderId,
+      `Sales Order ${salesOrder.channelOrderId || salesOrderId}`,
+      { status: salesOrder.status },
+      {
+        status: salesOrder.status,
+        orderCancellationId: cancellation.id,
+        cancelledLines,
+        effectTypes: effects.map((effect) => effect.type),
+      },
+      undefined,
+      trx,
+    );
+
+    return this.getOne(salesOrderId, trx);
+  }
+
+  private normalizePartialCancellationLines(lines: PartialCancellationLine[]): PartialCancellationLine[] {
+    const byLineId = new Map<string, number>();
+    for (const line of lines) {
+      if (!line.salesOrderLineId) {
+        throw new BadRequestException('Partial cancellation line must include salesOrderLineId');
+      }
+      if (!Number.isInteger(line.quantity) || line.quantity <= 0) {
+        throw new BadRequestException(
+          `Partial cancellation quantity for line ${line.salesOrderLineId} must be positive`,
+        );
+      }
+      byLineId.set(line.salesOrderLineId, (byLineId.get(line.salesOrderLineId) ?? 0) + line.quantity);
+    }
+    return [...byLineId.entries()].map(([salesOrderLineId, quantity]) => ({ salesOrderLineId, quantity }));
+  }
+
+  private async loadPriorPartialCancelledQuantities(salesOrderId: string, trx: DbTx): Promise<Map<string, number>> {
+    const cancellations = await trx
+      .select({ metadata: wmsTables.salesOrderCancellations.metadata })
+      .from(wmsTables.salesOrderCancellations)
+      .where(
+        and(
+          eq(wmsTables.salesOrderCancellations.salesOrderId, salesOrderId),
+          eq(wmsTables.salesOrderCancellations.cancellationScope, 'partial'),
+        ),
+      );
+
+    const cancelledByLine = new Map<string, number>();
+    for (const cancellation of cancellations) {
+      const metadata = (cancellation.metadata ?? {}) as Record<string, unknown>;
+      const cancelledLines = Array.isArray(metadata.cancelledLines) ? metadata.cancelledLines : [];
+      for (const line of cancelledLines) {
+        if (!line || typeof line !== 'object') continue;
+        const salesOrderLineId = (line as Record<string, unknown>).salesOrderLineId;
+        const quantity = (line as Record<string, unknown>).quantity;
+        if (typeof salesOrderLineId === 'string' && typeof quantity === 'number') {
+          cancelledByLine.set(salesOrderLineId, (cancelledByLine.get(salesOrderLineId) ?? 0) + quantity);
+        }
+      }
+    }
+    return cancelledByLine;
+  }
+
+  private async loadOpenFulfillmentBacklogs(salesOrderId: string, trx: DbTx) {
+    const backlogs = await trx
+      .select()
+      .from(wmsTables.fulfillmentOrderCreationBacklogs)
+      .where(eq(wmsTables.fulfillmentOrderCreationBacklogs.salesOrderId, salesOrderId));
+
+    return backlogs.filter((backlog) => OPEN_FULFILLMENT_BACKLOG_STATUSES.has(backlog.status));
+  }
+
+  private async requeueAwaitingMatchingFulfillmentBacklogs(
+    salesOrderId: string,
+    backlogs: Array<typeof wmsTables.fulfillmentOrderCreationBacklogs.$inferSelect>,
+    trx: DbTx,
+  ): Promise<void> {
+    if (!backlogs.some((backlog) => backlog.status === 'awaiting_matching')) {
+      return;
+    }
+
+    await trx
+      .update(wmsTables.fulfillmentOrderCreationBacklogs)
+      .set({
+        status: 'pending',
+        waitingVariantIds: [],
+        failureReason: null,
+        failureDetails: null,
+        nextAttemptAt: new Date(),
+        lockedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(wmsTables.fulfillmentOrderCreationBacklogs.salesOrderId, salesOrderId),
+          eq(wmsTables.fulfillmentOrderCreationBacklogs.status, 'awaiting_matching'),
+        ),
+      );
+  }
+
+  private async adjustFulfillmentForPartialCancellation(
+    salesOrderLineId: string,
+    remainingLineQuantity: number,
+    cancelledLineQuantity: number,
+    fulfillmentOrderItems: Array<typeof wmsTables.fulfillmentOrderItems.$inferSelect>,
+    fulfillmentOrderById: Map<string, typeof wmsTables.fulfillmentOrders.$inferSelect>,
+    fulfillmentDeltas: Map<string, { quantity: number; reserved: number }>,
+    trx: DbTx,
+  ): Promise<FulfillmentAdjustmentEffect[]> {
+    if (remainingLineQuantity <= 0 || fulfillmentOrderItems.length === 0) {
+      return [];
+    }
+
+    const itemsBySku = new Map<string, Array<typeof wmsTables.fulfillmentOrderItems.$inferSelect>>();
+    for (const item of fulfillmentOrderItems) {
+      const key = item.skuId;
+      const group = itemsBySku.get(key) ?? [];
+      group.push(item);
+      itemsBySku.set(key, group);
+    }
+
+    const effects: FulfillmentAdjustmentEffect[] = [];
+    for (const [skuId, items] of itemsBySku) {
+      const totalCurrentQty = items.reduce((sum, item) => sum + item.qty, 0);
+      if (totalCurrentQty <= 0) continue;
+      if (totalCurrentQty % remainingLineQuantity !== 0) {
+        throw new BadRequestException(
+          `Cannot derive SKU ${skuId} fulfillment quantity for line ${salesOrderLineId}; current quantity ${totalCurrentQty} is not divisible by remaining line quantity ${remainingLineQuantity}`,
+        );
+      }
+
+      const skuQtyPerLineUnit = totalCurrentQty / remainingLineQuantity;
+      let remainingFulfillmentQtyToCancel = cancelledLineQuantity * skuQtyPerLineUnit;
+      const cancellableUnprocessedQty = items.reduce((sum, item) => {
+        const fo = fulfillmentOrderById.get(item.fulfillmentOrderId);
+        if (!fo || !CANCELLABLE_FULFILLMENT_STATUSES.has(fo.status)) {
+          return sum;
+        }
+        return sum + this.getCancellableUnprocessedFulfillmentQty(item);
+      }, 0);
+
+      if (remainingFulfillmentQtyToCancel > cancellableUnprocessedQty) {
+        throw new BadRequestException(
+          `Cannot cancel ${cancelledLineQuantity} units from line ${salesOrderLineId}; affected fulfillment quantity has already been picked or shipped`,
+        );
+      }
+
+      for (const item of items) {
+        if (remainingFulfillmentQtyToCancel <= 0) break;
+        const fo = fulfillmentOrderById.get(item.fulfillmentOrderId);
+        if (!fo || !CANCELLABLE_FULFILLMENT_STATUSES.has(fo.status)) continue;
+
+        const availableToReduce = this.getCancellableUnprocessedFulfillmentQty(item);
+        if (availableToReduce <= 0) continue;
+
+        const quantityToReduce = Math.min(availableToReduce, remainingFulfillmentQtyToCancel);
+        const newQty = item.qty - quantityToReduce;
+        const remainingReservableQty = Math.max(0, newQty - (item.shippedQty || 0));
+        const reservationQtyToRelease = Math.max(0, (item.reservedQty || 0) - remainingReservableQty);
+        const releasedReservationQty =
+          reservationQtyToRelease > 0
+            ? await this.releaseFulfillmentOrderItemReservations(item, reservationQtyToRelease, trx)
+            : 0;
+        const newReservedQty = Math.max(0, (item.reservedQty || 0) - releasedReservationQty);
+        const newStatus = newQty === 0 ? 'canceled' : item.status;
+
+        await trx
+          .update(wmsTables.fulfillmentOrderItems)
+          .set({
+            qty: newQty,
+            reservedQty: newReservedQty,
+            status: newStatus,
+            updatedAt: new Date(),
+          })
+          .where(eq(wmsTables.fulfillmentOrderItems.id, item.id));
+
+        const currentDelta = fulfillmentDeltas.get(item.fulfillmentOrderId) ?? { quantity: 0, reserved: 0 };
+        currentDelta.quantity += quantityToReduce;
+        currentDelta.reserved += releasedReservationQty;
+        fulfillmentDeltas.set(item.fulfillmentOrderId, currentDelta);
+
+        effects.push({
+          type: 'adjusted_fulfillment_order_item',
+          targetType: 'fulfillment_order_item',
+          targetId: item.id,
+          metadata: {
+            fulfillmentOrderId: item.fulfillmentOrderId,
+            salesOrderLineId,
+            skuId,
+            previousQty: item.qty,
+            newQty,
+            quantityDelta: -quantityToReduce,
+            previousReservedQty: item.reservedQty || 0,
+            newReservedQty,
+            releasedReservationQty,
+            previousStatus: item.status,
+            newStatus,
+          },
+        });
+
+        remainingFulfillmentQtyToCancel -= quantityToReduce;
+      }
+    }
+
+    return effects;
+  }
+
+  private getCancellableUnprocessedFulfillmentQty(item: typeof wmsTables.fulfillmentOrderItems.$inferSelect): number {
+    const pickedQty = item.pickedQty || 0;
+    const shippedQty = item.shippedQty || 0;
+    const warehouseEvidenceQty = Math.max(pickedQty, shippedQty);
+    return Math.max(0, item.qty - warehouseEvidenceQty);
+  }
+
+  private async releaseFulfillmentOrderItemReservations(
+    item: typeof wmsTables.fulfillmentOrderItems.$inferSelect,
+    quantityToRelease: number,
+    trx: DbTx,
+  ): Promise<number> {
+    const reservations = await trx
+      .select()
+      .from(wmsTables.stockReservations)
+      .where(
+        and(
+          eq(wmsTables.stockReservations.fulfillmentOrderItemId, item.id),
+          eq(wmsTables.stockReservations.status, 'confirmed'),
+        ),
+      );
+
+    let remaining = quantityToRelease;
+    let released = 0;
+    const touchedSkuIds = new Set<string>();
+    for (const reservation of reservations) {
+      if (remaining <= 0) break;
+      const releaseQuantity = Math.min(reservation.quantity, remaining);
+      if (releaseQuantity === reservation.quantity) {
+        await trx
+          .update(wmsTables.stockReservations)
+          .set({ status: 'released', updatedAt: new Date() })
+          .where(eq(wmsTables.stockReservations.id, reservation.id));
+      } else {
+        await trx
+          .update(wmsTables.stockReservations)
+          .set({ quantity: reservation.quantity - releaseQuantity, updatedAt: new Date() })
+          .where(eq(wmsTables.stockReservations.id, reservation.id));
+      }
+      released += releaseQuantity;
+      remaining -= releaseQuantity;
+      touchedSkuIds.add(reservation.skuId);
+    }
+
+    for (const skuId of touchedSkuIds) {
+      await this.productSellableQuantity.recalculateAndPublishForSku(skuId, trx);
+    }
+
+    return released;
+  }
+
+  private toWalletRefundEffect(options: CancelSalesOrderOptions): CancellationEffect | null {
+    const refund = options.walletRefund;
+    if (!refund) {
+      return null;
+    }
+    if (!refund.id && !refund.externalRef) {
+      throw new BadRequestException('Wallet refund effect must include id or externalRef');
+    }
+    return {
+      type: 'linked_wallet_refund',
+      targetType: 'wallet_refund',
+      targetId: refund.id,
+      targetExternalRef: refund.externalRef,
+      metadata: {
+        ...(refund.amount !== undefined ? { amount: refund.amount } : {}),
+        ...(refund.currency ? { currency: refund.currency } : {}),
+        ...(refund.refundStatus ? { refundStatus: refund.refundStatus } : {}),
+        ...(refund.metadata ?? {}),
+      },
+    };
+  }
+
   private async closeOpenFulfillmentBacklogEffects(
     salesOrderId: string,
     trx: DbTx,
@@ -932,6 +1445,7 @@ export class SalesOrdersService {
   private async linkCancellationEffects(
     salesOrderId: string,
     cancellationId: string,
+    cancellationScope: 'full' | 'partial',
     effects: CancellationEffect[],
     occurredAt: Date,
     trx: DbTx,
@@ -946,7 +1460,7 @@ export class SalesOrdersService {
         targetExternalRef: null,
         relationName: 'opened_cancellation',
         metadata: {
-          cancellationScope: 'full',
+          cancellationScope,
           effectTypes: effects.map((effect) => effect.type),
         },
         occurredAt,

@@ -57,6 +57,10 @@ type ReservationFailureDetail = {
   availableQty: number;
   reason: string;
 };
+type PartialCancelledLineQuantity = {
+  salesOrderLineId: string;
+  quantity: number;
+};
 
 const SALES_ORDER_REF_TYPE = 'sales_order';
 const AMENDMENT_REF_TYPE = 'sales_order_amendment';
@@ -477,8 +481,14 @@ export class FulfillmentsService {
 
     const itemsToInsert: Omit<FulfillmentOrderItemInsert, 'fulfillmentOrderId'>[] = [];
     const missingLines: UnmatchedSalesOrderLine[] = [];
+    const cancelledByLine = await this.loadPartialCancelledLineQuantities(salesOrderId, trx);
 
     for (const sl of soLines) {
+      const fulfillableQuantity = sl.quantity - (cancelledByLine.get(sl.id) ?? 0);
+      if (fulfillableQuantity <= 0) {
+        continue;
+      }
+
       const snapshotMappings = sl.mappingSnapshotId
         ? (await this.productSkuMapping.getMappingSnapshot(sl.mappingSnapshotId, trx)).mappings
         : [];
@@ -491,7 +501,7 @@ export class FulfillmentsService {
             mappingSnapshotId: sl.mappingSnapshotId,
             variantId: sl.variantId,
             skuId: mapping.skuId,
-            qty: sl.quantity * Math.max(1, mapping.quantity || 1),
+            qty: fulfillableQuantity * Math.max(1, mapping.quantity || 1),
             reservedQty: 0,
             pickedQty: 0,
             shippedQty: 0,
@@ -524,7 +534,7 @@ export class FulfillmentsService {
           mappingSnapshotId: null,
           variantId: sl.variantId,
           skuId: link.skuId,
-          qty: sl.quantity * Math.max(1, link.quantity || 1),
+          qty: fulfillableQuantity * Math.max(1, link.quantity || 1),
           reservedQty: 0,
           pickedQty: 0,
           shippedQty: 0,
@@ -542,6 +552,29 @@ export class FulfillmentsService {
     }
 
     return itemsToInsert;
+  }
+
+  private async loadPartialCancelledLineQuantities(salesOrderId: string, trx: DbTx): Promise<Map<string, number>> {
+    const cancellations = await trx
+      .select({ metadata: wmsTables.salesOrderCancellations.metadata })
+      .from(wmsTables.salesOrderCancellations)
+      .where(eq(wmsTables.salesOrderCancellations.salesOrderId, salesOrderId));
+
+    const cancelledByLine = new Map<string, number>();
+    for (const cancellation of cancellations) {
+      const metadata = (cancellation.metadata ?? {}) as Record<string, unknown>;
+      const cancelledLines = Array.isArray(metadata.cancelledLines)
+        ? (metadata.cancelledLines as PartialCancelledLineQuantity[])
+        : [];
+      for (const line of cancelledLines) {
+        if (!line || typeof line.salesOrderLineId !== 'string' || typeof line.quantity !== 'number') {
+          continue;
+        }
+        cancelledByLine.set(line.salesOrderLineId, (cancelledByLine.get(line.salesOrderLineId) ?? 0) + line.quantity);
+      }
+    }
+
+    return cancelledByLine;
   }
 
   private async buildItemsFromCompensationItems(
@@ -1008,6 +1041,13 @@ export class FulfillmentsService {
 
   async ship(id: string, tx?: DbTx) {
     return this.inTx(async (trx) => {
+      await trx.execute(sql`
+        SELECT id
+        FROM ${wmsTables.fulfillmentOrders}
+        WHERE ${wmsTables.fulfillmentOrders.id} = ${id}
+        FOR UPDATE
+      `);
+
       const [fo] = await trx
         .select()
         .from(wmsTables.fulfillmentOrders)
@@ -1022,6 +1062,13 @@ export class FulfillmentsService {
         .from(wmsTables.shipments)
         .where(eq(wmsTables.shipments.fulfillmentOrderId, id))
         .limit(1);
+
+      await trx.execute(sql`
+        SELECT id
+        FROM ${wmsTables.fulfillmentOrderItems}
+        WHERE ${wmsTables.fulfillmentOrderItems.fulfillmentOrderId} = ${id}
+        FOR UPDATE
+      `);
 
       const items = await trx
         .select()

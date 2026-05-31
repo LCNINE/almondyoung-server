@@ -25,6 +25,7 @@ describe('FulfillmentsService', () => {
     fulfillmentOrderItems: Array<Record<string, any>>;
     shipments: Array<Record<string, any>>;
     reservations: Array<Record<string, any>>;
+    salesOrderCancellations: Array<Record<string, any>>;
     salesOrderAmendments: Array<Record<string, any>>;
     businessLinks: Array<Record<string, any>>;
   };
@@ -45,6 +46,7 @@ describe('FulfillmentsService', () => {
       if (table === wmsTables.fulfillmentOrderItems) return state.fulfillmentOrderItems;
       if (table === wmsTables.shipments) return state.shipments;
       if (table === wmsTables.invoices) return [];
+      if (table === wmsTables.salesOrderCancellations) return state.salesOrderCancellations;
       if (table === wmsTables.salesOrderAmendments) return state.salesOrderAmendments;
       if (table === wmsTables.businessLinks) return state.businessLinks;
       return [];
@@ -132,6 +134,7 @@ describe('FulfillmentsService', () => {
       fulfillmentOrders?: Array<Record<string, any>>;
       fulfillmentOrderItems?: Array<Record<string, any>>;
       shipments?: Array<Record<string, any>>;
+      salesOrderCancellations?: Array<Record<string, any>>;
       salesOrderAmendments?: Array<Record<string, any>>;
       businessLinks?: Array<Record<string, any>>;
     } = {},
@@ -153,6 +156,7 @@ describe('FulfillmentsService', () => {
       fulfillmentOrderItems: options.fulfillmentOrderItems ?? [],
       shipments: options.shipments ?? [],
       reservations: [],
+      salesOrderCancellations: options.salesOrderCancellations ?? [],
       salesOrderAmendments: options.salesOrderAmendments ?? [],
       businessLinks: options.businessLinks ?? [],
     };
@@ -178,9 +182,11 @@ describe('FulfillmentsService', () => {
               },
         );
       }),
-      getMappingSnapshot: jest.fn().mockImplementation((requestedSnapshotId: string) =>
-        Promise.resolve(options.mappingSnapshots?.[requestedSnapshotId] ?? { mappings: [] }),
-      ),
+      getMappingSnapshot: jest
+        .fn()
+        .mockImplementation((requestedSnapshotId: string) =>
+          Promise.resolve(options.mappingSnapshots?.[requestedSnapshotId] ?? { mappings: [] }),
+        ),
     };
     const availability = {
       getAvailableQuantity: jest.fn().mockResolvedValue(options.availableQty ?? 10),
@@ -440,6 +446,51 @@ describe('FulfillmentsService', () => {
       expect.anything(),
     );
     expect(outbox.enqueue.mock.calls.map(([event]) => event.eventType)).toContain('FulfillmentReady');
+  });
+
+  it('부분 취소된 SalesOrder line 수량은 backlog retry의 FO 생성 수량에서 차감한다', async () => {
+    const { service, state, unifiedReservation } = makeService({
+      lines: [
+        {
+          id: salesOrderLineId,
+          salesOrderId,
+          variantId,
+          quantity: 3,
+          mappingSnapshotId: null,
+        },
+      ],
+      salesOrderCancellations: [
+        {
+          id: '99999999-9999-4999-8999-999999999999',
+          salesOrderId,
+          cancellationScope: 'partial',
+          status: 'applied',
+          metadata: {
+            cancelledLines: [{ salesOrderLineId, quantity: 1 }],
+          },
+        },
+      ],
+    });
+
+    const result = await service.create({ salesOrderId, warehouseId });
+
+    expect(result).toMatchObject({
+      id: 'fo-1',
+      status: 'ready',
+      totalReservedQty: 4,
+    });
+    expect(state.fulfillmentOrderItems[0]).toMatchObject({
+      salesOrderLineId,
+      skuId,
+      qty: 4,
+      reservedQty: 4,
+    });
+    expect(unifiedReservation.reserveStock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        quantity: 4,
+      }),
+      expect.anything(),
+    );
   });
 
   it('CS 보상 출고는 fulfillment-only amendment와 별도 FO를 만들고 원 SalesOrder line을 바꾸지 않는다', async () => {
