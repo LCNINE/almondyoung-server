@@ -1,19 +1,64 @@
-import "server-only";
+import "server-only"
 
-import { env } from "./env";
-import { readApiData, readJson, throwIfBad } from "./api-helpers";
+import { env } from "./env"
+import { readApiData, readJson, throwIfBad } from "./api-helpers"
 
-type SignInBody = { loginId: string; password: string; rememberMe?: boolean };
+type SignInBody = { loginId: string; password: string; rememberMe?: boolean }
 
-export type TokenPair = { accessToken: string; refreshToken: string };
+export type TokenPair = { accessToken: string; refreshToken: string }
+
+export type SendPhoneVerificationInput = {
+  countryCode: string
+  phoneNumber: string
+  purpose?: "phone_verify"
+}
+
+export type VerifyPhoneCodeInput = {
+  phoneNumber: string
+  code: string
+}
+
+export type FindUserIdInput = {
+  phoneNumber: string
+}
+
+export type ForgotPasswordInput = {
+  loginId: string
+  phoneNumber: string
+}
+
+export type ResetPasswordInput = {
+  token: string
+  password: string
+}
+
+export type SendPhoneVerificationResult = {
+  success: boolean
+  message: string
+}
+
+export type PhoneVerificationResult = {
+  success: boolean
+  message: string
+}
+
+export type FindUserIdResult = {
+  loginIds: string[]
+}
+
+export type ForgotPasswordResult = {
+  verificationToken: string
+}
+
+export type ResetPasswordResult = void
 
 export type UserProfile = {
-  id: string;
-  loginId: string;
-  username: string;
-  email: string;
-  isEmailVerified: boolean;
-};
+  id: string
+  loginId: string
+  username: string
+  email: string
+  isEmailVerified: boolean
+}
 
 export async function signIn(body: SignInBody): Promise<TokenPair> {
   const res = await fetch(`${env.userServiceUrl}/auth/signin`, {
@@ -22,29 +67,29 @@ export async function signIn(body: SignInBody): Promise<TokenPair> {
     body: JSON.stringify(body),
     cache: "no-store",
     redirect: "manual",
-  });
-  await throwIfBad(res, "signin");
-  return readApiData<TokenPair>(res);
+  })
+  await throwIfBad(res, "signin")
+  return readApiData<TokenPair>(res)
 }
 
 export type LocalSignUpInput = {
-  loginId: string;
-  password: string;
-  email: string;
-  username: string;
-  nickname: string;
-  birthday: string;
-  phoneNumber: string;
-  isOver14: boolean;
-  termsOfService: boolean;
-  electronicTransaction: boolean;
-  privacyPolicy: boolean;
-  thirdPartySharing: boolean;
-  marketingConsent: boolean;
-};
+  loginId: string
+  password: string
+  email: string
+  username: string
+  nickname: string
+  birthday: string
+  phoneNumber: string
+  isOver14: boolean
+  termsOfService: boolean
+  electronicTransaction: boolean
+  privacyPolicy: boolean
+  thirdPartySharing: boolean
+  marketingConsent: boolean
+}
 
 export async function signUp(
-  body: LocalSignUpInput,
+  body: LocalSignUpInput
 ): Promise<{ userId: string; signupToken: string; message: string }> {
   const res = await fetch(`${env.userServiceUrl}/auth/signup`, {
     method: "POST",
@@ -52,9 +97,11 @@ export async function signUp(
     body: JSON.stringify(body),
     cache: "no-store",
     redirect: "manual",
-  });
-  await throwIfBad(res, "signup");
-  return readApiData<{ userId: string; signupToken: string; message: string }>(res);
+  })
+  await throwIfBad(res, "signup")
+  return readApiData<{ userId: string; signupToken: string; message: string }>(
+    res
+  )
 }
 
 export async function callbackSignup(signupToken: string): Promise<TokenPair> {
@@ -64,9 +111,81 @@ export async function callbackSignup(signupToken: string): Promise<TokenPair> {
     body: JSON.stringify({ signupToken }),
     cache: "no-store",
     redirect: "manual",
-  });
-  await throwIfBad(res, "callback-signup");
-  return readApiData<TokenPair>(res);
+  })
+  await throwIfBad(res, "callback-signup")
+  return readApiData<TokenPair>(res)
+}
+
+export async function sendPhoneVerificationCode(
+  body: SendPhoneVerificationInput
+): Promise<SendPhoneVerificationResult> {
+  const res = await fetch(`${env.userServiceUrl}/twilio/send-message`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...body, purpose: body.purpose ?? "phone_verify" }),
+    cache: "no-store",
+    redirect: "manual",
+  })
+  await throwIfBad(res, "send-phone-verification")
+  const message = await readApiData<string>(res)
+  return { success: true, message }
+}
+
+export async function verifyPhoneCode(
+  body: VerifyPhoneCodeInput
+): Promise<PhoneVerificationResult> {
+  const res = await fetch(`${env.userServiceUrl}/twilio/verify-code`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+    cache: "no-store",
+    redirect: "manual",
+  })
+  await throwIfBad(res, "verify-phone-code")
+  const message = await readApiData<string>(res)
+  return { success: true, message }
+}
+
+export async function findUserId(
+  body: FindUserIdInput
+): Promise<FindUserIdResult> {
+  const res = await fetch(`${env.userServiceUrl}/auth/forget-userid`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+    cache: "no-store",
+    redirect: "manual",
+  })
+  await throwIfBad(res, "find-user-id")
+  return readApiData<FindUserIdResult>(res)
+}
+
+export async function forgotPassword(
+  body: ForgotPasswordInput
+): Promise<ForgotPasswordResult> {
+  const res = await fetch(`${env.userServiceUrl}/auth/forget-password`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+    cache: "no-store",
+    redirect: "manual",
+  })
+  await throwIfBad(res, "forgot-password")
+  return readApiData<ForgotPasswordResult>(res)
+}
+
+export async function resetPassword(
+  body: ResetPasswordInput
+): Promise<ResetPasswordResult> {
+  const res = await fetch(`${env.userServiceUrl}/auth/reset-password`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+    cache: "no-store",
+    redirect: "manual",
+  })
+  await throwIfBad(res, "reset-password")
+  return readApiData<ResetPasswordResult>(res)
 }
 
 /**
@@ -82,29 +201,29 @@ export async function callbackSignup(signupToken: string): Promise<TokenPair> {
 export type RestoreResult =
   | { ok: true; accessToken: string }
   | { ok: false; reauthRequired: true }
-  | { ok: false; reauthRequired: false; message: string };
+  | { ok: false; reauthRequired: false; message: string }
 
 export async function restoreAccessToken(
-  refreshToken: string,
+  refreshToken: string
 ): Promise<RestoreResult> {
   const res = await fetch(`${env.userServiceUrl}/auth/restore-token`, {
     method: "POST",
     headers: { cookie: `refreshToken=${refreshToken}` },
     cache: "no-store",
     redirect: "manual",
-  });
+  })
 
   if (res.status === 401) {
-    return { ok: false, reauthRequired: true };
+    return { ok: false, reauthRequired: true }
   }
 
   if (!res.ok) {
-    const text = await res.text();
-    let message = text;
+    const text = await res.text()
+    let message = text
     try {
-      const body = JSON.parse(text);
-      message = body?.message ?? text;
-      if (Array.isArray(message)) message = message.join(", ");
+      const body = JSON.parse(text)
+      message = body?.message ?? text
+      if (Array.isArray(message)) message = message.join(", ")
     } catch {
       // keep raw
     }
@@ -112,39 +231,39 @@ export async function restoreAccessToken(
       ok: false,
       reauthRequired: false,
       message: `[restore-token] ${res.status}: ${message}`,
-    };
+    }
   }
 
-  const body = await readApiData<{ accessToken?: string }>(res);
-  if (body.accessToken) return { ok: true, accessToken: body.accessToken };
+  const body = await readApiData<{ accessToken?: string }>(res)
+  if (body.accessToken) return { ok: true, accessToken: body.accessToken }
 
   // Fallback: older behavior sets accessToken as Set-Cookie only
-  const setCookie = res.headers.get("set-cookie") ?? "";
-  const m = setCookie.match(/accessToken=([^;]+)/);
-  if (m?.[1]) return { ok: true, accessToken: m[1] };
+  const setCookie = res.headers.get("set-cookie") ?? ""
+  const m = setCookie.match(/accessToken=([^;]+)/)
+  if (m?.[1]) return { ok: true, accessToken: m[1] }
 
   return {
     ok: false,
     reauthRequired: false,
     message: "[restore-token] accessToken missing in response",
-  };
+  }
 }
 
 export type IssueOAuthCodeInput = {
-  clientId: string;
-  userId: string;
-  redirectUri: string;
-  codeChallenge: string;
-  codeChallengeMethod: "S256";
-  scope?: string;
-  nonce?: string;
-};
+  clientId: string
+  userId: string
+  redirectUri: string
+  codeChallenge: string
+  codeChallengeMethod: "S256"
+  scope?: string
+  nonce?: string
+}
 
 export async function issueOAuthCodeInternal(
-  input: IssueOAuthCodeInput,
+  input: IssueOAuthCodeInput
 ): Promise<{ code: string; expiresIn: number }> {
   if (!env.oauthInternalSecret) {
-    throw new Error("OAUTH_INTERNAL_SECRET not configured on auth-web");
+    throw new Error("OAUTH_INTERNAL_SECRET not configured on auth-web")
   }
   const res = await fetch(`${env.userServiceUrl}/oauth/internal/issue-code`, {
     method: "POST",
@@ -155,11 +274,11 @@ export async function issueOAuthCodeInternal(
     body: JSON.stringify(input),
     cache: "no-store",
     redirect: "manual",
-  });
-  await throwIfBad(res, "issue-code");
+  })
+  await throwIfBad(res, "issue-code")
   // user-service OAuthController 는 @SkipResponseEnvelope() 라 envelope 없이 직접 반환한다.
   // readApiData 를 쓰면 body.data 가 undefined 라서 호출부 destructure 가 폭발한다.
-  return readJson<{ code: string; expiresIn: number }>(res);
+  return readJson<{ code: string; expiresIn: number }>(res)
 }
 
 /**
@@ -167,32 +286,35 @@ export async function issueOAuthCodeInternal(
  * 미등록인 경우 OIDC error redirect 를 발사해 외부로 302 가 나가지 않도록 호출자가 로컬 에러 화면을 렌더해야 한다.
  */
 export async function validateRedirectUriInternal(input: {
-  clientId: string;
-  redirectUri: string;
+  clientId: string
+  redirectUri: string
 }): Promise<boolean> {
   if (!env.oauthInternalSecret) {
-    throw new Error("OAUTH_INTERNAL_SECRET not configured on auth-web");
+    throw new Error("OAUTH_INTERNAL_SECRET not configured on auth-web")
   }
-  const res = await fetch(`${env.userServiceUrl}/oauth/internal/validate-redirect-uri`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-internal-secret": env.oauthInternalSecret,
-    },
-    body: JSON.stringify(input),
-    cache: "no-store",
-    redirect: "manual",
-  });
+  const res = await fetch(
+    `${env.userServiceUrl}/oauth/internal/validate-redirect-uri`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-internal-secret": env.oauthInternalSecret,
+      },
+      body: JSON.stringify(input),
+      cache: "no-store",
+      redirect: "manual",
+    }
+  )
   if (!res.ok) {
     // 401(secret 불일치) / 404(엔드포인트 미배포) 등은 silent false 로 흡수되면 "등록되지 않은
     // redirect_uri" 화면과 구분이 안 돼 디버깅이 어렵다. status + clientId 만이라도 남겨둔다.
     console.warn(
-      `[validate-redirect-uri] user-service responded ${res.status} for clientId=${input.clientId}`,
-    );
-    return false;
+      `[validate-redirect-uri] user-service responded ${res.status} for clientId=${input.clientId}`
+    )
+    return false
   }
-  const body = await readJson<{ valid?: boolean }>(res);
-  return body.valid === true;
+  const body = await readJson<{ valid?: boolean }>(res)
+  return body.valid === true
 }
 
 export async function getMe(accessToken: string): Promise<UserProfile> {
@@ -201,7 +323,7 @@ export async function getMe(accessToken: string): Promise<UserProfile> {
     headers: { authorization: `Bearer ${accessToken}` },
     cache: "no-store",
     redirect: "manual",
-  });
-  await throwIfBad(res, "me");
-  return readApiData<UserProfile>(res);
+  })
+  await throwIfBad(res, "me")
+  return readApiData<UserProfile>(res)
 }
