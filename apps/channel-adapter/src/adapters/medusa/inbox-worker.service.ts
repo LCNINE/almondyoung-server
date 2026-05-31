@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
 import { inboxEvents } from '../../schema';
+import { ORDER_STREAM_EVENT_TYPES } from '../../order-event-routing';
 import { eq, and, lte, notInArray, gt, inArray } from 'drizzle-orm';
 import { v7 } from 'uuid';
 import { PimMedusaSyncService } from './pim-medusa-sync.service';
@@ -81,11 +82,11 @@ export class InboxWorkerService implements OnModuleInit {
   private async processInboxBatch(): Promise<void> {
     try {
       // 1. pending 상태이면서 nextAttemptAt이 지난 이벤트 조회
-      // Order events (OrderCreated, OrderModified, OrderCancelled) are handled by
-      // OutboxDispatcherService which publishes them to Kafka. Exclude them here
-      // to avoid marking them as published before they reach Kafka.
-      const ORDER_EVENT_TYPES = ['OrderCreated', 'OrderModified', 'OrderCancelled'];
-
+      // Order events are handled by OutboxDispatcherService which publishes them to Kafka.
+      // Exclude them here to avoid marking them as published before they reach Kafka — this
+      // worker has no switch case for them and would otherwise route them to the `default`
+      // branch and mark them published before dispatch. The exclusion list is shared with the
+      // dispatcher via ORDER_STREAM_EVENT_TYPES so the two can never drift.
       const events = await this.dbService.db
         .select()
         .from(inboxEvents)
@@ -93,7 +94,7 @@ export class InboxWorkerService implements OnModuleInit {
           and(
             eq(inboxEvents.status, 'pending'),
             lte(inboxEvents.nextAttemptAt, new Date()),
-            notInArray(inboxEvents.eventType, ORDER_EVENT_TYPES),
+            notInArray(inboxEvents.eventType, [...ORDER_STREAM_EVENT_TYPES]),
           ),
         )
         .orderBy(inboxEvents.createdAt)

@@ -16,8 +16,10 @@ import {
   OrderCreatedPayload,
   OrderCancelledPayload,
   OrderModifiedPayload,
+  OrderRefundCreatedPayload,
 } from '@packages/event-contracts/streams';
 import { channelAdapterSchema, inboxEvents } from '../schema';
+import { ORDER_STREAM_EVENT_TYPES } from '../order-event-routing';
 import { eq, and, lte, sql, inArray, ne } from 'drizzle-orm';
 
 type ChannelAdapterPayload =
@@ -28,7 +30,7 @@ type ChannelAdapterPayload =
   | ChannelStatusChangedPayload
   | QueryExecutedPayload;
 
-type OrderPayload = OrderCreatedPayload | OrderCancelledPayload | OrderModifiedPayload;
+type OrderPayload = OrderCreatedPayload | OrderCancelledPayload | OrderModifiedPayload | OrderRefundCreatedPayload;
 
 /**
  * OutboxDispatcherService
@@ -159,10 +161,8 @@ export class OutboxDispatcherService implements OnModuleInit {
     attempts: number;
   }) {
     try {
-      // eventType에 따라 적절한 publisher 선택
-      const orderEventTypes = ['OrderCreated', 'OrderCancelled', 'OrderModified'];
-
-      if (orderEventTypes.includes(event.event_type)) {
+      // eventType에 따라 적절한 publisher 선택. 제외 목록은 InboxWorkerService 와 공유.
+      if ((ORDER_STREAM_EVENT_TYPES as readonly string[]).includes(event.event_type)) {
         // Order 이벤트 → orders.events.v1로 발행 (WMS가 구독)
         await this.ordersPublisher.publishEvent({
           eventType: event.event_type as keyof OrderEvents,

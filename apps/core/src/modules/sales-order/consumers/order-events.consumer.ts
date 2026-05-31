@@ -1,15 +1,20 @@
-import { Controller, Logger, UseInterceptors } from '@nestjs/common';
+import { Controller, Logger, NotFoundException, UseInterceptors } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
-import { OrderCreatedPayload, OrderCancelledPayload, OrderModifiedPayload } from '@packages/event-contracts';
+import {
+  OrderCreatedPayload,
+  OrderCancelledPayload,
+  OrderModifiedPayload,
+  OrderRefundCreatedPayload,
+} from '@packages/event-contracts';
 import { MessageEnvelope } from '@packages/event-contracts/types';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { LibraryService } from '../../library/services/library.service';
 import { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 /**
  * Order 이벤트 컨슈머
@@ -126,8 +131,7 @@ export class OrderEventsConsumer {
       await this.inTx(async (tx) => {
         const salesOrder = await this.salesOrdersService.getOne(payload.orderId, tx);
         if (!salesOrder) {
-          this.logger.warn(`[OrderCancelled] Sales order not found, skipping: ${payload.orderId}`);
-          return;
+          throw new NotFoundException(`Sales order ${payload.orderId} not found for OrderCancelled`);
         }
 
         const alreadyProcessed = await this.checkAndRecordEvent(
@@ -196,6 +200,84 @@ export class OrderEventsConsumer {
       });
     } catch (error) {
       this.logger.error(`[OrderModified] Failed to process: ${payload.orderId}`, error.stack);
+      throw error;
+    }
+  }
+
+  @OnEvent('orders.events.v1', 'OrderRefundCreated')
+  async handleOrderRefundCreated(
+    @EventPayload() payload: OrderRefundCreatedPayload,
+    @EventEnvelope() envelope: MessageEnvelope<OrderRefundCreatedPayload>,
+  ) {
+    this.logger.log(`[OrderRefundCreated] Received: orderId=${payload.orderId}, refundId=${payload.refundId}`, {
+      correlationId: envelope.correlationId,
+    });
+
+    try {
+      await this.inTx(async (tx) => {
+        const salesOrder = await this.salesOrdersService.getOne(payload.orderId, tx);
+        if (!salesOrder) {
+          throw new NotFoundException(`Sales order ${payload.orderId} not found for OrderRefundCreated`);
+        }
+
+        const alreadyProcessed = await this.checkAndRecordEvent(
+          envelope.messageId,
+          payload.orderId,
+          'ORDER_REFUND_CREATED',
+          payload,
+          tx,
+        );
+        if (alreadyProcessed) return;
+
+        // checkAndRecordEvent only dedupes by Kafka messageId. The same refund can be redelivered
+        // under a NEW messageId (e.g. the channel-adapter outbox publishes to Kafka but crashes
+        // before marking its inbox row published, then republishes). Guard the timeline insert on
+        // the stable business key (sourceId, relationName, targetExternalRef) so operators never
+        // see a duplicate refund link for the same refundId.
+        const refundExternalRef = `medusa:refund:${payload.refundId}`;
+        const [existingLink] = await tx
+          .select({ id: wmsTables.businessLinks.id })
+          .from(wmsTables.businessLinks)
+          .where(
+            and(
+              eq(wmsTables.businessLinks.sourceType, 'sales_order'),
+              eq(wmsTables.businessLinks.sourceId, payload.orderId),
+              eq(wmsTables.businessLinks.relationName, 'order_lifecycle_refund_collected'),
+              eq(wmsTables.businessLinks.targetExternalRef, refundExternalRef),
+            ),
+          )
+          .limit(1);
+        if (existingLink) {
+          this.logger.log(
+            `[OrderRefundCreated] Refund link already recorded for ${payload.refundId}, skipping duplicate`,
+          );
+          return;
+        }
+
+        await tx.insert(wmsTables.businessLinks).values({
+          sourceType: 'sales_order',
+          sourceId: payload.orderId,
+          sourceExternalRef: null,
+          targetType: 'wallet_refund',
+          targetId: null,
+          targetExternalRef: refundExternalRef,
+          relationName: 'order_lifecycle_refund_collected',
+          metadata: {
+            paymentId: payload.paymentId,
+            amount: payload.amount,
+            currency: payload.currency,
+            reason: payload.reason,
+            note: payload.note,
+            refundStatus: 'collected',
+            sourceEventId: envelope.messageId,
+          },
+          occurredAt: new Date(payload.createdAt),
+        });
+
+        this.logger.log(`[OrderRefundCreated] Linked refund ${payload.refundId} to sales order ${payload.orderId}`);
+      });
+    } catch (error) {
+      this.logger.error(`[OrderRefundCreated] Failed to process: ${payload.orderId}`, error.stack);
       throw error;
     }
   }

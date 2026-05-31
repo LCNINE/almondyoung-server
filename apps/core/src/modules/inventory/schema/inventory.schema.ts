@@ -177,6 +177,7 @@ export const eventTypeOrderEnum = pgEnum('event_type_order', [
   'ORDER_CONFIRMED', // 주문 확정
   'ORDER_MODIFIED', // 주문 수정
   'ORDER_CANCELLED', // 주문 취소
+  'ORDER_REFUND_CREATED', // 환불 생성
 ]);
 
 export const taskPriorityEnum = pgEnum('task_priority', ['normal', 'high', 'urgent']);

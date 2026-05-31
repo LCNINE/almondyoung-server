@@ -12,9 +12,11 @@ import {
   toMedusaProductSellableInventorySku,
 } from '@packages/domain-types';
 import type { ProductSellableQuantityChangedPayload } from '@packages/event-contracts';
+import { LIFECYCLE_PAYMENT_STATUSES, PAYMENT_ACCEPTED_STATUSES } from './medusa-order-status';
 
 export interface MedusaOrder {
   id: string;
+  status?: 'pending' | 'completed' | 'draft' | 'archived' | 'canceled' | 'requires_action';
   payment_status?:
     | 'not_paid'
     | 'awaiting'
@@ -35,6 +37,7 @@ export interface MedusaOrder {
   discount_total?: number;
   created_at?: string;
   updated_at?: string;
+  canceled_at?: string;
   items?: Array<{
     id: string;
     title?: string;
@@ -64,18 +67,54 @@ export interface MedusaOrder {
     payments?: Array<{
       id?: string;
       captures?: Array<{ id?: string }>;
+      refunds?: Array<{
+        id?: string;
+        amount?: number | string;
+        created_at?: string;
+      }>;
     }>;
   }>;
+  transactions?: Array<{
+    id?: string;
+    amount?: number | string;
+    currency_code?: string;
+    reference?: string;
+    reference_id?: string;
+    created_at?: string;
+  }>;
+  summary?: {
+    refunded_total?: number | string;
+  };
 }
-
-const PAYMENT_ACCEPTED_STATUSES = new Set<MedusaOrder['payment_status']>(['authorized', 'captured']);
 
 function isPaymentAcceptedOrder(order: MedusaOrder): boolean {
   return PAYMENT_ACCEPTED_STATUSES.has(order.payment_status);
 }
 
+function isLifecycleOrder(order: MedusaOrder): boolean {
+  if (order.status === 'canceled' || LIFECYCLE_PAYMENT_STATUSES.has(order.payment_status)) {
+    return true;
+  }
+  if (Number(order.summary?.refunded_total ?? 0) > 0) {
+    return true;
+  }
+  if (order.transactions?.some((transaction) => transaction.reference === 'refund' || Number(transaction.amount) < 0)) {
+    return true;
+  }
+  return (
+    order.payment_collections?.some((collection) =>
+      collection.payments?.some((payment) => (payment.refunds?.length ?? 0) > 0),
+    ) ?? false
+  );
+}
+
+function isCollectableOrder(order: MedusaOrder): boolean {
+  return isPaymentAcceptedOrder(order) || isLifecycleOrder(order);
+}
+
 const ORDER_FIELDS = [
   'id',
+  'status',
   'payment_status',
   'email',
   'customer_id',
@@ -86,6 +125,7 @@ const ORDER_FIELDS = [
   'discount_total',
   'created_at',
   'updated_at',
+  'canceled_at',
   '*items',
   'items.id',
   'items.title',
@@ -101,6 +141,16 @@ const ORDER_FIELDS = [
   'payment_collections.id',
   'payment_collections.payments.id',
   'payment_collections.payments.captures.id',
+  'payment_collections.payments.refunds.id',
+  'payment_collections.payments.refunds.amount',
+  'payment_collections.payments.refunds.created_at',
+  'summary.refunded_total',
+  'transactions.id',
+  'transactions.amount',
+  'transactions.currency_code',
+  'transactions.reference',
+  'transactions.reference_id',
+  'transactions.created_at',
 ].join(',');
 
 @Injectable()
@@ -1436,7 +1486,7 @@ export class MedusaClient {
       });
 
       const orders = result?.orders ?? [];
-      allOrders.push(...orders.filter(isPaymentAcceptedOrder));
+      allOrders.push(...orders.filter(isCollectableOrder));
 
       if (offset + orders.length >= (result?.count ?? 0) || orders.length < limit) {
         break;
@@ -1459,7 +1509,7 @@ export class MedusaClient {
       );
 
       const order = result?.order;
-      if (!order || !isPaymentAcceptedOrder(order)) {
+      if (!order || !isCollectableOrder(order)) {
         return null;
       }
       return order;

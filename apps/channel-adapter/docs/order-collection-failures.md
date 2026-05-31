@@ -19,6 +19,16 @@ treats the collected Payment Accepted order as the sales-order processing contra
 published as `OrderModified`. Handle CS item additions/removals through a separate Core order amendment or extra shipment
 workflow.
 
+Cancellation and refund observations are not treated as contract modifications. After an order has been collected, the
+adapter records those observations through the Core lifecycle event path (`OrderCancelled` / `OrderRefundCreated`) and
+keeps product, quantity, shipping-address, and order-total changes quarantined under
+`collected_order_modification_not_accepted`.
+
+Medusa can expose `refunded` / `partially_refunded` status before concrete refund rows are visible in the fetched order
+payload. The adapter must still keep that snapshot in the order candidate path, marked ineligible for `OrderCreated`, so
+already mapped orders can be hash-compared and quarantined if the contract snapshot changed. It must not synthesize an
+`OrderRefundCreated` event until a concrete refund transaction or payment refund row is present.
+
 ## Operator API
 
 List quarantined failures:

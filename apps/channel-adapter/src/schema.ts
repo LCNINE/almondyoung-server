@@ -230,7 +230,8 @@ export const orderCollectionFailures = pgTable(
     sourceUpdatedAt: timestamp('source_updated_at').notNull(),
 
     status: varchar('status', { length: 30 }).notNull().default('quarantined'),
-    // 'quarantined' | 'replayed'
+    // 'quarantined' | 'replayed' | 'closed_lifecycle'
+    // closed_lifecycle: order went terminal (canceled/refunded) before its mapping gap was fixed.
     replayedAt: timestamp('replayed_at'),
     replayedWmsOrderId: uuid('replayed_wms_order_id'),
     errorMessage: text('error_message'),
