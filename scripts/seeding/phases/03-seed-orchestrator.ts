@@ -7,10 +7,8 @@ import { SeedCheckResult, SeedApplyResult, ServiceConfig, PhaseOptions } from '.
 import { SeedStep } from '../steps/base-seed-step';
 import { WmsSeedStep } from '../steps/wms.seed-step';
 import { PimSeedStep } from '../steps/pim.seed-step';
-import {
-  UserServiceSeedStep,
-  type OAuthClientSeed,
-} from '../steps/user-service.seed-step';
+import { ProductMatchingBackfillSeedStep } from '../steps/product-matching-backfill.seed-step';
+import { UserServiceSeedStep, type OAuthClientSeed } from '../steps/user-service.seed-step';
 import { MembershipSeedStep } from '../steps/membership.seed-step';
 import { FileServiceSeedStep } from '../steps/file-service.seed-step';
 import { NotificationSeedStep } from '../steps/notification.seed-step';
@@ -37,17 +35,12 @@ function isProdStage(): boolean {
   return /^(prod|production|live)$/i.test(stage);
 }
 
-async function resolveGroup(
-  options: PhaseOptions,
-  availableGroups: string[],
-): Promise<string | null> {
+async function resolveGroup(options: PhaseOptions, availableGroups: string[]): Promise<string | null> {
   if (options.group !== undefined) {
     const raw = (options.group ?? '').trim().toLowerCase();
     if (raw === '' || raw === NONE_GROUP) return null;
     if (!availableGroups.includes(options.group!)) {
-      throw new Error(
-        `알 수 없는 그룹 "${options.group}". 사용 가능: ${availableGroups.join(', ') || '(없음)'}`,
-      );
+      throw new Error(`알 수 없는 그룹 "${options.group}". 사용 가능: ${availableGroups.join(', ') || '(없음)'}`);
     }
     return options.group!;
   }
@@ -58,9 +51,7 @@ async function resolveGroup(
   }
 
   const filtered =
-    isProdStage() && !options.allowDemoInProd
-      ? availableGroups.filter((g) => !isDemoGroup(g))
-      : availableGroups;
+    isProdStage() && !options.allowDemoInProd ? availableGroups.filter((g) => !isDemoGroup(g)) : availableGroups;
 
   const choices = [
     { name: '(시드 단계 건너뛰기)', value: NONE_GROUP },
@@ -150,7 +141,9 @@ function printCheckResult(result: SeedCheckResult): void {
     const count = `${item.existing}/${item.expected}`;
     const missingStr =
       item.missing > 0
-        ? chalk.red(` (${item.missing} missing${item.missingDetails?.length ? ': ' + item.missingDetails.join(', ') : ''})`)
+        ? chalk.red(
+            ` (${item.missing} missing${item.missingDetails?.length ? ': ' + item.missingDetails.join(', ') : ''})`,
+          )
         : '';
     console.log(`    ${icon} ${item.entity.padEnd(28)} ${count.padEnd(8)}${missingStr}`);
   }
@@ -178,6 +171,7 @@ function buildSeedSteps(
     const coreDbUrl = urlFor(coreEntry.database);
     steps.push(new WmsSeedStep(coreDbUrl));
     steps.push(new PimSeedStep(coreDbUrl));
+    steps.push(new ProductMatchingBackfillSeedStep(coreDbUrl));
   }
 
   const userEntry = registryMap.get('user-service');
@@ -234,18 +228,17 @@ export async function runSeeding(options: PhaseOptions): Promise<SeedApplyResult
   const availableGroups = collectGroups(steps);
 
   // 운영 보호: 명시적 --group demo-*가 들어왔을 때 차단
-  if (
-    options.group &&
-    isDemoGroup(options.group) &&
-    isProdStage() &&
-    !options.allowDemoInProd
-  ) {
+  if (options.group && isDemoGroup(options.group) && isProdStage() && !options.allowDemoInProd) {
     logger.error(
       `운영 stage에서는 demo-* 그룹을 실행할 수 없습니다. 정말 필요하면 --allow-demo-in-prod 플래그를 추가하세요.`,
     );
     // dispose
     for (const step of steps) {
-      try { await step.dispose(); } catch { /* ignore */ }
+      try {
+        await step.dispose();
+      } catch {
+        /* ignore */
+      }
     }
     return [];
   }
@@ -256,7 +249,11 @@ export async function runSeeding(options: PhaseOptions): Promise<SeedApplyResult
   } catch (error: any) {
     logger.error(error.message);
     for (const step of steps) {
-      try { await step.dispose(); } catch { /* ignore */ }
+      try {
+        await step.dispose();
+      } catch {
+        /* ignore */
+      }
     }
     return [];
   }
@@ -264,7 +261,11 @@ export async function runSeeding(options: PhaseOptions): Promise<SeedApplyResult
   if (selectedGroup === null) {
     logger.info('시드 단계를 건너뜁니다.');
     for (const step of steps) {
-      try { await step.dispose(); } catch { /* ignore */ }
+      try {
+        await step.dispose();
+      } catch {
+        /* ignore */
+      }
     }
     return [];
   }
@@ -284,7 +285,11 @@ export async function runSeeding(options: PhaseOptions): Promise<SeedApplyResult
   if (filteredSteps.length === 0) {
     logger.warn(`그룹 "${selectedGroup}"에 속한 step이 없습니다.`);
     for (const step of steps) {
-      try { await step.dispose(); } catch { /* ignore */ }
+      try {
+        await step.dispose();
+      } catch {
+        /* ignore */
+      }
     }
     return [];
   }
@@ -335,7 +340,11 @@ export async function runSeeding(options: PhaseOptions): Promise<SeedApplyResult
     return results;
   } finally {
     for (const step of steps) {
-      try { await step.dispose(); } catch { /* ignore */ }
+      try {
+        await step.dispose();
+      } catch {
+        /* ignore */
+      }
     }
   }
 }
@@ -355,7 +364,11 @@ export async function listGroupsForDeployment(deployment?: string): Promise<stri
     return collectGroups(steps);
   } finally {
     for (const step of steps) {
-      try { await step.dispose(); } catch { /* ignore */ }
+      try {
+        await step.dispose();
+      } catch {
+        /* ignore */
+      }
     }
   }
 }

@@ -20,7 +20,7 @@ export abstract class SeedStep {
     protected readonly databaseUrl: string,
   ) {
     this.logger = new Logger(serviceName);
-    this.client = postgres(databaseUrl);
+    this.client = postgres(toPostgresJsUrl(databaseUrl));
     this.db = drizzle(this.client);
   }
 
@@ -36,11 +36,7 @@ export abstract class SeedStep {
   }
 
   /** 특정 ID들 중 DB에 존재하는 것들의 Set 반환 */
-  protected async findExistingIds(
-    table: string,
-    ids: string[],
-    idColumn = 'id',
-  ): Promise<Set<string>> {
+  protected async findExistingIds(table: string, ids: string[], idColumn = 'id'): Promise<Set<string>> {
     if (ids.length === 0) return new Set();
     const rows = await this.client`
       SELECT ${this.client(idColumn)}::text as id
@@ -69,9 +65,13 @@ export abstract class SeedStep {
   /** 테이블의 전체 row 수 */
   protected async countRows(table: string, schema?: string): Promise<number> {
     const fullTable = schema ? `${schema}.${table}` : table;
-    const rows = await this.client.unsafe(
-      `SELECT count(*)::int as count FROM ${fullTable}`,
-    );
+    const rows = await this.client.unsafe(`SELECT count(*)::int as count FROM ${fullTable}`);
     return rows[0].count;
   }
+}
+
+function toPostgresJsUrl(databaseUrl: string): string {
+  const url = new URL(databaseUrl);
+  url.searchParams.delete('uselibpqcompat');
+  return url.toString();
 }

@@ -8,6 +8,7 @@
  *
  * autodeploy workflow 의 마지막 DB step. 멱등성 필수 — UPSERT / ON CONFLICT DO NOTHING.
  * group prefix 'demo-' 이 *아닌* 모든 그룹을 순회 실행한다 (현재 사실상 'baseline').
+ * backfill 그룹은 사람이 명시적으로 선택할 때만 실행한다.
  */
 
 import chalk from 'chalk';
@@ -25,7 +26,7 @@ async function main() {
   if (parsed.deployment) console.log(chalk.gray(`  Deployment: ${parsed.deployment}`));
 
   const allGroups = await listGroupsForDeployment(parsed.deployment);
-  const refGroups = allGroups.filter((g) => !g.startsWith(DEMO_GROUP_PREFIX));
+  const refGroups = allGroups.filter((g) => !g.startsWith(DEMO_GROUP_PREFIX) && g !== 'backfill');
 
   if (refGroups.length === 0) {
     console.log(chalk.gray('  No reference seed groups registered for this deployment.'));
