@@ -1,4 +1,10 @@
-import { OrderCreatedPayload, OrderItem, ShippingAddress } from '@packages/event-contracts/streams';
+import {
+  OrderCancelledPayload,
+  OrderCreatedPayload,
+  OrderRefundCreatedPayload,
+  OrderItem,
+  ShippingAddress,
+} from '@packages/event-contracts/streams';
 
 export const CHANNEL_ORDER_PROVIDER = Symbol('CHANNEL_ORDER_PROVIDER');
 export const CHANNEL_PRODUCT_IDENTIFICATION_FAILED = 'channel_product_identification_failed' as const;
@@ -16,9 +22,25 @@ export interface OrderCollectionFailureItem {
   rawOrder: Record<string, unknown>;
 }
 
+export type OrderLifecycleEventType = 'OrderCancelled' | 'OrderRefundCreated';
+
+export type OrderLifecycleEventPayload =
+  | Omit<OrderCancelledPayload, 'orderId'>
+  | Omit<OrderRefundCreatedPayload, 'orderId'>;
+
+export interface OrderLifecycleEventItem {
+  externalOrderId: string;
+  sourceUpdatedAt: string;
+  eventType: OrderLifecycleEventType;
+  eventKey: string;
+  payload: OrderLifecycleEventPayload;
+  rawEvent: Record<string, unknown>;
+}
+
 export interface OrderFetchItem {
   externalOrderId: string;
   sourceUpdatedAt: string;
+  eligibleForOrderCreation?: boolean;
   createPayload: OrderCreatedPayload;
   changes: {
     items: OrderItem[];
@@ -31,6 +53,7 @@ export interface OrderFetchItem {
 export interface FetchOrdersResult {
   orders: OrderFetchItem[];
   failures: OrderCollectionFailureItem[];
+  lifecycleEvents?: OrderLifecycleEventItem[];
 }
 
 export type OrderFetchOutcome =

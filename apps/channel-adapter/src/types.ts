@@ -56,7 +56,10 @@ export type OrderCollectionFailure = InferSelectModel<typeof orderCollectionFail
 export type NewOrderCollectionFailure = InferInsertModel<typeof orderCollectionFailures>;
 export type UpdateOrderCollectionFailure = Partial<Omit<NewOrderCollectionFailure, 'id' | 'createdAt'>>;
 
-export type OrderCollectionFailureStatus = 'quarantined' | 'replayed';
+// 'closed_lifecycle': the quarantined order reached a terminal lifecycle (canceled/refunded →
+// no longer eligible for collection) before its mapping gap was fixed, so it will never be
+// collected and the quarantine is closed rather than left open for a replay that can't succeed.
+export type OrderCollectionFailureStatus = 'quarantined' | 'replayed' | 'closed_lifecycle';
 
 // INBOX EVENTS 타입 (Kafka 이벤트 수신 처리)
 export type InboxEvent = InferSelectModel<typeof inboxEvents>;

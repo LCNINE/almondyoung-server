@@ -114,6 +114,40 @@ export class OrderCollectionFailureService {
       })
       .where(eq(orderCollectionFailures.id, id));
   }
+
+  /**
+   * 채널 + externalOrderId 로 아직 열려 있는(quarantined) 격리 레코드를 찾는다.
+   * 이전 poll 에서 격리된 주문이 이후 terminal lifecycle 로 바뀌었는지 판단할 때 사용.
+   */
+  async findOpenByExternalOrderId(channel: string, externalOrderId: string): Promise<OrderCollectionFailure | null> {
+    const rows = await this.db.db
+      .select()
+      .from(orderCollectionFailures)
+      .where(
+        and(
+          eq(orderCollectionFailures.channel, channel),
+          eq(orderCollectionFailures.externalOrderId, externalOrderId),
+          eq(orderCollectionFailures.status, 'quarantined'),
+        ),
+      )
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  /**
+   * 격리된 주문이 수집되기 전에 terminal lifecycle(취소/환불 → 수집 불가)에 도달했을 때 호출.
+   * replay 로는 결코 수집될 수 없으므로 격리를 닫아 고아 상태로 남지 않게 한다.
+   */
+  async closeAsTerminalLifecycle(id: string, reason: string): Promise<void> {
+    await this.db.db
+      .update(orderCollectionFailures)
+      .set({
+        status: 'closed_lifecycle',
+        errorMessage: reason,
+        updatedAt: new Date(),
+      })
+      .where(eq(orderCollectionFailures.id, id));
+  }
 }
 
 function parseTimestamp(value: string): Date {

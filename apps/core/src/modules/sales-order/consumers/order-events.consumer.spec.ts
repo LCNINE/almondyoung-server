@@ -2,7 +2,12 @@ import { OrderEventsConsumer } from './order-events.consumer';
 import type { SalesOrdersService } from '../services/sales-orders.service';
 import type { LibraryService } from '../../library/services/library.service';
 import type { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
-import type { OrderCancelledPayload, OrderCreatedPayload, OrderModifiedPayload } from '@packages/event-contracts';
+import type {
+  OrderCancelledPayload,
+  OrderCreatedPayload,
+  OrderModifiedPayload,
+  OrderRefundCreatedPayload,
+} from '@packages/event-contracts';
 import type { MessageEnvelope } from '@packages/event-contracts/types';
 
 /**
@@ -22,18 +27,29 @@ describe('OrderEventsConsumer', () => {
       Pick<FulfillmentOrderCreationBacklogService, 'enqueueForSalesOrder' | 'closeOpenForSalesOrder'>
     >;
     txInserts: Array<{ table: unknown; values: unknown }>;
+    // Rows returned by the businessLinks idempotency guard's `select(...)` lookup. Empty by
+    // default (no existing link); push a row to simulate a refund link already recorded.
+    businessLinkRows: any[];
     fakeTx: any;
     dbService: any;
   };
 
   function makeMocks(): Mocks {
     const txInserts: Array<{ table: unknown; values: unknown }> = [];
+    const businessLinkRows: any[] = [];
     const fakeTx: any = {
       query: {
         orderEvents: {
           findFirst: jest.fn().mockResolvedValue(undefined),
         },
       },
+      select: () => ({
+        from: () => ({
+          where: () => ({
+            limit: () => Promise.resolve(businessLinkRows),
+          }),
+        }),
+      }),
       insert: (table: unknown) => ({
         values: (values: unknown) => {
           txInserts.push({ table, values });
@@ -63,6 +79,7 @@ describe('OrderEventsConsumer', () => {
         closeOpenForSalesOrder: jest.fn().mockResolvedValue(0),
       } as any,
       txInserts,
+      businessLinkRows,
       fakeTx,
       dbService,
     };
@@ -205,6 +222,30 @@ describe('OrderEventsConsumer', () => {
     expect(mocks.library.revokeOwnershipsForOrder).not.toHaveBeenCalled();
   });
 
+  it('OrderCancelled 대상 SalesOrder 가 없으면 lifecycle 신호를 재시도 가능하게 실패시킨다', async () => {
+    const mocks = makeMocks();
+    const consumer = makeConsumer(mocks);
+    const payload = {
+      orderId: 'so-missing-1',
+      reason: 'ADMIN_CANCEL',
+      cancelledBy: 'medusa',
+      cancelledAt: new Date().toISOString(),
+      refundRequired: false,
+    } as OrderCancelledPayload;
+    const cancelledEnvelope = {
+      messageId: 'cancel-msg-missing-1',
+      correlationId: 'corr-1',
+    } as MessageEnvelope<OrderCancelledPayload>;
+    mocks.salesOrders.getOne.mockResolvedValue(undefined as any);
+
+    await expect(consumer.handleOrderCancelled(payload, cancelledEnvelope)).rejects.toThrow(
+      'Sales order so-missing-1 not found for OrderCancelled',
+    );
+
+    expect(mocks.salesOrders.cancel).not.toHaveBeenCalled();
+    expect(mocks.txInserts).toHaveLength(0);
+  });
+
   it('OrderModified 는 수락된 판매주문 계약 데이터를 업데이트하지 않고 처리 이력만 남긴다', async () => {
     const mocks = makeMocks();
     const consumer = makeConsumer(mocks);
@@ -253,5 +294,105 @@ describe('OrderEventsConsumer', () => {
       orderId: payload.orderId,
       eventType: 'ORDER_MODIFIED',
     });
+  });
+
+  it('OrderRefundCreated 는 판매주문 timeline 에 wallet_refund 업무 연결을 남긴다', async () => {
+    const mocks = makeMocks();
+    const consumer = makeConsumer(mocks);
+    const payload = {
+      orderId: 'so-refunded-1',
+      refundId: 'ref_1',
+      paymentId: 'pay_1',
+      amount: 12000,
+      currency: 'KRW',
+      reason: 'MEDUSA_REFUND',
+      note: 'refund collected from Medusa',
+      createdBy: 'medusa',
+      createdAt: '2026-05-26T01:18:00.000Z',
+    } as OrderRefundCreatedPayload;
+    const refundEnvelope = {
+      messageId: 'refund-msg-1',
+      correlationId: 'corr-1',
+    } as MessageEnvelope<OrderRefundCreatedPayload>;
+    mocks.salesOrders.getOne.mockResolvedValue({ id: payload.orderId, status: 'pending' } as any);
+
+    await consumer.handleOrderRefundCreated(payload, refundEnvelope);
+
+    expect(mocks.txInserts).toHaveLength(2);
+    expect(mocks.txInserts[0].values).toMatchObject({
+      eventId: 'refund-msg-1',
+      orderId: payload.orderId,
+      eventType: 'ORDER_REFUND_CREATED',
+    });
+    expect(mocks.txInserts[1].values).toMatchObject({
+      sourceType: 'sales_order',
+      sourceId: payload.orderId,
+      targetType: 'wallet_refund',
+      targetExternalRef: 'medusa:refund:ref_1',
+      relationName: 'order_lifecycle_refund_collected',
+      metadata: expect.objectContaining({
+        paymentId: 'pay_1',
+        amount: 12000,
+        currency: 'KRW',
+        refundStatus: 'collected',
+        sourceEventId: 'refund-msg-1',
+      }),
+    });
+  });
+
+  it('OrderRefundCreated 가 새 messageId 로 재전달돼도 동일 refundId timeline 링크를 중복 생성하지 않는다', async () => {
+    const mocks = makeMocks();
+    const consumer = makeConsumer(mocks);
+    const payload = {
+      orderId: 'so-refunded-1',
+      refundId: 'ref_1',
+      paymentId: 'pay_1',
+      amount: 12000,
+      currency: 'KRW',
+      reason: 'MEDUSA_REFUND',
+      createdBy: 'medusa',
+      createdAt: '2026-05-26T01:18:00.000Z',
+    } as OrderRefundCreatedPayload;
+    // 같은 refund 가 새 messageId 로 다시 발행됨 (outbox 가 Kafka 발행 후 inbox published 마킹 전에 크래시 → 재발행)
+    const refundEnvelope = {
+      messageId: 'refund-msg-REDELIVERED',
+      correlationId: 'corr-1',
+    } as MessageEnvelope<OrderRefundCreatedPayload>;
+    mocks.salesOrders.getOne.mockResolvedValue({ id: payload.orderId, status: 'pending' } as any);
+    // 동일 (sourceId, relationName, targetExternalRef) 링크가 이전 전달에서 이미 기록돼 있음
+    mocks.businessLinkRows.push({ id: 'existing-link-1' });
+
+    await consumer.handleOrderRefundCreated(payload, refundEnvelope);
+
+    // messageId 가 새 것이라 orderEvents 처리 이력은 남지만, 안정 키 가드가 business_links 중복 insert 를 막는다.
+    expect(
+      mocks.txInserts.some((insert) => (insert.values as any).relationName === 'order_lifecycle_refund_collected'),
+    ).toBe(false);
+  });
+
+  it('OrderRefundCreated 대상 SalesOrder 가 없으면 lifecycle 신호를 재시도 가능하게 실패시킨다', async () => {
+    const mocks = makeMocks();
+    const consumer = makeConsumer(mocks);
+    const payload = {
+      orderId: 'so-missing-refund-1',
+      refundId: 'ref_1',
+      paymentId: 'pay_1',
+      amount: 12000,
+      currency: 'KRW',
+      reason: 'MEDUSA_REFUND',
+      createdBy: 'medusa',
+      createdAt: '2026-05-26T01:18:00.000Z',
+    } as OrderRefundCreatedPayload;
+    const refundEnvelope = {
+      messageId: 'refund-msg-missing-1',
+      correlationId: 'corr-1',
+    } as MessageEnvelope<OrderRefundCreatedPayload>;
+    mocks.salesOrders.getOne.mockResolvedValue(undefined as any);
+
+    await expect(consumer.handleOrderRefundCreated(payload, refundEnvelope)).rejects.toThrow(
+      'Sales order so-missing-refund-1 not found for OrderRefundCreated',
+    );
+
+    expect(mocks.txInserts).toHaveLength(0);
   });
 });
