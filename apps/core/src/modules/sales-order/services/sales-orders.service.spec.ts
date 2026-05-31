@@ -447,13 +447,16 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
       businessLinks: [] as Array<Record<string, any>>,
     };
 
-    const selectRowsFor = (table: unknown) => {
+    const selectRowsFor = (table: unknown, selection?: Record<string, unknown>) => {
       if (table === wmsTables.salesOrders) return state.salesOrders;
       if (table === wmsTables.salesOrderLines) return state.salesOrderLines;
       if (table === wmsTables.fulfillmentOrders) return state.fulfillmentOrders;
       if (table === wmsTables.fulfillmentOrderItems) return state.fulfillmentOrderItems;
       if (table === wmsTables.stockReservations) return state.stockReservations;
       if (table === wmsTables.fulfillmentOrderCreationBacklogs) return state.fulfillmentOrderCreationBacklogs;
+      if (table === wmsTables.salesOrderCancellations && selection && Object.keys(selection).length === 1) {
+        return state.salesOrderCancellations.filter((row) => row.cancellationScope === 'full');
+      }
       if (table === wmsTables.salesOrderCancellations) return state.salesOrderCancellations;
       if (table === wmsTables.businessLinks) return state.businessLinks;
       return [];
@@ -461,9 +464,9 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
 
     const tx: any = {
       execute: jest.fn().mockResolvedValue([]),
-      select: jest.fn(() => ({
+      select: jest.fn((selection?: Record<string, unknown>) => ({
         from: (table: unknown) => ({
-          where: () => rows(selectRowsFor(table)),
+          where: () => rows(selectRowsFor(table, selection)),
         }),
       })),
       update: jest.fn((table: unknown) => ({
@@ -690,7 +693,372 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
     });
   });
 
-  it('rejects partial cancellation when requested fulfillment quantity has already shipped', async () => {
+  it('records post-shipment cancellation handoff without rewriting shipped fulfillment evidence', async () => {
+    const { service, state, outbox } = makeService({
+      fulfillmentOrders: [
+        {
+          id: fulfillmentOrderId,
+          salesOrderId,
+          status: 'shipped',
+          totalItems: 1,
+          totalQty: 3,
+          totalReservedQty: 0,
+          canceledAt: null,
+        },
+      ],
+      fulfillmentOrderItems: [
+        {
+          id: fulfillmentOrderItemId,
+          fulfillmentOrderId,
+          salesOrderId,
+          salesOrderLineId,
+          skuId: '88888888-8888-4888-8888-888888888888',
+          qty: 3,
+          reservedQty: 0,
+          shippedQty: 3,
+          status: 'ready',
+        },
+      ],
+    });
+    const originalFulfillmentOrder = { ...state.fulfillmentOrders[0] };
+    const originalFulfillmentOrderItem = { ...state.fulfillmentOrderItems[0] };
+
+    const updated = await service.cancel(salesOrderId, {
+      lines: [{ salesOrderLineId, quantity: 1 }],
+      reasonCode: 'CUSTOMER_REQUEST',
+      postShipmentHandoff: {
+        type: 'return',
+        externalRef: 'return:request:ret_partial_1',
+        status: 'requested',
+      },
+      walletRefund: {
+        externalRef: 'wallet:refund:rf_partial_shipped_1',
+        amount: 5000,
+        currency: 'KRW',
+        refundStatus: 'PENDING',
+      },
+    });
+
+    expect(state.fulfillmentOrders[0]).toEqual(originalFulfillmentOrder);
+    expect(state.fulfillmentOrderItems[0]).toEqual(originalFulfillmentOrderItem);
+    expect(state.salesOrderCancellations).toEqual([
+      expect.objectContaining({
+        cancellationScope: 'partial',
+        metadata: expect.objectContaining({
+          cancelledLines: [{ salesOrderLineId, quantity: 1 }],
+        }),
+        effects: expect.arrayContaining([
+          expect.objectContaining({
+            type: 'preserved_shipped_fulfillment_order_item',
+            targetType: 'fulfillment_order_item',
+            targetId: fulfillmentOrderItemId,
+            metadata: expect.objectContaining({
+              fulfillmentOrderId,
+              salesOrderLineId,
+              affectedShippedQuantity: 1,
+              shippedQty: 3,
+              preservationPolicy: 'do_not_reduce_or_rewrite_shipped_fulfillment_evidence',
+            }),
+          }),
+          expect.objectContaining({
+            type: 'linked_post_shipment_return_handoff',
+            targetType: 'return_handoff',
+            targetExternalRef: 'return:request:ret_partial_1',
+            metadata: expect.objectContaining({
+              handoffType: 'return',
+              owner: 'logistics',
+              returnStatus: 'requested',
+              affectedShippedQuantity: 1,
+            }),
+          }),
+          expect.objectContaining({
+            type: 'linked_wallet_refund',
+            targetType: 'wallet_refund',
+            targetExternalRef: 'wallet:refund:rf_partial_shipped_1',
+            metadata: expect.objectContaining({
+              refundStatus: 'PENDING',
+            }),
+          }),
+        ]),
+      }),
+    ]);
+    expect(outbox.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          orderCancellationId: 'cancellation-1',
+          postShipmentHandoffRefs: ['return:request:ret_partial_1'],
+          walletRefundRef: 'wallet:refund:rf_partial_shipped_1',
+        }),
+      }),
+      expect.anything(),
+    );
+    expect(updated?.businessTimeline).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          relationName: 'cancellation_preserved_shipped_fulfillment_order_item',
+          linkedEntity: { type: 'fulfillment_order_item', id: fulfillmentOrderItemId, externalRef: null },
+          metadata: expect.objectContaining({
+            reason: 'affected_quantity_already_shipped',
+          }),
+        }),
+        expect.objectContaining({
+          relationName: 'cancellation_linked_post_shipment_return_handoff',
+          linkedEntity: { type: 'return_handoff', id: null, externalRef: 'return:request:ret_partial_1' },
+          effectStatus: { owner: 'logistics', value: 'requested' },
+        }),
+        expect.objectContaining({
+          relationName: 'cancellation_linked_wallet_refund',
+          linkedEntity: { type: 'wallet_refund', id: null, externalRef: 'wallet:refund:rf_partial_shipped_1' },
+          effectStatus: { owner: 'wallet', value: 'PENDING' },
+        }),
+      ]),
+    );
+  });
+
+  it('allows subsequent post-shipment partial cancellations on the same shipped line', async () => {
+    const { service, state, outbox } = makeService({
+      fulfillmentOrders: [
+        {
+          id: fulfillmentOrderId,
+          salesOrderId,
+          status: 'shipped',
+          totalItems: 1,
+          totalQty: 3,
+          totalReservedQty: 0,
+          canceledAt: null,
+        },
+      ],
+      fulfillmentOrderItems: [
+        {
+          id: fulfillmentOrderItemId,
+          fulfillmentOrderId,
+          salesOrderId,
+          salesOrderLineId,
+          skuId: '88888888-8888-4888-8888-888888888888',
+          qty: 3,
+          reservedQty: 0,
+          shippedQty: 3,
+          status: 'shipped',
+        },
+      ],
+    });
+    const originalFulfillmentOrder = { ...state.fulfillmentOrders[0] };
+    const originalFulfillmentOrderItem = { ...state.fulfillmentOrderItems[0] };
+
+    await service.cancel(salesOrderId, {
+      lines: [{ salesOrderLineId, quantity: 1 }],
+      reasonCode: 'CUSTOMER_REQUEST',
+      postShipmentHandoff: {
+        type: 'return',
+        externalRef: 'return:request:ret_partial_1',
+        status: 'requested',
+      },
+    });
+
+    await service.cancel(salesOrderId, {
+      lines: [{ salesOrderLineId, quantity: 1 }],
+      reasonCode: 'CUSTOMER_REQUEST',
+      postShipmentHandoff: {
+        type: 'return',
+        externalRef: 'return:request:ret_partial_2',
+        status: 'requested',
+      },
+    });
+
+    expect(state.fulfillmentOrders[0]).toEqual(originalFulfillmentOrder);
+    expect(state.fulfillmentOrderItems[0]).toEqual(originalFulfillmentOrderItem);
+    expect(state.salesOrderCancellations).toHaveLength(2);
+    expect(state.salesOrderCancellations[1]).toEqual(
+      expect.objectContaining({
+        id: 'cancellation-2',
+        cancellationScope: 'partial',
+        metadata: expect.objectContaining({
+          cancelledLines: [{ salesOrderLineId, quantity: 1 }],
+        }),
+        effects: expect.arrayContaining([
+          expect.objectContaining({
+            type: 'preserved_shipped_fulfillment_order_item',
+            targetId: fulfillmentOrderItemId,
+            metadata: expect.objectContaining({
+              affectedShippedQuantity: 1,
+              previouslyPreservedShippedQuantity: 1,
+              shippedQty: 3,
+            }),
+          }),
+          expect.objectContaining({
+            type: 'linked_post_shipment_return_handoff',
+            targetExternalRef: 'return:request:ret_partial_2',
+          }),
+        ]),
+      }),
+    );
+    expect(outbox.enqueue).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          orderCancellationId: 'cancellation-2',
+          postShipmentHandoffRefs: ['return:request:ret_partial_2'],
+        }),
+      }),
+      expect.anything(),
+    );
+  });
+
+  it('treats shipped fulfillment orders as shipped evidence when item shipped quantity is not populated', async () => {
+    const shippedAt = new Date('2026-05-30T02:00:00.000Z');
+    const { service, state, outbox } = makeService({
+      fulfillmentOrders: [
+        {
+          id: fulfillmentOrderId,
+          salesOrderId,
+          status: 'ready',
+          shippedAt,
+          totalItems: 1,
+          totalQty: 3,
+          totalReservedQty: 0,
+          canceledAt: null,
+        },
+      ],
+      fulfillmentOrderItems: [
+        {
+          id: fulfillmentOrderItemId,
+          fulfillmentOrderId,
+          salesOrderId,
+          salesOrderLineId,
+          skuId: '88888888-8888-4888-8888-888888888888',
+          qty: 3,
+          reservedQty: 0,
+          shippedQty: 0,
+          status: 'pending',
+        },
+      ],
+    });
+    const originalFulfillmentOrder = { ...state.fulfillmentOrders[0] };
+    const originalFulfillmentOrderItem = { ...state.fulfillmentOrderItems[0] };
+
+    await service.cancel(salesOrderId, {
+      lines: [{ salesOrderLineId, quantity: 1 }],
+      reasonCode: 'CUSTOMER_REQUEST',
+      postShipmentHandoff: {
+        type: 'return',
+        externalRef: 'return:request:ret_fo_level_shipped',
+        status: 'requested',
+      },
+    });
+
+    expect(state.fulfillmentOrders[0]).toEqual(originalFulfillmentOrder);
+    expect(state.fulfillmentOrderItems[0]).toEqual(originalFulfillmentOrderItem);
+    expect(state.salesOrderCancellations).toEqual([
+      expect.objectContaining({
+        cancellationScope: 'partial',
+        effects: expect.arrayContaining([
+          expect.objectContaining({
+            type: 'preserved_shipped_fulfillment_order_item',
+            targetId: fulfillmentOrderItemId,
+            metadata: expect.objectContaining({
+              fulfillmentOrderStatus: 'ready',
+              itemShippedQty: 0,
+              shippedQty: 0,
+              effectiveShippedQuantity: 3,
+              shippedEvidenceSource: 'fulfillment_order_shipped_state',
+              affectedShippedQuantity: 1,
+            }),
+          }),
+          expect.objectContaining({
+            type: 'linked_post_shipment_return_handoff',
+            targetExternalRef: 'return:request:ret_fo_level_shipped',
+          }),
+        ]),
+      }),
+    ]);
+    expect(outbox.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          postShipmentHandoffRefs: ['return:request:ret_fo_level_shipped'],
+        }),
+      }),
+      expect.anything(),
+    );
+  });
+
+  it('treats shipped fulfillment orders as overriding partial item shipped quantities', async () => {
+    const shippedAt = new Date('2026-05-30T02:00:00.000Z');
+    const { service, state, outbox } = makeService({
+      fulfillmentOrders: [
+        {
+          id: fulfillmentOrderId,
+          salesOrderId,
+          status: 'ready',
+          shippedAt,
+          totalItems: 1,
+          totalQty: 3,
+          totalReservedQty: 0,
+          canceledAt: null,
+        },
+      ],
+      fulfillmentOrderItems: [
+        {
+          id: fulfillmentOrderItemId,
+          fulfillmentOrderId,
+          salesOrderId,
+          salesOrderLineId,
+          skuId: '88888888-8888-4888-8888-888888888888',
+          qty: 3,
+          reservedQty: 0,
+          pickedQty: 0,
+          shippedQty: 1,
+          status: 'pending',
+        },
+      ],
+    });
+    const originalFulfillmentOrder = { ...state.fulfillmentOrders[0] };
+    const originalFulfillmentOrderItem = { ...state.fulfillmentOrderItems[0] };
+
+    await service.cancel(salesOrderId, {
+      lines: [{ salesOrderLineId, quantity: 1 }],
+      reasonCode: 'CUSTOMER_REQUEST',
+      postShipmentHandoff: {
+        type: 'return',
+        externalRef: 'return:request:ret_fo_level_partial_counter',
+        status: 'requested',
+      },
+    });
+
+    expect(state.fulfillmentOrders[0]).toEqual(originalFulfillmentOrder);
+    expect(state.fulfillmentOrderItems[0]).toEqual(originalFulfillmentOrderItem);
+    expect(state.salesOrderCancellations).toEqual([
+      expect.objectContaining({
+        cancellationScope: 'partial',
+        effects: expect.arrayContaining([
+          expect.objectContaining({
+            type: 'preserved_shipped_fulfillment_order_item',
+            targetId: fulfillmentOrderItemId,
+            metadata: expect.objectContaining({
+              fulfillmentOrderStatus: 'ready',
+              itemShippedQty: 1,
+              shippedQty: 1,
+              effectiveShippedQuantity: 3,
+              shippedEvidenceSource: 'fulfillment_order_shipped_state',
+              affectedShippedQuantity: 1,
+            }),
+          }),
+          expect.objectContaining({
+            type: 'linked_post_shipment_return_handoff',
+            targetExternalRef: 'return:request:ret_fo_level_partial_counter',
+          }),
+        ]),
+      }),
+    ]);
+    expect(outbox.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          postShipmentHandoffRefs: ['return:request:ret_fo_level_partial_counter'],
+        }),
+      }),
+      expect.anything(),
+    );
+  });
+
+  it('rejects non-UUID post-shipment handoff IDs before business link insert', async () => {
     const { service, state, outbox } = makeService({
       fulfillmentOrders: [
         {
@@ -722,10 +1090,16 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
       service.cancel(salesOrderId, {
         lines: [{ salesOrderLineId, quantity: 1 }],
         reasonCode: 'CUSTOMER_REQUEST',
+        postShipmentHandoff: {
+          type: 'return',
+          id: 'ret_123',
+          status: 'requested',
+        },
       }),
-    ).rejects.toThrow('affected fulfillment quantity has already been picked or shipped');
+    ).rejects.toThrow('postShipmentHandoff.id must be a UUID');
 
     expect(state.salesOrderCancellations).toHaveLength(0);
+    expect(state.businessLinks).toHaveLength(0);
     expect(outbox.enqueue).not.toHaveBeenCalled();
   });
 
