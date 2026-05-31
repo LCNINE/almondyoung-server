@@ -51,7 +51,11 @@ export interface OrderCreatedPayload {
   orderId: string;
   externalOrderId?: string;
   salesChannel: SalesChannel;
-  customerId: string;
+  /**
+   * 내부 user-service 사용자 UUID. 로그인 채널(medusa)은 Medusa customer.metadata.almond_user_id 에서 해석.
+   * 비-로그인 외부 채널(Naver/Coupang) 또는 미링크 고객은 null. (core sales_orders.customer_id 는 nullable uuid)
+   */
+  customerId: string | null;
 
   items: OrderItem[];
 
@@ -202,7 +206,7 @@ const OrderCreatedSchema = z.object({
   orderId: z.string().min(1),
   externalOrderId: z.string().optional(),
   salesChannel: SalesChannelSchema,
-  customerId: z.string().min(1),
+  customerId: z.string().min(1).nullable(),
   items: z.array(OrderItemSchema),
   totalAmount: z.number().nonnegative(),
   subtotalAmount: z.number().nonnegative(),
