@@ -379,7 +379,7 @@ function RefundsTableContent({ intentId }: { intentId: string }) {
         </tbody>
       </table>
       {data.refunds.some((r: RefundDto) => r.manualConfirmable) && (
-        <p className="px-4 py-2 text-xs text-amber-600">수동 송금 대기 중인 환불이 있습니다. 실제 송금 완료 후 "완료 처리" 버튼을 눌러주세요.</p>
+        <p className="px-4 py-2 text-xs text-amber-600">수동 송금 대기 중인 환불이 있습니다. 실제 송금 완료 후 “완료 처리” 버튼을 눌러주세요.</p>
       )}
     </div>
   );

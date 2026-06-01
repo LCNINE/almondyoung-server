@@ -90,7 +90,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     const [sortIndexes, totalCount] = await sortingService.listAndCountProductSortIndices(
       sortIndexFilter,
       {
-        order: { [sortBy]: order === 'desc' ? 'DESC' : 'ASC' },
+        // sales_count / review_count 는 0 인 상품이 많아 동점이 대량 발생한다.
+        // tie-breaker(product_id) 가 없으면 OFFSET 페이지네이션에서 동점 상품의
+        // 순서가 페이지마다 흔들려 같은 상품이 여러 페이지에 중복 출력된다.
+        order: { [sortBy]: order === 'desc' ? 'DESC' : 'ASC', product_id: 'ASC' },
         take: limit,
         skip: offset,
       },
