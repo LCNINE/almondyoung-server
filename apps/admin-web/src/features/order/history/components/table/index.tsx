@@ -71,37 +71,203 @@ function formatBusinessRef(ref: SalesOrderBusinessTimelineItemDto['linkedEntity'
     return ref.id ?? ref.externalRef ?? '-';
 }
 
+// ── Timeline 운영 레이블 맵 ──────────────────────────────────────────────
+const RELATION_LABELS: Record<string, { label: string; color: string; icon: string }> = {
+    // 취소
+    opened_cancellation:                             { label: '주문 취소 처리됨', color: 'bg-red-100 text-red-700', icon: '✕' },
+    cancellation_cancelled_fulfillment_order:        { label: '출고주문 취소됨', color: 'bg-orange-100 text-orange-700', icon: '📦' },
+    cancellation_closed_fulfillment_creation_backlog:{ label: '출고 대기 닫힘', color: 'bg-gray-100 text-gray-600', icon: '⏹' },
+    cancellation_revoked_digital_ownership:          { label: '디지털 권리 회수됨', color: 'bg-purple-100 text-purple-700', icon: '🔒' },
+    cancellation_linked_wallet_refund:               { label: '환불 연결됨', color: 'bg-blue-100 text-blue-700', icon: '💳' },
+    cancellation_preserved_shipped_fulfillment_order_item: { label: '출고 항목 보존 (반품 필요)', color: 'bg-yellow-100 text-yellow-700', icon: '⚠️' },
+    cancellation_post_shipment_handoff:              { label: '출고 후 처리 이관', color: 'bg-yellow-100 text-yellow-700', icon: '🔄' },
+    // CS
+    opened_cs_case:       { label: 'CS 케이스 생성됨', color: 'bg-indigo-100 text-indigo-700', icon: '📋' },
+    // 반품/교환 (세부 이벤트는 LIFECYCLE_EVENT_LABELS에서 metadata.event로 처리)
+    return_lifecycle_event:   { label: '반품 이력', color: 'bg-amber-100 text-amber-700', icon: '↩️' },
+    exchange_lifecycle_event: { label: '교환 이력', color: 'bg-amber-100 text-amber-700', icon: '🔁' },
+    return_requested:     { label: '반품 신청 접수됨', color: 'bg-amber-100 text-amber-700', icon: '↩️' },
+    exchange_requested:   { label: '교환 신청 접수됨', color: 'bg-amber-100 text-amber-700', icon: '🔁' },
+    // 정정
+    opened_amendment:     { label: '주문 정정됨', color: 'bg-cyan-100 text-cyan-700', icon: '✏️' },
+};
+
+// metadata.event 기반 반품/교환 라이프사이클 이벤트 레이블
+const LIFECYCLE_EVENT_LABELS: Record<string, { label: string; color: string; icon: string }> = {
+    return_approved:             { label: '반품 승인됨', color: 'bg-green-100 text-green-700', icon: '↩️' },
+    return_rejected:             { label: '반품 거절됨', color: 'bg-red-100 text-red-700', icon: '↩️' },
+    return_collection_pending:   { label: '반품 수거 대기', color: 'bg-amber-100 text-amber-700', icon: '↩️' },
+    return_collected:            { label: '반품 수거 완료', color: 'bg-blue-100 text-blue-700', icon: '↩️' },
+    return_inspected:            { label: '반품 검수 완료', color: 'bg-blue-100 text-blue-700', icon: '↩️' },
+    return_completed:            { label: '반품 완료', color: 'bg-green-100 text-green-700', icon: '✅' },
+    exchange_approved:           { label: '교환 승인됨', color: 'bg-green-100 text-green-700', icon: '🔁' },
+    exchange_rejected:           { label: '교환 거절됨', color: 'bg-red-100 text-red-700', icon: '🔁' },
+    exchange_collection_pending: { label: '교환 수거 대기', color: 'bg-amber-100 text-amber-700', icon: '🔁' },
+    exchange_collected:          { label: '교환 수거 완료', color: 'bg-blue-100 text-blue-700', icon: '🔁' },
+    exchange_inspected:          { label: '교환 검수 완료', color: 'bg-blue-100 text-blue-700', icon: '🔁' },
+    exchange_completed:          { label: '교환 완료', color: 'bg-green-100 text-green-700', icon: '✅' },
+};
+
+const ENTITY_TYPE_LABELS: Record<string, string> = {
+    sales_order: '판매주문',
+    order_cancellation: '주문취소',
+    fulfillment_order: '출고주문',
+    fulfillment_order_creation_backlog: '출고 대기',
+    digital_asset_ownership: '디지털 자산',
+    wallet_refund: '환불',
+    wallet_payment_intent: '결제 인텐트',
+    wallet_charge: '결제',
+    cs_case: 'CS 케이스',
+    sales_order_amendment: '주문 정정',
+    return_handoff: '반품 이관',
+    recovery_handoff: '회수 이관',
+};
+
+const EFFECT_STATUS_LABELS: Record<string, string> = {
+    PENDING: '처리 중',
+    SUCCEEDED: '완료',
+    FAILED: '실패',
+    MANUAL_PENDING: '수동 처리 대기',
+    pending: '처리 중',
+    succeeded: '완료',
+    failed: '실패',
+    manual_pending: '수동 처리 대기',
+    requested: '접수됨',
+    approved: '승인됨',
+    rejected: '거절됨',
+    collection_pending: '수거 대기',
+    collected: '수거 완료',
+    inspected: '검수 완료',
+    completed: '완료',
+};
+
+function TimelineItem({ item }: { item: SalesOrderBusinessTimelineItemDto }) {
+    const [showRaw, setShowRaw] = useState(false);
+
+    // lifecycle 이벤트는 metadata.event로 세부 레이블 결정
+    const metaEvent = typeof item.metadata?.event === 'string' ? item.metadata.event : null;
+    const mapping = (metaEvent && LIFECYCLE_EVENT_LABELS[metaEvent])
+        ? LIFECYCLE_EVENT_LABELS[metaEvent]
+        : (RELATION_LABELS[item.relationName] ?? { label: item.relationName, color: 'bg-gray-100 text-gray-600', icon: '•' });
+
+    const entityLabel = ENTITY_TYPE_LABELS[item.linkedEntity.type] ?? item.linkedEntity.type;
+    const ref = item.linkedEntity.id
+        ? item.linkedEntity.id.slice(0, 8) + '…'
+        : item.linkedEntity.externalRef ?? '-';
+
+    // 운영에 중요한 메타데이터 필드 추출
+    const metaRefundStatus = typeof item.metadata?.refundStatus === 'string' ? item.metadata.refundStatus : null;
+    const metaNote = typeof item.metadata?.note === 'string' ? item.metadata.note : null;
+    const metaAdminNote = typeof item.metadata?.adminNote === 'string' ? item.metadata.adminNote : null;
+    const displayNote = metaAdminNote ?? metaNote;
+
+    // 상태 판정 (refundStatus 또는 lifecycle event 이름 기준)
+    const statusValue = metaRefundStatus ?? metaEvent ?? null;
+    const isFailed = Boolean(statusValue && (
+        statusValue === 'failed' || statusValue === 'FAILED' || statusValue.includes('rejected')
+    ));
+    const isPending = Boolean(statusValue && (
+        statusValue === 'pending' || statusValue === 'manual_pending' ||
+        statusValue === 'MANUAL_PENDING' || statusValue === 'PENDING'
+    ));
+    const isSucceeded = Boolean(statusValue && (
+        statusValue === 'succeeded' || statusValue === 'SUCCEEDED' || statusValue.includes('completed')
+    ));
+
+    const statusBadgeColor = isFailed ? 'bg-red-100 text-red-700'
+        : isPending ? 'bg-amber-100 text-amber-700'
+        : isSucceeded ? 'bg-green-100 text-green-700'
+        : null;
+    const statusLabel = metaRefundStatus ? (EFFECT_STATUS_LABELS[metaRefundStatus] ?? metaRefundStatus) : null;
+
+    // 실패/대기 상태는 좌측 경계선으로 강조
+    const leftBorder = isFailed ? 'border-l-2 border-red-400 pl-2'
+        : isPending ? 'border-l-2 border-amber-400 pl-2'
+        : '';
+
+    const hasMetadata = Object.keys(item.metadata).length > 0;
+
+    return (
+        <div className={`flex gap-3 py-2.5 border-b last:border-0 ${leftBorder}`}>
+            <div className="flex w-8 shrink-0 items-start justify-center pt-0.5 text-base">{mapping.icon}</div>
+            <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${mapping.color}`}>
+                            {mapping.label}
+                        </span>
+                        {statusLabel && statusBadgeColor && (
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${statusBadgeColor}`}>
+                                {statusLabel}
+                            </span>
+                        )}
+                        {isFailed && (
+                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-red-50 text-red-600 ring-1 ring-inset ring-red-300">
+                                조치 필요
+                            </span>
+                        )}
+                        {isPending && !isFailed && (
+                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-300">
+                                처리 대기
+                            </span>
+                        )}
+                    </div>
+                    <span className="shrink-0 text-xs text-muted-foreground whitespace-nowrap">
+                        {dayjs(item.occurredAt).format('MM/DD HH:mm')}
+                    </span>
+                </div>
+                <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                    <span className="font-medium text-gray-500">{entityLabel}</span>
+                    <span className="font-mono">{ref}</span>
+                </div>
+                {displayNote && (
+                    <p className={`mt-1 text-xs break-words ${isFailed ? 'text-red-600 font-medium' : 'text-gray-600'}`}>
+                        {displayNote}
+                    </p>
+                )}
+                {hasMetadata && (
+                    <button
+                        className="mt-1 text-xs text-muted-foreground hover:text-gray-700 underline"
+                        onClick={() => setShowRaw((v) => !v)}
+                    >
+                        {showRaw ? '상세 닫기' : '상세 보기'}
+                    </button>
+                )}
+                {showRaw && (
+                    <pre className="mt-1 rounded bg-gray-50 p-2 text-xs text-gray-600 overflow-x-auto whitespace-pre-wrap max-h-40">
+                        {JSON.stringify(item.metadata, null, 2)}
+                    </pre>
+                )}
+            </div>
+        </div>
+    );
+}
+
 function BusinessTimelineModal({ order, open, onOpenChange }: { order: OrderLineRow | null; open: boolean; onOpenChange: (open: boolean) => void }) {
     const { data, isLoading } = useSalesOrder(open && order ? order.orderId : '');
-    const timeline = data?.businessTimeline ?? [];
+    const timeline = [...(data?.businessTimeline ?? [])].sort(
+        (a, b) => new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime()
+    );
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-w-2xl">
                 <DialogHeader>
-                    <DialogTitle>업무 연결</DialogTitle>
+                    <DialogTitle>주문 이력 타임라인</DialogTitle>
                     <p className="mt-1 text-xs text-muted-foreground">주문번호: {order?.orderNo ?? '-'}</p>
                 </DialogHeader>
 
-                <div className="flex max-h-[60vh] flex-col gap-2 overflow-y-auto">
+                <div className="flex max-h-[60vh] flex-col overflow-y-auto">
                     {isLoading ? (
-                        <div className="rounded border p-4 text-sm text-muted-foreground">불러오는 중...</div>
+                        <div className="p-4 text-sm text-muted-foreground">불러오는 중...</div>
                     ) : timeline.length === 0 ? (
-                        <div className="rounded border p-4 text-sm text-muted-foreground">연결된 업무가 없습니다.</div>
+                        <div className="p-4 text-sm text-muted-foreground">아직 기록된 업무 이력이 없습니다.</div>
                     ) : (
-                        timeline.map((item) => (
-                            <div key={item.id} className="rounded border p-3">
-                                <div className="flex items-center justify-between gap-2">
-                                    <div className="flex items-center gap-2">
-                                        <Badge variant="secondary">{item.relationName}</Badge>
-                                        <span className="text-sm font-medium">{item.linkedEntity.type}</span>
-                                    </div>
-                                    <span className="text-xs text-muted-foreground">{dayjs(item.occurredAt).format('YYYY-MM-DD HH:mm')}</span>
-                                </div>
-                                <div className="mt-2 break-all text-xs text-muted-foreground">{formatBusinessRef(item.linkedEntity)}</div>
-                                {Object.keys(item.metadata ?? {}).length > 0 && <pre className="mt-2 max-h-28 overflow-auto rounded bg-muted p-2 text-xs">{JSON.stringify(item.metadata, null, 2)}</pre>}
-                            </div>
-                        ))
+                        <div className="px-1">
+                            {timeline.map((item) => (
+                                <TimelineItem key={item.id} item={item} />
+                            ))}
+                        </div>
                     )}
                 </div>
             </DialogContent>

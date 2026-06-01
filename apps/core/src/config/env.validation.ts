@@ -34,6 +34,11 @@ export const almondyoungEnvSchema = z
     GOODSFLOW_API_KEY: z.string().optional(),
     GOODSFLOW_CENTER_CODE: z.string().optional(),
 
+    // Wallet 서비스 (취소 후 자동 환불 연결)
+    // 미설정 시 환불은 manual_pending 상태로 기록되며 운영자가 수동 처리한다.
+    WALLET_BASE_URL: z.string().url().optional(),
+    WALLET_API_KEY: z.string().min(1).optional(),
+
     // OpenTelemetry
     OTEL_EXPORTER_OTLP_ENDPOINT: z.string().url().optional(),
     OTEL_SERVICE_NAME: z.string().optional(),

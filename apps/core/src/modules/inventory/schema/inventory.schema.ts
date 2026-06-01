@@ -1040,6 +1040,11 @@ export const salesOrders = pgTable(
     // 메모
     memo: text('memo'), // 메모
 
+    // 결제 연동
+    // Wallet 서비스의 payment intent ID. Medusa 채널 주문의 경우 결제 세션 생성 시 설정.
+    // 취소 시 자동 환불 workflow에서 사용. 비-Medusa 채널 또는 레거시 주문은 NULL.
+    walletIntentId: varchar('wallet_intent_id', { length: 255 }),
+
     // 타임스탬프
     orderDate: timestamp('order_date', { withTimezone: true }).notNull(),
     confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
@@ -3315,3 +3320,160 @@ export type NewInvoice = InferInsertModel<typeof invoices>;
 export const inventoryTables = wmsTables;
 export const inventorySchema = wmsSchema;
 export type InventorySchema = typeof wmsSchema;
+
+/*───────────────────────────
+ * RETURN / EXCHANGE REQUEST
+ *──────────────────────────*/
+
+export const returnRequestStatusEnum = pgEnum('return_request_status', [
+  'requested',
+  'approved',
+  'rejected',
+  'collection_pending',
+  'collected',
+  'inspected',
+  'refund_pending',
+  'completed',
+  'cancelled',
+]);
+
+export const exchangeRequestStatusEnum = pgEnum('exchange_request_status', [
+  'requested',
+  'approved',
+  'rejected',
+  'collection_pending',
+  'collected',
+  'inspected',
+  'refund_pending',
+  'completed',
+  'cancelled',
+]);
+
+export const returnReasonCodeEnum = pgEnum('return_reason_code', [
+  'defective',
+  'not_as_described',
+  'change_of_mind',
+  'wrong_item',
+  'damaged_in_shipping',
+  'other',
+]);
+
+export const exchangeReasonCodeEnum = pgEnum('exchange_reason_code', [
+  'defective',
+  'not_as_described',
+  'change_of_mind',
+  'wrong_item',
+  'damaged_in_shipping',
+  'other',
+]);
+
+export const returnRequests = pgTable(
+  'return_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    salesOrderId: uuid('sales_order_id')
+      .references(() => salesOrders.id, { onDelete: 'restrict' })
+      .notNull(),
+    customerId: uuid('customer_id'),
+    status: returnRequestStatusEnum('status').notNull().default('requested'),
+    reasonCode: returnReasonCodeEnum('reason_code').notNull(),
+    reasonDetail: text('reason_detail'),
+    returnAddress: json('return_address'),
+    adminNote: text('admin_note'),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    collectedAt: timestamp('collected_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxReturnRequestsSalesOrder: index('idx_return_requests_sales_order').on(t.salesOrderId),
+    idxReturnRequestsStatus: index('idx_return_requests_status').on(t.status),
+    idxReturnRequestsCustomer: index('idx_return_requests_customer').on(t.customerId),
+  }),
+);
+
+export const returnRequestItems = pgTable(
+  'return_request_items',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    returnRequestId: uuid('return_request_id')
+      .references(() => returnRequests.id, { onDelete: 'cascade' })
+      .notNull(),
+    salesOrderLineId: uuid('sales_order_line_id').notNull(),
+    quantity: integer('quantity').notNull(),
+    reasonCode: returnReasonCodeEnum('reason_code'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxReturnRequestItemsRequest: index('idx_return_request_items_request').on(t.returnRequestId),
+    idxReturnRequestItemsOrderLine: index('idx_return_request_items_order_line').on(t.salesOrderLineId),
+  }),
+);
+
+export const exchangeRequests = pgTable(
+  'exchange_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    salesOrderId: uuid('sales_order_id')
+      .references(() => salesOrders.id, { onDelete: 'restrict' })
+      .notNull(),
+    customerId: uuid('customer_id'),
+    status: exchangeRequestStatusEnum('status').notNull().default('requested'),
+    reasonCode: exchangeReasonCodeEnum('reason_code').notNull(),
+    reasonDetail: text('reason_detail'),
+    adminNote: text('admin_note'),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxExchangeRequestsSalesOrder: index('idx_exchange_requests_sales_order').on(t.salesOrderId),
+    idxExchangeRequestsStatus: index('idx_exchange_requests_status').on(t.status),
+    idxExchangeRequestsCustomer: index('idx_exchange_requests_customer').on(t.customerId),
+  }),
+);
+
+export const exchangeRequestItems = pgTable(
+  'exchange_request_items',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    exchangeRequestId: uuid('exchange_request_id')
+      .references(() => exchangeRequests.id, { onDelete: 'cascade' })
+      .notNull(),
+    salesOrderLineId: uuid('sales_order_line_id').notNull(),
+    quantity: integer('quantity').notNull(),
+    desiredVariantId: varchar('desired_variant_id', { length: 255 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxExchangeRequestItemsRequest: index('idx_exchange_request_items_request').on(t.exchangeRequestId),
+    idxExchangeRequestItemsOrderLine: index('idx_exchange_request_items_order_line').on(t.salesOrderLineId),
+  }),
+);
+
+export const returnExchangeTables = {
+  returnRequests,
+  returnRequestItems,
+  exchangeRequests,
+  exchangeRequestItems,
+} as const;
+
+export const returnExchangeSchema = {
+  ...returnExchangeTables,
+} as const;
+
+// Return Request Types
+export type ReturnRequest = InferSelectModel<typeof returnRequests>;
+export type NewReturnRequest = InferInsertModel<typeof returnRequests>;
+
+export type ReturnRequestItem = InferSelectModel<typeof returnRequestItems>;
+export type NewReturnRequestItem = InferInsertModel<typeof returnRequestItems>;
+
+// Exchange Request Types
+export type ExchangeRequest = InferSelectModel<typeof exchangeRequests>;
+export type NewExchangeRequest = InferInsertModel<typeof exchangeRequests>;
+
+export type ExchangeRequestItem = InferSelectModel<typeof exchangeRequestItems>;
+export type NewExchangeRequestItem = InferInsertModel<typeof exchangeRequestItems>;

@@ -214,7 +214,7 @@ export function ExchangeOrderCard({
                     fullWidth={false}
                     onClick={onAddToCartClick}
                   >
-                    장바구니 담기
+                    {t("exchange.addToCart")}
                   </CustomButton>
                 </div>
               </div>

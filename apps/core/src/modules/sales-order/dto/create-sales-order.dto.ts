@@ -100,4 +100,9 @@ export class CreateSalesOrderDto {
   @ValidateNested({ each: true })
   @Type(() => CreateSalesOrderLineDto)
   lines: CreateSalesOrderLineDto[];
+
+  @ApiProperty({ description: 'Wallet 결제 인텐트 ID. Medusa 채널 주문만 해당. 취소 시 자동 환불에 사용됨.', required: false })
+  @IsString()
+  @IsOptional()
+  walletIntentId?: string;
 }

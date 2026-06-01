@@ -3,6 +3,13 @@
 import { CustomButton } from "@/components/shared/custom-buttons"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -10,45 +17,38 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { useAddToCart } from "@/hooks/api/use-add-to-cart"
 import { captureOrderPayment } from "@/lib/api/medusa/orders"
+import { cancelOrderByMedusaId, type StoreOrderAction, type StoreCancelUnavailableReason } from "@/lib/api/orders/store-orders"
+import type { StoreOrderActionsResponse } from "@/lib/api/orders/store-orders"
+import { OrderStatusBadges, CANCEL_UNAVAILABLE_MESSAGES, getCoreDisplayStatus } from "@/components/orders/order-status-badges"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
-import { MoreVertical, Package, RotateCcw, ShoppingCart } from "lucide-react"
+import { ExternalLink, MoreVertical, Package, RefreshCw, RotateCcw, ShoppingCart } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
 
 interface OrderCardContentProps {
-  /** 주문 ID */
   orderId: string
-  /** 주문 상태 (예: "배송 완료") */
   status: string
-  /** 결제 상태 (예: "authorized", "captured") */
   paymentStatus: string
-  /** 배송 관련 추가 정보 (예: "6/18(화) 도착") */
   deliveryInfo?: string
-  /** 배송 참고 사항 (모바일 전용) */
   shippingNote?: string
-  /** 상품명 */
   productName: string
-  /** 상품 이미지 URL */
   productImage: string
-  /** 가격 (포맷된 문자열) */
   price: string
-  /** 수량 */
   quantity: number | string
-  /** 상품 옵션 배열 */
   options?: string[]
-  /** 문의 버튼 표시 여부 (데스크탑 전용) */
   showInquiry?: boolean
-  /** 주문 아이템 목록 (구매 확정 시 리뷰 자격 생성용) */
   orderItems?: Array<{ productId: string; orderLineId: string }>
-  /** 상품 variant ID (장바구니 담기용) */
   variantId: string
+  /** Core 액션 목록. undefined이면 Medusa 상태 기반 fallback 사용. */
+  /** Core actions 전체 응답. 있으면 badge·버튼 조건에 사용 */
+  coreActions?: StoreOrderActionsResponse
+  /** 하위 호환 */
+  availableActions?: StoreOrderAction[]
+  cancelUnavailableReason?: StoreCancelUnavailableReason
+  channelInfo?: { channel: string; cancelUrl?: string; returnUrl?: string }
 }
 
-/**
- * 주문 카드의 메인 콘텐츠 컴포넌트
- * 상품 정보, 상태, 액션 버튼 등을 포함합니다.
- */
 export default function OrderCardContent({
   orderId,
   status,
@@ -63,31 +63,42 @@ export default function OrderCardContent({
   showInquiry = true,
   orderItems,
   variantId,
+  coreActions,
+  availableActions: availableActionsProp,
+  cancelUnavailableReason: cancelUnavailableReasonProp,
+  channelInfo: channelInfoProp,
 }: OrderCardContentProps) {
+  const availableActions = coreActions?.availableActions ?? availableActionsProp
+  const cancelUnavailableReason = coreActions?.cancelUnavailableReason ?? cancelUnavailableReasonProp
+  const channelInfo = coreActions?.channelInfo ?? channelInfoProp
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const { addToCart, isLoading: isAddingToCart } = useAddToCart()
   const resolvedProductImage = getThumbnailUrl(productImage)
   const quantityText = typeof quantity === "number" ? `${quantity}개` : quantity
   const [isConfirmed, setIsConfirmed] = useState(false)
+  const [showCancelDialog, setShowCancelDialog] = useState(false)
+  const [isCancelling, startCancelTransition] = useTransition()
+
   const canConfirmPurchase = paymentStatus === "authorized" && !isConfirmed
+  // Core projection 기준 주 상태 텍스트. Core 조회 실패 시 Medusa status로 fallback.
+  const displayStatus = coreActions ? getCoreDisplayStatus(coreActions) : status
+
+  // Core 액션 목록이 있으면 그것을 기준으로, 없으면 Medusa 상태 기반 fallback
+  const canCancel = availableActions ? availableActions.includes("cancel") : false
+  const canTrack = availableActions ? availableActions.includes("track") : true
+  const canReturn = availableActions?.includes("return") ?? false
+  const canExchange = availableActions?.includes("exchange") ?? false
+  const cancelTooltip = cancelUnavailableReason ? CANCEL_UNAVAILABLE_MESSAGES[cancelUnavailableReason] : undefined
 
   const handleConfirmPurchase = () => {
-    if (
-      !confirm(
-        "구매를 확정하시겠습니까?\n\n확정 후에는 반품·환불이 어려울 수 있어요."
-      )
-    )
-      return
-
+    if (!confirm("구매를 확정하시겠습니까?\n\n확정 후에는 반품·환불이 어려울 수 있어요.")) return
     startTransition(async () => {
       const result = await captureOrderPayment(orderId, orderItems)
-
       if (!result.success) {
         toast.error(result.message ?? "구매확정에 실패했습니다.")
         return
       }
-
       setIsConfirmed(true)
       toast.success("구매확정이 완료되었습니다.")
       router.refresh()
@@ -98,12 +109,23 @@ export default function OrderCardContent({
     const result = await addToCart({ variantId })
     if (result.success) {
       toast.success("장바구니에 담았습니다.", {
-        action: {
-          label: "장바구니 보기",
-          onClick: () => router.push("/cart"),
-        },
+        action: { label: "장바구니 보기", onClick: () => router.push("/cart") },
       })
     }
+  }
+
+  const handleCancelConfirm = () => {
+    startCancelTransition(async () => {
+      try {
+        await cancelOrderByMedusaId(orderId, { reasonCode: "CHANGE_OF_MIND" })
+        toast.success("주문 취소 요청이 접수되었습니다. 환불 상태는 주문 상세에서 확인해 주세요.")
+        setShowCancelDialog(false)
+        router.refresh()
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : undefined
+        toast.error(message ?? "취소 처리 중 오류가 발생했습니다.")
+      }
+    })
   }
 
   return (
@@ -112,52 +134,39 @@ export default function OrderCardContent({
         <div className="space-y-5">
           <div className="space-y-1.5 md:space-y-0">
             <div className="flex items-start justify-between">
-              <div className="flex items-center gap-3">
-                <h3 className="text-xs font-bold text-black md:text-lg">
-                  {status}
-                </h3>
-                {deliveryInfo && (
-                  <span className="text-xs text-green-500 md:text-lg">
-                    {deliveryInfo}
-                  </span>
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-xs font-bold text-black md:text-lg">{displayStatus}</h3>
+                  {deliveryInfo && (
+                    <span className="text-xs text-green-500 md:text-lg">{deliveryInfo}</span>
+                  )}
+                </div>
+                {/* Core 상태 badge — 주문/출고/환불 분리 */}
+                <OrderStatusBadges actions={coreActions} />
+                {/* 취소 불가 사유 안내 */}
+                {cancelUnavailableReason && !canCancel && cancelTooltip && (
+                  <p className="text-[10px] text-muted-foreground">{cancelTooltip}</p>
                 )}
               </div>
             </div>
-
-            {/* 모바일 전용 - 배송 노트 */}
             {shippingNote && (
-              <p className="text-xs leading-4 font-bold text-amber-500 md:hidden">
-                {shippingNote}
-              </p>
+              <p className="text-xs leading-4 font-bold text-amber-500 md:hidden">{shippingNote}</p>
             )}
           </div>
 
-          {/* 상품 카드 - container 추후 map함수로 렌러링해도됨.*/}
           <div className="flex items-center gap-2.5 md:gap-3.5">
-            {/* 상품 이미지 */}
             <figure className="shrink-0">
-              <img
-                className="h-20 w-16 rounded-[5px]"
-                src={resolvedProductImage}
-                alt={productName}
-              />
+              <img className="h-20 w-16 rounded-[5px]" src={resolvedProductImage} alt={productName} />
             </figure>
-
             <div className="flex flex-1 flex-col gap-2">
-              {/* 상품명 */}
               <h4 className="text-sm text-black md:text-base">{productName}</h4>
-
               <div className="flex items-end justify-between">
                 <div className="min-w-28 flex-1 text-xs text-gray-500 md:text-sm">
-                  <p>
-                    {price} · {quantityText}
-                  </p>
+                  <p>{price} · {quantityText}</p>
                   {options.map((option, index) => (
                     <p key={index}>- {option}</p>
                   ))}
                 </div>
-
-                {/* 장바구니 버튼 - 데스크탑만 */}
                 <CustomButton
                   type="button"
                   className="hidden rounded-[3px] md:inline-flex"
@@ -173,43 +182,25 @@ export default function OrderCardContent({
         </div>
       </section>
 
-      {/* 데스크탑 전용 - 구분선 */}
-      <div
-        className="hidden h-36 w-px bg-gray-200 md:block"
-        aria-hidden="true"
-      />
+      <div className="hidden h-36 w-px bg-gray-200 md:block" aria-hidden="true" />
 
-      {/* 모바일 버튼: 주요 액션 + 더보기 메뉴 */}
+      {/* 모바일 버튼 */}
       <div className="mt-5 flex items-center gap-2.5 md:hidden">
         {canConfirmPurchase ? (
           <CustomButton
-            type="button"
-            variant="fill"
-            color="primary"
-            size="lg"
-            className="flex-1"
-            fullWidth={true}
-            isLoading={isPending}
+            type="button" variant="fill" color="primary" size="lg"
+            className="flex-1" fullWidth isLoading={isPending}
             onClick={handleConfirmPurchase}
           >
             구매확정
           </CustomButton>
-        ) : (
-          <LocalizedClientLink
-            href={`/mypage/order/track?orderId=${orderId}`}
-            className="flex-1"
-          >
-            <CustomButton
-              type="button"
-              variant="outline"
-              color="secondary"
-              size="lg"
-              fullWidth={true}
-            >
+        ) : canTrack ? (
+          <LocalizedClientLink href={`/mypage/order/track?orderId=${orderId}`} className="flex-1">
+            <CustomButton type="button" variant="outline" color="secondary" size="lg" fullWidth>
               배송 조회
             </CustomButton>
           </LocalizedClientLink>
-        )}
+        ) : null}
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -221,7 +212,7 @@ export default function OrderCardContent({
               <MoreVertical className="h-4 w-4 text-gray-600" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-40">
+          <DropdownMenuContent align="end" className="w-44">
             <DropdownMenuItem
               className="flex cursor-pointer items-center gap-2"
               onClick={handleAddToCart}
@@ -230,7 +221,7 @@ export default function OrderCardContent({
               <ShoppingCart className="h-4 w-4" />
               다시 담기
             </DropdownMenuItem>
-            {canConfirmPurchase && (
+            {canTrack && (
               <DropdownMenuItem asChild>
                 <LocalizedClientLink
                   href={`/mypage/order/track?orderId=${orderId}`}
@@ -241,58 +232,127 @@ export default function OrderCardContent({
                 </LocalizedClientLink>
               </DropdownMenuItem>
             )}
-            <DropdownMenuItem className="flex cursor-pointer items-center gap-2">
-              <RotateCcw className="h-4 w-4" />
-              취소 / 반품 신청
-            </DropdownMenuItem>
+            {canReturn && (
+              <DropdownMenuItem asChild>
+                <LocalizedClientLink
+                  href={`/mypage/exchange?orderId=${orderId}&type=return`}
+                  className="flex cursor-pointer items-center gap-2"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  반품 신청
+                </LocalizedClientLink>
+              </DropdownMenuItem>
+            )}
+            {canExchange && (
+              <DropdownMenuItem asChild>
+                <LocalizedClientLink
+                  href={`/mypage/exchange?orderId=${orderId}&type=exchange`}
+                  className="flex cursor-pointer items-center gap-2"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  교환 신청
+                </LocalizedClientLink>
+              </DropdownMenuItem>
+            )}
+            {canCancel && (
+              <DropdownMenuItem
+                className="flex cursor-pointer items-center gap-2 text-red-600"
+                onClick={() => setShowCancelDialog(true)}
+              >
+                <RotateCcw className="h-4 w-4" />
+                주문 취소
+              </DropdownMenuItem>
+            )}
+            {!canCancel && channelInfo?.cancelUrl && (
+              <DropdownMenuItem asChild>
+                <a
+                  href={channelInfo.cancelUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex cursor-pointer items-center gap-2"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  {channelInfo.channel}에서 취소
+                </a>
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
 
-      {/* 데스크탑 버튼 (3개 세로) */}
+      {/* 데스크탑 버튼 */}
       <aside className="hidden max-w-48 min-w-28 flex-1 flex-col gap-2.5 md:flex">
         {canConfirmPurchase && (
-          <CustomButton
-            variant="fill"
-            color="primary"
-            size="md"
-            fullWidth={true}
-            isLoading={isPending}
-            onClick={handleConfirmPurchase}
-          >
+          <CustomButton variant="fill" color="primary" size="md" fullWidth isLoading={isPending} onClick={handleConfirmPurchase}>
             구매확정
           </CustomButton>
         )}
-        <LocalizedClientLink href={`/mypage/order/track?orderId=${orderId}`}>
+        {canTrack && (
+          <LocalizedClientLink href={`/mypage/order/track?orderId=${orderId}`}>
+            <CustomButton variant="outline" color="secondary" size="md" fullWidth>
+              배송 조회
+            </CustomButton>
+          </LocalizedClientLink>
+        )}
+        {canReturn && (
+          <LocalizedClientLink href={`/mypage/exchange?orderId=${orderId}&type=return`}>
+            <CustomButton variant="outline" color="secondary" size="md" fullWidth>
+              반품 신청
+            </CustomButton>
+          </LocalizedClientLink>
+        )}
+        {canExchange && (
+          <LocalizedClientLink href={`/mypage/exchange?orderId=${orderId}&type=exchange`}>
+            <CustomButton variant="outline" color="secondary" size="md" fullWidth>
+              교환 신청
+            </CustomButton>
+          </LocalizedClientLink>
+        )}
+        {canCancel ? (
           <CustomButton
-            variant="outline"
-            color="secondary"
-            size="md"
-            fullWidth={true}
+            variant="outline" color="secondary" size="md" fullWidth
+            onClick={() => setShowCancelDialog(true)}
           >
-            배송 조회
+            주문취소
           </CustomButton>
-        </LocalizedClientLink>
-        <CustomButton
-          variant="outline"
-          color="secondary"
-          size="md"
-          fullWidth={true}
-        >
-          주문취소
-        </CustomButton>
+        ) : cancelUnavailableReason && channelInfo?.cancelUrl ? (
+          <a href={channelInfo.cancelUrl} target="_blank" rel="noopener noreferrer">
+            <CustomButton variant="outline" color="secondary" size="md" fullWidth>
+              {channelInfo.channel}에서 취소
+            </CustomButton>
+          </a>
+        ) : cancelUnavailableReason && cancelUnavailableReason !== 'already_cancelled' ? (
+          <CustomButton variant="outline" color="secondary" size="md" fullWidth disabled title={cancelTooltip}>
+            주문취소 불가
+          </CustomButton>
+        ) : null}
         {showInquiry && (
-          <CustomButton
-            type="button"
-            variant="outline"
-            color="secondary"
-            size="md"
-            fullWidth={true}
-          >
+          <CustomButton type="button" variant="outline" color="secondary" size="md" fullWidth>
             문의
           </CustomButton>
         )}
       </aside>
+
+      {/* 취소 확인 dialog */}
+      <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>주문 취소</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            <p><span className="font-medium">{productName}</span> 주문을 취소하시겠습니까?</p>
+            <p className="text-muted-foreground text-xs">결제하신 금액은 영업일 기준 3~5일 내 환불됩니다.</p>
+          </div>
+          <DialogFooter>
+            <CustomButton variant="outline" color="secondary" size="md" onClick={() => setShowCancelDialog(false)} disabled={isCancelling}>
+              돌아가기
+            </CustomButton>
+            <CustomButton variant="fill" color="primary" size="md" onClick={handleCancelConfirm} isLoading={isCancelling}>
+              취소 확인
+            </CustomButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

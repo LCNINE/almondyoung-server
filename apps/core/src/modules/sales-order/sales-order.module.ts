@@ -11,11 +11,17 @@ import { FulfillmentOrderCreationBacklogModule } from '../fulfillment/backlog/fu
 
 import { SalesOrdersController } from './controllers/sales-orders.controller';
 import { SalesOrderAmendmentsController } from './controllers/sales-order-amendments.controller';
+import { StoreSalesOrdersController } from './controllers/store-sales-orders.controller';
+import { StoreSalesOrderReturnExchangeController } from './controllers/store-return-exchange.controller';
+import { AdminReturnExchangeController } from './controllers/admin-return-exchange.controller';
 import { OrderEventsConsumer } from './consumers/order-events.consumer';
 import { SalesOrdersService } from './services/sales-orders.service';
 import { SalesOrderAmendmentsService } from './services/sales-order-amendments.service';
 import { SalesOrderQueryService } from './services/sales-order-query.service';
 import { PoliciesService } from './services/policies.service';
+import { StoreSalesOrdersService } from './services/store-sales-orders.service';
+import { StoreReturnExchangeService } from './services/store-return-exchange.service';
+import { WalletRefundClient } from './services/wallet-refund.client';
 
 @Module({
   imports: [
@@ -44,8 +50,8 @@ import { PoliciesService } from './services/policies.service';
 
     ProductSellableQuantityModule,
   ],
-  controllers: [SalesOrdersController, SalesOrderAmendmentsController, OrderEventsConsumer],
-  providers: [SalesOrdersService, SalesOrderAmendmentsService, SalesOrderQueryService, PoliciesService],
+  controllers: [SalesOrdersController, SalesOrderAmendmentsController, StoreSalesOrdersController, StoreSalesOrderReturnExchangeController, AdminReturnExchangeController, OrderEventsConsumer],
+  providers: [SalesOrdersService, SalesOrderAmendmentsService, SalesOrderQueryService, PoliciesService, StoreSalesOrdersService, StoreReturnExchangeService, WalletRefundClient],
   exports: [
     SalesOrdersService, // Fulfillment BC (cancel, merge 시 SO 상태 변경)
     SalesOrderAmendmentsService,

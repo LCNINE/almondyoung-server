@@ -12,8 +12,13 @@ export async function generateMetadata() {
   })
 }
 
-export default async function ExchangePage() {
+interface ExchangePageProps {
+  searchParams: Promise<{ orderId?: string; type?: string }>
+}
+
+export default async function ExchangePage({ searchParams }: ExchangePageProps) {
   const t = await getTranslations("mypage.menu")
+  const { orderId, type } = await searchParams
   return (
     <WithHeaderLayout
       config={{
@@ -24,7 +29,7 @@ export default async function ExchangePage() {
       }}
     >
       <MypageLayout>
-        <ExchangeClient />
+        <ExchangeClient orderId={orderId} type={type === "exchange" ? "exchange" : "return"} />
       </MypageLayout>
     </WithHeaderLayout>
   )

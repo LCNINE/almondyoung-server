@@ -1,0 +1,1 @@
+ALTER TABLE "sales_orders" ADD COLUMN "wallet_intent_id" varchar(255);
