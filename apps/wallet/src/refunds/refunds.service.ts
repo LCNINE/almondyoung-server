@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { eq } from 'drizzle-orm';
-import { WalletSchema, refunds, paymentIntents } from '../schema';
+import { and, eq, inArray, sql } from 'drizzle-orm';
+import { WalletSchema, charges as chargesTable, refunds, paymentIntents } from '../schema';
 import { Refund } from '../types';
 import { ChargesService } from '../charges/charges.service';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
@@ -23,21 +23,23 @@ export class RefundsService {
   ) {}
 
   async create(dto: CreateRefundDto): Promise<Refund> {
+    // 1. Early validation (no lock needed)
     const charge = await this.chargesService.findById(dto.chargeId);
     if (!charge) {
-      throw new NotFoundException({
-        error: 'CHARGE_NOT_FOUND',
-        message: `Charge not found: ${dto.chargeId}`,
+      throw new NotFoundException({ error: 'CHARGE_NOT_FOUND', message: `Charge not found: ${dto.chargeId}` });
+    }
+    if (dto.intentId && charge.intentId !== dto.intentId) {
+      throw new BadRequestException({
+        error: 'CHARGE_INTENT_MISMATCH',
+        message: `Charge ${dto.chargeId} does not belong to intent ${dto.intentId}`,
       });
     }
-
     if (charge.status !== 'SUCCEEDED') {
       throw new BadRequestException({
         error: 'CHARGE_NOT_REFUNDABLE',
         message: `Charge is not in a refundable state: ${charge.status}`,
       });
     }
-
     if (dto.amount > charge.amount) {
       throw new BadRequestException({
         error: 'REFUND_AMOUNT_EXCEEDS_CHARGE',
@@ -52,32 +54,41 @@ export class RefundsService {
         message: `Payment method not found: ${charge.paymentMethodId}`,
       });
     }
-
     const userId = await this.getIntentUserId(charge.intentId);
     if (!userId) {
-      throw new NotFoundException({
-        error: 'INTENT_NOT_FOUND',
-        message: `Intent not found for charge: ${charge.id}`,
-      });
+      throw new NotFoundException({ error: 'INTENT_NOT_FOUND', message: `Intent not found for charge: ${charge.id}` });
     }
 
-    // Create refund record
-    const insertedRefunds = await this.dbService.db
-      .insert(refunds)
-      .values({
-        chargeId: charge.id,
-        intentId: charge.intentId,
-        amount: dto.amount,
-        currency: charge.currency,
-        status: 'PENDING',
-        reasonCode: dto.reasonCode ?? null,
-        reasonMessage: dto.reasonMessage ?? null,
-        providerRefundId: null,
-      })
-      .returning();
+    // 2. Lock charge row + re-check available amount + insert refund record atomically
+    const refund = await this.dbService.db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM ${chargesTable} WHERE id = ${charge.id} FOR UPDATE`);
 
-    const refund = insertedRefunds[0];
-    if (!refund) throw new Error('REFUND_INSERT_FAILED');
+      const alreadyRefunded = await this.getRefundedTotalInTx(charge.id, tx);
+      const available = charge.amount - alreadyRefunded;
+      if (dto.amount > available) {
+        throw new BadRequestException({
+          error: 'REFUND_AMOUNT_EXCEEDS_AVAILABLE',
+          message: `Refund amount (${dto.amount}) exceeds available refundable amount (${available})`,
+        });
+      }
+
+      const inserted = await tx
+        .insert(refunds)
+        .values({
+          chargeId: charge.id,
+          intentId: charge.intentId,
+          amount: dto.amount,
+          currency: charge.currency,
+          status: 'PENDING',
+          reasonCode: dto.reasonCode ?? null,
+          reasonMessage: dto.reasonMessage ?? null,
+          providerRefundId: null,
+        })
+        .returning();
+      const row = inserted[0];
+      if (!row) throw new Error('REFUND_INSERT_FAILED');
+      return row;
+    });
 
     const correlationId = `refund:${refund.id}:${Date.now()}`;
     const provider = this.providerRegistry.getProviderOrThrow(method.type);
@@ -100,6 +111,11 @@ export class RefundsService {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(`Provider refund threw: refundId=${refund.id}, error=${message}`);
+      // reasonCode는 관리자가 입력한 환불 사유를 보존. PG 오류는 reasonMessage에 추가하고 state_transitions에 기록
+      await this.dbService.db
+        .update(refunds)
+        .set({ reasonMessage: message.slice(0, 500), updatedAt: new Date() })
+        .where(eq(refunds.id, refund.id));
       await this.stateTransitionService.transitionRefund(refund.id, 'FAILED', {
         correlationId,
         reasonCode: 'PROVIDER_EXCEPTION',
@@ -154,10 +170,17 @@ export class RefundsService {
       await this.dbService.db.update(refunds).set({ updatedAt: new Date() }).where(eq(refunds.id, refund.id));
     } else {
       // FAILED
+      const failCode = providerResult.errorCode ?? 'REFUND_FAILED';
+      const failMessage = providerResult.errorMessage ?? null;
+      // reasonCode는 관리자가 입력한 환불 사유를 보존. PG 오류는 reasonMessage에 기록
+      await this.dbService.db
+        .update(refunds)
+        .set({ reasonMessage: failMessage, updatedAt: new Date() })
+        .where(eq(refunds.id, refund.id));
       await this.stateTransitionService.transitionRefund(refund.id, 'FAILED', {
         correlationId,
-        reasonCode: providerResult.errorCode ?? 'REFUND_FAILED',
-        reasonMessage: providerResult.errorMessage,
+        reasonCode: failCode,
+        reasonMessage: failMessage ?? undefined,
       });
     }
 
@@ -223,5 +246,59 @@ export class RefundsService {
       .where(eq(paymentIntents.id, intentId))
       .limit(1);
     return rows[0]?.userId ?? null;
+  }
+
+  async confirmManual(refundId: string): Promise<Refund> {
+    const refund = await this.findByIdOrThrow(refundId);
+    if (refund.status !== 'PENDING') {
+      throw new Error(`환불이 PENDING 상태가 아닙니다: ${refund.status}`);
+    }
+
+    const charge = await this.chargesService.findById(refund.chargeId);
+    if (!charge) throw new Error(`Charge not found: ${refund.chargeId}`);
+    const method = await this.paymentMethodsService.findById(charge.paymentMethodId);
+    if (method?.type !== 'BANK_TRANSFER') {
+      throw new Error('수동 완료 처리는 무통장 환불(BANK_TRANSFER)만 가능합니다.');
+    }
+
+    const userId = await this.getIntentUserId(refund.intentId);
+    if (!userId) throw new Error(`Intent not found for refund: ${refundId}`);
+    const now = new Date().toISOString();
+    const correlationId = `manual-confirm:${refundId}`;
+
+    // transitionRefund가 status update와 state_transitions 기록을 모두 처리
+    await this.stateTransitionService.transitionRefund(
+      refundId,
+      'SUCCEEDED',
+      {
+        correlationId,
+        reasonCode: 'MANUAL_CONFIRM',
+        outboxEvent: {
+          eventType: GatewayEventType.REFUND_SUCCEEDED,
+          aggregateType: GATEWAY_AGGREGATE_TYPE,
+          aggregateId: refundId,
+          payload: buildRefundEventPayload({
+            refundId,
+            chargeId: refund.chargeId,
+            intentId: refund.intentId,
+            userId: userId ?? '',
+            status: 'SUCCEEDED',
+            amount: refund.amount,
+            currency: refund.currency,
+            occurredAt: now,
+          }),
+        },
+      },
+      'PENDING',
+    );
+    return this.findByIdOrThrow(refundId);
+  }
+
+  private async getRefundedTotalInTx(chargeId: string, tx: Parameters<Parameters<typeof this.dbService.db.transaction>[0]>[0]): Promise<number> {
+    const rows = await tx
+      .select({ amount: refunds.amount })
+      .from(refunds)
+      .where(and(eq(refunds.chargeId, chargeId), inArray(refunds.status, ['SUCCEEDED', 'PENDING'])));
+    return rows.reduce((total, r) => total + r.amount, 0);
   }
 }

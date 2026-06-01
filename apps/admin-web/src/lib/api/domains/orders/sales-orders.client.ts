@@ -5,6 +5,7 @@
 
 import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import type {
+  CancelSalesOrderDto,
   CancelSalesOrderResponseDto,
   ConfirmSalesOrderResponseDto,
   CreateBusinessLinkDto,
@@ -89,10 +90,12 @@ export const salesOrders = {
 
   // 판매 주문 취소
   cancelSalesOrder: async (
-    id: string
+    id: string,
+    body?: CancelSalesOrderDto
   ): Promise<CancelSalesOrderResponseDto> => {
     const response = await client.post(
-      `${ALMONDYOUNG_API_BASE_URL}/sales-orders/${encodeURIComponent(id)}/cancel`
+      `${ALMONDYOUNG_API_BASE_URL}/sales-orders/${encodeURIComponent(id)}/cancel`,
+      body
     );
     return response.data;
   },

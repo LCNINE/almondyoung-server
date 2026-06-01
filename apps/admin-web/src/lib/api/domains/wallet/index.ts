@@ -78,13 +78,23 @@ export const walletApi = {
       reasonCode?: string;
       reasonMessage?: string;
     }
-  ): Promise<void> => {
-    await client.post(`${BASE}/v1/admin/payment-intents/${id}/refund`, dto, {
+  ): Promise<RefundDto> => {
+    const res = await client.post(`${BASE}/v1/admin/payment-intents/${id}/refund`, dto, {
       headers: { 'Idempotency-Key': crypto.randomUUID() },
     });
+    return res.data;
   },
 
   // ── Refunds ──────────────────────────────────────────────────────────────
+
+  confirmRefund: async (id: string): Promise<RefundDto> => {
+    const res = await client.post(
+      `${BASE}/v1/admin/refunds/${encodeURIComponent(id)}/confirm`,
+      undefined,
+      { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+    );
+    return res.data;
+  },
 
   listRefunds: async (
     query: RefundListQuery
