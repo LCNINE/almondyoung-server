@@ -1,7 +1,17 @@
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 import { HttpTypes } from "@medusajs/types"
 import { useMemo } from "react"
 import { useTranslations } from "next-intl"
+
+// 표시할 옵션 값이 이 개수를 초과하면 칩 대신 드롭다운으로 전환
+const DROPDOWN_THRESHOLD = 8
 
 interface OptionSelectProps {
   option: HttpTypes.StoreProductOption
@@ -28,10 +38,7 @@ function hasStock(variant: HttpTypes.StoreProductVariant): boolean {
   return (variant.inventory_quantity ?? 0) > 0
 }
 
-function getButtonStyle(
-  isCurrent: boolean,
-  isOutOfStock: boolean
-): string {
+function getButtonStyle(isCurrent: boolean, isOutOfStock: boolean): string {
   if (isOutOfStock) return "border-gray-200 bg-gray-100 text-gray-400"
   if (isCurrent) return "border-primary bg-primary text-primary-foreground"
   return "border-gray-200 hover:border-gray-400"
@@ -78,32 +85,65 @@ export default function OptionSelect({
     return { visibleValues: visible, outOfStockSet: outOfStock }
   }, [option, variants, selectedOptions])
 
+  // 값이 많으면 드롭다운으로 전환해 세로 공간을 절약
+  const useDropdown = visibleValues.length > DROPDOWN_THRESHOLD
+
   return (
     <div className="flex flex-col gap-y-3">
       <span className="text-sm font-medium">{title}</span>
-      <div className="flex flex-wrap gap-2">
-        {visibleValues.map((v) => {
-          const isOutOfStock = outOfStockSet.has(v)
-          const isCurrent = v === current
-          const isDisabled = disabled || isOutOfStock
 
-          return (
-            <button
-              key={v}
-              onClick={() => updateOption(option.id, v)}
-              disabled={isDisabled}
-              className={cn(
-                "rounded-full border px-4 py-2 text-sm transition-colors",
-                getButtonStyle(isCurrent, isOutOfStock),
-                isDisabled && "pointer-events-none"
-              )}
-              data-testid="option-button"
-            >
-              {isOutOfStock ? t("outOfStockSuffix", { value: v }) : v}
-            </button>
-          )
-        })}
-      </div>
+      {useDropdown ? (
+        <Select
+          value={current ?? ""}
+          onValueChange={(v) => updateOption(option.id, v)}
+          disabled={disabled}
+        >
+          <SelectTrigger className="w-full" data-testid="option-select-trigger">
+            <SelectValue placeholder={t("selectPlaceholder")} />
+          </SelectTrigger>
+          {/* Tailwind v4에서 select.tsx의 max-h-[--radix-...] 변수 클래스가
+              무효라 목록이 잘리므로, 유효한 max-height로 내부 스크롤을 보장 */}
+          <SelectContent className="max-h-[50vh]">
+            {visibleValues.map((v) => {
+              const isOutOfStock = outOfStockSet.has(v)
+              return (
+                <SelectItem
+                  key={v}
+                  value={v}
+                  disabled={isOutOfStock}
+                  data-testid="option-select-item"
+                >
+                  {isOutOfStock ? t("outOfStockSuffix", { value: v }) : v}
+                </SelectItem>
+              )
+            })}
+          </SelectContent>
+        </Select>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {visibleValues.map((v) => {
+            const isOutOfStock = outOfStockSet.has(v)
+            const isCurrent = v === current
+            const isDisabled = disabled || isOutOfStock
+
+            return (
+              <button
+                key={v}
+                onClick={() => updateOption(option.id, v)}
+                disabled={isDisabled}
+                className={cn(
+                  "rounded-full border px-4 py-2 text-sm transition-colors",
+                  getButtonStyle(isCurrent, isOutOfStock),
+                  isDisabled && "pointer-events-none"
+                )}
+                data-testid="option-button"
+              >
+                {isOutOfStock ? t("outOfStockSuffix", { value: v }) : v}
+              </button>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
