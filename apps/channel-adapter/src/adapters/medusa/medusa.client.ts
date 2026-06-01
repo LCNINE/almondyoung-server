@@ -1532,6 +1532,25 @@ export class MedusaClient {
     }
   }
 
+  async cancelOrder(orderId: string): Promise<void> {
+    try {
+      await this.sdk.client.fetch(`/admin/orders/${encodeURIComponent(orderId)}/cancel`, {
+        method: 'POST',
+      });
+      this.logger.log(`Cancelled Medusa order: ${orderId}`);
+    } catch (error) {
+      const fetchError = error as FetchError;
+      // 400: already cancelled / invalid state transition — treat as success (idempotent)
+      // 404: order not found (maybe quarantined order that never reached Medusa)
+      if (fetchError.status === 400 || fetchError.status === 404) {
+        this.logger.warn(`Medusa cancelOrder skipped (status=${fetchError.status}): ${orderId} - ${fetchError.message}`);
+        return;
+      }
+      this.logger.error(`Failed to cancel Medusa order: ${orderId}`, fetchError.message);
+      throw new Error(`Medusa cancelOrder failed: ${fetchError.message}`);
+    }
+  }
+
   // 헬스 체크: medusa api 연결 확인
   async healthCheck(): Promise<boolean> {
     try {
