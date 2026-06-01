@@ -21,6 +21,7 @@
   "sort": {
     "createdAt": "최신순",
     "salesDesc": "인기순",
+    "reviewCountDesc": "리뷰많은순",
     "priceAsc": "낮은 가격순",
     "priceDesc": "높은 가격순"
   },

@@ -21,6 +21,7 @@
   "sort": {
     "createdAt": "新着順",
     "salesDesc": "人気順",
+    "reviewCountDesc": "レビューが多い順",
     "priceAsc": "価格が安い順",
     "priceDesc": "価格が高い順"
   },

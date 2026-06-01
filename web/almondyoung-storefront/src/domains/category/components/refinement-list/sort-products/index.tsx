@@ -14,6 +14,7 @@ export type SortOptions =
   | "price_asc"
   | "price_desc"
   | "sales_desc"
+  | "review_count_desc"
 
 type SortProductsProps = {
   sortBy: SortOptions
@@ -22,6 +23,7 @@ type SortProductsProps = {
 
 const sortOptions: { value: SortOptions; labelKey: string }[] = [
   { value: "sales_desc", labelKey: "salesDesc" },
+  { value: "review_count_desc", labelKey: "reviewCountDesc" },
   { value: "price_asc", labelKey: "priceAsc" },
   { value: "price_desc", labelKey: "priceDesc" },
   { value: "created_at", labelKey: "createdAt" },
