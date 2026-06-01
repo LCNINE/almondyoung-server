@@ -8,7 +8,7 @@ import {
 import { listProducts, listProductsSorted } from "@/lib/api/medusa/products"
 import type { HttpTypes } from "@medusajs/types"
 import { useInfiniteQuery } from "@tanstack/react-query"
-import { useMemo } from "react"
+import { useCallback, useMemo } from "react"
 
 export const PRODUCT_LIMIT = 12
 
@@ -42,7 +42,13 @@ export function useCategoryProducts({
   initialNextPage,
   totalCount,
 }: UseCategoryProductsParams) {
-  const { data, error, isFetchingNextPage, fetchNextPage, hasNextPage } =
+  const {
+    data,
+    error,
+    isFetchingNextPage,
+    fetchNextPage: fetchNextPageRaw,
+    hasNextPage,
+  } =
     useInfiniteQuery<ProductPage, Error>({
       queryKey: [
         "category-products",
@@ -95,10 +101,22 @@ export function useCategoryProducts({
       initialDataUpdatedAt: Date.now(),
     })
 
-  const allProducts = useMemo(
-    () => (data ? data.pages.flatMap((p) => p.response.products) : []),
-    [data]
-  )
+  const allProducts = useMemo(() => {
+    const products = data ? data.pages.flatMap((p) => p.response.products) : []
+    const seen = new Set<string>()
+
+    return products.filter((product) => {
+      const id = product.id
+      if (!id) return true
+      if (seen.has(id)) return false
+      seen.add(id)
+      return true
+    })
+  }, [data])
+
+  const fetchNextPage = useCallback(() => {
+    void fetchNextPageRaw({ cancelRefetch: false })
+  }, [fetchNextPageRaw])
 
   return { allProducts, error, isFetchingNextPage, fetchNextPage, hasNextPage }
 }
