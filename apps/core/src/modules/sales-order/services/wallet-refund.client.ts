@@ -67,6 +67,7 @@ export class WalletRefundClient {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${this.apiKey}`,
+          'Idempotency-Key': options.correlationId,
           'X-Correlation-Id': options.correlationId,
         },
         body: JSON.stringify({
@@ -100,7 +101,21 @@ export class WalletRefundClient {
 
     let data: WalletRefundByIntentResponse;
     try {
-      data = (await response.json()) as WalletRefundByIntentResponse;
+      // Wallet API returns `id` per refund record; normalize to `refundId` for Core types.
+      const raw = (await response.json()) as { intentId: string; refunds?: Array<Record<string, unknown>> };
+      data = {
+        intentId: raw.intentId,
+        refunds: (raw.refunds ?? []).map((r) => ({
+          refundId: (r.id ?? r.refundId ?? '') as string,
+          intentId: (r.intentId ?? intentId) as string,
+          status: r.status as WalletRefundStatus,
+          amount: Number(r.amount ?? 0),
+          currency: (r.currency ?? 'KRW') as string,
+          reasonCode: (r.reasonCode ?? null) as string | null,
+          reasonMessage: (r.reasonMessage ?? null) as string | null,
+          manualConfirmable: Boolean(r.manualConfirmable ?? false),
+        })),
+      };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(`[WalletRefundClient] Failed to parse Wallet response for intent ${intentId}: ${message}`);

@@ -1,4 +1,5 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { and, eq, inArray, sum } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { InjectTypedDb } from '@app/db';
@@ -22,6 +23,7 @@ import {
   StoreCreateExchangeRequestDto,
   StoreExchangeRequestResponseDto,
 } from '../dto/store-exchange-request.dto';
+import { WalletRefundClient } from './wallet-refund.client';
 
 type SalesOrderRow = typeof inventoryTables.salesOrders.$inferSelect;
 type ReturnRequestRow = typeof returnExchangeTables.returnRequests.$inferSelect;
@@ -48,9 +50,12 @@ const FO_DELIVERED_STATUSES = new Set(['completed']);
 
 @Injectable()
 export class StoreReturnExchangeService {
+  private readonly logger = new Logger(StoreReturnExchangeService.name);
+
   constructor(
     @InjectTypedDb<typeof inventorySchema>()
     private readonly db: { db: PostgresJsDatabase<typeof inventorySchema> },
+    private readonly walletRefundClient: WalletRefundClient,
   ) {}
 
   // ── Store: create return request ─────────────────────────────────────────
@@ -97,6 +102,13 @@ export class StoreReturnExchangeService {
         .select()
         .from(returnExchangeTables.returnRequestItems)
         .where(eq(returnExchangeTables.returnRequestItems.returnRequestId, returnRequest.id));
+
+      await this.insertBusinessLink(tx, 'return_request', returnRequest.id, orderId, 'return_lifecycle_event', {
+        event: 'return_requested',
+        requestedBy: 'customer',
+        customerId,
+        timestamp: new Date().toISOString(),
+      });
 
       return this.toReturnResponseDto(returnRequest, items);
     });
@@ -145,6 +157,13 @@ export class StoreReturnExchangeService {
         .select()
         .from(returnExchangeTables.exchangeRequestItems)
         .where(eq(returnExchangeTables.exchangeRequestItems.exchangeRequestId, exchangeRequest.id));
+
+      await this.insertBusinessLink(tx, 'exchange_request', exchangeRequest.id, orderId, 'exchange_lifecycle_event', {
+        event: 'exchange_requested',
+        requestedBy: 'customer',
+        customerId,
+        timestamp: new Date().toISOString(),
+      });
 
       return this.toExchangeResponseDto(exchangeRequest, items);
     });
@@ -381,20 +400,131 @@ export class StoreReturnExchangeService {
   }
 
   async completeReturnRequest(returnRequestId: string, adminId: string): Promise<ReturnRequest> {
-    return this.db.db.transaction(async (tx) => {
+    const salesOrder = await this.db.db
+      .select({ id: wmsTables.salesOrders.id, walletIntentId: wmsTables.salesOrders.walletIntentId })
+      .from(wmsTables.salesOrders)
+      .innerJoin(returnExchangeTables.returnRequests, eq(returnExchangeTables.returnRequests.salesOrderId, wmsTables.salesOrders.id))
+      .where(eq(returnExchangeTables.returnRequests.id, returnRequestId))
+      .limit(1)
+      .then((r) => r[0]);
+
+    const returnItems = await this.db.db
+      .select({
+        quantity: returnExchangeTables.returnRequestItems.quantity,
+        unitPrice: wmsTables.salesOrderLines.unitPrice,
+      })
+      .from(returnExchangeTables.returnRequestItems)
+      .leftJoin(wmsTables.salesOrderLines, eq(returnExchangeTables.returnRequestItems.salesOrderLineId, wmsTables.salesOrderLines.id))
+      .where(eq(returnExchangeTables.returnRequestItems.returnRequestId, returnRequestId));
+
+    const refundAmount = returnItems.reduce((acc, item) => acc + item.quantity * (item.unitPrice ?? 0), 0);
+    // 환불할 금액이 없으면 즉시 완료. 있으면 refund_pending 경유 후 Wallet 성공 시 completed.
+    const immediateComplete = refundAmount <= 0;
+    const needsRefund = !immediateComplete && !!salesOrder?.walletIntentId;
+
+    // Phase 1: inspected → refund_pending (or completed when no refund needed)
+    const updatedRequest = await this.db.db.transaction(async (tx) => {
       const rr = await this.findReturnRequestOrThrow(returnRequestId, tx);
       if (rr.status !== 'inspected') {
         throw new ConflictException(`반품 요청 상태가 'inspected'가 아닙니다. 현재 상태: ${rr.status}`);
       }
 
-      const [updated] = await tx
+      const now = new Date();
+      const nextStatus = immediateComplete ? 'completed' : 'refund_pending';
+      const [result] = await tx
         .update(returnExchangeTables.returnRequests)
-        .set({ status: 'completed', completedAt: new Date(), updatedAt: new Date() })
+        .set({
+          status: nextStatus,
+          ...(immediateComplete ? { completedAt: now } : {}),
+          updatedAt: now,
+        })
         .where(eq(returnExchangeTables.returnRequests.id, returnRequestId))
         .returning();
 
       await this.insertBusinessLink(tx, 'return_request', returnRequestId, rr.salesOrderId, 'return_lifecycle_event', {
-        event: 'return_completed',
+        event: immediateComplete ? 'return_completed' : 'return_refund_pending',
+        adminId,
+        timestamp: now.toISOString(),
+      });
+
+      return result;
+    });
+
+    if (immediateComplete || !needsRefund) {
+      if (!immediateComplete && salesOrder && !salesOrder.walletIntentId) {
+        this.logger.warn(
+          `[ReturnRefund] No walletIntentId for SO ${salesOrder.id}, return ${returnRequestId}. Manual refund required.`,
+        );
+      }
+      return updatedRequest;
+    }
+
+    // Phase 2: Wallet 환불 시도. 성공 시 completed, 실패 시 refund_pending 유지 (수동 처리 필요)
+    const correlationId = `return:${returnRequestId}:refund`;
+    try {
+      const outcome = await this.walletRefundClient.refundByIntent(salesOrder!.walletIntentId!, refundAmount, {
+        reasonCode: 'RETURN_COMPLETED',
+        correlationId,
+      });
+
+      // partial_pending = 무통장 등 비동기 처리 중 → 실제 환불 완료 아님. success만 completed 허용.
+      const refundSucceeded = outcome.kind === 'success';
+      await this.db.db.insert(wmsTables.businessLinks).values({
+        sourceType: 'return_request',
+        sourceId: returnRequestId,
+        targetType: 'wallet_refund',
+        targetExternalRef: refundSucceeded || outcome.kind === 'partial_pending'
+          ? `wallet:refund:${outcome.refunds?.[0]?.refundId ?? correlationId}`
+          : `wallet:intent:${salesOrder!.walletIntentId}`,
+        relationName: 'return_linked_wallet_refund',
+        metadata: { outcome: outcome.kind, amount: refundAmount, correlationId },
+      });
+
+      if (refundSucceeded) {
+        const now = new Date();
+        const [completed] = await this.db.db
+          .update(returnExchangeTables.returnRequests)
+          .set({ status: 'completed', completedAt: now, updatedAt: now })
+          .where(eq(returnExchangeTables.returnRequests.id, returnRequestId))
+          .returning();
+        return completed;
+      }
+
+      if (outcome.kind === 'partial_pending') {
+        this.logger.warn(
+          `[ReturnRefund] Wallet refund partial_pending for return ${returnRequestId}. Manual confirmation required.`,
+        );
+      } else {
+        this.logger.error(
+          `[ReturnRefund] Wallet refund ${outcome.kind} for return ${returnRequestId}. Staying refund_pending for manual resolution.`,
+        );
+      }
+      return updatedRequest;
+    } catch (err) {
+      this.logger.error(
+        `[ReturnRefund] Wallet refund threw for return ${returnRequestId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return updatedRequest;
+    }
+  }
+
+  // ── Admin: state transitions (exchange) ──────────────────────────────────
+
+  async markExchangeCollectionPending(exchangeRequestId: string, adminId: string): Promise<ExchangeRequest> {
+    return this.db.db.transaction(async (tx) => {
+      const er = await this.findExchangeRequestOrThrow(exchangeRequestId, tx);
+      if (er.status !== 'approved') {
+        throw new ConflictException(`교환 요청 상태가 'approved'가 아닙니다. 현재 상태: ${er.status}`);
+      }
+
+      const [updated] = await tx
+        .update(returnExchangeTables.exchangeRequests)
+        .set({ status: 'collection_pending', updatedAt: new Date() })
+        .where(eq(returnExchangeTables.exchangeRequests.id, exchangeRequestId))
+        .returning();
+
+      await this.insertBusinessLink(tx, 'exchange_request', exchangeRequestId, er.salesOrderId, 'exchange_lifecycle_event', {
+        event: 'exchange_collection_pending',
         adminId,
         timestamp: new Date().toISOString(),
       });
@@ -403,7 +533,28 @@ export class StoreReturnExchangeService {
     });
   }
 
-  // ── Admin: state transitions (exchange) ──────────────────────────────────
+  async markExchangeCollected(exchangeRequestId: string, adminId: string): Promise<ExchangeRequest> {
+    return this.db.db.transaction(async (tx) => {
+      const er = await this.findExchangeRequestOrThrow(exchangeRequestId, tx);
+      if (er.status !== 'collection_pending') {
+        throw new ConflictException(`교환 요청 상태가 'collection_pending'이 아닙니다. 현재 상태: ${er.status}`);
+      }
+
+      const [updated] = await tx
+        .update(returnExchangeTables.exchangeRequests)
+        .set({ status: 'collected', updatedAt: new Date() })
+        .where(eq(returnExchangeTables.exchangeRequests.id, exchangeRequestId))
+        .returning();
+
+      await this.insertBusinessLink(tx, 'exchange_request', exchangeRequestId, er.salesOrderId, 'exchange_lifecycle_event', {
+        event: 'exchange_collected',
+        adminId,
+        timestamp: new Date().toISOString(),
+      });
+
+      return updated;
+    });
+  }
 
   async approveExchangeRequest(exchangeRequestId: string, adminId: string, adminNote?: string): Promise<ExchangeRequest> {
     return this.db.db.transaction(async (tx) => {
@@ -473,6 +624,132 @@ export class StoreReturnExchangeService {
       });
 
       return updated;
+    });
+  }
+
+  /**
+   * refund_pending 상태의 반품 환불을 Wallet에 재시도한다.
+   * 성공 시 completed, 실패 시 refund_pending 유지.
+   */
+  async retryReturnRefund(returnRequestId: string, adminId: string): Promise<ReturnRequest> {
+    const rr = await this.db.db
+      .select()
+      .from(returnExchangeTables.returnRequests)
+      .where(eq(returnExchangeTables.returnRequests.id, returnRequestId))
+      .limit(1)
+      .then((r) => r[0]);
+
+    if (!rr) throw new NotFoundException(`반품 요청을 찾을 수 없습니다: ${returnRequestId}`);
+    if (rr.status !== 'refund_pending') {
+      throw new ConflictException(`환불 재시도는 'refund_pending' 상태에서만 가능합니다. 현재 상태: ${rr.status}`);
+    }
+
+    const salesOrder = await this.db.db
+      .select({ id: wmsTables.salesOrders.id, walletIntentId: wmsTables.salesOrders.walletIntentId })
+      .from(wmsTables.salesOrders)
+      .where(eq(wmsTables.salesOrders.id, rr.salesOrderId))
+      .limit(1)
+      .then((r) => r[0]);
+
+    if (!salesOrder?.walletIntentId) {
+      throw new BadRequestException('walletIntentId가 없어 환불 재시도가 불가합니다. 수동 완료를 사용하세요.');
+    }
+
+    const returnItems = await this.db.db
+      .select({
+        quantity: returnExchangeTables.returnRequestItems.quantity,
+        unitPrice: wmsTables.salesOrderLines.unitPrice,
+      })
+      .from(returnExchangeTables.returnRequestItems)
+      .leftJoin(wmsTables.salesOrderLines, eq(returnExchangeTables.returnRequestItems.salesOrderLineId, wmsTables.salesOrderLines.id))
+      .where(eq(returnExchangeTables.returnRequestItems.returnRequestId, returnRequestId));
+
+    // 환불 금액: 반품 라인별 상품가 × 수량. 할인/배송비 미반영 (운영 정책: 상품가 기준 환불).
+    const refundAmount = returnItems.reduce((acc, item) => acc + item.quantity * (item.unitPrice ?? 0), 0);
+    if (refundAmount <= 0) {
+      throw new BadRequestException('환불 금액이 0원 이하입니다. 수동 완료를 사용하세요.');
+    }
+
+    // UUID로 재시도마다 고유한 correlation ID 생성.
+    // 카운트 기반 key는 동시 재시도 시 같은 번호가 나와 Wallet이 첫 실패 응답을 재생할 수 있음.
+    const priorAttempts = await this.db.db
+      .select({ id: wmsTables.businessLinks.id })
+      .from(wmsTables.businessLinks)
+      .where(
+        and(
+          eq(wmsTables.businessLinks.sourceType, 'return_request'),
+          eq(wmsTables.businessLinks.sourceId, returnRequestId),
+          eq(wmsTables.businessLinks.relationName, 'return_linked_wallet_refund'),
+        ),
+      )
+      .then((r) => r.length);
+    const attemptN = priorAttempts + 1;
+    const correlationId = `return:${returnRequestId}:refund:retry:${randomUUID()}`;
+    try {
+      const outcome = await this.walletRefundClient.refundByIntent(salesOrder.walletIntentId, refundAmount, {
+        reasonCode: 'RETURN_COMPLETED',
+        correlationId,
+      });
+
+      await this.db.db.insert(wmsTables.businessLinks).values({
+        sourceType: 'return_request',
+        sourceId: returnRequestId,
+        targetType: 'wallet_refund',
+        targetExternalRef: outcome.kind === 'success' || outcome.kind === 'partial_pending'
+          ? `wallet:refund:${outcome.refunds?.[0]?.refundId ?? correlationId}`
+          : `wallet:intent:${salesOrder.walletIntentId}`,
+        relationName: 'return_linked_wallet_refund',
+        metadata: { outcome: outcome.kind, amount: refundAmount, correlationId, retriedBy: adminId, attemptN },
+      });
+
+      if (outcome.kind === 'success') {
+        const now = new Date();
+        const [completed] = await this.db.db
+          .update(returnExchangeTables.returnRequests)
+          .set({ status: 'completed', completedAt: now, updatedAt: now })
+          .where(eq(returnExchangeTables.returnRequests.id, returnRequestId))
+          .returning();
+        return completed;
+      }
+
+      this.logger.warn(
+        `[ReturnRefund] Retry ${outcome.kind} for return ${returnRequestId}. Staying refund_pending.`,
+      );
+      return rr;
+    } catch (err) {
+      this.logger.error(
+        `[ReturnRefund] Retry threw for return ${returnRequestId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return rr;
+    }
+  }
+
+  /**
+   * Wallet 환불 없이 관리자가 직접 반품을 완료 처리한다.
+   * refund_pending 상태(Wallet 실패/수동 환불 완료)에서만 사용.
+   */
+  async manualCompleteReturn(returnRequestId: string, adminId: string, adminNote?: string): Promise<ReturnRequest> {
+    return this.db.db.transaction(async (tx) => {
+      const rr = await this.findReturnRequestOrThrow(returnRequestId, tx);
+      if (rr.status !== 'refund_pending') {
+        throw new ConflictException(`수동 완료는 'refund_pending' 상태에서만 가능합니다. 현재 상태: ${rr.status}`);
+      }
+
+      const now = new Date();
+      const [result] = await tx
+        .update(returnExchangeTables.returnRequests)
+        .set({ status: 'completed', completedAt: now, adminNote: adminNote ?? null, updatedAt: now })
+        .where(eq(returnExchangeTables.returnRequests.id, returnRequestId))
+        .returning();
+
+      await this.insertBusinessLink(tx, 'return_request', returnRequestId, rr.salesOrderId, 'return_lifecycle_event', {
+        event: 'return_manually_completed',
+        adminId,
+        adminNote: adminNote ?? null,
+        timestamp: now.toISOString(),
+      });
+
+      return result;
     });
   }
 
@@ -766,7 +1043,8 @@ export class StoreReturnExchangeService {
 
   /**
    * Validate that requested return quantities do not exceed available quantities per line.
-   * Available = original line quantity - sum of quantities already claimed in active return requests.
+   * Available = original line quantity - (active return claims + active exchange claims).
+   * Both return and exchange count against the same available pool to prevent double-claiming.
    */
   private async assertReturnQuantitiesAvailable(
     lineIds: string[],
@@ -782,28 +1060,52 @@ export class StoreReturnExchangeService {
 
     const originalQtyMap = new Map(orderLines.map((l) => [l.id, l.quantity]));
 
-    // Sum quantities already claimed in active return requests for these lines
-    const activeReturnItems = await this.db.db
-      .select({
-        salesOrderLineId: returnExchangeTables.returnRequestItems.salesOrderLineId,
-        totalClaimed: sum(returnExchangeTables.returnRequestItems.quantity),
-      })
-      .from(returnExchangeTables.returnRequestItems)
-      .innerJoin(
-        returnExchangeTables.returnRequests,
-        eq(returnExchangeTables.returnRequestItems.returnRequestId, returnExchangeTables.returnRequests.id),
-      )
-      .where(
-        and(
-          inArray(returnExchangeTables.returnRequestItems.salesOrderLineId, lineIds),
-          inArray(returnExchangeTables.returnRequests.status, [...ACTIVE_RETURN_STATUSES]),
-        ),
-      )
-      .groupBy(returnExchangeTables.returnRequestItems.salesOrderLineId);
+    const [activeReturnItems, activeExchangeItems] = await Promise.all([
+      // Active return claims
+      this.db.db
+        .select({
+          salesOrderLineId: returnExchangeTables.returnRequestItems.salesOrderLineId,
+          totalClaimed: sum(returnExchangeTables.returnRequestItems.quantity),
+        })
+        .from(returnExchangeTables.returnRequestItems)
+        .innerJoin(
+          returnExchangeTables.returnRequests,
+          eq(returnExchangeTables.returnRequestItems.returnRequestId, returnExchangeTables.returnRequests.id),
+        )
+        .where(
+          and(
+            inArray(returnExchangeTables.returnRequestItems.salesOrderLineId, lineIds),
+            inArray(returnExchangeTables.returnRequests.status, [...ACTIVE_RETURN_STATUSES]),
+          ),
+        )
+        .groupBy(returnExchangeTables.returnRequestItems.salesOrderLineId),
+      // Active exchange claims (same pool)
+      this.db.db
+        .select({
+          salesOrderLineId: returnExchangeTables.exchangeRequestItems.salesOrderLineId,
+          totalClaimed: sum(returnExchangeTables.exchangeRequestItems.quantity),
+        })
+        .from(returnExchangeTables.exchangeRequestItems)
+        .innerJoin(
+          returnExchangeTables.exchangeRequests,
+          eq(returnExchangeTables.exchangeRequestItems.exchangeRequestId, returnExchangeTables.exchangeRequests.id),
+        )
+        .where(
+          and(
+            inArray(returnExchangeTables.exchangeRequestItems.salesOrderLineId, lineIds),
+            inArray(returnExchangeTables.exchangeRequests.status, [...ACTIVE_EXCHANGE_STATUSES]),
+          ),
+        )
+        .groupBy(returnExchangeTables.exchangeRequestItems.salesOrderLineId),
+    ]);
 
-    const claimedQtyMap = new Map(
-      activeReturnItems.map((r) => [r.salesOrderLineId, Number(r.totalClaimed ?? 0)]),
-    );
+    const claimedQtyMap = new Map<string, number>();
+    for (const r of activeReturnItems) {
+      claimedQtyMap.set(r.salesOrderLineId, (claimedQtyMap.get(r.salesOrderLineId) ?? 0) + Number(r.totalClaimed ?? 0));
+    }
+    for (const r of activeExchangeItems) {
+      claimedQtyMap.set(r.salesOrderLineId, (claimedQtyMap.get(r.salesOrderLineId) ?? 0) + Number(r.totalClaimed ?? 0));
+    }
 
     for (const line of requestedLines) {
       const originalQty = originalQtyMap.get(line.salesOrderLineId) ?? 0;
@@ -820,7 +1122,8 @@ export class StoreReturnExchangeService {
 
   /**
    * Validate that requested exchange quantities do not exceed available quantities per line.
-   * Available = original line quantity - sum of quantities already claimed in active exchange requests.
+   * Available = original line quantity - (active exchange claims + active return claims).
+   * Both return and exchange count against the same available pool to prevent double-claiming.
    */
   private async assertExchangeQuantitiesAvailable(
     lineIds: string[],
@@ -836,28 +1139,52 @@ export class StoreReturnExchangeService {
 
     const originalQtyMap = new Map(orderLines.map((l) => [l.id, l.quantity]));
 
-    // Sum quantities already claimed in active exchange requests for these lines
-    const activeExchangeItems = await this.db.db
-      .select({
-        salesOrderLineId: returnExchangeTables.exchangeRequestItems.salesOrderLineId,
-        totalClaimed: sum(returnExchangeTables.exchangeRequestItems.quantity),
-      })
-      .from(returnExchangeTables.exchangeRequestItems)
-      .innerJoin(
-        returnExchangeTables.exchangeRequests,
-        eq(returnExchangeTables.exchangeRequestItems.exchangeRequestId, returnExchangeTables.exchangeRequests.id),
-      )
-      .where(
-        and(
-          inArray(returnExchangeTables.exchangeRequestItems.salesOrderLineId, lineIds),
-          inArray(returnExchangeTables.exchangeRequests.status, [...ACTIVE_EXCHANGE_STATUSES]),
-        ),
-      )
-      .groupBy(returnExchangeTables.exchangeRequestItems.salesOrderLineId);
+    const [activeExchangeItems, activeReturnItems] = await Promise.all([
+      // Active exchange claims
+      this.db.db
+        .select({
+          salesOrderLineId: returnExchangeTables.exchangeRequestItems.salesOrderLineId,
+          totalClaimed: sum(returnExchangeTables.exchangeRequestItems.quantity),
+        })
+        .from(returnExchangeTables.exchangeRequestItems)
+        .innerJoin(
+          returnExchangeTables.exchangeRequests,
+          eq(returnExchangeTables.exchangeRequestItems.exchangeRequestId, returnExchangeTables.exchangeRequests.id),
+        )
+        .where(
+          and(
+            inArray(returnExchangeTables.exchangeRequestItems.salesOrderLineId, lineIds),
+            inArray(returnExchangeTables.exchangeRequests.status, [...ACTIVE_EXCHANGE_STATUSES]),
+          ),
+        )
+        .groupBy(returnExchangeTables.exchangeRequestItems.salesOrderLineId),
+      // Active return claims (same pool)
+      this.db.db
+        .select({
+          salesOrderLineId: returnExchangeTables.returnRequestItems.salesOrderLineId,
+          totalClaimed: sum(returnExchangeTables.returnRequestItems.quantity),
+        })
+        .from(returnExchangeTables.returnRequestItems)
+        .innerJoin(
+          returnExchangeTables.returnRequests,
+          eq(returnExchangeTables.returnRequestItems.returnRequestId, returnExchangeTables.returnRequests.id),
+        )
+        .where(
+          and(
+            inArray(returnExchangeTables.returnRequestItems.salesOrderLineId, lineIds),
+            inArray(returnExchangeTables.returnRequests.status, [...ACTIVE_RETURN_STATUSES]),
+          ),
+        )
+        .groupBy(returnExchangeTables.returnRequestItems.salesOrderLineId),
+    ]);
 
-    const claimedQtyMap = new Map(
-      activeExchangeItems.map((r) => [r.salesOrderLineId, Number(r.totalClaimed ?? 0)]),
-    );
+    const claimedQtyMap = new Map<string, number>();
+    for (const r of activeExchangeItems) {
+      claimedQtyMap.set(r.salesOrderLineId, (claimedQtyMap.get(r.salesOrderLineId) ?? 0) + Number(r.totalClaimed ?? 0));
+    }
+    for (const r of activeReturnItems) {
+      claimedQtyMap.set(r.salesOrderLineId, (claimedQtyMap.get(r.salesOrderLineId) ?? 0) + Number(r.totalClaimed ?? 0));
+    }
 
     for (const line of requestedLines) {
       const originalQty = originalQtyMap.get(line.salesOrderLineId) ?? 0;

@@ -71,6 +71,7 @@ export interface MedusaOrder {
     id?: string;
     payments?: Array<{
       id?: string;
+      data?: Record<string, unknown>;
       captures?: Array<{ id?: string }>;
       refunds?: Array<{
         id?: string;
@@ -147,6 +148,7 @@ const ORDER_FIELDS = [
   '*shipping_address',
   'payment_collections.id',
   'payment_collections.payments.id',
+  'payment_collections.payments.data',
   'payment_collections.payments.captures.id',
   'payment_collections.payments.refunds.id',
   'payment_collections.payments.refunds.amount',
