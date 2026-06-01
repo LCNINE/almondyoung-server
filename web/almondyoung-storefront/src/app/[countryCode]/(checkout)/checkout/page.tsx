@@ -68,7 +68,6 @@ async function CheckoutManager({ cartId }: { cartId?: string }) {
     name: shippingMethod?.name ?? tProcess("shippingFallback"),
     description: shippingMethod?.type?.description ?? "",
   }
-
   const customer = await retrieveCustomer()
 
   return (
