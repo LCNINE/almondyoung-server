@@ -54,6 +54,10 @@ function makeExchangeRequest(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function makeWalletClient() {
+  return { refundByIntent: jest.fn() };
+}
+
 // ── Mock DB builder ───────────────────────────────────────────────────────────
 
 /**
@@ -75,6 +79,7 @@ function makeMockDb(selectRowsFor: (table: unknown) => unknown[]) {
       orderBy: () => terminal(rows),
       where: () => terminal(rows),
       innerJoin: () => terminal(rows),
+      leftJoin: () => terminal(rows),
       groupBy: () => terminal(rows),
       then: (resolve: (v: unknown[]) => unknown) => Promise.resolve(rows).then(resolve),
     };
@@ -145,7 +150,7 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
       return [];
     });
 
-    const service = new StoreReturnExchangeService(mockDb as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
 
     await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(
       BadRequestException,
@@ -166,7 +171,7 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
       return [];
     });
 
-    const service = new StoreReturnExchangeService(mockDb as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
 
     await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, dto)).rejects.toThrow(
       BadRequestException,
@@ -194,7 +199,7 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
       return [];
     });
 
-    const service = new StoreReturnExchangeService(mockDb as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
 
     await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, dto)).rejects.toThrow(
       BadRequestException,
@@ -209,7 +214,7 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
       return [];
     });
 
-    const service = new StoreReturnExchangeService(mockDb as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
 
     await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(
       BadRequestException,
@@ -270,7 +275,7 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
       }),
     }));
 
-    const service = new StoreReturnExchangeService(mockDb as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
 
     const result = await service.createReturnRequest(ORDER_ID, CUSTOMER_ID, baseDto);
 
@@ -327,7 +332,7 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
       }),
     }));
 
-    const service = new StoreReturnExchangeService(mockDb as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
 
     const result = await service.createReturnRequest(ORDER_ID, CUSTOMER_ID, baseDto);
 
@@ -342,7 +347,7 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
       return [];
     });
 
-    const service = new StoreReturnExchangeService(mockDb as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
 
     await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(
       ConflictException,
@@ -365,7 +370,7 @@ describe('StoreReturnExchangeService.createExchangeRequest', () => {
       return [];
     });
 
-    const service = new StoreReturnExchangeService(mockDb as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
 
     await expect(service.createExchangeRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(
       ConflictException,
@@ -405,7 +410,7 @@ describe('StoreReturnExchangeService.approveReturnRequest', () => {
       values: jest.fn().mockResolvedValue(undefined),
     }));
 
-    const service = new StoreReturnExchangeService(mockDb as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
 
     const result = await service.approveReturnRequest(RR_ID, 'admin-1', 'looks good');
 
@@ -427,7 +432,7 @@ describe('StoreReturnExchangeService.approveReturnRequest', () => {
       }),
     }));
 
-    const service = new StoreReturnExchangeService(mockDb as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
 
     await expect(service.approveReturnRequest(RR_ID, 'admin-1')).rejects.toThrow(ConflictException);
   });
@@ -462,7 +467,7 @@ describe('StoreReturnExchangeService.rejectReturnRequest', () => {
       values: jest.fn().mockResolvedValue(undefined),
     }));
 
-    const service = new StoreReturnExchangeService(mockDb as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
 
     const result = await service.rejectReturnRequest(RR_ID, 'admin-1', 'not eligible');
 
@@ -499,7 +504,7 @@ describe('StoreReturnExchangeService.markCollectionPending', () => {
       values: jest.fn().mockResolvedValue(undefined),
     }));
 
-    const service = new StoreReturnExchangeService(mockDb as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
 
     const result = await service.markCollectionPending(RR_ID, 'admin-1');
 
@@ -537,7 +542,7 @@ describe('StoreReturnExchangeService.markCollected', () => {
       values: jest.fn().mockResolvedValue(undefined),
     }));
 
-    const service = new StoreReturnExchangeService(mockDb as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
 
     const result = await service.markCollected(RR_ID, 'admin-1');
 
@@ -576,12 +581,150 @@ describe('StoreReturnExchangeService.completeReturnRequest', () => {
       values: jest.fn().mockResolvedValue(undefined),
     }));
 
-    const service = new StoreReturnExchangeService(mockDb as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
 
     const result = await service.completeReturnRequest(RR_ID, 'admin-1');
 
     expect(result.status).toBe('completed');
     expect(result.completedAt).toEqual(completedAt);
+  });
+
+  it('stays refund_pending when wallet returns partial_pending (무통장 비동기 처리)', async () => {
+    const rr = makeReturnRequest({ status: 'inspected' });
+    const refundPendingRr = { ...rr, status: 'refund_pending', updatedAt: new Date() };
+
+    const mockDb = makeMockDb((table) => {
+      if (table === wmsTables.salesOrders) return [{ id: ORDER_ID, walletIntentId: 'intent-123' }];
+      if (table === returnExchangeTables.returnRequestItems) return [{ quantity: 2, unitPrice: 3000 }];
+      return [];
+    });
+
+    const tx = (mockDb as any)._tx;
+    tx.select = jest.fn(() => ({
+      from: (_t: unknown) => ({
+        where: (_cond: unknown) => ({
+          limit: (n: number) => Promise.resolve([rr].slice(0, n)),
+          then: (resolve: (v: unknown[]) => unknown) => Promise.resolve([rr]).then(resolve),
+        }),
+      }),
+    }));
+    tx.update = jest.fn(() => ({
+      set: (_set: unknown) => ({
+        where: (_cond: unknown) => ({
+          returning: jest.fn().mockResolvedValue([refundPendingRr]),
+        }),
+      }),
+    }));
+    tx.insert = jest.fn(() => ({ values: jest.fn().mockResolvedValue(undefined) }));
+
+    const walletClient = makeWalletClient();
+    (walletClient.refundByIntent as jest.Mock).mockResolvedValue({
+      kind: 'partial_pending',
+      refunds: [{ refundId: 'refund-1', status: 'PENDING' }],
+    });
+
+    const service = new StoreReturnExchangeService(mockDb as any, walletClient as any);
+
+    const result = await service.completeReturnRequest(RR_ID, 'admin-1');
+
+    expect(result.status).toBe('refund_pending');
+  });
+
+  it('calls wallet with unitPrice × quantity sum (상품가 기준 환불 정책)', async () => {
+    const rr = makeReturnRequest({ status: 'inspected' });
+    const refundPendingRr = { ...rr, status: 'refund_pending', updatedAt: new Date() };
+
+    // 라인1: 2개 × 10000원, 라인2: 1개 × 5000원 → 기대 환불액 25000원
+    const mockDb = makeMockDb((table) => {
+      if (table === wmsTables.salesOrders) return [{ id: ORDER_ID, walletIntentId: 'intent-abc' }];
+      if (table === returnExchangeTables.returnRequestItems) return [
+        { quantity: 2, unitPrice: 10000 },
+        { quantity: 1, unitPrice: 5000 },
+      ];
+      return [];
+    });
+
+    const tx = (mockDb as any)._tx;
+    tx.select = jest.fn(() => ({
+      from: (_t: unknown) => ({
+        where: (_cond: unknown) => ({
+          limit: (n: number) => Promise.resolve([rr].slice(0, n)),
+          then: (resolve: (v: unknown[]) => unknown) => Promise.resolve([rr]).then(resolve),
+        }),
+      }),
+    }));
+    tx.update = jest.fn(() => ({
+      set: (_set: unknown) => ({
+        where: (_cond: unknown) => ({
+          returning: jest.fn().mockResolvedValue([refundPendingRr]),
+        }),
+      }),
+    }));
+    tx.insert = jest.fn(() => ({ values: jest.fn().mockResolvedValue(undefined) }));
+
+    const walletClient = makeWalletClient();
+    (walletClient.refundByIntent as jest.Mock).mockResolvedValue({ kind: 'failed', errorCode: 'ERR', errorMessage: 'fail' });
+
+    const service = new StoreReturnExchangeService(mockDb as any, walletClient as any);
+    await service.completeReturnRequest(RR_ID, 'admin-1');
+
+    expect(walletClient.refundByIntent).toHaveBeenCalledWith(
+      'intent-abc',
+      25000,
+      expect.objectContaining({ reasonCode: 'RETURN_COMPLETED' }),
+    );
+  });
+
+  it('transitions to refund_pending and stays there when wallet refund fails', async () => {
+    const rr = makeReturnRequest({ status: 'inspected' });
+    const refundPendingRr = { ...rr, status: 'refund_pending', updatedAt: new Date() };
+
+    const soRow = { id: ORDER_ID, walletIntentId: 'intent-123' };
+    const itemRow = { quantity: 1, unitPrice: 5000 };
+
+    const mockDb = makeMockDb((table) => {
+      if (table === wmsTables.salesOrders) return [soRow];
+      if (table === returnExchangeTables.returnRequestItems) return [itemRow];
+      return [];
+    });
+
+    const tx = (mockDb as any)._tx;
+    tx.select = jest.fn(() => ({
+      from: (_t: unknown) => ({
+        where: (_cond: unknown) => ({
+          limit: (n: number) => Promise.resolve([rr].slice(0, n)),
+          then: (resolve: (v: unknown[]) => unknown) => Promise.resolve([rr]).then(resolve),
+        }),
+      }),
+    }));
+    tx.update = jest.fn(() => ({
+      set: (_set: unknown) => ({
+        where: (_cond: unknown) => ({
+          returning: jest.fn().mockResolvedValue([refundPendingRr]),
+        }),
+      }),
+    }));
+    tx.insert = jest.fn(() => ({
+      values: jest.fn().mockResolvedValue(undefined),
+    }));
+
+    const walletClient = makeWalletClient();
+    (walletClient.refundByIntent as jest.Mock).mockResolvedValue({
+      kind: 'failed',
+      errorCode: 'REFUND_FAILED',
+      errorMessage: 'Wallet error',
+    });
+
+    const service = new StoreReturnExchangeService(mockDb as any, walletClient as any);
+
+    const result = await service.completeReturnRequest(RR_ID, 'admin-1');
+
+    expect(result.status).toBe('refund_pending');
+    expect(walletClient.refundByIntent).toHaveBeenCalledWith(
+      'intent-123',
+      5000,
+      expect.objectContaining({ reasonCode: 'RETURN_COMPLETED' }),
+    );
   });
 });
 
@@ -619,7 +762,7 @@ describe('StoreReturnExchangeService exchange happy path', () => {
     const approvedEr = { ...er, status: 'approved', decidedAt: new Date(), updatedAt: new Date() };
 
     const mockDb = makeTxWithRow(er, approvedEr);
-    const service = new StoreReturnExchangeService(mockDb as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
 
     const result = await service.approveExchangeRequest(ER_ID, 'admin-1', 'ok');
 
@@ -632,11 +775,65 @@ describe('StoreReturnExchangeService exchange happy path', () => {
     const completedEr = { ...er, status: 'completed', completedAt, updatedAt: new Date() };
 
     const mockDb = makeTxWithRow(er, completedEr);
-    const service = new StoreReturnExchangeService(mockDb as any);
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
 
     const result = await service.completeExchangeRequest(ER_ID, 'admin-1');
 
     expect(result.status).toBe('completed');
     expect(result.completedAt).toEqual(completedAt);
+  });
+});
+
+// ── retryReturnRefund tests ────────────────────────────────────────────────────
+
+describe('StoreReturnExchangeService.retryReturnRefund', () => {
+  it('throws ConflictException when status is not refund_pending', async () => {
+    const rr = makeReturnRequest({ status: 'inspected' });
+
+    const mockDb = makeMockDb((table) => {
+      if (table === returnExchangeTables.returnRequests) return [rr];
+      return [];
+    });
+
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
+
+    await expect(service.retryReturnRefund(RR_ID, 'admin-1')).rejects.toThrow(ConflictException);
+  });
+
+  it('uses UUID-based correlation ID so each retry call is unique (prevents Wallet cached-failure replay)', async () => {
+    const rr = makeReturnRequest({ status: 'refund_pending' });
+
+    const mockDb = makeMockDb((table) => {
+      if (table === returnExchangeTables.returnRequests) return [rr];
+      if (table === wmsTables.salesOrders) return [{ id: ORDER_ID, walletIntentId: 'intent-123' }];
+      if (table === returnExchangeTables.returnRequestItems) return [{ quantity: 1, unitPrice: 5000 }];
+      if (table === wmsTables.businessLinks) return [{ id: 'link-1' }, { id: 'link-2' }];
+      return [];
+    });
+
+    const walletClient = makeWalletClient();
+    (walletClient.refundByIntent as jest.Mock).mockResolvedValue({
+      kind: 'failed',
+      errorCode: 'ERR',
+      errorMessage: 'fail',
+    });
+
+    const service = new StoreReturnExchangeService(mockDb as any, walletClient as any);
+
+    // 두 번 호출하면 correlation ID가 달라야 함 (UUID 기반)
+    await service.retryReturnRefund(RR_ID, 'admin-1');
+    await service.retryReturnRefund(RR_ID, 'admin-1');
+
+    const calls = (walletClient.refundByIntent as jest.Mock).mock.calls;
+    expect(calls).toHaveLength(2);
+
+    const id1: string = calls[0][2].correlationId;
+    const id2: string = calls[1][2].correlationId;
+
+    // 두 ID 모두 올바른 prefix를 가지며
+    expect(id1).toMatch(/^return:.*:refund:retry:/);
+    expect(id2).toMatch(/^return:.*:refund:retry:/);
+    // 서로 달라야 함 — 동시 재시도 key 충돌 방지
+    expect(id1).not.toBe(id2);
   });
 });

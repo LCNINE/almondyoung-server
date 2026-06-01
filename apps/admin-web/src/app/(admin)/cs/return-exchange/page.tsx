@@ -1,14 +1,12 @@
-// src/app/(admin)/cs/return-exchange/page.tsx
-'use client';
-
-import { MainLayout } from '@/components/layout/main-layout';
-import { ComingSoon } from '@/components/ui/coming-soon';
+import RouteGuard from '@/components/layout/route-guard';
+import ReturnExchangeTemplate from '@/features/cs/return-exchange/template';
 
 export default function ReturnExchangePage() {
   return (
-    <ComingSoon
-      title="반품/교환"
-      description="반품 및 교환을 관리할 수 있는 페이지입니다."
-    />
+    <RouteGuard requireRole={['admin', 'master']}>
+      <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
+        <ReturnExchangeTemplate />
+      </div>
+    </RouteGuard>
   );
 }

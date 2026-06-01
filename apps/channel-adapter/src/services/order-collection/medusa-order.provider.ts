@@ -116,11 +116,17 @@ export class MedusaOrderProvider implements ReplayableChannelOrderProvider {
       detailAddress: addr?.address_2 ?? '',
     };
 
+    const walletIntentId = (order.payment_collections ?? [])
+      .flatMap((pc) => pc.payments ?? [])
+      .map((p) => p.data?.intentId)
+      .find((id): id is string => typeof id === 'string' && id.length > 0);
+
     const createPayload: OrderCreatedPayload = {
       orderId: uuidv4(),
       externalOrderId: order.id,
       salesChannel: 'medusa',
       customerId,
+      ...(walletIntentId ? { walletIntentId } : {}),
       items,
       totalAmount: order.total ?? 0,
       subtotalAmount: order.subtotal ?? 0,

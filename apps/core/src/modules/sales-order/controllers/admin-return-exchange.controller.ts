@@ -1,8 +1,10 @@
 import { Body, Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsArray, IsOptional, IsString, MaxLength, ValidateNested, IsInt, Min } from 'class-validator';
+import { Type } from 'class-transformer';
 import { User } from '@app/authorization';
 import { StoreReturnExchangeService } from '../services/store-return-exchange.service';
+import { StoreSalesOrdersService } from '../services/store-sales-orders.service';
 
 interface AuthenticatedAdmin {
   userId: string;
@@ -15,10 +17,49 @@ export class AdminDecideRequestDto {
   adminNote?: string;
 }
 
+class AdminCancelLineDto {
+  @IsString()
+  salesOrderLineId: string;
+
+  @IsInt()
+  @Min(1)
+  quantity: number;
+}
+
+export class AdminCancelOrderDto {
+  @IsOptional()
+  @IsString()
+  reasonCode?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reasonDetail?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AdminCancelLineDto)
+  lines?: AdminCancelLineDto[];
+}
+
 @ApiTags('Admin - Return/Exchange')
 @Controller('admin')
 export class AdminReturnExchangeController {
-  constructor(private readonly service: StoreReturnExchangeService) {}
+  constructor(
+    private readonly service: StoreReturnExchangeService,
+    private readonly storeSalesOrdersService: StoreSalesOrdersService,
+  ) {}
+
+  // ── Sales Order Admin Cancel ──────────────────────────────────────────────
+
+  @Post('sales-orders/:id/cancel')
+  @HttpCode(200)
+  @ApiOperation({ summary: '관리자 주문 취소 + Wallet 자동 환불 연동' })
+  @ApiParam({ name: 'id', description: '판매 주문 ID' })
+  adminCancelOrder(@Param('id') id: string, @Body() dto: AdminCancelOrderDto) {
+    return this.storeSalesOrdersService.adminCancelRequest(id, dto);
+  }
 
   // ── Return Requests ───────────────────────────────────────────────────────
 
@@ -117,6 +158,29 @@ export class AdminReturnExchangeController {
     return this.service.completeReturnRequest(id, admin.userId);
   }
 
+  @Post('return-requests/:id/retry-refund')
+  @HttpCode(200)
+  @ApiOperation({ summary: '반품 환불 재시도 (관리자) — refund_pending 상태에서만 가능' })
+  @ApiParam({ name: 'id', description: '반품 요청 ID' })
+  retryReturnRefund(
+    @Param('id') id: string,
+    @User() admin: AuthenticatedAdmin,
+  ) {
+    return this.service.retryReturnRefund(id, admin.userId);
+  }
+
+  @Post('return-requests/:id/manual-complete')
+  @HttpCode(200)
+  @ApiOperation({ summary: '반품 수동 환불 완료 (관리자) — refund_pending 상태에서만 가능' })
+  @ApiParam({ name: 'id', description: '반품 요청 ID' })
+  manualCompleteReturn(
+    @Param('id') id: string,
+    @User() admin: AuthenticatedAdmin,
+    @Body() dto: AdminDecideRequestDto,
+  ) {
+    return this.service.manualCompleteReturn(id, admin.userId, dto.adminNote);
+  }
+
   // ── Exchange Requests ─────────────────────────────────────────────────────
 
   @Get('exchange-requests')
@@ -168,6 +232,22 @@ export class AdminReturnExchangeController {
     @Body() dto: AdminDecideRequestDto,
   ) {
     return this.service.rejectExchangeRequest(id, admin.userId, dto.adminNote);
+  }
+
+  @Post('exchange-requests/:id/collection-pending')
+  @HttpCode(200)
+  @ApiOperation({ summary: '교환 수거 대기 처리 (관리자)' })
+  @ApiParam({ name: 'id', description: '교환 요청 ID' })
+  markExchangeCollectionPending(@Param('id') id: string, @User() admin: AuthenticatedAdmin) {
+    return this.service.markExchangeCollectionPending(id, admin.userId);
+  }
+
+  @Post('exchange-requests/:id/collected')
+  @HttpCode(200)
+  @ApiOperation({ summary: '교환 수거 완료 처리 (관리자)' })
+  @ApiParam({ name: 'id', description: '교환 요청 ID' })
+  markExchangeCollected(@Param('id') id: string, @User() admin: AuthenticatedAdmin) {
+    return this.service.markExchangeCollected(id, admin.userId);
   }
 
   @Post('exchange-requests/:id/inspected')

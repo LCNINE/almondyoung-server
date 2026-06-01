@@ -12,7 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useCancelSalesOrder } from '@/lib/services/orders';
+import { useAdminCancelSalesOrder } from '@/lib/services/orders';
 import type { OrderLineRow } from '@/features/order/history/hooks/use-order-rows';
 import type { CancelSalesOrderLineDto } from '@/lib/types/dto/orders';
 
@@ -32,7 +32,7 @@ interface Props {
 }
 
 export function CancelOrderModal({ order, open, onOpenChange }: Props) {
-  const cancelMutation = useCancelSalesOrder();
+  const cancelMutation = useAdminCancelSalesOrder();
 
   const isShipped = order?.orderStatus === 'shipped' || order?.orderStatus === 'delivered';
   const [scope, setScope] = useState<'full' | 'partial'>('full');
@@ -66,7 +66,7 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
     }
 
     try {
-      await cancelMutation.mutateAsync({
+      const result = await cancelMutation.mutateAsync({
         id: order.orderId,
         body: {
           lines,
@@ -75,12 +75,18 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
           cancelledBy: 'admin',
         },
       });
-      const successMsg =
-        scope === 'full'
-          ? '주문이 취소되었습니다.'
-          : isShipped
-            ? '부분 취소가 접수되었습니다. 출고된 상품은 반품/회수 처리가 별도로 필요합니다.'
-            : '부분 취소가 완료되었습니다.';
+      let successMsg: string;
+      if (scope === 'partial') {
+        successMsg = isShipped
+          ? '부분 취소가 접수되었습니다. 출고된 상품은 반품/회수 처리가 별도로 필요합니다.'
+          : '부분 취소가 반영되었습니다. 환불은 수동 처리가 필요합니다.';
+      } else if (result.refundStatus === 'succeeded') {
+        successMsg = '주문이 취소되고 환불이 완료되었습니다.';
+      } else if (result.refundStatus === 'pending') {
+        successMsg = '주문이 취소되었습니다. 환불 처리 중입니다.';
+      } else {
+        successMsg = '주문이 취소되었습니다. 환불은 수동으로 처리가 필요합니다.';
+      }
       toast.success(successMsg);
       onOpenChange(false);
     } catch (err: unknown) {

@@ -68,6 +68,7 @@ export {
   useCreateSalesOrder,
   useUpdateSalesOrder,
   useCancelSalesOrder,
+  useAdminCancelSalesOrder,
   // 출고 배치 (D2)
   useCreateOutboundBatch,
   useAddFOsToBatch,
