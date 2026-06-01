@@ -178,6 +178,7 @@ export class SalesOrdersService {
           shippingFee: dto.shippingFee ?? 0,
           mergeGroupId: dto.mergeGroupId ?? null,
           isMerged: false,
+          walletIntentId: dto.walletIntentId ?? null,
           orderDate: new Date(dto.orderDate ?? Date.now()),
           confirmedAt: null,
           processedAt: null,

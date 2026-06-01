@@ -5,9 +5,40 @@ import { ExternalLink } from "lucide-react"
 import { getTranslations } from "next-intl/server"
 import { DeliveryHeader } from "domains/order/track/components"
 import { Accordion } from "./accordion"
+import { getOrderTrackingByMedusaId, type StoreOrderTrackingResponse } from "@/lib/api/orders/store-orders"
+import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
 
-export default async function OrderTrackPage() {
+interface OrderTrackPageProps {
+  searchParams: Promise<{ orderId?: string }>
+}
+
+function trackingStatusToStep(status: StoreOrderTrackingResponse["status"]): number {
+  switch (status) {
+    case "not_shipped": return 1
+    case "preparing": return 2
+    case "shipping": return 4
+    case "delivered": return 5
+    default: return 1
+  }
+}
+
+export default async function OrderTrackPage({ searchParams }: OrderTrackPageProps) {
   const t = await getTranslations("mypage.page")
+  const tDelivery = await getTranslations("mypage.order.delivery")
+  const tOrderActions = await getTranslations("mypage.order.actions")
+  const { orderId } = await searchParams
+
+  let tracking: StoreOrderTrackingResponse | null = null
+  if (orderId) {
+    try {
+      tracking = await getOrderTrackingByMedusaId(orderId)
+    } catch {
+      // 배송 정보 조회 실패 시 null로 처리 (페이지는 렌더됨)
+    }
+  }
+
+  const currentStep = tracking ? trackingStatusToStep(tracking.status) : 1
+  const completedDate = tracking?.shipments.find((s) => s.deliveredAt)?.deliveredAt
   const faqData = [
     {
       id: "faq-1",
@@ -82,45 +113,89 @@ export default async function OrderTrackPage() {
     >
       <MypageLayout>
         <div className="bg-gray min-h-screen py-4">
-          {/* 간단한 사용: currentStep만 전달하면 자동으로 텍스트와 스텝퍼가 표시됨 */}
-          <DeliveryHeader currentStep={1} />
+          <DeliveryHeader
+            currentStep={currentStep}
+            completedDate={completedDate ? formatDate(completedDate, DATE_FORMATS.KO_DOT) : undefined}
+          />
 
           <div className="px-3 md:px-0">
-            {/* --- 주문 정보 --- */}
-            <section className="mt-9">
-              <div className="border-border-muted flex items-center justify-between border-b px-3">
-                <h3 className="text-[12px] font-bold text-gray-800">
-                  2025. 5. 14 주문
-                </h3>
-                <a href="#" className="text-[12px] text-[#ffa500]">
-                  주문 상세 보기
-                </a>
-              </div>
-              <div className="rounded-xl bg-white p-6 py-6 shadow-sm">
-                <div className="flex gap-4 rounded-xl">
-                  <img
-                    src="https://almondyoung.com/web/product/medium/202503/d21d85aa58f14bb4cc2a69342d24c4fa.jpg"
-                    alt="주문 상품 이미지"
-                    className="h-24 w-24 shrink-0 rounded-md border"
-                  />
-                  <div className="flex flex-col justify-center">
-                    <p className="font-semibold text-gray-800">
-                      노모드 속눈썹 영양제 블랙
-                    </p>
-                    <p className="mt-1 text-sm text-gray-600">9,000원</p>
-                    <p className="mt-1 text-sm text-gray-500">
-                      브러쉬 타입 1개
-                    </p>
-                    <p className="text-sm text-gray-500">마스카라 타입 1개</p>
-                  </div>
-                </div>
-                <button className="mt-[30px] flex h-[33px] w-full items-center justify-center rounded-[5px] border border-solid bg-white pt-[9px] pr-[7.5px] pb-[10px] pl-[10px]">
-                  <span className="text-[12px]">주문 취소</span>
-                </button>
-              </div>
+            {/* 주문목록으로 돌아가기 */}
+            <section className="mt-4">
+              <a
+                href="/mypage/order/list"
+                className="flex items-center gap-1 text-sm text-[#ffa500] hover:underline"
+              >
+                {tOrderActions("backToList")}
+              </a>
             </section>
 
+            {/* 배송 정보 */}
             <section className="mt-10">
+              <h3 className="mb-3 px-3 text-sm font-bold text-gray-800">
+                {tDelivery("trackingInfo")}
+              </h3>
+              {tracking && tracking.shipments.length > 0 ? (
+                <div className="space-y-3">
+                  {tracking.shipments.map((shipment, idx) => (
+                    <div key={idx} className="rounded-xl bg-white p-4 shadow-sm">
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-500">{tDelivery("carrierLabel")}</span>
+                          <span className="font-medium">
+                            {shipment.carrierName && shipment.carrierName !== 'UNKNOWN'
+                              ? shipment.carrierName
+                              : tDelivery("unknownCarrier")}
+                          </span>
+                        </div>
+                        {shipment.trackingNumber && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">{tDelivery("trackingNumberLabel")}</span>
+                            <span className="font-mono">{shipment.trackingNumber}</span>
+                          </div>
+                        )}
+                        {shipment.shippedAt && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-500">{tDelivery("shippedAtLabel")}</span>
+                            <span>{formatDate(shipment.shippedAt, DATE_FORMATS.KO_DOT)}</span>
+                          </div>
+                        )}
+                      </div>
+                      {shipment.trackingUrl && (
+                        <a
+                          href={shipment.trackingUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-3 flex items-center justify-center gap-1.5 rounded-md border border-gray-300 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                        >
+                          {tDelivery("viewTracking")}
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </a>
+                      )}
+                      {shipment.trackingEvents.length > 0 && (
+                        <div className="mt-3 border-t pt-3">
+                          <div className="space-y-2">
+                            {shipment.trackingEvents.slice(0, 5).map((evt, i) => (
+                              <div key={i} className="flex gap-3 text-xs text-gray-600">
+                                <span className="w-32 shrink-0 text-gray-400">
+                                  {formatDate(evt.timestamp, "MM.dd HH:mm")}
+                                </span>
+                                <span>{evt.location ?? evt.status}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-xl bg-white p-4 text-center text-sm text-gray-500 shadow-sm">
+                  {tDelivery("noTrackingInfo")}
+                </div>
+              )}
+            </section>
+
+            <section className="mt-6">
               <OrderInfoCardShipping />
             </section>
 

@@ -85,6 +85,20 @@
       "when": 1780185660000,
       "tag": "20260531000100_add-order-refund-event-type",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1780280825607,
+      "tag": "20260601022705_add-return-exchange-requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1780300985974,
+      "tag": "20260601080305_add-wallet-intent-id-to-sales-orders",
+      "breakpoints": true
     }
   ]
 }
