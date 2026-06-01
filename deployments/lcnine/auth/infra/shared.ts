@@ -8,7 +8,7 @@ export function setup() {
   // "live" 외의 모든 stage는 비운영으로 취급 (도메인 .dev. 접두사, bastion 등).
   const isDev = $app.stage !== "live";
 
-  const baseDomain = "lcnine-dev.com";
+  const baseDomain = isDev ? "lcnine-dev.com" : "almondyoung-next.com";
   const domain = (slug: string) =>
     isDev ? `${slug}.dev.${baseDomain}` : `${slug}.${baseDomain}`;
   const url = (slug: string) => `https://${domain(slug)}`;

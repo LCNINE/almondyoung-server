@@ -16,7 +16,7 @@ export function setup(infra: PlatformInfra) {
 
   // services stack 과 같은 zone 을 사용. wildcard ALB 가 services 에 있어도
   // specific A record 가 우선이라 라우팅 충돌 없음.
-  const baseDomain = "lcnine-dev.com";
+  const baseDomain = isDev ? "lcnine-dev.com" : "almondyoung-next.com";
   const consoleDomain = isDev
     ? `console.dev.${baseDomain}`
     : `console.${baseDomain}`;
