@@ -1650,3 +1650,112 @@ describe('SalesOrdersService business links', () => {
     ]);
   });
 });
+
+// ─── Full cancel shipped evidence guards ──────────────────────────────────────
+
+describe('SalesOrdersService.cancel full cancel shipped evidence guard', () => {
+  const salesOrderId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+  function rows<T>(value: T[]): T[] & { limit: (count: number) => Promise<T[]> } {
+    const result = [...value] as T[] & { limit: (count: number) => Promise<T[]> };
+    result.limit = (count: number) => Promise.resolve(result.slice(0, count));
+    return result;
+  }
+
+  function makeService(options: {
+    foStatus?: string;
+    foShippedAt?: Date | null;
+    foiShippedQty?: number;
+  } = {}) {
+    const { foStatus = 'ready', foShippedAt = null, foiShippedQty = 0 } = options;
+
+    const fo = {
+      id: 'fo-guard-1',
+      salesOrderId,
+      status: foStatus,
+      shippedAt: foShippedAt,
+      totalQty: 2,
+      totalReservedQty: 2,
+      canceledAt: null,
+    };
+    const foi = {
+      id: 'foi-guard-1',
+      fulfillmentOrderId: 'fo-guard-1',
+      salesOrderId,
+      salesOrderLineId: 'sol-guard-1',
+      skuId: 'sku-guard-1',
+      qty: 2,
+      reservedQty: 2,
+      shippedQty: foiShippedQty,
+      status: 'ready',
+    };
+
+    const selectRowsFor = (table: unknown): any[] => {
+      if (table === wmsTables.salesOrders) {
+        return [{ id: salesOrderId, status: 'confirmed', salesChannel: 'medusa', channelOrderId: 'ch-1', shippingAddress: {}, orderDate: new Date() }];
+      }
+      if (table === wmsTables.salesOrderCancellations) return [];
+      if (table === wmsTables.salesOrderLines) return [{ id: 'sol-guard-1', salesOrderId, quantity: 2 }];
+      if (table === wmsTables.fulfillmentOrders) return [fo];
+      if (table === wmsTables.fulfillmentOrderItems) return [foi];
+      if (table === wmsTables.businessLinks) return [];
+      return [];
+    };
+
+    const tx: any = {
+      execute: jest.fn().mockResolvedValue([]),
+      select: jest.fn(() => ({
+        from: (table: unknown) => ({
+          where: () => rows(selectRowsFor(table) as any),
+        }),
+      })),
+      update: jest.fn(() => ({ set: () => ({ where: () => [] }) })),
+      insert: jest.fn(() => ({ values: () => ({ returning: jest.fn().mockResolvedValue([{ id: 'cancel-1', effects: [], metadata: {} }]) }) })),
+      delete: jest.fn(() => ({ where: () => [] })),
+    };
+
+    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) } };
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const library = { revokeOwnershipsForOrderDetailed: jest.fn().mockResolvedValue({ revokedCount: 0, ownershipIds: [] }) };
+    const backlog = { closeOpenForSalesOrder: jest.fn().mockResolvedValue(0) };
+    const reservationLifecycle = { handleFulfillmentOrderStatusChange: jest.fn().mockResolvedValue(undefined) };
+
+    const service = new SalesOrdersService(
+      db as any, {} as any, outbox as any,
+      reservationLifecycle as any, {} as any, {} as any,
+      backlog as any, undefined, undefined, undefined, library as any,
+    );
+    return { service };
+  }
+
+  it('rejects full cancel when a fulfillment order has status shipped', async () => {
+    const { service } = makeService({ foStatus: 'shipped' });
+    await expect(
+      service.cancel(salesOrderId, { reasonCode: 'CUSTOMER_REQUEST' }),
+    ).rejects.toThrow('출고 완료된 항목이 포함된 주문은 전체 취소를 할 수 없습니다');
+  });
+
+  it('rejects full cancel when a fulfillment order has status completed', async () => {
+    const { service } = makeService({ foStatus: 'completed' });
+    await expect(
+      service.cancel(salesOrderId, { reasonCode: 'CUSTOMER_REQUEST' }),
+    ).rejects.toThrow('출고 완료된 항목이 포함된 주문은 전체 취소를 할 수 없습니다');
+  });
+
+  it('rejects full cancel when a fulfillment order has shippedAt set (status still ready)', async () => {
+    const { service } = makeService({ foStatus: 'ready', foShippedAt: new Date('2026-05-30T10:00:00.000Z') });
+    await expect(
+      service.cancel(salesOrderId, { reasonCode: 'CUSTOMER_REQUEST' }),
+    ).rejects.toThrow('출고 완료된 항목이 포함된 주문은 전체 취소를 할 수 없습니다');
+  });
+
+  it('rejects full cancel when a fulfillment order item has shippedQty > 0', async () => {
+    const { service } = makeService({ foStatus: 'ready', foiShippedQty: 1 });
+    await expect(
+      service.cancel(salesOrderId, { reasonCode: 'CUSTOMER_REQUEST' }),
+    ).rejects.toThrow('출고 수량이 있는 항목이 포함되어 전체 취소를 할 수 없습니다');
+  });
+
+  // happy path (ready FO, shippedQty=0 → cancel proceeds) is covered by the existing
+  // 24 passing tests in 'SalesOrdersService.cancel fulfillment backlog lifecycle'
+});

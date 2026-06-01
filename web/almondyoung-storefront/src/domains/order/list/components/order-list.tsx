@@ -3,6 +3,7 @@
 import { PageTitle } from "@/components/shared/page-title"
 import { Button } from "@/components/ui/button"
 import { getOrders } from "@/lib/api/medusa/orders"
+import { getOrderActionsByMedusaId, type StoreOrderActionsResponse } from "@/lib/api/orders/store-orders"
 import OrderCard from "@components/orders/order-card/order-card"
 import OrderCardContent from "@components/orders/order-card/order-card-content"
 import type { HttpTypes } from "@medusajs/types"
@@ -35,6 +36,7 @@ interface OrderListClientProps {
   initialCount: number
   initialLimit: number
   hasError?: boolean
+  initialActionsMap?: Record<string, StoreOrderActionsResponse>
 }
 
 const LOAD_MORE_LIMIT = 20
@@ -116,6 +118,7 @@ export function OrderList({
   initialCount,
   initialLimit,
   hasError = false,
+  initialActionsMap = {},
 }: OrderListClientProps) {
   const tStatus = useTranslations("mypage.order.status")
   const tList = useTranslations("mypage.order.list")
@@ -128,6 +131,8 @@ export function OrderList({
   })
   const [rawOrders, setRawOrders] =
     useState<HttpTypes.StoreOrder[]>(initialOrders)
+  const [actionsMap, setActionsMap] =
+    useState<Record<string, StoreOrderActionsResponse>>(initialActionsMap)
   const [totalCount, setTotalCount] = useState(initialCount)
   const [isPending, startTransition] = useTransition()
 
@@ -176,6 +181,19 @@ export function OrderList({
         if (typeof result.count === "number") {
           setTotalCount(result.count)
         }
+        // 새로 로드된 주문의 Core 액션도 병렬 조회
+        const newActions = await Promise.allSettled(
+          result.orders.map((o: HttpTypes.StoreOrder) => getOrderActionsByMedusaId(o.id))
+        )
+        setActionsMap((prev) => {
+          const next = { ...prev }
+          newActions.forEach((r, idx) => {
+            if (r.status === "fulfilled" && result.orders[idx]) {
+              next[result.orders[idx]!.id] = r.value
+            }
+          })
+          return next
+        })
       }
     })
   }
@@ -250,6 +268,7 @@ export function OrderList({
                 showInquiry={order.showInquiry}
                 orderItems={order.orderItems}
                 variantId={order.variantId}
+                coreActions={actionsMap[order.orderId]}
               />
             </OrderCard>
           ))}

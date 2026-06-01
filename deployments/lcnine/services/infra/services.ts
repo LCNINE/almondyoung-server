@@ -210,6 +210,9 @@ export function setup(infra: SharedInfra) {
       JWT_ISSUER: "almondyoung-auth",
       // OIDC: storefront/admin-web 의 RS256 토큰 검증용.
       OIDC_ISSUER_URL: idpUserServiceUrl,
+      // 고객 주문 취소 후 Wallet 자동 환불 연결
+      WALLET_BASE_URL: url("wallet"),
+      WALLET_API_KEY: walletApiKey.value,
     },
   });
 

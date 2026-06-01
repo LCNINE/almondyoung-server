@@ -50,7 +50,7 @@ export async function getOrders(params?: {
 }): Promise<HttpTypes.StoreOrderListResponse | null> {
   const filters: HttpTypes.StoreOrderFilters = {
     fields:
-      "id,display_id,status,fulfillment_status,payment_status,created_at,updated_at,total,currency_code,*items,*items.variant,*items.variant.product",
+      "id,display_id,status,fulfillment_status,payment_status,created_at,updated_at,total,currency_code,*items,*items.variant,*items.variant.product,*payment_collections,*payment_collections.payment_sessions",
     order: "-created_at",
   }
 
