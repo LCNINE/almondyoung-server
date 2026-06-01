@@ -10,7 +10,7 @@
 | `auth/` | `lcnine-auth` | IdP: user-service + auth-web. 자체 Postgres·ALB |
 | `services/` | `lcnine-services` | 커머스/물류/결제 도메인 + Medusa + admin/wallet web |
 
-세 앱 공통: stage 가 `live` 면 운영(`removal: retain`, `protect: true`, 도메인 접두사 없음), 그 외(`dev` 등)는 `.dev.` 접두사 + `removal: remove`.
+세 앱 공통: stage 가 `live` 면 운영(`removal: retain`, `protect: true`, `*.almondyoung-next.com`), 그 외(`dev` 등)는 `.dev.lcnine-dev.com` 접두사 + `removal: remove`.
 
 배포 순서: `platform → auth → services` (최초 부트스트랩 시. 이후엔 SSM late-binding 으로 독립 재배포 가능).
 
@@ -37,7 +37,7 @@
 - 위 SSM 두 키를 읽어 **platform VPC 공유** (`sst.aws.Vpc.get`). 같은 VPC 라서 Redpanda Cloud Map DNS 가 자동 해석됨.
 - 자체 소유: `Postgres("IdpDb")`, `Cluster`, **specific hostname ALB** (`user.<base>`).
   - services 의 wildcard ALB 와의 Route53 우선순위 충돌을 피하기 위함 (specific A record > wildcard alias).
-- 도메인: `user.dev.lcnine-dev.com` / live 시 `user.lcnine-dev.com`, `auth.<base>` 도 동일 패턴.
+- 도메인: `user.dev.lcnine-dev.com` / live 시 `user.almondyoung-next.com`, `auth.<base>` 도 동일 패턴.
 
 `auth/infra/services.ts`
 
@@ -54,7 +54,7 @@ SSM publish:
 `services/infra/shared.ts`
 
 - platform VPC + Kafka 를 SSM 으로 가져옴.
-- 자체 소유: `Postgres("Db")`, `Redis("Redis")` (ElastiCache Serverless), **wildcard ALB** (`*.dev.lcnine-dev.com` 또는 `*.lcnine-dev.com`).
+- 자체 소유: `Postgres("Db")`, `Redis("Redis")` (ElastiCache Serverless), **wildcard ALB** (`*.dev.lcnine-dev.com` 또는 `*.almondyoung-next.com`).
 - 한 Postgres 인스턴스에 서비스별 논리 DB(`dbUrl("analytics")` 등)로 분리. Redis 도 DB 인덱스로 분리.
 - `createService()` 헬퍼: ECS Fargate Service + ALB 룰. `transform.listenerRule` 로 hostHeader 조건을 직접 덮어써 wildcard ALB 한 대에 host 기반 멀티플렉싱.
 
