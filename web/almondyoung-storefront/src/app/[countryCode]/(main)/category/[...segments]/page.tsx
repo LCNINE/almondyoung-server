@@ -4,6 +4,9 @@ import { CategoryTemplate } from "@/domains/category/templates"
 import { siteConfig } from "@/lib/config/site"
 import { getCategoryByHandle } from "@/lib/api/medusa/categories"
 
+export const dynamic = "force-dynamic"
+export const revalidate = 0
+
 type Props = {
   params: Promise<{
     countryCode: string
