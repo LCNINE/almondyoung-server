@@ -84,7 +84,7 @@ export class BankTransferPaymentProvider implements PaymentProvider {
   }
 
   async refund(_params: RefundParams): Promise<RefundResult> {
-    // Bank transfer refunds are handled out-of-band (manual bank transfer back to customer)
-    return { status: 'SUCCEEDED' };
+    // Bank transfer refunds require manual transfer back to the customer — stay PENDING until confirmed
+    return { status: 'PENDING' };
   }
 }

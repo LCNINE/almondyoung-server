@@ -189,6 +189,7 @@ export class PaymentIntentAdminController {
       const refund = await this.refundsService.create({
         chargeId: dto.chargeId,
         amount: dto.amount,
+        intentId: id,
         reasonCode: dto.reasonCode,
         reasonMessage: dto.reasonMessage,
       });

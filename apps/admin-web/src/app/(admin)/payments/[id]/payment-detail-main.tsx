@@ -1,13 +1,25 @@
 'use client';
 
-import { Suspense } from 'react';
+import { Suspense, useState } from 'react';
+import { toast } from 'sonner';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
 import { Spinner } from '@/components/ui/spinner';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import {
   usePaymentIntentDetail,
   useStateTransitions,
 } from '@/lib/services/wallet';
+import { walletQueryKeys } from '@/lib/services/wallet/query-keys';
+import { walletApi } from '@/lib/api/domains/wallet';
 import { StatusBadgeCell } from '@/components/table/table-cells/wallet/status-badge-cell';
 import { AmountCell } from '@/components/table/table-cells/wallet/amount-cell';
 import Link from 'next/link';
@@ -276,6 +288,47 @@ function ChargesTable({ intentId }: { intentId: string }) {
   );
 }
 
+function RefundConfirmButton({ refundId, intentId, amount, currency }: { refundId: string; intentId: string; amount: number; currency: string }) {
+  const [open, setOpen] = useState(false);
+  const queryClient = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: () => walletApi.confirmRefund(refundId),
+    onSuccess: () => {
+      toast.success('환불 완료 처리되었습니다.');
+      setOpen(false);
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.intentDetail(intentId) });
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.stateTransitions(intentId) });
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.refunds() });
+    },
+    onError: () => toast.error('완료 처리 중 오류가 발생했습니다.'),
+  });
+
+  return (
+    <>
+      <Button size="sm" variant="outline" className="h-6 text-xs" onClick={() => setOpen(true)}>
+        완료 처리
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>수동 환불 완료 처리</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <p>환불 금액 <span className="font-semibold">{amount.toLocaleString('ko-KR')} {currency}</span>을 실제로 고객 계좌에 송금했습니까?</p>
+            <p className="text-amber-700 bg-amber-50 rounded p-2 text-xs">실제 송금이 완료된 경우에만 처리하세요. 이 작업은 되돌릴 수 없습니다.</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={mutation.isPending}>취소</Button>
+            <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+              {mutation.isPending ? '처리 중...' : '송금 완료 확인'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 function RefundsTableContent({ intentId }: { intentId: string }) {
   const { data } = usePaymentIntentDetail(intentId);
 
@@ -289,12 +342,13 @@ function RefundsTableContent({ intentId }: { intentId: string }) {
             <th className="px-4 py-2 font-medium text-left">상태</th>
             <th className="px-4 py-2 font-medium text-left">사유</th>
             <th className="px-4 py-2 font-medium text-left">생성일</th>
+            <th className="px-4 py-2 font-medium text-left">액션</th>
           </tr>
         </thead>
         <tbody>
           {data.refunds.length === 0 ? (
             <tr>
-              <td colSpan={5}>
+              <td colSpan={6}>
                 <Empty message="환불 없음" />
               </td>
             </tr>
@@ -314,11 +368,19 @@ function RefundsTableContent({ intentId }: { intentId: string }) {
                 <td className="px-4 py-2 text-xs text-muted-foreground">
                   {new Date(r.createdAt).toLocaleString('ko-KR')}
                 </td>
+                <td className="px-4 py-2">
+                  {r.manualConfirmable && (
+                    <RefundConfirmButton refundId={r.id} intentId={intentId} amount={r.amount} currency={r.currency} />
+                  )}
+                </td>
               </tr>
             ))
           )}
         </tbody>
       </table>
+      {data.refunds.some((r: RefundDto) => r.manualConfirmable) && (
+        <p className="px-4 py-2 text-xs text-amber-600">수동 송금 대기 중인 환불이 있습니다. 실제 송금 완료 후 "완료 처리" 버튼을 눌러주세요.</p>
+      )}
     </div>
   );
 }

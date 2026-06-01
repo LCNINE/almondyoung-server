@@ -358,7 +358,14 @@ export class SalesOrdersService {
         throw new BadRequestException('Partial cancellation lines cannot be empty; omit lines for full cancellation');
       }
 
-      if (this.hasPartialCancellationLines(options)) {
+      const isFullCancel = !this.hasPartialCancellationLines(options);
+      if (isFullCancel && (salesOrder.status === 'shipped' || salesOrder.status === 'delivered')) {
+        throw new BadRequestException(
+          '이미 출고/배송 완료된 주문은 전체 취소를 할 수 없습니다. 부분 취소로 진행해 주세요.',
+        );
+      }
+
+      if (!isFullCancel) {
         return this.cancelPartial(id, salesOrder, options, trx);
       }
 
@@ -391,12 +398,49 @@ export class SalesOrdersService {
         .from(wmsTables.salesOrderLines)
         .where(eq(wmsTables.salesOrderLines.salesOrderId, id));
 
+      // FO와 FO item을 잠근 뒤 출고 증거 확인 (shipped evidence check와 cancel update를 같은 락 범위에서 처리)
+      await trx.execute(sql`
+        SELECT id FROM ${wmsTables.fulfillmentOrders}
+        WHERE ${wmsTables.fulfillmentOrders.salesOrderId} = ${id}
+        FOR UPDATE
+      `);
+      await trx.execute(sql`
+        SELECT foi.id FROM ${wmsTables.fulfillmentOrderItems} foi
+        JOIN ${wmsTables.fulfillmentOrders} fo ON foi.fulfillment_order_id = fo.id
+        WHERE fo.sales_order_id = ${id}
+        FOR UPDATE
+      `);
+
       const fulfillmentOrders = await trx
         .select()
         .from(wmsTables.fulfillmentOrders)
         .where(eq(wmsTables.fulfillmentOrders.salesOrderId, id));
 
       this.logger.log(`Found ${fulfillmentOrders.length} fulfillment orders for SO ${id}`);
+
+      const hasShippedFulfillment = fulfillmentOrders.some(
+        (fo) => fo.status === 'shipped' || fo.status === 'completed' || fo.shippedAt != null,
+      );
+      if (hasShippedFulfillment) {
+        throw new BadRequestException('출고 완료된 항목이 포함된 주문은 전체 취소를 할 수 없습니다. 부분 취소로 진행해 주세요.');
+      }
+
+      if (fulfillmentOrders.length > 0) {
+        const foIds = fulfillmentOrders.map((fo) => fo.id);
+        const shippedItems = await trx
+          .select({ id: wmsTables.fulfillmentOrderItems.id })
+          .from(wmsTables.fulfillmentOrderItems)
+          .where(
+            and(
+              inArray(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, foIds),
+              sql`${wmsTables.fulfillmentOrderItems.shippedQty} > 0`,
+            ),
+          )
+          .limit(1);
+        if (shippedItems.length > 0) {
+          throw new BadRequestException('출고 수량이 있는 항목이 포함되어 전체 취소를 할 수 없습니다. 부분 취소로 진행해 주세요.');
+        }
+      }
 
       const effects: CancellationEffect[] = [];
       const cancelledFulfillmentOrderIds: string[] = [];
@@ -943,7 +987,7 @@ export class SalesOrdersService {
     trx: DbTx,
   ) {
     if (salesOrder.status === 'cancelled') {
-      throw new BadRequestException(`Sales order ${salesOrderId} is already fully cancelled`);
+      throw new BadRequestException('이미 전체 취소된 주문입니다.');
     }
 
     const [fullCancellation] = await trx
@@ -957,7 +1001,7 @@ export class SalesOrdersService {
       )
       .limit(1);
     if (fullCancellation) {
-      throw new BadRequestException(`Sales order ${salesOrderId} already has full cancellation ${fullCancellation.id}`);
+      throw new BadRequestException('이미 전체 취소 처리된 주문입니다.');
     }
 
     const requestedLines = this.normalizePartialCancellationLines(options.lines);
@@ -978,7 +1022,7 @@ export class SalesOrdersService {
       const remainingQuantity = line.quantity - (priorCancellationContext.cancelledByLine.get(line.id) ?? 0);
       if (request.quantity > remainingQuantity) {
         throw new BadRequestException(
-          `Cannot cancel ${request.quantity} units from line ${line.id}; only ${remainingQuantity} remain cancellable`,
+          `취소 수량(${request.quantity}개)이 취소 가능 수량(${remainingQuantity}개)을 초과합니다.`,
         );
       }
     }
@@ -1317,7 +1361,7 @@ export class SalesOrdersService {
 
       if (postShipmentQty > shippedEvidenceQty) {
         throw new BadRequestException(
-          `Cannot cancel ${cancelledLineQuantity} units from line ${salesOrderLineId}; affected fulfillment quantity has already been picked or shipped`,
+          `취소하려는 수량 중 일부(${postShipmentQty}개)가 이미 피킹 또는 출고 처리된 상태입니다. 해당 수량은 반품/회수 처리가 필요합니다.`,
         );
       }
 

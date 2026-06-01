@@ -176,7 +176,7 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
       cancelledBy: 'admin-1',
     });
 
-    expect(tx.execute).toHaveBeenCalledTimes(1);
+    expect(tx.execute).toHaveBeenCalledTimes(3); // SO FOR UPDATE + FO FOR UPDATE + FOI FOR UPDATE
     expect(state.salesOrders[0].status).toBe('cancelled');
     expect(state.salesOrderLines).toEqual(originalLines);
     expect(state.salesOrderCancellations).toEqual([
@@ -1200,7 +1200,7 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
         lines: [{ salesOrderLineId, quantity: 1 }],
         reasonCode: 'CUSTOMER_REQUEST',
       }),
-    ).rejects.toThrow('affected fulfillment quantity has already been picked or shipped');
+    ).rejects.toThrow('이미 피킹 또는 출고 처리된 상태입니다');
 
     expect(state.fulfillmentOrderItems[0]).toMatchObject({
       qty: 3,

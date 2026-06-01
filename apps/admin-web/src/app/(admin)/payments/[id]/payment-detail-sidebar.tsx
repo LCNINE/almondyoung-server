@@ -68,11 +68,11 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
 
   const canCapture = data.status === 'AUTHORIZED';
   const canCancel = ['CREATED', 'PROCESSING', 'REQUIRES_ACTION', 'AUTHORIZED', 'SUCCEEDED'].includes(data.status);
-  const canRefund = ['CAPTURED', 'SUCCEEDED'].includes(data.status);
 
   const succeededCharges = data.charges.filter(
     (c) => c.status === 'SUCCEEDED' && (c.operation === 'AUTHORIZE' || c.operation === 'CAPTURE'),
   );
+  const canRefund = succeededCharges.length > 0;
 
   const handleCapture = async () => {
     try {
@@ -95,12 +95,25 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
   const handleRefund = async () => {
     if (!refundChargeId || !refundAmount) return;
     try {
-      await refund.mutateAsync({
+      const result = await refund.mutateAsync({
         chargeId: refundChargeId,
         amount: refundAmount as number,
         reasonCode: refundReasonCode || undefined,
         reasonMessage: refundReasonMessage || undefined,
       });
+      if (result.status === 'FAILED') {
+        toast.error(`환불 실패: ${result.reasonMessage ?? result.reasonCode ?? 'PG 오류'}`);
+        return;
+      }
+      if (result.status === 'PENDING') {
+        toast.info('환불 대기 중: 무통장 입금 환불은 수동 송금이 필요합니다. 환불 내역에서 완료 처리해 주세요.');
+        setRefundOpen(false);
+        setRefundChargeId('');
+        setRefundAmount('');
+        setRefundReasonCode('');
+        setRefundReasonMessage('');
+        return;
+      }
       toast.success('환불 처리 완료');
       setRefundOpen(false);
       setRefundChargeId('');

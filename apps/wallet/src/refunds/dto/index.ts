@@ -13,6 +13,11 @@ export class CreateRefundDto {
   @Min(1)
   amount: number;
 
+  @ApiPropertyOptional({ description: 'Expected intent ID — validated against charge.intentId when provided' })
+  @IsOptional()
+  @IsString()
+  intentId?: string;
+
   @ApiPropertyOptional({ description: 'Reason code', maxLength: 128 })
   @IsOptional()
   @IsString()
@@ -52,4 +57,7 @@ export class RefundResponseDto {
 
   @ApiProperty()
   createdAt: Date;
+
+  @ApiProperty({ description: '수동 완료 처리 가능 여부 (무통장 환불만 true)' })
+  manualConfirmable: boolean;
 }

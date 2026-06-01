@@ -139,6 +139,7 @@ export class PaymentIntentsController {
       reasonCode: refund.reasonCode,
       reasonMessage: refund.reasonMessage,
       createdAt: refund.createdAt,
+      manualConfirmable: false,
     };
   }
 

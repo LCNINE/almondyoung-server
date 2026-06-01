@@ -175,8 +175,25 @@ export class PaymentIntentAdminService {
       createdAt: c.createdAt,
     }));
 
-    // Refunds
-    const refundRows = await db.select().from(refunds).where(eq(refunds.intentId, id)).orderBy(asc(refunds.createdAt));
+    // Refunds (charge → payment_method join으로 manualConfirmable 계산)
+    const refundRows = await db
+      .select({
+        id: refunds.id,
+        chargeId: refunds.chargeId,
+        intentId: refunds.intentId,
+        status: refunds.status,
+        amount: refunds.amount,
+        currency: refunds.currency,
+        reasonCode: refunds.reasonCode,
+        reasonMessage: refunds.reasonMessage,
+        createdAt: refunds.createdAt,
+        paymentMethodType: paymentMethods.type,
+      })
+      .from(refunds)
+      .leftJoin(charges, eq(refunds.chargeId, charges.id))
+      .leftJoin(paymentMethods, eq(charges.paymentMethodId, paymentMethods.id))
+      .where(eq(refunds.intentId, id))
+      .orderBy(asc(refunds.createdAt));
 
     const refundData: RefundResponseDto[] = refundRows.map((r) => ({
       id: r.id,
@@ -188,6 +205,7 @@ export class PaymentIntentAdminService {
       reasonCode: r.reasonCode ?? null,
       reasonMessage: r.reasonMessage ?? null,
       createdAt: r.createdAt,
+      manualConfirmable: r.status === 'PENDING' && r.paymentMethodType === 'BANK_TRANSFER',
     }));
 
     // Payment method
@@ -270,6 +288,7 @@ export class PaymentIntentAdminService {
       reasonCode: r.reasonCode ?? null,
       reasonMessage: r.reasonMessage ?? null,
       createdAt: r.createdAt,
+      manualConfirmable: false, // 목록 조회는 charge join 없이 조회 — 상세에서만 정확한 값 제공
     }));
 
     return { data, total, page, limit };
