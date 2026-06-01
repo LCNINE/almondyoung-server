@@ -53,7 +53,7 @@ export function MainLayout({ children }: MainLayoutProps) {
 
   return (
     <SidebarProvider defaultOpen={true}>
-      <div className="hidden lg:flex">
+      <div className="hidden lg:flex ">
         <AppSidebar
           activeMenu={activeMenu}
           activeItem={activeItem}
@@ -66,7 +66,7 @@ export function MainLayout({ children }: MainLayoutProps) {
           activeItem={activeItem ?? undefined}
           onMenuChange={handleMenuChange}
         />
-        <main className="flex-1 bg-white overflow-y-auto">{children}</main>
+        <main className="py-4 overflow-y-auto bg-white ">{children}</main>
       </div>
     </SidebarProvider>
   );

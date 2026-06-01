@@ -6,6 +6,7 @@ import { getTranslations } from "next-intl/server"
 import { FooterInfoLine } from "./footer-info-line"
 
 const CS_PHONE = "1877-7184"
+const COMPANY_SITE_URL = "https://www.lcnine.kr/"
 
 export default async function Footer({ className }: { className?: string }) {
   const t = await getTranslations("footer")
@@ -53,12 +54,14 @@ export default async function Footer({ className }: { className?: string }) {
                 </Button>
               </div>
               <nav className="flex flex-wrap gap-4 text-sm">
-                <LocalizedClientLink
-                  href="/company"
+                <Link
+                  href={COMPANY_SITE_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="hover:text-stone-700 hover:underline"
                 >
                   {t("company")}
-                </LocalizedClientLink>
+                </Link>
                 <LocalizedClientLink
                   href="/terms"
                   className="hover:text-stone-700 hover:underline"
@@ -128,9 +131,14 @@ export default async function Footer({ className }: { className?: string }) {
 
             {/* 정책 링크 */}
             <nav className="mb-6 flex flex-wrap justify-start gap-x-4 gap-y-2 text-xs text-stone-500">
-              <LocalizedClientLink href="/company" className="hover:text-stone-800">
+              <Link
+                href={COMPANY_SITE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-stone-800"
+              >
                 {t("company")}
-              </LocalizedClientLink>
+              </Link>
               <LocalizedClientLink href="/terms" className="hover:text-stone-800">
                 {t("terms")}
               </LocalizedClientLink>
