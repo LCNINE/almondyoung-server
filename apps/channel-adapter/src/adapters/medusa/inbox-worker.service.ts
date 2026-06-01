@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
-import { inboxEvents } from '../../schema';
+import { inboxEvents, wmsOrderMappings } from '../../schema';
 import { ORDER_STREAM_EVENT_TYPES } from '../../order-event-routing';
 import { eq, and, lte, notInArray, gt, inArray } from 'drizzle-orm';
 import { v7 } from 'uuid';
@@ -214,6 +214,35 @@ export class InboxWorkerService implements OnModuleInit {
         case 'FirebaseMembershipSynced': {
           const syncedPayload: { cafe24MemberId: string; active: boolean } = event.payload;
           await this.firebaseMembershipSyncService.syncByFirebase(syncedPayload.cafe24MemberId, syncedPayload.active);
+          break;
+        }
+
+        case 'CoreOrderCancelled': {
+          // Core(WMS)가 주문을 취소했을 때 Medusa order도 canceled로 동기화한다.
+          // wms_order_mappings에서 salesChannel='medusa'인 매핑을 찾아 Medusa cancel API를 호출.
+          const cancelPayload: { orderId: string } = event.payload;
+          const [mapping] = await this.dbService.db
+            .select({ channelOrderId: wmsOrderMappings.channelOrderId })
+            .from(wmsOrderMappings)
+            .where(
+              and(
+                eq(wmsOrderMappings.wmsOrderId, cancelPayload.orderId),
+                eq(wmsOrderMappings.salesChannel, 'medusa'),
+              ),
+            )
+            .limit(1);
+
+          if (!mapping) {
+            this.logger.debug(
+              `[CoreOrderCancelled] Medusa 매핑 없음, 취소 동기화 스킵: orderId=${cancelPayload.orderId}`,
+            );
+            break;
+          }
+
+          this.logger.log(
+            `[CoreOrderCancelled] Medusa 주문 취소 동기화: coreOrderId=${cancelPayload.orderId}, medusaOrderId=${mapping.channelOrderId}`,
+          );
+          await this.medusaClient.cancelOrder(mapping.channelOrderId);
           break;
         }
 
