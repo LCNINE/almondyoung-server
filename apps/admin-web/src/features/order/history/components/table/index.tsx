@@ -21,6 +21,7 @@ import { EditOrderModal } from '../modals/edit-order-modal';
 import { SplitQuantityModal } from '../modals/split-quantity-modal';
 import { AddOrderItemModal } from '../modals/add-order-item-modal';
 import { MemoModal } from '../modals/memo-modal';
+import { CancelOrderModal } from '../modals/cancel-order-modal';
 
 const PAGE_SIZE = 50;
 
@@ -176,6 +177,7 @@ export default function OrderTable() {
     const [showAddModal, setShowAddModal] = useState(false);
     const [showMemoModal, setShowMemoModal] = useState(false);
     const [showTimelineModal, setShowTimelineModal] = useState(false);
+    const [showCancelModal, setShowCancelModal] = useState(false);
     const [selectedOrder, setSelectedOrder] = useState<OrderLineRow | null>(null);
 
     /* 액션 */
@@ -339,6 +341,20 @@ export default function OrderTable() {
                         >
                             업무연결
                         </Button>
+                        {r.orderStatus !== 'cancelled' && (
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 px-2 text-xs text-red-600 border-red-300 hover:bg-red-50"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedOrder(r);
+                                    setShowCancelModal(true);
+                                }}
+                            >
+                                취소
+                            </Button>
+                        )}
                     </div>
                 ),
             },
@@ -452,6 +468,7 @@ export default function OrderTable() {
             {selectedOrder && <AddOrderItemModal order={selectedOrder} open={showAddModal} onOpenChange={setShowAddModal} />}
             {selectedOrder && <MemoModal order={selectedOrder} open={showMemoModal} onOpenChange={setShowMemoModal} />}
             <BusinessTimelineModal order={selectedOrder} open={showTimelineModal} onOpenChange={setShowTimelineModal} />
+            <CancelOrderModal order={selectedOrder} open={showCancelModal} onOpenChange={setShowCancelModal} />
         </>
     );
 }

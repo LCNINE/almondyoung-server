@@ -5,6 +5,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { orderQueryKeys } from './query-keys';
 import { orders } from '@/lib/api/domains';
 import type {
+  CancelSalesOrderDto,
   ResolveMatchingDto,
   ResolveOptionMatchingDto,
   SetMatchingPriorityDto,
@@ -60,8 +61,9 @@ export const useCancelSalesOrder = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) => orders.salesOrders.cancelSalesOrder(id),
-    onSuccess: (_, id) => {
+    mutationFn: ({ id, body }: { id: string; body?: CancelSalesOrderDto }) =>
+      orders.salesOrders.cancelSalesOrder(id, body),
+    onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: orderQueryKeys.orders });
       queryClient.invalidateQueries({ queryKey: orderQueryKeys.order(id) });
     },

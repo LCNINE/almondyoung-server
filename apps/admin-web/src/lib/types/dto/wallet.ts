@@ -88,6 +88,7 @@ export interface RefundDto {
   reasonCode: string | null;
   reasonMessage: string | null;
   createdAt: string;
+  manualConfirmable: boolean;
 }
 
 // ─── Payment Method ─────────────────────────────────────────────────────────

@@ -44,6 +44,7 @@ export class RefundsController {
       reasonCode: refund.reasonCode,
       reasonMessage: refund.reasonMessage,
       createdAt: refund.createdAt,
+      manualConfirmable: false,
     };
   }
 }

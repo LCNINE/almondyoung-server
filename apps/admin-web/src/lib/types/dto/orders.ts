@@ -327,9 +327,21 @@ export interface ConfirmSalesOrderResponseDto {
   status: 'confirmed';
 }
 
+export interface CancelSalesOrderLineDto {
+  salesOrderLineId: string;
+  quantity: number;
+}
+
+export interface CancelSalesOrderDto {
+  lines?: CancelSalesOrderLineDto[];
+  reasonCode?: string;
+  reasonDetail?: string;
+  cancelledBy?: string;
+}
+
 export interface CancelSalesOrderResponseDto {
   id: string;
-  status: 'canceled';
+  status: 'cancelled';
 }
 
 export interface MergeSalesOrdersDto {
