@@ -2,8 +2,6 @@
 
 import { sdk } from "@/lib/config/medusa"
 import { HttpTypes } from "@medusajs/types"
-// eslint-disable-next-line no-restricted-imports
-import { getCacheOptions } from "@/lib/data/cookies"
 
 const sortCategoriesByRank = (
   categories: HttpTypes.StoreProductCategory[]
@@ -19,10 +17,6 @@ const sortCategoriesByRank = (
 }
 
 export const listCategories = async (query?: Record<string, any>) => {
-  const next = {
-    ...(await getCacheOptions("categories")),
-  }
-
   const limit = query?.limit || 100
 
   return sdk.client
@@ -36,8 +30,7 @@ export const listCategories = async (query?: Record<string, any>) => {
           limit,
           ...query,
         },
-        next,
-        cache: "force-cache",
+        cache: "no-store",
       }
     )
     .then(({ product_categories }) => sortCategoriesByRank(product_categories))
@@ -46,10 +39,6 @@ export const listCategories = async (query?: Record<string, any>) => {
 export const getCategoryByHandle = async (categoryHandle: string[]) => {
   // segments의 마지막이 실제 카테고리 handle (예: ["clothing", "shirts"] → "shirts")
   const handle = categoryHandle[categoryHandle.length - 1]
-
-  const next = {
-    ...(await getCacheOptions("categories")),
-  }
 
   return sdk.client
     .fetch<HttpTypes.StoreProductCategoryListResponse>(
@@ -60,8 +49,7 @@ export const getCategoryByHandle = async (categoryHandle: string[]) => {
           fields: "*category_children",
           handle,
         },
-        next,
-        cache: "force-cache",
+        cache: "no-store",
       }
     )
     .then(({ product_categories }) => product_categories[0])
