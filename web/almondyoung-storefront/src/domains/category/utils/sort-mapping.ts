@@ -1,7 +1,7 @@
 import type { ProductSortBy, ProductSortOrder } from "@/lib/types/common/filter"
 import type { SortOptions } from "@/domains/category/components/refinement-list/sort-products"
 
-export const DEFAULT_CATEGORY_SORT: SortOptions = "sales_desc"
+export const DEFAULT_CATEGORY_SORT: SortOptions = "review_count_desc"
 
 const CATEGORY_SORT_OPTIONS = new Set<SortOptions>([
   "sales_desc",
