@@ -14,7 +14,16 @@ import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { FulfillmentShippedPayload, FulfillmentCancelledPayload } from '@packages/event-contracts/streams';
 import { MessageEnvelope } from '@packages/event-contracts/types';
+import { DbService } from '@app/db';
+import { inboxEvents } from '../schema';
+import type { ChannelAdapterSchema } from '../types';
 import { ChannelAdapterFactory } from '../adapters/channel-adapter.factory';
+
+interface CoreOrderCancelledPayload {
+  orderId: string;
+  orderCancellationId?: string;
+  cancelledFulfillmentOrderIds?: string[];
+}
 
 type SalesChannel = 'naver' | 'coupang' | 'medusa' | '3pl';
 
@@ -23,7 +32,10 @@ type SalesChannel = 'naver' | 'coupang' | 'medusa' | '3pl';
 export class FulfillmentEventsConsumer {
   private readonly logger = new Logger(FulfillmentEventsConsumer.name);
 
-  constructor(private readonly channelAdapterFactory: ChannelAdapterFactory) {
+  constructor(
+    private readonly channelAdapterFactory: ChannelAdapterFactory,
+    private readonly dbService: DbService<ChannelAdapterSchema>,
+  ) {
     this.logger.log('🚚 FulfillmentEventsConsumer 초기화 완료');
   }
 
@@ -153,5 +165,45 @@ export class FulfillmentEventsConsumer {
     });
 
     await Promise.allSettled(syncPromises);
+  }
+
+  /**
+   * Core ORDER_CANCELLED 핸들러
+   *
+   * Core(WMS)가 주문을 내부 취소할 때 fulfillments.events.v1으로 발행하는 ORDER_CANCELLED 이벤트.
+   * Medusa 주문 상태 동기화를 위해 inbox_events에 저장하고 InboxWorkerService가 처리하게 한다.
+   *
+   * 이벤트 발행 경로: Core sales-orders.service → outbox → fulfillments.events.v1 (shared outbox dispatcher)
+   */
+  @OnEvent('fulfillments.events.v1', 'ORDER_CANCELLED')
+  async handleCoreOrderCancelled(
+    @EventPayload() payload: CoreOrderCancelledPayload,
+    @EventEnvelope() envelope: MessageEnvelope,
+  ): Promise<void> {
+    const { orderId } = payload;
+    this.logger.log(`[ORDER_CANCELLED] Core 주문 취소 수신: orderId=${orderId}`, {
+      correlationId: envelope.correlationId,
+    });
+
+    try {
+      await this.dbService.db.insert(inboxEvents).values({
+        eventType: 'CoreOrderCancelled',
+        aggregateType: 'Order',
+        aggregateId: orderId,
+        partitionKey: orderId,
+        payload: payload,
+        metadata: {
+          correlationId: envelope.correlationId,
+          messageId: envelope.messageId,
+        },
+        status: 'pending',
+        createdAt: new Date(),
+      });
+
+      this.logger.log(`[ORDER_CANCELLED] Inbox 저장 완료: orderId=${orderId}`);
+    } catch (error) {
+      this.logger.error(`[ORDER_CANCELLED] Inbox 저장 실패: orderId=${orderId}`, error.stack);
+      throw error;
+    }
   }
 }
