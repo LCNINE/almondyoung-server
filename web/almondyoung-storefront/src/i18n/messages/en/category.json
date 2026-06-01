@@ -21,6 +21,7 @@
   "sort": {
     "createdAt": "Newest",
     "salesDesc": "Most popular",
+    "reviewCountDesc": "Most reviewed",
     "priceAsc": "Price: low to high",
     "priceDesc": "Price: high to low"
   },

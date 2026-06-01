@@ -13,6 +13,7 @@ type ProductSortOption =
   | "price_asc"
   | "price_desc"
   | "sales_desc"
+  | "review_count_desc"
 
 // (/store/products-sorted) 정렬 타입
 type ProductSortBy = "min_price" | "max_price" | "sales_count" | "review_count"

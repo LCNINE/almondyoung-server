@@ -5,6 +5,7 @@ export const DEFAULT_CATEGORY_SORT: SortOptions = "sales_desc"
 
 const CATEGORY_SORT_OPTIONS = new Set<SortOptions>([
   "sales_desc",
+  "review_count_desc",
   "price_asc",
   "price_desc",
   "created_at",
@@ -24,7 +25,10 @@ export function normalizeCategorySort(sortBy?: string): SortOptions {
  */
 export function isSortedOption(sortBy?: SortOptions): boolean {
   return (
-    sortBy === "price_asc" || sortBy === "price_desc" || sortBy === "sales_desc"
+    sortBy === "price_asc" ||
+    sortBy === "price_desc" ||
+    sortBy === "sales_desc" ||
+    sortBy === "review_count_desc"
   )
 }
 
@@ -41,7 +45,9 @@ export function mapSortParams(sortBy: SortOptions): {
       ? "min_price"
       : sortBy === "price_desc"
         ? "max_price"
-        : "sales_count"
+        : sortBy === "review_count_desc"
+          ? "review_count"
+          : "sales_count"
 
   const order: ProductSortOrder = sortBy === "price_asc" ? "asc" : "desc"
 
