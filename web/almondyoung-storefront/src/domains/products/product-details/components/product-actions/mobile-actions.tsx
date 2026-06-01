@@ -3,22 +3,14 @@
 import { Button } from "@/components/ui/button"
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { Separator } from "@/components/ui/separator"
-import { VariantPrice } from "@/lib/types/common/price"
 import { cn } from "@/lib/utils"
 import { HttpTypes } from "@medusajs/types"
-import { Minus, Plus, ShoppingCart, X } from "lucide-react"
+import { ShoppingCart } from "lucide-react"
 import React, { useState } from "react"
 import { useTranslations } from "next-intl"
-import ProductPrice from "../product-price"
 import OptionSelect from "./option-select"
-
-type SelectedItem = {
-  variantId: string
-  quantity: number
-  variant: HttpTypes.StoreProductVariant
-  price: VariantPrice
-  label: string
-}
+import SelectedItemRow from "./selected-item-row"
+import { SelectedItem } from "./types"
 
 type MobileActionsProps = {
   product: HttpTypes.StoreProduct
@@ -144,7 +136,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
         <DrawerContent className="max-h-[85vh]">
           <DrawerTitle className="sr-only">{t("sheetTitle")}</DrawerTitle>
 
-          <div className="overflow-y-auto px-4 pt-2 pb-2">
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pt-2 pb-2">
             {/* 옵션 선택 */}
             {!isSimple && (
               <div className="flex flex-col gap-y-4 py-2">
@@ -171,91 +163,22 @@ const MobileActions: React.FC<MobileActionsProps> = ({
               <div className="flex flex-col gap-2 py-3">
                 <Separator />
                 {selectedItems.map((item) => (
-                  <div
+                  <SelectedItemRow
                     key={item.variantId}
-                    className="flex items-center justify-between rounded-lg px-3 py-2"
-                  >
-                    <div className="flex flex-col gap-1">
-                      <span className="text-sm">{item.label}</span>
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center">
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            onClick={() => updateQuantity(item.variantId, -1)}
-                            className="h-7 w-7 rounded-r-none"
-                          >
-                            <Minus className="h-3 w-3" />
-                          </Button>
-                          <input
-                            ref={(el) => {
-                              if (el) {
-                                ;(el as any)._variantId = item.variantId
-                              }
-                            }}
-                            type="text"
-                            inputMode="numeric"
-                            value={item.quantity}
-                            onChange={(e) => {
-                              const raw = e.target.value
-                              if (raw === "") return
-                              const val = parseInt(raw, 10)
-                              if (!isNaN(val)) {
-                                const delta = val - item.quantity
-                                updateQuantity(item.variantId, delta)
-                              }
-                            }}
-                            onBlur={(e) => {
-                              const val = parseInt(e.target.value, 10)
-                              if (isNaN(val) || val < 1) {
-                                const delta = 1 - item.quantity
-                                updateQuantity(item.variantId, delta)
-                              }
-                            }}
-                            onFocus={(e) => e.target.select()}
-                            className="flex h-7 w-10 items-center justify-center border-y text-center text-sm outline-none"
-                          />
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            onClick={() => updateQuantity(item.variantId, 1)}
-                            className="h-7 w-7 rounded-l-none"
-                          >
-                            <Plus className="h-3 w-3" />
-                          </Button>
-                        </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            const input = document.querySelector(
-                              `input[type="text"][inputmode="numeric"]`
-                            ) as HTMLInputElement & { _variantId?: string }
-                            if (input && input._variantId === item.variantId) {
-                              input.focus()
-                            }
-                          }}
-                          disabled={isWelcomeMembership}
-                          className="h-7 px-2 text-[11px] text-gray-600"
-                        >
-                          {t("directInput")}
-                        </Button>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <ProductPrice
-                        product={product}
-                        variant={item.variant}
-                        quantity={item.quantity}
-                      />
-                      <button
-                        onClick={() => removeItem(item.variantId)}
-                        className="text-gray-400 hover:text-gray-600"
-                      >
-                        <X className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
+                    item={item}
+                    product={product}
+                    size="sm"
+                    directInputDisabled={isWelcomeMembership}
+                    onDecrement={() => updateQuantity(item.variantId, -1)}
+                    onIncrement={() => updateQuantity(item.variantId, 1)}
+                    onQuantityChange={(val) =>
+                      updateQuantity(item.variantId, val - item.quantity)
+                    }
+                    onInvalidBlur={() =>
+                      updateQuantity(item.variantId, 1 - item.quantity)
+                    }
+                    onRemove={() => removeItem(item.variantId)}
+                  />
                 ))}
               </div>
             )}

@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { useIntersection } from "@/hooks/use-intersection"
 import { addToCart, createBuyNowCart } from "@/lib/api/medusa/cart"
-import { VariantPrice } from "@/lib/types/common/price"
 import { getPricesForVariant } from "@/lib/utils/get-product-price"
 import {
   CustomerGroupRef,
@@ -12,7 +11,7 @@ import {
 } from "@/lib/utils/membership-group"
 import { HttpTypes } from "@medusajs/types"
 import { isEqual } from "lodash"
-import { Loader2, Minus, Plus, X } from "lucide-react"
+import { Loader2 } from "lucide-react"
 import {
   useParams,
   usePathname,
@@ -33,7 +32,8 @@ import ProductPreviewPrice from "../product-preview-price"
 import CartAddedModal from "./cart-added-modal"
 import MobileActions from "./mobile-actions"
 import OptionSelect from "./option-select"
-import ProductPrice from "../product-price"
+import SelectedItemRow from "./selected-item-row"
+import { SelectedItem } from "./types"
 import { isWelcomeMembershipProduct } from "@/lib/utils/welcome-membership"
 
 type ProductActionsProps = {
@@ -41,14 +41,6 @@ type ProductActionsProps = {
   product: HttpTypes.StoreProduct
   region: HttpTypes.StoreRegion
   disabled?: boolean
-}
-
-type SelectedItem = {
-  variantId: string
-  quantity: number
-  variant: HttpTypes.StoreProductVariant
-  price: VariantPrice
-  label: string
 }
 
 const optionsAsKeymap = (
@@ -219,6 +211,15 @@ export default function ProductActions({
     )
   }, [])
 
+  // 특정 항목의 수량을 직접 지정 (input 직접 입력용)
+  const setItemQuantity = useCallback((variantId: string, quantity: number) => {
+    setSelectedItems((prev) =>
+      prev.map((item) =>
+        item.variantId === variantId ? { ...item, quantity } : item
+      )
+    )
+  }, [])
+
   // 총 수량 & 총 가격
   const totalQuantity = selectedItems.reduce(
     (sum, item) => sum + item.quantity,
@@ -317,176 +318,88 @@ export default function ProductActions({
 
   return (
     <>
-      <div className="hidden lg:flex lg:flex-col lg:gap-y-2" ref={actionsRef}>
-        <ProductPreviewPrice
-          hasMembership={isMembershipGroup(customer?.groups)}
-          product={product}
-        />
+      <div
+        className="hidden lg:flex lg:min-h-0 lg:flex-1 lg:flex-col"
+        ref={actionsRef}
+      >
+        {/* 스크롤 영역: 옵션/선택목록이 길어져도 구매 버튼은 하단에 고정됨 */}
+        <div className="flex min-h-0 flex-1 flex-col gap-y-2 overflow-y-auto pb-2">
+          <ProductPreviewPrice
+            hasMembership={isMembershipGroup(customer?.groups)}
+            product={product}
+          />
 
-        <Separator />
+          <Separator />
 
-        {/* 옵션 선택 - variant가 2개 이상일 때만 표시 */}
-        {!isSimple && (
-          <div className="flex flex-col gap-y-4 py-2">
-            {(product.options || []).map((option) => (
-              <div key={option.id}>
-                <OptionSelect
-                  option={option}
-                  current={options[option.id]}
-                  updateOption={setOptionValue}
-                  title={option.title ?? ""}
-                  variants={product.variants}
-                  selectedOptions={options}
-                  selectedValues={selectedValuesMap[option.id]}
-                  disabled={!!disabled || isPending}
-                />
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* 선택된 항목 리스트 */}
-        {selectedItems.length > 0 && (
-          <>
-            {!isSimple && <Separator />}
-            <div className="flex flex-col gap-3 py-2">
-              {selectedItems.map((item) => (
-                <div
-                  key={item.variantId}
-                  className="flex items-center justify-between gap-4 rounded-lg px-4 py-3"
-                >
-                  <div className="flex flex-col gap-2">
-                    {!isSimple && (
-                      <span className="text-sm font-medium">{item.label}</span>
-                    )}
-                    <div className="flex items-center gap-2">
-                      <div className="flex items-center">
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={() => updateQuantity(item.variantId, -1)}
-                          className="h-8 w-8 rounded-r-none"
-                        >
-                          <Minus className="h-3.5 w-3.5" />
-                        </Button>
-
-                        <input
-                          ref={(el) => {
-                            if (el) {
-                              ;(el as any)._variantId = item.variantId
-                            }
-                          }}
-                          type="text"
-                          inputMode="numeric"
-                          value={item.quantity}
-                          onChange={(e) => {
-                            const raw = e.target.value
-                            if (raw === "") {
-                              setSelectedItems((prev) =>
-                                prev.map((si) =>
-                                  si.variantId === item.variantId
-                                    ? { ...si, quantity: 0 as any }
-                                    : si
-                                )
-                              )
-                              return
-                            }
-                            const val = parseInt(raw, 10)
-                            if (!isNaN(val)) {
-                              setSelectedItems((prev) =>
-                                prev.map((si) =>
-                                  si.variantId === item.variantId
-                                    ? { ...si, quantity: val }
-                                    : si
-                                )
-                              )
-                            }
-                          }}
-                          onBlur={(e) => {
-                            const val = parseInt(e.target.value, 10)
-                            if (isNaN(val) || val < 1) {
-                              setSelectedItems((prev) =>
-                                prev.map((si) =>
-                                  si.variantId === item.variantId
-                                    ? { ...si, quantity: 1 }
-                                    : si
-                                )
-                              )
-                              toast.info(t("minQtyOne"))
-                            }
-                          }}
-                          onFocus={(e) => e.target.select()}
-                          className="h-8 w-12 border-y text-center text-sm outline-none"
-                        />
-
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={() => updateQuantity(item.variantId, 1)}
-                          disabled={isWelcomeMembership && item.quantity >= 1}
-                          className="h-8 w-8 rounded-l-none"
-                        >
-                          <Plus className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          const input = document.querySelector(
-                            `input[type="text"][inputmode="numeric"]`
-                          ) as HTMLInputElement & { _variantId?: string }
-                          if (input && input._variantId === item.variantId) {
-                            input.focus()
-                          }
-                        }}
-                        disabled={isWelcomeMembership}
-                        className="h-8 px-3 text-xs text-gray-600"
-                      >
-                        {t("directInput")}
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="flex items-start gap-2">
-                    <ProductPrice
-                      product={product}
-                      variant={item.variant}
-                      quantity={item.quantity}
-                    />
-
-                    {!isSimple && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => removeItem(item.variantId)}
-                        className="h-6 w-6 text-gray-400 hover:text-gray-600"
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    )}
-                  </div>
+          {/* 옵션 선택 - variant가 2개 이상일 때만 표시 */}
+          {!isSimple && (
+            <div className="flex flex-col gap-y-4 py-2">
+              {(product.options || []).map((option) => (
+                <div key={option.id}>
+                  <OptionSelect
+                    option={option}
+                    current={options[option.id]}
+                    updateOption={setOptionValue}
+                    title={option.title ?? ""}
+                    variants={product.variants}
+                    selectedOptions={options}
+                    selectedValues={selectedValuesMap[option.id]}
+                    disabled={!!disabled || isPending}
+                  />
                 </div>
               ))}
             </div>
-          </>
-        )}
+          )}
 
-        {/* 구매수량 / 총 가격 */}
-        {selectedItems.length > 0 && (
-          <>
-            <Separator />
-            <div className="flex items-center justify-between py-2">
-              <span className="text-sm font-bold">
-                {t("totalQty", { count: totalQuantity })}
-              </span>
-              <span className="text-xl font-bold">
-                {t("totalPrice", { amount: totalPrice.toLocaleString() })}
-              </span>
-            </div>
-          </>
-        )}
+          {/* 선택된 항목 리스트 */}
+          {selectedItems.length > 0 && (
+            <>
+              {!isSimple && <Separator />}
+              <div className="flex flex-col gap-3 py-2">
+                {selectedItems.map((item) => (
+                  <SelectedItemRow
+                    key={item.variantId}
+                    item={item}
+                    product={product}
+                    size="md"
+                    showLabel={!isSimple}
+                    showRemove={!isSimple}
+                    incrementDisabled={isWelcomeMembership && item.quantity >= 1}
+                    directInputDisabled={isWelcomeMembership}
+                    onDecrement={() => updateQuantity(item.variantId, -1)}
+                    onIncrement={() => updateQuantity(item.variantId, 1)}
+                    onQuantityChange={(val) =>
+                      setItemQuantity(item.variantId, val)
+                    }
+                    onEmptyInput={() => setItemQuantity(item.variantId, 0)}
+                    onInvalidBlur={() => {
+                      setItemQuantity(item.variantId, 1)
+                      toast.info(t("minQtyOne"))
+                    }}
+                    onRemove={() => removeItem(item.variantId)}
+                  />
+                ))}
+              </div>
+            </>
+          )}
 
+          {/* 구매수량 / 총 가격 */}
+          {selectedItems.length > 0 && (
+            <>
+              <Separator />
+              <div className="flex items-center justify-between py-2">
+                <span className="text-sm font-bold">
+                  {t("totalQty", { count: totalQuantity })}
+                </span>
+                <span className="text-xl font-bold">
+                  {t("totalPrice", { amount: totalPrice.toLocaleString() })}
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* 하단 고정 액션 버튼 (스크롤 영역 밖) */}
         <div
           className="flex w-full gap-x-3 border-t border-gray-200 bg-white p-4"
           data-testid="mobile-actions"
