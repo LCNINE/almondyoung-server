@@ -100,6 +100,18 @@ export const salesOrders = {
     return response.data;
   },
 
+  // 관리자 주문 취소 + Wallet 자동 환불 (새 엔드포인트)
+  adminCancelSalesOrder: async (
+    id: string,
+    body?: CancelSalesOrderDto
+  ): Promise<{ status: string; refundStatus: string }> => {
+    const response = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/sales-orders/${encodeURIComponent(id)}/cancel`,
+      body
+    );
+    return response.data;
+  },
+
   createBusinessLink: async (
     id: string,
     data: CreateBusinessLinkDto

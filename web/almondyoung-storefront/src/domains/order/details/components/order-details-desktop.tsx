@@ -211,12 +211,14 @@ export const OrderDetailsDesktop = ({
         >
           {tActions("backToList")}
         </LocalizedClientLink>
-        <LocalizedClientLink
-          href={`/mypage/order/track?orderId=${order.id}`}
-          className="inline-flex items-center justify-center rounded-[5px] px-4 py-3 text-sm text-black outline-1 outline-zinc-400"
-        >
-          {tActions("trackDelivery")}
-        </LocalizedClientLink>
+        {(order.fulfillment_status === 'shipped' || order.fulfillment_status === 'fulfilled' || order.fulfillment_status === 'partially_fulfilled') && (
+          <LocalizedClientLink
+            href={`/mypage/order/track?orderId=${order.id}`}
+            className="inline-flex items-center justify-center rounded-[5px] px-4 py-3 text-sm text-black outline-1 outline-zinc-400"
+          >
+            {tActions("trackDelivery")}
+          </LocalizedClientLink>
+        )}
       </section>
     </div>
   )

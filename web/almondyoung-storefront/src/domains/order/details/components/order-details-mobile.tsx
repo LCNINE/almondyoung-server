@@ -221,13 +221,13 @@ export const OrderDetailsMobile = ({
             <CustomButton variant="outline" size="lg">
               {tActions("cancelOrReturn")}
             </CustomButton>
-            <LocalizedClientLink
-              href={`/mypage/order/track?orderId=${order.id}`}
-            >
-              <CustomButton variant="outline" size="lg">
-                {tActions("trackDelivery")}
-              </CustomButton>
-            </LocalizedClientLink>
+            {(order.fulfillment_status === 'shipped' || order.fulfillment_status === 'fulfilled' || order.fulfillment_status === 'partially_fulfilled') && (
+              <LocalizedClientLink href={`/mypage/order/track?orderId=${order.id}`}>
+                <CustomButton variant="outline" size="lg">
+                  {tActions("trackDelivery")}
+                </CustomButton>
+              </LocalizedClientLink>
+            )}
           </div>
         </section>
       </div>

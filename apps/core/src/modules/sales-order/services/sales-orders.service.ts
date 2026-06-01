@@ -947,6 +947,7 @@ export class SalesOrdersService {
       shippingFee: payload.shippingAmount ?? 0,
       orderDate: payload.createdAt,
       lines: this.convertOrderItems(payload.items),
+      walletIntentId: payload.walletIntentId,
     };
     return this.create(dto, tx);
   }

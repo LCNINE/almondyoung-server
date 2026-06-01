@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db';
-import { and, eq, inArray } from 'drizzle-orm';
-import { inventorySchema, inventoryTables } from '../../inventory/schema/inventory.schema';
+import { and, desc, eq, inArray } from 'drizzle-orm';
+import { inventorySchema, inventoryTables, returnExchangeTables } from '../../inventory/schema/inventory.schema';
 import {
   StoreCancelOrderDto,
   StoreCancelUnavailableReason,
@@ -37,6 +37,10 @@ const FO_SHIPPED_STATUSES = new Set(['shipped', 'completed']);
 const FO_PACKED_STATUSES = new Set(['picked', 'inspecting', 'invoiced', 'labeled', 'forwarded']);
 const FO_PICKING_STATUSES = new Set(['picking', 'allocated']);
 
+const ACTIVE_RETURN_STATUSES = ['requested', 'approved', 'collection_pending', 'collected', 'inspected', 'refund_pending'] as const;
+const ACTIVE_EXCHANGE_STATUSES = ['requested', 'approved', 'collection_pending', 'collected', 'inspected', 'refund_pending'] as const;
+const VALID_REFUND_STATUSES = new Set<StoreRefundStatus>(['none', 'pending', 'manual_pending', 'succeeded', 'failed']);
+
 @Injectable()
 export class StoreSalesOrdersService {
   private readonly logger = new Logger(StoreSalesOrdersService.name);
@@ -59,6 +63,47 @@ export class StoreSalesOrdersService {
     return this.processCancelRequest(so, customerId, dto);
   }
 
+  /**
+   * 관리자 취소 + Wallet 자동 환불 orchestration.
+   * 고객 취소와 동일하게 Core 취소 → Wallet 환불 → 결과 기록 순서를 보장한다.
+   * walletIntentId가 없으면 환불은 manual_pending으로 기록되고 취소는 완료된다.
+   */
+  async adminCancelRequest(
+    orderId: string,
+    dto: { reasonCode?: string; reasonDetail?: string; lines?: Array<{ salesOrderLineId: string; quantity: number }> },
+  ): Promise<{ status: string; refundStatus: string }> {
+    const so = await this.findSoOrThrow({ id: orderId });
+    if (so.status === 'cancelled') throw new BadRequestException('이미 취소된 주문입니다.');
+    if (so.status === 'timeout') throw new BadRequestException('타임아웃된 주문은 취소할 수 없습니다.');
+
+    await this.salesOrdersService.cancel(so.id, {
+      reasonCode: dto.reasonCode,
+      reasonDetail: dto.reasonDetail,
+      lines: dto.lines,
+      cancelledBy: 'admin',
+    });
+
+    // 부분 취소는 라인/할인/배송비 기준 환불 금액 계산이 복잡하므로 자동 환불 건너뜀 — 수동 처리 필요
+    if (dto.lines && dto.lines.length > 0) {
+      await this.recordWalletRefundLink(so.id, {
+        refundStatus: 'manual_pending',
+        intentId: so.walletIntentId ?? undefined,
+        note: '부분 취소 — 취소 라인 기준 환불 금액 수동 계산 필요',
+        reasonCode: dto.reasonCode,
+      });
+      // 부분 취소 후 실제 SO 상태를 재조회하여 반환 (전체가 취소되지 않을 수 있음)
+      const refreshed = await this.findSoOrThrow({ id: orderId });
+      return { status: refreshed.status, refundStatus: 'manual_pending' };
+    }
+
+    const refundStatus = await this.requestWalletRefundAfterCancel(
+      { ...so, status: 'cancelled' } as SalesOrderRow,
+      { reasonCode: dto.reasonCode },
+    );
+
+    return { status: 'cancelled', refundStatus };
+  }
+
   // ── 공개 메서드: Medusa channelOrderId 기반 ─────────────────────────────
 
   async getActionsByChannelOrder(channelOrderId: string, customerId: string): Promise<StoreOrderActionsResponseDto> {
@@ -79,7 +124,7 @@ export class StoreSalesOrdersService {
 
   private async findSoOrThrow(
     lookup: { id: string } | { channelOrderId: string; salesChannel: string },
-    customerId: string,
+    customerId?: string,
   ): Promise<SalesOrderRow> {
     const where =
       'id' in lookup
@@ -97,7 +142,7 @@ export class StoreSalesOrdersService {
       .then((r) => r[0]);
 
     if (!so) throw new NotFoundException('주문을 찾을 수 없습니다.');
-    if (so.customerId !== customerId) throw new ForbiddenException('본인 주문만 접근할 수 있습니다.');
+    if (customerId !== undefined && so.customerId !== customerId) throw new ForbiddenException('본인 주문만 접근할 수 있습니다.');
     return so;
   }
 
@@ -114,13 +159,31 @@ export class StoreSalesOrdersService {
     const availableActions: StoreOrderAction[] = [];
     let cancelUnavailableReason: StoreCancelUnavailableReason | undefined;
     let refundStatus: StoreRefundStatus = overrideRefundStatus ?? 'none';
-    // Phase 4에서 return_requests / exchange_requests 조회로 교체
-    const claimStatus: StoreClaimStatus = 'none';
+    let claimStatus: StoreClaimStatus = 'none';
 
     if (so.status === 'cancelled' && !overrideRefundStatus) {
-      // walletIntentId가 있으면 환불이 처리됐거나 처리 중이라고 best-effort 추정.
-      // 실제 status는 business link에 저장되나 현재는 조회하지 않음.
-      refundStatus = so.walletIntentId ? 'pending' : 'none';
+      const refundLink = await this.db.db
+        .select({ metadata: inventoryTables.businessLinks.metadata })
+        .from(inventoryTables.businessLinks)
+        .where(
+          and(
+            eq(inventoryTables.businessLinks.sourceType, 'sales_order'),
+            eq(inventoryTables.businessLinks.sourceId, so.id),
+            eq(inventoryTables.businessLinks.relationName, 'cancellation_linked_wallet_refund'),
+          ),
+        )
+        .orderBy(desc(inventoryTables.businessLinks.createdAt))
+        .limit(1)
+        .then((r) => r[0]);
+
+      if (refundLink) {
+        const stored = (refundLink.metadata as Record<string, unknown>)?.refundStatus;
+        refundStatus = (typeof stored === 'string' && VALID_REFUND_STATUSES.has(stored as StoreRefundStatus))
+          ? (stored as StoreRefundStatus)
+          : 'pending';
+      } else {
+        refundStatus = so.walletIntentId ? 'pending' : 'none';
+      }
     }
 
     if (so.status === 'timeout') {
@@ -134,9 +197,37 @@ export class StoreSalesOrdersService {
       cancelUnavailableReason = 'already_shipped';
       // return/exchange: 배송완료 상태 + 진행 중인 claim 없을 때만 허용
       const isDelivered = so.status === 'delivered' || fulfillmentStatus === 'delivered';
-      if (isDelivered && claimStatus === 'none') {
-        availableActions.push('return');
-        availableActions.push('exchange');
+      if (isDelivered) {
+        const [activeReturn, activeExchange] = await Promise.all([
+          this.db.db
+            .select({ id: returnExchangeTables.returnRequests.id })
+            .from(returnExchangeTables.returnRequests)
+            .where(
+              and(
+                eq(returnExchangeTables.returnRequests.salesOrderId, so.id),
+                inArray(returnExchangeTables.returnRequests.status, [...ACTIVE_RETURN_STATUSES]),
+              ),
+            )
+            .limit(1)
+            .then((r) => r[0]),
+          this.db.db
+            .select({ id: returnExchangeTables.exchangeRequests.id })
+            .from(returnExchangeTables.exchangeRequests)
+            .where(
+              and(
+                eq(returnExchangeTables.exchangeRequests.salesOrderId, so.id),
+                inArray(returnExchangeTables.exchangeRequests.status, [...ACTIVE_EXCHANGE_STATUSES]),
+              ),
+            )
+            .limit(1)
+            .then((r) => r[0]),
+        ]);
+        if (activeReturn) claimStatus = 'return_requested';
+        else if (activeExchange) claimStatus = 'exchange_requested';
+        if (claimStatus === 'none') {
+          availableActions.push('return');
+          availableActions.push('exchange');
+        }
       }
     } else if (isChannelOrder) {
       availableActions.push('receipt');

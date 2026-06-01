@@ -86,7 +86,7 @@ export default function OrderCardContent({
 
   // Core 액션 목록이 있으면 그것을 기준으로, 없으면 Medusa 상태 기반 fallback
   const canCancel = availableActions ? availableActions.includes("cancel") : false
-  const canTrack = availableActions ? availableActions.includes("track") : true
+  const canTrack = availableActions ? availableActions.includes("track") : false
   const canReturn = availableActions?.includes("return") ?? false
   const canExchange = availableActions?.includes("exchange") ?? false
   const cancelTooltip = cancelUnavailableReason ? CANCEL_UNAVAILABLE_MESSAGES[cancelUnavailableReason] : undefined
@@ -341,7 +341,7 @@ export default function OrderCardContent({
           </DialogHeader>
           <div className="space-y-2 text-sm">
             <p><span className="font-medium">{productName}</span> 주문을 취소하시겠습니까?</p>
-            <p className="text-muted-foreground text-xs">결제하신 금액은 영업일 기준 3~5일 내 환불됩니다.</p>
+            <p className="text-muted-foreground text-xs">취소 완료 후 결제 수단에 따라 환불이 진행됩니다.</p>
           </div>
           <DialogFooter>
             <CustomButton variant="outline" color="secondary" size="md" onClick={() => setShowCancelDialog(false)} disabled={isCancelling}>

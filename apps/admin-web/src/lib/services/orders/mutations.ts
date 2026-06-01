@@ -70,6 +70,19 @@ export const useCancelSalesOrder = () => {
   });
 };
 
+export const useAdminCancelSalesOrder = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body?: CancelSalesOrderDto }) =>
+      orders.salesOrders.adminCancelSalesOrder(id, body),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.orders });
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.order(id) });
+    },
+  });
+};
+
 // 레거시 stub — D2 useCreateOutboundBatch로 대체됨
 
 export const useUpdateOutboundBatch = () => {
