@@ -61,6 +61,14 @@ export class AdminReturnExchangeController {
     return this.storeSalesOrdersService.adminCancelRequest(id, dto);
   }
 
+  @Post('sales-orders/:id/retry-refund')
+  @HttpCode(200)
+  @ApiOperation({ summary: '취소 주문 환불 재시도 (failed/manual_pending 상태에서만 의미 있음)' })
+  @ApiParam({ name: 'id', description: '판매 주문 ID' })
+  adminRetryRefund(@Param('id') id: string) {
+    return this.storeSalesOrdersService.retryWalletRefund(id);
+  }
+
   // ── Return Requests ───────────────────────────────────────────────────────
 
   @Get('return-requests')

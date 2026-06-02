@@ -14,6 +14,9 @@ import {
   FulfillmentReturnedPayload,
   INVENTORY_STREAM,
   InventoryEvents,
+  CORE_ORDER_STREAM,
+  CoreOrderEvents,
+  SalesOrderCancelledPayload,
 } from '@packages/event-contracts/streams';
 import { wmsTables, wmsSchema } from '../../inventory/schema/inventory.schema';
 import { eq, and, lte, sql, inArray } from 'drizzle-orm';
@@ -38,6 +41,8 @@ export class OutboxDispatcherService implements OnModuleInit {
     private readonly fulfillmentPublisher: StreamPublisher<FulfillmentEvents>,
     @InjectStreamPublisher(INVENTORY_STREAM.topic.topic)
     private readonly inventoryPublisher: StreamPublisher<InventoryEvents>,
+    @InjectStreamPublisher(CORE_ORDER_STREAM.topic.topic)
+    private readonly coreOrderPublisher: StreamPublisher<CoreOrderEvents>,
   ) {}
 
   onModuleInit() {
@@ -138,6 +143,25 @@ export class OutboxDispatcherService implements OnModuleInit {
           payload: event.payload as any,
           metadata: { partitionKey: event.partition_key },
         });
+      } else if (event.event_type === 'SalesOrderCancelled') {
+        // Core 아웃바운드: core.orders.events.v1 / SalesOrderCancelled
+        // (Channel Adapter → Medusa 취소 동기화에 사용)
+        await this.coreOrderPublisher.publishEvent({
+          eventType: 'SalesOrderCancelled',
+          aggregateId: event.aggregate_id,
+          payload: event.payload as unknown as SalesOrderCancelledPayload,
+          metadata: { partitionKey: event.partition_key },
+        });
+      } else if (
+        event.event_type === 'OrderCancelled' ||
+        event.event_type === 'ORDER_CANCELLED'
+      ) {
+        // 레거시 outbox 소진: 구형 payload는 OrderCancelledSchema 필수 필드(reason, cancelledBy 등)가
+        // 없어 Kafka 발행 시 검증 오류가 발생한다. Channel Adapter는 이미 core.orders.events.v1/
+        // SalesOrderCancelled 를 구독하므로 이 이벤트는 Kafka 미발행, published 처리한다.
+        this.logger.warn(
+          `레거시 취소 이벤트 건너뜀: ${event.id} (${event.event_type}) — Kafka 미발행, published 처리`,
+        );
       } else {
         await this.fulfillmentPublisher.publishEvent({
           eventType: event.event_type as keyof FulfillmentEvents,

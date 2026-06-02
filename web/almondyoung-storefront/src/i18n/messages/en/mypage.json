@@ -427,7 +427,18 @@
       "cancelOrReturn": "Cancel / Return",
       "backToList": "Back to Orders",
       "addToCart": "Add to Cart",
-      "viewDetail": "View Details ›"
+      "viewDetail": "View Details ›",
+      "returnRequest": "Request Return",
+      "exchangeRequest": "Request Exchange",
+      "cancelDialogTitle": "Cancel Order",
+      "cancelDialogDescription": "A refund will be processed based on your payment method after cancellation.",
+      "cancelConfirm": "Confirm Cancel",
+      "cancelGoBack": "Go Back",
+      "cancelSuccess": "Order cancelled and refund completed.",
+      "cancelSuccessPending": "Order cancelled. Refund is being processed.",
+      "cancelSuccessFailed": "Order cancelled but refund failed. Please contact customer support.",
+      "cancelSuccessManual": "Order cancelled. Refund will be processed by customer support.",
+      "cancelError": "An error occurred during cancellation."
     },
     "delivery": {
       "paid": "Paid",

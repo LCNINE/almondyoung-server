@@ -292,6 +292,62 @@ const OrderMergedSchema = z.object({
   reason: z.string().optional(),
 });
 
+/**
+ * Core → Channel Adapter 주문 취소 완료 이벤트
+ *
+ * orders.events.v1 / OrderCancelled 는 외부 채널(Medusa/Naver/Coupang) → Core 인바운드 이벤트.
+ * 이 타입은 Core 가 취소를 완료한 뒤 Channel Adapter 에 전파하는 아웃바운드 이벤트.
+ * 스트림: core.orders.events.v1
+ */
+export interface SalesOrderCancelledPayload {
+  orderId: string;
+  reason:
+  | 'CUSTOMER_REQUEST'
+  | 'OUT_OF_STOCK'
+  | 'PAYMENT_FAILED'
+  | 'ADMIN_CANCEL'
+  | 'TIMEOUT';
+  reasonDetail?: string;
+  cancelledBy: string;
+  cancelledAt: string;
+  /** full: 전체취소 → Medusa cancelOrder 동기화 대상. partial: 부분취소 → Medusa 동기화 제외. */
+  cancellationScope: 'full' | 'partial';
+  refundRequired: boolean;
+  refundAmount?: number;
+  /** partial 시 취소된 라인 목록. full cancel에서는 undefined. */
+  cancelledLines?: Array<{
+    salesOrderLineId: string;
+    quantity: number;
+  }>;
+  stockRestorationResults?: Array<{
+    orderItemId: string;
+    skuId: string;
+    restoredQty: number;
+    stockEventId?: string;
+  }>;
+}
+
+const SalesOrderCancelledSchema = z.object({
+  orderId: z.string().min(1),
+  reason: z.enum(['CUSTOMER_REQUEST', 'OUT_OF_STOCK', 'PAYMENT_FAILED', 'ADMIN_CANCEL', 'TIMEOUT']),
+  reasonDetail: z.string().optional(),
+  cancelledBy: z.string().min(1),
+  cancelledAt: z.string().datetime(),
+  cancellationScope: z.enum(['full', 'partial']),
+  refundRequired: z.boolean(),
+  refundAmount: z.number().nonnegative().optional(),
+  cancelledLines: z.array(z.object({
+    salesOrderLineId: z.string().min(1),
+    quantity: z.number().int().positive(),
+  })).optional(),
+  stockRestorationResults: z.array(z.object({
+    orderItemId: z.string().min(1),
+    skuId: z.string().min(1),
+    restoredQty: z.number().int().nonnegative(),
+    stockEventId: z.string().optional(),
+  })).optional(),
+});
+
 // ===== Stream Config (타입 안전 버전) =====
 
 export const ORDER_STREAM = stream({
@@ -309,9 +365,24 @@ export const ORDER_STREAM = stream({
   },
 });
 
+/**
+ * Core → Channel Adapter 스트림 (core.orders.events.v1)
+ *
+ * Core 가 발행하는 아웃바운드 주문 이벤트. orders.events.v1 (외부 채널 → Core 인바운드) 와 분리.
+ */
+export const CORE_ORDER_STREAM = stream({
+  topic: 'core.orders.events.v1',
+  partitions: 12,
+  aggregateType: 'Order',
+  events: {
+    SalesOrderCancelled: event<'SalesOrderCancelled', SalesOrderCancelledPayload>('SalesOrderCancelled', SalesOrderCancelledSchema),
+  },
+});
+
 // ===== 타입 추론 =====
 
 export type OrderEvents = typeof ORDER_STREAM.events;
+export type CoreOrderEvents = typeof CORE_ORDER_STREAM.events;
 
 // =============================================================================
 // [LEGACY] Medusa 호환성 코드 - 추후 Medusa 마이그레이션 완료 시 삭제 예정
