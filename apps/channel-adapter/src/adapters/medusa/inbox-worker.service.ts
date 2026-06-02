@@ -219,14 +219,19 @@ export class InboxWorkerService implements OnModuleInit {
 
         case 'CoreOrderCancelled': {
           // Core(WMS)가 주문을 취소했을 때 Medusa order도 canceled로 동기화한다.
-          // wms_order_mappings에서 salesChannel='medusa'인 매핑을 찾아 Medusa cancel API를 호출.
-          const cancelPayload: { orderId: string } = event.payload;
+          // SalesOrderCancelledPayload.channelOrderId(Medusa order ID)로 wms_order_mappings를 조회.
+          // channelOrderId가 없는 구 이벤트는 wmsOrderId fallback으로 조회(하위 호환).
+          const cancelPayload: { orderId: string; channelOrderId?: string } = event.payload;
+
+          const medusaOrderId = cancelPayload.channelOrderId ?? null;
           const [mapping] = await this.dbService.db
             .select({ channelOrderId: wmsOrderMappings.channelOrderId })
             .from(wmsOrderMappings)
             .where(
               and(
-                eq(wmsOrderMappings.wmsOrderId, cancelPayload.orderId),
+                medusaOrderId
+                  ? eq(wmsOrderMappings.channelOrderId, medusaOrderId)
+                  : eq(wmsOrderMappings.wmsOrderId, cancelPayload.orderId),
                 eq(wmsOrderMappings.salesChannel, 'medusa'),
               ),
             )
@@ -234,7 +239,7 @@ export class InboxWorkerService implements OnModuleInit {
 
           if (!mapping) {
             this.logger.debug(
-              `[CoreOrderCancelled] Medusa 매핑 없음, 취소 동기화 스킵: orderId=${cancelPayload.orderId}`,
+              `[CoreOrderCancelled] Medusa 매핑 없음, 취소 동기화 스킵: orderId=${cancelPayload.orderId}, channelOrderId=${medusaOrderId}`,
             );
             break;
           }

@@ -75,6 +75,14 @@ export class AdminPaymentIntentListItemDto {
   @ApiProperty()
   status: PaymentIntentStatus;
 
+  @ApiPropertyOptional({
+    description: '운영 UI용 파생 상태. 환불이 있으면 REFUNDED/PARTIALLY_REFUNDED/REFUND_PENDING/REFUND_FAILED 등으로 표시한다.',
+  })
+  displayStatus?: string;
+
+  @ApiPropertyOptional()
+  refundedAmount?: number;
+
   @ApiPropertyOptional()
   userId: string | null;
 
@@ -151,6 +159,14 @@ export class AdminPaymentIntentDetailResponseDto {
 
   @ApiProperty()
   status: PaymentIntentStatus;
+
+  @ApiPropertyOptional({
+    description: '운영 UI용 파생 상태. 환불이 있으면 REFUNDED/PARTIALLY_REFUNDED/REFUND_PENDING/REFUND_FAILED 등으로 표시한다.',
+  })
+  displayStatus?: string;
+
+  @ApiPropertyOptional()
+  refundedAmount?: number;
 
   @ApiPropertyOptional()
   userId: string | null;

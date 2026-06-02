@@ -57,6 +57,13 @@ export class StoreOrderActionsResponseDto {
   })
   cancelUnavailableReason?: StoreCancelUnavailableReason;
 
+  /**
+   * 결제 상태. 현재는 결제확인된 주문만 WMS로 수집되므로 항상 'paid'.
+   * 무통장입금 도입 시 Wallet intent 상태를 조회해 'awaiting_payment'로 분기한다.
+   */
+  @ApiPropertyOptional({ enum: ['paid', 'awaiting_payment'] })
+  paymentStatus?: 'paid' | 'awaiting_payment';
+
   @ApiPropertyOptional()
   channelInfo?: {
     channel: string;

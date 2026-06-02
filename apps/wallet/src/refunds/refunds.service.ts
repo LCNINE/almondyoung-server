@@ -128,11 +128,10 @@ export class RefundsService {
 
     if (providerResult.status === 'SUCCEEDED') {
       await this.dbService.db.transaction(async (tx) => {
-        // Update refund → SUCCEEDED
+        // Keep provider metadata, then let the state machine perform PENDING -> SUCCEEDED.
         await tx
           .update(refunds)
           .set({
-            status: 'SUCCEEDED',
             providerRefundId: providerResult.providerRefundId ?? null,
             updatedAt: new Date(),
           })
@@ -161,7 +160,7 @@ export class RefundsService {
               }),
             },
           },
-          undefined,
+          'PENDING',
           tx,
         );
       });

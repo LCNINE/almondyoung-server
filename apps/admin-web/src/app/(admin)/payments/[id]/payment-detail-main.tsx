@@ -56,7 +56,7 @@ function BasicInfoContent({ intentId }: { intentId: string }) {
         <span className="font-mono text-xs">{data.id}</span>
       </KVRow>
       <KVRow label="상태">
-        <StatusBadgeCell value={data.status} type="intent" />
+        <StatusBadgeCell value={data.displayStatus ?? data.status} type="intent" />
       </KVRow>
       <KVRow label="결제 금액">
         <AmountCell

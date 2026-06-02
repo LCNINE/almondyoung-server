@@ -36,6 +36,12 @@ import {
   OrderDiscountResponseDto,
 } from '../payment-intents/dto';
 
+type RefundSummary = {
+  succeededAmount: number;
+  hasPending: boolean;
+  hasFailed: boolean;
+};
+
 @Injectable()
 export class PaymentIntentAdminService {
   constructor(
@@ -83,11 +89,15 @@ export class PaymentIntentAdminService {
       .limit(limit)
       .offset(offset);
 
+    const refundSummaries = await this.getRefundSummaries(rows.map((r) => r.id));
+
     const data: AdminPaymentIntentListItemDto[] = rows.map((r) => ({
       id: r.id,
       payableAmount: r.payableAmount,
       currency: r.currency,
       status: r.status,
+      displayStatus: this.deriveDisplayStatus(r.status, r.payableAmount, refundSummaries.get(r.id)),
+      refundedAmount: refundSummaries.get(r.id)?.succeededAmount ?? 0,
       userId: r.userId,
       paymentMethodType: r.paymentMethodType ?? null,
       createdAt: r.createdAt,
@@ -207,6 +217,7 @@ export class PaymentIntentAdminService {
       createdAt: r.createdAt,
       manualConfirmable: r.status === 'PENDING' && r.paymentMethodType === 'BANK_TRANSFER',
     }));
+    const refundSummary = this.summarizeRefundRows(refundRows);
 
     // Payment method
     let paymentMethod: AdminPaymentMethodSummaryDto | null = null;
@@ -239,6 +250,8 @@ export class PaymentIntentAdminService {
       payableAmount: intent.payableAmount,
       currency: intent.currency,
       status: intent.status,
+      displayStatus: this.deriveDisplayStatus(intent.status, intent.payableAmount, refundSummary),
+      refundedAmount: refundSummary.succeededAmount,
       userId: intent.userId,
       paymentMethodId: intent.paymentMethodId,
       clientSecret: intent.clientSecret,
@@ -253,6 +266,57 @@ export class PaymentIntentAdminService {
       refunds: refundData,
       paymentMethod,
     };
+  }
+
+  private async getRefundSummaries(intentIds: string[]): Promise<Map<string, RefundSummary>> {
+    if (intentIds.length === 0) return new Map();
+
+    const rows = await this.dbService.db
+      .select({
+        intentId: refunds.intentId,
+        status: refunds.status,
+        amount: refunds.amount,
+      })
+      .from(refunds)
+      .where(inArray(refunds.intentId, intentIds));
+
+    const grouped = new Map<string, Array<{ status: string; amount: number }>>();
+    for (const row of rows) {
+      const list = grouped.get(row.intentId) ?? [];
+      list.push(row);
+      grouped.set(row.intentId, list);
+    }
+
+    const summaries = new Map<string, RefundSummary>();
+    for (const [intentId, refundRows] of grouped.entries()) {
+      summaries.set(intentId, this.summarizeRefundRows(refundRows));
+    }
+    return summaries;
+  }
+
+  private summarizeRefundRows(rows: Array<{ status: string; amount: number }>): RefundSummary {
+    return rows.reduce<RefundSummary>(
+      (acc, row) => {
+        if (row.status === 'SUCCEEDED') acc.succeededAmount += row.amount;
+        if (row.status === 'PENDING') acc.hasPending = true;
+        if (row.status === 'FAILED') acc.hasFailed = true;
+        return acc;
+      },
+      { succeededAmount: 0, hasPending: false, hasFailed: false },
+    );
+  }
+
+  private deriveDisplayStatus(
+    status: PaymentIntentStatus,
+    payableAmount: number,
+    refundSummary?: RefundSummary,
+  ): string {
+    if (!refundSummary) return status;
+    if (refundSummary.succeededAmount >= payableAmount) return 'REFUNDED';
+    if (refundSummary.hasPending) return 'REFUND_PENDING';
+    if (refundSummary.hasFailed) return 'REFUND_FAILED';
+    if (refundSummary.succeededAmount > 0) return 'PARTIALLY_REFUNDED';
+    return status;
   }
 
   async listRefunds(query: AdminRefundListQueryDto): Promise<PaginatedResponseDto<RefundResponseDto>> {
