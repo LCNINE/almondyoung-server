@@ -19,7 +19,7 @@ import { SalesOrderFilterDto } from '../dto/sales-order-filter.dto';
 import { BusinessLinkReferenceDto, CreateBusinessLinkDto } from '../dto/create-business-link.dto';
 import { CancelSalesOrderDto } from '../dto/cancel-sales-order.dto';
 import { AddressDto } from '../dto/address.dto';
-import { OrderCreatedPayload, OrderModifiedPayload, ShippingAddress, OrderItem } from '@packages/event-contracts';
+import { OrderCreatedPayload, OrderModifiedPayload, OrderCancelledPayload, SalesOrderCancelledPayload, ShippingAddress, OrderItem } from '@packages/event-contracts';
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 
 type SalesOrderLineInsert = InferInsertModel<typeof wmsTables.salesOrderLines>;
@@ -126,6 +126,20 @@ const CANCELLABLE_FULFILLMENT_STATUSES = new Set([
   'inspecting',
   'invoiced',
 ]);
+
+const VALID_CANCEL_REASONS = new Set<OrderCancelledPayload['reason']>([
+  'CUSTOMER_REQUEST',
+  'OUT_OF_STOCK',
+  'PAYMENT_FAILED',
+  'ADMIN_CANCEL',
+  'TIMEOUT',
+]);
+
+function toCancelReason(reasonCode: string | null | undefined): OrderCancelledPayload['reason'] {
+  return VALID_CANCEL_REASONS.has(reasonCode as OrderCancelledPayload['reason'])
+    ? (reasonCode as OrderCancelledPayload['reason'])
+    : 'ADMIN_CANCEL';
+}
 
 /** Phase 6에서 FulfillmentsService로 교체된다 */
 interface IFulfillmentsService {
@@ -533,17 +547,20 @@ export class SalesOrdersService {
 
       await this.outbox.enqueue(
         {
-          eventType: ORDER_EVENTS.CANCELLED,
-          aggregateType: 'order',
+          eventType: 'SalesOrderCancelled',
+          aggregateType: 'Order',
           aggregateId: id,
           partitionKey: id,
           payload: {
             orderId: id,
-            orderCancellationId: cancellation.id,
-            cancelledFulfillmentOrderIds,
-            closedFulfillmentCreationBacklogIds: closedBacklog.backlogIds,
-            revokedDigitalOwnershipIds: digitalRevocation.ownershipIds,
-          },
+            reason: toCancelReason(options.reasonCode),
+            reasonDetail: options.reasonDetail ?? undefined,
+            cancelledBy: options.cancelledBy ?? 'system',
+            cancelledAt: occurredAt.toISOString(),
+            cancellationScope: 'full',
+            refundRequired: !!(salesOrder.walletIntentId && (salesOrder.totalAmount ?? 0) > 0),
+            refundAmount: options.walletRefund?.amount,
+          } satisfies SalesOrderCancelledPayload,
         },
         trx,
       );
@@ -1157,24 +1174,24 @@ export class SalesOrdersService {
 
     await this.outbox.enqueue(
       {
-        eventType: ORDER_EVENTS.CANCELLED,
-        aggregateType: 'order',
+        eventType: 'SalesOrderCancelled',
+        aggregateType: 'Order',
         aggregateId: salesOrderId,
         partitionKey: salesOrderId,
         payload: {
           orderId: salesOrderId,
-          orderCancellationId: cancellation.id,
+          reason: toCancelReason(options.reasonCode),
+          reasonDetail: options.reasonDetail ?? undefined,
+          cancelledBy: options.cancelledBy ?? 'system',
+          cancelledAt: occurredAt.toISOString(),
           cancellationScope: 'partial',
-          cancelledLines,
-          adjustedFulfillmentOrderItemIds: effects
-            .filter((effect) => effect.type === 'adjusted_fulfillment_order_item' && effect.targetId)
-            .map((effect) => effect.targetId),
-          walletRefundRef: walletRefundEffect?.targetExternalRef ?? walletRefundEffect?.targetId ?? null,
-          postShipmentHandoffRefs: effects
-            .filter((effect) => effect.type.startsWith('linked_post_shipment_'))
-            .map((effect) => effect.targetExternalRef ?? effect.targetId)
-            .filter(Boolean),
-        },
+          refundRequired: !!(salesOrder.walletIntentId && (salesOrder.totalAmount ?? 0) > 0),
+          refundAmount: options.walletRefund?.amount,
+          cancelledLines: requestedLines.map((line) => ({
+            salesOrderLineId: line.salesOrderLineId,
+            quantity: line.quantity,
+          })),
+        } satisfies SalesOrderCancelledPayload,
       },
       trx,
     );

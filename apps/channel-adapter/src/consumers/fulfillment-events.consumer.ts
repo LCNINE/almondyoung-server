@@ -12,18 +12,12 @@
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
 import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
-import { FulfillmentShippedPayload, FulfillmentCancelledPayload } from '@packages/event-contracts/streams';
+import { FulfillmentShippedPayload, FulfillmentCancelledPayload, SalesOrderCancelledPayload } from '@packages/event-contracts/streams';
 import { MessageEnvelope } from '@packages/event-contracts/types';
 import { DbService } from '@app/db';
 import { inboxEvents } from '../schema';
 import type { ChannelAdapterSchema } from '../types';
 import { ChannelAdapterFactory } from '../adapters/channel-adapter.factory';
-
-interface CoreOrderCancelledPayload {
-  orderId: string;
-  orderCancellationId?: string;
-  cancelledFulfillmentOrderIds?: string[];
-}
 
 type SalesChannel = 'naver' | 'coupang' | 'medusa' | '3pl';
 
@@ -168,22 +162,28 @@ export class FulfillmentEventsConsumer {
   }
 
   /**
-   * Core ORDER_CANCELLED 핸들러
+   * Core SalesOrderCancelled 핸들러
    *
-   * Core(WMS)가 주문을 내부 취소할 때 fulfillments.events.v1으로 발행하는 ORDER_CANCELLED 이벤트.
-   * Medusa 주문 상태 동기화를 위해 inbox_events에 저장하고 InboxWorkerService가 처리하게 한다.
+   * Core 가 주문 취소를 완료한 뒤 core.orders.events.v1 으로 발행하는 SalesOrderCancelled 이벤트.
+   * - cancellationScope === 'full': Medusa 전체 주문 취소 동기화 대상 → inbox_events 저장
+   * - cancellationScope === 'partial': 부분취소는 Medusa cancelOrder 대상이 아님 → 무시
    *
-   * 이벤트 발행 경로: Core sales-orders.service → outbox → fulfillments.events.v1 (shared outbox dispatcher)
+   * 이벤트 발행 경로: Core sales-orders.service → outbox → core.orders.events.v1 (outbox dispatcher)
    */
-  @OnEvent('fulfillments.events.v1', 'ORDER_CANCELLED')
+  @OnEvent('core.orders.events.v1', 'SalesOrderCancelled')
   async handleCoreOrderCancelled(
-    @EventPayload() payload: CoreOrderCancelledPayload,
+    @EventPayload() payload: SalesOrderCancelledPayload,
     @EventEnvelope() envelope: MessageEnvelope,
   ): Promise<void> {
-    const { orderId } = payload;
-    this.logger.log(`[ORDER_CANCELLED] Core 주문 취소 수신: orderId=${orderId}`, {
+    const { orderId, cancellationScope } = payload;
+    this.logger.log(`[SALES_ORDER_CANCELLED] Core 주문 취소 수신: orderId=${orderId}, scope=${cancellationScope}`, {
       correlationId: envelope.correlationId,
     });
+
+    if (cancellationScope !== 'full') {
+      this.logger.debug(`[SALES_ORDER_CANCELLED] 부분취소 - Medusa 동기화 제외: orderId=${orderId}`);
+      return;
+    }
 
     try {
       await this.dbService.db.insert(inboxEvents).values({
@@ -200,9 +200,9 @@ export class FulfillmentEventsConsumer {
         createdAt: new Date(),
       });
 
-      this.logger.log(`[ORDER_CANCELLED] Inbox 저장 완료: orderId=${orderId}`);
+      this.logger.log(`[SALES_ORDER_CANCELLED] Inbox 저장 완료: orderId=${orderId}`);
     } catch (error) {
-      this.logger.error(`[ORDER_CANCELLED] Inbox 저장 실패: orderId=${orderId}`, error.stack);
+      this.logger.error(`[SALES_ORDER_CANCELLED] Inbox 저장 실패: orderId=${orderId}`, error.stack);
       throw error;
     }
   }

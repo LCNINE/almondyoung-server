@@ -112,6 +112,15 @@ export const salesOrders = {
     return response.data;
   },
 
+  // 취소 주문 환불 재시도
+  adminRetryRefund: async (id: string): Promise<{ refundStatus: string }> => {
+    const response = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/sales-orders/${encodeURIComponent(id)}/retry-refund`,
+      {}
+    );
+    return response.data;
+  },
+
   createBusinessLink: async (
     id: string,
     data: CreateBusinessLinkDto

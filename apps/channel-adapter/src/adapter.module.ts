@@ -25,6 +25,7 @@ import { DbModule } from '@app/db';
 import {
   CHANNEL_ADAPTER_STREAM,
   ORDER_STREAM,
+  CORE_ORDER_STREAM,
   FULFILLMENT_STREAM,
   PRODUCT_STREAM,
   INVENTORY_STREAM,
@@ -108,6 +109,7 @@ import { OrderPollerOrchestrator } from './services/order-collection/order-polle
             streams: [
               CHANNEL_ADAPTER_STREAM,
               ORDER_STREAM,
+              CORE_ORDER_STREAM,
               FULFILLMENT_STREAM,
               PRODUCT_STREAM,
               INVENTORY_STREAM,
@@ -220,6 +222,10 @@ import { OrderPollerOrchestrator } from './services/order-collection/order-polle
           },
           {
             provide: 'STREAM_PUBLISHER_orders.events.v1',
+            useClass: NullEventPublisher,
+          },
+          {
+            provide: 'STREAM_PUBLISHER_core.orders.events.v1',
             useClass: NullEventPublisher,
           },
           {

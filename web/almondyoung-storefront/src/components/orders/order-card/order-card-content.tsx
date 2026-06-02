@@ -117,8 +117,18 @@ export default function OrderCardContent({
   const handleCancelConfirm = () => {
     startCancelTransition(async () => {
       try {
-        await cancelOrderByMedusaId(orderId, { reasonCode: "CHANGE_OF_MIND" })
-        toast.success("주문 취소 요청이 접수되었습니다. 환불 상태는 주문 상세에서 확인해 주세요.")
+        const result = await cancelOrderByMedusaId(orderId, { reasonCode: "CHANGE_OF_MIND" })
+        const message =
+          result.refundStatus === "succeeded"
+            ? "주문이 취소되고 환불이 완료되었습니다."
+            : result.refundStatus === "pending"
+              ? "주문이 취소되었습니다. 환불 처리 중입니다."
+              : result.refundStatus === "failed"
+                ? "주문은 취소되었지만 환불에 실패했습니다. 고객센터에서 확인해 주세요."
+                : result.refundStatus === "manual_pending"
+                  ? "주문은 취소되었습니다. 환불은 고객센터에서 확인 후 처리됩니다."
+                  : "주문이 취소되었습니다."
+        toast.success(message)
         setShowCancelDialog(false)
         router.refresh()
       } catch (err: unknown) {

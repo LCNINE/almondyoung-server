@@ -427,7 +427,18 @@
       "cancelOrReturn": "注文キャンセル / 返品申請",
       "backToList": "注文一覧へ戻る",
       "addToCart": "カートに追加",
-      "viewDetail": "注文詳細を見る ›"
+      "viewDetail": "注文詳細を見る ›",
+      "returnRequest": "返品申請",
+      "exchangeRequest": "交換申請",
+      "cancelDialogTitle": "注文キャンセル",
+      "cancelDialogDescription": "キャンセル完了後、お支払い方法に応じて返金が行われます。",
+      "cancelConfirm": "キャンセル確認",
+      "cancelGoBack": "戻る",
+      "cancelSuccess": "注文がキャンセルされ、返金が完了しました。",
+      "cancelSuccessPending": "注文がキャンセルされました。返金処理中です。",
+      "cancelSuccessFailed": "注文はキャンセルされましたが、返金に失敗しました。カスタマーサポートにご連絡ください。",
+      "cancelSuccessManual": "注文はキャンセルされました。返金はカスタマーサポートで確認後に処理されます。",
+      "cancelError": "キャンセル処理中にエラーが発生しました。"
     },
     "delivery": {
       "paid": "お支払い完了",

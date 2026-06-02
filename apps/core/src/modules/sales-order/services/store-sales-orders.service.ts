@@ -104,6 +104,63 @@ export class StoreSalesOrdersService {
     return { status: 'cancelled', refundStatus };
   }
 
+  /**
+   * 취소 주문의 환불 재시도.
+   *
+   * - succeeded: 이미 완료 → 재시도 없이 succeeded 반환
+   * - pending: 처리 중 → 중복 재시도 없이 pending 반환
+   * - manual_pending (walletIntentId/amount 없음): 자동 재시도 불가 → 400
+   * - failed / 링크 없음: 새 idempotency key `cancel:{id}:retry:{uuid}`로 Wallet 재호출
+   */
+  async retryWalletRefund(orderId: string): Promise<{ refundStatus: string }> {
+    const so = await this.findSoOrThrow({ id: orderId });
+    if (so.status !== 'cancelled') {
+      throw new BadRequestException('취소된 주문에만 환불 재시도를 할 수 있습니다.');
+    }
+
+    const refundLink = await this.db.db
+      .select({ metadata: inventoryTables.businessLinks.metadata })
+      .from(inventoryTables.businessLinks)
+      .where(
+        and(
+          eq(inventoryTables.businessLinks.sourceType, 'sales_order'),
+          eq(inventoryTables.businessLinks.sourceId, so.id),
+          eq(inventoryTables.businessLinks.relationName, 'cancellation_linked_wallet_refund'),
+        ),
+      )
+      .orderBy(desc(inventoryTables.businessLinks.createdAt))
+      .limit(1)
+      .then((r) => r[0]);
+
+    const currentStatus = (refundLink?.metadata as Record<string, unknown>)?.refundStatus as string | undefined;
+
+    if (currentStatus === 'succeeded') {
+      return { refundStatus: 'succeeded' };
+    }
+
+    if (currentStatus === 'pending') {
+      // 비동기 처리 중 — 중복 재시도 없이 그대로 반환
+      return { refundStatus: 'pending' };
+    }
+
+    // manual_pending이면서 Wallet 호출에 필요한 정보가 없는 경우 → 수동 처리 필요
+    if (!so.walletIntentId) {
+      throw new BadRequestException(
+        'Wallet 결제 정보가 없어 자동 재시도가 불가합니다. 결제 > 환불 관리에서 수동 처리하세요.',
+      );
+    }
+    if (!so.totalAmount || so.totalAmount <= 0) {
+      throw new BadRequestException(
+        '환불 금액 정보가 없어 자동 재시도가 불가합니다. 결제 > 환불 관리에서 수동 처리하세요.',
+      );
+    }
+
+    // failed 또는 링크 없음 → 새 idempotency key로 실제 PG 재호출
+    const retryCorrelationId = `cancel:${so.id}:retry:${crypto.randomUUID()}`;
+    const refundStatus = await this.requestWalletRefundAfterCancel(so, {}, retryCorrelationId);
+    return { refundStatus };
+  }
+
   // ── 공개 메서드: Medusa channelOrderId 기반 ─────────────────────────────
 
   async getActionsByChannelOrder(channelOrderId: string, customerId: string): Promise<StoreOrderActionsResponseDto> {
@@ -233,7 +290,7 @@ export class StoreSalesOrdersService {
       availableActions.push('receipt');
       cancelUnavailableReason = 'channel_order';
     } else if (fulfillmentStatus === 'picking' || fulfillmentStatus === 'packed') {
-      availableActions.push('cancel'); // 시도 가능하지만 실패할 수 있음
+      // 피킹 시작 이후 고객 셀프 취소 불가 — 고객센터 문의 안내
       availableActions.push('receipt');
       cancelUnavailableReason = 'already_processing';
     } else {
@@ -267,6 +324,19 @@ export class StoreSalesOrdersService {
       throw new BadRequestException(`${so.salesChannel} 채널 주문은 해당 채널에서 직접 취소해 주세요.`);
     }
 
+    const fos = await this.db.db
+      .select({ status: inventoryTables.fulfillmentOrders.status, shippedAt: inventoryTables.fulfillmentOrders.shippedAt })
+      .from(inventoryTables.fulfillmentOrders)
+      .where(eq(inventoryTables.fulfillmentOrders.salesOrderId, so.id));
+
+    const fulfillmentStatus = this.deriveFulfillmentStatus(fos);
+    if (fulfillmentStatus === 'picking' || fulfillmentStatus === 'packed') {
+      throw new BadRequestException('피킹이 시작된 주문은 직접 취소할 수 없습니다. 고객센터로 문의해 주세요.');
+    }
+    if (this.hasShippedEvidence(fos) || so.status === 'shipped' || so.status === 'delivered') {
+      throw new BadRequestException('이미 출고된 주문은 취소할 수 없습니다.');
+    }
+
     await this.salesOrdersService.cancel(so.id, {
       reasonCode: dto.reasonCode,
       reasonDetail: dto.reasonDetail,
@@ -284,6 +354,7 @@ export class StoreSalesOrdersService {
   private async requestWalletRefundAfterCancel(
     so: SalesOrderRow,
     dto: StoreCancelOrderDto,
+    correlationIdOverride?: string,
   ): Promise<StoreRefundStatus> {
     if (!so.walletIntentId) {
       // walletIntentId가 없으면 Wallet 자동 환불 불가 — 수동 처리 필요
@@ -299,7 +370,7 @@ export class StoreSalesOrdersService {
       return 'manual_pending';
     }
 
-    const correlationId = `cancel:${so.id}`;
+    const correlationId = correlationIdOverride ?? `cancel:${so.id}`;
     const amount = so.totalAmount;
 
     if (!amount || amount <= 0) {

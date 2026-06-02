@@ -99,7 +99,7 @@ export class TossPaymentProvider implements PaymentProvider {
       return { status: 'FAILED', errorCode: 'TOSS_PAYMENT_KEY_NOT_FOUND' };
     }
 
-    const result = await this.tossApi.cancelPayment(paymentKey, '고객 요청', params.amount);
+    const result = await this.tossApi.cancelPayment(paymentKey, '고객 요청', params.amount, params.idempotencyKey);
     if (result.ok) return { status: 'SUCCEEDED' };
     return { status: 'FAILED', errorCode: result.error.code, errorMessage: result.error.message };
   }
@@ -110,7 +110,12 @@ export class TossPaymentProvider implements PaymentProvider {
       return { status: 'FAILED', errorCode: 'TOSS_PAYMENT_KEY_NOT_FOUND' };
     }
 
-    const result = await this.tossApi.cancelPayment(paymentKey, params.reasonCode ?? '고객 요청', params.amount);
+    const result = await this.tossApi.cancelPayment(
+      paymentKey,
+      params.reasonCode ?? '고객 요청',
+      params.amount,
+      params.idempotencyKey,
+    );
     if (result.ok) {
       return { status: 'SUCCEEDED', providerRefundId: paymentKey };
     }

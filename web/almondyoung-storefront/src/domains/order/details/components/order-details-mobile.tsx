@@ -2,47 +2,53 @@
 
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { buildAddressLine } from "@/lib/utils/address-line"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { calculateMembershipDiscount } from "@/lib/utils/price-utils"
+import { formatDate, DATE_FORMATS } from "@/lib/utils/format-date"
 import {
   OrderInfoCardDivider,
   OrderInfoCardRoot,
   OrderInfoCardRow,
   OrderInfoCardRowItem,
 } from "@components/orders/order-info-card.atomic"
+import {
+  OrderStatusBadges,
+  getCoreDisplayStatus,
+  CANCEL_UNAVAILABLE_MESSAGES,
+} from "@/components/orders/order-status-badges"
+import type { StoreOrderActionsResponse } from "@/lib/api/orders/store-orders"
+import { cancelOrderByMedusaId } from "@/lib/api/orders/store-orders"
 import { HttpTypes } from "@medusajs/types"
 import { useTranslations } from "next-intl"
-
-const formatDate = (date?: string | Date | null) => {
-  if (!date) return "-"
-  const parsed = date instanceof Date ? date : new Date(date)
-  return parsed.toLocaleDateString()
-}
+import { useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 
 const formatAmount = (value?: number | null) =>
   `${(value ?? 0).toLocaleString()}원`
 
-const getOrderStatusKey = (order: HttpTypes.StoreOrder): string => {
-  if (order.status === "canceled") return "orderCancel"
-  if (order.fulfillment_status === "fulfilled") return "delivered"
-  if (order.fulfillment_status === "shipped") return "shipping"
-  if (order.fulfillment_status === "partially_fulfilled") return "partialShipping"
-  if (order.fulfillment_status === "not_fulfilled") return "preparing"
-  if (order.payment_status === "awaiting") return "paymentPending"
-  return "paid"
-}
-
 export const OrderDetailsMobile = ({
   order,
-  countryCode,
+  coreActions,
 }: {
   order: HttpTypes.StoreOrder | null
   countryCode: string
+  coreActions?: StoreOrderActionsResponse
 }) => {
   const tLabels = useTranslations("mypage.order.labels")
   const tStatus = useTranslations("mypage.order.status")
   const tActions = useTranslations("mypage.order.actions")
+  const router = useRouter()
+  const [showCancelDialog, setShowCancelDialog] = useState(false)
+  const [isCancelling, startCancelTransition] = useTransition()
 
   if (!order) {
     return (
@@ -65,15 +71,76 @@ export const OrderDetailsMobile = ({
   const postalCode = address?.postal_code || "-"
   const primaryAddress = address?.address_1 || addressLine || "-"
   const detailAddress = address?.address_2 || "-"
-  const statusLabel = tStatus(getOrderStatusKey(order))
   const membershipDiscount = calculateMembershipDiscount(order.items ?? [])
+
+  const availableActions = coreActions?.availableActions ?? []
+  const canCancel = availableActions.includes("cancel")
+  const canTrack = availableActions.includes("track")
+  const canReturn = availableActions.includes("return")
+  const canExchange = availableActions.includes("exchange")
+  const cancelUnavailableReason = coreActions?.cancelUnavailableReason
+  const cancelTooltip = cancelUnavailableReason
+    ? CANCEL_UNAVAILABLE_MESSAGES[cancelUnavailableReason]
+    : undefined
+
+  const showTrack =
+    canTrack ||
+    order.fulfillment_status === "shipped" ||
+    order.fulfillment_status === "fulfilled" ||
+    order.fulfillment_status === "partially_fulfilled"
+
+  const statusLabel = coreActions
+    ? getCoreDisplayStatus(coreActions)
+    : tStatus(
+        order.status === "canceled"
+          ? "orderCancel"
+          : order.fulfillment_status === "fulfilled"
+            ? "delivered"
+            : order.fulfillment_status === "shipped"
+              ? "shipping"
+              : order.fulfillment_status === "partially_fulfilled"
+                ? "partialShipping"
+                : order.fulfillment_status === "not_fulfilled"
+                  ? "preparing"
+                  : order.payment_status === "awaiting"
+                    ? "paymentPending"
+                    : "paid"
+      )
+
+  const handleCancelConfirm = () => {
+    startCancelTransition(async () => {
+      try {
+        const result = await cancelOrderByMedusaId(order.id, {
+          reasonCode: "CHANGE_OF_MIND",
+        })
+        const message =
+          result.refundStatus === "succeeded"
+            ? tActions("cancelSuccess")
+            : result.refundStatus === "pending"
+              ? tActions("cancelSuccessPending")
+              : result.refundStatus === "failed"
+                ? tActions("cancelSuccessFailed")
+                : result.refundStatus === "manual_pending"
+                  ? tActions("cancelSuccessManual")
+                  : tActions("cancelOrder")
+        toast.success(message)
+        setShowCancelDialog(false)
+        router.refresh()
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : undefined
+        toast.error(message ?? tActions("cancelError"))
+      }
+    })
+  }
 
   return (
     <main className="min-h-screen w-full bg-[#f8f8f8] font-sans">
       <div className="p-4 pb-24">
         <header className="mb-3 flex items-center justify-between text-sm">
           <h2 className="text-[13px] font-bold text-gray-800">
-            {tLabels("orderDateSuffix", { date: formatDate(order.created_at) })}
+            {tLabels("orderDateSuffix", {
+              date: formatDate(order.created_at, DATE_FORMATS.KO_LONG),
+            })}
           </h2>
           <span className="text-gray-500">
             {tLabels("orderNumberSuffix", {
@@ -168,6 +235,16 @@ export const OrderDetailsMobile = ({
               </dt>
               <dd className="text-gray-800">{statusLabel}</dd>
             </dl>
+            {coreActions && (
+              <div className="mt-2">
+                <OrderStatusBadges actions={coreActions} />
+              </div>
+            )}
+            {cancelUnavailableReason &&
+              !canCancel &&
+              cancelUnavailableReason !== "already_cancelled" && (
+                <p className="mt-1 text-[11px] text-amber-600">{cancelTooltip}</p>
+              )}
           </OrderInfoCardRoot>
         </section>
 
@@ -217,20 +294,87 @@ export const OrderDetailsMobile = ({
             })}
           </div>
 
-          <div className="border-border-muted mt-2 flex gap-2 border-t p-4">
-            <CustomButton variant="outline" size="lg">
-              {tActions("cancelOrReturn")}
-            </CustomButton>
-            {(order.fulfillment_status === 'shipped' || order.fulfillment_status === 'fulfilled' || order.fulfillment_status === 'partially_fulfilled') && (
-              <LocalizedClientLink href={`/mypage/order/track?orderId=${order.id}`}>
-                <CustomButton variant="outline" size="lg">
+          <div className="border-border-muted mt-2 flex flex-wrap gap-2 border-t p-4">
+            {showTrack && (
+              <LocalizedClientLink
+                href={`/mypage/order/track?orderId=${order.id}`}
+              >
+                <CustomButton variant="outline" size="sm">
                   {tActions("trackDelivery")}
                 </CustomButton>
               </LocalizedClientLink>
             )}
+            {canReturn && (
+              <LocalizedClientLink
+                href={`/mypage/exchange?orderId=${order.id}&type=return`}
+              >
+                <CustomButton variant="outline" size="sm">
+                  {tActions("returnRequest")}
+                </CustomButton>
+              </LocalizedClientLink>
+            )}
+            {canExchange && (
+              <LocalizedClientLink
+                href={`/mypage/exchange?orderId=${order.id}&type=exchange`}
+              >
+                <CustomButton variant="outline" size="sm">
+                  {tActions("exchangeRequest")}
+                </CustomButton>
+              </LocalizedClientLink>
+            )}
+            {canCancel && (
+              <CustomButton
+                variant="outline"
+                size="sm"
+                onClick={() => setShowCancelDialog(true)}
+                className="text-red-600 outline-red-300"
+              >
+                {tActions("cancelOrder")}
+              </CustomButton>
+            )}
+            {!canCancel &&
+              cancelUnavailableReason &&
+              cancelUnavailableReason !== "already_cancelled" && (
+                <CustomButton variant="outline" size="sm" disabled>
+                  {tActions("cancelOrder")}
+                </CustomButton>
+              )}
           </div>
         </section>
       </div>
+
+      <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{tActions("cancelDialogTitle")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            <p className="text-muted-foreground text-xs">
+              {tActions("cancelDialogDescription")}
+            </p>
+          </div>
+          <DialogFooter>
+            <CustomButton
+              variant="outline"
+              color="secondary"
+              size="md"
+              onClick={() => setShowCancelDialog(false)}
+              disabled={isCancelling}
+            >
+              {tActions("cancelGoBack")}
+            </CustomButton>
+            <CustomButton
+              variant="fill"
+              color="primary"
+              size="md"
+              onClick={handleCancelConfirm}
+              isLoading={isCancelling}
+            >
+              {tActions("cancelConfirm")}
+            </CustomButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   )
 }

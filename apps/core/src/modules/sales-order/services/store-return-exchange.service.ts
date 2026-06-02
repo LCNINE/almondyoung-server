@@ -401,23 +401,45 @@ export class StoreReturnExchangeService {
 
   async completeReturnRequest(returnRequestId: string, adminId: string): Promise<ReturnRequest> {
     const salesOrder = await this.db.db
-      .select({ id: wmsTables.salesOrders.id, walletIntentId: wmsTables.salesOrders.walletIntentId })
+      .select({
+        id: wmsTables.salesOrders.id,
+        walletIntentId: wmsTables.salesOrders.walletIntentId,
+        totalAmount: wmsTables.salesOrders.totalAmount,
+        shippingFee: wmsTables.salesOrders.shippingFee,
+      })
       .from(wmsTables.salesOrders)
       .innerJoin(returnExchangeTables.returnRequests, eq(returnExchangeTables.returnRequests.salesOrderId, wmsTables.salesOrders.id))
       .where(eq(returnExchangeTables.returnRequests.id, returnRequestId))
       .limit(1)
       .then((r) => r[0]);
 
-    const returnItems = await this.db.db
-      .select({
-        quantity: returnExchangeTables.returnRequestItems.quantity,
-        unitPrice: wmsTables.salesOrderLines.unitPrice,
-      })
-      .from(returnExchangeTables.returnRequestItems)
-      .leftJoin(wmsTables.salesOrderLines, eq(returnExchangeTables.returnRequestItems.salesOrderLineId, wmsTables.salesOrderLines.id))
-      .where(eq(returnExchangeTables.returnRequestItems.returnRequestId, returnRequestId));
+    const [allOrderLines, returnItems] = await Promise.all([
+      this.db.db
+        .select({
+          id: wmsTables.salesOrderLines.id,
+          quantity: wmsTables.salesOrderLines.quantity,
+          unitPrice: wmsTables.salesOrderLines.unitPrice,
+          totalPrice: wmsTables.salesOrderLines.totalPrice,
+        })
+        .from(wmsTables.salesOrderLines)
+        .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrder!.id)),
+      this.db.db
+        .select({
+          salesOrderLineId: returnExchangeTables.returnRequestItems.salesOrderLineId,
+          quantity: returnExchangeTables.returnRequestItems.quantity,
+          unitPrice: wmsTables.salesOrderLines.unitPrice,
+        })
+        .from(returnExchangeTables.returnRequestItems)
+        .leftJoin(wmsTables.salesOrderLines, eq(returnExchangeTables.returnRequestItems.salesOrderLineId, wmsTables.salesOrderLines.id))
+        .where(eq(returnExchangeTables.returnRequestItems.returnRequestId, returnRequestId)),
+    ]);
 
-    const refundAmount = returnItems.reduce((acc, item) => acc + item.quantity * (item.unitPrice ?? 0), 0);
+    const refundAmount = this.calculateReturnRefund(
+      returnItems,
+      allOrderLines,
+      salesOrder?.totalAmount ?? null,
+      salesOrder?.shippingFee ?? 0,
+    );
     // 환불할 금액이 없으면 즉시 완료. 있으면 refund_pending 경유 후 Wallet 성공 시 completed.
     const immediateComplete = refundAmount <= 0;
     const needsRefund = !immediateComplete && !!salesOrder?.walletIntentId;
@@ -645,7 +667,12 @@ export class StoreReturnExchangeService {
     }
 
     const salesOrder = await this.db.db
-      .select({ id: wmsTables.salesOrders.id, walletIntentId: wmsTables.salesOrders.walletIntentId })
+      .select({
+        id: wmsTables.salesOrders.id,
+        walletIntentId: wmsTables.salesOrders.walletIntentId,
+        totalAmount: wmsTables.salesOrders.totalAmount,
+        shippingFee: wmsTables.salesOrders.shippingFee,
+      })
       .from(wmsTables.salesOrders)
       .where(eq(wmsTables.salesOrders.id, rr.salesOrderId))
       .limit(1)
@@ -655,17 +682,33 @@ export class StoreReturnExchangeService {
       throw new BadRequestException('walletIntentId가 없어 환불 재시도가 불가합니다. 수동 완료를 사용하세요.');
     }
 
-    const returnItems = await this.db.db
-      .select({
-        quantity: returnExchangeTables.returnRequestItems.quantity,
-        unitPrice: wmsTables.salesOrderLines.unitPrice,
-      })
-      .from(returnExchangeTables.returnRequestItems)
-      .leftJoin(wmsTables.salesOrderLines, eq(returnExchangeTables.returnRequestItems.salesOrderLineId, wmsTables.salesOrderLines.id))
-      .where(eq(returnExchangeTables.returnRequestItems.returnRequestId, returnRequestId));
+    const [allOrderLines, returnItems] = await Promise.all([
+      this.db.db
+        .select({
+          id: wmsTables.salesOrderLines.id,
+          quantity: wmsTables.salesOrderLines.quantity,
+          unitPrice: wmsTables.salesOrderLines.unitPrice,
+          totalPrice: wmsTables.salesOrderLines.totalPrice,
+        })
+        .from(wmsTables.salesOrderLines)
+        .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrder.id)),
+      this.db.db
+        .select({
+          salesOrderLineId: returnExchangeTables.returnRequestItems.salesOrderLineId,
+          quantity: returnExchangeTables.returnRequestItems.quantity,
+          unitPrice: wmsTables.salesOrderLines.unitPrice,
+        })
+        .from(returnExchangeTables.returnRequestItems)
+        .leftJoin(wmsTables.salesOrderLines, eq(returnExchangeTables.returnRequestItems.salesOrderLineId, wmsTables.salesOrderLines.id))
+        .where(eq(returnExchangeTables.returnRequestItems.returnRequestId, returnRequestId)),
+    ]);
 
-    // 환불 금액: 반품 라인별 상품가 × 수량. 할인/배송비 미반영 (운영 정책: 상품가 기준 환불).
-    const refundAmount = returnItems.reduce((acc, item) => acc + item.quantity * (item.unitPrice ?? 0), 0);
+    const refundAmount = this.calculateReturnRefund(
+      returnItems,
+      allOrderLines,
+      salesOrder.totalAmount,
+      salesOrder.shippingFee,
+    );
     if (refundAmount <= 0) {
       throw new BadRequestException('환불 금액이 0원 이하입니다. 수동 완료를 사용하세요.');
     }
@@ -1233,6 +1276,47 @@ export class StoreReturnExchangeService {
       })),
       createdAt: returnRequest.createdAt,
     };
+  }
+
+  /**
+   * 반품 환불 금액 계산.
+   * - 전체 반품: totalAmount (배송비 포함한 실제 결제 금액)
+   * - 부분 반품: (반품 라인 합계 / 전체 라인 합계) × (totalAmount - shippingFee)
+   *   → 주문 레벨 할인을 라인 비중으로 배분. 부분 반품에는 배송비 미포함.
+   */
+  private calculateReturnRefund(
+    returnItems: { salesOrderLineId: string | null; quantity: number; unitPrice: number | null }[],
+    allLines: { id: string; quantity: number; unitPrice: number | null; totalPrice: number | null }[],
+    orderTotalAmount: number | null,
+    orderShippingFee: number,
+  ): number {
+    const orderTotal = orderTotalAmount ?? 0;
+
+    if (orderTotal <= 0 || allLines.length === 0) {
+      // totalAmount 정보 없음: 단순 unitPrice × 수량 합산으로 폴백
+      return returnItems.reduce((acc, item) => acc + item.quantity * (item.unitPrice ?? 0), 0);
+    }
+
+    const returnQtyByLineId = new Map(returnItems.map((r) => [r.salesOrderLineId, r.quantity]));
+    const isFullReturn = allLines.every((l) => (returnQtyByLineId.get(l.id) ?? 0) >= l.quantity);
+
+    if (isFullReturn) {
+      return orderTotal;
+    }
+
+    // totalPrice 또는 unitPrice × quantity를 라인 무게로 사용
+    const allLinesTotals = allLines.reduce((acc, l) => acc + (l.totalPrice ?? (l.unitPrice ?? 0) * l.quantity), 0);
+    if (allLinesTotals <= 0) {
+      return returnItems.reduce((acc, item) => acc + item.quantity * (item.unitPrice ?? 0), 0);
+    }
+
+    const returnedLinesTotals = allLines.reduce((acc, l) => {
+      const returnQty = returnQtyByLineId.get(l.id) ?? 0;
+      return acc + returnQty * (l.unitPrice ?? 0);
+    }, 0);
+
+    const productSubtotal = Math.max(0, orderTotal - orderShippingFee);
+    return Math.round((returnedLinesTotals * productSubtotal) / allLinesTotals);
   }
 
   private toExchangeResponseDto(

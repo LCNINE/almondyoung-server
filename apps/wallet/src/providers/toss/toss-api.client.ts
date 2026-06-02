@@ -52,10 +52,19 @@ export class TossApiClient {
     return this.post<TossConfirmResponse>('/payments/confirm', { paymentKey, orderId, amount });
   }
 
-  async cancelPayment(paymentKey: string, cancelReason: string, cancelAmount?: number): Promise<TossApiResult<TossCancelResponse>> {
+  async cancelPayment(
+    paymentKey: string,
+    cancelReason: string,
+    cancelAmount?: number,
+    idempotencyKey?: string,
+  ): Promise<TossApiResult<TossCancelResponse>> {
     const body: Record<string, unknown> = { cancelReason };
     if (cancelAmount !== undefined) body.cancelAmount = cancelAmount;
-    return this.post<TossCancelResponse>(`/payments/${paymentKey}/cancels`, body);
+    return this.post<TossCancelResponse>(
+      `/payments/${paymentKey}/cancel`,
+      body,
+      idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+    );
   }
 
   async issueBillingKey(authKey: string, customerKey: string): Promise<TossApiResult<TossBillingKeyResponse>> {
@@ -77,7 +86,11 @@ export class TossApiClient {
     });
   }
 
-  private async post<T>(path: string, body: Record<string, unknown>): Promise<TossApiResult<T>> {
+  private async post<T>(
+    path: string,
+    body: Record<string, unknown>,
+    extraHeaders?: Record<string, string>,
+  ): Promise<TossApiResult<T>> {
     const url = `${this.baseUrl}${path}`;
     this.logger.debug(`POST ${url}`);
 
@@ -86,6 +99,7 @@ export class TossApiClient {
       headers: {
         Authorization: `Basic ${this.auth}`,
         'Content-Type': 'application/json',
+        ...extraHeaders,
       },
       body: JSON.stringify(body),
     });
@@ -96,7 +110,37 @@ export class TossApiClient {
     }
 
     const error = await res.json().catch(() => ({ code: 'UNKNOWN', message: 'Unknown error' }));
-    this.logger.error(`Toss API error: ${res.status} ${JSON.stringify(error)}`);
-    return { ok: false, error: { code: error.code ?? 'UNKNOWN', message: error.message ?? '' }, statusCode: res.status };
+    this.logger.error(`Toss API error: ${res.status} ${this.stringifyError(error)}`);
+    return { ok: false, error: this.normalizeError(error), statusCode: res.status };
+  }
+
+  private normalizeError(error: unknown): TossApiError {
+    if (error && typeof error === 'object') {
+      const record = error as Record<string, unknown>;
+      return {
+        code: this.asString(record.code) ?? this.asString(record.errorCode) ?? 'UNKNOWN',
+        message: this.formatMessage(record.message ?? record.errorMessage ?? error),
+      };
+    }
+
+    return { code: 'UNKNOWN', message: this.formatMessage(error) };
+  }
+
+  private asString(value: unknown): string | undefined {
+    return typeof value === 'string' ? value : undefined;
+  }
+
+  private formatMessage(value: unknown): string {
+    if (typeof value === 'string') return value;
+    if (value === undefined || value === null) return '';
+    return this.stringifyError(value);
+  }
+
+  private stringifyError(value: unknown): string {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
   }
 }
