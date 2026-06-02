@@ -553,6 +553,7 @@ export class SalesOrdersService {
           partitionKey: id,
           payload: {
             orderId: id,
+            channelOrderId: salesOrder.channelOrderId ?? undefined,
             reason: toCancelReason(options.reasonCode),
             reasonDetail: options.reasonDetail ?? undefined,
             cancelledBy: options.cancelledBy ?? 'system',
@@ -1180,6 +1181,7 @@ export class SalesOrdersService {
         partitionKey: salesOrderId,
         payload: {
           orderId: salesOrderId,
+          channelOrderId: salesOrder.channelOrderId ?? undefined,
           reason: toCancelReason(options.reasonCode),
           reasonDetail: options.reasonDetail ?? undefined,
           cancelledBy: options.cancelledBy ?? 'system',

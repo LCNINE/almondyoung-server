@@ -307,6 +307,9 @@ export class StoreSalesOrdersService {
       claimStatus,
       availableActions,
       cancelUnavailableReason,
+      // 현재는 결제확인된 주문(authorized/captured)만 수집되므로 walletIntentId가 있으면 항상 paid.
+      // 무통장입금 도입 시 Wallet intent status를 확인해 'awaiting_payment'로 분기한다.
+      paymentStatus: so.walletIntentId ? 'paid' : undefined,
       channelInfo: isChannelOrder
         ? { channel: so.salesChannel, ...CHANNEL_CANCEL_URLS[so.salesChannel] }
         : undefined,

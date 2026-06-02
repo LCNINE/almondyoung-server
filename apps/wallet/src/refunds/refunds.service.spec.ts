@@ -176,6 +176,26 @@ describe('RefundsService', () => {
       ).resolves.toBeDefined();
     });
 
+    it('provider 성공 시 status 직접 업데이트 없이 PENDING -> SUCCEEDED 전이로 완료한다', async () => {
+      const { service, updateCalls, stateTransitionService } = makeContext({
+        providerResult: { status: 'SUCCEEDED', providerRefundId: 'prov-rf-001' },
+      });
+
+      await service.create({ chargeId: CHARGE_ID, amount: 5000 });
+
+      expect(updateCalls).toContainEqual({
+        set: expect.objectContaining({ providerRefundId: 'prov-rf-001' }),
+      });
+      expect(updateCalls.some((c) => c.set.status === 'SUCCEEDED')).toBe(false);
+      expect(stateTransitionService.transitionRefund).toHaveBeenCalledWith(
+        REFUND_ID,
+        'SUCCEEDED',
+        expect.objectContaining({ reasonCode: 'REFUND_SUCCEEDED' }),
+        'PENDING',
+        expect.anything(),
+      );
+    });
+
     it('charge가 SUCCEEDED 아닌 상태면 환불 불가 (CHARGE_NOT_REFUNDABLE)', async () => {
       const { service } = makeContext({ charge: makeCharge({ status: 'PENDING' }) });
       await expect(
