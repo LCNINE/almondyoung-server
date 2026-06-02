@@ -71,6 +71,8 @@ export interface StoreOrderActionsResponse {
   claimStatus: StoreClaimStatus
   availableActions: StoreOrderAction[]
   cancelUnavailableReason?: StoreCancelUnavailableReason
+  /** 결제 상태. 무통장입금 미확인 시 'awaiting_payment', 확인 완료 시 'paid'. */
+  paymentStatus?: 'paid' | 'awaiting_payment'
   channelInfo?: {
     channel: string
     cancelUrl?: string

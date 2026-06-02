@@ -28,7 +28,8 @@ function StatusBadge({ label, color }: BadgeProps) {
 // ── 주문 상태 badge ─────────────────────────────────────────────────────
 
 const ORDER_STATUS_MAP: Record<string, BadgeProps> = {
-  pending:    { label: "결제 확인 중", color: "bg-yellow-100 text-yellow-700" },
+  // pending = WMS 처리 전 단계. 결제 수단별 문구는 getCoreDisplayStatus에서 paymentStatus로 분기.
+  pending:    { label: "결제 완료",   color: "bg-blue-100 text-blue-700" },
   confirmed:  { label: "결제 완료",   color: "bg-blue-100 text-blue-700" },
   processing: { label: "준비 중",     color: "bg-blue-100 text-blue-700" },
   shipped:    { label: "배송 중",     color: "bg-green-100 text-green-700" },
@@ -80,14 +81,20 @@ const FO_DISPLAY_LABELS: Partial<Record<StoreFulfillmentStatus, string>> = {
 
 /**
  * Core action projection에서 고객 화면 주 상태 텍스트를 도출한다.
- * FO 상태가 더 구체적일 때 우선 사용, 없으면 SO 상태로 대체.
+ * FO 상태 > paymentStatus 분기 > SO 상태 순으로 우선 적용.
  */
 export function getCoreDisplayStatus(actions: StoreOrderActionsResponse): string {
-  return (
-    FO_DISPLAY_LABELS[actions.fulfillmentStatus] ??
-    ORDER_STATUS_MAP[actions.orderStatus]?.label ??
-    actions.orderStatus
-  )
+  // 출고 상태가 더 구체적이면 우선 표시
+  const foLabel = FO_DISPLAY_LABELS[actions.fulfillmentStatus]
+  if (foLabel) return foLabel
+
+  // pending 주문은 결제 수단별로 문구 분기
+  // paymentStatus가 없으면 카드결제 등 이미 확인된 결제 → "결제 완료"
+  if (actions.orderStatus === "pending") {
+    return actions.paymentStatus === "awaiting_payment" ? "입금 대기" : "결제 완료"
+  }
+
+  return ORDER_STATUS_MAP[actions.orderStatus]?.label ?? actions.orderStatus
 }
 
 // ── 복합 badge 컴포넌트 ───────────────────────────────────────────────

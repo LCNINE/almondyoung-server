@@ -5,6 +5,8 @@ export interface PaymentIntentListItem {
   payableAmount: number;
   currency: string;
   status: string;
+  displayStatus?: string;
+  refundedAmount?: number;
   userId: string | null;
   paymentMethodType: string | null;
   createdAt: string;
@@ -15,6 +17,8 @@ export interface PaymentIntentDetail {
   payableAmount: number;
   currency: string;
   status: string;
+  displayStatus?: string;
+  refundedAmount?: number;
   userId: string | null;
   paymentMethodId: string | null;
   clientSecret: string;

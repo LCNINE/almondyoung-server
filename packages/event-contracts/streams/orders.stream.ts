@@ -301,6 +301,9 @@ const OrderMergedSchema = z.object({
  */
 export interface SalesOrderCancelledPayload {
   orderId: string;
+  /** Core SalesOrder.channelOrderId (Medusa: 'order_xxx', Naver/Coupang: 채널 주문번호).
+   *  채널어댑터가 wms_order_mappings를 조회할 때 사용한다. */
+  channelOrderId?: string;
   reason:
   | 'CUSTOMER_REQUEST'
   | 'OUT_OF_STOCK'
@@ -329,6 +332,7 @@ export interface SalesOrderCancelledPayload {
 
 const SalesOrderCancelledSchema = z.object({
   orderId: z.string().min(1),
+  channelOrderId: z.string().optional(),
   reason: z.enum(['CUSTOMER_REQUEST', 'OUT_OF_STOCK', 'PAYMENT_FAILED', 'ADMIN_CANCEL', 'TIMEOUT']),
   reasonDetail: z.string().optional(),
   cancelledBy: z.string().min(1),
