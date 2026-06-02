@@ -66,7 +66,7 @@ export const CANCEL_UNAVAILABLE_MESSAGES: Record<string, string> = {
   already_shipped:    "이미 출고된 주문입니다. 반품 신청을 이용해 주세요.",
   already_cancelled:  "이미 취소된 주문입니다.",
   channel_order:      "채널 주문은 해당 채널에서 취소해 주세요.",
-  already_processing: "출고 준비 중으로 취소가 어려울 수 있습니다.",
+  already_processing: "피킹이 시작되어 직접 취소가 불가합니다. 고객센터로 문의해 주세요.",
 }
 
 // ── Core 상태 → 고객 표시 텍스트 변환 ──────────────────────────────────

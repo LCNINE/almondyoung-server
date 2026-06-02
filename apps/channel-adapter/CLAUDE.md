@@ -108,6 +108,7 @@ Core(구 PIM) (Kafka) → PimProductEventConsumer → inbox_events
 | `products.events.v1` | `ProductMasterActiveVersionChanged` | Inbox → Medusa 상품 동기화 |
 | `products.events.v1` | `CategoryChanged` | Inbox → Medusa 카테고리 동기화 |
 | `fulfillments.events.v1` | `FulfillmentShipped`, `FulfillmentCancelled` | 채널에 송장/취소 전파 |
+| `core.orders.events.v1` | `SalesOrderCancelled` (cancellationScope=full 만) | Inbox → Medusa 주문 취소 동기화 |
 | `membership.events.v1` | `MembershipStatusChanged` | Inbox → Medusa 고객 그룹 동기화 |
 | `users.events.v1` | `Cafe24Linked`, `Cafe24Unlinked` | Inbox → Firebase → Medusa 멤버십 동기화 |
 

@@ -2,41 +2,47 @@
 
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { buildAddressLine } from "@/lib/utils/address-line"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { calculateMembershipDiscount } from "@/lib/utils/price-utils"
+import { formatDate, DATE_FORMATS } from "@/lib/utils/format-date"
+import {
+  OrderStatusBadges,
+  getCoreDisplayStatus,
+  CANCEL_UNAVAILABLE_MESSAGES,
+} from "@/components/orders/order-status-badges"
+import type { StoreOrderActionsResponse } from "@/lib/api/orders/store-orders"
+import { cancelOrderByMedusaId } from "@/lib/api/orders/store-orders"
 import { HttpTypes } from "@medusajs/types"
 import { useTranslations } from "next-intl"
-
-const formatDate = (date?: string | Date | null) => {
-  if (!date) return "-"
-  const parsed = date instanceof Date ? date : new Date(date)
-  return parsed.toLocaleDateString()
-}
+import { useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 
 const formatAmount = (value?: number | null) =>
   `${(value ?? 0).toLocaleString()}원`
 
-const getOrderStatusKey = (order: HttpTypes.StoreOrder): string => {
-  if (order.status === "canceled") return "orderCancel"
-  if (order.fulfillment_status === "fulfilled") return "delivered"
-  if (order.fulfillment_status === "shipped") return "shipping"
-  if (order.fulfillment_status === "partially_fulfilled") return "partialShipping"
-  if (order.fulfillment_status === "not_fulfilled") return "preparing"
-  if (order.payment_status === "awaiting") return "paymentPending"
-  return "paid"
-}
-
 export const OrderDetailsDesktop = ({
   order,
-  countryCode,
+  coreActions,
 }: {
   order: HttpTypes.StoreOrder | null
   countryCode: string
+  coreActions?: StoreOrderActionsResponse
 }) => {
   const tLabels = useTranslations("mypage.order.labels")
   const tStatus = useTranslations("mypage.order.status")
   const tActions = useTranslations("mypage.order.actions")
+  const router = useRouter()
+  const [showCancelDialog, setShowCancelDialog] = useState(false)
+  const [isCancelling, startCancelTransition] = useTransition()
 
   if (!order) {
     return (
@@ -59,8 +65,61 @@ export const OrderDetailsDesktop = ({
   const postalCode = address?.postal_code || "-"
   const primaryAddress = address?.address_1 || addressLine || "-"
   const detailAddress = address?.address_2 || "-"
-  const statusLabel = tStatus(getOrderStatusKey(order))
   const membershipDiscount = calculateMembershipDiscount(order.items ?? [])
+
+  const availableActions = coreActions?.availableActions ?? []
+  const canCancel = availableActions.includes("cancel")
+  const canTrack = availableActions.includes("track")
+  const canReturn = availableActions.includes("return")
+  const canExchange = availableActions.includes("exchange")
+  const cancelUnavailableReason = coreActions?.cancelUnavailableReason
+  const cancelTooltip = cancelUnavailableReason
+    ? CANCEL_UNAVAILABLE_MESSAGES[cancelUnavailableReason]
+    : undefined
+
+  const statusLabel = coreActions
+    ? getCoreDisplayStatus(coreActions)
+    : tStatus(
+        order.status === "canceled"
+          ? "orderCancel"
+          : order.fulfillment_status === "fulfilled"
+            ? "delivered"
+            : order.fulfillment_status === "shipped"
+              ? "shipping"
+              : order.fulfillment_status === "partially_fulfilled"
+                ? "partialShipping"
+                : order.fulfillment_status === "not_fulfilled"
+                  ? "preparing"
+                  : order.payment_status === "awaiting"
+                    ? "paymentPending"
+                    : "paid"
+      )
+
+  const handleCancelConfirm = () => {
+    startCancelTransition(async () => {
+      try {
+        const result = await cancelOrderByMedusaId(order.id, {
+          reasonCode: "CHANGE_OF_MIND",
+        })
+        const message =
+          result.refundStatus === "succeeded"
+            ? tActions("cancelSuccess")
+            : result.refundStatus === "pending"
+              ? tActions("cancelSuccessPending")
+              : result.refundStatus === "failed"
+                ? tActions("cancelSuccessFailed")
+                : result.refundStatus === "manual_pending"
+                  ? tActions("cancelSuccessManual")
+                  : tActions("cancelOrder")
+        toast.success(message)
+        setShowCancelDialog(false)
+        router.refresh()
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : undefined
+        toast.error(message ?? tActions("cancelError"))
+      }
+    })
+  }
 
   return (
     <div className="bg-white py-4 font-['Pretendard'] md:px-6">
@@ -68,7 +127,9 @@ export const OrderDetailsDesktop = ({
         <h1 className="text-2xl font-bold text-black">{tLabels("title")}</h1>
         <div className="flex w-full max-w-[813px] flex-col gap-2 bg-white">
           <p className="text-lg text-black">
-            {tLabels("orderDateSuffix", { date: formatDate(order.created_at) })}
+            {tLabels("orderDateSuffix", {
+              date: formatDate(order.created_at, DATE_FORMATS.KO_LONG),
+            })}
           </p>
           <p className="text-lg text-black">
             <span className="font-bold">{tLabels("orderNumber")} </span>
@@ -80,7 +141,10 @@ export const OrderDetailsDesktop = ({
       </section>
 
       <section className="mb-[35px] space-y-3 border border-gray-200 p-7">
-        <h2 className="text-2xl font-bold text-black">{statusLabel}</h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-2xl font-bold text-black">{statusLabel}</h2>
+          <OrderStatusBadges actions={coreActions} medusaStatus={order.status} />
+        </div>
         {order.items?.map((item) => {
           const thumbnail = getThumbnailUrl(
             item.thumbnail ?? item.variant?.product?.thumbnail ?? ""
@@ -107,7 +171,9 @@ export const OrderDetailsDesktop = ({
                   {formatAmount(item.unit_price)} · {item.quantity}
                 </p>
                 {item.variant?.title && item.variant.title !== "Default" && (
-                  <p className="mt-1 text-sm text-gray-500">- {item.variant.title}</p>
+                  <p className="mt-1 text-sm text-gray-500">
+                    - {item.variant.title}
+                  </p>
                 )}
               </div>
               <CustomButton variant="outline" color="secondary" size="sm">
@@ -139,7 +205,9 @@ export const OrderDetailsDesktop = ({
             <dd className="text-base text-black">{primaryAddress}</dd>
           </div>
           <div className="flex gap-12">
-            <dt className="w-20 text-base text-black">{tLabels("addressDetail")}</dt>
+            <dt className="w-20 text-base text-black">
+              {tLabels("addressDetail")}
+            </dt>
             <dd className="text-base text-black">{detailAddress}</dd>
           </div>
         </dl>
@@ -211,7 +279,7 @@ export const OrderDetailsDesktop = ({
         >
           {tActions("backToList")}
         </LocalizedClientLink>
-        {(order.fulfillment_status === 'shipped' || order.fulfillment_status === 'fulfilled' || order.fulfillment_status === 'partially_fulfilled') && (
+        {canTrack && (
           <LocalizedClientLink
             href={`/mypage/order/track?orderId=${order.id}`}
             className="inline-flex items-center justify-center rounded-[5px] px-4 py-3 text-sm text-black outline-1 outline-zinc-400"
@@ -219,7 +287,84 @@ export const OrderDetailsDesktop = ({
             {tActions("trackDelivery")}
           </LocalizedClientLink>
         )}
+        {!canTrack &&
+          (order.fulfillment_status === "shipped" ||
+            order.fulfillment_status === "fulfilled" ||
+            order.fulfillment_status === "partially_fulfilled") && (
+            <LocalizedClientLink
+              href={`/mypage/order/track?orderId=${order.id}`}
+              className="inline-flex items-center justify-center rounded-[5px] px-4 py-3 text-sm text-black outline-1 outline-zinc-400"
+            >
+              {tActions("trackDelivery")}
+            </LocalizedClientLink>
+          )}
+        {canReturn && (
+          <LocalizedClientLink
+            href={`/mypage/exchange?orderId=${order.id}&type=return`}
+            className="inline-flex items-center justify-center rounded-[5px] px-4 py-3 text-sm text-black outline-1 outline-zinc-400"
+          >
+            {tActions("returnRequest")}
+          </LocalizedClientLink>
+        )}
+        {canExchange && (
+          <LocalizedClientLink
+            href={`/mypage/exchange?orderId=${order.id}&type=exchange`}
+            className="inline-flex items-center justify-center rounded-[5px] px-4 py-3 text-sm text-black outline-1 outline-zinc-400"
+          >
+            {tActions("exchangeRequest")}
+          </LocalizedClientLink>
+        )}
+        {canCancel && (
+          <button
+            type="button"
+            onClick={() => setShowCancelDialog(true)}
+            className="inline-flex items-center justify-center rounded-[5px] px-4 py-3 text-sm text-red-600 outline-1 outline-red-300"
+          >
+            {tActions("cancelOrder")}
+          </button>
+        )}
+        {!canCancel && cancelUnavailableReason && cancelUnavailableReason !== "already_cancelled" && (
+          <span
+            className="inline-flex cursor-not-allowed items-center justify-center rounded-[5px] px-4 py-3 text-sm text-gray-400 outline-1 outline-gray-200"
+            title={cancelTooltip}
+          >
+            {tActions("cancelOrder")}
+          </span>
+        )}
       </section>
+
+      <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{tActions("cancelDialogTitle")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            <p className="text-muted-foreground text-xs">
+              {tActions("cancelDialogDescription")}
+            </p>
+          </div>
+          <DialogFooter>
+            <CustomButton
+              variant="outline"
+              color="secondary"
+              size="md"
+              onClick={() => setShowCancelDialog(false)}
+              disabled={isCancelling}
+            >
+              {tActions("cancelGoBack")}
+            </CustomButton>
+            <CustomButton
+              variant="fill"
+              color="primary"
+              size="md"
+              onClick={handleCancelConfirm}
+              isLoading={isCancelling}
+            >
+              {tActions("cancelConfirm")}
+            </CustomButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

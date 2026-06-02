@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { EventsModule } from '@app/events';
-import { FULFILLMENT_STREAM } from '@packages/event-contracts';
+import { FULFILLMENT_STREAM, CORE_ORDER_STREAM } from '@packages/event-contracts';
 
 import { CoreInventoryModule } from '../inventory/core/inventory.module';
 import { SharedModule } from '../inventory/shared/shared.module';
@@ -44,7 +44,7 @@ import { LocationOptimizationController } from './controllers/location-optimizat
     // FULFILLMENT_STREAM Kafka producer (OutboxDispatcherService가 발행)
     // INVENTORY_STREAM publisher는 InventoryModule이 전역으로 등록
     EventsModule.forRoot({
-      streams: [FULFILLMENT_STREAM],
+      streams: [FULFILLMENT_STREAM, CORE_ORDER_STREAM],
       serviceName: 'almondyoung',
       enableDLQ: true,
     }),

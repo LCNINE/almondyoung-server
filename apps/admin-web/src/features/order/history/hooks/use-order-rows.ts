@@ -6,6 +6,7 @@ import { useSkusByIds } from '@/lib/services/inventory';
 import { useCreateOutboundBatch } from '@/lib/services/orders';
 import type { SalesOrdersQuery } from '@/lib/types/dto/orders';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+export { filterRefundIssueRows } from './refund-filter.utils';
 
 /** 테이블에서 1행 = 주문 라인 1개 */
 export type OrderLineRow = {
@@ -50,6 +51,9 @@ export type OrderLineRow = {
 
     // 주문 완전출고 여부 (행 선택 기준)
     isOrderFullyAllocated: boolean;
+
+    // 취소 주문 환불 상태 (cancelled 상태일 때만 의미 있음)
+    refundStatus?: string;
 
     // 전체 주문 라인들 (모달에서 사용)
     lines: Array<{
@@ -182,6 +186,17 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
                 const isReadyToShip = lineStatus === 'stock_deducted';
                 const isUnavailable = lineStatus === 'stock_unavailable';
 
+                // 취소된 주문만 환불 상태 추출 (첫 번째 라인에서만 계산, 나머지는 공유)
+                const refundStatus: string | undefined = idx === 0 && listItem.status === 'cancelled'
+                    ? (() => {
+                        const timeline: any[] = detail?.businessTimeline ?? [];
+                        const refundLink = timeline
+                            .filter((t: any) => t.relationName === 'cancellation_linked_wallet_refund')
+                            .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+                        return (refundLink?.metadata?.refundStatus as string | undefined);
+                    })()
+                    : undefined;
+
                 const row: OrderLineRow = {
                     rowId: `${listItem.id}-${line.id ?? idx}`,
                     rowSeq: 0, // 아래에서 재계산
@@ -220,6 +235,8 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
                     isDirect: !!line.isDirect,
 
                     isOrderFullyAllocated,
+
+                    refundStatus,
 
                     // 전체 주문 라인들 추가
                     lines: lines.map((l: any) => ({

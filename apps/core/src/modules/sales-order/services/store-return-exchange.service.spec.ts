@@ -559,7 +559,11 @@ describe('StoreReturnExchangeService.completeReturnRequest', () => {
     const completedAt = new Date('2026-06-01T15:00:00.000Z');
     const updatedRr = { ...rr, status: 'completed', completedAt, updatedAt: new Date() };
 
-    const mockDb = makeMockDb(() => []);
+    // SO 행이 있어야 salesOrder!.id 접근 가능. return items 없음 → refundAmount=0 → immediateComplete.
+    const mockDb = makeMockDb((table) => {
+      if (table === wmsTables.salesOrders) return [{ id: ORDER_ID, walletIntentId: null, totalAmount: 0, shippingFee: 0 }];
+      return [];
+    });
 
     const tx = (mockDb as any)._tx;
     tx.select = jest.fn(() => ({

@@ -144,7 +144,7 @@ export default function FilterBox() {
             </div>
 
             {/* 구분 */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
                 <span className="text-sm font-medium text-gray-700 w-14 shrink-0">구분</span>
                 <div className="flex items-center gap-4 flex-wrap">
                     {TYPE_OPTIONS.map((opt) => (
@@ -160,6 +160,24 @@ export default function FilterBox() {
                         </label>
                     ))}
                 </div>
+                <label className="flex items-center gap-1 text-sm text-gray-700 cursor-pointer">
+                    <input
+                        type="checkbox"
+                        checked={local.excludeTerminal}
+                        onChange={(e) => setLocal({ ...local, excludeTerminal: e.target.checked })}
+                        className="accent-blue-600"
+                    />
+                    취소/타임아웃 제외
+                </label>
+                <label className="flex items-center gap-1 text-sm text-orange-700 font-medium cursor-pointer">
+                    <input
+                        type="checkbox"
+                        checked={local.refundIssueOnly}
+                        onChange={(e) => setLocal({ ...local, refundIssueOnly: e.target.checked, excludeTerminal: e.target.checked ? false : local.excludeTerminal })}
+                        className="accent-orange-600"
+                    />
+                    환불 실패/수동처리만
+                </label>
             </div>
 
             {/* 검색 버튼 */}

@@ -7,8 +7,9 @@ import { toast } from 'sonner';
 import { useOrderHistoryFilter } from '../../contexts/filter.context';
 import type { SalesOrderBusinessTimelineItemDto, SalesOrdersQuery } from '@/lib/types/dto/orders';
 import { useSalesOrderRows, useCreatePickingLists } from '../../hooks/use-order-rows';
+import { filterRefundIssueRows } from '../../hooks/refund-filter.utils';
 import type { OrderLineRow } from '../../hooks/use-order-rows';
-import { useSalesOrder } from '@/lib/services/orders';
+import { useSalesOrder, useAdminRetryRefund } from '@/lib/services/orders';
 import { MergedDataTable } from '@/components/common/merged-data-table';
 import type { MergedTableColumn } from '@/components/common/merged-data-table';
 import { Table } from '@/components/admin-ui-experimental/common/table/table';
@@ -43,6 +44,52 @@ function StatusBadge({ row }: { row: OrderLineRow }) {
     if (lineStatus === 'stock_unavailable') return <span className="inline-flex rounded-full bg-red-100 text-red-600 text-[11px] font-medium px-2 py-0.5 whitespace-nowrap">출고불가</span>;
     if (!isMatched) return <span className="inline-flex rounded-full bg-gray-100 text-gray-500 text-[11px] font-medium px-2 py-0.5 whitespace-nowrap">매칭 없음</span>;
     return <span className="inline-flex rounded-full bg-orange-100 text-orange-600 text-[11px] font-medium px-2 py-0.5 whitespace-nowrap">매칭 안됨</span>;
+}
+
+/* ── 환불 상태 배지 ────────────────────────────────────────── */
+const REFUND_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+    succeeded:     { label: '환불 완료', className: 'bg-green-100 text-green-700' },
+    pending:       { label: '환불 처리중', className: 'bg-blue-100 text-blue-700' },
+    failed:        { label: '환불 실패', className: 'bg-red-100 text-red-700 ring-1 ring-inset ring-red-300' },
+    manual_pending:{ label: '수동처리 필요', className: 'bg-amber-100 text-amber-700 ring-1 ring-inset ring-amber-300' },
+    none:          { label: '환불 없음', className: 'bg-gray-100 text-gray-500' },
+};
+
+function RefundStatusBadge({ status }: { status: string }) {
+    const cfg = REFUND_STATUS_CONFIG[status] ?? { label: status, className: 'bg-gray-100 text-gray-600' };
+    return (
+        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${cfg.className}`}>
+            {cfg.label}
+        </span>
+    );
+}
+
+function RetryRefundButton({ orderId, onDone }: { orderId: string; onDone: (status: string) => void }) {
+    const retryMutation = useAdminRetryRefund();
+    return (
+        <button
+            className="h-6 px-2 rounded border border-orange-400 text-orange-600 hover:bg-orange-50 text-[11px] whitespace-nowrap disabled:opacity-50"
+            disabled={retryMutation.isPending}
+            onClick={async (e) => {
+                e.stopPropagation();
+                try {
+                    const result = await retryMutation.mutateAsync(orderId);
+                    onDone(result.refundStatus);
+                    if (result.refundStatus === 'succeeded') {
+                        toast.success('환불이 완료되었습니다.');
+                    } else if (result.refundStatus === 'pending') {
+                        toast.info('환불 처리 중입니다. 잠시 후 결제 관리에서 확인하세요.');
+                    } else {
+                        toast.error('환불 재시도 실패. 결제 관리에서 수동 처리하세요.');
+                    }
+                } catch {
+                    toast.error('환불 재시도 중 오류가 발생했습니다.');
+                }
+            }}
+        >
+            {retryMutation.isPending ? '처리중...' : '환불 재시도'}
+        </button>
+    );
 }
 
 /* ── 판매처 배지 ───────────────────────────────────────────── */
@@ -306,8 +353,13 @@ export default function OrderTable() {
                         return true;
                 }
             });
-        } else {
+        } else if (filter.excludeTerminal) {
             items = items.filter((r) => r.orderStatus !== 'cancelled' && r.orderStatus !== 'timeout');
+        }
+
+        // 환불 이슈 필터: order 단위 — 해당 orderId의 모든 행 포함
+        if (filter.refundIssueOnly) {
+            items = filterRefundIssueRows(items);
         }
 
         if (filter.keyword) {
@@ -329,7 +381,7 @@ export default function OrderTable() {
         }
 
         return items;
-    }, [data?.items, filter.type, filter.keyword, filter.keywordType]);
+    }, [data?.items, filter.type, filter.excludeTerminal, filter.refundIssueOnly, filter.keyword, filter.keywordType]);
 
     /* 선택 상태 (groupKey = orderId 기준) */
     const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
@@ -507,7 +559,27 @@ export default function OrderTable() {
                         >
                             업무연결
                         </Button>
-                        {r.orderStatus !== 'cancelled' && (
+                        {r.orderStatus === 'cancelled' ? (
+                            <div className="flex flex-col gap-1">
+                                <span className="inline-flex items-center h-7 px-2 rounded border border-gray-200 bg-gray-50 text-xs text-gray-500 whitespace-nowrap">
+                                    취소됨
+                                </span>
+                                {r.refundStatus && r.isFirstOfOrder && (
+                                    <RefundStatusBadge status={r.refundStatus} />
+                                )}
+                                {r.isFirstOfOrder && r.refundStatus === 'failed' && (
+                                    <RetryRefundButton
+                                        orderId={r.orderId}
+                                        onDone={() => {}}
+                                    />
+                                )}
+                                {r.isFirstOfOrder && r.refundStatus === 'manual_pending' && (
+                                    <span className="inline-flex items-center h-6 px-2 rounded border border-amber-300 text-amber-700 text-[11px] whitespace-nowrap bg-amber-50">
+                                        수동 처리 필요
+                                    </span>
+                                )}
+                            </div>
+                        ) : (
                             <Button
                                 variant="outline"
                                 size="sm"
@@ -518,7 +590,7 @@ export default function OrderTable() {
                                     setShowCancelModal(true);
                                 }}
                             >
-                                취소
+                                {r.orderStatus === 'processing' ? '강제취소' : '취소'}
                             </Button>
                         )}
                     </div>
@@ -602,6 +674,8 @@ export default function OrderTable() {
                         </div>
                         {isFetching && <span className="text-xs text-gray-400">(갱신 중)</span>}
                         {filter.type === 'pending' && <span className="text-xs text-amber-600 font-medium">미확정 주문만 표시 중</span>}
+                        {filter.type === 'all' && filter.excludeTerminal && <span className="text-xs text-gray-500">취소/타임아웃 제외 중</span>}
+                        {filter.refundIssueOnly && <span className="text-xs text-orange-600 font-medium">환불 실패/수동처리 주문만 표시 중</span>}
                     </div>
                     <div className="flex gap-2 flex-wrap">
                         <button

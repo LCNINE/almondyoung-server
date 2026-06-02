@@ -64,6 +64,7 @@ export const useCancelSalesOrder = () => {
     mutationFn: ({ id, body }: { id: string; body?: CancelSalesOrderDto }) =>
       orders.salesOrders.cancelSalesOrder(id, body),
     onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
       queryClient.invalidateQueries({ queryKey: orderQueryKeys.orders });
       queryClient.invalidateQueries({ queryKey: orderQueryKeys.order(id) });
     },
@@ -77,6 +78,21 @@ export const useAdminCancelSalesOrder = () => {
     mutationFn: ({ id, body }: { id: string; body?: CancelSalesOrderDto }) =>
       orders.salesOrders.adminCancelSalesOrder(id, body),
     onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.orders });
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.order(id) });
+    },
+  });
+};
+
+export const useAdminRetryRefund = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (id: string) => orders.salesOrders.adminRetryRefund(id),
+    onSuccess: (_, id) => {
+      // ['sales-orders'] prefix covers useSalesOrderRows(['sales-orders', 'list-view', ...])
+      queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
       queryClient.invalidateQueries({ queryKey: orderQueryKeys.orders });
       queryClient.invalidateQueries({ queryKey: orderQueryKeys.order(id) });
     },

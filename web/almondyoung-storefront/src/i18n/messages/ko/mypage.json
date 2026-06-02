@@ -427,7 +427,18 @@
       "cancelOrReturn": "주문 취소 / 반품 신청",
       "backToList": "주문목록 돌아가기",
       "addToCart": "장바구니 담기",
-      "viewDetail": "주문 상세보기 >"
+      "viewDetail": "주문 상세보기 >",
+      "returnRequest": "반품 신청",
+      "exchangeRequest": "교환 신청",
+      "cancelDialogTitle": "주문 취소",
+      "cancelDialogDescription": "취소 완료 후 결제 수단에 따라 환불이 진행됩니다.",
+      "cancelConfirm": "취소 확인",
+      "cancelGoBack": "돌아가기",
+      "cancelSuccess": "주문이 취소되고 환불이 완료되었습니다.",
+      "cancelSuccessPending": "주문이 취소되었습니다. 환불 처리 중입니다.",
+      "cancelSuccessFailed": "주문은 취소되었지만 환불에 실패했습니다. 고객센터에서 확인해 주세요.",
+      "cancelSuccessManual": "주문은 취소되었습니다. 환불은 고객센터에서 확인 후 처리됩니다.",
+      "cancelError": "취소 처리 중 오류가 발생했습니다."
     },
     "delivery": {
       "paid": "결제완료",
