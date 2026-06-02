@@ -163,6 +163,8 @@ export default function ProductCard({
             size="full"
             overlay={overlay}
           />
+
+          {/* 장바구니 담기 및 위시리스트 버튼  */}
           <ProductQuickActions
             productId={product.id ?? ""}
             productHandle={product.handle ?? ""}
