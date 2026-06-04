@@ -100,7 +100,7 @@ export function AppSidebar({
                 등록된 계정 수
               </span>
               <Badge variant="default" className="bg-sidebar-primary">
-                {adminUserCount ?? '-'}
+                {adminUserCount?.toLocaleString('ko-KR') ?? '-'}
               </Badge>
             </div>
           </div>
@@ -125,7 +125,7 @@ export function AppSidebar({
 
   return (
     <Sidebar collapsible="icon" className="border-r">
-      <SidebarHeader className="p-4 gap-4">
+      <SidebarHeader className="gap-4 p-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-sidebar-primary-foreground group-data-[collapsible=icon]:hidden">
             {currentMenu.title}
