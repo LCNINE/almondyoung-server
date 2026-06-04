@@ -99,6 +99,7 @@ export class StoreSalesOrdersService {
     const refundStatus = await this.requestWalletRefundAfterCancel(
       { ...so, status: 'cancelled' } as SalesOrderRow,
       { reasonCode: dto.reasonCode },
+      { actor: 'admin', attemptType: 'initial' },
     );
 
     return { status: 'cancelled', refundStatus };
@@ -155,9 +156,11 @@ export class StoreSalesOrdersService {
       );
     }
 
-    // failed 또는 링크 없음 → 새 idempotency key로 실제 PG 재호출
-    const retryCorrelationId = `cancel:${so.id}:retry:${crypto.randomUUID()}`;
-    const refundStatus = await this.requestWalletRefundAfterCancel(so, {}, retryCorrelationId);
+    // failed 또는 링크 없음 → 새 per-attempt key로 실제 PG 재호출
+    const refundStatus = await this.requestWalletRefundAfterCancel(so, {}, {
+      attemptType: 'retry',
+      actor: 'admin',
+    });
     return { refundStatus };
   }
 
@@ -346,19 +349,30 @@ export class StoreSalesOrdersService {
       cancelledBy: `customer:${customerId}`,
     });
 
-    const refundStatus = await this.requestWalletRefundAfterCancel(so, dto);
+    const refundStatus = await this.requestWalletRefundAfterCancel(so, dto, { actor: 'customer', attemptType: 'initial' });
     return this.buildActionsView({ ...so, status: 'cancelled' }, refundStatus);
   }
 
   /**
    * Core 취소 성공 후 Wallet 환불을 요청하고 결과를 business timeline에 기록한다.
    * Wallet 호출 실패/unavailable은 취소 자체를 롤백하지 않는다.
+   *
+   * correlationId는 per-attempt UUID를 포함하여 생성된다. 과거 실패 응답이
+   * Wallet idempotency에 의해 재생되어 복구를 막는 문제를 방지한다.
+   * 중복/초과 환불 방어는 Wallet의 refundable amount 검증이 담당한다.
    */
   private async requestWalletRefundAfterCancel(
     so: SalesOrderRow,
     dto: StoreCancelOrderDto,
-    correlationIdOverride?: string,
+    options?: {
+      attemptType?: 'initial' | 'retry';
+      actor?: 'customer' | 'admin' | 'system';
+      correlationId?: string;
+    },
   ): Promise<StoreRefundStatus> {
+    const attemptType = options?.attemptType ?? 'initial';
+    const actor = options?.actor ?? 'system';
+
     if (!so.walletIntentId) {
       // walletIntentId가 없으면 Wallet 자동 환불 불가 — 수동 처리 필요
       this.logger.warn(
@@ -369,11 +383,13 @@ export class StoreSalesOrdersService {
         refundStatus: 'manual_pending',
         note: 'walletIntentId가 없어 수동 처리 필요',
         reasonCode: dto.reasonCode,
+        attemptType,
+        actor,
       });
       return 'manual_pending';
     }
 
-    const correlationId = correlationIdOverride ?? `cancel:${so.id}`;
+    const correlationId = options?.correlationId ?? `cancel:${so.id}:${attemptType}:${crypto.randomUUID()}`;
     const amount = so.totalAmount;
 
     if (!amount || amount <= 0) {
@@ -385,6 +401,9 @@ export class StoreSalesOrdersService {
         note: `totalAmount=${amount} 이 유효하지 않아 수동 처리 필요`,
         intentId: so.walletIntentId,
         reasonCode: dto.reasonCode,
+        attemptType,
+        actor,
+        correlationId,
       });
       return 'manual_pending';
     }
@@ -404,6 +423,9 @@ export class StoreSalesOrdersService {
           refundId,
           amount,
           reasonCode: dto.reasonCode,
+          attemptType,
+          actor,
+          correlationId,
         });
         return 'succeeded';
       }
@@ -416,8 +438,27 @@ export class StoreSalesOrdersService {
           amount,
           note: '무통장 입금 또는 비동기 처리 중 — Wallet에서 확인 필요',
           reasonCode: dto.reasonCode,
+          attemptType,
+          actor,
+          correlationId,
         });
         return 'pending';
+      }
+      case 'already_refunded': {
+        // Wallet이 "환불 가능 금액 초과(= 이미 환불됨)"를 반환 — 실제로는 환불 완료 상태
+        await this.recordWalletRefundLink(so.id, {
+          refundStatus: 'succeeded',
+          intentId: so.walletIntentId,
+          amount,
+          note: `이미 환불 완료 (Wallet: ${outcome.errorCode})`,
+          reasonCode: dto.reasonCode,
+          attemptType,
+          actor,
+          correlationId,
+          errorCode: outcome.errorCode,
+          errorMessage: outcome.errorMessage,
+        });
+        return 'succeeded';
       }
       case 'failed': {
         await this.recordWalletRefundLink(so.id, {
@@ -426,6 +467,11 @@ export class StoreSalesOrdersService {
           amount,
           note: `Wallet 환불 실패: ${outcome.errorCode} — ${outcome.errorMessage}`,
           reasonCode: dto.reasonCode,
+          attemptType,
+          actor,
+          correlationId,
+          errorCode: outcome.errorCode,
+          errorMessage: outcome.errorMessage,
         });
         return 'failed';
       }
@@ -436,6 +482,9 @@ export class StoreSalesOrdersService {
           amount,
           note: `Wallet 연결 불가: ${outcome.errorMessage}`,
           reasonCode: dto.reasonCode,
+          attemptType,
+          actor,
+          correlationId,
         });
         return 'manual_pending';
       }
@@ -455,6 +504,11 @@ export class StoreSalesOrdersService {
       amount?: number;
       note?: string;
       reasonCode?: string;
+      attemptType?: 'initial' | 'retry';
+      actor?: 'customer' | 'admin' | 'system';
+      correlationId?: string;
+      errorCode?: string;
+      errorMessage?: string;
     },
   ): Promise<void> {
     try {
@@ -475,6 +529,11 @@ export class StoreSalesOrdersService {
           amount: info.amount ?? null,
           reasonCode: info.reasonCode ?? null,
           note: info.note ?? null,
+          attemptType: info.attemptType ?? null,
+          actor: info.actor ?? null,
+          correlationId: info.correlationId ?? null,
+          errorCode: info.errorCode ?? null,
+          errorMessage: info.errorMessage ?? null,
         },
       });
     } catch (err) {

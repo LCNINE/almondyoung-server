@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { DbService } from '@app/db';
-import { eq } from 'drizzle-orm';
-import { WalletSchema, billingMethods, cmsMembers } from '../schema';
+import { and, eq } from 'drizzle-orm';
+import { WalletSchema, billingMethods, cmsAgreements, cmsMembers } from '../schema';
 import { BillingMethod, CmsMember } from '../types';
 import { CmsApiClient } from './cms-api.client';
 import { BillingMethodService } from '../billing/billing-method.service';
@@ -127,7 +127,7 @@ export class CmsMemberService {
     billingMethodId: string,
     userId: string,
     dto: { paymentCompany: string; payerName: string; payerNumber: string; paymentNumber: string },
-  ): Promise<void> {
+  ): Promise<CmsMember> {
     const cmsMember = await this.findByBillingMethodId(billingMethodId);
     if (!cmsMember || cmsMember.userId !== userId) {
       throw new Error('CMS billing method not found or access denied');
@@ -145,8 +145,12 @@ export class CmsMemberService {
       throw new Error(`CMS member update failed: ${result.error.code} ${result.error.message}`);
     }
 
-    await Promise.all([
-      this.dbService.db
+    // 계좌 변경 시 기존 동의자료('등록' 상태)를 무효화한다.
+    // 계좌번호/예금주/납부자번호가 바뀌므로 과거 동의자료를 재사용해서는 안 된다.
+    // PENDING → REGISTERED 전이 후 새 동의자료가 없으면 isSelectableForRecurringBilling=false가 유지된다.
+    // 외부 API 성공 후 내부 상태 반영은 원자화 — 부분 성공 방지.
+    await this.dbService.db.transaction(async (tx) => {
+      await tx
         .update(cmsMembers)
         .set({
           paymentCompany: dto.paymentCompany,
@@ -157,12 +161,18 @@ export class CmsMemberService {
           resultMessage: null,
           updatedAt: new Date(),
         })
-        .where(eq(cmsMembers.id, cmsMember.id)),
-      this.dbService.db
+        .where(eq(cmsMembers.id, cmsMember.id));
+      await tx
         .update(billingMethods)
         .set({ displayName: `${dto.payerName} (${dto.paymentCompany})`, updatedAt: new Date() })
-        .where(eq(billingMethods.id, billingMethodId)),
-    ]);
+        .where(eq(billingMethods.id, billingMethodId));
+      await tx
+        .update(cmsAgreements)
+        .set({ status: '변경됨', updatedAt: new Date() })
+        .where(and(eq(cmsAgreements.cmsMemberId, cmsMember.cmsMemberId), eq(cmsAgreements.status, '등록')));
+    });
+
+    return { ...cmsMember, status: 'PENDING' };
   }
 
   async deleteMember(cmsMemberId: string): Promise<void> {

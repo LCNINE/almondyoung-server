@@ -221,35 +221,39 @@ function BusinessLicenseDetailContent({ id }: { id: string }) {
 
       <section className="p-4">
         <div className="flex items-center justify-between">
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={isUpdating}
-                className="text-gray-600"
-              >
-                <Clock className="mr-1.5 h-4 w-4" />
-                심사중으로 되돌리기
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>심사중으로 변경</AlertDialogTitle>
-                <AlertDialogDescription>
-                  상태를 심사중으로 변경합니다.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>취소</AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={() => handleStatusUpdate('under_review')}
+          {data.status === 'approved' || data.status === 'rejected' ? (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={isUpdating}
+                  className="text-gray-600"
                 >
-                  확인
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+                  <Clock className="mr-1.5 h-4 w-4" />
+                  심사중으로 되돌리기
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>심사중으로 변경</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    상태를 심사중으로 변경합니다.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>취소</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => handleStatusUpdate('under_review')}
+                  >
+                    확인
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          ) : (
+            <div></div>
+          )}
 
           <div className="flex gap-2">
             <AlertDialog>

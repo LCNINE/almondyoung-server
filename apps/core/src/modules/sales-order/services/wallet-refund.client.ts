@@ -22,6 +22,7 @@ export type WalletRefundOutcome =
   | { kind: 'success'; refunds: WalletRefundResult[] }
   | { kind: 'partial_pending'; refunds: WalletRefundResult[] }
   | { kind: 'failed'; errorCode: string; errorMessage: string }
+  | { kind: 'already_refunded'; errorCode: string; errorMessage: string }
   | { kind: 'no_intent_id' }
   | { kind: 'wallet_unavailable'; errorMessage: string };
 
@@ -91,8 +92,42 @@ export class WalletRefundClient {
       } catch {
         body = null;
       }
-      const errorCode = (body as any)?.error ?? `HTTP_${response.status}`;
-      const errorMessage = (body as any)?.message ?? response.statusText;
+      // Wallet BadRequestException 구조: { error, message } 또는 { message: { error, ... } }
+      // Nest 버전/미들웨어에 따라 errorCode가 다른 필드에 들어올 수 있어 방어적으로 파싱한다.
+      const b = body as Record<string, unknown> | null;
+      const nestedMessage = typeof b?.message === 'object' ? (b.message as Record<string, unknown>) : null;
+      const rawErrorCode =
+        (b?.error as string | undefined) ??
+        (b?.errorCode as string | undefined) ??
+        (nestedMessage?.error as string | undefined) ??
+        (nestedMessage?.errorCode as string | undefined) ??
+        `HTTP_${response.status}`;
+      const rawErrorMessage =
+        (typeof b?.message === 'string' ? b.message : undefined) ??
+        (nestedMessage?.message as string | undefined) ??
+        response.statusText;
+      const errorCode = rawErrorCode;
+      const errorMessage = rawErrorMessage;
+
+      // Wallet이 "이미 환불 완료" 또는 "환불 가능 금액 초과(= 이미 환불됨)"를 반환하면
+      // 실패가 아니라 "이미 환불 완료"로 정상화한다. failed로 남기면 운영자가 잘못된
+      // 실패를 계속 보게 되어 혼란이 발생한다.
+      const ALREADY_REFUNDED_CODES = new Set([
+        'REFUND_AMOUNT_EXCEEDS_AVAILABLE',
+        'REFUND_AMOUNT_EXCEEDS_TOTAL',
+      ]);
+      // errorCode 외에도 메시지 문자열에서 패턴 매칭 (방어적 처리)
+      const alreadyRefundedByMessage =
+        typeof errorMessage === 'string' &&
+        (errorMessage.includes('REFUND_AMOUNT_EXCEEDS_AVAILABLE') ||
+          errorMessage.includes('REFUND_AMOUNT_EXCEEDS_TOTAL'));
+      if (ALREADY_REFUNDED_CODES.has(errorCode) || alreadyRefundedByMessage) {
+        this.logger.warn(
+          `[WalletRefundClient] Already-refunded detected for intent ${intentId}: ${errorCode} — ${errorMessage}. correlationId=${options.correlationId}`,
+        );
+        return { kind: 'already_refunded', errorCode, errorMessage };
+      }
+
       this.logger.error(
         `[WalletRefundClient] Wallet returned ${response.status} for intent ${intentId}: ${errorCode} ${errorMessage}`,
       );

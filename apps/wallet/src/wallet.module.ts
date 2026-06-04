@@ -97,8 +97,15 @@ import { CmsMemberService } from './cms/cms-member.service';
 import { CmsMemberPollerService } from './cms/cms-member-poller.service';
 import { CmsAgreementService } from './cms/cms-agreement.service';
 import { CmsAgreementController } from './cms/cms-agreement.controller';
+import { CmsRegistrationService } from './cms/cms-registration.service';
 import { CmsBatchProvider } from './cms/cms-batch.provider';
 import { CmsSettlementPollerService } from './cms/cms-settlement-poller.service';
+
+// Dev helpers (dev/test only — ENABLE_DEV_CMS_HELPERS=true + NODE_ENV !== 'production')
+import { CmsDevController } from './dev/cms-dev.controller';
+import { CmsDevStateService } from './dev/cms-dev-state.service';
+
+const devHelpersEnabled = process.env.NODE_ENV !== 'production' && process.env.ENABLE_DEV_CMS_HELPERS === 'true';
 
 // Consumers
 import { UgcCommandConsumer } from './consumers/ugc-command.consumer';
@@ -369,6 +376,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     RecurringBillingAdminController,
     UgcCommandConsumer,
     BillingChargeConsumer,
+    ...(devHelpersEnabled ? [CmsDevController] : []),
   ],
   providers: [
     {
@@ -459,8 +467,12 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     CmsMemberService,
     CmsMemberPollerService,
     CmsAgreementService,
+    CmsRegistrationService,
     CmsBatchProvider,
     CmsSettlementPollerService,
+
+    // Dev helpers (conditional — only when ENABLE_DEV_CMS_HELPERS=true + non-production)
+    ...(devHelpersEnabled ? [CmsDevStateService] : []),
 
     // Webhooks
     TossWebhookService,
