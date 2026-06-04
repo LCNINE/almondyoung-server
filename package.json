@@ -129,6 +129,7 @@
     "start:wallet-web:dev": "cd apps/wallet-web && npm run dev",
     "start:wallet:dev": "nest start wallet --watch",
     "start:wallet:prod": "node dist/apps/wallet/main.js",
+    "wallet:dev:cms-member": "dotenv -e apps/wallet/.env -- npx tsx -r tsconfig-paths/register apps/wallet/scripts/dev-cms-member-state.ts",
     "test": "jest",
     "test:api": "newman run postman/File-Service-MIME-Validation.postman_collection.json -e postman/File-Service-Local.postman_environment.json",
     "test:api:ci": "npm run test:api:setup && npm run test:api -- --bail",

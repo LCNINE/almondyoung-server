@@ -1,9 +1,8 @@
 "use client"
 
-import type { BusinessInfo } from "@lib/types/dto/business"
-import { ArrowLeft } from "lucide-react"
 import { useState } from "react"
-import { UserDetail } from "types/global"
+
+import { BusinessInfo, UserDetail } from "@/lib/types/ui/user"
 import BusinessDisplay from "../components/business-display"
 import BusinessEmpty from "../components/business-empty"
 import BusinessForm from "../components/business-form"
@@ -31,17 +30,6 @@ export default function BusinessInfoTemplate({
 
   return (
     <div className="px-4 py-6 md:min-h-screen md:px-8 md:py-8">
-      <div className="mb-6 flex items-center gap-3">
-        {(viewMode === "edit" || viewMode === "register") && (
-          <button
-            onClick={handleCancel}
-            className="text-muted-foreground hover:bg-muted hover:text-foreground flex h-8 w-8 items-center justify-center rounded-md transition-colors md:hidden"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-        )}
-      </div>
-
       {/* 콘텐츠 */}
       {viewMode === "empty" && (
         <BusinessEmpty onRegister={() => setViewMode("register")} />

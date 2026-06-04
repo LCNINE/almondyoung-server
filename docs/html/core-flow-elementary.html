@@ -1,0 +1,733 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Core 흐름 한눈에 보기</title>
+    <style>
+      :root {
+        --ink: #18212f;
+        --muted: #667085;
+        --line: #cfd8e3;
+        --paper: #ffffff;
+        --soft: #f6f8fb;
+        --orange: #ee6b2f;
+        --orange-soft: #fff1e8;
+        --blue: #2f6fb3;
+        --blue-soft: #e9f3ff;
+        --green: #1c7c62;
+        --green-soft: #e8f8f1;
+        --red: #b42318;
+        --red-soft: #fff0ed;
+        --yellow: #ad7500;
+        --yellow-soft: #fff7d7;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        color: var(--ink);
+        background: #fff;
+        font-family:
+          ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.55;
+      }
+
+      main {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 30px 20px 56px;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 34px;
+        line-height: 1.15;
+      }
+
+      h2 {
+        margin-top: 34px;
+        padding-top: 24px;
+        border-top: 2px solid var(--line);
+        font-size: 24px;
+      }
+
+      h3 {
+        font-size: 17px;
+      }
+
+      code {
+        padding: 1px 6px;
+        border-radius: 5px;
+        background: #eef2f7;
+        color: #2b3645;
+        font-size: 0.92em;
+      }
+
+      .lead {
+        margin-top: 10px;
+        color: var(--muted);
+        font-size: 16px;
+      }
+
+      .hero {
+        margin-top: 22px;
+        display: grid;
+        grid-template-columns: 1.05fr 0.95fr;
+        gap: 16px;
+      }
+
+      .panel {
+        border: 2px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper);
+        padding: 16px;
+      }
+
+      .simple {
+        background: var(--orange-soft);
+        border-color: #ffd6bd;
+      }
+
+      .big {
+        font-size: 21px;
+        font-weight: 800;
+      }
+
+      .muted {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        min-height: 28px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: var(--soft);
+        border: 1px solid var(--line);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .map {
+        margin-top: 18px;
+        display: grid;
+        gap: 12px;
+      }
+
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 48px 1fr 48px 1fr;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .box {
+        min-height: 118px;
+        border: 2px solid var(--line);
+        border-radius: 8px;
+        background: var(--paper);
+        padding: 14px;
+        position: relative;
+      }
+
+      .box h3 {
+        margin-bottom: 7px;
+      }
+
+      .box p {
+        font-size: 14px;
+      }
+
+      .box .tag {
+        display: inline-block;
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .orange {
+        background: var(--orange-soft);
+        border-color: #ffc8a8;
+      }
+
+      .blue {
+        background: var(--blue-soft);
+        border-color: #b7d5f3;
+      }
+
+      .green {
+        background: var(--green-soft);
+        border-color: #b8e5d3;
+      }
+
+      .yellow {
+        background: var(--yellow-soft);
+        border-color: #f0d77a;
+      }
+
+      .red {
+        background: var(--red-soft);
+        border-color: #ffc9c2;
+      }
+
+      .arrow {
+        color: var(--muted);
+        font-size: 28px;
+        font-weight: 900;
+        text-align: center;
+      }
+
+      .lane {
+        margin-top: 18px;
+        border: 2px solid var(--line);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+
+      .lane-title {
+        padding: 12px 14px;
+        background: var(--soft);
+        border-bottom: 2px solid var(--line);
+        font-weight: 800;
+      }
+
+      .timeline {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(120px, 1fr));
+        gap: 0;
+        overflow-x: auto;
+      }
+
+      .time-card {
+        min-height: 158px;
+        padding: 14px;
+        border-right: 1px solid var(--line);
+        background: white;
+      }
+
+      .time-card:last-child {
+        border-right: 0;
+      }
+
+      .num {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 8px;
+        color: white;
+        background: var(--orange);
+        font-weight: 900;
+      }
+
+      .mini {
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .split {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+        margin-top: 14px;
+      }
+
+      .decision {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 12px;
+        margin-top: 14px;
+      }
+
+      .decision .box {
+        min-height: 160px;
+      }
+
+      .conversion {
+        display: grid;
+        grid-template-columns: 1fr 56px 1fr 56px 1fr;
+        gap: 10px;
+        align-items: stretch;
+        margin-top: 14px;
+      }
+
+      .receipt {
+        border: 2px solid var(--line);
+        border-radius: 8px;
+        background: white;
+        padding: 14px;
+      }
+
+      .receipt-title {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        padding-bottom: 8px;
+        margin-bottom: 10px;
+        border-bottom: 1px dashed var(--line);
+        font-weight: 900;
+      }
+
+      .line-item {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 7px 0;
+        border-bottom: 1px solid #edf1f5;
+      }
+
+      .line-item:last-child {
+        border-bottom: 0;
+      }
+
+      .formula {
+        margin-top: 14px;
+        padding: 14px;
+        border: 2px solid #b7d5f3;
+        border-radius: 8px;
+        background: var(--blue-soft);
+      }
+
+      .formula-grid {
+        display: grid;
+        grid-template-columns: 1fr 44px 1.4fr;
+        gap: 10px;
+        align-items: center;
+        margin-top: 10px;
+      }
+
+      table {
+        width: 100%;
+        margin-top: 14px;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+
+      th,
+      td {
+        border: 1px solid var(--line);
+        padding: 10px 12px;
+        vertical-align: top;
+        text-align: left;
+      }
+
+      th {
+        background: var(--soft);
+      }
+
+      .footer-note {
+        margin-top: 22px;
+        padding: 14px;
+        border-radius: 8px;
+        background: var(--soft);
+        border: 1px solid var(--line);
+      }
+
+      @media (max-width: 900px) {
+        main {
+          padding: 22px 14px 42px;
+        }
+
+        .hero,
+        .split,
+        .decision {
+          grid-template-columns: 1fr;
+        }
+
+        .row {
+          grid-template-columns: 1fr;
+        }
+
+        .conversion,
+        .formula-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .arrow {
+          transform: rotate(90deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Core 흐름 한눈에 보기</h1>
+      <p class="lead">
+        Core는 주문쪽지를 받아서, 창고가 실제로 움직일 수 있는 출고표로 바꾸는 큰 사무실이다.
+      </p>
+
+      <section class="hero">
+        <div class="panel simple">
+          <p class="big">한 문장으로 말하면</p>
+          <p style="margin-top: 10px">
+            손님이 상품을 사면 Core는 “이 주문을 어떤 창고 물건으로 보내야 하지?”를 확인하고,
+            가능하면 출고표를 만들고, 모르면 대기줄에 세운다.
+          </p>
+          <div class="chips">
+            <span class="chip">주문쪽지</span>
+            <span class="chip">상품</span>
+            <span class="chip">창고물건</span>
+            <span class="chip">출고표</span>
+            <span class="chip">재고예약</span>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>등장인물</h3>
+          <p style="margin-top: 8px"><strong>판매상품</strong>: 손님이 쇼핑몰에서 고르는 상품.</p>
+          <p><strong>창고물건</strong>: 창고에 실제로 있는 물건. 코드에서는 SKU.</p>
+          <p><strong>연결표</strong>: 판매상품 1개가 창고물건 몇 개로 나가는지 적은 표.</p>
+          <p><strong>출고표</strong>: 창고 직원이 보고 집어야 하는 일감.</p>
+        </div>
+      </section>
+
+      <h2>SO, FO, FOI 먼저 알기</h2>
+      <div class="conversion">
+        <div class="receipt orange">
+          <div class="receipt-title">
+            <span>SO</span>
+            <span>판매주문</span>
+          </div>
+          <p>손님이 산 상품 목록이다.</p>
+          <div class="line-item">
+            <span>젤네일 스타터 세트</span>
+            <strong>x 1</strong>
+          </div>
+          <p class="mini">DB: <code>sales_orders</code>, <code>sales_order_lines</code></p>
+        </div>
+        <div class="arrow">→</div>
+        <div class="receipt yellow">
+          <div class="receipt-title">
+            <span>매칭표</span>
+            <span>바꾸는 규칙</span>
+          </div>
+          <p>판매상품 1개가 창고 SKU 몇 개로 나가는지 적은 표다.</p>
+          <div class="line-item">
+            <span>베이스젤 SKU</span>
+            <strong>x 1</strong>
+          </div>
+          <div class="line-item">
+            <span>탑젤 SKU</span>
+            <strong>x 1</strong>
+          </div>
+          <div class="line-item">
+            <span>우드스틱 SKU</span>
+            <strong>x 2</strong>
+          </div>
+          <div class="line-item">
+            <span>파우치 SKU</span>
+            <strong>x 1</strong>
+          </div>
+          <p class="mini">DB: <code>product_matchings</code>, <code>product_variant_sku_links</code></p>
+        </div>
+        <div class="arrow">→</div>
+        <div class="receipt green">
+          <div class="receipt-title">
+            <span>FO / FOI</span>
+            <span>출고표</span>
+          </div>
+          <p>창고 직원이 실제로 집어야 할 SKU 목록이다.</p>
+          <div class="line-item">
+            <span>베이스젤 SKU</span>
+            <strong>x 1</strong>
+          </div>
+          <div class="line-item">
+            <span>탑젤 SKU</span>
+            <strong>x 1</strong>
+          </div>
+          <div class="line-item">
+            <span>우드스틱 SKU</span>
+            <strong>x 2</strong>
+          </div>
+          <div class="line-item">
+            <span>파우치 SKU</span>
+            <strong>x 1</strong>
+          </div>
+          <p class="mini">DB: <code>fulfillment_orders</code>, <code>fulfillment_order_items</code></p>
+        </div>
+      </div>
+
+      <div class="formula">
+        <h3>주문 수량이 곱해지는 방식</h3>
+        <div class="formula-grid">
+          <div class="receipt">
+            <div class="receipt-title">
+              <span>손님 주문</span>
+              <span>SO</span>
+            </div>
+            <div class="line-item">
+              <span>젤네일 스타터 세트</span>
+              <strong>x 3</strong>
+            </div>
+          </div>
+          <div class="arrow">×</div>
+          <div class="receipt">
+            <div class="receipt-title">
+              <span>출고표 결과</span>
+              <span>FOI</span>
+            </div>
+            <div class="line-item">
+              <span>베이스젤 SKU</span>
+              <strong>x 3</strong>
+            </div>
+            <div class="line-item">
+              <span>탑젤 SKU</span>
+              <strong>x 3</strong>
+            </div>
+            <div class="line-item">
+              <span>우드스틱 SKU</span>
+              <strong>x 6</strong>
+            </div>
+            <div class="line-item">
+              <span>파우치 SKU</span>
+              <strong>x 3</strong>
+            </div>
+          </div>
+        </div>
+        <p class="mini">
+          그래서 <code>fulfillment_order_items</code>는 “손님이 산 판매상품”이 아니라
+          “창고가 꺼낼 SKU 줄”을 저장한다.
+        </p>
+      </div>
+
+      <h2>가장 큰 그림</h2>
+      <div class="map">
+        <div class="row">
+          <div class="box orange">
+            <h3>1. 손님이 주문한다</h3>
+            <p>쇼핑몰, 네이버, 쿠팡 같은 곳에서 주문이 들어온다.</p>
+            <span class="tag">OrderCreated 이벤트</span>
+          </div>
+          <div class="arrow">→</div>
+          <div class="box blue">
+            <h3>2. Core가 주문쪽지를 저장한다</h3>
+            <p>누가, 무엇을, 몇 개 샀는지 판매주문으로 적어 둔다.</p>
+            <span class="tag">sales_orders / sales_order_lines</span>
+          </div>
+          <div class="arrow">→</div>
+          <div class="box yellow">
+            <h3>3. 출고 대기줄에 넣는다</h3>
+            <p>창고 출고표를 만들 일을 줄에 세운다. 실패해도 주문은 사라지지 않는다.</p>
+            <span class="tag">fulfillment_order_creation_backlogs</span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="box yellow">
+            <h3>4. 연결표를 본다</h3>
+            <p>판매상품이 어떤 창고물건으로 나가야 하는지 찾는다.</p>
+            <span class="tag">product_matchings / product_variant_sku_links</span>
+          </div>
+          <div class="arrow">→</div>
+          <div class="box green">
+            <h3>5. 출고표를 만든다</h3>
+            <p>창고 직원이 집을 SKU와 수량으로 바꿔 적는다.</p>
+            <span class="tag">fulfillment_orders / fulfillment_order_items</span>
+          </div>
+          <div class="arrow">→</div>
+          <div class="box green">
+            <h3>6. 재고를 예약하고 보낸다</h3>
+            <p>물건을 잡아두고, 피킹하고, 송장을 뽑고, 배송한다.</p>
+            <span class="tag">reservations / picking / invoice</span>
+          </div>
+        </div>
+      </div>
+
+      <h2>시간 순서로 보기</h2>
+      <div class="lane">
+        <div class="lane-title">주문 1건이 지나가는 길</div>
+        <div class="timeline">
+          <div class="time-card">
+            <span class="num">1</span>
+            <h3>주문 도착</h3>
+            <p>외부 채널이 Core에게 “주문이 생겼어”라고 알려준다.</p>
+            <p class="mini">consumer: <code>OrderEventsConsumer</code></p>
+          </div>
+          <div class="time-card">
+            <span class="num">2</span>
+            <h3>주문 저장</h3>
+            <p>Core가 주문과 주문상품 줄을 DB에 저장한다.</p>
+            <p class="mini">service: <code>SalesOrdersService</code></p>
+          </div>
+          <div class="time-card">
+            <span class="num">3</span>
+            <h3>출고 준비 줄</h3>
+            <p>결제 완료 주문이면 출고표 만들기 줄에 들어간다.</p>
+            <p class="mini">status: <code>pending</code></p>
+          </div>
+          <div class="time-card">
+            <span class="num">4</span>
+            <h3>창고물건 찾기</h3>
+            <p>판매상품을 창고물건 SKU로 바꿀 수 있는지 확인한다.</p>
+            <p class="mini">matching lookup</p>
+          </div>
+          <div class="time-card">
+            <span class="num">5</span>
+            <h3>모르면 멈춤</h3>
+            <p>연결표가 없으면 “나중에 다시 해” 하고 대기한다.</p>
+            <p class="mini">status: <code>awaiting_matching</code></p>
+          </div>
+          <div class="time-card">
+            <span class="num">6</span>
+            <h3>알면 출고표</h3>
+            <p>SKU와 수량으로 창고용 출고표를 만든다.</p>
+            <p class="mini">FO / FOI 생성</p>
+          </div>
+          <div class="time-card">
+            <span class="num">7</span>
+            <h3>예약과 배송</h3>
+            <p>재고를 예약하고 피킹, 검수, 송장, 출고로 간다.</p>
+            <p class="mini">ready 또는 unfulfillable</p>
+          </div>
+        </div>
+      </div>
+
+      <h2>Core가 갈림길에서 하는 판단</h2>
+      <div class="decision">
+        <div class="box green">
+          <h3>연결표가 있다</h3>
+          <p>판매상품을 SKU로 바꿀 수 있다.</p>
+          <p style="margin-top: 8px">
+            예: 상품 1개 = 창고물건 A 1개 + 창고물건 B 2개
+          </p>
+          <p class="tag">결과: 출고표 생성</p>
+        </div>
+        <div class="box yellow">
+          <h3>연결표가 없다</h3>
+          <p>창고가 무엇을 꺼내야 하는지 모른다.</p>
+          <p style="margin-top: 8px">그래서 주문은 지우지 않고, 출고만 기다리게 한다.</p>
+          <p class="tag">결과: 매칭 대기</p>
+        </div>
+        <div class="box blue">
+          <h3>창고물건이 필요 없다</h3>
+          <p>디지털 상품처럼 물리 배송이 필요 없는 상품일 수 있다.</p>
+          <p style="margin-top: 8px">그 줄은 출고표에 넣지 않는다.</p>
+          <p class="tag">결과: 물리 출고 제외</p>
+        </div>
+      </div>
+
+      <h2>가게 말과 코드 말 연결하기</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>쉬운 말</th>
+            <th>코드/DB에서 부르는 말</th>
+            <th>하는 일</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>손님 주문쪽지</td>
+            <td><code>sales_orders</code></td>
+            <td>주문번호, 고객, 배송지, 총금액을 저장한다.</td>
+          </tr>
+          <tr>
+            <td>주문 안의 상품 줄</td>
+            <td><code>sales_order_lines</code></td>
+            <td>어떤 판매상품을 몇 개 샀는지 저장한다.</td>
+          </tr>
+          <tr>
+            <td>판매상품</td>
+            <td><code>variant</code></td>
+            <td>쇼핑몰에서 파는 실제 선택 단위다.</td>
+          </tr>
+          <tr>
+            <td>창고물건</td>
+            <td><code>SKU</code></td>
+            <td>창고에 실제로 보관하고 꺼내는 물건이다.</td>
+          </tr>
+          <tr>
+            <td>판매상품과 창고물건 연결표</td>
+            <td><code>product_matchings</code>, <code>product_variant_sku_links</code></td>
+            <td>판매상품 1개가 어떤 SKU 몇 개로 나가는지 알려준다.</td>
+          </tr>
+          <tr>
+            <td>출고 만들기 대기줄</td>
+            <td><code>fulfillment_order_creation_backlogs</code></td>
+            <td>출고표를 만들 수 있을 때까지 다시 시도하는 줄이다.</td>
+          </tr>
+          <tr>
+            <td>창고 출고표</td>
+            <td><code>fulfillment_orders</code></td>
+            <td>창고가 처리할 출고 작업 묶음이다.</td>
+          </tr>
+          <tr>
+            <td>출고표 안의 물건 줄</td>
+            <td><code>fulfillment_order_items</code></td>
+            <td>SKU별로 몇 개 집어야 하는지 적는다.</td>
+          </tr>
+          <tr>
+            <td>물건 찜하기</td>
+            <td><code>stock_reservations</code></td>
+            <td>다른 주문이 못 가져가게 재고를 잡아둔다.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>두 가지 예시</h2>
+      <div class="split">
+        <div class="panel">
+          <h3>예시 A: 평범한 립스틱 주문</h3>
+          <p style="margin-top: 8px">손님이 립스틱 2개를 산다.</p>
+          <p>Core가 연결표를 본다.</p>
+          <p><code>립스틱 판매상품 1개 = 립스틱 SKU 1개</code></p>
+          <p>그래서 창고 출고표에는 <code>립스틱 SKU 2개</code>라고 적힌다.</p>
+        </div>
+        <div class="panel">
+          <h3>예시 B: 선물세트 주문</h3>
+          <p style="margin-top: 8px">손님이 선물세트 3개를 산다.</p>
+          <p>Core가 연결표를 본다.</p>
+          <p><code>세트 1개 = 립스틱 SKU 1개 + 파우치 SKU 1개</code></p>
+          <p>그래서 창고 출고표에는 <code>립스틱 SKU 3개</code>, <code>파우치 SKU 3개</code>라고 적힌다.</p>
+        </div>
+      </div>
+
+      <h2>막히는 경우</h2>
+      <div class="row" style="margin-top: 14px">
+        <div class="box red">
+          <h3>문제</h3>
+          <p>주문은 들어왔는데 판매상품이 어떤 창고물건인지 모른다.</p>
+        </div>
+        <div class="arrow">→</div>
+        <div class="box yellow">
+          <h3>Core의 행동</h3>
+          <p>주문은 그대로 저장하고, 출고표 만들기만 대기시킨다.</p>
+          <span class="tag">awaiting_matching</span>
+        </div>
+        <div class="arrow">→</div>
+        <div class="box green">
+          <h3>풀리는 순간</h3>
+          <p>관리자가 연결표를 저장하면 Core가 대기줄을 다시 깨워 출고표 생성을 재시도한다.</p>
+        </div>
+      </div>
+
+      <div class="footer-note">
+        <strong>기억할 한 줄</strong>
+        <p>
+          Core는 주문을 바로 창고에 던지지 않는다. 먼저 “판매상품을 창고 SKU로 바꿀 수 있는지” 확인하고,
+          알면 출고표를 만들고, 모르면 주문은 살려 둔 채 출고만 기다리게 한다.
+        </p>
+      </div>
+    </main>
+  </body>
+</html>

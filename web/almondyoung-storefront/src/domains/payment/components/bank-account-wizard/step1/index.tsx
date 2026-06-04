@@ -13,8 +13,11 @@ export default function BankSelectorStep({
 }) {
   return (
     <>
-      <p className="mb-4 text-center text-sm">
+      <p className="mb-3 text-center text-sm">
         본인 명의의 계좌만 등록 가능합니다.
+      </p>
+      <p className="mb-4 rounded-md border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700">
+        자동이체 계좌 등록 후 <strong>1~2영업일</strong> 심사를 거쳐 정기결제 수단으로 사용 가능합니다. 심사 중에는 정기결제 수단으로 선택할 수 없습니다.
       </p>
       <ScrollArea className="h-80">
         <div className="grid grid-cols-3 gap-3">

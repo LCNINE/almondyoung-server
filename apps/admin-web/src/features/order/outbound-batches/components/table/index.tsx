@@ -32,8 +32,10 @@ const PRIORITY_ORDER: Record<string, number> = { urgent: 0, high: 1, normal: 2 }
 
 export function OutboundBatchesTable() {
   const { data: warehouses = [] } = useWarehouses();
-  const [warehouseId, setWarehouseId] = useState<string>('');
-  const { data: batches = [], isLoading } = useOutboundBatches(warehouseId || undefined);
+  const [warehouseId, setWarehouseId] = useState<string>('all');
+  const { data: batches = [], isLoading } = useOutboundBatches(
+    warehouseId === 'all' ? undefined : warehouseId
+  );
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
 
@@ -50,7 +52,7 @@ export function OutboundBatchesTable() {
               <SelectValue placeholder="전체 창고" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">전체 창고</SelectItem>
+              <SelectItem value="all">전체 창고</SelectItem>
               {warehouses.map((w) => (
                 <SelectItem key={w.id} value={w.id}>
                   {w.name}

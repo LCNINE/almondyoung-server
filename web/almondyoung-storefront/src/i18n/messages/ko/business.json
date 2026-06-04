@@ -25,14 +25,16 @@
     "lookupError": "조회 중 오류가 발생했습니다.",
     "registerSuccess": "사업자 정보 등록이 완료되었습니다.",
     "editSuccess": "사업자 정보 수정이 완료되었습니다.",
-    "fileUploadSuccess": "새로운 파일이 업로드 되었습니다. 관리자의 검토 후 승인 완료 됩니다."
+    "fileUploadSuccess": "새로운 파일이 업로드 되었습니다. 관리자의 검토 후 승인 완료 됩니다.",
+    "infoOrFileRequired": "사업자 정보 또는 파일이 필요합니다."
   },
   "fileManager": {
-    "noBusinessTitle": "사업자가 없으신가요? 혹은 사업자 조회가 안되시나요?",
     "toggleLabel": "Toggle",
-    "fileAlternative": "파일로 대신 제출하셔도 돼요",
-    "fileTypeHint": "PDF, JPG, PNG 파일만 업로드 가능합니다. (최대 10MB)",
-    "fileSelectButton": "파일 선택"
+    "noBusinessInfo": "사업자 정보가 없어요",
+    "attachFile": "파일 첨부",
+    "fileAlt": "사업자등록증",
+    "fileDialogTitle": "사업자등록증 전체 보기",
+    "fileDialogDescription": "사업자등록증 이미지를 크게 볼 수 있습니다"
   },
   "display": {
     "statusLabel": "검증 상태:",
