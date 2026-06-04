@@ -20,16 +20,17 @@ import {
   fetchExternalBusinessInfo,
   updateBusiness,
 } from "@lib/api/users/business"
-import type { BusinessInfoDto } from "@lib/types/dto/users"
 import type { FilesDto } from "@lib/types/dto/files"
+import type { BusinessInfoDto } from "@lib/types/dto/users"
 import { formatBusinessNumber } from "@lib/utils/format-business-number"
 import type { ViewMode } from "domains/business/template/business-info-template"
+import { useTranslations } from "next-intl"
 import { useRouter } from "next/navigation"
-import { useTransition } from "react"
+import { useMemo, useTransition } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
-import BusinessFileManager from "./business-file-manager"
-import { BusinessDtoSchema, businessDtoSchema } from "./schema"
+import BusinessFileUploader from "./business-file-uploader"
+import { buildBusinessDtoSchema, BusinessDtoSchema } from "./schema"
 
 interface BusinessInfoFormProps {
   initialData?: BusinessInfoDto | null
@@ -46,6 +47,13 @@ export default function BusinessForm({
   setViewMode,
   isEditing = false,
 }: BusinessInfoFormProps) {
+  const t = useTranslations("business.form")
+
+  const businessDtoSchema = useMemo(
+    () => buildBusinessDtoSchema({ infoOrFileRequired: t("infoOrFileRequired") }),
+    [t]
+  )
+
   const form = useForm<BusinessDtoSchema>({
     resolver: zodResolver(businessDtoSchema),
     mode: "onChange",
@@ -69,7 +77,7 @@ export default function BusinessForm({
     const { businessNumber, representativeName, fileUrl, file, metadata } = data
 
     if (!form.watch("isSubmitting")) {
-      toast.info("사업자를 조회하시거나 새로운 파일을 첨부해주세요!")
+      toast.info(t("fileRequiredError"))
       return
     }
 
@@ -80,7 +88,7 @@ export default function BusinessForm({
         const formData = new FormData()
 
         formData.append("file", file)
-        formData.append("context", "business-verification-file")
+        formData.append("contextId", "business-verification-file")
 
         try {
           fileRes = await uploadFile(formData)
@@ -89,7 +97,7 @@ export default function BusinessForm({
           if (error instanceof HttpApiError) {
             toast.error(error.message)
           } else {
-            toast.error("파일 업로드 중 오류가 발생했습니다.")
+            toast.error(t("uploadError"))
           }
 
           return
@@ -112,11 +120,11 @@ export default function BusinessForm({
         } else if (viewMode === "edit") {
           // 기존 정보 수정
           if (!initialData?.id) {
-            toast.error("사업자 정보를 찾을 수 없습니다.")
+            toast.error(t("notFoundError"))
             return
           }
           // fileRes.data.url이 있으면 기존 사업자번호랑 대표자는 ''로 설정
-          const res = await updateBusiness({
+          await updateBusiness({
             business: {
               businessNumber: fileRes?.url ? "" : businessNumber,
               representativeName: fileRes?.url ? "" : representativeName,
@@ -141,11 +149,11 @@ export default function BusinessForm({
         const toastMessage = (mode: ViewMode | "fileUpload") => {
           switch (mode) {
             case "register":
-              return "사업자 정보 등록이 완료되었습니다."
+              return t("registerSuccess")
             case "edit":
-              return "사업자 정보 수정이 완료되었습니다."
+              return t("editSuccess")
             case "fileUpload":
-              return "새로운 파일이 업로드 되었습니다. 관리자의 검토 후 승인 완료 됩니다."
+              return t("fileUploadSuccess")
           }
         }
 
@@ -155,7 +163,7 @@ export default function BusinessForm({
         if (error instanceof HttpApiError) {
           toast.error(error.message)
         } else {
-          toast.error("오류가 발생했습니다.")
+          toast.error(t("genericError"))
         }
       }
     })
@@ -168,13 +176,13 @@ export default function BusinessForm({
 
     if (!businessNumber) {
       form.setError("businessNumber", {
-        message: "사업자등록번호를 입력해주세요.",
+        message: t("businessNumberRequiredError"),
       })
     }
 
     if (!representativeName) {
       form.setError("representativeName", {
-        message: "대표자명을 입력해주세요.",
+        message: t("representativeNameRequiredError"),
       })
     }
 
@@ -198,9 +206,7 @@ export default function BusinessForm({
         )
 
         if (res.success) {
-          toast.success(
-            '사업자 정보 조회가 완료되었습니다. 아래 "등록하기" 버튼을 눌러 사업자 정보를 등록해주세요.'
-          )
+          toast.success(t("lookupSuccess"))
 
           form.setValue("externalBusinessStatus", "success")
           form.setValue("isSubmitting", true)
@@ -211,13 +217,13 @@ export default function BusinessForm({
           switch (error.data.message) {
             case "사업자번호는 10자리이어야 합니다.":
               form.setError("businessNumber", {
-                message: "사업자등록번호는 10자리이어야 합니다.",
+                message: t("businessNumberLengthError"),
               })
               form.setFocus("businessNumber")
               break
             case "대표자 이름이 일치하지 않습니다.":
               form.setError("representativeName", {
-                message: "대표자 이름이 일치하지 않습니다.",
+                message: t("representativeNameMismatchError"),
               })
               form.setFocus("representativeName")
               break
@@ -225,7 +231,7 @@ export default function BusinessForm({
               toast.error(error.data.message)
           }
         } else {
-          toast.error("조회 중 오류가 발생했습니다.")
+          toast.error(t("lookupError"))
         }
       }
     })
@@ -242,11 +248,13 @@ export default function BusinessForm({
             render={({ field }) => (
               <FormItem>
                 <FormLabel>
-                  사업자등록번호 <span className="text-destructive">*</span>
+                  {t("businessNumberLabel")}{" "}
+                  <span className="text-destructive">*</span>
                 </FormLabel>
                 <FormControl>
                   <Input
-                    placeholder="000-00-00000"
+                    className="bg-background"
+                    placeholder={t("businessNumberPlaceholder")}
                     {...field}
                     onChange={(e) => {
                       const formatted = formatBusinessNumber(e.target.value)
@@ -276,11 +284,13 @@ export default function BusinessForm({
             render={({ field }) => (
               <FormItem>
                 <FormLabel>
-                  대표자명 <span className="text-destructive">*</span>
+                  {t("representativeNameLabel")}{" "}
+                  <span className="text-destructive">*</span>
                 </FormLabel>
                 <FormControl>
                   <Input
-                    placeholder="대표자명을 입력하세요"
+                    className="bg-background"
+                    placeholder={t("representativeNamePlaceholder")}
                     {...field}
                     onChange={(e) => {
                       field.onChange(e.target.value.trim().replace(/\s/g, ""))
@@ -304,38 +314,36 @@ export default function BusinessForm({
         <div className="flex items-center gap-2">
           {form.watch("externalBusinessStatus") === "success" ? (
             <Badge variant="default" className="px-2 py-1 text-xs">
-              <span className="font-normal">조회 완료</span>
+              <span className="font-normal">{t("lookupStatusSuccess")}</span>
             </Badge>
           ) : form.watch("externalBusinessStatus") === "failed" ? (
             <Badge
               variant="destructive"
               className="px-2 py-1 text-xs text-white"
             >
-              <span className="font-normal">조회 실패</span>
+              <span className="font-normal">{t("lookupStatusFailed")}</span>
             </Badge>
           ) : (
             <Badge
               variant="secondary"
-              className="bg-gray-20 hover:bg-gray-30 px-2 py-1 text-xs"
+              className="bg-gray-100 px-2 py-1 text-xs hover:bg-gray-200"
             >
-              <span className="font-normal">미조회</span>
+              <span className="font-normal">{t("lookupStatusNone")}</span>
             </Badge>
           )}
 
           <Button
             type="button"
-            className="ml-auto min-w-[120px] flex-none"
+            className="ml-auto w-28"
             onClick={handleExternalBusinessInfo}
             disabled={isSearchPending}
           >
-            {isSearchPending ? "조회 중..." : "조회하기"}
+            {isSearchPending ? t("lookupPending") : t("lookupButton")}
           </Button>
         </div>
 
         {/* 사업자등록증 첨부 파일 */}
-        <BusinessFileManager
-          isFilled={!!form.getValues("fileUrl") || !!form.getValues("file")}
-        />
+        <BusinessFileUploader />
 
         <div className="animate-in fade-in-50 slide-in-from-bottom-2 flex justify-end gap-3 pt-4 duration-300">
           {onCancel && (
@@ -345,7 +353,7 @@ export default function BusinessForm({
               onClick={onCancel}
               className="flex-1 md:min-w-[120px] md:flex-none"
             >
-              취소
+              {t("cancelButton")}
             </Button>
           )}
 
@@ -356,12 +364,12 @@ export default function BusinessForm({
           >
             {isSubmitPending ? (
               <>
-                <Spinner size="sm" color="white" /> 등록중 ..
+                <Spinner size="sm" color="white" /> {t("registerPending")}
               </>
             ) : isEditing ? (
-              "수정하기"
+              t("editButton")
             ) : (
-              "등록하기"
+              t("registerButton")
             )}
           </Button>
         </div>
