@@ -69,6 +69,38 @@ git checkout deployments/lcnine/services/infra/services.ts
 cd deployments/lcnine/services && npx sst deploy --stage dev
 ```
 
+## 잘못된 snapshot 백필 hard purge
+
+공개 전/주문 전 환경에서 오래된 `core-snapshots.json.gz` 로 백필을 실행했다면, Medusa soft delete API 대신
+컨테이너 내부 hard purge 스크립트로 PIM 백필 catalog row 를 제거한 뒤 최신 snapshot 으로 다시 백필한다.
+
+```bash
+CLUSTER_ARN=$(aws ecs list-clusters --query \
+  "clusterArns[?contains(@, 'lcnine-services-live-ClusterCluster')]|[0]" --output text)
+TASK_ARN=$(aws ecs list-tasks \
+  --cluster "$CLUSTER_ARN" --service-name Medusa \
+  --query 'taskArns[0]' --output text)
+
+# 1. 대상 집계만 확인 (기본 dry-run)
+aws ecs execute-command --cluster "$CLUSTER_ARN" \
+  --task "$TASK_ARN" --container Medusa --interactive \
+  --command "sh -c 'yarn purge:pim-backfill'"
+
+# 2. 실제 hard delete
+aws ecs execute-command --cluster "$CLUSTER_ARN" \
+  --task "$TASK_ARN" --container Medusa --interactive \
+  --command "sh -c 'PURGE_DRY_RUN=false PURGE_CONFIRM=purge-pim-backfill yarn purge:pim-backfill'"
+```
+
+기본 삭제 범위:
+- `metadata.pimMasterId` 가 있는 product 및 product 하위 row
+- 해당 variant 의 price set / projection inventory item / sales-channel link / shipping-profile link / sort-index
+- `metadata.pimCategoryId` 가 있는 product category
+- product 에 연결되지 않은 orphan product tag
+
+`workflow_execution` history 는 기본 삭제하지 않는다. 정말 workflow 실행 history 까지 지워야 하는 경우에만
+`PURGE_WORKFLOW_HISTORY=true` 를 추가한다.
+
 ## backfill-from-core.ts (컨테이너 내부)
 
 `apps/medusa/src/scripts/backfill-from-core.ts` 는 `medusa exec` 로 실행되는 in-process 스크립트.
