@@ -193,6 +193,12 @@ export class CmsBillingMethodStatusDto {
   @ApiProperty({ nullable: true })
   resultMessage: string | null;
 
+  @ApiProperty({ nullable: true })
+  paymentCompany: string | null;
+
+  @ApiProperty({ nullable: true })
+  payerName: string | null;
+
   @ApiProperty()
   createdAt: Date;
 
