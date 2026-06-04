@@ -43,10 +43,10 @@ const STATUS_VARIANTS: Record<DirectShipOrderStatus, 'default' | 'secondary' | '
 };
 
 export function DirectShipOrdersTable() {
-  const [statusFilter, setStatusFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [companyFilter, setCompanyFilter] = useState('');
   const { data: orders = [], isLoading } = useDirectShipOrders({
-    status: statusFilter || undefined,
+    status: statusFilter === 'all' ? undefined : statusFilter,
     companyName: companyFilter || undefined,
   });
 
@@ -84,7 +84,7 @@ export function DirectShipOrdersTable() {
             <SelectValue placeholder="상태 전체" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">전체</SelectItem>
+            <SelectItem value="all">전체</SelectItem>
             <SelectItem value="pending">대기</SelectItem>
             <SelectItem value="forwarded">발송 중</SelectItem>
             <SelectItem value="completed">완료</SelectItem>
