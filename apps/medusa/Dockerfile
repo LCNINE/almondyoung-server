@@ -12,13 +12,15 @@ WORKDIR /app
 RUN apk add --no-cache postgresql-client git openssh-client
 COPY package.json package-lock.json ./
 COPY packages/hms-api-wrapper/ ./packages/hms-api-wrapper/
-RUN npm ci --no-audit --no-fund
+RUN npm ci --no-audit --no-fund && npm cache clean --force
 
 # 2) 메두사 의존성 설치 (yarn v1)
 WORKDIR /app/apps/medusa
-RUN corepack enable && corepack prepare yarn@1.22.22 --activate
+RUN corepack disable && npm install -g yarn@1.22.22 --no-audit --no-fund
 COPY apps/medusa/package.json apps/medusa/yarn.lock ./
-RUN yarn install --frozen-lockfile --non-interactive
+RUN yarn config set registry https://registry.npmjs.org && \
+    yarn install --frozen-lockfile --non-interactive && \
+    yarn cache clean
 
 # 3) 소스 복사: 메두사, 공용 libs, packages, 채널 어댑터 타입(경로 참조용)
 COPY apps/medusa/ ./
@@ -64,7 +66,8 @@ RUN echo "===== After copying config and src =====" && \
 
 # 6) 빌드 산출물 디렉토리로 이동 및 프로덕션 의존성 설치
 WORKDIR /app/apps/medusa/.medusa/server
-RUN yarn install --frozen-lockfile --non-interactive --production
+RUN yarn install --frozen-lockfile --non-interactive --production && \
+    yarn cache clean
 
 # 6-1) 필수 모듈(@medusajs/api-key) 존재 확인 (없으면 빌드 실패)
 RUN node -e "const deps=require('./package.json').dependencies||{}; if(!deps['@medusajs/api-key']){console.error('Missing @medusajs/api-key in .medusa/server/package.json'); process.exit(1);} else {console.log('Confirmed @medusajs/api-key in build output');}" \
@@ -72,7 +75,6 @@ RUN node -e "const deps=require('./package.json').dependencies||{}; if(!deps['@m
 
 # 7) 프로덕션 환경 설정 및 캐시 정리
 ENV NODE_ENV=production
-RUN yarn cache clean
 
 EXPOSE 9000
 
