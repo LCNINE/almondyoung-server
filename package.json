@@ -70,6 +70,7 @@
     "migrate:event": "./scripts/with-ipv4.sh ts-node -r tsconfig-paths/register libs/events/scripts/migrate-event-schema.ts",
     "migrate:prefill-categories": "./scripts/with-ipv4.sh dotenv -e apps/channel-adapter/.env.migration -- ts-node -r tsconfig-paths/register apps/channel-adapter/scripts/prefill-medusa-categories.ts",
     "migrate:retry-failed": "./scripts/with-ipv4.sh dotenv -e apps/channel-adapter/.env.migration -- ts-node -r tsconfig-paths/register apps/channel-adapter/scripts/retry-failed.ts",
+    "migrate:purge-backfill-state": "./scripts/with-ipv4.sh dotenv -e apps/channel-adapter/.env.migration -- ts-node -r tsconfig-paths/register apps/channel-adapter/scripts/purge-pim-medusa-backfill-state.ts",
     "migrate:verify": "./scripts/with-ipv4.sh dotenv -e apps/channel-adapter/.env.migration -- ts-node -r tsconfig-paths/register apps/channel-adapter/scripts/verify-migration.ts",
     "migrate:sync-mappings": "./scripts/with-ipv4.sh dotenv -e apps/channel-adapter/.env.migration -- ts-node -r tsconfig-paths/register apps/channel-adapter/scripts/sync-mappings-from-medusa.ts",
     "medusa:backfill:extract": "./scripts/with-ipv4.sh dotenv -e apps/channel-adapter/.env.migration -- ts-node -r tsconfig-paths/register apps/medusa/scripts/extract-core-snapshots.ts",
