@@ -210,7 +210,7 @@ export default function ManualSingleOrderPage() {
 
       {/* 쇼핑몰/주문 기본 */}
       <Section title="쇼핑몰 정보">
-        <div className="grid md:grid-cols-2 gap-4">
+        <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
             <Label>판매채널 선택</Label>
             <RadioGroup
@@ -255,7 +255,7 @@ export default function ManualSingleOrderPage() {
                 value={channelId || ''}
                 onValueChange={(v) => setChannelId(v)}
               >
-                <SelectTrigger>
+                <SelectTrigger className="px-2 border ">
                   <SelectValue placeholder="자사몰 / 스마트스토어 / 쿠팡 ..." />
                 </SelectTrigger>
                 <SelectContent>
@@ -283,7 +283,7 @@ export default function ManualSingleOrderPage() {
           <div className="space-y-2">
             <Label>출고 창고</Label>
             <Select value={warehouseId || ''} onValueChange={setWarehouseId}>
-              <SelectTrigger>
+              <SelectTrigger className="px-2 border ">
                 <SelectValue placeholder="창고 선택" />
               </SelectTrigger>
               <SelectContent>
@@ -300,7 +300,7 @@ export default function ManualSingleOrderPage() {
 
       {/* 고객 / 주문자 */}
       <Section title="고객/주문자">
-        <div className="grid md:grid-cols-3 gap-4">
+        <div className="grid gap-4 md:grid-cols-3">
           <Field label="고객 선택">
             <div className="flex gap-2">
               <Button
@@ -311,7 +311,7 @@ export default function ManualSingleOrderPage() {
                 유저검색
               </Button>
               {customerId && (
-                <span className="text-xs text-muted-foreground self-center">
+                <span className="self-center text-xs text-muted-foreground">
                   선택된 고객 ID: {customerId}
                 </span>
               )}
@@ -340,7 +340,7 @@ export default function ManualSingleOrderPage() {
 
       {/* 수취인 */}
       <Section title="수취인 정보" subtitle="배송과 관련된 정보">
-        <div className="grid md:grid-cols-3 gap-4">
+        <div className="grid gap-4 md:grid-cols-3">
           <Field label="수취인 성명">
             <Input
               value={recipient.name}
@@ -430,14 +430,14 @@ export default function ManualSingleOrderPage() {
 
       {/* 주문상품 */}
       <Section title="주문상품 정보입력">
-        <div className="flex justify-between items-center">
+        <div className="flex items-center justify-between">
           <ProductSearch addLine={addLine} />
           <div className="text-sm text-muted-foreground">
             총 {totalQty}개 / 합계 {totalAmt.toLocaleString()} 원
           </div>
         </div>
 
-        <div className="rounded-md border mt-4 overflow-hidden">
+        <div className="mt-4 overflow-hidden border rounded-md">
           <Table>
             <TableHeader>
               <TableRow>
@@ -453,7 +453,7 @@ export default function ManualSingleOrderPage() {
                 <TableRow>
                   <TableCell
                     colSpan={5}
-                    className="text-center text-muted-foreground py-8"
+                    className="py-8 text-center text-muted-foreground"
                   >
                     상품을 추가하세요.
                   </TableCell>
@@ -518,7 +518,7 @@ export default function ManualSingleOrderPage() {
 
       <div className="flex justify-center">
         <Button
-          className="bg-orange-500 hover:bg-orange-600 text-white px-10"
+          className="px-10 text-white bg-orange-500 hover:bg-orange-600"
           onClick={handleSubmit}
           disabled={createOrder.isPending}
         >
@@ -552,7 +552,7 @@ function Section({
   children,
 }: React.PropsWithChildren<{ title: string; subtitle?: string }>) {
   return (
-    <div className="bg-white rounded-lg border p-4 md:p-6 space-y-4">
+    <div className="p-4 space-y-4 bg-white border rounded-lg md:p-6">
       <div>
         <h2 className="text-lg font-semibold">{title}</h2>
         {subtitle && (
@@ -571,7 +571,7 @@ function Field({
 }: React.PropsWithChildren<{ label: string; className?: string }>) {
   return (
     <div className={className}>
-      <Label className="mb-1 block">{label}</Label>
+      <Label className="block mb-1">{label}</Label>
       {children}
     </div>
   );
@@ -648,20 +648,20 @@ function ProductSearch({
 
           {/* 판매상품 탭 */}
           <TabsContent value="product" className="space-y-3">
-            <div className="rounded-md border overflow-hidden">
+            <div className="overflow-hidden border rounded-md">
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>상품명</TableHead>
-                    <TableHead className="w-36 text-right">옵션선택</TableHead>
+                    <TableHead className="text-right w-36">옵션선택</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {(Array.isArray(masters)
                     ? masters
                     : Array.isArray((masters as any)?.data)
-                    ? (masters as any).data
-                    : []
+                      ? (masters as any).data
+                      : []
                   ).map((m: any) => (
                     <MasterRow
                       key={m.id}
@@ -679,7 +679,7 @@ function ProductSearch({
                           price:
                             typeof v.price === 'number'
                               ? v.price
-                              : m.basePrice ?? 0,
+                              : (m.basePrice ?? 0),
                         });
                         setOpen(false);
                       }}
@@ -692,7 +692,7 @@ function ProductSearch({
 
           {/* 재고상품 탭 */}
           <TabsContent value="sku" className="space-y-3">
-            <div className="rounded-md border overflow-hidden">
+            <div className="overflow-hidden border rounded-md">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -738,7 +738,7 @@ function MasterRow({
   onChoose: (variant: any) => void;
 }) {
   const { data: variants, isLoading } = useVariantsByMaster(master.id);
-  const toArray = (v: any): any[] => (Array.isArray(v) ? v : v?.data ?? []);
+  const toArray = (v: any): any[] => (Array.isArray(v) ? v : (v?.data ?? []));
   const variantList = toArray(variants);
 
   return (
@@ -748,7 +748,7 @@ function MasterRow({
         <div className="text-xs text-muted-foreground">
           {isLoading ? '옵션 불러오는 중...' : `${variantList.length}개 옵션`}
         </div>
-        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+        <div className="grid grid-cols-1 gap-2 mt-3 md:grid-cols-2 lg:grid-cols-3">
           {variantList.map((v: any) => (
             <Button
               key={v.id}
@@ -762,7 +762,7 @@ function MasterRow({
               <span className="text-xs text-muted-foreground">
                 {(Number.isFinite(v.price)
                   ? Number(v.price)
-                  : master.basePrice ?? 0
+                  : (master.basePrice ?? 0)
                 ).toLocaleString()}
                 원
               </span>
@@ -782,8 +782,8 @@ function buildOptionText(v: any) {
         (o: any) => `${o.optionName ?? o.name}:${o.optionValue ?? o.value}`
       )
     : Array.isArray(v?.attributes)
-    ? v.attributes.map((o: any) => `${o.name}:${o.value}`)
-    : [];
+      ? v.attributes.map((o: any) => `${o.name}:${o.value}`)
+      : [];
 
   const text = pairs.filter(Boolean).join(' / ');
   return text || v.name || v.title || v.optionText || v.id;

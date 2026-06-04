@@ -11,12 +11,14 @@ import type {
   BnplHistoryDto,
   BnplProfileDto,
   BnplSummaryDto,
+  CmsBillingMethodStatusDto,
   CreateIntentRequestDto,
   CreateIntentResponseDto,
   IntentDto,
   OnboardHmsBnplResponse,
   PointsBalanceDto,
   PointsEventRowDto,
+  RegisterCmsWithAgreementResponseDto,
   TaxInvoiceData,
   TaxInvoiceDto,
 } from "@lib/types/dto/wallet"
@@ -165,6 +167,21 @@ export async function getBnplProfiles(): Promise<BnplProfileDto[]> {
 }
 
 /**
+ * CMS 결제수단 심사 상태 목록 조회 — PENDING/FAILED 포함, 고객 결제수단 관리 화면용
+ */
+export async function getCmsBillingMethodStatuses(): Promise<CmsBillingMethodStatusDto[]> {
+  try {
+    return await api<CmsBillingMethodStatusDto[]>("wallet", "/v1/billing-methods/cms", {
+      method: "GET",
+      cache: "no-store",
+      withAuth: true,
+    })
+  } catch {
+    return []
+  }
+}
+
+/**
  * 빌링 어그리먼트(구독-카드 연결) 목록 조회
  */
 export async function getBillingAgreements(): Promise<BillingAgreementDto[]> {
@@ -274,6 +291,7 @@ export async function onboardHmsBnpl(
     const payerName = getFormString(formData, "payerName")
     const payerNumber = getFormString(formData, "payerNumber")
     const paymentNumber = getFormString(formData, "paymentNumber")
+    const file = formData.get("file") as File | null
 
     if (!paymentCompany || !payerName || !payerNumber || !paymentNumber) {
       return {
@@ -282,27 +300,39 @@ export async function onboardHmsBnpl(
       }
     }
 
-    const billingMethod = await api<BillingMethodDto>(
+    if (!file) {
+      return {
+        success: false,
+        message: "전자서명 파일이 필요합니다.",
+      }
+    }
+
+    // multipart/form-data로 회원등록 + 동의자료 업로드를 Wallet이 원자적으로 처리
+    const body = new FormData()
+    body.append("paymentCompany", paymentCompany)
+    body.append("payerName", payerName)
+    body.append("payerNumber", payerNumber)
+    body.append("paymentNumber", paymentNumber)
+    body.append("file", file)
+
+    const result = await api<RegisterCmsWithAgreementResponseDto>(
       "wallet",
-      "/v1/billing-methods/cms/register",
+      "/v1/billing-methods/cms/register-with-agreement",
       {
         method: "POST",
-        body: {
-          paymentCompany,
-          payerName,
-          payerNumber,
-          paymentNumber,
-        },
+        body,
         withAuth: true,
+        timeout: 30000,
       }
     )
 
-    await setDefaultPaymentProfile(billingMethod.id)
+    await setDefaultPaymentProfile(result.id)
 
     return {
       success: true,
-      profileId: billingMethod.id,
-      memberId: billingMethod.id,
+      profileId: result.id,
+      memberId: result.id,
+      agreementUploadFailed: result.agreementUploadFailed,
     }
   } catch (error) {
     return {

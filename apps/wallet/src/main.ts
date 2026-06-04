@@ -5,6 +5,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import fastifyCookie from '@fastify/cookie';
 import fastifyCors from '@fastify/cors';
+import fastifyMultipart from '@fastify/multipart';
 import { WalletModule } from './wallet.module';
 import { EventsModule } from '@app/events';
 import { UGC_COMMAND_STREAM } from '@packages/event-contracts/streams';
@@ -86,6 +87,9 @@ async function bootstrap() {
     credentials: true,
   });
   await app.register(fastifyCookie);
+  await app.register(fastifyMultipart, {
+    limits: { fileSize: 5 * 1024 * 1024 },
+  });
 
   app.useGlobalPipes(
     new ValidationPipe({

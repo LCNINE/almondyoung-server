@@ -25,14 +25,16 @@
     "lookupError": "照会中にエラーが発生しました。",
     "registerSuccess": "事業者情報が登録されました。",
     "editSuccess": "事業者情報が更新されました。",
-    "fileUploadSuccess": "新しいファイルがアップロードされました。管理者の審査後に承認されます。"
+    "fileUploadSuccess": "新しいファイルがアップロードされました。管理者の審査後に承認されます。",
+    "infoOrFileRequired": "事業者情報またはファイルが必要です。"
   },
   "fileManager": {
-    "noBusinessTitle": "事業者登録がないですか？または照会できませんか？",
     "toggleLabel": "Toggle",
-    "fileAlternative": "ファイルで代わりに提出できます。",
-    "fileTypeHint": "PDF、JPG、PNGファイルのみアップロード可能です。（最大10MB）",
-    "fileSelectButton": "ファイルを選択"
+    "noBusinessInfo": "事業者情報がありません",
+    "attachFile": "ファイル添付",
+    "fileAlt": "事業者登録証",
+    "fileDialogTitle": "事業者登録証を全画面表示",
+    "fileDialogDescription": "事業者登録証の画像を大きく表示します"
   },
   "display": {
     "statusLabel": "認証状態：",

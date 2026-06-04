@@ -1,5 +1,3 @@
-import type { PaginatedResponseDto } from "../common/pagination"
-
 /*───────────────────────────
  * Intent
  *──────────────────────────*/
@@ -124,10 +122,10 @@ export type CreateHmsCardProfileRequest = {
 export type BillingMethodDto = {
   id: string
   userId: string
-  providerType: 'TOSS_BILLING' | 'NICEPAY_BILLING' | 'CMS_BATCH'
+  providerType: "TOSS_BILLING" | "NICEPAY_BILLING" | "CMS_BATCH"
   displayName: string | null
   method: Record<string, unknown> | null
-  status: 'ACTIVE' | 'REVOKED' | 'DELETED' | 'EXPIRED'
+  status: "ACTIVE" | "REVOKED" | "DELETED" | "EXPIRED"
   expiresAt: string | null
   createdAt: string
 }
@@ -141,8 +139,49 @@ export type BillingAgreementDto = {
   billingMethodId: string
   subscriberRef: string
   subscriberType: string
-  status: 'ACTIVE' | 'SUSPENDED' | 'REVOKED'
+  status: "ACTIVE" | "SUSPENDED" | "REVOKED"
   createdAt: string
+}
+
+/*───────────────────────────
+ * CMS 결제수단 심사 상태 (고객 결제수단 관리 화면용)
+ * GET /v1/billing-methods/cms — PENDING/FAILED 포함
+ *──────────────────────────*/
+export type CmsBillingMethodStatusDto = {
+  billingMethodId: string
+  userId: string
+  providerType: string
+  displayName: string | null
+  billingMethodStatus: "ACTIVE" | "REVOKED" | "DELETED" | "EXPIRED"
+  cmsMemberId: string | null
+  cmsMemberStatus: "PENDING" | "REGISTERED" | "FAILED" | "DELETED"
+  agreementStatus: string | null
+  /** true이면 정기결제 수단으로 선택 가능 */
+  isSelectableForRecurringBilling: boolean
+  /** 고객 표시용 레이블: 심사 중 / 심사 실패 / 사용 가능 / 동의자료 확인 필요 / 해지됨 */
+  statusLabel: string
+  resultCode: string | null
+  resultMessage: string | null
+  paymentCompany: string | null
+  payerName: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+/*───────────────────────────
+ * CMS 계좌 + 동의자료 통합 등록 응답
+ *──────────────────────────*/
+export type RegisterCmsWithAgreementResponseDto = {
+  id: string
+  userId: string
+  providerType: string
+  displayName: string | null
+  status: string
+  createdAt: string
+  cmsMemberId: string
+  cmsMemberStatus: "PENDING" | "REGISTERED" | "FAILED"
+  agreementStatus: string | null
+  agreementUploadFailed: boolean
 }
 
 /*───────────────────────────
@@ -152,6 +191,7 @@ export type OnboardHmsBnplResponse = {
   success: boolean
   profileId: string
   memberId: string
+  agreementUploadFailed?: boolean
 }
 
 /*───────────────────────────
