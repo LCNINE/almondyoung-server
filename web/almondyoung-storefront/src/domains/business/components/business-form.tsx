@@ -50,7 +50,8 @@ export default function BusinessForm({
   const t = useTranslations("business.form")
 
   const businessDtoSchema = useMemo(
-    () => buildBusinessDtoSchema({ infoOrFileRequired: t("infoOrFileRequired") }),
+    () =>
+      buildBusinessDtoSchema({ infoOrFileRequired: t("infoOrFileRequired") }),
     [t]
   )
 
@@ -67,7 +68,6 @@ export default function BusinessForm({
       isSubmitting: false,
     },
   })
-
   const [isSearchPending, startSearchTransition] = useTransition()
   const [isSubmitPending, startSubmitTransition] = useTransition()
 
@@ -75,6 +75,14 @@ export default function BusinessForm({
 
   const handleSubmit = (data: BusinessDtoSchema) => {
     const { businessNumber, representativeName, fileUrl, file, metadata } = data
+
+    if (initialData?.status === "approved") {
+      const confirmed = window.confirm(
+        "이미 승인된 사업자 정보가 있습니다. 수정하시면 재심사 대상이 됩니다. 계속하시겠습니까?"
+      )
+
+      if (!confirmed) return
+    }
 
     if (!form.watch("isSubmitting")) {
       toast.info(t("fileRequiredError"))
