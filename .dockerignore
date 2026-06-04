@@ -5,6 +5,7 @@ npm-debug.log*
 # Build outputs
 dist
 build
+**/.medusa
 !packages/hms-api-wrapper/dist
 !packages/hms-api-wrapper/dist/**
 *.tsbuildinfo
