@@ -10,7 +10,7 @@ import BusinessInfoTemplate from "domains/business/template/business-info-templa
 export async function generateMetadata() {
   const t = await getTranslations("mypage.page")
   return getSEOTags({
-    title: t("download"),
+    title: t("business"),
     openGraph: {},
   })
 }
@@ -25,12 +25,12 @@ export default async function BusinessPage() {
         showDesktopHeader: true,
         showMobileHeader: false,
         showMobileSubBackHeader: true,
-        mobileSubBackHeaderTitle: t("download"),
+        mobileSubBackHeaderTitle: t("business"),
       }}
     >
       <MypageLayout>
         <div className="bg-white px-3 py-4 md:min-h-screen md:px-6">
-          <PageTitle>{t("download")}</PageTitle>
+          <PageTitle>{t("business")}</PageTitle>
           <BusinessContent user={currentUser} />
         </div>
       </MypageLayout>
