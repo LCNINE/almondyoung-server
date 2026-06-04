@@ -169,13 +169,19 @@ export async function getBnplProfiles(): Promise<BnplProfileDto[]> {
 /**
  * CMS 결제수단 심사 상태 목록 조회 — PENDING/FAILED 포함, 고객 결제수단 관리 화면용
  */
-export async function getCmsBillingMethodStatuses(): Promise<CmsBillingMethodStatusDto[]> {
+export async function getCmsBillingMethodStatuses(): Promise<
+  CmsBillingMethodStatusDto[]
+> {
   try {
-    return await api<CmsBillingMethodStatusDto[]>("wallet", "/v1/billing-methods/cms", {
-      method: "GET",
-      cache: "no-store",
-      withAuth: true,
-    })
+    return await api<CmsBillingMethodStatusDto[]>(
+      "wallet",
+      "/v1/billing-methods/cms",
+      {
+        method: "GET",
+        cache: "no-store",
+        withAuth: true,
+      }
+    )
   } catch {
     return []
   }
@@ -252,6 +258,9 @@ export async function deleteBillingMethod(
 ): Promise<void> {
   await api<void>("wallet", `/v1/billing-methods/${billingMethodId}`, {
     method: "DELETE",
+    headers: {
+      "Idempotency-Key": crypto.randomUUID(),
+    },
     withAuth: true,
   })
 }
