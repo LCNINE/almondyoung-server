@@ -8,15 +8,18 @@ import {
   NotFoundException,
   Param,
   Post,
-  UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { WalletJwtAuth } from '../wallet-auth.decorator';
 import { CmsAgreementService } from './cms-agreement.service';
 import { CmsAgreementResponseDto, UploadCmsAgreementDto } from './dto';
 import { CmsAgreementRecord } from '../types';
+import {
+  FastifyMultipartInterceptor,
+  FastifyUploadedFile,
+  UploadedFastifyFile,
+} from '../common/fastify-multipart.interceptor';
 
 @ApiTags('CMS Agreements')
 @Controller('v1/cms-agreements')
@@ -26,24 +29,19 @@ export class CmsAgreementController {
   @Post()
   @HttpCode(201)
   @WalletJwtAuth()
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(new FastifyMultipartInterceptor('file'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Upload a CMS agreement document' })
   async upload(
     @Body() dto: UploadCmsAgreementDto,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFastifyFile() file: FastifyUploadedFile,
   ): Promise<CmsAgreementResponseDto> {
     if (!file || !file.buffer) {
       throw new BadRequestException('File is required');
     }
 
     try {
-      const record = await this.service.uploadAgreement(
-        dto.cmsMemberId,
-        file.buffer,
-        dto.fileType,
-        dto.fileExtension,
-      );
+      const record = await this.service.uploadAgreement(dto.cmsMemberId, file.buffer, dto.fileType, dto.fileExtension);
       return this.toResponse(record);
     } catch (e: any) {
       const msg = (e?.message ?? '').toLowerCase();
