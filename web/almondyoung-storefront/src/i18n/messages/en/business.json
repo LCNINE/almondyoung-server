@@ -25,14 +25,16 @@
     "lookupError": "An error occurred during lookup.",
     "registerSuccess": "Business info has been registered.",
     "editSuccess": "Business info has been updated.",
-    "fileUploadSuccess": "New file uploaded. It will be approved after admin review."
+    "fileUploadSuccess": "New file uploaded. It will be approved after admin review.",
+    "infoOrFileRequired": "Business info or a file is required."
   },
   "fileManager": {
-    "noBusinessTitle": "No business registration? Or can't look it up?",
     "toggleLabel": "Toggle",
-    "fileAlternative": "You can submit a file instead.",
-    "fileTypeHint": "Only PDF, JPG, PNG files are allowed. (Max 10MB)",
-    "fileSelectButton": "Select File"
+    "noBusinessInfo": "No business info yet",
+    "attachFile": "Attach File",
+    "fileAlt": "Business license",
+    "fileDialogTitle": "View Business License",
+    "fileDialogDescription": "View the full business license image."
   },
   "display": {
     "statusLabel": "Status:",

@@ -13,6 +13,7 @@ import {
 import { formatBusinessNumber } from "@lib/utils/format-business-number"
 import { getDisplayFilename } from "@lib/utils/get-diplay-filename"
 import { Pencil } from "lucide-react"
+import { useTranslations } from "next-intl"
 import Image from "next/image"
 
 interface BusinessDisplayProps {
@@ -20,45 +21,47 @@ interface BusinessDisplayProps {
   onEdit: () => void
 }
 
-// 검증 상태별 뱃지 매핑 함수
-const getStatusBadge = (status?: BusinessInfo["status"]) => {
-  switch (status) {
-    case "approved":
-      return (
-        <Badge
-          variant="secondary"
-          className="border-green-300 bg-green-100 text-green-700"
-        >
-          승인됨
-        </Badge>
-      )
-    case "under_review":
-      return (
-        <Badge
-          variant="outline"
-          className="border-yellow-300 bg-yellow-100 text-yellow-800"
-        >
-          심사중
-        </Badge>
-      )
-    case "rejected":
-      return (
-        <Badge
-          variant="destructive"
-          className="border-red-300 bg-red-100 text-red-700"
-        >
-          반려됨
-        </Badge>
-      )
-    default:
-      return <Badge variant="secondary">없음</Badge>
-  }
-}
-
 export default function BusinessDisplay({
   data,
   onEdit,
 }: BusinessDisplayProps) {
+  const t = useTranslations("business.display")
+
+  // 검증 상태별 뱃지 매핑 함수
+  const getStatusBadge = (status?: BusinessInfo["status"]) => {
+    switch (status) {
+      case "approved":
+        return (
+          <Badge
+            variant="secondary"
+            className="border-green-300 bg-green-100 text-green-700"
+          >
+            {t("statusApproved")}
+          </Badge>
+        )
+      case "under_review":
+        return (
+          <Badge
+            variant="outline"
+            className="border-yellow-300 bg-yellow-100 text-yellow-800"
+          >
+            {t("statusUnderReview")}
+          </Badge>
+        )
+      case "rejected":
+        return (
+          <Badge
+            variant="destructive"
+            className="border-red-300 bg-red-100 text-red-700"
+          >
+            {t("statusRejected")}
+          </Badge>
+        )
+      default:
+        return <Badge variant="secondary">{t("statusNone")}</Badge>
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="border-border bg-card rounded-lg border">
@@ -67,11 +70,11 @@ export default function BusinessDisplay({
             {/* 검증 상태 */}
             <tr className="border-b last:border-b-0">
               <th className="text-muted-foreground min-w-[140px] px-4 py-4 text-left align-top font-medium">
-                검증 상태:
+                {t("statusLabel")}
               </th>
               <td className="px-4 py-4">
                 {getStatusBadge(data.status)}
-                {data.reviewComment && (
+                {data.reviewComment && data.status === "rejected" && (
                   <div className="text-muted-foreground mt-1 text-xs">
                     {data.reviewComment}
                   </div>
@@ -81,7 +84,7 @@ export default function BusinessDisplay({
             {/* 사업자등록번호 */}
             <tr className="border-b last:border-b-0">
               <th className="text-muted-foreground min-w-[140px] px-4 py-4 text-left font-medium">
-                사업자등록번호:
+                {t("businessNumberLabel")}
               </th>
               <td className="text-foreground px-4 py-4">
                 {formatBusinessNumber(data.businessNumber ?? "")}
@@ -90,7 +93,7 @@ export default function BusinessDisplay({
             {/* 대표자명 */}
             <tr className="border-b last:border-b-0">
               <th className="text-muted-foreground min-w-[140px] px-4 py-4 text-left font-medium">
-                대표자명:
+                {t("representativeNameLabel")}
               </th>
               <td className="text-foreground px-4 py-4">
                 {data.representativeName}
@@ -100,7 +103,7 @@ export default function BusinessDisplay({
             {data.fileUrl && (
               <tr className="border-b last:border-b-0">
                 <th className="text-muted-foreground min-w-[140px] px-4 py-4 text-left align-top font-medium">
-                  사업자등록증:
+                  {t("fileLabel")}
                 </th>
                 <td className="text-foreground px-4 py-4">
                   <Dialog>
@@ -108,7 +111,7 @@ export default function BusinessDisplay({
                       <div className="flex cursor-pointer items-center gap-2">
                         <Image
                           src={data.fileUrl}
-                          alt="사업자등록증"
+                          alt={t("fileAlt")}
                           width={100}
                           height={100}
                           className="rounded border"
@@ -121,16 +124,16 @@ export default function BusinessDisplay({
                       aria-describedby="business-file-dialog-desc"
                     >
                       <DialogTitle className="sr-only">
-                        사업자등록증 전체 보기
+                        {t("fileDialogTitle")}
                       </DialogTitle>
                       <DialogDescription className="sr-only">
-                        사업자등록증 이미지를 크게 볼 수 있습니다
+                        {t("fileDialogDescription")}
                       </DialogDescription>
 
                       <div className="flex flex-col items-center p-2">
                         <Image
                           src={data.fileUrl}
-                          alt="사업자등록증"
+                          alt={t("fileAlt")}
                           width={600}
                           height={600}
                           className="h-auto max-w-full rounded border"
@@ -156,7 +159,7 @@ export default function BusinessDisplay({
       <div className="flex justify-end">
         <Button onClick={onEdit} className="gap-2">
           <Pencil className="h-4 w-4" />
-          정보 수정
+          {t("editButton")}
         </Button>
       </div>
     </div>
