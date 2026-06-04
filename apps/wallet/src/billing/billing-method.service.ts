@@ -2,8 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { and, desc, eq, inArray, ne } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
-import { WalletSchema, billingMethods, cmsAgreements, cmsMembers, paymentMethods } from '../schema';
+import { WalletSchema, billingAgreements, billingMethods, cmsAgreements, cmsMembers, paymentMethods } from '../schema';
 import { BillingMethod, CmsAgreementRecord, CmsMember } from '../types';
+import { CmsApiClient } from '../cms/cms-api.client';
 
 export interface CmsBillingMethodStatusRow {
   billingMethodId: string;
@@ -18,6 +19,8 @@ export interface CmsBillingMethodStatusRow {
   statusLabel: string;
   resultCode: string | null;
   resultMessage: string | null;
+  paymentCompany: string | null;
+  payerName: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -25,13 +28,12 @@ export interface CmsBillingMethodStatusRow {
 export class BillingMethodService {
   private readonly logger = new Logger(BillingMethodService.name);
 
-  constructor(private readonly dbService: DbService<WalletSchema>) {}
+  constructor(
+    private readonly dbService: DbService<WalletSchema>,
+    private readonly cmsApi: CmsApiClient,
+  ) {}
 
-  async registerCmsBillingMethod(
-    userId: string,
-    cmsMemberId: string,
-    displayName?: string,
-  ): Promise<BillingMethod> {
+  async registerCmsBillingMethod(userId: string, cmsMemberId: string, displayName?: string): Promise<BillingMethod> {
     const rows = await this.dbService.db
       .insert(billingMethods)
       .values({
@@ -52,15 +54,62 @@ export class BillingMethodService {
       throw new Error('billing method not found or already inactive');
     }
 
+    if (existing.providerType === 'CMS_BATCH') {
+      await this.deleteCmsBillingMethod(existing);
+      return;
+    }
+
     const updated = await this.dbService.db
       .update(billingMethods)
       .set({ status: 'REVOKED', updatedAt: new Date() })
-      .where(and(eq(billingMethods.id, billingMethodId), eq(billingMethods.userId, userId), eq(billingMethods.status, 'ACTIVE')))
+      .where(
+        and(
+          eq(billingMethods.id, billingMethodId),
+          eq(billingMethods.userId, userId),
+          eq(billingMethods.status, 'ACTIVE'),
+        ),
+      )
       .returning({ id: billingMethods.id });
 
     if (updated.length === 0) {
       throw new Error('billing method not found or already inactive');
     }
+  }
+
+  private async deleteCmsBillingMethod(method: BillingMethod): Promise<void> {
+    const cmsMember = await this.dbService.db
+      .select()
+      .from(cmsMembers)
+      .where(eq(cmsMembers.billingMethodId, method.id))
+      .limit(1)
+      .then((rows) => rows[0]);
+
+    if (cmsMember?.cmsMemberId && cmsMember.status !== 'DELETED') {
+      const result = await this.cmsApi.deleteMember(cmsMember.cmsMemberId);
+      if (!result.ok) {
+        this.logger.error(`CMS member deletion failed: ${result.error.code} ${result.error.message}`);
+        throw new Error(`CMS member deletion failed: ${result.error.code} ${result.error.message}`);
+      }
+    }
+
+    await this.dbService.db.transaction(async (tx) => {
+      await tx
+        .update(billingMethods)
+        .set({ status: 'DELETED', updatedAt: new Date() })
+        .where(and(eq(billingMethods.id, method.id), eq(billingMethods.userId, method.userId)));
+
+      await tx
+        .update(billingAgreements)
+        .set({ status: 'REVOKED', updatedAt: new Date() })
+        .where(and(eq(billingAgreements.billingMethodId, method.id), eq(billingAgreements.status, 'ACTIVE')));
+
+      if (cmsMember) {
+        await tx
+          .update(cmsMembers)
+          .set({ status: 'DELETED', updatedAt: new Date() })
+          .where(eq(cmsMembers.id, cmsMember.id));
+      }
+    });
   }
 
   async getBillingKey(billingMethodId: string): Promise<string> {
@@ -162,6 +211,8 @@ export class BillingMethodService {
         statusLabel: this.computeCmsStatusLabel(method.status, cmsMemberStatus, agreementStatus),
         resultCode: member?.resultCode ?? null,
         resultMessage: member?.resultMessage ?? null,
+        paymentCompany: member?.paymentCompany ?? null,
+        payerName: member?.payerName ?? null,
         createdAt: method.createdAt,
         updatedAt: method.updatedAt,
       };
@@ -185,11 +236,7 @@ export class BillingMethodService {
   }
 
   async findById(id: string): Promise<BillingMethod | undefined> {
-    const rows = await this.dbService.db
-      .select()
-      .from(billingMethods)
-      .where(eq(billingMethods.id, id))
-      .limit(1);
+    const rows = await this.dbService.db.select().from(billingMethods).where(eq(billingMethods.id, id)).limit(1);
     return rows[0];
   }
 

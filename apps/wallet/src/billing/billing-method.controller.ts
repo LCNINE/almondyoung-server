@@ -207,6 +207,8 @@ export class BillingMethodController {
       statusLabel: r.statusLabel,
       resultCode: r.resultCode,
       resultMessage: r.resultMessage,
+      paymentCompany: r.paymentCompany,
+      payerName: r.payerName,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
     }));
@@ -240,7 +242,7 @@ export class BillingMethodController {
       await this.service.revoke(id, userId);
     } catch (e: any) {
       const msg = (e?.message ?? '').toLowerCase();
-      if (msg.includes('not found')) throw new NotFoundException(e.message);
+      if (msg.includes('not found') || msg.includes('inactive')) throw new NotFoundException(e.message);
       throw new InternalServerErrorException(e.message);
     }
   }

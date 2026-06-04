@@ -1,5 +1,3 @@
-import type { PaginatedResponseDto } from "../common/pagination"
-
 /*───────────────────────────
  * Intent
  *──────────────────────────*/
@@ -124,10 +122,10 @@ export type CreateHmsCardProfileRequest = {
 export type BillingMethodDto = {
   id: string
   userId: string
-  providerType: 'TOSS_BILLING' | 'NICEPAY_BILLING' | 'CMS_BATCH'
+  providerType: "TOSS_BILLING" | "NICEPAY_BILLING" | "CMS_BATCH"
   displayName: string | null
   method: Record<string, unknown> | null
-  status: 'ACTIVE' | 'REVOKED' | 'DELETED' | 'EXPIRED'
+  status: "ACTIVE" | "REVOKED" | "DELETED" | "EXPIRED"
   expiresAt: string | null
   createdAt: string
 }
@@ -141,7 +139,7 @@ export type BillingAgreementDto = {
   billingMethodId: string
   subscriberRef: string
   subscriberType: string
-  status: 'ACTIVE' | 'SUSPENDED' | 'REVOKED'
+  status: "ACTIVE" | "SUSPENDED" | "REVOKED"
   createdAt: string
 }
 
@@ -154,9 +152,9 @@ export type CmsBillingMethodStatusDto = {
   userId: string
   providerType: string
   displayName: string | null
-  billingMethodStatus: 'ACTIVE' | 'REVOKED' | 'DELETED' | 'EXPIRED'
+  billingMethodStatus: "ACTIVE" | "REVOKED" | "DELETED" | "EXPIRED"
   cmsMemberId: string | null
-  cmsMemberStatus: 'PENDING' | 'REGISTERED' | 'FAILED' | 'DELETED'
+  cmsMemberStatus: "PENDING" | "REGISTERED" | "FAILED" | "DELETED"
   agreementStatus: string | null
   /** true이면 정기결제 수단으로 선택 가능 */
   isSelectableForRecurringBilling: boolean
@@ -164,6 +162,8 @@ export type CmsBillingMethodStatusDto = {
   statusLabel: string
   resultCode: string | null
   resultMessage: string | null
+  paymentCompany: string | null
+  payerName: string | null
   createdAt: string
   updatedAt: string
 }
@@ -179,7 +179,7 @@ export type RegisterCmsWithAgreementResponseDto = {
   status: string
   createdAt: string
   cmsMemberId: string
-  cmsMemberStatus: 'PENDING' | 'REGISTERED' | 'FAILED'
+  cmsMemberStatus: "PENDING" | "REGISTERED" | "FAILED"
   agreementStatus: string | null
   agreementUploadFailed: boolean
 }
