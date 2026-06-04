@@ -144,6 +144,23 @@ describe('StoreSalesOrdersService', () => {
       expect(result.orderStatus).toBe('cancelled');
     });
 
+    it('Wallet이 already_refunded 반환 시 refundStatus=succeeded (이미 환불 완료)', async () => {
+      const { service } = makeContext({
+        walletOutcome: { kind: 'already_refunded', errorCode: 'REFUND_AMOUNT_EXCEEDS_AVAILABLE', errorMessage: '환불 가능 금액 초과' },
+      });
+      const result = await service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {});
+      expect(result.refundStatus).toBe('succeeded');
+      expect(result.orderStatus).toBe('cancelled');
+    });
+
+    it('최초 고객 취소 correlationId는 :initial: 포함 per-attempt 형식, 고정 key 미사용', async () => {
+      const { service, walletClientMock } = makeContext();
+      await service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {});
+      const calledWith = (walletClientMock.refundByIntent as jest.Mock).mock.calls[0][2] as { correlationId: string };
+      expect(calledWith.correlationId).toMatch(/^cancel:so-001:initial:[0-9a-f-]{36}$/);
+      expect(calledWith.correlationId).not.toBe(`cancel:${SO_ID}`);
+    });
+
     it('Wallet 서비스 unavailable 시 refundStatus=manual_pending (취소는 유지)', async () => {
       const { service } = makeContext({
         walletOutcome: { kind: 'wallet_unavailable', errorMessage: 'Connection refused' },
@@ -400,6 +417,14 @@ describe('StoreSalesOrdersService', () => {
       expect(result.status).toBe('cancelled');
     });
 
+    it('관리자 최초 취소 correlationId는 :initial: 포함 per-attempt 형식', async () => {
+      const { service, walletClientMock } = makeAdminContext();
+      await service.adminCancelRequest(SO_ID, {});
+      const calledWith = (walletClientMock.refundByIntent as jest.Mock).mock.calls[0][2] as { correlationId: string };
+      expect(calledWith.correlationId).toMatch(/^cancel:so-001:initial:[0-9a-f-]{36}$/);
+      expect(calledWith.correlationId).not.toBe(`cancel:${SO_ID}`);
+    });
+
     it('lines 있으면 부분취소 — Wallet 미호출, refundStatus=manual_pending', async () => {
       const { service, walletClientMock, salesOrdersServiceMock } = makeAdminContext();
       const lines = [{ salesOrderLineId: 'line-001', quantity: 1 }];
@@ -563,6 +588,14 @@ describe('StoreSalesOrdersService', () => {
       await service.retryWalletRefund(SO_ID);
       const calledWith = (walletClientMock.refundByIntent as jest.Mock).mock.calls[0][2] as { correlationId: string };
       expect(calledWith.correlationId).not.toBe(`cancel:${SO_ID}`);
+    });
+
+    it('재시도 correlationId는 :retry: 포함 per-attempt 형식, initial key 미사용', async () => {
+      const { service, walletClientMock } = makeRetryContext({ currentRefundStatus: 'failed' });
+      await service.retryWalletRefund(SO_ID);
+      const calledWith = (walletClientMock.refundByIntent as jest.Mock).mock.calls[0][2] as { correlationId: string };
+      expect(calledWith.correlationId).toMatch(/^cancel:so-001:retry:[0-9a-f-]{36}$/);
+      expect(calledWith.correlationId).not.toContain(':initial:');
     });
 
     it('취소되지 않은 주문이면 400', async () => {

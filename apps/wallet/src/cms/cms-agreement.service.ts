@@ -6,6 +6,14 @@ import { CmsAgreementRecord } from '../types';
 import { CmsApiClient } from './cms-api.client';
 import { CmsMemberService } from './cms-member.service';
 
+/** 효성 API 5xx/네트워크 일시 장애 — 재시도 가능. 영구 실패로 기록하지 않는다. */
+export class CmsAgreementRetryableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CmsAgreementRetryableError';
+  }
+}
+
 @Injectable()
 export class CmsAgreementService {
   private readonly logger = new Logger(CmsAgreementService.name);
@@ -35,7 +43,9 @@ export class CmsAgreementService {
     const result = await this.cmsApi.uploadAgreement(cmsMemberId, file, fileType, fileExtension);
     if (!result.ok) {
       if (result.statusCode >= 500) {
-        throw new Error(`CMS agreement upload API error: ${result.error.code} ${result.error.message}`);
+        throw new CmsAgreementRetryableError(
+          `CMS agreement upload API error: ${result.error.code} ${result.error.message}`,
+        );
       }
       throw new Error(`CMS agreement upload failed: ${result.error.code} ${result.error.message}`);
     }
@@ -77,6 +87,31 @@ export class CmsAgreementService {
       .select()
       .from(cmsAgreements)
       .where(eq(cmsAgreements.cmsMemberId, cmsMemberId));
+  }
+
+  /**
+   * 동의자료 업로드 실패를 DB에 기록.
+   * 회원등록 성공 후 업로드가 실패한 경우 관리자 처리 필요 상태로 남긴다.
+   */
+  async recordAgreementFailure(
+    cmsMemberId: string,
+    fileType: string,
+    fileExtension: string,
+    reason: string,
+  ): Promise<CmsAgreementRecord> {
+    const rows = await this.dbService.db
+      .insert(cmsAgreements)
+      .values({
+        cmsMemberId,
+        agreementKey: null,
+        fileType,
+        fileExtension,
+        status: '실패',
+        resultCode: 'UPLOAD_FAILED',
+        resultMessage: reason.slice(0, 255),
+      })
+      .returning();
+    return rows[0];
   }
 
   /**

@@ -3,10 +3,11 @@
 import {
   getBillingAgreements,
   getBillingMethods,
+  getCmsBillingMethodStatuses,
   updateBillingAgreementMethod,
 } from "@lib/api/wallet"
 import { getCurrentSubscription, subscribeWithBillingMethod } from "@lib/api/membership"
-import type { BillingAgreementDto, BillingMethodDto } from "@lib/types/dto/wallet"
+import type { BillingAgreementDto, BillingMethodDto, CmsBillingMethodStatusDto } from "@lib/types/dto/wallet"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
@@ -52,6 +53,7 @@ export default function MembershipPaymentMethodPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [agreement, setAgreement] = useState<BillingAgreementDto | null>(null)
   const [allMethods, setAllMethods] = useState<BillingMethodDto[]>([])
+  const [cmsBillingStatuses, setCmsBillingStatuses] = useState<CmsBillingMethodStatusDto[]>([])
   const [nextBillingDate, setNextBillingDate] = useState<string | null>(null)
   const [isChanging, setIsChanging] = useState<string | null>(null)
 
@@ -59,6 +61,8 @@ export default function MembershipPaymentMethodPage() {
   const otherMethods = allMethods.filter(
     (m) => m.status === "ACTIVE" && m.id !== agreement?.billingMethodId,
   )
+  const pendingCmsMethods = cmsBillingStatuses.filter((s) => s.cmsMemberStatus === "PENDING")
+  const failedCmsMethods = cmsBillingStatuses.filter((s) => s.cmsMemberStatus === "FAILED")
 
   useEffect(() => {
     if (searchParams.get("cardChanged") === "1") {
@@ -75,9 +79,10 @@ export default function MembershipPaymentMethodPage() {
     async function load() {
       try {
         setIsLoading(true)
-        const [agreements, methods, subscription] = await Promise.all([
+        const [agreements, methods, cmsStatuses, subscription] = await Promise.all([
           getBillingAgreements(),
           getBillingMethods(),
+          getCmsBillingMethodStatuses(),
           isSubscribeFlow ? Promise.resolve(null) : getCurrentSubscription().catch(() => null),
         ])
 
@@ -88,6 +93,7 @@ export default function MembershipPaymentMethodPage() {
 
         setAgreement(membershipAgreement)
         setAllMethods(methods.filter((m) => m.status === "ACTIVE"))
+        setCmsBillingStatuses(cmsStatuses)
         setNextBillingDate(subscription?.nextBillingDate ?? null)
       } catch {
         toast.error(t("loadError"))
@@ -139,6 +145,13 @@ export default function MembershipPaymentMethodPage() {
     window.location.href = `${walletWebUrl}/billing-change?${params}`
   }
 
+  const handleRegisterCmsBankAccount = () => {
+    // 실패한 CMS 계좌 재등록 — 은행계좌 등록 흐름이 있는 결제 관리 페이지로 이동
+    // returnTo 파라미터로 등록 완료 후 멤버십 결제수단 화면으로 복귀
+    const returnTo = encodeURIComponent(window.location.pathname + window.location.search)
+    router.push(`/${countryCode}/mypage/payment?returnTo=${returnTo}`)
+  }
+
   useEffect(() => {
     if (!autoSubscribeOnLoad.current || isLoading || otherMethods.length === 0) return
     autoSubscribeOnLoad.current = false
@@ -150,25 +163,9 @@ export default function MembershipPaymentMethodPage() {
     return <MembershipPaymentMethodSkeleton />
   }
 
-  // CMS 등록 직후 돌아왔으나 심사 대기 중이라 사용 가능한 수단이 없는 경우 — 무한 스켈레톤 방지
-  if (autoSubscribeOnLoad.current && otherMethods.length === 0) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-white px-6 font-['Pretendard']">
-        <div className="w-full max-w-md rounded-md bg-amber-50 border border-amber-200 p-6 text-center">
-          <p className="text-sm font-semibold text-amber-800">{t("cmsPendingTitle")}</p>
-          <p className="mt-2 text-xs leading-relaxed text-amber-700">{t("cmsPendingDesc")}</p>
-          <button
-            className="mt-4 rounded-md bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600"
-            onClick={() => router.push(`/${countryCode}/mypage/membership`)}
-          >
-            {t("backAria")}
-          </button>
-        </div>
-      </div>
-    )
-  }
-
   const formattedNextBillingDate = formatDate(nextBillingDate, undefined, "")
+  const showAutoSubscribePendingNotice =
+    autoSubscribeOnLoad.current && otherMethods.length === 0 && pendingCmsMethods.length > 0
 
   return (
     <div className="flex min-h-screen flex-col bg-white font-['Pretendard']">
@@ -283,6 +280,80 @@ export default function MembershipPaymentMethodPage() {
                           ? t("subscribeWithCard")
                           : t("changeToCard")}
                     </button>
+                  </div>
+                ))}
+              </section>
+            )}
+
+            {/* 심사중 CMS 계좌 */}
+            {showAutoSubscribePendingNotice && (
+              <div className="rounded-md bg-amber-50 border border-amber-200 p-4">
+                <p className="text-sm font-semibold text-amber-800">{t("cmsPendingTitle")}</p>
+                <p className="mt-1 text-xs leading-relaxed text-amber-700">{t("cmsPendingDesc")}</p>
+              </div>
+            )}
+
+            {pendingCmsMethods.length > 0 && (
+              <section aria-labelledby="cms-pending-title" className="flex flex-col gap-3">
+                <h2 id="cms-pending-title" className="text-xs font-bold leading-4 text-black">
+                  {t("pendingMethodsTitle")}
+                </h2>
+                {pendingCmsMethods.map((m) => (
+                  <div
+                    key={m.billingMethodId}
+                    className="flex flex-col gap-2 rounded-md border border-amber-200 bg-amber-50 p-4"
+                  >
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-black flex-1">
+                        {m.displayName ?? t("registeredCard")}
+                      </p>
+                      <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                        {t("cmsPendingBadge")}
+                      </span>
+                    </div>
+                    <p className="text-xs leading-relaxed text-amber-700">
+                      {t("cmsPendingNotice")}
+                    </p>
+                  </div>
+                ))}
+              </section>
+            )}
+
+            {failedCmsMethods.length > 0 && (
+              <section aria-labelledby="cms-failed-title" className="flex flex-col gap-3">
+                <h2 id="cms-failed-title" className="text-xs font-bold leading-4 text-black">
+                  {t("failedMethodsTitle")}
+                </h2>
+                {failedCmsMethods.map((m) => (
+                  <div
+                    key={m.billingMethodId}
+                    className="flex flex-col gap-2 rounded-md border border-red-200 bg-red-50 p-4"
+                  >
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-black flex-1">
+                        {m.displayName ?? t("registeredCard")}
+                      </p>
+                      <span className="rounded bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700">
+                        {t("cmsFailedBadge")}
+                      </span>
+                    </div>
+                    {m.resultMessage && (
+                      <p className="text-xs text-red-600">
+                        {t("cmsFailedReason")}: {m.resultMessage}
+                      </p>
+                    )}
+                    <p className="text-xs leading-relaxed text-red-700">
+                      {t("cmsFailedNotice")}
+                    </p>
+                    <div className="flex justify-end">
+                      <button
+                        className="rounded-sm border border-red-300 bg-white px-2.5 py-1.5 text-xs font-normal text-red-700 shadow-sm hover:bg-red-50 disabled:opacity-50"
+                        onClick={handleRegisterCmsBankAccount}
+                        disabled={!!isChanging}
+                      >
+                        {t("cmsReregister")}
+                      </button>
+                    </div>
                   </div>
                 ))}
               </section>

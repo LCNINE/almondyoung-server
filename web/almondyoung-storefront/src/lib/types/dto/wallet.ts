@@ -146,12 +146,52 @@ export type BillingAgreementDto = {
 }
 
 /*───────────────────────────
+ * CMS 결제수단 심사 상태 (고객 결제수단 관리 화면용)
+ * GET /v1/billing-methods/cms — PENDING/FAILED 포함
+ *──────────────────────────*/
+export type CmsBillingMethodStatusDto = {
+  billingMethodId: string
+  userId: string
+  providerType: string
+  displayName: string | null
+  billingMethodStatus: 'ACTIVE' | 'REVOKED' | 'DELETED' | 'EXPIRED'
+  cmsMemberId: string | null
+  cmsMemberStatus: 'PENDING' | 'REGISTERED' | 'FAILED' | 'DELETED'
+  agreementStatus: string | null
+  /** true이면 정기결제 수단으로 선택 가능 */
+  isSelectableForRecurringBilling: boolean
+  /** 고객 표시용 레이블: 심사 중 / 심사 실패 / 사용 가능 / 동의자료 확인 필요 / 해지됨 */
+  statusLabel: string
+  resultCode: string | null
+  resultMessage: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+/*───────────────────────────
+ * CMS 계좌 + 동의자료 통합 등록 응답
+ *──────────────────────────*/
+export type RegisterCmsWithAgreementResponseDto = {
+  id: string
+  userId: string
+  providerType: string
+  displayName: string | null
+  status: string
+  createdAt: string
+  cmsMemberId: string
+  cmsMemberStatus: 'PENDING' | 'REGISTERED' | 'FAILED'
+  agreementStatus: string | null
+  agreementUploadFailed: boolean
+}
+
+/*───────────────────────────
  * HMS BNPL 온보딩 응답 (레거시)
  *──────────────────────────*/
 export type OnboardHmsBnplResponse = {
   success: boolean
   profileId: string
   memberId: string
+  agreementUploadFailed?: boolean
 }
 
 /*───────────────────────────
