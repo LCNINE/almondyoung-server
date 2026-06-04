@@ -124,6 +124,82 @@ export class BillingMethodResponseDto {
   createdAt: Date;
 }
 
+export class RegisterCmsWithAgreementResponseDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  userId: string;
+
+  @ApiProperty()
+  providerType: string;
+
+  @ApiProperty()
+  displayName: string | null;
+
+  @ApiProperty()
+  status: string;
+
+  @ApiProperty()
+  createdAt: Date;
+
+  @ApiProperty({ description: 'CMS 회원 ID (효성)' })
+  cmsMemberId: string;
+
+  @ApiProperty({ description: '심사 상태 (PENDING · REGISTERED · FAILED)' })
+  cmsMemberStatus: string;
+
+  @ApiProperty({ description: '동의자료 상태 (등록 · 실패 · null)' })
+  agreementStatus: string | null;
+
+  @ApiProperty({ description: '동의자료 업로드 실패 여부. true이면 관리자 처리 필요' })
+  agreementUploadFailed: boolean;
+}
+
+export class CmsBillingMethodStatusDto {
+  @ApiProperty({ description: 'billing_methods.id' })
+  billingMethodId: string;
+
+  @ApiProperty()
+  userId: string;
+
+  @ApiProperty()
+  providerType: string;
+
+  @ApiProperty()
+  displayName: string | null;
+
+  @ApiProperty({ enum: ['ACTIVE', 'REVOKED', 'DELETED', 'EXPIRED'] })
+  billingMethodStatus: string;
+
+  @ApiProperty({ description: '효성 CMS 회원 ID', nullable: true })
+  cmsMemberId: string | null;
+
+  @ApiProperty({ enum: ['PENDING', 'REGISTERED', 'FAILED', 'DELETED'] })
+  cmsMemberStatus: string;
+
+  @ApiProperty({ description: '동의자료 최신 상태 (등록·실패·null)', nullable: true })
+  agreementStatus: string | null;
+
+  @ApiProperty({ description: 'true이면 정기결제 수단으로 선택 가능 (REGISTERED + 동의자료 등록 + ACTIVE)' })
+  isSelectableForRecurringBilling: boolean;
+
+  @ApiProperty({ description: '고객 표시용 상태 레이블' })
+  statusLabel: string;
+
+  @ApiProperty({ nullable: true })
+  resultCode: string | null;
+
+  @ApiProperty({ nullable: true })
+  resultMessage: string | null;
+
+  @ApiProperty()
+  createdAt: Date;
+
+  @ApiProperty()
+  updatedAt: Date;
+}
+
 // ─── Billing Agreement DTOs ─────────────────────────────────────────────────
 
 export class CreateBillingAgreementDto {

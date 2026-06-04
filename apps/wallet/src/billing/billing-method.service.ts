@@ -1,9 +1,26 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
-import { WalletSchema, billingMethods, paymentMethods } from '../schema';
-import { BillingMethod } from '../types';
+import { WalletSchema, billingMethods, cmsAgreements, cmsMembers, paymentMethods } from '../schema';
+import { BillingMethod, CmsAgreementRecord, CmsMember } from '../types';
+
+export interface CmsBillingMethodStatusRow {
+  billingMethodId: string;
+  userId: string;
+  providerType: string;
+  displayName: string | null;
+  billingMethodStatus: string;
+  cmsMemberId: string | null;
+  cmsMemberStatus: string;
+  agreementStatus: string | null;
+  isSelectableForRecurringBilling: boolean;
+  statusLabel: string;
+  resultCode: string | null;
+  resultMessage: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
 @Injectable()
 export class BillingMethodService {
   private readonly logger = new Logger(BillingMethodService.name);
@@ -79,6 +96,92 @@ export class BillingMethodService {
       .select()
       .from(billingMethods)
       .where(and(eq(billingMethods.userId, userId), eq(billingMethods.status, 'ACTIVE')));
+  }
+
+  async getUserCmsBillingMethodStatuses(userId: string): Promise<CmsBillingMethodStatusRow[]> {
+    const methods = await this.dbService.db
+      .select()
+      .from(billingMethods)
+      .where(
+        and(
+          eq(billingMethods.userId, userId),
+          eq(billingMethods.providerType, 'CMS_BATCH'),
+          ne(billingMethods.status, 'DELETED'),
+        ),
+      )
+      .orderBy(desc(billingMethods.createdAt));
+
+    if (methods.length === 0) return [];
+
+    const methodIds = methods.map((m) => m.id);
+    const members: CmsMember[] = await this.dbService.db
+      .select()
+      .from(cmsMembers)
+      .where(inArray(cmsMembers.billingMethodId, methodIds));
+
+    const cmsMemberIds = members.map((m) => m.cmsMemberId);
+    let allAgreements: CmsAgreementRecord[] = [];
+    if (cmsMemberIds.length > 0) {
+      allAgreements = await this.dbService.db
+        .select()
+        .from(cmsAgreements)
+        .where(inArray(cmsAgreements.cmsMemberId, cmsMemberIds))
+        .orderBy(desc(cmsAgreements.createdAt));
+    }
+
+    const latestAgreementByCmsMemberId = new Map<string, CmsAgreementRecord>();
+    for (const agreement of allAgreements) {
+      if (!latestAgreementByCmsMemberId.has(agreement.cmsMemberId)) {
+        latestAgreementByCmsMemberId.set(agreement.cmsMemberId, agreement);
+      }
+    }
+
+    const memberByBillingMethodId = new Map<string, CmsMember>();
+    for (const member of members) {
+      memberByBillingMethodId.set(member.billingMethodId, member);
+    }
+
+    return methods.map((method) => {
+      const member = memberByBillingMethodId.get(method.id);
+      const agreement = member ? latestAgreementByCmsMemberId.get(member.cmsMemberId) : undefined;
+      const cmsMemberStatus = member?.status ?? 'PENDING';
+      const agreementStatus = agreement?.status ?? null;
+      const isSelectableForRecurringBilling =
+        method.status === 'ACTIVE' && cmsMemberStatus === 'REGISTERED' && agreementStatus === '등록';
+
+      return {
+        billingMethodId: method.id,
+        userId: method.userId,
+        providerType: method.providerType,
+        displayName: method.displayName ?? null,
+        billingMethodStatus: method.status,
+        cmsMemberId: member?.cmsMemberId ?? null,
+        cmsMemberStatus,
+        agreementStatus,
+        isSelectableForRecurringBilling,
+        statusLabel: this.computeCmsStatusLabel(method.status, cmsMemberStatus, agreementStatus),
+        resultCode: member?.resultCode ?? null,
+        resultMessage: member?.resultMessage ?? null,
+        createdAt: method.createdAt,
+        updatedAt: method.updatedAt,
+      };
+    });
+  }
+
+  private computeCmsStatusLabel(
+    billingMethodStatus: string,
+    cmsMemberStatus: string,
+    agreementStatus: string | null,
+  ): string {
+    if (billingMethodStatus === 'REVOKED') return '해지됨';
+    if (cmsMemberStatus === 'DELETED') return '삭제됨';
+    if (cmsMemberStatus === 'FAILED') return '심사 실패';
+    if (cmsMemberStatus === 'PENDING') return '심사 중';
+    if (cmsMemberStatus === 'REGISTERED') {
+      if (agreementStatus === '등록') return '사용 가능';
+      return '동의자료 확인 필요';
+    }
+    return '알 수 없음';
   }
 
   async findById(id: string): Promise<BillingMethod | undefined> {

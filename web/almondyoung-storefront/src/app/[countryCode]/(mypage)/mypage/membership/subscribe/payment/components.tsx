@@ -24,13 +24,13 @@ import { Label } from "@/components/ui/label"
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { HttpApiError } from "@lib/api/api-error"
-import { getBillingMethods } from "@lib/api/wallet"
+import { getBillingMethods, getCmsBillingMethodStatuses } from "@lib/api/wallet"
 import { subscribeWithBillingMethod, createMembershipCheckoutIntent } from "@lib/api/membership"
 import { setPendingPaymentMode } from "@lib/utils/checkout-intent-map"
 import { cn } from "@lib/utils"
 import { providerLabel } from "@lib/utils/billing-provider"
 import { useUser } from "@/contexts/user-context"
-import type { BillingMethodDto } from "@lib/types/dto/wallet"
+import type { BillingMethodDto, CmsBillingMethodStatusDto } from "@lib/types/dto/wallet"
 import { Calendar, CreditCard, Gift } from "lucide-react"
 import { useParams, useRouter } from "next/navigation"
 import React, { useEffect, useState } from "react"
@@ -118,12 +118,16 @@ export function MembershipForm({
   const { user } = useUser()
 
   const [billingMethods, setBillingMethods] = useState<BillingMethodDto[]>([])
+  const [cmsBillingStatuses, setCmsBillingStatuses] = useState<CmsBillingMethodStatusDto[]>([])
   const [selectedBillingMethodId, setSelectedBillingMethodId] = useState<string | null>(null)
   const [policyAgreed, setPolicyAgreed] = useState(false)
 
   useEffect(() => {
-    getBillingMethods()
-      .then((methods) => setBillingMethods(methods.filter((m) => m.status === "ACTIVE")))
+    Promise.all([getBillingMethods(), getCmsBillingMethodStatuses()])
+      .then(([methods, cmsStatuses]) => {
+        setBillingMethods(methods.filter((m) => m.status === "ACTIVE"))
+        setCmsBillingStatuses(cmsStatuses)
+      })
       .catch(() => {})
   }, [])
 
@@ -216,6 +220,7 @@ export function MembershipForm({
 
   const totalTrialDays = trialBenefits.reduce((acc, cur) => acc + cur.days, 0)
   const discountCount = discountBenefits.length
+  const hasPendingMethods = cmsBillingStatuses.some((s) => s.cmsMemberStatus === "PENDING")
 
   const billingMode = form.watch("billingMode")
   const subscriptionType = form.watch("subscriptionType")
@@ -236,11 +241,18 @@ export function MembershipForm({
   function getSubmitButtonLabel() {
     if (!form.watch("agreement")) return "약관에 동의해주세요"
     if (billingMode === "one_time" && !policyAgreed) return "결제 및 환불 정책에 동의해주세요"
-    const trialLabel = totalTrialDays > 0 ? `${totalTrialDays}일 무료체험` : "자동이체"
-    if (selectedBillingMethodId) {
-      return billingMode === "recurring" ? `${trialLabel} 시작하기` : "이 결제수단으로 구독하기"
+
+    if (billingMode === "recurring") {
+      if (selectedBillingMethodId) {
+        const trialLabel = totalTrialDays > 0 ? `${totalTrialDays}일 무료체험` : "정기결제"
+        return `${trialLabel} 시작하기`
+      }
+      if (hasPendingMethods) return "심사 완료 후 정기결제 가능"
+      return "자동이체 계좌 심사 신청하기"
     }
-    return billingMode === "recurring" ? `자동이체 등록 후 ${trialLabel} 시작하기` : "새 결제수단으로 결제하기"
+
+    if (selectedBillingMethodId) return "이 결제수단으로 구독하기"
+    return "새 결제수단으로 결제하기"
   }
   const hasPrice = subscriptionType == "monthly" || subscriptionType == "yearly"
   let firstPrice =
@@ -391,6 +403,11 @@ export function MembershipForm({
                             )}
                           </div>
                         </button>
+                        {subscriptionType !== "yearly" && field.value === "recurring" && (
+                          <p className="rounded-md bg-amber-50 border border-amber-100 px-3 py-2 text-xs leading-relaxed text-amber-700">
+                            새 자동이체 계좌를 등록하는 경우 효성 CMS 심사에 <strong>1~2영업일</strong>이 걸립니다. 즉시 이용하려면 &apos;한번만 결제&apos;를 선택해 주세요.
+                          </p>
+                        )}
                         {subscriptionType === "yearly" && (
                           <p className="text-muted-foreground text-xs px-1">
                             연간 플랜은 1회 결제만 지원합니다.
@@ -527,7 +544,7 @@ export function MembershipForm({
                 >
                   <CreditCard className="h-5 w-5 shrink-0 text-gray-400" />
                   <p className="text-sm text-gray-600">
-                    {billingMode === "recurring" ? "새 자동이체 수단 등록 후 시작" : "새 결제수단으로 결제하기"}
+                    {billingMode === "recurring" ? "새 자동이체 계좌 심사 신청 후 시작" : "새 결제수단으로 결제하기"}
                   </p>
                   {selectedBillingMethodId === null && (
                     <span className="text-primary ml-auto text-xs font-semibold">선택됨</span>
@@ -672,7 +689,8 @@ export function MembershipForm({
                 !form.watch("agreement") ||
                 !form.watch("subscriptionType") ||
                 form.formState.isSubmitting ||
-                (billingMode === "one_time" && !policyAgreed)
+                (billingMode === "one_time" && !policyAgreed) ||
+                (billingMode === "recurring" && !selectedBillingMethodId && hasPendingMethods)
               }
               type="submit"
             >

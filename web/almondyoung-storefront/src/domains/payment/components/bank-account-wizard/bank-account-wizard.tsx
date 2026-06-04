@@ -15,7 +15,7 @@ import { UserDetail } from "@lib/types/ui/user"
 import { cn } from "@lib/utils"
 import { format } from "date-fns"
 import { ChevronLeft, ChevronRight, CreditCard } from "lucide-react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { useActionState, useEffect, useState, useTransition } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
@@ -34,6 +34,7 @@ export default function BankAccountWizard({ user }: { user: UserDetail }) {
   const { closeModal: closeBnplModal } = useBnplModalStore() // 나중결제 결제 수단관리 모달창 닫기
 
   const router = useRouter()
+  const searchParams = useSearchParams()
 
   const form = useForm<PaymentMethodFormSchema>({
     resolver: zodResolver(paymentMethodFormSchema),
@@ -81,13 +82,28 @@ export default function BankAccountWizard({ user }: { user: UserDetail }) {
 
   useEffect(() => {
     if (state) {
-      if (state && state.success && "profileId" in state) {
-        toast.success("정기 결제 등록이 완료되었습니다.")
+      if (state.success && "profileId" in state) {
+        if (state.agreementUploadFailed) {
+          toast.warning(
+            "자동이체 계좌 심사 신청이 완료되었으나 동의자료 등록에 실패했습니다. 관리자에게 문의해 주세요."
+          )
+        } else {
+          toast.success(
+            "자동이체 계좌 심사 신청이 완료되었습니다. 심사에는 1~2영업일이 소요될 수 있습니다."
+          )
+        }
 
         form.reset()
-        router.refresh()
         closeModal()
         closeBnplModal()
+
+        // returnTo 파라미터가 있으면 해당 페이지로 복귀 (멤버십 재등록 플로우 등)
+        const returnTo = searchParams.get("returnTo")
+        if (returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//")) {
+          router.replace(returnTo)
+        } else {
+          router.refresh()
+        }
       } else {
         toast.error(state?.message || "정기결제 신청에 실패했습니다.")
       }
