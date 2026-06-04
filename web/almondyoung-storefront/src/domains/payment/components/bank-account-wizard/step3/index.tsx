@@ -204,6 +204,11 @@ export default function BankAgreementStep({
           </Button>
         </div>
 
+        {/* 심사 안내 */}
+        <p className="text-xs leading-relaxed text-gray-500">
+          제출 후 계좌 심사가 진행됩니다. 심사 완료 전에는 자동이체 결제가 진행되지 않으며, 심사 결과는 결제수단 관리 화면에서 확인할 수 있습니다.
+        </p>
+
         {/* 신청 버튼 */}
         <Button
           type="submit"
@@ -215,7 +220,7 @@ export default function BankAgreementStep({
           {isFormSubmitting ? (
             <Spinner size="sm" color="white" />
           ) : (
-            "정기결제 신청하기"
+            "자동이체 계좌 심사 신청하기"
           )}
         </Button>
       </div>
