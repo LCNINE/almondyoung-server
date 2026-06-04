@@ -11,18 +11,27 @@ import {
   Put,
   Body,
   Req,
-  UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { WalletJwtAuth } from '../wallet-auth.decorator';
 import { AuthenticatedRequest } from '../wallet.module';
 import { BillingMethodService } from './billing-method.service';
 import { CmsMemberService } from '../cms/cms-member.service';
 import { CmsRegistrationService } from '../cms/cms-registration.service';
-import { BillingMethodResponseDto, CmsBankAccountDto, CmsBillingMethodStatusDto, RegisterCmsBillingMethodDto, RegisterCmsWithAgreementResponseDto } from './dto';
+import {
+  BillingMethodResponseDto,
+  CmsBankAccountDto,
+  CmsBillingMethodStatusDto,
+  RegisterCmsBillingMethodDto,
+  RegisterCmsWithAgreementResponseDto,
+} from './dto';
 import { BillingMethod } from '../types';
+import {
+  FastifyMultipartInterceptor,
+  FastifyUploadedFile,
+  UploadedFastifyFile,
+} from '../common/fastify-multipart.interceptor';
 
 @ApiTags('Billing Methods')
 @Controller('v1/billing-methods')
@@ -81,13 +90,13 @@ export class BillingMethodController {
   @Post('cms/register-with-agreement')
   @HttpCode(201)
   @WalletJwtAuth()
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(new FastifyMultipartInterceptor('file'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'CMS 계좌 등록 + 전자서명 동의자료 업로드 통합 — 효성 회원등록 후 동의자료 연속 제출' })
   async registerCmsBankAccountWithAgreement(
     @Req() req: AuthenticatedRequest,
     @Body() dto: CmsBankAccountDto,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFastifyFile() file: FastifyUploadedFile,
   ): Promise<RegisterCmsWithAgreementResponseDto> {
     if (!file?.buffer) {
       throw new BadRequestException('전자서명 파일이 필요합니다');
@@ -95,12 +104,7 @@ export class BillingMethodController {
     const userId = req.jwtUserId!;
     const fileExtension = (file.originalname.split('.').pop() ?? 'png').toLowerCase();
     try {
-      const result = await this.cmsRegistrationService.registerWithAgreement(
-        userId,
-        dto,
-        file.buffer,
-        fileExtension,
-      );
+      const result = await this.cmsRegistrationService.registerWithAgreement(userId, dto, file.buffer, fileExtension);
       return {
         id: result.billingMethod.id,
         userId: result.billingMethod.userId,
@@ -122,14 +126,14 @@ export class BillingMethodController {
 
   @Put('cms/:id/with-agreement')
   @WalletJwtAuth()
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(new FastifyMultipartInterceptor('file'))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'CMS 계좌 변경 + 전자서명 동의자료 업로드 — 기존 동의자료 무효화 후 새 동의자료 제출' })
   async updateCmsBankAccountWithAgreement(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
     @Body() dto: CmsBankAccountDto,
-    @UploadedFile() file: Express.Multer.File,
+    @UploadedFastifyFile() file: FastifyUploadedFile,
   ): Promise<RegisterCmsWithAgreementResponseDto> {
     if (!file?.buffer) {
       throw new BadRequestException('전자서명 파일이 필요합니다');
@@ -137,13 +141,7 @@ export class BillingMethodController {
     const userId = req.jwtUserId!;
     const fileExtension = (file.originalname.split('.').pop() ?? 'png').toLowerCase();
     try {
-      const result = await this.cmsRegistrationService.updateWithAgreement(
-        id,
-        userId,
-        dto,
-        file.buffer,
-        fileExtension,
-      );
+      const result = await this.cmsRegistrationService.updateWithAgreement(id, userId, dto, file.buffer, fileExtension);
       return {
         id: result.billingMethod.id,
         userId: result.billingMethod.userId,
