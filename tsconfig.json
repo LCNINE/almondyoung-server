@@ -56,6 +56,12 @@
       "@packages/domain-types/*": [
         "packages/domain-types/*"
       ],
+      "@packages/product-description": [
+        "packages/product-description"
+      ],
+      "@packages/product-description/*": [
+        "packages/product-description/*"
+      ],
       "@packages/event-contracts": [
         "packages/event-contracts"
       ],
