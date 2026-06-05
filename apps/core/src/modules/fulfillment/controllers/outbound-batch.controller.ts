@@ -1,19 +1,25 @@
 import { Controller, Get, Post, Delete, Body, Param, Query, UsePipes, BadRequestException } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { OutboundBatchService } from '../services/outbound-batch.service';
 import { ZodValidationPipe } from '@app/shared/pipes/zod-validation.pipe';
 import { z } from 'zod';
 
-const CreateBatchSchema = z.object({
-  warehouseId: z.string().uuid(),
-  pickingMethod: z.enum(['individual', 'total_picking']),
-  name: z.string().optional(),
-  scheduledPickingAt: z
-    .string()
-    .datetime()
-    .optional()
-    .transform((s) => (s ? new Date(s) : undefined)),
-});
+const CreateBatchSchema = z
+  .object({
+    warehouseId: z.string().uuid().optional(),
+    pickingMethod: z.enum(['individual', 'total_picking']),
+    name: z.string().optional(),
+    scheduledPickingAt: z
+      .string()
+      .datetime()
+      .optional()
+      .transform((s) => (s ? new Date(s) : undefined)),
+    salesOrderIds: z.array(z.string().uuid()).min(1).optional(),
+  })
+  .refine((data) => data.warehouseId || (data.salesOrderIds && data.salesOrderIds.length > 0), {
+    message: 'warehouseId 또는 salesOrderIds 중 하나는 필수입니다',
+    path: ['warehouseId'],
+  });
 
 const AddFulfillmentOrdersSchema = z.object({
   fulfillmentOrderIds: z.array(z.string().uuid()).min(1),
@@ -26,11 +32,10 @@ export class OutboundBatchController {
 
   @Post()
   @ApiOperation({ summary: '아웃바운드 배치 생성' })
-  @ApiResponse({ status: 201, description: '아웃바운드 배치 생성 성공' })
+  @ApiResponse({ status: 201, description: '아웃바운드 배치 생성 성공 — { batchId, linkedFoCount }' })
   @UsePipes(new ZodValidationPipe(CreateBatchSchema))
   async createBatch(@Body() dto: z.infer<typeof CreateBatchSchema>) {
-    const batchId = await this.outboundBatchService.createBatch(dto);
-    return { batchId };
+    return this.outboundBatchService.createBatch(dto);
   }
 
   @Get()

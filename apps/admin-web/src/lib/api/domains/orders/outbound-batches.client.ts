@@ -12,6 +12,7 @@ import type {
   PickingListAggregateItem,
   AvailableFulfillmentOrder,
   CreateOutboundBatchRequest,
+  CreateOutboundBatchResponse,
   AddFOsToBatchRequest,
 } from '@/lib/types/dto/fulfillment';
 
@@ -44,7 +45,7 @@ export const outboundBatchesClient = {
     return res.data;
   },
 
-  create: async (data: CreateOutboundBatchRequest): Promise<{ batchId: string }> => {
+  create: async (data: CreateOutboundBatchRequest): Promise<CreateOutboundBatchResponse> => {
     const res = await client.post(BASE, data);
     return res.data;
   },

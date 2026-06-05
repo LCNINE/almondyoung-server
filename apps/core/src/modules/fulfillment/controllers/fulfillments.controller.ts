@@ -56,6 +56,13 @@ export class FulfillmentsController {
     return this.service.ship(id);
   }
 
+  @Post(':id/deliver')
+  @ApiOperation({ summary: '배송 완료 처리' })
+  @ApiParam({ name: 'id', description: '주문처리 ID' })
+  deliver(@Param('id') id: string) {
+    return this.service.markDelivered(id);
+  }
+
   @Post(':id/cancel')
   @ApiOperation({ summary: '주문처리 취소' })
   @ApiParam({ name: 'id', description: '주문처리 ID' })

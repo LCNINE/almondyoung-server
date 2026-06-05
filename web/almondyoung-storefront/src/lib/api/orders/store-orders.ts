@@ -62,6 +62,16 @@ export type StoreClaimStatus =
   | "returning"
   | "completed"
 
+export interface RefundSummary {
+  status: StoreRefundStatus
+  amount: number | null
+  currency: string
+  paymentMethodLabel: string | null
+  manualRequired: boolean
+  expectedProcessingMessage: string | null
+  lastUpdatedAt: string | null
+}
+
 export interface StoreOrderActionsResponse {
   orderId: string
   channelOrderId: string
@@ -73,6 +83,7 @@ export interface StoreOrderActionsResponse {
   cancelUnavailableReason?: StoreCancelUnavailableReason
   /** 결제 상태. 무통장입금 미확인 시 'awaiting_payment', 확인 완료 시 'paid'. */
   paymentStatus?: 'paid' | 'awaiting_payment'
+  refundSummary?: RefundSummary
   channelInfo?: {
     channel: string
     cancelUrl?: string

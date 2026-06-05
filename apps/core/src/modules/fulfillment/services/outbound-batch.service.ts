@@ -5,10 +5,11 @@ import { DbService } from '@app/db';
 import { and, eq, inArray, isNull, desc, lt, sql } from 'drizzle-orm';
 
 export interface CreateOutboundBatchDto {
-  warehouseId: string;
+  warehouseId?: string;
   pickingMethod: 'individual' | 'total_picking';
   name?: string;
   scheduledPickingAt?: Date;
+  salesOrderIds?: string[];
 }
 
 export interface OutboundBatchDetail {
@@ -68,10 +69,63 @@ export class OutboundBatchService {
     return tx ? fn(tx) : this.db.transaction(fn);
   }
 
-  async createBatch(dto: CreateOutboundBatchDto, tx?: DbTx): Promise<string> {
-    const { warehouseId, pickingMethod, name, scheduledPickingAt } = dto;
+  async createBatch(dto: CreateOutboundBatchDto, tx?: DbTx): Promise<{ batchId: string; linkedFoCount: number }> {
+    const { warehouseId: dtoWarehouseId, pickingMethod, name, scheduledPickingAt, salesOrderIds } = dto;
 
     return this.inTx(async (trx) => {
+      let foIdsToLink: string[] = [];
+      let effectiveWarehouseId = dtoWarehouseId!;
+
+      if (salesOrderIds && salesOrderIds.length > 0) {
+        const fos = await trx
+          .select({
+            id: wmsTables.fulfillmentOrders.id,
+            warehouseId: wmsTables.fulfillmentOrders.warehouseId,
+            fulfillmentMode: wmsTables.fulfillmentOrders.fulfillmentMode,
+            totalItems: wmsTables.fulfillmentOrders.totalItems,
+            totalQty: wmsTables.fulfillmentOrders.totalQty,
+          })
+          .from(wmsTables.fulfillmentOrders)
+          .where(
+            and(
+              inArray(wmsTables.fulfillmentOrders.salesOrderId, salesOrderIds),
+              inArray(wmsTables.fulfillmentOrders.status, ['ready', 'pending']),
+              isNull(wmsTables.fulfillmentOrders.batchId),
+            ),
+          );
+
+        const eligible = fos.filter((fo) => fo.fulfillmentMode !== 'drop_ship');
+
+        if (eligible.length === 0) {
+          throw new BadRequestException(
+            '선택한 주문에 출고 가능한 주문처리가 없습니다. 이미 배치에 할당됐거나 취소/배송완료 상태일 수 있습니다.',
+          );
+        }
+
+        if (eligible.some((fo) => !fo.warehouseId)) {
+          throw new BadRequestException(
+            '창고가 지정되지 않은 주문처리가 포함되어 있습니다. 해당 주문처리에 창고를 먼저 배정해 주세요.',
+          );
+        }
+
+        const warehouseIds = new Set(eligible.map((fo) => fo.warehouseId));
+        if (warehouseIds.size > 1) {
+          throw new ConflictException(
+            `선택한 주문의 출고 창고가 혼합되어 있습니다 (${[...warehouseIds].join(', ')}). 창고별로 따로 배치를 생성해 주세요.`,
+          );
+        }
+
+        const foWarehouseId = eligible[0].warehouseId!;
+        if (dtoWarehouseId && dtoWarehouseId !== foWarehouseId) {
+          throw new ConflictException(
+            `요청한 창고(${dtoWarehouseId})와 주문처리 창고(${foWarehouseId})가 다릅니다.`,
+          );
+        }
+
+        foIdsToLink = eligible.map((fo) => fo.id);
+        effectiveWarehouseId = dtoWarehouseId ?? foWarehouseId;
+      }
+
       const batchName = name || `배치-${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
       const batchNumber = `OB-${new Date()
         .toISOString()
@@ -83,7 +137,7 @@ export class OutboundBatchService {
         .values({
           name: batchName,
           batchNumber,
-          warehouseId,
+          warehouseId: effectiveWarehouseId,
           pickingMethod,
           status: 'created',
           totalItems: 0,
@@ -92,8 +146,34 @@ export class OutboundBatchService {
         })
         .returning();
 
-      this.logger.log(`Created outbound batch ${batch.id} with picking method: ${pickingMethod}`);
-      return batch.id;
+      if (foIdsToLink.length > 0) {
+        const foDetails = await trx
+          .select({
+            id: wmsTables.fulfillmentOrders.id,
+            totalItems: wmsTables.fulfillmentOrders.totalItems,
+            totalQty: wmsTables.fulfillmentOrders.totalQty,
+          })
+          .from(wmsTables.fulfillmentOrders)
+          .where(inArray(wmsTables.fulfillmentOrders.id, foIdsToLink));
+
+        await trx
+          .update(wmsTables.fulfillmentOrders)
+          .set({ status: 'allocated', batchId: batch.id, allocatedAt: new Date() })
+          .where(inArray(wmsTables.fulfillmentOrders.id, foIdsToLink));
+
+        const totalItems = foDetails.reduce((sum, fo) => sum + (fo.totalItems ?? 0), 0);
+        const totalQty = foDetails.reduce((sum, fo) => sum + (fo.totalQty ?? 0), 0);
+
+        await trx
+          .update(wmsTables.outboundBatches)
+          .set({ totalItems, totalQty })
+          .where(eq(wmsTables.outboundBatches.id, batch.id));
+      }
+
+      this.logger.log(
+        `Created outbound batch ${batch.id} (method: ${pickingMethod}, linked FOs: ${foIdsToLink.length})`,
+      );
+      return { batchId: batch.id, linkedFoCount: foIdsToLink.length };
     }, tx);
   }
 

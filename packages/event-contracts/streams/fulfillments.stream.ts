@@ -88,6 +88,7 @@ export interface FulfillmentLabeledPayload {
 export interface FulfillmentShippedPayload {
   fulfillmentId: string;
   orderId: string;
+  channelOrderId?: string;
 
   trackingInfo: TrackingInfo;
 
@@ -107,6 +108,7 @@ export interface FulfillmentShippedPayload {
 export interface FulfillmentDeliveredPayload {
   fulfillmentId: string;
   orderId: string;
+  channelOrderId?: string;
 
   deliveredAt: string;
   recipient?: string;
@@ -194,6 +196,7 @@ const FulfillmentLabeledSchema = z.object({
 const FulfillmentShippedSchema = z.object({
   fulfillmentId: z.string().min(1),
   orderId: z.string().min(1),
+  channelOrderId: z.string().optional(),
   trackingInfo: TrackingInfoSchema,
   shippedAt: z.string().datetime(),
   estimatedDeliveryDate: z.string().datetime().optional(),
@@ -207,6 +210,7 @@ const FulfillmentShippedSchema = z.object({
 const FulfillmentDeliveredSchema = z.object({
   fulfillmentId: z.string().min(1),
   orderId: z.string().min(1),
+  channelOrderId: z.string().optional(),
   deliveredAt: z.string().datetime(),
   recipient: z.string().optional(),
   deliverySignature: z.string().optional(),
