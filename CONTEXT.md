@@ -15,7 +15,15 @@
 - **CoW 는 cascading 된다.** variant CoW 가 일어나면, draft 의 pricing rule 중 그 variantId 를 `scopeTargetIds` 에 포함하는 룰도 함께 clone 되고 새 variantId 로 교체된다. 같은 트랜잭션 안에서 처리.
 - **`variantCode` 는 unique 제약 없다.** 같은 master 의 active variant 와 draft variant 는 동일한 외부 코드(=물리적 상품 식별자)를 의도적으로 공유한다. 진짜 의도("현재 active 버전에 매달린 variant 끼리만 unique")는 정션 join 이 필요해 partial index 로 표현 불가하므로 DB 강제는 없다. publish 직전에 active 버전의 variant 들끼리 충돌 검증.
 - **재고 매칭 (productMatchings + productVariantSkuLinks) 의 버전 인계.** matching 은 inventory 모듈 소유이고 `variantId` unique. variant CoW 가 발생해도 PIM 트랜잭션 안에선 matching 을 건드리지 않는다. 대신 `publishVersion` 이 새 active 의 matching 없는 variant 들에 대해 **이전 active 의 같은 옵션 조합 variant** 의 matching+links 를 clone (variantId 만 새 ID). 옵션 조합이 일치 안 하면 (= 정체성이 달라진 신규 조합) unmatched 유지 — 운영자가 product-matching 화면에서 처리. 의도: 본질적이지 않은 variant 변경(이미지/이름) 은 매칭 자동 인계, 옵션 정체성 변화는 끊김. draft 단계에선 inventory 시뮬레이션은 안 한다는 운영 가정.
-- **상품 상세설명**: `descriptionHtml` (text) 가 실데이터. 평문 `description` 컬럼은 현재 항상 NULL — 미래 용도 미정. 스토어프론트는 `prose` 컨테이너에 `dangerouslySetInnerHTML` 로 렌더 (sanitize 없음). 데이터 모양은 카페24/NNEditor 마이그레이션 출신의 **이미지 스택 HTML** (`<img>` 나열 + 인라인 style) 이 주류.
+- **상품 상세설명 (Product Description)**: 판매상품 master version 에 속하는 고객 노출용 상세 콘텐츠. Canonical source 는 Markdown 기반 `description` 이며, `description` 이 없을 때만 legacy `descriptionHtml` 을 fallback 으로 사용한다. 작성자는 `description` 에 raw HTML 을 쓰지 않고, 기본 Markdown 문법과 상품 상세설명 이미지 문법으로 콘텐츠를 표현한다.
+- **상품 상세설명 이미지**: 상품 상세설명 Markdown 안에서 file-service 의 File UUID 를 참조해 노출하는 이미지. 작성 문법은 `::product-image{fileId="..." alt="..."}` 이며, raw URL 이미지가 아니라 `product-description-image` file context 에 업로드된 파일을 참조한다.
+- 상품 상세설명 이미지 file reference 가 깨졌을 때 storefront 는 이미지를 조용히 숨기지 않고 alt 기반 placeholder 를 노출한다. 관리자 미리보기는 운영자가 고칠 수 있도록 fileId 와 함께 불러오기 실패를 명확히 표시한다.
+- **레거시 상품 상세설명 HTML (Legacy Product Description HTML)**: 카페24/NNEditor 마이그레이션 출신의 raw HTML 상세 콘텐츠. 데이터 모양은 **이미지 스택 HTML** (`<img>` 나열 + 인라인 style) 이 주류이며, 신규 작성의 canonical source 가 아니다. Markdown 전환 단계에서는 기존 raw HTML 호환성을 유지하고, 이를 정제하거나 Markdown 으로 자동 변환하는 작업은 별도 migration 으로 다룬다.
+- `description` 이 비어 있고 `descriptionHtml` 만 있는 기존 판매상품을 관리자가 열면, Markdown 편집기는 비어 있게 두고 legacy HTML 은 read-only preview 로 보여준다. 관리자가 Markdown 을 새로 저장한 뒤부터 해당 version 의 고객 노출 상세설명은 `description` 이 우선한다.
+- 새 draft version 을 만들 때는 부모 version 의 `description` 과 `descriptionHtml` 을 모두 그대로 복사한다. 기존 HTML-only 판매상품도 draft 생성 직후 고객 노출 상세설명이 유지되고, 운영자가 Markdown 을 저장한 version 부터 `description` 이 우선한다.
+- 판매채널에 노출되는 상품 상세설명은 active version 의 상세설명뿐이다. draft/inactive version 의 상세설명은 관리자 작성·미리보기·이전 버전 열람 대상이지 판매채널 projection 대상이 아니다.
+- 상품 상세설명 Markdown 파싱 규칙과 directive 계약은 NestJS 에 의존하지 않는 `packages/` 공유 코드로 둔다. admin preview 와 storefront/customer renderer 는 같은 파싱 규칙을 공유하고, surface 별 표시 컴포넌트만 다르게 주입한다.
+- Medusa product 의 `description` 필드는 canonical 상품 상세설명의 원천이 아니다. 현재는 null/empty projection 으로 두며, 고객용 상품 상세 콘텐츠는 Core 의 active version 상세설명(`description` 우선, 없으면 `descriptionHtml` fallback)을 storefront 가 직접 렌더한다. 필요해지면 Medusa `description` 은 요약(summary) 성격의 plain text projection 으로만 쓴다.
 - 변화 동인: 상품 등록/판매 시작·종료/이미지 변경.
 
 ### 재고상품 (SKU) — WMS 출신
