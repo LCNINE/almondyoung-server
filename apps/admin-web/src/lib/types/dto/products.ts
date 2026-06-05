@@ -116,6 +116,8 @@ export interface MasterDto {
 }
 
 export interface MastersQuery {
+  q?: string;
+  /** @deprecated GET /masters uses q for keyword search. */
   search?: string;
   pricingStrategy?: PricingStrategy;
   brand?: string;

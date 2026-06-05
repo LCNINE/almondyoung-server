@@ -17,7 +17,7 @@ export const useProductsMatchingTableQuery = ({
   const searchParams: MastersQuery = {
     limit: pageSize,
     page: page ? Number(page) : 1,
-    search: search || undefined,
+    q: search?.trim() || undefined,
     status: (status as MastersQuery['status']) || undefined,
     brand: brand || undefined,
     categoryId: categoryId || undefined,
