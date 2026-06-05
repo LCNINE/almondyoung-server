@@ -19,6 +19,7 @@ export default async function PaginatedProducts({
   page,
   collectionId,
   categoryId,
+  categoryIds,
   productsIds,
   countryCode,
 }: {
@@ -26,6 +27,7 @@ export default async function PaginatedProducts({
   page: number
   collectionId?: string
   categoryId?: string
+  categoryIds?: string[]
   productsIds?: string[]
   countryCode: string
 }) {
@@ -39,6 +41,10 @@ export default async function PaginatedProducts({
 
   if (categoryId) {
     queryParams["category_id"] = [categoryId]
+  }
+
+  if (categoryIds?.length) {
+    queryParams["category_id"] = categoryIds
   }
 
   if (productsIds) {

@@ -8,6 +8,7 @@ import { SortOptions } from "@modules/store/components/refinement-list/sort-prod
 import PaginatedProducts from "@modules/store/templates/paginated-products"
 import LocalizedClientLink from "@modules/common/components/localized-client-link"
 import { HttpTypes } from "@medusajs/types"
+import { getCategoryIdsWithDescendants } from "@lib/util/product-category"
 
 export default function CategoryTemplate({
   category,
@@ -35,6 +36,7 @@ export default function CategoryTemplate({
   }
 
   getParents(category)
+  const categoryIds = getCategoryIdsWithDescendants(category)
 
   return (
     <div
@@ -87,7 +89,7 @@ export default function CategoryTemplate({
           <PaginatedProducts
             sortBy={sort}
             page={pageNumber}
-            categoryId={category.id}
+            categoryIds={categoryIds}
             countryCode={countryCode}
           />
         </Suspense>
