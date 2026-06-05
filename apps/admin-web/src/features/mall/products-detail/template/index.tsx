@@ -6,6 +6,7 @@ import { GitBranch } from 'lucide-react';
 import { TwoColumnPage } from '@/components/admin-ui-experimental/layout';
 import { CardErrorBoundary } from '@/components/admin-ui-experimental/common/card-error-boundary';
 import { Spinner } from '@/components/ui/spinner';
+import { ProductDetailDescription } from '../components/description';
 import { ProductDetailGeneral } from '../components/general';
 import { ProductDetailImages } from '../components/images';
 import { ProductDetailOptions } from '../components/options';
@@ -41,6 +42,7 @@ export default function ProductsDetailTemplate({ masterId, versionId }: Props) {
       <TwoColumnPage>
         <TwoColumnPage.Main>
           <ProductDetailGeneral masterId={masterId} versionId={versionId} />
+          <ProductDetailDescription masterId={masterId} versionId={versionId} />
           <ProductDetailOptions masterId={masterId} versionId={versionId} />
           <ProductDetailVariants masterId={masterId} versionId={versionId} />
         </TwoColumnPage.Main>
