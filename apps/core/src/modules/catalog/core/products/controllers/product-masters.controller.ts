@@ -117,7 +117,7 @@ export class ProductMastersController {
     description: '브랜드 필터 (부분 일치)',
   })
   @ApiQuery({
-    name: 'name',
+    name: 'q',
     required: false,
     type: String,
     description: '상품명 검색 키워드 (부분 일치)',
@@ -153,6 +153,7 @@ export class ProductMastersController {
       limit?: string;
       categoryId?: string;
       brand?: string;
+      q?: string;
       name?: string;
       mode?: 'active' | 'active-or-inactive';
       deleted?: string;
@@ -169,7 +170,7 @@ export class ProductMastersController {
       limit: query.limit ? parseInt(query.limit) : undefined,
       categoryId: query.categoryId,
       brand: query.brand,
-      name: query.name,
+      name: query.q?.trim() || query.name?.trim() || undefined,
       mode: query.mode,
       deleted: query.deleted === 'true',
       ids: ids && ids.length > 0 ? ids : undefined,

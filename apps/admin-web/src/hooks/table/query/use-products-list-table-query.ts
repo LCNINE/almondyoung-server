@@ -1,4 +1,4 @@
-import type { MastersQuery, ProductStatus } from '@/lib/types/dto/products';
+import type { MastersQuery } from '@/lib/types/dto/products';
 import { useQueryParams } from '../../use-query-params';
 
 type UseProductsListTableQueryProps = {
@@ -8,15 +8,14 @@ type UseProductsListTableQueryProps = {
 export const useProductsListTableQuery = ({
   pageSize = 20,
 }: UseProductsListTableQueryProps = {}) => {
-  const queryObject = useQueryParams(['page', 'q', 'status', 'categoryId', 'brand']);
+  const queryObject = useQueryParams(['page', 'q', 'categoryId', 'brand']);
 
-  const { page, q, status, categoryId, brand } = queryObject;
+  const { page, q, categoryId, brand } = queryObject;
 
   const searchParams: MastersQuery = {
     limit: pageSize,
     page: page ? Number(page) : 1,
-    search: q,
-    status: status as ProductStatus | undefined,
+    q: q?.trim() || undefined,
     categoryId,
     brand,
   };
