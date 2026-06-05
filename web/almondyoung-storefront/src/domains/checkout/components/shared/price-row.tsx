@@ -43,7 +43,7 @@ const valueToneClass: Record<ValueTone, string> = {
 
 const highlightClass: Record<Highlight, string> = {
   none: "",
-  beige: "bg-[#FFF7E5]/50 px-4 py-4 lg:px-6",
+  beige: "bg-[#FFFBF2] px-4 py-4 lg:px-6",
 }
 
 interface PriceRowProps extends HTMLAttributes<HTMLDivElement> {
