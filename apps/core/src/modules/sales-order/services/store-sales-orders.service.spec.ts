@@ -353,8 +353,11 @@ describe('StoreSalesOrdersService', () => {
     so?: ReturnType<typeof makeSo>;
     walletOutcome?: WalletRefundOutcome;
     cancelError?: Error;
+    orderLines?: Array<{ id: string; quantity: number; unitPrice: number | null }>;
   } = {}) {
     const so = options.so ?? makeSo();
+    // Default order lines matching the cancelled line in tests
+    const orderLines = options.orderLines ?? [{ id: 'line-001', quantity: 2, unitPrice: 25000 }];
     const walletOutcome = options.walletOutcome ?? {
       kind: 'success',
       refunds: [{
@@ -374,9 +377,12 @@ describe('StoreSalesOrdersService', () => {
         select: jest.fn().mockImplementation(() => ({
           from: jest.fn().mockImplementation(() => ({
             where: jest.fn().mockImplementation(() => ({
+              // limit().then() — findSoOrThrow and businessLink lookups
               limit: jest.fn().mockReturnValue({
                 then: jest.fn((fn: (r: unknown[]) => unknown) => fn([so])),
               }),
+              // Direct await without .limit() — salesOrderLines query
+              then: jest.fn((fn: (r: unknown[]) => unknown) => fn(orderLines)),
               orderBy: jest.fn().mockReturnValue({
                 limit: jest.fn().mockReturnValue({
                   then: jest.fn((fn: (r: unknown[]) => unknown) => fn([])),
@@ -425,8 +431,12 @@ describe('StoreSalesOrdersService', () => {
       expect(calledWith.correlationId).not.toBe(`cancel:${SO_ID}`);
     });
 
-    it('lines 있으면 부분취소 — Wallet 미호출, refundStatus=manual_pending', async () => {
-      const { service, walletClientMock, salesOrdersServiceMock } = makeAdminContext();
+    it('부분취소 — 조건 충족 시에도 항상 manual_pending (쿠폰/포인트 배분 불확실)', async () => {
+      // line-001: qty=2, unitPrice=25000 → cancel qty=1
+      // 자동환불 정책이 manual_review로 변경되어 Wallet 미호출, refundAmount는 참고용으로만 반환
+      const { service, walletClientMock, salesOrdersServiceMock } = makeAdminContext({
+        orderLines: [{ id: 'line-001', quantity: 2, unitPrice: 25000 }],
+      });
       const lines = [{ salesOrderLineId: 'line-001', quantity: 1 }];
       const result = await service.adminCancelRequest(SO_ID, { lines });
       expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
@@ -435,6 +445,46 @@ describe('StoreSalesOrdersService', () => {
         expect.objectContaining({ lines, cancelledBy: 'admin' }),
       );
       expect(result.refundStatus).toBe('manual_pending');
+      expect(result.manualReason).toBe('PARTIAL_CANCEL_MANUAL_REVIEW');
+    });
+
+    it('부분취소 — walletIntentId 없음 → manual_pending, Wallet 미호출', async () => {
+      const { service, walletClientMock, salesOrdersServiceMock } = makeAdminContext({
+        so: makeSo({ walletIntentId: null }),
+        orderLines: [{ id: 'line-001', quantity: 2, unitPrice: 25000 }],
+      });
+      const lines = [{ salesOrderLineId: 'line-001', quantity: 1 }];
+      const result = await service.adminCancelRequest(SO_ID, { lines });
+      expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
+      expect(salesOrdersServiceMock.cancel).toHaveBeenCalledWith(
+        SO_ID,
+        expect.objectContaining({ lines, cancelledBy: 'admin' }),
+      );
+      expect(result.refundStatus).toBe('manual_pending');
+      expect(result.manualReason).toBe('NO_WALLET_INTENT');
+    });
+
+    it('부분취소 — 채널 주문(naver) → manual_pending, Wallet 미호출', async () => {
+      const { service, walletClientMock } = makeAdminContext({
+        so: makeSo({ salesChannel: 'naver' }),
+        orderLines: [{ id: 'line-001', quantity: 2, unitPrice: 25000 }],
+      });
+      const lines = [{ salesOrderLineId: 'line-001', quantity: 1 }];
+      const result = await service.adminCancelRequest(SO_ID, { lines });
+      expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
+      expect(result.refundStatus).toBe('manual_pending');
+      expect(result.manualReason).toBe('CHANNEL_ORDER');
+    });
+
+    it('부분취소 — unitPrice 없는 라인 취소 → manual_pending', async () => {
+      const { service, walletClientMock } = makeAdminContext({
+        orderLines: [{ id: 'line-001', quantity: 2, unitPrice: null }],
+      });
+      const lines = [{ salesOrderLineId: 'line-001', quantity: 1 }];
+      const result = await service.adminCancelRequest(SO_ID, { lines });
+      expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
+      expect(result.refundStatus).toBe('manual_pending');
+      expect(result.manualReason).toBe('NO_LINE_PRICING');
     });
 
     it('이미 취소된 주문이면 400', async () => {

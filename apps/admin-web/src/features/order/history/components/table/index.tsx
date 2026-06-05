@@ -6,7 +6,7 @@ import dayjs from 'dayjs';
 import { toast } from 'sonner';
 import { useOrderHistoryFilter } from '../../contexts/filter.context';
 import type { SalesOrderBusinessTimelineItemDto, SalesOrdersQuery } from '@/lib/types/dto/orders';
-import { useSalesOrderRows, useCreatePickingLists } from '../../hooks/use-order-rows';
+import { useSalesOrderRows } from '../../hooks/use-order-rows';
 import { filterRefundIssueRows } from '../../hooks/refund-filter.utils';
 import type { OrderLineRow } from '../../hooks/use-order-rows';
 import { useSalesOrder, useAdminRetryRefund } from '@/lib/services/orders';
@@ -23,6 +23,7 @@ import { SplitQuantityModal } from '../modals/split-quantity-modal';
 import { AddOrderItemModal } from '../modals/add-order-item-modal';
 import { MemoModal } from '../modals/memo-modal';
 import { CancelOrderModal } from '../modals/cancel-order-modal';
+import { ManualRefundCompleteModal } from '../modals/manual-refund-complete-modal';
 
 const PAGE_SIZE = 50;
 
@@ -88,6 +89,35 @@ function RetryRefundButton({ orderId, onDone }: { orderId: string; onDone: (stat
             }}
         >
             {retryMutation.isPending ? '처리중...' : '환불 재시도'}
+        </button>
+    );
+}
+
+function ViewPaymentButton({ walletIntentId }: { walletIntentId?: string | null }) {
+    if (!walletIntentId) return null;
+    return (
+        <button
+            className="h-6 px-2 rounded border border-blue-300 text-blue-600 hover:bg-blue-50 text-[11px] whitespace-nowrap"
+            onClick={(e) => {
+                e.stopPropagation();
+                window.open(`/payments/${encodeURIComponent(walletIntentId)}`, '_blank');
+            }}
+        >
+            결제 보기
+        </button>
+    );
+}
+
+function ManualCompleteButton({ onDone }: { onDone: () => void }) {
+    return (
+        <button
+            className="h-6 px-2 rounded border border-amber-400 text-amber-700 hover:bg-amber-50 text-[11px] whitespace-nowrap"
+            onClick={(e) => {
+                e.stopPropagation();
+                onDone();
+            }}
+        >
+            수동 완료
         </button>
     );
 }
@@ -396,53 +426,26 @@ export default function OrderTable() {
     const [showMemoModal, setShowMemoModal] = useState(false);
     const [showTimelineModal, setShowTimelineModal] = useState(false);
     const [showCancelModal, setShowCancelModal] = useState(false);
+    const [showManualRefundModal, setShowManualRefundModal] = useState(false);
     const [selectedOrder, setSelectedOrder] = useState<OrderLineRow | null>(null);
 
     /* 액션 */
-    const createPickingLists = useCreatePickingLists();
-
-    const handleSelectedOutbound = useCallback(async () => {
+    const handleSelectedOutbound = useCallback(() => {
         if (!selectedOrderIds.size) return;
+        // 피킹리스트 배치 관리 페이지로 이동 — 배치 생성과 FO 연결은 해당 페이지에서 처리
+        window.open('/order/outbound-batches', '_blank');
+        toast.info(`${selectedOrderIds.size}건 선택됨. 피킹리스트 관리 페이지에서 배치를 생성하고 출고 주문을 추가하세요.`);
+    }, [selectedOrderIds]);
 
-        // 3PL 주문 필터링 (피킹리스트 불필요)
-        const orderIdsToProcess = [...selectedOrderIds].filter((orderId) => {
-            const order = rows.find((r) => r.orderId === orderId);
-            return order && order.channel !== '3pl';
-        });
-
-        const excludedCount = selectedOrderIds.size - orderIdsToProcess.length;
-
-        if (orderIdsToProcess.length === 0) {
+    const handleBulkOutbound = useCallback(() => {
+        const readyCount = new Set(rows.filter((r) => isOrderSelectable(r) && r.channel !== '3pl').map((r) => r.orderId)).size;
+        if (!readyCount) {
             toast.info('출고 가능한 주문이 없습니다. (3PL 주문은 제외됩니다)');
             return;
         }
-
-        try {
-            const batches = await createPickingLists.mutateAsync(orderIdsToProcess);
-            const msg = excludedCount > 0 ? `${orderIdsToProcess.length}건 → ${batches.length}개 피킹리스트 생성 (3PL ${excludedCount}건 제외)` : `${orderIdsToProcess.length}건 → ${batches.length}개 피킹리스트 생성`;
-            toast.success(msg);
-            setSelectedOrderIds(new Set());
-        } catch {
-            toast.error('출고지시 처리 중 오류가 발생했습니다.');
-        }
-    }, [selectedOrderIds, rows, createPickingLists]);
-
-    const handleBulkOutbound = useCallback(async () => {
-        // 완전출고 가능하고 confirmed 상태인 주문만 (3PL 제외)
-        const readyIds = [...new Set(rows.filter((r) => isOrderSelectable(r) && r.channel !== '3pl').map((r) => r.orderId))];
-
-        if (!readyIds.length) {
-            toast.info('출고 가능한 주문이 없습니다. (3PL 주문은 제외됩니다)');
-            return;
-        }
-
-        try {
-            const batches = await createPickingLists.mutateAsync(readyIds);
-            toast.success(`${readyIds.length}건 → ${batches.length}개 피킹리스트 생성 (각 최대 20개)`);
-        } catch {
-            toast.error('일괄 출고지시 처리 중 오류가 발생했습니다.');
-        }
-    }, [rows, createPickingLists]);
+        window.open('/order/outbound-batches', '_blank');
+        toast.info(`출고 가능 주문 ${readyCount}건. 피킹리스트 관리 페이지에서 배치를 생성하고 출고 주문을 추가하세요.`);
+    }, [rows]);
 
     /* 페이지네이션 */
     const [page, setPage] = useState(0); // 0-based index (DataTable 방식)
@@ -514,7 +517,7 @@ export default function OrderTable() {
             {
                 key: '_actions',
                 label: '기능',
-                width: '96px',
+                width: '108px',
                 render: (_, r) => (
                     <div className="flex flex-col gap-1">
                         <button
@@ -527,23 +530,18 @@ export default function OrderTable() {
                         >
                             입력확인
                         </button>
+                        {/* stub: API 미구현 — 클릭 불가 */}
                         <button
-                            className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedOrder(r);
-                                setShowAddModal(true);
-                            }}
+                            disabled
+                            className="h-7 px-2 rounded border border-gray-200 bg-gray-50 whitespace-nowrap text-xs text-gray-400 cursor-not-allowed"
+                            title="준비 중: Core 주문분할 API 필요"
                         >
                             주문추가
                         </button>
                         <button
-                            className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedOrder(r);
-                                setShowQuantityModal(true);
-                            }}
+                            disabled
+                            className="h-7 px-2 rounded border border-gray-200 bg-gray-50 whitespace-nowrap text-xs text-gray-400 cursor-not-allowed"
+                            title="준비 중: Core 주문분할 API 필요"
                         >
                             수량나누기
                         </button>
@@ -564,34 +562,60 @@ export default function OrderTable() {
                                 <span className="inline-flex items-center h-7 px-2 rounded border border-gray-200 bg-gray-50 text-xs text-gray-500 whitespace-nowrap">
                                     취소됨
                                 </span>
-                                {r.refundStatus && r.isFirstOfOrder && (
+                                {r.isFirstOfOrder && r.refundStatus && (
                                     <RefundStatusBadge status={r.refundStatus} />
                                 )}
                                 {r.isFirstOfOrder && r.refundStatus === 'failed' && (
-                                    <RetryRefundButton
-                                        orderId={r.orderId}
-                                        onDone={() => {}}
-                                    />
+                                    <RetryRefundButton orderId={r.orderId} onDone={() => {}} />
+                                )}
+                                {r.isFirstOfOrder && r.refundStatus === 'failed' && (
+                                    <ViewPaymentButton walletIntentId={r.walletIntentId} />
                                 )}
                                 {r.isFirstOfOrder && r.refundStatus === 'manual_pending' && (
-                                    <span className="inline-flex items-center h-6 px-2 rounded border border-amber-300 text-amber-700 text-[11px] whitespace-nowrap bg-amber-50">
-                                        수동 처리 필요
-                                    </span>
+                                    <>
+                                        <ManualCompleteButton
+                                            onDone={() => {
+                                                setSelectedOrder(r);
+                                                setShowManualRefundModal(true);
+                                            }}
+                                        />
+                                        <ViewPaymentButton walletIntentId={r.walletIntentId} />
+                                    </>
+                                )}
+                                {r.isFirstOfOrder && r.refundStatus === 'succeeded' && (
+                                    <ViewPaymentButton walletIntentId={r.walletIntentId} />
+                                )}
+                                {r.isFirstOfOrder && r.refundStatus === 'pending' && (
+                                    <ViewPaymentButton walletIntentId={r.walletIntentId} />
                                 )}
                             </div>
                         ) : (
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-7 px-2 text-xs text-red-600 border-red-300 hover:bg-red-50"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedOrder(r);
-                                    setShowCancelModal(true);
-                                }}
-                            >
-                                {r.orderStatus === 'processing' ? '강제취소' : '취소'}
-                            </Button>
+                            <div className="flex flex-col gap-1">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-7 px-2 text-xs text-red-600 border-red-300 hover:bg-red-50"
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSelectedOrder(r);
+                                        setShowCancelModal(true);
+                                    }}
+                                >
+                                    {r.orderStatus === 'processing' ? '강제취소' : '취소'}
+                                </Button>
+                                {r.isFirstOfOrder && r.refundStatus === 'manual_pending' && (
+                                    <>
+                                        <RefundStatusBadge status={r.refundStatus} />
+                                        <ManualCompleteButton
+                                            onDone={() => {
+                                                setSelectedOrder(r);
+                                                setShowManualRefundModal(true);
+                                            }}
+                                        />
+                                        <ViewPaymentButton walletIntentId={r.walletIntentId} />
+                                    </>
+                                )}
+                            </div>
                         )}
                     </div>
                 ),
@@ -627,13 +651,11 @@ export default function OrderTable() {
                 render: (_, r) => (
                     <div className="flex flex-col gap-1">
                         <span className="text-gray-700">{r.shippingFee === 0 ? '선불' : `${(r.shippingFee ?? 0).toLocaleString()}원`}</span>
+                        {/* stub: Core 주문분할 API 미구현 */}
                         <button
-                            className="h-6 px-2 rounded border border-red-400 text-red-500 hover:bg-red-50 text-[11px] w-fit"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedOrder(r);
-                                setShowSplitModal(true);
-                            }}
+                            disabled
+                            className="h-6 px-2 rounded border border-gray-200 bg-gray-50 text-gray-400 text-[11px] w-fit cursor-not-allowed"
+                            title="준비 중: Core 주문분할 API 필요"
                         >
                             나누기
                         </button>
@@ -709,6 +731,11 @@ export default function OrderTable() {
             {selectedOrder && <MemoModal order={selectedOrder} open={showMemoModal} onOpenChange={setShowMemoModal} />}
             <BusinessTimelineModal order={selectedOrder} open={showTimelineModal} onOpenChange={setShowTimelineModal} />
             <CancelOrderModal order={selectedOrder} open={showCancelModal} onOpenChange={setShowCancelModal} />
+            <ManualRefundCompleteModal
+                order={selectedOrder}
+                open={showManualRefundModal}
+                onOpenChange={setShowManualRefundModal}
+            />
         </>
     );
 }

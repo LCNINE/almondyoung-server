@@ -1759,3 +1759,113 @@ describe('SalesOrdersService.cancel full cancel shipped evidence guard', () => {
   // happy path (ready FO, shippedQty=0 → cancel proceeds) is covered by the existing
   // 24 passing tests in 'SalesOrdersService.cancel fulfillment backlog lifecycle'
 });
+
+// ─── P0: confirm() 상태 가드 ────────────────────────────────────────────────────
+
+describe('SalesOrdersService.confirm() state guard', () => {
+  const salesOrderId = 'confirm-so-1111-1111-1111-111111111111';
+
+  function makeConfirmService(status: string) {
+    const state = {
+      salesOrders: [{ id: salesOrderId, status }],
+      salesOrderLines: [] as Array<Record<string, any>>,
+    };
+
+    const tx: any = {
+      execute: jest.fn().mockResolvedValue([]),
+      select: jest.fn(() => ({
+        from: (table: unknown) => ({
+          where: () => ({
+            limit: (n: number) =>
+              Promise.resolve(table === wmsTables.salesOrders ? state.salesOrders.slice(0, n) : []),
+          }),
+        }),
+      })),
+      update: jest.fn(() => ({
+        set: (set: Record<string, unknown>) => ({
+          where: () => {
+            state.salesOrders = state.salesOrders.map((row) => ({ ...row, ...set }));
+            return Promise.resolve([]);
+          },
+        }),
+      })),
+      insert: jest.fn(() => ({ values: () => ({ returning: jest.fn().mockResolvedValue([]) }) })),
+    };
+
+    const db = { db: { ...tx, transaction: jest.fn((fn: any) => fn(tx)) } };
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+
+    const service = new SalesOrdersService(
+      db as any,
+      {} as any,
+      outbox as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+
+    // getOne calls complex multi-table queries; stub it to return the current state
+    jest.spyOn(service, 'getOne').mockImplementation(
+      async () => ({ id: salesOrderId, status: state.salesOrders[0]?.status ?? 'confirmed' } as any),
+    );
+
+    return { service, state, tx };
+  }
+
+  it('pending → confirmed 정상 전이', async () => {
+    const { service, state } = makeConfirmService('pending');
+    await service.confirm(salesOrderId);
+    expect(state.salesOrders[0].status).toBe('confirmed');
+  });
+
+  it('confirmed → confirmed 멱등 반환 (status 재설정 없음)', async () => {
+    const { service, tx } = makeConfirmService('confirmed');
+    await service.confirm(salesOrderId);
+    // 핵심: execute(FOR UPDATE) 1회 + select 1회는 있지만 update는 없어야 한다
+    expect(tx.update).not.toHaveBeenCalled();
+  });
+
+  it('cancelled 주문은 ConflictException', async () => {
+    const { service } = makeConfirmService('cancelled');
+    const { ConflictException } = await import('@nestjs/common');
+    await expect(service.confirm(salesOrderId)).rejects.toThrow(ConflictException);
+  });
+
+  it('shipped 주문은 ConflictException', async () => {
+    const { service } = makeConfirmService('shipped');
+    const { ConflictException } = await import('@nestjs/common');
+    await expect(service.confirm(salesOrderId)).rejects.toThrow(ConflictException);
+  });
+
+  it('delivered 주문은 ConflictException', async () => {
+    const { service } = makeConfirmService('delivered');
+    const { ConflictException } = await import('@nestjs/common');
+    await expect(service.confirm(salesOrderId)).rejects.toThrow(ConflictException);
+  });
+
+  it('timeout 주문은 ConflictException', async () => {
+    const { service } = makeConfirmService('timeout');
+    const { ConflictException } = await import('@nestjs/common');
+    await expect(service.confirm(salesOrderId)).rejects.toThrow(ConflictException);
+  });
+
+  it('processing 주문은 ConflictException', async () => {
+    const { service } = makeConfirmService('processing');
+    const { ConflictException } = await import('@nestjs/common');
+    await expect(service.confirm(salesOrderId)).rejects.toThrow(ConflictException);
+  });
+
+  it('존재하지 않는 주문은 NotFoundException', async () => {
+    const tx: any = {
+      execute: jest.fn().mockResolvedValue([]),
+      select: jest.fn(() => ({
+        from: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }),
+      })),
+    };
+    const db = { db: { ...tx, transaction: jest.fn((fn: any) => fn(tx)) } };
+    const service = new SalesOrdersService(db as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any);
+    const { NotFoundException } = await import('@nestjs/common');
+    await expect(service.confirm('nonexistent-id')).rejects.toThrow(NotFoundException);
+  });
+});

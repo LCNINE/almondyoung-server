@@ -20,6 +20,7 @@ import { captureOrderPayment } from "@/lib/api/medusa/orders"
 import { cancelOrderByMedusaId, type StoreOrderAction, type StoreCancelUnavailableReason } from "@/lib/api/orders/store-orders"
 import type { StoreOrderActionsResponse } from "@/lib/api/orders/store-orders"
 import { OrderStatusBadges, CANCEL_UNAVAILABLE_MESSAGES, getCoreDisplayStatus } from "@/components/orders/order-status-badges"
+import { CancelReasonForm, type CancelReasonCode } from "@/components/orders/cancel-reason-form"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { ExternalLink, MoreVertical, Package, RefreshCw, RotateCcw, ShoppingCart } from "lucide-react"
 import { useRouter } from "next/navigation"
@@ -79,6 +80,8 @@ export default function OrderCardContent({
   const [isConfirmed, setIsConfirmed] = useState(false)
   const [showCancelDialog, setShowCancelDialog] = useState(false)
   const [isCancelling, startCancelTransition] = useTransition()
+  const [cancelReasonCode, setCancelReasonCode] = useState<CancelReasonCode>("CHANGE_OF_MIND")
+  const [cancelReasonDetail, setCancelReasonDetail] = useState("")
 
   const canConfirmPurchase = paymentStatus === "authorized" && !isConfirmed
   // Core projection 기준 주 상태 텍스트. Core 조회 실패 시 Medusa status로 fallback.
@@ -117,7 +120,13 @@ export default function OrderCardContent({
   const handleCancelConfirm = () => {
     startCancelTransition(async () => {
       try {
-        const result = await cancelOrderByMedusaId(orderId, { reasonCode: "CHANGE_OF_MIND" })
+        const result = await cancelOrderByMedusaId(orderId, {
+          reasonCode: cancelReasonCode,
+          reasonDetail:
+            cancelReasonCode === "OTHER" && cancelReasonDetail
+              ? cancelReasonDetail
+              : undefined,
+        })
         const message =
           result.refundStatus === "succeeded"
             ? "주문이 취소되고 환불이 완료되었습니다."
@@ -344,14 +353,33 @@ export default function OrderCardContent({
       </aside>
 
       {/* 취소 확인 dialog */}
-      <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+      <Dialog
+        open={showCancelDialog}
+        onOpenChange={(open) => {
+          setShowCancelDialog(open)
+          if (!open) {
+            setCancelReasonCode("CHANGE_OF_MIND")
+            setCancelReasonDetail("")
+          }
+        }}
+      >
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>주문 취소</DialogTitle>
           </DialogHeader>
-          <div className="space-y-2 text-sm">
-            <p><span className="font-medium">{productName}</span> 주문을 취소하시겠습니까?</p>
-            <p className="text-muted-foreground text-xs">취소 완료 후 결제 수단에 따라 환불이 진행됩니다.</p>
+          <div className="space-y-3 text-sm">
+            <p>
+              <span className="font-medium">{productName}</span> 주문을 취소하시겠습니까?
+            </p>
+            <p className="text-muted-foreground text-xs">
+              취소 완료 후 결제 수단에 따라 환불이 진행됩니다.
+            </p>
+            <CancelReasonForm
+              reasonCode={cancelReasonCode}
+              reasonDetail={cancelReasonDetail}
+              onReasonCodeChange={setCancelReasonCode}
+              onReasonDetailChange={setCancelReasonDetail}
+            />
           </div>
           <DialogFooter>
             <CustomButton variant="outline" color="secondary" size="md" onClick={() => setShowCancelDialog(false)} disabled={isCancelling}>

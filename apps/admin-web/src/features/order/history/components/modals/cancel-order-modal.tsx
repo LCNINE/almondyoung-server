@@ -35,25 +35,56 @@ type CancelResult = {
   scope: 'full' | 'partial';
   refundStatus: string;
   isShipped: boolean;
+  refundAmount?: number;
+  manualReason?: string | null;
+};
+
+const MANUAL_REASON_LABELS: Record<string, string> = {
+  CHANNEL_ORDER: '채널 주문 — 채널 환불 정책 적용 필요',
+  NO_WALLET_INTENT: '결제 정보(Wallet Intent) 없음',
+  NO_ORDER_TOTAL: '주문 총액 정보 없음',
+  NO_LINE_PRICING: '라인 단가 정보 없음',
+  ZERO_REFUND_AMOUNT: '계산된 환불 금액이 0원 (전액 할인 등)',
 };
 
 function RefundStatusPanel({ result, onClose }: { result: CancelResult; onClose: () => void }) {
   const isPartial = result.scope === 'partial';
   const isSucceeded = result.refundStatus === 'succeeded';
   const isPending = result.refundStatus === 'pending';
+  const isManualPending = result.refundStatus === 'manual_pending';
 
   let color = 'bg-gray-50 border-gray-200 text-gray-700';
   let icon = '✓';
   let title = '';
   let body = '';
 
-  if (isPartial) {
+  if (isPartial && isSucceeded) {
+    color = 'bg-green-50 border-green-200 text-green-800';
+    icon = '✓';
+    title = '부분 취소 및 자동 환불 완료';
+    body = result.refundAmount != null
+      ? `${result.refundAmount.toLocaleString()}원이 카드 환불 처리되었습니다.`
+      : '환불이 정상 처리되었습니다.';
+  } else if (isPartial && isPending) {
+    color = 'bg-blue-50 border-blue-200 text-blue-800';
+    icon = '⟳';
+    title = '부분 취소 완료 · 환불 처리 중';
+    body = result.refundAmount != null
+      ? `${result.refundAmount.toLocaleString()}원 환불이 진행 중입니다. 결제 > 환불 관리에서 상태를 확인하세요.`
+      : '환불이 진행 중입니다. 결제 > 환불 관리에서 상태를 확인하세요.';
+  } else if (isPartial && isManualPending) {
     color = 'bg-amber-50 border-amber-200 text-amber-800';
     icon = '⚠';
-    title = result.isShipped ? '부분 취소 접수 완료' : '부분 취소 완료';
+    title = result.isShipped ? '부분 취소 접수 완료 · 환불 수동 처리 필요' : '부분 취소 완료 · 환불 수동 처리 필요';
+    const reasonLabel = result.manualReason ? MANUAL_REASON_LABELS[result.manualReason] : null;
     body = result.isShipped
-      ? '출고된 상품은 반품/회수 처리가 별도로 필요합니다. 환불은 라인별 금액 확인 후 수동으로 처리하세요.'
-      : '환불 금액 계산 후 수동으로 처리해야 합니다. 결제 > 환불 관리에서 확인하세요.';
+      ? `출고된 상품은 반품/회수 처리가 별도로 필요합니다. 환불은 결제 > 환불 관리에서 수동으로 처리하세요.${reasonLabel ? ` (사유: ${reasonLabel})` : ''}`
+      : `취소 라인 기준 환불 금액을 결제 > 환불 관리에서 수동으로 처리하세요.${reasonLabel ? ` (사유: ${reasonLabel})` : ''}`;
+  } else if (isPartial) {
+    color = 'bg-orange-50 border-orange-200 text-orange-800';
+    icon = '!';
+    title = '부분 취소 완료 · 환불 확인 필요';
+    body = '환불 처리에 문제가 발생했습니다. 결제 > 환불 관리에서 확인하세요.';
   } else if (isSucceeded) {
     color = 'bg-green-50 border-green-200 text-green-800';
     icon = '✓';
@@ -137,7 +168,13 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
           cancelledBy: 'admin',
         },
       });
-      setCancelResult({ scope, refundStatus: result.refundStatus, isShipped });
+      setCancelResult({
+        scope,
+        refundStatus: result.refundStatus,
+        isShipped,
+        refundAmount: result.refundAmount,
+        manualReason: result.manualReason,
+      });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : undefined;
       toast.error(message ?? '취소 처리 중 오류가 발생했습니다.');
@@ -220,7 +257,7 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
                       </div>
                     ))}
                   </div>
-                  <p className="text-xs text-amber-600">부분 취소는 자동 환불이 적용되지 않습니다. 취소 후 수동으로 환불 금액을 계산하여 처리하세요.</p>
+                  <p className="text-xs text-amber-600">부분 취소 시 미출고 상품은 라인 단가 비중으로 자동 환불을 시도합니다. 채널 주문·단가 정보 없음 등 일부 케이스는 수동 처리가 필요합니다.</p>
                 </div>
               )}
 

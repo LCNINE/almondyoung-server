@@ -7,7 +7,6 @@ import { getOrderActionsByMedusaId, type StoreOrderActionsResponse } from "@/lib
 import OrderCard from "@components/orders/order-card/order-card"
 import OrderCardContent from "@components/orders/order-card/order-card-content"
 import type { HttpTypes } from "@medusajs/types"
-import { getYear } from "date-fns"
 import { Loader2, Package } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { useMemo, useState, useTransition } from "react"
@@ -113,67 +112,88 @@ const mapStoreOrderToOrderItem = (
   }
 }
 
+/** FilterOptions의 year/month 값으로 API에 넘길 날짜 범위를 계산한다. */
+function computeDateRange(filter: FilterOptions): { dateFrom?: string; dateTo?: string } {
+  if (!filter.year) return {}
+
+  const year = parseInt(filter.year)
+  if (isNaN(year)) return {}
+
+  if (!filter.month) {
+    return {
+      dateFrom: new Date(year, 0, 1).toISOString(),
+      dateTo: new Date(year, 11, 31, 23, 59, 59, 999).toISOString(),
+    }
+  }
+
+  const monthIndex = parseInt(filter.month) - 1
+  if (isNaN(monthIndex)) return {}
+
+  return {
+    dateFrom: new Date(year, monthIndex, 1).toISOString(),
+    dateTo: new Date(year, monthIndex + 1, 0, 23, 59, 59, 999).toISOString(),
+  }
+}
+
 export function OrderList({
   initialOrders,
   initialCount,
-  initialLimit,
+  initialLimit: _initialLimit,
   hasError = false,
   initialActionsMap = {},
 }: OrderListClientProps) {
   const tStatus = useTranslations("mypage.order.status")
   const tList = useTranslations("mypage.order.list")
-  const tFilter = useTranslations("mypage.order.filter")
   const tEmpty = useTranslations("mypage.empty")
 
-  const [filter, setFilter] = useState<FilterOptions>({
-    year: tFilter("allYears"),
-    month: tFilter("allMonths"),
-  })
-  const [rawOrders, setRawOrders] =
-    useState<HttpTypes.StoreOrder[]>(initialOrders)
-  const [actionsMap, setActionsMap] =
-    useState<Record<string, StoreOrderActionsResponse>>(initialActionsMap)
+  const [filter, setFilter] = useState<FilterOptions>({ year: "", month: "" })
+  const [currentDateRange, setCurrentDateRange] = useState<{ dateFrom?: string; dateTo?: string }>({})
+  const [rawOrders, setRawOrders] = useState<HttpTypes.StoreOrder[]>(initialOrders)
+  const [actionsMap, setActionsMap] = useState<Record<string, StoreOrderActionsResponse>>(initialActionsMap)
   const [totalCount, setTotalCount] = useState(initialCount)
-  const [isPending, startTransition] = useTransition()
+  const [isFiltering, startFilterTransition] = useTransition()
+  const [isPending, startLoadMoreTransition] = useTransition()
 
   const hasMore = rawOrders.length < totalCount
 
-  const allOrders: OrderItem[] = useMemo(
+  const orders: OrderItem[] = useMemo(
     () => rawOrders.map((o) => mapStoreOrderToOrderItem(o, { tStatus, tList })),
     [rawOrders, tStatus, tList]
   )
 
-  const orders = useMemo(() => {
-    return allOrders.filter((order) => {
-      const orderDateMatch = order.orderDate.match(/(\d+)월/)
-      const orderMonth = orderDateMatch ? parseInt(orderDateMatch[1]) : null
-
-      const originalOrder = rawOrders.find((o) => o.id === order.orderId)
-      const orderYear = originalOrder
-        ? getYear(new Date(originalOrder.created_at))
-        : null
-
-      const yearMatch =
-        filter.year === tFilter("allYears") || String(orderYear) === filter.year
-
-      const monthMatch =
-        filter.month === tFilter("allMonths") ||
-        (orderMonth !== null &&
-          filter.month === tFilter("monthFormat", { month: orderMonth }))
-
-      return yearMatch && monthMatch
-    })
-  }, [allOrders, filter, rawOrders, tFilter])
-
   const handleFilterChange = (newFilter: FilterOptions) => {
     setFilter(newFilter)
+    const dateRange = computeDateRange(newFilter)
+    setCurrentDateRange(dateRange)
+
+    startFilterTransition(async () => {
+      const result = await getOrders({ limit: LOAD_MORE_LIMIT, offset: 0, ...dateRange })
+
+      if (result) {
+        setRawOrders(result.orders ?? [])
+        setTotalCount(result.count ?? 0)
+
+        const newActions = await Promise.allSettled(
+          (result.orders ?? []).map((o: HttpTypes.StoreOrder) => getOrderActionsByMedusaId(o.id))
+        )
+        const nextMap: Record<string, StoreOrderActionsResponse> = {}
+        newActions.forEach((r, idx) => {
+          const order = (result.orders ?? [])[idx]
+          if (r.status === "fulfilled" && order) {
+            nextMap[order.id] = r.value
+          }
+        })
+        setActionsMap(nextMap)
+      }
+    })
   }
 
   const handleLoadMore = () => {
-    startTransition(async () => {
+    startLoadMoreTransition(async () => {
       const result = await getOrders({
         limit: LOAD_MORE_LIMIT,
         offset: rawOrders.length,
+        ...currentDateRange,
       })
 
       if (result?.orders) {
@@ -181,7 +201,6 @@ export function OrderList({
         if (typeof result.count === "number") {
           setTotalCount(result.count)
         }
-        // 새로 로드된 주문의 Core 액션도 병렬 조회
         const newActions = await Promise.allSettled(
           result.orders.map((o: HttpTypes.StoreOrder) => getOrderActionsByMedusaId(o.id))
         )
@@ -207,7 +226,7 @@ export function OrderList({
   }
 
   // 원본 데이터가 없으면 필터 없이 빈 화면
-  if (allOrders.length === 0) {
+  if (initialOrders.length === 0 && !isFiltering) {
     return (
       <div className="min-h-screen bg-white px-3 py-4 md:px-6">
         <PageTitle>{tList("title")}</PageTitle>
@@ -230,10 +249,18 @@ export function OrderList({
     <div className="min-h-screen bg-white px-3 py-4 md:px-6">
       <PageTitle>{tList("title")}</PageTitle>
       <section className="my-5">
-        <OrderFilter onFilterChange={handleFilterChange} />
+        <OrderFilter
+          onFilterChange={handleFilterChange}
+          defaultYear={filter.year}
+          defaultMonth={filter.month}
+        />
       </section>
 
-      {orders.length === 0 ? (
+      {isFiltering ? (
+        <div className="flex min-h-[200px] items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+        </div>
+      ) : orders.length === 0 ? (
         <div className="flex min-h-[300px] flex-col items-center justify-center gap-4">
           <Package className="h-12 w-12 text-gray-300" />
           <div className="text-center">

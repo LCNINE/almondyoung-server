@@ -519,6 +519,47 @@
       "reasonDamagedInShipping": "配送中の破損",
       "reasonOther": "その他",
       "noLines": "注文商品情報が見つかりません。"
+    },
+    "paymentStatus": {
+      "awaiting": "お支払い待ち",
+      "requires_action": "お支払い待ち",
+      "authorized": "お支払い承認済み",
+      "captured": "お支払い完了",
+      "partially_refunded": "一部返金済み",
+      "refunded": "返金完了",
+      "canceled": "お支払いキャンセル",
+      "failed": "お支払い失敗",
+      "unknown": "ご確認ください"
+    },
+    "refundInfo": {
+      "sectionTitle": "返金情報",
+      "statusLabel": "返金状況",
+      "amountLabel": "お支払い金額",
+      "guidance": {
+        "none": "",
+        "pending": "営業日3〜5日以内に返金が完了します。",
+        "manual_pending": "担当者確認後に返金が処理されます。お問い合わせはカスタマーサポートへご連絡ください。",
+        "succeeded": "返金が完了しました。",
+        "failed": "返金処理中に問題が発生しました。カスタマーサポートへお問い合わせください。"
+      },
+      "statusLabels": {
+        "none": "",
+        "pending": "返金処理中",
+        "manual_pending": "確認待ち",
+        "succeeded": "返金完了",
+        "failed": "返金確認が必要"
+      }
+    },
+    "cancelDialog": {
+      "reasonLabel": "キャンセル理由",
+      "otherPlaceholder": "キャンセル理由を入力してください（最大500文字）",
+      "reasons": {
+        "CHANGE_OF_MIND": "気が変わった",
+        "WRONG_ORDER": "誤った注文",
+        "FOUND_CHEAPER": "安い商品を見つけた",
+        "DELAY": "配送遅延",
+        "OTHER": "その他"
+      }
     }
   },
   "membership": {

@@ -115,6 +115,9 @@ export class SalesOrderResponseDto {
   @ApiProperty({ description: '판매 채널', enum: ['medusa', 'naver', 'coupang', '3pl'] })
   salesChannel: string;
 
+  @ApiProperty({ description: 'Wallet 결제 인텐트 ID (결제 상세 연결용)', nullable: true })
+  walletIntentId: string | null;
+
   @ApiProperty({
     description: '주문 상태',
     enum: ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'timeout'],

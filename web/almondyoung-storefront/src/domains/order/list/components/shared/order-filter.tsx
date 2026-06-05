@@ -9,8 +9,12 @@ import {
 } from "@/components/ui/select"
 import { Filter } from "lucide-react"
 import { useTranslations } from "next-intl"
-import { useState } from "react"
+import { useMemo, useState } from "react"
 
+/**
+ * year: "" = 전체, "2025" = 특정 연도 (숫자 문자열)
+ * month: "" = 전체, "1"~"12" = 특정 월 (숫자 문자열)
+ */
 export interface FilterOptions {
   year: string
   month: string
@@ -22,8 +26,9 @@ interface OrderFilterProps {
   defaultMonth?: string
 }
 
-const YEARS = ["2026", "2025", "2024", "2023"] as const
 const MONTHS_NUM = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const
+
+const FIRST_ORDER_YEAR = 2023
 
 export function OrderFilter({
   onFilterChange,
@@ -31,21 +36,33 @@ export function OrderFilter({
   defaultMonth,
 }: OrderFilterProps) {
   const t = useTranslations("mypage.order.filter")
-  const allYears = t("allYears")
-  const allMonths = t("allMonths")
 
-  const [year, setYear] = useState(defaultYear ?? allYears)
-  const [month, setMonth] = useState(defaultMonth ?? allMonths)
+  const years = useMemo(() => {
+    const currentYear = new Date().getFullYear()
+    const result: string[] = []
+    for (let y = currentYear; y >= FIRST_ORDER_YEAR; y--) {
+      result.push(String(y))
+    }
+    return result
+  }, [])
+
+  const [year, setYear] = useState(defaultYear ?? "")
+  const [month, setMonth] = useState(defaultMonth ?? "")
 
   const handleYearChange = (value: string) => {
-    setYear(value)
-    onFilterChange?.({ year: value, month })
+    const next = value === t("allYears") ? "" : value
+    setYear(next)
+    onFilterChange?.({ year: next, month })
   }
 
   const handleMonthChange = (value: string) => {
-    setMonth(value)
-    onFilterChange?.({ year, month: value })
+    const next = value === t("allMonths") ? "" : value
+    setMonth(next)
+    onFilterChange?.({ year, month: next })
   }
+
+  const yearDisplayValue = year || t("allYears")
+  const monthDisplayValue = month ? t("monthFormat", { month: parseInt(month) }) : t("allMonths")
 
   return (
     <section className="flex w-full items-center gap-4 bg-white py-1.5">
@@ -57,15 +74,15 @@ export function OrderFilter({
       </header>
 
       <div className="flex items-center gap-1.5">
-        <Select value={year} onValueChange={handleYearChange}>
+        <Select value={yearDisplayValue} onValueChange={handleYearChange}>
           <SelectTrigger className="h-6 w-20 rounded-[5px] border-zinc-300 px-2.5 text-xs font-medium text-gray-600">
-            <SelectValue placeholder={allYears} />
+            <SelectValue placeholder={t("allYears")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={allYears} className="text-xs">
-              {allYears}
+            <SelectItem value={t("allYears")} className="text-xs">
+              {t("allYears")}
             </SelectItem>
-            {YEARS.map((y) => (
+            {years.map((y) => (
               <SelectItem key={y} value={y} className="text-xs">
                 {y}
               </SelectItem>
@@ -73,18 +90,18 @@ export function OrderFilter({
           </SelectContent>
         </Select>
 
-        <Select value={month} onValueChange={handleMonthChange}>
+        <Select value={monthDisplayValue} onValueChange={handleMonthChange}>
           <SelectTrigger className="h-6 w-16 rounded-[5px] border-zinc-300 px-2.5 text-xs font-medium text-gray-600">
-            <SelectValue placeholder={allMonths} />
+            <SelectValue placeholder={t("allMonths")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={allMonths} className="text-xs">
-              {allMonths}
+            <SelectItem value={t("allMonths")} className="text-xs">
+              {t("allMonths")}
             </SelectItem>
             {MONTHS_NUM.map((m) => {
               const label = t("monthFormat", { month: m })
               return (
-                <SelectItem key={m} value={label} className="text-xs">
+                <SelectItem key={m} value={String(m)} className="text-xs">
                   {label}
                 </SelectItem>
               )

@@ -61,6 +61,33 @@ const REFUND_STATUS_MAP: Record<StoreRefundStatus, BadgeProps | null> = {
   failed:         { label: "환불 실패",         color: "bg-red-100 text-red-600" },
 }
 
+// ── Medusa payment_status → i18n 키 매핑 ───────────────────────────────
+
+const PAYMENT_STATUS_KEY_MAP: Record<string, string> = {
+  awaiting: "awaiting",
+  requires_action: "requires_action",
+  authorized: "authorized",
+  captured: "captured",
+  paid: "captured",
+  partially_refunded: "partially_refunded",
+  refunded: "refunded",
+  canceled: "canceled",
+  cancelled: "canceled",
+  failed: "failed",
+}
+
+/**
+ * Medusa payment_status를 i18n 키로 변환한다.
+ * 알 수 없는 값은 "unknown"을 반환하고 콘솔에 경고를 남긴다.
+ */
+export function getPaymentStatusI18nKey(status: string): string {
+  if (status in PAYMENT_STATUS_KEY_MAP) return PAYMENT_STATUS_KEY_MAP[status]!
+  if (typeof window !== "undefined") {
+    console.warn(`[OrderDetails] Unknown payment_status: "${status}"`)
+  }
+  return "unknown"
+}
+
 // ── 취소 불가 사유 메시지 ─────────────────────────────────────────────
 
 export const CANCEL_UNAVAILABLE_MESSAGES: Record<string, string> = {

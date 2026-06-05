@@ -47,8 +47,12 @@ export async function getOrders(params?: {
   limit?: number
   offset?: number
   status?: OrderStatus | OrderStatus[]
+  /** ISO 8601 datetime string — 이 날짜 이후 주문만 조회 */
+  dateFrom?: string
+  /** ISO 8601 datetime string — 이 날짜 이전 주문만 조회 */
+  dateTo?: string
 }): Promise<HttpTypes.StoreOrderListResponse | null> {
-  const filters: HttpTypes.StoreOrderFilters = {
+  const filters: HttpTypes.StoreOrderFilters & Record<string, unknown> = {
     fields:
       "id,display_id,status,fulfillment_status,payment_status,created_at,updated_at,total,currency_code,*items,*items.variant,*items.variant.product,*payment_collections,*payment_collections.payment_sessions",
     order: "-created_at",
@@ -64,6 +68,13 @@ export async function getOrders(params?: {
 
   if (params?.status) {
     filters.status = params.status
+  }
+
+  if (params?.dateFrom || params?.dateTo) {
+    const dateFilter: Record<string, string> = {}
+    if (params.dateFrom) dateFilter["$gte"] = params.dateFrom
+    if (params.dateTo) dateFilter["$lte"] = params.dateTo
+    filters["created_at"] = dateFilter
   }
 
   const authHeaders = await getAuthHeaders()

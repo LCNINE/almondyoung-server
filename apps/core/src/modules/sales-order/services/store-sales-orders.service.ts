@@ -1,7 +1,9 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { InjectTypedDb } from '@app/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import { inventorySchema, inventoryTables, returnExchangeTables } from '../../inventory/schema/inventory.schema';
+import { inventorySchema, inventoryTables, returnExchangeTables, wmsTables } from '../../inventory/schema/inventory.schema';
+import { calculatePartialCancellationRefund } from './partial-cancellation-refund-calculator';
 import {
   StoreCancelOrderDto,
   StoreCancelUnavailableReason,
@@ -71,7 +73,7 @@ export class StoreSalesOrdersService {
   async adminCancelRequest(
     orderId: string,
     dto: { reasonCode?: string; reasonDetail?: string; lines?: Array<{ salesOrderLineId: string; quantity: number }> },
-  ): Promise<{ status: string; refundStatus: string }> {
+  ): Promise<{ status: string; refundStatus: string; refundAmount?: number; manualReason?: string | null }> {
     const so = await this.findSoOrThrow({ id: orderId });
     if (so.status === 'cancelled') throw new BadRequestException('이미 취소된 주문입니다.');
     if (so.status === 'timeout') throw new BadRequestException('타임아웃된 주문은 취소할 수 없습니다.');
@@ -83,17 +85,66 @@ export class StoreSalesOrdersService {
       cancelledBy: 'admin',
     });
 
-    // 부분 취소는 라인/할인/배송비 기준 환불 금액 계산이 복잡하므로 자동 환불 건너뜀 — 수동 처리 필요
     if (dto.lines && dto.lines.length > 0) {
+      const orderLines = await this.db.db
+        .select({
+          id: wmsTables.salesOrderLines.id,
+          quantity: wmsTables.salesOrderLines.quantity,
+          unitPrice: wmsTables.salesOrderLines.unitPrice,
+        })
+        .from(wmsTables.salesOrderLines)
+        .where(eq(wmsTables.salesOrderLines.salesOrderId, so.id));
+
+      const calcResult = calculatePartialCancellationRefund({
+        salesChannel: so.salesChannel,
+        walletIntentId: so.walletIntentId,
+        totalAmount: so.totalAmount,
+        shippingFee: (so as SalesOrderRow & { shippingFee?: number | null }).shippingFee ?? 0,
+        allOrderLines: orderLines,
+        cancelledLines: dto.lines,
+      });
+
+      const refreshed = await this.findSoOrThrow({ id: orderId });
+
+      if (calcResult.autoRefundable) {
+        const correlationId = `partial-cancel:${so.id}:${computeLineHash(dto.lines)}`;
+        const refundStatus = await this.requestWalletRefundAfterCancel(
+          so,
+          { reasonCode: dto.reasonCode, reasonDetail: dto.reasonDetail },
+          {
+            actor: 'admin',
+            attemptType: 'initial',
+            correlationId,
+            amountOverride: calcResult.refundAmount,
+            extraMetadata: {
+              cancellationScope: 'partial',
+              breakdown: calcResult.breakdown,
+              cancelledLines: dto.lines,
+            },
+          },
+        );
+        return { status: refreshed.status, refundStatus, refundAmount: calcResult.refundAmount };
+      }
+
       await this.recordWalletRefundLink(so.id, {
         refundStatus: 'manual_pending',
         intentId: so.walletIntentId ?? undefined,
-        note: '부분 취소 — 취소 라인 기준 환불 금액 수동 계산 필요',
+        note: `부분 취소 — 자동 환불 불가: ${calcResult.manualReason ?? '정책 미충족'}`,
         reasonCode: dto.reasonCode,
+        extraMetadata: {
+          cancellationScope: 'partial',
+          manualReason: calcResult.manualReason,
+          breakdown: calcResult.breakdown,
+          cancelledLines: dto.lines,
+          warnings: calcResult.warnings,
+        },
       });
-      // 부분 취소 후 실제 SO 상태를 재조회하여 반환 (전체가 취소되지 않을 수 있음)
-      const refreshed = await this.findSoOrThrow({ id: orderId });
-      return { status: refreshed.status, refundStatus: 'manual_pending' };
+      return {
+        status: refreshed.status,
+        refundStatus: 'manual_pending',
+        refundAmount: 0,
+        manualReason: calcResult.manualReason,
+      };
     }
 
     const refundStatus = await this.requestWalletRefundAfterCancel(
@@ -103,6 +154,101 @@ export class StoreSalesOrdersService {
     );
 
     return { status: 'cancelled', refundStatus };
+  }
+
+  /**
+   * 운영자 수동 환불 완료 확인.
+   *
+   * PG/은행 환불을 이미 외부에서 처리한 사실을 운영자가 확인하고 내부 상태를 완료로 기록한다.
+   * provider.refund()를 호출하지 않으므로 "자동 환불 완료"와 명확히 구분된다.
+   * - succeeded: 이미 완료 → idempotent 반환
+   * - manual_pending / failed / 링크 없음: 새 business link로 succeeded(manual) 기록
+   * - pending: 비동기 처리 중 — 결제 관리에서 상태 확인 후 처리하도록 안내
+   */
+  async adminManualRefundComplete(
+    orderId: string,
+    dto: { adminNote?: string; refundLinkId?: string },
+  ): Promise<{ refundStatus: string; completionType: string }> {
+    const so = await this.findSoOrThrow({ id: orderId });
+
+    // Resolve target link: if refundLinkId given, target that specific link;
+    // otherwise find the most recent manual_pending link (supports partial cancellations).
+    const targetRefundLink = await (async () => {
+      if (dto.refundLinkId) {
+        return this.db.db
+          .select({ id: inventoryTables.businessLinks.id, metadata: inventoryTables.businessLinks.metadata })
+          .from(inventoryTables.businessLinks)
+          .where(
+            and(
+              eq(inventoryTables.businessLinks.id, dto.refundLinkId),
+              eq(inventoryTables.businessLinks.sourceType, 'sales_order'),
+              eq(inventoryTables.businessLinks.sourceId, so.id),
+              eq(inventoryTables.businessLinks.relationName, 'cancellation_linked_wallet_refund'),
+            ),
+          )
+          .limit(1)
+          .then((r) => r[0]);
+      }
+      // No refundLinkId: find the most recent manual_pending link that hasn't been
+      // closed by a subsequent completion record (same exclusion logic as admin-web UI).
+      return this.db.db
+        .select({ id: inventoryTables.businessLinks.id, metadata: inventoryTables.businessLinks.metadata })
+        .from(inventoryTables.businessLinks)
+        .where(
+          and(
+            eq(inventoryTables.businessLinks.sourceType, 'sales_order'),
+            eq(inventoryTables.businessLinks.sourceId, so.id),
+            eq(inventoryTables.businessLinks.relationName, 'cancellation_linked_wallet_refund'),
+          ),
+        )
+        .orderBy(desc(inventoryTables.businessLinks.createdAt))
+        .then((rows) => {
+          const completedIds = new Set<string>(
+            rows
+              .filter((r) => {
+                const m = r.metadata as Record<string, unknown>;
+                return m?.refundStatus === 'succeeded' && typeof m?.completedRefundLinkId === 'string';
+              })
+              .map((r) => (r.metadata as Record<string, unknown>).completedRefundLinkId as string),
+          );
+          return rows.find((r) => {
+            const m = r.metadata as Record<string, unknown>;
+            return m?.refundStatus === 'manual_pending' && !completedIds.has(r.id);
+          }) ?? null;
+        });
+    })();
+
+    const currentStatus = (targetRefundLink?.metadata as Record<string, unknown>)?.refundStatus as string | undefined;
+
+    // Allow fully-cancelled orders OR orders with a manual_pending link (from partial cancellation).
+    if (so.status !== 'cancelled' && currentStatus !== 'manual_pending') {
+      throw new BadRequestException('취소된 주문 또는 부분취소 환불 대기 건에만 수동 환불 완료 처리를 할 수 있습니다.');
+    }
+
+    if (currentStatus === 'succeeded') {
+      return { refundStatus: 'succeeded', completionType: 'manual' };
+    }
+
+    if (currentStatus === 'pending') {
+      throw new BadRequestException(
+        '환불이 처리 중입니다. 결제 > 환불 관리에서 상태를 확인한 후 완료 여부를 판단하세요.',
+      );
+    }
+
+    await this.recordWalletRefundLink(so.id, {
+      refundStatus: 'succeeded',
+      intentId: so.walletIntentId ?? undefined,
+      note: `운영자 수동 환불 완료 확인${dto.adminNote ? `: ${dto.adminNote}` : ''}`,
+      actor: 'admin',
+      attemptType: 'retry',
+      extraMetadata: {
+        completionType: 'manual',
+        providerRefundExecuted: false,
+        completedRefundLinkId: targetRefundLink?.id ?? null,
+      },
+    });
+
+    return { refundStatus: 'succeeded', completionType: 'manual' };
   }
 
   /**
@@ -368,13 +514,14 @@ export class StoreSalesOrdersService {
       attemptType?: 'initial' | 'retry';
       actor?: 'customer' | 'admin' | 'system';
       correlationId?: string;
+      amountOverride?: number;
+      extraMetadata?: Record<string, unknown>;
     },
   ): Promise<StoreRefundStatus> {
     const attemptType = options?.attemptType ?? 'initial';
     const actor = options?.actor ?? 'system';
 
     if (!so.walletIntentId) {
-      // walletIntentId가 없으면 Wallet 자동 환불 불가 — 수동 처리 필요
       this.logger.warn(
         `[WalletRefund] No walletIntentId for SO ${so.id} (channelOrderId=${so.channelOrderId}). ` +
           'Refund must be processed manually.',
@@ -385,25 +532,27 @@ export class StoreSalesOrdersService {
         reasonCode: dto.reasonCode,
         attemptType,
         actor,
+        extraMetadata: options?.extraMetadata,
       });
       return 'manual_pending';
     }
 
     const correlationId = options?.correlationId ?? `cancel:${so.id}:${attemptType}:${crypto.randomUUID()}`;
-    const amount = so.totalAmount;
+    const amount = options?.amountOverride ?? so.totalAmount;
 
     if (!amount || amount <= 0) {
       this.logger.warn(
-        `[WalletRefund] SO ${so.id} has invalid totalAmount=${amount}. Skipping auto-refund.`,
+        `[WalletRefund] SO ${so.id} has invalid amount=${amount}. Skipping auto-refund.`,
       );
       await this.recordWalletRefundLink(so.id, {
         refundStatus: 'manual_pending',
-        note: `totalAmount=${amount} 이 유효하지 않아 수동 처리 필요`,
+        note: `amount=${amount} 이 유효하지 않아 수동 처리 필요`,
         intentId: so.walletIntentId,
         reasonCode: dto.reasonCode,
         attemptType,
         actor,
         correlationId,
+        extraMetadata: options?.extraMetadata,
       });
       return 'manual_pending';
     }
@@ -426,6 +575,7 @@ export class StoreSalesOrdersService {
           attemptType,
           actor,
           correlationId,
+          extraMetadata: options?.extraMetadata,
         });
         return 'succeeded';
       }
@@ -441,11 +591,11 @@ export class StoreSalesOrdersService {
           attemptType,
           actor,
           correlationId,
+          extraMetadata: options?.extraMetadata,
         });
         return 'pending';
       }
       case 'already_refunded': {
-        // Wallet이 "환불 가능 금액 초과(= 이미 환불됨)"를 반환 — 실제로는 환불 완료 상태
         await this.recordWalletRefundLink(so.id, {
           refundStatus: 'succeeded',
           intentId: so.walletIntentId,
@@ -457,6 +607,7 @@ export class StoreSalesOrdersService {
           correlationId,
           errorCode: outcome.errorCode,
           errorMessage: outcome.errorMessage,
+          extraMetadata: options?.extraMetadata,
         });
         return 'succeeded';
       }
@@ -472,6 +623,7 @@ export class StoreSalesOrdersService {
           correlationId,
           errorCode: outcome.errorCode,
           errorMessage: outcome.errorMessage,
+          extraMetadata: options?.extraMetadata,
         });
         return 'failed';
       }
@@ -485,6 +637,7 @@ export class StoreSalesOrdersService {
           attemptType,
           actor,
           correlationId,
+          extraMetadata: options?.extraMetadata,
         });
         return 'manual_pending';
       }
@@ -509,6 +662,7 @@ export class StoreSalesOrdersService {
       correlationId?: string;
       errorCode?: string;
       errorMessage?: string;
+      extraMetadata?: Record<string, unknown>;
     },
   ): Promise<void> {
     try {
@@ -534,6 +688,7 @@ export class StoreSalesOrdersService {
           correlationId: info.correlationId ?? null,
           errorCode: info.errorCode ?? null,
           errorMessage: info.errorMessage ?? null,
+          ...(info.extraMetadata ?? {}),
         },
       });
     } catch (err) {
@@ -683,6 +838,14 @@ export class StoreSalesOrdersService {
 }
 
 // ── Module-level helpers ───────────────────────────────────────────────────
+
+function computeLineHash(lines: Array<{ salesOrderLineId: string; quantity: number }>): string {
+  const sorted = [...lines]
+    .sort((a, b) => a.salesOrderLineId.localeCompare(b.salesOrderLineId))
+    .map((l) => `${l.salesOrderLineId}:${l.quantity}`)
+    .join(',');
+  return createHash('sha256').update(sorted).digest('hex').slice(0, 12);
+}
 
 const CARRIER_NAMES: Record<string, string> = {
   CJ: 'CJ대한통운',
