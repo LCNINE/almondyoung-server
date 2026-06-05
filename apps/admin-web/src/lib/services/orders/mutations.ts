@@ -99,6 +99,20 @@ export const useAdminRetryRefund = () => {
   });
 };
 
+export const useAdminManualRefundComplete = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, adminNote, refundLinkId }: { id: string; adminNote?: string; refundLinkId?: string }) =>
+      orders.salesOrders.adminManualRefundComplete(id, adminNote, refundLinkId),
+    onSuccess: (_, { id }) => {
+      queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.orders });
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.order(id) });
+    },
+  });
+};
+
 // 레거시 stub — D2 useCreateOutboundBatch로 대체됨
 
 export const useUpdateOutboundBatch = () => {

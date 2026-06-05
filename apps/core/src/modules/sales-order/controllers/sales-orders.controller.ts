@@ -2,6 +2,7 @@ import { Controller, Get, Post, Patch, Body, Param, Query } from '@nestjs/common
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { SalesOrderAmendmentsService } from '../services/sales-order-amendments.service';
+import { StoreSalesOrdersService } from '../services/store-sales-orders.service';
 import { CreateSalesOrderDto } from '../dto/create-sales-order.dto';
 import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
 import { MergeSalesOrdersDto } from '../dto/merge-sales-orders.dto';
@@ -16,6 +17,7 @@ export class SalesOrdersController {
   constructor(
     private readonly service: SalesOrdersService,
     private readonly amendments: SalesOrderAmendmentsService,
+    private readonly storeSalesOrders: StoreSalesOrdersService,
   ) {}
 
   @Post()
@@ -42,10 +44,15 @@ export class SalesOrdersController {
   }
 
   @Post(':id/cancel')
-  @ApiOperation({ summary: '판매 주문 취소' })
+  @ApiOperation({ summary: '판매 주문 취소 (관리자 경로 — Wallet 환불 포함)' })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
+  @ApiResponse({ status: 200, description: '취소 성공. { status, refundStatus } 반환' })
   cancel(@Param('id') id: string, @Body() dto: CancelSalesOrderDto = {}) {
-    return this.service.cancel(id, dto);
+    return this.storeSalesOrders.adminCancelRequest(id, {
+      reasonCode: dto.reasonCode,
+      reasonDetail: dto.reasonDetail,
+      lines: dto.lines,
+    });
   }
 
   @Post(':id/business-links')

@@ -23,8 +23,13 @@ import {
   OrderStatusBadges,
   getCoreDisplayStatus,
   CANCEL_UNAVAILABLE_MESSAGES,
+  getPaymentStatusI18nKey,
 } from "@/components/orders/order-status-badges"
-import type { StoreOrderActionsResponse } from "@/lib/api/orders/store-orders"
+import {
+  CancelReasonForm,
+  type CancelReasonCode,
+} from "@/components/orders/cancel-reason-form"
+import type { StoreOrderActionsResponse, StoreRefundStatus } from "@/lib/api/orders/store-orders"
 import { cancelOrderByMedusaId } from "@/lib/api/orders/store-orders"
 import { HttpTypes } from "@medusajs/types"
 import { useTranslations } from "next-intl"
@@ -46,9 +51,14 @@ export const OrderDetailsMobile = ({
   const tLabels = useTranslations("mypage.order.labels")
   const tStatus = useTranslations("mypage.order.status")
   const tActions = useTranslations("mypage.order.actions")
+  const tPaymentStatus = useTranslations("mypage.order.paymentStatus")
+  const tRefundInfo = useTranslations("mypage.order.refundInfo")
   const router = useRouter()
   const [showCancelDialog, setShowCancelDialog] = useState(false)
   const [isCancelling, startCancelTransition] = useTransition()
+  const [cancelReasonCode, setCancelReasonCode] =
+    useState<CancelReasonCode>("CHANGE_OF_MIND")
+  const [cancelReasonDetail, setCancelReasonDetail] = useState("")
 
   if (!order) {
     return (
@@ -107,11 +117,24 @@ export const OrderDetailsMobile = ({
                     : "paid"
       )
 
+  const paymentStatusLabel = tPaymentStatus(
+    getPaymentStatusI18nKey(order.payment_status ?? "")
+  )
+
+  const refundStatus: StoreRefundStatus = coreActions?.refundStatus ?? "none"
+  const refundStatusBadgeLabel = tRefundInfo(`statusLabels.${refundStatus}`)
+  const refundGuidance = tRefundInfo(`guidance.${refundStatus}`)
+  const showRefundSection = refundStatus !== "none"
+
   const handleCancelConfirm = () => {
     startCancelTransition(async () => {
       try {
         const result = await cancelOrderByMedusaId(order.id, {
-          reasonCode: "CHANGE_OF_MIND",
+          reasonCode: cancelReasonCode,
+          reasonDetail:
+            cancelReasonCode === "OTHER" && cancelReasonDetail
+              ? cancelReasonDetail
+              : undefined,
         })
         const message =
           result.refundStatus === "succeeded"
@@ -245,6 +268,47 @@ export const OrderDetailsMobile = ({
               cancelUnavailableReason !== "already_cancelled" && (
                 <p className="mt-1 text-[11px] text-amber-600">{cancelTooltip}</p>
               )}
+            <OrderInfoCardDivider />
+            <dl className="space-y-1.5 text-sm">
+              <div className="flex">
+                <dt className="w-24 shrink-0 text-gray-500">{tLabels("paymentStatus")}</dt>
+                <dd className="font-medium text-gray-800">{paymentStatusLabel}</dd>
+              </div>
+              <div className="flex">
+                <dt className="w-24 shrink-0 text-gray-500">{tLabels("paymentMethod")}</dt>
+                <dd className="text-gray-800">
+                  {order.payment_collections?.length
+                    ? tLabels("paymentMethodRegistered")
+                    : "-"}
+                </dd>
+              </div>
+            </dl>
+            {showRefundSection && (
+              <div className="mt-3 rounded-md bg-gray-50 p-3 space-y-1.5">
+                <p className="text-xs font-medium text-gray-700">
+                  {tRefundInfo("sectionTitle")}
+                </p>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-500">{tRefundInfo("statusLabel")}:</span>
+                  <span
+                    className={`text-xs font-medium ${
+                      refundStatus === "succeeded"
+                        ? "text-green-600"
+                        : refundStatus === "pending"
+                          ? "text-amber-600"
+                          : refundStatus === "manual_pending"
+                            ? "text-amber-600"
+                            : "text-red-500"
+                    }`}
+                  >
+                    {refundStatusBadgeLabel}
+                  </span>
+                </div>
+                {refundGuidance && (
+                  <p className="text-xs text-gray-500">{refundGuidance}</p>
+                )}
+              </div>
+            )}
           </OrderInfoCardRoot>
         </section>
 
@@ -343,15 +407,30 @@ export const OrderDetailsMobile = ({
         </section>
       </div>
 
-      <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+      <Dialog
+        open={showCancelDialog}
+        onOpenChange={(open) => {
+          setShowCancelDialog(open)
+          if (!open) {
+            setCancelReasonCode("CHANGE_OF_MIND")
+            setCancelReasonDetail("")
+          }
+        }}
+      >
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>{tActions("cancelDialogTitle")}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-2 text-sm">
+          <div className="space-y-3 text-sm">
             <p className="text-muted-foreground text-xs">
               {tActions("cancelDialogDescription")}
             </p>
+            <CancelReasonForm
+              reasonCode={cancelReasonCode}
+              reasonDetail={cancelReasonDetail}
+              onReasonCodeChange={setCancelReasonCode}
+              onReasonDetailChange={setCancelReasonDetail}
+            />
           </div>
           <DialogFooter>
             <CustomButton

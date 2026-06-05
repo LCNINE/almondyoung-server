@@ -87,6 +87,7 @@ export interface SalesOrderDto {
   mergeGroupId: string | null;
   isMerged: boolean;
   orderDate: Date;
+  walletIntentId?: string | null;
   lines: {
     variantId: string;
     productMatchingId?: string;

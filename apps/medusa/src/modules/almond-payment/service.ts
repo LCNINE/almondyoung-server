@@ -127,10 +127,17 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
   }
 
   async capturePayment(input: CapturePaymentInput): Promise<CapturePaymentOutput> {
-    const { intentId } = input.data as unknown as WalletSessionData;
-    await this.walletFetch(`/v1/payment-intents/${intentId}/capture`, {
-      method: 'POST',
-    });
+    const data = input.data as unknown as WalletSessionData & { captured?: boolean };
+
+    // Skip the Wallet API call when the payment was already captured by Core/Wallet
+    // (the payment-events hook sets captured: true before running capturePaymentWorkflow).
+    // Core/Wallet is the payment SSOT; this is a DB-only projection sync.
+    if (!data.captured) {
+      await this.walletFetch(`/v1/payment-intents/${data.intentId}/capture`, {
+        method: 'POST',
+      });
+    }
+
     // captured: true 플래그를 data에 기록 → 이후 getPaymentStatus에서 'captured' 반환
     return {
       data: {

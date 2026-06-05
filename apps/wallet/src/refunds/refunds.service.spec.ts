@@ -39,13 +39,15 @@ function makeInsertedRefund(overrides: Partial<{ amount: number; reasonCode: str
 function makeContext(options: {
   charge?: ReturnType<typeof makeCharge>;
   method?: ReturnType<typeof makeMethod>;
-  priorRefundedAmount?: number;   // sum of SUCCEEDED/PENDING refunds already on this charge
+  priorRefundedAmount?: number;       // SUCCEEDED+PENDING total in the insert-phase transaction
+  succeededRefundedAmount?: number;   // SUCCEEDED-only total in the post-SUCCEEDED transaction
   providerResult?: { status: string; errorCode?: string; errorMessage?: string; providerRefundId?: string };
   pendingRefund?: ReturnType<typeof makeInsertedRefund>;  // for confirmManual tests
 } = {}) {
   const charge = options.charge ?? makeCharge();
   const method = options.method ?? makeMethod();
   const priorRefundedAmount = options.priorRefundedAmount ?? 0;
+  const succeededRefundedAmount = options.succeededRefundedAmount ?? 0;
   const providerResult = options.providerResult ?? { status: 'SUCCEEDED', providerRefundId: 'prov-rf-001' };
   const pendingRefund = options.pendingRefund;
 
@@ -53,27 +55,35 @@ function makeContext(options: {
   const updateCalls: Array<{ set: Record<string, unknown> }> = [];
 
   // tx used inside transactions
-  const makeTx = () => ({
-    execute: jest.fn().mockResolvedValue([]),
-    select: jest.fn().mockImplementation(() => ({
-      from: (table: any) => ({
-        where: () => [{ amount: priorRefundedAmount }],  // getRefundedTotalInTx
-      }),
-    })),
-    insert: jest.fn().mockImplementation(() => ({
-      values: (vals: any) => ({
-        returning: jest.fn().mockResolvedValue([makeInsertedRefund({ amount: vals.amount, reasonCode: vals.reasonCode })]),
-      }),
-    })),
-    update: jest.fn().mockImplementation(() => ({
-      set: (setValues: Record<string, unknown>) => ({
-        where: () => {
-          updateCalls.push({ set: setValues });
-          return Promise.resolve();
-        },
-      }),
-    })),
-  });
+  // txIndex distinguishes the insert transaction (1st) from the SUCCEEDED/confirmManual transaction (2nd+).
+  // confirmManual has only one tx call — detected via pendingRefund presence — and uses succeededRefundedAmount.
+  let txIndex = 0;
+  const makeTx = () => {
+    txIndex++;
+    const isInsertTx = !pendingRefund && txIndex === 1;
+    const selectAmount = isInsertTx ? priorRefundedAmount : succeededRefundedAmount;
+    return {
+      execute: jest.fn().mockResolvedValue([]),
+      select: jest.fn().mockImplementation(() => ({
+        from: () => ({
+          where: () => [{ amount: selectAmount }],
+        }),
+      })),
+      insert: jest.fn().mockImplementation(() => ({
+        values: (vals: any) => ({
+          returning: jest.fn().mockResolvedValue([makeInsertedRefund({ amount: vals.amount, reasonCode: vals.reasonCode })]),
+        }),
+      })),
+      update: jest.fn().mockImplementation(() => ({
+        set: (setValues: Record<string, unknown>) => ({
+          where: () => {
+            updateCalls.push({ set: setValues });
+            return Promise.resolve();
+          },
+        }),
+      })),
+    };
+  };
 
   const db = {
     db: {
@@ -109,6 +119,7 @@ function makeContext(options: {
   const providerRegistry = { getProviderOrThrow: jest.fn().mockReturnValue(provider) };
   const stateTransitionService = {
     transitionRefund: jest.fn().mockResolvedValue({ entityId: REFUND_ID, previousStatus: 'PENDING', newStatus: 'SUCCEEDED' }),
+    transitionCharge: jest.fn().mockResolvedValue({ entityId: CHARGE_ID, previousStatus: 'SUCCEEDED', newStatus: 'REFUNDED' }),
   };
 
   // For confirmManual: select is called twice:
@@ -300,6 +311,7 @@ describe('RefundsService', () => {
           }),
         }),
         'PENDING',
+        expect.anything(), // tx — confirmManual now wraps in a transaction
       );
     });
 
@@ -326,6 +338,108 @@ describe('RefundsService', () => {
       await expect(
         service.confirmManual('nonexistent'),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('P0.3: charge REFUNDED 전환 (환불 완료 후)', () => {
+    describe('create() — provider SUCCEEDED', () => {
+      it('전액 환불 완료 시 transitionCharge(SUCCEEDED → REFUNDED) 호출', async () => {
+        const { service, stateTransitionService } = makeContext({
+          charge: makeCharge({ amount: 10000 }),
+          succeededRefundedAmount: 10000, // tx-2에서 SUCCEEDED 합계가 charge.amount 이상
+        });
+
+        await service.create({ chargeId: CHARGE_ID, amount: 10000 });
+
+        expect(stateTransitionService.transitionCharge).toHaveBeenCalledWith(
+          CHARGE_ID,
+          'REFUNDED',
+          expect.objectContaining({ reasonCode: 'FULLY_REFUNDED' }),
+          'SUCCEEDED',
+          expect.anything(),
+        );
+      });
+
+      it('부분 환불 시 transitionCharge 호출하지 않음', async () => {
+        const { service, stateTransitionService } = makeContext({
+          charge: makeCharge({ amount: 10000 }),
+          succeededRefundedAmount: 5000, // 5000 < 10000 → 부분 환불
+        });
+
+        await service.create({ chargeId: CHARGE_ID, amount: 5000 });
+
+        expect(stateTransitionService.transitionCharge).not.toHaveBeenCalled();
+      });
+
+      it('provider FAILED 시 transitionCharge 호출하지 않음', async () => {
+        const { service, stateTransitionService } = makeContext({
+          providerResult: { status: 'FAILED', errorCode: 'CARD_DECLINED' },
+          succeededRefundedAmount: 10000, // 값이 있어도 FAILED path에서는 체크 안 함
+        });
+
+        await service.create({ chargeId: CHARGE_ID, amount: 5000 });
+
+        expect(stateTransitionService.transitionCharge).not.toHaveBeenCalled();
+      });
+
+      it('provider PENDING 시 transitionCharge 호출하지 않음', async () => {
+        const { service, stateTransitionService } = makeContext({
+          providerResult: { status: 'PENDING' },
+          succeededRefundedAmount: 10000,
+        });
+
+        await service.create({ chargeId: CHARGE_ID, amount: 5000 });
+
+        expect(stateTransitionService.transitionCharge).not.toHaveBeenCalled();
+      });
+
+      it('provider 예외 발생 시 transitionCharge 호출하지 않음', async () => {
+        const { service, stateTransitionService } = makeContext({ succeededRefundedAmount: 10000 });
+        const throwingProvider = { refund: jest.fn().mockRejectedValue(new Error('PG_TIMEOUT')) };
+        jest.spyOn((service as any).providerRegistry, 'getProviderOrThrow').mockReturnValue(throwingProvider);
+
+        await service.create({ chargeId: CHARGE_ID, amount: 5000 });
+
+        expect(stateTransitionService.transitionCharge).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('confirmManual() — BANK_TRANSFER', () => {
+      it('전액 환불 완료 시 transitionCharge(SUCCEEDED → REFUNDED) 호출', async () => {
+        const { service, chargesService, paymentMethodsService, stateTransitionService } = makeContext({
+          charge: makeCharge({ amount: 5000 }),
+          method: makeMethod('BANK_TRANSFER'),
+          pendingRefund: makeInsertedRefund({ amount: 5000 }),
+          succeededRefundedAmount: 5000, // 환불 후 SUCCEEDED 합계 = charge.amount
+        });
+        chargesService.findById = jest.fn().mockResolvedValue(makeCharge({ amount: 5000 }));
+        paymentMethodsService.findById = jest.fn().mockResolvedValue(makeMethod('BANK_TRANSFER'));
+
+        await service.confirmManual(REFUND_ID);
+
+        expect(stateTransitionService.transitionCharge).toHaveBeenCalledWith(
+          CHARGE_ID,
+          'REFUNDED',
+          expect.objectContaining({ reasonCode: 'FULLY_REFUNDED' }),
+          'SUCCEEDED',
+          expect.anything(),
+        );
+      });
+
+      it('부분 환불 시 transitionCharge 호출하지 않음', async () => {
+        const { service, chargesService, paymentMethodsService, stateTransitionService } = makeContext({
+          charge: makeCharge({ amount: 10000 }),
+          method: makeMethod('BANK_TRANSFER'),
+          pendingRefund: makeInsertedRefund({ amount: 5000 }),
+          succeededRefundedAmount: 5000, // 5000 < 10000
+        });
+        chargesService.findById = jest.fn().mockResolvedValue(makeCharge({ amount: 10000 }));
+        paymentMethodsService.findById = jest.fn().mockResolvedValue(makeMethod('BANK_TRANSFER'));
+
+        await service.confirmManual(REFUND_ID);
+
+        expect(stateTransitionService.transitionCharge).not.toHaveBeenCalled();
+      });
     });
   });
 });
