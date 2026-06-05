@@ -79,6 +79,7 @@ export default function OrderCardContent({
   const quantityText = typeof quantity === "number" ? `${quantity}개` : quantity
   const [isConfirmed, setIsConfirmed] = useState(false)
   const [showCancelDialog, setShowCancelDialog] = useState(false)
+  const [showConfirmPurchaseDialog, setShowConfirmPurchaseDialog] = useState(false)
   const [isCancelling, startCancelTransition] = useTransition()
   const [cancelReasonCode, setCancelReasonCode] = useState<CancelReasonCode>("CHANGE_OF_MIND")
   const [cancelReasonDetail, setCancelReasonDetail] = useState("")
@@ -95,7 +96,11 @@ export default function OrderCardContent({
   const cancelTooltip = cancelUnavailableReason ? CANCEL_UNAVAILABLE_MESSAGES[cancelUnavailableReason] : undefined
 
   const handleConfirmPurchase = () => {
-    if (!confirm("구매를 확정하시겠습니까?\n\n확정 후에는 반품·환불이 어려울 수 있어요.")) return
+    setShowConfirmPurchaseDialog(true)
+  }
+
+  const handleConfirmPurchaseSubmit = () => {
+    setShowConfirmPurchaseDialog(false)
     startTransition(async () => {
       const result = await captureOrderPayment(orderId, orderItems)
       if (!result.success) {
@@ -351,6 +356,37 @@ export default function OrderCardContent({
           </CustomButton>
         )}
       </aside>
+
+      {/* 구매확정 확인 dialog */}
+      <Dialog open={showConfirmPurchaseDialog} onOpenChange={setShowConfirmPurchaseDialog}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>구매확정</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            <p>구매를 확정할까요?</p>
+            <p className="text-xs text-muted-foreground">
+              확정 후에는 반품·교환 가능 조건이 달라질 수 있어요.
+            </p>
+          </div>
+          <DialogFooter>
+            <CustomButton
+              variant="outline" color="secondary" size="md"
+              onClick={() => setShowConfirmPurchaseDialog(false)}
+              disabled={isPending}
+            >
+              취소
+            </CustomButton>
+            <CustomButton
+              variant="fill" color="primary" size="md"
+              onClick={handleConfirmPurchaseSubmit}
+              isLoading={isPending}
+            >
+              구매확정
+            </CustomButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* 취소 확인 dialog */}
       <Dialog

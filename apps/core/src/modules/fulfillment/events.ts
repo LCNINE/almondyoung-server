@@ -10,6 +10,7 @@ export const FULFILLMENT_EVENTS = {
   READY: 'FulfillmentReady',
   LABELLED: 'FulfillmentLabeled',
   SHIPPED: 'FulfillmentShipped',
+  DELIVERED: 'FulfillmentDelivered',
   CANCELLED: 'FulfillmentCancelled',
 } as const;
 

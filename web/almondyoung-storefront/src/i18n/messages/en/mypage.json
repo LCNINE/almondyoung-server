@@ -535,6 +535,9 @@
       "sectionTitle": "Refund Information",
       "statusLabel": "Refund Status",
       "amountLabel": "Payment Amount",
+      "refundAmountLabel": "Refund Amount",
+      "refundMethodLabel": "Refund Method",
+      "refundDateLabel": "Processed On",
       "guidance": {
         "none": "",
         "pending": "Your refund will be completed within 3-5 business days.",

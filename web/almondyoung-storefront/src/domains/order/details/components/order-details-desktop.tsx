@@ -23,7 +23,7 @@ import {
   CancelReasonForm,
   type CancelReasonCode,
 } from "@/components/orders/cancel-reason-form"
-import type { StoreOrderActionsResponse, StoreRefundStatus } from "@/lib/api/orders/store-orders"
+import type { StoreOrderActionsResponse, StoreRefundStatus, RefundSummary } from "@/lib/api/orders/store-orders"
 import { cancelOrderByMedusaId } from "@/lib/api/orders/store-orders"
 import { HttpTypes } from "@medusajs/types"
 import { useTranslations } from "next-intl"
@@ -109,7 +109,8 @@ export const OrderDetailsDesktop = ({
     getPaymentStatusI18nKey(order.payment_status ?? "")
   )
 
-  const refundStatus: StoreRefundStatus = coreActions?.refundStatus ?? "none"
+  const refundSummary: RefundSummary | undefined = coreActions?.refundSummary
+  const refundStatus: StoreRefundStatus = refundSummary?.status ?? coreActions?.refundStatus ?? "none"
   const refundStatusBadgeLabel = tRefundInfo(`statusLabels.${refundStatus}`)
   const refundGuidance = tRefundInfo(`guidance.${refundStatus}`)
   const showRefundSection = refundStatus !== "none"
@@ -272,9 +273,31 @@ export const OrderDetailsDesktop = ({
                       {refundStatusBadgeLabel}
                     </span>
                   </div>
-                  {refundGuidance && (
-                    <p className="text-xs text-gray-500">{refundGuidance}</p>
+                  {refundSummary?.amount != null && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500">{tRefundInfo("refundAmountLabel")}:</span>
+                      <span className="text-xs text-gray-800">{formatAmount(refundSummary.amount)}</span>
+                    </div>
                   )}
+                  {refundSummary?.paymentMethodLabel && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500">{tRefundInfo("refundMethodLabel")}:</span>
+                      <span className="text-xs text-gray-800">{refundSummary.paymentMethodLabel}</span>
+                    </div>
+                  )}
+                  {refundStatus === "succeeded" && refundSummary?.lastUpdatedAt && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-gray-500">{tRefundInfo("refundDateLabel")}:</span>
+                      <span className="text-xs text-gray-800">
+                        {formatDate(refundSummary.lastUpdatedAt, DATE_FORMATS.KO_DOT)}
+                      </span>
+                    </div>
+                  )}
+                  {(refundSummary?.expectedProcessingMessage ?? refundGuidance) ? (
+                    <p className="text-xs text-gray-500">
+                      {refundSummary?.expectedProcessingMessage ?? refundGuidance}
+                    </p>
+                  ) : null}
                 </div>
               )}
             </div>

@@ -217,6 +217,88 @@ export class InboxWorkerService implements OnModuleInit {
           break;
         }
 
+        case 'CoreFulfillmentShipped': {
+          // Core WMS에서 FO가 출고 완료됐을 때 Medusa order metadata를 shipped로 갱신.
+          // payload.channelOrderId를 우선 사용하고 없으면 wms_order_mappings를 조회한다.
+          // 둘 다 없으면 Medusa 채널 주문이 아닌 것이므로 스킵.
+          const shippedPayload = event.payload as {
+            fulfillmentId: string;
+            orderId: string;
+            channelOrderId?: string;
+            trackingInfo?: { carrier?: string; trackingNumber?: string };
+            shippedAt?: string;
+          };
+
+          let shippedMedusaOrderId = shippedPayload.channelOrderId ?? null;
+          if (!shippedMedusaOrderId) {
+            const [shippedMapping] = await this.dbService.db
+              .select({ channelOrderId: wmsOrderMappings.channelOrderId })
+              .from(wmsOrderMappings)
+              .where(and(
+                eq(wmsOrderMappings.wmsOrderId, shippedPayload.orderId),
+                eq(wmsOrderMappings.salesChannel, 'medusa'),
+              ))
+              .limit(1);
+            shippedMedusaOrderId = shippedMapping?.channelOrderId ?? null;
+          }
+
+          if (!shippedMedusaOrderId) {
+            this.logger.debug(`[CoreFulfillmentShipped] Medusa 매핑 없음, 스킵: orderId=${shippedPayload.orderId}`);
+            break;
+          }
+
+          await this.medusaClient.updateOrderShippingProjection(shippedMedusaOrderId, {
+            status: 'shipped',
+            fulfillmentId: shippedPayload.fulfillmentId,
+            carrier: shippedPayload.trackingInfo?.carrier,
+            trackingNumber: shippedPayload.trackingInfo?.trackingNumber,
+            shippedAt: shippedPayload.shippedAt,
+          });
+          this.logger.log(
+            `[CoreFulfillmentShipped] Medusa 배송 시작 동기화 완료: orderId=${shippedPayload.orderId}, medusaOrderId=${shippedMedusaOrderId}`,
+          );
+          break;
+        }
+
+        case 'CoreFulfillmentDelivered': {
+          // Core WMS에서 FO 배송 완료 시 Medusa order metadata를 delivered로 갱신.
+          // payload.channelOrderId를 우선 사용하고 없으면 wms_order_mappings를 조회한다.
+          const deliveredPayload = event.payload as {
+            fulfillmentId: string;
+            orderId: string;
+            channelOrderId?: string;
+            deliveredAt?: string;
+          };
+
+          let deliveredMedusaOrderId = deliveredPayload.channelOrderId ?? null;
+          if (!deliveredMedusaOrderId) {
+            const [deliveredMapping] = await this.dbService.db
+              .select({ channelOrderId: wmsOrderMappings.channelOrderId })
+              .from(wmsOrderMappings)
+              .where(and(
+                eq(wmsOrderMappings.wmsOrderId, deliveredPayload.orderId),
+                eq(wmsOrderMappings.salesChannel, 'medusa'),
+              ))
+              .limit(1);
+            deliveredMedusaOrderId = deliveredMapping?.channelOrderId ?? null;
+          }
+
+          if (!deliveredMedusaOrderId) {
+            this.logger.debug(`[CoreFulfillmentDelivered] Medusa 매핑 없음, 스킵: orderId=${deliveredPayload.orderId}`);
+            break;
+          }
+
+          await this.medusaClient.updateOrderShippingProjection(deliveredMedusaOrderId, {
+            status: 'delivered',
+            fulfillmentId: deliveredPayload.fulfillmentId,
+            deliveredAt: deliveredPayload.deliveredAt,
+          });
+          this.logger.log(
+            `[CoreFulfillmentDelivered] Medusa 배송 완료 동기화 완료: orderId=${deliveredPayload.orderId}, medusaOrderId=${deliveredMedusaOrderId}`,
+          );
+          break;
+        }
+
         case 'CoreOrderCancelled': {
           // Core(WMS)가 주문을 취소했을 때 Medusa order도 canceled로 동기화한다.
           // SalesOrderCancelledPayload.channelOrderId(Medusa order ID)로 wms_order_mappings를 조회.

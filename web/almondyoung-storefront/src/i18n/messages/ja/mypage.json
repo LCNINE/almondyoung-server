@@ -535,6 +535,9 @@
       "sectionTitle": "返金情報",
       "statusLabel": "返金状況",
       "amountLabel": "お支払い金額",
+      "refundAmountLabel": "返金額",
+      "refundMethodLabel": "返金方法",
+      "refundDateLabel": "処理日",
       "guidance": {
         "none": "",
         "pending": "営業日3〜5日以内に返金が完了します。",

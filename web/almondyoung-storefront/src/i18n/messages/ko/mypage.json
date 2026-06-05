@@ -535,6 +535,9 @@
       "sectionTitle": "환불 정보",
       "statusLabel": "환불 상태",
       "amountLabel": "결제 금액",
+      "refundAmountLabel": "환불 금액",
+      "refundMethodLabel": "환불 수단",
+      "refundDateLabel": "처리일",
       "guidance": {
         "none": "",
         "pending": "영업일 기준 3~5일 내 환불이 완료됩니다.",

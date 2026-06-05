@@ -279,10 +279,16 @@ export type OutboundBatchStatus = 'created' | 'picking' | 'completed' | 'cancele
 export type PickingMethod = 'individual' | 'total_picking';
 
 export interface CreateOutboundBatchRequest {
-  warehouseId: string;
+  warehouseId?: string;
   pickingMethod: PickingMethod;
   name?: string;
   scheduledPickingAt?: string;
+  salesOrderIds?: string[];
+}
+
+export interface CreateOutboundBatchResponse {
+  batchId: string;
+  linkedFoCount: number;
 }
 
 export interface AddFOsToBatchRequest {

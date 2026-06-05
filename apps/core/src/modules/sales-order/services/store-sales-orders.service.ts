@@ -5,6 +5,7 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import { inventorySchema, inventoryTables, returnExchangeTables, wmsTables } from '../../inventory/schema/inventory.schema';
 import { calculatePartialCancellationRefund } from './partial-cancellation-refund-calculator';
 import {
+  RefundSummaryDto,
   StoreCancelOrderDto,
   StoreCancelUnavailableReason,
   StoreClaimStatus,
@@ -66,14 +67,15 @@ export class StoreSalesOrdersService {
   }
 
   /**
-   * 관리자 취소 + Wallet 자동 환불 orchestration.
-   * 고객 취소와 동일하게 Core 취소 → Wallet 환불 → 결과 기록 순서를 보장한다.
+   * 관리자 취소 + Wallet 환불 orchestration.
+   * 전체취소: Core 취소 → Wallet 자동 환불 시도 → 결과 기록.
+   * 부분취소: Core 취소 → 환불 추정액 계산 → manual_pending 기록 (자동 환불 없음).
    * walletIntentId가 없으면 환불은 manual_pending으로 기록되고 취소는 완료된다.
    */
   async adminCancelRequest(
     orderId: string,
     dto: { reasonCode?: string; reasonDetail?: string; lines?: Array<{ salesOrderLineId: string; quantity: number }> },
-  ): Promise<{ status: string; refundStatus: string; refundAmount?: number; manualReason?: string | null }> {
+  ): Promise<{ status: string; refundStatus: string; refundEstimateAmount?: number; manualReason?: string | null }> {
     const so = await this.findSoOrThrow({ id: orderId });
     if (so.status === 'cancelled') throw new BadRequestException('이미 취소된 주문입니다.');
     if (so.status === 'timeout') throw new BadRequestException('타임아웃된 주문은 취소할 수 없습니다.');
@@ -106,34 +108,18 @@ export class StoreSalesOrdersService {
 
       const refreshed = await this.findSoOrThrow({ id: orderId });
 
-      if (calcResult.autoRefundable) {
-        const correlationId = `partial-cancel:${so.id}:${computeLineHash(dto.lines)}`;
-        const refundStatus = await this.requestWalletRefundAfterCancel(
-          so,
-          { reasonCode: dto.reasonCode, reasonDetail: dto.reasonDetail },
-          {
-            actor: 'admin',
-            attemptType: 'initial',
-            correlationId,
-            amountOverride: calcResult.refundAmount,
-            extraMetadata: {
-              cancellationScope: 'partial',
-              breakdown: calcResult.breakdown,
-              cancelledLines: dto.lines,
-            },
-          },
-        );
-        return { status: refreshed.status, refundStatus, refundAmount: calcResult.refundAmount };
-      }
-
+      // 부분취소는 정책상 자동환불 없음 — 항상 manual_pending으로 기록.
+      // calcResult.manualRequired는 항상 true이며, refundEstimateAmount는
+      // 비례 배분 추정값이다. 실제 환불은 운영자가 검토 후 수동 처리한다.
       await this.recordWalletRefundLink(so.id, {
         refundStatus: 'manual_pending',
         intentId: so.walletIntentId ?? undefined,
-        note: `부분 취소 — 자동 환불 불가: ${calcResult.manualReason ?? '정책 미충족'}`,
+        note: `부분취소 수동 검토 필요: ${calcResult.manualReason}`,
         reasonCode: dto.reasonCode,
         extraMetadata: {
           cancellationScope: 'partial',
           manualReason: calcResult.manualReason,
+          refundEstimateAmount: calcResult.refundEstimateAmount,
           breakdown: calcResult.breakdown,
           cancelledLines: dto.lines,
           warnings: calcResult.warnings,
@@ -142,7 +128,7 @@ export class StoreSalesOrdersService {
       return {
         status: refreshed.status,
         refundStatus: 'manual_pending',
-        refundAmount: 0,
+        refundEstimateAmount: calcResult.refundEstimateAmount,
         manualReason: calcResult.manualReason,
       };
     }
@@ -366,10 +352,19 @@ export class StoreSalesOrdersService {
     let cancelUnavailableReason: StoreCancelUnavailableReason | undefined;
     let refundStatus: StoreRefundStatus = overrideRefundStatus ?? 'none';
     let claimStatus: StoreClaimStatus = 'none';
+    let refundSummary: RefundSummaryDto | undefined;
 
-    if (so.status === 'cancelled' && !overrideRefundStatus) {
-      const refundLink = await this.db.db
-        .select({ metadata: inventoryTables.businessLinks.metadata })
+    // cancellation_linked_wallet_refund 조회: 취소된 주문 + 부분취소(manual_pending) 모두 해당
+    const needsRefundLookup = (so.status === 'cancelled' && !overrideRefundStatus) ||
+      (so.status !== 'cancelled' && so.walletIntentId);
+
+    if (needsRefundLookup) {
+      const refundLinks = await this.db.db
+        .select({
+          id: inventoryTables.businessLinks.id,
+          metadata: inventoryTables.businessLinks.metadata,
+          createdAt: inventoryTables.businessLinks.createdAt,
+        })
         .from(inventoryTables.businessLinks)
         .where(
           and(
@@ -378,17 +373,58 @@ export class StoreSalesOrdersService {
             eq(inventoryTables.businessLinks.relationName, 'cancellation_linked_wallet_refund'),
           ),
         )
-        .orderBy(desc(inventoryTables.businessLinks.createdAt))
-        .limit(1)
-        .then((r) => r[0]);
+        .orderBy(desc(inventoryTables.businessLinks.createdAt));
 
-      if (refundLink) {
-        const stored = (refundLink.metadata as Record<string, unknown>)?.refundStatus;
-        refundStatus = (typeof stored === 'string' && VALID_REFUND_STATUSES.has(stored as StoreRefundStatus))
-          ? (stored as StoreRefundStatus)
-          : 'pending';
-      } else {
-        refundStatus = so.walletIntentId ? 'pending' : 'none';
+      const latestLink = refundLinks[0];
+
+      if (so.status === 'cancelled' && !overrideRefundStatus) {
+        if (latestLink) {
+          const stored = (latestLink.metadata as Record<string, unknown>)?.refundStatus;
+          refundStatus = (typeof stored === 'string' && VALID_REFUND_STATUSES.has(stored as StoreRefundStatus))
+            ? (stored as StoreRefundStatus)
+            : 'pending';
+        } else {
+          refundStatus = so.walletIntentId ? 'pending' : 'none';
+        }
+      }
+
+      // refundSummary 조립: 취소/부분취소 모두 지원
+      const summaryLink = latestLink ??
+        // 아직 cancelled가 아닌 주문에서 manual_pending 부분취소 링크 탐색
+        refundLinks.find((r) => {
+          const m = r.metadata as Record<string, unknown>;
+          return m?.refundStatus === 'manual_pending';
+        });
+
+      if (summaryLink) {
+        const m = summaryLink.metadata as Record<string, unknown>;
+        const summaryStatus = (typeof m?.refundStatus === 'string' && VALID_REFUND_STATUSES.has(m.refundStatus as StoreRefundStatus))
+          ? (m.refundStatus as StoreRefundStatus)
+          : (refundStatus !== 'none' ? refundStatus : undefined);
+
+        if (summaryStatus && summaryStatus !== 'none') {
+          // 부분취소(manual_pending)는 refundEstimateAmount, 전체취소는 amount
+          const summaryAmount =
+            typeof m?.refundEstimateAmount === 'number'
+              ? m.refundEstimateAmount
+              : typeof m?.amount === 'number'
+                ? m.amount
+                : null;
+          refundSummary = buildRefundSummary({
+            status: summaryStatus,
+            amount: summaryAmount,
+            manualRequired: summaryStatus === 'manual_pending',
+            lastUpdatedAt: summaryLink.createdAt?.toISOString() ?? null,
+          });
+        }
+      } else if (refundStatus !== 'none') {
+        // businessLink 없지만 refundStatus가 있는 경우 (walletIntentId 있는 대기 상태)
+        refundSummary = buildRefundSummary({
+          status: refundStatus,
+          amount: null,
+          manualRequired: refundStatus === 'manual_pending',
+          lastUpdatedAt: null,
+        });
       }
     }
 
@@ -453,6 +489,7 @@ export class StoreSalesOrdersService {
       orderStatus: so.status,
       fulfillmentStatus,
       refundStatus,
+      refundSummary,
       claimStatus,
       availableActions,
       cancelUnavailableReason,
@@ -838,6 +875,35 @@ export class StoreSalesOrdersService {
 }
 
 // ── Module-level helpers ───────────────────────────────────────────────────
+
+/**
+ * 고객 안내용 환불 summary를 조립한다.
+ * 내부 에러/provider 정보는 포함하지 않는다.
+ */
+function buildRefundSummary(data: {
+  status: StoreRefundStatus;
+  amount: number | null;
+  manualRequired: boolean;
+  lastUpdatedAt: string | null;
+}): RefundSummaryDto {
+  const messages: Record<StoreRefundStatus, string | null> = {
+    none: null,
+    pending: '환불 처리 중입니다. 결제 수단에 따라 영업일 기준 1~5일 소요될 수 있습니다.',
+    manual_pending: '환불 처리에 추가 확인이 필요합니다. 빠른 시일 내에 처리해 드리겠습니다.',
+    succeeded: null,
+    failed: '환불 처리 중 오류가 발생했습니다. 고객센터로 문의해 주세요.',
+  };
+
+  return {
+    status: data.status,
+    amount: data.amount,
+    currency: 'KRW',
+    paymentMethodLabel: null, // Wallet provider 정보가 이벤트에 포함될 때 보강 예정
+    manualRequired: data.manualRequired,
+    expectedProcessingMessage: messages[data.status] ?? null,
+    lastUpdatedAt: data.lastUpdatedAt,
+  };
+}
 
 function computeLineHash(lines: Array<{ salesOrderLineId: string; quantity: number }>): string {
   const sorted = [...lines]

@@ -1551,6 +1551,60 @@ export class MedusaClient {
     }
   }
 
+  /**
+   * Core WMS 출고/배송 완료 이벤트를 Medusa order metadata에 반영 (projection only).
+   *
+   * Medusa를 배송 SSOT로 만들지 않는다. order.metadata에 Core WMS 기준 배송 상태를
+   * 기록하여 storefront가 Core actions API와 함께 참조할 수 있게 한다.
+   * PG/provider를 다시 호출하지 않고 metadata 업데이트만 수행한다.
+   * 멱등성: 같은 status로 재전달돼도 같은 metadata 값으로 덮어쓰므로 안전하다.
+   */
+  async updateOrderShippingProjection(
+    orderId: string,
+    data: {
+      status: 'shipped' | 'delivered';
+      fulfillmentId: string;
+      carrier?: string;
+      trackingNumber?: string;
+      shippedAt?: string;
+      deliveredAt?: string;
+    },
+  ): Promise<void> {
+    try {
+      // 기존 metadata를 GET으로 읽어 병합 — metadata 필드를 통째로 교체하지 않기 위해
+      const existing = await this.sdk.client.fetch<{ order: { metadata?: Record<string, unknown> } }>(
+        `/admin/orders/${encodeURIComponent(orderId)}`,
+        { method: 'GET' },
+      );
+      const existingMeta = (existing?.order?.metadata as Record<string, unknown>) ?? {};
+
+      const metadata: Record<string, unknown> = {
+        ...existingMeta,
+        coreShippingStatus: data.status,
+        coreFulfillmentId: data.fulfillmentId,
+      };
+      if (data.carrier) metadata.coreCarrier = data.carrier;
+      if (data.trackingNumber) metadata.coreTrackingNumber = data.trackingNumber;
+      if (data.shippedAt) metadata.coreShippedAt = data.shippedAt;
+      if (data.deliveredAt) metadata.coreDeliveredAt = data.deliveredAt;
+
+      await this.sdk.client.fetch(`/admin/orders/${encodeURIComponent(orderId)}`, {
+        method: 'POST',
+        body: { metadata } as Record<string, unknown>,
+      });
+
+      this.logger.log(`Updated Medusa order shipping projection: orderId=${orderId}, status=${data.status}`);
+    } catch (error) {
+      const fetchError = error as FetchError;
+      if (fetchError.status === 404) {
+        this.logger.warn(`Medusa updateOrderShippingProjection: order not found, skipping orderId=${orderId}`);
+        return;
+      }
+      this.logger.error(`Failed to update Medusa order shipping projection: ${orderId}`, fetchError.message);
+      throw new Error(`Medusa updateOrderShippingProjection failed: ${fetchError.message}`);
+    }
+  }
+
   // 헬스 체크: medusa api 연결 확인
   async healthCheck(): Promise<boolean> {
     try {

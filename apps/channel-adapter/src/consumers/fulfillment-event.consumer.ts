@@ -4,25 +4,14 @@ import { FulfillmentUpdatedEvent } from '../types';
 import { RetryPolicy } from '../decorators/retry-policy.decorator';
 
 /**
- * WMS 이행 상태 업데이트 이벤트 Consumer
+ * @deprecated 이 클래스는 adapter.module.ts에 등록되지 않은 초기 설계 프로토타입입니다.
  *
- * CTO SoT 원칙에 따라 WMS에서 발생하는 이행 상태 변경 이벤트를 수신하여
- * 모든 연결된 판매채널에 주문 이행 정보를 동기화합니다.
+ * 실제 이행 이벤트 처리는 {@link FulfillmentEventsConsumer} (복수형, fulfillment-events.consumer.ts)에서 담당합니다.
+ * - `FulfillmentShipped` / `FulfillmentDelivered` / `FulfillmentCancelled` Kafka 이벤트 핸들러 구현 완료
+ * - Medusa projection 및 Naver/Coupang 채널 송장 동기화 처리
  *
- * @example
- * Kafka 토픽: wms.fulfillment.updated
- * 이벤트 예시:
- * ```json
- * {
- *   "orderId": "ORDER-123",
- *   "fulfillmentNo": "F-01",
- *   "status": "SHIPPED",
- *   "trackingNo": "123456789",
- *   "carrier": "CJ",
- *   "eventVersion": 1695462345000,
- *   "occurredAt": "2025-09-23T12:34:56Z"
- * }
- * ```
+ * 이 파일은 coupang-integration.spec.ts의 통합 테스트에서 수동 인스턴스로 참조됩니다.
+ * 해당 테스트를 제거하기 전에는 이 파일을 삭제하지 마세요.
  */
 @Injectable()
 export class FulfillmentEventConsumer {
