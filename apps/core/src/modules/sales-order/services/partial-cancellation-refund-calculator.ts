@@ -7,12 +7,16 @@
  * - 주문 레벨 할인이 totalAmount에 이미 반영되어 있으므로 비중 계산으로 배분됨
  * - 쿠폰/적립금 할인도 동일하게 lineValue 비중으로 안전하게 배분됨
  *
- * 자동 환불 가능 조건:
- * - salesChannel === 'medusa' (나머지는 채널 자체 환불 정책 적용)
- * - walletIntentId 존재
- * - totalAmount > 0
- * - 취소 대상 라인 전체에 unitPrice가 존재
- * - 계산된 환불 금액 > 0
+ * 현재 정책: 부분취소는 항상 manual_pending (수동 검토 필수).
+ * 자동환불을 열지 않는 이유:
+ * - 쿠폰/포인트/멤버십가 할인 배분 기준 미확정
+ * - 무료배송 조건 깨짐 여부 반영 불가
+ * - 부분 출고/배송 상태에서 이전 환불 이력 차감 미구현
+ * - Naver/Coupang 채널 환불과 Wallet 환불 중복 방지 정책 미확정
+ *
+ * 이 모듈이 반환하는 refundEstimateAmount는 비례 배분 추정값이다.
+ * 실제 환불액은 운영자가 검토·확정해야 하며, Wallet provider.refund()를
+ * 자동 호출하지 않는다.
  *
  * 정책 불충족 케이스는 manualReason과 함께 manual_pending으로 기록.
  * Wallet의 refundable amount 초과 방어는 Wallet이 담당.
@@ -55,12 +59,16 @@ export type PartialCancellationRefundInput = {
   cancelledLines: PartialCancellationLine[];
 };
 
+/**
+ * 부분취소 환불 산정 결과.
+ * 현재 정책상 자동환불은 열려 있지 않으므로 manualRequired는 항상 true이다.
+ * refundEstimateAmount는 비례 배분 추정값이며 실제 환불액이 아니다.
+ */
 export type PartialCancellationRefundResult = {
-  autoRefundable: boolean;
-  refundAmount: number;
+  refundEstimateAmount: number;
   breakdown: RefundBreakdown;
-  manualRequired: boolean;
-  manualReason: ManualRefundReason | null;
+  manualRequired: true;
+  manualReason: ManualRefundReason;
   warnings: string[];
 };
 
@@ -78,7 +86,7 @@ function manualResult(
   breakdown: RefundBreakdown = { ...EMPTY_BREAKDOWN },
   warnings: string[] = [],
 ): PartialCancellationRefundResult {
-  return { autoRefundable: false, refundAmount: 0, breakdown, manualRequired: true, manualReason: reason, warnings };
+  return { refundEstimateAmount: 0, breakdown, manualRequired: true, manualReason: reason, warnings };
 }
 
 export function calculatePartialCancellationRefund(
@@ -148,8 +156,7 @@ export function calculatePartialCancellationRefund(
 
   if (grossRefund <= 0) {
     return {
-      autoRefundable: false,
-      refundAmount: 0,
+      refundEstimateAmount: 0,
       breakdown,
       manualRequired: true,
       manualReason: 'ZERO_REFUND_AMOUNT',
@@ -157,12 +164,11 @@ export function calculatePartialCancellationRefund(
     };
   }
 
-  // Always require manual review for partial cancellations.
-  // Proportional allocation does not account for coupon/point/membership discount
-  // distribution, free-shipping threshold breakage, or prior refund history.
+  // 부분취소는 항상 수동 검토. 비례 배분 추정값만 제공.
+  // 자동환불을 열려면: 쿠폰/포인트 배분, 배송비 환불 기준, 이전 환불 이력 반영,
+  // 채널별 중복 환불 방지 정책이 먼저 확정되어야 한다.
   return {
-    autoRefundable: false,
-    refundAmount: grossRefund,
+    refundEstimateAmount: grossRefund,
     breakdown,
     manualRequired: true,
     manualReason: 'PARTIAL_CANCEL_MANUAL_REVIEW',

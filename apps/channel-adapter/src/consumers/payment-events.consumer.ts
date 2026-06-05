@@ -15,6 +15,10 @@ import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { MessageEnvelope } from '@packages/event-contracts/types';
 import { firstValueFrom } from 'rxjs';
+import { DbService } from '@app/db';
+import { eq, and } from 'drizzle-orm';
+import { wmsOrderMappings } from '../schema';
+import type { ChannelAdapterSchema } from '../types';
 
 /** Medusa에 전달할 결제 이벤트 타입 목록 */
 const MEDUSA_PAYMENT_EVENT_TYPES = [
@@ -42,6 +46,7 @@ export class PaymentEventsConsumer {
 
   constructor(
     private readonly httpService: HttpService,
+    private readonly dbService: DbService<ChannelAdapterSchema>,
     configService: ConfigService,
   ) {
     const medusaApiUrl = configService.get<string>('MEDUSA_API_URL') ?? '';
@@ -101,29 +106,66 @@ export class PaymentEventsConsumer {
 
   /**
    * RefundApproved — 환불 승인 이벤트.
+   * channelOrderId를 조회해 Medusa hook에 함께 전달한다.
    */
   @OnEvent('payments.events.v1', 'RefundApproved')
   async handleRefundApproved(
     @EventPayload() payload: Record<string, unknown>,
     @EventEnvelope() envelope: MessageEnvelope,
   ) {
-    await this.forwardToMedusa(envelope);
+    await this.forwardRefundToMedusa(envelope, payload);
   }
 
   /**
    * PaymentRefundCompleted — 환불 완료 이벤트.
+   * channelOrderId를 조회해 Medusa hook에 함께 전달한다 (order-level refund projection용).
    */
   @OnEvent('payments.events.v1', 'PaymentRefundCompleted')
   async handlePaymentRefundCompleted(
     @EventPayload() payload: Record<string, unknown>,
     @EventEnvelope() envelope: MessageEnvelope,
   ) {
-    await this.forwardToMedusa(envelope);
+    await this.forwardRefundToMedusa(envelope, payload);
   }
 
   // ─── Medusa webhook delivery ────────────────────────────────────────────────
 
-  private async forwardToMedusa(envelope: MessageEnvelope): Promise<void> {
+  /**
+   * 환불 이벤트를 Medusa에 전달할 때 wms_order_mappings에서 channelOrderId를 조회해 보강한다.
+   *
+   * Wallet/payment 이벤트에는 Core 주문 ID(orderId)가 있으나 Medusa 주문 ID(channelOrderId)는 없다.
+   * channel-adapter가 wms_order_mappings를 보유하므로 여기서 변환한다.
+   * 조회 실패는 Medusa 전달을 막지 않는다 — channelOrderId 없이 payment metadata만 갱신된다.
+   */
+  private async forwardRefundToMedusa(envelope: MessageEnvelope, payload: Record<string, unknown>): Promise<void> {
+    const coreOrderId = payload?.orderId as string | undefined;
+    let channelOrderId: string | undefined;
+
+    if (coreOrderId) {
+      try {
+        const [mapping] = await this.dbService.db
+          .select({ channelOrderId: wmsOrderMappings.channelOrderId })
+          .from(wmsOrderMappings)
+          .where(and(
+            eq(wmsOrderMappings.wmsOrderId, coreOrderId),
+            eq(wmsOrderMappings.salesChannel, 'medusa'),
+          ))
+          .limit(1);
+        channelOrderId = mapping?.channelOrderId ?? undefined;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`[RefundEvent] channelOrderId 조회 실패, 없이 진행: coreOrderId=${coreOrderId}, error=${msg}`);
+      }
+    }
+
+    const enrichedPayload: Record<string, unknown> = channelOrderId
+      ? { ...((envelope.payload as Record<string, unknown>) ?? {}), channelOrderId }
+      : (envelope.payload as Record<string, unknown>) ?? {};
+
+    await this.forwardToMedusa(envelope, enrichedPayload);
+  }
+
+  private async forwardToMedusa(envelope: MessageEnvelope, payloadOverride?: Record<string, unknown>): Promise<void> {
     const eventType = envelope.messageType;
 
     if (!this.medusaWebhookUrl) {
@@ -152,7 +194,7 @@ export class PaymentEventsConsumer {
             messageId: envelope.messageId,
             messageType: envelope.messageType,
             source: envelope.source,
-            payload: envelope.payload,
+            payload: payloadOverride ?? envelope.payload,
             occurredAt: envelope.occurredAt ?? envelope.timestamp,
             correlationId: envelope.correlationId,
           },

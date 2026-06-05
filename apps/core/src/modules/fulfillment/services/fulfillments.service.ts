@@ -20,7 +20,7 @@ import { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
 import { CreateCompensationShipmentDto, CompensationShipmentItemDto } from '../dto/create-compensation-shipment.dto';
 import { SplitFulfillmentOrderDto } from '../dto/split-fulfillment-order.dto';
 import { AssignShipmentDto } from '../dto/assign-shipment.dto';
-import { FulfillmentShippedPayload, FulfillmentCancelledPayload, Carrier } from '@packages/event-contracts/streams';
+import { FulfillmentShippedPayload, FulfillmentDeliveredPayload, FulfillmentCancelledPayload, Carrier } from '@packages/event-contracts/streams';
 import { SalesOrderAmendmentsService } from '../../sales-order/services/sales-order-amendments.service';
 import { SalesOrderAmendmentDeltaDto } from '../../sales-order/dto/create-sales-order-amendment.dto';
 
@@ -1088,9 +1088,18 @@ export class FulfillmentsService {
 
       await this.reservationLifecycle.handleFulfillmentOrderStatusChange(id, fo.status, 'shipped', trx);
 
+      const [salesOrderRow] = fo.salesOrderId
+        ? await trx
+            .select({ channelOrderId: wmsTables.salesOrders.channelOrderId })
+            .from(wmsTables.salesOrders)
+            .where(eq(wmsTables.salesOrders.id, fo.salesOrderId))
+            .limit(1)
+        : [];
+
       const shippedPayload: FulfillmentShippedPayload = {
         fulfillmentId: id,
         orderId: fo.salesOrderId ?? '',
+        channelOrderId: salesOrderRow?.channelOrderId ?? undefined,
         trackingInfo: {
           carrier: (shipment?.carrier as Carrier) ?? 'CJ',
           trackingNumber: shipment?.trackingNo ?? '',
@@ -1112,6 +1121,77 @@ export class FulfillmentsService {
           aggregateId: id,
           partitionKey: fo.salesOrderId ?? id,
           payload: shippedPayload,
+        },
+        trx,
+      );
+
+      return this.getOne(id, trx);
+    }, tx);
+  }
+
+  async markDelivered(id: string, tx?: DbTx) {
+    return this.inTx(async (trx) => {
+      const [fo] = await trx
+        .select()
+        .from(wmsTables.fulfillmentOrders)
+        .where(eq(wmsTables.fulfillmentOrders.id, id))
+        .limit(1);
+      if (!fo) {
+        throw new NotFoundException(`Fulfillment order ${id} not found`);
+      }
+      if (fo.status !== 'shipped') {
+        throw new ConflictException(`Cannot mark delivered: FO is in status '${fo.status}', expected 'shipped'`);
+      }
+
+      const now = new Date();
+
+      // 'completed' = delivered at FO level (FO_DELIVERED_STATUSES in store-sales-orders.service.ts)
+      await trx
+        .update(wmsTables.fulfillmentOrders)
+        .set({ status: 'completed', updatedAt: now })
+        .where(eq(wmsTables.fulfillmentOrders.id, id));
+
+      // 배송 완료 시각을 shipment_tracking에 기록 → buildTrackingView()가 deliveredAt으로 노출
+      const [shipmentRow] = await trx
+        .select({ id: wmsTables.shipments.id })
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.fulfillmentOrderId, id))
+        .limit(1);
+
+      if (shipmentRow) {
+        await trx.insert(wmsTables.shipmentTracking).values({
+          shipmentId: shipmentRow.id,
+          status: 'delivered',
+          timestamp: now,
+        });
+        await trx
+          .update(wmsTables.shipments)
+          .set({ status: 'delivered', lastUpdated: now })
+          .where(eq(wmsTables.shipments.id, shipmentRow.id));
+      }
+
+      const [salesOrderRow] = fo.salesOrderId
+        ? await trx
+            .select({ channelOrderId: wmsTables.salesOrders.channelOrderId })
+            .from(wmsTables.salesOrders)
+            .where(eq(wmsTables.salesOrders.id, fo.salesOrderId))
+            .limit(1)
+        : [];
+
+      const deliveredPayload: FulfillmentDeliveredPayload = {
+        fulfillmentId: id,
+        orderId: fo.salesOrderId ?? '',
+        channelOrderId: salesOrderRow?.channelOrderId ?? undefined,
+        deliveredAt: now.toISOString(),
+      };
+
+      await this.outbox.enqueue(
+        {
+          eventType: FULFILLMENT_EVENTS.DELIVERED,
+          aggregateType: 'fulfillment',
+          aggregateId: id,
+          partitionKey: fo.salesOrderId ?? id,
+          payload: deliveredPayload,
         },
         trx,
       );

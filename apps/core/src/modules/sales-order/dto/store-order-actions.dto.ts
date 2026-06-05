@@ -28,6 +28,35 @@ export type StoreClaimStatus =
   | 'returning'
   | 'completed';
 
+/**
+ * 고객에게 노출할 환불 요약 정보.
+ *
+ * Core가 Wallet 상태와 businessLinks를 조합해 생성한다.
+ * 내부 에러 코드, provider raw error, PG transaction key 등 운영 민감 정보는 포함하지 않는다.
+ */
+export class RefundSummaryDto {
+  @ApiProperty({ enum: ['none', 'pending', 'manual_pending', 'succeeded', 'failed'] })
+  status: StoreRefundStatus;
+
+  @ApiPropertyOptional({ description: '환불 금액 (KRW 기준 원 단위)' })
+  amount: number | null;
+
+  @ApiProperty()
+  currency: string;
+
+  @ApiPropertyOptional({ description: '결제 수단 표시 레이블 (예: 신용카드, 카카오페이)' })
+  paymentMethodLabel: string | null;
+
+  @ApiProperty({ description: '수동 처리가 필요한 경우 true' })
+  manualRequired: boolean;
+
+  @ApiPropertyOptional({ description: '고객 안내 메시지 (상태별 템플릿 문구)' })
+  expectedProcessingMessage: string | null;
+
+  @ApiPropertyOptional()
+  lastUpdatedAt: string | null;
+}
+
 export class StoreOrderActionsResponseDto {
   @ApiProperty()
   orderId: string;
@@ -45,6 +74,9 @@ export class StoreOrderActionsResponseDto {
 
   @ApiProperty({ enum: ['none', 'pending', 'manual_pending', 'succeeded', 'failed'] })
   refundStatus: StoreRefundStatus;
+
+  @ApiPropertyOptional({ type: RefundSummaryDto, description: '환불 상세 요약 (취소/부분취소 주문에서 제공)' })
+  refundSummary?: RefundSummaryDto;
 
   @ApiProperty({ enum: ['cancel', 'track', 'return', 'exchange', 'receipt'], isArray: true })
   availableActions: StoreOrderAction[];

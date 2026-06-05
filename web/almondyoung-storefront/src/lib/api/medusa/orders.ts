@@ -141,14 +141,8 @@ export async function captureOrderPayment(
       headers,
     })
 
-    // 구매 확정 성공 시 리뷰 작성 자격 생성
-    //todo: 메두사 워크플로우 흐름으로 커스텀
     if (items && items.length > 0) {
       try {
-        console.log(
-          "createReviewEligibility payload:",
-          JSON.stringify({ orderId, items }, null, 2)
-        )
         await createReviewEligibility({ orderId, items })
       } catch (e) {
         console.error("createReviewEligibility error:", e)
