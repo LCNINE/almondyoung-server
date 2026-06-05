@@ -104,7 +104,7 @@ export const salesOrders = {
   adminCancelSalesOrder: async (
     id: string,
     body?: CancelSalesOrderDto
-  ): Promise<{ status: string; refundStatus: string }> => {
+  ): Promise<{ status: string; refundStatus: string; refundAmount?: number; manualReason?: string | null }> => {
     const response = await client.post(
       `${ALMONDYOUNG_API_BASE_URL}/admin/sales-orders/${encodeURIComponent(id)}/cancel`,
       body
@@ -117,6 +117,19 @@ export const salesOrders = {
     const response = await client.post(
       `${ALMONDYOUNG_API_BASE_URL}/admin/sales-orders/${encodeURIComponent(id)}/retry-refund`,
       {}
+    );
+    return response.data;
+  },
+
+  // 수동 환불 완료 확인 (PG/은행에서 이미 환불된 사실을 운영자가 내부 상태로 기록)
+  adminManualRefundComplete: async (
+    id: string,
+    adminNote?: string,
+    refundLinkId?: string,
+  ): Promise<{ refundStatus: string; completionType: string }> => {
+    const response = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/sales-orders/${encodeURIComponent(id)}/manual-refund-complete`,
+      { adminNote, refundLinkId }
     );
     return response.data;
   },

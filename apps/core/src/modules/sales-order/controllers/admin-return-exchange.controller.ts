@@ -15,6 +15,11 @@ export class AdminDecideRequestDto {
   @IsString()
   @MaxLength(500)
   adminNote?: string;
+
+  /** 특정 partial cancellation의 환불 링크 ID를 지정하여 scoped 완료 처리 */
+  @IsOptional()
+  @IsString()
+  refundLinkId?: string;
 }
 
 class AdminCancelLineDto {
@@ -67,6 +72,19 @@ export class AdminReturnExchangeController {
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
   adminRetryRefund(@Param('id') id: string) {
     return this.storeSalesOrdersService.retryWalletRefund(id);
+  }
+
+  @Post('sales-orders/:id/manual-refund-complete')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: '취소 주문 수동 환불 완료 확인 (manual_pending/failed 상태에서만 의미 있음)',
+    description:
+      '외부(PG/은행)에서 이미 환불한 사실을 운영자가 확인하고 내부 상태를 완료로 기록한다. ' +
+      'provider.refund()를 호출하지 않으므로 자동 환불 완료와 구분된다.',
+  })
+  @ApiParam({ name: 'id', description: '판매 주문 ID' })
+  adminManualRefundComplete(@Param('id') id: string, @Body() dto: AdminDecideRequestDto) {
+    return this.storeSalesOrdersService.adminManualRefundComplete(id, dto);
   }
 
   // ── Return Requests ───────────────────────────────────────────────────────

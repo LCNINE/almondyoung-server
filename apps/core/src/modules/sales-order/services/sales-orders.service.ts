@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
@@ -317,6 +317,34 @@ export class SalesOrdersService {
 
   async confirm(id: string, warehouseId?: string, tx?: DbTx) {
     return this.inTx(async (trx) => {
+      // Row lock before state check to prevent concurrent double-confirm races
+      await trx.execute(sql`
+        SELECT id FROM ${wmsTables.salesOrders}
+        WHERE ${wmsTables.salesOrders.id} = ${id}
+        FOR UPDATE
+      `);
+
+      const [salesOrder] = await trx
+        .select({ id: wmsTables.salesOrders.id, status: wmsTables.salesOrders.status })
+        .from(wmsTables.salesOrders)
+        .where(eq(wmsTables.salesOrders.id, id))
+        .limit(1);
+
+      if (!salesOrder) throw new NotFoundException(`Sales order ${id} not found`);
+
+      if (salesOrder.status === 'confirmed') {
+        // Idempotent: already in target state — return current record without mutation
+        return this.getOne(id, trx);
+      }
+
+      const NON_CONFIRMABLE = new Set(['cancelled', 'shipped', 'delivered', 'timeout', 'processing']);
+      if (NON_CONFIRMABLE.has(salesOrder.status)) {
+        throw new ConflictException(
+          `Cannot confirm sales order ${id}: current status is '${salesOrder.status}'`,
+        );
+      }
+
+      // salesOrder.status === 'pending' — proceed with confirm
       const lines = await trx
         .select()
         .from(wmsTables.salesOrderLines)
@@ -341,9 +369,7 @@ export class SalesOrdersService {
         .set({ status: 'confirmed', confirmedAt: new Date() })
         .where(eq(wmsTables.salesOrders.id, id));
 
-      const updated = await this.getOne(id, trx);
-
-      return updated;
+      return this.getOne(id, trx);
     }, tx);
   }
 

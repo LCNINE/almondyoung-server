@@ -519,6 +519,47 @@
       "reasonDamagedInShipping": "Damaged in shipping",
       "reasonOther": "Other",
       "noLines": "No order items found."
+    },
+    "paymentStatus": {
+      "awaiting": "Payment Pending",
+      "requires_action": "Payment Pending",
+      "authorized": "Payment Authorized",
+      "captured": "Payment Completed",
+      "partially_refunded": "Partially Refunded",
+      "refunded": "Refunded",
+      "canceled": "Payment Cancelled",
+      "failed": "Payment Failed",
+      "unknown": "Please Check"
+    },
+    "refundInfo": {
+      "sectionTitle": "Refund Information",
+      "statusLabel": "Refund Status",
+      "amountLabel": "Payment Amount",
+      "guidance": {
+        "none": "",
+        "pending": "Your refund will be completed within 3-5 business days.",
+        "manual_pending": "Refund will be processed after operator review. Please contact customer support for inquiries.",
+        "succeeded": "Your refund has been completed.",
+        "failed": "There was an issue processing your refund. Please contact customer support."
+      },
+      "statusLabels": {
+        "none": "",
+        "pending": "Processing refund",
+        "manual_pending": "Awaiting review",
+        "succeeded": "Refunded",
+        "failed": "Refund issue"
+      }
+    },
+    "cancelDialog": {
+      "reasonLabel": "Cancellation Reason",
+      "otherPlaceholder": "Please enter your cancellation reason (up to 500 characters)",
+      "reasons": {
+        "CHANGE_OF_MIND": "Change of mind",
+        "WRONG_ORDER": "Wrong item ordered",
+        "FOUND_CHEAPER": "Found a better price",
+        "DELAY": "Delivery delay",
+        "OTHER": "Other"
+      }
     }
   },
   "membership": {

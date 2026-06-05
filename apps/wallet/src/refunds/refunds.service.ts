@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { DbService } from '@app/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { WalletSchema, charges as chargesTable, refunds, paymentIntents } from '../schema';
-import { Refund } from '../types';
+import { DbTx, Refund } from '../types';
 import { ChargesService } from '../charges/charges.service';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { ProviderRegistry } from '../providers/provider.registry';
@@ -163,6 +163,18 @@ export class RefundsService {
           'PENDING',
           tx,
         );
+
+        // If all charge amount is now covered by SUCCEEDED refunds, mark charge as REFUNDED.
+        const succeededTotal = await this.getSucceededRefundedTotalInTx(charge.id, tx);
+        if (succeededTotal >= charge.amount) {
+          await this.stateTransitionService.transitionCharge(
+            charge.id,
+            'REFUNDED',
+            { correlationId, reasonCode: 'FULLY_REFUNDED' },
+            'SUCCEEDED',
+            tx,
+          );
+        }
       });
     } else if (providerResult.status === 'PENDING') {
       // Refund is processing asynchronously
@@ -265,39 +277,63 @@ export class RefundsService {
     const now = new Date().toISOString();
     const correlationId = `manual-confirm:${refundId}`;
 
-    // transitionRefund가 status update와 state_transitions 기록을 모두 처리
-    await this.stateTransitionService.transitionRefund(
-      refundId,
-      'SUCCEEDED',
-      {
-        correlationId,
-        reasonCode: 'MANUAL_CONFIRM',
-        outboxEvent: {
-          eventType: GatewayEventType.REFUND_SUCCEEDED,
-          aggregateType: GATEWAY_AGGREGATE_TYPE,
-          aggregateId: refundId,
-          payload: buildRefundEventPayload({
-            refundId,
-            chargeId: refund.chargeId,
-            intentId: refund.intentId,
-            userId: userId ?? '',
-            status: 'SUCCEEDED',
-            amount: refund.amount,
-            currency: refund.currency,
-            occurredAt: now,
-          }),
+    await this.dbService.db.transaction(async (tx) => {
+      // transitionRefund가 status update와 state_transitions 기록을 모두 처리
+      await this.stateTransitionService.transitionRefund(
+        refundId,
+        'SUCCEEDED',
+        {
+          correlationId,
+          reasonCode: 'MANUAL_CONFIRM',
+          outboxEvent: {
+            eventType: GatewayEventType.REFUND_SUCCEEDED,
+            aggregateType: GATEWAY_AGGREGATE_TYPE,
+            aggregateId: refundId,
+            payload: buildRefundEventPayload({
+              refundId,
+              chargeId: refund.chargeId,
+              intentId: refund.intentId,
+              userId: userId ?? '',
+              status: 'SUCCEEDED',
+              amount: refund.amount,
+              currency: refund.currency,
+              occurredAt: now,
+            }),
+          },
         },
-      },
-      'PENDING',
-    );
+        'PENDING',
+        tx,
+      );
+
+      // If all charge amount is now covered by SUCCEEDED refunds, mark charge as REFUNDED.
+      const succeededTotal = await this.getSucceededRefundedTotalInTx(refund.chargeId, tx);
+      if (succeededTotal >= charge.amount) {
+        await this.stateTransitionService.transitionCharge(
+          charge.id,
+          'REFUNDED',
+          { correlationId, reasonCode: 'FULLY_REFUNDED' },
+          'SUCCEEDED',
+          tx,
+        );
+      }
+    });
+
     return this.findByIdOrThrow(refundId);
   }
 
-  private async getRefundedTotalInTx(chargeId: string, tx: Parameters<Parameters<typeof this.dbService.db.transaction>[0]>[0]): Promise<number> {
+  private async getRefundedTotalInTx(chargeId: string, tx: DbTx): Promise<number> {
     const rows = await tx
       .select({ amount: refunds.amount })
       .from(refunds)
       .where(and(eq(refunds.chargeId, chargeId), inArray(refunds.status, ['SUCCEEDED', 'PENDING'])));
+    return rows.reduce((total, r) => total + r.amount, 0);
+  }
+
+  private async getSucceededRefundedTotalInTx(chargeId: string, tx: DbTx): Promise<number> {
+    const rows = await tx
+      .select({ amount: refunds.amount })
+      .from(refunds)
+      .where(and(eq(refunds.chargeId, chargeId), eq(refunds.status, 'SUCCEEDED')));
     return rows.reduce((total, r) => total + r.amount, 0);
   }
 }

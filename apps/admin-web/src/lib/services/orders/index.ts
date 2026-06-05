@@ -70,6 +70,7 @@ export {
   useCancelSalesOrder,
   useAdminCancelSalesOrder,
   useAdminRetryRefund,
+  useAdminManualRefundComplete,
   // 출고 배치 (D2)
   useCreateOutboundBatch,
   useAddFOsToBatch,

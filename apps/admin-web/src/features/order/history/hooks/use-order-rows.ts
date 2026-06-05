@@ -52,8 +52,14 @@ export type OrderLineRow = {
     // 주문 완전출고 여부 (행 선택 기준)
     isOrderFullyAllocated: boolean;
 
-    // 취소 주문 환불 상태 (cancelled 상태일 때만 의미 있음)
+    // 취소 주문 환불 상태
     refundStatus?: string;
+
+    // 수동완료 대상 business link ID (부분취소가 여러 건인 경우 가장 최근 manual_pending 링크)
+    refundLinkId?: string;
+
+    // Wallet 결제 인텐트 ID (결제 상세 이동용, cancelled 주문에서 사용)
+    walletIntentId?: string | null;
 
     // 전체 주문 라인들 (모달에서 사용)
     lines: Array<{
@@ -186,16 +192,35 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
                 const isReadyToShip = lineStatus === 'stock_deducted';
                 const isUnavailable = lineStatus === 'stock_unavailable';
 
-                // 취소된 주문만 환불 상태 추출 (첫 번째 라인에서만 계산, 나머지는 공유)
-                const refundStatus: string | undefined = idx === 0 && listItem.status === 'cancelled'
+                // 환불 상태 추출 (첫 번째 라인에서만 계산, 나머지는 공유)
+                // cancelled 외에도 부분취소(partial)로 manual_pending이 생길 수 있으므로 상태 무관하게 조회
+                const { refundStatus, refundLinkId } = idx === 0
                     ? (() => {
                         const timeline: any[] = detail?.businessTimeline ?? [];
-                        const refundLink = timeline
+                        const refundLinks = timeline
                             .filter((t: any) => t.relationName === 'cancellation_linked_wallet_refund')
-                            .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-                        return (refundLink?.metadata?.refundStatus as string | undefined);
+                            .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+                        // Collect manual_pending links that have been completed via adminManualRefundComplete.
+                        // Completion creates a new succeeded link with completedRefundLinkId pointing to the
+                        // original manual_pending link — those should no longer surface as pending.
+                        const completedLinkIds = new Set<string>(
+                            refundLinks
+                                .filter((t: any) => t.metadata?.refundStatus === 'succeeded' && t.metadata?.completedRefundLinkId)
+                                .map((t: any) => t.metadata.completedRefundLinkId as string)
+                        );
+                        const pendingLink = refundLinks.find(
+                            (t: any) => t.metadata?.refundStatus === 'manual_pending' && !completedLinkIds.has(t.id)
+                        );
+                        const effectiveLink = pendingLink ?? refundLinks[0];
+                        return {
+                            refundStatus: effectiveLink?.metadata?.refundStatus as string | undefined,
+                            refundLinkId: pendingLink?.id as string | undefined,
+                        };
                     })()
-                    : undefined;
+                    : { refundStatus: undefined, refundLinkId: undefined };
+
+                const walletIntentId: string | null | undefined =
+                    idx === 0 ? (detail?.walletIntentId ?? listItem.walletIntentId ?? null) : undefined;
 
                 const row: OrderLineRow = {
                     rowId: `${listItem.id}-${line.id ?? idx}`,
@@ -237,6 +262,8 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
                     isOrderFullyAllocated,
 
                     refundStatus,
+                    refundLinkId,
+                    walletIntentId,
 
                     // 전체 주문 라인들 추가
                     lines: lines.map((l: any) => ({
