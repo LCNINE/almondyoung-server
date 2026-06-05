@@ -31,6 +31,7 @@ export type ProductMasterDetail = {
   id: string;
   name: string;
   description: string | null;
+  descriptionHtml: string | null;
   brand: string | null;
   status: string | null;
   isWholesaleOnly: boolean | null;
@@ -80,6 +81,7 @@ export type MasterVersionDetailDto = {
   status: 'draft' | 'active' | 'inactive';
   name: string;
   description: string | null;
+  descriptionHtml: string | null;
   brand: string | null;
   seoTitle: string | null;
   seoDescription: string | null;
@@ -105,4 +107,9 @@ export type MasterVersionDetailDto = {
     optionValues: Array<{ id: string; optionGroupId: string }>;
     price?: number;
   }>;
+};
+
+export type UpdateMasterVersionDto = {
+  description?: string | null;
+  descriptionHtml?: string | null;
 };
