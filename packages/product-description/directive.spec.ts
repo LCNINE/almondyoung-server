@@ -58,9 +58,9 @@ describe('product description image directive', () => {
     ).toEqual({ ok: false, reason: 'invalid_file_id' });
   });
 
-  it('creates a markdown directive string with escaped alt text', () => {
-    expect(createProductImageDirective({ fileId, alt: '12" nail \\ sample' })).toBe(
-      '::product-image{fileId="018f70fb-8a0f-7d44-9f1b-4d6f563a1111" alt="12\\" nail \\\\ sample"}',
+  it('creates a markdown directive string with directive-safe alt text entities', () => {
+    expect(createProductImageDirective({ fileId, alt: 'AT&T "nail" <sample> \\ path' })).toBe(
+      '::product-image{fileId="018f70fb-8a0f-7d44-9f1b-4d6f563a1111" alt="AT&amp;T &quot;nail&quot; &lt;sample&gt; \\ path"}',
     );
   });
 });

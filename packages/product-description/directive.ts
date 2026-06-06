@@ -44,7 +44,20 @@ export function parseProductImageDirective(node: ProductImageDirectiveNode): Pro
 }
 
 function escapeDirectiveAttr(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  return value.replace(/[&"<>]/g, (char) => {
+    switch (char) {
+      case '&':
+        return '&amp;';
+      case '"':
+        return '&quot;';
+      case '<':
+        return '&lt;';
+      case '>':
+        return '&gt;';
+      default:
+        return char;
+    }
+  });
 }
 
 export function createProductImageDirective({ fileId, alt }: ProductImageReference): string {

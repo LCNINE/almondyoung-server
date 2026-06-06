@@ -4,6 +4,10 @@ import { useState } from 'react';
 import { ImageOff } from 'lucide-react';
 import { FILE_SERVICE_BASE_URL } from '@/const/api-const';
 import { getProductDescriptionImagePlaceholderText } from './product-description-rendering';
+import {
+  isProductDescriptionImageBroken,
+  shouldShowProductDescriptionImagePlaceholder,
+} from './product-description-image-state';
 
 type Props = {
   fileId: string | null;
@@ -12,9 +16,10 @@ type Props = {
 };
 
 export function ProductDescriptionImage({ fileId, alt, error }: Props) {
-  const [broken, setBroken] = useState(false);
+  const [failedFileId, setFailedFileId] = useState<string | null>(null);
+  const broken = isProductDescriptionImageBroken({ fileId, failedFileId });
 
-  if (!fileId || error || broken) {
+  if (shouldShowProductDescriptionImagePlaceholder({ fileId, error, failedFileId })) {
     return (
       <div className="my-3 flex min-h-24 items-center gap-2 rounded-md border border-dashed bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
         <ImageOff className="size-4 shrink-0" />
@@ -36,7 +41,7 @@ export function ProductDescriptionImage({ fileId, alt, error }: Props) {
       alt={alt}
       className="my-3 max-w-full rounded-md"
       loading="lazy"
-      onError={() => setBroken(true)}
+      onError={() => setFailedFileId(fileId)}
     />
   );
 }
