@@ -1,5 +1,7 @@
 'use client';
 
+import { PRODUCT_DESCRIPTION_IMAGE_CONTEXT_ID } from '@packages/product-description';
+
 // file-service 업로드 클라이언트.
 // 주의: axios `client`(baseURL='/api') 대신 fetch 절대경로를 쓴다.
 // FILE_SERVICE_BASE_URL(브라우저)이 이미 '/api/proxy/file' 라서 axios 로 보내면
@@ -21,6 +23,7 @@ export type FileSignedUrlResponse = {
 };
 
 export const DIGITAL_ASSET_FILE_CONTEXT_ID = 'digital-asset-file';
+export { PRODUCT_DESCRIPTION_IMAGE_CONTEXT_ID };
 
 type UploadFileOptions = {
   contextId: string;

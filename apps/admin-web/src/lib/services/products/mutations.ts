@@ -40,6 +40,7 @@ import type {
   BulkDeleteDto,
   BulkRestoreDto,
 } from '@/lib/types/dto/products';
+import type { UpdateMasterVersionDto } from './products-detail.types';
 
 // ===== 카테고리 관련 뮤테이션 =====
 
@@ -483,6 +484,33 @@ export const useCreateMasterDraftVersion = () => {
     mutationFn: ({ masterId, dto }: { masterId: string; dto: CreateDraftVersionDto }) =>
       products.versions.createDraft(masterId, dto),
     onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.masterVersions(variables.masterId),
+      });
+    },
+  });
+};
+
+export const useUpdateMasterVersion = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      masterId,
+      versionId,
+      dto,
+    }: {
+      masterId: string;
+      versionId: string;
+      dto: UpdateMasterVersionDto;
+    }) => products.versions.update(masterId, versionId, dto),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.versionDetail(variables.masterId, variables.versionId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.master(variables.masterId),
+      });
       queryClient.invalidateQueries({
         queryKey: productQueryKeys.masterVersions(variables.masterId),
       });

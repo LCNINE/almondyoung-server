@@ -63,55 +63,47 @@ describe('PimToMedusaTransformer', () => {
       const result = transformPimToMedusa(mockSnapshot);
 
       expect(result.title).toBe('Test Product');
-      expect(result.handle).toBe('pim-master-123');
+      expect(result.handle).toBe('master-123');
       expect(result.status).toBe('published');
       expect(result.thumbnail).toBe('http://file-service/files/thumb-001');
       expect(result.images).toHaveLength(2);
       expect(result.variants).toHaveLength(2);
     });
 
-    it('should map variant prices correctly', () => {
+    it('does not project product detail markdown or legacy HTML into Medusa description', () => {
+      const result = transformPimToMedusa({
+        ...mockSnapshot,
+        description: '# Markdown detail\n\n::product-image{fileId="018f70fb-8a0f-7d44-9f1b-4d6f563a1111" alt="상세"}',
+        descriptionHtml: '<img src="https://legacy.example/detail.jpg" />',
+      });
+
+      expect(result.description).toBeUndefined();
+    });
+
+    it('should map base variant price and preserve price-list metadata', () => {
       const result = transformPimToMedusa(mockSnapshot);
       const variant = result.variants![0];
 
-      // Should have 4 prices: base, membership, tier-10, tier-50
-      expect(variant.prices).toHaveLength(4);
+      expect(variant.prices).toHaveLength(1);
 
-      // Base price
       expect(variant.prices![0]).toEqual({
         amount: 10000,
-        currency_code: 'KRW',
+        currency_code: 'krw',
       });
-
-      // Membership price with customer_group rule
-      expect(variant.prices![1]).toEqual({
-        amount: 9000,
-        currency_code: 'KRW',
-        rules: { customer_group_id: 'cusgroup_test_123' },
-      });
-
-      // Tier prices with min_quantity
-      expect(variant.prices![2]).toEqual({
-        amount: 8500,
-        currency_code: 'KRW',
-        min_quantity: 10,
-      });
-
-      expect(variant.prices![3]).toEqual({
-        amount: 8000,
-        currency_code: 'KRW',
-        min_quantity: 50,
-      });
+      expect(variant.metadata?.membershipPrice).toBe(9000);
+      expect(variant.metadata?.tieredPrices).toEqual([
+        { minQuantity: 10, price: 8500 },
+        { minQuantity: 50, price: 8000 },
+      ]);
     });
 
-    it('should not add membership price if MEMBERSHIP_GROUP_ID is not set', () => {
+    it('should not add membership price to the product payload if MEMBERSHIP_GROUP_ID is not set', () => {
       delete process.env.MEDUSA_MEMBERSHIP_GROUP_ID;
 
       const result = transformPimToMedusa(mockSnapshot);
       const variant = result.variants![0];
 
-      // Should only have base + tier prices (3 total, no membership)
-      expect(variant.prices).toHaveLength(3);
+      expect(variant.prices).toHaveLength(1);
       expect(variant.prices!.every((p) => !p.rules?.customer_group_id)).toBe(true);
     });
 
@@ -119,8 +111,8 @@ describe('PimToMedusaTransformer', () => {
       const result = transformPimToMedusa(mockSnapshot);
       const variant = result.variants![1]; // SKU-002 has no tier prices
 
-      // Should have 2 prices: base + membership
-      expect(variant.prices).toHaveLength(2);
+      expect(variant.prices).toHaveLength(1);
+      expect(variant.metadata?.tieredPrices).toBeUndefined();
     });
 
     it('should skip variants without basePrice when SKIP_VARIANTS_WITHOUT_PRICE is true', () => {
