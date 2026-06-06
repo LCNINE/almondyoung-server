@@ -91,6 +91,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@medusajs/types": "^2.13.5",
+    "@tailwindcss/typography": "^0.5.19",
     "@types/dagre": "^0.7.54",
     "@types/node": "^20",
     "@types/react": "^19",
