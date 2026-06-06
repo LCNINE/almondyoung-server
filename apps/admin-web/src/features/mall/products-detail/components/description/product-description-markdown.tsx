@@ -8,6 +8,10 @@ import {
   PRODUCT_IMAGE_DIRECTIVE_NAME,
 } from '@packages/product-description';
 import { ProductDescriptionImage } from './product-description-image';
+import {
+  PRODUCT_FILE_URL_PREFIX,
+  productDescriptionUrlTransform,
+} from './product-description-rendering';
 
 type MutableNode = {
   type?: string;
@@ -19,14 +23,17 @@ type MutableNode = {
   data?: { hProperties?: Record<string, unknown> };
 };
 
-const PRODUCT_FILE_URL_PREFIX = 'product-file:';
-
 function isDirective(node: MutableNode): boolean {
   return (
     node.type === 'leafDirective' ||
     node.type === 'textDirective' ||
     node.type === 'containerDirective'
   );
+}
+
+function getStringAttribute(node: MutableNode, name: string): string | null {
+  const value = node.attributes?.[name];
+  return typeof value === 'string' ? value : null;
 }
 
 function remarkProductImageDirective() {
@@ -50,12 +57,14 @@ function remarkProductImageDirective() {
               },
             };
           } else {
+            const fileId = getStringAttribute(child, 'fileId');
             children[index] = {
               type: 'image',
-              url: `${PRODUCT_FILE_URL_PREFIX}invalid`,
-              alt: '상품 상세 이미지',
+              url: `${PRODUCT_FILE_URL_PREFIX}${fileId ?? 'invalid'}`,
+              alt: getStringAttribute(child, 'alt') ?? '상품 상세 이미지',
               data: {
                 hProperties: {
+                  ...(fileId ? { 'data-product-image-file-id': fileId } : {}),
                   'data-product-image-error': parsed.reason,
                 },
               },
@@ -81,7 +90,12 @@ export function ProductDescriptionMarkdown({ value }: { value: string }) {
   return (
     <div className="prose prose-sm max-w-none">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm, remarkDirective, remarkProductImageDirective]}
+        remarkPlugins={[
+          remarkGfm,
+          remarkDirective,
+          remarkProductImageDirective,
+        ]}
+        urlTransform={productDescriptionUrlTransform}
         components={{
           img: (props: ProductImageProps) => {
             const src = typeof props.src === 'string' ? props.src : '';
