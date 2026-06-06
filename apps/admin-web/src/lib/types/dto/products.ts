@@ -69,6 +69,7 @@ export interface MoveCategoryDto {
 export interface CreateMasterDto {
   name: string;
   description?: string;
+  descriptionHtml?: string;
   basePrice: number;
   pricingStrategy: PricingStrategy;
   brand?: string;
@@ -80,7 +81,8 @@ export interface CreateMasterDto {
 
 export interface UpdateMasterDto {
   name?: string;
-  description?: string;
+  description?: string | null;
+  descriptionHtml?: string | null;
   basePrice?: number;
   pricingStrategy?: PricingStrategy;
   brand?: string;

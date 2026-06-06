@@ -1,0 +1,8 @@
+{
+  "name": "@packages/product-description",
+  "version": "0.0.1",
+  "description": "Framework-independent product description Markdown contract",
+  "private": true,
+  "main": "index.ts",
+  "types": "index.ts"
+}
