@@ -327,20 +327,34 @@
       "^@app/events(|/.*)$": "<rootDir>/libs/events/src/$1",
       "^@app/shared(|/.*)$": "<rootDir>/libs/shared/src/$1",
       "^@packages/event-contracts/(.*)$": "<rootDir>/packages/event-contracts/$1",
-      "^@packages/domain-types(|/.*)$": "<rootDir>/packages/domain-types$1"
+      "^@packages/domain-types(|/.*)$": "<rootDir>/packages/domain-types$1",
+      "^@packages/product-description(|/.*)$": "<rootDir>/packages/product-description$1"
     },
     "modulePathIgnorePatterns": [
-      "<rootDir>/apps/medusa/.medusa"
+      "<rootDir>/apps/medusa/.medusa",
+      "<rootDir>/apps/medusa/node_modules",
+      "<rootDir>/apps/admin-web/.next",
+      "<rootDir>/apps/admin-web/.open-next",
+      "<rootDir>/apps/admin-web/node_modules",
+      "<rootDir>/apps/wallet-web/.next",
+      "<rootDir>/apps/wallet-web/.open-next",
+      "<rootDir>/apps/wallet-web/node_modules"
     ],
     "rootDir": ".",
     "roots": [
       "<rootDir>/apps/",
-      "<rootDir>/libs/"
+      "<rootDir>/libs/",
+      "<rootDir>/packages/product-description/"
     ],
     "testEnvironment": "node",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
+      "^.+\\.(t|j)s$": [
+        "ts-jest",
+        {
+          "tsconfig": "tsconfig.jest.json"
+        }
+      ]
     }
   },
   "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"

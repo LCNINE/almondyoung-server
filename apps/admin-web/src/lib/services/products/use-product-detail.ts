@@ -25,6 +25,7 @@ export type ProductDetailView = {
   status: 'active' | 'inactive' | 'draft' | null;
   name: string;
   description: string | null;
+  descriptionHtml: string | null;
   brand: string | null;
   seoTitle: string | null;
   seoDescription: string | null;
@@ -51,6 +52,7 @@ function fromMaster(master: ProductMasterDetail): ProductDetailView {
         : null,
     name: master.name,
     description: master.description,
+    descriptionHtml: master.descriptionHtml,
     brand: master.brand,
     seoTitle: master.seoTitle,
     seoDescription: master.seoDescription,
@@ -74,6 +76,7 @@ function fromVersion(detail: MasterVersionDetailDto): ProductDetailView {
     status: detail.status,
     name: detail.name,
     description: detail.description,
+    descriptionHtml: detail.descriptionHtml,
     brand: detail.brand,
     seoTitle: detail.seoTitle,
     seoDescription: detail.seoDescription,
