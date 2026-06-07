@@ -6,8 +6,8 @@ type DbState = {
   inbox: Array<Record<string, any>>;
 };
 
-function makeDb(state: DbState) {
-  return {
+function makeDb(state: DbState, options: { failInboxInsert?: boolean } = {}) {
+  const db: any = {
     select: jest.fn(() => ({
       from: (table: unknown) => ({
         where: () => ({
@@ -17,6 +17,9 @@ function makeDb(state: DbState) {
     })),
     insert: jest.fn((table: unknown) => ({
       values: jest.fn((value: Record<string, any>) => {
+        if (table === inboxEvents && options.failInboxInsert) {
+          throw new Error('inbox insert failed');
+        }
         if (table === processedEvents) {
           state.processed.push(value);
         }
@@ -27,6 +30,20 @@ function makeDb(state: DbState) {
       }),
     })),
   };
+  db.transaction = jest.fn(async (callback: (tx: typeof db) => Promise<unknown>) => {
+    const processedBefore = [...state.processed];
+    const inboxBefore = [...state.inbox];
+
+    try {
+      return await callback(db);
+    } catch (error) {
+      state.processed = processedBefore;
+      state.inbox = inboxBefore;
+      throw error;
+    }
+  });
+
+  return db;
 }
 
 describe('PimProductEventConsumer product event idempotency', () => {
@@ -114,5 +131,25 @@ describe('PimProductEventConsumer product event idempotency', () => {
         partitionKey: 'master-1',
       }),
     );
+  });
+
+  it('rolls back the ProductMasterDeleted processed marker when the inbox row is not durable', async () => {
+    const state: DbState = { processed: [], inbox: [] };
+    const db = makeDb(state, { failInboxInsert: true });
+    const consumer = new PimProductEventConsumer({ db } as any);
+
+    await expect(
+      consumer.onProductMasterDeleted(
+        { messageId: 'delete-msg-1', correlationId: 'corr-1', chainId: 'chain-1' } as any,
+        {
+          masterId: 'master-1',
+          deletedAt: '2026-06-07T00:00:00.000Z',
+        } as any,
+      ),
+    ).rejects.toThrow('inbox insert failed');
+
+    expect(state.processed).toHaveLength(0);
+    expect(state.inbox).toHaveLength(0);
+    expect(db.transaction).toHaveBeenCalledTimes(1);
   });
 });
