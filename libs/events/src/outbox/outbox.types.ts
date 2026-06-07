@@ -12,6 +12,7 @@ export interface OutboxConfig {
   dispatchIntervalMs?: number; // 기본값: 5000
   batchSize?: number; // 기본값: 100
   maxRetries?: number; // 기본값: 5
+  processingTimeoutMs?: number; // 기본값: 300000 (5분)
   cleanupDays?: number; // 기본값: 7
 }
 
