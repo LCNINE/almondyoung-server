@@ -8,7 +8,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { InjectStreamPublisher, StreamPublisher } from '@app/events';
+import { InjectStreamPublisher, OutboxPublisher, StreamPublisher } from '@app/events';
 import { PRODUCT_STREAM, ProductEvents } from '@packages/event-contracts';
 import {
   ProductMaster,
@@ -95,6 +95,7 @@ export class ProductMastersService {
 
     @InjectStreamPublisher(PRODUCT_STREAM.topic.topic)
     private readonly productPublisher: StreamPublisher<ProductEvents>,
+    private readonly outboxPublisher: OutboxPublisher,
 
     @Inject(forwardRef(() => ProductVersionsService))
     private readonly productVersionsService: ProductVersionsService,
@@ -1127,21 +1128,22 @@ export class ProductMastersService {
   /**
    * Emit ProductMasterDeleted event
    */
-  private async _emitMasterDeletedEvent(masterId: string): Promise<void> {
-    try {
-      await this.productPublisher.publishEvent({
+  private async _emitMasterDeletedEvent(masterId: string, tx: DbTransaction): Promise<void> {
+    await this.outboxPublisher.saveEvent(
+      {
+        topic: PRODUCT_STREAM.topic.topic,
         eventType: 'ProductMasterDeleted',
+        aggregateType: PRODUCT_STREAM.aggregateType,
         aggregateId: masterId,
         payload: {
           masterId,
           deletedAt: new Date().toISOString(),
         },
-      });
+      },
+      tx,
+    );
 
-      this.logger.log(`📤 Published ProductMasterDeleted: ${masterId}`);
-    } catch (error) {
-      this.logger.error(`❌ Failed to publish ProductMasterDeleted: ${masterId}`, error.stack);
-    }
+    this.logger.log(`📦 Enqueued ProductMasterDeleted: ${masterId}`);
   }
 
   /**
@@ -1181,7 +1183,7 @@ export class ProductMastersService {
       );
 
       if (product.status === 'active') {
-        await this._emitMasterDeletedEvent(product.masterId);
+        await this._emitMasterDeletedEvent(product.masterId, tx);
       }
 
       await this.productSellableQuantity.recalculateAndPublishForVersion(id, tx);
@@ -1272,7 +1274,7 @@ export class ProductMastersService {
 
       // 4. Active 버전이 있었다면 이벤트 발행
       if (activeVersion) {
-        await this._emitMasterDeletedEvent(masterId);
+        await this._emitMasterDeletedEvent(masterId, tx);
       }
 
       await this.productSellableQuantity.recalculateAndPublishForMaster(masterId, tx);

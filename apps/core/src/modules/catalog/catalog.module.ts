@@ -26,6 +26,7 @@ import { DashboardModule } from './analytics/dashboard/dashboard.module';
       streams: [PRODUCT_STREAM],
       serviceName: 'almondyoung',
       enableDLQ: true,
+      enableOutbox: true,
     }),
     // Core
     ProductsModule,

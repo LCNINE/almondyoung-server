@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
 import { inboxEvents, wmsOrderMappings } from '../../schema';
 import { ORDER_STREAM_EVENT_TYPES } from '../../order-event-routing';
-import { eq, and, lte, notInArray, gt, inArray } from 'drizzle-orm';
+import { eq, and, lte, notInArray, gt, inArray, sql } from 'drizzle-orm';
 import { v7 } from 'uuid';
 import { PimMedusaSyncService } from './pim-medusa-sync.service';
 import { MembershipMedusaSyncService } from './membership-medusa-sync.service';
@@ -12,7 +12,10 @@ import { MedusaClient } from './medusa.client';
 import { AlmondAuthClient } from '../almond-auth/almond-auth.client';
 import { EventChainService, generateMessageId } from '@app/events';
 import type { PimActiveVersionChangedEvent, ChannelAdapterSchema } from '../../types';
-import type { CategoryChangedPayload } from '@packages/event-contracts/streams/product.stream';
+import type {
+  CategoryChangedPayload,
+  ProductMasterDeletedPayload,
+} from '@packages/event-contracts/streams/product.stream';
 import type { ProductSellableQuantityChangedPayload } from '@packages/event-contracts/streams/inventory.stream';
 import type { MembershipStatusChangedPayload } from '@packages/event-contracts/streams/membership.stream';
 import type {
@@ -20,6 +23,14 @@ import type {
   Cafe24UnlinkedPayload,
   UserEmailVerifiedPayload,
 } from '@packages/event-contracts/streams/user.stream';
+
+const PRODUCT_MASTER_LIFECYCLE_EVENT_TYPES = ['ProductMasterActiveVersionChanged', 'ProductMasterDeleted'] as const;
+
+function isProductMasterLifecycleEvent(
+  eventType: string,
+): eventType is (typeof PRODUCT_MASTER_LIFECYCLE_EVENT_TYPES)[number] {
+  return (PRODUCT_MASTER_LIFECYCLE_EVENT_TYPES as readonly string[]).includes(eventType);
+}
 
 @Injectable()
 export class InboxWorkerService implements OnModuleInit {
@@ -126,20 +137,24 @@ export class InboxWorkerService implements OnModuleInit {
     const eventId = event.id;
     const eventType = event.eventType;
     const aggregateId = event.aggregateId;
+    const supersedingEventTypes = this.getSupersedingEventTypes(eventType);
+    const supersedingStatuses = this.getSupersedingStatuses(eventType);
 
     try {
       this.logger.debug(`Processing inbox event: ${eventId} (type: ${eventType})`);
+      const eventOccurredAt = this.resolveInboxEventOccurredAt(event);
 
-      //  aggregateId + eventType의 더 최신 이벤트가 있으면 현재 이벤트 스킵
+      // aggregateId 기준 더 최신 lifecycle 이벤트가 있으면 현재 이벤트 스킵.
+      // Product master delete는 늦게 도착한 이전 active-version retry보다 우선해야 한다.
       const [newerEvent] = await this.dbService.db
         .select({ id: inboxEvents.id })
         .from(inboxEvents)
         .where(
           and(
             eq(inboxEvents.aggregateId, aggregateId),
-            eq(inboxEvents.eventType, eventType),
-            gt(inboxEvents.createdAt, event.createdAt),
-            inArray(inboxEvents.status, ['pending', 'processing']),
+            inArray(inboxEvents.eventType, supersedingEventTypes),
+            gt(sql<Date>`coalesce(${inboxEvents.eventOccurredAt}, ${inboxEvents.createdAt})`, eventOccurredAt),
+            inArray(inboxEvents.status, supersedingStatuses),
           ),
         )
         .limit(1);
@@ -167,6 +182,11 @@ export class InboxWorkerService implements OnModuleInit {
         case 'ProductMasterActiveVersionChanged':
           const productPayload: PimActiveVersionChangedEvent = event.payload;
           await this.syncService.handleActiveVersionChanged(productPayload);
+          break;
+
+        case 'ProductMasterDeleted':
+          const deletedPayload: ProductMasterDeletedPayload = event.payload;
+          await this.syncService.handleProductMasterDeleted(deletedPayload);
           break;
 
         case 'CategoryChanged':
@@ -234,10 +254,12 @@ export class InboxWorkerService implements OnModuleInit {
             const [shippedMapping] = await this.dbService.db
               .select({ channelOrderId: wmsOrderMappings.channelOrderId })
               .from(wmsOrderMappings)
-              .where(and(
-                eq(wmsOrderMappings.wmsOrderId, shippedPayload.orderId),
-                eq(wmsOrderMappings.salesChannel, 'medusa'),
-              ))
+              .where(
+                and(
+                  eq(wmsOrderMappings.wmsOrderId, shippedPayload.orderId),
+                  eq(wmsOrderMappings.salesChannel, 'medusa'),
+                ),
+              )
               .limit(1);
             shippedMedusaOrderId = shippedMapping?.channelOrderId ?? null;
           }
@@ -275,10 +297,12 @@ export class InboxWorkerService implements OnModuleInit {
             const [deliveredMapping] = await this.dbService.db
               .select({ channelOrderId: wmsOrderMappings.channelOrderId })
               .from(wmsOrderMappings)
-              .where(and(
-                eq(wmsOrderMappings.wmsOrderId, deliveredPayload.orderId),
-                eq(wmsOrderMappings.salesChannel, 'medusa'),
-              ))
+              .where(
+                and(
+                  eq(wmsOrderMappings.wmsOrderId, deliveredPayload.orderId),
+                  eq(wmsOrderMappings.salesChannel, 'medusa'),
+                ),
+              )
               .limit(1);
             deliveredMedusaOrderId = deliveredMapping?.channelOrderId ?? null;
           }
@@ -354,6 +378,40 @@ export class InboxWorkerService implements OnModuleInit {
       // 실패 처리 (재시도 로직)
       await this.handleFailure(event, error.message);
     }
+  }
+
+  private getSupersedingEventTypes(eventType: string): string[] {
+    if (isProductMasterLifecycleEvent(eventType)) {
+      return [...PRODUCT_MASTER_LIFECYCLE_EVENT_TYPES];
+    }
+
+    return [eventType];
+  }
+
+  private getSupersedingStatuses(eventType: string): string[] {
+    if (isProductMasterLifecycleEvent(eventType)) {
+      return ['pending', 'processing', 'published', 'failed'];
+    }
+
+    return ['pending', 'processing'];
+  }
+
+  private resolveInboxEventOccurredAt(event: any): Date {
+    const value =
+      event.eventOccurredAt ??
+      event.metadata?.eventOccurredAt ??
+      event.metadata?.occurredAt ??
+      event.metadata?.timestamp ??
+      event.payload?.changedAt ??
+      event.payload?.deletedAt ??
+      event.createdAt;
+    const date = value instanceof Date ? value : new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      throw new Error(`Invalid inbox event occurrence time: eventId=${event.id}, value=${value}`);
+    }
+
+    return date;
   }
 
   // 실패 처리: 재시도 횟수 증가 + 백오프 + DLQ
