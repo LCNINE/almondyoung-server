@@ -21,9 +21,11 @@ describe('PimMedusaSyncService.handleProductSellableQuantityChanged', () => {
     const medusaClient = {
       applyProductSellableQuantityProjection: jest.fn().mockResolvedValue(undefined),
       findProductByHandle: jest.fn().mockResolvedValue(params?.productByHandle ?? null),
+      setProductToDraft: jest.fn().mockResolvedValue(undefined),
     };
     const mappingRepo = {
       findByPimMasterId: jest.fn().mockResolvedValue(params?.mapping ?? null),
+      update: jest.fn().mockResolvedValue(undefined),
     };
     const service = new PimMedusaSyncService(medusaClient as any, mappingRepo as any);
 
@@ -82,5 +84,52 @@ describe('PimMedusaSyncService.handleProductSellableQuantityChanged', () => {
       }),
     ).rejects.toThrow('ProductSellableQuantityChanged missing masterId for variant pim-var-1');
     expect(medusaClient.applyProductSellableQuantityProjection).not.toHaveBeenCalled();
+  });
+});
+
+describe('PimMedusaSyncService.handleProductMasterDeleted', () => {
+  function createService(mapping?: { medusaProductId?: string | null } | null) {
+    const medusaClient = {
+      setProductToDraft: jest.fn().mockResolvedValue(undefined),
+    };
+    const mappingRepo = {
+      findByPimMasterId: jest.fn().mockResolvedValue(mapping ?? null),
+      update: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new PimMedusaSyncService(medusaClient as any, mappingRepo as any);
+
+    return { service, medusaClient, mappingRepo };
+  }
+
+  it('drafts the mapped Medusa product and retains the PIM-Medusa mapping', async () => {
+    const { service, medusaClient, mappingRepo } = createService({ medusaProductId: 'prod_1' });
+
+    await service.handleProductMasterDeleted({
+      masterId: 'master-1',
+      deletedAt: '2026-06-07T00:00:00.000Z',
+    });
+
+    expect(mappingRepo.findByPimMasterId).toHaveBeenCalledWith('master-1');
+    expect(medusaClient.setProductToDraft).toHaveBeenCalledWith('prod_1');
+    expect(mappingRepo.update).toHaveBeenCalledWith(
+      'master-1',
+      expect.objectContaining({
+        lastSyncAction: 'updated',
+        lastSyncedAt: expect.any(Date),
+      }),
+    );
+    expect((mappingRepo as any).delete).toBeUndefined();
+  });
+
+  it('does not call Medusa when a deleted master has no retained mapping', async () => {
+    const { service, medusaClient, mappingRepo } = createService(null);
+
+    await service.handleProductMasterDeleted({
+      masterId: 'master-1',
+      deletedAt: '2026-06-07T00:00:00.000Z',
+    });
+
+    expect(mappingRepo.update).not.toHaveBeenCalled();
+    expect(medusaClient.setProductToDraft).not.toHaveBeenCalled();
   });
 });
