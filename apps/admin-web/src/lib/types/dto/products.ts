@@ -66,17 +66,18 @@ export interface MoveCategoryDto {
 
 // ===== 제품 마스터 관련 =====
 
-export interface CreateMasterDto {
+/**
+ * POST /masters only opens a product master and its initial draft version.
+ * Product fields are edited later through version-scoped draft surfaces.
+ */
+export type CreateMasterDto = Record<string, never>;
+
+export interface CreateMasterResponseDto {
+  id: string;
+  masterId: string;
+  version: number;
+  status: VersionStatus;
   name: string;
-  description?: string;
-  descriptionHtml?: string;
-  basePrice: number;
-  pricingStrategy: PricingStrategy;
-  brand?: string;
-  status?: ProductStatus;
-  images?: string[];
-  specifications?: Record<string, string>;
-  tags?: string[];
 }
 
 export interface UpdateMasterDto {

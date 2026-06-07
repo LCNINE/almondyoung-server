@@ -4,6 +4,7 @@
 import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import type {
   CreateMasterDto,
+  CreateMasterResponseDto,
   MasterDto,
   MasterSummaryListResponseDto,
   MastersQuery,
@@ -38,11 +39,9 @@ export interface ProductSummary {
 }
 
 export const mastersClient = {
-  create: async (dto: CreateMasterDto): Promise<MasterDto> => {
-    const response = await client.post(
-      `${ALMONDYOUNG_API_BASE_URL}/masters`,
-      dto
-    );
+  create: async (dto?: CreateMasterDto): Promise<CreateMasterResponseDto> => {
+    const url = `${ALMONDYOUNG_API_BASE_URL}/masters`;
+    const response = dto ? await client.post(url, dto) : await client.post(url);
     return response.data;
   },
 
