@@ -10,7 +10,7 @@ import {
 } from '@packages/event-contracts/streams/product.stream';
 import { DbService } from '@app/db';
 import { processedEvents, inboxEvents } from '../schema';
-import { eq } from 'drizzle-orm';
+import { and, eq, or } from 'drizzle-orm';
 import type { ChannelAdapterSchema } from '../types';
 import { createHash } from 'crypto';
 
@@ -62,6 +62,7 @@ export class PimProductEventConsumer {
     envelope: DomainEvent<ProductMasterActiveVersionChangedPayload> | DomainEvent<ProductMasterDeletedPayload>;
     idempotencyKey: string;
     eventVersion: string;
+    eventOccurredAt: Date;
   }): Promise<boolean> {
     const db = this.dbService.db;
 
@@ -69,7 +70,17 @@ export class PimProductEventConsumer {
       const [existing] = await tx
         .select()
         .from(processedEvents)
-        .where(eq(processedEvents.idempotencyKey, params.idempotencyKey))
+        .where(
+          or(
+            eq(processedEvents.idempotencyKey, params.idempotencyKey),
+            and(
+              eq(processedEvents.source, PRODUCT_TOPIC),
+              eq(processedEvents.eventType, params.eventType),
+              eq(processedEvents.resourceId, params.masterId),
+              eq(processedEvents.eventVersion, params.eventVersion),
+            ),
+          ),
+        )
         .limit(1);
 
       if (existing) {
@@ -79,16 +90,32 @@ export class PimProductEventConsumer {
 
       const now = new Date();
 
-      await tx.insert(processedEvents).values({
-        idempotencyKey: params.idempotencyKey,
-        source: PRODUCT_TOPIC,
-        eventType: params.eventType,
-        resourceId: params.masterId,
-        eventVersion: params.eventVersion,
-        status: 'PROCESSED',
-        createdAt: now,
-        updatedAt: now,
-      });
+      const inserted = await tx
+        .insert(processedEvents)
+        .values({
+          idempotencyKey: params.idempotencyKey,
+          source: PRODUCT_TOPIC,
+          eventType: params.eventType,
+          resourceId: params.masterId,
+          eventVersion: params.eventVersion,
+          status: 'PROCESSED',
+          createdAt: now,
+          updatedAt: now,
+        })
+        .onConflictDoNothing({
+          target: [
+            processedEvents.source,
+            processedEvents.eventType,
+            processedEvents.resourceId,
+            processedEvents.eventVersion,
+          ],
+        })
+        .returning({ eventVersion: processedEvents.eventVersion });
+
+      if (inserted.length === 0) {
+        this.logger.debug(`[PIM] 이미 처리된 이벤트 tuple 충돌 스킵: ${params.idempotencyKey}`);
+        return false;
+      }
 
       await tx.insert(inboxEvents).values({
         eventType: params.eventType,
@@ -100,13 +127,36 @@ export class PimProductEventConsumer {
           correlationId: params.envelope.correlationId,
           messageId: params.envelope.messageId,
           chainId: params.envelope.chainId,
+          timestamp: params.envelope.timestamp,
+          occurredAt: params.envelope.occurredAt,
+          eventOccurredAt: params.eventOccurredAt.toISOString(),
         },
         status: 'pending',
+        eventOccurredAt: params.eventOccurredAt,
         createdAt: now,
       });
 
       return true;
     });
+  }
+
+  private resolveEventOccurredAt(
+    eventType: typeof ACTIVE_VERSION_CHANGED | typeof MASTER_DELETED,
+    envelope: DomainEvent<ProductMasterActiveVersionChangedPayload> | DomainEvent<ProductMasterDeletedPayload>,
+    payload: ProductMasterActiveVersionChangedPayload | ProductMasterDeletedPayload,
+  ): Date {
+    const payloadOccurredAt =
+      eventType === ACTIVE_VERSION_CHANGED
+        ? (payload as ProductMasterActiveVersionChangedPayload).changedAt
+        : (payload as ProductMasterDeletedPayload).deletedAt;
+    const value = envelope.occurredAt ?? envelope.timestamp ?? payloadOccurredAt;
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      throw new Error(`[PIM] Invalid product event occurredAt: ${value}`);
+    }
+
+    return date;
   }
 
   /**
@@ -139,6 +189,7 @@ export class PimProductEventConsumer {
         changeReason,
         payload.changedAt,
       ]);
+      const eventOccurredAt = this.resolveEventOccurredAt(ACTIVE_VERSION_CHANGED, envelope, payload);
 
       const saved = await this.saveToInboxOnce({
         eventType: ACTIVE_VERSION_CHANGED,
@@ -147,6 +198,7 @@ export class PimProductEventConsumer {
         envelope,
         idempotencyKey,
         eventVersion,
+        eventOccurredAt,
       });
 
       if (!saved) return;
@@ -179,6 +231,7 @@ export class PimProductEventConsumer {
         'deleted',
         payload.deletedAt,
       ]);
+      const eventOccurredAt = this.resolveEventOccurredAt(MASTER_DELETED, envelope, payload);
 
       const saved = await this.saveToInboxOnce({
         eventType: MASTER_DELETED,
@@ -187,6 +240,7 @@ export class PimProductEventConsumer {
         envelope,
         idempotencyKey,
         eventVersion,
+        eventOccurredAt,
       });
 
       if (!saved) return;

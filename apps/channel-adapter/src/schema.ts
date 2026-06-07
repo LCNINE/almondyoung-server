@@ -284,6 +284,7 @@ export const inboxEvents = pgTable(
     errorMessage: text('error_message'),
 
     // 타임스탬프
+    eventOccurredAt: timestamp('event_occurred_at'),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     publishedAt: timestamp('published_at'),
     failedAt: timestamp('failed_at'),
@@ -294,6 +295,7 @@ export const inboxEvents = pgTable(
     index('idx_inbox_pending_next_attempt').on(table.status, table.nextAttemptAt),
     // 파티션 키 인덱스
     index('idx_inbox_partition_key').on(table.partitionKey),
+    index('idx_inbox_aggregate_event_occurred').on(table.aggregateId, table.eventOccurredAt),
   ],
 );
 

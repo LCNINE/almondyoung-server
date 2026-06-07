@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
 import { inboxEvents, wmsOrderMappings } from '../../schema';
 import { ORDER_STREAM_EVENT_TYPES } from '../../order-event-routing';
-import { eq, and, lte, notInArray, gt, inArray } from 'drizzle-orm';
+import { eq, and, lte, notInArray, gt, inArray, sql } from 'drizzle-orm';
 import { v7 } from 'uuid';
 import { PimMedusaSyncService } from './pim-medusa-sync.service';
 import { MembershipMedusaSyncService } from './membership-medusa-sync.service';
@@ -142,9 +142,10 @@ export class InboxWorkerService implements OnModuleInit {
 
     try {
       this.logger.debug(`Processing inbox event: ${eventId} (type: ${eventType})`);
+      const eventOccurredAt = this.resolveInboxEventOccurredAt(event);
 
       // aggregateId 기준 더 최신 lifecycle 이벤트가 있으면 현재 이벤트 스킵.
-      // Product master delete는 이전 active-version retry보다 우선해야 한다.
+      // Product master delete는 늦게 도착한 이전 active-version retry보다 우선해야 한다.
       const [newerEvent] = await this.dbService.db
         .select({ id: inboxEvents.id })
         .from(inboxEvents)
@@ -152,7 +153,7 @@ export class InboxWorkerService implements OnModuleInit {
           and(
             eq(inboxEvents.aggregateId, aggregateId),
             inArray(inboxEvents.eventType, supersedingEventTypes),
-            gt(inboxEvents.createdAt, event.createdAt),
+            gt(sql<Date>`coalesce(${inboxEvents.eventOccurredAt}, ${inboxEvents.createdAt})`, eventOccurredAt),
             inArray(inboxEvents.status, supersedingStatuses),
           ),
         )
@@ -393,6 +394,24 @@ export class InboxWorkerService implements OnModuleInit {
     }
 
     return ['pending', 'processing'];
+  }
+
+  private resolveInboxEventOccurredAt(event: any): Date {
+    const value =
+      event.eventOccurredAt ??
+      event.metadata?.eventOccurredAt ??
+      event.metadata?.occurredAt ??
+      event.metadata?.timestamp ??
+      event.payload?.changedAt ??
+      event.payload?.deletedAt ??
+      event.createdAt;
+    const date = value instanceof Date ? value : new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      throw new Error(`Invalid inbox event occurrence time: eventId=${event.id}, value=${value}`);
+    }
+
+    return date;
   }
 
   // 실패 처리: 재시도 횟수 증가 + 백오프 + DLQ
