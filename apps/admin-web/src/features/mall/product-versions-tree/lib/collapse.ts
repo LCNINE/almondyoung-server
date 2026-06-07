@@ -14,6 +14,9 @@ export type CollapseResult = {
 };
 
 const MIN_GROUP_SIZE = 2;
+const DEFAULT_INCLUDE_STATUSES = ['active', 'inactive', 'draft'] satisfies Array<
+  MasterVersionDto['status']
+>;
 
 type WalkContext = {
   byId: Map<string, MasterVersionDto>;
@@ -34,7 +37,7 @@ function isExpandedAnchor(node: MasterVersionDto, ctx: WalkContext): boolean {
  * 분기점 사이의 자식=1 비-anchor 노드들의 chain 을 하나의 묶음으로 접는다.
  * - 분기점(anchor) = (visible children ≥ 2) OR root OR leaf OR status='active' OR id===currentVersionId.
  * - 묶음 최소 크기 = 2. 1이면 그냥 펼친다.
- * - draft 등 includeStatuses 에 없는 노드는 트리에서 제외 (자식 카운트에서도 빼고 계산).
+ * - includeStatuses 에 없는 노드는 트리에서 제외 (자식 카운트에서도 빼고 계산).
  */
 export function collapseTree(
   roots: MasterVersionDto[],
@@ -44,7 +47,7 @@ export function collapseTree(
   } = {},
 ): CollapseResult {
   const includeStatuses = new Set<MasterVersionDto['status']>(
-    options.includeStatuses ?? ['active', 'inactive'],
+    options.includeStatuses ?? DEFAULT_INCLUDE_STATUSES,
   );
   const currentVersionId = options.currentVersionId ?? null;
 
