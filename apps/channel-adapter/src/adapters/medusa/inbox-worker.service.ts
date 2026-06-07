@@ -390,7 +390,7 @@ export class InboxWorkerService implements OnModuleInit {
 
   private getSupersedingStatuses(eventType: string): string[] {
     if (isProductMasterLifecycleEvent(eventType)) {
-      return ['pending', 'processing', 'published'];
+      return ['pending', 'processing', 'published', 'failed'];
     }
 
     return ['pending', 'processing'];
