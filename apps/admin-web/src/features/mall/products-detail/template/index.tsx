@@ -12,6 +12,7 @@ import { ProductDetailImages } from '../components/images';
 import { ProductDetailOptions } from '../components/options';
 import { ProductDetailVariants } from '../components/variants';
 import { InactiveVersionBanner } from '../components/inactive-version-banner';
+import { DraftCompletionChecklist } from '../components/draft-completion-checklist';
 
 type Props = {
   masterId: string;
@@ -39,15 +40,29 @@ export default function ProductsDetailTemplate({ masterId, versionId }: Props) {
         </CardErrorBoundary>
       )}
 
+      {versionId && (
+        <CardErrorBoundary>
+          <Suspense fallback={null}>
+            <DraftCompletionChecklist masterId={masterId} versionId={versionId} />
+          </Suspense>
+        </CardErrorBoundary>
+      )}
+
       <TwoColumnPage>
         <TwoColumnPage.Main>
-          <ProductDetailGeneral masterId={masterId} versionId={versionId} />
+          <div id="product-basic-information">
+            <ProductDetailGeneral masterId={masterId} versionId={versionId} />
+          </div>
           <ProductDetailDescription masterId={masterId} versionId={versionId} />
-          <ProductDetailOptions masterId={masterId} versionId={versionId} />
-          <ProductDetailVariants masterId={masterId} versionId={versionId} />
+          <div id="product-options-and-variants" className="flex flex-col gap-y-3">
+            <ProductDetailOptions masterId={masterId} versionId={versionId} />
+            <ProductDetailVariants masterId={masterId} versionId={versionId} />
+          </div>
         </TwoColumnPage.Main>
         <TwoColumnPage.Sidebar>
-          <ProductDetailImages masterId={masterId} versionId={versionId} />
+          <div id="product-images">
+            <ProductDetailImages masterId={masterId} versionId={versionId} />
+          </div>
         </TwoColumnPage.Sidebar>
       </TwoColumnPage>
     </div>
