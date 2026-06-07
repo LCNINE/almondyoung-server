@@ -29,7 +29,7 @@ import {
 import { ProductReadAssembler } from '../products/assemblers/product-read.assembler';
 import { eq, isNull, like, inArray, and, or, sql, asc } from 'drizzle-orm';
 import { RowList } from 'postgres';
-import { InjectStreamPublisher, StreamPublisher } from '@app/events';
+import { OutboxPublisher } from '@app/events';
 import { PRODUCT_STREAM } from '@packages/event-contracts/streams/product.stream';
 import type { CategoryChangedPayload, CategorySnapshot } from '@packages/event-contracts/streams/product.stream';
 
@@ -38,19 +38,20 @@ export class ProductCategoriesService {
   constructor(
     @InjectDb() private readonly db: DbService<PimSchema>,
     private readonly productReadAssembler: ProductReadAssembler,
-    @InjectStreamPublisher(PRODUCT_STREAM.topic.topic)
-    private readonly eventPublisher: StreamPublisher,
+    private readonly outboxPublisher: OutboxPublisher,
   ) {}
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.db.db;
   }
 
+  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
+    return tx ? fn(tx) : this.db.db.transaction(fn);
+  }
+
   // 기본 CRUD
   async createCategory(data: CreateCategoryDto, tx?: DbTransaction): Promise<CategoryResponseDto> {
-    return this.db.db.transaction(async (trx) => {
-      const client = tx ?? trx;
-
+    return this.inTx(async (client) => {
       const { tagGroupLinks, ...categoryData } = data;
 
       // parentId가 있으면 부모 카테고리 조회하여 level/path 계산
@@ -97,9 +98,9 @@ export class ProductCategoriesService {
           await this._linkTagGroups(newCategory.id, tagGroupLinks, client);
         }
 
-        // Publish CategoryChanged event
+        // Enqueue CategoryChanged event
         const snapshot = this.buildCategorySnapshot(newCategory);
-        await this.publishCategoryEvent(newCategory.id, 'created', snapshot);
+        await this.publishCategoryEvent(newCategory.id, 'created', snapshot, client);
 
         const responseDto: CategoryResponseDto = CategoryMapper.toDto(newCategory);
         return responseDto;
@@ -118,13 +119,11 @@ export class ProductCategoriesService {
         }
         throw error;
       }
-    });
+    }, tx);
   }
 
   async updateCategory(categoryId: string, data: UpdateCategoryDto, tx?: DbTransaction): Promise<CategoryResponseDto> {
-    return this.db.db.transaction(async (trx) => {
-      const client = tx ?? trx;
-
+    return this.inTx(async (client) => {
       const { tagGroupLinks, ...categoryData } = data;
       const updatingCategoryData: UpdateProductCategory = categoryData;
       const [updatedCategory] = await client
@@ -144,12 +143,12 @@ export class ProductCategoriesService {
         }
       }
 
-      // Publish CategoryChanged event
+      // Enqueue CategoryChanged event
       const snapshot = this.buildCategorySnapshot(updatedCategory);
-      await this.publishCategoryEvent(categoryId, 'updated', snapshot);
+      await this.publishCategoryEvent(categoryId, 'updated', snapshot, client);
 
       return CategoryMapper.toDto(updatedCategory);
-    });
+    }, tx);
   }
 
   async deleteCategory(categoryId: string, moveProductsTo?: string, tx?: DbTransaction): Promise<void> {
@@ -204,16 +203,11 @@ export class ProductCategoriesService {
 
       await txn.delete(pimSchema.productCategories).where(eq(pimSchema.productCategories.id, categoryId));
 
-      // Publish CategoryChanged event
-      await this.publishCategoryEvent(categoryId, 'deleted', null);
+      // Enqueue CategoryChanged event
+      await this.publishCategoryEvent(categoryId, 'deleted', null, txn);
     };
 
-    // 트랜잭션 처리
-    if (tx) {
-      await executeDelete(tx);
-    } else {
-      await this.db.db.transaction(executeDelete);
-    }
+    await this.inTx(executeDelete, tx);
   }
 
   async getCategoryById(categoryId: string, tx?: DbTransaction): Promise<CategoryDetailResponseDto> {
@@ -372,15 +366,15 @@ export class ProductCategoriesService {
       // 모든 자손들의 레벨과 경로 재계산
       await this._updateDescendantPaths(categoryId, txn);
 
-      // Publish CategoryChanged event
+      // Enqueue CategoryChanged event
       const snapshot = this.buildCategorySnapshot(updatedCategory);
-      await this.publishCategoryEvent(categoryId, 'moved', snapshot);
+      await this.publishCategoryEvent(categoryId, 'moved', snapshot, txn);
 
       return updatedCategory;
     };
 
     // 트랜잭션 처리
-    const result = tx ? await executeMove(tx) : await this.db.db.transaction(executeMove);
+    const result = await this.inTx(executeMove, tx);
 
     const responseDto: CategoryResponseDto = CategoryMapper.toDto(result);
     return responseDto;
@@ -899,8 +893,6 @@ export class ProductCategoriesService {
       throw new BadRequestError('Category IDs are required');
     }
 
-    const client = this.getClient(tx);
-
     const executeReorder = async (txn: DbTransaction) => {
       // 1. 부모 카테고리 존재 확인 (parentId가 있는 경우)
       if (parentId) {
@@ -948,54 +940,49 @@ export class ProductCategoriesService {
         }
       }
 
-      // 4. 각 카테고리에 대해 CategoryChanged 이벤트 발행
+      // 4. 각 카테고리에 대해 CategoryChanged 이벤트 enqueue
       for (const category of updatedCategories) {
         const snapshot = this.buildCategorySnapshot(category);
-        await this.publishCategoryEvent(category.id, 'updated', snapshot);
+        await this.publishCategoryEvent(category.id, 'updated', snapshot, txn);
       }
     };
 
-    // 트랜잭션 처리
-    if (tx) {
-      await executeReorder(tx);
-    } else {
-      await this.db.db.transaction(executeReorder);
-    }
+    await this.inTx(executeReorder, tx);
   }
 
   async updateSortOrder(categoryId: string, sortOrder: number, tx?: DbTransaction): Promise<CategoryResponseDto> {
-    const client = this.getClient(tx);
-
     if (sortOrder < 0) {
       throw new BadRequestError('Sort order must be non-negative');
     }
 
-    // 카테고리 존재 확인
-    const [category] = await client
-      .select()
-      .from(pimSchema.productCategories)
-      .where(eq(pimSchema.productCategories.id, categoryId));
+    return this.inTx(async (client) => {
+      // 카테고리 존재 확인
+      const [category] = await client
+        .select()
+        .from(pimSchema.productCategories)
+        .where(eq(pimSchema.productCategories.id, categoryId));
 
-    if (!category) {
-      throw new NotFoundError(`Category not found: ${categoryId}`);
-    }
+      if (!category) {
+        throw new NotFoundError(`Category not found: ${categoryId}`);
+      }
 
-    // sortOrder 업데이트
-    const [updatedCategory] = await client
-      .update(pimSchema.productCategories)
-      .set({
-        sortOrder: sortOrder,
-        updatedAt: new Date(),
-      })
-      .where(eq(pimSchema.productCategories.id, categoryId))
-      .returning();
+      // sortOrder 업데이트
+      const [updatedCategory] = await client
+        .update(pimSchema.productCategories)
+        .set({
+          sortOrder: sortOrder,
+          updatedAt: new Date(),
+        })
+        .where(eq(pimSchema.productCategories.id, categoryId))
+        .returning();
 
-    // Publish CategoryChanged event
-    const snapshot = this.buildCategorySnapshot(updatedCategory);
-    await this.publishCategoryEvent(categoryId, 'updated', snapshot);
+      // Enqueue CategoryChanged event
+      const snapshot = this.buildCategorySnapshot(updatedCategory);
+      await this.publishCategoryEvent(categoryId, 'updated', snapshot, client);
 
-    const responseDto: CategoryResponseDto = CategoryMapper.toDto(updatedCategory);
-    return responseDto;
+      const responseDto: CategoryResponseDto = CategoryMapper.toDto(updatedCategory);
+      return responseDto;
+    }, tx);
   }
 
   // 검증 및 유틸리티
@@ -1142,12 +1129,13 @@ export class ProductCategoriesService {
   }
 
   /**
-   * Publish CategoryChanged event
+   * Enqueue CategoryChanged event
    */
   private async publishCategoryEvent(
     categoryId: string,
     changeType: 'created' | 'updated' | 'deleted' | 'moved',
     snapshot: CategorySnapshot | null,
+    tx: DbTransaction,
   ): Promise<void> {
     const payload: CategoryChangedPayload = {
       categoryId,
@@ -1156,11 +1144,16 @@ export class ProductCategoriesService {
       category: snapshot,
     };
 
-    await this.eventPublisher.publishEvent({
-      eventType: 'CategoryChanged',
-      aggregateId: categoryId,
-      payload,
-    });
+    await this.outboxPublisher.saveEvent(
+      {
+        topic: PRODUCT_STREAM.topic.topic,
+        eventType: 'CategoryChanged',
+        aggregateType: PRODUCT_STREAM.aggregateType,
+        aggregateId: categoryId,
+        payload,
+      },
+      tx,
+    );
   }
 
   // ===== Phase 2: Category Configuration Methods =====
@@ -1173,74 +1166,74 @@ export class ProductCategoriesService {
     dto: UpdateDisplaySettingsDto,
     tx?: DbTransaction,
   ): Promise<CategoryResponseDto> {
-    const client = this.getClient(tx);
+    return this.inTx(async (client) => {
+      const [category] = await client
+        .select()
+        .from(pimSchema.productCategories)
+        .where(eq(pimSchema.productCategories.id, categoryId));
 
-    const [category] = await client
-      .select()
-      .from(pimSchema.productCategories)
-      .where(eq(pimSchema.productCategories.id, categoryId));
+      if (!category) {
+        throw new NotFoundError(`Category not found: ${categoryId}`);
+      }
 
-    if (!category) {
-      throw new NotFoundError(`Category not found: ${categoryId}`);
-    }
+      const displaySettings: CategoryDisplaySettings = {
+        ...(category.displaySettings as CategoryDisplaySettings),
+        ...dto,
+      };
 
-    const displaySettings: CategoryDisplaySettings = {
-      ...(category.displaySettings as CategoryDisplaySettings),
-      ...dto,
-    };
+      const [updated] = await client
+        .update(pimSchema.productCategories)
+        .set({
+          displaySettings,
+          updatedAt: new Date(),
+        })
+        .where(eq(pimSchema.productCategories.id, categoryId))
+        .returning();
 
-    const [updated] = await client
-      .update(pimSchema.productCategories)
-      .set({
-        displaySettings,
-        updatedAt: new Date(),
-      })
-      .where(eq(pimSchema.productCategories.id, categoryId))
-      .returning();
+      // Enqueue CategoryChanged event
+      const snapshot = this.buildCategorySnapshot(updated);
+      await this.publishCategoryEvent(categoryId, 'updated', snapshot, client);
 
-    // Publish CategoryChanged event
-    const snapshot = this.buildCategorySnapshot(updated);
-    await this.publishCategoryEvent(categoryId, 'updated', snapshot);
-
-    const responseDto: CategoryResponseDto = CategoryMapper.toDto(updated);
-    return responseDto;
+      const responseDto: CategoryResponseDto = CategoryMapper.toDto(updated);
+      return responseDto;
+    }, tx);
   }
 
   /**
    * 카테고리 SEO 설정 업데이트
    */
   async updateSeoConfig(categoryId: string, dto: UpdateSeoConfigDto, tx?: DbTransaction): Promise<CategoryResponseDto> {
-    const client = this.getClient(tx);
+    return this.inTx(async (client) => {
+      const [category] = await client
+        .select()
+        .from(pimSchema.productCategories)
+        .where(eq(pimSchema.productCategories.id, categoryId));
 
-    const [category] = await client
-      .select()
-      .from(pimSchema.productCategories)
-      .where(eq(pimSchema.productCategories.id, categoryId));
+      if (!category) {
+        throw new NotFoundError(`Category not found: ${categoryId}`);
+      }
 
-    if (!category) {
-      throw new NotFoundError(`Category not found: ${categoryId}`);
-    }
+      const seoConfig: CategorySeoConfig = {
+        ...(category.seoConfig as CategorySeoConfig),
+        ...dto,
+      };
 
-    const seoConfig: CategorySeoConfig = {
-      ...(category.seoConfig as CategorySeoConfig),
-      ...dto,
-    };
+      const [updated] = await client
+        .update(pimSchema.productCategories)
+        .set({
+          seoConfig,
+          updatedAt: new Date(),
+        })
+        .where(eq(pimSchema.productCategories.id, categoryId))
+        .returning();
 
-    const [updated] = await client
-      .update(pimSchema.productCategories)
-      .set({
-        seoConfig,
-        updatedAt: new Date(),
-      })
-      .where(eq(pimSchema.productCategories.id, categoryId))
-      .returning();
+      // Enqueue CategoryChanged event
+      const snapshot = this.buildCategorySnapshot(updated);
+      await this.publishCategoryEvent(categoryId, 'updated', snapshot, client);
 
-    // Publish CategoryChanged event
-    const snapshot = this.buildCategorySnapshot(updated);
-    await this.publishCategoryEvent(categoryId, 'updated', snapshot);
-
-    const responseDto: CategoryResponseDto = CategoryMapper.toDto(updated);
-    return responseDto;
+      const responseDto: CategoryResponseDto = CategoryMapper.toDto(updated);
+      return responseDto;
+    }, tx);
   }
 
   /**
@@ -1251,69 +1244,69 @@ export class ProductCategoriesService {
     dto: UpdateTemplateConfigDto,
     tx?: DbTransaction,
   ): Promise<CategoryResponseDto> {
-    const client = this.getClient(tx);
+    return this.inTx(async (client) => {
+      const [category] = await client
+        .select()
+        .from(pimSchema.productCategories)
+        .where(eq(pimSchema.productCategories.id, categoryId));
 
-    const [category] = await client
-      .select()
-      .from(pimSchema.productCategories)
-      .where(eq(pimSchema.productCategories.id, categoryId));
+      if (!category) {
+        throw new NotFoundError(`Category not found: ${categoryId}`);
+      }
 
-    if (!category) {
-      throw new NotFoundError(`Category not found: ${categoryId}`);
-    }
+      const templateConfig: CategoryTemplateConfig = {
+        ...(category.templateConfig as CategoryTemplateConfig),
+        ...dto,
+      };
 
-    const templateConfig: CategoryTemplateConfig = {
-      ...(category.templateConfig as CategoryTemplateConfig),
-      ...dto,
-    };
+      const [updated] = await client
+        .update(pimSchema.productCategories)
+        .set({
+          templateConfig,
+          updatedAt: new Date(),
+        })
+        .where(eq(pimSchema.productCategories.id, categoryId))
+        .returning();
 
-    const [updated] = await client
-      .update(pimSchema.productCategories)
-      .set({
-        templateConfig,
-        updatedAt: new Date(),
-      })
-      .where(eq(pimSchema.productCategories.id, categoryId))
-      .returning();
+      // Enqueue CategoryChanged event
+      const snapshot = this.buildCategorySnapshot(updated);
+      await this.publishCategoryEvent(categoryId, 'updated', snapshot, client);
 
-    // Publish CategoryChanged event
-    const snapshot = this.buildCategorySnapshot(updated);
-    await this.publishCategoryEvent(categoryId, 'updated', snapshot);
-
-    const responseDto: CategoryResponseDto = CategoryMapper.toDto(updated);
-    return responseDto;
+      const responseDto: CategoryResponseDto = CategoryMapper.toDto(updated);
+      return responseDto;
+    }, tx);
   }
 
   /**
    * 카테고리 표시 여부 업데이트
    */
   async updateVisibility(categoryId: string, visible: boolean, tx?: DbTransaction): Promise<CategoryResponseDto> {
-    const client = this.getClient(tx);
+    return this.inTx(async (client) => {
+      const [category] = await client
+        .select()
+        .from(pimSchema.productCategories)
+        .where(eq(pimSchema.productCategories.id, categoryId));
 
-    const [category] = await client
-      .select()
-      .from(pimSchema.productCategories)
-      .where(eq(pimSchema.productCategories.id, categoryId));
+      if (!category) {
+        throw new NotFoundError(`Category not found: ${categoryId}`);
+      }
 
-    if (!category) {
-      throw new NotFoundError(`Category not found: ${categoryId}`);
-    }
+      const [updated] = await client
+        .update(pimSchema.productCategories)
+        .set({
+          visibility: visible,
+          updatedAt: new Date(),
+        })
+        .where(eq(pimSchema.productCategories.id, categoryId))
+        .returning();
 
-    const [updated] = await client
-      .update(pimSchema.productCategories)
-      .set({
-        visibility: visible,
-        updatedAt: new Date(),
-      })
-      .where(eq(pimSchema.productCategories.id, categoryId))
-      .returning();
+      // Enqueue CategoryChanged event
+      const snapshot = this.buildCategorySnapshot(updated);
+      await this.publishCategoryEvent(categoryId, 'updated', snapshot, client);
 
-    // Publish CategoryChanged event
-    const snapshot = this.buildCategorySnapshot(updated);
-    await this.publishCategoryEvent(categoryId, 'updated', snapshot);
-
-    const responseDto: CategoryResponseDto = CategoryMapper.toDto(updated);
-    return responseDto;
+      const responseDto: CategoryResponseDto = CategoryMapper.toDto(updated);
+      return responseDto;
+    }, tx);
   }
 
   // ===== TAG GROUP MANAGEMENT =====

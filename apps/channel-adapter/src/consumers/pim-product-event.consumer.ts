@@ -65,44 +65,48 @@ export class PimProductEventConsumer {
   }): Promise<boolean> {
     const db = this.dbService.db;
 
-    const [existing] = await db
-      .select()
-      .from(processedEvents)
-      .where(eq(processedEvents.idempotencyKey, params.idempotencyKey))
-      .limit(1);
+    return db.transaction(async (tx) => {
+      const [existing] = await tx
+        .select()
+        .from(processedEvents)
+        .where(eq(processedEvents.idempotencyKey, params.idempotencyKey))
+        .limit(1);
 
-    if (existing) {
-      this.logger.debug(`[PIM] 이미 처리된 이벤트 스킵: ${params.idempotencyKey}`);
-      return false;
-    }
+      if (existing) {
+        this.logger.debug(`[PIM] 이미 처리된 이벤트 스킵: ${params.idempotencyKey}`);
+        return false;
+      }
 
-    await db.insert(processedEvents).values({
-      idempotencyKey: params.idempotencyKey,
-      source: PRODUCT_TOPIC,
-      eventType: params.eventType,
-      resourceId: params.masterId,
-      eventVersion: params.eventVersion,
-      status: 'PROCESSED',
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      const now = new Date();
+
+      await tx.insert(processedEvents).values({
+        idempotencyKey: params.idempotencyKey,
+        source: PRODUCT_TOPIC,
+        eventType: params.eventType,
+        resourceId: params.masterId,
+        eventVersion: params.eventVersion,
+        status: 'PROCESSED',
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      await tx.insert(inboxEvents).values({
+        eventType: params.eventType,
+        aggregateType: 'Product',
+        aggregateId: params.masterId,
+        partitionKey: params.masterId,
+        payload: params.payload,
+        metadata: {
+          correlationId: params.envelope.correlationId,
+          messageId: params.envelope.messageId,
+          chainId: params.envelope.chainId,
+        },
+        status: 'pending',
+        createdAt: now,
+      });
+
+      return true;
     });
-
-    await db.insert(inboxEvents).values({
-      eventType: params.eventType,
-      aggregateType: 'Product',
-      aggregateId: params.masterId,
-      partitionKey: params.masterId,
-      payload: params.payload,
-      metadata: {
-        correlationId: params.envelope.correlationId,
-        messageId: params.envelope.messageId,
-        chainId: params.envelope.chainId,
-      },
-      status: 'pending',
-      createdAt: new Date(),
-    });
-
-    return true;
   }
 
   /**
