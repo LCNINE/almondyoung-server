@@ -3,6 +3,7 @@ import type { ProductSellableQuantityChangedPayload } from '@packages/event-cont
 
 function collectValues(value: unknown, seen = new WeakSet<object>()): unknown[] {
   if (value === null || value === undefined) return [];
+  if (value instanceof Date) return [value.toISOString()];
   if (typeof value !== 'object') return [value];
   if (seen.has(value)) return [];
 
@@ -159,6 +160,40 @@ describe('InboxWorkerService ProductSellableQuantityChanged handling', () => {
       },
       attempts: 1,
       createdAt: new Date('2026-05-26T00:00:00.000Z'),
+      metadata: { messageId: 'active-msg-1', chainId: 'chain-1' },
+    };
+
+    await (service as any).doProcessInboxEvent(event);
+
+    expect(syncService.handleActiveVersionChanged).not.toHaveBeenCalled();
+    expect(dbMock.updates).toEqual([
+      {
+        status: 'published',
+        publishedAt: new Date('2026-05-27T00:00:00.000Z'),
+        errorMessage: 'Superseded by newer event (aggregateId: master-1)',
+      },
+    ]);
+  });
+
+  it('orders lifecycle superseding by event occurrence time instead of inbox insertion time', async () => {
+    const { service, dbMock, syncService } = createService({
+      newerEvents: (condition) =>
+        collectValues(condition).includes('2026-05-26T00:00:00.000Z') ? [{ id: 'delete-event-1' }] : [],
+    });
+    const event = {
+      id: 'active-event-1',
+      eventType: 'ProductMasterActiveVersionChanged',
+      aggregateId: 'master-1',
+      payload: {
+        masterId: 'master-1',
+        versionId: 'version-1',
+        changeReason: 'published',
+        changedAt: '2026-05-26T00:00:00.000Z',
+        snapshot: { masterId: 'master-1', versionId: 'version-1', version: 1, name: 'Lip Tint', variants: [] },
+      },
+      attempts: 1,
+      eventOccurredAt: new Date('2026-05-26T00:00:00.000Z'),
+      createdAt: new Date('2026-05-28T00:00:00.000Z'),
       metadata: { messageId: 'active-msg-1', chainId: 'chain-1' },
     };
 
