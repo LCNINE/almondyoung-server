@@ -175,6 +175,39 @@ describe('InboxWorkerService ProductSellableQuantityChanged handling', () => {
     ]);
   });
 
+  it('treats a failed newer lifecycle event as superseding older lifecycle retries', async () => {
+    const { service, dbMock, syncService } = createService({
+      newerEvents: (condition) => (collectValues(condition).includes('failed') ? [{ id: 'delete-event-1' }] : []),
+    });
+    const event = {
+      id: 'active-event-1',
+      eventType: 'ProductMasterActiveVersionChanged',
+      aggregateId: 'master-1',
+      payload: {
+        masterId: 'master-1',
+        versionId: 'version-1',
+        changeReason: 'published',
+        changedAt: '2026-05-26T00:00:00.000Z',
+        snapshot: { masterId: 'master-1', versionId: 'version-1', version: 1, name: 'Lip Tint', variants: [] },
+      },
+      attempts: 1,
+      eventOccurredAt: new Date('2026-05-26T00:00:00.000Z'),
+      createdAt: new Date('2026-05-26T00:00:00.000Z'),
+      metadata: { messageId: 'active-msg-1', chainId: 'chain-1' },
+    };
+
+    await (service as any).doProcessInboxEvent(event);
+
+    expect(syncService.handleActiveVersionChanged).not.toHaveBeenCalled();
+    expect(dbMock.updates).toEqual([
+      {
+        status: 'published',
+        publishedAt: new Date('2026-05-27T00:00:00.000Z'),
+        errorMessage: 'Superseded by newer event (aggregateId: master-1)',
+      },
+    ]);
+  });
+
   it('orders lifecycle superseding by event occurrence time instead of inbox insertion time', async () => {
     const { service, dbMock, syncService } = createService({
       newerEvents: (condition) =>
