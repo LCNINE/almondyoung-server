@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { NotFoundError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
-import { InjectStreamPublisher, StreamPublisher } from '@app/events';
+import { InjectStreamPublisher, OutboxPublisher, StreamPublisher } from '@app/events';
 import { ProductEvents, PRODUCT_STREAM, ProductSnapshot } from '@packages/event-contracts';
 import { PricingValidatorService } from '../../pricing/pricing-validator.service';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
@@ -49,6 +49,7 @@ export class ProductVersionsService {
     @InjectDb() private readonly db: DbService<PimSchema>,
     @InjectStreamPublisher(PRODUCT_STREAM.topic.topic)
     private readonly productPublisher: StreamPublisher<ProductEvents>,
+    private readonly outboxPublisher: OutboxPublisher,
     private readonly pricingValidator: PricingValidatorService,
     private readonly productReadAssembler: ProductReadAssembler,
     private readonly priceCacheService: VariantPriceCacheService,
@@ -637,19 +638,26 @@ export class ProductVersionsService {
     targetStatus: 'active' | 'inactive',
     tx: DbTransaction,
   ): Promise<void> {
-    try {
-      const changeReason =
-        targetStatus === 'inactive' ? 'unpublished' : previousActiveVersion ? 'rollback' : 'published';
+    const changeReason = targetStatus === 'inactive' ? 'unpublished' : previousActiveVersion ? 'rollback' : 'published';
 
-      const snapshot =
-        targetStatus === 'active' ? await this._buildFullSnapshot(newVersion.masterId, newVersion.id, tx) : null;
+    const snapshot =
+      targetStatus === 'active' ? await this._buildFullSnapshot(newVersion.masterId, newVersion.id, tx) : null;
 
-      const categoryIds = snapshot?.categories?.map((c) => c.id) || [];
-      const primaryCategoryId =
-        categoryIds.length > 0 ? await this.getPrimaryCategoryId(newVersion.masterId, newVersion.id, tx) : null;
+    if ((changeReason === 'published' || changeReason === 'rollback') && !snapshot) {
+      throw new Error(
+        `ProductMasterActiveVersionChanged ${changeReason} event requires a full snapshot: masterId=${newVersion.masterId}, versionId=${newVersion.id}`,
+      );
+    }
 
-      await this.productPublisher.publishEvent({
+    const categoryIds = snapshot?.categories?.map((c) => c.id) || [];
+    const primaryCategoryId =
+      categoryIds.length > 0 ? await this.getPrimaryCategoryId(newVersion.masterId, newVersion.id, tx) : null;
+
+    await this.outboxPublisher.saveEvent(
+      {
+        topic: PRODUCT_STREAM.topic.topic,
         eventType: 'ProductMasterActiveVersionChanged',
+        aggregateType: PRODUCT_STREAM.aggregateType,
         aggregateId: newVersion.masterId,
         payload: {
           masterId: newVersion.masterId,
@@ -662,14 +670,13 @@ export class ProductVersionsService {
           changedAt: new Date().toISOString(),
           snapshot,
         },
-      });
+      },
+      tx,
+    );
 
-      this.logger.log(
-        `📤 Published ProductMasterActiveVersionChanged: ${newVersion.masterId} (${changeReason}) with ${snapshot ? 'full snapshot' : 'no snapshot'}`,
-      );
-    } catch (error) {
-      this.logger.error(`❌ Failed to publish ProductMasterActiveVersionChanged: ${newVersion.masterId}`, error.stack);
-    }
+    this.logger.log(
+      `📦 Enqueued ProductMasterActiveVersionChanged: ${newVersion.masterId} (${changeReason}) with ${snapshot ? 'full snapshot' : 'no snapshot'}`,
+    );
   }
 
   private async getVersionCategoryIds(masterId: string, versionId: string, tx: DbTransaction): Promise<string[]> {

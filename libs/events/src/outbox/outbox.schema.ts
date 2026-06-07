@@ -24,6 +24,7 @@ export const outbox_events = eventSchema.table(
 
     // 타임스탬프
     createdAt: timestamp('created_at').notNull().defaultNow(),
+    processingStartedAt: timestamp('processing_started_at'),
     publishedAt: timestamp('published_at'),
     failedAt: timestamp('failed_at'),
 
@@ -33,6 +34,7 @@ export const outbox_events = eventSchema.table(
   },
   (table) => ({
     statusIdx: index('outbox_status_idx').on(table.status, table.createdAt),
+    processingStartedIdx: index('outbox_processing_started_idx').on(table.status, table.processingStartedAt),
     topicIdx: index('outbox_topic_idx').on(table.topic),
   }),
 );

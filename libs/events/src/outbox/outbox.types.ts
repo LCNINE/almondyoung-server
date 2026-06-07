@@ -1,10 +1,10 @@
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { outbox_events, outboxSchema } from './outbox.schema';
+import { outbox_events } from './outbox.schema';
 
 export type OutboxEvent = typeof outbox_events.$inferSelect;
 export type NewOutboxEvent = typeof outbox_events.$inferInsert;
 
-export type DbTx = Parameters<Parameters<PostgresJsDatabase<typeof outboxSchema>['transaction']>[0]>[0];
+export type DbTx = Pick<PostgresJsDatabase<any>, 'insert'>;
 
 export type OutboxStatus = 'PENDING' | 'PROCESSING' | 'PUBLISHED' | 'FAILED';
 
@@ -12,6 +12,7 @@ export interface OutboxConfig {
   dispatchIntervalMs?: number; // 기본값: 5000
   batchSize?: number; // 기본값: 100
   maxRetries?: number; // 기본값: 5
+  processingTimeoutMs?: number; // 기본값: 300000 (5분)
   cleanupDays?: number; // 기본값: 7
 }
 

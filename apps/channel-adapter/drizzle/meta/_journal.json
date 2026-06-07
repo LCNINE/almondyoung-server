@@ -15,6 +15,13 @@
       "when": 1779780116048,
       "tag": "20260526072156_nebulous_hellcat",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780851581319,
+      "tag": "20260607165941_add_inbox_event_occurred_at_and_outbox_processing_started",
+      "breakpoints": true
     }
   ]
 }

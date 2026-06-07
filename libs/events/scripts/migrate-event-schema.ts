@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS event.outbox_events (
 
   -- 타임스탬프
   created_at timestamp NOT NULL DEFAULT now(),
+  processing_started_at timestamp,
   published_at timestamp,
   failed_at timestamp,
 
@@ -49,8 +50,12 @@ CREATE TABLE IF NOT EXISTS event.outbox_events (
   error_message text
 );
 
+ALTER TABLE event.outbox_events
+  ADD COLUMN IF NOT EXISTS processing_started_at timestamp;
+
 -- Create outbox indexes
 CREATE INDEX IF NOT EXISTS outbox_status_idx ON event.outbox_events (status, created_at);
+CREATE INDEX IF NOT EXISTS outbox_processing_started_idx ON event.outbox_events (status, processing_started_at);
 CREATE INDEX IF NOT EXISTS outbox_topic_idx ON event.outbox_events (topic);
 
 -- Create event_resource_links table (이벤트 체인 추적)
@@ -88,6 +93,7 @@ async function main() {
     console.log('  - event schema');
     console.log('  - event.outbox_events table');
     console.log('  - outbox_status_idx index');
+    console.log('  - outbox_processing_started_idx index');
     console.log('  - outbox_topic_idx index');
     console.log('  - event.event_resource_links table');
     console.log('  - erl_chain_idx, erl_resource_idx, erl_event_idx indexes');
