@@ -12,7 +12,6 @@ import type {
   CreateCategoryDto,
   UpdateCategoryDto,
   MoveCategoryDto,
-  CreateMasterDto,
   UpdateMasterDto,
   UpdatePricingStrategyDto,
   CreateChannelProductDto,
@@ -152,7 +151,7 @@ export const useCreateMaster = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (data: CreateMasterDto) => products.masters.create(data),
+    mutationFn: () => products.masters.create(),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: productQueryKeys.masters,
