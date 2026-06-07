@@ -44,7 +44,6 @@ function TreeGraphInner({
 
   const { nodes, edges } = useMemo(() => {
     const result = collapseTree(tree, {
-      includeStatuses: ['active', 'inactive'],
       currentVersionId,
     });
 
@@ -54,7 +53,7 @@ function TreeGraphInner({
       position: { x: 0, y: 0 },
       data: {
         version: v.version,
-        status: v.status === 'active' ? 'active' : 'inactive',
+        status: v.status,
         createdAt: v.createdAt,
         isCurrent: currentVersionId === v.id,
         onSelect: () =>
