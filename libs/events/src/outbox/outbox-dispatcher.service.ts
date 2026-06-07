@@ -4,7 +4,7 @@ import { DbService } from '@app/db';
 import { StreamPublisher } from '../publishers/stream-publisher.service';
 import { outbox_events } from './outbox.schema';
 import { OutboxConfig } from './outbox.types';
-import { eq, inArray, and, lt } from 'drizzle-orm';
+import { eq, inArray, and, lt, lte, or, isNull } from 'drizzle-orm';
 
 @Injectable()
 export class OutboxDispatcher {
@@ -22,6 +22,7 @@ export class OutboxDispatcher {
       dispatchIntervalMs: config?.dispatchIntervalMs ?? 5000,
       batchSize: config?.batchSize ?? 100,
       maxRetries: config?.maxRetries ?? 5,
+      processingTimeoutMs: config?.processingTimeoutMs ?? 300_000,
       cleanupDays: config?.cleanupDays ?? 7,
     };
   }
@@ -33,6 +34,7 @@ export class OutboxDispatcher {
   @Cron('*/5 * * * * *')
   async dispatchPendingEvents() {
     try {
+      await this.requeueStaleProcessingEvents();
       const events = await this.acquireEventBatch();
 
       if (events.length === 0) {
@@ -51,6 +53,7 @@ export class OutboxDispatcher {
 
   private async acquireEventBatch() {
     return await this.db.transaction(async (tx) => {
+      const processingStartedAt = new Date();
       const result = await tx
         .select({
           id: outbox_events.id,
@@ -74,10 +77,37 @@ export class OutboxDispatcher {
 
       const ids = result.map((e) => e.id);
 
-      await tx.update(outbox_events).set({ status: 'PROCESSING' }).where(inArray(outbox_events.id, ids));
+      await tx
+        .update(outbox_events)
+        .set({ status: 'PROCESSING', processingStartedAt })
+        .where(inArray(outbox_events.id, ids));
 
       return result;
     });
+  }
+
+  private async requeueStaleProcessingEvents() {
+    const threshold = new Date(Date.now() - this.config.processingTimeoutMs);
+    const timeoutSeconds = Math.floor(this.config.processingTimeoutMs / 1000);
+
+    const result = await this.db
+      .update(outbox_events)
+      .set({
+        status: 'PENDING',
+        processingStartedAt: null,
+        errorMessage: `Requeued after ${timeoutSeconds}s processing timeout`,
+      })
+      .where(
+        and(
+          eq(outbox_events.status, 'PROCESSING'),
+          or(isNull(outbox_events.processingStartedAt), lte(outbox_events.processingStartedAt, threshold)),
+        ),
+      )
+      .returning({ id: outbox_events.id });
+
+    if (result.length > 0) {
+      this.logger.warn(`Requeued ${result.length} stale outbox events`);
+    }
   }
 
   private async processEvent(event: any) {
@@ -94,6 +124,7 @@ export class OutboxDispatcher {
         .update(outbox_events)
         .set({
           status: 'PUBLISHED',
+          processingStartedAt: null,
           publishedAt: new Date(),
         })
         .where(eq(outbox_events.id, event.id));
@@ -112,6 +143,7 @@ export class OutboxDispatcher {
       .update(outbox_events)
       .set({
         status: isFinalFailure ? 'FAILED' : 'PENDING',
+        processingStartedAt: null,
         retryCount: newRetryCount,
         errorMessage: error.message,
         failedAt: isFinalFailure ? new Date() : undefined,

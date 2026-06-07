@@ -24,6 +24,14 @@ import type {
   UserEmailVerifiedPayload,
 } from '@packages/event-contracts/streams/user.stream';
 
+const PRODUCT_MASTER_LIFECYCLE_EVENT_TYPES = ['ProductMasterActiveVersionChanged', 'ProductMasterDeleted'] as const;
+
+function isProductMasterLifecycleEvent(
+  eventType: string,
+): eventType is (typeof PRODUCT_MASTER_LIFECYCLE_EVENT_TYPES)[number] {
+  return (PRODUCT_MASTER_LIFECYCLE_EVENT_TYPES as readonly string[]).includes(eventType);
+}
+
 @Injectable()
 export class InboxWorkerService implements OnModuleInit {
   private readonly logger = new Logger(InboxWorkerService.name);
@@ -129,20 +137,23 @@ export class InboxWorkerService implements OnModuleInit {
     const eventId = event.id;
     const eventType = event.eventType;
     const aggregateId = event.aggregateId;
+    const supersedingEventTypes = this.getSupersedingEventTypes(eventType);
+    const supersedingStatuses = this.getSupersedingStatuses(eventType);
 
     try {
       this.logger.debug(`Processing inbox event: ${eventId} (type: ${eventType})`);
 
-      //  aggregateId + eventType의 더 최신 이벤트가 있으면 현재 이벤트 스킵
+      // aggregateId 기준 더 최신 lifecycle 이벤트가 있으면 현재 이벤트 스킵.
+      // Product master delete는 이전 active-version retry보다 우선해야 한다.
       const [newerEvent] = await this.dbService.db
         .select({ id: inboxEvents.id })
         .from(inboxEvents)
         .where(
           and(
             eq(inboxEvents.aggregateId, aggregateId),
-            eq(inboxEvents.eventType, eventType),
+            inArray(inboxEvents.eventType, supersedingEventTypes),
             gt(inboxEvents.createdAt, event.createdAt),
-            inArray(inboxEvents.status, ['pending', 'processing']),
+            inArray(inboxEvents.status, supersedingStatuses),
           ),
         )
         .limit(1);
@@ -242,10 +253,12 @@ export class InboxWorkerService implements OnModuleInit {
             const [shippedMapping] = await this.dbService.db
               .select({ channelOrderId: wmsOrderMappings.channelOrderId })
               .from(wmsOrderMappings)
-              .where(and(
-                eq(wmsOrderMappings.wmsOrderId, shippedPayload.orderId),
-                eq(wmsOrderMappings.salesChannel, 'medusa'),
-              ))
+              .where(
+                and(
+                  eq(wmsOrderMappings.wmsOrderId, shippedPayload.orderId),
+                  eq(wmsOrderMappings.salesChannel, 'medusa'),
+                ),
+              )
               .limit(1);
             shippedMedusaOrderId = shippedMapping?.channelOrderId ?? null;
           }
@@ -283,10 +296,12 @@ export class InboxWorkerService implements OnModuleInit {
             const [deliveredMapping] = await this.dbService.db
               .select({ channelOrderId: wmsOrderMappings.channelOrderId })
               .from(wmsOrderMappings)
-              .where(and(
-                eq(wmsOrderMappings.wmsOrderId, deliveredPayload.orderId),
-                eq(wmsOrderMappings.salesChannel, 'medusa'),
-              ))
+              .where(
+                and(
+                  eq(wmsOrderMappings.wmsOrderId, deliveredPayload.orderId),
+                  eq(wmsOrderMappings.salesChannel, 'medusa'),
+                ),
+              )
               .limit(1);
             deliveredMedusaOrderId = deliveredMapping?.channelOrderId ?? null;
           }
@@ -362,6 +377,22 @@ export class InboxWorkerService implements OnModuleInit {
       // 실패 처리 (재시도 로직)
       await this.handleFailure(event, error.message);
     }
+  }
+
+  private getSupersedingEventTypes(eventType: string): string[] {
+    if (isProductMasterLifecycleEvent(eventType)) {
+      return [...PRODUCT_MASTER_LIFECYCLE_EVENT_TYPES];
+    }
+
+    return [eventType];
+  }
+
+  private getSupersedingStatuses(eventType: string): string[] {
+    if (isProductMasterLifecycleEvent(eventType)) {
+      return ['pending', 'processing', 'published'];
+    }
+
+    return ['pending', 'processing'];
   }
 
   // 실패 처리: 재시도 횟수 증가 + 백오프 + DLQ
