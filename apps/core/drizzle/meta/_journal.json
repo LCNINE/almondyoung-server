@@ -99,6 +99,13 @@
       "when": 1780300985974,
       "tag": "20260601080305_add-wallet-intent-id-to-sales-orders",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1780849016008,
+      "tag": "20260607161655_special_silverclaw",
+      "breakpoints": true
     }
   ]
 }
