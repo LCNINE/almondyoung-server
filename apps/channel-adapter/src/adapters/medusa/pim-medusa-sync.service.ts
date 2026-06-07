@@ -7,7 +7,10 @@ import { transformPimToMedusa, validatePimSnapshot } from './transformers/pim-to
 import type { PimActiveVersionChangedEvent, PimProductSnapshot, MedusaProduct } from '../../types';
 // PIMCLIENT: Type import removed
 // import type { PimCategoryDetail } from './pim.client';
-import type { CategoryChangedPayload } from '@packages/event-contracts/streams/product.stream';
+import type {
+  CategoryChangedPayload,
+  ProductMasterDeletedPayload,
+} from '@packages/event-contracts/streams/product.stream';
 import type { ProductSellableQuantityChangedPayload } from '@packages/event-contracts/streams/inventory.stream';
 
 export interface SyncResult {
@@ -450,25 +453,32 @@ export class PimMedusaSyncService {
         break;
 
       case 'unpublished':
-        this.logger.log(`Master ${masterId} unpublished → Setting to draft in Medusa`);
-
-        const mapping = await this.mappingRepo.findByPimMasterId(masterId);
-        if (!mapping || !mapping.medusaProductId) {
-          this.logger.warn(`No mapping found for unpublished master ${masterId}`);
-          return;
-        }
-
-        await this.medusaClient.setProductToDraft(mapping.medusaProductId);
-
-        await this.mappingRepo.update(masterId, {
-          lastSyncAction: 'updated',
-          lastSyncedAt: new Date(),
-        });
+        await this.draftMappedProduct(masterId, 'unpublished');
         break;
 
       default:
         this.logger.warn(`Unknown changeReason: ${changeReason}`);
     }
+  }
+
+  async handleProductMasterDeleted(event: ProductMasterDeletedPayload): Promise<void> {
+    this.logger.log(`Master ${event.masterId} deleted → Setting mapped Medusa product to draft`);
+    await this.draftMappedProduct(event.masterId, 'deleted');
+  }
+
+  private async draftMappedProduct(masterId: string, reason: 'unpublished' | 'deleted'): Promise<void> {
+    const mapping = await this.mappingRepo.findByPimMasterId(masterId);
+    if (!mapping || !mapping.medusaProductId) {
+      this.logger.warn(`No mapping found for ${reason} master ${masterId}`);
+      return;
+    }
+
+    await this.medusaClient.setProductToDraft(mapping.medusaProductId);
+
+    await this.mappingRepo.update(masterId, {
+      lastSyncAction: 'updated',
+      lastSyncedAt: new Date(),
+    });
   }
 
   async handleProductSellableQuantityChanged(payload: ProductSellableQuantityChangedPayload): Promise<void> {

@@ -12,7 +12,10 @@ import { MedusaClient } from './medusa.client';
 import { AlmondAuthClient } from '../almond-auth/almond-auth.client';
 import { EventChainService, generateMessageId } from '@app/events';
 import type { PimActiveVersionChangedEvent, ChannelAdapterSchema } from '../../types';
-import type { CategoryChangedPayload } from '@packages/event-contracts/streams/product.stream';
+import type {
+  CategoryChangedPayload,
+  ProductMasterDeletedPayload,
+} from '@packages/event-contracts/streams/product.stream';
 import type { ProductSellableQuantityChangedPayload } from '@packages/event-contracts/streams/inventory.stream';
 import type { MembershipStatusChangedPayload } from '@packages/event-contracts/streams/membership.stream';
 import type {
@@ -167,6 +170,11 @@ export class InboxWorkerService implements OnModuleInit {
         case 'ProductMasterActiveVersionChanged':
           const productPayload: PimActiveVersionChangedEvent = event.payload;
           await this.syncService.handleActiveVersionChanged(productPayload);
+          break;
+
+        case 'ProductMasterDeleted':
+          const deletedPayload: ProductMasterDeletedPayload = event.payload;
+          await this.syncService.handleProductMasterDeleted(deletedPayload);
           break;
 
         case 'CategoryChanged':

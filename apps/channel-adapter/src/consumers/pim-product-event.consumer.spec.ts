@@ -1,0 +1,118 @@
+import { PimProductEventConsumer } from './pim-product-event.consumer';
+import { inboxEvents, processedEvents } from '../schema';
+
+type DbState = {
+  processed: Array<Record<string, any>>;
+  inbox: Array<Record<string, any>>;
+};
+
+function makeDb(state: DbState) {
+  return {
+    select: jest.fn(() => ({
+      from: (table: unknown) => ({
+        where: () => ({
+          limit: () => (table === processedEvents ? state.processed.slice(0, 1) : []),
+        }),
+      }),
+    })),
+    insert: jest.fn((table: unknown) => ({
+      values: jest.fn((value: Record<string, any>) => {
+        if (table === processedEvents) {
+          state.processed.push(value);
+        }
+        if (table === inboxEvents) {
+          state.inbox.push(value);
+        }
+        return Promise.resolve(undefined);
+      }),
+    })),
+  };
+}
+
+describe('PimProductEventConsumer product event idempotency', () => {
+  it('deduplicates active-version events by messageId, so a same-version rollback with a new messageId is enqueued', async () => {
+    const state: DbState = { processed: [], inbox: [] };
+    const db = makeDb(state);
+    const consumer = new PimProductEventConsumer({ db } as any);
+    const payload = {
+      masterId: 'master-1',
+      versionId: 'version-1',
+      name: 'Lip Tint',
+      previousActiveVersionId: 'version-2',
+      categoryIds: [],
+      primaryCategoryId: null,
+      changeReason: 'rollback' as const,
+      changedAt: '2026-06-07T00:00:00.000Z',
+      snapshot: { masterId: 'master-1', versionId: 'version-1', version: 1, name: 'Lip Tint', variants: [] },
+    };
+
+    await consumer.onProductMasterActiveVersionChanged(
+      { messageId: 'msg-1', correlationId: 'corr-1', chainId: 'chain-1' } as any,
+      payload as any,
+    );
+    state.processed = [];
+    await consumer.onProductMasterActiveVersionChanged(
+      { messageId: 'msg-2', correlationId: 'corr-2', chainId: 'chain-2' } as any,
+      payload as any,
+    );
+
+    expect(state.inbox).toHaveLength(2);
+    expect(state.inbox[0].metadata.messageId).toBe('msg-1');
+    expect(state.inbox[1].metadata.messageId).toBe('msg-2');
+    expect(state.processed[0].idempotencyKey).toBe('products.events.v1:ProductMasterActiveVersionChanged:msg-2');
+  });
+
+  it('uses the documented aggregate fallback when messageId is missing', async () => {
+    const state: DbState = { processed: [], inbox: [] };
+    const db = makeDb(state);
+    const consumer = new PimProductEventConsumer({ db } as any);
+
+    await consumer.onProductMasterActiveVersionChanged(
+      { correlationId: 'corr-1' } as any,
+      {
+        masterId: 'master-1',
+        versionId: 'version-1',
+        name: 'Lip Tint',
+        previousActiveVersionId: null,
+        changeReason: 'published',
+        changedAt: '2026-06-07T00:00:00.000Z',
+        snapshot: { masterId: 'master-1', versionId: 'version-1', version: 1, name: 'Lip Tint', variants: [] },
+      } as any,
+    );
+
+    expect(state.processed[0].idempotencyKey).toBe(
+      'products.events.v1:ProductMasterActiveVersionChanged:master-1:version-1:published:2026-06-07T00:00:00.000Z',
+    );
+    expect(state.processed[0].eventVersion).toMatch(/^fallback:[a-f0-9]{40}$/);
+    expect(state.processed[0].eventVersion).toHaveLength(49);
+  });
+
+  it('stores ProductMasterDeleted in the inbox using event-instance idempotency', async () => {
+    const state: DbState = { processed: [], inbox: [] };
+    const db = makeDb(state);
+    const consumer = new PimProductEventConsumer({ db } as any);
+
+    await consumer.onProductMasterDeleted(
+      { messageId: 'delete-msg-1', correlationId: 'corr-1', chainId: 'chain-1' } as any,
+      {
+        masterId: 'master-1',
+        deletedAt: '2026-06-07T00:00:00.000Z',
+      } as any,
+    );
+
+    expect(state.processed[0]).toEqual(
+      expect.objectContaining({
+        idempotencyKey: 'products.events.v1:ProductMasterDeleted:delete-msg-1',
+        eventVersion: 'delete-msg-1',
+      }),
+    );
+    expect(state.inbox[0]).toEqual(
+      expect.objectContaining({
+        eventType: 'ProductMasterDeleted',
+        aggregateType: 'Product',
+        aggregateId: 'master-1',
+        partitionKey: 'master-1',
+      }),
+    );
+  });
+});
