@@ -205,7 +205,7 @@ export function MembershipForm({
           const { intentId } = await createMembershipCheckoutIntent(selectedPlanId, returnUrl, "one_time")
           setPendingPaymentMode("membership", { planId: selectedPlanId, billingMode: "one_time" })
           const walletWebUrl = process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
-          window.location.href = `${walletWebUrl}/pay/${intentId}`
+          window.location.href = `${walletWebUrl}/pay/${intentId}?region=${countryCode}`
         }
       }
     } catch (error) {

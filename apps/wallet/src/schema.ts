@@ -126,6 +126,67 @@ export const paymentMethods = pgTable(
   ],
 );
 
+// ─── Payment method catalog & regions ────────────────────────────────────────
+// 사용자별 결제수단(payment_methods)과 별개로, 시스템이 지원하는 결제수단 "종류"의
+// 카탈로그와 리전(국가)별 가용성을 관리한다. 최종 노출 = 카탈로그 글로벌 on AND 리전 매핑 on.
+
+export const paymentMethodCatalog = pgTable(
+  'payment_method_catalog',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    // provider.registry 의 providerType 과 1:1 (예: 'TOSS','NICEPAY','BANK_TRANSFER','POINTS','CMS_BATCH')
+    code: varchar('code', { length: 32 }).notNull(),
+    displayName: varchar('display_name', { length: 255 }).notNull(),
+    description: text('description'),
+    // 글로벌 활성화 스위치 (2계층 중 1계층). false 이면 모든 리전에서 숨김.
+    isEnabled: boolean('is_enabled').notNull().default(true),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [uniqueIndex('uq_payment_method_catalog_code').on(table.code)],
+);
+
+export const regions = pgTable(
+  'regions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    // 소문자 ISO 3166-1 alpha-2 (예: 'kr','us'). Medusa region.countries.iso_2 와 정합.
+    code: varchar('code', { length: 2 }).notNull(),
+    name: varchar('name', { length: 128 }).notNull(),
+    isActive: boolean('is_active').notNull().default(true),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('uq_regions_code').on(table.code),
+    check('regions_code_lowercase', sql`${table.code} = lower(${table.code})`),
+  ],
+);
+
+export const regionPaymentMethods = pgTable(
+  'region_payment_methods',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    regionId: uuid('region_id')
+      .notNull()
+      .references(() => regions.id, { onDelete: 'cascade' }),
+    catalogId: uuid('catalog_id')
+      .notNull()
+      .references(() => paymentMethodCatalog.id, { onDelete: 'cascade' }),
+    // 리전별 활성화 스위치 (2계층 중 2계층).
+    isEnabled: boolean('is_enabled').notNull().default(true),
+    sortOrder: integer('sort_order').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('uq_region_payment_methods_region_catalog').on(table.regionId, table.catalogId),
+    index('idx_region_payment_methods_region').on(table.regionId),
+  ],
+);
+
 export const paymentIntents = pgTable(
   'payment_intents',
   {
@@ -675,6 +736,9 @@ export type CmsWithdrawalStatus = (typeof cmsWithdrawalStatusEnum.enumValues)[nu
 
 export const walletSchema = {
   paymentMethods,
+  paymentMethodCatalog,
+  regions,
+  regionPaymentMethods,
   paymentIntents,
   paymentIntentItems,
   paymentIntentItemDiscounts,
