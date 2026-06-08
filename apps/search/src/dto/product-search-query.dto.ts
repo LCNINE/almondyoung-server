@@ -1,7 +1,7 @@
 import { Transform, Type } from 'class-transformer';
 import { IsArray, IsEnum, IsInt, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 
-export const SEARCH_SORT_VALUES = ['relevance', 'newest', 'price_asc', 'price_desc'] as const;
+export const SEARCH_SORT_VALUES = ['relevance', 'newest', 'price_asc', 'price_desc', 'review'] as const;
 
 export type SearchSort = (typeof SEARCH_SORT_VALUES)[number];
 
