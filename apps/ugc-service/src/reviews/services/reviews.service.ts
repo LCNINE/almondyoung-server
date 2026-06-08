@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { DbService, InjectDb } from '@app/db';
 import { and, asc, count, desc, eq, exists, gte, inArray, isNotNull, isNull, notExists, sql, type SQL } from 'drizzle-orm';
 import {
@@ -19,20 +20,37 @@ import { PaginatedResponseDto } from '@app/shared/dto';
 import { MAX_REVIEW_MEDIA_COUNT } from '../constants';
 import { ReviewRewardPolicyService } from './review-reward-policy.service';
 import { ReviewRewardPublisher } from './review-reward-publisher.service';
+import { ReviewStatsPublisher } from './review-stats-publisher.service';
+import type { RatingDistribution } from '@packages/event-contracts/streams';
 
 const SOURCE_SYSTEM = 'almondyoung';
 
 type DbTransaction = Parameters<Parameters<DbService<UgcServiceSchema>['db']['transaction']>[0]>[0];
 
+interface AggregatedReviewStats {
+  reviewCount: number;
+  ratingSum: number;
+  averageRating: number;
+  bayesianReviewScore: number;
+  ratingDistribution: RatingDistribution;
+}
+
 @Injectable()
 export class ReviewsService {
   private readonly logger = new Logger(ReviewsService.name);
+  private readonly bayesianConfidence: number;
+  private readonly bayesianPriorMean: number;
 
   constructor(
     @InjectDb() private readonly db: DbService<UgcServiceSchema>,
     private readonly rewardPolicyService: ReviewRewardPolicyService,
     private readonly rewardPublisher: ReviewRewardPublisher,
-  ) {}
+    private readonly statsPublisher: ReviewStatsPublisher,
+    private readonly configService: ConfigService,
+  ) {
+    this.bayesianConfidence = Number(this.configService.get('BAYESIAN_CONFIDENCE') ?? 10);
+    this.bayesianPriorMean = Number(this.configService.get('BAYESIAN_PRIOR_MEAN') ?? 3.5);
+  }
 
   private get client() {
     return this.db.db;
@@ -40,6 +58,52 @@ export class ReviewsService {
 
   private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
     return tx ? fn(tx) : this.client.transaction(fn);
+  }
+
+  private async aggregateReviewStats(productId: string, tx: DbTransaction): Promise<AggregatedReviewStats> {
+    const rows = await tx
+      .select({ rating: reviews.rating, count: count() })
+      .from(reviews)
+      .where(and(eq(reviews.productId, productId), eq(reviews.status, 'active'), isNull(reviews.deletedAt)))
+      .groupBy(reviews.rating);
+
+    const distribution: RatingDistribution = { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 };
+    let reviewCount = 0;
+    let ratingSum = 0;
+
+    for (const row of rows) {
+      const key = String(row.rating) as keyof RatingDistribution;
+      distribution[key] = row.count;
+      reviewCount += row.count;
+      ratingSum += row.rating * row.count;
+    }
+
+    const averageRating = reviewCount > 0 ? ratingSum / reviewCount : 0;
+
+    // Bayesian average: (C * m + n * avg) / (C + n)
+    // C: confidence weight (prior review count), m: prior mean
+    // When n=0: score reduces to m (prior mean only)
+    const C = this.bayesianConfidence;
+    const m = this.bayesianPriorMean;
+    const bayesianReviewScore = (C * m + reviewCount * averageRating) / (C + reviewCount);
+
+    return {
+      reviewCount,
+      ratingSum,
+      averageRating: reviewCount > 0 ? Math.round(averageRating * 10) / 10 : 0,
+      bayesianReviewScore: Math.round(bayesianReviewScore * 1000) / 1000,
+      ratingDistribution: distribution,
+    };
+  }
+
+  private publishStatsAfterCommit(productId: string): void {
+    this.inTx((tx) => this.aggregateReviewStats(productId, tx))
+      .then((stats) =>
+        this.statsPublisher.publishProductReviewStatsChanged({ productId, ...stats }),
+      )
+      .catch((err: Error) =>
+        this.logger.error(`Failed to publish review stats for product ${productId}: ${err.message}`),
+      );
   }
 
   private normalizeMediaFileIds(mediaFileIds?: string[] | null): string[] {
@@ -398,11 +462,17 @@ export class ReviewsService {
     //     });
     // }
 
+    if (!tx) {
+      this.publishStatsAfterCommit(dto.productId);
+    }
+
     return result;
   }
 
   async update(userId: string, id: string, dto: UpdateReviewDto, tx?: DbTransaction): Promise<ReviewWithMediaEntity> {
-    return this.inTx(async (tx) => {
+    let productId: string | undefined;
+
+    const result = await this.inTx(async (tx) => {
       const hasMediaUpdate = dto.mediaFileIds !== undefined;
       const mediaFileIds = this.normalizeMediaFileIds(dto.mediaFileIds);
 
@@ -434,6 +504,8 @@ export class ReviewsService {
         throw new NotFoundException('Review not found');
       }
 
+      productId = review.productId;
+
       if (hasMediaUpdate) {
         await tx.delete(reviewMedia).where(eq(reviewMedia.reviewId, id));
         await this.insertReviewMedia(id, mediaFileIds, tx);
@@ -454,10 +526,18 @@ export class ReviewsService {
         adminComment: commentMap.get(id) ?? null,
       };
     }, tx);
+
+    if (!tx && productId) {
+      this.publishStatsAfterCommit(productId);
+    }
+
+    return result;
   }
 
   async remove(userId: string, id: string, tx?: DbTransaction): Promise<void> {
-    return this.inTx(async (tx) => {
+    let productId: string | undefined;
+
+    await this.inTx(async (tx) => {
       const [review] = await tx
         .update(reviews)
         .set({
@@ -472,26 +552,40 @@ export class ReviewsService {
             isNull(reviews.deletedAt),
           ),
         )
-        .returning({ id: reviews.id });
+        .returning({ id: reviews.id, productId: reviews.productId });
 
       if (!review) {
         throw new NotFoundException('Review not found');
       }
+
+      productId = review.productId;
     }, tx);
+
+    if (!tx && productId) {
+      this.publishStatsAfterCommit(productId);
+    }
   }
 
   async deleteByAdmin(id: string, tx?: DbTransaction): Promise<void> {
-    return this.inTx(async (tx) => {
+    let productId: string | undefined;
+
+    await this.inTx(async (tx) => {
       const [review] = await tx
         .update(reviews)
         .set({ deletedAt: new Date(), updatedAt: new Date() })
         .where(and(eq(reviews.id, id), isNull(reviews.deletedAt)))
-        .returning({ id: reviews.id });
+        .returning({ id: reviews.id, productId: reviews.productId });
 
       if (!review) {
         throw new NotFoundException('Review not found');
       }
+
+      productId = review.productId;
     }, tx);
+
+    if (!tx && productId) {
+      this.publishStatsAfterCommit(productId);
+    }
   }
 
   async getRatingSummary(productId: string, tx?: DbTransaction) {
@@ -732,7 +826,9 @@ export class ReviewsService {
   }
 
   async updateStatus(id: string, status: ReviewStatus, tx?: DbTransaction): Promise<ReviewWithMediaEntity> {
-    return this.inTx(async (tx) => {
+    let productId: string | undefined;
+
+    const result = await this.inTx(async (tx) => {
       const [review] = await tx
         .update(reviews)
         .set({ status, updatedAt: new Date() })
@@ -742,6 +838,8 @@ export class ReviewsService {
       if (!review) {
         throw new NotFoundException('Review not found');
       }
+
+      productId = review.productId;
 
       const mediaFileIds = await this.fetchMediaFileIdsByReviewId(id, tx);
       const reactionCountMap = await this.fetchReactionCounts([id], tx);
@@ -757,6 +855,12 @@ export class ReviewsService {
         adminComment: commentMap.get(id) ?? null,
       };
     }, tx);
+
+    if (!tx && productId) {
+      this.publishStatsAfterCommit(productId);
+    }
+
+    return result;
   }
 
   async listByProduct(

@@ -344,7 +344,8 @@
     "roots": [
       "<rootDir>/apps/",
       "<rootDir>/libs/",
-      "<rootDir>/packages/product-description/"
+      "<rootDir>/packages/product-description/",
+      "<rootDir>/packages/event-contracts/"
     ],
     "testEnvironment": "node",
     "testRegex": ".*\\.spec\\.ts$",
