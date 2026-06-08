@@ -60,6 +60,23 @@ function getMethodIcon(type: string): ReactNode {
   }
 }
 
+// region(countryCode)별 사람이 읽는 이름. 미정의 코드는 코드 그대로(대문자) 표시한다.
+const REGION_LABELS: Record<string, string> = {
+  kr: '대한민국',
+  jp: '일본',
+  us: '미국',
+};
+
+// 빈 결제수단 안내에서 "어느 지역으로 들어왔는지"를 명확히 보여주기 위한 라벨.
+// 예: jp → "일본(JP)", fr → "FR". region 이 없으면 null.
+function getRegionLabel(region?: string | null): string | null {
+  const code = region?.trim();
+  if (!code) return null;
+  const upper = code.toUpperCase();
+  const name = REGION_LABELS[code.toLowerCase()];
+  return name ? `${name}(${upper})` : upper;
+}
+
 function formatAmount(amount: number, currency: string): string {
   if (currency === 'KRW') {
     return `${amount.toLocaleString('ko-KR')}원`;
@@ -88,6 +105,7 @@ export function PayForm({ intent, methods, pointsBalance, billingMethodsExist, a
     ? new Map(availableMethods.map((method) => [method.code, method]))
     : null;
   const isAvailableInRegion = (type: string) => !availableMethodMap || availableMethodMap.has(type);
+  const regionLabel = getRegionLabel(region);
 
   const externalMethods = methods
     .filter((m) => m.type !== 'POINTS' && isAvailableInRegion(m.type))
@@ -411,7 +429,9 @@ export function PayForm({ intent, methods, pointsBalance, billingMethodsExist, a
                       <CreditCard className="w-8 h-8 text-muted-foreground/50" />
                       <p className="text-sm text-muted-foreground">
                         {Array.isArray(availableMethods)
-                          ? '이 지역에서 사용 가능한 결제수단이 없습니다. 관리자 설정이 필요합니다.'
+                          ? regionLabel
+                            ? `${regionLabel} 지역에서 사용 가능한 결제수단이 없습니다. 관리자에게 문의해주세요.`
+                            : '이 지역에서 사용 가능한 결제수단이 없습니다. 관리자에게 문의해주세요.'
                           : '사용 가능한 결제 수단이 없습니다.'}
                       </p>
                     </div>
