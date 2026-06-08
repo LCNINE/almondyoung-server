@@ -67,8 +67,13 @@ describe('CmsApiClient', () => {
       const spy = mockFetch(201, { member: { memberId: 'M1', status: '신청대기', result: {} } });
 
       await client.createMember({
-        memberId: 'M1', memberName: '홍길동', paymentKind: 'CMS',
-        paymentCompany: '088', paymentNumber: '1234567890', payerName: '홍길동', payerNumber: '900101',
+        memberId: 'M1',
+        memberName: '홍길동',
+        paymentKind: 'CMS',
+        paymentCompany: '088',
+        paymentNumber: '1234567890',
+        payerName: '홍길동',
+        payerNumber: '900101',
       });
 
       const [url, options] = spy.mock.calls[0] as [string, RequestInit];
@@ -79,7 +84,13 @@ describe('CmsApiClient', () => {
     it('회원수정: PUT /v1/members/{memberId}', async () => {
       const spy = mockFetch(200, { member: { memberId: 'M1', status: '신청대기', result: {} } });
 
-      await client.updateMember('M1', { paymentKind: 'CMS', paymentCompany: '004', paymentNumber: '9999', payerName: '홍길동', payerNumber: '900101' });
+      await client.updateMember('M1', {
+        paymentKind: 'CMS',
+        paymentCompany: '004',
+        paymentNumber: '9999',
+        payerName: '홍길동',
+        payerNumber: '900101',
+      });
 
       const [url, options] = spy.mock.calls[0] as [string, RequestInit];
       expect(url).toBe('https://api-test.hyosungcms.co.kr/v1/members/M1');
@@ -88,8 +99,11 @@ describe('CmsApiClient', () => {
 
     it('회원삭제: DELETE /v1/members/{memberId} — 바디 없음', async () => {
       const spy = jest.spyOn(global, 'fetch').mockResolvedValue({
-        status: 204, ok: true,
-        json: async () => { throw new Error('no body'); },
+        status: 204,
+        ok: true,
+        json: async () => {
+          throw new Error('no body');
+        },
       } as unknown as Response);
 
       await client.deleteMember('M1');
@@ -103,7 +117,12 @@ describe('CmsApiClient', () => {
     it('출금신청: POST /v1/payments/cms', async () => {
       const spy = mockFetch(201, { payment: { transactionId: 'T1', status: '출금대기', result: {} } });
 
-      await client.requestWithdrawal({ transactionId: 'T1', memberId: 'M1', paymentDate: '20260601', callAmount: 10000 });
+      await client.requestWithdrawal({
+        transactionId: 'T1',
+        memberId: 'M1',
+        paymentDate: '20260601',
+        callAmount: 10000,
+      });
 
       const [url] = spy.mock.calls[0] as [string, RequestInit];
       expect(url).toBe('https://api-test.hyosungcms.co.kr/v1/payments/cms');
@@ -117,6 +136,17 @@ describe('CmsApiClient', () => {
       const [url] = spy.mock.calls[0] as [string, RequestInit];
       expect(url).toBe('https://add-test.hyosungcms.co.kr/v1/custs/testcustid/agreements/KEY1');
     });
+
+    it('동의자료 API는 custId가 없으면 빈 /custs// URL을 호출하지 않고 설정 오류를 던진다', async () => {
+      const previous = process.env.HYOSUNG_CMS_CUST_ID;
+      delete process.env.HYOSUNG_CMS_CUST_ID;
+      const spy = jest.spyOn(global, 'fetch');
+
+      await expect(client.getAgreement('KEY1')).rejects.toThrow('HYOSUNG_CMS_CUST_ID is not configured');
+      expect(spy).not.toHaveBeenCalled();
+
+      process.env.HYOSUNG_CMS_CUST_ID = previous;
+    });
   });
 
   describe('Request 바디', () => {
@@ -124,8 +154,13 @@ describe('CmsApiClient', () => {
       const spy = mockFetch(201, { member: { memberId: 'M1', status: '신청대기', result: {} } });
 
       await client.createMember({
-        memberId: 'M1', memberName: '홍길동', paymentKind: 'CMS',
-        paymentCompany: '088', paymentNumber: '1234567890', payerName: '홍길동', payerNumber: '900101',
+        memberId: 'M1',
+        memberName: '홍길동',
+        paymentKind: 'CMS',
+        paymentCompany: '088',
+        paymentNumber: '1234567890',
+        payerName: '홍길동',
+        payerNumber: '900101',
       });
 
       const [, options] = spy.mock.calls[0] as [string, RequestInit];
@@ -141,7 +176,12 @@ describe('CmsApiClient', () => {
     it('requestWithdrawal 바디에 callAmount 필드 사용 (amount 아님)', async () => {
       const spy = mockFetch(201, { payment: { transactionId: 'T1', status: '출금대기', result: {} } });
 
-      await client.requestWithdrawal({ transactionId: 'T1', memberId: 'M1', paymentDate: '20260601', callAmount: 10000 });
+      await client.requestWithdrawal({
+        transactionId: 'T1',
+        memberId: 'M1',
+        paymentDate: '20260601',
+        callAmount: 10000,
+      });
 
       const [, options] = spy.mock.calls[0] as [string, RequestInit];
       const body = JSON.parse(options.body as string);
@@ -152,7 +192,9 @@ describe('CmsApiClient', () => {
 
   describe('응답 파싱', () => {
     it('HTTP 2xx 성공 시 { member: {...} } 래퍼를 그대로 반환한다', async () => {
-      mockFetch(200, { member: { memberId: 'M1', status: '신청완료', result: { flag: 'Y', code: 'Q000', message: '정상' } } });
+      mockFetch(200, {
+        member: { memberId: 'M1', status: '신청완료', result: { flag: 'Y', code: 'Q000', message: '정상' } },
+      });
 
       const result = await client.getMember('M1');
 
@@ -166,8 +208,11 @@ describe('CmsApiClient', () => {
 
     it('HTTP 204 No Content는 성공으로 처리한다', async () => {
       jest.spyOn(global, 'fetch').mockResolvedValue({
-        status: 204, ok: true,
-        json: async () => { throw new Error('no body'); },
+        status: 204,
+        ok: true,
+        json: async () => {
+          throw new Error('no body');
+        },
       } as unknown as Response);
 
       const result = await client.deleteMember('M1');
@@ -195,7 +240,16 @@ describe('CmsApiClient', () => {
     });
 
     it('출금조회 응답의 payment.status를 올바르게 접근할 수 있다', async () => {
-      mockFetch(200, { payment: { transactionId: 'T1', status: '출금성공', callAmount: 10000, actualAmount: 10000, fee: 250, result: { flag: 'Y', code: 'Q000', message: '정상' } } });
+      mockFetch(200, {
+        payment: {
+          transactionId: 'T1',
+          status: '출금성공',
+          callAmount: 10000,
+          actualAmount: 10000,
+          fee: 250,
+          result: { flag: 'Y', code: 'Q000', message: '정상' },
+        },
+      });
 
       const result = await client.getWithdrawal('T1');
 
@@ -212,7 +266,12 @@ describe('CmsApiClient', () => {
     it('fromPaymentDate/toPaymentDate/pageSize/pageNumber 를 쿼리스트링으로 구성한다', async () => {
       const spy = mockFetch(200, { totalCnt: 0, payments: [] });
 
-      await client.searchWithdrawals({ fromPaymentDate: '20260101', toPaymentDate: '20260131', pageSize: 10, pageNumber: 1 });
+      await client.searchWithdrawals({
+        fromPaymentDate: '20260101',
+        toPaymentDate: '20260131',
+        pageSize: 10,
+        pageNumber: 1,
+      });
 
       const [url] = spy.mock.calls[0] as [string, RequestInit];
       expect(url).toContain('fromPaymentDate=20260101');
