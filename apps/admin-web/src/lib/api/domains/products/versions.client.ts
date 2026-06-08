@@ -9,7 +9,9 @@ import type {
 import type {
   BulkUpdateProductVariantDto,
   BulkUpdateProductVariantResultDto,
+  DeleteDraftVersionResultDto,
   MasterVersionDetailDto,
+  PublishProductVersionResultDto,
   UpdateProductVariantDto,
   UpdateProductVariantResultDto,
   UpdateMasterVersionDto,
@@ -42,6 +44,18 @@ export const versionsClient = {
     dto: UpdateMasterVersionDto
   ): Promise<MasterVersionDetailDto> =>
     (await client.put(`${base(masterId)}/${versionId}`, dto)).data,
+
+  publish: async (
+    masterId: string,
+    versionId: string
+  ): Promise<PublishProductVersionResultDto> =>
+    (await client.patch(`${base(masterId)}/${versionId}/publish`)).data,
+
+  deleteDraft: async (
+    masterId: string,
+    versionId: string
+  ): Promise<DeleteDraftVersionResultDto> =>
+    (await client.delete(`${base(masterId)}/${versionId}`)).data,
 
   updateVariant: async (
     masterId: string,

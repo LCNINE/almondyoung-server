@@ -507,6 +507,31 @@ function invalidateProductVariantEditingQueries(
   });
 }
 
+function invalidateProductVersionLifecycleQueries(
+  queryClient: QueryClient,
+  masterId: string,
+  versionId: string
+) {
+  queryClient.invalidateQueries({
+    queryKey: productQueryKeys.masters,
+  });
+  queryClient.invalidateQueries({
+    queryKey: productQueryKeys.master(masterId),
+  });
+  queryClient.invalidateQueries({
+    queryKey: productQueryKeys.masterVersions(masterId),
+  });
+  queryClient.invalidateQueries({
+    queryKey: productQueryKeys.versionDetail(masterId, versionId),
+  });
+  queryClient.invalidateQueries({
+    queryKey: productQueryKeys.variants,
+  });
+  queryClient.invalidateQueries({
+    queryKey: ['pricing'],
+  });
+}
+
 export const useCreateMasterDraftVersion = () => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -548,6 +573,48 @@ export const useUpdateMasterVersion = () => {
           queryKey: productQueryKeys.variants,
         });
       }
+    },
+  });
+};
+
+export const usePublishProductVersion = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      masterId,
+      versionId,
+    }: {
+      masterId: string;
+      versionId: string;
+    }) => products.versions.publish(masterId, versionId),
+    onSuccess: (_, variables) => {
+      invalidateProductVersionLifecycleQueries(
+        queryClient,
+        variables.masterId,
+        variables.versionId
+      );
+    },
+  });
+};
+
+export const useDeleteDraftProductVersion = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      masterId,
+      versionId,
+    }: {
+      masterId: string;
+      versionId: string;
+    }) => products.versions.deleteDraft(masterId, versionId),
+    onSuccess: (_, variables) => {
+      invalidateProductVersionLifecycleQueries(
+        queryClient,
+        variables.masterId,
+        variables.versionId
+      );
     },
   });
 };
