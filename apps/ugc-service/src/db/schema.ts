@@ -73,6 +73,12 @@ export const reviews = pgTable(
   (table) => [
     uniqueIndex('reviews_legacy_source_unique').on(table.sourceSystem, table.legacySourceReviewId),
     index('reviews_product_id').on(table.productId),
+    index('reviews_active_product_rating')
+      .on(table.productId, table.rating)
+      .where(sql`${table.status} = 'active' AND ${table.deletedAt} IS NULL`),
+    index('reviews_active_rating')
+      .on(table.rating)
+      .where(sql`${table.status} = 'active' AND ${table.deletedAt} IS NULL`),
     index('reviews_user_id').on(table.userId),
     index('reviews_created_at').on(table.createdAt),
   ],

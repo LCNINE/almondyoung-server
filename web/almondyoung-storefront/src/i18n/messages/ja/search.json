@@ -34,6 +34,8 @@
   "sort": {
     "relevance": "関連度順",
     "review": "レビュー順",
+    "reviewHelpAria": "レビュー順の基準を見る",
+    "reviewHelp": "レビュー順は単純なレビュー件数ではなく、公開レビューの評価と件数を合わせた信頼スコアで並べ替えます。",
     "priceAsc": "価格の安い順",
     "priceDesc": "価格の高い順",
     "newest": "新着順"
