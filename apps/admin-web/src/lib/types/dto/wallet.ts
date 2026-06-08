@@ -201,7 +201,12 @@ export interface PaginatedResponse<T> {
 
 // ── Recurring Billing Admin ──────────────────────────────────────────────────
 
-export type AdminRecurringBillingIssueType = 'PROVIDER_METHOD' | 'PROVIDER_MANDATE' | 'PROVIDER_CHARGE' | 'PAYMENT_INTENT' | 'CONTRACT';
+export type AdminRecurringBillingIssueType =
+  | 'PROVIDER_METHOD'
+  | 'PROVIDER_MANDATE'
+  | 'PROVIDER_CHARGE'
+  | 'PAYMENT_INTENT'
+  | 'CONTRACT';
 
 export interface AdminRecurringBillingRow {
   issueType: AdminRecurringBillingIssueType;
@@ -226,7 +231,12 @@ export interface AdminRecurringBillingRow {
     agreementStatus?: string | null;
     withdrawalId?: string;
     transactionId?: string;
-    withdrawalStatus?: 'REQUESTED' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED' | 'DELETED';
+    withdrawalStatus?:
+      | 'REQUESTED'
+      | 'PROCESSING'
+      | 'SUCCEEDED'
+      | 'FAILED'
+      | 'DELETED';
     paymentDate?: string;
     resultCode?: string | null;
     resultMessage?: string | null;
@@ -234,6 +244,65 @@ export interface AdminRecurringBillingRow {
   };
   createdAt: string;
   updatedAt: string;
+}
+
+// ── Payment method catalog & regions ────────────────────────────────────────
+
+export interface PaymentMethodCatalogDto {
+  id: string;
+  code: string;
+  displayName: string;
+  description: string | null;
+  isEnabled: boolean;
+  sortOrder: number;
+}
+
+export interface UpdateCatalogPayload {
+  isEnabled?: boolean;
+  displayName?: string;
+  sortOrder?: number;
+}
+
+export interface RegionDto {
+  id: string;
+  code: string;
+  name: string;
+  isActive: boolean;
+  sortOrder: number;
+}
+
+export interface CreateRegionPayload {
+  code: string;
+  name: string;
+  isActive?: boolean;
+  sortOrder?: number;
+}
+
+export interface UpdateRegionPayload {
+  name?: string;
+  isActive?: boolean;
+  sortOrder?: number;
+}
+
+export interface RegionMethodMatrixItem {
+  code: string;
+  displayName: string;
+  description: string | null;
+  globalEnabled: boolean;
+  regionEnabled: boolean;
+  available: boolean;
+  sortOrder: number;
+}
+
+export interface RegionMethodMatrixResponse {
+  region: RegionDto;
+  items: RegionMethodMatrixItem[];
+}
+
+export interface PutRegionMethodItem {
+  code: string;
+  isEnabled: boolean;
+  sortOrder?: number;
 }
 
 export interface AdminRecurringBillingOverview {
@@ -253,7 +322,12 @@ export interface AdminRecurringBillingListQuery {
   dateFrom?: string;
   dateTo?: string;
   cmsMemberStatus?: 'PENDING' | 'REGISTERED' | 'FAILED' | 'DELETED';
-  withdrawalStatus?: 'REQUESTED' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED' | 'DELETED';
+  withdrawalStatus?:
+    | 'REQUESTED'
+    | 'PROCESSING'
+    | 'SUCCEEDED'
+    | 'FAILED'
+    | 'DELETED';
   userId?: string;
   contractId?: string;
   cmsMemberId?: string;

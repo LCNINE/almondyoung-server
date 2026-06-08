@@ -86,7 +86,10 @@ export const usePointsEvents = (
   });
 };
 
-export const usePointsStats = (params?: { dateFrom?: string; dateTo?: string }) => {
+export const usePointsStats = (params?: {
+  dateFrom?: string;
+  dateTo?: string;
+}) => {
   return useQuery({
     queryKey: walletQueryKeys.pointsStats(params),
     queryFn: () => walletApi.getPointsStats(params),
@@ -115,5 +118,32 @@ export const useTopPointUsers = (limit?: number) => {
     queryKey: walletQueryKeys.topUsers(limit),
     queryFn: () => walletApi.getTopPointUsers(limit),
     staleTime: 60 * 1000,
+  });
+};
+
+// ── Payment method catalog & regions ─────────────────────────────────────────
+
+export const usePaymentMethodCatalog = () => {
+  return useQuery({
+    queryKey: walletQueryKeys.catalog(),
+    queryFn: () => walletApi.listPaymentMethodCatalog(),
+    staleTime: 30 * 1000,
+  });
+};
+
+export const useRegions = () => {
+  return useQuery({
+    queryKey: walletQueryKeys.regions(),
+    queryFn: () => walletApi.listRegions(),
+    staleTime: 30 * 1000,
+  });
+};
+
+export const useRegionPaymentMethods = (code: string | null) => {
+  return useQuery({
+    queryKey: walletQueryKeys.regionMethods(code ?? ''),
+    queryFn: () => walletApi.getRegionPaymentMethods(code as string),
+    staleTime: 30 * 1000,
+    enabled: !!code,
   });
 };

@@ -18,6 +18,13 @@ import {
   AdminRecurringBillingOverview,
   AdminRecurringBillingRow,
   AdminRecurringBillingListQuery,
+  PaymentMethodCatalogDto,
+  UpdateCatalogPayload,
+  RegionDto,
+  CreateRegionPayload,
+  UpdateRegionPayload,
+  RegionMethodMatrixResponse,
+  PutRegionMethodItem,
 } from '@/lib/types/dto/wallet';
 import { client } from '../../client';
 
@@ -31,6 +38,12 @@ function buildQueryString(query: Record<string, unknown>): string {
     }
   });
   return params.toString();
+}
+
+function idempotencyConfig() {
+  return {
+    headers: { 'Idempotency-Key': crypto.randomUUID() },
+  };
 }
 
 export const walletApi = {
@@ -59,15 +72,23 @@ export const walletApi = {
   },
 
   captureIntent: async (id: string): Promise<void> => {
-    await client.post(`${BASE}/v1/admin/payment-intents/${id}/capture`, undefined, {
-      headers: { 'Idempotency-Key': crypto.randomUUID() },
-    });
+    await client.post(
+      `${BASE}/v1/admin/payment-intents/${id}/capture`,
+      undefined,
+      {
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
+      }
+    );
   },
 
   cancelIntent: async (id: string): Promise<void> => {
-    await client.post(`${BASE}/v1/admin/payment-intents/${id}/cancel`, undefined, {
-      headers: { 'Idempotency-Key': crypto.randomUUID() },
-    });
+    await client.post(
+      `${BASE}/v1/admin/payment-intents/${id}/cancel`,
+      undefined,
+      {
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
+      }
+    );
   },
 
   refundIntent: async (
@@ -79,9 +100,13 @@ export const walletApi = {
       reasonMessage?: string;
     }
   ): Promise<RefundDto> => {
-    const res = await client.post(`${BASE}/v1/admin/payment-intents/${id}/refund`, dto, {
-      headers: { 'Idempotency-Key': crypto.randomUUID() },
-    });
+    const res = await client.post(
+      `${BASE}/v1/admin/payment-intents/${id}/refund`,
+      dto,
+      {
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
+      }
+    );
     return res.data;
   },
 
@@ -91,7 +116,7 @@ export const walletApi = {
     const res = await client.post(
       `${BASE}/v1/admin/refunds/${encodeURIComponent(id)}/confirm`,
       undefined,
-      { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+      { headers: { 'Idempotency-Key': crypto.randomUUID() } }
     );
     return res.data;
   },
@@ -126,13 +151,16 @@ export const walletApi = {
     await client.post(
       `${BASE}/v1/admin/payment-intents/${id}/bank-transfer-confirm`,
       { depositorNote },
-      { headers: { 'Idempotency-Key': crypto.randomUUID() } },
+      { headers: { 'Idempotency-Key': crypto.randomUUID() } }
     );
   },
 
   // ── Points ───────────────────────────────────────────────────────────────
 
-  getPointsStats: async (params?: { dateFrom?: string; dateTo?: string }): Promise<PointsStatsDto> => {
+  getPointsStats: async (params?: {
+    dateFrom?: string;
+    dateTo?: string;
+  }): Promise<PointsStatsDto> => {
     const res = await client.get(`${BASE}/v1/admin/points/stats`, { params });
     return res.data;
   },
@@ -145,7 +173,9 @@ export const walletApi = {
     dateFrom?: string;
     dateTo?: string;
   }): Promise<PaginatedResponse<PointsEventDto>> => {
-    const res = await client.get(`${BASE}/v1/admin/points/events/all`, { params });
+    const res = await client.get(`${BASE}/v1/admin/points/events/all`, {
+      params,
+    });
     return res.data;
   },
 
@@ -155,18 +185,27 @@ export const walletApi = {
     reasonCode?: string,
     expiresAt?: string
   ): Promise<BatchEarnResultDto> => {
-    const res = await client.post(`${BASE}/v1/admin/points/earn/batch`, { userIds, amount, reasonCode, expiresAt }, {
-      headers: { 'Idempotency-Key': crypto.randomUUID() },
-    });
+    const res = await client.post(
+      `${BASE}/v1/admin/points/earn/batch`,
+      { userIds, amount, reasonCode, expiresAt },
+      {
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
+      }
+    );
     return res.data;
   },
 
   getTopPointUsers: async (limit?: number): Promise<TopPointUserDto[]> => {
-    const res = await client.get(`${BASE}/v1/admin/points/users/top`, { params: { limit } });
+    const res = await client.get(`${BASE}/v1/admin/points/users/top`, {
+      params: { limit },
+    });
     return res.data;
   },
 
-  processExpiredPoints: async (): Promise<{ processed: number; cancelled: number }> => {
+  processExpiredPoints: async (): Promise<{
+    processed: number;
+    cancelled: number;
+  }> => {
     const res = await client.post(`${BASE}/v1/admin/points/expire`, undefined, {
       headers: { 'Idempotency-Key': crypto.randomUUID() },
     });
@@ -174,7 +213,9 @@ export const walletApi = {
   },
 
   getPointsBalance: async (userId: string): Promise<PointsBalanceDto> => {
-    const res = await client.get(`${BASE}/v1/admin/points/balance`, { params: { user_id: userId } });
+    const res = await client.get(`${BASE}/v1/admin/points/balance`, {
+      params: { user_id: userId },
+    });
     return res.data;
   },
 
@@ -196,9 +237,13 @@ export const walletApi = {
     reasonCode?: string,
     expiresAt?: string
   ): Promise<void> => {
-    await client.post(`${BASE}/v1/admin/points/earn`, { userId, amount, reasonCode, expiresAt }, {
-      headers: { 'Idempotency-Key': crypto.randomUUID() },
-    });
+    await client.post(
+      `${BASE}/v1/admin/points/earn`,
+      { userId, amount, reasonCode, expiresAt },
+      {
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
+      }
+    );
   },
 
   deductPoints: async (
@@ -206,9 +251,13 @@ export const walletApi = {
     amount: number,
     reasonCode?: string
   ): Promise<void> => {
-    await client.post(`${BASE}/v1/admin/points/deduct`, { userId, amount, reasonCode }, {
-      headers: { 'Idempotency-Key': crypto.randomUUID() },
-    });
+    await client.post(
+      `${BASE}/v1/admin/points/deduct`,
+      { userId, amount, reasonCode },
+      {
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
+      }
+    );
   },
 
   cancelEarnPoints: async (
@@ -217,48 +266,146 @@ export const walletApi = {
     amount?: number,
     reasonCode?: string
   ): Promise<void> => {
-    await client.post(`${BASE}/v1/admin/points/earn-cancel`, {
-      userId,
-      earnEventId,
-      ...(amount !== undefined && { amount }),
-      ...(reasonCode && { reasonCode }),
-    }, {
-      headers: { 'Idempotency-Key': crypto.randomUUID() },
-    });
+    await client.post(
+      `${BASE}/v1/admin/points/earn-cancel`,
+      {
+        userId,
+        earnEventId,
+        ...(amount !== undefined && { amount }),
+        ...(reasonCode && { reasonCode }),
+      },
+      {
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
+      }
+    );
   },
 
   // ── Recurring Billing Admin ──────────────────────────────────────────────────
 
-  getRecurringBillingOverview: async (): Promise<AdminRecurringBillingOverview> => {
-    const res = await client.get(`${BASE}/v1/admin/recurring-billing/overview`);
-    return res.data;
-  },
+  getRecurringBillingOverview:
+    async (): Promise<AdminRecurringBillingOverview> => {
+      const res = await client.get(
+        `${BASE}/v1/admin/recurring-billing/overview`
+      );
+      return res.data;
+    },
 
-  listRecurringBillingItems: async (query: AdminRecurringBillingListQuery): Promise<PaginatedResponse<AdminRecurringBillingRow>> => {
+  listRecurringBillingItems: async (
+    query: AdminRecurringBillingListQuery
+  ): Promise<PaginatedResponse<AdminRecurringBillingRow>> => {
     const qs = buildQueryString(query as Record<string, unknown>);
-    const res = await client.get(`${BASE}/v1/admin/recurring-billing/items${qs ? `?${qs}` : ''}`);
+    const res = await client.get(
+      `${BASE}/v1/admin/recurring-billing/items${qs ? `?${qs}` : ''}`
+    );
     return res.data;
   },
 
   pollCmsMember: async (id: string): Promise<AdminRecurringBillingRow> => {
-    const res = await client.post(`${BASE}/v1/admin/recurring-billing/providers/cms/members/${id}/poll`, undefined, {
-      headers: { 'Idempotency-Key': crypto.randomUUID() },
-    });
+    const res = await client.post(
+      `${BASE}/v1/admin/recurring-billing/providers/cms/members/${id}/poll`,
+      undefined,
+      {
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
+      }
+    );
     return res.data;
   },
 
   pollCmsWithdrawal: async (id: string): Promise<AdminRecurringBillingRow> => {
-    const res = await client.post(`${BASE}/v1/admin/recurring-billing/providers/cms/withdrawals/${id}/poll`, undefined, {
-      headers: { 'Idempotency-Key': crypto.randomUUID() },
-    });
+    const res = await client.post(
+      `${BASE}/v1/admin/recurring-billing/providers/cms/withdrawals/${id}/poll`,
+      undefined,
+      {
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
+      }
+    );
     return res.data;
   },
 
-  getAgreementStateByRefs: async (refs: string[]): Promise<Record<string, import('@/lib/types/dto/membership').AgreementStateEntry | null>> => {
+  getAgreementStateByRefs: async (
+    refs: string[]
+  ): Promise<
+    Record<
+      string,
+      import('@/lib/types/dto/membership').AgreementStateEntry | null
+    >
+  > => {
     if (!refs.length) return {};
     const params = new URLSearchParams();
     refs.forEach((r) => params.append('refs', r));
-    const res = await client.get(`${BASE}/v1/admin/recurring-billing/agreement-state-by-refs?${params.toString()}`);
+    const res = await client.get(
+      `${BASE}/v1/admin/recurring-billing/agreement-state-by-refs?${params.toString()}`
+    );
+    return res.data;
+  },
+
+  // ── Payment method catalog (글로벌) ──────────────────────────────────────────
+
+  listPaymentMethodCatalog: async (): Promise<PaymentMethodCatalogDto[]> => {
+    const res = await client.get(`${BASE}/v1/admin/payment-methods`);
+    return res.data;
+  },
+
+  updatePaymentMethodCatalog: async (
+    code: string,
+    payload: UpdateCatalogPayload
+  ): Promise<PaymentMethodCatalogDto> => {
+    const res = await client.patch(
+      `${BASE}/v1/admin/payment-methods/${encodeURIComponent(code)}`,
+      payload,
+      idempotencyConfig()
+    );
+    return res.data;
+  },
+
+  // ── Regions ──────────────────────────────────────────────────────────────────
+
+  listRegions: async (): Promise<RegionDto[]> => {
+    const res = await client.get(`${BASE}/v1/admin/regions`);
+    return res.data;
+  },
+
+  createRegion: async (payload: CreateRegionPayload): Promise<RegionDto> => {
+    const res = await client.post(
+      `${BASE}/v1/admin/regions`,
+      payload,
+      idempotencyConfig()
+    );
+    return res.data;
+  },
+
+  updateRegion: async (
+    code: string,
+    payload: UpdateRegionPayload
+  ): Promise<RegionDto> => {
+    const res = await client.patch(
+      `${BASE}/v1/admin/regions/${encodeURIComponent(code)}`,
+      payload,
+      idempotencyConfig()
+    );
+    return res.data;
+  },
+
+  // ── Region ↔ 결제수단 매핑 ───────────────────────────────────────────────────
+
+  getRegionPaymentMethods: async (
+    code: string
+  ): Promise<RegionMethodMatrixResponse> => {
+    const res = await client.get(
+      `${BASE}/v1/admin/regions/${encodeURIComponent(code)}/payment-methods`
+    );
+    return res.data;
+  },
+
+  putRegionPaymentMethods: async (
+    code: string,
+    items: PutRegionMethodItem[]
+  ): Promise<RegionMethodMatrixResponse> => {
+    const res = await client.put(
+      `${BASE}/v1/admin/regions/${encodeURIComponent(code)}/payment-methods`,
+      { items },
+      idempotencyConfig()
+    );
     return res.data;
   },
 };

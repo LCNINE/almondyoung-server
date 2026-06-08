@@ -10,6 +10,7 @@ import { PimSeedStep } from '../steps/pim.seed-step';
 import { ProductMatchingBackfillSeedStep } from '../steps/product-matching-backfill.seed-step';
 import { UserServiceSeedStep, type OAuthClientSeed } from '../steps/user-service.seed-step';
 import { MembershipSeedStep } from '../steps/membership.seed-step';
+import { WalletSeedStep } from '../steps/wallet.seed-step';
 import { FileServiceSeedStep } from '../steps/file-service.seed-step';
 import { NotificationSeedStep } from '../steps/notification.seed-step';
 import { DemoUserSeedStep } from '../steps/demo-user.seed-step';
@@ -187,6 +188,11 @@ function buildSeedSteps(
   const membershipEntry = registryMap.get('membership');
   if (membershipEntry?.hasSeedStep) {
     steps.push(new MembershipSeedStep(urlFor(membershipEntry.database)));
+  }
+
+  const walletEntry = registryMap.get('wallet');
+  if (walletEntry?.hasSeedStep) {
+    steps.push(new WalletSeedStep(urlFor(walletEntry.database)));
   }
 
   const fileEntry = registryMap.get('file-service');
