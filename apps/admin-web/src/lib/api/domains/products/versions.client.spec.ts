@@ -4,6 +4,8 @@ import { client } from '../../client';
 jest.mock('../../client', () => ({
   client: {
     put: jest.fn(),
+    patch: jest.fn(),
+    delete: jest.fn(),
   },
 }));
 
@@ -60,6 +62,34 @@ describe('versionsClient variant editing', () => {
           { id: 'variant-2', status: 'inactive' },
         ],
       }
+    );
+  });
+});
+
+describe('versionsClient lifecycle actions', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.mocked(client.patch).mockResolvedValue({
+      data: { message: 'Version published successfully' },
+    });
+    jest.mocked(client.delete).mockResolvedValue({
+      data: { success: true, message: 'Draft version deleted successfully' },
+    });
+  });
+
+  it('publishes a version through the Core lifecycle endpoint', async () => {
+    await versionsClient.publish('master-1', 'version-1');
+
+    expect(client.patch).toHaveBeenCalledWith(
+      expect.stringContaining('/masters/master-1/versions/version-1/publish')
+    );
+  });
+
+  it('deletes a draft version through the Core draft delete endpoint', async () => {
+    await versionsClient.deleteDraft('master-1', 'version-1');
+
+    expect(client.delete).toHaveBeenCalledWith(
+      expect.stringContaining('/masters/master-1/versions/version-1')
     );
   });
 });

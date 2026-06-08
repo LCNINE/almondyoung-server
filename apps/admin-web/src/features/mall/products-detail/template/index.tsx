@@ -13,6 +13,7 @@ import { ProductDetailOptions } from '../components/options';
 import { ProductDetailVariants } from '../components/variants';
 import { InactiveVersionBanner } from '../components/inactive-version-banner';
 import { DraftCompletionChecklist } from '../components/draft-completion-checklist';
+import { VersionLifecycleActions } from '../components/version-lifecycle-actions';
 
 type Props = {
   masterId: string;
@@ -44,6 +45,17 @@ export default function ProductsDetailTemplate({ masterId, versionId }: Props) {
         <CardErrorBoundary>
           <Suspense fallback={null}>
             <DraftCompletionChecklist masterId={masterId} versionId={versionId} />
+          </Suspense>
+        </CardErrorBoundary>
+      )}
+
+      {versionId && (
+        <CardErrorBoundary>
+          <Suspense fallback={null}>
+            <VersionLifecycleActions
+              masterId={masterId}
+              versionId={versionId}
+            />
           </Suspense>
         </CardErrorBoundary>
       )}
