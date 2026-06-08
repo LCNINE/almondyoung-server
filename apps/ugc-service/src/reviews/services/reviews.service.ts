@@ -832,7 +832,7 @@ export class ReviewsService {
       const [review] = await tx
         .update(reviews)
         .set({ status, updatedAt: new Date() })
-        .where(eq(reviews.id, id))
+        .where(and(eq(reviews.id, id), isNull(reviews.deletedAt)))
         .returning();
 
       if (!review) {
@@ -900,12 +900,10 @@ export class ReviewsService {
 
       const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-      const countQuery = tx.select({ count: count() }).from(reviews);
-      if (whereClause) {
-        countQuery.where(whereClause);
-      }
-
-      const [{ count: total }] = await countQuery;
+      const [{ count: total }] = await tx
+        .select({ count: count() })
+        .from(reviews)
+        .where(whereClause);
 
       const orderByClause = {
         latest: desc(reviews.createdAt),
@@ -914,13 +912,13 @@ export class ReviewsService {
         rating_low: asc(reviews.rating),
       }[query.sort ?? 'latest'];
 
-      const dataQuery = tx.select().from(reviews).orderBy(orderByClause).limit(limit).offset(offset);
-
-      if (whereClause) {
-        dataQuery.where(whereClause);
-      }
-
-      const data = await dataQuery;
+      const data = await tx
+        .select()
+        .from(reviews)
+        .where(whereClause)
+        .orderBy(orderByClause)
+        .limit(limit)
+        .offset(offset);
 
       const reviewIds = data.map((review) => review.id);
 

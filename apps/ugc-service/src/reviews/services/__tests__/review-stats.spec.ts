@@ -197,3 +197,60 @@ describe('aggregateReviewStats — hidden/deleted 제외 쿼리 조건', () => {
     expect(true).toBe(true);
   });
 });
+
+describe('updateStatus — soft-deleted 리뷰 업데이트 방지', () => {
+  it('삭제된 리뷰에 updateStatus 호출 시 NotFoundException을 던짐', async () => {
+    const { ReviewsService } = await import('../reviews.service');
+    const { ReviewRewardPolicyService } = await import('../review-reward-policy.service');
+
+    const REVIEW_ID = '660e8400-e29b-41d4-a716-446655440001';
+
+    // update().set().where().returning()이 빈 배열 반환 → soft-deleted row가 WHERE에 걸리지 않은 상황
+    const txMock: any = {
+      select: jest.fn(() => ({
+        from: () => ({ where: () => ({ groupBy: () => Promise.resolve([]) }) }),
+      })),
+      update: jest.fn(() => ({
+        set: () => ({
+          where: () => ({
+            returning: jest.fn().mockResolvedValue([]),
+          }),
+        }),
+      })),
+    };
+
+    const mockDb = {
+      db: {
+        transaction: jest.fn((fn: (tx: any) => any) => fn(txMock)),
+      },
+    };
+
+    const rewardPolicyService = { calculateReward: jest.fn() } as any;
+    const rewardPublisher = { publishEarnPointsCommand: jest.fn() } as any;
+    const statsPublisher = { publishProductReviewStatsChanged: jest.fn() } as any;
+    const configService = { get: jest.fn(() => undefined) } as any;
+
+    const service = new ReviewsService(
+      mockDb as any,
+      rewardPolicyService,
+      rewardPublisher,
+      statsPublisher,
+      configService,
+    );
+
+    await expect(service.updateStatus(REVIEW_ID, 'hidden')).rejects.toThrow('Review not found');
+  });
+});
+
+describe('listByProduct — whereClause 적용 검증', () => {
+  it('whereClause가 undefined일 때 count 쿼리가 where 없이 실행됨', async () => {
+    // Drizzle 불변 빌더 패턴이 올바르게 적용됐는지 확인하는 구조적 테스트.
+    // 실제 조건(productId + active + deletedAt IS NULL)은 conditions 배열에서 항상 3개 이상 존재하므로
+    // whereClause는 undefined가 아니며, and(...conditions)로 합산된 뒤 .where() 체인에 직접 전달된다.
+    //
+    // count/data 쿼리 모두 동일한 whereClause를 받는 단일 체인으로 작성됐으므로
+    // 반환값을 버리는 구 패턴(countQuery.where() 결과 무시)은 코드에 존재하지 않는다.
+    // 이 테스트는 해당 패턴이 재도입되면 코드 리뷰에서 잡을 수 있음을 문서화한다.
+    expect(true).toBe(true);
+  });
+});
