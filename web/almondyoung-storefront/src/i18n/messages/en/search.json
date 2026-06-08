@@ -33,6 +33,7 @@
   },
   "sort": {
     "relevance": "Relevance",
+    "review": "Top reviewed",
     "priceAsc": "Lowest price",
     "priceDesc": "Highest price",
     "newest": "Newest"
