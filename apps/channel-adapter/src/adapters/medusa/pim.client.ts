@@ -146,6 +146,7 @@ export class PimClient {
         status: data.status,
         isWholesaleOnly: data.isWholesaleOnly || false,
         isMembershipOnly: data.isMembershipOnly || false,
+        purchaseConstraint: data.purchaseConstraint ?? undefined,
         isGiftcard: data.isGiftcard || false,
         discountable: data.discountable !== false,
       };

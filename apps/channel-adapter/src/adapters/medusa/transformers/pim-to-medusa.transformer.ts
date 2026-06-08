@@ -77,6 +77,7 @@ export function transformPimToMedusa(
     isWholesaleOnly: snapshot.isWholesaleOnly,
     isMembershipOnly: snapshot.isMembershipOnly,
     productType: snapshot.productType,
+    pimPurchaseConstraint: snapshot.purchaseConstraint ?? null,
     syncedAt: new Date().toISOString(),
   };
 

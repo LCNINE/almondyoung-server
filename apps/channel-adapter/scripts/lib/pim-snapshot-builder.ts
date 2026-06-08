@@ -1,6 +1,6 @@
 // apps/channel-adapter/scripts/lib/pim-snapshot-builder.ts
 import * as postgres from 'postgres';
-import type { PimProductSnapshot } from '../../src/types';
+import type { PimProductSnapshot, PimPurchaseConstraint } from '../../src/types';
 
 // Database row types
 interface MasterRow {
@@ -61,6 +61,13 @@ interface OptionGroupRow {
   image_url?: string;
 }
 
+interface PurchaseConstraintRow {
+  master_id: string;
+  version_id: string;
+  requires_membership: boolean;
+  lifetime_quantity_limit: number | string | null;
+}
+
 /**
  * PimSnapshotBuilder - Fetches complete product snapshots from PIM database
  *
@@ -69,8 +76,9 @@ interface OptionGroupRow {
  * - 1 query for all categories (batch)
  * - 1 query for all variants (batch)
  * - 1 query for all option groups (batch)
+ * - 1 query for all purchase constraints (batch)
  *
- * Total: 4 queries for 100 products (vs 100+ API calls)
+ * Total: 5 queries for 100 products (vs 100+ API calls)
  */
 export class PimSnapshotBuilder {
   constructor(private readonly pimDb: postgres.Sql) {}
@@ -95,19 +103,20 @@ export class PimSnapshotBuilder {
     const masterIds = masters.map((m) => m.master_id);
     const versionIds = masters.map((m) => m.version_id);
 
-    // Step 2-4: Batch query related data
-    const [categories, variants, optionGroups] = await Promise.all([
+    // Step 2-5: Batch query related data
+    const [categories, variants, optionGroups, purchaseConstraints] = await Promise.all([
       this.queryCategories(masterIds, versionIds),
       this.queryVariants(masterIds, versionIds),
       this.queryOptionGroups(masterIds, versionIds),
+      this.queryPurchaseConstraints(masterIds, versionIds),
     ]);
 
     console.log(
-      `[PimSnapshotBuilder] Fetched: ${categories.length} categories, ${variants.length} variants, ${optionGroups.length} option values`,
+      `[PimSnapshotBuilder] Fetched: ${categories.length} categories, ${variants.length} variants, ${optionGroups.length} option values, ${purchaseConstraints.length} purchase constraints`,
     );
 
-    // Step 5: Assemble snapshots
-    return this.assembleSnapshots(masters, categories, variants, optionGroups);
+    // Step 6: Assemble snapshots
+    return this.assembleSnapshots(masters, categories, variants, optionGroups, purchaseConstraints);
   }
 
   /**
@@ -268,6 +277,28 @@ export class PimSnapshotBuilder {
   }
 
   /**
+   * Query purchase constraints for given masters (batch)
+   */
+  private async queryPurchaseConstraints(
+    masterIds: string[],
+    versionIds: string[],
+  ): Promise<PurchaseConstraintRow[]> {
+    if (masterIds.length === 0) return [];
+
+    return await this.pimDb<PurchaseConstraintRow[]>`
+      SELECT
+        pmpc.master_id,
+        pmpc.version_id,
+        ppc.requires_membership,
+        ppc.lifetime_quantity_limit
+      FROM product_master_purchase_constraints pmpc
+      INNER JOIN product_purchase_constraints ppc ON pmpc.purchase_constraint_id = ppc.id
+      WHERE pmpc.master_id = ANY(${masterIds})
+        AND pmpc.version_id = ANY(${versionIds})
+    `;
+  }
+
+  /**
    * Assemble database rows into PimProductSnapshot objects
    */
   private assembleSnapshots(
@@ -275,6 +306,7 @@ export class PimSnapshotBuilder {
     categories: CategoryRow[],
     variants: VariantRow[],
     optionGroups: OptionGroupRow[],
+    purchaseConstraints: PurchaseConstraintRow[],
   ): PimProductSnapshot[] {
     return masters.map((master) => {
       // Group categories by masterId
@@ -331,6 +363,19 @@ export class PimSnapshotBuilder {
         }
       });
 
+      const purchaseConstraintRow = purchaseConstraints.find(
+        (constraint) => constraint.master_id === master.master_id && constraint.version_id === master.version_id,
+      );
+      const purchaseConstraint: PimPurchaseConstraint | undefined = purchaseConstraintRow
+        ? {
+            requiresMembership: purchaseConstraintRow.requires_membership,
+            lifetimeQuantityLimit:
+              purchaseConstraintRow.lifetime_quantity_limit === null
+                ? null
+                : Number(purchaseConstraintRow.lifetime_quantity_limit),
+          }
+        : undefined;
+
       // Assemble final snapshot
       return {
         masterId: master.master_id,
@@ -352,6 +397,7 @@ export class PimSnapshotBuilder {
         status: master.status as any,
         isWholesaleOnly: master.is_wholesale_only,
         isMembershipOnly: master.is_membership_only,
+        purchaseConstraint,
         isGiftcard: false, // PIM schema doesn't have this field
         discountable: true, // PIM schema doesn't have this field
       };
