@@ -3,6 +3,12 @@
 import { walletApi } from '@/lib/api/domains/wallet';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { walletQueryKeys } from './query-keys';
+import type {
+  CreateRegionPayload,
+  PutRegionMethodItem,
+  UpdateCatalogPayload,
+  UpdateRegionPayload,
+} from '@/lib/types/dto/wallet';
 
 export const useCaptureIntent = (intentId: string) => {
   const queryClient = useQueryClient();
@@ -170,6 +176,75 @@ export const useCancelEarnPoints = () => {
         queryKey: walletQueryKeys.pointsBalance(variables.userId),
       });
       queryClient.invalidateQueries({ queryKey: walletQueryKeys.points() });
+    },
+  });
+};
+
+// ── Payment method catalog & regions ─────────────────────────────────────────
+
+export const useUpdatePaymentMethodCatalog = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      code,
+      payload,
+    }: {
+      code: string;
+      payload: UpdateCatalogPayload;
+    }) => walletApi.updatePaymentMethodCatalog(code, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.catalog() });
+      // 글로벌 토글은 모든 리전 매트릭스의 available 에 영향
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.regions() });
+    },
+  });
+};
+
+export const useCreateRegion = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: CreateRegionPayload) =>
+      walletApi.createRegion(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.regions() });
+    },
+  });
+};
+
+export const useUpdateRegion = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      code,
+      payload,
+    }: {
+      code: string;
+      payload: UpdateRegionPayload;
+    }) => walletApi.updateRegion(code, payload),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.regions() });
+      queryClient.invalidateQueries({
+        queryKey: walletQueryKeys.regionMethods(variables.code),
+      });
+    },
+  });
+};
+
+export const usePutRegionPaymentMethods = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      code,
+      items,
+    }: {
+      code: string;
+      items: PutRegionMethodItem[];
+    }) => walletApi.putRegionPaymentMethods(code, items),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: walletQueryKeys.regionMethods(variables.code),
+      });
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.regions() });
     },
   });
 };

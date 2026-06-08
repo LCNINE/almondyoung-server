@@ -63,8 +63,15 @@ export default function CheckoutTemplate({
     }, 0)
 
     // cart.discount_total은 cart 전체 기준이므로 부분 선택 시 item 단위 합산 필수.
-    const itemDiscount = selectedItems.reduce((acc, item) => acc + (item.discount_total ?? 0), 0)
-    const shippingDiscount = cart.shipping_methods?.reduce((acc, sm) => acc + (sm.discount_total ?? 0), 0) ?? 0
+    const itemDiscount = selectedItems.reduce(
+      (acc, item) => acc + (item.discount_total ?? 0),
+      0
+    )
+    const shippingDiscount =
+      cart.shipping_methods?.reduce(
+        (acc, sm) => acc + (sm.discount_total ?? 0),
+        0
+      ) ?? 0
     const discount_subtotal = itemDiscount + shippingDiscount
 
     const membershipDiscount =
@@ -190,10 +197,12 @@ export default function CheckoutTemplate({
 
       const walletWebUrl =
         process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
-      window.location.href = `${walletWebUrl}/pay/${intentId}`
+      window.location.href = `${walletWebUrl}/pay/${intentId}?region=${countryCode}`
     } catch (err) {
       console.error("결제 처리 실패:", err)
-      setError(err instanceof Error ? err.message : tProcess("toasts.unknownError"))
+      setError(
+        err instanceof Error ? err.message : tProcess("toasts.unknownError")
+      )
       setLoading(false)
     }
   }
