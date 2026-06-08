@@ -22,6 +22,8 @@
  *   --products=id1,id2      Comma-separated product UUIDs (skips --offset/--limit)
  *   --prior-count=10        Bayesian prior count m (default: 10)
  *   --fallback-prior-mean=3.5  Used only when the UGC DB has no active reviews
+ *   --review-sort-volume-weight=1.0  Max volume boost for explicit review sort
+ *   --review-sort-count-saturation=1000  Review count that reaches max volume boost
  *   --dry-run               Print stats without writing to OpenSearch
  *
  * Required env:
@@ -49,6 +51,8 @@ type BackfillOptions = {
   products?: string[];
   priorCount: number;
   fallbackPriorMean: number;
+  reviewSortVolumeWeight: number;
+  reviewSortCountSaturation: number;
   dryRun: boolean;
 };
 
@@ -95,6 +99,13 @@ function parseArgs(): BackfillOptions {
     return parsed;
   };
 
+  const parseNonNegativeFloat = (raw: string | undefined, name: string, def: number): number => {
+    if (raw === undefined) return def;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`${name} must be a non-negative number`);
+    return parsed;
+  };
+
   const parseRatingMean = (raw: string | undefined, name: string, def: number): number => {
     if (raw === undefined) return def;
     const parsed = Number(raw);
@@ -130,6 +141,19 @@ function parseArgs(): BackfillOptions {
     getOptionValue('--prior-mean') ? '--prior-mean' : '--fallback-prior-mean',
     3.5,
   );
+  const reviewSortVolumeWeight = parseNonNegativeFloat(
+    getOptionValue('--review-sort-volume-weight') ??
+      process.env.REVIEW_SORT_VOLUME_WEIGHT ??
+      getOptionValue('--review-sort-count-weight') ??
+      process.env.REVIEW_SORT_COUNT_WEIGHT,
+    '--review-sort-volume-weight',
+    1.0,
+  );
+  const reviewSortCountSaturation = parsePositiveFloat(
+    getOptionValue('--review-sort-count-saturation') ?? process.env.REVIEW_SORT_COUNT_SATURATION,
+    '--review-sort-count-saturation',
+    1000,
+  );
 
   return {
     batchSize,
@@ -138,6 +162,8 @@ function parseArgs(): BackfillOptions {
     products,
     priorCount,
     fallbackPriorMean,
+    reviewSortVolumeWeight,
+    reviewSortCountSaturation,
     dryRun: args.includes('--dry-run'),
   };
 }
@@ -155,6 +181,8 @@ function printUsage(): void {
       '  --products=id1,id2    Specific product UUIDs (overrides --offset/--limit)',
       '  --prior-count=10      Bayesian prior count m (default: 10)',
       '  --fallback-prior-mean=3.5  Used only when the UGC DB has no active reviews',
+      '  --review-sort-volume-weight=1.0  Max volume boost for explicit review sort',
+      '  --review-sort-count-saturation=1000  Review count that reaches max volume boost',
       '  --dry-run             Read and compute only, skip OpenSearch writes',
       '',
       'Required env:',
@@ -186,6 +214,18 @@ function bayesianScore(n: number, ratingSum: number, priorCount: number, globalA
   const denominator = n + priorCount;
   const score = denominator > 0 ? (n * avg + priorCount * globalAverageRating) / denominator : globalAverageRating;
   return parseFloat(score.toFixed(3));
+}
+
+function reviewSortScore(
+  bayesianReviewScore: number,
+  reviewCount: number,
+  volumeWeight: number,
+  countSaturation: number,
+): number {
+  const safeBayesian = Number.isFinite(bayesianReviewScore) ? bayesianReviewScore : 0;
+  const safeReviewCount = Number.isFinite(reviewCount) && reviewCount > 0 ? reviewCount : 0;
+  const normalizedVolume = Math.min(1, Math.log1p(safeReviewCount) / Math.log1p(countSaturation));
+  return parseFloat((safeBayesian + normalizedVolume * volumeWeight).toFixed(3));
 }
 
 // ---------------------------------------------------------------------------
@@ -308,6 +348,8 @@ async function bulkUpdateReviewStats(
   rows: ReviewStatsRow[],
   priorCount: number,
   globalAverageRating: number,
+  reviewSortVolumeWeight: number,
+  reviewSortCountSaturation: number,
 ): Promise<BulkResult> {
   if (rows.length === 0) {
     return { success: 0, skipped: 0, failed: 0 };
@@ -319,13 +361,20 @@ async function bulkUpdateReviewStats(
   for (const row of rows) {
     const n = row.reviewCount;
     const avg = n === 0 ? 0 : parseFloat((row.ratingSum / n).toFixed(1));
+    const bayesianReviewScore = bayesianScore(n, row.ratingSum, priorCount, globalAverageRating);
 
     operations.push({ update: { _index: index, _id: row.productId } });
     operations.push({
       doc: {
         review_count: n,
         average_rating: avg,
-        bayesian_review_score: bayesianScore(n, row.ratingSum, priorCount, globalAverageRating),
+        bayesian_review_score: bayesianReviewScore,
+        review_sort_score: reviewSortScore(
+          bayesianReviewScore,
+          n,
+          reviewSortVolumeWeight,
+          reviewSortCountSaturation,
+        ),
         review_stats_updated_at: now,
       },
     });
@@ -383,6 +432,8 @@ async function main(): Promise<void> {
   if (options.products) console.log(`- Products     : ${options.products.join(', ')}`);
   console.log(`- Prior count  : ${options.priorCount}`);
   console.log(`- Fallback mean: ${options.fallbackPriorMean}`);
+  console.log(`- Sort weight  : ${options.reviewSortVolumeWeight}`);
+  console.log(`- Saturation   : ${options.reviewSortCountSaturation}`);
   console.log(`- Dry run      : ${options.dryRun ? 'yes' : 'no'}`);
   console.log(`- OpenSearch   : ${opensearchNode} / ${productsIndex}`);
   console.log();
@@ -438,7 +489,13 @@ async function main(): Promise<void> {
           const n = row.reviewCount;
           const avg = n === 0 ? 0 : parseFloat((row.ratingSum / n).toFixed(1));
           const score = bayesianScore(n, row.ratingSum, options.priorCount, globalAverageRating);
-          console.log(`  [dry-run] ${row.productId}: count=${n}, avg=${avg}, bayesian=${score}`);
+          const sortScore = reviewSortScore(
+            score,
+            n,
+            options.reviewSortVolumeWeight,
+            options.reviewSortCountSaturation,
+          );
+          console.log(`  [dry-run] ${row.productId}: count=${n}, avg=${avg}, bayesian=${score}, sort=${sortScore}`);
         }
         totalSuccess += batch.length;
       } else {
@@ -448,6 +505,8 @@ async function main(): Promise<void> {
           batch,
           options.priorCount,
           globalAverageRating,
+          options.reviewSortVolumeWeight,
+          options.reviewSortCountSaturation,
         );
         totalSuccess += result.success;
         totalSkipped += result.skipped;
