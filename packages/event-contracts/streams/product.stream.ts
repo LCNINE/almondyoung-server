@@ -72,6 +72,11 @@ export interface ProductMasterActiveVersionChangedPayload {
   snapshot?: ProductSnapshot | null;
 }
 
+export interface ProductPurchaseConstraintSnapshot {
+  requiresMembership: boolean;
+  lifetimeQuantityLimit: number | null;
+}
+
 export interface ProductSnapshot {
   masterId: string;
   versionId: string;
@@ -144,6 +149,7 @@ export interface ProductSnapshot {
   isMembershipOnly: boolean;
   isGiftcard: boolean;
   discountable: boolean;
+  purchaseConstraint?: ProductPurchaseConstraintSnapshot;
 }
 
 export interface ProductMasterDeletedPayload {
@@ -285,6 +291,11 @@ const ProductSnapshotVariantSchema = z.object({
   material: z.string().optional(),
 });
 
+const ProductPurchaseConstraintSnapshotSchema = z.object({
+  requiresMembership: z.boolean(),
+  lifetimeQuantityLimit: z.number().int().positive().nullable(),
+});
+
 const ProductSnapshotSchema = z.object({
   masterId: z.string(),
   versionId: z.string(),
@@ -308,6 +319,7 @@ const ProductSnapshotSchema = z.object({
   isMembershipOnly: z.boolean(),
   isGiftcard: z.boolean(),
   discountable: z.boolean(),
+  purchaseConstraint: ProductPurchaseConstraintSnapshotSchema.optional(),
 });
 
 const ProductMasterActiveVersionChangedSchema = z.object({
