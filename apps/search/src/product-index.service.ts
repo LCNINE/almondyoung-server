@@ -19,17 +19,50 @@ export class ProductIndexService implements OnModuleInit {
   private readonly logger = new Logger(ProductIndexService.name);
   private readonly keywordResultPoolLimit = 5000;
   private readonly reviewScoreWeight: number;
+  private readonly reviewSortVolumeWeight: number;
+  private readonly reviewSortCountSaturation: number;
   private initPromise: Promise<void> | null = null;
 
   constructor(
     private readonly openSearchService: OpenSearchService,
     private readonly configService: ConfigService,
   ) {
-    this.reviewScoreWeight = parseFloat(configService.get<string>('REVIEW_SCORE_WEIGHT') ?? '0.1');
+    this.reviewScoreWeight = this.parsePositiveNumber(configService.get<string>('REVIEW_SCORE_WEIGHT'), 0.1);
+    this.reviewSortVolumeWeight = this.parsePositiveNumber(
+      configService.get<string>('REVIEW_SORT_VOLUME_WEIGHT') ?? configService.get<string>('REVIEW_SORT_COUNT_WEIGHT'),
+      1.0,
+    );
+    this.reviewSortCountSaturation = this.parseStrictPositiveNumber(
+      configService.get<string>('REVIEW_SORT_COUNT_SATURATION'),
+      1000,
+    );
   }
 
   async onModuleInit(): Promise<void> {
     await this.ensureProductsIndex();
+  }
+
+  private parsePositiveNumber(raw: string | undefined, fallback: number): number {
+    if (raw === undefined) return fallback;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+  }
+
+  private parseStrictPositiveNumber(raw: string | undefined, fallback: number): number {
+    if (raw === undefined) return fallback;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  }
+
+  private computeReviewSortScore(bayesianReviewScore: number, reviewCount: number): number {
+    const safeBayesian = Number.isFinite(bayesianReviewScore) ? bayesianReviewScore : 0;
+    const safeReviewCount = Number.isFinite(reviewCount) && reviewCount > 0 ? reviewCount : 0;
+    const normalizedVolume = Math.min(
+      1,
+      Math.log1p(safeReviewCount) / Math.log1p(this.reviewSortCountSaturation),
+    );
+    const volumeBoost = normalizedVolume * this.reviewSortVolumeWeight;
+    return Math.round((safeBayesian + volumeBoost) * 1000) / 1000;
   }
 
   async upsertProduct(masterId: string, document: SearchProductDocument): Promise<void> {
@@ -52,12 +85,18 @@ export class ProductIndexService implements OnModuleInit {
     const client = this.openSearchService.getClient();
     const index = this.openSearchService.getProductsIndex();
     await this.ensureProductsIndex();
+    const doc = {
+      ...stats,
+      review_sort_score:
+        stats.review_sort_score ??
+        this.computeReviewSortScore(stats.bayesian_review_score, stats.review_count),
+    };
 
     try {
       await client.update({
         index,
         id: masterId,
-        body: { doc: stats },
+        body: { doc },
       });
     } catch (error) {
       if (error.meta?.statusCode === 404) {
@@ -496,10 +535,11 @@ export class ProductIndexService implements OnModuleInit {
       case 'price_desc':
         return [{ min_base_price: { order: 'desc', missing: '_last' } }];
       case 'review':
-        // Explicit review sort: Bayesian score primary, review count tiebreak, recency fallback.
-        // missing: 0 pushes unindexed products to the bottom (0 < any real Bayesian score >= 3.5).
+        // Explicit review sort: quality confidence + diminishing review-count volume.
+        // review_sort_score = bayesian_review_score
+        //   + min(1, log1p(review_count) / log1p(REVIEW_SORT_COUNT_SATURATION)) * REVIEW_SORT_VOLUME_WEIGHT.
         return [
-          { bayesian_review_score: { order: 'desc', missing: 0 } },
+          { review_sort_score: { order: 'desc', missing: 0 } },
           { review_count: { order: 'desc', missing: 0 } },
           { updated_at: { order: 'desc' } },
         ];
