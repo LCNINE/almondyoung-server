@@ -58,7 +58,7 @@ export default function MembershipCheckoutTemplate({
     const { intentId } = await createMembershipCheckoutIntent(planId, returnUrl, "one_time")
     setPendingPaymentMode("membership", { planId, billingMode: "one_time" })
     const walletWebUrl = process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
-    window.location.href = `${walletWebUrl}/pay/${intentId}`
+    window.location.href = `${walletWebUrl}/pay/${intentId}?region=${countryCode}`
   }
 
   const handlePayment = async () => {
