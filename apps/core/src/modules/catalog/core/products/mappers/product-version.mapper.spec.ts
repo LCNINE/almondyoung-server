@@ -51,6 +51,11 @@ describe('ProductVersionMapper', () => {
       optionGroups: [],
       variants: [],
       channelProducts: [],
+      purchaseConstraint: {
+        id: 'constraint-1',
+        requiresMembership: true,
+        lifetimeQuantityLimit: 3,
+      },
     } as any);
 
     expect(response.description).toBe('# Markdown');
@@ -66,5 +71,10 @@ describe('ProductVersionMapper', () => {
         isPrimary: true,
       },
     ]);
+    expect(response.purchaseConstraint).toEqual({
+      id: 'constraint-1',
+      requiresMembership: true,
+      lifetimeQuantityLimit: 3,
+    });
   });
 });
