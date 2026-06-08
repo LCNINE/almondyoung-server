@@ -118,6 +118,7 @@ export const PRODUCTS_INDEX_MAPPINGS = {
     review_count: { type: 'integer' as const },
     average_rating: { type: 'float' as const },
     bayesian_review_score: { type: 'float' as const },
+    review_sort_score: { type: 'float' as const },
     review_stats_updated_at: { type: 'date' as const },
   },
 } as const;
@@ -127,6 +128,7 @@ export const REVIEW_FIELDS_MAPPINGS = {
     review_count: { type: 'integer' as const },
     average_rating: { type: 'float' as const },
     bayesian_review_score: { type: 'float' as const },
+    review_sort_score: { type: 'float' as const },
     review_stats_updated_at: { type: 'date' as const },
   },
 } as const;
@@ -152,6 +154,7 @@ export interface SearchProductDocument {
   review_count?: number;
   average_rating?: number;
   bayesian_review_score?: number;
+  review_sort_score?: number;
   review_stats_updated_at?: string | null;
 }
 
@@ -159,5 +162,6 @@ export interface ReviewStatsUpdateFields {
   review_count: number;
   average_rating: number;
   bayesian_review_score: number;
+  review_sort_score?: number;
   review_stats_updated_at: string;
 }

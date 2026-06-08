@@ -33,9 +33,10 @@ function makeOpenSearchService(client: ReturnType<typeof makeOpenSearchClient>) 
   };
 }
 
-function makeConfigService(reviewScoreWeight?: string) {
+function makeConfigService(values?: string | Record<string, string>) {
+  const configValues = typeof values === 'string' ? { REVIEW_SCORE_WEIGHT: values } : (values ?? {});
   return {
-    get: jest.fn((key: string) => (key === 'REVIEW_SCORE_WEIGHT' ? reviewScoreWeight : undefined)),
+    get: jest.fn((key: string) => configValues[key]),
   };
 }
 
@@ -68,7 +69,12 @@ describe('ProductIndexService.updateProductReviewStats', () => {
     expect(client.update).toHaveBeenCalledWith({
       index: 'search_products',
       id: MASTER_ID,
-      body: { doc: reviewStats },
+      body: {
+        doc: {
+          ...reviewStats,
+          review_sort_score: 4.317,
+        },
+      },
     });
   });
 
@@ -157,14 +163,14 @@ describe('ProductIndexService.searchProducts - sort=review', () => {
     service = module.get(ProductIndexService);
   });
 
-  it('no keyword: sorts by bayesian_review_score desc → review_count desc → updated_at desc', async () => {
+  it('no keyword: sorts by review_sort_score desc → review_count desc → updated_at desc', async () => {
     await service.searchProducts({ sort: 'review', page: 1, size: 20 } as any);
 
     expect(client.search).toHaveBeenCalledWith(
       expect.objectContaining({
         body: expect.objectContaining({
           sort: [
-            { bayesian_review_score: { order: 'desc', missing: 0 } },
+            { review_sort_score: { order: 'desc', missing: 0 } },
             { review_count: { order: 'desc', missing: 0 } },
             { updated_at: { order: 'desc' } },
           ],
@@ -180,11 +186,58 @@ describe('ProductIndexService.searchProducts - sort=review', () => {
     expect(client.search).toHaveBeenCalledTimes(2);
     for (const [callArg] of client.search.mock.calls) {
       expect(callArg.body.sort).toEqual([
-        { bayesian_review_score: { order: 'desc', missing: 0 } },
+        { review_sort_score: { order: 'desc', missing: 0 } },
         { review_count: { order: 'desc', missing: 0 } },
         { updated_at: { order: 'desc' } },
       ]);
     }
+  });
+
+  it('REVIEW_SORT_VOLUME_WEIGHT env changes computed review_sort_score', async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ProductIndexService,
+        { provide: OpenSearchService, useValue: makeOpenSearchService(client) },
+        { provide: ConfigService, useValue: makeConfigService({ REVIEW_SORT_VOLUME_WEIGHT: '0.9' }) },
+      ],
+    }).compile();
+    service = module.get(ProductIndexService);
+
+    await service.updateProductReviewStats(MASTER_ID, {
+      review_count: 10,
+      average_rating: 4.2,
+      bayesian_review_score: 3.97,
+      review_stats_updated_at: '2026-06-08T00:00:00.000Z',
+    });
+
+    expect(client.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          doc: expect.objectContaining({
+            review_sort_score: 4.282,
+          }),
+        }),
+      }),
+    );
+  });
+
+  it('caps review volume boost at REVIEW_SORT_COUNT_SATURATION', async () => {
+    await service.updateProductReviewStats(MASTER_ID, {
+      review_count: 1000,
+      average_rating: 3.4,
+      bayesian_review_score: 3.4,
+      review_stats_updated_at: '2026-06-08T00:00:00.000Z',
+    });
+
+    expect(client.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          doc: expect.objectContaining({
+            review_sort_score: 4.4,
+          }),
+        }),
+      }),
+    );
   });
 
   it('with keyword: query is plain bool (no function_score)', async () => {
