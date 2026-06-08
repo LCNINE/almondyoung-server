@@ -3,26 +3,26 @@
 import { useQueries } from '@tanstack/react-query';
 import { products } from '@/lib/api/domains';
 import { productQueryKeys } from '@/lib/services/products/query-keys';
-import type { VariantDto } from '@/lib/types/dto/products';
+import type { PricingVariant } from '../../pricing-detail-model';
 
 interface Props {
-  variants: VariantDto[];
+  variants: PricingVariant[];
   versionId: string | null;
   masterId: string;
-  isDraft: boolean;
 }
 
-export function PriceSetTable({ variants, versionId, masterId, isDraft }: Props) {
+export function PriceSetTable({ variants, versionId, masterId }: Props) {
+  const usesVersionPricing = Boolean(versionId);
   const queries = useQueries({
     queries: variants.map((v) => ({
-      queryKey: isDraft && versionId
+      queryKey: usesVersionPricing && versionId
         ? productQueryKeys.pricingVersionPriceSet(versionId, v.id)
         : productQueryKeys.pricingMasterPriceSet(masterId, v.id),
       queryFn: () =>
-        isDraft && versionId
+        usesVersionPricing && versionId
           ? products.pricing.versions.getPriceSet(versionId, v.id)
           : products.pricing.masters.getPriceSet(masterId, v.id),
-      enabled: isDraft ? !!versionId : !!masterId,
+      enabled: usesVersionPricing ? !!versionId : !!masterId,
       staleTime: 30 * 1000,
       retry: (count: number, error: any) => {
         if (error?.response?.status === 404) return false;

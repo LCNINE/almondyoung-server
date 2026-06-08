@@ -175,3 +175,28 @@ export type UpdateMasterVersionDto = {
   isMembershipOnly?: boolean;
   optionDiff?: ProductOptionDiff;
 };
+
+export type ProductVariantStatus = 'active' | 'inactive';
+
+export type UpdateProductVariantDto = {
+  variantName?: string;
+  status?: ProductVariantStatus;
+  displayOrder?: number;
+};
+
+export type BulkUpdateProductVariantDto = {
+  updates: Array<{ id: string } & UpdateProductVariantDto>;
+};
+
+export type UpdateProductVariantResultDto = {
+  variantId: string;
+  cowed: boolean;
+};
+
+export type BulkUpdateProductVariantResultDto = {
+  results: Array<{
+    originalId: string;
+    variantId: string;
+    cowed: boolean;
+  }>;
+};

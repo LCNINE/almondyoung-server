@@ -114,6 +114,8 @@ export const productQueryKeys = {
   masterVersions: (masterId: string) => ['master-versions', masterId] as const,
   versionDetail: (masterId: string, versionId: string) =>
     ['master-versions', masterId, 'detail', versionId] as const,
+  versionDetailRaw: (masterId: string, versionId: string) =>
+    [...productQueryKeys.versionDetail(masterId, versionId), 'raw'] as const,
 
   // 채널 리스팅 관련
   channelListingsByVariant: (variantId: string) =>

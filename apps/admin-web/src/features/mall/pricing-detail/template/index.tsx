@@ -1,13 +1,16 @@
 'use client';
 
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
-import { useMaster } from '@/lib/services/products/queries';
-import { useVariantsByMaster } from '@/lib/services/products/queries';
-import { useMasterVersions } from '@/lib/services/products/queries';
-import { useVersionPricingRules } from '@/lib/services/products/queries';
+import {
+  useMaster,
+  useMasterVersions,
+  useVariantsByMaster,
+  useVersionDetail,
+  useVersionPricingRules,
+} from '@/lib/services/products/queries';
 import {
   useReplaceVersionPricingRules,
   useDeleteVersionPricingRules,
@@ -20,6 +23,11 @@ import { Calculator } from '../components/calculator';
 import { PriceSetTable } from '../components/price-set-table';
 import type { ReplacePricingRulesDto } from '@/lib/types/dto/products';
 import { toast } from 'sonner';
+import {
+  selectPricingVariants,
+  toPricingVariantsFromMaster,
+  toPricingVariantsFromVersion,
+} from '../pricing-detail-model';
 
 interface Props {
   masterId: string;
@@ -32,22 +40,42 @@ export default function PricingDetailTemplate({ masterId }: Props) {
 
   const { data: master } = useMaster(masterId);
   const { data: versionsTree = [] } = useMasterVersions(masterId);
-  const { data: variantsRes } = useVariantsByMaster({
+  const { data: variantsRes, isLoading: masterVariantsLoading } = useVariantsByMaster({
     masterId,
     page: 1,
     limit: 100,
   });
-  const variants = variantsRes?.data ?? [];
 
-  const flatVersions = flattenVersions(versionsTree);
+  const flatVersions = useMemo(() => flattenVersions(versionsTree), [versionsTree]);
   const activeVersion = flatVersions.find((v) => v.status === 'active') ?? null;
 
   const paramVersionId = searchParams.get('versionId');
   const selectedVersionId = paramVersionId ?? activeVersion?.id ?? null;
 
   const selectedVersion = flatVersions.find((v) => v.id === selectedVersionId) ?? null;
-  const isDraft = selectedVersion?.status === 'draft';
   const isReadonly = selectedVersion?.status !== 'draft';
+  const { data: selectedVersionDetail, isLoading: versionDetailLoading } = useVersionDetail(
+    masterId,
+    selectedVersionId
+  );
+  const masterPricingVariants = useMemo(
+    () => toPricingVariantsFromMaster(variantsRes?.data ?? []),
+    [variantsRes?.data]
+  );
+  const versionPricingVariants = useMemo(
+    () => toPricingVariantsFromVersion(selectedVersionDetail?.variants ?? []),
+    [selectedVersionDetail?.variants]
+  );
+  const variants = useMemo(
+    () =>
+      selectPricingVariants({
+        selectedVersionId,
+        masterVariants: masterPricingVariants,
+        versionVariants: versionPricingVariants,
+      }),
+    [masterPricingVariants, selectedVersionId, versionPricingVariants]
+  );
+  const variantsLoading = selectedVersionId ? versionDetailLoading : masterVariantsLoading;
 
   const setVersionId = useCallback(
     (id: string) => {
@@ -104,8 +132,6 @@ export default function PricingDetailTemplate({ masterId }: Props) {
     );
   };
 
-  const hasNoDraft = flatVersions.every((v) => v.status !== 'draft');
-
   return (
     <div className="flex flex-col gap-y-2">
       <Container className="divide-y-0">
@@ -153,21 +179,27 @@ export default function PricingDetailTemplate({ masterId }: Props) {
           <div className="grid grid-cols-1 gap-y-2 lg:grid-cols-2 lg:gap-x-2 lg:gap-y-0">
             <Container className="divide-y-0">
               <Header title="가격 시뮬레이션" />
-              <Calculator
-                variants={variants}
-                versionId={selectedVersionId}
-                masterId={masterId}
-                isDraft={isDraft}
-              />
+              {variantsLoading ? (
+                <p className="p-6 text-center text-sm text-muted-foreground">품목 로딩 중...</p>
+              ) : (
+                <Calculator
+                  variants={variants}
+                  versionId={selectedVersionId}
+                  masterId={masterId}
+                />
+              )}
             </Container>
             <Container className="divide-y-0">
               <Header title="옵션별 가격 현황" />
-              <PriceSetTable
-                variants={variants}
-                versionId={selectedVersionId}
-                masterId={masterId}
-                isDraft={isDraft}
-              />
+              {variantsLoading ? (
+                <p className="p-6 text-center text-sm text-muted-foreground">품목 로딩 중...</p>
+              ) : (
+                <PriceSetTable
+                  variants={variants}
+                  versionId={selectedVersionId}
+                  masterId={masterId}
+                />
+              )}
             </Container>
           </div>
         </>

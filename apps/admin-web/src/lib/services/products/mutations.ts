@@ -3,7 +3,11 @@
 
 'use client';
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  useMutation,
+  useQueryClient,
+  type QueryClient,
+} from '@tanstack/react-query';
 import { productQueryKeys } from './query-keys';
 import { products } from '@/lib/api/domains';
 import { channelListingsClient } from '@/lib/api/domains/products/channel-listings.client';
@@ -39,7 +43,11 @@ import type {
   BulkDeleteDto,
   BulkRestoreDto,
 } from '@/lib/types/dto/products';
-import type { UpdateMasterVersionDto } from './products-detail.types';
+import type {
+  BulkUpdateProductVariantDto,
+  UpdateMasterVersionDto,
+  UpdateProductVariantDto,
+} from './products-detail.types';
 
 // ===== 카테고리 관련 뮤테이션 =====
 
@@ -477,6 +485,28 @@ export const useDeleteTagValue = () => {
 
 // ===== 버전 관련 뮤테이션 =====
 
+function invalidateProductVariantEditingQueries(
+  queryClient: QueryClient,
+  masterId: string,
+  versionId: string
+) {
+  queryClient.invalidateQueries({
+    queryKey: productQueryKeys.versionDetail(masterId, versionId),
+  });
+  queryClient.invalidateQueries({
+    queryKey: productQueryKeys.master(masterId),
+  });
+  queryClient.invalidateQueries({
+    queryKey: productQueryKeys.masterVersions(masterId),
+  });
+  queryClient.invalidateQueries({
+    queryKey: productQueryKeys.variants,
+  });
+  queryClient.invalidateQueries({
+    queryKey: ['pricing', 'versions', versionId],
+  });
+}
+
 export const useCreateMasterDraftVersion = () => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -518,6 +548,54 @@ export const useUpdateMasterVersion = () => {
           queryKey: productQueryKeys.variants,
         });
       }
+    },
+  });
+};
+
+export const useUpdateDraftVariant = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      masterId,
+      versionId,
+      variantId,
+      dto,
+    }: {
+      masterId: string;
+      versionId: string;
+      variantId: string;
+      dto: UpdateProductVariantDto;
+    }) => products.versions.updateVariant(masterId, versionId, variantId, dto),
+    onSuccess: (_, variables) => {
+      invalidateProductVariantEditingQueries(
+        queryClient,
+        variables.masterId,
+        variables.versionId
+      );
+    },
+  });
+};
+
+export const useBulkUpdateDraftVariants = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      masterId,
+      versionId,
+      dto,
+    }: {
+      masterId: string;
+      versionId: string;
+      dto: BulkUpdateProductVariantDto;
+    }) => products.versions.bulkUpdateVariants(masterId, versionId, dto),
+    onSuccess: (_, variables) => {
+      invalidateProductVariantEditingQueries(
+        queryClient,
+        variables.masterId,
+        variables.versionId
+      );
     },
   });
 };
