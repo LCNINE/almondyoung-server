@@ -153,7 +153,7 @@ function toQueryArray(value?: string | string[]): string[] | undefined {
 
 function normalizeSearchSort(
   value?: string | string[]
-): "relevance" | "newest" | "price_asc" | "price_desc" {
+): "relevance" | "newest" | "price_asc" | "price_desc" | "review" {
   const sortValue = Array.isArray(value) ? value[0] : value
   switch (sortValue) {
     case "newest":
@@ -164,6 +164,8 @@ function normalizeSearchSort(
     case "price-desc":
     case "price_desc":
       return "price_desc"
+    case "review":
+      return "review"
     case "relevance":
     default:
       return "relevance"

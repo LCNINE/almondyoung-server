@@ -2,7 +2,7 @@ import './tracing';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { EventsModule, createKafkaConfigFromEnv } from '@app/events';
-import { PRODUCT_STREAM } from '@packages/event-contracts';
+import { PRODUCT_STREAM, UGC_EVENT_STREAM } from '@packages/event-contracts';
 import { SearchModule } from './search.module';
 
 async function bootstrap() {
@@ -18,13 +18,13 @@ async function bootstrap() {
   const kafkaConfig = createKafkaConfigFromEnv();
   if (kafkaConfig) {
     const consumerOptions = EventsModule.forConsumer({
-      streams: [PRODUCT_STREAM],
+      streams: [PRODUCT_STREAM, UGC_EVENT_STREAM],
       groupId: process.env.KAFKA_GROUP_ID || 'search-indexer',
       kafka: kafkaConfig,
     });
     app.connectMicroservice(consumerOptions);
     await app.startAllMicroservices();
-    logger.log('Kafka consumer connected (products.events.v1).');
+    logger.log('Kafka consumer connected (products.events.v1, ugc.events.v1).');
   } else {
     logger.warn('Kafka consumer disabled: KAFKA_BROKERS not set.');
   }

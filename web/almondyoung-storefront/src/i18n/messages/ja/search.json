@@ -33,6 +33,7 @@
   },
   "sort": {
     "relevance": "関連度順",
+    "review": "レビュー順",
     "priceAsc": "価格の安い順",
     "priceDesc": "価格の高い順",
     "newest": "新着順"

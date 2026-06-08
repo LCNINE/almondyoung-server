@@ -1,8 +1,15 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ProductSearchQueryDto } from './dto/product-search-query.dto';
 import { ProductSearchItemDto, ProductSearchResponseDto } from './dto/product-search-response.dto';
 import { OpenSearchService } from './opensearch.service';
-import { PRODUCTS_INDEX_MAPPINGS, PRODUCTS_INDEX_SETTINGS, SearchProductDocument } from './types/product-document.type';
+import {
+  PRODUCTS_INDEX_MAPPINGS,
+  PRODUCTS_INDEX_SETTINGS,
+  REVIEW_FIELDS_MAPPINGS,
+  ReviewStatsUpdateFields,
+  SearchProductDocument,
+} from './types/product-document.type';
 import { compactText } from './utils/text.utils';
 
 type SearchStage = 'strict' | 'fallback';
@@ -11,9 +18,15 @@ type SearchStage = 'strict' | 'fallback';
 export class ProductIndexService implements OnModuleInit {
   private readonly logger = new Logger(ProductIndexService.name);
   private readonly keywordResultPoolLimit = 5000;
+  private readonly reviewScoreWeight: number;
   private initPromise: Promise<void> | null = null;
 
-  constructor(private readonly openSearchService: OpenSearchService) {}
+  constructor(
+    private readonly openSearchService: OpenSearchService,
+    private readonly configService: ConfigService,
+  ) {
+    this.reviewScoreWeight = parseFloat(configService.get<string>('REVIEW_SCORE_WEIGHT') ?? '0.1');
+  }
 
   async onModuleInit(): Promise<void> {
     await this.ensureProductsIndex();
@@ -24,11 +37,37 @@ export class ProductIndexService implements OnModuleInit {
     const index = this.openSearchService.getProductsIndex();
     await this.ensureProductsIndex();
 
-    await client.index({
+    // doc_as_upsert: true — creates if missing, otherwise merges; review fields in existing docs are preserved
+    await client.update({
       index,
       id: masterId,
-      body: document,
+      body: {
+        doc: document,
+        doc_as_upsert: true,
+      },
     });
+  }
+
+  async updateProductReviewStats(masterId: string, stats: ReviewStatsUpdateFields): Promise<void> {
+    const client = this.openSearchService.getClient();
+    const index = this.openSearchService.getProductsIndex();
+    await this.ensureProductsIndex();
+
+    try {
+      await client.update({
+        index,
+        id: masterId,
+        body: { doc: stats },
+      });
+    } catch (error) {
+      if (error.meta?.statusCode === 404) {
+        this.logger.warn(
+          `updateProductReviewStats: product ${masterId} not found in index — skipping (event will not be retried)`,
+        );
+        return;
+      }
+      throw error;
+    }
   }
 
   async deleteProduct(masterId: string): Promise<void> {
@@ -157,6 +196,16 @@ export class ProductIndexService implements OnModuleInit {
         }
       }
     }
+
+    // Ensure review field mappings exist (additive PUT — safe to call on every startup)
+    try {
+      await client.indices.putMapping({
+        index,
+        body: REVIEW_FIELDS_MAPPINGS,
+      });
+    } catch (error) {
+      this.logger.warn(`putMapping for review fields failed (non-fatal): ${error.message}`);
+    }
   }
 
   private async executeSearch(params: {
@@ -245,10 +294,40 @@ export class ProductIndexService implements OnModuleInit {
       }
     }
 
-    return {
+    const boolQuery = {
       bool: {
         must: mustClauses.length > 0 ? mustClauses : undefined,
         filter: filterClauses,
+      },
+    };
+
+    // Blend review quality into relevance ranking only when keyword is present.
+    // sort=review uses a pure sort field instead; other explicit sorts don't benefit from blending.
+    if (q && query.sort === 'relevance') {
+      return this.wrapWithReviewBoost(boolQuery);
+    }
+
+    return boolQuery;
+  }
+
+  // final_score = text_relevance_score + (bayesian_review_score * reviewScoreWeight)
+  // Weight is intentionally small so review can only overcome near-equal text matches (~0.5 score diff at default 0.1).
+  private wrapWithReviewBoost(boolQuery: any): any {
+    return {
+      function_score: {
+        query: boolQuery,
+        functions: [
+          {
+            field_value_factor: {
+              field: 'bayesian_review_score',
+              factor: this.reviewScoreWeight,
+              modifier: 'none',
+              missing: 3.5,
+            },
+          },
+        ],
+        score_mode: 'sum',
+        boost_mode: 'sum',
       },
     };
   }
@@ -416,9 +495,18 @@ export class ProductIndexService implements OnModuleInit {
         return [{ min_base_price: { order: 'asc', missing: '_last' } }];
       case 'price_desc':
         return [{ min_base_price: { order: 'desc', missing: '_last' } }];
+      case 'review':
+        // Explicit review sort: Bayesian score primary, review count tiebreak, recency fallback.
+        // missing: 0 pushes unindexed products to the bottom (0 < any real Bayesian score >= 3.5).
+        return [
+          { bayesian_review_score: { order: 'desc', missing: 0 } },
+          { review_count: { order: 'desc', missing: 0 } },
+          { updated_at: { order: 'desc' } },
+        ];
       case 'relevance':
       default:
         if (query.q?.trim()) {
+          // function_score in buildQuery produces a blended _score; sort by that first.
           return [{ _score: { order: 'desc' } }, { updated_at: { order: 'desc' } }];
         }
         return [{ updated_at: { order: 'desc' } }];
