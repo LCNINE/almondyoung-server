@@ -35,6 +35,7 @@ export function SearchPageClient({
 
   const SORT_OPTIONS = [
     { id: "relevance", label: tSort("relevance") },
+    { id: "review", label: tSort("review") },
     { id: "price_asc", label: tSort("priceAsc") },
     { id: "price_desc", label: tSort("priceDesc") },
     { id: "newest", label: tSort("newest") },
@@ -144,12 +145,13 @@ export function SearchPageClient({
 
 function normalizeSearchSort(
   value: string | null
-): "relevance" | "newest" | "price_asc" | "price_desc" {
+): "relevance" | "newest" | "price_asc" | "price_desc" | "review" {
   if (!value) return "relevance"
   if (value === "price-asc") return "price_asc"
   if (value === "price-desc") return "price_desc"
   if (value === "newest") return "newest"
   if (value === "price_asc") return "price_asc"
   if (value === "price_desc") return "price_desc"
+  if (value === "review") return "review"
   return "relevance"
 }
