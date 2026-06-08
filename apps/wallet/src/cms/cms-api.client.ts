@@ -64,9 +64,7 @@ export interface CmsApiError {
   message: string;
 }
 
-export type CmsApiResult<T> =
-  | { ok: true; data: T }
-  | { ok: false; error: CmsApiError; statusCode: number };
+export type CmsApiResult<T> = { ok: true; data: T } | { ok: false; error: CmsApiError; statusCode: number };
 
 // ─── Request DTOs ────────────────────────────────────────────────────────────
 
@@ -135,6 +133,13 @@ export class CmsApiClient {
     return process.env.HYOSUNG_CMS_CUST_ID ?? process.env.CUST_ID ?? '';
   }
 
+  private get requiredCustId(): string {
+    if (!this.custId) {
+      throw new Error('HYOSUNG_CMS_CUST_ID is not configured');
+    }
+    return this.custId;
+  }
+
   // ─── 회원관리 ──────────────────────────────────────────────────────────────
 
   async createMember(dto: CreateCmsMemberDto): Promise<CmsApiResult<CmsMemberResponse>> {
@@ -155,8 +160,13 @@ export class CmsApiClient {
 
   // ─── 동의자료관리 ──────────────────────────────────────────────────────────
 
-  async uploadAgreement(memberId: string, file: Buffer, fileType: string, fileExtension: string): Promise<CmsApiResult<CmsAgreementResponse>> {
-    const url = `${this.addUrl}/v1/custs/${this.custId}/agreements`;
+  async uploadAgreement(
+    memberId: string,
+    file: Buffer,
+    fileType: string,
+    fileExtension: string,
+  ): Promise<CmsApiResult<CmsAgreementResponse>> {
+    const url = `${this.addUrl}/v1/custs/${this.requiredCustId}/agreements`;
     this.logger.debug(`POST ${url} (multipart)`);
 
     const formData = new FormData();
@@ -173,7 +183,7 @@ export class CmsApiClient {
   }
 
   async getAgreement(agreementKey: string): Promise<CmsApiResult<CmsAgreementResponse>> {
-    return this.get<CmsAgreementResponse>(`${this.addUrl}/v1/custs/${this.custId}/agreements/${agreementKey}`);
+    return this.get<CmsAgreementResponse>(`${this.addUrl}/v1/custs/${this.requiredCustId}/agreements/${agreementKey}`);
   }
 
   // ─── 출금관리 ──────────────────────────────────────────────────────────────
@@ -182,7 +192,10 @@ export class CmsApiClient {
     return this.post<CmsWithdrawalResponse>(`${this.apiUrl}/v1/payments/cms`, dto);
   }
 
-  async updateWithdrawal(transactionId: string, dto: UpdateCmsWithdrawalDto): Promise<CmsApiResult<CmsWithdrawalResponse>> {
+  async updateWithdrawal(
+    transactionId: string,
+    dto: UpdateCmsWithdrawalDto,
+  ): Promise<CmsApiResult<CmsWithdrawalResponse>> {
     return this.put<CmsWithdrawalResponse>(`${this.apiUrl}/v1/payments/cms/${transactionId}`, dto);
   }
 

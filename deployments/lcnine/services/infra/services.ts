@@ -51,6 +51,7 @@ export function setup(infra: SharedInfra) {
   const nicepaySecretKey = new sst.Secret("NicepaySecretKey");
   const walletApiKey = new sst.Secret("WalletApiKey");
   const custKey = new sst.Secret("CustKey");
+  const custId = new sst.Secret("CustId");
   const swKey = new sst.Secret("SwKey");
 
   // Medusa
@@ -263,6 +264,7 @@ export function setup(infra: SharedInfra) {
       HYOSUNG_CMS_API_URL: isDev ? "https://api-test.hyosungcms.co.kr" : "https://api.hyosungcms.co.kr",
       HYOSUNG_CMS_ADD_URL: isDev ? "https://add-test.hyosungcms.co.kr" : "https://add.hyosungcms.co.kr",
       HYOSUNG_CMS_CUST_KEY: custKey.value,
+      HYOSUNG_CMS_CUST_ID: custId.value,
       HYOSUNG_CMS_SW_KEY: swKey.value,
       SERVICE_NAME: "wallet",
       CORS_ORIGINS: `*.${baseDomain}`,
