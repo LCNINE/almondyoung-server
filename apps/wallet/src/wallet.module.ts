@@ -62,6 +62,11 @@ import { PaymentIntentAdminService } from './admin/payment-intent-admin.service'
 import { PaymentIntentAdminController } from './admin/payment-intent-admin.controller';
 import { RefundAdminController } from './admin/refund-admin.controller';
 
+// Payment config (catalog + regions)
+import { PaymentConfigService } from './payment-config/payment-config.service';
+import { PaymentConfigAdminController } from './payment-config/payment-config-admin.controller';
+import { PaymentConfigController } from './payment-config/payment-config.controller';
+
 // Points (user-facing)
 import { PointsController } from './points/points.controller';
 import { BankTransferAdminService } from './admin/bank-transfer-admin.service';
@@ -366,6 +371,8 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     PointsAdminController,
     PaymentIntentAdminController,
     RefundAdminController,
+    PaymentConfigAdminController,
+    PaymentConfigController,
     PointsController,
     TossWebhookController,
     BillingMethodController,
@@ -434,6 +441,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
 
     // Methods / Charges
     PaymentMethodsService,
+    PaymentConfigService,
     ChargesService,
 
     // Intents

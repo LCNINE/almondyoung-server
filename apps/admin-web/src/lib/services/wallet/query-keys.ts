@@ -36,4 +36,12 @@ export const walletQueryKeys = {
     [...walletQueryKeys.points(), 'events', 'all', params] as const,
   topUsers: (limit?: number) =>
     [...walletQueryKeys.points(), 'users', 'top', { limit }] as const,
+
+  // Payment method catalog
+  catalog: () => [...walletQueryKeys.all, 'catalog'] as const,
+
+  // Regions
+  regions: () => [...walletQueryKeys.all, 'regions'] as const,
+  regionMethods: (code: string) =>
+    [...walletQueryKeys.regions(), code, 'payment-methods'] as const,
 } as const;
