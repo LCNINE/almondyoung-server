@@ -5,6 +5,7 @@ import { productQueryKeys } from './query-keys';
 import { products } from '@/lib/api/domains';
 import type {
   MasterVersionDetailDto,
+  ProductDetailCategory,
   ProductImage,
   ProductMasterDetail,
   ProductOptionGroup,
@@ -32,6 +33,7 @@ export type ProductDetailView = {
   seoKeywords: string[] | null;
   isWholesaleOnly: boolean | null;
   isMembershipOnly: boolean | null;
+  categories: ProductDetailCategory[];
   createdAt: string;
   updatedAt: string;
   optionGroups: ProductOptionGroup[];
@@ -47,7 +49,9 @@ function fromMaster(master: ProductMasterDetail): ProductDetailView {
     versionId: null,
     version: null,
     status:
-      master.status === 'active' || master.status === 'inactive' || master.status === 'draft'
+      master.status === 'active' ||
+      master.status === 'inactive' ||
+      master.status === 'draft'
         ? master.status
         : null,
     name: master.name,
@@ -59,6 +63,7 @@ function fromMaster(master: ProductMasterDetail): ProductDetailView {
     seoKeywords: master.seoKeywords,
     isWholesaleOnly: master.isWholesaleOnly,
     isMembershipOnly: master.isMembershipOnly,
+    categories: master.categories,
     createdAt: master.createdAt,
     updatedAt: master.updatedAt,
     optionGroups: master.optionGroups,
@@ -83,6 +88,7 @@ function fromVersion(detail: MasterVersionDetailDto): ProductDetailView {
     seoKeywords: detail.seoKeywords,
     isWholesaleOnly: detail.isWholesaleOnly,
     isMembershipOnly: detail.isMembershipOnly,
+    categories: detail.categories,
     createdAt: detail.createdAt,
     updatedAt: detail.updatedAt,
     optionGroups: detail.optionGroups,
@@ -105,7 +111,7 @@ function fromVersion(detail: MasterVersionDetailDto): ProductDetailView {
 
 export function useProductDetailSuspense(
   masterId: string,
-  versionId: string | null,
+  versionId: string | null
 ): { data: ProductDetailView } {
   const { data } = useSuspenseQuery({
     queryKey: versionId
@@ -113,10 +119,12 @@ export function useProductDetailSuspense(
       : productQueryKeys.master(masterId),
     queryFn: async (): Promise<ProductDetailView> => {
       if (versionId) {
-        return fromVersion(await products.versions.getById(masterId, versionId));
+        return fromVersion(
+          await products.versions.getById(masterId, versionId)
+        );
       }
       return fromMaster(
-        (await products.masters.get(masterId)) as unknown as ProductMasterDetail,
+        (await products.masters.get(masterId)) as unknown as ProductMasterDetail
       );
     },
     staleTime: 30 * 1000,

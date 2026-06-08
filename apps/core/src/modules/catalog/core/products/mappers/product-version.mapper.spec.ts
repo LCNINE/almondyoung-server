@@ -37,6 +37,17 @@ describe('ProductVersionMapper', () => {
       createdAt: new Date('2026-06-05T00:00:00.000Z'),
       updatedAt: new Date('2026-06-05T00:00:00.000Z'),
       images: [],
+      categories: [
+        {
+          id: 'cat-1',
+          name: '스킨케어',
+          slug: 'skin-care',
+          path: 'beauty/skin-care',
+          parentId: null,
+          isActive: true,
+          isPrimary: true,
+        },
+      ],
       optionGroups: [],
       variants: [],
       channelProducts: [],
@@ -44,5 +55,16 @@ describe('ProductVersionMapper', () => {
 
     expect(response.description).toBe('# Markdown');
     expect(response.descriptionHtml).toBe('<img src="legacy.jpg" />');
+    expect(response.categories).toEqual([
+      {
+        id: 'cat-1',
+        name: '스킨케어',
+        slug: 'skin-care',
+        path: 'beauty/skin-care',
+        parentId: null,
+        isActive: true,
+        isPrimary: true,
+      },
+    ]);
   });
 });

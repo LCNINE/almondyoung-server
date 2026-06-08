@@ -278,9 +278,20 @@ export type TagReadModel = {
   displayOrder: number;
 };
 
+export type ProductDetailCategory = {
+  id: string;
+  name: string;
+  slug: string;
+  path: string;
+  parentId: string | null;
+  isActive: boolean;
+  isPrimary: boolean;
+};
+
 // Product Master 상세 응답 DTO (모든 정보 포함)
 export interface ProductDetailDto extends ProductMasterVersion {
   images: ProductImage[];
+  categories: ProductDetailCategory[];
   optionGroups: OptionGroupReadModel[];
   variants: VariantReadModel[];
   channelProducts: (ChannelProduct & {

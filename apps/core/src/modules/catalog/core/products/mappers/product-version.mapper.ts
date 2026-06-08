@@ -1,5 +1,5 @@
 import { DateMapper } from '../../../common/mappers';
-import { ProductDetailDto } from '../../../catalog.types';
+import { ProductDetailCategory, ProductDetailDto } from '../../../catalog.types';
 import { ProductImageDto } from '../dto/products/product-image.dto';
 import { ProductImageMapper } from './product-image.mapper';
 
@@ -41,6 +41,7 @@ export interface ProductVersionDetailResponseDto {
   createdAt: string;
   updatedAt: string;
   images: ProductImageDto[];
+  categories: ProductDetailCategory[];
   optionGroups: any[];
   variants: any[];
   channelProducts: any[];
@@ -92,6 +93,7 @@ export class ProductVersionMapper {
       createdAt: DateMapper.toNotNullString(detail.createdAt),
       updatedAt: DateMapper.toNotNullString(detail.updatedAt),
       images: detail.images.map((img) => ProductImageMapper.toDto(img)),
+      categories: detail.categories,
       optionGroups: detail.optionGroups,
       variants: detail.variants,
       channelProducts: detail.channelProducts,

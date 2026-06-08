@@ -27,6 +27,16 @@ export type ProductImage = {
   sortOrder: number;
 };
 
+export type ProductDetailCategory = {
+  id: string;
+  name: string;
+  slug: string;
+  path: string;
+  parentId: string | null;
+  isActive: boolean;
+  isPrimary: boolean;
+};
+
 export type ProductMasterDetail = {
   id: string;
   name: string;
@@ -43,6 +53,7 @@ export type ProductMasterDetail = {
   updatedAt: string;
   createdBy: string | null;
   updatedBy: string | null;
+  categories: ProductDetailCategory[];
   optionGroups: ProductOptionGroup[];
   images: ProductImage[];
 };
@@ -92,6 +103,7 @@ export type MasterVersionDetailDto = {
   draftOwnerId: string | null;
   createdAt: string;
   updatedAt: string;
+  categories: ProductDetailCategory[];
   images: ProductImage[];
   optionGroups: ProductOptionGroup[];
   variants: Array<{
@@ -110,6 +122,15 @@ export type MasterVersionDetailDto = {
 };
 
 export type UpdateMasterVersionDto = {
+  name?: string;
   description?: string | null;
   descriptionHtml?: string | null;
+  brand?: string | null;
+  seoTitle?: string | null;
+  seoDescription?: string | null;
+  seoKeywords?: string[];
+  categoryIds?: string[];
+  primaryCategoryId?: string | null;
+  isWholesaleOnly?: boolean;
+  isMembershipOnly?: boolean;
 };
