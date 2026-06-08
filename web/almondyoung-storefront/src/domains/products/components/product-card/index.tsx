@@ -15,8 +15,6 @@ type RatingSummary = {
   totalCount: number
 }
 
-const ratingSummaryCache = new Map<string, Promise<RatingSummary>>()
-
 const toFiniteNumber = (value: unknown) => {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0
   if (typeof value === "string") {
@@ -38,21 +36,15 @@ const getMetadataRatingSummary = (
 })
 
 const fetchRatingSummary = (productId: string) => {
-  const cached = ratingSummaryCache.get(productId)
-  if (cached) return cached
-
-  const request = fetch(
-    `/api/ugc/rating-summary?${new URLSearchParams({ productId })}`
-  )
+  return fetch(`/api/ugc/rating-summary?${new URLSearchParams({ productId })}`, {
+    cache: "no-store",
+  })
     .then((res) => (res.ok ? res.json() : null))
     .then((data) => ({
       averageRating: toFiniteNumber(data?.averageRating),
       totalCount: toFiniteNumber(data?.totalCount),
     }))
     .catch(() => ({ averageRating: 0, totalCount: 0 }))
-
-  ratingSummaryCache.set(productId, request)
-  return request
 }
 
 function ProductCardRating({
@@ -137,7 +129,7 @@ export default function ProductCard({
   useEffect(() => {
     setRatingSummary(metadataSummary)
 
-    if (!productReviewId || metadataSummary.totalCount > 0) return
+    if (!productReviewId) return
 
     let ignore = false
 

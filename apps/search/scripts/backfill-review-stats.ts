@@ -20,8 +20,8 @@
  *   --offset=0              Skip first N products (default: 0)
  *   --limit=500             Max products to process
  *   --products=id1,id2      Comma-separated product UUIDs (skips --offset/--limit)
- *   --confidence=10         Bayesian confidence C (default: 10)
- *   --prior-mean=3.5        Bayesian prior mean m (default: 3.5)
+ *   --prior-count=10        Bayesian prior count m (default: 10)
+ *   --fallback-prior-mean=3.5  Used only when the UGC DB has no active reviews
  *   --dry-run               Print stats without writing to OpenSearch
  *
  * Required env:
@@ -47,8 +47,8 @@ type BackfillOptions = {
   offset: number;
   limit?: number;
   products?: string[];
-  confidence: number;
-  priorMean: number;
+  priorCount: number;
+  fallbackPriorMean: number;
   dryRun: boolean;
 };
 
@@ -95,6 +95,15 @@ function parseArgs(): BackfillOptions {
     return parsed;
   };
 
+  const parseRatingMean = (raw: string | undefined, name: string, def: number): number => {
+    if (raw === undefined) return def;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed < 0 || parsed > 5) {
+      throw new Error(`${name} must be a number between 0 and 5`);
+    }
+    return parsed;
+  };
+
   const batchSize = parsePositiveInt(getOptionValue('--batch-size'), '--batch-size', 100);
   if (batchSize < 1) throw new Error('--batch-size must be >= 1');
 
@@ -110,16 +119,25 @@ function parseArgs(): BackfillOptions {
         .filter(Boolean)
     : undefined;
 
-  const confidence = parsePositiveFloat(getOptionValue('--confidence'), '--confidence', 10);
-  const priorMean = parsePositiveFloat(getOptionValue('--prior-mean'), '--prior-mean', 3.5);
+  const legacyConfidence = getOptionValue('--confidence');
+  const priorCount = parsePositiveFloat(
+    getOptionValue('--prior-count') ?? legacyConfidence,
+    legacyConfidence ? '--confidence' : '--prior-count',
+    10,
+  );
+  const fallbackPriorMean = parseRatingMean(
+    getOptionValue('--fallback-prior-mean') ?? getOptionValue('--prior-mean'),
+    getOptionValue('--prior-mean') ? '--prior-mean' : '--fallback-prior-mean',
+    3.5,
+  );
 
   return {
     batchSize,
     offset,
     limit: limit === undefined ? undefined : Math.max(limit, 0),
     products,
-    confidence,
-    priorMean,
+    priorCount,
+    fallbackPriorMean,
     dryRun: args.includes('--dry-run'),
   };
 }
@@ -135,8 +153,8 @@ function printUsage(): void {
       '  --offset=0            Skip first N products (default: 0)',
       '  --limit=500           Max products to process',
       '  --products=id1,id2    Specific product UUIDs (overrides --offset/--limit)',
-      '  --confidence=10       Bayesian confidence C (default: 10)',
-      '  --prior-mean=3.5      Bayesian prior mean m (default: 3.5)',
+      '  --prior-count=10      Bayesian prior count m (default: 10)',
+      '  --fallback-prior-mean=3.5  Used only when the UGC DB has no active reviews',
       '  --dry-run             Read and compute only, skip OpenSearch writes',
       '',
       'Required env:',
@@ -157,12 +175,17 @@ function requireEnv(name: string): string {
   return value;
 }
 
-// Bayesian average: (C * m + n * avg) / (C + n)
-// Returns priorMean when reviewCount is 0 (same as ugc-service aggregateReviewStats).
-function bayesianScore(n: number, ratingSum: number, confidence: number, priorMean: number): number {
-  if (n === 0) return priorMean;
+// Bayesian average: (v / (v + m)) * R + (m / (v + m)) * C
+// R: product average, v: product review count, C: global active-review average, m: prior count.
+function bayesianScore(n: number, ratingSum: number, priorCount: number, globalAverageRating: number): number {
+  if (n <= 0) {
+    return parseFloat(globalAverageRating.toFixed(3));
+  }
+
   const avg = ratingSum / n;
-  return parseFloat(((confidence * priorMean + n * avg) / (confidence + n)).toFixed(3));
+  const denominator = n + priorCount;
+  const score = denominator > 0 ? (n * avg + priorCount * globalAverageRating) / denominator : globalAverageRating;
+  return parseFloat(score.toFixed(3));
 }
 
 // ---------------------------------------------------------------------------
@@ -188,6 +211,21 @@ async function fetchProductCount(sql: postgres.Sql, productIds?: string[]): Prom
       AND deleted_at IS NULL
   `;
   return row?.count ?? 0;
+}
+
+async function fetchGlobalAverageRating(sql: postgres.Sql, fallbackPriorMean: number): Promise<number> {
+  const [row] = await sql<[{ review_count: string; rating_sum: string }]>`
+    SELECT
+      COUNT(*)::text AS review_count,
+      COALESCE(SUM(rating), 0)::text AS rating_sum
+    FROM reviews
+    WHERE status = 'active'
+      AND deleted_at IS NULL
+  `;
+
+  const reviewCount = parseInt(row?.review_count ?? '0', 10);
+  const ratingSum = parseInt(row?.rating_sum ?? '0', 10);
+  return reviewCount > 0 ? ratingSum / reviewCount : fallbackPriorMean;
 }
 
 async function fetchStatsBatch(
@@ -268,8 +306,8 @@ async function bulkUpdateReviewStats(
   client: Client,
   index: string,
   rows: ReviewStatsRow[],
-  confidence: number,
-  priorMean: number,
+  priorCount: number,
+  globalAverageRating: number,
 ): Promise<BulkResult> {
   if (rows.length === 0) {
     return { success: 0, skipped: 0, failed: 0 };
@@ -287,7 +325,7 @@ async function bulkUpdateReviewStats(
       doc: {
         review_count: n,
         average_rating: avg,
-        bayesian_review_score: bayesianScore(n, row.ratingSum, confidence, priorMean),
+        bayesian_review_score: bayesianScore(n, row.ratingSum, priorCount, globalAverageRating),
         review_stats_updated_at: now,
       },
     });
@@ -343,8 +381,8 @@ async function main(): Promise<void> {
   console.log(`- Offset       : ${options.offset}`);
   if (options.limit !== undefined) console.log(`- Limit        : ${options.limit}`);
   if (options.products) console.log(`- Products     : ${options.products.join(', ')}`);
-  console.log(`- Confidence   : ${options.confidence}`);
-  console.log(`- Prior mean   : ${options.priorMean}`);
+  console.log(`- Prior count  : ${options.priorCount}`);
+  console.log(`- Fallback mean: ${options.fallbackPriorMean}`);
   console.log(`- Dry run      : ${options.dryRun ? 'yes' : 'no'}`);
   console.log(`- OpenSearch   : ${opensearchNode} / ${productsIndex}`);
   console.log();
@@ -371,13 +409,17 @@ async function main(): Promise<void> {
   const startedAt = Date.now();
 
   try {
-    const sourceCount = await fetchProductCount(pgSql, options.products);
+    const [sourceCount, globalAverageRating] = await Promise.all([
+      fetchProductCount(pgSql, options.products),
+      fetchGlobalAverageRating(pgSql, options.fallbackPriorMean),
+    ]);
     const plannedCount =
       options.limit === undefined
         ? Math.max(sourceCount - options.offset, 0)
         : Math.min(Math.max(sourceCount - options.offset, 0), options.limit);
 
     console.log(`Products with active reviews: ${sourceCount}`);
+    console.log(`Global active review average: ${globalAverageRating.toFixed(3)}`);
     console.log(`Planned to process          : ${plannedCount}`);
     console.log();
 
@@ -395,12 +437,18 @@ async function main(): Promise<void> {
         for (const row of batch) {
           const n = row.reviewCount;
           const avg = n === 0 ? 0 : parseFloat((row.ratingSum / n).toFixed(1));
-          const score = bayesianScore(n, row.ratingSum, options.confidence, options.priorMean);
+          const score = bayesianScore(n, row.ratingSum, options.priorCount, globalAverageRating);
           console.log(`  [dry-run] ${row.productId}: count=${n}, avg=${avg}, bayesian=${score}`);
         }
         totalSuccess += batch.length;
       } else {
-        const result = await bulkUpdateReviewStats(osClient, productsIndex, batch, options.confidence, options.priorMean);
+        const result = await bulkUpdateReviewStats(
+          osClient,
+          productsIndex,
+          batch,
+          options.priorCount,
+          globalAverageRating,
+        );
         totalSuccess += result.success;
         totalSkipped += result.skipped;
         totalFailed += result.failed;

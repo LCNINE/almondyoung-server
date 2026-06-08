@@ -41,7 +41,8 @@ export interface RatingDistribution {
  * 집계 결과 이벤트이므로 멱등: 동일 payload 재처리 시 search 문서는 동일 값으로 수렴.
  *
  * productId = ugc reviews.product_id = search master_id (UUID).
- * bayesianReviewScore 계산: (C * m + n * avg) / (C + n), C=10, m=3.5.
+ * bayesianReviewScore 계산: (v / (v + m)) * R + (m / (v + m)) * C.
+ * R=상품 active 리뷰 평균, v=상품 active 리뷰 수, C=전체 active 리뷰 평균, m=prior count.
  */
 export interface ProductReviewStatsChangedPayload {
   productId: string;
