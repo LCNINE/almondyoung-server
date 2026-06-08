@@ -34,6 +34,8 @@
   "sort": {
     "relevance": "관련도순",
     "review": "리뷰순",
+    "reviewHelpAria": "리뷰순 정렬 기준 보기",
+    "reviewHelp": "리뷰순은 단순 리뷰 수가 아니라 공개 리뷰의 평점과 리뷰 수를 함께 반영한 신뢰 점수 기준으로 정렬해요.",
     "priceAsc": "낮은가격순",
     "priceDesc": "높은가격순",
     "newest": "최신순"
