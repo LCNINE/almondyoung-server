@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -12,7 +12,11 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { useCalculateVersionPrice, useCalculateMasterPrice } from '@/lib/services/products/mutations';
-import type { VariantDto, CalculatePriceResponseDto, PricingLayer } from '@/lib/types/dto/products';
+import type { CalculatePriceResponseDto, PricingLayer } from '@/lib/types/dto/products';
+import {
+  getValidPricingVariantId,
+  type PricingVariant,
+} from '../../pricing-detail-model';
 
 const LAYER_LABEL: Record<PricingLayer, string> = {
   base_price: '기준가',
@@ -21,13 +25,12 @@ const LAYER_LABEL: Record<PricingLayer, string> = {
 };
 
 interface Props {
-  variants: VariantDto[];
+  variants: PricingVariant[];
   versionId: string | null;
   masterId: string;
-  isDraft: boolean;
 }
 
-export function Calculator({ variants, versionId, masterId, isDraft }: Props) {
+export function Calculator({ variants, versionId, masterId }: Props) {
   const [variantId, setVariantId] = useState('');
   const [quantity, setQuantity] = useState(1);
   const [customerType, setCustomerType] = useState<'regular' | 'membership'>('regular');
@@ -38,10 +41,14 @@ export function Calculator({ variants, versionId, masterId, isDraft }: Props) {
 
   const isPending = calcVersion.isPending || calcMaster.isPending;
 
+  useEffect(() => {
+    setVariantId((current) => getValidPricingVariantId(current, variants));
+  }, [variants]);
+
   const handleCalculate = () => {
     if (!variantId) return;
     const dto = { variantId, quantity, customerType };
-    if (isDraft && versionId) {
+    if (versionId) {
       calcVersion.mutate(
         { versionId, dto },
         { onSuccess: setResult },

@@ -7,6 +7,9 @@ import type {
   ProductVariantRow,
 } from '@/lib/services/products/products-detail.types';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Pencil } from 'lucide-react';
 
 const STATUS_LABELS: Record<string, string> = {
   active: '활성',
@@ -17,8 +20,13 @@ const STATUS_LABELS: Record<string, string> = {
 
 const columnHelper = createColumnHelper<ProductVariantRow>();
 
+type RowActions = {
+  onEdit: (row: ProductVariantRow) => void;
+};
+
 export function useProductVariantsTableColumns(
   optionGroups: ProductOptionGroup[],
+  actions?: RowActions
 ) {
   return useMemo(() => {
     // valueId → displayName. master 의 모든 그룹/값을 평탄화.
@@ -30,7 +38,7 @@ export function useProductVariantsTableColumns(
     }
 
     const sortedGroups = [...optionGroups].sort(
-      (a, b) => a.sortOrder - b.sortOrder,
+      (a, b) => a.sortOrder - b.sortOrder
     );
 
     const optionColumns: ColumnDef<ProductVariantRow, unknown>[] =
@@ -40,33 +48,65 @@ export function useProductVariantsTableColumns(
           header: group.displayName,
           cell: ({ row }) => {
             const matches = row.original.optionValues.filter(
-              (ov) => ov.optionGroupId === group.id,
+              (ov) => ov.optionGroupId === group.id
             );
             if (matches.length === 0) return '-';
             if (matches.length > 1) {
               console.warn(
-                `[ProductVariants] variant ${row.original.id} has ${matches.length} values for option group ${group.id}; expected 1`,
+                `[ProductVariants] variant ${row.original.id} has ${matches.length} values for option group ${group.id}; expected 1`
               );
             }
             const first = matches[0];
             const label = valueLabelById.get(first.id);
             if (label === undefined) {
               console.warn(
-                `[ProductVariants] option value ${first.id} on variant ${row.original.id} not found in master option groups`,
+                `[ProductVariants] option value ${first.id} on variant ${row.original.id} not found in master option groups`
               );
               return '-';
             }
             return label;
           },
-        }),
+        })
       );
 
-    return [
+    const columns: ColumnDef<ProductVariantRow, any>[] = [
+      ...(actions
+        ? [
+            columnHelper.display({
+              id: 'select',
+              header: ({ table }) => (
+                <Checkbox
+                  checked={
+                    table.getIsAllPageRowsSelected() ||
+                    (table.getIsSomePageRowsSelected() && 'indeterminate')
+                  }
+                  onCheckedChange={(value) =>
+                    table.toggleAllPageRowsSelected(!!value)
+                  }
+                  aria-label="전체 선택"
+                  onClick={(event) => event.stopPropagation()}
+                />
+              ),
+              cell: ({ row }) => (
+                <Checkbox
+                  checked={row.getIsSelected()}
+                  onCheckedChange={(value) => row.toggleSelected(!!value)}
+                  aria-label="행 선택"
+                  onClick={(event) => event.stopPropagation()}
+                />
+              ),
+            }),
+          ]
+        : []),
       columnHelper.accessor('variantName', {
         header: '이름',
         cell: ({ getValue }) => getValue() ?? '-',
       }),
       ...optionColumns,
+      columnHelper.accessor('displayOrder', {
+        header: '순서',
+        cell: ({ getValue }) => getValue() ?? '-',
+      }),
       columnHelper.accessor('isDefault', {
         header: '기본',
         cell: ({ getValue }) =>
@@ -88,6 +128,29 @@ export function useProductVariantsTableColumns(
           return `${v.toLocaleString()}원`;
         },
       }),
+      ...(actions
+        ? [
+            columnHelper.display({
+              id: 'actions',
+              header: '',
+              cell: ({ row }) => (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    actions.onEdit(row.original);
+                  }}
+                >
+                  <Pencil data-icon="inline-start" />
+                  편집
+                </Button>
+              ),
+            }),
+          ]
+        : []),
     ];
-  }, [optionGroups]);
+
+    return columns;
+  }, [actions, optionGroups]);
 }

@@ -2,9 +2,16 @@
 
 import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import { client } from '../../client';
-import type { MasterVersionDto, CreateDraftVersionDto } from '../../../types/dto/products';
 import type {
+  MasterVersionDto,
+  CreateDraftVersionDto,
+} from '../../../types/dto/products';
+import type {
+  BulkUpdateProductVariantDto,
+  BulkUpdateProductVariantResultDto,
   MasterVersionDetailDto,
+  UpdateProductVariantDto,
+  UpdateProductVariantResultDto,
   UpdateMasterVersionDto,
 } from '@/lib/services/products/products-detail.types';
 
@@ -20,20 +27,40 @@ export const versionsClient = {
 
   getById: async (
     masterId: string,
-    versionId: string,
+    versionId: string
   ): Promise<MasterVersionDetailDto> =>
     (await client.get(`${base(masterId)}/${versionId}`)).data,
 
   createDraft: async (
     masterId: string,
-    dto: CreateDraftVersionDto,
-  ): Promise<MasterVersionDto> =>
-    (await client.post(base(masterId), dto)).data,
+    dto: CreateDraftVersionDto
+  ): Promise<MasterVersionDto> => (await client.post(base(masterId), dto)).data,
 
   update: async (
     masterId: string,
     versionId: string,
-    dto: UpdateMasterVersionDto,
+    dto: UpdateMasterVersionDto
   ): Promise<MasterVersionDetailDto> =>
     (await client.put(`${base(masterId)}/${versionId}`, dto)).data,
+
+  updateVariant: async (
+    masterId: string,
+    versionId: string,
+    variantId: string,
+    dto: UpdateProductVariantDto
+  ): Promise<UpdateProductVariantResultDto> =>
+    (
+      await client.put(
+        `${base(masterId)}/${versionId}/variants/${variantId}`,
+        dto
+      )
+    ).data,
+
+  bulkUpdateVariants: async (
+    masterId: string,
+    versionId: string,
+    dto: BulkUpdateProductVariantDto
+  ): Promise<BulkUpdateProductVariantResultDto> =>
+    (await client.put(`${base(masterId)}/${versionId}/variants/bulk`, dto))
+      .data,
 };
