@@ -225,7 +225,7 @@ describe('ProductIndexService.searchProducts - relevance with keyword (function_
               field: 'bayesian_review_score',
               factor: 0.1,
               modifier: 'none',
-              missing: 0,
+              missing: 3.5,
             },
           },
         ],
