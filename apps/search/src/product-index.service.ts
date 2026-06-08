@@ -322,7 +322,7 @@ export class ProductIndexService implements OnModuleInit {
               field: 'bayesian_review_score',
               factor: this.reviewScoreWeight,
               modifier: 'none',
-              missing: 0,
+              missing: 3.5,
             },
           },
         ],
