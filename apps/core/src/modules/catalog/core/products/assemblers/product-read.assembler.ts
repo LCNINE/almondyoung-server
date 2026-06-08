@@ -6,6 +6,7 @@ import {
   ProductMasterVersion,
   DbTransaction,
   OptionGroupReadModel,
+  ProductDetailCategory,
   ProductImage,
   ProductVariant,
   TagReadModel,
@@ -15,6 +16,8 @@ import {
   type PimSchema,
   productMasters,
   productMasterVersions,
+  productMasterCategories,
+  productCategories,
   productMasterVariants,
   productVariants,
   productImages,
@@ -28,6 +31,7 @@ type ProductReadAssemblerInclude = {
   optionGroups?: boolean;
   variants?: boolean;
   tags?: boolean;
+  categories?: boolean;
   priceSummary?: boolean;
   channelProducts?: boolean;
 };
@@ -68,6 +72,7 @@ export class ProductReadAssembler {
         optionGroups: true,
         variants: true,
         tags: true,
+        categories: true,
         priceSummary: true,
         channelProducts: true,
         ...options?.include,
@@ -88,12 +93,16 @@ export class ProductReadAssembler {
       const imagesPromise: Promise<ProductImage[]> = include.images
         ? this._fetchImages(versionId, tx)
         : Promise.resolve([]);
+      const categoriesPromise: Promise<ProductDetailCategory[]> = include.categories
+        ? this._fetchCategories(masterId, versionId, tx)
+        : Promise.resolve([]);
 
-      const [optionGroups, variants, tags, images] = await Promise.all([
+      const [optionGroups, variants, tags, images, categories] = await Promise.all([
         optionGroupsPromise,
         variantsPromise,
         tagsPromise,
         imagesPromise,
+        categoriesPromise,
       ]);
 
       const cachedPrices = await this.priceCacheService.getCachedPriceSetsByVersion(versionId, tx);
@@ -137,6 +146,7 @@ export class ProductReadAssembler {
         ...version,
         thumbnail,
         images,
+        categories,
         optionGroups,
         variants: variantsWithOptions,
         channelProducts,
@@ -231,5 +241,28 @@ export class ProductReadAssembler {
       .from(productImages)
       .where(eq(productImages.versionId, versionId))
       .orderBy(desc(productImages.isPrimary), asc(productImages.sortOrder));
+  }
+
+  private async _fetchCategories(
+    masterId: string,
+    versionId: string,
+    tx: DbTransaction,
+  ): Promise<ProductDetailCategory[]> {
+    const rows = await tx
+      .select({
+        id: productCategories.id,
+        name: productCategories.name,
+        slug: productCategories.slug,
+        path: productCategories.path,
+        parentId: productCategories.parentId,
+        isActive: productCategories.isActive,
+        isPrimary: productMasterCategories.isPrimary,
+      })
+      .from(productMasterCategories)
+      .innerJoin(productCategories, eq(productMasterCategories.categoryId, productCategories.id))
+      .where(and(eq(productMasterCategories.masterId, masterId), eq(productMasterCategories.versionId, versionId)))
+      .orderBy(desc(productMasterCategories.isPrimary), asc(productCategories.path), asc(productCategories.name));
+
+    return rows;
   }
 }
