@@ -126,6 +126,8 @@ export type UpdateMasterVersionDto = {
   description?: string | null;
   descriptionHtml?: string | null;
   brand?: string | null;
+  thumbnailFileId?: string | null;
+  additionalImageFileIds?: string[];
   seoTitle?: string | null;
   seoDescription?: string | null;
   seoKeywords?: string[];
