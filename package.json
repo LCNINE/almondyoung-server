@@ -79,6 +79,8 @@
     "search:analyze": "ts-node -r tsconfig-paths/register apps/search/scripts/analyze-benchmark.ts",
     "search:backfill": "./scripts/with-ipv4.sh dotenv -e .env -e apps/search/.env -- ts-node -r tsconfig-paths/register apps/search/scripts/backfill-from-core.ts",
     "search:backfill:dry": "./scripts/with-ipv4.sh dotenv -e .env -e apps/search/.env -- ts-node -r tsconfig-paths/register apps/search/scripts/backfill-from-core.ts --dry-run",
+    "search:backfill:reviews": "./scripts/with-ipv4.sh dotenv -e .env -e apps/search/.env -- ts-node -r tsconfig-paths/register apps/search/scripts/backfill-review-stats.ts",
+    "search:backfill:reviews:dry": "./scripts/with-ipv4.sh dotenv -e .env -e apps/search/.env -- ts-node -r tsconfig-paths/register apps/search/scripts/backfill-review-stats.ts --dry-run",
     "search:benchmark": "./scripts/with-ipv4.sh dotenv -e .env -e apps/search/.env -- ts-node -r tsconfig-paths/register apps/search/scripts/benchmark-keywords.ts",
     "search:synonym-candidates": "ts-node -r tsconfig-paths/register apps/search/scripts/extract-synonym-candidates.ts",
     "seed": "ts-node -r tsconfig-paths/register src/database/seed-cli.ts",

@@ -398,15 +398,18 @@ async function bulkUpsert(
     return { success: 0, failed: 0 };
   }
 
+  // Use update + doc_as_upsert instead of index so that review fields already in the
+  // document (populated by the review stats backfill or Kafka consumer) are preserved
+  // when the product backfill is re-run.
   const operations: any[] = [];
   for (const doc of documents) {
     operations.push({
-      index: {
+      update: {
         _index: index,
         _id: doc.master_id,
       },
     });
-    operations.push(doc);
+    operations.push({ doc, doc_as_upsert: true });
   }
 
   const response: any = await client.bulk({
@@ -420,7 +423,7 @@ async function bulkUpsert(
 
   let failed = 0;
   for (let i = 0; i < response.body.items.length; i++) {
-    const item = response.body.items[i]?.index;
+    const item = response.body.items[i]?.update;
     if (item?.error) {
       failed += 1;
       const id = documents[i]?.master_id;
