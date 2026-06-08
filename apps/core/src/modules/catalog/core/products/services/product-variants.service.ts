@@ -23,7 +23,6 @@ import { UpdateProductVariantDto, UpdateVariantBulkDto } from '../dto';
 import { ProductVersionsService } from './product-versions.service';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
 import { VariantAssetLinkService } from '../../../../library/services/variant-asset-link.service';
-import { ProductSellableQuantityService } from '../../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 
 type VariantDetailKeysParam = { variantId: string; versionId: string } | { variantId: string; masterId: string };
 type VariantOptionsKeysParam = { variantId: string; versionId: string } | { variantId: string; masterId: string };
@@ -35,7 +34,6 @@ export class ProductVariantsService {
     private readonly productVersionsService: ProductVersionsService,
     private readonly priceCacheService: VariantPriceCacheService,
     private readonly variantAssetLinkService: VariantAssetLinkService,
-    private readonly productSellableQuantity: ProductSellableQuantityService,
   ) {}
 
   private getClient(tx?: DbTransaction) {
@@ -461,10 +459,6 @@ export class ProductVariantsService {
     if (data.variantCode !== undefined) updateData.variantCode = data.variantCode;
 
     await tx.update(productVariants).set(updateData).where(eq(productVariants.id, variantId));
-
-    if (data.status !== undefined) {
-      await this.productSellableQuantity.recalculateAndPublishForVariant(variantId, tx);
-    }
   }
 
   private async _cloneVariant(sourceVariantId: string, tx: DbTransaction): Promise<string> {

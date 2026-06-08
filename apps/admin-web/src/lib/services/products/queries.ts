@@ -30,6 +30,7 @@ import type {
 } from '@/lib/types/dto/products';
 import type { BatchVariantInfo } from '@/lib/api/domains/products/variants.client';
 import type {
+  MasterVersionDetailDto,
   ProductMasterDetail,
   ProductVariantsResponse,
 } from './products-detail.types';
@@ -423,6 +424,23 @@ export const useVersionDetailSuspense = (masterId: string, versionId: string) =>
   return useSuspenseQuery({
     queryKey: productQueryKeys.versionDetail(masterId, versionId),
     queryFn: () => products.versions.getById(masterId, versionId),
+    staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+};
+
+export const useVersionDetail = (masterId: string, versionId: string | null) => {
+  return useQuery<MasterVersionDetailDto>({
+    queryKey: versionId
+      ? productQueryKeys.versionDetailRaw(masterId, versionId)
+      : [...productQueryKeys.masterVersions(masterId), 'detail', 'none'],
+    queryFn: () => {
+      if (!versionId) {
+        throw new Error('versionId is required');
+      }
+      return products.versions.getById(masterId, versionId);
+    },
+    enabled: !!masterId && !!versionId,
     staleTime: 30 * 1000,
     gcTime: 5 * 60 * 1000,
   });
