@@ -120,7 +120,7 @@ describe('UGC_EVENT_STREAM', () => {
     });
 
     describe('bayesianReviewScore', () => {
-      it('0.0을 허용한다 (리뷰 없음 시 prior mean에 수렴하지 않는 극단값)', () => {
+      it('0.0을 허용한다 (계약상 점수 범위 하한)', () => {
         expect(() => schema.parse({ ...VALID_PAYLOAD, bayesianReviewScore: 0 })).not.toThrow();
       });
 

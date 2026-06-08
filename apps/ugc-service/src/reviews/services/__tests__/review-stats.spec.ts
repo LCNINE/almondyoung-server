@@ -10,13 +10,16 @@
  */
 
 describe('Bayesian average formula', () => {
-  function computeBayesian(reviewCount: number, ratingSum: number, C = 10, m = 3.5): number {
+  function computeBayesian(reviewCount: number, ratingSum: number, globalAverageRating = 3.5, priorCount = 10): number {
     const averageRating = reviewCount > 0 ? ratingSum / reviewCount : 0;
-    const raw = (C * m + reviewCount * averageRating) / (C + reviewCount);
+    const raw =
+      reviewCount + priorCount > 0
+        ? (reviewCount * averageRating + priorCount * globalAverageRating) / (reviewCount + priorCount)
+        : globalAverageRating;
     return Math.round(raw * 1000) / 1000;
   }
 
-  it('리뷰 없음 → prior mean(3.5)만 반영', () => {
+  it('리뷰 없음 → 전체 active 리뷰 평균 C만 반영', () => {
     expect(computeBayesian(0, 0)).toBe(3.5);
   });
 
@@ -27,7 +30,7 @@ describe('Bayesian average formula', () => {
   });
 
   it('리뷰 100개 평균 5점 → (10*3.5 + 100*5) / 110 ≈ 4.864', () => {
-    // C=10이므로 100개에도 prior 영향이 남음: 535/110 = 4.8636...
+    // priorCount=10이므로 100개에도 전체 평균 C 영향이 남음: 535/110 = 4.8636...
     const score = computeBayesian(100, 500);
     expect(score).toBeCloseTo(4.864, 2);
   });
@@ -45,10 +48,15 @@ describe('Bayesian average formula', () => {
     expect(score).toBeCloseTo(3.904, 2);
   });
 
-  it('C를 크게 올리면 prior 영향이 강해짐', () => {
-    const low = computeBayesian(10, 50, 1, 3.5);   // C=1: prior 거의 무시 → ~5
-    const high = computeBayesian(10, 50, 100, 3.5); // C=100: prior 강함 → ~3.6
+  it('priorCount를 크게 올리면 전체 평균 C 영향이 강해짐', () => {
+    const low = computeBayesian(10, 50, 3.5, 1); // m=1: 상품 평균 5점 영향이 큼
+    const high = computeBayesian(10, 50, 3.5, 100); // m=100: 전체 평균 3.5 영향이 큼
     expect(low).toBeGreaterThan(high);
+  });
+
+  it('전체 평균 C가 바뀌면 신규/저리뷰 상품 기준점도 같이 바뀜', () => {
+    expect(computeBayesian(0, 0, 4.1, 10)).toBe(4.1);
+    expect(computeBayesian(1, 5, 4.1, 10)).toBeCloseTo(4.182, 2);
   });
 
   it('결과는 항상 [0, 5] 범위', () => {
