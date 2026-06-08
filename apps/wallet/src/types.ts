@@ -14,8 +14,11 @@ import {
   paymentIntentItems,
   paymentIntentOrderDiscounts,
   paymentIntents,
+  paymentMethodCatalog,
   paymentMethods,
   paymentStateTransitions,
+  regionPaymentMethods,
+  regions,
   pointEventDetails,
   pointEvents,
   pointHoldDetails,
@@ -31,6 +34,18 @@ export type DbTransaction = DbTx;
 export type PaymentMethod = InferSelectModel<typeof paymentMethods>;
 export type NewPaymentMethod = InferInsertModel<typeof paymentMethods>;
 export type UpdatePaymentMethod = Partial<Omit<NewPaymentMethod, 'id' | 'createdAt' | 'updatedAt'>>;
+
+export type PaymentMethodCatalog = InferSelectModel<typeof paymentMethodCatalog>;
+export type NewPaymentMethodCatalog = InferInsertModel<typeof paymentMethodCatalog>;
+export type UpdatePaymentMethodCatalog = Partial<Omit<NewPaymentMethodCatalog, 'id' | 'createdAt' | 'updatedAt'>>;
+
+export type Region = InferSelectModel<typeof regions>;
+export type NewRegion = InferInsertModel<typeof regions>;
+export type UpdateRegion = Partial<Omit<NewRegion, 'id' | 'createdAt' | 'updatedAt'>>;
+
+export type RegionPaymentMethod = InferSelectModel<typeof regionPaymentMethods>;
+export type NewRegionPaymentMethod = InferInsertModel<typeof regionPaymentMethods>;
+export type UpdateRegionPaymentMethod = Partial<Omit<NewRegionPaymentMethod, 'id' | 'createdAt' | 'updatedAt'>>;
 
 export type PaymentIntent = InferSelectModel<typeof paymentIntents>;
 export type NewPaymentIntent = InferInsertModel<typeof paymentIntents>;

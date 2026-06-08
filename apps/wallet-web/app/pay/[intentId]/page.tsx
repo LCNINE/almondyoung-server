@@ -1,6 +1,12 @@
 import { cookies } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
-import { getPaymentIntent, getPaymentMethods, getPointsBalance, getBillingMethods } from '@/lib/wallet-api';
+import {
+  getPaymentIntent,
+  getPaymentMethods,
+  getPointsBalance,
+  getBillingMethods,
+  getAvailablePaymentMethods,
+} from '@/lib/wallet-api';
 import { buildReturnUrl } from '@/lib/return-url';
 import { PayForm } from './pay-form';
 import { Card, CardContent } from '@/components/ui/card';
@@ -10,10 +16,12 @@ import { CheckCircle2, XCircle } from 'lucide-react';
 
 interface Props {
   params: Promise<{ intentId: string }>;
+  searchParams: Promise<{ region?: string }>;
 }
 
-export default async function PayPage({ params }: Props) {
+export default async function PayPage({ params, searchParams }: Props) {
   const { intentId } = await params;
+  const { region } = await searchParams;
 
   // 서버 컴포넌트에서 브라우저 쿠키를 wallet API로 직접 포워딩
   const cookieStore = await cookies();
@@ -28,9 +36,14 @@ export default async function PayPage({ params }: Props) {
 
   const isRecurring = intent.metadata?.billingMode === 'recurring';
 
-  const [methods, billingMethods] = await Promise.all([
+  const [methods, billingMethods, availableMethods] = await Promise.all([
     getPaymentMethods(cookieHeader).catch(() => []),
     isRecurring ? getBillingMethods(cookieHeader) : Promise.resolve([]),
+    // region 미지정 → null (필터 미적용, 하위호환).
+    // region 명시 → 가용 결제수단 목록. 조회 실패해도 [] 로 막아, 설정 안 된 리전에 다른 리전(KR) 수단이 새지 않게 한다.
+    region
+      ? getAvailablePaymentMethods(region, cookieHeader).catch(() => [])
+      : Promise.resolve(null),
   ]);
 
   if (['AUTHORIZED', 'CAPTURED', 'SUCCEEDED'].includes(intent.status)) {
@@ -92,5 +105,14 @@ export default async function PayPage({ params }: Props) {
     );
   }
 
-  return <PayForm intent={intent} methods={methods} pointsBalance={pointsBalance} billingMethodsExist={billingMethodsExist} />;
+  return (
+    <PayForm
+      intent={intent}
+      methods={methods}
+      pointsBalance={pointsBalance}
+      billingMethodsExist={billingMethodsExist}
+      availableMethods={availableMethods}
+      region={region ?? null}
+    />
+  );
 }

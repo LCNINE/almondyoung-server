@@ -20,6 +20,13 @@ export interface PaymentMethod {
   isReusable: boolean;
 }
 
+export interface AvailablePaymentMethod {
+  code: string;
+  displayName: string;
+  description: string | null;
+  sortOrder: number;
+}
+
 export interface ConfirmResult {
   id: string;
   status: string;
@@ -90,6 +97,32 @@ export async function getPaymentMethods(cookieHeader?: string): Promise<PaymentM
   return res.json();
 }
 
+/**
+ * 리전(소문자 alpha-2)에서 사용 가능한 결제수단 카탈로그를 조회한다.
+ * storefront 가 전달한 region 으로 어떤 결제수단을 제시할지 결정하는 데 쓴다.
+ */
+export async function getAvailablePaymentMethods(
+  region: string,
+  cookieHeader?: string,
+): Promise<AvailablePaymentMethod[]> {
+  const code = region.trim().toLowerCase();
+  if (!/^[a-z]{2}$/.test(code)) return [];
+
+  const headers: Record<string, string> = {};
+  if (cookieHeader) headers['Cookie'] = cookieHeader;
+
+  const res = await fetch(`${BASE_URL}/v1/regions/${code}/payment-methods`, {
+    headers,
+    credentials: cookieHeader ? undefined : 'include',
+    cache: 'no-store',
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.message ?? `Failed to load available payment methods (${res.status})`);
+  }
+  return res.json();
+}
+
 export async function getPointsBalance(cookieHeader?: string): Promise<PointsBalance> {
   const headers: Record<string, string> = {};
   if (cookieHeader) headers['Cookie'] = cookieHeader;
@@ -156,10 +189,7 @@ export interface CmsBankAccountPayload {
   paymentNumber: string;
 }
 
-export async function registerCmsBankAccount(
-  dto: CmsBankAccountPayload,
-  cookieHeader: string,
-): Promise<BillingMethod> {
+export async function registerCmsBankAccount(dto: CmsBankAccountPayload, cookieHeader: string): Promise<BillingMethod> {
   const res = await fetch(`${BASE_URL}/v1/billing-methods/cms/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Cookie: cookieHeader, 'Idempotency-Key': crypto.randomUUID() },

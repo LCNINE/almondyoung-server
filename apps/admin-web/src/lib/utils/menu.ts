@@ -478,6 +478,11 @@ export const mainMenus: MainMenu[] = [
         isComingSoon: true,
       },
       {
+        id: 'store-regions',
+        title: '리전 설정 (통화/세금)',
+        path: '/mall/regions',
+      },
+      {
         id: 'settings',
         title: '설정',
         path: '/mall/settings',
@@ -509,6 +514,16 @@ export const mainMenus: MainMenu[] = [
         id: 'points-management',
         title: '적립금 관리',
         path: '/payments/points',
+      },
+      {
+        id: 'payment-methods-management',
+        title: '결제수단 관리',
+        path: '/payments/methods',
+      },
+      {
+        id: 'region-management',
+        title: '리전·결제수단 관리',
+        path: '/payments/regions',
       },
     ],
   },
