@@ -38,8 +38,8 @@ interface AggregatedReviewStats {
 @Injectable()
 export class ReviewsService {
   private readonly logger = new Logger(ReviewsService.name);
-  private readonly bayesianConfidence: number;
-  private readonly bayesianPriorMean: number;
+  private readonly bayesianPriorCount: number;
+  private readonly fallbackPriorMean: number;
 
   constructor(
     @InjectDb() private readonly db: DbService<UgcServiceSchema>,
@@ -48,8 +48,17 @@ export class ReviewsService {
     private readonly statsPublisher: ReviewStatsPublisher,
     private readonly configService: ConfigService,
   ) {
-    this.bayesianConfidence = Number(this.configService.get('BAYESIAN_CONFIDENCE') ?? 10);
-    this.bayesianPriorMean = Number(this.configService.get('BAYESIAN_PRIOR_MEAN') ?? 3.5);
+    const bayesianPriorCount = Number(
+      this.configService.get('BAYESIAN_PRIOR_COUNT') ?? this.configService.get('BAYESIAN_CONFIDENCE') ?? 10,
+    );
+    const fallbackPriorMean = Number(this.configService.get('BAYESIAN_PRIOR_MEAN') ?? 3.5);
+
+    this.bayesianPriorCount =
+      Number.isFinite(bayesianPriorCount) && bayesianPriorCount > 0 ? bayesianPriorCount : 10;
+    this.fallbackPriorMean =
+      Number.isFinite(fallbackPriorMean) && fallbackPriorMean >= 0 && fallbackPriorMean <= 5
+        ? fallbackPriorMean
+        : 3.5;
   }
 
   private get client() {
@@ -67,6 +76,14 @@ export class ReviewsService {
       .where(and(eq(reviews.productId, productId), eq(reviews.status, 'active'), isNull(reviews.deletedAt)))
       .groupBy(reviews.rating);
 
+    const globalStatsRows = await tx
+      .select({
+        reviewCount: count(),
+        ratingSum: sql<number>`COALESCE(SUM(${reviews.rating}), 0)::int`,
+      })
+      .from(reviews)
+      .where(and(eq(reviews.status, 'active'), isNull(reviews.deletedAt)));
+
     const distribution: RatingDistribution = { '1': 0, '2': 0, '3': 0, '4': 0, '5': 0 };
     let reviewCount = 0;
     let ratingSum = 0;
@@ -79,13 +96,20 @@ export class ReviewsService {
     }
 
     const averageRating = reviewCount > 0 ? ratingSum / reviewCount : 0;
+    const globalStats = globalStatsRows[0];
+    const globalReviewCount = Number(globalStats?.reviewCount ?? 0);
+    const globalRatingSum = Number(globalStats?.ratingSum ?? 0);
+    const globalAverageRating =
+      globalReviewCount > 0 ? globalRatingSum / globalReviewCount : this.fallbackPriorMean;
 
-    // Bayesian average: (C * m + n * avg) / (C + n)
-    // C: confidence weight (prior review count), m: prior mean
-    // When n=0: score reduces to m (prior mean only)
-    const C = this.bayesianConfidence;
-    const m = this.bayesianPriorMean;
-    const bayesianReviewScore = (C * m + reviewCount * averageRating) / (C + reviewCount);
+    // Bayesian average: (v / (v + m)) * R + (m / (v + m)) * C
+    // R: product average, v: product review count, C: global active-review average, m: prior count.
+    const priorCount = this.bayesianPriorCount;
+    const denominator = reviewCount + priorCount;
+    const bayesianReviewScore =
+      denominator > 0
+        ? (reviewCount * averageRating + priorCount * globalAverageRating) / denominator
+        : globalAverageRating;
 
     return {
       reviewCount,
