@@ -1,0 +1,5 @@
+# Core Catalog owns purchase constraint data while sales channels enforce it
+
+Core Catalog owns the source data for saleable product purchase constraints, but it does not validate customer orders against those constraints. Purchase constraints are version-owned catalog data: a product master version may have zero or one mapped purchase constraint row, drafts copy the mapping and use copy-on-write when editing a shared row, and active-version publish or rollback includes the constraint in the `ProductMasterActiveVersionChanged` snapshot.
+
+Sales channels receive this data as projection input through channel-adapter and enforce only the constraints they support. Core publish is not blocked when a channel cannot enforce a constraint; unsupported enforcement is a channel projection capability gap. For Medusa, the first implementation slice projects the constraint into separate product metadata (`pimPurchaseConstraint`) for future custom workflow/hook enforcement, while checkout enforcement and lifetime quantity accounting remain out of scope until that Medusa customization exists.
