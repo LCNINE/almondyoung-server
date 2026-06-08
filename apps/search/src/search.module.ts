@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { SearchController } from './search.controller';
 import { ProductEventsConsumer } from './product-events.consumer';
+import { ReviewEventsConsumer } from './review-events.consumer';
 import { OpenSearchService } from './opensearch.service';
 import { ProductIndexService } from './product-index.service';
 import { SearchService } from './search.service';
@@ -17,7 +18,7 @@ import { SearchKeywordService } from './search-keyword.service';
       envFilePath: ['.env', 'apps/search/.env'],
     }),
   ],
-  controllers: [SearchController, ProductEventsConsumer, HealthController],
+  controllers: [SearchController, ProductEventsConsumer, ReviewEventsConsumer, HealthController],
   providers: [
     SearchService,
     OpenSearchService,
