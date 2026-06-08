@@ -47,6 +47,7 @@ export interface ProductVersionDetailResponseDto {
   channelProducts: any[];
   tagValues?: any[];
   priceSummary?: ProductDetailDto['priceSummary'];
+  purchaseConstraint?: ProductDetailDto['purchaseConstraint'];
 }
 
 /**
@@ -99,6 +100,7 @@ export class ProductVersionMapper {
       channelProducts: detail.channelProducts,
       tagValues: detail.tagValues,
       priceSummary: detail.priceSummary,
+      purchaseConstraint: detail.purchaseConstraint ?? null,
     };
   }
 }
