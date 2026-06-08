@@ -422,7 +422,7 @@ export const useVersionTreeSuspense = (masterId: string) => {
  */
 export const useVersionDetailSuspense = (masterId: string, versionId: string) => {
   return useSuspenseQuery({
-    queryKey: productQueryKeys.versionDetail(masterId, versionId),
+    queryKey: productQueryKeys.versionDetailRaw(masterId, versionId),
     queryFn: () => products.versions.getById(masterId, versionId),
     staleTime: 30 * 1000,
     gcTime: 5 * 60 * 1000,

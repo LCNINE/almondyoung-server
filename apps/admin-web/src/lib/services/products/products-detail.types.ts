@@ -200,3 +200,12 @@ export type BulkUpdateProductVariantResultDto = {
     cowed: boolean;
   }>;
 };
+
+export type PublishProductVersionResultDto = {
+  message: string;
+};
+
+export type DeleteDraftVersionResultDto = {
+  success: boolean;
+  message: string;
+};
