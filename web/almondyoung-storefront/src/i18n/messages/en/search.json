@@ -34,6 +34,8 @@
   "sort": {
     "relevance": "Relevance",
     "review": "Top reviewed",
+    "reviewHelpAria": "View how review sorting works",
+    "reviewHelp": "Review sorting uses a confidence score based on public review ratings and review count, not review count alone.",
     "priceAsc": "Lowest price",
     "priceDesc": "Highest price",
     "newest": "Newest"

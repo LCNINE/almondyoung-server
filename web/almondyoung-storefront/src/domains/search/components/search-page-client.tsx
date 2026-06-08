@@ -9,6 +9,8 @@ import type { SearchProductResult } from "../containers/search-container"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useTranslations } from "next-intl"
 import { SearchEmptyState } from "./search-empty-state"
+import { CircleHelp } from "lucide-react"
+import { useState } from "react"
 
 interface SearchPageClientProps {
   isMembership: boolean
@@ -32,6 +34,7 @@ export function SearchPageClient({
   const tSort = useTranslations("search.sort")
   const searchParams = useSearchParams()
   const { keywords: historyKeywords } = useSearchHistory()
+  const [isReviewInfoOpen, setIsReviewInfoOpen] = useState(false)
 
   const SORT_OPTIONS = [
     { id: "relevance", label: tSort("relevance") },
@@ -109,7 +112,31 @@ export function SearchPageClient({
         <div className="hidden text-sm text-gray-500 md:block">
           {t("pageInfo", { current: currentPage, total: totalPages })}
         </div>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          <div
+            className="relative flex items-center"
+            onMouseEnter={() => setIsReviewInfoOpen(true)}
+            onMouseLeave={() => setIsReviewInfoOpen(false)}
+          >
+            <button
+              type="button"
+              aria-label={tSort("reviewHelpAria")}
+              aria-expanded={isReviewInfoOpen}
+              className="flex h-7 w-7 items-center justify-center rounded-full text-gray-400 transition-colors hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-olive-500"
+              onClick={() => setIsReviewInfoOpen((open) => !open)}
+              onBlur={() => setIsReviewInfoOpen(false)}
+            >
+              <CircleHelp className="h-4 w-4" aria-hidden="true" />
+            </button>
+            {isReviewInfoOpen && (
+              <div
+                role="tooltip"
+                className="absolute right-0 top-8 z-20 w-64 rounded-md border border-gray-200 bg-white px-3 py-2 text-xs leading-5 text-gray-700 shadow-lg"
+              >
+                {tSort("reviewHelp")}
+              </div>
+            )}
+          </div>
           <CustomDropdown
             items={SORT_OPTIONS}
             defaultValue={currentSort}
