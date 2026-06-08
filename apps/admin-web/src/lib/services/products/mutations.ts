@@ -513,6 +513,11 @@ export const useUpdateMasterVersion = () => {
       queryClient.invalidateQueries({
         queryKey: productQueryKeys.masterVersions(variables.masterId),
       });
+      if (variables.dto.optionDiff) {
+        queryClient.invalidateQueries({
+          queryKey: productQueryKeys.variants,
+        });
+      }
     },
   });
 };

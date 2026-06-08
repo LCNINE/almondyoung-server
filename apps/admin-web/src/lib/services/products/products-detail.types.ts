@@ -74,6 +74,44 @@ export type ProductVariantRow = {
   price?: number;
 };
 
+export type ProductOptionDiffValueInput = {
+  displayName: string;
+  colorCode?: string;
+  imageUrl?: string;
+  sortOrder?: number;
+};
+
+export type ProductOptionDiff = {
+  add?: Array<{
+    displayName: string;
+    description?: string;
+    sortOrder?: number;
+    values: ProductOptionDiffValueInput[];
+  }>;
+  modifyDisplay?: Array<{
+    optionGroupId: string;
+    displayName?: string;
+    description?: string;
+    sortOrder?: number;
+    values?: Array<{
+      optionValueId: string;
+      displayName?: string;
+      colorCode?: string;
+      imageUrl?: string;
+      sortOrder?: number;
+    }>;
+  }>;
+  addValues?: Array<{
+    optionGroupId: string;
+    values: ProductOptionDiffValueInput[];
+  }>;
+  removeValues?: Array<{
+    optionGroupId: string;
+    optionValueIds: string[];
+  }>;
+  remove?: string[];
+};
+
 export type ProductVariantsResponse = {
   data: ProductVariantRow[];
   total: number;
@@ -135,4 +173,5 @@ export type UpdateMasterVersionDto = {
   primaryCategoryId?: string | null;
   isWholesaleOnly?: boolean;
   isMembershipOnly?: boolean;
+  optionDiff?: ProductOptionDiff;
 };
