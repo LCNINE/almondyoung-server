@@ -40,7 +40,7 @@ export function UserTable() {
   return (
     <div>
       {selectedUserIds.length > 0 && (
-        <div className="flex items-center gap-2 p-3 bg-muted/50 border-b">
+        <div className="flex items-center gap-2 p-3 border-b bg-muted/50">
           <span className="text-sm text-muted-foreground">
             {selectedUserIds.length}명 선택됨
           </span>
