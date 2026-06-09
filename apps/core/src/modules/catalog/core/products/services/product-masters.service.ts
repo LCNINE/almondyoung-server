@@ -39,6 +39,8 @@ import {
   productMasterOptionGroups,
   productMasterVariants,
   productMasterPricingRules,
+  productMasterPurchaseConstraints,
+  productPurchaseConstraints,
   productTagValues,
   tagValues,
   tagGroups,
@@ -1384,10 +1386,45 @@ export class ProductMastersService {
         tx,
       );
 
+      const purchaseConstraintMappings = await tx
+        .select({ purchaseConstraintId: productMasterPurchaseConstraints.purchaseConstraintId })
+        .from(productMasterPurchaseConstraints)
+        .where(
+          and(
+            eq(productMasterPurchaseConstraints.masterId, product.masterId),
+            eq(productMasterPurchaseConstraints.versionId, id),
+          ),
+        );
+
       await tx.delete(productMasterVersions).where(eq(productMasterVersions.id, id));
+
+      await this._cleanupOrphanedPurchaseConstraints(
+        purchaseConstraintMappings.map((mapping) => mapping.purchaseConstraintId),
+        tx,
+      );
 
       return { deleted: true };
     }, tx);
+  }
+
+  private async _cleanupOrphanedPurchaseConstraints(
+    candidateConstraintIds: string[],
+    tx: DbTransaction,
+  ): Promise<void> {
+    if (candidateConstraintIds.length === 0) {
+      return;
+    }
+
+    for (const constraintId of new Set(candidateConstraintIds)) {
+      const remainingMappings = await tx
+        .select()
+        .from(productMasterPurchaseConstraints)
+        .where(eq(productMasterPurchaseConstraints.purchaseConstraintId, constraintId));
+
+      if (remainingMappings.length === 0) {
+        await tx.delete(productPurchaseConstraints).where(eq(productPurchaseConstraints.id, constraintId));
+      }
+    }
   }
 
   /**
