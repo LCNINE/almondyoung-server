@@ -30,6 +30,8 @@ import type {
   AddFOsToBatchRequest,
   ForwardDirectShipOrdersRequest,
   CompleteDirectShipOrdersRequest,
+  CreateStandaloneFulfillmentRequest,
+  InspectByScanRequest,
 } from '@/lib/types/dto/fulfillment';
 
 // 주문 관련 뮤테이션
@@ -103,7 +105,15 @@ export const useAdminManualRefundComplete = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, adminNote, refundLinkId }: { id: string; adminNote?: string; refundLinkId?: string }) =>
+    mutationFn: ({
+      id,
+      adminNote,
+      refundLinkId,
+    }: {
+      id: string;
+      adminNote?: string;
+      refundLinkId?: string;
+    }) =>
       orders.salesOrders.adminManualRefundComplete(id, adminNote, refundLinkId),
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
@@ -221,6 +231,64 @@ export const useGenerateBarcode = () => {
   });
 };
 
+// ===== 출고주문(FO) 액션 뮤테이션 =====
+
+// FO 상세/목록 캐시 무효화 공통 처리
+const useInvalidateFulfillment = () => {
+  const queryClient = useQueryClient();
+  return (id: string) => {
+    queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillment(id) });
+    queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillments });
+  };
+};
+
+export const useCreateFulfillmentOrder = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateStandaloneFulfillmentRequest) =>
+      orders.fulfillmentOrder.createStandalone(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillments });
+    },
+  });
+};
+
+export const useShipFulfillment = () => {
+  const invalidate = useInvalidateFulfillment();
+  return useMutation({
+    mutationFn: (id: string) => orders.fulfillmentOrder.ship(id),
+    onSuccess: (_, id) => invalidate(id),
+  });
+};
+
+export const useCancelFulfillment = () => {
+  const invalidate = useInvalidateFulfillment();
+  return useMutation({
+    mutationFn: (id: string) => orders.fulfillmentOrder.cancel(id),
+    onSuccess: (_, id) => invalidate(id),
+  });
+};
+
+export const useReserveFulfillmentItem = () => {
+  const invalidate = useInvalidateFulfillment();
+  return useMutation({
+    mutationFn: ({
+      id,
+      fulfillmentOrderItemId,
+      quantity,
+    }: {
+      id: string;
+      fulfillmentOrderItemId: string;
+      quantity: number;
+    }) =>
+      orders.fulfillmentOrder.reserveItem(id, {
+        fulfillmentOrderItemId,
+        quantity,
+      }),
+    onSuccess: (_, { id }) => invalidate(id),
+  });
+};
+
 // ===== 검수 관련 뮤테이션 =====
 
 export const useStartInspection = () => {
@@ -256,12 +324,21 @@ export const useInspectItem = () => {
     mutationFn: (data: InspectItemRequest) =>
       orders.inspection.inspectItem(data),
     onSuccess: (_, data) => {
-      queryClient.invalidateQueries({
-        queryKey: orderQueryKeys.inspectionSummary(data.sessionId),
-      });
+      queryClient.invalidateQueries({ queryKey: ['inspection'] });
       queryClient.invalidateQueries({
         queryKey: orderQueryKeys.inspectionHistory(data.foiId),
       });
+    },
+  });
+};
+
+export const useInspectByScan = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: InspectByScanRequest) =>
+      orders.inspection.inspectByScan(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inspection'] });
     },
   });
 };
@@ -272,6 +349,7 @@ export const useForceShipment = () => {
     mutationFn: (data: ForceShipmentRequest) =>
       orders.inspection.forceShipment(data),
     onSuccess: (_, data) => {
+      queryClient.invalidateQueries({ queryKey: ['inspection'] });
       queryClient.invalidateQueries({
         queryKey: orderQueryKeys.inspectionHistory(data.foiId),
       });

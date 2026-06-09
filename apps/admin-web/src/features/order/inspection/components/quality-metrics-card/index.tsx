@@ -13,7 +13,7 @@ export function QualityMetricsCard() {
     <div className="flex flex-wrap gap-3 rounded-md border p-4">
       <div className="flex flex-col gap-1">
         <span className="text-xs text-muted-foreground">총 검수</span>
-        <span className="text-lg font-semibold">{metrics.totalInspected}</span>
+        <span className="text-lg font-semibold">{metrics.totalInspections}</span>
       </div>
       <div className="flex flex-col gap-1">
         <span className="text-xs text-muted-foreground">승인율</span>
@@ -24,8 +24,8 @@ export function QualityMetricsCard() {
         <Badge variant="destructive">{(metrics.rejectionRate * 100).toFixed(1)}%</Badge>
       </div>
       <div className="flex flex-col gap-1">
-        <span className="text-xs text-muted-foreground">강제출고율</span>
-        <Badge variant="secondary">{(metrics.forceShipmentRate * 100).toFixed(1)}%</Badge>
+        <span className="text-xs text-muted-foreground">이슈 유형</span>
+        <Badge variant="secondary">{metrics.commonIssues.length}</Badge>
       </div>
     </div>
   );

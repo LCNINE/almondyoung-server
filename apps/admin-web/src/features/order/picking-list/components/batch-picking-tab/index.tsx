@@ -8,15 +8,37 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Search } from 'lucide-react';
 import { BarcodeScanInput } from '@/components/common/barcode-scan-input';
-import { useBatchPickingOperations, useBatchPickingProgress } from '@/lib/services/orders/queries';
-import { useBatchPick, useGenerateBarcode } from '@/lib/services/orders/mutations';
+import {
+  useBatchPickingOperations,
+  useBatchPickingProgress,
+} from '@/lib/services/orders/queries';
+import {
+  useBatchPick,
+  useGenerateBarcode,
+} from '@/lib/services/orders/mutations';
+import type { PickingOperation } from '@/lib/types/dto/fulfillment';
+
+// 백엔드는 SKU 단위 집계만 주므로 진행 상태는 pickedQty/totalQty 로 프론트에서 도출
+function operationStatus(
+  op: PickingOperation
+): 'pending' | 'partial' | 'completed' {
+  if (op.pickedQty >= op.totalQty) return 'completed';
+  if (op.pickedQty > 0) return 'partial';
+  return 'pending';
+}
+
+function normalizeScannedSku(scanned: string) {
+  const trimmed = scanned.trim();
+  return trimmed.toUpperCase().startsWith('SKU-') ? trimmed.slice(4) : trimmed;
+}
 
 export function BatchPickingTab() {
   const [batchId, setBatchId] = useState('');
   const [searchedBatchId, setSearchedBatchId] = useState('');
   const [barcode, setBarcode] = useState('');
 
-  const { data: operations, isLoading: opsLoading } = useBatchPickingOperations(searchedBatchId);
+  const { data: operations, isLoading: opsLoading } =
+    useBatchPickingOperations(searchedBatchId);
   const { data: progress } = useBatchPickingProgress(searchedBatchId);
   const batchPickMutation = useBatchPick();
   const generateBarcodeMutation = useGenerateBarcode();
@@ -29,9 +51,13 @@ export function BatchPickingTab() {
 
   const handleBarcodeScan = async (scanned: string) => {
     if (!searchedBatchId) return;
-    // 스캔된 바코드로 SKU를 찾아 수량 1 피킹
-    const op = operations?.find((o) => o.skuId === scanned || o.status !== 'completed');
-    if (!op) {
+    const scannedSku = normalizeScannedSku(scanned).toLowerCase();
+    const op = operations?.find(
+      (operation) =>
+        operation.skuId.toLowerCase() === scannedSku ||
+        operation.skuCode.toLowerCase() === scannedSku
+    );
+    if (!op || op.remainingQty <= 0) {
       toast.error('매칭되는 SKU를 찾을 수 없습니다.');
       return;
     }
@@ -50,14 +76,19 @@ export function BatchPickingTab() {
 
   const handleGenerateBarcode = async (skuId: string) => {
     try {
-      const result = await generateBarcodeMutation.mutateAsync({ type: 'sku', id: skuId });
+      const result = await generateBarcodeMutation.mutateAsync({
+        type: 'sku',
+        id: skuId,
+      });
       if (result.uri) {
         window.open(result.uri, '_blank');
       } else {
         toast.success(`바코드: ${result.barcode}`);
       }
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : '바코드 생성에 실패했습니다.');
+      toast.error(
+        e instanceof Error ? e.message : '바코드 생성에 실패했습니다.'
+      );
     }
   };
 
@@ -91,7 +122,9 @@ export function BatchPickingTab() {
               <Badge variant="secondary">
                 {progress.pickedItems}/{progress.totalItems}
               </Badge>
-              <span className="text-sm font-medium">{progress.progressPercent}%</span>
+              <span className="text-sm font-medium">
+                {progress.completionPercentage}%
+              </span>
             </div>
           )}
 
@@ -106,30 +139,43 @@ export function BatchPickingTab() {
             <p className="text-sm text-muted-foreground">로딩 중…</p>
           ) : operations && operations.length > 0 ? (
             <div className="flex flex-col gap-1 rounded-md border p-2">
-              {operations.map((op) => (
-                <div key={op.id} className="flex items-center gap-2 py-1">
-                  <div className="flex flex-1 flex-col">
-                    <span className="text-sm font-medium">{op.skuName}</span>
-                    <span className="font-mono text-xs text-muted-foreground">
-                      {op.skuCode} {op.locationCode && `— ${op.locationCode}`}
-                    </span>
+              {operations.map((op) => {
+                const status = operationStatus(op);
+                return (
+                  <div key={op.skuId} className="flex items-center gap-2 py-1">
+                    <div className="flex flex-1 flex-col">
+                      <span className="text-sm font-medium">{op.skuName}</span>
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {op.skuCode} {op.locationCode && `— ${op.locationCode}`}
+                      </span>
+                    </div>
+                    <Badge
+                      variant={
+                        status === 'completed'
+                          ? 'default'
+                          : status === 'partial'
+                            ? 'secondary'
+                            : 'outline'
+                      }
+                    >
+                      {op.pickedQty}/{op.totalQty}
+                    </Badge>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleGenerateBarcode(op.skuId)}
+                      disabled={generateBarcodeMutation.isPending}
+                    >
+                      라벨
+                    </Button>
                   </div>
-                  <Badge variant={op.status === 'completed' ? 'default' : op.status === 'partial' ? 'secondary' : 'outline'}>
-                    {op.pickedQty}/{op.requiredQty}
-                  </Badge>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleGenerateBarcode(op.skuId)}
-                    disabled={generateBarcodeMutation.isPending}
-                  >
-                    라벨
-                  </Button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">조회된 피킹 작업이 없습니다.</p>
+            <p className="text-sm text-muted-foreground">
+              조회된 피킹 작업이 없습니다.
+            </p>
           )}
         </>
       )}

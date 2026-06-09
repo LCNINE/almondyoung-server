@@ -30,9 +30,17 @@ describe('FulfillmentsService', () => {
     businessLinks: Array<Record<string, any>>;
   };
 
-  function rows<T>(value: T[]): T[] & { limit: (count: number) => T[] } {
-    const result = [...value] as T[] & { limit: (count: number) => T[] };
-    result.limit = (count: number) => result.slice(0, count);
+  type QueryRows<T> = T[] & {
+    limit: (count: number) => QueryRows<T>;
+    offset: (count: number) => QueryRows<T>;
+    orderBy: (...args: unknown[]) => QueryRows<T>;
+  };
+
+  function rows<T>(value: T[]): QueryRows<T> {
+    const result = [...value] as QueryRows<T>;
+    result.limit = (count: number) => rows(result.slice(0, count));
+    result.offset = (count: number) => rows(result.slice(count));
+    result.orderBy = () => result;
     return result;
   }
 
@@ -55,9 +63,16 @@ describe('FulfillmentsService', () => {
     const tx: any = {
       execute: jest.fn().mockResolvedValue([]),
       select: jest.fn(() => ({
-        from: (table: unknown) => ({
-          where: (_where: unknown) => rows(selectRowsFor(table)),
-        }),
+        from: (table: unknown) => {
+          const result = rows(selectRowsFor(table));
+          const query: any = {
+            innerJoin: () => query,
+            where: (_where: unknown) => result,
+            limit: (count: number) => result.limit(count),
+            orderBy: (...args: unknown[]) => result.orderBy(...args),
+          };
+          return query;
+        },
       })),
       insert: jest.fn((table: unknown) => ({
         values: (value: any) => {
