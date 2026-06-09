@@ -1,19 +1,19 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 export class InvoiceSummaryDto {
-  @ApiProperty({ description: 'Invoice ID' })
+  @ApiProperty()
   id: string;
 
-  @ApiProperty({ description: '송장번호' })
+  @ApiProperty()
   invoiceNumber: string;
 
-  @ApiProperty({ description: 'Invoice 상태', enum: ['issued', 'printed', 'shipped', 'canceled'] })
+  @ApiProperty({ enum: ['issued', 'printed', 'shipped', 'canceled'] })
   status: string;
 
-  @ApiProperty({ description: '택배사 코드', nullable: true })
+  @ApiProperty({ nullable: true })
   carrierCode: string | null;
 
-  @ApiProperty({ description: '송장 발급 방식', enum: ['goodsflow', 'direct', 'self'] })
+  @ApiProperty({ enum: ['goodsflow', 'direct', 'self'] })
   issueMethod: string;
 }
 
@@ -53,20 +53,19 @@ export class FulfillmentOrderItemDto {
 }
 
 export class FulfillmentOrderResponseDto {
-  @ApiProperty({ description: 'Fulfillment Order ID' })
+  @ApiProperty()
   id: string;
 
-  @ApiProperty({ description: 'Sales Order ID', nullable: true })
+  @ApiProperty({ nullable: true })
   salesOrderId: string | null;
 
-  @ApiProperty({ description: 'Warehouse ID', nullable: true })
+  @ApiProperty({ nullable: true })
   warehouseId: string | null;
 
-  @ApiProperty({ description: 'Owner ID (for 3PL)', nullable: true })
+  @ApiProperty({ nullable: true })
   ownerId: string | null;
 
   @ApiProperty({
-    description: 'Fulfillment Order 상태',
     enum: [
       'created',
       'reserving',
@@ -87,52 +86,55 @@ export class FulfillmentOrderResponseDto {
   })
   status: string;
 
-  @ApiProperty({ description: 'Batch ID', nullable: true })
+  @ApiProperty({ nullable: true })
   batchId: string | null;
 
-  @ApiProperty({ description: 'Fulfillment Mode', enum: ['in_house', '3pl', 'drop_ship'], nullable: true })
+  @ApiProperty({ enum: ['in_house', '3pl', 'drop_ship'], nullable: true })
   fulfillmentMode: string | null;
 
-  @ApiProperty({ description: '우선순위', enum: ['normal', 'high', 'urgent'] })
+  @ApiProperty({ enum: ['pending', 'forwarded', 'completed', 'canceled'], nullable: true })
+  directShipStatus: string | null;
+
+  @ApiProperty({ enum: ['normal', 'high', 'urgent'] })
   priority: string;
 
-  @ApiProperty({ description: '총 아이템 수' })
+  @ApiProperty()
   totalItems: number;
 
-  @ApiProperty({ description: '총 수량' })
+  @ApiProperty()
   totalQty: number;
 
-  @ApiProperty({ description: '총 예약 수량' })
+  @ApiProperty()
   totalReservedQty: number;
 
-  @ApiProperty({ description: '예약 실패 사유', nullable: true })
+  @ApiProperty({ nullable: true })
   reservationFailureReason: string | null;
 
-  @ApiProperty({ description: '예약 실패 상세', nullable: true })
+  @ApiProperty({ nullable: true })
   reservationFailureDetails: unknown | null;
 
-  @ApiProperty({ description: '할당 일시', nullable: true })
+  @ApiProperty({ nullable: true })
   allocatedAt: Date | null;
 
-  @ApiProperty({ description: '출고 일시', nullable: true })
+  @ApiProperty({ nullable: true })
   shippedAt: Date | null;
 
-  @ApiProperty({ description: '취소 일시', nullable: true })
+  @ApiProperty({ nullable: true })
   canceledAt: Date | null;
 
-  @ApiProperty({ description: '배송지 정보', nullable: true })
+  @ApiProperty({ nullable: true })
   shippingAddress: unknown | null;
 
-  @ApiProperty({ description: '라벨 번호', nullable: true })
+  @ApiProperty({ nullable: true })
   labelNo: string | null;
 
-  @ApiProperty({ description: '생성 일시' })
+  @ApiProperty()
   createdAt: Date;
 
-  @ApiProperty({ description: '수정 일시' })
+  @ApiProperty()
   updatedAt: Date;
 
-  @ApiProperty({ description: 'Invoice 정보', type: InvoiceSummaryDto, nullable: true })
+  @ApiProperty({ type: InvoiceSummaryDto, nullable: true })
   invoice: InvoiceSummaryDto | null;
 
   @ApiProperty({

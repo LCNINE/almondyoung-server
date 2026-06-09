@@ -224,31 +224,35 @@ export class ReservationLifecycleService {
 
   /**
    * FO 분할시 예약 재분배
+   *
+   * originalFulfillmentOrderItemId: 예약이 걸려 있는 원본 FOI ID
+   * newFulfillmentOrderItemId: 분할 후 생성된 신규 FOI ID (새 예약에 연결)
    */
   async handleFulfillmentOrderSplit(
     originalFoId: string,
     newFoId: string,
     splitItems: Array<{
-      fulfillmentOrderItemId: string;
+      originalFulfillmentOrderItemId: string;
+      newFulfillmentOrderItemId: string;
       skuId: string;
       splitQuantity: number;
-      originalQuantity: number;
+      originalQuantityBeforeSplit: number;
     }>,
     tx?: DbTx,
   ): Promise<void> {
     return this.inTx(async (trx) => {
       for (const item of splitItems) {
-        // 1. 원본 FO의 예약 조회
+        // 1. 원본 FOI에 걸린 예약 조회 (분할 전 originalFulfillmentOrderItemId 기준)
         const originalReservations = await trx.query.stockReservations.findMany({
           where: and(
-            eq(wmsTables.stockReservations.fulfillmentOrderItemId, item.fulfillmentOrderItemId),
+            eq(wmsTables.stockReservations.fulfillmentOrderItemId, item.originalFulfillmentOrderItemId),
             eq(wmsTables.stockReservations.status, 'confirmed'),
           ),
         });
 
         if (originalReservations.length === 0) continue;
 
-        const splitRatio = item.splitQuantity / item.originalQuantity;
+        const splitRatio = item.splitQuantity / item.originalQuantityBeforeSplit;
         let remainingToSplit = item.splitQuantity;
 
         for (const reservation of originalReservations) {
@@ -258,7 +262,7 @@ export class ReservationLifecycleService {
           const splitReservationQty = Math.min(Math.floor(reservation.quantity * splitRatio), remainingToSplit);
 
           if (splitReservationQty > 0) {
-            // 3. 새 FO에 대한 예약 생성
+            // 3. 신규 FOI로 예약 생성 (newFulfillmentOrderItemId 사용)
             await this.unifiedReservation.reserveStock(
               {
                 targetType: 'FULFILLMENT_ORDER',
@@ -266,7 +270,7 @@ export class ReservationLifecycleService {
                 skuId: item.skuId,
                 warehouseId: reservation.warehouseId,
                 quantity: splitReservationQty,
-                fulfillmentOrderItemId: item.fulfillmentOrderItemId,
+                fulfillmentOrderItemId: item.newFulfillmentOrderItemId,
                 reason: `Split from FO ${originalFoId}`,
               },
               trx,
@@ -274,10 +278,8 @@ export class ReservationLifecycleService {
 
             // 4. 원본 예약 수량 차감
             if (splitReservationQty === reservation.quantity) {
-              // 전체 예약을 새 FO로 이동
               await this.unifiedReservation.releaseReservation(reservation.id, trx);
             } else {
-              // 부분 이동: 원본 예약 수량 감소
               await trx
                 .update(wmsTables.stockReservations)
                 .set({

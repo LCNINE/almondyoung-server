@@ -17,6 +17,25 @@
 - **버전 격리는 정션 + copy-on-write 로 구현된다.** `product_variants`, `product_option_groups`, `product_option_values`, `pricing_rules` 모두 version 컬럼이 없고, 버전 매핑은 정션 테이블 (`productMasterVariants`, `productMasterOptionGroups`, `productMasterPricingRules`) 이 가진다. draft 가 부모로부터 생기면 정션만 복사 — entity row 는 공유. **edit 시 그 entity 가 draft 외 다른 버전에도 매핑되어 있으면 새 row 를 clone 하고 draft 의 정션만 repoint** (CoW). draft 단독 매핑이면 in-place. 옵션 구조/값 변경에 의한 variant 재생성도 같은 원리 — `_regenerateVariantsForVersion` 의 `_findMatchingVariant` 가 부모 조합과 일치하는 variant 는 승계, 새 조합은 새 variant 발급. 직접 variant 편집은 version-scoped 엔드포인트(`PUT /masters/:masterId/versions/:versionId/variants/:variantId`)로만 가능 — 기존 글로벌 `PUT /variants/:id` 는 격리를 깨뜨리므로 사용 금지.
 - **CoW 는 cascading 된다.** variant CoW 가 일어나면, draft 의 pricing rule 중 그 variantId 를 `scopeTargetIds` 에 포함하는 룰도 함께 clone 되고 새 variantId 로 교체된다. 같은 트랜잭션 안에서 처리.
 - **`variantCode` 는 unique 제약 없다.** 같은 master 의 active variant 와 draft variant 는 동일한 외부 코드(=물리적 상품 식별자)를 의도적으로 공유한다. 진짜 의도("현재 active 버전에 매달린 variant 끼리만 unique")는 정션 join 이 필요해 partial index 로 표현 불가하므로 DB 강제는 없다. publish 직전에 active 버전의 variant 들끼리 충돌 검증.
+- **판매상품 구매제약조건**은 한 판매상품 master 전체에 적용되는 구매 가능 조건이다. 개별 variant 가 아니라 master 기준으로 적용하며, 서로 다른 variant 별 구매제한이 필요하면 별도 판매상품 master 로 분리한다.
+- Catalog 는 멤버십의 상세 자격 모델을 알지 않는다. 판매상품 구매제약조건에는 멤버십 회원만 구매 가능한지 여부를 boolean 으로만 저장하고, 판매채널의 customer group 같은 구체 식별자는 channel-adapter/판매채널 설정이 번역한다.
+- 판매상품 구매제약조건의 lifetime 구매수량 제한은 같은 master 의 모든 variant 구매수량을 합산해 판단한다. 새 version 이 publish 되어도 같은 master 의 lifetime 구매수량 기준은 리셋되지 않는다.
+- 판매상품 구매제약조건의 lifetime 구매수량 제한은 없거나 양의 정수여야 한다. `0` 은 "아예 구매 불가"라는 별도 의미가 되므로 구매제약조건 값으로 쓰지 않는다.
+- 판매상품 구매제약조건은 없을 수 있다. 제약조건 row/매핑이 0개이면 해당 판매상품 version 에는 구매제약조건이 없다는 뜻이다.
+- 판매상품 구매제약조건도 다른 version-owned 상품 연관 데이터처럼 entity row 와 version mapping 을 분리한다. draft 생성 시 mapping 만 복사해 조건 row 를 공유하고, draft 수정 시 공유 row 이면 CoW 로 clone 후 draft mapping 만 repoint 한다. 한 version 이 가질 수 있는 판매상품 구매제약조건은 최대 1개다.
+- 구매제약조건이 없는 부모 version 에서 만든 draft 에 처음 조건을 추가하면 새 constraint row 를 만들고 draft version 에만 mapping 한다.
+- 판매상품 구매제약조건 row 는 version mapping 이 없으면 의미가 없으므로 orphan 을 남기지 않는다. 단, CoW 자체가 기존 row 삭제를 뜻하지는 않으며, mapping 삭제 또는 repoint 후 참조하는 version 이 0개인지 확인한 경우에만 constraint row 를 삭제한다.
+- 판매상품 구매제약조건 수정은 scalar version update DTO 에 섞지 않고 별도 version-scoped surface 로 다룬다. 조건 row 생성/수정/삭제는 CoW 와 "row 0개 = 없음" 의미를 가지므로 pricing rule/variant 편집처럼 독립된 편집 흐름이 적절하다.
+- 판매상품 구매제약조건의 admin-web 편집 UI 는 Core API/event/channel-adapter projection 이후 별도 작업으로 다룬다.
+- 판매상품 구매제약조건 mutation 에서 모든 조건을 끈 값(`requiresMembership=false`, `lifetimeQuantityLimit=null`)은 제약조건 삭제와 같은 결과다. 명시적 삭제 endpoint 도 제공한다.
+- version detail read model 도 현재 version 의 판매상품 구매제약조건을 포함한다. 별도 구매제약조건 조회 endpoint 는 편집 surface 의 명시적 조회용으로 유지하고, mutation 은 별도 endpoint 가 담당한다.
+- active version publish snapshot 은 판매상품 구매제약조건을 optional object 로 전달한다. 필드가 없으면 제약조건 없음이고, row 가 있으면 `requiresMembership` 과 `lifetimeQuantityLimit` (`null` 이면 수량 제한 없음) 을 포함한다.
+- 판매상품 구매제약조건 draft edit 은 판매채널 이벤트를 발행하지 않는다. 판매채널 projection 은 active version publish/rollback 시 `ProductMasterActiveVersionChanged` snapshot 으로만 갱신한다.
+- Medusa 는 현재 판매상품 구매제약조건의 lifetime 구매수량 제한을 기본 기능으로 지원하지 않는다. Core Catalog 는 이 조건의 SoT 를 가질 수 있지만, Medusa 에서의 실제 적용은 별도 custom workflow/hook 구현 전까지 작동하지 않는다.
+- channel-adapter 는 판매상품 구매제약조건을 Medusa product metadata 의 별도 projection 으로 전달한다. 이 metadata 는 미래의 Medusa custom workflow/hook 이 Core 호출 없이 로컬에서 제약을 적용하기 위한 입력이며, 기존 `isMembershipOnly` metadata 와 섞지 않는다.
+- 판매상품 구매제약조건이 설정되어도 판매채널이 해당 제약 기능을 지원하지 않으면 실제 제약은 작동하지 않을 수 있다. 이것은 Catalog publish 차단 조건이 아니며, channel-adapter/판매채널 projection 의 지원 범위 문제로 다룬다.
+- **멤버십가 공개 제한**은 멤버십 회원이 아닌 고객에게 해당 판매상품의 멤버십가를 보여주지 않는 가격 노출 정책이다. 이것은 구매 가능 여부가 아니며, "멤버십 회원만 구매 가능"과 구분한다.
+- `isMembershipOnly` 는 legacy 필드명 때문에 **멤버십가 공개 제한**과 **멤버십 회원 전용 구매조건**을 혼동시키기 쉽다. 도메인 언어에서는 구매조건을 `isMembershipOnly` 로 부르지 않는다.
 - **재고 매칭 (productMatchings + productVariantSkuLinks) 의 버전 인계.** matching 은 inventory 모듈 소유이고 `variantId` unique. variant CoW 가 발생해도 PIM 트랜잭션 안에선 matching 을 건드리지 않는다. 대신 `publishVersion` 이 새 active 의 matching 없는 variant 들에 대해 **이전 active 의 같은 옵션 조합 variant** 의 matching+links 를 clone (variantId 만 새 ID). 옵션 조합이 일치 안 하면 (= 정체성이 달라진 신규 조합) unmatched 유지 — 운영자가 product-matching 화면에서 처리. 의도: 본질적이지 않은 variant 변경(이미지/이름) 은 매칭 자동 인계, 옵션 정체성 변화는 끊김. draft 단계에선 inventory 시뮬레이션은 안 한다는 운영 가정.
 - **상품 상세설명 (Product Description)**: 판매상품 master version 에 속하는 고객 노출용 상세 콘텐츠. Canonical source 는 Markdown 기반 `description` 이며, `description` 이 없을 때만 legacy `descriptionHtml` 을 fallback 으로 사용한다. 작성자는 `description` 에 raw HTML 을 쓰지 않고, 기본 Markdown 문법과 상품 상세설명 이미지 문법으로 콘텐츠를 표현한다.
 - **상품 상세설명 이미지**: 상품 상세설명 Markdown 안에서 file-service 의 File UUID 를 참조해 노출하는 이미지. 작성 문법은 `::product-image{fileId="..." alt="..."}` 이며, raw URL 이미지가 아니라 `product-description-image` file context 에 업로드된 파일을 참조한다.
