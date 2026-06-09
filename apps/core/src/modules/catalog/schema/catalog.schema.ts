@@ -11,6 +11,7 @@ import {
   bigint,
   uniqueIndex,
   index,
+  check,
   foreignKey,
   primaryKey,
   pgEnum,
@@ -318,6 +319,50 @@ export const productMasterPricingRules = pgTable(
   (table) => [
     index('idx_master_pricing_rules_master_version').on(table.masterId, table.versionId),
     uniqueIndex('unique_master_pricing_rule_version').on(table.masterId, table.pricingRuleId, table.versionId),
+  ],
+);
+
+export const productPurchaseConstraints = pgTable(
+  'product_purchase_constraints',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    requiresMembership: boolean('requires_membership').default(false).notNull(),
+    lifetimeQuantityLimit: integer('lifetime_quantity_limit'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => [
+    check(
+      'chk_product_purchase_constraints_lifetime_quantity_limit_positive',
+      sql.raw('"lifetime_quantity_limit" IS NULL OR "lifetime_quantity_limit" > 0'),
+    ),
+  ],
+);
+
+export const productMasterPurchaseConstraints = pgTable(
+  'product_master_purchase_constraints',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    masterId: uuid('master_id')
+      .notNull()
+      .references(() => productMasters.id, { onDelete: 'cascade' }),
+    versionId: uuid('version_id')
+      .notNull()
+      .references(() => productMasterVersions.id, { onDelete: 'cascade' }),
+    purchaseConstraintId: uuid('purchase_constraint_id')
+      .notNull()
+      .references(() => productPurchaseConstraints.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_master_purchase_constraints_master_version').on(table.masterId, table.versionId),
+    index('idx_master_purchase_constraints_constraint').on(table.purchaseConstraintId),
+    uniqueIndex('unique_purchase_constraint_version').on(table.versionId),
+    uniqueIndex('unique_master_purchase_constraint_version').on(table.masterId, table.versionId),
   ],
 );
 
@@ -924,6 +969,8 @@ export const catalogSchema = {
   productMasterOptionGroups,
   productMasterVariants,
   productMasterPricingRules,
+  productPurchaseConstraints,
+  productMasterPurchaseConstraints,
   productOptionGroupDisplays,
   productOptionValueDisplays,
   productOptionGroups,

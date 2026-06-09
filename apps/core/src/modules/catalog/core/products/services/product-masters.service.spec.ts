@@ -7,7 +7,12 @@ jest.mock(
 );
 
 import { ProductMastersService } from './product-masters.service';
-import { productMasters, productMasterVersions } from '../../../schema/catalog.schema';
+import {
+  productMasterPurchaseConstraints,
+  productMasters,
+  productMasterVersions,
+  productPurchaseConstraints,
+} from '../../../schema/catalog.schema';
 
 describe('ProductMastersService Medusa projection outbox events', () => {
   function makeService() {
@@ -95,5 +100,175 @@ describe('ProductMastersService Medusa projection outbox events', () => {
       tx,
     );
     expect(productPublisher.publishEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProductMastersService hardDelete purchase constraint cleanup', () => {
+  type VersionRow = {
+    id: string;
+    masterId: string;
+    status: string;
+  };
+
+  type PurchaseConstraintRow = {
+    id: string;
+    requiresMembership: boolean;
+    lifetimeQuantityLimit: number | null;
+  };
+
+  type PurchaseConstraintMappingRow = {
+    id: string;
+    masterId: string;
+    versionId: string;
+    purchaseConstraintId: string;
+  };
+
+  function makeService() {
+    const productPublisher = {
+      publishEvent: jest.fn().mockResolvedValue(undefined),
+    };
+    const outboxPublisher = {
+      saveEvent: jest.fn().mockResolvedValue(undefined),
+    };
+    const productSellableQuantity = {
+      recalculateAndPublishForMaster: jest.fn().mockResolvedValue([]),
+    };
+
+    return new ProductMastersService(
+      {} as any,
+      productPublisher as any,
+      outboxPublisher as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      productSellableQuantity as any,
+      null,
+    );
+  }
+
+  function makeHardDeleteTx(input: {
+    versions: VersionRow[];
+    purchaseConstraints: PurchaseConstraintRow[];
+    purchaseConstraintMappings: PurchaseConstraintMappingRow[];
+  }) {
+    const state = {
+      versions: [...input.versions],
+      purchaseConstraints: [...input.purchaseConstraints],
+      purchaseConstraintMappings: [...input.purchaseConstraintMappings],
+    };
+
+    const rowsForTable = (table: unknown) => {
+      if (table === productMasterVersions) return state.versions;
+      if (table === productPurchaseConstraints) return state.purchaseConstraints;
+      if (table === productMasterPurchaseConstraints) return state.purchaseConstraintMappings;
+      return [];
+    };
+
+    const columnToRowKey: Record<string, string> = {
+      id: 'id',
+      master_id: 'masterId',
+      version_id: 'versionId',
+      purchase_constraint_id: 'purchaseConstraintId',
+    };
+
+    const isColumnChunk = (chunk: any) => chunk && typeof chunk.name === 'string' && chunk.table;
+    const isParamChunk = (chunk: any) =>
+      chunk &&
+      Object.prototype.hasOwnProperty.call(chunk, 'value') &&
+      Object.prototype.hasOwnProperty.call(chunk, 'encoder');
+
+    const collectPredicates = (condition: any): Array<{ column: string; value: unknown }> => {
+      const chunks = condition?.queryChunks;
+      if (!Array.isArray(chunks)) {
+        return [];
+      }
+
+      const column = chunks.find(isColumnChunk);
+      const param = chunks.find(isParamChunk);
+      if (column && param) {
+        return [{ column: column.name, value: param.value }];
+      }
+
+      return chunks.flatMap((chunk) => collectPredicates(chunk));
+    };
+
+    const matchesWhere = (row: Record<string, unknown>, condition: any) =>
+      collectPredicates(condition).every((predicate) => {
+        const key = columnToRowKey[predicate.column] ?? predicate.column;
+        return row[key] === predicate.value;
+      });
+
+    const projectRows = <T extends Record<string, unknown>>(rows: T[], selection?: Record<string, unknown>) => {
+      if (!selection) {
+        return rows;
+      }
+
+      return rows.map((row) =>
+        Object.keys(selection).reduce<Record<string, unknown>>((projected, key) => {
+          projected[key] = row[key];
+          return projected;
+        }, {}),
+      );
+    };
+
+    return {
+      state,
+      select: jest.fn((selection?: Record<string, unknown>) => ({
+        from: jest.fn((table: unknown) => ({
+          where: jest.fn((condition: unknown) =>
+            projectRows(
+              rowsForTable(table).filter((row) => matchesWhere(row, condition)),
+              selection,
+            ),
+          ),
+        })),
+      })),
+      delete: jest.fn((table: unknown) => ({
+        where: jest.fn((condition: unknown) => {
+          const rows = rowsForTable(table);
+          const deletedRows: Record<string, unknown>[] = [];
+
+          for (let index = rows.length - 1; index >= 0; index -= 1) {
+            if (matchesWhere(rows[index], condition)) {
+              deletedRows.push(rows[index]);
+              rows.splice(index, 1);
+            }
+          }
+
+          if (table === productMasterVersions) {
+            for (const version of deletedRows) {
+              for (let index = state.purchaseConstraintMappings.length - 1; index >= 0; index -= 1) {
+                if (state.purchaseConstraintMappings[index].versionId === version.id) {
+                  state.purchaseConstraintMappings.splice(index, 1);
+                }
+              }
+            }
+          }
+        }),
+      })),
+    };
+  }
+
+  it('deletes an unshared purchase constraint row after permanently deleting its version', async () => {
+    const service = makeService();
+    const tx = makeHardDeleteTx({
+      versions: [{ id: 'version-id', masterId: 'master-id', status: 'draft' }],
+      purchaseConstraints: [{ id: 'constraint-id', requiresMembership: true, lifetimeQuantityLimit: 3 }],
+      purchaseConstraintMappings: [
+        {
+          id: 'mapping-id',
+          masterId: 'master-id',
+          versionId: 'version-id',
+          purchaseConstraintId: 'constraint-id',
+        },
+      ],
+    });
+    (service as any).logAudit = jest.fn().mockResolvedValue(undefined);
+
+    await service.hardDelete('version-id', 'user-id', tx as any);
+
+    expect(tx.state.purchaseConstraintMappings).toEqual([]);
+    expect(tx.state.purchaseConstraints).toEqual([]);
   });
 });

@@ -21,6 +21,8 @@ import {
   productMasterVariants,
   productVariants,
   productImages,
+  productMasterPurchaseConstraints,
+  productPurchaseConstraints,
 } from '../../../schema/catalog.schema';
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { OptionReadLoader } from '../loaders/option-read.loader';
@@ -96,13 +98,15 @@ export class ProductReadAssembler {
       const categoriesPromise: Promise<ProductDetailCategory[]> = include.categories
         ? this._fetchCategories(masterId, versionId, tx)
         : Promise.resolve([]);
+      const purchaseConstraintPromise = this._fetchPurchaseConstraint(masterId, versionId, tx);
 
-      const [optionGroups, variants, tags, images, categories] = await Promise.all([
+      const [optionGroups, variants, tags, images, categories, purchaseConstraint] = await Promise.all([
         optionGroupsPromise,
         variantsPromise,
         tagsPromise,
         imagesPromise,
         categoriesPromise,
+        purchaseConstraintPromise,
       ]);
 
       const cachedPrices = await this.priceCacheService.getCachedPriceSetsByVersion(versionId, tx);
@@ -152,6 +156,7 @@ export class ProductReadAssembler {
         channelProducts,
         tagValues: tags,
         priceSummary,
+        purchaseConstraint,
       };
     }, tx);
   }
@@ -233,6 +238,33 @@ export class ProductReadAssembler {
       .orderBy(asc(productVariants.displayOrder));
 
     return variantResults.map((r) => r.product_variants);
+  }
+
+  private async _fetchPurchaseConstraint(
+    masterId: string,
+    versionId: string,
+    tx: DbTransaction,
+  ): Promise<ProductDetailDto['purchaseConstraint']> {
+    const [row] = await tx
+      .select({
+        id: productPurchaseConstraints.id,
+        requiresMembership: productPurchaseConstraints.requiresMembership,
+        lifetimeQuantityLimit: productPurchaseConstraints.lifetimeQuantityLimit,
+      })
+      .from(productMasterPurchaseConstraints)
+      .innerJoin(
+        productPurchaseConstraints,
+        eq(productMasterPurchaseConstraints.purchaseConstraintId, productPurchaseConstraints.id),
+      )
+      .where(
+        and(
+          eq(productMasterPurchaseConstraints.masterId, masterId),
+          eq(productMasterPurchaseConstraints.versionId, versionId),
+        ),
+      )
+      .limit(1);
+
+    return row ?? null;
   }
 
   private async _fetchImages(versionId: string, tx: DbTransaction): Promise<ProductImage[]> {
