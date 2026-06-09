@@ -80,6 +80,32 @@ describe('PimToMedusaTransformer', () => {
       expect(result.description).toBeUndefined();
     });
 
+    it('projects purchase constraints into separate Medusa product metadata', () => {
+      const result = transformPimToMedusa({
+        ...mockSnapshot,
+        isMembershipOnly: false,
+        purchaseConstraint: {
+          requiresMembership: true,
+          lifetimeQuantityLimit: 3,
+        },
+      });
+
+      expect(result.metadata.pimPurchaseConstraint).toEqual({
+        requiresMembership: true,
+        lifetimeQuantityLimit: 3,
+      });
+      expect(result.metadata.isMembershipOnly).toBe(false);
+    });
+
+    it('sets null pimPurchaseConstraint when no purchase constraint exists so Medusa updates clear stale metadata', () => {
+      const result = transformPimToMedusa({
+        ...mockSnapshot,
+        purchaseConstraint: undefined,
+      });
+
+      expect(result.metadata.pimPurchaseConstraint).toBeNull();
+    });
+
     it('should map base variant price and preserve price-list metadata', () => {
       const result = transformPimToMedusa(mockSnapshot);
       const variant = result.variants![0];

@@ -865,12 +865,19 @@ export class FulfillmentsService {
         .limit(1);
       if (!origin) return null;
 
+      const TERMINAL_STATUSES = ['shipped', 'completed', 'canceled'];
+      if (TERMINAL_STATUSES.includes(origin.status)) {
+        throw new ConflictException(`Cannot split FO ${id} in status '${origin.status}'`);
+      }
+
       const [newFo] = await trx
         .insert(wmsTables.fulfillmentOrders)
         .values({
           salesOrderId: origin.salesOrderId,
           warehouseId: origin.warehouseId,
           ownerId: origin.ownerId,
+          fulfillmentMode: origin.fulfillmentMode,
+          priority: origin.priority,
           status: 'created',
           shippingAddress: origin.shippingAddress,
           labelNo: null,
@@ -882,23 +889,41 @@ export class FulfillmentsService {
       let splitItemCount = 0;
       let splitTotalQty = 0;
 
+      type SplitReservationMove = {
+        originalFulfillmentOrderItemId: string;
+        newFulfillmentOrderItemId: string;
+        skuId: string;
+        splitQuantity: number;
+        originalQuantityBeforeSplit: number;
+      };
+
       if (itemMoves.length > 0) {
-        const splitItems: Array<{
-          fulfillmentOrderItemId: string;
-          skuId: string;
-          splitQuantity: number;
-          originalQuantity: number;
-        }> = [];
+        const splitItems: SplitReservationMove[] = [];
 
         for (const mv of itemMoves) {
           const [item] = await trx
             .select()
             .from(wmsTables.fulfillmentOrderItems)
-            .where(eq(wmsTables.fulfillmentOrderItems.id, mv.fulfillmentOrderItemId))
+            .where(
+              and(
+                eq(wmsTables.fulfillmentOrderItems.id, mv.fulfillmentOrderItemId),
+                eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, id),
+              ),
+            )
             .limit(1);
           if (!item) continue;
-          const moveQty = Math.min(mv.quantity, item.qty - item.shippedQty);
-          if (moveQty <= 0) continue;
+
+          const splittableQty = item.qty - item.shippedQty;
+          if (splittableQty <= 0) continue;
+
+          if (mv.quantity > splittableQty) {
+            throw new BadRequestException(
+              `Cannot split ${mv.quantity} of FOI ${item.id}: only ${splittableQty} units are splittable (shippedQty=${item.shippedQty})`,
+            );
+          }
+
+          const moveQty = mv.quantity;
+          const originalQtyBeforeSplit = item.qty;
 
           await trx
             .update(wmsTables.fulfillmentOrderItems)
@@ -927,10 +952,11 @@ export class FulfillmentsService {
             .returning();
 
           splitItems.push({
-            fulfillmentOrderItemId: newItem.id,
+            originalFulfillmentOrderItemId: item.id,
+            newFulfillmentOrderItemId: newItem.id,
             skuId: item.skuId,
             splitQuantity: moveQty,
-            originalQuantity: item.qty,
+            originalQuantityBeforeSplit: originalQtyBeforeSplit,
           });
           splitItemCount += 1;
           splitTotalQty += moveQty;
@@ -942,12 +968,7 @@ export class FulfillmentsService {
       } else if (legacyMoves.length > 0) {
         this.logger.warn(`[split] Using deprecated 'lines' field. Please use 'items' instead.`);
 
-        const splitItems: Array<{
-          fulfillmentOrderItemId: string;
-          skuId: string;
-          splitQuantity: number;
-          originalQuantity: number;
-        }> = [];
+        const splitItems: SplitReservationMove[] = [];
 
         for (const mv of legacyMoves) {
           const [item] = await trx
@@ -958,6 +979,8 @@ export class FulfillmentsService {
           if (!item) continue;
           const moveQty = Math.min(mv.quantity, item.qty - item.shippedQty);
           if (moveQty <= 0) continue;
+
+          const originalQtyBeforeSplit = item.qty;
 
           await trx
             .update(wmsTables.fulfillmentOrderItems)
@@ -986,10 +1009,11 @@ export class FulfillmentsService {
             .returning();
 
           splitItems.push({
-            fulfillmentOrderItemId: newItem.id,
+            originalFulfillmentOrderItemId: item.id,
+            newFulfillmentOrderItemId: newItem.id,
             skuId: item.skuId,
             splitQuantity: moveQty,
-            originalQuantity: item.qty,
+            originalQuantityBeforeSplit: originalQtyBeforeSplit,
           });
           splitItemCount += 1;
           splitTotalQty += moveQty;
@@ -1257,6 +1281,51 @@ export class FulfillmentsService {
     }, tx);
   }
 
+  private computeAdminAvailableActions(
+    fo: { status: string; fulfillmentMode: string | null; directShipStatus: string | null | undefined },
+    items: Array<{ shippedQty: number }>,
+  ): string[] {
+    const TERMINAL_STATUSES = ['shipped', 'completed', 'canceled'];
+    const isTerminal = TERMINAL_STATUSES.includes(fo.status);
+    const hasShippedItems = items.some((i) => i.shippedQty > 0);
+    const actions: string[] = [];
+
+    if (!isTerminal) {
+      if (!hasShippedItems) actions.push('split');
+      actions.push('reserve');
+      if (!hasShippedItems) {
+        actions.push('unreserve', 'transferReservation');
+      }
+      actions.push('assignShipment', 'cancel');
+    }
+    if (['invoiced', 'labeled', 'picked', 'inspecting'].includes(fo.status)) {
+      actions.push('ship');
+    }
+    if (fo.status === 'shipped') {
+      actions.push('deliver');
+    }
+    if (fo.fulfillmentMode === 'drop_ship' && !isTerminal) {
+      const dsStatus = fo.directShipStatus;
+      if (!dsStatus || dsStatus === 'pending') actions.push('forwardDropShip');
+      if (dsStatus === 'forwarded') actions.push('completeDropShip');
+    }
+    return actions;
+  }
+
+  private computeBlockedReasons(
+    fo: { status: string },
+    items: Array<{ shippedQty: number }>,
+  ): string[] {
+    const reasons: string[] = [];
+    if (['shipped', 'completed', 'canceled'].includes(fo.status)) {
+      reasons.push('TERMINAL_STATUS');
+    }
+    if (items.some((i) => i.shippedQty > 0)) {
+      reasons.push('SHIPPED_EVIDENCE');
+    }
+    return reasons;
+  }
+
   async getOne(id: string, tx?: DbTx) {
     const db = tx ?? this.db.db;
 
@@ -1270,17 +1339,68 @@ export class FulfillmentsService {
       return null;
     }
 
-    const invoiceRows = await db
-      .select({
-        id: wmsTables.invoices.id,
-        invoiceNumber: wmsTables.invoices.invoiceNumber,
-        status: wmsTables.invoices.status,
-        carrierCode: wmsTables.invoices.carrierCode,
-        issueMethod: wmsTables.invoices.issueMethod,
-      })
-      .from(wmsTables.invoices)
-      .where(eq(wmsTables.invoices.fulfillmentOrderId, id))
-      .limit(1);
+    const [items, invoiceRows, shipmentRows] = await Promise.all([
+      db
+        .select()
+        .from(wmsTables.fulfillmentOrderItems)
+        .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, id)),
+      db
+        .select({
+          id: wmsTables.invoices.id,
+          invoiceNumber: wmsTables.invoices.invoiceNumber,
+          status: wmsTables.invoices.status,
+          carrierCode: wmsTables.invoices.carrierCode,
+          issueMethod: wmsTables.invoices.issueMethod,
+        })
+        .from(wmsTables.invoices)
+        .where(eq(wmsTables.invoices.fulfillmentOrderId, id))
+        .limit(1),
+      db
+        .select({
+          id: wmsTables.shipments.id,
+          trackingNo: wmsTables.shipments.trackingNo,
+          carrier: wmsTables.shipments.carrier,
+          status: wmsTables.shipments.status,
+          eta: wmsTables.shipments.eta,
+          invoiceUrl: wmsTables.shipments.invoiceUrl,
+        })
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.fulfillmentOrderId, id))
+        .limit(1),
+    ]);
+
+    const itemIds = items.map((i) => i.id);
+    const reservations =
+      itemIds.length > 0
+        ? await db
+            .select({
+              id: wmsTables.stockReservations.id,
+              fulfillmentOrderItemId: wmsTables.stockReservations.fulfillmentOrderItemId,
+              skuId: wmsTables.stockReservations.skuId,
+              warehouseId: wmsTables.stockReservations.warehouseId,
+              quantity: wmsTables.stockReservations.quantity,
+              status: wmsTables.stockReservations.status,
+            })
+            .from(wmsTables.stockReservations)
+            .where(
+              and(
+                inArray(wmsTables.stockReservations.fulfillmentOrderItemId, itemIds),
+                eq(wmsTables.stockReservations.status, 'confirmed'),
+              ),
+            )
+        : [];
+
+    const batchRow = fulfillmentOrder.batchId
+      ? await db
+          .select({ id: wmsTables.outboundBatches.id, batchNumber: wmsTables.outboundBatches.batchNumber })
+          .from(wmsTables.outboundBatches)
+          .where(eq(wmsTables.outboundBatches.id, fulfillmentOrder.batchId))
+          .limit(1)
+          .then((rows) => rows[0] ?? null)
+      : null;
+
+    const adminAvailableActions = this.computeAdminAvailableActions(fulfillmentOrder, items);
+    const blockedReasons = this.computeBlockedReasons(fulfillmentOrder, items);
 
     // FOI 라인 + SKU 조인 (상세 화면 표시용)
     const items = await db
@@ -1358,7 +1478,7 @@ export class FulfillmentsService {
 
     const data = fulfillmentOrders.map((fo) => ({
       ...fo,
-      invoice: invoicesByFoId.get(fo.id) || null,
+      invoice: invoicesByFoId.get(fo.id) ?? null,
     }));
 
     return { data, total };
