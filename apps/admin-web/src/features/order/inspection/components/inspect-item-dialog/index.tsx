@@ -20,18 +20,24 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { useInspectItem } from '@/lib/services/orders/mutations';
+import type { InspectionItem } from '@/lib/types/dto/fulfillment';
 
 interface Props {
   sessionId: string;
-  foiId: string;
+  item: InspectionItem;
   inspectorUserId: string;
   onClose: () => void;
 }
 
-export function InspectItemDialog({ sessionId, foiId, inspectorUserId, onClose }: Props) {
-  const [inspectedQty, setInspectedQty] = useState(1);
-  const [approvedQty, setApprovedQty] = useState(1);
-  const [rejectedQty, setRejectedQty] = useState(0);
+export function InspectItemDialog({
+  sessionId,
+  item,
+  inspectorUserId,
+  onClose,
+}: Props) {
+  const [approvedQty, setApprovedQty] = useState(item.approvedQty);
+  const [rejectedQty, setRejectedQty] = useState(item.rejectedQty);
+  const inspectedQty = approvedQty + rejectedQty;
 
   const inspectMutation = useInspectItem();
 
@@ -39,7 +45,7 @@ export function InspectItemDialog({ sessionId, foiId, inspectorUserId, onClose }
     try {
       await inspectMutation.mutateAsync({
         sessionId,
-        foiId,
+        foiId: item.foiId,
         inspectedQty,
         approvedQty,
         rejectedQty,
@@ -63,12 +69,7 @@ export function InspectItemDialog({ sessionId, foiId, inspectorUserId, onClose }
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-1">
             <Label>검수 수량</Label>
-            <Input
-              type="number"
-              min={0}
-              value={inspectedQty}
-              onChange={(e) => setInspectedQty(Number(e.target.value))}
-            />
+            <Input type="number" min={0} value={inspectedQty} disabled />
           </div>
           <div className="flex flex-col gap-1">
             <Label>승인 수량</Label>

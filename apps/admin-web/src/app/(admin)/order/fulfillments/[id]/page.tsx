@@ -1,5 +1,5 @@
 import RouteGuard from '@/components/layout/route-guard';
-import { FulfillmentDetail } from '@/features/order/fulfillments/detail';
+import { FulfillmentDetail } from '@/features/order/fulfillments/components/detail';
 
 export default async function FulfillmentDetailPage({
   params,

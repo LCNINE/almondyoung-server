@@ -9,6 +9,7 @@ import { client } from '../../client';
 import type {
   FulfillmentOrder,
   FulfillmentOrderDetail,
+  FulfillmentOutboxEvent,
   ListFulfillmentsQuery,
   CreateFulfillmentOrderRequest,
   SplitFulfillmentOrderRequest,
@@ -28,6 +29,11 @@ export const fulfillmentsClient = {
 
   get: async (id: string): Promise<FulfillmentOrderDetail> => {
     const res = await client.get(`${BASE}/${encodeURIComponent(id)}`);
+    return res.data;
+  },
+
+  getOutboxEvents: async (id: string): Promise<FulfillmentOutboxEvent[]> => {
+    const res = await client.get(`${BASE}/${encodeURIComponent(id)}/outbox-events`);
     return res.data;
   },
 

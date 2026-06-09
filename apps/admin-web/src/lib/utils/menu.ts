@@ -129,6 +129,11 @@ export const mainMenus: MainMenu[] = [
             title: '주문입력 (수동/대량)',
             path: '/order/manual-bulk',
           },
+          {
+            id: 'fulfillment-manual',
+            title: '출고주문 생성 (수동)',
+            path: '/order/fulfillment-manual',
+          },
         ],
       },
       {
@@ -140,6 +145,11 @@ export const mainMenus: MainMenu[] = [
         id: 'shipment',
         title: '출고',
         children: [
+          {
+            id: 'fulfillments',
+            title: '출고주문',
+            path: '/order/fulfillments',
+          },
           {
             id: 'regional-invoice',
             title: '(자체배송) 지역별 출고',

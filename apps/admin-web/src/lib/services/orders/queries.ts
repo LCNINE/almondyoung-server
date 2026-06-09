@@ -1,7 +1,12 @@
 // src/lib/services/orders/queries.ts
 'use client';
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  keepPreviousData,
+} from '@tanstack/react-query';
 import { orderQueryKeys } from './query-keys';
 import { orders } from '@/lib/api/domains';
 import type {
@@ -17,6 +22,7 @@ import type {
 import type {
   QualityMetricsQuery,
   ListFulfillmentsQuery,
+  FulfillmentOrdersQuery,
 } from '@/lib/types/dto/fulfillment';
 
 // 주문 관련 쿼리
@@ -205,33 +211,45 @@ export const usePickingSession = (foId: string) => {
   });
 };
 
-// 이행 관련 쿼리 (Core GET /fulfillments canonical API)
-export const useFulfillments = (params?: ListFulfillmentsQuery) => {
+// 이행(출고주문) 관련 쿼리 — GET /fulfillments, GET /fulfillments/:id
+export const useFulfillmentOrders = (query: FulfillmentOrdersQuery | ListFulfillmentsQuery = {}) => {
   return useQuery({
-    queryKey: orderQueryKeys.fulfillmentsList(params as Record<string, unknown>),
-    queryFn: () => orders.fulfillments.list(params),
+    queryKey: orderQueryKeys.fulfillmentsList(query),
+    queryFn: () => orders.fulfillmentOrder.list(query as FulfillmentOrdersQuery),
+    placeholderData: keepPreviousData,
   });
-};
-
-export const useFulfillment = (id: string) => {
-  return useQuery({
-    queryKey: orderQueryKeys.fulfillment(id),
-    queryFn: () => orders.fulfillments.get(id),
-    enabled: !!id,
-  });
-};
-
-/** @deprecated useFulfillments 사용 권장 */
-export const useFulfillmentOrders = (params?: ListFulfillmentsQuery) => {
-  return useFulfillments(params);
 };
 
 /** @deprecated useFulfillment 사용 권장 */
 export const useFulfillmentOrder = (id: string) => {
-  return useFulfillment(id);
+  return useQuery({
+    queryKey: orderQueryKeys.fulfillment(id),
+    queryFn: () => orders.fulfillmentOrder.getOne(id),
+    enabled: !!id,
+  });
+};
+
+// 별칭 (호환성) — useFulfillmentOrders/useFulfillmentOrder 로 통합
+export const useFulfillments = useFulfillmentOrders;
+export const useFulfillment = useFulfillmentOrder;
+
+export const useFulfillmentOutboxEvents = (id: string) => {
+  return useQuery({
+    queryKey: [...orderQueryKeys.fulfillment(id), 'outbox-events'],
+    queryFn: () => orders.fulfillments.getOutboxEvents(id),
+    enabled: !!id,
+  });
 };
 
 // 검수 관련 쿼리
+export const useInspectionSession = (sessionId: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.inspectionSession(sessionId),
+    queryFn: () => orders.inspection.getSession(sessionId),
+    enabled: !!sessionId,
+  });
+};
+
 export const useInspectionSummary = (foId: string) => {
   return useQuery({
     queryKey: orderQueryKeys.inspectionSummary(foId),

@@ -109,7 +109,8 @@ export class InvoiceService {
 
       const priceMap = new Map(salesOrderLines.map((line) => [line.id, line.unitPrice]));
 
-      if (fulfillmentOrder.status !== 'picked') {
+      // 검수는 선택 단계 — picked(검수 전) 또는 inspected(검수 완료) 둘 다 송장 발행 허용 (§4)
+      if (fulfillmentOrder.status !== 'picked' && fulfillmentOrder.status !== 'inspected') {
         throw new ConflictException(`Cannot issue invoice for FO in status: ${fulfillmentOrder.status}`);
       }
 
