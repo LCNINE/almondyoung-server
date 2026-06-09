@@ -85,6 +85,17 @@ export {
   // 합포장 (D2)
   useAnalyzeConsolidation,
   useAutoConsolidate,
+  // FO 액션 (Core /fulfillments canonical)
+  useCreateFulfillmentOrder,
+  useSplitFulfillmentOrder,
+  useCheckFulfillmentAvailability,
+  useReserveFulfillment,
+  useUnreserveFulfillment,
+  useTransferFulfillmentReservation,
+  useAssignFulfillmentShipment,
+  useShipFulfillment,
+  useDeliverFulfillment,
+  useCancelFulfillment,
 } from './mutations';
 
 // 데이터 변환 함수들 (주문 전용)
