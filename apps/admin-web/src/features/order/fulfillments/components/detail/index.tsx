@@ -6,6 +6,7 @@ import { Container } from '@/components/admin-ui-experimental/common/container';
 import { Header } from '@/components/admin-ui-experimental/common/header';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,6 +26,11 @@ import {
   useReserveFulfillmentItem,
 } from '@/lib/services/orders/mutations';
 import type { FulfillmentMode, FulfillmentOrderPriority } from '@/lib/types/dto/fulfillment';
+import { InventoryTab } from '../../detail/inventory-tab';
+import { SplitTab } from '../../detail/split-tab';
+import { ShipmentTab } from '../../detail/shipment-tab';
+import { DirectShipTab } from '../../detail/direct-ship-tab';
+import { HistoryTab } from '../../detail/history-tab';
 
 // 출고/취소가 불가능한 종료 상태
 const TERMINAL_STATUSES = new Set(['shipped', 'completed', 'canceled']);
@@ -110,6 +116,13 @@ export function FulfillmentDetail({ id }: { id: string }) {
   }
 
   const isTerminal = TERMINAL_STATUSES.has(data.status);
+  const fo = {
+    ...data,
+    items: data.items ?? [],
+    reservations: data.reservations ?? [],
+    adminAvailableActions: data.adminAvailableActions ?? [],
+    blockedReasons: data.blockedReasons ?? [],
+  };
 
   const handleShip = async () => {
     try {
@@ -171,42 +184,42 @@ export function FulfillmentDetail({ id }: { id: string }) {
           <span className="font-mono text-xs">{data.id}</span>
         </InfoRow>
         <InfoRow label="상태">
-          <FoStatusBadge status={data.status} />
+          <FoStatusBadge status={fo.status} />
         </InfoRow>
         <InfoRow label="창고">
-          <span className="font-mono text-xs">{data.warehouseId ?? '-'}</span>
+          <span className="font-mono text-xs">{fo.warehouseId ?? '-'}</span>
         </InfoRow>
         <InfoRow label="모드">
-          {data.fulfillmentMode ? MODE_LABEL[data.fulfillmentMode] : '-'}
+          {fo.fulfillmentMode ? MODE_LABEL[fo.fulfillmentMode] : '-'}
         </InfoRow>
-        <InfoRow label="우선순위">{PRIORITY_LABEL[data.priority] ?? data.priority}</InfoRow>
+        <InfoRow label="우선순위">{PRIORITY_LABEL[fo.priority] ?? fo.priority}</InfoRow>
         <InfoRow label="수량">
-          아이템 {data.totalItems} / 총 {data.totalQty} / 예약 {data.totalReservedQty}
+          아이템 {fo.totalItems} / 총 {fo.totalQty} / 예약 {fo.totalReservedQty}
         </InfoRow>
-        {data.salesOrderId && (
+        {fo.salesOrderId && (
           <InfoRow label="원본 주문(SO)">
-            <span className="font-mono text-xs">{data.salesOrderId}</span>
+            <span className="font-mono text-xs">{fo.salesOrderId}</span>
           </InfoRow>
         )}
         <InfoRow label="생성일">
-          {new Date(data.createdAt).toLocaleString('ko-KR')}
+          {new Date(fo.createdAt).toLocaleString('ko-KR')}
         </InfoRow>
-        {data.invoice && (
+        {fo.invoice && (
           <InfoRow label="송장">
-            {data.invoice.invoiceNumber} ({data.invoice.status})
-            {data.invoice.carrierCode ? ` · ${data.invoice.carrierCode}` : ''}
+            {fo.invoice.invoiceNumber} ({fo.invoice.status})
+            {fo.invoice.carrierCode ? ` · ${fo.invoice.carrierCode}` : ''}
           </InfoRow>
         )}
-        {data.reservationFailureReason && (
+        {fo.reservationFailureReason && (
           <InfoRow label="예약 실패">
-            <span className="text-red-600">{data.reservationFailureReason}</span>
+            <span className="text-red-600">{fo.reservationFailureReason}</span>
           </InfoRow>
         )}
       </Container>
 
       {/* FOI 라인 */}
       <Container className="divide-y-0">
-        <Header title={`출고 라인 (${data.items?.length ?? 0})`} />
+        <Header title={`출고 라인 (${fo.items.length})`} />
         <div className="overflow-x-auto p-3">
           <table className="w-full text-sm">
             <thead>
@@ -221,7 +234,7 @@ export function FulfillmentDetail({ id }: { id: string }) {
               </tr>
             </thead>
             <tbody>
-              {(data.items ?? []).map((item) => {
+              {fo.items.map((item) => {
                 const remaining = item.qty - item.reservedQty;
                 const canReserve = remaining > 0 && !isTerminal;
                 return (
@@ -254,7 +267,7 @@ export function FulfillmentDetail({ id }: { id: string }) {
                   </tr>
                 );
               })}
-              {(data.items ?? []).length === 0 && (
+              {fo.items.length === 0 && (
                 <tr>
                   <td colSpan={7} className="py-6 text-center text-muted-foreground">
                     출고 라인이 없습니다.
@@ -263,6 +276,40 @@ export function FulfillmentDetail({ id }: { id: string }) {
               )}
             </tbody>
           </table>
+        </div>
+      </Container>
+
+      <Container className="divide-y-0">
+        <Header title="운영 액션" />
+        <div className="p-3">
+          <Tabs defaultValue="inventory" className="w-full">
+            <TabsList className="flex h-auto flex-wrap justify-start">
+              <TabsTrigger value="inventory">재고</TabsTrigger>
+              <TabsTrigger value="split">분할</TabsTrigger>
+              <TabsTrigger value="shipment">배송</TabsTrigger>
+              {fo.fulfillmentMode === 'drop_ship' && (
+                <TabsTrigger value="direct-ship">직배</TabsTrigger>
+              )}
+              <TabsTrigger value="history">이력</TabsTrigger>
+            </TabsList>
+            <TabsContent value="inventory">
+              <InventoryTab fo={fo} />
+            </TabsContent>
+            <TabsContent value="split">
+              <SplitTab fo={fo} />
+            </TabsContent>
+            <TabsContent value="shipment">
+              <ShipmentTab fo={fo} />
+            </TabsContent>
+            {fo.fulfillmentMode === 'drop_ship' && (
+              <TabsContent value="direct-ship">
+                <DirectShipTab fo={fo} />
+              </TabsContent>
+            )}
+            <TabsContent value="history">
+              <HistoryTab fo={fo} />
+            </TabsContent>
+          </Tabs>
         </div>
       </Container>
     </div>

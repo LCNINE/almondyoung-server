@@ -45,7 +45,7 @@ export function CouponDetailDialog({
 
   if (!c) return null;
 
-  const { name, maxClaims, createdBy, visibility, autoIssueTrigger } = getCouponMeta(c);
+  const { name, maxUsesPerCustomer, maxClaims, createdBy, visibility, autoIssueTrigger } = getCouponMeta(c);
 
   const storefrontUrl = process.env.NEXT_PUBLIC_STOREFRONT_URL ?? '';
   const defaultCountry = process.env.NEXT_PUBLIC_STOREFRONT_DEFAULT_COUNTRY ?? 'kr';
@@ -148,6 +148,14 @@ export function CouponDetailDialog({
           {autoIssueTrigger && (
             <Row label="자동 발급">
               {AUTO_ISSUE_TRIGGER_LABELS[autoIssueTrigger]}
+            </Row>
+          )}
+          <Row label="발급 방식">
+            {visibility === 'assigned_only' ? '발급 고객 전용' : visibility === 'claimable' ? '발급받기' : '공개'}
+          </Row>
+          {visibility === 'claimable' && (
+            <Row label="총 발급 수량">
+              {maxClaims ? `${maxClaims.toLocaleString('ko-KR')}명 한정` : '무제한'}
             </Row>
           )}
           <Row label="유효 기간">{formatPeriod(c)}</Row>

@@ -1448,18 +1448,24 @@ export const outboundTaskLines = pgTable('outbound_task_lines', {
 /*───────────────────────────
  * SHIPMENTS
  *──────────────────────────*/
-export const shipments = pgTable('shipments', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  trackingNo: varchar('tracking_no', { length: 64 }).notNull(),
-  carrier: carrierEnum('carrier').notNull().default('CJ'),
-  status: shipmentStatusEnum('status').notNull().default('created'),
-  eta: timestamp('eta', { withTimezone: true }),
-  splitStatus: boolean('split_status').notNull().default(false),
-  invoiceUrl: varchar('invoice_url', { length: 512 }),
-  fulfillmentOrderId: uuid('fulfillment_order_id').references(() => fulfillmentOrders.id, { onDelete: 'set null' }),
-  lastUpdated: timestamp('last_updated', { withTimezone: true }).notNull().defaultNow(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const shipments = pgTable(
+  'shipments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    trackingNo: varchar('tracking_no', { length: 64 }).notNull(),
+    carrier: carrierEnum('carrier').notNull().default('CJ'),
+    status: shipmentStatusEnum('status').notNull().default('created'),
+    eta: timestamp('eta', { withTimezone: true }),
+    splitStatus: boolean('split_status').notNull().default(false),
+    invoiceUrl: varchar('invoice_url', { length: 512 }),
+    fulfillmentOrderId: uuid('fulfillment_order_id').references(() => fulfillmentOrders.id, { onDelete: 'set null' }),
+    lastUpdated: timestamp('last_updated', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqFulfillmentOrder: unique('uq_shipments_fulfillment_order_id').on(t.fulfillmentOrderId),
+  }),
+);
 
 export const shipmentTracking = pgTable('shipment_tracking', {
   id: uuid('id').primaryKey().defaultRandom(),

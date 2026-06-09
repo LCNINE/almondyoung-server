@@ -21,6 +21,9 @@ export class FulfillmentOrderItemDto {
   @ApiProperty({ description: 'Fulfillment Order Item ID' })
   id: string;
 
+  @ApiProperty({ description: 'Fulfillment Order ID', required: false })
+  fulfillmentOrderId?: string;
+
   @ApiProperty({ description: 'SKU ID' })
   skuId: string;
 
@@ -50,6 +53,57 @@ export class FulfillmentOrderItemDto {
 
   @ApiProperty({ description: '원본 Sales Order Line ID', nullable: true })
   salesOrderLineId: string | null;
+
+  @ApiProperty({ description: '원본 variant ID', nullable: true })
+  variantId: string | null;
+}
+
+export class ReservationSummaryDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ nullable: true })
+  fulfillmentOrderItemId: string | null;
+
+  @ApiProperty()
+  skuId: string;
+
+  @ApiProperty()
+  warehouseId: string;
+
+  @ApiProperty()
+  quantity: number;
+
+  @ApiProperty()
+  status: string;
+}
+
+export class ShipmentSummaryDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  trackingNo: string;
+
+  @ApiProperty()
+  carrier: string;
+
+  @ApiProperty()
+  status: string;
+
+  @ApiProperty({ nullable: true })
+  eta: Date | null;
+
+  @ApiProperty({ nullable: true })
+  invoiceUrl: string | null;
+}
+
+export class BatchSummaryDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  batchNumber: string;
 }
 
 export class FulfillmentOrderResponseDto {
@@ -79,6 +133,7 @@ export class FulfillmentOrderResponseDto {
       'picking',
       'picked',
       'inspecting',
+      'inspected',
       'invoiced',
       'completed',
       'forwarded',
@@ -137,12 +192,31 @@ export class FulfillmentOrderResponseDto {
   @ApiProperty({ type: InvoiceSummaryDto, nullable: true })
   invoice: InvoiceSummaryDto | null;
 
+  @ApiProperty({ type: ShipmentSummaryDto, nullable: true, required: false })
+  shipment?: ShipmentSummaryDto | null;
+
+  @ApiProperty({ type: BatchSummaryDto, nullable: true, required: false })
+  batch?: BatchSummaryDto | null;
+
   @ApiProperty({
     description: 'FOI 라인 (상세 조회 시에만 포함)',
     type: [FulfillmentOrderItemDto],
     nullable: true,
   })
   items?: FulfillmentOrderItemDto[];
+
+  @ApiProperty({
+    description: '재고 예약 레코드 (상세 조회 시에만 포함)',
+    type: [ReservationSummaryDto],
+    required: false,
+  })
+  reservations?: ReservationSummaryDto[];
+
+  @ApiProperty({ description: '관리자 UI에서 현재 실행 가능한 액션', type: [String], required: false })
+  adminAvailableActions?: string[];
+
+  @ApiProperty({ description: '관리자 액션 차단 사유', type: [String], required: false })
+  blockedReasons?: string[];
 }
 
 export class FulfillmentOrderListResponseDto {

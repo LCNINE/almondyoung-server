@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -12,7 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Trash2, Play, CheckCircle, XCircle, PackagePlus } from 'lucide-react';
+import { Trash2, Play, CheckCircle, XCircle, PackagePlus, ExternalLink } from 'lucide-react';
 import {
   useOutboundBatch,
   useStartBatchPicking,
@@ -185,7 +186,16 @@ export function BatchDetailDrawer({ batchId, warehouseId, open, onOpenChange }: 
                     <TableBody>
                       {batch.fulfillmentOrders?.map((fo: OutboundBatchFO) => (
                         <TableRow key={fo.id}>
-                          <TableCell className="font-mono text-xs">{fo.id}</TableCell>
+                          <TableCell>
+                            <Link
+                              href={`/order/fulfillments/${fo.id}`}
+                              className="flex items-center gap-1 font-mono text-xs hover:underline"
+                              onClick={() => onOpenChange(false)}
+                            >
+                              {fo.id.substring(0, 8)}…
+                              <ExternalLink className="h-3 w-3 text-muted-foreground" />
+                            </Link>
+                          </TableCell>
                           <TableCell>{fo.status}</TableCell>
                           <TableCell>
                             {PRIORITY_LABELS[fo.priority] ?? fo.priority}

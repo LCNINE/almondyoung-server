@@ -1,7 +1,9 @@
 'use client';
 
+import Link from 'next/link';
 import { createColumnHelper } from '@tanstack/react-table';
 import { useMemo } from 'react';
+import { ExternalLink } from 'lucide-react';
 import { DateCell } from '@/components/table/table-cells/common';
 import type { ReservationDto } from '@/lib/types/dto/inventory';
 
@@ -40,11 +42,26 @@ export const useReservationsTableColumns = (actions: RowActions) => {
       }),
       columnHelper.accessor('targetId', {
         header: '대상 ID',
-        cell: ({ getValue }) => (
-          <span className="font-mono text-xs text-muted-foreground">
-            {getValue().slice(0, 8)}…
-          </span>
-        ),
+        cell: ({ getValue, row }) => {
+          const id = getValue();
+          if (row.original.targetType === 'FULFILLMENT_ORDER') {
+            return (
+              <Link
+                href={`/order/fulfillments/${id}`}
+                className="flex items-center gap-1 font-mono text-xs hover:underline"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {id.slice(0, 8)}…
+                <ExternalLink className="h-3 w-3 text-muted-foreground" />
+              </Link>
+            );
+          }
+          return (
+            <span className="font-mono text-xs text-muted-foreground">
+              {id.slice(0, 8)}…
+            </span>
+          );
+        },
       }),
       columnHelper.accessor('skuId', {
         header: 'SKU ID',

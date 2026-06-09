@@ -1,203 +1,215 @@
-# Sprint FO/Admin-web 기준선 (2026-06-09)
+# Sprint FO/Admin-web 기준선 및 구현 검토 (2026-06-09)
 
-> Phase 0 산출물 — "무엇을 완료로 볼지" 합의 문서.
-> 이 문서의 판단 기준은 코드가 아니라 ADR/마이그레이션 문서이며,
-> Phase 1 이후 구현 완료 여부는 이 기준에서 체크한다.
+> 목표: FO 분할, 재고할당 확인/할당/해제/이전, 직배(dropship), 배송 기능을 admin-web에서 실제 운영자가 사용할 수 있게 노출한다.
+> Phase 0 기준선에서 시작했고, Phase 1-7 구현 후 현재 코드 기준으로 완료/잔여 리스크를 재정리한다.
 
 ---
 
-## 1. 서비스 경계 (불변)
+## 1. 서비스 경계
 
 | 소유자 | 책임 |
 |--------|------|
 | **Core** | FO 상태 전이, 재고 예약/해제/이전, 배송 상태, 출고 이벤트 발행의 SoT |
-| **admin-web** | 운영 명령 UI. 상태 판단은 서버 응답 기반. 서버가 내려준 관리자용 `adminAvailableActions`만 활성화 |
+| **admin-web** | 운영 명령 UI. 상태 판단은 서버 응답 기반. 서버가 내려준 `adminAvailableActions`만 버튼 활성화 기준으로 사용 |
 | **storefront** | Core store-facing action/tracking projection만 소비. FO 상태를 직접 계산하지 않음 |
 | **channel-adapter** | Core 이벤트를 외부 채널/Medusa projection으로 반영 |
 | **Medusa** | Medusa order는 Core `sales_orders`와 다른 정체성. `(salesChannel, channelOrderId)`로 참조 |
-| **Wallet** | 취소/환불 후처리에서만 Core와 연결. FO 상태의 SoT 아님 |
+| **Wallet** | 취소/환불 후처리의 SoT. FO 상태의 SoT 아님 |
+
+판단: 현재 구현 방향은 이 경계를 대체로 지킨다. 특히 출고/배송 이벤트는 Core에서 발행하고, admin-web은 API client/mutation을 통해 Core에 명령만 보낸다.
 
 ---
 
-## 2. ADR 결정 요약 (이번 Sprint의 룰셋)
+## 2. 구현 현황
 
-### ADR-0012 — FO 생성과 예약은 분리
-- 재고 부족 → FO 객체는 생성, reservation 단계에서 실패/대기 표시
-- "생성 + 예약을 한 트랜잭션"으로 묶는 API는 폐기 (POST /fulfillment-orders = deprecated)
-- Canonical: `POST /fulfillments`
+### Phase 1 — Core FO 계약/정합성 보정
 
-### ADR-0014 — FO 생성 대기는 durable backlog
-- 판매상품↔재고상품 매칭 누락 → backlog 기록. SO 롤백 불가
-- 운영화면은 "매칭 없어 대기 중인 주문"을 backlog 기준으로 표시해야 함
+완료:
+- `GET /fulfillments`에 `status`, `warehouseId`, `fulfillmentMode`, `salesOrderId`, `priority`, `limit`, `offset` 필터 추가
+- `GET /fulfillments/:id`에 `items`, `reservations`, `batch`, `shipment`, `invoice`, `directShipStatus`, `adminAvailableActions`, `blockedReasons` 포함
+- split reservation 재분배 버그 수정
+- reserve/unreserve/transfer-reservation에서 URL FO id와 FOI 소속 FO id 검증 추가
+- terminal/shipped evidence guard 추가
 
-### ADR-0015 — 상품매칭은 strategy 중심
-- `strategy='void'` = 물리 출고 불필요. `strategy='variant'` + `status='matched'` = 정상 매칭
-- `status='ignored'`는 legacy; 새로 쓰지 않음
-- 출고주문 생성은 `strategy='void'` 여부를 명시적으로 확인
+검토 메모:
+- `adminAvailableActions` 계약은 admin-web 버튼 활성 기준으로 사용되고 있어 UI 방향은 맞다.
+- 단, 서버 액션별 guard는 `ship()`까지 완전히 닫혀 있지 않다. 아래 "잔여 리스크" 참고.
 
-### ADR-0016 — 수락 후 주문은 계약 스냅샷
-- `sales_order_lines`는 직접 PATCH/DELETE 금지
-- 사후 변경: 주문정정(SalesOrderAmendment), 취소(OrderCancellation), 환불(Wallet), 출고 조정
-- 관리자 화면은 CS/정정/취소/환불/출고/반품 연결 타임라인을 보여야 함
+### Phase 2 — 배송/직배 이벤트 전이 통합
 
-### ADR-0017 + order-post-processing-action-matrix — 표시 상태 조합 규칙
-- 표시 상태 = SO status + FO status + Wallet refund status 조합
-- 고객용 `availableActions`는 서버(Core store-facing API)가 내려줌. storefront는 계산 안 함
-- 관리자 FO 액션은 고객 액션과 별도 계약(`adminAvailableActions`)으로 둠
-- FO 중 하나라도 `shipped`/`completed`이면 SO가 `confirmed`여도 전체취소 불가
+완료:
+- `invoice.service.ts`의 `markAsShipped()`가 FO 직접 업데이트 대신 `FulfillmentsService.ship()`로 위임
+- goodsflow/direct/self invoice 출고가 같은 canonical ship path를 사용
+- `direct-ship.service.ts`의 `markOrdersAsCompleted()`가 FO별 `ship()` 호출 후 `directShipStatus='completed'`를 업데이트
+- `ship()`은 FO status, FOI shippedQty, shippedAt, reservation lifecycle, `FulfillmentShipped` outbox를 함께 처리
+- `markDelivered()`는 FO `completed`, shipment tracking, `FulfillmentDelivered` outbox를 처리
 
----
+검토 메모:
+- "출고 완료"와 "배송 완료"의 의미 분리는 논리적으로 맞다.
+- "직배 완료"는 고객 수령이 아니라 공급사 출고 완료로 처리하고 `FulfillmentDelivered`를 발행하지 않는 정책이 맞다.
 
-## 3. 현재 구현 상태 평가
+### Phase 3 — admin-web API client/type 정리
 
-### 3.1 완료로 인정하는 것 (Wave D1/D2 산출물)
+완료:
+- `fulfillmentsClient` 신규 추가: `GET/POST /fulfillments` canonical API 사용
+- deprecated `POST /fulfillment-orders` 생성 경로 제거
+- `useFulfillments`, `useFulfillment` stub 제거 및 실 API 연결
+- FO 관련 DTO 타입 확장
+- mutation invalidate 범위에 fulfillments/detail/outbound-batches/reservations/direct-ship 포함
 
-Wave D1/D2는 ✅로 표시되어 있으나, 아래 "완료로 인정하는 범위"는 한정적이다.
+남아도 되는 legacy 경로:
+- 피킹/검수/아웃바운드 배치의 하위 URL에 포함된 `/fulfillment-orders`
+- `PUT /fulfillment-orders/:id/priority`, legacy cancel/delete
 
-**완료 (이번 Sprint에서 건드리지 않아도 되는 것):**
-- `/order/picking-list` 화면 (FO ID 입력 → 피킹 시작 → 바코드 스캔 → 완료)
-- `/order/inspection` 화면 (세션 시작 → 검수 입력 → 일괄 승인 → 세션 완료)
-- `/order/print-invoices-by-order` 화면 (goodsflow 발행 → 출력 URI)
-- `/order/outbound-batches` 화면 (배치 생성 → FO 추가 → start-picking 흐름)
-- `/order/direct-ship` 화면 (forward → CSV export → complete)
-- admin-web `ALMONDYOUNG_API_BASE_URL` 단일 base URL 이전
-- `BarcodeScanInput` 공용 컴포넌트 추출
+### Phase 4 — admin-web FO 목록/상세/액션
 
-**완료였으나 이번 Sprint에서 반드시 보정해야 하는 것:**
+완료:
+- `/order/fulfillments` 목록 read-only 화면
+- `/order/fulfillments/[id]` 상세 화면
+- 상세 탭: overview, items, inventory, split, shipment, direct-ship, history
+- 재고 탭: 가용성 확인, 예약, 해제, 이전 접근 가능
+- 분할 탭: 미출고 수량 기준 분할 UI
+- 배송 탭: 운송장 등록, 출고 완료, 배송 완료 접근 가능
+- 직배 탭: `drop_ship` FO에서만 공급사 전달, CSV export, 공급사 출고 완료 접근 가능
+- history 탭: Core outbox 이벤트 실데이터 + 상태 타임라인 표시. `GET /fulfillments/:id/outbox-events` 연결
 
-| 항목 | 현재 증상 | 근거 파일 |
-|------|-----------|-----------|
-| `POST /fulfillment-orders` 경로 | admin-web이 여전히 deprecated 410 경로 호출 | `wms-pim-통합-마이그레이션.md` §4 PR#1-4 |
-| FO 목록/상세 hook | `Promise.resolve([])` stub — 실 API 미연결 | `queries.ts:221` |
-| FO split reservation 재분배 | 새 FOI id로 원본 예약 조회 → 재분배 누락 | `fulfillments.service.ts:922` |
-| direct-ship 상태 매핑 손실 | `allocated≡forwarded`, `completed≡shipped` 합침 | 마이그레이션 문서 D2 ⚠️ |
-| invoice `direct`/`self` ship 처리 경로 | `markAsShipped`가 `printed` 상태만 허용 → 전이 불가 | 마이그레이션 문서 D1 ⚠️ |
-| reserve/unreserve/transfer URL:id ↔ body FOI 소속 검증 없음 | 다른 FO의 FOI를 잘못 처리 가능 | `fulfillments.controller.ts:97` |
+검토 메모:
+- 버튼 활성화는 `adminAvailableActions` 기반이라 의도와 맞다.
+- history 탭의 "발행 완료"는 Core outbox → Kafka 전달까지이며, channel-adapter/Medusa projection 성공 여부는 별도 확인 필요.
 
-### 3.2 미구현 (이번 Sprint 신규 작업)
+### Phase 5 — 기존 화면 deep link 연결
 
-| 항목 | 우선순위 |
-|------|---------|
-| `GET /fulfillments` 필터 확장 (status, warehouseId, fulfillmentMode, salesOrderId, priority, pagination) | Phase 1 필수 |
-| `GET /fulfillments/:id` 응답 확장 (items, reservations, batch, shipment, invoice, directShipStatus, adminAvailableActions) | Phase 1 필수 |
-| shipped evidence 있는 FO → split/reserve/unreserve/batch-remove 서버 차단 | Phase 1 필수 |
-| admin-web FO 목록 read-only 화면 `/order/fulfillments` | Phase 4A |
-| admin-web FO 상세 read-only 화면 `/order/fulfillments/[id]` | Phase 4B |
-| admin-web FO 재고 액션 탭 | Phase 4C |
-| admin-web FO 분할 탭 | Phase 4D |
-| admin-web FO 배송 탭 | Phase 4E |
-| admin-web FO 직배 탭 | Phase 4F |
-| 기존 화면에서 FO 상세 deep link 연결 | Phase 5 |
-| storefront `availableActions`/tracking 회귀 검증 | Phase 6 |
-| 배송조회 API `GET /store/orders/:id/tracking` projection 회귀 검증 | Phase 6 |
-| Core cancellation → Wallet refund 자동 연결 | Phase 6 검증 |
+완료:
+- outbound-batches drawer FO 행 -> `/order/fulfillments/[fo.id]`
+- FO 목록/상세 -> `/order/outbound-batches?batchId=...`
+- `/order/outbound-batches?batchId=...` 진입 시 drawer 자동 오픈
+- direct-ship order row -> `/order/fulfillments/[foId]`
+- FO 목록/상세 -> `/order/direct-ship?foId=...`
+- `/order/direct-ship?foId=...` 진입 시 orders 탭 자동 선택 및 해당 행 하이라이트
+- inventory reservations의 `targetType=FULFILLMENT_ORDER` targetId -> FO 상세 링크
 
-### 3.3 이번 Sprint 범위 외 (명시적 제외)
+구조적으로 아직 연결하지 않은 화면:
+- `/inventory/transfers` -> FO 상세: `TransferJobLineDto`에 `fulfillmentOrderId` 없음
+- `/order/picking-list` -> FO 상세: 화면이 stub/hard-coded 성격
+- `/order/inspection` -> FO 상세: 화면이 stub/hard-coded 성격
 
-- 반품/교환 workflow (`return_requests`, `exchange_requests` 테이블)
-- Admin 타임라인 UX (raw JSON → 사람이 읽는 타임라인)
-- 채널 주문 취소/반품 안내 통합
-- consolidation/location-optimization 실 구현 (advisory 유지)
-- inspection 세션 DB 영속 (현재 in-memory)
-- JWT 가드 일괄 적용 (별도 인프라 PR)
+### Phase 6 — storefront/customer projection 검증
 
----
+검토 결과:
+- storefront는 `adminAvailableActions`를 쓰지 않고 Core store-facing `availableActions`만 사용한다.
+- shipped evidence가 생기면 Core 고객 취소 차단 정책에 걸린다.
+- 취소/환불 상태는 Wallet/Core business link 흐름과 분리되어 있으며 Phase 1-5 admin-web 변경과 직접 충돌하지 않는다.
 
-## 4. 이번 Sprint 완료 기준 (Acceptance Criteria)
+### Phase 7 — 검증
 
-### Core 계약
+이번 문서 업데이트 중 재검증:
+- `yarn --cwd apps/admin-web type-check` 통과
+- `yarn --cwd apps/admin-web build` 통과
+- build warning은 기존 lint성 경고와 Phase 5의 `no-unused-expressions` 1건이며 빌드는 성공
 
-- [ ] `GET /fulfillments`가 status, warehouseId, fulfillmentMode, salesOrderId, priority, limit, offset 필터를 지원한다
-- [ ] `GET /fulfillments/:id` 응답에 items, reservations, shipment, invoice, directShipStatus, `adminAvailableActions`가 포함된다
-- [ ] `POST /fulfillments/:id/split` 후 원본/신규 FO의 reservedQty와 reservation row 수가 일치한다 (unit test)
-- [ ] reserve/unreserve/transfer-reservation 요청에서 URL의 FO id와 body FOI의 실제 소속 FO id가 다르면 400이 반환된다
-- [ ] FO에 shippedQty > 0인 FOI가 있으면 split/unreserve/batch-remove 요청이 409로 차단된다
-
-### 배송/직배 이벤트
-
-- [ ] goodsflow invoice를 통한 ship 처리, direct ship complete, self ship 처리가 모두 동일하게 FulfillmentShipped outbox 이벤트를 발행한다
-- [ ] channel-adapter가 FulfillmentShipped 이벤트를 수신할 수 있는 경로가 존재한다
-
-### admin-web
-
-- [ ] admin-web에서 deprecated `POST /fulfillment-orders`를 호출하는 코드가 0건이다
-- [ ] `/order/fulfillments` 목록 화면에서 FO 목록이 실제 API로 조회된다
-- [ ] `/order/fulfillments/[id]` 상세 read-only 화면에서 개요/items/reservations/batch/invoice/shipment/directShipStatus가 표시된다
-- [ ] FO 상세 재고 탭에서 재고 확인/예약/해제/이전 액션이 접근 가능하다
-- [ ] FO 상세 분할 탭에서 미출고 수량만 분할 가능하다
-- [ ] FO 상세 배송 탭에서 assign-shipment/ship/deliver가 접근 가능하다
-- [ ] FO 상세 직배 탭은 `drop_ship` FO에만 노출된다
-- [ ] 모든 관리자 액션 버튼의 활성/비활성화가 서버의 `adminAvailableActions`/`blockedReasons` 기반이다
-- [ ] `/order/outbound-batches`, `/order/direct-ship` row에서 FO 상세 deep link가 있다
-
-### storefront
-
-- [ ] SO cancelled + refund 상태 조합에 따라 `REFUND_PENDING` / `REFUND_COMPLETE` / `CANCELLED`가 정확히 구분된다
-- [ ] shipped FO가 있는 주문에서 고객 취소 API가 차단된다
+붙여넣은 Phase 7 산출물 기준 검증:
+- Core fulfillment 관련 focused tests 통과
+- admin-web type-check/lint/build 통과로 보고됨
 
 ---
 
-## 5. 구현 순서 제약
+## 3. 현재 완료 판단
 
-```
-Phase 1 (Core 보정)
-  ├── FO split reservation 재분배 버그 수정          [필수 선행]
-  ├── URL:id ↔ FOI 소속 검증 추가                    [필수 선행]
-  ├── GET /fulfillments 필터 확장                     [Phase 4 선행]
-  └── GET /fulfillments/:id 응답 확장                 [Phase 4 선행]
-      │
-Phase 2 (배송 이벤트 통합)
-  ├── invoice direct/self ship → FulfillmentShipped  [Phase 6 선행]
-  └── direct-ship complete → FulfillmentShipped      [Phase 6 선행]
-      │
-Phase 3 (admin-web client 정리)
-  ├── /fulfillments canonical client                  [Phase 4 선행]
-  └── FO hook stub 제거                               [Phase 4 선행]
-      │
-Phase 4A (admin-web FO 목록 read-only)
-  └── /order/fulfillments 목록 + row deep link
-      │
-Phase 4B (admin-web FO 상세 read-only)
-  └── /order/fulfillments/[id] 개요/items/reservations/batch/invoice/shipment
-      │
-Phase 4C (admin-web FO 재고 탭)
-  └── check-availability/reserve/unreserve/transfer-reservation
-      │
-Phase 4D (admin-web FO 분할 탭)
-  └── split + reservation 합계 검증
-      │
-Phase 4E (admin-web FO 배송 탭)
-  └── assign-shipment/ship/deliver
-      │
-Phase 4F (admin-web FO 직배 탭)
-  └── drop_ship forward/export/complete
-      │
-Phase 5 (기존 화면 연결)
-  └── deep link 추가 (outbound-batches, direct-ship, reservations, transfers)
-      │
-Phase 6 (storefront/customer projection 회귀 검증)
-  └── 고객용 availableActions/tracking 버튼 조건부 노출
-```
+목표별 상태:
+
+| 목표 | 상태 | 판단 |
+|------|------|------|
+| FO 목록/상세를 admin-web에서 조회 | 완료 | 실 API 연결 및 라우트 존재 |
+| FO 분할 | 완료에 가까움 | UI/API 연결됨. shipped evidence guard 존재 |
+| 재고 확인 | 완료 | 상세 재고 탭에서 check-availability 접근 가능 |
+| 재고 예약 | 완료 | `POST /fulfillments/:id/reserve` 연결 |
+| 재고 해제 | 완료 | `POST /fulfillments/:id/unreserve` 연결 |
+| 예약 이전 | 완료 | `POST /fulfillments/:id/transfer-reservation` 연결 |
+| 배송 운송장 등록 | 완료 | `assign-shipment` 연결 |
+| 출고 완료 | 완료 | `ship()` 상태 guard + FOR UPDATE lock + DB unique constraint 추가 |
+| 배송 완료 | 완료 | `markDelivered()`는 shipped 상태만 허용 |
+| 직배 전달 | 완료 | `directShipStatus=pending/null` -> `forwarded` |
+| 직배 공급사 출고 완료 | 완료 | `ship()` guard에 drop_ship forwarded 조건 포함 |
+| 기존 운영 화면 deep link | 부분 완료 | outbound/direct/reservations 완료, transfers/picking/inspection은 구조상 미연결 |
+| storefront 고객 액션 회귀 | 완료에 가까움 | admin 계약과 분리됨. shipped evidence로 고객 취소 차단 |
+
+결론:
+- admin-web에서 목표 기능은 운영자가 접근 가능한 수준까지 노출됐다.
+- "완벽하게 완료"로 보기에는 `ship()` 서버 guard와 일부 화면의 실데이터/딥링크 미연결이 남아 있다.
 
 ---
 
-## 6. 용어 정의 (이번 Sprint 한정)
+## 4. 잔여 리스크 및 수정 필요
 
-| 용어 | 정의 |
-|------|------|
-| **재고 확인** | check-availability + 현재 reservation 목록 조회 |
-| **재고 예약** | FOI 단위 reserve (POST /fulfillments/:id/reserve) |
-| **예약 해제** | FOI 단위 unreserve (POST /fulfillments/:id/unreserve) |
-| **예약 이전** | 같은 SKU FOI 간 transfer-reservation |
-| **배치 할당** | FO를 outbound batch에 배정하는 작업. 재고 예약과 다른 의미 |
-| **직배 전달** | directShipStatus=forwarded (공급사에 주문 전달 완료) |
-| **직배 완료** | FO status=shipped/completed + directShipStatus=completed (고객 배송 완료 아님) |
-| **출고 완료** | FO status=shipped (invoice shipped + FulfillmentShipped 이벤트 발행됨) |
-| **배송 완료** | FO status=completed + SO status=delivered (고객 수령 확인) |
-| **고객용 availableActions** | storefront 전용 액션. 예: cancel, track, return, exchange, receipt |
-| **관리자용 adminAvailableActions** | admin-web FO 전용 액션. 예: split, reserve, unreserve, transferReservation, assignShipment, ship, deliver, forwardDropShip, completeDropShip |
+### ~~P1. `ship()` 서버 상태 guard 미완료~~ — 완료
+
+`ship()` 내 상태 guard가 추가됐다 (services/fulfillments.service.ts):
+- 이미 `shipped`: idempotent return
+- `completed`/`canceled`: 409
+- `drop_ship` + `directShipStatus !== 'forwarded'`: 409
+- 일반 모드에서 `invoiced/labeled/picked/inspecting` 외: 409
+
+### ~~P2. `assignShipment()` 상태/중복 guard 미완료~~ — 완료, 동시성 보강 포함
+
+`assignShipment()` 내 guard 추가됐다:
+- terminal 상태(`shipped/completed/canceled`): 409
+- 동일 FO에 active shipment 존재: 409
+- `picked/inspecting/invoiced`에서 상태 역전이 없음
+- **FO row `FOR UPDATE` lock** 추가 — SELECT → INSERT 사이 race 차단
+- **`shipments.fulfillmentOrderId` DB unique constraint** 추가 (`uq_shipments_fulfillment_order_id`) — 애플리케이션 우회 경우의 안전망
+
+migration: `apps/core/drizzle/20260609063049_add-shipments-fo-unique-idx.sql`
+
+### ~~P2. direct-ship 라벨 오해 가능성~~ — 완료
+
+- `forwarded`: "공급사 전달", `completed`: "공급사 출고 완료" 로 수정됨
+
+### ~~P2. history 탭 placeholder~~ — 완료
+
+Core outbox 이벤트 실데이터 표시. "발행 완료"는 Kafka 전달까지이며 projection 성공은 별도 확인 필요임을 UI에 명시.
+
+### P3. Picking/Inspection 화면 deep link — 다음 phase
+
+현재 `/order/picking-list`, `/order/inspection`은 하드코딩 stub. picking 세션 데이터에 `fulfillmentOrderId`가 없어 deep link 추가 불가. 다음 phase에서 실데이터 연결과 함께 처리.
 
 ---
 
 
+
+## 6. 다음 보강 순서 — 완료 (2026-06-09)
+
+1. ✅ `ship()` 서버 상태 guard 추가 및 테스트
+   - 이미 `shipped` → idempotent return (중복 호출 안전)
+   - `completed`/`canceled` → 409 ConflictException
+   - `drop_ship` + `directShipStatus !== 'forwarded'` → 409
+   - 일반 모드는 `invoiced/labeled/picked/inspecting` 외 → 409
+   - 테스트 9건 추가 (`ship guard` describe block), 전체 49개 통과
+
+2. ✅ `assignShipment()` 상태/중복 shipment guard 추가
+   - terminal 상태(`shipped/completed/canceled`) → 409
+   - 동일 FO에 active shipment 존재 → 409 (update-in-place 엔드포인트 별도로 두는 정책)
+   - `picked/inspecting/invoiced`에서 호출 시 상태 역전이 없이 shipment만 등록
+   - `ready/created`에서만 `labeled`로 전이
+   - 테스트 5건 추가 (`assignShipment guard` describe block)
+
+3. ✅ direct-ship 목록 라벨/버튼 문구를 공급사 출고 의미로 정리
+   - `forwarded`: "공급사 전달" (기존: "발송 중")
+   - `completed`: "공급사 출고 완료" (기존: "완료")
+   - forward-dialog/complete-dialog 제목·설명·버튼 전면 수정
+
+4. ✅ picking/inspection 실데이터 연결 분석 — 연결 보류
+   - `/order/picking-list`, `/order/inspection` 두 화면 모두 하드코딩된 fake 데이터 + API 연결 없음
+   - stub 화면에 FO deep link를 추가하면 오히려 혼란 → 다음 phase에서 실데이터 연결과 함께 처리
+
+5. ✅ history 탭을 outbox/inbox trace 기반 실제 운영 추적 UI로 교체
+   - Core에 `GET /fulfillments/:id/outbox-events` 추가 (`aggregateType='fulfillment'`)
+   - `FulfillmentOutboxEvent` 타입 + `fulfillmentsClient.getOutboxEvents()` + `useFulfillmentOutboxEvents` 훅 추가
+   - history-tab.tsx: 상태 타임라인 + Core outbox 이벤트 테이블 (이벤트 타입, 상태 배지, 시도 수, 발행/재시도 시각)
+   - 실패/재시도 이벤트 있으면 운영 Alert 노출
+   - `yarn --cwd apps/admin-web type-check` 통과
+
+### 잔여 작업
+
+- picking/inspection 실데이터 연결 → 다음 phase에서 picking 세션에 `fulfillmentOrderId` 추가 후 deep link
+- `/inventory/transfers` → FO 상세: `TransferJobLineDto`에 `fulfillmentOrderId` 없음, 다음 phase
 
