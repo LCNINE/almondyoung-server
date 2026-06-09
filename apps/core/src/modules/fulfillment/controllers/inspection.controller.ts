@@ -31,6 +31,7 @@ const InspectItemSchema = z.object({
 });
 
 const ForceShipmentSchema = z.object({
+  sessionId: z.string().uuid(),
   foiId: z.string().uuid(),
   reason: z.string().min(1),
   authorizedBy: z.string().min(1),
@@ -39,13 +40,27 @@ const ForceShipmentSchema = z.object({
 });
 
 const BulkApproveSchema = z.object({
+  sessionId: z.string().uuid(),
   foiIds: z.array(z.string().uuid()).min(1),
   inspectorUserId: z.string(),
 });
 
+// sessionId 는 URL param 으로 받으므로 body 는 inspectorUserId 만
 const CompleteSessionSchema = z.object({
-  sessionId: z.string(),
   inspectorUserId: z.string(),
+});
+
+const ScanInspectionSchema = z.object({
+  barcode: z.string().min(1),
+  sessionId: z.string().uuid(),
+  fulfillmentOrderId: z.string().uuid().optional(),
+});
+
+const InspectByScanSchema = z.object({
+  barcode: z.string().min(1),
+  sessionId: z.string().uuid(),
+  inspectorUserId: z.string(),
+  quantity: z.number().int().positive().default(1),
 });
 
 @ApiTags('Inspection')
@@ -58,6 +73,13 @@ export class InspectionController {
   @UsePipes(new ZodValidationPipe(StartInspectionSchema))
   async startInspectionSession(@Body() dto: z.infer<typeof StartInspectionSchema>) {
     return this.inspectionService.startInspectionSession(dto);
+  }
+
+  @Get('sessions/:sessionId')
+  @ApiOperation({ summary: '품질검사 세션 조회' })
+  @ApiParam({ name: 'sessionId', description: '품질검사 세션 ID' })
+  async getInspectionSession(@Param('sessionId') sessionId: string) {
+    return this.inspectionService.getInspectionSession(sessionId);
   }
 
   @Post('sessions/:sessionId/complete')
@@ -77,6 +99,23 @@ export class InspectionController {
   @UsePipes(new ZodValidationPipe(InspectItemSchema))
   async inspectItem(@Body() dto: z.infer<typeof InspectItemSchema>) {
     return this.inspectionService.inspectItem(dto);
+  }
+
+  @Post('scan')
+  @ApiOperation({ summary: '검수 바코드 스캔 (대상 FOI 조회)' })
+  @UsePipes(new ZodValidationPipe(ScanInspectionSchema))
+  async scanBarcode(@Body() dto: z.infer<typeof ScanInspectionSchema>) {
+    return this.inspectionService.scanBarcode(dto.barcode, {
+      sessionId: dto.sessionId,
+      fulfillmentOrderId: dto.fulfillmentOrderId,
+    });
+  }
+
+  @Post('inspect-by-scan')
+  @ApiOperation({ summary: '검수 바코드 스캔 (스캔 1회 = approved +수량 누적)' })
+  @UsePipes(new ZodValidationPipe(InspectByScanSchema))
+  async inspectByScan(@Body() dto: z.infer<typeof InspectByScanSchema>) {
+    return this.inspectionService.inspectByScan(dto);
   }
 
   @Post('items/force-shipment')
@@ -103,7 +142,7 @@ export class InspectionController {
   @ApiOperation({ summary: '상품 일괄 승인' })
   @UsePipes(new ZodValidationPipe(BulkApproveSchema))
   async bulkApprove(@Body() dto: z.infer<typeof BulkApproveSchema>) {
-    const approvedCount = await this.inspectionService.bulkApprove(dto.foiIds, dto.inspectorUserId);
+    const approvedCount = await this.inspectionService.bulkApprove(dto.sessionId, dto.foiIds, dto.inspectorUserId);
     return { message: `Successfully approved ${approvedCount} items`, approvedCount };
   }
 

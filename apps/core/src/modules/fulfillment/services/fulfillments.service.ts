@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
-import { eq, inArray, desc, sql } from 'drizzle-orm';
+import { eq, inArray, desc, sql, count } from 'drizzle-orm';
 import { PoliciesService } from './policies.service';
 import { AvailabilityService } from './availability.service';
 import { FULFILLMENT_EVENTS } from '../events';
@@ -23,6 +23,13 @@ import { AssignShipmentDto } from '../dto/assign-shipment.dto';
 import { FulfillmentShippedPayload, FulfillmentDeliveredPayload, FulfillmentCancelledPayload, Carrier } from '@packages/event-contracts/streams';
 import { SalesOrderAmendmentsService } from '../../sales-order/services/sales-order-amendments.service';
 import { SalesOrderAmendmentDeltaDto } from '../../sales-order/dto/create-sales-order-amendment.dto';
+
+type FulfillmentStatus = (typeof wmsTables.fulfillmentOrders.status.enumValues)[number];
+
+// 외부 쿼리 문자열을 fulfillment status enum 으로 좁히는 타입 가드.
+// enumValues 를 readonly string[] 로 넓혀 includes 비교 (단순 멤버십 체크용 안전한 위닝)
+const isFulfillmentStatus = (value: string): value is FulfillmentStatus =>
+  (wmsTables.fulfillmentOrders.status.enumValues as readonly string[]).includes(value);
 
 type FulfillmentOrderItemInsert = {
   fulfillmentOrderId: string;
@@ -1275,24 +1282,59 @@ export class FulfillmentsService {
       .where(eq(wmsTables.invoices.fulfillmentOrderId, id))
       .limit(1);
 
+    // FOI 라인 + SKU 조인 (상세 화면 표시용)
+    const items = await db
+      .select({
+        id: wmsTables.fulfillmentOrderItems.id,
+        skuId: wmsTables.fulfillmentOrderItems.skuId,
+        skuCode: wmsTables.skus.code,
+        skuName: wmsTables.skus.name,
+        qty: wmsTables.fulfillmentOrderItems.qty,
+        reservedQty: wmsTables.fulfillmentOrderItems.reservedQty,
+        pickedQty: wmsTables.fulfillmentOrderItems.pickedQty,
+        shippedQty: wmsTables.fulfillmentOrderItems.shippedQty,
+        status: wmsTables.fulfillmentOrderItems.status,
+        salesOrderId: wmsTables.fulfillmentOrderItems.salesOrderId,
+        salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
+      })
+      .from(wmsTables.fulfillmentOrderItems)
+      .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId))
+      .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, id))
+      .orderBy(wmsTables.fulfillmentOrderItems.createdAt);
+
     return {
       ...fulfillmentOrder,
       invoice: invoiceRows[0] || null,
+      items,
     };
   }
 
-  async list(params: { limit: number; offset: number }, tx?: DbTx) {
+  async list(params: { limit: number; offset: number; status?: string }, tx?: DbTx) {
     const db = tx ?? this.db.db;
+
+    // status 쿼리 문자열을 enum 으로 안전 narrowing (잘못된 값은 무시)
+    const statusFilter =
+      params.status && isFulfillmentStatus(params.status) ? params.status : undefined;
+    const whereClause = statusFilter
+      ? eq(wmsTables.fulfillmentOrders.status, statusFilter)
+      : undefined;
+
+    const [totalRow] = await db
+      .select({ value: count() })
+      .from(wmsTables.fulfillmentOrders)
+      .where(whereClause);
+    const total = totalRow?.value ?? 0;
 
     const fulfillmentOrders = await db
       .select()
       .from(wmsTables.fulfillmentOrders)
+      .where(whereClause)
       .limit(params.limit)
       .offset(params.offset)
       .orderBy(desc(wmsTables.fulfillmentOrders.createdAt));
 
     if (fulfillmentOrders.length === 0) {
-      return [];
+      return { data: [], total };
     }
 
     const fulfillmentOrderIds = fulfillmentOrders.map((fo) => fo.id);
@@ -1314,10 +1356,12 @@ export class FulfillmentsService {
       invoicesByFoId.set(invoice.fulfillmentOrderId, invoice);
     }
 
-    return fulfillmentOrders.map((fo) => ({
+    const data = fulfillmentOrders.map((fo) => ({
       ...fo,
       invoice: invoicesByFoId.get(fo.id) || null,
     }));
+
+    return { data, total };
   }
 
   async checkAvailability(fulfillmentOrderId: string, tx?: DbTx) {
