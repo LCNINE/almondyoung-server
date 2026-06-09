@@ -42,6 +42,7 @@ export {
   useFulfillment,
   useFulfillmentOrders,
   useFulfillmentOrder,
+  useFulfillmentOutboxEvents,
   useLegacyPurchaseOrders,
   useLegacyPurchaseOrder,
   // 검수
@@ -71,6 +72,11 @@ export {
   useAdminCancelSalesOrder,
   useAdminRetryRefund,
   useAdminManualRefundComplete,
+  // 출고주문(FO) 액션
+  useCreateFulfillmentOrder,
+  useShipFulfillment,
+  useCancelFulfillment,
+  useReserveFulfillmentItem,
   // 출고 배치 (D2)
   useCreateOutboundBatch,
   useAddFOsToBatch,
@@ -86,16 +92,13 @@ export {
   useAnalyzeConsolidation,
   useAutoConsolidate,
   // FO 액션 (Core /fulfillments canonical)
-  useCreateFulfillmentOrder,
   useSplitFulfillmentOrder,
   useCheckFulfillmentAvailability,
   useReserveFulfillment,
   useUnreserveFulfillment,
   useTransferFulfillmentReservation,
   useAssignFulfillmentShipment,
-  useShipFulfillment,
   useDeliverFulfillment,
-  useCancelFulfillment,
 } from './mutations';
 
 // 데이터 변환 함수들 (주문 전용)

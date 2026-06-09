@@ -30,12 +30,13 @@ import type {
   AddFOsToBatchRequest,
   ForwardDirectShipOrdersRequest,
   CompleteDirectShipOrdersRequest,
-  CreateFulfillmentOrderRequest,
+  CreateStandaloneFulfillmentRequest,
   SplitFulfillmentOrderRequest,
   ReserveRequest,
   UnreserveRequest,
   TransferReservationRequest,
   AssignShipmentRequest,
+  InspectByScanRequest,
 } from '@/lib/types/dto/fulfillment';
 
 // 주문 관련 뮤테이션
@@ -109,7 +110,15 @@ export const useAdminManualRefundComplete = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, adminNote, refundLinkId }: { id: string; adminNote?: string; refundLinkId?: string }) =>
+    mutationFn: ({
+      id,
+      adminNote,
+      refundLinkId,
+    }: {
+      id: string;
+      adminNote?: string;
+      refundLinkId?: string;
+    }) =>
       orders.salesOrders.adminManualRefundComplete(id, adminNote, refundLinkId),
     onSuccess: (_, { id }) => {
       queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
@@ -227,6 +236,37 @@ export const useGenerateBarcode = () => {
   });
 };
 
+// ===== 출고주문(FO) 액션 뮤테이션 =====
+
+// FO 상세/목록 캐시 무효화 공통 처리
+const useInvalidateFulfillment = () => {
+  const queryClient = useQueryClient();
+  return (id: string) => {
+    queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillment(id) });
+    queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillments });
+  };
+};
+
+export const useReserveFulfillmentItem = () => {
+  const invalidate = useInvalidateFulfillment();
+  return useMutation({
+    mutationFn: ({
+      id,
+      fulfillmentOrderItemId,
+      quantity,
+    }: {
+      id: string;
+      fulfillmentOrderItemId: string;
+      quantity: number;
+    }) =>
+      orders.fulfillmentOrder.reserveItem(id, {
+        fulfillmentOrderItemId,
+        quantity,
+      }),
+    onSuccess: (_, { id }) => invalidate(id),
+  });
+};
+
 // ===== 검수 관련 뮤테이션 =====
 
 export const useStartInspection = () => {
@@ -262,12 +302,21 @@ export const useInspectItem = () => {
     mutationFn: (data: InspectItemRequest) =>
       orders.inspection.inspectItem(data),
     onSuccess: (_, data) => {
-      queryClient.invalidateQueries({
-        queryKey: orderQueryKeys.inspectionSummary(data.sessionId),
-      });
+      queryClient.invalidateQueries({ queryKey: ['inspection'] });
       queryClient.invalidateQueries({
         queryKey: orderQueryKeys.inspectionHistory(data.foiId),
       });
+    },
+  });
+};
+
+export const useInspectByScan = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: InspectByScanRequest) =>
+      orders.inspection.inspectByScan(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inspection'] });
     },
   });
 };
@@ -278,6 +327,7 @@ export const useForceShipment = () => {
     mutationFn: (data: ForceShipmentRequest) =>
       orders.inspection.forceShipment(data),
     onSuccess: (_, data) => {
+      queryClient.invalidateQueries({ queryKey: ['inspection'] });
       queryClient.invalidateQueries({
         queryKey: orderQueryKeys.inspectionHistory(data.foiId),
       });
@@ -737,8 +787,8 @@ function invalidateFulfillment(queryClient: ReturnType<typeof useQueryClient>, i
 export const useCreateFulfillmentOrder = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: CreateFulfillmentOrderRequest) =>
-      orders.fulfillments.create(data),
+    mutationFn: (data: CreateStandaloneFulfillmentRequest) =>
+      orders.fulfillmentOrder.createStandalone(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillments });
     },
@@ -809,12 +859,16 @@ export const useAssignFulfillmentShipment = (id: string) => {
   });
 };
 
-export const useShipFulfillment = (id: string) => {
+export const useShipFulfillment = (boundId?: string) => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => orders.fulfillments.ship(id),
-    onSuccess: () => {
-      invalidateFulfillment(queryClient, id);
+    mutationFn: (id?: string) => {
+      const targetId = boundId ?? id;
+      if (!targetId) throw new Error('Fulfillment id is required');
+      return orders.fulfillments.ship(targetId);
+    },
+    onSuccess: (_, id) => {
+      invalidateFulfillment(queryClient, boundId ?? id!);
     },
   });
 };
@@ -829,12 +883,16 @@ export const useDeliverFulfillment = (id: string) => {
   });
 };
 
-export const useCancelFulfillment = (id: string) => {
+export const useCancelFulfillment = (boundId?: string) => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => orders.fulfillments.cancel(id),
-    onSuccess: () => {
-      invalidateFulfillment(queryClient, id);
+    mutationFn: (id?: string) => {
+      const targetId = boundId ?? id;
+      if (!targetId) throw new Error('Fulfillment id is required');
+      return orders.fulfillments.cancel(targetId);
+    },
+    onSuccess: (_, id) => {
+      invalidateFulfillment(queryClient, boundId ?? id!);
     },
   });
 };

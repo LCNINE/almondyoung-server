@@ -195,6 +195,7 @@ export const fulfillmentStatusEnum = pgEnum('fulfillment_status', [
   'picking',
   'picked',
   'inspecting',
+  'inspected',
   'invoiced',
   'completed',
   'forwarded',
@@ -1447,18 +1448,24 @@ export const outboundTaskLines = pgTable('outbound_task_lines', {
 /*───────────────────────────
  * SHIPMENTS
  *──────────────────────────*/
-export const shipments = pgTable('shipments', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  trackingNo: varchar('tracking_no', { length: 64 }).notNull(),
-  carrier: carrierEnum('carrier').notNull().default('CJ'),
-  status: shipmentStatusEnum('status').notNull().default('created'),
-  eta: timestamp('eta', { withTimezone: true }),
-  splitStatus: boolean('split_status').notNull().default(false),
-  invoiceUrl: varchar('invoice_url', { length: 512 }),
-  fulfillmentOrderId: uuid('fulfillment_order_id').references(() => fulfillmentOrders.id, { onDelete: 'set null' }),
-  lastUpdated: timestamp('last_updated', { withTimezone: true }).notNull().defaultNow(),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+export const shipments = pgTable(
+  'shipments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    trackingNo: varchar('tracking_no', { length: 64 }).notNull(),
+    carrier: carrierEnum('carrier').notNull().default('CJ'),
+    status: shipmentStatusEnum('status').notNull().default('created'),
+    eta: timestamp('eta', { withTimezone: true }),
+    splitStatus: boolean('split_status').notNull().default(false),
+    invoiceUrl: varchar('invoice_url', { length: 512 }),
+    fulfillmentOrderId: uuid('fulfillment_order_id').references(() => fulfillmentOrders.id, { onDelete: 'set null' }),
+    lastUpdated: timestamp('last_updated', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqFulfillmentOrder: unique('uq_shipments_fulfillment_order_id').on(t.fulfillmentOrderId),
+  }),
+);
 
 export const shipmentTracking = pgTable('shipment_tracking', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -2044,6 +2051,87 @@ export const fulfillmentOrderItems = pgTable(
 );
 
 /*───────────────────────────
+ * INSPECTION (검수) — 영속화 테이블 3종
+ *──────────────────────────*/
+
+// 검수 세션 (FO 단위). status/type 는 varchar (FOI status 컨벤션 따름)
+export const inspectionSessions = pgTable(
+  'inspection_sessions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    fulfillmentOrderId: uuid('fulfillment_order_id')
+      .references(() => fulfillmentOrders.id, { onDelete: 'cascade' })
+      .notNull(),
+    type: varchar('type', { length: 16 }).notNull().default('individual'), // individual | batch
+    status: varchar('status', { length: 16 }).notNull().default('active'), // active | completed | paused
+    inspectorUserId: varchar('inspector_user_id', { length: 255 }),
+    totalItems: integer('total_items').notNull().default(0),
+    inspectedItems: integer('inspected_items').notNull().default(0),
+    completedItems: integer('completed_items').notNull().default(0),
+    issues: integer('issues').notNull().default(0),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxFulfillmentOrder: index('idx_inspection_sessions_fo').on(t.fulfillmentOrderId),
+    idxStatus: index('idx_inspection_sessions_status').on(t.status),
+  }),
+);
+
+// 검수 아이템 (세션 × FOI). 세션 내 FOI 당 1행 (upsert)
+export const inspectionItems = pgTable(
+  'inspection_items',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    sessionId: uuid('session_id')
+      .references(() => inspectionSessions.id, { onDelete: 'cascade' })
+      .notNull(),
+    foiId: uuid('foi_id')
+      .references(() => fulfillmentOrderItems.id, { onDelete: 'cascade' })
+      .notNull(),
+    inspectedQty: integer('inspected_qty').notNull().default(0),
+    approvedQty: integer('approved_qty').notNull().default(0),
+    rejectedQty: integer('rejected_qty').notNull().default(0),
+    status: varchar('status', { length: 16 }).notNull().default('pending'), // pending | inspecting | approved | rejected | partial
+    lastInspectedAt: timestamp('last_inspected_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxSession: index('idx_inspection_items_session').on(t.sessionId),
+    idxFoi: index('idx_inspection_items_foi').on(t.foiId),
+    uqSessionFoi: unique('uq_inspection_items_session_foi').on(t.sessionId, t.foiId),
+  }),
+);
+
+// 검수 이슈 (불량/수량불일치 등). FOI 단위 누적 기록
+export const inspectionIssues = pgTable(
+  'inspection_issues',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    foiId: uuid('foi_id')
+      .references(() => fulfillmentOrderItems.id, { onDelete: 'cascade' })
+      .notNull(),
+    sessionId: uuid('session_id').references(() => inspectionSessions.id, { onDelete: 'set null' }),
+    type: varchar('type', { length: 32 }).notNull(), // quantity_mismatch | quality_issue | damage | wrong_item | other
+    severity: varchar('severity', { length: 16 }).notNull(), // minor | major | critical
+    description: text('description').notNull().default(''),
+    qty: integer('qty'),
+    inspectorUserId: varchar('inspector_user_id', { length: 255 }),
+    photos: jsonb('photos').$type<string[]>(),
+    reportedAt: timestamp('reported_at', { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    resolution: text('resolution'),
+  },
+  (t) => ({
+    idxFoi: index('idx_inspection_issues_foi').on(t.foiId),
+    idxSession: index('idx_inspection_issues_session').on(t.sessionId),
+  }),
+);
+
+/*───────────────────────────
  * OUTBOUND BATCH SYSTEM
  *──────────────────────────*/
 
@@ -2198,6 +2286,9 @@ export const wmsTables = {
   productSkuMappingItems,
   productSkuMappingSnapshots,
   fulfillmentOrderItems,
+  inspectionSessions,
+  inspectionItems,
+  inspectionIssues,
   outboundBatches,
   fulfillmentOrderBatches,
   invoices,

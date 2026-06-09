@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import {
   Sheet,
   SheetContent,
@@ -20,6 +19,7 @@ import {
   useResetPickingItem,
   usePickByBarcode,
 } from '@/lib/services/orders/mutations';
+import { useFulfillmentOrder } from '@/lib/services/orders/queries';
 import type { PickingSession } from '@/lib/types/dto/fulfillment';
 import { CheckCircle2, RotateCcw } from 'lucide-react';
 
@@ -33,6 +33,9 @@ export function PickingSessionDrawer({ foId, open, onClose }: Props) {
   const [session, setSession] = useState<PickingSession | null>(null);
   const [barcode, setBarcode] = useState('');
   const [started, setStarted] = useState(false);
+
+  // 바코드 스캔 피킹 시 실제 창고 ID 전달용 (SKU 바코드 경로에서 재고 검증에 사용)
+  const { data: fo } = useFulfillmentOrder(foId);
 
   const startMutation = useStartIndividualPicking();
   const pickMutation = usePickIndividualItem();
@@ -58,7 +61,7 @@ export function PickingSessionDrawer({ foId, open, onClose }: Props) {
         barcode: scanned,
         pickedQty: 1,
         fulfillmentOrderId: foId,
-        warehouseId: '', // warehouseId는 세션에서 추론하거나 별도 입력
+        warehouseId: fo?.warehouseId ?? '', // FO 상세에서 실제 창고 ID 사용
       });
       toast.success(`바코드 스캔 완료: ${scanned}`);
       // 세션 재조회로 진행 상황 갱신

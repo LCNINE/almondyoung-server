@@ -5,17 +5,19 @@
 
 export type FulfillmentMode = 'in_house' | '3pl' | 'drop_ship';
 export type FulfillmentOrderPriority = 'normal' | 'high' | 'urgent';
+// 백엔드 fulfillmentStatusEnum 전체와 1:1 (inventory.schema.ts)
 export type FulfillmentOrderStatus =
   | 'created'
   | 'reserving'
   | 'ready'
   | 'unfulfillable'
+  | 'labeled'
   | 'pending'
   | 'allocated'
   | 'picking'
   | 'picked'
   | 'inspecting'
-  | 'labeled'
+  | 'inspected'
   | 'invoiced'
   | 'forwarded'
   | 'shipped'
@@ -26,19 +28,23 @@ export type DirectShipStatus = 'pending' | 'forwarded' | 'completed' | 'canceled
 
 // ===== FO summary types (Core DTO 1:1 대응) =====
 
-export interface FulfillmentOrderItemSummary {
+export interface FulfillmentOrderItem {
   id: string;
-  fulfillmentOrderId: string;
+  fulfillmentOrderId?: string;
   salesOrderId: string | null;
   salesOrderLineId: string | null;
   variantId: string | null;
   skuId: string;
+  skuCode: string;
+  skuName: string;
   qty: number;
   reservedQty: number;
   pickedQty: number;
   shippedQty: number;
   status: string;
 }
+
+export type FulfillmentOrderItemSummary = FulfillmentOrderItem;
 
 export interface ReservationSummary {
   id: string;
@@ -52,10 +58,12 @@ export interface ReservationSummary {
 export interface InvoiceSummary {
   id: string;
   invoiceNumber: string;
-  status: 'issued' | 'printed' | 'shipped' | 'canceled';
+  status: InvoiceStatus;
   carrierCode: string | null;
-  issueMethod: 'goodsflow' | 'direct' | 'self';
+  issueMethod: InvoiceIssueMethod;
 }
+
+export type FulfillmentInvoiceSummary = InvoiceSummary;
 
 export interface ShipmentSummary {
   id: string;
@@ -86,9 +94,11 @@ export interface FulfillmentOrder {
   totalQty: number;
   totalReservedQty: number;
   reservationFailureReason: string | null;
+  reservationFailureDetails?: unknown | null;
   allocatedAt: string | null;
   shippedAt: string | null;
   canceledAt: string | null;
+  shippingAddress?: unknown | null;
   labelNo: string | null;
   createdAt: string;
   updatedAt: string;
@@ -99,7 +109,7 @@ export interface FulfillmentOrder {
 
 /** GET /fulfillments/:id 상세 응답 (items, reservations, adminAvailableActions 포함) */
 export interface FulfillmentOrderDetail extends FulfillmentOrder {
-  items: FulfillmentOrderItemSummary[];
+  items: FulfillmentOrderItem[];
   reservations: ReservationSummary[];
   adminAvailableActions: string[];
   blockedReasons: string[];
@@ -114,7 +124,12 @@ export interface ListFulfillmentsQuery {
   priority?: FulfillmentOrderPriority;
   limit?: number;
   offset?: number;
+  page?: number;
 }
+
+export type FulfillmentOrdersQuery = ListFulfillmentsQuery & {
+  status?: FulfillmentOrderStatus;
+};
 
 /** POST /fulfillments/:id/split body */
 export interface SplitFulfillmentOrderItem {
@@ -166,12 +181,56 @@ export interface CreateFulfillmentOrderRequest {
   items: FulfillmentOrderItemInput[];
 }
 
+// 수동 standalone FO 생성 (POST /fulfillments — 백엔드 CreateFulfillmentOrderDto, salesOrderId 미사용)
+export interface FulfillmentShippingAddress {
+  recipientName: string;
+  phone: string;
+  postalCode: string;
+  roadAddress: string;
+  detailAddress: string;
+  deliveryNote?: string;
+}
+
+export interface CreateStandaloneFulfillmentItem {
+  skuId: string;
+  quantity: number;
+  variantId?: string;
+}
+
+export interface CreateStandaloneFulfillmentRequest {
+  warehouseId?: string;
+  fulfillmentMode?: FulfillmentMode;
+  priority?: FulfillmentOrderPriority;
+  shippingAddress?: FulfillmentShippingAddress;
+  items: CreateStandaloneFulfillmentItem[];
+}
+
 export interface AllocateToBatchRequest {
   batchId: string;
 }
 
 export interface UpdateFulfillmentPriorityRequest {
   priority: FulfillmentOrderPriority;
+}
+
+export interface FulfillmentOutboxEvent {
+  id: string;
+  eventType: string;
+  status: 'pending' | 'processing' | 'published' | 'failed' | string;
+  attempts: number;
+  nextAttemptAt: string | null;
+  publishedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// 목록 아이템 — 목록 응답엔 items 없음(상세에서만). 구조 자체는 상세와 동일.
+export type FulfillmentOrderListItem = FulfillmentOrderDetail;
+
+// GET /fulfillments 페이지네이션 응답 (백엔드 FulfillmentOrderListResponseDto)
+export interface FulfillmentOrdersListResponse {
+  data: FulfillmentOrderListItem[];
+  total: number;
 }
 
 // ===== Picking =====
@@ -211,36 +270,58 @@ export interface GenerateBarcodeRequest {
   id: string;
 }
 
+// 백엔드 picking-process.service.ts 의 PickingOperation/PickingProgress/IndividualPickingSession 과 1:1
+export interface PickingOperationFoiDetail {
+  foiId: string;
+  fulfillmentOrderId: string;
+  salesOrderId: string | null;
+  salesOrderLineId: string | null;
+  requiredQty: number;
+  pickedQty: number;
+  remainingQty: number;
+}
+
+// SKU 단위로 집계된 배치 피킹 작업 (skuCode/skuName 은 백엔드 skus 조인으로 제공)
 export interface PickingOperation {
-  id: string;
+  batchId: string;
+  skuId: string;
+  skuCode: string;
+  skuName: string;
+  locationCode?: string; // ⚠️ 현재 백엔드 미구현 — 항상 undefined
+  totalQty: number;
+  pickedQty: number;
+  remainingQty: number;
+  foiDetails: PickingOperationFoiDetail[];
+}
+
+export interface PickingProgress {
+  batchId: string;
+  totalSkus: number;
+  completedSkus: number;
+  totalItems: number;
+  pickedItems: number;
+  remainingItems: number;
+  completionPercentage: number;
+}
+
+export interface PickingSessionItem {
+  foiId: string;
   skuId: string;
   skuCode: string;
   skuName: string;
   requiredQty: number;
   pickedQty: number;
-  locationCode?: string;
-  status: 'pending' | 'partial' | 'completed';
+  locationCode?: string; // ⚠️ 현재 백엔드 미구현 — 항상 undefined
+  isCompleted: boolean;
 }
 
-export interface PickingProgress {
-  batchId: string;
-  totalItems: number;
-  pickedItems: number;
-  progressPercent: number;
-  status: string;
-}
-
+// 개별 FO 피킹 세션 (POST /picking/fulfillment-orders/:id/start, GET .../session)
 export interface PickingSession {
   fulfillmentOrderId: string;
-  status: string;
-  items: Array<{
-    foiId: string;
-    skuId: string;
-    skuCode: string;
-    skuName: string;
-    requiredQty: number;
-    pickedQty: number;
-  }>;
+  items: PickingSessionItem[];
+  totalItems: number;
+  completedItems: number;
+  completionPercentage: number;
 }
 
 export interface GenerateBarcodeResponse {
@@ -251,7 +332,12 @@ export interface GenerateBarcodeResponse {
 // ===== Inspection =====
 
 export type InspectionType = 'individual' | 'batch';
-export type IssueType = 'quantity_mismatch' | 'quality_issue' | 'damage' | 'wrong_item' | 'other';
+export type IssueType =
+  | 'quantity_mismatch'
+  | 'quality_issue'
+  | 'damage'
+  | 'wrong_item'
+  | 'other';
 export type IssueSeverity = 'minor' | 'major' | 'critical';
 
 export interface StartInspectionRequest {
@@ -279,6 +365,7 @@ export interface InspectItemRequest {
 }
 
 export interface ForceShipmentRequest {
+  sessionId: string;
   foiId: string;
   reason: string;
   authorizedBy: string;
@@ -287,53 +374,113 @@ export interface ForceShipmentRequest {
 }
 
 export interface BulkApproveRequest {
+  sessionId: string;
   foiIds: string[];
   inspectorUserId: string;
 }
 
+// sessionId 는 URL path 로 전달 (body 중복 제거)
 export interface CompleteInspectionSessionRequest {
-  sessionId: string;
   inspectorUserId: string;
 }
 
+// 검수 바코드 스캔 (3-C)
+export interface ScanInspectionRequest {
+  barcode: string;
+  sessionId: string;
+  fulfillmentOrderId?: string;
+}
+
+export interface InspectByScanRequest {
+  barcode: string;
+  sessionId: string;
+  inspectorUserId: string;
+  quantity?: number;
+}
+
+// 영속화된 검수 이슈 레코드 (백엔드 inspection_issues)
+export interface InspectionIssueRecord {
+  id: string;
+  foiId: string;
+  type: IssueType;
+  severity: IssueSeverity;
+  description: string;
+  qty?: number;
+  inspectorUserId: string;
+  reportedAt: string;
+  resolvedAt?: string;
+  resolution?: string;
+  photos?: string[];
+}
+
+// 검수 아이템 (세션 × FOI) — 백엔드 InspectionItem
+export interface InspectionItem {
+  foiId: string;
+  salesOrderId: string | null;
+  salesOrderLineId: string | null;
+  skuId: string;
+  skuName: string;
+  requiredQty: number;
+  pickedQty: number;
+  inspectedQty: number;
+  approvedQty: number;
+  rejectedQty: number;
+  status: 'pending' | 'inspecting' | 'approved' | 'rejected' | 'partial';
+  issues: InspectionIssueRecord[];
+  lastInspectedAt?: string;
+}
+
+// 백엔드 InspectionSession (영속화)
 export interface InspectionSession {
   id: string;
   fulfillmentOrderId: string;
   type: InspectionType;
+  status: 'active' | 'completed' | 'paused';
   inspectorUserId: string;
-  status: 'active' | 'completed';
+  totalItems: number;
+  inspectedItems: number;
+  completedItems: number;
+  issues: number;
   startedAt: string;
   completedAt?: string;
+  items: InspectionItem[];
 }
 
+// 백엔드 getInspectionSummary 응답
 export interface InspectionSummary {
-  fulfillmentOrderId: string;
   totalItems: number;
+  pendingItems: number;
   inspectedItems: number;
   approvedItems: number;
   rejectedItems: number;
-  forcedItems: number;
-  status: string;
+  partialItems: number;
+  totalIssues: number;
+  canComplete: boolean;
 }
 
+// 백엔드 getInspectionHistory 응답 (FOI 단위)
 export interface InspectionHistoryItem {
-  id: string;
-  foiId: string;
-  action: string;
+  inspectorUserId: string;
   inspectedQty: number;
   approvedQty: number;
   rejectedQty: number;
-  issues: InspectionIssue[];
-  inspectorUserId: string;
-  createdAt: string;
+  issues: number;
+  timestamp: string;
 }
 
+// 백엔드 getQualityMetrics 응답
 export interface QualityMetrics {
-  totalInspected: number;
+  totalInspections: number;
   approvalRate: number;
   rejectionRate: number;
-  forceShipmentRate: number;
-  issueBreakdown: Record<IssueType, number>;
+  avgInspectionTime: number;
+  commonIssues: Array<{ type: string; count: number; percentage: number }>;
+  inspectorPerformance: Array<{
+    inspectorUserId: string;
+    inspections: number;
+    approvalRate: number;
+    avgTime: number;
+  }>;
 }
 
 export interface QualityMetricsQuery {
@@ -411,7 +558,11 @@ export interface TrackInvoiceResponse {
 
 // ===== Outbound Batches (D2) =====
 
-export type OutboundBatchStatus = 'created' | 'picking' | 'completed' | 'canceled';
+export type OutboundBatchStatus =
+  | 'created'
+  | 'picking'
+  | 'completed'
+  | 'canceled';
 export type PickingMethod = 'individual' | 'total_picking';
 
 export interface CreateOutboundBatchRequest {
@@ -493,7 +644,11 @@ export interface AvailableFulfillmentOrder {
 
 // ===== Direct Ship (D2) =====
 
-export type DirectShipOrderStatus = 'pending' | 'forwarded' | 'completed' | 'canceled';
+export type DirectShipOrderStatus =
+  | 'pending'
+  | 'forwarded'
+  | 'completed'
+  | 'canceled';
 
 export interface DirectShipOrderItem {
   foiId: string;
@@ -599,7 +754,11 @@ export interface ConsolidationGroupSavings {
 export interface ConsolidationGroup {
   groupId: string;
   consolidationKey: string;
-  reason: 'same_address' | 'same_customer_nearby' | 'same_service_zone' | 'manual';
+  reason:
+    | 'same_address'
+    | 'same_customer_nearby'
+    | 'same_service_zone'
+    | 'manual';
   confidence: number;
   salesOrders: ConsolidationCandidate[];
   estimatedSavings: ConsolidationGroupSavings;
@@ -629,8 +788,16 @@ export interface ConsolidationLiveOpportunities {
   warehouseId: string;
   timestamp: string;
   opportunities: {
-    immediate: { count: number; potentialSavings: number; groups: ConsolidationGroup[] };
-    reviewRequired: { count: number; potentialSavings: number; groups: ConsolidationGroup[] };
+    immediate: {
+      count: number;
+      potentialSavings: number;
+      groups: ConsolidationGroup[];
+    };
+    reviewRequired: {
+      count: number;
+      potentialSavings: number;
+      groups: ConsolidationGroup[];
+    };
   };
   recommendations: string[];
 }
