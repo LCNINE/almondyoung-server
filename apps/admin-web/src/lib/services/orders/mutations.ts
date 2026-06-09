@@ -211,8 +211,18 @@ export const useResetPickingItem = () => {
 };
 
 export const useBatchPick = () => {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (data: BatchPickRequest) => orders.picking.batchPick(data),
+    onSuccess: (_data, variables) => {
+      // 피킹 반영 후 집계/진행률을 다시 불러와 화면(뱃지·진행률)이 갱신되도록 한다.
+      queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.batchOperations(variables.batchId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.batchProgress(variables.batchId),
+      });
+    },
   });
 };
 

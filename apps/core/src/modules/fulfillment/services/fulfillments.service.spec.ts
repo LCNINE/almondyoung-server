@@ -1402,6 +1402,68 @@ describe('FulfillmentsService', () => {
     });
   });
 
+  it('getOne은 상세 운영 화면에 필요한 배송, 예약, 액션 정보를 반환한다', async () => {
+    const { service, tx } = makeService({
+      fulfillmentOrders: [
+        {
+          id: 'fo-detail',
+          salesOrderId,
+          warehouseId,
+          status: 'picked',
+          fulfillmentMode: 'in_house',
+          directShipStatus: null,
+          batchId: null,
+        },
+      ],
+      fulfillmentOrderItems: [
+        {
+          id: 'foi-detail',
+          fulfillmentOrderId: 'fo-detail',
+          salesOrderId,
+          salesOrderLineId,
+          variantId,
+          skuId,
+          skuCode: 'SKU-001',
+          skuName: '상세 테스트 SKU',
+          qty: 2,
+          reservedQty: 2,
+          pickedQty: 2,
+          shippedQty: 0,
+          status: 'picked',
+        },
+      ],
+      shipments: [
+        {
+          id: 'shipment-detail',
+          fulfillmentOrderId: 'fo-detail',
+          trackingNo: 'TRACK-001',
+          carrier: 'CJ',
+          status: 'ready',
+          eta: null,
+          invoiceUrl: null,
+        },
+      ],
+    });
+
+    const detail = await service.getOne('fo-detail', tx);
+
+    expect(detail?.id).toBe('fo-detail');
+    expect(detail?.shipment).toMatchObject({
+      id: 'shipment-detail',
+      trackingNo: 'TRACK-001',
+    });
+    expect(detail?.batch).toBeNull();
+    expect(detail?.reservations).toHaveLength(0);
+    expect(detail?.blockedReasons).toHaveLength(0);
+    expect(detail?.items[0]).toMatchObject({
+      id: 'foi-detail',
+      skuCode: 'SKU-001',
+    });
+    expect(detail?.adminAvailableActions).toEqual(
+      expect.arrayContaining(['split', 'reserve', 'assignShipment', 'cancel', 'ship']),
+    );
+  });
+
   it('checkAvailability는 현재 FO의 기존 예약 수량을 가용 수량으로 인정한다', async () => {
     const { service, availability } = makeService({
       availableQty: 0,
