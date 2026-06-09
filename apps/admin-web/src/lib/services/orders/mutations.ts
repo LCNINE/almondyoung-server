@@ -30,6 +30,12 @@ import type {
   AddFOsToBatchRequest,
   ForwardDirectShipOrdersRequest,
   CompleteDirectShipOrdersRequest,
+  CreateFulfillmentOrderRequest,
+  SplitFulfillmentOrderRequest,
+  ReserveRequest,
+  UnreserveRequest,
+  TransferReservationRequest,
+  AssignShipmentRequest,
 } from '@/lib/types/dto/fulfillment';
 
 // 주문 관련 뮤테이션
@@ -715,5 +721,120 @@ export const useAutoConsolidate = () => {
   return useMutation({
     mutationFn: (groupId: string) =>
       orders.consolidation.autoConsolidate(groupId),
+  });
+};
+
+// ===== FO 액션 뮤테이션 (Core /fulfillments canonical API) =====
+
+function invalidateFulfillment(queryClient: ReturnType<typeof useQueryClient>, id: string) {
+  queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillments });
+  queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillment(id) });
+  queryClient.invalidateQueries({ queryKey: orderQueryKeys.outboundBatches });
+  queryClient.invalidateQueries({ queryKey: ['inventory', 'reservations'] });
+  queryClient.invalidateQueries({ queryKey: ['direct-ship'] });
+}
+
+export const useCreateFulfillmentOrder = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: CreateFulfillmentOrderRequest) =>
+      orders.fulfillments.create(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillments });
+    },
+  });
+};
+
+export const useSplitFulfillmentOrder = (id: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: SplitFulfillmentOrderRequest) =>
+      orders.fulfillments.split(id, data),
+    onSuccess: () => {
+      invalidateFulfillment(queryClient, id);
+    },
+  });
+};
+
+export const useCheckFulfillmentAvailability = (id: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => orders.fulfillments.checkAvailability(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillment(id) });
+      queryClient.invalidateQueries({ queryKey: ['inventory', 'reservations'] });
+    },
+  });
+};
+
+export const useReserveFulfillment = (id: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: ReserveRequest) => orders.fulfillments.reserve(id, data),
+    onSuccess: () => {
+      invalidateFulfillment(queryClient, id);
+    },
+  });
+};
+
+export const useUnreserveFulfillment = (id: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: UnreserveRequest) => orders.fulfillments.unreserve(id, data),
+    onSuccess: () => {
+      invalidateFulfillment(queryClient, id);
+    },
+  });
+};
+
+export const useTransferFulfillmentReservation = (id: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: TransferReservationRequest) =>
+      orders.fulfillments.transferReservation(id, data),
+    onSuccess: () => {
+      invalidateFulfillment(queryClient, id);
+    },
+  });
+};
+
+export const useAssignFulfillmentShipment = (id: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: AssignShipmentRequest) =>
+      orders.fulfillments.assignShipment(id, data),
+    onSuccess: () => {
+      invalidateFulfillment(queryClient, id);
+    },
+  });
+};
+
+export const useShipFulfillment = (id: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => orders.fulfillments.ship(id),
+    onSuccess: () => {
+      invalidateFulfillment(queryClient, id);
+    },
+  });
+};
+
+export const useDeliverFulfillment = (id: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => orders.fulfillments.deliver(id),
+    onSuccess: () => {
+      invalidateFulfillment(queryClient, id);
+    },
+  });
+};
+
+export const useCancelFulfillment = (id: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => orders.fulfillments.cancel(id),
+    onSuccess: () => {
+      invalidateFulfillment(queryClient, id);
+    },
   });
 };

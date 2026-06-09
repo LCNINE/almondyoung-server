@@ -1,9 +1,10 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsTables, wmsSchema } from '../../inventory/schema/inventory.schema';
+import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { DbService } from '@app/db';
 import { and, eq, inArray, desc, isNull, or } from 'drizzle-orm';
 import * as ExcelJS from 'exceljs';
+import { FulfillmentsService } from './fulfillments.service';
 
 export interface DirectShipCustomerInfo {
   customerName: string | null;
@@ -74,7 +75,10 @@ export interface DirectShipDashboard {
 export class DirectShipService {
   private readonly logger = new Logger(DirectShipService.name);
 
-  constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
+  constructor(
+    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
+    private readonly fulfillmentsService: FulfillmentsService,
+  ) {}
 
   private get db() {
     return this.dbService.db;
@@ -320,22 +324,15 @@ export class DirectShipService {
     }
 
     await this.db.transaction(async (tx) => {
+      // canonical ship path per FO: FOI shippedQty, FO status='shipped', shippedAt, FulfillmentShipped event
       for (const fo of foRows) {
-        await tx
-          .update(wmsTables.fulfillmentOrderItems)
-          .set({
-            shippedQty: wmsTables.fulfillmentOrderItems.qty,
-            updatedAt: new Date(),
-          })
-          .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fo.id));
+        await this.fulfillmentsService.ship(fo.id, tx as unknown as DbTx);
       }
 
+      // directShipStatus is drop_ship specific; ship() doesn't set it
       await tx
         .update(wmsTables.fulfillmentOrders)
-        .set({
-          directShipStatus: 'completed',
-          shippedAt: new Date(),
-        })
+        .set({ directShipStatus: 'completed' })
         .where(inArray(wmsTables.fulfillmentOrders.id, fulfillmentOrderIds));
 
       this.logger.log(`Marked ${fulfillmentOrderIds.length} direct ship orders as completed by: ${completedBy}`);
