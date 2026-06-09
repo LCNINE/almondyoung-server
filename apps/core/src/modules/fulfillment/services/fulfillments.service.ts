@@ -1043,6 +1043,7 @@ export class FulfillmentsService {
 
   async assignShipment(id: string, dto: AssignShipmentDto, tx?: DbTx) {
     return this.inTx(async (trx) => {
+      // ship()과 동일한 row lock: SELECT → INSERT 사이 동시 요청 2개가 중복 shipment를 만드는 race 차단
       await trx.execute(sql`
         SELECT id
         FROM ${wmsTables.fulfillmentOrders}
@@ -1058,8 +1059,10 @@ export class FulfillmentsService {
       if (!fo) {
         throw new NotFoundException(`Fulfillment order ${id} not found`);
       }
-      if (['shipped', 'completed', 'canceled'].includes(fo.status)) {
-        throw new ConflictException(`Cannot assign shipment: FO is in terminal status '${fo.status}'`);
+
+      const ASSIGN_SHIPMENT_TERMINAL = new Set(['shipped', 'completed', 'canceled']);
+      if (ASSIGN_SHIPMENT_TERMINAL.has(fo.status)) {
+        throw new ConflictException(`Cannot assign shipment to FO ${id} in terminal status '${fo.status}'`);
       }
 
       const [existingShipment] = await trx
@@ -1068,7 +1071,7 @@ export class FulfillmentsService {
         .where(eq(wmsTables.shipments.fulfillmentOrderId, id))
         .limit(1);
       if (existingShipment) {
-        throw new ConflictException(`Shipment already assigned to fulfillment order ${id}`);
+        throw new ConflictException(`Shipment already exists for FO ${id}`);
       }
 
       await trx.insert(wmsTables.shipments).values({
@@ -1079,20 +1082,24 @@ export class FulfillmentsService {
         fulfillmentOrderId: id,
       });
 
-      await trx
-        .update(wmsTables.fulfillmentOrders)
-        .set({ status: 'labeled' })
-        .where(eq(wmsTables.fulfillmentOrders.id, id));
-      await this.outbox.enqueue(
-        {
-          eventType: FULFILLMENT_EVENTS.LABELLED,
-          aggregateType: 'fulfillment',
-          aggregateId: id,
-          partitionKey: id,
-          payload: { fulfillmentOrderId: id },
-        },
-        trx,
-      );
+      // picking/inspection/invoiced 진행 중에는 labeled로 역전이하지 않음
+      const NO_REGRESS_STATUSES = new Set(['picked', 'inspecting', 'invoiced']);
+      if (!NO_REGRESS_STATUSES.has(fo.status)) {
+        await trx
+          .update(wmsTables.fulfillmentOrders)
+          .set({ status: 'labeled' })
+          .where(eq(wmsTables.fulfillmentOrders.id, id));
+        await this.outbox.enqueue(
+          {
+            eventType: FULFILLMENT_EVENTS.LABELLED,
+            aggregateType: 'fulfillment',
+            aggregateId: id,
+            partitionKey: id,
+            payload: { fulfillmentOrderId: id },
+          },
+          trx,
+        );
+      }
 
       return this.getOne(id, trx);
     }, tx);
@@ -1115,14 +1122,29 @@ export class FulfillmentsService {
       if (!fo) {
         throw new NotFoundException(`Fulfillment order ${id} not found`);
       }
+
+      // 이미 shipped: idempotent return (invoice/direct-ship 경유 중복 호출 방어)
       if (fo.status === 'shipped') {
         return this.getOne(id, trx);
       }
-      if (['completed', 'canceled'].includes(fo.status)) {
-        throw new ConflictException(`Cannot ship: FO is in terminal status '${fo.status}'`);
+
+      if (fo.status === 'completed' || fo.status === 'canceled') {
+        throw new ConflictException(`Cannot ship FO ${id} in terminal status '${fo.status}'`);
       }
-      if (!['ready', 'allocated', 'picked', 'inspecting', 'inspected', 'invoiced', 'labeled', 'forwarded'].includes(fo.status)) {
-        throw new ConflictException(`Cannot ship: FO is in status '${fo.status}'`);
+
+      if (fo.fulfillmentMode === 'drop_ship') {
+        if (fo.directShipStatus !== 'forwarded') {
+          throw new ConflictException(
+            `Cannot ship drop_ship FO ${id}: directShipStatus must be 'forwarded', got '${fo.directShipStatus ?? 'null'}'`,
+          );
+        }
+      } else {
+        const SHIP_ALLOWED = new Set(['invoiced', 'labeled', 'picked', 'inspecting', 'inspected']);
+        if (!SHIP_ALLOWED.has(fo.status)) {
+          throw new ConflictException(
+            `Cannot ship FO ${id} in status '${fo.status}'. Allowed: invoiced, labeled, picked, inspecting, inspected`,
+          );
+        }
       }
 
       const [shipment] = await trx

@@ -113,6 +113,13 @@
       "when": 1780974262229,
       "tag": "20260609030422_add-inspection-tables",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1780986649103,
+      "tag": "20260609063049_add-shipments-fo-unique-idx",
+      "breakpoints": true
     }
   ]
 }

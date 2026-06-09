@@ -33,11 +33,11 @@ export function CompleteDialog({ foIds, open, onOpenChange }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[400px]">
         <DialogHeader>
-          <DialogTitle>직배송 완료 처리</DialogTitle>
+          <DialogTitle>공급사 출고 완료 처리</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-2">
           <p className="text-sm text-muted-foreground">
-            선택된 FO {foIds.length}건을 완료 처리합니다. 배송 완료 시점의 담당자명을 입력하세요.
+            선택된 FO {foIds.length}건을 공급사 출고 완료 처리합니다. 고객 배송 완료(수령)가 아닌 공급사 출고 시점입니다. 처리 담당자명을 입력하세요.
           </p>
           <div className="space-y-1.5">
             <Label>처리 담당자</Label>
@@ -51,7 +51,7 @@ export function CompleteDialog({ foIds, open, onOpenChange }: Props) {
               취소
             </Button>
             <Button type="submit" disabled={complete.isPending}>
-              완료 처리
+              공급사 출고 완료
             </Button>
           </DialogFooter>
         </form>

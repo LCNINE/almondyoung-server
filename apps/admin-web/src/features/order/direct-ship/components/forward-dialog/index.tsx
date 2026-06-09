@@ -33,11 +33,11 @@ export function ForwardDialog({ foIds, open, onOpenChange }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[400px]">
         <DialogHeader>
-          <DialogTitle>직배송 발송 처리</DialogTitle>
+          <DialogTitle>공급사 전달</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-2">
           <p className="text-sm text-muted-foreground">
-            선택된 FO {foIds.length}건을 발송 처리합니다.
+            선택된 FO {foIds.length}건을 공급사에 전달합니다. directShipStatus가 &apos;forwarded&apos;로 전환됩니다.
           </p>
           <div className="space-y-1.5">
             <Label>공급사 / 직배송 업체명</Label>
@@ -51,7 +51,7 @@ export function ForwardDialog({ foIds, open, onOpenChange }: Props) {
               취소
             </Button>
             <Button type="submit" disabled={forward.isPending}>
-              발송 처리
+              공급사 전달
             </Button>
           </DialogFooter>
         </form>
