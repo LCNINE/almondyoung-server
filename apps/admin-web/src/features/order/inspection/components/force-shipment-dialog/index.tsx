@@ -16,12 +16,18 @@ import {
 import { useForceShipment } from '@/lib/services/orders/mutations';
 
 interface Props {
+  sessionId: string;
   foiId: string;
   authorizedBy: string;
   onClose: () => void;
 }
 
-export function ForceShipmentDialog({ foiId, authorizedBy, onClose }: Props) {
+export function ForceShipmentDialog({
+  sessionId,
+  foiId,
+  authorizedBy,
+  onClose,
+}: Props) {
   const [reason, setReason] = useState('');
   const [forceQty, setForceQty] = useState(1);
   const [note, setNote] = useState('');
@@ -35,6 +41,7 @@ export function ForceShipmentDialog({ foiId, authorizedBy, onClose }: Props) {
     }
     try {
       await mutation.mutateAsync({
+        sessionId,
         foiId,
         reason: reason.trim(),
         authorizedBy,
@@ -84,7 +91,9 @@ export function ForceShipmentDialog({ foiId, authorizedBy, onClose }: Props) {
               rows={2}
             />
           </div>
-          <p className="text-xs text-muted-foreground">승인자: {authorizedBy}</p>
+          <p className="text-xs text-muted-foreground">
+            승인자: {authorizedBy}
+          </p>
         </div>
 
         <DialogFooter>

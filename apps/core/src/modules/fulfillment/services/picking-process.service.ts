@@ -8,6 +8,8 @@ import { BarcodeService, FOIScanResult, SkuScanResult } from '../../inventory/sh
 export interface PickingOperation {
   batchId: string;
   skuId: string;
+  skuCode: string;
+  skuName: string;
   locationCode?: string;
   totalQty: number;
   pickedQty: number;
@@ -46,6 +48,7 @@ export interface IndividualPickingSession {
   items: Array<{
     foiId: string;
     skuId: string;
+    skuCode: string;
     skuName: string;
     requiredQty: number;
     pickedQty: number;
@@ -95,6 +98,8 @@ export class PickingProcessService {
           foId: wmsTables.fulfillmentOrders.id,
           itemId: wmsTables.fulfillmentOrderItems.id,
           skuId: wmsTables.fulfillmentOrderItems.skuId,
+          skuCode: wmsTables.skus.code,
+          skuName: wmsTables.skus.name,
           salesOrderId: wmsTables.fulfillmentOrderItems.salesOrderId,
           salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
           qty: wmsTables.fulfillmentOrderItems.qty,
@@ -105,6 +110,7 @@ export class PickingProcessService {
           wmsTables.fulfillmentOrders,
           eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
         )
+        .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId))
         .where(eq(wmsTables.fulfillmentOrders.batchId, batchId));
 
       const skuOperations = new Map<string, PickingOperation>();
@@ -116,6 +122,8 @@ export class PickingProcessService {
           skuOperations.set(skuId, {
             batchId,
             skuId,
+            skuCode: row.skuCode,
+            skuName: row.skuName,
             locationCode: undefined,
             totalQty: 0,
             pickedQty: 0,
@@ -323,6 +331,7 @@ export class PickingProcessService {
           skuId: wmsTables.fulfillmentOrderItems.skuId,
           qty: wmsTables.fulfillmentOrderItems.qty,
           pickedQty: wmsTables.fulfillmentOrderItems.pickedQty,
+          skuCode: wmsTables.skus.code,
           skuName: wmsTables.skus.name,
         })
         .from(wmsTables.fulfillmentOrderItems)
@@ -336,6 +345,7 @@ export class PickingProcessService {
         items: itemRows.map((item) => ({
           foiId: item.id,
           skuId: item.skuId,
+          skuCode: item.skuCode,
           skuName: item.skuName,
           requiredQty: item.qty,
           pickedQty: item.pickedQty,
@@ -371,6 +381,7 @@ export class PickingProcessService {
         skuId: wmsTables.fulfillmentOrderItems.skuId,
         qty: wmsTables.fulfillmentOrderItems.qty,
         pickedQty: wmsTables.fulfillmentOrderItems.pickedQty,
+        skuCode: wmsTables.skus.code,
         skuName: wmsTables.skus.name,
       })
       .from(wmsTables.fulfillmentOrderItems)
@@ -384,6 +395,7 @@ export class PickingProcessService {
       items: itemRows.map((item) => ({
         foiId: item.id,
         skuId: item.skuId,
+        skuCode: item.skuCode,
         skuName: item.skuName,
         requiredQty: item.qty,
         pickedQty: item.pickedQty,
