@@ -33,8 +33,8 @@ const PAGE_SIZE = 20;
 
 const STATUS_LABELS: Record<DirectShipOrderStatus, string> = {
   pending: '대기',
-  forwarded: '발송 중',
-  completed: '완료',
+  forwarded: '공급사 전달',
+  completed: '공급사 출고 완료',
   canceled: '취소',
 };
 
@@ -92,8 +92,8 @@ export function DirectShipOrdersTable() {
           <SelectContent>
             <SelectItem value="all">전체</SelectItem>
             <SelectItem value="pending">대기</SelectItem>
-            <SelectItem value="forwarded">발송 중</SelectItem>
-            <SelectItem value="completed">완료</SelectItem>
+            <SelectItem value="forwarded">공급사 전달</SelectItem>
+            <SelectItem value="completed">공급사 출고 완료</SelectItem>
           </SelectContent>
         </Select>
 
@@ -107,10 +107,10 @@ export function DirectShipOrdersTable() {
               variant="outline"
               onClick={() => setForwardOpen(true)}
             >
-              발송 처리
+              공급사 전달
             </Button>
             <Button size="sm" onClick={() => setCompleteOpen(true)}>
-              완료 처리
+              공급사 출고 완료
             </Button>
           </div>
         )}
