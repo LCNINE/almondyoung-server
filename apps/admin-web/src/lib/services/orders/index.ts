@@ -71,6 +71,11 @@ export {
   useAdminCancelSalesOrder,
   useAdminRetryRefund,
   useAdminManualRefundComplete,
+  // 출고주문(FO) 액션
+  useCreateFulfillmentOrder,
+  useShipFulfillment,
+  useCancelFulfillment,
+  useReserveFulfillmentItem,
   // 출고 배치 (D2)
   useCreateOutboundBatch,
   useAddFOsToBatch,
