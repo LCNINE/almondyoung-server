@@ -85,7 +85,7 @@ function RowActions({ fo }: { fo: FulfillmentOrder }) {
         <DropdownMenuSeparator />
         {fo.batchId && (
           <DropdownMenuItem asChild>
-            <Link href="/order/outbound-batches">출고 배치</Link>
+            <Link href={`/order/outbound-batches?batchId=${fo.batchId}`}>출고 배치</Link>
           </DropdownMenuItem>
         )}
         <DropdownMenuItem asChild>
@@ -101,7 +101,7 @@ function RowActions({ fo }: { fo: FulfillmentOrder }) {
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
-              <Link href="/order/direct-ship">직배송 운영</Link>
+              <Link href={`/order/direct-ship?foId=${fo.id}`}>직배송 운영</Link>
             </DropdownMenuItem>
           </>
         )}
