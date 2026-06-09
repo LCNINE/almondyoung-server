@@ -85,10 +85,11 @@ export class InspectionController {
   @Post('sessions/:sessionId/complete')
   @ApiOperation({ summary: '품질검사 세션 완료' })
   @ApiParam({ name: 'sessionId', description: '품질검사 세션 ID' })
-  @UsePipes(new ZodValidationPipe(CompleteSessionSchema))
+  // 파이프는 @Body 에만 스코프한다. 메서드 레벨 @UsePipes 는 @Param('sessionId') 문자열까지
+  // object 스키마로 파싱해 "Validation failed" 로 터뜨린다.
   async completeInspectionSession(
     @Param('sessionId') sessionId: string,
-    @Body() dto: z.infer<typeof CompleteSessionSchema>,
+    @Body(new ZodValidationPipe(CompleteSessionSchema)) dto: z.infer<typeof CompleteSessionSchema>,
   ) {
     await this.inspectionService.completeInspectionSession(sessionId, dto.inspectorUserId);
     return { message: 'Inspection session completed successfully' };
