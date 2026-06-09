@@ -1043,6 +1043,37 @@ export class FulfillmentsService {
 
   async assignShipment(id: string, dto: AssignShipmentDto, tx?: DbTx) {
     return this.inTx(async (trx) => {
+      // ship()과 동일한 row lock: SELECT → INSERT 사이 동시 요청 2개가 중복 shipment를 만드는 race 차단
+      await trx.execute(sql`
+        SELECT id
+        FROM ${wmsTables.fulfillmentOrders}
+        WHERE ${wmsTables.fulfillmentOrders.id} = ${id}
+        FOR UPDATE
+      `);
+
+      const [fo] = await trx
+        .select()
+        .from(wmsTables.fulfillmentOrders)
+        .where(eq(wmsTables.fulfillmentOrders.id, id))
+        .limit(1);
+      if (!fo) {
+        throw new NotFoundException(`Fulfillment order ${id} not found`);
+      }
+
+      const ASSIGN_SHIPMENT_TERMINAL = new Set(['shipped', 'completed', 'canceled']);
+      if (ASSIGN_SHIPMENT_TERMINAL.has(fo.status)) {
+        throw new ConflictException(`Cannot assign shipment to FO ${id} in terminal status '${fo.status}'`);
+      }
+
+      const [existingShipment] = await trx
+        .select({ id: wmsTables.shipments.id })
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.fulfillmentOrderId, id))
+        .limit(1);
+      if (existingShipment) {
+        throw new ConflictException(`Shipment already exists for FO ${id}`);
+      }
+
       await trx.insert(wmsTables.shipments).values({
         trackingNo: dto.trackingNo,
         status: 'created',
@@ -1051,20 +1082,24 @@ export class FulfillmentsService {
         fulfillmentOrderId: id,
       });
 
-      await trx
-        .update(wmsTables.fulfillmentOrders)
-        .set({ status: 'labeled' })
-        .where(eq(wmsTables.fulfillmentOrders.id, id));
-      await this.outbox.enqueue(
-        {
-          eventType: FULFILLMENT_EVENTS.LABELLED,
-          aggregateType: 'fulfillment',
-          aggregateId: id,
-          partitionKey: id,
-          payload: { fulfillmentOrderId: id },
-        },
-        trx,
-      );
+      // picking/inspection/invoiced 진행 중에는 labeled로 역전이하지 않음
+      const NO_REGRESS_STATUSES = new Set(['picked', 'inspecting', 'invoiced']);
+      if (!NO_REGRESS_STATUSES.has(fo.status)) {
+        await trx
+          .update(wmsTables.fulfillmentOrders)
+          .set({ status: 'labeled' })
+          .where(eq(wmsTables.fulfillmentOrders.id, id));
+        await this.outbox.enqueue(
+          {
+            eventType: FULFILLMENT_EVENTS.LABELLED,
+            aggregateType: 'fulfillment',
+            aggregateId: id,
+            partitionKey: id,
+            payload: { fulfillmentOrderId: id },
+          },
+          trx,
+        );
+      }
 
       return this.getOne(id, trx);
     }, tx);
@@ -1088,6 +1123,30 @@ export class FulfillmentsService {
         throw new NotFoundException(`Fulfillment order ${id} not found`);
       }
 
+      // 이미 shipped: idempotent return (invoice/direct-ship 경유 중복 호출 방어)
+      if (fo.status === 'shipped') {
+        return this.getOne(id, trx);
+      }
+
+      if (fo.status === 'completed' || fo.status === 'canceled') {
+        throw new ConflictException(`Cannot ship FO ${id} in terminal status '${fo.status}'`);
+      }
+
+      if (fo.fulfillmentMode === 'drop_ship') {
+        if (fo.directShipStatus !== 'forwarded') {
+          throw new ConflictException(
+            `Cannot ship drop_ship FO ${id}: directShipStatus must be 'forwarded', got '${fo.directShipStatus ?? 'null'}'`,
+          );
+        }
+      } else {
+        const SHIP_ALLOWED = new Set(['invoiced', 'labeled', 'picked', 'inspecting', 'inspected']);
+        if (!SHIP_ALLOWED.has(fo.status)) {
+          throw new ConflictException(
+            `Cannot ship FO ${id} in status '${fo.status}'. Allowed: invoiced, labeled, picked, inspecting, inspected`,
+          );
+        }
+      }
+
       const [shipment] = await trx
         .select()
         .from(wmsTables.shipments)
@@ -1105,16 +1164,17 @@ export class FulfillmentsService {
         .select()
         .from(wmsTables.fulfillmentOrderItems)
         .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, id));
+      const now = new Date();
       for (const item of items) {
         await trx
           .update(wmsTables.fulfillmentOrderItems)
-          .set({ shippedQty: item.qty, status: 'shipped', updatedAt: new Date() })
+          .set({ shippedQty: item.qty, status: 'shipped', updatedAt: now })
           .where(eq(wmsTables.fulfillmentOrderItems.id, item.id));
       }
 
       await trx
         .update(wmsTables.fulfillmentOrders)
-        .set({ status: 'shipped', updatedAt: new Date() })
+        .set({ status: 'shipped', shippedAt: now, updatedAt: now })
         .where(eq(wmsTables.fulfillmentOrders.id, id));
 
       await this.reservationLifecycle.handleFulfillmentOrderStatusChange(id, fo.status, 'shipped', trx);
@@ -1136,7 +1196,7 @@ export class FulfillmentsService {
           trackingNumber: shipment?.trackingNo ?? '',
           invoiceUrl: shipment?.invoiceUrl ?? undefined,
         },
-        shippedAt: new Date().toISOString(),
+        shippedAt: now.toISOString(),
         estimatedDeliveryDate: shipment?.eta?.toISOString(),
         shippedItems: items.map((item) => ({
           fulfillmentItemId: item.id,
@@ -1326,6 +1386,27 @@ export class FulfillmentsService {
     return reasons;
   }
 
+  async getOutboxEvents(id: string, tx?: DbTx) {
+    const db = tx ?? this.db.db;
+    return db
+      .select({
+        id: wmsTables.outboxEvents.id,
+        eventType: wmsTables.outboxEvents.eventType,
+        status: wmsTables.outboxEvents.status,
+        attempts: wmsTables.outboxEvents.attempts,
+        nextAttemptAt: wmsTables.outboxEvents.nextAttemptAt,
+        publishedAt: wmsTables.outboxEvents.publishedAt,
+        createdAt: wmsTables.outboxEvents.createdAt,
+        updatedAt: wmsTables.outboxEvents.updatedAt,
+      })
+      .from(wmsTables.outboxEvents)
+      .where(and(
+        eq(wmsTables.outboxEvents.aggregateType, 'fulfillment'),
+        eq(wmsTables.outboxEvents.aggregateId, id),
+      ))
+      .orderBy(desc(wmsTables.outboxEvents.createdAt));
+  }
+
   async getOne(id: string, tx?: DbTx) {
     const db = tx ?? this.db.db;
 
@@ -1341,9 +1422,25 @@ export class FulfillmentsService {
 
     const [items, invoiceRows, shipmentRows] = await Promise.all([
       db
-        .select()
+        .select({
+          id: wmsTables.fulfillmentOrderItems.id,
+          fulfillmentOrderId: wmsTables.fulfillmentOrderItems.fulfillmentOrderId,
+          salesOrderId: wmsTables.fulfillmentOrderItems.salesOrderId,
+          salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
+          variantId: wmsTables.fulfillmentOrderItems.variantId,
+          skuId: wmsTables.fulfillmentOrderItems.skuId,
+          skuCode: wmsTables.skus.code,
+          skuName: wmsTables.skus.name,
+          qty: wmsTables.fulfillmentOrderItems.qty,
+          reservedQty: wmsTables.fulfillmentOrderItems.reservedQty,
+          pickedQty: wmsTables.fulfillmentOrderItems.pickedQty,
+          shippedQty: wmsTables.fulfillmentOrderItems.shippedQty,
+          status: wmsTables.fulfillmentOrderItems.status,
+        })
         .from(wmsTables.fulfillmentOrderItems)
-        .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, id)),
+        .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId))
+        .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, id))
+        .orderBy(wmsTables.fulfillmentOrderItems.createdAt),
       db
         .select({
           id: wmsTables.invoices.id,
@@ -1429,15 +1526,31 @@ export class FulfillmentsService {
     };
   }
 
-  async list(params: { limit: number; offset: number; status?: string }, tx?: DbTx) {
+  async list(
+    params: {
+      limit: number;
+      offset: number;
+      status?: string;
+      warehouseId?: string;
+      fulfillmentMode?: string;
+      salesOrderId?: string;
+      priority?: string;
+    },
+    tx?: DbTx,
+  ) {
     const db = tx ?? this.db.db;
 
     // status 쿼리 문자열을 enum 으로 안전 narrowing (잘못된 값은 무시)
     const statusFilter =
       params.status && isFulfillmentStatus(params.status) ? params.status : undefined;
-    const whereClause = statusFilter
-      ? eq(wmsTables.fulfillmentOrders.status, statusFilter)
-      : undefined;
+    const conditions = [
+      statusFilter ? eq(wmsTables.fulfillmentOrders.status, statusFilter) : undefined,
+      params.warehouseId ? eq(wmsTables.fulfillmentOrders.warehouseId, params.warehouseId) : undefined,
+      params.fulfillmentMode ? eq(wmsTables.fulfillmentOrders.fulfillmentMode, params.fulfillmentMode as any) : undefined,
+      params.salesOrderId ? eq(wmsTables.fulfillmentOrders.salesOrderId, params.salesOrderId) : undefined,
+      params.priority ? eq(wmsTables.fulfillmentOrders.priority, params.priority as any) : undefined,
+    ].filter(Boolean);
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
     const [totalRow] = await db
       .select({ value: count() })

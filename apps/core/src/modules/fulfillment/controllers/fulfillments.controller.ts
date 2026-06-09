@@ -73,6 +73,13 @@ export class FulfillmentsController {
     return this.service.cancel(id);
   }
 
+  @Get(':id/outbox-events')
+  @ApiOperation({ summary: '주문처리 outbox 이벤트 조회' })
+  @ApiParam({ name: 'id', description: '주문처리 ID' })
+  getOutboxEvents(@Param('id') id: string) {
+    return this.service.getOutboxEvents(id);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: '주문처리 상세 조회 (items, reservations, batch, shipment, invoice, adminAvailableActions 포함)' })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
@@ -86,16 +93,28 @@ export class FulfillmentsController {
   @ApiQuery({ name: 'limit', required: false, type: String })
   @ApiQuery({ name: 'offset', required: false, type: String })
   @ApiQuery({ name: 'status', required: false, type: String, description: 'FO 상태 필터 (단일)' })
+  @ApiQuery({ name: 'warehouseId', required: false, type: String })
+  @ApiQuery({ name: 'fulfillmentMode', required: false, enum: ['in_house', '3pl', 'drop_ship'] })
+  @ApiQuery({ name: 'salesOrderId', required: false, type: String })
+  @ApiQuery({ name: 'priority', required: false, enum: ['normal', 'high', 'urgent'] })
   @ApiResponse({ status: 200, type: FulfillmentOrderListResponseDto })
   list(
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
     @Query('status') status?: string,
+    @Query('warehouseId') warehouseId?: string,
+    @Query('fulfillmentMode') fulfillmentMode?: string,
+    @Query('salesOrderId') salesOrderId?: string,
+    @Query('priority') priority?: string,
   ) {
     return this.service.list({
       limit: limit ? parseInt(limit, 10) : 20,
       offset: offset ? parseInt(offset, 10) : 0,
       status: status || undefined,
+      warehouseId: warehouseId || undefined,
+      fulfillmentMode: fulfillmentMode || undefined,
+      salesOrderId: salesOrderId || undefined,
+      priority: priority || undefined,
     });
   }
 

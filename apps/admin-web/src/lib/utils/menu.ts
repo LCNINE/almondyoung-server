@@ -176,6 +176,11 @@ export const mainMenus: MainMenu[] = [
             path: '/order/inspection',
           },
           {
+            id: 'fulfillments',
+            title: 'FO 목록',
+            path: '/order/fulfillments',
+          },
+          {
             id: 'outbound-batches',
             title: '출고 배치',
             path: '/order/outbound-batches',
