@@ -40,7 +40,18 @@ export const skusClient = {
     const response = await client.get(
       `${ALMONDYOUNG_API_BASE_URL}/inventory/skus?${buildQueryString(query as Record<string, unknown>)}`
     );
-    return response.data;
+    // 백엔드 GET /inventory/skus 는 SkuResponseDto[] 배열을 그대로 반환하므로
+    // 선언된 페이지네이션 형태로 정규화한다.
+    const data = response.data;
+    if (Array.isArray(data)) {
+      return {
+        items: data,
+        total: data.length,
+        limit: query.limit ?? data.length,
+        offset: query.offset ?? 0,
+      };
+    }
+    return data;
   },
 
   getSku: async (id: string): Promise<SkuResponseDto> => {

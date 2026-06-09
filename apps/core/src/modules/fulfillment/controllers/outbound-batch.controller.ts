@@ -72,8 +72,12 @@ export class OutboundBatchController {
   @Post(':id/fulfillment-orders')
   @ApiOperation({ summary: '배치에 주문처리 추가' })
   @ApiParam({ name: 'id', description: '배치 ID' })
-  @UsePipes(new ZodValidationPipe(AddFulfillmentOrdersSchema))
-  async addFulfillmentOrders(@Param('id') batchId: string, @Body() dto: z.infer<typeof AddFulfillmentOrdersSchema>) {
+  // 파이프는 @Body 에만 스코프한다. 메서드 레벨 @UsePipes 는 @Param('id') 문자열까지
+  // object 스키마로 파싱해 "Validation failed" 로 터뜨린다.
+  async addFulfillmentOrders(
+    @Param('id') batchId: string,
+    @Body(new ZodValidationPipe(AddFulfillmentOrdersSchema)) dto: z.infer<typeof AddFulfillmentOrdersSchema>,
+  ) {
     await this.outboundBatchService.addFulfillmentOrdersToBatch(batchId, dto.fulfillmentOrderIds);
     return { message: 'Fulfillment orders added to batch successfully' };
   }
