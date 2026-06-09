@@ -14,7 +14,10 @@ import type {
   VariantSkuLookupResponseDto,
   OrderLinesQuery,
 } from '@/lib/types/dto/orders';
-import type { QualityMetricsQuery } from '@/lib/types/dto/fulfillment';
+import type {
+  QualityMetricsQuery,
+  ListFulfillmentsQuery,
+} from '@/lib/types/dto/fulfillment';
 
 // 주문 관련 쿼리
 export const useSalesOrders = (params?: any) => {
@@ -202,35 +205,30 @@ export const usePickingSession = (foId: string) => {
   });
 };
 
-// 이행 관련 쿼리
-export const useFulfillments = () => {
+// 이행 관련 쿼리 (Core GET /fulfillments canonical API)
+export const useFulfillments = (params?: ListFulfillmentsQuery) => {
   return useQuery({
-    queryKey: orderQueryKeys.fulfillments,
-    queryFn: () => Promise.resolve([]),
+    queryKey: orderQueryKeys.fulfillmentsList(params as Record<string, unknown>),
+    queryFn: () => orders.fulfillments.list(params),
   });
 };
 
 export const useFulfillment = (id: string) => {
   return useQuery({
     queryKey: orderQueryKeys.fulfillment(id),
-    queryFn: () => Promise.resolve({ id }),
+    queryFn: () => orders.fulfillments.get(id),
     enabled: !!id,
   });
 };
 
-export const useFulfillmentOrders = () => {
-  return useQuery({
-    queryKey: orderQueryKeys.fulfillmentOrders,
-    queryFn: () => Promise.resolve([]),
-  });
+/** @deprecated useFulfillments 사용 권장 */
+export const useFulfillmentOrders = (params?: ListFulfillmentsQuery) => {
+  return useFulfillments(params);
 };
 
+/** @deprecated useFulfillment 사용 권장 */
 export const useFulfillmentOrder = (id: string) => {
-  return useQuery({
-    queryKey: orderQueryKeys.fulfillmentOrder(id),
-    queryFn: () => Promise.resolve({ id }),
-    enabled: !!id,
-  });
+  return useFulfillment(id);
 };
 
 // 검수 관련 쿼리

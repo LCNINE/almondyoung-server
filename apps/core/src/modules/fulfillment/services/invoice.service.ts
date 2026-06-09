@@ -3,6 +3,7 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { DbService } from '@app/db';
 import { eq, inArray } from 'drizzle-orm';
+import { FulfillmentsService } from './fulfillments.service';
 
 interface ShippingAddressJson {
   recipientName?: string;
@@ -55,7 +56,10 @@ export class InvoiceService {
   private readonly logger = new Logger(InvoiceService.name);
   private readonly deliveryProviders: Map<string, DeliveryProvider>;
 
-  constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {
+  constructor(
+    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
+    private readonly fulfillmentsService: FulfillmentsService,
+  ) {
     this.deliveryProviders = new Map();
     this.deliveryProviders.set('goodsflow', new GoodsflowDeliveryProvider());
   }
@@ -225,6 +229,7 @@ export class InvoiceService {
           id: wmsTables.invoices.id,
           fulfillmentOrderId: wmsTables.invoices.fulfillmentOrderId,
           issueMethod: wmsTables.invoices.issueMethod,
+          invoiceNumber: wmsTables.invoices.invoiceNumber,
           status: wmsTables.invoices.status,
         })
         .from(wmsTables.invoices)
@@ -244,15 +249,17 @@ export class InvoiceService {
         throw new ConflictException(`Cannot ship invoice in status: ${invoice.status}`);
       }
 
+      if (!invoice.invoiceNumber) {
+        throw new BadRequestException('Cannot ship: invoiceNumber is required');
+      }
+
       await trx
         .update(wmsTables.invoices)
         .set({ status: 'shipped', shippedAt: new Date() })
         .where(eq(wmsTables.invoices.id, invoiceId));
 
-      await trx
-        .update(wmsTables.fulfillmentOrders)
-        .set({ status: 'shipped', shippedAt: new Date() })
-        .where(eq(wmsTables.fulfillmentOrders.id, invoice.fulfillmentOrderId));
+      // canonical ship path: FOI shippedQty, FO status='shipped', reservations, FulfillmentShipped event
+      await this.fulfillmentsService.ship(invoice.fulfillmentOrderId, trx);
 
       this.logger.log(`Marked invoice ${invoiceId} as shipped`);
     }, tx);

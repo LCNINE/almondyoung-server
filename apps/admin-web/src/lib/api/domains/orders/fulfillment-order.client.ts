@@ -1,33 +1,22 @@
 'use client';
 
 // src/lib/api/domains/orders/fulfillment-order.client.ts
-// Fulfillment Orders API 클라이언트
+// Legacy endpoints kept only for:
+//   - priority update (PUT /fulfillment-orders/:id/priority)
+//   - legacy cancel/delete (DELETE /fulfillment-orders/:id)
+//
+// FO 생성/재고 action은 fulfillments.client.ts (POST /fulfillments) 사용
 
 import type {
-  CreateFulfillmentOrderDto,
-  CreateFulfillmentOrderResponse,
   DeleteFulfillmentOrderResponse,
   UpdatePriorityDto,
   UpdatePriorityResponse,
-  AllocateInventoryDto,
-  AllocateInventoryResponse,
 } from '../../../types/dto/orders';
 import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import { client } from '../../client';
 
 export const fulfillmentOrder = {
-  // Fulfillment Order 생성
-  create: async (
-    data: CreateFulfillmentOrderDto
-  ): Promise<CreateFulfillmentOrderResponse> => {
-    const response = await client.post(
-      `${ALMONDYOUNG_API_BASE_URL}/fulfillment-orders`,
-      data
-    );
-    return response.data;
-  },
-
-  // Fulfillment Order 삭제
+  // Fulfillment Order 삭제 (legacy cancel)
   delete: async (id: string): Promise<DeleteFulfillmentOrderResponse> => {
     const response = await client.delete(
       `${ALMONDYOUNG_API_BASE_URL}/fulfillment-orders/${encodeURIComponent(id)}`
@@ -44,20 +33,6 @@ export const fulfillmentOrder = {
       `${ALMONDYOUNG_API_BASE_URL}/fulfillment-orders/${encodeURIComponent(
         id
       )}/priority`,
-      data
-    );
-    return response.data;
-  },
-
-  // 재고 할당
-  allocateInventory: async (
-    id: string,
-    data: AllocateInventoryDto
-  ): Promise<AllocateInventoryResponse> => {
-    const response = await client.post(
-      `${ALMONDYOUNG_API_BASE_URL}/fulfillment-orders/${encodeURIComponent(
-        id
-      )}/allocate`,
       data
     );
     return response.data;

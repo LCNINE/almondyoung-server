@@ -27,6 +27,8 @@ export const orderQueryKeys = {
 
   // 이행 관련
   fulfillments: ['fulfillments'] as const,
+  fulfillmentsList: (params?: Record<string, unknown>) =>
+    ['fulfillments', 'list', params ?? {}] as const,
   fulfillment: (id: string) => ['fulfillments', id] as const,
   fulfillmentOrders: ['fulfillment-orders'] as const,
   fulfillmentOrder: (id: string) => ['fulfillment-orders', id] as const,
