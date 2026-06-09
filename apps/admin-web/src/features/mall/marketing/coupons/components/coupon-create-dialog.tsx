@@ -193,6 +193,7 @@ export function CouponCreateDialog({
 
     const additional_data: Record<string, unknown> = {};
     if (trimmedName) additional_data.name = trimmedName;
+    if (maxUsesPerCustomer) additional_data.max_uses_per_customer = Number(maxUsesPerCustomer);
     if (visibility === 'claimable' && maxClaims) additional_data.max_claims = Number(maxClaims);
     if (me) additional_data.created_by = me.email || me.username;
     additional_data.visibility = visibility;
@@ -612,6 +613,47 @@ export function CouponCreateDialog({
             {autoIssueTrigger && (
               <p className="text-xs text-muted-foreground">
                 조건 충족 고객에게 시스템이 자동으로 발급합니다.
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label>발급 방식</Label>
+            <Select value={visibility} onValueChange={(v) => setVisibility(v as 'public' | 'claimable' | 'assigned_only')}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="public">공개 — 모든 로그인 고객에게 노출</SelectItem>
+                <SelectItem value="claimable">발급받기 — 고객이 직접 발급받아야 사용 가능</SelectItem>
+                <SelectItem value="assigned_only">발급 고객 전용 — 관리자가 발급한 고객만 사용 가능</SelectItem>
+              </SelectContent>
+            </Select>
+            {visibility === 'claimable' && (
+              <p className="text-xs text-muted-foreground">
+                마이페이지에서 "발급받기" 버튼으로 고객이 직접 발급받을 수 있습니다.
+              </p>
+            )}
+            {visibility === 'claimable' && (
+              <div className="mt-3 space-y-2">
+                <Label>총 발급 가능 수량</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={maxClaims}
+                  onChange={(e) => setMaxClaims(e.target.value ? Number(e.target.value) : '')}
+                  placeholder="예: 100 (비워두면 무제한)"
+                />
+                {!!maxClaims && (
+                  <p className="text-xs text-muted-foreground">
+                    최대 {maxClaims.toLocaleString('ko-KR')}명까지 발급받을 수 있습니다.
+                  </p>
+                )}
+              </div>
+            )}
+            {visibility === 'assigned_only' && (
+              <p className="text-xs text-muted-foreground">
+                고객 발급 탭에서 직접 발급한 고객만 마이페이지에서 보이고 사용할 수 있습니다.
               </p>
             )}
           </div>

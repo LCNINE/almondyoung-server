@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   Table,
   TableBody,
@@ -20,6 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { ExternalLink } from 'lucide-react';
 import { useDirectShipOrders } from '@/lib/services/orders';
 import { ForwardDialog } from '../forward-dialog';
 import { CompleteDialog } from '../complete-dialog';
@@ -30,8 +33,8 @@ const PAGE_SIZE = 20;
 
 const STATUS_LABELS: Record<DirectShipOrderStatus, string> = {
   pending: '대기',
-  forwarded: '발송 중',
-  completed: '완료',
+  forwarded: '공급사 전달',
+  completed: '공급사 출고 완료',
   canceled: '취소',
 };
 
@@ -43,6 +46,9 @@ const STATUS_VARIANTS: Record<DirectShipOrderStatus, 'default' | 'secondary' | '
 };
 
 export function DirectShipOrdersTable() {
+  const searchParams = useSearchParams();
+  const highlightFoId = searchParams.get('foId') ?? null;
+
   const [statusFilter, setStatusFilter] = useState('all');
   const [companyFilter, setCompanyFilter] = useState('');
   const { data: orders = [], isLoading } = useDirectShipOrders({
@@ -86,8 +92,8 @@ export function DirectShipOrdersTable() {
           <SelectContent>
             <SelectItem value="all">전체</SelectItem>
             <SelectItem value="pending">대기</SelectItem>
-            <SelectItem value="forwarded">발송 중</SelectItem>
-            <SelectItem value="completed">완료</SelectItem>
+            <SelectItem value="forwarded">공급사 전달</SelectItem>
+            <SelectItem value="completed">공급사 출고 완료</SelectItem>
           </SelectContent>
         </Select>
 
@@ -101,10 +107,10 @@ export function DirectShipOrdersTable() {
               variant="outline"
               onClick={() => setForwardOpen(true)}
             >
-              발송 처리
+              공급사 전달
             </Button>
             <Button size="sm" onClick={() => setCompleteOpen(true)}>
-              완료 처리
+              공급사 출고 완료
             </Button>
           </div>
         )}
@@ -132,12 +138,20 @@ export function DirectShipOrdersTable() {
                 <TableHead>우선순위</TableHead>
                 <TableHead className="text-right">수량</TableHead>
                 <TableHead>발송일</TableHead>
+                <TableHead>FO</TableHead>
                 <TableHead />
               </TableRow>
             </TableHeader>
             <TableBody>
               {orders.slice(0, PAGE_SIZE).map((order: DirectShipOrder) => (
-                <TableRow key={order.fulfillmentOrderId}>
+                <TableRow
+                  key={order.fulfillmentOrderId}
+                  className={
+                    highlightFoId === order.fulfillmentOrderId
+                      ? 'bg-muted/60 ring-1 ring-inset ring-ring'
+                      : undefined
+                  }
+                >
                   <TableCell>
                     <Checkbox
                       checked={selected.has(order.fulfillmentOrderId)}
@@ -156,6 +170,15 @@ export function DirectShipOrdersTable() {
                     {order.forwardedAt
                       ? new Date(order.forwardedAt).toLocaleDateString('ko-KR')
                       : '-'}
+                  </TableCell>
+                  <TableCell>
+                    <Link
+                      href={`/order/fulfillments/${order.fulfillmentOrderId}`}
+                      className="flex items-center gap-1 font-mono text-xs text-muted-foreground hover:text-foreground hover:underline"
+                    >
+                      {order.fulfillmentOrderId.substring(0, 8)}…
+                      <ExternalLink className="h-3 w-3" />
+                    </Link>
                   </TableCell>
                   <TableCell>
                     {order.status === 'forwarded' && (

@@ -21,6 +21,7 @@ import type {
 } from '@/lib/types/dto/orders';
 import type {
   QualityMetricsQuery,
+  ListFulfillmentsQuery,
   FulfillmentOrdersQuery,
 } from '@/lib/types/dto/fulfillment';
 
@@ -211,14 +212,15 @@ export const usePickingSession = (foId: string) => {
 };
 
 // 이행(출고주문) 관련 쿼리 — GET /fulfillments, GET /fulfillments/:id
-export const useFulfillmentOrders = (query: FulfillmentOrdersQuery = {}) => {
+export const useFulfillmentOrders = (query: FulfillmentOrdersQuery | ListFulfillmentsQuery = {}) => {
   return useQuery({
     queryKey: orderQueryKeys.fulfillmentsList(query),
-    queryFn: () => orders.fulfillmentOrder.list(query),
+    queryFn: () => orders.fulfillmentOrder.list(query as FulfillmentOrdersQuery),
     placeholderData: keepPreviousData,
   });
 };
 
+/** @deprecated useFulfillment 사용 권장 */
 export const useFulfillmentOrder = (id: string) => {
   return useQuery({
     queryKey: orderQueryKeys.fulfillment(id),
@@ -230,6 +232,14 @@ export const useFulfillmentOrder = (id: string) => {
 // 별칭 (호환성) — useFulfillmentOrders/useFulfillmentOrder 로 통합
 export const useFulfillments = useFulfillmentOrders;
 export const useFulfillment = useFulfillmentOrder;
+
+export const useFulfillmentOutboxEvents = (id: string) => {
+  return useQuery({
+    queryKey: [...orderQueryKeys.fulfillment(id), 'outbox-events'],
+    queryFn: () => orders.fulfillments.getOutboxEvents(id),
+    enabled: !!id,
+  });
+};
 
 // 검수 관련 쿼리
 export const useInspectionSession = (sessionId: string) => {

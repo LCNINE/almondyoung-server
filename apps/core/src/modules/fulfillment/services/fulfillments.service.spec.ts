@@ -1081,16 +1081,16 @@ describe('FulfillmentsService', () => {
     const { service, reservationLifecycle } = makeService({
       fulfillmentOrders: [
         {
-          id: 'fo-ready-1',
+          id: 'fo-invoiced-1',
           salesOrderId,
           warehouseId,
-          status: 'ready',
+          status: 'invoiced',
         },
       ],
       fulfillmentOrderItems: [
         {
-          id: 'foi-ready-1',
-          fulfillmentOrderId: 'fo-ready-1',
+          id: 'foi-invoiced-1',
+          fulfillmentOrderId: 'fo-invoiced-1',
           skuId,
           qty: 2,
           reservedQty: 2,
@@ -1098,19 +1098,191 @@ describe('FulfillmentsService', () => {
       ],
       shipments: [
         {
-          fulfillmentOrderId: 'fo-ready-1',
+          fulfillmentOrderId: 'fo-invoiced-1',
           carrier: 'CJ',
           trackingNo: 'TRACK-1',
         },
       ],
     });
 
-    await service.ship('fo-ready-1');
+    await service.ship('fo-invoiced-1');
 
     expect(reservationLifecycle.handleFulfillmentOrderStatusChange).toHaveBeenCalledWith(
-      'fo-ready-1',
-      'ready',
+      'fo-invoiced-1',
+      'invoiced',
       'shipped',
+      expect.anything(),
+    );
+  });
+
+  describe('ship guard', () => {
+    it('이미 shipped인 FO는 idempotent return한다', async () => {
+      const { service, reservationLifecycle, outbox } = makeService({
+        fulfillmentOrders: [{ id: 'fo-already-shipped', salesOrderId, warehouseId, status: 'shipped' }],
+        fulfillmentOrderItems: [{ id: 'foi-1', fulfillmentOrderId: 'fo-already-shipped', skuId, qty: 2, reservedQty: 0, shippedQty: 2 }],
+        shipments: [{ fulfillmentOrderId: 'fo-already-shipped', carrier: 'CJ', trackingNo: 'TRK-X' }],
+      });
+
+      await expect(service.ship('fo-already-shipped')).resolves.toBeDefined();
+      expect(reservationLifecycle.handleFulfillmentOrderStatusChange).not.toHaveBeenCalled();
+      expect(outbox.enqueue).not.toHaveBeenCalled();
+    });
+
+    it('completed FO는 ship이 ConflictException을 던진다', async () => {
+      const { service } = makeService({
+        fulfillmentOrders: [{ id: 'fo-completed', salesOrderId, warehouseId, status: 'completed' }],
+        fulfillmentOrderItems: [],
+      });
+
+      await expect(service.ship('fo-completed')).rejects.toThrow(ConflictException);
+    });
+
+    it('canceled FO는 ship이 ConflictException을 던진다', async () => {
+      const { service } = makeService({
+        fulfillmentOrders: [{ id: 'fo-canceled', salesOrderId, warehouseId, status: 'canceled' }],
+        fulfillmentOrderItems: [],
+      });
+
+      await expect(service.ship('fo-canceled')).rejects.toThrow(ConflictException);
+    });
+
+    it('ready 상태 일반 FO는 ship이 ConflictException을 던진다', async () => {
+      const { service } = makeService({
+        fulfillmentOrders: [{ id: 'fo-ready', salesOrderId, warehouseId, status: 'ready' }],
+        fulfillmentOrderItems: [{ id: 'foi-1', fulfillmentOrderId: 'fo-ready', skuId, qty: 2, reservedQty: 2, shippedQty: 0 }],
+      });
+
+      await expect(service.ship('fo-ready')).rejects.toThrow(ConflictException);
+    });
+
+    it.each(['invoiced', 'labeled', 'picked', 'inspecting'] as const)(
+      '%s 상태 일반 FO는 ship을 허용한다',
+      async (status) => {
+        const { service } = makeService({
+          fulfillmentOrders: [{ id: `fo-${status}`, salesOrderId, warehouseId, status }],
+          fulfillmentOrderItems: [{ id: 'foi-1', fulfillmentOrderId: `fo-${status}`, skuId, qty: 2, reservedQty: 2, shippedQty: 0 }],
+          shipments: [{ fulfillmentOrderId: `fo-${status}`, carrier: 'CJ', trackingNo: 'TRK-1' }],
+        });
+
+        await expect(service.ship(`fo-${status}`)).resolves.toBeDefined();
+      },
+    );
+
+    it('drop_ship FO는 directShipStatus=forwarded일 때만 ship을 허용한다', async () => {
+      const { service } = makeService({
+        fulfillmentOrders: [
+          {
+            id: 'fo-drop-forwarded',
+            salesOrderId,
+            warehouseId,
+            status: 'ready',
+            fulfillmentMode: 'drop_ship',
+            directShipStatus: 'forwarded',
+          },
+        ],
+        fulfillmentOrderItems: [{ id: 'foi-1', fulfillmentOrderId: 'fo-drop-forwarded', skuId, qty: 2, reservedQty: 0, shippedQty: 0 }],
+      });
+
+      await expect(service.ship('fo-drop-forwarded')).resolves.toBeDefined();
+    });
+
+    it('drop_ship FO에서 directShipStatus=pending이면 ship이 ConflictException을 던진다', async () => {
+      const { service } = makeService({
+        fulfillmentOrders: [
+          {
+            id: 'fo-drop-pending',
+            salesOrderId,
+            warehouseId,
+            status: 'ready',
+            fulfillmentMode: 'drop_ship',
+            directShipStatus: 'pending',
+          },
+        ],
+        fulfillmentOrderItems: [],
+      });
+
+      await expect(service.ship('fo-drop-pending')).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe('assignShipment guard', () => {
+    it('terminal 상태 FO에 shipment 등록 시 ConflictException을 던진다', async () => {
+      for (const status of ['shipped', 'completed', 'canceled']) {
+        const { service } = makeService({
+          fulfillmentOrders: [{ id: `fo-${status}`, salesOrderId, warehouseId, status }],
+          fulfillmentOrderItems: [],
+          shipments: [],
+        });
+
+        await expect(
+          service.assignShipment(`fo-${status}`, { trackingNo: 'TRK-1' }),
+        ).rejects.toThrow(ConflictException);
+      }
+    });
+
+    it('이미 shipment가 있는 FO에 중복 등록 시 ConflictException을 던진다', async () => {
+      const { service } = makeService({
+        fulfillmentOrders: [{ id: 'fo-labeled', salesOrderId, warehouseId, status: 'labeled' }],
+        fulfillmentOrderItems: [],
+        shipments: [{ id: 'ship-existing', fulfillmentOrderId: 'fo-labeled', trackingNo: 'TRK-1' }],
+      });
+
+      await expect(service.assignShipment('fo-labeled', { trackingNo: 'TRK-2' })).rejects.toThrow(ConflictException);
+    });
+
+    it.each(['picked', 'inspecting', 'invoiced'] as const)(
+      '%s 상태에서 assignShipment는 상태를 labeled로 역전이하지 않는다',
+      async (status) => {
+        const { service, state } = makeService({
+          fulfillmentOrders: [{ id: `fo-${status}`, salesOrderId, warehouseId, status }],
+          fulfillmentOrderItems: [],
+          shipments: [],
+        });
+
+        await service.assignShipment(`fo-${status}`, { trackingNo: 'TRK-NEW' });
+
+        expect(state.fulfillmentOrders[0].status).toBe(status);
+      },
+    );
+
+    it('ready 상태에서 assignShipment는 labeled로 전환한다', async () => {
+      const { service, state } = makeService({
+        fulfillmentOrders: [{ id: 'fo-ready', salesOrderId, warehouseId, status: 'ready' }],
+        fulfillmentOrderItems: [],
+        shipments: [],
+      });
+
+      await service.assignShipment('fo-ready', { trackingNo: 'TRK-READY' });
+
+      expect(state.fulfillmentOrders[0].status).toBe('labeled');
+    });
+  });
+
+  it('ship은 FulfillmentShipped outbox 이벤트를 발행한다', async () => {
+    const { service, outbox } = makeService({
+      fulfillmentOrders: [{ id: 'fo-ship-1', salesOrderId, warehouseId, status: 'invoiced' }],
+      fulfillmentOrderItems: [{ id: 'foi-ship-1', fulfillmentOrderId: 'fo-ship-1', skuId, qty: 3, reservedQty: 3, shippedQty: 0 }],
+      shipments: [{ id: 'shipment-1', fulfillmentOrderId: 'fo-ship-1', carrier: 'CJ', trackingNo: 'TRK-001' }],
+    });
+
+    await service.ship('fo-ship-1');
+
+    expect(outbox.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'FulfillmentShipped' }),
+      expect.anything(),
+    );
+  });
+
+  it('markDelivered는 FulfillmentDelivered outbox 이벤트를 발행하고 shipment를 delivered로 업데이트한다', async () => {
+    const { service, outbox } = makeService({
+      fulfillmentOrders: [{ id: 'fo-delivered-1', salesOrderId, warehouseId, status: 'shipped' }],
+      shipments: [{ id: 'shipment-2', fulfillmentOrderId: 'fo-delivered-1', trackingNo: 'TRK-002', carrier: 'CJ' }],
+    });
+
+    await service.markDelivered('fo-delivered-1');
+
+    expect(outbox.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'FulfillmentDelivered' }),
       expect.anything(),
     );
   });

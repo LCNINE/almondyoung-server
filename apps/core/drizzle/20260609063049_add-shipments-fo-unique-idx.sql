@@ -1,0 +1,1 @@
+ALTER TABLE "shipments" ADD CONSTRAINT "uq_shipments_fulfillment_order_id" UNIQUE("fulfillment_order_id");

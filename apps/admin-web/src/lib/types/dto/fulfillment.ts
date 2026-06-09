@@ -19,10 +19,152 @@ export type FulfillmentOrderStatus =
   | 'inspecting'
   | 'inspected'
   | 'invoiced'
+  | 'forwarded'
   | 'shipped'
   | 'completed'
-  | 'forwarded'
   | 'canceled';
+
+export type DirectShipStatus = 'pending' | 'forwarded' | 'completed' | 'canceled';
+
+// ===== FO summary types (Core DTO 1:1 대응) =====
+
+export interface FulfillmentOrderItem {
+  id: string;
+  fulfillmentOrderId?: string;
+  salesOrderId: string | null;
+  salesOrderLineId: string | null;
+  variantId: string | null;
+  skuId: string;
+  skuCode: string;
+  skuName: string;
+  qty: number;
+  reservedQty: number;
+  pickedQty: number;
+  shippedQty: number;
+  status: string;
+}
+
+export type FulfillmentOrderItemSummary = FulfillmentOrderItem;
+
+export interface ReservationSummary {
+  id: string;
+  fulfillmentOrderItemId: string | null;
+  skuId: string;
+  warehouseId: string;
+  quantity: number;
+  status: string;
+}
+
+export interface InvoiceSummary {
+  id: string;
+  invoiceNumber: string;
+  status: InvoiceStatus;
+  carrierCode: string | null;
+  issueMethod: InvoiceIssueMethod;
+}
+
+export type FulfillmentInvoiceSummary = InvoiceSummary;
+
+export interface ShipmentSummary {
+  id: string;
+  trackingNo: string;
+  carrier: string;
+  status: string;
+  eta: string | null;
+  invoiceUrl: string | null;
+}
+
+export interface BatchSummary {
+  id: string;
+  batchNumber: string;
+}
+
+/** GET /fulfillments 목록 / 상세 응답 (Core FulfillmentOrderResponseDto) */
+export interface FulfillmentOrder {
+  id: string;
+  salesOrderId: string | null;
+  warehouseId: string | null;
+  ownerId: string | null;
+  status: FulfillmentOrderStatus;
+  batchId: string | null;
+  fulfillmentMode: FulfillmentMode | null;
+  directShipStatus: DirectShipStatus | null;
+  priority: FulfillmentOrderPriority;
+  totalItems: number;
+  totalQty: number;
+  totalReservedQty: number;
+  reservationFailureReason: string | null;
+  reservationFailureDetails?: unknown | null;
+  allocatedAt: string | null;
+  shippedAt: string | null;
+  canceledAt: string | null;
+  shippingAddress?: unknown | null;
+  labelNo: string | null;
+  createdAt: string;
+  updatedAt: string;
+  invoice: InvoiceSummary | null;
+  shipment?: ShipmentSummary | null;
+  batch?: BatchSummary | null;
+}
+
+/** GET /fulfillments/:id 상세 응답 (items, reservations, adminAvailableActions 포함) */
+export interface FulfillmentOrderDetail extends FulfillmentOrder {
+  items: FulfillmentOrderItem[];
+  reservations: ReservationSummary[];
+  adminAvailableActions: string[];
+  blockedReasons: string[];
+}
+
+/** GET /fulfillments 쿼리 파라미터 */
+export interface ListFulfillmentsQuery {
+  status?: string;
+  warehouseId?: string;
+  fulfillmentMode?: FulfillmentMode;
+  salesOrderId?: string;
+  priority?: FulfillmentOrderPriority;
+  limit?: number;
+  offset?: number;
+  page?: number;
+}
+
+export type FulfillmentOrdersQuery = ListFulfillmentsQuery & {
+  status?: FulfillmentOrderStatus;
+};
+
+/** POST /fulfillments/:id/split body */
+export interface SplitFulfillmentOrderItem {
+  fulfillmentOrderItemId: string;
+  quantity: number;
+}
+
+export interface SplitFulfillmentOrderRequest {
+  items: SplitFulfillmentOrderItem[];
+}
+
+/** POST /fulfillments/:id/reserve body */
+export interface ReserveRequest {
+  fulfillmentOrderItemId: string;
+  quantity: number;
+}
+
+/** POST /fulfillments/:id/unreserve body */
+export interface UnreserveRequest {
+  fulfillmentOrderItemId: string;
+  quantity: number;
+}
+
+/** POST /fulfillments/:id/transfer-reservation body */
+export interface TransferReservationRequest {
+  fromFulfillmentOrderItemId: string;
+  toFulfillmentOrderItemId: string;
+  quantity: number;
+}
+
+/** POST /fulfillments/:id/assign-shipment body */
+export interface AssignShipmentRequest {
+  trackingNo: string;
+  eta?: string;
+}
 
 export interface FulfillmentOrderItemInput {
   salesOrderId: string;
@@ -71,53 +213,15 @@ export interface UpdateFulfillmentPriorityRequest {
   priority: FulfillmentOrderPriority;
 }
 
-// 출고주문 조회 응답 (GET /fulfillments, GET /fulfillments/:id — 백엔드 FulfillmentOrderResponseDto 대응)
-export interface FulfillmentInvoiceSummary {
+export interface FulfillmentOutboxEvent {
   id: string;
-  invoiceNumber: string;
-  status: InvoiceStatus;
-  carrierCode: string | null;
-  issueMethod: InvoiceIssueMethod;
-}
-
-// FOI 라인 (GET /fulfillments/:id 상세 응답에만 포함 — 백엔드 FulfillmentOrderItemDto 대응)
-export interface FulfillmentOrderItem {
-  id: string;
-  skuId: string;
-  skuCode: string;
-  skuName: string;
-  qty: number;
-  reservedQty: number;
-  pickedQty: number;
-  shippedQty: number;
-  status: string;
-  salesOrderId: string | null;
-  salesOrderLineId: string | null;
-}
-
-export interface FulfillmentOrderDetail {
-  id: string;
-  salesOrderId: string | null;
-  warehouseId: string | null;
-  ownerId: string | null;
-  status: FulfillmentOrderStatus;
-  batchId: string | null;
-  fulfillmentMode: FulfillmentMode | null;
-  priority: FulfillmentOrderPriority;
-  totalItems: number;
-  totalQty: number;
-  totalReservedQty: number;
-  reservationFailureReason: string | null;
-  reservationFailureDetails: unknown | null;
-  allocatedAt: string | null;
-  shippedAt: string | null;
-  canceledAt: string | null;
-  shippingAddress: unknown | null;
-  labelNo: string | null;
+  eventType: string;
+  status: 'pending' | 'processing' | 'published' | 'failed' | string;
+  attempts: number;
+  nextAttemptAt: string | null;
+  publishedAt: string | null;
   createdAt: string;
   updatedAt: string;
-  invoice: FulfillmentInvoiceSummary | null;
-  items?: FulfillmentOrderItem[]; // 상세(getOne)에서만 채워짐. 목록에서는 undefined
 }
 
 // 목록 아이템 — 목록 응답엔 items 없음(상세에서만). 구조 자체는 상세와 동일.
@@ -127,13 +231,6 @@ export type FulfillmentOrderListItem = FulfillmentOrderDetail;
 export interface FulfillmentOrdersListResponse {
   data: FulfillmentOrderListItem[];
   total: number;
-}
-
-export interface FulfillmentOrdersQuery {
-  limit?: number;
-  offset?: number;
-  page?: number; // page 지정 시 offset = (page-1)*limit 로 변환 (client 에서 처리)
-  status?: FulfillmentOrderStatus;
 }
 
 // ===== Picking =====

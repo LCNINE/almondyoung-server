@@ -14,7 +14,7 @@ export default function DirectShipTemplate() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const tab = (searchParams.get('tab') as Tab) ?? 'dashboard';
+  const tab = (searchParams.get('tab') as Tab) ?? (searchParams.get('foId') ? 'orders' : 'dashboard');
 
   const handleTabChange = useCallback(
     (value: string) => {
