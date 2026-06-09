@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
-import { eq, inArray, desc, sql, count } from 'drizzle-orm';
+import { eq, inArray, desc, sql, count, and } from 'drizzle-orm';
 import { PoliciesService } from './policies.service';
 import { AvailabilityService } from './availability.service';
 import { FULFILLMENT_EVENTS } from '../events';
@@ -1403,7 +1403,7 @@ export class FulfillmentsService {
     const blockedReasons = this.computeBlockedReasons(fulfillmentOrder, items);
 
     // FOI 라인 + SKU 조인 (상세 화면 표시용)
-    const items = await db
+    const itemsWithSku = await db
       .select({
         id: wmsTables.fulfillmentOrderItems.id,
         skuId: wmsTables.fulfillmentOrderItems.skuId,
@@ -1425,7 +1425,7 @@ export class FulfillmentsService {
     return {
       ...fulfillmentOrder,
       invoice: invoiceRows[0] || null,
-      items,
+      items: itemsWithSku,
     };
   }
 
