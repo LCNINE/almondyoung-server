@@ -13,7 +13,8 @@ export const orderQueryKeys = {
   outboundBatchList: (warehouseId?: string) =>
     ['outbound-batches', 'list', warehouseId ?? ''] as const,
   outboundBatch: (id: string) => ['outbound-batches', id] as const,
-  outboundBatchPickingList: (id: string) => ['outbound-batches', id, 'picking-list'] as const,
+  outboundBatchPickingList: (id: string) =>
+    ['outbound-batches', id, 'picking-list'] as const,
   availableFulfillmentOrders: (warehouseId: string) =>
     ['outbound-batches', 'available', warehouseId] as const,
 
@@ -22,12 +23,14 @@ export const orderQueryKeys = {
   picking: (id: string) => ['pickings', id] as const,
   pickingList: (orderId: string) => ['pickings', 'list', orderId] as const,
   pickingSession: (foId: string) => ['pickings', 'session', foId] as const,
-  batchOperations: (batchId: string) => ['pickings', 'batch', batchId, 'operations'] as const,
-  batchProgress: (batchId: string) => ['pickings', 'batch', batchId, 'progress'] as const,
+  batchOperations: (batchId: string) =>
+    ['pickings', 'batch', batchId, 'operations'] as const,
+  batchProgress: (batchId: string) =>
+    ['pickings', 'batch', batchId, 'progress'] as const,
 
   // 이행 관련
   fulfillments: ['fulfillments'] as const,
-  fulfillmentsList: (params?: Record<string, unknown>) =>
+  fulfillmentsList: (params?: object) =>
     ['fulfillments', 'list', params ?? {}] as const,
   fulfillment: (id: string) => ['fulfillments', id] as const,
   fulfillmentOrders: ['fulfillment-orders'] as const,
@@ -64,9 +67,13 @@ export const orderQueryKeys = {
   purchaseOrder: (id: string) => ['purchase-orders', id] as const,
 
   // 검수 관련
+  inspectionSession: (sessionId: string) =>
+    ['inspection', 'session', sessionId] as const,
   inspectionSummary: (foId: string) => ['inspection', 'summary', foId] as const,
-  inspectionHistory: (foiId: string) => ['inspection', 'history', foiId] as const,
-  qualityMetrics: (query: Record<string, any>) => ['inspection', 'metrics', 'quality', query] as const,
+  inspectionHistory: (foiId: string) =>
+    ['inspection', 'history', foiId] as const,
+  qualityMetrics: (query: Record<string, any>) =>
+    ['inspection', 'metrics', 'quality', query] as const,
 
   // 송장 관련
   invoices: ['invoices'] as const,
@@ -86,7 +93,8 @@ export const orderQueryKeys = {
   // 합포장 관련
   consolidationCandidates: (warehouseId: string) =>
     ['consolidation', 'candidates', warehouseId] as const,
-  consolidationLive: (warehouseId: string) => ['consolidation', 'live', warehouseId] as const,
+  consolidationLive: (warehouseId: string) =>
+    ['consolidation', 'live', warehouseId] as const,
   consolidationSavings: (warehouseId: string, days: number) =>
     ['consolidation', 'savings', warehouseId, days] as const,
   consolidationRules: ['consolidation', 'rules'] as const,

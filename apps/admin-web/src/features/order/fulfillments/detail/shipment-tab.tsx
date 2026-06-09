@@ -60,7 +60,7 @@ export function ShipmentTab({ fo }: { fo: FulfillmentOrderDetail }) {
 
   const handleShip = async () => {
     try {
-      await ship.mutateAsync();
+      await ship.mutateAsync(undefined);
       toast.success('출고 완료 처리되었습니다. FO 상태가 shipped로 전환됩니다.');
     } catch (err) {
       toast.error(`출고 완료 처리 실패: ${extractErrorMessage(err)}`);

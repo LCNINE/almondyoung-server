@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
-import { eq, inArray, desc, sql, and } from 'drizzle-orm';
+import { and, eq, inArray, desc, sql, count } from 'drizzle-orm';
 import { PoliciesService } from './policies.service';
 import { AvailabilityService } from './availability.service';
 import { FULFILLMENT_EVENTS } from '../events';
@@ -23,6 +23,13 @@ import { AssignShipmentDto } from '../dto/assign-shipment.dto';
 import { FulfillmentShippedPayload, FulfillmentDeliveredPayload, FulfillmentCancelledPayload, Carrier } from '@packages/event-contracts/streams';
 import { SalesOrderAmendmentsService } from '../../sales-order/services/sales-order-amendments.service';
 import { SalesOrderAmendmentDeltaDto } from '../../sales-order/dto/create-sales-order-amendment.dto';
+
+type FulfillmentStatus = (typeof wmsTables.fulfillmentOrders.status.enumValues)[number];
+
+// 외부 쿼리 문자열을 fulfillment status enum 으로 좁히는 타입 가드.
+// enumValues 를 readonly string[] 로 넓혀 includes 비교 (단순 멤버십 체크용 안전한 위닝)
+const isFulfillmentStatus = (value: string): value is FulfillmentStatus =>
+  (wmsTables.fulfillmentOrders.status.enumValues as readonly string[]).includes(value);
 
 type FulfillmentOrderItemInsert = {
   fulfillmentOrderId: string;
@@ -1036,6 +1043,34 @@ export class FulfillmentsService {
 
   async assignShipment(id: string, dto: AssignShipmentDto, tx?: DbTx) {
     return this.inTx(async (trx) => {
+      await trx.execute(sql`
+        SELECT id
+        FROM ${wmsTables.fulfillmentOrders}
+        WHERE ${wmsTables.fulfillmentOrders.id} = ${id}
+        FOR UPDATE
+      `);
+
+      const [fo] = await trx
+        .select()
+        .from(wmsTables.fulfillmentOrders)
+        .where(eq(wmsTables.fulfillmentOrders.id, id))
+        .limit(1);
+      if (!fo) {
+        throw new NotFoundException(`Fulfillment order ${id} not found`);
+      }
+      if (['shipped', 'completed', 'canceled'].includes(fo.status)) {
+        throw new ConflictException(`Cannot assign shipment: FO is in terminal status '${fo.status}'`);
+      }
+
+      const [existingShipment] = await trx
+        .select({ id: wmsTables.shipments.id })
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.fulfillmentOrderId, id))
+        .limit(1);
+      if (existingShipment) {
+        throw new ConflictException(`Shipment already assigned to fulfillment order ${id}`);
+      }
+
       await trx.insert(wmsTables.shipments).values({
         trackingNo: dto.trackingNo,
         status: 'created',
@@ -1079,6 +1114,15 @@ export class FulfillmentsService {
         .limit(1);
       if (!fo) {
         throw new NotFoundException(`Fulfillment order ${id} not found`);
+      }
+      if (fo.status === 'shipped') {
+        return this.getOne(id, trx);
+      }
+      if (['completed', 'canceled'].includes(fo.status)) {
+        throw new ConflictException(`Cannot ship: FO is in terminal status '${fo.status}'`);
+      }
+      if (!['ready', 'allocated', 'picked', 'inspecting', 'inspected', 'invoiced', 'labeled', 'forwarded'].includes(fo.status)) {
+        throw new ConflictException(`Cannot ship: FO is in status '${fo.status}'`);
       }
 
       const [shipment] = await trx
@@ -1320,6 +1364,27 @@ export class FulfillmentsService {
     return reasons;
   }
 
+  async getOutboxEvents(id: string, tx?: DbTx) {
+    const db = tx ?? this.db.db;
+    return db
+      .select({
+        id: wmsTables.outboxEvents.id,
+        eventType: wmsTables.outboxEvents.eventType,
+        status: wmsTables.outboxEvents.status,
+        attempts: wmsTables.outboxEvents.attempts,
+        nextAttemptAt: wmsTables.outboxEvents.nextAttemptAt,
+        publishedAt: wmsTables.outboxEvents.publishedAt,
+        createdAt: wmsTables.outboxEvents.createdAt,
+        updatedAt: wmsTables.outboxEvents.updatedAt,
+      })
+      .from(wmsTables.outboxEvents)
+      .where(and(
+        eq(wmsTables.outboxEvents.aggregateType, 'fulfillment'),
+        eq(wmsTables.outboxEvents.aggregateId, id),
+      ))
+      .orderBy(desc(wmsTables.outboxEvents.createdAt));
+  }
+
   async getOne(id: string, tx?: DbTx) {
     const db = tx ?? this.db.db;
 
@@ -1335,9 +1400,25 @@ export class FulfillmentsService {
 
     const [items, invoiceRows, shipmentRows] = await Promise.all([
       db
-        .select()
+        .select({
+          id: wmsTables.fulfillmentOrderItems.id,
+          fulfillmentOrderId: wmsTables.fulfillmentOrderItems.fulfillmentOrderId,
+          salesOrderId: wmsTables.fulfillmentOrderItems.salesOrderId,
+          salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
+          variantId: wmsTables.fulfillmentOrderItems.variantId,
+          skuId: wmsTables.fulfillmentOrderItems.skuId,
+          skuCode: wmsTables.skus.code,
+          skuName: wmsTables.skus.name,
+          qty: wmsTables.fulfillmentOrderItems.qty,
+          reservedQty: wmsTables.fulfillmentOrderItems.reservedQty,
+          pickedQty: wmsTables.fulfillmentOrderItems.pickedQty,
+          shippedQty: wmsTables.fulfillmentOrderItems.shippedQty,
+          status: wmsTables.fulfillmentOrderItems.status,
+        })
         .from(wmsTables.fulfillmentOrderItems)
-        .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, id)),
+        .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId))
+        .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, id))
+        .orderBy(wmsTables.fulfillmentOrderItems.createdAt),
       db
         .select({
           id: wmsTables.invoices.id,
@@ -1398,11 +1479,11 @@ export class FulfillmentsService {
 
     return {
       ...fulfillmentOrder,
+      invoice: invoiceRows[0] || null,
+      shipment: shipmentRows[0] || null,
+      batch: batchRow,
       items,
       reservations,
-      batch: batchRow,
-      shipment: shipmentRows[0] ?? null,
-      invoice: invoiceRows[0] ?? null,
       adminAvailableActions,
       blockedReasons,
     };
@@ -1422,26 +1503,34 @@ export class FulfillmentsService {
   ) {
     const db = tx ?? this.db.db;
 
+    // status 쿼리 문자열을 enum 으로 안전 narrowing (잘못된 값은 무시)
+    const statusFilter =
+      params.status && isFulfillmentStatus(params.status) ? params.status : undefined;
     const conditions = [
-      params.status ? eq(wmsTables.fulfillmentOrders.status, params.status as any) : undefined,
+      statusFilter ? eq(wmsTables.fulfillmentOrders.status, statusFilter) : undefined,
       params.warehouseId ? eq(wmsTables.fulfillmentOrders.warehouseId, params.warehouseId) : undefined,
-      params.fulfillmentMode
-        ? eq(wmsTables.fulfillmentOrders.fulfillmentMode, params.fulfillmentMode as any)
-        : undefined,
+      params.fulfillmentMode ? eq(wmsTables.fulfillmentOrders.fulfillmentMode, params.fulfillmentMode as any) : undefined,
       params.salesOrderId ? eq(wmsTables.fulfillmentOrders.salesOrderId, params.salesOrderId) : undefined,
       params.priority ? eq(wmsTables.fulfillmentOrders.priority, params.priority as any) : undefined,
     ].filter(Boolean);
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [totalRow] = await db
+      .select({ value: count() })
+      .from(wmsTables.fulfillmentOrders)
+      .where(whereClause);
+    const total = totalRow?.value ?? 0;
 
     const fulfillmentOrders = await db
       .select()
       .from(wmsTables.fulfillmentOrders)
-      .where(conditions.length > 0 ? and(...(conditions as Parameters<typeof and>)) : undefined)
+      .where(whereClause)
       .limit(params.limit)
       .offset(params.offset)
       .orderBy(desc(wmsTables.fulfillmentOrders.createdAt));
 
     if (fulfillmentOrders.length === 0) {
-      return [];
+      return { data: [], total };
     }
 
     const fulfillmentOrderIds = fulfillmentOrders.map((fo) => fo.id);
@@ -1463,10 +1552,12 @@ export class FulfillmentsService {
       invoicesByFoId.set(invoice.fulfillmentOrderId, invoice);
     }
 
-    return fulfillmentOrders.map((fo) => ({
+    const data = fulfillmentOrders.map((fo) => ({
       ...fo,
       invoice: invoicesByFoId.get(fo.id) ?? null,
     }));
+
+    return { data, total };
   }
 
   async checkAvailability(fulfillmentOrderId: string, tx?: DbTx) {
