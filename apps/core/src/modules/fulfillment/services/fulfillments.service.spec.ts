@@ -1100,6 +1100,35 @@ describe('FulfillmentsService', () => {
     );
   });
 
+  it('ship은 FulfillmentShipped outbox 이벤트를 발행한다', async () => {
+    const { service, outbox } = makeService({
+      fulfillmentOrders: [{ id: 'fo-ship-1', salesOrderId, warehouseId, status: 'invoiced' }],
+      fulfillmentOrderItems: [{ id: 'foi-ship-1', fulfillmentOrderId: 'fo-ship-1', skuId, qty: 3, reservedQty: 3, shippedQty: 0 }],
+      shipments: [{ id: 'shipment-1', fulfillmentOrderId: 'fo-ship-1', carrier: 'CJ', trackingNo: 'TRK-001' }],
+    });
+
+    await service.ship('fo-ship-1');
+
+    expect(outbox.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'FulfillmentShipped' }),
+      expect.anything(),
+    );
+  });
+
+  it('markDelivered는 FulfillmentDelivered outbox 이벤트를 발행하고 shipment를 delivered로 업데이트한다', async () => {
+    const { service, outbox } = makeService({
+      fulfillmentOrders: [{ id: 'fo-delivered-1', salesOrderId, warehouseId, status: 'shipped' }],
+      shipments: [{ id: 'shipment-2', fulfillmentOrderId: 'fo-delivered-1', trackingNo: 'TRK-002', carrier: 'CJ' }],
+    });
+
+    await service.markDelivered('fo-delivered-1');
+
+    expect(outbox.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'FulfillmentDelivered' }),
+      expect.anything(),
+    );
+  });
+
   it('cancel은 ready/unfulfillable FO의 기존 confirmed reservation을 lifecycle로 해제한다', async () => {
     const { service, reservationLifecycle } = makeService({
       fulfillmentOrders: [

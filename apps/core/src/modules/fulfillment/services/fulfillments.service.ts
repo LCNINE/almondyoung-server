@@ -1098,16 +1098,17 @@ export class FulfillmentsService {
         .select()
         .from(wmsTables.fulfillmentOrderItems)
         .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, id));
+      const now = new Date();
       for (const item of items) {
         await trx
           .update(wmsTables.fulfillmentOrderItems)
-          .set({ shippedQty: item.qty, status: 'shipped', updatedAt: new Date() })
+          .set({ shippedQty: item.qty, status: 'shipped', updatedAt: now })
           .where(eq(wmsTables.fulfillmentOrderItems.id, item.id));
       }
 
       await trx
         .update(wmsTables.fulfillmentOrders)
-        .set({ status: 'shipped', updatedAt: new Date() })
+        .set({ status: 'shipped', shippedAt: now, updatedAt: now })
         .where(eq(wmsTables.fulfillmentOrders.id, id));
 
       await this.reservationLifecycle.handleFulfillmentOrderStatusChange(id, fo.status, 'shipped', trx);
@@ -1129,7 +1130,7 @@ export class FulfillmentsService {
           trackingNumber: shipment?.trackingNo ?? '',
           invoiceUrl: shipment?.invoiceUrl ?? undefined,
         },
-        shippedAt: new Date().toISOString(),
+        shippedAt: now.toISOString(),
         estimatedDeliveryDate: shipment?.eta?.toISOString(),
         shippedItems: items.map((item) => ({
           fulfillmentItemId: item.id,
