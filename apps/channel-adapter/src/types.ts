@@ -519,6 +519,11 @@ export type ChannelQuery =
 
 // PIM-Medusa 동기화 타입
 
+export interface PimPurchaseConstraint {
+  requiresMembership: boolean;
+  lifetimeQuantityLimit: number | null;
+}
+
 // PIM Active Version 스냅샷 (동기화 소스 데이터)
 export interface PimProductSnapshot {
   // Master/Version 식별
@@ -604,6 +609,7 @@ export interface PimProductSnapshot {
   status: 'draft' | 'active' | 'inactive';
   isWholesaleOnly?: boolean;
   isMembershipOnly?: boolean;
+  purchaseConstraint?: PimPurchaseConstraint;
   isGiftcard?: boolean;
   discountable?: boolean;
 }
@@ -678,6 +684,7 @@ export interface MedusaProductPayload {
     seoKeywords?: string[];
     isWholesaleOnly?: boolean;
     isMembershipOnly?: boolean;
+    pimPurchaseConstraint?: PimPurchaseConstraint | null;
     productType?: string;
     syncedAt: string;
   };

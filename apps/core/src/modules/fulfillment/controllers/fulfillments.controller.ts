@@ -53,14 +53,14 @@ export class FulfillmentsController {
   }
 
   @Post(':id/ship')
-  @ApiOperation({ summary: '배송 처리' })
+  @ApiOperation({ summary: '출고 완료 처리 (FulfillmentShipped 이벤트 발행)' })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
   ship(@Param('id') id: string) {
     return this.service.ship(id);
   }
 
   @Post(':id/deliver')
-  @ApiOperation({ summary: '배송 완료 처리' })
+  @ApiOperation({ summary: '배송 완료 처리 (고객 수령 확인, FulfillmentDelivered 이벤트 발행)' })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
   deliver(@Param('id') id: string) {
     return this.service.markDelivered(id);
@@ -74,7 +74,7 @@ export class FulfillmentsController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: '주문처리 상세 조회' })
+  @ApiOperation({ summary: '주문처리 상세 조회 (items, reservations, batch, shipment, invoice, adminAvailableActions 포함)' })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
   @ApiResponse({ status: 200, type: FulfillmentOrderResponseDto })
   getOne(@Param('id') id: string) {
@@ -111,7 +111,7 @@ export class FulfillmentsController {
   @ApiParam({ name: 'id', description: '주문처리 ID' })
   @ApiBody({ type: ReserveDto })
   reserve(@Param('id') id: string, @Body() dto: ReserveDto) {
-    return this.reservations.reserve(dto);
+    return this.reservations.reserve(id, dto);
   }
 
   @Post(':id/unreserve')
@@ -119,15 +119,15 @@ export class FulfillmentsController {
   @ApiParam({ name: 'id', description: '주문처리 ID' })
   @ApiBody({ type: UnreserveDto })
   unreserve(@Param('id') id: string, @Body() dto: UnreserveDto) {
-    return this.reservations.unreserve(dto);
+    return this.reservations.unreserve(id, dto);
   }
 
   @Post(':id/transfer-reservation')
-  @ApiOperation({ summary: '예약 이전' })
+  @ApiOperation({ summary: '예약 이전 (같은 SKU FOI 간)' })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
   @ApiBody({ type: TransferReservationDto })
   transfer(@Param('id') id: string, @Body() dto: TransferReservationDto) {
-    return this.reservations.transferReservation(dto);
+    return this.reservations.transferReservation(id, dto);
   }
 
   private getUserId(user: AuthenticatedUser): string | undefined {

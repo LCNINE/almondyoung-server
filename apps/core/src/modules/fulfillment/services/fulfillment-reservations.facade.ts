@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { eq, and } from 'drizzle-orm';
@@ -24,7 +24,13 @@ export class FulfillmentReservationsFacade {
     return tx ? fn(tx) : this.db.db.transaction(fn);
   }
 
-  async reserve(dto: { fulfillmentOrderItemId: string; quantity: number }, tx?: DbTx) {
+  private readonly TERMINAL_STATUSES = ['shipped', 'completed', 'canceled'] as const;
+
+  async reserve(
+    urlFulfillmentOrderId: string,
+    dto: { fulfillmentOrderItemId: string; quantity: number },
+    tx?: DbTx,
+  ) {
     return this.inTx(async (trx) => {
       const foi = await trx.query.fulfillmentOrderItems.findFirst({
         where: eq(wmsTables.fulfillmentOrderItems.id, dto.fulfillmentOrderItemId),
@@ -32,12 +38,20 @@ export class FulfillmentReservationsFacade {
       if (!foi) {
         throw new BadRequestException(`FOI ${dto.fulfillmentOrderItemId} not found`);
       }
+      if (foi.fulfillmentOrderId !== urlFulfillmentOrderId) {
+        throw new BadRequestException(
+          `FOI ${foi.id} belongs to FO ${foi.fulfillmentOrderId}, not ${urlFulfillmentOrderId}`,
+        );
+      }
 
       const fo = await trx.query.fulfillmentOrders.findFirst({
         where: eq(wmsTables.fulfillmentOrders.id, foi.fulfillmentOrderId),
       });
       if (!fo) {
         throw new BadRequestException(`FO ${foi.fulfillmentOrderId} not found`);
+      }
+      if (this.TERMINAL_STATUSES.includes(fo.status as any)) {
+        throw new ConflictException(`Cannot reserve for FO ${fo.id} in status '${fo.status}'`);
       }
       if (!fo.warehouseId) {
         throw new BadRequestException(`FO ${fo.id} has no warehouseId`);
@@ -73,7 +87,11 @@ export class FulfillmentReservationsFacade {
     }, tx);
   }
 
-  async unreserve(dto: { fulfillmentOrderItemId: string; quantity: number }, tx?: DbTx) {
+  async unreserve(
+    urlFulfillmentOrderId: string,
+    dto: { fulfillmentOrderItemId: string; quantity: number },
+    tx?: DbTx,
+  ) {
     return this.inTx(async (trx) => {
       const foi = await trx.query.fulfillmentOrderItems.findFirst({
         where: eq(wmsTables.fulfillmentOrderItems.id, dto.fulfillmentOrderItemId),
@@ -81,11 +99,25 @@ export class FulfillmentReservationsFacade {
       if (!foi) {
         throw new BadRequestException(`FOI ${dto.fulfillmentOrderItemId} not found`);
       }
+      if (foi.fulfillmentOrderId !== urlFulfillmentOrderId) {
+        throw new BadRequestException(
+          `FOI ${foi.id} belongs to FO ${foi.fulfillmentOrderId}, not ${urlFulfillmentOrderId}`,
+        );
+      }
+
       const fo = await trx.query.fulfillmentOrders.findFirst({
         where: eq(wmsTables.fulfillmentOrders.id, foi.fulfillmentOrderId),
       });
       if (!fo) {
         throw new BadRequestException(`FO ${foi.fulfillmentOrderId} not found`);
+      }
+      if (this.TERMINAL_STATUSES.includes(fo.status as any)) {
+        throw new ConflictException(`Cannot unreserve for FO ${fo.id} in status '${fo.status}'`);
+      }
+      if (foi.shippedQty > 0) {
+        throw new ConflictException(
+          `Cannot unreserve FOI ${foi.id}: shipped evidence exists (shippedQty=${foi.shippedQty})`,
+        );
       }
 
       const reservations = await this.unified.getReservationsByTarget('FULFILLMENT_ORDER', fo.id, trx);
@@ -127,6 +159,7 @@ export class FulfillmentReservationsFacade {
   }
 
   async transferReservation(
+    urlFulfillmentOrderId: string,
     dto: { fromFulfillmentOrderItemId: string; toFulfillmentOrderItemId: string; quantity: number },
     tx?: DbTx,
   ) {
@@ -140,6 +173,12 @@ export class FulfillmentReservationsFacade {
       if (!from || !to) {
         throw new BadRequestException('Invalid FOI id(s)');
       }
+      if (from.fulfillmentOrderId !== urlFulfillmentOrderId) {
+        throw new BadRequestException(
+          `Source FOI ${from.id} belongs to FO ${from.fulfillmentOrderId}, not ${urlFulfillmentOrderId}`,
+        );
+      }
+
       const fromFo = await trx.query.fulfillmentOrders.findFirst({
         where: eq(wmsTables.fulfillmentOrders.id, from.fulfillmentOrderId),
       });
@@ -148,6 +187,12 @@ export class FulfillmentReservationsFacade {
       });
       if (!fromFo || !toFo || !toFo.warehouseId) {
         throw new BadRequestException('Invalid FO(s) or target FO has no warehouse');
+      }
+      if (this.TERMINAL_STATUSES.includes(fromFo.status as any)) {
+        throw new ConflictException(`Cannot transfer reservation from FO ${fromFo.id} in status '${fromFo.status}'`);
+      }
+      if (this.TERMINAL_STATUSES.includes(toFo.status as any)) {
+        throw new ConflictException(`Cannot transfer reservation to FO ${toFo.id} in status '${toFo.status}'`);
       }
       if (from.skuId !== to.skuId) {
         throw new BadRequestException('SKU mismatch between from/to FOI');
@@ -166,7 +211,7 @@ export class FulfillmentReservationsFacade {
         trx,
       );
 
-      await this.unreserve({ fulfillmentOrderItemId: from.id, quantity: dto.quantity }, trx);
+      await this.unreserve(urlFulfillmentOrderId, { fulfillmentOrderItemId: from.id, quantity: dto.quantity }, trx);
 
       await trx
         .update(wmsTables.fulfillmentOrderItems)

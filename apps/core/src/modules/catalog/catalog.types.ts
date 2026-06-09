@@ -9,6 +9,8 @@ import {
   productMasterOptionGroups,
   productMasterVariants,
   productMasterPricingRules,
+  productPurchaseConstraints,
+  productMasterPurchaseConstraints,
   productOptionGroupDisplays,
   productOptionValueDisplays,
   productOptionGroups,
@@ -86,6 +88,17 @@ export type NewProductMasterVariant = InferInsertModel<typeof productMasterVaria
 // ===== PRODUCT MASTER PRICING RULES (Mapping Table) 타입 =====
 export type ProductMasterPricingRule = InferSelectModel<typeof productMasterPricingRules>;
 export type NewProductMasterPricingRule = InferInsertModel<typeof productMasterPricingRules>;
+
+export type ProductPurchaseConstraint = InferSelectModel<typeof productPurchaseConstraints>;
+export type NewProductPurchaseConstraint = InferInsertModel<typeof productPurchaseConstraints>;
+export type ProductMasterPurchaseConstraint = InferSelectModel<typeof productMasterPurchaseConstraints>;
+export type NewProductMasterPurchaseConstraint = InferInsertModel<typeof productMasterPurchaseConstraints>;
+
+export type PurchaseConstraintReadModel = {
+  id: string;
+  requiresMembership: boolean;
+  lifetimeQuantityLimit: number | null;
+};
 
 // ===== PRODUCT OPTION GROUP DISPLAYS 타입 =====
 export type ProductOptionGroupDisplay = InferSelectModel<typeof productOptionGroupDisplays>;
@@ -299,6 +312,7 @@ export interface ProductDetailDto extends ProductMasterVersion {
   })[];
   tagValues?: TagReadModel[];
   priceSummary?: PriceSummary | null;
+  purchaseConstraint?: PurchaseConstraintReadModel | null;
 }
 
 // 가격 조회 응답 DTO

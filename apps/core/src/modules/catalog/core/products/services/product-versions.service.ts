@@ -31,6 +31,8 @@ import {
   productVariants,
   variantOptionValues,
   pricingRules,
+  productMasterPurchaseConstraints,
+  productPurchaseConstraints,
   productTagValues,
   tagValues,
   productImages,
@@ -720,6 +722,7 @@ export class ProductVersionsService {
     const categories = await this._buildCategoryTree(masterId, versionId, tx);
     const optionGroups = await this._getVersionOptionGroups(masterId, versionId, tx);
     const variants = await this._getVersionVariants(versionId, tx);
+    const purchaseConstraint = await this._getVersionPurchaseConstraint(masterId, versionId, tx);
 
     const images = await tx
       .select()
@@ -766,7 +769,34 @@ export class ProductVersionsService {
       isMembershipOnly: version.isMembershipOnly || false,
       isGiftcard: false,
       discountable: true,
+      purchaseConstraint,
     };
+  }
+
+  private async _getVersionPurchaseConstraint(
+    masterId: string,
+    versionId: string,
+    tx: DbTransaction,
+  ): Promise<ProductSnapshot['purchaseConstraint']> {
+    const [row] = await tx
+      .select({
+        requiresMembership: productPurchaseConstraints.requiresMembership,
+        lifetimeQuantityLimit: productPurchaseConstraints.lifetimeQuantityLimit,
+      })
+      .from(productMasterPurchaseConstraints)
+      .innerJoin(
+        productPurchaseConstraints,
+        eq(productMasterPurchaseConstraints.purchaseConstraintId, productPurchaseConstraints.id),
+      )
+      .where(
+        and(
+          eq(productMasterPurchaseConstraints.masterId, masterId),
+          eq(productMasterPurchaseConstraints.versionId, versionId),
+        ),
+      )
+      .limit(1);
+
+    return row ?? undefined;
   }
 
   /**
@@ -1375,6 +1405,28 @@ export class ProductVersionsService {
       );
     }
 
+    const purchaseConstraintMappings = await tx
+      .select()
+      .from(productMasterPurchaseConstraints)
+      .where(
+        and(
+          eq(productMasterPurchaseConstraints.masterId, masterId),
+          eq(productMasterPurchaseConstraints.versionId, fromVersionId),
+        ),
+      );
+
+    if (purchaseConstraintMappings.length > 0) {
+      await tx.insert(productMasterPurchaseConstraints).values(
+        purchaseConstraintMappings.map((mapping) => ({
+          id: uuidv7(),
+          masterId,
+          versionId: toVersionId,
+          purchaseConstraintId: mapping.purchaseConstraintId,
+          createdAt: new Date(),
+        })),
+      );
+    }
+
     const tagValueMappings = await tx
       .select({
         tagValueId: productTagValues.tagValueId,
@@ -1440,7 +1492,7 @@ export class ProductVersionsService {
 
     this.logger.log(
       `Copied mappings and displays from version ${fromVersionId} to ${toVersionId} for master ${masterId}: ` +
-        `${categories.length} categories, ${optionGroups.length} option groups, ${variants.length} variants, ${pricingRules.length} pricing rules, ${tagValueMappings.length} active tag values, ${images.length} images`,
+        `${categories.length} categories, ${optionGroups.length} option groups, ${variants.length} variants, ${pricingRules.length} pricing rules, ${purchaseConstraintMappings.length} purchase constraints, ${tagValueMappings.length} active tag values, ${images.length} images`,
     );
   }
 
@@ -1524,6 +1576,25 @@ export class ProductVersionsService {
           ),
         );
 
+      const purchaseConstraintMappings = await tx
+        .select({ purchaseConstraintId: productMasterPurchaseConstraints.purchaseConstraintId })
+        .from(productMasterPurchaseConstraints)
+        .where(
+          and(
+            eq(productMasterPurchaseConstraints.masterId, version.masterId),
+            eq(productMasterPurchaseConstraints.versionId, version.id),
+          ),
+        );
+
+      await tx
+        .delete(productMasterPurchaseConstraints)
+        .where(
+          and(
+            eq(productMasterPurchaseConstraints.masterId, version.masterId),
+            eq(productMasterPurchaseConstraints.versionId, version.id),
+          ),
+        );
+
       // 4. 버전 자체 삭제
       await tx.delete(productMasterVersions).where(eq(productMasterVersions.id, versionId));
 
@@ -1536,6 +1607,14 @@ export class ProductVersionsService {
       if (pricingRuleMappings.length > 0) {
         await this._cleanupOrphanedPricingRules(
           pricingRuleMappings.map((m) => m.pricingRuleId),
+          tx,
+        );
+      }
+
+      // 7. 고아 purchase constraint 정리
+      if (purchaseConstraintMappings.length > 0) {
+        await this._cleanupOrphanedPurchaseConstraints(
+          purchaseConstraintMappings.map((m) => m.purchaseConstraintId),
           tx,
         );
       }
@@ -1599,6 +1678,33 @@ export class ProductVersionsService {
 
     if (deletedCount > 0) {
       this.logger.log(`Cleaned up ${deletedCount} orphaned pricing rules`);
+    }
+  }
+
+  private async _cleanupOrphanedPurchaseConstraints(
+    candidateConstraintIds: string[],
+    tx: DbTransaction,
+  ): Promise<void> {
+    if (candidateConstraintIds.length === 0) {
+      return;
+    }
+
+    let deletedCount = 0;
+
+    for (const constraintId of new Set(candidateConstraintIds)) {
+      const allMappings = await tx
+        .select()
+        .from(productMasterPurchaseConstraints)
+        .where(eq(productMasterPurchaseConstraints.purchaseConstraintId, constraintId));
+
+      if (allMappings.length === 0) {
+        await tx.delete(productPurchaseConstraints).where(eq(productPurchaseConstraints.id, constraintId));
+        deletedCount++;
+      }
+    }
+
+    if (deletedCount > 0) {
+      this.logger.log(`Cleaned up ${deletedCount} orphaned purchase constraints`);
     }
   }
 }
