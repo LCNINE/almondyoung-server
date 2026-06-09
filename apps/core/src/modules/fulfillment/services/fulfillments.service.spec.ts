@@ -205,6 +205,7 @@ describe('FulfillmentsService', () => {
     };
     const reservationLifecycle = {
       handleFulfillmentOrderStatusChange: jest.fn().mockResolvedValue(undefined),
+      handleFulfillmentOrderSplit: jest.fn().mockResolvedValue(undefined),
     };
     const policies = {
       getVariantPolicy: jest.fn().mockResolvedValue(
@@ -1129,6 +1130,89 @@ describe('FulfillmentsService', () => {
       'canceled',
       expect.anything(),
     );
+  });
+
+  describe('split guard', () => {
+    it('shipped FO는 split이 ConflictException을 던진다', async () => {
+      const { service } = makeService({
+        fulfillmentOrders: [{ id: 'fo-shipped', salesOrderId, warehouseId, status: 'shipped' }],
+        fulfillmentOrderItems: [
+          { id: 'foi-1', fulfillmentOrderId: 'fo-shipped', skuId, qty: 3, reservedQty: 0, shippedQty: 3 },
+        ],
+      });
+
+      await expect(service.split('fo-shipped', { items: [{ fulfillmentOrderItemId: 'foi-1', quantity: 1 }] })).rejects.toThrow(
+        "Cannot split FO fo-shipped in status 'shipped'",
+      );
+    });
+
+    it('completed FO는 split이 ConflictException을 던진다', async () => {
+      const { service } = makeService({
+        fulfillmentOrders: [{ id: 'fo-completed', salesOrderId, warehouseId, status: 'completed' }],
+        fulfillmentOrderItems: [
+          { id: 'foi-1', fulfillmentOrderId: 'fo-completed', skuId, qty: 2, reservedQty: 0, shippedQty: 2 },
+        ],
+      });
+
+      await expect(service.split('fo-completed', { items: [{ fulfillmentOrderItemId: 'foi-1', quantity: 1 }] })).rejects.toThrow(
+        "Cannot split FO fo-completed in status 'completed'",
+      );
+    });
+
+    it('canceled FO는 split이 ConflictException을 던진다', async () => {
+      const { service } = makeService({
+        fulfillmentOrders: [{ id: 'fo-canceled', salesOrderId, warehouseId, status: 'canceled' }],
+        fulfillmentOrderItems: [
+          { id: 'foi-1', fulfillmentOrderId: 'fo-canceled', skuId, qty: 2, reservedQty: 0, shippedQty: 0 },
+        ],
+      });
+
+      await expect(service.split('fo-canceled', { items: [{ fulfillmentOrderItemId: 'foi-1', quantity: 1 }] })).rejects.toThrow(
+        "Cannot split FO fo-canceled in status 'canceled'",
+      );
+    });
+
+    it('split quantity > splittable qty이면 BadRequestException을 던진다', async () => {
+      const { service } = makeService({
+        fulfillmentOrders: [{ id: 'fo-ready', salesOrderId, warehouseId, status: 'ready' }],
+        fulfillmentOrderItems: [
+          { id: 'foi-1', fulfillmentOrderId: 'fo-ready', skuId, qty: 5, reservedQty: 5, shippedQty: 3 },
+        ],
+      });
+
+      // splittableQty = 5 - 3 = 2, requesting 3 → 400
+      await expect(service.split('fo-ready', { items: [{ fulfillmentOrderItemId: 'foi-1', quantity: 3 }] })).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('split은 originalFulfillmentOrderItemId(원본)와 newFulfillmentOrderItemId(신규)를 구분해서 lifecycle에 전달한다', async () => {
+      const { service, reservationLifecycle } = makeService({
+        fulfillmentOrders: [{ id: 'fo-ready', salesOrderId, warehouseId, status: 'ready' }],
+        fulfillmentOrderItems: [
+          { id: 'foi-original', fulfillmentOrderId: 'fo-ready', skuId, qty: 4, reservedQty: 4, shippedQty: 0 },
+        ],
+      });
+
+      const handleSplit = jest.spyOn(reservationLifecycle, 'handleFulfillmentOrderSplit' as any).mockResolvedValue(undefined);
+
+      await service.split('fo-ready', { items: [{ fulfillmentOrderItemId: 'foi-original', quantity: 2 }] });
+
+      expect(handleSplit).toHaveBeenCalledWith(
+        'fo-ready',
+        expect.any(String),
+        [
+          expect.objectContaining({
+            originalFulfillmentOrderItemId: 'foi-original',
+            newFulfillmentOrderItemId: expect.stringMatching(/^foi-/),
+            skuId,
+            splitQuantity: 2,
+            originalQuantityBeforeSplit: 4,
+          }),
+        ],
+        expect.anything(),
+      );
+    });
   });
 
   it('checkAvailability는 현재 FO의 기존 예약 수량을 가용 수량으로 인정한다', async () => {
