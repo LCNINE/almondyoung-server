@@ -11,6 +11,7 @@ import { ReserveDto } from '../dto/reserve.dto';
 import { UnreserveDto } from '../dto/unreserve.dto';
 import { TransferReservationDto } from '../dto/transfer-reservation.dto';
 import { FulfillmentOrderResponseDto } from '../dto/fulfillment-order-response.dto';
+import { ListFulfillmentsQueryDto } from '../dto/list-fulfillments-query.dto';
 
 type AuthenticatedUser = { id?: string; userId?: string; sub?: string } | undefined;
 
@@ -50,14 +51,14 @@ export class FulfillmentsController {
   }
 
   @Post(':id/ship')
-  @ApiOperation({ summary: '배송 처리' })
+  @ApiOperation({ summary: '출고 완료 처리 (FulfillmentShipped 이벤트 발행)' })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
   ship(@Param('id') id: string) {
     return this.service.ship(id);
   }
 
   @Post(':id/deliver')
-  @ApiOperation({ summary: '배송 완료 처리' })
+  @ApiOperation({ summary: '배송 완료 처리 (고객 수령 확인, FulfillmentDelivered 이벤트 발행)' })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
   deliver(@Param('id') id: string) {
     return this.service.markDelivered(id);
@@ -71,7 +72,7 @@ export class FulfillmentsController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: '주문처리 상세 조회' })
+  @ApiOperation({ summary: '주문처리 상세 조회 (items, reservations, batch, shipment, invoice, adminAvailableActions 포함)' })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
   @ApiResponse({ status: 200, type: FulfillmentOrderResponseDto })
   getOne(@Param('id') id: string) {
@@ -80,11 +81,24 @@ export class FulfillmentsController {
 
   @Get()
   @ApiOperation({ summary: '주문처리 목록 조회' })
-  @ApiQuery({ name: 'limit', required: false, type: String })
-  @ApiQuery({ name: 'offset', required: false, type: String })
+  @ApiQuery({ name: 'status', required: false })
+  @ApiQuery({ name: 'warehouseId', required: false })
+  @ApiQuery({ name: 'fulfillmentMode', required: false, enum: ['in_house', '3pl', 'drop_ship'] })
+  @ApiQuery({ name: 'salesOrderId', required: false })
+  @ApiQuery({ name: 'priority', required: false, enum: ['normal', 'high', 'urgent'] })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'offset', required: false, type: Number })
   @ApiResponse({ status: 200, type: [FulfillmentOrderResponseDto] })
-  list(@Query('limit') limit?: string, @Query('offset') offset?: string) {
-    return this.service.list({ limit: limit ? parseInt(limit, 10) : 20, offset: offset ? parseInt(offset, 10) : 0 });
+  list(@Query() query: ListFulfillmentsQueryDto) {
+    return this.service.list({
+      limit: query.limit ?? 20,
+      offset: query.offset ?? 0,
+      status: query.status,
+      warehouseId: query.warehouseId,
+      fulfillmentMode: query.fulfillmentMode,
+      salesOrderId: query.salesOrderId,
+      priority: query.priority,
+    });
   }
 
   @Post(':id/check-availability')
@@ -99,7 +113,7 @@ export class FulfillmentsController {
   @ApiParam({ name: 'id', description: '주문처리 ID' })
   @ApiBody({ type: ReserveDto })
   reserve(@Param('id') id: string, @Body() dto: ReserveDto) {
-    return this.reservations.reserve(dto);
+    return this.reservations.reserve(id, dto);
   }
 
   @Post(':id/unreserve')
@@ -107,15 +121,15 @@ export class FulfillmentsController {
   @ApiParam({ name: 'id', description: '주문처리 ID' })
   @ApiBody({ type: UnreserveDto })
   unreserve(@Param('id') id: string, @Body() dto: UnreserveDto) {
-    return this.reservations.unreserve(dto);
+    return this.reservations.unreserve(id, dto);
   }
 
   @Post(':id/transfer-reservation')
-  @ApiOperation({ summary: '예약 이전' })
+  @ApiOperation({ summary: '예약 이전 (같은 SKU FOI 간)' })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
   @ApiBody({ type: TransferReservationDto })
   transfer(@Param('id') id: string, @Body() dto: TransferReservationDto) {
-    return this.reservations.transferReservation(dto);
+    return this.reservations.transferReservation(id, dto);
   }
 
   private getUserId(user: AuthenticatedUser): string | undefined {
