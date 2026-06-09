@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
-import { and, eq, inArray, desc, sql, count } from 'drizzle-orm';
+import { eq, inArray, desc, sql, count, and } from 'drizzle-orm';
 import { PoliciesService } from './policies.service';
 import { AvailabilityService } from './availability.service';
 import { FULFILLMENT_EVENTS } from '../events';
@@ -1499,15 +1499,30 @@ export class FulfillmentsService {
     const adminAvailableActions = this.computeAdminAvailableActions(fulfillmentOrder, items);
     const blockedReasons = this.computeBlockedReasons(fulfillmentOrder, items);
 
+    // FOI 라인 + SKU 조인 (상세 화면 표시용)
+    const itemsWithSku = await db
+      .select({
+        id: wmsTables.fulfillmentOrderItems.id,
+        skuId: wmsTables.fulfillmentOrderItems.skuId,
+        skuCode: wmsTables.skus.code,
+        skuName: wmsTables.skus.name,
+        qty: wmsTables.fulfillmentOrderItems.qty,
+        reservedQty: wmsTables.fulfillmentOrderItems.reservedQty,
+        pickedQty: wmsTables.fulfillmentOrderItems.pickedQty,
+        shippedQty: wmsTables.fulfillmentOrderItems.shippedQty,
+        status: wmsTables.fulfillmentOrderItems.status,
+        salesOrderId: wmsTables.fulfillmentOrderItems.salesOrderId,
+        salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
+      })
+      .from(wmsTables.fulfillmentOrderItems)
+      .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId))
+      .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, id))
+      .orderBy(wmsTables.fulfillmentOrderItems.createdAt);
+
     return {
       ...fulfillmentOrder,
       invoice: invoiceRows[0] || null,
-      shipment: shipmentRows[0] || null,
-      batch: batchRow,
-      items,
-      reservations,
-      adminAvailableActions,
-      blockedReasons,
+      items: itemsWithSku,
     };
   }
 
