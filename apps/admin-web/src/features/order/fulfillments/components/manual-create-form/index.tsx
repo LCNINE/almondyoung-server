@@ -47,7 +47,8 @@ export function ManualCreateForm() {
   const createMutation = useCreateFulfillmentOrder();
 
   const [warehouseId, setWarehouseId] = useState('');
-  const [fulfillmentMode, setFulfillmentMode] = useState<FulfillmentMode>('in_house');
+  const [fulfillmentMode, setFulfillmentMode] =
+    useState<FulfillmentMode>('in_house');
   const [priority, setPriority] = useState<FulfillmentOrderPriority>('normal');
   const [items, setItems] = useState<DraftItem[]>([]);
 
@@ -61,7 +62,8 @@ export function ManualCreateForm() {
 
   // 배송지 (선택)
   const [useAddress, setUseAddress] = useState(false);
-  const [address, setAddress] = useState<FulfillmentShippingAddress>(EMPTY_ADDRESS);
+  const [address, setAddress] =
+    useState<FulfillmentShippingAddress>(EMPTY_ADDRESS);
 
   const handleSearch = () => setSearchKeyword(keywordInput.trim());
 
@@ -77,7 +79,9 @@ export function ManualCreateForm() {
 
   const updateQty = (skuId: string, quantity: number) => {
     setItems((prev) =>
-      prev.map((i) => (i.skuId === skuId ? { ...i, quantity: Math.max(1, quantity) } : i))
+      prev.map((i) =>
+        i.skuId === skuId ? { ...i, quantity: Math.max(1, quantity) } : i
+      )
     );
   };
 
@@ -127,7 +131,7 @@ export function ManualCreateForm() {
   };
 
   return (
-    <div className="flex w-full flex-col gap-y-3">
+    <div className="flex flex-col w-full gap-y-3">
       <Container className="divide-y-0">
         <Header title="출고주문 수동 생성" />
 
@@ -171,7 +175,9 @@ export function ManualCreateForm() {
               <Label>우선순위</Label>
               <Select
                 value={priority}
-                onValueChange={(v) => setPriority(v as FulfillmentOrderPriority)}
+                onValueChange={(v) =>
+                  setPriority(v as FulfillmentOrderPriority)
+                }
               >
                 <SelectTrigger className="w-[140px]">
                   <SelectValue />
@@ -199,13 +205,13 @@ export function ManualCreateForm() {
                 className="w-[320px]"
               />
               <Button variant="outline" onClick={handleSearch}>
-                <Search className="mr-1 h-4 w-4" />
+                <Search className="w-4 h-4 mr-1" />
                 검색
               </Button>
             </div>
 
             {searchKeyword && (
-              <div className="max-h-48 overflow-y-auto rounded-md border">
+              <div className="overflow-y-auto border rounded-md max-h-48">
                 {skuLoading ? (
                   <p className="p-3 text-sm text-muted-foreground">검색 중…</p>
                 ) : (skuResult?.items ?? []).length > 0 ? (
@@ -214,14 +220,18 @@ export function ManualCreateForm() {
                       key={sku.id}
                       type="button"
                       onClick={() => addItem(sku.id, sku.code, sku.name)}
-                      className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-muted"
+                      className="flex items-center justify-between w-full px-3 py-2 text-sm text-left hover:bg-muted"
                     >
                       <span>{sku.name}</span>
-                      <span className="font-mono text-xs text-muted-foreground">{sku.code}</span>
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {sku.code}
+                      </span>
                     </button>
                   ))
                 ) : (
-                  <p className="p-3 text-sm text-muted-foreground">검색 결과가 없습니다.</p>
+                  <p className="p-3 text-sm text-muted-foreground">
+                    검색 결과가 없습니다.
+                  </p>
                 )}
               </div>
             )}
@@ -229,7 +239,7 @@ export function ManualCreateForm() {
 
           {/* 선택된 품목 */}
           {items.length > 0 && (
-            <div className="flex flex-col gap-1 rounded-md border p-2">
+            <div className="flex flex-col gap-1 p-2 border rounded-md">
               {items.map((item) => (
                 <div key={item.skuId} className="flex items-center gap-2 py-1">
                   <span className="flex-1 text-sm">{item.label}</span>
@@ -237,11 +247,17 @@ export function ManualCreateForm() {
                     type="number"
                     min={1}
                     value={item.quantity}
-                    onChange={(e) => updateQty(item.skuId, Number(e.target.value))}
+                    onChange={(e) =>
+                      updateQty(item.skuId, Number(e.target.value))
+                    }
                     className="w-24"
                   />
-                  <Button variant="ghost" size="icon" onClick={() => removeItem(item.skuId)}>
-                    <X className="h-4 w-4" />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => removeItem(item.skuId)}
+                  >
+                    <X className="w-4 h-4" />
                   </Button>
                 </div>
               ))}
@@ -258,36 +274,48 @@ export function ManualCreateForm() {
               배송지 입력 (선택)
             </label>
             {useAddress && (
-              <div className="grid grid-cols-2 gap-3 rounded-md border p-3">
+              <div className="grid grid-cols-2 gap-3 p-3 border rounded-md">
                 <Input
                   placeholder="수령인 이름"
                   value={address.recipientName}
-                  onChange={(e) => setAddress({ ...address, recipientName: e.target.value })}
+                  onChange={(e) =>
+                    setAddress({ ...address, recipientName: e.target.value })
+                  }
                 />
                 <Input
                   placeholder="수령인 연락처"
                   value={address.phone}
-                  onChange={(e) => setAddress({ ...address, phone: e.target.value })}
+                  onChange={(e) =>
+                    setAddress({ ...address, phone: e.target.value })
+                  }
                 />
                 <Input
                   placeholder="우편번호"
                   value={address.postalCode}
-                  onChange={(e) => setAddress({ ...address, postalCode: e.target.value })}
+                  onChange={(e) =>
+                    setAddress({ ...address, postalCode: e.target.value })
+                  }
                 />
                 <Input
                   placeholder="도로명 주소"
                   value={address.roadAddress}
-                  onChange={(e) => setAddress({ ...address, roadAddress: e.target.value })}
+                  onChange={(e) =>
+                    setAddress({ ...address, roadAddress: e.target.value })
+                  }
                 />
                 <Input
                   placeholder="상세 주소"
                   value={address.detailAddress}
-                  onChange={(e) => setAddress({ ...address, detailAddress: e.target.value })}
+                  onChange={(e) =>
+                    setAddress({ ...address, detailAddress: e.target.value })
+                  }
                 />
                 <Input
                   placeholder="배송 메모 (선택)"
                   value={address.deliveryNote ?? ''}
-                  onChange={(e) => setAddress({ ...address, deliveryNote: e.target.value })}
+                  onChange={(e) =>
+                    setAddress({ ...address, deliveryNote: e.target.value })
+                  }
                 />
               </div>
             )}
