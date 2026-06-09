@@ -2,10 +2,12 @@ import { Module, forwardRef } from '@nestjs/common';
 import { ProductMastersController } from './controllers/product-masters.controller';
 import { ProductVariantsController } from './controllers/product-variants.controller';
 import { ProductMasterVersionsController } from './controllers/product-master-versions.controller';
+import { ProductPurchaseConstraintsController } from './controllers/product-purchase-constraints.controller';
 import { ProductMastersService } from './services/product-masters.service';
 import { ProductVariantsService } from './services/product-variants.service';
 import { ProductSearchService } from './services/product-search.service';
 import { ProductVersionsService } from './services/product-versions.service';
+import { ProductPurchaseConstraintsService } from './services/product-purchase-constraints.service';
 import { PricingModule } from '../pricing/pricing.module';
 import { ProductVersionsController } from './controllers/product-versions.controller';
 import { ProductReadAssembler } from './assemblers/product-read.assembler';
@@ -22,12 +24,14 @@ import { ProductSellableQuantityModule } from '../../../inventory/product-sellab
     ProductVariantsController,
     ProductMasterVersionsController,
     ProductVersionsController,
+    ProductPurchaseConstraintsController,
   ],
   providers: [
     ProductMastersService,
     ProductVariantsService,
     ProductSearchService,
     ProductVersionsService,
+    ProductPurchaseConstraintsService,
     ProductReadAssembler,
     OptionReadLoader,
     TagReadLoader,
@@ -37,6 +41,7 @@ import { ProductSellableQuantityModule } from '../../../inventory/product-sellab
     ProductVariantsService,
     ProductSearchService,
     ProductVersionsService,
+    ProductPurchaseConstraintsService,
     ProductReadAssembler,
   ],
 })

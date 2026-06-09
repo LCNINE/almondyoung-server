@@ -7,6 +7,17 @@ jest.mock(
 );
 
 import { ProductVersionsService } from './product-versions.service';
+import {
+  productMasterOptionGroups,
+  productMasterPricingRules,
+  productMasterPurchaseConstraints,
+  productMasterVariants,
+  productMasterVersions,
+  productOptionGroupDisplays,
+  productOptionValueDisplays,
+  productPurchaseConstraints,
+  productTagValues,
+} from '../../../schema/catalog.schema';
 
 describe('ProductVersionsService Medusa projection outbox events', () => {
   function makeService() {
@@ -46,6 +57,10 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
       isGiftcard: false,
       discountable: true,
       categories: [{ id: 'cat-1' }],
+      purchaseConstraint: {
+        requiresMembership: true,
+        lifetimeQuantityLimit: 3,
+      },
     };
 
     (service as any)._buildFullSnapshot = jest.fn().mockResolvedValue(snapshot);
@@ -76,7 +91,12 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
           categoryIds: ['cat-1'],
           primaryCategoryId: 'cat-1',
           changeReason: 'published',
-          snapshot,
+          snapshot: expect.objectContaining({
+            purchaseConstraint: {
+              requiresMembership: true,
+              lifetimeQuantityLimit: 3,
+            },
+          }),
         }),
       }),
       tx,
@@ -103,5 +123,315 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     ).rejects.toThrow('snapshot unavailable');
 
     expect(outboxPublisher.saveEvent).not.toHaveBeenCalled();
+  });
+});
+
+describe('ProductVersionsService copy mappings', () => {
+  function makeService() {
+    const productPublisher = {
+      publishEvent: jest.fn().mockResolvedValue(undefined),
+    };
+    const outboxPublisher = {
+      saveEvent: jest.fn().mockResolvedValue(undefined),
+    };
+
+    return new ProductVersionsService(
+      {} as any,
+      productPublisher as any,
+      outboxPublisher as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+  }
+
+  function makeTx() {
+    const inserts: Array<{ table: unknown; values: unknown }> = [];
+    const purchaseConstraintMappings = [
+      {
+        id: 'mapping-1',
+        masterId: 'master-1',
+        versionId: 'version-1',
+        purchaseConstraintId: 'constraint-1',
+        createdAt: new Date('2026-06-01T00:00:00.000Z'),
+      },
+    ];
+
+    const rowsForTable = (table: unknown) => {
+      if (table === productMasterPurchaseConstraints) {
+        return purchaseConstraintMappings;
+      }
+
+      return [];
+    };
+
+    const withOrderBy = <T>(rows: T[]) => {
+      const result = rows as T[] & { orderBy: () => Promise<T[]> };
+      result.orderBy = async () => rows;
+      return result;
+    };
+
+    return {
+      inserts,
+      select: jest.fn(() => ({
+        from: jest.fn((table: unknown) => {
+          const chain = {
+            innerJoin: jest.fn(() => chain),
+            where: jest.fn(() => withOrderBy(rowsForTable(table))),
+          };
+
+          return chain;
+        }),
+      })),
+      insert: jest.fn((table: unknown) => ({
+        values: jest.fn(async (values: unknown) => {
+          inserts.push({ table, values });
+        }),
+      })),
+    };
+  }
+
+  it('copies purchase constraint mappings from the source version to the draft target', async () => {
+    const service = makeService();
+    const tx = makeTx();
+
+    await (service as any)._copyMappings(tx, 'master-1', 'version-1', 'version-2');
+
+    expect(tx.inserts).toContainEqual({
+      table: productMasterPurchaseConstraints,
+      values: [
+        expect.objectContaining({
+          masterId: 'master-1',
+          versionId: 'version-2',
+          purchaseConstraintId: 'constraint-1',
+          createdAt: expect.any(Date),
+        }),
+      ],
+    });
+  });
+});
+
+describe('ProductVersionsService deleteDraftVersion purchase constraint cleanup', () => {
+  type VersionRow = {
+    id: string;
+    masterId: string;
+    status: string;
+  };
+
+  type PurchaseConstraintRow = {
+    id: string;
+    requiresMembership: boolean;
+    lifetimeQuantityLimit: number | null;
+  };
+
+  type PurchaseConstraintMappingRow = {
+    id: string;
+    masterId: string;
+    versionId: string;
+    purchaseConstraintId: string;
+  };
+
+  function makeService() {
+    const productPublisher = {
+      publishEvent: jest.fn().mockResolvedValue(undefined),
+    };
+    const outboxPublisher = {
+      saveEvent: jest.fn().mockResolvedValue(undefined),
+    };
+
+    return new ProductVersionsService(
+      {} as any,
+      productPublisher as any,
+      outboxPublisher as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+  }
+
+  function makeDeleteDraftTx(input: {
+    versions: VersionRow[];
+    purchaseConstraints: PurchaseConstraintRow[];
+    purchaseConstraintMappings: PurchaseConstraintMappingRow[];
+  }) {
+    const state = {
+      versions: [...input.versions],
+      purchaseConstraints: [...input.purchaseConstraints],
+      purchaseConstraintMappings: [...input.purchaseConstraintMappings],
+      optionGroupDisplays: [],
+      optionValueDisplays: [],
+      optionGroupMappings: [],
+      variantMappings: [],
+      tagValueMappings: [],
+      pricingRuleMappings: [],
+    };
+
+    const rowsForTable = (table: unknown) => {
+      if (table === productMasterVersions) return state.versions;
+      if (table === productPurchaseConstraints) return state.purchaseConstraints;
+      if (table === productMasterPurchaseConstraints) return state.purchaseConstraintMappings;
+      if (table === productOptionGroupDisplays) return state.optionGroupDisplays;
+      if (table === productOptionValueDisplays) return state.optionValueDisplays;
+      if (table === productMasterOptionGroups) return state.optionGroupMappings;
+      if (table === productMasterVariants) return state.variantMappings;
+      if (table === productTagValues) return state.tagValueMappings;
+      if (table === productMasterPricingRules) return state.pricingRuleMappings;
+      return [];
+    };
+
+    const columnToRowKey: Record<string, string> = {
+      id: 'id',
+      master_id: 'masterId',
+      version_id: 'versionId',
+      purchase_constraint_id: 'purchaseConstraintId',
+      variant_id: 'variantId',
+      pricing_rule_id: 'pricingRuleId',
+    };
+
+    const isColumnChunk = (chunk: any) => chunk && typeof chunk.name === 'string' && chunk.table;
+    const isParamChunk = (chunk: any) =>
+      chunk &&
+      Object.prototype.hasOwnProperty.call(chunk, 'value') &&
+      Object.prototype.hasOwnProperty.call(chunk, 'encoder');
+
+    const collectPredicates = (condition: any): Array<{ column: string; value: unknown }> => {
+      const chunks = condition?.queryChunks;
+      if (!Array.isArray(chunks)) {
+        return [];
+      }
+
+      const column = chunks.find(isColumnChunk);
+      const param = chunks.find(isParamChunk);
+      if (column && param) {
+        return [{ column: column.name, value: param.value }];
+      }
+
+      return chunks.flatMap((chunk) => collectPredicates(chunk));
+    };
+
+    const matchesWhere = (row: Record<string, unknown>, condition: any) =>
+      collectPredicates(condition).every((predicate) => {
+        const key = columnToRowKey[predicate.column] ?? predicate.column;
+        return row[key] === predicate.value;
+      });
+
+    const projectRows = <T extends Record<string, unknown>>(rows: T[], selection?: Record<string, unknown>) => {
+      if (!selection) {
+        return rows;
+      }
+
+      return rows.map((row) =>
+        Object.keys(selection).reduce<Record<string, unknown>>((projected, key) => {
+          projected[key] = row[key];
+          return projected;
+        }, {}),
+      );
+    };
+
+    const withLimit = <T extends Record<string, unknown>>(rows: T[]) => {
+      const result = rows as T[] & { limit: (limit: number) => Promise<T[]> };
+      result.limit = async (limit: number) => rows.slice(0, limit);
+      return result;
+    };
+
+    return {
+      state,
+      select: jest.fn((selection?: Record<string, unknown>) => ({
+        from: jest.fn((table: unknown) => ({
+          where: jest.fn((condition: unknown) =>
+            withLimit(
+              projectRows(
+                rowsForTable(table).filter((row) => matchesWhere(row, condition)),
+                selection,
+              ) as Record<string, unknown>[],
+            ),
+          ),
+        })),
+      })),
+      delete: jest.fn((table: unknown) => ({
+        where: jest.fn((condition: unknown) => {
+          const rows = rowsForTable(table);
+          const deletedRows: Record<string, unknown>[] = [];
+
+          for (let index = rows.length - 1; index >= 0; index -= 1) {
+            if (matchesWhere(rows[index], condition)) {
+              deletedRows.push(rows[index]);
+              rows.splice(index, 1);
+            }
+          }
+
+          if (table === productMasterVersions) {
+            for (const version of deletedRows) {
+              for (let index = state.purchaseConstraintMappings.length - 1; index >= 0; index -= 1) {
+                if (state.purchaseConstraintMappings[index].versionId === version.id) {
+                  state.purchaseConstraintMappings.splice(index, 1);
+                }
+              }
+            }
+          }
+        }),
+      })),
+    };
+  }
+
+  it('deletes a draft-only purchase constraint row after removing the draft mapping', async () => {
+    const service = makeService();
+    const tx = makeDeleteDraftTx({
+      versions: [{ id: 'draft-version-id', masterId: 'master-id', status: 'draft' }],
+      purchaseConstraints: [{ id: 'constraint-id', requiresMembership: true, lifetimeQuantityLimit: 3 }],
+      purchaseConstraintMappings: [
+        {
+          id: 'mapping-id',
+          masterId: 'master-id',
+          versionId: 'draft-version-id',
+          purchaseConstraintId: 'constraint-id',
+        },
+      ],
+    });
+
+    await service.deleteDraftVersion('draft-version-id', tx as any);
+
+    expect(tx.state.purchaseConstraintMappings).toEqual([]);
+    expect(tx.state.purchaseConstraints).toEqual([]);
+  });
+
+  it('keeps a shared purchase constraint row when another version mapping still references it', async () => {
+    const service = makeService();
+    const tx = makeDeleteDraftTx({
+      versions: [{ id: 'draft-version-id', masterId: 'master-id', status: 'draft' }],
+      purchaseConstraints: [{ id: 'constraint-id', requiresMembership: true, lifetimeQuantityLimit: 3 }],
+      purchaseConstraintMappings: [
+        {
+          id: 'draft-mapping-id',
+          masterId: 'master-id',
+          versionId: 'draft-version-id',
+          purchaseConstraintId: 'constraint-id',
+        },
+        {
+          id: 'active-mapping-id',
+          masterId: 'master-id',
+          versionId: 'active-version-id',
+          purchaseConstraintId: 'constraint-id',
+        },
+      ],
+    });
+
+    await service.deleteDraftVersion('draft-version-id', tx as any);
+
+    expect(tx.state.purchaseConstraintMappings).toEqual([
+      {
+        id: 'active-mapping-id',
+        masterId: 'master-id',
+        versionId: 'active-version-id',
+        purchaseConstraintId: 'constraint-id',
+      },
+    ]);
+    expect(tx.state.purchaseConstraints).toEqual([
+      { id: 'constraint-id', requiresMembership: true, lifetimeQuantityLimit: 3 },
+    ]);
   });
 });
