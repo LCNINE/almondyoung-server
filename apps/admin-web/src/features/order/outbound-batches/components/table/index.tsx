@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   Table,
   TableBody,
@@ -31,6 +32,7 @@ const PAGE_SIZE = 20;
 const PRIORITY_ORDER: Record<string, number> = { urgent: 0, high: 1, normal: 2 };
 
 export function OutboundBatchesTable() {
+  const searchParams = useSearchParams();
   const { data: warehouses = [] } = useWarehouses();
   const [warehouseId, setWarehouseId] = useState<string>('all');
   const { data: batches = [], isLoading } = useOutboundBatches(
@@ -38,6 +40,11 @@ export function OutboundBatchesTable() {
   );
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
+
+  const batchIdParam = searchParams.get('batchId');
+  useEffect(() => {
+    if (batchIdParam) setSelectedBatchId(batchIdParam);
+  }, [batchIdParam]);
 
   const sorted = [...batches].sort(
     (a, b) => (PRIORITY_ORDER[a.status] ?? 9) - (PRIORITY_ORDER[b.status] ?? 9)

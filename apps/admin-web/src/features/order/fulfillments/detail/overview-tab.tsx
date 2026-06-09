@@ -112,7 +112,7 @@ export function OverviewTab({ fo }: { fo: FulfillmentOrderDetail }) {
         <KVRow label="배치 ID">
           {fo.batch ? (
             <Button asChild variant="link" className="h-auto p-0 font-mono text-xs">
-              <Link href="/order/outbound-batches">{fo.batch.id}</Link>
+              <Link href={`/order/outbound-batches?batchId=${fo.batch.id}`}>{fo.batch.id}</Link>
             </Button>
           ) : '-'}
         </KVRow>
@@ -187,7 +187,7 @@ export function OverviewTab({ fo }: { fo: FulfillmentOrderDetail }) {
               <>
                 <span className="mr-2">{DIRECT_SHIP_LABELS[fo.directShipStatus] ?? fo.directShipStatus}</span>
                 <Button asChild variant="link" className="h-auto p-0 text-xs">
-                  <Link href="/order/direct-ship">직배송 운영 화면 →</Link>
+                  <Link href={`/order/direct-ship?foId=${fo.id}`}>직배송 운영 화면 →</Link>
                 </Button>
               </>
             ) : '-'}
