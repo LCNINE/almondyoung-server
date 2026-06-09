@@ -595,7 +595,7 @@ function ProductSearch({
   // 재고상품 (SkuQuery에 search가 없어서 클라이언트 필터)
   const { data: skusRaw } = useSkus();
   const skus = useMemo(() => {
-    const arr = (skusRaw ?? []) as any[];
+    const arr = (skusRaw?.items ?? []) as any[];
     if (!q) return arr;
     const kw = q.toLowerCase();
     return arr.filter(
