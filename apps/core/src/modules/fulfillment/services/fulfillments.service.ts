@@ -1522,7 +1522,12 @@ export class FulfillmentsService {
     return {
       ...fulfillmentOrder,
       invoice: invoiceRows[0] || null,
+      shipment: shipmentRows[0] || null,
+      batch: batchRow,
       items: itemsWithSku,
+      reservations,
+      adminAvailableActions,
+      blockedReasons,
     };
   }
 
