@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Dialog,
@@ -16,11 +15,16 @@ import {
 import { useBulkApprove } from '@/lib/services/orders/mutations';
 
 interface Props {
+  sessionId: string;
   inspectorUserId: string;
   onClose: () => void;
 }
 
-export function BulkApproveDialog({ inspectorUserId, onClose }: Props) {
+export function BulkApproveDialog({
+  sessionId,
+  inspectorUserId,
+  onClose,
+}: Props) {
   const [foiIdsInput, setFoiIdsInput] = useState('');
   const mutation = useBulkApprove();
 
@@ -36,7 +40,11 @@ export function BulkApproveDialog({ inspectorUserId, onClose }: Props) {
     }
 
     try {
-      const result = await mutation.mutateAsync({ foiIds: ids, inspectorUserId });
+      const result = await mutation.mutateAsync({
+        sessionId,
+        foiIds: ids,
+        inspectorUserId,
+      });
       toast.success(`${result.approvedCount}개 항목이 일괄 승인되었습니다.`);
       onClose();
     } catch (e: unknown) {
@@ -70,7 +78,10 @@ export function BulkApproveDialog({ inspectorUserId, onClose }: Props) {
           <Button variant="outline" onClick={onClose}>
             취소
           </Button>
-          <Button onClick={handleSubmit} disabled={mutation.isPending || !foiIdsInput.trim()}>
+          <Button
+            onClick={handleSubmit}
+            disabled={mutation.isPending || !foiIdsInput.trim()}
+          >
             {mutation.isPending ? '처리 중…' : '일괄 승인'}
           </Button>
         </DialogFooter>

@@ -10,7 +10,10 @@ import { AssignShipmentDto } from '../dto/assign-shipment.dto';
 import { ReserveDto } from '../dto/reserve.dto';
 import { UnreserveDto } from '../dto/unreserve.dto';
 import { TransferReservationDto } from '../dto/transfer-reservation.dto';
-import { FulfillmentOrderResponseDto } from '../dto/fulfillment-order-response.dto';
+import {
+  FulfillmentOrderResponseDto,
+  FulfillmentOrderListResponseDto,
+} from '../dto/fulfillment-order-response.dto';
 
 type AuthenticatedUser = { id?: string; userId?: string; sub?: string } | undefined;
 
@@ -82,9 +85,18 @@ export class FulfillmentsController {
   @ApiOperation({ summary: '주문처리 목록 조회' })
   @ApiQuery({ name: 'limit', required: false, type: String })
   @ApiQuery({ name: 'offset', required: false, type: String })
-  @ApiResponse({ status: 200, type: [FulfillmentOrderResponseDto] })
-  list(@Query('limit') limit?: string, @Query('offset') offset?: string) {
-    return this.service.list({ limit: limit ? parseInt(limit, 10) : 20, offset: offset ? parseInt(offset, 10) : 0 });
+  @ApiQuery({ name: 'status', required: false, type: String, description: 'FO 상태 필터 (단일)' })
+  @ApiResponse({ status: 200, type: FulfillmentOrderListResponseDto })
+  list(
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+    @Query('status') status?: string,
+  ) {
+    return this.service.list({
+      limit: limit ? parseInt(limit, 10) : 20,
+      offset: offset ? parseInt(offset, 10) : 0,
+      status: status || undefined,
+    });
   }
 
   @Post(':id/check-availability')

@@ -1,7 +1,12 @@
 // src/lib/services/orders/queries.ts
 'use client';
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  useQuery,
+  useMutation,
+  useQueryClient,
+  keepPreviousData,
+} from '@tanstack/react-query';
 import { orderQueryKeys } from './query-keys';
 import { orders } from '@/lib/api/domains';
 import type {
@@ -14,7 +19,10 @@ import type {
   VariantSkuLookupResponseDto,
   OrderLinesQuery,
 } from '@/lib/types/dto/orders';
-import type { QualityMetricsQuery } from '@/lib/types/dto/fulfillment';
+import type {
+  QualityMetricsQuery,
+  FulfillmentOrdersQuery,
+} from '@/lib/types/dto/fulfillment';
 
 // 주문 관련 쿼리
 export const useSalesOrders = (params?: any) => {
@@ -202,38 +210,36 @@ export const usePickingSession = (foId: string) => {
   });
 };
 
-// 이행 관련 쿼리
-export const useFulfillments = () => {
+// 이행(출고주문) 관련 쿼리 — GET /fulfillments, GET /fulfillments/:id
+export const useFulfillmentOrders = (query: FulfillmentOrdersQuery = {}) => {
   return useQuery({
-    queryKey: orderQueryKeys.fulfillments,
-    queryFn: () => Promise.resolve([]),
-  });
-};
-
-export const useFulfillment = (id: string) => {
-  return useQuery({
-    queryKey: orderQueryKeys.fulfillment(id),
-    queryFn: () => Promise.resolve({ id }),
-    enabled: !!id,
-  });
-};
-
-export const useFulfillmentOrders = () => {
-  return useQuery({
-    queryKey: orderQueryKeys.fulfillmentOrders,
-    queryFn: () => Promise.resolve([]),
+    queryKey: orderQueryKeys.fulfillmentsList(query),
+    queryFn: () => orders.fulfillmentOrder.list(query),
+    placeholderData: keepPreviousData,
   });
 };
 
 export const useFulfillmentOrder = (id: string) => {
   return useQuery({
-    queryKey: orderQueryKeys.fulfillmentOrder(id),
-    queryFn: () => Promise.resolve({ id }),
+    queryKey: orderQueryKeys.fulfillment(id),
+    queryFn: () => orders.fulfillmentOrder.getOne(id),
     enabled: !!id,
   });
 };
 
+// 별칭 (호환성) — useFulfillmentOrders/useFulfillmentOrder 로 통합
+export const useFulfillments = useFulfillmentOrders;
+export const useFulfillment = useFulfillmentOrder;
+
 // 검수 관련 쿼리
+export const useInspectionSession = (sessionId: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.inspectionSession(sessionId),
+    queryFn: () => orders.inspection.getSession(sessionId),
+    enabled: !!sessionId,
+  });
+};
+
 export const useInspectionSummary = (foId: string) => {
   return useQuery({
     queryKey: orderQueryKeys.inspectionSummary(foId),

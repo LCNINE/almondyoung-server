@@ -17,6 +17,41 @@ export class InvoiceSummaryDto {
   issueMethod: string;
 }
 
+export class FulfillmentOrderItemDto {
+  @ApiProperty({ description: 'Fulfillment Order Item ID' })
+  id: string;
+
+  @ApiProperty({ description: 'SKU ID' })
+  skuId: string;
+
+  @ApiProperty({ description: 'SKU 코드' })
+  skuCode: string;
+
+  @ApiProperty({ description: 'SKU 명' })
+  skuName: string;
+
+  @ApiProperty({ description: '요청 수량' })
+  qty: number;
+
+  @ApiProperty({ description: '예약 수량' })
+  reservedQty: number;
+
+  @ApiProperty({ description: '피킹 수량' })
+  pickedQty: number;
+
+  @ApiProperty({ description: '출고 수량' })
+  shippedQty: number;
+
+  @ApiProperty({ description: 'FOI 상태 (pending/shipped/approved/rejected/partial 등)' })
+  status: string;
+
+  @ApiProperty({ description: '원본 Sales Order ID', nullable: true })
+  salesOrderId: string | null;
+
+  @ApiProperty({ description: '원본 Sales Order Line ID', nullable: true })
+  salesOrderLineId: string | null;
+}
+
 export class FulfillmentOrderResponseDto {
   @ApiProperty({ description: 'Fulfillment Order ID' })
   id: string;
@@ -99,4 +134,19 @@ export class FulfillmentOrderResponseDto {
 
   @ApiProperty({ description: 'Invoice 정보', type: InvoiceSummaryDto, nullable: true })
   invoice: InvoiceSummaryDto | null;
+
+  @ApiProperty({
+    description: 'FOI 라인 (상세 조회 시에만 포함)',
+    type: [FulfillmentOrderItemDto],
+    nullable: true,
+  })
+  items?: FulfillmentOrderItemDto[];
+}
+
+export class FulfillmentOrderListResponseDto {
+  @ApiProperty({ description: '출고주문 목록', type: [FulfillmentOrderResponseDto] })
+  data: FulfillmentOrderResponseDto[];
+
+  @ApiProperty({ description: '전체 개수 (필터 적용 후)' })
+  total: number;
 }
