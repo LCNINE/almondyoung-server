@@ -153,7 +153,13 @@ export class InboxWorkerService implements OnModuleInit {
           and(
             eq(inboxEvents.aggregateId, aggregateId),
             inArray(inboxEvents.eventType, supersedingEventTypes),
-            gt(sql<Date>`coalesce(${inboxEvents.eventOccurredAt}, ${inboxEvents.createdAt})`, eventOccurredAt),
+            // event_occurred_at/created_at 은 `timestamp without time zone` 이라 PG 는 비교 파라미터를
+            // timestamp 로 추론하지만, postgres.js 는 JS Date 를 timestamptz binary 로 전송한다.
+            // 타입/바이너리 불일치로 prepared query 가 실패하므로, 컬럼을 UTC 기준 timestamptz 로 맞춰 비교한다.
+            gt(
+              sql<Date>`coalesce(${inboxEvents.eventOccurredAt}, ${inboxEvents.createdAt}) at time zone 'UTC'`,
+              eventOccurredAt,
+            ),
             inArray(inboxEvents.status, supersedingStatuses),
           ),
         )
