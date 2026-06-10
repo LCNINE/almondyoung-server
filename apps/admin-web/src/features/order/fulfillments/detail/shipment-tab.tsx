@@ -8,6 +8,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { AlertTriangle, Truck, PackageCheck } from 'lucide-react';
 import {
   useAssignFulfillmentShipment,
@@ -15,7 +22,16 @@ import {
   useDeliverFulfillment,
   orderQueryKeys,
 } from '@/lib/services/orders';
-import type { FulfillmentOrderDetail } from '@/lib/types/dto/fulfillment';
+import type { FulfillmentOrderDetail, AssignShipmentRequest } from '@/lib/types/dto/fulfillment';
+
+const CARRIER_LABELS: Record<string, string> = {
+  CJ: 'CJ대한통운',
+  HANJIN: '한진택배',
+  LOTTE: '롯데택배',
+  LOGEN: '로젠택배',
+  KDEXP: '경동택배',
+  CJGLS: 'CJ GLS',
+};
 
 function extractErrorMessage(err: unknown): string {
   if (err && typeof err === 'object') {
@@ -34,6 +50,7 @@ export function ShipmentTab({ fo }: { fo: FulfillmentOrderDetail }) {
   const canDeliver = fo.adminAvailableActions.includes('deliver');
 
   const [trackingNo, setTrackingNo] = useState('');
+  const [carrier, setCarrier] = useState<AssignShipmentRequest['carrier']>('CJ');
   const [eta, setEta] = useState('');
 
   const assignShipment = useAssignFulfillmentShipment(fo.id);
@@ -48,10 +65,12 @@ export function ShipmentTab({ fo }: { fo: FulfillmentOrderDetail }) {
     try {
       await assignShipment.mutateAsync({
         trackingNo: trackingNo.trim(),
+        carrier,
         eta: eta.trim() || undefined,
       });
       toast.success('운송장 정보가 등록되었습니다.');
       setTrackingNo('');
+      setCarrier('CJ');
       setEta('');
     } catch (err) {
       toast.error(`운송장 등록 실패: ${extractErrorMessage(err)}`);
@@ -138,6 +157,23 @@ export function ShipmentTab({ fo }: { fo: FulfillmentOrderDetail }) {
         )}
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
+            <Label className="text-xs">택배사 (필수)</Label>
+            <Select
+              value={carrier}
+              onValueChange={(v) => setCarrier(v as AssignShipmentRequest['carrier'])}
+              disabled={!canAssign}
+            >
+              <SelectTrigger className="w-36">
+                <SelectValue placeholder="택배사 선택" />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(CARRIER_LABELS).map(([code, label]) => (
+                  <SelectItem key={code} value={code}>{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex flex-col gap-1">
             <Label className="text-xs">운송장 번호 (필수)</Label>
             <Input
               value={trackingNo}
@@ -184,7 +220,7 @@ export function ShipmentTab({ fo }: { fo: FulfillmentOrderDetail }) {
           <AlertTriangle />
           <AlertDescription>
             출고 완료 전 송장번호 또는 운송장 추적번호가 등록되어 있는지 확인하세요.
-            ship 액션은 FO 상태가 invoiced / labeled / picked / inspecting일 때만 활성화됩니다.
+            ship 액션은 FO 상태가 invoiced / labeled / picked / inspecting / inspected일 때만 활성화됩니다.
           </AlertDescription>
         </Alert>
         {!canShip && (

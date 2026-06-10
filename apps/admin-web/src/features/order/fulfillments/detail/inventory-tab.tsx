@@ -28,6 +28,8 @@ type AvailabilityResult = { ready: boolean } | null;
 
 export function InventoryTab({ fo }: { fo: FulfillmentOrderDetail }) {
   const canReserve = fo.adminAvailableActions.includes('reserve');
+  const canUnreserve = fo.adminAvailableActions.includes('unreserve');
+  const canTransfer = fo.adminAvailableActions.includes('transferReservation');
 
   const checkAvailability = useCheckFulfillmentAvailability(fo.id);
   const [availabilityResult, setAvailabilityResult] = useState<AvailabilityResult>(null);
@@ -112,6 +114,8 @@ export function InventoryTab({ fo }: { fo: FulfillmentOrderDetail }) {
               size="sm"
               variant="outline"
               onClick={() => setUnreserveOpen(true)}
+              disabled={!canUnreserve}
+              title={!canUnreserve ? '출고 수량이 있거나 terminal 상태에서는 예약 해제가 불가합니다.' : undefined}
             >
               예약 해제
             </Button>
@@ -119,6 +123,8 @@ export function InventoryTab({ fo }: { fo: FulfillmentOrderDetail }) {
               size="sm"
               variant="outline"
               onClick={() => setTransferOpen(true)}
+              disabled={!canTransfer}
+              title={!canTransfer ? '출고 수량이 있거나 terminal 상태에서는 예약 이전이 불가합니다.' : undefined}
             >
               예약 이전
             </Button>
@@ -254,12 +260,14 @@ export function InventoryTab({ fo }: { fo: FulfillmentOrderDetail }) {
       <UnreserveDialog
         foId={fo.id}
         items={fo.items}
+        canUnreserve={canUnreserve}
         open={unreserveOpen}
         onOpenChange={setUnreserveOpen}
       />
       <TransferDialog
         foId={fo.id}
         items={fo.items}
+        canTransfer={canTransfer}
         open={transferOpen}
         onOpenChange={setTransferOpen}
       />

@@ -923,6 +923,13 @@ export class FulfillmentsService {
           }
 
           const moveQty = mv.quantity;
+
+          if (item.qty - moveQty < 1 && item.shippedQty === 0) {
+            throw new BadRequestException(
+              `Cannot split all qty from FOI ${item.id}: at least 1 unit must remain on the origin`,
+            );
+          }
+
           const originalQtyBeforeSplit = item.qty;
 
           await trx
@@ -980,6 +987,12 @@ export class FulfillmentsService {
           const moveQty = Math.min(mv.quantity, item.qty - item.shippedQty);
           if (moveQty <= 0) continue;
 
+          if (item.qty - moveQty < 1 && item.shippedQty === 0) {
+            throw new BadRequestException(
+              `Cannot split all qty from FOI ${item.id}: at least 1 unit must remain on the origin`,
+            );
+          }
+
           const originalQtyBeforeSplit = item.qty;
 
           await trx
@@ -1033,6 +1046,11 @@ export class FulfillmentsService {
         .set({ totalItems: splitItemCount, totalQty: splitTotalQty, updatedAt: new Date() })
         .where(eq(wmsTables.fulfillmentOrders.id, newFo.id));
 
+      await trx
+        .update(wmsTables.fulfillmentOrders)
+        .set({ totalQty: origin.totalQty - splitTotalQty, updatedAt: new Date() })
+        .where(eq(wmsTables.fulfillmentOrders.id, id));
+
       return {
         ...newFo,
         totalItems: splitItemCount,
@@ -1076,6 +1094,7 @@ export class FulfillmentsService {
 
       await trx.insert(wmsTables.shipments).values({
         trackingNo: dto.trackingNo,
+        carrier: (dto.carrier ?? 'CJ') as Carrier,
         status: 'created',
         eta: dto.eta ? new Date(dto.eta) : null,
         splitStatus: false,
@@ -1083,7 +1102,7 @@ export class FulfillmentsService {
       });
 
       // picking/inspection/invoiced 진행 중에는 labeled로 역전이하지 않음
-      const NO_REGRESS_STATUSES = new Set(['picked', 'inspecting', 'invoiced']);
+      const NO_REGRESS_STATUSES = new Set(['picked', 'inspecting', 'inspected', 'invoiced']);
       if (!NO_REGRESS_STATUSES.has(fo.status)) {
         await trx
           .update(wmsTables.fulfillmentOrders)
@@ -1358,7 +1377,7 @@ export class FulfillmentsService {
       }
       actions.push('assignShipment', 'cancel');
     }
-    if (['invoiced', 'labeled', 'picked', 'inspecting'].includes(fo.status)) {
+    if (['invoiced', 'labeled', 'picked', 'inspecting', 'inspected'].includes(fo.status)) {
       actions.push('ship');
     }
     if (fo.status === 'shipped') {
