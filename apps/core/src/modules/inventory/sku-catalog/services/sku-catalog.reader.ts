@@ -143,6 +143,7 @@ export class SkuCatalogReader {
       supplierName?: string;
       inventoryManagement?: boolean;
       groupId?: string;
+      holderId?: string;
     },
     tx?: DbTx,
   ): Promise<SkuResponseDto[]> {
@@ -179,6 +180,7 @@ export class SkuCatalogReader {
       if (query.id) conditions.push(eq(wmsTables.skus.id, query.id));
       if (query.code) conditions.push(eq(wmsTables.skus.code, query.code));
       if (query.groupId) conditions.push(eq(wmsTables.skus.groupId, query.groupId));
+      if (query.holderId) conditions.push(eq(wmsTables.skus.holderId, query.holderId));
       if (query.name) conditions.push(sql`${wmsTables.skus.name} ILIKE ${'%' + query.name + '%'}`);
       if (skuIdFilter && skuIdFilter.length > 0) {
         conditions.push(inArray(wmsTables.skus.id, skuIdFilter));

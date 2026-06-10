@@ -1155,7 +1155,7 @@ describe('FulfillmentsService', () => {
       await expect(service.ship('fo-ready')).rejects.toThrow(ConflictException);
     });
 
-    it.each(['invoiced', 'labeled', 'picked', 'inspecting'] as const)(
+    it.each(['invoiced', 'labeled', 'picked', 'inspecting', 'inspected'] as const)(
       '%s 상태 일반 FO는 ship을 허용한다',
       async (status) => {
         const { service } = makeService({
@@ -1230,7 +1230,7 @@ describe('FulfillmentsService', () => {
       await expect(service.assignShipment('fo-labeled', { trackingNo: 'TRK-2' })).rejects.toThrow(ConflictException);
     });
 
-    it.each(['picked', 'inspecting', 'invoiced'] as const)(
+    it.each(['picked', 'inspecting', 'inspected', 'invoiced'] as const)(
       '%s 상태에서 assignShipment는 상태를 labeled로 역전이하지 않는다',
       async (status) => {
         const { service, state } = makeService({
@@ -1270,6 +1270,20 @@ describe('FulfillmentsService', () => {
     expect(outbox.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({ eventType: 'FulfillmentShipped' }),
       expect.anything(),
+    );
+  });
+
+  describe('markDelivered guard', () => {
+    it.each(['ready', 'labeled', 'invoiced', 'canceled', 'completed'] as const)(
+      '%s 상태 FO는 markDelivered가 ConflictException을 던진다',
+      async (status) => {
+        const { service } = makeService({
+          fulfillmentOrders: [{ id: `fo-${status}`, salesOrderId, warehouseId, status }],
+          shipments: [],
+        });
+
+        await expect(service.markDelivered(`fo-${status}`)).rejects.toThrow(ConflictException);
+      },
     );
   });
 
@@ -1373,6 +1387,34 @@ describe('FulfillmentsService', () => {
       );
     });
 
+    it('shippedQty=0인 FOI 전체 수량을 분할하면 BadRequestException을 던진다', async () => {
+      const { service } = makeService({
+        fulfillmentOrders: [{ id: 'fo-ready', salesOrderId, warehouseId, status: 'ready' }],
+        fulfillmentOrderItems: [
+          { id: 'foi-1', fulfillmentOrderId: 'fo-ready', skuId, qty: 5, reservedQty: 0, shippedQty: 0 },
+        ],
+      });
+
+      // 전체 5개 분할 시도 → 원본에 0개 잔존 → 차단
+      await expect(service.split('fo-ready', { items: [{ fulfillmentOrderItemId: 'foi-1', quantity: 5 }] })).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+
+    it('shippedQty > 0이면 splittable qty 전체 분할이 허용된다', async () => {
+      const { service, state } = makeService({
+        fulfillmentOrders: [{ id: 'fo-ready', salesOrderId, warehouseId, status: 'ready', totalQty: 5, totalItems: 1 }],
+        fulfillmentOrderItems: [
+          { id: 'foi-1', fulfillmentOrderId: 'fo-ready', skuId, qty: 5, reservedQty: 3, shippedQty: 3 },
+        ],
+      });
+
+      // splittableQty = 5 - 3 = 2, 전부 분할해도 원본에 shippedQty=3이 남음 → 허용
+      await service.split('fo-ready', { items: [{ fulfillmentOrderItemId: 'foi-1', quantity: 2 }] });
+      const originalFoi = state.fulfillmentOrderItems.find((i) => i.id === 'foi-1');
+      expect(originalFoi?.qty).toBe(3); // 5 - 2 = 3 (= shippedQty)
+    });
+
     it('split은 originalFulfillmentOrderItemId(원본)와 newFulfillmentOrderItemId(신규)를 구분해서 lifecycle에 전달한다', async () => {
       const { service, reservationLifecycle } = makeService({
         fulfillmentOrders: [{ id: 'fo-ready', salesOrderId, warehouseId, status: 'ready' }],
@@ -1399,6 +1441,46 @@ describe('FulfillmentsService', () => {
         ],
         expect.anything(),
       );
+    });
+
+    it('split 후 원본 FO의 totalQty가 분할 수량만큼 감소한다', async () => {
+      const { service, state } = makeService({
+        fulfillmentOrders: [
+          { id: 'fo-ready', salesOrderId, warehouseId, status: 'ready', totalQty: 5, totalItems: 1 },
+        ],
+        fulfillmentOrderItems: [
+          { id: 'foi-1', fulfillmentOrderId: 'fo-ready', skuId, qty: 5, reservedQty: 0, shippedQty: 0 },
+        ],
+      });
+
+      const newFo = await service.split('fo-ready', {
+        items: [{ fulfillmentOrderItemId: 'foi-1', quantity: 3 }],
+      });
+
+      // 반환된 신규 FO는 분할 수량
+      expect(newFo?.totalQty).toBe(3);
+
+      // 원본 FO는 분할 수량만큼 감소 (mock 제약으로 상태에서 id로 구분)
+      const originFo = state.fulfillmentOrders.find((fo) => fo.id === 'fo-ready');
+      expect(originFo?.totalQty).toBe(2); // 5 - 3
+    });
+
+    it('split 후 원본 FOI의 qty가 분할 수량만큼 감소한다', async () => {
+      const { service, state } = makeService({
+        fulfillmentOrders: [
+          { id: 'fo-ready', salesOrderId, warehouseId, status: 'ready', totalQty: 4, totalItems: 1 },
+        ],
+        fulfillmentOrderItems: [
+          { id: 'foi-1', fulfillmentOrderId: 'fo-ready', skuId, qty: 4, reservedQty: 4, shippedQty: 0 },
+        ],
+      });
+
+      await service.split('fo-ready', {
+        items: [{ fulfillmentOrderItemId: 'foi-1', quantity: 1 }],
+      });
+
+      const originalFoi = state.fulfillmentOrderItems.find((i) => i.id === 'foi-1');
+      expect(originalFoi?.qty).toBe(3); // 4 - 1
     });
   });
 
@@ -1462,6 +1544,137 @@ describe('FulfillmentsService', () => {
     expect(detail?.adminAvailableActions).toEqual(
       expect.arrayContaining(['split', 'reserve', 'assignShipment', 'cancel', 'ship']),
     );
+  });
+
+  describe('computeAdminAvailableActions / computeBlockedReasons', () => {
+    function makeFoDetail(
+      status: string,
+      options: {
+        fulfillmentMode?: string;
+        directShipStatus?: string | null;
+        shippedQty?: number;
+      } = {},
+    ) {
+      const { fulfillmentMode = 'in_house', directShipStatus = null, shippedQty = 0 } = options;
+      return makeService({
+        fulfillmentOrders: [
+          {
+            id: 'fo-action-test',
+            salesOrderId,
+            warehouseId,
+            status,
+            fulfillmentMode,
+            directShipStatus,
+            batchId: null,
+          },
+        ],
+        fulfillmentOrderItems: [
+          {
+            id: 'foi-action-test',
+            fulfillmentOrderId: 'fo-action-test',
+            salesOrderId,
+            salesOrderLineId,
+            variantId,
+            skuId,
+            qty: 2,
+            reservedQty: 2,
+            pickedQty: 0,
+            shippedQty,
+            status: 'ready',
+          },
+        ],
+      });
+    }
+
+    it('shipped 상태에서 deliver만 허용하고 TERMINAL_STATUS blockedReason을 반환한다', async () => {
+      const { service, tx } = makeFoDetail('shipped');
+      const detail = await service.getOne('fo-action-test', tx);
+      expect(detail?.adminAvailableActions).toEqual(['deliver']);
+      expect(detail?.blockedReasons).toContain('TERMINAL_STATUS');
+    });
+
+    it('completed 상태에서 액션이 없고 TERMINAL_STATUS blockedReason을 반환한다', async () => {
+      const { service, tx } = makeFoDetail('completed');
+      const detail = await service.getOne('fo-action-test', tx);
+      expect(detail?.adminAvailableActions).toHaveLength(0);
+      expect(detail?.blockedReasons).toContain('TERMINAL_STATUS');
+    });
+
+    it('canceled 상태에서 액션이 없고 TERMINAL_STATUS blockedReason을 반환한다', async () => {
+      const { service, tx } = makeFoDetail('canceled');
+      const detail = await service.getOne('fo-action-test', tx);
+      expect(detail?.adminAvailableActions).toHaveLength(0);
+      expect(detail?.blockedReasons).toContain('TERMINAL_STATUS');
+    });
+
+    it('inspected 상태에서 ship이 허용된다', async () => {
+      const { service, tx } = makeFoDetail('inspected');
+      const detail = await service.getOne('fo-action-test', tx);
+      expect(detail?.adminAvailableActions).toContain('ship');
+    });
+
+    it('ready 상태에서 ship이 없고 split/reserve/unreserve/transferReservation/assignShipment/cancel이 있다', async () => {
+      const { service, tx } = makeFoDetail('ready');
+      const detail = await service.getOne('fo-action-test', tx);
+      expect(detail?.adminAvailableActions).not.toContain('ship');
+      expect(detail?.adminAvailableActions).toEqual(
+        expect.arrayContaining(['split', 'reserve', 'unreserve', 'transferReservation', 'assignShipment', 'cancel']),
+      );
+      expect(detail?.blockedReasons).toHaveLength(0);
+    });
+
+    it('shipped item이 있으면 split/unreserve/transferReservation을 제거하고 SHIPPED_EVIDENCE를 추가한다', async () => {
+      const { service, tx } = makeFoDetail('ready', { shippedQty: 1 });
+      const detail = await service.getOne('fo-action-test', tx);
+      expect(detail?.adminAvailableActions).not.toContain('split');
+      expect(detail?.adminAvailableActions).not.toContain('unreserve');
+      expect(detail?.adminAvailableActions).not.toContain('transferReservation');
+      expect(detail?.adminAvailableActions).toContain('reserve');
+      expect(detail?.adminAvailableActions).toContain('assignShipment');
+      expect(detail?.blockedReasons).toContain('SHIPPED_EVIDENCE');
+    });
+
+    it('terminal 상태 + shipped item이면 TERMINAL_STATUS와 SHIPPED_EVIDENCE 둘 다 반환한다', async () => {
+      const { service, tx } = makeFoDetail('shipped', { shippedQty: 2 });
+      const detail = await service.getOne('fo-action-test', tx);
+      expect(detail?.blockedReasons).toContain('TERMINAL_STATUS');
+      expect(detail?.blockedReasons).toContain('SHIPPED_EVIDENCE');
+    });
+
+    it('drop_ship + directShipStatus 미설정이면 forwardDropShip을 허용한다', async () => {
+      const { service, tx } = makeFoDetail('ready', { fulfillmentMode: 'drop_ship', directShipStatus: null });
+      const detail = await service.getOne('fo-action-test', tx);
+      expect(detail?.adminAvailableActions).toContain('forwardDropShip');
+      expect(detail?.adminAvailableActions).not.toContain('completeDropShip');
+    });
+
+    it('drop_ship + directShipStatus=pending이면 forwardDropShip을 허용한다', async () => {
+      const { service, tx } = makeFoDetail('ready', { fulfillmentMode: 'drop_ship', directShipStatus: 'pending' });
+      const detail = await service.getOne('fo-action-test', tx);
+      expect(detail?.adminAvailableActions).toContain('forwardDropShip');
+      expect(detail?.adminAvailableActions).not.toContain('completeDropShip');
+    });
+
+    it('drop_ship + directShipStatus=forwarded이면 completeDropShip만 허용한다', async () => {
+      const { service, tx } = makeFoDetail('ready', { fulfillmentMode: 'drop_ship', directShipStatus: 'forwarded' });
+      const detail = await service.getOne('fo-action-test', tx);
+      expect(detail?.adminAvailableActions).toContain('completeDropShip');
+      expect(detail?.adminAvailableActions).not.toContain('forwardDropShip');
+    });
+
+    it('drop_ship terminal FO에서는 forwardDropShip/completeDropShip을 허용하지 않는다', async () => {
+      const { service, tx } = makeFoDetail('canceled', { fulfillmentMode: 'drop_ship', directShipStatus: 'forwarded' });
+      const detail = await service.getOne('fo-action-test', tx);
+      expect(detail?.adminAvailableActions).not.toContain('forwardDropShip');
+      expect(detail?.adminAvailableActions).not.toContain('completeDropShip');
+    });
+
+    it('in_house FO에서는 drop_ship 관련 액션이 없다', async () => {
+      const { service, tx } = makeFoDetail('ready', { fulfillmentMode: 'in_house' });
+      const detail = await service.getOne('fo-action-test', tx);
+      expect(detail?.adminAvailableActions).not.toContain('forwardDropShip');
+      expect(detail?.adminAvailableActions).not.toContain('completeDropShip');
+    });
   });
 
   it('checkAvailability는 현재 FO의 기존 예약 수량을 가용 수량으로 인정한다', async () => {

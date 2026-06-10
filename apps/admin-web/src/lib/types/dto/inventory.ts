@@ -847,6 +847,7 @@ export interface SkuQuery {
   name?: string;
   supplierName?: string;
   groupId?: string;
+  holderId?: string;
   limit?: number;
   offset?: number;
 }

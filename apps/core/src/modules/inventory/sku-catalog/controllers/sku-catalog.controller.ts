@@ -49,6 +49,7 @@ export class SkuCatalogController {
   @ApiQuery({ name: 'supplierName', required: false })
   @ApiQuery({ name: 'inventoryManagement', required: false, type: Boolean })
   @ApiQuery({ name: 'groupId', required: false })
+  @ApiQuery({ name: 'holderId', required: false })
   @ApiResponse({ status: 200, description: '검색된 SKU 목록', type: [SkuResponseDto] })
   async search(
     @Query('id') id?: string,
@@ -58,8 +59,9 @@ export class SkuCatalogController {
     @Query('supplierName') supplierName?: string,
     @Query('inventoryManagement') inventoryManagement?: boolean,
     @Query('groupId') groupId?: string,
+    @Query('holderId') holderId?: string,
   ): Promise<SkuResponseDto[]> {
-    return this.skus.search({ id, code, barcode, name, supplierName, inventoryManagement, groupId });
+    return this.skus.search({ id, code, barcode, name, supplierName, inventoryManagement, groupId, holderId });
   }
 
   @Get('search/advanced')
