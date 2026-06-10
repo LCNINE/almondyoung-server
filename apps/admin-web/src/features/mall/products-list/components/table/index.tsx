@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useMastersSummary } from '@/lib/services/products/queries';
 import { useDataTable } from '@/hooks/use-data-table';
 import { useProductsListTableColumns } from '@/hooks/table/columns/use-products-list-table-columns';
@@ -8,10 +9,16 @@ import { useProductsListTableQuery } from '@/hooks/table/query/use-products-list
 import { DataTable } from '@/components/data-table';
 import { Button } from '@/components/ui/button';
 import { Download, Trash2 } from 'lucide-react';
+import {
+  BulkActionModal,
+  type BulkActionType,
+} from '@/features/mall/bulk/components/bulk-action-modal';
 
 const PAGE_SIZE = 20;
 
 export function ProductsListTable() {
+  const [modalAction, setModalAction] = useState<BulkActionType | null>(null);
+
   const { searchParams: query } = useProductsListTableQuery({ pageSize: PAGE_SIZE });
   const { data, isLoading, isFetching } = useMastersSummary(query);
   const columns = useProductsListTableColumns();
@@ -26,21 +33,35 @@ export function ProductsListTable() {
     enableRowSelection: true,
   });
 
-  const selectedRows = table.getSelectedRowModel().rows;
+  const selectedIds = table
+    .getSelectedRowModel()
+    .rows.map((r) => r.original.masterId);
+
+  function handleSuccess() {
+    table.resetRowSelection();
+  }
 
   return (
     <div>
-      {selectedRows.length > 0 && (
+      {selectedIds.length > 0 && (
         <div className="flex items-center gap-2 border-b bg-muted/50 p-3">
-          <span className="text-sm text-muted-foreground">{selectedRows.length}개 선택됨</span>
+          <span className="text-sm text-muted-foreground">{selectedIds.length}개 선택됨</span>
           <Button size="sm" variant="outline">
             <Download className="mr-1 h-3 w-3" />
             엑셀 다운로드
           </Button>
-          <Button size="sm" variant="outline">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setModalAction('status')}
+          >
             선택 상품상태변경
           </Button>
-          <Button size="sm" variant="outline">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setModalAction('delete')}
+          >
             <Trash2 className="mr-1 h-3 w-3" />
             선택 삭제
           </Button>
@@ -64,6 +85,14 @@ export function ProductsListTable() {
         search
         navigateTo={(row) => `/mall/products-list/${row.original.masterId}`}
         noRecords={{ message: '상품 데이터가 없습니다.' }}
+      />
+
+      <BulkActionModal
+        open={modalAction !== null}
+        onOpenChange={(open) => !open && setModalAction(null)}
+        action={modalAction}
+        selectedIds={selectedIds}
+        onSuccess={handleSuccess}
       />
     </div>
   );
