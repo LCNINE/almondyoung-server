@@ -85,9 +85,12 @@ async function collectConfig(options: { yes: boolean; deployment?: string }) {
 
   // Notification config
   const fcmPrivateKey = process.env.NOTIFICATION_FCM_PRIVATE_KEY || '';
+  const resendApiKey = process.env.NOTIFICATION_RESEND_API_KEY || process.env.RESEND_API_KEY || '';
   const twilioAuthToken = process.env.NOTIFICATION_TWILIO_AUTH_TOKEN || '';
   const twilioAccountSid = process.env.NOTIFICATION_TWILIO_ACCOUNT_SID || '';
+  const nhnAppKey = process.env.NOTIFICATION_NHN_APP_KEY || process.env.NHN_APP_KEY || '';
   const nhnSecretKey = process.env.NOTIFICATION_NHN_SECRET_KEY || '';
+  const nhnSenderKey = process.env.NOTIFICATION_NHN_SENDER_KEY || process.env.NHN_SENDER_KEY || '';
 
   // OAuth RP 시드. RP 마다 *_BASE_URL 이 비어 있으면 해당 client 는 시드하지 않는다 (옵션).
   // secret 미지정 시 시더가 1회 생성·로그하고, 다음 실행에선 ON CONFLICT 가 secret_hash 를 안 건드려 안전.
@@ -127,9 +130,12 @@ async function collectConfig(options: { yes: boolean; deployment?: string }) {
     demoPassword,
     notification: {
       fcmPrivateKey,
+      resendApiKey,
       twilioAuthToken,
       twilioAccountSid,
+      nhnAppKey,
       nhnSecretKey,
+      nhnSenderKey,
     },
     oauthClients,
   };
@@ -361,7 +367,15 @@ export async function listGroupsForDeployment(deployment?: string): Promise<stri
   const placeholder: Awaited<ReturnType<typeof collectConfig>> = {
     adminPassword: 'placeholder',
     demoPassword: 'placeholder',
-    notification: { fcmPrivateKey: '', twilioAuthToken: '', twilioAccountSid: '', nhnSecretKey: '' },
+    notification: {
+      fcmPrivateKey: '',
+      resendApiKey: '',
+      twilioAuthToken: '',
+      twilioAccountSid: '',
+      nhnAppKey: '',
+      nhnSecretKey: '',
+      nhnSenderKey: '',
+    },
     oauthClients: [],
   };
   const registry = getServiceRegistry(deployment);
