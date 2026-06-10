@@ -1,5 +1,6 @@
 // apps/notification/src/provider/services/provider-manager.service.ts
 import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectTypedDb } from '@app/db/decorators';
 import { notificationTables } from '../../../database/schemas/notification-schema';
 import { DbService } from '@app/db';
@@ -27,6 +28,7 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
     @InjectTypedDb<typeof notificationTables>() private readonly dbService: DbService<typeof notificationTables>,
     private readonly providerFactory: ProviderFactory,
     private readonly alertService: AlertService,
+    private readonly configService: ConfigService,
   ) {
     this.logger = new StructuredLogger(new Logger(ProviderManagerService.name));
   }
@@ -91,11 +93,11 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
         channel: Channel.EMAIL,
         priority: 10,
         config: {
-          apiKey: 're_L5T64k9X_PUJsu8kKModEQbJBQh1uvoUg',
-          baseUrl: 'https://api.resend.com',
+          apiKey: this.configService.get<string>('RESEND_API_KEY') || '',
+          baseUrl: this.configService.get<string>('RESEND_BASE_URL') || 'https://api.resend.com',
           timeout: 30000,
-          fromName: 'Almond Young',
-          fromEmail: 'noreply@almondyoung.com',
+          fromName: this.configService.get<string>('RESEND_FROM_NAME') || 'Almond Young',
+          fromEmail: this.configService.get<string>('RESEND_FROM') || 'noreply@almondyoung.com',
           maxRetries: 3,
           retryDelay: 1000,
         },
@@ -122,13 +124,13 @@ export class ProviderManagerService implements OnModuleInit, OnModuleDestroy {
         channel: Channel.KAKAO,
         priority: 10,
         config: {
-          apiUrl: 'https://api-alimtalk.cloud.toast.com',
-          appKey: '56ySy3UiPmNhryr8',
+          apiUrl: this.configService.get<string>('NHN_API_URL') || 'https://api-alimtalk.cloud.toast.com',
+          appKey: this.configService.get<string>('NHN_APP_KEY') || '',
           timeout: 30000,
-          secretKey: 'p2CCuK4jPYJLZvydoVNEykYKOZb6IvkV',
-          senderKey: '4bd6430a65cad17d327c758006e5cf4a773d82e6',
-          plusFriendId: '@아몬드영',
-          resendAppKey: '',
+          secretKey: this.configService.get<string>('NHN_SECRET_KEY') || '',
+          senderKey: this.configService.get<string>('NHN_SENDER_KEY') || '',
+          plusFriendId: this.configService.get<string>('NHN_PLUS_FRIEND_ID') || '@아몬드영',
+          resendAppKey: this.configService.get<string>('NHN_SMS_APP_KEY') || '',
         },
       },
     ];

@@ -73,9 +73,12 @@ ADMIN_INITIAL_PASSWORD=Admin@1234!
 
 # Notification Provider Secrets (Required for Notification Service)
 NOTIFICATION_FCM_PRIVATE_KEY=-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----
+NOTIFICATION_RESEND_API_KEY=your_resend_api_key
 NOTIFICATION_TWILIO_AUTH_TOKEN=your_twilio_auth_token
 NOTIFICATION_TWILIO_ACCOUNT_SID=your_twilio_account_sid
+NOTIFICATION_NHN_APP_KEY=your_nhn_app_key
 NOTIFICATION_NHN_SECRET_KEY=your_nhn_secret_key
+NOTIFICATION_NHN_SENDER_KEY=your_nhn_sender_key
 
 # Execution Options (Optional)
 SEED_CONTINUE_ON_ERROR=true      # Continue even if one seeder fails
