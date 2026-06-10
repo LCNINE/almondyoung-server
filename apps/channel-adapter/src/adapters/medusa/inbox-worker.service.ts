@@ -153,12 +153,14 @@ export class InboxWorkerService implements OnModuleInit {
           and(
             eq(inboxEvents.aggregateId, aggregateId),
             inArray(inboxEvents.eventType, supersedingEventTypes),
-            // event_occurred_at/created_at 은 `timestamp without time zone` 이라 PG 는 비교 파라미터를
-            // timestamp 로 추론하지만, postgres.js 는 JS Date 를 timestamptz binary 로 전송한다.
-            // 타입/바이너리 불일치로 prepared query 가 실패하므로, 컬럼을 UTC 기준 timestamptz 로 맞춰 비교한다.
+            // drizzle 의 gt(raw sql, value) 는 좌변이 raw `sql` fragment 일 때 컬럼 타입 코덱을
+            // 적용하지 못해, Date 객체를 직렬화하지 못한 채 드라이버로 넘겨 ERR_INVALID_ARG_TYPE
+            // ("The string argument ... Received an instance of Date") 로 쿼리가 실패한다.
+            // 우변을 ISO 문자열 + ::timestamptz 로 바인딩하고, 좌변(timestamp without tz)은
+            // UTC instant 로 맞춰 정확히 비교한다.
             gt(
-              sql<Date>`coalesce(${inboxEvents.eventOccurredAt}, ${inboxEvents.createdAt}) at time zone 'UTC'`,
-              eventOccurredAt,
+              sql`coalesce(${inboxEvents.eventOccurredAt}, ${inboxEvents.createdAt}) at time zone 'UTC'`,
+              sql`${eventOccurredAt.toISOString()}::timestamptz`,
             ),
             inArray(inboxEvents.status, supersedingStatuses),
           ),

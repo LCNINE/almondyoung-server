@@ -23,7 +23,9 @@ COPY libs/ ./libs/
 COPY packages/ ./packages/
 COPY apps/channel-adapter/ ./apps/channel-adapter/
 
-RUN npm run build:channel-adapter
+# 2026-06-10: buildx registry 캐시가 소스 변경(inbox-worker timestamp fix)을 건너뛰어
+# 옛 dist 가 이미지에 들어가는 문제가 있었다. 빌드 레이어 캐시를 무효화하기 위한 버스터.
+RUN echo "cachebust 2026-06-10 inbox-timestamp-fix" && npm run build:channel-adapter
 
 FROM base AS runner
 # 운영 코드용 prod node_modules 와, 일회성 마이그레이션 스크립트(ts-node) 용 dev 포함 node_modules 를
