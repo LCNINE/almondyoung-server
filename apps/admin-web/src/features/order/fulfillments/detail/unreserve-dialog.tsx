@@ -26,6 +26,7 @@ import type { FulfillmentOrderItemSummary } from '@/lib/types/dto/fulfillment';
 interface Props {
   foId: string;
   items: FulfillmentOrderItemSummary[];
+  canUnreserve: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -40,7 +41,7 @@ function extractErrorMessage(err: unknown): string {
   return '알 수 없는 오류가 발생했습니다.';
 }
 
-export function UnreserveDialog({ foId, items, open, onOpenChange }: Props) {
+export function UnreserveDialog({ foId, items, canUnreserve, open, onOpenChange }: Props) {
   const [foiId, setFoiId] = useState('');
   const [qty, setQty] = useState('1');
   const unreserve = useUnreserveFulfillment(foId);
@@ -79,6 +80,13 @@ export function UnreserveDialog({ foId, items, open, onOpenChange }: Props) {
           <DialogTitle>예약 해제</DialogTitle>
         </DialogHeader>
 
+        {!canUnreserve && (
+          <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>현재 FO 상태에서는 예약 해제가 허용되지 않습니다.</span>
+          </div>
+        )}
+
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <Label>아이템 (FOI)</Label>
@@ -89,7 +97,7 @@ export function UnreserveDialog({ foId, items, open, onOpenChange }: Props) {
               <SelectContent>
                 {unreservable.map((item) => (
                   <SelectItem key={item.id} value={item.id}>
-                    SKU {item.skuId.substring(0, 8)}… — 예약 {item.reservedQty}개
+                    {item.skuCode} {item.skuName && `(${item.skuName})`} — 예약 {item.reservedQty}개
                     {item.shippedQty > 0 && ' ⚠ 출고됨'}
                   </SelectItem>
                 ))}
@@ -129,7 +137,7 @@ export function UnreserveDialog({ foId, items, open, onOpenChange }: Props) {
           <Button
             variant="destructive"
             onClick={handleSubmit}
-            disabled={unreserve.isPending || !foiId || hasShippedEvidence}
+            disabled={unreserve.isPending || !foiId || hasShippedEvidence || !canUnreserve}
           >
             {unreserve.isPending ? '처리 중...' : '해제'}
           </Button>

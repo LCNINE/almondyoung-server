@@ -286,5 +286,49 @@ describe('FulfillmentReservationsFacade', () => {
         ),
       ).rejects.toThrow(BadRequestException);
     });
+
+    it('from FO가 terminal 상태면 ConflictException을 던진다', async () => {
+      const toItemId = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+      const { facade, tx, state } = makeFacade({ foStatus: 'shipped' });
+
+      let callCount = 0;
+      tx.query.fulfillmentOrderItems.findFirst = jest.fn().mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) return state.items[0];
+        return { id: toItemId, fulfillmentOrderId, skuId, qty: 1, reservedQty: 0, shippedQty: 0 };
+      });
+
+      await expect(
+        facade.transferReservation(
+          fulfillmentOrderId,
+          { fromFulfillmentOrderItemId: fulfillmentOrderItemId, toFulfillmentOrderItemId: toItemId, quantity: 1 },
+          tx,
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('to FO가 terminal 상태면 ConflictException을 던진다', async () => {
+      const toItemId = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+      const toFoId = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+      const { facade, tx, state } = makeFacade({
+        foStatus: 'ready',
+        toFo: { id: toFoId, status: 'shipped', warehouseId, totalReservedQty: 0 },
+      });
+
+      let callCount = 0;
+      tx.query.fulfillmentOrderItems.findFirst = jest.fn().mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) return state.items[0]; // from → fulfillmentOrderId (ready)
+        return { id: toItemId, fulfillmentOrderId: toFoId, skuId, qty: 1, reservedQty: 0, shippedQty: 0 }; // to → toFoId (shipped)
+      });
+
+      await expect(
+        facade.transferReservation(
+          fulfillmentOrderId,
+          { fromFulfillmentOrderItemId: fulfillmentOrderItemId, toFulfillmentOrderItemId: toItemId, quantity: 1 },
+          tx,
+        ),
+      ).rejects.toThrow(ConflictException);
+    });
   });
 });
