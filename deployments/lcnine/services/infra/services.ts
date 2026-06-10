@@ -53,6 +53,10 @@ export function setup(infra: SharedInfra) {
   const custKey = new sst.Secret("CustKey");
   const custId = new sst.Secret("CustId");
   const swKey = new sst.Secret("SwKey");
+  // 무통장입금 안내 계좌 — 결제 화면 노출용. `sst secret set` 으로 stage 별 주입. 미설정 시 화면에 '-' 표시.
+  const bankTransferBankName = new sst.Secret("BankTransferBankName", "");
+  const bankTransferAccountNumber = new sst.Secret("BankTransferAccountNumber", "");
+  const bankTransferAccountHolder = new sst.Secret("BankTransferAccountHolder", "");
 
   // Medusa
   const medusaJwtSecret = new sst.Secret("MedusaJwtSecret");
@@ -269,6 +273,10 @@ export function setup(infra: SharedInfra) {
       SERVICE_NAME: "wallet",
       CORS_ORIGINS: `*.${baseDomain}`,
       WALLET_MEDUSA_WEBHOOK_URL: `${url("medusa")}/hooks/payment/pp_almond-payment_almond-payment`,
+      // 무통장입금 안내 계좌 — 결제 화면 노출용. 값은 `sst secret set` 으로 주입 (하단 선언부 참고).
+      BANK_TRANSFER_BANK_NAME: bankTransferBankName.value,
+      BANK_TRANSFER_ACCOUNT_NUMBER: bankTransferAccountNumber.value,
+      BANK_TRANSFER_ACCOUNT_HOLDER: bankTransferAccountHolder.value,
     },
   });
 
