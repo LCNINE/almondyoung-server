@@ -2,8 +2,8 @@ import { createColumnHelper } from '@tanstack/react-table';
 import { useMemo } from 'react';
 import type { PendingBankTransferDto } from '@/lib/types/dto/wallet';
 import { IdCell, DateCell } from '@/components/table/table-cells/common';
-import { AmountCell } from '@/components/table/table-cells/wallet';
 import { PlaceholderCell } from '@/components/table/table-cells/common/placeholder-cell';
+import { BankTransferConfirmCell } from '@/features/payments/components/bank-transfer-table/confirm-cell';
 
 const columnHelper = createColumnHelper<PendingBankTransferDto>();
 
@@ -16,31 +16,61 @@ export const useBankTransferTableColumns = () => {
       }),
       columnHelper.accessor('userId', {
         header: '사용자 ID',
-        cell: ({ getValue }) => <IdCell value={getValue()} />,
+        cell: ({ getValue }) => {
+          const val = getValue();
+          return val ? <IdCell value={val} /> : <PlaceholderCell />;
+        },
+      }),
+      columnHelper.display({
+        id: 'bankAccount',
+        header: '입금 계좌',
+        cell: ({ row }) => {
+          const { bankName, accountNumber, accountHolder } = row.original;
+          if (!bankName && !accountNumber) return <PlaceholderCell />;
+          return (
+            <div className="leading-tight">
+              <div className="text-sm">
+                <span className="font-medium">{bankName}</span>{' '}
+                <span className="font-mono">{accountNumber}</span>
+              </div>
+              {accountHolder ? (
+                <div className="text-xs text-muted-foreground">
+                  예금주 {accountHolder}
+                </div>
+              ) : null}
+            </div>
+          );
+        },
       }),
       columnHelper.accessor('payableAmount', {
         header: '결제 금액',
         cell: ({ getValue, row }) => (
-          <AmountCell value={getValue()} currency={row.original.currency} />
+          <div className="text-right">
+            <span className="text-base font-bold tabular-nums">
+              {getValue().toLocaleString('ko-KR')}
+            </span>
+            <span className="ml-1 text-xs text-muted-foreground">
+              {row.original.currency}
+            </span>
+          </div>
         ),
-      }),
-      columnHelper.accessor('bankName', {
-        header: '은행명',
-        cell: ({ getValue }) => {
-          const val = getValue();
-          return val ? <span className="text-sm">{val}</span> : <PlaceholderCell />;
-        },
-      }),
-      columnHelper.accessor('accountNumber', {
-        header: '계좌번호',
-        cell: ({ getValue }) => {
-          const val = getValue();
-          return val ? <span className="text-sm font-mono">{val}</span> : <PlaceholderCell />;
-        },
       }),
       columnHelper.accessor('createdAt', {
         header: '생성일',
         cell: ({ getValue }) => <DateCell value={getValue()} />,
+      }),
+      columnHelper.display({
+        id: 'actions',
+        header: () => <div className="text-right">작업</div>,
+        cell: ({ row }) => (
+          <div className="flex justify-end">
+            <BankTransferConfirmCell
+              id={row.original.id}
+              payableAmount={row.original.payableAmount}
+              currency={row.original.currency}
+            />
+          </div>
+        ),
       }),
     ],
     [],
