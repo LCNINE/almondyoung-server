@@ -29,7 +29,7 @@ export class ProductBulkService {
     const updated = await client
       .update(productMasterVersions)
       .set(updateData)
-      .where(and(inArray(productMasterVersions.id, dto.productIds), eq(productMasterVersions.status, 'active')))
+      .where(and(inArray(productMasterVersions.masterId, dto.productIds), eq(productMasterVersions.status, 'active')))
       .returning();
 
     // Log bulk update
@@ -59,7 +59,7 @@ export class ProductBulkService {
         deletedBy: userId,
         updatedAt: new Date(),
       })
-      .where(and(inArray(productMasterVersions.id, dto.productIds), eq(productMasterVersions.status, 'active')))
+      .where(and(inArray(productMasterVersions.masterId, dto.productIds), eq(productMasterVersions.status, 'active')))
       .returning();
 
     // Log bulk delete
@@ -89,7 +89,7 @@ export class ProductBulkService {
         deletedBy: null,
         updatedAt: new Date(),
       })
-      .where(and(inArray(productMasterVersions.id, dto.productIds), eq(productMasterVersions.status, 'active')))
+      .where(and(inArray(productMasterVersions.masterId, dto.productIds), eq(productMasterVersions.status, 'active')))
       .returning();
 
     // Log bulk restore
