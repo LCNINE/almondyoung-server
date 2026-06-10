@@ -201,7 +201,7 @@ Search:
 6. 관리자가 입금 확인을 처리한다.
    - API 기준: `POST /v1/admin/payment-intents/:intentId/bank-transfer-confirm`
    - body 예: `{ "depositorNote": "QA deposit confirmed" }`
-7. Wallet outbox에서 `payments.events.v1 / payment.intent.succeeded`가 발행되는지 확인한다.
+7. Wallet outbox에서 `payments.events.v1 / payment.intent.captured`가 발행되는지 확인한다. (legacy `payment.intent.succeeded`는 더 이상 발행되지 않는다. Medusa hook과 channel-adapter relay는 둘 다 capture로 처리하므로 호환된다.)
 8. channel-adapter/payment relay와 Medusa hook 처리 후 Medusa payment가 captured projection 상태가 되는지 확인한다.
 9. wallet-web 대기 화면에서 상태 새로고침 또는 완료 링크를 통해 storefront callback으로 돌아간다.
 10. storefront callback이 `cart.complete()`를 수행하고 `/kr/checkout/success/:intentId?orderId=:orderId`로 이동하는지 확인한다.
@@ -209,9 +209,9 @@ Search:
 ### 기대 결과
 
 - 무통장 confirm 전에는 주문 완료 페이지로 넘어가지 않는다.
-- admin 승인 후 Wallet intent status는 `SUCCEEDED`다.
-- `payment.intent.succeeded` payload의 `intentId`가 Medusa payment `payment_session_id`와 매칭된다.
-- Medusa hook은 `payment.intent.succeeded`를 capture event로 처리한다.
+- admin 승인 후 Wallet intent status는 `CAPTURED`다.
+- `payment.intent.captured` payload의 `intentId`가 Medusa payment `payment_session_id`와 매칭된다.
+- Medusa hook은 `payment.intent.captured`를 capture event로 처리한다.
 - Medusa payment에는 capture record 또는 `captured_at`이 반영된다.
 - storefront 주문 완료 페이지에 Medusa order id/display id가 표시된다.
 
@@ -439,7 +439,7 @@ Search:
 - search index에 active 상품이 색인된다.
 - storefront category/product/cart/checkout 진입이 정상이다.
 - wallet-web이 region별 결제수단을 정확히 보여준다.
-- 무통장 입금은 admin 승인 전 대기, 승인 후 Wallet `SUCCEEDED`, Medusa capture projection, storefront order complete까지 이어진다.
+- 무통장 입금은 admin 승인 전 대기, 승인 후 Wallet `CAPTURED`, Medusa capture projection, storefront order complete까지 이어진다.
 - Medusa order polling으로 `wms_order_mappings`와 Core `sales_orders`가 생성된다.
 - 미매칭 주문은 fulfillment backlog `awaiting_matching`으로 멈추고, 매칭 해소 후 자동 재시도된다.
 - matched 주문은 fulfillment order로 변환된다.
@@ -481,7 +481,7 @@ Search:
 - `GET /v1/admin/payment-intents/pending-bank-transfers`
 - `POST /v1/admin/payment-intents/:id/bank-transfer-confirm`
 - topic: `payments.events.v1`
-- event: `payment.intent.succeeded`
+- event: `payment.intent.captured` (legacy: `payment.intent.succeeded` — Medusa hook은 둘 다 capture로 수용)
 - Medusa hook: `POST /hooks/payment-events`
 
 ### Core WMS
