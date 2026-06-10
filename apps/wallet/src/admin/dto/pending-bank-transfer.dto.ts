@@ -27,4 +27,13 @@ export class PendingBankTransferResponseDto {
 
   @ApiProperty()
   createdAt: Date;
+
+  @ApiPropertyOptional({ description: '입금 안내 은행명 (authorize 시 스냅샷)' })
+  bankName: string | null;
+
+  @ApiPropertyOptional({ description: '입금 안내 계좌번호 (authorize 시 스냅샷)' })
+  accountNumber: string | null;
+
+  @ApiPropertyOptional({ description: '입금 안내 예금주 (authorize 시 스냅샷)' })
+  accountHolder: string | null;
 }

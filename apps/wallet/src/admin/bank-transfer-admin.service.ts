@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { PaginatedResponseDto } from '@app/shared';
-import { and, count, desc, eq } from 'drizzle-orm';
+import { and, count, desc, eq, sql } from 'drizzle-orm';
 import { WalletSchema, charges, paymentIntents, paymentMethods } from '../schema';
 import { ChargesService } from '../charges/charges.service';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
@@ -36,6 +36,8 @@ export class BankTransferAdminService {
 
     const total = countResult?.value ?? 0;
 
+    // 은행/계좌/예금주는 authorize 시점에 charges.responsePayload.nextAction 으로 스냅샷된다.
+    // 활성 AUTHORIZE charge 는 active unique index 로 intent 당 최대 1건이라 left join 으로 안전하게 가져온다.
     const rows = await db
       .select({
         id: paymentIntents.id,
@@ -46,9 +48,20 @@ export class BankTransferAdminService {
         paymentMethodId: paymentIntents.paymentMethodId,
         expiresAt: paymentIntents.expiresAt,
         createdAt: paymentIntents.createdAt,
+        bankName: sql<string | null>`${charges.responsePayload}->'nextAction'->>'bankName'`,
+        accountNumber: sql<string | null>`${charges.responsePayload}->'nextAction'->>'accountNumber'`,
+        accountHolder: sql<string | null>`${charges.responsePayload}->'nextAction'->>'accountHolder'`,
       })
       .from(paymentIntents)
       .innerJoin(paymentMethods, eq(paymentIntents.paymentMethodId, paymentMethods.id))
+      .leftJoin(
+        charges,
+        and(
+          eq(charges.intentId, paymentIntents.id),
+          eq(charges.operation, 'AUTHORIZE'),
+          eq(charges.status, 'REQUIRES_ACTION'),
+        ),
+      )
       .where(condition)
       .orderBy(desc(paymentIntents.createdAt))
       .limit(limit)
@@ -63,6 +76,10 @@ export class BankTransferAdminService {
       paymentMethodId: r.paymentMethodId,
       expiresAt: r.expiresAt,
       createdAt: r.createdAt,
+      // env(BANK_TRANSFER_*) 미설정이면 빈 문자열로 저장되므로 null 로 정규화한다.
+      bankName: r.bankName || null,
+      accountNumber: r.accountNumber || null,
+      accountHolder: r.accountHolder || null,
     }));
 
     return { data, total, page, limit };

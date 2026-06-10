@@ -126,8 +126,9 @@ export interface PendingBankTransferDto {
   payableAmount: number;
   currency: string;
   userId: string | null;
-  bankName: string;
-  accountNumber: string;
+  bankName: string | null;
+  accountNumber: string | null;
+  accountHolder: string | null;
   createdAt: string;
 }
 
