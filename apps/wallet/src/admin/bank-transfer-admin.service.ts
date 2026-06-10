@@ -96,7 +96,13 @@ export class BankTransferAdminService {
     const correlationId = `bank-transfer-confirm:${intentId}:${Date.now()}`;
     const now = new Date().toISOString();
 
-    // 3. Transaction: charge → SUCCEEDED, intent → SUCCEEDED + outbox event
+    // 3. Transaction: charge → SUCCEEDED, intent → AUTHORIZED → CAPTURED + outbox event
+    //
+    // 무통장입금은 PG 가 없어 authorize 시점에 REQUIRES_ACTION 으로 멈춰 있다.
+    // 입금 확인 = 자금 확인(AUTHORIZED) + 정산(CAPTURED) 이 한 번에 일어나는 것이므로
+    // 상태머신이 허용하는 정식 경로(REQUIRES_ACTION → AUTHORIZED → CAPTURED)로 두 단계 전이한다.
+    // (REQUIRES_ACTION → CAPTURED / SUCCEEDED 직접 전이는 상태머신에 없음 — SUCCEEDED 는 legacy 상태.)
+    // 최종 상태를 CAPTURED 로 둬야 Medusa 가 payment.intent.captured → SUCCESSFUL 로 받아 주문을 완료 처리한다.
     await this.dbService.db.transaction(async (tx) => {
       await this.chargesService.updateStatus(
         charge.id,
@@ -107,21 +113,34 @@ export class BankTransferAdminService {
         tx,
       );
 
+      // 중간 전이: 자금 확인. 입금 확인은 단일 milestone 이므로 별도 비즈니스 이벤트는 발행하지 않는다.
       await this.stateTransitionService.transitionIntent(
         intentId,
-        'SUCCEEDED',
+        'AUTHORIZED',
+        {
+          correlationId,
+          triggeredByType: 'ADMIN',
+          reasonCode: 'BANK_TRANSFER_CONFIRMED',
+        },
+        undefined,
+        tx,
+      );
+
+      await this.stateTransitionService.transitionIntent(
+        intentId,
+        'CAPTURED',
         {
           correlationId,
           triggeredByType: 'ADMIN',
           reasonCode: 'BANK_TRANSFER_CONFIRMED',
           outboxEvent: {
-            eventType: GatewayEventType.INTENT_SUCCEEDED,
+            eventType: GatewayEventType.INTENT_CAPTURED,
             aggregateType: GATEWAY_AGGREGATE_TYPE,
             aggregateId: intent.id,
             payload: buildPaymentIntentEventPayload({
               intentId: intent.id,
               userId: intent.userId ?? '',
-              status: 'SUCCEEDED',
+              status: 'CAPTURED',
               payableAmount: intent.payableAmount,
               currency: intent.currency,
               occurredAt: now,

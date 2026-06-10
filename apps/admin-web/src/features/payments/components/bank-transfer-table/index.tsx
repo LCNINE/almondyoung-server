@@ -41,6 +41,7 @@ export function BankTransferTable() {
         isFetching={isFetching}
         count={data?.total ?? 0}
         pageSize={PAGE_SIZE}
+        navigateTo={(row) => `/payments/${row.original.id}`}
         noRecords={{ message: '대기 중인 무통장입금 건이 없습니다.' }}
       />
       {(data?.data ?? []).length > 0 && (

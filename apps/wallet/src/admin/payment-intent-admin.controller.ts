@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  HttpException,
   InternalServerErrorException,
   NotFoundException,
   Param,
@@ -124,11 +125,14 @@ export class PaymentIntentAdminController {
   async confirmDeposit(@Param('id') id: string, @Body() dto: BankTransferConfirmDto) {
     try {
       await this.bankTransferService.confirmDeposit(id, dto.depositorNote);
-      return { status: 'SUCCEEDED' };
+      return { status: 'CAPTURED' };
     } catch (e: any) {
+      // 서비스가 던진 Nest 예외(404 NotFound / 422 Unprocessable 등)는 상태 코드를 보존해 그대로 전달한다.
+      if (e instanceof HttpException) throw e;
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('not found')) throw new NotFoundException(e.message);
-      if (msg.match(/already|invalid|failed|required|exceed/)) throw new BadRequestException(e.message);
+      if (msg.match(/already|invalid|failed|required|exceed|not allowed|transition|mismatch/))
+        throw new BadRequestException(e.message);
       throw new InternalServerErrorException(e.message);
     }
   }
