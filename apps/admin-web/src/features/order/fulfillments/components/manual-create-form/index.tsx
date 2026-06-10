@@ -17,7 +17,7 @@ import {
 import { Container } from '@/components/admin-ui-experimental/common/container';
 import { Header } from '@/components/admin-ui-experimental/common/header';
 import { Search, X } from 'lucide-react';
-import { useWarehouses, useSkus } from '@/lib/services/inventory/queries';
+import { useWarehouses, useSkus, useHolderSearch } from '@/lib/services/inventory/queries';
 import { useCreateFulfillmentOrder } from '@/lib/services/orders/mutations';
 import type {
   FulfillmentMode,
@@ -52,12 +52,31 @@ export function ManualCreateForm() {
   const [priority, setPriority] = useState<FulfillmentOrderPriority>('normal');
   const [items, setItems] = useState<DraftItem[]>([]);
 
+  // 공급사 (drop_ship 전용)
+  const [ownerId, setOwnerId] = useState('');
+  const [selectedHolderName, setSelectedHolderName] = useState('');
+  const [holderSearchInput, setHolderSearchInput] = useState('');
+  const { data: holderSearchData, isFetching: holderLoading } = useHolderSearch(
+    holderSearchInput,
+    false, // 외부 공급사만 (isOurAsset: false)
+  );
+
+  const clearHolder = () => {
+    setOwnerId('');
+    setSelectedHolderName('');
+    setHolderSearchInput('');
+    setItems([]);
+    setKeywordInput('');
+    setSearchKeyword('');
+  };
+
   // SKU 검색
   const [keywordInput, setKeywordInput] = useState('');
   const [searchKeyword, setSearchKeyword] = useState('');
   const { data: skuResult, isFetching: skuLoading } = useSkus({
     name: searchKeyword || undefined,
     limit: 10,
+    ...(fulfillmentMode === 'drop_ship' && ownerId ? { holderId: ownerId } : {}),
   });
 
   // 배송지 (선택)
@@ -101,6 +120,10 @@ export function ManualCreateForm() {
       toast.error('출고 품목을 1개 이상 추가하세요.');
       return;
     }
+    if (fulfillmentMode === 'drop_ship' && !ownerId) {
+      toast.error('직배송 모드에서는 공급사를 선택해야 합니다.');
+      return;
+    }
     if (useAddress && !addressFilled) {
       toast.error('배송지 입력 시 메모를 제외한 모든 항목은 필수입니다.');
       return;
@@ -110,6 +133,7 @@ export function ManualCreateForm() {
       warehouseId: warehouseId || undefined,
       fulfillmentMode,
       priority,
+      ...(fulfillmentMode === 'drop_ship' && ownerId ? { ownerId } : {}),
       items: items.map((i) => ({ skuId: i.skuId, quantity: i.quantity })),
       ...(useAddress && addressFilled
         ? {
@@ -158,7 +182,11 @@ export function ManualCreateForm() {
               <Label>출고 모드</Label>
               <Select
                 value={fulfillmentMode}
-                onValueChange={(v) => setFulfillmentMode(v as FulfillmentMode)}
+                onValueChange={(v) => {
+                  const mode = v as FulfillmentMode;
+                  setFulfillmentMode(mode);
+                  if (mode !== 'drop_ship') clearHolder();
+                }}
               >
                 <SelectTrigger className="w-[160px]">
                   <SelectValue />
@@ -170,6 +198,64 @@ export function ManualCreateForm() {
                 </SelectContent>
               </Select>
             </div>
+
+            {fulfillmentMode === 'drop_ship' && (
+              <div className="flex flex-col gap-1">
+                <Label>
+                  공급사 <span className="text-destructive">*</span>
+                </Label>
+                {selectedHolderName ? (
+                  <div className="flex items-center gap-2 px-3 py-2 border rounded-md w-fit text-sm">
+                    <span>{selectedHolderName}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="w-5 h-5"
+                      onClick={clearHolder}
+                    >
+                      <X className="w-3 h-3" />
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <Input
+                      value={holderSearchInput}
+                      onChange={(e) => setHolderSearchInput(e.target.value)}
+                      placeholder="공급사 이름으로 검색"
+                      className="w-[240px]"
+                    />
+                    {holderSearchInput && (
+                      <div className="overflow-y-auto border rounded-md max-h-48 w-[240px]">
+                        {holderLoading ? (
+                          <p className="p-3 text-sm text-muted-foreground">
+                            검색 중…
+                          </p>
+                        ) : (holderSearchData?.data ?? []).length > 0 ? (
+                          (holderSearchData?.data ?? []).map((holder) => (
+                            <button
+                              key={holder.id}
+                              type="button"
+                              onClick={() => {
+                                setOwnerId(holder.id);
+                                setSelectedHolderName(holder.name);
+                                setHolderSearchInput('');
+                              }}
+                              className="flex w-full items-center px-3 py-2 text-sm text-left hover:bg-muted"
+                            >
+                              {holder.name}
+                            </button>
+                          ))
+                        ) : (
+                          <p className="p-3 text-sm text-muted-foreground">
+                            검색 결과가 없습니다.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
 
             <div className="flex flex-col gap-1">
               <Label>우선순위</Label>

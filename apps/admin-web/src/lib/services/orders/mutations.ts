@@ -740,6 +740,7 @@ export const useForwardDirectShipOrders = () => {
       orders.directShip.forwardOrders(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['direct-ship'] });
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillments });
     },
   });
 };
@@ -751,6 +752,7 @@ export const useCompleteDirectShipOrders = () => {
       orders.directShip.completeOrders(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['direct-ship'] });
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillments });
     },
   });
 };

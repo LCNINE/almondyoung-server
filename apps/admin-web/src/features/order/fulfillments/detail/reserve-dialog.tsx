@@ -89,7 +89,7 @@ export function ReserveDialog({ foId, items, open, onOpenChange }: Props) {
               <SelectContent>
                 {reservable.map((item) => (
                   <SelectItem key={item.id} value={item.id}>
-                    SKU {item.skuId.substring(0, 8)}… — 미예약 {item.qty - item.reservedQty}개
+                    {item.skuCode} {item.skuName && `(${item.skuName})`} — 미예약 {item.qty - item.reservedQty}개
                   </SelectItem>
                 ))}
               </SelectContent>
