@@ -52,14 +52,22 @@ function FulfillmentDetailContent({ id }: { id: string }) {
     );
   }
 
+  const safeFo = {
+    ...fo,
+    items: fo.items ?? [],
+    adminAvailableActions: fo.adminAvailableActions ?? [],
+    blockedReasons: fo.blockedReasons ?? [],
+    reservations: fo.reservations ?? [],
+  };
+
   return (
     <Container className="divide-y-0">
       <div className="flex items-center gap-3 px-4 py-4">
-        <FoStatusBadge status={fo.status} />
+        <FoStatusBadge status={safeFo.status} />
         <div>
-          <p className="font-mono text-sm text-muted-foreground">{fo.id}</p>
-          {fo.salesOrderId && (
-            <p className="text-xs text-muted-foreground">판매주문: {fo.salesOrderId}</p>
+          <p className="font-mono text-sm text-muted-foreground">{safeFo.id}</p>
+          {safeFo.salesOrderId && (
+            <p className="text-xs text-muted-foreground">판매주문: {safeFo.salesOrderId}</p>
           )}
         </div>
       </div>
@@ -70,16 +78,16 @@ function FulfillmentDetailContent({ id }: { id: string }) {
             <TabsTrigger value="overview">개요</TabsTrigger>
             <TabsTrigger value="items">
               아이템/재고
-              {fo.items.length > 0 && (
+              {safeFo.items.length > 0 && (
                 <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-xs">
-                  {fo.items.length}
+                  {safeFo.items.length}
                 </span>
               )}
             </TabsTrigger>
             <TabsTrigger value="inventory">재고 액션</TabsTrigger>
             <TabsTrigger value="split">분할</TabsTrigger>
             <TabsTrigger value="shipment">배송</TabsTrigger>
-            {fo.fulfillmentMode === 'drop_ship' && (
+            {safeFo.fulfillmentMode === 'drop_ship' && (
               <TabsTrigger value="direct-ship">직배</TabsTrigger>
             )}
             <TabsTrigger value="history">이력</TabsTrigger>
@@ -87,31 +95,31 @@ function FulfillmentDetailContent({ id }: { id: string }) {
         </div>
 
         <TabsContent value="overview" className="px-4">
-          <OverviewTab fo={fo} />
+          <OverviewTab fo={safeFo} />
         </TabsContent>
 
         <TabsContent value="items" className="px-4">
-          <ItemsTab fo={fo} />
+          <ItemsTab fo={safeFo} />
         </TabsContent>
 
         <TabsContent value="inventory" className="px-4">
-          <InventoryTab fo={fo} />
+          <InventoryTab fo={safeFo} />
         </TabsContent>
 
         <TabsContent value="split" className="px-4">
-          <SplitTab fo={fo} />
+          <SplitTab fo={safeFo} />
         </TabsContent>
 
         <TabsContent value="shipment" className="px-4">
-          <ShipmentTab fo={fo} />
+          <ShipmentTab fo={safeFo} />
         </TabsContent>
 
         <TabsContent value="direct-ship" className="px-4">
-          <DirectShipTab fo={fo} />
+          <DirectShipTab fo={safeFo} />
         </TabsContent>
 
         <TabsContent value="history" className="px-4">
-          <HistoryTab fo={fo} />
+          <HistoryTab fo={safeFo} />
         </TabsContent>
       </Tabs>
     </Container>

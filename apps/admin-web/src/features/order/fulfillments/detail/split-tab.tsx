@@ -23,11 +23,8 @@ import type {
   FulfillmentOrder,
 } from '@/lib/types/dto/fulfillment';
 
-const TERMINAL_STATUSES = ['shipped', 'completed', 'canceled'] as const;
-type TerminalStatus = (typeof TERMINAL_STATUSES)[number];
-
-function isTerminal(status: string): status is TerminalStatus {
-  return (TERMINAL_STATUSES as readonly string[]).includes(status);
+function getSplittableQty(item: FulfillmentOrderItemSummary): number {
+  return item.shippedQty === 0 ? item.qty - 1 : item.qty - item.shippedQty;
 }
 
 function extractErrorMessage(err: unknown): string {
@@ -61,7 +58,8 @@ export function SplitTab({ fo }: { fo: FulfillmentOrderDetail }) {
   const split = useSplitFulfillmentOrder(fo.id);
   const [result, setResult] = useState<SplitResult | null>(null);
 
-  const blocked = isTerminal(fo.status);
+  // Core가 계산한 adminAvailableActions 기준 — terminal이거나 shipped evidence가 있으면 split 불가
+  const blocked = !fo.adminAvailableActions.includes('split');
 
   // 분할 가능 아이템만 초기화
   const splittableItems = fo.items.filter((i) => i.qty - i.shippedQty > 0);
@@ -89,7 +87,7 @@ export function SplitTab({ fo }: { fo: FulfillmentOrderDetail }) {
     // 클라이언트 사전 검증
     for (const m of moves) {
       const row = rows.find((r) => r.item.id === m.foiId)!;
-      const splittable = row.item.qty - row.item.shippedQty;
+      const splittable = getSplittableQty(row.item);
       if (m.qty > splittable) {
         toast.error(
           `FOI ${m.foiId.substring(0, 8)}…: 분할 수량(${m.qty})이 분할 가능 수량(${splittable})을 초과합니다.`
@@ -138,7 +136,7 @@ export function SplitTab({ fo }: { fo: FulfillmentOrderDetail }) {
           <AlertTriangle />
           <AlertDescription>
             현재 FO 상태({fo.status})에서는 분할이 불가합니다.
-            분할은 shipped/completed/canceled 이전 상태에서만 허용됩니다.
+            분할은 shipped/completed/canceled 이전 상태이고 출고된 수량(shippedQty)이 없을 때만 허용됩니다.
           </AlertDescription>
         </Alert>
       )}
@@ -152,7 +150,7 @@ export function SplitTab({ fo }: { fo: FulfillmentOrderDetail }) {
           <section>
             <h3 className="mb-2 text-sm font-semibold">FOI별 분할 수량 입력</h3>
             <p className="mb-3 text-xs text-muted-foreground">
-              분할 가능 수량 = qty − shippedQty. 출고된 수량은 분할할 수 없습니다.
+              분할 가능 수량 = shippedQty가 없으면 qty−1, 있으면 qty−shippedQty. 원본 FO에는 최소 1개가 남아야 합니다.
             </p>
 
             {splittableItems.length === 0 ? (
@@ -170,14 +168,14 @@ export function SplitTab({ fo }: { fo: FulfillmentOrderDetail }) {
                       <TableHead className="text-right">출고됨</TableHead>
                       <TableHead className="text-right">예약됨</TableHead>
                       <TableHead className="text-right">
-                        <span title="qty - shippedQty">분할 가능</span>
+                        <span title="shippedQty=0이면 qty-1, 아니면 qty-shippedQty (원본에 최소 1개 잔류)">분할 가능</span>
                       </TableHead>
                       <TableHead>분할 수량</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {fo.items.map((item) => {
-                      const splittable = item.qty - item.shippedQty;
+                      const splittable = getSplittableQty(item);
                       const disabled = splittable <= 0;
                       const row = rows.find((r) => r.item.id === item.id);
                       const splitQtyNum = parseInt(row?.splitQty ?? '', 10);
@@ -228,7 +226,7 @@ export function SplitTab({ fo }: { fo: FulfillmentOrderDetail }) {
                                 />
                                 {isOverQty && (
                                   <span className="text-xs text-destructive">
-                                    최대 {splittable}
+                                    최대 {splittable}{item.shippedQty === 0 && ' (원본에 최소 1개 잔류)'}
                                   </span>
                                 )}
                               </div>
