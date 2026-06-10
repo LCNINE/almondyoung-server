@@ -19,12 +19,14 @@ export function transformPimToMedusa(
   overrides?: MedusaSyncOverrides,
 ): MedusaProductPayload {
   logger.log(`Transforming PIM snapshot: ${snapshot.masterId} v${snapshot.version}`);
-  const toFileUrl = (fileId?: string | null): string | undefined => {
-    if (!fileId) return undefined;
-    if (/^https?:\/\//i.test(fileId)) return fileId;
-    const base = process.env.FILE_SERVICE_URL;
-    if (!base) return fileId;
-    return `${base.replace(/\/$/, '')}/files/${fileId}`;
+  // Core 이벤트 snapshot 의 thumbnail/image 는 "/files/{fileId}" 상대경로로 온다.
+  // 스토어프론트는 `${fileBase}/files/public/{값}` 으로 이미지 URL 을 조합하므로,
+  // Medusa 에는 fileId 만 저장해야 경로 중복(`/files/public//files/...` → 깨진 이미지)이
+  // 생기지 않는다. 백필 상품도 thumbnail 에 fileId 만 저장돼 있어 형태가 일치한다.
+  const toFileId = (value?: string | null): string | undefined => {
+    if (!value) return undefined;
+    if (/^https?:\/\//i.test(value)) return value; // 이미 절대 URL 이면 보존
+    return value.replace(/^\/+/, '').replace(/^files\//, '');
   };
 
   // 1. 기본 정보
@@ -47,7 +49,7 @@ export function transformPimToMedusa(
         return a.sortOrder - b.sortOrder;
       })
       .map((img) => ({
-        url: img.url,
+        url: toFileId(img.fileId ?? img.url) ?? img.url,
       })) || [];
 
   // 3. 활성 variants만 먼저 필터링 (deleted/가격없는 variant 제외)
@@ -91,7 +93,7 @@ export function transformPimToMedusa(
     handle,
     status,
     description,
-    thumbnail: toFileUrl(snapshot.thumbnail),
+    thumbnail: toFileId(snapshot.thumbnail),
     images,
     options,
     variants,
