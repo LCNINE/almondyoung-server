@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { DirectShipService } from './direct-ship.service';
+import { wmsTables } from '../../inventory/schema/inventory.schema';
 
 describe('DirectShipService.markOrdersAsCompleted', () => {
   const fo1 = 'fo-drop-aaaa-1111-1111-1111-111111111111';
@@ -57,5 +58,90 @@ describe('DirectShipService.markOrdersAsCompleted', () => {
 
     expect(fulfillmentsService.ship).toHaveBeenCalledTimes(1);
     expect(fulfillmentsService.ship).toHaveBeenCalledWith(fo1, expect.anything());
+  });
+});
+
+describe('DirectShipService.forwardOrdersToCompany', () => {
+  const holderId = 'holder-aaaa-1111-1111-1111-111111111111';
+  const differentHolderId = 'holder-bbbb-9999-9999-9999-999999999999';
+  const fo1 = 'fo-drop-cccc-3333-3333-3333-333333333333';
+  const companyName = '예시공급사(주)';
+
+  function makeService({
+    holderRows = [{ id: holderId }],
+    foRows = [{ id: fo1, ownerId: null as string | null }],
+  }: {
+    holderRows?: Array<Record<string, any>>;
+    foRows?: Array<{ id: string; ownerId: string | null }>;
+  } = {}) {
+    const mockTx: any = {
+      update: jest.fn(() => ({ set: () => ({ where: () => Promise.resolve() }) })),
+    };
+
+    const mockDb: any = {
+      select: jest.fn(() => ({
+        from: (table: any) => {
+          const isHolderTable = table === wmsTables.holders;
+          const rows = isHolderTable ? holderRows : foRows;
+          return {
+            where: (_cond: any) => {
+              if (isHolderTable) {
+                return { limit: (_n: number) => Promise.resolve(rows) };
+              }
+              return Promise.resolve(rows);
+            },
+          };
+        },
+      })),
+      transaction: jest.fn((fn: (tx: any) => Promise<any>) => fn(mockTx)),
+    };
+
+    const dbService: any = { db: mockDb };
+    const fulfillmentsService: any = { ship: jest.fn().mockResolvedValue(undefined) };
+    const service = new DirectShipService(dbService, fulfillmentsService);
+    return { service, mockTx };
+  }
+
+  it('알 수 없는 회사명이면 BadRequestException을 던진다', async () => {
+    const { service } = makeService({ holderRows: [] });
+    await expect(service.forwardOrdersToCompany([fo1], companyName)).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('FO의 ownerId가 다른 holder로 설정되어 있으면 BadRequestException을 던진다', async () => {
+    const { service } = makeService({
+      holderRows: [{ id: holderId }],
+      foRows: [{ id: fo1, ownerId: differentHolderId }],
+    });
+    await expect(service.forwardOrdersToCompany([fo1], companyName)).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('이미 forwarded된 FO는 DB 필터에서 제외되어 BadRequestException을 던진다', async () => {
+    // forwarded FO는 pending/null 조건 필터에서 걸러져 foRows가 비어 있음
+    const { service } = makeService({
+      holderRows: [{ id: holderId }],
+      foRows: [],
+    });
+    await expect(service.forwardOrdersToCompany([fo1], companyName)).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('정상 전달 시 transaction 내에서 directShipStatus=forwarded로 업데이트한다', async () => {
+    const { service, mockTx } = makeService();
+    await service.forwardOrdersToCompany([fo1], companyName);
+    expect(mockTx.update).toHaveBeenCalled();
+  });
+
+  it('ownerId가 같은 holder로 이미 설정되어 있으면 전달을 허용한다', async () => {
+    const { service, mockTx } = makeService({
+      holderRows: [{ id: holderId }],
+      foRows: [{ id: fo1, ownerId: holderId }],
+    });
+    await service.forwardOrdersToCompany([fo1], companyName);
+    expect(mockTx.update).toHaveBeenCalled();
   });
 });

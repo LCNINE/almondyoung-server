@@ -19,12 +19,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { AlertTriangle } from 'lucide-react';
 import { useTransferFulfillmentReservation } from '@/lib/services/orders';
 import type { FulfillmentOrderItemSummary } from '@/lib/types/dto/fulfillment';
 
 interface Props {
   foId: string;
   items: FulfillmentOrderItemSummary[];
+  canTransfer: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -39,7 +41,7 @@ function extractErrorMessage(err: unknown): string {
   return '알 수 없는 오류가 발생했습니다.';
 }
 
-export function TransferDialog({ foId, items, open, onOpenChange }: Props) {
+export function TransferDialog({ foId, items, canTransfer, open, onOpenChange }: Props) {
   const [fromFoiId, setFromFoiId] = useState('');
   const [toFoiId, setToFoiId] = useState('');
   const [qty, setQty] = useState('1');
@@ -92,6 +94,14 @@ export function TransferDialog({ foId, items, open, onOpenChange }: Props) {
         <DialogHeader>
           <DialogTitle>예약 이전</DialogTitle>
         </DialogHeader>
+
+        {!canTransfer && (
+          <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>현재 FO 상태에서는 예약 이전이 허용되지 않습니다.</span>
+          </div>
+        )}
+
         <p className="text-xs text-muted-foreground">
           같은 SKU의 FOI 간에만 이전 가능합니다. SKU가 다른 FOI를 대상으로 선택하면 서버가 400으로 거부합니다.
         </p>
@@ -106,7 +116,7 @@ export function TransferDialog({ foId, items, open, onOpenChange }: Props) {
               <SelectContent>
                 {fromCandidates.map((item) => (
                   <SelectItem key={item.id} value={item.id}>
-                    SKU {item.skuId.substring(0, 8)}… — 예약 {item.reservedQty}개
+                    {item.skuCode} {item.skuName && `(${item.skuName})`} — 예약 {item.reservedQty}개
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -122,7 +132,7 @@ export function TransferDialog({ foId, items, open, onOpenChange }: Props) {
               <SelectContent>
                 {toCandidates.map((item) => (
                   <SelectItem key={item.id} value={item.id}>
-                    SKU {item.skuId.substring(0, 8)}… — 미예약 {item.qty - item.reservedQty}개
+                    {item.skuCode} {item.skuName && `(${item.skuName})`} — 미예약 {item.qty - item.reservedQty}개
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -153,7 +163,7 @@ export function TransferDialog({ foId, items, open, onOpenChange }: Props) {
           </Button>
           <Button
             onClick={handleSubmit}
-            disabled={transfer.isPending || !fromFoiId || !toFoiId || toCandidates.length === 0}
+            disabled={transfer.isPending || !fromFoiId || !toFoiId || toCandidates.length === 0 || !canTransfer}
           >
             {transfer.isPending ? '처리 중...' : '이전'}
           </Button>

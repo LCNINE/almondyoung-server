@@ -163,6 +163,7 @@ export interface TransferReservationRequest {
 /** POST /fulfillments/:id/assign-shipment body */
 export interface AssignShipmentRequest {
   trackingNo: string;
+  carrier?: 'CJ' | 'HANJIN' | 'LOTTE' | 'LOGEN' | 'KDEXP' | 'CJGLS';
   eta?: string;
 }
 
@@ -201,6 +202,7 @@ export interface CreateStandaloneFulfillmentRequest {
   warehouseId?: string;
   fulfillmentMode?: FulfillmentMode;
   priority?: FulfillmentOrderPriority;
+  ownerId?: string;
   shippingAddress?: FulfillmentShippingAddress;
   items: CreateStandaloneFulfillmentItem[];
 }
