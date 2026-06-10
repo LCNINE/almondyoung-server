@@ -28,9 +28,12 @@ interface EnvConfig {
   AWS_S3_PRIVATE_BUCKET?: string;
   ADMIN_INITIAL_PASSWORD: string;
   NOTIFICATION_FCM_PRIVATE_KEY: string;
+  NOTIFICATION_RESEND_API_KEY: string;
   NOTIFICATION_TWILIO_AUTH_TOKEN: string;
   NOTIFICATION_TWILIO_ACCOUNT_SID: string;
+  NOTIFICATION_NHN_APP_KEY: string;
   NOTIFICATION_NHN_SECRET_KEY: string;
+  NOTIFICATION_NHN_SENDER_KEY: string;
   SEED_CONTINUE_ON_ERROR: boolean;
   SEED_VERBOSE: boolean;
 }
@@ -51,11 +54,15 @@ function loadEnvConfig(): EnvConfig {
       process.env.ADMIN_INITIAL_PASSWORD || 'Admin@1234!',
     NOTIFICATION_FCM_PRIVATE_KEY:
       process.env.NOTIFICATION_FCM_PRIVATE_KEY || '',
+    NOTIFICATION_RESEND_API_KEY:
+      process.env.NOTIFICATION_RESEND_API_KEY || process.env.RESEND_API_KEY || '',
     NOTIFICATION_TWILIO_AUTH_TOKEN:
       process.env.NOTIFICATION_TWILIO_AUTH_TOKEN || '',
     NOTIFICATION_TWILIO_ACCOUNT_SID:
       process.env.NOTIFICATION_TWILIO_ACCOUNT_SID || '',
+    NOTIFICATION_NHN_APP_KEY: process.env.NOTIFICATION_NHN_APP_KEY || process.env.NHN_APP_KEY || '',
     NOTIFICATION_NHN_SECRET_KEY: process.env.NOTIFICATION_NHN_SECRET_KEY || '',
+    NOTIFICATION_NHN_SENDER_KEY: process.env.NOTIFICATION_NHN_SENDER_KEY || process.env.NHN_SENDER_KEY || '',
     SEED_CONTINUE_ON_ERROR:
       process.env.SEED_CONTINUE_ON_ERROR === 'true' || true,
     SEED_VERBOSE: process.env.SEED_VERBOSE === 'true' || true,
@@ -245,9 +252,12 @@ async function main() {
         seedNotification(
           config.NOTIFICATION_DATABASE_URL,
           config.NOTIFICATION_FCM_PRIVATE_KEY,
+          config.NOTIFICATION_RESEND_API_KEY,
           config.NOTIFICATION_TWILIO_AUTH_TOKEN,
           config.NOTIFICATION_TWILIO_ACCOUNT_SID,
+          config.NOTIFICATION_NHN_APP_KEY,
           config.NOTIFICATION_NHN_SECRET_KEY,
+          config.NOTIFICATION_NHN_SENDER_KEY,
         ),
       config.SEED_CONTINUE_ON_ERROR,
     ),

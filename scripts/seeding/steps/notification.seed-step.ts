@@ -5,9 +5,12 @@ import { FIXED_UUIDS } from '../constants/uuids';
 
 export interface NotificationConfig {
   fcmPrivateKey: string;
+  resendApiKey: string;
   twilioAuthToken: string;
   twilioAccountSid: string;
+  nhnAppKey: string;
   nhnSecretKey: string;
+  nhnSenderKey: string;
 }
 
 function buildProviders(config: NotificationConfig) {
@@ -32,7 +35,7 @@ function buildProviders(config: NotificationConfig) {
       providerName: 'Resend Email',
       channel: 'EMAIL',
       config: {
-        apiKey: 're_L5T64k9X_PUJsu8kKModEQbJBQh1uvoUg',
+        apiKey: config.resendApiKey,
         baseUrl: 'https://api.resend.com',
         timeout: 30000,
         fromName: 'Almond Young',
@@ -64,10 +67,10 @@ function buildProviders(config: NotificationConfig) {
       channel: 'KAKAO',
       config: {
         apiUrl: 'https://api-alimtalk.cloud.toast.com',
-        appKey: '56ySy3UiPmNhryr8',
+        appKey: config.nhnAppKey,
         timeout: 30000,
         secretKey: config.nhnSecretKey,
-        senderKey: '4bd6430a65cad17d327c758006e5cf4a773d82e6',
+        senderKey: config.nhnSenderKey,
         plusFriendId: '@아몬드영',
         resendAppKey: '',
       },

@@ -12,9 +12,12 @@ type NotificationProviderInsert = InferInsertModel<typeof notificationSchema.not
 export async function seedNotification(
   databaseUrl: string,
   fcmPrivateKey: string,
+  resendApiKey: string,
   twilioAuthToken: string,
   twilioAccountSid: string,
+  nhnAppKey: string,
   nhnSecretKey: string,
+  nhnSenderKey: string,
 ): Promise<void> {
   logger.info('Starting Notification seeding');
 
@@ -48,7 +51,7 @@ export async function seedNotification(
         providerName: 'Resend Email',
         channel: 'EMAIL',
         config: {
-          apiKey: 're_L5T64k9X_PUJsu8kKModEQbJBQh1uvoUg',
+          apiKey: resendApiKey,
           baseUrl: 'https://api.resend.com',
           timeout: 30000,
           fromName: 'Almond Young',
@@ -82,10 +85,10 @@ export async function seedNotification(
         channel: 'KAKAO',
         config: {
           apiUrl: 'https://api-alimtalk.cloud.toast.com',
-          appKey: '56ySy3UiPmNhryr8',
+          appKey: nhnAppKey,
           timeout: 30000,
           secretKey: nhnSecretKey,
-          senderKey: '4bd6430a65cad17d327c758006e5cf4a773d82e6',
+          senderKey: nhnSenderKey,
           plusFriendId: '@아몬드영',
           resendAppKey: '',
         },
