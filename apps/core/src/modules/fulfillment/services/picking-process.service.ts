@@ -691,6 +691,31 @@ export class PickingProcessService {
           message: `Picked ${pickedQty} units for specific order item`,
           data: { foiId: parsed.id, pickedQty },
         };
+      } else if (parsed.type === 'unknown' && context.fulfillmentOrderId) {
+        // skuCode(예: P00002) 또는 외부 바코드 — FO 내 매칭 FOI 탐색
+        const [foi] = await trx
+          .select({ id: wmsTables.fulfillmentOrderItems.id })
+          .from(wmsTables.fulfillmentOrderItems)
+          .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId))
+          .where(
+            and(
+              eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, context.fulfillmentOrderId),
+              eq(wmsTables.skus.code, parsed.id),
+            ),
+          )
+          .limit(1);
+
+        if (!foi) {
+          throw new BadRequestException(`Invalid barcode for picking: ${barcode}`);
+        }
+
+        await this.pickIndividualItem(foi.id, pickedQty, context.pickerUserId, trx);
+
+        return {
+          success: true,
+          message: `Picked ${pickedQty} units for specific order item`,
+          data: { foiId: foi.id, pickedQty },
+        };
       } else {
         throw new BadRequestException(`Invalid barcode for picking: ${barcode}`);
       }

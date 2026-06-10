@@ -2,7 +2,7 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { DbService } from '@app/db';
-import { and, eq, inArray, desc, isNull, or } from 'drizzle-orm';
+import { and, eq, inArray, desc, isNull, or, sql } from 'drizzle-orm';
 import * as ExcelJS from 'exceljs';
 import { FulfillmentsService } from './fulfillments.service';
 
@@ -186,7 +186,8 @@ export class DirectShipService {
             .innerJoin(wmsTables.salesOrderLines, eq(wmsTables.salesOrderLines.salesOrderId, wmsTables.salesOrders.id))
             .innerJoin(
               wmsTables.fulfillmentOrderItems,
-              eq(wmsTables.fulfillmentOrderItems.salesOrderLineId, wmsTables.salesOrderLines.id),
+              // sales_order_line_id 는 varchar, sales_order_lines.id 는 uuid — 명시적 캐스트 필요
+              sql`${wmsTables.fulfillmentOrderItems.salesOrderLineId}::uuid = ${wmsTables.salesOrderLines.id}`,
             )
             .where(inArray(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, foIds));
 
