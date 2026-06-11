@@ -2,6 +2,8 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { ArrowLeft } from 'lucide-react';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
 import {
@@ -132,8 +134,23 @@ export default function PricingDetailTemplate({ masterId }: Props) {
     );
   };
 
+  const backHref = selectedVersionId
+    ? `/mall/products-list/${masterId}?versionId=${selectedVersionId}`
+    : `/mall/products-list/${masterId}`;
+
   return (
     <div className="flex flex-col gap-y-2">
+      <div className="flex items-center gap-2 text-sm text-gray-500">
+        <Link
+          href={backHref}
+          className="flex items-center gap-1 hover:text-gray-700"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          {master?.name ?? '상품 상세'}
+        </Link>
+        <span>/</span>
+        <span className="text-gray-900">가격 관리</span>
+      </div>
       <Container className="divide-y-0">
         <Header
           title={master?.name ?? '가격 관리'}
