@@ -71,6 +71,55 @@ export class PaymentEventsConsumer {
     await this.forwardToMedusa(envelope);
   }
 
+  // ─── Wallet outbox dispatcher 타입 (payment.intent.* / gateway.*) ──────────
+  // Wallet OutboxDispatcherService 는 envelope.messageType 에 outbox eventType
+  // (dot-notation)을 그대로 싣는다. EventTypeGuard 가 messageType 단위로 필터링하므로
+  // 타입별 핸들러가 없으면 조용히 버려져 Medusa projection 이 끊긴다 (#407).
+
+  @OnEvent('payments.events.v1', 'payment.intent.created')
+  async handleIntentCreated(@EventEnvelope() envelope: MessageEnvelope) {
+    await this.forwardToMedusa(envelope);
+  }
+
+  @OnEvent('payments.events.v1', 'payment.intent.authorized')
+  async handleIntentAuthorized(@EventEnvelope() envelope: MessageEnvelope) {
+    await this.forwardToMedusa(envelope);
+  }
+
+  @OnEvent('payments.events.v1', 'payment.intent.captured')
+  async handleIntentCaptured(@EventEnvelope() envelope: MessageEnvelope) {
+    await this.forwardToMedusa(envelope);
+  }
+
+  /** legacy 타입 — wallet GatewayEventType.INTENT_SUCCEEDED 가 backward compat 으로 남아 있음 */
+  @OnEvent('payments.events.v1', 'payment.intent.succeeded')
+  async handleIntentSucceeded(@EventEnvelope() envelope: MessageEnvelope) {
+    await this.forwardToMedusa(envelope);
+  }
+
+  @OnEvent('payments.events.v1', 'payment.intent.failed')
+  async handleIntentFailed(@EventEnvelope() envelope: MessageEnvelope) {
+    await this.forwardToMedusa(envelope);
+  }
+
+  @OnEvent('payments.events.v1', 'payment.intent.canceled')
+  async handleIntentCanceled(@EventEnvelope() envelope: MessageEnvelope) {
+    await this.forwardToMedusa(envelope);
+  }
+
+  @OnEvent('payments.events.v1', 'gateway.charge.captured')
+  async handleChargeCaptured(@EventEnvelope() envelope: MessageEnvelope) {
+    await this.forwardToMedusa(envelope);
+  }
+
+  @OnEvent('payments.events.v1', 'gateway.refund.succeeded')
+  async handleGatewayRefundSucceeded(
+    @EventPayload() payload: Record<string, unknown>,
+    @EventEnvelope() envelope: MessageEnvelope,
+  ) {
+    await this.forwardRefundToMedusa(envelope, payload);
+  }
+
   /**
    * PaymentAuthorized — 결제 승인 이벤트.
    */
