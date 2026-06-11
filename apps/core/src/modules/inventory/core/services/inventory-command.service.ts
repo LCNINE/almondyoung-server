@@ -3,7 +3,8 @@ import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { StockEventStore } from '../repositories/stock-event.store';
 import { OutboxService } from '../../shared/outbox/outbox.service';
-import { eq, and } from 'drizzle-orm';
+import { LocationService } from './location.service';
+import { eq, and, gt, desc } from 'drizzle-orm';
 
 @Injectable()
 export class InventoryCommandService {
@@ -13,6 +14,7 @@ export class InventoryCommandService {
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly eventStore: StockEventStore,
     private readonly outboxService: OutboxService,
+    private readonly locationService: LocationService,
   ) {}
 
   private get db() {
@@ -289,13 +291,23 @@ export class InventoryCommandService {
         throw new BadRequestException(`SKU not found: ${input.skuId}`);
       }
 
-      // 2. 현재 재고 조회
+      // 2. 위치 미지정 시 시스템 입고기본존으로 — 빈 문자열 uuid 비교(DB 에러)와
+      //    locationId 없는 ledger 갱신 불가 문제를 막는다
+      let effectiveLocationId = input.locationId ?? null;
+      if (!effectiveLocationId) {
+        await this.locationService.ensureSystemLocations(input.warehouseId, trx);
+        const zone = await this.locationService.getSystemLocationByRole(input.warehouseId, 'inbound_default', trx);
+        if (!zone) throw new BadRequestException('조정 기본 위치가 존재하지 않습니다.');
+        effectiveLocationId = zone.id;
+      }
+
+      // 3. 현재 재고 조회
       const currentStock = await trx.query.stockLedgers.findFirst({
         where: (l, { eq, and }) =>
           and(
             eq(l.skuId, input.skuId),
             eq(l.warehouseId, input.warehouseId),
-            eq(l.locationId, input.locationId ?? ''),
+            eq(l.locationId, effectiveLocationId),
             eq(l.stockState, 'ON_HAND'),
           ),
       });
@@ -303,12 +315,12 @@ export class InventoryCommandService {
       const currentQuantity = currentStock?.qty ?? 0;
       const afterQuantity = currentQuantity + input.quantity;
 
-      // 3. Stock Event 생성
+      // 4. Stock Event 생성
       const event = await this.eventStore.createEvent(
         {
           skuId: input.skuId,
           toWarehouseId: input.warehouseId,
-          toLocationId: input.locationId ?? null,
+          toLocationId: effectiveLocationId,
           toState: 'ON_HAND',
           transitionType: 'ADJUST_UP',
           quantity: input.quantity,
@@ -334,7 +346,7 @@ export class InventoryCommandService {
             skuCode: sku.name, // SKU 이름
             skuId: input.skuId, // SKU ID
             warehouseId: input.warehouseId,
-            locationId: input.locationId,
+            locationId: effectiveLocationId,
             quantity: input.quantity, // 조정량
             deltaQuantity: input.quantity, // 변동량 (양수)
             afterQuantity: afterQuantity, // 조정 후 재고
@@ -375,26 +387,53 @@ export class InventoryCommandService {
         throw new BadRequestException(`SKU not found: ${input.skuId}`);
       }
 
-      // 2. 현재 재고 조회
+      // 2. 위치 미지정 시 ON_HAND가 가장 많은 위치에서 차감
+      let effectiveLocationId = input.locationId ?? null;
+      if (!effectiveLocationId) {
+        const [candidate] = await trx
+          .select({ locationId: wmsTables.stockLedgers.locationId, qty: wmsTables.stockLedgers.qty })
+          .from(wmsTables.stockLedgers)
+          .where(
+            and(
+              eq(wmsTables.stockLedgers.skuId, input.skuId),
+              eq(wmsTables.stockLedgers.warehouseId, input.warehouseId),
+              eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
+              gt(wmsTables.stockLedgers.qty, 0),
+            ),
+          )
+          .orderBy(desc(wmsTables.stockLedgers.qty))
+          .limit(1);
+        if (!candidate) {
+          throw new BadRequestException('차감할 ON_HAND 재고가 없습니다.');
+        }
+        effectiveLocationId = candidate.locationId;
+      }
+
+      // 3. 현재 재고 조회 + 부족 검증 (ledger 음수 제약으로 500 나기 전에 400으로)
       const currentStock = await trx.query.stockLedgers.findFirst({
         where: (l, { eq, and }) =>
           and(
             eq(l.skuId, input.skuId),
             eq(l.warehouseId, input.warehouseId),
-            eq(l.locationId, input.locationId ?? ''),
+            eq(l.locationId, effectiveLocationId),
             eq(l.stockState, 'ON_HAND'),
           ),
       });
 
       const currentQuantity = currentStock?.qty ?? 0;
-      const afterQuantity = Math.max(0, currentQuantity - input.quantity);
+      if (currentQuantity < input.quantity) {
+        throw new BadRequestException(
+          `재고가 부족합니다. 해당 위치 ON_HAND ${currentQuantity} < 차감 요청 ${input.quantity}`,
+        );
+      }
+      const afterQuantity = currentQuantity - input.quantity;
 
-      // 3. Stock Event 생성
+      // 4. Stock Event 생성
       const event = await this.eventStore.createEvent(
         {
           skuId: input.skuId,
           fromWarehouseId: input.warehouseId,
-          fromLocationId: input.locationId ?? null,
+          fromLocationId: effectiveLocationId,
           fromState: 'ON_HAND',
           transitionType: 'ADJUST_DOWN',
           quantity: input.quantity,
@@ -420,7 +459,7 @@ export class InventoryCommandService {
             skuCode: sku.name,
             skuId: input.skuId,
             warehouseId: input.warehouseId,
-            locationId: input.locationId,
+            locationId: effectiveLocationId,
             quantity: input.quantity,
             deltaQuantity: -input.quantity, // 변동량 (음수)
             afterQuantity: afterQuantity,

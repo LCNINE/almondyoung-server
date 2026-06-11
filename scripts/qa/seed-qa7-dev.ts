@@ -57,8 +57,8 @@ async function main() {
   const outbox = new OutboxService(dbService);
   const sellable = new ProductSellableQuantityService(dbService, outbox);
   const eventStore = new StockEventStore(dbService, sellable);
-  const command = new InventoryCommandService(dbService, eventStore, outbox);
   const location = new LocationService(dbService);
+  const command = new InventoryCommandService(dbService, eventStore, outbox, location);
   const reader = new SkuCatalogReader(dbService);
   const manager = new SkuCatalogManager(dbService, reader);
   const skuCatalog = new SkuCatalogService(reader, manager);
