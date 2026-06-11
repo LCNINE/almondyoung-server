@@ -19,7 +19,9 @@ const PAGE_SIZE = 20;
 export function ProductsListTable() {
   const [modalAction, setModalAction] = useState<BulkActionType | null>(null);
 
-  const { searchParams: query } = useProductsListTableQuery({ pageSize: PAGE_SIZE });
+  const { searchParams: query } = useProductsListTableQuery({
+    pageSize: PAGE_SIZE,
+  });
   const { data, isLoading, isFetching } = useMastersSummary(query);
   const columns = useProductsListTableColumns();
   const filters = useProductsListTableFilters();
@@ -44,10 +46,12 @@ export function ProductsListTable() {
   return (
     <div>
       {selectedIds.length > 0 && (
-        <div className="flex items-center gap-2 border-b bg-muted/50 p-3">
-          <span className="text-sm text-muted-foreground">{selectedIds.length}개 선택됨</span>
+        <div className="fixed z-50 flex items-center gap-2 p-2 pl-4 -translate-x-1/2 border rounded-lg shadow-lg bottom-6 left-1/2 bg-background">
+          <span className="text-sm text-muted-foreground whitespace-nowrap">
+            {selectedIds.length}개 선택됨
+          </span>
           <Button size="sm" variant="outline">
-            <Download className="mr-1 h-3 w-3" />
+            <Download className="w-3 h-3 mr-1" />
             엑셀 다운로드
           </Button>
           <Button
@@ -62,7 +66,7 @@ export function ProductsListTable() {
             variant="outline"
             onClick={() => setModalAction('delete')}
           >
-            <Trash2 className="mr-1 h-3 w-3" />
+            <Trash2 className="w-3 h-3 mr-1" />
             선택 삭제
           </Button>
           <Button
