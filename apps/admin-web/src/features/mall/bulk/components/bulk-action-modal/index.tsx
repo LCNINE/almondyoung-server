@@ -120,10 +120,14 @@ export function BulkActionModal({
                   <SelectValue placeholder="상태 선택" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="active">활성</SelectItem>
+                  {/* 일괄 변경은 판매중단만 지원 — 재공개(inactive→active)는 가격/variant 검증이
+                      필요해서 상품 상세의 공개 버튼으로만 가능하다. */}
                   <SelectItem value="inactive">판매중단</SelectItem>
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                판매중단된 상품을 다시 판매하려면 상품 상세 페이지에서 공개 처리해 주세요.
+              </p>
             </div>
           )}
 
