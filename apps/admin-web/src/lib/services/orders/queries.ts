@@ -241,6 +241,22 @@ export const useFulfillmentOutboxEvents = (id: string) => {
   });
 };
 
+/** 예약 이전 대상 후보 조회 — 같은 창고·같은 SKU, 작업 전 상태, 부족분 있는 FOI (cross-FO 포함) */
+export const useFulfillmentTransferCandidates = (
+  foId: string,
+  fromFoiId?: string
+) => {
+  return useQuery({
+    queryKey: orderQueryKeys.fulfillmentTransferCandidates(
+      foId,
+      fromFoiId ?? ''
+    ),
+    queryFn: () =>
+      orders.fulfillments.getTransferCandidates(foId, fromFoiId ?? ''),
+    enabled: !!foId && !!fromFoiId,
+  });
+};
+
 // 검수 관련 쿼리
 export const useInspectionSession = (sessionId: string) => {
   return useQuery({

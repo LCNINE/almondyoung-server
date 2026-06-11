@@ -41,6 +41,7 @@ describe('FulfillmentsService', () => {
     result.limit = (count: number) => rows(result.slice(0, count));
     result.offset = (count: number) => rows(result.slice(count));
     result.orderBy = () => result;
+    result.for = () => result;
     return result;
   }
 
@@ -1371,6 +1372,94 @@ describe('FulfillmentsService', () => {
       await expect(service.split('fo-canceled', { items: [{ fulfillmentOrderItemId: 'foi-1', quantity: 1 }] })).rejects.toThrow(
         "Cannot split FO fo-canceled in status 'canceled'",
       );
+    });
+
+    it('같은 FOI가 중복으로 들어오면 BadRequestException을 던진다', async () => {
+      const { service } = makeService({
+        fulfillmentOrders: [{ id: 'fo-ready', salesOrderId, warehouseId, status: 'ready' }],
+        fulfillmentOrderItems: [
+          { id: 'foi-1', fulfillmentOrderId: 'fo-ready', skuId, qty: 5, reservedQty: 5, shippedQty: 0 },
+        ],
+      });
+
+      await expect(
+        service.split('fo-ready', {
+          items: [
+            { fulfillmentOrderItemId: 'foi-1', quantity: 1 },
+            { fulfillmentOrderItemId: 'foi-1', quantity: 1 },
+          ],
+        }),
+      ).rejects.toThrow('Duplicate fulfillmentOrderItemId');
+    });
+
+    it('quantity가 0 이하면 BadRequestException을 던진다 (items 경로)', async () => {
+      const { service } = makeService({
+        fulfillmentOrders: [{ id: 'fo-ready', salesOrderId, warehouseId, status: 'ready' }],
+        fulfillmentOrderItems: [
+          { id: 'foi-1', fulfillmentOrderId: 'fo-ready', skuId, qty: 5, reservedQty: 5, shippedQty: 0 },
+        ],
+      });
+
+      await expect(
+        service.split('fo-ready', { items: [{ fulfillmentOrderItemId: 'foi-1', quantity: 0 }] }),
+      ).rejects.toThrow('Split quantity must be greater than 0');
+    });
+
+    it('quantity가 음수면 BadRequestException을 던진다 (legacy lines 경로)', async () => {
+      const { service } = makeService({
+        fulfillmentOrders: [{ id: 'fo-ready', salesOrderId, warehouseId, status: 'ready' }],
+        fulfillmentOrderItems: [
+          { id: 'foi-1', fulfillmentOrderId: 'fo-ready', skuId, qty: 5, reservedQty: 5, shippedQty: 0 },
+        ],
+      });
+
+      await expect(
+        service.split('fo-ready', { lines: [{ fulfillmentOrderLineId: 'foi-1', quantity: -1 }] }),
+      ).rejects.toThrow('Split quantity must be greater than 0');
+    });
+
+    it('존재하지 않는 FOI id가 들어오면 BadRequestException을 던진다 (silent skip 금지)', async () => {
+      const { service } = makeService({
+        fulfillmentOrders: [{ id: 'fo-ready', salesOrderId, warehouseId, status: 'ready' }],
+        fulfillmentOrderItems: [
+          { id: 'foi-1', fulfillmentOrderId: 'fo-ready', skuId, qty: 5, reservedQty: 5, shippedQty: 0 },
+        ],
+      });
+
+      await expect(
+        service.split('fo-ready', { items: [{ fulfillmentOrderItemId: 'foi-unknown', quantity: 1 }] }),
+      ).rejects.toThrow('not found in FO fo-ready');
+    });
+
+    it('legacy lines 경로: 다른 FO 소속 FOI는 BadRequestException을 던진다', async () => {
+      const { service } = makeService({
+        fulfillmentOrders: [{ id: 'fo-ready', salesOrderId, warehouseId, status: 'ready' }],
+        fulfillmentOrderItems: [
+          { id: 'foi-foreign', fulfillmentOrderId: 'fo-other', skuId, qty: 5, reservedQty: 5, shippedQty: 0 },
+        ],
+      });
+
+      await expect(
+        service.split('fo-ready', { lines: [{ fulfillmentOrderLineId: 'foi-foreign', quantity: 1 }] }),
+      ).rejects.toThrow('not found in FO fo-ready');
+    });
+
+    it('legacy lines 경로: 같은 line이 중복으로 들어오면 BadRequestException을 던진다', async () => {
+      const { service } = makeService({
+        fulfillmentOrders: [{ id: 'fo-ready', salesOrderId, warehouseId, status: 'ready' }],
+        fulfillmentOrderItems: [
+          { id: 'foi-1', fulfillmentOrderId: 'fo-ready', skuId, qty: 5, reservedQty: 5, shippedQty: 0 },
+        ],
+      });
+
+      await expect(
+        service.split('fo-ready', {
+          lines: [
+            { fulfillmentOrderLineId: 'foi-1', quantity: 1 },
+            { fulfillmentOrderLineId: 'foi-1', quantity: 1 },
+          ],
+        }),
+      ).rejects.toThrow('Duplicate fulfillmentOrderLineId');
     });
 
     it('split quantity > splittable qty이면 BadRequestException을 던진다', async () => {

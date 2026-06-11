@@ -33,6 +33,8 @@ export const orderQueryKeys = {
   fulfillmentsList: (params?: object) =>
     ['fulfillments', 'list', params ?? {}] as const,
   fulfillment: (id: string) => ['fulfillments', id] as const,
+  fulfillmentTransferCandidates: (id: string, fromFoiId: string) =>
+    ['fulfillments', id, 'transfer-candidates', fromFoiId] as const,
   fulfillmentOrders: ['fulfillment-orders'] as const,
   fulfillmentOrder: (id: string) => ['fulfillment-orders', id] as const,
 
