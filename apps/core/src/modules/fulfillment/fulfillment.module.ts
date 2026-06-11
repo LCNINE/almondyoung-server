@@ -17,6 +17,7 @@ import { OutboxDispatcherService } from './outbox/outbox-dispatcher.service';
 // Services
 import { FulfillmentsService } from './services/fulfillments.service';
 import { FulfillmentOrderCreationBacklogWorker } from './services/fulfillment-order-creation-backlog.worker';
+import { FulfillmentOrderReservationRetryWorker } from './services/fulfillment-order-reservation-retry.worker';
 import { FulfillmentOrderTransactionService } from './services/fulfillment-order-transaction.service';
 import { FulfillmentReservationsFacade } from './services/fulfillment-reservations.facade';
 import { AvailabilityService } from './services/availability.service';
@@ -85,6 +86,7 @@ import { LocationOptimizationController } from './controllers/location-optimizat
     // Core fulfillment services
     FulfillmentsService,
     FulfillmentOrderCreationBacklogWorker,
+    FulfillmentOrderReservationRetryWorker,
     FulfillmentOrderTransactionService,
     FulfillmentReservationsFacade,
     AvailabilityService,
