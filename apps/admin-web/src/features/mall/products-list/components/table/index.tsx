@@ -83,7 +83,12 @@ export function ProductsListTable() {
         pageSize={PAGE_SIZE}
         filters={filters}
         search
-        navigateTo={(row) => `/mall/products-list/${row.original.masterId}`}
+        navigateTo={(row) =>
+          // active 버전이 없는 상품은 GET /masters/:id 가 404 — versionId 로 직접 조회한다.
+          row.original.status === 'active'
+            ? `/mall/products-list/${row.original.masterId}`
+            : `/mall/products-list/${row.original.masterId}?versionId=${row.original.versionId}`
+        }
         noRecords={{ message: '상품 데이터가 없습니다.' }}
       />
 

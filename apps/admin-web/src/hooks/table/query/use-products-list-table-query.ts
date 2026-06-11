@@ -8,9 +8,9 @@ type UseProductsListTableQueryProps = {
 export const useProductsListTableQuery = ({
   pageSize = 20,
 }: UseProductsListTableQueryProps = {}) => {
-  const queryObject = useQueryParams(['page', 'q', 'categoryId', 'brand']);
+  const queryObject = useQueryParams(['page', 'q', 'categoryId', 'brand', 'mode']);
 
-  const { page, q, categoryId, brand } = queryObject;
+  const { page, q, categoryId, brand, mode } = queryObject;
 
   const searchParams: MastersQuery = {
     limit: pageSize,
@@ -18,6 +18,7 @@ export const useProductsListTableQuery = ({
     q: q?.trim() || undefined,
     categoryId,
     brand,
+    mode: mode === 'active-or-inactive' ? mode : undefined,
   };
 
   return { searchParams, raw: queryObject };
