@@ -24,6 +24,7 @@ import {
   useBulkDeleteMasters,
   useBulkRestoreMasters,
 } from '@/lib/services/products';
+import type { BulkUpdateFailureDto } from '@/lib/types/dto/products';
 
 export type BulkActionType =
   | 'status'
@@ -52,6 +53,7 @@ export function BulkActionModal({
   const [approvalStatus, setApprovalStatus] = useState('');
   const [basePrice, setBasePrice] = useState('');
   const [brand, setBrand] = useState('');
+  const [failedItems, setFailedItems] = useState<BulkUpdateFailureDto[]>([]);
 
   const bulkUpdate = useBulkUpdateMasters();
   const bulkDelete = useBulkDeleteMasters();
@@ -74,6 +76,7 @@ export function BulkActionModal({
 
   async function handleConfirm() {
     const count = selectedIds.length;
+    setFailedItems([]);
     try {
       if (action === 'delete') {
         await bulkDelete.mutateAsync({ productIds: selectedIds });
@@ -82,7 +85,7 @@ export function BulkActionModal({
         await bulkRestore.mutateAsync({ productIds: selectedIds });
         toast.success(`${count}개 상품이 복원되었습니다.`);
       } else {
-        await bulkUpdate.mutateAsync({
+        const result = await bulkUpdate.mutateAsync({
           productIds: selectedIds,
           ...(action === 'status' && status ? { status: status as 'active' | 'inactive' } : {}),
           ...(action === 'approvalStatus' && approvalStatus
@@ -91,6 +94,16 @@ export function BulkActionModal({
           ...(action === 'price' && basePrice ? { basePrice: Number(basePrice) } : {}),
           ...(action === 'brand' && brand ? { brand } : {}),
         });
+
+        const failures = result.failed ?? [];
+        if (failures.length > 0) {
+          // 부분 실패 — 모달을 닫지 않고 실패 목록을 보여준다.
+          setFailedItems(failures);
+          toast.warning(`${result.updated}개 적용, ${failures.length}개 실패했습니다.`);
+          onSuccess();
+          return;
+        }
+
         toast.success(`${count}개 상품이 수정되었습니다.`);
       }
       onSuccess();
@@ -100,8 +113,13 @@ export function BulkActionModal({
     }
   }
 
+  function handleOpenChange(open: boolean) {
+    if (!open) setFailedItems([]);
+    onOpenChange(open);
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{getTitle()}</DialogTitle>
@@ -120,14 +138,33 @@ export function BulkActionModal({
                   <SelectValue placeholder="상태 선택" />
                 </SelectTrigger>
                 <SelectContent>
-                  {/* 일괄 변경은 판매중단만 지원 — 재공개(inactive→active)는 가격/variant 검증이
-                      필요해서 상품 상세의 공개 버튼으로만 가능하다. */}
+                  <SelectItem value="active">판매 활성화</SelectItem>
                   <SelectItem value="inactive">판매중단</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                판매중단된 상품을 다시 판매하려면 상품 상세 페이지에서 공개 처리해 주세요.
+              {status === 'active' && (
+                <p className="text-xs text-muted-foreground">
+                  가격·옵션 검증을 통과한 상품만 활성화되며, 실패한 상품은 목록으로 표시됩니다.
+                </p>
+              )}
+            </div>
+          )}
+
+          {failedItems.length > 0 && (
+            <div className="space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-3">
+              <p className="text-sm font-medium text-destructive">
+                실패한 상품 ({failedItems.length}개)
               </p>
+              <ul className="max-h-40 space-y-1 overflow-y-auto text-xs text-muted-foreground">
+                {failedItems.map((item) => (
+                  <li key={item.masterId}>
+                    <span className="font-medium text-foreground">
+                      {item.name ?? item.masterId}
+                    </span>{' '}
+                    — {item.reason}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 
