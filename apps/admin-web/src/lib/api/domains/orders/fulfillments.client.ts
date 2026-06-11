@@ -16,6 +16,7 @@ import type {
   ReserveRequest,
   UnreserveRequest,
   TransferReservationRequest,
+  TransferCandidate,
   AssignShipmentRequest,
 } from '@/lib/types/dto/fulfillment';
 
@@ -64,6 +65,16 @@ export const fulfillmentsClient = {
 
   transferReservation: async (id: string, data: TransferReservationRequest): Promise<unknown> => {
     const res = await client.post(`${BASE}/${encodeURIComponent(id)}/transfer-reservation`, data);
+    return res.data;
+  },
+
+  getTransferCandidates: async (
+    id: string,
+    fromFulfillmentOrderItemId: string,
+  ): Promise<TransferCandidate[]> => {
+    const res = await client.get(`${BASE}/${encodeURIComponent(id)}/transfer-candidates`, {
+      params: { fromFulfillmentOrderItemId },
+    });
     return res.data;
   },
 

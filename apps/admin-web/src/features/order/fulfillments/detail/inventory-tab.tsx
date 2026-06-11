@@ -124,7 +124,7 @@ export function InventoryTab({ fo }: { fo: FulfillmentOrderDetail }) {
               variant="outline"
               onClick={() => setTransferOpen(true)}
               disabled={!canTransfer}
-              title={!canTransfer ? '출고 수량이 있거나 terminal 상태에서는 예약 이전이 불가합니다.' : undefined}
+              title={!canTransfer ? '피킹이 시작된 출고주문은 예약을 이전할 수 없습니다. (허용 상태: created / reserving / ready / unfulfillable)' : undefined}
             >
               예약 이전
             </Button>

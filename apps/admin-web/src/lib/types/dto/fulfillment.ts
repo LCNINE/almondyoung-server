@@ -160,6 +160,19 @@ export interface TransferReservationRequest {
   quantity: number;
 }
 
+/** GET /fulfillments/:id/transfer-candidates 응답 항목 */
+export interface TransferCandidate {
+  id: string;
+  fulfillmentOrderId: string;
+  fulfillmentOrderStatus: string;
+  salesOrderId: string | null;
+  skuId: string;
+  qty: number;
+  reservedQty: number;
+  shortage: number;
+  sameFulfillmentOrder: boolean;
+}
+
 /** POST /fulfillments/:id/assign-shipment body */
 export interface AssignShipmentRequest {
   trackingNo: string;
