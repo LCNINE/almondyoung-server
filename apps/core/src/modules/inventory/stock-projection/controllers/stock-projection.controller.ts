@@ -4,6 +4,7 @@ import { ApiOkResponsePaginated } from '../../shared/decorators/api-paginated-re
 import { PaginatedResponseDto } from '../../shared/dto';
 import { CurrentStockDto } from '../dto/current-stock.dto';
 import { GetStockQueryDto } from '../dto/get-stock-query.dto';
+import { GetStockSummaryListQueryDto, StockSummaryListItemDto } from '../dto/stock-summary-list.dto';
 import { SkuStockSummaryDto } from '../dto/sku-stock-summary.dto';
 import { StockProjectionService } from '../services/stock-projection.service';
 
@@ -23,6 +24,20 @@ export class StockProjectionController {
   @ApiOkResponsePaginated(CurrentStockDto)
   async getCurrentStock(@Query() query: GetStockQueryDto): Promise<PaginatedResponseDto<CurrentStockDto>> {
     return this.stockProjection.getCurrentStock(query);
+  }
+
+  @Get('/stocks/summary')
+  @ApiOperation({
+    summary: '재고 요약 목록 조회 (SKU × 창고)',
+    description: 'SKU·창고별 재고 요약 목록을 조회합니다. 재고 움직임이 전혀 없는 SKU × 창고 조합은 제외됩니다.',
+  })
+  @ApiQuery({ name: 'skuId', required: false, description: 'SKU ID 필터' })
+  @ApiQuery({ name: 'warehouseId', required: false, description: '창고 ID 필터' })
+  @ApiOkResponsePaginated(StockSummaryListItemDto)
+  async listStockSummaries(
+    @Query() query: GetStockSummaryListQueryDto,
+  ): Promise<PaginatedResponseDto<StockSummaryListItemDto>> {
+    return this.stockProjection.listStockSummaries(query);
   }
 
   @Get('/stocks/sku/:skuId/total')

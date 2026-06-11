@@ -5,6 +5,7 @@ import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { StockEventStore } from '../../core/repositories/stock-event.store';
 import { GetStockQueryDto } from '../dto/get-stock-query.dto';
+import { GetStockSummaryListQueryDto, StockSummaryListItemDto } from '../dto/stock-summary-list.dto';
 import { CurrentStockDto } from '../dto/current-stock.dto';
 import { SkuStockSummaryDto } from '../dto/sku-stock-summary.dto';
 import { PaginatedResponseDto } from '../../shared/dto';
@@ -64,6 +65,59 @@ export class StockProjectionReader {
 
       return {
         data,
+        total: Number(countResult?.count || 0),
+        page,
+        limit,
+      };
+    }, tx);
+  }
+
+  async listStockSummaries(
+    query: GetStockSummaryListQueryDto,
+    tx?: DbTx,
+  ): Promise<PaginatedResponseDto<StockSummaryListItemDto>> {
+    const { skuId, warehouseId, page = 1, limit = 20 } = query;
+    const offset = (page - 1) * limit;
+
+    return this.inTx(async (trx) => {
+      const v = wmsSchema.stockSummary;
+      // view는 SKU × 창고 CROSS JOIN — 재고 움직임이 전혀 없는 조합은 목록에서 제외
+      const conditions: SQL[] = [
+        sql`(${v.onHandQty} <> 0 OR ${v.defectiveQty} <> 0 OR ${v.inTransferQty} <> 0 OR ${v.reservedQty} <> 0 OR ${v.inboundPendingQty} <> 0 OR ${v.transferPendingQty} <> 0)`,
+      ];
+      if (skuId) {
+        conditions.push(eq(v.skuId, skuId));
+      }
+      if (warehouseId) {
+        conditions.push(eq(v.warehouseId, warehouseId));
+      }
+
+      const rows = await trx
+        .select()
+        .from(v)
+        .where(and(...conditions))
+        .orderBy(v.skuName, v.warehouseName)
+        .limit(limit)
+        .offset(offset);
+
+      const [countResult] = await trx
+        .select({ count: sql<number>`count(*)` })
+        .from(v)
+        .where(and(...conditions));
+
+      return {
+        data: rows.map((s) => ({
+          skuId: s.skuId,
+          skuName: s.skuName ?? '',
+          warehouseId: s.warehouseId,
+          warehouseName: s.warehouseName ?? '',
+          currentQuantity: s.onHandQty + s.defectiveQty + s.inTransferQty,
+          availableQuantity: s.availableQty,
+          reservedQuantity: s.reservedQty,
+          inboundPendingQuantity: s.inboundPendingQty,
+          outboundPendingQuantity: s.onOrderQty,
+          lastUpdated: s.lastCalculatedAt,
+        })),
         total: Number(countResult?.count || 0),
         page,
         limit,
