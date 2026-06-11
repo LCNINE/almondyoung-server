@@ -83,6 +83,7 @@ export class ProductMastersController {
       **조회 모드**:
       - active: 공개된 상품만 (기본값)
       - active-or-inactive: 공개 우선, 없으면 최신 비공개 상품
+      - all: 공개 우선 → 최신 비공개 → 최신 draft (작성 중인 상품 포함)
 
       **기본값**:
       - mode: 'active'
@@ -126,9 +127,9 @@ export class ProductMastersController {
     name: 'mode',
     required: false,
     type: String,
-    enum: ['active', 'active-or-inactive'],
+    enum: ['active', 'active-or-inactive', 'all'],
     description:
-      '조회 모드: active(active 버전만), active-or-inactive(active 우선, 없으면 최신 inactive). 기본값: active',
+      '조회 모드: active(active 버전만), active-or-inactive(active 우선, 없으면 최신 inactive), all(draft만 있는 상품 포함). 기본값: active',
   })
   @ApiQuery({
     name: 'deleted',
@@ -155,7 +156,7 @@ export class ProductMastersController {
       brand?: string;
       q?: string;
       name?: string;
-      mode?: 'active' | 'active-or-inactive';
+      mode?: 'active' | 'active-or-inactive' | 'all';
       deleted?: string;
       ids?: string;
     },

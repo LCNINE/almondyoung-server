@@ -86,7 +86,8 @@ type VariantCombination = VariantCombinationItem[];
 // Master 목록 조회 모드
 type MasterListMode =
   | 'active' // active 버전만
-  | 'active-or-inactive'; // active 우선, 없으면 최신 inactive
+  | 'active-or-inactive' // active 우선, 없으면 최신 inactive
+  | 'all'; // active 우선 → 최신 inactive → 최신 draft (draft만 있는 신규 상품 포함)
 
 @Injectable()
 export class ProductMastersService {
@@ -528,9 +529,13 @@ export class ProductMastersService {
       // ===== 모드별 버전 선택 서브쿼리 =====
       // - active: 서브쿼리 불필요 — productMasterVersions에 직접 status/deletedAt 조건을 건다.
       // - active-or-inactive: master당 active 우선 → 최신 inactive 1개를 ROW_NUMBER로 선택.
+      // - all: active 우선 → 최신 inactive → 최신 draft. draft만 있는 신규 상품도 목록에 나온다.
+      const rankedVersionStatuses: ('active' | 'inactive' | 'draft')[] =
+        mode === 'all' ? ['active', 'inactive', 'draft'] : ['active', 'inactive'];
       const rankedVersionsSubquery =
-        mode === 'active-or-inactive'
-          ? trx
+        mode === 'active'
+          ? null
+          : trx
               .select({
                 masterId: productMasterVersions.masterId,
                 versionId: productMasterVersions.id,
@@ -540,7 +545,11 @@ export class ProductMastersService {
                   ROW_NUMBER() OVER (
                     PARTITION BY ${productMasterVersions.masterId}
                     ORDER BY
-                      CASE WHEN ${productMasterVersions.status} = 'active' THEN 0 ELSE 1 END,
+                      CASE
+                        WHEN ${productMasterVersions.status} = 'active' THEN 0
+                        WHEN ${productMasterVersions.status} = 'inactive' THEN 1
+                        ELSE 2
+                      END,
                       ${productMasterVersions.createdAt} DESC
                   )
                 `.as('rn'),
@@ -548,12 +557,11 @@ export class ProductMastersService {
               .from(productMasterVersions)
               .where(
                 and(
-                  inArray(productMasterVersions.status, ['active', 'inactive']),
+                  inArray(productMasterVersions.status, rankedVersionStatuses),
                   isNull(productMasterVersions.deletedAt),
                 ),
               )
-              .as('ranked_versions')
-          : null;
+              .as('ranked_versions');
 
       // ===== 카테고리 필터: 하위 카테고리 포함 ID 목록 (Recursive CTE) =====
       let categoryIds: string[] | undefined;
