@@ -18,7 +18,7 @@ export const useProductsListTableQuery = ({
     q: q?.trim() || undefined,
     categoryId,
     brand,
-    mode: mode === 'active-or-inactive' ? mode : undefined,
+    mode: mode === 'active-or-inactive' || mode === 'all' ? mode : undefined,
   };
 
   return { searchParams, raw: queryObject };
