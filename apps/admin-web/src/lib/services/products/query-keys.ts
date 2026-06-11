@@ -101,10 +101,12 @@ export const productQueryKeys = {
     [...productQueryKeys.tagGroup(groupId), 'values'] as const,
 
   // 가격 관리 관련
+  pricingVersion: (versionId: string) =>
+    ['pricing', 'versions', versionId] as const,
   pricingVersionRules: (versionId: string) =>
-    ['pricing', 'versions', versionId, 'rules'] as const,
+    [...productQueryKeys.pricingVersion(versionId), 'rules'] as const,
   pricingVersionPriceSet: (versionId: string, variantId: string) =>
-    ['pricing', 'versions', versionId, 'price-set', variantId] as const,
+    [...productQueryKeys.pricingVersion(versionId), 'price-set', variantId] as const,
   pricingMasterRules: (masterId: string) =>
     ['pricing', 'masters', masterId, 'rules'] as const,
   pricingMasterPriceSet: (masterId: string, variantId: string) =>
