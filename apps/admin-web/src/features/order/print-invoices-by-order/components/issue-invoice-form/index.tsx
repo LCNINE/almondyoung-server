@@ -81,8 +81,7 @@ export function IssueInvoiceForm() {
 
   const handleShip = async () => {
     if (!issuedInvoiceId) return;
-    // ⚠️ goodsflow 방식만 printed 상태에서 ship 가능.
-    // direct/self는 printed 상태로 전이할 수 없어 이 버튼이 비활성화됨.
+    // goodsflow: printed 상태에서만 ship 가능. direct/self: 인쇄 단계가 없어 issued 에서 바로 ship 가능 (서버 가드 동일).
     try {
       await shipMutation.mutateAsync(issuedInvoiceId);
       toast.success('배송 처리가 완료되었습니다.');

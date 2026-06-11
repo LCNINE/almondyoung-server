@@ -1075,6 +1075,28 @@ export class InspectionService {
       return target.foiId;
     }
 
+    if (parsed.type === 'unknown') {
+      // skuCode(예: P00008) 또는 외부 바코드 — 세션 내 매칭 FOI 탐색 (피킹 pickByBarcodeScan 과 동일한 폴백)
+      const rows = await trx
+        .select({
+          foiId: wmsTables.inspectionItems.foiId,
+          pickedQty: wmsTables.fulfillmentOrderItems.pickedQty,
+          inspectedQty: wmsTables.inspectionItems.inspectedQty,
+        })
+        .from(wmsTables.inspectionItems)
+        .innerJoin(
+          wmsTables.fulfillmentOrderItems,
+          eq(wmsTables.fulfillmentOrderItems.id, wmsTables.inspectionItems.foiId),
+        )
+        .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId))
+        .where(and(eq(wmsTables.inspectionItems.sessionId, sessionId), eq(wmsTables.skus.code, parsed.id)));
+      const target = rows.find((r) => r.inspectedQty < r.pickedQty) ?? rows[0];
+      if (!target) {
+        throw new NotFoundException(`Barcode ${barcode} does not match any item in inspection session ${sessionId}`);
+      }
+      return target.foiId;
+    }
+
     throw new BadRequestException(`Unsupported barcode for inspection: ${barcode}`);
   }
 
