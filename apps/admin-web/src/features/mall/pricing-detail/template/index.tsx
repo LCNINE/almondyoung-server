@@ -97,7 +97,7 @@ export default function PricingDetailTemplate({ masterId }: Props) {
   const handleSave = (dto: ReplacePricingRulesDto) => {
     if (!selectedVersionId) return;
     replaceRules.mutate(
-      { versionId: selectedVersionId, dto },
+      { masterId, versionId: selectedVersionId, dto },
       {
         onSuccess: () => toast.success('가격 룰이 저장되었습니다.'),
         onError: () => toast.error('저장에 실패했습니다.'),
@@ -108,7 +108,7 @@ export default function PricingDetailTemplate({ masterId }: Props) {
   const handleDelete = () => {
     if (!selectedVersionId) return;
     deleteRules.mutate(
-      { versionId: selectedVersionId },
+      { masterId, versionId: selectedVersionId },
       {
         onSuccess: () => toast.success('가격 룰이 삭제되었습니다.'),
         onError: () => toast.error('삭제에 실패했습니다.'),

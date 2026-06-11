@@ -503,7 +503,7 @@ function invalidateProductVariantEditingQueries(
     queryKey: productQueryKeys.variants,
   });
   queryClient.invalidateQueries({
-    queryKey: ['pricing', 'versions', versionId],
+    queryKey: productQueryKeys.pricingVersion(versionId),
   });
 }
 
@@ -669,15 +669,38 @@ export const useBulkUpdateDraftVariants = () => {
 
 // ===== 가격 관리 뮤테이션 =====
 
+// rules 뿐 아니라 variant 별 price-set 쿼리(옵션별 가격 현황)와
+// versionDetail(variants 테이블의 가격 컬럼)까지 함께 무효화
+function invalidatePricingRulesQueries(
+  queryClient: QueryClient,
+  masterId: string,
+  versionId: string
+) {
+  queryClient.invalidateQueries({
+    queryKey: productQueryKeys.pricingVersion(versionId),
+  });
+  queryClient.invalidateQueries({
+    queryKey: productQueryKeys.versionDetail(masterId, versionId),
+  });
+}
+
 export const useReplaceVersionPricingRules = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ versionId, dto }: { versionId: string; dto: ReplacePricingRulesDto }) =>
-      products.pricing.versions.replaceRules(versionId, dto),
+    mutationFn: ({
+      versionId,
+      dto,
+    }: {
+      masterId: string;
+      versionId: string;
+      dto: ReplacePricingRulesDto;
+    }) => products.pricing.versions.replaceRules(versionId, dto),
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: productQueryKeys.pricingVersionRules(variables.versionId),
-      });
+      invalidatePricingRulesQueries(
+        queryClient,
+        variables.masterId,
+        variables.versionId
+      );
     },
   });
 };
@@ -685,12 +708,14 @@ export const useReplaceVersionPricingRules = () => {
 export const useDeleteVersionPricingRules = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ versionId }: { versionId: string }) =>
+    mutationFn: ({ versionId }: { masterId: string; versionId: string }) =>
       products.pricing.versions.deleteRules(versionId),
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: productQueryKeys.pricingVersionRules(variables.versionId),
-      });
+      invalidatePricingRulesQueries(
+        queryClient,
+        variables.masterId,
+        variables.versionId
+      );
     },
   });
 };
