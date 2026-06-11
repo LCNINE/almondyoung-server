@@ -376,7 +376,11 @@ export interface LocationCreateResultDto {
 
 // ===== 입고 =====
 
-export type InboundMethod = 'individual' | 'simple' | 'simple_fullscan' | 'planned';
+export type InboundMethod =
+  | 'individual'
+  | 'simple'
+  | 'simple_fullscan'
+  | 'planned';
 export type InboundWorkLogType = 'INBOUND' | 'PUTAWAY' | 'RETURN' | 'CANCEL';
 export type InboundReceiptStatus = 'posted' | 'draft' | 'cancelled' | 'voided';
 export type InboundPlanType = 'source' | 'destination';
@@ -719,13 +723,35 @@ export interface AdjustStockDto {
   reason: string;
 }
 
+// core stock_events raw row (GET /inventory/stocks/history)
+export type StockTransitionType =
+  | 'RECEIVE'
+  | 'SHIP'
+  | 'MOVE'
+  | 'MARK_DEFECT'
+  | 'REWORK_GOOD'
+  | 'SCRAP'
+  | 'ADJUST_UP'
+  | 'ADJUST_DOWN';
+
 export interface StockHistoryDto {
   id: string;
-  eventType: string;
-  deltaQuantity: number;
-  eventTimestamp: string;
-  reason?: string;
-  orderId?: string;
+  skuId: string;
+  journalId?: string | null;
+  fromWarehouseId?: string | null;
+  fromLocationId?: string | null;
+  toWarehouseId?: string | null;
+  toLocationId?: string | null;
+  fromState?: string | null;
+  toState?: string | null;
+  transitionType: StockTransitionType;
+  quantity: number;
+  occurredAt: string;
+  recordedAt: string;
+  eventStatus: 'PENDING' | 'POSTED' | 'VOIDED';
+  reversalOfEventId?: string | null;
+  voidedByEventId?: string | null;
+  reason?: string | null;
 }
 
 export interface SkuResponseDto {
@@ -1004,7 +1030,8 @@ export interface CreateSupplierCategoryRequest {
   description?: string;
 }
 
-export type UpdateSupplierCategoryRequest = Partial<CreateSupplierCategoryRequest>;
+export type UpdateSupplierCategoryRequest =
+  Partial<CreateSupplierCategoryRequest>;
 
 // 재고소유 정보
 export interface HolderDto {
@@ -1477,7 +1504,12 @@ export interface StockReorderSuggestionDto {
 
 // ===== 회수(Returns) =====
 
-export type ReturnStatus = 'requested' | 'received' | 'qc_passed' | 'qc_failed' | 'disposed';
+export type ReturnStatus =
+  | 'requested'
+  | 'received'
+  | 'qc_passed'
+  | 'qc_failed'
+  | 'disposed';
 export type ReturnQcStatus = 'pending' | 'passed' | 'failed';
 export type ReturnProcessAction = 'restock' | 'dispose';
 
