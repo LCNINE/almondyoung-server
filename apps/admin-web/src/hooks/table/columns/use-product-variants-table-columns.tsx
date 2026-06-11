@@ -120,14 +120,6 @@ export function useProductVariantsTableColumns(
           return <Badge variant="secondary">{STATUS_LABELS[v] ?? v}</Badge>;
         },
       }),
-      columnHelper.accessor('price', {
-        header: '가격',
-        cell: ({ getValue }) => {
-          const v = getValue();
-          if (v == null) return '-';
-          return `${v.toLocaleString()}원`;
-        },
-      }),
       ...(actions
         ? [
             columnHelper.display({

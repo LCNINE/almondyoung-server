@@ -3,13 +3,8 @@
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { FormSelect } from '@/components/common/form/form-select';
 import { Badge } from '@/components/ui/badge';
 import { useCalculateVersionPrice, useCalculateMasterPrice } from '@/lib/services/products/mutations';
 import type { CalculatePriceResponseDto, PricingLayer } from '@/lib/types/dto/products';
@@ -63,43 +58,39 @@ export function Calculator({ variants, versionId, masterId }: Props) {
 
   return (
     <div className="space-y-4 p-4">
-      <p className="text-sm font-semibold">가격 시뮬레이션</p>
-
-      <div className="space-y-2">
-        <Select value={variantId} onValueChange={setVariantId}>
-          <SelectTrigger className="h-8 text-xs">
-            <SelectValue placeholder="옵션(variant) 선택" />
-          </SelectTrigger>
-          <SelectContent>
-            {variants.map((v) => (
-              <SelectItem key={v.id} value={v.id} className="text-xs">
-                {v.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="space-y-3">
+        <div className="flex flex-col gap-1.5">
+          <Label>옵션(variant)</Label>
+          <FormSelect
+            value={variantId}
+            onValueChange={setVariantId}
+            placeholder="옵션을 선택하세요"
+            options={variants.map((v) => ({ value: v.id, label: v.name }))}
+          />
+        </div>
 
         <div className="flex gap-2">
-          <Input
-            type="number"
-            min={1}
-            className="h-8 w-24 text-xs"
-            value={quantity}
-            onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-            placeholder="수량"
-          />
-          <Select
-            value={customerType}
-            onValueChange={(v) => setCustomerType(v as 'regular' | 'membership')}
-          >
-            <SelectTrigger className="h-8 flex-1 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="regular" className="text-xs">일반</SelectItem>
-              <SelectItem value="membership" className="text-xs">멤버십</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex w-24 flex-col gap-1.5">
+            <Label htmlFor="pricing-sim-quantity">수량</Label>
+            <Input
+              id="pricing-sim-quantity"
+              type="number"
+              min={1}
+              value={quantity}
+              onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+            />
+          </div>
+          <div className="flex flex-1 flex-col gap-1.5">
+            <Label>고객 유형</Label>
+            <FormSelect
+              value={customerType}
+              onValueChange={(v) => setCustomerType(v as 'regular' | 'membership')}
+              options={[
+                { value: 'regular', label: '일반' },
+                { value: 'membership', label: '멤버십' },
+              ]}
+            />
+          </div>
         </div>
 
         <Button size="sm" className="w-full" onClick={handleCalculate} disabled={!variantId || isPending}>
