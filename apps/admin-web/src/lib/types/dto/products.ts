@@ -126,8 +126,8 @@ export interface MastersQuery {
   brand?: string;
   categoryId?: string;
   status?: ProductStatus;
-  /** active(기본): active 버전만 / active-or-inactive: active 우선, 없으면 최신 inactive 포함 */
-  mode?: 'active' | 'active-or-inactive';
+  /** active(기본): active 버전만 / active-or-inactive: active 우선, 없으면 최신 inactive 포함 / all: draft만 있는 상품 포함 */
+  mode?: 'active' | 'active-or-inactive' | 'all';
   limit?: number;
   page?: number;
 }
