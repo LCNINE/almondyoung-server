@@ -1067,35 +1067,6 @@ export class ProductMastersService {
     return result[0].count > 0;
   }
 
-  async updateMasterStatus(masterId: string, status: string, tx?: DbTransaction): Promise<void> {
-    if (!masterId) {
-      throw new BadRequestException('Master ID is required');
-    }
-
-    if (!status) {
-      throw new BadRequestException('Status is required');
-    }
-
-    const validStatuses = ['active', 'inactive', 'draft'];
-    if (!validStatuses.includes(status)) {
-      throw new BadRequestException(`Invalid status: ${status}. Valid statuses are: ${validStatuses.join(', ')}`);
-    }
-
-    await this.inTx(async (tx) => {
-      const exists = await this.existsMaster(masterId, tx);
-      if (!exists) {
-        throw new NotFoundException(`Master not found: ${masterId}`);
-      }
-      await tx
-        .update(productMasterVersions)
-        .set({
-          status: status as 'active' | 'inactive' | 'draft',
-          updatedAt: new Date(),
-        })
-        .where(eq(productMasterVersions.id, masterId));
-    }, tx);
-  }
-
   private generateOptionCombinations(optionGroups: any[]): any[][] {
     if (!optionGroups || optionGroups.length === 0) {
       return [];
