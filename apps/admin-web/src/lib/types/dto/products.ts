@@ -932,6 +932,20 @@ export interface BulkOperationResultDto {
   affected: number;
 }
 
+export interface BulkUpdateFailureDto {
+  masterId: string;
+  name: string | null;
+  reason: string;
+}
+
+// 백엔드 POST /masters/bulk/update 실제 응답 모양.
+export interface BulkUpdateResultDto {
+  updated: number;
+  products: unknown[];
+  /** status: 'active'(일괄 재공개) 경로에서만 채워진다 — 검증 실패한 상품 목록. */
+  failed?: BulkUpdateFailureDto[];
+}
+
 // ===== CSV 관련 =====
 
 export interface CsvImportResultDto {

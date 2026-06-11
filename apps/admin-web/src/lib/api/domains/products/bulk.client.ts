@@ -6,11 +6,12 @@ import type {
   BulkDeleteDto,
   BulkRestoreDto,
   BulkOperationResultDto,
+  BulkUpdateResultDto,
 } from '@/lib/types/dto/products';
 import { client } from '../../client';
 
 export const bulkClient = {
-  update: async (dto: BulkUpdateDto): Promise<BulkOperationResultDto> => {
+  update: async (dto: BulkUpdateDto): Promise<BulkUpdateResultDto> => {
     const response = await client.post(
       `${ALMONDYOUNG_API_BASE_URL}/masters/bulk/update`,
       dto

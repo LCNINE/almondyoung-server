@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { and, eq, inArray, isNotNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { type PimSchema, productMasterVersions, productAuditLog } from '../../schema/catalog.schema';
 import { BulkUpdateDto, BulkDeleteDto, BulkRestoreDto } from './dto';
 import { DbTransaction } from '../../catalog.types';
@@ -24,6 +24,11 @@ export class ProductBulkService {
     // 이벤트 발행이 필요하다 — Medusa(스토어프론트)·검색 색인이 이 이벤트로 동기화된다.
     if (dto.status === 'inactive') {
       return this.bulkUnpublish(dto, userId, tx);
+    }
+
+    // 활성화는 publish 경로(가격·variant 검증 + 이벤트 발행)를 타야 하며 부분 실패를 허용한다.
+    if (dto.status === 'active') {
+      return this.bulkActivate(dto, userId, tx);
     }
 
     const client = this.getClient(tx);
@@ -108,6 +113,83 @@ export class ProductBulkService {
     return {
       updated: products.length,
       products,
+    };
+  }
+
+  /**
+   * 판매중단(inactive) 상품 일괄 재공개.
+   * master별 최신 inactive 버전을 publishVersion으로 publish — 검증 실패(가격 미설정 등)는
+   * 해당 master만 failed에 수집하고 나머지는 계속 진행한다.
+   */
+  private async bulkActivate(dto: BulkUpdateDto, userId: string, tx?: DbTransaction) {
+    const client = this.getClient(tx);
+
+    const products: (typeof productMasterVersions.$inferSelect)[] = [];
+    const failed: { masterId: string; name: string | null; reason: string }[] = [];
+
+    for (const masterId of dto.productIds) {
+      // 이미 판매중인 master는 skip
+      const [active] = await client
+        .select({ id: productMasterVersions.id })
+        .from(productMasterVersions)
+        .where(
+          and(
+            eq(productMasterVersions.masterId, masterId),
+            eq(productMasterVersions.status, 'active'),
+            isNull(productMasterVersions.deletedAt),
+          ),
+        )
+        .limit(1);
+      if (active) continue;
+
+      // 최신 inactive 버전을 publish 대상으로 선택
+      const [target] = await client
+        .select()
+        .from(productMasterVersions)
+        .where(
+          and(
+            eq(productMasterVersions.masterId, masterId),
+            eq(productMasterVersions.status, 'inactive'),
+            isNull(productMasterVersions.deletedAt),
+          ),
+        )
+        .orderBy(desc(productMasterVersions.createdAt))
+        .limit(1);
+
+      if (!target) {
+        failed.push({ masterId, name: null, reason: '판매중단 상태의 버전이 없습니다' });
+        continue;
+      }
+
+      const run = async (trx: DbTransaction) => {
+        await this.productVersionsService.publishVersion(target.id, trx);
+        await trx.insert(productAuditLog).values({
+          versionId: target.id,
+          action: 'bulk_activated',
+          changes: { status: 'active' },
+          userId,
+          timestamp: new Date(),
+        });
+      };
+
+      try {
+        // publishVersion은 검증 전에 쓰기를 시작하므로, 실패한 master의 부분 쓰기가
+        // 남지 않도록 외부 tx가 있어도 savepoint(중첩 트랜잭션)로 감싼다.
+        if (tx) {
+          await tx.transaction(run);
+        } else {
+          await this.db.db.transaction(run);
+        }
+        products.push({ ...target, status: 'active' });
+      } catch (error) {
+        failed.push({ masterId, name: target.name, reason: error?.message ?? '알 수 없는 오류' });
+      }
+    }
+
+    return {
+      updated: products.length,
+      products,
+      failed,
     };
   }
 
