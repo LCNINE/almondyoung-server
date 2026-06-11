@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, asc, sql } from 'drizzle-orm';
 import { UnifiedReservationService } from './unified-reservation.service';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 
@@ -240,63 +240,111 @@ export class ReservationLifecycleService {
     }>,
     tx?: DbTx,
   ): Promise<void> {
+    // 예약 이동은 reserveStock 재호출이 아니라 confirmed row 직접 이전으로 처리한다 —
+    // 재고가 전량 예약된 상태(가용재고 0)에서도 분할이 동작해야 하고,
+    // SKU 전체 confirmed 합계가 보존되므로 sellable 재계산도 불필요하다.
+    // 이동량 = min(splitQuantity, 원본 FOI confirmed 합계). FOI reservedQty와
+    // FO totalReservedQty 갱신도 실제 이동량 기준으로 여기서 수행한다.
+    // 잠금 컨벤션: FO/FOI는 호출자(split)가 잠그고, reservation row는 여기서 createdAt, id 순으로 잠근다.
     return this.inTx(async (trx) => {
+      let totalMoved = 0;
+
       for (const item of splitItems) {
-        // 1. 원본 FOI에 걸린 예약 조회 (분할 전 originalFulfillmentOrderItemId 기준)
-        const originalReservations = await trx.query.stockReservations.findMany({
-          where: and(
-            eq(wmsTables.stockReservations.fulfillmentOrderItemId, item.originalFulfillmentOrderItemId),
-            eq(wmsTables.stockReservations.status, 'confirmed'),
-          ),
-        });
+        const originalReservations = await trx
+          .select()
+          .from(wmsTables.stockReservations)
+          .where(
+            and(
+              eq(wmsTables.stockReservations.fulfillmentOrderItemId, item.originalFulfillmentOrderItemId),
+              eq(wmsTables.stockReservations.status, 'confirmed'),
+            ),
+          )
+          .orderBy(asc(wmsTables.stockReservations.createdAt), asc(wmsTables.stockReservations.id))
+          .for('update');
 
         if (originalReservations.length === 0) continue;
 
-        const splitRatio = item.splitQuantity / item.originalQuantityBeforeSplit;
         let remainingToSplit = item.splitQuantity;
+        let movedForItem = 0;
 
         for (const reservation of originalReservations) {
           if (remainingToSplit <= 0) break;
 
-          // 2. 분할할 수량 계산 (비례 분배)
-          const splitReservationQty = Math.min(Math.floor(reservation.quantity * splitRatio), remainingToSplit);
-
-          if (splitReservationQty > 0) {
-            // 3. 신규 FOI로 예약 생성 (newFulfillmentOrderItemId 사용)
-            await this.unifiedReservation.reserveStock(
-              {
-                targetType: 'FULFILLMENT_ORDER',
+          const moveQty = Math.min(reservation.quantity, remainingToSplit);
+          if (moveQty === reservation.quantity) {
+            // row 전체 이동: 소유권만 신규 FOI로 변경
+            await trx
+              .update(wmsTables.stockReservations)
+              .set({
                 targetId: newFoId,
-                skuId: item.skuId,
-                warehouseId: reservation.warehouseId,
-                quantity: splitReservationQty,
                 fulfillmentOrderItemId: item.newFulfillmentOrderItemId,
                 reason: `Split from FO ${originalFoId}`,
-              },
-              trx,
-            );
+                updatedAt: new Date(),
+              })
+              .where(eq(wmsTables.stockReservations.id, reservation.id));
+          } else {
+            // 부분 이동: 원본 차감 + 신규 FOI로 새 confirmed row 생성
+            await trx
+              .update(wmsTables.stockReservations)
+              .set({ quantity: reservation.quantity - moveQty, updatedAt: new Date() })
+              .where(eq(wmsTables.stockReservations.id, reservation.id));
 
-            // 4. 원본 예약 수량 차감
-            if (splitReservationQty === reservation.quantity) {
-              await this.unifiedReservation.releaseReservation(reservation.id, trx);
-            } else {
-              await trx
-                .update(wmsTables.stockReservations)
-                .set({
-                  quantity: reservation.quantity - splitReservationQty,
-                  updatedAt: new Date(),
-                })
-                .where(eq(wmsTables.stockReservations.id, reservation.id));
-
-              await this.recalculateSellableQuantityForReservationSku(reservation, trx);
-            }
-
-            remainingToSplit -= splitReservationQty;
+            await trx.insert(wmsTables.stockReservations).values({
+              targetType: 'FULFILLMENT_ORDER',
+              targetId: newFoId,
+              skuId: reservation.skuId,
+              warehouseId: reservation.warehouseId,
+              quantity: moveQty,
+              fulfillmentOrderItemId: item.newFulfillmentOrderItemId,
+              status: 'confirmed',
+              reason: `Split from FO ${originalFoId}`,
+            });
           }
+
+          remainingToSplit -= moveQty;
+          movedForItem += moveQty;
+        }
+
+        if (movedForItem > 0) {
+          await trx
+            .update(wmsTables.fulfillmentOrderItems)
+            .set({
+              reservedQty: sql`GREATEST(${wmsTables.fulfillmentOrderItems.reservedQty} - ${movedForItem}, 0)`,
+              updatedAt: new Date(),
+            })
+            .where(eq(wmsTables.fulfillmentOrderItems.id, item.originalFulfillmentOrderItemId));
+
+          await trx
+            .update(wmsTables.fulfillmentOrderItems)
+            .set({
+              reservedQty: sql`${wmsTables.fulfillmentOrderItems.reservedQty} + ${movedForItem}`,
+              updatedAt: new Date(),
+            })
+            .where(eq(wmsTables.fulfillmentOrderItems.id, item.newFulfillmentOrderItemId));
+
+          totalMoved += movedForItem;
         }
       }
 
-      this.logger.log(`Split FO ${originalFoId} → ${newFoId} with reservation redistribution`);
+      if (totalMoved > 0) {
+        await trx
+          .update(wmsTables.fulfillmentOrders)
+          .set({
+            totalReservedQty: sql`GREATEST(${wmsTables.fulfillmentOrders.totalReservedQty} - ${totalMoved}, 0)`,
+            updatedAt: new Date(),
+          })
+          .where(eq(wmsTables.fulfillmentOrders.id, originalFoId));
+
+        await trx
+          .update(wmsTables.fulfillmentOrders)
+          .set({
+            totalReservedQty: sql`${wmsTables.fulfillmentOrders.totalReservedQty} + ${totalMoved}`,
+            updatedAt: new Date(),
+          })
+          .where(eq(wmsTables.fulfillmentOrders.id, newFoId));
+      }
+
+      this.logger.log(`Split FO ${originalFoId} → ${newFoId}: moved ${totalMoved} reserved units`);
     }, tx);
   }
 

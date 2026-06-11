@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { User } from '@app/authorization';
 import { FulfillmentsService } from '../services/fulfillments.service';
@@ -142,11 +142,25 @@ export class FulfillmentsController {
   }
 
   @Post(':id/transfer-reservation')
-  @ApiOperation({ summary: '예약 이전 (같은 SKU FOI 간)' })
+  @ApiOperation({ summary: '예약 이전 (같은 창고·같은 SKU FOI 간, cross-FO 허용, 작업 전 상태만)' })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
   @ApiBody({ type: TransferReservationDto })
-  transfer(@Param('id') id: string, @Body() dto: TransferReservationDto) {
-    return this.reservations.transferReservation(id, dto);
+  transfer(@Param('id') id: string, @Body() dto: TransferReservationDto, @User() user: AuthenticatedUser) {
+    return this.reservations.transferReservation(id, { ...dto, performedBy: this.getUserId(user) });
+  }
+
+  @Get(':id/transfer-candidates')
+  @ApiOperation({ summary: '예약 이전 대상 후보 조회 (같은 창고·같은 SKU, 작업 전 상태, 미예약 부족분 있는 FOI)' })
+  @ApiParam({ name: 'id', description: '주문처리 ID' })
+  @ApiQuery({ name: 'fromFulfillmentOrderItemId', required: true, type: String })
+  getTransferCandidates(
+    @Param('id') id: string,
+    @Query('fromFulfillmentOrderItemId') fromFulfillmentOrderItemId?: string,
+  ) {
+    if (!fromFulfillmentOrderItemId) {
+      throw new BadRequestException('fromFulfillmentOrderItemId is required');
+    }
+    return this.reservations.getTransferCandidates(id, fromFulfillmentOrderItemId);
   }
 
   private getUserId(user: AuthenticatedUser): string | undefined {

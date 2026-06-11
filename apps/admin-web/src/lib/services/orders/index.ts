@@ -43,6 +43,7 @@ export {
   useFulfillmentOrders,
   useFulfillmentOrder,
   useFulfillmentOutboxEvents,
+  useFulfillmentTransferCandidates,
   useLegacyPurchaseOrders,
   useLegacyPurchaseOrder,
   // 검수
