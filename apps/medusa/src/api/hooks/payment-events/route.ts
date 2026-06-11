@@ -17,6 +17,7 @@ const CAPTURE_EVENT_TYPES = new Set([
 const CANCEL_EVENT_TYPES = new Set([
   'PaymentCancelled',
   'payment.intent.cancelled',
+  'payment.intent.canceled', // wallet GatewayEventType.INTENT_CANCELED (single-l)
   'gateway.charge.voided',
 ]);
 
