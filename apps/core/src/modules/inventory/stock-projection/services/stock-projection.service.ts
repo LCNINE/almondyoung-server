@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DbTx } from '../../schema/inventory.schema';
 import { GetStockQueryDto } from '../dto/get-stock-query.dto';
+import { GetStockSummaryListQueryDto } from '../dto/stock-summary-list.dto';
 import { StockProjectionReader } from './stock-projection.reader';
 import { StockProjectionManager } from './stock-projection.manager';
 
@@ -13,6 +14,10 @@ export class StockProjectionService {
 
   getCurrentStock(query: GetStockQueryDto, tx?: DbTx) {
     return this.reader.getCurrentStock(query, tx);
+  }
+
+  listStockSummaries(query: GetStockSummaryListQueryDto, tx?: DbTx) {
+    return this.reader.listStockSummaries(query, tx);
   }
 
   getTotalBySku(skuId: string, tx?: DbTx) {
