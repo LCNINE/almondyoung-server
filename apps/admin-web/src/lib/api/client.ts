@@ -57,7 +57,8 @@ let inflight: Promise<void> | null = null;
 async function refreshAccessToken(): Promise<void> {
   if (inflight) return inflight;
 
-  const supportsLocks = typeof navigator !== 'undefined' && 'locks' in navigator;
+  const supportsLocks =
+    typeof navigator !== 'undefined' && 'locks' in navigator;
 
   const run = async () => {
     if (supportsLocks) {
@@ -108,7 +109,9 @@ client.interceptors.request.use((config) => {
 // 백엔드 중 user-service 만 ResponseInterceptor(@app/shared) 로 envelope 를 씌우고,
 // core/ugc-service 등은 raw 응답을 그대로 반환한다.
 // 도메인 client 가 양쪽을 신경 쓰지 않도록 여기서 한 번에 정규화한다.
-function isApiEnvelope(body: unknown): body is { success: boolean; data: unknown; message?: string } {
+function isApiEnvelope(
+  body: unknown
+): body is { success: boolean; data: unknown; message?: string } {
   if (!body || typeof body !== 'object') return false;
   const v = body as Record<string, unknown>;
   return v.success === true && 'data' in v;
@@ -143,6 +146,25 @@ client.interceptors.response.use(
       }
     }
 
+    // 4xx는 재시도 대상이 아니다 — 서버가 내려준 메시지를 그대로 보존해 던진다
+    // (재시도 후 raw AxiosError를 던지면 토스트에 "Request failed with status code 409" 같은
+    //  generic 문구만 떠서 운영자가 원인을 알 수 없다)
+    if (err.response && err.response.status < 500) {
+      const data = err.response.data as { message?: string | string[] };
+      const message =
+        (Array.isArray(data?.message)
+          ? data.message.join('\n')
+          : data?.message) ||
+        err.message ||
+        '요청 처리 중 오류가 발생했습니다.';
+
+      throw new CustomError({
+        message,
+        statusCode: err.response.status,
+        response: err.response.data,
+      });
+    }
+
     // 일반적인 재시도 로직
     if (!config) {
       const statusCode = err.response?.status || 500;
@@ -164,9 +186,23 @@ client.interceptors.response.use(
       config.retryDelay = globalConfig.retryDelay;
     }
 
-    // 재시도 횟수 체크
+    // 재시도 횟수 체크 — 소진 시에도 서버 메시지를 보존해 던진다
     if (config.retry <= 0) {
-      return Promise.reject(err);
+      const data = err.response?.data as
+        | { message?: string | string[] }
+        | undefined;
+      const message =
+        (Array.isArray(data?.message)
+          ? data.message.join('\n')
+          : data?.message) ||
+        err.message ||
+        '요청 처리 중 오류가 발생했습니다.';
+
+      throw new CustomError({
+        message,
+        statusCode: err.response?.status || 500,
+        response: err.response?.data,
+      });
     }
 
     // 재시도하기 전에 카운트 감소
