@@ -256,6 +256,7 @@ export class ProductVersionsService {
    * 부수 효과:
    * - 새 active 의 variant 중 matching 없는 것을 이전 active 의 같은 옵션 조합 variant 로부터 인계 (docs/adr/0004)
    * - 새 active variant 들끼리의 variantCode 충돌 검증 (DB 강제 없음 — 런타임 검증)
+   * - 다른 master 의 active 버전과 productCode 충돌 검증 (DB partial unique index와 이중 방어)
    */
   async publishVersion(versionId: string, tx?: DbTransaction): Promise<void> {
     return this.inTx(async (tx) => {
@@ -276,6 +277,7 @@ export class ProductVersionsService {
 
       // 새 active 가 될 버전의 variantCode 충돌 검증
       await this._validateVariantCodeUniqueness(versionId, tx);
+      await this.validateProductCodeUniqueness(version, tx);
 
       // 기존 active를 inactive로
       await tx
@@ -345,6 +347,29 @@ export class ProductVersionsService {
 
     if (dups.size > 0) {
       throw new BadRequestException(`Duplicate variantCode in version ${versionId}: ${Array.from(dups).join(', ')}`);
+    }
+  }
+
+  async validateProductCodeUniqueness(
+    version: Pick<ProductMasterVersion, 'masterId' | 'productCode'>,
+    tx: DbTransaction,
+  ): Promise<void> {
+    if (!version.productCode) {
+      return;
+    }
+
+    const activeVersions = await tx
+      .select({
+        masterId: productMasterVersions.masterId,
+      })
+      .from(productMasterVersions)
+      .where(
+        and(eq(productMasterVersions.status, 'active'), eq(productMasterVersions.productCode, version.productCode)),
+      );
+
+    const conflict = activeVersions.find((activeVersion) => activeVersion.masterId !== version.masterId);
+    if (conflict) {
+      throw new BadRequestException(`productCode ${version.productCode} is already used by another active product`);
     }
   }
 

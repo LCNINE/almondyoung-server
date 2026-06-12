@@ -151,7 +151,7 @@ export const productMasterVersions = pgTable(
     productType: varchar('product_type', { length: 50 }).notNull().default('regular_sale'), // 'limited_edition' | 'regular_sale'
 
     // Product Identification
-    productCode: varchar('product_code', { length: 100 }).unique(),
+    productCode: varchar('product_code', { length: 100 }),
     alternativeName: varchar('alternative_name', { length: 255 }),
     material: text('material'),
 
@@ -217,6 +217,9 @@ export const productMasterVersions = pgTable(
     index('idx_versions_sales_dates').on(table.salesStartDate, table.salesEndDate),
     uniqueIndex('unique_master_active_version')
       .on(table.masterId)
+      .where(sql`${table.status} = 'active'`),
+    uniqueIndex('unique_active_product_code')
+      .on(table.productCode)
       .where(sql`${table.status} = 'active'`),
     uniqueIndex('unique_master_version').on(table.masterId, table.version),
   ],
