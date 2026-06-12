@@ -9,10 +9,19 @@ describe('InvoiceService.markAsShipped', () => {
   type InvoiceRow = {
     id: string;
     fulfillmentOrderId: string;
-    issueMethod: 'goodsflow' | 'direct' | 'self';
+    issueMethod: 'goodsflow' | 'hanjin' | 'direct' | 'self';
     invoiceNumber: string;
     status: 'issued' | 'printed' | 'shipped' | 'canceled';
   };
+
+  function makeFakeProvider(): any {
+    return {
+      issueInvoice: jest.fn(),
+      generatePrintUri: jest.fn(),
+      trackDelivery: jest.fn(),
+      cancelInvoice: jest.fn(),
+    };
+  }
 
   function makeTx(invoiceRow: InvoiceRow | null) {
     const tx: any = {
@@ -20,8 +29,7 @@ describe('InvoiceService.markAsShipped', () => {
         from: (_table: unknown) => ({
           where: (_where: unknown) => ({
             limit: (_n: number) => ({
-              then: (fn: (rows: InvoiceRow[]) => unknown) =>
-                Promise.resolve(fn(invoiceRow ? [invoiceRow] : [])),
+              then: (fn: (rows: InvoiceRow[]) => unknown) => Promise.resolve(fn(invoiceRow ? [invoiceRow] : [])),
             }),
           }),
         }),
@@ -38,7 +46,7 @@ describe('InvoiceService.markAsShipped', () => {
     const dbService: any = { db: { transaction: jest.fn((fn) => fn(tx)) } };
     const fulfillmentsService: any = { ship: jest.fn().mockResolvedValue(undefined) };
 
-    const service = new InvoiceService(dbService, fulfillmentsService);
+    const service = new InvoiceService(dbService, fulfillmentsService, makeFakeProvider(), makeFakeProvider());
     return { service, tx, fulfillmentsService };
   }
 

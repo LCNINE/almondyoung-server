@@ -13,7 +13,7 @@ export class InvoiceSummaryDto {
   @ApiProperty({ nullable: true })
   carrierCode: string | null;
 
-  @ApiProperty({ enum: ['goodsflow', 'direct', 'self'] })
+  @ApiProperty({ enum: ['goodsflow', 'hanjin', 'direct', 'self'] })
   issueMethod: string;
 }
 
