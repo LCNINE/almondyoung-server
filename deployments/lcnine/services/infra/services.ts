@@ -419,6 +419,8 @@ export function setup(infra: SharedInfra) {
       MEMBERSHIP_SERVICE_URL: url("membership"),
       NOTIFICATION_SERVICE_URL: url("notification"),
       CHANNEL_ADAPTER_SERVICE_URL: url("channel-adapter"),
+      FILE_SERVICE_URL: url("file"),
+      UGC_SERVICE_URL: url("ugc"),
       ADMIN_DOMAIN: domain("admin"),
       OIDC_ISSUER_URL: idpUserServiceUrl,
       OAUTH_ISSUER_URL: idpUserServiceUrl,
