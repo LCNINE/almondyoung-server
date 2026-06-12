@@ -146,6 +146,14 @@ export interface ProductSnapshot {
   }>;
   status: 'active' | 'draft' | 'archived';
   isWholesaleOnly: boolean;
+  /**
+   * 멤버십가 공개 제한 플래그.
+   * true면 비회원에게 멤버십가 숫자(variant.metadata.membershipPrice)를 숨기고
+   * "멤버십 회원 공개"로 표시한다. 상품 노출/구매를 제한하는 플래그가 아니다 —
+   * 구매 제한은 purchaseConstraint로 표현한다.
+   * (주의: purchaseConstraint는 현재 Medusa metadata로 전파만 되고,
+   *  Medusa cart/checkout 단의 구매 차단 enforcement는 아직 구현되지 않았다.)
+   */
   isMembershipOnly: boolean;
   isGiftcard: boolean;
   discountable: boolean;
@@ -316,6 +324,7 @@ const ProductSnapshotSchema = z.object({
   variants: z.array(ProductSnapshotVariantSchema),
   status: z.enum(['active', 'draft', 'archived']),
   isWholesaleOnly: z.boolean(),
+  // 멤버십가 공개 제한 (비회원에게 멤버십가 숨김) — 상품 노출/구매 제한 아님
   isMembershipOnly: z.boolean(),
   isGiftcard: z.boolean(),
   discountable: z.boolean(),

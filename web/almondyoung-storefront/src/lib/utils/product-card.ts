@@ -8,6 +8,19 @@ import { isWelcomeMembershipProduct } from "@/lib/utils/welcome-membership"
 
 export type ReviewSummary = { rating: number; reviewCount: number }
 
+/**
+ * 멤버십가 비공개 여부 (비회원에게 멤버십가 숫자 대신 "멤버십 회원 공개" 표시).
+ * 상품 숨김/구매 제한이 아니다. 판정 기준은 product.metadata.isMembershipOnly 단일.
+ */
+export function getIsMembershipOnly(
+  product: Pick<StoreProduct, "metadata">
+): boolean {
+  return (
+    product.metadata?.isMembershipOnly === true ||
+    product.metadata?.isMembershipOnly === "true"
+  )
+}
+
 const getMembershipPreviewPrice = (
   variant: StoreProductVariant | null | undefined
 ) => {
@@ -94,9 +107,7 @@ export function mapStoreProductToCardProps(
     ? Infinity
     : variants.reduce((sum, v) => sum + (v.inventory_quantity || 0), 0)
 
-  const isMembershipOnly =
-    product.metadata?.isMembershipOnly === true ||
-    product.metadata?.isMembershipOnly === "true"
+  const isMembershipOnly = getIsMembershipOnly(product)
 
   const isWelcomeMembership = isWelcomeMembershipProduct(product.tags)
 
@@ -136,17 +147,9 @@ export function mapStoreProductsToCardProps(
   reviewsMap?: Map<string, ReviewSummary>,
   options?: { isMember?: boolean }
 ): ProductCardProps[] {
-  const filtered =
-    options?.isMember === false
-      ? products.filter((p) => {
-          const isHidden =
-            p.metadata?.isMembershipOnly === true ||
-            p.metadata?.isMembershipOnly === "true"
-          return !isHidden
-        })
-      : products
-
-  return filtered
+  // isMembershipOnly=true 상품도 비회원에게 그대로 노출한다.
+  // (isMembershipOnly는 상품 숨김이 아니라 "비회원에게 멤버십가 숫자 숨김" 표시 정책)
+  return products
     .map((product) =>
       mapStoreProductToCardProps(product, reviewsMap, options?.isMember)
     )

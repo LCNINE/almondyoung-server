@@ -77,6 +77,8 @@ export function transformPimToMedusa(
     seoDescription: snapshot.seoDescription,
     seoKeywords: snapshot.seoKeywords,
     isWholesaleOnly: snapshot.isWholesaleOnly,
+    // 멤버십가 공개 제한 플래그 — Medusa/스토어프론트에서 상품 숨김 용도로 쓰지 않는다.
+    // 비회원에게 멤버십가 숫자 대신 "멤버십 회원 공개"를 표시하기 위한 표시 정책 값이다.
     isMembershipOnly: snapshot.isMembershipOnly,
     productType: snapshot.productType,
     pimPurchaseConstraint: snapshot.purchaseConstraint ?? null,

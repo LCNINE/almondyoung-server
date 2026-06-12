@@ -1,6 +1,7 @@
 "use client"
 
 import ProductCard from "@/domains/products/components/product-card"
+import { getIsMembershipOnly } from "@/lib/utils/product-card"
 import CustomDropdown from "@components/dropdown"
 import { SearchHistory } from "@components/search/search-history"
 import { SharedPagination } from "@/components/shared/pagination"
@@ -152,7 +153,7 @@ export function SearchPageClient({
               key={product.id}
               product={product}
               isMembership={isMembership}
-              isMembershipOnly={product.metadata?.isMembershipOnly === true}
+              isMembershipOnly={getIsMembershipOnly(product)}
               countryCode={countryCode}
               isWishlisted={wishlistIds.includes(product.id ?? "")}
             />

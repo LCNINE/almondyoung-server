@@ -283,10 +283,12 @@ function ProductBasicInformationEditDrawer({
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex flex-col gap-1">
                     <Label htmlFor="product-basic-membership">
-                      멤버십 전용
+                      멤버십가 비공개
                     </Label>
                     <p className="text-sm text-muted-foreground">
-                      멤버십 회원 대상 상품으로 제한합니다.
+                      비회원에게 멤버십가 숫자 대신 &ldquo;멤버십 회원
+                      공개&rdquo;를 표시합니다. 상품 노출과 일반가 구매는
+                      제한되지 않습니다.
                     </p>
                   </div>
                   <Switch
@@ -352,7 +354,7 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
     { key: '브랜드', value: data.brand ?? '-' },
     { key: '상태', value: formatStatus(data.status) },
     { key: '도매 전용', value: formatBool(data.isWholesaleOnly) },
-    { key: '멤버십 전용', value: formatBool(data.isMembershipOnly) },
+    { key: '멤버십가 비공개', value: formatBool(data.isMembershipOnly) },
     { key: 'SEO 제목', value: data.seoTitle ?? '-' },
     { key: 'SEO 설명', value: data.seoDescription ?? '-' },
     { key: 'SEO 키워드', value: formatSeoKeywords(data.seoKeywords) },

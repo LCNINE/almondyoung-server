@@ -23,19 +23,19 @@ export type MemberState = {
   isMember: boolean;
 };
 
-export const MEMBERSHIP_PRICE_HIDDEN_PRODUCT_IDS = new Set([
-  'prod_019c0c0d9b01722ab8ff1ceda3f3501f',
-  'prod_019c0c0d9b2776fc840b2e730adc6447',
-  'prod_019c0c0d9b2e75ca823ec40282e58b09',
-  'prod_019c0c0d9b2676c28c79ad749950e351',
-  'prod_019c0c0d9b2676c28c7999efcab89e60',
-]);
-
 export const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null;
 };
 
-export const isMembershipOnlyProduct = (product: MembershipProduct): boolean => {
+/**
+ * 비멤버에게 멤버십가 숫자를 숨길 상품인지 판정한다.
+ *
+ * isMembershipOnly는 "상품 자체를 숨김/구매 차단"이 아니라
+ * "비멤버에게 멤버십가 숫자 대신 '멤버십 회원 공개'를 표시할지 여부"를 의미한다.
+ * 상품 목록/상세 노출과 일반 판매가 구매는 제한하지 않는다.
+ * (과거의 상품 ID 하드코딩 목록은 dev/live 데이터 보정 완료 후 제거 — metadata가 유일한 기준)
+ */
+export const isMembershipPriceHiddenProduct = (product: MembershipProduct): boolean => {
   return product.metadata?.isMembershipOnly === true || product.metadata?.isMembershipOnly === 'true';
 };
 
@@ -47,10 +47,12 @@ const sanitizeMembershipPriceMetadata = (metadata: Record<string, unknown>) => {
   return next;
 };
 
+/**
+ * 비멤버 응답에서 variant.metadata의 멤버십가 숫자만 제거한다.
+ * 상품 자체(id, variants, 그 외 metadata)는 그대로 유지된다.
+ */
 export const sanitizeProductForNonMember = (product: MembershipProduct): MembershipProduct => {
-  const productId = product.id;
-
-  if (!productId || !MEMBERSHIP_PRICE_HIDDEN_PRODUCT_IDS.has(productId)) {
+  if (!isMembershipPriceHiddenProduct(product)) {
     return product;
   }
 
@@ -71,6 +73,45 @@ export const sanitizeProductForNonMember = (product: MembershipProduct): Members
     ...product,
     variants,
   };
+};
+
+/**
+ * 단일 상품에 멤버십가 표시 정책을 적용한다.
+ * 비회원이면 멤버십가 숨김 상품(metadata.isMembershipOnly=true)의
+ * variant.metadata 멤버십가 숫자를 제거하고, 회원은 그대로 둔다.
+ */
+export const applyMembershipPriceVisibility = (
+  product: MembershipProduct,
+  isMember: boolean,
+): MembershipProduct => {
+  return isMember ? product : sanitizeProductForNonMember(product);
+};
+
+/**
+ * /store/products, /store/products/:id, /store/products-sorted 등의 응답 payload에
+ * 멤버십가 표시 정책을 적용한다. `products` 배열과 `product` 단건 모두 처리하며,
+ * 상품을 제거하거나 count를 바꾸지 않는다.
+ */
+export const transformStoreProductsPayload = (payload: unknown, isMember: boolean): unknown => {
+  if (!isRecord(payload)) {
+    return payload;
+  }
+
+  let next: Record<string, unknown> | null = null;
+
+  if (Array.isArray(payload.products)) {
+    next = { ...payload };
+    next.products = payload.products.map((item) =>
+      isRecord(item) ? applyMembershipPriceVisibility(item as MembershipProduct, isMember) : item,
+    );
+  }
+
+  if (isRecord(payload.product)) {
+    next = next ?? { ...payload };
+    next.product = applyMembershipPriceVisibility(payload.product as MembershipProduct, isMember);
+  }
+
+  return next ?? payload;
 };
 
 export const resolveMemberState = async (req: AuthenticatedMedusaRequest): Promise<MemberState> => {

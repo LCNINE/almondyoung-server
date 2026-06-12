@@ -74,7 +74,7 @@ export class ProductDto {
   @ApiProperty({ description: '도매회원 전용 여부' })
   isWholesaleOnly: boolean;
 
-  @ApiProperty({ description: '멤버십회원 전용 여부' })
+  @ApiProperty({ description: '멤버십가 비공개 여부 (비회원에게 멤버십가 숨김 — 상품 노출·구매 제한 아님)' })
   isMembershipOnly: boolean;
 
   @ApiProperty({ description: '생성일시' })
@@ -149,7 +149,7 @@ export class ProductSummaryDto {
   @ApiProperty({ description: '브랜드', nullable: true })
   brand: string | null;
 
-  @ApiProperty({ description: '멤버십회원 전용 여부' })
+  @ApiProperty({ description: '멤버십가 비공개 여부 (비회원에게 멤버십가 숨김 — 상품 노출·구매 제한 아님)' })
   isMembershipOnly: boolean;
 
   @ApiProperty({ description: '상품 상태', enum: ['draft', 'inactive', 'active'] })

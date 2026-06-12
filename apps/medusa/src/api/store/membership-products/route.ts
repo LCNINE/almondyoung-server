@@ -1,22 +1,10 @@
 import type { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
-import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
-
-type ProductMetadata = {
-  isMembershipOnly?: boolean | string;
-  [key: string]: unknown;
-};
-
-type ProductVariant = {
-  metadata?: Record<string, unknown> | null;
-  [key: string]: unknown;
-};
-
-type MembershipProduct = {
-  id?: string;
-  metadata?: ProductMetadata | null;
-  variants?: ProductVariant[] | null;
-  [key: string]: unknown;
-};
+import {
+  applyMembershipPriceVisibility,
+  isRecord,
+  resolveMemberState,
+  type MembershipProduct,
+} from '../../../utils/membership-filter';
 
 type StoreProductsResponse = {
   products: MembershipProduct[];
@@ -25,71 +13,11 @@ type StoreProductsResponse = {
   limit?: number;
 };
 
-type MemberState = {
-  customerId?: string;
-  isMember: boolean;
-};
-
 const DEFAULT_LIMIT = 12;
-const SCAN_BATCH_SIZE = 100;
-
-// 비멤버에게는 멤버십가 노출을 제한할 상품 (상품 자체는 노출)
-const MEMBERSHIP_PRICE_HIDDEN_PRODUCT_IDS = new Set([
-  'prod_019c0c0d9b01722ab8ff1ceda3f3501f', // 롤리킹 펌제 1제 2제
-  'prod_019c0c0d9b2776fc840b2e730adc6447', // 롤리킹 글루
-  'prod_019c0c0d9b2e75ca823ec40282e58b09', // 롤리킹 롯드
-  'prod_019c0c0d9b2676c28c79ad749950e351', // 롤리킹 속눈썹펌 세트
-  'prod_019c0c0d9b2676c28c7999efcab89e60', // 롤리킹 에센스 5ml
-]);
-
-const isRecord = (value: unknown): value is Record<string, unknown> => {
-  return typeof value === 'object' && value !== null;
-};
 
 const toNumber = (value: unknown, fallback: number) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
-};
-
-const isMembershipOnlyProduct = (product: MembershipProduct) => {
-  return product.metadata?.isMembershipOnly === true || product.metadata?.isMembershipOnly === 'true';
-};
-
-const sanitizeMembershipPriceMetadata = (metadata: Record<string, unknown>) => {
-  const next = { ...metadata };
-
-  // snake/camel 모두 방어
-  delete next.membershipPrice;
-  delete next.membership_price;
-  delete next.membershipprice;
-
-  return next;
-};
-
-const sanitizeProductForNonMember = (product: MembershipProduct) => {
-  const productId = product.id;
-
-  if (!productId || !MEMBERSHIP_PRICE_HIDDEN_PRODUCT_IDS.has(productId)) {
-    return product;
-  }
-
-  const variants = Array.isArray(product.variants)
-    ? product.variants.map((variant) => {
-        if (!variant.metadata || !isRecord(variant.metadata)) {
-          return variant;
-        }
-
-        return {
-          ...variant,
-          metadata: sanitizeMembershipPriceMetadata(variant.metadata),
-        };
-      })
-    : product.variants;
-
-  return {
-    ...product,
-    variants,
-  };
 };
 
 const getRequestOrigin = (req: AuthenticatedMedusaRequest) => {
@@ -200,66 +128,13 @@ const fetchStoreProducts = async (
   return parseStoreProductsResponse(data);
 };
 
-const resolveMemberState = async (req: AuthenticatedMedusaRequest): Promise<MemberState> => {
-  const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
-  const membershipGroupId = process.env.MEDUSA_MEMBERSHIP_GROUP_ID?.trim();
-  const customerId = req.auth_context?.actor_id;
-
-  if (!customerId || !membershipGroupId) {
-    return {
-      customerId,
-      isMember: false,
-    };
-  }
-
-  try {
-    const graphResult: unknown = await query.graph({
-      entity: 'customer',
-      fields: ['id', 'groups.id'],
-      filters: { id: customerId },
-    });
-
-    const customers = isRecord(graphResult) ? graphResult.data : undefined;
-
-    if (!Array.isArray(customers)) {
-      return {
-        customerId,
-        isMember: false,
-      };
-    }
-
-    const firstCustomer = (customers as unknown[])[0];
-    if (!isRecord(firstCustomer) || !Array.isArray(firstCustomer.groups)) {
-      return {
-        customerId,
-        isMember: false,
-      };
-    }
-
-    const isMember = firstCustomer.groups.some((group) => {
-      return isRecord(group) && group.id === membershipGroupId;
-    });
-
-    return {
-      customerId,
-      isMember,
-    };
-  } catch (error) {
-    console.error('[membership-products] 멤버십 확인 실패:', error);
-
-    return {
-      customerId,
-      isMember: false,
-    };
-  }
-};
-
 /**
- * 멤버십 필터링이 적용된 상품 목록 API
+ * 멤버십가 표시 정책이 적용된 상품 목록 API
  *
  * 정책
- * - isMembershipOnly=true: 비멤버에게 상품 자체를 숨김
- * - 롤리킹 지정 상품: 비멤버에게는 상품 노출하되 멤버십가(metadata) 제거
+ * - isMembershipOnly=true: 비멤버에게도 상품은 그대로 노출하되, 멤버십가 숫자(variant.metadata.membershipPrice)만 제거
+ *   (스토어프론트는 멤버십가 영역에 "멤버십 회원 공개"를 표시)
+ * - 상품 접근/구매 제한이 아니다 — 비멤버도 일반 판매가로 구매 가능
  */
 export const GET = async (req: AuthenticatedMedusaRequest, res: MedusaResponse) => {
   const requestedLimit = toNumber(req.query.limit, DEFAULT_LIMIT);
@@ -271,64 +146,15 @@ export const GET = async (req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     console.log(`[membership-products] customerId: ${customerId}, isMember: ${isMember}`);
 
     const baseSearchParams = createBaseSearchParams(req);
+    const response = await fetchStoreProducts(req, baseSearchParams);
 
-    // 멤버십 회원은 기본 /store/products 응답을 그대로 반환
-    if (isMember) {
-      const memberResponse = await fetchStoreProducts(req, baseSearchParams);
-
-      return res.json({
-        products: memberResponse.products,
-        count: memberResponse.count,
-        offset: requestedOffset,
-        limit: requestedLimit,
-      });
-    }
-
-    // 비멤버십은 "필터 후 offset/limit" 기준이 되도록 전체 스캔
-    const scanParams = new URLSearchParams(baseSearchParams);
-    const scanLimit = Math.max(SCAN_BATCH_SIZE, requestedLimit);
-
-    scanParams.set('limit', String(scanLimit));
-    scanParams.set('offset', '0');
-
-    const pagedProducts: MembershipProduct[] = [];
-    let visibleTotal = 0;
-    let seenVisible = 0;
-
-    let rawOffset = 0;
-    let rawCount = Number.POSITIVE_INFINITY;
-
-    while (rawOffset < rawCount) {
-      scanParams.set('offset', String(rawOffset));
-
-      const batchResponse = await fetchStoreProducts(req, scanParams);
-      rawCount = batchResponse.count;
-
-      const batchProducts = batchResponse.products;
-
-      if (batchProducts.length === 0) {
-        break;
-      }
-
-      const visibleBatch = batchProducts
-        .filter((product) => !isMembershipOnlyProduct(product))
-        .map((product) => sanitizeProductForNonMember(product));
-
-      for (const product of visibleBatch) {
-        if (seenVisible >= requestedOffset && pagedProducts.length < requestedLimit) {
-          pagedProducts.push(product);
-        }
-
-        seenVisible += 1;
-      }
-
-      visibleTotal += visibleBatch.length;
-      rawOffset += batchProducts.length;
-    }
+    // 상품을 숨기지 않는다 (count/offset/limit 불변). 비멤버는 멤버십가 metadata만 제거된다.
+    // (내부 /store/products 호출에도 동일 미들웨어가 적용되지만, 멱등이므로 여기서도 명시 적용)
+    const products = response.products.map((product) => applyMembershipPriceVisibility(product, isMember));
 
     return res.json({
-      products: pagedProducts,
-      count: visibleTotal,
+      products,
+      count: response.count,
       offset: requestedOffset,
       limit: requestedLimit,
     });
