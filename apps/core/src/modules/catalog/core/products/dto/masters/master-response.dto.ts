@@ -42,7 +42,7 @@ export class ProductMasterDto {
   @ApiProperty({ description: '도매회원 전용 여부', nullable: true })
   isWholesaleOnly: boolean | null;
 
-  @ApiProperty({ description: '멤버십회원 전용 여부', nullable: true })
+  @ApiProperty({ description: '멤버십가 비공개 여부 (비회원에게 멤버십가 숨김 — 상품 노출·구매 제한 아님)', nullable: true })
   isMembershipOnly: boolean | null;
 
   @ApiProperty({ description: '생성일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })

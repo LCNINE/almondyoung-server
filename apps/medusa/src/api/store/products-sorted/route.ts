@@ -121,6 +121,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         'title',
         'handle',
         'thumbnail',
+        // metadata.isMembershipOnly: 스토어프론트가 비멤버에게 멤버십가 숫자 대신
+        // "멤버십 회원 공개"를 표시할지 판단하는 데 필요
+        'metadata',
         'variants.*',
         'variants.calculated_price.*',
         'images.*',

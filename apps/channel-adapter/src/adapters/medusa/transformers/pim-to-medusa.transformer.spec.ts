@@ -97,6 +97,18 @@ describe('PimToMedusaTransformer', () => {
       expect(result.metadata.isMembershipOnly).toBe(false);
     });
 
+    it('projects isMembershipOnly as price-visibility metadata without hiding the product (status stays published)', () => {
+      // isMembershipOnly는 "비회원에게 멤버십가 숨김" 표시 정책 값일 뿐,
+      // Medusa 상품 노출(status/visibility)에 영향을 주면 안 된다.
+      const result = transformPimToMedusa({
+        ...mockSnapshot,
+        isMembershipOnly: true,
+      });
+
+      expect(result.metadata.isMembershipOnly).toBe(true);
+      expect(result.status).toBe('published');
+    });
+
     it('sets null pimPurchaseConstraint when no purchase constraint exists so Medusa updates clear stale metadata', () => {
       const result = transformPimToMedusa({
         ...mockSnapshot,

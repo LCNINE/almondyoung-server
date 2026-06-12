@@ -40,7 +40,7 @@ export class ProductVersionDto {
   @ApiProperty({ description: '도매회원 전용' })
   isWholesaleOnly: boolean;
 
-  @ApiProperty({ description: '멤버십회원 전용' })
+  @ApiProperty({ description: '멤버십가 비공개 여부 (비회원에게 멤버십가 숨김 — 상품 노출·구매 제한 아님)' })
   isMembershipOnly: boolean;
 
   @ApiProperty({ description: '상품 타입' })

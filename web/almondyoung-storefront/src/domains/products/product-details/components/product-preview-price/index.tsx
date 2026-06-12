@@ -2,6 +2,7 @@
 
 import { ProductMembershipBadge } from "@/components/shared/badges/product-membership-badge"
 import { getProductPrice } from "@/lib/utils/get-product-price"
+import { getIsMembershipOnly } from "@/lib/utils/product-card"
 import { HttpTypes } from "@medusajs/types"
 import { useTranslations } from "next-intl"
 
@@ -16,20 +17,8 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
 
   if (!cheapestPrice) return null
 
-  // 가격 숨김 처리가 필요한 상품 ID (하드코딩 - 나중에 제거 예정)
-  // TODO: 롤리킹 상품 가격 숨김 해제 시 이 배열에서 제거
-  const HIDDEN_PRICE_PRODUCT_IDS = [
-    "prod_019c0c0d9b01722ab8ff1ceda3f3501f", // 롤리킹 펌제 1제 2제
-    "prod_019c0c0d9b2776fc840b2e730adc6447", // 롤리킹 글루
-    "prod_019c0c0d9b2e75ca823ec40282e58b09", // 롤리킹 롯드
-    "prod_019c0c0d9b2676c28c79ad749950e351", // 롤리킹 속눈썹펌 세트
-    "prod_019c0c0d9b2676c28c7999efcab89e60", // 롤리킹 에센스 5ml
-  ]
-
-  const isMembershipOnly =
-    product.metadata?.isMembershipOnly === true ||
-    product.metadata?.isMembershipOnly === "true" ||
-    HIDDEN_PRICE_PRODUCT_IDS.includes(product.id)
+  // 멤버십가 비공개 여부 (비회원에게 멤버십가 숫자 대신 "멤버십 회원 공개" 표시)
+  const isMembershipOnly = getIsMembershipOnly(product)
 
   const membershipPrice = product.variants?.[0]?.metadata?.membershipPrice as
     | number
@@ -62,21 +51,9 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
 
   const showOriginalPrice = cheapestPrice.calculated_price_number < cheapestPrice.original_price_number
 
-  // 가격 숨김 상품: 비회원에게만 가격 숨김
-  if (!hasMembership && isMembershipOnly) {
-    return (
-      <div className="flex flex-col gap-2 py-2">
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-2">
-            <ProductMembershipBadge size="md" label={t("membershipBadgeLabel")} />
-            <span className="text-primary text-lg font-bold">
-              {t("membershipOnlyPrice")}
-            </span>
-          </div>
-        </div>
-      </div>
-    )
-  }
+  // 멤버십가 비공개 상품: 비회원에게도 일반 판매가는 그대로 보여주고,
+  // 아래 멤버십가 프로모션 영역에서 숫자 대신 "멤버십 회원 공개"를 표시
+  const showMembershipPriceHiddenNotice = !hasMembership && isMembershipOnly
 
   return (
     <div className="flex flex-col gap-2 py-2">
@@ -117,23 +94,41 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
         </div>
       )}
 
-      {/* 비멤버에게 멤버십 가격 프로모션 */}
-      {!hasMembership && hasMembershipPrice && membershipDiscountRate > 0 && (
+      {/* 비멤버에게 멤버십 가격 프로모션 (비공개 상품은 숫자 대신 안내 문구) */}
+      {showMembershipPriceHiddenNotice ? (
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
             <ProductMembershipBadge size="md" label={t("membershipBadgeLabel")} />
-            <span className="text-primary text-sm font-semibold">
-              {membershipDiscountRate}% OFF
-            </span>
             <span className="text-primary text-lg font-bold">
-              {membershipPrice.toLocaleString()}
-              {t("won")}
+              {t("membershipOnlyPrice")}
             </span>
           </div>
-          <p className="text-primary text-xs font-medium">
-            {t("memberSavings", { amount: membershipSavings.toLocaleString() })}
-          </p>
         </div>
+      ) : (
+        !hasMembership &&
+        hasMembershipPrice &&
+        membershipDiscountRate > 0 && (
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <ProductMembershipBadge
+                size="md"
+                label={t("membershipBadgeLabel")}
+              />
+              <span className="text-primary text-sm font-semibold">
+                {membershipDiscountRate}% OFF
+              </span>
+              <span className="text-primary text-lg font-bold">
+                {membershipPrice.toLocaleString()}
+                {t("won")}
+              </span>
+            </div>
+            <p className="text-primary text-xs font-medium">
+              {t("memberSavings", {
+                amount: membershipSavings.toLocaleString(),
+              })}
+            </p>
+          </div>
+        )
       )}
     </div>
   )

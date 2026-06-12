@@ -1,6 +1,14 @@
 import { authenticate, defineMiddlewares } from '@medusajs/framework/http';
 import { adminRouteMiddlewares } from './admin/middlewares';
 import { perCustomerLimitMiddleware } from './store/carts/middlewares/per-customer-limit';
+import { membershipPriceVisibilityMiddleware } from './store/products/middlewares/membership-price-visibility';
+
+// 멤버십가 표시 정책: 비회원 응답에서 멤버십가 metadata만 제거한다 (상품 숨김 아님).
+// authenticate(allowUnauthenticated)로 로그인 고객의 auth_context를 채운 뒤 멤버 여부를 판별한다.
+const membershipPriceVisibilityMiddlewares = [
+  authenticate('customer', ['session', 'bearer'], { allowUnauthenticated: true }),
+  membershipPriceVisibilityMiddleware,
+];
 
 // 프로파일링용 타이밍 미들웨어
 const timingMiddleware = (req: any, res: any, next: any) => {
@@ -27,6 +35,21 @@ export default defineMiddlewares({
       middlewares: [timingMiddleware],
     },
     ...adminRouteMiddlewares,
+    {
+      matcher: '/store/products',
+      method: 'GET',
+      middlewares: membershipPriceVisibilityMiddlewares,
+    },
+    {
+      matcher: '/store/products/:id',
+      method: 'GET',
+      middlewares: membershipPriceVisibilityMiddlewares,
+    },
+    {
+      matcher: '/store/products-sorted',
+      method: 'GET',
+      middlewares: membershipPriceVisibilityMiddlewares,
+    },
     {
       matcher: '/store/carts/:id/promotions',
       method: 'POST',
