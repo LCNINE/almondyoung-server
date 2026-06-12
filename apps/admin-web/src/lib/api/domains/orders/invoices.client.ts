@@ -28,14 +28,14 @@ export const invoicesClient = {
   },
 
   print: async (data: PrintInvoicesRequest): Promise<PrintInvoicesResponse> => {
-    // 응답의 printUri를 window.open으로 열어 Goodsflow 인쇄 페이지를 표시.
-    // ⚠️ direct/self 방식으로 발행된 송장이 포함되면 BadRequest 발생.
+    // 응답의 printUri를 window.open으로 열어 provider(한진/Goodsflow) 인쇄 페이지를 표시.
+    // ⚠️ direct/self 방식 송장만 포함되거나, 서로 다른 provider 송장이 섞이면 BadRequest 발생.
     const res = await client.post(`${BASE}/print`, data);
     return res.data;
   },
 
   ship: async (id: string): Promise<{ message: string }> => {
-    // goodsflow: 'printed' 상태만 허용. direct/self: 'issued' 또는 'printed' 상태에서 허용.
+    // provider(hanjin/goodsflow): 'printed' 상태만 허용. direct/self: 'issued' 또는 'printed' 상태에서 허용.
     const res = await client.put(`${BASE}/${encodeURIComponent(id)}/ship`);
     return res.data;
   },
@@ -46,7 +46,7 @@ export const invoicesClient = {
   },
 
   track: async (id: string): Promise<TrackInvoiceResponse> => {
-    // ⚠️ goodsflow 방식만 지원. direct/self는 서버에서 BadRequest 반환.
+    // ⚠️ provider(hanjin/goodsflow) 방식만 지원. direct/self는 서버에서 BadRequest 반환.
     const res = await client.get(`${BASE}/${encodeURIComponent(id)}/track`);
     return res.data;
   },

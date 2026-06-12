@@ -12,7 +12,10 @@ const IssueInvoiceSchema = z.object({
   senderName: z.string().optional(),
   senderPhone: z.string().optional(),
   deliveryMessage: z.string().optional(),
-  issueMethod: z.enum(['goodsflow', 'direct', 'self']).default('goodsflow'),
+  // 미지정 시 서버가 결정: 한진 env 설정 전 goodsflow, 설정 후 hanjin (InvoiceService.defaultIssueMethod)
+  issueMethod: z.enum(['goodsflow', 'hanjin', 'direct', 'self']).optional(),
+  // direct(직접 입력) 발행 시 필수 — 택배사 발급 실제 운송장 번호
+  invoiceNumber: z.string().min(1).optional(),
 });
 
 const PrintInvoicesSchema = z.object({

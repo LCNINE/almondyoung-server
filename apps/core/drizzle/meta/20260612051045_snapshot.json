@@ -1,6 +1,6 @@
 {
-  "id": "65927605-669c-41fe-86bb-f1865b1eb25d",
-  "prevId": "c6d561ab-d2d9-4115-909c-297bb52c65de",
+  "id": "533e3dba-8365-4059-9d1c-05c1cb37ca30",
+  "prevId": "90c5394a-7596-41a0-b604-638a1def4427",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2323,6 +2323,163 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.product_master_purchase_constraints": {
+      "name": "product_master_purchase_constraints",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "master_id": {
+          "name": "master_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version_id": {
+          "name": "version_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "purchase_constraint_id": {
+          "name": "purchase_constraint_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_master_purchase_constraints_master_version": {
+          "name": "idx_master_purchase_constraints_master_version",
+          "columns": [
+            {
+              "expression": "master_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "version_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_master_purchase_constraints_constraint": {
+          "name": "idx_master_purchase_constraints_constraint",
+          "columns": [
+            {
+              "expression": "purchase_constraint_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "unique_purchase_constraint_version": {
+          "name": "unique_purchase_constraint_version",
+          "columns": [
+            {
+              "expression": "version_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "unique_master_purchase_constraint_version": {
+          "name": "unique_master_purchase_constraint_version",
+          "columns": [
+            {
+              "expression": "master_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "version_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "product_master_purchase_constraints_master_id_product_masters_id_fk": {
+          "name": "product_master_purchase_constraints_master_id_product_masters_id_fk",
+          "tableFrom": "product_master_purchase_constraints",
+          "tableTo": "product_masters",
+          "columnsFrom": [
+            "master_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "product_master_purchase_constraints_version_id_product_master_versions_id_fk": {
+          "name": "product_master_purchase_constraints_version_id_product_master_versions_id_fk",
+          "tableFrom": "product_master_purchase_constraints",
+          "tableTo": "product_master_versions",
+          "columnsFrom": [
+            "version_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "product_master_purchase_constraints_purchase_constraint_id_product_purchase_constraints_id_fk": {
+          "name": "product_master_purchase_constraints_purchase_constraint_id_product_purchase_constraints_id_fk",
+          "tableFrom": "product_master_purchase_constraints",
+          "tableTo": "product_purchase_constraints",
+          "columnsFrom": [
+            "purchase_constraint_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.product_master_variants": {
       "name": "product_master_variants",
       "schema": "",
@@ -2942,6 +3099,22 @@
           "method": "btree",
           "with": {}
         },
+        "unique_active_product_code": {
+          "name": "unique_active_product_code",
+          "columns": [
+            {
+              "expression": "product_code",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"product_master_versions\".\"status\" = 'active'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "unique_master_version": {
           "name": "unique_master_version",
           "columns": [
@@ -2993,15 +3166,7 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "product_master_versions_product_code_unique": {
-          "name": "product_master_versions_product_code_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "product_code"
-          ]
-        }
-      },
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -3527,6 +3692,57 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.product_purchase_constraints": {
+      "name": "product_purchase_constraints",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "requires_membership": {
+          "name": "requires_membership",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "lifetime_quantity_limit": {
+          "name": "lifetime_quantity_limit",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "chk_product_purchase_constraints_lifetime_quantity_limit_positive": {
+          "name": "chk_product_purchase_constraints_lifetime_quantity_limit_positive",
+          "value": "\"lifetime_quantity_limit\" IS NULL OR \"lifetime_quantity_limit\" > 0"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.product_tag_values": {
@@ -12198,7 +12414,15 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "uq_shipments_fulfillment_order_id": {
+          "name": "uq_shipments_fulfillment_order_id",
+          "nullsNotDistinct": false,
+          "columns": [
+            "fulfillment_order_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -16157,7 +16381,8 @@
       "values": [
         "goodsflow",
         "direct",
-        "self"
+        "self",
+        "hanjin"
       ]
     },
     "public.invoice_status": {
