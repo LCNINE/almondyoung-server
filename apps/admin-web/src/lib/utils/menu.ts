@@ -463,13 +463,13 @@ export const mainMenus: MainMenu[] = [
         id: 'marketing',
         title: '마케팅',
         children: [
-          { id: 'messages', title: '메시지 or 푸시알림' },
+          // { id: 'messages', title: '메시지 or 푸시알림' },
           {
             id: 'banner-groups',
             title: '배너 그룹',
             path: '/mall/banner-groups',
           },
-          { id: 'popups', title: '팝업' },
+          // { id: 'popups', title: '팝업' },
           { id: 'points', title: '적립금', path: '/mall/marketing/points' },
           { id: 'coupons', title: '쿠폰', path: '/mall/marketing/coupons' },
           { id: 'promotions', title: '프로모션' },
@@ -491,11 +491,6 @@ export const mainMenus: MainMenu[] = [
         id: 'store-regions',
         title: '리전 설정 (통화/세금)',
         path: '/mall/regions',
-      },
-      {
-        id: 'settings',
-        title: '설정',
-        path: '/mall/settings',
       },
     ],
   },
