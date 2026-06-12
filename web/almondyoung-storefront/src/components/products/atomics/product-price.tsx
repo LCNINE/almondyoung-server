@@ -2,7 +2,6 @@
 
 import React from "react"
 import { ProductMembershipBadge } from "@/components/shared/badges/product-membership-badge"
-import AnimatedMembershipText from "@components/products/atomics/animated-membership-text"
 
 /**
  * ProductPrice - 순수 표시 컴포넌트
@@ -18,7 +17,7 @@ export const ProductPrice = ({
   originalPrice, // 원가 (할인 전, 옵셔널)
   discountRate, // 할인율 (%, 상위에서 계산)
   isSoldOut, // 품절 여부
-  isMembershipOnly, // 멤버십 전용 여부
+  isMembershipOnly, // 멤버십가 비공개 여부 (비회원에게 멤버십가 숫자 숨김)
   showMembershipTag, // 멤버십 태그 표시 여부
   isTimeSale, // 타임세일 여부
   showMembershipHint, // 멤버십 안내 문구 표시
@@ -51,15 +50,21 @@ export const ProductPrice = ({
   //   )
   // }
 
-  // ===== 2. 멤버십 전용 상품 =====
-  if (isMembershipOnly) {
+  // ===== 2. 멤버십가 비공개 상품 (비회원) =====
+  // 상품과 일반 판매가는 그대로 노출하고, 멤버십가 숫자 영역만 "멤버십 회원 공개"로 대체
+  // 멤버십 회원은 price list가 적용된 실제 가격을 일반 흐름으로 표시
+  if (isMembershipOnly && !isMember) {
     return (
-      <div className="flex flex-col gap-1 md:flex-row md:flex-wrap md:items-center md:gap-1.5">
-        <AnimatedMembershipText
-          className="text-base font-bold md:text-[19px]"
-          delay={6000}
-          duration={1500}
-        />
+      <div className="gap-0.7 flex flex-col">
+        <span className="text-base font-bold md:text-[19px]">
+          {displayPrice.toLocaleString()}원
+        </span>
+        <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#F2994A]">
+          <ProductMembershipBadge size="sm" label="멤버십할인가" />
+          <span className="text-[15px] font-bold text-[#F2994A]">
+            멤버십 회원 공개
+          </span>
+        </div>
       </div>
     )
   }

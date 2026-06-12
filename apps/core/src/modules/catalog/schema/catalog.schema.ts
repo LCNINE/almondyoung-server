@@ -144,7 +144,7 @@ export const productMasterVersions = pgTable(
     // 고지훈 임시 시연용수정 - 상품 상세설명 (HTML 에디터용)
     descriptionHtml: text('description_html'), // 상품 상세설명 HTML (단일 필드)
     isWholesaleOnly: boolean('is_wholesale_only').default(false).notNull(), // 도매회원 전용
-    isMembershipOnly: boolean('is_membership_only').default(false).notNull(), // 멤버십회원 전용
+    isMembershipOnly: boolean('is_membership_only').default(false).notNull(), // 멤버십가 공개 제한 — 비회원에게 멤버십가 숫자를 숨김 (상품 노출/구매 제한 아님; 구매 제한은 purchaseConstraint 사용)
 
     // ===== Phase 1 NEW FIELDS START =====
     // Product Type

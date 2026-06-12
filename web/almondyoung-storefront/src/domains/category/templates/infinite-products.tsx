@@ -9,6 +9,7 @@ import {
 import { useProductGridVirtualizer } from "@/domains/category/hooks/use-product-grid-virtualizer"
 import { useWishlistIds } from "@/domains/category/hooks/use-wishlist-ids"
 import ProductCard from "@/domains/products/components/product-card"
+import { getIsMembershipOnly } from "@/lib/utils/product-card"
 import type { HttpTypes } from "@medusajs/types"
 import { useTranslations } from "next-intl"
 
@@ -25,10 +26,6 @@ type InfiniteProductsProps = {
   isLoggedIn: boolean
   initialWishlistIds: string[]
 }
-
-const getIsMembershipOnly = (product: HttpTypes.StoreProduct): boolean =>
-  product.metadata?.isMembershipOnly === true ||
-  product.metadata?.isMembershipOnly === "true"
 
 export default function InfiniteProducts({
   initialProducts,

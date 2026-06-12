@@ -125,7 +125,7 @@ export class UpdateProductMasterDto {
   @IsBoolean()
   isWholesaleOnly?: boolean;
 
-  @ApiProperty({ description: '멤버십회원 전용 여부', required: false })
+  @ApiProperty({ description: '멤버십가 비공개 여부 (비회원에게 멤버십가 숨김 — 상품 노출·구매 제한 아님)', required: false })
   @IsOptional()
   @IsBoolean()
   isMembershipOnly?: boolean;

@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/carousel"
 import ProductCard from "@/domains/products/components/product-card"
 import RankBadge from "@/domains/products/components/rank-badge"
+import { getIsMembershipOnly } from "@/lib/utils/product-card"
 import { CustomerGroup } from "@/lib/types/dto/medusa"
 import { StoreCustomerWithGroups } from "@/lib/types/ui/medusa"
 import { HttpTypes } from "@medusajs/types"
@@ -59,7 +60,7 @@ export function WelcomeDealSection({
                 <ProductCard
                   product={p}
                   isMembership={isMembership}
-                  isMembershipOnly={p.metadata?.isMembershipOnly === true}
+                  isMembershipOnly={getIsMembershipOnly(p)}
                   overlay={<RankBadge rank={index + 1} variant="bottom-left" />}
                   isWishlisted={wishlistIds?.has(p.id ?? "") ?? false}
                 />

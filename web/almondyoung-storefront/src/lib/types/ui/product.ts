@@ -15,7 +15,7 @@ export interface PriceInfo {
   original: number // 정가
   member?: number // 멤버십가 (없을 수 있음)
   discountRate?: number // (original - member)/original * 100 (정수)
-  isMembership: boolean | null // true=멤버십 전용, false=일반상품, null=비회원상태(가격 숨김)
+  isMembership: boolean | null // true=멤버십가 비공개, false=일반상품, null=비회원상태(멤버십가 숨김)
 }
 
 export interface PriceRange {
@@ -111,7 +111,7 @@ export interface ProductCard {
   basePrice?: number // 정가
   membershipPrice?: number // 멤버십가
   actualPrice?: number // 현재 유저 기준 계산가
-  isMembershipOnly?: boolean // 멤버십 전용 여부
+  isMembershipOnly?: boolean // 멤버십가 비공개 여부 (비회원에게 멤버십가 숫자 대신 "멤버십 회원 공개" 표시)
 
   // ===== 재고/판매 상태 (서버 제공) =====
   // 📡 서버: 실시간 재고, 판매 상태 제공

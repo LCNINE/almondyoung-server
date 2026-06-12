@@ -4,6 +4,7 @@ import { SharedPagination } from "@/components/shared/pagination"
 import { PageTitle } from "@/components/shared/page-title"
 import { useMembership } from "@/contexts/membership-context"
 import ProductCard from "domains/products/components/product-card"
+import { getIsMembershipOnly } from "@/lib/utils/product-card"
 import type { FrequentProductsPage } from "@/lib/types/ui/frequent-products"
 import { useRouter } from "next/navigation"
 import { useMemo, useState } from "react"
@@ -94,7 +95,7 @@ export function FrequentProductsTemplate({
                 product={item}
                 countryCode={countryCode}
                 isMembership={isMembershipPricing}
-                isMembershipOnly={false}
+                isMembershipOnly={getIsMembershipOnly(item)}
               />
             ))}
           </div>
