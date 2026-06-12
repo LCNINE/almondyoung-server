@@ -536,15 +536,17 @@ export class MedusaClient {
     thumbnail?: string;
     sortOrder?: number;
   }): Promise<string> {
-    // Fast path: 이미 알고 있는 매핑이면 list/verify/update 없이 바로 반환.
-    // primeCategoryCache 또는 직전 호출에서 적재된 entry 가 있을 때 적용된다.
-    const cachedById = this.categoryCache.get(categorySnapshot.id);
-    if (cachedById) return cachedById;
-    const cachedBySlug = categorySnapshot.slug ? this.categoryCache.get(categorySnapshot.slug) : undefined;
-    if (cachedBySlug) {
-      this.setCategoryCache(categorySnapshot.id, cachedBySlug);
-      return cachedBySlug;
-    }
+    // [백필 시 주석 해제] 대량 백필 중에는 아래 캐시 fast-path를 활성화해
+    // 카테고리당 list/verify/update API 호출을 0회에 가깝게 줄일 수 있다.
+    // 단, 실시간 이벤트(CategoryChanged) 경로에서는 캐시 히트가 실제 업데이트를 막으므로
+    // 백필이 끝나면 반드시 다시 주석 처리할 것.
+    // const cachedById = this.categoryCache.get(categorySnapshot.id);
+    // if (cachedById) return cachedById;
+    // const cachedBySlug = categorySnapshot.slug ? this.categoryCache.get(categorySnapshot.slug) : undefined;
+    // if (cachedBySlug) {
+    //   this.setCategoryCache(categorySnapshot.id, cachedBySlug);
+    //   return cachedBySlug;
+    // }
 
     const preferredHandle = categorySnapshot.slug || categorySnapshot.id;
     const legacyHandle = categorySnapshot.id;
