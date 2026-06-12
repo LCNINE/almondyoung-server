@@ -14,6 +14,13 @@ export class BusinessLicenseResponseDto {
   userId: string;
 
   @ApiProperty({
+    description: '사용자 이름',
+    type: String,
+    nullable: true,
+  })
+  userName?: string | null;
+
+  @ApiProperty({
     description: '상점 ID',
     type: String,
     nullable: true,
