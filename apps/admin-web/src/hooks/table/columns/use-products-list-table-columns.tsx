@@ -1,8 +1,9 @@
 'use client';
 
 import { createColumnHelper } from '@tanstack/react-table';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { ImageOff } from 'lucide-react';
 import type { MasterSummaryDto } from '@/lib/types/dto/products';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DateCell } from '@/components/table/table-cells/common';
@@ -20,12 +21,42 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 // thumbnail 은 fileId 또는 절대 URL. file-service public 경로로 변환한다.
-function resolveThumbnailSrc(thumbnail: string | null | undefined): string {
-  if (!thumbnail) return '/placeholder.svg';
+function resolveThumbnailSrc(thumbnail: string | null | undefined): string | null {
+  if (!thumbnail) return null;
   if (thumbnail.startsWith('http://') || thumbnail.startsWith('https://')) {
     return thumbnail;
   }
   return `${FILE_SERVICE_BASE_URL}/files/public/${thumbnail}`;
+}
+
+function ProductThumbnailCell({
+  thumbnail,
+}: {
+  thumbnail: string | null | undefined;
+}) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const src = resolveThumbnailSrc(thumbnail);
+  const loadFailed = src !== null && failedSrc === src;
+
+  if (!src || loadFailed) {
+    return (
+      <div className="mx-auto flex h-14 w-14 flex-col items-center justify-center rounded bg-muted text-muted-foreground">
+        <ImageOff className="h-4 w-4" aria-hidden="true" />
+        <span className="mt-0.5 text-[9px]">이미지 없음</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto h-14 w-14 overflow-hidden rounded bg-muted">
+      <img
+        src={src}
+        alt="상품 이미지"
+        className="h-full w-full object-cover"
+        onError={() => setFailedSrc(src)}
+      />
+    </div>
+  );
 }
 
 export function useProductsListTableColumns() {
@@ -63,15 +94,7 @@ export function useProductsListTableColumns() {
       }),
       columnHelper.accessor('thumbnail', {
         header: '이미지',
-        cell: ({ getValue }) => (
-          <div className="mx-auto h-14 w-14 overflow-hidden rounded">
-            <img
-              src={resolveThumbnailSrc(getValue())}
-              alt="상품 이미지"
-              className="h-full w-full object-cover"
-            />
-          </div>
-        ),
+        cell: ({ getValue }) => <ProductThumbnailCell thumbnail={getValue()} />,
       }),
       columnHelper.accessor('name', {
         header: '상품명/옵션/브랜드',
