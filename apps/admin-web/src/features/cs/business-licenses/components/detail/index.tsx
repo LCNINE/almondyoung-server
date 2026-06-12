@@ -118,6 +118,7 @@ function BusinessLicenseDetailContent({ id }: { id: string }) {
 
   const rows: { key: string; value: React.ReactNode }[] = [
     { key: 'ID', value: <span className="font-mono text-xs">{data.id}</span> },
+    { key: '사용자 이름', value: data.userName ?? '-' },
     {
       key: '사용자 ID',
       value: <span className="font-mono text-xs">{data.userId}</span>,

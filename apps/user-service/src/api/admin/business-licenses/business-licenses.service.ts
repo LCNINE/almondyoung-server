@@ -3,7 +3,7 @@ import { InjectStreamPublisher, StreamPublisher } from '@app/events';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { UserEvents } from '@packages/event-contracts';
 import { userServiceSchema, type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
-import { and, asc, count, desc, eq, gte, inArray, isNotNull, lte } from 'drizzle-orm';
+import { and, asc, count, desc, eq, getTableColumns, gte, inArray, isNotNull, lte } from 'drizzle-orm';
 import * as schema from '../../../../database/drizzle/schema';
 import { BusinessLicenseResponseDto } from '../../business-licenses/dto/business-license.response.dto';
 import { UsersService } from '../../users/users.service';
@@ -37,7 +37,7 @@ export class BusinessLicensesService {
   }: {
     businessLicenseQueryDto: BusinessLicenseQueryDto;
   }): Promise<{
-    data: schema.BusinessLicense[];
+    data: (schema.BusinessLicense & { userName: string | null })[];
     total: number;
     page: number;
     limit: number;
@@ -92,8 +92,12 @@ export class BusinessLicensesService {
         sortBy === 'createdAt' ? asc(schema.businessLicenses.createdAt) : desc(schema.businessLicenses.createdAt);
 
       const dataQuery = this.dbService.db
-        .select()
+        .select({
+          ...getTableColumns(schema.businessLicenses),
+          userName: schema.users.username,
+        })
         .from(schema.businessLicenses)
+        .leftJoin(schema.users, eq(schema.businessLicenses.userId, schema.users.id))
         .where(whereClause)
         .orderBy(orderExpr)
         .limit(limit)
@@ -111,8 +115,12 @@ export class BusinessLicensesService {
   async getBusinessLicenseByBusinessLicenseId(id: string): Promise<BusinessLicenseResponseDto | null> {
     try {
       const [query] = await this.dbService.db
-        .select()
+        .select({
+          ...getTableColumns(schema.businessLicenses),
+          userName: schema.users.username,
+        })
         .from(schema.businessLicenses)
+        .leftJoin(schema.users, eq(schema.businessLicenses.userId, schema.users.id))
         .where(eq(schema.businessLicenses.id, id));
 
       return query;
