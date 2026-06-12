@@ -7,6 +7,7 @@ jest.mock(
 );
 
 import { ProductVersionsService } from './product-versions.service';
+import type { DbTransaction } from '../../../catalog.types';
 import {
   productMasterOptionGroups,
   productMasterPricingRules,
@@ -210,6 +211,49 @@ describe('ProductVersionsService copy mappings', () => {
         }),
       ],
     });
+  });
+});
+
+describe('ProductVersionsService productCode publish validation', () => {
+  function makeService() {
+    return new ProductVersionsService(
+      {} as any,
+      { publishEvent: jest.fn() } as any,
+      { saveEvent: jest.fn() } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+  }
+
+  function makeTx(activeVersions: Array<{ masterId: string }>): DbTransaction {
+    return {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          where: jest.fn().mockResolvedValue(activeVersions),
+        })),
+      })),
+    } as unknown as DbTransaction;
+  }
+
+  it('allows a draft to reuse the productCode of its own active version', async () => {
+    const service = makeService();
+    const tx = makeTx([{ masterId: 'master-1' }]);
+
+    await expect(
+      service.validateProductCodeUniqueness({ masterId: 'master-1', productCode: 'PROD-001' }, tx),
+    ).resolves.toBeUndefined();
+  });
+
+  it('rejects a productCode used by another active master', async () => {
+    const service = makeService();
+    const tx = makeTx([{ masterId: 'master-2' }]);
+
+    await expect(
+      service.validateProductCodeUniqueness({ masterId: 'master-1', productCode: 'PROD-001' }, tx),
+    ).rejects.toThrow('productCode PROD-001 is already used by another active product');
   });
 });
 

@@ -127,6 +127,13 @@
       "when": 1780986649103,
       "tag": "20260609063049_add-shipments-fo-unique-idx",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1781232416000,
+      "tag": "20260612114656_product-code-active-unique",
+      "breakpoints": true
     }
   ]
 }
