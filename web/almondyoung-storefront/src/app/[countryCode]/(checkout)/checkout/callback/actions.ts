@@ -1,5 +1,6 @@
 "use server"
 
+import { cartRequiresShipping } from "@/lib/api/medusa/shipping-method-policy"
 import { sdk } from "@/lib/config/medusa"
 import {
   getAuthHeaders,
@@ -17,12 +18,22 @@ async function ensureShippingMethod(
 
   // 현재 cart의 shipping_methods 확인
   const { cart } = await sdk.client.fetch<{
-    cart: { shipping_methods?: { id: string }[] }
+    cart: {
+      items?: { requires_shipping?: boolean | null; product_type?: string | null }[]
+      shipping_methods?: { id: string }[]
+    }
   }>(`/store/carts/${cartId}`, {
     method: "GET",
-    query: { fields: "+shipping_methods" },
+    query: {
+      fields: "+items,+items.requires_shipping,+items.product_type,+shipping_methods",
+    },
     headers,
   })
+
+  if (!cartRequiresShipping(cart.items)) {
+    console.log(`${prefix} shipping 불필요 cart, shipping method 보장 생략`)
+    return
+  }
 
   if (cart.shipping_methods?.length) {
     console.log(
@@ -54,7 +65,7 @@ async function ensureShippingMethod(
 
   if (!shipping_options?.length) {
     console.error(`${prefix} 사용 가능한 shipping option 없음, 할당 불가`)
-    return
+    throw new Error("배송이 필요한 상품에 적용 가능한 배송 옵션이 없습니다.")
   }
 
   const targetOption = shipping_options[0]

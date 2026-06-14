@@ -16,6 +16,10 @@ import { redirect } from "next/navigation"
 import { HttpApiError } from "../api-error"
 import { getRegion } from "./regions"
 import { retrieveCustomer, transferCart } from "./customer"
+import {
+  cartRequiresShipping,
+  selectShippingOptionsForCart,
+} from "./shipping-method-policy"
 
 // 카트 조회 시 사용하는 기본 fields
 const DEFAULT_CART_FIELDS =
@@ -1179,35 +1183,27 @@ export const listCartShippingMethods = async (
 }
 
 /**
- * 장바구니 아이템 타입에 따라 올바른 배송 옵션을 자동 설정합니다.
- * - 물리 상품이 있으면 → Standard 배송
- * - 디지털 상품만 있으면 → Digital Delivery
- *
+ * 장바구니의 requires_shipping 값에 따라 필요한 경우에만 표준 배송 옵션을 자동 설정합니다.
  * @param cart - 장바구니 객체 (items 포함 필수)
  * @returns 업데이트된 cart와 필터링된 배송 옵션
  */
 export async function ensureCorrectShippingMethod(cart: HttpTypes.StoreCart): Promise<{
   cart: HttpTypes.StoreCart
   shippingMethods: HttpTypes.StoreCartShippingOption[] | null
+  requiresShipping: boolean
 }> {
   // 1. 모든 배송 옵션 조회
   const allShippingMethods = await listCartShippingMethods(cart.id)
 
-  // 2. 장바구니 아이템 분석: 물리 상품 여부 확인
-  const hasPhysicalItem = cart.items?.some(
-    (item) => (item as { product_type?: string | null }).product_type !== "digital_sale"
-  )
+  const requiresShipping = cartRequiresShipping(cart.items)
+  const shippingMethods = selectShippingOptionsForCart(
+    allShippingMethods,
+    cart.items
+  ) as HttpTypes.StoreCartShippingOption[]
 
-  // 3. 배송 옵션 필터링
-  // - 물리 상품이 있으면 → Standard (물리 배송 필요)
-  // - 디지털 상품만 있으면 → Digital Delivery
-  const shippingMethods = allShippingMethods?.filter((option) => {
-    const typeCode = (option.type as { code?: string } | undefined)?.code
-    if (hasPhysicalItem) {
-      return typeCode === "standard"
-    }
-    return typeCode === "digital_delivery"
-  }) ?? null
+  if (!requiresShipping) {
+    return { cart, shippingMethods: [], requiresShipping }
+  }
 
   // 4. 배송 옵션 자동 설정/업데이트
   // - shipping method가 없거나
@@ -1223,11 +1219,11 @@ export async function ensureCorrectShippingMethod(cart: HttpTypes.StoreCart): Pr
       shippingMethods[0].id
     )
     if (updatedCart) {
-      return { cart: updatedCart, shippingMethods }
+      return { cart: updatedCart, shippingMethods, requiresShipping }
     }
   }
 
-  return { cart, shippingMethods }
+  return { cart, shippingMethods, requiresShipping }
 }
 
 export async function setShippingMethod({

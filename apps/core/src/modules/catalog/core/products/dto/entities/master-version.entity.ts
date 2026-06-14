@@ -46,6 +46,9 @@ export class ProductVersionDto {
   @ApiProperty({ description: '상품 타입' })
   productType: string;
 
+  @ApiProperty({ description: '이행 유형', enum: ['physical', 'digital'], default: 'physical' })
+  fulfillmentKind: 'physical' | 'digital';
+
   @ApiProperty({ description: '상품 코드', nullable: true })
   productCode: string | null;
 
