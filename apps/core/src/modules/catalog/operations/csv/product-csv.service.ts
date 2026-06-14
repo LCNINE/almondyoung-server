@@ -93,6 +93,10 @@ export class ProductCsvService {
         errors.push('Product type must be one of: regular_sale, limited_edition');
       }
 
+      if (row.fulfillmentKind && !['physical', 'digital'].includes(row.fulfillmentKind)) {
+        errors.push('Fulfillment kind must be one of: physical, digital');
+      }
+
       // Validate ageRestriction
       if (row.ageRestriction !== undefined && row.ageRestriction !== null) {
         const age = Number(row.ageRestriction);
@@ -174,6 +178,7 @@ export class ProductCsvService {
             marketPrice: row.marketPrice ? Number(row.marketPrice) : undefined,
             supplyPrice: row.supplyPrice ? Number(row.supplyPrice) : undefined,
             productType: (row.productType as any) || 'regular_sale',
+            fulfillmentKind: (row.fulfillmentKind as 'physical' | 'digital') || 'physical',
             salesClassification: row.salesClassification?.trim() || undefined,
             purchaseClassification: row.purchaseClassification?.trim() || undefined,
             ageRestriction: row.ageRestriction ? Number(row.ageRestriction) : 0,
@@ -236,6 +241,7 @@ export class ProductCsvService {
       supplyPrice: product.supplyPrice || 0,
       status: product.status || 'draft',
       productType: product.productType || 'regular_sale',
+      fulfillmentKind: (product.fulfillmentKind as 'physical' | 'digital') || 'physical',
       salesClassification: product.salesClassification || '',
       purchaseClassification: product.purchaseClassification || '',
       ageRestriction: product.ageRestriction || 0,
@@ -267,6 +273,7 @@ export class ProductCsvService {
         supplyPrice: '8000',
         status: 'active',
         productType: 'regular_sale',
+        fulfillmentKind: 'physical',
         salesClassification: 'Beauty',
         purchaseClassification: 'Retail',
         ageRestriction: '0',
