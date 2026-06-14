@@ -149,6 +149,8 @@ export const productMasterVersions = pgTable(
     // ===== Phase 1 NEW FIELDS START =====
     // Product Type
     productType: varchar('product_type', { length: 50 }).notNull().default('regular_sale'), // 'limited_edition' | 'regular_sale'
+    // Fulfillment classification. Shipping eligibility must not be inferred from SKU or asset matching.
+    fulfillmentKind: varchar('fulfillment_kind', { length: 20 }).$type<'physical' | 'digital'>().notNull().default('physical'),
 
     // Product Identification
     productCode: varchar('product_code', { length: 100 }),
