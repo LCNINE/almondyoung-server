@@ -10,6 +10,7 @@ export interface MedusaSyncOverrides {
   categories?: Array<{ id: string }>;
   tags?: Array<{ value: string; id?: string }>;
   type_id?: string;
+  shipping_profile_id?: string | null;
   sales_channels?: string[];
 }
 
@@ -67,6 +68,9 @@ export function transformPimToMedusa(
   // 5. Variants 변환 (이미 필터링된 activeVariants 사용)
   const variants = transformVariants(activeVariants, optionTitles, defaultOptionTitles, isOptionlessProduct);
 
+  const fulfillmentKind = snapshot.fulfillmentKind ?? 'physical';
+  const requiresShipping = fulfillmentKind === 'physical';
+
   // 6. 메타데이터
   const metadata = {
     pimMasterId: snapshot.masterId,
@@ -82,6 +86,8 @@ export function transformPimToMedusa(
     isMembershipOnly: snapshot.isMembershipOnly,
     productType: snapshot.productType,
     pimPurchaseConstraint: snapshot.purchaseConstraint ?? null,
+    fulfillmentKind,
+    requiresShipping,
     syncedAt: new Date().toISOString(),
   };
 
@@ -101,6 +107,7 @@ export function transformPimToMedusa(
     variants,
     categories,
     tags,
+    shipping_profile_id: requiresShipping ? (overrides?.shipping_profile_id ?? undefined) : null,
     sales_channels: salesChannels,
     metadata,
     is_giftcard: snapshot.isGiftcard,

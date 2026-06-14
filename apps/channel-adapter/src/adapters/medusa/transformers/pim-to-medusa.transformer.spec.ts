@@ -118,6 +118,28 @@ describe('PimToMedusaTransformer', () => {
       expect(result.metadata.pimPurchaseConstraint).toBeNull();
     });
 
+    it('assigns the default shipping profile to physical products', () => {
+      const result = transformPimToMedusa(
+        { ...mockSnapshot, fulfillmentKind: 'physical' },
+        { shipping_profile_id: 'sp_default' },
+      );
+
+      expect(result.shipping_profile_id).toBe('sp_default');
+      expect(result.metadata.fulfillmentKind).toBe('physical');
+      expect(result.metadata.requiresShipping).toBe(true);
+    });
+
+    it('clears shipping profile for digital products', () => {
+      const result = transformPimToMedusa(
+        { ...mockSnapshot, fulfillmentKind: 'digital' },
+        { shipping_profile_id: 'sp_default' },
+      );
+
+      expect(result.shipping_profile_id).toBeNull();
+      expect(result.metadata.fulfillmentKind).toBe('digital');
+      expect(result.metadata.requiresShipping).toBe(false);
+    });
+
     it('should map base variant price and preserve price-list metadata', () => {
       const result = transformPimToMedusa(mockSnapshot);
       const variant = result.variants![0];
