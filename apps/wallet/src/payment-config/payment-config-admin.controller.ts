@@ -2,7 +2,7 @@ import { Body, Controller, Get, HttpCode, Param, Patch, Post, Put } from '@nestj
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PaymentConfigService } from './payment-config.service';
 import { WalletAdminAuth } from '../wallet-admin-auth.decorator';
-import { PaymentMethodCatalog, Region } from '../types';
+import { Region } from '../types';
 import {
   CatalogResponseDto,
   CreateRegionDto,
@@ -12,17 +12,6 @@ import {
   UpdateCatalogDto,
   UpdateRegionDto,
 } from './dto';
-
-function toCatalogResponse(c: PaymentMethodCatalog): CatalogResponseDto {
-  return {
-    id: c.id,
-    code: c.code,
-    displayName: c.displayName,
-    description: c.description,
-    isEnabled: c.isEnabled,
-    sortOrder: c.sortOrder,
-  };
-}
 
 function toRegionResponse(r: Region): RegionResponseDto {
   return { id: r.id, code: r.code, name: r.name, isActive: r.isActive, sortOrder: r.sortOrder };
@@ -39,14 +28,13 @@ export class PaymentConfigAdminController {
   @Get('payment-methods')
   @ApiOperation({ summary: '결제수단 카탈로그 목록 (글로벌 활성화 상태 포함)' })
   async listCatalog(): Promise<CatalogResponseDto[]> {
-    const rows = await this.service.listCatalog();
-    return rows.map(toCatalogResponse);
+    return this.service.listCatalog();
   }
 
   @Patch('payment-methods/:code')
   @ApiOperation({ summary: '결제수단 글로벌 활성화/비활성화 및 표시정보 수정' })
   async updateCatalog(@Param('code') code: string, @Body() dto: UpdateCatalogDto): Promise<CatalogResponseDto> {
-    return toCatalogResponse(await this.service.updateCatalog(code, dto));
+    return this.service.updateCatalog(code, dto);
   }
 
   // ── Regions ─────────────────────────────────────────────────────────────────

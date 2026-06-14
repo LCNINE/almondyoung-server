@@ -13,6 +13,11 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import {
+  PaymentProviderCapability,
+  PaymentProviderPublicExposure,
+  ProviderKind,
+} from '../../providers/provider-descriptors';
 
 const toLowerTrim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim().toLowerCase() : value);
 
@@ -24,13 +29,6 @@ export class UpdateCatalogDto {
   @IsBoolean()
   isEnabled?: boolean;
 
-  @ApiPropertyOptional({ description: '표시 이름' })
-  @IsOptional()
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(255)
-  displayName?: string;
-
   @ApiPropertyOptional({ description: '정렬 순서 (작을수록 먼저)' })
   @IsOptional()
   @IsInt()
@@ -40,11 +38,22 @@ export class UpdateCatalogDto {
 
 export class CatalogResponseDto {
   @ApiProperty() id!: string;
+  @ApiProperty({ nullable: true, type: String }) policyId!: string | null;
   @ApiProperty({ description: 'provider 코드 (TOSS, NICEPAY, ...)' }) code!: string;
   @ApiProperty() displayName!: string;
   @ApiProperty({ nullable: true, type: String }) description!: string | null;
   @ApiProperty() isEnabled!: boolean;
   @ApiProperty() sortOrder!: number;
+  @ApiProperty({ enum: ['supported', 'retired'] }) supportStatus!: 'supported' | 'retired';
+  @ApiProperty() isRetired!: boolean;
+  @ApiProperty({ nullable: true, enum: ['gateway', 'ledger'] }) kind!: ProviderKind | null;
+  @ApiProperty({ nullable: true, enum: ['checkout', 'billing', 'internal'] })
+  publicExposure!: PaymentProviderPublicExposure | null;
+  @ApiProperty({
+    isArray: true,
+    enum: ['checkout', 'points', 'manual_transfer', 'recurring_billing', 'refund'],
+  })
+  capabilities!: PaymentProviderCapability[];
 }
 
 // ─── Region ──────────────────────────────────────────────────────────────────
@@ -139,6 +148,16 @@ export class RegionMethodMatrixItemDto {
   @ApiProperty({ description: '이 리전에서의 활성화 (매핑 없으면 false)' }) regionEnabled!: boolean;
   @ApiProperty({ description: '글로벌·리전 모두 켜져 실제 노출되는지' }) available!: boolean;
   @ApiProperty() sortOrder!: number;
+  @ApiProperty({ enum: ['supported', 'retired'] }) supportStatus!: 'supported' | 'retired';
+  @ApiProperty() isRetired!: boolean;
+  @ApiProperty({ nullable: true, enum: ['gateway', 'ledger'] }) kind!: ProviderKind | null;
+  @ApiProperty({ nullable: true, enum: ['checkout', 'billing', 'internal'] })
+  publicExposure!: PaymentProviderPublicExposure | null;
+  @ApiProperty({
+    isArray: true,
+    enum: ['checkout', 'points', 'manual_transfer', 'recurring_billing', 'refund'],
+  })
+  capabilities!: PaymentProviderCapability[];
 }
 
 export class RegionMethodMatrixResponseDto {
