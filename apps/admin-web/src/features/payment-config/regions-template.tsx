@@ -100,11 +100,13 @@ export default function RegionsTemplate() {
       }
 
       if (hasMethodChanges && matrix) {
-        const items = matrix.items.map((it) => ({
-          code: it.code,
-          isEnabled: effectiveMethodEnabled(it.code, it.regionEnabled),
-          sortOrder: it.sortOrder,
-        }));
+        const items = matrix.items
+          .filter((it) => it.supportStatus === 'supported')
+          .map((it) => ({
+            code: it.code,
+            isEnabled: effectiveMethodEnabled(it.code, it.regionEnabled),
+            sortOrder: it.sortOrder,
+          }));
         await putMethods.mutateAsync({ code: selectedCode, items });
       }
 
@@ -245,9 +247,19 @@ export default function RegionsTemplate() {
                         </TableCell>
                         <TableCell>
                           <Badge
-                            variant={it.globalEnabled ? 'default' : 'secondary'}
+                            variant={
+                              it.supportStatus === 'retired'
+                                ? 'outline'
+                                : it.globalEnabled
+                                  ? 'default'
+                                  : 'secondary'
+                            }
                           >
-                            {it.globalEnabled ? '활성' : '비활성'}
+                            {it.supportStatus === 'retired'
+                              ? '지원 중단'
+                              : it.globalEnabled
+                                ? '활성'
+                                : '비활성'}
                           </Badge>
                         </TableCell>
                         <TableCell>
@@ -261,7 +273,7 @@ export default function RegionsTemplate() {
                             onCheckedChange={(v) =>
                               handleMethodToggle(it.code, it.regionEnabled, v)
                             }
-                            disabled={isSaving}
+                            disabled={isSaving || it.isRetired}
                             aria-label={`${it.displayName} ${matrix.region.code} 활성화`}
                           />
                         </TableCell>
