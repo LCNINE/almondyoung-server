@@ -134,6 +134,13 @@
       "when": 1781232416000,
       "tag": "20260612114656_product-code-active-unique",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1781477658529,
+      "tag": "20260615075418_add-product-fulfillment-kind",
+      "breakpoints": true
     }
   ]
 }
