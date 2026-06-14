@@ -1,6 +1,10 @@
-import { fetchWithRefresh } from './fetch-with-refresh';
+import { fetchWithAuthBounce } from './fetch-with-refresh';
 
 const BASE_URL = process.env.NEXT_PUBLIC_WALLET_API_URL ?? 'http://localhost:3100';
+
+function paymentIntentRoute(intentId: string, action: 'confirm' | 'cancel'): string {
+  return `/api/payment-intents/${encodeURIComponent(intentId)}/${action}`;
+}
 
 export interface PaymentIntent {
   id: string;
@@ -144,7 +148,7 @@ export async function confirmPaymentIntent(
   paymentMethodId: string | null,
   pointsToApply?: number,
 ): Promise<ConfirmResult> {
-  const res = await fetchWithRefresh(`${BASE_URL}/v1/payment-intents/${intentId}/confirm`, {
+  const res = await fetchWithAuthBounce(paymentIntentRoute(intentId, 'confirm'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -331,7 +335,7 @@ export async function updateBillingAgreementMethod(
 }
 
 export async function cancelPaymentIntent(intentId: string): Promise<void> {
-  const res = await fetchWithRefresh(`${BASE_URL}/v1/payment-intents/${intentId}/cancel`, {
+  const res = await fetchWithAuthBounce(paymentIntentRoute(intentId, 'cancel'), {
     method: 'POST',
     headers: {
       'Idempotency-Key': crypto.randomUUID(),

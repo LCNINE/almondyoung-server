@@ -3,6 +3,7 @@
 import { useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import { confirmPaymentIntent, cancelPaymentIntent } from '@/lib/wallet-api';
+import { isWalletSessionExpiredError, redirectToWalletLogin } from '@/lib/auth-expired';
 import { buildReturnUrl } from '@/lib/return-url';
 import type { AvailablePaymentMethod, PaymentIntent, PaymentMethod, PointsBalance } from '@/lib/wallet-api';
 import { Card, CardContent } from '@/components/ui/card';
@@ -210,6 +211,11 @@ export function PayForm({ intent, methods, pointsBalance, billingMethodsExist, a
         router.replace(buildPayPath(intent.id, region));
       }
     } catch (err) {
+      if (isWalletSessionExpiredError(err)) {
+        redirectToWalletLogin();
+        return;
+      }
+
       setError(err instanceof Error ? err.message : '결제에 실패했어요.');
     } finally {
       setLoading(false);
@@ -232,6 +238,11 @@ export function PayForm({ intent, methods, pointsBalance, billingMethodsExist, a
         router.replace(buildPayPath(intent.id, region));
       }
     } catch (err) {
+      if (isWalletSessionExpiredError(err)) {
+        redirectToWalletLogin();
+        return;
+      }
+
       setError(err instanceof Error ? err.message : '취소에 실패했어요.');
     } finally {
       setLoading(false);
