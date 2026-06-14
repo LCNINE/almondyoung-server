@@ -524,6 +524,8 @@ export interface PimPurchaseConstraint {
   lifetimeQuantityLimit: number | null;
 }
 
+export type PimFulfillmentKind = 'physical' | 'digital';
+
 // PIM Active Version 스냅샷 (동기화 소스 데이터)
 export interface PimProductSnapshot {
   // Master/Version 식별
@@ -565,6 +567,7 @@ export interface PimProductSnapshot {
   brand?: string;
   tags?: string[];
   productType?: string;
+  fulfillmentKind?: PimFulfillmentKind;
 
   // 옵션 그룹
   optionGroups?: Array<{
@@ -671,6 +674,7 @@ export interface MedusaProductPayload {
   tags?: Array<{ value: string }>;
   collection_id?: string;
   type_id?: string;
+  shipping_profile_id?: string | null;
   sales_channels?: Array<{ id: string }>;
 
   // 메타데이터 (핵심: PIM 추적용)
@@ -686,6 +690,8 @@ export interface MedusaProductPayload {
     isMembershipOnly?: boolean;
     pimPurchaseConstraint?: PimPurchaseConstraint | null;
     productType?: string;
+    fulfillmentKind: PimFulfillmentKind;
+    requiresShipping: boolean;
     syncedAt: string;
   };
 
