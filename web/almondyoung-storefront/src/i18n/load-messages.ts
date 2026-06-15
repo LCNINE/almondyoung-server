@@ -35,6 +35,7 @@ export const MESSAGE_NAMESPACES = [
   "mypage",
   "couponClaim",
   "business",
+  "notice",
 ] as const
 
 export type MessageNamespace = (typeof MESSAGE_NAMESPACES)[number]
