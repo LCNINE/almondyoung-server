@@ -5,6 +5,7 @@ import { Container } from '@/components/admin-ui-experimental/common/container';
 import { Header } from '@/components/admin-ui-experimental/common/header';
 import { Spinner } from '@/components/ui/spinner';
 import { useQuestion } from '@/lib/services/qna';
+import { useOptionalAdminUser } from '@/lib/services/users/queries';
 import {
   CATEGORY_LABELS,
   STATUS_LABELS,
@@ -28,6 +29,7 @@ import { QuestionDeleteButton } from '../question-delete-button';
 
 function QuestionDetailContent({ questionId }: { questionId: string }) {
   const { data } = useQuestion(questionId);
+  const { data: author } = useOptionalAdminUser(data.userId);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [carouselApi, setCarouselApi] = useState<CarouselApi>();
 
@@ -47,7 +49,7 @@ function QuestionDetailContent({ questionId }: { questionId: string }) {
   }, [carouselApi, selectedIndex]);
 
   const rows: { key: string; value: React.ReactNode }[] = [
-    { key: '작성자', value: data.nickname },
+    { key: '작성자', value: author?.username || data.nickname },
     {
       key: '카테고리',
       value: data.category ? CATEGORY_LABELS[data.category] : '-',

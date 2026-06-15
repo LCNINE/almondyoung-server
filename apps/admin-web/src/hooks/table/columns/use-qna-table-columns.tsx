@@ -10,14 +10,34 @@ import {
 
 const columnHelper = createColumnHelper<QuestionDto>();
 
-export const useQnaTableColumns = () => {
+export interface QnaAuthorSummary {
+  id: string;
+  username: string;
+  nickname: string | null;
+}
+
+interface QnaTableColumnContext {
+  userMap: Map<string, QnaAuthorSummary>;
+}
+
+export const useQnaTableColumns = ({ userMap }: QnaTableColumnContext) => {
   return useMemo(
     () => [
       columnHelper.accessor('id', {
         header: 'ID',
         cell: ({ getValue }) => <IdCell value={getValue()} />,
       }),
-      columnHelper.accessor('nickname', { header: '작성자' }),
+      columnHelper.display({
+        id: 'author',
+        header: '작성자',
+        // 작성 당시 스냅샷된 nickname 이 아니라 회원의 이름(username)을 우선 표시.
+        // 조회 실패(탈퇴 등) 시 스냅샷 nickname 으로 fallback.
+        cell: ({ row }) => {
+          const { userId, nickname } = row.original;
+          const displayName = userMap.get(userId)?.username || nickname;
+          return <span>{displayName || '-'}</span>;
+        },
+      }),
       columnHelper.accessor('category', {
         header: '카테고리',
         cell: ({ getValue }) => <QnaCategoryCell value={getValue()} />,
@@ -41,6 +61,6 @@ export const useQnaTableColumns = () => {
         cell: ({ getValue }) => <DateCell value={getValue()} />,
       }),
     ],
-    []
+    [userMap]
   );
 };
