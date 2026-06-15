@@ -173,7 +173,7 @@ export function Header({ activeMenu, activeItem, onMenuChange }: HeaderProps) {
         </Link>
 
         {/* 메인 메뉴 (데스크톱) */}
-        <nav className="items-center flex-1 hidden space-x-3 lg:flex">
+        <nav className="items-center flex-1 min-w-0 hidden gap-0.5 overflow-x-auto lg:flex xl:gap-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {mainMenus.map((menu) => {
             const IconComponent = iconMap[menu.icon as keyof typeof iconMap];
             const isActive = activeMenu === menu.id;
@@ -188,7 +188,7 @@ export function Header({ activeMenu, activeItem, onMenuChange }: HeaderProps) {
               >
                 <Button
                   variant="ghost"
-                  className={`text-sm px-4 py-2 transition-colors ${
+                  className={`text-xs xl:text-sm py-2 has-[>svg]:px-2 xl:has-[>svg]:px-3 transition-colors whitespace-nowrap ${
                     isActive
                       ? 'text-blue-600 hover:text-blue-700'
                       : isHovered
@@ -197,7 +197,9 @@ export function Header({ activeMenu, activeItem, onMenuChange }: HeaderProps) {
                   }`}
                   onClick={() => handleMenuClick(menu.id)}
                 >
-                  {IconComponent && <IconComponent className="w-4 h-4 mr-0" />}
+                  {IconComponent && (
+                    <IconComponent className="hidden w-4 h-4 xl:inline-block" />
+                  )}
                   {menu.title}
                 </Button>
 
