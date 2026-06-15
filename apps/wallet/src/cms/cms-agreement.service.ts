@@ -5,6 +5,7 @@ import { WalletSchema, cmsAgreements } from '../schema';
 import { CmsAgreementRecord } from '../types';
 import { CmsApiClient } from './cms-api.client';
 import { CmsMemberService } from './cms-member.service';
+import { CmsOperationError, CMS_CUSTOMER_MESSAGES } from './cms-errors';
 
 /** 효성 API 5xx/네트워크 일시 장애 — 재시도 가능. 영구 실패로 기록하지 않는다. */
 export class CmsAgreementRetryableError extends Error {
@@ -42,6 +43,14 @@ export class CmsAgreementService {
 
     const result = await this.cmsApi.uploadAgreement(cmsMemberId, file, fileType, fileExtension);
     if (!result.ok) {
+      if (result.error.code === 'CMS_PROVIDER_AUTH_FAILED') {
+        throw new CmsOperationError(
+          'CMS_PROVIDER_AUTH_FAILED',
+          CMS_CUSTOMER_MESSAGES.providerIssue,
+          502,
+          result.error.message,
+        );
+      }
       if (result.statusCode >= 500) {
         throw new CmsAgreementRetryableError(
           `CMS agreement upload API error: ${result.error.code} ${result.error.message}`,
@@ -83,10 +92,7 @@ export class CmsAgreementService {
    * 특정 회원의 동의자료 목록 조회.
    */
   async findByCmsMemberId(cmsMemberId: string): Promise<CmsAgreementRecord[]> {
-    return this.dbService.db
-      .select()
-      .from(cmsAgreements)
-      .where(eq(cmsAgreements.cmsMemberId, cmsMemberId));
+    return this.dbService.db.select().from(cmsAgreements).where(eq(cmsAgreements.cmsMemberId, cmsMemberId));
   }
 
   /**

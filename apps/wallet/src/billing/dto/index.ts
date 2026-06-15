@@ -1,4 +1,4 @@
-import { IsIn, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
+import { IsIn, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Matches, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 // ─── Billing Method DTOs ────────────────────────────────────────────────────
@@ -76,6 +76,7 @@ export class CmsBankAccountDto {
   @ApiProperty({ description: '은행코드 3자리 (예: 004=국민, 088=신한)', example: '004' })
   @IsString()
   @IsNotEmpty()
+  @Matches(/^\d{3}$/, { message: 'paymentCompany must be a 3-digit bank code' })
   @MaxLength(3)
   paymentCompany: string;
 
@@ -88,6 +89,7 @@ export class CmsBankAccountDto {
   @ApiProperty({ description: '생년월일 6자리(YYMMDD) 또는 사업자번호 10자리', maxLength: 10 })
   @IsString()
   @IsNotEmpty()
+  @Matches(/^(\d{6}|\d{10})$/, { message: 'payerNumber must be 6 or 10 digits' })
   @MaxLength(10)
   payerNumber: string;
 
@@ -96,6 +98,13 @@ export class CmsBankAccountDto {
   @IsNotEmpty()
   @MaxLength(16)
   paymentNumber: string;
+
+  @ApiProperty({ description: '연락처 (숫자만)', maxLength: 20 })
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^\d{8,20}$/, { message: 'phone must contain 8 to 20 digits' })
+  @MaxLength(20)
+  phone: string;
 }
 
 export class BillingMethodResponseDto {

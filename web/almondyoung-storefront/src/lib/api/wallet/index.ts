@@ -300,9 +300,16 @@ export async function onboardHmsBnpl(
     const payerName = getFormString(formData, "payerName")
     const payerNumber = getFormString(formData, "payerNumber")
     const paymentNumber = getFormString(formData, "paymentNumber")
+    const phone = getFormString(formData, "phone").replace(/\D/g, "")
     const file = formData.get("file") as File | null
 
-    if (!paymentCompany || !payerName || !payerNumber || !paymentNumber) {
+    if (
+      !paymentCompany ||
+      !payerName ||
+      !payerNumber ||
+      !paymentNumber ||
+      !phone
+    ) {
       return {
         success: false,
         message: "계좌 등록에 필요한 정보가 부족합니다.",
@@ -322,6 +329,7 @@ export async function onboardHmsBnpl(
     body.append("payerName", payerName)
     body.append("payerNumber", payerNumber)
     body.append("paymentNumber", paymentNumber)
+    body.append("phone", phone)
     body.append("file", file)
 
     const result = await api<RegisterCmsWithAgreementResponseDto>(

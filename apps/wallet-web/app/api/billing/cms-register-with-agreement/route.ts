@@ -8,7 +8,7 @@ export async function POST(request: Request) {
     return Response.json({ error: '잘못된 요청입니다.' }, { status: 400 });
   }
 
-  const required = ['paymentCompany', 'payerName', 'payerNumber', 'paymentNumber'];
+  const required = ['paymentCompany', 'payerName', 'payerNumber', 'paymentNumber', 'phone'];
   for (const field of required) {
     if (!formData.get(field)) {
       return Response.json({ error: `필수 항목이 누락되었습니다: ${field}` }, { status: 400 });
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
       cache: 'no-store',
     });
 
-    const body = await res.json().catch(() => ({})) as Record<string, unknown>;
+    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
     if (!res.ok) {
       const errMsg = (body?.message as string) ?? `등록 실패 (${res.status})`;
       return Response.json({ error: errMsg }, { status: res.status >= 500 ? 502 : 400 });

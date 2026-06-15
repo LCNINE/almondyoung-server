@@ -8,15 +8,15 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     return Response.json({ error: '잘못된 요청입니다.' }, { status: 400 });
   }
 
-  const { paymentCompany, payerName, payerNumber, paymentNumber } = body as Record<string, string>;
-  if (!paymentCompany || !payerName || !payerNumber || !paymentNumber) {
+  const { paymentCompany, payerName, payerNumber, paymentNumber, phone } = body as Record<string, string>;
+  if (!paymentCompany || !payerName || !payerNumber || !paymentNumber || !phone) {
     return Response.json({ error: '필수 항목이 누락되었습니다.' }, { status: 400 });
   }
 
   const cookieHeader = request.headers.get('Cookie') ?? '';
 
   try {
-    await updateCmsBankAccount(id, { paymentCompany, payerName, payerNumber, paymentNumber }, cookieHeader);
+    await updateCmsBankAccount(id, { paymentCompany, payerName, payerNumber, paymentNumber, phone }, cookieHeader);
     return new Response(null, { status: 200 });
   } catch (err) {
     const message = err instanceof Error ? err.message : '계좌 변경 중 오류가 발생했습니다.';
