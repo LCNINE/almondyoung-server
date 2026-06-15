@@ -11,12 +11,22 @@ function optional(name: string, fallback: string): string {
 }
 
 export const authEnv = {
-  userServiceUrl: required("USER_SERVICE_URL"),
-  parentCookieDomain: optional("PARENT_COOKIE_DOMAIN", ""),
-  parentCookieSecure: optional("PARENT_COOKIE_SECURE", "true") === "true",
-  parentCookieSameSite: optional("PARENT_COOKIE_SAMESITE", "lax") as
-    | "lax"
-    | "none"
-    | "strict",
-  authWebOrigin: required("AUTH_WEB_ORIGIN"),
+  get userServiceUrl(): string {
+    return required("USER_SERVICE_URL")
+  },
+  get parentCookieDomain(): string {
+    return optional("PARENT_COOKIE_DOMAIN", "")
+  },
+  get parentCookieSecure(): boolean {
+    return optional("PARENT_COOKIE_SECURE", "true") === "true"
+  },
+  get parentCookieSameSite(): "lax" | "none" | "strict" {
+    return optional("PARENT_COOKIE_SAMESITE", "lax") as
+      | "lax"
+      | "none"
+      | "strict"
+  },
+  get authWebOrigin(): string {
+    return required("AUTH_WEB_ORIGIN")
+  },
 }

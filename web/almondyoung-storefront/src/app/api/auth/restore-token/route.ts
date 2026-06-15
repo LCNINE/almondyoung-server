@@ -3,6 +3,9 @@ import { cookies } from "next/headers"
 import { requireBackendBaseUrl } from "@/lib/config/backend"
 import { restoreAccessToken } from "@/lib/auth/user-service"
 
+export const dynamic = "force-dynamic"
+export const revalidate = 0
+
 const isIpHost = (hostname: string) => {
   return /^(?:\d{1,3}\.){3}\d{1,3}$/.test(hostname) || hostname.includes(":")
 }

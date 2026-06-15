@@ -10,7 +10,9 @@ import { useBusinessLicenses } from '@/lib/services/business-licenses';
 const PAGE_SIZE = 20;
 
 export function BusinessLicenseTable() {
-  const { searchParams: query } = useBusinessLicenseTableQuery({ pageSize: PAGE_SIZE });
+  const { searchParams: query } = useBusinessLicenseTableQuery({
+    pageSize: PAGE_SIZE,
+  });
   const { data, isLoading, isFetching } = useBusinessLicenses(query);
   const columns = useBusinessLicenseTableColumns();
   const filters = useBusinessLicenseTableFilters();

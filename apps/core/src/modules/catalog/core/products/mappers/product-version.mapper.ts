@@ -22,6 +22,7 @@ export interface ProductVersionDetailResponseDto {
   isWholesaleOnly: boolean;
   isMembershipOnly: boolean;
   productType: string | null;
+  fulfillmentKind: 'physical' | 'digital';
   productCode: string | null;
   alternativeName: string | null;
   material: string | null;
@@ -75,6 +76,7 @@ export class ProductVersionMapper {
       isWholesaleOnly: detail.isWholesaleOnly,
       isMembershipOnly: detail.isMembershipOnly,
       productType: detail.productType,
+      fulfillmentKind: (detail.fulfillmentKind ?? 'physical') as 'physical' | 'digital',
       productCode: detail.productCode,
       alternativeName: detail.alternativeName,
       material: detail.material,
