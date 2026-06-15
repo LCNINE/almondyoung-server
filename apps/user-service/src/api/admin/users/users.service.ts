@@ -58,14 +58,19 @@ export class UsersService {
         conditions.push(inArray(schema.users.id, idList!));
       }
       if (filters?.q) {
-        const searchTerm = `%${filters.q}%`;
-        conditions.push(
-          or(
-            ilike(schema.users.username, searchTerm),
-            ilike(schema.users.email, searchTerm),
-            ilike(schema.users.loginId, searchTerm),
-          ),
-        );
+        const q = filters.q.trim();
+        const searchTerm = `%${q}%`;
+        const orConditions = [
+          ilike(schema.users.username, searchTerm),
+          ilike(schema.users.email, searchTerm),
+          ilike(schema.users.loginId, searchTerm),
+        ];
+        // q 가 UUID 형태면 유저 ID 정확 매칭도 허용 (고객조회에서 userId 로 검색하는 케이스)
+        const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (UUID_RE.test(q)) {
+          orConditions.push(eq(schema.users.id, q));
+        }
+        conditions.push(or(...orConditions));
       }
       if (filters?.roleName) {
         const roleNames = filters.roleName
