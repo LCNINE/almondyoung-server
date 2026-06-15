@@ -413,6 +413,12 @@ describe('ProductMatchingService strategy semantics', () => {
       ],
       [
         {
+          variantId: matching.variantId,
+          availabilityOverride: 'manual_out_of_stock',
+        },
+      ],
+      [
+        {
           masterId: matching.masterId,
           versionId: '55555555-5555-5555-5555-555555555555',
           name: '상품 A',
@@ -435,6 +441,11 @@ describe('ProductMatchingService strategy semantics', () => {
           strategy: 'variant',
           skuLinkCount: 1,
           hasSkuLinks: true,
+          stockPolicy: {
+            preStockSellable: true,
+            alwaysSellableZeroStock: false,
+            availabilityOverride: 'manual_out_of_stock',
+          },
           master: {
             id: matching.masterId,
             name: '상품 A',

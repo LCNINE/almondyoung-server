@@ -42,11 +42,15 @@ describe('ProductSkuMappingService', () => {
       isResolved: false,
     };
     let links: Array<{ productMatchingId: string; skuId: string; quantity: number }> = [];
+    let salesVariantPolicy: Record<string, any> | null = null;
 
     const tx = {
       query: {
         productMatchings: {
           findFirst: jest.fn().mockImplementation(async () => matching),
+        },
+        salesVariantPolicies: {
+          findFirst: jest.fn().mockImplementation(async () => salesVariantPolicy),
         },
         productVariantSkuLinks: {
           findMany: jest.fn().mockImplementation(async () => links),
@@ -83,6 +87,9 @@ describe('ProductSkuMappingService', () => {
           if (table === wmsTables.productVariantSkuLinks) {
             links = Array.isArray(values) ? values : [values];
           }
+          if (table === wmsTables.salesVariantPolicies) {
+            salesVariantPolicy = Array.isArray(values) ? values[0] : values;
+          }
 
           return {
             returning: async () => {
@@ -93,6 +100,7 @@ describe('ProductSkuMappingService', () => {
 
               return [];
             },
+            onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
           };
         },
       })),
@@ -116,6 +124,11 @@ describe('ProductSkuMappingService', () => {
 
     const result = await service.upsert(variantId, {
       links: [{ skuId, quantity: 2 }],
+      policy: {
+        preStockSellable: false,
+        alwaysSellableZeroStock: false,
+        availabilityOverride: 'manual_out_of_stock',
+      },
     } as any);
 
     expect(updates.find((entry) => entry.table === wmsTables.productMatchings)?.set).toMatchObject({
@@ -130,6 +143,13 @@ describe('ProductSkuMappingService', () => {
         quantity: 2,
       },
     ]);
+    expect(inserts.find((entry) => entry.table === wmsTables.salesVariantPolicies)?.values).toMatchObject({
+      variantId,
+      inventoryManagement: true,
+      preStockSellable: false,
+      alwaysSellableZeroStock: false,
+      availabilityOverride: 'manual_out_of_stock',
+    });
     expect(productSellableQuantity.recalculateAndPublishForVariant).toHaveBeenCalledWith(variantId, tx);
     expect(fulfillmentBacklog.wakeBacklogsWaitingForVariant).toHaveBeenCalledWith(variantId, tx);
     expect(result).toMatchObject({
@@ -137,6 +157,11 @@ describe('ProductSkuMappingService', () => {
       variantId,
       status: 'matched',
       strategy: 'variant',
+      stockPolicy: {
+        preStockSellable: false,
+        alwaysSellableZeroStock: false,
+        availabilityOverride: 'manual_out_of_stock',
+      },
       links: [{ productMatchingId: matchingId, skuId, quantity: 2 }],
     });
   });
