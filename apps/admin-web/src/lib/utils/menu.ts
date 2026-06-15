@@ -409,7 +409,7 @@ export const mainMenus: MainMenu[] = [
     id: 'own-mall',
     title: '자사몰 관리',
     icon: 'Store',
-    defaultPath: '/mall/settings', // 첫 번째 페이지
+    defaultPath: '/mall/users', // 첫 번째 페이지, 임시로 users로 설정
     children: [
       {
         id: 'mall-selection',
