@@ -115,6 +115,14 @@ export class ProductSellableQuantityService {
         .from(wmsTables.productMatchings)
         .where(inArray(wmsTables.productMatchings.variantId, existingVariantIds));
 
+      const policyRows = await trx
+        .select({
+          variantId: wmsTables.salesVariantPolicies.variantId,
+          availabilityOverride: wmsTables.salesVariantPolicies.availabilityOverride,
+        })
+        .from(wmsTables.salesVariantPolicies)
+        .where(inArray(wmsTables.salesVariantPolicies.variantId, existingVariantIds));
+
       const matchingIds = matchingRows.map((matching) => matching.id);
       const linkRows =
         matchingIds.length > 0
@@ -150,6 +158,7 @@ export class ProductSellableQuantityService {
       }
 
       const matchingMap = new Map(matchingRows.map((matching) => [matching.variantId, matching]));
+      const policyMap = new Map(policyRows.map((policy) => [policy.variantId, policy]));
       const linksByMatchingId = new Map<string, typeof linkRows>();
       for (const link of linkRows) {
         const links = linksByMatchingId.get(link.productMatchingId) ?? [];
@@ -169,6 +178,7 @@ export class ProductSellableQuantityService {
 
           const activeVersion = activeVersionMap.get(variantId);
           const matching = matchingMap.get(variantId);
+          const policy = policyMap.get(variantId);
           const links = matching ? (linksByMatchingId.get(matching.id) ?? []) : [];
 
           const input: ProductSellableQuantityInput = {
@@ -191,6 +201,7 @@ export class ProductSellableQuantityService {
                   alwaysSellableZeroStock: matching.alwaysSellableZeroStock,
                 }
               : null,
+            availabilityOverride: policy?.availabilityOverride ?? null,
             components: links.map((link) => ({
               skuId: link.skuId,
               requiredQuantity: link.quantity,
