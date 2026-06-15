@@ -28,6 +28,16 @@ export function useSelectedParams({ prefix }: UseSelectedParamsOptions = {}) {
     router.replace(`${pathname}?${params.toString()}`);
   };
 
+  const addMany = (entries: Record<string, string | string[]>) => {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(entries)) {
+      const strValue = Array.isArray(value) ? value.join(',') : value;
+      params.set(prefixKey(key), strValue);
+    }
+    params.delete(prefixKey('page'));
+    router.replace(`${pathname}?${params.toString()}`);
+  };
+
   const deleteParam = (key: string) => {
     const params = new URLSearchParams(searchParams.toString());
     params.delete(prefixKey(key));
@@ -44,5 +54,5 @@ export function useSelectedParams({ prefix }: UseSelectedParamsOptions = {}) {
     router.replace(`${pathname}?${params.toString()}`);
   };
 
-  return { get, add, delete: deleteParam, deleteMany, searchParams };
+  return { get, add, addMany, delete: deleteParam, deleteMany, searchParams };
 }
