@@ -1207,36 +1207,84 @@ export class ProductMatchingService {
   ): Promise<{
     preStockSellable: boolean;
     alwaysSellableZeroStock: boolean;
+    availabilityOverride: 'manual_out_of_stock' | null;
   } | null> {
-    const matching = await this.inTx(async (trx) => {
+    const { matching, policy } = await this.inTx(async (trx) => {
       const [row] = await trx
         .select()
         .from(wmsTables.productMatchings)
         .where(eq(wmsTables.productMatchings.variantId, variantId))
         .limit(1);
-      return row;
+      const [policyRow] = await trx
+        .select({
+          variantId: wmsTables.salesVariantPolicies.variantId,
+          preStockSellable: wmsTables.salesVariantPolicies.preStockSellable,
+          alwaysSellableZeroStock: wmsTables.salesVariantPolicies.alwaysSellableZeroStock,
+          availabilityOverride: wmsTables.salesVariantPolicies.availabilityOverride,
+        })
+        .from(wmsTables.salesVariantPolicies)
+        .where(eq(wmsTables.salesVariantPolicies.variantId, variantId))
+        .limit(1);
+      return { matching: row, policy: policyRow };
     }, tx);
 
-    if (!matching) {
+    if (!matching && !policy) {
       return null;
     }
 
     return {
-      preStockSellable: matching.preStockSellable,
-      alwaysSellableZeroStock: matching.alwaysSellableZeroStock,
+      preStockSellable: matching?.preStockSellable ?? policy?.preStockSellable ?? false,
+      alwaysSellableZeroStock: matching?.alwaysSellableZeroStock ?? policy?.alwaysSellableZeroStock ?? false,
+      availabilityOverride: policy?.availabilityOverride ?? null,
     };
   }
 
   async updateStockPolicy(matchingId: string, stockPolicy: StockPolicyDto, tx?: DbTx) {
-    const [updated] = await this.inTx(
-      async (trx) =>
-        trx
-          .update(wmsTables.productMatchings)
-          .set({ ...stockPolicy, updatedAt: new Date() })
-          .where(eq(wmsTables.productMatchings.id, matchingId))
-          .returning(),
-      tx,
-    ).then((r) => r);
+    const [updated] = await this.inTx(async (trx) => {
+      const matchingPolicyPatch = {
+        ...(stockPolicy.preStockSellable !== undefined ? { preStockSellable: stockPolicy.preStockSellable } : {}),
+        ...(stockPolicy.alwaysSellableZeroStock !== undefined
+          ? { alwaysSellableZeroStock: stockPolicy.alwaysSellableZeroStock }
+          : {}),
+        updatedAt: new Date(),
+      };
+
+      const [updatedMatching] = await trx
+        .update(wmsTables.productMatchings)
+        .set(matchingPolicyPatch)
+        .where(eq(wmsTables.productMatchings.id, matchingId))
+        .returning();
+
+      if (!updatedMatching) {
+        return [updatedMatching];
+      }
+
+      const now = new Date();
+      const variantPolicyValues = {
+        variantId: updatedMatching.variantId,
+        inventoryManagement: true,
+        preStockSellable: stockPolicy.preStockSellable ?? updatedMatching.preStockSellable,
+        alwaysSellableZeroStock: stockPolicy.alwaysSellableZeroStock ?? updatedMatching.alwaysSellableZeroStock,
+        availabilityOverride: stockPolicy.availabilityOverride ?? null,
+        updatedAt: now,
+      };
+
+      await trx
+        .insert(wmsTables.salesVariantPolicies)
+        .values(variantPolicyValues)
+        .onConflictDoUpdate({
+          target: wmsTables.salesVariantPolicies.variantId,
+          set: {
+            inventoryManagement: true,
+            preStockSellable: variantPolicyValues.preStockSellable,
+            alwaysSellableZeroStock: variantPolicyValues.alwaysSellableZeroStock,
+            availabilityOverride: variantPolicyValues.availabilityOverride,
+            updatedAt: now,
+          },
+        });
+
+      return [updatedMatching];
+    }, tx);
 
     if (!updated) {
       throw new NotFoundException(`Product matching with ID ${matchingId} not found.`);

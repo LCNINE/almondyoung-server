@@ -96,6 +96,7 @@ describe('ProductMatchingService strategy semantics', () => {
           return {
             returning: jest.fn().mockResolvedValue([{ ...matching, ...(values as object) }]),
             onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
+            onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
           };
         }),
       })),
@@ -549,5 +550,57 @@ describe('ProductMatchingService strategy semantics', () => {
       tx,
     );
     expect(fulfillmentBacklog.wakeBacklogsWaitingForVariant).toHaveBeenCalledWith(matching.variantId, tx);
+  });
+
+  it('updates sales variant policy override and recalculates projection', async () => {
+    const { service, productSellableQuantity } = makeService();
+    const tx = makeTx([[matching]]);
+
+    const result = await service.updateStockPolicy(
+      matching.id,
+      {
+        preStockSellable: false,
+        alwaysSellableZeroStock: false,
+        availabilityOverride: 'manual_out_of_stock',
+      },
+      tx as never,
+    );
+
+    expect(tx.updates[0]).toMatchObject({
+      preStockSellable: false,
+      alwaysSellableZeroStock: false,
+      updatedAt: expect.any(Date),
+    });
+    expect(tx.updates[0]).not.toHaveProperty('availabilityOverride');
+    expect(tx.inserts[0]).toMatchObject({
+      variantId: matching.variantId,
+      inventoryManagement: true,
+      preStockSellable: false,
+      alwaysSellableZeroStock: false,
+      availabilityOverride: 'manual_out_of_stock',
+    });
+    expect(productSellableQuantity.recalculateAndPublishForVariant).toHaveBeenCalledWith(matching.variantId, tx);
+    expect(result).toMatchObject({ id: matching.id });
+  });
+
+  it('returns sales variant policy when variant has no matching row', async () => {
+    const { service } = makeService();
+    const tx = makeTx([
+      [],
+      [
+        {
+          variantId: matching.variantId,
+          preStockSellable: false,
+          alwaysSellableZeroStock: false,
+          availabilityOverride: 'manual_out_of_stock',
+        },
+      ],
+    ]);
+
+    await expect(service.getStockPolicyForVariant(matching.variantId, tx as never)).resolves.toEqual({
+      preStockSellable: false,
+      alwaysSellableZeroStock: false,
+      availabilityOverride: 'manual_out_of_stock',
+    });
   });
 });
