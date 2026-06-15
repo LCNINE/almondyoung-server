@@ -43,6 +43,7 @@ export class ProductSellableQuantityDto {
       'SELLABLE',
       'PRE_STOCK_SELLABLE',
       'ALWAYS_SELLABLE_ZERO_STOCK',
+      'MANUAL_OUT_OF_STOCK',
       'NOT_ACTIVE_VERSION',
       'VARIANT_INACTIVE',
       'SALES_NOT_STARTED',
@@ -62,6 +63,9 @@ export class ProductSellableQuantityDto {
 
   @ApiProperty({ description: '재고 0이어도 항상 판매 가능 정책' })
   alwaysSellableZeroStock: boolean;
+
+  @ApiProperty({ description: '수동 판매 가능 상태 override', enum: ['manual_out_of_stock'], nullable: true })
+  availabilityOverride: 'manual_out_of_stock' | null;
 
   @ApiProperty({ type: [ProductSellableQuantityComponentDto] })
   components: ProductSellableQuantityComponentDto[];
