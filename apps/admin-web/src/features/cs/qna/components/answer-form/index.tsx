@@ -94,7 +94,7 @@ function AnswerFormContent({ questionId }: { questionId: string }) {
       {hasAnswer && (
         <div className="text-xs text-muted-foreground space-y-1">
           <div>
-            답변자: {adminUser?.nickname ?? adminUser?.username ?? '-'}
+            답변자: {adminUser?.username ?? adminUser?.nickname ?? '-'}
           </div>
           <div>
             마지막 수정:{' '}
