@@ -21,6 +21,7 @@ import type {
 import type { SkuLinkState } from '@/lib/types/ui/matching';
 import {
   useVariantMatching,
+  useVariantStockPolicy,
   useUpsertVariantMatching,
   useSetMatchingPriority,
   useChangeMatchingStrategy,
@@ -56,7 +57,13 @@ const getCurrentSkuLinks = (
 ) => (source?.matchedSkus?.length ? source.matchedSkus : (source?.links ?? []));
 
 function VariantPanel({ variant, masterId, onSaved }: VariantPanelProps) {
-  const { data: current } = useVariantMatching(variant.id);
+  const { data: current, isFetched: isMatchingFetched } = useVariantMatching(
+    variant.id
+  );
+  const { data: variantStockPolicy } = useVariantStockPolicy(
+    variant.id,
+    isMatchingFetched && !current
+  );
   const upsert = useUpsertVariantMatching();
   const setPriority = useSetMatchingPriority();
   const setStrategy = useChangeMatchingStrategy();
@@ -81,11 +88,17 @@ function VariantPanel({ variant, masterId, onSaved }: VariantPanelProps) {
       setStrategyState(current.strategy ?? 'variant');
       setPriorityState(current.priority ?? 'normal');
       setStockPolicy(normalizeStockPolicy(current.stockPolicy));
+    } else if (isMatchingFetched) {
+      setLinks([]);
+      setStrategyState('variant');
+      setPriorityState('normal');
+      setStockPolicy(normalizeStockPolicy(variantStockPolicy));
     }
-  }, [current]);
+  }, [current, isMatchingFetched, variantStockPolicy]);
 
   const handleSave = async () => {
     const currentSkuLinks = getCurrentSkuLinks(current);
+    const currentStockPolicy = current?.stockPolicy ?? variantStockPolicy;
     const changedLinks =
       JSON.stringify(links) !==
       JSON.stringify(
@@ -95,7 +108,8 @@ function VariantPanel({ variant, masterId, onSaved }: VariantPanelProps) {
         })) ?? []
       );
     const changedPolicy =
-      JSON.stringify(stockPolicy) !== JSON.stringify(normalizeStockPolicy(current?.stockPolicy));
+      JSON.stringify(stockPolicy) !==
+      JSON.stringify(normalizeStockPolicy(currentStockPolicy));
     const changedStrategy =
       strategy !==
       (current as { strategy?: MatchingStrategy } | undefined)?.strategy;

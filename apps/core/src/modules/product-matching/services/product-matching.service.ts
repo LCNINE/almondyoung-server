@@ -82,6 +82,50 @@ export class ProductMatchingService {
     return tx ? fn(tx) : this.db.transaction(fn);
   }
 
+  private hasAvailabilityOverride(policy: StockPolicyDto | undefined): boolean {
+    return !!policy && Object.prototype.hasOwnProperty.call(policy, 'availabilityOverride');
+  }
+
+  private async upsertSalesVariantPolicy(
+    trx: DbTx,
+    variantId: string,
+    stockPolicy: StockPolicyDto | undefined,
+    fallback: { preStockSellable: boolean; alwaysSellableZeroStock: boolean },
+    options: { requireAvailabilityOverride?: boolean } = {},
+  ) {
+    const hasAvailabilityOverride = this.hasAvailabilityOverride(stockPolicy);
+    if (options.requireAvailabilityOverride && !hasAvailabilityOverride) {
+      return;
+    }
+
+    const now = new Date();
+    const availabilityOverridePatch = hasAvailabilityOverride
+      ? { availabilityOverride: stockPolicy?.availabilityOverride ?? null }
+      : {};
+    const variantPolicyValues = {
+      variantId,
+      inventoryManagement: true,
+      preStockSellable: stockPolicy?.preStockSellable ?? fallback.preStockSellable,
+      alwaysSellableZeroStock: stockPolicy?.alwaysSellableZeroStock ?? fallback.alwaysSellableZeroStock,
+      ...availabilityOverridePatch,
+      updatedAt: now,
+    };
+
+    await trx
+      .insert(wmsTables.salesVariantPolicies)
+      .values(variantPolicyValues)
+      .onConflictDoUpdate({
+        target: wmsTables.salesVariantPolicies.variantId,
+        set: {
+          inventoryManagement: true,
+          preStockSellable: variantPolicyValues.preStockSellable,
+          alwaysSellableZeroStock: variantPolicyValues.alwaysSellableZeroStock,
+          ...availabilityOverridePatch,
+          updatedAt: now,
+        },
+      });
+  }
+
   private getStrategy(strategyType: string): MatchingStrategy {
     const strategy = this.strategies.get(strategyType);
     if (!strategy) {
@@ -891,6 +935,9 @@ export class ProductMatchingService {
           `Product matching ${matchingId} resolved as 'matched' with ${strategy} strategy. ` +
             `SKUs: ${mappings.length}, Stock Policy: ${JSON.stringify(finalStockPolicy)}`,
         );
+        await this.upsertSalesVariantPolicy(trx, productMatching.variantId, stockPolicy, finalStockPolicy, {
+          requireAvailabilityOverride: true,
+        });
         await this.productSellableQuantity.recalculateAndPublishForVariant(productMatching.variantId, trx);
         await this.fulfillmentBacklog.wakeBacklogsWaitingForVariant(productMatching.variantId, trx);
         return updatedMatching;
@@ -923,6 +970,9 @@ export class ProductMatchingService {
         `Product matching ${matchingId} resolved as 'matched' with void strategy. ` +
           `Stock Policy: ${JSON.stringify(finalStockPolicy)}`,
       );
+      await this.upsertSalesVariantPolicy(trx, variantId, stockPolicy, finalStockPolicy, {
+        requireAvailabilityOverride: true,
+      });
       await this.productSellableQuantity.recalculateAndPublishForVariant(variantId, trx);
       await this.fulfillmentBacklog.wakeBacklogsWaitingForVariant(variantId, trx);
       return updatedMatching;
@@ -988,6 +1038,19 @@ export class ProductMatchingService {
         .set(nextState)
         .where(eq(wmsTables.productMatchings.id, matchingId))
         .returning();
+
+      if (dto.target === 'void') {
+        await this.upsertSalesVariantPolicy(
+          trx,
+          productMatching.variantId,
+          dto.stockPolicy,
+          {
+            preStockSellable: updatedMatching.preStockSellable,
+            alwaysSellableZeroStock: updatedMatching.alwaysSellableZeroStock,
+          },
+          { requireAvailabilityOverride: true },
+        );
+      }
 
       await this.auditService.log(
         {
@@ -1273,29 +1336,16 @@ export class ProductMatchingService {
         return [updatedMatching];
       }
 
-      const now = new Date();
-      const variantPolicyValues = {
-        variantId: updatedMatching.variantId,
-        inventoryManagement: true,
-        preStockSellable: stockPolicy.preStockSellable ?? updatedMatching.preStockSellable,
-        alwaysSellableZeroStock: stockPolicy.alwaysSellableZeroStock ?? updatedMatching.alwaysSellableZeroStock,
-        availabilityOverride: stockPolicy.availabilityOverride ?? null,
-        updatedAt: now,
-      };
-
-      await trx
-        .insert(wmsTables.salesVariantPolicies)
-        .values(variantPolicyValues)
-        .onConflictDoUpdate({
-          target: wmsTables.salesVariantPolicies.variantId,
-          set: {
-            inventoryManagement: true,
-            preStockSellable: variantPolicyValues.preStockSellable,
-            alwaysSellableZeroStock: variantPolicyValues.alwaysSellableZeroStock,
-            availabilityOverride: variantPolicyValues.availabilityOverride,
-            updatedAt: now,
-          },
-        });
+      await this.upsertSalesVariantPolicy(
+        trx,
+        updatedMatching.variantId,
+        stockPolicy,
+        {
+          preStockSellable: updatedMatching.preStockSellable,
+          alwaysSellableZeroStock: updatedMatching.alwaysSellableZeroStock,
+        },
+        {},
+      );
 
       return [updatedMatching];
     }, tx);
