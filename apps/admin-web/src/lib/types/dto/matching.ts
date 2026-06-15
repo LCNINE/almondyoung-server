@@ -207,7 +207,7 @@ export interface UpdateStockPolicyResponseDto {
 /** PUT /matchings/:variantId 요청 바디 */
 export interface UpsertMatchingDto {
   masterId?: string | null;
-  links: { skuId: string; quantity: number }[];
+  links?: { skuId: string; quantity: number }[];
   policy?: Partial<StockPolicyDto>;
 }
 

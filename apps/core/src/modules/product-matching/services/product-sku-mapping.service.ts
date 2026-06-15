@@ -95,8 +95,15 @@ export class ProductSkuMappingService {
       const existing = await trx.query.productMatchings.findFirst({
         where: (m, { eq }) => eq(m.variantId, variantId),
       });
-      const isEmptyLinkUpdateForExistingMatching = Array.isArray(dto.links) && dto.links.length === 0 && !!existing;
-      const isPolicyOnlySave = !hasLinks && !isEmptyLinkUpdateForExistingMatching && dto.policy !== undefined;
+      const hasExplicitEmptyLinks = Array.isArray(dto.links) && dto.links.length === 0;
+      const existingLinksForEmptyUpdate =
+        existing && hasExplicitEmptyLinks
+          ? await trx.query.productVariantSkuLinks.findMany({
+              where: (l, { eq }) => eq(l.productMatchingId, existing.id),
+            })
+          : [];
+      const isClearingExistingLinks = hasExplicitEmptyLinks && !!existing && existingLinksForEmptyUpdate.length > 0;
+      const isPolicyOnlySave = !hasLinks && !isClearingExistingLinks && dto.policy !== undefined;
 
       if (isPolicyOnlySave) {
         const now = new Date();

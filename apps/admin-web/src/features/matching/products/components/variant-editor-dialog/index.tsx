@@ -29,6 +29,7 @@ import {
   getMatchingStrategyDecisionColor,
   createDefaultStockPolicy,
   normalizeStockPolicy,
+  buildUpsertMatchingPayload,
 } from '@/lib/services/matching';
 import { matchingQueryKeys } from '@/lib/services/matching';
 import { useQueryClient } from '@tanstack/react-query';
@@ -123,7 +124,12 @@ function VariantPanel({ variant, masterId, onSaved }: VariantPanelProps) {
       promises.push(
         upsert.mutateAsync({
           variantId: variant.id,
-          data: { masterId, links, policy: stockPolicy },
+          data: buildUpsertMatchingPayload({
+            masterId,
+            links,
+            policy: stockPolicy,
+            changedLinks,
+          }),
         })
       );
     }
