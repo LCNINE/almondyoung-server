@@ -3,6 +3,7 @@ export type BusinessLicenseStatus = 'under_review' | 'approved' | 'rejected';
 export interface BusinessLicenseDto {
   id: string;
   userId: string;
+  userName?: string | null;
   shopId?: string | null;
   businessNumber?: string | null;
   representativeName?: string | null;

@@ -148,6 +148,13 @@
       "when": 1781243526960,
       "tag": "20260612055206_add-active-invoice-unique-index",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1781477658529,
+      "tag": "20260615075418_add-product-fulfillment-kind",
+      "breakpoints": true
     }
   ]
 }

@@ -330,11 +330,10 @@ export function setup(infra: SharedInfra) {
     port: 9000,
     priority: 210,
     link: [db, redis],
-    // 백필 / 트래픽 대응을 위한 scaling. 끝나면 본 블록을 제거(또는 SST 기본값으로
-    // 되돌리기) 후 sst deploy 로 원복할 것 — 비용 누적 방지.
-    cpu: "1 vCPU",
-    memory: "2 GB",
-    scaling: { min: 2, max: 4 },
+    // 운영 기본 용량. 백필/이벤트 대응 시 일시적으로 올리고, 끝나면 원복한다.
+    cpu: "0.5 vCPU",
+    memory: "1 GB",
+    scaling: { min: 2, max: 2 },
     buildArgs: {
       VITE_USER_SERVICE_URL: idpUserServiceUrl,
       MEDUSA_BACKEND_URL: url("medusa"),

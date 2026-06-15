@@ -1,48 +1,40 @@
 import { sql } from 'drizzle-orm';
 import { SeedStep } from './base-seed-step';
 import { SeedCheckResult, SeedApplyResult } from '../lib/types';
+import { DEFAULT_PAYMENT_PROVIDER_DESCRIPTORS } from '../../../apps/wallet/src/providers/provider-descriptors';
 
 /**
- * 결제수단 카탈로그(글로벌) + 리전 + 리전별 매핑의 기준(reference) 시드.
- * 카탈로그 code 는 provider.registry 의 providerType 과 일치한다.
- * 최종 노출 = 카탈로그 is_enabled(글로벌) AND 리전 is_active AND 매핑 is_enabled.
+ * 결제수단 운영 policy baseline.
+ *
+ * 지원 provider 목록의 SoT는 wallet ProviderRegistry descriptor다. 이 seed는
+ * 최초 kr 리전과 공개 checkout provider의 policy row/FK anchor만 보조로 만든다.
  */
-const CATALOG = [
-  { code: 'POINTS', displayName: '포인트', description: '내부 포인트 결제', isEnabled: true, sortOrder: 10 },
-  {
-    code: 'TOSS',
-    displayName: '토스페이먼츠',
-    description: '카드/간편결제 (토스페이먼츠)',
-    isEnabled: true,
-    sortOrder: 20,
-  },
-  {
-    code: 'BANK_TRANSFER',
-    displayName: '무통장입금',
-    description: '계좌 무통장 입금 (수동 확인)',
-    isEnabled: true,
-    sortOrder: 30,
-  },
-  // NICEPAY 는 provider 코드는 있으나 아직 미운영 → 글로벌 비활성으로 등록 (admin 이 준비되면 켠다)
-  {
-    code: 'NICEPAY',
-    displayName: '나이스페이',
-    description: '카드/간편결제 (나이스페이)',
-    isEnabled: false,
-    sortOrder: 40,
-  },
-] as const;
+const BASELINE_CHECKOUT_PROVIDERS = DEFAULT_PAYMENT_PROVIDER_DESCRIPTORS.filter(
+  (descriptor) => descriptor.publicExposure === 'checkout',
+);
+
+const CATALOG_POLICY = BASELINE_CHECKOUT_PROVIDERS.map((descriptor) => ({
+  code: descriptor.code,
+  displayName: descriptor.displayName,
+  description: descriptor.description,
+  isEnabled: descriptor.defaultEnabled,
+  sortOrder: descriptor.defaultSortOrder,
+})) as readonly {
+  code: string;
+  displayName: string;
+  description: string | null;
+  isEnabled: boolean;
+  sortOrder: number;
+}[];
 
 const REGIONS = [{ code: 'kr', name: '대한민국', isActive: true, sortOrder: 10 }] as const;
 
-// kr 에서 활성화할 결제수단 (글로벌 is_enabled 와 AND 되어 최종 노출).
-// NICEPAY 는 kr 매핑은 켜두되 글로벌이 꺼져 있어 실제로는 숨겨진다.
-const REGION_METHODS = [
-  { regionCode: 'kr', catalogCode: 'POINTS', isEnabled: true, sortOrder: 10 },
-  { regionCode: 'kr', catalogCode: 'TOSS', isEnabled: true, sortOrder: 20 },
-  { regionCode: 'kr', catalogCode: 'BANK_TRANSFER', isEnabled: true, sortOrder: 30 },
-  { regionCode: 'kr', catalogCode: 'NICEPAY', isEnabled: true, sortOrder: 40 },
-] as const;
+const REGION_METHODS = BASELINE_CHECKOUT_PROVIDERS.map((descriptor) => ({
+  regionCode: 'kr',
+  catalogCode: descriptor.code,
+  isEnabled: true,
+  sortOrder: descriptor.defaultSortOrder,
+})) as readonly { regionCode: string; catalogCode: string; isEnabled: boolean; sortOrder: number }[];
 
 export class WalletSeedStep extends SeedStep {
   readonly groups = ['baseline'] as const;
@@ -54,10 +46,10 @@ export class WalletSeedStep extends SeedStep {
   async check(): Promise<SeedCheckResult> {
     const existingCatalog = await this.findExistingKeys(
       'payment_method_catalog',
-      CATALOG.map((c) => c.code),
+      CATALOG_POLICY.map((c) => c.code),
       'code',
     );
-    const missingCatalog = CATALOG.filter((c) => !existingCatalog.has(c.code));
+    const missingCatalog = CATALOG_POLICY.filter((c) => !existingCatalog.has(c.code));
 
     const existingRegions = await this.findExistingKeys(
       'regions',
@@ -72,7 +64,7 @@ export class WalletSeedStep extends SeedStep {
     const items = [
       {
         entity: 'payment_method_catalog',
-        expected: CATALOG.length,
+        expected: CATALOG_POLICY.length,
         existing: existingCatalog.size,
         missing: missingCatalog.length,
         missingDetails: missingCatalog.map((c) => c.code),
@@ -110,14 +102,14 @@ export class WalletSeedStep extends SeedStep {
 
     try {
       this.logger.step(1, 3, 'Inserting payment method catalog');
-      for (const c of CATALOG) {
+      for (const c of CATALOG_POLICY) {
         await this.db.execute(sql`
           INSERT INTO payment_method_catalog (code, display_name, description, is_enabled, sort_order)
           VALUES (${c.code}, ${c.displayName}, ${c.description}, ${c.isEnabled}, ${c.sortOrder})
           ON CONFLICT (code) DO NOTHING
         `);
       }
-      itemsApplied += CATALOG.length;
+      itemsApplied += CATALOG_POLICY.length;
 
       this.logger.step(2, 3, 'Inserting regions');
       for (const r of REGIONS) {

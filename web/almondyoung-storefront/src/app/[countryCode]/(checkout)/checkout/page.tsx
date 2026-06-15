@@ -47,9 +47,30 @@ async function CheckoutManager({ cartId }: { cartId?: string }) {
   }
 
   // 장바구니 아이템 타입에 따라 올바른 배송 옵션 자동 설정
-  const { cart: updatedCart, shippingMethods } =
-    await ensureCorrectShippingMethod(cart)
+  const {
+    cart: updatedCart,
+    shippingMethods,
+    requiresShipping,
+  } = await ensureCorrectShippingMethod(cart)
   cart = updatedCart as CartResponseDto["cart"]
+
+  if (requiresShipping && !shippingMethods?.length) {
+    return (
+      <ProtectedRoute>
+        <main className="mx-auto flex min-h-[60vh] max-w-2xl flex-col justify-center px-4 py-16">
+          <div className="rounded-md border border-red-200 bg-red-50 p-5 text-red-900">
+            <h1 className="text-base font-semibold">
+              배송 옵션을 찾을 수 없습니다.
+            </h1>
+            <p className="mt-2 text-sm leading-6">
+              배송이 필요한 상품에 적용 가능한 배송 수단이 없습니다.
+              고객센터로 문의해주세요.
+            </p>
+          </div>
+        </main>
+      </ProtectedRoute>
+    )
+  }
 
   const promotionsResponse = await getMyPromotions({ limit: 100 }).catch(
     () => ({

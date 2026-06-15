@@ -14,6 +14,7 @@ import {
   createShippingOptionsWorkflow,
   createShippingProfilesWorkflow,
   createStockLocationsWorkflow,
+  linkSalesChannelsToStockLocationWorkflow,
 } from '@medusajs/medusa/core-flows';
 
 // ─── 설정값 ───────────────────────────────────────────────────────────────────
@@ -26,12 +27,31 @@ const SHIPPING_FEE_KRW = 2_500;
 const FREE_SHIPPING_THRESHOLD_KRW = 50_000;
 // ─────────────────────────────────────────────────────────────────────────────
 
+export type StockLocationSalesChannelLink = {
+  id?: string | null;
+};
+
+export function getMissingSalesChannelIdsForStockLocation(
+  linkedSalesChannels: StockLocationSalesChannelLink[] | null | undefined,
+  requiredSalesChannelIds: string[],
+): string[] {
+  const linkedIds = new Set(
+    (linkedSalesChannels ?? [])
+      .map((salesChannel) => salesChannel.id)
+      .filter((id): id is string => Boolean(id)),
+  );
+
+  return requiredSalesChannelIds.filter((id) => !linkedIds.has(id));
+}
+
 export default async function seedShipping({ container }: ExecArgs) {
   const logger = container.resolve(ContainerRegistrationKeys.LOGGER);
   const link = container.resolve(ContainerRegistrationKeys.LINK);
   const query = container.resolve(ContainerRegistrationKeys.QUERY);
   const fulfillmentModuleService = container.resolve(Modules.FULFILLMENT);
+  const salesChannelModuleService = container.resolve(Modules.SALES_CHANNEL);
   const stockLocationModuleService = container.resolve(Modules.STOCK_LOCATION);
+  const storeModuleService = container.resolve(Modules.STORE);
 
   // ── 1. Stock Location ────────────────────────────────────────────────────
   logger.info('[seed-shipping] Stock location 확인 중...');
@@ -79,7 +99,56 @@ export default async function seedShipping({ container }: ExecArgs) {
     logger.info('[seed-shipping] Fulfillment provider 이미 연결됨, 건너뜀.');
   }
 
-  // ── 3. Shipping Profile ──────────────────────────────────────────────────
+  // ── 3. StockLocation ↔ SalesChannel 연결 ────────────────────────────────
+  logger.info('[seed-shipping] Sales channel 연결 확인 중...');
+  const [store] = await storeModuleService.listStores();
+  let defaultSalesChannelId = store?.default_sales_channel_id ?? null;
+
+  if (!defaultSalesChannelId) {
+    const [defaultSalesChannel] = await salesChannelModuleService.listSalesChannels({
+      name: 'Default Sales Channel',
+    });
+    defaultSalesChannelId = defaultSalesChannel?.id ?? null;
+  }
+
+  if (!defaultSalesChannelId) {
+    throw new Error('[seed-shipping] Default sales channel을 찾을 수 없습니다. seed.ts를 먼저 실행하세요.');
+  }
+
+  const requiredSalesChannelIds = [defaultSalesChannelId];
+  const getMissingSalesChannelIds = async () => {
+    const { data } = await query.graph({
+      entity: 'stock_location',
+      fields: ['id', 'sales_channels.id'],
+      filters: { id: stockLocation.id },
+    });
+
+    return getMissingSalesChannelIdsForStockLocation(data[0]?.sales_channels, requiredSalesChannelIds);
+  };
+
+  const missingSalesChannelIds = await getMissingSalesChannelIds();
+  if (missingSalesChannelIds.length) {
+    try {
+      await linkSalesChannelsToStockLocationWorkflow(container).run({
+        input: {
+          id: stockLocation.id,
+          add: missingSalesChannelIds,
+        },
+      });
+      logger.info('[seed-shipping] Sales channel 연결 완료.');
+    } catch (error) {
+      const stillMissingSalesChannelIds = await getMissingSalesChannelIds();
+      if (stillMissingSalesChannelIds.length) {
+        throw error;
+      }
+
+      logger.info('[seed-shipping] Sales channel이 다른 seed 실행에서 이미 연결됨, 건너뜀.');
+    }
+  } else {
+    logger.info('[seed-shipping] Sales channel 이미 연결됨, 건너뜀.');
+  }
+
+  // ── 4. Shipping Profile ──────────────────────────────────────────────────
   logger.info('[seed-shipping] Shipping profile 확인 중...');
   const existingProfiles = await fulfillmentModuleService.listShippingProfiles({ type: 'default' });
 
@@ -97,7 +166,7 @@ export default async function seedShipping({ container }: ExecArgs) {
     logger.info('[seed-shipping] Default shipping profile 생성 완료.');
   }
 
-  // ── 4. FulfillmentSet + ServiceZone ──────────────────────────────────────
+  // ── 5. FulfillmentSet + ServiceZone ──────────────────────────────────────
   logger.info('[seed-shipping] Fulfillment set 확인 중...');
   const existingSets = await fulfillmentModuleService.listFulfillmentSets(
     { name: FULFILLMENT_SET_NAME },
@@ -122,7 +191,7 @@ export default async function seedShipping({ container }: ExecArgs) {
     logger.info('[seed-shipping] Fulfillment set 생성 완료.');
   }
 
-  // ── 5. StockLocation ↔ FulfillmentSet 연결 ───────────────────────────────
+  // ── 6. StockLocation ↔ FulfillmentSet 연결 ───────────────────────────────
   logger.info('[seed-shipping] Fulfillment set 연결 확인 중...');
   const { data: locationWithSets } = await query.graph({
     entity: 'stock_location',
@@ -141,7 +210,7 @@ export default async function seedShipping({ container }: ExecArgs) {
     logger.info('[seed-shipping] Fulfillment set 이미 연결됨, 건너뜀.');
   }
 
-  // ── 6. Shipping Option ───────────────────────────────────────────────────
+  // ── 7. Shipping Option ───────────────────────────────────────────────────
   logger.info('[seed-shipping] Shipping option 확인 중...');
   const existingOptions = await fulfillmentModuleService.listShippingOptions({
     name: SHIPPING_OPTION_NAME,

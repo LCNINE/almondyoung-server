@@ -4,17 +4,12 @@ import { PointsPaymentProvider } from './points/points.provider';
 import { TossPaymentProvider } from './toss/toss.provider';
 import { BankTransferPaymentProvider } from './bank-transfer/bank-transfer.provider';
 import { CmsBatchProvider } from '../cms/cms-batch.provider';
-
-export type ProviderKind = 'gateway' | 'ledger';
-
-interface ProviderMeta {
-  kind: ProviderKind;
-}
+import { PAYMENT_PROVIDER_DESCRIPTORS, PaymentProviderDescriptor, ProviderKind } from './provider-descriptors';
 
 @Injectable()
 export class ProviderRegistry {
   private readonly providers = new Map<string, PaymentProvider>();
-  private readonly metadata = new Map<string, ProviderMeta>();
+  private readonly descriptors = new Map<string, PaymentProviderDescriptor>();
 
   constructor(
     pointsProvider: PointsPaymentProvider,
@@ -22,16 +17,26 @@ export class ProviderRegistry {
     bankTransferProvider: BankTransferPaymentProvider,
     @Optional() cmsBatchProvider?: CmsBatchProvider,
   ) {
-    this.register(pointsProvider, { kind: 'ledger' });
-    this.register(tossProvider, { kind: 'gateway' });
-    this.register(bankTransferProvider, { kind: 'gateway' });
+    this.register(pointsProvider, PAYMENT_PROVIDER_DESCRIPTORS.POINTS);
+    this.register(tossProvider, PAYMENT_PROVIDER_DESCRIPTORS.TOSS);
+    this.register(bankTransferProvider, PAYMENT_PROVIDER_DESCRIPTORS.BANK_TRANSFER);
     if (cmsBatchProvider) {
-      this.register(cmsBatchProvider, { kind: 'gateway' });
+      this.register(cmsBatchProvider, PAYMENT_PROVIDER_DESCRIPTORS.CMS_BATCH);
     }
   }
 
   all(): PaymentProvider[] {
     return Array.from(this.providers.values());
+  }
+
+  listDescriptors(): PaymentProviderDescriptor[] {
+    return Array.from(this.descriptors.values()).sort(
+      (a, b) => a.defaultSortOrder - b.defaultSortOrder || a.code.localeCompare(b.code),
+    );
+  }
+
+  hasProvider(providerType: string): boolean {
+    return this.providers.has(providerType.trim().toUpperCase());
   }
 
   getProviderOrThrow(providerType: string): PaymentProvider {
@@ -48,16 +53,20 @@ export class ProviderRegistry {
     return provider;
   }
 
-  getKind(providerType: string): ProviderKind {
+  getDescriptorOrThrow(providerType: string): PaymentProviderDescriptor {
     const normalizedType = providerType.trim().toUpperCase();
-    const meta = this.metadata.get(normalizedType);
-    if (!meta) {
+    const descriptor = this.descriptors.get(normalizedType);
+    if (!descriptor) {
       throw new NotFoundException({
         error: 'PROVIDER_NOT_SUPPORTED',
         message: `Payment provider not supported: ${providerType}`,
       });
     }
-    return meta.kind;
+    return descriptor;
+  }
+
+  getKind(providerType: string): ProviderKind {
+    return this.getDescriptorOrThrow(providerType).kind;
   }
 
   shouldAutoCapture(providerTypes: string[]): boolean {
@@ -68,9 +77,12 @@ export class ProviderRegistry {
     });
   }
 
-  register(provider: PaymentProvider, meta: ProviderMeta): void {
+  register(provider: PaymentProvider, descriptor: PaymentProviderDescriptor): void {
     const key = provider.providerType.toUpperCase();
+    if (descriptor.code !== key) {
+      throw new Error(`Provider descriptor code mismatch: ${descriptor.code} !== ${key}`);
+    }
     this.providers.set(key, provider);
-    this.metadata.set(key, meta);
+    this.descriptors.set(key, descriptor);
   }
 }

@@ -251,16 +251,23 @@ export interface AdminRecurringBillingRow {
 
 export interface PaymentMethodCatalogDto {
   id: string;
+  policyId: string | null;
   code: string;
   displayName: string;
   description: string | null;
   isEnabled: boolean;
   sortOrder: number;
+  supportStatus: 'supported' | 'retired';
+  isRetired: boolean;
+  kind: 'gateway' | 'ledger' | null;
+  publicExposure: 'checkout' | 'billing' | 'internal' | null;
+  capabilities: Array<
+    'checkout' | 'points' | 'manual_transfer' | 'recurring_billing' | 'refund'
+  >;
 }
 
 export interface UpdateCatalogPayload {
   isEnabled?: boolean;
-  displayName?: string;
   sortOrder?: number;
 }
 
@@ -293,6 +300,13 @@ export interface RegionMethodMatrixItem {
   regionEnabled: boolean;
   available: boolean;
   sortOrder: number;
+  supportStatus: 'supported' | 'retired';
+  isRetired: boolean;
+  kind: 'gateway' | 'ledger' | null;
+  publicExposure: 'checkout' | 'billing' | 'internal' | null;
+  capabilities: Array<
+    'checkout' | 'points' | 'manual_transfer' | 'recurring_billing' | 'refund'
+  >;
 }
 
 export interface RegionMethodMatrixResponse {
