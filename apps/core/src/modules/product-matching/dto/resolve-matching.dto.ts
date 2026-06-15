@@ -25,6 +25,16 @@ export class StockPolicyDto {
   @IsBoolean()
   @IsOptional()
   alwaysSellableZeroStock?: boolean = false;
+
+  @ApiProperty({
+    description: '수동 판매 가능 상태 override. manual_out_of_stock이면 노출은 유지하되 판매가능수량을 0으로 projection합니다.',
+    required: false,
+    nullable: true,
+    enum: ['manual_out_of_stock'],
+  })
+  @IsOptional()
+  @IsEnum(['manual_out_of_stock'])
+  availabilityOverride?: 'manual_out_of_stock' | null;
 }
 
 export class ResolveMatchingDto {
