@@ -462,7 +462,8 @@ describe('FulfillmentsService', () => {
       }),
       expect.anything(),
     );
-    expect(outbox.enqueue.mock.calls.map(([event]) => event.eventType)).toContain('FulfillmentReady');
+    // FulfillmentReady 는 구독 서비스가 없어 발행하지 않는다 (FO 상태는 ready 로 전환됨).
+    expect(outbox.enqueue.mock.calls.map(([event]) => event.eventType)).not.toContain('FulfillmentReady');
   });
 
   it('부분 취소된 SalesOrder line 수량은 backlog retry의 FO 생성 수량에서 차감한다', async () => {
@@ -945,7 +946,8 @@ describe('FulfillmentsService', () => {
     });
     expect(state.fulfillmentOrderItems).toHaveLength(0);
     expect(unifiedReservation.reserveStock).not.toHaveBeenCalled();
-    expect(outbox.enqueue.mock.calls.map(([event]) => event.eventType)).toEqual(['FulfillmentCreated']);
+    // FulfillmentCreated 는 구독 서비스가 없어 발행하지 않는다.
+    expect(outbox.enqueue.mock.calls.map(([event]) => event.eventType)).toEqual([]);
   });
 
   it('matched + void line과 variant line이 섞인 주문은 물리 출고 item만 생성한다', async () => {
@@ -1065,7 +1067,8 @@ describe('FulfillmentsService', () => {
     expect(state.fulfillmentOrderItems[0]).toMatchObject({ id: 'foi-1', skuId, qty: 2, reservedQty: 0 });
     expect(availability.getAvailableQuantity).not.toHaveBeenCalled();
     expect(unifiedReservation.reserveStock).not.toHaveBeenCalled();
-    expect(outbox.enqueue.mock.calls.map(([event]) => event.eventType)).toContain('FulfillmentReady');
+    // FulfillmentReady 는 구독 서비스가 없어 발행하지 않는다 (FO 상태는 ready 로 전환됨).
+    expect(outbox.enqueue.mock.calls.map(([event]) => event.eventType)).not.toContain('FulfillmentReady');
   });
 
   it('sales order line 이 없으면 빈 FO를 만들지 않는다', async () => {

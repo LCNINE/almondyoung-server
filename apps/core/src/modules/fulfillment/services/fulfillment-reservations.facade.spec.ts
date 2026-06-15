@@ -152,14 +152,13 @@ describe('FulfillmentReservationsFacade', () => {
       unified as any,
       productSellableQuantity as any,
       policies as any,
-      outbox as any,
     );
 
     return { facade, state, tx, unified, productSellableQuantity, policies, outbox };
   }
 
   describe('reserve', () => {
-    it('manual reserve로 모든 item이 예약되면 FO를 ready로 바꾸고 READY 이벤트를 enqueue한다', async () => {
+    it('manual reserve로 모든 item이 예약되면 FO를 ready로 바꾼다 (READY 이벤트는 미구독이라 발행하지 않는다)', async () => {
       const { facade, state, tx, unified, outbox } = makeFacade();
 
       await facade.reserve(fulfillmentOrderId, { fulfillmentOrderItemId, quantity: 1 }, tx);
@@ -181,16 +180,8 @@ describe('FulfillmentReservationsFacade', () => {
         reservationFailureReason: null,
         reservationFailureDetails: null,
       });
-      expect(outbox.enqueue).toHaveBeenCalledWith(
-        expect.objectContaining({
-          eventType: 'FulfillmentReady',
-          aggregateType: 'fulfillment',
-          aggregateId: fulfillmentOrderId,
-          partitionKey: fulfillmentOrderId,
-          payload: { fulfillmentOrderId },
-        }),
-        tx,
-      );
+      // FulfillmentReady 는 구독 서비스가 없어 발행하지 않는다.
+      expect(outbox.enqueue).not.toHaveBeenCalled();
     });
 
     it('labeled FO는 수동 예약 refresh가 ready로 되돌리지 않고 READY 이벤트도 내지 않는다', async () => {
@@ -407,14 +398,12 @@ describe('FulfillmentReservationsFacade', () => {
       const unified = { reserveStock: jest.fn(), getReservationsByTarget: jest.fn(), releaseReservation: jest.fn() };
       const productSellableQuantity = { recalculateAndPublishForSku: jest.fn().mockResolvedValue(undefined) };
       const policies = { getVariantPolicy: jest.fn().mockResolvedValue({ inventoryManagement: true }) };
-      const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
 
       const facade = new FulfillmentReservationsFacade(
         {} as any,
         unified as any,
         productSellableQuantity as any,
         policies as any,
-        outbox as any,
       );
 
       return { facade, tx, captured, unified };

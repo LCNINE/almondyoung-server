@@ -4,8 +4,6 @@ import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.sch
 import { eq, and, asc, gt, ne, inArray } from 'drizzle-orm';
 import { UnifiedReservationService } from '../../inventory/shared/services/unified-reservation.service';
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
-import { FULFILLMENT_EVENTS } from '../events';
-import { OutboxService } from '../outbox/outbox.service';
 import { PoliciesService } from './policies.service';
 
 @Injectable()
@@ -17,7 +15,6 @@ export class FulfillmentReservationsFacade {
     private readonly unified: UnifiedReservationService,
     private readonly productSellableQuantity: ProductSellableQuantityService,
     private readonly policies: PoliciesService,
-    private readonly outbox: OutboxService,
   ) {}
 
   private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
@@ -546,18 +543,8 @@ export class FulfillmentReservationsFacade {
       })
       .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
 
-    if (allReserved && fo.status !== 'ready') {
-      await this.outbox.enqueue(
-        {
-          eventType: FULFILLMENT_EVENTS.READY,
-          aggregateType: 'fulfillment',
-          aggregateId: fulfillmentOrderId,
-          partitionKey: fulfillmentOrderId,
-          payload: { fulfillmentOrderId },
-        },
-        trx,
-      );
-    }
+    // FulfillmentReady 는 구독하는 서비스가 없어 발행하지 않는다 (설계 원칙: 미구독 이벤트 미발행).
+    // allReserved 시 FO 상태는 위에서 이미 'ready' 로 갱신되며, 어드민/스토어프론트는 Core API 로 직접 조회한다.
   }
 
   private async requiresStockReservation(variantId: string | null | undefined, trx: DbTx): Promise<boolean> {
