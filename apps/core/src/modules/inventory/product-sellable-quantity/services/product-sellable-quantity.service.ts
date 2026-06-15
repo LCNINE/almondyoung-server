@@ -438,6 +438,7 @@ export function toProductSellableQuantityChangedPayload(
     stockBoundQuantity: projection.stockBoundQuantity,
     isSellable: projection.isSellable,
     reason: projection.reason,
+    availabilityOverride: projection.availabilityOverride,
     calculatedAt: projection.calculatedAt.toISOString(),
   };
 }
