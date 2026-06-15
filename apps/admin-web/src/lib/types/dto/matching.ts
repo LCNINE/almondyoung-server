@@ -5,10 +5,12 @@ export type MatchingStatus = 'pending' | 'matched' | 'ignored';
 export type MatchingStrategy = 'void' | 'variant';
 export type MatchingPriority = 'normal' | 'high';
 export type LegacyIgnoredResolutionTarget = 'pending' | 'void';
+export type AvailabilityOverride = 'manual_out_of_stock' | null;
 
 export interface StockPolicyDto {
   preStockSellable: boolean;
   alwaysSellableZeroStock: boolean;
+  availabilityOverride?: AvailabilityOverride;
 }
 
 export interface SkuMappingDto {

@@ -27,6 +27,7 @@ import {
   getMatchingStrategyDecisionLabel,
   getMatchingStrategyDecisionColor,
   createDefaultStockPolicy,
+  normalizeStockPolicy,
 } from '@/lib/services/matching';
 import { matchingQueryKeys } from '@/lib/services/matching';
 import { useQueryClient } from '@tanstack/react-query';
@@ -79,7 +80,7 @@ function VariantPanel({ variant, masterId, onSaved }: VariantPanelProps) {
       );
       setStrategyState(current.strategy ?? 'variant');
       setPriorityState(current.priority ?? 'normal');
-      setStockPolicy(current.stockPolicy ?? createDefaultStockPolicy());
+      setStockPolicy(normalizeStockPolicy(current.stockPolicy));
     }
   }, [current]);
 
@@ -94,7 +95,7 @@ function VariantPanel({ variant, masterId, onSaved }: VariantPanelProps) {
         })) ?? []
       );
     const changedPolicy =
-      JSON.stringify(stockPolicy) !== JSON.stringify(current?.stockPolicy);
+      JSON.stringify(stockPolicy) !== JSON.stringify(normalizeStockPolicy(current?.stockPolicy));
     const changedStrategy =
       strategy !==
       (current as { strategy?: MatchingStrategy } | undefined)?.strategy;

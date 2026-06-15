@@ -10,8 +10,15 @@ interface StockPolicySectionProps {
 }
 
 export function StockPolicySection({ value, onChange }: StockPolicySectionProps) {
-  const set = (key: keyof StockPolicyDto) => (checked: boolean) => {
+  const set = (key: 'preStockSellable' | 'alwaysSellableZeroStock') => (checked: boolean) => {
     onChange({ ...value, [key]: checked });
+  };
+
+  const setManualOutOfStock = (checked: boolean) => {
+    onChange({
+      ...value,
+      availabilityOverride: checked ? 'manual_out_of_stock' : null,
+    });
   };
 
   return (
@@ -36,6 +43,16 @@ export function StockPolicySection({ value, onChange }: StockPolicySectionProps)
           />
           <Label htmlFor="alwaysSellableZeroStock" className="cursor-pointer text-sm">
             항상 판매 가능 (직배/신상품)
+          </Label>
+        </div>
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="manualOutOfStock"
+            checked={value.availabilityOverride === 'manual_out_of_stock'}
+            onCheckedChange={(c) => setManualOutOfStock(!!c)}
+          />
+          <Label htmlFor="manualOutOfStock" className="cursor-pointer text-sm">
+            수동 품절 (노출 유지, 판매 재고 0)
           </Label>
         </div>
       </div>
