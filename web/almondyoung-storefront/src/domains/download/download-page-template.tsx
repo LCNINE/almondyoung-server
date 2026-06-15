@@ -1,13 +1,14 @@
 "use client"
 
 import { Button } from "@components/common/ui/button"
-import type { UserDetail } from "types/global"
+
 import { ChevronLeft, ChevronRight, Filter } from "lucide-react"
 import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import { DownloadCard } from "./components/download-card"
 import { DownloadFilters } from "./components/download-filters"
 import type { DigitalAssetOwnership } from "@lib/types/ui/library.ui"
+import { UserDetail } from "@/lib/types/ui/user"
 
 interface DownloadPageTemplateProps {
   user: UserDetail
@@ -51,8 +52,8 @@ export default function DownloadPageTemplate({
 
   return (
     <div className="px-4 py-4 md:px-6">
-      <div className="bg-background min-h-screen">
-        <div className="container mx-auto max-w-7xl px-4 py-8">
+      <div className="min-h-screen bg-background">
+        <div className="container px-4 py-8 mx-auto max-w-7xl">
           {/* Header */}
           <div className="mb-8">
             <h1 className="mb-2 text-3xl font-bold">다운로드</h1>
@@ -62,10 +63,9 @@ export default function DownloadPageTemplate({
           </div>
 
           {/* Filters */}
-          <div className="mb-6 flex items-center justify-between">
-            <div className="text-muted-foreground text-sm">
-              총{" "}
-              <span className="text-foreground font-semibold">{total}</span>
+          <div className="flex items-center justify-between mb-6">
+            <div className="text-sm text-muted-foreground">
+              총 <span className="font-semibold text-foreground">{total}</span>
               개의 상품
             </div>
             <DownloadFilters
@@ -95,14 +95,14 @@ export default function DownloadPageTemplate({
 
               {/* Pagination */}
               {totalPages > 1 && (
-                <div className="mt-8 flex items-center justify-center gap-2">
+                <div className="flex items-center justify-center gap-2 mt-8">
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => handlePageChange(currentPage - 1)}
                     disabled={currentPage === 1}
                   >
-                    <ChevronLeft className="h-4 w-4" />
+                    <ChevronLeft className="w-4 h-4" />
                     이전
                   </Button>
 
@@ -149,15 +149,15 @@ export default function DownloadPageTemplate({
                     disabled={currentPage === totalPages}
                   >
                     다음
-                    <ChevronRight className="h-4 w-4" />
+                    <ChevronRight className="w-4 h-4" />
                   </Button>
                 </div>
               )}
             </>
           ) : (
             <div className="py-16 text-center">
-              <div className="bg-muted mb-4 inline-flex h-16 w-16 items-center justify-center rounded-full">
-                <Filter className="text-muted-foreground h-8 w-8" />
+              <div className="inline-flex items-center justify-center w-16 h-16 mb-4 rounded-full bg-muted">
+                <Filter className="w-8 h-8 text-muted-foreground" />
               </div>
               <h3 className="mb-2 text-lg font-semibold">상품이 없습니다</h3>
               <p className="text-muted-foreground">
