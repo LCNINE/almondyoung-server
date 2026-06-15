@@ -27,7 +27,7 @@ type DataTableOrderByProps = {
 }
 
 export function DataTableOrderBy({ orderBy, prefix, presetOnly }: DataTableOrderByProps) {
-  const { get, add, deleteMany } = useSelectedParams({ prefix })
+  const { get, add, addMany, deleteMany } = useSelectedParams({ prefix })
 
   const rawSort = get('sort')
   const rawOrder = get('order')
@@ -44,8 +44,7 @@ export function DataTableOrderBy({ orderBy, prefix, presetOnly }: DataTableOrder
     if (sortValue === key) {
       add('order', orderValue === 'asc' ? 'desc' : 'asc')
     } else {
-      add('sort', key)
-      add('order', 'asc')
+      addMany({ sort: key, order: 'asc' })
     }
   }
 
