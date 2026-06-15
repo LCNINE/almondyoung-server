@@ -160,6 +160,40 @@ describe('ProductMatchingService strategy semantics', () => {
     });
   });
 
+  it('persists accepted availability override when resolving as void', async () => {
+    const { service, productSellableQuantity } = makeService();
+    const tx = makeTx([[matching]]);
+
+    await service.resolveMatchingPending(
+      matching.id,
+      {
+        strategy: 'void',
+        stockPolicy: {
+          preStockSellable: true,
+          alwaysSellableZeroStock: false,
+          availabilityOverride: 'manual_out_of_stock',
+        },
+      } as ResolveMatchingDto,
+      tx as never,
+    );
+
+    expect(tx.updates[0]).toMatchObject({
+      status: 'matched',
+      strategy: 'void',
+      isResolved: true,
+      preStockSellable: true,
+      alwaysSellableZeroStock: false,
+    });
+    expect(tx.inserts[0]).toMatchObject({
+      variantId: matching.variantId,
+      inventoryManagement: true,
+      preStockSellable: true,
+      alwaysSellableZeroStock: false,
+      availabilityOverride: 'manual_out_of_stock',
+    });
+    expect(productSellableQuantity.recalculateAndPublishForVariant).toHaveBeenCalledWith(matching.variantId, tx);
+  });
+
   it('resolves SKU 구성 매칭 and wakes waiting fulfillment backlog', async () => {
     const { service, fulfillmentBacklog } = makeService();
     const tx = makeTx([[matching]]);
@@ -190,6 +224,47 @@ describe('ProductMatchingService strategy semantics', () => {
       strategy: 'variant',
     });
     expect(fulfillmentBacklog.wakeBacklogsWaitingForVariant).toHaveBeenCalledWith(matching.variantId, tx);
+  });
+
+  it('persists accepted availability override when resolving SKU 구성 matching', async () => {
+    const { service, productSellableQuantity } = makeService();
+    const tx = makeTx([[matching]]);
+    const skuId = '44444444-4444-4444-4444-444444444444';
+
+    await service.resolveMatchingPending(
+      matching.id,
+      {
+        strategy: 'variant',
+        skuMappings: [{ skuId, quantity: 2 }],
+        stockPolicy: {
+          preStockSellable: false,
+          alwaysSellableZeroStock: false,
+          availabilityOverride: 'manual_out_of_stock',
+        },
+      } as ResolveMatchingDto,
+      tx as never,
+    );
+
+    expect(tx.inserts[0]).toMatchObject({
+      productMatchingId: matching.id,
+      skuId,
+      quantity: 2,
+    });
+    expect(tx.updates[0]).toMatchObject({
+      status: 'matched',
+      strategy: 'variant',
+      isResolved: true,
+      preStockSellable: false,
+      alwaysSellableZeroStock: false,
+    });
+    expect(tx.inserts[1]).toMatchObject({
+      variantId: matching.variantId,
+      inventoryManagement: true,
+      preStockSellable: false,
+      alwaysSellableZeroStock: false,
+      availabilityOverride: 'manual_out_of_stock',
+    });
+    expect(productSellableQuantity.recalculateAndPublishForVariant).toHaveBeenCalledWith(matching.variantId, tx);
   });
 
   it('uses one transaction for void update and sellable projection recalculation', async () => {
@@ -534,6 +609,7 @@ describe('ProductMatchingService strategy semantics', () => {
         stockPolicy: {
           preStockSellable: true,
           alwaysSellableZeroStock: false,
+          availabilityOverride: 'manual_out_of_stock',
         },
       },
       { userId: 'operator-1' },
@@ -546,6 +622,13 @@ describe('ProductMatchingService strategy semantics', () => {
       isResolved: true,
       preStockSellable: true,
       alwaysSellableZeroStock: false,
+    });
+    expect(tx.inserts[0]).toMatchObject({
+      variantId: matching.variantId,
+      inventoryManagement: true,
+      preStockSellable: true,
+      alwaysSellableZeroStock: false,
+      availabilityOverride: 'manual_out_of_stock',
     });
     expect(result).toMatchObject({ status: 'matched', strategy: 'void', isResolved: true });
     expect(auditService.log).toHaveBeenCalledWith(

@@ -155,6 +155,13 @@
       "when": 1781477658529,
       "tag": "20260615075418_add-product-fulfillment-kind",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1781529416726,
+      "tag": "20260615131656_hard_kulan_gath",
+      "breakpoints": true
     }
   ]
 }

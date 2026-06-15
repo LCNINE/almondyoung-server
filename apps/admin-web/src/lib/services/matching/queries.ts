@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { matchingQueryKeys } from './query-keys';
 import { matchingClient } from '@/lib/api/domains/matching';
+import { createDefaultStockPolicy } from './transformers';
 import type {
   MatchingsQuery,
   OrderLinesQuery,
@@ -52,11 +53,26 @@ export const useVariantMatching = (variantId: string) => {
   });
 };
 
-export const useVariantStockPolicy = (variantId: string) => {
+const isNotFoundError = (error: unknown) =>
+  typeof error === 'object' &&
+  error !== null &&
+  'statusCode' in error &&
+  (error as { statusCode?: number }).statusCode === 404;
+
+export const useVariantStockPolicy = (variantId: string, enabled = true) => {
   return useQuery({
     queryKey: matchingQueryKeys.stockPolicy(variantId),
-    queryFn: () => matchingClient.getVariantStockPolicy(variantId),
-    enabled: !!variantId,
+    queryFn: async () => {
+      try {
+        return await matchingClient.getVariantStockPolicy(variantId);
+      } catch (error) {
+        if (isNotFoundError(error)) {
+          return createDefaultStockPolicy();
+        }
+        throw error;
+      }
+    },
+    enabled: !!variantId && enabled,
     staleTime: 60 * 1000,
     gcTime: 10 * 60 * 1000,
   });

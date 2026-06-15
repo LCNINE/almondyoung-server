@@ -169,6 +169,9 @@ export const useUpsertVariantMatching = () => {
       queryClient.invalidateQueries({
         queryKey: matchingQueryKeys.variantMatching(variables.variantId),
       });
+      queryClient.invalidateQueries({
+        queryKey: matchingQueryKeys.stockPolicy(variables.variantId),
+      });
       queryClient.invalidateQueries({ queryKey: matchingQueryKeys.lists() });
       queryClient.invalidateQueries({
         queryKey: matchingQueryKeys.orderLineLists(),
