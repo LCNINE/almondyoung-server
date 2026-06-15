@@ -347,6 +347,7 @@
       "<rootDir>/apps/",
       "<rootDir>/libs/",
       "<rootDir>/packages/product-description/",
+      "<rootDir>/packages/domain-types/",
       "<rootDir>/packages/event-contracts/",
       "<rootDir>/scripts/"
     ],
