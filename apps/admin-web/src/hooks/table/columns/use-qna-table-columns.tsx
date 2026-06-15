@@ -23,8 +23,8 @@ interface QnaTableColumnContext {
 export const useQnaTableColumns = ({ userMap }: QnaTableColumnContext) => {
   return useMemo(
     () => [
-      columnHelper.accessor('id', {
-        header: 'ID',
+      columnHelper.accessor('userId', {
+        header: '유저 ID',
         cell: ({ getValue }) => <IdCell value={getValue()} />,
       }),
       columnHelper.display({
