@@ -26,6 +26,7 @@ import {
   getMatchingStrategyDecisionLabel,
   getMatchingStrategyDecisionColor,
   createDefaultStockPolicy,
+  normalizeStockPolicy,
 } from '@/lib/services/matching';
 import { SkuLookupSection } from '@/features/matching/products/components/variant-editor-dialog/sku-lookup-section';
 import { StrategySection } from '@/features/matching/products/components/variant-editor-dialog/strategy-section';
@@ -72,7 +73,7 @@ export function VariantMatchingEditorDialog({
       );
       setStrategyState(matching.strategy ?? 'variant');
       setPriorityState(matching.priority ?? 'normal');
-      setStockPolicy(matching.stockPolicy ?? createDefaultStockPolicy());
+      setStockPolicy(normalizeStockPolicy(matching.stockPolicy));
     }
   }, [matching]);
 
@@ -89,7 +90,7 @@ export function VariantMatchingEditorDialog({
         }))
       );
     const changedPolicy =
-      JSON.stringify(stockPolicy) !== JSON.stringify(matching.stockPolicy);
+      JSON.stringify(stockPolicy) !== JSON.stringify(normalizeStockPolicy(matching.stockPolicy));
     const changedStrategy = strategy !== matching.strategy;
     const changedPriority = priority !== matching.priority;
 

@@ -82,6 +82,13 @@ export const transformMatchingsForTable = (response: MatchingsResponseDto) => ({
 export const createDefaultStockPolicy = (): StockPolicyDto => ({
   preStockSellable: true,
   alwaysSellableZeroStock: false,
+  availabilityOverride: null,
+});
+
+export const normalizeStockPolicy = (policy?: Partial<StockPolicyDto> | null): StockPolicyDto => ({
+  ...createDefaultStockPolicy(),
+  ...(policy ?? {}),
+  availabilityOverride: policy?.availabilityOverride ?? null,
 });
 
 export const createDefaultResolveMatching = (): ResolveMatchingDto => ({
