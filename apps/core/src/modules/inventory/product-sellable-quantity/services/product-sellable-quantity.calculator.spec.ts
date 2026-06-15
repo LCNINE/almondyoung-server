@@ -228,6 +228,54 @@ describe('calculateProductSellableQuantity', () => {
     expect(result.reason).toBe('PRE_STOCK_SELLABLE');
   });
 
+  it('manual out-of-stock override projects zero even without matching or SKU links', () => {
+    const result = calculateProductSellableQuantity(
+      makeInput({
+        matching: null,
+        components: [],
+        availabilityOverride: 'manual_out_of_stock',
+      }),
+      { now },
+    );
+
+    expect(result.sellableQuantity).toBe(0);
+    expect(result.stockBoundQuantity).toBe(0);
+    expect(result.isSellable).toBe(false);
+    expect(result.reason).toBe('MANUAL_OUT_OF_STOCK');
+    expect(result.availabilityOverride).toBe('manual_out_of_stock');
+  });
+
+  it('manual out-of-stock override wins over void strategy but not over inactive variant', () => {
+    const voidResult = calculateProductSellableQuantity(
+      makeInput({
+        availabilityOverride: 'manual_out_of_stock',
+        matching: {
+          id: 'matching-1',
+          status: 'matched',
+          strategy: 'void',
+          preStockSellable: true,
+          alwaysSellableZeroStock: true,
+        },
+        components: [],
+      }),
+      { now },
+    );
+
+    expect(voidResult.sellableQuantity).toBe(0);
+    expect(voidResult.isSellable).toBe(false);
+    expect(voidResult.reason).toBe('MANUAL_OUT_OF_STOCK');
+
+    const inactiveResult = calculateProductSellableQuantity(
+      makeInput({
+        variantStatus: 'inactive',
+        availabilityOverride: 'manual_out_of_stock',
+      }),
+      { now },
+    );
+
+    expect(inactiveResult.reason).toBe('VARIANT_INACTIVE');
+  });
+
   it('ProductSellableQuantityChanged payload는 원인 없이 현재 projection 상태를 담는다', () => {
     const projection = calculateProductSellableQuantity(makeInput(), { now });
 
@@ -240,6 +288,7 @@ describe('calculateProductSellableQuantity', () => {
       stockBoundQuantity: 10,
       isSellable: true,
       reason: 'SELLABLE',
+      availabilityOverride: null,
       calculatedAt: now.toISOString(),
     });
   });

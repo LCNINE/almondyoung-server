@@ -1,6 +1,16 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsInt, IsOptional, IsPositive, IsString, IsUUID, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsPositive,
+  IsString,
+  IsUUID,
+  ValidateNested,
+} from 'class-validator';
 
 export class MatchingLinkDto {
   @ApiProperty({ description: 'SKU ID', example: '123e4567-e89b-12d3-a456-426614174000' })
@@ -23,6 +33,16 @@ export class MatchingPolicyDto {
   @IsOptional()
   @IsBoolean()
   alwaysSellableZeroStock?: boolean;
+
+  @ApiProperty({
+    description: '수동 판매 가능 상태 override. manual_out_of_stock이면 노출은 유지하되 판매가능수량을 0으로 projection합니다.',
+    required: false,
+    nullable: true,
+    enum: ['manual_out_of_stock'],
+  })
+  @IsOptional()
+  @IsEnum(['manual_out_of_stock'])
+  availabilityOverride?: 'manual_out_of_stock' | null;
 }
 
 export class UpsertMatchingDto {

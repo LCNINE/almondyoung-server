@@ -1485,6 +1485,7 @@ export const salesVariantPolicies = pgTable('sales_variant_policies', {
   inventoryManagement: boolean('inventory_management').notNull().default(false),
   preStockSellable: boolean('pre_stock_sellable').notNull().default(false),
   alwaysSellableZeroStock: boolean('always_sellable_zero_stock').notNull().default(false),
+  availabilityOverride: varchar('availability_override', { length: 32 }).$type<'manual_out_of_stock' | null>(),
   effectiveFrom: timestamp('effective_from', { withTimezone: true }),
   effectiveTo: timestamp('effective_to', { withTimezone: true }),
   updatedBy: uuid('updated_by'),

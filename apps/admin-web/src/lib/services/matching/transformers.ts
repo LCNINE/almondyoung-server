@@ -5,6 +5,7 @@ import type {
   MatchingsResponseDto,
   ResolveMatchingDto,
   StockPolicyDto,
+  UpsertMatchingDto,
 } from '@/lib/types/dto/matching';
 import {
   getMatchingStrategyDecisionLabel,
@@ -82,6 +83,29 @@ export const transformMatchingsForTable = (response: MatchingsResponseDto) => ({
 export const createDefaultStockPolicy = (): StockPolicyDto => ({
   preStockSellable: true,
   alwaysSellableZeroStock: false,
+  availabilityOverride: null,
+});
+
+export const normalizeStockPolicy = (policy?: Partial<StockPolicyDto> | null): StockPolicyDto => ({
+  ...createDefaultStockPolicy(),
+  ...(policy ?? {}),
+  availabilityOverride: policy?.availabilityOverride ?? null,
+});
+
+export const buildUpsertMatchingPayload = ({
+  masterId,
+  links,
+  policy,
+  changedLinks,
+}: {
+  masterId?: string | null;
+  links: NonNullable<UpsertMatchingDto['links']>;
+  policy: UpsertMatchingDto['policy'];
+  changedLinks: boolean;
+}): UpsertMatchingDto => ({
+  masterId,
+  ...(changedLinks ? { links } : {}),
+  policy,
 });
 
 export const createDefaultResolveMatching = (): ResolveMatchingDto => ({
