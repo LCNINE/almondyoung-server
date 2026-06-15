@@ -6,6 +6,9 @@ import { getTranslations } from "next-intl/server"
 import { FooterInfoLine } from "./footer-info-line"
 
 const CS_PHONE = "1877-7184"
+const CS_PHONE_LINK = "tel:18777184"
+const KAKAO_CHANNEL_URL = "https://pf.kakao.com/_xaxgxazs"
+const INSTAGRAM_URL = "https://www.instagram.com/almondyoung_official/"
 const COMPANY_SITE_URL = "https://www.lcnine.kr/"
 
 export default async function Footer({ className }: { className?: string }) {
@@ -27,7 +30,11 @@ export default async function Footer({ className }: { className?: string }) {
                   asChild
                   className="px-0 py-0 text-stone-400 hover:text-stone-700 hover:underline"
                 >
-                  <Link href="tel:18777184" target="_blank">
+                  <Link
+                    href={CS_PHONE_LINK}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
                     {t("callPhone")}
                   </Link>
                 </Button>
@@ -36,7 +43,11 @@ export default async function Footer({ className }: { className?: string }) {
                   asChild
                   className="px-0 py-0 text-stone-400 hover:text-stone-700 hover:underline"
                 >
-                  <Link href="https://pf.kakao.com/_xaxgxazs" target="_blank">
+                  <Link
+                    href={KAKAO_CHANNEL_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
                     {t("kakaoChatAdd")}
                   </Link>
                 </Button>
@@ -46,8 +57,9 @@ export default async function Footer({ className }: { className?: string }) {
                   className="px-0 py-0 text-stone-400 hover:text-stone-700 hover:underline"
                 >
                   <Link
-                    href="https://www.instagram.com/almondyoung_official/"
+                    href={INSTAGRAM_URL}
                     target="_blank"
+                    rel="noopener noreferrer"
                   >
                     {t("instagram")}
                   </Link>
@@ -115,17 +127,30 @@ export default async function Footer({ className }: { className?: string }) {
                 {t("csTitle", { phone: CS_PHONE })}
               </h3>
               <div className="flex justify-start gap-4 text-sm font-medium text-stone-600">
-                <button type="button" className="hover:text-stone-900">
+                <Link
+                  href={CS_PHONE_LINK}
+                  className="inline-flex min-h-11 items-center hover:text-stone-900"
+                >
                   {t("callPhone")}
-                </button>
+                </Link>
                 <div className="h-3 w-px self-center bg-stone-300" />
-                <button type="button" className="hover:text-stone-900">
+                <Link
+                  href={KAKAO_CHANNEL_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex min-h-11 items-center hover:text-stone-900"
+                >
                   {t("kakaoChat")}
-                </button>
+                </Link>
                 <div className="h-3 w-px self-center bg-stone-300" />
-                <button type="button" className="hover:text-stone-900">
+                <Link
+                  href={INSTAGRAM_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex min-h-11 items-center hover:text-stone-900"
+                >
                   {t("instagram")}
-                </button>
+                </Link>
               </div>
             </section>
 
@@ -139,7 +164,10 @@ export default async function Footer({ className }: { className?: string }) {
               >
                 {t("company")}
               </Link>
-              <LocalizedClientLink href="/terms" className="hover:text-stone-800">
+              <LocalizedClientLink
+                href="/terms"
+                className="hover:text-stone-800"
+              >
                 {t("terms")}
               </LocalizedClientLink>
               <LocalizedClientLink
@@ -148,7 +176,10 @@ export default async function Footer({ className }: { className?: string }) {
               >
                 {t("privacy")}
               </LocalizedClientLink>
-              <LocalizedClientLink href="/guide" className="hover:text-stone-800">
+              <LocalizedClientLink
+                href="/guide"
+                className="hover:text-stone-800"
+              >
                 {t("guide")}
               </LocalizedClientLink>
             </nav>
