@@ -95,6 +95,8 @@ bash scripts/sellmate/run.sh live import-products apps/core/tmp/
 
 ## 4. 재고량 동기화
 
+> 음수재고량 에러나면 `CLAMP_NEGATIVE=1 bash scripts/sellmate/run.sh live sync-stock apps/core/tmp/` 이거쓸것
+
 ```bash
 # 미리보기 (증가/감소 건수 확인)
 DRY_RUN=1 bash scripts/sellmate/run.sh live sync-stock apps/core/tmp/
