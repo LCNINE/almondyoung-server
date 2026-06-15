@@ -1,7 +1,7 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { NotFoundError, BadRequestError } from '@app/shared';
-import { and, count, desc, eq, ilike, isNull, max as drizzleMax, sql } from 'drizzle-orm';
+import { and, count, desc, eq, ilike, inArray, isNull, max as drizzleMax } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
 import { type LibrarySchema, digitalAssets, digitalAssetFileVersions } from '../schema/library.schema';
@@ -316,7 +316,7 @@ export class DigitalAssetService {
     const rows = await trx
       .select()
       .from(digitalAssetFileVersions)
-      .where(sql`${digitalAssetFileVersions.id} = ANY(${versionIds})`);
+      .where(inArray(digitalAssetFileVersions.id, versionIds));
     return new Map(rows.map((r) => [r.id, r]));
   }
 
