@@ -755,9 +755,12 @@ export async function getCartPricingForPreview(cartId: string): Promise<{
   }
 
   const options = await listCartShippingMethods(cart.id, "no-store")
-  const firstOption = options?.[0]
-  if (!firstOption) {
-    return toPricing(cart)
+  const shippingMethods = selectShippingOptionsForCart(options, cart.items)
+  const standardOption = shippingMethods[0]
+  if (!standardOption) {
+    throw new Error(
+      "배송이 필요한 상품에 적용 가능한 표준 배송 옵션이 없습니다."
+    )
   }
 
   const headers = {
@@ -766,17 +769,17 @@ export async function getCartPricingForPreview(cartId: string): Promise<{
 
   await sdk.store.cart.addShippingMethod(
     cart.id,
-    { option_id: firstOption.id },
+    { option_id: standardOption.id },
     {},
     headers
   )
 
   const recalculated = await retrieveCart(cart.id, undefined, "no-store")
   if (!recalculated) {
-    return toPricing(cart, firstOption.amount ?? 0)
+    return toPricing(cart, standardOption.amount ?? 0)
   }
 
-  return toPricing(recalculated, firstOption.amount ?? 0)
+  return toPricing(recalculated, standardOption.amount ?? 0)
 }
 
 export async function updateLineItem({
@@ -1170,6 +1173,7 @@ export const listCartShippingMethods = async (
         method: "GET",
         query: {
           cart_id: cartId,
+          fields: "id,name,amount,type",
         },
         headers,
         next,
@@ -1187,7 +1191,9 @@ export const listCartShippingMethods = async (
  * @param cart - 장바구니 객체 (items 포함 필수)
  * @returns 업데이트된 cart와 필터링된 배송 옵션
  */
-export async function ensureCorrectShippingMethod(cart: HttpTypes.StoreCart): Promise<{
+export async function ensureCorrectShippingMethod(
+  cart: HttpTypes.StoreCart
+): Promise<{
   cart: HttpTypes.StoreCart
   shippingMethods: HttpTypes.StoreCartShippingOption[] | null
   requiresShipping: boolean
@@ -1213,7 +1219,10 @@ export async function ensureCorrectShippingMethod(cart: HttpTypes.StoreCart): Pr
     (option) => option.id === currentShippingOptionId
   )
 
-  if (shippingMethods?.[0] && (!currentShippingOptionId || !isCurrentOptionValid)) {
+  if (
+    shippingMethods?.[0] &&
+    (!currentShippingOptionId || !isCurrentOptionValid)
+  ) {
     const updatedCart = await addCartShippingMethodDuringRender(
       cart.id,
       shippingMethods[0].id
@@ -1280,7 +1289,6 @@ export type CartRefreshResult = {
    */
   hasMembershipGroup: boolean | null
 }
-
 
 // 카트 가격 재계산 + 캐시 무효화
 export async function refreshCartPrices(): Promise<CartRefreshResult> {

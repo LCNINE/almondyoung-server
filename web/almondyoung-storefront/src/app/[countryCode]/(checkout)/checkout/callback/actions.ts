@@ -1,6 +1,9 @@
 "use server"
 
-import { cartRequiresShipping } from "@/lib/api/medusa/shipping-method-policy"
+import {
+  cartRequiresShipping,
+  selectShippingOptionsForCart,
+} from "@/lib/api/medusa/shipping-method-policy"
 import { sdk } from "@/lib/config/medusa"
 import {
   getAuthHeaders,
@@ -19,13 +22,17 @@ async function ensureShippingMethod(
   // 현재 cart의 shipping_methods 확인
   const { cart } = await sdk.client.fetch<{
     cart: {
-      items?: { requires_shipping?: boolean | null; product_type?: string | null }[]
-      shipping_methods?: { id: string }[]
+      items?: {
+        requires_shipping?: boolean | null
+        product_type?: string | null
+      }[]
+      shipping_methods?: { id: string; shipping_option_id?: string | null }[]
     }
   }>(`/store/carts/${cartId}`, {
     method: "GET",
     query: {
-      fields: "+items,+items.requires_shipping,+items.product_type,+shipping_methods",
+      fields:
+        "+items,+items.requires_shipping,+items.product_type,+shipping_methods,+shipping_methods.shipping_option_id",
     },
     headers,
   })
@@ -35,21 +42,21 @@ async function ensureShippingMethod(
     return
   }
 
-  if (cart.shipping_methods?.length) {
-    console.log(
-      `${prefix} shipping_methods 존재 (count=${cart.shipping_methods.length}), 추가 불필요`
-    )
-    return
-  }
-
-  console.warn(`${prefix} shipping_methods 없음, 사용 가능한 옵션 조회 시작`)
+  console.warn(
+    `${prefix} standard shipping method 보장, 사용 가능한 옵션 조회 시작`
+  )
 
   // 사용 가능한 shipping options 조회
   const { shipping_options } = await sdk.client.fetch<{
-    shipping_options: { id: string; name: string; amount: number }[]
+    shipping_options: {
+      id: string
+      name: string
+      amount: number
+      type?: { code?: string | null } | null
+    }[]
   }>("/store/shipping-options", {
     method: "GET",
-    query: { cart_id: cartId },
+    query: { cart_id: cartId, fields: "id,name,amount,type" },
     headers,
   })
 
@@ -59,16 +66,38 @@ async function ensureShippingMethod(
         id: o.id,
         name: o.name,
         amount: o.amount,
+        typeCode: o.type?.code ?? null,
       })) ?? []
     )}`
   )
 
-  if (!shipping_options?.length) {
-    console.error(`${prefix} 사용 가능한 shipping option 없음, 할당 불가`)
-    throw new Error("배송이 필요한 상품에 적용 가능한 배송 옵션이 없습니다.")
+  const standardOptions = selectShippingOptionsForCart(
+    shipping_options,
+    cart.items
+  )
+
+  if (!standardOptions.length) {
+    console.error(
+      `${prefix} 사용 가능한 standard shipping option 없음, 할당 불가`
+    )
+    throw new Error(
+      "배송이 필요한 상품에 적용 가능한 표준 배송 옵션이 없습니다."
+    )
   }
 
-  const targetOption = shipping_options[0]
+  const currentShippingOptionId = cart.shipping_methods?.[0]?.shipping_option_id
+  const isCurrentOptionValid = standardOptions.some(
+    (option) => option.id === currentShippingOptionId
+  )
+
+  if (currentShippingOptionId && isCurrentOptionValid) {
+    console.log(
+      `${prefix} standard shipping method 존재 (option_id=${currentShippingOptionId}), 추가 불필요`
+    )
+    return
+  }
+
+  const targetOption = standardOptions[0]
   await sdk.store.cart.addShippingMethod(
     cartId,
     { option_id: targetOption.id },
@@ -106,8 +135,8 @@ async function getSourceCartSelection(
         : null
     const sourceLineItemIds = Array.isArray(metadata?.source_line_item_ids)
       ? metadata.source_line_item_ids.filter(
-        (id): id is string => typeof id === "string" && id.length > 0
-      )
+          (id): id is string => typeof id === "string" && id.length > 0
+        )
       : []
 
     if (
