@@ -12,6 +12,7 @@ import {
   Headphones,
   Menu,
   Package,
+  ShoppingBag,
   Store,
   Users,
 } from 'lucide-react';
@@ -24,6 +25,7 @@ const iconMap: Record<string, React.ElementType> = {
   Users,
   Building2,
   Package,
+  ShoppingBag,
   Boxes,
   Headphones,
   BarChart3,
