@@ -1,6 +1,7 @@
 import { getBaseURL } from "@lib/utils/env"
 import { Metadata } from "next"
 import { MainHeader } from "../../../components/layout/header/main-header"
+import { NoticePopup } from "@/components/layout/notice-popup"
 import { siteConfig } from "@/lib/config/site"
 
 export const metadata: Metadata = {
@@ -16,6 +17,7 @@ export default function MainLayout(props: { children: React.ReactNode }) {
     <div className="flex min-h-screen flex-col">
       <MainHeader />
       {props.children}
+      <NoticePopup />
     </div>
   )
 }
