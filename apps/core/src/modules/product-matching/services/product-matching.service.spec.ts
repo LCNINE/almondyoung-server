@@ -96,6 +96,7 @@ describe('ProductMatchingService strategy semantics', () => {
           return {
             returning: jest.fn().mockResolvedValue([{ ...matching, ...(values as object) }]),
             onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
+            onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
           };
         }),
       })),
@@ -159,6 +160,40 @@ describe('ProductMatchingService strategy semantics', () => {
     });
   });
 
+  it('persists accepted availability override when resolving as void', async () => {
+    const { service, productSellableQuantity } = makeService();
+    const tx = makeTx([[matching]]);
+
+    await service.resolveMatchingPending(
+      matching.id,
+      {
+        strategy: 'void',
+        stockPolicy: {
+          preStockSellable: true,
+          alwaysSellableZeroStock: false,
+          availabilityOverride: 'manual_out_of_stock',
+        },
+      } as ResolveMatchingDto,
+      tx as never,
+    );
+
+    expect(tx.updates[0]).toMatchObject({
+      status: 'matched',
+      strategy: 'void',
+      isResolved: true,
+      preStockSellable: true,
+      alwaysSellableZeroStock: false,
+    });
+    expect(tx.inserts[0]).toMatchObject({
+      variantId: matching.variantId,
+      inventoryManagement: true,
+      preStockSellable: true,
+      alwaysSellableZeroStock: false,
+      availabilityOverride: 'manual_out_of_stock',
+    });
+    expect(productSellableQuantity.recalculateAndPublishForVariant).toHaveBeenCalledWith(matching.variantId, tx);
+  });
+
   it('resolves SKU 구성 매칭 and wakes waiting fulfillment backlog', async () => {
     const { service, fulfillmentBacklog } = makeService();
     const tx = makeTx([[matching]]);
@@ -189,6 +224,47 @@ describe('ProductMatchingService strategy semantics', () => {
       strategy: 'variant',
     });
     expect(fulfillmentBacklog.wakeBacklogsWaitingForVariant).toHaveBeenCalledWith(matching.variantId, tx);
+  });
+
+  it('persists accepted availability override when resolving SKU 구성 matching', async () => {
+    const { service, productSellableQuantity } = makeService();
+    const tx = makeTx([[matching]]);
+    const skuId = '44444444-4444-4444-4444-444444444444';
+
+    await service.resolveMatchingPending(
+      matching.id,
+      {
+        strategy: 'variant',
+        skuMappings: [{ skuId, quantity: 2 }],
+        stockPolicy: {
+          preStockSellable: false,
+          alwaysSellableZeroStock: false,
+          availabilityOverride: 'manual_out_of_stock',
+        },
+      } as ResolveMatchingDto,
+      tx as never,
+    );
+
+    expect(tx.inserts[0]).toMatchObject({
+      productMatchingId: matching.id,
+      skuId,
+      quantity: 2,
+    });
+    expect(tx.updates[0]).toMatchObject({
+      status: 'matched',
+      strategy: 'variant',
+      isResolved: true,
+      preStockSellable: false,
+      alwaysSellableZeroStock: false,
+    });
+    expect(tx.inserts[1]).toMatchObject({
+      variantId: matching.variantId,
+      inventoryManagement: true,
+      preStockSellable: false,
+      alwaysSellableZeroStock: false,
+      availabilityOverride: 'manual_out_of_stock',
+    });
+    expect(productSellableQuantity.recalculateAndPublishForVariant).toHaveBeenCalledWith(matching.variantId, tx);
   });
 
   it('uses one transaction for void update and sellable projection recalculation', async () => {
@@ -412,6 +488,12 @@ describe('ProductMatchingService strategy semantics', () => {
       ],
       [
         {
+          variantId: matching.variantId,
+          availabilityOverride: 'manual_out_of_stock',
+        },
+      ],
+      [
+        {
           masterId: matching.masterId,
           versionId: '55555555-5555-5555-5555-555555555555',
           name: '상품 A',
@@ -434,6 +516,11 @@ describe('ProductMatchingService strategy semantics', () => {
           strategy: 'variant',
           skuLinkCount: 1,
           hasSkuLinks: true,
+          stockPolicy: {
+            preStockSellable: true,
+            alwaysSellableZeroStock: false,
+            availabilityOverride: 'manual_out_of_stock',
+          },
           master: {
             id: matching.masterId,
             name: '상품 A',
@@ -522,6 +609,7 @@ describe('ProductMatchingService strategy semantics', () => {
         stockPolicy: {
           preStockSellable: true,
           alwaysSellableZeroStock: false,
+          availabilityOverride: 'manual_out_of_stock',
         },
       },
       { userId: 'operator-1' },
@@ -534,6 +622,13 @@ describe('ProductMatchingService strategy semantics', () => {
       isResolved: true,
       preStockSellable: true,
       alwaysSellableZeroStock: false,
+    });
+    expect(tx.inserts[0]).toMatchObject({
+      variantId: matching.variantId,
+      inventoryManagement: true,
+      preStockSellable: true,
+      alwaysSellableZeroStock: false,
+      availabilityOverride: 'manual_out_of_stock',
     });
     expect(result).toMatchObject({ status: 'matched', strategy: 'void', isResolved: true });
     expect(auditService.log).toHaveBeenCalledWith(
@@ -549,5 +644,57 @@ describe('ProductMatchingService strategy semantics', () => {
       tx,
     );
     expect(fulfillmentBacklog.wakeBacklogsWaitingForVariant).toHaveBeenCalledWith(matching.variantId, tx);
+  });
+
+  it('updates sales variant policy override and recalculates projection', async () => {
+    const { service, productSellableQuantity } = makeService();
+    const tx = makeTx([[matching]]);
+
+    const result = await service.updateStockPolicy(
+      matching.id,
+      {
+        preStockSellable: false,
+        alwaysSellableZeroStock: false,
+        availabilityOverride: 'manual_out_of_stock',
+      },
+      tx as never,
+    );
+
+    expect(tx.updates[0]).toMatchObject({
+      preStockSellable: false,
+      alwaysSellableZeroStock: false,
+      updatedAt: expect.any(Date),
+    });
+    expect(tx.updates[0]).not.toHaveProperty('availabilityOverride');
+    expect(tx.inserts[0]).toMatchObject({
+      variantId: matching.variantId,
+      inventoryManagement: true,
+      preStockSellable: false,
+      alwaysSellableZeroStock: false,
+      availabilityOverride: 'manual_out_of_stock',
+    });
+    expect(productSellableQuantity.recalculateAndPublishForVariant).toHaveBeenCalledWith(matching.variantId, tx);
+    expect(result).toMatchObject({ id: matching.id });
+  });
+
+  it('returns sales variant policy when variant has no matching row', async () => {
+    const { service } = makeService();
+    const tx = makeTx([
+      [],
+      [
+        {
+          variantId: matching.variantId,
+          preStockSellable: false,
+          alwaysSellableZeroStock: false,
+          availabilityOverride: 'manual_out_of_stock',
+        },
+      ],
+    ]);
+
+    await expect(service.getStockPolicyForVariant(matching.variantId, tx as never)).resolves.toEqual({
+      preStockSellable: false,
+      alwaysSellableZeroStock: false,
+      availabilityOverride: 'manual_out_of_stock',
+    });
   });
 });

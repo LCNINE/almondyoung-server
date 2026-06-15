@@ -5,10 +5,12 @@ export type MatchingStatus = 'pending' | 'matched' | 'ignored';
 export type MatchingStrategy = 'void' | 'variant';
 export type MatchingPriority = 'normal' | 'high';
 export type LegacyIgnoredResolutionTarget = 'pending' | 'void';
+export type AvailabilityOverride = 'manual_out_of_stock' | null;
 
 export interface StockPolicyDto {
   preStockSellable: boolean;
   alwaysSellableZeroStock: boolean;
+  availabilityOverride?: AvailabilityOverride;
 }
 
 export interface SkuMappingDto {
@@ -205,7 +207,7 @@ export interface UpdateStockPolicyResponseDto {
 /** PUT /matchings/:variantId 요청 바디 */
 export interface UpsertMatchingDto {
   masterId?: string | null;
-  links: { skuId: string; quantity: number }[];
+  links?: { skuId: string; quantity: number }[];
   policy?: Partial<StockPolicyDto>;
 }
 

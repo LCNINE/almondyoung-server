@@ -21,12 +21,15 @@ import type {
 import type { SkuLinkState } from '@/lib/types/ui/matching';
 import {
   useVariantMatching,
+  useVariantStockPolicy,
   useUpsertVariantMatching,
   useSetMatchingPriority,
   useChangeMatchingStrategy,
   getMatchingStrategyDecisionLabel,
   getMatchingStrategyDecisionColor,
   createDefaultStockPolicy,
+  normalizeStockPolicy,
+  buildUpsertMatchingPayload,
 } from '@/lib/services/matching';
 import { matchingQueryKeys } from '@/lib/services/matching';
 import { useQueryClient } from '@tanstack/react-query';
@@ -55,7 +58,13 @@ const getCurrentSkuLinks = (
 ) => (source?.matchedSkus?.length ? source.matchedSkus : (source?.links ?? []));
 
 function VariantPanel({ variant, masterId, onSaved }: VariantPanelProps) {
-  const { data: current } = useVariantMatching(variant.id);
+  const { data: current, isFetched: isMatchingFetched } = useVariantMatching(
+    variant.id
+  );
+  const { data: variantStockPolicy } = useVariantStockPolicy(
+    variant.id,
+    isMatchingFetched && !current
+  );
   const upsert = useUpsertVariantMatching();
   const setPriority = useSetMatchingPriority();
   const setStrategy = useChangeMatchingStrategy();
@@ -79,12 +88,18 @@ function VariantPanel({ variant, masterId, onSaved }: VariantPanelProps) {
       );
       setStrategyState(current.strategy ?? 'variant');
       setPriorityState(current.priority ?? 'normal');
-      setStockPolicy(current.stockPolicy ?? createDefaultStockPolicy());
+      setStockPolicy(normalizeStockPolicy(current.stockPolicy));
+    } else if (isMatchingFetched) {
+      setLinks([]);
+      setStrategyState('variant');
+      setPriorityState('normal');
+      setStockPolicy(normalizeStockPolicy(variantStockPolicy));
     }
-  }, [current]);
+  }, [current, isMatchingFetched, variantStockPolicy]);
 
   const handleSave = async () => {
     const currentSkuLinks = getCurrentSkuLinks(current);
+    const currentStockPolicy = current?.stockPolicy ?? variantStockPolicy;
     const changedLinks =
       JSON.stringify(links) !==
       JSON.stringify(
@@ -94,7 +109,8 @@ function VariantPanel({ variant, masterId, onSaved }: VariantPanelProps) {
         })) ?? []
       );
     const changedPolicy =
-      JSON.stringify(stockPolicy) !== JSON.stringify(current?.stockPolicy);
+      JSON.stringify(stockPolicy) !==
+      JSON.stringify(normalizeStockPolicy(currentStockPolicy));
     const changedStrategy =
       strategy !==
       (current as { strategy?: MatchingStrategy } | undefined)?.strategy;
@@ -108,7 +124,12 @@ function VariantPanel({ variant, masterId, onSaved }: VariantPanelProps) {
       promises.push(
         upsert.mutateAsync({
           variantId: variant.id,
-          data: { masterId, links, policy: stockPolicy },
+          data: buildUpsertMatchingPayload({
+            masterId,
+            links,
+            policy: stockPolicy,
+            changedLinks,
+          }),
         })
       );
     }

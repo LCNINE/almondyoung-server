@@ -30,6 +30,7 @@ describe('ProductSellableQuantityService.recalculateAndPublishForVariant', () =>
     reason: 'SELLABLE',
     preStockSellable: false,
     alwaysSellableZeroStock: false,
+    availabilityOverride: null,
     components: [],
     calculatedAt: new Date('2026-05-26T00:00:00.000Z'),
   };
@@ -44,6 +45,63 @@ describe('ProductSellableQuantityService.recalculateAndPublishForVariant', () =>
       query: {
         productSellableQuantityProjections: {
           findFirst: jest.fn().mockResolvedValue(previous),
+        },
+      },
+      insert: jest.fn(() => ({
+        values: (values: Record<string, unknown>) => {
+          inserted.push(values);
+          return {
+            onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
+          };
+        },
+      })),
+    } as unknown as RecalculateTx;
+
+    return {
+      inserted,
+      tx,
+    };
+  }
+
+  function makeSelectBuilder(rows: unknown[]) {
+    const builder = {
+      from: jest.fn(() => builder),
+      innerJoin: jest.fn(() => builder),
+      where: jest.fn(() => builder),
+      orderBy: jest.fn(() => Promise.resolve(rows)),
+      groupBy: jest.fn(() => Promise.resolve(rows)),
+      then: (resolve: (value: unknown[]) => unknown, reject: (reason: unknown) => unknown) =>
+        Promise.resolve(rows).then(resolve, reject),
+    };
+
+    return builder;
+  }
+
+  function makePolicyCalculationTx(): {
+    tx: RecalculateTx;
+    inserted: Array<Record<string, unknown>>;
+  } {
+    const inserted: Array<Record<string, unknown>> = [];
+    const selectResults: unknown[][] = [
+      [{ id: projection.variantId, status: 'active' }],
+      [
+        {
+          variantId: projection.variantId,
+          masterId: projection.masterId,
+          versionId: projection.versionId,
+          salesStartDate: null,
+          salesEndDate: null,
+        },
+      ],
+      [],
+      [{ variantId: projection.variantId, availabilityOverride: 'manual_out_of_stock' }],
+    ];
+    const tx = {
+      execute: jest.fn().mockResolvedValue(undefined),
+      select: jest.fn(() => makeSelectBuilder(selectResults.shift() ?? [])),
+      query: {
+        productSellableQuantityProjections: {
+          findFirst: jest.fn().mockResolvedValue(null),
         },
       },
       insert: jest.fn(() => ({
@@ -98,6 +156,41 @@ describe('ProductSellableQuantityService.recalculateAndPublishForVariant', () =>
       sellableQuantity: 7,
       isSellable: true,
       calculatedAt: projection.calculatedAt.toISOString(),
+    });
+  });
+
+  it('sales variant policy override가 있으면 매칭이 없어도 수동 품절 projection을 publish한다', async () => {
+    const outbox = makeOutbox();
+    const db = { db: { transaction: jest.fn() } } as unknown as DbService<MergedSchema>;
+    const service = new ProductSellableQuantityService(db, outbox as unknown as OutboxService);
+    const { tx, inserted } = makePolicyCalculationTx();
+
+    const result = await service.recalculateAndPublishForVariant(projection.variantId, tx);
+
+    expect(result.published).toBe(true);
+    expect(result.projection).toMatchObject({
+      variantId: projection.variantId,
+      sellableQuantity: 0,
+      stockBoundQuantity: 0,
+      isSellable: false,
+      reason: 'MANUAL_OUT_OF_STOCK',
+      availabilityOverride: 'manual_out_of_stock',
+    });
+    expect(inserted[0]).toMatchObject({
+      variantId: projection.variantId,
+      sellableQuantity: 0,
+      stockBoundQuantity: 0,
+      isSellable: false,
+      reason: 'MANUAL_OUT_OF_STOCK',
+    });
+    const [params] = outbox.enqueue.mock.calls[0];
+    expect(params.payload).toMatchObject({
+      variantId: projection.variantId,
+      sellableQuantity: 0,
+      stockBoundQuantity: 0,
+      isSellable: false,
+      reason: 'MANUAL_OUT_OF_STOCK',
+      availabilityOverride: 'manual_out_of_stock',
     });
   });
 

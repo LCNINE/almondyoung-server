@@ -257,6 +257,7 @@ export type ProductSellableQuantityReason =
   | 'SELLABLE'
   | 'PRE_STOCK_SELLABLE'
   | 'ALWAYS_SELLABLE_ZERO_STOCK'
+  | 'MANUAL_OUT_OF_STOCK'
   | 'NOT_ACTIVE_VERSION'
   | 'VARIANT_INACTIVE'
   | 'SALES_NOT_STARTED'
@@ -277,6 +278,7 @@ export interface ProductSellableQuantityChangedPayload {
   stockBoundQuantity?: number;
   isSellable: boolean;
   reason?: ProductSellableQuantityReason;
+  availabilityOverride?: 'manual_out_of_stock' | null;
   calculatedAt: string;
 }
 
@@ -450,6 +452,7 @@ const ProductSellableQuantityReasonSchema = z.enum([
   'SELLABLE',
   'PRE_STOCK_SELLABLE',
   'ALWAYS_SELLABLE_ZERO_STOCK',
+  'MANUAL_OUT_OF_STOCK',
   'NOT_ACTIVE_VERSION',
   'VARIANT_INACTIVE',
   'SALES_NOT_STARTED',
@@ -471,6 +474,7 @@ const ProductSellableQuantityChangedSchema = z.object({
   stockBoundQuantity: z.number().int().nonnegative().optional(),
   isSellable: z.boolean(),
   reason: ProductSellableQuantityReasonSchema.optional(),
+  availabilityOverride: z.enum(['manual_out_of_stock']).nullable().optional(),
   calculatedAt: z.string().datetime(),
 });
 

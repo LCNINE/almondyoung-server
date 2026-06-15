@@ -4,6 +4,8 @@ export type { ProductSellableQuantityReason } from '@packages/event-contracts';
 
 export const UNBOUNDED_SELLABLE_QUANTITY = 99_999_999;
 
+export type ProductAvailabilityOverride = 'manual_out_of_stock' | null;
+
 export interface ProductSellableQuantityComponentInput {
   skuId: string;
   requiredQuantity: number;
@@ -26,6 +28,7 @@ export interface ProductSellableQuantityInput {
     preStockSellable: boolean;
     alwaysSellableZeroStock: boolean;
   } | null;
+  availabilityOverride?: ProductAvailabilityOverride;
   components: ProductSellableQuantityComponentInput[];
 }
 
@@ -44,6 +47,7 @@ export interface ProductSellableQuantityResult {
   reason: ProductSellableQuantityReason;
   preStockSellable: boolean;
   alwaysSellableZeroStock: boolean;
+  availabilityOverride: ProductAvailabilityOverride;
   components: ProductSellableQuantityComponentResult[];
   calculatedAt: Date;
 }
@@ -62,6 +66,7 @@ export function calculateProductSellableQuantity(
     matchingId: input.matching?.id ?? null,
     preStockSellable: input.matching?.preStockSellable ?? false,
     alwaysSellableZeroStock: input.matching?.alwaysSellableZeroStock ?? false,
+    availabilityOverride: input.availabilityOverride ?? null,
     calculatedAt,
   };
 
@@ -88,6 +93,10 @@ export function calculateProductSellableQuantity(
 
   if (input.activeVersion.salesEndDate && input.activeVersion.salesEndDate < calculatedAt) {
     return zero('SALES_ENDED');
+  }
+
+  if (input.availabilityOverride === 'manual_out_of_stock') {
+    return zero('MANUAL_OUT_OF_STOCK');
   }
 
   if (!input.matching) {
