@@ -175,6 +175,7 @@ export class MedusaClient {
   private readonly tagCache = new Map<string, string>(); // key: value
   private readonly typeCache = new Map<string, string>(); // key: value
   private readonly salesChannelCache = new Map<string, string>(); // key: name
+  private defaultShippingProfileId?: string;
   private projectionStockLocationId?: string;
   // 대용량 상품일 때 한번에 보내는 variants 수를 제한 (unknown_error 완화 목적)
   private readonly MAX_VARIANTS_PER_REQUEST = 30;
@@ -200,6 +201,7 @@ export class MedusaClient {
     this.tagCache.clear();
     this.typeCache.clear();
     this.salesChannelCache.clear();
+    this.defaultShippingProfileId = undefined;
     this.logger.log('All caches cleared');
   }
 
@@ -824,6 +826,21 @@ export class MedusaClient {
     }
   }
 
+  async getDefaultShippingProfileId(): Promise<string> {
+    if (this.defaultShippingProfileId) {
+      return this.defaultShippingProfileId;
+    }
+
+    const { shipping_profiles } = await this.sdk.admin.shippingProfile.list({ type: 'default', limit: 10 });
+    const profile = shipping_profiles?.[0];
+    if (!profile?.id) {
+      throw new Error('Default Medusa shipping profile not found. Run seed-shipping first.');
+    }
+
+    this.defaultShippingProfileId = profile.id;
+    return profile.id;
+  }
+
   // handle로 medusa product 조회
   async findProductByHandle(handle: string): Promise<MedusaProduct | null> {
     try {
@@ -1050,9 +1067,15 @@ export class MedusaClient {
     productId: string,
     sourceVariants: MedusaProductPayload['variants'],
     latestProduct?: MedusaProduct,
+    options: { requiresShipping?: boolean } = {},
   ): Promise<Map<string, { variantId: string; inventoryItemId: string }>> {
     const ensured = new Map<string, { variantId: string; inventoryItemId: string }>();
     if (!sourceVariants || sourceVariants.length === 0) {
+      return ensured;
+    }
+
+    if (options.requiresShipping === false) {
+      await this.removeProjectionInventoryLinks(productId, latestProduct);
       return ensured;
     }
 
@@ -1216,6 +1239,32 @@ export class MedusaClient {
     }
 
     return ensured;
+  }
+
+  private async removeProjectionInventoryLinks(productId: string, latestProduct?: MedusaProduct): Promise<void> {
+    const latest = latestProduct ?? (await this.getProductWithVariantDetails(productId));
+    const deletePayload: Array<{ inventory_item_id: string; variant_id: string }> = [];
+
+    for (const variant of latest.variants || []) {
+      for (const link of ((variant as any).inventory_items || []) as any[]) {
+        const inventory = link.inventory as
+          | { sku?: string | null; metadata?: Record<string, unknown> | null }
+          | undefined;
+        if (link.inventory_item_id && inventory && isMedusaProductSellableInventoryItem(inventory)) {
+          deletePayload.push({
+            inventory_item_id: link.inventory_item_id,
+            variant_id: variant.id,
+          });
+        }
+      }
+    }
+
+    if (deletePayload.length > 0) {
+      await this.sdk.admin.product.batchVariantInventoryItems(productId, { delete: deletePayload });
+      this.logger.log(
+        `Removed ${deletePayload.length} sellable projection inventory links for non-shipping product ${productId}`,
+      );
+    }
   }
 
   private async getProjectionStockLocationId(): Promise<string> {
@@ -1394,12 +1443,14 @@ export class MedusaClient {
     payload: MedusaProductPayload,
     medusaProductId?: string,
   ): Promise<{ product: MedusaProduct; action: 'created' | 'updated' }> {
+    const requiresShipping = payload.metadata.requiresShipping !== false;
+
     if (medusaProductId) {
       try {
         // 매핑이 있으면 업데이트
         const updatePayload = await this.enrichPayloadWithExistingVariantIds(medusaProductId, payload);
         const product = await this.updateProduct(medusaProductId, updatePayload);
-        await this.ensureVariantInventoryLinks(product.id, payload.variants);
+        await this.ensureVariantInventoryLinks(product.id, payload.variants, undefined, { requiresShipping });
         return { product, action: 'updated' };
       } catch (err) {
         // 이전에 존재하던 product id가 삭제되었을 경우 create로 재시도
@@ -1422,7 +1473,7 @@ export class MedusaClient {
       );
       const updatePayload = await this.enrichPayloadWithExistingVariantIds(existingProduct.id, payload);
       const product = await this.updateProduct(existingProduct.id, updatePayload);
-      await this.ensureVariantInventoryLinks(product.id, payload.variants);
+      await this.ensureVariantInventoryLinks(product.id, payload.variants, undefined, { requiresShipping });
       return { product, action: 'updated' };
     }
 
@@ -1430,7 +1481,7 @@ export class MedusaClient {
     // inventory_items 필드가 없을 가능성이 높음 → ensureVariantInventoryLinks 가 필요시
     // getProductWithVariantDetails 로 다시 조회한다 (기존 동작 유지).
     const product = await this.createProductChunked(payload);
-    await this.ensureVariantInventoryLinks(product.id, payload.variants);
+    await this.ensureVariantInventoryLinks(product.id, payload.variants, undefined, { requiresShipping });
     return { product, action: 'created' };
   }
 

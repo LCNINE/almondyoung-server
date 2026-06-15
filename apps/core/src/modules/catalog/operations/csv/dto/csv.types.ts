@@ -10,6 +10,7 @@ export interface ProductCsvRow {
   supplyPrice?: number;
   status?: string;
   productType?: string;
+  fulfillmentKind?: 'physical' | 'digital';
   salesClassification?: string;
   purchaseClassification?: string;
   ageRestriction?: number;

@@ -18,6 +18,7 @@ describe('ProductVersionMapper', () => {
       isWholesaleOnly: false,
       isMembershipOnly: false,
       productType: null,
+      fulfillmentKind: 'physical',
       productCode: null,
       alternativeName: null,
       material: null,
@@ -60,6 +61,7 @@ describe('ProductVersionMapper', () => {
 
     expect(response.description).toBe('# Markdown');
     expect(response.descriptionHtml).toBe('<img src="legacy.jpg" />');
+    expect(response.fulfillmentKind).toBe('physical');
     expect(response.categories).toEqual([
       {
         id: 'cat-1',

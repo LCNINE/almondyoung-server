@@ -75,22 +75,34 @@ export default function PaymentMethodCatalogTemplate() {
             </TableRow>
           )}
           {catalog.map((c) => (
-            <TableRow key={c.id}>
+            <TableRow key={c.code}>
               <TableCell className="font-mono text-sm">{c.code}</TableCell>
               <TableCell>{c.displayName}</TableCell>
               <TableCell className="text-muted-foreground">
                 {c.description ?? '-'}
               </TableCell>
               <TableCell>
-                <Badge variant={c.isEnabled ? 'default' : 'secondary'}>
-                  {c.isEnabled ? '활성' : '비활성'}
+                <Badge
+                  variant={
+                    c.supportStatus === 'retired'
+                      ? 'outline'
+                      : c.isEnabled
+                        ? 'default'
+                        : 'secondary'
+                  }
+                >
+                  {c.supportStatus === 'retired'
+                    ? '지원 중단'
+                    : c.isEnabled
+                      ? '활성'
+                      : '비활성'}
                 </Badge>
               </TableCell>
               <TableCell className="text-right">
                 <Switch
                   checked={c.isEnabled}
                   onCheckedChange={(v) => handleToggle(c.code, v)}
-                  disabled={updateMutation.isPending}
+                  disabled={updateMutation.isPending || c.isRetired}
                   aria-label={`${c.displayName} 글로벌 활성화`}
                 />
               </TableCell>

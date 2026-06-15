@@ -26,8 +26,15 @@ export const useBusinessLicenseTableColumns = () => {
         cell: ({ getValue }) => <IdCell value={getValue()} />,
       }),
       columnHelper.accessor('userId', {
-        header: '사용자 ID',
-        cell: ({ getValue }) => <IdCell value={getValue()} />,
+        header: '사용자',
+        cell: ({ row }) => {
+          return (
+            <div className="flex flex-col gap-0.5">
+              <span>{row.original.userName ?? '-'}</span>
+              <IdCell value={row.original.userId} />
+            </div>
+          );
+        },
       }),
       columnHelper.accessor('businessNumber', {
         header: '사업자등록번호',
@@ -46,7 +53,7 @@ export const useBusinessLicenseTableColumns = () => {
           row.original.fileUrl ? (
             <Badge variant="outline">있음</Badge>
           ) : (
-            <span className="text-muted-foreground text-xs">없음</span>
+            <span className="text-xs text-muted-foreground">없음</span>
           ),
       }),
       columnHelper.accessor('status', {

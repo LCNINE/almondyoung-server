@@ -108,6 +108,7 @@ export interface ProductSnapshot {
   brand?: string;
   tags?: string[];
   productType?: string;
+  fulfillmentKind?: 'physical' | 'digital';
   optionGroups?: Array<{
     id: string;
     name: string;
@@ -320,6 +321,7 @@ const ProductSnapshotSchema = z.object({
   brand: z.string().optional(),
   tags: z.array(z.string()).optional(),
   productType: z.string().optional(),
+  fulfillmentKind: z.enum(['physical', 'digital']).optional(),
   optionGroups: z.array(ProductSnapshotOptionGroupSchema).optional(),
   variants: z.array(ProductSnapshotVariantSchema),
   status: z.enum(['active', 'draft', 'archived']),
