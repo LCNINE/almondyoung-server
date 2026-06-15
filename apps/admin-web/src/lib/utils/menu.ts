@@ -205,8 +205,53 @@ export const mainMenus: MainMenu[] = [
     ],
   },
   {
+    id: 'product-management',
+    title: '상품관리',
+    icon: 'ShoppingBag',
+    defaultPath: '/mall/products-list',
+    children: [
+      { id: 'product-dashboard', title: '대시보드' },
+      { id: 'product-list', title: '목록', path: '/mall/products-list' },
+      {
+        id: 'product-registration',
+        title: '등록',
+        path: '/mall/product-registration',
+      },
+      {
+        id: 'product-category',
+        title: '분류/카테고리',
+        path: '/mall/categories',
+      },
+      { id: 'product-tags', title: '태그', path: '/mall/tags' },
+      {
+        id: 'channel-listings',
+        title: '채널 노출 관리',
+        path: '/mall/channel-listings',
+      },
+      {
+        id: 'channel-categories',
+        title: '채널 카테고리',
+        path: '/mall/channel-categories',
+      },
+      { id: 'product-display', title: '진열' },
+      { id: 'deleted-products', title: '휴지통(삭제상품 관리)' },
+      { id: 'product-bulk', title: '일괄 작업', path: '/mall/bulk' },
+      {
+        id: 'product-csv',
+        title: 'CSV 가져오기/내보내기',
+        path: '/mall/csv',
+      },
+      { id: 'product-audit', title: '감사 이력/승인', path: '/mall/audit' },
+      {
+        id: 'digital-assets',
+        title: '디지털 자산',
+        path: '/mall/digital-assets',
+      },
+    ],
+  },
+  {
     id: 'inventory-product',
-    title: '재고&상품 관리',
+    title: '재고관리',
     icon: 'Boxes',
     defaultPath: '/inventory/status', // 첫 번째 페이지
     children: [
@@ -415,49 +460,6 @@ export const mainMenus: MainMenu[] = [
         id: 'mall-selection',
         title: '쇼핑몰 선택',
         isComingSoon: true,
-      },
-      {
-        id: 'products',
-        title: '상품',
-        children: [
-          { id: 'product-dashboard', title: '대시보드' },
-          { id: 'product-list', title: '목록', path: '/mall/products-list' },
-          {
-            id: 'product-registration',
-            title: '등록',
-            path: '/mall/product-registration',
-          },
-          {
-            id: 'product-category',
-            title: '분류/카테고리',
-            path: '/mall/categories',
-          },
-          { id: 'product-tags', title: '태그', path: '/mall/tags' },
-          {
-            id: 'channel-listings',
-            title: '채널 노출 관리',
-            path: '/mall/channel-listings',
-          },
-          {
-            id: 'channel-categories',
-            title: '채널 카테고리',
-            path: '/mall/channel-categories',
-          },
-          { id: 'product-display', title: '진열' },
-          { id: 'deleted-products', title: '휴지통(삭제상품 관리)' },
-          { id: 'product-bulk', title: '일괄 작업', path: '/mall/bulk' },
-          {
-            id: 'product-csv',
-            title: 'CSV 가져오기/내보내기',
-            path: '/mall/csv',
-          },
-          { id: 'product-audit', title: '감사 이력/승인', path: '/mall/audit' },
-          {
-            id: 'digital-assets',
-            title: '디지털 자산',
-            path: '/mall/digital-assets',
-          },
-        ],
       },
       {
         id: 'marketing',
