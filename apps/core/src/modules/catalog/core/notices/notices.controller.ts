@@ -1,4 +1,4 @@
-import { MasterRoleGuard, Public } from '@app/authorization';
+import { RolesGuard, Public } from '@app/authorization';
 import { Body, Controller, Delete, Get, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CreateNoticeDto, NoticeListQueryDto, NoticeResponseDto, UpdateNoticeDto } from './dto';
@@ -10,7 +10,7 @@ export class NoticesController {
   constructor(private readonly noticesService: NoticesService) {}
 
   @Post()
-  @UseGuards(MasterRoleGuard)
+  @UseGuards(RolesGuard('master', 'admin'))
   @ApiBearerAuth()
   @ApiOperation({ summary: '공지사항 생성 (관리자)', description: '새로운 공지사항을 등록합니다.' })
   @ApiBody({ type: CreateNoticeDto })
@@ -20,7 +20,7 @@ export class NoticesController {
   }
 
   @Get()
-  @UseGuards(MasterRoleGuard)
+  @UseGuards(RolesGuard('master', 'admin'))
   @ApiBearerAuth()
   @ApiOperation({
     summary: '공지사항 목록 조회 (관리자)',
@@ -57,7 +57,7 @@ export class NoticesController {
   }
 
   @Put(':id')
-  @UseGuards(MasterRoleGuard)
+  @UseGuards(RolesGuard('master', 'admin'))
   @ApiBearerAuth()
   @ApiOperation({ summary: '공지사항 수정 (관리자)', description: '공지사항 정보를 수정합니다.' })
   @ApiParam({ name: 'id', description: '공지사항 ID' })
@@ -69,7 +69,7 @@ export class NoticesController {
   }
 
   @Delete(':id')
-  @UseGuards(MasterRoleGuard)
+  @UseGuards(RolesGuard('master', 'admin'))
   @ApiBearerAuth()
   @ApiOperation({ summary: '공지사항 삭제 (관리자, Soft Delete)', description: '공지사항을 soft delete 합니다.' })
   @ApiParam({ name: 'id', description: '공지사항 ID' })
