@@ -24,7 +24,7 @@ describe('buildUpsertMatchingPayload', () => {
           availabilityOverride: 'manual_out_of_stock',
         },
         changedLinks: false,
-      }),
+      })
     ).toEqual({
       masterId: 'master-1',
       policy: {
@@ -46,7 +46,7 @@ describe('buildUpsertMatchingPayload', () => {
           availabilityOverride: null,
         },
         changedLinks: true,
-      }),
+      })
     ).toEqual({
       masterId: 'master-1',
       links: [{ skuId: 'sku-1', quantity: 2 }],
@@ -56,5 +56,22 @@ describe('buildUpsertMatchingPayload', () => {
         availabilityOverride: null,
       },
     });
+  });
+});
+
+describe('getProductSellableReasonLabel', () => {
+  it('returns Korean operation labels for known projection reasons', () => {
+    expect(
+      transformers.getProductSellableReasonLabel('MANUAL_OUT_OF_STOCK')
+    ).toBe('수동 품절');
+    expect(transformers.getProductSellableReasonLabel('MATCHING_MISSING')).toBe(
+      '매칭 없음'
+    );
+  });
+
+  it('falls back to the original reason code for unknown values', () => {
+    expect(transformers.getProductSellableReasonLabel('NEW_REASON')).toBe(
+      'NEW_REASON'
+    );
   });
 });

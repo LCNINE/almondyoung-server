@@ -1,14 +1,28 @@
 'use client';
 
-import { Suspense, useEffect, useMemo, useState, type FormEvent } from 'react';
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+} from 'react';
 import { CardErrorBoundary } from '@/components/admin-ui-experimental/common/card-error-boundary';
 import { Container } from '@/components/admin-ui-experimental/common/container';
 import { Header } from '@/components/admin-ui-experimental/common/header';
 import { Spinner } from '@/components/ui/spinner';
 import { DataTable } from '@/components/data-table';
 import { useDataTable } from '@/hooks/use-data-table';
-import { useProductVariantsTableColumns } from '@/hooks/table/columns/use-product-variants-table-columns';
-import { useVariantsByMasterSuspense } from '@/lib/services/products/queries';
+import {
+  useProductVariantsTableColumns,
+  type ProductVariantTableRow,
+} from '@/hooks/table/columns/use-product-variants-table-columns';
+import { useQueryParams } from '@/hooks/use-query-params';
+import {
+  useVariantsByMasterSuspense,
+  useVariantsByMasterVersionSuspense,
+} from '@/lib/services/products/queries';
 import { useProductDetailSuspense } from '@/lib/services/products/use-product-detail';
 import type {
   ProductVariantRow,
@@ -23,6 +37,7 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from '@/components/ui/drawer';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -36,6 +51,18 @@ import {
   useBulkUpdateDraftVariants,
   useUpdateDraftVariant,
 } from '@/lib/services/products/mutations';
+import {
+  matchingQueryKeys,
+  normalizeStockPolicy,
+  useUpdateVariantStockPolicy,
+  useVariantMatchingBatch,
+} from '@/lib/services/matching';
+import { useQueryClient } from '@tanstack/react-query';
+import type {
+  StockPolicyDto,
+  VariantMatchingBatchItemDto,
+} from '@/lib/types/dto/matching';
+import { VariantMatchingPanel } from '@/features/matching/products/components/variant-editor-dialog';
 import {
   canEditProductVariants,
   toBulkProductVariantUpdateDto,
@@ -60,6 +87,28 @@ function isInvalidDisplayOrder(value: string): boolean {
   if (!trimmed) return true;
   const parsed = Number(trimmed);
   return !Number.isInteger(parsed) || parsed < 0;
+}
+
+function getPage(value: string | undefined): number {
+  const page = Number(value);
+  return Number.isInteger(page) && page > 0 ? page : 1;
+}
+
+function getVariantDisplayName(variant: ProductVariantRow): string {
+  return variant.variantName ?? variant.id;
+}
+
+function mergeMatchingInfo(
+  rows: ProductVariantRow[],
+  matchingItems: VariantMatchingBatchItemDto[] | undefined
+): ProductVariantTableRow[] {
+  const matchingByVariantId = new Map(
+    (matchingItems ?? []).map((item) => [item.variantId, item])
+  );
+  return rows.map((row) => ({
+    ...row,
+    matchingInfo: matchingByVariantId.get(row.id),
+  }));
 }
 
 function ProductVariantEditDrawer({
@@ -236,46 +285,137 @@ function ProductVariantEditDrawer({
   );
 }
 
+function ProductVariantMatchingDrawer({
+  masterId,
+  variant,
+  open,
+  onOpenChange,
+}: {
+  masterId: string;
+  variant: ProductVariantTableRow;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  return (
+    <Drawer open={open} onOpenChange={onOpenChange} direction="right">
+      <DrawerContent className="sm:max-w-xl">
+        <DrawerHeader>
+          <DrawerTitle>매칭 편집</DrawerTitle>
+          <DrawerDescription>
+            {getVariantDisplayName(variant)}
+          </DrawerDescription>
+        </DrawerHeader>
+        <ScrollArea className="min-h-0 flex-1 px-4 pb-4">
+          <VariantMatchingPanel
+            variantId={variant.id}
+            variantName={getVariantDisplayName(variant)}
+            masterId={masterId}
+            onSaved={() => onOpenChange(false)}
+          />
+        </ScrollArea>
+      </DrawerContent>
+    </Drawer>
+  );
+}
+
 function VariantsTable({
   masterId,
   versionId,
   rows,
+  total,
   optionGroups,
   editable,
+  showMatchingColumns,
+  matchingBatchLoading,
 }: {
   masterId: string;
   versionId: string | null;
-  rows: ProductVariantRow[];
+  rows: ProductVariantTableRow[];
+  total: number;
   optionGroups: ReturnType<
     typeof useProductDetailSuspense
   >['data']['optionGroups'];
   editable: boolean;
+  showMatchingColumns: boolean;
+  matchingBatchLoading: boolean;
 }) {
   const [editingVariant, setEditingVariant] =
-    useState<ProductVariantRow | null>(null);
+    useState<ProductVariantTableRow | null>(null);
+  const [matchingEditingVariant, setMatchingEditingVariant] =
+    useState<ProductVariantTableRow | null>(null);
+  const [pendingPolicyVariantId, setPendingPolicyVariantId] = useState<
+    string | null
+  >(null);
   const bulkUpdateVariants = useBulkUpdateDraftVariants();
+  const updateStockPolicy = useUpdateVariantStockPolicy();
+  const queryClient = useQueryClient();
   const actions = useMemo(
     () => (editable ? { onEdit: setEditingVariant } : undefined),
     [editable]
   );
-  const columns = useProductVariantsTableColumns(optionGroups, actions);
 
-  const sorted = useMemo(() => {
-    return [...rows].sort((a, b) => {
-      const ao = a.displayOrder ?? Number.POSITIVE_INFINITY;
-      const bo = b.displayOrder ?? Number.POSITIVE_INFINITY;
-      if (ao !== bo) return ao - bo;
-      return a.createdAt.localeCompare(b.createdAt);
-    });
-  }, [rows]);
+  const handlePolicyChange = useCallback(
+    (row: ProductVariantTableRow, policy: StockPolicyDto) => {
+      if (pendingPolicyVariantId) return;
+      const normalized = normalizeStockPolicy(policy);
+      setPendingPolicyVariantId(row.id);
+      updateStockPolicy.mutate(
+        {
+          variantId: row.id,
+          data: normalized,
+        },
+        {
+          onError: (error) => {
+            toast.error(
+              error instanceof Error
+                ? error.message
+                : '재고 정책 저장에 실패했습니다.'
+            );
+            queryClient.invalidateQueries({
+              queryKey: matchingQueryKeys.variantMatchingBatches(),
+            });
+          },
+          onSettled: () => {
+            setPendingPolicyVariantId(null);
+          },
+        }
+      );
+    },
+    [pendingPolicyVariantId, queryClient, updateStockPolicy]
+  );
+
+  const matchingActions = useMemo(
+    () =>
+      showMatchingColumns
+        ? {
+            isLoading: matchingBatchLoading,
+            pendingVariantId: pendingPolicyVariantId,
+            onPolicyChange: handlePolicyChange,
+            onEditMatching: setMatchingEditingVariant,
+          }
+        : undefined,
+    [
+      showMatchingColumns,
+      matchingBatchLoading,
+      pendingPolicyVariantId,
+      handlePolicyChange,
+    ]
+  );
+
+  const columns = useProductVariantsTableColumns(
+    optionGroups,
+    actions,
+    matchingActions
+  );
 
   const { table } = useDataTable({
-    data: sorted,
+    data: rows,
     columns,
-    count: sorted.length,
+    count: total,
     pageSize: PAGE_SIZE,
     getRowId: (row) => row.id,
     enableRowSelection: editable,
+    prefix: 'variants',
   });
 
   const selectedRows = table
@@ -353,8 +493,9 @@ function VariantsTable({
 
       <DataTable
         table={table}
-        count={sorted.length}
+        count={total}
         pageSize={PAGE_SIZE}
+        prefix="variants"
         noRecords={{ message: '품목이 없습니다.' }}
       />
 
@@ -369,20 +510,54 @@ function VariantsTable({
           }}
         />
       )}
+
+      {matchingEditingVariant && (
+        <ProductVariantMatchingDrawer
+          masterId={masterId}
+          variant={matchingEditingVariant}
+          open={!!matchingEditingVariant}
+          onOpenChange={(open) => {
+            if (!open) setMatchingEditingVariant(null);
+          }}
+        />
+      )}
     </>
   );
 }
 
 function VariantsFromMaster({ masterId }: { masterId: string }) {
   const { data: detail } = useProductDetailSuspense(masterId, null);
-  const { data: variants } = useVariantsByMasterSuspense(masterId, PAGE_SIZE);
+  const { page } = useQueryParams(['page'], 'variants');
+  const currentPage = getPage(page);
+  const { data: variants } = useVariantsByMasterSuspense(
+    masterId,
+    currentPage,
+    PAGE_SIZE
+  );
+  const showMatchingColumns = detail.status === 'active';
+  const variantIds = useMemo(
+    () => variants.data.map((variant) => variant.id),
+    [variants.data]
+  );
+  const matchingBatch = useVariantMatchingBatch(
+    variantIds,
+    showMatchingColumns
+  );
+  const rows = useMemo(
+    () => mergeMatchingInfo(variants.data, matchingBatch.data?.data),
+    [matchingBatch.data?.data, variants.data]
+  );
+
   return (
     <VariantsTable
       masterId={masterId}
       versionId={null}
-      rows={variants.data}
+      rows={rows}
+      total={variants.total}
       optionGroups={detail.optionGroups}
       editable={false}
+      showMatchingColumns={showMatchingColumns}
+      matchingBatchLoading={matchingBatch.isLoading || matchingBatch.isFetching}
     />
   );
 }
@@ -395,14 +570,38 @@ function VariantsFromVersion({
   versionId: string;
 }) {
   const { data: detail } = useProductDetailSuspense(masterId, versionId);
-  const rows = detail.variantsInline ?? [];
+  const { page } = useQueryParams(['page'], 'variants');
+  const currentPage = getPage(page);
+  const { data: variants } = useVariantsByMasterVersionSuspense(
+    masterId,
+    versionId,
+    currentPage,
+    PAGE_SIZE
+  );
+  const showMatchingColumns = detail.status === 'active';
+  const variantIds = useMemo(
+    () => variants.data.map((variant) => variant.id),
+    [variants.data]
+  );
+  const matchingBatch = useVariantMatchingBatch(
+    variantIds,
+    showMatchingColumns
+  );
+  const rows = useMemo(
+    () => mergeMatchingInfo(variants.data, matchingBatch.data?.data),
+    [matchingBatch.data?.data, variants.data]
+  );
+
   return (
     <VariantsTable
       masterId={masterId}
       versionId={versionId}
       rows={rows}
+      total={variants.total}
       optionGroups={detail.optionGroups}
       editable={canEditProductVariants(detail)}
+      showMatchingColumns={showMatchingColumns}
+      matchingBatchLoading={matchingBatch.isLoading || matchingBatch.isFetching}
     />
   );
 }

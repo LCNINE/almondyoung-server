@@ -12,6 +12,7 @@ import type {
   StockPolicyDto,
   VariantMatchingDto,
   UpsertMatchingDto,
+  UpdateVariantStockPolicyDto,
 } from '@/lib/types/dto/matching';
 
 export const useResolveMatching = () => {
@@ -132,6 +133,33 @@ export const useUpdateMatchingStockPolicy = () => {
   });
 };
 
+export const useUpdateVariantStockPolicy = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      variantId,
+      data,
+    }: {
+      variantId: string;
+      data: UpdateVariantStockPolicyDto;
+    }) => matchingClient.updateVariantStockPolicy(variantId, data),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: matchingQueryKeys.variantMatchingBatches(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: matchingQueryKeys.variantMatching(variables.variantId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: matchingQueryKeys.stockPolicy(variables.variantId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: matchingQueryKeys.orderLineLists(),
+      });
+    },
+  });
+};
+
 export const useUpdateVariantMatching = () => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -171,6 +199,9 @@ export const useUpsertVariantMatching = () => {
       });
       queryClient.invalidateQueries({
         queryKey: matchingQueryKeys.stockPolicy(variables.variantId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: matchingQueryKeys.variantMatchingBatches(),
       });
       queryClient.invalidateQueries({ queryKey: matchingQueryKeys.lists() });
       queryClient.invalidateQueries({
