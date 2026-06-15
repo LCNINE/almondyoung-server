@@ -394,16 +394,10 @@ export class FulfillmentsService {
       throw new Error('Failed to create fulfillment order');
     }
 
-    await this.outbox.enqueue(
-      {
-        eventType: FULFILLMENT_EVENTS.CREATED,
-        aggregateType: 'fulfillment',
-        aggregateId: fo.id,
-        partitionKey: fo.id,
-        payload: { fulfillmentOrderId: fo.id },
-      },
-      trx,
-    );
+    // FulfillmentCreated 는 구독하는 서비스가 없어 발행하지 않는다.
+    // (스토어프론트/어드민 모두 Core API 로 live FO 상태를 직접 조회하고,
+    //  Medusa 동기화는 Shipped/Delivered 만 사용한다.)
+    // 설계 원칙: 아무도 구독하지 않는 이벤트는 발행하지 않는다.
 
     const insertedItems =
       itemsToInsert.length > 0
@@ -435,16 +429,7 @@ export class FulfillmentsService {
           updatedAt: new Date(),
         })
         .where(eq(wmsTables.fulfillmentOrders.id, fo.id));
-      await this.outbox.enqueue(
-        {
-          eventType: FULFILLMENT_EVENTS.READY,
-          aggregateType: 'fulfillment',
-          aggregateId: fo.id,
-          partitionKey: fo.id,
-          payload: { fulfillmentOrderId: fo.id },
-        },
-        trx,
-      );
+      // FulfillmentReady 는 구독하는 서비스가 없어 발행하지 않는다 (설계 원칙: 미구독 이벤트 미발행).
     } else if (reservationResult.status === 'unfulfillable') {
       await trx
         .update(wmsTables.fulfillmentOrders)
@@ -1150,16 +1135,7 @@ export class FulfillmentsService {
           .update(wmsTables.fulfillmentOrders)
           .set({ status: 'labeled' })
           .where(eq(wmsTables.fulfillmentOrders.id, id));
-        await this.outbox.enqueue(
-          {
-            eventType: FULFILLMENT_EVENTS.LABELLED,
-            aggregateType: 'fulfillment',
-            aggregateId: id,
-            partitionKey: id,
-            payload: { fulfillmentOrderId: id },
-          },
-          trx,
-        );
+        // FulfillmentLabeled 는 구독하는 서비스가 없어 발행하지 않는다 (설계 원칙: 미구독 이벤트 미발행).
       }
 
       return this.getOne(id, trx);

@@ -98,7 +98,7 @@ export class FulfillmentOrderReservationRetryWorker {
    * facade.reserve가 FOI 단위 전량(부족분) 예약이며, 재고 부족(Conflict)·
    * 상태 변경 경합(terminal 전환 등)은 다음 주기로 미루고 넘어간다.
    * 전 FOI가 채워지면 facade 내부 refreshReservationStatus가
-   * ready 전환 + 실패사유 초기화 + FulfillmentReady outbox까지 처리한다.
+   * ready 전환 + 실패사유 초기화를 처리한다. (FulfillmentReady 이벤트는 구독 서비스가 없어 발행하지 않는다.)
    */
   async retryOne(fulfillmentOrderId: string, tx?: DbTx) {
     const foi = wmsTables.fulfillmentOrderItems;
