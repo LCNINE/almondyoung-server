@@ -82,11 +82,14 @@ function classifyCmsRow(input: ClassifyInput): ClassifyResult {
 
 // ─── Agreement status aggregation ────────────────────────────────────────────
 
-function aggregateAgreementStatus(statuses: string[]): string | null {
-  if (statuses.length === 0) return null;
-  if (statuses.includes('등록')) return '등록';
-  if (statuses.includes('실패')) return '실패';
-  return '미등록';
+type AgreementStatusSnapshot = Pick<typeof cmsAgreements.$inferSelect, 'status' | 'createdAt'>;
+
+export function aggregateAgreementStatus(agreements: AgreementStatusSnapshot[]): string | null {
+  if (agreements.length === 0) return null;
+
+  return agreements.reduce((latest, agreement) =>
+    agreement.createdAt > latest.createdAt ? agreement : latest,
+  ).status;
 }
 
 // ─── Service ─────────────────────────────────────────────────────────────────
@@ -282,10 +285,10 @@ export class RecurringBillingAdminService {
         ? await this.db.select().from(cmsAgreements).where(inArray(cmsAgreements.cmsMemberId, allMemberIds))
         : [];
 
-    const agreementsByMemberId = new Map<string, string[]>();
+    const agreementsByMemberId = new Map<string, AgreementStatusSnapshot[]>();
     for (const ag of agreementsForAll) {
       const existing = agreementsByMemberId.get(ag.cmsMemberId) ?? [];
-      existing.push(ag.status);
+      existing.push({ status: ag.status, createdAt: ag.createdAt });
       agreementsByMemberId.set(ag.cmsMemberId, existing);
     }
 
@@ -307,8 +310,8 @@ export class RecurringBillingAdminService {
       const key = `member:${r.cmsMember.id}`;
       if (seen.has(key)) continue;
 
-      const statuses = agreementsByMemberId.get(r.cmsMember.cmsMemberId) ?? [];
-      const aggStatus = aggregateAgreementStatus(statuses);
+      const agreements = agreementsByMemberId.get(r.cmsMember.cmsMemberId) ?? [];
+      const aggStatus = aggregateAgreementStatus(agreements);
       if (aggStatus !== '등록') {
         seen.add(key);
         rows.push(this.buildMemberRow(r.cmsMember, r.billingMethod, r.billingAgreement, aggStatus, 'PROVIDER_MANDATE'));
@@ -320,8 +323,8 @@ export class RecurringBillingAdminService {
       const key = `member:${r.cmsMember.id}`;
       if (seen.has(key)) continue;
 
-      const statuses = agreementsByMemberId.get(r.cmsMember.cmsMemberId) ?? [];
-      const aggStatus = aggregateAgreementStatus(statuses);
+      const agreements = agreementsByMemberId.get(r.cmsMember.cmsMemberId) ?? [];
+      const aggStatus = aggregateAgreementStatus(agreements);
       if (aggStatus !== '등록') {
         seen.add(key);
         rows.push(this.buildMemberRow(r.cmsMember, r.billingMethod, r.billingAgreement, aggStatus, 'PROVIDER_MANDATE'));
@@ -408,16 +411,16 @@ export class RecurringBillingAdminService {
         ? await this.db.select().from(cmsAgreements).where(inArray(cmsAgreements.cmsMemberId, memberIds))
         : [];
 
-    const agreementsByMemberId = new Map<string, string[]>();
+    const agreementsByMemberId = new Map<string, AgreementStatusSnapshot[]>();
     for (const ag of agreements) {
       const existing = agreementsByMemberId.get(ag.cmsMemberId) ?? [];
-      existing.push(ag.status);
+      existing.push({ status: ag.status, createdAt: ag.createdAt });
       agreementsByMemberId.set(ag.cmsMemberId, existing);
     }
 
     const data = rows.map((r) => {
-      const statuses = agreementsByMemberId.get(r.cmsMember.cmsMemberId) ?? [];
-      const aggStatus = aggregateAgreementStatus(statuses);
+      const agreements = agreementsByMemberId.get(r.cmsMember.cmsMemberId) ?? [];
+      const aggStatus = aggregateAgreementStatus(agreements);
       return this.buildMemberRow(r.cmsMember, r.billingMethod, r.billingAgreement, aggStatus, 'PROVIDER_METHOD');
     });
 
@@ -694,10 +697,10 @@ export class RecurringBillingAdminService {
         ? await this.db.select().from(cmsAgreements).where(inArray(cmsAgreements.cmsMemberId, cmsMemberIds))
         : [];
 
-    const cmsAgreementsByMemberId = new Map<string, string[]>();
+    const cmsAgreementsByMemberId = new Map<string, AgreementStatusSnapshot[]>();
     for (const ag of cmsAgreementRows) {
       const existing = cmsAgreementsByMemberId.get(ag.cmsMemberId) ?? [];
-      existing.push(ag.status);
+      existing.push({ status: ag.status, createdAt: ag.createdAt });
       cmsAgreementsByMemberId.set(ag.cmsMemberId, existing);
     }
 
@@ -721,8 +724,8 @@ export class RecurringBillingAdminService {
     for (const r of agreementRows) {
       const ref = r.billingAgreement.subscriberRef;
       const cmsMemberIdStr = r.cmsMember?.cmsMemberId ?? null;
-      const statuses = cmsMemberIdStr ? (cmsAgreementsByMemberId.get(cmsMemberIdStr) ?? []) : [];
-      const aggStatus = aggregateAgreementStatus(statuses);
+      const agreements = cmsMemberIdStr ? (cmsAgreementsByMemberId.get(cmsMemberIdStr) ?? []) : [];
+      const aggStatus = aggregateAgreementStatus(agreements);
 
       result[ref] = {
         billingAgreementId: r.billingAgreement.id,
@@ -776,8 +779,7 @@ export class RecurringBillingAdminService {
       .from(cmsAgreements)
       .where(eq(cmsAgreements.cmsMemberId, updated.cmsMemberId));
 
-    const statuses = agreementRows.map((a) => a.status);
-    const aggStatus = aggregateAgreementStatus(statuses);
+    const aggStatus = aggregateAgreementStatus(agreementRows);
 
     return this.buildMemberRow(
       updated,
