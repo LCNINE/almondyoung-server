@@ -35,8 +35,10 @@ export class BillingAgreementController {
       return this.toResponse(agreement);
     } catch (e: any) {
       const msg = (e?.message ?? '').toLowerCase();
-      if (msg.includes('not found') || msg.includes('no active')) throw new NotFoundException(e.message);
-      if (msg.match(/inactive|invalid|already/)) throw new BadRequestException(e.message);
+      if (msg.includes('not found') || msg.includes('no active') || msg.includes('no selectable')) {
+        throw new NotFoundException(e.message);
+      }
+      if (msg.match(/inactive|invalid|already|not ready/)) throw new BadRequestException(e.message);
       throw new InternalServerErrorException(e.message);
     }
   }
@@ -64,7 +66,7 @@ export class BillingAgreementController {
     } catch (e: any) {
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('not found')) throw new NotFoundException(e.message);
-      if (msg.match(/inactive|invalid/)) throw new BadRequestException(e.message);
+      if (msg.match(/inactive|invalid|not ready/)) throw new BadRequestException(e.message);
       throw new InternalServerErrorException(e.message);
     }
   }

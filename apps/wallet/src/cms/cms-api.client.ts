@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { CmsOperationError, CMS_CUSTOMER_MESSAGES, isCmsProviderAuthError } from './cms-errors';
 
 // ─── Response types ──────────────────────────────────────────────────────────
 
@@ -81,6 +82,7 @@ export interface CreateCmsMemberDto {
 
 export interface UpdateCmsMemberDto {
   paymentKind: 'CMS';
+  phone?: string;
   paymentCompany?: string;
   paymentNumber?: string;
   payerName?: string;
@@ -135,7 +137,12 @@ export class CmsApiClient {
 
   private get requiredCustId(): string {
     if (!this.custId) {
-      throw new Error('HYOSUNG_CMS_CUST_ID is not configured');
+      throw new CmsOperationError(
+        'CMS_PROVIDER_CONFIG_MISSING',
+        CMS_CUSTOMER_MESSAGES.providerIssue,
+        502,
+        'HYOSUNG_CMS_CUST_ID is not configured',
+      );
     }
     return this.custId;
   }
@@ -223,7 +230,12 @@ export class CmsApiClient {
 
   private authHeaders(): Record<string, string> {
     if (!this.swKey || !this.custKey) {
-      throw new Error('HYOSUNG_CMS_SW_KEY/HYOSUNG_CMS_CUST_KEY is not configured');
+      throw new CmsOperationError(
+        'CMS_PROVIDER_CONFIG_MISSING',
+        CMS_CUSTOMER_MESSAGES.providerIssue,
+        502,
+        'HYOSUNG_CMS_SW_KEY/HYOSUNG_CMS_CUST_KEY is not configured',
+      );
     }
 
     return {
@@ -301,9 +313,14 @@ export class CmsApiClient {
       return { ok: true, data: body as T };
     }
 
+    const providerCode = body?.code ?? body?.error?.code ?? String(res.status);
+    const providerMessage = body?.message ?? body?.error?.message ?? body?.error?.developerMessage ?? 'Unknown error';
     const error: CmsApiError = {
-      code: String(res.status),
-      message: body?.error?.message ?? body?.error?.developerMessage ?? 'Unknown error',
+      code:
+        res.status === 401 || res.status === 403 || isCmsProviderAuthError(String(providerCode), providerMessage)
+          ? 'CMS_PROVIDER_AUTH_FAILED'
+          : String(providerCode),
+      message: providerMessage,
     };
     this.logger.error(`CMS API error: ${res.status} ${JSON.stringify(error)}`);
     return { ok: false, error, statusCode: res.status };

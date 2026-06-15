@@ -6,6 +6,15 @@ import { WalletSchema, billingMethods, cmsAgreements, cmsMembers } from '../sche
 import { BillingMethod, CmsMember } from '../types';
 import { CmsApiClient } from './cms-api.client';
 import { BillingMethodService } from '../billing/billing-method.service';
+import { CmsOperationError, CMS_CUSTOMER_MESSAGES } from './cms-errors';
+
+type CmsBankAccountInput = {
+  paymentCompany: string;
+  payerName: string;
+  payerNumber: string;
+  paymentNumber: string;
+  phone: string;
+};
 
 @Injectable()
 export class CmsMemberService {
@@ -23,12 +32,7 @@ export class CmsMemberService {
    */
   async registerMember(
     userId: string,
-    dto: {
-      paymentCompany: string;
-      payerName: string;
-      payerNumber: string;
-      paymentNumber: string;
-    },
+    dto: CmsBankAccountInput,
   ): Promise<{ cmsMember: CmsMember; billingMethod: BillingMethod }> {
     // 효성 회원 ID는 고객사가 직접 발급 (20자 이내, A-F0-9)
     const memberId = randomBytes(10).toString('hex').toUpperCase();
@@ -36,6 +40,7 @@ export class CmsMemberService {
     const result = await this.cmsApi.createMember({
       memberId,
       memberName: dto.payerName,
+      phone: dto.phone,
       paymentKind: 'CMS',
       paymentCompany: dto.paymentCompany,
       paymentNumber: dto.paymentNumber,
@@ -44,10 +49,28 @@ export class CmsMemberService {
     });
 
     if (!result.ok) {
-      if (result.statusCode >= 500) {
-        throw new Error(`CMS member registration API error: ${result.error.code} ${result.error.message}`);
+      if (result.error.code === 'CMS_PROVIDER_AUTH_FAILED') {
+        throw new CmsOperationError(
+          'CMS_PROVIDER_AUTH_FAILED',
+          CMS_CUSTOMER_MESSAGES.providerIssue,
+          502,
+          result.error.message,
+        );
       }
-      throw new Error(`CMS member registration failed: ${result.error.code} ${result.error.message}`);
+      if (result.statusCode >= 500) {
+        throw new CmsOperationError(
+          'CMS_PROVIDER_UNAVAILABLE',
+          CMS_CUSTOMER_MESSAGES.providerIssue,
+          502,
+          result.error.message,
+        );
+      }
+      throw new CmsOperationError(
+        'CMS_MEMBER_REGISTRATION_REJECTED',
+        `${CMS_CUSTOMER_MESSAGES.inputRejected} ${result.error.message}`,
+        400,
+        result.error.message,
+      );
     }
 
     const cmsMemberId = result.data.member.memberId;
@@ -126,7 +149,7 @@ export class CmsMemberService {
   async updateBankAccount(
     billingMethodId: string,
     userId: string,
-    dto: { paymentCompany: string; payerName: string; payerNumber: string; paymentNumber: string },
+    dto: CmsBankAccountInput,
   ): Promise<CmsMember> {
     const cmsMember = await this.findByBillingMethodId(billingMethodId);
     if (!cmsMember || cmsMember.userId !== userId) {
@@ -139,10 +162,32 @@ export class CmsMemberService {
       paymentNumber: dto.paymentNumber,
       payerName: dto.payerName,
       payerNumber: dto.payerNumber,
+      phone: dto.phone,
     });
 
     if (!result.ok) {
-      throw new Error(`CMS member update failed: ${result.error.code} ${result.error.message}`);
+      if (result.error.code === 'CMS_PROVIDER_AUTH_FAILED') {
+        throw new CmsOperationError(
+          'CMS_PROVIDER_AUTH_FAILED',
+          CMS_CUSTOMER_MESSAGES.providerIssue,
+          502,
+          result.error.message,
+        );
+      }
+      if (result.statusCode >= 500) {
+        throw new CmsOperationError(
+          'CMS_PROVIDER_UNAVAILABLE',
+          CMS_CUSTOMER_MESSAGES.providerIssue,
+          502,
+          result.error.message,
+        );
+      }
+      throw new CmsOperationError(
+        'CMS_MEMBER_UPDATE_REJECTED',
+        `${CMS_CUSTOMER_MESSAGES.inputRejected} ${result.error.message}`,
+        400,
+        result.error.message,
+      );
     }
 
     // 계좌 변경 시 기존 동의자료('등록' 상태)를 무효화한다.

@@ -69,6 +69,7 @@ describe('CmsApiClient', () => {
       await client.createMember({
         memberId: 'M1',
         memberName: '홍길동',
+        phone: '01012345678',
         paymentKind: 'CMS',
         paymentCompany: '088',
         paymentNumber: '1234567890',
@@ -86,6 +87,7 @@ describe('CmsApiClient', () => {
 
       await client.updateMember('M1', {
         paymentKind: 'CMS',
+        phone: '01012345678',
         paymentCompany: '004',
         paymentNumber: '9999',
         payerName: '홍길동',
@@ -142,7 +144,10 @@ describe('CmsApiClient', () => {
       delete process.env.HYOSUNG_CMS_CUST_ID;
       const spy = jest.spyOn(global, 'fetch');
 
-      await expect(client.getAgreement('KEY1')).rejects.toThrow('HYOSUNG_CMS_CUST_ID is not configured');
+      await expect(client.getAgreement('KEY1')).rejects.toMatchObject({
+        code: 'CMS_PROVIDER_CONFIG_MISSING',
+        providerMessage: 'HYOSUNG_CMS_CUST_ID is not configured',
+      });
       expect(spy).not.toHaveBeenCalled();
 
       process.env.HYOSUNG_CMS_CUST_ID = previous;
@@ -156,6 +161,7 @@ describe('CmsApiClient', () => {
       await client.createMember({
         memberId: 'M1',
         memberName: '홍길동',
+        phone: '01012345678',
         paymentKind: 'CMS',
         paymentCompany: '088',
         paymentNumber: '1234567890',
@@ -169,6 +175,7 @@ describe('CmsApiClient', () => {
       expect(body.custKey).toBeUndefined();
       expect(body.bankAccount).toBeUndefined();
       expect(body.paymentNumber).toBe('1234567890');
+      expect(body.phone).toBe('01012345678');
       expect(body.paymentKind).toBe('CMS');
       expect(body.memberId).toBe('M1');
     });
@@ -228,6 +235,27 @@ describe('CmsApiClient', () => {
       if (!result.ok) {
         expect(result.statusCode).toBe(400);
         expect(result.error.message).toBe('잘못된 요청');
+      }
+    });
+
+    it('효성 인증 실패 메시지는 운영 설정 오류 코드로 분류한다', async () => {
+      mockFetch(400, { code: '400', message: '인증 실패. 인증정보를 확인해주세요.' });
+
+      const result = await client.createMember({
+        memberId: 'M1',
+        memberName: '홍길동',
+        phone: '01012345678',
+        paymentKind: 'CMS',
+        paymentCompany: '088',
+        paymentNumber: '1234567890',
+        payerName: '홍길동',
+        payerNumber: '900101',
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.statusCode).toBe(400);
+        expect(result.error.code).toBe('CMS_PROVIDER_AUTH_FAILED');
       }
     });
 

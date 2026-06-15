@@ -35,6 +35,7 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
   const [payerName, setPayerName] = useState('');
   const [payerNumber, setPayerNumber] = useState('');
   const [paymentNumber, setPaymentNumber] = useState('');
+  const [phone, setPhone] = useState('');
 
   const returnUrlWithFlag = (() => {
     try {
@@ -63,6 +64,7 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
     formData.append('payerName', payerName);
     formData.append('payerNumber', payerNumber);
     formData.append('paymentNumber', paymentNumber);
+    formData.append('phone', phone);
     formData.append('file', blob, 'signature.png');
     try {
       const url = isRegister
@@ -70,7 +72,7 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
         : `/api/billing/cms-update-with-agreement/${billingMethodId}`;
       const method = isRegister ? 'POST' : 'PUT';
       const res = await fetch(url, { method, credentials: 'include', body: formData });
-      const data = await res.json().catch(() => ({})) as { error?: string; agreementUploadFailed?: boolean };
+      const data = (await res.json().catch(() => ({}))) as { error?: string; agreementUploadFailed?: boolean };
       if (!res.ok) {
         setError(data.error ?? (isRegister ? '계좌 등록에 실패했습니다.' : '계좌 변경에 실패했습니다.'));
         setStep('details');
@@ -92,9 +94,17 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
     return (
       <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4">
         <div className="w-full max-w-md space-y-4">
-          <Card className={agreementUploadFailed ? 'border-amber-200 bg-amber-50/50 shadow-sm' : 'border-emerald-200 bg-emerald-50/50 shadow-sm'}>
+          <Card
+            className={
+              agreementUploadFailed
+                ? 'border-amber-200 bg-amber-50/50 shadow-sm'
+                : 'border-emerald-200 bg-emerald-50/50 shadow-sm'
+            }
+          >
             <CardContent className="flex items-start gap-3 p-6">
-              <CheckCircle2 className={`mt-0.5 h-5 w-5 shrink-0 ${agreementUploadFailed ? 'text-amber-500' : 'text-emerald-500'}`} />
+              <CheckCircle2
+                className={`mt-0.5 h-5 w-5 shrink-0 ${agreementUploadFailed ? 'text-amber-500' : 'text-emerald-500'}`}
+              />
               <div>
                 <p className={`text-sm font-semibold ${agreementUploadFailed ? 'text-amber-800' : 'text-emerald-800'}`}>
                   {isRegister ? '계좌 등록이 접수되었습니다' : '계좌 변경이 접수되었습니다'}
@@ -138,8 +148,14 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
               {/* 출금 계좌 확인 */}
               <div className="rounded-md bg-muted/60 px-4 py-3 text-xs space-y-1">
                 <p className="font-semibold text-foreground mb-1.5">출금 계좌 확인</p>
-                <div className="flex justify-between"><span className="text-muted-foreground">금융기관</span><span>{bankName}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">예금주</span><span>{payerName}</span></div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">금융기관</span>
+                  <span>{bankName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">예금주</span>
+                  <span>{payerName}</span>
+                </div>
               </div>
 
               {/* 개인정보 수집·이용 동의 */}
@@ -149,18 +165,24 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
                   <p>아몬드영은 CMS 자동이체 서비스 제공을 위해 아래와 같이 개인정보를 수집·이용합니다.</p>
                   <table className="w-full mt-1 text-[10px]">
                     <tbody>
-                      <tr><td className="font-medium w-24 py-0.5 align-top">수집·이용 목적</td><td>CMS 자동이체 서비스 신청 및 처리</td></tr>
-                      <tr><td className="font-medium py-0.5 align-top">수집 항목</td><td>예금주명, 생년월일(사업자등록번호), 금융기관명, 계좌번호</td></tr>
-                      <tr><td className="font-medium py-0.5 align-top">보유·이용 기간</td><td>서비스 해지 후 5년</td></tr>
+                      <tr>
+                        <td className="font-medium w-24 py-0.5 align-top">수집·이용 목적</td>
+                        <td>CMS 자동이체 서비스 신청 및 처리</td>
+                      </tr>
+                      <tr>
+                        <td className="font-medium py-0.5 align-top">수집 항목</td>
+                        <td>예금주명, 연락처, 생년월일(사업자등록번호), 금융기관명, 계좌번호</td>
+                      </tr>
+                      <tr>
+                        <td className="font-medium py-0.5 align-top">보유·이용 기간</td>
+                        <td>서비스 해지 후 5년</td>
+                      </tr>
                     </tbody>
                   </table>
                   <p className="mt-1">동의를 거부할 권리가 있으나, 거부 시 자동이체 서비스 이용이 제한됩니다.</p>
                 </div>
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <Checkbox
-                    checked={consentPersonalInfo}
-                    onCheckedChange={(v) => setConsentPersonalInfo(!!v)}
-                  />
+                  <Checkbox checked={consentPersonalInfo} onCheckedChange={(v) => setConsentPersonalInfo(!!v)} />
                   <span className="text-xs">개인정보 수집·이용에 동의합니다.</span>
                 </label>
               </div>
@@ -172,19 +194,28 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
                   <p>아몬드영은 CMS 자동이체 서비스 제공을 위해 아래와 같이 개인정보를 제3자에게 제공합니다.</p>
                   <table className="w-full mt-1 text-[10px]">
                     <tbody>
-                      <tr><td className="font-medium w-24 py-0.5 align-top">제공받는 자</td><td>효성에프엠에스㈜, 금융결제원</td></tr>
-                      <tr><td className="font-medium py-0.5 align-top">제공 목적</td><td>CMS 출금이체 서비스 처리 및 정산</td></tr>
-                      <tr><td className="font-medium py-0.5 align-top">제공 항목</td><td>예금주명, 생년월일(사업자등록번호), 금융기관명, 계좌번호</td></tr>
-                      <tr><td className="font-medium py-0.5 align-top">보유 기간</td><td>서비스 해지 후 5년</td></tr>
+                      <tr>
+                        <td className="font-medium w-24 py-0.5 align-top">제공받는 자</td>
+                        <td>효성에프엠에스㈜, 금융결제원</td>
+                      </tr>
+                      <tr>
+                        <td className="font-medium py-0.5 align-top">제공 목적</td>
+                        <td>CMS 출금이체 서비스 처리 및 정산</td>
+                      </tr>
+                      <tr>
+                        <td className="font-medium py-0.5 align-top">제공 항목</td>
+                        <td>예금주명, 연락처, 생년월일(사업자등록번호), 금융기관명, 계좌번호</td>
+                      </tr>
+                      <tr>
+                        <td className="font-medium py-0.5 align-top">보유 기간</td>
+                        <td>서비스 해지 후 5년</td>
+                      </tr>
                     </tbody>
                   </table>
                   <p className="mt-1">동의를 거부할 권리가 있으나, 거부 시 자동이체 서비스 이용이 제한됩니다.</p>
                 </div>
                 <label className="flex items-center gap-2 cursor-pointer">
-                  <Checkbox
-                    checked={consentThirdParty}
-                    onCheckedChange={(v) => setConsentThirdParty(!!v)}
-                  />
+                  <Checkbox checked={consentThirdParty} onCheckedChange={(v) => setConsentThirdParty(!!v)} />
                   <span className="text-xs">개인정보 제3자 제공에 동의합니다.</span>
                 </label>
               </div>
@@ -215,7 +246,10 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => { setStep('consent'); setError(null); }}
+                  onClick={() => {
+                    setStep('consent');
+                    setError(null);
+                  }}
                   className="rounded-sm p-1 text-muted-foreground hover:text-foreground"
                   aria-label="이전 단계로"
                 >
@@ -224,8 +258,8 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
                 <h2 className="text-sm font-semibold">전자서명</h2>
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                자동이체 동의서에 서명해주세요. 서명 이미지는 효성 CMS에 동의자료로 제출되며,
-                미제출 시 심사에서 실패할 수 있습니다.
+                자동이체 동의서에 서명해주세요. 서명 이미지는 효성 CMS에 동의자료로 제출되며, 미제출 시 심사에서 실패할
+                수 있습니다.
               </p>
               {error && (
                 <Alert variant="destructive">
@@ -251,9 +285,7 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
           <CardContent className="p-6">
             <div className="mb-5 flex items-center gap-2">
               <CreditCard className="h-4 w-4 text-muted-foreground" />
-              <h2 className="text-sm font-semibold">
-                {isRegister ? '자동이체 계좌 등록' : '정기결제 계좌 변경'}
-              </h2>
+              <h2 className="text-sm font-semibold">{isRegister ? '자동이체 계좌 등록' : '정기결제 계좌 변경'}</h2>
             </div>
             <p className="mb-5 text-xs text-muted-foreground">
               {isRegister
@@ -263,7 +295,9 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
 
             <form onSubmit={handleDetailsSubmit} className="space-y-4">
               <div className="space-y-1.5">
-                <Label htmlFor="paymentCompany" className="text-xs text-muted-foreground">은행</Label>
+                <Label htmlFor="paymentCompany" className="text-xs text-muted-foreground">
+                  은행
+                </Label>
                 <select
                   id="paymentCompany"
                   value={paymentCompany}
@@ -273,13 +307,17 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
                 >
                   <option value="">은행 선택</option>
                   {CMS_BANKS.map((b) => (
-                    <option key={b.code} value={b.code}>{b.name}</option>
+                    <option key={b.code} value={b.code}>
+                      {b.name}
+                    </option>
                   ))}
                 </select>
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="payerName" className="text-xs text-muted-foreground">예금주명</Label>
+                <Label htmlFor="payerName" className="text-xs text-muted-foreground">
+                  예금주명
+                </Label>
                 <Input
                   id="payerName"
                   placeholder="홍길동"
@@ -291,13 +329,29 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="paymentNumber" className="text-xs text-muted-foreground">계좌번호</Label>
+                <Label htmlFor="paymentNumber" className="text-xs text-muted-foreground">
+                  계좌번호
+                </Label>
                 <Input
                   id="paymentNumber"
                   placeholder="숫자만 입력"
                   value={paymentNumber}
                   onChange={(e) => setPaymentNumber(e.target.value.replace(/\D/g, '').slice(0, 16))}
                   inputMode="numeric"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="phone" className="text-xs text-muted-foreground">
+                  연락처
+                </Label>
+                <Input
+                  id="phone"
+                  placeholder="01012345678"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 20))}
+                  inputMode="tel"
                   required
                 />
               </div>
@@ -337,11 +391,11 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
           </CardContent>
         </Card>
 
-        {(
+        {
           <p className="text-center text-xs text-muted-foreground">
             계좌 정보는 암호화되어 효성 CMS에 안전하게 전송됩니다
           </p>
-        )}
+        }
       </div>
     </div>
   );

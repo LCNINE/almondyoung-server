@@ -3,12 +3,16 @@ import { CmsMemberService } from './cms-member.service';
 import { CmsAgreementService, CmsAgreementRetryableError } from './cms-agreement.service';
 import { BillingMethodService } from '../billing/billing-method.service';
 import { BillingMethod, CmsMember, CmsAgreementRecord } from '../types';
+import { isCmsOperationError } from './cms-errors';
+
+const CMS_AGREEMENT_FILE_TYPE = '서면';
 
 export interface RegisterCmsWithAgreementDto {
   paymentCompany: string;
   payerName: string;
   payerNumber: string;
   paymentNumber: string;
+  phone: string;
 }
 
 export interface RegisterCmsWithAgreementResult {
@@ -50,7 +54,7 @@ export class CmsRegistrationService {
       const agreement = await this.cmsAgreementService.uploadAgreement(
         cmsMember.cmsMemberId,
         file,
-        '전자서명',
+        CMS_AGREEMENT_FILE_TYPE,
         fileExtension,
       );
       return { billingMethod, cmsMember, agreement, agreementUploadFailed: false };
@@ -62,6 +66,12 @@ export class CmsRegistrationService {
         );
         throw err;
       }
+      if (isCmsOperationError(err)) {
+        this.logger.error(
+          `Agreement upload provider error. cmsMemberId=${cmsMember.cmsMemberId} code=${err.code} reason=${err.providerMessage ?? err.message}`,
+        );
+        throw err;
+      }
       const reason = err instanceof Error ? err.message : String(err);
       this.logger.error(
         `Agreement upload failed after member registration. cmsMemberId=${cmsMember.cmsMemberId} reason=${reason}`,
@@ -69,7 +79,7 @@ export class CmsRegistrationService {
 
       const failedRecord = await this.cmsAgreementService.recordAgreementFailure(
         cmsMember.cmsMemberId,
-        '전자서명',
+        CMS_AGREEMENT_FILE_TYPE,
         fileExtension,
         reason,
       );
@@ -108,7 +118,7 @@ export class CmsRegistrationService {
       const agreement = await this.cmsAgreementService.uploadAgreement(
         updatedMember.cmsMemberId,
         file,
-        '전자서명',
+        CMS_AGREEMENT_FILE_TYPE,
         fileExtension,
       );
       return { billingMethod, cmsMember: updatedMember, agreement, agreementUploadFailed: false };
@@ -119,6 +129,12 @@ export class CmsRegistrationService {
         );
         throw err;
       }
+      if (isCmsOperationError(err)) {
+        this.logger.error(
+          `Agreement upload provider error after bank account update. cmsMemberId=${updatedMember.cmsMemberId} code=${err.code} reason=${err.providerMessage ?? err.message}`,
+        );
+        throw err;
+      }
       const reason = err instanceof Error ? err.message : String(err);
       this.logger.error(
         `Agreement upload failed after bank account update. cmsMemberId=${updatedMember.cmsMemberId} reason=${reason}`,
@@ -126,7 +142,7 @@ export class CmsRegistrationService {
 
       const failedRecord = await this.cmsAgreementService.recordAgreementFailure(
         updatedMember.cmsMemberId,
-        '전자서명',
+        CMS_AGREEMENT_FILE_TYPE,
         fileExtension,
         reason,
       );

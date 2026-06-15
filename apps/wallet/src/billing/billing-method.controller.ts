@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpException,
   HttpCode,
   InternalServerErrorException,
   NotFoundException,
@@ -19,6 +20,7 @@ import { AuthenticatedRequest } from '../wallet.module';
 import { BillingMethodService } from './billing-method.service';
 import { CmsMemberService } from '../cms/cms-member.service';
 import { CmsRegistrationService } from '../cms/cms-registration.service';
+import { isCmsOperationError } from '../cms/cms-errors';
 import {
   BillingMethodResponseDto,
   CmsBankAccountDto,
@@ -42,6 +44,15 @@ export class BillingMethodController {
     private readonly cmsRegistrationService: CmsRegistrationService,
   ) {}
 
+  private mapCmsError(error: unknown): never {
+    if (isCmsOperationError(error)) {
+      throw new HttpException({ code: error.code, message: error.customerMessage }, error.statusCode);
+    }
+
+    const message = error instanceof Error ? error.message : 'CMS 처리 중 오류가 발생했습니다.';
+    throw new InternalServerErrorException(message);
+  }
+
   @Post('cms')
   @HttpCode(201)
   @WalletJwtAuth()
@@ -57,7 +68,7 @@ export class BillingMethodController {
     } catch (e: any) {
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('already')) throw new BadRequestException(e.message);
-      throw new InternalServerErrorException(e.message);
+      this.mapCmsError(e);
     }
   }
 
@@ -83,7 +94,7 @@ export class BillingMethodController {
     } catch (e: any) {
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('already')) throw new BadRequestException(e.message);
-      throw new InternalServerErrorException(e.message);
+      this.mapCmsError(e);
     }
   }
 
@@ -120,7 +131,7 @@ export class BillingMethodController {
     } catch (e: any) {
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('already')) throw new BadRequestException(e.message);
-      throw new InternalServerErrorException(e.message);
+      this.mapCmsError(e);
     }
   }
 
@@ -157,7 +168,7 @@ export class BillingMethodController {
     } catch (e: any) {
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('not found') || msg.includes('access denied')) throw new NotFoundException(e.message);
-      throw new InternalServerErrorException(e.message);
+      this.mapCmsError(e);
     }
   }
 
@@ -182,7 +193,7 @@ export class BillingMethodController {
     } catch (e: any) {
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('not found') || msg.includes('access denied')) throw new NotFoundException(e.message);
-      throw new InternalServerErrorException(e.message);
+      this.mapCmsError(e);
     }
   }
 
