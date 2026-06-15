@@ -8,13 +8,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
-  Drawer,
-  DrawerClose,
-  DrawerContent,
-  DrawerFooter,
-  DrawerHeader,
-  DrawerTitle,
-} from "@/components/ui/drawer"
+  FullScreenDialog,
+  FullScreenDialogBody,
+  FullScreenDialogContent,
+  FullScreenDialogFooter,
+  FullScreenDialogHeader,
+  FullScreenDialogTitle,
+} from "@/components/ui/full-screen-dialog"
 import { Form } from "@/components/ui/form"
 import { useMediaQuery } from "@/hooks/use-media-query"
 import {
@@ -67,6 +67,7 @@ export function ShippingAddressModal({
     : DEFAULT_LOCALE
   const config = getAddressConfig(locale)
   const t = useTranslations("checkout.shipping.form")
+  const tHeader = useTranslations("checkout.header")
 
   const isEditMode = mode === "edit"
   const modalTitle = t(isEditMode ? "title.edit" : "title.create")
@@ -327,25 +328,28 @@ export function ShippingAddressModal({
     )
   }
 
-  // Mobile: Drawer
+  // Mobile: full-screen dialog
   return (
-    <Drawer open={open} onOpenChange={onOpenChange}>
-      <DrawerContent>
-        <DrawerHeader className="text-left">
-          <DrawerTitle>{modalTitle}</DrawerTitle>
-        </DrawerHeader>
-        <div className="px-4">{formContent}</div>
-        <DrawerFooter className="pt-4">
+    <FullScreenDialog open={open} onOpenChange={onOpenChange}>
+      <FullScreenDialogContent>
+        <FullScreenDialogHeader closeLabel={tHeader("closeAria")}>
+          <FullScreenDialogTitle>{modalTitle}</FullScreenDialogTitle>
+        </FullScreenDialogHeader>
+        <FullScreenDialogBody>{formContent}</FullScreenDialogBody>
+        <FullScreenDialogFooter>
           <Button type="submit" form="address-form" disabled={isSubmitting}>
             {submitButtonText}
           </Button>
-          <DrawerClose asChild>
-            <Button variant="outline" disabled={isSubmitting}>
-              {t("cancel")}
-            </Button>
-          </DrawerClose>
-        </DrawerFooter>
-      </DrawerContent>
-    </Drawer>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={isSubmitting}
+          >
+            {t("cancel")}
+          </Button>
+        </FullScreenDialogFooter>
+      </FullScreenDialogContent>
+    </FullScreenDialog>
   )
 }
