@@ -37,6 +37,19 @@ export const productQueryKeys = {
   variants: ['variants'] as const,
   variantsByMaster: (masterId: string, query: Record<string, any>) =>
     [...productQueryKeys.variants, 'master', masterId, query] as const,
+  variantsByMasterVersion: (
+    masterId: string,
+    versionId: string,
+    query: Record<string, any>
+  ) =>
+    [
+      ...productQueryKeys.variants,
+      'master',
+      masterId,
+      'version',
+      versionId,
+      query,
+    ] as const,
   variant: (id: string) => [...productQueryKeys.variants, id] as const,
   variantPrice: (id: string) =>
     [...productQueryKeys.variant(id), 'price'] as const,
@@ -106,7 +119,11 @@ export const productQueryKeys = {
   pricingVersionRules: (versionId: string) =>
     [...productQueryKeys.pricingVersion(versionId), 'rules'] as const,
   pricingVersionPriceSet: (versionId: string, variantId: string) =>
-    [...productQueryKeys.pricingVersion(versionId), 'price-set', variantId] as const,
+    [
+      ...productQueryKeys.pricingVersion(versionId),
+      'price-set',
+      variantId,
+    ] as const,
   pricingMasterRules: (masterId: string) =>
     ['pricing', 'masters', masterId, 'rules'] as const,
   pricingMasterPriceSet: (masterId: string, variantId: string) =>

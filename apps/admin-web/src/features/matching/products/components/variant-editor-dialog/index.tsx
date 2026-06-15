@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import type { MasterDto, VariantDto } from '@/lib/types/dto/products';
+import type { MasterDto } from '@/lib/types/dto/products';
 import type {
   MatchingStrategy,
   MatchingPriority,
@@ -44,10 +44,11 @@ interface VariantEditorDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-interface VariantPanelProps {
-  variant: VariantDto;
+interface VariantMatchingPanelProps {
+  variantId: string;
+  variantName: string | null;
   masterId: string;
-  onSaved: () => void;
+  onSaved?: () => void;
 }
 
 const getCurrentSkuLinks = (
@@ -57,12 +58,16 @@ const getCurrentSkuLinks = (
   } | null
 ) => (source?.matchedSkus?.length ? source.matchedSkus : (source?.links ?? []));
 
-function VariantPanel({ variant, masterId, onSaved }: VariantPanelProps) {
-  const { data: current, isFetched: isMatchingFetched } = useVariantMatching(
-    variant.id
-  );
+export function VariantMatchingPanel({
+  variantId,
+  variantName,
+  masterId,
+  onSaved,
+}: VariantMatchingPanelProps) {
+  const { data: current, isFetched: isMatchingFetched } =
+    useVariantMatching(variantId);
   const { data: variantStockPolicy } = useVariantStockPolicy(
-    variant.id,
+    variantId,
     isMatchingFetched && !current
   );
   const upsert = useUpsertVariantMatching();
@@ -123,7 +128,7 @@ function VariantPanel({ variant, masterId, onSaved }: VariantPanelProps) {
     if (changedLinks || changedPolicy) {
       promises.push(
         upsert.mutateAsync({
-          variantId: variant.id,
+          variantId,
           data: buildUpsertMatchingPayload({
             masterId,
             links,
@@ -155,7 +160,7 @@ function VariantPanel({ variant, masterId, onSaved }: VariantPanelProps) {
       queryClient.invalidateQueries({
         queryKey: matchingQueryKeys.mastersBatchStats([masterId]),
       });
-      onSaved();
+      onSaved?.();
     }
   };
 
@@ -165,7 +170,7 @@ function VariantPanel({ variant, masterId, onSaved }: VariantPanelProps) {
   return (
     <div className="space-y-4 py-2">
       <div className="flex items-center gap-2">
-        <span className="text-sm font-medium">{variant.name}</span>
+        <span className="text-sm font-medium">{variantName ?? variantId}</span>
         {current?.status && (
           <Badge
             className={`text-xs ${getMatchingStrategyDecisionColor({
@@ -190,7 +195,7 @@ function VariantPanel({ variant, masterId, onSaved }: VariantPanelProps) {
 
       <Separator />
 
-      <VariantAssetSection variantId={variant.id} />
+      <VariantAssetSection variantId={variantId} />
 
       <Separator />
 
@@ -266,9 +271,10 @@ export function VariantEditorDialog({
           <div className="flex-1">
             {selectedVariant && master ? (
               <ScrollArea className="h-[360px] pr-2">
-                <VariantPanel
+                <VariantMatchingPanel
                   key={selectedVariant.id}
-                  variant={selectedVariant}
+                  variantId={selectedVariant.id}
+                  variantName={selectedVariant.name}
                   masterId={master.id}
                   onSaved={() => {}}
                 />

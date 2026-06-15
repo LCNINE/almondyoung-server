@@ -25,6 +25,9 @@ import type {
   OrderLinesResponseDto,
   UpsertMatchingDto,
   MasterMatchingStatsDto,
+  VariantMatchingBatchResponseDto,
+  VariantMatchingBatchItemDto,
+  UpdateVariantStockPolicyDto,
 } from '@/lib/types/dto/matching';
 
 export const matchingClient = {
@@ -191,6 +194,36 @@ export const matchingClient = {
   getVariantStockPolicy: async (variantId: string): Promise<StockPolicyDto> => {
     const response = await client.get(
       `${ALMONDYOUNG_API_BASE_URL}/matchings/variants/${variantId}/stock-policy`
+    );
+    return response.data;
+  },
+
+  /**
+   * Variant 운영 매칭 정보 일괄 조회
+   * POST /matchings/variants/batch
+   */
+  getVariantMatchingBatch: async (
+    variantIds: string[]
+  ): Promise<VariantMatchingBatchResponseDto> => {
+    if (variantIds.length === 0) return { data: [] };
+    const response = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/matchings/variants/batch`,
+      { variantIds }
+    );
+    return response.data;
+  },
+
+  /**
+   * Variant 운영 재고 정책 저장
+   * PUT /matchings/variants/{variantId}/stock-policy
+   */
+  updateVariantStockPolicy: async (
+    variantId: string,
+    data: UpdateVariantStockPolicyDto
+  ): Promise<VariantMatchingBatchItemDto> => {
+    const response = await client.put(
+      `${ALMONDYOUNG_API_BASE_URL}/matchings/variants/${variantId}/stock-policy`,
+      data
     );
     return response.data;
   },

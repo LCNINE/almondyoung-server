@@ -209,15 +209,40 @@ export const useVariantsByMaster = (query: VariantsQuery) => {
  */
 export const useVariantsByMasterSuspense = (
   masterId: string,
-  limit = 100,
+  page = 1,
+  limit = 100
 ) => {
-  const query = { masterId, page: 1, limit };
+  const query = { masterId, page, limit };
   return useSuspenseQuery({
     queryKey: productQueryKeys.variantsByMaster(masterId, query),
     queryFn: async () =>
       (await products.variants.getByMaster(
         masterId,
-        query,
+        query
+      )) as unknown as ProductVariantsResponse,
+    staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+};
+
+export const useVariantsByMasterVersionSuspense = (
+  masterId: string,
+  versionId: string,
+  page = 1,
+  limit = 100
+) => {
+  const query = { masterId, versionId, page, limit };
+  return useSuspenseQuery({
+    queryKey: productQueryKeys.variantsByMasterVersion(
+      masterId,
+      versionId,
+      query
+    ),
+    queryFn: async () =>
+      (await products.variants.getByMasterVersion(
+        masterId,
+        versionId,
+        query
       )) as unknown as ProductVariantsResponse,
     staleTime: 30 * 1000,
     gcTime: 5 * 60 * 1000,
@@ -420,7 +445,10 @@ export const useVersionTreeSuspense = (masterId: string) => {
  * 특정 버전 상세 조회 (Suspense). products-detail 페이지가 ?versionId 로 진입했을 때 사용.
  * MasterDto/VersionDetailDto 정합 정비 전까지는 로컬 타입으로 받는다.
  */
-export const useVersionDetailSuspense = (masterId: string, versionId: string) => {
+export const useVersionDetailSuspense = (
+  masterId: string,
+  versionId: string
+) => {
   return useSuspenseQuery({
     queryKey: productQueryKeys.versionDetailRaw(masterId, versionId),
     queryFn: () => products.versions.getById(masterId, versionId),
@@ -429,7 +457,10 @@ export const useVersionDetailSuspense = (masterId: string, versionId: string) =>
   });
 };
 
-export const useVersionDetail = (masterId: string, versionId: string | null) => {
+export const useVersionDetail = (
+  masterId: string,
+  versionId: string | null
+) => {
   return useQuery<MasterVersionDetailDto>({
     queryKey: versionId
       ? productQueryKeys.versionDetailRaw(masterId, versionId)

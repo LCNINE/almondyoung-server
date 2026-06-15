@@ -4,7 +4,16 @@ import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.sch
 import { eq, inArray, sql, and, desc, isNull } from 'drizzle-orm';
 import { UpsertMatchingDto } from '../dto/upsert-matching.dto';
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
+import { ProductSellableQuantityResult } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.calculator';
 import { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
+import { productVariants } from '../../catalog/schema/catalog.schema';
+import {
+  UpdateVariantStockPolicyDto,
+  VariantMatchingBatchItemDto,
+  VariantMatchingBatchResponseDto,
+} from '../dto/variant-matching-batch.dto';
+
+type StockPolicyPatch = UpsertMatchingDto['policy'] | UpdateVariantStockPolicyDto | undefined;
 
 @Injectable()
 export class ProductSkuMappingService {
@@ -21,25 +30,33 @@ export class ProductSkuMappingService {
     return tx ? fn(tx) : this.dbService.db.transaction(fn);
   }
 
-  private hasAvailabilityOverride(policy: UpsertMatchingDto['policy']): boolean {
+  private hasAvailabilityOverride(policy: StockPolicyPatch): boolean {
     return !!policy && Object.prototype.hasOwnProperty.call(policy, 'availabilityOverride');
   }
 
   private async upsertSalesVariantPolicy(
     trx: DbTx,
     variantId: string,
-    policy: UpsertMatchingDto['policy'],
+    policy: StockPolicyPatch,
     fallback: { preStockSellable: boolean; alwaysSellableZeroStock: boolean },
     now = new Date(),
+    options: { preserveExistingUnspecified?: boolean } = {},
   ) {
+    const preserveExistingUnspecified = options.preserveExistingUnspecified ?? true;
+    const existingPolicy = preserveExistingUnspecified
+      ? await trx.query.salesVariantPolicies.findFirst({
+          where: (p, { eq }) => eq(p.variantId, variantId),
+        })
+      : null;
     const availabilityOverridePatch = this.hasAvailabilityOverride(policy)
       ? { availabilityOverride: policy?.availabilityOverride ?? null }
       : {};
     const variantPolicyValues = {
       variantId,
       inventoryManagement: true,
-      preStockSellable: policy?.preStockSellable ?? fallback.preStockSellable,
-      alwaysSellableZeroStock: policy?.alwaysSellableZeroStock ?? fallback.alwaysSellableZeroStock,
+      preStockSellable: policy?.preStockSellable ?? existingPolicy?.preStockSellable ?? fallback.preStockSellable,
+      alwaysSellableZeroStock:
+        policy?.alwaysSellableZeroStock ?? existingPolicy?.alwaysSellableZeroStock ?? fallback.alwaysSellableZeroStock,
       ...availabilityOverridePatch,
       updatedAt: now,
     };
@@ -57,6 +74,157 @@ export class ProductSkuMappingService {
           updatedAt: now,
         },
       });
+  }
+
+  private toProjectionView(projection: ProductSellableQuantityResult | undefined | null) {
+    if (!projection) return null;
+
+    return {
+      ...projection,
+      calculatedAt: projection.calculatedAt.toISOString(),
+    };
+  }
+
+  async getVariantMatchingBatch(variantIds: string[], tx?: DbTx): Promise<VariantMatchingBatchResponseDto> {
+    if (!Array.isArray(variantIds)) {
+      throw new BadRequestException('variantIds must be an array');
+    }
+
+    if (variantIds.length > 500) {
+      throw new BadRequestException('variantIds must not exceed 500 items');
+    }
+
+    if (variantIds.length === 0) {
+      return { data: [] };
+    }
+
+    return this.inTx(async (trx) => {
+      const uniqueVariantIds = [...new Set(variantIds.filter(Boolean))];
+
+      if (uniqueVariantIds.length === 0) {
+        return {
+          data: variantIds.map((variantId) => ({
+            variantId,
+            exists: false,
+            matching: null,
+            stockPolicy: {
+              preStockSellable: true,
+              alwaysSellableZeroStock: false,
+              availabilityOverride: null,
+            },
+            projection: null,
+          })),
+        };
+      }
+
+      const variants = await (trx as any)
+        .select({
+          id: productVariants.id,
+        })
+        .from(productVariants)
+        .where(inArray(productVariants.id, uniqueVariantIds));
+
+      const matchings = await trx
+        .select({
+          id: wmsTables.productMatchings.id,
+          variantId: wmsTables.productMatchings.variantId,
+          masterId: wmsTables.productMatchings.masterId,
+          skuGroupId: wmsTables.productMatchings.skuGroupId,
+          status: wmsTables.productMatchings.status,
+          priority: wmsTables.productMatchings.priority,
+          strategy: wmsTables.productMatchings.strategy,
+          isResolved: wmsTables.productMatchings.isResolved,
+          preStockSellable: wmsTables.productMatchings.preStockSellable,
+          alwaysSellableZeroStock: wmsTables.productMatchings.alwaysSellableZeroStock,
+          createdAt: wmsTables.productMatchings.createdAt,
+          updatedAt: wmsTables.productMatchings.updatedAt,
+        })
+        .from(wmsTables.productMatchings)
+        .where(inArray(wmsTables.productMatchings.variantId, uniqueVariantIds));
+
+      const policies = await trx
+        .select({
+          variantId: wmsTables.salesVariantPolicies.variantId,
+          preStockSellable: wmsTables.salesVariantPolicies.preStockSellable,
+          alwaysSellableZeroStock: wmsTables.salesVariantPolicies.alwaysSellableZeroStock,
+          availabilityOverride: wmsTables.salesVariantPolicies.availabilityOverride,
+        })
+        .from(wmsTables.salesVariantPolicies)
+        .where(inArray(wmsTables.salesVariantPolicies.variantId, uniqueVariantIds));
+
+      const matchingIds = matchings.map((matching) => matching.id);
+      const links =
+        matchingIds.length > 0
+          ? await trx
+              .select({
+                productMatchingId: wmsTables.productVariantSkuLinks.productMatchingId,
+                skuId: wmsTables.productVariantSkuLinks.skuId,
+                quantity: wmsTables.productVariantSkuLinks.quantity,
+                skuName: wmsTables.skus.name,
+                skuCode: wmsTables.skus.code,
+              })
+              .from(wmsTables.productVariantSkuLinks)
+              .leftJoin(wmsTables.skus, eq(wmsTables.productVariantSkuLinks.skuId, wmsTables.skus.id))
+              .where(inArray(wmsTables.productVariantSkuLinks.productMatchingId, matchingIds))
+          : [];
+
+      const projections = await this.productSellableQuantity.getByVariantIds(uniqueVariantIds, trx as any);
+
+      const existingVariantIds = new Set(variants.map((variant) => variant.id));
+      const matchingByVariantId = new Map(matchings.map((matching) => [matching.variantId, matching]));
+      const policyByVariantId = new Map(policies.map((policy) => [policy.variantId, policy]));
+      const projectionByVariantId = new Map(projections.map((projection) => [projection.variantId, projection]));
+      const linksByMatchingId = new Map<string, typeof links>();
+
+      for (const link of links) {
+        const matchingLinks = linksByMatchingId.get(link.productMatchingId) ?? [];
+        matchingLinks.push(link);
+        linksByMatchingId.set(link.productMatchingId, matchingLinks);
+      }
+
+      const data: VariantMatchingBatchItemDto[] = variantIds.map((variantId) => {
+        const matching = matchingByVariantId.get(variantId);
+        const policy = policyByVariantId.get(variantId);
+        const stockPolicy = {
+          preStockSellable: matching?.preStockSellable ?? policy?.preStockSellable ?? true,
+          alwaysSellableZeroStock: matching?.alwaysSellableZeroStock ?? policy?.alwaysSellableZeroStock ?? false,
+          availabilityOverride: policy?.availabilityOverride ?? null,
+        };
+
+        if (!existingVariantIds.has(variantId)) {
+          return {
+            variantId,
+            exists: false,
+            matching: null,
+            stockPolicy,
+            projection: null,
+          };
+        }
+
+        return {
+          variantId,
+          exists: true,
+          matching: matching
+            ? {
+                ...matching,
+                createdAt: matching.createdAt.toISOString(),
+                updatedAt: matching.updatedAt.toISOString(),
+                stockPolicy,
+                links: (linksByMatchingId.get(matching.id) ?? []).map((link) => ({
+                  skuId: link.skuId,
+                  skuName: link.skuName ?? undefined,
+                  skuCode: link.skuCode ?? undefined,
+                  quantity: link.quantity,
+                })),
+              }
+            : null,
+          stockPolicy,
+          projection: this.toProjectionView(projectionByVariantId.get(variantId)),
+        };
+      });
+
+      return { data };
+    }, tx);
   }
 
   async getByVariant(variantId: string, tx?: DbTx) {
@@ -174,10 +342,17 @@ export class ProductSkuMappingService {
         );
       }
 
-      await this.upsertSalesVariantPolicy(trx, variantId, dto.policy, {
-        preStockSellable: base.preStockSellable,
-        alwaysSellableZeroStock: base.alwaysSellableZeroStock,
-      });
+      await this.upsertSalesVariantPolicy(
+        trx,
+        variantId,
+        dto.policy,
+        {
+          preStockSellable: base.preStockSellable,
+          alwaysSellableZeroStock: base.alwaysSellableZeroStock,
+        },
+        undefined,
+        { preserveExistingUnspecified: false },
+      );
 
       await trx
         .update(wmsTables.salesOrderLines)
@@ -188,6 +363,57 @@ export class ProductSkuMappingService {
       await this.fulfillmentBacklog.wakeBacklogsWaitingForVariant(variantId, trx);
 
       return this.getByVariant(variantId, trx);
+    }, tx);
+  }
+
+  async updateVariantStockPolicy(variantId: string, dto: UpdateVariantStockPolicyDto, tx?: DbTx) {
+    return this.inTx(async (trx) => {
+      if (!variantId) throw new BadRequestException('variantId required');
+
+      const policy: UpdateVariantStockPolicyDto = dto ?? {};
+      const [variant] = await (trx as any)
+        .select({ id: productVariants.id })
+        .from(productVariants)
+        .where(eq(productVariants.id, variantId))
+        .limit(1);
+
+      if (!variant) {
+        throw new NotFoundException(`Variant not found: ${variantId}`);
+      }
+
+      const existing = await trx.query.productMatchings.findFirst({
+        where: (m, { eq }) => eq(m.variantId, variantId),
+      });
+      const now = new Date();
+      const matchingPolicyPatch = {
+        ...(policy.preStockSellable !== undefined ? { preStockSellable: policy.preStockSellable } : {}),
+        ...(policy.alwaysSellableZeroStock !== undefined
+          ? { alwaysSellableZeroStock: policy.alwaysSellableZeroStock }
+          : {}),
+        updatedAt: now,
+      };
+
+      if (existing && Object.keys(matchingPolicyPatch).length > 1) {
+        await trx
+          .update(wmsTables.productMatchings)
+          .set(matchingPolicyPatch)
+          .where(eq(wmsTables.productMatchings.variantId, variantId));
+      }
+
+      await this.upsertSalesVariantPolicy(
+        trx,
+        variantId,
+        policy,
+        {
+          preStockSellable: existing?.preStockSellable ?? true,
+          alwaysSellableZeroStock: existing?.alwaysSellableZeroStock ?? false,
+        },
+        now,
+      );
+
+      await this.productSellableQuantity.recalculateAndPublishForVariant(variantId, trx);
+      const response = await this.getVariantMatchingBatch([variantId], trx);
+      return response.data[0];
     }, tx);
   }
 

@@ -22,6 +22,11 @@ export const matchingQueryKeys = {
   variantMatching: (variantId: string) =>
     [...matchingQueryKeys.variantMatchings(), variantId] as const,
 
+  variantMatchingBatches: () =>
+    [...matchingQueryKeys.all, 'variant-batch'] as const,
+  variantMatchingBatch: (variantIds: string[]) =>
+    [...matchingQueryKeys.variantMatchingBatches(), variantIds] as const,
+
   stockPolicies: () => [...matchingQueryKeys.all, 'stock-policy'] as const,
   stockPolicy: (variantId: string) =>
     [...matchingQueryKeys.stockPolicies(), variantId] as const,

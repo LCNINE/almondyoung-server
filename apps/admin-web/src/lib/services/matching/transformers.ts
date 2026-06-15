@@ -86,11 +86,52 @@ export const createDefaultStockPolicy = (): StockPolicyDto => ({
   availabilityOverride: null,
 });
 
-export const normalizeStockPolicy = (policy?: Partial<StockPolicyDto> | null): StockPolicyDto => ({
+export const normalizeStockPolicy = (
+  policy?: Partial<StockPolicyDto> | null
+): StockPolicyDto => ({
   ...createDefaultStockPolicy(),
   ...(policy ?? {}),
   availabilityOverride: policy?.availabilityOverride ?? null,
 });
+
+export const PRODUCT_SELLABLE_REASON_LABELS: Record<string, string> = {
+  SELLABLE: '판매 가능',
+  ALWAYS_SELLABLE_ZERO_STOCK: '항상 판매 가능',
+  PRE_STOCK_SELLABLE: '선판매 가능',
+  MANUAL_OUT_OF_STOCK: '수동 품절',
+  NOT_ACTIVE_VERSION: '운영 버전 아님',
+  VARIANT_INACTIVE: '품목 비활성',
+  SALES_NOT_STARTED: '판매 시작 전',
+  SALES_ENDED: '판매 종료',
+  MATCHING_MISSING: '매칭 없음',
+  MATCHING_PENDING: '매칭 필요',
+  MATCHING_IGNORED: '매칭 감사 대상',
+  MATCHING_STRATEGY_UNSUPPORTED: '지원하지 않는 전략',
+  MATCHING_LINK_MISSING: 'SKU 구성 없음',
+  INSUFFICIENT_COMPONENT_STOCK: '구성 SKU 재고 부족',
+};
+
+export const getProductSellableReasonLabel = (
+  reason?: string | null
+): string => {
+  if (!reason) return '-';
+  return PRODUCT_SELLABLE_REASON_LABELS[reason] ?? reason;
+};
+
+export const getProductSellableReasonBadgeVariant = (
+  reason?: string | null,
+  isSellable?: boolean
+): 'default' | 'secondary' | 'destructive' | 'outline' => {
+  if (!reason) return 'outline';
+  if (isSellable) return 'default';
+  if (
+    reason === 'MANUAL_OUT_OF_STOCK' ||
+    reason === 'INSUFFICIENT_COMPONENT_STOCK'
+  ) {
+    return 'destructive';
+  }
+  return 'secondary';
+};
 
 export const buildUpsertMatchingPayload = ({
   masterId,
