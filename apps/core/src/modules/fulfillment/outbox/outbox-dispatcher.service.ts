@@ -35,6 +35,15 @@ export class OutboxDispatcherService implements OnModuleInit {
   private readonly logger = new Logger(OutboxDispatcherService.name);
   private isProcessing = false;
 
+  /**
+   * 배치 acquire 시 row 를 잠그는 lease 시간(ms).
+   * acquire 가 next_attempt_at 을 NOW + LEASE_MS 로 밀어 두면, 발행이 진행 중이거나
+   * 프로세스가 여러 개(롤링 배포 등)여도 같은 pending row 가 재선택되지 않는다.
+   * 발행이 정상/실패로 끝나면 publishEvent 가 status/next_attempt_at 을 다시 확정한다.
+   * 프로세스가 발행 도중 죽으면 lease 만료 후 attempts 증가 없이 재시도된다.
+   */
+  private static readonly LEASE_MS = 60_000;
+
   constructor(
     private readonly db: DbService<typeof wmsSchema>,
     @InjectStreamPublisher(FULFILLMENT_STREAM.topic.topic)
@@ -93,10 +102,12 @@ export class OutboxDispatcherService implements OnModuleInit {
         }
 
         const eventIds = pendingEvents.map((e) => e.id);
+        // attempts 는 여기서 올리지 않는다 — 발행 실패 시 publishEvent 가 단일 지점에서 증가시킨다.
+        // 대신 next_attempt_at 을 lease 만큼 밀어 발행 중인 row 의 재선택(이중 증가/중복 발행)을 막는다.
         await tx
           .update(wmsTables.outboxEvents)
           .set({
-            attempts: sql`${wmsTables.outboxEvents.attempts} + 1`,
+            nextAttemptAt: new Date(Date.now() + OutboxDispatcherService.LEASE_MS),
           })
           .where(inArray(wmsTables.outboxEvents.id, eventIds));
 
