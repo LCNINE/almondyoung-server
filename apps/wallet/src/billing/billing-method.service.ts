@@ -147,6 +147,42 @@ export class BillingMethodService {
       .where(and(eq(billingMethods.userId, userId), eq(billingMethods.status, 'ACTIVE')));
   }
 
+  async assertSelectableForRecurringBilling(userId: string, billingMethodId: string): Promise<BillingMethod> {
+    const method = await this.findById(billingMethodId);
+    if (!method || method.userId !== userId || method.status !== 'ACTIVE') {
+      throw new Error('billing method not found or inactive');
+    }
+
+    if (method.providerType !== 'CMS_BATCH') {
+      return method;
+    }
+
+    const statuses = await this.getUserCmsBillingMethodStatuses(userId);
+    const status = statuses.find((row) => row.billingMethodId === billingMethodId);
+    if (!status?.isSelectableForRecurringBilling) {
+      throw new Error('CMS billing method is not ready for recurring billing');
+    }
+
+    return method;
+  }
+
+  async findLatestSelectableForRecurringBilling(userId: string): Promise<BillingMethod | undefined> {
+    const methods = await this.dbService.db
+      .select()
+      .from(billingMethods)
+      .where(and(eq(billingMethods.userId, userId), eq(billingMethods.status, 'ACTIVE')))
+      .orderBy(desc(billingMethods.createdAt));
+
+    if (methods.length === 0) return undefined;
+
+    const cmsStatuses = await this.getUserCmsBillingMethodStatuses(userId);
+    const selectableCmsIds = new Set(
+      cmsStatuses.filter((status) => status.isSelectableForRecurringBilling).map((status) => status.billingMethodId),
+    );
+
+    return methods.find((method) => method.providerType !== 'CMS_BATCH' || selectableCmsIds.has(method.id));
+  }
+
   async getUserCmsBillingMethodStatuses(userId: string): Promise<CmsBillingMethodStatusRow[]> {
     const methods = await this.dbService.db
       .select()

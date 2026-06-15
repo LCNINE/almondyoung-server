@@ -191,6 +191,7 @@ export interface CmsBankAccountPayload {
   payerName: string;
   payerNumber: string;
   paymentNumber: string;
+  phone: string;
 }
 
 export async function registerCmsBankAccount(dto: CmsBankAccountPayload, cookieHeader: string): Promise<BillingMethod> {

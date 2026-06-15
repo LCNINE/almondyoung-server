@@ -1,14 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, desc, eq } from 'drizzle-orm';
-import { WalletSchema, billingAgreements, billingMethods } from '../schema';
+import { and, eq } from 'drizzle-orm';
+import { WalletSchema, billingAgreements } from '../schema';
 import { BillingAgreement } from '../types';
+import { BillingMethodService } from './billing-method.service';
 
 @Injectable()
 export class BillingAgreementService {
   private readonly logger = new Logger(BillingAgreementService.name);
 
-  constructor(private readonly dbService: DbService<WalletSchema>) {}
+  constructor(
+    private readonly dbService: DbService<WalletSchema>,
+    private readonly billingMethodService: BillingMethodService,
+  ) {}
 
   async create(
     userId: string,
@@ -16,16 +20,7 @@ export class BillingAgreementService {
     subscriberRef: string,
     subscriberType: string,
   ): Promise<BillingAgreement> {
-    // Verify billing method exists and belongs to user
-    const methods = await this.dbService.db
-      .select({ id: billingMethods.id })
-      .from(billingMethods)
-      .where(and(eq(billingMethods.id, billingMethodId), eq(billingMethods.userId, userId), eq(billingMethods.status, 'ACTIVE')))
-      .limit(1);
-
-    if (methods.length === 0) {
-      throw new Error('billing method not found or inactive');
-    }
+    await this.billingMethodService.assertSelectableForRecurringBilling(userId, billingMethodId);
 
     const rows = await this.dbService.db
       .insert(billingAgreements)
@@ -45,26 +40,17 @@ export class BillingAgreementService {
    * 서버 간 호출용 — 유저의 가장 최근 ACTIVE billing_method로 agreement를 생성하거나 기존 것을 반환.
    * subscriberRef+subscriberType 조합이 이미 존재하면 최신 billing_method로 업데이트.
    */
-  async createWithAutoMethod(
-    userId: string,
-    subscriberRef: string,
-    subscriberType: string,
-  ): Promise<BillingAgreement> {
-    const [latestMethods, existing] = await Promise.all([
-      this.dbService.db
-        .select()
-        .from(billingMethods)
-        .where(and(eq(billingMethods.userId, userId), eq(billingMethods.status, 'ACTIVE')))
-        .orderBy(desc(billingMethods.createdAt))
-        .limit(1),
+  async createWithAutoMethod(userId: string, subscriberRef: string, subscriberType: string): Promise<BillingAgreement> {
+    const [billingMethod, existing] = await Promise.all([
+      this.billingMethodService.findLatestSelectableForRecurringBilling(userId),
       this.findBySubscriberRef(subscriberType, subscriberRef),
     ]);
 
-    if (latestMethods.length === 0) {
-      throw new Error(`no active billing method found for user: ${userId}`);
+    if (!billingMethod) {
+      throw new Error(`no selectable billing method found for user: ${userId}`);
     }
 
-    const billingMethodId = latestMethods[0].id;
+    const billingMethodId = billingMethod.id;
     if (existing) {
       if (existing.billingMethodId !== billingMethodId) {
         await this.updateBillingMethod(existing.id, billingMethodId, userId);
@@ -99,22 +85,19 @@ export class BillingAgreementService {
   }
 
   async updateBillingMethod(agreementId: string, newBillingMethodId: string, userId: string): Promise<void> {
-    // Verify new billing method belongs to userId and is active
-    const methods = await this.dbService.db
-      .select({ id: billingMethods.id })
-      .from(billingMethods)
-      .where(and(eq(billingMethods.id, newBillingMethodId), eq(billingMethods.userId, userId), eq(billingMethods.status, 'ACTIVE')))
-      .limit(1);
-
-    if (methods.length === 0) {
-      throw new Error('new billing method not found or inactive');
-    }
+    await this.billingMethodService.assertSelectableForRecurringBilling(userId, newBillingMethodId);
 
     // Update only if the agreement belongs to userId
     const rows = await this.dbService.db
       .update(billingAgreements)
       .set({ billingMethodId: newBillingMethodId, updatedAt: new Date() })
-      .where(and(eq(billingAgreements.id, agreementId), eq(billingAgreements.userId, userId), eq(billingAgreements.status, 'ACTIVE')))
+      .where(
+        and(
+          eq(billingAgreements.id, agreementId),
+          eq(billingAgreements.userId, userId),
+          eq(billingAgreements.status, 'ACTIVE'),
+        ),
+      )
       .returning({ id: billingAgreements.id });
 
     if (rows.length === 0) {
@@ -126,7 +109,13 @@ export class BillingAgreementService {
     const rows = await this.dbService.db
       .update(billingAgreements)
       .set({ status: 'REVOKED', updatedAt: new Date() })
-      .where(and(eq(billingAgreements.id, agreementId), eq(billingAgreements.userId, userId), eq(billingAgreements.status, 'ACTIVE')))
+      .where(
+        and(
+          eq(billingAgreements.id, agreementId),
+          eq(billingAgreements.userId, userId),
+          eq(billingAgreements.status, 'ACTIVE'),
+        ),
+      )
       .returning({ id: billingAgreements.id });
 
     if (rows.length === 0) {
