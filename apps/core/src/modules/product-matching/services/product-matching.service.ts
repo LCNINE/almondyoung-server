@@ -547,6 +547,17 @@ export class ProductMatchingService {
             .where(inArray(productVariants.id, variantIds))
         : [];
 
+    const policies =
+      variantIds.length > 0
+        ? await trx
+            .select({
+              variantId: wmsTables.salesVariantPolicies.variantId,
+              availabilityOverride: wmsTables.salesVariantPolicies.availabilityOverride,
+            })
+            .from(wmsTables.salesVariantPolicies)
+            .where(inArray(wmsTables.salesVariantPolicies.variantId, variantIds))
+        : [];
+
     const masterVersions =
       masterIds.length > 0
         ? await (trx as any)
@@ -575,6 +586,8 @@ export class ProductMatchingService {
       variantsById.set(variant.id, variant);
     }
 
+    const policiesByVariantId = new Map(policies.map((policy) => [policy.variantId, policy]));
+
     const masterVersionByMasterId = new Map<string, (typeof masterVersions)[number]>();
     for (const version of masterVersions) {
       const current = masterVersionByMasterId.get(version.masterId);
@@ -598,6 +611,7 @@ export class ProductMatchingService {
         stockPolicy: {
           preStockSellable: row.preStockSellable,
           alwaysSellableZeroStock: row.alwaysSellableZeroStock,
+          availabilityOverride: policiesByVariantId.get(row.variantId)?.availabilityOverride ?? null,
         },
         isGift: false,
         createdAt: row.createdAt.toISOString(),

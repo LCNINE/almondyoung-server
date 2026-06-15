@@ -27,10 +27,21 @@ export class ProductSkuMappingService {
         where: (m, { eq }) => eq(m.variantId, variantId),
       });
       if (!matching) return null;
+      const policy = await trx.query.salesVariantPolicies.findFirst({
+        where: (p, { eq }) => eq(p.variantId, variantId),
+      });
       const links = await trx.query.productVariantSkuLinks.findMany({
         where: (l, { eq }) => eq(l.productMatchingId, matching.id),
       });
-      return { ...matching, links };
+      return {
+        ...matching,
+        links,
+        stockPolicy: {
+          preStockSellable: matching.preStockSellable,
+          alwaysSellableZeroStock: matching.alwaysSellableZeroStock,
+          availabilityOverride: policy?.availabilityOverride ?? null,
+        },
+      };
     }, tx);
   }
 
@@ -80,6 +91,30 @@ export class ProductSkuMappingService {
           })),
         );
       }
+
+      const now = new Date();
+      const variantPolicyValues = {
+        variantId,
+        inventoryManagement: true,
+        preStockSellable: base.preStockSellable,
+        alwaysSellableZeroStock: base.alwaysSellableZeroStock,
+        availabilityOverride: dto.policy?.availabilityOverride ?? null,
+        updatedAt: now,
+      };
+
+      await trx
+        .insert(wmsTables.salesVariantPolicies)
+        .values(variantPolicyValues)
+        .onConflictDoUpdate({
+          target: wmsTables.salesVariantPolicies.variantId,
+          set: {
+            inventoryManagement: true,
+            preStockSellable: variantPolicyValues.preStockSellable,
+            alwaysSellableZeroStock: variantPolicyValues.alwaysSellableZeroStock,
+            availabilityOverride: variantPolicyValues.availabilityOverride,
+            updatedAt: now,
+          },
+        });
 
       await trx
         .update(wmsTables.salesOrderLines)
