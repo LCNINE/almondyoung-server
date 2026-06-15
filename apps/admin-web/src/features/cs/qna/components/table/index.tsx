@@ -1,8 +1,13 @@
 'use client';
 
+import { useMemo } from 'react';
 import { useQuestions } from '@/lib/services/qna';
+import { useAdminUsersByIds } from '@/lib/services/users/queries';
 import { useDataTable } from '@/hooks/use-data-table';
-import { useQnaTableColumns } from '@/hooks/table/columns/use-qna-table-columns';
+import {
+  useQnaTableColumns,
+  type QnaAuthorSummary,
+} from '@/hooks/table/columns/use-qna-table-columns';
 import { useQnaTableFilters } from '@/hooks/table/filters/use-qna-table-filters';
 import { useQnaTableQuery } from '@/hooks/table/query/use-qna-table-query';
 import { DataTable } from '@/components/data-table';
@@ -12,11 +17,32 @@ const PAGE_SIZE = 20;
 export function QnaTable() {
   const { searchParams: query } = useQnaTableQuery({ pageSize: PAGE_SIZE });
   const { data, isLoading, isFetching } = useQuestions(query);
-  const columns = useQnaTableColumns();
+
+  const questions = data?.data ?? [];
+
+  const userIds = useMemo(
+    () =>
+      Array.from(
+        new Set(questions.map((q) => q.userId).filter(Boolean) as string[])
+      ),
+    [questions]
+  );
+
+  const { data: users } = useAdminUsersByIds(userIds);
+
+  const userMap = useMemo(() => {
+    const m = new Map<string, QnaAuthorSummary>();
+    (users?.data ?? []).forEach((u) => {
+      m.set(u.id, { id: u.id, username: u.username, nickname: u.nickname });
+    });
+    return m;
+  }, [users]);
+
+  const columns = useQnaTableColumns({ userMap });
   const filters = useQnaTableFilters();
 
   const { table } = useDataTable({
-    data: data?.data ?? [],
+    data: questions,
     columns,
     count: data?.total,
     pageSize: PAGE_SIZE,
