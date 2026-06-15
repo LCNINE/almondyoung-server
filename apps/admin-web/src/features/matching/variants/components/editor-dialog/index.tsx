@@ -27,6 +27,7 @@ import {
   getMatchingStrategyDecisionColor,
   createDefaultStockPolicy,
   normalizeStockPolicy,
+  buildUpsertMatchingPayload,
 } from '@/lib/services/matching';
 import { SkuLookupSection } from '@/features/matching/products/components/variant-editor-dialog/sku-lookup-section';
 import { StrategySection } from '@/features/matching/products/components/variant-editor-dialog/strategy-section';
@@ -100,11 +101,12 @@ export function VariantMatchingEditorDialog({
       promises.push(
         upsert.mutateAsync({
           variantId: matching.variantId,
-          data: {
+          data: buildUpsertMatchingPayload({
             masterId: matching.master?.id ?? '',
             links,
             policy: stockPolicy,
-          },
+            changedLinks,
+          }),
         })
       );
     }

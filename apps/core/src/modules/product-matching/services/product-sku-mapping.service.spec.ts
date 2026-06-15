@@ -113,6 +113,121 @@ describe('ProductSkuMappingService', () => {
     expect(fulfillmentBacklog.wakeBacklogsWaitingForVariant).not.toHaveBeenCalled();
   });
 
+  it('preserves an existing no-link void matching when saving stock policy only', async () => {
+    const variantId = 'variant-1';
+    const matchingId = 'matching-1';
+    const updates: Array<{ table: unknown; set: Record<string, unknown> }> = [];
+    let matching: Record<string, any> = {
+      id: matchingId,
+      variantId,
+      masterId: 'master-1',
+      status: 'matched',
+      priority: 'normal',
+      strategy: 'void',
+      isResolved: true,
+      preStockSellable: true,
+      alwaysSellableZeroStock: false,
+    };
+    let links: Array<{ productMatchingId: string; skuId: string; quantity: number }> = [];
+    let salesVariantPolicy: Record<string, any> | null = null;
+
+    const tx = {
+      query: {
+        productMatchings: {
+          findFirst: jest.fn().mockImplementation(async () => matching),
+        },
+        salesVariantPolicies: {
+          findFirst: jest.fn().mockImplementation(async () => salesVariantPolicy),
+        },
+        productVariantSkuLinks: {
+          findMany: jest.fn().mockImplementation(async () => links),
+        },
+      },
+      update: jest.fn((table: unknown) => ({
+        set: (set: Record<string, unknown>) => {
+          updates.push({ table, set });
+          return {
+            where: () => {
+              if (table === wmsTables.productMatchings) {
+                return {
+                  returning: async () => {
+                    matching = { ...matching, ...set };
+                    return [matching];
+                  },
+                };
+              }
+
+              return Promise.resolve([]);
+            },
+          };
+        },
+      })),
+      delete: jest.fn((table: unknown) => ({
+        where: jest.fn(async () => {
+          if (table === wmsTables.productVariantSkuLinks) {
+            links = [];
+          }
+        }),
+      })),
+      insert: jest.fn((table: unknown) => ({
+        values: (values: any) => {
+          if (table === wmsTables.salesVariantPolicies) {
+            salesVariantPolicy = Array.isArray(values) ? values[0] : values;
+          }
+
+          return {
+            returning: jest.fn().mockResolvedValue([]),
+            onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
+          };
+        },
+      })),
+    };
+    const dbService = {
+      db: {
+        transaction: jest.fn((fn) => fn(tx)),
+      },
+    };
+    const productSellableQuantity = {
+      recalculateAndPublishForVariant: jest.fn(),
+    };
+    const fulfillmentBacklog = {
+      wakeBacklogsWaitingForVariant: jest.fn(),
+    };
+    const service = new ProductSkuMappingService(
+      dbService as any,
+      productSellableQuantity as any,
+      fulfillmentBacklog as any,
+    );
+
+    const result = await service.upsert(variantId, {
+      links: [],
+      policy: {
+        preStockSellable: true,
+        alwaysSellableZeroStock: false,
+        availabilityOverride: 'manual_out_of_stock',
+      },
+    } as any);
+
+    expect(tx.delete).not.toHaveBeenCalledWith(wmsTables.productVariantSkuLinks);
+    expect(updates.find((entry) => entry.table === wmsTables.productMatchings)?.set).not.toHaveProperty(
+      'strategy',
+      'variant',
+    );
+    expect(productSellableQuantity.recalculateAndPublishForVariant).toHaveBeenCalledWith(variantId, tx);
+    expect(fulfillmentBacklog.wakeBacklogsWaitingForVariant).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      id: matchingId,
+      variantId,
+      strategy: 'void',
+      links: [],
+      stockPolicy: {
+        preStockSellable: true,
+        alwaysSellableZeroStock: false,
+        availabilityOverride: 'manual_out_of_stock',
+      },
+    });
+  });
+
   it('removes existing SKU links when an existing matching is saved with empty links', async () => {
     const variantId = 'variant-1';
     const matchingId = 'matching-1';
