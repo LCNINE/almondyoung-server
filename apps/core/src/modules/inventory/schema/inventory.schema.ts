@@ -215,7 +215,7 @@ export const outboxStatusEnum = pgEnum('outbox_status', ['pending', 'published',
 // FOI 기반 확장 enums
 export const pickingMethodEnum = pgEnum('picking_method', ['individual', 'total_picking']);
 export const batchStatusEnum = pgEnum('batch_status', ['created', 'picking', 'completed', 'canceled']);
-export const invoiceMethodEnum = pgEnum('invoice_method', ['goodsflow', 'direct', 'self']);
+export const invoiceMethodEnum = pgEnum('invoice_method', ['goodsflow', 'direct', 'self', 'hanjin']);
 export const invoiceStatusEnum = pgEnum('invoice_status', ['issued', 'printed', 'shipped', 'canceled']);
 
 // Audit system enums
@@ -2198,6 +2198,8 @@ export const invoices = pgTable(
     invoiceNumber: varchar('invoice_number', { length: 128 }).notNull().unique(),
     carrierCode: varchar('carrier_code', { length: 32 }),
     issueMethod: invoiceMethodEnum('issue_method').notNull(),
+    // 기술부채: 컬럼명은 goodsflow 시절 명명이지만 실제로는 모든 외부 배송 provider(goodsflow/hanjin)의
+    // external service id 공용 저장소. rename 은 expand-contract 3 PR 비용이라 보류 (ADR-0005 §5).
     goodsflowServiceId: varchar('goodsflow_service_id', { length: 255 }),
     status: invoiceStatusEnum('status').notNull().default('issued'),
     issuedAt: timestamp('issued_at', { withTimezone: true }).notNull().defaultNow(),
@@ -2209,6 +2211,11 @@ export const invoices = pgTable(
     idxFulfillmentOrder: index('idx_invoices_fo').on(t.fulfillmentOrderId),
     idxInvoiceNumber: index('idx_invoices_number').on(t.invoiceNumber),
     idxStatus: index('idx_invoices_status').on(t.status),
+    // FO 당 활성(미취소) invoice 1개 보장 — 동시 발행 race 의 DB 레벨 방어선.
+    // canceled 는 제외하므로 취소 후 재발행이 가능하다.
+    uqActivePerFo: uniqueIndex('uq_invoices_fo_active')
+      .on(t.fulfillmentOrderId)
+      .where(sql`${t.status} <> 'canceled'`),
   }),
 );
 

@@ -132,7 +132,21 @@
       "idx": 18,
       "version": "7",
       "when": 1781232416000,
-      "tag": "20260612114656_product-code-active-unique",
+      "tag": "20260612044656_product-code-active-unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1781241045218,
+      "tag": "20260612051045_add-hanjin-invoice-method",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1781243526960,
+      "tag": "20260612055206_add-active-invoice-unique-index",
       "breakpoints": true
     },
     {

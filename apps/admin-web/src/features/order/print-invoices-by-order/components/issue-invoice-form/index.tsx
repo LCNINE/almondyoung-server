@@ -18,21 +18,27 @@ import { useInvoice } from '@/lib/services/orders/queries';
 import type { IssueInvoiceRequest, InvoiceIssueMethod } from '@/lib/types/dto/fulfillment';
 import { Badge } from '@/components/ui/badge';
 
+// Core carrier enum(inventory.schema.ts)에 있는 값만 노출 — enum 밖 값은 서버가 400 으로 거부한다
 const CARRIER_CODES = [
+  { value: 'HANJIN', label: '한진택배' },
   { value: 'CJ', label: 'CJ대한통운' },
   { value: 'LOTTE', label: '롯데택배' },
-  { value: 'HANJIN', label: '한진택배' },
-  { value: 'POST', label: '우체국택배' },
+  { value: 'LOGEN', label: '로젠택배' },
 ];
 
 export function IssueInvoiceForm() {
   const [foId, setFoId] = useState('');
-  const [carrierCode, setCarrierCode] = useState('CJ');
+  const [carrierCode, setCarrierCode] = useState('HANJIN');
   const [recipientName, setRecipientName] = useState('');
   const [recipientAddress, setRecipientAddress] = useState('');
   const [recipientPhone, setRecipientPhone] = useState('');
   const [deliveryMessage, setDeliveryMessage] = useState('');
-  const [issueMethod, setIssueMethod] = useState<InvoiceIssueMethod>('goodsflow');
+  // 기본값 없음 — 운영자가 발행 방식을 명시적으로 선택해야 발행 가능.
+  // (direct 가 기본이면 HANJIN + 내부발번이 고객 tracking 으로 나가는 사고 여지)
+  // TODO(hanjin): 한진 계약 승인(HANJIN_* secret 등록) 후 기본값 'hanjin' 전환 검토.
+  const [issueMethod, setIssueMethod] = useState<InvoiceIssueMethod | ''>('');
+  // direct(직접 입력) 발행 시 필수 — 택배사에서 실제 발급받은 운송장 번호
+  const [trackingNumber, setTrackingNumber] = useState('');
   const [issuedInvoiceId, setIssuedInvoiceId] = useState<string | null>(null);
 
   const issueMutation = useIssueInvoice();
@@ -47,6 +53,14 @@ export function IssueInvoiceForm() {
       toast.error('주문처리 ID, 수취인 정보를 모두 입력해주세요.');
       return;
     }
+    if (!issueMethod) {
+      toast.error('발행 방식을 선택해주세요.');
+      return;
+    }
+    if (issueMethod === 'direct' && !trackingNumber.trim()) {
+      toast.error('직접 입력 발행은 실제 운송장 번호가 필요합니다.');
+      return;
+    }
     try {
       const result = await issueMutation.mutateAsync({
         fulfillmentOrderId: foId.trim(),
@@ -56,6 +70,8 @@ export function IssueInvoiceForm() {
         recipientPhone: recipientPhone.trim(),
         deliveryMessage: deliveryMessage.trim() || undefined,
         issueMethod,
+        invoiceNumber:
+          issueMethod === 'direct' ? trackingNumber.trim() : undefined,
       });
       setIssuedInvoiceId(result.invoiceId);
       toast.success('송장이 발행되었습니다.');
@@ -81,7 +97,7 @@ export function IssueInvoiceForm() {
 
   const handleShip = async () => {
     if (!issuedInvoiceId) return;
-    // goodsflow: printed 상태에서만 ship 가능. direct/self: 인쇄 단계가 없어 issued 에서 바로 ship 가능 (서버 가드 동일).
+    // 외부 provider(hanjin/goodsflow): printed 상태에서만 ship 가능. direct/self: 인쇄 단계가 없어 issued 에서 바로 ship 가능 (서버 가드 동일).
     try {
       await shipMutation.mutateAsync(issuedInvoiceId);
       toast.success('배송 처리가 완료되었습니다.');
@@ -102,7 +118,9 @@ export function IssueInvoiceForm() {
     }
   };
 
-  const canPrint = invoiceDetail?.status === 'issued' && issueMethod === 'goodsflow';
+  const isProviderMethod =
+    issueMethod === 'hanjin' || issueMethod === 'goodsflow';
+  const canPrint = invoiceDetail?.status === 'issued' && isProviderMethod;
   const isDirectOrSelf = issueMethod === 'direct' || issueMethod === 'self';
   const canShip = isDirectOrSelf
     ? invoiceDetail?.status === 'issued' || invoiceDetail?.status === 'printed'
@@ -128,7 +146,12 @@ export function IssueInvoiceForm() {
         <div className="flex gap-2">
           <div className="flex flex-1 flex-col gap-1">
             <Label>택배사</Label>
-            <Select value={carrierCode} onValueChange={setCarrierCode} disabled={!!issuedInvoiceId}>
+            {/* hanjin 발행은 서버에서 carrier 를 HANJIN 으로 강제하므로 선택 잠금 */}
+            <Select
+              value={carrierCode}
+              onValueChange={setCarrierCode}
+              disabled={!!issuedInvoiceId || issueMethod === 'hanjin'}
+            >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -145,20 +168,39 @@ export function IssueInvoiceForm() {
             <Label>발행 방식</Label>
             <Select
               value={issueMethod}
-              onValueChange={(v) => setIssueMethod(v as InvoiceIssueMethod)}
+              onValueChange={(v) => {
+                const method = v as InvoiceIssueMethod;
+                setIssueMethod(method);
+                if (method === 'hanjin') setCarrierCode('HANJIN');
+              }}
               disabled={!!issuedInvoiceId}
             >
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue placeholder="발행 방식 선택" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="goodsflow">Goodsflow</SelectItem>
-                <SelectItem value="direct">직접 입력</SelectItem>
+                <SelectItem value="hanjin">한진택배 (API)</SelectItem>
+                <SelectItem value="direct">
+                  직접 입력 (운송장 번호 필요)
+                </SelectItem>
                 <SelectItem value="self">자체 발행</SelectItem>
+                <SelectItem value="goodsflow">Goodsflow (구)</SelectItem>
               </SelectContent>
             </Select>
           </div>
         </div>
+
+        {issueMethod === 'direct' && (
+          <div className="flex flex-col gap-1">
+            <Label>운송장 번호</Label>
+            <Input
+              placeholder="택배사에서 발급받은 실제 운송장 번호"
+              value={trackingNumber}
+              onChange={(e) => setTrackingNumber(e.target.value)}
+              disabled={!!issuedInvoiceId}
+            />
+          </div>
+        )}
 
         <div className="flex flex-col gap-1">
           <Label>수취인 이름</Label>
@@ -198,7 +240,10 @@ export function IssueInvoiceForm() {
         </div>
 
         {!issuedInvoiceId ? (
-          <Button onClick={handleIssue} disabled={issueMutation.isPending}>
+          <Button
+            onClick={handleIssue}
+            disabled={issueMutation.isPending || !issueMethod}
+          >
             {issueMutation.isPending ? '발행 중…' : '송장 발행'}
           </Button>
         ) : (
@@ -249,7 +294,8 @@ export function IssueInvoiceForm() {
 
           {isDirectOrSelf && (
             <p className="text-xs text-muted-foreground">
-              direct/self 방식은 발행 즉시 배송 처리가 가능합니다 (Goodsflow 인쇄 불필요).
+              direct/self 방식은 발행 즉시 배송 처리가 가능합니다 (송장 출력
+              불필요).
             </p>
           )}
         </div>

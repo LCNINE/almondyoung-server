@@ -28,6 +28,8 @@ import { InspectionService } from './services/inspection.service';
 import { ConsolidationService } from './services/consolidation.service';
 import { DirectShipService } from './services/direct-ship.service';
 import { InvoiceService } from './services/invoice.service';
+import { GoodsflowDeliveryProvider } from './services/goodsflow-delivery.provider';
+import { HanjinDeliveryProvider } from './services/hanjin-delivery.provider';
 
 // Controllers
 import { FulfillmentsController } from './controllers/fulfillments.controller';
@@ -99,6 +101,8 @@ import { LocationOptimizationController } from './controllers/location-optimizat
     ConsolidationService,
     DirectShipService,
     InvoiceService,
+    GoodsflowDeliveryProvider,
+    HanjinDeliveryProvider,
   ],
 })
 export class FulfillmentModule {}

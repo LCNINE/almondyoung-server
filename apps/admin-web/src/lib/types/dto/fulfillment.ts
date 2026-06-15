@@ -507,12 +507,14 @@ export interface QualityMetricsQuery {
 
 // ===== Invoice =====
 
-export type InvoiceIssueMethod = 'goodsflow' | 'direct' | 'self';
+export type InvoiceIssueMethod = 'goodsflow' | 'hanjin' | 'direct' | 'self';
 export type InvoiceStatus = 'issued' | 'printed' | 'shipped' | 'canceled';
 
 export interface IssueInvoiceRequest {
   fulfillmentOrderId: string;
   carrierCode: string;
+  /** direct(직접 입력) 발행 시 필수 — 택배사 발급 실제 운송장 번호 */
+  invoiceNumber?: string;
   recipientName: string;
   recipientAddress: string;
   recipientPhone: string;
