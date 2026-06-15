@@ -6,6 +6,21 @@ export type MatchingStrategy = 'void' | 'variant';
 export type MatchingPriority = 'normal' | 'high';
 export type LegacyIgnoredResolutionTarget = 'pending' | 'void';
 export type AvailabilityOverride = 'manual_out_of_stock' | null;
+export type ProductSellableQuantityReason =
+  | 'SELLABLE'
+  | 'ALWAYS_SELLABLE_ZERO_STOCK'
+  | 'PRE_STOCK_SELLABLE'
+  | 'MANUAL_OUT_OF_STOCK'
+  | 'NOT_ACTIVE_VERSION'
+  | 'VARIANT_INACTIVE'
+  | 'SALES_NOT_STARTED'
+  | 'SALES_ENDED'
+  | 'MATCHING_MISSING'
+  | 'MATCHING_PENDING'
+  | 'MATCHING_IGNORED'
+  | 'MATCHING_STRATEGY_UNSUPPORTED'
+  | 'MATCHING_LINK_MISSING'
+  | 'INSUFFICIENT_COMPONENT_STOCK';
 
 export interface StockPolicyDto {
   preStockSellable: boolean;
@@ -16,6 +31,8 @@ export interface StockPolicyDto {
 export interface SkuMappingDto {
   skuId: string;
   quantity: number;
+  skuName?: string;
+  skuCode?: string;
 }
 
 export interface OptionMappingDto {
@@ -203,6 +220,43 @@ export interface UpdateStockPolicyResponseDto {
   id: string;
   stockPolicy: StockPolicyDto;
 }
+
+export interface ProductSellableQuantityProjectionComponentDto {
+  skuId: string;
+  requiredQuantity: number;
+  availableQuantity: number;
+  componentSellableQuantity: number;
+}
+
+export interface ProductSellableQuantityProjectionDto {
+  variantId: string;
+  masterId: string | null;
+  versionId: string | null;
+  matchingId: string | null;
+  sellableQuantity: number;
+  stockBoundQuantity: number;
+  isSellable: boolean;
+  reason: ProductSellableQuantityReason | string;
+  preStockSellable: boolean;
+  alwaysSellableZeroStock: boolean;
+  availabilityOverride: AvailabilityOverride;
+  calculatedAt: string;
+  components: ProductSellableQuantityProjectionComponentDto[];
+}
+
+export interface VariantMatchingBatchItemDto {
+  variantId: string;
+  exists: boolean;
+  matching: VariantMatchingDto | null;
+  stockPolicy: StockPolicyDto;
+  projection: ProductSellableQuantityProjectionDto | null;
+}
+
+export interface VariantMatchingBatchResponseDto {
+  data: VariantMatchingBatchItemDto[];
+}
+
+export type UpdateVariantStockPolicyDto = Partial<StockPolicyDto>;
 
 /** PUT /matchings/:variantId 요청 바디 */
 export interface UpsertMatchingDto {

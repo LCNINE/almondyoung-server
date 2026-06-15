@@ -53,6 +53,19 @@ export const useVariantMatching = (variantId: string) => {
   });
 };
 
+export const useVariantMatchingBatch = (
+  variantIds: string[],
+  enabled = true
+) => {
+  return useQuery({
+    queryKey: matchingQueryKeys.variantMatchingBatch(variantIds),
+    queryFn: () => matchingClient.getVariantMatchingBatch(variantIds),
+    enabled: enabled && variantIds.length > 0,
+    staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+};
+
 const isNotFoundError = (error: unknown) =>
   typeof error === 'object' &&
   error !== null &&
