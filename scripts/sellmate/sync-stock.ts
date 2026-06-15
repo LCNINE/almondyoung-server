@@ -53,6 +53,7 @@ const BUCHEON_RECEIVING_LOC_ID = process.env.LOCATION_ID || '019d0002-0001-7000-
 const ALLOW_MISSING = process.env.ALLOW_MISSING === '1' || process.env.ALLOW_MISSING === 'true';
 const ALLOW_DUP_FILES = process.env.ALLOW_DUP_FILES === '1' || process.env.ALLOW_DUP_FILES === 'true';
 const SKIP_SELLABLE_CHECK = process.env.SKIP_SELLABLE_CHECK === '1' || process.env.SKIP_SELLABLE_CHECK === 'true';
+const CLAMP_NEGATIVE = process.env.CLAMP_NEGATIVE === '1' || process.env.CLAMP_NEGATIVE === 'true';
 
 const COLUMN_CANDIDATES = {
   itemCode: ['옵션정보일련번호', '옵션코드', '품목코드', '판매처옵션코드'],
@@ -67,9 +68,11 @@ const OVERRIDES: Partial<Record<LogicalField, string | undefined>> = {
 
 const DRY_RUN = process.env.DRY_RUN === '1' || process.env.DRY_RUN === 'true';
 
-/** 비음수 정수만 허용. 빈값/소수/문자/음수는 null 을 돌려 호출부가 오류로 처리하게 한다. */
-export function parseStock(s: string): number | null {
+/** 비음수 정수만 허용. 빈값/소수/문자는 null 을 돌려 호출부가 오류로 처리하게 한다.
+ *  CLAMP_NEGATIVE=1 이면 음수를 0 으로 처리(셀메이트 음수 재고 데이터 대응). */
+export function parseStock(s: string, clampNegative = false): number | null {
   const cleaned = (s ?? '').toString().replace(/,/g, '').trim();
+  if (/^-\d+$/.test(cleaned) && clampNegative) return 0; // 음수 → 0 clamp
   if (!/^\d+$/.test(cleaned)) return null; // 빈값·기호·소수점·음수 전부 거부
   const n = Number(cleaned);
   return Number.isSafeInteger(n) ? n : null;
@@ -104,7 +107,7 @@ export function parseStockRows(
     const itemCode = (rows[i][cols.itemCode] ?? '').toString().trim();
     if (!itemCode) continue;
     const raw = (rows[i][cols.stock] ?? '').toString();
-    const target = parseStock(raw);
+    const target = parseStock(raw, CLAMP_NEGATIVE);
     if (target === null) {
       errors.push({ file: path.basename(file), rowNumber: i, itemCode, raw });
       continue;
