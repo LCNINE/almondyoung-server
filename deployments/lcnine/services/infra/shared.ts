@@ -55,7 +55,10 @@ export function setup(opts?: { baseDomain?: string }) {
   });
 
   // ─── Database ───
-  const db = new sst.aws.Postgres("Db", { vpc });
+  const db = new sst.aws.Postgres("Db", {
+    vpc,
+    instance: "t4g.medium",
+  });
 
   const dbUrl = (dbName: string) =>
     $interpolate`postgresql://${db.username}:${db.password}@${db.host}:${db.port}/${dbName}?sslmode=require`;
