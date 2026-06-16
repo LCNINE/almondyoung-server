@@ -29,7 +29,6 @@ interface ProductSortingService {
   ): Promise<[ProductSortIndexRecord[], number]>;
 }
 
-
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
   try {
     const sortingService = req.scope.resolve<ProductSortingService>(PRODUCT_SORTING_MODULE);
@@ -90,17 +89,14 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       sortIndexFilter.product_id = { $in: categoryProductIds };
     }
 
-    const [sortIndexes, totalCount] = await sortingService.listAndCountProductSortIndices(
-      sortIndexFilter,
-      {
-        // sales_count / review_count 는 0 인 상품이 많아 동점이 대량 발생한다.
-        // tie-breaker(product_id) 가 없으면 OFFSET 페이지네이션에서 동점 상품의
-        // 순서가 페이지마다 흔들려 같은 상품이 여러 페이지에 중복 출력된다.
-        order: { [sortBy]: order === 'desc' ? 'DESC' : 'ASC', product_id: 'ASC' },
-        take: limit,
-        skip: offset,
-      },
-    );
+    const [sortIndexes, totalCount] = await sortingService.listAndCountProductSortIndices(sortIndexFilter, {
+      // sales_count / review_count 는 0 인 상품이 많아 동점이 대량 발생한다.
+      // tie-breaker(product_id) 가 없으면 OFFSET 페이지네이션에서 동점 상품의
+      // 순서가 페이지마다 흔들려 같은 상품이 여러 페이지에 중복 출력된다.
+      order: { [sortBy]: order === 'desc' ? 'DESC' : 'ASC', product_id: 'ASC' },
+      take: limit,
+      skip: offset,
+    });
 
     const productIds = sortIndexes.map((s) => s.product_id);
 
