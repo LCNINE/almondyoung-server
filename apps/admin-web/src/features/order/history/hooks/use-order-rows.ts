@@ -1,8 +1,8 @@
 // src/features/order/history/hooks/use-order-rows.ts
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 import { useMemo } from 'react';
 import { customerApi, orders } from '@/lib/api/domains';
-import { useSkusByIds } from '@/lib/services/inventory';
+import { useVariantsBatch } from '@/lib/services/products';
 import { useCreateOutboundBatch } from '@/lib/services/orders';
 import type { SalesOrdersQuery } from '@/lib/types/dto/orders';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -107,14 +107,15 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
     },
   });
 
-  // 3) SKU 맵
-  const allSkuIds = new Set<string>();
+  // 3) Variant 맵 (옵션 표시용)
+  // 주문 라인에는 옵션 정보가 없고 PIM Variant 에만 있으므로 variantId 로 batch 조회한다.
+  const allVariantIds = new Set<string>();
   detailQueries.data?.forEach((detail) => {
     detail?.lines?.forEach((item: any) => {
-      if (item?.skuId) allSkuIds.add(item.skuId);
+      if (item?.variantId) allVariantIds.add(item.variantId);
     });
   });
-  const skuMapQuery = useSkusByIds(Array.from(allSkuIds));
+  const variantMapQuery = useVariantsBatch(Array.from(allVariantIds));
 
   // 4) 사용자 맵
   const allCustomerIds = new Set<string>();
@@ -167,12 +168,8 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
       if (d?.id) detailMap.set(d.id, d);
     });
 
-    const skuMap =
-      skuMapQuery.data &&
-      typeof skuMapQuery.data === 'object' &&
-      !Array.isArray(skuMapQuery.data)
-        ? (skuMapQuery.data as Record<string, any>)
-        : ({} as Record<string, any>);
+    // useVariantsBatch 의 select 가 Map<variantId, BatchVariantInfo> 로 반환한다.
+    const variantMap = variantMapQuery.data ?? new Map();
     const userMap = userMapQuery.data ?? {};
 
     const lineRows: OrderLineRow[] = [];
@@ -209,12 +206,10 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
       const orderLineCount = lines.length || 1;
 
       lines.forEach((line: any, idx: number) => {
-        const sku = line.skuId ? skuMap[line.skuId] : undefined;
-        const optionName = sku?.optionKey
-          ? Object.entries(sku.optionKey)
-              .map(([, v]) => `${v}`)
-              .join(', ')
-          : (sku?.optionName ?? line.optionName);
+        const variant = line.variantId
+          ? variantMap.get(line.variantId)
+          : undefined;
+        const optionName = variant?.optionLabel ?? line.optionName;
 
         const lineStatus: string = line.status ?? 'pending';
         const isMatched = !!line.productMatchingId;
@@ -296,12 +291,12 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
           workLogs: detail?.workLogs ?? [],
 
           variantId: line.variantId,
-          productName: sku?.name ?? line.productName ?? line.variantId,
+          productName: line.productName ?? variant?.masterName ?? line.variantId,
           optionName: optionName ?? undefined,
           quantity: Number(line.quantity ?? 1),
           unitPrice: line.unitPrice ?? undefined,
           totalPrice: line.totalPrice ?? undefined,
-          imageUrl: sku?.imageUrl ?? line.imageUrl,
+          imageUrl: line.imageUrl,
           skuId: line.skuId,
 
           isMatched,
@@ -323,13 +318,9 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
             id: l.id,
             variantId: l.variantId,
             productName:
-              l.skuId && skuMap[l.skuId] ? skuMap[l.skuId].name : l.productName,
+              l.productName ?? variantMap.get(l.variantId)?.masterName,
             optionName:
-              l.skuId && skuMap[l.skuId]?.optionKey
-                ? Object.entries(skuMap[l.skuId].optionKey)
-                    .map(([, v]) => `${v}`)
-                    .join(', ')
-                : l.optionName,
+              variantMap.get(l.variantId)?.optionLabel ?? l.optionName,
             quantity: Number(l.quantity ?? 1),
             unitPrice: l.unitPrice,
             totalPrice: l.totalPrice,
@@ -383,29 +374,29 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
     });
 
     return { items: lineRows, total };
-  }, [listQuery.data, detailQueries.data, skuMapQuery.data, userMapQuery.data]);
+  }, [listQuery.data, detailQueries.data, variantMapQuery.data, userMapQuery.data]);
 
   return {
     data: transformedData,
     isLoading:
       listQuery.isLoading ||
       detailQueries.isLoading ||
-      skuMapQuery.isLoading ||
+      variantMapQuery.isLoading ||
       userMapQuery.isLoading,
     isFetching:
       listQuery.isFetching ||
       detailQueries.isFetching ||
-      skuMapQuery.isFetching ||
+      variantMapQuery.isFetching ||
       userMapQuery.isFetching,
     error:
       listQuery.error ||
       detailQueries.error ||
-      skuMapQuery.error ||
+      variantMapQuery.error ||
       userMapQuery.error,
     refetch: () => {
       listQuery.refetch();
       detailQueries.refetch();
-      skuMapQuery.refetch();
+      variantMapQuery.refetch();
       userMapQuery.refetch();
     },
   };
@@ -442,5 +433,5 @@ export function useCreatePickingLists() {
 }
 
 // 하위 호환 - 모달 컴포넌트가 참조하는 타입 (as any 캐스팅으로 전달되므로 느슨하게 유지)
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export type SalesOrderRow = any;
