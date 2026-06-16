@@ -603,22 +603,68 @@ export class ProductVersionsService {
   }
 
   /**
-   * 운영 노출 정책 변경 — draft 없이 active 버전의 isMembershipOnly를 직접 수정하고 채널에 재싱크.
+   * 멤버십가 공개 제한 변경 — draft 없이 active 버전을 직접 수정하고 채널에 재싱크.
    */
-  async updateMembershipVisibility(masterId: string, isMembershipOnly: boolean, tx?: DbTransaction): Promise<void> {
+  async updateMembershipPriceVisibility(
+    masterId: string,
+    hideMembershipPriceForNonMembers: boolean,
+    tx?: DbTransaction,
+  ): Promise<void> {
     return this.inTx(async (tx) => {
       const activeVersion = await this.getActiveVersion(masterId, tx);
 
       await tx
         .update(productMasterVersions)
-        .set({ isMembershipOnly, updatedAt: new Date() })
+        .set({
+          hideMembershipPriceForNonMembers,
+          isMembershipOnly: hideMembershipPriceForNonMembers,
+          updatedAt: new Date(),
+        })
         .where(eq(productMasterVersions.id, activeVersion.id));
 
       // 변경된 값을 스냅샷에 반영하기 위해 in-memory 패치 후 이벤트 발행
-      const patchedVersion = { ...activeVersion, isMembershipOnly };
+      const patchedVersion = {
+        ...activeVersion,
+        hideMembershipPriceForNonMembers,
+        isMembershipOnly: hideMembershipPriceForNonMembers,
+      };
       await this._emitActiveVersionChangedEvent(patchedVersion, null, 'active', tx);
 
-      this.logger.log(`updateMembershipVisibility: master=${masterId} isMembershipOnly=${isMembershipOnly}`);
+      this.logger.log(
+        `updateMembershipPriceVisibility: master=${masterId} hideMembershipPriceForNonMembers=${hideMembershipPriceForNonMembers}`,
+      );
+    }, tx);
+  }
+
+  /**
+   * @deprecated use updateMembershipPriceVisibility
+   */
+  async updateMembershipVisibility(masterId: string, isMembershipOnly: boolean, tx?: DbTransaction): Promise<void> {
+    return this.updateMembershipPriceVisibility(masterId, isMembershipOnly, tx);
+  }
+
+  /**
+   * 멤버십 회원 전용 노출 변경 — draft 없이 active 버전을 직접 수정하고 채널에 재싱크.
+   */
+  async updateMembersOnlyVisibility(
+    masterId: string,
+    isVisibleToMembersOnly: boolean,
+    tx?: DbTransaction,
+  ): Promise<void> {
+    return this.inTx(async (tx) => {
+      const activeVersion = await this.getActiveVersion(masterId, tx);
+
+      await tx
+        .update(productMasterVersions)
+        .set({ isVisibleToMembersOnly, updatedAt: new Date() })
+        .where(eq(productMasterVersions.id, activeVersion.id));
+
+      const patchedVersion = { ...activeVersion, isVisibleToMembersOnly };
+      await this._emitActiveVersionChangedEvent(patchedVersion, null, 'active', tx);
+
+      this.logger.log(
+        `updateMembersOnlyVisibility: master=${masterId} isVisibleToMembersOnly=${isVisibleToMembersOnly}`,
+      );
     }, tx);
   }
 
@@ -812,7 +858,9 @@ export class ProductVersionsService {
       variants,
       status: version.status === 'inactive' ? 'draft' : version.status,
       isWholesaleOnly: version.isWholesaleOnly || false,
-      isMembershipOnly: version.isMembershipOnly || false,
+      hideMembershipPriceForNonMembers: version.hideMembershipPriceForNonMembers ?? version.isMembershipOnly ?? false,
+      isMembershipOnly: version.hideMembershipPriceForNonMembers ?? version.isMembershipOnly ?? false,
+      isVisibleToMembersOnly: version.isVisibleToMembersOnly ?? false,
       isGiftcard: false,
       discountable: true,
       purchaseConstraint,
@@ -1140,6 +1188,8 @@ export class ProductVersionsService {
         'descriptionHtml',
         'status',
         'isWholesaleOnly',
+        'hideMembershipPriceForNonMembers',
+        'isVisibleToMembersOnly',
         'isMembershipOnly',
         'productType',
         'fulfillmentKind',

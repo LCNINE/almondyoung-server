@@ -68,6 +68,9 @@ export interface PimProductSnapshot {
   }>;
   status: 'draft' | 'active' | 'inactive';
   isWholesaleOnly?: boolean;
+  hideMembershipPriceForNonMembers?: boolean;
+  isVisibleToMembersOnly?: boolean;
+  /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly?: boolean;
   isGiftcard?: boolean;
   discountable?: boolean;
@@ -157,6 +160,9 @@ export function transformPimToMedusa(
 
   const variants = transformVariants(activeVariants, optionTitles, defaultOptionTitles, isOptionlessProduct);
 
+  const hideMembershipPriceForNonMembers =
+    snapshot.hideMembershipPriceForNonMembers ?? snapshot.isMembershipOnly ?? false;
+
   const metadata = {
     pimMasterId: snapshot.masterId,
     pimVersionId: snapshot.versionId,
@@ -166,7 +172,9 @@ export function transformPimToMedusa(
     seoDescription: snapshot.seoDescription,
     seoKeywords: snapshot.seoKeywords,
     isWholesaleOnly: snapshot.isWholesaleOnly,
-    isMembershipOnly: snapshot.isMembershipOnly,
+    hideMembershipPriceForNonMembers,
+    isMembershipOnly: hideMembershipPriceForNonMembers,
+    isVisibleToMembersOnly: snapshot.isVisibleToMembersOnly ?? false,
     productType: snapshot.productType,
     syncedAt: new Date().toISOString(),
   };

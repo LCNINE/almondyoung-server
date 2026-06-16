@@ -292,21 +292,80 @@ export class ProductMastersController {
     };
   }
 
-  @Patch(':masterId/membership-visibility')
+  @Patch(':masterId/membership-price-visibility')
   @ApiOperation({
-    summary: '멤버십가 공개 여부 변경',
-    description: 'draft 없이 active 버전의 isMembershipOnly를 직접 수정합니다. 채널 어댑터를 통해 Medusa에 즉시 반영됩니다.',
+    summary: '멤버십가 공개 제한 변경',
+    description:
+      'draft 없이 active 버전의 hideMembershipPriceForNonMembers를 직접 수정합니다. 채널 어댑터를 통해 Medusa에 즉시 반영됩니다.',
   })
   @ApiParam({ name: 'masterId', description: 'Master ID' })
-  @ApiBody({ schema: { type: 'object', properties: { isMembershipOnly: { type: 'boolean' } }, required: ['isMembershipOnly'] } })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { hideMembershipPriceForNonMembers: { type: 'boolean' } },
+      required: ['hideMembershipPriceForNonMembers'],
+    },
+  })
   @ApiResponse({ status: 200, description: '성공' })
   @ApiResponse({ status: 404, description: 'Active 버전 없음' })
-  async updateMembershipVisibility(
+  async updateMembershipPriceVisibility(
     @Param('masterId') masterId: string,
-    @Body() body: { isMembershipOnly: boolean },
+    @Body() body: { hideMembershipPriceForNonMembers: boolean },
   ) {
-    await this.productVersionsService.updateMembershipVisibility(masterId, body.isMembershipOnly);
-    return { success: true, masterId, isMembershipOnly: body.isMembershipOnly };
+    await this.productVersionsService.updateMembershipPriceVisibility(masterId, body.hideMembershipPriceForNonMembers);
+    return {
+      success: true,
+      masterId,
+      hideMembershipPriceForNonMembers: body.hideMembershipPriceForNonMembers,
+      isMembershipOnly: body.hideMembershipPriceForNonMembers,
+    };
+  }
+
+  @Patch(':masterId/membership-visibility')
+  @ApiOperation({
+    summary: 'Deprecated: 멤버십가 공개 제한 변경',
+    description:
+      'Deprecated legacy alias입니다. hideMembershipPriceForNonMembers 대신 isMembershipOnly를 받아 같은 active 직접 업데이트를 수행합니다.',
+    deprecated: true,
+  })
+  @ApiParam({ name: 'masterId', description: 'Master ID' })
+  @ApiBody({
+    schema: { type: 'object', properties: { isMembershipOnly: { type: 'boolean' } }, required: ['isMembershipOnly'] },
+  })
+  @ApiResponse({ status: 200, description: '성공' })
+  @ApiResponse({ status: 404, description: 'Active 버전 없음' })
+  async updateMembershipVisibility(@Param('masterId') masterId: string, @Body() body: { isMembershipOnly: boolean }) {
+    await this.productVersionsService.updateMembershipPriceVisibility(masterId, body.isMembershipOnly);
+    return {
+      success: true,
+      masterId,
+      hideMembershipPriceForNonMembers: body.isMembershipOnly,
+      isMembershipOnly: body.isMembershipOnly,
+    };
+  }
+
+  @Patch(':masterId/members-only-visibility')
+  @ApiOperation({
+    summary: '멤버십 회원 전용 노출 변경',
+    description:
+      'draft 없이 active 버전의 isVisibleToMembersOnly를 직접 수정합니다. 비회원 목록/검색/상세 접근에서 숨기는 운영 노출 정책입니다.',
+  })
+  @ApiParam({ name: 'masterId', description: 'Master ID' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { isVisibleToMembersOnly: { type: 'boolean' } },
+      required: ['isVisibleToMembersOnly'],
+    },
+  })
+  @ApiResponse({ status: 200, description: '성공' })
+  @ApiResponse({ status: 404, description: 'Active 버전 없음' })
+  async updateMembersOnlyVisibility(
+    @Param('masterId') masterId: string,
+    @Body() body: { isVisibleToMembersOnly: boolean },
+  ) {
+    await this.productVersionsService.updateMembersOnlyVisibility(masterId, body.isVisibleToMembersOnly);
+    return { success: true, masterId, isVisibleToMembersOnly: body.isVisibleToMembersOnly };
   }
 
   @Patch(':masterId/unpublish')

@@ -18,7 +18,13 @@ import {
   CategoryTagGroupItemDto,
 } from './dto';
 import { CategoryMapper, CategoryTagGroupsEntity, CategoryTagGroupItem } from './mappers';
-import { ProductMaster, DbTransaction, NewProductCategory, ProductCategory, UpdateProductCategory } from '../../catalog.types';
+import {
+  ProductMaster,
+  DbTransaction,
+  NewProductCategory,
+  ProductCategory,
+  UpdateProductCategory,
+} from '../../catalog.types';
 import {
   type PimSchema,
   pimSchema,
@@ -261,9 +267,8 @@ export class ProductCategoriesService {
     const client = this.getClient(tx);
 
     const baseQuery = client.select().from(pimSchema.productCategories);
-    const allCategories = await (includeInactive
-      ? baseQuery
-      : baseQuery.where(eq(pimSchema.productCategories.isActive, true))
+    const allCategories = await (
+      includeInactive ? baseQuery : baseQuery.where(eq(pimSchema.productCategories.isActive, true))
     ).orderBy(pimSchema.productCategories.level, pimSchema.productCategories.sortOrder);
 
     // Build tree structure
@@ -572,6 +577,8 @@ export class ProductCategoriesService {
         descriptionHtml: pimSchema.productMasterVersions.descriptionHtml,
         status: pimSchema.productMasterVersions.status,
         isWholesaleOnly: pimSchema.productMasterVersions.isWholesaleOnly,
+        hideMembershipPriceForNonMembers: pimSchema.productMasterVersions.hideMembershipPriceForNonMembers,
+        isVisibleToMembersOnly: pimSchema.productMasterVersions.isVisibleToMembersOnly,
         isMembershipOnly: pimSchema.productMasterVersions.isMembershipOnly,
         createdAt: pimSchema.productMasterVersions.createdAt,
         updatedAt: pimSchema.productMasterVersions.updatedAt,

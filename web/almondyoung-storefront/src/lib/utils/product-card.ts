@@ -10,15 +10,42 @@ export type ReviewSummary = { rating: number; reviewCount: number }
 
 /**
  * 멤버십가 비공개 여부 (비회원에게 멤버십가 숫자 대신 "멤버십 회원 공개" 표시).
- * 상품 숨김/구매 제한이 아니다. 판정 기준은 product.metadata.isMembershipOnly 단일.
+ * 상품 숨김/구매 제한이 아니다.
+ */
+export function getHideMembershipPriceForNonMembers(
+  product: Pick<StoreProduct, "metadata">
+): boolean {
+  return (
+    product.metadata?.hideMembershipPriceForNonMembers === true ||
+    product.metadata?.hideMembershipPriceForNonMembers === "true" ||
+    product.metadata?.isMembershipOnly === true ||
+    product.metadata?.isMembershipOnly === "true"
+  )
+}
+
+export function getIsVisibleToMembersOnly(
+  product: Pick<StoreProduct, "metadata">
+): boolean {
+  return (
+    product.metadata?.isVisibleToMembersOnly === true ||
+    product.metadata?.isVisibleToMembersOnly === "true"
+  )
+}
+
+export function filterProductsByMembershipVisibility<
+  T extends Pick<StoreProduct, "metadata">,
+>(products: T[], isMembership: boolean): T[] {
+  if (isMembership) return products
+  return products.filter((product) => !getIsVisibleToMembersOnly(product))
+}
+
+/**
+ * @deprecated UI prop compatibility. Use getHideMembershipPriceForNonMembers.
  */
 export function getIsMembershipOnly(
   product: Pick<StoreProduct, "metadata">
 ): boolean {
-  return (
-    product.metadata?.isMembershipOnly === true ||
-    product.metadata?.isMembershipOnly === "true"
-  )
+  return getHideMembershipPriceForNonMembers(product)
 }
 
 const getMembershipPreviewPrice = (
@@ -107,7 +134,8 @@ export function mapStoreProductToCardProps(
     ? Infinity
     : variants.reduce((sum, v) => sum + (v.inventory_quantity || 0), 0)
 
-  const isMembershipOnly = getIsMembershipOnly(product)
+  const hideMembershipPriceForNonMembers =
+    getHideMembershipPriceForNonMembers(product)
 
   const isWelcomeMembership = isWelcomeMembershipProduct(product.tags)
 
@@ -123,7 +151,7 @@ export function mapStoreProductToCardProps(
     imageSrc: imageUrl,
     membershipSavings,
     showMembershipHint,
-    isMembershipOnly,
+    isMembershipOnly: hideMembershipPriceForNonMembers,
     manageInventory: !hasUnmanagedVariant,
     available: hasAnyStock ? totalAvailable : 0,
     debugPrices: {
@@ -147,9 +175,10 @@ export function mapStoreProductsToCardProps(
   reviewsMap?: Map<string, ReviewSummary>,
   options?: { isMember?: boolean }
 ): ProductCardProps[] {
-  // isMembershipOnly=true 상품도 비회원에게 그대로 노출한다.
-  // (isMembershipOnly는 상품 숨김이 아니라 "비회원에게 멤버십가 숫자 숨김" 표시 정책)
-  return products
+  return filterProductsByMembershipVisibility(
+    products,
+    Boolean(options?.isMember)
+  )
     .map((product) =>
       mapStoreProductToCardProps(product, reviewsMap, options?.isMember)
     )

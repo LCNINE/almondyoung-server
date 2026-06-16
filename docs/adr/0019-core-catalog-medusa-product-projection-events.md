@@ -2,7 +2,7 @@
 
 Core Catalog 는 판매상품 데이터의 source of truth 이고, Medusa 는 판매채널 projection 이다. Medusa 는 우리 Kafka broker 로부터 직접 이벤트를 받지 않으므로 Core Catalog 의 active 상품 변경은 channel-adapter 가 받아서 Medusa Admin API 로 반영한다.
 
-active 판매상품 변경은 `draft 수정 -> publish` 경로로만 발생해야 한다. active version row 를 직접 수정하는 것은 정책상 금지한다. bulk edit 은 기존 운영 흐름상 회색지대가 있으므로 이번 결정의 구현 범위에서 제외하지만, 장기적으로는 active 직접 수정 금지 원칙에 맞춰 별도 재설계해야 한다.
+active 판매상품 변경은 `draft 수정 -> publish` 경로로만 발생해야 한다. active version row 를 직접 수정하는 것은 정책상 금지한다. 예외적으로 **멤버십가 공개 제한**과 **멤버십 회원 전용 노출** 같은 운영 노출 정책은 active version 에 즉시 반영할 수 있고, 변경된 active snapshot 을 outbox 로 재발행한다. bulk edit 은 기존 운영 흐름상 회색지대이므로 이번 결정의 구현 범위에서 제외하지만, 장기적으로는 active 직접 수정 금지 원칙에 맞춰 별도 재설계해야 한다.
 
 ## 결정
 

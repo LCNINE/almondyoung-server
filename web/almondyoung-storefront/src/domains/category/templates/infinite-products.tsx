@@ -9,8 +9,10 @@ import {
 import { useProductGridVirtualizer } from "@/domains/category/hooks/use-product-grid-virtualizer"
 import { useWishlistIds } from "@/domains/category/hooks/use-wishlist-ids"
 import ProductCard from "@/domains/products/components/product-card"
-import { getIsMembershipOnly } from "@/lib/utils/product-card"
-import { filterMembershipRestrictedProducts } from "@/lib/utils/membership-restricted-products" // TODO(#433): isMembersOnly 구현 후 제거
+import {
+  filterProductsByMembershipVisibility,
+  getHideMembershipPriceForNonMembers,
+} from "@/lib/utils/product-card"
 import type { HttpTypes } from "@medusajs/types"
 import { useTranslations } from "next-intl"
 
@@ -56,7 +58,10 @@ export default function InfiniteProducts({
     })
   const wishlistSet = useWishlistIds({ isLoggedIn, initialWishlistIds })
 
-  const visibleProducts = filterMembershipRestrictedProducts(allProducts, isMembership)
+  const visibleProducts = filterProductsByMembershipVisibility(
+    allProducts,
+    isMembership
+  )
 
   const { listRef, virtualizer, virtualItems, columns, rowCount, rowHeight } =
     useProductGridVirtualizer({
@@ -120,7 +125,9 @@ export default function InfiniteProducts({
                       <ProductCard
                         product={p}
                         isMembership={isMembership}
-                        isMembershipOnly={getIsMembershipOnly(p)}
+                        isMembershipOnly={getHideMembershipPriceForNonMembers(
+                          p
+                        )}
                         isWishlisted={wishlistSet.has(p.id ?? "")}
                         countryCode={countryCode}
                       />
@@ -134,7 +141,7 @@ export default function InfiniteProducts({
       </div>
 
       {!hasNextPage && visibleProducts.length > PRODUCT_LIMIT && (
-        <p className="py-8 text-sm text-center text-gray-500">{t("noMore")}</p>
+        <p className="py-8 text-center text-sm text-gray-500">{t("noMore")}</p>
       )}
     </>
   )

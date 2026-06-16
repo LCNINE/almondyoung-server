@@ -20,6 +20,9 @@ export interface ProductVersionDetailResponseDto {
   seoKeywords: string[] | null;
   descriptionHtml: string | null;
   isWholesaleOnly: boolean;
+  hideMembershipPriceForNonMembers: boolean;
+  isVisibleToMembersOnly: boolean;
+  /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly: boolean;
   productType: string | null;
   fulfillmentKind: 'physical' | 'digital';
@@ -74,7 +77,9 @@ export class ProductVersionMapper {
       seoKeywords: detail.seoKeywords,
       descriptionHtml: detail.descriptionHtml,
       isWholesaleOnly: detail.isWholesaleOnly,
-      isMembershipOnly: detail.isMembershipOnly,
+      hideMembershipPriceForNonMembers: detail.hideMembershipPriceForNonMembers ?? detail.isMembershipOnly ?? false,
+      isVisibleToMembersOnly: detail.isVisibleToMembersOnly ?? false,
+      isMembershipOnly: detail.hideMembershipPriceForNonMembers ?? detail.isMembershipOnly ?? false,
       productType: detail.productType,
       fulfillmentKind: (detail.fulfillmentKind ?? 'physical') as 'physical' | 'digital',
       productCode: detail.productCode,

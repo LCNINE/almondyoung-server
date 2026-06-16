@@ -16,6 +16,8 @@ describe('ProductVersionMapper', () => {
       seoDescription: null,
       seoKeywords: null,
       isWholesaleOnly: false,
+      hideMembershipPriceForNonMembers: false,
+      isVisibleToMembersOnly: false,
       isMembershipOnly: false,
       productType: null,
       fulfillmentKind: 'physical',

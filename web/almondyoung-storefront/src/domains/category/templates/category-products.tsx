@@ -2,7 +2,7 @@ import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import { listProducts, listProductsSorted } from "@/lib/api/medusa/products"
 import { getRegion } from "@/lib/api/medusa/regions"
 import { isMembershipGroup } from "@/lib/utils/membership-group"
-import { filterMembershipRestrictedProducts } from "@/lib/utils/membership-restricted-products" // TODO(#433): isMembersOnly 구현 후 제거
+import { filterProductsByMembershipVisibility } from "@/lib/utils/product-card"
 import { getWishlist } from "@lib/api/users/wishlist"
 import { PackageX } from "lucide-react"
 import { getTranslations } from "next-intl/server"
@@ -69,7 +69,7 @@ export default async function CategoryProducts({
   const wishlist = customer ? await getWishlist().catch(() => []) : []
   const initialWishlistIds = wishlist.map((item) => item.productId)
 
-  const filteredProducts = filterMembershipRestrictedProducts(
+  const filteredProducts = filterProductsByMembershipVisibility(
     initialProducts,
     isMembership
   )

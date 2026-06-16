@@ -18,6 +18,8 @@ interface MasterRow {
   product_type?: string;
   status: string;
   is_wholesale_only: boolean;
+  hide_membership_price_for_non_members: boolean;
+  is_visible_to_members_only: boolean;
   is_membership_only: boolean;
 }
 
@@ -139,6 +141,8 @@ export class PimSnapshotBuilder {
         pmv.product_type,
         pmv.status,
         pmv.is_wholesale_only,
+        pmv.hide_membership_price_for_non_members,
+        pmv.is_visible_to_members_only,
         pmv.is_membership_only
       FROM product_masters pm
       INNER JOIN product_master_versions pmv ON pm.id = pmv.master_id
@@ -279,10 +283,7 @@ export class PimSnapshotBuilder {
   /**
    * Query purchase constraints for given masters (batch)
    */
-  private async queryPurchaseConstraints(
-    masterIds: string[],
-    versionIds: string[],
-  ): Promise<PurchaseConstraintRow[]> {
+  private async queryPurchaseConstraints(masterIds: string[], versionIds: string[]): Promise<PurchaseConstraintRow[]> {
     if (masterIds.length === 0) return [];
 
     return await this.pimDb<PurchaseConstraintRow[]>`
@@ -396,7 +397,9 @@ export class PimSnapshotBuilder {
         optionGroups: Array.from(groupedOptions.values()),
         status: master.status as any,
         isWholesaleOnly: master.is_wholesale_only,
-        isMembershipOnly: master.is_membership_only,
+        hideMembershipPriceForNonMembers: master.hide_membership_price_for_non_members ?? master.is_membership_only,
+        isMembershipOnly: master.hide_membership_price_for_non_members ?? master.is_membership_only,
+        isVisibleToMembersOnly: master.is_visible_to_members_only ?? false,
         purchaseConstraint,
         isGiftcard: false, // PIM schema doesn't have this field
         discountable: true, // PIM schema doesn't have this field

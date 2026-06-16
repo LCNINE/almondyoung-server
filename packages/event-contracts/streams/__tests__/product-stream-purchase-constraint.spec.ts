@@ -24,6 +24,8 @@ const validPayload = {
     ],
     status: 'active',
     isWholesaleOnly: false,
+    hideMembershipPriceForNonMembers: false,
+    isVisibleToMembersOnly: false,
     isMembershipOnly: false,
     isGiftcard: false,
     discountable: true,
@@ -44,6 +46,22 @@ describe('PRODUCT_STREAM ProductMasterActiveVersionChanged purchaseConstraint', 
       requiresMembership: true,
       lifetimeQuantityLimit: 3,
     });
+  });
+
+  it('carries membership visibility policies in the active product snapshot', () => {
+    const parsed = schema.parse({
+      ...validPayload,
+      snapshot: {
+        ...validPayload.snapshot,
+        hideMembershipPriceForNonMembers: true,
+        isMembershipOnly: true,
+        isVisibleToMembersOnly: true,
+      },
+    });
+
+    expect(parsed.snapshot?.hideMembershipPriceForNonMembers).toBe(true);
+    expect(parsed.snapshot?.isMembershipOnly).toBe(true);
+    expect(parsed.snapshot?.isVisibleToMembersOnly).toBe(true);
   });
 
   it('accepts null lifetimeQuantityLimit as no quantity limit', () => {

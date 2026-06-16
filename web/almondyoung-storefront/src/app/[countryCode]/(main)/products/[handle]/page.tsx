@@ -5,7 +5,7 @@ import { getQnaSummary } from "@/lib/api/ugc"
 import { getRatingSummary } from "@/lib/api/ugc/reviews"
 import { addToRecentViews } from "@/lib/api/users/recent-views"
 import { isMembershipGroup } from "@/lib/utils/membership-group"
-import { isProductMembershipRestricted } from "@/lib/utils/membership-restricted-products"
+import { getIsVisibleToMembersOnly } from "@/lib/utils/product-card"
 import { Customer } from "@/lib/types/ui/medusa"
 import { listProducts } from "@lib/api/medusa/products"
 import { getRegion } from "@lib/api/medusa/regions"
@@ -67,8 +67,7 @@ export default async function Page(props: Props) {
     notFound()
   }
 
-  // TODO(#433): isMembersOnly 필드 구현 후 metadata.isMembersOnly 기반으로 교체 및 하드코딩 제거
-  if (isProductMembershipRestricted(pricedProduct)) {
+  if (getIsVisibleToMembersOnly(pricedProduct)) {
     const groups = customer?.groups ?? []
     if (!isMembershipGroup(groups)) {
       notFound()

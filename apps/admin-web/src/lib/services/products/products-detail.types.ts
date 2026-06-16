@@ -45,6 +45,9 @@ export type ProductMasterDetail = {
   brand: string | null;
   status: string | null;
   isWholesaleOnly: boolean | null;
+  hideMembershipPriceForNonMembers?: boolean | null;
+  isVisibleToMembersOnly?: boolean | null;
+  /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly: boolean | null;
   fulfillmentKind?: 'physical' | 'digital' | null;
   seoTitle: string | null;
@@ -137,6 +140,9 @@ export type MasterVersionDetailDto = {
   seoDescription: string | null;
   seoKeywords: string[] | null;
   isWholesaleOnly: boolean | null;
+  hideMembershipPriceForNonMembers?: boolean | null;
+  isVisibleToMembersOnly?: boolean | null;
+  /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly: boolean | null;
   fulfillmentKind?: 'physical' | 'digital' | null;
   parentVersionId: string | null;
@@ -174,6 +180,9 @@ export type UpdateMasterVersionDto = {
   categoryIds?: string[];
   primaryCategoryId?: string | null;
   isWholesaleOnly?: boolean;
+  hideMembershipPriceForNonMembers?: boolean;
+  isVisibleToMembersOnly?: boolean;
+  /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly?: boolean;
   fulfillmentKind?: 'physical' | 'digital';
   optionDiff?: ProductOptionDiff;

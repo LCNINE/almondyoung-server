@@ -54,6 +54,8 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
       variants: [],
       status: 'active',
       isWholesaleOnly: false,
+      hideMembershipPriceForNonMembers: false,
+      isVisibleToMembersOnly: false,
       isMembershipOnly: false,
       isGiftcard: false,
       discountable: true,

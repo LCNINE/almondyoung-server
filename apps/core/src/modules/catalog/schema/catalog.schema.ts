@@ -145,12 +145,17 @@ export const productMasterVersions = pgTable(
     descriptionHtml: text('description_html'), // 상품 상세설명 HTML (단일 필드)
     isWholesaleOnly: boolean('is_wholesale_only').default(false).notNull(), // 도매회원 전용
     isMembershipOnly: boolean('is_membership_only').default(false).notNull(), // 멤버십가 공개 제한 — 비회원에게 멤버십가 숫자를 숨김 (상품 노출/구매 제한 아님; 구매 제한은 purchaseConstraint 사용)
+    hideMembershipPriceForNonMembers: boolean('hide_membership_price_for_non_members').default(false).notNull(), // 멤버십가 공개 제한 canonical field
+    isVisibleToMembersOnly: boolean('is_visible_to_members_only').default(false).notNull(), // 멤버십 회원 전용 노출 — 비회원 목록/검색/상세에서 숨김
 
     // ===== Phase 1 NEW FIELDS START =====
     // Product Type
     productType: varchar('product_type', { length: 50 }).notNull().default('regular_sale'), // 'limited_edition' | 'regular_sale'
     // Fulfillment classification. Shipping eligibility must not be inferred from SKU or asset matching.
-    fulfillmentKind: varchar('fulfillment_kind', { length: 20 }).$type<'physical' | 'digital'>().notNull().default('physical'),
+    fulfillmentKind: varchar('fulfillment_kind', { length: 20 })
+      .$type<'physical' | 'digital'>()
+      .notNull()
+      .default('physical'),
 
     // Product Identification
     productCode: varchar('product_code', { length: 100 }),

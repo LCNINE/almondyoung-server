@@ -18,6 +18,9 @@ export const CreateMasterSchema = z.object({
   seoKeywords: z.array(z.string()).optional(),
   descriptionHtml: z.string().optional(),
   isWholesaleOnly: z.boolean().optional(),
+  hideMembershipPriceForNonMembers: z.boolean().optional(),
+  isVisibleToMembersOnly: z.boolean().optional(),
+  /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly: z.boolean().optional(),
   // optionGroups removed - use update API with optionDiff instead
   categoryIds: z.array(z.uuid()).optional(),
@@ -73,7 +76,20 @@ export class CreateMasterDtoSwagger {
   @ApiProperty({ description: '도매회원 전용 여부', required: false })
   isWholesaleOnly?: boolean;
 
-  @ApiProperty({ description: '멤버십가 비공개 여부 (비회원에게 멤버십가 숨김 — 상품 노출·구매 제한 아님)', required: false })
+  @ApiProperty({
+    description: '멤버십가 비공개 여부 (비회원에게 멤버십가 숨김 — 상품 노출·구매 제한 아님)',
+    required: false,
+  })
+  hideMembershipPriceForNonMembers?: boolean;
+
+  @ApiProperty({ description: '멤버십 회원 전용 노출 여부 (비회원 목록·검색·상세에서 숨김)', required: false })
+  isVisibleToMembersOnly?: boolean;
+
+  @ApiProperty({
+    description: 'Deprecated. hideMembershipPriceForNonMembers를 사용하세요.',
+    required: false,
+    deprecated: true,
+  })
   isMembershipOnly?: boolean;
 
   // optionGroups removed - use PUT /masters/:id with optionDiff instead

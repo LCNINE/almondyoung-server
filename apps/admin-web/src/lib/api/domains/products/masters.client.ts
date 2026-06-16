@@ -31,6 +31,9 @@ export interface ProductSummary {
   name: string;
   thumbnail: string | null;
   brand: string | null;
+  hideMembershipPriceForNonMembers: boolean;
+  isVisibleToMembersOnly: boolean;
+  /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly: boolean;
   status: string;
   createdAt: string;
@@ -102,6 +105,16 @@ export const mastersClient = {
     return response.data;
   },
 
+  updateMembershipPriceVisibility: async (
+    masterId: string,
+    hideMembershipPriceForNonMembers: boolean
+  ): Promise<void> => {
+    await client.patch(
+      `${ALMONDYOUNG_API_BASE_URL}/masters/${masterId}/membership-price-visibility`,
+      { hideMembershipPriceForNonMembers }
+    );
+  },
+
   updateMembershipVisibility: async (
     masterId: string,
     isMembershipOnly: boolean
@@ -109,6 +122,16 @@ export const mastersClient = {
     await client.patch(
       `${ALMONDYOUNG_API_BASE_URL}/masters/${masterId}/membership-visibility`,
       { isMembershipOnly }
+    );
+  },
+
+  updateMembersOnlyVisibility: async (
+    masterId: string,
+    isVisibleToMembersOnly: boolean
+  ): Promise<void> => {
+    await client.patch(
+      `${ALMONDYOUNG_API_BASE_URL}/masters/${masterId}/members-only-visibility`,
+      { isVisibleToMembersOnly }
     );
   },
 

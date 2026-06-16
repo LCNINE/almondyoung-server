@@ -161,6 +161,10 @@ export interface MasterSummaryDto {
   thumbnail: string | null;
   brand: string | null;
   /** 멤버십가 비공개 여부 — 비회원에게 멤버십가 숫자를 숨김. 상품 노출·구매 제한 아님. */
+  hideMembershipPriceForNonMembers: boolean;
+  /** 멤버십 회원 전용 노출 여부 — 비회원 목록·검색·상세에서 숨김. */
+  isVisibleToMembersOnly: boolean;
+  /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly: boolean;
   status: ProductStatus;
   createdAt: string;

@@ -34,8 +34,14 @@
 - Medusa 는 현재 판매상품 구매제약조건의 lifetime 구매수량 제한을 기본 기능으로 지원하지 않는다. Core Catalog 는 이 조건의 SoT 를 가질 수 있지만, Medusa 에서의 실제 적용은 별도 custom workflow/hook 구현 전까지 작동하지 않는다.
 - channel-adapter 는 판매상품 구매제약조건을 Medusa product metadata 의 별도 projection 으로 전달한다. 이 metadata 는 미래의 Medusa custom workflow/hook 이 Core 호출 없이 로컬에서 제약을 적용하기 위한 입력이며, 기존 `isMembershipOnly` metadata 와 섞지 않는다.
 - 판매상품 구매제약조건이 설정되어도 판매채널이 해당 제약 기능을 지원하지 않으면 실제 제약은 작동하지 않을 수 있다. 이것은 Catalog publish 차단 조건이 아니며, channel-adapter/판매채널 projection 의 지원 범위 문제로 다룬다.
-- **멤버십가 공개 제한**은 멤버십 회원이 아닌 고객에게 해당 판매상품의 멤버십가를 보여주지 않는 가격 노출 정책이다. 이것은 구매 가능 여부가 아니며, "멤버십 회원만 구매 가능"과 구분한다.
-- `isMembershipOnly` 는 legacy 필드명 때문에 **멤버십가 공개 제한**과 **멤버십 회원 전용 구매조건**을 혼동시키기 쉽다. 도메인 언어에서는 구매조건을 `isMembershipOnly` 로 부르지 않는다.
+- **멤버십가 공개 제한**은 멤버십 회원이 아닌 고객에게 해당 판매상품의 멤버십가를 보여주지 않는 가격 노출 정책이다. 이것은 상품 노출이나 구매 가능 여부가 아니며, 코드에서는 `hideMembershipPriceForNonMembers` 로 표현한다.
+- **멤버십 회원 전용 노출**은 멤버십 회원이 아닌 고객의 목록/검색/상세 접근에서 해당 판매상품을 숨기는 고객 노출 정책이다. 이것은 구매 가능 여부가 아니며, 코드에서는 `isVisibleToMembersOnly` 로 표현한다.
+- **멤버십가 공개 제한**과 **멤버십 회원 전용 노출**은 운영 노출 정책이므로 active version 에 즉시 반영할 수 있다. 일반 판매상품 내용 변경은 여전히 draft/publish 흐름을 따른다.
+- **멤버십 회원 전용 노출**의 canonical enforcement 는 판매채널 응답 단계다. Medusa 는 단건 상세 접근을 차단하고, custom sorted list 는 query/count 단계에서 제외한다. 비회원 장바구니 담기도 방어적으로 차단한다. Storefront 는 metadata 기반 필터를 한 번 더 적용하는 UX 방어선이다.
+- Medusa/Storefront 에서 **멤버십 회원** 판정은 Medusa customer group 기준이다. 고객이 `MEDUSA_MEMBERSHIP_GROUP_ID` 그룹에 속해 있으면 멤버십 회원이고, guest 또는 해당 그룹이 없는 로그인 고객은 비회원이다.
+- Search service 는 첫 구현에서 **멤버십 회원 전용 노출**을 index/query 조건으로 반영하지 않는다. Storefront 검색 결과는 Medusa metadata 기준으로 필터하지만 search total/page 는 숨겨진 상품을 포함할 수 있으며, 정확한 검색 pagination 은 별도 작업으로 다룬다.
+- `isMembershipOnly` 는 legacy 필드명 때문에 **멤버십가 공개 제한**, **멤버십 회원 전용 노출**, **멤버십 회원 전용 구매조건**을 혼동시키기 쉽다. 도메인 언어에서는 이 세 정책 중 어느 것도 `isMembershipOnly` 로 부르지 않는다.
+- `isMembersOnly` 는 어떤 정책이 멤버십 전용인지 불분명하므로 쓰지 않는다.
 - **재고 매칭 (productMatchings + productVariantSkuLinks) 의 버전 인계.** matching 은 inventory 모듈 소유이고 `variantId` unique. variant CoW 가 발생해도 PIM 트랜잭션 안에선 matching 을 건드리지 않는다. 대신 `publishVersion` 이 새 active 의 matching 없는 variant 들에 대해 **이전 active 의 같은 옵션 조합 variant** 의 matching+links 를 clone (variantId 만 새 ID). 옵션 조합이 일치 안 하면 (= 정체성이 달라진 신규 조합) unmatched 유지 — 운영자가 product-matching 화면에서 처리. 의도: 본질적이지 않은 variant 변경(이미지/이름) 은 매칭 자동 인계, 옵션 정체성 변화는 끊김. draft 단계에선 inventory 시뮬레이션은 안 한다는 운영 가정.
 - **상품 상세설명 (Product Description)**: 판매상품 master version 에 속하는 고객 노출용 상세 콘텐츠. Canonical source 는 Markdown 기반 `description` 이며, `description` 이 없을 때만 legacy `descriptionHtml` 을 fallback 으로 사용한다. 작성자는 `description` 에 raw HTML 을 쓰지 않고, 기본 Markdown 문법과 상품 상세설명 이미지 문법으로 콘텐츠를 표현한다.
 - **상품 상세설명 이미지**: 상품 상세설명 Markdown 안에서 file-service 의 File UUID 를 참조해 노출하는 이미지. 작성 문법은 `::product-image{fileId="..." alt="..."}` 이며, raw URL 이미지가 아니라 `product-description-image` file context 에 업로드된 파일을 참조한다.

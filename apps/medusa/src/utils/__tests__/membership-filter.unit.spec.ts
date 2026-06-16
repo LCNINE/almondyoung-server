@@ -1,6 +1,9 @@
 import {
+  assertProductVisibleToCustomer,
   applyMembershipPriceVisibility,
+  filterProductsForMemberState,
   isMembershipPriceHiddenProduct,
+  isVisibleToMembersOnlyProduct,
   sanitizeProductForNonMember,
   transformStoreProductsPayload,
   type MembershipProduct,
@@ -19,7 +22,16 @@ const makeProduct = (overrides: Partial<MembershipProduct> = {}): MembershipProd
 });
 
 describe('isMembershipPriceHiddenProduct', () => {
-  it('metadata.isMembershipOnly=true(boolean/string) 상품을 멤버십가 숨김 대상으로 판정한다', () => {
+  it('metadata.hideMembershipPriceForNonMembers=true(boolean/string) 상품을 멤버십가 숨김 대상으로 판정한다', () => {
+    expect(isMembershipPriceHiddenProduct(makeProduct({ metadata: { hideMembershipPriceForNonMembers: true } }))).toBe(
+      true,
+    );
+    expect(
+      isMembershipPriceHiddenProduct(makeProduct({ metadata: { hideMembershipPriceForNonMembers: 'true' } })),
+    ).toBe(true);
+  });
+
+  it('legacy metadata.isMembershipOnly=true(boolean/string)도 멤버십가 숨김 대상으로 판정한다', () => {
     expect(isMembershipPriceHiddenProduct(makeProduct({ metadata: { isMembershipOnly: true } }))).toBe(true);
     expect(isMembershipPriceHiddenProduct(makeProduct({ metadata: { isMembershipOnly: 'true' } }))).toBe(true);
   });
@@ -27,6 +39,37 @@ describe('isMembershipPriceHiddenProduct', () => {
   it('일반 상품은 숨김 대상이 아니다', () => {
     expect(isMembershipPriceHiddenProduct(makeProduct())).toBe(false);
     expect(isMembershipPriceHiddenProduct(makeProduct({ metadata: null }))).toBe(false);
+  });
+});
+
+describe('members-only product visibility', () => {
+  it('metadata.isVisibleToMembersOnly=true(boolean/string) 상품을 회원 전용 노출 대상으로 판정한다', () => {
+    expect(isVisibleToMembersOnlyProduct(makeProduct({ metadata: { isVisibleToMembersOnly: true } }))).toBe(true);
+    expect(isVisibleToMembersOnlyProduct(makeProduct({ metadata: { isVisibleToMembersOnly: 'true' } }))).toBe(true);
+  });
+
+  it('비멤버 products 배열에서 members-only 상품을 제거한다', () => {
+    const products = [
+      makeProduct({ id: 'prod_members_only', metadata: { isVisibleToMembersOnly: true } }),
+      makeProduct({ id: 'prod_public' }),
+    ];
+
+    expect(filterProductsForMemberState(products, false).map((product) => product.id)).toEqual(['prod_public']);
+  });
+
+  it('멤버 products 배열에서는 members-only 상품을 유지한다', () => {
+    const products = [
+      makeProduct({ id: 'prod_members_only', metadata: { isVisibleToMembersOnly: true } }),
+      makeProduct({ id: 'prod_public' }),
+    ];
+
+    expect(filterProductsForMemberState(products, true)).toHaveLength(2);
+  });
+
+  it('비멤버 단건 members-only 상품 접근을 차단한다', () => {
+    const product = makeProduct({ metadata: { isVisibleToMembersOnly: true } });
+    expect(() => assertProductVisibleToCustomer(product, false)).toThrow('멤버십 회원 전용 상품입니다.');
+    expect(() => assertProductVisibleToCustomer(product, true)).not.toThrow();
   });
 });
 
@@ -96,10 +139,14 @@ describe('applyMembershipPriceVisibility', () => {
 });
 
 describe('transformStoreProductsPayload', () => {
-  it('비멤버 products 배열 응답에서 상품을 제거하지 않고 멤버십가만 숨긴다', () => {
+  it('비멤버 products 배열 응답에서 members-only 상품을 제거하고 멤버십가를 숨긴다', () => {
     const payload = {
-      products: [makeProduct({ metadata: { isMembershipOnly: true } }), makeProduct({ id: 'prod_other' })],
-      count: 2,
+      products: [
+        makeProduct({ metadata: { hideMembershipPriceForNonMembers: true } }),
+        makeProduct({ id: 'prod_members_only', metadata: { isVisibleToMembersOnly: true } }),
+        makeProduct({ id: 'prod_other' }),
+      ],
+      count: 3,
       offset: 0,
       limit: 12,
     };
@@ -107,8 +154,9 @@ describe('transformStoreProductsPayload', () => {
     const result = transformStoreProductsPayload(payload, false) as typeof payload;
 
     expect(result.products).toHaveLength(2);
-    expect(result.count).toBe(2);
-    // isMembershipOnly 상품: membershipPrice 제거
+    expect(result.count).toBe(3);
+    expect(result.products.map((product) => product.id)).toEqual(['prod_normal', 'prod_other']);
+    // hideMembershipPriceForNonMembers 상품: membershipPrice 제거
     expect(result.products[0].variants?.[0]?.metadata).toEqual({ sku: 'SKU-1' });
     // 일반 상품: membershipPrice 유지
     expect(result.products[1].variants?.[0]?.metadata?.membershipPrice).toBe(9900);

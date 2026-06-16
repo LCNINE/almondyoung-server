@@ -12,6 +12,8 @@ export class ProductMapper {
     // thumbnail은 product_images에서 isPrimary=true인 이미지의 fileId 사용
     const primaryImage = images.find((img) => img.isPrimary);
     const thumbnail = primaryImage ? primaryImage.fileId : null;
+    const hideMembershipPriceForNonMembers =
+      version.hideMembershipPriceForNonMembers ?? version.isMembershipOnly ?? false;
 
     return {
       id: version.id,
@@ -30,7 +32,9 @@ export class ProductMapper {
       productType: version.productType,
       productCode: version.productCode,
       isWholesaleOnly: version.isWholesaleOnly ?? false,
-      isMembershipOnly: version.isMembershipOnly ?? false,
+      hideMembershipPriceForNonMembers,
+      isVisibleToMembersOnly: version.isVisibleToMembersOnly ?? false,
+      isMembershipOnly: hideMembershipPriceForNonMembers,
       createdAt: DateMapper.toNotNullString(version.createdAt),
       updatedAt: DateMapper.toNotNullString(version.updatedAt),
       deletedAt: DateMapper.toNullableString(version.deletedAt),
