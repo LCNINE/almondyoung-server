@@ -322,6 +322,7 @@
   "callback": {
     "paymentFailed": "Payment failed.",
     "missingParams": "No payment information found.",
+    "callbackError": "An error occurred while processing the payment.",
     "membershipFailFallback": "Membership signup processing failed",
     "membershipCallbackError": "An error occurred while processing the membership payment.",
     "processingTitle": "Processing payment",

@@ -2,8 +2,6 @@ import CheckoutHeader from "@/app/[countryCode]/(checkout)/checkout/checkout-hea
 import { getIntent } from "@/lib/api/wallet"
 import { getOrder } from "@/lib/api/medusa/orders"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
-import type { IntentDto } from "@/lib/types/dto/wallet"
-import { notFound } from "next/navigation"
 import Link from "next/link"
 import { getTranslations } from "next-intl/server"
 import { ChevronDownIcon, ReviewPromptCard } from "../_components"
@@ -24,9 +22,30 @@ const resolveItemThumbnail = (item: HttpTypes.StoreOrderLineItem) => {
   return getThumbnailUrl(rawThumbnail)
 }
 
-const getIntentOrderId = (intent: IntentDto) => {
-  const orderId = intent.metadata?.["orderId"]
-  return typeof orderId === "string" ? orderId : undefined
+async function getIntentOrNull(intentId: string) {
+  try {
+    return await getIntent(intentId)
+  } catch (err) {
+    console.warn(
+      `[CheckoutSuccessPage] intent lookup failed, rendering fallback (intentId=${intentId})`,
+      err instanceof Error ? err.message : err
+    )
+    return null
+  }
+}
+
+async function getOrderOrNull(orderId?: string) {
+  if (!orderId) return null
+
+  try {
+    return await getOrder(orderId)
+  } catch (err) {
+    console.warn(
+      `[CheckoutSuccessPage] order lookup failed, rendering fallback (orderId=${orderId})`,
+      err instanceof Error ? err.message : err
+    )
+    return null
+  }
 }
 
 export default async function CheckoutSuccessPage({
@@ -36,7 +55,7 @@ export default async function CheckoutSuccessPage({
   const { intentId, countryCode } = await params
   const { orderId } = await searchParams
 
-  const intent = await getIntent(intentId)
+  const intent = await getIntentOrNull(intentId)
   const t = await getTranslations("checkout")
 
   console.log("============== 주문완료 페이지 디버그 ==============")
@@ -46,14 +65,10 @@ export default async function CheckoutSuccessPage({
   console.log("intent.metadata:", JSON.stringify(intent?.metadata))
   console.log("================================================")
 
-  if (!intent) {
-    notFound()
-  }
-
-  const rawOrder = orderId ? await getOrder(orderId) : null
+  const rawOrder = await getOrderOrNull(orderId)
 
   // 소유권 검증: intent의 이메일과 order의 이메일이 일치하는지 확인
-  const intentEmail = intent.metadata?.["customerEmail"]
+  const intentEmail = intent?.metadata?.["customerEmail"]
   const orderEmail = rawOrder?.email
   const isOwnerMatch =
     rawOrder && intentEmail && orderEmail && intentEmail === orderEmail
@@ -84,16 +99,14 @@ export default async function CheckoutSuccessPage({
       <CheckoutHeader title={t("header.title")} />
 
       <h1 className="text-center text-2xl font-bold text-black">
-        <span className="text-[#ffa500]">{t("success.completedHighlight")}</span>
+        <span className="text-[#ffa500]">
+          {t("success.completedHighlight")}
+        </span>
         {t("success.completedSuffix")}
       </h1>
 
       {/* 주문 요약 카드 */}
-      <OrderSummaryCard
-        intent={intent}
-        order={order}
-        countryCode={countryCode}
-      />
+      <OrderSummaryCard order={order} countryCode={countryCode} />
 
       {/* 리뷰 유도 카드 */}
       <ReviewPromptCard />
@@ -102,11 +115,9 @@ export default async function CheckoutSuccessPage({
 }
 
 async function OrderSummaryCard({
-  intent,
   order,
   countryCode,
 }: {
-  intent: IntentDto
   order: HttpTypes.StoreOrder | null
   countryCode: string
 }) {
@@ -119,7 +130,9 @@ async function OrderSummaryCard({
       <section className="w-full max-w-[816px] overflow-hidden rounded-[10px] border-[0.5px] border-[#d9d9d9] bg-white">
         <div className="flex flex-col items-center gap-4 p-8">
           <p className="text-lg text-black">{t("noOrder.completed")}</p>
-          <p className="text-sm text-gray-500">{t("noOrder.detailsInMypage")}</p>
+          <p className="text-sm text-gray-500">
+            {t("noOrder.detailsInMypage")}
+          </p>
           <Link
             href={`/${countryCode}/mypage/order/list`}
             className="mt-4 flex h-[60px] w-full items-center justify-center rounded-[5px] bg-[#fff7e5] text-center text-[19px] font-bold text-[#ffa500] transition-colors hover:bg-[#ffedcc]"

@@ -11,6 +11,9 @@ import {
 } from "@/lib/utils/checkout-intent-map"
 import { processPaymentCallback, revalidateMembershipSuccess } from "./actions"
 
+const getErrorMessage = (err: unknown, fallback: string) =>
+  err instanceof Error && err.message ? err.message : fallback
+
 export default function CallbackPage() {
   const t = useTranslations("checkout.callback")
   const router = useRouter()
@@ -20,49 +23,63 @@ export default function CallbackPage() {
   const countryCode = params.countryCode as string
 
   useEffect(() => {
-    const paymentIntentId = searchParams.get("payment_intent_id")
-    const status = searchParams.get("status")
-    // URL에 mode가 없으면 sessionStorage fallback (returnUrl에 쿼리가 있을 때 wallet이 URL을 깨뜨리는 문제 대응)
-    const pendingMode = getPendingPaymentMode()
-    const mode = searchParams.get("mode") ?? pendingMode?.mode ?? null
+    let cancelled = false
 
-    // 하위 호환: 기존 흐름의 cartId 쿼리가 있으면 우선 사용
-    const cartIdFromQuery = searchParams.get("cartId")
-    const cartId =
-      cartIdFromQuery ||
-      (paymentIntentId ? getCheckoutCartByIntent(paymentIntentId) : null)
+    const failUrl = (code: string, message: string, mode?: string | null) =>
+      mode === "membership"
+        ? `/${countryCode}/mypage/membership/subscribe/fail?code=${code}&message=${encodeURIComponent(message)}`
+        : `/${countryCode}/checkout/fail?code=${code}&message=${encodeURIComponent(message)}`
 
-    if (status !== "succeeded") {
+    const replace = (url: string) => {
+      if (!cancelled) {
+        router.replace(url)
+      }
+    }
+
+    const clearPendingPayment = (paymentIntentId?: string | null) => {
       if (paymentIntentId) {
         removeCheckoutCartByIntent(paymentIntentId)
       }
       removePendingPaymentMode()
-      router.replace(
-        mode === "membership"
-          ? `/${countryCode}/mypage/membership/subscribe/fail?code=PAYMENT_FAILED&message=${encodeURIComponent(t("paymentFailed"))}`
-          : `/${countryCode}/checkout/fail?code=PAYMENT_FAILED&message=${encodeURIComponent(t("paymentFailed"))}`
-      )
-      return
     }
 
-    if (!paymentIntentId) {
-      router.replace(
-        mode === "membership"
-          ? `/${countryCode}/mypage/membership/subscribe/fail?code=MISSING_PARAMS&message=${encodeURIComponent(t("missingParams"))}`
-          : `/${countryCode}/checkout/fail?code=MISSING_PARAMS&message=${encodeURIComponent(t("missingParams"))}`
-      )
-      return
-    }
+    const handleCallback = async () => {
+      const paymentIntentId = searchParams.get("payment_intent_id")
+      const status = searchParams.get("status")
+      // URL에 mode가 없으면 sessionStorage fallback (returnUrl에 쿼리가 있을 때 wallet이 URL을 깨뜨리는 문제 대응)
+      const pendingMode = getPendingPaymentMode()
+      const mode = searchParams.get("mode") ?? pendingMode?.mode ?? null
 
-    // 멤버십 결제: JWT 없이 wallet payment intent 검증으로 구독 확정
-    // (크로스도메인 지갑 리다이렉트 후 accessToken 쿠키 소실 문제 우회)
-    if (mode === "membership") {
-      fetch(`/api/membership/subscriptions/confirm-checkout-intent`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ intentId: paymentIntentId }),
-      })
-        .then(async (res) => {
+      // 하위 호환: 기존 흐름의 cartId 쿼리가 있으면 우선 사용
+      const cartIdFromQuery = searchParams.get("cartId")
+      const cartId =
+        cartIdFromQuery ||
+        (paymentIntentId ? getCheckoutCartByIntent(paymentIntentId) : null)
+
+      if (status !== "succeeded") {
+        clearPendingPayment(paymentIntentId)
+        replace(failUrl("PAYMENT_FAILED", t("paymentFailed"), mode))
+        return
+      }
+
+      if (!paymentIntentId) {
+        replace(failUrl("MISSING_PARAMS", t("missingParams"), mode))
+        return
+      }
+
+      // 멤버십 결제: JWT 없이 wallet payment intent 검증으로 구독 확정
+      // (크로스도메인 지갑 리다이렉트 후 accessToken 쿠키 소실 문제 우회)
+      if (mode === "membership") {
+        try {
+          const res = await fetch(
+            `/api/membership/subscriptions/confirm-checkout-intent`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ intentId: paymentIntentId }),
+            }
+          )
+
           removeCheckoutCartByIntent(paymentIntentId)
           removePendingPaymentMode()
           if (res.ok || res.status === 409) {
@@ -77,35 +94,69 @@ export default function CallbackPage() {
             } catch {
               // 복구 실패해도 성공 페이지로 이동 (error.tsx가 처리)
             }
-            revalidateMembershipSuccess().catch(() => { })
-            router.replace(
-              `/${countryCode}/mypage/membership/subscribe/success`
-            )
+            revalidateMembershipSuccess().catch(() => {})
+            replace(`/${countryCode}/mypage/membership/subscribe/success`)
           } else {
             const errorData = await res.json().catch(() => ({}))
             const message = errorData?.message || t("membershipFailFallback")
-            router.replace(
-              `/${countryCode}/mypage/membership/subscribe/fail?code=SUBSCRIBE_FAILED&message=${encodeURIComponent(message)}`
-            )
+            replace(failUrl("SUBSCRIBE_FAILED", message, mode))
           }
-        })
-        .catch(() => {
+        } catch (err) {
           removeCheckoutCartByIntent(paymentIntentId)
           removePendingPaymentMode()
-          router.replace(
-            `/${countryCode}/mypage/membership/subscribe/fail?code=CALLBACK_ERROR&message=${encodeURIComponent(t("membershipCallbackError"))}`
+          replace(
+            failUrl(
+              "CALLBACK_ERROR",
+              getErrorMessage(err, t("membershipCallbackError")),
+              mode
+            )
           )
-        })
-      return
-    }
+        }
+        return
+      }
 
-    processPaymentCallback(countryCode, paymentIntentId, mode, cartId).then(
-      (result) => {
+      try {
+        const result = await processPaymentCallback(
+          countryCode,
+          paymentIntentId,
+          mode,
+          cartId
+        )
         removeCheckoutCartByIntent(paymentIntentId)
         removePendingPaymentMode()
-        router.replace(result.redirectUrl)
+        if (result.success) {
+          try {
+            await fetch("/api/auth/restore-token", {
+              method: "POST",
+              credentials: "include",
+            })
+          } catch {
+            // 복구 실패해도 성공/실패 페이지 라우팅은 계속 진행한다.
+          }
+        }
+        replace(result.redirectUrl)
+      } catch (err) {
+        removeCheckoutCartByIntent(paymentIntentId)
+        removePendingPaymentMode()
+        replace(
+          failUrl(
+            "CALLBACK_ERROR",
+            getErrorMessage(err, t("callbackError")),
+            mode
+          )
+        )
       }
-    )
+    }
+
+    handleCallback().catch((err) => {
+      replace(
+        failUrl("CALLBACK_ERROR", getErrorMessage(err, t("callbackError")))
+      )
+    })
+
+    return () => {
+      cancelled = true
+    }
   }, [countryCode, searchParams, router, t])
 
   return (
