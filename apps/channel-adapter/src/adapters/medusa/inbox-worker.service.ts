@@ -179,20 +179,29 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
 
   private async claimNextInboxEvent(): Promise<InboxWorkerEventRecord | null> {
     const inFlightIds = [...this.inFlightEventIds];
+    const workerEventTypesSql = sql.join(
+      [...INBOX_WORKER_EVENT_TYPES].map((eventType) => sql`${eventType}`),
+      sql`, `,
+    );
     const excludeInFlightSql =
-      inFlightIds.length > 0 ? sql`AND id <> ALL(${inFlightIds}::uuid[])` : sql.empty();
+      inFlightIds.length > 0
+        ? sql`AND id NOT IN (${sql.join(
+            inFlightIds.map((eventId) => sql`${eventId}`),
+            sql`, `,
+          )})`
+        : sql.empty();
 
     const rows = await this.dbService.db.execute<InboxWorkerEventRecord>(sql`
       UPDATE ${inboxEvents}
       SET
         status = 'processing',
         attempts = attempts + 1,
-        next_attempt_at = NOW() + (${this.processingLeaseMs} * interval '1 millisecond'),
+        next_attempt_at = NOW() + (${this.processingLeaseMs}::integer * interval '1 millisecond'),
         error_message = NULL
       WHERE id = (
         SELECT id
         FROM ${inboxEvents}
-        WHERE event_type = ANY(${[...INBOX_WORKER_EVENT_TYPES]}::text[])
+        WHERE event_type IN (${workerEventTypesSql})
           AND (
             (status = 'pending' AND next_attempt_at <= NOW())
             OR (status = 'processing' AND next_attempt_at <= NOW())
