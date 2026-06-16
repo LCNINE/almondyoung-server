@@ -794,7 +794,7 @@ export default function OrderTable() {
               className="text-blue-600 hover:underline font-medium block text-left"
               onClick={() =>
                 window.open(
-                  `/cs?orderNo=${encodeURIComponent(r.orderNo)}`,
+                  `/cs?orderId=${encodeURIComponent(r.orderId)}&orderNo=${encodeURIComponent(r.orderNo)}`,
                   '_blank'
                 )
               }

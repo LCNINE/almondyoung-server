@@ -76,6 +76,11 @@ export class AdminOperationsController {
       throw new HttpException(`요청한 리소스를 찾을 수 없습니다.`, HttpStatus.NOT_FOUND);
     }
 
+    // 충돌(이미 존재하는 상태) — 원본 메시지를 그대로 전달해 프론트에서 직관적으로 안내한다.
+    if (msg.includes('이미') || msg.includes('already exists')) {
+      throw new HttpException(msg, HttpStatus.CONFLICT);
+    }
+
     if (
       msg.includes('already exists') ||
       msg.includes('already') ||
