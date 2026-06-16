@@ -7,6 +7,7 @@ import { CsTabs, CsTabPanel } from "@/domains/cs/components/cs-tabs"
 import { Faq } from "@/domains/cs/components/faq"
 import { Inquiry } from "@/domains/cs/components/inquiry"
 import { Notice } from "@/domains/cs/components/notice"
+import { FEATURES } from "@/lib/config/features"
 import { listProducts } from "@/lib/api/medusa/products"
 
 export async function generateMetadata() {
@@ -42,8 +43,9 @@ export default async function CsPage({ params, searchParams }: CsPageProps) {
   // 상품 문의 진입 시 productId 는 pimMasterId(문의에 저장되는 값)로 전달된다.
   // 상품명까지 같이 넘어오면(상품 상세 → 1:1 문의 경로) 재조회 없이 그대로 사용.
   // productName 없이 productId 만 있는 레거시/외부 진입은 handle 로 재조회해 보정.
+  // QnA 기능을 닫은 동안에는 inquiry 패널 자체를 렌더하지 않으므로 조회도 생략.
   const productPromise: Promise<{ id: string; title: string } | undefined> =
-    !productId
+    !FEATURES.qna || !productId
       ? Promise.resolve(undefined)
       : productName
         ? Promise.resolve({ id: productId, title: productName })
@@ -75,9 +77,11 @@ export default async function CsPage({ params, searchParams }: CsPageProps) {
               <Faq />
             </CsTabPanel>
 
-            <CsTabPanel value="inquiry">
-              <Inquiry product={product} />
-            </CsTabPanel>
+            {FEATURES.qna && (
+              <CsTabPanel value="inquiry">
+                <Inquiry product={product} />
+              </CsTabPanel>
+            )}
 
             <CsTabPanel value="notice">
               <Notice />
