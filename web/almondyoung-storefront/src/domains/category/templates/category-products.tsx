@@ -2,6 +2,7 @@ import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import { listProducts, listProductsSorted } from "@/lib/api/medusa/products"
 import { getRegion } from "@/lib/api/medusa/regions"
 import { isMembershipGroup } from "@/lib/utils/membership-group"
+import { filterMembershipRestrictedProducts } from "@/lib/utils/membership-restricted-products" // TODO(#433): isMembersOnly 구현 후 제거
 import { getWishlist } from "@lib/api/users/wishlist"
 import { PackageX } from "lucide-react"
 import { getTranslations } from "next-intl/server"
@@ -62,12 +63,18 @@ export default async function CategoryProducts({
 
   const customer = await retrieveCustomer().catch(() => null)
   const groups = customer?.groups ?? []
+  const isMembership = isMembershipGroup(groups)
 
   // 로그인한 경우에만 위시리스트 조회
   const wishlist = customer ? await getWishlist().catch(() => []) : []
   const initialWishlistIds = wishlist.map((item) => item.productId)
 
-  if (initialProducts.length === 0) {
+  const filteredProducts = filterMembershipRestrictedProducts(
+    initialProducts,
+    isMembership
+  )
+
+  if (filteredProducts.length === 0) {
     const t = await getTranslations("category.products")
     return (
       <div className="flex min-h-[360px] flex-col items-center justify-center text-center">
@@ -85,7 +92,7 @@ export default async function CategoryProducts({
   return (
     <InfiniteProducts
       key={effectiveSortBy}
-      initialProducts={initialProducts}
+      initialProducts={filteredProducts}
       initialNextPage={initialNextPage}
       totalCount={totalCount}
       sortBy={effectiveSortBy}
@@ -93,7 +100,7 @@ export default async function CategoryProducts({
       collectionId={collectionId}
       productsIds={productsIds}
       countryCode={countryCode}
-      isMembership={isMembershipGroup(groups)}
+      isMembership={isMembership}
       isLoggedIn={!!customer}
       initialWishlistIds={initialWishlistIds}
     />

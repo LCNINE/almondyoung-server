@@ -100,6 +100,14 @@ function isBankTransferPendingAction(value: unknown): value is BankTransferPendi
   );
 }
 
+const TOSS_SUB_METHODS = [
+  { value: 'CARD' as const, label: '카드 / 간편결제', desc: '카드, 카카오페이, 네이버페이, 토스페이 등' },
+  { value: 'MOBILE_PHONE' as const, label: '휴대폰', desc: '휴대폰 소액결제' },
+  { value: 'TRANSFER' as const, label: '계좌이체', desc: '실시간 계좌이체' },
+  { value: 'VIRTUAL_ACCOUNT' as const, label: '가상계좌', desc: '무통장입금' },
+] as const;
+type TossSubMethod = (typeof TOSS_SUB_METHODS)[number]['value'];
+
 export function PayForm({ intent, methods, pointsBalance, billingMethodsExist, availableMethods, region }: Props) {
   const router = useRouter();
   const availableMethodMap = availableMethods
@@ -124,9 +132,12 @@ export function PayForm({ intent, methods, pointsBalance, billingMethodsExist, a
   const [selectedMethodId, setSelectedMethodId] = useState<string>(externalMethods[0]?.id ?? '');
   const [usePoints, setUsePoints] = useState(false);
   const [pointsAmount, setPointsAmount] = useState(0);
+  const [tossSubMethod, setTossSubMethod] = useState<TossSubMethod>('CARD');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bankTransferPending, setBankTransferPending] = useState<BankTransferPendingAction | null>(null);
+
+  const isTossSelected = externalMethods.find((m) => m.id === selectedMethodId)?.type === 'TOSS';
 
   const isRecurring = intent.metadata?.billingMode === 'recurring';
   const maxPoints = Math.min(availablePoints, intent.payableAmount);
@@ -172,17 +183,19 @@ export function PayForm({ intent, methods, pointsBalance, billingMethodsExist, a
         const tossPayments = await loadTossPayments(na.clientKey as string);
         const payment = tossPayments.payment({ customerKey: `user-${intent.userId}` });
         const tossCompletePath = buildPayPath(`${intent.id}/toss-complete`, region);
-        await payment.requestPayment({
-          method: 'CARD',
+        const tossParams = {
+          method: isTossSelected ? tossSubMethod : 'CARD',
           orderId: na.orderId as string,
           orderName: na.orderName as string,
-          amount: { currency: 'KRW', value: na.amount as number },
+          amount: { currency: 'KRW' as const, value: na.amount as number },
           successUrl: `${window.location.origin}${tossCompletePath}`,
           failUrl: `${window.location.origin}${buildPayPath(intent.id, region, { toss_fail: '1' })}`,
           ...(na.customerName ? { customerName: na.customerName as string } : {}),
           ...(na.customerEmail ? { customerEmail: na.customerEmail as string } : {}),
           ...(na.customerMobilePhone ? { customerMobilePhone: na.customerMobilePhone as string } : {}),
-        });
+        };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await payment.requestPayment(tossParams as any);
         return; // requestPayment redirects
       }
 
@@ -491,6 +504,46 @@ export function PayForm({ intent, methods, pointsBalance, billingMethodsExist, a
                       })}
                     </div>
                   )}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Toss 결제 방식 선택 (TOSS 수단 선택 시) */}
+            {remainingAmount > 0 && isTossSelected && (
+              <Card className="border shadow-sm border-border/60">
+                <CardContent className="p-6">
+                  <span className="mb-4 block text-sm font-semibold">결제 방식 선택</span>
+                  <div className="space-y-2">
+                    {TOSS_SUB_METHODS.map(({ value, label, desc }) => {
+                      const isSelected = tossSubMethod === value;
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setTossSubMethod(value)}
+                          className={[
+                            'w-full flex items-center gap-3 rounded-lg border px-4 py-3 text-left transition-colors',
+                            isSelected
+                              ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
+                              : 'border-border bg-background hover:bg-accent/50',
+                          ].join(' ')}
+                        >
+                          <div
+                            className={[
+                              'flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
+                              isSelected ? 'border-primary' : 'border-muted-foreground/40',
+                            ].join(' ')}
+                          >
+                            {isSelected && <div className="h-1.5 w-1.5 rounded-full bg-primary" />}
+                          </div>
+                          <div>
+                            <span className="text-sm font-medium">{label}</span>
+                            <span className="ml-2 text-xs text-muted-foreground">{desc}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </CardContent>
               </Card>
             )}

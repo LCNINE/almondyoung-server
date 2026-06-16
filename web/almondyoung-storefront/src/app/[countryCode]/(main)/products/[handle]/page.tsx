@@ -4,6 +4,8 @@ import { getProductDetailByMasterId } from "@/lib/api/pim/products"
 import { getQnaSummary } from "@/lib/api/ugc"
 import { getRatingSummary } from "@/lib/api/ugc/reviews"
 import { addToRecentViews } from "@/lib/api/users/recent-views"
+import { isMembershipGroup } from "@/lib/utils/membership-group"
+import { isProductMembershipRestricted } from "@/lib/utils/membership-restricted-products"
 import { Customer } from "@/lib/types/ui/medusa"
 import { listProducts } from "@lib/api/medusa/products"
 import { getRegion } from "@lib/api/medusa/regions"
@@ -63,6 +65,14 @@ export default async function Page(props: Props) {
 
   if (!pricedProduct) {
     notFound()
+  }
+
+  // TODO(#433): isMembersOnly 필드 구현 후 metadata.isMembersOnly 기반으로 교체 및 하드코딩 제거
+  if (isProductMembershipRestricted(pricedProduct)) {
+    const groups = customer?.groups ?? []
+    if (!isMembershipGroup(groups)) {
+      notFound()
+    }
   }
 
   // 캐시 프라이밍 — 자식 컴포넌트들이 사용할 데이터를 미리 fetch 시작
