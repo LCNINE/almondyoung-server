@@ -6,10 +6,10 @@
 
 export function setup(opts?: { baseDomain?: string }) {
   // "live" 외의 모든 stage는 비운영으로 취급 (도메인 .dev. 접두사 등).
-  const isDev = $app.stage !== "live";
+  const isDev = $app.stage !== 'live';
 
   // Dockerfile은 모노레포 루트 기준 경로로 작성되어 있으므로 context를 repo root로 올린다.
-  const dockerContext = "../../../";
+  const dockerContext = '../../../';
 
   // ─── Platform 공유 자원 (lcnine-platform이 publish) ───
   const platformVpcId = aws.ssm.getParameterOutput({
@@ -19,8 +19,8 @@ export function setup(opts?: { baseDomain?: string }) {
     name: `/lcnine-platform/${$app.stage}/kafka-brokers`,
   }).value;
 
-  const vpc = sst.aws.Vpc.get("Vpc", platformVpcId);
-  const cluster = new sst.aws.Cluster("Cluster", {
+  const vpc = sst.aws.Vpc.get('Vpc', platformVpcId);
+  const cluster = new sst.aws.Cluster('Cluster', {
     vpc: {
       id: vpc.id,
       securityGroups: vpc.securityGroups,
@@ -33,41 +33,36 @@ export function setup(opts?: { baseDomain?: string }) {
   });
 
   // ─── Domain helper ───
-  const baseDomain = opts?.baseDomain ?? (isDev ? "lcnine-dev.com" : "almondyoung-next.com");
-  const domain = (slug: string) =>
-    isDev ? `${slug}.dev.${baseDomain}` : `${slug}.${baseDomain}`;
+  const baseDomain = opts?.baseDomain ?? (isDev ? 'lcnine-dev.com' : 'almondyoung-next.com');
+  const domain = (slug: string) => (isDev ? `${slug}.dev.${baseDomain}` : `${slug}.${baseDomain}`);
   const url = (slug: string) => `https://${domain(slug)}`;
 
   // ─── Shared ALB (wildcard) ───
   // auth 앱은 specific hostname(id./auth.)으로 같은 zone에 ALB를 잡는다. Route53에서
   // specific A record가 wildcard alias보다 우선되므로 충돌 없음.
-  const wildcardDomain = isDev
-    ? `*.dev.${baseDomain}`
-    : `*.${baseDomain}`;
+  const wildcardDomain = isDev ? `*.dev.${baseDomain}` : `*.${baseDomain}`;
 
-  const alb = new sst.aws.Alb("SharedAlb", {
+  const alb = new sst.aws.Alb('SharedAlb', {
     vpc,
     domain: { name: wildcardDomain },
     listeners: [
-      { port: 80, protocol: "http" },
-      { port: 443, protocol: "https" },
+      { port: 80, protocol: 'http' },
+      { port: 443, protocol: 'https' },
     ],
   });
 
   // ─── Database ───
-  const db = new sst.aws.Postgres("Db", {
+  const db = new sst.aws.Postgres('Db', {
     vpc,
-    instance: "t4g.medium",
+    instance: 't4g.medium',
   });
 
   const dbUrl = (dbName: string) =>
     $interpolate`postgresql://${db.username}:${db.password}@${db.host}:${db.port}/${dbName}?sslmode=require`;
 
   // ─── Redis (ElastiCache Serverless) ───
-  const redis = new sst.aws.Redis("Redis", { vpc, cluster: false });
-  const encodedRedisPassword = redis.password?.apply((p) =>
-    encodeURIComponent(p),
-  );
+  const redis = new sst.aws.Redis('Redis', { vpc, cluster: false });
+  const encodedRedisPassword = redis.password?.apply((p) => encodeURIComponent(p));
   const redisUrl = (dbIndex: number) =>
     $interpolate`rediss://${redis.username}:${encodedRedisPassword}@${redis.host}:${redis.port}/${dbIndex}`;
 
@@ -77,24 +72,22 @@ export function setup(opts?: { baseDomain?: string }) {
   // 패키지 ID 는 region + EngineVersion 별로 다름 — 아래 값은 ap-northeast-2 / OpenSearch_2.17.
   // 엔진 버전 업그레이드 시 `aws opensearch describe-packages --filters Name=PackageName,Value=analysis-nori` 로 새 ID 조회.
   const vpcInfo = aws.ec2.getVpcOutput({ id: vpc.id });
-  const opensearchSg = new aws.ec2.SecurityGroup("OpensearchSg", {
+  const opensearchSg = new aws.ec2.SecurityGroup('OpensearchSg', {
     vpcId: vpc.id,
-    description: "Allow HTTPS to OpenSearch domain from within VPC",
+    description: 'Allow HTTPS to OpenSearch domain from within VPC',
     ingress: [
       {
-        protocol: "tcp",
+        protocol: 'tcp',
         fromPort: 443,
         toPort: 443,
         cidrBlocks: [vpcInfo.cidrBlock],
       },
     ],
-    egress: [
-      { protocol: "-1", fromPort: 0, toPort: 0, cidrBlocks: ["0.0.0.0/0"] },
-    ],
+    egress: [{ protocol: '-1', fromPort: 0, toPort: 0, cidrBlocks: ['0.0.0.0/0'] }],
   });
-  const opensearch = new sst.aws.OpenSearch("Opensearch", {
-    instance: "t3.small",
-    storage: "10 GB",
+  const opensearch = new sst.aws.OpenSearch('Opensearch', {
+    instance: 't3.small',
+    storage: '10 GB',
     transform: {
       domain: (args) => {
         args.vpcOptions = {
@@ -107,21 +100,31 @@ export function setup(opts?: { baseDomain?: string }) {
   // Pulumi-aws 의 PackageAssociation 기본 wait 가 10분이라 t3.small 도메인 plugin install +
   // rolling restart 에 부족할 때가 많다 — 60분으로 늘려둔다.
   new aws.opensearch.PackageAssociation(
-    "OpensearchNoriAssociation",
+    'OpensearchNoriAssociation',
     {
-      packageId: "G267799487",
+      packageId: 'G267799487',
       domainName: opensearch.nodes.domain!.domainName,
     },
     {
-      customTimeouts: { create: "60m", update: "60m", delete: "60m" },
+      customTimeouts: { create: '60m', update: '60m', delete: '60m' },
     },
   );
 
   // ─── Common env builders ───
+  let otelExporterOtlpEndpoint: $util.Output<string> | string | undefined;
+
+  const setOtelExporterOtlpEndpoint = (endpoint: $util.Output<string> | string) => {
+    otelExporterOtlpEndpoint = endpoint;
+  };
+
   const baseEnv = (serviceName: string) => ({
-    NODE_ENV: "production",
+    NODE_ENV: 'production',
     OTEL_SERVICE_NAME: serviceName,
+    ...(otelExporterOtlpEndpoint ? { OTEL_EXPORTER_OTLP_ENDPOINT: otelExporterOtlpEndpoint } : {}),
   });
+
+  const serviceDiscoveryName = (serviceName: string) =>
+    $interpolate`${serviceName}.${$app.stage}.${$app.name}.${vpc.nodes.cloudmapNamespace.name}`;
 
   // platform Redpanda는 VPC 내부 PLAINTEXT. kafka-config.util은 API key/SASL 미지정 시
   // plaintext로 자동 fallback하므로 브로커 주소와 prefix/group만 주입하면 된다.
@@ -161,9 +164,9 @@ export function setup(opts?: { baseDomain?: string }) {
         instance: alb,
         rules: [
           {
-            listen: "443/https",
+            listen: '443/https',
             forward: `${opts.port}/http` as const,
-            conditions: { path: "/*" },
+            conditions: { path: '/*' },
             priority: opts.priority,
           },
         ],
@@ -193,13 +196,11 @@ export function setup(opts?: { baseDomain?: string }) {
           );
           // Forward any caller-provided transform.service (function or partial object)
           const orig = opts.transform?.service;
-          if (typeof orig === "function") orig(args);
+          if (typeof orig === 'function') orig(args);
           else if (orig != null) Object.assign(args, orig);
         },
         listenerRule: (args: Record<string, any>) => {
-          args.conditions = [
-            { hostHeader: { values: [domain(opts.domainSlug)] } },
-          ];
+          args.conditions = [{ hostHeader: { values: [domain(opts.domainSlug)] } }];
         },
       },
     });
@@ -217,6 +218,8 @@ export function setup(opts?: { baseDomain?: string }) {
     domain,
     url,
     baseEnv,
+    setOtelExporterOtlpEndpoint,
+    serviceDiscoveryName,
     kafkaEnv,
     createService,
   };

@@ -1,18 +1,34 @@
 /// <reference path="../../../../.sst/platform/config.d.ts" />
 
-import type { SharedInfra } from "./shared";
+import type { SharedInfra } from './shared';
 
 export function setup(infra: SharedInfra) {
-  const { isDev, db, redis, opensearch, dbUrl, redisUrl, baseDomain, domain, url, kafkaEnv, createService } = infra;
+  const {
+    isDev,
+    vpc,
+    cluster,
+    db,
+    redis,
+    opensearch,
+    dbUrl,
+    redisUrl,
+    baseDomain,
+    domain,
+    url,
+    kafkaEnv,
+    serviceDiscoveryName,
+    setOtelExporterOtlpEndpoint,
+    createService,
+  } = infra;
 
   // storefront/auth-web 등이 BACKEND_DOMAIN + 서비스 서브도메인 규칙으로 백엔드 URL을 조립한다.
   // 즉 root는 stage에 따라 dev. 접두사가 붙는 형태와 동일해야 한다.
   const backendRootDomain = isDev ? `dev.${baseDomain}` : baseDomain;
 
   // ─── Secrets ───
-  const authSecret = new sst.Secret("AuthSecret");
-  const awsS3AccessKeyId = new sst.Secret("AwsS3AccessKeyId");
-  const awsS3SecretAccessKey = new sst.Secret("AwsS3SecretAccessKey");
+  const authSecret = new sst.Secret('AuthSecret');
+  const awsS3AccessKeyId = new sst.Secret('AwsS3AccessKeyId');
+  const awsS3SecretAccessKey = new sst.Secret('AwsS3SecretAccessKey');
 
   // ─── IdP (lcnine-auth) 앱이 publish한 SSM Parameter 조회 ───
   // user-service는 deployments/lcnine/auth/ 의 별도 SST 앱으로 분리되어 있으므로 URL을
@@ -34,233 +50,280 @@ export function setup(infra: SharedInfra) {
   }).value;
 
   // Channel Adapter
-  const channelAdapterInternalKey = new sst.Secret("ChannelAdapterInternalKey");
-  const medusaApiKey = new sst.Secret("MedusaApiKey");
+  const channelAdapterInternalKey = new sst.Secret('ChannelAdapterInternalKey');
+  const medusaApiKey = new sst.Secret('MedusaApiKey');
 
   // Notification
-  const nhnAppKey = new sst.Secret("NhnAppKey");
-  const nhnSecretKey = new sst.Secret("NhnSecretKey");
-  const nhnSenderKey = new sst.Secret("NhnSenderKey");
-  const resendApiKey = new sst.Secret("ResendApiKey");
-  const resendWebhookSecret = new sst.Secret("ResendWebhookSecret");
+  const nhnAppKey = new sst.Secret('NhnAppKey');
+  const nhnSecretKey = new sst.Secret('NhnSecretKey');
+  const nhnSenderKey = new sst.Secret('NhnSenderKey');
+  const resendApiKey = new sst.Secret('ResendApiKey');
+  const resendWebhookSecret = new sst.Secret('ResendWebhookSecret');
 
   // Wallet
-  const tossClientKey = new sst.Secret("TossClientKey");
-  const tossSecretKey = new sst.Secret("TossSecretKey");
-  const nicepayClientKey = new sst.Secret("NicepayClientKey");
-  const nicepaySecretKey = new sst.Secret("NicepaySecretKey");
-  const walletApiKey = new sst.Secret("WalletApiKey");
-  const custKey = new sst.Secret("CustKey");
-  const custId = new sst.Secret("CustId");
-  const swKey = new sst.Secret("SwKey");
+  const tossClientKey = new sst.Secret('TossClientKey');
+  const tossSecretKey = new sst.Secret('TossSecretKey');
+  const nicepayClientKey = new sst.Secret('NicepayClientKey');
+  const nicepaySecretKey = new sst.Secret('NicepaySecretKey');
+  const walletApiKey = new sst.Secret('WalletApiKey');
+  const custKey = new sst.Secret('CustKey');
+  const custId = new sst.Secret('CustId');
+  const swKey = new sst.Secret('SwKey');
   // 무통장입금 안내 계좌 — 결제 화면 노출용. `sst secret set` 으로 stage 별 주입. 미설정 시 화면에 '-' 표시.
-  const bankTransferBankName = new sst.Secret("BankTransferBankName", "");
-  const bankTransferAccountNumber = new sst.Secret("BankTransferAccountNumber", "");
-  const bankTransferAccountHolder = new sst.Secret("BankTransferAccountHolder", "");
+  const bankTransferBankName = new sst.Secret('BankTransferBankName', '');
+  const bankTransferAccountNumber = new sst.Secret('BankTransferAccountNumber', '');
+  const bankTransferAccountHolder = new sst.Secret('BankTransferAccountHolder', '');
 
   // Medusa
-  const medusaJwtSecret = new sst.Secret("MedusaJwtSecret");
-  const medusaCookieSecret = new sst.Secret("MedusaCookieSecret");
+  const medusaJwtSecret = new sst.Secret('MedusaJwtSecret');
+  const medusaCookieSecret = new sst.Secret('MedusaCookieSecret');
   // medusa-storefront RP 의 OIDC client_secret. user-service 시드 시 등록된 값과 동일해야 한다.
-  const medusaOidcClientSecret = new sst.Secret("MedusaOidcClientSecret");
+  const medusaOidcClientSecret = new sst.Secret('MedusaOidcClientSecret');
   // admin-web RP 의 OIDC client_secret. user-service 시드 시 등록된 값과 동일해야 한다.
-  const adminWebOidcClientSecret = new sst.Secret("AdminWebOidcClientSecret");
+  const adminWebOidcClientSecret = new sst.Secret('AdminWebOidcClientSecret');
   // wallet-web RP 의 OIDC client_secret. user-service 시드 시 등록된 값과 동일해야 한다.
-  const walletWebOidcClientSecret = new sst.Secret("WalletWebOidcClientSecret");
+  const walletWebOidcClientSecret = new sst.Secret('WalletWebOidcClientSecret');
 
   // Storefront
-  const medusaPublishableKey = new sst.Secret("MedusaPublishableKey");
-  const storefrontRevalidateSecret = new sst.Secret("StorefrontRevalidateSecret");
+  const medusaPublishableKey = new sst.Secret('MedusaPublishableKey');
+  const storefrontRevalidateSecret = new sst.Secret('StorefrontRevalidateSecret');
+
+  // Grafana Cloud
+  const grafanaCloudApiToken = new sst.Secret('GrafanaCloudApiToken');
+  const grafanaCloudPrometheusRemoteWriteUrl = new sst.Secret(
+    'GrafanaCloudPrometheusRemoteWriteUrl',
+    'https://prometheus-prod-49-prod-ap-northeast-0.grafana.net/api/prom/push',
+  );
+  const grafanaCloudPrometheusUsername = new sst.Secret('GrafanaCloudPrometheusUsername', '3066614');
+  const grafanaCloudTempoOtlpEndpoint = new sst.Secret(
+    'GrafanaCloudTempoOtlpEndpoint',
+    'tempo-prod-20-prod-ap-northeast-0.grafana.net:443',
+  );
+  const grafanaCloudTempoUsername = new sst.Secret('GrafanaCloudTempoUsername', '1523287');
+
+  const alloy = new sst.aws.Service('Observability', {
+    cluster,
+    cpu: '0.25 vCPU',
+    memory: '0.5 GB',
+    scaling: { min: 1, max: 1 },
+    serviceRegistry: { port: 4318 },
+    image: {
+      context: '../../../',
+      dockerfile: 'deployments/lcnine/services/observability/alloy/Dockerfile',
+    },
+    environment: {
+      SST_STAGE: $app.stage,
+      GRAFANA_CLOUD_API_TOKEN: grafanaCloudApiToken.value,
+      GRAFANA_CLOUD_PROMETHEUS_REMOTE_WRITE_URL: grafanaCloudPrometheusRemoteWriteUrl.value,
+      GRAFANA_CLOUD_PROMETHEUS_USERNAME: grafanaCloudPrometheusUsername.value,
+      GRAFANA_CLOUD_TEMPO_OTLP_ENDPOINT: grafanaCloudTempoOtlpEndpoint.value,
+      GRAFANA_CLOUD_TEMPO_USERNAME: grafanaCloudTempoUsername.value,
+      CORE_METRICS_TARGET: $interpolate`${serviceDiscoveryName('Core')}:3000`,
+    },
+    transform: {
+      service: (args: Record<string, any>) => {
+        args.networkConfiguration = vpc.privateSubnets.apply((subnets) =>
+          vpc.securityGroups.apply((sgs) => ({
+            assignPublicIp: false,
+            subnets,
+            securityGroups: sgs,
+          })),
+        );
+      },
+    },
+  });
+
+  setOtelExporterOtlpEndpoint($interpolate`http://${alloy.service}:4318`);
 
   // ═══════════════════════════════════════════
   //  Services
   // ═══════════════════════════════════════════
 
-  createService("Analytics", {
-    dockerfile: "apps/analytics/Dockerfile",
-    domainSlug: "analytics",
+  createService('Analytics', {
+    dockerfile: 'apps/analytics/Dockerfile',
+    domainSlug: 'analytics',
     port: 3040,
     priority: 110,
     link: [db],
     loadBalancerHealth: {
-      "3040/http": {
-        path: "/health",
-        interval: "30 seconds",
-        timeout: "5 seconds",
+      '3040/http': {
+        path: '/health',
+        interval: '30 seconds',
+        timeout: '5 seconds',
         healthyThreshold: 2,
         unhealthyThreshold: 5,
       },
     },
     environment: {
-      DATABASE_URL: dbUrl("analytics"),
-      ...kafkaEnv("analytics", "analytics-group"),
+      DATABASE_URL: dbUrl('analytics'),
+      ...kafkaEnv('analytics', 'analytics-group'),
       AUTH_SECRET: authSecret.value,
       // OIDC: storefront/admin-web 의 RS256 토큰 검증용. JWKS endpoint 는 라이브러리가 자동 파생.
       OIDC_ISSUER_URL: idpUserServiceUrl,
     },
   });
 
-  createService("ChannelAdapter", {
-    dockerfile: "apps/channel-adapter/Dockerfile",
-    domainSlug: "channel-adapter",
+  createService('ChannelAdapter', {
+    dockerfile: 'apps/channel-adapter/Dockerfile',
+    domainSlug: 'channel-adapter',
     port: 3000,
     priority: 120,
     link: [db],
     loadBalancerHealth: {
-      "3000/http": {
-        path: "/health",
-        interval: "30 seconds",
-        timeout: "5 seconds",
+      '3000/http': {
+        path: '/health',
+        interval: '30 seconds',
+        timeout: '5 seconds',
         healthyThreshold: 2,
         unhealthyThreshold: 5,
       },
     },
     environment: {
-      DATABASE_URL: dbUrl("channel_adapter"),
+      DATABASE_URL: dbUrl('channel_adapter'),
       // 2026-05-27: this is the intended durable consumer group for channel-adapter.
       // Existing Kafka backlog is disposable, so no offset migration is required.
-      ...kafkaEnv("channel-adapter", "channel-adapter-group"),
+      ...kafkaEnv('channel-adapter', 'channel-adapter-group'),
       CHANNEL_ADAPTER_INTERNAL_KEY: channelAdapterInternalKey.value,
       MEDUSA_API_KEY: medusaApiKey.value,
-      MEDUSA_API_URL: url("medusa"),
-      MEDUSA_MEMBERSHIP_GROUP_ID: "cusgroup_01KFZ12A1M344F6HKGDV35J28A",
-      ALMOND_AUTH_URL: "https://asia-northeast3-almond-auth.cloudfunctions.net/api",
+      MEDUSA_API_URL: url('medusa'),
+      MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
+      ALMOND_AUTH_URL: 'https://asia-northeast3-almond-auth.cloudfunctions.net/api',
       USER_SERVICE_URL: idpUserServiceUrl,
-      PIM_API_URL: url("core"),
-      NAVER_API_ENDPOINT: "https://dummy.com",
-      NAVER_CLIENT_ID: "1",
-      NAVER_CLIENT_SECRET: "1",
-      COUPANG_ACCESS_KEY: "1",
-      COUPANG_SECRET_KEY: "1",
-      COUPANG_VENDOR_ID: "1",
-      SKIP_VARIANTS_WITHOUT_PRICE: "true",
+      PIM_API_URL: url('core'),
+      NAVER_API_ENDPOINT: 'https://dummy.com',
+      NAVER_CLIENT_ID: '1',
+      NAVER_CLIENT_SECRET: '1',
+      COUPANG_ACCESS_KEY: '1',
+      COUPANG_SECRET_KEY: '1',
+      COUPANG_VENDOR_ID: '1',
+      SKIP_VARIANTS_WITHOUT_PRICE: 'true',
       // 2026-06-16: PIM→Medusa 동기화(InboxWorker)가 Medusa를 과부하시켜 504 유발한 사고 후
       // 백로그를 천천히 소진하도록 throttle. 기본(5s/10건=분당 120건)→30s/2건=분당 4건.
       // 안정화 후 단계적으로 상향(예: 10000/5) 가능.
-      INBOX_POLL_INTERVAL_MS: "30000",
-      INBOX_BATCH_SIZE: "2",
+      INBOX_POLL_INTERVAL_MS: '30000',
+      INBOX_BATCH_SIZE: '2',
     },
   });
 
-  createService("Membership", {
-    dockerfile: "apps/membership/Dockerfile",
-    domainSlug: "membership",
+  createService('Membership', {
+    dockerfile: 'apps/membership/Dockerfile',
+    domainSlug: 'membership',
     port: 3000,
     priority: 130,
     link: [db],
     loadBalancerHealth: {
-      "3000/http": {
-        path: "/health",
-        interval: "30 seconds",
-        timeout: "5 seconds",
+      '3000/http': {
+        path: '/health',
+        interval: '30 seconds',
+        timeout: '5 seconds',
         healthyThreshold: 2,
         unhealthyThreshold: 5,
       },
     },
     environment: {
-      DATABASE_URL: dbUrl("membership"),
-      ...kafkaEnv("membership", "membership-group"),
+      DATABASE_URL: dbUrl('membership'),
+      ...kafkaEnv('membership', 'membership-group'),
       WALLET_API_KEY: walletApiKey.value,
-      WALLET_API_URL: url("wallet"),
+      WALLET_API_URL: url('wallet'),
       // OIDC: storefront 의 RS256 토큰 검증용. (이전엔 hardcoded default 에 의존했지만 정식화됨.)
       OIDC_ISSUER_URL: idpUserServiceUrl,
     },
   });
 
-  createService("Notification", {
-    dockerfile: "apps/notification/Dockerfile",
-    domainSlug: "notification",
+  createService('Notification', {
+    dockerfile: 'apps/notification/Dockerfile',
+    domainSlug: 'notification',
     port: 3000,
     priority: 140,
     link: [db],
     loadBalancerHealth: {
-      "3000/http": {
-        path: "/health",
-        interval: "30 seconds",
-        timeout: "5 seconds",
+      '3000/http': {
+        path: '/health',
+        interval: '30 seconds',
+        timeout: '5 seconds',
         healthyThreshold: 2,
         unhealthyThreshold: 5,
       },
     },
     environment: {
-      DATABASE_URL: dbUrl("notification"),
-      ...kafkaEnv("notification", "notification-group"),
-      NHN_API_URL: "https://api-alimtalk.cloud.toast.com",
+      DATABASE_URL: dbUrl('notification'),
+      ...kafkaEnv('notification', 'notification-group'),
+      NHN_API_URL: 'https://api-alimtalk.cloud.toast.com',
       NHN_APP_KEY: nhnAppKey.value,
       NHN_SECRET_KEY: nhnSecretKey.value,
       NHN_SENDER_KEY: nhnSenderKey.value,
-      NHN_PLUS_FRIEND_ID: "@아몬드영",
+      NHN_PLUS_FRIEND_ID: '@아몬드영',
       RESEND_API_KEY: resendApiKey.value,
-      RESEND_BASE_URL: "https://api.resend.com",
+      RESEND_BASE_URL: 'https://api.resend.com',
       RESEND_FROM: `noreply@mail.${baseDomain}`,
-      RESEND_FROM_NAME: "아몬드영",
+      RESEND_FROM_NAME: '아몬드영',
       RESEND_WEBHOOK_SECRET: resendWebhookSecret.value,
     },
   });
 
-  createService("Core", {
-    dockerfile: "apps/core/Dockerfile",
-    domainSlug: "core",
+  createService('Core', {
+    dockerfile: 'apps/core/Dockerfile',
+    domainSlug: 'core',
     port: 3000,
     priority: 145,
     link: [db],
     loadBalancerHealth: {
-      "3000/http": {
-        path: "/health",
-        interval: "30 seconds",
-        timeout: "5 seconds",
+      '3000/http': {
+        path: '/health',
+        interval: '30 seconds',
+        timeout: '5 seconds',
         healthyThreshold: 2,
         unhealthyThreshold: 5,
       },
     },
     environment: {
-      DATABASE_URL: dbUrl("core"),
-      ...kafkaEnv("core", "core-group"),
+      DATABASE_URL: dbUrl('core'),
+      ...kafkaEnv('core', 'core-group'),
       AUTH_SECRET: authSecret.value,
-      JWT_ISSUER: "almondyoung-auth",
+      JWT_ISSUER: 'almondyoung-auth',
       // OIDC: storefront/admin-web 의 RS256 토큰 검증용.
       OIDC_ISSUER_URL: idpUserServiceUrl,
       // 고객 주문 취소 후 Wallet 자동 환불 연결
-      WALLET_BASE_URL: url("wallet"),
+      WALLET_BASE_URL: url('wallet'),
       WALLET_API_KEY: walletApiKey.value,
     },
   });
 
-  createService("UgcService", {
-    dockerfile: "apps/ugc-service/Dockerfile",
-    domainSlug: "ugc",
+  createService('UgcService', {
+    dockerfile: 'apps/ugc-service/Dockerfile',
+    domainSlug: 'ugc',
     port: 3030,
     priority: 160,
     link: [db],
     environment: {
-      DATABASE_URL: dbUrl("ugc"),
-      ...kafkaEnv("ugc-service", "ugc-service-group"),
+      DATABASE_URL: dbUrl('ugc'),
+      ...kafkaEnv('ugc-service', 'ugc-service-group'),
       AUTH_SECRET: authSecret.value,
-      JWT_ISSUER: "almondyoung-auth",
+      JWT_ISSUER: 'almondyoung-auth',
       // OIDC: storefront 의 RS256 토큰 검증용.
       OIDC_ISSUER_URL: idpUserServiceUrl,
     },
   });
 
-  createService("Wallet", {
-    dockerfile: "apps/wallet/Dockerfile",
-    domainSlug: "wallet",
+  createService('Wallet', {
+    dockerfile: 'apps/wallet/Dockerfile',
+    domainSlug: 'wallet',
     port: 3000,
     priority: 180,
     link: [db],
     loadBalancerHealth: {
-      "3000/http": {
+      '3000/http': {
         // wallet 의 HealthController 는 @Controller('v1') prefix 로 /v1/health 에 노출됨.
-        path: "/v1/health",
-        interval: "30 seconds",
-        timeout: "5 seconds",
+        path: '/v1/health',
+        interval: '30 seconds',
+        timeout: '5 seconds',
         healthyThreshold: 2,
         unhealthyThreshold: 5,
       },
     },
     environment: {
-      DATABASE_URL: dbUrl("wallet"),
-      ...kafkaEnv("wallet", "wallet-group"),
+      DATABASE_URL: dbUrl('wallet'),
+      ...kafkaEnv('wallet', 'wallet-group'),
       AUTH_SECRET: authSecret.value,
       USER_JWT_SECRET: authSecret.value,
       // OIDC: storefront 의 RS256 토큰 검증용 (마이페이지 포인트/빌링 등).
@@ -270,14 +333,14 @@ export function setup(infra: SharedInfra) {
       NICEPAY_CLIENT_KEY: nicepayClientKey.value,
       NICEPAY_SECRET_KEY: nicepaySecretKey.value,
       WALLET_API_KEY: walletApiKey.value,
-      HYOSUNG_CMS_API_URL: isDev ? "https://api-test.hyosungcms.co.kr" : "https://api.hyosungcms.co.kr",
-      HYOSUNG_CMS_ADD_URL: isDev ? "https://add-test.hyosungcms.co.kr" : "https://add.hyosungcms.co.kr",
+      HYOSUNG_CMS_API_URL: isDev ? 'https://api-test.hyosungcms.co.kr' : 'https://api.hyosungcms.co.kr',
+      HYOSUNG_CMS_ADD_URL: isDev ? 'https://add-test.hyosungcms.co.kr' : 'https://add.hyosungcms.co.kr',
       HYOSUNG_CMS_CUST_KEY: custKey.value,
       HYOSUNG_CMS_CUST_ID: custId.value,
       HYOSUNG_CMS_SW_KEY: swKey.value,
-      SERVICE_NAME: "wallet",
+      SERVICE_NAME: 'wallet',
       CORS_ORIGINS: `*.${baseDomain}`,
-      WALLET_MEDUSA_WEBHOOK_URL: `${url("medusa")}/hooks/payment/pp_almond-payment_almond-payment`,
+      WALLET_MEDUSA_WEBHOOK_URL: `${url('medusa')}/hooks/payment/pp_almond-payment_almond-payment`,
       // 무통장입금 안내 계좌 — 결제 화면 노출용. 값은 `sst secret set` 으로 주입 (하단 선언부 참고).
       BANK_TRANSFER_BANK_NAME: bankTransferBankName.value,
       BANK_TRANSFER_ACCOUNT_NUMBER: bankTransferAccountNumber.value,
@@ -285,37 +348,37 @@ export function setup(infra: SharedInfra) {
     },
   });
 
-  createService("FileService", {
-    dockerfile: "apps/file-service/Dockerfile",
-    domainSlug: "file",
+  createService('FileService', {
+    dockerfile: 'apps/file-service/Dockerfile',
+    domainSlug: 'file',
     port: 3000,
     priority: 190,
     link: [db],
     environment: {
-      DATABASE_URL: dbUrl("file_service"),
-      ...kafkaEnv("file-service", "file-service-group"),
+      DATABASE_URL: dbUrl('file_service'),
+      ...kafkaEnv('file-service', 'file-service-group'),
       AUTH_SECRET: authSecret.value,
       // OIDC: storefront/admin-web 의 RS256 토큰 검증용.
       OIDC_ISSUER_URL: idpUserServiceUrl,
       AWS_ACCESS_KEY_ID: awsS3AccessKeyId.value,
       AWS_SECRET_ACCESS_KEY: awsS3SecretAccessKey.value,
-      AWS_REGION: "ap-northeast-2",
-      AWS_S3_PUBLIC_BUCKET: "almondyoung-demo",
-      AWS_S3_PRIVATE_BUCKET: "almondyoung-demo",
-      STORAGE_PROVIDER: "S3",
+      AWS_REGION: 'ap-northeast-2',
+      AWS_S3_PUBLIC_BUCKET: 'almondyoung-demo',
+      AWS_S3_PRIVATE_BUCKET: 'almondyoung-demo',
+      STORAGE_PROVIDER: 'S3',
     },
   });
 
-  createService("Search", {
-    dockerfile: "apps/search/Dockerfile",
-    domainSlug: "search",
+  createService('Search', {
+    dockerfile: 'apps/search/Dockerfile',
+    domainSlug: 'search',
     port: 3000,
     priority: 200,
     loadBalancerHealth: {
-      "3000/http": {
-        path: "/health",
-        interval: "30 seconds",
-        timeout: "5 seconds",
+      '3000/http': {
+        path: '/health',
+        interval: '30 seconds',
+        timeout: '5 seconds',
         healthyThreshold: 2,
         unhealthyThreshold: 5,
       },
@@ -323,31 +386,31 @@ export function setup(infra: SharedInfra) {
     environment: {
       // TEMP: AWS OpenSearch(VPC) 연결 트러블슈팅 동안 Railway 자체호스팅 인스턴스로 폴백.
       //       복구되면 opensearch.url/username/password 로 되돌릴 것.
-      OPENSEARCH_NODE: "https://opensearch-development.up.railway.app",
-      SEARCH_PRODUCTS_INDEX: "search_products",
-      ...kafkaEnv("search", "search-indexer-group"),
+      OPENSEARCH_NODE: 'https://opensearch-development.up.railway.app',
+      SEARCH_PRODUCTS_INDEX: 'search_products',
+      ...kafkaEnv('search', 'search-indexer-group'),
     },
   });
 
-  createService("Medusa", {
-    dockerfile: "apps/medusa/Dockerfile",
-    domainSlug: "medusa",
+  createService('Medusa', {
+    dockerfile: 'apps/medusa/Dockerfile',
+    domainSlug: 'medusa',
     port: 9000,
     priority: 210,
     link: [db, redis],
     // 운영 기본 용량. 백필/이벤트 대응 시 일시적으로 올리고, 끝나면 원복한다.
-    cpu: "0.5 vCPU",
-    memory: "1 GB",
+    cpu: '0.5 vCPU',
+    memory: '1 GB',
     scaling: { min: 2, max: 2 },
     buildArgs: {
       VITE_USER_SERVICE_URL: idpUserServiceUrl,
-      MEDUSA_BACKEND_URL: url("medusa"),
+      MEDUSA_BACKEND_URL: url('medusa'),
     },
     loadBalancerHealth: {
-      "9000/http": {
-        path: "/health",
-        interval: "30 seconds",
-        timeout: "5 seconds",
+      '9000/http': {
+        path: '/health',
+        interval: '30 seconds',
+        timeout: '5 seconds',
         healthyThreshold: 2,
         unhealthyThreshold: 5,
       },
@@ -364,111 +427,113 @@ export function setup(infra: SharedInfra) {
       DATABASE_URL: $interpolate`postgresql://${db.username}:${db.password}@${db.host}:${db.port}/medusa?sslmode=disable`,
       REDIS_URL: redisUrl(0),
       CACHE_REDIS_URL: redisUrl(1),
-      MEDUSA_FF_CACHING: "true",
+      MEDUSA_FF_CACHING: 'true',
       // Auth
       JWT_SECRET: medusaJwtSecret.value,
       COOKIE_SECRET: medusaCookieSecret.value,
-      JWT_EXPIRES_IN: "30d",
+      JWT_EXPIRES_IN: '30d',
       // TEMP(시연용): my-auth provider가 user-service 발급 토큰을 jwt.verify하므로
       // IdP 스택의 AUTH_SECRET과 동일한 값을 주입.
       AUTH_SECRET: idpAuthSecret,
       MEDUSA_API_KEY: medusaApiKey.value,
       // CORS
-      STORE_CORS: [url("www"), "https://almondyoung.com", "https://www.almondyoung.com", "http://localhost:8001"].join(","),
-      ADMIN_CORS: [url("medusa"), "http://localhost:9000"].join(","),
-      AUTH_CORS: [url("medusa"), url("www"), "https://almondyoung.com", "https://www.almondyoung.com", "http://localhost:8001"].join(","),
+      STORE_CORS: [url('www'), 'https://almondyoung.com', 'https://www.almondyoung.com', 'http://localhost:8001'].join(
+        ',',
+      ),
+      ADMIN_CORS: [url('medusa'), 'http://localhost:9000'].join(','),
+      AUTH_CORS: [
+        url('medusa'),
+        url('www'),
+        'https://almondyoung.com',
+        'https://www.almondyoung.com',
+        'http://localhost:8001',
+      ].join(','),
       // Internal service URLs
-      FRONTEND_URL: url("www"),
+      FRONTEND_URL: url('www'),
       USER_SERVICE_URL: idpUserServiceUrl,
-      MEDUSA_BACKEND_URL: url("medusa"),
+      MEDUSA_BACKEND_URL: url('medusa'),
       // OIDC: medusa-config.js 는 AUTH_WEB_URL 이 truthy 일 때만 user-service-sso provider 를 등록한다.
       // 아래 5개는 모두 set 되어야 storefront 의 /auth/customer/user-service-sso 가 동작.
       AUTH_WEB_URL: idpAuthWebUrl,
       OIDC_ISSUER_URL: idpUserServiceUrl,
-      OIDC_CLIENT_ID: "medusa-storefront",
+      OIDC_CLIENT_ID: 'medusa-storefront',
       OIDC_CLIENT_SECRET: medusaOidcClientSecret.value,
-      OIDC_SCOPES: "openid email profile",
-      SSO_DEFAULT_CALLBACK_URL: $interpolate`${url("www")}/kr/callback/oidc`,
-      WALLET_BASE_URL: url("wallet"),
+      OIDC_SCOPES: 'openid email profile',
+      SSO_DEFAULT_CALLBACK_URL: $interpolate`${url('www')}/kr/callback/oidc`,
+      WALLET_BASE_URL: url('wallet'),
       WALLET_API_KEY: walletApiKey.value,
-      ALMOND_PAYMENT_ENDPOINT: url("wallet"),
-      MEMBERSHIP_SERVICE_URL: url("membership"),
-      UGC_SERVICE_URL: url("ugc"),
-      MEDUSA_MEMBERSHIP_GROUP_ID: "cusgroup_01KFZ12A1M344F6HKGDV35J28A",
+      ALMOND_PAYMENT_ENDPOINT: url('wallet'),
+      MEMBERSHIP_SERVICE_URL: url('membership'),
+      UGC_SERVICE_URL: url('ugc'),
+      MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
       // S3
-      S3_FILE_URL: "https://almondyoung-medusa-digital-asset.s3.ap-northeast-2.amazonaws.com",
+      S3_FILE_URL: 'https://almondyoung-medusa-digital-asset.s3.ap-northeast-2.amazonaws.com',
       S3_ACCESS_KEY_ID: awsS3AccessKeyId.value,
       S3_SECRET_ACCESS_KEY: awsS3SecretAccessKey.value,
-      S3_REGION: "ap-northeast-2",
-      S3_BUCKET: "almondyoung-medusa-digital-asset",
+      S3_REGION: 'ap-northeast-2',
+      S3_BUCKET: 'almondyoung-medusa-digital-asset',
       // Admin & logging
-      MEDUSA_ADMIN_ONBOARDING_TYPE: "default",
-      LOG_LEVEL: "debug",
+      MEDUSA_ADMIN_ONBOARDING_TYPE: 'default',
+      LOG_LEVEL: 'debug',
     },
   });
 
   // ─── admin-web (Next.js / OpenNext, CloudFront) ───
   // admin-web 자체가 OIDC RP. 빌드 단계의 page-data collection 이 OIDC env 를 required 로 읽으므로,
   // 아래 7개 변수는 누락 시 OpenNext 빌드가 실패한다 (apps/admin-web/src/lib/auth/env.ts 참조).
-  new sst.aws.Nextjs("AdminWeb", {
-    path: "../../../apps/admin-web",
-    domain: { name: domain("admin") },
+  new sst.aws.Nextjs('AdminWeb', {
+    path: '../../../apps/admin-web',
+    domain: { name: domain('admin') },
     environment: {
       AUTH_SECRET: authSecret.value,
-      ALMONDYOUNG_API_URL: url("core"),
-      MEDUSA_API_URL: url("medusa"),
+      ALMONDYOUNG_API_URL: url('core'),
+      MEDUSA_API_URL: url('medusa'),
       MEDUSA_API_KEY: medusaApiKey.value,
       USER_SERVICE_URL: idpUserServiceUrl,
-      WALLET_SERVICE_URL: url("wallet"),
-      MEMBERSHIP_SERVICE_URL: url("membership"),
-      NOTIFICATION_SERVICE_URL: url("notification"),
-      CHANNEL_ADAPTER_SERVICE_URL: url("channel-adapter"),
-      FILE_SERVICE_URL: url("file"),
-      UGC_SERVICE_URL: url("ugc"),
-      ADMIN_DOMAIN: domain("admin"),
+      WALLET_SERVICE_URL: url('wallet'),
+      MEMBERSHIP_SERVICE_URL: url('membership'),
+      NOTIFICATION_SERVICE_URL: url('notification'),
+      CHANNEL_ADAPTER_SERVICE_URL: url('channel-adapter'),
+      FILE_SERVICE_URL: url('file'),
+      UGC_SERVICE_URL: url('ugc'),
+      ADMIN_DOMAIN: domain('admin'),
       OIDC_ISSUER_URL: idpUserServiceUrl,
       OAUTH_ISSUER_URL: idpUserServiceUrl,
       OIDC_AUTHORIZATION_URL: $interpolate`${idpAuthWebUrl}/oauth/authorize`,
-      OIDC_CLIENT_ID: "admin-web",
+      OIDC_CLIENT_ID: 'admin-web',
       OIDC_CLIENT_SECRET: adminWebOidcClientSecret.value,
-      OIDC_REDIRECT_URI: $interpolate`${url("admin")}/auth/callback`,
-      OIDC_POST_LOGOUT_REDIRECT_URI: $interpolate`${url("admin")}/login`,
+      OIDC_REDIRECT_URI: $interpolate`${url('admin')}/auth/callback`,
+      OIDC_POST_LOGOUT_REDIRECT_URI: $interpolate`${url('admin')}/login`,
       OAUTH_JWKS_URL: $interpolate`${idpUserServiceUrl}/.well-known/jwks.json`,
-      NEXT_PUBLIC_STOREFRONT_URL: url("www"),
-      NEXT_PUBLIC_STOREFRONT_DEFAULT_COUNTRY: "kr",
+      NEXT_PUBLIC_STOREFRONT_URL: url('www'),
+      NEXT_PUBLIC_STOREFRONT_DEFAULT_COUNTRY: 'kr',
     },
   });
 
   // ─── storefront WAF (CloudFront IP 차단) ───
   // 레거시 cafe24 상점/보안 설정에서 차단하던 IP를 뉴 아몬드영 스토어프론트에도 동일 적용.
   // CloudFront에 붙는 WAF는 global scope = us-east-1 강제이므로 전용 provider로 생성한다.
-  const wafUsEast1 = new aws.Provider("WafUsEast1", { region: "us-east-1" });
+  const wafUsEast1 = new aws.Provider('WafUsEast1', { region: 'us-east-1' });
 
   const storefrontBlockIpSet = new aws.wafv2.IpSet(
-    "StorefrontBlockIpSet",
+    'StorefrontBlockIpSet',
     {
-      scope: "CLOUDFRONT",
-      ipAddressVersion: "IPV4",
+      scope: 'CLOUDFRONT',
+      ipAddressVersion: 'IPV4',
       // 단일 IP는 /32. cafe24 상점/보안 설정의 차단 목록과 동기화한다.
-      addresses: [
-        "125.60.32.38/32",
-        "211.252.157.13/32",
-        "210.220.13.170/32",
-        "210.95.250.112/32",
-        "210.90.35.236/32",
-      ],
+      addresses: ['125.60.32.38/32', '211.252.157.13/32', '210.220.13.170/32', '210.95.250.112/32', '210.90.35.236/32'],
     },
     { provider: wafUsEast1 },
   );
 
   const storefrontWebAclResource = new aws.wafv2.WebAcl(
-    "StorefrontWebAcl",
+    'StorefrontWebAcl',
     {
-      scope: "CLOUDFRONT",
+      scope: 'CLOUDFRONT',
       defaultAction: { allow: {} }, // 기본 허용, IPSet에 든 IP만 차단
       rules: [
         {
-          name: "block-cafe24-ips",
+          name: 'block-cafe24-ips',
           priority: 1,
           action: { block: {} },
           statement: {
@@ -476,14 +541,14 @@ export function setup(infra: SharedInfra) {
           },
           visibilityConfig: {
             cloudwatchMetricsEnabled: true,
-            metricName: "block-cafe24-ips",
+            metricName: 'block-cafe24-ips',
             sampledRequestsEnabled: true,
           },
         },
       ],
       visibilityConfig: {
         cloudwatchMetricsEnabled: true,
-        metricName: "StorefrontWebAcl",
+        metricName: 'StorefrontWebAcl',
         sampledRequestsEnabled: true,
       },
     },
@@ -493,9 +558,9 @@ export function setup(infra: SharedInfra) {
   // ─── storefront (Next.js / OpenNext, CloudFront) ───
   // Medusa STORE_CORS/AUTH_CORS에 이미 url("www")로 등록되어 있다.
   // 백엔드 서비스 URL은 storefront가 BACKEND_DOMAIN + 서비스 서브도메인 규칙으로 조립한다.
-  new sst.aws.Nextjs("Storefront", {
-    path: "../../../web/almondyoung-storefront",
-    domain: { name: domain("www") },
+  new sst.aws.Nextjs('Storefront', {
+    path: '../../../web/almondyoung-storefront',
+    domain: { name: domain('www') },
     transform: {
       // CloudFront distribution에 위 WebACL 연결 → 스토어프론트 전체 IP 차단.
       cdn: (cdnArgs) => {
@@ -503,14 +568,14 @@ export function setup(infra: SharedInfra) {
       },
     },
     environment: {
-      NEXT_PUBLIC_BASE_URL: url("www"),
-      NEXT_PUBLIC_DEFAULT_REGION: "kr",
-      NEXT_PUBLIC_WALLET_WEB_URL: url("wallet-web"),
-      NEXT_PUBLIC_MEDUSA_MEMBERSHIP_GROUP_ID: "cusgroup_01KFZ12A1M344F6HKGDV35J28A",
+      NEXT_PUBLIC_BASE_URL: url('www'),
+      NEXT_PUBLIC_DEFAULT_REGION: 'kr',
+      NEXT_PUBLIC_WALLET_WEB_URL: url('wallet-web'),
+      NEXT_PUBLIC_MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
       NEXT_PUBLIC_BACKEND_DOMAIN: backendRootDomain,
       BACKEND_DOMAIN: backendRootDomain,
-      NEXT_PUBLIC_USE_RAILWAY_BACKEND: "true",
-      USE_RAILWAY_BACKEND: "true",
+      NEXT_PUBLIC_USE_RAILWAY_BACKEND: 'true',
+      USE_RAILWAY_BACKEND: 'true',
       NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: medusaPublishableKey.value,
       REVALIDATE_SECRET: storefrontRevalidateSecret.value,
       // 인증 일원화: auth-web origin + user-service 직접 호출(server-side).
@@ -522,34 +587,32 @@ export function setup(infra: SharedInfra) {
       OIDC_CLIENT_SECRET: medusaOidcClientSecret.value,
       // 형제 서브도메인 간 세션 공유 (auth-web과 동일 값이어야 함).
       PARENT_COOKIE_DOMAIN: `.${baseDomain}`,
-      PARENT_COOKIE_SECURE: "true",
-      PARENT_COOKIE_SAMESITE: "lax",
+      PARENT_COOKIE_SECURE: 'true',
+      PARENT_COOKIE_SAMESITE: 'lax',
       // 레거시 cafe24 마이페이지 redirect.
-      NEXT_PUBLIC_LEGACY_ORDER_LIST_URL:
-        "https://almondyoung.com/myshop/order/list.html",
-      NEXT_PUBLIC_LEGACY_MEMBERSHIP_HISTORY_URL:
-        "https://almondyoung.com/myshop/mileage/historyList.html",
+      NEXT_PUBLIC_LEGACY_ORDER_LIST_URL: 'https://almondyoung.com/myshop/order/list.html',
+      NEXT_PUBLIC_LEGACY_MEMBERSHIP_HISTORY_URL: 'https://almondyoung.com/myshop/mileage/historyList.html',
     },
   });
 
   // ─── wallet-web (Next.js / OpenNext, CloudFront) ───
   // wallet-web 자체가 OIDC RP. admin-web 과 동일한 패턴으로 user-service 와 직접 OIDC code-exchange.
   // RP 코드: apps/wallet-web/lib/auth/*, app/login, app/auth/callback, app/api/auth/{refresh,signout}, middleware.ts.
-  new sst.aws.Nextjs("WalletWeb", {
-    path: "../../../apps/wallet-web",
-    domain: { name: domain("wallet-web") },
+  new sst.aws.Nextjs('WalletWeb', {
+    path: '../../../apps/wallet-web',
+    domain: { name: domain('wallet-web') },
     environment: {
-      NEXT_PUBLIC_WALLET_API_URL: url("wallet"),
-      WALLET_API_URL: url("wallet"),
+      NEXT_PUBLIC_WALLET_API_URL: url('wallet'),
+      WALLET_API_URL: url('wallet'),
       WALLET_API_KEY: walletApiKey.value,
       TOSS_CLIENT_KEY: tossClientKey.value,
       // OIDC (wallet-web RP). client_id 는 시더와 동일하게 'wallet-web'.
       OIDC_ISSUER_URL: idpUserServiceUrl,
       OIDC_AUTHORIZATION_URL: $interpolate`${idpAuthWebUrl}/oauth/authorize`,
-      OIDC_CLIENT_ID: "wallet-web",
+      OIDC_CLIENT_ID: 'wallet-web',
       OIDC_CLIENT_SECRET: walletWebOidcClientSecret.value,
-      OIDC_REDIRECT_URI: $interpolate`${url("wallet-web")}/auth/callback`,
-      OIDC_POST_LOGOUT_REDIRECT_URI: url("wallet-web"),
+      OIDC_REDIRECT_URI: $interpolate`${url('wallet-web')}/auth/callback`,
+      OIDC_POST_LOGOUT_REDIRECT_URI: url('wallet-web'),
       OAUTH_JWKS_URL: $interpolate`${idpUserServiceUrl}/.well-known/jwks.json`,
       // 세션 쿠키는 host-only (admin-web 패턴). 다른 RP 와의 세션 공유는 IdP 레벨에서만
       // 일어나며 (auth-web hub 의 parent-domain idp 쿠키), wallet-web 은 자체 도메인에만 토큰을 박는다.
