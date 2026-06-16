@@ -221,14 +221,25 @@ export async function oidcCallback(args: {
  * 로그아웃: _medusa_jwt 제거 후 user-service /oauth/end_session으로 redirect.
  */
 export async function oidcSignOut(countryCode: string): Promise<void> {
+  console.log("[logout] oidcSignOut 진입")
   // _medusa_jwt 와 user-service accessToken/refreshToken 모두 제거 (단일 OIDC 세션 라이프사이클).
   await removeAllAuthTokens()
+  console.log("[logout] oidcSignOut: removeAllAuthTokens 완료")
 
   const issuer = process.env.OIDC_ISSUER_URL ?? process.env.NEXT_PUBLIC_USER_SERVICE_URL
   const clientId = process.env.OIDC_CLIENT_ID ?? "medusa-storefront"
   const base = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:8000"
+  console.log(
+    "[logout] oidcSignOut: issuer=",
+    issuer,
+    "clientId=",
+    clientId,
+    "base=",
+    base
+  )
 
   if (!issuer) {
+    console.log("[logout] oidcSignOut: issuer 없음 → 홈으로 redirect")
     redirect(`/${countryCode}`)
   }
 
@@ -236,5 +247,6 @@ export async function oidcSignOut(countryCode: string): Promise<void> {
   url.searchParams.set("client_id", clientId)
   url.searchParams.set("post_logout_redirect_uri", `${base}/${countryCode}`)
 
+  console.log("[logout] oidcSignOut: end_session redirect 직전 url=", url.toString())
   redirect(url.toString())
 }

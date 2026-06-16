@@ -6,6 +6,7 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
+  Logger,
   Post,
   Query,
   Req,
@@ -27,6 +28,8 @@ import { OAuthService } from './oauth.service';
 @Controller('oauth')
 @SkipResponseEnvelope()
 export class OAuthController {
+  private readonly logger = new Logger(OAuthController.name);
+
   constructor(
     private readonly oauthService: OAuthService,
     private readonly configService: ConfigService,
@@ -137,6 +140,9 @@ export class OAuthController {
     @Query('state') state?: string,
   ): Promise<void> {
     const accessToken = this.extractAccessToken(req);
+    this.logger.log(
+      `[logout] end_session GET 도착 accessToken=${accessToken ? '있음' : '없음'} clientId=${clientId} postLogoutRedirectUri=${postLogoutRedirectUri}`,
+    );
     const { redirectUrl } = await this.oauthService.endSession({
       accessToken,
       clientId,
@@ -164,6 +170,9 @@ export class OAuthController {
     },
   ): Promise<{ redirectUrl: string | null }> {
     const accessToken = this.extractAccessToken(req);
+    this.logger.log(
+      `[logout] end_session POST 도착 accessToken=${accessToken ? '있음' : '없음'} clientId=${body?.client_id}`,
+    );
     const result = await this.oauthService.endSession({
       accessToken,
       clientId: body?.client_id,
