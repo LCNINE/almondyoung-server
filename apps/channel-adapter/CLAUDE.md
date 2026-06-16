@@ -51,7 +51,7 @@ Kafka Consumer → inbox_events 테이블 저장 (빠른 ACK) → InboxWorkerSer
 ```
 - **Inbox**: Kafka → DB 저장 → 비동기 처리 (외부 API 호출이 느리므로 Consumer timeout 방지)
 - **Outbox (공용 `@app/events`)**: DB → Kafka 발행 (트랜잭션 보장)
-- `InboxWorkerService`가 `setInterval`로 pending 이벤트 폴링 (기본 5초)
+- `InboxWorkerService`는 handler start interval 마다 eventType allowlist 대상 row 1개를 atomic claim 하고, task-local handler concurrency 로 외부 API 압력을 제한
 - `OutboxDispatcherService`가 `@Cron(EVERY_10_SECONDS)`로 Kafka 발행
 
 ### 3-3. Inbox를 두 서비스가 나눠 처리
@@ -59,10 +59,10 @@ Kafka Consumer → inbox_events 테이블 저장 (빠른 ACK) → InboxWorkerSer
 
 | 서비스 | 처리 대상 이벤트 | 역할 |
 |--------|------------------|------|
-| **InboxWorkerService** | `ProductMasterActiveVersionChanged`, `CategoryChanged`, `MembershipStatusChanged`, `Cafe24Linked/Unlinked` | 외부 API(Medusa) 호출 |
+| **InboxWorkerService** | 명시적 eventType allowlist 의 Medusa/Firebase projection 이벤트 | 외부 API(Medusa/Firebase) 호출 |
 | **OutboxDispatcherService** | `OrderCreated`, `OrderModified`, `OrderCancelled`, 기타 `ChannelAdapter` 집계 이벤트 | Kafka 발행 |
 
-- InboxWorker는 `aggregateType != 'Product'`가 아닌 이벤트 중 주문 이벤트를 제외(`notInArray`)
+- InboxWorker는 batch-size 기반 throttle 이 아니라 `INBOX_MAX_CONCURRENT_HANDLERS`, `INBOX_HANDLER_START_INTERVAL_MS`, processing lease 로 처리 압력을 제어
 - OutboxDispatcher는 `aggregateType != 'Product'` 조건으로 Product 이벤트를 제외
 
 ### 3-4. CQRS 스타일 Command/Query 분리

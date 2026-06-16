@@ -18,6 +18,7 @@ function collectValues(value: unknown, seen = new WeakSet<object>()): unknown[] 
 
 function createDbMock(newerEvents: unknown[] | ((condition: unknown) => unknown[]) = []) {
   const updates: any[] = [];
+  const execute = jest.fn().mockResolvedValue([]);
   const where = jest.fn((condition: unknown) => ({
     limit: jest.fn().mockResolvedValue(typeof newerEvents === 'function' ? newerEvents(condition) : newerEvents),
   }));
@@ -33,8 +34,9 @@ function createDbMock(newerEvents: unknown[] | ((condition: unknown) => unknown[
   }));
 
   return {
-    db: { select, update },
+    db: { execute, select, update },
     updates,
+    execute,
   };
 }
 
@@ -55,19 +57,22 @@ describe('InboxWorkerService ProductSellableQuantityChanged handling', () => {
     syncError?: Error;
     maxRetries?: number;
     newerEvents?: unknown[] | ((condition: unknown) => unknown[]);
+    config?: Record<string, string | number | undefined>;
+    syncPromise?: Promise<void>;
   }) {
     const dbMock = createDbMock(params?.newerEvents);
     const syncService = {
       handleActiveVersionChanged: jest.fn().mockResolvedValue(undefined),
       handleProductMasterDeleted: jest.fn().mockResolvedValue(undefined),
-      handleProductSellableQuantityChanged: params?.syncError
-        ? jest.fn().mockRejectedValue(params.syncError)
-        : jest.fn().mockResolvedValue(undefined),
+      handleProductSellableQuantityChanged: jest.fn(() => {
+        if (params?.syncError) return Promise.reject(params.syncError);
+        if (params?.syncPromise) return params.syncPromise;
+        return Promise.resolve();
+      }),
     };
     const configService = {
       get: jest.fn((key: string) => {
-        if (key === 'INBOX_POLL_INTERVAL_MS') return 5000;
-        if (key === 'INBOX_BATCH_SIZE') return 10;
+        if (Object.prototype.hasOwnProperty.call(params?.config ?? {}, key)) return params?.config?.[key];
         if (key === 'INBOX_MAX_RETRIES') return params?.maxRetries ?? 5;
         return undefined;
       }),
@@ -111,7 +116,6 @@ describe('InboxWorkerService ProductSellableQuantityChanged handling', () => {
 
     expect(syncService.handleProductSellableQuantityChanged).toHaveBeenCalledWith(payload);
     expect(dbMock.updates).toEqual([
-      { status: 'processing' },
       { status: 'published', publishedAt: new Date('2026-05-27T00:00:00.000Z') },
     ]);
   });
@@ -125,7 +129,7 @@ describe('InboxWorkerService ProductSellableQuantityChanged handling', () => {
       eventType: 'ProductSellableQuantityChanged',
       aggregateId: 'pim-var-1',
       payload,
-      attempts: 0,
+      attempts: 1,
       createdAt: new Date('2026-05-27T00:00:00.000Z'),
       metadata: { messageId: 'msg-1', chainId: 'chain-1' },
     };
@@ -133,13 +137,140 @@ describe('InboxWorkerService ProductSellableQuantityChanged handling', () => {
     await (service as any).doProcessInboxEvent(event);
 
     expect(syncService.handleProductSellableQuantityChanged).toHaveBeenCalledWith(payload);
-    expect(dbMock.updates[0]).toEqual({ status: 'processing' });
-    expect(dbMock.updates[1]).toEqual({
+    expect(dbMock.updates[0]).toEqual({
       status: 'pending',
       attempts: 1,
       errorMessage: 'Medusa API down',
       nextAttemptAt: new Date('2026-05-27T00:00:02.000Z'),
     });
+  });
+
+  it('does not increment attempts again when a claimed event fails', async () => {
+    const { service, dbMock, syncService } = createService({
+      syncError: new Error('Medusa API down'),
+      maxRetries: 5,
+    });
+    const event = {
+      id: 'inbox_1',
+      eventType: 'ProductSellableQuantityChanged',
+      aggregateId: 'pim-var-1',
+      payload,
+      attempts: 2,
+      createdAt: new Date('2026-05-27T00:00:00.000Z'),
+      metadata: { messageId: 'msg-1', chainId: 'chain-1' },
+    };
+
+    await (service as any).doProcessInboxEvent(event);
+
+    expect(syncService.handleProductSellableQuantityChanged).toHaveBeenCalledWith(payload);
+    expect(dbMock.updates[0]).toEqual({
+      status: 'pending',
+      attempts: 2,
+      errorMessage: 'Medusa API down',
+      nextAttemptAt: new Date('2026-05-27T00:00:04.000Z'),
+    });
+  });
+
+  it('marks a claimed event failed when attempts already reached max retries', async () => {
+    const { service, dbMock } = createService({
+      syncError: new Error('Medusa API down'),
+      maxRetries: 2,
+    });
+    const event = {
+      id: 'inbox_1',
+      eventType: 'ProductSellableQuantityChanged',
+      aggregateId: 'pim-var-1',
+      payload,
+      attempts: 2,
+      createdAt: new Date('2026-05-27T00:00:00.000Z'),
+      metadata: { messageId: 'msg-1', chainId: 'chain-1' },
+    };
+
+    await (service as any).doProcessInboxEvent(event);
+
+    expect(dbMock.updates[0]).toEqual({
+      status: 'failed',
+      attempts: 2,
+      errorMessage: 'Medusa API down',
+      failedAt: new Date('2026-05-27T00:00:00.000Z'),
+    });
+  });
+
+  it('keeps unsupported event types retryable instead of publishing them', async () => {
+    const { service, dbMock } = createService();
+    const event = {
+      id: 'inbox_unknown',
+      eventType: 'SomeUnexpectedEvent',
+      aggregateId: 'aggregate-1',
+      payload: {},
+      attempts: 1,
+      createdAt: new Date('2026-05-27T00:00:00.000Z'),
+      metadata: { messageId: 'msg-1', chainId: 'chain-1' },
+    };
+
+    await (service as any).doProcessInboxEvent(event);
+
+    expect(dbMock.updates[0]).toEqual({
+      status: 'pending',
+      attempts: 1,
+      errorMessage: 'Unsupported inbox event type: SomeUnexpectedEvent',
+      nextAttemptAt: new Date('2026-05-27T00:00:02.000Z'),
+    });
+  });
+
+  it('coerces string worker env config to numbers', () => {
+    const { service } = createService({
+      config: {
+        INBOX_MAX_CONCURRENT_HANDLERS: '3',
+        INBOX_HANDLER_START_INTERVAL_MS: '10000',
+        INBOX_PROCESSING_LEASE_MS: '900000',
+        INBOX_SHUTDOWN_DRAIN_MS: '25000',
+        INBOX_MAX_RETRIES: '7',
+      },
+    });
+
+    expect((service as any).maxConcurrentHandlers).toBe(3);
+    expect((service as any).handlerStartIntervalMs).toBe(10000);
+    expect((service as any).processingLeaseMs).toBe(900000);
+    expect((service as any).shutdownDrainMs).toBe(25000);
+    expect((service as any).maxRetries).toBe(7);
+  });
+
+  it('starts at most one handler per tick and skips claims while at local concurrency limit', async () => {
+    const neverResolves = new Promise<void>(() => undefined);
+    const { service, dbMock } = createService({
+      config: {
+        INBOX_MAX_CONCURRENT_HANDLERS: '1',
+        INBOX_HANDLER_START_INTERVAL_MS: '10000',
+      },
+      syncPromise: neverResolves,
+    });
+    dbMock.execute.mockResolvedValueOnce([
+      {
+        id: '01930000-0000-7000-8000-000000000001',
+        eventType: 'ProductSellableQuantityChanged',
+        aggregateType: 'ProductVariant',
+        aggregateId: 'pim-var-1',
+        partitionKey: 'pim-var-1',
+        payload,
+        metadata: { messageId: 'msg-1', chainId: 'chain-1' },
+        status: 'processing',
+        attempts: 1,
+        nextAttemptAt: new Date('2026-05-27T00:15:00.000Z'),
+        errorMessage: null,
+        eventOccurredAt: null,
+        createdAt: new Date('2026-05-27T00:00:00.000Z'),
+        publishedAt: null,
+        failedAt: null,
+      },
+    ]);
+
+    (service as any).isRunning = true;
+    await (service as any).tryStartNextHandler();
+    await (service as any).tryStartNextHandler();
+
+    expect(dbMock.execute).toHaveBeenCalledTimes(1);
+    expect((service as any).inFlightHandlers).toBe(1);
   });
 
   it('does not publish an older active-version retry after a newer product delete is present', async () => {

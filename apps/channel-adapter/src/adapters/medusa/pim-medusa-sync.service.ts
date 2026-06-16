@@ -370,8 +370,8 @@ export class PimMedusaSyncService {
       const { product, action } = await this.medusaClient.upsertProduct(medusaPayload, medusaProductId);
 
       if (shouldSyncCategories && attachableCategories.length > 0) {
-        // 추가 verify (getCategoryById N 회 직렬) 는 attachProductToCategories 내부 verify 와
-        // 중복이라 제거. attach 측은 Promise.all + categoryCache 기반으로 이미 빠름.
+        // 추가 verify 는 attachProductToCategories 내부 verify 와 중복이라 제거.
+        // attach 측은 categoryCache 를 우선 사용하고, miss 와 attach 호출은 Medusa 보호를 위해 순차 실행한다.
         const resolvedCategoryIds = attachableCategories.map((c) => c.id);
         await this.medusaClient.attachProductToCategories(product.id, resolvedCategoryIds, { throwOnFailure: false });
       }

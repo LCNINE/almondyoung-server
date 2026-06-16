@@ -1,9 +1,8 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
 import { inboxEvents, wmsOrderMappings } from '../../schema';
-import { ORDER_STREAM_EVENT_TYPES } from '../../order-event-routing';
-import { eq, and, lte, notInArray, gt, inArray, sql } from 'drizzle-orm';
+import { eq, and, gt, inArray, sql } from 'drizzle-orm';
 import { v7 } from 'uuid';
 import { PimMedusaSyncService } from './pim-medusa-sync.service';
 import { MembershipMedusaSyncService } from './membership-medusa-sync.service';
@@ -26,19 +25,51 @@ import type {
 
 const PRODUCT_MASTER_LIFECYCLE_EVENT_TYPES = ['ProductMasterActiveVersionChanged', 'ProductMasterDeleted'] as const;
 
+const INBOX_WORKER_EVENT_TYPES = [
+  'ProductMasterActiveVersionChanged',
+  'ProductMasterDeleted',
+  'CategoryChanged',
+  'ProductSellableQuantityChanged',
+  'MembershipStatusChanged',
+  'UserEmailVerified',
+  'Cafe24Linked',
+  'Cafe24Unlinked',
+  'FirebaseMembershipSynced',
+  'CoreFulfillmentShipped',
+  'CoreFulfillmentDelivered',
+  'CoreOrderCancelled',
+] as const;
+
+type InboxWorkerEventType = (typeof INBOX_WORKER_EVENT_TYPES)[number];
+type InboxEventRecord = Omit<typeof inboxEvents.$inferSelect, 'payload' | 'metadata'> & {
+  payload: any;
+  metadata: Record<string, any> | null;
+};
+type InboxWorkerEventRecord = Omit<InboxEventRecord, 'eventType'> & { eventType: InboxWorkerEventType };
+
 function isProductMasterLifecycleEvent(
   eventType: string,
 ): eventType is (typeof PRODUCT_MASTER_LIFECYCLE_EVENT_TYPES)[number] {
   return (PRODUCT_MASTER_LIFECYCLE_EVENT_TYPES as readonly string[]).includes(eventType);
 }
 
+function isInboxWorkerEventType(eventType: string): eventType is InboxWorkerEventType {
+  return (INBOX_WORKER_EVENT_TYPES as readonly string[]).includes(eventType);
+}
+
 @Injectable()
-export class InboxWorkerService implements OnModuleInit {
+export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(InboxWorkerService.name);
   private isRunning = false;
+  private isStopping = false;
+  private isClaiming = false;
+  private inFlightHandlers = 0;
+  private readonly inFlightEventIds = new Set<string>();
   private intervalId: ReturnType<typeof setInterval> | null = null;
-  private readonly pollIntervalMs: number;
-  private readonly batchSize: number;
+  private readonly handlerStartIntervalMs: number;
+  private readonly maxConcurrentHandlers: number;
+  private readonly processingLeaseMs: number;
+  private readonly shutdownDrainMs: number;
   private readonly maxRetries: number;
 
   constructor(
@@ -51,14 +82,11 @@ export class InboxWorkerService implements OnModuleInit {
     private readonly configService: ConfigService,
     private readonly eventChainService: EventChainService,
   ) {
-    this.pollIntervalMs =
-      this.configService.get<number>('INBOX_POLL_INTERVAL_MS') ||
-      this.configService.get<number>('OUTBOX_POLL_INTERVAL_MS') ||
-      5000; // 5초마다 polling (backward compatibility)
-    this.batchSize =
-      this.configService.get<number>('INBOX_BATCH_SIZE') || this.configService.get<number>('OUTBOX_BATCH_SIZE') || 10;
-    this.maxRetries =
-      this.configService.get<number>('INBOX_MAX_RETRIES') || this.configService.get<number>('OUTBOX_MAX_RETRIES') || 5;
+    this.maxConcurrentHandlers = this.readPositiveIntConfig('INBOX_MAX_CONCURRENT_HANDLERS', 1);
+    this.handlerStartIntervalMs = this.readPositiveIntConfig('INBOX_HANDLER_START_INTERVAL_MS', 10000);
+    this.processingLeaseMs = this.readPositiveIntConfig('INBOX_PROCESSING_LEASE_MS', 15 * 60 * 1000);
+    this.shutdownDrainMs = this.readNonNegativeIntConfig('INBOX_SHUTDOWN_DRAIN_MS', 25000);
+    this.maxRetries = this.readPositiveIntConfig('INBOX_MAX_RETRIES', 5);
   }
 
   async onModuleInit() {
@@ -67,73 +95,171 @@ export class InboxWorkerService implements OnModuleInit {
   }
 
   start() {
-    if (this.isRunning) {
+    if (this.isRunning && !this.isStopping) {
       this.logger.warn('Inbox worker is already running');
       return;
     }
 
     this.isRunning = true;
-    this.intervalId = setInterval(async () => {
-      await this.processInboxBatch();
-    }, this.pollIntervalMs);
+    this.isStopping = false;
+    void this.tryStartNextHandler();
+    this.intervalId = setInterval(() => {
+      void this.tryStartNextHandler();
+    }, this.handlerStartIntervalMs);
 
-    this.logger.log(`Inbox worker started (poll interval: ${this.pollIntervalMs}ms)`);
+    this.logger.log(
+      `Inbox worker started (handlerStartIntervalMs=${this.handlerStartIntervalMs}ms, ` +
+        `maxConcurrentHandlers=${this.maxConcurrentHandlers}, processingLeaseMs=${this.processingLeaseMs}ms, ` +
+        `shutdownDrainMs=${this.shutdownDrainMs}ms, maxRetries=${this.maxRetries})`,
+    );
   }
 
-  stop() {
+  async stop(): Promise<void> {
     if (this.intervalId) {
       clearInterval(this.intervalId);
       this.intervalId = null;
     }
+    this.isStopping = true;
     this.isRunning = false;
+    await this.drainInFlightHandlers();
     this.logger.log('Inbox worker stopped');
   }
 
-  // Inbox에서 pending 이벤트를 가져와 처리
-  private async processInboxBatch(): Promise<void> {
-    try {
-      // 1. pending 상태이면서 nextAttemptAt이 지난 이벤트 조회
-      // Order events are handled by OutboxDispatcherService which publishes them to Kafka.
-      // Exclude them here to avoid marking them as published before they reach Kafka — this
-      // worker has no switch case for them and would otherwise route them to the `default`
-      // branch and mark them published before dispatch. The exclusion list is shared with the
-      // dispatcher via ORDER_STREAM_EVENT_TYPES so the two can never drift.
-      const events = await this.dbService.db
-        .select()
-        .from(inboxEvents)
-        .where(
-          and(
-            eq(inboxEvents.status, 'pending'),
-            lte(inboxEvents.nextAttemptAt, new Date()),
-            notInArray(inboxEvents.eventType, [...ORDER_STREAM_EVENT_TYPES]),
-          ),
-        )
-        .orderBy(inboxEvents.createdAt)
-        .limit(this.batchSize);
+  private readPositiveIntConfig(key: string, defaultValue: number): number {
+    return this.readIntConfig(key, defaultValue, { min: 1 });
+  }
 
-      if (events.length === 0) {
+  private readNonNegativeIntConfig(key: string, defaultValue: number): number {
+    return this.readIntConfig(key, defaultValue, { min: 0 });
+  }
+
+  private readIntConfig(key: string, defaultValue: number, options: { min: number }): number {
+    const raw = this.configService.get<string | number | undefined>(key);
+    if (raw === undefined || raw === null || raw === '') {
+      return defaultValue;
+    }
+
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value < options.min) {
+      throw new Error(`Invalid ${key}: expected integer >= ${options.min}, received ${raw}`);
+    }
+
+    return value;
+  }
+
+  private async tryStartNextHandler(): Promise<void> {
+    if (!this.isRunning || this.isStopping || this.isClaiming) {
+      return;
+    }
+
+    if (this.inFlightHandlers >= this.maxConcurrentHandlers) {
+      return;
+    }
+
+    this.isClaiming = true;
+    try {
+      const event = await this.claimNextInboxEvent();
+      if (!event) {
         return;
       }
 
-      this.logger.debug(`Processing ${events.length} inbox events...`);
-
-      for (const event of events) {
-        await this.processInboxEvent(event);
-      }
+      this.inFlightHandlers += 1;
+      this.inFlightEventIds.add(event.id);
+      this.logger.debug(
+        `Claimed inbox event: ${event.id} (type=${event.eventType}, attempts=${event.attempts}, ` +
+          `inFlight=${this.inFlightHandlers}/${this.maxConcurrentHandlers})`,
+      );
+      void this.runClaimedEvent(event);
     } catch (error) {
-      this.logger.error('Failed to process inbox batch', error.stack);
+      this.logger.error('Failed to claim inbox event', this.getErrorStack(error));
+    } finally {
+      this.isClaiming = false;
+    }
+  }
+
+  private async claimNextInboxEvent(): Promise<InboxWorkerEventRecord | null> {
+    const inFlightIds = [...this.inFlightEventIds];
+    const excludeInFlightSql =
+      inFlightIds.length > 0 ? sql`AND id <> ALL(${inFlightIds}::uuid[])` : sql.empty();
+
+    const rows = await this.dbService.db.execute<InboxWorkerEventRecord>(sql`
+      UPDATE ${inboxEvents}
+      SET
+        status = 'processing',
+        attempts = attempts + 1,
+        next_attempt_at = NOW() + (${this.processingLeaseMs} * interval '1 millisecond'),
+        error_message = NULL
+      WHERE id = (
+        SELECT id
+        FROM ${inboxEvents}
+        WHERE event_type = ANY(${[...INBOX_WORKER_EVENT_TYPES]}::text[])
+          AND (
+            (status = 'pending' AND next_attempt_at <= NOW())
+            OR (status = 'processing' AND next_attempt_at <= NOW())
+          )
+          ${excludeInFlightSql}
+        ORDER BY created_at ASC
+        FOR UPDATE SKIP LOCKED
+        LIMIT 1
+      )
+      RETURNING
+        id,
+        event_type AS "eventType",
+        aggregate_type AS "aggregateType",
+        aggregate_id AS "aggregateId",
+        partition_key AS "partitionKey",
+        payload,
+        metadata,
+        status,
+        attempts,
+        next_attempt_at AS "nextAttemptAt",
+        error_message AS "errorMessage",
+        event_occurred_at AS "eventOccurredAt",
+        created_at AS "createdAt",
+        published_at AS "publishedAt",
+        failed_at AS "failedAt"
+    `);
+
+    return rows[0] ?? null;
+  }
+
+  private async runClaimedEvent(event: InboxWorkerEventRecord): Promise<void> {
+    try {
+      await this.processInboxEvent(event);
+    } catch (error) {
+      this.logger.error(`Unhandled inbox event processing error: ${event.id}`, this.getErrorStack(error));
+    } finally {
+      this.inFlightEventIds.delete(event.id);
+      this.inFlightHandlers = Math.max(0, this.inFlightHandlers - 1);
+    }
+  }
+
+  private async drainInFlightHandlers(): Promise<void> {
+    if (this.inFlightHandlers === 0 || this.shutdownDrainMs === 0) {
+      return;
+    }
+
+    const deadline = Date.now() + this.shutdownDrainMs;
+    while (this.inFlightHandlers > 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+
+    if (this.inFlightHandlers > 0) {
+      this.logger.warn(
+        `Inbox worker shutdown drain timed out with ${this.inFlightHandlers} handler(s) still in flight`,
+      );
     }
   }
 
   // 단일 inbox 이벤트 처리
-  private async processInboxEvent(event: any): Promise<void> {
+  private async processInboxEvent(event: InboxWorkerEventRecord): Promise<void> {
     const chainId = event.metadata?.chainId ?? v7();
     const eventId = event.metadata?.messageId ?? generateMessageId();
 
     await this.eventChainService.runWithChain(chainId, eventId, () => this.doProcessInboxEvent(event));
   }
 
-  private async doProcessInboxEvent(event: any): Promise<void> {
+  private async doProcessInboxEvent(event: InboxEventRecord): Promise<void> {
     const eventId = event.id;
     const eventType = event.eventType;
     const aggregateId = event.aggregateId;
@@ -182,8 +308,9 @@ export class InboxWorkerService implements OnModuleInit {
         return;
       }
 
-      // 상태를 processing으로 변경 (동시 처리 방지)
-      await this.dbService.db.update(inboxEvents).set({ status: 'processing' }).where(eq(inboxEvents.id, eventId));
+      if (!isInboxWorkerEventType(eventType)) {
+        throw new Error(`Unsupported inbox event type: ${eventType}`);
+      }
 
       // Route based on event type
       switch (eventType) {
@@ -366,8 +493,7 @@ export class InboxWorkerService implements OnModuleInit {
         }
 
         default:
-          this.logger.warn(`Unknown event type: ${eventType} for event ${eventId}`);
-          break;
+          throw new Error(`Unsupported inbox event type: ${eventType}`);
       }
 
       // 성공 처리
@@ -381,10 +507,10 @@ export class InboxWorkerService implements OnModuleInit {
 
       this.logger.log(`Inbox event processed: ${eventId}`);
     } catch (error) {
-      this.logger.error(`Failed to process inbox event: ${eventId}`, error.stack);
+      this.logger.error(`Failed to process inbox event: ${eventId}`, this.getErrorStack(error));
 
       // 실패 처리 (재시도 로직)
-      await this.handleFailure(event, error.message);
+      await this.handleFailure(event, this.getErrorMessage(error));
     }
   }
 
@@ -423,9 +549,9 @@ export class InboxWorkerService implements OnModuleInit {
   }
 
   // 실패 처리: 재시도 횟수 증가 + 백오프 + DLQ
-  private async handleFailure(event: any, errorMessage: string): Promise<void> {
+  private async handleFailure(event: InboxEventRecord, errorMessage: string): Promise<void> {
     const eventId = event.id;
-    const attempts = event.attempts + 1;
+    const attempts = Number.isInteger(event.attempts) && event.attempts > 0 ? event.attempts : 1;
 
     if (attempts >= this.maxRetries) {
       // 최대 재시도 횟수 초과 → failed (DLQ)
@@ -460,6 +586,14 @@ export class InboxWorkerService implements OnModuleInit {
   }
 
   async onModuleDestroy() {
-    this.stop();
+    await this.stop();
+  }
+
+  private getErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : String(error);
+  }
+
+  private getErrorStack(error: unknown): string {
+    return error instanceof Error ? error.stack || error.message : String(error);
   }
 }
