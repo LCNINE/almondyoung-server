@@ -322,6 +322,7 @@
   "callback": {
     "paymentFailed": "결제에 실패했습니다.",
     "missingParams": "결제 정보가 없습니다.",
+    "callbackError": "결제 처리 중 오류가 발생했습니다.",
     "membershipFailFallback": "멤버십 가입 처리 실패",
     "membershipCallbackError": "멤버십 결제 처리 중 오류가 발생했습니다.",
     "processingTitle": "결제 처리 중",

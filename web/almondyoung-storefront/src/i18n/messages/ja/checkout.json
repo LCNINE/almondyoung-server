@@ -322,6 +322,7 @@
   "callback": {
     "paymentFailed": "決済に失敗しました。",
     "missingParams": "決済情報がありません。",
+    "callbackError": "決済処理中にエラーが発生しました。",
     "membershipFailFallback": "メンバーシップ加入処理失敗",
     "membershipCallbackError": "メンバーシップ決済処理中にエラーが発生しました。",
     "processingTitle": "決済処理中",
