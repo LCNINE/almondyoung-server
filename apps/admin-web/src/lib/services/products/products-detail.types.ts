@@ -46,6 +46,7 @@ export type ProductMasterDetail = {
   status: string | null;
   isWholesaleOnly: boolean | null;
   isMembershipOnly: boolean | null;
+  fulfillmentKind?: 'physical' | 'digital' | null;
   seoTitle: string | null;
   seoDescription: string | null;
   seoKeywords: string[] | null;
@@ -137,6 +138,7 @@ export type MasterVersionDetailDto = {
   seoKeywords: string[] | null;
   isWholesaleOnly: boolean | null;
   isMembershipOnly: boolean | null;
+  fulfillmentKind?: 'physical' | 'digital' | null;
   parentVersionId: string | null;
   draftOwnerId: string | null;
   createdAt: string;
@@ -173,6 +175,7 @@ export type UpdateMasterVersionDto = {
   primaryCategoryId?: string | null;
   isWholesaleOnly?: boolean;
   isMembershipOnly?: boolean;
+  fulfillmentKind?: 'physical' | 'digital';
   optionDiff?: ProductOptionDiff;
 };
 

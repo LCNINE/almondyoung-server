@@ -76,6 +76,15 @@ export class UpdateProductMasterDto {
   @IsEnum(['active', 'inactive', 'draft'])
   status?: 'active' | 'inactive' | 'draft';
 
+  @ApiProperty({
+    description: '배송 유형 (physical: 배송비 부과 / digital: 배송 불필요·배송비 면제)',
+    enum: ['physical', 'digital'],
+    required: false,
+  })
+  @IsOptional()
+  @IsEnum(['physical', 'digital'])
+  fulfillmentKind?: 'physical' | 'digital';
+
   // ========== 이미지 관련 필드 ==========
 
   @ApiProperty({ description: '썸네일 파일 ID (file-service)', required: false })

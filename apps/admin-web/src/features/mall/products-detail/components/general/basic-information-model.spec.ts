@@ -18,6 +18,7 @@ describe('basic information editing model', () => {
     seoKeywords: ['almond', 'young'],
     isWholesaleOnly: true,
     isMembershipOnly: null,
+    fulfillmentKind: null,
     categories: [
       {
         id: 'cat-primary',
@@ -84,6 +85,7 @@ describe('basic information editing model', () => {
       seoKeywordsText: 'almond, young',
       isWholesaleOnly: true,
       isMembershipOnly: false,
+      fulfillmentKind: 'physical',
       categoryIds: ['cat-primary', 'cat-secondary'],
       primaryCategoryId: 'cat-primary',
     });
@@ -99,6 +101,7 @@ describe('basic information editing model', () => {
         seoKeywordsText: ' glow, skincare\n glow, serum ',
         isWholesaleOnly: true,
         isMembershipOnly: false,
+        fulfillmentKind: 'physical',
         categoryIds: ['cat-secondary', 'cat-primary'],
         primaryCategoryId: 'cat-primary',
       })
@@ -110,6 +113,7 @@ describe('basic information editing model', () => {
       seoKeywords: ['glow', 'skincare', 'serum'],
       isWholesaleOnly: true,
       isMembershipOnly: false,
+      fulfillmentKind: 'physical',
       categoryIds: ['cat-secondary', 'cat-primary'],
       primaryCategoryId: 'cat-primary',
     });
@@ -123,6 +127,7 @@ describe('basic information editing model', () => {
         seoKeywordsText: ' ,  ',
         isWholesaleOnly: false,
         isMembershipOnly: true,
+        fulfillmentKind: 'digital',
         categoryIds: [],
         primaryCategoryId: 'cat-not-selected',
       })
@@ -133,6 +138,7 @@ describe('basic information editing model', () => {
       seoKeywords: [],
       isWholesaleOnly: false,
       isMembershipOnly: true,
+      fulfillmentKind: 'digital',
       categoryIds: [],
       primaryCategoryId: null,
     });
