@@ -430,6 +430,7 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
             checked={data.isMembershipOnly ?? false}
             onCheckedChange={handleMembershipVisibilityChange}
             disabled={updateMembershipVisibility.isPending}
+            className="data-[state=unchecked]:border-gray-300"
           />
         </div>
       </div>
