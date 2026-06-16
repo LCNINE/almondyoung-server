@@ -45,6 +45,9 @@ export class ProductMasterDto {
   @ApiProperty({ description: '멤버십가 비공개 여부 (비회원에게 멤버십가 숨김 — 상품 노출·구매 제한 아님)', nullable: true })
   isMembershipOnly: boolean | null;
 
+  @ApiProperty({ description: '배송 유형 (physical: 배송비 부과 / digital: 배송 불필요·배송비 면제)', enum: ['physical', 'digital'] })
+  fulfillmentKind: 'physical' | 'digital';
+
   @ApiProperty({ description: '생성일시 (ISO 8601 형식)', example: '2025-12-05T10:30:00.000Z' })
   createdAt: string;
 

@@ -33,6 +33,7 @@ export type ProductDetailView = {
   seoKeywords: string[] | null;
   isWholesaleOnly: boolean | null;
   isMembershipOnly: boolean | null;
+  fulfillmentKind: 'physical' | 'digital' | null;
   categories: ProductDetailCategory[];
   createdAt: string;
   updatedAt: string;
@@ -63,6 +64,7 @@ function fromMaster(master: ProductMasterDetail): ProductDetailView {
     seoKeywords: master.seoKeywords,
     isWholesaleOnly: master.isWholesaleOnly,
     isMembershipOnly: master.isMembershipOnly,
+    fulfillmentKind: master.fulfillmentKind ?? null,
     categories: master.categories,
     createdAt: master.createdAt,
     updatedAt: master.updatedAt,
@@ -88,6 +90,7 @@ function fromVersion(detail: MasterVersionDetailDto): ProductDetailView {
     seoKeywords: detail.seoKeywords,
     isWholesaleOnly: detail.isWholesaleOnly,
     isMembershipOnly: detail.isMembershipOnly,
+    fulfillmentKind: detail.fulfillmentKind ?? null,
     categories: detail.categories,
     createdAt: detail.createdAt,
     updatedAt: detail.updatedAt,

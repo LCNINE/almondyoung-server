@@ -34,6 +34,7 @@ export class ProductMasterMapper {
       status: entity.status,
       isWholesaleOnly: entity.isWholesaleOnly,
       isMembershipOnly: entity.isMembershipOnly,
+      fulfillmentKind: (entity.fulfillmentKind ?? 'physical') as 'physical' | 'digital',
       createdAt: DateMapper.toNotNullString(entity.createdAt),
       updatedAt: DateMapper.toNotNullString(entity.updatedAt),
       createdBy: entity.createdBy,
