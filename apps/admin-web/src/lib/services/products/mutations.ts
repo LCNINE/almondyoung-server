@@ -189,6 +189,24 @@ export const useUpdateMaster = () => {
 };
 
 /**
+ * 멤버십가 공개 여부 변경 (draft 없이 즉시 적용)
+ */
+export const useUpdateMembershipVisibility = (masterId: string, versionId: string | null) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (isMembershipOnly: boolean) =>
+      products.masters.updateMembershipVisibility(masterId, isMembershipOnly),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.master(masterId) });
+      if (versionId) {
+        queryClient.invalidateQueries({ queryKey: productQueryKeys.versionDetail(masterId, versionId) });
+      }
+    },
+  });
+};
+
+/**
  * 제품 마스터 삭제
  */
 export const useDeleteMaster = () => {

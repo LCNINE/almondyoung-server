@@ -292,6 +292,23 @@ export class ProductMastersController {
     };
   }
 
+  @Patch(':masterId/membership-visibility')
+  @ApiOperation({
+    summary: '멤버십가 공개 여부 변경',
+    description: 'draft 없이 active 버전의 isMembershipOnly를 직접 수정합니다. 채널 어댑터를 통해 Medusa에 즉시 반영됩니다.',
+  })
+  @ApiParam({ name: 'masterId', description: 'Master ID' })
+  @ApiBody({ schema: { type: 'object', properties: { isMembershipOnly: { type: 'boolean' } }, required: ['isMembershipOnly'] } })
+  @ApiResponse({ status: 200, description: '성공' })
+  @ApiResponse({ status: 404, description: 'Active 버전 없음' })
+  async updateMembershipVisibility(
+    @Param('masterId') masterId: string,
+    @Body() body: { isMembershipOnly: boolean },
+  ) {
+    await this.productVersionsService.updateMembershipVisibility(masterId, body.isMembershipOnly);
+    return { success: true, masterId, isMembershipOnly: body.isMembershipOnly };
+  }
+
   @Patch(':masterId/unpublish')
   @ApiOperation({
     summary: '제품 마스터 비공개 처리',

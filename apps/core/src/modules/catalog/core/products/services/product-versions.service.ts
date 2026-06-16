@@ -603,6 +603,26 @@ export class ProductVersionsService {
   }
 
   /**
+   * 운영 노출 정책 변경 — draft 없이 active 버전의 isMembershipOnly를 직접 수정하고 채널에 재싱크.
+   */
+  async updateMembershipVisibility(masterId: string, isMembershipOnly: boolean, tx?: DbTransaction): Promise<void> {
+    return this.inTx(async (tx) => {
+      const activeVersion = await this.getActiveVersion(masterId, tx);
+
+      await tx
+        .update(productMasterVersions)
+        .set({ isMembershipOnly, updatedAt: new Date() })
+        .where(eq(productMasterVersions.id, activeVersion.id));
+
+      // 변경된 값을 스냅샷에 반영하기 위해 in-memory 패치 후 이벤트 발행
+      const patchedVersion = { ...activeVersion, isMembershipOnly };
+      await this._emitActiveVersionChangedEvent(patchedVersion, null, 'active', tx);
+
+      this.logger.log(`updateMembershipVisibility: master=${masterId} isMembershipOnly=${isMembershipOnly}`);
+    }, tx);
+  }
+
+  /**
    * Master의 Active 버전을 Inactive로 전환 (상품 비공개)
    */
   async unpublishMaster(masterId: string, tx?: DbTransaction): Promise<void> {
