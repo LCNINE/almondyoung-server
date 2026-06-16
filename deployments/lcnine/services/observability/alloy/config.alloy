@@ -1,0 +1,62 @@
+logging {
+	level  = "info"
+	format = "logfmt"
+}
+
+otelcol.receiver.otlp "apps" {
+	grpc {
+		endpoint = "0.0.0.0:4317"
+	}
+
+	http {
+		endpoint = "0.0.0.0:4318"
+	}
+
+	output {
+		traces = [otelcol.processor.batch.traces.input]
+	}
+}
+
+otelcol.processor.batch "traces" {
+	output {
+		traces = [otelcol.exporter.otlp.grafanacloud_tempo.input]
+	}
+}
+
+otelcol.exporter.otlp "grafanacloud_tempo" {
+	client {
+		endpoint = sys.env("GRAFANA_CLOUD_TEMPO_OTLP_ENDPOINT")
+		auth     = otelcol.auth.basic.grafanacloud_tempo.handler
+	}
+}
+
+otelcol.auth.basic "grafanacloud_tempo" {
+	username = sys.env("GRAFANA_CLOUD_TEMPO_USERNAME")
+	password = sys.env("GRAFANA_CLOUD_API_TOKEN")
+}
+
+prometheus.scrape "core" {
+	targets = [
+		{
+			"__address__"            = sys.env("CORE_METRICS_TARGET"),
+			"job"                    = "core",
+			"service_name"           = "core",
+			"deployment_environment" = sys.env("SST_STAGE"),
+		},
+	]
+
+	metrics_path    = "/metrics"
+	scrape_interval = "60s"
+	forward_to      = [prometheus.remote_write.grafanacloud.receiver]
+}
+
+prometheus.remote_write "grafanacloud" {
+	endpoint {
+		url = sys.env("GRAFANA_CLOUD_PROMETHEUS_REMOTE_WRITE_URL")
+
+		basic_auth {
+			username = sys.env("GRAFANA_CLOUD_PROMETHEUS_USERNAME")
+			password = sys.env("GRAFANA_CLOUD_API_TOKEN")
+		}
+	}
+}
