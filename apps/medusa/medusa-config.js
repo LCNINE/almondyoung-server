@@ -15,7 +15,7 @@ module.exports = defineConfig({
       },
       pool: {
         min: 2,
-        max: 10,
+        max: 20,
         idleTimeoutMillis: 30000,
         acquireTimeoutMillis: 10000, // 연결 획득 타임아웃
       },
