@@ -134,6 +134,11 @@ export function setup(infra: SharedInfra) {
       COUPANG_SECRET_KEY: "1",
       COUPANG_VENDOR_ID: "1",
       SKIP_VARIANTS_WITHOUT_PRICE: "true",
+      // 2026-06-16: PIM→Medusa 동기화(InboxWorker)가 Medusa를 과부하시켜 504 유발한 사고 후
+      // 백로그를 천천히 소진하도록 throttle. 기본(5s/10건=분당 120건)→30s/2건=분당 4건.
+      // 안정화 후 단계적으로 상향(예: 10000/5) 가능.
+      INBOX_POLL_INTERVAL_MS: "30000",
+      INBOX_BATCH_SIZE: "2",
     },
   });
 
