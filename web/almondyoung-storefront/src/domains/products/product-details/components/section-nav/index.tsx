@@ -1,6 +1,7 @@
 "use client"
 
 import { cn } from "@/lib/utils"
+import { FEATURES } from "@/lib/config/features"
 import { useScrollSpyWindow } from "@/hooks/use-scroll-spy-window"
 import { usePathname, useSearchParams } from "next/navigation"
 import { useCallback, useEffect, useMemo, useRef } from "react"
@@ -8,7 +9,10 @@ import { useTranslations } from "next-intl"
 
 export type SectionTab = "detail" | "review" | "qna"
 
-const VALID_TABS: SectionTab[] = ["detail", "review", "qna"]
+// QnA 기능을 닫은 동안 Q&A 탭은 네비/스크롤스파이/URL 대상에서 제외한다.
+const VALID_TABS: SectionTab[] = FEATURES.qna
+  ? ["detail", "review", "qna"]
+  : ["detail", "review"]
 const NAV_OFFSET = 56
 
 interface SectionTabsProps {
@@ -118,15 +122,17 @@ export function SectionTabs({
           {t("review")}
           {reviewCountSlot}
         </button>
-        <button
-          type="button"
-          onClick={() => scrollToSection("qna")}
-          aria-current={activeTab === "qna" ? "true" : undefined}
-          className={buttonClass(activeTab === "qna")}
-        >
-          {t("qna")}
-          {qnaCountSlot}
-        </button>
+        {FEATURES.qna && (
+          <button
+            type="button"
+            onClick={() => scrollToSection("qna")}
+            aria-current={activeTab === "qna" ? "true" : undefined}
+            className={buttonClass(activeTab === "qna")}
+          >
+            {t("qna")}
+            {qnaCountSlot}
+          </button>
+        )}
       </nav>
       {children}
     </div>
