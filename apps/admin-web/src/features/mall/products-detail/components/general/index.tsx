@@ -54,6 +54,12 @@ function formatStatus(s: string | null): string {
   return STATUS_LABELS[s] ?? s;
 }
 
+function formatFulfillmentKind(kind: 'physical' | 'digital' | null): string {
+  if (kind === 'digital') return '디지털 (배송비 면제)';
+  if (kind === 'physical') return '실물 (배송비 부과)';
+  return '-';
+}
+
 function formatSeoKeywords(values: string[] | null): string {
   if (!values?.length) return '-';
   return values.join(', ');
@@ -265,6 +271,24 @@ function ProductBasicInformationEditDrawer({
               <div className="flex flex-col gap-3 rounded-md border p-3">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex flex-col gap-1">
+                    <Label htmlFor="product-basic-digital">디지털 상품</Label>
+                    <p className="text-sm text-muted-foreground">
+                      배송이 필요 없는 디지털 상품으로 설정합니다. 활성화하면
+                      배송비가 부과되지 않습니다.
+                    </p>
+                  </div>
+                  <Switch
+                    id="product-basic-digital"
+                    checked={values.fulfillmentKind === 'digital'}
+                    onCheckedChange={(checked) =>
+                      setValue('fulfillmentKind', checked ? 'digital' : 'physical')
+                    }
+                    disabled={updateVersion.isPending}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-col gap-1">
                     <Label htmlFor="product-basic-wholesale">도매 전용</Label>
                     <p className="text-sm text-muted-foreground">
                       도매 운영 대상 상품으로 제한합니다.
@@ -353,6 +377,7 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
     { key: '이름', value: data.name },
     { key: '브랜드', value: data.brand ?? '-' },
     { key: '상태', value: formatStatus(data.status) },
+    { key: '배송 유형', value: formatFulfillmentKind(data.fulfillmentKind) },
     { key: '도매 전용', value: formatBool(data.isWholesaleOnly) },
     { key: '멤버십가 비공개', value: formatBool(data.isMembershipOnly) },
     { key: 'SEO 제목', value: data.seoTitle ?? '-' },

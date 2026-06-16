@@ -14,6 +14,7 @@ export type BasicInformationDetail = {
   seoKeywords: string[] | null;
   isWholesaleOnly: boolean | null;
   isMembershipOnly: boolean | null;
+  fulfillmentKind: 'physical' | 'digital' | null;
   categories: ProductDetailCategory[];
 };
 
@@ -25,6 +26,7 @@ export type BasicInformationFormValues = {
   seoKeywordsText: string;
   isWholesaleOnly: boolean;
   isMembershipOnly: boolean;
+  fulfillmentKind: 'physical' | 'digital';
   categoryIds: string[];
   primaryCategoryId: string | null;
 };
@@ -69,6 +71,7 @@ export function toBasicInformationFormValues(
     seoKeywordsText: detail.seoKeywords?.join(', ') ?? '',
     isWholesaleOnly: detail.isWholesaleOnly ?? false,
     isMembershipOnly: detail.isMembershipOnly ?? false,
+    fulfillmentKind: detail.fulfillmentKind ?? 'physical',
     categoryIds: detail.categories.map((category) => category.id),
     primaryCategoryId:
       detail.categories.find((category) => category.isPrimary)?.id ?? null,
@@ -134,6 +137,7 @@ export function toBasicInformationUpdateDto(
     seoKeywords: parseSeoKeywords(values.seoKeywordsText),
     isWholesaleOnly: values.isWholesaleOnly,
     isMembershipOnly: values.isMembershipOnly,
+    fulfillmentKind: values.fulfillmentKind,
     categoryIds,
     primaryCategoryId:
       primaryCategoryId && categoryIds.includes(primaryCategoryId)
