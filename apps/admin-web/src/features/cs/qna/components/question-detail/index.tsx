@@ -5,6 +5,7 @@ import { Container } from '@/components/admin-ui-experimental/common/container';
 import { Header } from '@/components/admin-ui-experimental/common/header';
 import { Spinner } from '@/components/ui/spinner';
 import { useQuestion } from '@/lib/services/qna';
+import { useMastersByIds } from '@/lib/services/products/queries';
 import { useOptionalAdminUser } from '@/lib/services/users/queries';
 import {
   CATEGORY_LABELS,
@@ -30,6 +31,11 @@ import { QuestionDeleteButton } from '../question-delete-button';
 function QuestionDetailContent({ questionId }: { questionId: string }) {
   const { data } = useQuestion(questionId);
   const { data: author } = useOptionalAdminUser(data.userId);
+  // 상품 문의면 productId(=masterId)로 상품명 조회. 일반 문의(null)면 배치가 빈 배열이라 호출 안 됨.
+  const { data: products } = useMastersByIds(
+    data.productId ? [data.productId] : []
+  );
+  const productName = products?.data?.[0]?.name;
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [carouselApi, setCarouselApi] = useState<CarouselApi>();
 
@@ -50,6 +56,18 @@ function QuestionDetailContent({ questionId }: { questionId: string }) {
 
   const rows: { key: string; value: React.ReactNode }[] = [
     { key: '작성자', value: author?.username || data.nickname },
+    ...(data.productId
+      ? [
+          {
+            key: '문의 상품',
+            value: (
+              <span title={data.productId}>
+                {productName ?? data.productId}
+              </span>
+            ),
+          },
+        ]
+      : []),
     {
       key: '카테고리',
       value: data.category ? CATEGORY_LABELS[data.category] : '-',
