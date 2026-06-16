@@ -134,7 +134,24 @@ export class UpdateProductMasterDto {
   @IsBoolean()
   isWholesaleOnly?: boolean;
 
-  @ApiProperty({ description: '멤버십가 비공개 여부 (비회원에게 멤버십가 숨김 — 상품 노출·구매 제한 아님)', required: false })
+  @ApiProperty({
+    description: '멤버십가 비공개 여부 (비회원에게 멤버십가 숨김 — 상품 노출·구매 제한 아님)',
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  hideMembershipPriceForNonMembers?: boolean;
+
+  @ApiProperty({ description: '멤버십 회원 전용 노출 여부 (비회원 목록·검색·상세에서 숨김)', required: false })
+  @IsOptional()
+  @IsBoolean()
+  isVisibleToMembersOnly?: boolean;
+
+  @ApiProperty({
+    description: 'Deprecated. hideMembershipPriceForNonMembers를 사용하세요.',
+    required: false,
+    deprecated: true,
+  })
   @IsOptional()
   @IsBoolean()
   isMembershipOnly?: boolean;

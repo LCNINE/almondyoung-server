@@ -1,8 +1,9 @@
 import { addToCartWorkflow, createCartWorkflow } from '@medusajs/medusa/core-flows';
 import { validateInventoryForItems } from '../../../utils/validate-inventory';
 import { AddToCartWorkflowInputDTO, CreateCartWorkflowInputDTO } from '@medusajs/framework/types';
-import { MedusaError, Modules } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, MedusaError, Modules } from '@medusajs/framework/utils';
 import type { IProductModuleService, ICartModuleService, ICustomerModuleService } from '@medusajs/framework/types';
+import { isRecord, isVisibleToMembersOnlyProduct, type MembershipProduct } from '../../../utils/membership-filter';
 
 type CartInput = CreateCartWorkflowInputDTO | AddToCartWorkflowInputDTO;
 
@@ -14,6 +15,67 @@ type ValidItem = {
 // 웰컴 멤버십 설정
 const MEMBERSHIP_SERVICE_URL = process.env.MEMBERSHIP_SERVICE_URL || 'http://localhost:3040';
 const WELCOME_MEMBERSHIP_TAG = 'welcome-membership';
+
+const resolveCartCustomerId = async (input: CartInput, container: any): Promise<string | null> => {
+  if ('cart_id' in input && input.cart_id) {
+    const cartModule: ICartModuleService = container.resolve(Modules.CART);
+    const cart = await cartModule.retrieveCart(input.cart_id, {
+      select: ['customer_id'],
+    });
+    return cart?.customer_id ?? null;
+  }
+
+  const inputCustomerId = (input as { customer_id?: string | null }).customer_id;
+  return inputCustomerId ?? null;
+};
+
+const resolveCustomerIsMembershipMember = async (container: any, customerId: string | null): Promise<boolean> => {
+  const membershipGroupId = process.env.MEDUSA_MEMBERSHIP_GROUP_ID?.trim();
+  if (!customerId || !membershipGroupId) {
+    return false;
+  }
+
+  try {
+    const query = container.resolve(ContainerRegistrationKeys.QUERY);
+    const graphResult: unknown = await query.graph({
+      entity: 'customer',
+      fields: ['id', 'groups.id'],
+      filters: { id: customerId },
+    });
+
+    const customers = isRecord(graphResult) ? graphResult.data : undefined;
+    if (!Array.isArray(customers)) {
+      return false;
+    }
+
+    const firstCustomer = customers[0];
+    if (!isRecord(firstCustomer) || !Array.isArray(firstCustomer.groups)) {
+      return false;
+    }
+
+    return firstCustomer.groups.some((group) => isRecord(group) && group.id === membershipGroupId);
+  } catch (error) {
+    console.error('[MembersOnlyVisibility] customer group lookup failed:', error);
+    return false;
+  }
+};
+
+const validateMembersOnlyProductVisibility = async (input: CartInput, container: any, variants: any[]) => {
+  const hasMembersOnlyProduct = variants.some((variant) =>
+    isVisibleToMembersOnlyProduct((variant.product ?? {}) as MembershipProduct),
+  );
+
+  if (!hasMembersOnlyProduct) {
+    return;
+  }
+
+  const customerId = await resolveCartCustomerId(input, container);
+  const isMember = await resolveCustomerIsMembershipMember(container, customerId);
+
+  if (!isMember) {
+    throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '멤버십 회원 전용 상품입니다.');
+  }
+};
 
 /**
  * 웰컴 멤버십 상품 구매 자격 검증
@@ -103,6 +165,9 @@ const handleValidateCartItemsInventory = async ({ input }: { input: CartInput },
   if ('cart_id' in input && input.cart_id) {
     await validateWelcomeMembership(input, container, variants);
   }
+
+  // 3. 멤버십 회원 전용 노출 상품 직접 담기 방어
+  await validateMembersOnlyProductVisibility(input, container, variants);
 };
 
 // 장바구니 생성 시 재고 검증

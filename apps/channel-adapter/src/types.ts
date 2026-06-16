@@ -611,6 +611,9 @@ export interface PimProductSnapshot {
   // 메타데이터
   status: 'draft' | 'active' | 'inactive';
   isWholesaleOnly?: boolean;
+  hideMembershipPriceForNonMembers?: boolean;
+  isVisibleToMembersOnly?: boolean;
+  /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly?: boolean;
   purchaseConstraint?: PimPurchaseConstraint;
   isGiftcard?: boolean;
@@ -687,6 +690,9 @@ export interface MedusaProductPayload {
     seoDescription?: string;
     seoKeywords?: string[];
     isWholesaleOnly?: boolean;
+    hideMembershipPriceForNonMembers?: boolean;
+    isVisibleToMembersOnly?: boolean;
+    /** @deprecated use hideMembershipPriceForNonMembers */
     isMembershipOnly?: boolean;
     pimPurchaseConstraint?: PimPurchaseConstraint | null;
     productType?: string;

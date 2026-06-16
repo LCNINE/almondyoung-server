@@ -4,7 +4,7 @@ import { listProducts } from "@lib/api/medusa/products"
 import { getRegion } from "@lib/api/medusa/regions"
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import { getMembershipGroupIdFromEnv } from "@/lib/utils/membership-group"
-import { filterMembershipRestrictedProducts } from "@/lib/utils/membership-restricted-products" // TODO(#433): isMembersOnly 구현 후 제거
+import { filterProductsByMembershipVisibility } from "@/lib/utils/product-card"
 import { getWishlist } from "@lib/api/users/wishlist"
 import type { HttpTypes } from "@medusajs/types"
 
@@ -110,7 +110,12 @@ export async function SearchContainer({
           })
         }
 
-        const visibleItems = filterMembershipRestrictedProducts(items, isMembership) // TODO(#433): isMembersOnly 구현 후 제거
+        // TODO(#433 follow-up): add isVisibleToMembersOnly to the search index/query
+        // so pagination.total and totalPages exclude hidden products before Medusa hydration.
+        const visibleItems = filterProductsByMembershipVisibility(
+          items,
+          isMembership
+        )
 
         searchResult = {
           items: visibleItems,

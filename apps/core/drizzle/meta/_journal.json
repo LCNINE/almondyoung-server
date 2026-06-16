@@ -162,6 +162,13 @@
       "when": 1781529416726,
       "tag": "20260615131656_hard_kulan_gath",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1781643423179,
+      "tag": "20260616205703_membership-product-visibility-policies",
+      "breakpoints": true
     }
   ]
 }

@@ -20,7 +20,11 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { useUpdateMasterVersion, useUpdateMembershipVisibility } from '@/lib/services/products/mutations';
+import {
+  useUpdateMasterVersion,
+  useUpdateMembershipPriceVisibility,
+  useUpdateMembersOnlyVisibility,
+} from '@/lib/services/products/mutations';
 import { useCategoryTree } from '@/lib/services/products/queries';
 import {
   useProductDetailSuspense,
@@ -281,7 +285,10 @@ function ProductBasicInformationEditDrawer({
                     id="product-basic-digital"
                     checked={values.fulfillmentKind === 'digital'}
                     onCheckedChange={(checked) =>
-                      setValue('fulfillmentKind', checked ? 'digital' : 'physical')
+                      setValue(
+                        'fulfillmentKind',
+                        checked ? 'digital' : 'physical'
+                      )
                     }
                     disabled={updateVersion.isPending}
                   />
@@ -317,9 +324,28 @@ function ProductBasicInformationEditDrawer({
                   </div>
                   <Switch
                     id="product-basic-membership"
-                    checked={values.isMembershipOnly}
+                    checked={values.hideMembershipPriceForNonMembers}
                     onCheckedChange={(checked) =>
-                      setValue('isMembershipOnly', checked)
+                      setValue('hideMembershipPriceForNonMembers', checked)
+                    }
+                    disabled={updateVersion.isPending}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-col gap-1">
+                    <Label htmlFor="product-basic-members-only">
+                      멤버십 회원 전용 노출
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      비회원의 상품 목록, 검색 결과, 상세 접근에서 숨깁니다.
+                    </p>
+                  </div>
+                  <Switch
+                    id="product-basic-members-only"
+                    checked={values.isVisibleToMembersOnly}
+                    onCheckedChange={(checked) =>
+                      setValue('isVisibleToMembersOnly', checked)
                     }
                     disabled={updateVersion.isPending}
                   />
@@ -372,7 +398,14 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
   const { data } = useProductDetailSuspense(masterId, versionId);
   const [editOpen, setEditOpen] = useState(false);
   const canEdit = canEditBasicInformation(data);
-  const updateMembershipVisibility = useUpdateMembershipVisibility(masterId, versionId);
+  const updateMembershipPriceVisibility = useUpdateMembershipPriceVisibility(
+    masterId,
+    versionId
+  );
+  const updateMembersOnlyVisibility = useUpdateMembersOnlyVisibility(
+    masterId,
+    versionId
+  );
 
   const rows: { key: string; value: string }[] = [
     { key: '이름', value: data.name },
@@ -388,10 +421,28 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
     { key: '수정일', value: data.updatedAt },
   ];
 
-  function handleMembershipVisibilityChange(checked: boolean) {
-    updateMembershipVisibility.mutate(checked, {
-      onSuccess: () => toast.success(checked ? '멤버십가를 멤버십 회원에게만 공개합니다.' : '멤버십가를 전체 공개합니다.'),
+  function handleMembershipPriceVisibilityChange(checked: boolean) {
+    updateMembershipPriceVisibility.mutate(checked, {
+      onSuccess: () =>
+        toast.success(
+          checked
+            ? '멤버십가를 멤버십 회원에게만 공개합니다.'
+            : '멤버십가를 전체 공개합니다.'
+        ),
       onError: () => toast.error('멤버십가 공개 설정 변경에 실패했습니다.'),
+    });
+  }
+
+  function handleMembersOnlyVisibilityChange(checked: boolean) {
+    updateMembersOnlyVisibility.mutate(checked, {
+      onSuccess: () =>
+        toast.success(
+          checked
+            ? '비회원에게 상품을 숨깁니다.'
+            : '비회원에게 상품을 노출합니다.'
+        ),
+      onError: () =>
+        toast.error('멤버십 회원 전용 노출 설정 변경에 실패했습니다.'),
     });
   }
 
@@ -424,14 +475,53 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
             <div className="text-sm">{value}</div>
           </div>
         ))}
-        <div className="grid grid-cols-2 p-3 items-center">
-          <div className="text-sm font-medium text-gray-500">멤버십가 비공개</div>
-          <Switch
-            checked={data.isMembershipOnly ?? false}
-            onCheckedChange={handleMembershipVisibilityChange}
-            disabled={updateMembershipVisibility.isPending}
-            className="data-[state=unchecked]:border-gray-300"
-          />
+        <div className="flex flex-col gap-3 p-3">
+          <div>
+            <div className="text-sm font-medium text-gray-700">
+              운영 노출 정책
+            </div>
+            <p className="mt-1 text-xs text-gray-500">
+              active version에 즉시 적용되며 채널 어댑터를 통해 스토어에
+              반영됩니다.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 flex-col gap-1">
+              <Label htmlFor="product-detail-membership-price-visibility">
+                멤버십가 비공개
+              </Label>
+              <p className="text-xs text-gray-500">
+                비회원에게 멤버십가 숫자 대신 &ldquo;멤버십 회원 공개&rdquo;를
+                표시합니다.
+              </p>
+            </div>
+            <Switch
+              id="product-detail-membership-price-visibility"
+              checked={data.hideMembershipPriceForNonMembers ?? false}
+              onCheckedChange={handleMembershipPriceVisibilityChange}
+              disabled={updateMembershipPriceVisibility.isPending}
+              className="data-[state=unchecked]:border-gray-300"
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 flex-col gap-1">
+              <Label htmlFor="product-detail-members-only-visibility">
+                멤버십 회원 전용 노출
+              </Label>
+              <p className="text-xs text-gray-500">
+                비회원의 상품 목록, 검색 결과, 상세 접근에서 숨깁니다.
+              </p>
+            </div>
+            <Switch
+              id="product-detail-members-only-visibility"
+              checked={data.isVisibleToMembersOnly ?? false}
+              onCheckedChange={handleMembersOnlyVisibilityChange}
+              disabled={updateMembersOnlyVisibility.isPending}
+              className="data-[state=unchecked]:border-gray-300"
+            />
+          </div>
         </div>
       </div>
       {canEdit && (

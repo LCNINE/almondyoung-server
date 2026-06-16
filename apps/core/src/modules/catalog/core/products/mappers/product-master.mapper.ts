@@ -21,6 +21,9 @@ export class ProductMasterMapper {
    * Map entity to ProductMasterDto
    */
   static toDto(entity: ProductMasterVersionEntity, images: ProductImageDto[]): ProductMasterDto {
+    const hideMembershipPriceForNonMembers =
+      entity.hideMembershipPriceForNonMembers ?? entity.isMembershipOnly ?? false;
+
     return {
       id: entity.id,
       name: entity.name,
@@ -33,7 +36,9 @@ export class ProductMasterMapper {
       seoKeywords: entity.seoKeywords,
       status: entity.status,
       isWholesaleOnly: entity.isWholesaleOnly,
-      isMembershipOnly: entity.isMembershipOnly,
+      hideMembershipPriceForNonMembers,
+      isVisibleToMembersOnly: entity.isVisibleToMembersOnly ?? false,
+      isMembershipOnly: hideMembershipPriceForNonMembers,
       fulfillmentKind: (entity.fulfillmentKind ?? 'physical') as 'physical' | 'digital',
       createdAt: DateMapper.toNotNullString(entity.createdAt),
       updatedAt: DateMapper.toNotNullString(entity.updatedAt),
@@ -55,13 +60,18 @@ export class ProductMasterMapper {
     },
   ): ProductSummaryDto {
     // thumbnail은 product_images에서 가져온 값 사용
+    const hideMembershipPriceForNonMembers =
+      entity.version.hideMembershipPriceForNonMembers ?? entity.version.isMembershipOnly ?? false;
+
     return {
       versionId: entity.version.id,
       masterId: entity.id,
       name: entity.version.name,
       thumbnail: entity.thumbnail ?? null,
       brand: entity.version.brand,
-      isMembershipOnly: entity.version.isMembershipOnly,
+      hideMembershipPriceForNonMembers,
+      isVisibleToMembersOnly: entity.version.isVisibleToMembersOnly ?? false,
+      isMembershipOnly: hideMembershipPriceForNonMembers,
       status: entity.version.status,
       createdAt: DateMapper.toNotNullString(entity.createdAt),
       optionGroupNames: entity.optionGroupNames,

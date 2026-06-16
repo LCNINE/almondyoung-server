@@ -241,6 +241,9 @@ export interface CreateMasterDto {
 
   // 구매제한 필드들
   isWholesaleOnly?: boolean;
+  hideMembershipPriceForNonMembers?: boolean;
+  isVisibleToMembersOnly?: boolean;
+  /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly?: boolean;
 
   // optionGroups removed - use update API with optionDiff instead
@@ -252,6 +255,9 @@ export interface MasterListItemDto {
   name: string;
   thumbnail?: string;
   // basePrice removed - 가격은 pricing rules로 조회
+  hideMembershipPriceForNonMembers: boolean;
+  isVisibleToMembersOnly: boolean;
+  /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly: boolean;
   status: string;
   createdAt: Date;

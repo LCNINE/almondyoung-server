@@ -794,6 +794,18 @@ export class ProductMastersService {
         ...masterUpdateData
       } = data;
 
+      if (
+        masterUpdateData.hideMembershipPriceForNonMembers !== undefined &&
+        masterUpdateData.isMembershipOnly === undefined
+      ) {
+        masterUpdateData.isMembershipOnly = masterUpdateData.hideMembershipPriceForNonMembers;
+      } else if (
+        masterUpdateData.isMembershipOnly !== undefined &&
+        masterUpdateData.hideMembershipPriceForNonMembers === undefined
+      ) {
+        masterUpdateData.hideMembershipPriceForNonMembers = masterUpdateData.isMembershipOnly;
+      }
+
       const [updated] = await tx
         .update(productMasterVersions)
         .set({

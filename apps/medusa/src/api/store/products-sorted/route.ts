@@ -1,6 +1,11 @@
-import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
+import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys, isPresent, QueryContext } from '@medusajs/framework/utils';
 import { PRODUCT_SORTING_MODULE } from '../../../modules/product-sorting';
+import {
+  filterProductsForMemberState,
+  resolveMemberState,
+  type MembershipProduct,
+} from '../../../utils/membership-filter';
 
 type SortBy = 'min_price' | 'max_price' | 'sales_count' | 'review_count';
 type SortOrder = 'asc' | 'desc';
@@ -29,10 +34,11 @@ interface ProductSortingService {
   ): Promise<[ProductSortIndexRecord[], number]>;
 }
 
-export async function GET(req: MedusaRequest, res: MedusaResponse) {
+export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
   try {
     const sortingService = req.scope.resolve<ProductSortingService>(PRODUCT_SORTING_MODULE);
     const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
+    const { isMember } = await resolveMemberState(req);
 
     const sortBy = (req.query.sort_by as SortBy) || 'sales_count';
     const order = (req.query.order as SortOrder) || 'desc';
@@ -54,12 +60,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       });
     }
 
-    // 카테고리/컬렉션 필터가 있으면 해당 상품 ID들을 먼저 조회
+    // 카테고리/컬렉션 필터가 있거나 비회원이면 해당 상품 ID들을 먼저 조회한다.
     // status: 'published' 를 여기서 걸어야 미발행(판매중단) 상품이 정렬 인덱스 단계부터
     // 제외되어 count 까지 정확해진다. (표준 /store/products 는 미들웨어가 자동으로
     // published 필터를 강제하지만, 이 라우트는 query.graph 를 직접 호출하므로 명시 필요)
-    let categoryProductIds: string[] | null = null;
-    if (categoryIds.length > 0 || collectionId) {
+    let scopedProductIds: string[] | null = null;
+    if (categoryIds.length > 0 || collectionId || !isMember) {
       const categoryFilters: Record<string, unknown> = { status: 'published' };
 
       if (categoryIds.length > 0) {
@@ -72,21 +78,22 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
 
       const { data: categoryProducts } = await query.graph({
         entity: 'product',
-        fields: ['id'],
+        fields: ['id', 'metadata'],
         filters: categoryFilters,
       });
 
-      categoryProductIds = categoryProducts.map((p: { id: string }) => p.id);
+      const visibleProducts = filterProductsForMemberState(categoryProducts as MembershipProduct[], isMember);
+      scopedProductIds = visibleProducts.map((p) => p.id).filter((id): id is string => typeof id === 'string');
 
-      if (categoryProductIds.length === 0) {
+      if (scopedProductIds.length === 0) {
         return res.json({ products: [], count: 0 });
       }
     }
 
     // 정렬 인덱스 필터 구성
     const sortIndexFilter: ProductSortIndexFilter = { currency_code: currencyCode };
-    if (categoryProductIds) {
-      sortIndexFilter.product_id = { $in: categoryProductIds };
+    if (scopedProductIds) {
+      sortIndexFilter.product_id = { $in: scopedProductIds };
     }
 
     const [sortIndexes, totalCount] = await sortingService.listAndCountProductSortIndices(sortIndexFilter, {
@@ -120,8 +127,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         'title',
         'handle',
         'thumbnail',
-        // metadata.isMembershipOnly: 스토어프론트가 비멤버에게 멤버십가 숫자 대신
-        // "멤버십 회원 공개"를 표시할지 판단하는 데 필요
+        // metadata: 멤버십가 공개 제한과 멤버십 회원 전용 노출 판정에 필요
         'metadata',
         'variants.*',
         'variants.calculated_price.*',
@@ -134,7 +140,10 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     });
 
     const productMap = new Map(products.map((p: { id: string }) => [p.id, p]));
-    const sorted = productIds.map((id) => productMap.get(id)).filter(Boolean);
+    const sorted = filterProductsForMemberState(
+      productIds.map((id) => productMap.get(id)).filter(Boolean) as MembershipProduct[],
+      isMember,
+    );
 
     res.json({ products: sorted, count: totalCount });
   } catch (error: unknown) {

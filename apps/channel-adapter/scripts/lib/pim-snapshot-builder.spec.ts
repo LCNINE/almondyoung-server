@@ -12,6 +12,8 @@ const masterRows = [
     name: 'Constrained Product',
     status: 'active',
     is_wholesale_only: false,
+    hide_membership_price_for_non_members: true,
+    is_visible_to_members_only: true,
     is_membership_only: false,
   },
 ];
@@ -87,6 +89,9 @@ describe('PimSnapshotBuilder', () => {
       requiresMembership: true,
       lifetimeQuantityLimit: 3,
     });
+    expect(snapshots[0].hideMembershipPriceForNonMembers).toBe(true);
+    expect(snapshots[0].isMembershipOnly).toBe(true);
+    expect(snapshots[0].isVisibleToMembersOnly).toBe(true);
   });
 
   it('leaves purchaseConstraint undefined when no purchase constraint row exists', async () => {

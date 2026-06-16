@@ -189,14 +189,17 @@ export const useUpdateMaster = () => {
 };
 
 /**
- * 멤버십가 공개 여부 변경 (draft 없이 즉시 적용)
+ * 멤버십가 공개 제한 변경 (draft 없이 즉시 적용)
  */
-export const useUpdateMembershipVisibility = (masterId: string, versionId: string | null) => {
+export const useUpdateMembershipPriceVisibility = (masterId: string, versionId: string | null) => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (isMembershipOnly: boolean) =>
-      products.masters.updateMembershipVisibility(masterId, isMembershipOnly),
+    mutationFn: (hideMembershipPriceForNonMembers: boolean) =>
+      products.masters.updateMembershipPriceVisibility(
+        masterId,
+        hideMembershipPriceForNonMembers,
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: productQueryKeys.master(masterId) });
       if (versionId) {
@@ -205,6 +208,29 @@ export const useUpdateMembershipVisibility = (masterId: string, versionId: strin
     },
   });
 };
+
+/**
+ * 멤버십 회원 전용 노출 변경 (draft 없이 즉시 적용)
+ */
+export const useUpdateMembersOnlyVisibility = (masterId: string, versionId: string | null) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (isVisibleToMembersOnly: boolean) =>
+      products.masters.updateMembersOnlyVisibility(masterId, isVisibleToMembersOnly),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.master(masterId) });
+      if (versionId) {
+        queryClient.invalidateQueries({ queryKey: productQueryKeys.versionDetail(masterId, versionId) });
+      }
+    },
+  });
+};
+
+/**
+ * @deprecated use useUpdateMembershipPriceVisibility
+ */
+export const useUpdateMembershipVisibility = useUpdateMembershipPriceVisibility;
 
 /**
  * 제품 마스터 삭제

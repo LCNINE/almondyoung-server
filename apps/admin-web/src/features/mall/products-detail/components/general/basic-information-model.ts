@@ -13,6 +13,9 @@ export type BasicInformationDetail = {
   seoDescription: string | null;
   seoKeywords: string[] | null;
   isWholesaleOnly: boolean | null;
+  hideMembershipPriceForNonMembers: boolean | null;
+  isVisibleToMembersOnly: boolean | null;
+  /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly: boolean | null;
   fulfillmentKind: 'physical' | 'digital' | null;
   categories: ProductDetailCategory[];
@@ -25,7 +28,8 @@ export type BasicInformationFormValues = {
   seoDescription: string;
   seoKeywordsText: string;
   isWholesaleOnly: boolean;
-  isMembershipOnly: boolean;
+  hideMembershipPriceForNonMembers: boolean;
+  isVisibleToMembersOnly: boolean;
   fulfillmentKind: 'physical' | 'digital';
   categoryIds: string[];
   primaryCategoryId: string | null;
@@ -70,7 +74,11 @@ export function toBasicInformationFormValues(
     seoDescription: detail.seoDescription ?? '',
     seoKeywordsText: detail.seoKeywords?.join(', ') ?? '',
     isWholesaleOnly: detail.isWholesaleOnly ?? false,
-    isMembershipOnly: detail.isMembershipOnly ?? false,
+    hideMembershipPriceForNonMembers:
+      detail.hideMembershipPriceForNonMembers ??
+      detail.isMembershipOnly ??
+      false,
+    isVisibleToMembersOnly: detail.isVisibleToMembersOnly ?? false,
     fulfillmentKind: detail.fulfillmentKind ?? 'physical',
     categoryIds: detail.categories.map((category) => category.id),
     primaryCategoryId:
@@ -136,7 +144,9 @@ export function toBasicInformationUpdateDto(
     seoDescription: trimToNullable(values.seoDescription),
     seoKeywords: parseSeoKeywords(values.seoKeywordsText),
     isWholesaleOnly: values.isWholesaleOnly,
-    isMembershipOnly: values.isMembershipOnly,
+    hideMembershipPriceForNonMembers: values.hideMembershipPriceForNonMembers,
+    isMembershipOnly: values.hideMembershipPriceForNonMembers,
+    isVisibleToMembersOnly: values.isVisibleToMembersOnly,
     fulfillmentKind: values.fulfillmentKind,
     categoryIds,
     primaryCategoryId:

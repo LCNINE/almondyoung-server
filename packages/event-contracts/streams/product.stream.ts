@@ -155,6 +155,9 @@ export interface ProductSnapshot {
    * (주의: purchaseConstraint는 현재 Medusa metadata로 전파만 되고,
    *  Medusa cart/checkout 단의 구매 차단 enforcement는 아직 구현되지 않았다.)
    */
+  hideMembershipPriceForNonMembers: boolean;
+  isVisibleToMembersOnly: boolean;
+  /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly: boolean;
   isGiftcard: boolean;
   discountable: boolean;
@@ -286,10 +289,14 @@ const ProductSnapshotVariantSchema = z.object({
   optionCombination: z.array(OptionCombinationItemSchema).optional(),
   basePrice: z.number(),
   membershipPrice: z.number().optional(),
-  tieredPrices: z.array(z.object({
-    minQuantity: z.number(),
-    price: z.number(),
-  })).optional(),
+  tieredPrices: z
+    .array(
+      z.object({
+        minQuantity: z.number(),
+        price: z.number(),
+      }),
+    )
+    .optional(),
   weight: z.number().optional(),
   length: z.number().optional(),
   width: z.number().optional(),
@@ -327,6 +334,9 @@ const ProductSnapshotSchema = z.object({
   status: z.enum(['active', 'draft', 'archived']),
   isWholesaleOnly: z.boolean(),
   // 멤버십가 공개 제한 (비회원에게 멤버십가 숨김) — 상품 노출/구매 제한 아님
+  hideMembershipPriceForNonMembers: z.boolean(),
+  isVisibleToMembersOnly: z.boolean(),
+  // Deprecated alias kept for compatibility during expand phase.
   isMembershipOnly: z.boolean(),
   isGiftcard: z.boolean(),
   discountable: z.boolean(),
@@ -407,10 +417,7 @@ export const PRODUCT_STREAM = stream({
       'ProductMasterDeleted',
       ProductMasterDeletedSchema,
     ),
-    CategoryChanged: event<'CategoryChanged', CategoryChangedPayload>(
-      'CategoryChanged',
-      CategoryChangedSchema,
-    ),
+    CategoryChanged: event<'CategoryChanged', CategoryChangedPayload>('CategoryChanged', CategoryChangedSchema),
   },
 });
 

@@ -1,6 +1,7 @@
 import type { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import {
   applyMembershipPriceVisibility,
+  filterProductsForMemberState,
   isRecord,
   resolveMemberState,
   type MembershipProduct,
@@ -132,9 +133,9 @@ const fetchStoreProducts = async (
  * 멤버십가 표시 정책이 적용된 상품 목록 API
  *
  * 정책
- * - isMembershipOnly=true: 비멤버에게도 상품은 그대로 노출하되, 멤버십가 숫자(variant.metadata.membershipPrice)만 제거
+ * - hideMembershipPriceForNonMembers=true: 비멤버에게 멤버십가 숫자(variant.metadata.membershipPrice)만 제거
  *   (스토어프론트는 멤버십가 영역에 "멤버십 회원 공개"를 표시)
- * - 상품 접근/구매 제한이 아니다 — 비멤버도 일반 판매가로 구매 가능
+ * - isVisibleToMembersOnly=true: 비멤버 목록 응답에서 제거
  */
 export const GET = async (req: AuthenticatedMedusaRequest, res: MedusaResponse) => {
   const requestedLimit = toNumber(req.query.limit, DEFAULT_LIMIT);
@@ -148,9 +149,11 @@ export const GET = async (req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     const baseSearchParams = createBaseSearchParams(req);
     const response = await fetchStoreProducts(req, baseSearchParams);
 
-    // 상품을 숨기지 않는다 (count/offset/limit 불변). 비멤버는 멤버십가 metadata만 제거된다.
+    // 비멤버는 members-only 상품을 제거하고, 멤버십가 metadata만 제거된다.
     // (내부 /store/products 호출에도 동일 미들웨어가 적용되지만, 멱등이므로 여기서도 명시 적용)
-    const products = response.products.map((product) => applyMembershipPriceVisibility(product, isMember));
+    const products = filterProductsForMemberState(response.products, isMember).map((product) =>
+      applyMembershipPriceVisibility(product, isMember),
+    );
 
     return res.json({
       products,

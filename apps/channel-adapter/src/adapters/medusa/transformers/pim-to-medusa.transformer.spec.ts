@@ -83,7 +83,9 @@ describe('PimToMedusaTransformer', () => {
     it('projects purchase constraints into separate Medusa product metadata', () => {
       const result = transformPimToMedusa({
         ...mockSnapshot,
-        isMembershipOnly: false,
+        hideMembershipPriceForNonMembers: false,
+        isMembershipOnly: true,
+        isVisibleToMembersOnly: true,
         purchaseConstraint: {
           requiresMembership: true,
           lifetimeQuantityLimit: 3,
@@ -94,19 +96,43 @@ describe('PimToMedusaTransformer', () => {
         requiresMembership: true,
         lifetimeQuantityLimit: 3,
       });
+      expect(result.metadata.hideMembershipPriceForNonMembers).toBe(false);
       expect(result.metadata.isMembershipOnly).toBe(false);
+      expect(result.metadata.isVisibleToMembersOnly).toBe(true);
     });
 
-    it('projects isMembershipOnly as price-visibility metadata without hiding the product (status stays published)', () => {
-      // isMembershipOnly는 "비회원에게 멤버십가 숨김" 표시 정책 값일 뿐,
+    it('projects hideMembershipPriceForNonMembers as price-visibility metadata without hiding the product', () => {
+      // hideMembershipPriceForNonMembers는 "비회원에게 멤버십가 숨김" 표시 정책 값일 뿐,
       // Medusa 상품 노출(status/visibility)에 영향을 주면 안 된다.
       const result = transformPimToMedusa({
         ...mockSnapshot,
+        hideMembershipPriceForNonMembers: true,
+      });
+
+      expect(result.metadata.hideMembershipPriceForNonMembers).toBe(true);
+      expect(result.metadata.isMembershipOnly).toBe(true);
+      expect(result.status).toBe('published');
+    });
+
+    it('projects members-only visibility as metadata without changing Medusa status', () => {
+      const result = transformPimToMedusa({
+        ...mockSnapshot,
+        isVisibleToMembersOnly: true,
+      });
+
+      expect(result.metadata.isVisibleToMembersOnly).toBe(true);
+      expect(result.status).toBe('published');
+    });
+
+    it('falls back from legacy isMembershipOnly to price-visibility metadata', () => {
+      const result = transformPimToMedusa({
+        ...mockSnapshot,
+        hideMembershipPriceForNonMembers: undefined,
         isMembershipOnly: true,
       });
 
+      expect(result.metadata.hideMembershipPriceForNonMembers).toBe(true);
       expect(result.metadata.isMembershipOnly).toBe(true);
-      expect(result.status).toBe('published');
     });
 
     it('sets null pimPurchaseConstraint when no purchase constraint exists so Medusa updates clear stale metadata', () => {
