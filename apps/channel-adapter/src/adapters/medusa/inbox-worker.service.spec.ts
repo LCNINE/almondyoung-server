@@ -1,5 +1,6 @@
 import { InboxWorkerService } from './inbox-worker.service';
 import type { ProductSellableQuantityChangedPayload } from '@packages/event-contracts/streams/inventory.stream';
+import { PgDialect } from 'drizzle-orm/pg-core';
 
 function collectValues(value: unknown, seen = new WeakSet<object>()): unknown[] {
   if (value === null || value === undefined) return [];
@@ -271,6 +272,20 @@ describe('InboxWorkerService ProductSellableQuantityChanged handling', () => {
 
     expect(dbMock.execute).toHaveBeenCalledTimes(1);
     expect((service as any).inFlightHandlers).toBe(1);
+  });
+
+  it('renders the atomic claim query with an IN list instead of an invalid ANY row cast', async () => {
+    const { service, dbMock } = createService();
+
+    await (service as any).claimNextInboxEvent();
+
+    const claimSql = new PgDialect().sqlToQuery(dbMock.execute.mock.calls[0][0]);
+    expect(claimSql.sql).toContain('WHERE event_type IN (');
+    expect(claimSql.sql).not.toContain('ANY((');
+    expect(claimSql.sql).not.toContain('::text[]');
+    expect(claimSql.params[0]).toBe(900000);
+    expect(claimSql.params).toContain('ProductMasterActiveVersionChanged');
+    expect(claimSql.params).toContain('CoreOrderCancelled');
   });
 
   it('does not publish an older active-version retry after a newer product delete is present', async () => {
