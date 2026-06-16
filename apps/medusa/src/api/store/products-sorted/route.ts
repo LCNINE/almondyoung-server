@@ -56,9 +56,12 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
     }
 
     // 카테고리/컬렉션 필터가 있으면 해당 상품 ID들을 먼저 조회
+    // status: 'published' 를 여기서 걸어야 미발행(판매중단) 상품이 정렬 인덱스 단계부터
+    // 제외되어 count 까지 정확해진다. (표준 /store/products 는 미들웨어가 자동으로
+    // published 필터를 강제하지만, 이 라우트는 query.graph 를 직접 호출하므로 명시 필요)
     let categoryProductIds: string[] | null = null;
     if (categoryIds.length > 0 || collectionId) {
-      const categoryFilters: Record<string, unknown> = {};
+      const categoryFilters: Record<string, unknown> = { status: 'published' };
 
       if (categoryIds.length > 0) {
         categoryFilters.categories = { id: categoryIds };
@@ -128,7 +131,9 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
         'variants.calculated_price.*',
         'images.*',
       ],
-      filters: { id: productIds },
+      // 카테고리/컬렉션 필터가 없는 전역 정렬 목록까지 커버하기 위한 방어적 필터.
+      // 카테고리가 있는 경우엔 위에서 이미 published 만 추렸으므로 사실상 no-op.
+      filters: { id: productIds, status: 'published' },
       context,
     });
 
