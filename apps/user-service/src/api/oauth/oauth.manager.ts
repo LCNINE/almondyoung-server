@@ -317,6 +317,7 @@ export class OAuthManager {
     postLogoutRedirectUri?: string;
     state?: string;
   }): Promise<{ redirectUrl: string | null }> {
+    this.logger.log(`[logout] endSession 시작 accessToken=${input.accessToken ? '있음' : '없음'}`);
     let userId: string | null = null;
     if (input.accessToken) {
       try {
@@ -330,18 +331,24 @@ export class OAuthManager {
         const audAccepted =
           aud === INTERNAL_TOKEN_AUDIENCE ||
           (typeof aud === 'string' && aud.length > 0 && (await this.repo.findActiveClientById(aud)) !== null);
+        this.logger.log(
+          `[logout] endSession verify 성공 sub=${payload.sub} aud=${aud} audAccepted=${audAccepted}`,
+        );
         if (audAccepted && payload.sub) {
           userId = payload.sub;
         }
-      } catch {
+      } catch (e) {
         // 토큰이 만료/무효해도 logout 자체는 진행 (idempotent).
+        this.logger.warn(`[logout] endSession verify 실패: ${(e as Error).message}`);
       }
     }
 
     if (userId) {
       await this.repo.revokeAllUserTokens(userId);
       await this.tokensService.deleteAllTokens(userId);
-      this.logger.log(`SLO: revoked all tokens for userId=${userId}`);
+      this.logger.log(`[logout] SLO: revoked all tokens for userId=${userId}`);
+    } else {
+      this.logger.warn('[logout] endSession userId 식별 실패 → revoke 스킵');
     }
 
     let redirectUrl: string | null = null;
