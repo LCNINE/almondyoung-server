@@ -28,30 +28,39 @@ function CsTabsLoading() {
 
 interface CsPageProps {
   params: Promise<{ countryCode: string }>
-  searchParams: Promise<{ tab?: string; productId?: string }>
+  searchParams: Promise<{
+    tab?: string
+    productId?: string
+    productName?: string
+  }>
 }
 
 export default async function CsPage({ params, searchParams }: CsPageProps) {
   const { countryCode } = await params
-  const { productId } = await searchParams
+  const { productId, productName } = await searchParams
 
+  // 상품 문의 진입 시 productId 는 pimMasterId(문의에 저장되는 값)로 전달된다.
+  // 상품명까지 같이 넘어오면(상품 상세 → 1:1 문의 경로) 재조회 없이 그대로 사용.
+  // productName 없이 productId 만 있는 레거시/외부 진입은 handle 로 재조회해 보정.
   const productPromise: Promise<{ id: string; title: string } | undefined> =
-    productId
-      ? listProducts({
-          countryCode,
-          queryParams: { handle: productId },
-        })
-          .then(({ response }) => {
-            const productData = response.products[0]
-            const pimMasterId = productData?.metadata?.pimMasterId as
-              | string
-              | undefined
-            return pimMasterId
-              ? { id: pimMasterId, title: productData.title }
-              : undefined
+    !productId
+      ? Promise.resolve(undefined)
+      : productName
+        ? Promise.resolve({ id: productId, title: productName })
+        : listProducts({
+            countryCode,
+            queryParams: { handle: productId },
           })
-          .catch(() => undefined)
-      : Promise.resolve(undefined)
+            .then(({ response }) => {
+              const productData = response.products[0]
+              const pimMasterId = productData?.metadata?.pimMasterId as
+                | string
+                | undefined
+              return pimMasterId
+                ? { id: pimMasterId, title: productData.title }
+                : undefined
+            })
+            .catch(() => undefined)
 
   const product = await productPromise
 

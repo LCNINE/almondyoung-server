@@ -154,7 +154,11 @@ export function QnaList({ productId, productName, productThumbnail }: Props) {
       redirectToLogin()
       return
     }
-    router.push(`/${countryCode}/cs?tab=inquiry&productId=${productId}`)
+    // productId 는 pimMasterId(= 문의에 저장되는 값). 상품명도 함께 넘겨
+    // CS 페이지가 handle 로 재조회(매칭 실패 가능)하지 않도록 한다.
+    const params = new URLSearchParams({ tab: "inquiry", productId })
+    if (productName) params.set("productName", productName)
+    router.push(`/${countryCode}/cs?${params.toString()}`)
   }
 
   const handleMyQnaToggle = () => {
