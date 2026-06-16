@@ -434,12 +434,69 @@ export function setup(infra: SharedInfra) {
     },
   });
 
+  // ─── storefront WAF (CloudFront IP 차단) ───
+  // 레거시 cafe24 상점/보안 설정에서 차단하던 IP를 뉴 아몬드영 스토어프론트에도 동일 적용.
+  // CloudFront에 붙는 WAF는 global scope = us-east-1 강제이므로 전용 provider로 생성한다.
+  const wafUsEast1 = new aws.Provider("WafUsEast1", { region: "us-east-1" });
+
+  const storefrontBlockIpSet = new aws.wafv2.IpSet(
+    "StorefrontBlockIpSet",
+    {
+      scope: "CLOUDFRONT",
+      ipAddressVersion: "IPV4",
+      // 단일 IP는 /32. cafe24 상점/보안 설정의 차단 목록과 동기화한다.
+      addresses: [
+        "125.60.32.38/32",
+        "211.252.157.13/32",
+        "210.220.13.170/32",
+        "210.95.250.112/32",
+        "210.90.35.236/32",
+      ],
+    },
+    { provider: wafUsEast1 },
+  );
+
+  const storefrontWebAclResource = new aws.wafv2.WebAcl(
+    "StorefrontWebAcl",
+    {
+      scope: "CLOUDFRONT",
+      defaultAction: { allow: {} }, // 기본 허용, IPSet에 든 IP만 차단
+      rules: [
+        {
+          name: "block-cafe24-ips",
+          priority: 1,
+          action: { block: {} },
+          statement: {
+            ipSetReferenceStatement: { arn: storefrontBlockIpSet.arn },
+          },
+          visibilityConfig: {
+            cloudwatchMetricsEnabled: true,
+            metricName: "block-cafe24-ips",
+            sampledRequestsEnabled: true,
+          },
+        },
+      ],
+      visibilityConfig: {
+        cloudwatchMetricsEnabled: true,
+        metricName: "StorefrontWebAcl",
+        sampledRequestsEnabled: true,
+      },
+    },
+    { provider: wafUsEast1 },
+  );
+
   // ─── storefront (Next.js / OpenNext, CloudFront) ───
   // Medusa STORE_CORS/AUTH_CORS에 이미 url("www")로 등록되어 있다.
   // 백엔드 서비스 URL은 storefront가 BACKEND_DOMAIN + 서비스 서브도메인 규칙으로 조립한다.
   new sst.aws.Nextjs("Storefront", {
     path: "../../../web/almondyoung-storefront",
     domain: { name: domain("www") },
+    transform: {
+      // CloudFront distribution에 위 WebACL 연결 → 스토어프론트 전체 IP 차단.
+      cdn: (cdnArgs) => {
+        cdnArgs.webAclArn = storefrontWebAclResource.arn;
+      },
+    },
     environment: {
       NEXT_PUBLIC_BASE_URL: url("www"),
       NEXT_PUBLIC_DEFAULT_REGION: "kr",
