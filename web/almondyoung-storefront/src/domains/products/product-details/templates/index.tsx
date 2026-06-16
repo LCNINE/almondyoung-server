@@ -1,4 +1,5 @@
 import { QnaList } from "@/components/qna/qna-list"
+import { FEATURES } from "@/lib/config/features"
 import { ErrorBoundary } from "@/components/shared/error-boundary"
 import {
   ProductDetailInfoSkeleton,
@@ -98,14 +99,16 @@ export async function ProductTemplate({
                 </ErrorBoundary>
               </SectionTabPanel>
 
-              {/* Q&A Tab Panel */}
-              <SectionTabPanel value="qna">
-                <QnaList
-                  productId={product.metadata?.pimMasterId as string}
-                  productName={product.title ?? ""}
-                  productThumbnail={product.thumbnail ?? null}
-                />
-              </SectionTabPanel>
+              {/* Q&A Tab Panel — QnA 기능을 닫은 동안 미노출 */}
+              {FEATURES.qna && (
+                <SectionTabPanel value="qna">
+                  <QnaList
+                    productId={product.metadata?.pimMasterId as string}
+                    productName={product.title ?? ""}
+                    productThumbnail={product.thumbnail ?? null}
+                  />
+                </SectionTabPanel>
+              )}
             </SectionTabsWrapper>
           </main>
 
