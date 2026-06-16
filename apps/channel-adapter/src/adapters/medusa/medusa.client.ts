@@ -649,15 +649,10 @@ export class MedusaClient {
     if (!categoryIds || categoryIds.length === 0) return;
     const unique = Array.from(new Set(categoryIds));
 
-    // 카테고리 존재 여부 확인 (병렬). knownCategoryIds 에 있으면 getCategoryById 도 생략.
+    // 카테고리 존재 여부 확인. knownCategoryIds 에 있으면 getCategoryById 도 생략.
     // primeCategoryCache 후엔 거의 모든 id 가 캐시 hit 이라 verify 라운드트립이 사라진다.
-    const verifyResults = await Promise.all(
-      unique.map(async (catId) => {
-        if (this.knownCategoryIds.has(catId)) return { catId, ok: true };
-        return { catId, ok: !!(await this.getCategoryById(catId)) };
-      }),
-    );
-    for (const { catId, ok } of verifyResults) {
+    for (const catId of unique) {
+      const ok = this.knownCategoryIds.has(catId) || !!(await this.getCategoryById(catId));
       if (!ok) {
         this.logger.warn(`Category ${catId} does not exist in Medusa before attaching product ${productId}`);
         if (options?.throwOnFailure) {
@@ -667,23 +662,17 @@ export class MedusaClient {
       }
     }
 
-    // productCategory.updateProducts로 M:N 조인 테이블에 직접 추가 (병렬).
+    // productCategory.updateProducts로 M:N 조인 테이블에 직접 추가.
     // (product.update({ categories }) 는 product record만 업데이트하고 조인 테이블을 갱신하지 않음)
-    const attachResults = await Promise.allSettled(
-      unique.map((catId) =>
-        this.sdk.admin.productCategory.updateProducts(catId, { add: [productId] } as any).then(() => {
-          this.logger.debug(`Attached product ${productId} to category ${catId}`);
-        }),
-      ),
-    );
-    for (let i = 0; i < attachResults.length; i++) {
-      const r = attachResults[i];
-      if (r.status === 'rejected') {
-        const fetchError = r.reason as FetchError;
-        const catId = unique[i];
+    for (const catId of unique) {
+      try {
+        await this.sdk.admin.productCategory.updateProducts(catId, { add: [productId] } as any);
+        this.logger.debug(`Attached product ${productId} to category ${catId}`);
+      } catch (error) {
+        const fetchError = error as FetchError;
         this.logger.warn(`Failed to attach product ${productId} to category ${catId}: ${fetchError.message}`);
         if (options?.throwOnFailure) {
-          throw r.reason;
+          throw error;
         }
       }
     }
@@ -776,7 +765,7 @@ export class MedusaClient {
   }
 
   async ensureTags(values: string[]): Promise<Array<{ id: string; value: string }>> {
-    // 캐시 hit 분리 — 미스 항목만 병렬 ensure (primeTagCache 후엔 대부분 hit).
+    // 캐시 hit 분리 — 미스 항목만 순차 ensure (primeTagCache 후엔 대부분 hit).
     const hits: Array<{ id: string; value: string }> = [];
     const misses: string[] = [];
     for (const value of values) {
@@ -788,7 +777,10 @@ export class MedusaClient {
       }
     }
     if (misses.length === 0) return hits;
-    const ensured = await Promise.all(misses.map(async (value) => ({ value, id: await this.ensureTag(value) })));
+    const ensured: Array<{ id: string; value: string }> = [];
+    for (const value of misses) {
+      ensured.push({ value, id: await this.ensureTag(value) });
+    }
     return [...hits, ...ensured];
   }
 

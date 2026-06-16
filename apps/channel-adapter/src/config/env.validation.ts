@@ -42,6 +42,11 @@ export const channelAdapterEnvSchema = z.object({
   MEDUSA_API_URL: z.string().url(),
   MEDUSA_API_KEY: z.string(),
   MEDUSA_MEMBERSHIP_GROUP_ID: z.string().optional(),
+  INBOX_MAX_CONCURRENT_HANDLERS: z.coerce.number().int().positive().optional(),
+  INBOX_HANDLER_START_INTERVAL_MS: z.coerce.number().int().positive().optional(),
+  INBOX_PROCESSING_LEASE_MS: z.coerce.number().int().positive().optional(),
+  INBOX_SHUTDOWN_DRAIN_MS: z.coerce.number().int().nonnegative().optional(),
+  INBOX_MAX_RETRIES: z.coerce.number().int().positive().optional(),
 
   // Firebase Membership Sync
   ALMOND_AUTH_URL: z.string().url().optional(),
