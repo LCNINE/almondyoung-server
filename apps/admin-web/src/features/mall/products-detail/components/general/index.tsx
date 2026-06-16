@@ -20,7 +20,7 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { useUpdateMasterVersion } from '@/lib/services/products/mutations';
+import { useUpdateMasterVersion, useUpdateMembershipVisibility } from '@/lib/services/products/mutations';
 import { useCategoryTree } from '@/lib/services/products/queries';
 import {
   useProductDetailSuspense,
@@ -372,6 +372,7 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
   const { data } = useProductDetailSuspense(masterId, versionId);
   const [editOpen, setEditOpen] = useState(false);
   const canEdit = canEditBasicInformation(data);
+  const updateMembershipVisibility = useUpdateMembershipVisibility(masterId, versionId);
 
   const rows: { key: string; value: string }[] = [
     { key: '이름', value: data.name },
@@ -379,7 +380,6 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
     { key: '상태', value: formatStatus(data.status) },
     { key: '배송 유형', value: formatFulfillmentKind(data.fulfillmentKind) },
     { key: '도매 전용', value: formatBool(data.isWholesaleOnly) },
-    { key: '멤버십가 비공개', value: formatBool(data.isMembershipOnly) },
     { key: 'SEO 제목', value: data.seoTitle ?? '-' },
     { key: 'SEO 설명', value: data.seoDescription ?? '-' },
     { key: 'SEO 키워드', value: formatSeoKeywords(data.seoKeywords) },
@@ -387,6 +387,13 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
     { key: '등록일', value: data.createdAt },
     { key: '수정일', value: data.updatedAt },
   ];
+
+  function handleMembershipVisibilityChange(checked: boolean) {
+    updateMembershipVisibility.mutate(checked, {
+      onSuccess: () => toast.success(checked ? '멤버십가를 멤버십 회원에게만 공개합니다.' : '멤버십가를 전체 공개합니다.'),
+      onError: () => toast.error('멤버십가 공개 설정 변경에 실패했습니다.'),
+    });
+  }
 
   return (
     <>
@@ -417,6 +424,14 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
             <div className="text-sm">{value}</div>
           </div>
         ))}
+        <div className="grid grid-cols-2 p-3 items-center">
+          <div className="text-sm font-medium text-gray-500">멤버십가 비공개</div>
+          <Switch
+            checked={data.isMembershipOnly ?? false}
+            onCheckedChange={handleMembershipVisibilityChange}
+            disabled={updateMembershipVisibility.isPending}
+          />
+        </div>
       </div>
       {canEdit && (
         <ProductBasicInformationEditDrawer

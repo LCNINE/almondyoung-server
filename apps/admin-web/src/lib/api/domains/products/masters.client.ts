@@ -102,6 +102,16 @@ export const mastersClient = {
     return response.data;
   },
 
+  updateMembershipVisibility: async (
+    masterId: string,
+    isMembershipOnly: boolean
+  ): Promise<void> => {
+    await client.patch(
+      `${ALMONDYOUNG_API_BASE_URL}/masters/${masterId}/membership-visibility`,
+      { isMembershipOnly }
+    );
+  },
+
   listByIds: async (
     ids: string[]
   ): Promise<{
