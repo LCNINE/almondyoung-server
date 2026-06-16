@@ -218,29 +218,34 @@ export default function BusinessForm({
 
           form.setValue("externalBusinessStatus", "success")
           form.setValue("isSubmitting", true)
+          return
+        }
+
+        form.setValue("externalBusinessStatus", "failed")
+        switch (res.field) {
+          case "businessNumber":
+            form.setError("businessNumber", {
+              message: t("businessNumberLengthError"),
+            })
+            form.setFocus("businessNumber")
+            break
+          case "representativeName":
+            form.setError("representativeName", {
+              message: t("representativeNameMismatchError"),
+            })
+            form.setFocus("representativeName")
+            break
+          default:
+            // 백엔드 원본 메시지를 그대로 노출(없으면 generic).
+            toast.error(res.message || t("lookupError"))
         }
       } catch (error: any) {
-        form.setValue("externalBusinessStatus", "failed")
-        if (error instanceof HttpApiError) {
-          switch (error.data.message) {
-            case "사업자번호는 10자리이어야 합니다.":
-              form.setError("businessNumber", {
-                message: t("businessNumberLengthError"),
-              })
-              form.setFocus("businessNumber")
-              break
-            case "대표자 이름이 일치하지 않습니다.":
-              form.setError("representativeName", {
-                message: t("representativeNameMismatchError"),
-              })
-              form.setFocus("representativeName")
-              break
-            default:
-              toast.error(error.data.message)
-          }
-        } else {
-          toast.error(t("lookupError"))
+        // 인증 에러는 error.tsx 로 전파해 토큰 복구를 처리한다.
+        if (error?.digest === "UNAUTHORIZED" || error?.message === "UNAUTHORIZED") {
+          throw error
         }
+        form.setValue("externalBusinessStatus", "failed")
+        toast.error(t("lookupError"))
       }
     })
   }

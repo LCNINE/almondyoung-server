@@ -1,5 +1,4 @@
 // src/domains/payment/components/hooks/use-business-verification.ts
-import { HttpApiError } from "@lib/api/api-error"
 import { fetchExternalBusinessInfo } from "@lib/api/users/business"
 import { useState, useTransition } from "react"
 import { UseFormReturn } from "react-hook-form"
@@ -45,26 +44,30 @@ export function useBusinessVerification({
             '사업자 정보 조회가 완료되었습니다. 아래 "등록하기" 버튼을 눌러 사업자 정보를 등록해주세요.'
           )
           setBusinessCheckStatus("success")
+          return
+        }
+
+        setBusinessCheckStatus("failed")
+        switch (res.field) {
+          case "businessNumber":
+            toast.error("사업자등록번호는 10자리이어야 합니다.")
+            form.setFocus("businessNumber")
+            break
+          case "representativeName":
+            toast.error("대표이사 이름이 일치하지 않습니다.")
+            form.setFocus("ceoName")
+            break
+          default:
+            // 백엔드 원본 메시지를 그대로 노출(없으면 generic).
+            toast.error(res.message || "조회 중 오류가 발생했습니다.")
         }
       } catch (error: any) {
-        setBusinessCheckStatus("failed")
-
-        if (error instanceof HttpApiError) {
-          switch (error.data.message) {
-            case "사업자번호는 10자리이어야 합니다.":
-              toast.error("사업자등록번호는 10자리이어야 합니다.")
-              form.setFocus("businessNumber")
-              break
-            case "대표자 이름이 일치하지 않습니다.":
-              toast.error("대표이사 이름이 일치하지 않습니다.")
-              form.setFocus("ceoName")
-              break
-            default:
-              toast.error(error.data.message || "조회 중 오류가 발생했습니다.")
-          }
-        } else {
-          toast.error(error.message || "조회 중 오류가 발생했습니다.")
+        // 인증 에러는 error.tsx 로 전파해 토큰 복구를 처리한다.
+        if (error?.digest === "UNAUTHORIZED" || error?.message === "UNAUTHORIZED") {
+          throw error
         }
+        setBusinessCheckStatus("failed")
+        toast.error(error?.message || "조회 중 오류가 발생했습니다.")
       }
     })
   }
