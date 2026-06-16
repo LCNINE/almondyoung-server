@@ -1,5 +1,5 @@
 import { createStep, StepResponse } from '@medusajs/framework/workflows-sdk';
-import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, QueryContext } from '@medusajs/framework/utils';
 import { PRODUCT_SORTING_MODULE } from '../../../modules/product-sorting';
 import type ProductSortingModuleService from '../../../modules/product-sorting/service';
 
@@ -21,7 +21,9 @@ export const updateSortIndexStep = createStep(
         fields: ['id', 'variants.id', 'variants.calculated_price.calculated_amount'],
         filters: { id: product_id },
         context: {
-          currency_code,
+          variants: {
+            calculated_price: QueryContext({ currency_code }),
+          },
         },
       });
 

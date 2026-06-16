@@ -18,9 +18,14 @@ export interface QnaAuthorSummary {
 
 interface QnaTableColumnContext {
   userMap: Map<string, QnaAuthorSummary>;
+  // 문의 대상 상품 masterId → 상품명 매핑 (상품 문의가 아니면 productId 자체가 null)
+  productMap: Map<string, string>;
 }
 
-export const useQnaTableColumns = ({ userMap }: QnaTableColumnContext) => {
+export const useQnaTableColumns = ({
+  userMap,
+  productMap,
+}: QnaTableColumnContext) => {
   return useMemo(
     () => [
       columnHelper.accessor('userId', {
@@ -36,6 +41,21 @@ export const useQnaTableColumns = ({ userMap }: QnaTableColumnContext) => {
           const { userId, nickname } = row.original;
           const displayName = userMap.get(userId)?.username || nickname;
           return <span>{displayName || '-'}</span>;
+        },
+      }),
+      columnHelper.display({
+        id: 'product',
+        header: '문의 상품',
+        // productId(=masterId)는 상품 문의에만 존재. 일반 문의(계정/배송 등)는 null → '-'.
+        cell: ({ row }) => {
+          const { productId } = row.original;
+          if (!productId) return <span className="text-gray-400">-</span>;
+          const name = productMap.get(productId);
+          return (
+            <span className="line-clamp-1 text-sm" title={productId}>
+              {name ?? productId}
+            </span>
+          );
         },
       }),
       columnHelper.accessor('category', {
@@ -61,6 +81,6 @@ export const useQnaTableColumns = ({ userMap }: QnaTableColumnContext) => {
         cell: ({ getValue }) => <DateCell value={getValue()} />,
       }),
     ],
-    [userMap]
+    [userMap, productMap]
   );
 };

@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import { useQuestions } from '@/lib/services/qna';
+import { useMastersByIds } from '@/lib/services/products/queries';
 import { useAdminUsersByIds } from '@/lib/services/users/queries';
 import { useDataTable } from '@/hooks/use-data-table';
 import {
@@ -28,7 +29,17 @@ export function QnaTable() {
     [questions]
   );
 
+  // 상품 문의(productId 존재)만 모아 상품명을 배치 조회. 일반 문의는 productId 가 null.
+  const productIds = useMemo(
+    () =>
+      Array.from(
+        new Set(questions.map((q) => q.productId).filter(Boolean) as string[])
+      ),
+    [questions]
+  );
+
   const { data: users } = useAdminUsersByIds(userIds);
+  const { data: products } = useMastersByIds(productIds);
 
   const userMap = useMemo(() => {
     const m = new Map<string, QnaAuthorSummary>();
@@ -38,7 +49,15 @@ export function QnaTable() {
     return m;
   }, [users]);
 
-  const columns = useQnaTableColumns({ userMap });
+  const productMap = useMemo(() => {
+    const m = new Map<string, string>();
+    (products?.data ?? []).forEach((p) => {
+      m.set(p.masterId, p.name);
+    });
+    return m;
+  }, [products]);
+
+  const columns = useQnaTableColumns({ userMap, productMap });
   const filters = useQnaTableFilters();
 
   const { table } = useDataTable({
