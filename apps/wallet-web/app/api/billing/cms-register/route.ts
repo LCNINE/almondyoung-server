@@ -1,4 +1,5 @@
 import { registerCmsBankAccount } from '@/lib/wallet-api';
+import { getBackendAuthCookie } from '@/lib/auth/session-cookies';
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
@@ -11,7 +12,7 @@ export async function POST(request: Request) {
     return Response.json({ error: '필수 항목이 누락되었습니다.' }, { status: 400 });
   }
 
-  const cookieHeader = request.headers.get('Cookie') ?? '';
+  const cookieHeader = await getBackendAuthCookie();
 
   try {
     const method = await registerCmsBankAccount(

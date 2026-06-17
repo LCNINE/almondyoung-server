@@ -1,4 +1,5 @@
 import { updateCmsBankAccount } from '@/lib/wallet-api';
+import { getBackendAuthCookie } from '@/lib/auth/session-cookies';
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -13,7 +14,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     return Response.json({ error: '필수 항목이 누락되었습니다.' }, { status: 400 });
   }
 
-  const cookieHeader = request.headers.get('Cookie') ?? '';
+  const cookieHeader = await getBackendAuthCookie();
 
   try {
     await updateCmsBankAccount(id, { paymentCompany, payerName, payerNumber, paymentNumber, phone }, cookieHeader);

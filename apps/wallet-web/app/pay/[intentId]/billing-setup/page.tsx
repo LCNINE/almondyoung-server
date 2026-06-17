@@ -13,14 +13,15 @@ export default async function BillingSetupPage({ params, searchParams }: Props) 
   const { intentId } = await params;
   const { returnUrl, fail, msg, mode } = await searchParams;
 
-  // 인증 가드 (구 Edge middleware 의 /pay 보호 이전). 로그인 후 /pay/{intentId} 로 복귀하면
-  // 메인 page 가 recurring 을 판단해 billing-setup 으로 자동 재진입한다.
+  // 인증 가드 (구 Edge middleware 의 /pay 보호 이전). access token 을 못 쓰면 /auth/ensure 로
+  // 보내 refresh token 으로 먼저 갱신한다 (refresh 까지 죽으면 ensure 가 /login 으로). 로그인 후
+  // /pay/{intentId} 로 복귀하면 메인 page 가 recurring 을 판단해 billing-setup 으로 자동 재진입한다.
   const cookieStore = await cookies();
   const accessToken = cookieStore.get(SESSION_COOKIE_NAMES.ACCESS_TOKEN)?.value;
   if (!(await isAccessTokenUsable(accessToken))) {
-    const loginPath = `/login?redirect_to=${encodeURIComponent(`/pay/${intentId}`)}`;
+    const ensurePath = `/auth/ensure?redirect_to=${encodeURIComponent(`/pay/${intentId}`)}`;
     const origin = selfOrigin();
-    redirect(origin ? `${origin}${loginPath}` : loginPath);
+    redirect(origin ? `${origin}${ensurePath}` : ensurePath);
   }
 
   const initialError =

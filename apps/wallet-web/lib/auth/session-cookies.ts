@@ -4,10 +4,15 @@ import { cookies } from 'next/headers';
 
 import type { TokenSet } from './oidc-client';
 
-const ACCESS_TOKEN = 'accessToken';
-const REFRESH_TOKEN = 'refreshToken';
-const ID_TOKEN = 'idToken';
-const STATE_COOKIE = 'oidc_state';
+// ⚠️ wallet-web 고유 쿠키 이름. 스토어프론트가 부모 도메인(.lcnine-dev.com)에 박는
+// `accessToken`/`refreshToken`(client_id=medusa-storefront) 이 모든 서브도메인으로 전송돼
+// wallet-web 으로도 넘어온다. 같은 이름이면 서버가 둘을 구분 못 하고 브라우저별 전송 순서에
+// 따라 남의 토큰(aud=medusa-storefront)을 읽어 가드가 거부 → 사파리 결제 무한루프가 됐다.
+// 그래서 wallet-web 토큰은 충돌하지 않는 고유 이름으로 host-only 발급한다.
+const ACCESS_TOKEN = 'wallet_at';
+const REFRESH_TOKEN = 'wallet_rt';
+const ID_TOKEN = 'wallet_it';
+const STATE_COOKIE = 'wallet_oidc_state';
 
 const REFRESH_MAX_AGE = 60 * 60 * 24 * 14; // 2 weeks
 
@@ -89,6 +94,26 @@ export async function getAccessToken(): Promise<string | null> {
   const jar = await cookies();
   return jar.get(ACCESS_TOKEN)?.value ?? null;
 }
+
+/**
+ * wallet 백엔드(wallet-api)로 forwarding 할 때 쓸 Cookie 헤더.
+ *
+ * 백엔드는 `accessToken` 쿠키(또는 Authorization Bearer)에서 토큰을 뽑는데, 브라우저가 보낸
+ * 전체 쿠키를 그대로 넘기면 스토어프론트의 부모도메인 `accessToken`(aud=medusa-storefront)이
+ * 섞여 백엔드가 잘못된 토큰을 읽을 수 있다. 그래서 wallet-web 자기 토큰만 `accessToken` 이름으로
+ * 단독 전달한다(백엔드는 이 이름으로 읽음).
+ */
+export function backendAuthCookieFromToken(accessToken: string | null | undefined): string {
+  return accessToken ? `${ACCESS_TOKEN_FORWARD_NAME}=${accessToken}` : '';
+}
+
+export async function getBackendAuthCookie(): Promise<string> {
+  return backendAuthCookieFromToken(await getAccessToken());
+}
+
+// 백엔드(wallet-api)가 읽는 쿠키 이름. wallet-web 자체 저장 이름(wallet_at)과 달리, 백엔드
+// 계약상 `accessToken` 이어야 한다 (apps/wallet 의 getAccessTokenFromRequest).
+const ACCESS_TOKEN_FORWARD_NAME = 'accessToken';
 
 export async function getRefreshToken(): Promise<string | null> {
   const jar = await cookies();
