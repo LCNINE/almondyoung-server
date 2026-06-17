@@ -80,7 +80,20 @@ export class EntitlementService {
    * ✅ 흐름만 표현: "권한 조정"
    */
   async adjustEntitlement(userId: string, days: number, reason: string, adminId: string) {
-    return this.manager.adjustEntitlement(userId, days, reason, adminId);
+    const result = await this.manager.adjustEntitlement(userId, days, reason, adminId);
+    this.membershipEventPublisher
+      .publishStatusChanged({
+        userId,
+        status: 'RESUMED',
+        occurredAt: new Date().toISOString(),
+        tierId: result.tierId,
+        reasonCode: 'ENTITLEMENT_ADJUSTED',
+        reasonText: reason,
+      })
+      .catch((err: Error) =>
+        this.logger.error(`MembershipStatusChanged Kafka 발행 실패 (userId=${userId}): ${err?.message}`, err?.stack),
+      );
+    return result;
   }
 
   /**
@@ -109,7 +122,7 @@ export class EntitlementService {
    * ✅ 흐름만 표현: "권한 연장"
    */
   async extendEntitlement(userId: string, additionalDays: number, reason: string, adminId?: string): Promise<void> {
-    await this.manager.adjustEntitlement(userId, additionalDays, reason, adminId || 'system');
+    await this.adjustEntitlement(userId, additionalDays, reason, adminId || 'system');
   }
 
   /**
