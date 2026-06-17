@@ -1,6 +1,7 @@
 import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
-import { Modules } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 import { capturePaymentWorkflow } from '@medusajs/core-flows';
+import { completeCartWorkflow } from '@medusajs/medusa/core-flows';
 
 // Process-level idempotency store (in-memory, resets on restart).
 // DB-backed persistence is a follow-up (idempotency_keys table or payment_events table).
@@ -302,6 +303,13 @@ async function handleRefundProjection(
  * that the almond-payment provider skips its Wallet API call, then run
  * capturePaymentWorkflow to let Medusa create the capture sub-record, update the
  * payment collection status, and add the order transaction — all DB-only operations.
+ *
+ * Bank transfer path (무통장입금): cart.complete() is never called before capture
+ * because the storefront waits for the bank transfer confirmation page without
+ * completing the cart. When the admin confirms the payment in Wallet/admin, the
+ * intent becomes CAPTURED and this event fires — but no Medusa payment row exists yet.
+ * In that case we recover by running completeCartWorkflow first to create the order,
+ * then proceed with the normal capture projection.
  */
 async function handleCaptureProjection(
   scope: any,
@@ -310,14 +318,36 @@ async function handleCaptureProjection(
   logger: { info: Function; warn: Function; debug: Function },
 ) {
   const paymentModule = scope.resolve(Modules.PAYMENT);
-  const payments = await paymentModule.listPayments(
+  let payments = await paymentModule.listPayments(
     { payment_session_id: intentId },
     { relations: ['captures'] },
   );
-  const payment = payments[0];
+  let payment = payments[0];
 
   if (!payment) {
-    throw new Error(`[payment-events] handleCaptureProjection: no Medusa payment found for intentId=${intentId} (messageId=${messageId})`);
+    // Bank transfer recovery path: cart was never completed.
+    // completeCartWorkflow creates the order + payment row; after that the normal
+    // capture projection below handles the rest.
+    logger.info(
+      `[payment-events] handleCaptureProjection: no payment found for intentId=${intentId}, attempting bank transfer cart recovery (messageId=${messageId})`,
+    );
+    await recoverBankTransferOrder(scope, intentId, messageId, logger);
+
+    // Re-query after recovery
+    payments = await paymentModule.listPayments(
+      { payment_session_id: intentId },
+      { relations: ['captures'] },
+    );
+    payment = payments[0];
+
+    if (!payment) {
+      // Recovery completed idempotently (cart was already completed via another path
+      // or the order already existed). No payment row to update — log and exit cleanly.
+      logger.warn(
+        `[payment-events] handleCaptureProjection: no payment row after recovery for intentId=${intentId}, skipping capture projection (messageId=${messageId})`,
+      );
+      return;
+    }
   }
 
   if (payment.captured_at) {
@@ -350,4 +380,110 @@ async function handleCaptureProjection(
   });
 
   logger.info(`[payment-events] handleCaptureProjection: projected capture for payment_id=${payment.id} intentId=${intentId}`);
+}
+
+/**
+ * Bank transfer recovery: finds the cart for the given intentId and runs
+ * completeCartWorkflow if the order has not been created yet.
+ *
+ * Lookup path: intentId → payment_session.payment_collection_id
+ *   → payment_collection.cart (via CartPaymentCollection link, bidirectional)
+ *   → completeCartWorkflow
+ *
+ * Idempotency:
+ *   - cart.completed_at: set by completeCartWorkflow on success → skip
+ *   - order_cart link: exists if order was created by any path → skip
+ *
+ * After completeCartWorkflow the almond-payment provider's authorizePayment
+ * calls Wallet, receives CAPTURED status, and Medusa's payment module maps
+ * 'captured' → 'authorized' internally (payment-module.js line 242-243),
+ * so the authorization succeeds and the order is created with an authorized
+ * (not yet captured) payment row. The caller then runs capturePaymentWorkflow
+ * to record the capture sub-record.
+ */
+async function recoverBankTransferOrder(
+  scope: any,
+  intentId: string,
+  messageId: string,
+  logger: { info: Function; warn: Function; debug: Function },
+): Promise<void> {
+  const paymentModule = scope.resolve(Modules.PAYMENT);
+  const query = scope.resolve(ContainerRegistrationKeys.QUERY);
+
+  // Step 1: payment session ID = intentId (set by almond-payment initiatePayment)
+  const paymentSessions = await paymentModule.listPaymentSessions(
+    { id: intentId },
+    { select: ['id', 'payment_collection_id'] },
+  );
+  const paymentSession = paymentSessions[0];
+
+  if (!paymentSession) {
+    throw new Error(
+      `[payment-events] recoverBankTransferOrder: no payment session found for intentId=${intentId} (messageId=${messageId})`,
+    );
+  }
+
+  const paymentCollectionId = paymentSession.payment_collection_id;
+
+  // Step 2: reverse-traverse the CartPaymentCollection link to find the cart.
+  // The link extends PaymentCollection with a 'cart' field alias — bidirectional.
+  const { data: collections } = await query.graph({
+    entity: 'payment_collection',
+    fields: ['id', 'cart.id', 'cart.completed_at'],
+    filters: { id: paymentCollectionId },
+  });
+
+  const cart = (collections[0] as any)?.cart as { id: string; completed_at: string | null } | undefined;
+
+  if (!cart?.id) {
+    throw new Error(
+      `[payment-events] recoverBankTransferOrder: no cart found for payment_collection_id=${paymentCollectionId} intentId=${intentId}`,
+    );
+  }
+
+  const cartId = cart.id;
+
+  // Step 3: idempotency — cart.completed_at is set by completeCartWorkflow
+  if (cart.completed_at) {
+    logger.info(
+      `[payment-events] recoverBankTransferOrder: cart ${cartId} already completed (completed_at=${cart.completed_at}), skipping. intentId=${intentId}`,
+    );
+    return;
+  }
+
+  // Step 4: idempotency — order_cart link exists if order was created by any path
+  const { data: orderCartLinks } = await query.graph({
+    entity: 'order_cart',
+    fields: ['cart_id', 'order_id'],
+    filters: { cart_id: cartId },
+  });
+
+  if (orderCartLinks.length > 0) {
+    logger.info(
+      `[payment-events] recoverBankTransferOrder: order already exists for cart ${cartId} (order_id=${(orderCartLinks[0] as any)?.order_id}), skipping. intentId=${intentId}`,
+    );
+    return;
+  }
+
+  // Step 5: complete the cart to create the order
+  logger.info(
+    `[payment-events] recoverBankTransferOrder: running completeCartWorkflow for cart ${cartId} intentId=${intentId}`,
+  );
+
+  const { errors } = await completeCartWorkflow(scope).run({
+    input: { id: cartId },
+    context: { transactionId: `bank-transfer-recovery:${cartId}` },
+    throwOnError: false,
+  });
+
+  if (errors?.length) {
+    const error = errors[0]?.error;
+    throw new Error(
+      `[payment-events] recoverBankTransferOrder: completeCartWorkflow failed for cart ${cartId} intentId=${intentId}: ${(error as any)?.message ?? String(error)}`,
+    );
+  }
+
+  logger.info(
+    `[payment-events] recoverBankTransferOrder: order created successfully for cart ${cartId} intentId=${intentId}`,
+  );
 }
