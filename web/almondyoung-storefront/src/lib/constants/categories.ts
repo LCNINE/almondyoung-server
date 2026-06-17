@@ -56,6 +56,12 @@ export const FIXED_CATEGORIES = [
     name: "노몬드",
     handle: "cafe24-cat-495",
   },
+  {
+    key: "shop-meal",
+    id: "pcat_01KT8J0Z8XVAYFQ8EF965GSTWM",
+    name: "샵간편식",
+    handle: "cafe24-cat-618",
+  },
 ] as const
 
 export type FixedCategory = (typeof FIXED_CATEGORIES)[number]
