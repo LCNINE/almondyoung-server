@@ -162,6 +162,19 @@ export async function upsertAccount(
   })
 }
 
+/**
+ * 로그아웃 시 호출. 해당 계정의 refresh token 쿠키(_rt)만 삭제하고 메타/리스트는 남겨둔다.
+ * → 계정은 허브 리스트에 "재로그인 필요" 상태로 계속 보이고, 다시 선택하면 selectAccountAction 이
+ *    RT 부재를 감지해 비밀번호 재입력(/signin reauth) 으로 보낸다. 공용 PC 보안 흐름의 핵심.
+ * removeAccount 와 달리 메타를 지우지 않으므로 loginId/email prefill 도 유지된다.
+ */
+export async function invalidateAccountRefreshToken(
+  userId: string
+): Promise<void> {
+  const jar = await cookies()
+  jar.delete(rtCookieName(userId))
+}
+
 export async function removeAccount(userId: string): Promise<void> {
   const jar = await cookies()
   const listRaw = jar.get(LIST_COOKIE)?.value

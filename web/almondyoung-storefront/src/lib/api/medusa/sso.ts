@@ -218,7 +218,13 @@ export async function oidcCallback(args: {
 }
 
 /**
- * 로그아웃: _medusa_jwt 제거 후 user-service /oauth/end_session으로 redirect.
+ * 로그아웃: _medusa_jwt 제거 후 auth-web /oauth/end_session 으로 redirect.
+ *
+ * end_session 은 user-service(백엔드)가 아니라 auth-web(IdP 프론트)으로 보낸다. authorize 가
+ * auth-web 에 있으므로 로그아웃도 같은 곳을 거쳐야 한다. user-service 로 직접 navigate 하면
+ * (1) auth-web host-only 세션 쿠키를 cross-domain 이라 못 지우고, (2) Bearer 가 없어 DB 토큰
+ * revoke 도 스킵돼, 다음 로그인 시 계정 리스트에서 비밀번호 없이 자동 재로그인되는 버그가 난다.
+ * auth-web end_session 라우트가 host-only 쿠키 정리 + S2S revoke + 계정 허브 RT 무효화를 모두 수행한다.
  */
 export async function oidcSignOut(countryCode: string): Promise<void> {
   console.log("[logout] oidcSignOut 진입")
@@ -226,24 +232,25 @@ export async function oidcSignOut(countryCode: string): Promise<void> {
   await removeAllAuthTokens()
   console.log("[logout] oidcSignOut: removeAllAuthTokens 완료")
 
-  const issuer = process.env.OIDC_ISSUER_URL ?? process.env.NEXT_PUBLIC_USER_SERVICE_URL
+  const authWebOrigin =
+    process.env.AUTH_WEB_ORIGIN ?? process.env.NEXT_PUBLIC_AUTH_WEB_ORIGIN
   const clientId = process.env.OIDC_CLIENT_ID ?? "medusa-storefront"
   const base = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:8000"
   console.log(
-    "[logout] oidcSignOut: issuer=",
-    issuer,
+    "[logout] oidcSignOut: authWebOrigin=",
+    authWebOrigin,
     "clientId=",
     clientId,
     "base=",
     base
   )
 
-  if (!issuer) {
-    console.log("[logout] oidcSignOut: issuer 없음 → 홈으로 redirect")
+  if (!authWebOrigin) {
+    console.log("[logout] oidcSignOut: authWebOrigin 없음 → 홈으로 redirect")
     redirect(`/${countryCode}`)
   }
 
-  const url = new URL("/oauth/end_session", issuer)
+  const url = new URL("/oauth/end_session", authWebOrigin)
   url.searchParams.set("client_id", clientId)
   url.searchParams.set("post_logout_redirect_uri", `${base}/${countryCode}`)
 
