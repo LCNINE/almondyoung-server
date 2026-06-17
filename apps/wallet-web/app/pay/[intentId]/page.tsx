@@ -1,5 +1,7 @@
 import { cookies } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
+import { isAccessTokenUsable, selfOrigin } from '@/lib/auth/access-token';
+import { SESSION_COOKIE_NAMES } from '@/lib/auth/session-cookies';
 import {
   getPaymentIntent,
   getPaymentMethods,
@@ -26,6 +28,16 @@ export default async function PayPage({ params, searchParams }: Props) {
   // 서버 컴포넌트에서 브라우저 쿠키를 wallet API로 직접 포워딩
   const cookieStore = await cookies();
   const cookieHeader = cookieStore.toString();
+
+  // 인증 가드 (구 Edge middleware 의 /pay 보호를 Node 런타임으로 이전).
+  // Node redirect 는 절대 URL Location 을 유지해 iOS Chrome 에서도 정상 동작한다.
+  const accessToken = cookieStore.get(SESSION_COOKIE_NAMES.ACCESS_TOKEN)?.value;
+  if (!(await isAccessTokenUsable(accessToken))) {
+    const internalPath = `/pay/${intentId}${region ? `?region=${region}` : ''}`;
+    const loginPath = `/login?redirect_to=${encodeURIComponent(internalPath)}`;
+    const origin = selfOrigin();
+    redirect(origin ? `${origin}${loginPath}` : loginPath);
+  }
 
   let intent;
   try {
