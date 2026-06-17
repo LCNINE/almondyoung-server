@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { EntitlementService } from '../entitlement.service';
 import { EntitlementReader } from '../entitlement/entitlement.reader';
 import { EntitlementManager } from '../entitlement/entitlement.manager';
+import { MembershipEventPublisher } from '../membership-event.publisher';
 import { DbService } from '@app/db';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 
@@ -29,7 +30,12 @@ describe('EntitlementService - Lazy Expiration', () => {
   };
 
   const mockManager = {
+    adjustEntitlement: jest.fn(),
     expireEntitlement: jest.fn(),
+  };
+
+  const mockMembershipEventPublisher = {
+    publishStatusChanged: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -47,6 +53,10 @@ describe('EntitlementService - Lazy Expiration', () => {
         {
           provide: DbService,
           useValue: mockDbService,
+        },
+        {
+          provide: MembershipEventPublisher,
+          useValue: mockMembershipEventPublisher,
         },
       ],
     }).compile();
@@ -132,6 +142,37 @@ describe('EntitlementService - Lazy Expiration', () => {
 
       // Then
       expect(mockManager.expireEntitlement).toHaveBeenCalledWith('entitlement_001', userId);
+    });
+  });
+
+  describe('adjustEntitlement', () => {
+    it('권한 조정 성공 후 RESUMED 상태 변경 이벤트를 발행해야 함', async () => {
+      const userId = 'test_user_001';
+      const adjustedEntitlement = {
+        id: 'entitlement_002',
+        userId,
+        tierId: 'tier_001',
+        startsAt: '2026-06-16',
+        endsAt: '2026-06-26',
+        isCurrent: true,
+      };
+
+      mockManager.adjustEntitlement.mockResolvedValue(adjustedEntitlement);
+      mockMembershipEventPublisher.publishStatusChanged.mockResolvedValue(undefined);
+
+      const result = await service.adjustEntitlement(userId, 1, '동기화 오류 복구', 'admin_001');
+
+      expect(result).toBe(adjustedEntitlement);
+      expect(mockManager.adjustEntitlement).toHaveBeenCalledWith(userId, 1, '동기화 오류 복구', 'admin_001');
+      expect(mockMembershipEventPublisher.publishStatusChanged).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId,
+          status: 'RESUMED',
+          tierId: 'tier_001',
+          reasonCode: 'ENTITLEMENT_ADJUSTED',
+          reasonText: '동기화 오류 복구',
+        }),
+      );
     });
   });
 });
