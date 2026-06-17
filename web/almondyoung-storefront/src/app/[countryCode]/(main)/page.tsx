@@ -1,5 +1,8 @@
 import { ThemeManager } from "@/components/shared/theme-manager"
 import { SurveyPromptBanner } from "@/components/survey-prompt-banner"
+import { Cafe24LinkBanner } from "@/components/cafe24-link-banner"
+import { Cafe24LinkPopup } from "@/components/layout/cafe24-link-popup"
+import { getCafe24LinkInfo } from "@/lib/api/users/cafe24"
 import { getMyProfile } from "@/lib/api/users/profile"
 import { siteConfig } from "@/lib/config/site"
 import { getSEOTags } from "@/lib/seo"
@@ -22,12 +25,23 @@ export default async function Home({
   const userDetailInfo = await getMyProfile().catch(() => null)
   const showSurvey: boolean = shouldShowSurvey(userDetailInfo)
 
+  const showCafe24Banner = await (async () => {
+    if (!userDetailInfo) return false
+    const result = await getCafe24LinkInfo()
+    if (!("data" in result)) return false
+    return !result.data
+  })()
+
   return (
     <ProtectedRoute>
       <HomeLogoutTemplate countryCode={countryCode} />
 
       {/* 설문 유도 배너 */}
       {showSurvey && <SurveyPromptBanner countryCode={countryCode} />}
+
+      {/* 카페24 계정 미연동 유저 대상 연동 권장 팝업 + 배너 */}
+      {showCafe24Banner && <Cafe24LinkPopup countryCode={countryCode} />}
+      {showCafe24Banner && <Cafe24LinkBanner countryCode={countryCode} />}
 
       {/* 테마 매니저 (개발 모드에서만 표시) */}
       {process.env.NODE_ENV === "development" && <ThemeManager />}

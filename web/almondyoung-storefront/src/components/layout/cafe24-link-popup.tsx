@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { useTranslations } from "next-intl"
 
-import { Button } from "@/components/ui/button"
+import { CustomButton } from "@/components/shared/custom-buttons"
 import {
   Dialog,
   DialogContent,
@@ -11,40 +11,36 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 
-/**
- * 일회성 공지 팝업.
- *
- * - 스토어프론트 진입 시 1회 노출되는 단순 안내 팝업.
- * - "오늘 하루 보지 않기" 를 누르면 해당 브라우저(=그 기기) localStorage 에
- *   숨김 만료 시각을 저장해 자정까지 다시 뜨지 않음
- * - 공지 내용을 바꿔 다시 모두에게 노출하고 싶으면 STORAGE_KEY 의 버전(v1)을 올린다.
- */
-const STORAGE_KEY = "notice:signup-renewal:v1:hideUntil"
+const CAFE24_MIGRATOR_BASE = "https://almondyoung.com/migrator/confirm.html"
+const STORAGE_KEY = "notice:cafe24-link:v1:hideUntil"
 
-interface NoticePopupProps {
-  isLoggedIn: boolean
+interface Cafe24LinkPopupProps {
+  countryCode: string
 }
 
-export function NoticePopup({ isLoggedIn }: NoticePopupProps) {
-  const t = useTranslations("notice.signupRenewal")
+export function Cafe24LinkPopup({ countryCode }: Cafe24LinkPopupProps) {
+  const t = useTranslations("notice.cafe24Link")
   const [open, setOpen] = useState(false)
 
   useEffect(() => {
     if (typeof window === "undefined") return
-    if (isLoggedIn) return
 
     const hideUntil = localStorage.getItem(STORAGE_KEY)
     if (hideUntil && Date.now() < Number(hideUntil)) return
 
     setOpen(true)
-  }, [isLoggedIn])
+  }, [])
 
   const hideForToday = () => {
-    // 오늘 자정까지 숨김
     const endOfDay = new Date()
     endOfDay.setHours(23, 59, 59, 999)
     localStorage.setItem(STORAGE_KEY, String(endOfDay.getTime()))
     setOpen(false)
+  }
+
+  const handleLink = () => {
+    const postUrl = `${window.location.origin}/${countryCode}/mypage/account/cafe24/confirm`
+    window.location.href = `${CAFE24_MIGRATOR_BASE}?redirect_to=${encodeURIComponent(postUrl)}`
   }
 
   return (
@@ -62,16 +58,9 @@ export function NoticePopup({ isLoggedIn }: NoticePopupProps) {
         </DialogHeader>
 
         <div className="space-y-4 px-7 pt-5 pb-7 text-[15px] leading-7 text-gray-600">
-          <p>{t("greeting")}</p>
           <p>{t("p1")}</p>
-          <p>
-            {t("p2")}
-            <br />
-            {t("p3")}
-          </p>
-          <p>{t("p4")}</p>
-          <p>{t("p5")}</p>
-          <p>{t("p6")}</p>
+          <p>{t("p2")}</p>
+          <p>{t("p3")}</p>
         </div>
 
         <div className="flex items-center justify-between border-t border-gray-100 px-7 py-4">
@@ -82,9 +71,9 @@ export function NoticePopup({ isLoggedIn }: NoticePopupProps) {
           >
             {t("hideForToday")}
           </button>
-          <Button type="button" onClick={() => setOpen(false)} className="px-6">
-            {t("close")}
-          </Button>
+          <CustomButton type="button" size="sm" onClick={handleLink} className="px-5">
+            {t("link")}
+          </CustomButton>
         </div>
       </DialogContent>
     </Dialog>

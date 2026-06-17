@@ -2,6 +2,7 @@ import { getBaseURL } from "@lib/utils/env"
 import { Metadata } from "next"
 import { MainHeader } from "../../../components/layout/header/main-header"
 import { NoticePopup } from "@/components/layout/notice-popup"
+import { getMyProfile } from "@/lib/api/users/profile"
 import { siteConfig } from "@/lib/config/site"
 
 export const metadata: Metadata = {
@@ -12,12 +13,13 @@ export const metadata: Metadata = {
   },
 }
 
-export default function MainLayout(props: { children: React.ReactNode }) {
+export default async function MainLayout(props: { children: React.ReactNode }) {
+  const user = await getMyProfile().catch(() => null)
   return (
     <div className="flex min-h-screen flex-col">
       <MainHeader />
       {props.children}
-      <NoticePopup />
+      <NoticePopup isLoggedIn={!!user} />
     </div>
   )
 }

@@ -27,6 +27,14 @@
     "emptyDescription": "No products are registered in this category.",
     "interestTitleSuffix": "Best"
   },
+  "cafe24Link": {
+    "mobileText": "Connect your existing Almondyoung account",
+    "desktopTitle": "Link your Cafe24 account for more benefits",
+    "desktopDescription": "If you were an Almondyoung membership member on Cafe24, link your account to keep your benefits.",
+    "link": "Link existing account",
+    "dismiss": "Close",
+    "logoAlt": "Almondyoung logo"
+  },
   "survey": {
     "mobileText": "Get personalized recommendations",
     "desktopTitle": "We'll find the perfect products for you",
