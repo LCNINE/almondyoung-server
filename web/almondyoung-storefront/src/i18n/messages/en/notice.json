@@ -1,4 +1,14 @@
 {
+  "cafe24Link": {
+    "label": "Notice",
+    "date": "2026.06.15",
+    "title": "Link your existing Almondyoung (Cafe24) account",
+    "p1": "Following the website renewal, you need to link your existing Cafe24 Almondyoung account.",
+    "p2": "Linking your Cafe24 account lets you carry over your existing membership benefits to your new account.",
+    "p3": "Please tap the button below to link your existing Almondyoung account.",
+    "link": "Link existing account",
+    "hideForToday": "Don't show again today"
+  },
   "signupRenewal": {
     "label": "Notice",
     "date": "2026.06.15",

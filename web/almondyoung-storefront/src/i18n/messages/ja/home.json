@@ -27,6 +27,14 @@
     "emptyDescription": "このカテゴリには登録された商品がありません。",
     "interestTitleSuffix": "ベスト"
   },
+  "cafe24Link": {
+    "mobileText": "旧アーモンドヤングアカウントを連携しましょう",
+    "desktopTitle": "Cafe24アカウントを連携してより多くの特典を",
+    "desktopDescription": "Cafe24でアーモンドヤングのメンバーシップをご利用の方は、アカウントを連携して特典を引き継ぎましょう。",
+    "link": "旧アカウントを連携",
+    "dismiss": "閉じる",
+    "logoAlt": "アモンドヤン ロゴ"
+  },
   "survey": {
     "mobileText": "おすすめ商品を受け取ろう",
     "desktopTitle": "院長様にぴったりの商品をお探しします",

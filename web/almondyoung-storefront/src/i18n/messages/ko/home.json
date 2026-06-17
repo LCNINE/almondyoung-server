@@ -27,6 +27,14 @@
     "emptyDescription": "이 카테고리에 등록된 상품이 없습니다.",
     "interestTitleSuffix": "베스트"
   },
+  "cafe24Link": {
+    "mobileText": "기존 아몬드영 계정을 연결해보세요",
+    "desktopTitle": "카페24 계정을 연결하면 더 많은 혜택을 누릴 수 있어요",
+    "desktopDescription": "카페24 아몬드영 멤버십 회원이라면 계정을 연결해 혜택을 이어받으세요.",
+    "link": "기존 아몬드영 연결",
+    "dismiss": "닫기",
+    "logoAlt": "아몬드영 로고"
+  },
   "survey": {
     "mobileText": "맞춤 상품을 추천받아보세요",
     "desktopTitle": "원장님께 딱 맞는 상품을 찾아드릴게요",
