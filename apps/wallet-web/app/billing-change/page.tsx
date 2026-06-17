@@ -1,5 +1,5 @@
-import { cookies } from 'next/headers';
 import { getBillingMethods } from '@/lib/wallet-api';
+import { getBackendAuthCookie } from '@/lib/auth/session-cookies';
 import { BillingChangeForm } from './billing-change-form';
 
 interface Props {
@@ -13,8 +13,7 @@ interface Props {
 export default async function BillingChangePage({ searchParams }: Props) {
   const { returnUrl, fail, msg } = await searchParams;
 
-  const cookieStore = await cookies();
-  const methods = await getBillingMethods(cookieStore.toString());
+  const methods = await getBillingMethods(await getBackendAuthCookie());
   const cmsBillingMethod = methods.find((m) => m.providerType === 'CMS_BATCH' && m.status === 'ACTIVE');
 
   const initialError =

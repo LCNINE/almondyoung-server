@@ -1,15 +1,8 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-import {
-  consumeStateCookie,
-  writeSessionCookies,
-} from '@/lib/auth/session-cookies';
-import {
-  exchangeCodeForTokens,
-  verifyIdToken,
-  type OidcStateRecord,
-} from '@/lib/auth/oidc-client';
+import { consumeStateCookie, writeSessionCookies } from '@/lib/auth/session-cookies';
+import { exchangeCodeForTokens, verifyIdToken, type OidcStateRecord } from '@/lib/auth/oidc-client';
 
 /**
  * IdP 가 사용자 동의/로그인 완료 후 redirect 로 진입하는 callback 라우트.

@@ -1,3 +1,5 @@
+import { getBackendAuthCookie } from '@/lib/auth/session-cookies';
+
 const WALLET_API_URL = process.env.NEXT_PUBLIC_WALLET_API_URL ?? 'http://localhost:3100';
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -23,7 +25,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     return Response.json({ error: '전자서명 파일이 필요합니다.' }, { status: 400 });
   }
 
-  const cookieHeader = request.headers.get('Cookie') ?? '';
+  const cookieHeader = await getBackendAuthCookie();
 
   try {
     const res = await fetch(`${WALLET_API_URL}/v1/billing-methods/cms/${id}/with-agreement`, {

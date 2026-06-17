@@ -1,7 +1,7 @@
 import { isRedirectError } from 'next/dist/client/components/redirect-error';
-import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { approveToss, getBillingMethods } from '@/lib/wallet-api';
+import { getBackendAuthCookie } from '@/lib/auth/session-cookies';
 import { buildReturnUrl } from '@/lib/return-url';
 
 interface Props {
@@ -37,8 +37,7 @@ export default async function TossCompletePage({ params, searchParams }: Props) 
         status: 'succeeded',
       });
       if (result.metadata?.billingMode === 'recurring') {
-        const cookieStore = await cookies();
-        const billingMethods = await getBillingMethods(cookieStore.toString());
+        const billingMethods = await getBillingMethods(await getBackendAuthCookie());
         if (billingMethods.length === 0) {
           redirect(`/pay/${intentId}/billing-setup?provider=TOSS&returnUrl=${encodeURIComponent(successUrl)}`);
         }

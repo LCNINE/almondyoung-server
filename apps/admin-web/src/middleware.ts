@@ -3,8 +3,14 @@ import type { NextRequest } from 'next/server';
 import { createRemoteJWKSet, jwtVerify, type JWTVerifyOptions } from 'jose';
 
 const ACCESS_TOKEN = 'accessToken';
+const REFRESH_TOKEN = 'refreshToken';
 
-const PUBLIC_PATHS = ['/login', '/unauthorized', '/auth/callback'];
+const PUBLIC_PATHS = [
+  '/login',
+  '/unauthorized',
+  '/auth/callback',
+  '/auth/ensure',
+];
 
 // admin-web 은 user-service IdP 의 OIDC RP. access_token 검증은 RS256 + JWKS 단일화.
 // HS256 fallback / parent-domain 쿠키 / /auth/restore-token 호출은 모두 제거됨.
@@ -14,11 +20,13 @@ const OIDC_CLIENT_ID = process.env.OIDC_CLIENT_ID;
 
 if (!OAUTH_JWKS_URL || !OAUTH_ISSUER_URL || !OIDC_CLIENT_ID) {
   console.warn(
-    '[middleware] OIDC env not fully configured: OAUTH_JWKS_URL, OAUTH_ISSUER_URL, OIDC_CLIENT_ID 필요',
+    '[middleware] OIDC env not fully configured: OAUTH_JWKS_URL, OAUTH_ISSUER_URL, OIDC_CLIENT_ID 필요'
   );
 }
 
-const JWKS = OAUTH_JWKS_URL ? createRemoteJWKSet(new URL(OAUTH_JWKS_URL)) : null;
+const JWKS = OAUTH_JWKS_URL
+  ? createRemoteJWKSet(new URL(OAUTH_JWKS_URL))
+  : null;
 
 const VERIFY_OPTS: JWTVerifyOptions = {
   audience: OIDC_CLIENT_ID,
@@ -56,30 +64,38 @@ export async function middleware(request: NextRequest) {
   }
 
   const accessToken = request.cookies.get(ACCESS_TOKEN)?.value;
+  const hasRefreshToken = Boolean(request.cookies.get(REFRESH_TOKEN)?.value);
   if (!accessToken) {
-    return redirectToLogin(request);
+    return bounce(request, hasRefreshToken);
   }
 
-  // accessToken 검증: 유효하면 통과, 만료/invalid 시 login redirect.
-  // 미들웨어에서 refresh를 시도하지 않는다. Edge Runtime은 공유 락이 없어
-  // 병렬 요청이 동시에 같은 refreshToken을 사용하면 user-service reuse detection이
-  // 세션 전체를 무효화한다. refresh는 client.ts(Web Locks)에서만 수행한다.
+  // accessToken 검증: 유효하면 통과, 만료/invalid 시 갱신/로그인으로.
+  // 미들웨어(Edge)에서 직접 refresh 하지 않는다 — 공유 락이 없어 한 페이지의 병렬 요청이 같은
+  // refreshToken 을 동시에 쓰면 user-service reuse detection 이 세션을 무효화한다. 대신 전체
+  // 네비게이션당 1회만 들르는 Node 라우트 `/auth/ensure` 로 보내 거기서 refresh 한다.
+  // SPA 내부 fetch 의 refresh 는 여전히 client.ts(Web Locks)가 담당.
   try {
     await verifyAccessToken(accessToken);
     return NextResponse.next();
   } catch {
-    return redirectToLogin(request);
+    return bounce(request, hasRefreshToken);
   }
 }
 
-function redirectToLogin(request: NextRequest): NextResponse {
-  const url = new URL('/login', request.nextUrl.origin);
-  url.searchParams.set('redirect_to', request.nextUrl.pathname + request.nextUrl.search);
+/**
+ * refresh token 이 있으면 `/auth/ensure` 로 보내 조용히 갱신 시도, 없으면 곧장 `/login`.
+ * (refresh token 까지 없는 첫 진입은 ensure 를 들러도 어차피 /login 으로 떨어지므로 한 홉 절약.)
+ */
+function bounce(request: NextRequest, hasRefreshToken: boolean): NextResponse {
+  const target = hasRefreshToken ? '/auth/ensure' : '/login';
+  const url = new URL(target, request.nextUrl.origin);
+  url.searchParams.set(
+    'redirect_to',
+    request.nextUrl.pathname + request.nextUrl.search
+  );
   return NextResponse.redirect(url);
 }
 
 export const config = {
-  matcher: [
-    '/((?!api|_next/static|_next/image|favicon.ico).*)',
-  ],
+  matcher: ['/((?!api|_next/static|_next/image|favicon.ico).*)'],
 };
