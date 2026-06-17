@@ -105,7 +105,10 @@ async function handleCancelProjection(
   logger: { info: Function; warn: Function; debug: Function },
 ) {
   const paymentModule = scope.resolve(Modules.PAYMENT);
-  const payments = await paymentModule.listPayments({ payment_session_id: intentId }, {});
+  const sessionId = await resolvePaymentSessionId(paymentModule, intentId);
+  const payments = sessionId
+    ? await paymentModule.listPayments({ payment_session_id: sessionId }, {})
+    : [];
   const payment = payments[0];
 
   if (!payment) {
@@ -161,7 +164,10 @@ async function handleRefundProjection(
   logger: { info: Function; warn: Function; debug: Function; error: Function },
 ) {
   const paymentModule = scope.resolve(Modules.PAYMENT);
-  const payments = await paymentModule.listPayments({ payment_session_id: intentId }, {});
+  const sessionId = await resolvePaymentSessionId(paymentModule, intentId);
+  const payments = sessionId
+    ? await paymentModule.listPayments({ payment_session_id: sessionId }, {})
+    : [];
   const payment = payments[0];
 
   if (!payment) {
@@ -304,6 +310,10 @@ async function handleRefundProjection(
  * capturePaymentWorkflow to let Medusa create the capture sub-record, update the
  * payment collection status, and add the order transaction — all DB-only operations.
  *
+ * Payment session lookup: Medusa auto-generates payses_* IDs — the intentId is stored
+ * in data.intentId (JSONB). We resolve the session ID via JSON containment filter, then
+ * look up the payment by payment_session_id = session.id.
+ *
  * Bank transfer path (무통장입금): cart.complete() is never called before capture
  * because the storefront waits for the bank transfer confirmation page without
  * completing the cart. When the admin confirms the payment in Wallet/admin, the
@@ -311,6 +321,20 @@ async function handleRefundProjection(
  * In that case we recover by running completeCartWorkflow first to create the order,
  * then proceed with the normal capture projection.
  */
+async function resolvePaymentSessionId(
+  paymentModule: any,
+  intentId: string,
+): Promise<string | null> {
+  // Medusa auto-generates payment session IDs (payses_*) — the intentId is stored in
+  // data.intentId, not used as the session ID. We filter by JSON containment on the
+  // data column (PostgreSQL JSONB @> operator, supported by MikroORM v6).
+  const sessions = await paymentModule.listPaymentSessions(
+    { data: { intentId } } as any,
+    { select: ['id'] },
+  );
+  return (sessions[0] as any)?.id ?? null;
+}
+
 async function handleCaptureProjection(
   scope: any,
   intentId: string,
@@ -318,10 +342,11 @@ async function handleCaptureProjection(
   logger: { info: Function; warn: Function; debug: Function },
 ) {
   const paymentModule = scope.resolve(Modules.PAYMENT);
-  let payments = await paymentModule.listPayments(
-    { payment_session_id: intentId },
-    { relations: ['captures'] },
-  );
+
+  const sessionId = await resolvePaymentSessionId(paymentModule, intentId);
+  let payments = sessionId
+    ? await paymentModule.listPayments({ payment_session_id: sessionId }, { relations: ['captures'] })
+    : [];
   let payment = payments[0];
 
   if (!payment) {
@@ -333,11 +358,11 @@ async function handleCaptureProjection(
     );
     await recoverBankTransferOrder(scope, intentId, messageId, logger);
 
-    // Re-query after recovery
-    payments = await paymentModule.listPayments(
-      { payment_session_id: intentId },
-      { relations: ['captures'] },
-    );
+    // Re-query after recovery — use resolved sessionId (not intentId, which is never the session PK)
+    const recoveredSessionId = sessionId ?? (await resolvePaymentSessionId(paymentModule, intentId));
+    payments = recoveredSessionId
+      ? await paymentModule.listPayments({ payment_session_id: recoveredSessionId }, { relations: ['captures'] })
+      : [];
     payment = payments[0];
 
     if (!payment) {
@@ -386,7 +411,8 @@ async function handleCaptureProjection(
  * Bank transfer recovery: finds the cart for the given intentId and runs
  * completeCartWorkflow if the order has not been created yet.
  *
- * Lookup path: intentId → payment_session.payment_collection_id
+ * Lookup path: intentId → payment_session (filter by data.intentId, JSONB containment)
+ *   → payment_session.payment_collection_id
  *   → payment_collection.cart (via CartPaymentCollection link, bidirectional)
  *   → completeCartWorkflow
  *
@@ -410,9 +436,11 @@ async function recoverBankTransferOrder(
   const paymentModule = scope.resolve(Modules.PAYMENT);
   const query = scope.resolve(ContainerRegistrationKeys.QUERY);
 
-  // Step 1: payment session ID = intentId (set by almond-payment initiatePayment)
+  // Step 1: find payment session by intentId stored in data.intentId.
+  // Medusa generates payses_* IDs — the intentId is in data, not the primary key.
+  // PostgreSQL JSONB containment (@>) is used via MikroORM v6's JSON filter.
   const paymentSessions = await paymentModule.listPaymentSessions(
-    { id: intentId },
+    { data: { intentId } } as any,
     { select: ['id', 'payment_collection_id'] },
   );
   const paymentSession = paymentSessions[0];

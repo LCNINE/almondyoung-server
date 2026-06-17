@@ -98,6 +98,12 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
 
     const items = data?.items as unknown[] | undefined;
 
+    // Medusa passes its auto-generated payment session ID (payses_*) via data.session_id.
+    // We store it in intent metadata so the webhook handler can resolve the payment session
+    // without a JSON column scan — see payment-events/route.ts handleCaptureProjection.
+    const medusaSessionId = (data as any)?.session_id as string | undefined;
+    if (medusaSessionId) metadata.medusaSessionId = medusaSessionId;
+
     // userId는 wallet-web에서 첫 번째 JWT 인증 GET 요청 시 자동으로 claim되므로 여기서 전달하지 않음
     const intent = await this.walletFetch<{ id: string }>('/v1/payment-intents', {
       method: 'POST',
