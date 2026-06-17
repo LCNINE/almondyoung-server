@@ -6,6 +6,7 @@ import { redirect } from "next/navigation"
 import {
   getAccountMeta,
   getRefreshToken,
+  invalidateAccountRefreshToken,
   removeAccount,
   upsertAccount,
 } from "@/lib/account-store"
@@ -444,6 +445,16 @@ export async function signOutAction(
 ): Promise<never> {
   const accessToken = await getIdpAccessToken()
 
+  // 활성 계정 userId 를 미리 확보 (계정 허브 RT 무효화용). 식별 실패해도 로그아웃은 진행.
+  let userId: string | null = null
+  if (accessToken) {
+    try {
+      userId = (await getMe(accessToken)).id
+    } catch {
+      userId = null
+    }
+  }
+
   // user-service에 server-to-server 호출. 토큰이 없으면 cookie clear만.
   if (accessToken) {
     try {
@@ -460,7 +471,9 @@ export async function signOutAction(
     }
   }
 
+  // active session 쿠키 만료 + 계정 허브 per-account RT 무효화 (다음 선택 시 비밀번호 재입력 강제).
   await clearIdpSessionCookies()
+  if (userId) await invalidateAccountRefreshToken(userId)
   redirect(sanitizeRedirectTo(redirectTo) ?? "/")
 }
 
