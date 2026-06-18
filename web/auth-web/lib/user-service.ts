@@ -317,6 +317,20 @@ export async function validateRedirectUriInternal(input: {
   return body.valid === true
 }
 
+export async function checkEmailAvailable(email: string): Promise<boolean> {
+  const res = await fetch(
+    `${env.userServiceUrl}/users/email-available?email=${encodeURIComponent(email)}`,
+    {
+      method: "GET",
+      cache: "no-store",
+      redirect: "manual",
+    }
+  )
+  await throwIfBad(res, "email-available")
+  const body = await readApiData<{ available: boolean }>(res)
+  return body.available
+}
+
 export async function getMe(accessToken: string): Promise<UserProfile> {
   const res = await fetch(`${env.userServiceUrl}/users/me`, {
     method: "GET",

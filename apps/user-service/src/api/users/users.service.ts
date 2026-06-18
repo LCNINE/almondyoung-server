@@ -146,6 +146,13 @@ export class UsersService {
     }
   }
 
+  // 이메일 가입 가능 여부 확인 (중복 여부만 boolean 으로 반환, PII 미노출)
+  // 회원가입 폼의 사전 중복 체크용. 가입 시점 중복 검증과 동일하게 findUserByEmail 을 재사용한다.
+  async isEmailAvailable(email: string, tx?: DbTransaction): Promise<boolean> {
+    const user = await this.findUserByEmail(email, tx);
+    return user === null;
+  }
+
   // 휴대폰 번호로 사용자 찾기 (복수 가능)
   async findUsersByPhoneNumber(phoneNumber: string, tx?: DbTransaction): Promise<schema.User[]> {
     const client = this.getClient(tx);

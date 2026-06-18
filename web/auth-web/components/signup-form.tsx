@@ -7,14 +7,27 @@ import { signUpAction } from "@/app/actions";
 import { PhoneNumberInput } from "@/components/phone-number-input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Field, FieldLabel } from "@/components/ui/field";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+} from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { useEmailAvailability } from "@/hooks/use-email-availability";
 
 export function SignUpForm({ redirectTo }: { redirectTo: string }) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [email, setEmail] = useState("");
+  const emailAvailability = useEmailAvailability(email);
+  const emailTaken = emailAvailability.status === "taken";
 
   const onSubmit = (formData: FormData) => {
+    if (emailTaken) {
+      setError("이미 사용 중인 이메일입니다. 다른 이메일을 입력해주세요.");
+      return;
+    }
     setError(null);
     startTransition(async () => {
       const res = await signUpAction(formData);
@@ -58,9 +71,19 @@ export function SignUpForm({ redirectTo }: { redirectTo: string }) {
           maxLength={20}
         />
       </Field>
-      <Field>
+      <Field data-invalid={emailTaken || undefined}>
         <FieldLabel htmlFor="email">이메일</FieldLabel>
-        <Input id="email" name="email" type="email" required />
+        <Input
+          id="email"
+          name="email"
+          type="email"
+          required
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          aria-invalid={emailTaken || undefined}
+          aria-describedby="emailStatus"
+        />
+        <EmailStatus state={emailAvailability} />
       </Field>
       <Field>
         <FieldLabel htmlFor="username">이름</FieldLabel>
@@ -128,7 +151,7 @@ export function SignUpForm({ redirectTo }: { redirectTo: string }) {
       </fieldset>
 
       {error && <p className="text-sm text-destructive">{error}</p>}
-      <Button type="submit" disabled={pending}>
+      <Button type="submit" disabled={pending || emailTaken}>
         {pending ? "가입 중..." : "가입하기"}
       </Button>
       <Button asChild variant="ghost" size="sm">
@@ -140,6 +163,36 @@ export function SignUpForm({ redirectTo }: { redirectTo: string }) {
       </Button>
     </form>
   );
+}
+
+function EmailStatus({
+  state,
+}: {
+  state: ReturnType<typeof useEmailAvailability>;
+}) {
+  switch (state.status) {
+    case "checking":
+      return (
+        <FieldDescription id="emailStatus">
+          이메일 사용 가능 여부 확인 중...
+        </FieldDescription>
+      );
+    case "available":
+      return (
+        <FieldDescription id="emailStatus" className="text-emerald-600">
+          사용 가능한 이메일입니다.
+        </FieldDescription>
+      );
+    case "taken":
+      return (
+        <FieldError id="emailStatus">이미 사용 중인 이메일입니다.</FieldError>
+      );
+    case "invalid":
+    case "error":
+      return <FieldError id="emailStatus">{state.message}</FieldError>;
+    default:
+      return null;
+  }
 }
 
 function Consent({
