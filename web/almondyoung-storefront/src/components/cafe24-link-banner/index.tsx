@@ -1,11 +1,13 @@
 "use client"
 
-import { motion } from "framer-motion"
+import { useEffect, useState } from "react"
+import { motion, AnimatePresence } from "framer-motion"
 import { Link2 } from "lucide-react"
 import Image from "next/image"
 import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { CustomButton } from "@/components/shared/custom-buttons"
+import { getCafe24LinkInfo } from "@/lib/api/users/cafe24"
 
 const CAFE24_MIGRATOR_BASE = "https://almondyoung.com/migrator/confirm.html"
 
@@ -15,13 +17,26 @@ interface Cafe24LinkBannerProps {
 
 export function Cafe24LinkBanner({ countryCode }: Cafe24LinkBannerProps) {
   const t = useTranslations("home.cafe24Link")
+  const [isLinked, setIsLinked] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    getCafe24LinkInfo().then((result) => {
+      if ("data" in result) {
+        setIsLinked(!!result.data)
+      }
+    })
+  }, [])
 
   const handleLink = () => {
     const postUrl = `${window.location.origin}/${countryCode}/mypage/account/cafe24/confirm`
     window.location.href = `${CAFE24_MIGRATOR_BASE}?redirect_to=${encodeURIComponent(postUrl)}`
   }
 
+  // 로딩 중이거나 이미 연동된 경우 표시 안함
+  if (isLinked === null || isLinked) return null
+
   return (
+    <AnimatePresence>
     <motion.div
       initial={{ y: 100, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
@@ -106,5 +121,6 @@ export function Cafe24LinkBanner({ countryCode }: Cafe24LinkBannerProps) {
         </div>
       </div>
     </motion.div>
+    </AnimatePresence>
   )
 }
