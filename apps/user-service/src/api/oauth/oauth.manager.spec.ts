@@ -14,6 +14,7 @@ type RepoMock = jest.Mocked<
     | 'markCodeConsumed'
     | 'insertOAuthToken'
     | 'findOAuthTokenByRefresh'
+    | 'findChildToken'
     | 'revokeTokenById'
     | 'revokeAllUserTokens'
     | 'revokeChain'
@@ -55,6 +56,7 @@ describe('OAuthManager — nonce propagation', () => {
       markCodeConsumed: jest.fn().mockResolvedValue(undefined),
       insertOAuthToken: jest.fn().mockResolvedValue({}),
       findOAuthTokenByRefresh: jest.fn(),
+      findChildToken: jest.fn().mockResolvedValue(null),
       revokeTokenById: jest.fn().mockResolvedValue(undefined),
       revokeAllUserTokens: jest.fn().mockResolvedValue(undefined),
       revokeChain: jest.fn().mockResolvedValue(undefined),
@@ -70,6 +72,7 @@ describe('OAuthManager — nonce propagation', () => {
 
     usersService = {
       findUserById: jest.fn().mockResolvedValue({ id: 'u-1', email: 'a@b.c', nickname: 'n', username: 'u' }),
+      getUserRoleNames: jest.fn().mockResolvedValue([]),
     } as unknown as jest.Mocked<UsersService>;
 
     tokensService = {
@@ -206,6 +209,96 @@ describe('OAuthManager — nonce propagation', () => {
         ([payload]) => typeof payload === 'object' && payload !== null && 'auth_time' in payload,
       );
       expect(idTokenCall).toBeUndefined();
+    });
+  });
+
+  describe('refreshTokens — reuse grace window (iOS 동시 요청 대응)', () => {
+    beforeEach(() => {
+      // refresh_token 그랜트도 issueToken → assertClientCredentials 를 거친다. public client 로 통과.
+      (reader.getClientOrThrow as jest.Mock).mockResolvedValue(makeClient());
+    });
+
+    function revokedRow(overrides: Partial<Record<string, unknown>> = {}) {
+      return {
+        id: 'parent-1',
+        userId: 'u-1',
+        clientId: 'admin-web',
+        refreshToken: 'rt-parent',
+        scope: 'openid profile',
+        isRevoked: true,
+        expiresAt: new Date(Date.now() + 60_000),
+        rotatedFrom: null,
+        createdAt: new Date(Date.now() - 60_000),
+        updatedAt: new Date(), // 방금 회전됨 → grace 내
+        ...overrides,
+      } as never;
+    }
+
+    function refresh() {
+      return manager.issueToken({
+        grantType: 'refresh_token',
+        clientId: 'admin-web',
+        refreshToken: 'rt-parent',
+      });
+    }
+
+    it('grace 내 + 살아있는 자식이 있으면 chain 을 죽이지 않고 자식을 회전해 새 토큰을 발급한다', async () => {
+      repo.findOAuthTokenByRefresh.mockResolvedValue(revokedRow());
+      repo.findChildToken.mockResolvedValue({
+        id: 'child-1',
+        userId: 'u-1',
+        clientId: 'admin-web',
+        refreshToken: 'rt-child',
+        scope: 'openid profile',
+        isRevoked: false,
+        expiresAt: new Date(Date.now() + 60_000),
+      } as never);
+
+      const result = await refresh();
+
+      expect(result.access_token).toBeDefined();
+      expect(repo.revokeChain).not.toHaveBeenCalled();
+      // 자식이 한 번 더 회전됨
+      expect(repo.revokeTokenById).toHaveBeenCalledWith('child-1', expect.anything());
+      expect(repo.insertOAuthToken).toHaveBeenCalled();
+    });
+
+    it('grace 를 벗어난 재사용은 chain 전체를 revoke 하고 거부한다', async () => {
+      repo.findOAuthTokenByRefresh.mockResolvedValue(
+        revokedRow({ updatedAt: new Date(Date.now() - 5 * 60_000) }), // 5분 전 → grace 밖
+      );
+
+      await expect(refresh()).rejects.toThrow(/reuse detected/);
+      expect(repo.revokeChain).toHaveBeenCalledWith('parent-1', expect.anything());
+      expect(repo.findChildToken).not.toHaveBeenCalled();
+    });
+
+    it('grace 내라도 자식이 이미 revoke 됐으면 진짜 reuse 로 보고 chain 을 revoke 한다', async () => {
+      repo.findOAuthTokenByRefresh.mockResolvedValue(revokedRow());
+      repo.findChildToken.mockResolvedValue({
+        id: 'child-1',
+        userId: 'u-1',
+        clientId: 'admin-web',
+        refreshToken: 'rt-child',
+        scope: 'openid profile',
+        isRevoked: true,
+        expiresAt: new Date(Date.now() + 60_000),
+      } as never);
+
+      await expect(refresh()).rejects.toThrow(/reuse detected/);
+      expect(repo.revokeChain).toHaveBeenCalledWith('parent-1', expect.anything());
+    });
+
+    it('정상(미회전) 토큰은 회전되어 새 토큰을 발급한다', async () => {
+      repo.findOAuthTokenByRefresh.mockResolvedValue(
+        revokedRow({ isRevoked: false, updatedAt: new Date(Date.now() - 60_000) }),
+      );
+
+      const result = await refresh();
+
+      expect(result.access_token).toBeDefined();
+      expect(repo.revokeTokenById).toHaveBeenCalledWith('parent-1', expect.anything());
+      expect(repo.revokeChain).not.toHaveBeenCalled();
     });
   });
 });
