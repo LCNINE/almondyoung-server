@@ -41,7 +41,14 @@ export async function GET(
     return renderError(result.error)
   }
 
-  return NextResponse.redirect(new URL(result.redirectTo, req.url))
+  // NextResponse.redirect() 대신 replace()를 사용해 콜백 URL이 브라우저 history에 남지 않게 한다.
+  // Safari back-swipe 등으로 콜백 URL에 재진입하면 이미 consumed된 code가 재제출되어
+  // "invalid or already used code" 에러가 발생한다.
+  const target = new URL(result.redirectTo, req.url).toString()
+  return new NextResponse(
+    `<!doctype html><meta charset="utf-8"><script>location.replace(${JSON.stringify(target)})</script>`,
+    { status: 200, headers: { "content-type": "text/html; charset=utf-8" } },
+  )
 }
 
 function escapeHtml(s: string): string {
