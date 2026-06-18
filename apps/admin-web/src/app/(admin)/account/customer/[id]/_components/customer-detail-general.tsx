@@ -6,6 +6,7 @@ import { Header } from '@/components/admin-ui-experimental/common/header';
 import { Spinner } from '@/components/ui/spinner';
 import { useCustomerById } from '@/lib/services/customers';
 import { formatDate } from '@/lib/utils/date';
+import { formatPhoneNumber } from '@/lib/utils/phone';
 
 export function CustomerDetailGeneralContent({
   customerId,
@@ -13,6 +14,7 @@ export function CustomerDetailGeneralContent({
   customerId: string;
 }) {
   const { data: customer } = useCustomerById(customerId);
+  console.log('data:', customer);
   const profile = customer?.profile;
 
   const rows: { key: string; value: string | null }[] = [
@@ -20,7 +22,12 @@ export function CustomerDetailGeneralContent({
     { key: '이름', value: customer?.username ?? null },
     { key: '닉네임', value: customer?.nickname ?? null },
     { key: '이메일', value: customer?.email ?? null },
-    { key: '전화번호', value: profile?.phoneNumber ?? null },
+    {
+      key: '전화번호',
+      value: profile?.phoneNumber
+        ? formatPhoneNumber(profile.phoneNumber)
+        : null,
+    },
     { key: '생년월일', value: formatDate(profile?.birthDate) },
     { key: '주소', value: profile?.address ?? null },
     { key: '최근 활동일', value: formatDate(customer?.lastActivityAt) },

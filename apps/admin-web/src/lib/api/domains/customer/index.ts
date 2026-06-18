@@ -16,7 +16,8 @@ export interface CustomerListQuery {
   page?: number;
   limit?: number;
   q?: string;
-  sort?: 'createdAt' | 'username' | 'email' | 'lastActivityAt';
+  roleName?: string;
+  sort?: 'createdAt' | 'username' | 'email' | 'lastActivityAt' | 'phoneNumber';
   order?: 'asc' | 'desc';
 }
 
@@ -26,6 +27,7 @@ export interface CustomerListItem {
   username: string;
   nickname: string | null;
   email: string;
+  phoneNumber: string | null;
   isEmailVerified: boolean;
   lastActivityAt: string | null;
   deletedAt: string | null;

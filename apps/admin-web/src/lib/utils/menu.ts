@@ -74,7 +74,7 @@ export const mainMenus: MainMenu[] = [
   },
   {
     id: 'account-management',
-    title: '거래처관리',
+    title: '채널/고객 관리',
     icon: 'Building2',
     defaultPath: '/account/sales-channel', // 첫 번째 페이지
     children: [

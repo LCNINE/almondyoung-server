@@ -31,7 +31,7 @@ export const getBreadcrumbItems = (pathname: string): BreadcrumbItem[] => {
 
   // 발주처 관련 페이지들
   if (pathname.startsWith('/account/supplier')) {
-    items.push({ label: '거래처관리', href: '/account/sales-channel' });
+    items.push({ label: '채널/고객 관리', href: '/account/sales-channel' });
     items.push({ label: '발주처 관리', href: '/account/supplier' });
 
     if (pathname.includes('/register')) {
@@ -42,13 +42,13 @@ export const getBreadcrumbItems = (pathname: string): BreadcrumbItem[] => {
   }
   // 판매처 관련 페이지들
   else if (pathname.startsWith('/account/sales-channel')) {
-    items.push({ label: '거래처관리' });
+    items.push({ label: '채널/고객 관리' });
     items.push({ label: '판매처 관리' });
   }
 
   // 고객 관련 페이지들
   else if (pathname.startsWith('/account/customer')) {
-    items.push({ label: '거래처관리' });
+    items.push({ label: '채널/고객 관리' });
     items.push({ label: '고객 관리' });
   }
 

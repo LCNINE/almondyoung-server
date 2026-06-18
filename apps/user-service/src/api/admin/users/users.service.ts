@@ -9,7 +9,10 @@ import { AddressDto } from '../../../commons/dto/address.dto';
 import { DbTransaction } from 'apps/user-service/src/commons/types';
 import { UserConsent } from '../../consents/types/consent.type';
 
-export type UserWithRoles = schema.UserWithoutPassword & { roles: string[] };
+export type UserWithRoles = schema.UserWithoutPassword & {
+  roles: string[];
+  phoneNumber: string | null;
+};
 
 @Injectable()
 export class UsersService {
@@ -27,7 +30,7 @@ export class UsersService {
     page?: number;
     limit?: number;
     roleName?: string;
-    sort?: 'createdAt' | 'username' | 'email' | 'lastActivityAt';
+    sort?: 'createdAt' | 'username' | 'email' | 'lastActivityAt' | 'phoneNumber';
     order?: 'asc' | 'desc';
     ids?: string;
     tx?: DbTransaction;
@@ -64,6 +67,7 @@ export class UsersService {
           ilike(schema.users.username, searchTerm),
           ilike(schema.users.email, searchTerm),
           ilike(schema.users.loginId, searchTerm),
+          ilike(schema.profiles.phoneNumber, searchTerm),
         ];
         // q 가 UUID 형태면 유저 ID 정확 매칭도 허용 (고객조회에서 userId 로 검색하는 케이스)
         const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -90,14 +94,21 @@ export class UsersService {
       const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
       // total count
-      const countQuery = client.select({ count: count() }).from(schema.users);
+      // profiles 와 1:1 leftJoin 이라 count 값에는 영향이 없지만, q 검색에 phoneNumber 조건이
+      // 포함될 수 있으므로 동일하게 join 해 둔다.
+      const countQuery = client
+        .select({ count: count() })
+        .from(schema.users)
+        .leftJoin(schema.profiles, eq(schema.users.id, schema.profiles.userId));
       if (whereClause) {
         countQuery.where(whereClause);
       }
       const [{ count: total }] = await countQuery;
 
       // data query
-      const orderExpr = sortOrder === 'asc' ? asc((schema.users as any)[sortBy]) : desc((schema.users as any)[sortBy]);
+      const orderColumn =
+        sortBy === 'phoneNumber' ? schema.profiles.phoneNumber : (schema.users as any)[sortBy];
+      const orderExpr = sortOrder === 'asc' ? asc(orderColumn) : desc(orderColumn);
 
       const dataQuery = client
         .select({
@@ -111,8 +122,10 @@ export class UsersService {
           deletedAt: schema.users.deletedAt,
           createdAt: schema.users.createdAt,
           updatedAt: schema.users.updatedAt,
+          phoneNumber: schema.profiles.phoneNumber,
         })
         .from(schema.users)
+        .leftJoin(schema.profiles, eq(schema.users.id, schema.profiles.userId))
         .orderBy(orderExpr)
         .limit(limit)
         .offset(offset);

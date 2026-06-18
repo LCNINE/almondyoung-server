@@ -16,6 +16,9 @@ export class AdminUserListItemDto {
   @ApiProperty()
   email: string;
 
+  @ApiProperty({ nullable: true })
+  phoneNumber: string | null;
+
   @ApiProperty()
   isEmailVerified: boolean;
 

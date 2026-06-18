@@ -36,6 +36,7 @@ export function CustomerTable() {
       orderBy={[
         { key: 'username', label: '이름' },
         { key: 'email', label: '이메일' },
+        { key: 'phoneNumber', label: '휴대전화' },
         { key: 'createdAt', label: '가입일' },
         { key: 'lastActivityAt', label: '최근 활동일' },
       ]}
