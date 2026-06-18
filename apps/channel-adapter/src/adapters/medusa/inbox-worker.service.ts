@@ -9,6 +9,7 @@ import { MembershipMedusaSyncService } from './membership-medusa-sync.service';
 import { FirebaseMembershipSyncService } from './firebase-membership-sync.service';
 import { MedusaClient } from './medusa.client';
 import { AlmondAuthClient } from '../almond-auth/almond-auth.client';
+import { MembershipServiceClient } from '../../services/membership-service.client';
 import { EventChainService, generateMessageId } from '@app/events';
 import type { PimActiveVersionChangedEvent, ChannelAdapterSchema } from '../../types';
 import type {
@@ -79,6 +80,7 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
     private readonly firebaseMembershipSyncService: FirebaseMembershipSyncService,
     private readonly medusaClient: MedusaClient,
     private readonly almondAuthClient: AlmondAuthClient,
+    private readonly membershipServiceClient: MembershipServiceClient,
     private readonly configService: ConfigService,
     private readonly eventChainService: EventChainService,
   ) {
@@ -364,8 +366,17 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
 
         case 'Cafe24Linked': {
           const linkedPayload: Cafe24LinkedPayload = event.payload;
-          const isActive = await this.almondAuthClient.getMembershipStatus(linkedPayload.cafe24MemberId);
-          await this.firebaseMembershipSyncService.syncByFirebase(linkedPayload.cafe24MemberId, isActive);
+          const { active, remainingDays } = await this.almondAuthClient.getMembershipDetail(linkedPayload.cafe24MemberId);
+          // 뉴 아몬드영(membership service + Medusa)이 SSOT.
+          // Firebase가 활성이면 멤버십 서비스에 구독 지급 → MembershipStatusChanged 이벤트 → Medusa 동기화 (기존 경로).
+          // Firebase가 비활성이거나 이미 활성 구독이 있으면 no-op.
+          if (active && remainingDays) {
+            await this.membershipServiceClient.grantIfNoActiveMembership(
+              linkedPayload.userId,
+              remainingDays,
+              'cafe24_migration',
+            );
+          }
           break;
         }
 

@@ -47,17 +47,11 @@ const getFirstSearchParamValue = (
   return null
 }
 
-export async function POST(
+function handleConfirm(
   request: NextRequest,
-  { params }: { params: { countryCode: string } }
+  countryCode: string,
+  encryptedIdToken: string | null
 ) {
-  const countryCode = params?.countryCode ?? "kr"
-
-  const formData = await request.formData()
-  const encryptedIdToken =
-    getFirstFormValue(formData, ["encryptedIdToken", "encrypted_id_token"]) ??
-    getFirstSearchParamValue(request, ["encryptedIdToken", "encrypted_id_token"])
-
   if (!encryptedIdToken) {
     return buildStatusRedirect(request, countryCode, "missing_token")
   }
@@ -71,4 +65,30 @@ export async function POST(
     path: "/",
   })
   return response
+}
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { countryCode: string } }
+) {
+  const countryCode = params?.countryCode ?? "kr"
+  const encryptedIdToken = getFirstSearchParamValue(request, [
+    "encryptedIdToken",
+    "encrypted_id_token",
+  ])
+  return handleConfirm(request, countryCode, encryptedIdToken)
+}
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: { countryCode: string } }
+) {
+  const countryCode = params?.countryCode ?? "kr"
+
+  const formData = await request.formData()
+  const encryptedIdToken =
+    getFirstFormValue(formData, ["encryptedIdToken", "encrypted_id_token"]) ??
+    getFirstSearchParamValue(request, ["encryptedIdToken", "encrypted_id_token"])
+
+  return handleConfirm(request, countryCode, encryptedIdToken)
 }
