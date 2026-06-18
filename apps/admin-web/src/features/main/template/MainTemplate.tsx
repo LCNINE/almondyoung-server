@@ -12,8 +12,10 @@ import { QuickActionsCard } from '@/features/main/quick-actions/QuickActionsCard
 import { useOrderStats, useSalesOrders, usePendingMatchings } from '@/lib/services/orders';
 import { useQuestions } from '@/lib/services/qna';
 import { useAllUserCount } from '@/lib/services/users';
+import { usePendingBankTransfers } from '@/lib/services/wallet';
 import type { SalesOrderStatus } from '@/lib/types/dto/orders';
 import {
+  Banknote,
   Boxes,
   CheckCircle,
   ChevronRight,
@@ -52,6 +54,7 @@ export default function MainTemplate() {
   const { data: pendingMatchings, isLoading: isMatchingsLoading } = usePendingMatchings({ limit: 1 });
   const { data: userCount, isLoading: isUserCountLoading } = useAllUserCount();
   const { data: qnaData, isLoading: isQnaLoading } = useQuestions({ limit: 1, status: 'active' });
+  const { data: bankTransfers, isLoading: isBankTransfersLoading } = usePendingBankTransfers(1, 1);
   const { data: recentOrdersData, isLoading: isOrdersLoading } = useSalesOrders({ limit: 5 });
 
   const stats = [
@@ -93,6 +96,16 @@ export default function MainTemplate() {
       path: '/cs/qna',
       highlight: (v: number) => v > 0,
     },
+    {
+      label: '무통장입금 대기',
+      value: bankTransfers?.total,
+      isLoading: isBankTransfersLoading,
+      icon: Banknote,
+      iconBg: 'bg-purple-50',
+      iconColor: 'text-purple-600',
+      path: '/payments/bank-transfers',
+      highlight: (v: number) => v > 0,
+    },
   ];
 
   const recentOrders = recentOrdersData?.data ?? [];
@@ -110,7 +123,7 @@ export default function MainTemplate() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         {stats.map((stat) => {
           const Icon = stat.icon;
           const isHighlighted = stat.value != null && stat.highlight?.(stat.value);

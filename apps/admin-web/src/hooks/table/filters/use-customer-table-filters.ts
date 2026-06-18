@@ -1,7 +1,16 @@
 import type { Filter } from '@/components/data-table';
 
 export function useCustomerTableFilters(): Filter[] {
-  // 현재 백엔드에서 hasShop 필터를 지원하지 않음
-  // 추후 백엔드 지원 시 필터 추가 가능
-  return [];
+  return [
+    {
+      key: 'roleName',
+      label: '등급',
+      type: 'select',
+      options: [
+        { label: '관리자', value: 'admin' },
+        { label: '슈퍼계정', value: 'master' },
+        { label: '일반회원', value: 'user' },
+      ],
+    },
+  ];
 }

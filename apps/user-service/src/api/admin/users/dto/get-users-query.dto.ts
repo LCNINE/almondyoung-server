@@ -4,7 +4,7 @@ import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class GetUsersQueryDto {
   @ApiPropertyOptional({
-    description: '통합 검색어 (사용자명, 이메일, 로그인ID에서 검색)',
+    description: '통합 검색어 (사용자명, 이메일, 로그인ID, 휴대전화에서 검색)',
   })
   @IsOptional()
   @IsString()
@@ -39,12 +39,12 @@ export class GetUsersQueryDto {
 
   @ApiPropertyOptional({
     description: '정렬 필드',
-    enum: ['createdAt', 'username', 'email', 'lastActivityAt'],
+    enum: ['createdAt', 'username', 'email', 'lastActivityAt', 'phoneNumber'],
     default: 'createdAt',
   })
   @IsOptional()
-  @IsEnum(['createdAt', 'username', 'email', 'lastActivityAt'])
-  sort?: 'createdAt' | 'username' | 'email' | 'lastActivityAt';
+  @IsEnum(['createdAt', 'username', 'email', 'lastActivityAt', 'phoneNumber'])
+  sort?: 'createdAt' | 'username' | 'email' | 'lastActivityAt' | 'phoneNumber';
 
   @ApiPropertyOptional({
     description: '정렬 순서',

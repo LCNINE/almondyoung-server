@@ -11,16 +11,17 @@ export const useCustomerTableQuery = ({
   pageSize = 20,
 }: UseCustomerTableQueryProps) => {
   const queryObject = useQueryParams(
-    ['page', 'q', 'sort', 'order'],
+    ['page', 'q', 'roleName', 'sort', 'order'],
     prefix
   )
 
-  const { page, q, sort, order } = queryObject
+  const { page, q, roleName, sort, order } = queryObject
 
   const searchParams: CustomerListQuery = {
     limit: pageSize,
     page: page ? Number(page) : 1,
     q,
+    roleName,
     sort: sort as CustomerListQuery['sort'],
     order: order as 'asc' | 'desc' | undefined,
   }
