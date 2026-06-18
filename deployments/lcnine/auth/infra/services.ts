@@ -92,6 +92,9 @@ export function setup(infra: IdpInfra) {
         authWebUrl,
         'http://localhost:8000',
         url('medusa'),
+        // Cafe24 migrator 페이지(almondyoung.com)에서 /cafe24/member-info 호출
+        'https://almondyoung.com',
+        'https://www.almondyoung.com',
         // NOTE: fastify-cors의 origin 배열은 와일드카드를 지원하지 않으므로
         // 필요한 서브도메인은 여기에 명시적으로 추가할 것.
       ].join(','),
