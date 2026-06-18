@@ -20,6 +20,7 @@ export class Cafe24MemberInfoResponseDto {
   @ApiProperty({
     description: 'Cafe24 회원 이름',
     example: '홍길동',
+    nullable: true,
   })
-  memberName: string;
+  memberName: string | null;
 }
