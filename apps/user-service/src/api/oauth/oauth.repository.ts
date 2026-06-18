@@ -120,12 +120,26 @@ export class OAuthRepository {
     return row;
   }
 
-  async findOAuthTokenByRefresh(refreshToken: string, tx?: DbTransaction) {
+  async findOAuthTokenByRefresh(refreshToken: string, tx?: DbTransaction, forUpdate = false) {
+    const client = this.getClient(tx);
+    const base = client
+      .select()
+      .from(userServiceSchema.oauthTokens)
+      .where(eq(userServiceSchema.oauthTokens.refreshToken, refreshToken))
+      .limit(1);
+    // forUpdate: 동일 refresh token 에 대한 동시 회전 요청을 row lock 으로 직렬화한다.
+    // (iOS WebKit 의 중복 fetch 가 SELECT→UPDATE race 를 만들어 reuse 오탐을 일으키는 것을 막는다.)
+    const [row] = forUpdate ? await base.for('update') : await base;
+    return row ?? null;
+  }
+
+  /** rotation chain 에서 주어진 부모로부터 회전되어 나온 자식 토큰을 찾는다 (reuse grace 판정용). */
+  async findChildToken(parentId: string, tx?: DbTransaction) {
     const client = this.getClient(tx);
     const [row] = await client
       .select()
       .from(userServiceSchema.oauthTokens)
-      .where(eq(userServiceSchema.oauthTokens.refreshToken, refreshToken))
+      .where(eq(userServiceSchema.oauthTokens.rotatedFrom, parentId))
       .limit(1);
     return row ?? null;
   }
