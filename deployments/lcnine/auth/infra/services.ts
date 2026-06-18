@@ -20,9 +20,9 @@ export function setup(infra: IdpInfra) {
   const twilioAuthToken = new sst.Secret('TwilioAuthToken');
   const twilioServiceId = new sst.Secret('TwilioServiceId');
 
-  // const cafe24ClientId = new sst.Secret("Cafe24ClientId");
-  // const cafe24ClientSecret = new sst.Secret("Cafe24ClientSecret");
-  // const cafe24ServiceKey = new sst.Secret("Cafe24ServiceKey");
+  const cafe24ClientId = new sst.Secret("Cafe24ClientId");
+  const cafe24ClientSecret = new sst.Secret("Cafe24ClientSecret");
+  const cafe24ServiceKey = new sst.Secret("Cafe24ServiceKey");
 
   // const awsS3AccessKeyId = new sst.Secret("AwsS3AccessKeyId");
   // const awsS3SecretAccessKey = new sst.Secret("AwsS3SecretAccessKey");
@@ -117,10 +117,10 @@ export function setup(infra: IdpInfra) {
       TWILIO_AUTH_TOKEN: twilioAuthToken.value,
       TWILIO_PHONE_NUMBER: '+15856342856',
       TWILIO_SERVICE_ID: twilioServiceId.value,
-      // CAFE24_CLIENT_ID: cafe24ClientId.value,
-      // CAFE24_CLIENT_SECRET: cafe24ClientSecret.value,
-      // CAFE24_SERVICE_KEY: cafe24ServiceKey.value,
-      // CAFE24_MALL_ID: "lcnine",
+      CAFE24_CLIENT_ID: cafe24ClientId.value,
+      CAFE24_CLIENT_SECRET: cafe24ClientSecret.value,
+      CAFE24_SERVICE_KEY: cafe24ServiceKey.value,
+      CAFE24_MALL_ID: "lcnine",
       BIZNO_URL: 'https://bizno.net/article',
       // AWS_ACCESS_KEY_ID: awsS3AccessKeyId.value,
       // AWS_SECRET_ACCESS_KEY: awsS3SecretAccessKey.value,

@@ -109,12 +109,16 @@ export class Cafe24LinkService {
     }
   }
 
-  async fetchMemberInfo(encryptedIdToken: string, tx?: DbTransaction) {
-    const { memberId, memberName } = await this.fetchMemberPrivacyByEncryptedIdToken(encryptedIdToken, tx);
+  async fetchMemberInfo(encryptedIdToken: string, _tx?: DbTransaction) {
+    const payload = this.decodeTokenPayload(encryptedIdToken);
+    const memberId = this.extractMemberId(payload);
+    if (!memberId) {
+      throw new BadRequestException('회원 ID를 확인할 수 없습니다.');
+    }
 
     return {
       memberId,
-      memberName,
+      memberName: (payload['member_name'] as string | undefined) ?? null,
     };
   }
 
