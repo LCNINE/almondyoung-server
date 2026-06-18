@@ -86,6 +86,21 @@ email_response.json
 kakao_response*.json
 nhn_*.json
 
+# Customer/order export files with personal information
+apps/medusa/cellmate-*.csv
+apps/medusa/cellmate-*.json
+apps/medusa/cellmate-*.xls
+apps/medusa/cellmate-*.xlsx
+apps/medusa/sellmate-orders-*.json
+apps/medusa/orders-sellmate-*.xls
+apps/medusa/weekly-sales-summary-*.xls
+apps/medusa/택배양식*.xls
+apps/medusa/*-orders-source.json
+apps/medusa/export/
+apps/medusa/exports/
+scripts/sellmate/out/
+scripts/sellmate/output/
+
 # Backup files
 *.backup
 *.backup2
