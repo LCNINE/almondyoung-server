@@ -17,13 +17,12 @@ interface Cafe24LinkBannerProps {
 
 export function Cafe24LinkBanner({ countryCode }: Cafe24LinkBannerProps) {
   const t = useTranslations("home.cafe24Link")
-  const [isLinked, setIsLinked] = useState<boolean | null>(null)
+  const [visible, setVisible] = useState(false)
 
   useEffect(() => {
     getCafe24LinkInfo().then((result) => {
-      if ("data" in result) {
-        setIsLinked(!!result.data)
-      }
+      const alreadyLinked = "data" in result && !!result.data
+      if (!alreadyLinked) setVisible(true)
     })
   }, [])
 
@@ -32,8 +31,7 @@ export function Cafe24LinkBanner({ countryCode }: Cafe24LinkBannerProps) {
     window.location.href = `${CAFE24_MIGRATOR_BASE}?redirect_to=${encodeURIComponent(postUrl)}`
   }
 
-  // 로딩 중이거나 이미 연동된 경우 표시 안함
-  if (isLinked === null || isLinked) return null
+  if (!visible) return null
 
   return (
     <AnimatePresence>
