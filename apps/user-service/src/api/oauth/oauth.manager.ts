@@ -21,6 +21,11 @@ import { isRedirectUriRegistered } from './redirect-uri';
 
 const CODE_TTL_SECONDS = 300;
 
+// 정상 회전 직후 같은 refresh token 이 다시 도착하는 것을 탈취(reuse)가 아닌 동시성 race 로
+// 관용하는 시간 창. iOS WebKit 의 중복 요청은 보통 수 초 내에 몰리므로 30초면 충분하며,
+// 이 창을 벗어난 재사용은 여전히 chain 전체 revoke 로 처리해 탈취 방어를 유지한다.
+const REFRESH_REUSE_GRACE_MS = 30_000;
+
 function hasOpenIdScope(scope: string | null): boolean {
   if (!scope) return false;
   return scope.split(/\s+/).includes('openid');
@@ -156,12 +161,26 @@ export class OAuthManager {
     if (!input.refreshToken) throw new BadRequestError('refresh_token required');
 
     return this.inTx(async (tx) => {
-      const row = await this.repo.findOAuthTokenByRefresh(input.refreshToken!, tx);
+      // FOR UPDATE: 동일 토큰에 대한 동시 회전 요청을 직렬화해 SELECT→UPDATE race 를 제거한다.
+      const row = await this.repo.findOAuthTokenByRefresh(input.refreshToken!, tx, true);
       if (!row) throw new UnauthorizedError('invalid refresh_token');
       if (row.clientId !== input.clientId) throw new UnauthorizedError('client mismatch');
 
-      // reuse detection: 이미 revoke된 토큰 재사용 → chain 전체 revoke
+      // reuse detection: 이미 revoke된 토큰 재사용.
       if (row.isRevoked) {
+        // grace window: 정상 회전 직후(30초 내) 같은 토큰이 다시 도착하는 것은 탈취가 아니라
+        // iOS WebKit 등의 동시·중복 요청이다. 이 경우 chain 을 죽이지 않고, 직전 회전으로 발급된
+        // 자식 토큰을 한 번 더 회전시켜 유효한 새 토큰 쌍을 내준다 → 세션 유지.
+        const revokedAtMs = row.updatedAt?.getTime() ?? 0;
+        const withinGrace = Date.now() - revokedAtMs < REFRESH_REUSE_GRACE_MS;
+        const child = withinGrace ? await this.repo.findChildToken(row.id, tx) : null;
+        if (child && !child.isRevoked && child.expiresAt > new Date()) {
+          this.logger.warn(
+            `refresh token concurrent-rotation tolerated (grace) parent=${row.id} child=${child.id}`,
+          );
+          await this.repo.revokeTokenById(child.id, tx);
+          return this.mintTokenPair(child.userId, child.clientId, child.scope, child.id, tx);
+        }
         this.logger.warn(`refresh token reuse detected for tokenId=${row.id}`);
         await this.repo.revokeChain(row.id, tx);
         throw new UnauthorizedError('refresh_token reuse detected; chain revoked');
