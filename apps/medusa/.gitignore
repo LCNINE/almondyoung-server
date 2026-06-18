@@ -29,3 +29,13 @@ static
 # 백필 빌드 타임 dump (apps/medusa/scripts/extract-core-snapshots.ts 결과)
 src/data/core-snapshots.json
 src/data/core-snapshots.json.gz
+
+# 고객 개인정보(PII) 포함 — 절대 커밋 금지 (셀메이트/주문 export dump)
+sellmate-orders-*.json
+orders-sellmate-*.xls
+cellmate-*.json
+cellmate-*.csv
+cellmate-*.xls
+cellmate-*.xlsx
+weekly-sales-summary-*.xls
+택배양식*.xls
