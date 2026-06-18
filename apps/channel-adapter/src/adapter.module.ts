@@ -75,6 +75,7 @@ import { InboxWorkerService } from './adapters/medusa/inbox-worker.service';
 import { FirebaseMembershipSyncService } from './adapters/medusa/firebase-membership-sync.service';
 import { AlmondAuthClient } from './adapters/almond-auth/almond-auth.client';
 import { UserServiceClient } from './services/user-service.client';
+import { MembershipServiceClient } from './services/membership-service.client';
 import { MembershipDailySyncService } from './services/membership-daily-sync.service';
 import { CouponIssueReconciliationService } from './services/coupon-issue-reconciliation.service';
 import { InternalMembershipController } from './controllers/internal-membership.controller';
@@ -205,6 +206,7 @@ import { OrderPollerOrchestrator } from './services/order-collection/order-polle
     // Firebase 멤버십 동기화
     AlmondAuthClient,
     UserServiceClient,
+    MembershipServiceClient,
     FirebaseMembershipSyncService,
     MembershipDailySyncService,
     CouponIssueReconciliationService,

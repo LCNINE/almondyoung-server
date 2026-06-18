@@ -42,6 +42,7 @@ import { BenefitTrackingController } from './controllers/benefit-tracking.contro
 import { SavingsController } from './controllers/savings.controller';
 import { WelcomeMembershipController } from './controllers/welcome-membership.controller';
 import { HealthController } from './controllers/health.controller';
+import { InternalMembershipController } from './controllers/internal-membership.controller';
 import { WelcomeMembershipService } from './services/welcome-membership.service';
 import { BillingManager } from './services/billing/billing.manager';
 import { BillingReader } from './services/billing/billing.reader';
@@ -90,6 +91,7 @@ import { JwtAuthGuard } from '@app/authorization';
     SavingsController,
     WelcomeMembershipController,
     HealthController,
+    InternalMembershipController,
   ],
   providers: [
     {

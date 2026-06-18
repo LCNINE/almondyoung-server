@@ -66,9 +66,9 @@
       }
 
       log('redirect to storefront');
-      postRedirect(redirectUrl, {
-        encrypted_id_token: encryptedIdToken,
-      });
+      const targetUrl = new URL(redirectUrl);
+      targetUrl.searchParams.set('encrypted_id_token', encryptedIdToken);
+      window.location.href = targetUrl.toString();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setError(message);
