@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { getCafe24LinkInfo } from "@/lib/api/users/cafe24"
 
 const CAFE24_MIGRATOR_BASE = "https://almondyoung.com/migrator/confirm.html"
 const STORAGE_KEY = "notice:cafe24-link:v1:hideUntil"
@@ -28,7 +29,11 @@ export function Cafe24LinkPopup({ countryCode }: Cafe24LinkPopupProps) {
     const hideUntil = localStorage.getItem(STORAGE_KEY)
     if (hideUntil && Date.now() < Number(hideUntil)) return
 
-    setOpen(true)
+    getCafe24LinkInfo().then((result) => {
+      // 이미 연동됐으면 표시 안함
+      if ("data" in result && result.data) return
+      setOpen(true)
+    })
   }, [])
 
   const hideForToday = () => {
