@@ -10,6 +10,7 @@ import {
   removeAccount,
   upsertAccount,
 } from "@/lib/account-store"
+import { ApiError } from "@/lib/api-helpers"
 import { env } from "@/lib/env"
 import {
   clearIdpSessionCookies,
@@ -21,6 +22,7 @@ import { parseAuthorizeRedirectTarget } from "@/lib/oauth-redirect"
 import { sanitizeRedirectTo } from "@/lib/redirect"
 import {
   callbackSignup,
+  checkEmailAvailable,
   findUserId,
   forgotPassword,
   getMe,
@@ -317,6 +319,35 @@ export async function signInAction(formData: FormData): Promise<ActionResult> {
   }
 
   return redirectAfterAuth(userId, redirectToRaw)
+}
+
+export type CheckEmailResult =
+  | { status: "available" }
+  | { status: "taken" }
+  | { status: "invalid"; message: string }
+  | { status: "error"; message: string }
+
+export async function checkEmailAvailableAction(
+  email: string
+): Promise<CheckEmailResult> {
+  const normalized = email.trim()
+  if (!normalized) {
+    return { status: "invalid", message: "이메일을 입력해주세요." }
+  }
+
+  try {
+    const available = await checkEmailAvailable(normalized)
+    return available ? { status: "available" } : { status: "taken" }
+  } catch (e) {
+    // user-service 가 400 (형식 오류) 을 던지면 사용자에게 형식 안내로 노출한다.
+    if (e instanceof ApiError && e.status === 400) {
+      return { status: "invalid", message: "올바른 이메일 형식이 아닙니다." }
+    }
+    return {
+      status: "error",
+      message: "이메일 확인 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.",
+    }
+  }
 }
 
 export async function signUpAction(formData: FormData): Promise<ActionResult> {
