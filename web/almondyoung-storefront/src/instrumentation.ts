@@ -46,7 +46,10 @@ export function register() {
   // 명시적으로 설정된 경우에만 trace 를 내보낸다. 엔드포인트가 없으면
   // exporter 를 붙이지 않아 no-op 으로 둔다 (이전의 Railway dev collector
   // 하드코딩 fallback 은 운영 trace 가 외부로 새어 제거됨).
+  // VPC 밖 Lambda 라 내부 Alloy 대신 Grafana Cloud OTLP 게이트웨이로 직접 보낸다.
   const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT
+  const instanceId = process.env.GRAFANA_OTLP_INSTANCE_ID
+  const token = process.env.GRAFANA_OTLP_TOKEN
 
   registerOTel({
     serviceName: process.env.OTEL_SERVICE_NAME ?? "almondyoung-storefront",
@@ -54,6 +57,12 @@ export function register() {
       ? {
           traceExporter: new OTLPHttpJsonTraceExporter({
             url: `${endpoint}/v1/traces`,
+            headers:
+              instanceId && token
+                ? {
+                    Authorization: `Basic ${Buffer.from(`${instanceId}:${token}`).toString("base64")}`,
+                  }
+                : undefined,
           }),
         }
       : {}),
