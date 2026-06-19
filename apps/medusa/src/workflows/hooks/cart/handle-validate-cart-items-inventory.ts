@@ -1,5 +1,5 @@
 import { addToCartWorkflow, createCartWorkflow } from '@medusajs/medusa/core-flows';
-import { validateInventoryForItems } from '../../../utils/validate-inventory';
+// import { validateInventoryForItems } from '../../../utils/validate-inventory';
 import { AddToCartWorkflowInputDTO, CreateCartWorkflowInputDTO } from '@medusajs/framework/types';
 import { ContainerRegistrationKeys, MedusaError, Modules } from '@medusajs/framework/utils';
 import type { IProductModuleService, ICartModuleService, ICustomerModuleService } from '@medusajs/framework/types';
@@ -158,8 +158,8 @@ const handleValidateCartItemsInventory = async ({ input }: { input: CartInput },
     { relations: ['product', 'product.tags'] },
   );
 
-  // 1. 재고 검증
-  await validateInventoryForItems({ items: validItems, variants }, container);
+  // TEMP: 재고 부족 주문 차단을 장바구니 플로우에서 임시 비활성화.
+  // await validateInventoryForItems({ items: validItems, variants }, container);
 
   // 2. 웰컴 멤버십 자격 검증 (addToCart인 경우만 - cart_id가 있음)
   if ('cart_id' in input && input.cart_id) {
