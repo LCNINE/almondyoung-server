@@ -92,6 +92,20 @@ export class PaymentIntentsController {
     return this.toResponse(updated);
   }
 
+  @Post(':id/abandon')
+  @HttpCode(200)
+  @WalletJwtAuth()
+  @ApiOperation({ summary: 'Abandon an in-flight checkout action (soft reset to CREATED)' })
+  async abandon(@Param('id') id: string, @Req() req: AuthenticatedRequest): Promise<PaymentIntentResponseDto> {
+    if (req.jwtUserId) {
+      await this.claimOrVerify(id, req.jwtUserId);
+    }
+
+    await this.service.abandon(id);
+    const updated = await this.service.findByIdOrThrow(id);
+    return this.toResponse(updated);
+  }
+
   @Post(':id/refund')
   @HttpCode(200)
   @ApiOperation({ summary: 'Refund a payment intent (API-key authenticated)' })

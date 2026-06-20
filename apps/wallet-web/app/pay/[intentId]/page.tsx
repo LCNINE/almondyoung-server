@@ -18,12 +18,12 @@ import { CheckCircle2, XCircle } from 'lucide-react';
 
 interface Props {
   params: Promise<{ intentId: string }>;
-  searchParams: Promise<{ region?: string }>;
+  searchParams: Promise<{ region?: string; toss_fail?: string }>;
 }
 
 export default async function PayPage({ params, searchParams }: Props) {
   const { intentId } = await params;
-  const { region } = await searchParams;
+  const { region, toss_fail } = await searchParams;
 
   const cookieStore = await cookies();
 
@@ -127,6 +127,7 @@ export default async function PayPage({ params, searchParams }: Props) {
       billingMethodsExist={billingMethodsExist}
       availableMethods={availableMethods}
       region={region ?? null}
+      tossFailed={toss_fail === '1'}
     />
   );
 }
