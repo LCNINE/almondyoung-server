@@ -14,6 +14,22 @@ import type {
 
 export type { AdminCustomer, AdminCustomerAddress };
 
+export interface MedusaCustomerAddressPayload {
+  address_name: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  phone?: string | null;
+  company?: string | null;
+  address_1: string;
+  address_2?: string | null;
+  city?: string | null;
+  country_code: string;
+  province?: string | null;
+  postal_code?: string | null;
+  is_default_shipping?: boolean;
+  is_default_billing?: boolean;
+}
+
 
 export interface MedusaCustomerListQuery {
   limit?: number;
@@ -55,6 +71,17 @@ export const medusaCustomerApi = {
   ): Promise<AdminCustomerListResponse> => {
     const response = await client.get<AdminCustomerListResponse>(
       `${MEDUSA_BASE_URL}/admin/customers?email=${encodeURIComponent(email)}&limit=1`
+    );
+    return response.data;
+  },
+
+  createCustomerAddress: async (
+    id: string,
+    payload: MedusaCustomerAddressPayload
+  ): Promise<AdminCustomerResponse> => {
+    const response = await client.post<AdminCustomerResponse>(
+      `${MEDUSA_BASE_URL}/admin/customers/${id}/addresses`,
+      payload
     );
     return response.data;
   },
