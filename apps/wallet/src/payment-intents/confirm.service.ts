@@ -391,6 +391,9 @@ export class ConfirmService {
           correlationId,
           reasonCode: 'REQUIRES_ACTION',
         });
+        // Give the in-flight action (e.g. Toss checkout) a short TTL so an abandoned
+        // one is reclaimed in minutes by TossActionExpirationJob, not the 24h intent TTL.
+        await this.stampActionExpiry(intentId);
         return { nextAction: result.nextAction };
 
       default: {
@@ -516,6 +519,21 @@ export class ConfirmService {
     } catch (err) {
       this.logger.error(`Failed to cancel POINTS hold for intent ${intentId}: ${err}`);
     }
+  }
+
+  private static readonly DEFAULT_ACTION_TTL_MINUTES = 15;
+
+  private actionTtlMs(): number {
+    const raw = Number(process.env.WALLET_TOSS_ACTION_TTL_MINUTES);
+    const minutes = Number.isFinite(raw) && raw > 0 ? raw : ConfirmService.DEFAULT_ACTION_TTL_MINUTES;
+    return minutes * 60_000;
+  }
+
+  private async stampActionExpiry(intentId: string): Promise<void> {
+    await this.dbService.db
+      .update(paymentIntents)
+      .set({ actionExpiresAt: new Date(Date.now() + this.actionTtlMs()) })
+      .where(eq(paymentIntents.id, intentId));
   }
 
   private async lockIntent(intentId: string, tx: DbTx): Promise<typeof paymentIntents.$inferSelect | null> {

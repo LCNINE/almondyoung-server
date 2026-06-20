@@ -1,4 +1,4 @@
-type PaymentIntentAction = 'confirm' | 'cancel';
+type PaymentIntentAction = 'confirm' | 'cancel' | 'abandon';
 
 function getWalletApiUrl(): string {
   return process.env.WALLET_API_URL ?? process.env.NEXT_PUBLIC_WALLET_API_URL ?? 'http://localhost:3100';

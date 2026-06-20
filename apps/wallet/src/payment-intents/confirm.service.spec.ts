@@ -78,8 +78,12 @@ function makeContext() {
   const autoCaptureService = { attemptAutoCapture: jest.fn().mockResolvedValue(undefined) };
   const stateTransitionService = { transitionIntent: jest.fn().mockResolvedValue(undefined) };
 
+  const updateSet = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) });
   const dbService = {
-    db: { transaction: jest.fn((fn: (tx: unknown) => unknown) => fn(makeTx(intent))) },
+    db: {
+      transaction: jest.fn((fn: (tx: unknown) => unknown) => fn(makeTx(intent))),
+      update: jest.fn().mockReturnValue({ set: updateSet }),
+    },
   };
 
   const service = new ConfirmService(
@@ -91,7 +95,7 @@ function makeContext() {
     stateTransitionService as never,
   );
 
-  return { service, pointsProvider, chargesService };
+  return { service, pointsProvider, chargesService, updateSet };
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -106,5 +110,15 @@ describe('ConfirmService', () => {
       expect.objectContaining({ chargeId: 'charge-points', intentId: 'intent-1', amount: 8130 }),
     );
     expect(chargesService.updateStatus).toHaveBeenCalledWith('charge-points', 'CANCELED', {});
+  });
+
+  it('stamps a short action-expiry deadline when entering REQUIRES_ACTION', async () => {
+    const { service, updateSet } = makeContext();
+
+    await service.confirm('intent-1', { paymentMethodId: 'pm-toss', pointsToApply: 0 }, 'corr-1');
+
+    expect(updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ actionExpiresAt: expect.any(Date) }),
+    );
   });
 });
