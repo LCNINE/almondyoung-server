@@ -49,6 +49,8 @@ import { ConfirmService } from './payment-intents/confirm.service';
 import { CaptureService } from './payment-intents/capture.service';
 import { AutoCaptureService } from './payment-intents/auto-capture.service';
 import { CancelService } from './payment-intents/cancel.service';
+import { ChargeReleaseService } from './payment-intents/charge-release.service';
+import { AbandonService } from './payment-intents/abandon.service';
 import { TossApproveService } from './payment-intents/toss-approve.service';
 
 // Refunds
@@ -76,6 +78,7 @@ import { RecurringBillingAdminController } from './admin/recurring-billing-admin
 // Messaging + Jobs
 import { OutboxDispatcherService } from './messaging/outbox-dispatcher.service';
 import { ExpirationJob } from './jobs/expiration.job';
+import { TossActionExpirationJob } from './jobs/toss-action-expiration.job';
 import { PointsExpirationJob } from './jobs/points-expiration.job';
 
 // Webhooks
@@ -450,6 +453,8 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     CaptureService,
     AutoCaptureService,
     CancelService,
+    ChargeReleaseService,
+    AbandonService,
     TossApproveService,
 
     // Refunds
@@ -489,6 +494,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     // Messaging + Jobs
     OutboxDispatcherService,
     ExpirationJob,
+    TossActionExpirationJob,
     PointsExpirationJob,
   ],
 })

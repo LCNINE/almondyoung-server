@@ -1,0 +1,2 @@
+ALTER TABLE "payment_intents" ADD COLUMN "action_expires_at" timestamp with time zone;--> statement-breakpoint
+CREATE INDEX "idx_payment_intents_status_action_expires_at" ON "payment_intents" USING btree ("status","action_expires_at");

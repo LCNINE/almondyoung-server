@@ -22,6 +22,7 @@ import { calculatePricing } from './intent-pricing';
 import { ConfirmService } from './confirm.service';
 import { CaptureService } from './capture.service';
 import { CancelService } from './cancel.service';
+import { AbandonService } from './abandon.service';
 import { TossApproveService } from './toss-approve.service';
 
 const DEFAULT_INTENT_EXPIRY_MINUTES = 60 * 24; // 24 hours
@@ -34,6 +35,7 @@ export class PaymentIntentsService {
     private readonly confirmService: ConfirmService,
     private readonly captureService: CaptureService,
     private readonly cancelService: CancelService,
+    private readonly abandonService: AbandonService,
     private readonly tossApproveService: TossApproveService,
   ) {}
 
@@ -263,5 +265,16 @@ export class PaymentIntentsService {
 
     const correlationId = `cancel:${intentId}:${Date.now()}`;
     await this.cancelService.cancel(intent, correlationId);
+  }
+
+  /**
+   * Soft-resets an abandoned in-flight checkout action (closed/failed Toss
+   * checkout, expired payment screen). Releases provider-side holds and returns
+   * the intent to CREATED so Medusa can reuse it. No-op once finalised.
+   */
+  async abandon(intentId: string): Promise<{ status: string }> {
+    await this.findByIdOrThrow(intentId);
+    const correlationId = `abandon:${intentId}:${Date.now()}`;
+    return this.abandonService.abandon(intentId, correlationId);
   }
 }

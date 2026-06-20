@@ -4,6 +4,7 @@ import { DbService } from '@app/db';
 import { and, eq, inArray, lte, sql } from 'drizzle-orm';
 import { WalletSchema, paymentIntents } from '../schema';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
+import { ChargeReleaseService } from '../payment-intents/charge-release.service';
 
 const DEFAULT_EXPIRATION_CRON = '*/10 * * * *';
 const DEFAULT_EXPIRATION_BATCH_SIZE = 100;
@@ -16,6 +17,7 @@ export class ExpirationJob {
   constructor(
     private readonly dbService: DbService<WalletSchema>,
     private readonly stateTransitionService: StateTransitionService,
+    private readonly chargeReleaseService: ChargeReleaseService,
   ) {
     const raw = process.env.WALLET_EXPIRATION_BATCH_SIZE;
     const parsed = Number(raw);
@@ -45,7 +47,11 @@ export class ExpirationJob {
     const now = new Date();
 
     const dueIntents = await this.dbService.db
-      .select({ id: paymentIntents.id })
+      .select({
+        id: paymentIntents.id,
+        userId: paymentIntents.userId,
+        currency: paymentIntents.currency,
+      })
       .from(paymentIntents)
       .where(
         and(
@@ -60,6 +66,9 @@ export class ExpirationJob {
 
     for (const intent of dueIntents) {
       try {
+        // Release provider-side holds (POINTS hold, TOSS authorize, …) before
+        // cancelling, otherwise an expired composite intent leaks its points hold.
+        await this.chargeReleaseService.releaseIntentCharges(intent, `expiration:${intent.id}`);
         await this.stateTransitionService.transitionIntent(intent.id, 'CANCELED', {
           correlationId: `expiration:${intent.id}`,
           reasonCode: 'INTENT_EXPIRED',

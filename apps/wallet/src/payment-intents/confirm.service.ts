@@ -110,6 +110,12 @@ export class ConfirmService {
     }
     const intentUserId: string = intent.userId;
 
+    // 6.5. Release any stale SUCCEEDED POINTS hold left by a previous attempt.
+    //      Unconditional: it must NOT depend on this retry re-applying points,
+    //      otherwise an abandoned composite attempt (POINTS + Toss) leaks its
+    //      points hold whenever the UI shows 0 available points and hides reuse.
+    await this.cancelSucceededPointsHold(intentId, intentUserId, intent.currency, correlationId);
+
     // 7. Build ChargePlan
     const plan = await this.buildChargePlan(intentUserId, pointsAmount, externalAmount, dto.paymentMethodId, tx);
 
@@ -385,6 +391,9 @@ export class ConfirmService {
           correlationId,
           reasonCode: 'REQUIRES_ACTION',
         });
+        // Give the in-flight action (e.g. Toss checkout) a short TTL so an abandoned
+        // one is reclaimed in minutes by TossActionExpirationJob, not the 24h intent TTL.
+        await this.stampActionExpiry(intentId);
         return { nextAction: result.nextAction };
 
       default: {
@@ -510,6 +519,21 @@ export class ConfirmService {
     } catch (err) {
       this.logger.error(`Failed to cancel POINTS hold for intent ${intentId}: ${err}`);
     }
+  }
+
+  private static readonly DEFAULT_ACTION_TTL_MINUTES = 15;
+
+  private actionTtlMs(): number {
+    const raw = Number(process.env.WALLET_TOSS_ACTION_TTL_MINUTES);
+    const minutes = Number.isFinite(raw) && raw > 0 ? raw : ConfirmService.DEFAULT_ACTION_TTL_MINUTES;
+    return minutes * 60_000;
+  }
+
+  private async stampActionExpiry(intentId: string): Promise<void> {
+    await this.dbService.db
+      .update(paymentIntents)
+      .set({ actionExpiresAt: new Date(Date.now() + this.actionTtlMs()) })
+      .where(eq(paymentIntents.id, intentId));
   }
 
   private async lockIntent(intentId: string, tx: DbTx): Promise<typeof paymentIntents.$inferSelect | null> {
