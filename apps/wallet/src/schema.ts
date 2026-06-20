@@ -204,6 +204,9 @@ export const paymentIntents = pgTable(
       .notNull()
       .default(sql`'{}'::jsonb`),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    // Short-lived deadline for an in-flight REQUIRES_ACTION (e.g. Toss checkout) action.
+    // Distinct from the 24h intent `expiresAt`; lets an abandoned action be reclaimed in minutes.
+    actionExpiresAt: timestamp('action_expires_at', { withTimezone: true }),
     version: integer('version').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -212,6 +215,7 @@ export const paymentIntents = pgTable(
     check('payment_intents_payable_amount_non_negative', sql`${table.payableAmount} >= 0`),
     uniqueIndex('uq_payment_intents_client_secret').on(table.clientSecret),
     index('idx_payment_intents_status_expires_at').on(table.status, table.expiresAt),
+    index('idx_payment_intents_status_action_expires_at').on(table.status, table.actionExpiresAt),
     index('idx_payment_intents_user_created_at').on(table.userId, table.createdAt),
     uniqueIndex('idx_payment_intents_billing_idempotency_key')
       .on(sql`(${table.metadata}->>'idempotencyKey')`)

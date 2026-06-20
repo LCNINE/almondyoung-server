@@ -2,7 +2,7 @@ import { fetchWithAuthBounce } from './fetch-with-refresh';
 
 const BASE_URL = process.env.NEXT_PUBLIC_WALLET_API_URL ?? 'http://localhost:3100';
 
-function paymentIntentRoute(intentId: string, action: 'confirm' | 'cancel'): string {
+function paymentIntentRoute(intentId: string, action: 'confirm' | 'cancel' | 'abandon'): string {
   return `/api/payment-intents/${encodeURIComponent(intentId)}/${action}`;
 }
 
@@ -346,5 +346,24 @@ export async function cancelPaymentIntent(intentId: string): Promise<void> {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.message ?? `Cancel failed (${res.status})`);
+  }
+}
+
+/**
+ * Soft-resets an abandoned in-flight action (e.g. returning from a failed Toss
+ * checkout). Releases provider-side holds and returns the intent to CREATED so
+ * it can be retried/reused. Best-effort: callers ignore failures.
+ */
+export async function abandonPaymentIntent(intentId: string): Promise<void> {
+  const res = await fetchWithAuthBounce(paymentIntentRoute(intentId, 'abandon'), {
+    method: 'POST',
+    headers: {
+      'Idempotency-Key': crypto.randomUUID(),
+    },
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.message ?? `Abandon failed (${res.status})`);
   }
 }

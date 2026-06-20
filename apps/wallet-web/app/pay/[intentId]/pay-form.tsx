@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { confirmPaymentIntent, cancelPaymentIntent } from '@/lib/wallet-api';
+import { confirmPaymentIntent, cancelPaymentIntent, abandonPaymentIntent } from '@/lib/wallet-api';
 import { isWalletSessionExpiredError, redirectToWalletLogin } from '@/lib/auth-expired';
 import { buildReturnUrl } from '@/lib/return-url';
 import type { AvailablePaymentMethod, PaymentIntent, PaymentMethod, PointsBalance } from '@/lib/wallet-api';
@@ -35,6 +35,8 @@ interface Props {
    */
   availableMethods?: AvailablePaymentMethod[] | null;
   region?: string | null;
+  /** Toss 결제가 실패/취소로 돌아왔을 때(failUrl ?toss_fail=1) true. mount 시 abandon 신호 전송. */
+  tossFailed?: boolean;
 }
 
 interface BankTransferPendingAction {
@@ -108,7 +110,15 @@ const TOSS_SUB_METHODS = [
 ] as const;
 type TossSubMethod = (typeof TOSS_SUB_METHODS)[number]['value'];
 
-export function PayForm({ intent, methods, pointsBalance, billingMethodsExist, availableMethods, region }: Props) {
+export function PayForm({
+  intent,
+  methods,
+  pointsBalance,
+  billingMethodsExist,
+  availableMethods,
+  region,
+  tossFailed,
+}: Props) {
   const router = useRouter();
   const availableMethodMap = availableMethods
     ? new Map(availableMethods.map((method) => [method.code, method]))
@@ -136,6 +146,27 @@ export function PayForm({ intent, methods, pointsBalance, billingMethodsExist, a
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bankTransferPending, setBankTransferPending] = useState<BankTransferPendingAction | null>(null);
+
+  // Toss 결제 실패/취소로 돌아온 경우(failUrl ?toss_fail=1) abandon 신호를 보내 REQUIRES_ACTION 으로
+  // 묶인 포인트 hold 를 즉시 해제하고 intent 를 CREATED 로 soft reset 한다. best-effort — 실패해도
+  // 만료 job 이 안전망. 처리 후 toss_fail 파라미터를 제거(replace)해 재실행을 막고 서버 데이터를 다시 읽는다.
+  useEffect(() => {
+    if (!tossFailed) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        await abandonPaymentIntent(intent.id);
+      } catch {
+        // best-effort: 만료 job 이 안전망이므로 무시한다.
+      }
+      if (!cancelled) {
+        router.replace(buildPayPath(intent.id, region));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tossFailed, intent.id, region, router]);
 
   const isTossSelected = externalMethods.find((m) => m.id === selectedMethodId)?.type === 'TOSS';
 
