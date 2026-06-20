@@ -49,6 +49,7 @@ import { ConfirmService } from './payment-intents/confirm.service';
 import { CaptureService } from './payment-intents/capture.service';
 import { AutoCaptureService } from './payment-intents/auto-capture.service';
 import { CancelService } from './payment-intents/cancel.service';
+import { ChargeReleaseService } from './payment-intents/charge-release.service';
 import { TossApproveService } from './payment-intents/toss-approve.service';
 
 // Refunds
@@ -450,6 +451,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     CaptureService,
     AutoCaptureService,
     CancelService,
+    ChargeReleaseService,
     TossApproveService,
 
     // Refunds

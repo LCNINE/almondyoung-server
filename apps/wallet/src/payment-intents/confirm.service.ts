@@ -110,6 +110,12 @@ export class ConfirmService {
     }
     const intentUserId: string = intent.userId;
 
+    // 6.5. Release any stale SUCCEEDED POINTS hold left by a previous attempt.
+    //      Unconditional: it must NOT depend on this retry re-applying points,
+    //      otherwise an abandoned composite attempt (POINTS + Toss) leaks its
+    //      points hold whenever the UI shows 0 available points and hides reuse.
+    await this.cancelSucceededPointsHold(intentId, intentUserId, intent.currency, correlationId);
+
     // 7. Build ChargePlan
     const plan = await this.buildChargePlan(intentUserId, pointsAmount, externalAmount, dto.paymentMethodId, tx);
 
