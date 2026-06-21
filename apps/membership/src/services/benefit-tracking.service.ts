@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { NotFoundError } from '@app/shared';
 import { SubscriptionService } from './subscription.service';
 import { BenefitReader } from './benefit/benefit.reader';
 import { BenefitManager } from './benefit/benefit.manager';
@@ -77,7 +78,9 @@ export class BenefitTrackingService {
     const subscription = await this.subscriptionService.getActiveSubscription(userId);
 
     if (!subscription) {
-      throw new Error('NO_ACTIVE_SUBSCRIPTION');
+      // 활성 구독이 없는 것은 정상적인 비즈니스 상태 — 500 이 아니라 404 로 내려간다.
+      // GlobalExceptionFilter 가 ApplicationException → HTTP status 로 매핑한다.
+      throw new NotFoundError('활성화된 구독이 없습니다');
     }
 
     return this.benefitReader.findCurrentCycleBenefit(userId, subscription.billingDate, subscription.type);
