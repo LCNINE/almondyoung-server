@@ -14,6 +14,7 @@ otelcol.receiver.otlp "apps" {
 
 	output {
 		traces = [otelcol.processor.batch.traces.input]
+		logs   = [otelcol.processor.batch.logs.input]
 	}
 }
 
@@ -21,6 +22,27 @@ otelcol.processor.batch "traces" {
 	output {
 		traces = [otelcol.exporter.otlp.grafanacloud_tempo.input]
 	}
+}
+
+otelcol.processor.batch "logs" {
+	output {
+		logs = [otelcol.exporter.otlphttp.grafanacloud_loki.input]
+	}
+}
+
+// Grafana Cloud Loki 는 OTLP 인제스트를 네이티브 지원한다. otlphttp 가 endpoint 뒤에
+// /v1/logs 를 자동으로 붙이므로 endpoint 는 .../otlp 베이스만 준다 (deprecated 된
+// otelcol.exporter.loki + loki.write 대신 OTLP 직행).
+otelcol.exporter.otlphttp "grafanacloud_loki" {
+	client {
+		endpoint = sys.env("GRAFANA_CLOUD_LOKI_OTLP_ENDPOINT")
+		auth     = otelcol.auth.basic.grafanacloud_loki.handler
+	}
+}
+
+otelcol.auth.basic "grafanacloud_loki" {
+	username = sys.env("GRAFANA_CLOUD_LOKI_USERNAME")
+	password = sys.env("GRAFANA_CLOUD_API_TOKEN")
 }
 
 otelcol.exporter.otlp "grafanacloud_tempo" {

@@ -112,6 +112,14 @@ export function setup(infra: SharedInfra) {
   const grafanaCloudWebOtlpInstanceId = new sst.Secret('GrafanaCloudWebOtlpInstanceId');
   const grafanaCloudWebOtlpToken = new sst.Secret('GrafanaCloudWebOtlpToken');
 
+  // Loki(로그). Alloy 가 OTLP 로그를 받아 Grafana Cloud Loki 의 OTLP 엔드포인트로 보낸다.
+  // username 은 Loki 전용 instance ID(Tempo/Prometheus 와 다른 값) — Grafana Cloud 의
+  // Loki "OTLP" 설정 화면에 표시됨. 비밀번호는 기존 GRAFANA_CLOUD_API_TOKEN 재사용
+  // (Access Policy 에 logs:write scope 필요). endpoint 는 zone 을 모르므로 default 없이
+  // 강제 set — 미설정 시 deploy 실패로 잘못된 곳에 silent 전송되는 사고를 막는다.
+  const grafanaCloudLokiOtlpEndpoint = new sst.Secret('GrafanaCloudLokiOtlpEndpoint');
+  const grafanaCloudLokiUsername = new sst.Secret('GrafanaCloudLokiUsername');
+
   const alloy = new sst.aws.Service('Observability', {
     cluster,
     cpu: '0.25 vCPU',
@@ -129,6 +137,8 @@ export function setup(infra: SharedInfra) {
       GRAFANA_CLOUD_PROMETHEUS_USERNAME: grafanaCloudPrometheusUsername.value,
       GRAFANA_CLOUD_TEMPO_OTLP_ENDPOINT: grafanaCloudTempoOtlpEndpoint.value,
       GRAFANA_CLOUD_TEMPO_USERNAME: grafanaCloudTempoUsername.value,
+      GRAFANA_CLOUD_LOKI_OTLP_ENDPOINT: grafanaCloudLokiOtlpEndpoint.value,
+      GRAFANA_CLOUD_LOKI_USERNAME: grafanaCloudLokiUsername.value,
       CORE_METRICS_TARGET: $interpolate`${serviceDiscoveryName('Core')}:3000`,
     },
     transform: {

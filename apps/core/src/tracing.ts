@@ -1,28 +1,6 @@
-import { NodeSDK } from '@opentelemetry/sdk-node';
-import { getNodeAutoInstrumentations } from '@opentelemetry/auto-instrumentations-node';
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
-import { resourceFromAttributes } from '@opentelemetry/resources';
-import { ATTR_SERVICE_NAME } from '@opentelemetry/semantic-conventions';
+// 공용 OpenTelemetry 부트스트랩. 반드시 main.ts 의 첫 import 로 유지할 것 —
+// 계측 대상 모듈보다 먼저 SDK 가 시작돼야 trace_id 주입/자동계측이 성립한다.
+// deep 경로로 import (배럴 @app/shared 우회) — 이유는 telemetry.ts 주석 참고.
+import { startTelemetry } from '@app/shared/observability/telemetry';
 
-const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
-
-if (endpoint) {
-  const sdk = new NodeSDK({
-    resource: resourceFromAttributes({
-      [ATTR_SERVICE_NAME]: process.env.OTEL_SERVICE_NAME ?? 'core',
-    }),
-    traceExporter: new OTLPTraceExporter({
-      url: `${endpoint}/v1/traces`,
-    }),
-    instrumentations: [
-      getNodeAutoInstrumentations({
-        '@opentelemetry/instrumentation-fs': { enabled: false },
-      }),
-    ],
-  });
-
-  sdk.start();
-
-  process.on('SIGTERM', () => sdk.shutdown());
-  process.on('SIGINT', () => sdk.shutdown());
-}
+startTelemetry({ serviceName: 'core' });

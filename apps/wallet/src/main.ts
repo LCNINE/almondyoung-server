@@ -6,6 +6,7 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import fastifyCookie from '@fastify/cookie';
 import fastifyCors from '@fastify/cors';
 import fastifyMultipart from '@fastify/multipart';
+import { Logger } from 'nestjs-pino';
 import { WalletModule } from './wallet.module';
 import { EventsModule } from '@app/events';
 import { UGC_COMMAND_STREAM } from '@packages/event-contracts/streams';
@@ -64,7 +65,10 @@ function isOriginAllowed(origin: string | undefined, allowedOrigins: string[]): 
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestFastifyApplication>(WalletModule, new FastifyAdapter());
+  const app = await NestFactory.create<NestFastifyApplication>(WalletModule, new FastifyAdapter(), {
+    bufferLogs: true,
+  });
+  app.useLogger(app.get(Logger));
 
   app.connectMicroservice(
     EventsModule.forConsumer({

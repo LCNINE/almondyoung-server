@@ -5,6 +5,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { EventsModule, createKafkaConfigFromEnv } from '@app/events';
 import { USER_STREAM, ORDER_STREAM, PAYMENT_STREAM } from '@packages/event-contracts';
+import { Logger } from 'nestjs-pino';
 import { NotificationModule } from './notification.module';
 import { AllExceptionsFilter } from './shared/filters/exception.filter';
 import { LoggingInterceptor } from './shared/interceptors/logging.interceptor';
@@ -13,7 +14,9 @@ import * as bodyParser from 'body-parser';
 async function bootstrap() {
   const app = await NestFactory.create(NotificationModule, {
     bodyParser: false, // 기본 body parser 비활성화
+    bufferLogs: true,
   });
+  app.useLogger(app.get(Logger));
 
   // Raw body를 저장하는 미들웨어 (웹훅용)
   const rawBodyBuffer = (req: any, res: any, buffer: Buffer, encoding: BufferEncoding) => {

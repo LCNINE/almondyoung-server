@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { LoggerModule } from 'nestjs-pino';
+import { loggerConfig } from '@app/shared/observability/logger.config';
 import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { DbModule } from '@app/db';
@@ -14,6 +16,7 @@ const combinedSchema = { ...ugcServiceSchema, ...authorizationSchema };
 
 @Module({
   imports: [
+    LoggerModule.forRoot(loggerConfig),
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env', 'apps/ugc-service/.env'],

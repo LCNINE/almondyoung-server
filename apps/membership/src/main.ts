@@ -2,6 +2,7 @@
 import './tracing';
 import { NestFactory } from '@nestjs/core';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
+import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import fastifyCookie from '@fastify/cookie';
@@ -22,8 +23,9 @@ async function bootstrap(): Promise<void> {
 
   // 개발환경: Express, 운영환경: Fastify
   const app = isDev
-    ? await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter())
-    : await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter());
+    ? await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter(), { bufferLogs: true })
+    : await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter(), { bufferLogs: true });
+  app.useLogger(app.get(Logger));
 
   // 쿠키 파서 등록 (Fastify)
   await app.register(fastifyCookie);

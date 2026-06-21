@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { LoggerModule } from 'nestjs-pino';
+import { loggerConfig } from '@app/shared/observability/logger.config';
 import { HttpModule } from '@nestjs/axios';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ClsModule } from 'nestjs-cls';
@@ -87,6 +89,7 @@ import { OrderPollerOrchestrator } from './services/order-collection/order-polle
 
 @Module({
   imports: [
+    LoggerModule.forRoot(loggerConfig),
     ClsModule.forRoot({ global: true, middleware: { mount: false } }),
     ConfigModule.forRoot({
       isGlobal: true,

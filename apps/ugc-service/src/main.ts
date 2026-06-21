@@ -1,5 +1,6 @@
 import './tracing';
 import { NestFactory } from '@nestjs/core';
+import { Logger } from 'nestjs-pino';
 import { UgcServiceModule } from './ugc-service.module';
 import { ValidationPipe } from '@nestjs/common';
 import { GlobalExceptionFilter } from '@app/shared';
@@ -8,7 +9,10 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import fastifyCookie from '@fastify/cookie';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestFastifyApplication>(UgcServiceModule, new FastifyAdapter());
+  const app = await NestFactory.create<NestFastifyApplication>(UgcServiceModule, new FastifyAdapter(), {
+    bufferLogs: true,
+  });
+  app.useLogger(app.get(Logger));
 
   await app.register(fastifyCookie);
 

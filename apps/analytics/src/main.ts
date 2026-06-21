@@ -7,11 +7,15 @@ import { GlobalExceptionFilter } from '@app/shared';
 import fastifyCookie from '@fastify/cookie';
 import { EventsModule, createKafkaConfigFromEnv } from '@app/events';
 import { ORDER_STREAM } from '@packages/event-contracts';
+import { Logger as PinoLogger } from 'nestjs-pino';
 import { AnalyticsModule } from './analytics.module';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
-  const app = await NestFactory.create<NestFastifyApplication>(AnalyticsModule, new FastifyAdapter());
+  const app = await NestFactory.create<NestFastifyApplication>(AnalyticsModule, new FastifyAdapter(), {
+    bufferLogs: true,
+  });
+  app.useLogger(app.get(PinoLogger));
 
   await app.register(fastifyCookie);
 

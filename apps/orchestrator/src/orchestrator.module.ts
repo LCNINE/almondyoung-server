@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { LoggerModule } from 'nestjs-pino';
+import { loggerConfig } from '@app/shared/observability/logger.config';
 import { ConfigModule } from '@nestjs/config';
 import { HttpModule } from '@nestjs/axios';
 import { validateOrchestratorEnv } from './config/env.validation';
@@ -9,6 +11,7 @@ import { WmsApiService } from './services/wms.api.service';
 
 @Module({
   imports: [
+    LoggerModule.forRoot(loggerConfig),
     ConfigModule.forRoot({
       isGlobal: true,
       validate: validateOrchestratorEnv,

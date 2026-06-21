@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { LoggerModule } from 'nestjs-pino';
+import { loggerConfig } from '@app/shared/observability/logger.config';
 import { HttpModule } from '@nestjs/axios';
 import { DbModule } from '@app/db';
 import { EventsModule, EventTraceApiModule } from '@app/events';
@@ -57,6 +59,7 @@ import { JwtAuthGuard } from '@app/authorization';
 
 @Module({
   imports: [
+    LoggerModule.forRoot(loggerConfig),
     ConfigModule.forRoot({
       isGlobal: true,
       validate: validateMembershipEnv,
