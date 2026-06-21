@@ -2,11 +2,13 @@ import './tracing';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { GlobalExceptionFilter } from '@app/shared';
+import { Logger } from 'nestjs-pino';
 import { FileServiceModule } from './file-service.module';
 import * as cookieParser from 'cookie-parser';
 
 async function bootstrap() {
-  const app = await NestFactory.create(FileServiceModule);
+  const app = await NestFactory.create(FileServiceModule, { bufferLogs: true });
+  app.useLogger(app.get(Logger));
 
   app.useGlobalFilters(new GlobalExceptionFilter());
   app.use(cookieParser());

@@ -3,11 +3,13 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { EventsModule, createKafkaConfigFromEnv } from '@app/events';
 import { PRODUCT_STREAM, UGC_EVENT_STREAM } from '@packages/event-contracts';
+import { Logger as PinoLogger } from 'nestjs-pino';
 import { SearchModule } from './search.module';
 
 async function bootstrap() {
   const logger = new Logger('SearchBootstrap');
-  const app = await NestFactory.create(SearchModule);
+  const app = await NestFactory.create(SearchModule, { bufferLogs: true });
+  app.useLogger(app.get(PinoLogger));
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

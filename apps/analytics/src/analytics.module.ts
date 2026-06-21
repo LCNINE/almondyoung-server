@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { LoggerModule } from 'nestjs-pino';
+import { loggerConfig } from '@app/shared/observability/logger.config';
 import { ConfigModule } from '@nestjs/config';
 import { DbModule } from '@app/db';
 import { EventsModule } from '@app/events';
@@ -18,6 +20,7 @@ import { UserPurchaseQuery } from './features/user-purchase/read-model/user-purc
 
 @Module({
   imports: [
+    LoggerModule.forRoot(loggerConfig),
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env', 'apps/analytics/.env'],

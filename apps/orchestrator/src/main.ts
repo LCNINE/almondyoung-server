@@ -2,10 +2,12 @@ import './tracing';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { Logger as PinoLogger } from 'nestjs-pino';
 import { OrchestratorModule } from './orchestrator.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(OrchestratorModule);
+  const app = await NestFactory.create(OrchestratorModule, { bufferLogs: true });
+  app.useLogger(app.get(PinoLogger));
   const logger = new Logger('Orchestrator');
 
   // Global validation pipe

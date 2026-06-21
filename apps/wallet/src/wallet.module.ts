@@ -12,6 +12,8 @@ import { APP_GUARD, APP_INTERCEPTOR, Reflector } from '@nestjs/core';
 import { PassportModule } from '@nestjs/passport';
 import { ScheduleModule } from '@nestjs/schedule';
 import { DbModule } from '@app/db';
+import { LoggerModule } from 'nestjs-pino';
+import { loggerConfig } from '@app/shared/observability/logger.config';
 import { EventsModule, EventTraceApiModule } from '@app/events';
 import { UGC_COMMAND_STREAM, WALLET_COMMAND_STREAM, PAYMENT_STREAM } from '@packages/event-contracts/streams';
 import { Observable, firstValueFrom, isObservable } from 'rxjs';
@@ -344,6 +346,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
 
 @Module({
   imports: [
+    LoggerModule.forRoot(loggerConfig),
     ConfigModule.forRoot({
       isGlobal: true,
       validate: validateWalletEnv,

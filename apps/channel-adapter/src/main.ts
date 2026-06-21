@@ -1,6 +1,7 @@
 // apps/channel-adapter/src/main.ts
 import './tracing';
 import { NestFactory } from '@nestjs/core';
+import { Logger } from 'nestjs-pino';
 import { AdapterModule } from './adapter.module';
 import { ValidationPipe } from '@nestjs/common';
 // import {
@@ -22,7 +23,9 @@ async function bootstrap() {
   const app = await NestFactory.create(
     AdapterModule,
     // new FastifyAdapter(),
+    { bufferLogs: true },
   );
+  app.useLogger(app.get(Logger));
 
   app.useGlobalPipes(new ValidationPipe());
 

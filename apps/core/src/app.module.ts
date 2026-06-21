@@ -4,7 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
 import { DbModule } from '@app/db';
 import { AuthorizationModule, JwtAuthGuard } from '@app/authorization';
-import { loggerConfig } from './logger.config';
+import { loggerConfig } from '@app/shared/observability/logger.config';
 import { validateAlmondyoungEnv } from './config/env.validation';
 import { mergedSchema } from './platform/database/merged-schema';
 import { ALL_SCOPES } from './platform/auth/merged-scopes';
