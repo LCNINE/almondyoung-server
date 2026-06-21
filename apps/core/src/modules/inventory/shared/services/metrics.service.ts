@@ -74,6 +74,23 @@ export class MetricsService implements OnModuleInit {
     registers: [register],
   });
 
+  // 헬스체크 메트릭 — 다른 메트릭과 동일하게 한 번만 등록. recordHealthCheck() 안에서
+  // 매번 생성하면 두 번째 호출부터 prom-client 중복 등록 예외가 난다.
+  private readonly healthGauge = new Gauge({
+    name: 'wms_health_status',
+    help: 'Health status of WMS components',
+    labelNames: ['component'],
+    registers: [register],
+  });
+
+  private readonly healthResponseTime = new Histogram({
+    name: 'wms_health_response_time_seconds',
+    help: 'Response time for health checks',
+    labelNames: ['component'],
+    buckets: [0.001, 0.01, 0.1, 0.5, 1, 2, 5],
+    registers: [register],
+  });
+
   onModuleInit() {
     // 기본 시스템 메트릭 수집 시작
     collectDefaultMetrics({ register });
@@ -186,7 +203,7 @@ export class MetricsService implements OnModuleInit {
   /**
    * 비즈니스 메트릭 업데이트 (배치 작업용)
    */
-  async updateBusinessMetrics() {
+  updateBusinessMetrics() {
     try {
       // 이 메소드는 주기적으로 호출되어 비즈니스 메트릭을 업데이트할 수 있습니다.
       // 예: 총 주문 수, 평균 재고 회전율 등
@@ -202,23 +219,8 @@ export class MetricsService implements OnModuleInit {
    * 헬스체크용 메트릭
    */
   recordHealthCheck(component: string, status: 'healthy' | 'unhealthy', responseTimeMs: number) {
-    const healthGauge = new Gauge({
-      name: 'wms_health_status',
-      help: 'Health status of WMS components',
-      labelNames: ['component'],
-      registers: [register],
-    });
-
-    const healthResponseTime = new Histogram({
-      name: 'wms_health_response_time_seconds',
-      help: 'Response time for health checks',
-      labelNames: ['component'],
-      buckets: [0.001, 0.01, 0.1, 0.5, 1, 2, 5],
-      registers: [register],
-    });
-
-    healthGauge.set({ component }, status === 'healthy' ? 1 : 0);
-    healthResponseTime.observe({ component }, responseTimeMs / 1000);
+    this.healthGauge.set({ component }, status === 'healthy' ? 1 : 0);
+    this.healthResponseTime.observe({ component }, responseTimeMs / 1000);
   }
 
   /**

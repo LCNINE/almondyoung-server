@@ -1,5 +1,4 @@
-import { Controller, Get, Res } from '@nestjs/common';
-import { Response } from 'express';
+import { Controller, Get, Header } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { Public } from '@app/authorization';
 import { MetricsService } from '../services/metrics.service';
@@ -9,8 +8,13 @@ import { MetricsService } from '../services/metrics.service';
 export class MetricsController {
   constructor(private readonly metricsService: MetricsService) {}
 
+  // Core runs on Fastify \u2014 never use the Express `Response` API (`res.set`/`res.json`)
+  // here. Set headers declaratively and return the body; failures propagate to
+  // GlobalExceptionFilter (\u2192 500 with a logged stack).
   @Get()
   @Public()
+  @Header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
+  @Header('Cache-Control', 'no-cache, no-store, must-revalidate')
   @ApiOperation({
     summary: '\uba54\ud2b8\ub9ad \uc870\ud68c',
     description:
@@ -25,23 +29,7 @@ export class MetricsController {
     status: 500,
     description: '\uba54\ud2b8\ub9ad \uc0dd\uc131 \uc2e4\ud328',
   })
-  async getMetrics(@Res() res: Response) {
-    try {
-      const metrics = await this.metricsService.getMetrics();
-
-      res.set({
-        'Content-Type': 'text/plain; version=0.0.4; charset=utf-8',
-        'Cache-Control': 'no-cache, no-store, must-revalidate',
-        Pragma: 'no-cache',
-        Expires: '0',
-      });
-
-      res.send(metrics);
-    } catch (error) {
-      res.status(500).json({
-        error: 'Failed to generate metrics',
-        message: error.message,
-      });
-    }
+  async getMetrics(): Promise<string> {
+    return this.metricsService.getMetrics();
   }
 }
