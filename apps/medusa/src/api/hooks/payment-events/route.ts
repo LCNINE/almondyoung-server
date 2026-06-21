@@ -98,7 +98,7 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
  * paymentModule.updatePayment() — a pure-DB operation that does NOT call the
  * payment provider (confirmed from source: "currently there is no update with the provider").
  */
-async function handleCancelProjection(
+export async function handleCancelProjection(
   scope: any,
   intentId: string,
   messageId: string,
@@ -112,11 +112,15 @@ async function handleCancelProjection(
   const payment = payments[0];
 
   if (!payment) {
-    // Throw so the outer handler returns 500 and the caller retries.
-    // Guards against the race where a Wallet event arrives before the Medusa payment
-    // record is linked (e.g., outbox delivery ordering). Dead-lettering is the
-    // caller's responsibility after exhausting retries.
-    throw new Error(`[payment-events] handleCancelProjection: no Medusa payment found for intentId=${intentId} (messageId=${messageId})`);
+    // No Medusa payment to cancel — terminal no-op, not a retryable failure.
+    // Either the intent never originated from a Medusa checkout (membership/billing
+    // intents have no Medusa session, ever), or it was an abandoned bank-transfer
+    // order that was never completed. We don't create an order just to cancel it.
+    // Returning (not throwing) makes the hook respond 200 so the event is not retried.
+    logger.info(
+      `[payment-events] handleCancelProjection: no Medusa payment for intentId=${intentId}, skipping (messageId=${messageId})`,
+    );
+    return;
   }
 
   if (payment.canceled_at) {
@@ -155,7 +159,7 @@ async function handleCancelProjection(
  *   - Failure marker clear: payment의 모든 walletRefunds messageId가 order의
  *     walletRefundMessageIds에 포함된 경우에만 clear해 부분 실패분 누락을 방지한다.
  */
-async function handleRefundProjection(
+export async function handleRefundProjection(
   scope: any,
   intentId: string,
   amount: number | undefined,
@@ -171,7 +175,12 @@ async function handleRefundProjection(
   const payment = payments[0];
 
   if (!payment) {
-    throw new Error(`[payment-events] handleRefundProjection: no Medusa payment found for intentId=${intentId} (messageId=${messageId})`);
+    // No Medusa payment to record the refund against — the intent never originated
+    // from a Medusa checkout. Terminal no-op → respond 200, no retry.
+    logger.info(
+      `[payment-events] handleRefundProjection: no Medusa payment for intentId=${intentId}, skipping (messageId=${messageId})`,
+    );
+    return;
   }
 
   const refundAmount = amount ?? 0;
@@ -335,7 +344,7 @@ async function resolvePaymentSessionId(
   return (sessions[0] as any)?.id ?? null;
 }
 
-async function handleCaptureProjection(
+export async function handleCaptureProjection(
   scope: any,
   intentId: string,
   messageId: string,
@@ -344,9 +353,22 @@ async function handleCaptureProjection(
   const paymentModule = scope.resolve(Modules.PAYMENT);
 
   const sessionId = await resolvePaymentSessionId(paymentModule, intentId);
-  let payments = sessionId
-    ? await paymentModule.listPayments({ payment_session_id: sessionId }, { relations: ['captures'] })
-    : [];
+
+  if (!sessionId) {
+    // No Medusa payment session for this intent — it never originated from a Medusa
+    // checkout (membership/billing intents have no session, ever). Bank-transfer
+    // recovery only applies when a session exists but the cart was not completed, so
+    // there is nothing to recover here. Terminal no-op → respond 200, no retry.
+    logger.info(
+      `[payment-events] handleCaptureProjection: no Medusa payment session for intentId=${intentId}, skipping (messageId=${messageId})`,
+    );
+    return;
+  }
+
+  let payments = await paymentModule.listPayments(
+    { payment_session_id: sessionId },
+    { relations: ['captures'] },
+  );
   let payment = payments[0];
 
   if (!payment) {
@@ -358,11 +380,12 @@ async function handleCaptureProjection(
     );
     await recoverBankTransferOrder(scope, intentId, messageId, logger);
 
-    // Re-query after recovery — use resolved sessionId (not intentId, which is never the session PK)
-    const recoveredSessionId = sessionId ?? (await resolvePaymentSessionId(paymentModule, intentId));
-    payments = recoveredSessionId
-      ? await paymentModule.listPayments({ payment_session_id: recoveredSessionId }, { relations: ['captures'] })
-      : [];
+    // Re-query after recovery using the already-resolved sessionId (guaranteed non-null
+    // by the guard above — recovery completes the cart, it does not change the session).
+    payments = await paymentModule.listPayments(
+      { payment_session_id: sessionId },
+      { relations: ['captures'] },
+    );
     payment = payments[0];
 
     if (!payment) {

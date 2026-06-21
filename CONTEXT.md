@@ -98,6 +98,14 @@
 - `CREATED`, `PROCESSING`, `REQUIRES_ACTION`, `FAILED`, `CANCELED` 주문/결제는 Core 판매주문 생성 대상이 아니다.
 - _Avoid_: `authorized` 라는 특정 provider 상태명을 Core 주문 생성의 도메인 용어로 쓰기.
 
+### Medusa 결제 Projection (Payment Events Hook)
+- 정의: Wallet 결제 인텐트 상태 변경(`payment.intent.captured/canceled`, refund 등)을 Medusa 의 payment/order 레코드에 반영하는 단방향 projection. 수신점은 `/hooks/payment-events`, 결제 SSOT 는 Wallet 이다.
+- Medusa 결제 projection 의 대상은 **Medusa 체크아웃을 거쳐 생성된 결제뿐이다.** 판별 기준은 그 intentId 에 대응하는 Medusa payment session row 의 존재 여부다. session 은 체크아웃 시 동기적으로 생성·커밋되므로, capture/cancel 이벤트 도착 시점엔 이미 존재한다 (주문인데 session 이 아직 없는 race 는 없다).
+- 멤버십·빌링처럼 Medusa 를 거치지 않은 인텐트는 Medusa 에 session 이 영영 없다. 이런 이벤트는 projection 대상이 아니므로 `200 SKIPPED` 로 종료한다 (재시도/dead-letter 아님). channel-adapter 는 결제 종류를 안 가리고 모든 `payment.intent.*` 를 훅으로 forward 하므로, "내 것이 아닌" 이벤트 구분은 훅의 책임이다.
+- 무통장입금(BANK_TRANSFER) 은 session 은 있고 Medusa payment row 만 없는 상태다. 이때 capture 이벤트만 cart 를 완료해 주문/결제를 만든 뒤 capture 를 반영하는 복구 경로를 탄다 (session 자체가 없는 비-Medusa 케이스와 구분). cancel/refund 는 반영할 payment 가 없으면 no-op SKIPPED 다 — 취소하려고 주문을 새로 만들지 않는다.
+- 500 은 진짜 일시적 실패(DB 오류 등)에만 쓴다. "Medusa 에 짝이 없음" 은 일시적 상태가 아니라 영구 상태이므로 500/재시도로 다루지 않는다. 실제 side-effect 멱등성은 `captured_at`/`canceled_at` DB 상태가 보장하며, in-memory `processedMessageIds` 는 그 보조 최적화일 뿐이다.
+- _Avoid_: 모든 Wallet 결제 이벤트를 Medusa 주문으로 가정하기, "payment 없음" 을 race 로 보고 무한 재시도(500)하기, in-memory 멱등성 set 을 멱등성의 유일한 근거로 신뢰하기.
+
 ### 판매주문 (Core Sales Order)
 - 정의: Payment Accepted 된 채널 주문을 Core 의 주문 처리 모델로 번역해 기록한 주문.
 - 판매주문은 채널주문의 live projection 이 아니라, Payment Accepted 시점에 Core 가 수락한 독립 처리 계약이다.
