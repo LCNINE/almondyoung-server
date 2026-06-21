@@ -2,6 +2,7 @@ import './tracing';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { EventsModule, createKafkaConfigFromEnv } from '@app/events';
+import { applyAlbKeepAlive } from '@app/shared';
 import { PRODUCT_STREAM, UGC_EVENT_STREAM } from '@packages/event-contracts';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import { SearchModule } from './search.module';
@@ -32,6 +33,7 @@ async function bootstrap() {
   }
 
   const port = parseInt(process.env.PORT || '3000', 10);
+  applyAlbKeepAlive(app.getHttpServer());
   await app.listen(port, '0.0.0.0');
   logger.log(`Search service listening on 0.0.0.0:${port}`);
 }
