@@ -8,6 +8,7 @@ import * as schema from '../../../../database/drizzle/schema';
 import { BusinessLicenseResponseDto } from '../../business-licenses/dto/business-license.response.dto';
 import { UsersService } from '../../users/users.service';
 import { BusinessAdminUpdateDto } from './dto/business-updeta.dto';
+import { BusinessAdminUpsertDto } from './dto/business-upsert.dto';
 import { BusinessLicenseQueryDto } from './dto/pagination-query-dto';
 
 @Injectable()
@@ -30,6 +31,63 @@ export class BusinessLicensesService {
       .limit(1);
 
     return result ?? null;
+  }
+
+  /**
+   * 관리자가 특정 사용자의 사업자 등록 정보를 등록/수정(upsert)한다.
+   */
+  async upsertBusinessLicenseByUserId(
+    userId: string,
+    dto: BusinessAdminUpsertDto,
+  ): Promise<BusinessLicenseResponseDto> {
+    // 사용자 존재 검증 — 없으면 NotFound 를 던진다.
+    const user = await this.usersService.findUserById(userId);
+    if (!user) {
+      throw new NotFoundException('사용자를 찾을 수 없습니다.');
+    }
+
+    const status = dto.status ?? 'approved';
+    const existing = await this.getBusinessLicensesByUserId(userId);
+
+    let result: schema.BusinessLicense;
+    if (existing) {
+      const [updated] = await this.dbService.db
+        .update(userServiceSchema.businessLicenses)
+        .set({
+          businessNumber: dto.businessNumber,
+          representativeName: dto.representativeName,
+          status,
+        })
+        .where(eq(userServiceSchema.businessLicenses.id, existing.id))
+        .returning();
+      result = updated;
+    } else {
+      const [created] = await this.dbService.db
+        .insert(userServiceSchema.businessLicenses)
+        .values({
+          userId,
+          businessNumber: dto.businessNumber,
+          representativeName: dto.representativeName,
+          status,
+        })
+        .returning();
+      result = created;
+    }
+
+    // 승인 상태로 등록/수정한 경우 멤버십 등 다운스트림을 위해 이벤트를 발행한다.
+    if (status === 'approved') {
+      await this.eventPublisher.publishEvent({
+        eventType: 'BusinessLicenseApproved',
+        aggregateId: user.id,
+        payload: {
+          userId: user.id,
+          email: user.email,
+          name: user.username,
+        },
+      });
+    }
+
+    return result;
   }
 
   async getBusinessLicenses({

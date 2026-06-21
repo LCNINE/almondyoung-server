@@ -40,6 +40,16 @@ export interface BusinessLicenseUpdateDto {
   fileUrl?: string | null;
 }
 
+/**
+ * 관리자가 특정 사용자의 사업자 등록 정보를 등록/수정(upsert)할 때 보내는 페이로드.
+ * 수동 입력 전용.
+ */
+export interface BusinessLicenseUpsertDto {
+  businessNumber: string;
+  representativeName: string;
+  status?: BusinessLicenseStatus;
+}
+
 export const BUSINESS_LICENSE_STATUS_LABELS: Record<BusinessLicenseStatus, string> = {
   under_review: '심사중',
   approved: '승인',

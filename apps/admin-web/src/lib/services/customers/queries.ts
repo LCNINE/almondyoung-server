@@ -75,3 +75,12 @@ export const useShopInfoByUserId = (userId: string) => {
     enabled: !!userId,
   });
 };
+
+// 특정 고객의 사업자 등록 정보 단건 조회 (없으면 null)
+export const useBusinessLicenseByUserId = (userId: string) => {
+  return useQuery({
+    queryKey: customerQueryKeys.businessLicenseByUserId(userId),
+    queryFn: () => customerApi.getBusinessLicenseByUserId(userId),
+    enabled: !!userId,
+  });
+};

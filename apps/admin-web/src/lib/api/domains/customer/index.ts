@@ -5,6 +5,10 @@
 import { USER_SERVICE_BASE_URL } from '@/const';
 import { Shop, User } from '@/lib/types';
 import {
+  BusinessLicenseDto,
+  BusinessLicenseUpsertDto,
+} from '@/lib/types/dto/business-licenses';
+import {
   CustomerBusinessLicense,
   CustomerBusinessLicenseQueryDto,
   CustomerConsent,
@@ -116,6 +120,28 @@ export const customerApi = {
   getShopByUserId: async (userId: string): Promise<Shop> => {
     const response = await client.get<Shop>(
       `${USER_SERVICE_BASE_URL}/admin/shops/${userId}`
+    );
+    return response.data;
+  },
+
+  // 특정 사용자의 사업자 등록 정보 단건 조회 (없으면 null)
+  getBusinessLicenseByUserId: async (
+    userId: string
+  ): Promise<BusinessLicenseDto | null> => {
+    const response = await client.get<BusinessLicenseDto | null>(
+      `${USER_SERVICE_BASE_URL}/admin/business-licenses/user/${userId}`
+    );
+    return response.data;
+  },
+
+  // 특정 사용자의 사업자 등록 정보 등록/수정 (upsert)
+  upsertBusinessLicenseByUserId: async (
+    userId: string,
+    dto: BusinessLicenseUpsertDto
+  ): Promise<BusinessLicenseDto> => {
+    const response = await client.post<BusinessLicenseDto>(
+      `${USER_SERVICE_BASE_URL}/admin/business-licenses/user/${userId}`,
+      dto
     );
     return response.data;
   },
