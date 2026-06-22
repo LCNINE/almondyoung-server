@@ -78,9 +78,18 @@
       }
     },
     "form": {
-      "title": { "create": "配送先を登録", "edit": "配送先を編集" },
-      "submit": { "create": "保存", "edit": "修正" },
-      "submitting": { "create": "保存中...", "edit": "修正中..." },
+      "title": {
+        "create": "配送先を登録",
+        "edit": "配送先を編集"
+      },
+      "submit": {
+        "create": "保存",
+        "edit": "修正"
+      },
+      "submitting": {
+        "create": "保存中...",
+        "edit": "修正中..."
+      },
       "cancel": "キャンセル",
       "search": "住所検索",
       "fields": {
@@ -106,7 +115,10 @@
         "city": "市区町村を入力してください",
         "province": "都道府県を入力してください"
       },
-      "saveAsDefault": { "create": "基本配送先として保存", "edit": "基本配送先に設定" },
+      "saveAsDefault": {
+        "create": "基本配送先として保存",
+        "edit": "基本配送先に設定"
+      },
       "toasts": {
         "created": "配送先を登録しました。",
         "createdDefault": "基本配送先として登録しました。",
@@ -248,6 +260,12 @@
       "noItems": "決済する商品がありません。カートに戻って商品を選択してください。",
       "paymentInitFailed": "決済セッションの初期化に失敗しました。",
       "unknownError": "不明なエラー"
+    },
+    "unavailableItems": {
+      "title": "ご注文できない商品があります",
+      "description": "以下の商品は販売が終了したため、決済を進められません。カートから該当商品を削除してから再度お試しください。",
+      "fallbackName": "一部の商品",
+      "goToCart": "カートへ移動"
     }
   },
   "membership": {

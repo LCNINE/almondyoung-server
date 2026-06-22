@@ -29,6 +29,8 @@ type ItemProps = {
   selected?: boolean
   onSelectChange?: (checked: boolean) => void
   selectDisabled?: boolean
+  /** 판매중단(draft/미게시)으로 결제를 막는 상품이면 true */
+  isUnavailable?: boolean
 }
 
 type ItemChildProps = {
@@ -46,6 +48,7 @@ type ItemChildProps = {
   selected?: boolean
   onSelectChange?: (checked: boolean) => void
   selectDisabled?: boolean
+  isUnavailable?: boolean
 }
 
 type DesktopItemProps = Partial<ItemChildProps> & {
@@ -60,6 +63,7 @@ function Item({
   selected,
   onSelectChange,
   selectDisabled,
+  isUnavailable,
 }: ItemProps) {
   const t = useTranslations("cart.items")
   const [isPending, startTransition] = useTransition()
@@ -121,6 +125,7 @@ function Item({
     selected,
     onSelectChange,
     selectDisabled,
+    isUnavailable,
   } as ItemChildProps)
 }
 
@@ -140,6 +145,7 @@ function DesktopItem({
   selected,
   onSelectChange,
   selectDisabled,
+  isUnavailable,
 }: DesktopItemProps) {
   const t = useTranslations("cart.items")
   const tCart = useTranslations("cart")
@@ -203,6 +209,11 @@ function DesktopItem({
 
       {/* 상품명 & 옵션 */}
       <TableCell className="text-left">
+        {isUnavailable && (
+          <p className="mb-1 text-xs font-semibold text-red-600">
+            {t("soldOutBadge")}
+          </p>
+        )}
         <p className="text-sm font-medium" data-testid="product-title">
           {item.product_title}
         </p>
@@ -212,6 +223,9 @@ function DesktopItem({
               .map((opt) => `${opt.option?.title}: ${opt.value}`)
               .join(" / ")}
           </p>
+        )}
+        {isUnavailable && (
+          <p className="mt-1 text-xs text-red-600">{t("soldOutHint")}</p>
         )}
       </TableCell>
 
@@ -375,6 +389,7 @@ function MobileItem({
   discountPercentage,
   changeQuantity,
   handleDelete,
+  isUnavailable,
 }: MobileItemProps) {
   const t = useTranslations("cart.items")
   const tCart = useTranslations("cart")
@@ -426,6 +441,11 @@ function MobileItem({
         {/* 상단: 상품명 + 삭제버튼 */}
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1">
+            {isUnavailable && (
+              <p className="mb-0.5 text-xs font-semibold text-red-600">
+                {t("soldOutBadge")}
+              </p>
+            )}
             <p className="line-clamp-2 text-sm leading-snug font-medium">
               {item.product_title}
             </p>
@@ -435,6 +455,9 @@ function MobileItem({
                   .map((opt) => `${opt.option?.title}: ${opt.value}`)
                   .join(" / ")}
               </p>
+            )}
+            {isUnavailable && (
+              <p className="mt-0.5 text-xs text-red-600">{t("soldOutHint")}</p>
             )}
           </div>
           <Button
