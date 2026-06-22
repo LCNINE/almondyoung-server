@@ -78,9 +78,18 @@
       }
     },
     "form": {
-      "title": { "create": "배송지 등록", "edit": "배송지 수정" },
-      "submit": { "create": "저장", "edit": "수정" },
-      "submitting": { "create": "저장 중...", "edit": "수정 중..." },
+      "title": {
+        "create": "배송지 등록",
+        "edit": "배송지 수정"
+      },
+      "submit": {
+        "create": "저장",
+        "edit": "수정"
+      },
+      "submitting": {
+        "create": "저장 중...",
+        "edit": "수정 중..."
+      },
       "cancel": "취소",
       "search": "주소 검색",
       "fields": {
@@ -106,7 +115,10 @@
         "city": "시/군/구를 입력해주세요",
         "province": "시/도를 입력해주세요"
       },
-      "saveAsDefault": { "create": "기본 배송지로 저장", "edit": "기본 배송지로 설정" },
+      "saveAsDefault": {
+        "create": "기본 배송지로 저장",
+        "edit": "기본 배송지로 설정"
+      },
       "toasts": {
         "created": "배송지가 등록되었습니다.",
         "createdDefault": "배송지가 기본 배송지로 등록되었습니다.",
@@ -248,6 +260,12 @@
       "noItems": "결제할 상품이 없습니다. 장바구니로 돌아가 상품을 선택해주세요.",
       "paymentInitFailed": "결제 세션 초기화에 실패했습니다.",
       "unknownError": "알 수 없는 오류"
+    },
+    "unavailableItems": {
+      "title": "주문할 수 없는 상품이 있어요",
+      "description": "아래 상품이 판매 중단되어 결제를 진행할 수 없습니다. 장바구니에서 해당 상품을 삭제한 뒤 다시 시도해주세요.",
+      "fallbackName": "일부 상품",
+      "goToCart": "장바구니로 이동"
     }
   },
   "membership": {

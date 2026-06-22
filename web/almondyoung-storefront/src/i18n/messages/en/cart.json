@@ -30,7 +30,9 @@
     "quantityMinError": "Quantity must be at least 1.",
     "quantityDialogTitle": "Enter quantity",
     "cancel": "Cancel",
-    "confirm": "Confirm"
+    "confirm": "Confirm",
+    "soldOutBadge": "Unavailable",
+    "soldOutHint": "This item is no longer available. Remove it to continue to checkout."
   },
   "summary": {
     "title": "Order summary",

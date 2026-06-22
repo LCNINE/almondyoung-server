@@ -2,7 +2,10 @@
 
 import { Card, CardContent } from "@/components/ui/card"
 import { CartHeader } from "@/domains/cart/components/header"
-import { createCheckoutCartFromLineItems, refreshCartPrices } from "@/lib/api/medusa/cart"
+import {
+  createCheckoutCartFromLineItems,
+  refreshCartPrices,
+} from "@/lib/api/medusa/cart"
 import { HttpTypes } from "@medusajs/types"
 import { useTranslations } from "next-intl"
 import { useParams, useRouter } from "next/navigation"
@@ -14,13 +17,23 @@ import Summary from "./summary"
 
 type Props = {
   cart: HttpTypes.StoreCart | null
+  /** 판매중단(draft/미게시)으로 결제를 막는 variant id 목록 */
+  unavailableVariantIds?: string[]
 }
 
-export default function CartTemplate({ cart }: Props) {
+export default function CartTemplate({
+  cart,
+  unavailableVariantIds = [],
+}: Props) {
   const router = useRouter()
   const params = useParams()
   const countryCode = (params.countryCode as string) || "kr"
   const t = useTranslations("cart.summary")
+
+  const unavailableVariantIdSet = useMemo(
+    () => new Set(unavailableVariantIds),
+    [unavailableVariantIds]
+  )
 
   const cartItems = cart?.items
   const sortedItems = useMemo(
@@ -67,6 +80,27 @@ export default function CartTemplate({ cart }: Props) {
   const goToCheckout = useCallback(() => {
     if (selectedIds.size === 0) return
 
+    // 판매중단(draft/미게시)된 상품이 선택돼 있으면 결제로 못 넘어가게 막는다.
+    const unavailableSelected = sortedItems.filter(
+      (item) =>
+        selectedIds.has(item.id) &&
+        !!item.variant_id &&
+        unavailableVariantIdSet.has(item.variant_id)
+    )
+    if (unavailableSelected.length > 0) {
+      const names = unavailableSelected
+        .map((item) => item.product_title || item.title || "")
+        .filter(Boolean)
+      import("sonner").then(({ toast }) =>
+        toast.error(
+          names.length > 0
+            ? t("itemsUnavailable", { items: names.join(", ") })
+            : t("checkoutFailed")
+        )
+      )
+      return
+    }
+
     const isEveryLineSelected =
       sortedItems.length > 0 &&
       sortedItems.every((item) => selectedIds.has(item.id)) &&
@@ -105,10 +139,19 @@ export default function CartTemplate({ cart }: Props) {
         toast.error(t("checkoutFailed"))
       }
     })
-  }, [selectedIds, sortedItems, countryCode, router, t])
+  }, [
+    selectedIds,
+    sortedItems,
+    countryCode,
+    router,
+    t,
+    unavailableVariantIdSet,
+  ])
 
   useEffect(() => {
-    refreshCartPrices().then(() => router.refresh()).catch(() => {})
+    refreshCartPrices()
+      .then(() => router.refresh())
+      .catch(() => {})
   }, [])
 
   // 아이템이 변경되면 (삭제 등) 선택 상태 동기화
@@ -139,6 +182,7 @@ export default function CartTemplate({ cart }: Props) {
                 allSelected={allSelected}
                 onSelectAll={handleSelectAll}
                 onSelectItem={handleSelectItem}
+                unavailableVariantIds={unavailableVariantIdSet}
               />
             </CardContent>
           </Card>
