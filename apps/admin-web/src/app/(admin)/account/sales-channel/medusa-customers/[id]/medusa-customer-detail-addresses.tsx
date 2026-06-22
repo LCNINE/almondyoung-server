@@ -5,11 +5,17 @@ import { Container } from '@/components/admin-ui-experimental/common/container';
 import { Header } from '@/components/admin-ui-experimental/common/header';
 import { Spinner } from '@/components/ui/spinner';
 import { useMedusaCustomerById } from '@/lib/services/medusa-customers';
-import type { AdminCustomerAddress } from '@medusajs/types';
+import type { AdminCustomer, AdminCustomerAddress } from '@medusajs/types';
 import { Badge } from '@/components/ui/badge';
 import { CustomerAddressCreateDialog } from '@/features/medusa-customers/components/customer-address-create-dialog';
 
-function AddressCard({ address }: { address: AdminCustomerAddress }) {
+function AddressCard({
+  customer,
+  address,
+}: {
+  customer: AdminCustomer;
+  address: AdminCustomerAddress;
+}) {
   const fullName = [address.last_name, address.first_name]
     .filter(Boolean)
     .join('');
@@ -24,14 +30,17 @@ function AddressCard({ address }: { address: AdminCustomerAddress }) {
 
   return (
     <div className="border-b p-4 last:border-b-0">
-      <div className="mb-2 flex items-center gap-2">
-        <span className="font-medium">{address.address_name || '주소'}</span>
-        {address.is_default_shipping && (
-          <Badge variant="secondary">기본 배송지</Badge>
-        )}
-        {address.is_default_billing && (
-          <Badge variant="outline">기본 청구지</Badge>
-        )}
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <span className="font-medium">{address.address_name || '주소'}</span>
+          {address.is_default_shipping && (
+            <Badge variant="secondary">기본 배송지</Badge>
+          )}
+          {address.is_default_billing && (
+            <Badge variant="outline">기본 청구지</Badge>
+          )}
+        </div>
+        <CustomerAddressCreateDialog customer={customer} address={address} />
       </div>
       <div className="space-y-1 text-sm text-gray-600">
         {fullName && <p>{fullName}</p>}
@@ -73,7 +82,7 @@ export function MedusaCustomerDetailAddressesContent({
         <CustomerAddressCreateDialog customer={customer} />
       </div>
       {addresses.map((address) => (
-        <AddressCard key={address.id} address={address} />
+        <AddressCard key={address.id} customer={customer} address={address} />
       ))}
     </div>
   );

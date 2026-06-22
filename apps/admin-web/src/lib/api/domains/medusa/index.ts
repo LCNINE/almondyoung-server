@@ -94,4 +94,16 @@ export const medusaCustomerApi = {
     );
     return response.data;
   },
+
+  updateCustomerAddress: async (
+    id: string,
+    addressId: string,
+    payload: MedusaCustomerAddressPayload
+  ): Promise<AdminCustomerResponse> => {
+    const response = await client.post<AdminCustomerResponse>(
+      `${MEDUSA_BASE_URL}/admin/customers/${id}/addresses/${addressId}`,
+      payload
+    );
+    return response.data;
+  },
 };
