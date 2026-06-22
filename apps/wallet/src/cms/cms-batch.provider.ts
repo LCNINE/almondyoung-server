@@ -23,6 +23,7 @@ import { nextCmsPaymentDate } from './cms-date.util';
 export class CmsBatchProvider implements PaymentProvider {
   readonly providerType = 'CMS_BATCH';
   readonly autoCapture = true;
+  readonly actionMode = 'interactive' as const;
 
   private readonly logger = new Logger(CmsBatchProvider.name);
 

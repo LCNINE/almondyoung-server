@@ -19,6 +19,7 @@ import { BillingMethodService } from '../../billing/billing-method.service';
 export class TossBillingProvider implements PaymentProvider {
   readonly providerType = 'TOSS_BILLING';
   readonly autoCapture = true;
+  readonly actionMode = 'interactive' as const;
 
   private readonly logger = new Logger(TossBillingProvider.name);
 
