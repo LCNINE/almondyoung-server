@@ -83,14 +83,20 @@ export class ChargesService {
   async findRefundableByIntent(intentId: string, tx?: DbTx): Promise<Charge[]> {
     const db = tx ?? this.dbService.db;
 
-    // 1순위: CAPTURE + SUCCEEDED
+    // 1순위: CAPTURE. A captured leg is the refund source of truth.
+    // If capture rows exist but none are still SUCCEEDED, the payment has already
+    // been refunded or is no longer provider-refundable. Do not fall back to the
+    // original AUTHORIZE leg, otherwise providers like Toss receive a duplicate
+    // cancel request for an already-canceled payment.
     const captured = await (db as typeof this.dbService.db)
       .select()
       .from(charges)
-      .where(and(eq(charges.intentId, intentId), eq(charges.operation, 'CAPTURE'), eq(charges.status, 'SUCCEEDED')))
+      .where(and(eq(charges.intentId, intentId), eq(charges.operation, 'CAPTURE')))
       .orderBy(asc(charges.createdAt));
 
-    if (captured.length > 0) return captured;
+    const refundableCaptures = captured.filter((charge) => charge.status === 'SUCCEEDED');
+    if (refundableCaptures.length > 0) return refundableCaptures;
+    if (captured.length > 0) return [];
 
     // 2순위: AUTHORIZE + SUCCEEDED (포인트 전액결제 등 capture 없는 케이스)
     return (db as typeof this.dbService.db)
