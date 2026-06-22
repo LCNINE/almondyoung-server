@@ -69,6 +69,72 @@ export async function retrieveCart(
     })
 }
 
+/**
+ * 카트 라인아이템 중 draft/미게시/삭제(또는 판매채널 이탈)된 상품을 가려낸다.
+ */
+export async function findUnavailableLineItems(
+  cart: HttpTypes.StoreCart,
+  countryCode: string
+): Promise<{ variantIds: string[]; productNames: string[] }> {
+  const items = cart.items ?? []
+  const productIds = Array.from(
+    new Set(
+      items
+        .map((item) => item.product_id)
+        .filter((id): id is string => Boolean(id))
+    )
+  )
+
+  if (productIds.length === 0) {
+    return { variantIds: [], productNames: [] }
+  }
+
+  const region = await getRegion(countryCode)
+  if (!region) {
+    return { variantIds: [], productNames: [] }
+  }
+
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  const { products } = await sdk.client
+    .fetch<{ products: HttpTypes.StoreProduct[] }>(`/store/products`, {
+      method: "GET",
+      query: {
+        id: productIds,
+        region_id: region.id,
+        fields: "id",
+        limit: productIds.length,
+      },
+      headers,
+      cache: "no-store",
+    })
+    .catch(() => ({ products: [] as HttpTypes.StoreProduct[] }))
+
+  const publishedProductIds = new Set(products.map((product) => product.id))
+  const unavailableItems = items.filter(
+    (item) => item.product_id && !publishedProductIds.has(item.product_id)
+  )
+
+  const variantIds = Array.from(
+    new Set(
+      unavailableItems
+        .map((item) => item.variant_id)
+        .filter((id): id is string => Boolean(id))
+    )
+  )
+  const productNames = Array.from(
+    new Set(
+      unavailableItems
+        .map((item) => item.product_title || item.title || "")
+        .filter(Boolean)
+    )
+  )
+
+  return { variantIds, productNames }
+}
+
 export async function getOrSetCart(countryCode: string) {
   const region = await getRegion(countryCode)
 
