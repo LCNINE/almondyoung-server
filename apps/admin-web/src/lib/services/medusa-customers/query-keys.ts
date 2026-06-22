@@ -14,4 +14,7 @@ export const medusaCustomerQueryKeys = {
 
   byEmail: (email: string) =>
     [...medusaCustomerQueryKeys.all, 'byEmail', email] as const,
+
+  byAlmondUserId: (almondUserId: string) =>
+    [...medusaCustomerQueryKeys.all, 'byAlmondUserId', almondUserId] as const,
 } as const;

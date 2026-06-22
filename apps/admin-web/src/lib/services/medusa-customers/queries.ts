@@ -32,3 +32,13 @@ export const useMedusaCustomerByEmail = (email: string) => {
     enabled: !!email,
   });
 };
+
+export const useMedusaCustomerByAlmondUserId = (
+  almondUserId: string | null | undefined
+) => {
+  return useQuery({
+    queryKey: medusaCustomerQueryKeys.byAlmondUserId(almondUserId ?? ''),
+    queryFn: () => medusaCustomerApi.getCustomerByAlmondUserId(almondUserId!),
+    enabled: !!almondUserId,
+  });
+};
