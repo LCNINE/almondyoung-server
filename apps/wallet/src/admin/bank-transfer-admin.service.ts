@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { PaginatedResponseDto } from '@app/shared';
-import { and, count, desc, eq, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, sql } from 'drizzle-orm';
 import { WalletSchema, charges, paymentIntents, paymentMethods } from '../schema';
 import { ChargesService } from '../charges/charges.service';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
@@ -26,7 +26,10 @@ export class BankTransferAdminService {
     const db = this.dbService.db;
     const offset = (page - 1) * limit;
 
-    const condition = and(eq(paymentIntents.status, 'REQUIRES_ACTION'), eq(paymentMethods.type, 'BANK_TRANSFER'));
+    const condition = and(
+      inArray(paymentIntents.status, ['AWAITING_DEPOSIT', 'REQUIRES_ACTION']),
+      eq(paymentMethods.type, 'BANK_TRANSFER'),
+    );
 
     const [countResult] = await db
       .select({ value: count() })
