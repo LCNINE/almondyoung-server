@@ -42,7 +42,8 @@
     "selectItems": "구매할 상품을 선택해주세요.",
     "checkout": "구매하기",
     "checkoutWithCount": "{count}개 상품 구매하기",
-    "checkoutFailed": "주문 진행에 실패했습니다. 다시 시도해주세요."
+    "checkoutFailed": "주문 진행에 실패했습니다. 다시 시도해주세요.",
+    "itemsUnavailable": "‘{items}’은(는) 현재 구매할 수 없는 상품이에요. 장바구니에서 제외한 뒤 다시 시도해주세요."
   },
   "mobileBar": {
     "discountTotal": "총 {amount}원 할인",
