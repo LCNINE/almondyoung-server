@@ -383,18 +383,30 @@ export class ConfirmService {
         });
         return {};
 
-      case 'REQUIRES_ACTION':
+      case 'REQUIRES_ACTION': {
         await this.chargesService.updateStatus(primaryChargeId, 'REQUIRES_ACTION', {
           responsePayload: { ...(result.raw ?? {}), nextAction: result.nextAction },
         });
-        await this.stateTransitionService.transitionIntent(intentId, 'REQUIRES_ACTION', {
-          correlationId,
-          reasonCode: 'REQUIRES_ACTION',
-        });
-        // Give the in-flight action (e.g. Toss checkout) a short TTL so an abandoned
-        // one is reclaimed in minutes by TossActionExpirationJob, not the 24h intent TTL.
-        await this.stampActionExpiry(intentId);
+
+        // 프로바이더가 선언한 액션 의미로 만료 정책을 분기한다.
+        if (phase1.plan.primary.provider.actionMode === 'offline-wait') {
+          // 무통장: 오프라인 입금 대기. 긴 입금 윈도우(expiresAt)로 두고
+          // actionExpiresAt은 찍지 않아 TossActionExpirationJob 대상에서 제외한다.
+          await this.stateTransitionService.transitionIntent(intentId, 'AWAITING_DEPOSIT', {
+            correlationId,
+            reasonCode: 'AWAITING_DEPOSIT',
+          });
+          await this.stampDepositExpiry(intentId);
+        } else {
+          // Toss 등 인터랙티브 액션: 기존대로 짧은 actionExpiresAt로 빠르게 reclaim.
+          await this.stateTransitionService.transitionIntent(intentId, 'REQUIRES_ACTION', {
+            correlationId,
+            reasonCode: 'REQUIRES_ACTION',
+          });
+          await this.stampActionExpiry(intentId);
+        }
         return { nextAction: result.nextAction };
+      }
 
       default: {
         // FAILED
@@ -533,6 +545,21 @@ export class ConfirmService {
     await this.dbService.db
       .update(paymentIntents)
       .set({ actionExpiresAt: new Date(Date.now() + this.actionTtlMs()) })
+      .where(eq(paymentIntents.id, intentId));
+  }
+
+  private static readonly DEFAULT_DEPOSIT_WINDOW_HOURS = 72;
+
+  private depositWindowMs(): number {
+    const raw = Number(process.env.WALLET_BANK_TRANSFER_DEPOSIT_WINDOW_HOURS);
+    const hours = Number.isFinite(raw) && raw > 0 ? raw : ConfirmService.DEFAULT_DEPOSIT_WINDOW_HOURS;
+    return hours * 60 * 60_000;
+  }
+
+  private async stampDepositExpiry(intentId: string): Promise<void> {
+    await this.dbService.db
+      .update(paymentIntents)
+      .set({ expiresAt: new Date(Date.now() + this.depositWindowMs()) })
       .where(eq(paymentIntents.id, intentId));
   }
 

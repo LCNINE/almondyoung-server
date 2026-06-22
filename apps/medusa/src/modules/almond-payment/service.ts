@@ -68,6 +68,8 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
         return 'captured';
       case 'SUCCEEDED':
         return captured ? 'captured' : 'authorized'; // backward compat
+      case 'AWAITING_DEPOSIT':
+        return 'pending'; // 무통장 입금 대기 — 아직 cart 완료 불가
       case 'CANCELED':
         return 'canceled';
       case 'FAILED':
