@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { eq, sql } from 'drizzle-orm';
-import { WalletSchema, paymentIntents } from '../schema';
+import { PaymentIntentStatus, WalletSchema, paymentIntents } from '../schema';
 import { Charge, DbTx } from '../types';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { ChargesService } from '../charges/charges.service';
@@ -63,7 +63,7 @@ export class ConfirmService {
     dto: { paymentMethodId?: string; pointsToApply?: number },
     correlationId: string,
     tx: DbTx,
-  ): Promise<Phase1Result> {
+  ): Promise<Phase1Result | null> {
     // 1. Lock intent
     const intent = await this.lockIntent(intentId, tx);
     if (!intent) {
@@ -73,9 +73,27 @@ export class ConfirmService {
       });
     }
 
+    const pointsToApply = dto.pointsToApply ?? 0;
+
+    if (intent.payableAmount === 0) {
+      if (pointsToApply > 0) {
+        throw new BadRequestException({
+          error: 'POINTS_NOT_APPLICABLE_TO_ZERO_AMOUNT',
+          message: 'Points cannot be applied to a zero-amount payment intent',
+        });
+      }
+
+      if (intent.status === 'CAPTURED' || intent.status === 'SUCCEEDED') {
+        return null;
+      }
+    }
+
     // 2. Validate status
-    const allowedStatuses = ['CREATED', 'PROCESSING', 'REQUIRES_ACTION'] as const;
-    if (!allowedStatuses.includes(intent.status as (typeof allowedStatuses)[number])) {
+    const allowedStatuses: readonly PaymentIntentStatus[] =
+      intent.payableAmount === 0
+        ? ['CREATED', 'PROCESSING', 'REQUIRES_ACTION', 'AUTHORIZED']
+        : ['CREATED', 'PROCESSING', 'REQUIRES_ACTION'];
+    if (!allowedStatuses.includes(intent.status)) {
       throw new ConflictException({
         error: 'INTENT_STATUS_INVALID',
         message: `Intent cannot be confirmed in status: ${intent.status}`,
@@ -89,7 +107,6 @@ export class ConfirmService {
     }
 
     // 4. Calculate amounts
-    const pointsToApply = dto.pointsToApply ?? 0;
     const pointsAmount = Math.min(pointsToApply, intent.payableAmount);
     const externalAmount = intent.payableAmount - pointsAmount;
 
@@ -109,6 +126,11 @@ export class ConfirmService {
       });
     }
     const intentUserId: string = intent.userId;
+
+    if (intent.payableAmount === 0) {
+      await this.completeZeroAmountIntent(intentId, intent.status, intentUserId, intent.currency, correlationId, tx);
+      return null;
+    }
 
     // 6.5. Release any stale SUCCEEDED POINTS hold left by a previous attempt.
     //      Unconditional: it must NOT depend on this retry re-applying points,
@@ -192,6 +214,70 @@ export class ConfirmService {
       discountChargeId,
       primaryChargeId,
     };
+  }
+
+  private async completeZeroAmountIntent(
+    intentId: string,
+    status: PaymentIntentStatus,
+    userId: string,
+    currency: string,
+    correlationId: string,
+    tx: DbTx,
+  ): Promise<void> {
+    const now = new Date().toISOString();
+
+    if (status === 'CREATED') {
+      await this.stateTransitionService.transitionIntent(
+        intentId,
+        'PROCESSING',
+        {
+          correlationId,
+          triggeredByType: 'USER',
+          reasonCode: 'ZERO_AMOUNT_CONFIRM',
+        },
+        undefined,
+        tx,
+      );
+    }
+
+    if (status !== 'AUTHORIZED') {
+      await this.stateTransitionService.transitionIntent(
+        intentId,
+        'AUTHORIZED',
+        {
+          correlationId,
+          triggeredByType: 'USER',
+          reasonCode: 'ZERO_AMOUNT_AUTHORIZED',
+        },
+        undefined,
+        tx,
+      );
+    }
+
+    await this.stateTransitionService.transitionIntent(
+      intentId,
+      'CAPTURED',
+      {
+        correlationId,
+        triggeredByType: 'USER',
+        reasonCode: 'ZERO_AMOUNT_CAPTURED',
+        outboxEvent: {
+          eventType: GatewayEventType.INTENT_CAPTURED,
+          aggregateType: GATEWAY_AGGREGATE_TYPE,
+          aggregateId: intentId,
+          payload: buildPaymentIntentEventPayload({
+            intentId,
+            userId,
+            status: 'CAPTURED',
+            payableAmount: 0,
+            currency,
+            occurredAt: now,
+          }),
+        },
+      },
+      undefined,
+      tx,
+    );
   }
 
   // ─── ChargePlan builder ────────────────────────────────────────────────────
@@ -368,7 +454,14 @@ export class ConfirmService {
   ): Promise<{ nextAction?: Record<string, unknown> }> {
     switch (result.status) {
       case 'SUCCEEDED':
-        await this.handleFinalChargeSuccess(intentId, primaryChargeId, result.providerTransactionId, result.raw, phase1, correlationId);
+        await this.handleFinalChargeSuccess(
+          intentId,
+          primaryChargeId,
+          result.providerTransactionId,
+          result.raw,
+          phase1,
+          correlationId,
+        );
         return {};
 
       case 'PENDING':
