@@ -37,7 +37,13 @@ function makeTx(intent: ReturnType<typeof makeIntent>) {
   };
 }
 
-function makeContext() {
+function makeContext(
+  opts: {
+    providerActionMode?: 'interactive' | 'offline-wait';
+    authorizeResult?: { status: string; nextAction?: Record<string, unknown> };
+    methodType?: string;
+  } = {},
+) {
   const intent = makeIntent();
 
   const stalePointsCharge = {
@@ -51,9 +57,12 @@ function makeContext() {
 
   const pointsProvider = { cancel: jest.fn().mockResolvedValue(undefined) };
   const extProvider = {
+    actionMode: opts.providerActionMode ?? 'interactive',
     authorize: jest
       .fn()
-      .mockResolvedValue({ status: 'REQUIRES_ACTION', nextAction: { type: 'TOSS_CHECKOUT' } }),
+      .mockResolvedValue(
+        opts.authorizeResult ?? { status: 'REQUIRES_ACTION', nextAction: { type: 'TOSS_CHECKOUT' } },
+      ),
   };
 
   const chargesService = {
@@ -65,7 +74,7 @@ function makeContext() {
   };
 
   const paymentMethodsService = {
-    findById: jest.fn().mockResolvedValue({ id: 'pm-toss', type: 'TOSS', providerData: {} }),
+    findById: jest.fn().mockResolvedValue({ id: 'pm-ext', type: opts.methodType ?? 'TOSS', providerData: {} }),
     findOrCreatePointsMethod: jest.fn().mockResolvedValue({ id: 'pm-points' }),
   };
 
@@ -95,7 +104,7 @@ function makeContext() {
     stateTransitionService as never,
   );
 
-  return { service, pointsProvider, chargesService, updateSet };
+  return { service, pointsProvider, chargesService, updateSet, stateTransitionService };
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -120,5 +129,25 @@ describe('ConfirmService', () => {
     expect(updateSet).toHaveBeenCalledWith(
       expect.objectContaining({ actionExpiresAt: expect.any(Date) }),
     );
+  });
+
+  it('offline-wait provider enters AWAITING_DEPOSIT and stamps a long deposit expiry (not actionExpiresAt)', async () => {
+    const { service, updateSet, stateTransitionService } = makeContext({
+      providerActionMode: 'offline-wait',
+      authorizeResult: { status: 'REQUIRES_ACTION', nextAction: { type: 'BANK_TRANSFER_PENDING' } },
+      methodType: 'BANK_TRANSFER',
+    });
+
+    await service.confirm('intent-1', { paymentMethodId: 'pm-ext', pointsToApply: 0 }, 'corr-1');
+
+    expect(stateTransitionService.transitionIntent).toHaveBeenCalledWith(
+      'intent-1',
+      'AWAITING_DEPOSIT',
+      expect.objectContaining({ reasonCode: 'AWAITING_DEPOSIT' }),
+    );
+
+    const setArgs = updateSet.mock.calls.map((c) => c[0]);
+    expect(setArgs).toContainEqual(expect.objectContaining({ expiresAt: expect.any(Date) }));
+    expect(setArgs).not.toContainEqual(expect.objectContaining({ actionExpiresAt: expect.any(Date) }));
   });
 });
