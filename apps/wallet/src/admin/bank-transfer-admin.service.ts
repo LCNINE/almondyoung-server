@@ -118,10 +118,11 @@ export class BankTransferAdminService {
 
     // 3. Transaction: charge → SUCCEEDED, intent → AUTHORIZED → CAPTURED + outbox event
     //
-    // 무통장입금은 PG 가 없어 authorize 시점에 REQUIRES_ACTION 으로 멈춰 있다.
+    // 무통장입금은 PG 가 없어 authorize 시점에 intent 는 AWAITING_DEPOSIT, charge 는
+    // REQUIRES_ACTION 으로 멈춰 있다.
     // 입금 확인 = 자금 확인(AUTHORIZED) + 정산(CAPTURED) 이 한 번에 일어나는 것이므로
-    // 상태머신이 허용하는 정식 경로(REQUIRES_ACTION → AUTHORIZED → CAPTURED)로 두 단계 전이한다.
-    // (REQUIRES_ACTION → CAPTURED / SUCCEEDED 직접 전이는 상태머신에 없음 — SUCCEEDED 는 legacy 상태.)
+    // 상태머신이 허용하는 정식 경로(AWAITING_DEPOSIT → AUTHORIZED → CAPTURED)로 두 단계 전이한다.
+    // (구 REQUIRES_ACTION 건도 REQUIRES_ACTION → AUTHORIZED 전이가 유지되어 동일하게 처리된다.)
     // 최종 상태를 CAPTURED 로 둬야 Medusa 가 payment.intent.captured → SUCCESSFUL 로 받아 주문을 완료 처리한다.
     await this.dbService.db.transaction(async (tx) => {
       await this.chargesService.updateStatus(
