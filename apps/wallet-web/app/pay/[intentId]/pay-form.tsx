@@ -95,11 +95,7 @@ function buildPayPath(intentId: string, region?: string | null, extra?: Record<s
 }
 
 function isBankTransferPendingAction(value: unknown): value is BankTransferPendingAction {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    (value as { type?: unknown }).type === 'BANK_TRANSFER_PENDING'
-  );
+  return typeof value === 'object' && value !== null && (value as { type?: unknown }).type === 'BANK_TRANSFER_PENDING';
 }
 
 const TOSS_SUB_METHODS = [
@@ -120,9 +116,7 @@ export function PayForm({
   tossFailed,
 }: Props) {
   const router = useRouter();
-  const availableMethodMap = availableMethods
-    ? new Map(availableMethods.map((method) => [method.code, method]))
-    : null;
+  const availableMethodMap = availableMethods ? new Map(availableMethods.map((method) => [method.code, method])) : null;
   const isAvailableInRegion = (type: string) => !availableMethodMap || availableMethodMap.has(type);
   const regionLabel = getRegionLabel(region);
 
@@ -171,6 +165,7 @@ export function PayForm({
   const isTossSelected = externalMethods.find((m) => m.id === selectedMethodId)?.type === 'TOSS';
 
   const isRecurring = intent.metadata?.billingMode === 'recurring';
+  const isZeroAmount = intent.payableAmount === 0;
   const maxPoints = Math.min(availablePoints, intent.payableAmount);
   const remainingAmount = intent.payableAmount - (usePoints ? pointsAmount : 0);
 
@@ -327,7 +322,10 @@ export function PayForm({
                 <div className="flex justify-between gap-4">
                   <dt className="text-muted-foreground">입금 금액</dt>
                   <dd className="font-semibold">
-                    {formatAmount(bankTransferPending.amount ?? remainingAmount, bankTransferPending.currency ?? intent.currency)}
+                    {formatAmount(
+                      bankTransferPending.amount ?? remainingAmount,
+                      bankTransferPending.currency ?? intent.currency,
+                    )}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-4">
@@ -411,65 +409,67 @@ export function PayForm({
           {/* 우측 패널: 포인트 + 결제수단 + CTA */}
           <div className="flex-1 space-y-4">
             {/* 포인트 사용 카드 */}
-            <Card className="border shadow-sm border-border/60">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <Coins className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm font-semibold">포인트 사용</span>
+            {!isZeroAmount && (
+              <Card className="border shadow-sm border-border/60">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Coins className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm font-semibold">포인트 사용</span>
+                    </div>
+                    <span className="text-sm text-muted-foreground">
+                      보유: {availablePoints.toLocaleString('ko-KR')}P
+                    </span>
                   </div>
-                  <span className="text-sm text-muted-foreground">
-                    보유: {availablePoints.toLocaleString('ko-KR')}P
-                  </span>
-                </div>
 
-                {availablePoints === 0 ? (
-                  <p className="text-sm text-muted-foreground">보유 포인트 없음</p>
-                ) : (
-                  <div className="space-y-3">
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={usePoints}
-                        onChange={(e) => handleTogglePoints(e.target.checked)}
-                        className="w-4 h-4 rounded border-border"
-                      />
-                      <span className="text-sm">포인트 사용하기</span>
-                    </label>
+                  {availablePoints === 0 ? (
+                    <p className="text-sm text-muted-foreground">보유 포인트 없음</p>
+                  ) : (
+                    <div className="space-y-3">
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={usePoints}
+                          onChange={(e) => handleTogglePoints(e.target.checked)}
+                          className="w-4 h-4 rounded border-border"
+                        />
+                        <span className="text-sm">포인트 사용하기</span>
+                      </label>
 
-                    {usePoints && (
-                      <div className="space-y-2 pl-7">
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="number"
-                            min={0}
-                            max={maxPoints}
-                            value={pointsAmount}
-                            onChange={(e) => handlePointsAmountChange(e.target.value)}
-                            className="w-32 rounded-md border border-border bg-background px-3 py-1.5 text-sm"
-                          />
-                          <span className="text-sm text-muted-foreground">P</span>
-                          <button
-                            type="button"
-                            onClick={() => setPointsAmount(maxPoints)}
-                            className="text-xs text-primary hover:underline"
-                          >
-                            전액 사용
-                          </button>
+                      {usePoints && (
+                        <div className="space-y-2 pl-7">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min={0}
+                              max={maxPoints}
+                              value={pointsAmount}
+                              onChange={(e) => handlePointsAmountChange(e.target.value)}
+                              className="w-32 rounded-md border border-border bg-background px-3 py-1.5 text-sm"
+                            />
+                            <span className="text-sm text-muted-foreground">P</span>
+                            <button
+                              type="button"
+                              onClick={() => setPointsAmount(maxPoints)}
+                              className="text-xs text-primary hover:underline"
+                            >
+                              전액 사용
+                            </button>
+                          </div>
+                          {remainingAmount > 0 ? (
+                            <p className="text-xs text-muted-foreground">
+                              {formatAmount(remainingAmount, intent.currency)} 추가 결제
+                            </p>
+                          ) : (
+                            <p className="text-xs font-medium text-emerald-600">포인트로 전액 결제됩니다</p>
+                          )}
                         </div>
-                        {remainingAmount > 0 ? (
-                          <p className="text-xs text-muted-foreground">
-                            {formatAmount(remainingAmount, intent.currency)} 추가 결제
-                          </p>
-                        ) : (
-                          <p className="text-xs font-medium text-emerald-600">포인트로 전액 결제됩니다</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
             {/* 결제수단 선택 카드 (잔액이 있을 때만 표시) */}
             {remainingAmount > 0 && (
