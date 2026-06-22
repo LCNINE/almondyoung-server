@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { cn } from '@/lib/utils/ui';
 import { MemberSummary } from '../components/member-summary';
 import { HomeTab } from '../components/tabs/home-tab';
+import { InquiriesTab } from '../components/tabs/inquiries-tab';
+import { OrdersTab } from '../components/tabs/orders-tab';
 import { PlaceholderTab } from '../components/tabs/placeholder-tab';
 
 export type TabKey =
@@ -66,8 +68,10 @@ export default function CustomerDetailWindowTemplate({
           {activeTab === 'detail' && (
             <PlaceholderTab title="회원 상세정보" />
           )}
-          {activeTab === 'orders' && <PlaceholderTab title="주문내역" />}
-          {activeTab === 'inquiries' && <PlaceholderTab title="문의내역" />}
+          {activeTab === 'orders' && <OrdersTab customerId={customerId} />}
+          {activeTab === 'inquiries' && (
+            <InquiriesTab customerId={customerId} />
+          )}
           {activeTab === 'points' && <PlaceholderTab title="적립금/쿠폰" />}
           {activeTab === 'cart' && <PlaceholderTab title="장바구니 정보" />}
         </main>

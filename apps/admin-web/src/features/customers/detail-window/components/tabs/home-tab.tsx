@@ -7,41 +7,14 @@ import {
   useMedusaCustomerByEmail,
   useMedusaOrdersByCustomerId,
 } from '@/lib/services/medusa-customers';
-import type { AdminOrder } from '@/lib/api/domains/medusa';
 import { formatDate } from '@/lib/utils/date';
 import { formatPhoneNumber } from '@/lib/utils/phone';
 import { BlacklistSetting } from '../blacklist-setting';
-
-const PAYMENT_STATUS_LABELS: Record<string, string> = {
-  not_paid: '미결제',
-  awaiting: '입금대기',
-  authorized: '결제승인',
-  partially_authorized: '부분승인',
-  captured: '결제완료',
-  partially_captured: '부분결제',
-  partially_refunded: '부분환불',
-  refunded: '환불완료',
-  canceled: '결제취소',
-  requires_action: '조치필요',
-};
-
-const FULFILLMENT_STATUS_LABELS: Record<string, string> = {
-  not_fulfilled: '미배송',
-  partially_fulfilled: '부분처리',
-  fulfilled: '배송준비',
-  partially_shipped: '부분출고',
-  shipped: '출고완료',
-  partially_delivered: '부분배송',
-  delivered: '배송완료',
-  canceled: '배송취소',
-};
-
-function formatOrderAmount(order: AdminOrder): string {
-  const code = (order.currency_code ?? '').toUpperCase();
-  const amount = Number(order.total ?? 0).toLocaleString();
-  if (code === 'KRW' || !code) return `₩${amount}`;
-  return `${amount} ${code}`;
-}
+import {
+  formatOrderAmount,
+  paymentStatusLabel,
+  fulfillmentStatusLabel,
+} from '../../lib/order-labels';
 
 function membershipLabel(roles: string[] | undefined): string {
   if (!roles?.length) return '일반 회원';
@@ -214,12 +187,10 @@ export function HomeTab({ customerId }: { customerId: string }) {
                       {formatOrderAmount(order)}
                     </td>
                     <td className="py-2 pr-3 text-gray-600">
-                      {PAYMENT_STATUS_LABELS[order.payment_status] ??
-                        order.payment_status}
+                      {paymentStatusLabel(order.payment_status)}
                     </td>
                     <td className="py-2 text-gray-600">
-                      {FULFILLMENT_STATUS_LABELS[order.fulfillment_status] ??
-                        order.fulfillment_status}
+                      {fulfillmentStatusLabel(order.fulfillment_status)}
                     </td>
                   </tr>
                 ))}

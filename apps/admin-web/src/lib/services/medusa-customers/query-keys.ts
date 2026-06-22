@@ -15,6 +15,9 @@ export const medusaCustomerQueryKeys = {
   byEmail: (email: string) =>
     [...medusaCustomerQueryKeys.all, 'byEmail', email] as const,
 
-  orders: (customerId: string) =>
-    [...medusaCustomerQueryKeys.all, 'orders', customerId] as const,
+  orders: (customerId: string, query: object = {}) =>
+    [...medusaCustomerQueryKeys.all, 'orders', customerId, query] as const,
+
+  order: (orderId: string) =>
+    [...medusaCustomerQueryKeys.all, 'order', orderId] as const,
 } as const;

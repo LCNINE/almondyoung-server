@@ -41,8 +41,17 @@ export const useMedusaOrdersByCustomerId = (
   query: Omit<MedusaOrderListQuery, 'customer_id'> = {}
 ) => {
   return useQuery({
-    queryKey: medusaCustomerQueryKeys.orders(customerId ?? ''),
+    queryKey: medusaCustomerQueryKeys.orders(customerId ?? '', query),
     queryFn: () => medusaOrderApi.getOrdersByCustomerId(customerId!, query),
     enabled: !!customerId,
+  });
+};
+
+// Medusa 주문 단건 상세 조회
+export const useMedusaOrderById = (orderId: string | undefined) => {
+  return useQuery({
+    queryKey: medusaCustomerQueryKeys.order(orderId ?? ''),
+    queryFn: () => medusaOrderApi.getOrderById(orderId!),
+    enabled: !!orderId,
   });
 };
