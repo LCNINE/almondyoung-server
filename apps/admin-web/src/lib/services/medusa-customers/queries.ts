@@ -3,7 +3,9 @@
 
 import {
   medusaCustomerApi,
+  medusaOrderApi,
   MedusaCustomerListQuery,
+  MedusaOrderListQuery,
 } from '@/lib/api/domains/medusa';
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
 import { medusaCustomerQueryKeys } from './query-keys';
@@ -30,5 +32,17 @@ export const useMedusaCustomerByEmail = (email: string) => {
     queryKey: medusaCustomerQueryKeys.byEmail(email),
     queryFn: () => medusaCustomerApi.getCustomerByEmail(email),
     enabled: !!email,
+  });
+};
+
+// Medusa 고객 ID로 주문 목록 조회 (최신순)
+export const useMedusaOrdersByCustomerId = (
+  customerId: string | undefined,
+  query: Omit<MedusaOrderListQuery, 'customer_id'> = {}
+) => {
+  return useQuery({
+    queryKey: medusaCustomerQueryKeys.orders(customerId ?? ''),
+    queryFn: () => medusaOrderApi.getOrdersByCustomerId(customerId!, query),
+    enabled: !!customerId,
   });
 };

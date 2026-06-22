@@ -3,9 +3,45 @@
 import { Star, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCustomerById } from '@/lib/services/customers';
+import {
+  useMedusaCustomerByEmail,
+  useMedusaOrdersByCustomerId,
+} from '@/lib/services/medusa-customers';
+import type { AdminOrder } from '@/lib/api/domains/medusa';
 import { formatDate } from '@/lib/utils/date';
 import { formatPhoneNumber } from '@/lib/utils/phone';
 import { BlacklistSetting } from '../blacklist-setting';
+
+const PAYMENT_STATUS_LABELS: Record<string, string> = {
+  not_paid: '미결제',
+  awaiting: '입금대기',
+  authorized: '결제승인',
+  partially_authorized: '부분승인',
+  captured: '결제완료',
+  partially_captured: '부분결제',
+  partially_refunded: '부분환불',
+  refunded: '환불완료',
+  canceled: '결제취소',
+  requires_action: '조치필요',
+};
+
+const FULFILLMENT_STATUS_LABELS: Record<string, string> = {
+  not_fulfilled: '미배송',
+  partially_fulfilled: '부분처리',
+  fulfilled: '배송준비',
+  partially_shipped: '부분출고',
+  shipped: '출고완료',
+  partially_delivered: '부분배송',
+  delivered: '배송완료',
+  canceled: '배송취소',
+};
+
+function formatOrderAmount(order: AdminOrder): string {
+  const code = (order.currency_code ?? '').toUpperCase();
+  const amount = Number(order.total ?? 0).toLocaleString();
+  if (code === 'KRW' || !code) return `₩${amount}`;
+  return `${amount} ${code}`;
+}
 
 function membershipLabel(roles: string[] | undefined): string {
   if (!roles?.length) return '일반 회원';
@@ -43,6 +79,23 @@ function Field({ label, value }: { label: string; value: string | null }) {
 export function HomeTab({ customerId }: { customerId: string }) {
   const { data: customer, isLoading } = useCustomerById(customerId);
   const profile = customer?.profile;
+
+  // user-service 회원 ↔ Medusa 고객은 이메일로 매칭한다.
+  const email = customer?.email ?? '';
+  const { data: medusaCustomerRes, isLoading: isMedusaCustomerLoading } =
+    useMedusaCustomerByEmail(email);
+  const medusaCustomerId = medusaCustomerRes?.customers?.[0]?.id;
+  const {
+    data: ordersRes,
+    isLoading: isOrdersLoading,
+    isError: isOrdersError,
+  } = useMedusaOrdersByCustomerId(medusaCustomerId);
+  const orders = ordersRes?.orders ?? [];
+  const orderCount = ordersRes?.count ?? orders.length;
+  const isOrderSectionLoading =
+    !!email && (isMedusaCustomerLoading || isOrdersLoading);
+  // 연동 고객을 못 찾았거나(이메일 미일치) 주문 조회가 실패한 경우
+  const hasOrderError = !!email && !isOrderSectionLoading && isOrdersError;
 
   if (isLoading) {
     return <div className="text-sm text-gray-400">불러오는 중…</div>;
@@ -110,14 +163,70 @@ export function HomeTab({ customerId }: { customerId: string }) {
         </Card>
       </div>
 
-      {/* 주문정보 (단계 2에서 연동) */}
+      {/* 주문정보 */}
       <section className="rounded-lg border border-gray-200 bg-white p-4">
-        <div className="mb-3 text-sm font-semibold text-gray-800">
+        <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-800">
           주문정보
+          {!isOrderSectionLoading && (
+            <span className="text-xs font-normal text-gray-500">
+              총 {orderCount.toLocaleString()}건
+            </span>
+          )}
         </div>
-        <div className="py-8 text-center text-sm text-gray-400">
-          주문 데이터 연동 예정
-        </div>
+
+        {isOrderSectionLoading ? (
+          <div className="py-8 text-center text-sm text-gray-400">
+            불러오는 중…
+          </div>
+        ) : hasOrderError ? (
+          <div className="py-8 text-center text-sm text-red-400">
+            주문 정보를 불러오지 못했습니다.
+          </div>
+        ) : orders.length === 0 ? (
+          <div className="py-8 text-center text-sm text-gray-400">
+            주문 내역이 없습니다.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-200 text-left text-xs text-gray-500">
+                  <th className="py-2 pr-3 font-medium">주문번호</th>
+                  <th className="py-2 pr-3 font-medium">주문일</th>
+                  <th className="py-2 pr-3 text-right font-medium">결제금액</th>
+                  <th className="py-2 pr-3 font-medium">결제상태</th>
+                  <th className="py-2 font-medium">배송상태</th>
+                </tr>
+              </thead>
+              <tbody>
+                {orders.map((order) => (
+                  <tr
+                    key={order.id}
+                    className="border-b border-gray-100 last:border-0"
+                  >
+                    <td className="py-2 pr-3 text-gray-900">
+                      #{order.display_id}
+                    </td>
+                    <td className="py-2 pr-3 text-gray-600">
+                      {formatDate(order.created_at)}
+                    </td>
+                    <td className="py-2 pr-3 text-right text-gray-900">
+                      {formatOrderAmount(order)}
+                    </td>
+                    <td className="py-2 pr-3 text-gray-600">
+                      {PAYMENT_STATUS_LABELS[order.payment_status] ??
+                        order.payment_status}
+                    </td>
+                    <td className="py-2 text-gray-600">
+                      {FULFILLMENT_STATUS_LABELS[order.fulfillment_status] ??
+                        order.fulfillment_status}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </div>
   );

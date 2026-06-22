@@ -12,8 +12,7 @@ export type TabKey =
   | 'orders'
   | 'inquiries'
   | 'points'
-  | 'cart'
-  | 'messages';
+  | 'cart';
 
 const MENU: { key: TabKey; label: string }[] = [
   { key: 'home', label: '홈' },
@@ -22,7 +21,6 @@ const MENU: { key: TabKey; label: string }[] = [
   { key: 'inquiries', label: '문의내역' },
   { key: 'points', label: '적립금/쿠폰' },
   { key: 'cart', label: '장바구니 정보' },
-  { key: 'messages', label: '메시지 발송내역' },
 ];
 
 export default function CustomerDetailWindowTemplate({
@@ -72,9 +70,6 @@ export default function CustomerDetailWindowTemplate({
           {activeTab === 'inquiries' && <PlaceholderTab title="문의내역" />}
           {activeTab === 'points' && <PlaceholderTab title="적립금/쿠폰" />}
           {activeTab === 'cart' && <PlaceholderTab title="장바구니 정보" />}
-          {activeTab === 'messages' && (
-            <PlaceholderTab title="메시지 발송내역" />
-          )}
         </main>
       </div>
     </div>
