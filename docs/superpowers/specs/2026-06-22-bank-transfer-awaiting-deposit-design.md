@@ -164,6 +164,9 @@ storefront initiatePaymentSession → wallet 무통장 선택/confirm
 
 ## 9. 리스크 / 확인 필요
 
-- cancel/abandon 경로(`cancelPaymentIntent`, `AbandonService`)가 AWAITING_DEPOSIT를 올바르게 다루는지 구현 시 확인(상태 규칙상 cancel은 허용, abandon은 AWAITING_DEPOSIT를 ABANDONABLE에 넣지 않음으로써 의도적으로 제외 — 확인).
+- cancel/abandon 경로 (구현 계획에서 해소됨):
+  - **명시적 cancel**: `payment-intents.service.ts`의 `cancelableStatuses`에 `AWAITING_DEPOSIT`를 **추가해야 함**(현재 미포함 → `INTENT_NOT_CANCELABLE`로 막힘, Medusa는 no-op로 삼켜 적립금 hold 잔류). 계획 Task 6.
+  - **만료 cancel**: `ExpirationJob`은 `stateTransitionService`를 직접 호출해 위 가드를 우회 → 상태 규칙(AWAITING_DEPOSIT→CANCELED)만 있으면 동작.
+  - **abandon**: `AbandonService.ABANDONABLE = ['REQUIRES_ACTION','PROCESSING']` 그대로 둬 AWAITING_DEPOSIT를 **의도적으로 제외**(입금 대기는 soft-reset 대상이 아님).
 - `mapStatus` 기본 default가 이미 pending이라 명시 추가는 가독성 목적.
 - 멀티 인스턴스 잡 중복 실행 시 동시성 — 기존 잡과 동일한 락/멱등 전제 그대로(신규 리스크 없음).
