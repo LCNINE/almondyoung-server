@@ -1,4 +1,4 @@
-import { MedusaCustomerListQuery } from '@/lib/api/domains/medusa';
+import type { MedusaCustomerListQuery } from '@/lib/types/dto/medusa';
 import { useQueryParams } from '../../use-query-params';
 
 type UseMedusaCustomerTableQueryProps = {

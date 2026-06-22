@@ -1,12 +1,11 @@
 // src/lib/services/medusa-customers/queries.ts
 'use client';
 
-import {
-  medusaCustomerApi,
-  medusaOrderApi,
+import { medusaCustomerApi, medusaOrderApi } from '@/lib/api/domains/medusa';
+import type {
   MedusaCustomerListQuery,
   MedusaOrderListQuery,
-} from '@/lib/api/domains/medusa';
+} from '@/lib/types/dto/medusa';
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
 import { medusaCustomerQueryKeys } from './query-keys';
 
@@ -53,5 +52,14 @@ export const useMedusaOrderById = (orderId: string | undefined) => {
     queryKey: medusaCustomerQueryKeys.order(orderId ?? ''),
     queryFn: () => medusaOrderApi.getOrderById(orderId!),
     enabled: !!orderId,
+  });
+};
+
+// Medusa 고객 장바구니 조회
+export const useMedusaCustomerCart = (customerId: string | undefined) => {
+  return useQuery({
+    queryKey: medusaCustomerQueryKeys.cart(customerId ?? ''),
+    queryFn: () => medusaCustomerApi.getCustomerCart(customerId!),
+    enabled: !!customerId,
   });
 };

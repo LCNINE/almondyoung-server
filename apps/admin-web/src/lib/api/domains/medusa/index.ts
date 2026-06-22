@@ -3,27 +3,25 @@
 // Medusa Customer 도메인 API 클라이언트
 
 import { MEDUSA_BASE_URL } from '@/const';
-import { client } from '../../client';
 import type {
-  AdminCustomer,
-  AdminCustomerAddress,
-  AdminCustomerResponse,
+  CustomerCartResponse,
+  MedusaCustomerListQuery,
+  MedusaOrderListQuery,
+} from '@/lib/types/dto/medusa';
+import type {
   AdminCustomerListResponse,
-  AdminOrder,
+  AdminCustomerResponse,
   AdminOrderListResponse,
   AdminOrderResponse,
 } from '@medusajs/types';
+import { client } from '../../client';
 
-
-export type { AdminCustomer, AdminCustomerAddress, AdminOrder };
-
-
-export interface MedusaCustomerListQuery {
-  limit?: number;
-  offset?: number;
-  q?: string;
-  order?: string; // Medusa 형식: "-created_at" (desc), "created_at" (asc)
-}
+// 컴포넌트에서 사용하는 Medusa 엔티티 타입 재노출
+export type {
+  AdminCustomer,
+  AdminCustomerAddress,
+  AdminOrder,
+} from '@medusajs/types';
 
 export const medusaCustomerApi = {
   // 고객 목록 조회
@@ -32,7 +30,8 @@ export const medusaCustomerApi = {
   ): Promise<AdminCustomerListResponse> => {
     const params = new URLSearchParams();
     if (query.limit !== undefined) params.append('limit', String(query.limit));
-    if (query.offset !== undefined) params.append('offset', String(query.offset));
+    if (query.offset !== undefined)
+      params.append('offset', String(query.offset));
     if (query.q) params.append('q', query.q);
     if (query.order) params.append('order', query.order);
 
@@ -61,17 +60,17 @@ export const medusaCustomerApi = {
     );
     return response.data;
   },
-};
 
-export interface MedusaOrderListQuery {
-  customer_id?: string;
-  limit?: number;
-  offset?: number;
-  order?: string; // Medusa 형식: "-created_at" (desc), "created_at" (asc)
-  // 주문일 범위 필터 (ISO 문자열). Medusa 의 created_at[$gte]/[$lte] 로 전달
-  createdAtGte?: string;
-  createdAtLte?: string;
-}
+  // 고객의 활성 장바구니 조회 (커스텀 admin 엔드포인트)
+  getCustomerCart: async (
+    customerId: string
+  ): Promise<CustomerCartResponse> => {
+    const response = await client.get<CustomerCartResponse>(
+      `${MEDUSA_BASE_URL}/admin/customers/${customerId}/cart`
+    );
+    return response.data;
+  },
+};
 
 // 주문 목록 조회 시 가져올 필드 (그리드 컬럼 + 품목별 뷰를 위해 items / 결제수단 / 판매채널 포함)
 const ORDER_LIST_FIELDS = [
@@ -145,9 +144,12 @@ export const medusaOrderApi = {
     params.append('customer_id', customerId);
     params.append('order', query.order ?? '-created_at');
     params.append('limit', String(query.limit ?? 20));
-    if (query.offset !== undefined) params.append('offset', String(query.offset));
-    if (query.createdAtGte) params.append('created_at[$gte]', query.createdAtGte);
-    if (query.createdAtLte) params.append('created_at[$lte]', query.createdAtLte);
+    if (query.offset !== undefined)
+      params.append('offset', String(query.offset));
+    if (query.createdAtGte)
+      params.append('created_at[$gte]', query.createdAtGte);
+    if (query.createdAtLte)
+      params.append('created_at[$lte]', query.createdAtLte);
     params.append('fields', ORDER_LIST_FIELDS);
 
     const response = await client.get<AdminOrderListResponse>(

@@ -20,4 +20,7 @@ export const medusaCustomerQueryKeys = {
 
   order: (orderId: string) =>
     [...medusaCustomerQueryKeys.all, 'order', orderId] as const,
+
+  cart: (customerId: string) =>
+    [...medusaCustomerQueryKeys.all, 'cart', customerId] as const,
 } as const;

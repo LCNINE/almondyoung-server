@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { cn } from '@/lib/utils/ui';
 import { MemberSummary } from '../components/member-summary';
+import { CartTab } from '../components/tabs/cart-tab';
 import { HomeTab } from '../components/tabs/home-tab';
 import { InquiriesTab } from '../components/tabs/inquiries-tab';
 import { OrdersTab } from '../components/tabs/orders-tab';
@@ -73,7 +74,7 @@ export default function CustomerDetailWindowTemplate({
             <InquiriesTab customerId={customerId} />
           )}
           {activeTab === 'points' && <PlaceholderTab title="적립금/쿠폰" />}
-          {activeTab === 'cart' && <PlaceholderTab title="장바구니 정보" />}
+          {activeTab === 'cart' && <CartTab customerId={customerId} />}
         </main>
       </div>
     </div>
