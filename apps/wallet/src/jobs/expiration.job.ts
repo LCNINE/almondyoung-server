@@ -9,6 +9,13 @@ import { ChargeReleaseService } from '../payment-intents/charge-release.service'
 const DEFAULT_EXPIRATION_CRON = '*/10 * * * *';
 const DEFAULT_EXPIRATION_BATCH_SIZE = 100;
 
+export const EXPIRABLE_INTENT_STATUSES = [
+  'CREATED',
+  'PROCESSING',
+  'REQUIRES_ACTION',
+  'AWAITING_DEPOSIT',
+] as const;
+
 @Injectable()
 export class ExpirationJob {
   private readonly logger = new Logger(ExpirationJob.name);
@@ -55,7 +62,10 @@ export class ExpirationJob {
       .from(paymentIntents)
       .where(
         and(
-          inArray(paymentIntents.status, ['CREATED', 'PROCESSING', 'REQUIRES_ACTION']),
+          inArray(
+            paymentIntents.status,
+            EXPIRABLE_INTENT_STATUSES as unknown as (typeof paymentIntents.$inferSelect)['status'][],
+          ),
           lte(paymentIntents.expiresAt, now),
         ),
       )

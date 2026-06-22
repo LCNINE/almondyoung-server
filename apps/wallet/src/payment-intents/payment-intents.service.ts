@@ -27,6 +27,15 @@ import { TossApproveService } from './toss-approve.service';
 
 const DEFAULT_INTENT_EXPIRY_MINUTES = 60 * 24; // 24 hours
 
+export const CANCELABLE_INTENT_STATUSES = [
+  'CREATED',
+  'PROCESSING',
+  'REQUIRES_ACTION',
+  'AWAITING_DEPOSIT',
+  'AUTHORIZED',
+  'SUCCEEDED',
+] as const;
+
 @Injectable()
 export class PaymentIntentsService {
   constructor(
@@ -255,8 +264,7 @@ export class PaymentIntentsService {
       return;
     }
 
-    const cancelableStatuses = ['CREATED', 'PROCESSING', 'REQUIRES_ACTION', 'AUTHORIZED', 'SUCCEEDED'];
-    if (!cancelableStatuses.includes(intent.status)) {
+    if (!(CANCELABLE_INTENT_STATUSES as readonly string[]).includes(intent.status)) {
       throw new BadRequestException({
         error: 'INTENT_NOT_CANCELABLE',
         message: `Intent cannot be canceled in status: ${intent.status}`,

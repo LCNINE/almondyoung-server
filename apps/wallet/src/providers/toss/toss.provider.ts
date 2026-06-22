@@ -19,6 +19,7 @@ import { and } from 'drizzle-orm';
 export class TossPaymentProvider implements PaymentProvider {
   readonly providerType = 'TOSS';
   readonly autoCapture = true;
+  readonly actionMode = 'interactive' as const;
 
   constructor(
     private readonly dbService: DbService<WalletSchema>,
