@@ -1,0 +1,66 @@
+'use client';
+
+import { Container } from '@/components/admin-ui-experimental/common/container';
+import { Header } from '@/components/admin-ui-experimental/common/header';
+import { Badge } from '@/components/ui/badge';
+import { Spinner } from '@/components/ui/spinner';
+import { CustomerAddressCreateDialog } from '@/features/medusa-customers/components/customer-address-create-dialog';
+import { useMedusaCustomerByAlmondUserId } from '@/lib/services/medusa-customers';
+import type { AdminCustomerAddress } from '@medusajs/types';
+
+function AddressCard({ address }: { address: AdminCustomerAddress }) {
+  const fullName = [address.last_name, address.first_name].filter(Boolean).join('');
+  const fullAddress = [address.city, address.province, address.address_1, address.address_2]
+    .filter(Boolean)
+    .join(' ');
+
+  return (
+    <div className="border-b p-4 last:border-b-0">
+      <div className="mb-2 flex items-center gap-2">
+        <span className="font-medium">{address.address_name || '주소'}</span>
+        {address.is_default_shipping && <Badge variant="secondary">기본 배송지</Badge>}
+        {address.is_default_billing && <Badge variant="outline">기본 청구지</Badge>}
+      </div>
+      <div className="space-y-1 text-sm text-gray-600">
+        {fullName && <p>{fullName}</p>}
+        {fullAddress && <p>{fullAddress}</p>}
+        {address.postal_code && <p>우편번호: {address.postal_code}</p>}
+        {address.phone && <p>전화: {address.phone}</p>}
+        {address.company && <p>회사: {address.company}</p>}
+      </div>
+    </div>
+  );
+}
+
+export function CustomerMedusaAddresses({ userId }: { userId: string }) {
+  const { data, isLoading, isError } = useMedusaCustomerByAlmondUserId(userId);
+  const customer = data?.customer;
+  const addresses = customer?.addresses ?? [];
+
+  return (
+    <Container className="divide-y">
+      <Header
+        title="Medusa 배송지"
+        right={customer ? <CustomerAddressCreateDialog customer={customer} /> : null}
+      />
+
+      {isLoading ? (
+        <div className="flex justify-center p-4">
+          <Spinner />
+        </div>
+      ) : isError || !customer ? (
+        <div className="p-4 text-center text-sm text-gray-500">
+          연결된 Medusa 고객을 찾을 수 없습니다.
+        </div>
+      ) : addresses.length === 0 ? (
+        <div className="p-4 text-center text-sm text-gray-500">등록된 주소가 없습니다.</div>
+      ) : (
+        <div>
+          {addresses.map((address) => (
+            <AddressCard key={address.id} address={address} />
+          ))}
+        </div>
+      )}
+    </Container>
+  );
+}
