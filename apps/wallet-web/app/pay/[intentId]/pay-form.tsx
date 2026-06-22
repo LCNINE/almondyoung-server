@@ -230,7 +230,9 @@ export function PayForm({
         return; // requestPayment redirects
       }
 
-      if (result.status === 'REQUIRES_ACTION' && isBankTransferPendingAction(result.nextAction)) {
+      // 무통장: confirm 응답 status는 이제 AWAITING_DEPOSIT이므로 status가 아니라
+      // nextAction 타입(BANK_TRANSFER_PENDING)으로 판별한다.
+      if (isBankTransferPendingAction(result.nextAction)) {
         setBankTransferPending(result.nextAction);
         return;
       }

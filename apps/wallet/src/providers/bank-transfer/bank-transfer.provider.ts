@@ -17,6 +17,7 @@ import { WalletSchema, paymentMethods } from '../../schema';
 export class BankTransferPaymentProvider implements PaymentProvider {
   readonly providerType = 'BANK_TRANSFER';
   readonly autoCapture = true;
+  readonly actionMode = 'offline-wait' as const;
 
   constructor(private readonly dbService: DbService<WalletSchema>) {}
 

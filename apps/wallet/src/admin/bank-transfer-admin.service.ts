@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { PaginatedResponseDto } from '@app/shared';
-import { and, count, desc, eq, sql } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, sql } from 'drizzle-orm';
 import { WalletSchema, charges, paymentIntents, paymentMethods } from '../schema';
 import { ChargesService } from '../charges/charges.service';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
@@ -26,7 +26,10 @@ export class BankTransferAdminService {
     const db = this.dbService.db;
     const offset = (page - 1) * limit;
 
-    const condition = and(eq(paymentIntents.status, 'REQUIRES_ACTION'), eq(paymentMethods.type, 'BANK_TRANSFER'));
+    const condition = and(
+      inArray(paymentIntents.status, ['AWAITING_DEPOSIT', 'REQUIRES_ACTION']),
+      eq(paymentMethods.type, 'BANK_TRANSFER'),
+    );
 
     const [countResult] = await db
       .select({ value: count() })
@@ -115,10 +118,11 @@ export class BankTransferAdminService {
 
     // 3. Transaction: charge → SUCCEEDED, intent → AUTHORIZED → CAPTURED + outbox event
     //
-    // 무통장입금은 PG 가 없어 authorize 시점에 REQUIRES_ACTION 으로 멈춰 있다.
+    // 무통장입금은 PG 가 없어 authorize 시점에 intent 는 AWAITING_DEPOSIT, charge 는
+    // REQUIRES_ACTION 으로 멈춰 있다.
     // 입금 확인 = 자금 확인(AUTHORIZED) + 정산(CAPTURED) 이 한 번에 일어나는 것이므로
-    // 상태머신이 허용하는 정식 경로(REQUIRES_ACTION → AUTHORIZED → CAPTURED)로 두 단계 전이한다.
-    // (REQUIRES_ACTION → CAPTURED / SUCCEEDED 직접 전이는 상태머신에 없음 — SUCCEEDED 는 legacy 상태.)
+    // 상태머신이 허용하는 정식 경로(AWAITING_DEPOSIT → AUTHORIZED → CAPTURED)로 두 단계 전이한다.
+    // (구 REQUIRES_ACTION 건도 REQUIRES_ACTION → AUTHORIZED 전이가 유지되어 동일하게 처리된다.)
     // 최종 상태를 CAPTURED 로 둬야 Medusa 가 payment.intent.captured → SUCCESSFUL 로 받아 주문을 완료 처리한다.
     await this.dbService.db.transaction(async (tx) => {
       await this.chargesService.updateStatus(
