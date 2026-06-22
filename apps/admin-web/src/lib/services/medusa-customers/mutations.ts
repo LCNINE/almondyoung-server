@@ -23,3 +23,23 @@ export const useCreateMedusaCustomerAddress = (customerId: string) => {
     },
   });
 };
+
+export const useUpdateMedusaCustomerAddress = (
+  customerId: string,
+  addressId: string
+) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: MedusaCustomerAddressPayload) =>
+      medusaCustomerApi.updateCustomerAddress(customerId, addressId, payload),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: medusaCustomerQueryKeys.detail(customerId),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: medusaCustomerQueryKeys.all,
+      });
+    },
+  });
+};
