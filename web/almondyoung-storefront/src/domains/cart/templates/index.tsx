@@ -81,11 +81,24 @@ export default function CartTemplate({ cart }: Props) {
     // 일부 선택 → 새 체크아웃 카트 생성
     startCheckoutTransition(async () => {
       try {
-        const { cartId } = await createCheckoutCartFromLineItems({
+        const result = await createCheckoutCartFromLineItems({
           countryCode,
           lineItemIds: Array.from(selectedIds),
         })
-        router.push(`/${countryCode}/checkout?cartId=${cartId}`)
+
+        // 미게시/판매중지 등으로 담을 수 없는 상품이 있으면 어떤 상품인지 안내
+        if ("error" in result) {
+          const names = result.unavailableNames.filter(Boolean)
+          const { toast } = await import("sonner")
+          toast.error(
+            names.length > 0
+              ? t("itemsUnavailable", { items: names.join(", ") })
+              : t("checkoutFailed")
+          )
+          return
+        }
+
+        router.push(`/${countryCode}/checkout?cartId=${result.cartId}`)
       } catch (error) {
         console.error("Failed to create checkout cart:", error)
         const { toast } = await import("sonner")

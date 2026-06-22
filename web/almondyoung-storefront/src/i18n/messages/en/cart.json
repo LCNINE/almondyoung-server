@@ -42,7 +42,8 @@
     "selectItems": "Please select items to purchase.",
     "checkout": "Checkout",
     "checkoutWithCount": "Checkout ({count} items)",
-    "checkoutFailed": "Failed to proceed to checkout. Please try again."
+    "checkoutFailed": "Failed to proceed to checkout. Please try again.",
+    "itemsUnavailable": "‘{items}’ is currently unavailable. Please remove it from your cart and try again."
   },
   "mobileBar": {
     "discountTotal": "{amount} KRW off",

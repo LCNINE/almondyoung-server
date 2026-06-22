@@ -42,7 +42,8 @@
     "selectItems": "ご購入される商品を選択してください。",
     "checkout": "購入する",
     "checkoutWithCount": "{count}点の商品を購入する",
-    "checkoutFailed": "注文の進行に失敗しました。もう一度お試しください。"
+    "checkoutFailed": "注文の進行に失敗しました。もう一度お試しください。",
+    "itemsUnavailable": "「{items}」は現在購入できない商品です。カートから削除して再度お試しください。"
   },
   "mobileBar": {
     "discountTotal": "合計{amount}ウォン割引",

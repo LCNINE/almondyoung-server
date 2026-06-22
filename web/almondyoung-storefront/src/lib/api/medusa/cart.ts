@@ -288,7 +288,10 @@ export async function createBuyNowCart(params: {
 export async function createCheckoutCartFromLineItems(params: {
   countryCode: string
   lineItemIds: string[]
-}): Promise<{ cartId: string }> {
+}): Promise<
+  | { cartId: string }
+  | { error: "ITEMS_UNAVAILABLE"; unavailableNames: string[] }
+> {
   const { countryCode, lineItemIds } = params
 
   if (!lineItemIds.length) {
@@ -358,6 +361,9 @@ export async function createCheckoutCartFromLineItems(params: {
     }
   }
 
+  // 미게시(draft)/삭제/판매중지 등으로 새 카트에 담을 수 없는 상품을 모아 호출부에 알린다.
+  const unavailableNames: string[] = []
+
   for (const item of selectedItems) {
     const variantId = item.variant_id || item.variant?.id
     if (!variantId) {
@@ -368,15 +374,27 @@ export async function createCheckoutCartFromLineItems(params: {
       )
     }
 
-    await sdk.store.cart.createLineItem(
-      checkoutCart.id,
-      {
-        variant_id: variantId,
-        quantity: item.quantity,
-      },
-      {},
-      headers
-    )
+    try {
+      await sdk.store.cart.createLineItem(
+        checkoutCart.id,
+        {
+          variant_id: variantId,
+          quantity: item.quantity,
+        },
+        {},
+        headers
+      )
+    } catch (error) {
+      // 인증 만료는 error.tsx 의 토큰 복구 경로로 흘려보낸다
+      if ((error as { status?: number })?.status === 401) {
+        throw error
+      }
+      unavailableNames.push(item.product_title || item.title || "")
+    }
+  }
+
+  if (unavailableNames.length > 0) {
+    return { error: "ITEMS_UNAVAILABLE", unavailableNames }
   }
 
   await sdk.store.cart.update(
