@@ -1,4 +1,4 @@
-import { ExpirationJob } from './expiration.job';
+import { ExpirationJob, EXPIRABLE_INTENT_STATUSES } from './expiration.job';
 
 // ─── Test context ─────────────────────────────────────────────────────────────
 
@@ -51,5 +51,17 @@ describe('ExpirationJob', () => {
       expect.anything(),
     );
     expect(result.expired).toBe(1);
+  });
+});
+
+describe('ExpirationJob — expirable statuses', () => {
+  it('includes AWAITING_DEPOSIT so unpaid bank-transfer intents get released + canceled at the deposit window', () => {
+    expect(EXPIRABLE_INTENT_STATUSES).toContain('AWAITING_DEPOSIT');
+  });
+
+  it('still includes the in-flight statuses', () => {
+    expect(EXPIRABLE_INTENT_STATUSES).toEqual(
+      expect.arrayContaining(['CREATED', 'PROCESSING', 'REQUIRES_ACTION', 'AWAITING_DEPOSIT']),
+    );
   });
 });
