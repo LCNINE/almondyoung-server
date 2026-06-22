@@ -30,7 +30,9 @@
     "quantityMinError": "수량은 1개 이상이어야 합니다.",
     "quantityDialogTitle": "수량을 입력해주세요",
     "cancel": "취소",
-    "confirm": "확인"
+    "confirm": "확인",
+    "soldOutBadge": "판매중단",
+    "soldOutHint": "판매가 중단된 상품입니다. 결제하려면 이 상품을 삭제해주세요."
   },
   "summary": {
     "title": "주문 예상 금액",
