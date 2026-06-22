@@ -28,7 +28,7 @@ export const loggerConfig: Params = {
     customLogLevel: (_req, res, err) => {
       if (err || res.statusCode >= 500) return 'error';
       if (res.statusCode >= 400) return 'warn';
-      return 'info';
+      return 'debug';
     },
     autoLogging: {
       ignore: (req) => req.url === '/health' || req.url === '/metrics',
