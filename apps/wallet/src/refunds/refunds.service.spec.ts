@@ -39,6 +39,8 @@ function makeInsertedRefund(overrides: Partial<{ amount: number; reasonCode: str
 function makeContext(options: {
   charge?: ReturnType<typeof makeCharge>;
   method?: ReturnType<typeof makeMethod>;
+  refundableCharges?: ReturnType<typeof makeCharge>[];
+  existingSucceededRefunds?: ReturnType<typeof makeInsertedRefund>[];
   priorRefundedAmount?: number;       // SUCCEEDED+PENDING total in the insert-phase transaction
   succeededRefundedAmount?: number;   // SUCCEEDED-only total in the post-SUCCEEDED transaction
   providerResult?: { status: string; errorCode?: string; errorMessage?: string; providerRefundId?: string };
@@ -46,6 +48,8 @@ function makeContext(options: {
 } = {}) {
   const charge = options.charge ?? makeCharge();
   const method = options.method ?? makeMethod();
+  const refundableCharges = options.refundableCharges ?? [charge];
+  const existingSucceededRefunds = options.existingSucceededRefunds ?? [];
   const priorRefundedAmount = options.priorRefundedAmount ?? 0;
   const succeededRefundedAmount = options.succeededRefundedAmount ?? 0;
   const providerResult = options.providerResult ?? { status: 'SUCCEEDED', providerRefundId: 'prov-rf-001' };
@@ -91,6 +95,7 @@ function makeContext(options: {
       select: jest.fn().mockImplementation(() => ({
         from: (table: any) => ({
           where: () => ({
+            orderBy: () => Promise.resolve(existingSucceededRefunds),
             limit: () => ({
               then: (cb: any) => {
                 // For paymentIntents query (getIntentUserId)
@@ -113,7 +118,10 @@ function makeContext(options: {
     },
   };
 
-  const chargesService = { findById: jest.fn().mockResolvedValue(charge) };
+  const chargesService = {
+    findById: jest.fn().mockResolvedValue(charge),
+    findRefundableByIntent: jest.fn().mockResolvedValue(refundableCharges),
+  };
   const paymentMethodsService = { findById: jest.fn().mockResolvedValue(method) };
   const provider = { refund: jest.fn().mockResolvedValue(providerResult) };
   const providerRegistry = { getProviderOrThrow: jest.fn().mockReturnValue(provider) };
@@ -212,6 +220,30 @@ describe('RefundsService', () => {
       await expect(
         service.create({ chargeId: CHARGE_ID, amount: 1000 }),
       ).rejects.toThrow('not in a refundable state');
+    });
+
+    it('intent가 이미 전액 환불되어 환불 가능 charge가 없으면 기존 성공 환불을 반환한다', async () => {
+      const existingRefund = { ...makeInsertedRefund({ amount: 10000 }), status: 'SUCCEEDED' };
+      const { service, chargesService, provider, db } = makeContext({
+        refundableCharges: [],
+        existingSucceededRefunds: [existingRefund],
+      });
+
+      await expect(service.createByIntent(INTENT_ID, { amount: 10000 })).resolves.toEqual([existingRefund]);
+      expect(chargesService.findRefundableByIntent).toHaveBeenCalledWith(INTENT_ID);
+      expect(provider.refund).not.toHaveBeenCalled();
+      expect(db.db.transaction).not.toHaveBeenCalled();
+    });
+
+    it('환불 가능 charge가 없고 기존 성공 환불도 부족하면 REFUNDABLE_CHARGE_NOT_FOUND', async () => {
+      const existingRefund = { ...makeInsertedRefund({ amount: 3000 }), status: 'SUCCEEDED' };
+      const { service, provider } = makeContext({
+        refundableCharges: [],
+        existingSucceededRefunds: [existingRefund],
+      });
+
+      await expect(service.createByIntent(INTENT_ID, { amount: 10000 })).rejects.toThrow('No refundable charge found');
+      expect(provider.refund).not.toHaveBeenCalled();
     });
   });
 
