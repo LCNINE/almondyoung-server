@@ -11,7 +11,10 @@ import type { RevokeRequestDto } from './dto/revoke.dto';
  * 서버는 MUST 지원해야 한다. body 의 client_secret 은 NOT RECOMMENDED 이지만 대부분 구현이 같이 받는다.
  * 따라서 헤더에서 먼저 추출 시도 → 없으면 body 의 client_secret 을 fallback 으로 본다.
  */
-export function parseBasicAuthCredentials(authHeader: string | undefined): { clientId?: string; clientSecret?: string } {
+export function parseBasicAuthCredentials(authHeader: string | undefined): {
+  clientId?: string;
+  clientSecret?: string;
+} {
   if (!authHeader) return {};
   const m = authHeader.match(/^Basic\s+([A-Za-z0-9+/=_-]+)\s*$/i);
   if (!m) return {};
@@ -32,6 +35,7 @@ export function parseBasicAuthCredentials(authHeader: string | undefined): { cli
 const MAX_LEN_CLIENT_ID = 64;
 const MAX_LEN_SECRET = 256;
 const MAX_LEN_CODE = 128;
+const MAX_LEN_HANDOFF_TOKEN = 2048;
 const MAX_LEN_VERIFIER = 256;
 const MAX_LEN_URI = 1024;
 const MAX_LEN_REFRESH = 2048;
@@ -70,7 +74,7 @@ export function normalizeTokenBody(raw: unknown): TokenRequestDto {
   assertMax(clientSecret, MAX_LEN_SECRET, 'client_secret');
 
   const code = readString(body, 'code');
-  assertMax(code, MAX_LEN_CODE, 'code');
+  assertMax(code, grantType === 'payment_handoff' ? MAX_LEN_HANDOFF_TOKEN : MAX_LEN_CODE, 'code');
 
   const codeVerifier = readString(body, 'code_verifier', 'codeVerifier');
   assertMax(codeVerifier, MAX_LEN_VERIFIER, 'code_verifier');

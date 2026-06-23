@@ -1,5 +1,6 @@
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import * as jwt from 'jsonwebtoken';
 import { OAuthManager } from './oauth.manager';
 import { OAuthReader } from './oauth.reader';
 import { OAuthRepository, OAuthClientRow } from './oauth.repository';
@@ -323,31 +324,36 @@ describe('OAuthManager — nonce propagation', () => {
     it('confidential client + 유효한 핸드오프 토큰 → 세션 토큰셋 발급', async () => {
       (reader.getClientOrThrow as jest.Mock).mockResolvedValue(confidentialClient());
       jest.spyOn(bcrypt, 'compare').mockResolvedValue(true as never);
-      (jwtService.verifyAsync as jest.Mock).mockResolvedValue({ sub: 'u-1', purpose: 'payment_handoff' });
+      (jwtService.verifyAsync as jest.Mock).mockRejectedValue(new Error('invalid algorithm'));
+      const handoffToken = jwt.sign({ sub: 'u-1', purpose: 'payment_handoff' }, 'handoff-secret', {
+        expiresIn: '120s',
+      });
 
       const result = await manager.issueToken({
         grantType: 'payment_handoff',
         clientId: 'wallet-web',
         clientSecret: 'secret',
-        code: 'handoff-jwt',
+        code: handoffToken,
       } as never);
 
       expect(result.access_token).toBeDefined();
       expect(result.refresh_token).toBeDefined();
-      expect(jwtService.verifyAsync).toHaveBeenCalledWith('handoff-jwt', { secret: 'handoff-secret' });
+      expect(jwtService.verifyAsync).not.toHaveBeenCalled();
     });
 
     it('purpose 가 payment_handoff 가 아니면 거부', async () => {
       (reader.getClientOrThrow as jest.Mock).mockResolvedValue(confidentialClient());
       jest.spyOn(bcrypt, 'compare').mockResolvedValue(true as never);
-      (jwtService.verifyAsync as jest.Mock).mockResolvedValue({ sub: 'u-1', purpose: 'social_callback' });
+      const socialToken = jwt.sign({ sub: 'u-1', purpose: 'social_callback' }, 'handoff-secret', {
+        expiresIn: '120s',
+      });
 
       await expect(
         manager.issueToken({
           grantType: 'payment_handoff',
           clientId: 'wallet-web',
           clientSecret: 'secret',
-          code: 'x',
+          code: socialToken,
         } as never),
       ).rejects.toThrow(/invalid handoff token/);
     });
