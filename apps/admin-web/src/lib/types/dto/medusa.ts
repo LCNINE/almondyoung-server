@@ -29,6 +29,8 @@ export interface CustomerCartItem {
   variant_id: string | null;
   variant_title: string | null;
   variant_sku: string | null;
+  // 재고 관리 여부: false=재고 미관리(디지털 상품 등), true=관리, null=variant 조회 실패
+  manage_inventory: boolean | null;
   option_stock: number | null;
   total_stock: number | null;
   sold_out: boolean;

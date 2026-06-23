@@ -52,7 +52,6 @@ export function CartTab({ customerId }: { customerId: string }) {
   const { data: medusaCustomerRes, isLoading: isMedusaCustomerLoading } =
     useMedusaCustomerByEmail(email);
   const medusaCustomerId = medusaCustomerRes?.customers?.[0]?.id;
-
   const {
     data: cartRes,
     isLoading: isCartLoading,
@@ -79,9 +78,9 @@ export function CartTab({ customerId }: { customerId: string }) {
   const isError = !!email && !isLoading && (isCartError || !medusaCustomerId);
 
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-4">
-      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-gray-800">
-        <ShoppingCart className="size-4 text-indigo-500" />
+    <section className="p-4 bg-white border border-gray-200 rounded-lg">
+      <div className="flex items-center gap-2 mb-3 text-sm font-semibold text-gray-800">
+        <ShoppingCart className="text-indigo-500 size-4" />
         장바구니 정보
         {!isLoading && !isError && (
           <span className="text-xs font-normal text-gray-500">
@@ -91,17 +90,17 @@ export function CartTab({ customerId }: { customerId: string }) {
       </div>
 
       {isLoading ? (
-        <div className="space-y-2 py-2">
-          <Skeleton className="h-8 w-full" />
-          <Skeleton className="h-8 w-full" />
-          <Skeleton className="h-8 w-full" />
+        <div className="py-2 space-y-2">
+          <Skeleton className="w-full h-8" />
+          <Skeleton className="w-full h-8" />
+          <Skeleton className="w-full h-8" />
         </div>
       ) : isError ? (
-        <div className="py-8 text-center text-sm text-red-400">
+        <div className="py-8 text-sm text-center text-red-400">
           장바구니 정보를 불러오지 못했습니다.
         </div>
       ) : total === 0 ? (
-        <div className="rounded-md border border-gray-100 py-12 text-center text-sm text-gray-400">
+        <div className="py-12 text-sm text-center text-gray-400 border border-gray-100 rounded-md">
           검색결과가 없습니다.
         </div>
       ) : (
@@ -115,7 +114,7 @@ export function CartTab({ customerId }: { customerId: string }) {
                   <TableHead className="w-32">옵션</TableHead>
                   <TableHead className="w-20 text-center">옵션재고</TableHead>
                   <TableHead className="w-20 text-center">총재고량</TableHead>
-                  <TableHead className="w-14 text-center">수량</TableHead>
+                  <TableHead className="text-center w-14">수량</TableHead>
                   <TableHead className="w-24 text-right">판매가</TableHead>
                   <TableHead className="w-20 text-center">품절옵션</TableHead>
                 </TableRow>
@@ -123,7 +122,7 @@ export function CartTab({ customerId }: { customerId: string }) {
               <TableBody>
                 {pagedItems.map((item) => (
                   <TableRow key={item.id} className="align-top">
-                    <TableCell className="whitespace-nowrap text-xs text-gray-600">
+                    <TableCell className="text-xs text-gray-600 whitespace-nowrap">
                       {formatDateTime(item.created_at)}
                     </TableCell>
                     <TableCell>
@@ -134,10 +133,10 @@ export function CartTab({ customerId }: { customerId: string }) {
                           <img
                             src={item.thumbnail}
                             alt={item.product_title ?? ''}
-                            className="size-10 shrink-0 rounded border object-cover"
+                            className="object-cover border rounded size-10 shrink-0"
                           />
                         ) : (
-                          <div className="flex size-10 shrink-0 items-center justify-center rounded border bg-gray-50 text-gray-300">
+                          <div className="flex items-center justify-center text-gray-300 border rounded size-10 shrink-0 bg-gray-50">
                             <Package className="size-4" />
                           </div>
                         )}
@@ -156,12 +155,23 @@ export function CartTab({ customerId }: { customerId: string }) {
                     <TableCell className="text-xs text-gray-600">
                       {item.variant_title ?? '-'}
                     </TableCell>
-                    <TableCell className="text-center text-gray-700">
-                      <StockCell value={item.option_stock} />
-                    </TableCell>
-                    <TableCell className="text-center text-gray-700">
-                      <StockCell value={item.total_stock} />
-                    </TableCell>
+                    {item.manage_inventory === false ? (
+                      <TableCell
+                        colSpan={2}
+                        className="text-xs text-center text-gray-400"
+                      >
+                        재고관리 안함
+                      </TableCell>
+                    ) : (
+                      <>
+                        <TableCell className="text-center text-gray-700">
+                          <StockCell value={item.option_stock} />
+                        </TableCell>
+                        <TableCell className="text-center text-gray-700">
+                          <StockCell value={item.total_stock} />
+                        </TableCell>
+                      </>
+                    )}
                     <TableCell className="text-center text-gray-700">
                       {item.quantity}
                     </TableCell>
@@ -182,7 +192,7 @@ export function CartTab({ customerId }: { customerId: string }) {
           </div>
 
           {totalPages > 1 && (
-            <div className="mt-4 flex items-center justify-center gap-1">
+            <div className="flex items-center justify-center gap-1 mt-4">
               <Button
                 type="button"
                 size="icon"
@@ -200,7 +210,7 @@ export function CartTab({ customerId }: { customerId: string }) {
                   type="button"
                   size="icon"
                   variant={p === safePage ? 'default' : 'outline'}
-                  className="size-7 text-xs"
+                  className="text-xs size-7"
                   onClick={() => setPage(p)}
                 >
                   {p}

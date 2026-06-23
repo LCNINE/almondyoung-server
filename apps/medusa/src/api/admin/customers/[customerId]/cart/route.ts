@@ -63,28 +63,18 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   }
 
   const items: any[] = activeCart.items ?? [];
-  const productIds = [
-    ...new Set(items.map((i) => i.product_id).filter(Boolean)),
-  ] as string[];
+  const productIds = [...new Set(items.map((i) => i.product_id).filter(Boolean))] as string[];
 
   // 2) 관련 상품의 모든 variant + inventory_item 연결 조회 (총재고량 계산을 위해 전체 variant 필요)
   const { data: variantRows } = await query.graph({
     entity: 'product_variant',
-    fields: [
-      'id',
-      'product_id',
-      'manage_inventory',
-      'inventory_items.inventory_item_id',
-    ],
+    fields: ['id', 'product_id', 'manage_inventory', 'inventory_items.inventory_item_id'],
     filters: { product_id: productIds },
   });
 
   // variant_id -> inventory_item_id, variant_id -> { productId, managed }
   const variantToInventoryItem = new Map<string, string>();
-  const variantMeta = new Map<
-    string,
-    { productId: string; managed: boolean }
-  >();
+  const variantMeta = new Map<string, { productId: string; managed: boolean }>();
   const allInventoryItemIds: string[] = [];
 
   for (const v of variantRows as any[]) {
@@ -107,8 +97,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       { take: null },
     );
     for (const level of levels as any[]) {
-      const available =
-        (level.stocked_quantity || 0) - (level.reserved_quantity || 0);
+      const available = (level.stocked_quantity || 0) - (level.reserved_quantity || 0);
       const prev = availableByInventoryItem.get(level.inventory_item_id) ?? 0;
       availableByInventoryItem.set(level.inventory_item_id, prev + available);
     }
@@ -122,9 +111,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       continue;
     }
     const invItemId = variantToInventoryItem.get(variantId);
-    const available = invItemId
-      ? (availableByInventoryItem.get(invItemId) ?? 0)
-      : 0;
+    const available = invItemId ? (availableByInventoryItem.get(invItemId) ?? 0) : 0;
     availableByVariant.set(variantId, available);
   }
 
@@ -144,6 +131,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
   const responseItems = items.map((item) => {
     const optionStock = availableByVariant.get(item.variant_id) ?? null;
     const totalStock = totalStockByProduct.get(item.product_id) ?? null;
+    const manageInventory = variantMeta.get(item.variant_id)?.managed ?? null;
     return {
       id: item.id,
       created_at: item.created_at,
@@ -155,6 +143,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       variant_id: item.variant_id,
       variant_title: item.variant_title ?? null,
       variant_sku: item.variant_sku ?? null,
+      manage_inventory: manageInventory,
       option_stock: optionStock,
       total_stock: totalStock,
       sold_out: optionStock != null && optionStock <= 0,
