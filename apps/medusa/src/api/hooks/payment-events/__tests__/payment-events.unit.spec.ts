@@ -247,6 +247,23 @@ describe('handleAwaitingDepositProjection', () => {
     expect(cartModule.updateCarts).not.toHaveBeenCalled();
     expect(completeRun).not.toHaveBeenCalled();
   });
+
+  it('session 자체가 없으면(비-Medusa intent: 멤버십/빌링 무통장) throw 없이 skip 한다', async () => {
+    // offline-wait 이벤트는 결제수단(무통장) 기준으로 발행되므로, Medusa 세션이 없는
+    // 멤버십/빌링 무통장 intent 도 이 핸들러에 도달한다. capture/cancel/refund 핸들러처럼
+    // terminal no-op(200) 으로 끝내야 무한 재시도/DLQ 를 피한다.
+    const { scope, cartModule } = makeScope({
+      paymentModule: { listPaymentSessions: jest.fn().mockResolvedValue([]) },
+    });
+
+    await expect(
+      handleAwaitingDepositProjection(scope as any, 'intent_non_medusa', 'msg_no_session', logger as any),
+    ).resolves.toBeUndefined();
+
+    expect(completeCartWorkflow).not.toHaveBeenCalled();
+    expect(cartModule.updateCarts).not.toHaveBeenCalled();
+    expect(deleteLineItemsWorkflow).not.toHaveBeenCalled();
+  });
 });
 
 describe('handleCaptureProjection', () => {
