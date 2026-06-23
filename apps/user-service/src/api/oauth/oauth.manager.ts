@@ -7,6 +7,7 @@ import { TokensService } from '../tokens/tokens.service';
 import { type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
+import * as jwt from 'jsonwebtoken';
 import { DbTransaction } from '../../commons/types';
 import {
   INTERNAL_TOKEN_AUDIENCE,
@@ -176,11 +177,16 @@ export class OAuthManager {
       throw new UnauthorizedError('payment_handoff grant requires a confidential client');
     }
 
-    let payload: { sub?: string; purpose?: string; client_id?: string };
+    const handoffSecret = this.configService.getOrThrow<string>('JWT_VERIFICATION_TOKEN_SECRET');
+    let payload: jwt.JwtPayload & { purpose?: string; client_id?: string };
     try {
-      payload = await this.jwtService.verifyAsync(input.code, {
-        secret: this.configService.getOrThrow<string>('JWT_VERIFICATION_TOKEN_SECRET'),
+      const verified = jwt.verify(input.code, handoffSecret, {
+        algorithms: ['HS256'],
       });
+      if (typeof verified === 'string') {
+        throw new UnauthorizedError('invalid handoff token');
+      }
+      payload = verified;
     } catch {
       throw new UnauthorizedError('invalid or expired handoff token');
     }
@@ -217,9 +223,7 @@ export class OAuthManager {
         const withinGrace = Date.now() - revokedAtMs < REFRESH_REUSE_GRACE_MS;
         const child = withinGrace ? await this.repo.findChildToken(row.id, tx) : null;
         if (child && !child.isRevoked && child.expiresAt > new Date()) {
-          this.logger.warn(
-            `refresh token concurrent-rotation tolerated (grace) parent=${row.id} child=${child.id}`,
-          );
+          this.logger.warn(`refresh token concurrent-rotation tolerated (grace) parent=${row.id} child=${child.id}`);
           await this.repo.revokeTokenById(child.id, tx);
           return this.mintTokenPair(child.userId, child.clientId, child.scope, child.id, tx);
         }
@@ -385,16 +389,12 @@ export class OAuthManager {
         // SLO 는 internal session token (aud=user-service-internal) 과
         // OAuth access token (aud=등록된 client_id) 양쪽을 의도적으로 수용한다.
         // JwtModule 은 issuer/RS256 만 강제하므로 audience 화이트리스트는 여기서 명시 검증한다.
-        const payload = await this.jwtService.verifyAsync<{ sub?: string; aud?: string }>(
-          input.accessToken,
-        );
+        const payload = await this.jwtService.verifyAsync<{ sub?: string; aud?: string }>(input.accessToken);
         const aud = payload.aud;
         const audAccepted =
           aud === INTERNAL_TOKEN_AUDIENCE ||
           (typeof aud === 'string' && aud.length > 0 && (await this.repo.findActiveClientById(aud)) !== null);
-        this.logger.log(
-          `[logout] endSession verify 성공 sub=${payload.sub} aud=${aud} audAccepted=${audAccepted}`,
-        );
+        this.logger.log(`[logout] endSession verify 성공 sub=${payload.sub} aud=${aud} audAccepted=${audAccepted}`);
         if (audAccepted && payload.sub) {
           userId = payload.sub;
         }
