@@ -1,27 +1,65 @@
-import { handleCancelProjection, handleCaptureProjection, handleRefundProjection } from '../route';
+import {
+  handleAwaitingDepositProjection,
+  handleCancelProjection,
+  handleCaptureProjection,
+  handleRefundProjection,
+} from '../route';
 import { capturePaymentWorkflow } from '@medusajs/core-flows';
-import { completeCartWorkflow } from '@medusajs/medusa/core-flows';
+import { completeCartWorkflow, cancelOrderWorkflow, deleteLineItemsWorkflow } from '@medusajs/medusa/core-flows';
 
 // Workflow imports are mocked so importing the route is cheap and we can assert
 // they are NOT invoked on skip paths.
 jest.mock('@medusajs/core-flows', () => ({ capturePaymentWorkflow: jest.fn() }));
-jest.mock('@medusajs/medusa/core-flows', () => ({ completeCartWorkflow: jest.fn() }));
+jest.mock('@medusajs/medusa/core-flows', () => ({
+  completeCartWorkflow: jest.fn(),
+  cancelOrderWorkflow: jest.fn(),
+  deleteLineItemsWorkflow: jest.fn(),
+}));
 
-type PaymentModuleStub = {
-  listPaymentSessions: jest.Mock;
-  listPayments: jest.Mock;
-  updatePayment: jest.Mock;
-};
+type GraphArgs = { entity: string; fields?: string[]; filters?: Record<string, unknown> };
+type GraphFn = (args: GraphArgs) => Promise<{ data: any[] }> | { data: any[] };
 
-function makeScope(paymentModule: Partial<PaymentModuleStub>) {
-  const full: PaymentModuleStub = {
+function makeScope(opts: {
+  paymentModule?: Record<string, unknown>;
+  orderModule?: Record<string, unknown>;
+  cartModule?: Record<string, unknown>;
+  graph?: GraphFn;
+} = {}) {
+  const paymentModule = {
     listPaymentSessions: jest.fn().mockResolvedValue([]),
     listPayments: jest.fn().mockResolvedValue([]),
     updatePayment: jest.fn(),
-    ...paymentModule,
+    ...opts.paymentModule,
   };
-  const scope = { resolve: jest.fn().mockReturnValue(full) };
-  return { scope, paymentModule: full };
+  const orderModule = {
+    retrieveOrder: jest.fn().mockResolvedValue(null),
+    updateOrders: jest.fn(),
+    ...opts.orderModule,
+  };
+  const cartModule = {
+    updateCarts: jest.fn(),
+    ...opts.cartModule,
+  };
+  const query = {
+    graph: jest.fn(opts.graph ?? (async () => ({ data: [] }))),
+  };
+  // Medusa container keys resolve to string tokens: Modules.PAYMENT='payment',
+  // Modules.ORDER='order', Modules.CART='cart', ContainerRegistrationKeys.QUERY='query'.
+  const scope = {
+    resolve: jest.fn((key: string) => {
+      if (key === 'order') return orderModule;
+      if (key === 'cart') return cartModule;
+      if (key === 'query') return query;
+      return paymentModule;
+    }),
+  };
+  return { scope, paymentModule, orderModule, cartModule, query };
+}
+
+function mockCancelOrder(result: { errors?: Array<{ error: unknown }> } = { errors: [] }) {
+  const run = jest.fn().mockResolvedValue(result);
+  (cancelOrderWorkflow as unknown as jest.Mock).mockReturnValue({ run });
+  return run;
 }
 
 const logger = { info: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() };
@@ -31,7 +69,7 @@ beforeEach(() => jest.clearAllMocks());
 describe('handleCancelProjection', () => {
   it('비-Medusa intent(session 없음)는 throw 없이 skip 한다', async () => {
     const { scope, paymentModule } = makeScope({
-      listPaymentSessions: jest.fn().mockResolvedValue([]),
+      paymentModule: { listPaymentSessions: jest.fn().mockResolvedValue([]) },
     });
 
     await expect(
@@ -41,25 +79,180 @@ describe('handleCancelProjection', () => {
     expect(paymentModule.updatePayment).not.toHaveBeenCalled();
   });
 
-  it('실제 Medusa payment가 있으면 canceled_at 으로 표시한다 (회귀 가드)', async () => {
-    const payment = { id: 'pay_1', canceled_at: null, metadata: {} };
+  it('payment 있고 주문이 없으면 canceled_at 으로 표시한다 (회귀 가드)', async () => {
+    const payment = { id: 'pay_1', canceled_at: null, captured_at: null, metadata: {} };
     const { scope, paymentModule } = makeScope({
-      listPaymentSessions: jest.fn().mockResolvedValue([{ id: 'payses_1' }]),
-      listPayments: jest.fn().mockResolvedValue([payment]),
+      paymentModule: {
+        listPaymentSessions: jest.fn().mockResolvedValue([{ id: 'payses_1' }]),
+        listPayments: jest.fn().mockResolvedValue([payment]),
+      },
+      // graph 기본값 {data:[]} → payment_collection 조회 빈 결과 → 주문 없음
     });
 
     await handleCancelProjection(scope as any, 'intent_medusa', 'msg_4', logger as any);
 
+    expect(cancelOrderWorkflow).not.toHaveBeenCalled();
     expect(paymentModule.updatePayment).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'pay_1', canceled_at: expect.any(Date) }),
     );
+  });
+
+  it('미입금(미capture) 선생성 주문이 있으면 주문을 취소하고 payment 를 취소 표시한다', async () => {
+    const payment = { id: 'pay_1', canceled_at: null, captured_at: null, metadata: {} };
+    const runCancel = mockCancelOrder({ errors: [] });
+    const graph: GraphFn = async ({ entity }) => {
+      if (entity === 'payment_collection') return { data: [{ id: 'pc_1', cart: { id: 'cart_1' } }] };
+      if (entity === 'order_cart') return { data: [{ cart_id: 'cart_1', order_id: 'order_1' }] };
+      return { data: [] };
+    };
+    const { scope, paymentModule, orderModule } = makeScope({
+      paymentModule: {
+        listPaymentSessions: jest.fn().mockResolvedValue([{ id: 'payses_1', payment_collection_id: 'pc_1' }]),
+        listPayments: jest.fn().mockResolvedValue([payment]),
+      },
+      orderModule: { retrieveOrder: jest.fn().mockResolvedValue({ id: 'order_1', status: 'pending' }) },
+      graph,
+    });
+
+    await handleCancelProjection(scope as any, 'intent_bt', 'msg_5', logger as any);
+
+    expect(runCancel).toHaveBeenCalledWith(
+      expect.objectContaining({ input: expect.objectContaining({ order_id: 'order_1' }) }),
+    );
+    expect(paymentModule.updatePayment).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'pay_1', canceled_at: expect.any(Date) }),
+    );
+    expect(orderModule.retrieveOrder).toHaveBeenCalled();
+  });
+
+  it('주문 취소가 실패하면 throw 하고(재시도 가능) payment 는 취소 표시하지 않는다', async () => {
+    const payment = { id: 'pay_1', canceled_at: null, captured_at: null, metadata: {} };
+    mockCancelOrder({ errors: [{ error: new Error('boom') }] });
+    const graph: GraphFn = async ({ entity }) => {
+      if (entity === 'payment_collection') return { data: [{ id: 'pc_1', cart: { id: 'cart_1' } }] };
+      if (entity === 'order_cart') return { data: [{ cart_id: 'cart_1', order_id: 'order_1' }] };
+      return { data: [] };
+    };
+    const { scope, paymentModule } = makeScope({
+      paymentModule: {
+        listPaymentSessions: jest.fn().mockResolvedValue([{ id: 'payses_1', payment_collection_id: 'pc_1' }]),
+        listPayments: jest.fn().mockResolvedValue([payment]),
+      },
+      orderModule: { retrieveOrder: jest.fn().mockResolvedValue({ id: 'order_1', status: 'pending' }) },
+      graph,
+    });
+
+    await expect(
+      handleCancelProjection(scope as any, 'intent_bt', 'msg_6', logger as any),
+    ).rejects.toThrow(/cancelOrderWorkflow failed/);
+
+    expect(paymentModule.updatePayment).not.toHaveBeenCalled();
+  });
+
+  it('이미 capture(입금확정)된 주문은 취소하지 않는다', async () => {
+    const payment = { id: 'pay_1', canceled_at: null, captured_at: new Date(), metadata: {} };
+    const runCancel = mockCancelOrder({ errors: [] });
+    const { scope } = makeScope({
+      paymentModule: {
+        listPaymentSessions: jest.fn().mockResolvedValue([{ id: 'payses_1' }]),
+        listPayments: jest.fn().mockResolvedValue([payment]),
+      },
+    });
+
+    await handleCancelProjection(scope as any, 'intent_captured', 'msg_7', logger as any);
+
+    expect(runCancel).not.toHaveBeenCalled();
+  });
+});
+
+describe('handleAwaitingDepositProjection', () => {
+  it('주문 생성(completeCartWorkflow) 전에 cart 에 awaiting_deposit marker 를 원자적으로 심는다', async () => {
+    const completeRun = jest.fn().mockResolvedValue({ errors: [] });
+    (completeCartWorkflow as unknown as jest.Mock).mockReturnValue({ run: completeRun });
+    const deleteRun = jest.fn().mockResolvedValue({ errors: [] });
+    (deleteLineItemsWorkflow as unknown as jest.Mock).mockReturnValue({ run: deleteRun });
+
+    const graph: GraphFn = async ({ entity, filters }) => {
+      if (entity === 'payment_collection') {
+        return {
+          data: [
+            {
+              id: 'pc_1',
+              cart: { id: 'cart_1', completed_at: null, metadata: { source_cart_id: 'src_1', source_line_item_ids: ['li_1'] } },
+            },
+          ],
+        };
+      }
+      if (entity === 'order_cart') return { data: [] };
+      if (entity === 'cart') {
+        const id = (filters as any)?.id;
+        if (id === 'cart_1') return { data: [{ id: 'cart_1', metadata: { source_cart_id: 'src_1', source_line_item_ids: ['li_1'] } }] };
+        if (id === 'src_1') return { data: [{ id: 'src_1', completed_at: null, items: [{ id: 'li_1' }] }] };
+      }
+      return { data: [] };
+    };
+
+    const { scope, cartModule } = makeScope({
+      paymentModule: {
+        listPaymentSessions: jest.fn().mockResolvedValue([{ id: 'payses_1', payment_collection_id: 'pc_1' }]),
+        listPayments: jest.fn().mockResolvedValue([]),
+      },
+      graph,
+    });
+
+    await handleAwaitingDepositProjection(scope as any, 'intent_bt', 'msg_a', logger as any);
+
+    // marker 가 cart.metadata 에 심긴다 (completeCartWorkflow 가 order 로 복사 → 원자적)
+    expect(cartModule.updateCarts).toHaveBeenCalledWith(
+      'cart_1',
+      expect.objectContaining({
+        metadata: expect.objectContaining({ bank_transfer_status: 'awaiting_deposit' }),
+      }),
+    );
+    // 순서 보장: marker(updateCarts) → 주문 생성(completeCartWorkflow). marker 없는 authorized 주문 창 없음.
+    expect((cartModule.updateCarts as jest.Mock).mock.invocationCallOrder[0]).toBeLessThan(
+      completeRun.mock.invocationCallOrder[0],
+    );
+    // 원본 카트 정리도 실행 (구매한 라인 삭제)
+    expect(deleteRun).toHaveBeenCalledWith(
+      expect.objectContaining({ input: { cart_id: 'src_1', ids: ['li_1'] } }),
+    );
+  });
+
+  it('이미 완료된 cart(이벤트 순서 역전: capture 선처리)면 marker 를 심지 않는다', async () => {
+    const completeRun = jest.fn().mockResolvedValue({ errors: [] });
+    (completeCartWorkflow as unknown as jest.Mock).mockReturnValue({ run: completeRun });
+    (deleteLineItemsWorkflow as unknown as jest.Mock).mockReturnValue({ run: jest.fn().mockResolvedValue({ errors: [] }) });
+
+    const graph: GraphFn = async ({ entity, filters }) => {
+      if (entity === 'payment_collection') {
+        return { data: [{ id: 'pc_1', cart: { id: 'cart_1', completed_at: '2026-06-23T00:00:00Z', metadata: {} } }] };
+      }
+      if (entity === 'cart') {
+        const id = (filters as any)?.id;
+        if (id === 'cart_1') return { data: [{ id: 'cart_1', metadata: {} }] };
+      }
+      return { data: [] };
+    };
+
+    const { scope, cartModule } = makeScope({
+      paymentModule: {
+        listPaymentSessions: jest.fn().mockResolvedValue([{ id: 'payses_1', payment_collection_id: 'pc_1' }]),
+      },
+      graph,
+    });
+
+    await handleAwaitingDepositProjection(scope as any, 'intent_bt', 'msg_b', logger as any);
+
+    expect(cartModule.updateCarts).not.toHaveBeenCalled();
+    expect(completeRun).not.toHaveBeenCalled();
   });
 });
 
 describe('handleCaptureProjection', () => {
   it('session 자체가 없으면 무통장 복구를 시도하지 않고 skip 한다', async () => {
     const { scope } = makeScope({
-      listPaymentSessions: jest.fn().mockResolvedValue([]),
+      paymentModule: { listPaymentSessions: jest.fn().mockResolvedValue([]) },
     });
 
     await expect(
@@ -68,13 +261,14 @@ describe('handleCaptureProjection', () => {
 
     expect(completeCartWorkflow).not.toHaveBeenCalled();
     expect(capturePaymentWorkflow).not.toHaveBeenCalled();
+    expect(deleteLineItemsWorkflow).not.toHaveBeenCalled();
   });
 });
 
 describe('handleRefundProjection', () => {
   it('Medusa payment 없으면 throw 없이 skip 한다', async () => {
     const { scope, paymentModule } = makeScope({
-      listPaymentSessions: jest.fn().mockResolvedValue([]),
+      paymentModule: { listPaymentSessions: jest.fn().mockResolvedValue([]) },
     });
 
     await expect(

@@ -25,6 +25,7 @@ const MEDUSA_PAYMENT_EVENT_TYPES = [
   'payment.intent.created',
   'payment.intent.authorized',
   'payment.intent.captured',
+  'payment.intent.awaiting_deposit',
   'payment.intent.succeeded',
   'payment.intent.failed',
   'payment.intent.canceled',
@@ -88,6 +89,14 @@ export class PaymentEventsConsumer {
 
   @OnEvent('payments.events.v1', 'payment.intent.captured')
   async handleIntentCaptured(@EventEnvelope() envelope: MessageEnvelope) {
+    await this.forwardToMedusa(envelope);
+  }
+
+  /**
+   * 무통장입금 입금 대기 진입 — Medusa 가 주문을 '입금확인중' 으로 선생성하도록 전달
+   */
+  @OnEvent('payments.events.v1', 'payment.intent.awaiting_deposit')
+  async handleIntentAwaitingDeposit(@EventEnvelope() envelope: MessageEnvelope) {
     await this.forwardToMedusa(envelope);
   }
 

@@ -16,7 +16,11 @@ import { revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
 import { HttpApiError } from "../api-error"
 import { getRegion } from "./regions"
-import { retrieveCustomer, transferCart } from "./customer"
+import {
+  recoverCustomerCart,
+  retrieveCustomer,
+  transferCart,
+} from "./customer"
 import {
   cartRequiresShipping,
   selectShippingOptionsForCart,
@@ -43,6 +47,11 @@ export async function retrieveCart(
     return null
   }
 
+  // 완료(주문 전환)된 카트를 감지하려면 completed_at 이 응답에 포함
+  const effectiveFields = fields.includes("completed_at")
+    ? fields
+    : `${fields},completed_at`
+
   const headers = {
     ...(await getAuthHeaders()),
   }
@@ -55,16 +64,33 @@ export async function retrieveCart(
     .fetch<{ cart: HttpTypes.StoreCart }>(`/store/carts/${id}`, {
       method: "GET",
       query: {
-        fields,
+        fields: effectiveFields,
       },
       headers,
       next,
       cache,
     })
-    .then(({ cart }: { cart: HttpTypes.StoreCart }) => cart)
+    .then(async ({ cart }: { cart: HttpTypes.StoreCart }) => {
+      // completeCartWorkflow 로 주문 전환된 카트는 더 이상 장바구니가 아니다.
+      // 무통장입금처럼 브라우저가 완료 과정에 참여하지 않으면 쿠키가 남아
+      // 완료된 카트가 계속 장바구니로 노출. 쿠키를 정리하고 null 을 돌려 상위에서 새 카트 생성/복구로 흐르게
+      if (cart?.completed_at) {
+        // 렌더 컨텍스트에서는 쿠키 변경이 막힐 수 있어 best-effort 로 처리한
+        try {
+          await removeCartId()
+        } catch {
+          // Server Action/Route Handler 가 아닌 곳에서 호출되면 무시
+        }
+        return null
+      }
+      return cart
+    })
     .catch(async (error) => {
       if (error?.response?.status === 404) {
-        await removeCartId()
+        try {
+          await removeCartId()
+        } catch {
+        }
       }
       return null
     })
@@ -160,6 +186,18 @@ export async function getOrSetCart(countryCode: string) {
       // 다른 사용자의 장바구니이므로 쿠키 제거 후 새 장바구니 생성
       await removeCartId()
       cart = null
+    }
+  }
+
+  if (!cart) {
+    // 쿠키 소실(캐시 삭제 / 쿠키 만료 / 시크릿 모드 / 다른 기기)로 카트 쿠키가 없더라도
+    // 로그인 상태라면 새 카트를 만들기 전에 고객의 기존 미완료 카트를 먼저 복구
+    // recoverCustomerCart 는 GET /store/customers/me/cart 를 호출하며, 백엔드가 completed_at IS NULL 로 필터링하므로 완료(주문 전환)된 카트는 절대 복구되지 않는다.
+    if (headers.authorization) {
+      const recovered = await recoverCustomerCart()
+      if (recovered) {
+        cart = recovered
+      }
     }
   }
 

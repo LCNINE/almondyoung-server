@@ -371,6 +371,7 @@
     "status": {
       "cancelled": "キャンセル済み",
       "paymentPending": "お支払い待ち",
+      "depositPending": "入金確認中",
       "delivered": "配送完了",
       "shipping": "配送中",
       "partialShipping": "一部配送",
