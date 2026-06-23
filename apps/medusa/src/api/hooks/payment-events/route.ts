@@ -553,7 +553,13 @@ async function cleanupSourceCartItems(scope: any, intentId: string, logger: { in
  * 무통장 선생성 주문의 입금 상태 메타데이터(bank_transfer_status)를 갱신.
  * - 'awaiting_deposit' (선생성 시): 무조건 설정.
  * - 'confirmed' (입금확인 capture 시): onlyIfAwaiting 으로, 기존이 'awaiting_deposit' 인 무통장 주문에만 설정(카드 주문/복구 폴백 주문은 건드리지 않음).
- * best-effort — 실패해도 결제 projection 자체를 막지 않음.
+ *
+ * 실패는 swallow 하지 않고 propagate 한다(=재시도 가능). capturePaymentWorkflow 는 order 행을
+ * 건드리지 않으므로(payment capture + order_transaction insert + order_summary update 뿐), capture
+ * 이후 order.updated_at 을 올리는 유일한 쓰기가 이 updateOrders 다. channel-adapter 폴러는
+ * order.updated_at 으로 watermark 를 전진시키므로(증분 수집), 이 갱신을 best-effort 로 삼키면
+ * 결제된(captured) 주문이 watermark 에 추월당해 영영 수집(출고)되지 않을 수 있다. 따라서 throw →
+ * outer handler 500 → 재배달 시 handleCaptureProjection 이 captured_at 가드로 멱등 재진입해 재시도한다.
  */
 async function updateBankTransferOrderStatus(
   scope: any,
@@ -562,36 +568,31 @@ async function updateBankTransferOrderStatus(
   logger: { info: Function; warn: Function; debug: Function; error: Function },
   opts: { onlyIfAwaiting?: boolean } = {},
 ): Promise<void> {
-  try {
-    const orderId = await resolveOrderIdForIntent(scope, intentId);
-    if (!orderId) {
-      logger.warn(
-        `[payment-events] updateBankTransferOrderStatus: no order for intentId=${intentId}, skipping (status=${status})`,
-      );
-      return;
-    }
-    const orderModule = scope.resolve(Modules.ORDER);
-    const order = await orderModule.retrieveOrder(orderId, { select: ['id', 'metadata'] });
-    const meta = (order?.metadata as Record<string, unknown>) ?? {};
-    if (opts.onlyIfAwaiting && meta.bank_transfer_status !== 'awaiting_deposit') {
-      return;
-    }
-    // 방어: 이미 입금확정(confirmed)된 주문을 다시 '입금확인중' 으로 되돌리지 않음.
-    if (status === 'awaiting_deposit' && meta.bank_transfer_status === 'confirmed') {
-      return;
-    }
-    await orderModule.updateOrders([
-      { id: orderId, metadata: { ...meta, bank_transfer_status: status } },
-    ]);
-    logger.info(
-      `[payment-events] updateBankTransferOrderStatus: order ${orderId} bank_transfer_status=${status} (intentId=${intentId})`,
-    );
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    logger.error(
-      `[payment-events] updateBankTransferOrderStatus failed intentId=${intentId} status=${status}: ${msg}`,
+  const orderId = await resolveOrderIdForIntent(scope, intentId);
+  if (!orderId) {
+    // capture 이후엔 payment 행 존재 = 완료된 cart = 주문 존재가 보장된다. 여기서 null 이면
+    // 일시적 lookup 실패(order_cart 링크 eventual consistency 등)일 가능성이 높으므로 조용히
+    // 삼키지 말고 throw 해 재시도되게 한다 — load-bearing updated_at bump 의 silent 누락 방지.
+    throw new Error(
+      `[payment-events] updateBankTransferOrderStatus: no order for intentId=${intentId} (status=${status})`,
     );
   }
+  const orderModule = scope.resolve(Modules.ORDER);
+  const order = await orderModule.retrieveOrder(orderId, { select: ['id', 'metadata'] });
+  const meta = (order?.metadata as Record<string, unknown>) ?? {};
+  if (opts.onlyIfAwaiting && meta.bank_transfer_status !== 'awaiting_deposit') {
+    return;
+  }
+  // 방어: 이미 입금확정(confirmed)된 주문을 다시 '입금확인중' 으로 되돌리지 않음.
+  if (status === 'awaiting_deposit' && meta.bank_transfer_status === 'confirmed') {
+    return;
+  }
+  await orderModule.updateOrders([
+    { id: orderId, metadata: { ...meta, bank_transfer_status: status } },
+  ]);
+  logger.info(
+    `[payment-events] updateBankTransferOrderStatus: order ${orderId} bank_transfer_status=${status} (intentId=${intentId})`,
+  );
 }
 
 export async function handleCaptureProjection(
