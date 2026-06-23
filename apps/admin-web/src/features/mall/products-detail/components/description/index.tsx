@@ -1,12 +1,13 @@
 'use client';
 
 import { Suspense, useEffect, useRef, useState } from 'react';
-import { Save } from 'lucide-react';
+import { ChevronDown, Save } from 'lucide-react';
 import { toast } from 'sonner';
 import { CardErrorBoundary } from '@/components/admin-ui-experimental/common/card-error-boundary';
 import { Container } from '@/components/admin-ui-experimental/common/container';
 import { Header } from '@/components/admin-ui-experimental/common/header';
 import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
 import { useUpdateMasterVersion } from '@/lib/services/products/mutations';
@@ -46,6 +47,8 @@ function ProductDetailDescriptionContent({ masterId, versionId }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const canEdit = data.source === 'version' && data.status === 'draft' && Boolean(data.versionId);
   const [draft, setDraft] = useState(data.description ?? '');
+  const hasContent = (data.description ?? '').trim().length > 0 || Boolean(data.descriptionHtml);
+  const [open, setOpen] = useState(!hasContent);
 
   useEffect(() => {
     setDraft(data.description ?? '');
@@ -75,46 +78,58 @@ function ProductDetailDescriptionContent({ masterId, versionId }: Props) {
   const previewValue = canEdit ? draft : data.description ?? '';
 
   return (
-    <div className="flex flex-col gap-4 p-4">
-      {canEdit ? (
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-sm font-medium">Markdown</div>
-            <div className="flex items-center gap-2">
-              <MarkdownImageUploadButton disabled={updateVersion.isPending} onInsert={insertMarkdown} />
-              <Button size="sm" disabled={updateVersion.isPending} onClick={handleSave}>
-                <Save data-icon="inline-start" />
-                {updateVersion.isPending ? '저장 중...' : '저장'}
-              </Button>
+    <Collapsible open={open} onOpenChange={setOpen} className="p-4">
+      <CollapsibleContent className="flex flex-col gap-4 data-[state=closed]:hidden">
+        {canEdit ? (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-sm font-medium">Markdown</div>
+              <div className="flex items-center gap-2">
+                <MarkdownImageUploadButton disabled={updateVersion.isPending} onInsert={insertMarkdown} />
+                <Button size="sm" disabled={updateVersion.isPending} onClick={handleSave}>
+                  <Save data-icon="inline-start" />
+                  {updateVersion.isPending ? '저장 중...' : '저장'}
+                </Button>
+              </div>
             </div>
+            <Textarea
+              ref={textareaRef}
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              rows={12}
+              placeholder="Markdown으로 상품 상세설명을 작성하세요."
+            />
           </div>
-          <Textarea
-            ref={textareaRef}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            rows={12}
-            placeholder="Markdown으로 상품 상세설명을 작성하세요."
+        ) : (
+          <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+            상품 상세설명은 draft version에서만 수정할 수 있습니다.
+          </div>
+        )}
+
+        {previewValue.trim().length > 0 ? (
+          <div>
+            <div className="mb-2 text-xs font-medium text-muted-foreground">Markdown 미리보기</div>
+            <ProductDescriptionMarkdown value={previewValue} />
+          </div>
+        ) : (
+          <div className="rounded-md border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
+            Markdown 상세설명이 비어 있습니다.
+          </div>
+        )}
+
+        {!data.description && data.descriptionHtml ? <LegacyHtmlPreview html={data.descriptionHtml} /> : null}
+      </CollapsibleContent>
+
+      <CollapsibleTrigger asChild>
+        <Button variant="outline" className="mt-4 w-full justify-center gap-1">
+          {open ? '상품설명 접기' : '상품설명 더보기'}
+          <ChevronDown
+            className="size-4 transition-transform duration-200"
+            style={{ transform: open ? 'rotate(180deg)' : undefined }}
           />
-        </div>
-      ) : (
-        <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
-          상품 상세설명은 draft version에서만 수정할 수 있습니다.
-        </div>
-      )}
-
-      {previewValue.trim().length > 0 ? (
-        <div>
-          <div className="mb-2 text-xs font-medium text-muted-foreground">Markdown 미리보기</div>
-          <ProductDescriptionMarkdown value={previewValue} />
-        </div>
-      ) : (
-        <div className="rounded-md border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
-          Markdown 상세설명이 비어 있습니다.
-        </div>
-      )}
-
-      {!data.description && data.descriptionHtml ? <LegacyHtmlPreview html={data.descriptionHtml} /> : null}
-    </div>
+        </Button>
+      </CollapsibleTrigger>
+    </Collapsible>
   );
 }
 
