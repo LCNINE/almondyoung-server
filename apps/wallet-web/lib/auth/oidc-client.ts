@@ -174,6 +174,50 @@ export async function refreshTokens(refreshToken: string): Promise<TokenSet> {
   };
 }
 
+/**
+ * payment_handoff grant. storefront 가 인증된 고객에게 발급한 단기 핸드오프 토큰을 confidential
+ * client 인증과 함께 교환해 wallet-web 자기 세션 토큰셋을 받는다. 별도 서브도메인에서 OIDC
+ * silent-SSO/쿠키로 세션을 재확보하지 못하는 인앱브라우저·ITP 환경을 우회하는 경로.
+ */
+export async function exchangeHandoffForTokens(handoffToken: string): Promise<TokenSet> {
+  const body = new URLSearchParams({
+    grant_type: 'payment_handoff',
+    code: handoffToken,
+    client_id: oidcEnv.clientId,
+    client_secret: oidcEnv.clientSecret,
+  });
+
+  const res = await fetch(`${oidcEnv.issuerUrl}/oauth/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+    cache: 'no-store',
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`handoff exchange failed: ${res.status} ${text}`);
+  }
+
+  const json = (await res.json()) as {
+    access_token: string;
+    refresh_token: string;
+    id_token?: string;
+    expires_in: number;
+    token_type: string;
+    scope?: string;
+  };
+
+  return {
+    accessToken: json.access_token,
+    refreshToken: json.refresh_token,
+    idToken: json.id_token,
+    expiresIn: json.expires_in,
+    tokenType: json.token_type,
+    scope: json.scope,
+  };
+}
+
 /** id_token 검증 — JWKS 서명 + iss + aud + nonce 일치. exp/iat/nbf 는 jose 가 기본 검사. */
 export async function verifyIdToken(
   idToken: string,
