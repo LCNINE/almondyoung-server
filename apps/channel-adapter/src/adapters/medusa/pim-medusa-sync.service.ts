@@ -3,6 +3,7 @@ import { Injectable, Logger } from '@nestjs/common';
 // import { PimClient } from './pim.client';
 import { MedusaClient } from './medusa.client';
 import { PimMedusaMappingRepository } from './pim-medusa-mapping.repository';
+import { StorefrontRevalidateService } from './storefront-revalidate.service';
 import { transformPimToMedusa, validatePimSnapshot } from './transformers/pim-to-medusa.transformer';
 import type { PimActiveVersionChangedEvent, PimProductSnapshot, MedusaProduct } from '../../types';
 // PIMCLIENT: Type import removed
@@ -30,6 +31,7 @@ export class PimMedusaSyncService {
     // private readonly pimClient: PimClient,
     private readonly medusaClient: MedusaClient,
     private readonly mappingRepo: PimMedusaMappingRepository,
+    private readonly storefrontRevalidate: StorefrontRevalidateService,
   ) {}
 
   // PIMCLIENT: This method is disabled because it calls PIM API (this.pimClient.getCategory)
@@ -388,6 +390,9 @@ export class PimMedusaSyncService {
         action,
       });
 
+      // 상품 변경을 스토어프론트 캐시에 즉시 반영 (best-effort)
+      await this.storefrontRevalidate.revalidateProduct(medusaPayload.handle);
+
       return {
         success: true,
         masterId,
@@ -483,6 +488,10 @@ export class PimMedusaSyncService {
       lastSyncAction: 'updated',
       lastSyncedAt: new Date(),
     });
+
+    // 판매중단/삭제로 상품이 스토어프론트에서 사라져야 하므로 캐시 무효화 (best-effort).
+    // 이 경로는 드물어 항상 무효화한다 (handle = masterId).
+    await this.storefrontRevalidate.revalidateProduct(masterId);
   }
 
   async handleProductSellableQuantityChanged(payload: ProductSellableQuantityChangedPayload): Promise<void> {
@@ -514,7 +523,7 @@ export class PimMedusaSyncService {
         `sellableQuantity=${payload.sellableQuantity}, reason=${payload.reason ?? 'unknown'}`,
     );
 
-    await this.medusaClient.applyProductSellableQuantityProjection({
+    const { soldOutChanged } = await this.medusaClient.applyProductSellableQuantityProjection({
       ...payload,
       medusaProductId,
     });
@@ -522,8 +531,13 @@ export class PimMedusaSyncService {
     this.logger.log(
       `ProductSellableQuantityChanged synced to Medusa: masterId=${payload.masterId}, ` +
         `variantId=${payload.variantId}, medusaProductId=${medusaProductId}, ` +
-        `sellableQuantity=${payload.sellableQuantity}`,
+        `sellableQuantity=${payload.sellableQuantity}, soldOutChanged=${soldOutChanged}`,
     );
+
+    // 품절↔판매중 상태가 실제로 바뀐 경우에만 스토어프론트 캐시 무효화 (best-effort).
+    if (soldOutChanged) {
+      await this.storefrontRevalidate.revalidateProduct(payload.masterId);
+    }
   }
 
   // PIMCLIENT: PIM health check removed - only check Medusa (external dependency)

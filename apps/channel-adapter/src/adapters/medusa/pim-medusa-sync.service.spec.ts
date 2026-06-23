@@ -19,7 +19,7 @@ describe('PimMedusaSyncService.handleProductSellableQuantityChanged', () => {
     productByHandle?: { id: string } | null;
   }) {
     const medusaClient = {
-      applyProductSellableQuantityProjection: jest.fn().mockResolvedValue(undefined),
+      applyProductSellableQuantityProjection: jest.fn().mockResolvedValue({ soldOutChanged: false }),
       findProductByHandle: jest.fn().mockResolvedValue(params?.productByHandle ?? null),
       setProductToDraft: jest.fn().mockResolvedValue(undefined),
     };
@@ -27,9 +27,16 @@ describe('PimMedusaSyncService.handleProductSellableQuantityChanged', () => {
       findByPimMasterId: jest.fn().mockResolvedValue(params?.mapping ?? null),
       update: jest.fn().mockResolvedValue(undefined),
     };
-    const service = new PimMedusaSyncService(medusaClient as any, mappingRepo as any);
+    const storefrontRevalidate = {
+      revalidateProduct: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new PimMedusaSyncService(
+      medusaClient as any,
+      mappingRepo as any,
+      storefrontRevalidate as any,
+    );
 
-    return { service, medusaClient, mappingRepo };
+    return { service, medusaClient, mappingRepo, storefrontRevalidate };
   }
 
   it('maps the PIM master to an existing Medusa product and applies the projection', async () => {
@@ -96,9 +103,16 @@ describe('PimMedusaSyncService.handleProductMasterDeleted', () => {
       findByPimMasterId: jest.fn().mockResolvedValue(mapping ?? null),
       update: jest.fn().mockResolvedValue(undefined),
     };
-    const service = new PimMedusaSyncService(medusaClient as any, mappingRepo as any);
+    const storefrontRevalidate = {
+      revalidateProduct: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new PimMedusaSyncService(
+      medusaClient as any,
+      mappingRepo as any,
+      storefrontRevalidate as any,
+    );
 
-    return { service, medusaClient, mappingRepo };
+    return { service, medusaClient, mappingRepo, storefrontRevalidate };
   }
 
   it('drafts the mapped Medusa product and retains the PIM-Medusa mapping', async () => {

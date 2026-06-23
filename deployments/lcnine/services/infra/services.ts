@@ -208,6 +208,10 @@ export function setup(infra: SharedInfra) {
       MEDUSA_API_KEY: medusaApiKey.value,
       MEDUSA_API_URL: url('medusa'),
       MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
+      // 상품/재고 동기화 직후 스토어프론트 on-demand 캐시 무효화 트리거.
+      // 시크릿은 Storefront 의 REVALIDATE_SECRET 과 동일 값(StorefrontRevalidateSecret).
+      STOREFRONT_REVALIDATE_URL: $interpolate`${url('www')}/api/revalidate`,
+      STOREFRONT_REVALIDATE_SECRET: storefrontRevalidateSecret.value,
       ALMOND_AUTH_URL: 'https://asia-northeast3-almond-auth.cloudfunctions.net/api',
       USER_SERVICE_URL: idpUserServiceUrl,
       PIM_API_URL: url('core'),
