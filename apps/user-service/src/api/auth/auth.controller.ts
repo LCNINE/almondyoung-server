@@ -151,6 +151,22 @@ export class AuthController {
     return this.authService.changePassword(dto.currentPassword, dto.newPassword, user.id);
   }
 
+  @ApiOperation({
+    summary: '결제창(wallet-web) 핸드오프 토큰 발급',
+    description:
+      '인증된 고객이 결제로 진입할 때 호출. wallet-web 이 별도 서브도메인에서 세션을 재확보하지 못하는 ' +
+      '인앱브라우저·ITP 환경을 우회하기 위해, storefront 가 이 단기 토큰을 받아 결제창 URL 로 넘긴다. ' +
+      '토큰은 wallet-web 이 POST /oauth/token (grant_type=payment_handoff) 으로 한 번 교환한다.',
+  })
+  @ApiResponse({ status: 200, description: '핸드오프 토큰 발급 성공' })
+  @Post('payment-handoff')
+  @UseGuards(AuthGuard('jwt'))
+  @HttpCode(HttpStatus.OK)
+  async paymentHandoff(@CurrentUser() user: JwtPayload): Promise<{ handoffToken: string }> {
+    const handoffToken = await this.authService.issuePaymentHandoffToken(user.id);
+    return { handoffToken };
+  }
+
   @ApiOperation({ summary: '아이디 찾기' })
   @ApiResponse({ status: 200, description: '아이디 찾기 SMS 전송 성공' })
   @Post('forget-userid')

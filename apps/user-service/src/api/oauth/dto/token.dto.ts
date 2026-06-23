@@ -6,8 +6,8 @@ import { ApiProperty } from '@nestjs/swagger';
  * snake_case(표준) 와 camelCase(레거시 내부 호출) 키 양쪽이 수용된다.
  */
 export class TokenRequestDto {
-  @ApiProperty({ enum: ['authorization_code', 'refresh_token'], description: 'grant_type' })
-  grantType: 'authorization_code' | 'refresh_token';
+  @ApiProperty({ enum: ['authorization_code', 'refresh_token', 'payment_handoff'], description: 'grant_type' })
+  grantType: 'authorization_code' | 'refresh_token' | 'payment_handoff';
 
   @ApiProperty({ description: 'client_id' })
   clientId: string;

@@ -58,7 +58,7 @@ export function normalizeTokenBody(raw: unknown): TokenRequestDto {
   const body = raw as Record<string, unknown>;
 
   const grantType = readString(body, 'grant_type', 'grantType');
-  if (grantType !== 'authorization_code' && grantType !== 'refresh_token') {
+  if (grantType !== 'authorization_code' && grantType !== 'refresh_token' && grantType !== 'payment_handoff') {
     throw new BadRequestError('unsupported grant_type');
   }
 
