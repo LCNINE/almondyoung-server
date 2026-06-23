@@ -1,5 +1,5 @@
 import { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
-import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, MedusaError, Modules } from '@medusajs/framework/utils';
 import { capturePaymentWorkflow } from '@medusajs/core-flows';
 import { completeCartWorkflow, cancelOrderWorkflow, deleteLineItemsWorkflow } from '@medusajs/medusa/core-flows';
 
@@ -147,9 +147,23 @@ export async function handleCancelProjection(
     const orderId = await resolveOrderIdForIntent(scope, intentId);
     if (orderId) {
       const orderModule = scope.resolve(Modules.ORDER);
-      const order = await orderModule
-        .retrieveOrder(orderId, { select: ['id', 'status'] })
-        .catch(() => null);
+      // 일시적 lookup 오류를 null 로 삼키면 안 됨: cancelOrderWorkflow 를 건너뛴 채 아래에서
+      // payment.canceled_at 을 찍어버려 위 가드(payment.canceled_at)에 걸리고, 재배달 시 주문 취소를
+      // 다시 시도하지 못해 고아 주문 + 예약재고 누수가 영구화된다(위 워크플로 실패 경로와 동일한 불변식).
+      // 따라서 NotFound(이미 하드삭제돼 취소 대상이 없는 주문)만 no-op 로 통과시키고, 그 외 오류는
+      // throw → outer handler 500 → 재배달 시 재시도되게 한다.
+      let order: { id: string; status: string } | null = null;
+      try {
+        order = await orderModule.retrieveOrder(orderId, { select: ['id', 'status'] });
+      } catch (lookupErr) {
+        if (lookupErr instanceof MedusaError && lookupErr.type === MedusaError.Types.NOT_FOUND) {
+          logger.info(
+            `[payment-events] handleCancelProjection: order ${orderId} not found (already deleted), skipping order cancel. intentId=${intentId}`,
+          );
+        } else {
+          throw lookupErr;
+        }
+      }
       if (order && order.status !== 'canceled') {
         const { errors } = await cancelOrderWorkflow(scope).run({
           input: { order_id: orderId, no_notification: true },
