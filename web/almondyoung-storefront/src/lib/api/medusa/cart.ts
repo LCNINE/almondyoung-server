@@ -10,6 +10,7 @@ import {
   setCartId,
 } from "@lib/data/cookies"
 import medusaError from "@lib/utils/medusa-error"
+import { isVariantSoldOut } from "@lib/utils/cart-availability"
 import { HttpTypes } from "@medusajs/types"
 import { revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
@@ -23,7 +24,7 @@ import {
 
 // 카트 조회 시 사용하는 기본 fields
 const DEFAULT_CART_FIELDS =
-  "*items, *region, *items.product, *items.variant, *items.variant.options, *items.variant.options.option, +items.variant.inventory_quantity, +items.variant.manage_inventory, *items.thumbnail, *items.metadata, +items.total, +items.original_total, +items.compare_at_unit_price, *promotions, +shipping_methods, *customer, *customer.groups, customer_id, +payment_collection.id, +currency_code, +item_subtotal, +shipping_total, +total, +discount_total, +original_item_subtotal, +original_item_total"
+  "*items, *region, *items.product, *items.variant, *items.variant.options, *items.variant.options.option, +items.variant.inventory_quantity, +items.variant.manage_inventory, +items.variant.allow_backorder, *items.thumbnail, *items.metadata, +items.total, +items.original_total, +items.compare_at_unit_price, *promotions, +shipping_methods, *customer, *customer.groups, customer_id, +payment_collection.id, +currency_code, +item_subtotal, +shipping_total, +total, +discount_total, +original_item_subtotal, +original_item_total"
 
 /**
  * 카트 ID를 통해 카트 정보를 조회합니다. 만약 ID가 제공되지 않으면, 쿠키에 저장된 카트 ID를 사용합니다.
@@ -113,8 +114,11 @@ export async function findUnavailableLineItems(
     .catch(() => ({ products: [] as HttpTypes.StoreProduct[] }))
 
   const publishedProductIds = new Set(products.map((product) => product.id))
+  // 판매중단(미게시) 이거나, 재고 기준 품절(수동 품절 포함)이면 구매 불가로 본다.
   const unavailableItems = items.filter(
-    (item) => item.product_id && !publishedProductIds.has(item.product_id)
+    (item) =>
+      (item.product_id && !publishedProductIds.has(item.product_id)) ||
+      isVariantSoldOut(item.variant)
   )
 
   const variantIds = Array.from(
