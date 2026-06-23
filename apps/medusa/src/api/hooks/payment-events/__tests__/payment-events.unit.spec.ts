@@ -167,7 +167,11 @@ describe('handleCancelProjection', () => {
 
 describe('handleAwaitingDepositProjection', () => {
   it('주문 생성(completeCartWorkflow) 전에 cart 에 awaiting_deposit marker 를 원자적으로 심는다', async () => {
-    const completeRun = jest.fn().mockResolvedValue({ errors: [] });
+    let orderCreated = false;
+    const completeRun = jest.fn().mockImplementation(async () => {
+      orderCreated = true;
+      return { errors: [] };
+    });
     (completeCartWorkflow as unknown as jest.Mock).mockReturnValue({ run: completeRun });
     const deleteRun = jest.fn().mockResolvedValue({ errors: [] });
     (deleteLineItemsWorkflow as unknown as jest.Mock).mockReturnValue({ run: deleteRun });
@@ -183,7 +187,9 @@ describe('handleAwaitingDepositProjection', () => {
           ],
         };
       }
-      if (entity === 'order_cart') return { data: [] };
+      if (entity === 'order_cart') {
+        return { data: orderCreated ? [{ cart_id: 'cart_1', order_id: 'order_1' }] : [] };
+      }
       if (entity === 'cart') {
         const id = (filters as any)?.id;
         if (id === 'cart_1') return { data: [{ id: 'cart_1', metadata: { source_cart_id: 'src_1', source_line_item_ids: ['li_1'] } }] };
@@ -196,6 +202,13 @@ describe('handleAwaitingDepositProjection', () => {
       paymentModule: {
         listPaymentSessions: jest.fn().mockResolvedValue([{ id: 'payses_1', payment_collection_id: 'pc_1' }]),
         listPayments: jest.fn().mockResolvedValue([]),
+      },
+      orderModule: {
+        retrieveOrder: jest.fn().mockResolvedValue({
+          id: 'order_1',
+          payment_status: 'authorized',
+          metadata: { bank_transfer_status: 'awaiting_deposit' },
+        }),
       },
       graph,
     });
@@ -219,7 +232,7 @@ describe('handleAwaitingDepositProjection', () => {
     );
   });
 
-  it('이미 완료된 cart(이벤트 순서 역전: capture 선처리)면 marker 를 심지 않는다', async () => {
+  it('이미 완료된 cart 의 기존 주문이 captured 면 awaiting_deposit marker 를 뒤늦게 심지 않는다', async () => {
     const completeRun = jest.fn().mockResolvedValue({ errors: [] });
     (completeCartWorkflow as unknown as jest.Mock).mockReturnValue({ run: completeRun });
     (deleteLineItemsWorkflow as unknown as jest.Mock).mockReturnValue({ run: jest.fn().mockResolvedValue({ errors: [] }) });
@@ -228,6 +241,7 @@ describe('handleAwaitingDepositProjection', () => {
       if (entity === 'payment_collection') {
         return { data: [{ id: 'pc_1', cart: { id: 'cart_1', completed_at: '2026-06-23T00:00:00Z', metadata: {} } }] };
       }
+      if (entity === 'order_cart') return { data: [{ cart_id: 'cart_1', order_id: 'order_1' }] };
       if (entity === 'cart') {
         const id = (filters as any)?.id;
         if (id === 'cart_1') return { data: [{ id: 'cart_1', metadata: {} }] };
@@ -235,9 +249,13 @@ describe('handleAwaitingDepositProjection', () => {
       return { data: [] };
     };
 
-    const { scope, cartModule } = makeScope({
+    const { scope, cartModule, orderModule } = makeScope({
       paymentModule: {
         listPaymentSessions: jest.fn().mockResolvedValue([{ id: 'payses_1', payment_collection_id: 'pc_1' }]),
+      },
+      orderModule: {
+        retrieveOrder: jest.fn().mockResolvedValue({ id: 'order_1', payment_status: 'captured', metadata: {} }),
+        updateOrders: jest.fn(),
       },
       graph,
     });
@@ -245,7 +263,49 @@ describe('handleAwaitingDepositProjection', () => {
     await handleAwaitingDepositProjection(scope as any, 'intent_bt', 'msg_b', logger as any);
 
     expect(cartModule.updateCarts).not.toHaveBeenCalled();
+    expect(orderModule.updateOrders).not.toHaveBeenCalled();
     expect(completeRun).not.toHaveBeenCalled();
+  });
+
+  it('이미 완료된 cart 의 기존 주문이 uncaptured 면 awaiting_deposit marker 를 보수한다 (P1 회귀)', async () => {
+    const completeRun = jest.fn().mockResolvedValue({ errors: [] });
+    (completeCartWorkflow as unknown as jest.Mock).mockReturnValue({ run: completeRun });
+    (deleteLineItemsWorkflow as unknown as jest.Mock).mockReturnValue({ run: jest.fn().mockResolvedValue({ errors: [] }) });
+
+    const graph: GraphFn = async ({ entity, filters }) => {
+      if (entity === 'payment_collection') {
+        return { data: [{ id: 'pc_1', cart: { id: 'cart_1', completed_at: '2026-06-23T00:00:00Z', metadata: {} } }] };
+      }
+      if (entity === 'order_cart') return { data: [{ cart_id: 'cart_1', order_id: 'order_1' }] };
+      if (entity === 'cart') {
+        const id = (filters as any)?.id;
+        if (id === 'cart_1') return { data: [{ id: 'cart_1', metadata: {} }] };
+      }
+      return { data: [] };
+    };
+    const updateOrders = jest.fn().mockResolvedValue(undefined);
+
+    const { scope, cartModule } = makeScope({
+      paymentModule: {
+        listPaymentSessions: jest.fn().mockResolvedValue([{ id: 'payses_1', payment_collection_id: 'pc_1' }]),
+      },
+      orderModule: {
+        retrieveOrder: jest.fn().mockResolvedValue({ id: 'order_1', payment_status: 'authorized', metadata: {} }),
+        updateOrders,
+      },
+      graph,
+    });
+
+    await handleAwaitingDepositProjection(scope as any, 'intent_bt', 'msg_completed_uncaptured', logger as any);
+
+    expect(cartModule.updateCarts).not.toHaveBeenCalled();
+    expect(completeRun).not.toHaveBeenCalled();
+    expect(updateOrders).toHaveBeenCalledWith([
+      expect.objectContaining({
+        id: 'order_1',
+        metadata: expect.objectContaining({ bank_transfer_status: 'awaiting_deposit' }),
+      }),
+    ]);
   });
 
   it('session 자체가 없으면(비-Medusa intent: 멤버십/빌링 무통장) throw 없이 skip 한다', async () => {

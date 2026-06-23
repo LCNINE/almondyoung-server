@@ -437,12 +437,16 @@ export async function handleAwaitingDepositProjection(
     return;
   }
 
-  // 주문을 '입금확인중'(awaiting_deposit) marker 와 함께 원자적으로 선생성.
-  // marker 는 recoverBankTransferOrder 가 cart.metadata 에 심고 completeCartWorkflow 가 order.metadata
-  // 로 복사하므로(=주문 생성과 marker 가 분리되지 않음), marker 없는 authorized 주문이 WMS 수집 게이트를 통과하는 창이 존재하지 않음.
-  //
-  // 이벤트 순서 역전(관리자 즉시 입금확인 → capture 가 먼저 처리되어 주문이 이미 완료)인 경우, recoverBankTransferOrder 가 cart.completed_at 으로 멱등 skip 하여 marker 를 심지 않음(그 주문은 captured 라 게이트가 payment_status 로 정상 수집한다). 따라서 별도의 captured 가드 불필요.
+  // 주문을 '입금확인중'(awaiting_deposit) marker 와 함께 선생성.
+  // 정상 경로는 recoverBankTransferOrder 가 cart.metadata 에 marker 를 심고 completeCartWorkflow 가
+  // order.metadata 로 복사한다. 단, HTTP complete 가 웹훅보다 먼저 성공한 레이스에서는 이미
+  // marker 없는 authorized 주문이 있을 수 있으므로 recover 의 멱등 skip 이후 order marker 를
+  // 한 번 더 보장한다. captured 주문은 payment_status 로 WMS 수집 가능하므로 awaiting marker 를
+  // 뒤늦게 심지 않는다.
   await recoverBankTransferOrder(scope, intentId, messageId, logger, /* markAwaitingDeposit */ true);
+  await updateBankTransferOrderStatus(scope, intentId, 'awaiting_deposit', logger, {
+    skipIfCaptured: true,
+  });
 
   // 원본 장바구니에서 구매한 아이템 제거. 무통장은 callback 을 안 타므로 서버사이드에서 정리
   // 실패해도 주문엔 이미 marker 가 있어 WMS 수집은 막힌 채 재시도됨.
@@ -564,22 +568,20 @@ async function cleanupSourceCartItems(scope: any, intentId: string, logger: { in
 
 /**
  * 무통장 선생성 주문의 입금 상태 메타데이터(bank_transfer_status)를 갱신.
- * - 'awaiting_deposit' (선생성 시): 무조건 설정.
+ * - 'awaiting_deposit' (선생성/복구 시): uncaptured 주문에 marker 가 없으면 설정.
  * - 'confirmed' (입금확인 capture 시): onlyIfAwaiting 으로, 기존이 'awaiting_deposit' 인 무통장 주문에만 설정(카드 주문/복구 폴백 주문은 건드리지 않음).
  *
- * 실패는 swallow 하지 않고 propagate 한다(=재시도 가능). capturePaymentWorkflow 는 order 행을
- * 건드리지 않으므로(payment capture + order_transaction insert + order_summary update 뿐), capture
- * 이후 order.updated_at 을 올리는 유일한 쓰기가 이 updateOrders 다. channel-adapter 폴러는
- * order.updated_at 으로 watermark 를 전진시키므로(증분 수집), 이 갱신을 best-effort 로 삼키면
- * 결제된(captured) 주문이 watermark 에 추월당해 영영 수집(출고)되지 않을 수 있다. 따라서 throw →
- * outer handler 500 → 재배달 시 handleCaptureProjection 이 captured_at 가드로 멱등 재진입해 재시도한다.
+ * 실패는 swallow 하지 않고 propagate 한다(=재시도 가능). awaiting_deposit 은 marker 없는 authorized
+ * 주문이 WMS 게이트를 통과하지 못하게 하는 load-bearing write 고, confirmed 는 capture 이후
+ * order.updated_at 을 올리는 load-bearing write 다. 따라서 throw → outer handler 500 → 재배달 시
+ * 각 핸들러가 멱등 재진입해 재시도한다.
  */
 async function updateBankTransferOrderStatus(
   scope: any,
   intentId: string,
   status: 'awaiting_deposit' | 'confirmed',
   logger: { info: Function; warn: Function; debug: Function; error: Function },
-  opts: { onlyIfAwaiting?: boolean } = {},
+  opts: { onlyIfAwaiting?: boolean; skipIfCaptured?: boolean } = {},
 ): Promise<void> {
   const orderId = await resolveOrderIdForIntent(scope, intentId);
   if (!orderId) {
@@ -591,9 +593,25 @@ async function updateBankTransferOrderStatus(
     );
   }
   const orderModule = scope.resolve(Modules.ORDER);
-  const order = await orderModule.retrieveOrder(orderId, { select: ['id', 'metadata'] });
+  const order = (await orderModule.retrieveOrder(orderId, {
+    select: ['id', 'metadata', 'payment_status'],
+  })) as { id: string; metadata?: Record<string, unknown> | null; payment_status?: string | null } | null;
+  if (!order) {
+    throw new Error(
+      `[payment-events] updateBankTransferOrderStatus: retrieveOrder returned empty for order ${orderId} intentId=${intentId} (status=${status})`,
+    );
+  }
+  if (opts.skipIfCaptured && order.payment_status === 'captured') {
+    logger.debug(
+      `[payment-events] updateBankTransferOrderStatus: order ${orderId} already captured, skipping ${status} marker (intentId=${intentId})`,
+    );
+    return;
+  }
   const meta = (order?.metadata as Record<string, unknown>) ?? {};
   if (opts.onlyIfAwaiting && meta.bank_transfer_status !== 'awaiting_deposit') {
+    return;
+  }
+  if (meta.bank_transfer_status === status) {
     return;
   }
   // 방어: 이미 입금확정(confirmed)된 주문을 다시 '입금확인중' 으로 되돌리지 않음.
