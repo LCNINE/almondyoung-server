@@ -279,6 +279,7 @@ export interface ProductSellableQuantityChangedPayload {
   isSellable: boolean;
   reason?: ProductSellableQuantityReason;
   availabilityOverride?: 'manual_out_of_stock' | null;
+  preStockSellable?: boolean;
   calculatedAt: string;
 }
 
@@ -475,6 +476,7 @@ const ProductSellableQuantityChangedSchema = z.object({
   isSellable: z.boolean(),
   reason: ProductSellableQuantityReasonSchema.optional(),
   availabilityOverride: z.enum(['manual_out_of_stock']).nullable().optional(),
+  preStockSellable: z.boolean().optional(),
   calculatedAt: z.string().datetime(),
 });
 
