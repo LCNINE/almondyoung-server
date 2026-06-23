@@ -67,6 +67,7 @@ import { PollingChangeHashService } from './services/polling-change-hash.service
 // import { PimClient } from './adapters/medusa/pim.client';
 import { MedusaClient } from './adapters/medusa/medusa.client';
 import { PimMedusaSyncService } from './adapters/medusa/pim-medusa-sync.service';
+import { StorefrontRevalidateService } from './adapters/medusa/storefront-revalidate.service';
 import { MembershipMedusaSyncService } from './adapters/medusa/membership-medusa-sync.service';
 import { PimProductEventConsumer } from './consumers/pim-product-event.consumer';
 import { PimCategoryConsumer } from './consumers/pim-category.consumer';
@@ -188,6 +189,7 @@ import { OrderPollerOrchestrator } from './services/order-collection/order-polle
     // PimClient,
     MedusaClient,
     PimMedusaSyncService,
+    StorefrontRevalidateService,
     MembershipMedusaSyncService,
     PimProductEventConsumer,
     PimCategoryConsumer,
