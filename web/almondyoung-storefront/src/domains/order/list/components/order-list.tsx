@@ -44,9 +44,13 @@ const getOrderStatusKey = (order: HttpTypes.StoreOrder): string => {
   if (order.status === "canceled") return "cancelled"
   // 무통장입금 선생성 주문: 관리자 입금확인 전까지 '입금확인중' 으로 표시
   // 결제는 authorized(미capture) 상태라 일반 로직에선 '상품 준비 중'으로 잘못 보이므로 최우선 처리
+  // payment_status 와 AND: 입금확인(capture) 후 'confirmed' metadata 갱신이 실패해 awaiting_deposit
+  // 가 남아도, captured 면 이미 결제완료이므로 '입금확인중' 으로 표시하지 않는다
+  // (channel-adapter 의 WMS 수집 게이트와 동일한 불변식).
   if (
     (order.metadata as Record<string, unknown> | null)?.bank_transfer_status ===
-    "awaiting_deposit"
+      "awaiting_deposit" &&
+    order.payment_status !== "captured"
   )
     return "depositPending"
   if (order.payment_status === "awaiting") return "paymentPending"

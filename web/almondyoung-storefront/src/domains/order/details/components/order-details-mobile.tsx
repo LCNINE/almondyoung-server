@@ -104,8 +104,11 @@ export const OrderDetailsMobile = ({
     : tStatus(
         order.status === "canceled"
           ? "orderCancel"
-          : (order.metadata as Record<string, unknown> | null)
-                ?.bank_transfer_status === "awaiting_deposit"
+          : // captured 후 'confirmed' metadata 갱신 실패로 awaiting_deposit 가 남아도
+            // 결제완료(captured)면 '입금확인중' 으로 표시하지 않음 (WMS 수집 게이트와 동일 불변식)
+            (order.metadata as Record<string, unknown> | null)
+                  ?.bank_transfer_status === "awaiting_deposit" &&
+              order.payment_status !== "captured"
             ? "depositPending"
           : order.fulfillment_status === "fulfilled"
             ? "delivered"
