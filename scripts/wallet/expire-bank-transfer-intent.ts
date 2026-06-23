@@ -64,11 +64,11 @@ async function main() {
       ? await wallet`
           SELECT id, status, expires_at, payable_amount, currency, user_id
           FROM payment_intents
-          WHERE id = ${intentId} AND status = 'AWAITING_DEPOSIT'`
+          WHERE id = ${intentId} AND status::text = 'AWAITING_DEPOSIT'`
       : await wallet`
           SELECT id, status, expires_at, payable_amount, currency, user_id
           FROM payment_intents
-          WHERE status = 'AWAITING_DEPOSIT'
+          WHERE status::text = 'AWAITING_DEPOSIT'
           ORDER BY created_at DESC
           LIMIT 50`;
 
@@ -102,7 +102,7 @@ async function main() {
     const updated = await wallet`
       UPDATE payment_intents
       SET expires_at = now() - interval '1 minute', updated_at = now()
-      WHERE id = ANY(${ids}) AND status = 'AWAITING_DEPOSIT'
+      WHERE id = ANY(${ids}) AND status::text = 'AWAITING_DEPOSIT'
       RETURNING id, expires_at`;
 
     console.log(`\n✅ expires_at 백데이트 완료: ${(updated as any[]).length}건`);
