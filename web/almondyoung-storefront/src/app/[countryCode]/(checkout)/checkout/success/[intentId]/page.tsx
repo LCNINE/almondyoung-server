@@ -7,9 +7,15 @@ import { getTranslations } from "next-intl/server"
 import { ChevronDownIcon, ReviewPromptCard } from "../_components"
 import { HttpTypes } from "@medusajs/types"
 import { buildAddressLine } from "@/lib/utils/address-line"
+import { createWebLogger } from "@packages/web-observability"
 
 // 주문 정보는 사용자별로 다르므로 캐싱 비활성화
 export const dynamic = "force-dynamic"
+
+const logger = createWebLogger({
+  component: "storefront.checkout-success",
+  route: "/[countryCode]/checkout/success/[intentId]",
+})
 
 interface PageProps {
   params: Promise<{ intentId: string; countryCode: string; usePoints: string }>
@@ -26,10 +32,10 @@ async function getIntentOrNull(intentId: string) {
   try {
     return await getIntent(intentId)
   } catch (err) {
-    console.warn(
-      `[CheckoutSuccessPage] intent lookup failed, rendering fallback (intentId=${intentId})`,
-      err instanceof Error ? err.message : err
-    )
+    logger.warn("storefront.checkout_success.intent_lookup_failed", {
+      error: err,
+      attributes: { intent_id: intentId },
+    })
     return null
   }
 }
@@ -40,10 +46,10 @@ async function getOrderOrNull(orderId?: string) {
   try {
     return await getOrder(orderId)
   } catch (err) {
-    console.warn(
-      `[CheckoutSuccessPage] order lookup failed, rendering fallback (orderId=${orderId})`,
-      err instanceof Error ? err.message : err
-    )
+    logger.warn("storefront.checkout_success.order_lookup_failed", {
+      error: err,
+      attributes: { order_id: orderId },
+    })
     return null
   }
 }
@@ -58,12 +64,14 @@ export default async function CheckoutSuccessPage({
   const intent = await getIntentOrNull(intentId)
   const t = await getTranslations("checkout")
 
-  console.log("============== 주문완료 페이지 디버그 ==============")
-  console.log("intentId:", intentId)
-  console.log("orderId (URL):", orderId)
-  console.log("intent.userId:", intent?.userId)
-  console.log("intent.metadata:", JSON.stringify(intent?.metadata))
-  console.log("================================================")
+  logger.info("storefront.checkout_success.render_started", {
+    attributes: {
+      intent_id: intentId,
+      order_id: orderId ?? null,
+      intent_user_id: intent?.userId ?? null,
+      has_intent_metadata: Boolean(intent?.metadata),
+    },
+  })
 
   const rawOrder = await getOrderOrNull(orderId)
 
@@ -76,22 +84,21 @@ export default async function CheckoutSuccessPage({
   // 소유권이 일치하지 않으면 order 정보를 표시하지 않음 (보안)
   const order = isOwnerMatch ? rawOrder : null
 
-  console.log("============== order 정보 ==============")
-  console.log("order.id:", rawOrder?.id)
-  console.log("order.display_id:", rawOrder?.display_id)
-  console.log("order.customer_id:", rawOrder?.customer_id)
-  console.log("order.email:", rawOrder?.email)
-  console.log("intentEmail:", intentEmail)
-  console.log("isOwnerMatch:", isOwnerMatch)
-  console.log(
-    "shipping_address.first_name:",
-    rawOrder?.shipping_address?.first_name
-  )
-  console.log(
-    "shipping_address.last_name:",
-    rawOrder?.shipping_address?.last_name
-  )
-  console.log("=========================================")
+  logger.info("storefront.checkout_success.order_resolved", {
+    attributes: {
+      intent_id: intentId,
+      order_id: rawOrder?.id ?? null,
+      order_display_id: rawOrder?.display_id ?? null,
+      customer_id: rawOrder?.customer_id ?? null,
+      has_intent_email: Boolean(intentEmail),
+      has_order_email: Boolean(orderEmail),
+      is_owner_match: Boolean(isOwnerMatch),
+      has_shipping_name: Boolean(
+        rawOrder?.shipping_address?.first_name ||
+          rawOrder?.shipping_address?.last_name
+      ),
+    },
+  })
 
   return (
     <main className="flex min-h-screen w-full flex-col items-center gap-[41px] bg-[#f8f8f8] pb-20">

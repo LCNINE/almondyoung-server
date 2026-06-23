@@ -3,6 +3,12 @@ import type { NextRequest } from 'next/server';
 
 import { consumeStateCookie, writeSessionCookies } from '@/lib/auth/session-cookies';
 import { exchangeCodeForTokens, verifyIdToken, type OidcStateRecord } from '@/lib/auth/oidc-client';
+import { createWebLogger } from '@packages/web-observability';
+
+const logger = createWebLogger({
+  component: 'wallet-web.auth-callback',
+  route: '/auth/callback',
+});
 
 /**
  * IdP 가 사용자 동의/로그인 완료 후 redirect 로 진입하는 callback 라우트.
@@ -34,6 +40,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   if (errorFromIdp) {
     // prompt=none 으로 시도한 silent SSO 가 활성 세션 없음으로 실패한 경우 → interactive fallback.
     if (errorFromIdp === 'login_required' && stateRecord?.prompt === 'none') {
+      logger.info('wallet.auth_callback.silent_sso_login_required', {
+        attributes: {
+          has_redirect_to: Boolean(stateRecord.redirectTo),
+        },
+      });
       const dest = new URL('/login', request.nextUrl.origin);
       if (stateRecord.redirectTo) dest.searchParams.set('redirect_to', stateRecord.redirectTo);
       // 빈 문자열로 명시 — login page 가 이를 "prompt 미전송" 으로 해석.
@@ -57,7 +68,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     tokens = await exchangeCodeForTokens(code, stateRecord.codeVerifier);
   } catch (e) {
-    console.error('[oidc-callback] token exchange failed', e);
+    logger.error('wallet.auth_callback.token_exchange_failed', { error: e });
     return failRedirect(request, 'token_exchange_failed');
   }
 
@@ -65,7 +76,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     try {
       await verifyIdToken(tokens.idToken, stateRecord.nonce);
     } catch (e) {
-      console.error('[oidc-callback] id_token verification failed', e);
+      logger.error('wallet.auth_callback.id_token_verification_failed', { error: e });
       return failRedirect(request, 'id_token_verification_failed');
     }
   }

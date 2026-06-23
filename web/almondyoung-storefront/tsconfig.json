@@ -30,6 +30,8 @@
       "@hooks/*": ["src/hooks/*"],
       "@context/*": ["src/context/*"],
       "@data/*": ["src/data/*"],
+      "@packages/web-observability": ["../../packages/web-observability"],
+      "@packages/web-observability/*": ["../../packages/web-observability/*"],
       "domains/*": ["src/domains/*"],
       "/*": ["src/*"]
     },

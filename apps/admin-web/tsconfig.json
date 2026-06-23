@@ -20,6 +20,8 @@
     ],
     "paths": {
       "@/*": ["./src/*"],
+      "@packages/web-observability": ["../../packages/web-observability"],
+      "@packages/web-observability/*": ["../../packages/web-observability/*"],
       "@packages/product-description": ["../../packages/product-description"],
       "@packages/product-description/*": ["../../packages/product-description/*"]
     }
