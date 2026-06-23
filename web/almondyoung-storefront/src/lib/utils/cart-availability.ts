@@ -10,6 +10,18 @@ export function isUnavailableVariantError(error: unknown): boolean {
   return UNAVAILABLE_VARIANT_MESSAGE_REGEX.test(message)
 }
 
+/** Medusa confirmInventory 의 재고 부족 에러(품절)인지 판단한다. 문자열/에러 모두 허용. */
+const INSUFFICIENT_INVENTORY_MESSAGE_REGEX =
+  /does not have the required inventory/i
+
+export function isInsufficientInventoryError(error: unknown): boolean {
+  const message =
+    typeof error === "string"
+      ? error
+      : ((error as { message?: string })?.message ?? "")
+  return INSUFFICIENT_INVENTORY_MESSAGE_REGEX.test(message)
+}
+
 /** 에러 메시지에서 문제된 variant id 목록을 중복 제거해 추출한다. */
 export function extractUnavailableVariantIds(error: unknown): string[] {
   const message = (error as { message?: string })?.message ?? ""

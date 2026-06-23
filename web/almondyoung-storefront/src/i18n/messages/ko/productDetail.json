@@ -85,7 +85,9 @@
     "welcomeMembershipLimit": "웰컴 멤버십 상품은 1개만 구매 가능합니다",
     "addCartFail": "장바구니 담기에 실패했습니다.",
     "sheetTitle": "옵션 선택",
-    "optionSelectTitle": "{title} 선택"
+    "optionSelectTitle": "{title} 선택",
+    "soldOutToast": "선택하신 옵션이 품절되어 담을 수 없습니다.",
+    "soldOutToastNamed": "‘{option}’ 옵션이 품절되어 담을 수 없습니다."
   },
   "cartModal": {
     "addingTitle": "장바구니에 담는 중",

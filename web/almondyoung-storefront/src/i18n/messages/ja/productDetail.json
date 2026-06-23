@@ -85,7 +85,9 @@
     "welcomeMembershipLimit": "ウェルカム メンバーシップ商品は1個のみ購入可能です",
     "addCartFail": "カートへの追加に失敗しました。",
     "sheetTitle": "オプション選択",
-    "optionSelectTitle": "{title} 選択"
+    "optionSelectTitle": "{title} 選択",
+    "soldOutToast": "選択されたオプションは在庫切れのため追加できません。",
+    "soldOutToastNamed": "「{option}」は在庫切れのため追加できません。"
   },
   "cartModal": {
     "addingTitle": "カートに追加中",

@@ -35,6 +35,7 @@ import OptionSelect from "./option-select"
 import SelectedItemRow from "./selected-item-row"
 import { SelectedItem } from "./types"
 import { isWelcomeMembershipProduct } from "@/lib/utils/welcome-membership"
+import { isInsufficientInventoryError } from "@/lib/utils/cart-availability"
 
 type ProductActionsProps = {
   customer: (HttpTypes.StoreCustomer & { groups: CustomerGroupRef[] }) | null
@@ -272,7 +273,13 @@ export default function ProductActions({
           })
           if (result.error) {
             setShowCartModal(false)
-            toast.error(result.error)
+            toast.error(
+              isInsufficientInventoryError(result.error)
+                ? isSimple
+                  ? t("soldOutToast")
+                  : t("soldOutToastNamed", { option: item.label })
+                : result.error
+            )
             return
           }
         }
@@ -303,7 +310,11 @@ export default function ProductActions({
           })),
         })
         if (result.error) {
-          toast.error(result.error)
+          toast.error(
+            isInsufficientInventoryError(result.error)
+              ? t("soldOutToast")
+              : result.error
+          )
           return
         }
         router.push(`/${countryCode}/checkout?cartId=${result.cartId}`)
@@ -364,7 +375,9 @@ export default function ProductActions({
                     size="md"
                     showLabel={!isSimple}
                     showRemove={!isSimple}
-                    incrementDisabled={isWelcomeMembership && item.quantity >= 1}
+                    incrementDisabled={
+                      isWelcomeMembership && item.quantity >= 1
+                    }
                     directInputDisabled={isWelcomeMembership}
                     onDecrement={() => updateQuantity(item.variantId, -1)}
                     onIncrement={() => updateQuantity(item.variantId, 1)}

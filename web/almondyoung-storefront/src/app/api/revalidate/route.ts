@@ -1,5 +1,5 @@
 import { listRegions } from "@lib/api/medusa/regions"
-import { revalidatePath } from "next/cache"
+import { revalidatePath, revalidateTag } from "next/cache"
 import { NextRequest, NextResponse } from "next/server"
 
 export const dynamic = "force-dynamic"
@@ -41,7 +41,10 @@ export async function POST(request: NextRequest) {
   const expected = process.env.REVALIDATE_SECRET
 
   if (!expected || secret !== expected) {
-    return NextResponse.json({ ok: false, error: "unauthorized" }, { status: 401 })
+    return NextResponse.json(
+      { ok: false, error: "unauthorized" },
+      { status: 401 }
+    )
   }
 
   let body: { handle?: string; paths?: string[] } = {}
@@ -55,6 +58,9 @@ export async function POST(request: NextRequest) {
 
   // 바뀐 상품의 상세 페이지를 region(locale) 별로 정밀 무효화.
   if (body.handle) {
+    revalidateTag(`product-${body.handle}`)
+    revalidated.push(`tag:product-${body.handle}`)
+
     const countryCodes = await getCountryCodes()
     for (const cc of countryCodes) {
       const path = `/${cc}/products/${body.handle}`
@@ -75,5 +81,9 @@ export async function POST(request: NextRequest) {
     revalidated.push(p)
   }
 
-  return NextResponse.json({ ok: true, handle: body.handle ?? null, revalidated })
+  return NextResponse.json({
+    ok: true,
+    handle: body.handle ?? null,
+    revalidated,
+  })
 }
