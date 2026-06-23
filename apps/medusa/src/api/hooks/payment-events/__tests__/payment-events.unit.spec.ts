@@ -263,6 +263,60 @@ describe('handleCaptureProjection', () => {
     expect(capturePaymentWorkflow).not.toHaveBeenCalled();
     expect(deleteLineItemsWorkflow).not.toHaveBeenCalled();
   });
+
+  // 선생성된 무통장 주문의 입금확인 경로. capturePaymentWorkflow 는 order 행의 updated_at 을
+  // 건드리지 않으므로(payment capture + order_transaction insert + order_summary update 뿐),
+  // 'confirmed' metadata 갱신(updateOrders)이 capture 이후 order.updated_at 을 올리는 유일한
+  // 쓰기다. 이 게 best-effort 로 삼켜지면 결제된 주문이 channel-adapter watermark 에 추월당해
+  // 영영 수집되지 않을 수 있다 → 실패는 propagate 되어 hook 이 재시도해야 한다.
+  function makeCaptureScope(updateOrders: jest.Mock) {
+    (capturePaymentWorkflow as unknown as jest.Mock).mockReturnValue({
+      run: jest.fn().mockResolvedValue({}),
+    });
+    const payment = { id: 'pay_1', captured_at: null, data: {} };
+    const graph: GraphFn = async ({ entity, filters }) => {
+      if (entity === 'payment_collection') return { data: [{ id: 'pc_1', cart: { id: 'cart_1' } }] };
+      if (entity === 'order_cart') return { data: [{ cart_id: 'cart_1', order_id: 'order_1' }] };
+      // cleanupSourceCartItems: checkout cart 에 source_cart_id 없음 → no-op
+      if (entity === 'cart') return { data: [{ id: 'cart_1', metadata: {} }] };
+      return { data: [] };
+    };
+    return makeScope({
+      paymentModule: {
+        listPaymentSessions: jest.fn().mockResolvedValue([{ id: 'payses_1', payment_collection_id: 'pc_1' }]),
+        listPayments: jest.fn().mockResolvedValue([payment]),
+        updatePayment: jest.fn(),
+      },
+      orderModule: {
+        retrieveOrder: jest.fn().mockResolvedValue({ id: 'order_1', metadata: { bank_transfer_status: 'awaiting_deposit' } }),
+        updateOrders: updateOrders,
+      },
+      graph,
+    });
+  }
+
+  it("입금확인(capture) 후 awaiting_deposit → confirmed 로 order.updated_at 을 bump 한다", async () => {
+    const updateOrders = jest.fn().mockResolvedValue(undefined);
+    const { scope } = makeCaptureScope(updateOrders);
+
+    await handleCaptureProjection(scope as any, 'intent_bt', 'msg_cap', logger as any);
+
+    expect(updateOrders).toHaveBeenCalledWith([
+      expect.objectContaining({
+        id: 'order_1',
+        metadata: expect.objectContaining({ bank_transfer_status: 'confirmed' }),
+      }),
+    ]);
+  });
+
+  it('confirmed metadata 갱신(updateOrders) 실패 시 throw 하여 hook 이 재시도하게 한다 (P2 회귀)', async () => {
+    const updateOrders = jest.fn().mockRejectedValue(new Error('order metadata write failed'));
+    const { scope } = makeCaptureScope(updateOrders);
+
+    await expect(
+      handleCaptureProjection(scope as any, 'intent_bt', 'msg_cap_fail', logger as any),
+    ).rejects.toThrow(/order metadata write failed/);
+  });
 });
 
 describe('handleRefundProjection', () => {
