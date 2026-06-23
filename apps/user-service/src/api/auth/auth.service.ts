@@ -37,8 +37,10 @@ import {
   JWT_RESET_PASSWORD_ACCESS_TOKEN_EXPIRATION,
   JWT_SIGNUP_CALLBACK_TOKEN_EXPIRATION,
   JWT_SOCIAL_CALLBACK_TOKEN_EXPIRATION,
+  JWT_PAYMENT_HANDOFF_TOKEN_EXPIRATION,
   SIGNUP_CALLBACK_TOKEN_PURPOSE,
   SOCIAL_CALLBACK_TOKEN_PURPOSE,
+  PAYMENT_HANDOFF_TOKEN_PURPOSE,
 } from '../../constants/auth.constant';
 import { ConsentsService } from '../consents/consents.service';
 import { TokensService } from '../tokens/tokens.service';
@@ -108,6 +110,22 @@ export class AuthService {
       {
         secret: this.configService.getOrThrow<string>('JWT_VERIFICATION_TOKEN_SECRET'),
         expiresIn: JWT_SOCIAL_CALLBACK_TOKEN_EXPIRATION,
+      },
+    );
+  }
+
+  /**
+   * 결제창(wallet-web) 핸드오프 토큰 발급. 인증된 고객의 storefront 세션에서 호출되며,
+   * wallet-web 이 별도 서브도메인에서 OIDC silent-SSO/쿠키로 세션을 재확보하지 못하는
+   * 인앱브라우저·ITP 환경을 우회하기 위한 용도. 짧은 TTL(120s) + purpose claim 으로 1회 왕복 한정.
+   * 교환은 `POST /oauth/token` (grant_type=payment_handoff) 에서 confidential client 인증 후에만 가능.
+   */
+  async issuePaymentHandoffToken(userId: string): Promise<string> {
+    return this.jwtService.signAsync(
+      { sub: userId, purpose: PAYMENT_HANDOFF_TOKEN_PURPOSE },
+      {
+        secret: this.configService.getOrThrow<string>('JWT_VERIFICATION_TOKEN_SECRET'),
+        expiresIn: JWT_PAYMENT_HANDOFF_TOKEN_EXPIRATION,
       },
     );
   }
