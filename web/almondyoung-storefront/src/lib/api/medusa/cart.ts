@@ -75,9 +75,15 @@ export async function retrieveCart(
       // 무통장입금처럼 브라우저가 완료 과정에 참여하지 않으면 쿠키가 남아
       // 완료된 카트가 계속 장바구니로 노출. 쿠키를 정리하고 null 을 돌려 상위에서 새 카트 생성/복구로 흐르게
       if (cart?.completed_at) {
-        // 렌더 컨텍스트에서는 쿠키 변경이 막힐 수 있어 best-effort 로 처리한
+        // 쿠키는 '이 완료된 카트를 쿠키가 실제로 가리킬 때'만 정리한다. 명시적 cartId 로 완료된
+        // 파생 카트(체크아웃/배송 프리뷰 sub-cart)를 조회하는 경우, 쿠키가 가리키는 별개의 활성
+        // source 카트를 지워 남은 장바구니를 유실시키면 안 된다.
         try {
-          await removeCartId()
+          const cookieCartId = await getCartId()
+          if (cookieCartId && cookieCartId === id) {
+            // 렌더 컨텍스트에서는 쿠키 변경이 막힐 수 있어 best-effort 로 처리
+            await removeCartId()
+          }
         } catch {
           // Server Action/Route Handler 가 아닌 곳에서 호출되면 무시
         }

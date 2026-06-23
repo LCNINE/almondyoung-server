@@ -1,6 +1,7 @@
 import { authenticate, defineMiddlewares } from '@medusajs/framework/http';
 import { adminRouteMiddlewares } from './admin/middlewares';
 import { perCustomerLimitMiddleware } from './store/carts/middlewares/per-customer-limit';
+import { rejectAwaitingDepositCompleteMiddleware } from './store/carts/middlewares/reject-awaiting-deposit-complete';
 import { membershipPriceVisibilityMiddleware } from './store/products/middlewares/membership-price-visibility';
 
 // 멤버십가 표시 정책: 비회원 응답에서 멤버십가 metadata만 제거한다 (상품 숨김 아님).
@@ -57,6 +58,13 @@ export default defineMiddlewares({
         authenticate('customer', ['session', 'bearer'], { allowUnauthenticated: true }),
         perCustomerLimitMiddleware,
       ],
+    },
+    {
+      // 무통장 입금대기 intent 의 cart 를 HTTP 로 complete 하는 경로를 막는다(미입금 출고 방지).
+      // 정상 무통장 주문은 wallet 웹훅이 in-process 로 선생성하므로 이 라우트를 거치지 않는다.
+      matcher: '/store/carts/:id/complete',
+      method: 'POST',
+      middlewares: [rejectAwaitingDepositCompleteMiddleware],
     },
     {
       matcher: '/store/coupons/preview',
