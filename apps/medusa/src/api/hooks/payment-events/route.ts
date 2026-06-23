@@ -424,6 +424,19 @@ export async function handleAwaitingDepositProjection(
   messageId: string,
   logger: { info: Function; warn: Function; debug: Function; error: Function },
 ) {
+  // offline-wait 이벤트는 채널이 아니라 결제수단(무통장) 기준으로 발행되므로, Medusa 체크아웃에서
+  // 비롯되지 않은 intent(멤버십/빌링 무통장 — Medusa 세션이 애초에 없음)도 여기에 도달한다.
+  // 그런 intent 는 선생성할 cart 가 없다. capture/cancel/refund 핸들러와 동일하게 terminal no-op
+  // (200 응답) 으로 끝내 무한 재시도/DLQ 를 피한다. 세션이 있으면 정상 무통장 복구를 진행한다.
+  const paymentModule = scope.resolve(Modules.PAYMENT);
+  const sessionId = await resolvePaymentSessionId(paymentModule, intentId);
+  if (!sessionId) {
+    logger.info(
+      `[payment-events] handleAwaitingDepositProjection: no Medusa payment session for intentId=${intentId}, skipping (messageId=${messageId})`,
+    );
+    return;
+  }
+
   // 주문을 '입금확인중'(awaiting_deposit) marker 와 함께 원자적으로 선생성.
   // marker 는 recoverBankTransferOrder 가 cart.metadata 에 심고 completeCartWorkflow 가 order.metadata
   // 로 복사하므로(=주문 생성과 marker 가 분리되지 않음), marker 없는 authorized 주문이 WMS 수집 게이트를 통과하는 창이 존재하지 않음.

@@ -4,6 +4,7 @@ import {
   cartRequiresShipping,
   selectShippingOptionsForCart,
 } from "@/lib/api/medusa/shipping-method-policy"
+import { getIntent } from "@/lib/api/wallet"
 import { sdk } from "@/lib/config/medusa"
 import {
   getAuthHeaders,
@@ -114,6 +115,31 @@ interface ProcessPaymentResult {
   redirectUrl: string
 }
 
+/**
+ * 무통장입금 입금대기(AWAITING_DEPOSIT) intent 인지 wallet 에서 서버사이드로 확인.
+ *
+ * callback 의 status 쿼리는 wallet-web 이 붙이는 값이라 신뢰할 수 없다(누락/위조 가능). 무통장은
+ * almond-payment 가 AWAITING_DEPOSIT 을 'authorized' 로 매핑하므로, 이 상태에서 cart.complete() 가
+ * 그대로 성공해 marker 없는 주문이 생기고 WMS 게이트를 통과(미입금 출고)할 수 있다. 정상 흐름에선
+ * 무통장은 wallet-web 입금화면에 머물러 이 callback 에 오지 않으므로, 여기 도달했다면 수동 진입/레이스다.
+ * → 입금대기 intent 면 cart.complete() 를 막고 주문내역(웹훅이 선생성한 '입금확인중' 주문)으로 보낸다.
+ *
+ * 조회 실패(예: 크로스도메인 토큰 소실)는 fail-open: 카드 결제 정상 완료를 막지 않기 위해 진행시킨다.
+ * 카드 intent 는 AWAITING_DEPOSIT 이 아니므로 fail-open 이어도 marker 없는 미입금 주문이 생기지 않는다.
+ */
+async function isAwaitingDepositIntent(intentId: string): Promise<boolean> {
+  try {
+    const intent = await getIntent(intentId)
+    return intent.status === "AWAITING_DEPOSIT"
+  } catch (err) {
+    console.warn(
+      `[processPaymentCallback] intent status lookup failed, proceeding (intentId=${intentId})`,
+      err instanceof Error ? err.message : err
+    )
+    return false
+  }
+}
+
 interface SourceCartSelection {
   sourceCartId: string
   sourceLineItemIds: string[]
@@ -192,6 +218,15 @@ export async function processPaymentCallback(
   cartId?: string | null
 ): Promise<ProcessPaymentResult> {
   try {
+    // 무통장입금 입금대기 intent 는 cart.complete() 로 주문을 만들지 않는다(미입금 출고 방지).
+    // 주문은 wallet 의 awaiting_deposit 웹훅이 marker 와 함께 선생성하므로 주문내역으로 보낸다.
+    if (await isAwaitingDepositIntent(intentId)) {
+      return {
+        success: true,
+        redirectUrl: `/${countryCode}/mypage/order/list`,
+      }
+    }
+
     const targetCartId = cartId || (await getCartId())
     console.log("============== callback 디버그 ==============")
     console.log("intentId:", intentId)
