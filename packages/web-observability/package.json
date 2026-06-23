@@ -1,0 +1,21 @@
+{
+  "name": "@packages/web-observability",
+  "version": "0.0.1",
+  "description": "Shared observability helpers for Next.js web apps",
+  "private": true,
+  "main": "index.ts",
+  "types": "index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./browser": "./browser.ts",
+    "./otel-node": "./otel-node.ts"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/api-logs": "0.213.0",
+    "@opentelemetry/exporter-logs-otlp-http": "0.213.0",
+    "@opentelemetry/resources": "^2.6.0",
+    "@opentelemetry/sdk-logs": "0.213.0",
+    "@opentelemetry/semantic-conventions": "^1.40.0"
+  }
+}

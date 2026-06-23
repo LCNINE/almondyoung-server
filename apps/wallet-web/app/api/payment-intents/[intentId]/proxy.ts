@@ -4,8 +4,14 @@ import {
   backendAuthCookieFromToken,
   writeSessionCookies,
 } from '../../../../lib/auth/session-cookies';
+import { createWebLogger } from '@packages/web-observability';
 
 type PaymentIntentAction = 'confirm' | 'cancel' | 'abandon';
+
+const logger = createWebLogger({
+  component: 'wallet-web.payment-intent-proxy',
+  route: '/api/payment-intents/[intentId]/[action]',
+});
 
 function getWalletApiUrl(): string {
   return process.env.WALLET_API_URL ?? process.env.NEXT_PUBLIC_WALLET_API_URL ?? 'http://localhost:3100';
@@ -95,21 +101,17 @@ export async function proxyPaymentIntentAction(
         refreshed = null;
       }
     }
-    // Observability: identify which browsers/sessions still fail at payment confirm so we can
-    // confirm the in-app-browser (no cookies → no refresh token) cohort without edge access logs.
-    // No tokens are logged — only the User-Agent and the refresh outcome.
-    console.warn(
-      JSON.stringify({
-        tag: 'pay-confirm-auth-401',
+    logger.warn('wallet.payment_intent.auth_401', {
+      attributes: {
         action,
-        intentId,
-        userAgent: request.headers.get('User-Agent') ?? null,
-        hadRefreshToken: Boolean(refreshToken),
-        refreshAttempted: Boolean(refreshToken),
+        intent_id: intentId,
+        user_agent: request.headers.get('User-Agent') ?? null,
+        had_refresh_token: Boolean(refreshToken),
+        refresh_attempted: Boolean(refreshToken),
         rescued: Boolean(refreshed && upstream.status < 400),
-        finalStatus: upstream.status,
-      }),
-    );
+        final_status: upstream.status,
+      },
+    });
   }
 
   const responseBody = await upstream.text();
@@ -122,6 +124,16 @@ export async function proxyPaymentIntentAction(
   // Persist the rotated session so the browser keeps the refreshed token for later calls.
   if (refreshed) {
     writeSessionCookies(cookieJar(headers), refreshed);
+  }
+
+  if (upstream.status >= 500) {
+    logger.error('wallet.payment_intent.upstream_5xx', {
+      attributes: {
+        action,
+        intent_id: intentId,
+        upstream_status: upstream.status,
+      },
+    });
   }
 
   return new Response(responseBody || null, {

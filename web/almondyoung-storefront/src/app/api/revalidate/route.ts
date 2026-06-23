@@ -1,8 +1,14 @@
 import { listRegions } from "@lib/api/medusa/regions"
 import { revalidatePath, revalidateTag } from "next/cache"
 import { NextRequest, NextResponse } from "next/server"
+import { createWebLogger } from "@packages/web-observability"
 
 export const dynamic = "force-dynamic"
+
+const logger = createWebLogger({
+  component: "storefront.revalidate",
+  route: "/api/revalidate",
+})
 
 /**
  * Medusa region 에 등록된 country code(iso_2) 목록을 동적으로 가져온다.
@@ -41,6 +47,12 @@ export async function POST(request: NextRequest) {
   const expected = process.env.REVALIDATE_SECRET
 
   if (!expected || secret !== expected) {
+    logger.warn("storefront.revalidate.unauthorized", {
+      attributes: {
+        has_expected_secret: Boolean(expected),
+        has_provided_secret: Boolean(secret),
+      },
+    })
     return NextResponse.json(
       { ok: false, error: "unauthorized" },
       { status: 401 }
@@ -80,6 +92,14 @@ export async function POST(request: NextRequest) {
     revalidatePath(p)
     revalidated.push(p)
   }
+
+  logger.info("storefront.revalidate.completed", {
+    attributes: {
+      handle: body.handle ?? null,
+      paths_count: body.paths?.length ?? 0,
+      revalidated_count: revalidated.length,
+    },
+  })
 
   return NextResponse.json({
     ok: true,

@@ -19,7 +19,9 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@packages/web-observability": ["../../packages/web-observability"],
+      "@packages/web-observability/*": ["../../packages/web-observability/*"]
     }
   },
   "include": [

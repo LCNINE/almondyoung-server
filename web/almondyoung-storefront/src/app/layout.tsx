@@ -1,5 +1,6 @@
 import Footer from "@/components/layout/footer"
 import { BottomNavigation } from "@/components/layout/nav/bottom-nav"
+import { ObservabilityProvider } from "@/components/providers/observability-provider"
 import { FloatingButtons } from "@/components/shared/custom-buttons/floating-buttons"
 import { PushNotificationProvider } from "@/components/providers/push-notification-provider"
 import { CartProvider } from "@/contexts/cart-context"
@@ -56,6 +57,7 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
           <QueryProvider>
             <OverlayProvider>
               <UserProvider initialUser={userDetailInfo}>
+                <ObservabilityProvider />
                 <PushNotificationProvider />
                 <CartProvider initialCart={cart}>
                   <ThemeProvider

@@ -12,13 +12,17 @@ import {
   removeCartId,
 } from "@/lib/data/cookies"
 import { revalidateTag } from "next/cache"
+import { createWebLogger } from "@packages/web-observability"
+
+const logger = createWebLogger({
+  component: "storefront.checkout-callback",
+  route: "/[countryCode]/checkout/callback",
+})
 
 async function ensureShippingMethod(
   cartId: string,
   headers: Record<string, string>
 ): Promise<void> {
-  const prefix = `[ensureShippingMethod] cartId=${cartId}`
-
   // 현재 cart의 shipping_methods 확인
   const { cart } = await sdk.client.fetch<{
     cart: {
@@ -38,13 +42,15 @@ async function ensureShippingMethod(
   })
 
   if (!cartRequiresShipping(cart.items)) {
-    console.log(`${prefix} shipping 불필요 cart, shipping method 보장 생략`)
+    logger.info("storefront.checkout.shipping_not_required", {
+      attributes: { cart_id: cartId },
+    })
     return
   }
 
-  console.warn(
-    `${prefix} standard shipping method 보장, 사용 가능한 옵션 조회 시작`
-  )
+  logger.info("storefront.checkout.shipping_method.ensure_started", {
+    attributes: { cart_id: cartId },
+  })
 
   // 사용 가능한 shipping options 조회
   const { shipping_options } = await sdk.client.fetch<{
@@ -60,16 +66,18 @@ async function ensureShippingMethod(
     headers,
   })
 
-  console.log(
-    `${prefix} 사용 가능한 shipping options: ${JSON.stringify(
-      shipping_options?.map((o) => ({
-        id: o.id,
-        name: o.name,
-        amount: o.amount,
-        typeCode: o.type?.code ?? null,
-      })) ?? []
-    )}`
-  )
+  logger.info("storefront.checkout.shipping_options.loaded", {
+    attributes: {
+      cart_id: cartId,
+      shipping_options:
+        shipping_options?.map((o) => ({
+          id: o.id,
+          name: o.name,
+          amount: o.amount,
+          typeCode: o.type?.code ?? null,
+        })) ?? [],
+    },
+  })
 
   const standardOptions = selectShippingOptionsForCart(
     shipping_options,
@@ -77,9 +85,9 @@ async function ensureShippingMethod(
   )
 
   if (!standardOptions.length) {
-    console.error(
-      `${prefix} 사용 가능한 standard shipping option 없음, 할당 불가`
-    )
+    logger.error("storefront.checkout.shipping_options.none_applicable", {
+      attributes: { cart_id: cartId },
+    })
     throw new Error(
       "배송이 필요한 상품에 적용 가능한 표준 배송 옵션이 없습니다."
     )
@@ -91,9 +99,12 @@ async function ensureShippingMethod(
   )
 
   if (currentShippingOptionId && isCurrentOptionValid) {
-    console.log(
-      `${prefix} standard shipping method 존재 (option_id=${currentShippingOptionId}), 추가 불필요`
-    )
+    logger.info("storefront.checkout.shipping_method.already_valid", {
+      attributes: {
+        cart_id: cartId,
+        shipping_option_id: currentShippingOptionId,
+      },
+    })
     return
   }
 
@@ -104,9 +115,13 @@ async function ensureShippingMethod(
     {},
     headers
   )
-  console.log(
-    `${prefix} shipping method 할당 완료 (option_id=${targetOption.id}, name=${targetOption.name})`
-  )
+  logger.info("storefront.checkout.shipping_method.assigned", {
+    attributes: {
+      cart_id: cartId,
+      shipping_option_id: targetOption.id,
+      shipping_option_name: targetOption.name,
+    },
+  })
 }
 
 interface ProcessPaymentResult {
@@ -179,9 +194,13 @@ async function removePurchasedItemsFromSourceCart(
   }
 
   if (failedCount > 0) {
-    console.warn(
-      `[processPaymentCallback] source cart cleanup partially failed (sourceCartId=${selection.sourceCartId}, deleted=${deletedCount}, failed=${failedCount})`
-    )
+    logger.warn("storefront.checkout.source_cart_cleanup_partial_failure", {
+      attributes: {
+        source_cart_id: selection.sourceCartId,
+        deleted_count: deletedCount,
+        failed_count: failedCount,
+      },
+    })
   }
 }
 
@@ -193,11 +212,15 @@ export async function processPaymentCallback(
 ): Promise<ProcessPaymentResult> {
   try {
     const targetCartId = cartId || (await getCartId())
-    console.log("============== callback 디버그 ==============")
-    console.log("intentId:", intentId)
-    console.log("cartId (param):", cartId)
-    console.log("targetCartId:", targetCartId)
-    console.log("=============================================")
+    logger.info("storefront.checkout.payment_callback.started", {
+      attributes: {
+        country_code: countryCode,
+        intent_id: intentId,
+        mode: mode ?? null,
+        cart_id_param: cartId ?? null,
+        target_cart_id: targetCartId ?? null,
+      },
+    })
 
     if (targetCartId) {
       const headers = { ...(await getAuthHeaders()) }
@@ -211,15 +234,20 @@ export async function processPaymentCallback(
 
       const cartRes = await sdk.store.cart.complete(targetCartId, {}, headers)
 
-      console.log("============== cart.complete 결과 ==============")
-      console.log("cartRes.type:", cartRes?.type)
-      if (cartRes?.type === "order") {
-        console.log("order.id:", cartRes.order.id)
-        console.log("order.display_id:", cartRes.order.display_id)
-        console.log("order.customer_id:", cartRes.order.customer_id)
-        console.log("order.email:", cartRes.order.email)
-      }
-      console.log("================================================")
+      logger.info("storefront.checkout.cart_complete.finished", {
+        attributes: {
+          intent_id: intentId,
+          target_cart_id: targetCartId,
+          result_type: cartRes?.type ?? null,
+          ...(cartRes?.type === "order"
+            ? {
+                order_id: cartRes.order.id,
+                order_display_id: cartRes.order.display_id,
+                customer_id: cartRes.order.customer_id ?? null,
+              }
+            : {}),
+        },
+      })
 
       if (cartRes?.type === "order") {
         revalidateTag(await getCacheTag("orders"))
@@ -240,6 +268,14 @@ export async function processPaymentCallback(
 
       const errMsg =
         (cartRes as any)?.error?.message ?? "주문 처리에 실패했습니다."
+      logger.warn("storefront.checkout.cart_complete.non_order_result", {
+        attributes: {
+          intent_id: intentId,
+          target_cart_id: targetCartId,
+          result_type: (cartRes as any)?.type ?? null,
+          error_message: errMsg,
+        },
+      })
       return {
         success: false,
         redirectUrl: `/${countryCode}/checkout/fail?code=ORDER_FAILED&message=${encodeURIComponent(errMsg)}`,
@@ -252,6 +288,15 @@ export async function processPaymentCallback(
     }
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : "알 수 없는 오류"
+    logger.error("storefront.checkout.payment_callback.failed", {
+      error: err,
+      attributes: {
+        country_code: countryCode,
+        intent_id: intentId,
+        mode: mode ?? null,
+        cart_id_param: cartId ?? null,
+      },
+    })
     return {
       success: false,
       redirectUrl:
