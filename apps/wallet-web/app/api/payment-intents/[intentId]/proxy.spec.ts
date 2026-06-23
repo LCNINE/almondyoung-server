@@ -137,6 +137,41 @@ describe('payment intent proxy', () => {
     );
   });
 
+  it('persists rotated session cookies even when the retried wallet API call fails', async () => {
+    process.env.WALLET_API_URL = 'https://wallet-api.example.com';
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce(new Response('Unauthorized', { status: 401 }))
+      .mockResolvedValueOnce(Response.json({ message: 'intent expired' }, { status: 409 }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    (refreshTokens as jest.Mock).mockResolvedValue({
+      accessToken: 'new_at',
+      refreshToken: 'new_rt',
+      idToken: 'new_it',
+      expiresIn: 900,
+    });
+
+    const request = new Request('https://wallet-web.example.com/api/payment-intents/pi_123/confirm', {
+      method: 'POST',
+      headers: {
+        Cookie: 'wallet_at=expired; wallet_rt=valid_refresh',
+        'Content-Type': 'application/json',
+        'Idempotency-Key': 'idem_abc',
+      },
+      body: '{}',
+    });
+
+    const response = await proxyPaymentIntentAction(request, 'pi_123', 'confirm');
+
+    expect(response.status).toBe(409);
+    expect(refreshTokens).toHaveBeenCalledWith('valid_refresh');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(writeSessionCookies).toHaveBeenCalledTimes(1);
+    expect((writeSessionCookies as jest.Mock).mock.calls[0][1]).toEqual(
+      expect.objectContaining({ accessToken: 'new_at', refreshToken: 'new_rt' }),
+    );
+  });
+
   it('returns the original 401 when there is no refresh token to bounce with', async () => {
     process.env.WALLET_API_URL = 'https://wallet-api.example.com';
     const fetchMock = jest.fn().mockResolvedValue(new Response('Unauthorized', { status: 401 }));
