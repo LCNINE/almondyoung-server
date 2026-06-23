@@ -1,6 +1,7 @@
 import { DbService, InjectDb } from '@app/db';
 import { BadRequestError, UnauthorizedError } from '@app/shared';
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { TokensService } from '../tokens/tokens.service';
 import { type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
@@ -11,6 +12,7 @@ import {
   INTERNAL_TOKEN_AUDIENCE,
   JWT_ACCESS_TOKEN_EXPIRATION,
   JWT_REFRESH_TOKEN_LONG_EXPIRATION,
+  PAYMENT_HANDOFF_TOKEN_PURPOSE,
 } from '../../constants/auth.constant';
 import { UsersService } from '../users/users.service';
 import { IssueCodeRequestDto } from './dto/issue-code.dto';
@@ -62,6 +64,7 @@ export class OAuthManager {
     private readonly jwtService: JwtService,
     private readonly usersService: UsersService,
     private readonly tokensService: TokensService,
+    private readonly configService: ConfigService,
   ) {}
 
   private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
@@ -113,6 +116,9 @@ export class OAuthManager {
     if (input.grantType === 'refresh_token') {
       return this.refreshTokens(input);
     }
+    if (input.grantType === 'payment_handoff') {
+      return this.exchangeHandoffForToken(input);
+    }
     throw new BadRequestError('unsupported grant_type');
   }
 
@@ -155,6 +161,42 @@ export class OAuthManager {
       });
       return tokens;
     });
+  }
+
+  // payment_handoff grant: storefront 가 인증된 고객에게 발급한 단기 핸드오프 토큰을 wallet-web 이
+  // confidential client 인증과 함께 교환해 자기 세션 토큰셋을 받는다. wallet-web 이 별도 서브도메인에서
+  // OIDC silent-SSO/쿠키로 세션을 재확보하지 못하는 인앱브라우저·ITP 환경을 우회하기 위한 경로다.
+  // PKCE 대신 client_secret 으로 신뢰를 보증하므로 confidential client 만 허용한다
+  // (client 자격 검증은 issueToken 의 assertClientCredentials 에서 선행됨).
+  private async exchangeHandoffForToken(input: TokenRequestDto): Promise<TokenResponseDto> {
+    if (!input.code) throw new BadRequestError('code (handoff token) required for payment_handoff grant');
+
+    const client = await this.reader.getClientOrThrow(input.clientId);
+    if (client.clientType !== 'confidential') {
+      throw new UnauthorizedError('payment_handoff grant requires a confidential client');
+    }
+
+    let payload: { sub?: string; purpose?: string; client_id?: string };
+    try {
+      payload = await this.jwtService.verifyAsync(input.code, {
+        secret: this.configService.getOrThrow<string>('JWT_VERIFICATION_TOKEN_SECRET'),
+      });
+    } catch {
+      throw new UnauthorizedError('invalid or expired handoff token');
+    }
+    if (payload.purpose !== PAYMENT_HANDOFF_TOKEN_PURPOSE || !payload.sub) {
+      throw new UnauthorizedError('invalid handoff token');
+    }
+    // 핸드오프 토큰이 특정 client 를 지목했다면(선택) 교환하는 client 와 일치해야 한다.
+    if (payload.client_id && payload.client_id !== input.clientId) {
+      throw new UnauthorizedError('handoff token client mismatch');
+    }
+
+    const userId = payload.sub;
+    const scope = (client.allowedScopes ?? []).join(' ') || null;
+    return this.inTx((tx) =>
+      this.mintTokenPair(userId, input.clientId, scope, undefined, tx, { authTime: new Date() }),
+    );
   }
 
   private async refreshTokens(input: TokenRequestDto): Promise<TokenResponseDto> {
