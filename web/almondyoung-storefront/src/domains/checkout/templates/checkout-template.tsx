@@ -31,6 +31,39 @@ interface CheckoutTemplateProps {
   promotions: Promotion[]
 }
 
+function isUnauthorizedError(error: unknown): boolean {
+  const err = error as Error & { digest?: string }
+  return err?.digest === "UNAUTHORIZED" || err?.message === "UNAUTHORIZED"
+}
+
+async function restoreStorefrontToken(): Promise<boolean> {
+  try {
+    const res = await fetch("/api/auth/restore-token", {
+      method: "POST",
+      credentials: "include",
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+function redirectToWalletHandoff(
+  walletWebUrl: string,
+  handoffToken: string,
+  payPath: string
+) {
+  window.location.href = `${walletWebUrl}/auth/handoff?h=${encodeURIComponent(
+    handoffToken
+  )}&redirect_to=${encodeURIComponent(payPath)}`
+}
+
+function redirectToWalletEnsure(walletWebUrl: string, payPath: string) {
+  window.location.href = `${walletWebUrl}/auth/ensure?redirect_to=${encodeURIComponent(
+    payPath
+  )}`
+}
+
 export default function CheckoutTemplate({
   isMembership,
   cart,
@@ -205,14 +238,25 @@ export default function CheckoutTemplate({
       // 그걸 교환해 자기 세션을 확보한다. 발급 실패 시 기존 직접 진입으로 폴백(무회귀).
       try {
         const handoffToken = await mintPaymentHandoffToken()
-        window.location.href = `${walletWebUrl}/auth/handoff?h=${encodeURIComponent(
-          handoffToken
-        )}&redirect_to=${encodeURIComponent(payPath)}`
+        redirectToWalletHandoff(walletWebUrl, handoffToken, payPath)
       } catch (handoffErr) {
-        const hErr = handoffErr as Error & { digest?: string }
-        // UNAUTHORIZED는 error.tsx의 토큰 복구로 전파.
-        if (hErr?.digest === "UNAUTHORIZED" || hErr?.message === "UNAUTHORIZED") {
-          throw handoffErr
+        if (isUnauthorizedError(handoffErr)) {
+          const restored = await restoreStorefrontToken()
+          if (restored) {
+            try {
+              const retryHandoffToken = await mintPaymentHandoffToken()
+              redirectToWalletHandoff(walletWebUrl, retryHandoffToken, payPath)
+              return
+            } catch (retryErr) {
+              if (!isUnauthorizedError(retryErr)) {
+                window.location.href = `${walletWebUrl}${payPath}`
+                return
+              }
+            }
+          }
+
+          redirectToWalletEnsure(walletWebUrl, payPath)
+          return
         }
         // 핸드오프 미가용(미배포 등) → 기존 경로로 진입(wallet-web 자체 세션 복구).
         window.location.href = `${walletWebUrl}${payPath}`
