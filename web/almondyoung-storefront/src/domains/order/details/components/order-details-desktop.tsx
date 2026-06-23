@@ -92,6 +92,9 @@ export const OrderDetailsDesktop = ({
     : tStatus(
         order.status === "canceled"
           ? "orderCancel"
+          : (order.metadata as Record<string, unknown> | null)
+                ?.bank_transfer_status === "awaiting_deposit"
+            ? "depositPending"
           : order.fulfillment_status === "fulfilled"
             ? "delivered"
             : order.fulfillment_status === "shipped"

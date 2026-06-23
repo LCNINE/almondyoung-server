@@ -42,6 +42,13 @@ const LOAD_MORE_LIMIT = 20
 
 const getOrderStatusKey = (order: HttpTypes.StoreOrder): string => {
   if (order.status === "canceled") return "cancelled"
+  // 무통장입금 선생성 주문: 관리자 입금확인 전까지 '입금확인중' 으로 표시
+  // 결제는 authorized(미capture) 상태라 일반 로직에선 '상품 준비 중'으로 잘못 보이므로 최우선 처리
+  if (
+    (order.metadata as Record<string, unknown> | null)?.bank_transfer_status ===
+    "awaiting_deposit"
+  )
+    return "depositPending"
   if (order.payment_status === "awaiting") return "paymentPending"
   if (order.fulfillment_status === "fulfilled") return "delivered"
   if (order.fulfillment_status === "shipped") return "shipping"

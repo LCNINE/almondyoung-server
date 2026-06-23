@@ -485,9 +485,24 @@ export class ConfirmService {
         if (phase1.plan.primary.provider.actionMode === 'offline-wait') {
           // 무통장: 오프라인 입금 대기. 긴 입금 윈도우(expiresAt)로 두고
           // actionExpiresAt은 찍지 않아 TossActionExpirationJob 대상에서 제외한다.
+          //
+          // INTENT_AWAITING_DEPOSIT 이벤트를 발행해 Medusa 가 주문을 '입금확인중' 상태로 선생성
+          // 입금대기 시점에 주문 내용이 고정되어, 이후 카트 수정이 주문/결제금액 불일치를 일으키는 문제를 차단. 이벤트가 유실돼도 관리자 입금확인 (INTENT_CAPTURED) 시 기존 복구 경로가 주문을 생성하므로 graceful degradation 됨.
           await this.stateTransitionService.transitionIntent(intentId, 'AWAITING_DEPOSIT', {
             correlationId,
             reasonCode: 'AWAITING_DEPOSIT',
+            outboxEvent: {
+              eventType: GatewayEventType.INTENT_AWAITING_DEPOSIT,
+              aggregateType: GATEWAY_AGGREGATE_TYPE,
+              aggregateId: intentId,
+              payload: buildPaymentIntentEventPayload({
+                intentId,
+                userId: phase1.userId,
+                status: 'AWAITING_DEPOSIT',
+                payableAmount: phase1.payableAmount,
+                currency: phase1.currency,
+              }),
+            },
           });
           await this.stampDepositExpiry(intentId);
         } else {
