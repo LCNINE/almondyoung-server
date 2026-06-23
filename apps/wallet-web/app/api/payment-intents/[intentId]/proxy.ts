@@ -120,7 +120,7 @@ export async function proxyPaymentIntentAction(
   }
 
   // Persist the rotated session so the browser keeps the refreshed token for later calls.
-  if (refreshed && upstream.status < 400) {
+  if (refreshed) {
     writeSessionCookies(cookieJar(headers), refreshed);
   }
 
