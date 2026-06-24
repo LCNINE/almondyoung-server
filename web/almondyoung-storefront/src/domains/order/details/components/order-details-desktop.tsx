@@ -88,6 +88,13 @@ export const OrderDetailsDesktop = ({
   const canTrack = availableActions.includes("track")
   const canReturn = availableActions.includes("return")
   const canExchange = availableActions.includes("exchange")
+  // 배송조회는 배송이 필요한 주문에서만(디지털 단독 주문은 숨김).
+  const showTrack =
+    requiresShipping &&
+    (canTrack ||
+      order.fulfillment_status === "shipped" ||
+      order.fulfillment_status === "fulfilled" ||
+      order.fulfillment_status === "partially_fulfilled")
   const cancelUnavailableReason = coreActions?.cancelUnavailableReason
   const cancelTooltip = cancelUnavailableReason
     ? CANCEL_UNAVAILABLE_MESSAGES[cancelUnavailableReason]
@@ -354,12 +361,14 @@ export const OrderDetailsDesktop = ({
                   </dd>
                 </div>
               )}
-              <div className="flex items-center justify-between">
-                <dt className="text-base text-black">{tLabels("shippingFee")}</dt>
-                <dd className="text-base text-black">
-                  {formatAmount(order.shipping_total)}
-                </dd>
-              </div>
+              {requiresShipping && (
+                <div className="flex items-center justify-between">
+                  <dt className="text-base text-black">{tLabels("shippingFee")}</dt>
+                  <dd className="text-base text-black">
+                    {formatAmount(order.shipping_total)}
+                  </dd>
+                </div>
+              )}
             </dl>
           </div>
           <dl className="border-t-[0.5px] border-b-[0.5px] border-zinc-300 bg-gray-background p-3.5">
@@ -382,7 +391,7 @@ export const OrderDetailsDesktop = ({
         >
           {tActions("backToList")}
         </LocalizedClientLink>
-        {canTrack && (
+        {showTrack && (
           <LocalizedClientLink
             href={`/mypage/order/track?orderId=${order.id}`}
             className="inline-flex items-center justify-center rounded-[5px] px-4 py-3 text-sm text-black outline-1 outline-zinc-400"
@@ -390,17 +399,6 @@ export const OrderDetailsDesktop = ({
             {tActions("trackDelivery")}
           </LocalizedClientLink>
         )}
-        {!canTrack &&
-          (order.fulfillment_status === "shipped" ||
-            order.fulfillment_status === "fulfilled" ||
-            order.fulfillment_status === "partially_fulfilled") && (
-            <LocalizedClientLink
-              href={`/mypage/order/track?orderId=${order.id}`}
-              className="inline-flex items-center justify-center rounded-[5px] px-4 py-3 text-sm text-black outline-1 outline-zinc-400"
-            >
-              {tActions("trackDelivery")}
-            </LocalizedClientLink>
-          )}
         {canReturn && (
           <LocalizedClientLink
             href={`/mypage/exchange?orderId=${order.id}&type=return`}
