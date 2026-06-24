@@ -32,7 +32,7 @@ function useColumns(onEdit?: (row: AdminMemberListItem) => void, userMap: Record
           const loginId = userMap[userId]?.loginId;
           return (
             <Link
-              href={`/account/customer/${userId}`}
+              href={`/customer-window/${userId}`}
               target="_blank"
               rel="noopener noreferrer"
               className="font-medium text-primary text-xs hover:underline"

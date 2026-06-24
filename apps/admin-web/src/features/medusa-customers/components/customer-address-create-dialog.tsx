@@ -14,8 +14,8 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
-  useCreateMedusaCustomerAddress,
-  useUpdateMedusaCustomerAddress,
+  useCreateMedusaAddress,
+  useUpdateMedusaAddress,
 } from '@/lib/services/medusa-customers';
 import type { AdminCustomer, AdminCustomerAddress } from '@medusajs/types';
 import { Pencil, Plus } from 'lucide-react';
@@ -81,8 +81,8 @@ export function CustomerAddressCreateDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<AddressFormState>(() => initialAddressForm(customer, address));
-  const createAddress = useCreateMedusaCustomerAddress(customer?.id ?? '');
-  const updateAddress = useUpdateMedusaCustomerAddress(customer?.id ?? '', address?.id ?? '');
+  const createAddress = useCreateMedusaAddress(customer?.id ?? '');
+  const updateAddress = useUpdateMedusaAddress(customer?.id ?? '');
   const isEdit = !!address;
   const isPending = createAddress.isPending || updateAddress.isPending;
   const idPrefix = isEdit ? `address-${address?.id}` : 'address-new';
@@ -124,12 +124,12 @@ export function CustomerAddressCreateDialog({
       const payload = {
         address_name: addressName,
         first_name: recipientName,
-        last_name: null,
-        phone: form.phone.trim() || null,
+        last_name: undefined,
+        phone: form.phone.trim() || undefined,
         address_1: address1,
-        address_2: form.address2.trim() || null,
-        city: form.city.trim() || null,
-        province: form.province.trim() || null,
+        address_2: form.address2.trim() || undefined,
+        city: form.city.trim() || undefined,
+        province: form.province.trim() || undefined,
         postal_code: postalCode,
         country_code: countryCode,
         is_default_shipping: form.isDefaultShipping,
@@ -137,7 +137,7 @@ export function CustomerAddressCreateDialog({
       };
 
       if (isEdit && address?.id) {
-        await updateAddress.mutateAsync(payload);
+        await updateAddress.mutateAsync({ addressId: address.id, payload });
       } else {
         await createAddress.mutateAsync(payload);
       }
