@@ -27,7 +27,7 @@ function useColumns() {
         header: '자사몰 아이디',
         cell: ({ getValue }) => (
           <Link
-            href={`/account/customer/${getValue()}`}
+            href={`/customer-window/${getValue()}`}
             target="_blank"
             rel="noopener noreferrer"
             className="font-medium text-primary text-xs hover:underline"
