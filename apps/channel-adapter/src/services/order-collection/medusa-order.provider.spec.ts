@@ -63,6 +63,61 @@ describe('MedusaOrderProvider', () => {
     });
   });
 
+  it('수집 시 라인의 fulfillmentKind/requiresShipping 을 보존한다 (디지털 라인은 requiresShipping=false)', async () => {
+    const provider = new MedusaOrderProvider({
+      listOrders: jest.fn().mockResolvedValue([
+        {
+          id: 'order_mixed_1',
+          payment_status: 'authorized',
+          customer_id: 'cus_1',
+          currency_code: 'KRW',
+          total: 10000,
+          subtotal: 10000,
+          shipping_total: 0,
+          discount_total: 0,
+          created_at: '2026-06-24T01:00:00.000Z',
+          updated_at: '2026-06-24T01:05:00.000Z',
+          items: [
+            {
+              id: 'item_phys',
+              title: 'Physical',
+              quantity: 1,
+              unit_price: 10000,
+              variant_id: 'v_phys',
+              variant: {
+                metadata: { pimVariantId: 'pv_phys' },
+                product: { metadata: { pimMasterId: 'm1', pimVersionId: 'ver1' } },
+              },
+            },
+            {
+              id: 'item_dig',
+              title: 'E-book',
+              quantity: 1,
+              unit_price: 0,
+              variant_id: 'v_dig',
+              requires_shipping: false,
+              variant: {
+                metadata: { pimVariantId: 'pv_dig' },
+                product: {
+                  metadata: { pimMasterId: 'm2', pimVersionId: 'ver2', fulfillmentKind: 'digital', requiresShipping: false },
+                },
+              },
+            },
+          ],
+          shipping_address: { first_name: 'Jane', last_name: 'Kim', phone: '010', postal_code: '12345', address_1: 'Seoul', address_2: '' },
+        },
+      ]),
+    } as any);
+
+    const result = await provider.fetchOrders(null);
+    const items = result.orders[0].createPayload.items;
+    const phys = items.find((i) => i.orderItemId === 'item_phys');
+    const dig = items.find((i) => i.orderItemId === 'item_dig');
+
+    expect(phys).toMatchObject({ fulfillmentKind: 'physical', requiresShipping: true });
+    expect(dig).toMatchObject({ fulfillmentKind: 'digital', requiresShipping: false });
+  });
+
   // 무통장입금 선생성 주문은 입금 확인(capture) 전까지 WMS 출고 수집에서 제외
   const bankTransferOrder = (overrides: Record<string, unknown>) => ({
     id: 'order_bt_1',
