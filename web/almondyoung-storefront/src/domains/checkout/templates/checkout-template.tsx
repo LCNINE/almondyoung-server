@@ -76,51 +76,23 @@ export default function CheckoutTemplate({
   const params = useParams()
   const countryCode = params.countryCode as string
 
-  // 선택된 상품 ID (기본값: 전체 선택)
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(
-    () => new Set(cart.items?.map((item) => item.id) ?? [])
-  )
+  const cartItems = useMemo(() => cart.items ?? [], [cart.items])
 
-  // 선택된 상품만 필터링
-  const selectedItems = useMemo(
-    () => cart.items?.filter((item) => selectedIds.has(item.id)) ?? [],
-    [cart.items, selectedIds]
-  )
-
-  // 가격 계산 - 선택된 아이템 기준
+  // 가격 계산 - checkout cart 전체 기준
   const cartTotals: CartTotals = useMemo(() => {
-    const { currency_code } = getCartTotals(cart)
-
-    // 선택된 아이템 기준 상품 금액 계산 (멤버십 할인 적용 후)
-    const item_subtotal = selectedItems.reduce((acc, item) => {
-      return acc + (item.unit_price ?? 0) * (item.quantity ?? 0)
-    }, 0)
-
-    // cart.discount_total은 cart 전체 기준이므로 부분 선택 시 item 단위 합산 필수.
-    const itemDiscount = selectedItems.reduce(
-      (acc, item) => acc + (item.discount_total ?? 0),
-      0
-    )
-    const shippingDiscount =
-      cart.shipping_methods?.reduce(
-        (acc, sm) => acc + (sm.discount_total ?? 0),
-        0
-      ) ?? 0
-    const discount_subtotal = itemDiscount + shippingDiscount
+    const { currency_code, item_subtotal, discount_subtotal, total } =
+      getCartTotals(cart)
 
     const membershipDiscount =
-      isMembership && selectedItems.length > 0
-        ? calculateMembershipDiscount(selectedItems)
+      isMembership && cartItems.length > 0
+        ? calculateMembershipDiscount(cartItems)
         : 0
 
     // 할인 전 정가 기준 상품 금액 (compare_at_unit_price 기준)
     const original_item_subtotal = item_subtotal + membershipDiscount
 
     const totalDiscount = discount_subtotal
-    const finalTotal = Math.max(
-      0,
-      item_subtotal + shipping.amount - totalDiscount
-    )
+    const finalTotal = total
 
     return {
       currency_code,
@@ -133,7 +105,7 @@ export default function CheckoutTemplate({
       totalDiscount,
       finalTotal,
     }
-  }, [cart, shipping, selectedItems, isMembership])
+  }, [cart, cartItems, shipping, isMembership])
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -173,7 +145,7 @@ export default function CheckoutTemplate({
       setLoading(true)
       setError(null)
 
-      if (selectedItems.length === 0) {
+      if (cartItems.length === 0) {
         setError(tProcess("toasts.noItems"))
         setLoading(false)
         return
@@ -199,7 +171,7 @@ export default function CheckoutTemplate({
 
       const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
 
-      const payLineItems = selectedItems
+      const payLineItems = cartItems
       const firstTitle = payLineItems[0]?.title ?? tProcess("productFallback")
       const orderName =
         payLineItems.length <= 1
@@ -286,11 +258,8 @@ export default function CheckoutTemplate({
             onShippingMemoChange={handleShippingMemoChange}
           />
           <OrderProductsSection
-            cartId={checkoutCartId}
-            products={cart?.items}
+            products={cartItems}
             shipping={shipping.amount}
-            selectedIds={selectedIds}
-            onSelectedIdsChange={setSelectedIds}
           />
           <DiscountSection
             cartId={cart.id}
