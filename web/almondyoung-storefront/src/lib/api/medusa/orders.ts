@@ -54,7 +54,7 @@ export async function getOrders(params?: {
 }): Promise<HttpTypes.StoreOrderListResponse | null> {
   const filters: HttpTypes.StoreOrderFilters & Record<string, unknown> = {
     fields:
-      "id,display_id,status,fulfillment_status,payment_status,created_at,updated_at,total,currency_code,*items,*items.variant,*items.variant.product,*payment_collections,*payment_collections.payment_sessions",
+      "id,display_id,status,fulfillment_status,payment_status,created_at,updated_at,total,currency_code,metadata,*items,*items.variant,*items.variant.product,*payment_collections,*payment_collections.payment_sessions",
     order: "-created_at",
   }
 
@@ -107,7 +107,8 @@ export async function getOrder(
   }
 
   return await sdk.store.order
-    .retrieve(orderId, {}, headers)
+    // +metadata: 무통장 입금확인중(metadata.bank_transfer_status) 표시를 위해 기본 필드에 추가
+    .retrieve(orderId, { fields: "+metadata" }, headers)
     .then(({ order }) => order)
     .catch(async (error) => {
       await handleMedusaAuthError(error)

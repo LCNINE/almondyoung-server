@@ -93,6 +93,8 @@ export const GatewayEventType = {
   INTENT_FAILED: 'payment.intent.failed',
   INTENT_CANCELED: 'payment.intent.canceled',
   INTENT_CAPTURED: 'payment.intent.captured',
+  // 무통장입금 입금 대기 진입 — Medusa 가 주문을 '입금확인중' 으로 선생성하도록 트리거.
+  INTENT_AWAITING_DEPOSIT: 'payment.intent.awaiting_deposit',
   CHARGE_AUTHORIZED: 'gateway.charge.authorized',
   CHARGE_CAPTURED: 'gateway.charge.captured',
   CHARGE_FAILED: 'gateway.charge.failed',

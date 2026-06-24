@@ -371,6 +371,7 @@
     "status": {
       "cancelled": "Cancelled",
       "paymentPending": "Payment Pending",
+      "depositPending": "Awaiting Deposit",
       "delivered": "Delivered",
       "shipping": "Shipping",
       "partialShipping": "Partial Shipping",

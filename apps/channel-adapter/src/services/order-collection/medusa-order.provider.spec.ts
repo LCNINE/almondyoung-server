@@ -63,6 +63,62 @@ describe('MedusaOrderProvider', () => {
     });
   });
 
+  // 무통장입금 선생성 주문은 입금 확인(capture) 전까지 WMS 출고 수집에서 제외
+  const bankTransferOrder = (overrides: Record<string, unknown>) => ({
+    id: 'order_bt_1',
+    customer_id: 'cus_1',
+    currency_code: 'KRW',
+    total: 10000,
+    subtotal: 10000,
+    shipping_total: 0,
+    discount_total: 0,
+    created_at: '2026-06-23T01:00:00.000Z',
+    updated_at: '2026-06-23T01:05:00.000Z',
+    items: [
+      {
+        id: 'item_1',
+        title: 'Product',
+        quantity: 1,
+        unit_price: 10000,
+        variant_id: 'variant_1',
+        variant: {
+          metadata: { pimVariantId: 'pim_variant_1' },
+          product: { metadata: { pimMasterId: 'master_1', pimVersionId: 'version_1' } },
+        },
+      },
+    ],
+    shipping_address: { first_name: 'Jane', last_name: 'Kim', phone: '010-0000-0000', postal_code: '12345', address_1: 'Seoul', address_2: '' },
+    ...overrides,
+  });
+
+  it('무통장 입금대기(awaiting_deposit + authorized) 주문은 수집(OrderCreated)에서 제외한다', async () => {
+    const provider = new MedusaOrderProvider({
+      listOrders: jest.fn().mockResolvedValue([
+        bankTransferOrder({ payment_status: 'authorized', metadata: { bank_transfer_status: 'awaiting_deposit' } }),
+      ]),
+    } as any);
+
+    const result = await provider.fetchOrders(null);
+
+    expect(result.orders).toHaveLength(0);
+    expect(result.failures).toHaveLength(0);
+    expect(result.lifecycleEvents ?? []).toHaveLength(0);
+  });
+
+  it('입금 확인 후(captured)에는 awaiting_deposit metadata 가 남아있어도 수집한다', async () => {
+    const provider = new MedusaOrderProvider({
+      listOrders: jest.fn().mockResolvedValue([
+        // confirmed metadata 갱신이 실패해 awaiting_deposit 가 남았더라도, captured 면 수집
+        bankTransferOrder({ payment_status: 'captured', metadata: { bank_transfer_status: 'awaiting_deposit' } }),
+      ]),
+    } as any);
+
+    const result = await provider.fetchOrders(null);
+
+    expect(result.orders).toHaveLength(1);
+    expect(result.orders[0].externalOrderId).toBe('order_bt_1');
+  });
+
   it('builds an OrderCreated payload that passes stream validation when optional address details are blank', async () => {
     const provider = new MedusaOrderProvider({
       listOrders: jest.fn().mockResolvedValue([

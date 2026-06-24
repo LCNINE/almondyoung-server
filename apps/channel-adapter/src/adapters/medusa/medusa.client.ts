@@ -43,6 +43,8 @@ export interface MedusaOrder {
   created_at?: string;
   updated_at?: string;
   canceled_at?: string;
+  // 주문 레벨 메타데이터. 무통장입금 선생성 주문의 bank_transfer_status('awaiting_deposit'|'confirmed')로 입금 전(미수집) 여부를 판별하는 데 사용
+  metadata?: Record<string, unknown> | null;
   items?: Array<{
     id: string;
     title?: string;
@@ -134,6 +136,7 @@ const ORDER_FIELDS = [
   'created_at',
   'updated_at',
   'canceled_at',
+  'metadata',
   '*items',
   'items.id',
   'items.title',
