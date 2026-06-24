@@ -69,14 +69,20 @@ export class CsLabelsService {
       await this.loadCaseOrThrow(csCaseId, trx);
       const label = await this.loadActiveLabelOrThrow(labelId, trx);
 
-      const [existing] = await trx
-        .select()
-        .from(csCaseLabels)
-        .where(and(eq(csCaseLabels.csCaseId, csCaseId), eq(csCaseLabels.labelId, labelId)))
-        .limit(1);
-      if (existing) return existing;
+      const [applied] = await trx
+        .insert(csCaseLabels)
+        .values({ csCaseId, labelId })
+        .onConflictDoNothing({ target: [csCaseLabels.csCaseId, csCaseLabels.labelId] })
+        .returning();
+      if (!applied) {
+        const [existing] = await trx
+          .select()
+          .from(csCaseLabels)
+          .where(and(eq(csCaseLabels.csCaseId, csCaseId), eq(csCaseLabels.labelId, labelId)))
+          .limit(1);
+        return existing;
+      }
 
-      const [applied] = await trx.insert(csCaseLabels).values({ csCaseId, labelId }).returning();
       await this.recordEvent(trx, csCaseId, 'label_added', actorId, { labelId, labelName: label.name });
       return applied;
     }, tx);
@@ -87,8 +93,14 @@ export class CsLabelsService {
       await this.loadCaseOrThrow(csCaseId, trx);
       const label = await this.loadLabelOrThrow(labelId, trx);
 
-      await trx.delete(csCaseLabels).where(and(eq(csCaseLabels.csCaseId, csCaseId), eq(csCaseLabels.labelId, labelId)));
+      const [removed] = await trx
+        .delete(csCaseLabels)
+        .where(and(eq(csCaseLabels.csCaseId, csCaseId), eq(csCaseLabels.labelId, labelId)))
+        .returning();
+      if (!removed) return undefined;
+
       await this.recordEvent(trx, csCaseId, 'label_removed', actorId, { labelId, labelName: label.name });
+      return removed;
     }, tx);
   }
 

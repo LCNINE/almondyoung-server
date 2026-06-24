@@ -6,6 +6,8 @@ import { CsLabelsService } from './cs-labels.service';
 const caseId = 'aaaaaaaa-0000-4000-8000-000000000001';
 const labelId = 'bbbbbbbb-0000-4000-8000-000000000001';
 const actorId = 'cccccccc-0000-4000-8000-000000000001';
+const otherCaseId = 'eeeeeeee-0000-4000-8000-000000000001';
+const otherLabelId = 'ffffffff-0000-4000-8000-000000000001';
 
 function seedCaseAndLabel(label: Record<string, unknown> = {}) {
   const seed = new Map<unknown, any[]>();
@@ -91,6 +93,19 @@ describe('CsLabelsService', () => {
     expect(state.get(csCaseEvents)).toHaveLength(0);
   });
 
+  it('does not duplicate a case-label or event when apply hits a conflict', async () => {
+    const seed = seedCaseAndLabel();
+    const { db, state } = makeFakeDb(seed);
+    const service = new CsLabelsService(db as any);
+
+    await service.applyLabel(caseId, labelId, actorId);
+    const result = await service.applyLabel(caseId, labelId, actorId);
+
+    expect(result).toMatchObject({ csCaseId: caseId, labelId });
+    expect(state.get(csCaseLabels)).toHaveLength(1);
+    expect(state.get(csCaseEvents)).toHaveLength(1);
+  });
+
   it('rejects applying a label to an unknown case', async () => {
     const seed = new Map<unknown, any[]>();
     seed.set(csLabels, [{ id: labelId, name: '환불', isActive: true }]);
@@ -132,6 +147,45 @@ describe('CsLabelsService', () => {
       actorId,
       payload: { labelId, labelName: '환불' },
     });
+  });
+
+  it('does not record a label_removed event when the label is not applied', async () => {
+    const { db, state } = makeFakeDb(seedCaseAndLabel());
+    const service = new CsLabelsService(db as any);
+
+    const result = await service.removeLabel(caseId, labelId, actorId);
+
+    expect(result).toBeUndefined();
+    expect(state.get(csCaseLabels)).toHaveLength(0);
+    expect(state.get(csCaseEvents)).toHaveLength(0);
+  });
+
+  it('removing a label only deletes the matching case-label', async () => {
+    const seed = seedCaseAndLabel();
+    seed.set(csCases, [
+      { id: caseId, subject: 'x', status: 'open' },
+      { id: otherCaseId, subject: 'y', status: 'open' },
+    ]);
+    seed.set(csLabels, [
+      { id: labelId, name: '환불', isActive: true },
+      { id: otherLabelId, name: '배송', isActive: true },
+    ]);
+    seed.set(csCaseLabels, [
+      { id: 'dddddddd-0000-4000-8000-000000000001', csCaseId: caseId, labelId },
+      { id: 'dddddddd-0000-4000-8000-000000000002', csCaseId: otherCaseId, labelId },
+      { id: 'dddddddd-0000-4000-8000-000000000003', csCaseId: caseId, labelId: otherLabelId },
+    ]);
+    const { db, state } = makeFakeDb(seed);
+    const service = new CsLabelsService(db as any);
+
+    const result = await service.removeLabel(caseId, labelId, actorId);
+
+    expect(result).toMatchObject({ csCaseId: caseId, labelId });
+    expect(state.get(csCaseLabels)).toEqual([
+      expect.objectContaining({ csCaseId: otherCaseId, labelId }),
+      expect.objectContaining({ csCaseId: caseId, labelId: otherLabelId }),
+    ]);
+    expect(state.get(csCaseEvents)).toHaveLength(1);
   });
 
   it('rejects removing an unknown label', async () => {

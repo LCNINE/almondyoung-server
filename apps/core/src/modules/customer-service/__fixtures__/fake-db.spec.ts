@@ -1,4 +1,5 @@
-import { csCases } from '../schema/customer-service.schema';
+import { and, eq } from 'drizzle-orm';
+import { csCaseLabels, csCases } from '../schema/customer-service.schema';
 import { makeFakeDb } from './fake-db';
 
 describe('makeFakeDb', () => {
@@ -78,5 +79,60 @@ describe('makeFakeDb', () => {
       .where({ id: row.id } as unknown as never)
       .returning();
     expect(updated.subject).toBe('b');
+  });
+
+  it('filters select rows with eq predicates', async () => {
+    const seed = new Map<unknown, any[]>();
+    seed.set(csCaseLabels, [
+      { id: 'cl1', csCaseId: 'case-1', labelId: 'label-1' },
+      { id: 'cl2', csCaseId: 'case-2', labelId: 'label-1' },
+    ]);
+    const { db } = makeFakeDb(seed);
+
+    const rows = await db.db.select().from(csCaseLabels).where(eq(csCaseLabels.csCaseId, 'case-1'));
+
+    expect(rows).toEqual([expect.objectContaining({ id: 'cl1' })]);
+  });
+
+  it('deletes and returns only rows matching and(eq, eq) predicates', async () => {
+    const seed = new Map<unknown, any[]>();
+    seed.set(csCaseLabels, [
+      { id: 'cl1', csCaseId: 'case-1', labelId: 'label-1' },
+      { id: 'cl2', csCaseId: 'case-2', labelId: 'label-1' },
+      { id: 'cl3', csCaseId: 'case-1', labelId: 'label-2' },
+    ]);
+    const { db, state } = makeFakeDb(seed);
+
+    const removed = await db.db
+      .delete(csCaseLabels)
+      .where(and(eq(csCaseLabels.csCaseId, 'case-1'), eq(csCaseLabels.labelId, 'label-1')))
+      .returning();
+
+    expect(removed).toEqual([expect.objectContaining({ id: 'cl1' })]);
+    expect(state.get(csCaseLabels)).toEqual([
+      expect.objectContaining({ id: 'cl2' }),
+      expect.objectContaining({ id: 'cl3' }),
+    ]);
+  });
+
+  it('keeps non-conflicting rows when onConflictDoNothing receives a target', async () => {
+    const seed = new Map<unknown, any[]>();
+    seed.set(csCaseLabels, [{ id: 'cl1', csCaseId: 'case-1', labelId: 'label-1' }]);
+    const { db, state } = makeFakeDb(seed);
+
+    const inserted = await db.db
+      .insert(csCaseLabels)
+      .values([
+        { id: 'cl2', csCaseId: 'case-1', labelId: 'label-1' },
+        { id: 'cl3', csCaseId: 'case-2', labelId: 'label-1' },
+      ])
+      .onConflictDoNothing({ target: [csCaseLabels.csCaseId, csCaseLabels.labelId] })
+      .returning();
+
+    expect(inserted).toEqual([expect.objectContaining({ id: 'cl3' })]);
+    expect(state.get(csCaseLabels)).toEqual([
+      expect.objectContaining({ id: 'cl1' }),
+      expect.objectContaining({ id: 'cl3' }),
+    ]);
   });
 });
