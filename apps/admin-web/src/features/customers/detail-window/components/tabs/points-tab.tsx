@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { AxiosError } from 'axios';
-import { ChevronLeft, ChevronRight, Coins, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Coins, Minus, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -26,7 +26,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { usePointsBalance, usePointsEvents } from '@/lib/services/wallet';
-import { useEarnPoints } from '@/lib/services/wallet';
+import { useDeductPoints, useEarnPoints } from '@/lib/services/wallet';
 import { formatDateTime } from '@/lib/utils/date';
 
 const PAGE_SIZE = 10;
@@ -108,7 +108,8 @@ function EarnPointsDialog({
         onError: (error) => {
           const message =
             error instanceof AxiosError
-              ? (error.response?.data?.message ?? error.message)
+              ? ((error.response?.data as { message?: string } | undefined)
+                  ?.message ?? error.message)
               : '적립금 지급에 실패했습니다.';
           toast.error(message);
         },
@@ -180,8 +181,149 @@ function EarnPointsDialog({
   );
 }
 
+/** 적립금 수동 차감 다이얼로그 */
+function DeductPointsDialog({
+  customerId,
+  available,
+  open,
+  onClose,
+}: {
+  customerId: string;
+  available: number;
+  open: boolean;
+  onClose: () => void;
+}) {
+  const [amount, setAmount] = useState('');
+  const [reasonCode, setReasonCode] = useState('');
+  const { mutate, isPending } = useDeductPoints();
+
+  const amountNum = Number(amount);
+  const isOverBalance = Number.isInteger(amountNum) && amountNum > available;
+  const canSubmit =
+    Number.isInteger(amountNum) && amountNum > 0 && !isOverBalance;
+
+  const handleSubmit = () => {
+    if (!canSubmit) return;
+    mutate(
+      {
+        userId: customerId,
+        amount: amountNum,
+        reasonCode: reasonCode.trim() || undefined,
+      },
+      {
+        onSuccess: () => {
+          toast.success(`${amountNum.toLocaleString()}P를 차감했습니다.`);
+          setAmount('');
+          setReasonCode('');
+          onClose();
+        },
+        onError: (error) => {
+          const message =
+            error instanceof AxiosError
+              ? ((error.response?.data as { message?: string } | undefined)
+                  ?.message ?? error.message)
+              : '적립금 차감에 실패했습니다.';
+          toast.error(message);
+        },
+      }
+    );
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>적립금 차감</DialogTitle>
+          <DialogDescription className="sr-only">
+            회원의 적립금을 수동으로 차감합니다.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <p className="text-sm text-gray-500">
+            사용 가능 잔액:{' '}
+            <span className="font-medium text-gray-800">
+              {available.toLocaleString()}P
+            </span>
+          </p>
+          <div className="space-y-1.5">
+            <Label htmlFor="deduct-amount">차감 포인트</Label>
+            <Input
+              id="deduct-amount"
+              type="number"
+              min={1}
+              max={available}
+              step={1}
+              inputMode="numeric"
+              placeholder="예: 5000"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+            />
+            {isOverBalance && (
+              <p className="text-xs text-red-500">
+                사용 가능 잔액을 초과합니다.
+              </p>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="deduct-reason">사유 (선택)</Label>
+            <Input
+              id="deduct-reason"
+              placeholder="예: 오적립 회수"
+              value={reasonCode}
+              onChange={(e) => setReasonCode(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose}>
+            취소
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={!canSubmit || isPending}
+            onClick={handleSubmit}
+          >
+            {isPending ? '차감 중…' : '차감'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** 셀 내용이 길면 …으로 줄이고, 클릭하면 모달로 전체를 보여준다 */
+function TruncatedCell({
+  title,
+  text,
+  className,
+  onShow,
+}: {
+  title: string;
+  text: string;
+  className?: string;
+  onShow: (detail: { title: string; text: string }) => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={text}
+      onClick={() => onShow({ title, text })}
+      className={`inline-block max-w-[12rem] truncate align-bottom hover:underline ${className ?? ''}`}
+    >
+      {text}
+    </button>
+  );
+}
+
 export function PointsTab({ customerId }: { customerId: string }) {
   const [earnOpen, setEarnOpen] = useState(false);
+  const [deductOpen, setDeductOpen] = useState(false);
+  const [detail, setDetail] = useState<{ title: string; text: string } | null>(
+    null
+  );
   const [page, setPage] = useState(1);
 
   const { data: balance, isLoading: isBalanceLoading } =
@@ -209,6 +351,16 @@ export function PointsTab({ customerId }: { customerId: string }) {
         >
           <Plus className="mr-1 size-3.5" />
           적립금 지급
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-7 px-3 text-xs"
+          onClick={() => setDeductOpen(true)}
+        >
+          <Minus className="mr-1 size-3.5" />
+          적립금 차감
         </Button>
       </div>
 
@@ -277,10 +429,18 @@ export function PointsTab({ customerId }: { customerId: string }) {
                         e.amount > 0 ? 'text-indigo-600' : 'text-red-500'
                       }`}
                     >
-                      {formatPoint(e.amount)}
+                      <TruncatedCell
+                        title="포인트"
+                        text={formatPoint(e.amount)}
+                        onShow={setDetail}
+                      />
                     </TableCell>
                     <TableCell className="text-sm text-gray-700">
-                      {e.reasonCode ?? '-'}
+                      <TruncatedCell
+                        title="사유"
+                        text={e.reasonCode ?? '-'}
+                        onShow={setDetail}
+                      />
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-xs text-gray-500">
                       {e.expiresAt ? formatDateTime(e.expiresAt) : '-'}
@@ -330,6 +490,26 @@ export function PointsTab({ customerId }: { customerId: string }) {
         open={earnOpen}
         onClose={() => setEarnOpen(false)}
       />
+      <DeductPointsDialog
+        customerId={customerId}
+        available={balance?.available ?? 0}
+        open={deductOpen}
+        onClose={() => setDeductOpen(false)}
+      />
+
+      <Dialog open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{detail?.title}</DialogTitle>
+            <DialogDescription className="sr-only">
+              전체 내용 보기
+            </DialogDescription>
+          </DialogHeader>
+          <p className="break-words whitespace-pre-wrap text-sm text-gray-800">
+            {detail?.text}
+          </p>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
