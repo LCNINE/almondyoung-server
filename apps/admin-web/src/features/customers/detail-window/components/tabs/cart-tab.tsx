@@ -126,7 +126,21 @@ export function CartTab({ customerId }: { customerId: string }) {
                       {formatDateTime(item.created_at)}
                     </TableCell>
                     <TableCell>
-                      <div className="flex gap-2">
+                      <a
+                        href={
+                          item.master_id
+                            ? `/mall/products-list/${item.master_id}`
+                            : undefined
+                        }
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={cn(
+                          'flex gap-2',
+                          item.master_id
+                            ? 'group cursor-pointer'
+                            : 'pointer-events-none'
+                        )}
+                      >
                         {item.thumbnail ? (
                           // 외부 CDN(메두사) 이미지라 next/image 대신 img 사용
                           // eslint-disable-next-line @next/next/no-img-element
@@ -141,7 +155,7 @@ export function CartTab({ customerId }: { customerId: string }) {
                           </div>
                         )}
                         <div className="min-w-0 text-xs leading-tight">
-                          <div className="text-gray-900">
+                          <div className="text-gray-900 group-hover:text-indigo-600 group-hover:underline">
                             {item.product_title ?? '-'}
                           </div>
                           {item.variant_sku && (
@@ -150,7 +164,7 @@ export function CartTab({ customerId }: { customerId: string }) {
                             </div>
                           )}
                         </div>
-                      </div>
+                      </a>
                     </TableCell>
                     <TableCell className="text-xs text-gray-600">
                       {item.variant_title ?? '-'}

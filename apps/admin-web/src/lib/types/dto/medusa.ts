@@ -24,6 +24,8 @@ export interface CustomerCartItem {
   quantity: number;
   unit_price: number;
   product_id: string | null;
+  // Medusa handle == Core PIM masterId. 관리자 상품 상세 링크용
+  master_id: string | null;
   product_title: string | null;
   thumbnail: string | null;
   variant_id: string | null;

@@ -39,6 +39,7 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       'items.title',
       'items.thumbnail',
       'items.product_id',
+      'items.product.handle',
       'items.product_title',
       'items.variant_id',
       'items.variant_title',
@@ -138,6 +139,8 @@ export async function GET(req: MedusaRequest, res: MedusaResponse) {
       quantity: item.quantity,
       unit_price: item.unit_price,
       product_id: item.product_id,
+      // Medusa handle == Core PIM masterId. 관리자 상품 상세(/mall/products-list/[masterId]) 링크용
+      master_id: item.product?.handle ?? null,
       product_title: item.product_title ?? item.title ?? null,
       thumbnail: item.thumbnail ?? null,
       variant_id: item.variant_id,
