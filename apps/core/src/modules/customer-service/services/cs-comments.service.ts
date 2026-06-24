@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { BadRequestError, NotFoundError } from '@app/shared';
+import { BadRequestError, ForbiddenError, NotFoundError } from '@app/shared';
 import { eq } from 'drizzle-orm';
 import { type MergedSchema } from '../../../platform/database/merged-schema';
 import { CreateCsCommentDto } from '../dto/create-cs-comment.dto';
+import { EditCsCommentDto } from '../dto/edit-cs-comment.dto';
 import {
   csCaseCommentAttachments,
   csCaseCommentMentions,
@@ -75,6 +76,39 @@ export class CsCommentsService {
       }
 
       return { ...comment, mentions: mentionIds, attachmentFileIds: attachments.map((a) => a.fileId) };
+    }, tx);
+  }
+
+  async editComment(commentId: string, dto: EditCsCommentDto, actorId: string, tx?: Tx) {
+    const body = dto.body?.trim();
+    if (!body) throw new BadRequestError('Comment body must not be empty');
+
+    return this.inTx(async (trx) => {
+      const comment = await this.loadCommentOrThrow(commentId, trx);
+      if (comment.deletedAt) throw new BadRequestError('Cannot edit a deleted comment');
+      if (comment.authorId !== actorId) throw new ForbiddenError('Only the author can edit this comment');
+
+      const [updated] = await trx
+        .update(csCaseComments)
+        .set({ body, editedAt: new Date(), updatedAt: new Date() })
+        .where(eq(csCaseComments.id, commentId))
+        .returning();
+      return updated;
+    }, tx);
+  }
+
+  async deleteComment(commentId: string, actorId: string, tx?: Tx) {
+    return this.inTx(async (trx) => {
+      const comment = await this.loadCommentOrThrow(commentId, trx);
+      if (comment.authorId !== actorId) throw new ForbiddenError('Only the author can delete this comment');
+      if (comment.deletedAt) return comment;
+
+      const [updated] = await trx
+        .update(csCaseComments)
+        .set({ deletedAt: new Date(), deletedBy: actorId, updatedAt: new Date() })
+        .where(eq(csCaseComments.id, commentId))
+        .returning();
+      return updated;
     }, tx);
   }
 }
