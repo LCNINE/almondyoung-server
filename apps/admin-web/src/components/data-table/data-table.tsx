@@ -16,6 +16,8 @@ type DataTableProps<TData extends RowData> = {
   orderByPresetOnly?: boolean;
   search?: boolean;
   navigateTo?: (row: Row<TData>) => string;
+  /** navigateTo 경로를 같은 창 이동(router.push) 대신 새 팝업 창으로 연다 */
+  openInNewWindow?: boolean;
   noRecords?: { message: string };
   prefix?: string;
 };
@@ -31,6 +33,7 @@ export function DataTable<TData extends RowData>({
   orderByPresetOnly,
   search,
   navigateTo,
+  openInNewWindow,
   noRecords,
   prefix,
 }: DataTableProps<TData>) {
@@ -49,6 +52,7 @@ export function DataTable<TData extends RowData>({
         isFetching={isFetching}
         noRecords={noRecords}
         navigateTo={navigateTo}
+        openInNewWindow={openInNewWindow}
         pageSize={pageSize}
         count={count}
       />

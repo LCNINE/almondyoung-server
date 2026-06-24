@@ -11,10 +11,18 @@ export class BusinessAdminUpdateDto {
   @IsOptional({ message: '검토 코멘트는 선택사항입니다.' })
   reviewComment?: string;
 
+  @IsString({ message: '사업자번호는 문자열이어야 합니다.' })
+  @IsOptional({ message: '사업자번호는 선택사항입니다.' })
+  businessNumber?: string;
+
+  @IsString({ message: '대표자명은 문자열이어야 합니다.' })
+  @IsOptional({ message: '대표자명은 선택사항입니다.' })
+  representativeName?: string;
+
   @IsIn(statusEnum.enumValues, { each: true })
   @IsString({ message: '상태는 문자열이어야 합니다.' })
-  @IsNotEmpty({ message: '해당 사업자 등록 정보의 상태값을 설정해주세요.' })
-  status: (typeof schema.statusEnum.enumValues)[number];
+  @IsOptional({ message: '상태는 선택사항입니다.' })
+  status?: (typeof schema.statusEnum.enumValues)[number];
 
   @IsString({ message: '사용자 ID는 문자열이어야 합니다.' })
   @IsNotEmpty({ message: '사용자 ID는 필수입니다.' })

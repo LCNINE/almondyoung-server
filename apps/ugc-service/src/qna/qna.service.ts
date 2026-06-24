@@ -358,6 +358,7 @@ export class QnaService {
       status?: 'active' | 'answered' | 'deleted';
       sort?: string;
       q?: string;
+      userId?: string;
     },
     tx?: DbTransaction,
   ): Promise<PaginatedResponseDto<QuestionWithDetailsEntity>> {
@@ -381,6 +382,11 @@ export class QnaService {
       // 카테고리 필터
       if (query.category) {
         conditions.push(eq(questions.category, query.category as QuestionCategory));
+      }
+
+      // 작성자(회원) 필터
+      if (query.userId) {
+        conditions.push(eq(questions.userId, query.userId));
       }
 
       // 검색어 (제목, 내용, 닉네임)

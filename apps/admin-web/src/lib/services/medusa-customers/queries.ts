@@ -1,10 +1,11 @@
 // src/lib/services/medusa-customers/queries.ts
 'use client';
 
-import {
-  medusaCustomerApi,
+import { medusaCustomerApi, medusaOrderApi } from '@/lib/api/domains/medusa';
+import type {
   MedusaCustomerListQuery,
-} from '@/lib/api/domains/medusa';
+  MedusaOrderListQuery,
+} from '@/lib/types/dto/medusa';
 import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
 import { medusaCustomerQueryKeys } from './query-keys';
 
@@ -33,12 +34,32 @@ export const useMedusaCustomerByEmail = (email: string) => {
   });
 };
 
-export const useMedusaCustomerByAlmondUserId = (
-  almondUserId: string | null | undefined
+// Medusa 고객 ID로 주문 목록 조회 (최신순)
+export const useMedusaOrdersByCustomerId = (
+  customerId: string | undefined,
+  query: Omit<MedusaOrderListQuery, 'customer_id'> = {}
 ) => {
   return useQuery({
-    queryKey: medusaCustomerQueryKeys.byAlmondUserId(almondUserId ?? ''),
-    queryFn: () => medusaCustomerApi.getCustomerByAlmondUserId(almondUserId!),
-    enabled: !!almondUserId,
+    queryKey: medusaCustomerQueryKeys.orders(customerId ?? '', query),
+    queryFn: () => medusaOrderApi.getOrdersByCustomerId(customerId!, query),
+    enabled: !!customerId,
+  });
+};
+
+// Medusa 주문 단건 상세 조회
+export const useMedusaOrderById = (orderId: string | undefined) => {
+  return useQuery({
+    queryKey: medusaCustomerQueryKeys.order(orderId ?? ''),
+    queryFn: () => medusaOrderApi.getOrderById(orderId!),
+    enabled: !!orderId,
+  });
+};
+
+// Medusa 고객 장바구니 조회
+export const useMedusaCustomerCart = (customerId: string | undefined) => {
+  return useQuery({
+    queryKey: medusaCustomerQueryKeys.cart(customerId ?? ''),
+    queryFn: () => medusaCustomerApi.getCustomerCart(customerId!),
+    enabled: !!customerId,
   });
 };

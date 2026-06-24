@@ -1,4 +1,4 @@
-import { CustomerListQuery } from '@/lib/api/domains/customer'
+import { CustomerListQuery } from '@/lib/types'
 import { useQueryParams } from '../../use-query-params'
 
 type UseCustomerTableQueryProps = {

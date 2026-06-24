@@ -61,6 +61,7 @@ export interface QnaListQuery {
   status?: QuestionStatusFilter;
   sort?: QuestionSortOption;
   q?: string;
+  userId?: string;
 }
 
 // 질문 목록 응답 DTO

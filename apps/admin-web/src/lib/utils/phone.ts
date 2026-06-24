@@ -19,6 +19,18 @@ export function formatPhoneNumber(raw: string | null | undefined): string {
   return value;
 }
 
+/**
+ * 입력값을 E.164(`+8210...`)로 정규화한다. (`formatPhoneNumber`의 역방향)
+ * 이미 `+`로 시작하면 그대로 두고, leading 0은 한국(+82)으로 간주해 치환한다.
+ */
+export function toE164(input: string): string {
+  const v = input.trim().replace(/[\s-]/g, '');
+  if (!v) return '';
+  if (v.startsWith('+')) return v;
+  if (v.startsWith('0')) return `+82${v.slice(1)}`;
+  return v;
+}
+
 function formatKoreanLocal(national: string): string {
   const digits = national.replace(/\D/g, '');
 

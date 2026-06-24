@@ -126,4 +126,12 @@ export class AdminQuestionListQueryDto extends PaginationQueryDto {
   })
   @IsOptional()
   q?: string;
+
+  @ApiPropertyOptional({
+    description: '작성자(회원) ID (UUID) - 특정 회원의 문의만 조회 시',
+    example: 'f7b98c38-2d6f-4b37-8b6b-2f68b1c15b0a',
+  })
+  @IsOptional()
+  @IsUUID()
+  userId?: string;
 }

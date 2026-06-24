@@ -1,44 +1,56 @@
+// src/lib/services/medusa-customers/mutations.ts
+// Medusa 고객 배송지(주소) 뮤테이션
 'use client';
 
 import {
+  MedusaAddressPayload,
   medusaCustomerApi,
-  type MedusaCustomerAddressPayload,
 } from '@/lib/api/domains/medusa';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { medusaCustomerQueryKeys } from './query-keys';
 
-export const useCreateMedusaCustomerAddress = (customerId: string) => {
+// 배송지 추가
+export const useCreateMedusaAddress = (customerId: string) => {
   const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: (payload: MedusaCustomerAddressPayload) =>
-      medusaCustomerApi.createCustomerAddress(customerId, payload),
+    mutationFn: (payload: MedusaAddressPayload) =>
+      medusaCustomerApi.createAddress(customerId, payload),
     onSuccess: () => {
-      void queryClient.invalidateQueries({
+      queryClient.invalidateQueries({
         queryKey: medusaCustomerQueryKeys.detail(customerId),
-      });
-      void queryClient.invalidateQueries({
-        queryKey: medusaCustomerQueryKeys.all,
       });
     },
   });
 };
 
-export const useUpdateMedusaCustomerAddress = (
-  customerId: string,
-  addressId: string
-) => {
+// 배송지 수정
+export const useUpdateMedusaAddress = (customerId: string) => {
   const queryClient = useQueryClient();
-
   return useMutation({
-    mutationFn: (payload: MedusaCustomerAddressPayload) =>
-      medusaCustomerApi.updateCustomerAddress(customerId, addressId, payload),
+    mutationFn: ({
+      addressId,
+      payload,
+    }: {
+      addressId: string;
+      payload: MedusaAddressPayload;
+    }) => medusaCustomerApi.updateAddress(customerId, addressId, payload),
     onSuccess: () => {
-      void queryClient.invalidateQueries({
+      queryClient.invalidateQueries({
         queryKey: medusaCustomerQueryKeys.detail(customerId),
       });
-      void queryClient.invalidateQueries({
-        queryKey: medusaCustomerQueryKeys.all,
+    },
+  });
+};
+
+// 배송지 삭제
+export const useDeleteMedusaAddress = (customerId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (addressId: string) =>
+      medusaCustomerApi.deleteAddress(customerId, addressId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: medusaCustomerQueryKeys.detail(customerId),
       });
     },
   });

@@ -16,6 +16,8 @@ type DataTableRootProps<TData extends RowData> = {
   isFetching?: boolean;
   noRecords?: { message: string };
   navigateTo?: (row: Row<TData>) => string;
+  /** navigateTo 경로를 같은 창 이동 대신 새 팝업 창으로 연다 */
+  openInNewWindow?: boolean;
   pageSize: number;
   count: number;
 };
@@ -26,10 +28,23 @@ export function DataTableRoot<TData extends RowData>({
   isFetching,
   noRecords,
   navigateTo,
+  openInNewWindow,
   pageSize,
   count,
 }: DataTableRootProps<TData>) {
   const router = useRouter();
+
+  const handleRowClick = (href: string) => {
+    if (openInNewWindow) {
+      window.open(
+        href,
+        href,
+        'width=1200,height=860,menubar=no,toolbar=no,location=no,status=no'
+      );
+      return;
+    }
+    router.push(href);
+  };
 
   const { pageIndex } = table.getState().pagination;
   const pageCount = table.getPageCount();
@@ -59,7 +74,7 @@ export function DataTableRoot<TData extends RowData>({
               <Table.Row key={`skeleton-${i}`}>
                 {table.getAllColumns().map((col) => (
                   <Table.Cell key={col.id}>
-                    <Skeleton className="h-4 w-full" />
+                    <Skeleton className="w-full h-4" />
                   </Table.Cell>
                 ))}
               </Table.Row>
@@ -80,7 +95,7 @@ export function DataTableRoot<TData extends RowData>({
                 <Table.Row
                   key={row.id}
                   className={href ? 'cursor-pointer' : ''}
-                  onClick={href ? () => router.push(href) : undefined}
+                  onClick={href ? () => handleRowClick(href) : undefined}
                 >
                   {row.getVisibleCells().map((cell) => (
                     <Table.Cell key={cell.id}>

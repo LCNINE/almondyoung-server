@@ -13,7 +13,7 @@ import { fixCompareAtPrices } from '../../../../utils/cart-prices';
  * 최신 카트 1개만 처리.
  */
 export async function POST(req: MedusaRequest, res: MedusaResponse) {
-  const { customerId } = req.params;
+  const { id: customerId } = req.params;
 
   if (!customerId) {
     return res.status(400).json({ message: 'customerId is required' });

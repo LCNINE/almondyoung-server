@@ -51,6 +51,11 @@ export function MainLayout({ children }: MainLayoutProps) {
     return <>{children}</>;
   }
 
+  // 회원정보조회 팝업 창
+  if (pathname.startsWith('/customer-window')) {
+    return <>{children}</>;
+  }
+
   return (
     <SidebarProvider defaultOpen={true}>
       <div className="hidden lg:flex ">

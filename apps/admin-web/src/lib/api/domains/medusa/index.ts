@@ -3,40 +3,25 @@
 // Medusa Customer 도메인 API 클라이언트
 
 import { MEDUSA_BASE_URL } from '@/const';
-import { client } from '../../client';
 import type {
+  CustomerCartResponse,
+  MedusaCustomerListQuery,
+  MedusaOrderListQuery,
+} from '@/lib/types/dto/medusa';
+import type {
+  AdminCustomerListResponse,
+  AdminCustomerResponse,
+  AdminOrderListResponse,
+  AdminOrderResponse,
+} from '@medusajs/types';
+import { client } from '../../client';
+
+// 컴포넌트에서 사용하는 Medusa 엔티티 타입 재노출
+export type {
   AdminCustomer,
   AdminCustomerAddress,
-  AdminCustomerResponse,
-  AdminCustomerListResponse,
+  AdminOrder,
 } from '@medusajs/types';
-
-
-export type { AdminCustomer, AdminCustomerAddress };
-
-export interface MedusaCustomerAddressPayload {
-  address_name: string;
-  first_name?: string | null;
-  last_name?: string | null;
-  phone?: string | null;
-  company?: string | null;
-  address_1: string;
-  address_2?: string | null;
-  city?: string | null;
-  country_code: string;
-  province?: string | null;
-  postal_code?: string | null;
-  is_default_shipping?: boolean;
-  is_default_billing?: boolean;
-}
-
-
-export interface MedusaCustomerListQuery {
-  limit?: number;
-  offset?: number;
-  q?: string;
-  order?: string; // Medusa 형식: "-created_at" (desc), "created_at" (asc)
-}
 
 export const medusaCustomerApi = {
   // 고객 목록 조회
@@ -45,7 +30,8 @@ export const medusaCustomerApi = {
   ): Promise<AdminCustomerListResponse> => {
     const params = new URLSearchParams();
     if (query.limit !== undefined) params.append('limit', String(query.limit));
-    if (query.offset !== undefined) params.append('offset', String(query.offset));
+    if (query.offset !== undefined)
+      params.append('offset', String(query.offset));
     if (query.q) params.append('q', query.q);
     if (query.order) params.append('order', query.order);
 
@@ -84,25 +70,162 @@ export const medusaCustomerApi = {
     return response.data;
   },
 
-  createCustomerAddress: async (
-    id: string,
-    payload: MedusaCustomerAddressPayload
+  // 고객의 활성 장바구니 조회 (커스텀 admin 엔드포인트)
+  getCustomerCart: async (
+    customerId: string
+  ): Promise<CustomerCartResponse> => {
+    const response = await client.get<CustomerCartResponse>(
+      `${MEDUSA_BASE_URL}/admin/customers/${customerId}/cart`
+    );
+    return response.data;
+  },
+
+  // 배송지(주소) 추가 — Medusa 빌트인 admin 엔드포인트
+  createAddress: async (
+    customerId: string,
+    payload: MedusaAddressPayload
   ): Promise<AdminCustomerResponse> => {
     const response = await client.post<AdminCustomerResponse>(
-      `${MEDUSA_BASE_URL}/admin/customers/${id}/addresses`,
+      `${MEDUSA_BASE_URL}/admin/customers/${customerId}/addresses`,
       payload
     );
     return response.data;
   },
 
-  updateCustomerAddress: async (
-    id: string,
+  // 배송지(주소) 수정
+  updateAddress: async (
+    customerId: string,
     addressId: string,
-    payload: MedusaCustomerAddressPayload
+    payload: MedusaAddressPayload
   ): Promise<AdminCustomerResponse> => {
     const response = await client.post<AdminCustomerResponse>(
-      `${MEDUSA_BASE_URL}/admin/customers/${id}/addresses/${addressId}`,
+      `${MEDUSA_BASE_URL}/admin/customers/${customerId}/addresses/${addressId}`,
       payload
+    );
+    return response.data;
+  },
+
+  // 배송지(주소) 삭제
+  deleteAddress: async (
+    customerId: string,
+    addressId: string
+  ): Promise<void> => {
+    await client.delete(
+      `${MEDUSA_BASE_URL}/admin/customers/${customerId}/addresses/${addressId}`
+    );
+  },
+};
+
+// Medusa 고객 주소 생성/수정 페이로드 (AdminCustomerAddress 의 입력 가능 필드)
+export interface MedusaAddressPayload {
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
+  company?: string;
+  address_1?: string;
+  address_2?: string;
+  city?: string;
+  province?: string;
+  postal_code?: string;
+  country_code?: string;
+  address_name?: string;
+  is_default_shipping?: boolean;
+  is_default_billing?: boolean;
+}
+
+// 주문 목록 조회 시 가져올 필드 (그리드 컬럼 + 품목별 뷰를 위해 items / 결제수단 / 판매채널 포함)
+const ORDER_LIST_FIELDS = [
+  'id',
+  'display_id',
+  'status',
+  'payment_status',
+  'fulfillment_status',
+  'item_subtotal',
+  'item_total',
+  'total',
+  'subtotal',
+  'discount_total',
+  'currency_code',
+  'email',
+  'created_at',
+  'sales_channel.name',
+  'payment_collections.payments.provider_id',
+  'payment_collections.payments.amount',
+  'items.id',
+  'items.title',
+  'items.subtitle',
+  'items.thumbnail',
+  'items.product_title',
+  'items.product_handle',
+  'items.variant_sku',
+  'items.variant_title',
+  'items.quantity',
+  'items.unit_price',
+  'items.total',
+  'items.detail.quantity',
+  'items.detail.fulfilled_quantity',
+  'items.detail.shipped_quantity',
+  'items.detail.delivered_quantity',
+].join(',');
+
+// 주문 상세 조회 시 가져올 필드 (라인 아이템 / 배송지 / 금액 포함)
+const ORDER_DETAIL_FIELDS = [
+  'id',
+  'display_id',
+  'status',
+  'payment_status',
+  'fulfillment_status',
+  'total',
+  'subtotal',
+  'shipping_total',
+  'discount_total',
+  'tax_total',
+  'currency_code',
+  'email',
+  'created_at',
+  'items.id',
+  'items.title',
+  'items.subtitle',
+  'items.thumbnail',
+  'items.product_title',
+  'items.variant_title',
+  'items.quantity',
+  'items.unit_price',
+  'items.total',
+  '*shipping_address',
+].join(',');
+
+export const medusaOrderApi = {
+  // 고객 ID로 주문 목록 조회 (최신순)
+  getOrdersByCustomerId: async (
+    customerId: string,
+    query: Omit<MedusaOrderListQuery, 'customer_id'> = {}
+  ): Promise<AdminOrderListResponse> => {
+    const params = new URLSearchParams();
+    params.append('customer_id', customerId);
+    params.append('order', query.order ?? '-created_at');
+    params.append('limit', String(query.limit ?? 20));
+    if (query.offset !== undefined)
+      params.append('offset', String(query.offset));
+    if (query.createdAtGte)
+      params.append('created_at[$gte]', query.createdAtGte);
+    if (query.createdAtLte)
+      params.append('created_at[$lte]', query.createdAtLte);
+    params.append('fields', ORDER_LIST_FIELDS);
+
+    const response = await client.get<AdminOrderListResponse>(
+      `${MEDUSA_BASE_URL}/admin/orders?${params.toString()}`
+    );
+    return response.data;
+  },
+
+  // 주문 단건 상세 조회
+  getOrderById: async (orderId: string): Promise<AdminOrderResponse> => {
+    const params = new URLSearchParams();
+    params.append('fields', ORDER_DETAIL_FIELDS);
+
+    const response = await client.get<AdminOrderResponse>(
+      `${MEDUSA_BASE_URL}/admin/orders/${orderId}?${params.toString()}`
     );
     return response.data;
   },
