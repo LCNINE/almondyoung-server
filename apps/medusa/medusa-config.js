@@ -1,4 +1,5 @@
 const { loadEnv, defineConfig, Modules, ContainerRegistrationKeys } = require('@medusajs/framework/utils');
+const { logger } = require('./src/utils/otel-logger');
 const path = require('path');
 
 // apps/medusa/ 폴더
@@ -6,6 +7,7 @@ const medusaDir = __dirname;
 loadEnv(process.env.NODE_ENV || 'development', medusaDir);
 
 module.exports = defineConfig({
+  logger,
   projectConfig: {
     databaseUrl: process.env.DATABASE_URL,
     // Neon serverless DB용 connection pool 최적화
