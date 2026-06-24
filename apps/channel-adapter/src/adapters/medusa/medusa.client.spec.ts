@@ -246,6 +246,58 @@ describe('MedusaClient product sellable inventory projection', () => {
     expect(upsertProjectionInventoryLevel).toHaveBeenCalledWith('iitem_projection', 0);
   });
 
+  it('skips stock projection and removes projection links for digital products', async () => {
+    const client = Object.create(MedusaClient.prototype) as MedusaClient;
+    (client as any).logger = logger;
+    (client as any).getProductWithVariantDetails = jest.fn().mockResolvedValue({
+      id: 'prod_digital',
+      metadata: { fulfillmentKind: 'digital', requiresShipping: false },
+      variants: [
+        {
+          id: 'variant_medusa_1',
+          title: '기본 품목',
+          sku: 'SKU-D',
+          manage_inventory: false,
+          metadata: { pimVariantId: 'pim-var-1' },
+          inventory_items: [
+            {
+              inventory_item_id: 'iitem_projection',
+              inventory: {
+                sku: 'psq_pim-var-1',
+                metadata: { projectionType: 'product_sellable_quantity', pimVariantId: 'pim-var-1' },
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const removeProjectionInventoryLinks = jest.fn().mockResolvedValue(undefined);
+    const ensureVariantInventoryLinks = jest.fn();
+    const batchVariants = jest.fn();
+    (client as any).removeProjectionInventoryLinks = removeProjectionInventoryLinks;
+    (client as any).ensureVariantInventoryLinks = ensureVariantInventoryLinks;
+    (client as any).sdk = { admin: { product: { batchVariants } } };
+
+    const result = await client.applyProductSellableQuantityProjection({
+      medusaProductId: 'prod_digital',
+      variantId: 'pim-var-1',
+      masterId: 'master-1',
+      sellableQuantity: 7,
+      isSellable: true,
+      reason: 'SELLABLE',
+      calculatedAt: '2026-05-27T00:00:00.000Z',
+    });
+
+    expect(result).toEqual({ soldOutChanged: false });
+    // 디지털은 projection inventory 를 만들지 않고 기존 링크를 제거한다.
+    expect(removeProjectionInventoryLinks).toHaveBeenCalledWith(
+      'prod_digital',
+      expect.objectContaining({ id: 'prod_digital' }),
+    );
+    expect(ensureVariantInventoryLinks).not.toHaveBeenCalled();
+    expect(batchVariants).not.toHaveBeenCalled();
+  });
+
   it('turns on managed inventory and stores sellable quantity for stock-gated projection events', async () => {
     const batchVariants = jest.fn().mockResolvedValue({});
     const upsertProjectionInventoryLevel = jest.fn().mockResolvedValue(undefined);
