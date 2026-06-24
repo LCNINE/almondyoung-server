@@ -6,6 +6,7 @@ import { PaymentTotalSection } from "@/domains/checkout/components/sections/paym
 import { ShippingSection } from "@/domains/checkout/components/sections/shipping"
 import type { ShippingMemo } from "@/domains/checkout/components/sections/shipping/types"
 import { initiatePaymentSession, updateCart } from "@/lib/api/medusa/cart"
+import { cartRequiresShipping } from "@/lib/api/medusa/shipping-method-policy"
 import { mintPaymentHandoffToken } from "@/lib/api/users/auth/payment-handoff"
 import { CartResponseDto } from "@/lib/types/dto/medusa"
 import type { CartTotals, ShippingInfo } from "@/lib/types/ui/cart"
@@ -87,6 +88,10 @@ export default function CheckoutTemplate({
     [cart.items, selectedIds]
   )
 
+  // 배송 필요 여부는 선택된 상품 기준으로 판단(부분 선택 대응). 디지털만 선택하면 배송 불필요.
+  // 판별은 line item requires_shipping 우선, 없으면 product_type 폴백.
+  const requiresShipping = cartRequiresShipping(selectedItems)
+
   // 가격 계산 - 선택된 아이템 기준
   const cartTotals: CartTotals = useMemo(() => {
     const { currency_code } = getCartTotals(cart)
@@ -116,24 +121,27 @@ export default function CheckoutTemplate({
     // 할인 전 정가 기준 상품 금액 (compare_at_unit_price 기준)
     const original_item_subtotal = item_subtotal + membershipDiscount
 
+    // 배송 불필요(디지털 단독)면 배송비 0
+    const effectiveShipping = requiresShipping ? shipping.amount : 0
+
     const totalDiscount = discount_subtotal
     const finalTotal = Math.max(
       0,
-      item_subtotal + shipping.amount - totalDiscount
+      item_subtotal + effectiveShipping - totalDiscount
     )
 
     return {
       currency_code,
       item_subtotal,
       original_item_subtotal,
-      shipping: shipping.amount,
+      shipping: effectiveShipping,
       discount_subtotal,
       membershipDiscount,
       pointsUsed: 0,
       totalDiscount,
       finalTotal,
     }
-  }, [cart, shipping, selectedItems, isMembership])
+  }, [cart, shipping, selectedItems, isMembership, requiresShipping])
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -151,19 +159,22 @@ export default function CheckoutTemplate({
   }, [])
 
   const handlePayment = async () => {
-    if (!cart?.shipping_address?.address_1) {
-      return toast.error(tProcess("toasts.setShipping"))
-    }
-    if (!shippingMemo.type) {
-      return toast.error(tProcess("toasts.selectMemo"))
-    }
-    // 문 앞 선택 + 공동현관 있음 체크 시 비밀번호 필수
-    if (
-      shippingMemo.type === "door" &&
-      shippingMemo.hasEntrance &&
-      !shippingMemo.entrancePassword.trim()
-    ) {
-      return toast.error(tProcess("toasts.enterEntrancePw"))
+    // 배송이 필요할 때만 배송지/배송메모를 강제한다.
+    if (requiresShipping) {
+      if (!cart?.shipping_address?.address_1) {
+        return toast.error(tProcess("toasts.setShipping"))
+      }
+      if (!shippingMemo.type) {
+        return toast.error(tProcess("toasts.selectMemo"))
+      }
+      // 문 앞 선택 + 공동현관 있음 체크 시 비밀번호 필수
+      if (
+        shippingMemo.type === "door" &&
+        shippingMemo.hasEntrance &&
+        !shippingMemo.entrancePassword.trim()
+      ) {
+        return toast.error(tProcess("toasts.enterEntrancePw"))
+      }
     }
     processPayment()
   }
@@ -179,23 +190,25 @@ export default function CheckoutTemplate({
         return
       }
 
-      // 결제 전 배송 메모 저장
-      await updateCart(
-        {
-          metadata: {
-            shipping_memo_type: shippingMemo.type,
-            shipping_memo_custom:
-              shippingMemo.type === "other" ? shippingMemo.custom : "",
-            has_entrance:
-              shippingMemo.type === "door" ? shippingMemo.hasEntrance : false,
-            entrance_password:
-              shippingMemo.type === "door" && shippingMemo.hasEntrance
-                ? shippingMemo.entrancePassword
-                : "",
+      // 결제 전 배송 메모 저장 (배송이 필요한 카트에서만)
+      if (requiresShipping) {
+        await updateCart(
+          {
+            metadata: {
+              shipping_memo_type: shippingMemo.type,
+              shipping_memo_custom:
+                shippingMemo.type === "other" ? shippingMemo.custom : "",
+              has_entrance:
+                shippingMemo.type === "door" ? shippingMemo.hasEntrance : false,
+              entrance_password:
+                shippingMemo.type === "door" && shippingMemo.hasEntrance
+                  ? shippingMemo.entrancePassword
+                  : "",
+            },
           },
-        },
-        checkoutCartId
-      )
+          checkoutCartId
+        )
+      }
 
       const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
 
@@ -209,9 +222,10 @@ export default function CheckoutTemplate({
               count: payLineItems.length - 1,
             })
 
+      // 배송이 필요할 때만 배송비를 결제항목에 포함(화면 총액과 일치)
       const paymentItems = buildPaymentItems(
         payLineItems,
-        cart.shipping_methods
+        requiresShipping ? cart.shipping_methods : []
       )
 
       const result = await initiatePaymentSession(cart, {
@@ -278,13 +292,17 @@ export default function CheckoutTemplate({
         <MobileHeader onClose={() => router.push(`/${countryCode}/cart`)} />
 
         <div className="mx-auto lg:max-w-[820px]">
-          <ShippingSection
-            cartId={checkoutCartId}
-            shippingAddress={cart?.shipping_address || null}
-            addressName={cart?.metadata?.shipping_address_name as string | null}
-            shippingMemo={shippingMemo}
-            onShippingMemoChange={handleShippingMemoChange}
-          />
+          {requiresShipping && (
+            <ShippingSection
+              cartId={checkoutCartId}
+              shippingAddress={cart?.shipping_address || null}
+              addressName={
+                cart?.metadata?.shipping_address_name as string | null
+              }
+              shippingMemo={shippingMemo}
+              onShippingMemoChange={handleShippingMemoChange}
+            />
+          )}
           <OrderProductsSection
             cartId={checkoutCartId}
             products={cart?.items}
