@@ -45,6 +45,15 @@ export class CreateSalesOrderLineDto {
   @IsNumber()
   @IsOptional()
   totalPrice?: number;
+
+  @ApiProperty({ description: "이행 종류 ('physical' | 'digital')", required: false })
+  @IsString()
+  @IsOptional()
+  fulfillmentKind?: 'physical' | 'digital';
+
+  @ApiProperty({ description: '배송 필요 여부', required: false })
+  @IsOptional()
+  requiresShipping?: boolean;
 }
 
 export class CreateSalesOrderDto {
