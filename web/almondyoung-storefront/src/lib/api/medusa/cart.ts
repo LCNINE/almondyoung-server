@@ -48,12 +48,16 @@ export async function retrieveCart(
   }
 
   // 완료(주문 전환)된 카트를 감지하려면 completed_at 이 응답에 포함돼야 한다.
-  // 구분자는 반드시 ", +"(콤마+공백+플러스) 로 붙인다. Medusa store cart 필드 파서가
-  // ", " 로 구분된 기존 필드열 뒤에 ",completed_at"(공백 없이) 을 붙이면 직전 필드와 한 토큰으로
-  // 묶여 500 을 내고, retrieveCart 가 null 을 반환해 '빈 장바구니 / 체크아웃 404' 장애가 난다.
+  // 구분자는 반드시 ",+completed_at"(콤마+플러스, 공백 없음) 이어야 한다. 두 함정을 동시에 피한다:
+  //   1) ",completed_at"(공백 없이 plain): ", " 로 구분된 기존 필드열 뒤에 붙이면 직전 필드와 한
+  //      토큰으로 묶여 Medusa 가 500 → retrieveCart null → '빈 장바구니/체크아웃 404' 장애.
+  //   2) ", +completed_at"(콤마+공백+플러스): 500 은 피하지만 리딩 스페이스로 필드가 드롭되어
+  //      응답에 completed_at 이 안 와 완료 감지 실패 → 완료 카트가 반환되어 addToCart 가
+  //      'cart is already completed' 로 실패(무통장 주문 직후 장바구니 안 담김 장애).
+  // "+" prefix 는 500 을 막고, 공백 제거는 필드가 정상 포함되게 한다.
   const effectiveFields = fields.includes("completed_at")
     ? fields
-    : `${fields}, +completed_at`
+    : `${fields},+completed_at`
 
   const headers = {
     ...(await getAuthHeaders()),
