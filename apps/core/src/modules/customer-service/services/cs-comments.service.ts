@@ -53,7 +53,14 @@ export class CsCommentsService {
           .values(mentionIds.map((mentionedUserId) => ({ commentId: comment.id, mentionedUserId })));
       }
 
-      const attachments = dto.attachments ?? [];
+      const attachments = (dto.attachments ?? []).map((attachment) => ({
+        ...attachment,
+        fileId: attachment.fileId.trim(),
+      }));
+      if (attachments.some((attachment) => !attachment.fileId)) {
+        throw new BadRequestError('Attachment fileId must not be empty');
+      }
+
       if (attachments.length) {
         await trx.insert(csCaseCommentAttachments).values(
           attachments.map((a, index) => ({
