@@ -1,6 +1,6 @@
 import { createColumnHelper } from '@tanstack/react-table';
 import { useMemo } from 'react';
-import { CustomerListItem } from '@/lib/api/domains/customer';
+import { CustomerListItem } from '@/lib/types';
 import { IdCell, DateCell, CopyableTextCell, PlaceholderCell } from '@/components/table/table-cells/common';
 import { EmailVerifiedCell, RoleCell } from '@/components/table/table-cells/user';
 import { formatPhoneNumber } from '@/lib/utils/phone';

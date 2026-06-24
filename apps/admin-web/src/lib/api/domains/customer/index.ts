@@ -3,49 +3,18 @@
 // Customer 도메인 API 클라이언트
 
 import { USER_SERVICE_BASE_URL } from '@/const';
-import { Shop, User } from '@/lib/types';
+import { RoleDto, Shop, User } from '@/lib/types';
 import {
-  BusinessLicenseDto,
-  BusinessLicenseUpsertDto,
-} from '@/lib/types/dto/business-licenses';
-import {
+  AdminUpdateBusinessLicenseDto,
+  AdminUpdateUserDto,
   CustomerBusinessLicense,
   CustomerBusinessLicenseQueryDto,
   CustomerConsent,
+  CustomerListQuery,
+  CustomerListResponse,
   CustomerProfile,
 } from '@/lib/types/dto/customers';
 import { client } from '../../client';
-
-export interface CustomerListQuery {
-  page?: number;
-  limit?: number;
-  q?: string;
-  roleName?: string;
-  sort?: 'createdAt' | 'username' | 'email' | 'lastActivityAt' | 'phoneNumber';
-  order?: 'asc' | 'desc';
-}
-
-export interface CustomerListItem {
-  id: string;
-  loginId: string;
-  username: string;
-  nickname: string | null;
-  email: string;
-  phoneNumber: string | null;
-  isEmailVerified: boolean;
-  lastActivityAt: string | null;
-  deletedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-  roles: string[];
-}
-
-export interface CustomerListResponse {
-  data: CustomerListItem[];
-  total: number;
-  page: number;
-  limit: number;
-}
 
 export const customerApi = {
   // 사용자들 조회
@@ -124,25 +93,60 @@ export const customerApi = {
     return response.data;
   },
 
-  // 특정 사용자의 사업자 등록 정보 단건 조회 (없으면 null)
-  getBusinessLicenseByUserId: async (
+  // 회원 기본정보 수정
+  updateUser: async (
+    userId: string,
+    dto: AdminUpdateUserDto
+  ): Promise<CustomerProfile> => {
+    const response = await client.patch<CustomerProfile>(
+      `${USER_SERVICE_BASE_URL}/admin/users/${userId}`,
+      dto
+    );
+    return response.data;
+  },
+
+  // 단일 회원 동의 현황 조회 (미동의 시 null)
+  getUserConsent: async (userId: string): Promise<CustomerConsent | null> => {
+    const response = await client.get<CustomerConsent | null>(
+      `${USER_SERVICE_BASE_URL}/admin/users/consent/${userId}`
+    );
+    return response.data;
+  },
+
+  // 단일 회원 사업자등록증 조회
+  getBusinessLicenseByUser: async (
     userId: string
-  ): Promise<BusinessLicenseDto | null> => {
-    const response = await client.get<BusinessLicenseDto | null>(
+  ): Promise<CustomerBusinessLicense | null> => {
+    const response = await client.get<CustomerBusinessLicense | null>(
       `${USER_SERVICE_BASE_URL}/admin/business-licenses/user/${userId}`
     );
     return response.data;
   },
 
-  // 특정 사용자의 사업자 등록 정보 등록/수정 (upsert)
-  upsertBusinessLicenseByUserId: async (
-    userId: string,
-    dto: BusinessLicenseUpsertDto
-  ): Promise<BusinessLicenseDto> => {
-    const response = await client.post<BusinessLicenseDto>(
-      `${USER_SERVICE_BASE_URL}/admin/business-licenses/user/${userId}`,
+  // 사업자등록증 심사 수정 (상태/코멘트)
+  updateBusinessLicense: async (
+    businessId: string,
+    dto: AdminUpdateBusinessLicenseDto
+  ): Promise<CustomerBusinessLicense> => {
+    const response = await client.put<CustomerBusinessLicense>(
+      `${USER_SERVICE_BASE_URL}/admin/business-licenses/${businessId}`,
       dto
     );
     return response.data;
+  },
+
+  // 회원의 역할 목록 조회 ({ roles: RoleDto[] })
+  getUserRoles: async (userId: string): Promise<RoleDto[]> => {
+    const response = await client.get<{ roles: RoleDto[] }>(
+      `${USER_SERVICE_BASE_URL}/admin/users/${userId}/roles`
+    );
+    return response.data?.roles ?? [];
+  },
+
+  // 회원의 역할 일괄 교체
+  setUserRoles: async (userId: string, roleIds: string[]): Promise<void> => {
+    await client.put(`${USER_SERVICE_BASE_URL}/admin/users/${userId}/roles`, {
+      roleIds,
+    });
   },
 };

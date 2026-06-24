@@ -122,7 +122,63 @@ interface CustomerBusinessLicenseQueryDto {
   hasVerificationFile?: boolean; // 검증 파일이 있는지
 }
 
+// ===== 관리자 회원 수정/목록 (user-service admin API) =====
+
+// 관리자가 회원 기본정보 수정 시 보내는 필드 (user-service UpdateUserDto 의 스칼라 부분만)
+interface AdminUpdateUserDto {
+  username?: string;
+  nickname?: string;
+  phoneNumber?: string; // E.164 (+8210...)
+  birthDate?: string;
+}
+
+// 관리자 사업자등록증 수정 (user-service BusinessAdminUpdateDto). userId 필수, 나머지 선택.
+interface AdminUpdateBusinessLicenseDto {
+  userId: string;
+  businessNumber?: string;
+  representativeName?: string;
+  status?: CustomerBusinessLicenseStatus;
+  reviewComment?: string;
+  fileUrl?: string | null;
+}
+
+interface CustomerListQuery {
+  page?: number;
+  limit?: number;
+  q?: string;
+  roleName?: string;
+  sort?: 'createdAt' | 'username' | 'email' | 'lastActivityAt' | 'phoneNumber';
+  order?: 'asc' | 'desc';
+}
+
+interface CustomerListItem {
+  id: string;
+  loginId: string;
+  username: string;
+  nickname: string | null;
+  email: string;
+  phoneNumber: string | null;
+  isEmailVerified: boolean;
+  lastActivityAt: string | null;
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  roles: string[];
+}
+
+interface CustomerListResponse {
+  data: CustomerListItem[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 export type {
+  AdminUpdateUserDto,
+  AdminUpdateBusinessLicenseDto,
+  CustomerListQuery,
+  CustomerListItem,
+  CustomerListResponse,
   Customer,
   CustomerProfile,
   CustomerProfileDetail,

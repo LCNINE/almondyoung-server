@@ -1,8 +1,8 @@
 // src/lib/services/customers/queries.ts
 'use client';
 
-import { customerApi, CustomerListQuery } from '@/lib/api/domains/customer';
-import { CustomerBusinessLicenseQueryDto } from '@/lib/types';
+import { customerApi } from '@/lib/api/domains/customer';
+import { CustomerBusinessLicenseQueryDto, CustomerListQuery } from '@/lib/types';
 import { useQuery } from '@tanstack/react-query';
 import { customerQueryKeys } from './query-keys';
 
@@ -76,11 +76,29 @@ export const useShopInfoByUserId = (userId: string) => {
   });
 };
 
-// 특정 고객의 사업자 등록 정보 단건 조회 (없으면 null)
-export const useBusinessLicenseByUserId = (userId: string) => {
+// 단일 회원 동의 현황
+export const useUserConsent = (userId: string) => {
+  return useQuery({
+    queryKey: customerQueryKeys.userConsent(userId),
+    queryFn: () => customerApi.getUserConsent(userId),
+    enabled: !!userId,
+  });
+};
+
+// 단일 회원 사업자등록증
+export const useBusinessLicenseByUser = (userId: string) => {
   return useQuery({
     queryKey: customerQueryKeys.businessLicenseByUserId(userId),
-    queryFn: () => customerApi.getBusinessLicenseByUserId(userId),
+    queryFn: () => customerApi.getBusinessLicenseByUser(userId),
+    enabled: !!userId,
+  });
+};
+
+// 회원 역할 목록
+export const useUserRoles = (userId: string) => {
+  return useQuery({
+    queryKey: customerQueryKeys.userRoles(userId),
+    queryFn: () => customerApi.getUserRoles(userId),
     enabled: !!userId,
   });
 };

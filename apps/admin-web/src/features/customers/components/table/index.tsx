@@ -41,7 +41,8 @@ export function CustomerTable() {
         { key: 'lastActivityAt', label: '최근 활동일' },
       ]}
       search
-      navigateTo={(row) => `/account/customer/${row.original.id}`}
+      navigateTo={(row) => `/customer-window/${row.original.id}`}
+      openInNewWindow
       noRecords={{ message: '고객 데이터가 없습니다.' }}
     />
   );
