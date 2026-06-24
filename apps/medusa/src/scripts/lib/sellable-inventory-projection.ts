@@ -33,6 +33,7 @@ type ProductVariantWithInventoryLinks = {
 type ProductWithVariants = {
   id: string;
   handle?: string | null;
+  metadata?: Record<string, unknown> | null;
   variants?: ProductVariantWithInventoryLinks[];
 };
 
@@ -98,6 +99,7 @@ export async function ensureSellableInventoryProjectionLinks(container: any, inp
     fields: [
       'id',
       'handle',
+      'metadata',
       'variants.id',
       'variants.title',
       'variants.sku',
@@ -115,6 +117,35 @@ export async function ensureSellableInventoryProjectionLinks(container: any, inp
   let variantsSeen = 0;
 
   for (const product of products) {
+    // 디지털 상품은 배송이 없으므로 sellable projection inventory(requires_shipping=true)를 만들지 않는다.
+    // 런타임 동기화 경로(medusa.client ensureVariantInventoryLinks)와 동일하게 기존 projection 링크는 제거한다.
+    const isDigital =
+      product.metadata?.fulfillmentKind === 'digital' || product.metadata?.requiresShipping === false;
+
+    if (isDigital) {
+      for (const variant of product.variants || []) {
+        const pimVariantId = variant.metadata?.pimVariantId;
+        if (typeof pimVariantId !== 'string' || !pimVariantId) continue;
+        variantsSeen += 1;
+
+        const projectionSku = toMedusaProductSellableInventorySku(pimVariantId);
+        for (const link of variant.inventory_items || []) {
+          const isProjection =
+            !!link.inventory_item_id &&
+            (link.inventory?.sku === projectionSku ||
+              (link.inventory?.metadata?.pimVariantId === pimVariantId &&
+                isMedusaProductSellableInventoryItem(link.inventory)));
+          if (isProjection) {
+            linksToDismiss.push({
+              [Modules.PRODUCT]: { variant_id: variant.id },
+              [Modules.INVENTORY]: { inventory_item_id: link.inventory_item_id as string },
+            });
+          }
+        }
+      }
+      continue;
+    }
+
     for (const variant of product.variants || []) {
       const pimVariantId = variant.metadata?.pimVariantId;
       if (typeof pimVariantId !== 'string' || !pimVariantId) continue;

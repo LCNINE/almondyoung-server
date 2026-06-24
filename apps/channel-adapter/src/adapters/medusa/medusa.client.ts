@@ -947,7 +947,7 @@ export class MedusaClient {
   private async getProductWithVariantDetails(productId: string): Promise<MedusaProduct> {
     const { product } = await this.sdk.admin.product.retrieve(productId, {
       fields:
-        'id,*variants,+variants.metadata,+variants.manage_inventory,+variants.sku,+variants.title,' +
+        'id,metadata,*variants,+variants.metadata,+variants.manage_inventory,+variants.sku,+variants.title,' +
         '+variants.inventory_items,+variants.inventory_items.inventory.id,+variants.inventory_items.inventory.sku,' +
         '+variants.inventory_items.inventory.metadata',
     });
@@ -1009,6 +1009,7 @@ export class MedusaClient {
   private async getOrCreateSellableProjectionInventoryItem(params: {
     pimVariantId: string;
     title: string;
+    requiresShipping?: boolean;
   }): Promise<string> {
     const sku = toMedusaProductSellableInventorySku(params.pimVariantId);
     const existing = await this.sdk.admin.inventoryItem.list({
@@ -1025,7 +1026,8 @@ export class MedusaClient {
       const created = await this.sdk.admin.inventoryItem.create({
         sku,
         title: params.title,
-        requires_shipping: true,
+        // 디지털은 projection inventory를 만들지 않으므로 호출부에서 걸러지지만, 정책값을 받아 하드코딩을 피한다.
+        requires_shipping: params.requiresShipping ?? true,
         metadata: {
           projectionType: 'product_sellable_quantity',
           projectionSource: 'core',
@@ -1157,6 +1159,7 @@ export class MedusaClient {
         (await this.getOrCreateSellableProjectionInventoryItem({
           pimVariantId: target.pimVariantId,
           title: target.title,
+          requiresShipping: options.requiresShipping,
         }));
 
       ensured.set(target.pimVariantId, { variantId: target.variantId, inventoryItemId });
@@ -1367,6 +1370,20 @@ export class MedusaClient {
       throw new Error(
         `Medusa variant with pimVariantId=${input.variantId} not found on product ${input.medusaProductId}`,
       );
+    }
+
+    // 디지털 상품은 재고/품절/배송 projection 대상이 아니다. sellable quantity 이벤트가 와도
+    // projection inventory를 만들지 않고, 남아 있으면 제거한다.
+    const productMetadata = (product as { metadata?: Record<string, unknown> | null }).metadata ?? {};
+    const isDigitalProduct =
+      productMetadata.fulfillmentKind === 'digital' || productMetadata.requiresShipping === false;
+    if (isDigitalProduct) {
+      await this.removeProjectionInventoryLinks(product.id, product);
+      this.logger.log(
+        `Skipped sellable quantity projection for digital product: medusaProduct=${product.id}, ` +
+          `pimVariantId=${input.variantId}`,
+      );
+      return { soldOutChanged: false };
     }
 
     const ensuredLinks = await this.ensureVariantInventoryLinks(
