@@ -37,6 +37,14 @@ export class CsCommentsService {
     const body = dto.body?.trim();
     if (!body) throw new BadRequestError('Comment body must not be empty');
 
+    const attachments = (dto.attachments ?? []).map((attachment) => ({
+      ...attachment,
+      fileId: attachment.fileId.trim(),
+    }));
+    if (attachments.some((attachment) => !attachment.fileId)) {
+      throw new BadRequestError('Attachment fileId must not be empty');
+    }
+
     return this.inTx(async (trx) => {
       const [csCase] = await trx.select().from(csCases).where(eq(csCases.id, csCaseId)).limit(1);
       if (!csCase) throw new NotFoundError(`CS Case ${csCaseId} not found`);
@@ -51,14 +59,6 @@ export class CsCommentsService {
         await trx
           .insert(csCaseCommentMentions)
           .values(mentionIds.map((mentionedUserId) => ({ commentId: comment.id, mentionedUserId })));
-      }
-
-      const attachments = (dto.attachments ?? []).map((attachment) => ({
-        ...attachment,
-        fileId: attachment.fileId.trim(),
-      }));
-      if (attachments.some((attachment) => !attachment.fileId)) {
-        throw new BadRequestError('Attachment fileId must not be empty');
       }
 
       if (attachments.length) {

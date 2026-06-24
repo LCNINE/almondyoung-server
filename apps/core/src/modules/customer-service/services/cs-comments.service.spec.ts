@@ -50,12 +50,15 @@ describe('CsCommentsService.addComment', () => {
   });
 
   it('rejects an attachment with an empty fileId', async () => {
-    const { db } = makeFakeDb(seedCase(caseId));
+    const { db, state } = makeFakeDb(seedCase(caseId));
     const service = new CsCommentsService(db as any);
 
     await expect(
       service.addComment(caseId, { body: 'hi', attachments: [{ fileId: '   ' }] }, authorId),
     ).rejects.toThrow('fileId');
+    expect(state.get(csCaseComments)).toHaveLength(0);
+    expect(state.get(csCaseCommentMentions)).toHaveLength(0);
+    expect(state.get(csCaseCommentAttachments)).toHaveLength(0);
   });
 
   it('throws when the case does not exist', async () => {
