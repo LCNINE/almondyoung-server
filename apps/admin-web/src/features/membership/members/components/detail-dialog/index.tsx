@@ -383,7 +383,7 @@ function GrantForm({ userId }: { userId: string }) {
 function PeriodTab({ userId }: { userId: string }) {
   const { data: detail, isLoading } = useMemberDetail(userId);
 
-  if (isLoading) return <Skeleton className="w-full h-48" />;
+  if (isLoading) return <Skeleton className="w-full h-48 bg-gray-200" />;
 
   const isActive = detail?.status === 'ACTIVE' || detail?.status === 'PAUSED';
 
@@ -479,7 +479,7 @@ function PlanTab({
     return '정기결제 (해지 예약됨)';
   }
 
-  if (isLoading) return <Skeleton className="w-full h-48" />;
+  if (isLoading) return <Skeleton className="w-full h-48 bg-gray-200" />;
 
   return (
     <div className="space-y-4">
@@ -616,7 +616,7 @@ function BillingTab({
     }
   };
 
-  if (isLoading) return <Skeleton className="w-full h-48" />;
+  if (isLoading) return <Skeleton className="w-full h-48 bg-gray-200" />;
 
   return (
     <div className="space-y-3">
@@ -699,7 +699,7 @@ function LogTab({ userId }: { userId: string }) {
   );
   const operatorNames = useUserNames(operatorIds);
 
-  if (isLoading) return <Skeleton className="w-full h-48" />;
+  if (isLoading) return <Skeleton className="w-full h-48 bg-gray-200" />;
 
   return (
     <Card className="py-0 overflow-hidden">
@@ -770,7 +770,7 @@ export function MembershipDetailPanel({
   const { data: detail, isLoading } = useMemberDetail(userId);
   const userNames = useUserNames(userId ? [userId] : []);
 
-  if (isLoading) return <Skeleton className="w-full h-64" />;
+  if (isLoading) return <Skeleton className="w-full h-64 bg-gray-200" />;
 
   if (!detail) {
     return (
