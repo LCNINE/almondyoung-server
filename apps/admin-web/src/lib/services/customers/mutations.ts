@@ -42,6 +42,20 @@ export const useUpdateBusinessLicense = (userId: string) => {
   });
 };
 
+// 사업자등록증 등록/수정 (userId 기준 upsert)
+export const useUpsertBusinessLicense = (userId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: { businessNumber: string; representativeName: string }) =>
+      customerApi.upsertBusinessLicense(userId, dto),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: customerQueryKeys.businessLicenseByUserId(userId),
+      });
+    },
+  });
+};
+
 // 회원 역할 일괄 교체
 export const useSetUserRoles = (userId: string) => {
   const queryClient = useQueryClient();
