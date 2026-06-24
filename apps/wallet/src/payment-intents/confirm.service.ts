@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { eq, sql } from 'drizzle-orm';
-import { WalletSchema, paymentIntents } from '../schema';
+import { PaymentIntentStatus, WalletSchema, paymentIntents } from '../schema';
 import { Charge, DbTx } from '../types';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { ChargesService } from '../charges/charges.service';
@@ -63,7 +63,7 @@ export class ConfirmService {
     dto: { paymentMethodId?: string; pointsToApply?: number },
     correlationId: string,
     tx: DbTx,
-  ): Promise<Phase1Result> {
+  ): Promise<Phase1Result | null> {
     // 1. Lock intent
     const intent = await this.lockIntent(intentId, tx);
     if (!intent) {
@@ -73,9 +73,27 @@ export class ConfirmService {
       });
     }
 
+    const pointsToApply = dto.pointsToApply ?? 0;
+
+    if (intent.payableAmount === 0) {
+      if (pointsToApply > 0) {
+        throw new BadRequestException({
+          error: 'POINTS_NOT_APPLICABLE_TO_ZERO_AMOUNT',
+          message: 'Points cannot be applied to a zero-amount payment intent',
+        });
+      }
+
+      if (intent.status === 'CAPTURED' || intent.status === 'SUCCEEDED') {
+        return null;
+      }
+    }
+
     // 2. Validate status
-    const allowedStatuses = ['CREATED', 'PROCESSING', 'REQUIRES_ACTION'] as const;
-    if (!allowedStatuses.includes(intent.status as (typeof allowedStatuses)[number])) {
+    const allowedStatuses: readonly PaymentIntentStatus[] =
+      intent.payableAmount === 0
+        ? ['CREATED', 'PROCESSING', 'REQUIRES_ACTION', 'AUTHORIZED']
+        : ['CREATED', 'PROCESSING', 'REQUIRES_ACTION'];
+    if (!allowedStatuses.includes(intent.status)) {
       throw new ConflictException({
         error: 'INTENT_STATUS_INVALID',
         message: `Intent cannot be confirmed in status: ${intent.status}`,
@@ -89,7 +107,6 @@ export class ConfirmService {
     }
 
     // 4. Calculate amounts
-    const pointsToApply = dto.pointsToApply ?? 0;
     const pointsAmount = Math.min(pointsToApply, intent.payableAmount);
     const externalAmount = intent.payableAmount - pointsAmount;
 
@@ -109,6 +126,17 @@ export class ConfirmService {
       });
     }
     const intentUserId: string = intent.userId;
+
+    if (intent.payableAmount === 0) {
+      await this.completeZeroAmountIntent(intentId, intent.status, intentUserId, intent.currency, correlationId, tx);
+      return null;
+    }
+
+    // 6.5. Release any stale SUCCEEDED POINTS hold left by a previous attempt.
+    //      Unconditional: it must NOT depend on this retry re-applying points,
+    //      otherwise an abandoned composite attempt (POINTS + Toss) leaks its
+    //      points hold whenever the UI shows 0 available points and hides reuse.
+    await this.cancelSucceededPointsHold(intentId, intentUserId, intent.currency, correlationId);
 
     // 7. Build ChargePlan
     const plan = await this.buildChargePlan(intentUserId, pointsAmount, externalAmount, dto.paymentMethodId, tx);
@@ -186,6 +214,70 @@ export class ConfirmService {
       discountChargeId,
       primaryChargeId,
     };
+  }
+
+  private async completeZeroAmountIntent(
+    intentId: string,
+    status: PaymentIntentStatus,
+    userId: string,
+    currency: string,
+    correlationId: string,
+    tx: DbTx,
+  ): Promise<void> {
+    const now = new Date().toISOString();
+
+    if (status === 'CREATED') {
+      await this.stateTransitionService.transitionIntent(
+        intentId,
+        'PROCESSING',
+        {
+          correlationId,
+          triggeredByType: 'USER',
+          reasonCode: 'ZERO_AMOUNT_CONFIRM',
+        },
+        undefined,
+        tx,
+      );
+    }
+
+    if (status !== 'AUTHORIZED') {
+      await this.stateTransitionService.transitionIntent(
+        intentId,
+        'AUTHORIZED',
+        {
+          correlationId,
+          triggeredByType: 'USER',
+          reasonCode: 'ZERO_AMOUNT_AUTHORIZED',
+        },
+        undefined,
+        tx,
+      );
+    }
+
+    await this.stateTransitionService.transitionIntent(
+      intentId,
+      'CAPTURED',
+      {
+        correlationId,
+        triggeredByType: 'USER',
+        reasonCode: 'ZERO_AMOUNT_CAPTURED',
+        outboxEvent: {
+          eventType: GatewayEventType.INTENT_CAPTURED,
+          aggregateType: GATEWAY_AGGREGATE_TYPE,
+          aggregateId: intentId,
+          payload: buildPaymentIntentEventPayload({
+            intentId,
+            userId,
+            status: 'CAPTURED',
+            payableAmount: 0,
+            currency,
+            occurredAt: now,
+          }),
+        },
+      },
+      undefined,
+      tx,
+    );
   }
 
   // ─── ChargePlan builder ────────────────────────────────────────────────────
@@ -362,7 +454,14 @@ export class ConfirmService {
   ): Promise<{ nextAction?: Record<string, unknown> }> {
     switch (result.status) {
       case 'SUCCEEDED':
-        await this.handleFinalChargeSuccess(intentId, primaryChargeId, result.providerTransactionId, result.raw, phase1, correlationId);
+        await this.handleFinalChargeSuccess(
+          intentId,
+          primaryChargeId,
+          result.providerTransactionId,
+          result.raw,
+          phase1,
+          correlationId,
+        );
         return {};
 
       case 'PENDING':
@@ -377,15 +476,45 @@ export class ConfirmService {
         });
         return {};
 
-      case 'REQUIRES_ACTION':
+      case 'REQUIRES_ACTION': {
         await this.chargesService.updateStatus(primaryChargeId, 'REQUIRES_ACTION', {
           responsePayload: { ...(result.raw ?? {}), nextAction: result.nextAction },
         });
-        await this.stateTransitionService.transitionIntent(intentId, 'REQUIRES_ACTION', {
-          correlationId,
-          reasonCode: 'REQUIRES_ACTION',
-        });
+
+        // 프로바이더가 선언한 액션 의미로 만료 정책을 분기한다.
+        if (phase1.plan.primary.provider.actionMode === 'offline-wait') {
+          // 무통장: 오프라인 입금 대기. 긴 입금 윈도우(expiresAt)로 두고
+          // actionExpiresAt은 찍지 않아 TossActionExpirationJob 대상에서 제외한다.
+          //
+          // INTENT_AWAITING_DEPOSIT 이벤트를 발행해 Medusa 가 주문을 '입금확인중' 상태로 선생성
+          // 입금대기 시점에 주문 내용이 고정되어, 이후 카트 수정이 주문/결제금액 불일치를 일으키는 문제를 차단. 이벤트가 유실돼도 관리자 입금확인 (INTENT_CAPTURED) 시 기존 복구 경로가 주문을 생성하므로 graceful degradation 됨.
+          await this.stateTransitionService.transitionIntent(intentId, 'AWAITING_DEPOSIT', {
+            correlationId,
+            reasonCode: 'AWAITING_DEPOSIT',
+            outboxEvent: {
+              eventType: GatewayEventType.INTENT_AWAITING_DEPOSIT,
+              aggregateType: GATEWAY_AGGREGATE_TYPE,
+              aggregateId: intentId,
+              payload: buildPaymentIntentEventPayload({
+                intentId,
+                userId: phase1.userId,
+                status: 'AWAITING_DEPOSIT',
+                payableAmount: phase1.payableAmount,
+                currency: phase1.currency,
+              }),
+            },
+          });
+          await this.stampDepositExpiry(intentId);
+        } else {
+          // Toss 등 인터랙티브 액션: 기존대로 짧은 actionExpiresAt로 빠르게 reclaim.
+          await this.stateTransitionService.transitionIntent(intentId, 'REQUIRES_ACTION', {
+            correlationId,
+            reasonCode: 'REQUIRES_ACTION',
+          });
+          await this.stampActionExpiry(intentId);
+        }
         return { nextAction: result.nextAction };
+      }
 
       default: {
         // FAILED
@@ -510,6 +639,36 @@ export class ConfirmService {
     } catch (err) {
       this.logger.error(`Failed to cancel POINTS hold for intent ${intentId}: ${err}`);
     }
+  }
+
+  private static readonly DEFAULT_ACTION_TTL_MINUTES = 15;
+
+  private actionTtlMs(): number {
+    const raw = Number(process.env.WALLET_TOSS_ACTION_TTL_MINUTES);
+    const minutes = Number.isFinite(raw) && raw > 0 ? raw : ConfirmService.DEFAULT_ACTION_TTL_MINUTES;
+    return minutes * 60_000;
+  }
+
+  private async stampActionExpiry(intentId: string): Promise<void> {
+    await this.dbService.db
+      .update(paymentIntents)
+      .set({ actionExpiresAt: new Date(Date.now() + this.actionTtlMs()) })
+      .where(eq(paymentIntents.id, intentId));
+  }
+
+  private static readonly DEFAULT_DEPOSIT_WINDOW_HOURS = 72;
+
+  private depositWindowMs(): number {
+    const raw = Number(process.env.WALLET_BANK_TRANSFER_DEPOSIT_WINDOW_HOURS);
+    const hours = Number.isFinite(raw) && raw > 0 ? raw : ConfirmService.DEFAULT_DEPOSIT_WINDOW_HOURS;
+    return hours * 60 * 60_000;
+  }
+
+  private async stampDepositExpiry(intentId: string): Promise<void> {
+    await this.dbService.db
+      .update(paymentIntents)
+      .set({ expiresAt: new Date(Date.now() + this.depositWindowMs()) })
+      .where(eq(paymentIntents.id, intentId));
   }
 
   private async lockIntent(intentId: string, tx: DbTx): Promise<typeof paymentIntents.$inferSelect | null> {

@@ -43,6 +43,8 @@ export interface MedusaOrder {
   created_at?: string;
   updated_at?: string;
   canceled_at?: string;
+  // 주문 레벨 메타데이터. 무통장입금 선생성 주문의 bank_transfer_status('awaiting_deposit'|'confirmed')로 입금 전(미수집) 여부를 판별하는 데 사용
+  metadata?: Record<string, unknown> | null;
   items?: Array<{
     id: string;
     title?: string;
@@ -134,6 +136,7 @@ const ORDER_FIELDS = [
   'created_at',
   'updated_at',
   'canceled_at',
+  'metadata',
   '*items',
   'items.id',
   'items.title',
@@ -1324,19 +1327,24 @@ export class MedusaClient {
     }
   }
 
-  private async upsertProjectionInventoryLevel(inventoryItemId: string, stockedQuantity: number): Promise<void> {
+  // 반환값: 이 호출 직전의 stocked_quantity (레벨이 없었으면 null). 품절 전환 판별에 사용.
+  private async upsertProjectionInventoryLevel(
+    inventoryItemId: string,
+    stockedQuantity: number,
+  ): Promise<number | null> {
     const locationId = await this.getProjectionStockLocationId();
     const { inventory_levels: levels } = await this.sdk.admin.inventoryItem.listLevels(inventoryItemId, {
       location_id: locationId,
       limit: 1,
     } as any);
 
+    const previousQuantity = typeof levels?.[0]?.stocked_quantity === 'number' ? levels[0].stocked_quantity : null;
     const normalizedQuantity = Math.max(0, Math.trunc(stockedQuantity || 0));
     if (levels?.[0]) {
       await this.sdk.admin.inventoryItem.updateLevel(inventoryItemId, locationId, {
         stocked_quantity: normalizedQuantity,
       });
-      return;
+      return previousQuantity;
     }
 
     await this.sdk.admin.inventoryItem.batchInventoryItemLocationLevels(inventoryItemId, {
@@ -1344,13 +1352,14 @@ export class MedusaClient {
       update: [],
       delete: [],
     });
+    return previousQuantity;
   }
 
   async applyProductSellableQuantityProjection(
     input: ProductSellableQuantityChangedPayload & {
       medusaProductId: string;
     },
-  ): Promise<void> {
+  ): Promise<{ soldOutChanged: boolean }> {
     const product = await this.getProductWithVariantDetails(input.medusaProductId);
     const medusaVariant = product.variants?.find((variant) => variant.metadata?.pimVariantId === input.variantId);
 
@@ -1378,22 +1387,44 @@ export class MedusaClient {
     }
 
     const shouldManageInventory = shouldManageMedusaInventoryForSellableProjection(input);
+    const previousBackorder = (medusaVariant as { allow_backorder?: boolean }).allow_backorder ?? false;
+    // 수동품절은 선판매(백오더)를 이긴다 — 강제 품절이 의도이므로 allow_backorder 를 끈다.
+    // 그 외엔 선판매 정책(preStockSellable)을 그대로 반영해 해제 시 복원되게 한다.
+    const desiredBackorder =
+      input.availabilityOverride === 'manual_out_of_stock' ? false : !!input.preStockSellable;
+    const newStock = shouldManageInventory ? Math.max(0, Math.trunc(input.sellableQuantity || 0)) : 0;
+
+    const variantUpdate: { id: string; manage_inventory?: boolean; allow_backorder?: boolean } = {
+      id: medusaVariant.id,
+    };
     if (medusaVariant.manage_inventory !== shouldManageInventory) {
-      await this.sdk.admin.product.batchVariants(product.id, {
-        update: [{ id: medusaVariant.id, manage_inventory: shouldManageInventory }],
-      });
+      variantUpdate.manage_inventory = shouldManageInventory;
+    }
+    if (previousBackorder !== desiredBackorder) {
+      variantUpdate.allow_backorder = desiredBackorder;
+    }
+    if (Object.keys(variantUpdate).length > 1) {
+      await this.sdk.admin.product.batchVariants(product.id, { update: [variantUpdate] });
     }
 
-    await this.upsertProjectionInventoryLevel(
+    const previousStock = await this.upsertProjectionInventoryLevel(
       ensuredLink.inventoryItemId,
       shouldManageInventory ? input.sellableQuantity : 0,
     );
 
+    // 스토어프론트 품절 표시 기준: manage_inventory && stock<=0 && !allow_backorder.
+    // 이 변경이 "판매중↔품절" 상태를 바꿨는지 계산 — 캐시 무효화는 이 전환 때만 한다
+    const oldSoldOut = !!medusaVariant.manage_inventory && (previousStock ?? 0) <= 0 && !previousBackorder;
+    const newSoldOut = shouldManageInventory && newStock <= 0 && !desiredBackorder;
+    const soldOutChanged = oldSoldOut !== newSoldOut;
+
     this.logger.log(
       `Applied Product Sellable Quantity projection: pimVariantId=${input.variantId}, ` +
         `medusaVariant=${medusaVariant.id}, manage_inventory=${shouldManageInventory}, ` +
-        `stocked_quantity=${shouldManageInventory ? input.sellableQuantity : 0}, reason=${input.reason ?? 'unknown'}`,
+        `stocked_quantity=${newStock}, reason=${input.reason ?? 'unknown'}, soldOutChanged=${soldOutChanged}`,
     );
+
+    return { soldOutChanged };
   }
 
   private async safeDeleteProduct(productId: string): Promise<void> {
@@ -1588,7 +1619,9 @@ export class MedusaClient {
       // 400: already cancelled / invalid state transition — treat as success (idempotent)
       // 404: order not found (maybe quarantined order that never reached Medusa)
       if (fetchError.status === 400 || fetchError.status === 404) {
-        this.logger.warn(`Medusa cancelOrder skipped (status=${fetchError.status}): ${orderId} - ${fetchError.message}`);
+        this.logger.warn(
+          `Medusa cancelOrder skipped (status=${fetchError.status}): ${orderId} - ${fetchError.message}`,
+        );
         return;
       }
       this.logger.error(`Failed to cancel Medusa order: ${orderId}`, fetchError.message);

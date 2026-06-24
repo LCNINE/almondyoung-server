@@ -1,7 +1,9 @@
 import { TwoColumnPage } from '@/components/admin-ui-experimental/layout';
 import { CustomerDetailGeneral } from './_components/customer-detail-general';
 import { CustomerDetailShop } from './_components/customer-detail-shop';
+import { CustomerDetailBusiness } from './_components/customer-detail-business';
 import { CustomerBlacklist } from './_components/customer-blacklist';
+import { CustomerMedusaAddresses } from './_components/customer-medusa-addresses';
 
 /**
  * user-service 고객 목록 페이지입니다.
@@ -21,8 +23,9 @@ export default async function CustomerDetailPage({
       </TwoColumnPage>
       <TwoColumnPage>
         <CustomerBlacklist userId={id} />
-        <div></div>
+        <CustomerDetailBusiness userId={id} />
       </TwoColumnPage>
+      <CustomerMedusaAddresses userId={id} />
     </div>
   );
 }

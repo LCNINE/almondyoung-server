@@ -1,4 +1,6 @@
 import { JwtService } from '@nestjs/jwt';
+import * as bcrypt from 'bcrypt';
+import * as jwt from 'jsonwebtoken';
 import { OAuthManager } from './oauth.manager';
 import { OAuthReader } from './oauth.reader';
 import { OAuthRepository, OAuthClientRow } from './oauth.repository';
@@ -45,6 +47,7 @@ describe('OAuthManager — nonce propagation', () => {
   let jwtService: jest.Mocked<JwtService>;
   let usersService: jest.Mocked<UsersService>;
   let tokensService: jest.Mocked<TokensService>;
+  let configService: { getOrThrow: jest.Mock };
   let dbService: { db: { transaction: jest.Mock } };
   let manager: OAuthManager;
 
@@ -68,6 +71,7 @@ describe('OAuthManager — nonce propagation', () => {
 
     jwtService = {
       signAsync: jest.fn().mockResolvedValue('signed-jwt'),
+      verifyAsync: jest.fn(),
     } as unknown as jest.Mocked<JwtService>;
 
     usersService = {
@@ -78,6 +82,10 @@ describe('OAuthManager — nonce propagation', () => {
     tokensService = {
       deleteAllTokens: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<TokensService>;
+
+    configService = {
+      getOrThrow: jest.fn().mockReturnValue('handoff-secret'),
+    };
 
     // tx 호출은 inline 실행 (실제 트랜잭션 없이 fn 그대로 호출)
     dbService = {
@@ -93,6 +101,7 @@ describe('OAuthManager — nonce propagation', () => {
       jwtService,
       usersService,
       tokensService,
+      configService as never,
     );
   });
 
@@ -299,6 +308,74 @@ describe('OAuthManager — nonce propagation', () => {
       expect(result.access_token).toBeDefined();
       expect(repo.revokeTokenById).toHaveBeenCalledWith('parent-1', expect.anything());
       expect(repo.revokeChain).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('payment_handoff grant', () => {
+    function confidentialClient() {
+      return makeClient({
+        clientId: 'wallet-web',
+        clientType: 'confidential',
+        clientSecretHash: 'hash',
+        allowedScopes: ['openid', 'profile', 'email'],
+      });
+    }
+
+    it('confidential client + 유효한 핸드오프 토큰 → 세션 토큰셋 발급', async () => {
+      (reader.getClientOrThrow as jest.Mock).mockResolvedValue(confidentialClient());
+      jest.spyOn(bcrypt, 'compare').mockResolvedValue(true as never);
+      (jwtService.verifyAsync as jest.Mock).mockRejectedValue(new Error('invalid algorithm'));
+      const handoffToken = jwt.sign({ sub: 'u-1', purpose: 'payment_handoff' }, 'handoff-secret', {
+        expiresIn: '120s',
+      });
+
+      const result = await manager.issueToken({
+        grantType: 'payment_handoff',
+        clientId: 'wallet-web',
+        clientSecret: 'secret',
+        code: handoffToken,
+      } as never);
+
+      expect(result.access_token).toBeDefined();
+      expect(result.refresh_token).toBeDefined();
+      expect(jwtService.verifyAsync).not.toHaveBeenCalled();
+    });
+
+    it('purpose 가 payment_handoff 가 아니면 거부', async () => {
+      (reader.getClientOrThrow as jest.Mock).mockResolvedValue(confidentialClient());
+      jest.spyOn(bcrypt, 'compare').mockResolvedValue(true as never);
+      const socialToken = jwt.sign({ sub: 'u-1', purpose: 'social_callback' }, 'handoff-secret', {
+        expiresIn: '120s',
+      });
+
+      await expect(
+        manager.issueToken({
+          grantType: 'payment_handoff',
+          clientId: 'wallet-web',
+          clientSecret: 'secret',
+          code: socialToken,
+        } as never),
+      ).rejects.toThrow(/invalid handoff token/);
+    });
+
+    it('public client 는 핸드오프 교환 불가', async () => {
+      (reader.getClientOrThrow as jest.Mock).mockResolvedValue(
+        makeClient({ clientId: 'wallet-web', clientType: 'public' }),
+      );
+      (jwtService.verifyAsync as jest.Mock).mockResolvedValue({ sub: 'u-1', purpose: 'payment_handoff' });
+
+      await expect(
+        manager.issueToken({ grantType: 'payment_handoff', clientId: 'wallet-web', code: 'x' } as never),
+      ).rejects.toThrow(/confidential client/);
+    });
+
+    it('code(핸드오프 토큰) 누락 시 거부', async () => {
+      (reader.getClientOrThrow as jest.Mock).mockResolvedValue(confidentialClient());
+      jest.spyOn(bcrypt, 'compare').mockResolvedValue(true as never);
+
+      await expect(
+        manager.issueToken({ grantType: 'payment_handoff', clientId: 'wallet-web', clientSecret: 'secret' } as never),
+      ).rejects.toThrow(/code .*required/);
     });
   });
 });

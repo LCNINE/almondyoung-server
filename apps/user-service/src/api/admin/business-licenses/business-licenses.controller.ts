@@ -1,9 +1,10 @@
 import { RequireScopes } from '@app/authorization';
-import { Body, Controller, Delete, Get, Param, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { BusinessLicenseResponseDto } from '../../business-licenses/dto/business-license.response.dto';
 import { BusinessLicensesService } from './business-licenses.service';
 import { BusinessAdminUpdateDto } from './dto/business-updeta.dto';
+import { BusinessAdminUpsertDto } from './dto/business-upsert.dto';
 import { BusinessLicenseQueryDto } from './dto/pagination-query-dto';
 
 @ApiTags('사업자 등록 관리')
@@ -24,6 +25,24 @@ export class BusinessLicensesController {
   @RequireScopes('user:read')
   async getBusinessLicensesByUserId(@Param('userId') userId: string): Promise<BusinessLicenseResponseDto | null> {
     return this.businessLicensesService.getBusinessLicensesByUserId(userId);
+  }
+
+  @Post('/user/:userId')
+  @RequireScopes('master', 'admin:users:modify')
+  @ApiOperation({
+    summary: '관리자가 특정 사용자의 사업자 등록 정보 등록/수정',
+    description:
+      '관리자가 특정 사용자의 사업자 등록 정보를 등록하거나 수정합니다. ' +
+      '사용자당 사업자 등록은 1개이므로 기존 정보가 있으면 수정, 없으면 새로 생성합니다.',
+  })
+  @ApiParam({ name: 'userId', description: '사용자 ID' })
+  @ApiResponse({ status: 201, description: '사업자 등록 정보 등록/수정 성공' })
+  @ApiResponse({ status: 404, description: '사용자를 찾을 수 없음' })
+  async upsertBusinessLicenseByUserId(
+    @Param('userId') userId: string,
+    @Body() upsertBusinessLicenseDto: BusinessAdminUpsertDto,
+  ): Promise<BusinessLicenseResponseDto> {
+    return this.businessLicensesService.upsertBusinessLicenseByUserId(userId, upsertBusinessLicenseDto);
   }
 
   @Get()

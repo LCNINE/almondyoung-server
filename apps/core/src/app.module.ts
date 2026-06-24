@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { LoggerModule } from 'nestjs-pino';
 import { DbModule } from '@app/db';
 import { AuthorizationModule, JwtAuthGuard } from '@app/authorization';
+import { loggerConfig } from '@app/shared/observability/logger.config';
 import { validateAlmondyoungEnv } from './config/env.validation';
 import { mergedSchema } from './platform/database/merged-schema';
 import { ALL_SCOPES } from './platform/auth/merged-scopes';
@@ -23,6 +25,7 @@ import { CustomerServiceModule } from './modules/customer-service/customer-servi
       validate: validateAlmondyoungEnv,
       envFilePath: ['.env', 'apps/core/.env'],
     }),
+    LoggerModule.forRoot(loggerConfig),
     DbModule.forRootAsync({
       useFactory: (configService: ConfigService) => ({
         connectionString: configService.get<string>('DATABASE_URL') ?? '',

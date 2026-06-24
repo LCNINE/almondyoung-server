@@ -10,12 +10,17 @@ import {
   setCartId,
 } from "@lib/data/cookies"
 import medusaError from "@lib/utils/medusa-error"
+import { isVariantSoldOut } from "@lib/utils/cart-availability"
 import { HttpTypes } from "@medusajs/types"
 import { revalidateTag } from "next/cache"
 import { redirect } from "next/navigation"
 import { HttpApiError } from "../api-error"
 import { getRegion } from "./regions"
-import { retrieveCustomer, transferCart } from "./customer"
+import {
+  recoverCustomerCart,
+  retrieveCustomer,
+  transferCart,
+} from "./customer"
 import {
   cartRequiresShipping,
   selectShippingOptionsForCart,
@@ -23,7 +28,7 @@ import {
 
 // 카트 조회 시 사용하는 기본 fields
 const DEFAULT_CART_FIELDS =
-  "*items, *region, *items.product, *items.variant, *items.variant.options, *items.variant.options.option, +items.variant.inventory_quantity, +items.variant.manage_inventory, *items.thumbnail, *items.metadata, +items.total, +items.original_total, +items.compare_at_unit_price, *promotions, +shipping_methods, *customer, *customer.groups, customer_id, +payment_collection.id, +currency_code, +item_subtotal, +shipping_total, +total, +discount_total, +original_item_subtotal, +original_item_total"
+  "*items, *region, *items.product, *items.variant, *items.variant.options, *items.variant.options.option, +items.variant.inventory_quantity, +items.variant.manage_inventory, +items.variant.allow_backorder, *items.thumbnail, *items.metadata, +items.total, +items.original_total, +items.compare_at_unit_price, *promotions, +shipping_methods, *customer, *customer.groups, customer_id, +payment_collection.id, +currency_code, +item_subtotal, +shipping_total, +total, +discount_total, +original_item_subtotal, +original_item_total"
 
 /**
  * 카트 ID를 통해 카트 정보를 조회합니다. 만약 ID가 제공되지 않으면, 쿠키에 저장된 카트 ID를 사용합니다.
@@ -42,6 +47,18 @@ export async function retrieveCart(
     return null
   }
 
+  // 완료(주문 전환)된 카트를 감지하려면 completed_at 이 응답에 포함돼야 한다.
+  // 구분자는 반드시 ",+completed_at"(콤마+플러스, 공백 없음) 이어야 한다. 두 함정을 동시에 피한다:
+  //   1) ",completed_at"(공백 없이 plain): ", " 로 구분된 기존 필드열 뒤에 붙이면 직전 필드와 한
+  //      토큰으로 묶여 Medusa 가 500 → retrieveCart null → '빈 장바구니/체크아웃 404' 장애.
+  //   2) ", +completed_at"(콤마+공백+플러스): 500 은 피하지만 리딩 스페이스로 필드가 드롭되어
+  //      응답에 completed_at 이 안 와 완료 감지 실패 → 완료 카트가 반환되어 addToCart 가
+  //      'cart is already completed' 로 실패(무통장 주문 직후 장바구니 안 담김 장애).
+  // "+" prefix 는 500 을 막고, 공백 제거는 필드가 정상 포함되게 한다.
+  const effectiveFields = fields.includes("completed_at")
+    ? fields
+    : `${fields},+completed_at`
+
   const headers = {
     ...(await getAuthHeaders()),
   }
@@ -54,19 +71,111 @@ export async function retrieveCart(
     .fetch<{ cart: HttpTypes.StoreCart }>(`/store/carts/${id}`, {
       method: "GET",
       query: {
-        fields,
+        fields: effectiveFields,
       },
       headers,
       next,
       cache,
     })
-    .then(({ cart }: { cart: HttpTypes.StoreCart }) => cart)
+    .then(async ({ cart }: { cart: HttpTypes.StoreCart }) => {
+      // completeCartWorkflow 로 주문 전환된 카트는 더 이상 장바구니가 아니다.
+      // 무통장입금처럼 브라우저가 완료 과정에 참여하지 않으면 쿠키가 남아
+      // 완료된 카트가 계속 장바구니로 노출. 쿠키를 정리하고 null 을 돌려 상위에서 새 카트 생성/복구로 흐르게
+      if (cart?.completed_at) {
+        // 쿠키는 '이 완료된 카트를 쿠키가 실제로 가리킬 때'만 정리한다. 명시적 cartId 로 완료된
+        // 파생 카트(체크아웃/배송 프리뷰 sub-cart)를 조회하는 경우, 쿠키가 가리키는 별개의 활성
+        // source 카트를 지워 남은 장바구니를 유실시키면 안 된다.
+        try {
+          const cookieCartId = await getCartId()
+          if (cookieCartId && cookieCartId === id) {
+            // 렌더 컨텍스트에서는 쿠키 변경이 막힐 수 있어 best-effort 로 처리
+            await removeCartId()
+          }
+        } catch {
+          // Server Action/Route Handler 가 아닌 곳에서 호출되면 무시
+        }
+        return null
+      }
+      return cart
+    })
     .catch(async (error) => {
       if (error?.response?.status === 404) {
-        await removeCartId()
+        try {
+          await removeCartId()
+        } catch {
+        }
       }
       return null
     })
+}
+
+/**
+ * 카트 라인아이템 중 draft/미게시/삭제(또는 판매채널 이탈)된 상품을 가려낸다.
+ */
+export async function findUnavailableLineItems(
+  cart: HttpTypes.StoreCart,
+  countryCode: string
+): Promise<{ variantIds: string[]; productNames: string[] }> {
+  const items = cart.items ?? []
+  const productIds = Array.from(
+    new Set(
+      items
+        .map((item) => item.product_id)
+        .filter((id): id is string => Boolean(id))
+    )
+  )
+
+  if (productIds.length === 0) {
+    return { variantIds: [], productNames: [] }
+  }
+
+  const region = await getRegion(countryCode)
+  if (!region) {
+    return { variantIds: [], productNames: [] }
+  }
+
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  const { products } = await sdk.client
+    .fetch<{ products: HttpTypes.StoreProduct[] }>(`/store/products`, {
+      method: "GET",
+      query: {
+        id: productIds,
+        region_id: region.id,
+        fields: "id",
+        limit: productIds.length,
+      },
+      headers,
+      cache: "no-store",
+    })
+    .catch(() => ({ products: [] as HttpTypes.StoreProduct[] }))
+
+  const publishedProductIds = new Set(products.map((product) => product.id))
+  // 판매중단(미게시) 이거나, 재고 기준 품절(수동 품절 포함)이면 구매 불가로 본다.
+  const unavailableItems = items.filter(
+    (item) =>
+      (item.product_id && !publishedProductIds.has(item.product_id)) ||
+      isVariantSoldOut(item.variant)
+  )
+
+  const variantIds = Array.from(
+    new Set(
+      unavailableItems
+        .map((item) => item.variant_id)
+        .filter((id): id is string => Boolean(id))
+    )
+  )
+  const productNames = Array.from(
+    new Set(
+      unavailableItems
+        .map((item) => item.product_title || item.title || "")
+        .filter(Boolean)
+    )
+  )
+
+  return { variantIds, productNames }
 }
 
 export async function getOrSetCart(countryCode: string) {
@@ -90,6 +199,18 @@ export async function getOrSetCart(countryCode: string) {
       // 다른 사용자의 장바구니이므로 쿠키 제거 후 새 장바구니 생성
       await removeCartId()
       cart = null
+    }
+  }
+
+  if (!cart) {
+    // 쿠키 소실(캐시 삭제 / 쿠키 만료 / 시크릿 모드 / 다른 기기)로 카트 쿠키가 없더라도
+    // 로그인 상태라면 새 카트를 만들기 전에 고객의 기존 미완료 카트를 먼저 복구
+    // recoverCustomerCart 는 GET /store/customers/me/cart 를 호출하며, 백엔드가 completed_at IS NULL 로 필터링하므로 완료(주문 전환)된 카트는 절대 복구되지 않는다.
+    if (headers.authorization) {
+      const recovered = await recoverCustomerCart()
+      if (recovered) {
+        cart = recovered
+      }
     }
   }
 
@@ -288,7 +409,10 @@ export async function createBuyNowCart(params: {
 export async function createCheckoutCartFromLineItems(params: {
   countryCode: string
   lineItemIds: string[]
-}): Promise<{ cartId: string }> {
+}): Promise<
+  | { cartId: string }
+  | { error: "ITEMS_UNAVAILABLE"; unavailableNames: string[] }
+> {
   const { countryCode, lineItemIds } = params
 
   if (!lineItemIds.length) {
@@ -358,6 +482,9 @@ export async function createCheckoutCartFromLineItems(params: {
     }
   }
 
+  // 미게시(draft)/삭제/판매중지 등으로 새 카트에 담을 수 없는 상품을 모아 호출부에 알린다.
+  const unavailableNames: string[] = []
+
   for (const item of selectedItems) {
     const variantId = item.variant_id || item.variant?.id
     if (!variantId) {
@@ -368,15 +495,27 @@ export async function createCheckoutCartFromLineItems(params: {
       )
     }
 
-    await sdk.store.cart.createLineItem(
-      checkoutCart.id,
-      {
-        variant_id: variantId,
-        quantity: item.quantity,
-      },
-      {},
-      headers
-    )
+    try {
+      await sdk.store.cart.createLineItem(
+        checkoutCart.id,
+        {
+          variant_id: variantId,
+          quantity: item.quantity,
+        },
+        {},
+        headers
+      )
+    } catch (error) {
+      // 인증 만료는 error.tsx 의 토큰 복구 경로로 흘려보낸다
+      if ((error as { status?: number })?.status === 401) {
+        throw error
+      }
+      unavailableNames.push(item.product_title || item.title || "")
+    }
+  }
+
+  if (unavailableNames.length > 0) {
+    return { error: "ITEMS_UNAVAILABLE", unavailableNames }
   }
 
   await sdk.store.cart.update(

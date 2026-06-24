@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { confirmPaymentIntent, cancelPaymentIntent } from '@/lib/wallet-api';
+import { confirmPaymentIntent, cancelPaymentIntent, abandonPaymentIntent } from '@/lib/wallet-api';
 import { isWalletSessionExpiredError, redirectToWalletLogin } from '@/lib/auth-expired';
 import { buildReturnUrl } from '@/lib/return-url';
 import type { AvailablePaymentMethod, PaymentIntent, PaymentMethod, PointsBalance } from '@/lib/wallet-api';
@@ -35,6 +35,8 @@ interface Props {
    */
   availableMethods?: AvailablePaymentMethod[] | null;
   region?: string | null;
+  /** Toss 결제가 실패/취소로 돌아왔을 때(failUrl ?toss_fail=1) true. mount 시 abandon 신호 전송. */
+  tossFailed?: boolean;
 }
 
 interface BankTransferPendingAction {
@@ -93,11 +95,7 @@ function buildPayPath(intentId: string, region?: string | null, extra?: Record<s
 }
 
 function isBankTransferPendingAction(value: unknown): value is BankTransferPendingAction {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    (value as { type?: unknown }).type === 'BANK_TRANSFER_PENDING'
-  );
+  return typeof value === 'object' && value !== null && (value as { type?: unknown }).type === 'BANK_TRANSFER_PENDING';
 }
 
 const TOSS_SUB_METHODS = [
@@ -108,11 +106,17 @@ const TOSS_SUB_METHODS = [
 ] as const;
 type TossSubMethod = (typeof TOSS_SUB_METHODS)[number]['value'];
 
-export function PayForm({ intent, methods, pointsBalance, billingMethodsExist, availableMethods, region }: Props) {
+export function PayForm({
+  intent,
+  methods,
+  pointsBalance,
+  billingMethodsExist,
+  availableMethods,
+  region,
+  tossFailed,
+}: Props) {
   const router = useRouter();
-  const availableMethodMap = availableMethods
-    ? new Map(availableMethods.map((method) => [method.code, method]))
-    : null;
+  const availableMethodMap = availableMethods ? new Map(availableMethods.map((method) => [method.code, method])) : null;
   const isAvailableInRegion = (type: string) => !availableMethodMap || availableMethodMap.has(type);
   const regionLabel = getRegionLabel(region);
 
@@ -137,9 +141,31 @@ export function PayForm({ intent, methods, pointsBalance, billingMethodsExist, a
   const [error, setError] = useState<string | null>(null);
   const [bankTransferPending, setBankTransferPending] = useState<BankTransferPendingAction | null>(null);
 
+  // Toss 결제 실패/취소로 돌아온 경우(failUrl ?toss_fail=1) abandon 신호를 보내 REQUIRES_ACTION 으로
+  // 묶인 포인트 hold 를 즉시 해제하고 intent 를 CREATED 로 soft reset 한다. best-effort — 실패해도
+  // 만료 job 이 안전망. 처리 후 toss_fail 파라미터를 제거(replace)해 재실행을 막고 서버 데이터를 다시 읽는다.
+  useEffect(() => {
+    if (!tossFailed) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        await abandonPaymentIntent(intent.id);
+      } catch {
+        // best-effort: 만료 job 이 안전망이므로 무시한다.
+      }
+      if (!cancelled) {
+        router.replace(buildPayPath(intent.id, region));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tossFailed, intent.id, region, router]);
+
   const isTossSelected = externalMethods.find((m) => m.id === selectedMethodId)?.type === 'TOSS';
 
   const isRecurring = intent.metadata?.billingMode === 'recurring';
+  const isZeroAmount = intent.payableAmount === 0;
   const maxPoints = Math.min(availablePoints, intent.payableAmount);
   const remainingAmount = intent.payableAmount - (usePoints ? pointsAmount : 0);
 
@@ -199,7 +225,9 @@ export function PayForm({ intent, methods, pointsBalance, billingMethodsExist, a
         return; // requestPayment redirects
       }
 
-      if (result.status === 'REQUIRES_ACTION' && isBankTransferPendingAction(result.nextAction)) {
+      // 무통장: confirm 응답 status는 이제 AWAITING_DEPOSIT이므로 status가 아니라
+      // nextAction 타입(BANK_TRANSFER_PENDING)으로 판별한다.
+      if (isBankTransferPendingAction(result.nextAction)) {
         setBankTransferPending(result.nextAction);
         return;
       }
@@ -294,7 +322,10 @@ export function PayForm({ intent, methods, pointsBalance, billingMethodsExist, a
                 <div className="flex justify-between gap-4">
                   <dt className="text-muted-foreground">입금 금액</dt>
                   <dd className="font-semibold">
-                    {formatAmount(bankTransferPending.amount ?? remainingAmount, bankTransferPending.currency ?? intent.currency)}
+                    {formatAmount(
+                      bankTransferPending.amount ?? remainingAmount,
+                      bankTransferPending.currency ?? intent.currency,
+                    )}
                   </dd>
                 </div>
                 <div className="flex justify-between gap-4">
@@ -378,65 +409,67 @@ export function PayForm({ intent, methods, pointsBalance, billingMethodsExist, a
           {/* 우측 패널: 포인트 + 결제수단 + CTA */}
           <div className="flex-1 space-y-4">
             {/* 포인트 사용 카드 */}
-            <Card className="border shadow-sm border-border/60">
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <Coins className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm font-semibold">포인트 사용</span>
+            {!isZeroAmount && (
+              <Card className="border shadow-sm border-border/60">
+                <CardContent className="p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Coins className="w-4 h-4 text-muted-foreground" />
+                      <span className="text-sm font-semibold">포인트 사용</span>
+                    </div>
+                    <span className="text-sm text-muted-foreground">
+                      보유: {availablePoints.toLocaleString('ko-KR')}P
+                    </span>
                   </div>
-                  <span className="text-sm text-muted-foreground">
-                    보유: {availablePoints.toLocaleString('ko-KR')}P
-                  </span>
-                </div>
 
-                {availablePoints === 0 ? (
-                  <p className="text-sm text-muted-foreground">보유 포인트 없음</p>
-                ) : (
-                  <div className="space-y-3">
-                    <label className="flex items-center gap-3 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={usePoints}
-                        onChange={(e) => handleTogglePoints(e.target.checked)}
-                        className="w-4 h-4 rounded border-border"
-                      />
-                      <span className="text-sm">포인트 사용하기</span>
-                    </label>
+                  {availablePoints === 0 ? (
+                    <p className="text-sm text-muted-foreground">보유 포인트 없음</p>
+                  ) : (
+                    <div className="space-y-3">
+                      <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={usePoints}
+                          onChange={(e) => handleTogglePoints(e.target.checked)}
+                          className="w-4 h-4 rounded border-border"
+                        />
+                        <span className="text-sm">포인트 사용하기</span>
+                      </label>
 
-                    {usePoints && (
-                      <div className="space-y-2 pl-7">
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="number"
-                            min={0}
-                            max={maxPoints}
-                            value={pointsAmount}
-                            onChange={(e) => handlePointsAmountChange(e.target.value)}
-                            className="w-32 rounded-md border border-border bg-background px-3 py-1.5 text-sm"
-                          />
-                          <span className="text-sm text-muted-foreground">P</span>
-                          <button
-                            type="button"
-                            onClick={() => setPointsAmount(maxPoints)}
-                            className="text-xs text-primary hover:underline"
-                          >
-                            전액 사용
-                          </button>
+                      {usePoints && (
+                        <div className="space-y-2 pl-7">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min={0}
+                              max={maxPoints}
+                              value={pointsAmount}
+                              onChange={(e) => handlePointsAmountChange(e.target.value)}
+                              className="w-32 rounded-md border border-border bg-background px-3 py-1.5 text-sm"
+                            />
+                            <span className="text-sm text-muted-foreground">P</span>
+                            <button
+                              type="button"
+                              onClick={() => setPointsAmount(maxPoints)}
+                              className="text-xs text-primary hover:underline"
+                            >
+                              전액 사용
+                            </button>
+                          </div>
+                          {remainingAmount > 0 ? (
+                            <p className="text-xs text-muted-foreground">
+                              {formatAmount(remainingAmount, intent.currency)} 추가 결제
+                            </p>
+                          ) : (
+                            <p className="text-xs font-medium text-emerald-600">포인트로 전액 결제됩니다</p>
+                          )}
                         </div>
-                        {remainingAmount > 0 ? (
-                          <p className="text-xs text-muted-foreground">
-                            {formatAmount(remainingAmount, intent.currency)} 추가 결제
-                          </p>
-                        ) : (
-                          <p className="text-xs font-medium text-emerald-600">포인트로 전액 결제됩니다</p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
 
             {/* 결제수단 선택 카드 (잔액이 있을 때만 표시) */}
             {remainingAmount > 0 && (

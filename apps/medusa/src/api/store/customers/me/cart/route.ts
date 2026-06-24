@@ -10,18 +10,30 @@ import { autoFillShipping } from './auto-fill-shipping';
 async function getCustomerCart(query: any, customerId: string) {
   const { data: carts } = await query.graph({
     entity: 'cart',
-    fields: ['id', 'customer_id', 'completed_at', 'updated_at', ...defaultStoreCartFields],
+    fields: ['id', 'customer_id', 'completed_at', 'updated_at', 'metadata', ...defaultStoreCartFields],
     filters: {
       customer_id: customerId,
       completed_at: null,
     },
   });
 
+  // 결제용 checkout cart / 배송 미리보기 cart 는 일반 장바구니 복구 대상에서 제외.
+  // createCheckoutCartFromLineItems 가 checkout cart 도 고객에게 transfer 하므로, 무통장 입금 대기 (최대 72h) 동안 쿠키가 소실되면 결제용 cart 가 고객 장바구니로 복구되는 레이스가 생긴다.
+  // source_cart_id(원본 참조) / is_shipping_preview metadata 로 파생 cart 를 가려남.
+  const shoppingCarts = (carts || []).filter((cart: any) => {
+    // 안전망: query.graph 의 `completed_at: null` 필터가 환경/버전에 따라 안 걸리는 경우가 있어,
+    // 완료(주문 전환)된 카트를 JS 에서 명시적으로 한 번 더 배제한다. 이게 빠지면 무통장 주문 직후
+    // '방금 완료된 카트'가 복구되어 addToCart 가 'already completed' 로 실패한다.
+    if (cart?.completed_at) return false;
+    const meta = (cart?.metadata ?? {}) as Record<string, unknown>;
+    return !meta.source_cart_id && meta.is_shipping_preview !== true;
+  });
+
   // 카트 선택 우선순위:
   // 1. updated_at 최신 카트 우선
   // 2. 동시간대면 아이템이 있는 카트를 우선
   // 3. 그래도 같으면 아이템 수가 많은 카트를 우선
-  const sortedCarts = (carts || []).sort((a: any, b: any) => {
+  const sortedCarts = shoppingCarts.sort((a: any, b: any) => {
     const dateA = new Date(a.updated_at || 0).getTime();
     const dateB = new Date(b.updated_at || 0).getTime();
 

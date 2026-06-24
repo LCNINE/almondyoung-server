@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query } from '@nestjs/common';
 import { BenefitTrackingService } from '../services/benefit-tracking.service';
 import { RecordDiscountDto, CycleBenefitDto } from '../shared/dto/benefit-tracking.dto';
 
@@ -51,14 +51,8 @@ export class BenefitTrackingController {
    */
   @Get('current')
   async getCurrentCycleBenefit(@Query('userId') userId: string): Promise<CycleBenefitDto> {
-    try {
-      return await this.benefitTrackingService.getCurrentCycleBenefit(userId);
-    } catch (error: any) {
-      if (error.message?.includes('NO_ACTIVE_SUBSCRIPTION')) {
-        throw new Error('활성화된 구독이 없습니다');
-      }
-      throw error;
-    }
+    // 활성 구독이 없으면 서비스가 NotFoundError(404)를 던지고 GlobalExceptionFilter 가 매핑한다.
+    return this.benefitTrackingService.getCurrentCycleBenefit(userId);
   }
 
   /**

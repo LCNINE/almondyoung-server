@@ -78,6 +78,13 @@ export interface PaymentProvider {
   readonly autoCapture: boolean;
 
   /**
+   * REQUIRES_ACTION의 의미를 선언한다.
+   * - 'interactive'  : Toss 등 짧은 외부 리다이렉트. 짧은 actionExpiresAt로 빠르게 reclaim.
+   * - 'offline-wait' : 무통장 등 오프라인 입금 대기. 긴 입금 윈도우(expiresAt) 동안 유지.
+   */
+  readonly actionMode: 'interactive' | 'offline-wait';
+
+  /**
    * 이 provider 소속 결제수단 목록 반환.
    * singleton provider(POINTS 등)는 없으면 자동 생성 후 반환.
    * multi provider(CARD 등)는 등록된 것만 반환.

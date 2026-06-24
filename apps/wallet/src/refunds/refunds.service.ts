@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { WalletSchema, charges as chargesTable, refunds, paymentIntents } from '../schema';
 import { DbTx, Refund } from '../types';
 import { ChargesService } from '../charges/charges.service';
@@ -204,6 +204,12 @@ export class RefundsService {
   ): Promise<Refund[]> {
     const refundableCharges = await this.chargesService.findRefundableByIntent(intentId);
     if (refundableCharges.length === 0) {
+      const succeededRefunds = await this.findSucceededRefundsByIntent(intentId);
+      const succeededTotal = succeededRefunds.reduce((sum, refund) => sum + refund.amount, 0);
+      if (succeededTotal >= dto.amount) {
+        return succeededRefunds;
+      }
+
       throw new NotFoundException({
         error: 'REFUNDABLE_CHARGE_NOT_FOUND',
         message: `No refundable charge found for intent: ${intentId}`,
@@ -248,6 +254,14 @@ export class RefundsService {
       });
     }
     return refund;
+  }
+
+  private async findSucceededRefundsByIntent(intentId: string): Promise<Refund[]> {
+    return this.dbService.db
+      .select()
+      .from(refunds)
+      .where(and(eq(refunds.intentId, intentId), eq(refunds.status, 'SUCCEEDED')))
+      .orderBy(asc(refunds.createdAt));
   }
 
   private async getIntentUserId(intentId: string): Promise<string | null> {

@@ -195,6 +195,7 @@ export class EventsModule {
             name: 'KAFKA_CLIENT',
             transport: Transport.KAFKA,
             options: {
+              producerOnlyMode: true,
               client: {
                 clientId: kafka.clientId,
                 brokers: kafka.brokers,
@@ -303,6 +304,7 @@ export class EventsModule {
             name: 'KAFKA_CLIENT',
             transport: Transport.KAFKA,
             options: {
+              producerOnlyMode: true,
               client: {
                 clientId: kafka.clientId,
                 brokers: kafka.brokers,

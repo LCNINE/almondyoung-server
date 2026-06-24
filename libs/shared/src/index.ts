@@ -10,6 +10,9 @@ export * from './pim/pim.client';
 export * from './pim/pim.orchestrator';
 export * from './streams';
 
+// HTTP server tuning
+export * from './http/keep-alive';
+
 // Filters
 export * from './filters/application.exception';
 export * from './filters/domain-exceptions';

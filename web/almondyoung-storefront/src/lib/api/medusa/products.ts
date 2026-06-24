@@ -72,8 +72,18 @@ export const listProducts = async ({
     ...(await getAuthHeaders()),
   }
 
+  // handle 조회 시 방문자 무관 태그를 추가해 재고 변경 시 revalidateTag 로 무효화 가능하게.
+  const cacheOptions = await getCacheOptions("products")
+  const handleTag =
+    typeof queryParams?.handle === "string"
+      ? [`product-${queryParams.handle}`]
+      : []
+  const tags = [
+    ...("tags" in cacheOptions ? cacheOptions.tags : []),
+    ...handleTag,
+  ]
   const next = {
-    ...(await getCacheOptions("products")),
+    ...(tags.length ? { tags } : {}),
     revalidate: 3600,
   }
 
@@ -87,7 +97,7 @@ export const listProducts = async ({
           offset,
           region_id: region?.id,
           fields:
-            "*variants.calculated_price,+variants.inventory_quantity,*variants.images,+metadata,+tags,",
+            "*variants.calculated_price,+variants.inventory_quantity,+variants.manage_inventory,+variants.allow_backorder,*variants.options,*variants.images,+metadata,+tags,",
           ...queryParams,
         },
         headers,

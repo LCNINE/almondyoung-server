@@ -4,12 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
     "@base-ui/react": "^1.2.0",
+    "@packages/web-observability": "file:../../packages/web-observability",
     "@tosspayments/tosspayments-sdk": "^2",
     "@vercel/otel": "^2.1.1",
     "class-variance-authority": "^0.7.1",

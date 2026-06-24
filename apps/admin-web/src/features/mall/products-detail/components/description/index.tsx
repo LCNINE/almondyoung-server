@@ -1,12 +1,17 @@
 'use client';
 
 import { Suspense, useEffect, useRef, useState } from 'react';
-import { Save } from 'lucide-react';
+import { ChevronDown, Save } from 'lucide-react';
 import { toast } from 'sonner';
 import { CardErrorBoundary } from '@/components/admin-ui-experimental/common/card-error-boundary';
 import { Container } from '@/components/admin-ui-experimental/common/container';
 import { Header } from '@/components/admin-ui-experimental/common/header';
 import { Button } from '@/components/ui/button';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
 import { useUpdateMasterVersion } from '@/lib/services/products/mutations';
@@ -16,8 +21,13 @@ import { ProductDescriptionMarkdown } from './product-description-markdown';
 
 type Props = { masterId: string; versionId: string | null };
 
-function insertAtCursor(textarea: HTMLTextAreaElement | null, current: string, insert: string): string {
-  if (!textarea) return `${current}${current.endsWith('\n') || current.length === 0 ? '' : '\n'}${insert}\n`;
+function insertAtCursor(
+  textarea: HTMLTextAreaElement | null,
+  current: string,
+  insert: string
+): string {
+  if (!textarea)
+    return `${current}${current.endsWith('\n') || current.length === 0 ? '' : '\n'}${insert}\n`;
 
   const start = textarea.selectionStart;
   const end = textarea.selectionEnd;
@@ -31,9 +41,11 @@ function insertAtCursor(textarea: HTMLTextAreaElement | null, current: string, i
 function LegacyHtmlPreview({ html }: { html: string }) {
   return (
     <div>
-      <div className="mb-2 text-xs font-medium text-muted-foreground">레거시 HTML 미리보기</div>
+      <div className="mb-2 text-xs font-medium text-muted-foreground">
+        레거시 HTML 미리보기
+      </div>
       <div
-        className="prose prose-sm max-w-none rounded-md border bg-muted/20 p-3"
+        className="p-3 prose-sm prose border rounded-md max-w-none bg-muted/20"
         dangerouslySetInnerHTML={{ __html: html }}
       />
     </div>
@@ -44,8 +56,14 @@ function ProductDetailDescriptionContent({ masterId, versionId }: Props) {
   const { data } = useProductDetailSuspense(masterId, versionId);
   const updateVersion = useUpdateMasterVersion();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const canEdit = data.source === 'version' && data.status === 'draft' && Boolean(data.versionId);
+  const canEdit =
+    data.source === 'version' &&
+    data.status === 'draft' &&
+    Boolean(data.versionId);
   const [draft, setDraft] = useState(data.description ?? '');
+  const hasContent =
+    (data.description ?? '').trim().length > 0 || Boolean(data.descriptionHtml);
+  const [open, setOpen] = useState(!hasContent);
 
   useEffect(() => {
     setDraft(data.description ?? '');
@@ -62,59 +80,103 @@ function ProductDetailDescriptionContent({ masterId, versionId }: Props) {
       {
         onSuccess: () => toast.success('상품 상세설명을 저장했습니다.'),
         onError: (err) =>
-          toast.error(err instanceof Error ? err.message : '상품 상세설명 저장에 실패했습니다.'),
-      },
+          toast.error(
+            err instanceof Error
+              ? err.message
+              : '상품 상세설명 저장에 실패했습니다.'
+          ),
+      }
     );
   };
 
   const insertMarkdown = (markdown: string) => {
-    setDraft((current) => insertAtCursor(textareaRef.current, current, markdown));
+    setDraft((current) =>
+      insertAtCursor(textareaRef.current, current, markdown)
+    );
     textareaRef.current?.focus();
   };
 
-  const previewValue = canEdit ? draft : data.description ?? '';
+  const previewValue = canEdit ? draft : (data.description ?? '');
 
   return (
-    <div className="flex flex-col gap-4 p-4">
-      {canEdit ? (
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-sm font-medium">Markdown</div>
-            <div className="flex items-center gap-2">
-              <MarkdownImageUploadButton disabled={updateVersion.isPending} onInsert={insertMarkdown} />
-              <Button size="sm" disabled={updateVersion.isPending} onClick={handleSave}>
-                <Save data-icon="inline-start" />
-                {updateVersion.isPending ? '저장 중...' : '저장'}
-              </Button>
+    <Collapsible open={open} onOpenChange={setOpen} className="p-4">
+      <CollapsibleContent className="flex flex-col gap-4 data-[state=closed]:hidden">
+        {canEdit ? (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-sm font-medium">Markdown</div>
+              <div className="flex items-center gap-2">
+                <MarkdownImageUploadButton
+                  disabled={updateVersion.isPending}
+                  onInsert={insertMarkdown}
+                />
+                <Button
+                  size="sm"
+                  disabled={updateVersion.isPending}
+                  onClick={handleSave}
+                >
+                  <Save data-icon="inline-start" />
+                  {updateVersion.isPending ? '저장 중...' : '저장'}
+                </Button>
+              </div>
             </div>
+            <Textarea
+              ref={textareaRef}
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              rows={12}
+              placeholder="Markdown으로 상품 상세설명을 작성하세요."
+            />
           </div>
-          <Textarea
-            ref={textareaRef}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            rows={12}
-            placeholder="Markdown으로 상품 상세설명을 작성하세요."
+        ) : (
+          <div className="px-3 py-2 text-sm border rounded-md bg-muted/20 text-muted-foreground">
+            상품 상세설명은 draft version에서만 수정할 수 있습니다.
+          </div>
+        )}
+
+        {previewValue.trim().length > 0 ? (
+          <div>
+            <div className="mb-2 text-xs font-medium text-muted-foreground">
+              Markdown 미리보기
+            </div>
+            <ProductDescriptionMarkdown value={previewValue} />
+          </div>
+        ) : (
+          <div className="px-3 py-6 text-sm text-center border border-dashed rounded-md text-muted-foreground">
+            Markdown 상세설명이 비어 있습니다.
+          </div>
+        )}
+
+        {!data.description && data.descriptionHtml ? (
+          <LegacyHtmlPreview html={data.descriptionHtml} />
+        ) : null}
+      </CollapsibleContent>
+
+      {!open && hasContent ? (
+        // 상품 상세 설명 접힌 상태 미리보기
+        <div className="relative overflow-hidden max-h-48">
+          {previewValue.trim().length > 0 ? (
+            <ProductDescriptionMarkdown value={previewValue} />
+          ) : data.descriptionHtml ? (
+            <div
+              className="prose-sm prose max-w-none"
+              dangerouslySetInnerHTML={{ __html: data.descriptionHtml }}
+            />
+          ) : null}
+          <div className="absolute inset-x-0 bottom-0 h-16 pointer-events-none bg-gradient-to-t from-background to-transparent" />
+        </div>
+      ) : null}
+
+      <CollapsibleTrigger asChild>
+        <Button variant="outline" className="justify-center w-full gap-1 mt-4">
+          {open ? '상품설명 접기' : '상품설명 더보기'}
+          <ChevronDown
+            className="transition-transform duration-200 size-4"
+            style={{ transform: open ? 'rotate(180deg)' : undefined }}
           />
-        </div>
-      ) : (
-        <div className="rounded-md border bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
-          상품 상세설명은 draft version에서만 수정할 수 있습니다.
-        </div>
-      )}
-
-      {previewValue.trim().length > 0 ? (
-        <div>
-          <div className="mb-2 text-xs font-medium text-muted-foreground">Markdown 미리보기</div>
-          <ProductDescriptionMarkdown value={previewValue} />
-        </div>
-      ) : (
-        <div className="rounded-md border border-dashed px-3 py-6 text-center text-sm text-muted-foreground">
-          Markdown 상세설명이 비어 있습니다.
-        </div>
-      )}
-
-      {!data.description && data.descriptionHtml ? <LegacyHtmlPreview html={data.descriptionHtml} /> : null}
-    </div>
+        </Button>
+      </CollapsibleTrigger>
+    </Collapsible>
   );
 }
 
@@ -130,7 +192,10 @@ export function ProductDetailDescription({ masterId, versionId }: Props) {
             </div>
           }
         >
-          <ProductDetailDescriptionContent masterId={masterId} versionId={versionId} />
+          <ProductDetailDescriptionContent
+            masterId={masterId}
+            versionId={versionId}
+          />
         </Suspense>
       </CardErrorBoundary>
     </Container>

@@ -1,0 +1,1 @@
+ALTER TYPE "public"."payment_intent_status" ADD VALUE 'AWAITING_DEPOSIT' BEFORE 'AUTHORIZED';

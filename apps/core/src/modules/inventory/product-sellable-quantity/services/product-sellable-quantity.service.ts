@@ -450,6 +450,7 @@ export function toProductSellableQuantityChangedPayload(
     isSellable: projection.isSellable,
     reason: projection.reason,
     availabilityOverride: projection.availabilityOverride,
+    preStockSellable: projection.preStockSellable,
     calculatedAt: projection.calculatedAt.toISOString(),
   };
 }

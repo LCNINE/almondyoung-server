@@ -5,6 +5,7 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import fastifyCookie from '@fastify/cookie';
 import fastifyMultipart from '@fastify/multipart';
+import { Logger } from 'nestjs-pino';
 import { EventsModule } from '@app/events';
 import { GlobalExceptionFilter } from '@app/shared';
 import { ORDER_STREAM } from '@packages/event-contracts';
@@ -14,7 +15,12 @@ async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     new FastifyAdapter(),
+    // 부팅 로그를 버퍼링했다가 pino 로거가 준비되면 flush — 초기 로그도 JSON+trace_id 로.
+    { bufferLogs: true },
   );
+
+  // nestjs-pino 를 Nest 의 기본 로거로 사용. trace_id 주입은 instrumentation-pino 가 처리.
+  app.useLogger(app.get(Logger));
 
   // Fastify plugins
   await app.register(fastifyCookie);

@@ -1,12 +1,14 @@
 import './tracing';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { GlobalExceptionFilter } from '@app/shared';
+import { GlobalExceptionFilter, applyAlbKeepAlive } from '@app/shared';
+import { Logger } from 'nestjs-pino';
 import { FileServiceModule } from './file-service.module';
 import * as cookieParser from 'cookie-parser';
 
 async function bootstrap() {
-  const app = await NestFactory.create(FileServiceModule);
+  const app = await NestFactory.create(FileServiceModule, { bufferLogs: true });
+  app.useLogger(app.get(Logger));
 
   app.useGlobalFilters(new GlobalExceptionFilter());
   app.use(cookieParser());
@@ -43,6 +45,7 @@ async function bootstrap() {
   });
 
   const port = process.env.PORT ?? 3000;
+  applyAlbKeepAlive(app.getHttpServer());
   await app.listen(port);
 
   console.log(`🚀 File Service가 포트 ${port}에서 실행 중입니다.`);

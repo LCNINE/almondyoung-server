@@ -85,7 +85,9 @@
     "welcomeMembershipLimit": "Only 1 welcome-membership item can be purchased",
     "addCartFail": "Failed to add to cart.",
     "sheetTitle": "Select options",
-    "optionSelectTitle": "Select {title}"
+    "optionSelectTitle": "Select {title}",
+    "soldOutToast": "The selected option is sold out.",
+    "soldOutToastNamed": "‘{option}’ is sold out and cannot be added."
   },
   "cartModal": {
     "addingTitle": "Adding to cart",

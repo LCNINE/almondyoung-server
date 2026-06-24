@@ -1,5 +1,7 @@
 // apps/notification/src/notification.module.ts
 import { Module } from '@nestjs/common';
+import { LoggerModule } from 'nestjs-pino';
+import { loggerConfig } from '@app/shared/observability/logger.config';
 import { EventTraceApiModule } from '@app/events';
 import { BullModule } from '@nestjs/bull';
 import { ConfigModule } from '@nestjs/config';
@@ -18,6 +20,7 @@ import { DeviceModule } from './device/device.module';
 
 @Module({
   imports: [
+    LoggerModule.forRoot(loggerConfig),
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: process.env.NOTIFICATION_ENV_PATH,

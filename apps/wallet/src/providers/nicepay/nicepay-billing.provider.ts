@@ -19,6 +19,7 @@ import { BillingMethodService } from '../../billing/billing-method.service';
 export class NicepayBillingProvider implements PaymentProvider {
   readonly providerType = 'NICEPAY_BILLING';
   readonly autoCapture = true;
+  readonly actionMode = 'interactive' as const;
 
   private readonly logger = new Logger(NicepayBillingProvider.name);
 

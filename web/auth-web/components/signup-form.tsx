@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useState, useTransition } from "react";
 
 import { signUpAction } from "@/app/actions";
+import { BirthdayInput } from "@/components/birthday-input";
+import { PasswordInput } from "@/components/password-input";
 import { PhoneNumberInput } from "@/components/phone-number-input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -47,28 +49,53 @@ export function SignUpForm({ redirectTo }: { redirectTo: string }) {
           minLength={4}
           maxLength={20}
           pattern="[a-z0-9]+"
+          autoCapitalize="off"
+          autoComplete="username"
+          title="영문 소문자와 숫자만 사용해 4~20자로 입력해주세요."
+          aria-describedby="loginIdHelp"
+          onInvalid={(e) =>
+            e.currentTarget.setCustomValidity(
+              "아이디는 영문 소문자와 숫자만, 4~20자로 입력해주세요."
+            )
+          }
+          onInput={(e) => e.currentTarget.setCustomValidity("")}
         />
+        <FieldDescription id="loginIdHelp">
+          영문 소문자와 숫자만, 4~20자
+        </FieldDescription>
       </Field>
       <Field>
         <FieldLabel htmlFor="password">비밀번호</FieldLabel>
-        <Input
+        <PasswordInput
           id="password"
           name="password"
-          type="password"
           required
           minLength={8}
           maxLength={20}
+          autoComplete="new-password"
+          pattern={`(?=.*[a-zA-Z])(?=.*\\d)(?=.*[!@#$%^&*()_+\\-=\\[\\]{};':"\\\\|,.<>\\/?]).+`}
+          title="영문, 숫자, 특수문자를 각각 1개 이상 포함해 8~20자로 입력해주세요."
+          aria-describedby="passwordHelp"
+          onInvalid={(e) =>
+            e.currentTarget.setCustomValidity(
+              "비밀번호는 영문, 숫자, 특수문자를 각각 1개 이상 포함해 8~20자로 입력해주세요."
+            )
+          }
+          onInput={(e) => e.currentTarget.setCustomValidity("")}
         />
+        <FieldDescription id="passwordHelp">
+          영문, 숫자, 특수문자를 각각 1개 이상 포함해 8~20자
+        </FieldDescription>
       </Field>
       <Field>
         <FieldLabel htmlFor="passwordConfirm">비밀번호 확인</FieldLabel>
-        <Input
+        <PasswordInput
           id="passwordConfirm"
           name="passwordConfirm"
-          type="password"
           required
           minLength={8}
           maxLength={20}
+          autoComplete="new-password"
         />
       </Field>
       <Field data-invalid={emailTaken || undefined}>
@@ -107,7 +134,7 @@ export function SignUpForm({ redirectTo }: { redirectTo: string }) {
       </Field>
       <Field>
         <FieldLabel htmlFor="birthday">생년월일</FieldLabel>
-        <Input id="birthday" name="birthday" type="date" required />
+        <BirthdayInput id="birthday" name="birthday" required />
       </Field>
       <Field>
         <FieldLabel htmlFor="phoneNumber">휴대폰 번호</FieldLabel>

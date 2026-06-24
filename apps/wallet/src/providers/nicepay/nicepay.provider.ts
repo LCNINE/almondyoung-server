@@ -18,6 +18,7 @@ import { NicepayAuthService } from './nicepay-auth.service';
 export class NicepayPaymentProvider implements PaymentProvider {
   readonly providerType = 'NICEPAY';
   readonly autoCapture = true;
+  readonly actionMode = 'interactive' as const;
 
   constructor(
     private readonly dbService: DbService<WalletSchema>,

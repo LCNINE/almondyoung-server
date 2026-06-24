@@ -18,6 +18,7 @@ import { PointsLedgerService, PointsOperationResult } from './points-ledger.serv
 export class PointsPaymentProvider implements PaymentProvider {
   readonly providerType = 'POINTS';
   readonly autoCapture = true;
+  readonly actionMode = 'interactive' as const;
 
   constructor(
     private readonly dbService: DbService<WalletSchema>,

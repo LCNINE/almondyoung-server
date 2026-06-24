@@ -43,6 +43,18 @@ export function setup(infra: IdpInfra) {
   const oauthJwtPrivateKey = new sst.Secret('OauthJwtPrivateKey');
   const oauthJwtPublicKey = new sst.Secret('OauthJwtPublicKey');
 
+  // ─── Observability ───
+  // user-service 는 별도 앱이라 lcnine-services 의 Alloy 로 보내면 auth→services 순환 의존이
+  // 생긴다 (현재는 services→auth 단방향). 그래서 lcnine-services 의 Next.js 앱들과 동일하게
+  // Grafana Cloud OTLP 게이트웨이로 직접 전송한다. 시크릿은 앱 단위 격리라 이 앱에서도 따로
+  // `sst secret set` 해야 한다. 토큰은 traces write-only 전용.
+  const grafanaCloudOtlpEndpoint = new sst.Secret(
+    'GrafanaCloudOtlpEndpoint',
+    'https://otlp-gateway-prod-ap-northeast-0.grafana.net/otlp',
+  );
+  const grafanaCloudWebOtlpInstanceId = new sst.Secret('GrafanaCloudWebOtlpInstanceId');
+  const grafanaCloudWebOtlpToken = new sst.Secret('GrafanaCloudWebOtlpToken');
+
   // ─── user-service 호스트는 user.<base>, auth-web은 auth.<base> ───
   const userServiceUrl = url('user');
   const authWebUrl = url('auth');
@@ -71,6 +83,11 @@ export function setup(infra: IdpInfra) {
       KAFKA_BROKERS: kafkaBrokers,
       KAFKA_CLIENT_ID_PREFIX: 'user-service',
       KAFKA_GROUP_ID: 'user-service',
+      // OTEL: Grafana Cloud OTLP 게이트웨이로 직접 전송 (Alloy 우회 — 위 주석 참고).
+      // OTEL_SERVICE_NAME 은 baseEnv 가 'user-service' 로 세팅함.
+      OTEL_EXPORTER_OTLP_ENDPOINT: grafanaCloudOtlpEndpoint.value,
+      GRAFANA_OTLP_INSTANCE_ID: grafanaCloudWebOtlpInstanceId.value,
+      GRAFANA_OTLP_TOKEN: grafanaCloudWebOtlpToken.value,
       AUTH_SECRET: authSecret.value,
       JWT_REFRESH_SECRET: jwtRefreshSecret.value,
       JWT_VERIFICATION_TOKEN_SECRET: jwtVerificationTokenSecret.value,

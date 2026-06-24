@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { LoggerModule } from 'nestjs-pino';
+import { loggerConfig } from '@app/shared/observability/logger.config';
 import { ConfigModule } from '@nestjs/config';
 import { SearchController } from './search.controller';
 import { ProductEventsConsumer } from './product-events.consumer';
@@ -13,6 +15,7 @@ import { SearchKeywordService } from './search-keyword.service';
 
 @Module({
   imports: [
+    LoggerModule.forRoot(loggerConfig),
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env', 'apps/search/.env'],

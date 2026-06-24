@@ -30,7 +30,9 @@
     "quantityMinError": "Quantity must be at least 1.",
     "quantityDialogTitle": "Enter quantity",
     "cancel": "Cancel",
-    "confirm": "Confirm"
+    "confirm": "Confirm",
+    "soldOutBadge": "Unavailable",
+    "soldOutHint": "This item is no longer available. Remove it to continue to checkout."
   },
   "summary": {
     "title": "Order summary",
@@ -42,7 +44,8 @@
     "selectItems": "Please select items to purchase.",
     "checkout": "Checkout",
     "checkoutWithCount": "Checkout ({count} items)",
-    "checkoutFailed": "Failed to proceed to checkout. Please try again."
+    "checkoutFailed": "Failed to proceed to checkout. Please try again.",
+    "itemsUnavailable": "‘{items}’ is currently unavailable. Please remove it from your cart and try again."
   },
   "mobileBar": {
     "discountTotal": "{amount} KRW off",

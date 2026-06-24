@@ -101,6 +101,25 @@ export function setup(infra: SharedInfra) {
   );
   const grafanaCloudTempoUsername = new sst.Secret('GrafanaCloudTempoUsername', '1523287');
 
+  // Next.js(서버리스) 앱은 VPC 밖 Lambda 라 내부 Alloy(CloudMap)에 닿지 못한다.
+  // → Grafana Cloud OTLP 게이트웨이로 직접 전송한다. 자격증명은 traces write-only 전용
+  //   Access Policy 토큰을 따로 발급해 Alloy 의 풀스코프 토큰과 분리한다 (blast radius 격리).
+  //   auth 헤더(Basic base64(instanceId:token))는 각 앱 instrumentation 에서 조립한다.
+  const grafanaCloudOtlpEndpoint = new sst.Secret(
+    'GrafanaCloudOtlpEndpoint',
+    'https://otlp-gateway-prod-ap-northeast-0.grafana.net/otlp',
+  );
+  const grafanaCloudWebOtlpInstanceId = new sst.Secret('GrafanaCloudWebOtlpInstanceId');
+  const grafanaCloudWebOtlpToken = new sst.Secret('GrafanaCloudWebOtlpToken');
+
+  // Loki(로그). Alloy 가 OTLP 로그를 받아 Grafana Cloud Loki 의 OTLP 엔드포인트로 보낸다.
+  // username 은 Loki 전용 instance ID(Tempo/Prometheus 와 다른 값) — Grafana Cloud 의
+  // Loki "OTLP" 설정 화면에 표시됨. 비밀번호는 기존 GRAFANA_CLOUD_API_TOKEN 재사용
+  // (Access Policy 에 logs:write scope 필요). endpoint 는 zone 을 모르므로 default 없이
+  // 강제 set — 미설정 시 deploy 실패로 잘못된 곳에 silent 전송되는 사고를 막는다.
+  const grafanaCloudLokiOtlpEndpoint = new sst.Secret('GrafanaCloudLokiOtlpEndpoint');
+  const grafanaCloudLokiUsername = new sst.Secret('GrafanaCloudLokiUsername');
+
   const alloy = new sst.aws.Service('Observability', {
     cluster,
     cpu: '0.25 vCPU',
@@ -118,6 +137,8 @@ export function setup(infra: SharedInfra) {
       GRAFANA_CLOUD_PROMETHEUS_USERNAME: grafanaCloudPrometheusUsername.value,
       GRAFANA_CLOUD_TEMPO_OTLP_ENDPOINT: grafanaCloudTempoOtlpEndpoint.value,
       GRAFANA_CLOUD_TEMPO_USERNAME: grafanaCloudTempoUsername.value,
+      GRAFANA_CLOUD_LOKI_OTLP_ENDPOINT: grafanaCloudLokiOtlpEndpoint.value,
+      GRAFANA_CLOUD_LOKI_USERNAME: grafanaCloudLokiUsername.value,
       CORE_METRICS_TARGET: $interpolate`${serviceDiscoveryName('Core')}:3000`,
     },
     transform: {
@@ -187,6 +208,10 @@ export function setup(infra: SharedInfra) {
       MEDUSA_API_KEY: medusaApiKey.value,
       MEDUSA_API_URL: url('medusa'),
       MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
+      // 상품/재고 동기화 직후 스토어프론트 on-demand 캐시 무효화 트리거.
+      // 시크릿은 Storefront 의 REVALIDATE_SECRET 과 동일 값(StorefrontRevalidateSecret).
+      STOREFRONT_REVALIDATE_URL: $interpolate`${url('www')}/api/revalidate`,
+      STOREFRONT_REVALIDATE_SECRET: storefrontRevalidateSecret.value,
       ALMOND_AUTH_URL: 'https://asia-northeast3-almond-auth.cloudfunctions.net/api',
       USER_SERVICE_URL: idpUserServiceUrl,
       PIM_API_URL: url('core'),
@@ -346,6 +371,9 @@ export function setup(infra: SharedInfra) {
       BANK_TRANSFER_BANK_NAME: bankTransferBankName.value,
       BANK_TRANSFER_ACCOUNT_NUMBER: bankTransferAccountNumber.value,
       BANK_TRANSFER_ACCOUNT_HOLDER: bankTransferAccountHolder.value,
+      // 무통장 입금 대기 만료 윈도우(시간). 미설정 시 코드 기본값 72h.
+      // 입금확인을 수동으로 하고 주말/연휴가 있어, 입금했는데 자동취소되는 사고를 막기 위해 7일(168h)로 설정.
+      WALLET_BANK_TRANSFER_DEPOSIT_WINDOW_HOURS: '168',
     },
   });
 
@@ -508,6 +536,11 @@ export function setup(infra: SharedInfra) {
       OAUTH_JWKS_URL: $interpolate`${idpUserServiceUrl}/.well-known/jwks.json`,
       NEXT_PUBLIC_STOREFRONT_URL: url('www'),
       NEXT_PUBLIC_STOREFRONT_DEFAULT_COUNTRY: 'kr',
+      // OTEL: Lambda(VPC 밖)라 Alloy 우회, Grafana Cloud OTLP 게이트웨이로 직접 전송.
+      OTEL_SERVICE_NAME: 'admin-web',
+      OTEL_EXPORTER_OTLP_ENDPOINT: grafanaCloudOtlpEndpoint.value,
+      GRAFANA_OTLP_INSTANCE_ID: grafanaCloudWebOtlpInstanceId.value,
+      GRAFANA_OTLP_TOKEN: grafanaCloudWebOtlpToken.value,
     },
   });
 
@@ -593,6 +626,11 @@ export function setup(infra: SharedInfra) {
       // 레거시 cafe24 마이페이지 redirect.
       NEXT_PUBLIC_LEGACY_ORDER_LIST_URL: 'https://almondyoung.com/myshop/order/list.html',
       NEXT_PUBLIC_LEGACY_MEMBERSHIP_HISTORY_URL: 'https://almondyoung.com/myshop/mileage/historyList.html',
+      // OTEL: Lambda(VPC 밖)라 Alloy 우회, Grafana Cloud OTLP 게이트웨이로 직접 전송.
+      OTEL_SERVICE_NAME: 'almondyoung-storefront',
+      OTEL_EXPORTER_OTLP_ENDPOINT: grafanaCloudOtlpEndpoint.value,
+      GRAFANA_OTLP_INSTANCE_ID: grafanaCloudWebOtlpInstanceId.value,
+      GRAFANA_OTLP_TOKEN: grafanaCloudWebOtlpToken.value,
     },
   });
 
@@ -617,6 +655,11 @@ export function setup(infra: SharedInfra) {
       OAUTH_JWKS_URL: $interpolate`${idpUserServiceUrl}/.well-known/jwks.json`,
       // 세션 쿠키는 host-only (admin-web 패턴). 다른 RP 와의 세션 공유는 IdP 레벨에서만
       // 일어나며 (auth-web hub 의 parent-domain idp 쿠키), wallet-web 은 자체 도메인에만 토큰을 박는다.
+      // OTEL: Lambda(VPC 밖)라 Alloy 우회, Grafana Cloud OTLP 게이트웨이로 직접 전송.
+      OTEL_SERVICE_NAME: 'wallet-web',
+      OTEL_EXPORTER_OTLP_ENDPOINT: grafanaCloudOtlpEndpoint.value,
+      GRAFANA_OTLP_INSTANCE_ID: grafanaCloudWebOtlpInstanceId.value,
+      GRAFANA_OTLP_TOKEN: grafanaCloudWebOtlpToken.value,
     },
   });
 }

@@ -29,6 +29,20 @@
       "when": 1780882763488,
       "tag": "20260608013923_add-payment-method-catalog-and-regions",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1781973454988,
+      "tag": "20260620163734_add-toss-action-expires-at",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1782095327159,
+      "tag": "20260622022847_add-awaiting-deposit-status",
+      "breakpoints": true
     }
   ]
 }

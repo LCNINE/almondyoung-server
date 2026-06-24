@@ -51,6 +51,15 @@ export const medusaCustomerApi = {
     return response.data;
   },
 
+  getCustomerByAlmondUserId: async (
+    almondUserId: string
+  ): Promise<AdminCustomerResponse> => {
+    const response = await client.get<AdminCustomerResponse>(
+      `${MEDUSA_BASE_URL}/admin/customers/by-almond-user/${encodeURIComponent(almondUserId)}`
+    );
+    return medusaCustomerApi.getCustomerById(response.data.customer.id);
+  },
+
   // 이메일로 고객 검색
   getCustomerByEmail: async (
     email: string

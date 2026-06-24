@@ -78,9 +78,18 @@
       }
     },
     "form": {
-      "title": { "create": "Add shipping address", "edit": "Edit shipping address" },
-      "submit": { "create": "Save", "edit": "Update" },
-      "submitting": { "create": "Saving...", "edit": "Updating..." },
+      "title": {
+        "create": "Add shipping address",
+        "edit": "Edit shipping address"
+      },
+      "submit": {
+        "create": "Save",
+        "edit": "Update"
+      },
+      "submitting": {
+        "create": "Saving...",
+        "edit": "Updating..."
+      },
       "cancel": "Cancel",
       "search": "Search address",
       "fields": {
@@ -106,7 +115,10 @@
         "city": "Please enter a city",
         "province": "Please enter a state / province"
       },
-      "saveAsDefault": { "create": "Save as default address", "edit": "Set as default address" },
+      "saveAsDefault": {
+        "create": "Save as default address",
+        "edit": "Set as default address"
+      },
       "toasts": {
         "created": "Shipping address registered.",
         "createdDefault": "Registered as your default shipping address.",
@@ -248,6 +260,12 @@
       "noItems": "There are no items to pay for. Go back to the cart and select items.",
       "paymentInitFailed": "Failed to initialize the payment session.",
       "unknownError": "An unknown error occurred"
+    },
+    "unavailableItems": {
+      "title": "Some items can't be ordered",
+      "description": "The items below are no longer available, so checkout can't continue. Please remove them from your cart and try again.",
+      "fallbackName": "Some items",
+      "goToCart": "Go to cart"
     }
   },
   "membership": {

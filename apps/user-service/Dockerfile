@@ -8,13 +8,13 @@ RUN apk add --no-cache postgresql-client git openssh-client
 FROM base AS deps
 COPY package*.json ./
 COPY packages/hms-api-wrapper/ ./packages/hms-api-wrapper/
-RUN npm ci
+RUN npm ci --foreground-scripts
 
 # === 프로덕션 의존성 설치 단계 ===
 FROM base AS deps-prod
 COPY package*.json ./
 COPY packages/hms-api-wrapper/ ./packages/hms-api-wrapper/
-RUN npm ci --omit=dev && npm cache clean --force
+RUN npm ci --omit=dev --foreground-scripts && npm cache clean --force
 
 # === 빌드 단계 ===
 FROM base AS builder
