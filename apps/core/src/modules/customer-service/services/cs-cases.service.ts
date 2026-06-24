@@ -1,11 +1,20 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { BadRequestError, NotFoundError } from '@app/shared';
-import { desc, eq, type InferInsertModel } from 'drizzle-orm';
+import { and, desc, eq, inArray, or, type InferInsertModel } from 'drizzle-orm';
 import { type MergedSchema } from '../../../platform/database/merged-schema';
 import { wmsTables } from '../../inventory/schema/inventory.schema';
 import { BusinessLinkReferenceDto, CreateBusinessLinkDto } from '../../sales-order/dto/create-business-link.dto';
-import { csCaseEvents, csCases, type CsCase, type CsCaseEventType } from '../schema/customer-service.schema';
+import {
+  csCaseCommentAttachments,
+  csCaseCommentMentions,
+  csCaseComments,
+  csCaseEvents,
+  csCaseLabels,
+  csCases,
+  type CsCase,
+  type CsCaseEventType,
+} from '../schema/customer-service.schema';
 import { CreateCsCaseDto } from '../dto/create-cs-case.dto';
 
 type Db = DbService<MergedSchema>['db'];
@@ -81,7 +90,36 @@ export class CsCasesService {
   async getOne(id: string, tx?: Tx) {
     return this.inTx(async (trx) => {
       const csCase = await this.loadCaseOrThrow(id, trx);
-      return this.toCaseResponse(csCase, [], []);
+
+      const comments = await trx.select().from(csCaseComments).where(eq(csCaseComments.csCaseId, id));
+      const commentIds = comments.map((c) => c.id);
+      const mentions = commentIds.length
+        ? await trx.select().from(csCaseCommentMentions).where(inArray(csCaseCommentMentions.commentId, commentIds))
+        : [];
+      const attachments = commentIds.length
+        ? await trx
+            .select()
+            .from(csCaseCommentAttachments)
+            .where(inArray(csCaseCommentAttachments.commentId, commentIds))
+        : [];
+      const events = await trx.select().from(csCaseEvents).where(eq(csCaseEvents.csCaseId, id));
+      const links = await trx
+        .select()
+        .from(wmsTables.businessLinks)
+        .where(
+          or(
+            and(eq(wmsTables.businessLinks.sourceType, CS_CASE_REF_TYPE), eq(wmsTables.businessLinks.sourceId, id)),
+            and(eq(wmsTables.businessLinks.targetType, CS_CASE_REF_TYPE), eq(wmsTables.businessLinks.targetId, id)),
+          ),
+        );
+      const caseLabels = await trx.select().from(csCaseLabels).where(eq(csCaseLabels.csCaseId, id));
+
+      const timeline = this.buildTimeline(id, comments, mentions, attachments, events, links);
+      return this.toCaseResponse(
+        csCase,
+        caseLabels.map((l) => l.labelId),
+        timeline,
+      );
     }, tx);
   }
 
@@ -212,6 +250,57 @@ export class CsCasesService {
 
   private referencesCsCase(ref: BusinessLinkReference, csCaseId: string): boolean {
     return ref.type === CS_CASE_REF_TYPE && ref.id === csCaseId;
+  }
+
+  private buildTimeline(
+    csCaseId: string,
+    comments: Array<Record<string, any>>,
+    mentions: Array<Record<string, any>>,
+    attachments: Array<Record<string, any>>,
+    events: Array<Record<string, any>>,
+    links: Array<Record<string, any>>,
+  ) {
+    const commentItems = comments.map((c) => ({
+      kind: 'comment' as const,
+      id: c.id,
+      occurredAt: c.createdAt as Date,
+      actorId: (c.authorId ?? null) as string | null,
+      body: c.deletedAt ? null : (c.body as string),
+      deleted: Boolean(c.deletedAt),
+      edited: Boolean(c.editedAt),
+      mentions: mentions.filter((m) => m.commentId === c.id).map((m) => m.mentionedUserId as string),
+      attachmentFileIds: attachments.filter((a) => a.commentId === c.id).map((a) => a.fileId as string),
+    }));
+
+    const eventItems = events.map((e) => ({
+      kind: 'event' as const,
+      id: e.id,
+      occurredAt: e.occurredAt as Date,
+      actorId: (e.actorId ?? null) as string | null,
+      eventType: e.type as CsCaseEventType,
+      payload: (e.payload ?? {}) as Record<string, unknown>,
+    }));
+
+    const linkItems = links.map((link) => {
+      const outbound = link.sourceType === CS_CASE_REF_TYPE && link.sourceId === csCaseId;
+      return {
+        kind: 'business_link' as const,
+        id: link.id,
+        occurredAt: link.occurredAt as Date,
+        actorId: null,
+        payload: {
+          relationName: link.relationName,
+          direction: outbound ? 'outbound' : 'inbound',
+          linkedEntity: outbound
+            ? { type: link.targetType, id: link.targetId, externalRef: link.targetExternalRef }
+            : { type: link.sourceType, id: link.sourceId, externalRef: link.sourceExternalRef },
+        } as Record<string, unknown>,
+      };
+    });
+
+    return [...commentItems, ...eventItems, ...linkItems].sort(
+      (a, b) => a.occurredAt.getTime() - b.occurredAt.getTime(),
+    );
   }
 
   private toCaseResponse(csCase: CsCase, labelIds: string[], timeline: unknown[]) {
