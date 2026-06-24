@@ -1,10 +1,20 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsOptional, IsString, IsUUID, MaxLength, ValidateNested } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+  ValidateNested,
+} from 'class-validator';
 
 export class CsCommentAttachmentInput {
   @ApiProperty({ description: 'file-service 파일 ID' })
   @IsString()
+  @IsNotEmpty()
   @MaxLength(255)
   fileId: string;
 
