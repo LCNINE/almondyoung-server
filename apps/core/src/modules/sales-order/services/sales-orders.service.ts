@@ -225,6 +225,8 @@ export class SalesOrdersService {
             quantity: l.quantity,
             unitPrice: l.unitPrice ?? null,
             totalPrice: l.totalPrice ?? null,
+            fulfillmentKind: l.fulfillmentKind ?? null,
+            requiresShipping: l.requiresShipping ?? null,
             status: 'pending',
             suggestedQuantity: acceptanceByPolicy ? l.quantity : null,
             unavailableSkuIds: null,
@@ -2108,6 +2110,8 @@ export class SalesOrdersService {
       quantity: item.quantity,
       unitPrice: item.unitPrice,
       totalPrice: item.totalPrice,
+      fulfillmentKind: item.fulfillmentKind,
+      requiresShipping: item.requiresShipping,
     }));
   }
 }
