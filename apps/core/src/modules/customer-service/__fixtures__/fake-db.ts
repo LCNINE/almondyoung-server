@@ -77,9 +77,20 @@ export function makeFakeDb(seed: Map<unknown, Row[]> = new Map()) {
     insert: (table: unknown) => ({
       values: (values: Row | Row[]) => {
         const inserted = insertRows(table, values);
+        const removeInsertedRows = () => {
+          const rows = state.get(table);
+          for (const row of inserted) {
+            const index = rows.indexOf(row);
+            if (index !== -1) rows.splice(index, 1);
+          }
+        };
+
         return {
           returning: () => Promise.resolve(inserted),
-          onConflictDoNothing: () => ({ returning: () => Promise.resolve([]) }),
+          onConflictDoNothing: () => {
+            removeInsertedRows();
+            return { returning: () => Promise.resolve([]) };
+          },
         };
       },
     }),
