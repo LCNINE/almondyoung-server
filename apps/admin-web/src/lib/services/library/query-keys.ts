@@ -8,4 +8,7 @@ export const libraryQueryKeys = {
     [...libraryQueryKeys.digitalAssets(), 'file-versions', id] as const,
   variantAssets: (variantId: string) =>
     [...libraryQueryKeys.all, 'variant-assets', variantId] as const,
+  ownerships: () => [...libraryQueryKeys.all, 'ownerships'] as const,
+  ownershipsList: (query: unknown) =>
+    [...libraryQueryKeys.ownerships(), 'list', query] as const,
 };

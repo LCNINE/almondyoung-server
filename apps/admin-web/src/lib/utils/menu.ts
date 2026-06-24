@@ -247,6 +247,11 @@ export const mainMenus: MainMenu[] = [
         title: '디지털 자산',
         path: '/mall/digital-assets',
       },
+      {
+        id: 'digital-ownerships',
+        title: '디지털 사용권',
+        path: '/mall/ownerships',
+      },
     ],
   },
   {
