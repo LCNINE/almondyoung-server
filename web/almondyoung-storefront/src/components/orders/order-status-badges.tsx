@@ -98,31 +98,8 @@ export const CANCEL_UNAVAILABLE_MESSAGES: Record<string, string> = {
 }
 
 // ── Core 상태 → 고객 표시 텍스트 변환 ──────────────────────────────────
-
-const FO_DISPLAY_LABELS: Partial<Record<StoreFulfillmentStatus, string>> = {
-  picking:   '출고 준비 중',
-  packed:    '배송 예정',
-  shipped:   '배송 중',
-  delivered: '배송 완료',
-}
-
-/**
- * Core action projection에서 고객 화면 주 상태 텍스트를 도출한다.
- * FO 상태 > paymentStatus 분기 > SO 상태 순으로 우선 적용.
- */
-export function getCoreDisplayStatus(actions: StoreOrderActionsResponse): string {
-  // 출고 상태가 더 구체적이면 우선 표시
-  const foLabel = FO_DISPLAY_LABELS[actions.fulfillmentStatus]
-  if (foLabel) return foLabel
-
-  // pending 주문은 결제 수단별로 문구 분기
-  // paymentStatus가 없으면 카드결제 등 이미 확인된 결제 → "결제 완료"
-  if (actions.orderStatus === "pending") {
-    return actions.paymentStatus === "awaiting_payment" ? "입금 대기" : "결제 완료"
-  }
-
-  return ORDER_STATUS_MAP[actions.orderStatus]?.label ?? actions.orderStatus
-}
+// 실제 로직은 순수 모듈(order-status-display.ts)에 있고, 기존 import 경로 호환을 위해 재export.
+export { getCoreDisplayStatus } from "./order-status-display"
 
 // ── 복합 badge 컴포넌트 ───────────────────────────────────────────────
 

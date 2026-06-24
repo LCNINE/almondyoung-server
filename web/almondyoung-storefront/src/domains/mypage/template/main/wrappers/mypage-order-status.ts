@@ -1,5 +1,11 @@
 import type { HttpTypes } from "@medusajs/types"
+import { getCoreDisplayStatus } from "@/components/orders/order-status-display"
+import {
+  getOrderActionsByMedusaId,
+  type StoreOrderActionsResponse,
+} from "@/lib/api/orders/store-orders"
 import type { OrderStatus } from "../../../types/mypage-types"
+import { withMypageTimeout } from "./mypage-timeout"
 
 const getOrderStatusLabel = (order: HttpTypes.StoreOrder): string => {
   if (order.status === "canceled") return "취소됨"
@@ -23,4 +29,22 @@ export const resolveMypageShippingStatus = (order: HttpTypes.StoreOrder) => {
   }
 
   return null
+}
+
+/**
+ * 마이페이지 홈에서 표시할 주문의 실제 상태 라벨을 계산한다.
+ * 주문내역(order-list)과 동일하게 Core(WMS) projection 기반 getCoreDisplayStatus 를 우선 사용하고,
+ * Core 조회 실패/타임아웃 시 Medusa 기반 fallback 라벨을 사용한다.
+ * (Core 를 연동하지 않으면 모든 주문이 fulfillment_status=not_fulfilled 라 '상품 준비 중'으로만 보였다.)
+ */
+export async function resolveMypageDisplayLabel(
+  order: HttpTypes.StoreOrder,
+  fallbackLabel: string
+): Promise<string> {
+  const actions = await withMypageTimeout<StoreOrderActionsResponse | null>(
+    getOrderActionsByMedusaId(order.id),
+    null,
+    3000
+  )
+  return actions ? getCoreDisplayStatus(actions) : fallbackLabel
 }

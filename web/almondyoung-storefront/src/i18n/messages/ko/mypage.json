@@ -439,7 +439,9 @@
       "cancelSuccessPending": "주문이 취소되었습니다. 환불 처리 중입니다.",
       "cancelSuccessFailed": "주문은 취소되었지만 환불에 실패했습니다. 고객센터에서 확인해 주세요.",
       "cancelSuccessManual": "주문은 취소되었습니다. 환불은 고객센터에서 확인 후 처리됩니다.",
-      "cancelError": "취소 처리 중 오류가 발생했습니다."
+      "cancelError": "취소 처리 중 오류가 발생했습니다.",
+      "contactCs": "고객센터 문의",
+      "bankTransferCancelGuide": "무통장입금 주문 취소는 고객센터로 문의해 주세요."
     },
     "delivery": {
       "paid": "결제완료",

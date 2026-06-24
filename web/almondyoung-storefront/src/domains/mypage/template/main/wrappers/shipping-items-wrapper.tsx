@@ -2,7 +2,10 @@ import { getOrders } from "@lib/api/medusa/orders"
 import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
 import { ShippingItemsSection } from "../../../components/desktop/shipping-items-section"
 import type { ShippingOrder } from "../../../types/mypage-types"
-import { resolveMypageShippingStatus } from "./mypage-order-status"
+import {
+  resolveMypageDisplayLabel,
+  resolveMypageShippingStatus,
+} from "./mypage-order-status"
 import { withMypageTimeout } from "./mypage-timeout"
 
 /**
@@ -11,15 +14,22 @@ import { withMypageTimeout } from "./mypage-timeout"
 export async function ShippingItemsWrapper() {
   const ordersData = await withMypageTimeout(getOrders({ limit: 10 }), null)
 
-  const shippingOrders: ShippingOrder[] = (ordersData?.orders || [])
+  // 1) 표시 대상 주문 선별(기존 로직 유지) → 2) 선별된 주문만 Core 상태 조회해 실제 라벨 계산
+  const candidates = (ordersData?.orders || [])
     .filter((order: any) => order.status !== "canceled")
-    .map((order: any) => {
-      const shippingStatus = resolveMypageShippingStatus(order)
-      if (!shippingStatus) {
-        return null
-      }
+    .map((order: any) => ({
+      order,
+      shippingStatus: resolveMypageShippingStatus(order),
+    }))
+    .filter((c: any) => c.shippingStatus !== null)
+    .slice(0, 3)
 
-      let deliveryInfo = ""
+  const shippingOrders: ShippingOrder[] = await Promise.all(
+    candidates.map(async ({ order, shippingStatus }: any) => {
+      const statusLabel = await resolveMypageDisplayLabel(
+        order,
+        shippingStatus.statusLabel
+      )
 
       const firstItem = order.items?.[0]
       const productName =
@@ -38,9 +48,9 @@ export async function ShippingItemsWrapper() {
 
       return {
         orderId: order.id,
-        status: shippingStatus.statusLabel,
+        status: statusLabel,
         paymentStatus: order.payment_status ?? "unknown",
-        deliveryInfo,
+        deliveryInfo: "",
         shippingNote: "",
         productName,
         productImage: getThumbnailUrl(productImage),
@@ -57,10 +67,12 @@ export async function ShippingItemsWrapper() {
             orderLineId: item.id,
           })),
         variantId: firstItem?.variant_id ?? "",
+        bankTransferStatus:
+          ((order.metadata as Record<string, unknown> | null)
+            ?.bank_transfer_status as string | undefined) ?? undefined,
       }
     })
-    .filter((order): order is ShippingOrder => order !== null)
-    .slice(0, 3)
+  )
 
   return <ShippingItemsSection initialOrders={shippingOrders} />
 }

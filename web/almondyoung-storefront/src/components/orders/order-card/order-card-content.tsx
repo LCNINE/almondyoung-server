@@ -27,6 +27,9 @@ import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
 
+/** 무통장입금 주문 취소 안내용 고객센터 카카오채널 링크 */
+const KAKAO_CS_URL = "https://pf.kakao.com/_xaxgxazs"
+
 interface OrderCardContentProps {
   orderId: string
   status: string
@@ -48,6 +51,12 @@ interface OrderCardContentProps {
   availableActions?: StoreOrderAction[]
   cancelUnavailableReason?: StoreCancelUnavailableReason
   channelInfo?: { channel: string; cancelUrl?: string; returnUrl?: string }
+  /**
+   * Medusa order.metadata.bank_transfer_status (#439 마커).
+   * 'awaiting_deposit' = 입금확인중(미결제), 'confirmed' = 입금확인 완료.
+   * 무통장 주문 식별 및 버튼 노출 제어에 사용.
+   */
+  bankTransferStatus?: string
 }
 
 export default function OrderCardContent({
@@ -68,6 +77,7 @@ export default function OrderCardContent({
   availableActions: availableActionsProp,
   cancelUnavailableReason: cancelUnavailableReasonProp,
   channelInfo: channelInfoProp,
+  bankTransferStatus,
 }: OrderCardContentProps) {
   const availableActions = coreActions?.availableActions ?? availableActionsProp
   const cancelUnavailableReason = coreActions?.cancelUnavailableReason ?? cancelUnavailableReasonProp
@@ -84,7 +94,14 @@ export default function OrderCardContent({
   const [cancelReasonCode, setCancelReasonCode] = useState<CancelReasonCode>("CHANGE_OF_MIND")
   const [cancelReasonDetail, setCancelReasonDetail] = useState("")
 
-  const canConfirmPurchase = paymentStatus === "authorized" && !isConfirmed
+  // 무통장입금 주문 식별 (#439 마커)
+  const isBankTransferConfirmed = bankTransferStatus === "confirmed"
+  const isBankTransferAwaitingDeposit = bankTransferStatus === "awaiting_deposit"
+
+  // 입금확인중(미결제) 무통장 주문은 결제가 authorized 로 매핑되지만 아직 입금 전이므로
+  // 구매확정 버튼을 노출하지 않는다.
+  const canConfirmPurchase =
+    paymentStatus === "authorized" && !isConfirmed && !isBankTransferAwaitingDeposit
   // Core projection 기준 주 상태 텍스트. Core 조회 실패 시 Medusa status로 fallback.
   const displayStatus = coreActions ? getCoreDisplayStatus(coreActions) : status
 
@@ -94,6 +111,11 @@ export default function OrderCardContent({
   const canReturn = availableActions?.includes("return") ?? false
   const canExchange = availableActions?.includes("exchange") ?? false
   const cancelTooltip = cancelUnavailableReason ? CANCEL_UNAVAILABLE_MESSAGES[cancelUnavailableReason] : undefined
+
+  // 입금확인 완료된 무통장 주문은 셀프 취소 시 자동환불이 되지 않아 관리자가 인지하기 어렵다.
+  // 셀프 취소 버튼을 숨기고 고객센터(카카오채널) 문의로 안내한다.
+  const showSelfCancel = canCancel && !isBankTransferConfirmed
+  const showBankTransferCancelGuide = canCancel && isBankTransferConfirmed
 
   const handleConfirmPurchase = () => {
     setShowConfirmPurchaseDialog(true)
@@ -170,6 +192,12 @@ export default function OrderCardContent({
                 {/* 취소 불가 사유 안내 */}
                 {cancelUnavailableReason && !canCancel && cancelTooltip && (
                   <p className="text-[10px] text-muted-foreground">{cancelTooltip}</p>
+                )}
+                {/* 무통장입금 주문 취소 안내 */}
+                {showBankTransferCancelGuide && (
+                  <p className="text-[10px] text-muted-foreground">
+                    무통장입금 주문 취소는 고객센터로 문의해 주세요.
+                  </p>
                 )}
               </div>
             </div>
@@ -278,13 +306,26 @@ export default function OrderCardContent({
                 </LocalizedClientLink>
               </DropdownMenuItem>
             )}
-            {canCancel && (
+            {showSelfCancel && (
               <DropdownMenuItem
                 className="flex cursor-pointer items-center gap-2 text-red-600"
                 onClick={() => setShowCancelDialog(true)}
               >
                 <RotateCcw className="h-4 w-4" />
                 주문 취소
+              </DropdownMenuItem>
+            )}
+            {showBankTransferCancelGuide && (
+              <DropdownMenuItem asChild>
+                <a
+                  href={KAKAO_CS_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex cursor-pointer items-center gap-2"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  취소 문의 (고객센터)
+                </a>
               </DropdownMenuItem>
             )}
             {!canCancel && channelInfo?.cancelUrl && (
@@ -332,13 +373,19 @@ export default function OrderCardContent({
             </CustomButton>
           </LocalizedClientLink>
         )}
-        {canCancel ? (
+        {showSelfCancel ? (
           <CustomButton
             variant="outline" color="secondary" size="md" fullWidth
             onClick={() => setShowCancelDialog(true)}
           >
             주문취소
           </CustomButton>
+        ) : showBankTransferCancelGuide ? (
+          <a href={KAKAO_CS_URL} target="_blank" rel="noopener noreferrer">
+            <CustomButton variant="outline" color="secondary" size="md" fullWidth>
+              고객센터 문의
+            </CustomButton>
+          </a>
         ) : cancelUnavailableReason && channelInfo?.cancelUrl ? (
           <a href={channelInfo.cancelUrl} target="_blank" rel="noopener noreferrer">
             <CustomButton variant="outline" color="secondary" size="md" fullWidth>
