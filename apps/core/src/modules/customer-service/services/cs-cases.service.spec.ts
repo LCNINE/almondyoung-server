@@ -1,4 +1,12 @@
-import { csCaseEvents, csCases } from '../schema/customer-service.schema';
+import {
+  csCaseCommentAttachments,
+  csCaseCommentMentions,
+  csCaseComments,
+  csCaseEvents,
+  csCaseLabels,
+  csCases,
+} from '../schema/customer-service.schema';
+import { wmsTables } from '../../inventory/schema/inventory.schema';
 import { makeFakeDb } from '../__fixtures__/fake-db';
 import { CsCasesService } from './cs-cases.service';
 
@@ -103,5 +111,73 @@ describe('CsCasesService.assign', () => {
     const created = await service.create({ subject: 'x', assignedTo: 'agent-9' } as any, 'op-1');
 
     await expect(service.assign(created.id, 'agent-9', 'op-1')).rejects.toThrow('already assigned');
+  });
+});
+
+describe('CsCasesService.getOne timeline', () => {
+  it('merges comments, events, and business links ordered by occurredAt, with labelIds', async () => {
+    const seed = new Map<unknown, any[]>();
+    const caseId = 'aaaaaaaa-0000-4000-8000-000000000001';
+    seed.set(csCases, [
+      {
+        id: caseId,
+        status: 'open',
+        priority: 'normal',
+        subject: 'x',
+        metadata: {},
+        createdAt: new Date('2026-06-20T00:00:00Z'),
+        updatedAt: new Date('2026-06-20T00:00:00Z'),
+      },
+    ]);
+    seed.set(csCaseComments, [
+      {
+        id: 'c1',
+        csCaseId: caseId,
+        authorId: 'op-1',
+        body: '카톡으로 이렇게 답함',
+        editedAt: null,
+        deletedAt: null,
+        createdAt: new Date('2026-06-20T00:02:00Z'),
+      },
+    ]);
+    seed.set(csCaseCommentMentions, [{ id: 'm1', commentId: 'c1', mentionedUserId: 'agent-2' }]);
+    seed.set(csCaseCommentAttachments, [{ id: 'a1', commentId: 'c1', csCaseId: caseId, fileId: 'file_123' }]);
+    seed.set(csCaseEvents, [
+      {
+        id: 'e1',
+        csCaseId: caseId,
+        type: 'status_changed',
+        actorId: 'op-1',
+        payload: { from: 'open', to: 'pending' },
+        occurredAt: new Date('2026-06-20T00:01:00Z'),
+      },
+    ]);
+    seed.set(wmsTables.businessLinks, [
+      {
+        id: 'l1',
+        sourceType: 'cs_case',
+        sourceId: caseId,
+        sourceExternalRef: null,
+        targetType: 'sales_order',
+        targetId: 'so-1',
+        targetExternalRef: null,
+        relationName: 'opened_for_sales_order',
+        metadata: {},
+        occurredAt: new Date('2026-06-20T00:03:00Z'),
+        createdAt: new Date('2026-06-20T00:03:00Z'),
+      },
+    ]);
+    seed.set(csCaseLabels, [{ id: 'cl1', csCaseId: caseId, labelId: 'label-1' }]);
+
+    const { db } = makeFakeDb(seed);
+    const service = new CsCasesService(db as any);
+
+    const result = await service.getOne(caseId);
+
+    expect(result.labelIds).toEqual(['label-1']);
+    expect(result.timeline.map((t: any) => t.kind)).toEqual(['event', 'comment', 'business_link']);
+    const comment = result.timeline.find((t: any) => t.kind === 'comment') as any;
+    expect(comment.mentions).toEqual(['agent-2']);
+    expect(comment.attachmentFileIds).toEqual(['file_123']);
   });
 });
