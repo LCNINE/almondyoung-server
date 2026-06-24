@@ -38,7 +38,9 @@ export class VariantAssetLinkService {
     return tx ? fn(tx) : this.db.transaction(fn);
   }
 
-  async listAssetsForVariant(variantId: string, tx?: Tx): Promise<DigitalAssetResponseDto[]> {
+  // tx 는 AnyTx 로 받아 다른 BC(catalog publish 등)의 트랜잭션도 그대로 전달할 수 있게 한다.
+  // (동일 DB 내 테이블이라 런타임 안전; cloneLinksForVariant 와 동일한 cross-module tx 컨벤션)
+  async listAssetsForVariant(variantId: string, tx?: AnyTx): Promise<DigitalAssetResponseDto[]> {
     return this.inTx(async (trx) => {
       const rows = await trx
         .select()
@@ -70,7 +72,7 @@ export class VariantAssetLinkService {
           updatedAt: a.updatedAt,
         };
       });
-    }, tx);
+    }, tx as Tx | undefined);
   }
 
   /**

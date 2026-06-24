@@ -259,6 +259,66 @@ describe('ProductVersionsService productCode publish validation', () => {
   });
 });
 
+describe('ProductVersionsService digital asset-link publish guard', () => {
+  function makeService(variantAssetLinkService: any) {
+    return new ProductVersionsService(
+      {} as any,
+      { publishEvent: jest.fn() } as any,
+      { saveEvent: jest.fn() } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      variantAssetLinkService,
+      {} as any,
+    );
+  }
+
+  const physicalVersion = { id: 'v1', masterId: 'm1', fulfillmentKind: 'physical' } as any;
+  const digitalVersion = { id: 'v2', masterId: 'm2', fulfillmentKind: 'digital' } as any;
+
+  it('물리 상품은 asset link 와 무관하게 publish 검증을 통과한다', async () => {
+    const link = { listAssetsForVariant: jest.fn() };
+    const service = makeService(link);
+
+    await expect((service as any)._validateDigitalAssetLinks(physicalVersion, {} as any)).resolves.toBeUndefined();
+    expect(link.listAssetsForVariant).not.toHaveBeenCalled();
+  });
+
+  it('디지털 상품의 모든 변종에 다운로드 가능한 자산(파일버전 보유)이 있으면 통과한다', async () => {
+    const link = { listAssetsForVariant: jest.fn().mockResolvedValue([{ id: 'a1', currentFileVersionId: 'fv1' }]) };
+    const service = makeService(link);
+    (service as any).getVersionVariants = jest.fn().mockResolvedValue(['var1', 'var2']);
+
+    await expect((service as any)._validateDigitalAssetLinks(digitalVersion, {} as any)).resolves.toBeUndefined();
+  });
+
+  it('디지털 상품에 asset link 없는 변종이 있으면 publish 를 차단한다', async () => {
+    const link = {
+      listAssetsForVariant: jest
+        .fn()
+        .mockImplementation((variantId: string) =>
+          Promise.resolve(variantId === 'var1' ? [{ id: 'a1', currentFileVersionId: 'fv1' }] : []),
+        ),
+    };
+    const service = makeService(link);
+    (service as any).getVersionVariants = jest.fn().mockResolvedValue(['var1', 'var2']);
+
+    await expect((service as any)._validateDigitalAssetLinks(digitalVersion, {} as any)).rejects.toThrow(
+      'asset link 없는 변종',
+    );
+  });
+
+  it('asset link 는 있으나 파일 버전이 없으면(다운로드 불가) publish 를 차단한다', async () => {
+    const link = { listAssetsForVariant: jest.fn().mockResolvedValue([{ id: 'a1', currentFileVersionId: null }]) };
+    const service = makeService(link);
+    (service as any).getVersionVariants = jest.fn().mockResolvedValue(['var1']);
+
+    await expect((service as any)._validateDigitalAssetLinks(digitalVersion, {} as any)).rejects.toThrow(
+      '파일 버전이 없어 다운로드 불가',
+    );
+  });
+});
+
 describe('ProductVersionsService deleteDraftVersion purchase constraint cleanup', () => {
   type VersionRow = {
     id: string;
