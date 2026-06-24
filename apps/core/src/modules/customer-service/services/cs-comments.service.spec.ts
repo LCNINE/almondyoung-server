@@ -1,3 +1,4 @@
+import { ForbiddenError } from '@app/shared';
 import {
   csCaseCommentAttachments,
   csCaseCommentMentions,
@@ -65,5 +66,42 @@ describe('CsCommentsService.addComment', () => {
     const { db } = makeFakeDb();
     const service = new CsCommentsService(db as any);
     await expect(service.addComment(caseId, { body: 'hi' }, authorId)).rejects.toThrow('not found');
+  });
+});
+
+describe('CsCommentsService edit/delete', () => {
+  const caseId = 'aaaaaaaa-0000-4000-8000-000000000001';
+  const authorId = 'bbbbbbbb-0000-4000-8000-000000000001';
+  const otherAuthorId = 'cccccccc-0000-4000-8000-000000000001';
+
+  it('lets the author edit and sets editedAt', async () => {
+    const { db, state } = makeFakeDb(seedCase(caseId));
+    const service = new CsCommentsService(db as any);
+    const created = await service.addComment(caseId, { body: 'first' }, authorId);
+
+    const edited = await service.editComment(created.id, { body: 'second' }, authorId);
+
+    expect(edited.body).toBe('second');
+    expect(state.get(csCaseComments)[0].editedAt).not.toBeNull();
+  });
+
+  it('blocks editing someone else’s comment', async () => {
+    const { db } = makeFakeDb(seedCase(caseId));
+    const service = new CsCommentsService(db as any);
+    const created = await service.addComment(caseId, { body: 'first' }, authorId);
+
+    await expect(service.editComment(created.id, { body: 'x' }, otherAuthorId)).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it('soft-deletes (author only) keeping the row', async () => {
+    const { db, state } = makeFakeDb(seedCase(caseId));
+    const service = new CsCommentsService(db as any);
+    const created = await service.addComment(caseId, { body: 'first' }, authorId);
+
+    await service.deleteComment(created.id, authorId);
+
+    expect(state.get(csCaseComments)).toHaveLength(1);
+    expect(state.get(csCaseComments)[0].deletedAt).not.toBeNull();
+    expect(state.get(csCaseComments)[0].deletedBy).toBe(authorId);
   });
 });
