@@ -3,7 +3,7 @@ import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 import { IInventoryService } from '@medusajs/framework/types';
 
 /**
- * GET /admin/customers/:customerId/cart
+ * GET /admin/customers/:id/cart
  *
  * 회원조회 창의 "장바구니 정보" 탭용. 고객의 최신 active cart(완료 안 된 것) 1개의
  * 라인 아이템을 재고 정보와 함께 반환한다.
@@ -15,7 +15,7 @@ import { IInventoryService } from '@medusajs/framework/types';
  * 재고 미관리(manage_inventory=false) variant 는 재고 개념이 없어 null 로 둔다.
  */
 export async function GET(req: MedusaRequest, res: MedusaResponse) {
-  const { customerId } = req.params;
+  const { id: customerId } = req.params;
 
   if (!customerId) {
     return res.status(400).json({ message: 'customerId is required' });
