@@ -2,25 +2,40 @@
  * 셀메이트에 입력한 주문들을 core sales_orders 에서 'shipped'(출고완료)로 일괄 변경.
  * 물류 미연동 기간 동안 고객 셀프취소를 막기 위한 수동 운영 스크립트.
  *
+ * 입력 파일: 셀메이트 주문 CSV 또는 XLSX (둘 다 지원). 주문번호 컬럼(YYYYMMDD-{displayId}) 사용.
+ *
  * 사용법 (deployments/lcnine/services 에서):
  *   # dry-run (대상만 확인)
- *   npx sst shell --stage live -- npx tsx ../../../scripts/sellmate/mark-shipped-from-csv.ts <csv경로>
+ *   npx sst shell --stage live -- npx tsx ../../../scripts/sellmate/mark-shipped-from-csv.ts <csv|xlsx 경로>
  *   # 실제 적용
- *   npx sst shell --stage live -- npx tsx ../../../scripts/sellmate/mark-shipped-from-csv.ts <csv경로> --apply
+ *   npx sst shell --stage live -- npx tsx ../../../scripts/sellmate/mark-shipped-from-csv.ts <csv|xlsx 경로> --apply
  *
- * CSV 5번째 컬럼 주문번호(YYYYMMDD-{displayId}) 의 displayId 를 medusa order.display_id 로 매핑,
+ * 주문번호(YYYYMMDD-{displayId}) 의 displayId 를 medusa order.display_id 로 매핑,
  * medusa order.id = core sales_orders.channel_order_id 로 연결하여 status='pending' 인 것만 'shipped' 로 변경.
  * (취소/이미출고 건은 status 조건으로 자동 제외)
  */
 import postgres from 'postgres';
 import { Resource } from 'sst';
 import { readFileSync } from 'fs';
+import { execFileSync } from 'child_process';
 
 const csvPath = process.argv[2];
 const APPLY = process.argv.includes('--apply');
 if (!csvPath) {
-  console.error('CSV 경로를 인자로 넘겨주세요.');
+  console.error('주문 파일(CSV 또는 XLSX) 경로를 인자로 넘겨주세요.');
   process.exit(1);
+}
+
+/** CSV/TXT 는 그대로, XLSX 는 압축 해제하여 텍스트(주문번호 포함)를 반환 */
+function readOrderFileText(path: string): string {
+  if (/\.xlsx$/i.test(path)) {
+    // xlsx = zip. 시트/공유문자열 XML 을 펼쳐 주문번호 문자열을 그대로 추출.
+    return execFileSync('unzip', ['-p', path, 'xl/*'], {
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+    });
+  }
+  return readFileSync(path, 'utf8');
 }
 
 function conn(database: string) {
@@ -45,7 +60,7 @@ async function withRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
 }
 
 async function main() {
-  const csv = readFileSync(csvPath, 'utf8');
+  const csv = readOrderFileText(csvPath);
   const idset = new Set<number>();
   for (const m of csv.matchAll(/\b\d{8}-(\d+)\b/g)) idset.add(Number(m[1]));
   const displayIds = [...idset].sort((a, b) => a - b);
