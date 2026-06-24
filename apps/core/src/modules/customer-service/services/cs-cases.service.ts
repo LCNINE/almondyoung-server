@@ -85,6 +85,29 @@ export class CsCasesService {
     }, tx);
   }
 
+  async updateStatus(id: string, status: CsCase['status'], operatorId?: string, tx?: Tx) {
+    return this.inTx(async (trx) => {
+      const current = await this.loadCaseOrThrow(id, trx);
+      const previousStatus = current.status;
+      if (previousStatus === status) {
+        return this.toCaseResponse(current, [], []);
+      }
+
+      const [updated] = await trx
+        .update(csCases)
+        .set({
+          status,
+          closedAt: status === 'closed' ? new Date() : null,
+          updatedAt: new Date(),
+        })
+        .where(eq(csCases.id, id))
+        .returning();
+
+      await this.recordEvent(trx, id, 'status_changed', operatorId, { from: previousStatus, to: status });
+      return this.toCaseResponse(updated, [], []);
+    }, tx);
+  }
+
   async createBusinessLink(id: string, dto: CreateBusinessLinkDto, tx?: Tx) {
     return this.inTx(async (trx) => {
       await this.loadCaseOrThrow(id, trx);
