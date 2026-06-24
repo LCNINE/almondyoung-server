@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { cn } from '@/lib/utils/ui';
+import { MembershipDetailPanel } from '@/features/membership/members/components/detail-dialog';
 import { MemberSummary } from '../components/member-summary';
 import { CartTab } from '../components/tabs/cart-tab';
 import { DetailTab } from '../components/tabs/detail-tab';
@@ -13,6 +14,7 @@ import { PointsTab } from '../components/tabs/points-tab';
 export type TabKey =
   | 'home'
   | 'detail'
+  | 'membership'
   | 'orders'
   | 'inquiries'
   | 'points'
@@ -21,6 +23,7 @@ export type TabKey =
 const MENU: { key: TabKey; label: string }[] = [
   { key: 'home', label: '홈' },
   { key: 'detail', label: '회원 상세정보' },
+  { key: 'membership', label: '멤버십' },
   { key: 'orders', label: '주문내역' },
   { key: 'inquiries', label: '문의내역' },
   { key: 'points', label: '적립금/쿠폰' },
@@ -68,6 +71,12 @@ export default function CustomerDetailWindowTemplate({
         <main className="min-w-0 flex-1 overflow-y-auto p-5">
           {activeTab === 'home' && <HomeTab customerId={customerId} />}
           {activeTab === 'detail' && <DetailTab customerId={customerId} />}
+          {activeTab === 'membership' && (
+            <MembershipDetailPanel
+              userId={customerId}
+              allowAdminActions={false}
+            />
+          )}
           {activeTab === 'orders' && <OrdersTab customerId={customerId} />}
           {activeTab === 'inquiries' && (
             <InquiriesTab customerId={customerId} />

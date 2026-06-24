@@ -20,17 +20,12 @@ import {
   type CarouselApi,
 } from '@/components/ui/carousel';
 import { StarIcon } from 'lucide-react';
-import { FILE_SERVICE_BASE_URL } from '@/const/api-const';
+import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 import Image from 'next/image';
 import { ReviewDeleteButton } from '../review-delete-button';
 
 function buildProductThumbnailSrc(thumbnail: string | null | undefined) {
-  if (!thumbnail) return '/placeholder.svg';
-  if (thumbnail.startsWith('http://') || thumbnail.startsWith('https://')) {
-    return thumbnail;
-  }
-
-  return `${FILE_SERVICE_BASE_URL}/files/public/${thumbnail}`;
+  return resolvePublicFileUrl(thumbnail) ?? '/placeholder.svg';
 }
 
 function ratingStars(rating: number) {
@@ -115,7 +110,7 @@ function ReviewDetailContent({ reviewId }: { reviewId: string }) {
   const [carouselApi, setCarouselApi] = useState<CarouselApi>();
 
   const imageUrls = data.mediaFileIds.map(
-    (fileId) => `${FILE_SERVICE_BASE_URL}/files/public/${fileId}`
+    (fileId) => resolvePublicFileUrl(fileId) ?? ''
   );
 
   React.useEffect(() => {

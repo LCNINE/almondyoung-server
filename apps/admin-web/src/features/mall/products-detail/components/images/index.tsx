@@ -25,7 +25,7 @@ import {
   DrawerTitle,
 } from '@/components/ui/drawer';
 import { Spinner } from '@/components/ui/spinner';
-import { FILE_SERVICE_BASE_URL } from '@/const/api-const';
+import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 import {
   PRODUCT_IMAGE_CONTEXT_ID,
   uploadFileToFileService,
@@ -46,10 +46,6 @@ import {
 type Props = { masterId: string; versionId: string | null };
 type UploadTarget = 'representative' | 'additional';
 
-function resolveImageSrc(fileId: string): string {
-  return `${FILE_SERVICE_BASE_URL}/files/public/${fileId}`;
-}
-
 function ImagePreview({
   fileId,
   alt,
@@ -61,7 +57,7 @@ function ImagePreview({
 }) {
   return (
     <Image
-      src={resolveImageSrc(fileId)}
+      src={resolvePublicFileUrl(fileId) ?? ''}
       alt={alt}
       fill
       className="object-contain"

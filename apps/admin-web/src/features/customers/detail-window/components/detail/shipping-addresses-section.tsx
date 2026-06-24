@@ -17,6 +17,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { AddressSearchDialog } from '@/components/common/address-search-dialog';
 import {
   medusaCustomerApi,
   type AdminCustomerAddress,
@@ -73,6 +74,7 @@ export function ShippingAddressesSection({
   const deleteAddr = useDeleteMedusaAddress(customerId);
 
   const [open, setOpen] = useState(false);
+  const [addrDialogOpen, setAddrDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
 
@@ -147,13 +149,13 @@ export function ShippingAddressesSection({
       }
     >
       {!medusaCustomerId ? (
-        <div className="py-6 text-center text-sm text-gray-400">
+        <div className="py-6 text-sm text-center text-gray-400">
           연동된 Medusa 고객이 없어 배송지를 조회할 수 없습니다.
         </div>
       ) : isLoading ? (
         <div className="text-sm text-gray-400">불러오는 중…</div>
       ) : addresses.length === 0 ? (
-        <div className="py-6 text-center text-sm text-gray-400">
+        <div className="py-6 text-sm text-center text-gray-400">
           등록된 배송지가 없습니다.
         </div>
       ) : (
@@ -161,7 +163,7 @@ export function ShippingAddressesSection({
           {addresses.map((a) => (
             <div
               key={a.id}
-              className="flex items-start justify-between rounded-md border border-gray-100 bg-gray-50 p-3"
+              className="flex items-start justify-between p-3 border border-gray-100 rounded-md bg-gray-50"
             >
               <div className="min-w-0 text-sm">
                 <div className="flex items-center gap-2">
@@ -182,7 +184,7 @@ export function ShippingAddressesSection({
                   {[a.address_1, a.address_2].filter(Boolean).join(' ') || '-'}
                 </div>
               </div>
-              <div className="flex shrink-0 gap-1">
+              <div className="flex gap-1 shrink-0">
                 <Button
                   type="button"
                   size="icon"
@@ -196,7 +198,7 @@ export function ShippingAddressesSection({
                   type="button"
                   size="icon"
                   variant="ghost"
-                  className="h-7 w-7 text-red-500"
+                  className="text-red-500 h-7 w-7"
                   onClick={() => handleDelete(a.id)}
                   disabled={deleteAddr.isPending}
                 >
@@ -211,7 +213,9 @@ export function ShippingAddressesSection({
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editingId ? '배송지 수정' : '배송지 추가'}</DialogTitle>
+            <DialogTitle>
+              {editingId ? '배송지 수정' : '배송지 추가'}
+            </DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-4 py-2">
             <div className="space-y-1.5">
@@ -235,12 +239,20 @@ export function ShippingAddressesSection({
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-gray-500">우편번호</Label>
-              <Input
-                value={form.postal_code}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, postal_code: e.target.value }))
-                }
-              />
+              <div className="flex gap-2">
+                <Input
+                  value={form.postal_code}
+                  placeholder="주소검색으로 입력"
+                  readOnly
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setAddrDialogOpen(true)}
+                >
+                  주소검색
+                </Button>
+              </div>
             </div>
             <div className="col-span-2 space-y-1.5">
               <Label className="text-xs text-gray-500">주소</Label>
@@ -260,14 +272,16 @@ export function ShippingAddressesSection({
                 }
               />
             </div>
-            <div className="col-span-2 flex items-center gap-2">
+            <div className="flex items-center col-span-2 gap-2">
               <Switch
                 checked={form.is_default_shipping}
                 onCheckedChange={(v) =>
                   setForm((f) => ({ ...f, is_default_shipping: v }))
                 }
               />
-              <Label className="text-sm text-gray-700">기본 배송지로 설정</Label>
+              <Label className="text-sm text-gray-700">
+                기본 배송지로 설정
+              </Label>
             </div>
           </div>
           <DialogFooter>
@@ -284,6 +298,15 @@ export function ShippingAddressesSection({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AddressSearchDialog
+        open={addrDialogOpen}
+        onOpenChange={setAddrDialogOpen}
+        onSelect={({ zipcode, address }) =>
+          setForm((f) => ({ ...f, postal_code: zipcode, address_1: address }))
+        }
+        title="주소 검색"
+      />
     </SectionCard>
   );
 }

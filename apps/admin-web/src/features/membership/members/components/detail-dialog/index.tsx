@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { toast } from 'sonner';
+import { Crown, CalendarClock, SlidersHorizontal } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -11,6 +12,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardAction,
+  CardContent,
+} from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,7 +28,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { Separator } from '@/components/ui/separator';
 import {
   Table,
   TableBody,
@@ -40,6 +48,13 @@ import {
   useGrantSubscriptionByDays,
 } from '@/lib/services/membership';
 import { useUserNames } from '@/hooks/use-user-names';
+import { formatDate, formatDateTime } from '@/lib/utils/date';
+import {
+  getRemainingDays,
+  getMembershipUsageDays,
+  getBillingEventLabel,
+  getMembershipStatus,
+} from '@/lib/utils/membership';
 
 interface MembershipMemberDetailDialogProps {
   member: AdminMemberListItem | null;
@@ -47,54 +62,14 @@ interface MembershipMemberDetailDialogProps {
   onClose: () => void;
 }
 
-function getRemainingDays(endsAt: string | null): string {
-  if (!endsAt) return '-';
-  const end = new Date(endsAt);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const diff = Math.ceil((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  if (diff < 0) return '만료됨';
-  if (diff === 0) return '오늘 만료';
-  return `${diff}일 남음`;
-}
-
-function formatDate(d: string | null | undefined): string {
-  if (!d) return '-';
-  return new Date(d).toLocaleDateString('ko-KR', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-}
-
-function formatDateTime(d: string): string {
-  return new Date(d).toLocaleString('ko-KR', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-function getMembershipUsageDays(firstContractCreatedAt: string): string {
-  const start = new Date(firstContractCreatedAt);
-  const today = new Date();
-  const diff = Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-  return `${diff}일`;
-}
-
-function getBillingEventLabel(eventType: string): { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' } {
-  switch (eventType) {
-    case 'CHARGE_SUCCESS':
-      return { label: '결제 성공', variant: 'default' };
-    case 'CHARGE_FAIL':
-      return { label: '결제 실패', variant: 'destructive' };
-    case 'CHARGE_ATTEMPT':
-      return { label: '결제 시도', variant: 'secondary' };
-    default:
-      return { label: eventType, variant: 'outline' };
-  }
+// 라벨-값 한 줄 (shadcn Card 안에서 사용).
+function Field({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex gap-3 py-1 text-sm">
+      <span className="w-24 shrink-0 text-muted-foreground">{label}</span>
+      <span className="break-all">{value ?? '-'}</span>
+    </div>
+  );
 }
 
 // 강제 즉시 취소 다이얼로그
@@ -105,9 +80,16 @@ interface ForceCancelDialogProps {
   onSuccess: () => void;
 }
 
-function ForceCancelDialog({ open, onClose, contractId, onSuccess }: ForceCancelDialogProps) {
+function ForceCancelDialog({
+  open,
+  onClose,
+  contractId,
+  onSuccess,
+}: ForceCancelDialogProps) {
   const [reason, setReason] = useState('');
-  const [refundType, setRefundType] = useState<'FULL' | 'PARTIAL' | 'NONE'>('NONE');
+  const [refundType, setRefundType] = useState<'FULL' | 'PARTIAL' | 'NONE'>(
+    'NONE'
+  );
   const [refundAmount, setRefundAmount] = useState('');
   const [adminNote, setAdminNote] = useState('');
   const forceCancelMutation = useForceCancelSubscription();
@@ -137,11 +119,14 @@ function ForceCancelDialog({ open, onClose, contractId, onSuccess }: ForceCancel
         contractId,
         reason: reason.trim(),
         refundType,
-        refundAmount: refundType === 'PARTIAL' ? Number(refundAmount) : undefined,
+        refundAmount:
+          refundType === 'PARTIAL' ? Number(refundAmount) : undefined,
         adminNote: adminNote.trim() || undefined,
       });
       if (result.refundStatus === 'FAILED') {
-        toast.warning('구독은 취소되었으나 환불 처리에 실패했습니다. 수동으로 환불해주세요.');
+        toast.warning(
+          '구독은 취소되었으나 환불 처리에 실패했습니다. 수동으로 환불해주세요.'
+        );
       } else {
         toast.success('구독이 즉시 취소되었습니다.');
       }
@@ -156,7 +141,9 @@ function ForceCancelDialog({ open, onClose, contractId, onSuccess }: ForceCancel
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-destructive">구독 강제 즉시 취소</DialogTitle>
+          <DialogTitle className="text-destructive">
+            구독 강제 즉시 취소
+          </DialogTitle>
           <DialogDescription>
             구독이 즉시 종료됩니다. 이 작업은 되돌릴 수 없습니다.
           </DialogDescription>
@@ -164,7 +151,9 @@ function ForceCancelDialog({ open, onClose, contractId, onSuccess }: ForceCancel
 
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label>취소 사유 <span className="text-destructive">*</span></Label>
+            <Label>
+              취소 사유 <span className="text-destructive">*</span>
+            </Label>
             <Textarea
               placeholder="취소 사유를 입력해주세요"
               value={reason}
@@ -174,30 +163,51 @@ function ForceCancelDialog({ open, onClose, contractId, onSuccess }: ForceCancel
           </div>
 
           <div className="space-y-2">
-            <Label>환불 유형 <span className="text-destructive">*</span></Label>
+            <Label>
+              환불 유형 <span className="text-destructive">*</span>
+            </Label>
             <RadioGroup
               value={refundType}
-              onValueChange={(v) => setRefundType(v as 'FULL' | 'PARTIAL' | 'NONE')}
+              onValueChange={(v) =>
+                setRefundType(v as 'FULL' | 'PARTIAL' | 'NONE')
+              }
               className="flex gap-4"
             >
               <div className="flex items-center gap-1.5">
                 <RadioGroupItem value="NONE" id="refund-none" />
-                <Label htmlFor="refund-none" className="cursor-pointer font-normal">환불 없음</Label>
+                <Label
+                  htmlFor="refund-none"
+                  className="font-normal cursor-pointer"
+                >
+                  환불 없음
+                </Label>
               </div>
               <div className="flex items-center gap-1.5">
                 <RadioGroupItem value="FULL" id="refund-full" />
-                <Label htmlFor="refund-full" className="cursor-pointer font-normal">전액 환불</Label>
+                <Label
+                  htmlFor="refund-full"
+                  className="font-normal cursor-pointer"
+                >
+                  전액 환불
+                </Label>
               </div>
               <div className="flex items-center gap-1.5">
                 <RadioGroupItem value="PARTIAL" id="refund-partial" />
-                <Label htmlFor="refund-partial" className="cursor-pointer font-normal">부분 환불</Label>
+                <Label
+                  htmlFor="refund-partial"
+                  className="font-normal cursor-pointer"
+                >
+                  부분 환불
+                </Label>
               </div>
             </RadioGroup>
           </div>
 
           {refundType === 'PARTIAL' && (
             <div className="space-y-1.5">
-              <Label>환불 금액 (원) <span className="text-destructive">*</span></Label>
+              <Label>
+                환불 금액 (원) <span className="text-destructive">*</span>
+              </Label>
               <Input
                 type="number"
                 placeholder="환불 금액 입력"
@@ -258,28 +268,40 @@ function AdjustForm({ userId }: { userId: string }) {
   };
 
   return (
-    <div className="space-y-2 rounded-lg border p-4">
-      <p className="text-sm font-medium">구독 기간 조정</p>
-      <p className="text-xs text-muted-foreground">양수: 연장 / 음수: 단축 (예: 7, -3)</p>
-      <div className="flex gap-2">
-        <Input
-          type="number"
-          placeholder="일수 (예: 7)"
-          value={days}
-          onChange={(e) => setDays(e.target.value)}
-          className="w-32"
-        />
-        <Input
-          placeholder="사유 입력"
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          className="flex-1"
-        />
-      </div>
-      <Button size="sm" onClick={handleSubmit} disabled={mutation.isPending} className="w-full">
-        {mutation.isPending ? '처리 중...' : '변경하기'}
-      </Button>
-    </div>
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-1.5 text-sm">
+          <SlidersHorizontal className="text-indigo-500 size-4" />
+          구독 기간 조정
+        </CardTitle>
+        <CardDescription>양수: 연장 / 음수: 단축 (예: 7, -3)</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <div className="flex gap-2">
+          <Input
+            type="number"
+            placeholder="일수 (예: 7)"
+            value={days}
+            onChange={(e) => setDays(e.target.value)}
+            className="w-32"
+          />
+          <Input
+            placeholder="사유 입력"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            className="flex-1"
+          />
+        </div>
+        <Button
+          size="sm"
+          onClick={handleSubmit}
+          disabled={mutation.isPending}
+          className="w-full"
+        >
+          {mutation.isPending ? '처리 중...' : '변경하기'}
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -295,14 +317,20 @@ function GrantForm({ userId }: { userId: string }) {
       return;
     }
     try {
-      await mutation.mutateAsync({ userId, days: d, memo: memo.trim() || undefined });
+      await mutation.mutateAsync({
+        userId,
+        days: d,
+        memo: memo.trim() || undefined,
+      });
       toast.success('구독이 지급되었습니다.');
       setDays('');
       setMemo('');
     } catch (e: any) {
       const msg: string = e?.response?.data?.message ?? e?.message ?? '';
       if (msg.includes('이미 활성')) {
-        toast.error('이미 활성 구독이 있는 회원입니다. 기간 조정 기능을 이용하세요.');
+        toast.error(
+          '이미 활성 구독이 있는 회원입니다. 기간 조정 기능을 이용하세요.'
+        );
       } else {
         toast.error('구독 지급에 실패했습니다.');
       }
@@ -310,31 +338,44 @@ function GrantForm({ userId }: { userId: string }) {
   };
 
   return (
-    <div className="space-y-3 rounded-lg border p-4">
-      <p className="text-sm font-medium">구독 지급</p>
-      <p className="text-xs text-muted-foreground">
-        지급할 일수와 사유(메모)를 입력하세요. 마이페이지에서 확인할 수 있습니다.
-      </p>
-      <div className="flex gap-2">
-        <Input
-          type="number"
-          placeholder="일수 (예: 30)"
-          value={days}
-          onChange={(e) => setDays(e.target.value)}
-          min={1}
-          className="w-32"
-        />
-        <Input
-          placeholder="메모 (예: 계좌이체 확인)"
-          value={memo}
-          onChange={(e) => setMemo(e.target.value)}
-          className="flex-1"
-        />
-      </div>
-      <Button size="sm" onClick={handleSubmit} disabled={mutation.isPending || !days} className="w-full">
-        {mutation.isPending ? '처리 중...' : '구독 지급'}
-      </Button>
-    </div>
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-1.5 text-sm">
+          <Crown className="text-indigo-500 size-4" />
+          구독 지급
+        </CardTitle>
+        <CardDescription>
+          지급할 일수와 사유(메모)를 입력하세요. 마이페이지에서 확인할 수
+          있습니다.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex gap-2">
+          <Input
+            type="number"
+            placeholder="일수 (예: 30)"
+            value={days}
+            onChange={(e) => setDays(e.target.value)}
+            min={1}
+            className="w-32"
+          />
+          <Input
+            placeholder="메모 (예: 계좌이체 확인)"
+            value={memo}
+            onChange={(e) => setMemo(e.target.value)}
+            className="flex-1"
+          />
+        </div>
+        <Button
+          size="sm"
+          onClick={handleSubmit}
+          disabled={mutation.isPending || !days}
+          className="w-full"
+        >
+          {mutation.isPending ? '처리 중...' : '구독 지급'}
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -342,54 +383,88 @@ function GrantForm({ userId }: { userId: string }) {
 function PeriodTab({ userId }: { userId: string }) {
   const { data: detail, isLoading } = useMemberDetail(userId);
 
-  if (isLoading) return <Skeleton className="h-48 w-full" />;
+  if (isLoading) return <Skeleton className="w-full h-48" />;
 
   const isActive = detail?.status === 'ACTIVE' || detail?.status === 'PAUSED';
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 rounded-lg border p-4">
-        <div>
-          <p className="text-xs text-muted-foreground">남은 구독 기간</p>
-          <p className="font-medium">{getRemainingDays(detail?.endsAt ?? null)}</p>
-        </div>
-        <div>
-          <p className="text-xs text-muted-foreground">만료일</p>
-          <p className="font-medium">{formatDate(detail?.endsAt)}</p>
-        </div>
-        <div>
-          <p className="text-xs text-muted-foreground">일시정지 횟수</p>
-          <p className="font-medium">{detail?.pauseCount ?? 0}회</p>
-        </div>
-        <div>
-          <p className="text-xs text-muted-foreground">일시정지 중</p>
-          <p className="font-medium">{detail?.isPaused ? '예' : '아니오'}</p>
-        </div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Card className="gap-0 py-3 ">
+          <CardContent className="px-3">
+            <p className="text-xs text-muted-foreground">남은 구독 기간</p>
+            <p className="mt-0.5 text-sm font-semibold text-primary">
+              {getRemainingDays(detail?.endsAt ?? null)}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="gap-0 py-3">
+          <CardContent className="px-3">
+            <p className="text-xs text-muted-foreground">만료일</p>
+            <p className="mt-0.5 text-sm font-semibold">
+              {formatDate(detail?.endsAt)}
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="gap-0 py-3">
+          <CardContent className="px-3">
+            <p className="text-xs text-muted-foreground">일시정지 횟수</p>
+            <p className="mt-0.5 text-sm font-semibold">
+              {detail?.pauseCount ?? 0}회
+            </p>
+          </CardContent>
+        </Card>
+        <Card className="gap-0 py-3">
+          <CardContent className="px-3">
+            <p className="text-xs text-muted-foreground">일시정지 중</p>
+            <p className="mt-0.5 text-sm font-semibold">
+              {detail?.isPaused ? '예' : '아니오'}
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
-      {isActive ? <AdjustForm userId={userId} /> : <GrantForm userId={userId} />}
+      {isActive ? (
+        <AdjustForm userId={userId} />
+      ) : (
+        <GrantForm userId={userId} />
+      )}
     </div>
   );
 }
 
 // 두번째 탭: 플랜 / 결제 방식 / 해지 관리
-function PlanTab({ userId, contractId }: { userId: string; contractId: string }) {
+function PlanTab({
+  userId,
+  contractId,
+  allowForceCancel,
+}: {
+  userId: string;
+  contractId: string;
+  allowForceCancel: boolean;
+}) {
   const { data: detail, isLoading, refetch } = useMemberDetail(userId);
   const setAutoRenewalMutation = useSetAutoRenewal();
-  const [pendingAutoRenewal, setPendingAutoRenewal] = useState<boolean | null>(null);
+  const [pendingAutoRenewal, setPendingAutoRenewal] = useState<boolean | null>(
+    null
+  );
   const [forceCancelOpen, setForceCancelOpen] = useState(false);
 
-  const effectiveAutoRenewal = pendingAutoRenewal ?? detail?.autoRenewal ?? true;
+  const effectiveAutoRenewal =
+    pendingAutoRenewal ?? detail?.autoRenewal ?? true;
   const isActive = detail?.status === 'ACTIVE' || detail?.status === 'PAUSED';
 
   const handleAutoRenewalSave = async () => {
     if (pendingAutoRenewal === null) return;
     try {
-      await setAutoRenewalMutation.mutateAsync({ contractId, autoRenewal: pendingAutoRenewal });
+      await setAutoRenewalMutation.mutateAsync({
+        contractId,
+        autoRenewal: pendingAutoRenewal,
+      });
       toast.success(
         pendingAutoRenewal
           ? '자동갱신이 재개되었습니다.'
-          : '해지가 예약되었습니다. 현재 구독 기간 만료 후 자동갱신이 중단됩니다.',
+          : '해지가 예약되었습니다. 현재 구독 기간 만료 후 자동갱신이 중단됩니다.'
       );
       setPendingAutoRenewal(null);
     } catch {
@@ -404,108 +479,131 @@ function PlanTab({ userId, contractId }: { userId: string; contractId: string })
     return '정기결제 (해지 예약됨)';
   }
 
-  if (isLoading) return <Skeleton className="h-48 w-full" />;
+  if (isLoading) return <Skeleton className="w-full h-48" />;
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium">현재 플랜</p>
-            <p className="text-xs text-muted-foreground">
-              {detail?.tierCode ?? '-'} /{' '}
-              {detail?.planDurationDays && detail.planDurationDays >= 365
-                ? '연간'
-                : detail?.planDurationDays && detail.planDurationDays >= 28
-                  ? '월간'
-                  : `${detail?.planDurationDays ?? '-'}일`}
-            </p>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-1.5 text-sm">
+            <CalendarClock className="text-indigo-500 size-4" />
+            현재 플랜
+          </CardTitle>
+          <CardDescription>
+            {detail?.tierCode ?? '-'} /{' '}
+            {detail?.planDurationDays && detail.planDurationDays >= 365
+              ? '연간'
+              : detail?.planDurationDays && detail.planDurationDays >= 28
+                ? '월간'
+                : `${detail?.planDurationDays ?? '-'}일`}
+          </CardDescription>
+          <CardAction>
+            <Badge
+              variant={detail?.status === 'ACTIVE' ? 'default' : 'outline'}
+            >
+              {getMembershipStatus(detail?.status).label}
+            </Badge>
+          </CardAction>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-muted-foreground">결제 방식</span>
+            <span className="font-medium">{getBillingTypeLabel()}</span>
           </div>
-          <Badge variant={detail?.status === 'ACTIVE' ? 'default' : 'outline'}>
-            {detail?.status ?? '-'}
-          </Badge>
-        </div>
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-muted-foreground">
+              {detail?.autoRenewal ? '다음 결제일' : '구독 종료일'}
+            </span>
+            <span>
+              {detail?.autoRenewal
+                ? formatDate(detail.nextBillingDate)
+                : formatDate(detail?.endsAt)}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
 
-        <Separator />
-
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">결제 방식</span>
-          <span className="font-medium">{getBillingTypeLabel()}</span>
-        </div>
-
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-muted-foreground">
-            {detail?.autoRenewal ? '다음 결제일' : '구독 종료일'}
-          </span>
-          <span>
-            {detail?.autoRenewal
-              ? formatDate(detail.nextBillingDate)
-              : formatDate(detail?.endsAt)}
-          </span>
-        </div>
-      </div>
-
-      {isActive && (
-        <div className="rounded-lg border p-4 space-y-3">
-          <p className="text-sm font-medium">자동갱신 설정</p>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm">자동 연장</p>
-              <p className="text-xs text-muted-foreground">
-                {effectiveAutoRenewal
-                  ? '구독 만료 시 자동으로 갱신됩니다.'
-                  : '현재 구독 기간 만료 후 자동갱신이 중단됩니다.'}
-              </p>
+      {allowForceCancel && isActive && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">자동갱신 설정</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm">자동 연장</p>
+                <p className="text-xs text-muted-foreground">
+                  {effectiveAutoRenewal
+                    ? '구독 만료 시 자동으로 갱신됩니다.'
+                    : '현재 구독 기간 만료 후 자동갱신이 중단됩니다.'}
+                </p>
+              </div>
+              <Switch
+                checked={effectiveAutoRenewal}
+                onCheckedChange={(checked) => setPendingAutoRenewal(checked)}
+              />
             </div>
-            <Switch
-              checked={effectiveAutoRenewal}
-              onCheckedChange={(checked) => setPendingAutoRenewal(checked)}
-            />
-          </div>
 
-          {pendingAutoRenewal !== null && (
+            {pendingAutoRenewal !== null && (
+              <Button
+                size="sm"
+                onClick={handleAutoRenewalSave}
+                disabled={setAutoRenewalMutation.isPending}
+                className="w-full"
+              >
+                {setAutoRenewalMutation.isPending ? '저장 중...' : '변경 저장'}
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {allowForceCancel && isActive && (
+        <Card className="border-destructive/30">
+          <CardHeader>
+            <CardTitle className="text-sm text-destructive">
+              강제 즉시 취소
+            </CardTitle>
+            <CardDescription>
+              구독을 즉시 종료합니다. 정기결제 해지 예약과 달리 현재 구독 기간도
+              즉시 종료됩니다. 환불 여부를 선택할 수 있습니다.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
             <Button
               size="sm"
-              onClick={handleAutoRenewalSave}
-              disabled={setAutoRenewalMutation.isPending}
+              variant="destructive"
               className="w-full"
+              onClick={() => setForceCancelOpen(true)}
             >
-              {setAutoRenewalMutation.isPending ? '저장 중...' : '변경 저장'}
+              강제 즉시 취소
             </Button>
-          )}
-        </div>
+          </CardContent>
+        </Card>
       )}
 
-      {isActive && (
-        <div className="rounded-lg border border-destructive/30 p-4 space-y-2">
-          <p className="text-sm font-medium text-destructive">강제 즉시 취소</p>
-          <p className="text-xs text-muted-foreground">
-            구독을 즉시 종료합니다. 정기결제 해지 예약과 달리 현재 구독 기간도 즉시 종료됩니다.
-            환불 여부를 선택할 수 있습니다.
-          </p>
-          <Button
-            size="sm"
-            variant="destructive"
-            className="w-full"
-            onClick={() => setForceCancelOpen(true)}
-          >
-            강제 즉시 취소
-          </Button>
-        </div>
+      {allowForceCancel && (
+        <ForceCancelDialog
+          open={forceCancelOpen}
+          onClose={() => setForceCancelOpen(false)}
+          contractId={contractId}
+          onSuccess={() => refetch()}
+        />
       )}
-
-      <ForceCancelDialog
-        open={forceCancelOpen}
-        onClose={() => setForceCancelOpen(false)}
-        contractId={contractId}
-        onSuccess={() => refetch()}
-      />
     </div>
   );
 }
 
 // 세번째 탭: 결제 기록
-function BillingTab({ userId, contractId }: { userId: string; contractId: string }) {
+function BillingTab({
+  userId,
+  contractId,
+  allowRetry,
+}: {
+  userId: string;
+  contractId: string;
+  allowRetry: boolean;
+}) {
   const { data: events, isLoading } = useMemberBillingEvents(userId);
   const retryBillingMutation = useRetryBilling();
 
@@ -518,22 +616,24 @@ function BillingTab({ userId, contractId }: { userId: string; contractId: string
     }
   };
 
-  if (isLoading) return <Skeleton className="h-48 w-full" />;
+  if (isLoading) return <Skeleton className="w-full h-48" />;
 
   return (
     <div className="space-y-3">
-      <div className="flex justify-end">
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={handleRetry}
-          disabled={retryBillingMutation.isPending}
-          className="h-7 text-xs"
-        >
-          {retryBillingMutation.isPending ? '처리 중...' : '결제 수동 재시도'}
-        </Button>
-      </div>
-      <div className="rounded-lg border">
+      {allowRetry && (
+        <div className="flex justify-end">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleRetry}
+            disabled={retryBillingMutation.isPending}
+            className="text-xs h-7"
+          >
+            {retryBillingMutation.isPending ? '처리 중...' : '결제 수동 재시도'}
+          </Button>
+        </div>
+      )}
+      <Card className="py-0 overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
@@ -546,7 +646,10 @@ function BillingTab({ userId, contractId }: { userId: string; contractId: string
           <TableBody>
             {!events?.length ? (
               <TableRow>
-                <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                <TableCell
+                  colSpan={4}
+                  className="py-8 text-center text-muted-foreground"
+                >
                   결제 기록이 없습니다.
                 </TableCell>
               </TableRow>
@@ -555,12 +658,16 @@ function BillingTab({ userId, contractId }: { userId: string; contractId: string
                 const { label, variant } = getBillingEventLabel(ev.eventType);
                 return (
                   <TableRow key={ev.id}>
-                    <TableCell className="text-xs">{formatDateTime(ev.createdAt)}</TableCell>
+                    <TableCell className="text-xs">
+                      {formatDateTime(ev.createdAt)}
+                    </TableCell>
                     <TableCell>
                       <Badge variant={variant}>{label}</Badge>
                     </TableCell>
-                    <TableCell className="text-right text-sm">
-                      {ev.amount != null ? `${ev.amount.toLocaleString()}원` : '-'}
+                    <TableCell className="text-sm text-right">
+                      {ev.amount != null
+                        ? `${ev.amount.toLocaleString()}원`
+                        : '-'}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {ev.errorCode ?? '-'}
@@ -571,7 +678,7 @@ function BillingTab({ userId, contractId }: { userId: string; contractId: string
             )}
           </TableBody>
         </Table>
-      </div>
+      </Card>
     </div>
   );
 }
@@ -581,15 +688,21 @@ function LogTab({ userId }: { userId: string }) {
   const { data: events, isLoading } = useMemberContractEvents(userId);
 
   const operatorIds = useMemo(
-    () => [...new Set((events ?? []).map((e) => e.causedByUserId).filter((id): id is string => !!id))],
+    () => [
+      ...new Set(
+        (events ?? [])
+          .map((e) => e.causedByUserId)
+          .filter((id): id is string => !!id)
+      ),
+    ],
     [events]
   );
   const operatorNames = useUserNames(operatorIds);
 
-  if (isLoading) return <Skeleton className="h-48 w-full" />;
+  if (isLoading) return <Skeleton className="w-full h-48" />;
 
   return (
-    <div className="rounded-lg border">
+    <Card className="py-0 overflow-hidden">
       <Table>
         <TableHeader>
           <TableRow>
@@ -601,14 +714,19 @@ function LogTab({ userId }: { userId: string }) {
         <TableBody>
           {!events?.length ? (
             <TableRow>
-              <TableCell colSpan={3} className="text-center text-muted-foreground py-8">
+              <TableCell
+                colSpan={3}
+                className="py-8 text-center text-muted-foreground"
+              >
                 로그가 없습니다.
               </TableCell>
             </TableRow>
           ) : (
             events.map((ev) => (
               <TableRow key={ev.id}>
-                <TableCell className="text-xs">{formatDateTime(ev.createdAt)}</TableCell>
+                <TableCell className="text-xs">
+                  {formatDateTime(ev.createdAt)}
+                </TableCell>
                 <TableCell className="text-sm">{ev.eventType}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">
                   {ev.causedByUserId ? (
@@ -616,7 +734,10 @@ function LogTab({ userId }: { userId: string }) {
                       <span className="flex items-center gap-1">
                         <span>{operatorNames[ev.causedByUserId].loginId}</span>
                         {operatorNames[ev.causedByUserId].roles[0] && (
-                          <Badge variant="outline" className="text-xs py-0 px-1 h-4">
+                          <Badge
+                            variant="outline"
+                            className="h-4 px-1 py-0 text-xs"
+                          >
                             {operatorNames[ev.causedByUserId].roles[0]}
                           </Badge>
                         )}
@@ -633,6 +754,109 @@ function LogTab({ userId }: { userId: string }) {
           )}
         </TableBody>
       </Table>
+    </Card>
+  );
+}
+
+// 멤버십 상세 본문 — userId 만으로 동작한다. 다이얼로그와 회원조회창 탭이 공유한다.
+// allowAdminActions=false 면 강제 즉시 취소·결제 수동 재시도 같은 위험 액션을 숨긴다(회원조회창용).
+export function MembershipDetailPanel({
+  userId,
+  allowAdminActions = true,
+}: {
+  userId: string;
+  allowAdminActions?: boolean;
+}) {
+  const { data: detail, isLoading } = useMemberDetail(userId);
+  const userNames = useUserNames(userId ? [userId] : []);
+
+  if (isLoading) return <Skeleton className="w-full h-64" />;
+
+  if (!detail) {
+    return (
+      <div className="space-y-4">
+        <Card>
+          <CardContent className="flex flex-col items-center gap-2 py-8 text-center">
+            <Crown className="size-6 text-muted-foreground/50" />
+            <p className="text-sm text-muted-foreground">
+              멤버십 가입 이력이 없습니다. 아래에서 구독을 지급해 등록할 수
+              있습니다.
+            </p>
+          </CardContent>
+        </Card>
+        <GrantForm userId={userId} />
+      </div>
+    );
+  }
+
+  const contractId = detail.contractId;
+  const status = getMembershipStatus(detail.status);
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-1.5 text-sm">
+            <Crown className="text-indigo-500 size-4" />
+            멤버십 정보
+          </CardTitle>
+          <CardAction>
+            <Badge variant={status.variant}>{status.label}</Badge>
+          </CardAction>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 gap-x-8 sm:grid-cols-2">
+          <Field
+            label="로그인 아이디"
+            value={userNames[userId]?.loginId || userId || '-'}
+          />
+          <Field label="성함" value={userNames[userId]?.username || '-'} />
+          <Field
+            label="최초 등록일"
+            value={formatDate(detail.firstContractCreatedAt)}
+          />
+          <Field
+            label="멤버십 이용일"
+            value={
+              detail.firstContractCreatedAt
+                ? getMembershipUsageDays(detail.firstContractCreatedAt)
+                : '-'
+            }
+          />
+        </CardContent>
+      </Card>
+
+      <Tabs defaultValue="period">
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="period">멤버십 기간 관리</TabsTrigger>
+          <TabsTrigger value="plan">플랜 구독 변경</TabsTrigger>
+          <TabsTrigger value="billing">결제 기록</TabsTrigger>
+          <TabsTrigger value="log">로그</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="period" className="mt-4">
+          <PeriodTab userId={userId} />
+        </TabsContent>
+
+        <TabsContent value="plan" className="mt-4">
+          <PlanTab
+            userId={userId}
+            contractId={contractId}
+            allowForceCancel={allowAdminActions}
+          />
+        </TabsContent>
+
+        <TabsContent value="billing" className="mt-4">
+          <BillingTab
+            userId={userId}
+            contractId={contractId}
+            allowRetry={allowAdminActions}
+          />
+        </TabsContent>
+
+        <TabsContent value="log" className="mt-4">
+          <LogTab userId={userId} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
@@ -643,9 +867,6 @@ export function MembershipMemberDetailDialog({
   open,
   onClose,
 }: MembershipMemberDetailDialogProps) {
-  const { data: detail } = useMemberDetail(member?.userId ?? null);
-  const userNames = useUserNames(member?.userId ? [member.userId] : []);
-
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto p-0">
@@ -655,69 +876,8 @@ export function MembershipMemberDetailDialog({
           </DialogTitle>
         </DialogHeader>
 
-        <div className="p-6 space-y-4">
-
-          <div className="grid grid-cols-2 gap-x-6 gap-y-2 rounded-lg bg-gray-50 px-4 py-3 text-sm">
-            <div className="flex gap-2">
-              <span className="text-muted-foreground w-24 shrink-0">로그인 아이디</span>
-              <span className="font-medium break-all">
-                {(member?.userId && userNames[member.userId]?.loginId) || member?.userId || '-'}
-              </span>
-            </div>
-            <div className="flex gap-2">
-              <span className="text-muted-foreground w-24 shrink-0">성함</span>
-              <span className="font-medium">{(member?.userId && userNames[member.userId]?.username) || '-'}</span>
-            </div>
-            <div className="flex gap-2">
-              <span className="text-muted-foreground w-24 shrink-0">최초 등록일</span>
-              <span className="font-medium">
-                {formatDate(detail?.firstContractCreatedAt ?? member?.createdAt)}
-              </span>
-            </div>
-            <div className="flex gap-2">
-              <span className="text-muted-foreground w-24 shrink-0">멤버십 이용일</span>
-              <span className="font-medium">
-                {detail?.firstContractCreatedAt
-                  ? getMembershipUsageDays(detail.firstContractCreatedAt)
-                  : '-'}
-              </span>
-            </div>
-          </div>
-
-          {member && (
-            <Tabs defaultValue="period">
-              <TabsList className="w-full">
-                <TabsTrigger value="period" className="flex-1">
-                  멤버십 기간 관리
-                </TabsTrigger>
-                <TabsTrigger value="plan" className="flex-1">
-                  플랜 구독 변경
-                </TabsTrigger>
-                <TabsTrigger value="billing" className="flex-1">
-                  결제 기록
-                </TabsTrigger>
-                <TabsTrigger value="log" className="flex-1">
-                  로그
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="period" className="mt-4">
-                <PeriodTab userId={member.userId} />
-              </TabsContent>
-
-              <TabsContent value="plan" className="mt-4">
-                <PlanTab userId={member.userId} contractId={member.contractId} />
-              </TabsContent>
-
-              <TabsContent value="billing" className="mt-4">
-                <BillingTab userId={member.userId} contractId={member.contractId} />
-              </TabsContent>
-
-              <TabsContent value="log" className="mt-4">
-                <LogTab userId={member.userId} />
-              </TabsContent>
-            </Tabs>
-          )}
+        <div className="p-6">
+          {member && <MembershipDetailPanel userId={member.userId} />}
         </div>
       </DialogContent>
     </Dialog>

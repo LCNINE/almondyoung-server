@@ -46,7 +46,7 @@ import {
   STATUS_LABELS,
   type QuestionDto,
 } from '@/lib/types/dto/qna';
-import { FILE_SERVICE_BASE_URL } from '@/const';
+import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 import { formatDate } from '@/lib/utils/date';
 
 function categoryLabel(category: QuestionDto['category']): string {
@@ -199,7 +199,7 @@ function InquiryDetailDialog({
 }) {
   const imageUrls =
     question?.mediaFileIds.map(
-      (fileId) => `${FILE_SERVICE_BASE_URL}/files/public/${fileId}`
+      (fileId) => resolvePublicFileUrl(fileId) ?? ''
     ) ?? [];
 
   return (
