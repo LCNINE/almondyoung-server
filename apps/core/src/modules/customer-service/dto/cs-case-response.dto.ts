@@ -34,7 +34,11 @@ export class CsCaseTimelineItemDto {
   @ApiProperty({ description: 'comment: 첨부 file-service ID 목록', required: false, type: [String] })
   attachmentFileIds?: string[];
 
-  @ApiProperty({ description: 'event: 이벤트 종류', required: false })
+  @ApiProperty({
+    description: 'event: 이벤트 종류',
+    enum: ['status_changed', 'assigned', 'unassigned', 'label_added', 'label_removed'],
+    required: false,
+  })
   eventType?: CsCaseEventType;
 
   @ApiProperty({ description: 'event/business_link: payload', required: false })
