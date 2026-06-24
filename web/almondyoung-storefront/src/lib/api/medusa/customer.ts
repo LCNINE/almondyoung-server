@@ -111,7 +111,11 @@ export async function recoverCustomerCart(): Promise<HttpTypes.StoreCart | null>
       return null
     })
 
-  if (!cart?.id) {
+  // 완료(주문 전환)된 카트는 절대 복구하지 않는다. 백엔드가 completed_at IS NULL 로 필터링하지만,
+  // Medusa query.graph 의 null 필터가 환경/버전에 따라 안 걸려 '방금 완료된(=가장 최근) 카트'가
+  // 내려올 수 있다. 그걸 복구하면 getOrSetCart 가 완료 카트를 반환 → addToCart 가 'already completed'
+  // 로 실패한다(무통장 주문 직후 장바구니 안 담김 장애). 클라이언트에서 안전망으로 한 번 더 막는다.
+  if (!cart?.id || cart.completed_at) {
     return null
   }
 

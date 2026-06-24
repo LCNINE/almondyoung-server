@@ -371,6 +371,9 @@ export function setup(infra: SharedInfra) {
       BANK_TRANSFER_BANK_NAME: bankTransferBankName.value,
       BANK_TRANSFER_ACCOUNT_NUMBER: bankTransferAccountNumber.value,
       BANK_TRANSFER_ACCOUNT_HOLDER: bankTransferAccountHolder.value,
+      // 무통장 입금 대기 만료 윈도우(시간). 미설정 시 코드 기본값 72h.
+      // 입금확인을 수동으로 하고 주말/연휴가 있어, 입금했는데 자동취소되는 사고를 막기 위해 7일(168h)로 설정.
+      WALLET_BANK_TRANSFER_DEPOSIT_WINDOW_HOURS: '168',
     },
   });
 

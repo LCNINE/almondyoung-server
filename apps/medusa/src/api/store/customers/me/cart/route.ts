@@ -21,6 +21,10 @@ async function getCustomerCart(query: any, customerId: string) {
   // createCheckoutCartFromLineItems 가 checkout cart 도 고객에게 transfer 하므로, 무통장 입금 대기 (최대 72h) 동안 쿠키가 소실되면 결제용 cart 가 고객 장바구니로 복구되는 레이스가 생긴다.
   // source_cart_id(원본 참조) / is_shipping_preview metadata 로 파생 cart 를 가려남.
   const shoppingCarts = (carts || []).filter((cart: any) => {
+    // 안전망: query.graph 의 `completed_at: null` 필터가 환경/버전에 따라 안 걸리는 경우가 있어,
+    // 완료(주문 전환)된 카트를 JS 에서 명시적으로 한 번 더 배제한다. 이게 빠지면 무통장 주문 직후
+    // '방금 완료된 카트'가 복구되어 addToCart 가 'already completed' 로 실패한다.
+    if (cart?.completed_at) return false;
     const meta = (cart?.metadata ?? {}) as Record<string, unknown>;
     return !meta.source_cart_id && meta.is_shipping_preview !== true;
   });
