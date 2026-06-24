@@ -1,3 +1,5 @@
+import { csCases } from '../schema/customer-service.schema';
+
 /**
  * Minimal in-memory fake of DbService<MergedSchema> for customer-service unit tests.
  * Filtering in where() is intentionally loose (returns all rows for the table); tests
@@ -22,6 +24,37 @@ export function makeFakeDb(seed: Map<unknown, Row[]> = new Map()) {
     },
   };
 
+  const makeRow = (table: unknown, values: Row): Row => ({
+    ...(table === csCases
+      ? {
+          status: 'open',
+          priority: 'normal',
+          description: null,
+          sourceChannel: 'kakao',
+          externalThreadRef: null,
+          customerId: null,
+          customerName: null,
+          assignedTo: null,
+          metadata: {},
+          createdBy: null,
+          closedAt: null,
+        }
+      : {}),
+    ...values,
+    id: values.id ?? nextId(),
+    createdAt: values.createdAt ?? new Date('2026-06-20T00:00:00.000Z'),
+    updatedAt: values.updatedAt ?? new Date('2026-06-20T00:00:00.000Z'),
+  });
+
+  const insertRows = (table: unknown, values: Row | Row[]): Row[] => {
+    const list = Array.isArray(values) ? values : [values];
+    return list.map((v) => {
+      const row = makeRow(table, v);
+      state.get(table).push(row);
+      return row;
+    });
+  };
+
   const tx: any = {
     select: (_columns?: unknown) => ({
       from: (table: unknown) => {
@@ -42,23 +75,13 @@ export function makeFakeDb(seed: Map<unknown, Row[]> = new Map()) {
       },
     }),
     insert: (table: unknown) => ({
-      values: (values: Row | Row[]) => ({
-        returning: () => {
-          const list = Array.isArray(values) ? values : [values];
-          const inserted = list.map((v) => {
-            const row = {
-              id: v.id ?? nextId(),
-              createdAt: new Date('2026-06-20T00:00:00.000Z'),
-              updatedAt: new Date('2026-06-20T00:00:00.000Z'),
-              ...v,
-            };
-            state.get(table).push(row);
-            return row;
-          });
-          return Promise.resolve(inserted);
-        },
-        onConflictDoNothing: () => ({ returning: () => Promise.resolve([]) }),
-      }),
+      values: (values: Row | Row[]) => {
+        const inserted = insertRows(table, values);
+        return {
+          returning: () => Promise.resolve(inserted),
+          onConflictDoNothing: () => ({ returning: () => Promise.resolve([]) }),
+        };
+      },
     }),
     update: (table: unknown) => ({
       set: (patch: Row) => ({
