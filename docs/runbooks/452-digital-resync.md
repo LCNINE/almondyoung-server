@@ -67,6 +67,24 @@ projection requires_shipping=true = 0
 5. **집계 검증**: `_resync-prep.ts` 재실행 → 기대치 충족 확인. "프로필 없음 + requires_shipping=true projection" 0개 재확인.
 6. 결과 보고(코드/라이브 검증 분리).
 
+## #461(디지털 물리출고 제외) 배포 전후 검증 — 기존 backlog 점검
+#461 의 `sales_order_lines.fulfillment_kind/requires_shipping` 는 nullable 이고 **기존 라인은 backfill 되지 않는다**(null=물리 간주). 따라서 #461 배포 전 이미 생성된 디지털 SO line/backlog 는 새 게이트로 자동 제외되지 않는다. (현재 장애 주문 대부분은 #450 에서 주문 생성 자체가 막혔고 Core FO void-matching 방어도 있어 blocker 는 아님.)
+
+배포 전후로 **open(pending/awaiting_matching) backlog 중 디지털 의심 라인**을 점검한다 (Core DB, READ-ONLY):
+```sql
+-- backlog 의 sales_order_lines 를 PIM fulfillment_kind 와 대조해 디지털 의심 라인 탐지.
+-- (variant_id → master 매핑은 product_master_variants 등으로 연결)
+SELECT b.id AS backlog_id, b.status, sol.id AS line_id, sol.variant_id, pmv.fulfillment_kind
+FROM fulfillment_order_creation_backlogs b
+JOIN sales_order_lines sol ON sol.sales_order_id = b.sales_order_id
+JOIN product_master_variants pmvar ON pmvar.variant_id = sol.variant_id
+JOIN product_master_versions pmv ON pmv.master_id = pmvar.master_id AND pmv.status = 'active'
+WHERE b.status IN ('pending', 'awaiting_matching')
+  AND pmv.fulfillment_kind = 'digital';
+```
+- 결과가 있으면 해당 backlog 를 수동으로 `not_required` 처리(또는 재처리)한다.
+- 결과가 0건이면 추가 조치 불필요.
+
 ## 롤백 / 안전장치
 - backfill-v2 는 upsert(기존 product 갱신). 디지털 상품에 한정(150 masterId 화이트리스트)하여 물리상품 영향 0.
 - 단계적(dry-run 1 → 전체) + 전/후 집계 비교로 이상 즉시 감지.
