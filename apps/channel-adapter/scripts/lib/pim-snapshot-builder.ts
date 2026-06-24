@@ -1,6 +1,6 @@
 // apps/channel-adapter/scripts/lib/pim-snapshot-builder.ts
 import * as postgres from 'postgres';
-import type { PimProductSnapshot, PimPurchaseConstraint } from '../../src/types';
+import type { PimFulfillmentKind, PimProductSnapshot, PimPurchaseConstraint } from '../../src/types';
 
 // Database row types
 interface MasterRow {
@@ -16,6 +16,7 @@ interface MasterRow {
   seo_description?: string;
   seo_keywords?: string[];
   product_type?: string;
+  fulfillment_kind?: PimFulfillmentKind | null;
   status: string;
   is_wholesale_only: boolean;
   hide_membership_price_for_non_members: boolean;
@@ -88,11 +89,11 @@ export class PimSnapshotBuilder {
   /**
    * Fetch active product masters with full snapshots
    */
-  async fetchActiveMasters(limit: number, offset: number): Promise<PimProductSnapshot[]> {
+  async fetchActiveMasters(limit: number, offset: number, targetMasterIds?: string[]): Promise<PimProductSnapshot[]> {
     console.log(`[PimSnapshotBuilder] Fetching ${limit} masters from offset ${offset}...`);
 
     // Step 1: Query active masters + versions
-    const masters = await this.queryMasters(limit, offset);
+    const masters = await this.queryMasters(limit, offset, targetMasterIds);
 
     if (masters.length === 0) {
       console.log(`[PimSnapshotBuilder] No masters found`);
@@ -124,7 +125,9 @@ export class PimSnapshotBuilder {
   /**
    * Query active masters with version data
    */
-  private async queryMasters(limit: number, offset: number): Promise<MasterRow[]> {
+  private async queryMasters(limit: number, offset: number, targetMasterIds?: string[]): Promise<MasterRow[]> {
+    // targetMasterIds 가 주어지면 해당 master 만 대상으로 한다(디지털 재동기화 등 부분 타겟팅).
+    const masterFilter = targetMasterIds?.length ? this.pimDb`AND pm.id = ANY(${targetMasterIds})` : this.pimDb``;
     return await this.pimDb<MasterRow[]>`
       SELECT
         pm.id AS master_id,
@@ -139,6 +142,7 @@ export class PimSnapshotBuilder {
         pmv.seo_description,
         pmv.seo_keywords,
         pmv.product_type,
+        pmv.fulfillment_kind,
         pmv.status,
         pmv.is_wholesale_only,
         pmv.hide_membership_price_for_non_members,
@@ -149,6 +153,7 @@ export class PimSnapshotBuilder {
       WHERE pmv.status = 'active'
         AND pmv.deleted_at IS NULL
         AND pm.deleted_at IS NULL
+        ${masterFilter}
       ORDER BY pm.created_at DESC
       LIMIT ${limit} OFFSET ${offset}
     `;
@@ -391,6 +396,7 @@ export class PimSnapshotBuilder {
         seoKeywords: master.seo_keywords || [],
         brand: master.brand,
         productType: master.product_type,
+        fulfillmentKind: master.fulfillment_kind ?? undefined,
         categories: masterCategories,
         categoryIds: masterCategories.map((c) => c.id),
         variants: masterVariants,
