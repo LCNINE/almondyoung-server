@@ -304,6 +304,9 @@ export class ProductVersionsService {
       // Library 의 variant↔asset 매칭도 같은 패턴으로 인계 (옵션 조합 일치 시)
       await this._reconcileAssetLinksAfterPublish(version.id, previousActiveVersion?.id ?? null, tx);
 
+      // 디지털 publish 가드 — reconcile 로 인계된 링크까지 반영하도록 그 뒤에 검증(throw 시 tx 롤백).
+      await this._validateDigitalAssetLinks(version, tx);
+
       // 이벤트 발행: 추가/삭제된 variant
       await this._publishVariantChangeEvents(version, previousActiveVersion, tx);
 
@@ -513,6 +516,42 @@ export class ProductVersionsService {
     if (inheritedCount > 0) {
       this.logger.log(
         `Matching reconciliation: inherited ${inheritedCount}/${unmatched.length} variant matchings from version ${previousActiveVersionId} to ${newVersionId}`,
+      );
+    }
+  }
+
+  /**
+   * 디지털 상품(fulfillmentKind='digital') publish 가드: 모든 변종에 "다운로드 가능한" 자산이 있어야 한다.
+   * - 변종마다 library asset link 가 1개 이상
+   * - 그 자산 중 최소 1개는 currentFileVersionId 보유(실제 다운로드 파일이 존재)
+   * 둘 중 하나라도 불충족이면 "구매했는데 받을 파일이 없는" 상태가 되므로 publish 를 막는다.
+   */
+  private async _validateDigitalAssetLinks(version: ProductMasterVersion, tx: DbTransaction): Promise<void> {
+    if (version.fulfillmentKind !== 'digital') {
+      return;
+    }
+    const variantIds = await this.getVersionVariants(version.masterId, version.id, tx);
+    const missingLink: string[] = [];
+    const missingFileVersion: string[] = [];
+    for (const variantId of variantIds) {
+      const assets = await this.variantAssetLinkService.listAssetsForVariant(variantId, tx);
+      if (!assets || assets.length === 0) {
+        missingLink.push(variantId);
+      } else if (!assets.some((a) => a.currentFileVersionId)) {
+        // 링크는 있으나 모든 자산이 파일 버전 없음 → 다운로드 불가.
+        missingFileVersion.push(variantId);
+      }
+    }
+    if (missingLink.length > 0 || missingFileVersion.length > 0) {
+      const parts: string[] = [];
+      if (missingLink.length > 0) {
+        parts.push(`asset link 없는 변종: ${missingLink.join(', ')}`);
+      }
+      if (missingFileVersion.length > 0) {
+        parts.push(`파일 버전이 없어 다운로드 불가한 변종: ${missingFileVersion.join(', ')}`);
+      }
+      throw new BadRequestException(
+        `디지털 상품은 모든 변종에 다운로드 가능한 자산이 필요합니다. ${parts.join(' / ')}`,
       );
     }
   }
