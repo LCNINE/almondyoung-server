@@ -35,7 +35,8 @@ const nextConfig = {
   },
 
   turbopack: {
-    root: path.resolve(__dirname),
+    // 모노레포 루트로 지정해야 root 밖의 @packages/* (예: web-observability) 가 해석됨
+    root: path.resolve(__dirname, "../.."),
   },
 
   eslint: {
