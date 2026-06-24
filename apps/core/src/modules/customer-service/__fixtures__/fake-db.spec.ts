@@ -19,6 +19,29 @@ describe('makeFakeDb', () => {
     expect(state.get(csCases)[0].subject).toBe('bare');
   });
 
+  it('does not persist rows when onConflictDoNothing returns no rows', async () => {
+    const { db, state } = makeFakeDb();
+    const result = await db.db
+      .insert(csCases)
+      .values({ subject: 'skip' } as Record<string, unknown>)
+      .onConflictDoNothing()
+      .returning();
+    expect(result).toEqual([]);
+    expect(state.get(csCases)).toHaveLength(0);
+  });
+
+  it('persists transaction inserts through the same state', async () => {
+    const { db, state } = makeFakeDb();
+    const [row] = await db.db.transaction((tx) =>
+      tx
+        .insert(csCases)
+        .values({ subject: 'tx' } as Record<string, unknown>)
+        .returning(),
+    );
+    expect(row.subject).toBe('tx');
+    expect(state.get(csCases)).toHaveLength(1);
+  });
+
   it('applies csCases defaults and reads through the select chain', async () => {
     const { db } = makeFakeDb();
     await db.db.insert(csCases).values({ subject: 'defaults' } as Record<string, unknown>);
