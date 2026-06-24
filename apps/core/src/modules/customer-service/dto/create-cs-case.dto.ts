@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsIn, IsObject, IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
-import { type CsCasePriority } from '../schema/customer-service.schema';
+import { type CsCasePriority, type CsCaseSourceChannel } from '../schema/customer-service.schema';
 
 export class CreateCsCaseDto {
   @ApiProperty({ description: 'CS Case 제목' })
@@ -8,13 +8,7 @@ export class CreateCsCaseDto {
   @MaxLength(255)
   subject: string;
 
-  @ApiProperty({ description: '상담/처리 사유 코드', required: false })
-  @IsString()
-  @MaxLength(96)
-  @IsOptional()
-  reasonCode?: string;
-
-  @ApiProperty({ description: '상세 설명', required: false })
+  @ApiProperty({ description: '상세 설명(카톡 내용 복사/요약)', required: false })
   @IsString()
   @IsOptional()
   description?: string;
@@ -29,7 +23,23 @@ export class CreateCsCaseDto {
   @IsOptional()
   priority?: CsCasePriority;
 
-  @ApiProperty({ description: '고객 ID', required: false })
+  @ApiProperty({
+    description: '유입 채널',
+    enum: ['kakao', 'web_messenger', 'manual'],
+    default: 'kakao',
+    required: false,
+  })
+  @IsIn(['kakao', 'web_messenger', 'manual'])
+  @IsOptional()
+  sourceChannel?: CsCaseSourceChannel;
+
+  @ApiProperty({ description: '외부 대화 포인터(카톡 상담방/닉네임 등)', required: false })
+  @IsString()
+  @MaxLength(255)
+  @IsOptional()
+  externalThreadRef?: string;
+
+  @ApiProperty({ description: '고객 ID(회원 특정 시에만)', required: false })
   @IsUUID()
   @IsOptional()
   customerId?: string;
@@ -39,18 +49,6 @@ export class CreateCsCaseDto {
   @MaxLength(255)
   @IsOptional()
   customerName?: string;
-
-  @ApiProperty({ description: '고객 이메일', required: false })
-  @IsString()
-  @MaxLength(255)
-  @IsOptional()
-  customerEmail?: string;
-
-  @ApiProperty({ description: '고객 전화번호', required: false })
-  @IsString()
-  @MaxLength(64)
-  @IsOptional()
-  customerPhone?: string;
 
   @ApiProperty({ description: '담당자 ID', required: false })
   @IsUUID()
