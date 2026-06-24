@@ -67,3 +67,41 @@ describe('CsCasesService.updateStatus', () => {
     expect(state.get(csCaseEvents)).toHaveLength(0);
   });
 });
+
+describe('CsCasesService.assign', () => {
+  it('assigns an owner and records an assigned event', async () => {
+    const { db, state } = makeFakeDb();
+    const service = new CsCasesService(db as any);
+    const created = await service.create({ subject: 'x' }, 'op-1');
+
+    const updated = await service.assign(created.id, 'agent-9', 'op-1');
+
+    expect(updated.assignedTo).toBe('agent-9');
+    expect(state.get(csCaseEvents)[0]).toMatchObject({
+      type: 'assigned',
+      payload: { from: null, to: 'agent-9' },
+    });
+  });
+
+  it('unassigns and records an unassigned event', async () => {
+    const { db, state } = makeFakeDb();
+    const service = new CsCasesService(db as any);
+    const created = await service.create({ subject: 'x', assignedTo: 'agent-9' } as any, 'op-1');
+
+    const updated = await service.assign(created.id, null, 'op-1');
+
+    expect(updated.assignedTo).toBeNull();
+    expect(state.get(csCaseEvents)[0]).toMatchObject({
+      type: 'unassigned',
+      payload: { from: 'agent-9' },
+    });
+  });
+
+  it('rejects assigning to the current owner', async () => {
+    const { db } = makeFakeDb();
+    const service = new CsCasesService(db as any);
+    const created = await service.create({ subject: 'x', assignedTo: 'agent-9' } as any, 'op-1');
+
+    await expect(service.assign(created.id, 'agent-9', 'op-1')).rejects.toThrow('already assigned');
+  });
+});

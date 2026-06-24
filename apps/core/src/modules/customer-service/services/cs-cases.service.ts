@@ -108,6 +108,31 @@ export class CsCasesService {
     }, tx);
   }
 
+  async assign(id: string, assigneeId: string | null, operatorId?: string, tx?: Tx) {
+    return this.inTx(async (trx) => {
+      const current = await this.loadCaseOrThrow(id, trx);
+      const previousAssignedTo = current.assignedTo ?? null;
+      if (previousAssignedTo === (assigneeId ?? null)) {
+        throw new BadRequestError(
+          assigneeId ? `CS Case ${id} is already assigned to ${assigneeId}` : `CS Case ${id} is already unassigned`,
+        );
+      }
+
+      const [updated] = await trx
+        .update(csCases)
+        .set({ assignedTo: assigneeId, updatedAt: new Date() })
+        .where(eq(csCases.id, id))
+        .returning();
+
+      if (assigneeId) {
+        await this.recordEvent(trx, id, 'assigned', operatorId, { from: previousAssignedTo, to: assigneeId });
+      } else {
+        await this.recordEvent(trx, id, 'unassigned', operatorId, { from: previousAssignedTo });
+      }
+      return this.toCaseResponse(updated, [], []);
+    }, tx);
+  }
+
   async createBusinessLink(id: string, dto: CreateBusinessLinkDto, tx?: Tx) {
     return this.inTx(async (trx) => {
       await this.loadCaseOrThrow(id, trx);
