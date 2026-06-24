@@ -73,6 +73,7 @@ export function ShippingItemsSection({
           showInquiry={order.showInquiry}
           orderItems={order.orderItems}
           variantId={order.variantId}
+          bankTransferStatus={order.bankTransferStatus}
         />
       ))}
     </section>

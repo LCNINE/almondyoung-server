@@ -28,6 +28,7 @@ interface OrderItem {
   showInquiry: boolean
   orderItems: Array<{ productId: string; orderLineId: string }>
   variantId: string
+  bankTransferStatus?: string
 }
 
 interface OrderListClientProps {
@@ -120,6 +121,10 @@ const mapStoreOrderToOrderItem = (
         orderLineId: item.id,
       })),
     variantId: firstItem?.variant_id ?? "",
+    bankTransferStatus:
+      ((order.metadata as Record<string, unknown> | null)?.bank_transfer_status as
+        | string
+        | undefined) ?? undefined,
   }
 }
 
@@ -307,6 +312,7 @@ export function OrderList({
                 orderItems={order.orderItems}
                 variantId={order.variantId}
                 coreActions={actionsMap[order.orderId]}
+                bankTransferStatus={order.bankTransferStatus}
               />
             </OrderCard>
           ))}

@@ -47,6 +47,7 @@ async function markWelcomeMembershipPurchased(
 type OrderWithPayments = {
   id: string;
   customer_id?: string | null;
+  metadata?: Record<string, unknown> | null;
   items?: Array<{
     id: string;
     product_id: string;
@@ -81,6 +82,7 @@ export const POST = async (req: AuthenticatedMedusaRequest, res: MedusaResponse)
     fields: [
       'id',
       'customer_id',
+      'metadata',
       'items.id',
       'items.product_id',
       'payment_collections.id',
@@ -109,6 +111,20 @@ export const POST = async (req: AuthenticatedMedusaRequest, res: MedusaResponse)
   const uncapturedPaymentIds = payments
     .filter((payment) => !((payment.captures?.length ?? 0) > 0))
     .map((payment) => payment.id);
+
+  // 무통장입금 '입금확인중'(awaiting_deposit) 주문은 아직 미결제 상태(authorized)이므로
+  // 고객의 구매확정(capture)을 서버에서 거절한다. UI 버튼 숨김만으로는 직접 API 호출을 막지 못한다.
+  // 입금 확인(capture)은 관리자가 입금을 검증한 뒤에만 수행된다.
+  // (capture 후 'confirmed' metadata 갱신이 실패해 awaiting_deposit 가 남아도, 이미 모두 capture된
+  //  주문이면 uncaptured 가 없어 통과 — channel-adapter/주문내역의 'payment captured' 불변식과 동일.)
+  const isAwaitingDeposit =
+    (order.metadata as Record<string, unknown> | null)?.bank_transfer_status === 'awaiting_deposit';
+  if (isAwaitingDeposit && uncapturedPaymentIds.length > 0) {
+    throw new MedusaError(
+      MedusaError.Types.NOT_ALLOWED,
+      'This bank transfer order is awaiting deposit confirmation. Payment is captured by the administrator after the deposit is verified.',
+    );
+  }
 
   // 결제 캡처 + 리뷰 자격 생성을 워크플로우로 트랜잭션 처리
   await confirmPurchaseWorkflow(req.scope).run({

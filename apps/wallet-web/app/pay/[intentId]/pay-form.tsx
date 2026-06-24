@@ -94,6 +94,23 @@ function buildPayPath(intentId: string, region?: string | null, extra?: Record<s
   return `/pay/${intentId}${query ? `?${query}` : ''}`;
 }
 
+/**
+ * 무통장입금 대기 화면에서 storefront 주문내역으로 보내기 위한 URL 을 구성한다.
+ * wallet-web 과 storefront 는 서로 다른 origin 이므로 intent.returnUrl(스토어프론트 origin 포함)에서
+ * origin 을 가져오고 region(countryCode)으로 경로를 만든다. returnUrl 이 없으면 null.
+ */
+function buildStorefrontOrderListUrl(returnUrl?: string | null, region?: string | null): string | null {
+  if (!returnUrl) return null;
+  try {
+    const url = new URL(returnUrl);
+    const firstSegment = url.pathname.split('/').filter(Boolean)[0];
+    const countryCode = (region?.trim() || firstSegment || 'kr').toLowerCase();
+    return `${url.origin}/${countryCode}/mypage/order/list`;
+  } catch {
+    return null;
+  }
+}
+
 function isBankTransferPendingAction(value: unknown): value is BankTransferPendingAction {
   return typeof value === 'object' && value !== null && (value as { type?: unknown }).type === 'BANK_TRANSFER_PENDING';
 }
@@ -293,6 +310,7 @@ export function PayForm({
   const canConfirm = remainingAmount === 0 || !!selectedMethodId;
 
   if (bankTransferPending) {
+    const orderListUrl = buildStorefrontOrderListUrl(intent.returnUrl, region);
     return (
       <div className="min-h-screen bg-muted/40">
         <div className="border-b bg-card">
@@ -309,9 +327,10 @@ export function PayForm({
                   <Landmark className="h-5 w-5" />
                 </div>
                 <div className="space-y-1">
-                  <h1 className="text-lg font-semibold">입금 확인 대기 중입니다</h1>
+                  <h1 className="text-lg font-semibold">주문이 접수되었습니다</h1>
                   <p className="text-sm text-muted-foreground">
-                    아래 계좌로 입금하면 관리자가 확인한 뒤 결제가 완료됩니다.
+                    주문이 &lsquo;입금확인중&rsquo; 상태로 접수되었어요. 아래 계좌로 입금하시면
+                    관리자 확인 후 배송이 진행됩니다.
                   </p>
                 </div>
               </div>
@@ -345,13 +364,27 @@ export function PayForm({
               <Alert>
                 <AlertCircle className="w-4 h-4" />
                 <AlertDescription>
-                  입금 전에는 주문이 최종 확정되지 않습니다. 입금 확인은 관리자 승인 후 처리됩니다.
+                  주문이 이미 <span className="font-medium">‘입금확인중’</span> 상태로 접수되어, 지금 바로
+                  아래 <span className="font-medium">‘주문 내역에서 확인’</span> 버튼으로 확인하실 수 있어요.
+                  입금이 확인되면 관리자 승인 후 결제가 완료됩니다.
                 </AlertDescription>
               </Alert>
 
-              <Button variant="outline" className="w-full" onClick={() => router.refresh()}>
-                결제 상태 새로고침
-              </Button>
+              <div className="space-y-2">
+                {orderListUrl && (
+                  <Button
+                    className="w-full"
+                    onClick={() => {
+                      window.location.href = orderListUrl;
+                    }}
+                  >
+                    주문 내역에서 확인
+                  </Button>
+                )}
+                <Button variant="outline" className="w-full" onClick={() => router.refresh()}>
+                  결제 상태 새로고침
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </div>

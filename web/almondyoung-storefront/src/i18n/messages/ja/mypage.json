@@ -439,7 +439,9 @@
       "cancelSuccessPending": "注文がキャンセルされました。返金処理中です。",
       "cancelSuccessFailed": "注文はキャンセルされましたが、返金に失敗しました。カスタマーサポートにご連絡ください。",
       "cancelSuccessManual": "注文はキャンセルされました。返金はカスタマーサポートで確認後に処理されます。",
-      "cancelError": "キャンセル処理中にエラーが発生しました。"
+      "cancelError": "キャンセル処理中にエラーが発生しました。",
+      "contactCs": "カスタマーサポートへ問い合わせ",
+      "bankTransferCancelGuide": "銀行振込注文のキャンセルはカスタマーサポートへお問い合わせください。"
     },
     "delivery": {
       "paid": "お支払い完了",

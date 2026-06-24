@@ -51,6 +51,7 @@ export interface ShippingOrder {
   showInquiry: boolean
   orderItems: Array<{ productId: string; orderLineId: string }>
   variantId: string
+  bankTransferStatus?: string
 }
 
 /**

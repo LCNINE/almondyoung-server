@@ -34,6 +34,9 @@ import { toast } from "sonner"
 const formatAmount = (value?: number | null) =>
   `${(value ?? 0).toLocaleString()}원`
 
+/** 무통장입금 주문 취소 안내용 고객센터 카카오채널 링크 */
+const KAKAO_CS_URL = "https://pf.kakao.com/_xaxgxazs"
+
 export const OrderDetailsDesktop = ({
   order,
   coreActions,
@@ -86,6 +89,14 @@ export const OrderDetailsDesktop = ({
   const cancelTooltip = cancelUnavailableReason
     ? CANCEL_UNAVAILABLE_MESSAGES[cancelUnavailableReason]
     : undefined
+
+  // 입금확인 완료된 무통장 주문은 셀프 취소 시 자동환불이 되지 않아 관리자가 인지하기 어렵다.
+  // 셀프 취소를 막고 고객센터(카카오채널) 문의로 안내한다.
+  const isBankTransferConfirmed =
+    (order.metadata as Record<string, unknown> | null)?.bank_transfer_status ===
+    "confirmed"
+  const showSelfCancel = canCancel && !isBankTransferConfirmed
+  const showBankTransferCancelGuide = canCancel && isBankTransferConfirmed
 
   const statusLabel = coreActions
     ? getCoreDisplayStatus(coreActions)
@@ -393,7 +404,7 @@ export const OrderDetailsDesktop = ({
             {tActions("exchangeRequest")}
           </LocalizedClientLink>
         )}
-        {canCancel && (
+        {showSelfCancel && (
           <button
             type="button"
             onClick={() => setShowCancelDialog(true)}
@@ -402,6 +413,17 @@ export const OrderDetailsDesktop = ({
             {tActions("cancelOrder")}
           </button>
         )}
+        {showBankTransferCancelGuide && (
+          <a
+            href={KAKAO_CS_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center rounded-[5px] px-4 py-3 text-sm text-black outline-1 outline-zinc-400"
+            title={tActions("bankTransferCancelGuide")}
+          >
+            {tActions("contactCs")}
+          </a>
+        )}
         {!canCancel && cancelUnavailableReason && cancelUnavailableReason !== "already_cancelled" && (
           <span
             className="inline-flex cursor-not-allowed items-center justify-center rounded-[5px] px-4 py-3 text-sm text-gray-400 outline-1 outline-gray-200"
@@ -409,6 +431,11 @@ export const OrderDetailsDesktop = ({
           >
             {tActions("cancelOrder")}
           </span>
+        )}
+        {showBankTransferCancelGuide && (
+          <p className="w-full text-xs text-muted-foreground">
+            {tActions("bankTransferCancelGuide")}
+          </p>
         )}
       </section>
 
