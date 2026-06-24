@@ -133,41 +133,11 @@
   "orderProducts": {
     "title": "注文商品",
     "empty": "注文商品がありません。",
-    "selectAll": "全選択 ({selected}/{total})",
-    "deleteSelected": "選択削除",
-    "deleteSelectedDialog": {
-      "title": "選択商品の削除",
-      "description": "選択した{count}件の商品をカートから削除しますか?",
-      "cancel": "キャンセル",
-      "confirm": "削除",
-      "deleting": "削除中..."
-    },
-    "deleteSingleDialog": {
-      "title": "商品削除",
-      "description": "{title} をカートから削除しますか?",
-      "cancel": "キャンセル",
-      "confirm": "削除",
-      "deleting": "削除中..."
-    },
     "optionBadge": "オプション",
     "optionDefault": "基本",
     "optionLine": "{value} | {quantity}点",
-    "quantityChange": "変更",
-    "quantityDialogTitle": "数量変更",
-    "quantityExpected": "予想金額:",
-    "save": "保存",
-    "saving": "保存中...",
-    "cancel": "キャンセル",
     "shippingFee": "送料 {amount}ウォン",
-    "amountWon": "{amount}ウォン",
-    "toasts": {
-      "deletedCount": "{count}件の商品を削除しました。",
-      "deleteFailed": "商品の削除に失敗しました。",
-      "deletedSingle": "商品を削除しました。",
-      "quantityChanged": "数量を変更しました。",
-      "quantityChangeFailed": "数量の変更に失敗しました。",
-      "welcomeOneOnly": "ウェルカムメンバーシップ商品はお一人様1点まで購入可能です。"
-    }
+    "amountWon": "{amount}ウォン"
   },
   "discount": {
     "title": "割引・付加決済",
