@@ -69,7 +69,11 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
       case 'SUCCEEDED':
         return captured ? 'captured' : 'authorized'; // backward compat
       case 'AWAITING_DEPOSIT':
-        return 'pending'; // 무통장 입금 대기 — 아직 cart 완료 불가
+        // 무통장 입금 대기 — '입금확인중' 주문을 선생성하기 위해 authorized 로 매핑.
+        // 이렇게 해야 completeCartWorkflow 가 cart 를 완료(주문 생성)할 수 있다. 실제 입금
+        // 확정(capture)은 관리자 입금확인(INTENT_CAPTURED) 시점에 별도로 일어남.
+        // AWAITING_DEPOSIT 은 무통장 intent 만 도달하므로 카드/Toss 플로우엔 영향이 없음.
+        return 'authorized';
       case 'CANCELED':
         return 'canceled';
       case 'FAILED':

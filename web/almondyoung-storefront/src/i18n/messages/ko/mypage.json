@@ -371,6 +371,7 @@
     "status": {
       "cancelled": "취소됨",
       "paymentPending": "결제 대기",
+      "depositPending": "입금확인중",
       "delivered": "배송 완료",
       "shipping": "배송 중",
       "partialShipping": "부분 배송",

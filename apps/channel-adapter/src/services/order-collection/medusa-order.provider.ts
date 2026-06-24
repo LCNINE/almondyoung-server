@@ -57,7 +57,18 @@ export class MedusaOrderProvider implements ReplayableChannelOrderProvider {
     // attaches cancellation/refund only to already-collected orders, so an uncollected
     // canceled snapshot (even one whose payment is still authorized/captured) is observed
     // for lifecycle but is not eligible for OrderCreated.
-    const eligibleForOrderCreation = PAYMENT_ACCEPTED_STATUSES.has(order.payment_status) && order.status !== 'canceled';
+    // 무통장입금 선생성 주문: 입금 확인 전에는 결제가 authorized(미capture) 상태라
+    // PAYMENT_ACCEPTED_STATUSES 를 통과하지만, 실제 입금이 안 됐으므로 WMS 출고 파이프라인에
+    // 태우면 안 됨. metadata.bank_transfer_status='awaiting_deposit' 면 수집(OrderCreated)에서 제외
+    //
+    // 단, 게이트를 metadata 단독이 아니라 payment_status 와 함께 본다: 관리자 입금확인 후
+    // payment_status='captured' 가 되면, Medusa 의 'confirmed' metadata 갱신이 (네트워크 등으로)
+    // 실패해 awaiting_deposit 가 남아있더라도 수집을 영구히 막지 않도록 한다. 즉 '미입금(authorized) + awaiting_deposit' 일 때만 제외
+    const isAwaitingBankDeposit =
+      (order.metadata as Record<string, unknown> | null | undefined)?.bank_transfer_status === 'awaiting_deposit' &&
+      order.payment_status !== 'captured';
+    const eligibleForOrderCreation =
+      PAYMENT_ACCEPTED_STATUSES.has(order.payment_status) && order.status !== 'canceled' && !isAwaitingBankDeposit;
     const lifecycleStatusSnapshot = this.isLifecycleStatusSnapshot(order);
     const hasLifecycleObservation = lifecycleStatusSnapshot || this.hasLifecycleObservation(order);
     if (!eligibleForOrderCreation && !hasLifecycleObservation) {

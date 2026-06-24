@@ -17,7 +17,10 @@ export default async function Cart({
 }) {
   const { countryCode } = await params
 
-  let cart = await retrieveCart().catch((error) => {
+  // 무통장입금 주문 선생성 시 원본 장바구니 아이템은 Medusa 서버사이드에서 제거됨.
+  // 그 정리는 storefront 의 carts 캐시 태그를 무효화하지 못하므로, 이미 force-dynamic 인 카트
+  // 페이지에서는 no-store 로 항상 최신 카트를 읽어 '구매한 상품이 장바구니에 남아있는' 오표시를 막음.
+  let cart = await retrieveCart(undefined, undefined, "no-store").catch((error) => {
     console.error(error)
     return notFound()
   })
