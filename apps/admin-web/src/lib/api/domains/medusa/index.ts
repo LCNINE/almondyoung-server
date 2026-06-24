@@ -70,7 +70,59 @@ export const medusaCustomerApi = {
     );
     return response.data;
   },
+
+  // 배송지(주소) 추가 — Medusa 빌트인 admin 엔드포인트
+  createAddress: async (
+    customerId: string,
+    payload: MedusaAddressPayload
+  ): Promise<AdminCustomerResponse> => {
+    const response = await client.post<AdminCustomerResponse>(
+      `${MEDUSA_BASE_URL}/admin/customers/${customerId}/addresses`,
+      payload
+    );
+    return response.data;
+  },
+
+  // 배송지(주소) 수정
+  updateAddress: async (
+    customerId: string,
+    addressId: string,
+    payload: MedusaAddressPayload
+  ): Promise<AdminCustomerResponse> => {
+    const response = await client.post<AdminCustomerResponse>(
+      `${MEDUSA_BASE_URL}/admin/customers/${customerId}/addresses/${addressId}`,
+      payload
+    );
+    return response.data;
+  },
+
+  // 배송지(주소) 삭제
+  deleteAddress: async (
+    customerId: string,
+    addressId: string
+  ): Promise<void> => {
+    await client.delete(
+      `${MEDUSA_BASE_URL}/admin/customers/${customerId}/addresses/${addressId}`
+    );
+  },
 };
+
+// Medusa 고객 주소 생성/수정 페이로드 (AdminCustomerAddress 의 입력 가능 필드)
+export interface MedusaAddressPayload {
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
+  company?: string;
+  address_1?: string;
+  address_2?: string;
+  city?: string;
+  province?: string;
+  postal_code?: string;
+  country_code?: string;
+  address_name?: string;
+  is_default_shipping?: boolean;
+  is_default_billing?: boolean;
+}
 
 // 주문 목록 조회 시 가져올 필드 (그리드 컬럼 + 품목별 뷰를 위해 items / 결제수단 / 판매채널 포함)
 const ORDER_LIST_FIELDS = [

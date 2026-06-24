@@ -4,10 +4,11 @@ import { useState } from 'react';
 import { cn } from '@/lib/utils/ui';
 import { MemberSummary } from '../components/member-summary';
 import { CartTab } from '../components/tabs/cart-tab';
+import { DetailTab } from '../components/tabs/detail-tab';
 import { HomeTab } from '../components/tabs/home-tab';
 import { InquiriesTab } from '../components/tabs/inquiries-tab';
 import { OrdersTab } from '../components/tabs/orders-tab';
-import { PlaceholderTab } from '../components/tabs/placeholder-tab';
+import { PointsTab } from '../components/tabs/points-tab';
 
 export type TabKey =
   | 'home'
@@ -66,14 +67,12 @@ export default function CustomerDetailWindowTemplate({
         {/* 우측: 탭 콘텐츠 */}
         <main className="min-w-0 flex-1 overflow-y-auto p-5">
           {activeTab === 'home' && <HomeTab customerId={customerId} />}
-          {activeTab === 'detail' && (
-            <PlaceholderTab title="회원 상세정보" />
-          )}
+          {activeTab === 'detail' && <DetailTab customerId={customerId} />}
           {activeTab === 'orders' && <OrdersTab customerId={customerId} />}
           {activeTab === 'inquiries' && (
             <InquiriesTab customerId={customerId} />
           )}
-          {activeTab === 'points' && <PlaceholderTab title="적립금/쿠폰" />}
+          {activeTab === 'points' && <PointsTab customerId={customerId} />}
           {activeTab === 'cart' && <CartTab customerId={customerId} />}
         </main>
       </div>

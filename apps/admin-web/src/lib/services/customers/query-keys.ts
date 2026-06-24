@@ -29,4 +29,12 @@ export const customerQueryKeys = {
 
   // 고객 샵 관련
   shop: (userId: string) => [...customerQueryKeys.all, 'shop', userId] as const,
+
+  // 단일 회원 동의 현황
+  userConsent: (userId: string) =>
+    [...customerQueryKeys.all, 'user-consent', userId] as const,
+
+  // 회원 역할
+  userRoles: (userId: string) =>
+    [...customerQueryKeys.all, 'user-roles', userId] as const,
 } as const;
