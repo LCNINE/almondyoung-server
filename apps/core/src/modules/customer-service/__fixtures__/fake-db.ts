@@ -1,4 +1,4 @@
-import { csCases } from '../schema/customer-service.schema';
+import { csCases, csLabels } from '../schema/customer-service.schema';
 
 /**
  * Minimal in-memory fake of DbService<MergedSchema> for customer-service unit tests.
@@ -38,6 +38,13 @@ export function makeFakeDb(seed: Map<unknown, Row[]> = new Map()) {
           metadata: {},
           createdBy: null,
           closedAt: null,
+        }
+      : {}),
+    ...(table === csLabels
+      ? {
+          color: '#888888',
+          isActive: true,
+          sortOrder: 0,
         }
       : {}),
     ...values,
@@ -106,6 +113,12 @@ export function makeFakeDb(seed: Map<unknown, Row[]> = new Map()) {
           },
         }),
       }),
+    }),
+    delete: (table: unknown) => ({
+      where: () => {
+        state.rows.set(table, []);
+        return Promise.resolve([]);
+      },
     }),
   };
 
