@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { NotFoundError } from '@app/shared';
+import { NotFoundError, BadRequestError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
 import { ChannelVariantListing, NewChannelVariantListing, DbTransaction } from '../../catalog.types';
 import {
@@ -151,13 +151,22 @@ export class ChannelListingService {
 
     // Channel 존재 확인
     const channel = await client
-      .select({ id: salesChannels.id })
+      .select({ id: salesChannels.id, site: salesChannels.site })
       .from(salesChannels)
       .where(eq(salesChannels.id, dto.salesChannelId))
       .limit(1);
 
     if (channel.length === 0) {
       throw new NotFoundError(`Sales channel not found: ${dto.salesChannelId}`);
+    }
+
+    // 외부 마켓플레이스(네이버/쿠팡)는 비로그인 주문이라 구매자 식별(customerId)이 없어 디지털 소유권을
+    // 부여할 수 없다. 따라서 디지털 상품은 외부채널에 listing(판매 노출)하지 못하게 막는다.
+    // 디지털은 Medusa(자사몰)에서만 판매한다. (#455)
+    if (this.isExternalMarketplaceSite(channel[0].site) && (await this.isDigitalVariant(dto.variantId, tx))) {
+      throw new BadRequestError(
+        `외부 채널(${channel[0].site})은 디지털 상품을 지원하지 않습니다. 디지털 상품은 Medusa(자사몰)에서만 판매할 수 있습니다.`,
+      );
     }
 
     const [listing] = await client
@@ -335,6 +344,23 @@ export class ChannelListingService {
   /**
    * 특정 매핑 조회
    */
+  /** 외부 마켓플레이스(비로그인 주문 → customerId 없음) 채널인지. 디지털 판매 차단 대상. */
+  private isExternalMarketplaceSite(site: string): boolean {
+    return site === 'naver' || site === 'coupang';
+  }
+
+  /** variant 의 active 버전이 디지털(fulfillmentKind='digital')인지. */
+  private async isDigitalVariant(variantId: string, tx?: DbTransaction): Promise<boolean> {
+    const client = this.getClient(tx);
+    const [row] = await client
+      .select({ fulfillmentKind: productMasterVersions.fulfillmentKind })
+      .from(productMasterVariants)
+      .innerJoin(productMasterVersions, eq(productMasterVariants.versionId, productMasterVersions.id))
+      .where(and(eq(productMasterVariants.variantId, variantId), eq(productMasterVersions.status, 'active')))
+      .limit(1);
+    return row?.fulfillmentKind === 'digital';
+  }
+
   async getListingById(listingId: string, tx?: DbTransaction): Promise<ChannelVariantListing | null> {
     const client = this.getClient(tx);
 
