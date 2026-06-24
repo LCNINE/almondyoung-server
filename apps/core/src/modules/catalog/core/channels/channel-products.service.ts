@@ -29,6 +29,42 @@ export class ChannelProductsService {
     return tx ?? this.db.db;
   }
 
+  /** 외부 마켓플레이스(비로그인 주문 → customerId 없음) 채널인지. 디지털 판매 차단 대상. */
+  private isExternalMarketplaceSite(site: string): boolean {
+    return site === 'naver' || site === 'coupang';
+  }
+
+  /**
+   * 외부채널 디지털 판매 차단 가드 (채널 상품 생성/활성 공유).
+   * 외부 마켓플레이스(네이버/쿠팡)는 비로그인 주문이라 디지털 소유권을 부여할 수 없어, 디지털 master 의
+   * 채널 상품 생성/활성을 막는다. 디지털은 Medusa(자사몰)에서만 판매한다. (#455)
+   */
+  private async assertDigitalAllowedForChannelMaster(
+    masterId: string,
+    channelId: string,
+    tx?: DbTransaction,
+  ): Promise<void> {
+    const client = this.getClient(tx);
+    const [ch] = await client
+      .select({ site: salesChannels.site })
+      .from(salesChannels)
+      .where(eq(salesChannels.id, channelId))
+      .limit(1);
+    if (!ch || !this.isExternalMarketplaceSite(ch.site)) {
+      return;
+    }
+    const [m] = await client
+      .select({ fulfillmentKind: productMasterVersions.fulfillmentKind })
+      .from(productMasterVersions)
+      .where(and(eq(productMasterVersions.masterId, masterId), eq(productMasterVersions.status, 'active')))
+      .limit(1);
+    if (m?.fulfillmentKind === 'digital') {
+      throw new BadRequestError(
+        `외부 채널(${ch.site})은 디지털 상품을 지원하지 않습니다. 디지털 상품은 Medusa(자사몰)에서만 판매할 수 있습니다.`,
+      );
+    }
+  }
+
   async createChannelProduct(data: CreateChannelProductDto, tx?: DbTransaction): Promise<ChannelProduct> {
     if (!data.masterId || !data.channelId) {
       throw new BadRequestError('Master ID and Channel ID are required');
@@ -55,6 +91,9 @@ export class ChannelProductsService {
     if (channelExists.length === 0) {
       throw new NotFoundError(`Channel not found: ${data.channelId}`);
     }
+
+    // 외부 마켓플레이스(네이버/쿠팡)는 디지털 판매 미지원 — 채널 상품 생성 차단. (#455)
+    await this.assertDigitalAllowedForChannelMaster(data.masterId, data.channelId, tx);
 
     // 3. 중복 확인
     const alreadyExists = await this.existsChannelProduct(data.masterId, data.channelId, tx);
@@ -422,6 +461,11 @@ export class ChannelProductsService {
     const existing = await this.getChannelProduct(channelProductId, tx);
     if (!existing) {
       throw new NotFoundError(`Channel product not found: ${channelProductId}`);
+    }
+
+    // 활성화(재활성 포함) 시 외부 마켓플레이스 디지털 차단. (#455)
+    if (isActive) {
+      await this.assertDigitalAllowedForChannelMaster(existing.masterId, existing.channelId, tx);
     }
 
     // 2. 활성 상태 설정

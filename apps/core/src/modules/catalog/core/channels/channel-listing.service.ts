@@ -151,7 +151,7 @@ export class ChannelListingService {
 
     // Channel 존재 확인
     const channel = await client
-      .select({ id: salesChannels.id, site: salesChannels.site })
+      .select({ id: salesChannels.id })
       .from(salesChannels)
       .where(eq(salesChannels.id, dto.salesChannelId))
       .limit(1);
@@ -160,14 +160,8 @@ export class ChannelListingService {
       throw new NotFoundError(`Sales channel not found: ${dto.salesChannelId}`);
     }
 
-    // 외부 마켓플레이스(네이버/쿠팡)는 비로그인 주문이라 구매자 식별(customerId)이 없어 디지털 소유권을
-    // 부여할 수 없다. 따라서 디지털 상품은 외부채널에 listing(판매 노출)하지 못하게 막는다.
-    // 디지털은 Medusa(자사몰)에서만 판매한다. (#455)
-    if (this.isExternalMarketplaceSite(channel[0].site) && (await this.isDigitalVariant(dto.variantId, tx))) {
-      throw new BadRequestError(
-        `외부 채널(${channel[0].site})은 디지털 상품을 지원하지 않습니다. 디지털 상품은 Medusa(자사몰)에서만 판매할 수 있습니다.`,
-      );
-    }
+    // 외부 마켓플레이스(네이버/쿠팡)는 디지털 판매를 지원하지 않는다 — 생성 차단. (#455)
+    await this.assertDigitalAllowedForChannel(dto.variantId, dto.salesChannelId, tx);
 
     const [listing] = await client
       .insert(channelVariantListings)
@@ -296,6 +290,13 @@ export class ChannelListingService {
   async activateListing(listingId: string, tx?: DbTransaction): Promise<void> {
     const client = this.getClient(tx);
 
+    // 생성뿐 아니라 재활성도 동일 가드를 타야 한다 — 비활성 외부채널 디지털 listing 의 재활성 우회 차단. (#455)
+    const existing = await this.getListingById(listingId, tx);
+    if (!existing) {
+      return;
+    }
+    await this.assertDigitalAllowedForChannel(existing.variantId, existing.salesChannelId, tx);
+
     const [updated] = await client
       .update(channelVariantListings)
       .set({ isActive: true, updatedAt: new Date() })
@@ -342,8 +343,28 @@ export class ChannelListingService {
   }
 
   /**
-   * 특정 매핑 조회
+   * 외부채널 디지털 판매 차단 가드 (생성/재활성 공유).
+   * 외부 마켓플레이스(네이버/쿠팡)는 비로그인 주문이라 구매자 식별(customerId)이 없어 디지털 소유권을
+   * 부여할 수 없다. 디지털은 Medusa(자사몰)에서만 판매한다. (#455)
    */
+  private async assertDigitalAllowedForChannel(
+    variantId: string,
+    salesChannelId: string,
+    tx?: DbTransaction,
+  ): Promise<void> {
+    const client = this.getClient(tx);
+    const [ch] = await client
+      .select({ site: salesChannels.site })
+      .from(salesChannels)
+      .where(eq(salesChannels.id, salesChannelId))
+      .limit(1);
+    if (ch && this.isExternalMarketplaceSite(ch.site) && (await this.isDigitalVariant(variantId, tx))) {
+      throw new BadRequestError(
+        `외부 채널(${ch.site})은 디지털 상품을 지원하지 않습니다. 디지털 상품은 Medusa(자사몰)에서만 판매할 수 있습니다.`,
+      );
+    }
+  }
+
   /** 외부 마켓플레이스(비로그인 주문 → customerId 없음) 채널인지. 디지털 판매 차단 대상. */
   private isExternalMarketplaceSite(site: string): boolean {
     return site === 'naver' || site === 'coupang';
@@ -361,6 +382,9 @@ export class ChannelListingService {
     return row?.fulfillmentKind === 'digital';
   }
 
+  /**
+   * 특정 매핑 조회
+   */
   async getListingById(listingId: string, tx?: DbTransaction): Promise<ChannelVariantListing | null> {
     const client = this.getClient(tx);
 
