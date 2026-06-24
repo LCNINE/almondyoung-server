@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { buildAddressLine } from "@/lib/utils/address-line"
+import { cartRequiresShipping, isDigitalItem } from "@/lib/api/medusa/shipping-method-policy"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { calculateMembershipDiscount } from "@/lib/utils/price-utils"
 import { formatDate, DATE_FORMATS } from "@/lib/utils/format-date"
@@ -79,6 +80,8 @@ export const OrderDetailsDesktop = ({
   const primaryAddress = address?.address_1 || addressLine || "-"
   const detailAddress = address?.address_2 || "-"
   const membershipDiscount = calculateMembershipDiscount(order.items ?? [])
+  // 디지털 단독 주문이면 배송 정보를 숨긴다(배송이 필요한 라인이 하나도 없음).
+  const requiresShipping = cartRequiresShipping(order.items)
 
   const availableActions = coreActions?.availableActions ?? []
   const canCancel = availableActions.includes("cancel")
@@ -217,14 +220,23 @@ export const OrderDetailsDesktop = ({
                   </p>
                 )}
               </div>
-              <CustomButton variant="outline" color="secondary" size="sm">
-                {tActions("addToCart")}
-              </CustomButton>
+              {isDigitalItem(item) ? (
+                <LocalizedClientLink href="/mypage/download">
+                  <CustomButton variant="outline" color="secondary" size="sm">
+                    {tActions("download")}
+                  </CustomButton>
+                </LocalizedClientLink>
+              ) : (
+                <CustomButton variant="outline" color="secondary" size="sm">
+                  {tActions("addToCart")}
+                </CustomButton>
+              )}
             </article>
           )
         })}
       </section>
 
+      {requiresShipping && (
       <section className="mb-[35px] flex flex-col gap-4">
         <h2 className="text-lg font-bold text-black">{tLabels("recipientInfo")}</h2>
         <hr className="border-t-[0.5px] border-stone-900" />
@@ -253,6 +265,7 @@ export const OrderDetailsDesktop = ({
           </div>
         </dl>
       </section>
+      )}
 
       <section className="mb-[35px] flex flex-col gap-4">
         <h2 className="text-lg font-bold text-black">{tLabels("paymentInfo")}</h2>
