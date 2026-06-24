@@ -24,7 +24,7 @@ import {
   type CarouselApi,
 } from '@/components/ui/carousel';
 import { LockIcon } from 'lucide-react';
-import { FILE_SERVICE_BASE_URL } from '@/const/api-const';
+import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 import Image from 'next/image';
 import { QuestionDeleteButton } from '../question-delete-button';
 
@@ -40,7 +40,7 @@ function QuestionDetailContent({ questionId }: { questionId: string }) {
   const [carouselApi, setCarouselApi] = useState<CarouselApi>();
 
   const imageUrls = data.mediaFileIds.map(
-    (fileId) => `${FILE_SERVICE_BASE_URL}/files/public/${fileId}`
+    (fileId) => resolvePublicFileUrl(fileId) ?? ''
   );
 
   const handleImageClick = (index: number) => {

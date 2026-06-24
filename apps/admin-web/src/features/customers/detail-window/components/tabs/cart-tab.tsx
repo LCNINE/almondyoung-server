@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils/ui';
+import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 import { useCustomerById } from '@/lib/services/customers';
 import {
   useMedusaCustomerByEmail,
@@ -141,11 +142,11 @@ export function CartTab({ customerId }: { customerId: string }) {
                             : 'pointer-events-none'
                         )}
                       >
-                        {item.thumbnail ? (
+                        {resolvePublicFileUrl(item.thumbnail) ? (
                           // 외부 CDN(메두사) 이미지라 next/image 대신 img 사용
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
-                            src={item.thumbnail}
+                            src={resolvePublicFileUrl(item.thumbnail) ?? ''}
                             alt={item.product_title ?? ''}
                             className="object-cover border rounded size-10 shrink-0"
                           />

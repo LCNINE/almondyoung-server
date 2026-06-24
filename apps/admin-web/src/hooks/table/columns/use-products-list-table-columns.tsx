@@ -9,7 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { DateCell } from '@/components/table/table-cells/common';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { FILE_SERVICE_BASE_URL } from '@/const/api-const';
+import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 
 const columnHelper = createColumnHelper<MasterSummaryDto>();
 
@@ -20,22 +20,13 @@ const STATUS_LABELS: Record<string, string> = {
   archived: '보관',
 };
 
-// thumbnail 은 fileId 또는 절대 URL. file-service public 경로로 변환한다.
-function resolveThumbnailSrc(thumbnail: string | null | undefined): string | null {
-  if (!thumbnail) return null;
-  if (thumbnail.startsWith('http://') || thumbnail.startsWith('https://')) {
-    return thumbnail;
-  }
-  return `${FILE_SERVICE_BASE_URL}/files/public/${thumbnail}`;
-}
-
 function ProductThumbnailCell({
   thumbnail,
 }: {
   thumbnail: string | null | undefined;
 }) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
-  const src = resolveThumbnailSrc(thumbnail);
+  const src = resolvePublicFileUrl(thumbnail);
   const loadFailed = src !== null && failedSrc === src;
 
   if (!src || loadFailed) {

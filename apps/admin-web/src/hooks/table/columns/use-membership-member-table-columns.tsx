@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { AdminMemberListItem } from '@/lib/api/domains/membership';
+import { getRemainingDays } from '@/lib/utils/membership';
 
 const columnHelper = createColumnHelper<AdminMemberListItem>();
 
@@ -15,17 +16,6 @@ const statusConfig: Record<string, { label: string; variant: 'default' | 'second
   CANCELLED: { label: '해지', variant: 'destructive' },
   EXPIRED: { label: '만료', variant: 'outline' },
 };
-
-function getRemainingDays(endsAt: string | null): string {
-  if (!endsAt) return '-';
-  const end = new Date(endsAt);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const diff = Math.ceil((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-  if (diff < 0) return '만료됨';
-  if (diff === 0) return '오늘 만료';
-  return `${diff}일 남음`;
-}
 
 function formatDateRange(startsAt: string | null, endsAt: string | null): string {
   if (!startsAt && !endsAt) return '-';

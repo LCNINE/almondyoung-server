@@ -31,6 +31,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils/ui';
+import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 import { useCustomerById } from '@/lib/services/customers';
 import {
   useMedusaCustomerByEmail,
@@ -246,11 +247,11 @@ function OrderDetailDialog({
               <ul className="divide-y divide-gray-100 rounded-md border border-gray-100">
                 {(order.items ?? []).map((item) => (
                   <li key={item.id} className="flex gap-3 p-2.5">
-                    {item.thumbnail ? (
+                    {resolvePublicFileUrl(item.thumbnail) ? (
                       // 외부 CDN(메두사) 이미지라 next/image 대신 img 사용
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={item.thumbnail}
+                        src={resolvePublicFileUrl(item.thumbnail) ?? ''}
                         alt={item.title}
                         className="size-12 shrink-0 rounded-md border object-cover"
                       />
@@ -492,11 +493,11 @@ function ByItemTable({
                 )}
                 <TableCell>
                   <div className="flex gap-2">
-                    {item.thumbnail ? (
+                    {resolvePublicFileUrl(item.thumbnail) ? (
                       // 외부 CDN(메두사) 이미지라 next/image 대신 img 사용
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={item.thumbnail}
+                        src={resolvePublicFileUrl(item.thumbnail) ?? ''}
                         alt={item.title}
                         className="size-10 shrink-0 rounded border object-cover"
                       />

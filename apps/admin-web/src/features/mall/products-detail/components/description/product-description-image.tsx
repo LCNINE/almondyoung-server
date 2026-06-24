@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { ImageOff } from 'lucide-react';
-import { FILE_SERVICE_BASE_URL } from '@/const/api-const';
+import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 import { getProductDescriptionImagePlaceholderText } from './product-description-rendering';
 import {
   isProductDescriptionImageBroken,
@@ -37,7 +37,7 @@ export function ProductDescriptionImage({ fileId, alt, error }: Props) {
 
   return (
     <img
-      src={`${FILE_SERVICE_BASE_URL}/files/public/${fileId}`}
+      src={resolvePublicFileUrl(fileId) ?? ''}
       alt={alt}
       className="my-3 max-w-full rounded-md"
       loading="lazy"

@@ -16,6 +16,7 @@ export function usePaymentIntentTableFilters(): Filter[] {
         { label: '취소', value: 'CANCELED' },
         { label: '실패', value: 'FAILED' },
         { label: '만료', value: 'EXPIRED' },
+        { label: '입금대기중', value: 'AWAITING_DEPOSIT' },
         { label: '정산대기', value: 'PENDING_SETTLEMENT' },
       ],
     },
