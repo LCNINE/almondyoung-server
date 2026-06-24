@@ -59,3 +59,52 @@ export interface CreateFileVersionDto {
 export interface SetVariantAssetLinksDto {
   assetIds: string[];
 }
+
+// 어드민 ownership 운영
+export type AdminOwnershipStatus = 'all' | 'active' | 'revoked';
+
+export interface OwnershipAssetSummaryDto {
+  id: string;
+  name: string;
+  description?: string | null;
+  mimeType?: string | null;
+  thumbnailUrl?: string | null;
+}
+
+export interface AdminOwnershipDto {
+  id: string;
+  customerId: string;
+  assetId: string;
+  salesOrderId: string;
+  grantedAt: string;
+  exercisedAt?: string | null;
+  revokedAt?: string | null;
+  revokedReason?: string | null;
+  asset: OwnershipAssetSummaryDto;
+}
+
+export interface AdminOwnershipListResponse {
+  data: AdminOwnershipDto[];
+  total: number;
+  skip: number;
+  take: number;
+}
+
+export interface AdminOwnershipListQuery {
+  customerId?: string;
+  assetId?: string;
+  salesOrderId?: string;
+  status?: AdminOwnershipStatus;
+  skip?: number;
+  take?: number;
+}
+
+export interface GrantOwnershipDto {
+  customerId: string;
+  assetId: string;
+  salesOrderId: string;
+}
+
+export interface RevokeOwnershipDto {
+  reason?: string;
+}

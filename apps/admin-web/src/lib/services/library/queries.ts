@@ -2,8 +2,8 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { libraryQueryKeys } from './query-keys';
-import { digitalAssetsClient, variantAssetLinksClient } from '@/lib/api/domains/library';
-import type { DigitalAssetListQuery } from '@/lib/types/dto/library';
+import { digitalAssetsClient, ownershipsClient, variantAssetLinksClient } from '@/lib/api/domains/library';
+import type { AdminOwnershipListQuery, DigitalAssetListQuery } from '@/lib/types/dto/library';
 
 export const useDigitalAssets = (query?: DigitalAssetListQuery) => {
   return useQuery({
@@ -36,6 +36,14 @@ export const useVariantAssets = (variantId: string | undefined) => {
     queryKey: libraryQueryKeys.variantAssets(variantId ?? ''),
     queryFn: () => variantAssetLinksClient.list(variantId as string),
     enabled: !!variantId,
+    staleTime: 30 * 1000,
+  });
+};
+
+export const useAdminOwnerships = (query?: AdminOwnershipListQuery) => {
+  return useQuery({
+    queryKey: libraryQueryKeys.ownershipsList(query ?? {}),
+    queryFn: () => ownershipsClient.list(query),
     staleTime: 30 * 1000,
   });
 };
