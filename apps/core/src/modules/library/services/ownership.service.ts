@@ -1,13 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { ForbiddenError, NotFoundError } from '@app/shared';
+import { BadRequestError, ForbiddenError, NotFoundError } from '@app/shared';
 import { and, count, desc, eq, isNotNull, isNull, type SQL } from 'drizzle-orm';
 
+import { wmsTables } from '../../inventory/schema/inventory.schema';
 import {
   type LibrarySchema,
   digitalAssetFileVersions,
   digitalAssetOwnerships,
   digitalAssets,
+  productVariantDigitalAssetLinks,
 } from '../schema/library.schema';
 import {
   OwnershipListResponseDto,
@@ -230,6 +232,7 @@ export class OwnershipService {
       if (!asset) {
         throw new NotFoundError(`Asset not found: ${dto.assetId}`);
       }
+      await this._assertManualGrantMatchesOrder(dto, trx);
 
       await trx
         .insert(digitalAssetOwnerships)
@@ -258,6 +261,10 @@ export class OwnershipService {
           ),
         );
 
+      this.logger.log(
+        `Manual digital ownership grant: customerId=${dto.customerId}, assetId=${dto.assetId}, salesOrderId=${dto.salesOrderId}`,
+      );
+
       return this._toAdminDto(row);
     }, tx);
   }
@@ -281,9 +288,9 @@ export class OwnershipService {
   }
 
   /**
-   * 어드민 재발급. revoke 된 ownership 을 다시 활성화해 고객이 다시 다운로드할 수 있게 한다.
+   * 어드민 재활성화. revoke 된 ownership 을 다시 활성화해 고객이 다시 다운로드할 수 있게 한다.
    */
-  async adminResend(ownershipId: string, tx?: Tx): Promise<AdminOwnershipResponseDto> {
+  async adminReactivate(ownershipId: string, tx?: Tx): Promise<AdminOwnershipResponseDto> {
     return this.inTx(async (trx) => {
       const updated = await trx
         .update(digitalAssetOwnerships)
@@ -299,6 +306,46 @@ export class OwnershipService {
   }
 
   // ── private ────────────────────────────────────────────────────────────────
+
+  private async _assertManualGrantMatchesOrder(dto: GrantOwnershipDto, trx: Tx): Promise<void> {
+    const [order] = await trx
+      .select({ customerId: wmsTables.salesOrders.customerId })
+      .from(wmsTables.salesOrders)
+      .where(eq(wmsTables.salesOrders.id, dto.salesOrderId));
+
+    if (!order) {
+      throw new NotFoundError(`Sales order not found: ${dto.salesOrderId}`);
+    }
+    if (!order.customerId) {
+      throw new BadRequestError(`Sales order has no customer id: ${dto.salesOrderId}`);
+    }
+    if (order.customerId !== dto.customerId) {
+      throw new BadRequestError(
+        `Sales order ${dto.salesOrderId} does not belong to customer ${dto.customerId}`,
+      );
+    }
+
+    const linkedOrderLines = await trx
+      .select({ assetId: productVariantDigitalAssetLinks.assetId })
+      .from(wmsTables.salesOrderLines)
+      .innerJoin(
+        productVariantDigitalAssetLinks,
+        eq(wmsTables.salesOrderLines.variantId, productVariantDigitalAssetLinks.variantId),
+      )
+      .where(
+        and(
+          eq(wmsTables.salesOrderLines.salesOrderId, dto.salesOrderId),
+          eq(productVariantDigitalAssetLinks.assetId, dto.assetId),
+        ),
+      )
+      .limit(1);
+
+    if (linkedOrderLines.length === 0) {
+      throw new BadRequestError(
+        `Asset ${dto.assetId} is not linked to any variant in sales order ${dto.salesOrderId}`,
+      );
+    }
+  }
 
   private async _loadOwnedOrThrow(
     ownershipId: string,

@@ -9,7 +9,7 @@ export default function OwnershipsTemplate() {
     <Container className="divide-y-0">
       <Header
         title="디지털 사용권"
-        subtitle="디지털 자산 사용권(ownership)을 고객·자산·주문 단위로 조회하고, 수동 부여·회수·재발급합니다."
+        subtitle="디지털 자산 사용권(ownership)을 고객·자산·주문 단위로 조회하고, 수동 부여·회수·재활성화합니다."
       />
       <OwnershipsTable />
     </Container>

@@ -7,8 +7,10 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { RolesGuard } from '@app/authorization';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 
 import { OwnershipService } from '../services/ownership.service';
 import {
@@ -21,6 +23,8 @@ import {
 } from '../dto/admin-ownership.dto';
 
 @ApiTags('Library / Admin Ownerships')
+@ApiBearerAuth()
+@UseGuards(RolesGuard('master', 'admin'))
 @Controller('library/admin/ownerships')
 export class OwnershipAdminController {
   constructor(private readonly service: OwnershipService) {}
@@ -76,9 +80,9 @@ export class OwnershipAdminController {
 
   @Post(':id/resend')
   @HttpCode(200)
-  @ApiOperation({ summary: '어드민 재발급 (회수된 ownership 재활성화)' })
+  @ApiOperation({ summary: '어드민 재활성화 (회수된 ownership 복원)' })
   @ApiResponse({ status: 200, type: AdminOwnershipResponseDto })
-  async resend(@Param('id', ParseUUIDPipe) id: string): Promise<AdminOwnershipResponseDto> {
-    return this.service.adminResend(id);
+  async reactivate(@Param('id', ParseUUIDPipe) id: string): Promise<AdminOwnershipResponseDto> {
+    return this.service.adminReactivate(id);
   }
 }

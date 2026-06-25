@@ -1,5 +1,11 @@
 import { PgDialect } from 'drizzle-orm/pg-core';
 
+import { wmsTables } from '../../inventory/schema/inventory.schema';
+import {
+  digitalAssetOwnerships,
+  digitalAssets,
+  productVariantDigitalAssetLinks,
+} from '../schema/library.schema';
 import { OwnershipService } from './ownership.service';
 
 /**
@@ -228,7 +234,7 @@ describe('OwnershipService.listForCustomer — revokedAt IS NULL 필터 (이슈 
 });
 
 /**
- * 어드민 ownership API: 조회 필터 / 강제 회수 / 재발급.
+ * 어드민 ownership API: 조회 필터 / 수동 부여 / 강제 회수 / 재활성화.
  */
 describe('OwnershipService — 어드민 (#457)', () => {
   function makeService(): OwnershipService {
@@ -293,7 +299,115 @@ describe('OwnershipService — 어드민 (#457)', () => {
     });
   });
 
-  describe('adminRevoke / adminResend', () => {
+  describe('grantManual — 주문/고객/자산 정합성 검증', () => {
+    function makeFakeTxForGrant(opts: {
+      assetExists?: boolean;
+      order?: { customerId: string | null };
+      linked?: boolean;
+    }) {
+      const inserted: any[] = [];
+      const tx: any = {
+        select: () => ({
+          from: (table: any) => {
+            if (table === digitalAssets) {
+              return {
+                where: () => (opts.assetExists === false ? [] : [{ id: 'a-1' }]),
+              };
+            }
+            if (table === wmsTables.salesOrders) {
+              return {
+                where: () => (opts.order === undefined ? [] : [{ customerId: opts.order.customerId }]),
+              };
+            }
+            if (table === wmsTables.salesOrderLines) {
+              return {
+                innerJoin: () => ({
+                  where: () => ({
+                    limit: () => (opts.linked === false ? [] : [{ assetId: 'a-1' }]),
+                  }),
+                }),
+              };
+            }
+            if (table === digitalAssetOwnerships) {
+              return {
+                innerJoin: () => ({
+                  where: () => [
+                    {
+                      ownership: {
+                        id: 'o-1',
+                        customerId: 'c-1',
+                        assetId: 'a-1',
+                        salesOrderId: 'so-1',
+                        grantedAt: new Date(),
+                        exercisedAt: null,
+                        revokedAt: null,
+                        revokedReason: null,
+                      },
+                      asset: { id: 'a-1', name: 'x', description: null, mimeType: null, thumbnailUrl: null },
+                    },
+                  ],
+                }),
+              };
+            }
+            throw new Error('unexpected table');
+          },
+        }),
+        insert: (table: any) => {
+          expect(table).toBe(digitalAssetOwnerships);
+          return {
+            values: (val: any) => ({
+              onConflictDoNothing: () => {
+                inserted.push(val);
+              },
+            }),
+          };
+        },
+      };
+      return { tx, inserted };
+    }
+
+    it('주문 고객과 주문 라인 asset 링크가 일치해야 수동 부여한다', async () => {
+      const service = makeService();
+      const { tx, inserted } = makeFakeTxForGrant({
+        order: { customerId: 'c-1' },
+        linked: true,
+      });
+
+      const res = await service.grantManual({ customerId: 'c-1', assetId: 'a-1', salesOrderId: 'so-1' }, tx);
+
+      expect(inserted).toHaveLength(1);
+      expect(inserted[0]).toMatchObject({ customerId: 'c-1', assetId: 'a-1', salesOrderId: 'so-1' });
+      expect(res.id).toBe('o-1');
+    });
+
+    it('주문 고객이 다르면 수동 부여하지 않는다', async () => {
+      const service = makeService();
+      const { tx, inserted } = makeFakeTxForGrant({
+        order: { customerId: 'c-other' },
+        linked: true,
+      });
+
+      await expect(
+        service.grantManual({ customerId: 'c-1', assetId: 'a-1', salesOrderId: 'so-1' }, tx),
+      ).rejects.toThrow(/does not belong/i);
+      expect(inserted).toHaveLength(0);
+    });
+
+    it('주문 라인 variant 가 해당 asset 과 연결되어 있지 않으면 수동 부여하지 않는다', async () => {
+      const service = makeService();
+      const { tx, inserted } = makeFakeTxForGrant({
+        order: { customerId: 'c-1' },
+        linked: false,
+      });
+
+      await expect(
+        service.grantManual({ customerId: 'c-1', assetId: 'a-1', salesOrderId: 'so-1' }, tx),
+      ).rejects.toThrow(/not linked/i);
+      expect(inserted).toHaveLength(0);
+    });
+  });
+
+  describe('adminRevoke / adminReactivate', () => {
     function makeFakeTxForUpdate(opts: { updatedRows: { id: string }[] }) {
       const captured: { set?: any } = {};
       const tx: any = {
@@ -349,11 +463,11 @@ describe('OwnershipService — 어드민 (#457)', () => {
       await expect(service.adminRevoke('o-x', null, tx)).rejects.toThrow(/not found/i);
     });
 
-    it('adminResend — revokedAt 을 비워 재활성화', async () => {
+    it('adminReactivate — revokedAt 을 비워 재활성화', async () => {
       const service = makeService();
       const { tx, captured } = makeFakeTxForUpdate({ updatedRows: [{ id: 'o-1' }] });
 
-      const res = await service.adminResend('o-1', tx);
+      const res = await service.adminReactivate('o-1', tx);
 
       expect(captured.set.revokedAt).toBeNull();
       expect(captured.set.revokedReason).toBeNull();
