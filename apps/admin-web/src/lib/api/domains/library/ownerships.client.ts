@@ -28,7 +28,7 @@ export const ownershipsClient = {
     return response.data;
   },
 
-  resend: async (id: string): Promise<AdminOwnershipDto> => {
+  reactivate: async (id: string): Promise<AdminOwnershipDto> => {
     const response = await client.post(`${BASE}/${id}/resend`);
     return response.data;
   },

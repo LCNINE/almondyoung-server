@@ -99,10 +99,10 @@ export const useRevokeOwnership = () => {
   });
 };
 
-export const useResendOwnership = () => {
+export const useReactivateOwnership = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => ownershipsClient.resend(id),
+    mutationFn: (id: string) => ownershipsClient.reactivate(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: libraryQueryKeys.ownerships() });
     },

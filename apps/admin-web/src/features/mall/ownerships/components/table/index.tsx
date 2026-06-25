@@ -20,8 +20,8 @@ import {
 } from '@/components/ui/table';
 import {
   useAdminOwnerships,
+  useReactivateOwnership,
   useRevokeOwnership,
-  useResendOwnership,
 } from '@/lib/services/library';
 import type { AdminOwnershipStatus } from '@/lib/types/dto/library';
 import { toast } from 'sonner';
@@ -48,7 +48,7 @@ export function OwnershipsTable() {
     take: 50,
   });
   const revokeMutation = useRevokeOwnership();
-  const resendMutation = useResendOwnership();
+  const reactivateMutation = useReactivateOwnership();
 
   const rows = data?.data ?? [];
 
@@ -62,12 +62,12 @@ export function OwnershipsTable() {
     }
   };
 
-  const handleResend = async (id: string) => {
+  const handleReactivate = async (id: string) => {
     try {
-      await resendMutation.mutateAsync(id);
-      toast.success('사용권을 재발급했습니다.');
+      await reactivateMutation.mutateAsync(id);
+      toast.success('사용권을 재활성화했습니다.');
     } catch {
-      toast.error('재발급에 실패했습니다.');
+      toast.error('재활성화에 실패했습니다.');
     }
   };
 
@@ -160,10 +160,10 @@ export function OwnershipsTable() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => handleResend(row.id)}
-                          disabled={resendMutation.isPending}
+                          onClick={() => handleReactivate(row.id)}
+                          disabled={reactivateMutation.isPending}
                         >
-                          재발급
+                          재활성화
                         </Button>
                       ) : (
                         <Button
