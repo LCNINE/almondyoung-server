@@ -26,6 +26,7 @@ import {
 import type { AdminOwnershipStatus } from '@/lib/types/dto/library';
 import { toast } from 'sonner';
 import { OwnershipGrantDialog } from '../grant-dialog';
+import { normalizeRevokePromptValue } from './revoke-reason';
 
 const STATUS_OPTIONS: { value: AdminOwnershipStatus; label: string }[] = [
   { value: 'all', label: '전체' },
@@ -53,7 +54,9 @@ export function OwnershipsTable() {
   const rows = data?.data ?? [];
 
   const handleRevoke = async (id: string) => {
-    const reason = prompt('회수 사유 (선택)') ?? undefined;
+    const reason = normalizeRevokePromptValue(prompt('회수 사유 (선택)'));
+    if (reason === null) return;
+
     try {
       await revokeMutation.mutateAsync({ id, reason });
       toast.success('사용권을 회수했습니다.');
