@@ -187,6 +187,45 @@ describe('CsCasesService.getOne timeline', () => {
     expect(comment?.mentions).toEqual(['agent-2']);
     expect(comment?.attachmentFileIds).toEqual(['file_123']);
   });
+
+  it('returns comment attachment file IDs ordered by stored sortOrder', async () => {
+    const seed = new Map<unknown, any[]>();
+    const caseId = 'aaaaaaaa-0000-4000-8000-000000000001';
+    seed.set(csCases, [
+      {
+        id: caseId,
+        status: 'open',
+        priority: 'normal',
+        subject: 'x',
+        metadata: {},
+        createdAt: new Date('2026-06-20T00:00:00Z'),
+        updatedAt: new Date('2026-06-20T00:00:00Z'),
+      },
+    ]);
+    seed.set(csCaseComments, [
+      {
+        id: 'c1',
+        csCaseId: caseId,
+        authorId: 'op-1',
+        body: 'attachments',
+        editedAt: null,
+        deletedAt: null,
+        createdAt: new Date('2026-06-20T00:02:00Z'),
+      },
+    ]);
+    seed.set(csCaseCommentAttachments, [
+      { id: 'a2', commentId: 'c1', csCaseId: caseId, fileId: 'file_second', sortOrder: 1 },
+      { id: 'a1', commentId: 'c1', csCaseId: caseId, fileId: 'file_first', sortOrder: 0 },
+    ]);
+
+    const { db } = makeFakeDb(seed);
+    const service = new CsCasesService(db as any);
+
+    const result = await service.getOne(caseId);
+
+    const comment = (result.timeline as TimelineItem[]).find((t) => t.kind === 'comment');
+    expect(comment?.attachmentFileIds).toEqual(['file_first', 'file_second']);
+  });
 });
 
 describe('CsCasesService.list', () => {
