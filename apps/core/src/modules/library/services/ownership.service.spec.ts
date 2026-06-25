@@ -226,3 +226,138 @@ describe('OwnershipService.listForCustomer — revokedAt IS NULL 필터 (이슈 
     expect(sql).toMatch(/"exercised_at"\s+is\s+not\s+null/i);
   });
 });
+
+/**
+ * 어드민 ownership API: 조회 필터 / 강제 회수 / 재발급.
+ */
+describe('OwnershipService — 어드민 (#457)', () => {
+  function makeService(): OwnershipService {
+    const fakeDb: any = { db: {} };
+    return new OwnershipService(fakeDb);
+  }
+
+  describe('listForAdmin — status 필터', () => {
+    function makeFakeTxCapturingWhere() {
+      const captured: { count?: any; list?: any } = {};
+      const tx: any = {
+        select: () => ({
+          from: () => ({
+            where: (whereExpr: any) => {
+              captured.count = whereExpr;
+              return [{ value: 0 }];
+            },
+            innerJoin: () => ({
+              where: (whereExpr: any) => {
+                captured.list = whereExpr;
+                return {
+                  orderBy: () => ({ limit: () => ({ offset: () => [] }) }),
+                };
+              },
+            }),
+          }),
+        }),
+      };
+      return { tx, captured };
+    }
+
+    it("status 'all' + 필터 없음 — WHERE 는 비어 revoke 포함 전체 조회", async () => {
+      const service = makeService();
+      const { tx, captured } = makeFakeTxCapturingWhere();
+
+      const res = await service.listForAdmin({ status: 'all' }, tx);
+
+      expect(captured.list).toBeUndefined();
+      expect(res.total).toBe(0);
+    });
+
+    it("status 'revoked' + customerId — revoked_at IS NOT NULL 과 customer 일치 포함", async () => {
+      const service = makeService();
+      const { tx, captured } = makeFakeTxCapturingWhere();
+
+      await service.listForAdmin({ customerId: 'c-1', status: 'revoked' }, tx);
+
+      const sql = new PgDialect().sqlToQuery(captured.list).sql.replace(/\s+/g, ' ');
+      expect(sql).toMatch(/"customer_id"\s*=\s*\$\d+/);
+      expect(sql).toMatch(/"revoked_at"\s+is\s+not\s+null/i);
+    });
+
+    it("status 'active' — revoked_at IS NULL 포함", async () => {
+      const service = makeService();
+      const { tx, captured } = makeFakeTxCapturingWhere();
+
+      await service.listForAdmin({ assetId: 'a-1', status: 'active' }, tx);
+
+      const sql = new PgDialect().sqlToQuery(captured.list).sql.replace(/\s+/g, ' ');
+      expect(sql).toMatch(/"asset_id"\s*=\s*\$\d+/);
+      expect(sql).toMatch(/"revoked_at"\s+is\s+null/i);
+    });
+  });
+
+  describe('adminRevoke / adminResend', () => {
+    function makeFakeTxForUpdate(opts: { updatedRows: { id: string }[] }) {
+      const captured: { set?: any } = {};
+      const tx: any = {
+        update: () => ({
+          set: (val: any) => {
+            captured.set = val;
+            return {
+              where: () => ({ returning: () => opts.updatedRows }),
+            };
+          },
+        }),
+        // _loadAdminDto 의 재조회
+        select: () => ({
+          from: () => ({
+            innerJoin: () => ({
+              where: () => [
+                {
+                  ownership: {
+                    id: 'o-1',
+                    customerId: 'c-1',
+                    assetId: 'a-1',
+                    salesOrderId: 'so-1',
+                    grantedAt: new Date(),
+                    exercisedAt: null,
+                    revokedAt: captured.set?.revokedAt ?? null,
+                    revokedReason: captured.set?.revokedReason ?? null,
+                  },
+                  asset: { id: 'a-1', name: 'x', description: null, mimeType: null, thumbnailUrl: null },
+                },
+              ],
+            }),
+          }),
+        }),
+      };
+      return { tx, captured };
+    }
+
+    it('adminRevoke — revokedAt/이유를 채워 회수', async () => {
+      const service = makeService();
+      const { tx, captured } = makeFakeTxForUpdate({ updatedRows: [{ id: 'o-1' }] });
+
+      const res = await service.adminRevoke('o-1', '운영 회수', tx);
+
+      expect(captured.set.revokedAt).toBeInstanceOf(Date);
+      expect(captured.set.revokedReason).toBe('운영 회수');
+      expect(res.revokedReason).toBe('운영 회수');
+    });
+
+    it('adminRevoke — 대상 없으면 NotFoundError', async () => {
+      const service = makeService();
+      const { tx } = makeFakeTxForUpdate({ updatedRows: [] });
+
+      await expect(service.adminRevoke('o-x', null, tx)).rejects.toThrow(/not found/i);
+    });
+
+    it('adminResend — revokedAt 을 비워 재활성화', async () => {
+      const service = makeService();
+      const { tx, captured } = makeFakeTxForUpdate({ updatedRows: [{ id: 'o-1' }] });
+
+      const res = await service.adminResend('o-1', tx);
+
+      expect(captured.set.revokedAt).toBeNull();
+      expect(captured.set.revokedReason).toBeNull();
+      expect(res.revokedAt).toBeNull();
+    });
+  });
+});

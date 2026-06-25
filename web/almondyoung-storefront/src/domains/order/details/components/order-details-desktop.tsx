@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { buildAddressLine } from "@/lib/utils/address-line"
+import { cartRequiresShipping, isDigitalItem } from "@/lib/api/medusa/shipping-method-policy"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { calculateMembershipDiscount } from "@/lib/utils/price-utils"
 import { formatDate, DATE_FORMATS } from "@/lib/utils/format-date"
@@ -79,12 +80,21 @@ export const OrderDetailsDesktop = ({
   const primaryAddress = address?.address_1 || addressLine || "-"
   const detailAddress = address?.address_2 || "-"
   const membershipDiscount = calculateMembershipDiscount(order.items ?? [])
+  // 디지털 단독 주문이면 배송 정보를 숨긴다(배송이 필요한 라인이 하나도 없음).
+  const requiresShipping = cartRequiresShipping(order.items)
 
   const availableActions = coreActions?.availableActions ?? []
   const canCancel = availableActions.includes("cancel")
   const canTrack = availableActions.includes("track")
   const canReturn = availableActions.includes("return")
   const canExchange = availableActions.includes("exchange")
+  // 배송조회는 배송이 필요한 주문에서만(디지털 단독 주문은 숨김).
+  const showTrack =
+    requiresShipping &&
+    (canTrack ||
+      order.fulfillment_status === "shipped" ||
+      order.fulfillment_status === "fulfilled" ||
+      order.fulfillment_status === "partially_fulfilled")
   const cancelUnavailableReason = coreActions?.cancelUnavailableReason
   const cancelTooltip = cancelUnavailableReason
     ? CANCEL_UNAVAILABLE_MESSAGES[cancelUnavailableReason]
@@ -217,14 +227,23 @@ export const OrderDetailsDesktop = ({
                   </p>
                 )}
               </div>
-              <CustomButton variant="outline" color="secondary" size="sm">
-                {tActions("addToCart")}
-              </CustomButton>
+              {isDigitalItem(item) ? (
+                <LocalizedClientLink href="/mypage/download">
+                  <CustomButton variant="outline" color="secondary" size="sm">
+                    {tActions("download")}
+                  </CustomButton>
+                </LocalizedClientLink>
+              ) : (
+                <CustomButton variant="outline" color="secondary" size="sm">
+                  {tActions("addToCart")}
+                </CustomButton>
+              )}
             </article>
           )
         })}
       </section>
 
+      {requiresShipping && (
       <section className="mb-[35px] flex flex-col gap-4">
         <h2 className="text-lg font-bold text-black">{tLabels("recipientInfo")}</h2>
         <hr className="border-t-[0.5px] border-stone-900" />
@@ -253,6 +272,7 @@ export const OrderDetailsDesktop = ({
           </div>
         </dl>
       </section>
+      )}
 
       <section className="mb-[35px] flex flex-col gap-4">
         <h2 className="text-lg font-bold text-black">{tLabels("paymentInfo")}</h2>
@@ -341,12 +361,14 @@ export const OrderDetailsDesktop = ({
                   </dd>
                 </div>
               )}
-              <div className="flex items-center justify-between">
-                <dt className="text-base text-black">{tLabels("shippingFee")}</dt>
-                <dd className="text-base text-black">
-                  {formatAmount(order.shipping_total)}
-                </dd>
-              </div>
+              {requiresShipping && (
+                <div className="flex items-center justify-between">
+                  <dt className="text-base text-black">{tLabels("shippingFee")}</dt>
+                  <dd className="text-base text-black">
+                    {formatAmount(order.shipping_total)}
+                  </dd>
+                </div>
+              )}
             </dl>
           </div>
           <dl className="border-t-[0.5px] border-b-[0.5px] border-zinc-300 bg-gray-background p-3.5">
@@ -369,7 +391,7 @@ export const OrderDetailsDesktop = ({
         >
           {tActions("backToList")}
         </LocalizedClientLink>
-        {canTrack && (
+        {showTrack && (
           <LocalizedClientLink
             href={`/mypage/order/track?orderId=${order.id}`}
             className="inline-flex items-center justify-center rounded-[5px] px-4 py-3 text-sm text-black outline-1 outline-zinc-400"
@@ -377,17 +399,6 @@ export const OrderDetailsDesktop = ({
             {tActions("trackDelivery")}
           </LocalizedClientLink>
         )}
-        {!canTrack &&
-          (order.fulfillment_status === "shipped" ||
-            order.fulfillment_status === "fulfilled" ||
-            order.fulfillment_status === "partially_fulfilled") && (
-            <LocalizedClientLink
-              href={`/mypage/order/track?orderId=${order.id}`}
-              className="inline-flex items-center justify-center rounded-[5px] px-4 py-3 text-sm text-black outline-1 outline-zinc-400"
-            >
-              {tActions("trackDelivery")}
-            </LocalizedClientLink>
-          )}
         {canReturn && (
           <LocalizedClientLink
             href={`/mypage/exchange?orderId=${order.id}&type=return`}

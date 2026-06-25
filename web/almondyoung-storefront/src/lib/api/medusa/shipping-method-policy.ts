@@ -24,6 +24,25 @@ export function cartRequiresShipping(
   return Boolean(items?.some(itemRequiresShipping))
 }
 
+// 디지털(배송 불필요) 라인 여부. requires_shipping === false 우선, 없으면 product_type === 'digital_sale'.
+export function isDigitalItem(item: CartShippingPolicyItem): boolean {
+  return !itemRequiresShipping(item)
+}
+
+export type DigitalProductInput = {
+  metadata?: Record<string, unknown> | null
+  type?: { value?: string | null } | null
+}
+
+// 상품 단위 디지털 여부(PDP/카드용). metadata.fulfillmentKind / requiresShipping 우선, type.value='digital_sale' fallback.
+export function isDigitalProduct(product?: DigitalProductInput | null): boolean {
+  if (!product) return false
+  const meta = product.metadata ?? {}
+  if (meta.fulfillmentKind === "digital") return true
+  if (meta.requiresShipping === false) return true
+  return product.type?.value === "digital_sale"
+}
+
 export function selectShippingOptionsForCart<
   T extends CartShippingPolicyOption,
 >(options: T[] | null | undefined, items?: CartShippingPolicyItem[] | null): T[] {

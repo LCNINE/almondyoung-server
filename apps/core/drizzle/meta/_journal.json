@@ -169,6 +169,13 @@
       "when": 1781643423179,
       "tag": "20260616205703_membership-product-visibility-policies",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1782293280585,
+      "tag": "20260624092800_add-fulfillment-kind-to-sales-order-lines",
+      "breakpoints": true
     }
   ]
 }

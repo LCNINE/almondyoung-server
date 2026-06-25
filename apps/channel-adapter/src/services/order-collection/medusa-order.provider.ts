@@ -99,6 +99,7 @@ export class MedusaOrderProvider implements ReplayableChannelOrderProvider {
       const pimVariantId = this.getPimVariantId(item) ?? '';
       const pimMasterId = this.getPimMasterId(item) ?? '';
       const pimVersionId = this.getPimVersionId(item) ?? '';
+      const { fulfillmentKind, requiresShipping } = this.resolveFulfillment(item);
       return {
         orderItemId: item.id,
         skuId: pimVariantId,
@@ -110,6 +111,8 @@ export class MedusaOrderProvider implements ReplayableChannelOrderProvider {
         quantity: item.quantity ?? 1,
         unitPrice: item.unit_price ?? 0,
         totalPrice: (item.unit_price ?? 0) * (item.quantity ?? 1),
+        fulfillmentKind,
+        requiresShipping,
       };
     });
 
@@ -183,6 +186,28 @@ export class MedusaOrderProvider implements ReplayableChannelOrderProvider {
   private getPimVersionId(item: NonNullable<MedusaOrder['items']>[number]): string | null {
     const pimVersionId = item.variant?.product?.metadata?.pimVersionId;
     return this.getStringMetadataValue(pimVersionId);
+  }
+
+  /**
+   * 라인의 이행 의도(물리/디지털)를 해석한다. downstream(WMS/FO)이 물리 출고 대상 여부를
+   * 명시적으로 판단할 수 있도록 이벤트에 보존한다.
+   * 우선순위: line item.requires_shipping → product.metadata.requiresShipping
+   *          → product.metadata.fulfillmentKind('digital'면 배송 불필요). 모두 없으면 물리로 간주.
+   */
+  private resolveFulfillment(item: NonNullable<MedusaOrder['items']>[number]): {
+    fulfillmentKind: 'physical' | 'digital';
+    requiresShipping: boolean;
+  } {
+    const meta = (item.variant?.product?.metadata ?? {}) as Record<string, unknown>;
+    const metaFulfillmentKind = meta.fulfillmentKind === 'digital' ? 'digital' : meta.fulfillmentKind === 'physical' ? 'physical' : undefined;
+    const metaRequiresShipping = typeof meta.requiresShipping === 'boolean' ? (meta.requiresShipping as boolean) : undefined;
+    const itemRequiresShipping = typeof (item as { requires_shipping?: unknown }).requires_shipping === 'boolean'
+      ? ((item as { requires_shipping?: boolean }).requires_shipping as boolean)
+      : undefined;
+
+    const requiresShipping = itemRequiresShipping ?? metaRequiresShipping ?? metaFulfillmentKind !== 'digital';
+    const fulfillmentKind: 'physical' | 'digital' = metaFulfillmentKind ?? (requiresShipping ? 'physical' : 'digital');
+    return { fulfillmentKind, requiresShipping };
   }
 
   private getStringMetadataValue(value: unknown): string | null {

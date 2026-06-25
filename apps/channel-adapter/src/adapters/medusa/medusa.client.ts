@@ -143,6 +143,7 @@ const ORDER_FIELDS = [
   'items.quantity',
   'items.unit_price',
   'items.variant_id',
+  '+items.requires_shipping',
   '+items.variant',
   '+items.variant.metadata',
   '+items.variant.title',
