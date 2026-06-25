@@ -126,6 +126,13 @@ export class EntitlementService {
   }
 
   /**
+   * 주어진 userId 중 멤버십이 활성(현재 권한 + 미만료)인 userId만 반환.
+   */
+  async getActiveUserIds(userIds: string[]): Promise<string[]> {
+    return this.reader.getActiveUserIds(userIds);
+  }
+
+  /**
    * 여러 사용자의 권한 정보 일괄 조회
    */
   async getBulkUserEntitlements(userIds: string[]) {
