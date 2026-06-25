@@ -32,4 +32,22 @@ export class MembershipServiceClient {
       throw error;
     }
   }
+
+  /**
+   * 주어진 userId 중 멤버십이 활성(현재 권한 + 미만료)인 userId만 반환.
+   * 멤버십 서비스가 SSOT다 — 일일 정합성 크론의 add/remove 판정 기준.
+   */
+  async getActiveUserIds(userIds: string[]): Promise<string[]> {
+    if (!userIds.length) return [];
+    const url = `${this.getBaseUrl()}/internal/memberships/active`;
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post<{ activeUserIds: string[] }>(url, { userIds }),
+      );
+      return response.data?.activeUserIds ?? [];
+    } catch (error) {
+      this.logger.error(`getActiveUserIds 실패: ${error?.message}`);
+      throw error;
+    }
+  }
 }
