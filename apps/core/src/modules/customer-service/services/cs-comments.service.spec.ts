@@ -1,4 +1,4 @@
-import { ForbiddenError } from '@app/shared';
+import { ForbiddenError, NotFoundError } from '@app/shared';
 import {
   csCaseCommentAttachments,
   csCaseCommentMentions,
@@ -79,7 +79,7 @@ describe('CsCommentsService edit/delete', () => {
     const service = new CsCommentsService(db as any);
     const created = await service.addComment(caseId, { body: 'first' }, authorId);
 
-    const edited = await service.editComment(created.id, { body: 'second' }, authorId);
+    const edited = await service.editComment(caseId, created.id, { body: 'second' }, authorId);
 
     expect(edited.body).toBe('second');
     expect(state.get(csCaseComments)[0].editedAt).not.toBeNull();
@@ -90,7 +90,9 @@ describe('CsCommentsService edit/delete', () => {
     const service = new CsCommentsService(db as any);
     const created = await service.addComment(caseId, { body: 'first' }, authorId);
 
-    await expect(service.editComment(created.id, { body: 'x' }, otherAuthorId)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(service.editComment(caseId, created.id, { body: 'x' }, otherAuthorId)).rejects.toBeInstanceOf(
+      ForbiddenError,
+    );
   });
 
   it('soft-deletes (author only) keeping the row', async () => {
@@ -98,10 +100,34 @@ describe('CsCommentsService edit/delete', () => {
     const service = new CsCommentsService(db as any);
     const created = await service.addComment(caseId, { body: 'first' }, authorId);
 
-    await service.deleteComment(created.id, authorId);
+    await service.deleteComment(caseId, created.id, authorId);
 
     expect(state.get(csCaseComments)).toHaveLength(1);
     expect(state.get(csCaseComments)[0].deletedAt).not.toBeNull();
     expect(state.get(csCaseComments)[0].deletedBy).toBe(authorId);
+  });
+
+  it('rejects editing a comment through a different case route', async () => {
+    const otherCaseId = 'aaaaaaaa-0000-4000-8000-000000000002';
+    const seed = seedCase(caseId);
+    seed.get(csCases)!.push({ id: otherCaseId, subject: 'y', status: 'open' });
+    const { db } = makeFakeDb(seed);
+    const service = new CsCommentsService(db as any);
+    const created = await service.addComment(caseId, { body: 'first' }, authorId);
+
+    await expect(service.editComment(otherCaseId, created.id, { body: 'second' }, authorId)).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+  });
+
+  it('rejects deleting a comment through a different case route', async () => {
+    const otherCaseId = 'aaaaaaaa-0000-4000-8000-000000000002';
+    const seed = seedCase(caseId);
+    seed.get(csCases)!.push({ id: otherCaseId, subject: 'y', status: 'open' });
+    const { db } = makeFakeDb(seed);
+    const service = new CsCommentsService(db as any);
+    const created = await service.addComment(caseId, { body: 'first' }, authorId);
+
+    await expect(service.deleteComment(otherCaseId, created.id, authorId)).rejects.toBeInstanceOf(NotFoundError);
   });
 });
