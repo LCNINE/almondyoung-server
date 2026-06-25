@@ -1,12 +1,14 @@
-import { Body, Controller, Delete, Param, Post } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { User } from '@app/authorization';
+import { Body, Controller, Delete, Param, Post, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import { RolesGuard, User } from '@app/authorization';
 import { ApplyCsLabelDto } from '../dto/cs-label.dto';
 import { CsLabelsService } from '../services/cs-labels.service';
 
 type AuthenticatedUser = { id?: string; userId?: string; sub?: string } | undefined;
 
 @ApiTags('CS Case Labels')
+@ApiBearerAuth()
+@UseGuards(RolesGuard('master', 'admin'))
 @Controller('cs-cases/:caseId/labels')
 export class CsCaseLabelsController {
   constructor(private readonly service: CsLabelsService) {}

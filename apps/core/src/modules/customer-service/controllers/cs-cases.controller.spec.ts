@@ -1,4 +1,13 @@
+import { GUARDS_METADATA } from '@nestjs/common/constants';
+import { CsCaseCommentsController } from './cs-case-comments.controller';
+import { CsCaseLabelsController } from './cs-case-labels.controller';
 import { CsCasesController } from './cs-cases.controller';
+import { CsLabelsController } from './cs-labels.controller';
+
+function expectRoleGuarded(controller: object) {
+  const guards = Reflect.getMetadata(GUARDS_METADATA, controller) as unknown[] | undefined;
+  expect(guards?.length).toBeGreaterThan(0);
+}
 
 describe('CsCasesController', () => {
   function makeController() {
@@ -29,5 +38,12 @@ describe('CsCasesController', () => {
     const { controller, service } = makeController();
     controller.assign('case-1', { assigneeId: 'agent-2' } as any, { userId: 'u-3' });
     expect(service.assign).toHaveBeenCalledWith('case-1', 'agent-2', 'u-3');
+  });
+
+  it('protects all customer-service controllers with role guards', () => {
+    expectRoleGuarded(CsCasesController);
+    expectRoleGuarded(CsCaseCommentsController);
+    expectRoleGuarded(CsCaseLabelsController);
+    expectRoleGuarded(CsLabelsController);
   });
 });
