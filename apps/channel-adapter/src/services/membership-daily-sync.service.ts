@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
 import { DbService } from '@app/db';
 import { AlmondAuthClient } from '../adapters/almond-auth/almond-auth.client';
 import { FirebaseMembershipSyncService } from '../adapters/medusa/firebase-membership-sync.service';
@@ -26,7 +25,9 @@ export class MembershipDailySyncService {
     private readonly firebaseMembershipSyncService: FirebaseMembershipSyncService,
   ) {}
 
-  @Cron('0 2 * * *', { timeZone: 'Asia/Seoul' })
+  // 자동 스케줄 비활성화: 활성 멤버 판정을 레거시 AlmondAuth(카페24)에서 가져와
+  // 멤버십 서비스(현 SSOT) 기준 활성 회원을 매일 메두사 그룹에서 제거하던 문제.
+  // 멤버십 서비스 기준으로 재구현 후 다시 스케줄링한다. (수동 실행 runManually는 유지)
   async reconcileMembership(): Promise<void> {
     this.logger.log('일일 멤버십 정합성 크론 시작');
 
