@@ -289,7 +289,8 @@
     },
     "review": {
       "ratingTitle": "구매 경험이 만족스러웠나요?"
-    }
+    },
+    "downloadBtn": "디지털 상품 다운로드"
   },
   "fail": {
     "loading": "오류 정보를 불러오는 중...",

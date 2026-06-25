@@ -4,6 +4,8 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsIn,
+  IsBoolean,
   IsArray,
   IsNumber,
   Min,
@@ -45,6 +47,16 @@ export class CreateSalesOrderLineDto {
   @IsNumber()
   @IsOptional()
   totalPrice?: number;
+
+  @ApiProperty({ description: "이행 종류 ('physical' | 'digital')", required: false, enum: ['physical', 'digital'] })
+  @IsIn(['physical', 'digital'])
+  @IsOptional()
+  fulfillmentKind?: 'physical' | 'digital';
+
+  @ApiProperty({ description: '배송 필요 여부', required: false })
+  @IsBoolean()
+  @IsOptional()
+  requiresShipping?: boolean;
 }
 
 export class CreateSalesOrderDto {

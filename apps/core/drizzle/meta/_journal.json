@@ -176,6 +176,13 @@
       "when": 1782337163118,
       "tag": "20260624213923_cs-issue-tracker",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1782401258062,
+      "tag": "20260625152738_add-fulfillment-kind-to-sales-order-lines",
+      "breakpoints": true
     }
   ]
 }
