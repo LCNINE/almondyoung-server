@@ -7,8 +7,10 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { RolesGuard } from '@app/authorization';
 
 import { OwnershipService } from '../services/ownership.service';
 import {
@@ -21,6 +23,8 @@ import {
 } from '../dto/admin-ownership.dto';
 
 @ApiTags('Library / Admin Ownerships')
+@ApiBearerAuth()
+@UseGuards(RolesGuard('master', 'admin'))
 @Controller('library/admin/ownerships')
 export class OwnershipAdminController {
   constructor(private readonly service: OwnershipService) {}
