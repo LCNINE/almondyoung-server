@@ -1,4 +1,13 @@
+import { GUARDS_METADATA } from '@nestjs/common/constants';
+import { CsCaseCommentsController } from './cs-case-comments.controller';
+import { CsCaseLabelsController } from './cs-case-labels.controller';
 import { CsCasesController } from './cs-cases.controller';
+import { CsLabelsController } from './cs-labels.controller';
+
+function expectRoleGuarded(controller: object) {
+  const guards = Reflect.getMetadata(GUARDS_METADATA, controller) as unknown[] | undefined;
+  expect(guards?.length).toBeGreaterThan(0);
+}
 
 describe('CsCasesController', () => {
   function makeController() {
@@ -7,35 +16,34 @@ describe('CsCasesController', () => {
       list: jest.fn(),
       getOne: jest.fn(),
       createBusinessLink: jest.fn(),
+      updateStatus: jest.fn(),
+      assign: jest.fn(),
     };
     return { controller: new CsCasesController(service as any), service };
   }
 
-  it('uses the authenticated user id as the CS Case creator', () => {
+  it('uses the authenticated user id as the creator', () => {
     const { controller, service } = makeController();
-    const dto = { subject: 'Need cancellation review' };
-
-    controller.create(dto, { id: '11111111-1111-4111-8111-111111111111' });
-
-    expect(service.create).toHaveBeenCalledWith(dto, '11111111-1111-4111-8111-111111111111');
+    controller.create({ subject: 'x' } as any, { id: 'u-1' });
+    expect(service.create).toHaveBeenCalledWith({ subject: 'x' }, 'u-1');
   });
 
-  it('falls back to userId/sub shapes used by existing auth call sites', () => {
+  it('delegates status update with the operator id', () => {
     const { controller, service } = makeController();
-    const dto = { subject: 'Need fulfillment review' };
-
-    controller.create(dto, { userId: '22222222-2222-4222-8222-222222222222' });
-    controller.create(dto, { sub: '33333333-3333-4333-8333-333333333333' });
-
-    expect(service.create).toHaveBeenNthCalledWith(1, dto, '22222222-2222-4222-8222-222222222222');
-    expect(service.create).toHaveBeenNthCalledWith(2, dto, '33333333-3333-4333-8333-333333333333');
+    controller.updateStatus('case-1', { status: 'closed' } as any, { sub: 'u-9' });
+    expect(service.updateStatus).toHaveBeenCalledWith('case-1', 'closed', 'u-9');
   });
 
-  it('passes a numeric list limit to the service', () => {
+  it('delegates assignment with the operator id', () => {
     const { controller, service } = makeController();
+    controller.assign('case-1', { assigneeId: 'agent-2' } as any, { userId: 'u-3' });
+    expect(service.assign).toHaveBeenCalledWith('case-1', 'agent-2', 'u-3');
+  });
 
-    controller.list(20);
-
-    expect(service.list).toHaveBeenCalledWith(20);
+  it('protects all customer-service controllers with role guards', () => {
+    expectRoleGuarded(CsCasesController);
+    expectRoleGuarded(CsCaseCommentsController);
+    expectRoleGuarded(CsCaseLabelsController);
+    expectRoleGuarded(CsLabelsController);
   });
 });

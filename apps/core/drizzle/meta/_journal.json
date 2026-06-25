@@ -169,6 +169,13 @@
       "when": 1781643423179,
       "tag": "20260616205703_membership-product-visibility-policies",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1782337163118,
+      "tag": "20260624213923_cs-issue-tracker",
+      "breakpoints": true
     }
   ]
 }
