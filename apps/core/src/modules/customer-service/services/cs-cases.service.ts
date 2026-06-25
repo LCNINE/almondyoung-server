@@ -284,7 +284,10 @@ export class CsCasesService {
       deleted: Boolean(c.deletedAt),
       edited: Boolean(c.editedAt),
       mentions: mentions.filter((m) => m.commentId === c.id).map((m) => m.mentionedUserId),
-      attachmentFileIds: attachments.filter((a) => a.commentId === c.id).map((a) => a.fileId),
+      attachmentFileIds: attachments
+        .filter((a) => a.commentId === c.id)
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((a) => a.fileId),
     }));
 
     const eventItems = events.map((e) => ({
