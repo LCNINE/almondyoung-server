@@ -229,11 +229,6 @@ export class OrderEventsConsumer {
         );
         if (alreadyProcessed) return;
 
-        // checkAndRecordEvent only dedupes by Kafka messageId. The same refund can be redelivered
-        // under a NEW messageId (e.g. the channel-adapter outbox publishes to Kafka but crashes
-        // before marking its inbox row published, then republishes). Guard the timeline insert on
-        // the stable business key (sourceId, relationName, targetExternalRef) so operators never
-        // see a duplicate refund link for the same refundId.
         const refundExternalRef = `medusa:refund:${payload.refundId}`;
         const [existingLink] = await tx
           .select({ id: wmsTables.businessLinks.id })
