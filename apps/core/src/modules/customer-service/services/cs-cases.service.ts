@@ -222,7 +222,18 @@ export class CsCasesService {
         .from(csCases)
         .orderBy(desc(csCases.createdAt))
         .limit(Math.min(100, Math.max(1, limit)));
-      return rows.map((row) => this.toCaseResponse(row, [], []));
+      const caseIds = rows.map((row) => row.id);
+      const caseLabels = caseIds.length
+        ? await trx.select().from(csCaseLabels).where(inArray(csCaseLabels.csCaseId, caseIds))
+        : [];
+      const labelIdsByCaseId = new Map<string, string[]>();
+      for (const caseLabel of caseLabels) {
+        const labelIds = labelIdsByCaseId.get(caseLabel.csCaseId) ?? [];
+        labelIds.push(caseLabel.labelId);
+        labelIdsByCaseId.set(caseLabel.csCaseId, labelIds);
+      }
+
+      return rows.map((row) => this.toCaseResponse(row, labelIdsByCaseId.get(row.id) ?? [], []));
     }, tx);
   }
 

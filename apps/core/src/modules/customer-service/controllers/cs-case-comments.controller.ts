@@ -25,16 +25,21 @@ export class CsCaseCommentsController {
   @ApiOperation({ summary: '댓글 수정(작성자 본인만)' })
   @ApiParam({ name: 'caseId' })
   @ApiParam({ name: 'commentId' })
-  edit(@Param('commentId') commentId: string, @Body() dto: EditCsCommentDto, @User() user: AuthenticatedUser) {
-    return this.service.editComment(commentId, dto, this.getUserId(user));
+  edit(
+    @Param('caseId') caseId: string,
+    @Param('commentId') commentId: string,
+    @Body() dto: EditCsCommentDto,
+    @User() user: AuthenticatedUser,
+  ) {
+    return this.service.editComment(caseId, commentId, dto, this.getUserId(user));
   }
 
   @Delete(':commentId')
   @ApiOperation({ summary: '댓글 삭제(소프트, 작성자 본인만)' })
   @ApiParam({ name: 'caseId' })
   @ApiParam({ name: 'commentId' })
-  remove(@Param('commentId') commentId: string, @User() user: AuthenticatedUser) {
-    return this.service.deleteComment(commentId, this.getUserId(user));
+  remove(@Param('caseId') caseId: string, @Param('commentId') commentId: string, @User() user: AuthenticatedUser) {
+    return this.service.deleteComment(caseId, commentId, this.getUserId(user));
   }
 
   private getUserId(user: AuthenticatedUser): string {

@@ -188,3 +188,43 @@ describe('CsCasesService.getOne timeline', () => {
     expect(comment?.attachmentFileIds).toEqual(['file_123']);
   });
 });
+
+describe('CsCasesService.list', () => {
+  it('includes applied labelIds for each listed ticket', async () => {
+    const caseA = 'aaaaaaaa-0000-4000-8000-000000000001';
+    const caseB = 'aaaaaaaa-0000-4000-8000-000000000002';
+    const seed = new Map<unknown, any[]>();
+    seed.set(csCases, [
+      {
+        id: caseA,
+        status: 'open',
+        priority: 'normal',
+        subject: 'a',
+        metadata: {},
+        createdAt: new Date('2026-06-20T00:01:00Z'),
+        updatedAt: new Date('2026-06-20T00:01:00Z'),
+      },
+      {
+        id: caseB,
+        status: 'open',
+        priority: 'normal',
+        subject: 'b',
+        metadata: {},
+        createdAt: new Date('2026-06-20T00:00:00Z'),
+        updatedAt: new Date('2026-06-20T00:00:00Z'),
+      },
+    ]);
+    seed.set(csCaseLabels, [
+      { id: 'cl1', csCaseId: caseA, labelId: 'label-a' },
+      { id: 'cl2', csCaseId: caseA, labelId: 'label-b' },
+      { id: 'cl3', csCaseId: caseB, labelId: 'label-c' },
+    ]);
+    const { db } = makeFakeDb(seed);
+    const service = new CsCasesService(db as any);
+
+    const result = await service.list();
+
+    expect(result.find((row) => row.id === caseA)?.labelIds).toEqual(['label-a', 'label-b']);
+    expect(result.find((row) => row.id === caseB)?.labelIds).toEqual(['label-c']);
+  });
+});

@@ -34,6 +34,12 @@ export class CsCommentsService {
     return row;
   }
 
+  private assertCommentBelongsToCase(comment: CsCaseComment, csCaseId: string): void {
+    if (comment.csCaseId !== csCaseId) {
+      throw new NotFoundError(`CS comment ${comment.id} not found in CS Case ${csCaseId}`);
+    }
+  }
+
   async addComment(csCaseId: string, dto: CreateCsCommentDto, authorId: string, tx?: Tx) {
     const body = dto.body?.trim();
     if (!body) throw new BadRequestError('Comment body must not be empty');
@@ -76,12 +82,13 @@ export class CsCommentsService {
     }, tx);
   }
 
-  async editComment(commentId: string, dto: EditCsCommentDto, actorId: string, tx?: Tx) {
+  async editComment(csCaseId: string, commentId: string, dto: EditCsCommentDto, actorId: string, tx?: Tx) {
     const body = dto.body?.trim();
     if (!body) throw new BadRequestError('Comment body must not be empty');
 
     return this.inTx(async (trx) => {
       const comment = await this.loadCommentOrThrow(commentId, trx);
+      this.assertCommentBelongsToCase(comment, csCaseId);
       if (comment.deletedAt) throw new BadRequestError('Cannot edit a deleted comment');
       if (comment.authorId !== actorId) throw new ForbiddenError('Only the author can edit this comment');
 
@@ -94,9 +101,10 @@ export class CsCommentsService {
     }, tx);
   }
 
-  async deleteComment(commentId: string, actorId: string, tx?: Tx) {
+  async deleteComment(csCaseId: string, commentId: string, actorId: string, tx?: Tx) {
     return this.inTx(async (trx) => {
       const comment = await this.loadCommentOrThrow(commentId, trx);
+      this.assertCommentBelongsToCase(comment, csCaseId);
       if (comment.authorId !== actorId) throw new ForbiddenError('Only the author can delete this comment');
       if (comment.deletedAt) return comment;
 
