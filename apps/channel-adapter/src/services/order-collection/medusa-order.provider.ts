@@ -193,19 +193,30 @@ export class MedusaOrderProvider implements ReplayableChannelOrderProvider {
    * 명시적으로 판단할 수 있도록 이벤트에 보존한다.
    * 우선순위: line item.requires_shipping → product.metadata.requiresShipping
    *          → product.metadata.fulfillmentKind('digital'면 배송 불필요). 모두 없으면 물리로 간주.
+   * line item snapshot 이 있으면 fulfillmentKind 도 그 값과 일관되게 판별한다.
    */
   private resolveFulfillment(item: NonNullable<MedusaOrder['items']>[number]): {
     fulfillmentKind: 'physical' | 'digital';
     requiresShipping: boolean;
   } {
     const meta = (item.variant?.product?.metadata ?? {}) as Record<string, unknown>;
-    const metaFulfillmentKind = meta.fulfillmentKind === 'digital' ? 'digital' : meta.fulfillmentKind === 'physical' ? 'physical' : undefined;
-    const metaRequiresShipping = typeof meta.requiresShipping === 'boolean' ? (meta.requiresShipping as boolean) : undefined;
-    const itemRequiresShipping = typeof (item as { requires_shipping?: unknown }).requires_shipping === 'boolean'
-      ? ((item as { requires_shipping?: boolean }).requires_shipping as boolean)
-      : undefined;
+    const metaFulfillmentKind =
+      meta.fulfillmentKind === 'digital' ? 'digital' : meta.fulfillmentKind === 'physical' ? 'physical' : undefined;
+    const metaRequiresShipping =
+      typeof meta.requiresShipping === 'boolean' ? (meta.requiresShipping as boolean) : undefined;
+    const itemRequiresShipping =
+      typeof (item as { requires_shipping?: unknown }).requires_shipping === 'boolean'
+        ? ((item as { requires_shipping?: boolean }).requires_shipping as boolean)
+        : undefined;
 
-    const requiresShipping = itemRequiresShipping ?? metaRequiresShipping ?? metaFulfillmentKind !== 'digital';
+    if (itemRequiresShipping !== undefined) {
+      return {
+        fulfillmentKind: itemRequiresShipping ? 'physical' : 'digital',
+        requiresShipping: itemRequiresShipping,
+      };
+    }
+
+    const requiresShipping = metaRequiresShipping ?? metaFulfillmentKind !== 'digital';
     const fulfillmentKind: 'physical' | 'digital' = metaFulfillmentKind ?? (requiresShipping ? 'physical' : 'digital');
     return { fulfillmentKind, requiresShipping };
   }
