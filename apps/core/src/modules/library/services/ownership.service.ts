@@ -1,14 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { ForbiddenError, NotFoundError } from '@app/shared';
-import { and, count, desc, eq, isNotNull, isNull, type SQL } from 'drizzle-orm';
+import { BadRequestError, ForbiddenError, NotFoundError } from '@app/shared';
+import { and, count, desc, eq, inArray, isNotNull, isNull, type SQL } from 'drizzle-orm';
 
 import {
   type LibrarySchema,
   digitalAssetFileVersions,
   digitalAssetOwnerships,
   digitalAssets,
+  productVariantDigitalAssetLinks,
 } from '../schema/library.schema';
+import { wmsTables } from '../../inventory/schema/inventory.schema';
 import {
   OwnershipListResponseDto,
   OwnershipResponseDto,
@@ -26,9 +28,6 @@ export type OwnershipFilter = 'all' | 'new' | 'used';
 
 /**
  * Storefront 사용자 본인의 ownership 조회/exercise/다운로드 메타 조회.
- *
- * - revoke 된 ownership 은 노출/exercise/다운로드 모두 차단 (ADR-0006).
- * - exercise 는 이미 exercise 된 경우 idempotent — 멱등 성공.
  * - 다운로드 가능 조건: 본인 ownership + exercised + 미revoke + asset 의 currentFileVersion 존재.
  */
 @Injectable()
@@ -229,6 +228,46 @@ export class OwnershipService {
         .where(eq(digitalAssets.id, dto.assetId));
       if (!asset) {
         throw new NotFoundError(`Asset not found: ${dto.assetId}`);
+      }
+
+      const [order] = await trx
+        .select({
+          id: wmsTables.salesOrders.id,
+          customerId: wmsTables.salesOrders.customerId,
+        })
+        .from(wmsTables.salesOrders)
+        .where(eq(wmsTables.salesOrders.id, dto.salesOrderId));
+      if (!order) {
+        throw new NotFoundError(`Sales order not found: ${dto.salesOrderId}`);
+      }
+      if (order.customerId !== dto.customerId) {
+        throw new BadRequestError(
+          `Customer ${dto.customerId} does not match sales order ${dto.salesOrderId}`,
+        );
+      }
+
+      const lines = await trx
+        .select({ variantId: wmsTables.salesOrderLines.variantId })
+        .from(wmsTables.salesOrderLines)
+        .where(eq(wmsTables.salesOrderLines.salesOrderId, dto.salesOrderId));
+      const variantIds = Array.from(new Set(lines.map((l) => l.variantId)));
+
+      const linkedAsset = variantIds.length
+        ? await trx
+            .select({ assetId: productVariantDigitalAssetLinks.assetId })
+            .from(productVariantDigitalAssetLinks)
+            .where(
+              and(
+                inArray(productVariantDigitalAssetLinks.variantId, variantIds),
+                eq(productVariantDigitalAssetLinks.assetId, dto.assetId),
+              ),
+            )
+            .limit(1)
+        : [];
+      if (linkedAsset.length === 0) {
+        throw new BadRequestError(
+          `Asset ${dto.assetId} is not linked to any variant in sales order ${dto.salesOrderId}`,
+        );
       }
 
       await trx
