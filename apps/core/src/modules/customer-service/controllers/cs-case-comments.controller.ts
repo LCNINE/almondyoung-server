@@ -1,6 +1,6 @@
-import { Body, Controller, Delete, Param, Patch, Post } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { User } from '@app/authorization';
+import { Body, Controller, Delete, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import { RolesGuard, User } from '@app/authorization';
 import { CreateCsCommentDto } from '../dto/create-cs-comment.dto';
 import { EditCsCommentDto } from '../dto/edit-cs-comment.dto';
 import { CsCommentsService } from '../services/cs-comments.service';
@@ -8,6 +8,8 @@ import { CsCommentsService } from '../services/cs-comments.service';
 type AuthenticatedUser = { id?: string; userId?: string; sub?: string } | undefined;
 
 @ApiTags('CS Comments')
+@ApiBearerAuth()
+@UseGuards(RolesGuard('master', 'admin'))
 @Controller('cs-cases/:caseId/comments')
 export class CsCaseCommentsController {
   constructor(private readonly service: CsCommentsService) {}

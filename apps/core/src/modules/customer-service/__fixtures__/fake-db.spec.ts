@@ -82,6 +82,23 @@ describe('makeFakeDb', () => {
     expect(updated.subject).toBe('b');
   });
 
+  it('updates only rows matching eq predicates', async () => {
+    const seed = new Map<unknown, any[]>();
+    seed.set(csCases, [
+      { id: 'case-1', subject: 'a' },
+      { id: 'case-2', subject: 'b' },
+    ]);
+    const { db, state } = makeFakeDb(seed);
+
+    const updated = await db.db.update(csCases).set({ subject: 'updated' }).where(eq(csCases.id, 'case-1')).returning();
+
+    expect(updated).toEqual([expect.objectContaining({ id: 'case-1', subject: 'updated' })]);
+    expect(state.get(csCases)).toEqual([
+      expect.objectContaining({ id: 'case-1', subject: 'updated' }),
+      expect.objectContaining({ id: 'case-2', subject: 'b' }),
+    ]);
+  });
+
   it('filters select rows with eq predicates', async () => {
     const seed = new Map<unknown, any[]>();
     seed.set(csCaseLabels, [

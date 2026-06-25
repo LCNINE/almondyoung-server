@@ -1,6 +1,17 @@
-import { Body, Controller, DefaultValuePipe, Get, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { User } from '@app/authorization';
+import {
+  Body,
+  Controller,
+  DefaultValuePipe,
+  Get,
+  Param,
+  ParseIntPipe,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { RolesGuard, User } from '@app/authorization';
 import { CreateBusinessLinkDto } from '../../sales-order/dto/create-business-link.dto';
 import { AssignCsCaseDto, CreateCsCaseDto, CsCaseResponseDto, UpdateCsCaseStatusDto } from '../dto';
 import { CsCasesService } from '../services/cs-cases.service';
@@ -8,6 +19,8 @@ import { CsCasesService } from '../services/cs-cases.service';
 type AuthenticatedUser = { id?: string; userId?: string; sub?: string } | undefined;
 
 @ApiTags('CS Cases')
+@ApiBearerAuth()
+@UseGuards(RolesGuard('master', 'admin'))
 @Controller('cs-cases')
 export class CsCasesController {
   constructor(private readonly service: CsCasesService) {}

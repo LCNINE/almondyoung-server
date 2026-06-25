@@ -190,13 +190,14 @@ export function makeFakeDb(seed: Map<unknown, Row[]> = new Map()) {
     }),
     update: (table: unknown) => ({
       set: (patch: Row) => ({
-        where: () => ({
+        where: (predicate: unknown) => ({
           returning: () => {
             const rows = state.get(table);
-            const target = rows[rows.length - 1];
-            if (!target) return Promise.resolve([]);
-            Object.assign(target, patch, { updatedAt: new Date('2026-06-20T00:01:00.000Z') });
-            return Promise.resolve([target]);
+            const targets = filterRows(rows, predicate);
+            for (const target of targets) {
+              Object.assign(target, patch, { updatedAt: new Date('2026-06-20T00:01:00.000Z') });
+            }
+            return Promise.resolve(targets);
           },
         }),
       }),

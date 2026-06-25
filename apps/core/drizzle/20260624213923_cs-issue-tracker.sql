@@ -69,6 +69,10 @@ CREATE INDEX "idx_cs_case_events_case_id" ON "cs_case_events" USING btree ("cs_c
 CREATE INDEX "idx_cs_case_labels_case_id" ON "cs_case_labels" USING btree ("cs_case_id");--> statement-breakpoint
 CREATE INDEX "idx_cs_cases_assigned_to" ON "cs_cases" USING btree ("assigned_to");--> statement-breakpoint
 CREATE INDEX "idx_cs_cases_source_channel" ON "cs_cases" USING btree ("source_channel");--> statement-breakpoint
+UPDATE "cs_cases"
+SET "status" = 'closed',
+	"closed_at" = COALESCE("closed_at", "resolved_at", "updated_at")
+WHERE "status" = 'resolved';--> statement-breakpoint
 ALTER TABLE "cs_cases" DROP COLUMN "reason_code";--> statement-breakpoint
 ALTER TABLE "cs_cases" DROP COLUMN "customer_email";--> statement-breakpoint
 ALTER TABLE "cs_cases" DROP COLUMN "customer_phone";--> statement-breakpoint
