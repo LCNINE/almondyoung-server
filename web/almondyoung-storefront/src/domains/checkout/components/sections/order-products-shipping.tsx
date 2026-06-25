@@ -2,6 +2,7 @@
 
 import { Badge } from "@/components/ui/badge"
 import { FreeShippingProgress } from "@/domains/cart/components/free-shipping-progress"
+import { cartRequiresShipping } from "@/lib/api/medusa/shipping-method-policy"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { calcItemPrice, formatPrice } from "@/lib/utils/price-utils"
 import { StoreCart, StoreCartLineItem } from "@medusajs/types"
@@ -40,6 +41,8 @@ export const OrderProductsSection = ({
     0
   )
 
+  const requiresShipping = cartRequiresShipping(products)
+
   return (
     <section aria-labelledby="order-heading" className="mb-8">
       <h2
@@ -60,12 +63,14 @@ export const OrderProductsSection = ({
           ))}
         </div>
 
-        <div className="border-t border-gray-100 px-[14px] py-4 lg:px-10">
-          <FreeShippingProgress className="mb-3" itemSubtotal={itemSubtotal} />
-          <p className="text-right text-[12px] text-gray-600 lg:text-sm">
-            {t("shippingFee", { amount: formatPrice(shipping) })}
-          </p>
-        </div>
+        {requiresShipping && (
+          <div className="border-t border-gray-100 px-[14px] py-4 lg:px-10">
+            <FreeShippingProgress className="mb-3" itemSubtotal={itemSubtotal} />
+            <p className="text-right text-[12px] text-gray-600 lg:text-sm">
+              {t("shippingFee", { amount: formatPrice(shipping) })}
+            </p>
+          </div>
+        )}
       </article>
     </section>
   )
