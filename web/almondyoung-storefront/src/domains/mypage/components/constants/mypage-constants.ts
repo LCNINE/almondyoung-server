@@ -11,6 +11,7 @@ export const QUICK_LINKS: QuickLink[] = [
 
 export const MENU_ITEMS: MenuItem[] = [
   { label: "mypage.menu.orderInquiry", icon: "📄", path: "/mypage/order/list" },
+  { label: "mypage.menu.download", icon: "📥", path: "/mypage/download" },
   {
     label: "mypage.menu.orderLegacy",
     icon: "🧾",
@@ -44,6 +45,7 @@ export const MENU_SECTIONS: MenuSection[] = [
         path: "/mypage/order/legacy",
       },
       { label: "mypage.menu.exchange", icon: "🔄", path: "/mypage/exchange" },
+      { label: "mypage.menu.download", icon: "📥", path: "/mypage/download" },
     ],
   },
   {
@@ -93,6 +95,12 @@ export const SIDEBAR_MENU_ITEMS = [
     label: "mypage.menu.orderLegacy",
     hasSubMenu: false,
     path: "/mypage/order/legacy",
+  },
+  {
+    id: "download",
+    label: "mypage.menu.download",
+    hasSubMenu: false,
+    path: "/mypage/download",
   },
   {
     id: "wishlist",

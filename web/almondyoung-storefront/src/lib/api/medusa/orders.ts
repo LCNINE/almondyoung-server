@@ -108,7 +108,12 @@ export async function getOrder(
 
   return await sdk.store.order
     // +metadata: 무통장 입금확인중(metadata.bank_transfer_status) 표시를 위해 기본 필드에 추가
-    .retrieve(orderId, { fields: "+metadata" }, headers)
+    // +items.requires_shipping/product_type: 디지털 판별(다운로드 CTA·배송정보 숨김)에 필요 — 기본 필드에 없어 명시 요청
+    .retrieve(
+      orderId,
+      { fields: "+metadata,+items.requires_shipping,+items.product_type" },
+      headers
+    )
     .then(({ order }) => order)
     .catch(async (error) => {
       await handleMedusaAuthError(error)
