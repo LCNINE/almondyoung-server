@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
 import { and, eq } from 'drizzle-orm';
 import { csCaseLabels, csCases } from '../schema/customer-service.schema';
 import { makeFakeDb } from './fake-db';

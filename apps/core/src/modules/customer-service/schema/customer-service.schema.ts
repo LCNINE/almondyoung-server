@@ -87,10 +87,7 @@ export const csCaseCommentAttachments = pgTable(
     uploadedBy: uuid('uploaded_by'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [
-    index('idx_cs_attachment_case_id').on(t.csCaseId),
-    index('idx_cs_attachment_comment_id').on(t.commentId),
-  ],
+  (t) => [index('idx_cs_attachment_case_id').on(t.csCaseId), index('idx_cs_attachment_comment_id').on(t.commentId)],
 );
 
 export const csCaseEvents = pgTable(

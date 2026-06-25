@@ -2,11 +2,8 @@ import { getTableConfig } from 'drizzle-orm/pg-core';
 import {
   csCases,
   csCaseComments,
-  csCaseCommentMentions,
   csCaseCommentAttachments,
   csCaseEvents,
-  csLabels,
-  csCaseLabels,
   customerServiceSchema,
 } from './customer-service.schema';
 

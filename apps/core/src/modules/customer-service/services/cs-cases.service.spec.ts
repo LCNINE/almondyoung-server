@@ -10,6 +10,12 @@ import { wmsTables } from '../../inventory/schema/inventory.schema';
 import { makeFakeDb } from '../__fixtures__/fake-db';
 import { CsCasesService } from './cs-cases.service';
 
+type TimelineItem = {
+  kind: string;
+  mentions?: string[];
+  attachmentFileIds?: string[];
+};
+
 describe('CsCasesService.create', () => {
   it('creates a ticket with defaults and stamps the operator', async () => {
     const { db, state } = makeFakeDb();
@@ -175,9 +181,10 @@ describe('CsCasesService.getOne timeline', () => {
     const result = await service.getOne(caseId);
 
     expect(result.labelIds).toEqual(['label-1']);
-    expect(result.timeline.map((t: any) => t.kind)).toEqual(['event', 'comment', 'business_link']);
-    const comment = result.timeline.find((t: any) => t.kind === 'comment') as any;
-    expect(comment.mentions).toEqual(['agent-2']);
-    expect(comment.attachmentFileIds).toEqual(['file_123']);
+    const timeline = result.timeline as TimelineItem[];
+    expect(timeline.map((t) => t.kind)).toEqual(['event', 'comment', 'business_link']);
+    const comment = timeline.find((t) => t.kind === 'comment');
+    expect(comment?.mentions).toEqual(['agent-2']);
+    expect(comment?.attachmentFileIds).toEqual(['file_123']);
   });
 });

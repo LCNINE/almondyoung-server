@@ -4,13 +4,7 @@ import { ConflictError, NotFoundError } from '@app/shared';
 import { and, asc, eq } from 'drizzle-orm';
 import { type MergedSchema } from '../../../platform/database/merged-schema';
 import { CreateCsLabelDto } from '../dto/cs-label.dto';
-import {
-  csCaseEvents,
-  csCaseLabels,
-  csCases,
-  csLabels,
-  type CsCaseEventType,
-} from '../schema/customer-service.schema';
+import { csCaseEvents, csCaseLabels, csCases, csLabels, type CsCaseEventType } from '../schema/customer-service.schema';
 
 type Db = DbService<MergedSchema>['db'];
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
