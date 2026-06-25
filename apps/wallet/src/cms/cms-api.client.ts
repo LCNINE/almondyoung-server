@@ -72,7 +72,7 @@ export type CmsApiResult<T> = { ok: true; data: T } | { ok: false; error: CmsApi
 export interface CreateCmsMemberDto {
   memberId: string;
   memberName: string;
-  phone?: string;
+  phone: string;
   paymentKind: 'CMS';
   paymentCompany: string;
   paymentNumber: string;

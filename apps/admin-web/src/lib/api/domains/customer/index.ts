@@ -123,6 +123,18 @@ export const customerApi = {
     return response.data;
   },
 
+  // 사업자등록증 등록/수정 (userId 기준 upsert — 기존 있으면 수정, 없으면 생성)
+  upsertBusinessLicense: async (
+    userId: string,
+    dto: { businessNumber: string; representativeName: string }
+  ): Promise<CustomerBusinessLicense> => {
+    const response = await client.post<CustomerBusinessLicense>(
+      `${USER_SERVICE_BASE_URL}/admin/business-licenses/user/${userId}`,
+      dto
+    );
+    return response.data;
+  },
+
   // 사업자등록증 심사 수정 (상태/코멘트)
   updateBusinessLicense: async (
     businessId: string,

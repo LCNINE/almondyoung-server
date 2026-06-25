@@ -1,53 +1,23 @@
 "use client"
 
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
-import { deleteLineItem, updateLineItem } from "@/lib/api/medusa/cart"
 import { FreeShippingProgress } from "@/domains/cart/components/free-shipping-progress"
-import { isWelcomeMembershipProduct } from "@/lib/utils/welcome-membership"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { calcItemPrice, formatPrice } from "@/lib/utils/price-utils"
 import { StoreCart, StoreCartLineItem } from "@medusajs/types"
-import { Minus, Plus, Trash2, X } from "lucide-react"
 import Image from "next/image"
 import { useTranslations } from "next-intl"
-import { useState, useTransition } from "react"
-import { toast } from "sonner"
 
 interface OrderProductsSectionProps {
-  cartId: string
   products: StoreCart["items"]
   shipping: number
-  selectedIds: Set<string>
-  onSelectedIdsChange: (ids: Set<string>) => void
 }
 
 export const OrderProductsSection = ({
-  cartId,
   products,
   shipping,
-  selectedIds,
-  onSelectedIdsChange,
 }: OrderProductsSectionProps) => {
   const t = useTranslations("checkout.orderProducts")
-  const [isPending, startTransition] = useTransition()
 
   if (!products?.length) {
     return (
@@ -65,45 +35,10 @@ export const OrderProductsSection = ({
     )
   }
 
-  const allSelected =
-    products.length > 0 &&
-    products.every((item) => selectedIds.has(item.id)) &&
-    selectedIds.size === products.length
-  const someSelected = selectedIds.size > 0
-
-  const toggleAll = () => {
-    if (allSelected) {
-      onSelectedIdsChange(new Set())
-    } else {
-      onSelectedIdsChange(new Set(products.map((item) => item.id)))
-    }
-  }
-
-  const toggleItem = (id: string) => {
-    const newSet = new Set(selectedIds)
-    if (newSet.has(id)) {
-      newSet.delete(id)
-    } else {
-      newSet.add(id)
-    }
-    onSelectedIdsChange(newSet)
-  }
-
-  const handleDeleteSelected = () => {
-    if (selectedIds.size === 0) return
-
-    startTransition(async () => {
-      try {
-        await Promise.all(
-          Array.from(selectedIds).map((id) => deleteLineItem(id, cartId))
-        )
-        toast.success(t("toasts.deletedCount", { count: selectedIds.size }))
-        onSelectedIdsChange(new Set())
-      } catch {
-        toast.error(t("toasts.deleteFailed"))
-      }
-    })
-  }
+  const itemSubtotal = products.reduce(
+    (sum, item) => sum + (item.unit_price ?? 0) * (item.quantity ?? 0),
+    0
+  )
 
   return (
     <section aria-labelledby="order-heading" className="mb-8">
@@ -114,87 +49,19 @@ export const OrderProductsSection = ({
         {t("title")}
       </h2>
       <article className="rounded-md border border-gray-200 bg-white lg:rounded-[10px]">
-        {/* 전체 선택 & 선택 삭제 헤더 */}
-        <div className="flex items-center justify-between border-b border-gray-100 px-[14px] py-3 lg:px-10">
-          <label className="flex cursor-pointer items-center gap-2">
-            <Checkbox
-              checked={allSelected}
-              onCheckedChange={toggleAll}
-              disabled={isPending}
-            />
-            <span className="text-[12px] text-gray-700 lg:text-sm">
-              {t("selectAll", {
-                selected: selectedIds.size,
-                total: products.length,
-              })}
-            </span>
-          </label>
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1 px-2 text-[12px] text-gray-500 hover:text-red-500 lg:text-sm"
-                disabled={!someSelected || isPending}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                {t("deleteSelected")}
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>
-                  {t("deleteSelectedDialog.title")}
-                </AlertDialogTitle>
-                <AlertDialogDescription>
-                  {t("deleteSelectedDialog.description", {
-                    count: selectedIds.size,
-                  })}
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>
-                  {t("deleteSelectedDialog.cancel")}
-                </AlertDialogCancel>
-                <AlertDialogAction
-                  className="bg-red-500 hover:bg-red-600"
-                  onClick={handleDeleteSelected}
-                  disabled={isPending}
-                >
-                  {isPending
-                    ? t("deleteSelectedDialog.deleting")
-                    : t("deleteSelectedDialog.confirm")}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </div>
-
         {/* 상품 목록 */}
         <div className="space-y-4 px-[14px] py-[18px] lg:px-10 lg:py-8">
           {products.map((item, i) => (
             <ProductItem
               key={item.id}
               item={item}
-              cartId={cartId}
               showDivider={i < products.length - 1}
-              isSelected={selectedIds.has(item.id)}
-              onToggle={() => toggleItem(item.id)}
-              disabled={isPending}
             />
           ))}
         </div>
 
         <div className="border-t border-gray-100 px-[14px] py-4 lg:px-10">
-          {selectedIds.size > 0 && (
-            <FreeShippingProgress
-              className="mb-3"
-              itemSubtotal={products?.reduce(
-                (sum, p) => (selectedIds.has(p.id) ? sum + (p.unit_price ?? 0) * (p.quantity ?? 0) : sum),
-                0
-              ) ?? 0}
-            />
-          )}
+          <FreeShippingProgress className="mb-3" itemSubtotal={itemSubtotal} />
           <p className="text-right text-[12px] text-gray-600 lg:text-sm">
             {t("shippingFee", { amount: formatPrice(shipping) })}
           </p>
@@ -206,57 +73,20 @@ export const OrderProductsSection = ({
 
 function ProductItem({
   item,
-  cartId,
   showDivider,
-  isSelected,
-  onToggle,
-  disabled,
 }: {
   item: StoreCartLineItem
-  cartId: string
   showDivider: boolean
-  isSelected: boolean
-  onToggle: () => void
-  disabled?: boolean
 }) {
   const t = useTranslations("checkout.orderProducts")
-  const [isPending, startTransition] = useTransition()
-  const {
-    thumbnail,
-    product_title,
-    title,
-    variant_title,
-    subtitle,
-    quantity,
-    unit_price,
-    id,
-  } = item
+  const { thumbnail, product_title, title, variant_title, subtitle, quantity } =
+    item
   const productTitle = product_title ?? title
   const { total, originalTotal, hasReducedPrice } = calcItemPrice(item)
-  const isWelcomeMembership = isWelcomeMembershipProduct(
-    (item as any).product?.tags
-  )
 
-  const handleDelete = () => {
-    startTransition(async () => {
-      try {
-        await deleteLineItem(id, cartId)
-        toast.success(t("toasts.deletedSingle"))
-      } catch {
-        toast.error(t("toasts.deleteFailed"))
-      }
-    })
-  }
   return (
     <div className={showDivider ? "border-b border-gray-100 pb-4" : ""}>
       <div className="flex items-start gap-3 lg:gap-4">
-        {/* 체크박스 */}
-        <Checkbox
-          checked={isSelected}
-          onCheckedChange={onToggle}
-          disabled={disabled || isPending}
-          className="mt-1"
-        />
         <div className="relative h-[52px] w-[52px] lg:h-[64px] lg:w-[64px]">
           <Image
             src={getThumbnailUrl(thumbnail ?? "")}
@@ -269,42 +99,8 @@ function ProductItem({
         <p className="flex-1 text-[12px] text-gray-900 lg:text-sm">
           {productTitle}
         </p>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 text-gray-400 hover:text-gray-600"
-              disabled={isPending}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>{t("deleteSingleDialog.title")}</AlertDialogTitle>
-              <AlertDialogDescription>
-                {t("deleteSingleDialog.description", { title: productTitle })}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>
-                {t("deleteSingleDialog.cancel")}
-              </AlertDialogCancel>
-              <AlertDialogAction
-                className="bg-yellow-30 hover:bg-yellow-40"
-                onClick={handleDelete}
-                disabled={isPending}
-              >
-                {isPending
-                  ? t("deleteSingleDialog.deleting")
-                  : t("deleteSingleDialog.confirm")}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
       </div>
-      <div className="mt-3 ml-7 lg:ml-8">
+      <div className="mt-3">
         <div className="flex items-center justify-between rounded-[2px] bg-[#F5F5F5]/50 px-2 py-2 lg:px-3 lg:py-2.5">
           <div className="flex items-center gap-2">
             <Badge
@@ -321,13 +117,6 @@ function ProductItem({
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <QuantityEditPopover
-              itemId={id}
-              cartId={cartId}
-              currentQuantity={quantity}
-              unitPrice={unit_price}
-              isWelcomeMembership={isWelcomeMembership}
-            />
             <PriceDisplay
               hasDiscount={hasReducedPrice}
               originalPrice={originalTotal}
@@ -337,114 +126,6 @@ function ProductItem({
         </div>
       </div>
     </div>
-  )
-}
-
-function QuantityEditPopover({
-  itemId,
-  cartId,
-  currentQuantity,
-  unitPrice,
-  isWelcomeMembership,
-}: {
-  itemId: string
-  cartId: string
-  currentQuantity: number
-  unitPrice: number
-  isWelcomeMembership?: boolean
-}) {
-  const t = useTranslations("checkout.orderProducts")
-  const [open, setOpen] = useState(false)
-  const [quantity, setQuantity] = useState(currentQuantity)
-  const [isPending, startTransition] = useTransition()
-
-  const handleOpen = (isOpen: boolean) => {
-    if (isOpen) setQuantity(currentQuantity)
-    setOpen(isOpen)
-  }
-
-  const handleSave = () => {
-    if (quantity === currentQuantity) return setOpen(false)
-    startTransition(async () => {
-      try {
-        await updateLineItem({ lineId: itemId, quantity, cartId })
-        toast.success(t("toasts.quantityChanged"))
-        setOpen(false)
-      } catch {
-        toast.error(t("toasts.quantityChangeFailed"))
-      }
-    })
-  }
-
-  return (
-    <Popover open={open} onOpenChange={handleOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-6 px-2 text-[11px] text-gray-600"
-        >
-          {t("quantityChange")}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-56 space-y-3 p-3">
-        <p className="text-sm font-medium">{t("quantityDialogTitle")}</p>
-        <div className="flex items-center justify-center gap-3">
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-            disabled={isPending || quantity <= 1}
-          >
-            <Minus className="h-4 w-4" />
-          </Button>
-          <span className="min-w-[40px] text-center text-lg font-medium">
-            {quantity}
-          </span>
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-8 w-8"
-            onClick={() => {
-              if (isWelcomeMembership) {
-                toast.error(t("toasts.welcomeOneOnly"))
-                return
-              }
-              setQuantity((q) => q + 1)
-            }}
-            disabled={isPending || (isWelcomeMembership && quantity >= 1)}
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
-        </div>
-        <p className="text-center text-sm text-gray-500">
-          {t("quantityExpected")}{" "}
-          <span className="font-medium text-gray-900">
-            {t("amountWon", { amount: formatPrice(unitPrice * quantity) })}
-          </span>
-        </p>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="flex-1"
-            onClick={() => setOpen(false)}
-            disabled={isPending}
-          >
-            {t("cancel")}
-          </Button>
-          <Button
-            size="sm"
-            className="flex-1"
-            onClick={handleSave}
-            disabled={isPending}
-          >
-            {isPending ? t("saving") : t("save")}
-          </Button>
-        </div>
-      </PopoverContent>
-    </Popover>
   )
 }
 

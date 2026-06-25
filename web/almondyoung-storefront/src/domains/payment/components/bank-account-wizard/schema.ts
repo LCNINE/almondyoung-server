@@ -1,12 +1,20 @@
 import z from "zod"
 
+const payerNumberSchema = z
+  .string()
+  .min(1, "생년월일 또는 사업자번호를 입력해주세요")
+  .transform((value) => value.replace(/\D/g, ""))
+  .refine((value) => /^(\d{6}|\d{10})$/.test(value), {
+    message: "생년월일 6자리 또는 사업자번호 10자리를 입력해주세요",
+  })
+
 export const paymentMethodFormSchema = z
   .object({
     bankCode: z.string().min(1, "은행을 선택해주세요"), // 은행 코드
     bankName: z.string().min(1, "은행을 선택해주세요"), // 은행 이름
     accountNumber: z.string().min(1, "계좌번호를 입력해주세요"),
     accountHolderName: z.string().min(1, "예금주명을 입력해주세요"),
-    payerNumber: z.string().min(1, "사업자 번호를 입력해주세요"),
+    payerNumber: payerNumberSchema,
     billingDate: z.string().min(1, "결제일을 선택해주세요"),
     birthDate: z.string().min(1, "생년월일을 입력해주세요"),
     isOwnerConfirmed: z.boolean(), // 예금주 확인 여부

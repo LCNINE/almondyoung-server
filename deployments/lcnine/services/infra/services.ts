@@ -213,6 +213,7 @@ export function setup(infra: SharedInfra) {
       STOREFRONT_REVALIDATE_URL: $interpolate`${url('www')}/api/revalidate`,
       STOREFRONT_REVALIDATE_SECRET: storefrontRevalidateSecret.value,
       ALMOND_AUTH_URL: 'https://asia-northeast3-almond-auth.cloudfunctions.net/api',
+      MEMBERSHIP_SERVICE_URL: url('membership'),
       USER_SERVICE_URL: idpUserServiceUrl,
       PIM_API_URL: url('core'),
       NAVER_API_ENDPOINT: 'https://dummy.com',
