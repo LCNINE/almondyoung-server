@@ -14,6 +14,7 @@ const mallProductBreadcrumbs = [
   { prefix: '/mall/csv', label: 'CSV 가져오기/내보내기' },
   { prefix: '/mall/audit', label: '감사 이력/승인' },
   { prefix: '/mall/digital-assets', label: '디지털 자산' },
+  { prefix: '/mall/ownerships', label: '디지털 사용권' },
   { prefix: '/mall/pricing', label: '가격 관리' },
 ];
 

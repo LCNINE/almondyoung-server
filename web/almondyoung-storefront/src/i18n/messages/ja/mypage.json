@@ -441,7 +441,8 @@
       "cancelSuccessManual": "注文はキャンセルされました。返金はカスタマーサポートで確認後に処理されます。",
       "cancelError": "キャンセル処理中にエラーが発生しました。",
       "contactCs": "カスタマーサポートへ問い合わせ",
-      "bankTransferCancelGuide": "銀行振込注文のキャンセルはカスタマーサポートへお問い合わせください。"
+      "bankTransferCancelGuide": "銀行振込注文のキャンセルはカスタマーサポートへお問い合わせください。",
+      "download": "ダウンロード"
     },
     "delivery": {
       "paid": "お支払い完了",

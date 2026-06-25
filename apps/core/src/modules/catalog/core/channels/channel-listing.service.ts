@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { NotFoundError } from '@app/shared';
+import { NotFoundError, BadRequestError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
 import { ChannelVariantListing, NewChannelVariantListing, DbTransaction } from '../../catalog.types';
 import {
@@ -160,6 +160,8 @@ export class ChannelListingService {
       throw new NotFoundError(`Sales channel not found: ${dto.salesChannelId}`);
     }
 
+    await this.assertDigitalAllowedForChannel(dto.variantId, dto.salesChannelId, tx);
+
     const [listing] = await client
       .insert(channelVariantListings)
       .values({
@@ -287,6 +289,13 @@ export class ChannelListingService {
   async activateListing(listingId: string, tx?: DbTransaction): Promise<void> {
     const client = this.getClient(tx);
 
+    // 재활성도 생성과 동일 가드를 탄다.
+    const existing = await this.getListingById(listingId, tx);
+    if (!existing) {
+      return;
+    }
+    await this.assertDigitalAllowedForChannel(existing.variantId, existing.salesChannelId, tx);
+
     const [updated] = await client
       .update(channelVariantListings)
       .set({ isActive: true, updatedAt: new Date() })
@@ -330,6 +339,43 @@ export class ChannelListingService {
       .limit(1);
 
     return result.length > 0;
+  }
+
+  // 외부 마켓플레이스(네이버/쿠팡)는 비로그인 주문이라 구매자 식별이 없어 디지털 소유권을 부여할 수 없다.
+  // 디지털은 자사몰(medusa)에서만 판매한다. 생성/재활성에서 공유.
+  private async assertDigitalAllowedForChannel(
+    variantId: string,
+    salesChannelId: string,
+    tx?: DbTransaction,
+  ): Promise<void> {
+    const client = this.getClient(tx);
+    const [ch] = await client
+      .select({ site: salesChannels.site })
+      .from(salesChannels)
+      .where(eq(salesChannels.id, salesChannelId))
+      .limit(1);
+    if (ch && this.isExternalMarketplaceSite(ch.site) && (await this.isDigitalVariant(variantId, tx))) {
+      throw new BadRequestError(
+        `외부 채널(${ch.site})은 디지털 상품을 지원하지 않습니다. 디지털 상품은 Medusa(자사몰)에서만 판매할 수 있습니다.`,
+      );
+    }
+  }
+
+  /** 외부 마켓플레이스(비로그인 주문 → customerId 없음) 채널인지. 디지털 판매 차단 대상. */
+  private isExternalMarketplaceSite(site: string): boolean {
+    return site === 'naver' || site === 'coupang';
+  }
+
+  /** variant 의 active 버전이 디지털(fulfillmentKind='digital')인지. */
+  private async isDigitalVariant(variantId: string, tx?: DbTransaction): Promise<boolean> {
+    const client = this.getClient(tx);
+    const [row] = await client
+      .select({ fulfillmentKind: productMasterVersions.fulfillmentKind })
+      .from(productMasterVariants)
+      .innerJoin(productMasterVersions, eq(productMasterVariants.versionId, productMasterVersions.id))
+      .where(and(eq(productMasterVariants.variantId, variantId), eq(productMasterVersions.status, 'active')))
+      .limit(1);
+    return row?.fulfillmentKind === 'digital';
   }
 
   /**

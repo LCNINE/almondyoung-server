@@ -481,6 +481,12 @@ export class FulfillmentsService {
         continue;
       }
 
+      // 디지털 라인은 물리 출고 대상이 아니다 — FO item 을 만들지 않는다.
+      // (digital-only 주문은 buildItems 결과가 비어 requiresPhysicalFulfillmentOrder=false → backlog not_required)
+      if (this.isDigitalFulfillmentLine(sl)) {
+        continue;
+      }
+
       const snapshotMappings = sl.mappingSnapshotId
         ? (await this.productSkuMapping.getMappingSnapshot(sl.mappingSnapshotId, trx)).mappings
         : [];
@@ -599,6 +605,11 @@ export class FulfillmentsService {
         );
       }
 
+      // 디지털 라인은 물리 출고/보상 대상이 아니다.
+      if (sourceLine && this.isDigitalFulfillmentLine(sourceLine)) {
+        continue;
+      }
+
       const snapshotMappings = sourceLine?.mappingSnapshotId
         ? (await this.productSkuMapping.getMappingSnapshot(sourceLine.mappingSnapshotId, trx)).mappings
         : [];
@@ -705,6 +716,12 @@ export class FulfillmentsService {
 
   private isVoidMatching(matching: VariantSkuMatching): boolean {
     return matching?.status === 'matched' && matching.strategy === 'void';
+  }
+
+  // 디지털 라인 판별: fulfillmentKind='digital' 또는 requiresShipping=false.
+  // null(미지정, 기존 데이터/외부 채널)은 물리로 간주.
+  private isDigitalFulfillmentLine(line: { fulfillmentKind?: string | null; requiresShipping?: boolean | null }): boolean {
+    return line.fulfillmentKind === 'digital' || line.requiresShipping === false;
   }
 
   private getPhysicalSkuLinks(matching: VariantSkuMatching): Array<{ skuId: string; quantity: number }> {

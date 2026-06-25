@@ -3,8 +3,10 @@
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { ProductQuickActions } from "domains/products/components/product-quick-actions"
 import { getProductPrice } from "@/lib/utils/get-product-price"
+import { isDigitalProduct } from "@/lib/api/medusa/shipping-method-policy"
 import { HttpTypes } from "@medusajs/types"
 import { Star } from "lucide-react"
+import { useTranslations } from "next-intl"
 import React, { useEffect, useMemo, useState } from "react"
 import ProductPrice from "./price"
 import Thumbnail from "../thumbnail"
@@ -113,6 +115,8 @@ export default function ProductCard({
   const { cheapestPrice } = getProductPrice({
     product,
   })
+  const tCard = useTranslations("productCard")
+  const isDigital = isDigitalProduct(product)
 
   const isSingleOption = (product.variants?.length ?? 0) <= 1
   const productReviewId =
@@ -155,6 +159,12 @@ export default function ProductCard({
             size="full"
             overlay={overlay}
           />
+
+          {isDigital && (
+            <span className="bg-primary/90 absolute left-2 top-2 z-10 rounded px-2 py-0.5 text-[11px] font-medium text-white">
+              {tCard("digitalBadge")}
+            </span>
+          )}
 
           {/* 장바구니 담기 및 위시리스트 버튼  */}
           <ProductQuickActions

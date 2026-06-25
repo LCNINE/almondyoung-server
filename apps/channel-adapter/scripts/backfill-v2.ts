@@ -17,6 +17,9 @@
  *   # With options
  *   npx ts-node apps/channel-adapter/scripts/backfill-v2.ts --batch-size=50 --limit=100 --concurrency=5
  *
+ *   # 특정 master 만 재동기화 (부분 타겟팅, 예: 디지털 상품)
+ *   npx ts-node apps/channel-adapter/scripts/backfill-v2.ts --master-ids=uuid1,uuid2,uuid3
+ *
  *   # Resume from checkpoint
  *   npx ts-node apps/channel-adapter/scripts/backfill-v2.ts --resume=backfill-1737600000-abc12345
  */
@@ -29,6 +32,7 @@ import { PimSnapshotBuilder } from './lib/pim-snapshot-builder';
 import { MigrationSessionService } from './lib/migration-session.service';
 import { syncWithRetry, classifyError } from './lib/error-classifier';
 import { PimMedusaSyncService } from '../src/adapters/medusa/pim-medusa-sync.service';
+import { StorefrontRevalidateService } from '../src/adapters/medusa/storefront-revalidate.service';
 import { MedusaClient } from '../src/adapters/medusa/medusa.client';
 import { PimMedusaMappingRepository } from '../src/adapters/medusa/pim-medusa-mapping.repository';
 
@@ -39,6 +43,7 @@ interface BackfillOptions {
   limit?: number;
   concurrency: number;
   rateLimitMs: number;
+  masterIds?: string[];
 }
 
 const DEFAULT_CONCURRENCY = 3;
@@ -79,12 +84,19 @@ function parseArgs(): BackfillOptions {
   const rawRateLimit = rateLimitRaw ? parseInt(rateLimitRaw, 10) : DEFAULT_RATE_LIMIT_MS;
   const rateLimitMs = Math.max(0, Number.isFinite(rawRateLimit) ? rawRateLimit : DEFAULT_RATE_LIMIT_MS);
 
+  // --master-ids=uuid1,uuid2 : 지정한 master 만 재동기화(부분 타겟팅). 미지정 시 전체.
+  const masterIdsRaw = getArgValue(args, 'master-ids');
+  const masterIds = masterIdsRaw
+    ? masterIdsRaw.split(',').map((s) => s.trim()).filter(Boolean)
+    : undefined;
+
   return {
     batchSize: batchSizeRaw ? parseInt(batchSizeRaw, 10) : 100,
     resumeSessionId: resumeRaw,
     limit: limitRaw ? parseInt(limitRaw, 10) : undefined,
     concurrency,
     rateLimitMs,
+    masterIds: masterIds?.length ? masterIds : undefined,
   };
 }
 
@@ -175,7 +187,13 @@ async function main() {
   const sessionService = new MigrationSessionService(channelDb);
   const medusaClient = new MedusaClient(configService);
   const mappingRepo = new PimMedusaMappingRepository({ db: channelDb } as any);
-  const syncService = new PimMedusaSyncService(medusaClient, mappingRepo);
+  // StorefrontRevalidateService 는 무인자 생성(환경변수 없으면 no-op). 생성자 3번째 인자 누락으로
+  // backfill-v2 가 깨져 있던 것을 함께 보정한다.
+  const syncService = new PimMedusaSyncService(
+    medusaClient,
+    mappingRepo,
+    new StorefrontRevalidateService(),
+  );
 
   // 카테고리/태그/타입/세일즈채널 캐시를 미리 채워 product 당 list/verify HTTP 호출을
   // 0 회에 가깝게 줄인다. 이후 cacheOnly 모드를 활성화해 paginated LIST 조회도 회피.
@@ -222,8 +240,8 @@ async function main() {
     while (true) {
       console.log(`\n📊 Batch ${batchNumber}: Fetching ${session.batchSize} products from offset ${offset}...`);
 
-      // Fetch batch
-      const snapshots = await snapshotBuilder.fetchActiveMasters(session.batchSize, offset);
+      // Fetch batch (masterIds 지정 시 해당 master 만 대상)
+      const snapshots = await snapshotBuilder.fetchActiveMasters(session.batchSize, offset, options.masterIds);
 
       if (snapshots.length === 0) {
         console.log('✅ No more products to process');

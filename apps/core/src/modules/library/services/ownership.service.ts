@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { ForbiddenError, NotFoundError } from '@app/shared';
-import { and, count, desc, eq, isNotNull, isNull } from 'drizzle-orm';
+import { and, count, desc, eq, isNotNull, isNull, type SQL } from 'drizzle-orm';
 
 import {
   type LibrarySchema,
@@ -13,6 +13,12 @@ import {
   OwnershipListResponseDto,
   OwnershipResponseDto,
 } from '../dto/ownership-response.dto';
+import {
+  AdminOwnershipListResponseDto,
+  AdminOwnershipResponseDto,
+  AdminOwnershipStatus,
+  GrantOwnershipDto,
+} from '../dto/admin-ownership.dto';
 
 type Tx = Parameters<Parameters<DbService<LibrarySchema>['db']['transaction']>[0]>[0];
 
@@ -157,6 +163,141 @@ export class OwnershipService {
     }, tx);
   }
 
+  // ── admin ────────────────────────────────────────────────────────────────
+
+  /**
+   * 어드민 ownership 조회. customer/asset/order 로 필터하며 revoke 된 항목도
+   * status 에 따라 함께 노출한다 (운영 추적용).
+   */
+  async listForAdmin(
+    opts: {
+      customerId?: string;
+      assetId?: string;
+      salesOrderId?: string;
+      status?: AdminOwnershipStatus;
+      skip?: number;
+      take?: number;
+    } = {},
+    tx?: Tx,
+  ): Promise<AdminOwnershipListResponseDto> {
+    return this.inTx(async (trx) => {
+      const skip = Math.max(0, opts.skip ?? 0);
+      const take = Math.min(100, Math.max(1, opts.take ?? 20));
+      const status = opts.status ?? 'all';
+
+      const conditions: SQL[] = [];
+      if (opts.customerId) conditions.push(eq(digitalAssetOwnerships.customerId, opts.customerId));
+      if (opts.assetId) conditions.push(eq(digitalAssetOwnerships.assetId, opts.assetId));
+      if (opts.salesOrderId) conditions.push(eq(digitalAssetOwnerships.salesOrderId, opts.salesOrderId));
+      if (status === 'active') conditions.push(isNull(digitalAssetOwnerships.revokedAt));
+      if (status === 'revoked') conditions.push(isNotNull(digitalAssetOwnerships.revokedAt));
+
+      const whereExpr = conditions.length ? and(...conditions) : undefined;
+
+      const [{ value: total }] = await trx
+        .select({ value: count() })
+        .from(digitalAssetOwnerships)
+        .where(whereExpr);
+
+      const rows = await trx
+        .select({ ownership: digitalAssetOwnerships, asset: digitalAssets })
+        .from(digitalAssetOwnerships)
+        .innerJoin(digitalAssets, eq(digitalAssetOwnerships.assetId, digitalAssets.id))
+        .where(whereExpr)
+        .orderBy(desc(digitalAssetOwnerships.grantedAt))
+        .limit(take)
+        .offset(skip);
+
+      return {
+        data: rows.map((r) => this._toAdminDto(r)),
+        total: Number(total),
+        skip,
+        take,
+      };
+    }, tx);
+  }
+
+  /**
+   * 어드민 수동 부여. (customerId, assetId, salesOrderId) unique 로 멱등 —
+   * 이미 있으면 기존 row 를 그대로 돌려준다.
+   */
+  async grantManual(dto: GrantOwnershipDto, tx?: Tx): Promise<AdminOwnershipResponseDto> {
+    return this.inTx(async (trx) => {
+      const [asset] = await trx
+        .select({ id: digitalAssets.id })
+        .from(digitalAssets)
+        .where(eq(digitalAssets.id, dto.assetId));
+      if (!asset) {
+        throw new NotFoundError(`Asset not found: ${dto.assetId}`);
+      }
+
+      await trx
+        .insert(digitalAssetOwnerships)
+        .values({
+          customerId: dto.customerId,
+          assetId: dto.assetId,
+          salesOrderId: dto.salesOrderId,
+        })
+        .onConflictDoNothing({
+          target: [
+            digitalAssetOwnerships.customerId,
+            digitalAssetOwnerships.assetId,
+            digitalAssetOwnerships.salesOrderId,
+          ],
+        });
+
+      const [row] = await trx
+        .select({ ownership: digitalAssetOwnerships, asset: digitalAssets })
+        .from(digitalAssetOwnerships)
+        .innerJoin(digitalAssets, eq(digitalAssetOwnerships.assetId, digitalAssets.id))
+        .where(
+          and(
+            eq(digitalAssetOwnerships.customerId, dto.customerId),
+            eq(digitalAssetOwnerships.assetId, dto.assetId),
+            eq(digitalAssetOwnerships.salesOrderId, dto.salesOrderId),
+          ),
+        );
+
+      return this._toAdminDto(row);
+    }, tx);
+  }
+
+  /**
+   * 어드민 강제 회수. exercise 여부와 무관하게 revoke 한다 (고객 본인 다운로드 차단용).
+   */
+  async adminRevoke(ownershipId: string, reason: string | null, tx?: Tx): Promise<AdminOwnershipResponseDto> {
+    return this.inTx(async (trx) => {
+      const updated = await trx
+        .update(digitalAssetOwnerships)
+        .set({ revokedAt: new Date(), revokedReason: reason })
+        .where(eq(digitalAssetOwnerships.id, ownershipId))
+        .returning({ id: digitalAssetOwnerships.id });
+
+      if (updated.length === 0) {
+        throw new NotFoundError(`Ownership not found: ${ownershipId}`);
+      }
+      return this._loadAdminDto(ownershipId, trx);
+    }, tx);
+  }
+
+  /**
+   * 어드민 재발급. revoke 된 ownership 을 다시 활성화해 고객이 다시 다운로드할 수 있게 한다.
+   */
+  async adminResend(ownershipId: string, tx?: Tx): Promise<AdminOwnershipResponseDto> {
+    return this.inTx(async (trx) => {
+      const updated = await trx
+        .update(digitalAssetOwnerships)
+        .set({ revokedAt: null, revokedReason: null })
+        .where(eq(digitalAssetOwnerships.id, ownershipId))
+        .returning({ id: digitalAssetOwnerships.id });
+
+      if (updated.length === 0) {
+        throw new NotFoundError(`Ownership not found: ${ownershipId}`);
+      }
+      return this._loadAdminDto(ownershipId, trx);
+    }, tx);
+  }
+
   // ── private ────────────────────────────────────────────────────────────────
 
   private async _loadOwnedOrThrow(
@@ -184,6 +325,42 @@ export class OwnershipService {
       throw new ForbiddenError(`Ownership has been revoked: ${ownershipId}`);
     }
     return row;
+  }
+
+  private async _loadAdminDto(ownershipId: string, trx: Tx): Promise<AdminOwnershipResponseDto> {
+    const [row] = await trx
+      .select({ ownership: digitalAssetOwnerships, asset: digitalAssets })
+      .from(digitalAssetOwnerships)
+      .innerJoin(digitalAssets, eq(digitalAssetOwnerships.assetId, digitalAssets.id))
+      .where(eq(digitalAssetOwnerships.id, ownershipId));
+
+    if (!row) {
+      throw new NotFoundError(`Ownership not found: ${ownershipId}`);
+    }
+    return this._toAdminDto(row);
+  }
+
+  private _toAdminDto(row: {
+    ownership: typeof digitalAssetOwnerships.$inferSelect;
+    asset: typeof digitalAssets.$inferSelect;
+  }): AdminOwnershipResponseDto {
+    return {
+      id: row.ownership.id,
+      customerId: row.ownership.customerId,
+      assetId: row.ownership.assetId,
+      salesOrderId: row.ownership.salesOrderId,
+      grantedAt: row.ownership.grantedAt,
+      exercisedAt: row.ownership.exercisedAt,
+      revokedAt: row.ownership.revokedAt,
+      revokedReason: row.ownership.revokedReason,
+      asset: {
+        id: row.asset.id,
+        name: row.asset.name,
+        description: row.asset.description,
+        mimeType: row.asset.mimeType,
+        thumbnailUrl: row.asset.thumbnailUrl,
+      },
+    };
   }
 
   private _toDto(row: {

@@ -7,6 +7,7 @@ import { getTranslations } from "next-intl/server"
 import { ChevronDownIcon, ReviewPromptCard } from "../_components"
 import { HttpTypes } from "@medusajs/types"
 import { buildAddressLine } from "@/lib/utils/address-line"
+import { cartRequiresShipping, isDigitalItem } from "@/lib/api/medusa/shipping-method-policy"
 import { createWebLogger } from "@packages/web-observability"
 
 // 주문 정보는 사용자별로 다르므로 캐싱 비활성화
@@ -163,6 +164,8 @@ async function OrderSummaryCard({
       })
     : null
   const items = order.items ?? []
+  const requiresShipping = cartRequiresShipping(items)
+  const hasDigital = items.some(isDigitalItem)
   const firstItem = items[0]
   const firstThumbnail = firstItem ? resolveItemThumbnail(firstItem) : ""
 
@@ -176,29 +179,31 @@ async function OrderSummaryCard({
           </h2>
         </header>
 
-        {/* 배송 정보 */}
-        <div className="px-8 py-6">
-          <dl>
-            <div className="flex items-center justify-between">
-              <dt className="sr-only">{t("sr.recipient")}</dt>
-              <dd className="text-lg font-bold text-black">
-                {recipientName ?? t("fallbackName")}
-              </dd>
-            </div>
-            {address?.phone && (
-              <div className="mt-4">
-                <dt className="sr-only">{t("sr.contact")}</dt>
-                <dd className="text-base text-black">{address.phone}</dd>
+        {/* 배송 정보 (디지털 단독 주문은 숨김) */}
+        {requiresShipping && (
+          <div className="px-8 py-6">
+            <dl>
+              <div className="flex items-center justify-between">
+                <dt className="sr-only">{t("sr.recipient")}</dt>
+                <dd className="text-lg font-bold text-black">
+                  {recipientName ?? t("fallbackName")}
+                </dd>
               </div>
-            )}
-            {addressLine && (
-              <div className="mt-2">
-                <dt className="sr-only">{t("sr.address")}</dt>
-                <dd className="text-base text-black">{addressLine}</dd>
-              </div>
-            )}
-          </dl>
-        </div>
+              {address?.phone && (
+                <div className="mt-4">
+                  <dt className="sr-only">{t("sr.contact")}</dt>
+                  <dd className="text-base text-black">{address.phone}</dd>
+                </div>
+              )}
+              {addressLine && (
+                <div className="mt-2">
+                  <dt className="sr-only">{t("sr.address")}</dt>
+                  <dd className="text-base text-black">{addressLine}</dd>
+                </div>
+              )}
+            </dl>
+          </div>
+        )}
 
         <details className="group">
           <summary className="flex cursor-pointer list-none items-center justify-between p-8">
@@ -257,7 +262,15 @@ async function OrderSummaryCard({
           </div>
         </details>
 
-        <div className="p-8">
+        <div className="flex flex-col gap-3 p-8">
+          {hasDigital && (
+            <Link
+              href={`/${countryCode}/mypage/download`}
+              className="flex h-[60px] w-full items-center justify-center rounded-[5px] bg-[#ffa500] text-center text-[19px] font-bold text-white transition-colors hover:bg-[#e69500]"
+            >
+              {t("downloadBtn")}
+            </Link>
+          )}
           <Link
             href={`/${countryCode}/mypage/order/details?orderId=${order.id}`}
             className="flex h-[60px] w-full items-center justify-center rounded-[5px] bg-[#fff7e5] text-center text-[19px] font-bold text-[#ffa500] transition-colors hover:bg-[#ffedcc]"

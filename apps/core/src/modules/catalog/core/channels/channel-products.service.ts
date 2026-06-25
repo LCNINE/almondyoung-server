@@ -29,6 +29,39 @@ export class ChannelProductsService {
     return tx ?? this.db.db;
   }
 
+  /** 외부 마켓플레이스(비로그인 주문 → customerId 없음) 채널인지. 디지털 판매 차단 대상. */
+  private isExternalMarketplaceSite(site: string): boolean {
+    return site === 'naver' || site === 'coupang';
+  }
+
+  // 외부 마켓플레이스(네이버/쿠팡)는 비로그인 주문이라 디지털 소유권을 부여할 수 없다.
+  // 디지털 master 의 채널상품 생성/활성을 막는다(자사몰만 디지털 판매).
+  private async assertDigitalAllowedForChannelMaster(
+    masterId: string,
+    channelId: string,
+    tx?: DbTransaction,
+  ): Promise<void> {
+    const client = this.getClient(tx);
+    const [ch] = await client
+      .select({ site: salesChannels.site })
+      .from(salesChannels)
+      .where(eq(salesChannels.id, channelId))
+      .limit(1);
+    if (!ch || !this.isExternalMarketplaceSite(ch.site)) {
+      return;
+    }
+    const [m] = await client
+      .select({ fulfillmentKind: productMasterVersions.fulfillmentKind })
+      .from(productMasterVersions)
+      .where(and(eq(productMasterVersions.masterId, masterId), eq(productMasterVersions.status, 'active')))
+      .limit(1);
+    if (m?.fulfillmentKind === 'digital') {
+      throw new BadRequestError(
+        `외부 채널(${ch.site})은 디지털 상품을 지원하지 않습니다. 디지털 상품은 Medusa(자사몰)에서만 판매할 수 있습니다.`,
+      );
+    }
+  }
+
   async createChannelProduct(data: CreateChannelProductDto, tx?: DbTransaction): Promise<ChannelProduct> {
     if (!data.masterId || !data.channelId) {
       throw new BadRequestError('Master ID and Channel ID are required');
@@ -55,6 +88,8 @@ export class ChannelProductsService {
     if (channelExists.length === 0) {
       throw new NotFoundError(`Channel not found: ${data.channelId}`);
     }
+
+    await this.assertDigitalAllowedForChannelMaster(data.masterId, data.channelId, tx);
 
     // 3. 중복 확인
     const alreadyExists = await this.existsChannelProduct(data.masterId, data.channelId, tx);
@@ -424,6 +459,10 @@ export class ChannelProductsService {
       throw new NotFoundError(`Channel product not found: ${channelProductId}`);
     }
 
+    if (isActive) {
+      await this.assertDigitalAllowedForChannelMaster(existing.masterId, existing.channelId, tx);
+    }
+
     // 2. 활성 상태 설정
     await client
       .update(channelProducts)
@@ -663,6 +702,10 @@ export class ChannelProductsService {
 
       if (missingChannelIds.length > 0) {
         throw new NotFoundError(`Channels not found: ${missingChannelIds.join(', ')}`);
+      }
+
+      for (const channelId of uniqueChannelIds) {
+        await this.assertDigitalAllowedForChannelMaster(masterId, channelId, txn);
       }
 
       // 3. 중복 확인
