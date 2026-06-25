@@ -21,6 +21,10 @@ type Db = DbService<MergedSchema>['db'];
 type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type BusinessLinkInsert = InferInsertModel<typeof wmsTables.businessLinks>;
 type BusinessLinkRow = typeof wmsTables.businessLinks.$inferSelect;
+type CsCaseCommentRow = typeof csCaseComments.$inferSelect;
+type CsCaseCommentMentionRow = typeof csCaseCommentMentions.$inferSelect;
+type CsCaseCommentAttachmentRow = typeof csCaseCommentAttachments.$inferSelect;
+type CsCaseEventRow = typeof csCaseEvents.$inferSelect;
 type BusinessLinkReference = {
   type: string;
   id: string | null;
@@ -254,30 +258,30 @@ export class CsCasesService {
 
   private buildTimeline(
     csCaseId: string,
-    comments: Array<Record<string, any>>,
-    mentions: Array<Record<string, any>>,
-    attachments: Array<Record<string, any>>,
-    events: Array<Record<string, any>>,
-    links: Array<Record<string, any>>,
+    comments: CsCaseCommentRow[],
+    mentions: CsCaseCommentMentionRow[],
+    attachments: CsCaseCommentAttachmentRow[],
+    events: CsCaseEventRow[],
+    links: BusinessLinkRow[],
   ) {
     const commentItems = comments.map((c) => ({
       kind: 'comment' as const,
       id: c.id,
-      occurredAt: c.createdAt as Date,
-      actorId: (c.authorId ?? null) as string | null,
-      body: c.deletedAt ? null : (c.body as string),
+      occurredAt: c.createdAt,
+      actorId: c.authorId ?? null,
+      body: c.deletedAt ? null : c.body,
       deleted: Boolean(c.deletedAt),
       edited: Boolean(c.editedAt),
-      mentions: mentions.filter((m) => m.commentId === c.id).map((m) => m.mentionedUserId as string),
-      attachmentFileIds: attachments.filter((a) => a.commentId === c.id).map((a) => a.fileId as string),
+      mentions: mentions.filter((m) => m.commentId === c.id).map((m) => m.mentionedUserId),
+      attachmentFileIds: attachments.filter((a) => a.commentId === c.id).map((a) => a.fileId),
     }));
 
     const eventItems = events.map((e) => ({
       kind: 'event' as const,
       id: e.id,
-      occurredAt: e.occurredAt as Date,
-      actorId: (e.actorId ?? null) as string | null,
-      eventType: e.type as CsCaseEventType,
+      occurredAt: e.occurredAt,
+      actorId: e.actorId ?? null,
+      eventType: e.type,
       payload: (e.payload ?? {}) as Record<string, unknown>,
     }));
 
@@ -286,7 +290,7 @@ export class CsCasesService {
       return {
         kind: 'business_link' as const,
         id: link.id,
-        occurredAt: link.occurredAt as Date,
+        occurredAt: link.occurredAt,
         actorId: null,
         payload: {
           relationName: link.relationName,

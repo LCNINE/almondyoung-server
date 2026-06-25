@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
 import { csCases, csLabels } from '../schema/customer-service.schema';
 
 /**
@@ -29,7 +30,9 @@ function isColumnChunk(chunk: unknown): chunk is { name: string } {
 }
 
 function isParamChunk(chunk: unknown): chunk is { value: unknown } {
-  return Boolean(chunk && typeof chunk === 'object' && 'value' in chunk && !Array.isArray((chunk as { value?: unknown }).value));
+  return Boolean(
+    chunk && typeof chunk === 'object' && 'value' in chunk && !Array.isArray((chunk as { value?: unknown }).value),
+  );
 }
 
 function isSupportedSqlShape(chunks: unknown[]): boolean {
@@ -126,7 +129,7 @@ export function makeFakeDb(seed: Map<unknown, Row[]> = new Map()) {
   };
 
   const tx: any = {
-    select: (_columns?: unknown) => ({
+    select: () => ({
       from: (table: unknown) => {
         const makeSelectResult = (rows: Row[]) => {
           const r = [...rows] as Row[] & { orderBy: () => any; limit: (n: number) => Promise<Row[]> };

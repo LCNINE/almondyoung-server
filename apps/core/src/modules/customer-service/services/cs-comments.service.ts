@@ -50,10 +50,7 @@ export class CsCommentsService {
       const [csCase] = await trx.select().from(csCases).where(eq(csCases.id, csCaseId)).limit(1);
       if (!csCase) throw new NotFoundError(`CS Case ${csCaseId} not found`);
 
-      const [comment] = await trx
-        .insert(csCaseComments)
-        .values({ csCaseId, authorId, body })
-        .returning();
+      const [comment] = await trx.insert(csCaseComments).values({ csCaseId, authorId, body }).returning();
 
       const mentionIds = [...new Set(dto.mentionedUserIds ?? [])];
       if (mentionIds.length) {
