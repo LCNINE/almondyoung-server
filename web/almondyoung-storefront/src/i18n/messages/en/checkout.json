@@ -133,41 +133,11 @@
   "orderProducts": {
     "title": "Order items",
     "empty": "There are no order items.",
-    "selectAll": "Select all ({selected}/{total})",
-    "deleteSelected": "Delete selected",
-    "deleteSelectedDialog": {
-      "title": "Delete selected items",
-      "description": "Delete {count} selected item(s) from the cart?",
-      "cancel": "Cancel",
-      "confirm": "Delete",
-      "deleting": "Deleting..."
-    },
-    "deleteSingleDialog": {
-      "title": "Delete item",
-      "description": "Delete {title} from the cart?",
-      "cancel": "Cancel",
-      "confirm": "Delete",
-      "deleting": "Deleting..."
-    },
     "optionBadge": "Option",
     "optionDefault": "Default",
     "optionLine": "{value} | {quantity} pcs",
-    "quantityChange": "Change",
-    "quantityDialogTitle": "Change quantity",
-    "quantityExpected": "Estimated total:",
-    "save": "Save",
-    "saving": "Saving...",
-    "cancel": "Cancel",
     "shippingFee": "Shipping {amount} KRW",
-    "amountWon": "{amount} KRW",
-    "toasts": {
-      "deletedCount": "{count} item(s) deleted.",
-      "deleteFailed": "Failed to delete the item.",
-      "deletedSingle": "Item deleted.",
-      "quantityChanged": "Quantity updated.",
-      "quantityChangeFailed": "Failed to update the quantity.",
-      "welcomeOneOnly": "Welcome membership product is limited to one per person."
-    }
+    "amountWon": "{amount} KRW"
   },
   "discount": {
     "title": "Discounts / Additional payments",

@@ -63,6 +63,10 @@ const getFormString = (formData: FormData, key: string) => {
   return typeof value === "string" ? value.trim() : ""
 }
 
+const CMS_BANK_CODE_PATTERN = /^\d{3}$/
+const CMS_PAYER_NUMBER_PATTERN = /^(\d{6}|\d{10})$/
+const CMS_PHONE_PATTERN = /^\d{8,20}$/
+
 const mapBillingMethodToBnplProfile = (
   method: BillingMethodDto,
   isDefault: boolean
@@ -298,7 +302,10 @@ export async function onboardHmsBnpl(
   try {
     const paymentCompany = getFormString(formData, "paymentCompany")
     const payerName = getFormString(formData, "payerName")
-    const payerNumber = getFormString(formData, "payerNumber")
+    const payerNumber = getFormString(formData, "payerNumber").replace(
+      /\D/g,
+      ""
+    )
     const paymentNumber = getFormString(formData, "paymentNumber")
     const phone = getFormString(formData, "phone").replace(/\D/g, "")
     const file = formData.get("file") as File | null
@@ -313,6 +320,17 @@ export async function onboardHmsBnpl(
       return {
         success: false,
         message: "계좌 등록에 필요한 정보가 부족합니다.",
+      }
+    }
+
+    if (
+      !CMS_BANK_CODE_PATTERN.test(paymentCompany) ||
+      !CMS_PAYER_NUMBER_PATTERN.test(payerNumber) ||
+      !CMS_PHONE_PATTERN.test(phone)
+    ) {
+      return {
+        success: false,
+        message: "계좌 등록 정보 형식이 올바르지 않습니다.",
       }
     }
 

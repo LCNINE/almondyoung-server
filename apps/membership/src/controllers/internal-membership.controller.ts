@@ -1,12 +1,16 @@
 import { Controller, Post, Body, HttpCode, HttpStatus, Logger } from '@nestjs/common';
 import { Public } from '@app/authorization';
 import { AdminOperationsService } from '../services/admin-operations.service';
+import { EntitlementService } from '../services/entitlement.service';
 
 @Controller('internal')
 export class InternalMembershipController {
   private readonly logger = new Logger(InternalMembershipController.name);
 
-  constructor(private readonly adminOperationsService: AdminOperationsService) {}
+  constructor(
+    private readonly adminOperationsService: AdminOperationsService,
+    private readonly entitlementService: EntitlementService,
+  ) {}
 
   /**
    * 시스템 내부 전용 구독 지급 엔드포인트 (channel-adapter → membership 서비스 간 호출)
@@ -30,5 +34,18 @@ export class InternalMembershipController {
       this.logger.error(`[internal/grant] 실패: userId=${userId}, ${message}`);
       throw error;
     }
+  }
+
+  /**
+   * 주어진 userId 중 멤버십 활성(현재 권한 + 미만료)인 userId만 반환.
+   * channel-adapter 일일 정합성 크론이 메두사 고객 그룹 add/remove 판정에 사용한다.
+   */
+  @Public()
+  @Post('memberships/active')
+  @HttpCode(HttpStatus.OK)
+  async getActiveMemberships(@Body() body: { userIds: string[] }): Promise<{ activeUserIds: string[] }> {
+    const userIds = Array.isArray(body?.userIds) ? body.userIds : [];
+    const activeUserIds = await this.entitlementService.getActiveUserIds(userIds);
+    return { activeUserIds };
   }
 }

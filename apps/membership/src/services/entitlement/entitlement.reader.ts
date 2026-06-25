@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, gte } from 'drizzle-orm';
 
 type Entitlement = typeof schema.subscriptionEntitlement.$inferSelect;
 
@@ -94,6 +94,28 @@ export class EntitlementReader {
       .limit(1);
 
     return entitlement || null;
+  }
+
+  /**
+   * 주어진 userId 중 멤버십이 활성(현재 권한 + 미만료)인 userId만 반환.
+   * 일일 정합성 크론(channel-adapter)이 메두사 고객 그룹 add/remove 판정에 쓴다.
+   */
+  async getActiveUserIds(userIds: string[]): Promise<string[]> {
+    if (!userIds.length) return [];
+
+    const today = new Date().toISOString().split('T')[0];
+    const rows = await this.dbService.db
+      .selectDistinct({ userId: schema.subscriptionEntitlement.userId })
+      .from(schema.subscriptionEntitlement)
+      .where(
+        and(
+          inArray(schema.subscriptionEntitlement.userId, userIds),
+          eq(schema.subscriptionEntitlement.isCurrent, true),
+          gte(schema.subscriptionEntitlement.endsAt, today),
+        ),
+      );
+
+    return rows.map((r) => r.userId);
   }
 
   async getBulkUserEntitlementDetails(userIds: string[]) {

@@ -77,45 +77,20 @@ export default function CheckoutTemplate({
   const params = useParams()
   const countryCode = params.countryCode as string
 
-  // 선택된 상품 ID (기본값: 전체 선택)
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(
-    () => new Set(cart.items?.map((item) => item.id) ?? [])
-  )
+  const cartItems = useMemo(() => cart.items ?? [], [cart.items])
 
-  // 선택된 상품만 필터링
-  const selectedItems = useMemo(
-    () => cart.items?.filter((item) => selectedIds.has(item.id)) ?? [],
-    [cart.items, selectedIds]
-  )
+  // 배송 필요 여부 — 전체 카트 기준. 디지털 단독 카트면 false → 배송지/배송메모 강제와 배송비를 모두 생략한다.
+  // 판별은 line item requires_shipping 우선, 없으면 product_type 폴백(shipping-method-policy).
+  const requiresShipping = cartRequiresShipping(cartItems)
 
-  // 배송 필요 여부는 선택된 상품 기준으로 판단(부분 선택 대응). 디지털만 선택하면 배송 불필요.
-  // 판별은 line item requires_shipping 우선, 없으면 product_type 폴백.
-  const requiresShipping = cartRequiresShipping(selectedItems)
-
-  // 가격 계산 - 선택된 아이템 기준
+  // 가격 계산 - checkout cart 전체 기준
   const cartTotals: CartTotals = useMemo(() => {
-    const { currency_code } = getCartTotals(cart)
-
-    // 선택된 아이템 기준 상품 금액 계산 (멤버십 할인 적용 후)
-    const item_subtotal = selectedItems.reduce((acc, item) => {
-      return acc + (item.unit_price ?? 0) * (item.quantity ?? 0)
-    }, 0)
-
-    // cart.discount_total은 cart 전체 기준이므로 부분 선택 시 item 단위 합산 필수.
-    const itemDiscount = selectedItems.reduce(
-      (acc, item) => acc + (item.discount_total ?? 0),
-      0
-    )
-    const shippingDiscount =
-      cart.shipping_methods?.reduce(
-        (acc, sm) => acc + (sm.discount_total ?? 0),
-        0
-      ) ?? 0
-    const discount_subtotal = itemDiscount + shippingDiscount
+    const { currency_code, item_subtotal, discount_subtotal, total } =
+      getCartTotals(cart)
 
     const membershipDiscount =
-      isMembership && selectedItems.length > 0
-        ? calculateMembershipDiscount(selectedItems)
+      isMembership && cartItems.length > 0
+        ? calculateMembershipDiscount(cartItems)
         : 0
 
     // 할인 전 정가 기준 상품 금액 (compare_at_unit_price 기준)
@@ -125,10 +100,9 @@ export default function CheckoutTemplate({
     const effectiveShipping = requiresShipping ? shipping.amount : 0
 
     const totalDiscount = discount_subtotal
-    const finalTotal = Math.max(
-      0,
-      item_subtotal + effectiveShipping - totalDiscount
-    )
+    // 최종 결제금액은 Medusa 권위값(total: 배송비/세금 포함)을 그대로 사용한다.
+    // 디지털 단독 카트는 배송메서드가 없어 total에 배송비가 포함되지 않는다(buildPaymentItems도 동일하게 배송 제외).
+    const finalTotal = total
 
     return {
       currency_code,
@@ -141,7 +115,7 @@ export default function CheckoutTemplate({
       totalDiscount,
       finalTotal,
     }
-  }, [cart, shipping, selectedItems, isMembership, requiresShipping])
+  }, [cart, cartItems, shipping, isMembership, requiresShipping])
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -184,7 +158,7 @@ export default function CheckoutTemplate({
       setLoading(true)
       setError(null)
 
-      if (selectedItems.length === 0) {
+      if (cartItems.length === 0) {
         setError(tProcess("toasts.noItems"))
         setLoading(false)
         return
@@ -212,7 +186,7 @@ export default function CheckoutTemplate({
 
       const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
 
-      const payLineItems = selectedItems
+      const payLineItems = cartItems
       const firstTitle = payLineItems[0]?.title ?? tProcess("productFallback")
       const orderName =
         payLineItems.length <= 1
@@ -304,11 +278,8 @@ export default function CheckoutTemplate({
             />
           )}
           <OrderProductsSection
-            cartId={checkoutCartId}
-            products={cart?.items}
-            shipping={shipping.amount}
-            selectedIds={selectedIds}
-            onSelectedIdsChange={setSelectedIds}
+            products={cartItems}
+            shipping={requiresShipping ? shipping.amount : 0}
           />
           <DiscountSection
             cartId={cart.id}
