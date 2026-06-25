@@ -9,6 +9,8 @@ import { z } from 'zod';
 
 // ===== Common Types =====
 
+export type FulfillmentKind = 'physical' | 'digital';
+
 export interface OrderItem {
   orderItemId: string;
   skuId: string;
@@ -20,6 +22,10 @@ export interface OrderItem {
   quantity: number;
   unitPrice: number;
   totalPrice: number;
+  // 물리/디지털 이행 의도를 downstream(WMS/FO)이 명시적으로 판단할 수 있도록 보존한다.
+  // optional — 기존 외부 채널 이벤트(네이버/쿠팡)와의 호환을 위해 미지정 시 물리로 간주한다.
+  fulfillmentKind?: FulfillmentKind;
+  requiresShipping?: boolean;
 }
 
 export interface ShippingAddress {
@@ -193,6 +199,8 @@ const OrderItemSchema = z.object({
   quantity: z.number().int().positive(),
   unitPrice: z.number().nonnegative(),
   totalPrice: z.number().nonnegative(),
+  fulfillmentKind: z.enum(['physical', 'digital']).optional(),
+  requiresShipping: z.boolean().optional(),
 });
 
 const ShippingAddressSchema = z.object({

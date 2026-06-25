@@ -1293,6 +1293,28 @@ export const addCartShippingMethodDuringRender = async (
     .catch(medusaError)
 }
 
+/**
+ * 카트의 모든 배송 method 를 제거한다. (커스텀 라우트 DELETE /store/carts/:id/shipping-methods)
+ * 물리→디지털 단독으로 바뀐 카트에 남은 배송 method 가 Medusa total 에 배송비를 더해
+ * 결제 금액이 틀어지는 것을 막는다.
+ */
+export const clearCartShippingMethods = async (cartId: string) => {
+  const headers = {
+    ...(await getAuthHeaders()),
+  }
+
+  return sdk.client
+    .fetch<{ cart: HttpTypes.StoreCart; deleted_count: number }>(
+      `/store/carts/${cartId}/shipping-methods`,
+      {
+        method: "DELETE",
+        headers,
+      }
+    )
+    .then(({ cart }) => cart)
+    .catch(() => null)
+}
+
 export const listCartShippingMethods = async (
   cartId: string,
   cache: RequestCache = "force-cache"
@@ -1347,6 +1369,16 @@ export async function ensureCorrectShippingMethod(
   ) as HttpTypes.StoreCartShippingOption[]
 
   if (!requiresShipping) {
+    // 디지털 단독(배송 불필요) 카트에 이전 물리 상품 때 설정된 배송 method 가 남아 있으면
+    // Medusa total 에 배송비가 포함돼 결제 금액이 틀어진다. 남은 method 를 제거한다.
+    if (cart.shipping_methods?.length) {
+      const cleared = await clearCartShippingMethods(cart.id)
+      return {
+        cart: cleared ?? cart,
+        shippingMethods: [],
+        requiresShipping,
+      }
+    }
     return { cart, shippingMethods: [], requiresShipping }
   }
 

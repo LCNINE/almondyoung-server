@@ -7,6 +7,7 @@ import {
 } from "@/components/skeletons/product-detail-skeletons"
 import { Customer } from "@/lib/types/ui/medusa"
 import { isMembershipGroup } from "@/lib/utils/membership-group"
+import { isDigitalProduct } from "@/lib/api/medusa/shipping-method-policy"
 import { HttpTypes } from "@medusajs/types"
 import { notFound } from "next/navigation"
 import { getTranslations } from "next-intl/server"
@@ -41,6 +42,7 @@ export async function ProductTemplate({
   }
 
   const t = await getTranslations("productDetail.section")
+  const isDigital = isDigitalProduct(product)
 
   return (
     <div className="min-h-screen bg-white pt-6">
@@ -59,6 +61,7 @@ export async function ProductTemplate({
                 pimMasterId={product.metadata?.pimMasterId as string}
                 countryCode={countryCode}
                 customer={customer}
+                isDigital={isDigital}
               >
                 <ProductPreviewPrice
                   hasMembership={isMembershipGroup(customer?.groups)}
@@ -121,6 +124,7 @@ export async function ProductTemplate({
                 pimMasterId={product.metadata?.pimMasterId as string}
                 countryCode={countryCode}
                 customer={customer}
+                isDigital={isDigital}
               />
             </div>
 

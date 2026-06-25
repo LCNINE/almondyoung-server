@@ -1,6 +1,7 @@
 "use client"
 
 import LocalizedClientLink from "@/components/shared/localized-client-link"
+import { cartRequiresShipping, isDigitalItem } from "@/lib/api/medusa/shipping-method-policy"
 import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
 import {
   Dialog,
@@ -85,6 +86,8 @@ export const OrderDetailsMobile = ({
   const primaryAddress = address?.address_1 || addressLine || "-"
   const detailAddress = address?.address_2 || "-"
   const membershipDiscount = calculateMembershipDiscount(order.items ?? [])
+  // 디지털 단독 주문이면 배송 정보를 숨긴다.
+  const requiresShipping = cartRequiresShipping(order.items)
 
   const availableActions = coreActions?.availableActions ?? []
   const canCancel = availableActions.includes("cancel")
@@ -104,11 +107,13 @@ export const OrderDetailsMobile = ({
   const showSelfCancel = canCancel && !isBankTransferConfirmed
   const showBankTransferCancelGuide = canCancel && isBankTransferConfirmed
 
+  // 배송조회는 배송이 필요한 주문에서만(디지털 단독 주문은 숨김).
   const showTrack =
-    canTrack ||
-    order.fulfillment_status === "shipped" ||
-    order.fulfillment_status === "fulfilled" ||
-    order.fulfillment_status === "partially_fulfilled"
+    requiresShipping &&
+    (canTrack ||
+      order.fulfillment_status === "shipped" ||
+      order.fulfillment_status === "fulfilled" ||
+      order.fulfillment_status === "partially_fulfilled")
 
   const statusLabel = coreActions
     ? getCoreDisplayStatus(coreActions)
@@ -203,14 +208,16 @@ export const OrderDetailsMobile = ({
                 {formatAmount(order.item_total)}
               </OrderInfoCardRowItem>
             </OrderInfoCardRow>
-            <OrderInfoCardRow className="mb-2">
-              <OrderInfoCardRowItem className="text-gray-500">
-                {tLabels("shippingFee")}
-              </OrderInfoCardRowItem>
-              <OrderInfoCardRowItem className="text-right text-gray-800">
-                {formatAmount(order.shipping_total)}
-              </OrderInfoCardRowItem>
-            </OrderInfoCardRow>
+            {requiresShipping && (
+              <OrderInfoCardRow className="mb-2">
+                <OrderInfoCardRowItem className="text-gray-500">
+                  {tLabels("shippingFee")}
+                </OrderInfoCardRowItem>
+                <OrderInfoCardRowItem className="text-right text-gray-800">
+                  {formatAmount(order.shipping_total)}
+                </OrderInfoCardRowItem>
+              </OrderInfoCardRow>
+            )}
             <OrderInfoCardRow className="mb-2">
               <OrderInfoCardRowItem className="text-gray-500">
                 {tLabels("discount")}
@@ -240,6 +247,7 @@ export const OrderDetailsMobile = ({
           </OrderInfoCardRoot>
         </section>
 
+        {requiresShipping && (
         <section aria-labelledby="shipping-info-title" className="mt-3">
           <OrderInfoCardRoot className="p-4">
             <h3
@@ -351,6 +359,7 @@ export const OrderDetailsMobile = ({
             )}
           </OrderInfoCardRoot>
         </section>
+        )}
 
         <section className="mt-3 rounded-lg bg-white shadow-sm">
           <div className="p-4">
@@ -390,9 +399,17 @@ export const OrderDetailsMobile = ({
                       </p>
                     )}
                   </div>
-                  <CustomButton variant="outline" size="sm">
-                    {tActions("addToCart")}
-                  </CustomButton>
+                  {isDigitalItem(item) ? (
+                    <LocalizedClientLink href="/mypage/download">
+                      <CustomButton variant="outline" size="sm">
+                        {tActions("download")}
+                      </CustomButton>
+                    </LocalizedClientLink>
+                  ) : (
+                    <CustomButton variant="outline" size="sm">
+                      {tActions("addToCart")}
+                    </CustomButton>
+                  )}
                 </article>
               )
             })}

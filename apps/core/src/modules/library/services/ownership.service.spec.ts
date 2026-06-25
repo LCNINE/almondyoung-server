@@ -1,6 +1,12 @@
 import { PgDialect } from 'drizzle-orm/pg-core';
 
 import { OwnershipService } from './ownership.service';
+import {
+  digitalAssets,
+  digitalAssetOwnerships,
+  productVariantDigitalAssetLinks,
+} from '../schema/library.schema';
+import { wmsTables } from '../../inventory/schema/inventory.schema';
 
 /**
  * 다운로드가 항상 asset.currentFileVersionId 가 가리키는 fileId 로 라우팅되는지를
@@ -224,5 +230,247 @@ describe('OwnershipService.listForCustomer — revokedAt IS NULL 필터 (이슈 
     const sql = new PgDialect().sqlToQuery(captured.list).sql.replace(/\s+/g, ' ');
     expect(sql).toMatch(/"revoked_at"\s+is\s+null/i);
     expect(sql).toMatch(/"exercised_at"\s+is\s+not\s+null/i);
+  });
+});
+
+/**
+ * 어드민 ownership API: 조회 필터 / 강제 회수 / 재발급.
+ */
+describe('OwnershipService — 어드민 (#457)', () => {
+  function makeService(): OwnershipService {
+    const fakeDb: any = { db: {} };
+    return new OwnershipService(fakeDb);
+  }
+
+  describe('listForAdmin — status 필터', () => {
+    function makeFakeTxCapturingWhere() {
+      const captured: { count?: any; list?: any } = {};
+      const tx: any = {
+        select: () => ({
+          from: () => ({
+            where: (whereExpr: any) => {
+              captured.count = whereExpr;
+              return [{ value: 0 }];
+            },
+            innerJoin: () => ({
+              where: (whereExpr: any) => {
+                captured.list = whereExpr;
+                return {
+                  orderBy: () => ({ limit: () => ({ offset: () => [] }) }),
+                };
+              },
+            }),
+          }),
+        }),
+      };
+      return { tx, captured };
+    }
+
+    it("status 'all' + 필터 없음 — WHERE 는 비어 revoke 포함 전체 조회", async () => {
+      const service = makeService();
+      const { tx, captured } = makeFakeTxCapturingWhere();
+
+      const res = await service.listForAdmin({ status: 'all' }, tx);
+
+      expect(captured.list).toBeUndefined();
+      expect(res.total).toBe(0);
+    });
+
+    it("status 'revoked' + customerId — revoked_at IS NOT NULL 과 customer 일치 포함", async () => {
+      const service = makeService();
+      const { tx, captured } = makeFakeTxCapturingWhere();
+
+      await service.listForAdmin({ customerId: 'c-1', status: 'revoked' }, tx);
+
+      const sql = new PgDialect().sqlToQuery(captured.list).sql.replace(/\s+/g, ' ');
+      expect(sql).toMatch(/"customer_id"\s*=\s*\$\d+/);
+      expect(sql).toMatch(/"revoked_at"\s+is\s+not\s+null/i);
+    });
+
+    it("status 'active' — revoked_at IS NULL 포함", async () => {
+      const service = makeService();
+      const { tx, captured } = makeFakeTxCapturingWhere();
+
+      await service.listForAdmin({ assetId: 'a-1', status: 'active' }, tx);
+
+      const sql = new PgDialect().sqlToQuery(captured.list).sql.replace(/\s+/g, ' ');
+      expect(sql).toMatch(/"asset_id"\s*=\s*\$\d+/);
+      expect(sql).toMatch(/"revoked_at"\s+is\s+null/i);
+    });
+  });
+
+  describe('adminRevoke / adminResend', () => {
+    function makeFakeTxForUpdate(opts: { updatedRows: { id: string }[] }) {
+      const captured: { set?: any } = {};
+      const tx: any = {
+        update: () => ({
+          set: (val: any) => {
+            captured.set = val;
+            return {
+              where: () => ({ returning: () => opts.updatedRows }),
+            };
+          },
+        }),
+        // _loadAdminDto 의 재조회
+        select: () => ({
+          from: () => ({
+            innerJoin: () => ({
+              where: () => [
+                {
+                  ownership: {
+                    id: 'o-1',
+                    customerId: 'c-1',
+                    assetId: 'a-1',
+                    salesOrderId: 'so-1',
+                    grantedAt: new Date(),
+                    exercisedAt: null,
+                    revokedAt: captured.set?.revokedAt ?? null,
+                    revokedReason: captured.set?.revokedReason ?? null,
+                  },
+                  asset: { id: 'a-1', name: 'x', description: null, mimeType: null, thumbnailUrl: null },
+                },
+              ],
+            }),
+          }),
+        }),
+      };
+      return { tx, captured };
+    }
+
+    it('adminRevoke — revokedAt/이유를 채워 회수', async () => {
+      const service = makeService();
+      const { tx, captured } = makeFakeTxForUpdate({ updatedRows: [{ id: 'o-1' }] });
+
+      const res = await service.adminRevoke('o-1', '운영 회수', tx);
+
+      expect(captured.set.revokedAt).toBeInstanceOf(Date);
+      expect(captured.set.revokedReason).toBe('운영 회수');
+      expect(res.revokedReason).toBe('운영 회수');
+    });
+
+    it('adminRevoke — 대상 없으면 NotFoundError', async () => {
+      const service = makeService();
+      const { tx } = makeFakeTxForUpdate({ updatedRows: [] });
+
+      await expect(service.adminRevoke('o-x', null, tx)).rejects.toThrow(/not found/i);
+    });
+
+    it('adminResend — revokedAt 을 비워 재활성화', async () => {
+      const service = makeService();
+      const { tx, captured } = makeFakeTxForUpdate({ updatedRows: [{ id: 'o-1' }] });
+
+      const res = await service.adminResend('o-1', tx);
+
+      expect(captured.set.revokedAt).toBeNull();
+      expect(captured.set.revokedReason).toBeNull();
+      expect(res.revokedAt).toBeNull();
+    });
+  });
+
+  describe('grantManual — 주문/고객/자산링크 정합성 검증 (#456)', () => {
+    type GrantTxOpts = {
+      asset?: { id: string }[];
+      order?: { id: string; customerId: string | null }[];
+      lines?: { variantId: string }[];
+      linked?: { assetId: string }[];
+    };
+
+    function makeGrantTx(opts: GrantTxOpts) {
+      const captured: { inserted?: boolean } = {};
+      const finalRow = [
+        {
+          ownership: {
+            id: 'o-1',
+            customerId: 'c-1',
+            assetId: 'a-1',
+            salesOrderId: 'so-1',
+            grantedAt: new Date(),
+            exercisedAt: null,
+            revokedAt: null,
+            revokedReason: null,
+          },
+          asset: { id: 'a-1', name: 'x', description: null, mimeType: null, thumbnailUrl: null },
+        },
+      ];
+      const tx: any = {
+        select: () => ({
+          from: (table: unknown) => {
+            if (table === digitalAssets) {
+              return { where: () => opts.asset ?? [] };
+            }
+            if (table === wmsTables.salesOrders) {
+              return { where: () => opts.order ?? [] };
+            }
+            if (table === wmsTables.salesOrderLines) {
+              return { where: () => opts.lines ?? [] };
+            }
+            if (table === productVariantDigitalAssetLinks) {
+              return { where: () => ({ limit: () => opts.linked ?? [] }) };
+            }
+            if (table === digitalAssetOwnerships) {
+              return { innerJoin: () => ({ where: () => finalRow }) };
+            }
+            return { where: () => [] };
+          },
+        }),
+        insert: () => ({
+          values: () => ({
+            onConflictDoNothing: () => {
+              captured.inserted = true;
+            },
+          }),
+        }),
+      };
+      return { tx, captured };
+    }
+
+    const dto = { customerId: 'c-1', assetId: 'a-1', salesOrderId: 'so-1' };
+
+    it('정상 — 주문·고객 일치 + asset 이 주문 variant 에 연결되면 부여', async () => {
+      const service = makeService();
+      const { tx, captured } = makeGrantTx({
+        asset: [{ id: 'a-1' }],
+        order: [{ id: 'so-1', customerId: 'c-1' }],
+        lines: [{ variantId: 'v-1' }],
+        linked: [{ assetId: 'a-1' }],
+      });
+
+      const res = await service.grantManual(dto, tx);
+
+      expect(captured.inserted).toBe(true);
+      expect(res.customerId).toBe('c-1');
+    });
+
+    it('asset 없음 → NotFoundError', async () => {
+      const service = makeService();
+      const { tx } = makeGrantTx({ asset: [] });
+      await expect(service.grantManual(dto, tx)).rejects.toThrow(/asset not found/i);
+    });
+
+    it('주문 없음 → NotFoundError', async () => {
+      const service = makeService();
+      const { tx } = makeGrantTx({ asset: [{ id: 'a-1' }], order: [] });
+      await expect(service.grantManual(dto, tx)).rejects.toThrow(/sales order not found/i);
+    });
+
+    it('고객 불일치 → BadRequestError', async () => {
+      const service = makeService();
+      const { tx } = makeGrantTx({
+        asset: [{ id: 'a-1' }],
+        order: [{ id: 'so-1', customerId: 'other-customer' }],
+      });
+      await expect(service.grantManual(dto, tx)).rejects.toThrow(/does not match/i);
+    });
+
+    it('asset 이 주문 variant 에 미연결 → BadRequestError', async () => {
+      const service = makeService();
+      const { tx } = makeGrantTx({
+        asset: [{ id: 'a-1' }],
+        order: [{ id: 'so-1', customerId: 'c-1' }],
+        lines: [{ variantId: 'v-1' }],
+        linked: [],
+      });
+      await expect(service.grantManual(dto, tx)).rejects.toThrow(/not linked/i);
+    });
   });
 });

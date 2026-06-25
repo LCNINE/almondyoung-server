@@ -1078,6 +1078,11 @@ export const salesOrderLines = pgTable(
     unitPrice: integer('unit_price'), // 단가
     totalPrice: integer('total_price'), // 총 가격
 
+    // 이행 의도(물리/디지털). 디지털 라인은 물리 출고(FO) 대상에서 제외된다.
+    // nullable — 미지정(기존 데이터/외부 채널)은 물리로 간주.
+    fulfillmentKind: varchar('fulfillment_kind', { length: 16 }), // 'physical' | 'digital' | null
+    requiresShipping: boolean('requires_shipping'), // null = 물리로 간주
+
     status: orderItemStatusEnum('status').notNull().default('pending'),
     suggestedQuantity: integer('suggested_quantity'), // 부분 수량 제안
     unavailableSkuIds: json('unavailable_sku_ids'), // 부족한 SKU 정보

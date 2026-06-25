@@ -441,7 +441,8 @@
       "cancelSuccessManual": "Order cancelled. Refund will be processed by customer support.",
       "cancelError": "An error occurred during cancellation.",
       "contactCs": "Contact Support",
-      "bankTransferCancelGuide": "To cancel a bank transfer order, please contact customer support."
+      "bankTransferCancelGuide": "To cancel a bank transfer order, please contact customer support.",
+      "download": "Download"
     },
     "delivery": {
       "paid": "Paid",

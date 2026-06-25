@@ -926,6 +926,58 @@ describe('FulfillmentsService', () => {
     expect(state.fulfillmentOrderItems).toHaveLength(0);
   });
 
+  it('디지털 라인만 있는 sales order는 물리 FO가 필요 없다고 판별한다', async () => {
+    const { service, productSkuMapping } = makeService({
+      lines: [
+        {
+          id: salesOrderLineId,
+          salesOrderId,
+          variantId,
+          quantity: 1,
+          mappingSnapshotId: null,
+          fulfillmentKind: 'digital',
+          requiresShipping: false,
+        },
+      ],
+    });
+
+    await expect(service.requiresPhysicalFulfillmentOrder(salesOrderId)).resolves.toBe(false);
+    // 디지털 라인은 matching 조회 이전에 제외된다.
+    expect(productSkuMapping.getByVariant).not.toHaveBeenCalled();
+  });
+
+  it('디지털 라인과 물리 라인이 섞이면 물리 FO가 필요하다고 판별한다 (디지털 라인은 제외)', async () => {
+    const { service } = makeService({
+      lines: [
+        {
+          id: salesOrderLineId,
+          salesOrderId,
+          variantId,
+          quantity: 1,
+          mappingSnapshotId: null,
+        },
+        {
+          id: voidSalesOrderLineId,
+          salesOrderId,
+          variantId: voidVariantId,
+          quantity: 1,
+          mappingSnapshotId: null,
+          fulfillmentKind: 'digital',
+          requiresShipping: false,
+        },
+      ],
+      matchingsByVariant: {
+        [variantId]: {
+          status: 'matched',
+          strategy: 'variant',
+          links: [{ skuId, quantity: 1 }],
+        },
+      },
+    });
+
+    await expect(service.requiresPhysicalFulfillmentOrder(salesOrderId)).resolves.toBe(true);
+  });
+
   it('matched + void sales order line은 물리 출고 item 없이 제외한다', async () => {
     const { service, state, unifiedReservation, outbox } = makeService({
       matching: {
