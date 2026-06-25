@@ -35,8 +35,8 @@ describe('CsCasesService.create', () => {
       externalThreadRef: '카톡상담방 A',
       createdBy: 'operator-1',
       labelIds: [],
-      timeline: [],
     });
+    expect(created).not.toHaveProperty('timeline');
   });
 });
 
@@ -80,6 +80,23 @@ describe('CsCasesService.updateStatus', () => {
 
     expect(state.get(csCaseEvents)).toHaveLength(0);
   });
+
+  it('returns a summary with existing labelIds and no timeline', async () => {
+    const caseId = 'aaaaaaaa-0000-4000-8000-000000000001';
+    const seed = new Map<unknown, any[]>();
+    seed.set(csCases, [{ id: caseId, subject: 'x', status: 'open' }]);
+    seed.set(csCaseLabels, [
+      { id: 'cl1', csCaseId: caseId, labelId: 'label-a' },
+      { id: 'cl2', csCaseId: caseId, labelId: 'label-b' },
+    ]);
+    const { db } = makeFakeDb(seed);
+    const service = new CsCasesService(db as any);
+
+    const updated = await service.updateStatus(caseId, 'pending', 'op-1');
+
+    expect(updated).toMatchObject({ id: caseId, status: 'pending', labelIds: ['label-a', 'label-b'] });
+    expect(updated).not.toHaveProperty('timeline');
+  });
 });
 
 describe('CsCasesService.assign', () => {
@@ -117,6 +134,20 @@ describe('CsCasesService.assign', () => {
     const created = await service.create({ subject: 'x', assignedTo: 'agent-9' } as any, 'op-1');
 
     await expect(service.assign(created.id, 'agent-9', 'op-1')).rejects.toThrow('already assigned');
+  });
+
+  it('returns a summary with existing labelIds and no timeline', async () => {
+    const caseId = 'aaaaaaaa-0000-4000-8000-000000000001';
+    const seed = new Map<unknown, any[]>();
+    seed.set(csCases, [{ id: caseId, subject: 'x', status: 'open', assignedTo: null }]);
+    seed.set(csCaseLabels, [{ id: 'cl1', csCaseId: caseId, labelId: 'label-a' }]);
+    const { db } = makeFakeDb(seed);
+    const service = new CsCasesService(db as any);
+
+    const updated = await service.assign(caseId, 'agent-9', 'op-1');
+
+    expect(updated).toMatchObject({ id: caseId, assignedTo: 'agent-9', labelIds: ['label-a'] });
+    expect(updated).not.toHaveProperty('timeline');
   });
 });
 
@@ -265,5 +296,6 @@ describe('CsCasesService.list', () => {
 
     expect(result.find((row) => row.id === caseA)?.labelIds).toEqual(['label-a', 'label-b']);
     expect(result.find((row) => row.id === caseB)?.labelIds).toEqual(['label-c']);
+    expect(result[0]).not.toHaveProperty('timeline');
   });
 });

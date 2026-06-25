@@ -87,7 +87,7 @@ export class CsCasesService {
         })
         .returning();
 
-      return this.toCaseResponse(created, [], []);
+      return this.toCaseSummaryResponse(created, []);
     }, tx);
   }
 
@@ -131,8 +131,9 @@ export class CsCasesService {
     return this.inTx(async (trx) => {
       const current = await this.loadCaseOrThrow(id, trx);
       const previousStatus = current.status;
+      const labelIds = await this.loadCaseLabelIds(id, trx);
       if (previousStatus === status) {
-        return this.toCaseResponse(current, [], []);
+        return this.toCaseSummaryResponse(current, labelIds);
       }
 
       const [updated] = await trx
@@ -146,7 +147,7 @@ export class CsCasesService {
         .returning();
 
       await this.recordEvent(trx, id, 'status_changed', operatorId, { from: previousStatus, to: status });
-      return this.toCaseResponse(updated, [], []);
+      return this.toCaseSummaryResponse(updated, labelIds);
     }, tx);
   }
 
@@ -159,6 +160,7 @@ export class CsCasesService {
           assigneeId ? `CS Case ${id} is already assigned to ${assigneeId}` : `CS Case ${id} is already unassigned`,
         );
       }
+      const labelIds = await this.loadCaseLabelIds(id, trx);
 
       const [updated] = await trx
         .update(csCases)
@@ -171,7 +173,7 @@ export class CsCasesService {
       } else {
         await this.recordEvent(trx, id, 'unassigned', operatorId, { from: previousAssignedTo });
       }
-      return this.toCaseResponse(updated, [], []);
+      return this.toCaseSummaryResponse(updated, labelIds);
     }, tx);
   }
 
@@ -233,8 +235,13 @@ export class CsCasesService {
         labelIdsByCaseId.set(caseLabel.csCaseId, labelIds);
       }
 
-      return rows.map((row) => this.toCaseResponse(row, labelIdsByCaseId.get(row.id) ?? [], []));
+      return rows.map((row) => this.toCaseSummaryResponse(row, labelIdsByCaseId.get(row.id) ?? []));
     }, tx);
+  }
+
+  private async loadCaseLabelIds(csCaseId: string, tx: Tx): Promise<string[]> {
+    const caseLabels = await tx.select().from(csCaseLabels).where(eq(csCaseLabels.csCaseId, csCaseId));
+    return caseLabels.map((label) => label.labelId);
   }
 
   private async assertSalesOrderReferenceExists(ref: BusinessLinkReference, tx: Tx): Promise<void> {
@@ -323,10 +330,16 @@ export class CsCasesService {
 
   private toCaseResponse(csCase: CsCase, labelIds: string[], timeline: unknown[]) {
     return {
+      ...this.toCaseSummaryResponse(csCase, labelIds),
+      timeline,
+    };
+  }
+
+  private toCaseSummaryResponse(csCase: CsCase, labelIds: string[]) {
+    return {
       ...csCase,
       metadata: (csCase.metadata ?? {}) as Record<string, unknown>,
       labelIds,
-      timeline,
     };
   }
 

@@ -13,7 +13,13 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RolesGuard, User } from '@app/authorization';
 import { CreateBusinessLinkDto } from '../../sales-order/dto/create-business-link.dto';
-import { AssignCsCaseDto, CreateCsCaseDto, CsCaseResponseDto, UpdateCsCaseStatusDto } from '../dto';
+import {
+  AssignCsCaseDto,
+  CreateCsCaseDto,
+  CsCaseResponseDto,
+  CsCaseSummaryResponseDto,
+  UpdateCsCaseStatusDto,
+} from '../dto';
 import { CsCasesService } from '../services/cs-cases.service';
 
 type AuthenticatedUser = { id?: string; userId?: string; sub?: string } | undefined;
@@ -27,7 +33,7 @@ export class CsCasesController {
 
   @Post()
   @ApiOperation({ summary: 'CS Case 생성' })
-  @ApiResponse({ status: 201, type: CsCaseResponseDto })
+  @ApiResponse({ status: 201, type: CsCaseSummaryResponseDto })
   create(@Body() dto: CreateCsCaseDto, @User() user: AuthenticatedUser) {
     return this.service.create(dto, this.getUserId(user));
   }
@@ -35,6 +41,7 @@ export class CsCasesController {
   @Get()
   @ApiOperation({ summary: 'CS Case 목록 조회' })
   @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiResponse({ status: 200, type: [CsCaseSummaryResponseDto] })
   list(@Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number) {
     return this.service.list(limit);
   }
@@ -50,6 +57,7 @@ export class CsCasesController {
   @Patch(':id/status')
   @ApiOperation({ summary: 'CS Case 상태 변경(재오픈 포함)' })
   @ApiParam({ name: 'id' })
+  @ApiResponse({ status: 200, type: CsCaseSummaryResponseDto })
   updateStatus(@Param('id') id: string, @Body() dto: UpdateCsCaseStatusDto, @User() user: AuthenticatedUser) {
     return this.service.updateStatus(id, dto.status, this.getUserId(user));
   }
@@ -57,6 +65,7 @@ export class CsCasesController {
   @Patch(':id/assignee')
   @ApiOperation({ summary: 'CS Case 담당자 배정/해제' })
   @ApiParam({ name: 'id' })
+  @ApiResponse({ status: 200, type: CsCaseSummaryResponseDto })
   assign(@Param('id') id: string, @Body() dto: AssignCsCaseDto, @User() user: AuthenticatedUser) {
     return this.service.assign(id, dto.assigneeId, this.getUserId(user));
   }

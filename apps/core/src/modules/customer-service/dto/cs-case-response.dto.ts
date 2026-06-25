@@ -45,7 +45,7 @@ export class CsCaseTimelineItemDto {
   payload?: Record<string, unknown>;
 }
 
-export class CsCaseResponseDto {
+export class CsCaseSummaryResponseDto {
   @ApiProperty({ description: 'CS Case ID' })
   id: string;
 
@@ -93,7 +93,9 @@ export class CsCaseResponseDto {
 
   @ApiProperty({ description: '적용된 라벨 ID 목록', type: [String] })
   labelIds: string[];
+}
 
+export class CsCaseResponseDto extends CsCaseSummaryResponseDto {
   @ApiProperty({ description: '시간순 통합 타임라인', type: [CsCaseTimelineItemDto] })
   timeline: CsCaseTimelineItemDto[];
 }
