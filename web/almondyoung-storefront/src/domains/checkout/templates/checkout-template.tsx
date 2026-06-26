@@ -184,7 +184,11 @@ export default function CheckoutTemplate({
         )
       }
 
-      const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
+      // sessionStorage 매핑(checkout-intent-map)이 wallet 크로스도메인 리다이렉트에서 유실돼도
+      // callback 이 checkout cart 를 동기적으로 식별/완료할 수 있도록 returnUrl 에 cartId 를 싣는다.
+      // wallet-web 의 buildReturnUrl 은 new URL().searchParams.set 으로 payment_intent_id/status 를
+      // 안전하게 덧붙이므로(naive 문자열 결합 아님) 기존 cartId 쿼리는 보존된다.
+      const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback?cartId=${encodeURIComponent(checkoutCartId)}`
 
       const payLineItems = cartItems
       const firstTitle = payLineItems[0]?.title ?? tProcess("productFallback")
