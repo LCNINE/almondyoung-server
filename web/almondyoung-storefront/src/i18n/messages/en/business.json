@@ -6,14 +6,16 @@
     "businessNumberLengthError": "Business registration number must be 10 digits.",
     "representativeNameLabel": "Representative Name",
     "representativeNamePlaceholder": "Enter representative name",
-    "representativeNameRequiredError": "Please enter the representative name.",
-    "representativeNameMismatchError": "Representative name does not match.",
     "lookupButton": "Look up",
     "lookupPending": "Looking up...",
     "lookupSuccess": "Business info retrieved. Press \"Register\" below to save.",
-    "lookupStatusSuccess": "Verified",
-    "lookupStatusFailed": "Failed",
-    "lookupStatusNone": "Not checked",
+    "lookupHint": "Look up by business number for automatic approval. You can still register without it.",
+    "lookupVerifiedTitle": "Business verified",
+    "lookupVerifiedHint": "It will be approved automatically.",
+    "lookupReviewTitle": "You can register as is",
+    "lookupReviewHint": "It will be approved after an admin review.",
+    "orAttachFile": "Don't have a business number? Attach your business license",
+    "lookupNonBlockingToast": "You can register as is. Just tap the “Register” button below.",
     "cancelButton": "Cancel",
     "registerButton": "Register",
     "editButton": "Edit",
@@ -22,11 +24,12 @@
     "uploadError": "An error occurred while uploading the file.",
     "notFoundError": "Business info not found.",
     "genericError": "An error occurred.",
-    "lookupError": "An error occurred during lookup.",
     "registerSuccess": "Business info has been registered.",
     "editSuccess": "Business info has been updated.",
     "fileUploadSuccess": "New file uploaded. It will be approved after admin review.",
-    "infoOrFileRequired": "Business info or a file is required."
+    "infoOrFileRequired": "Business info or a file is required.",
+    "backButton": "Back",
+    "representativeNameRequiredError": "Please enter the representative name."
   },
   "fileManager": {
     "toggleLabel": "Toggle",
@@ -34,7 +37,9 @@
     "attachFile": "Attach File",
     "fileAlt": "Business license",
     "fileDialogTitle": "View Business License",
-    "fileDialogDescription": "View the full business license image."
+    "fileDialogDescription": "View the full business license image.",
+    "uploadPrompt": "Attach business license file",
+    "uploadHint": "PDF, JPG, PNG"
   },
   "display": {
     "statusLabel": "Status:",

@@ -1,7 +1,6 @@
 "use client"
 
 import { Spinner } from "@/components/shared/spinner"
-import { Badge } from "@components/common/ui/badge"
 import { Button } from "@components/common/ui/button"
 import {
   Form,
@@ -24,9 +23,10 @@ import type { FilesDto } from "@lib/types/dto/files"
 import type { BusinessInfoDto } from "@lib/types/dto/users"
 import { formatBusinessNumber } from "@lib/utils/format-business-number"
 import type { ViewMode } from "domains/business/template/business-info-template"
+import { CheckCircle2, ChevronLeft, ChevronRight, Info, X } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { useRouter } from "next/navigation"
-import { useMemo, useTransition } from "react"
+import { useMemo, useState, useTransition } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 import BusinessFileUploader from "./business-file-uploader"
@@ -51,7 +51,10 @@ export default function BusinessForm({
 
   const businessDtoSchema = useMemo(
     () =>
-      buildBusinessDtoSchema({ infoOrFileRequired: t("infoOrFileRequired") }),
+      buildBusinessDtoSchema({
+        businessNumberRequired: t("businessNumberRequiredError"),
+        representativeNameRequired: t("representativeNameRequiredError"),
+      }),
     [t]
   )
 
@@ -64,7 +67,7 @@ export default function BusinessForm({
       fileUrl: initialData?.fileUrl ?? undefined,
       file: undefined,
       metadata: initialData?.metadata ?? undefined,
-      externalBusinessStatus: "null",
+      nts: null,
       isSubmitting: false,
     },
   })
@@ -73,8 +76,33 @@ export default function BusinessForm({
 
   const router = useRouter()
 
+  // 파일 첨부 경로를 쓰는 동안에는 직접 입력(번호/대표자명)을 잠근다.
+  // dirtyFields 대신 실제 값 기준이라 X 로 파일을 지우면 자동으로 다시 열린다.
+  const isFileMode = Boolean(form.watch("file") || form.watch("fileUrl"))
+
+  // 스텝 전환: false=번호/대표자 입력 화면, true=파일 첨부 화면
+  // 기존 파일이 있으면 파일 스텝으로 시작.
+  const [showFileUpload, setShowFileUpload] = useState(
+    Boolean(initialData?.fileUrl)
+  )
+
+  // 파일 스텝에서 "이전" → 첨부한 파일을 리셋하고 번호/대표자 입력 화면으로 복귀.
+  const handleBackToInfo = () => {
+    form.setValue("file", undefined, { shouldValidate: true })
+    form.setValue("fileUrl", undefined)
+    form.setValue("isSubmitting", Boolean(form.getValues("nts")))
+    setShowFileUpload(false)
+  }
+
+  // 조회를 했거나 파일이 있어야 등록/취소 버튼이 등장
+  const showActions = Boolean(form.watch("nts")) || isFileMode
+
   const handleSubmit = (data: BusinessDtoSchema) => {
-    const { businessNumber, representativeName, fileUrl, file, metadata } = data
+    const { businessNumber, representativeName, file, metadata } = data
+
+    // 상태조회 결과를 metadata.nts 에 보관
+    const nts = form.watch("nts")
+    const mergedMetadata = nts != null ? { ...(metadata ?? {}), nts } : metadata
 
     if (initialData?.status === "approved") {
       const confirmed = window.confirm(
@@ -115,13 +143,11 @@ export default function BusinessForm({
       try {
         // 새로 등록
         if (viewMode === "register") {
-          const res = await createBusiness({
+          await createBusiness({
             businessNumber,
             representativeName,
             fileUrl: fileRes?.url,
-            externalBusinessStatus:
-              form.watch("externalBusinessStatus") === "success" ? true : false,
-            metadata,
+            metadata: mergedMetadata,
           })
 
           router.refresh()
@@ -141,11 +167,7 @@ export default function BusinessForm({
                 : initialData?.fileUrl
                   ? initialData.fileUrl
                   : "",
-              externalBusinessStatus:
-                form.watch("externalBusinessStatus") === "success"
-                  ? true
-                  : false,
-              metadata,
+              metadata: mergedMetadata,
             },
             businessId: initialData?.id!,
           })
@@ -177,75 +199,86 @@ export default function BusinessForm({
     })
   }
 
-  // 사업자 정보 외부 조회
+  // 조회 결과 안내 — 이 페이지 전용 커스텀 토스트(전역 토스트 디자인은 건드리지 않음).
+  const showLookupToast = (verified: boolean, detail?: string) => {
+    toast.custom(
+      (id) => (
+        <div className="flex w-full items-start gap-3 rounded-xl border bg-white px-4 py-3 shadow-lg">
+          {verified ? (
+            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+          ) : (
+            <Info className="mt-0.5 h-5 w-5 shrink-0 text-sky-600" />
+          )}
+          <div className="text-sm">
+            <p className="font-semibold text-gray-900">
+              {verified ? "사업자 확인 완료" : "그대로 등록하실 수 있어요"}
+            </p>
+            {verified && detail && <p className="text-gray-500">{detail}</p>}
+            <p className="mt-0.5 text-xs text-gray-500">
+              {verified
+                ? "자동으로 승인돼요. 아래 ‘등록하기’를 눌러주세요."
+                : "관리자 확인 후 승인돼요. 아래 ‘등록하기’를 눌러주세요."}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => toast.dismiss(id)}
+            className="ml-auto text-gray-400 transition-colors hover:text-gray-600"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      ),
+
+      { id: "business-lookup", duration: 7000 }
+    )
+  }
+
+  // 사업자 정보 외부 조회 (국세청 상태조회). 사업자번호만 필요하며 결과와 무관하게 등록 가능.
   const handleExternalBusinessInfo = () => {
-    const businessNumber = form.getValues("businessNumber")
-    const representativeName = form.getValues("representativeName")
+    const digits = form.getValues("businessNumber").replace(/\D/g, "")
 
-    if (!businessNumber) {
+    if (digits.length !== 10) {
       form.setError("businessNumber", {
-        message: t("businessNumberRequiredError"),
+        message:
+          digits.length === 0
+            ? t("businessNumberRequiredError")
+            : t("businessNumberLengthError"),
       })
-    }
-
-    if (!representativeName) {
-      form.setError("representativeName", {
-        message: t("representativeNameRequiredError"),
-      })
-    }
-
-    if (
-      form.formState.errors.businessNumber ||
-      form.formState.errors.representativeName
-    ) {
-      form.setFocus(
-        form.formState.errors.businessNumber?.message
-          ? "businessNumber"
-          : "representativeName"
-      )
+      form.setFocus("businessNumber")
       return
     }
 
     startSearchTransition(async () => {
       try {
-        const res = await fetchExternalBusinessInfo(
-          businessNumber,
-          representativeName
-        )
+        const nts = await fetchExternalBusinessInfo(digits)
 
-        if (res.success) {
-          toast.success(t("lookupSuccess"))
+        form.setValue("nts", nts)
+        form.setValue("isSubmitting", true) // 조회 결과와 무관하게 등록 허용
 
-          form.setValue("externalBusinessStatus", "success")
-          form.setValue("isSubmitting", true)
-          return
-        }
-
-        form.setValue("externalBusinessStatus", "failed")
-        switch (res.field) {
-          case "businessNumber":
-            form.setError("businessNumber", {
-              message: t("businessNumberLengthError"),
-            })
-            form.setFocus("businessNumber")
-            break
-          case "representativeName":
-            form.setError("representativeName", {
-              message: t("representativeNameMismatchError"),
-            })
-            form.setFocus("representativeName")
-            break
-          default:
-            // 백엔드 원본 메시지를 그대로 노출(없으면 generic).
-            toast.error(res.message || t("lookupError"))
-        }
+        // 번호 실존(계속/휴업/폐업) = 자동 승인 → 확인 토스트, 미등록/조회실패 → 안내 토스트
+        const verified =
+          nts.result === "active" ||
+          nts.result === "suspended" ||
+          nts.result === "closed"
+        const raw = nts.raw ?? {}
+        const detail = [raw.b_stt, raw.tax_type]
+          .filter((v): v is string => typeof v === "string" && v.length > 0)
+          .join(" · ")
+        showLookupToast(verified, detail)
       } catch (error: any) {
-        // 인증 에러는 error.tsx 로 전파해 토큰 복구를 처리한다.
-        if (error?.digest === "UNAUTHORIZED" || error?.message === "UNAUTHORIZED") {
+        if (
+          error?.digest === "UNAUTHORIZED" ||
+          error?.message === "UNAUTHORIZED"
+        ) {
           throw error
         }
-        form.setValue("externalBusinessStatus", "failed")
-        toast.error(t("lookupError"))
+        form.setValue("nts", {
+          result: "lookup_failed",
+          checkedAt: new Date().toISOString(),
+        })
+        form.setValue("isSubmitting", true)
+        showLookupToast(false)
       }
     })
   }
@@ -253,139 +286,154 @@ export default function BusinessForm({
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
-        <div className="grid gap-6 md:grid md:grid-cols-2">
-          {/* 사업자등록번호 */}
-          <FormField
-            control={form.control}
-            name="businessNumber"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>
-                  {t("businessNumberLabel")}{" "}
-                  <span className="text-destructive">*</span>
-                </FormLabel>
-                <FormControl>
-                  <Input
-                    className="bg-background"
-                    placeholder={t("businessNumberPlaceholder")}
-                    {...field}
-                    onChange={(e) => {
-                      const formatted = formatBusinessNumber(e.target.value)
-                      field.onChange(formatted.replace(/\s/g, "")) // 공백 제거
-                      form.clearErrors("businessNumber")
-                      form.trigger("businessNumber")
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault() // form submit 방지
-                        handleExternalBusinessInfo()
-                      }
-                    }}
-                    disabled={form.formState.dirtyFields.file}
-                    maxLength={12}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+        {!showFileUpload ? (
+          <>
+            <div className="grid gap-6 md:grid md:grid-cols-2">
+              {/* 사업자등록번호 */}
+              <FormField
+                control={form.control}
+                name="businessNumber"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      {t("businessNumberLabel")}{" "}
+                      <span className="text-destructive">*</span>
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        className="bg-background"
+                        placeholder={t("businessNumberPlaceholder")}
+                        {...field}
+                        onChange={(e) => {
+                          const formatted = formatBusinessNumber(e.target.value)
+                          field.onChange(formatted.replace(/\s/g, "")) // 공백 제거
+                          form.clearErrors("businessNumber")
+                          form.trigger("businessNumber")
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault() // form submit 방지
+                            handleExternalBusinessInfo()
+                          }
+                        }}
+                        maxLength={12}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-          {/* 대표자명 */}
-          <FormField
-            control={form.control}
-            name="representativeName"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>
-                  {t("representativeNameLabel")}{" "}
-                  <span className="text-destructive">*</span>
-                </FormLabel>
-                <FormControl>
-                  <Input
-                    className="bg-background"
-                    placeholder={t("representativeNamePlaceholder")}
-                    {...field}
-                    onChange={(e) => {
-                      field.onChange(e.target.value.trim().replace(/\s/g, ""))
-                      form.clearErrors("representativeName")
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault()
-                        handleExternalBusinessInfo()
-                      }
-                    }}
-                    disabled={form.formState.dirtyFields.file}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        </div>
+              {/* 대표자명 */}
+              <FormField
+                control={form.control}
+                name="representativeName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      {t("representativeNameLabel")}{" "}
+                      <span className="text-destructive">*</span>
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        className="bg-background"
+                        placeholder={t("representativeNamePlaceholder")}
+                        {...field}
+                        onChange={(e) => {
+                          field.onChange(
+                            e.target.value.trim().replace(/\s/g, "")
+                          )
+                          form.clearErrors("representativeName")
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault()
+                            handleExternalBusinessInfo()
+                          }
+                        }}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
 
-        <div className="flex items-center gap-2">
-          {form.watch("externalBusinessStatus") === "success" ? (
-            <Badge variant="default" className="px-2 py-1 text-xs">
-              <span className="font-normal">{t("lookupStatusSuccess")}</span>
-            </Badge>
-          ) : form.watch("externalBusinessStatus") === "failed" ? (
-            <Badge
-              variant="destructive"
-              className="px-2 py-1 text-xs text-white"
-            >
-              <span className="font-normal">{t("lookupStatusFailed")}</span>
-            </Badge>
-          ) : (
-            <Badge
-              variant="secondary"
-              className="bg-gray-100 px-2 py-1 text-xs hover:bg-gray-200"
-            >
-              <span className="font-normal">{t("lookupStatusNone")}</span>
-            </Badge>
-          )}
+            <div className="space-y-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-muted-foreground text-xs leading-relaxed">
+                  {t("lookupHint")}
+                </p>
+                <Button
+                  type="button"
+                  className="w-full shrink-0 sm:w-28"
+                  onClick={handleExternalBusinessInfo}
+                  disabled={isSearchPending}
+                >
+                  {isSearchPending ? t("lookupPending") : t("lookupButton")}
+                </Button>
+              </div>
+            </div>
 
-          <Button
-            type="button"
-            className="ml-auto w-28"
-            onClick={handleExternalBusinessInfo}
-            disabled={isSearchPending}
-          >
-            {isSearchPending ? t("lookupPending") : t("lookupButton")}
-          </Button>
-        </div>
-
-        {/* 사업자등록증 첨부 파일 */}
-        <BusinessFileUploader />
-
-        <div className="animate-in fade-in-50 slide-in-from-bottom-2 flex justify-end gap-3 pt-4 duration-300">
-          {onCancel && (
-            <Button
+            {/* 사업자등록번호가 없으면 파일 첨부 스텝으로 전환 */}
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => setShowFileUpload(true)}
+                className="group text-foreground hover:bg-muted flex w-full cursor-pointer items-center justify-between gap-2 rounded-md border border-dashed px-4 py-3 text-sm font-medium transition-colors"
+              >
+                <span className="underline-offset-4 group-hover:underline">
+                  {t("orAttachFile")}
+                </span>
+                <ChevronRight className="text-muted-foreground h-4 w-4 shrink-0 transition-transform group-hover:translate-x-0.5" />
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="animate-in fade-in-50 slide-in-from-right-1 space-y-3 duration-200">
+            <button
               type="button"
-              variant="outline"
-              onClick={onCancel}
-              className="flex-1 md:min-w-[120px] md:flex-none"
+              onClick={handleBackToInfo}
+              className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-sm font-medium transition-colors"
             >
-              {t("cancelButton")}
-            </Button>
-          )}
+              <ChevronLeft className="h-4 w-4" />
+              {t("backButton")}
+            </button>
+            <BusinessFileUploader />
+          </div>
+        )}
 
-          <Button
-            type="submit"
-            className={`relative flex-1 md:min-w-[120px] md:flex-none`}
-            disabled={isSubmitPending}
-          >
-            {isSubmitPending ? (
-              <>
-                <Spinner size="sm" color="white" /> {t("registerPending")}
-              </>
-            ) : isEditing ? (
-              t("editButton")
-            ) : (
-              t("registerButton")
+        {/* 조회했거나 파일을 첨부해야 등록/취소 버튼이 나타난다. */}
+        {showActions && (
+          <div className="animate-in fade-in-50 slide-in-from-bottom-2 flex justify-end gap-3 pt-4 duration-300">
+            {onCancel && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onCancel}
+                className="flex-1 md:min-w-[120px] md:flex-none"
+              >
+                {t("cancelButton")}
+              </Button>
             )}
-          </Button>
-        </div>
+
+            <Button
+              type="submit"
+              className={`relative flex-1 md:min-w-[120px] md:flex-none`}
+              disabled={isSubmitPending}
+            >
+              {isSubmitPending ? (
+                <>
+                  <Spinner size="sm" color="white" /> {t("registerPending")}
+                </>
+              ) : isEditing ? (
+                t("editButton")
+              ) : (
+                t("registerButton")
+              )}
+            </Button>
+          </div>
+        )}
       </form>
     </Form>
   )

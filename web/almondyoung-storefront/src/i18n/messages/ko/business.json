@@ -6,14 +6,16 @@
     "businessNumberLengthError": "사업자등록번호는 10자리이어야 합니다.",
     "representativeNameLabel": "대표자명",
     "representativeNamePlaceholder": "대표자명을 입력하세요",
-    "representativeNameRequiredError": "대표자명을 입력해주세요.",
-    "representativeNameMismatchError": "대표자 이름이 일치하지 않습니다.",
     "lookupButton": "조회하기",
     "lookupPending": "조회 중...",
     "lookupSuccess": "사업자 정보 조회가 완료되었습니다. 아래 \"등록하기\" 버튼을 눌러 사업자 정보를 등록해주세요.",
-    "lookupStatusSuccess": "조회 완료",
-    "lookupStatusFailed": "조회 실패",
-    "lookupStatusNone": "미조회",
+    "lookupHint": "사업자등록번호로 조회하면 자동으로 승인돼요. 조회하지 않아도 등록할 수 있어요.",
+    "lookupVerifiedTitle": "사업자 확인 완료",
+    "lookupVerifiedHint": "자동으로 승인돼요.",
+    "lookupReviewTitle": "그대로 등록하실 수 있어요",
+    "lookupReviewHint": "관리자 확인 후 승인돼요.",
+    "orAttachFile": "사업자등록번호가 없으신가요? 사업자등록증 첨부하기",
+    "lookupNonBlockingToast": "그대로 등록하실 수 있어요. 아래 ‘등록하기’ 버튼을 눌러주세요.",
     "cancelButton": "취소",
     "registerButton": "등록하기",
     "editButton": "수정하기",
@@ -22,11 +24,12 @@
     "uploadError": "파일 업로드 중 오류가 발생했습니다.",
     "notFoundError": "사업자 정보를 찾을 수 없습니다.",
     "genericError": "오류가 발생했습니다.",
-    "lookupError": "조회 중 오류가 발생했습니다.",
     "registerSuccess": "사업자 정보 등록이 완료되었습니다.",
     "editSuccess": "사업자 정보 수정이 완료되었습니다.",
     "fileUploadSuccess": "새로운 파일이 업로드 되었습니다. 관리자의 검토 후 승인 완료 됩니다.",
-    "infoOrFileRequired": "사업자 정보 또는 파일이 필요합니다."
+    "infoOrFileRequired": "사업자 정보 또는 파일이 필요합니다.",
+    "backButton": "이전",
+    "representativeNameRequiredError": "대표자명을 입력해주세요."
   },
   "fileManager": {
     "toggleLabel": "Toggle",
@@ -34,7 +37,9 @@
     "attachFile": "파일 첨부",
     "fileAlt": "사업자등록증",
     "fileDialogTitle": "사업자등록증 전체 보기",
-    "fileDialogDescription": "사업자등록증 이미지를 크게 볼 수 있습니다"
+    "fileDialogDescription": "사업자등록증 이미지를 크게 볼 수 있습니다",
+    "uploadPrompt": "사업자등록증 파일 첨부",
+    "uploadHint": "PDF, JPG, PNG 형식"
   },
   "display": {
     "statusLabel": "검증 상태:",

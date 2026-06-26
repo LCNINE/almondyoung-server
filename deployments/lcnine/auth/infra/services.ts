@@ -23,6 +23,7 @@ export function setup(infra: IdpInfra) {
   const cafe24ClientId = new sst.Secret("Cafe24ClientId");
   const cafe24ClientSecret = new sst.Secret("Cafe24ClientSecret");
   const cafe24ServiceKey = new sst.Secret("Cafe24ServiceKey");
+  const dataGoKrServiceKey = new sst.Secret("DataGoKrServiceKey");
 
   // const awsS3AccessKeyId = new sst.Secret("AwsS3AccessKeyId");
   // const awsS3SecretAccessKey = new sst.Secret("AwsS3SecretAccessKey");
@@ -138,7 +139,7 @@ export function setup(infra: IdpInfra) {
       CAFE24_CLIENT_SECRET: cafe24ClientSecret.value,
       CAFE24_SERVICE_KEY: cafe24ServiceKey.value,
       CAFE24_MALL_ID: "lcnine",
-      BIZNO_URL: 'https://bizno.net/article',
+      DATA_GO_KR_SERVICE_KEY: dataGoKrServiceKey.value,
       // AWS_ACCESS_KEY_ID: awsS3AccessKeyId.value,
       // AWS_SECRET_ACCESS_KEY: awsS3SecretAccessKey.value,
     },
