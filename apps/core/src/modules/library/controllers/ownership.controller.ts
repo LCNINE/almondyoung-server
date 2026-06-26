@@ -13,6 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
+import type { ServerResponse } from 'http';
 import { Readable } from 'stream';
 
 import { OwnershipFilter, OwnershipService } from '../services/ownership.service';
@@ -100,18 +101,21 @@ export class OwnershipController {
     // 확장자 보존을 위해 originalName 을 우선.
     const downloadName = (meta?.originalName ?? meta?.fileName ?? assetName) || 'download';
 
-    res.setHeader('Content-Type', assetMimeType ?? meta?.mimeType ?? contentType);
+    // Core 는 Fastify 어댑터다. Fastify reply 에 직접 pipe 하면 응답을 객체로 인식해
+    // FST_ERR_REP_INVALID_PAYLOAD_TYPE("invalid type 'object'") 가 난다.
+    // hijack() 으로 raw Node 응답을 take over 한 뒤 그쪽으로 스트리밍한다.
+    const reply = res as unknown as { hijack: () => void; raw: ServerResponse };
+    reply.hijack();
+    reply.raw.setHeader('Content-Type', assetMimeType ?? meta?.mimeType ?? contentType);
     if (contentLength !== null && Number.isFinite(contentLength)) {
-      res.setHeader('Content-Length', String(contentLength));
+      reply.raw.setHeader('Content-Length', String(contentLength));
     }
-    res.setHeader('Content-Disposition', buildContentDisposition(downloadName));
+    reply.raw.setHeader('Content-Disposition', buildContentDisposition(downloadName));
 
-    // Web ReadableStream → Node Readable, then pipe to response
+    // Web ReadableStream → Node Readable, then pipe to raw response
     const nodeStream = Readable.fromWeb(stream as any);
-    nodeStream.on('error', (err) => {
-      res.destroy(err);
-    });
-    nodeStream.pipe(res);
+    nodeStream.on('error', () => reply.raw.destroy());
+    nodeStream.pipe(reply.raw);
   }
 
   private _requireUserId(req: any): string {
