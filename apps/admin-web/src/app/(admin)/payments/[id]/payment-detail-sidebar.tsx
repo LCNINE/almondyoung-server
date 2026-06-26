@@ -18,6 +18,20 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+
+const errMessage = (e: unknown, fallback: string) =>
+  e instanceof Error && e.message ? e.message : fallback;
 
 function PaymentMethodInfoContent({ intentId }: { intentId: string }) {
   const { data } = usePaymentIntentDetail(intentId);
@@ -67,28 +81,41 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
   const [refundReasonMessage, setRefundReasonMessage] = useState('');
 
   const canCapture = data.status === 'AUTHORIZED';
-  const canCancel = ['CREATED', 'PROCESSING', 'REQUIRES_ACTION', 'AUTHORIZED', 'SUCCEEDED'].includes(data.status);
+  // AWAITING_DEPOSIT(무통장 입금대기) 포함 — 미입금 건을 입금확인 전에 거절/취소할 수 있어야 한다.
+  // wallet 의 CANCELABLE_INTENT_STATUSES 가 이미 허용하며, 취소 시 선생성 주문 취소 + 예약재고 해제까지
+  // 웹훅(handleCancelProjection)이 처리한다.
+  const canCancel = [
+    'CREATED',
+    'PROCESSING',
+    'REQUIRES_ACTION',
+    'AUTHORIZED',
+    'SUCCEEDED',
+    'AWAITING_DEPOSIT',
+  ].includes(data.status);
+  const isAwaitingDeposit = data.status === 'AWAITING_DEPOSIT';
 
   const succeededCharges = data.charges.filter(
     (c) => c.status === 'SUCCEEDED' && (c.operation === 'AUTHORIZE' || c.operation === 'CAPTURE'),
   );
   const canRefund = succeededCharges.length > 0;
 
+  const amountLabel = `${data.payableAmount.toLocaleString('ko-KR')} ${data.currency}`;
+
   const handleCapture = async () => {
     try {
       await capture.mutateAsync();
       toast.success('매입 처리 완료');
-    } catch {
-      toast.error('매입 처리 실패');
+    } catch (e) {
+      toast.error(errMessage(e, '매입 처리 실패'));
     }
   };
 
   const handleCancel = async () => {
     try {
       await cancel.mutateAsync();
-      toast.success('취소 처리 완료');
-    } catch {
-      toast.error('취소 처리 실패');
+      toast.success(isAwaitingDeposit ? '입금 거절(주문 취소) 완료' : '취소 처리 완료');
+    } catch (e) {
+      toast.error(errMessage(e, isAwaitingDeposit ? '입금 거절 실패' : '취소 처리 실패'));
     }
   };
 
@@ -120,8 +147,8 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
       setRefundAmount('');
       setRefundReasonCode('');
       setRefundReasonMessage('');
-    } catch {
-      toast.error('환불 처리 실패');
+    } catch (e) {
+      toast.error(errMessage(e, '환불 처리 실패'));
     }
   };
 
@@ -138,13 +165,36 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
     <>
       <div className="p-4 space-y-2">
         {canCapture && (
-          <Button
-            className="w-full"
-            onClick={handleCapture}
-            disabled={capture.isPending}
-          >
-            {capture.isPending ? '처리 중...' : '매입 (Capture)'}
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button className="w-full" disabled={capture.isPending}>
+                {capture.isPending ? '처리 중...' : '매입 (Capture)'}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>매입(Capture) 처리</AlertDialogTitle>
+                <AlertDialogDescription>
+                  결제{' '}
+                  <span className="font-semibold text-foreground">
+                    {amountLabel}
+                  </span>{' '}
+                  건을 실제로 매입(자금 확정)합니다. 이 작업은 되돌릴 수 없습니다.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={capture.isPending}>
+                  취소
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={capture.isPending}
+                  onClick={() => void handleCapture()}
+                >
+                  매입 확정
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         )}
         {canRefund && (
           <Button
@@ -156,14 +206,59 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
           </Button>
         )}
         {canCancel && (
-          <Button
-            className="w-full"
-            variant="destructive"
-            onClick={handleCancel}
-            disabled={cancel.isPending}
-          >
-            {cancel.isPending ? '처리 중...' : '취소 (Cancel)'}
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                className="w-full"
+                variant="destructive"
+                disabled={cancel.isPending}
+              >
+                {cancel.isPending
+                  ? '처리 중...'
+                  : isAwaitingDeposit
+                    ? '입금 거절 (주문 취소)'
+                    : '취소 (Cancel)'}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {isAwaitingDeposit ? '입금 거절(주문 취소) 처리' : '결제 취소 처리'}
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  {isAwaitingDeposit ? (
+                    <>
+                      미입금 무통장 건{' '}
+                      <span className="font-semibold text-foreground">
+                        {amountLabel}
+                      </span>{' '}
+                      을(를) 거절하고 선생성된 주문을 취소합니다(예약 재고 해제).
+                      이 작업은 되돌릴 수 없습니다.
+                    </>
+                  ) : (
+                    <>
+                      결제{' '}
+                      <span className="font-semibold text-foreground">
+                        {amountLabel}
+                      </span>{' '}
+                      건을 취소(void)합니다. 이 작업은 되돌릴 수 없습니다.
+                    </>
+                  )}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={cancel.isPending}>
+                  닫기
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  disabled={cancel.isPending}
+                  onClick={() => void handleCancel()}
+                >
+                  {isAwaitingDeposit ? '입금 거절' : '취소 확정'}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         )}
       </div>
 

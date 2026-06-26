@@ -283,7 +283,15 @@ export async function processPaymentCallback(
       }
     }
 
-    const targetCartId = cartId || (await getCartId())
+    // cartId 는 결제 대상 checkout cart 를 positively 식별한 값(sessionStorage 매핑 또는 쿼리).
+    // 유실 시(wallet 크로스도메인 리다이렉트로 sessionStorage 소실 + returnUrl 에 cartId 가 없어
+    // URL 폴백 부재) 쿠키(쇼핑 카트)로 fallback 하면 안 된다: 엉뚱한 카트 완료를 시도하고, 아래
+    // 쿠키 삭제 가드가 잔여 아이템이 남은 살아있는 쇼핑 카트의 쿠키를 지워 "결제 후 빈 장바구니"
+    // 가 된다. 주문 생성은 wallet capture 웹훅(medusa payment-events: handleCaptureProjection →
+    // recoverBankTransferOrder → completeCartWorkflow)이 intent→session→cart 로 서버사이드에서
+    // authoritative 하게 처리하므로, 식별 불가 시 여기서는 완료를 시도하지 않고 성공 페이지로
+    // 보낸다(쿠키 미변경 → 카트 페이지가 잔여 쇼핑 카트를 그대로 표시).
+    const targetCartId = cartId
     logger.info("storefront.checkout.payment_callback.started", {
       attributes: {
         country_code: countryCode,
@@ -312,7 +320,9 @@ export async function processPaymentCallback(
           await removePurchasedItemsFromSourceCart(sourceCartSelection, headers)
         }
         const currentCartId = await getCartId()
-        if (!cartId || currentCartId === targetCartId) {
+        // 실제로 완료된 카트가 쿠키 카트와 같을 때만 쿠키를 비운다(전체 결제: 쇼핑 카트=결제 카트).
+        // 부분/즉시구매는 쿠키가 잔여 아이템이 남은 쇼핑 카트를 가리키므로 비우지 않는다.
+        if (currentCartId === targetCartId) {
           await removeCartId()
         }
         return {
@@ -382,7 +392,9 @@ export async function processPaymentCallback(
         }
 
         const currentCartId = await getCartId()
-        if (!cartId || currentCartId === targetCartId) {
+        // 실제로 완료된 카트가 쿠키 카트와 같을 때만 쿠키를 비운다(전체 결제: 쇼핑 카트=결제 카트).
+        // 부분/즉시구매는 쿠키가 잔여 아이템이 남은 쇼핑 카트를 가리키므로 비우지 않는다.
+        if (currentCartId === targetCartId) {
           await removeCartId()
         }
         return {
@@ -407,6 +419,15 @@ export async function processPaymentCallback(
       }
     }
 
+    // targetCartId(=cartId) 식별 실패 — 위 if 블록을 타지 않은 경우. 주문은 서버측 capture 웹훅이
+    // 생성하므로 쿠키를 건드리지 않고 성공 페이지로 보낸다(빈 장바구니 방지).
+    logger.info("storefront.checkout.payment_callback.no_checkout_cart_mapping", {
+      attributes: {
+        country_code: countryCode,
+        intent_id: intentId,
+        mode: mode ?? null,
+      },
+    })
     return {
       success: true,
       redirectUrl: `/${countryCode}/checkout/success/${intentId}`,

@@ -4,6 +4,7 @@ import type { PendingBankTransferDto } from '@/lib/types/dto/wallet';
 import { IdCell, DateCell } from '@/components/table/table-cells/common';
 import { PlaceholderCell } from '@/components/table/table-cells/common/placeholder-cell';
 import { BankTransferConfirmCell } from '@/features/payments/components/bank-transfer-table/confirm-cell';
+import { BankTransferDetailCell } from '@/features/payments/components/bank-transfer-table/detail-cell';
 import type { UserInfo } from '@/hooks/use-user-names';
 
 const columnHelper = createColumnHelper<PendingBankTransferDto>();
@@ -24,12 +25,19 @@ export const useBankTransferTableColumns = ({ userMap = {} }: UseColumnsOptions 
         cell: ({ getValue }) => {
           const userId = getValue();
           if (!userId) return <PlaceholderCell />;
-          const username = userMap[userId]?.username;
+          const info = userMap[userId];
+          const username = info?.username;
+          const loginId = info?.loginId;
           return (
             <div className="flex flex-col gap-0.5">
               <span className="text-sm">
                 {username || <span className="text-muted-foreground">-</span>}
               </span>
+              {loginId ? (
+                <span className="text-xs text-muted-foreground">
+                  로그인 ID: {loginId}
+                </span>
+              ) : null}
               <IdCell value={userId} />
             </div>
           );
@@ -70,14 +78,18 @@ export const useBankTransferTableColumns = ({ userMap = {} }: UseColumnsOptions 
         ),
       }),
       columnHelper.accessor('createdAt', {
-        header: '생성일',
-        cell: ({ getValue }) => <DateCell value={getValue()} />,
+        header: '생성일시',
+        cell: ({ getValue }) => <DateCell value={getValue()} withTime />,
       }),
       columnHelper.display({
         id: 'actions',
         header: () => <div className="text-right">작업</div>,
         cell: ({ row }) => (
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-1.5">
+            <BankTransferDetailCell
+              id={row.original.id}
+              userId={row.original.userId}
+            />
             <BankTransferConfirmCell
               id={row.original.id}
               payableAmount={row.original.payableAmount}

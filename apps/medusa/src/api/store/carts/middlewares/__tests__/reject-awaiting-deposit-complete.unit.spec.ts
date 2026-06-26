@@ -5,11 +5,17 @@ type GraphFn = (args: GraphArgs) => Promise<{ data: any[] }> | { data: any[] };
 
 function makeReq(opts: { cartId?: string | undefined; graph?: GraphFn } = {}) {
   const query = { graph: jest.fn(opts.graph ?? (async () => ({ data: [] }))) };
+  const logger = { warn: jest.fn(), error: jest.fn() };
   return {
     params: { id: 'cartId' in opts ? opts.cartId : 'cart_1' },
     // ContainerRegistrationKeys.QUERY === 'query'
-    scope: { resolve: jest.fn((key: string) => (key === 'query' ? query : undefined)) },
+    scope: {
+      resolve: jest.fn((key: string) =>
+        key === 'query' ? query : key === 'logger' ? logger : undefined,
+      ),
+    },
     _query: query,
+    _logger: logger,
   } as any;
 }
 
