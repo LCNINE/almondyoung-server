@@ -8,10 +8,10 @@ import {
   exerciseOwnership,
 } from "@lib/api/library/library-api"
 import type { DigitalAssetOwnership } from "@lib/types/ui/library.ui"
-import { Cat, Check, Download } from "lucide-react"
+import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
+import { Cat, Check, Download, FileText } from "lucide-react"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
-import Image from "next/image"
 
 interface DownloadCardProps {
   ownership: DigitalAssetOwnership
@@ -85,6 +85,9 @@ export function DownloadCard({ ownership, isExercised }: DownloadCardProps) {
   }
 
   const busy = isDownloading || isPending
+  const thumbnailSrc = ownership.asset.thumbnailUrl
+    ? getThumbnailUrl(ownership.asset.thumbnailUrl)
+    : ""
 
   return (
     <div
@@ -94,15 +97,21 @@ export function DownloadCard({ ownership, isExercised }: DownloadCardProps) {
         busy && "opacity-80"
       )}
     >
-      {/* Thumbnail */}
+      {/* Thumbnail — 썸네일이 없거나 깨지면 파일 아이콘 placeholder 노출(엑박 방지) */}
       <div className="bg-muted relative aspect-video overflow-hidden">
-        <Image
-          src={ownership.asset.thumbnailUrl || ""}
-          alt={ownership.asset.name}
-          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-          width={100}
-          height={100}
-        />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <FileText className="text-muted-foreground/40 h-10 w-10" />
+        </div>
+        {thumbnailSrc && (
+          <img
+            src={thumbnailSrc}
+            alt={ownership.asset.name}
+            className="relative h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+            onError={(e) => {
+              e.currentTarget.style.display = "none"
+            }}
+          />
+        )}
         <div className="absolute inset-0 bg-linear-to-t from-black/60 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
 
         {/* Status Badge */}
@@ -121,7 +130,10 @@ export function DownloadCard({ ownership, isExercised }: DownloadCardProps) {
       {/* Content */}
       <div className="space-y-3 p-4">
         <div>
-          <h3 className="text-card-foreground mb-1 truncate font-semibold">
+          <h3
+            className="text-card-foreground mb-1 truncate text-sm font-semibold"
+            title={ownership.asset.name}
+          >
             {ownership.asset.name}
           </h3>
         </div>
