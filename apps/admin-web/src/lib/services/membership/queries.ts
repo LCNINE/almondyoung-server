@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { membershipApi, AdminMembersQuery, AdminBillingHistoryQuery, AdminTierWithPlans } from '@/lib/api/domains/membership';
 import { walletApi } from '@/lib/api/domains/wallet';
 import { AdminRecurringBillingListQuery } from '@/lib/types/dto/wallet';
+import { isCustomError } from '@/lib/api/customError';
 import { membershipQueryKeys } from './query-keys';
 
 export const useMembershipMembers = (
@@ -22,6 +23,9 @@ export const useMemberDetail = (userId: string | null) => {
     queryKey: membershipQueryKeys.memberDetail(userId ?? ''),
     queryFn: () => membershipApi.getMemberDetail(userId!),
     enabled: !!userId,
+    // 멤버십 미가입 회원은 404 — 정상 결과라 재시도하면 로딩만 길어진다
+    retry: (count, error) =>
+      isCustomError(error) && error.statusCode === 404 ? false : count < 2,
   });
 };
 
