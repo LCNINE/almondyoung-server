@@ -8,13 +8,9 @@ import {
   Post,
   Query,
   Req,
-  Res,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import type { Response } from 'express';
-import type { ServerResponse } from 'http';
-import { Readable } from 'stream';
 
 import { OwnershipFilter, OwnershipService } from '../services/ownership.service';
 import { FileServiceClient } from '../clients/file-service.client';
@@ -78,44 +74,23 @@ export class OwnershipController {
 
   @Get(':id/download')
   @ApiOperation({
-    summary: '본인 ownership 의 현재 파일 버전을 binary stream 으로 다운로드 (exercise 필수)',
+    summary: '본인 ownership 의 현재 파일 다운로드 signed URL 반환 (exercise 필수)',
   })
-  @ApiResponse({ status: 200, description: 'Binary stream + Content-Disposition' })
+  @ApiResponse({
+    status: 200,
+    description: '{ url, filename } — 브라우저가 S3 signed URL 에서 직접 다운로드(강제 다운로드 disposition 포함)',
+  })
   async download(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: any,
-    @Res() res: Response,
-  ): Promise<void> {
+  ): Promise<{ url: string; filename: string }> {
     const customerId = this._requireUserId(req);
-    const { fileId, assetName, assetMimeType } = await this.service.getDownloadable(
-      id,
-      customerId,
-    );
+    const { fileId, assetName } = await this.service.getDownloadable(id, customerId);
 
-    const [{ stream, contentType, contentLength }, meta] = await Promise.all([
-      this.fileServiceClient.fetchFile(fileId),
-      this.fileServiceClient.fetchMetadata(fileId).catch(() => null),
-    ]);
-
-    // 파일명 결정: file-service 의 originalName > assetName.
-    // 확장자 보존을 위해 originalName 을 우선.
-    const downloadName = (meta?.originalName ?? meta?.fileName ?? assetName) || 'download';
-
-    // Core 는 Fastify 어댑터다. Fastify reply 에 직접 pipe 하면 응답을 객체로 인식해
-    // FST_ERR_REP_INVALID_PAYLOAD_TYPE("invalid type 'object'") 가 난다.
-    // hijack() 으로 raw Node 응답을 take over 한 뒤 그쪽으로 스트리밍한다.
-    const reply = res as unknown as { hijack: () => void; raw: ServerResponse };
-    reply.hijack();
-    reply.raw.setHeader('Content-Type', assetMimeType ?? meta?.mimeType ?? contentType);
-    if (contentLength !== null && Number.isFinite(contentLength)) {
-      reply.raw.setHeader('Content-Length', String(contentLength));
-    }
-    reply.raw.setHeader('Content-Disposition', buildContentDisposition(downloadName));
-
-    // Web ReadableStream → Node Readable, then pipe to raw response
-    const nodeStream = Readable.fromWeb(stream as any);
-    nodeStream.on('error', () => reply.raw.destroy());
-    nodeStream.pipe(reply.raw);
+    // 파일 바이트를 Core/스토어프론트로 프록시하지 않는다. file-service 의 강제 다운로드 signed URL 을
+    // 받아 반환하면 브라우저가 S3 에서 직접 받는다 (대용량 파일 Lambda 6MB 응답한도 502 회피).
+    const url = await this.fileServiceClient.getDownloadUrl(fileId);
+    return { url, filename: assetName };
   }
 
   private _requireUserId(req: any): string {
@@ -125,14 +100,4 @@ export class OwnershipController {
     }
     return userId;
   }
-}
-
-/**
- * RFC 5987 형식의 Content-Disposition 헤더를 만든다.
- * 한국어/유니코드 파일명을 안전하게 전달하기 위해 ASCII fallback + `filename*=UTF-8''...` 사용.
- */
-function buildContentDisposition(filename: string): string {
-  const asciiFallback = filename.replace(/[^\x20-\x7E]+/g, '_').replace(/["\\]/g, '_');
-  const encoded = encodeURIComponent(filename).replace(/['()]/g, escape);
-  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`;
 }

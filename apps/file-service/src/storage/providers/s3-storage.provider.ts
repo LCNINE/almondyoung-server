@@ -130,6 +130,9 @@ export class S3StorageProvider implements StorageUploadPort, StorageDeletePort, 
           : new GetObjectCommand({
               Bucket: bucket,
               Key: request.key,
+              ...(request.responseContentDisposition
+                ? { ResponseContentDisposition: request.responseContentDisposition }
+                : {}),
             });
 
       const signedUrl = await getSignedUrl(this.s3Client, command, {

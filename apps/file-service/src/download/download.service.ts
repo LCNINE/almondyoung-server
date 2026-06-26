@@ -12,7 +12,12 @@ export class DownloadService {
     private readonly fileAccess: FileAccess,
   ) {}
 
-  async getSignedUrl(fileId: string, expiresIn: number, user: JwtPayload): Promise<SignedUrlResponseDto> {
+  async getSignedUrl(
+    fileId: string,
+    expiresIn: number,
+    user: JwtPayload,
+    download = false,
+  ): Promise<SignedUrlResponseDto> {
     const file = await this.fileAccess.loadReadable(fileId, user);
 
     if (file.isPublic) {
@@ -22,11 +27,17 @@ export class DownloadService {
       };
     }
 
+    // download=true 면 강제 다운로드 + 원본 파일명 (RFC 5987). 미지정 시 브라우저 기본(inline) 동작.
+    const responseContentDisposition = download
+      ? `attachment; filename*=UTF-8''${encodeURIComponent(file.originalName)}`
+      : undefined;
+
     const signedUrlResult = await this.storageService.getSignedUrl({
       key: file.filePath,
       expiresIn,
       operation: 'get',
       isPublic: false,
+      responseContentDisposition,
     });
 
     return {

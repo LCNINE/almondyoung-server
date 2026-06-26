@@ -1,13 +1,9 @@
 "use server"
 
-import { getAccessToken, getCookies } from "@lib/data/cookies"
 import { revalidatePath } from "next/cache"
 
 import { api } from "../api"
 import { ApiAuthError, ApiNetworkError, HttpApiError } from "../api-error"
-import {
-  requireBackendBaseUrl,
-} from "@/lib/config/backend"
 import type {
   OwnershipFilter,
   OwnershipListResponseDto,
@@ -76,88 +72,29 @@ export const exerciseOwnership = async (
 }
 
 /**
- * 본인 ownership 의 파일을 binary stream 으로 받아 (filename, mimeType, bytes) 반환.
- *
- * api() 는 JSON 만 다루므로 raw fetch 를 사용. 인증/쿠키는 동일하게 부착.
- * Content-Disposition 의 RFC 5987 `filename*=UTF-8''...` 파라미터를 우선 디코드.
+ * 본인 ownership 의 다운로드 URL(S3 signed URL, 강제 다운로드 disposition 포함)을 받아 반환한다.
+ * 파일 바이트를 서버액션으로 프록시하면 대용량 파일이 Lambda 응답한도(6MB)를 넘겨 502 가 나므로,
+ * Core 가 signed URL 만 주고 브라우저가 S3 에서 직접 받는다.
  */
 export const downloadOwnership = async (
   ownershipId: string
 ): Promise<
-  | {
-      success: true
-      filename: string
-      mimeType: string
-      // Server Action 의 한계로 bytes 는 base64 로 직렬화해 넘긴다 (Buffer 직접 반환 불가).
-      base64: string
-    }
+  | { success: true; url: string; filename: string }
   | { success: false; message: string }
 > => {
   try {
-    const baseUrl = requireBackendBaseUrl("library")
-    const cookieString = await getCookies()
-    const accessToken = await getAccessToken()
-    if (!accessToken) {
-      throw new ApiAuthError("UNAUTHORIZED", 401, "UNAUTHORIZED")
-    }
-
-    const res = await fetch(`${baseUrl}/library/ownerships/${ownershipId}/download`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Cookie: cookieString,
-      },
-    })
-
-    if (!res.ok) {
-      if (res.status === 401) {
-        throw new ApiAuthError("UNAUTHORIZED", 401, "UNAUTHORIZED")
-      }
-      const errBody = await res.text().catch(() => "")
-      return {
-        success: false,
-        message: errBody || `다운로드 실패: ${res.status}`,
-      }
-    }
-
-    const contentType = res.headers.get("content-type") ?? "application/octet-stream"
-    const filename = parseContentDispositionFilename(
-      res.headers.get("content-disposition")
+    const data = await api<{ url: string; filename: string }>(
+      "library",
+      `/library/ownerships/${ownershipId}/download`,
+      { method: "GET", withAuth: true }
     )
-
-    const arrayBuffer = await res.arrayBuffer()
-    const base64 = Buffer.from(arrayBuffer).toString("base64")
-
-    return { success: true, filename, mimeType: contentType, base64 }
+    return { success: true, url: data.url, filename: data.filename }
   } catch (err) {
     if (err instanceof ApiAuthError) throw err
     const message =
-      err instanceof Error ? err.message : "라이센스 다운로드에 실패했습니다."
+      err instanceof HttpApiError || err instanceof ApiNetworkError
+        ? err.message
+        : "라이센스 다운로드에 실패했습니다."
     return { success: false, message }
   }
-}
-
-/**
- * Content-Disposition 파싱.
- * 우선순위: `filename*=UTF-8''<encoded>` > `filename="..."` > `download`.
- */
-function parseContentDispositionFilename(header: string | null): string {
-  if (!header) return "download"
-
-  const starMatch = header.match(/filename\*\s*=\s*UTF-8''([^;]+)/i)
-  if (starMatch) {
-    try {
-      return decodeURIComponent(starMatch[1].trim())
-    } catch {
-      // fall through to ascii fallback
-    }
-  }
-
-  const quotedMatch = header.match(/filename\s*=\s*"([^"]+)"/i)
-  if (quotedMatch) return quotedMatch[1]
-
-  const bareMatch = header.match(/filename\s*=\s*([^;]+)/i)
-  if (bareMatch) return bareMatch[1].trim()
-
-  return "download"
 }

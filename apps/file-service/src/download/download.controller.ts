@@ -41,8 +41,14 @@ export class DownloadController {
     @Param('fileId', ParseUUIDPipe) fileId: string,
     @Query('expiresIn', new DefaultValuePipe(3600), ParseIntPipe) expiresIn: number,
     @User() user: JwtPayload,
+    @Query('download') download?: string,
   ): Promise<SignedUrlResponseDto> {
-    return this.downloadService.getSignedUrl(fileId, expiresIn, user);
+    return this.downloadService.getSignedUrl(
+      fileId,
+      expiresIn,
+      user,
+      download === 'true' || download === '1',
+    );
   }
 
   @Get(':fileId/metadata')
