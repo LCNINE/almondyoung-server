@@ -59,6 +59,7 @@ export class ProductVersionReadLoader {
           eq(productMasterVersions.masterId, masterId),
           eq(productMasterVersions.status, 'active'),
           isNull(productMasters.deletedAt),
+          isNull(productMasterVersions.deletedAt),
         ),
       )
       .limit(1);
