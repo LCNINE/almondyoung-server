@@ -64,7 +64,7 @@ export default function BusinessForm({
     defaultValues: {
       businessNumber: formatBusinessNumber(initialData?.businessNumber ?? ""),
       representativeName: initialData?.representativeName ?? "",
-      fileUrl: initialData?.fileUrl ?? undefined,
+      fileUrl: initialData?.fileUrl || undefined,
       file: undefined,
       metadata: initialData?.metadata ?? undefined,
       nts: null,
@@ -213,6 +213,7 @@ export default function BusinessForm({
       .join(" · ")
     // not_found 면 미등록 메시지, lookup_failed 면 raw 가 없어 일반 안내.
     const reason = detail || "국세청 조회에 실패했어요."
+    const ctaLabel = isEditing ? "수정하기" : "등록하기"
 
     toast.custom(
       (id) => (
@@ -239,8 +240,8 @@ export default function BusinessForm({
             </p>
             <p className="text-[13px] leading-snug font-normal text-gray-500">
               {verified
-                ? "자동으로 승인돼요. 아래 ‘등록하기’를 눌러주세요."
-                : "관리자가 확인 후 승인해드릴게요. 그대로 ‘등록하기’를 눌러주세요."}
+                ? `자동으로 승인돼요. 아래 ‘${ctaLabel}’를 눌러주세요.`
+                : `관리자가 확인 후 승인해드릴게요. 그대로 ‘${ctaLabel}’를 눌러주세요.`}
             </p>
           </div>
         </button>

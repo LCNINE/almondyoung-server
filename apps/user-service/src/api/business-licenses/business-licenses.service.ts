@@ -238,6 +238,8 @@ export class BusinessLicensesService {
       .update(businessLicenses)
       .set({
         ...data,
+        businessNumber: data.businessNumber || null,
+        representativeName: data.representativeName || null,
         status,
         fileUrl: data.fileUrl ?? null,
       })
