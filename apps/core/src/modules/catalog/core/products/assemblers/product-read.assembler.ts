@@ -117,6 +117,7 @@ export class ProductReadAssembler {
       const variantsWithOptions: VariantReadModel[] = include.variants
         ? await Promise.all(
             variants.map(async (v) => {
+              const { optionValueIds: _optionValueIds, ...variant } = v;
               const optionValues = await this.optionReadLoader.getVariantOptionValues(tx, v.id, versionId, locale);
               const priceSet = priceMap.get(v.id);
               if (!priceSet && version.status === 'active') {
@@ -124,7 +125,7 @@ export class ProductReadAssembler {
               }
 
               return {
-                ...v,
+                ...variant,
                 optionValues,
                 price: priceSet?.basePrice,
                 priceSet: priceSet
