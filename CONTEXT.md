@@ -87,6 +87,17 @@
 - Medusa 는 WMS/재고 판단을 위해 Core API 를 직접 호출하지 않는다. 꼭 필요한 예외가 아니라면 Medusa 와 Core 의 commerce 경계는 channel-adapter 를 통해 연결한다.
 - _Avoid_: Medusa 를 Core 의 주문 하위 모듈처럼 취급하기, Medusa order id 를 Core sales order id 로 재사용하기, Medusa 에서 Core WMS/availability API 를 직접 호출하기.
 
+### 판매채널 Projection Snapshot
+- 정의: active 판매상품 version 을 판매채널이 자기 상품 projection 으로 반영할 수 있도록 Core Catalog 가 publish/rollback 시점에 전달하는 상품 상태 스냅샷.
+- 판매채널 Projection Snapshot 은 고객 화면 read model 이 아니라 channel-adapter 가 소비하는 active 판매상품 projection 계약이다.
+- 판매채널 Projection Snapshot 은 active version 에 대해서만 생성한다. draft/inactive 의 작성·열람 상태는 관리자 version detail 의 대상이지 판매채널 반영 대상이 아니다.
+- 판매상품이 unpublished 상태가 될 때는 판매채널 Projection Snapshot 없이 active version 이 없다는 상태만 전달한다.
+- 판매채널 Projection Snapshot 은 계산된 가격 projection 이 빠진 상태로 생성하지 않는다. 가격 projection 누락은 판매채널에 기본값으로 넘길 문제가 아니라 publish/republish 실패로 드러내야 하는 상태다.
+- 판매채널 Projection Snapshot 은 variant 가 0개인 active 판매상품에 대해 생성하지 않는다. 옵션 없는 판매상품도 기본 variant 1개가 있어야 하므로, variant 0개 active 상태는 정상 publish 흐름에서는 발생하지 않아야 하는 불완전한 상태다.
+- 판매채널 Projection Snapshot 의 상품 이미지 참조는 File UUID 를 일차 데이터로 다룬다. URL 문자열은 판매채널 adapter 가 필요할 때 자기 projection 형식에 맞춰 파생하는 값이지 Core Catalog 의 canonical 상품 상태가 아니다.
+- 기존 판매채널 Projection Snapshot contract 와 consumer 호환은 유지한다. 이미지 URL 필드가 남아 있어도 Core Catalog 의 의미상 canonical 값은 File UUID 이며, URL 필드는 호환/adapter 편의 값으로 취급한다.
+- _Avoid_: 일반 사용자용 read model, storefront read model.
+
 ### 채널주문 (Channel Order)
 - 정의: Medusa/Naver/Coupang 같은 판매 채널이 자기 주문 모델과 ID 체계로 보유하는 원천 주문.
 - 채널주문은 Core 판매주문의 live projection 대상이 아니다. Payment Accepted 시점에 channel-adapter 가 채널주문을 Core 판매주문 처리 계약으로 번역한다.
