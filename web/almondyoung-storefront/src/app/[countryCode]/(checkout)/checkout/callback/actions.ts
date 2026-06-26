@@ -341,14 +341,16 @@ export async function processPaymentCallback(
         return await finishAsCompleted()
       }
 
-      // cart.complete() 직전 shipping method 보장
-      await ensureShippingMethod(targetCartId, headers)
-
       let cartRes: Awaited<ReturnType<typeof sdk.store.cart.complete>>
       try {
+        // cart.complete() 직전 shipping method 보장. ⚠️ 반드시 try 안에서 호출한다:
+        // 서버 capture 웹훅(handleCaptureProjection → completeCartWorkflow)이 이 카트를 동시에
+        // 완료하면, 완료된 카트에 addShippingMethod 가 throw 한다. try 밖이면 이 throw 가 바깥
+        // catch 로 새어나가 결제·주문이 정상인데도 '실패페이지' 가 떴다(주문은 웹훅이 이미 생성).
+        await ensureShippingMethod(targetCartId, headers)
         cartRes = await sdk.store.cart.complete(targetCartId, {}, headers)
       } catch (completeErr) {
-        // 동시 호출 레이스 / 중복 콜백: 다른 호출이 먼저 완료시킨 경우 주문은 이미 생성됐다.
+        // 동시 호출 레이스 / 중복 콜백: 다른 호출(웹훅 포함)이 먼저 완료시킨 경우 주문은 이미 생성됐다.
         // ①완료 재확인(no-store) 또는 ②"이미 완료된 카트 재완료" 에러 시그니처면 성공 처리.
         const recheckCompletedAt = await getCartCompletedAt(
           targetCartId,
