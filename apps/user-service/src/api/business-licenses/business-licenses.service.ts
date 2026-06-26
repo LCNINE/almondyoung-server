@@ -2,18 +2,34 @@ import { DbService, InjectDb } from '@app/db';
 import { HttpService } from '@nestjs/axios';
 import { BadRequestException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as cheerio from 'cheerio';
 import { and, eq } from 'drizzle-orm';
 import { firstValueFrom } from 'rxjs';
 import { BusinessLicense, businessLicenses, type UserServiceSchema } from '../../../database/drizzle/schema';
-import { BusinessLicensesHelper } from './business-licenses.helper';
 import {
+  BusinessMetadata,
   CreateBusinessLicenseDto,
   FetchBusinessLicenseDto,
+  NtsLookupResult,
   UpdateBusinessLicenseDto,
 } from './dto/business-license.dto';
 import { BusinessLicenseResponseDto } from './dto/business-license.response.dto';
 import { BusinessLicenseException } from './exceptions/business.exceptions';
+
+// 국세청 상태조회 (data.go.kr) — 사업자번호만으로 계속/휴업/폐업/미등록 여부를 확인한다.
+const NTS_STATUS_URL = 'https://api.odcloud.kr/api/nts-businessman/v1/status';
+
+interface NtsStatusRow {
+  b_no: string;
+  b_stt: string;
+  b_stt_cd: string;
+  tax_type?: string;
+  [key: string]: unknown;
+}
+
+interface NtsStatusResponse {
+  status_code: string;
+  data?: NtsStatusRow[];
+}
 
 @Injectable()
 export class BusinessLicensesService {
@@ -21,7 +37,6 @@ export class BusinessLicensesService {
     @InjectDb()
     private readonly dbService: DbService<UserServiceSchema>,
     private readonly httpService: HttpService,
-    private readonly businessLicensesHelper: BusinessLicensesHelper,
     private readonly configService: ConfigService,
   ) {}
 
@@ -54,14 +69,16 @@ export class BusinessLicensesService {
           representativeName: null,
           status: 'under_review',
           fileUrl: data.fileUrl,
+          metadata: data.metadata ?? null,
         });
       } else {
         await this.dbService.db.insert(businessLicenses).values({
           userId,
           businessNumber: data.businessNumber,
           representativeName: data.representativeName,
-          status: 'approved',
+          status: this.deriveStatus(data.metadata),
           fileUrl: null,
+          metadata: data.metadata ?? null,
         });
       }
       return;
@@ -86,49 +103,62 @@ export class BusinessLicensesService {
     return result ?? null;
   }
   /**
-   * 사업자 정보 외부 조회
+   * 사업자 정보 외부 조회 (국세청 상태조회).
+   *
+   * 등록을 막지 않는다 — 결과(계속/휴업/폐업/미등록/조회실패)를 그대로 돌려주고,
+   * 호출 측이 metadata 에 보관한다. 일시정지/장애/키 미설정은 모두 lookup_failed 로 흡수한다.
    */
-  async fetchBusinessLicense(fetchBusinessLicenseDto: FetchBusinessLicenseDto): Promise<void> {
-    const { businessNumber, representativeName } = fetchBusinessLicenseDto;
+  async fetchBusinessLicense(fetchBusinessLicenseDto: FetchBusinessLicenseDto): Promise<NtsLookupResult> {
+    const { businessNumber } = fetchBusinessLicenseDto;
+    const checkedAt = new Date().toISOString();
 
-    const baseUrl = this.configService.get<string>('BIZNO_URL');
-
-    if (!baseUrl) {
-      throw new BusinessLicenseException({
-        message: '사업자 조회 서비스가 설정되지 않았습니다.',
-        errorCode: 'BUSINESS_LICENSE_FETCH_NOT_CONFIGURED',
-        httpStatus: HttpStatus.SERVICE_UNAVAILABLE,
-      });
+    const serviceKey = this.configService.get<string>('DATA_GO_KR_SERVICE_KEY');
+    if (!serviceKey) {
+      return { result: 'lookup_failed', checkedAt, error: 'SERVICE_KEY_NOT_CONFIGURED' };
     }
 
-    let response: { data: string };
     try {
-      response = await firstValueFrom(this.httpService.get(`${baseUrl}/${businessNumber}`));
-    } catch {
-      throw new BusinessLicenseException({
-        message: '사업자 정보 조회 중 외부 서비스 오류가 발생했습니다.',
-        errorCode: 'BUSINESS_LICENSE_FETCH_EXTERNAL_ERROR',
-        httpStatus: HttpStatus.BAD_GATEWAY,
-      });
+      const { data } = await firstValueFrom(
+        this.httpService.post<NtsStatusResponse>(
+          NTS_STATUS_URL,
+          { b_no: [businessNumber] },
+          { params: { serviceKey }, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+
+      const row = data?.data?.[0];
+      if (data?.status_code !== 'OK' || !row) {
+        return { result: 'lookup_failed', checkedAt, error: `unexpected_response:${data?.status_code ?? 'none'}` };
+      }
+
+      return { result: this.mapBusinessStatus(row.b_stt_cd), checkedAt, raw: row };
+    } catch (error) {
+      return {
+        result: 'lookup_failed',
+        checkedAt,
+        error: error instanceof Error ? error.message : 'request_failed',
+      };
     }
+  }
 
-    const $ = cheerio.load(response.data);
-
-    const businessInfo = {
-      // prettier-ignore
-      businessNumber: this.businessLicensesHelper.extractTableValue($, '사업자등록번호'),
-      ceoName: this.businessLicensesHelper.extractTableValue($, '대표자명'),
-    };
-
-    if (representativeName !== businessInfo.ceoName) {
-      throw new BusinessLicenseException({
-        message: '대표자 이름이 일치하지 않습니다.',
-        errorCode: 'BUSINESS_LICENSE_CEO_NAME_NOT_MATCH',
-        httpStatus: HttpStatus.BAD_REQUEST,
-      });
+  // 국세청 납세자상태코드 → 내부 result. 01 계속 / 02 휴업 / 03 폐업 / 그 외(빈값) 미등록.
+  private mapBusinessStatus(code: string | undefined): NtsLookupResult['result'] {
+    switch (code) {
+      case '01':
+        return 'active';
+      case '02':
+        return 'suspended';
+      case '03':
+        return 'closed';
+      default:
+        return 'not_found';
     }
+  }
 
-    return;
+  // 번호가 실존(계속/휴업/폐업)으로 확인되면 approved, 미등록/조회실패면 사람이 보도록 under_review.
+  private deriveStatus(metadata: BusinessMetadata | null | undefined): 'approved' | 'under_review' {
+    const result = metadata?.nts?.result;
+    return result === 'active' || result === 'suspended' || result === 'closed' ? 'approved' : 'under_review';
   }
 
   async updateBusinessLicenseByBusinessId(
@@ -201,30 +231,18 @@ export class BusinessLicensesService {
   }
 
   private async updateApprovedLicense(businessLicenseId: string, data: UpdateBusinessLicenseDto): Promise<void> {
-    // 외부 사업자 조회 결과, true일때 status를 approved로 변경
-    if (data.externalBusinessStatus) {
-      await this.dbService.db
-        .update(businessLicenses)
-        .set({
-          ...data,
-          status: 'approved',
-          fileUrl: null,
-        })
-        .where(eq(businessLicenses.id, businessLicenseId));
+    // 파일 첨부 경로는 관리자 심사 대상(under_review), 직접 입력 경로는 상태조회 결과로 판정.
+    const status = data.fileUrl ? 'under_review' : this.deriveStatus(data.metadata);
 
-      return;
-    }
-    // 외부 사업자 조회 결과, false일때 혹은 새롭게 첨부한 파일이 있을 때 status를 under_review로 변
-    else if (!data.externalBusinessStatus || data.fileUrl) {
-      await this.dbService.db
-        .update(businessLicenses)
-        .set({
-          ...data,
-          status: 'under_review',
-          fileUrl: data.fileUrl,
-        })
-        .where(eq(businessLicenses.id, businessLicenseId));
-      return;
-    }
+    await this.dbService.db
+      .update(businessLicenses)
+      .set({
+        ...data,
+        businessNumber: data.businessNumber || null,
+        representativeName: data.representativeName || null,
+        status,
+        fileUrl: data.fileUrl ?? null,
+      })
+      .where(eq(businessLicenses.id, businessLicenseId));
   }
 }

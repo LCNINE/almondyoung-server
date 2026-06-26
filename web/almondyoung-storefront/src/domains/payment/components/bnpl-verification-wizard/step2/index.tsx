@@ -105,6 +105,7 @@ function BusinessForm({
 
   const {
     businessCheckStatus,
+    ntsResult,
     isPending: isExternalBusinessPending,
     handleVerifyBusiness,
   } = useBusinessVerification({ form })
@@ -138,20 +139,24 @@ function BusinessForm({
         }
       }
 
+      const metadata = ntsResult ? { nts: ntsResult } : undefined
+
       if (businessInfo) {
-        const res = await updateBusiness({
+        await updateBusiness({
           business: {
             businessNumber: form.watch("businessNumber") ?? "",
             representativeName: form.watch("ceoName") ?? "",
             fileUrl: fileRes?.url ?? undefined,
+            metadata,
           },
           businessId: businessInfo.id,
         })
       } else {
-        const res = await createBusiness({
+        await createBusiness({
           businessNumber: form.watch("businessNumber") ?? "",
           representativeName: form.watch("ceoName") ?? "",
           fileUrl: fileRes?.url ?? undefined,
+          metadata,
         })
       }
       router.refresh()

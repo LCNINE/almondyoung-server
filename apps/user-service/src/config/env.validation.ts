@@ -54,6 +54,9 @@ export const userServiceEnvSchema = z.object({
   AWS_SECRET_ACCESS_KEY: z.string().optional(),
   AWS_S3_BUCKET: z.string(),
 
+  // 국세청 사업자등록정보 상태조회 (data.go.kr). 없으면 조회는 lookup_failed 로 처리되고 등록은 계속 가능.
+  DATA_GO_KR_SERVICE_KEY: z.string().optional(),
+
   // Cafe24 Link (optional: disabled when not set)
   CAFE24_SERVICE_KEY: z.string().optional(),
   CAFE24_API_VERSION: z.string().optional(),

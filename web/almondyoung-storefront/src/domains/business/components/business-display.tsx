@@ -1,7 +1,6 @@
 "use client"
 
 import { BusinessInfo } from "@/lib/types/ui/user"
-import { Badge } from "@components/common/ui/badge"
 import { Button } from "@components/common/ui/button"
 import {
   Dialog,
@@ -15,6 +14,7 @@ import { getDisplayFilename } from "@lib/utils/get-diplay-filename"
 import { Pencil } from "lucide-react"
 import { useTranslations } from "next-intl"
 import Image from "next/image"
+import type { ReactNode } from "react"
 
 interface BusinessDisplayProps {
   data: BusinessInfo
@@ -27,135 +27,110 @@ export default function BusinessDisplay({
 }: BusinessDisplayProps) {
   const t = useTranslations("business.display")
 
-  // 검증 상태별 뱃지 매핑 함수
   const getStatusBadge = (status?: BusinessInfo["status"]) => {
-    switch (status) {
-      case "approved":
-        return (
-          <Badge
-            variant="secondary"
-            className="border-green-300 bg-green-100 text-green-700"
-          >
-            {t("statusApproved")}
-          </Badge>
-        )
-      case "under_review":
-        return (
-          <Badge
-            variant="outline"
-            className="border-yellow-300 bg-yellow-100 text-yellow-800"
-          >
-            {t("statusUnderReview")}
-          </Badge>
-        )
-      case "rejected":
-        return (
-          <Badge
-            variant="destructive"
-            className="border-red-300 bg-red-100 text-red-700"
-          >
-            {t("statusRejected")}
-          </Badge>
-        )
-      default:
-        return <Badge variant="secondary">{t("statusNone")}</Badge>
+    const tone: Record<string, { pill: string; dot: string }> = {
+      approved: { pill: "bg-emerald-500/10 text-emerald-700", dot: "bg-emerald-500" },
+      under_review: { pill: "bg-amber-500/10 text-amber-700", dot: "bg-amber-500" },
+      rejected: { pill: "bg-red-500/10 text-red-600", dot: "bg-red-500" },
+      none: { pill: "bg-gray-500/10 text-gray-600", dot: "bg-gray-400" },
     }
+    const label = {
+      approved: t("statusApproved"),
+      under_review: t("statusUnderReview"),
+      rejected: t("statusRejected"),
+      none: t("statusNone"),
+    }
+    const key = status ?? "none"
+    const { pill, dot } = tone[key] ?? tone.none
+    return (
+      <span
+        className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${pill}`}
+      >
+        <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
+        {label[key as keyof typeof label] ?? label.none}
+      </span>
+    )
   }
 
+  const Row = ({ label, children }: { label: string; children: ReactNode }) => (
+    <div className="flex items-start justify-between gap-4 px-5 py-4">
+      <dt className="shrink-0 text-sm font-medium text-gray-500">{label}</dt>
+      <dd className="text-right text-sm font-medium text-gray-900">
+        {children}
+      </dd>
+    </div>
+  )
+
   return (
-    <div className="space-y-6">
-      <div className="border-border bg-card rounded-lg border">
-        <table className="w-full text-sm">
-          <tbody>
-            {/* 검증 상태 */}
-            <tr className="border-b last:border-b-0">
-              <th className="text-muted-foreground min-w-[140px] px-4 py-4 text-left align-top font-medium">
-                {t("statusLabel")}
-              </th>
-              <td className="px-4 py-4">
-                {getStatusBadge(data.status)}
-                {data.reviewComment && data.status === "rejected" && (
-                  <div className="text-muted-foreground mt-1 text-xs">
-                    {data.reviewComment}
-                  </div>
-                )}
-              </td>
-            </tr>
-            {/* 사업자등록번호 */}
-            <tr className="border-b last:border-b-0">
-              <th className="text-muted-foreground min-w-[140px] px-4 py-4 text-left font-medium">
-                {t("businessNumberLabel")}
-              </th>
-              <td className="text-foreground px-4 py-4">
-                {formatBusinessNumber(data.businessNumber ?? "")}
-              </td>
-            </tr>
-            {/* 대표자명 */}
-            <tr className="border-b last:border-b-0">
-              <th className="text-muted-foreground min-w-[140px] px-4 py-4 text-left font-medium">
-                {t("representativeNameLabel")}
-              </th>
-              <td className="text-foreground px-4 py-4">
-                {data.representativeName}
-              </td>
-            </tr>
-            {/* 파일 정보 */}
-            {data.fileUrl && (
-              <tr className="border-b last:border-b-0">
-                <th className="text-muted-foreground min-w-[140px] px-4 py-4 text-left align-top font-medium">
-                  {t("fileLabel")}
-                </th>
-                <td className="text-foreground px-4 py-4">
-                  <Dialog>
-                    <DialogTrigger asChild>
-                      <div className="flex cursor-pointer items-center gap-2">
-                        <Image
-                          src={data.fileUrl}
-                          alt={t("fileAlt")}
-                          width={100}
-                          height={100}
-                          className="rounded border"
-                        />
-                        <span>{getDisplayFilename(data.fileUrl)}</span>
-                      </div>
-                    </DialogTrigger>
-                    <DialogContent
-                      className="w-auto max-w-[90vw]"
-                      aria-describedby="business-file-dialog-desc"
-                    >
-                      <DialogTitle className="sr-only">
-                        {t("fileDialogTitle")}
-                      </DialogTitle>
-                      <DialogDescription className="sr-only">
-                        {t("fileDialogDescription")}
-                      </DialogDescription>
+    <div className="space-y-4">
+      <dl className="divide-y divide-gray-100 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+        <Row label={t("statusLabel")}>
+          {getStatusBadge(data.status)}
+          {data.reviewComment && data.status === "rejected" && (
+            <div className="mt-1 text-xs font-normal text-gray-400">
+              {data.reviewComment}
+            </div>
+          )}
+        </Row>
 
-                      <div className="flex flex-col items-center p-2">
-                        <Image
-                          src={data.fileUrl}
-                          alt={t("fileAlt")}
-                          width={600}
-                          height={600}
-                          className="h-auto max-w-full rounded border"
-                          style={{ objectFit: "contain" }}
-                        />
-                        <span
-                          id="business-file-dialog-desc"
-                          className="text-muted-foreground mt-2 text-xs"
-                        >
-                          {getDisplayFilename(data.fileUrl)}
-                        </span>
-                      </div>
-                    </DialogContent>
-                  </Dialog>
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+        <Row label={t("businessNumberLabel")}>
+          {formatBusinessNumber(data.businessNumber ?? "")}
+        </Row>
 
-      {/* 수정 버튼 */}
+        <Row label={t("representativeNameLabel")}>
+          {data.representativeName}
+        </Row>
+
+        {data.fileUrl && (
+          <Row label={t("fileLabel")}>
+            <Dialog>
+              <DialogTrigger asChild>
+                <div className="flex cursor-pointer items-center gap-2">
+                  <Image
+                    src={data.fileUrl}
+                    alt={t("fileAlt")}
+                    width={100}
+                    height={100}
+                    className="rounded-lg border border-gray-100"
+                  />
+                  <span className="font-normal text-gray-500">
+                    {getDisplayFilename(data.fileUrl)}
+                  </span>
+                </div>
+              </DialogTrigger>
+              <DialogContent
+                className="w-auto max-w-[90vw]"
+                aria-describedby="business-file-dialog-desc"
+              >
+                <DialogTitle className="sr-only">
+                  {t("fileDialogTitle")}
+                </DialogTitle>
+                <DialogDescription className="sr-only">
+                  {t("fileDialogDescription")}
+                </DialogDescription>
+
+                <div className="flex flex-col items-center p-2">
+                  <Image
+                    src={data.fileUrl}
+                    alt={t("fileAlt")}
+                    width={600}
+                    height={600}
+                    className="h-auto max-w-full rounded-lg border border-gray-100"
+                    style={{ objectFit: "contain" }}
+                  />
+                  <span
+                    id="business-file-dialog-desc"
+                    className="mt-2 text-xs text-gray-400"
+                  >
+                    {getDisplayFilename(data.fileUrl)}
+                  </span>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </Row>
+        )}
+      </dl>
+
       <div className="flex justify-end">
         <Button onClick={onEdit} className="gap-2">
           <Pencil className="h-4 w-4" />

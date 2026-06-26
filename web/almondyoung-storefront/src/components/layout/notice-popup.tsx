@@ -19,7 +19,7 @@ import {
  *   숨김 만료 시각을 저장해 자정까지 다시 뜨지 않음
  * - 공지 내용을 바꿔 다시 모두에게 노출하고 싶으면 STORAGE_KEY 의 버전(v1)을 올린다.
  */
-const STORAGE_KEY = "notice:signup-renewal:v1:hideUntil"
+const STORAGE_KEY = "notice:signup-renewal:v2:hideUntil"
 
 interface NoticePopupProps {
   isLoggedIn: boolean
