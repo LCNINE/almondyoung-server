@@ -88,6 +88,7 @@ export function transformPimToMedusa(
     hideMembershipPriceForNonMembers,
     isMembershipOnly: hideMembershipPriceForNonMembers,
     isVisibleToMembersOnly: snapshot.isVisibleToMembersOnly ?? false,
+    isOverseas: snapshot.isOverseas ?? false,
     productType: snapshot.productType,
     pimPurchaseConstraint: snapshot.purchaseConstraint ?? null,
     fulfillmentKind,

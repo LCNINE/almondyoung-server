@@ -68,6 +68,7 @@ export interface MedusaOrder {
     postal_code?: string;
     address_1?: string;
     address_2?: string;
+    metadata?: Record<string, unknown> | null;
   };
   payment_collections?: Array<{
     id?: string;

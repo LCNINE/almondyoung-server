@@ -579,6 +579,7 @@ export class ProductCategoriesService {
         isWholesaleOnly: pimSchema.productMasterVersions.isWholesaleOnly,
         hideMembershipPriceForNonMembers: pimSchema.productMasterVersions.hideMembershipPriceForNonMembers,
         isVisibleToMembersOnly: pimSchema.productMasterVersions.isVisibleToMembersOnly,
+        isOverseas: pimSchema.productMasterVersions.isOverseas,
         isMembershipOnly: pimSchema.productMasterVersions.isMembershipOnly,
         createdAt: pimSchema.productMasterVersions.createdAt,
         updatedAt: pimSchema.productMasterVersions.updatedAt,

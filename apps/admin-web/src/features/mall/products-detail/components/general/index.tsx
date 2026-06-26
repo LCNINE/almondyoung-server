@@ -313,6 +313,21 @@ function ProductBasicInformationEditDrawer({
 
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex flex-col gap-1">
+                    <Label htmlFor="product-basic-overseas">해외직구</Label>
+                    <p className="text-sm text-muted-foreground">
+                      체크 시 주문 단계에서 개인통관고유부호 입력이 필수가 됩니다.
+                    </p>
+                  </div>
+                  <Switch
+                    id="product-basic-overseas"
+                    checked={values.isOverseas}
+                    onCheckedChange={(checked) => setValue('isOverseas', checked)}
+                    disabled={updateVersion.isPending}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-col gap-1">
                     <Label htmlFor="product-basic-membership">
                       멤버십가 비공개
                     </Label>
@@ -413,6 +428,7 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
     { key: '상태', value: formatStatus(data.status) },
     { key: '배송 유형', value: formatFulfillmentKind(data.fulfillmentKind) },
     { key: '도매 전용', value: formatBool(data.isWholesaleOnly) },
+    { key: '해외직구', value: formatBool(data.isOverseas) },
     { key: 'SEO 제목', value: data.seoTitle ?? '-' },
     { key: 'SEO 설명', value: data.seoDescription ?? '-' },
     { key: 'SEO 키워드', value: formatSeoKeywords(data.seoKeywords) },

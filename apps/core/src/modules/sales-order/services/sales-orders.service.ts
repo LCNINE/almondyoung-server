@@ -2100,6 +2100,7 @@ export class SalesOrdersService {
       roadAddress: address.roadAddress,
       detailAddress: address.detailAddress,
       deliveryNote: address.deliveryNote,
+      personalCustomsCode: address.personalCustomsCode,
     };
   }
 

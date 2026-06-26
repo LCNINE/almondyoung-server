@@ -1,10 +1,15 @@
 "use client"
 
+import { CustomsCodeSection } from "@/domains/checkout/components/sections/customs-code"
 import { DiscountSection } from "@/domains/checkout/components/sections/discount"
 import { OrderProductsSection } from "@/domains/checkout/components/sections/order-products-shipping"
 import { PaymentTotalSection } from "@/domains/checkout/components/sections/payment-total"
 import { ShippingSection } from "@/domains/checkout/components/sections/shipping"
 import type { ShippingMemo } from "@/domains/checkout/components/sections/shipping/types"
+import {
+  cartHasOverseasItem,
+  isValidPersonalCustomsCode,
+} from "@/domains/checkout/utils/customs"
 import { initiatePaymentSession, updateCart } from "@/lib/api/medusa/cart"
 import { cartRequiresShipping } from "@/lib/api/medusa/shipping-method-policy"
 import { mintPaymentHandoffToken } from "@/lib/api/users/auth/payment-handoff"
@@ -73,6 +78,7 @@ export default function CheckoutTemplate({
   promotions,
 }: CheckoutTemplateProps) {
   const tProcess = useTranslations("checkout.process")
+  const tCustoms = useTranslations("checkout.customsCode")
   const router = useRouter()
   const params = useParams()
   const countryCode = params.countryCode as string
@@ -132,6 +138,19 @@ export default function CheckoutTemplate({
     setShippingMemo(memo)
   }, [])
 
+  // 해외직구 상품 포함 여부 → 개인통관고유부호 입력 필수
+  const hasOverseasItem = useMemo(() => cartHasOverseasItem(cart), [cart])
+  const [personalCustomsCode, setPersonalCustomsCode] = useState<string>(
+    () =>
+      (cart?.shipping_address?.metadata?.personalCustomsCode as string) || ""
+  )
+  const [customsCodeError, setCustomsCodeError] = useState<string | null>(null)
+
+  const handleCustomsCodeChange = useCallback((value: string) => {
+    setPersonalCustomsCode(value)
+    setCustomsCodeError((prev) => (prev ? null : prev))
+  }, [])
+
   const handlePayment = async () => {
     // 배송이 필요할 때만 배송지/배송메모를 강제한다.
     if (requiresShipping) {
@@ -149,6 +168,11 @@ export default function CheckoutTemplate({
       ) {
         return toast.error(tProcess("toasts.enterEntrancePw"))
       }
+    }
+    // 해외직구 상품이 있으면 개인통관고유부호 형식 검증
+    if (hasOverseasItem && !isValidPersonalCustomsCode(personalCustomsCode)) {
+      setCustomsCodeError(tCustoms("error"))
+      return toast.error(tCustoms("error"))
     }
     processPayment()
   }
@@ -178,6 +202,32 @@ export default function CheckoutTemplate({
                 shippingMemo.type === "door" && shippingMemo.hasEntrance
                   ? shippingMemo.entrancePassword
                   : "",
+            },
+          },
+          checkoutCartId
+        )
+      }
+
+      // 해외직구 상품이 있으면 개인통관고유부호를 shipping_address.metadata 에 저장
+      if (hasOverseasItem && cart?.shipping_address) {
+        const addr = cart.shipping_address
+        await updateCart(
+          {
+            shipping_address: {
+              first_name: addr.first_name ?? undefined,
+              last_name: addr.last_name ?? undefined,
+              phone: addr.phone ?? undefined,
+              company: addr.company ?? undefined,
+              address_1: addr.address_1 ?? undefined,
+              address_2: addr.address_2 ?? undefined,
+              city: addr.city ?? undefined,
+              province: addr.province ?? undefined,
+              postal_code: addr.postal_code ?? undefined,
+              country_code: addr.country_code ?? undefined,
+              metadata: {
+                ...(addr.metadata ?? {}),
+                personalCustomsCode: personalCustomsCode.trim(),
+              },
             },
           },
           checkoutCartId
@@ -275,6 +325,13 @@ export default function CheckoutTemplate({
               }
               shippingMemo={shippingMemo}
               onShippingMemoChange={handleShippingMemoChange}
+            />
+          )}
+          {hasOverseasItem && (
+            <CustomsCodeSection
+              value={personalCustomsCode}
+              onChange={handleCustomsCodeChange}
+              error={customsCodeError}
             />
           )}
           <OrderProductsSection
