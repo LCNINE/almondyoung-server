@@ -74,7 +74,7 @@ function ProductImagesDisplay({ detail }: { detail: ProductDetailView }) {
   }, [detail.images]);
 
   if (!primary && rest.length === 0) {
-    return <div className="p-3 text-sm text-gray-500">이미지 없음</div>;
+    return <div className="p-3 text-sm text-gray-500">등록된 이미지 없음</div>;
   }
 
   return (
