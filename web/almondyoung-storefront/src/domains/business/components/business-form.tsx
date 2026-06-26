@@ -20,10 +20,10 @@ import {
   updateBusiness,
 } from "@lib/api/users/business"
 import type { FilesDto } from "@lib/types/dto/files"
-import type { BusinessInfoDto } from "@lib/types/dto/users"
+import type { BusinessInfoDto, NtsLookupResult } from "@lib/types/dto/users"
 import { formatBusinessNumber } from "@lib/utils/format-business-number"
 import type { ViewMode } from "domains/business/template/business-info-template"
-import { CheckCircle2, ChevronLeft, ChevronRight, Info, X } from "lucide-react"
+import { CheckCircle2, ChevronLeft, ChevronRight, Info } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { useRouter } from "next/navigation"
 import { useMemo, useState, useTransition } from "react"
@@ -199,38 +199,60 @@ export default function BusinessForm({
     })
   }
 
-  // 조회 결과 안내 — 이 페이지 전용 커스텀 토스트(전역 토스트 디자인은 건드리지 않음).
-  const showLookupToast = (verified: boolean, detail?: string) => {
+  // 조회 결과 안내
+  const showLookupToast = (nts: NtsLookupResult) => {
+    const verified =
+      nts.result === "active" ||
+      nts.result === "suspended" ||
+      nts.result === "closed"
+
+    // 국세청 응답의 실제 메시지(상태·미등록 사유)를 그대로 읽어 보여준다.
+    const raw = nts.raw ?? {}
+    const detail = [raw.b_stt, raw.tax_type]
+      .filter((v): v is string => typeof v === "string" && v.length > 0)
+      .join(" · ")
+    // not_found 면 미등록 메시지, lookup_failed 면 raw 가 없어 일반 안내.
+    const reason = detail || "국세청 조회에 실패했어요."
+
     toast.custom(
       (id) => (
-        <div className="flex w-full items-start gap-3 rounded-xl border bg-white px-4 py-3 shadow-lg">
+        <button
+          type="button"
+          onClick={() => toast.dismiss(id)}
+          style={{
+            fontFamily:
+              '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif',
+          }}
+          className="flex w-full items-start gap-3 rounded-2xl bg-white/70 px-4 py-3 text-left shadow-[0_8px_30px_rgba(0,0,0,0.12)] backdrop-blur-2xl backdrop-saturate-150"
+        >
           {verified ? (
             <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
           ) : (
             <Info className="mt-0.5 h-5 w-5 shrink-0 text-sky-600" />
           )}
-          <div className="text-sm">
-            <p className="font-semibold text-gray-900">
-              {verified ? "사업자 확인 완료" : "그대로 등록하실 수 있어요"}
+          <div className="space-y-0.5">
+            <p className="text-[15px] leading-snug font-medium text-gray-900">
+              {verified ? "사업자 확인 완료" : "확인이 필요한 사업자번호예요"}
             </p>
-            {verified && detail && <p className="text-gray-500">{detail}</p>}
-            <p className="mt-0.5 text-xs text-gray-500">
+            <p className="text-[13px] leading-snug font-normal text-gray-500">
+              {verified ? detail : reason}
+            </p>
+            <p className="text-[13px] leading-snug font-normal text-gray-500">
               {verified
                 ? "자동으로 승인돼요. 아래 ‘등록하기’를 눌러주세요."
-                : "관리자 확인 후 승인돼요. 아래 ‘등록하기’를 눌러주세요."}
+                : "관리자가 확인 후 승인해드릴게요. 그대로 ‘등록하기’를 눌러주세요."}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => toast.dismiss(id)}
-            className="ml-auto text-gray-400 transition-colors hover:text-gray-600"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+        </button>
       ),
 
-      { id: "business-lookup", duration: 7000 }
+      {
+        id: "business-lookup",
+        duration: 7000,
+        position: "bottom-center",
+        // 기본 sonner 폭(356px)보다 넓게.
+        style: { width: "min(480px, 92vw)" },
+      }
     )
   }
 
@@ -252,20 +274,11 @@ export default function BusinessForm({
     startSearchTransition(async () => {
       try {
         const nts = await fetchExternalBusinessInfo(digits)
-        console.log("nts:", nts)
         form.setValue("nts", nts)
         form.setValue("isSubmitting", true) // 조회 결과와 무관하게 등록 허용
 
-        // 번호 실존(계속/휴업/폐업) = 자동 승인 → 확인 토스트, 미등록/조회실패 → 안내 토스트
-        const verified =
-          nts.result === "active" ||
-          nts.result === "suspended" ||
-          nts.result === "closed"
-        const raw = nts.raw ?? {}
-        const detail = [raw.b_stt, raw.tax_type]
-          .filter((v): v is string => typeof v === "string" && v.length > 0)
-          .join(" · ")
-        showLookupToast(verified, detail)
+        // 번호 실존(계속/휴업/폐업) = 자동 승인, 미등록/조회실패 = 국세청 메시지 그대로 안내
+        showLookupToast(nts)
       } catch (error: any) {
         if (
           error?.digest === "UNAUTHORIZED" ||
@@ -273,12 +286,13 @@ export default function BusinessForm({
         ) {
           throw error
         }
-        form.setValue("nts", {
+        const failed: NtsLookupResult = {
           result: "lookup_failed",
           checkedAt: new Date().toISOString(),
-        })
+        }
+        form.setValue("nts", failed)
         form.setValue("isSubmitting", true)
-        showLookupToast(false)
+        showLookupToast(failed)
       }
     })
   }
