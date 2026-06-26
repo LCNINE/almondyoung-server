@@ -42,10 +42,10 @@
     "uploadHint": "PDF, JPG, PNG"
   },
   "display": {
-    "statusLabel": "Status:",
-    "businessNumberLabel": "Business Number:",
-    "representativeNameLabel": "Representative:",
-    "fileLabel": "Business License:",
+    "statusLabel": "Status",
+    "businessNumberLabel": "Business Number",
+    "representativeNameLabel": "Representative",
+    "fileLabel": "Business License",
     "fileAlt": "Business license",
     "fileDialogTitle": "View Business License",
     "fileDialogDescription": "View the full business license image.",

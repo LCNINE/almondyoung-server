@@ -29,7 +29,7 @@ export default function BusinessInfoTemplate({
   }
 
   return (
-    <div className="px-4 py-6 md:min-h-screen md:px-8 md:py-8">
+    <div className="max-w-2xl py-6 md:min-h-screen md:py-8">
       {/* 콘텐츠 */}
       {viewMode === "empty" && (
         <BusinessEmpty onRegister={() => setViewMode("register")} />

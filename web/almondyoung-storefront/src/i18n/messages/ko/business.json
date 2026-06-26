@@ -42,10 +42,10 @@
     "uploadHint": "PDF, JPG, PNG 형식"
   },
   "display": {
-    "statusLabel": "검증 상태:",
-    "businessNumberLabel": "사업자등록번호:",
-    "representativeNameLabel": "대표자명:",
-    "fileLabel": "사업자등록증:",
+    "statusLabel": "상태",
+    "businessNumberLabel": "사업자등록번호",
+    "representativeNameLabel": "대표자명",
+    "fileLabel": "사업자등록증",
     "fileAlt": "사업자등록증",
     "fileDialogTitle": "사업자등록증 전체 보기",
     "fileDialogDescription": "사업자등록증 이미지를 크게 볼 수 있습니다",

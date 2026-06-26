@@ -42,10 +42,10 @@
     "uploadHint": "PDF・JPG・PNG形式"
   },
   "display": {
-    "statusLabel": "認証状態：",
-    "businessNumberLabel": "事業者登録番号：",
-    "representativeNameLabel": "代表者名：",
-    "fileLabel": "事業者登録証：",
+    "statusLabel": "状態",
+    "businessNumberLabel": "事業者登録番号",
+    "representativeNameLabel": "代表者名",
+    "fileLabel": "事業者登録証",
     "fileAlt": "事業者登録証",
     "fileDialogTitle": "事業者登録証を全画面表示",
     "fileDialogDescription": "事業者登録証の画像を大きく表示します",
