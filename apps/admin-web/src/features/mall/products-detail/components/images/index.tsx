@@ -405,7 +405,7 @@ function ProductDetailImagesContent({ masterId, versionId }: Props) {
   return (
     <>
       <Header
-        title="이미지"
+        title="상품 이미지"
         subtitle={
           !canEdit
             ? '이미지는 draft version에서만 수정할 수 있습니다.'
@@ -444,7 +444,7 @@ export function ProductDetailImages({ masterId, versionId }: Props) {
         <Suspense
           fallback={
             <>
-              <Header title="이미지" />
+              <Header title="상품 이미지" />
               <div className="flex justify-center p-4">
                 <Spinner />
               </div>
