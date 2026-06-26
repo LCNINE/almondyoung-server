@@ -10,7 +10,10 @@ describe('PimToMedusaTransformer', () => {
     name: 'Test Product',
     description: 'Test Description',
     thumbnail: 'http://file-service/files/thumb-001',
-    images: ['http://file-service/files/img-001', 'http://file-service/files/img-002'],
+    images: [
+      { fileId: 'img-001', url: 'img-001', isPrimary: true, sortOrder: 1 },
+      { fileId: 'img-002', url: 'img-002', isPrimary: false, sortOrder: 2 },
+    ],
     categoryIds: ['cat-1'],
     tags: ['tag1', 'tag2'],
     optionGroups: [
@@ -66,8 +69,22 @@ describe('PimToMedusaTransformer', () => {
       expect(result.handle).toBe('master-123');
       expect(result.status).toBe('published');
       expect(result.thumbnail).toBe('http://file-service/files/thumb-001');
-      expect(result.images).toHaveLength(2);
+      expect(result.images).toEqual([{ url: 'img-001' }, { url: 'img-002' }]);
       expect(result.variants).toHaveLength(2);
+    });
+
+    it('accepts Core File UUIDs in thumbnail and image url compatibility fields', () => {
+      const result = transformPimToMedusa({
+        ...mockSnapshot,
+        thumbnail: 'thumb-001',
+        images: [
+          { fileId: 'img-001', url: 'img-001', isPrimary: true, sortOrder: 2 },
+          { fileId: 'img-000', url: 'img-000', isPrimary: false, sortOrder: 1 },
+        ],
+      });
+
+      expect(result.thumbnail).toBe('thumb-001');
+      expect(result.images).toEqual([{ url: 'img-001' }, { url: 'img-000' }]);
     });
 
     it('does not project product detail markdown or legacy HTML into Medusa description', () => {
