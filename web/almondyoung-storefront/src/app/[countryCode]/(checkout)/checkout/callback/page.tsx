@@ -14,10 +14,6 @@ import { processPaymentCallback, revalidateMembershipSuccess } from "./actions"
 const getErrorMessage = (err: unknown, fallback: string) =>
   err instanceof Error && err.message ? err.message : fallback
 
-// 콜백 effect 더블런/중복 콜백으로 동일 payment_intent 가 두 번 처리되는 것을 막는 in-memory 가드.
-// 두 번째 처리는 이미 완료된 카트를 다시 complete 하려다 실패해, 성공한 결제를 실패페이지로 뒤집는다.
-const processedCallbackIntents = new Set<string>()
-
 export default function CallbackPage() {
   const t = useTranslations("checkout.callback")
   const router = useRouter()
@@ -70,10 +66,6 @@ export default function CallbackPage() {
         replace(failUrl("MISSING_PARAMS", t("missingParams"), mode))
         return
       }
-
-      // 동일 intent 1회만 처리 (서버 멱등 가드와 함께 이중 방어)
-      if (processedCallbackIntents.has(paymentIntentId)) return
-      processedCallbackIntents.add(paymentIntentId)
 
       // 멤버십 결제: JWT 없이 wallet payment intent 검증으로 구독 확정
       // (크로스도메인 지갑 리다이렉트 후 accessToken 쿠키 소실 문제 우회)
