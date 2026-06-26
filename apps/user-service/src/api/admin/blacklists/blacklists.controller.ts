@@ -5,7 +5,6 @@ import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, 
 import { BlacklistsService } from './blacklists.service';
 import { BlacklistsCreateDto } from './dto/blacklists-create.dto';
 import { BlacklistsResponseDto } from './dto/blacklists-response.dto';
-import { BlacklistsNotFoundException } from './exceptions/blacklists.exceptions';
 
 @ApiTags('블랙리스트 관리')
 @ApiBearerAuth('access-token')
@@ -44,16 +43,11 @@ export class BlacklistsController {
     description: '블랙리스트를 조회합니다.',
   })
   @ApiParam({ name: 'userId', description: '블랙리스트 ID' })
-  @ApiResponse({ status: 200, description: '블랙리스트 조회 성공' })
-  @ApiResponse({ status: 404, description: '블랙리스트를 찾을 수 없음' })
+  @ApiResponse({ status: 200, description: '블랙리스트 조회 성공 (미등록 회원은 null)' })
   @Get(':userId')
   @RequireScopes('master', 'admin:users:read')
-  async getBlacklistByUserId(@Param('userId') userId: string): Promise<BlacklistsResponseDto> {
-    const blacklist = await this.blacklistsService.getBlacklistByUserId(userId);
-    if (!blacklist) {
-      throw new BlacklistsNotFoundException('해당 블랙리스트 정보를 찾을 수 없습니다.');
-    }
-    return blacklist;
+  async getBlacklistByUserId(@Param('userId') userId: string): Promise<BlacklistsResponseDto | null> {
+    return await this.blacklistsService.getBlacklistByUserId(userId);
   }
   @ApiOperation({
     summary: '블랙리스트 생성',

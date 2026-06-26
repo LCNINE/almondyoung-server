@@ -1,9 +1,11 @@
 'use client';
 
+import { useMemo } from 'react';
 import { usePendingBankTransfers } from '@/lib/services/wallet';
 import { useDataTable } from '@/hooks/use-data-table';
 import { useBankTransferTableColumns } from '@/hooks/table/columns/use-bank-transfer-table-columns';
 import { useBankTransferTableQuery } from '@/hooks/table/query/use-bank-transfer-table-query';
+import { useUserNames } from '@/hooks/use-user-names';
 import { DataTable } from '@/components/data-table';
 
 const PAGE_SIZE = 20;
@@ -11,7 +13,15 @@ const PAGE_SIZE = 20;
 export function BankTransferTable() {
   const { page, limit } = useBankTransferTableQuery({ pageSize: PAGE_SIZE });
   const { data, isLoading, isFetching } = usePendingBankTransfers(page, limit);
-  const columns = useBankTransferTableColumns();
+  const userIds = useMemo(
+    () =>
+      data?.data
+        .map((t) => t.userId)
+        .filter((id): id is string => Boolean(id)) ?? [],
+    [data?.data]
+  );
+  const userMap = useUserNames(userIds);
+  const columns = useBankTransferTableColumns({ userMap });
 
   const { table } = useDataTable({
     data: data?.data ?? [],

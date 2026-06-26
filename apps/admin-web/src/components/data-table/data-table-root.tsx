@@ -39,7 +39,7 @@ export function DataTableRoot<TData extends RowData>({
       window.open(
         href,
         href,
-        'width=1200,height=860,menubar=no,toolbar=no,location=no,status=no'
+        'width=1200,height=650,menubar=no,toolbar=no,location=no,status=no'
       );
       return;
     }

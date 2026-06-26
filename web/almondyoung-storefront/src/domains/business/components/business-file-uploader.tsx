@@ -1,9 +1,8 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import { getDisplayFilename } from "@lib/utils/get-diplay-filename"
-import { X } from "lucide-react"
+import { Upload, X } from "lucide-react"
 import { useTranslations } from "next-intl"
 import React from "react"
 import { useFormContext } from "react-hook-form"
@@ -19,9 +18,7 @@ import {
 
 export default function BusinessFileUploader() {
   return (
-    <div className="grid gap-6 md:grid-cols-2">
-      <BusinessFileForm />
-    </div>
+    <BusinessFileForm />
   )
 }
 
@@ -50,8 +47,9 @@ function BusinessFileForm() {
 
   const handleRemoveFile = (e: React.MouseEvent) => {
     e.stopPropagation()
-    form.setValue("file", undefined)
+    form.setValue("file", undefined, { shouldValidate: true })
     form.setValue("fileUrl", undefined)
+    form.setValue("isSubmitting", Boolean(form.getValues("nts")))
     if (inputRef.current) inputRef.current.value = ""
   }
 
@@ -59,24 +57,11 @@ function BusinessFileForm() {
     <div className="flex flex-col gap-3">
       <label
         htmlFor="businessFileInput"
-        className="flex cursor-pointer items-center justify-between rounded-md border px-4 py-5"
+        className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-md border border-dashed px-4 py-8 text-center transition-colors hover:bg-muted"
       >
-        <div className="flex items-center gap-2">
-          <Checkbox
-            checked={Boolean(file || fileUrl)}
-            tabIndex={-1}
-            className="pointer-events-none h-4 w-4 border-gray-300"
-          />
-          <span className="text-sm">{t("noBusinessInfo")}</span>
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          tabIndex={-1}
-          className="pointer-events-none"
-        >
-          {t("attachFile")}
-        </Button>
+        <Upload className="h-6 w-6 text-muted-foreground" />
+        <span className="text-sm font-medium">{t("uploadPrompt")}</span>
+        <span className="text-xs text-muted-foreground">{t("uploadHint")}</span>
         <input
           id="businessFileInput"
           ref={inputRef}
@@ -139,10 +124,12 @@ function FilePreview({
           />
 
           <Button
-            className="absolute top-1 right-1 cursor-pointer opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+            type="button"
+            size="icon"
+            className="absolute top-1 right-1 h-6 w-6 cursor-pointer"
             onClick={onRemove}
           >
-            <X className="h-6 w-6" />
+            <X className="h-4 w-4" />
           </Button>
         </div>
       </DialogTrigger>

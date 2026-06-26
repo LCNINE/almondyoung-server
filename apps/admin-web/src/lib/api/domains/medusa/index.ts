@@ -192,6 +192,10 @@ const ORDER_DETAIL_FIELDS = [
   'items.quantity',
   'items.unit_price',
   'items.total',
+  'items.detail.quantity',
+  'items.detail.fulfilled_quantity',
+  'items.detail.shipped_quantity',
+  'items.detail.delivered_quantity',
   '*shipping_address',
 ].join(',');
 

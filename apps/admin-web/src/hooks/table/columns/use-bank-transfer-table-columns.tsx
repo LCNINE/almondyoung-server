@@ -4,10 +4,15 @@ import type { PendingBankTransferDto } from '@/lib/types/dto/wallet';
 import { IdCell, DateCell } from '@/components/table/table-cells/common';
 import { PlaceholderCell } from '@/components/table/table-cells/common/placeholder-cell';
 import { BankTransferConfirmCell } from '@/features/payments/components/bank-transfer-table/confirm-cell';
+import type { UserInfo } from '@/hooks/use-user-names';
 
 const columnHelper = createColumnHelper<PendingBankTransferDto>();
 
-export const useBankTransferTableColumns = () => {
+type UseColumnsOptions = {
+  userMap?: Record<string, UserInfo>;
+};
+
+export const useBankTransferTableColumns = ({ userMap = {} }: UseColumnsOptions = {}) => {
   return useMemo(
     () => [
       columnHelper.accessor('id', {
@@ -15,10 +20,19 @@ export const useBankTransferTableColumns = () => {
         cell: ({ getValue }) => <IdCell value={getValue()} />,
       }),
       columnHelper.accessor('userId', {
-        header: '사용자 ID',
+        header: '사용자',
         cell: ({ getValue }) => {
-          const val = getValue();
-          return val ? <IdCell value={val} /> : <PlaceholderCell />;
+          const userId = getValue();
+          if (!userId) return <PlaceholderCell />;
+          const username = userMap[userId]?.username;
+          return (
+            <div className="flex flex-col gap-0.5">
+              <span className="text-sm">
+                {username || <span className="text-muted-foreground">-</span>}
+              </span>
+              <IdCell value={userId} />
+            </div>
+          );
         },
       }),
       columnHelper.display({
@@ -73,6 +87,6 @@ export const useBankTransferTableColumns = () => {
         ),
       }),
     ],
-    [],
+    [userMap],
   );
 };

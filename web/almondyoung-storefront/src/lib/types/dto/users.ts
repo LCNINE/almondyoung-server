@@ -95,7 +95,7 @@ export interface BusinessInfoDto {
   reviewComment?: string | null // 관리자 리뷰 코멘트
   fileUrl?: string | null // 검증 파일
   status?: "under_review" | "approved" | "rejected" // 검증 상태
-  metadata?: unknown // 메타데이터
+  metadata?: BusinessMetadata
   createdAt: Date
   updatedAt: Date
 }
@@ -104,16 +104,29 @@ export interface BusinessInfoRequestDto {
   businessNumber?: string
   representativeName?: string
   fileUrl?: string
-  metadata?: unknown
-  externalBusinessStatus?: boolean
+  metadata?: BusinessMetadata
 }
 
 /*───────────────────────────
- * 사업자 정보 외부 조회 응답
+ * 국세청 상태조회 결과 (등록을 막지 않고 metadata 에 보관)
  *──────────────────────────*/
-export interface ExternalBusinessInfoResponseDto {
-  success: boolean
-  data: BusinessInfoDto
+export type NtsResult =
+  | "active" // 계속사업자
+  | "suspended" // 휴업자
+  | "closed" // 폐업자
+  | "not_found" // 국세청 미등록
+  | "lookup_failed" // 조회 자체 실패(키 미설정/장애/일시정지 등)
+
+export interface NtsLookupResult {
+  result: NtsResult
+  checkedAt: string
+  raw?: Record<string, unknown>
+  error?: string
+}
+
+export interface BusinessMetadata {
+  nts?: NtsLookupResult
+  [key: string]: unknown
 }
 
 /*───────────────────────────
@@ -121,7 +134,6 @@ export interface ExternalBusinessInfoResponseDto {
  *──────────────────────────*/
 export interface ExternalBusinessInfoRequestDto {
   businessNumber: string
-  representativeName: string
 }
 
 /*───────────────────────────
