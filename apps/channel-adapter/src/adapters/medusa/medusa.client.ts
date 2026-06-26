@@ -445,11 +445,27 @@ export class MedusaClient {
   }
 
   private async createCategory(payload: HttpTypes.AdminCreateProductCategory): Promise<HttpTypes.AdminProductCategory> {
-    const { product_category } = await this.sdk.admin.productCategory.create(payload);
-    if (!product_category) {
-      throw new Error('Medusa API returned no category in response');
+    try {
+      const { product_category } = await this.sdk.admin.productCategory.create(payload);
+      if (!product_category) {
+        throw new Error('Medusa API returned no category in response');
+      }
+      return product_category;
+    } catch (err) {
+      // 멱등 처리: cacheOnly 모드(백필)에서 캐시에 없던 기존 카테고리(예: PIM 링크 없는 Cafe24 레거시
+      // handle)는 create 가 "already exists" 로 실패한다. 이 경우 handle 로 기존 것을 찾아 반환한다.
+      const message = err instanceof Error ? err.message : String(err);
+      if (/already exists/i.test(message) && payload.handle) {
+        const existing = await this.findCategoryByHandle(payload.handle);
+        if (existing) {
+          this.logger.warn(
+            `createCategory: handle '${payload.handle}' already exists, resolved existing ${existing.id}`,
+          );
+          return existing;
+        }
+      }
+      throw err;
     }
-    return product_category;
   }
 
   // 카테고리 보장: PIM 카테고리 트리를 따라 부모→자식 순서로 생성/조회
