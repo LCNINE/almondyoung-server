@@ -115,11 +115,9 @@ function isBankTransferPendingAction(value: unknown): value is BankTransferPendi
   return typeof value === 'object' && value !== null && (value as { type?: unknown }).type === 'BANK_TRANSFER_PENDING';
 }
 
+// 토스페이먼츠는 카드결제만 사용한다. (휴대폰/계좌이체/가상계좌 비노출)
 const TOSS_SUB_METHODS = [
   { value: 'CARD' as const, label: '카드 / 간편결제', desc: '카드, 카카오페이, 네이버페이, 토스페이 등' },
-  { value: 'MOBILE_PHONE' as const, label: '휴대폰', desc: '휴대폰 소액결제' },
-  { value: 'TRANSFER' as const, label: '계좌이체', desc: '실시간 계좌이체' },
-  { value: 'VIRTUAL_ACCOUNT' as const, label: '가상계좌', desc: '무통장입금' },
 ] as const;
 type TossSubMethod = (typeof TOSS_SUB_METHODS)[number]['value'];
 
@@ -574,8 +572,8 @@ export function PayForm({
               </Card>
             )}
 
-            {/* Toss 결제 방식 선택 (TOSS 수단 선택 시) */}
-            {remainingAmount > 0 && isTossSelected && (
+            {/* Toss 결제 방식 선택 (TOSS 수단 선택 시). 카드 단일이면 선택 UI 숨김 */}
+            {remainingAmount > 0 && isTossSelected && TOSS_SUB_METHODS.length > 1 && (
               <Card className="border shadow-sm border-border/60">
                 <CardContent className="p-6">
                   <span className="mb-4 block text-sm font-semibold">결제 방식 선택</span>
