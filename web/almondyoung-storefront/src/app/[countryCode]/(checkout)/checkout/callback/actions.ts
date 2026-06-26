@@ -155,6 +155,29 @@ async function isAwaitingDepositIntent(intentId: string): Promise<boolean> {
   }
 }
 
+/**
+ * 카트의 completed_at 만 raw 로 조회한다. (lib/api/medusa/cart.retrieveCart 는 완료된 카트를 감지하면
+ * null 을 돌려주므로 멱등 가드 용도로 쓸 수 없다.) completed_at 필드 포맷은 ",+completed_at"(콤마+플러스,
+ * 공백 없음) 이어야 500/필드드롭 함정을 피한다.
+ */
+async function getCartCompletedAt(
+  cartId: string,
+  headers: Record<string, string>
+): Promise<string | null> {
+  try {
+    const { cart } = await sdk.client.fetch<{
+      cart: { completed_at?: string | null }
+    }>(`/store/carts/${cartId}`, {
+      method: "GET",
+      query: { fields: "id,+completed_at" },
+      headers,
+    })
+    return cart?.completed_at ?? null
+  } catch {
+    return null
+  }
+}
+
 interface SourceCartSelection {
   sourceCartId: string
   sourceLineItemIds: string[]
@@ -264,10 +287,62 @@ export async function processPaymentCallback(
         headers
       )
 
+      // 이미 완료된 카트면(콜백 중복 호출 / effect 더블런 / 웹훅 레이스) 주문은 이미 생성됐다.
+      // 이때 cart.complete() 를 다시 부르면 Medusa 가 "Payment collection has not been initiated
+      // for cart" 로 던져, 결제·주문이 정상인데도 실패페이지가 뜬다. 완료된 카트는 성공으로 처리한다.
+      const finishAsCompleted = async (
+        orderId?: string
+      ): Promise<ProcessPaymentResult> => {
+        revalidateTag(await getCacheTag("orders"))
+        if (sourceCartSelection) {
+          await removePurchasedItemsFromSourceCart(sourceCartSelection, headers)
+        }
+        const currentCartId = await getCartId()
+        if (!cartId || currentCartId === targetCartId) {
+          await removeCartId()
+        }
+        return {
+          success: true,
+          redirectUrl: orderId
+            ? `/${countryCode}/checkout/success/${intentId}?orderId=${orderId}`
+            : `/${countryCode}/checkout/success/${intentId}`,
+        }
+      }
+
+      const preCompletedAt = await getCartCompletedAt(targetCartId, headers)
+      if (preCompletedAt) {
+        logger.info("storefront.checkout.cart_already_completed", {
+          attributes: { intent_id: intentId, target_cart_id: targetCartId },
+        })
+        return await finishAsCompleted()
+      }
+
       // cart.complete() 직전 shipping method 보장
       await ensureShippingMethod(targetCartId, headers)
 
-      const cartRes = await sdk.store.cart.complete(targetCartId, {}, headers)
+      let cartRes: Awaited<ReturnType<typeof sdk.store.cart.complete>>
+      try {
+        cartRes = await sdk.store.cart.complete(targetCartId, {}, headers)
+      } catch (completeErr) {
+        // 동시 호출 레이스: 다른 호출이 먼저 완료시킨 경우 → 완료됐으면 성공 처리
+        const recheckCompletedAt = await getCartCompletedAt(
+          targetCartId,
+          headers
+        )
+        if (recheckCompletedAt) {
+          logger.info(
+            "storefront.checkout.cart_complete.race_already_completed",
+            {
+              attributes: {
+                intent_id: intentId,
+                target_cart_id: targetCartId,
+              },
+            }
+          )
+          return await finishAsCompleted()
+        }
+        throw completeErr
+      }
 
       logger.info("storefront.checkout.cart_complete.finished", {
         attributes: {
