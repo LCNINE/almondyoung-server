@@ -79,6 +79,7 @@ describe('ProductReadAssembler shared loader integration', () => {
         priceSet: { basePrice: 10000, membershipPrice: 9000, tieredPrices: [] },
       }),
     );
+    expect(detail.variants[0]).not.toHaveProperty('optionValueIds');
     expect(detail.channelProducts).toEqual([]);
     expect(detail.tagValues).toEqual([]);
     expect(detail.priceSummary).toEqual({ minBasePrice: 10000 });
