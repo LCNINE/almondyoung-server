@@ -71,7 +71,8 @@ export function ImageGallery({ product }: Props) {
             src={getThumbnailUrl(selectedImage.url)}
             alt={product.title ?? t("mainAlt")}
             fill
-            sizes="(max-width: 768px) 100vw, 600px"
+            sizes="(max-width: 1024px) 100vw, 700px"
+            quality={100}
             className="object-cover"
             priority
           />

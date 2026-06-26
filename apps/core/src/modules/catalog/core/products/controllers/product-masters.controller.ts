@@ -368,6 +368,27 @@ export class ProductMastersController {
     return { success: true, masterId, isVisibleToMembersOnly: body.isVisibleToMembersOnly };
   }
 
+  @Patch(':masterId/overseas')
+  @ApiOperation({
+    summary: '해외직구 여부 변경',
+    description:
+      'draft 없이 active 버전의 isOverseas를 직접 수정합니다. 체크 시 주문 단계에서 개인통관고유부호 입력이 필수가 됩니다.',
+  })
+  @ApiParam({ name: 'masterId', description: 'Master ID' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { isOverseas: { type: 'boolean' } },
+      required: ['isOverseas'],
+    },
+  })
+  @ApiResponse({ status: 200, description: '성공' })
+  @ApiResponse({ status: 404, description: 'Active 버전 없음' })
+  async updateOverseas(@Param('masterId') masterId: string, @Body() body: { isOverseas: boolean }) {
+    await this.productVersionsService.updateOverseas(masterId, body.isOverseas);
+    return { success: true, masterId, isOverseas: body.isOverseas };
+  }
+
   @Patch(':masterId/unpublish')
   @ApiOperation({
     summary: '제품 마스터 비공개 처리',
