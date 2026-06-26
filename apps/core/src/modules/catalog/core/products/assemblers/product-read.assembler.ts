@@ -7,7 +7,6 @@ import {
   OptionGroupReadModel,
   ProductDetailCategory,
   ProductImage,
-  ProductVariant,
   TagReadModel,
   VariantReadModel,
 } from '../../../catalog.types';
@@ -18,7 +17,7 @@ import {
 import { and, eq, inArray } from 'drizzle-orm';
 import { OptionReadLoader } from '../loaders/option-read.loader';
 import { TagReadLoader } from '../loaders/tag-read.loader';
-import { ProductVersionReadLoader } from '../loaders/product-version-read.loader';
+import { ProductVersionReadLoader, ProductVersionVariantFragment } from '../loaders/product-version-read.loader';
 
 type ProductReadAssemblerInclude = {
   images?: boolean;
@@ -79,7 +78,7 @@ export class ProductReadAssembler {
       const optionGroupsPromise: Promise<OptionGroupReadModel[]> = include.optionGroups
         ? this.optionReadLoader.getOptionGroups(tx, masterId, versionId, locale)
         : Promise.resolve([]);
-      const variantsPromise: Promise<ProductVariant[]> = include.variants
+      const variantsPromise: Promise<ProductVersionVariantFragment[]> = include.variants
         ? this.versionReadLoader.getVariants(tx, masterId, versionId)
         : Promise.resolve([]);
       const tagsPromise: Promise<TagReadModel[]> = include.tags
