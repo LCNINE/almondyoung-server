@@ -134,6 +134,16 @@ function expectWhereIncludesScope(
   expect(conditionContains(condition, versionId)).toBe(true);
 }
 
+function expectOrderExpression(expression: unknown, column: unknown, direction: 'asc' | 'desc') {
+  const chunks = (expression as { queryChunks?: unknown[] }).queryChunks;
+  const chunkText = (chunk: unknown) => ((chunk as { value?: string[] })?.value ?? []).join('');
+
+  expect(chunks).toHaveLength(3);
+  expect(chunkText(chunks?.[0])).toBe('');
+  expect(chunks?.[1]).toBe(column);
+  expect(chunkText(chunks?.[2])).toBe(` ${direction}`);
+}
+
 describe('ProductVersionReadLoader', () => {
   it('loads active versions only when the master and version are not soft-deleted', async () => {
     const loader = new ProductVersionReadLoader();
@@ -239,6 +249,11 @@ describe('ProductVersionReadLoader', () => {
       'version-2',
     );
     expect(getChain(tx, variantOptionValues).where).toHaveBeenCalledTimes(1);
+
+    const variantChain = getChain(tx, productMasterVariants);
+    expect(variantChain.lastTerminal.orderBy).toHaveBeenCalledTimes(1);
+    expect(variantChain.lastTerminal.orderBy.mock.calls[0]).toHaveLength(1);
+    expectOrderExpression(variantChain.lastTerminal.orderBy.mock.calls[0][0], productVariants.displayOrder, 'asc');
   });
 
   it('loads product images sorted with primary image first and raw File UUIDs only', async () => {
@@ -257,6 +272,9 @@ describe('ProductVersionReadLoader', () => {
 
     const chain = getChain(tx, productImages);
     expect(chain.lastTerminal.orderBy).toHaveBeenCalledTimes(1);
+    expect(chain.lastTerminal.orderBy.mock.calls[0]).toHaveLength(2);
+    expectOrderExpression(chain.lastTerminal.orderBy.mock.calls[0][0], productImages.isPrimary, 'desc');
+    expectOrderExpression(chain.lastTerminal.orderBy.mock.calls[0][1], productImages.sortOrder, 'asc');
   });
 
   it('returns null when no purchase constraint mapping exists', async () => {
