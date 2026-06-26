@@ -313,6 +313,8 @@ export function setup(infra: SharedInfra) {
       // 고객 주문 취소 후 Wallet 자동 환불 연결
       WALLET_BASE_URL: url('wallet'),
       WALLET_API_KEY: walletApiKey.value,
+      // 디지털 자산 다운로드: library ownership 다운로드 시 file-service signed URL 호출
+      FILE_SERVICE_URL: url('file'),
     },
   });
 
