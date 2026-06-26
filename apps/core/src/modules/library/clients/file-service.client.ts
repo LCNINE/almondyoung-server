@@ -91,7 +91,8 @@ export class FileServiceClient {
    * 파일 바이트를 Core/스토어프론트로 프록시하지 않고 브라우저가 S3 에서 직접 받게 하기 위함
    * (대용량 파일이 Lambda 응답 한도(6MB)를 넘겨 502 나는 문제 해결).
    */
-  async getDownloadUrl(fileId: string, expiresIn = 300): Promise<string> {
+  // expiresIn 은 짧게 (클릭→다운로드 시작에 충분). 관리자 회수 후 이미 발급된 URL 의 유효창을 줄인다.
+  async getDownloadUrl(fileId: string, expiresIn = 60): Promise<string> {
     const token = this.mintServiceToken();
     const res = await fetch(
       `${this.baseUrl()}/files/${fileId}/download?expiresIn=${expiresIn}&download=true`,

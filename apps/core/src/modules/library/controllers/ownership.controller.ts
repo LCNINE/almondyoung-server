@@ -89,8 +89,13 @@ export class OwnershipController {
 
     // 파일 바이트를 Core/스토어프론트로 프록시하지 않는다. file-service 의 강제 다운로드 signed URL 을
     // 받아 반환하면 브라우저가 S3 에서 직접 받는다 (대용량 파일 Lambda 6MB 응답한도 502 회피).
-    const url = await this.fileServiceClient.getDownloadUrl(fileId);
-    return { url, filename: assetName };
+    // 반환 filename 은 실제 S3 다운로드 파일명(file-service originalName)과 일치시킨다.
+    const [meta, url] = await Promise.all([
+      this.fileServiceClient.fetchMetadata(fileId).catch(() => null),
+      this.fileServiceClient.getDownloadUrl(fileId),
+    ]);
+    const filename = meta?.originalName ?? meta?.fileName ?? assetName;
+    return { url, filename };
   }
 
   private _requireUserId(req: any): string {
