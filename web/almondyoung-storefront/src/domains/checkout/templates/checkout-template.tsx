@@ -184,11 +184,11 @@ export default function CheckoutTemplate({
         )
       }
 
-      // sessionStorage 매핑(checkout-intent-map)이 wallet 크로스도메인 리다이렉트에서 유실돼도
-      // callback 이 checkout cart 를 동기적으로 식별/완료할 수 있도록 returnUrl 에 cartId 를 싣는다.
-      // wallet-web 의 buildReturnUrl 은 new URL().searchParams.set 으로 payment_intent_id/status 를
-      // 안전하게 덧붙이므로(naive 문자열 결합 아님) 기존 cartId 쿼리는 보존된다.
-      const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback?cartId=${encodeURIComponent(checkoutCartId)}`
+      // returnUrl 에는 cartId 를 싣지 않는다. 싣으면 콜백이 항상 능동 cart.complete 경로를 타
+      // 서버 capture 웹훅(completeCartWorkflow)과 락 경합으로 "결제 처리중" 이 길게 멈추고,
+      // 그 사이 서버액션 반복 호출/실패페이지가 발생한다(2026-06-26 라이브 회귀). 주문 생성은
+      // 웹훅이 authoritative 하게 처리하고, 콜백은 cartId 식별 불가 시 가벼운 success 경로로 빠진다.
+      const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
 
       const payLineItems = cartItems
       const firstTitle = payLineItems[0]?.title ?? tProcess("productFallback")
