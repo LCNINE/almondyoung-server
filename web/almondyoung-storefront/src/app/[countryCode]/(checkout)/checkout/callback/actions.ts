@@ -169,13 +169,27 @@ async function getCartCompletedAt(
       cart: { completed_at?: string | null }
     }>(`/store/carts/${cartId}`, {
       method: "GET",
-      query: { fields: "id,+completed_at" },
+      query: { fields: "+completed_at" },
       headers,
+      // 완료 여부는 실시간 상태라 절대 캐시하면 안 된다. 캐시되면 완료된 카트를
+      // 미완료로 오판해 멱등 가드가 무력화된다.
+      cache: "no-store",
     })
     return cart?.completed_at ?? null
   } catch {
     return null
   }
+}
+
+// "이미 완료된 카트를 재완료"할 때만 나오는 Medusa 에러 시그니처. cart.complete 가 이 에러를
+// 던지면 주문은 이미 생성된 상태이므로(첫 호출이 성공) 성공으로 간주해도 안전하다.
+function isAlreadyCompletedError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err ?? "")
+  return (
+    /payment collection has not been initiated/i.test(msg) ||
+    /already completed/i.test(msg) ||
+    /completed cart/i.test(msg)
+  )
 }
 
 interface SourceCartSelection {
@@ -324,12 +338,13 @@ export async function processPaymentCallback(
       try {
         cartRes = await sdk.store.cart.complete(targetCartId, {}, headers)
       } catch (completeErr) {
-        // 동시 호출 레이스: 다른 호출이 먼저 완료시킨 경우 → 완료됐으면 성공 처리
+        // 동시 호출 레이스 / 중복 콜백: 다른 호출이 먼저 완료시킨 경우 주문은 이미 생성됐다.
+        // ①완료 재확인(no-store) 또는 ②"이미 완료된 카트 재완료" 에러 시그니처면 성공 처리.
         const recheckCompletedAt = await getCartCompletedAt(
           targetCartId,
           headers
         )
-        if (recheckCompletedAt) {
+        if (recheckCompletedAt || isAlreadyCompletedError(completeErr)) {
           logger.info(
             "storefront.checkout.cart_complete.race_already_completed",
             {
