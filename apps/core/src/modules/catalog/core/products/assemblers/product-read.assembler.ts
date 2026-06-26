@@ -1,9 +1,8 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
 import {
   ProductDetailDto,
-  ProductMasterVersion,
   DbTransaction,
   OptionGroupReadModel,
   ProductDetailCategory,
@@ -14,19 +13,12 @@ import {
 } from '../../../catalog.types';
 import {
   type PimSchema,
-  productMasters,
-  productMasterVersions,
-  productMasterCategories,
-  productCategories,
-  productMasterVariants,
-  productVariants,
   productImages,
-  productMasterPurchaseConstraints,
-  productPurchaseConstraints,
 } from '../../../schema/catalog.schema';
-import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { OptionReadLoader } from '../loaders/option-read.loader';
 import { TagReadLoader } from '../loaders/tag-read.loader';
+import { ProductVersionReadLoader } from '../loaders/product-version-read.loader';
 
 type ProductReadAssemblerInclude = {
   images?: boolean;
@@ -52,6 +44,7 @@ export class ProductReadAssembler {
     private readonly priceCacheService: VariantPriceCacheService,
     private readonly optionReadLoader: OptionReadLoader,
     private readonly tagReadLoader: TagReadLoader,
+    private readonly versionReadLoader: ProductVersionReadLoader,
   ) {}
 
   private get client() {
@@ -80,34 +73,43 @@ export class ProductReadAssembler {
         ...options?.include,
       };
 
-      const version = await this.getVersionById(versionId, tx);
+      const version = await this.versionReadLoader.getVersionById(tx, versionId);
       const masterId = version.masterId;
 
       const optionGroupsPromise: Promise<OptionGroupReadModel[]> = include.optionGroups
         ? this.optionReadLoader.getOptionGroups(tx, masterId, versionId, locale)
         : Promise.resolve([]);
       const variantsPromise: Promise<ProductVariant[]> = include.variants
-        ? this._fetchVariants(masterId, versionId, tx)
+        ? this.versionReadLoader.getVariants(tx, masterId, versionId)
         : Promise.resolve([]);
       const tagsPromise: Promise<TagReadModel[]> = include.tags
         ? this.tagReadLoader.getTags(tx, masterId, versionId)
         : Promise.resolve([]);
       const imagesPromise: Promise<ProductImage[]> = include.images
-        ? this._fetchImages(versionId, tx)
+        ? this.versionReadLoader.getImages(tx, versionId)
         : Promise.resolve([]);
-      const categoriesPromise: Promise<ProductDetailCategory[]> = include.categories
-        ? this._fetchCategories(masterId, versionId, tx)
+      const categoryFragmentsPromise = include.categories
+        ? this.versionReadLoader.getCategories(tx, masterId, versionId)
         : Promise.resolve([]);
-      const purchaseConstraintPromise = this._fetchPurchaseConstraint(masterId, versionId, tx);
+      const purchaseConstraintPromise = this.versionReadLoader.getPurchaseConstraint(tx, masterId, versionId);
 
-      const [optionGroups, variants, tags, images, categories, purchaseConstraint] = await Promise.all([
+      const [optionGroups, variants, tags, images, categoryFragments, purchaseConstraint] = await Promise.all([
         optionGroupsPromise,
         variantsPromise,
         tagsPromise,
         imagesPromise,
-        categoriesPromise,
+        categoryFragmentsPromise,
         purchaseConstraintPromise,
       ]);
+      const categories: ProductDetailCategory[] = categoryFragments.map((category) => ({
+        id: category.id,
+        name: category.name,
+        slug: category.slug,
+        path: category.path,
+        parentId: category.parentId,
+        isActive: category.isActive,
+        isPrimary: category.isPrimary,
+      }));
 
       const cachedPrices = await this.priceCacheService.getCachedPriceSetsByVersion(versionId, tx);
       const priceMap = new Map(cachedPrices.map((p) => [p.variantId, p]));
@@ -167,7 +169,7 @@ export class ProductReadAssembler {
     tx?: DbTransaction,
   ): Promise<ProductDetailDto> {
     return this.inTx(async (tx) => {
-      const activeVersion = await this.getActiveVersion(masterId, tx);
+      const activeVersion = await this.versionReadLoader.getActiveVersion(tx, masterId);
       return this.getVersionDetail(activeVersion.id, options, tx);
     }, tx);
   }
@@ -191,110 +193,6 @@ export class ProductReadAssembler {
   }
 
   async getImagesByVersionId(versionId: string, tx?: DbTransaction): Promise<ProductImage[]> {
-    return this.inTx(async (tx) => this._fetchImages(versionId, tx), tx);
-  }
-
-  private async getVersionById(versionId: string, tx: DbTransaction): Promise<ProductMasterVersion> {
-    const [version] = await tx
-      .select()
-      .from(productMasterVersions)
-      .where(eq(productMasterVersions.id, versionId))
-      .limit(1);
-
-    if (!version) {
-      throw new NotFoundException(`Version ${versionId} not found`);
-    }
-
-    return version;
-  }
-
-  private async getActiveVersion(masterId: string, tx: DbTransaction): Promise<ProductMasterVersion> {
-    const result = await tx
-      .select()
-      .from(productMasterVersions)
-      .innerJoin(productMasters, eq(productMasterVersions.masterId, productMasters.id))
-      .where(
-        and(
-          eq(productMasterVersions.masterId, masterId),
-          eq(productMasterVersions.status, 'active'),
-          isNull(productMasters.deletedAt),
-        ),
-      )
-      .limit(1);
-
-    if (result.length === 0) {
-      throw new NotFoundException(`No active version found for master ${masterId}`);
-    }
-
-    return result[0].product_master_versions;
-  }
-
-  private async _fetchVariants(masterId: string, versionId: string, tx: DbTransaction): Promise<ProductVariant[]> {
-    const variantResults = await tx
-      .select()
-      .from(productMasterVariants)
-      .innerJoin(productVariants, eq(productMasterVariants.variantId, productVariants.id))
-      .where(and(eq(productMasterVariants.masterId, masterId), eq(productMasterVariants.versionId, versionId)))
-      .orderBy(asc(productVariants.displayOrder));
-
-    return variantResults.map((r) => r.product_variants);
-  }
-
-  private async _fetchPurchaseConstraint(
-    masterId: string,
-    versionId: string,
-    tx: DbTransaction,
-  ): Promise<ProductDetailDto['purchaseConstraint']> {
-    const [row] = await tx
-      .select({
-        id: productPurchaseConstraints.id,
-        requiresMembership: productPurchaseConstraints.requiresMembership,
-        lifetimeQuantityLimit: productPurchaseConstraints.lifetimeQuantityLimit,
-      })
-      .from(productMasterPurchaseConstraints)
-      .innerJoin(
-        productPurchaseConstraints,
-        eq(productMasterPurchaseConstraints.purchaseConstraintId, productPurchaseConstraints.id),
-      )
-      .where(
-        and(
-          eq(productMasterPurchaseConstraints.masterId, masterId),
-          eq(productMasterPurchaseConstraints.versionId, versionId),
-        ),
-      )
-      .limit(1);
-
-    return row ?? null;
-  }
-
-  private async _fetchImages(versionId: string, tx: DbTransaction): Promise<ProductImage[]> {
-    return await tx
-      .select()
-      .from(productImages)
-      .where(eq(productImages.versionId, versionId))
-      .orderBy(desc(productImages.isPrimary), asc(productImages.sortOrder));
-  }
-
-  private async _fetchCategories(
-    masterId: string,
-    versionId: string,
-    tx: DbTransaction,
-  ): Promise<ProductDetailCategory[]> {
-    const rows = await tx
-      .select({
-        id: productCategories.id,
-        name: productCategories.name,
-        slug: productCategories.slug,
-        path: productCategories.path,
-        parentId: productCategories.parentId,
-        isActive: productCategories.isActive,
-        isPrimary: productMasterCategories.isPrimary,
-      })
-      .from(productMasterCategories)
-      .innerJoin(productCategories, eq(productMasterCategories.categoryId, productCategories.id))
-      .where(and(eq(productMasterCategories.masterId, masterId), eq(productMasterCategories.versionId, versionId)))
-      .orderBy(desc(productMasterCategories.isPrimary), asc(productCategories.path), asc(productCategories.name));
-
-    return rows;
+    return this.inTx(async (tx) => this.versionReadLoader.getImages(tx, versionId), tx);
   }
 }
