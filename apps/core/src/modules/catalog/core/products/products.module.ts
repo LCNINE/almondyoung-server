@@ -12,6 +12,7 @@ import { PricingModule } from '../pricing/pricing.module';
 import { ProductVersionsController } from './controllers/product-versions.controller';
 import { ProductReadAssembler } from './assemblers/product-read.assembler';
 import { OptionReadLoader } from './loaders/option-read.loader';
+import { ProductVersionReadLoader } from './loaders/product-version-read.loader';
 import { TagReadLoader } from './loaders/tag-read.loader';
 import { ProductMatchingModule } from '../../../product-matching/product-matching.module';
 import { LibraryModule } from '../../../library/library.module';
@@ -34,6 +35,7 @@ import { ProductSellableQuantityModule } from '../../../inventory/product-sellab
     ProductPurchaseConstraintsService,
     ProductReadAssembler,
     OptionReadLoader,
+    ProductVersionReadLoader,
     TagReadLoader,
   ],
   exports: [
