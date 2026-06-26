@@ -252,7 +252,7 @@ export default function BusinessForm({
     startSearchTransition(async () => {
       try {
         const nts = await fetchExternalBusinessInfo(digits)
-
+        console.log("nts:", nts)
         form.setValue("nts", nts)
         form.setValue("isSubmitting", true) // 조회 결과와 무관하게 등록 허용
 
