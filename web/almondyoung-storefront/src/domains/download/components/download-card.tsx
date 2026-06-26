@@ -33,21 +33,13 @@ export function DownloadCard({ ownership, isExercised }: DownloadCardProps) {
           return
         }
 
-        const binaryString = atob(result.base64)
-        const bytes = new Uint8Array(binaryString.length)
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i)
-        }
-        const blob = new Blob([bytes], { type: result.mimeType })
-
-        const url = window.URL.createObjectURL(blob)
+        // Core 가 준 S3 signed URL(강제 다운로드 disposition 포함)로 브라우저가 S3 에서 직접 받는다.
         const link = document.createElement("a")
-        link.href = url
-        link.download = result.filename
+        link.href = result.url
+        link.rel = "noopener"
         document.body.appendChild(link)
         link.click()
         document.body.removeChild(link)
-        window.URL.revokeObjectURL(url)
 
         toast.success("다운로드 시작", { description: result.filename })
       } catch (err: unknown) {

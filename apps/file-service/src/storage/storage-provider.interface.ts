@@ -40,6 +40,8 @@ export interface SignedUrlRequest {
   expiresIn: number;
   operation?: 'get' | 'put';
   isPublic?: boolean;
+  // GET presign 시 S3 ResponseContentDisposition 으로 강제 다운로드/파일명 지정 (예: attachment; filename*=UTF-8''..)
+  responseContentDisposition?: string;
 }
 
 export interface SignedUrlResult {
