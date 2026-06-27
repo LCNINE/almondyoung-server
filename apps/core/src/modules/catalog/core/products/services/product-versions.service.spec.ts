@@ -28,23 +28,44 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     const outboxPublisher = {
       saveEvent: jest.fn().mockResolvedValue(undefined),
     };
+    const projectionSnapshotAssembler = {
+      assembleActiveVersionSnapshot: jest.fn(),
+    };
+    const pricingValidator = {
+      validateCalculatedPrices: jest.fn().mockResolvedValue(undefined),
+    };
+    const priceCacheService = {
+      cachePricesForVersion: jest.fn().mockResolvedValue(undefined),
+    };
+    const productSellableQuantity = {
+      recalculateAndPublishForVariants: jest.fn().mockResolvedValue(undefined),
+    };
 
     const service = new ProductVersionsService(
       {} as any,
       productPublisher as any,
       outboxPublisher as any,
+      pricingValidator as any,
       {} as any,
+      projectionSnapshotAssembler as any,
+      priceCacheService as any,
       {} as any,
-      {} as any,
-      {} as any,
-      {} as any,
+      productSellableQuantity as any,
     );
 
-    return { service, productPublisher, outboxPublisher };
+    return {
+      service,
+      productPublisher,
+      outboxPublisher,
+      projectionSnapshotAssembler,
+      pricingValidator,
+      priceCacheService,
+      productSellableQuantity,
+    };
   }
 
   it('enqueues ProductMasterActiveVersionChanged through the transactional outbox using the provided tx', async () => {
-    const { service, productPublisher, outboxPublisher } = makeService();
+    const { service, productPublisher, outboxPublisher, projectionSnapshotAssembler } = makeService();
     const tx = {} as any;
     const snapshot = {
       masterId: 'master-1',
@@ -66,8 +87,11 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
       },
     };
 
-    (service as any)._buildFullSnapshot = jest.fn().mockResolvedValue(snapshot);
-    (service as any).getPrimaryCategoryId = jest.fn().mockResolvedValue('cat-1');
+    projectionSnapshotAssembler.assembleActiveVersionSnapshot.mockResolvedValue({
+      snapshot,
+      categoryIds: ['cat-1'],
+      primaryCategoryId: 'cat-1',
+    });
 
     await (service as any)._emitActiveVersionChangedEvent(
       {
@@ -76,10 +100,11 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
         name: 'Lip Tint',
       },
       null,
-      'active',
+      'published',
       tx,
     );
 
+    expect(projectionSnapshotAssembler.assembleActiveVersionSnapshot).toHaveBeenCalledWith('master-1', 'version-2', tx);
     expect(outboxPublisher.saveEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         topic: 'products.events.v1',
@@ -107,10 +132,62 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     expect(productPublisher.publishEvent).not.toHaveBeenCalled();
   });
 
-  it('fails published/rollback events before enqueueing when the full snapshot cannot be built', async () => {
-    const { service, outboxPublisher } = makeService();
+  it('uses the caller-provided active changeReason instead of inferring rollback from previous active version', async () => {
+    const { service, outboxPublisher, projectionSnapshotAssembler } = makeService();
     const tx = {} as any;
-    (service as any)._buildFullSnapshot = jest.fn().mockRejectedValue(new Error('snapshot unavailable'));
+    const snapshot = {
+      masterId: 'master-1',
+      versionId: 'version-2',
+      version: 2,
+      name: 'Snapshot Name',
+      variants: [],
+      status: 'active',
+      isWholesaleOnly: false,
+      hideMembershipPriceForNonMembers: false,
+      isVisibleToMembersOnly: false,
+      isMembershipOnly: false,
+      isGiftcard: false,
+      discountable: true,
+      categories: [],
+    };
+    projectionSnapshotAssembler.assembleActiveVersionSnapshot.mockResolvedValue({
+      snapshot,
+      categoryIds: [],
+      primaryCategoryId: null,
+    });
+
+    await (service as any)._emitActiveVersionChangedEvent(
+      {
+        id: 'version-2',
+        masterId: 'master-1',
+        name: 'Version Name',
+      },
+      {
+        id: 'version-1',
+        masterId: 'master-1',
+      },
+      'published',
+      tx,
+    );
+
+    expect(outboxPublisher.saveEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          versionId: 'version-2',
+          name: 'Snapshot Name',
+          previousActiveVersionId: 'version-1',
+          changeReason: 'published',
+          snapshot,
+        }),
+      }),
+      tx,
+    );
+  });
+
+  it('fails published/rollback events before enqueueing when the projection snapshot cannot be assembled', async () => {
+    const { service, outboxPublisher, projectionSnapshotAssembler } = makeService();
+    const tx = {} as any;
+    projectionSnapshotAssembler.assembleActiveVersionSnapshot.mockRejectedValue(new Error('snapshot unavailable'));
 
     await expect(
       (service as any)._emitActiveVersionChangedEvent(
@@ -120,12 +197,198 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
           name: 'Lip Tint',
         },
         null,
-        'active',
+        'published',
         tx,
       ),
     ).rejects.toThrow('snapshot unavailable');
 
     expect(outboxPublisher.saveEvent).not.toHaveBeenCalled();
+  });
+
+  it('enqueues unpublished events without a snapshot, active version id, or category projection', async () => {
+    const { service, outboxPublisher, projectionSnapshotAssembler } = makeService();
+    const tx = {} as any;
+
+    await (service as any)._emitActiveVersionChangedEvent(
+      {
+        id: 'version-2',
+        masterId: 'master-1',
+        name: 'Lip Tint',
+      },
+      {
+        id: 'version-2',
+        masterId: 'master-1',
+      },
+      'unpublished',
+      tx,
+    );
+
+    expect(projectionSnapshotAssembler.assembleActiveVersionSnapshot).not.toHaveBeenCalled();
+    expect(outboxPublisher.saveEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          masterId: 'master-1',
+          versionId: null,
+          name: null,
+          previousActiveVersionId: 'version-2',
+          categoryIds: [],
+          primaryCategoryId: null,
+          changeReason: 'unpublished',
+          snapshot: null,
+        }),
+      }),
+      tx,
+    );
+  });
+
+  it('publishes a draft with validation, price cache, active transition, snapshot enqueue, and sellable recalculation in order', async () => {
+    const {
+      service,
+      outboxPublisher,
+      projectionSnapshotAssembler,
+      pricingValidator,
+      priceCacheService,
+      productSellableQuantity,
+    } = makeService();
+    const order: string[] = [];
+    const tx = {
+      update: jest.fn(() => ({
+        set: jest.fn((values: { status?: string }) => ({
+          where: jest.fn(async () => {
+            if (values.status === 'inactive') {
+              order.push('deactivatePrevious');
+            }
+            if (values.status === 'active') {
+              order.push('activateTarget');
+            }
+          }),
+        })),
+      })),
+    };
+
+    (service as any).getVersionById = jest.fn().mockResolvedValue({
+      id: 'version-2',
+      masterId: 'master-1',
+      status: 'draft',
+      name: 'Lip Tint',
+      fulfillmentKind: 'physical',
+    });
+    (service as any).getActiveVersion = jest.fn().mockResolvedValue({
+      id: 'version-1',
+      masterId: 'master-1',
+      status: 'active',
+    });
+    (service as any)._validateVariantCodeUniqueness = jest.fn(async () => order.push('validateVariantCode'));
+    service.validateProductCodeUniqueness = jest.fn(async () => order.push('validateProductCode')) as any;
+    pricingValidator.validateCalculatedPrices.mockImplementation(async () => order.push('validatePrices'));
+    priceCacheService.cachePricesForVersion.mockImplementation(async () => order.push('cachePrices'));
+    (service as any)._reconcileMatchingsAfterPublish = jest.fn(async () => order.push('reconcileMatchings'));
+    (service as any)._reconcileAssetLinksAfterPublish = jest.fn(async () => order.push('reconcileAssetLinks'));
+    (service as any)._publishVariantChangeEvents = jest.fn(async () => order.push('publishVariantChanges'));
+    (service as any).getVersionVariants = jest.fn().mockResolvedValue([]);
+    projectionSnapshotAssembler.assembleActiveVersionSnapshot.mockImplementation(async () => {
+      order.push('assembleSnapshot');
+      return {
+        snapshot: {
+          masterId: 'master-1',
+          versionId: 'version-2',
+          version: 2,
+          name: 'Lip Tint',
+          variants: [],
+          status: 'active',
+          isWholesaleOnly: false,
+          hideMembershipPriceForNonMembers: false,
+          isVisibleToMembersOnly: false,
+          isMembershipOnly: false,
+          isGiftcard: false,
+          discountable: true,
+          categories: [],
+        },
+        categoryIds: [],
+        primaryCategoryId: null,
+      };
+    });
+    outboxPublisher.saveEvent.mockImplementation(async () => order.push('saveOutbox'));
+    productSellableQuantity.recalculateAndPublishForVariants.mockImplementation(async () =>
+      order.push('recalculateSellableQuantity'),
+    );
+
+    await service.publishVersion('version-2', tx as any);
+
+    expect(order).toEqual([
+      'validateVariantCode',
+      'validateProductCode',
+      'validatePrices',
+      'cachePrices',
+      'deactivatePrevious',
+      'activateTarget',
+      'reconcileMatchings',
+      'reconcileAssetLinks',
+      'publishVariantChanges',
+      'assembleSnapshot',
+      'saveOutbox',
+      'recalculateSellableQuantity',
+    ]);
+    expect(outboxPublisher.saveEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          changeReason: 'published',
+          previousActiveVersionId: 'version-1',
+        }),
+      }),
+      tx,
+    );
+  });
+
+  it('determines publish changeReason from the target version pre-publish status', async () => {
+    const { service } = makeService();
+    const tx = {
+      update: jest.fn(() => ({
+        set: jest.fn(() => ({
+          where: jest.fn().mockResolvedValue(undefined),
+        })),
+      })),
+    };
+    const emit = jest.fn().mockResolvedValue(undefined);
+
+    (service as any)._emitActiveVersionChangedEvent = emit;
+    (service as any)._validateVariantCodeUniqueness = jest.fn().mockResolvedValue(undefined);
+    service.validateProductCodeUniqueness = jest.fn().mockResolvedValue(undefined) as any;
+    (service as any)._reconcileMatchingsAfterPublish = jest.fn().mockResolvedValue(undefined);
+    (service as any)._reconcileAssetLinksAfterPublish = jest.fn().mockResolvedValue(undefined);
+    (service as any)._validateDigitalAssetLinks = jest.fn().mockResolvedValue(undefined);
+    (service as any)._publishVariantChangeEvents = jest.fn().mockResolvedValue(undefined);
+    (service as any).getVersionVariants = jest.fn().mockResolvedValue([]);
+
+    const draftVersion = {
+      id: 'version-draft',
+      masterId: 'master-1',
+      status: 'draft',
+      name: 'Draft',
+    };
+    const inactiveVersion = {
+      id: 'version-inactive',
+      masterId: 'master-1',
+      status: 'inactive',
+      name: 'Inactive',
+    };
+    const previousActiveVersion = {
+      id: 'version-active',
+      masterId: 'master-1',
+      status: 'active',
+    };
+
+    (service as any).getActiveVersion = jest.fn().mockResolvedValue(previousActiveVersion);
+    (service as any).getVersionById = jest
+      .fn()
+      .mockResolvedValueOnce(draftVersion)
+      .mockResolvedValueOnce(inactiveVersion);
+
+    await service.publishVersion('version-draft', tx as any);
+    await service.publishVersion('version-inactive', tx as any);
+
+    expect(emit).toHaveBeenNthCalledWith(1, draftVersion, previousActiveVersion, 'published', tx);
+    expect(emit).toHaveBeenNthCalledWith(2, inactiveVersion, previousActiveVersion, 'rollback', tx);
   });
 });
 
@@ -142,6 +405,7 @@ describe('ProductVersionsService copy mappings', () => {
       {} as any,
       productPublisher as any,
       outboxPublisher as any,
+      {} as any,
       {} as any,
       {} as any,
       {} as any,
@@ -227,6 +491,7 @@ describe('ProductVersionsService productCode publish validation', () => {
       {} as any,
       {} as any,
       {} as any,
+      {} as any,
     );
   }
 
@@ -265,6 +530,7 @@ describe('ProductVersionsService digital asset-link publish guard', () => {
       {} as any,
       { publishEvent: jest.fn() } as any,
       { saveEvent: jest.fn() } as any,
+      {} as any,
       {} as any,
       {} as any,
       {} as any,
@@ -351,6 +617,7 @@ describe('ProductVersionsService deleteDraftVersion purchase constraint cleanup'
       {} as any,
       productPublisher as any,
       outboxPublisher as any,
+      {} as any,
       {} as any,
       {} as any,
       {} as any,

@@ -69,8 +69,14 @@ export class VariantPriceCacheService {
       await trx
         .insert(productVariantPriceCache)
         .values(rows)
-        .onConflictDoNothing({
+        .onConflictDoUpdate({
           target: [productVariantPriceCache.versionId, productVariantPriceCache.variantId],
+          set: {
+            basePrice: sql`excluded.base_price`,
+            membershipPrice: sql`excluded.membership_price`,
+            tieredPrices: sql`excluded.tiered_prices`,
+            createdAt: sql`excluded.created_at`,
+          },
         });
 
       return rows.length;
