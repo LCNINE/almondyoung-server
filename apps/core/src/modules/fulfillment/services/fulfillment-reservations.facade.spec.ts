@@ -147,8 +147,12 @@ describe('FulfillmentReservationsFacade', () => {
       recalculateAndPublishForSku: jest.fn().mockResolvedValue(undefined),
     };
 
+    const dbMock = {
+      run: jest.fn((fn: (t: any) => any, aTx?: any) => fn(aTx ?? tx)),
+      db: tx,
+    };
     const facade = new FulfillmentReservationsFacade(
-      {} as any,
+      dbMock as any,
       unified as any,
       productSellableQuantity as any,
       policies as any,
@@ -399,8 +403,12 @@ describe('FulfillmentReservationsFacade', () => {
       const productSellableQuantity = { recalculateAndPublishForSku: jest.fn().mockResolvedValue(undefined) };
       const policies = { getVariantPolicy: jest.fn().mockResolvedValue({ inventoryManagement: true }) };
 
+      const dbMock2 = {
+        run: jest.fn((fn: (t: any) => any, aTx?: any) => fn(aTx ?? tx)),
+        db: tx,
+      };
       const facade = new FulfillmentReservationsFacade(
-        {} as any,
+        dbMock2 as any,
         unified as any,
         productSellableQuantity as any,
         policies as any,

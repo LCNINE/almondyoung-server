@@ -25,12 +25,8 @@ export class FulfillmentOrderCreationBacklogService {
     return this.dbService.db;
   }
 
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   async enqueueForSalesOrder(salesOrderId: string, tx?: DbTx): Promise<FulfillmentOrderCreationBacklog | undefined> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const [inserted] = await trx
         .insert(wmsTables.fulfillmentOrderCreationBacklogs)
         .values({
@@ -55,7 +51,7 @@ export class FulfillmentOrderCreationBacklogService {
   }
 
   async findById(id: string, tx?: DbTx): Promise<FulfillmentOrderCreationBacklog | undefined> {
-    return this.inTx(
+    return this.dbService.run(
       (trx) =>
         trx.query.fulfillmentOrderCreationBacklogs.findFirst({
           where: eq(wmsTables.fulfillmentOrderCreationBacklogs.id, id),
@@ -111,7 +107,7 @@ export class FulfillmentOrderCreationBacklogService {
   async markAwaitingMatching(backlogId: string, missingLines: FulfillmentCreationMissingLine[], tx?: DbTx) {
     const waitingVariantIds = [...new Set(missingLines.map((line) => line.variantId))];
 
-    return this.inTx(
+    return this.dbService.run(
       (trx) =>
         trx
           .update(wmsTables.fulfillmentOrderCreationBacklogs)
@@ -138,7 +134,7 @@ export class FulfillmentOrderCreationBacklogService {
     const nextAttemptAt = this.calculateNextAttempt(attempts);
     const details = this.serializeError(error);
 
-    return this.inTx(
+    return this.dbService.run(
       (trx) =>
         trx
           .update(wmsTables.fulfillmentOrderCreationBacklogs)
@@ -171,7 +167,7 @@ export class FulfillmentOrderCreationBacklogService {
     salesOrderId: string,
     tx?: DbTx,
   ): Promise<{ closedCount: number; backlogIds: string[] }> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const updated = await trx
         .update(wmsTables.fulfillmentOrderCreationBacklogs)
         .set({
@@ -200,7 +196,7 @@ export class FulfillmentOrderCreationBacklogService {
   }
 
   async wakeBacklogsWaitingForVariant(variantId: string, tx?: DbTx): Promise<number> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const updated = await trx
         .update(wmsTables.fulfillmentOrderCreationBacklogs)
         .set({
@@ -246,7 +242,7 @@ export class FulfillmentOrderCreationBacklogService {
     fulfillmentOrderId: string | null,
     tx?: DbTx,
   ) {
-    return this.inTx(
+    return this.dbService.run(
       (trx) =>
         trx
           .update(wmsTables.fulfillmentOrderCreationBacklogs)
