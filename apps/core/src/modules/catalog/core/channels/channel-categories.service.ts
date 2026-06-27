@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { NotFoundError, BadRequestError, ConflictError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
-import { ChannelCategory, NewChannelCategory, UpdateChannelCategory, DbTransaction } from '../../catalog.types';
+import { ChannelCategory, NewChannelCategory, UpdateChannelCategory, DbTransaction, DbClient } from '../../catalog.types';
 import { type PimSchema, channelCategories, salesChannels } from '../../schema/catalog.schema';
 import { eq, count, asc, sql } from 'drizzle-orm';
 
@@ -9,7 +9,7 @@ import { eq, count, asc, sql } from 'drizzle-orm';
 export class ChannelCategoriesService {
   constructor(@InjectDb() private readonly db: DbService<PimSchema>) {}
 
-  private getClient(tx?: DbTransaction) {
+  private getClient(tx?: DbTransaction): DbClient {
     return tx ?? this.db.db;
   }
 

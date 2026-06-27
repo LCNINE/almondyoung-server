@@ -21,16 +21,8 @@ export class PricingService {
     private readonly calculatorService: PricingCalculatorService,
   ) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   async getVersionRules(versionId: string, tx?: DbTransaction): Promise<PricingRulesResponseDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       // version 존재 여부 확인
       const [version] = await trx
         .select({ id: productMasterVersions.id })
@@ -76,7 +68,7 @@ export class PricingService {
     rulesDto: ReplacePricingRulesDto,
     tx?: DbTransaction,
   ): Promise<PricingRulesResponseDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       // draft 상태 검증 및 masterId 가져오기
       const [version] = await trx
         .select({
@@ -175,7 +167,7 @@ export class PricingService {
   }
 
   async deleteVersionRules(versionId: string, tx?: DbTransaction): Promise<void> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       // draft 상태 검증
       const [version] = await trx
         .select({ status: productMasterVersions.status })
@@ -211,7 +203,7 @@ export class PricingService {
   }
 
   async getVariantPriceSet(versionId: string, variantId: string, tx?: DbTransaction): Promise<VariantPriceSet> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       return this.calculatorService.calculateVariantPriceSet(versionId, variantId, trx);
     }, tx);
   }
@@ -221,7 +213,7 @@ export class PricingService {
     variantIds: string[],
     tx?: DbTransaction,
   ): Promise<VariantPriceSet[]> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       return this.calculatorService.calculateVariantPriceSetMany(versionId, variantIds, trx);
     }, tx);
   }

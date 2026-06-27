@@ -42,9 +42,7 @@ describe('ProductCategoriesService Medusa projection outbox events', () => {
       })),
     };
     const db = {
-      db: {
-        transaction: jest.fn(async (callback: (trx: typeof tx) => Promise<unknown>) => callback(tx)),
-      },
+      run: jest.fn(async (callback: (trx: typeof tx) => Promise<unknown>, t?: typeof tx) => callback(t ?? tx)),
     };
     const outboxPublisher = {
       saveEvent: jest.fn().mockResolvedValue(undefined),
