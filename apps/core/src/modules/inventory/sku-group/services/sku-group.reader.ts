@@ -12,16 +12,8 @@ export class SkuGroupReader {
     private readonly dbService: DbService<typeof wmsSchema>,
   ) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   async getById(groupId: string, tx?: DbTx): Promise<SkuGroupResponseDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { skuGroups, skus } = wmsTables;
 
       const [group] = await trx.select().from(skuGroups).where(eq(skuGroups.id, groupId)).limit(1);
@@ -45,7 +37,7 @@ export class SkuGroupReader {
   }
 
   async list(tx?: DbTx): Promise<SkuGroupResponseDto[]> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { skuGroups, skus } = wmsTables;
 
       const groups = await trx.select().from(skuGroups).orderBy(desc(skuGroups.createdAt));
@@ -75,7 +67,7 @@ export class SkuGroupReader {
   }
 
   async getMembers(groupId: string, tx?: DbTx): Promise<SkuGroupMembersResponseDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { skuGroups, skus } = wmsTables;
 
       const [group] = await trx.select().from(skuGroups).where(eq(skuGroups.id, groupId)).limit(1);
@@ -114,7 +106,7 @@ export class SkuGroupReader {
   }
 
   async getUngroupedSkus(limit: number = 50, offset: number = 0, tx?: DbTx): Promise<SkuGroupMemberDto[]> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { skus } = wmsTables;
 
       const ungrouped = await trx

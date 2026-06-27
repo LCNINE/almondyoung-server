@@ -26,15 +26,11 @@ export class LocationService {
     return this.dbService.db;
   }
 
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   // 시스템 로케이션 존재 보장 (멱등)
   async ensureSystemLocations(warehouseId: string, tx?: DbTx) {
     const roles = Object.keys(SYSTEM_LOCATION_DEFAULTS) as SystemLocationRole[];
 
-    await this.inTx(async (trx) => {
+    await this.dbService.run(async (trx) => {
       for (const role of roles) {
         const [exists] = await trx
           .select()
@@ -374,7 +370,7 @@ export class LocationService {
   }
 
   async getLocationById(locationId: string, tx?: DbTx): Promise<Location> {
-    return await this.inTx(async (tx) => {
+    return await this.dbService.run(async (tx) => {
       const [result] = await this.db
         .select()
         .from(wmsTables.locations)
@@ -520,7 +516,7 @@ export class LocationService {
       conditions.push(eq(wmsTables.locationRacks.isActive, isActive));
     }
 
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const result = await tx
         .select()
         .from(wmsTables.locationRacks)

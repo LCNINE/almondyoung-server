@@ -12,16 +12,8 @@ export class SupplierCategoriesService {
     private readonly dbService: DbService<typeof wmsSchema>,
   ) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   async createCategory(dto: CreateSupplierCategoryDto, tx?: DbTx): Promise<SupplierCategoryResponseDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { supplierCategories } = wmsTables;
 
       const [category] = await trx
@@ -37,7 +29,7 @@ export class SupplierCategoriesService {
   }
 
   async updateCategory(id: string, dto: UpdateSupplierCategoryDto, tx?: DbTx): Promise<SupplierCategoryResponseDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { supplierCategories } = wmsTables;
 
       const [existing] = await trx.select().from(supplierCategories).where(eq(supplierCategories.id, id)).limit(1);
@@ -61,7 +53,7 @@ export class SupplierCategoriesService {
   }
 
   async deleteCategory(id: string, tx?: DbTx): Promise<void> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { supplierCategories } = wmsTables;
 
       const result = await trx.delete(supplierCategories).where(eq(supplierCategories.id, id)).returning();
@@ -73,7 +65,7 @@ export class SupplierCategoriesService {
   }
 
   async getCategoryById(id: string, tx?: DbTx): Promise<SupplierCategoryResponseDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { supplierCategories } = wmsTables;
 
       const [category] = await trx.select().from(supplierCategories).where(eq(supplierCategories.id, id)).limit(1);
@@ -87,7 +79,7 @@ export class SupplierCategoriesService {
   }
 
   async getCategories(tx?: DbTx): Promise<SupplierCategoryResponseDto[]> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { supplierCategories } = wmsTables;
 
       const categories = await trx.select().from(supplierCategories).orderBy(supplierCategories.name);

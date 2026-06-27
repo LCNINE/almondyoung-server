@@ -16,16 +16,8 @@ export class SkuGroupManager {
     private readonly reader: SkuGroupReader,
   ) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   async create(createDto: CreateSkuGroupDto, tx?: DbTx): Promise<SkuGroupResponseDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { skuGroups } = wmsTables;
 
       const groupCode = createDto.code || `G${Math.floor(100000 + Math.random() * 900000)}`;
@@ -58,7 +50,7 @@ export class SkuGroupManager {
   }
 
   async update(groupId: string, updateDto: UpdateSkuGroupDto, tx?: DbTx): Promise<SkuGroupResponseDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { skuGroups } = wmsTables;
 
       const [existing] = await trx.select().from(skuGroups).where(eq(skuGroups.id, groupId)).limit(1);
@@ -80,7 +72,7 @@ export class SkuGroupManager {
   }
 
   async remove(groupId: string, tx?: DbTx): Promise<void> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { skuGroups } = wmsTables;
 
       const [group] = await trx.select().from(skuGroups).where(eq(skuGroups.id, groupId)).limit(1);
@@ -99,7 +91,7 @@ export class SkuGroupManager {
     addDto: AddSkuToGroupDto,
     tx?: DbTx,
   ): Promise<{ success: boolean; skuId: string; groupId: string }> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { skuGroups, skus } = wmsTables;
 
       const [group] = await trx.select().from(skuGroups).where(eq(skuGroups.id, groupId)).limit(1);
@@ -131,7 +123,7 @@ export class SkuGroupManager {
   }
 
   async bulkAddSkus(groupId: string, bulkDto: BulkAddSkusToGroupDto, tx?: DbTx): Promise<BulkAddSkusResponseDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const results: BulkAddResultItemDto[] = [];
       let successCount = 0;
       let failedCount = 0;
@@ -162,7 +154,7 @@ export class SkuGroupManager {
   }
 
   async removeSku(skuId: string, tx?: DbTx): Promise<{ success: boolean }> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { skus } = wmsTables;
 
       const [sku] = await trx.select().from(skus).where(eq(skus.id, skuId)).limit(1);

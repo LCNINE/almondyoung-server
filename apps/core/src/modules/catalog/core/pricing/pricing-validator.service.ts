@@ -29,21 +29,13 @@ export class PricingValidatorService {
     private readonly calculatorService: PricingCalculatorService,
   ) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   async validateRuleSet(
     masterId: string,
     versionId: string,
     rulesDto: unknown,
     tx?: DbTransaction,
   ): Promise<ValidatedPricingRulesSet> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       console.error('RAW rulesDto:', JSON.stringify(rulesDto, null, 2));
 
       const parseResult = pricingRulesSetSchema.safeParse(rulesDto);
@@ -191,7 +183,7 @@ export class PricingValidatorService {
   }
 
   async validateCalculatedPrices(versionId: string, tx?: DbTransaction): Promise<void> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const variants = await trx
         .select({ id: productVariants.id })
         .from(productMasterVariants)

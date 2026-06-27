@@ -43,7 +43,7 @@ describe('ProductVariantsService draft variant updates', () => {
     };
 
     const service: InstrumentedProductVariantsService = new ProductVariantsService(
-      {} as ConstructorParameters<typeof ProductVariantsService>[0],
+      { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
       productVersionsService as unknown as ConstructorParameters<typeof ProductVariantsService>[1],
       {} as ConstructorParameters<typeof ProductVariantsService>[2],
       {} as ConstructorParameters<typeof ProductVariantsService>[3],

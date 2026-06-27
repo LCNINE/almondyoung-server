@@ -27,7 +27,7 @@ describe('ProductMastersService Medusa projection outbox events', () => {
     };
 
     const service = new ProductMastersService(
-      {} as any,
+      { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
       productPublisher as any,
       outboxPublisher as any,
       {} as any,
@@ -135,7 +135,7 @@ describe('ProductMastersService hardDelete purchase constraint cleanup', () => {
     };
 
     return new ProductMastersService(
-      {} as any,
+      { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
       productPublisher as any,
       outboxPublisher as any,
       {} as any,

@@ -215,6 +215,9 @@ export function makeFakeDb(seed: Map<unknown, Row[]> = new Map()) {
     }),
   };
 
-  const db = { db: { ...tx, transaction: (fn: (t: any) => any) => fn(tx) } };
+  const db = {
+    db: { ...tx, transaction: (fn: (t: any) => any) => fn(tx) },
+    run: (fn: (t: any) => any, txArg?: any) => (txArg ? fn(txArg) : fn(tx)),
+  };
   return { db, state, tx };
 }

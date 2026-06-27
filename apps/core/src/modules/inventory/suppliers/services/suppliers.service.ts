@@ -26,16 +26,8 @@ export class SuppliersService {
     private readonly dbService: DbService<typeof wmsSchema>,
   ) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   async createSupplier(dto: CreateSupplierDto, tx?: DbTx): Promise<SupplierResponseDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { suppliers, supplierCategoryMappings } = wmsTables;
 
       const [supplier] = await trx
@@ -80,7 +72,7 @@ export class SuppliersService {
   }
 
   async updateSupplier(id: string, dto: UpdateSupplierDto, tx?: DbTx): Promise<SupplierResponseDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { suppliers, supplierCategoryMappings } = wmsTables;
 
       const [existing] = await trx.select().from(suppliers).where(eq(suppliers.id, id)).limit(1);
@@ -137,7 +129,7 @@ export class SuppliersService {
   }
 
   async deleteSupplier(id: string, tx?: DbTx): Promise<void> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { suppliers } = wmsTables;
 
       const result = await trx.delete(suppliers).where(eq(suppliers.id, id)).returning();
@@ -151,7 +143,7 @@ export class SuppliersService {
   }
 
   async getSupplierById(id: string, tx?: DbTx): Promise<SupplierResponseDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { suppliers, supplierCategoryMappings, supplierCategories } = wmsTables;
 
       const [supplier] = await trx.select().from(suppliers).where(eq(suppliers.id, id)).limit(1);
@@ -175,7 +167,7 @@ export class SuppliersService {
   }
 
   async getSuppliers(filters: SupplierFiltersDto, tx?: DbTx): Promise<SupplierListResponseDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { suppliers, supplierCategoryMappings, supplierCategories } = wmsTables;
 
       const conditions: SQL[] = [];
@@ -283,7 +275,7 @@ export class SuppliersService {
   }
 
   async getFilterOptions(tx?: DbTx): Promise<SupplierFilterOptionsResponseDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { supplierCategories } = wmsTables;
 
       const categories = await trx.select().from(supplierCategories).orderBy(supplierCategories.name);

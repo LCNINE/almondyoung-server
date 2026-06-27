@@ -43,7 +43,10 @@ describe('InvoiceService.markAsShipped', () => {
 
   function makeService(invoiceRow: InvoiceRow | null) {
     const tx = makeTx(invoiceRow);
-    const dbService: any = { db: { transaction: jest.fn((fn) => fn(tx)) } };
+    const dbService: any = {
+      db: { transaction: jest.fn((fn) => fn(tx)) },
+      run: jest.fn((fn: (t: any) => any, aTx?: any) => fn(aTx ?? tx)),
+    };
     const fulfillmentsService: any = { ship: jest.fn().mockResolvedValue(undefined) };
 
     const service = new InvoiceService(dbService, fulfillmentsService, makeFakeProvider(), makeFakeProvider());

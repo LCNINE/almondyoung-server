@@ -1,6 +1,6 @@
 import { BadRequestException, GoneException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { ProductVariant, UpdateProductVariant, DbTransaction } from '../../../catalog.types';
+import { ProductVariant, UpdateProductVariant, DbTransaction, DbClient } from '../../../catalog.types';
 import { ProductVariantMapper } from '../mappers';
 import { VariantWithPriceDto } from '../dto/variants/variant-response.dto';
 import {
@@ -36,12 +36,8 @@ export class ProductVariantsService {
     private readonly variantAssetLinkService: VariantAssetLinkService,
   ) {}
 
-  private getClient(tx?: DbTransaction) {
+  private getClient(tx?: DbTransaction): DbClient {
     return tx ?? this.db.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
-    return tx ? fn(tx) : this.db.db.transaction(fn);
   }
 
   async getVariantsByMaster(
@@ -181,7 +177,7 @@ export class ProductVariantsService {
   }
 
   async getVariantDetail(keys: VariantDetailKeysParam, tx?: DbTransaction): Promise<VariantWithPriceDto | null> {
-    return await this.inTx(async (tx) => {
+    return await this.db.run(async (tx) => {
       // version ID를 결정
       let versionId: string;
       let masterId: string;
@@ -281,7 +277,7 @@ export class ProductVariantsService {
       };
     }>
   > {
-    return await this.inTx(async (tx) => {
+    return await this.db.run(async (tx) => {
       let versionId: string;
       let masterId: string;
 
@@ -367,7 +363,7 @@ export class ProductVariantsService {
       throw new BadRequestException('masterId, versionId, variantId are required');
     }
 
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       const version = await this.productVersionsService.getVersionById(versionId, trx);
       if (version.masterId !== masterId) {
         throw new BadRequestException(`Version ${versionId} does not belong to master ${masterId}`);
@@ -435,7 +431,7 @@ export class ProductVariantsService {
       throw new BadRequestException('Updates are required');
     }
 
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       const results: Array<{ originalId: string; variantId: string; cowed: boolean }> = [];
       for (const update of updates) {
         const { id, ...data } = update;
@@ -710,7 +706,7 @@ export class ProductVariantsService {
       throw new BadRequestException('Master ID is required');
     }
 
-    return await this.inTx(async (tx) => {
+    return await this.db.run(async (tx) => {
       let targetVersionId: string;
 
       if (!versionId) {

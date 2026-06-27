@@ -1,6 +1,7 @@
 // PIM 마이크로서비스의 중앙 집중화된 타입 정의
+import { TxFor } from '@app/db';
 import { InferSelectModel, InferInsertModel } from 'drizzle-orm';
-import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import { PostgresJsDatabase } from 'drizzle-orm/postgres-js'; // keep — used by DbClient
 import {
   productCategories,
   productMasters,
@@ -37,7 +38,13 @@ import {
 } from './schema/catalog.schema';
 
 // ===== TRANSACTION 타입 =====
-export type DbTransaction = PostgresJsDatabase<PimSchema>;
+/** A transaction handle — for DbService.run callbacks and tx propagation. */
+export type DbTransaction = TxFor<PimSchema>;
+/**
+ * A read/write handle that is EITHER a transaction OR the base connection.
+ * Used by the `getClient(tx?) => tx ?? this.db.db` read-handle idiom.
+ */
+export type DbClient = DbTransaction | PostgresJsDatabase<PimSchema>;
 
 // ===== VERSION MANAGEMENT 타입 =====
 export type VersionStatus = 'draft' | 'inactive' | 'active';

@@ -26,14 +26,6 @@ export class LibraryService {
     private readonly dbService: DbService<typeof wmsSchema>,
   ) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   /**
    * SO 의 모든 line 의 variant 에 매칭된 모든 asset 에 대해 ownership 을 발급.
    *
@@ -43,7 +35,7 @@ export class LibraryService {
    * @returns 새로 생성된 ownership 수.
    */
   async grantOwnershipsForOrder(salesOrderId: string, tx?: DbTx): Promise<number> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const [order] = await trx
         .select({
           id: wmsTables.salesOrders.id,
@@ -120,7 +112,7 @@ export class LibraryService {
     reason: string | null,
     tx?: DbTx,
   ): Promise<{ revokedCount: number; ownershipIds: string[] }> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const updated = await trx
         .update(digitalAssetOwnerships)
         .set({ revokedAt: new Date(), revokedReason: reason })

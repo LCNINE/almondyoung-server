@@ -59,7 +59,10 @@ describe('VariantPriceCacheService', () => {
         tieredPrices: [{ minQuantity: 10, price: 9000 }],
       }),
     };
-    const service = new VariantPriceCacheService({ db: { transaction: jest.fn() } } as any, calculatorService as any);
+    const service = new VariantPriceCacheService(
+      { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
+      calculatorService as any,
+    );
 
     await service.cachePricesForVersion('version-1', tx as any);
 

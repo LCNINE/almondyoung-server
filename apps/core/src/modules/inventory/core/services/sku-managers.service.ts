@@ -14,15 +14,11 @@ export class SkuManagersService {
     private readonly dbService: DbService<typeof wmsSchema>,
   ) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
   /**
    * Assign managers to SKU (create or update)
    */
   async assignManagers(dto: CreateSkuManagersDto, tx?: DbTx): Promise<SkuManagersResponseDto> {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const { skuManagers, skus } = wmsTables;
 
       // Validate SKU exists
@@ -75,7 +71,7 @@ export class SkuManagersService {
    * Update managers for a SKU
    */
   async updateManagers(skuId: string, dto: UpdateSkuManagersDto, tx?: DbTx): Promise<SkuManagersResponseDto> {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const { skuManagers } = wmsTables;
 
       // Check if managers exist
@@ -103,7 +99,7 @@ export class SkuManagersService {
    * Get managers by SKU ID
    */
   async getManagersBySkuId(skuId: string, tx?: DbTx): Promise<SkuManagersResponseDto | null> {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const { skuManagers } = wmsTables;
 
       const result = await tx.select().from(skuManagers).where(eq(skuManagers.skuId, skuId)).limit(1);
@@ -129,7 +125,7 @@ export class SkuManagersService {
       assignedAt: Date;
     }>
   > {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const { skuManagers } = wmsTables;
 
       const results = await tx
@@ -182,7 +178,7 @@ export class SkuManagersService {
    * Remove all managers from a SKU
    */
   async removeManagers(skuId: string, tx?: DbTx): Promise<{ success: boolean; message: string }> {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const { skuManagers } = wmsTables;
 
       // Check if exists
@@ -209,7 +205,7 @@ export class SkuManagersService {
     role: 'designer' | 'purchaseManager' | 'registrationManager',
     tx?: DbTx,
   ): Promise<SkuManagersResponseDto> {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const { skuManagers } = wmsTables;
 
       // Check if exists
@@ -240,7 +236,7 @@ export class SkuManagersService {
    * Get all manager assignments
    */
   async getAllManagerAssignments(tx?: DbTx): Promise<SkuManagersResponseDto[]> {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const { skuManagers } = wmsTables;
 
       const results = await tx.select().from(skuManagers).orderBy(skuManagers.createdAt);
@@ -264,7 +260,4 @@ export class SkuManagersService {
     };
   }
 
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
 }

@@ -17,19 +17,11 @@ export class StockProjectionReader {
     private readonly eventStore: StockEventStore,
   ) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   async getCurrentStock(query: GetStockQueryDto, tx?: DbTx): Promise<PaginatedResponseDto<CurrentStockDto>> {
     const { skuId, warehouseId, page = 1, limit = 20 } = query;
     const offset = (page - 1) * limit;
 
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const conditions: SQL[] = [eq(wmsSchema.stockSummary.warehouseId, warehouseId)];
 
       if (skuId) {
@@ -79,7 +71,7 @@ export class StockProjectionReader {
     const { skuId, warehouseId, page = 1, limit = 20 } = query;
     const offset = (page - 1) * limit;
 
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const v = wmsSchema.stockSummary;
       // view는 SKU × 창고 CROSS JOIN — 재고 움직임이 전혀 없는 조합은 목록에서 제외
       const conditions: SQL[] = [
@@ -134,7 +126,7 @@ export class StockProjectionReader {
     totalReservedQuantity: number;
     totalAvailableQuantity: number;
   }> {
-    const summaries = await this.inTx(
+    const summaries = await this.dbService.run(
       async (trx) => trx.select().from(wmsSchema.stockSummary).where(eq(wmsSchema.stockSummary.skuId, skuId)),
       tx,
     );
@@ -155,7 +147,7 @@ export class StockProjectionReader {
   }
 
   async getBySkuAndWarehouse(skuId: string, warehouseId: string, tx?: DbTx) {
-    const summary = await this.inTx(async (trx) => {
+    const summary = await this.dbService.run(async (trx) => {
       const [row] = await trx
         .select()
         .from(wmsSchema.stockSummary)
@@ -164,7 +156,7 @@ export class StockProjectionReader {
       return row;
     }, tx);
 
-    const details = await this.inTx(
+    const details = await this.dbService.run(
       async (trx) =>
         trx
           .select({
@@ -200,7 +192,7 @@ export class StockProjectionReader {
   }
 
   async getSkuSummary(skuId: string, tx?: DbTx): Promise<SkuStockSummaryDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const [sku] = await trx.select().from(wmsTables.skus).where(eq(wmsTables.skus.id, skuId)).limit(1);
 
       if (!sku) {

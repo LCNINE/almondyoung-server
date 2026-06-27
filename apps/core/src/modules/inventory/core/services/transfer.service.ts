@@ -26,10 +26,6 @@ export class TransferService {
     return this.dbService.db;
   }
 
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   /**
    * 창고 간 이동 작업 생성
    */
@@ -48,7 +44,7 @@ export class TransferService {
     },
     tx?: DbTx,
   ) {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       this.logger.log(`Creating transfer job from warehouse ${params.fromWarehouseId} to ${params.toWarehouseId}`);
 
       if (params.items.length === 0) {
@@ -120,7 +116,7 @@ export class TransferService {
     },
     tx?: DbTx,
   ) {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       this.logger.log(`Executing transfer job ${params.jobId}`);
 
       // Job 조회
@@ -266,7 +262,7 @@ export class TransferService {
     },
     tx?: DbTx,
   ) {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       this.logger.log(
         `Moving SKU ${params.skuId} within warehouse ${params.warehouseId}: ${params.fromLocationId} → ${params.toLocationId}`,
       );

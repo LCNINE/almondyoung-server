@@ -11,20 +11,12 @@ import { SalesChannelWithCategory } from './mappers/sales-channel.mapper';
 export class SalesChannelsService {
   constructor(@InjectDb() private readonly db: DbService<PimSchema>) {}
 
-  private get client() {
-    return this.db.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
-    return tx ? fn(tx) : this.client.transaction(fn);
-  }
-
   async createChannel(data: NewSalesChannel, tx?: DbTransaction): Promise<SalesChannelWithCategory> {
     if (!data.site || !data.name) {
       throw new BadRequestError('Channel site and name are required');
     }
 
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       if (data.categoryId) {
         const category = await tx
           .select({ id: channelCategories.id })
@@ -69,7 +61,7 @@ export class SalesChannelsService {
       throw new BadRequestError('Channel ID is required');
     }
 
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const result = await tx
         .select({
           channel: salesChannels,
@@ -106,7 +98,7 @@ export class SalesChannelsService {
     page: number;
     limit: number;
   }> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const page = filters?.page || 1;
       const limit = Math.min(filters?.limit || 20, 100);
       const offset = (page - 1) * limit;
@@ -167,7 +159,7 @@ export class SalesChannelsService {
     page: number;
     limit: number;
   }> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       return this.getChannels({ isActive: true, ...filters }, tx);
     }, tx);
   }
@@ -181,7 +173,7 @@ export class SalesChannelsService {
       throw new BadRequestError('Channel ID is required');
     }
 
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       if (data.categoryId) {
         const category = await tx
           .select({ id: channelCategories.id })
@@ -218,7 +210,7 @@ export class SalesChannelsService {
       throw new BadRequestError('Channel ID is required');
     }
 
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const existing = await this.tryGetChannelById(channelId, tx);
       if (!existing) {
         throw new NotFoundError(`Channel not found: ${channelId}`);
@@ -246,7 +238,7 @@ export class SalesChannelsService {
       throw new BadRequestError('Channel ID is required');
     }
 
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const updated = await this.updateChannel(channelId, { isActive }, tx);
       return updated;
     }, tx);

@@ -43,18 +43,13 @@ export class StockEventStore {
     return this.dbService.db;
   }
 
-  /** 공용 트랜잭션 헬퍼 */
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   // -----------------------------
   // 생성/커밋 (이벤트 + 레저 갱신)
   // -----------------------------
 
   /** 이벤트 1건 생성 + 레저 프로젝션 갱신(동일 트랜잭션) */
   async createEvent(input: CreateEventInput, tx?: DbTx) {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       // 1) 이벤트 삽입 (멱등키가 있으면 중복 방지)
       const [event] = await trx
         .insert(wmsTables.stockEvents)
@@ -303,7 +298,7 @@ export class StockEventStore {
 
   /** 이벤트 역분개(취소): 원 이벤트의 효과를 상쇄하는 반대 이벤트 생성 */
   async reverseEvent(eventId: string, reason: string, tx?: DbTx) {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const original = await trx.query.stockEvents.findFirst({
         where: eq(wmsTables.stockEvents.id, eventId),
       });

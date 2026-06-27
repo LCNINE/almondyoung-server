@@ -18,16 +18,8 @@ export class SkuCatalogManager {
     private readonly reader: SkuCatalogReader,
   ) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   async create(dto: CreateSkuDto, tx?: DbTx): Promise<SkuResponseDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { supplierIds, categoryIds, source, skuGroupId, imageUploadIds, ...skuData } = dto;
 
       const [newSku] = await trx
@@ -73,7 +65,7 @@ export class SkuCatalogManager {
   }
 
   async update(skuId: string, dto: UpdateSkuDto, tx?: DbTx): Promise<SkuResponseDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { supplierIds, categoryIds, skuGroupId, imageUploadIds, ...updateData } = dto;
 
       const skuUpdatePayload = {
@@ -124,7 +116,7 @@ export class SkuCatalogManager {
       throw new BadRequestError('Valid SKU ID is required');
     }
 
-    await this.inTx(async (trx) => {
+    await this.dbService.run(async (trx) => {
       const [sku] = await trx.select().from(wmsTables.skus).where(eq(wmsTables.skus.id, skuId)).limit(1);
 
       if (!sku) {
@@ -185,7 +177,7 @@ export class SkuCatalogManager {
       throw new BadRequestError('Valid SKU ID is required');
     }
 
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const [sku] = await trx
         .select()
         .from(wmsTables.skus)
@@ -217,7 +209,7 @@ export class SkuCatalogManager {
       throw new NotFoundError(`SKU with ID ${skuId} not found`);
     }
 
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const [existing] = await trx
         .select()
         .from(wmsTables.skuBarcodes)
@@ -248,7 +240,7 @@ export class SkuCatalogManager {
       throw new NotFoundError(`SKU with ID ${skuId} not found`);
     }
 
-    const barcode = await this.inTx(async (trx) => {
+    const barcode = await this.dbService.run(async (trx) => {
       const [row] = await trx
         .select()
         .from(wmsTables.skuBarcodes)
@@ -265,7 +257,7 @@ export class SkuCatalogManager {
       throw new BadRequestError('Cannot remove primary barcode');
     }
 
-    await this.inTx(
+    await this.dbService.run(
       async (trx) => trx.delete(wmsTables.skuBarcodes).where(eq(wmsTables.skuBarcodes.id, barcodeId)),
       tx,
     );

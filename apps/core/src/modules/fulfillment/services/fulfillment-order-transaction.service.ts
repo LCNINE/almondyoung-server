@@ -48,14 +48,6 @@ export class FulfillmentOrderTransactionService {
     private readonly reservationLifecycle: ReservationLifecycleService,
   ) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   async createFulfillmentOrder(dto: CreateFulfillmentOrderDto, tx?: DbTx): Promise<FulfillmentOrderResult> {
     const { warehouseId, fulfillmentMode, priority, items } = dto;
 
@@ -63,7 +55,7 @@ export class FulfillmentOrderTransactionService {
       throw new BadRequestException('FO items cannot be empty');
     }
 
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       await this.validateItems(items, warehouseId, trx);
 
       const [fulfillmentOrder] = await trx
@@ -175,7 +167,7 @@ export class FulfillmentOrderTransactionService {
   }
 
   async cancelFulfillmentOrder(fulfillmentOrderId: string, tx?: DbTx): Promise<void> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const foRows = await trx
         .select({ id: wmsTables.fulfillmentOrders.id, status: wmsTables.fulfillmentOrders.status })
         .from(wmsTables.fulfillmentOrders)
@@ -208,7 +200,7 @@ export class FulfillmentOrderTransactionService {
   }
 
   async completeFulfillmentOrder(fulfillmentOrderId: string, tx?: DbTx): Promise<void> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const foRows = await trx
         .select({ id: wmsTables.fulfillmentOrders.id, status: wmsTables.fulfillmentOrders.status })
         .from(wmsTables.fulfillmentOrders)
@@ -239,7 +231,7 @@ export class FulfillmentOrderTransactionService {
   }
 
   async shipFulfillmentOrder(fulfillmentOrderId: string, tx?: DbTx): Promise<void> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const foRows = await trx
         .select({ id: wmsTables.fulfillmentOrders.id, status: wmsTables.fulfillmentOrders.status })
         .from(wmsTables.fulfillmentOrders)
@@ -272,7 +264,7 @@ export class FulfillmentOrderTransactionService {
     priority: 'normal' | 'high' | 'urgent',
     tx?: DbTx,
   ): Promise<void> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const [updated] = await trx
         .update(wmsTables.fulfillmentOrders)
         .set({ priority, updatedAt: new Date() })
@@ -288,7 +280,7 @@ export class FulfillmentOrderTransactionService {
   }
 
   async allocateToOutboundBatch(fulfillmentOrderId: string, batchId: string, tx?: DbTx): Promise<void> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const foRows = await trx
         .select({
           id: wmsTables.fulfillmentOrders.id,

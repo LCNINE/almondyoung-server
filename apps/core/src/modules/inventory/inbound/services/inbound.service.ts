@@ -38,13 +38,9 @@ export class InboundService {
     return this.dbService.db;
   }
 
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   // 입고 라인 메모 수정
   async updateInboundLineMemo(lineId: string, dto: UpdateInboundLineMemoDto, tx?: DbTx) {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const line = await tx.query.inboundReceiptLines.findFirst({
         where: eq(wmsTables.inboundReceiptLines.id, lineId),
       });
@@ -75,7 +71,7 @@ export class InboundService {
   // 간편입고: 지정 창고/로케이션에 여러 SKU를 즉시 입고
   async simpleInbound(dto: SimpleInboundDto, tx?: DbTx) {
     const { warehouseId, items } = dto;
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       // 간편입고는 항상 시스템 입고기본존으로 (보장 선행)
       await this.locationService.ensureSystemLocations(warehouseId, tx);
       const inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default', tx);
@@ -161,7 +157,7 @@ export class InboundService {
   // 전수조사 간편입고: 처리 로직은 동일하나 회차/로그의 method를 구분
   async simpleInboundFullscan(dto: SimpleInboundDto, tx?: DbTx) {
     const { warehouseId, items } = dto;
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       await this.locationService.ensureSystemLocations(warehouseId, tx);
       const inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default', tx);
       if (!inboundZone) throw new BadRequestException('입고 기본존이 존재하지 않습니다.');
@@ -239,7 +235,7 @@ export class InboundService {
   // 개별입고: 단일 SKU를 지정 로케이션(옵션, 없으면 기본입고존)으로 입고
   async individualInbound(dto: IndividualInboundDto, tx?: DbTx) {
     const { warehouseId, skuId, quantity } = dto;
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       let effectiveLocationId = dto.locationId ?? null;
       if (!effectiveLocationId) {
         await this.locationService.ensureSystemLocations(warehouseId, tx);
@@ -317,7 +313,7 @@ export class InboundService {
 
   // 입고 예정 목록 조회 (이중 입고 계획 지원)
   async getInboundPending(warehouseId?: string, tx?: DbTx): Promise<InboundPendingListResponse> {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const { inboundPlans, inboundPlanItems, purchaseOrders, suppliers, skus } = wmsTables;
 
       // 1. pending 상태의 plans 조회
@@ -636,7 +632,7 @@ export class InboundService {
 
   // 입고예정 생성
   async createInboundPlan(dto: CreateInboundPlanDto, tx?: DbTx) {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const { purchaseOrders } = wmsTables;
 
       // 발주 존재 여부 확인
@@ -675,7 +671,7 @@ export class InboundService {
 
   // 입고예정 아이템 추가
   async addInboundPlanItems(dto: AddInboundPlanItemsDto, tx?: DbTx) {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const plan = await tx.query.inboundPlans.findFirst({ where: eq(wmsTables.inboundPlans.id, dto.planId) });
       if (!plan) throw new NotFoundException('inbound plan not found');
       for (const item of dto.items) {
@@ -723,7 +719,7 @@ export class InboundService {
 
   // 입고예정 아이템 기반 실입고 처리
   async receiveFromPlan(dto: ReceiveFromPlanDto, tx?: DbTx) {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const item = await tx.query.inboundPlanItems.findFirst({
         where: eq(wmsTables.inboundPlanItems.id, dto.planItemId),
       });
@@ -813,7 +809,7 @@ export class InboundService {
 
   // 즉시 적치(원위치 → 목적지)
   async putawayFromOrigin(dto: PutawayRequestDto, tx?: DbTx) {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const line = await tx.query.inboundReceiptLines.findFirst({
         where: eq(wmsTables.inboundReceiptLines.id, dto.lineId),
       });
@@ -887,7 +883,7 @@ export class InboundService {
 
   // 회송
   async returnInbound(dto: ReturnInboundDto, tx?: DbTx) {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const line = await tx.query.inboundReceiptLines.findFirst({
         where: eq(wmsTables.inboundReceiptLines.id, dto.lineId),
       });
@@ -953,7 +949,7 @@ export class InboundService {
 
   // 입고취소
   async cancelInbound(dto: CancelInboundDto, tx?: DbTx) {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const line = await tx.query.inboundReceiptLines.findFirst({
         where: eq(wmsTables.inboundReceiptLines.id, dto.lineId),
       });

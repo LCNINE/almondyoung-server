@@ -22,14 +22,6 @@ export class StockEventService {
     private readonly allocationStrategy: AllocationStrategyService,
   ) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   /**
    * 안전한 SKU ID 기반 재고 입고 처리
    * - 자동 SKU 생성 없음
@@ -39,7 +31,7 @@ export class StockEventService {
   async createStockEntryBySkuId(dto: CreateStockEntryBySkuIdDto, tx?: DbTx) {
     const { skuId, variantId, warehouseId, locationId, quantity, stockType, reason, subBarcode, packingUnit } = dto;
 
-    return this.inTx(async (executor) => {
+    return this.dbService.run(async (executor) => {
       // SKU ID로 직접 조회, 자동 생성 없음
       const sku = await executor.query.skus.findFirst({
         where: eq(wmsTables.skus.id, skuId),
@@ -106,7 +98,7 @@ export class StockEventService {
   ) {
     this.logger.log(`Reserving ${quantity} units of SKU ${skuId} for ${targetType}:${targetId}`);
 
-    return this.inTx(async (executor) => {
+    return this.dbService.run(async (executor) => {
       // UnifiedReservationService를 활용한 예약 생성
       const reservation = await this.unifiedReservation.reserveStock(
         {
@@ -133,7 +125,7 @@ export class StockEventService {
   async releaseReservation(reservationId: string, reason?: string, tx?: DbTx) {
     this.logger.log(`Releasing reservation: ${reservationId}`);
 
-    return this.inTx(async (executor) => {
+    return this.dbService.run(async (executor) => {
       await this.unifiedReservation.releaseReservation(reservationId, executor);
 
       this.logger.log(`Successfully released reservation: ${reservationId}`);
@@ -161,7 +153,7 @@ export class StockEventService {
       `Transferring ${quantity} units of SKU ${skuId} from ${fromWarehouseId}/${fromLocationId} to ${toWarehouseId}/${toLocationId}`,
     );
 
-    return this.inTx(async (executor) => {
+    return this.dbService.run(async (executor) => {
       if (quantity <= 0) {
         throw new BadRequestException('Quantity must be positive');
       }
@@ -218,7 +210,7 @@ export class StockEventService {
   ) {
     this.logger.log(`Processing damage: ${quantity} units of SKU ${skuId} at ${warehouseId}/${locationId}`);
 
-    return this.inTx(async (executor) => {
+    return this.dbService.run(async (executor) => {
       if (quantity <= 0) {
         throw new BadRequestException('Quantity must be positive');
       }
@@ -261,7 +253,7 @@ export class StockEventService {
   ) {
     this.logger.log(`Processing return: ${quantity} units of SKU ${skuId} for order ${orderId}`);
 
-    return this.inTx(async (executor) => {
+    return this.dbService.run(async (executor) => {
       if (quantity <= 0) {
         throw new BadRequestException('Quantity must be positive');
       }
