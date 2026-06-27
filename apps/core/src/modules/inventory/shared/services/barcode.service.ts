@@ -36,14 +36,6 @@ export class BarcodeService {
 
   constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   parseBarcode(barcode: string): BarcodeParseResult {
     const trimmed = barcode.trim().toUpperCase();
 
@@ -95,7 +87,7 @@ export class BarcodeService {
   }
 
   async scanSku(barcode: string, warehouseId: string, tx?: DbTx): Promise<SkuScanResult> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const parsed = this.parseBarcode(barcode);
 
       let skuId: string;
@@ -142,7 +134,7 @@ export class BarcodeService {
   }
 
   async scanFulfillmentOrderItem(barcode: string, tx?: DbTx): Promise<FOIScanResult> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const parsed = this.parseBarcode(barcode);
 
       let foiId: string;
@@ -215,7 +207,7 @@ export class BarcodeService {
       isCompleted: boolean;
     }>;
   }> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const parsed = this.parseBarcode(barcode);
 
       let foId: string;
@@ -293,7 +285,7 @@ export class BarcodeService {
   }
 
   async validateLocationAccess(locationCode: string, warehouseId: string, tx?: DbTx): Promise<boolean> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       // TODO: Implement location validation
       // For now, just log and return true
       this.logger.log(`Location access validated: ${locationCode} in warehouse ${warehouseId}`);

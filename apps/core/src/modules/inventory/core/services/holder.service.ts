@@ -18,10 +18,6 @@ export class HolderService implements OnModuleInit {
     return this.dbService.db;
   }
 
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   async onModuleInit() {
     await this.ensureDefaultsExist();
   }
@@ -50,7 +46,7 @@ export class HolderService implements OnModuleInit {
   }
 
   async listHolders(query: HolderQueryDto, tx?: DbTx): Promise<HolderListResponseDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { holders } = wmsTables;
       const { page = 1, limit = 20, search, isOurAsset } = query;
       const offset = (page - 1) * limit;
@@ -93,7 +89,7 @@ export class HolderService implements OnModuleInit {
   }
 
   async getHolderById(id: string, tx?: DbTx): Promise<HolderDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { holders } = wmsTables;
 
       const [holder] = await trx.select().from(holders).where(eq(holders.id, id)).limit(1);
@@ -113,7 +109,7 @@ export class HolderService implements OnModuleInit {
   }
 
   async createHolder(dto: CreateHolderDto, tx?: DbTx): Promise<HolderDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { holders } = wmsTables;
 
       const [existing] = await trx.select().from(holders).where(eq(holders.name, dto.name)).limit(1);
@@ -143,7 +139,7 @@ export class HolderService implements OnModuleInit {
   }
 
   async updateHolder(id: string, dto: UpdateHolderDto, tx?: DbTx): Promise<HolderDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { holders } = wmsTables;
 
       const [existing] = await trx.select().from(holders).where(eq(holders.id, id)).limit(1);
@@ -182,7 +178,7 @@ export class HolderService implements OnModuleInit {
   }
 
   async deleteHolder(id: string, tx?: DbTx): Promise<{ success: boolean }> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { holders, skus, fulfillmentOrders } = wmsTables;
 
       const [existing] = await trx.select().from(holders).where(eq(holders.id, id)).limit(1);
