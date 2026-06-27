@@ -39,9 +39,7 @@ describe('ProductSkuMappingService', () => {
   it('does not resolve or wake variant matching without SKU links', async () => {
     const tx = {};
     const dbService = {
-      db: {
-        transaction: jest.fn((fn) => fn(tx)),
-      },
+      run: jest.fn((fn, txArg) => txArg ? fn(txArg) : fn(tx)),
     };
     const productSellableQuantity = {
       recalculateAndPublishForVariant: jest.fn(),
@@ -105,9 +103,7 @@ describe('ProductSkuMappingService', () => {
       })),
     };
     const dbService = {
-      db: {
-        transaction: jest.fn((fn) => fn(tx)),
-      },
+      run: jest.fn((fn, txArg) => txArg ? fn(txArg) : fn(tx)),
     };
     const productSellableQuantity = {
       recalculateAndPublishForVariant: jest.fn(),
@@ -216,9 +212,7 @@ describe('ProductSkuMappingService', () => {
       })),
     };
     const dbService = {
-      db: {
-        transaction: jest.fn((fn) => fn(tx)),
-      },
+      run: jest.fn((fn, txArg) => txArg ? fn(txArg) : fn(tx)),
     };
     const productSellableQuantity = {
       recalculateAndPublishForVariant: jest.fn(),
@@ -333,9 +327,7 @@ describe('ProductSkuMappingService', () => {
       })),
     };
     const dbService = {
-      db: {
-        transaction: jest.fn((fn) => fn(tx)),
-      },
+      run: jest.fn((fn, txArg) => txArg ? fn(txArg) : fn(tx)),
     };
     const productSellableQuantity = {
       recalculateAndPublishForVariant: jest.fn(),
@@ -458,9 +450,7 @@ describe('ProductSkuMappingService', () => {
       })),
     };
     const dbService = {
-      db: {
-        transaction: jest.fn((fn) => fn(tx)),
-      },
+      run: jest.fn((fn, txArg) => txArg ? fn(txArg) : fn(tx)),
     };
     const productSellableQuantity = {
       recalculateAndPublishForVariant: jest.fn(),
@@ -580,9 +570,7 @@ describe('ProductSkuMappingService', () => {
       ),
     };
     const dbService = {
-      db: {
-        transaction: jest.fn((fn) => fn(tx)),
-      },
+      run: jest.fn((fn, txArg) => txArg ? fn(txArg) : fn(tx)),
     };
     const productSellableQuantity = {
       getByVariantIds: jest.fn().mockResolvedValue([
@@ -649,7 +637,7 @@ describe('ProductSkuMappingService', () => {
 
   it('rejects variant matching batch requests over 500 IDs', async () => {
     const service = createService(
-      { db: { transaction: jest.fn() } },
+      { run: jest.fn() },
       { getByVariantIds: jest.fn(), recalculateAndPublishForVariant: jest.fn() },
     );
 
@@ -663,7 +651,7 @@ describe('ProductSkuMappingService', () => {
       select: createSelectMock(new Map<unknown, unknown[]>([[productVariants, []]])),
     };
     const service = createService(
-      { db: { transaction: jest.fn((fn) => fn(tx)) } },
+      { run: jest.fn((fn, txArg) => txArg ? fn(txArg) : fn(tx)) },
       { getByVariantIds: jest.fn(), recalculateAndPublishForVariant: jest.fn() },
     );
 
@@ -742,7 +730,7 @@ describe('ProductSkuMappingService', () => {
       recalculateAndPublishForVariant: jest.fn(),
       getByVariantIds: jest.fn().mockResolvedValue([]),
     };
-    const service = createService({ db: { transaction: jest.fn((fn) => fn(tx)) } }, productSellableQuantity);
+    const service = createService({ run: jest.fn((fn, txArg) => txArg ? fn(txArg) : fn(tx)) }, productSellableQuantity);
 
     const result = await service.updateVariantStockPolicy(variantId, {
       preStockSellable: false,
@@ -814,7 +802,7 @@ describe('ProductSkuMappingService', () => {
       recalculateAndPublishForVariant: jest.fn(),
       getByVariantIds: jest.fn().mockResolvedValue([]),
     };
-    const service = createService({ db: { transaction: jest.fn((fn) => fn(tx)) } }, productSellableQuantity);
+    const service = createService({ run: jest.fn((fn, txArg) => txArg ? fn(txArg) : fn(tx)) }, productSellableQuantity);
 
     await service.updateVariantStockPolicy(variantId, { preStockSellable: true });
 
@@ -872,7 +860,7 @@ describe('ProductSkuMappingService', () => {
       recalculateAndPublishForVariant: jest.fn(),
       getByVariantIds: jest.fn().mockResolvedValue([]),
     };
-    const service = createService({ db: { transaction: jest.fn((fn) => fn(tx)) } }, productSellableQuantity);
+    const service = createService({ run: jest.fn((fn, txArg) => txArg ? fn(txArg) : fn(tx)) }, productSellableQuantity);
 
     await service.updateVariantStockPolicy(variantId, { availabilityOverride: null });
 
