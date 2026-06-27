@@ -230,11 +230,12 @@ git commit -m "feat(db): add DbService.run single transaction runner with unit t
 
 ---
 
-## Task 3: Normalize per-BC tx-type derivations via `TxFor`
+## Task 3: Normalize per-BC tx-type derivations via `TxFor` (inventory + platform only)
+
+> **Plan correction (2026-06-28, found during execution):** Catalog's `DbTransaction` is NOT narrowed here. It is currently `PostgresJsDatabase<PimSchema>` (whole-db) and is used by a pervasive `getClient(tx?) { return tx ?? this.db.db }` read-handle idiom across ~9 catalog services. Narrowing it to the subtransaction form breaks all those call sites, so the narrowing + read-handle split + `inTx`→`run` migration for catalog are done together in the expanded **Task 12**. Task 3 only touches inventory and platform, whose `DbTx` is already the subtransaction form (this change is type-identical and cannot break the build).
 
 **Files:**
 - Modify: `apps/core/src/modules/inventory/schema/inventory.schema.ts:3185`
-- Modify: `apps/core/src/modules/catalog/catalog.types.ts:40`
 - Modify: `apps/core/src/platform/database/types.ts:8`
 
 - [ ] **Step 1: Inventory — re-express `DbTx` via `TxFor` (name kept)**
@@ -247,17 +248,9 @@ import { TxFor } from '@app/db';
 export type DbTx = TxFor<typeof wmsSchema>;
 ```
 
-- [ ] **Step 2: Catalog — fix the outlier whole-db `DbTransaction` to the subtx form**
+If `TypedDatabase` becomes unused after this change, remove its import; otherwise leave it.
 
-In `catalog.types.ts`, replace line 40:
-
-```ts
-import { TxFor } from '@app/db';
-// ...
-export type DbTransaction = TxFor<PimSchema>;
-```
-
-- [ ] **Step 3: Platform — re-express `DbTx` via `TxFor` (name kept)**
+- [ ] **Step 2: Platform — re-express `DbTx` via `TxFor` (name kept)**
 
 In `platform/database/types.ts`, replace line 8:
 
@@ -267,16 +260,18 @@ import { TxFor } from '@app/db';
 export type DbTx = TxFor<MergedSchema>;
 ```
 
-- [ ] **Step 4: Verify build**
+`MergedSchema` is already imported there. Leave the `AppDb` export as-is.
+
+- [ ] **Step 3: Verify build**
 
 Run: `npm run build:core`
-Expected: PASS. (`TxFor<S>` is identical to the previous `Parameters<...>` derivation for inventory/platform; for catalog it narrows from whole-db to subtx, which is safe because no catalog code calls `.transaction()` on a `DbTransaction`-typed value — that role moves to `DbService.run`.)
+Expected: PASS. (`TxFor<S>` expands to exactly the previous `Parameters<...>` derivation for both inventory and platform — type-identical, no consumer impact.)
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add apps/core/src/modules/inventory/schema/inventory.schema.ts apps/core/src/modules/catalog/catalog.types.ts apps/core/src/platform/database/types.ts
-git commit -m "refactor(core): derive per-BC tx types via TxFor; fix catalog DbTransaction outlier"
+git add apps/core/src/modules/inventory/schema/inventory.schema.ts apps/core/src/platform/database/types.ts
+git commit -m "refactor(core): derive inventory & platform tx types via TxFor"
 ```
 
 ---
@@ -581,38 +576,69 @@ git commit -m "refactor(library,cs): replace per-class inTx with DbService.run"
 
 ---
 
-## Task 12: Within-BC sweep — catalog
+## Task 12: Within-BC sweep — catalog (+ DbTransaction narrowing + read-handle split)
 
-Apply the **Migration Recipe** to catalog services (all `PimSchema`-typed; tx type is `DbTransaction`).
+Catalog is the largest and trickiest sweep because two changes must land **together** to keep the build green:
+1. **Narrow `DbTransaction`** (deferred from Task 3) from whole-db to the subtransaction handle, so `tx?: DbTransaction` can be propagated into `DbService.run`.
+2. **Introduce a read-handle type** for the pervasive `getClient(tx?) { return tx ?? this.db.db }` idiom, which needs the *whole-db* type (a base connection or a tx — both usable for reads). Today that idiom abuses `DbTransaction` (whole-db); once `DbTransaction` becomes a subtransaction it must switch to the new read-handle type.
 
-**Files:**
-- `core/products/services/product-masters.service.ts`, `product-versions.service.ts`, `product-variants.service.ts`, `product-purchase-constraints.service.ts`
+Both `getClient` and `inTx` appear across these catalog services (verified): `categories.service.ts` (19 `getClient` sites), `channels/channel-products.service.ts`, `channels/channel-listing.service.ts`, `channels/channel-categories.service.ts`, `channels/sales-channels.service.ts`, `products/services/product-variants.service.ts`, `products/services/product-search.service.ts`, `operations/approval/product-approval.service.ts`, `operations/bulk/product-bulk.service.ts`, plus `core/pricing/master-pricing.controller.ts:32` (`const client = tx ?? this.db`).
+
+**Files (apply both changes):**
+- `catalog.types.ts` (narrow `DbTransaction`; add `DbClient` read-handle type)
+- `core/products/services/product-masters.service.ts`, `product-versions.service.ts`, `product-variants.service.ts`, `product-purchase-constraints.service.ts`, `product-search.service.ts`
 - `core/products/assemblers/product-read.assembler.ts`
 - `core/categories/categories.service.ts`
-- `core/channels/sales-channels.service.ts`
-- `core/pricing/pricing.service.ts`, `pricing-calculator.service.ts`, `pricing-validator.service.ts`, `variant-price-cache.service.ts`
+- `core/channels/sales-channels.service.ts`, `channel-products.service.ts`, `channel-listing.service.ts`, `channel-categories.service.ts`
+- `core/pricing/pricing.service.ts`, `pricing-calculator.service.ts`, `pricing-validator.service.ts`, `variant-price-cache.service.ts`, `master-pricing.controller.ts`
 - `core/tags/tags.service.ts`, `core/notices/notices.service.ts`, `core/banners/banners.service.ts`
-- `operations/approval/product-approval.service.ts`
+- `operations/approval/product-approval.service.ts`, `operations/bulk/product-bulk.service.ts`
 
-> `product-versions.service.ts` uses `private get dbConn() { return this.db.db; }` + `this.dbConn.transaction(fn)` in its `inTx`. Replace `this.inTx(` with `this.db.run(` (the injected field is `this.db: DbService<PimSchema>`), and delete the now-unused `dbConn` getter if nothing else references it.
+- [ ] **Step 1: Define the two catalog types**
 
-- [ ] **Step 1: Apply the Migration Recipe to each file**
+In `apps/core/src/modules/catalog/catalog.types.ts`, replace the whole-db `DbTransaction` and add a read-handle type:
 
-- [ ] **Step 2: Verify build**
+```ts
+import { TxFor } from '@app/db';
+import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+// ...
+/** A transaction handle (for DbService.run callbacks and tx propagation). */
+export type DbTransaction = TxFor<PimSchema>;
+/**
+ * A read/write handle that is EITHER the base connection OR a transaction.
+ * Used by the `getClient(tx?) => tx ?? this.db.db` idiom: a subtransaction is
+ * assignable to this whole-db type, so `tx ?? this.db.db` unifies here.
+ */
+export type DbClient = PostgresJsDatabase<PimSchema>;
+```
+
+- [ ] **Step 2: Retype every `getClient` helper and its read consumers**
+
+In each service that has `private getClient(tx?: DbTransaction) { return tx ?? this.db.db; }`:
+- Change the signature to return the read handle explicitly: `private getClient(tx?: DbTransaction): DbClient { return tx ?? this.db.db; }`. (A subtransaction `tx` is assignable to `DbClient`, so this compiles.)
+- Any private helper that receives the *output of* `getClient` (a `DbClient`) — e.g. `categories.service.ts` `_getAncestorCategoryIds`, or anything that also gets called with a raw `tx` for reads — must take `DbClient` (NOT `DbTransaction`) as its handle parameter. A real `DbTransaction` is assignable to `DbClient`, so callers passing a tx still compile.
+- `product-search.service.ts` already uses `client: ReturnType<typeof this.getClient>` for its helpers — that resolves to `DbClient` automatically once `getClient` is annotated, so leave those as-is.
+- `master-pricing.controller.ts:32` `const client = tx ?? this.db` — note `this.db` here is the `DbService` instance, so this should be `tx ?? this.db.db` returning `DbClient`; verify and fix the access if needed.
+
+- [ ] **Step 3: Apply the Migration Recipe (inTx → run) to each file**
+
+Replace each `this.inTx(fn, tx)` with `this.db.run(fn, tx)` (or `this.<dbField>.run` per the actual injected field name), delete the local `inTx` helper, and delete any `private get dbConn()` getter that existed only for `inTx`. Keep `tx?: DbTransaction` propagation signatures. (`product-versions.service.ts` uses `dbConn` for its `inTx` — replace with `this.db.run`.)
+
+- [ ] **Step 4: Verify build**
 
 Run: `npm run build:core`
-Expected: PASS. **If `product-versions.service.ts` fails to compile** because `_reconcileMatchingsAfterPublish` queries `wmsSchema` tables through a `PimTx` (a pre-existing hidden cross-BC reach the strict typing now surfaces): do **not** widen the whole service to `MergedSchema`. Instead, narrow the fix — either (a) move that reconciliation query behind a `wmsSchema`-typed inventory/product-matching service method that accepts `tx?: AnyTx`, or (b) if out of scope for this refactor, record it as a follow-up and apply a single localized `tx as TxFor<MergedSchema>` at exactly that query with a `// cross-BC reach — see ADR-0025 follow-up` comment. Prefer (a).
+Expected: PASS. The compiler will iteratively point at any remaining helper that still types its handle as `DbTransaction` but receives a `DbClient` — fix each by switching that parameter to `DbClient`. **If `product-versions.service.ts` fails because `_reconcileMatchingsAfterPublish` queries `wmsSchema` tables through a `PimTx`** (a pre-existing hidden cross-BC reach the strict typing now surfaces): do **not** widen the whole service to `MergedSchema`. Prefer moving that reconciliation query behind a `wmsSchema`-typed inventory/product-matching service method that accepts `tx?: AnyTx`; if out of scope, apply a single localized `tx as TxFor<MergedSchema>` at exactly that query with a `// cross-BC reach — see ADR-0025 follow-up` comment and report it as DONE_WITH_CONCERNS.
 
-- [ ] **Step 3: Run catalog targeted tests**
+- [ ] **Step 5: Run catalog targeted tests**
 
-Run: `npx jest --testPathPattern='catalog/.*(product-versions|product-masters|product-variants|purchase-constraints|assembler|loader)'`
+Run: `npx jest --testPathPattern='catalog/.*(product-versions|product-masters|product-variants|purchase-constraints|assembler|loader|categories)'`
 Expected: PASS.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add apps/core/src/modules/catalog
-git commit -m "refactor(catalog): replace per-class inTx with DbService.run"
+git commit -m "refactor(catalog): DbService.run + narrow DbTransaction + DbClient read-handle"
 ```
 
 ---
