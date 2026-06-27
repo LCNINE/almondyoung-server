@@ -128,8 +128,18 @@ describe('ProductSellableQuantityService.recalculateAndPublishForVariant', () =>
     };
   }
 
+  function makeDbService(): DbService<MergedSchema> {
+    const dbService = {
+      run: jest.fn(async <T>(fn: (tx: unknown) => Promise<T>, tx?: unknown) =>
+        tx ? fn(tx) : Promise.reject(new Error('transaction opened unexpectedly in test')),
+      ),
+      db: { transaction: jest.fn() },
+    } as unknown as DbService<MergedSchema>;
+    return dbService;
+  }
+
   function makeService(outbox: OutboxMock) {
-    const db = { db: { transaction: jest.fn() } } as unknown as DbService<MergedSchema>;
+    const db = makeDbService();
     const service = new ProductSellableQuantityService(db, outbox as unknown as OutboxService);
     const getByVariantId = jest.spyOn(service, 'getByVariantId').mockResolvedValue(projection);
     return { service, getByVariantId };
@@ -161,7 +171,7 @@ describe('ProductSellableQuantityService.recalculateAndPublishForVariant', () =>
 
   it('sales variant policy override가 있으면 매칭이 없어도 수동 품절 projection을 publish한다', async () => {
     const outbox = makeOutbox();
-    const db = { db: { transaction: jest.fn() } } as unknown as DbService<MergedSchema>;
+    const db = makeDbService();
     const service = new ProductSellableQuantityService(db, outbox as unknown as OutboxService);
     const { tx, inserted } = makePolicyCalculationTx();
 

@@ -1,7 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { DbService, InjectTypedDb } from '@app/db';
-import { TypedDatabase } from '@app/db/types';
+import { AnyTx, DbService, InjectTypedDb, TxFor } from '@app/db';
 import { and, desc, eq, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
 import { ProductSellableQuantityChangedPayload } from '@packages/event-contracts';
 import { MergedSchema } from '../../../../platform/database/merged-schema';
@@ -19,7 +18,7 @@ import {
   ProductSellableQuantityResult,
 } from './product-sellable-quantity.calculator';
 
-type ProductSellableQuantityDbTx = Parameters<Parameters<TypedDatabase<MergedSchema>['transaction']>[0]>[0];
+type MergedTx = TxFor<MergedSchema>;
 
 @Injectable()
 export class ProductSellableQuantityService {
@@ -32,22 +31,7 @@ export class ProductSellableQuantityService {
     private readonly outbox: OutboxService,
   ) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(
-    fn: (tx: ProductSellableQuantityDbTx) => Promise<T>,
-    tx?: ProductSellableQuantityDbTx,
-  ): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
-  private asTx(tx?: unknown): ProductSellableQuantityDbTx | undefined {
-    return tx as ProductSellableQuantityDbTx | undefined;
-  }
-
-  async getByVariantId(variantId: string, tx?: ProductSellableQuantityDbTx): Promise<ProductSellableQuantityResult> {
+  async getByVariantId(variantId: string, tx?: AnyTx): Promise<ProductSellableQuantityResult> {
     const [projection] = await this.getByVariantIds([variantId], tx);
 
     if (!projection) {
@@ -59,7 +43,7 @@ export class ProductSellableQuantityService {
 
   async getByVariantIds(
     variantIds: string[],
-    tx?: ProductSellableQuantityDbTx,
+    tx?: AnyTx,
   ): Promise<ProductSellableQuantityResult[]> {
     const uniqueVariantIds = [...new Set(variantIds.filter(Boolean))];
 
@@ -67,7 +51,7 @@ export class ProductSellableQuantityService {
       return [];
     }
 
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const variantRows = await trx
         .select({
           id: productVariants.id,
@@ -212,14 +196,14 @@ export class ProductSellableQuantityService {
           return calculateProductSellableQuantity(input);
         })
         .filter((projection): projection is ProductSellableQuantityResult => projection !== null);
-    }, tx);
+    }, tx as MergedTx | undefined);
   }
 
   async recalculateAndPublishForVariant(
     variantId: string,
-    tx?: unknown,
+    tx?: AnyTx,
   ): Promise<{ projection: ProductSellableQuantityResult | null; published: boolean }> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       await trx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${variantId}))`);
 
       let projection: ProductSellableQuantityResult;
@@ -282,12 +266,12 @@ export class ProductSellableQuantityService {
       );
 
       return { projection, published: true };
-    }, this.asTx(tx));
+    }, tx as MergedTx | undefined);
   }
 
   async recalculateAndPublishForVariants(
     variantIds: string[],
-    tx?: unknown,
+    tx?: AnyTx,
   ): Promise<Array<{ projection: ProductSellableQuantityResult | null; published: boolean }>> {
     const uniqueVariantIds = [...new Set(variantIds.filter(Boolean))].sort((a, b) => a.localeCompare(b));
 
@@ -295,20 +279,20 @@ export class ProductSellableQuantityService {
       return [];
     }
 
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const results: Array<{ projection: ProductSellableQuantityResult | null; published: boolean }> = [];
       for (const variantId of uniqueVariantIds) {
         results.push(await this.recalculateAndPublishForVariant(variantId, trx));
       }
       return results;
-    }, this.asTx(tx));
+    }, tx as MergedTx | undefined);
   }
 
   async recalculateAndPublishForVersion(
     versionId: string,
-    tx?: unknown,
+    tx?: AnyTx,
   ): Promise<Array<{ projection: ProductSellableQuantityResult | null; published: boolean }>> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const rows = await trx
         .select({ variantId: productMasterVariants.variantId })
         .from(productMasterVariants)
@@ -318,14 +302,14 @@ export class ProductSellableQuantityService {
         rows.map((row) => row.variantId),
         trx,
       );
-    }, this.asTx(tx));
+    }, tx as MergedTx | undefined);
   }
 
   async recalculateAndPublishForSku(
     skuId: string,
-    tx?: unknown,
+    tx?: AnyTx,
   ): Promise<Array<{ projection: ProductSellableQuantityResult | null; published: boolean }>> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const rows = await trx
         .select({ variantId: wmsTables.productMatchings.variantId })
         .from(wmsTables.productVariantSkuLinks)
@@ -339,14 +323,14 @@ export class ProductSellableQuantityService {
         rows.map((row) => row.variantId),
         trx,
       );
-    }, this.asTx(tx));
+    }, tx as MergedTx | undefined);
   }
 
   async recalculateAndPublishForMaster(
     masterId: string,
-    tx?: unknown,
+    tx?: AnyTx,
   ): Promise<Array<{ projection: ProductSellableQuantityResult | null; published: boolean }>> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const rows = await trx
         .select({ variantId: productMasterVariants.variantId })
         .from(productMasterVariants)
@@ -356,7 +340,7 @@ export class ProductSellableQuantityService {
         rows.map((row) => row.variantId),
         trx,
       );
-    }, this.asTx(tx));
+    }, tx as MergedTx | undefined);
   }
 
   @Cron(CronExpression.EVERY_MINUTE, {
@@ -389,9 +373,9 @@ export class ProductSellableQuantityService {
   async refreshSalesPeriodProjections(
     now = new Date(),
     limit = 500,
-    tx?: unknown,
+    tx?: AnyTx,
   ): Promise<Array<{ projection: ProductSellableQuantityResult | null; published: boolean }>> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const rows = await trx
         .select({ variantId: productMasterVariants.variantId })
         .from(productMasterVariants)
@@ -433,7 +417,7 @@ export class ProductSellableQuantityService {
         rows.map((row) => row.variantId),
         trx,
       );
-    }, this.asTx(tx));
+    }, tx as MergedTx | undefined);
   }
 }
 
