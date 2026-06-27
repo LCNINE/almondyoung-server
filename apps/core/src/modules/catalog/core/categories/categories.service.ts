@@ -733,11 +733,7 @@ export class ProductCategoriesService {
     };
 
     // 트랜잭션 처리
-    if (tx) {
-      await executeMove(tx);
-    } else {
-      await this.db.db.transaction(executeMove);
-    }
+    await this.db.run(executeMove, tx);
   }
 
   // 고지훈 추가 - 기존 카테고리를 유지하면서 추가로 카테고리에 상품 연결 (다대다 지원)
@@ -823,11 +819,7 @@ export class ProductCategoriesService {
     };
 
     // 트랜잭션 처리
-    if (tx) {
-      await executeAdd(tx);
-    } else {
-      await this.db.db.transaction(executeAdd);
-    }
+    await this.db.run(executeAdd, tx);
   }
 
   // 검색 및 필터링
@@ -1099,11 +1091,7 @@ export class ProductCategoriesService {
     };
 
     // 트랜잭션 처리
-    if (tx) {
-      await executeRebuild(tx);
-    } else {
-      await this.db.db.transaction(executeRebuild);
-    }
+    await this.db.run(executeRebuild, tx);
   }
 
   // ===== Event Publishing Helpers =====
@@ -1428,10 +1416,8 @@ export class ProductCategoriesService {
    * 카테고리의 태그 그룹 연결 교체
    */
   async replaceTagGroupLinks(categoryId: string, links: CategoryTagGroupLinkDto[], tx?: DbTransaction): Promise<void> {
-    return this.db.db.transaction(async (trx) => {
-      const client = tx ?? trx;
-
-      const [category] = await client
+    return this.db.run(async (trx) => {
+      const [category] = await trx
         .select()
         .from(pimSchema.productCategories)
         .where(eq(pimSchema.productCategories.id, categoryId))
@@ -1441,12 +1427,12 @@ export class ProductCategoriesService {
         throw new NotFoundError(`Category not found: ${categoryId}`);
       }
 
-      await client.delete(pimSchema.categoryTagGroups).where(eq(pimSchema.categoryTagGroups.categoryId, categoryId));
+      await trx.delete(pimSchema.categoryTagGroups).where(eq(pimSchema.categoryTagGroups.categoryId, categoryId));
 
       if (links.length > 0) {
-        await this._linkTagGroups(categoryId, links, client);
+        await this._linkTagGroups(categoryId, links, trx);
       }
-    });
+    }, tx);
   }
 
   /**

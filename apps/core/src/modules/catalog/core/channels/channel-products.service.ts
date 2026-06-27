@@ -737,13 +737,7 @@ export class ChannelProductsService {
       return result;
     };
 
-    if (tx) {
-      return await executeBulkCreate(tx);
-    } else {
-      return await this.db.db.transaction(async (txn) => {
-        return await executeBulkCreate(txn);
-      });
-    }
+    return await this.db.run(executeBulkCreate, tx);
   }
 
   async getActiveProductCountByChannel(channelId: string, tx?: DbTransaction): Promise<number> {

@@ -98,11 +98,7 @@ export class ProductBulkService {
       };
 
       try {
-        if (tx) {
-          await run(tx);
-        } else {
-          await this.db.db.transaction(run);
-        }
+        await this.db.run(run, tx);
       } catch (error) {
         // active 버전이 없는 master는 skip — 기존 직접 UPDATE의 status='active' 조건과 같은 의미
         if (error instanceof NotFoundException) continue;
@@ -178,7 +174,7 @@ export class ProductBulkService {
         if (tx) {
           await tx.transaction(run);
         } else {
-          await this.db.db.transaction(run);
+          await this.db.run(run);
         }
         products.push({ ...target, status: 'active' });
       } catch (error) {
@@ -206,11 +202,7 @@ export class ProductBulkService {
       };
 
       try {
-        if (tx) {
-          await run(tx);
-        } else {
-          await this.db.db.transaction(run);
-        }
+        await this.db.run(run, tx);
       } catch (error) {
         // active 버전이 없거나 이미 삭제된 master는 skip — 기존 status='active' 필터와 같은 의미
         if (error instanceof NotFoundException || error instanceof BadRequestException) continue;
@@ -249,11 +241,7 @@ export class ProductBulkService {
       };
 
       try {
-        if (tx) {
-          await run(tx);
-        } else {
-          await this.db.db.transaction(run);
-        }
+        await this.db.run(run, tx);
       } catch (error) {
         if (error instanceof NotFoundException || error instanceof BadRequestException) continue;
         throw error;
