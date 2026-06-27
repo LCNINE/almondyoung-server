@@ -74,14 +74,6 @@ export class ProductMatchingService {
     this.strategies.set('variant', new VariantMatchingStrategy(dbService));
   }
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   private hasAvailabilityOverride(policy: StockPolicyDto | undefined): boolean {
     return !!policy && Object.prototype.hasOwnProperty.call(policy, 'availabilityOverride');
   }
@@ -277,7 +269,7 @@ export class ProductMatchingService {
 
     this.logger.log(`Creating manual matching request for master ID: ${payload.masterId}`);
 
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       let created = 0;
       let skipped = 0;
 
@@ -338,7 +330,7 @@ export class ProductMatchingService {
     tx?: DbTx,
   ): Promise<{ created: number; skipped: number }> {
     this.logger.log(`Handling automatic matching for master ID: ${payload.masterId}`);
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       let created = 0;
       let skipped = 0;
 
@@ -507,7 +499,7 @@ export class ProductMatchingService {
     const limit = params.limit ?? 50;
     const offset = params.offset ?? 0;
 
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const conditions: SQL<unknown>[] = [];
       if (params.status) {
         conditions.push(eq(wmsTables.productMatchings.status, params.status));
@@ -707,7 +699,7 @@ export class ProductMatchingService {
     const limit = params.limit ?? 50;
     const offset = params.offset ?? 0;
 
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { salesOrderLines, salesOrders, productMatchings, productVariantSkuLinks, skus } = wmsTables;
 
       const conditions: SQL<unknown>[] = [];
@@ -864,7 +856,7 @@ export class ProductMatchingService {
     } = resolveDto;
     const hasSkuMappings = Boolean((skuIds && skuIds.length > 0) || (skuMappings && skuMappings.length > 0));
 
-    const productMatching = await this.inTx(async (trx) => {
+    const productMatching = await this.dbService.run(async (trx) => {
       const [row] = await trx
         .select()
         .from(wmsTables.productMatchings)
@@ -884,7 +876,7 @@ export class ProductMatchingService {
     if (ignore || resolveAsVoid || strategy === 'void') {
       return this.resolveMatchingAsVoid(matchingId, productMatching.variantId, stockPolicy, tx);
     } else if (hasSkuMappings) {
-      return this.inTx(async (trx) => {
+      return this.dbService.run(async (trx) => {
         let mappings: SkuQuantityMapping[];
 
         if (skuMappings && skuMappings.length > 0) {
@@ -953,7 +945,7 @@ export class ProductMatchingService {
       alwaysSellableZeroStock: stockPolicy?.alwaysSellableZeroStock ?? false,
     };
 
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const [updatedMatching] = await trx
         .update(wmsTables.productMatchings)
         .set({
@@ -985,7 +977,7 @@ export class ProductMatchingService {
     auditContext?: AuditContext,
     tx?: DbTx,
   ) {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const [productMatching] = await trx
         .select()
         .from(wmsTables.productMatchings)
@@ -1100,7 +1092,7 @@ export class ProductMatchingService {
   }
 
   async setMatchingPriority(matchingId: string, priority: 'normal' | 'high', tx?: DbTx) {
-    const [updatedMatching] = await this.inTx(
+    const [updatedMatching] = await this.dbService.run(
       async (trx) =>
         trx
           .update(wmsTables.productMatchings)
@@ -1121,7 +1113,7 @@ export class ProductMatchingService {
   async handleVariantDeletion(variantId: string, tx?: DbTx) {
     this.logger.log(`Handling variant deletion for variantId: ${variantId}`);
 
-    const productMatching = await this.inTx(async (trx) => {
+    const productMatching = await this.dbService.run(async (trx) => {
       const [row] = await trx
         .select()
         .from(wmsTables.productMatchings)
@@ -1136,7 +1128,7 @@ export class ProductMatchingService {
     }
 
     if (productMatching.status === 'matched' && productMatching.strategy) {
-      await this.inTx(async (trx) => {
+      await this.dbService.run(async (trx) => {
         if (!productMatching.strategy) {
           throw new BadRequestException('strategy 값이 null입니다.');
         }
@@ -1153,7 +1145,7 @@ export class ProductMatchingService {
         );
       }, tx);
     } else {
-      await this.inTx(async (trx) => {
+      await this.dbService.run(async (trx) => {
         await trx.delete(wmsTables.productMatchings).where(eq(wmsTables.productMatchings.id, productMatching.id));
         await this.productSellableQuantity.recalculateAndPublishForVariant(variantId, trx);
       }, tx);
@@ -1171,7 +1163,7 @@ export class ProductMatchingService {
     },
     tx?: DbTx,
   ) {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const productMatching = await trx.query.productMatchings.findFirst({
         where: eq(wmsTables.productMatchings.variantId, variantId),
       });
@@ -1210,7 +1202,7 @@ export class ProductMatchingService {
   }
 
   async changeMatchingStrategy(matchingId: string, newStrategy: 'void' | 'variant', tx?: DbTx) {
-    const productMatching = await this.inTx(async (trx) => {
+    const productMatching = await this.dbService.run(async (trx) => {
       const [row] = await trx
         .select()
         .from(wmsTables.productMatchings)
@@ -1227,7 +1219,7 @@ export class ProductMatchingService {
       throw new BadRequestException('Can only change strategy for matched products');
     }
 
-    await this.inTx(async (trx) => {
+    await this.dbService.run(async (trx) => {
       if (productMatching.strategy) {
         const oldStrategy = this.getStrategy(productMatching.strategy);
         const context: MatchingContext = {
@@ -1253,7 +1245,7 @@ export class ProductMatchingService {
     selectedOptions?: Array<{ optionName: string; optionValue: string }>,
     tx?: DbTx,
   ): Promise<SkuQuantityMapping[]> {
-    const productMatching = await this.inTx(async (trx) => {
+    const productMatching = await this.dbService.run(async (trx) => {
       const [row] = await trx
         .select()
         .from(wmsTables.productMatchings)
@@ -1286,7 +1278,7 @@ export class ProductMatchingService {
     alwaysSellableZeroStock: boolean;
     availabilityOverride: 'manual_out_of_stock' | null;
   } | null> {
-    const { matching, policy } = await this.inTx(async (trx) => {
+    const { matching, policy } = await this.dbService.run(async (trx) => {
       const [row] = await trx
         .select()
         .from(wmsTables.productMatchings)
@@ -1317,7 +1309,7 @@ export class ProductMatchingService {
   }
 
   async updateStockPolicy(matchingId: string, stockPolicy: StockPolicyDto, tx?: DbTx) {
-    const [updated] = await this.inTx(async (trx) => {
+    const [updated] = await this.dbService.run(async (trx) => {
       const matchingPolicyPatch = {
         ...(stockPolicy.preStockSellable !== undefined ? { preStockSellable: stockPolicy.preStockSellable } : {}),
         ...(stockPolicy.alwaysSellableZeroStock !== undefined

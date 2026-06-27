@@ -19,16 +19,8 @@ export class WarehouseManager {
     private readonly locationService: LocationService,
   ) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   async create(dto: CreateWarehouseDto, tx?: DbTx): Promise<Warehouse> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const [newWarehouse] = await trx
         .insert(wmsTables.warehouses)
         .values({
@@ -46,7 +38,7 @@ export class WarehouseManager {
   }
 
   async update(id: string, dto: UpdateWarehouseDto, tx?: DbTx): Promise<Warehouse> {
-    const [updated] = await this.inTx(
+    const [updated] = await this.dbService.run(
       async (trx) =>
         trx
           .update(wmsTables.warehouses)
@@ -80,7 +72,7 @@ export class WarehouseManager {
       throw new ConflictError('사용 중인 창고는 삭제할 수 없습니다.');
     }
 
-    const [deleted] = await this.inTx(
+    const [deleted] = await this.dbService.run(
       async (trx) => trx.delete(wmsTables.warehouses).where(eq(wmsTables.warehouses.id, id)).returning(),
       tx,
     );
@@ -100,7 +92,7 @@ export class WarehouseManager {
         const existing = await this.reader.findOneOrNull(data.id);
 
         if (!existing) {
-          await this.inTx(async (trx) => {
+          await this.dbService.run(async (trx) => {
             await trx.insert(wmsTables.warehouses).values({
               id: data.id,
               name: data.name,

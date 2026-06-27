@@ -23,16 +23,8 @@ export class VariantPriceCacheService {
     private readonly calculatorService: PricingCalculatorService,
   ) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   async cachePricesForVersion(versionId: string, tx?: DbTransaction): Promise<number> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const [version] = await trx
         .select({ id: productMasterVersions.id })
         .from(productMasterVersions)
@@ -84,7 +76,7 @@ export class VariantPriceCacheService {
   }
 
   async getCachedPriceSetsByVersion(versionId: string, tx?: DbTransaction): Promise<CachedPriceSet[]> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       return trx
         .select({
           variantId: productVariantPriceCache.variantId,
@@ -98,7 +90,7 @@ export class VariantPriceCacheService {
   }
 
   async getPriceSummariesByVersionIds(versionIds: string[], tx?: DbTransaction): Promise<Map<string, PriceSummary>> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       if (versionIds.length === 0) {
         return new Map();
       }

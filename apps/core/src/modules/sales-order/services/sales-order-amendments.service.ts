@@ -36,12 +36,8 @@ export class SalesOrderAmendmentsService {
     private readonly db: DbService<typeof wmsSchema>,
   ) {}
 
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
-    return tx ? fn(tx) : this.db.db.transaction(fn);
-  }
-
   async create(dto: CreateSalesOrderAmendmentDto, operatorId?: string, tx?: DbTx) {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       const [salesOrder] = await trx
         .select({ id: wmsTables.salesOrders.id, status: wmsTables.salesOrders.status })
         .from(wmsTables.salesOrders)

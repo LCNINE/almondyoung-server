@@ -23,6 +23,7 @@ describe('FulfillmentOrderCreationBacklogService', () => {
       db: {
         transaction: jest.fn((fn) => fn(tx)),
       },
+      run: jest.fn((fn: (t: any) => any, aTx?: any) => fn(aTx ?? tx)),
     };
 
     return {

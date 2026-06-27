@@ -44,15 +44,11 @@ export class SkuLocationMovementService {
     private readonly dbService: DbService<typeof wmsSchema>,
   ) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
   /**
    * Record a SKU location movement
    */
   async recordMovement(dto: CreateSkuLocationMovementDto, tx?: DbTx): Promise<SkuLocationMovementResponseDto> {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const { skuLocationMovements, skus, locations } = wmsTables;
 
       // Validate: from and to locations must be different
@@ -118,7 +114,7 @@ export class SkuLocationMovementService {
     movements: SkuLocationMovementResponseDto[];
     total: number;
   }> {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const { skuLocationMovements } = wmsTables;
 
       // Get movements
@@ -156,7 +152,7 @@ export class SkuLocationMovementService {
     movements: SkuLocationMovementResponseDto[];
     total: number;
   }> {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const { skuLocationMovements } = wmsTables;
 
       // Build where clause based on direction
@@ -202,7 +198,7 @@ export class SkuLocationMovementService {
     movements: SkuLocationMovementResponseDto[];
     total: number;
   }> {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const { skuLocationMovements } = wmsTables;
 
       // Build where conditions
@@ -260,7 +256,7 @@ export class SkuLocationMovementService {
    * Get movement statistics
    */
   async getMovementStatistics(startDate?: Date, endDate?: Date, tx?: DbTx): Promise<MovementStatistics> {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const { skuLocationMovements, skus, locations } = wmsTables;
 
       // Build date filter
@@ -356,7 +352,7 @@ export class SkuLocationMovementService {
    * Get recent movements (last N movements)
    */
   async getRecentMovements(limit: number = 20, tx?: DbTx): Promise<SkuLocationMovementResponseDto[]> {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const { skuLocationMovements } = wmsTables;
 
       const movements = await tx
@@ -373,7 +369,7 @@ export class SkuLocationMovementService {
    * Get single movement by ID
    */
   async getMovementById(id: string, tx?: DbTx): Promise<SkuLocationMovementResponseDto> {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const { skuLocationMovements } = wmsTables;
 
       const result = await tx.select().from(skuLocationMovements).where(eq(skuLocationMovements.id, id)).limit(1);
@@ -391,7 +387,7 @@ export class SkuLocationMovementService {
    * Processes each movement independently - partial success is allowed
    */
   async bulkRecordMovements(dto: BulkMoveSkuLocationDto, tx?: DbTx): Promise<BulkMoveResultDto> {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const results: Array<{
         success: boolean;
         skuId?: string;
@@ -436,7 +432,7 @@ export class SkuLocationMovementService {
    * Resolves the SKU first, then records the movement
    */
   async moveSkuByIdentifier(dto: MoveSkuByIdentifierDto, tx?: DbTx): Promise<SkuLocationMovementResponseDto> {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       // Resolve SKU
       const resolvedSku = await this.resolveSkuIdentifier(dto.skuIdentifier, tx);
 
@@ -465,7 +461,7 @@ export class SkuLocationMovementService {
    * Each SKU is resolved first, then movement is recorded
    */
   async bulkMoveByIdentifier(dto: BulkMoveByIdentifierDto, tx?: DbTx): Promise<BulkMoveResultDto> {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const results: Array<{
         success: boolean;
         skuId?: string;
@@ -577,7 +573,4 @@ export class SkuLocationMovementService {
     };
   }
 
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
 }

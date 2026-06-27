@@ -50,15 +50,11 @@ export class UnifiedReservationService {
     private readonly productSellableQuantity: ProductSellableQuantityService,
   ) {}
 
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
-    return tx ? fn(tx) : this.db.db.transaction(fn);
-  }
-
   /**
    * 재고 예약 생성
    */
   async reserveStock(dto: ReserveStockDto, tx?: DbTx): Promise<Reservation> {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       // 1. 사용가능한 재고 확인
       const availableStock = await this.getAvailableStock(dto.skuId, dto.warehouseId, trx);
 
@@ -94,7 +90,7 @@ export class UnifiedReservationService {
    * 예약 해제
    */
   async releaseReservation(id: string, tx?: DbTx): Promise<void> {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       const [updated] = await trx
         .update(wmsTables.stockReservations)
         .set({
@@ -123,7 +119,7 @@ export class UnifiedReservationService {
     toTargetId: string,
     tx?: DbTx,
   ): Promise<Reservation> {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       // 기존 예약 해제
       await this.releaseReservation(fromReservationId, trx);
 
@@ -285,7 +281,7 @@ export class UnifiedReservationService {
    * 예약 만료 처리 (배치 작업용)
    */
   async releaseExpiredReservations(tx?: DbTx): Promise<number> {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       const now = new Date();
 
       const result = await trx

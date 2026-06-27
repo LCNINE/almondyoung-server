@@ -17,10 +17,6 @@ export class InventoryCommandService {
     private readonly locationService: LocationService,
   ) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
   async receive(
     input: {
       skuId: string;
@@ -106,7 +102,7 @@ export class InventoryCommandService {
 
       return { eventId: event?.id ?? null };
     };
-    return tx ? exec(tx) : this.db.transaction(exec);
+    return this.dbService.run(exec, tx);
   }
 
   async ship(
@@ -191,7 +187,7 @@ export class InventoryCommandService {
 
       return { eventId: event?.id ?? null };
     };
-    return tx ? exec(tx) : this.db.transaction(exec);
+    return this.dbService.run(exec, tx);
   }
 
   async transferShip(
@@ -227,7 +223,7 @@ export class InventoryCommandService {
       );
       return { eventId: event?.id ?? null };
     };
-    return tx ? exec(tx) : this.db.transaction(exec);
+    return this.dbService.run(exec, tx);
   }
 
   async transferReceive(
@@ -265,7 +261,7 @@ export class InventoryCommandService {
       );
       return { eventId: event?.id ?? null };
     };
-    return tx ? exec(tx) : this.db.transaction(exec);
+    return this.dbService.run(exec, tx);
   }
 
   async adjustUp(
@@ -361,7 +357,7 @@ export class InventoryCommandService {
 
       return { eventId: event?.id ?? null };
     };
-    return tx ? exec(tx) : this.db.transaction(exec);
+    return this.dbService.run(exec, tx);
   }
 
   async adjustDown(
@@ -474,7 +470,7 @@ export class InventoryCommandService {
 
       return { eventId: event?.id ?? null };
     };
-    return tx ? exec(tx) : this.db.transaction(exec);
+    return this.dbService.run(exec, tx);
   }
 
   async moveInternal(
@@ -513,7 +509,7 @@ export class InventoryCommandService {
       );
       return { eventId: event?.id ?? null };
     };
-    return tx ? exec(tx) : this.db.transaction(exec);
+    return this.dbService.run(exec, tx);
   }
 
   async reverseEvent(input: { eventId: string; reason: string }, tx?: DbTx) {
@@ -521,6 +517,6 @@ export class InventoryCommandService {
       const rev = await this.eventStore.reverseEvent(input.eventId, input.reason, trx);
       return { eventId: rev?.id ?? null };
     };
-    return tx ? exec(tx) : this.db.transaction(exec);
+    return this.dbService.run(exec, tx);
   }
 }

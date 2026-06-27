@@ -107,7 +107,7 @@ export class TagsController {
     description: '태그 그룹을 찾을 수 없음',
   })
   async updateTagGroup(@Param('id') id: string, @Body() dto: UpdateTagGroupDto): Promise<TagGroupResponseDto> {
-    return await this.db.db.transaction(async (tx) => {
+    return await this.db.run(async (tx) => {
       await this.tagsService.updateTagGroup(id, dto, tx);
       const tagGroup = await this.tagsService.getTagGroup(id, tx);
       return TagMapper.toGroupDto(tagGroup);
@@ -172,7 +172,7 @@ export class TagsController {
     @Body() body: CreateTagValueBodyDto,
   ): Promise<TagValueWithGroupNameDto> {
     const dto: CreateTagValueDto = { ...body, groupId };
-    return await this.db.db.transaction(async (tx) => {
+    return await this.db.run(async (tx) => {
       const tagValue = await this.tagsService.createTagValue(dto, tx);
       const tagGroup = await this.tagsService.getTagGroup(tagValue.groupId, tx);
       return TagMapper.toValueWithGroupDto({ ...tagValue, group: tagGroup });
@@ -199,7 +199,7 @@ export class TagsController {
     description: '태그 값을 찾을 수 없음',
   })
   async getTagValue(@Param('id') id: string): Promise<TagValueWithGroupNameDto> {
-    return await this.db.db.transaction(async (tx) => {
+    return await this.db.run(async (tx) => {
       const tagValue = await this.tagsService.getTagValue(id, tx);
       const tagGroup = await this.tagsService.getTagGroup(tagValue.groupId, tx);
       return TagMapper.toValueWithGroupDto({ ...tagValue, group: tagGroup });
@@ -231,7 +231,7 @@ export class TagsController {
     description: '중복된 태그 값',
   })
   async updateTagValue(@Param('id') id: string, @Body() dto: UpdateTagValueDto): Promise<TagValueWithGroupNameDto> {
-    return await this.db.db.transaction(async (tx) => {
+    return await this.db.run(async (tx) => {
       await this.tagsService.updateTagValue(id, dto, tx);
       const tagValue = await this.tagsService.getTagValue(id, tx);
       const tagGroup = await this.tagsService.getTagGroup(tagValue.groupId, tx);

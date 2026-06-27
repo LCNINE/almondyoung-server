@@ -10,23 +10,15 @@ import { AdvancedInventoryFiltersDto, StockDisplayMode } from '../dto/advanced-f
 export class SkuCatalogReader {
   constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   async findById(skuId: string, tx?: DbTx) {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const [row] = await trx.select().from(wmsTables.skus).where(eq(wmsTables.skus.id, skuId)).limit(1);
       return row;
     }, tx);
   }
 
   async getById(skuId: string, tx?: DbTx, warehouseId?: string): Promise<SkuResponseDto> {
-    const result = await this.inTx(async (trx) => {
+    const result = await this.dbService.run(async (trx) => {
       const [r] = await trx
         .select()
         .from(wmsTables.skus)
@@ -45,12 +37,12 @@ export class SkuCatalogReader {
       throw new NotFoundError(`SKU with ID ${skuId} not found`);
     }
 
-    const barcodes = await this.inTx(
+    const barcodes = await this.dbService.run(
       async (trx) => trx.select().from(wmsTables.skuBarcodes).where(eq(wmsTables.skuBarcodes.skuId, skuId)),
       tx,
     );
 
-    const suppliers = await this.inTx(
+    const suppliers = await this.dbService.run(
       async (trx) =>
         trx
           .select({ id: wmsTables.suppliers.id, name: wmsTables.suppliers.name })
@@ -60,7 +52,7 @@ export class SkuCatalogReader {
       tx,
     );
 
-    const categories = await this.inTx(
+    const categories = await this.dbService.run(
       async (trx) =>
         trx
           .select({ name: wmsTables.categories.name })
@@ -70,7 +62,7 @@ export class SkuCatalogReader {
       tx,
     );
 
-    const images = await this.inTx(
+    const images = await this.dbService.run(
       async (trx) =>
         trx
           .select()
@@ -82,7 +74,7 @@ export class SkuCatalogReader {
 
     let currentStock = 0;
     if (warehouseId) {
-      const [stockInfo] = await this.inTx(
+      const [stockInfo] = await this.dbService.run(
         async (trx) =>
           trx
             .select({ onHandQty: wmsSchema.stockSummary.onHandQty })
@@ -93,7 +85,7 @@ export class SkuCatalogReader {
       );
       currentStock = stockInfo?.onHandQty ?? 0;
     } else {
-      const [stockInfo] = await this.inTx(
+      const [stockInfo] = await this.dbService.run(
         async (trx) =>
           trx
             .select({ total: sql<number>`COALESCE(SUM(${wmsSchema.stockSummary.onHandQty}), 0)` })
@@ -147,7 +139,7 @@ export class SkuCatalogReader {
     },
     tx?: DbTx,
   ): Promise<SkuResponseDto[]> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       let skuIdFilter: string[] | undefined;
 
       if (query.barcode) {
@@ -269,7 +261,7 @@ export class SkuCatalogReader {
     filters: AdvancedInventoryFiltersDto,
     tx?: DbTx,
   ): Promise<{ items: SkuResponseDto[]; total: number; limit: number; offset: number }> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       if (filters.displayMode && !filters.warehouseId) {
         throw new Error('displayMode filter requires warehouseId to be specified');
       }
@@ -365,7 +357,7 @@ export class SkuCatalogReader {
     },
     tx?: DbTx,
   ): Promise<{ items: SkuResponseDto[]; total: number; limit: number; offset: number }> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { skus, skuGroups } = wmsTables;
       const conditions: SQL[] = [];
       conditions.push(eq(skus.isDeleted, true));

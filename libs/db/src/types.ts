@@ -9,6 +9,24 @@ export type DrizzleSchema = Record<string, DrizzleTable | DrizzleRelations | Dri
 
 export type TypedDatabase<TSchema extends DrizzleSchema> = PostgresJsDatabase<TSchema>;
 
+/**
+ * Canonical transaction-handle type for a given schema.
+ * The single sanctioned way to derive a per-BC tx type:
+ *   export type WmsTx = TxFor<typeof wmsSchema>;
+ */
+export type TxFor<TSchema extends DrizzleSchema> = Parameters<
+  Parameters<PostgresJsDatabase<TSchema>['transaction']>[0]
+>[0];
+
+/**
+ * Wide transaction type for cross-BC seam services that must accept a
+ * transaction opened under a different BC's schema view. This is the only
+ * sanctioned `any` surface for transaction propagation — every per-BC
+ * `TxFor<S>` is assignable to it. Seam services narrow it back with a single
+ * `tx as TxFor<TheirSchema>` at the point they run their own work.
+ */
+export type AnyTx = { select: any; insert: any; update: any; delete: any; execute: any };
+
 export type TableNames<TSchema extends DrizzleSchema> = keyof TSchema & string;
 
 export type SchemaTable<TSchema extends DrizzleSchema, TTableName extends TableNames<TSchema>> = TSchema[TTableName];

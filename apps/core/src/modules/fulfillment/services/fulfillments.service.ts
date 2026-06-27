@@ -89,19 +89,15 @@ export class FulfillmentsService {
     @Optional() private readonly salesOrderAmendments?: SalesOrderAmendmentsService,
   ) {}
 
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
-    return tx ? fn(tx) : this.db.db.transaction(fn);
-  }
-
   async requiresPhysicalFulfillmentOrder(salesOrderId: string, tx?: DbTx): Promise<boolean> {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       const items = await this.buildItemsFromSalesOrder(salesOrderId, trx);
       return items.length > 0;
     }, tx);
   }
 
   async create(dto: CreateFulfillmentOrderDto, tx?: DbTx) {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       try {
         if (dto.salesOrderId) {
           await trx.execute(sql`
@@ -223,7 +219,7 @@ export class FulfillmentsService {
     }
     const salesOrderAmendments = this.salesOrderAmendments;
 
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       if (dto.fulfillmentOrderId && dto.items?.length) {
         throw new BadRequestException(
           'Use fulfillmentOrderId to link an existing effect or items to create one, not both',
@@ -859,7 +855,7 @@ export class FulfillmentsService {
   }
 
   async split(id: string, dto: SplitFulfillmentOrderDto, tx?: DbTx) {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       // 잠금 순서 컨벤션 (ready 상태 재고 조정 액션 공통): FO(id asc) → FOI(id asc) → reservation
       // origin FO를 잠가 reserve/unreserve/transferReservation과의 동시 실행을 직렬화한다
       const [origin] = await trx
@@ -1104,7 +1100,7 @@ export class FulfillmentsService {
   }
 
   async assignShipment(id: string, dto: AssignShipmentDto, tx?: DbTx) {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       // ship()과 동일한 row lock: SELECT → INSERT 사이 동시 요청 2개가 중복 shipment를 만드는 race 차단
       await trx.execute(sql`
         SELECT id
@@ -1160,7 +1156,7 @@ export class FulfillmentsService {
   }
 
   async ship(id: string, tx?: DbTx) {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       await trx.execute(sql`
         SELECT id
         FROM ${wmsTables.fulfillmentOrders}
@@ -1275,7 +1271,7 @@ export class FulfillmentsService {
   }
 
   async markDelivered(id: string, tx?: DbTx) {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       const [fo] = await trx
         .select()
         .from(wmsTables.fulfillmentOrders)
@@ -1354,7 +1350,7 @@ export class FulfillmentsService {
     },
     tx?: DbTx,
   ) {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       const [fo] = await trx
         .select()
         .from(wmsTables.fulfillmentOrders)
@@ -1663,7 +1659,7 @@ export class FulfillmentsService {
   }
 
   async checkAvailability(fulfillmentOrderId: string, tx?: DbTx) {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       const fo = await this.getOne(fulfillmentOrderId, trx);
       if (!fo?.warehouseId) return { ready: false };
 

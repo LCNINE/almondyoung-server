@@ -168,14 +168,10 @@ export class SalesOrdersService {
     @Optional() private readonly library?: LibraryService,
   ) {}
 
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
-    return tx ? fn(tx) : this.db.db.transaction(fn);
-  }
-
   async create(dto: CreateSalesOrderDto, tx?: DbTx) {
     const timer = this.metrics?.startOrderTimer('create');
 
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       const [order] = await trx
         .insert(wmsTables.salesOrders)
         .values({
@@ -269,7 +265,7 @@ export class SalesOrdersService {
   }
 
   async update(id: string, dto: UpdateSalesOrderDto, tx?: DbTx) {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       const [salesOrder] = await trx
         .select()
         .from(wmsTables.salesOrders)
@@ -318,7 +314,7 @@ export class SalesOrdersService {
   }
 
   async confirm(id: string, warehouseId?: string, tx?: DbTx) {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       // Row lock before state check to prevent concurrent double-confirm races
       await trx.execute(sql`
         SELECT id FROM ${wmsTables.salesOrders}
@@ -378,7 +374,7 @@ export class SalesOrdersService {
   async cancel(id: string, optionsOrTx?: CancelSalesOrderOptions | DbTx, tx?: DbTx) {
     const { options, tx: explicitTx } = this.normalizeCancelArgs(optionsOrTx, tx);
 
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       this.logger.log(`Cancelling sales order: ${id}`);
 
       await trx.execute(sql`
@@ -620,7 +616,7 @@ export class SalesOrdersService {
   }
 
   async merge(dto: MergeSalesOrdersDto, tx?: DbTx) {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       const sourceIds: string[] = dto?.sourceOrderIds ?? [];
       if (!Array.isArray(sourceIds) || sourceIds.length < 2) {
         return { ok: false, reason: 'NEED_AT_LEAST_TWO_ORDERS' };
@@ -764,7 +760,7 @@ export class SalesOrdersService {
   }
 
   async createBusinessLink(id: string, dto: CreateBusinessLinkDto, tx?: DbTx) {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       const [order] = await trx
         .select({ id: wmsTables.salesOrders.id })
         .from(wmsTables.salesOrders)
@@ -826,7 +822,7 @@ export class SalesOrdersService {
   }
 
   async list(params: SalesOrderFilterDto, tx?: DbTx) {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       const conditions: SQL[] = [];
 
       if (params.startDate) {
@@ -999,7 +995,7 @@ export class SalesOrdersService {
   }
 
   async updateFromEvent(id: string, changes: OrderModifiedPayload['changes'], tx?: DbTx) {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       this.logger.warn(
         `[updateFromEvent] Ignored post-acceptance OrderModified for sales order ${id}; ` +
           'use SalesOrderAmendment or OrderCancellation workflows for contract changes.',

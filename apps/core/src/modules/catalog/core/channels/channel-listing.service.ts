@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { NotFoundError, BadRequestError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
-import { ChannelVariantListing, NewChannelVariantListing, DbTransaction } from '../../catalog.types';
+import { ChannelVariantListing, NewChannelVariantListing, DbTransaction, DbClient } from '../../catalog.types';
 import {
   type PimSchema,
   channelVariantListings,
@@ -45,7 +45,7 @@ export class ChannelListingService {
     private readonly productSellableQuantity: ProductSellableQuantityService,
   ) {}
 
-  private getClient(tx?: DbTransaction) {
+  private getClient(tx?: DbTransaction): DbClient {
     return tx ?? this.db.db;
   }
 

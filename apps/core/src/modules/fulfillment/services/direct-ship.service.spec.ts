@@ -18,7 +18,7 @@ describe('DirectShipService.markOrdersAsCompleted', () => {
       transaction: jest.fn((fn: (tx: any) => Promise<any>) => fn(mockTx)),
     };
 
-    const dbService: any = { db: mockDb };
+    const dbService: any = { db: mockDb, run: jest.fn((fn: (tx: any) => Promise<any>) => fn(mockTx)) };
     const fulfillmentsService: any = { ship: jest.fn().mockResolvedValue(undefined) };
 
     const service = new DirectShipService(dbService, fulfillmentsService);
@@ -96,7 +96,7 @@ describe('DirectShipService.forwardOrdersToCompany', () => {
       transaction: jest.fn((fn: (tx: any) => Promise<any>) => fn(mockTx)),
     };
 
-    const dbService: any = { db: mockDb };
+    const dbService: any = { db: mockDb, run: jest.fn((fn: (tx: any) => Promise<any>) => fn(mockTx)) };
     const fulfillmentsService: any = { ship: jest.fn().mockResolvedValue(undefined) };
     const service = new DirectShipService(dbService, fulfillmentsService);
     return { service, mockTx };

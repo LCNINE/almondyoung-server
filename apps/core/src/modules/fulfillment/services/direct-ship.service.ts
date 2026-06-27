@@ -1,6 +1,6 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
+import { wmsTables, wmsSchema } from '../../inventory/schema/inventory.schema';
 import { DbService } from '@app/db';
 import { and, eq, inArray, desc, isNull, or, sql } from 'drizzle-orm';
 import * as ExcelJS from 'exceljs';
@@ -292,7 +292,7 @@ export class DirectShipService {
       );
     }
 
-    await this.db.transaction(async (tx) => {
+    await this.dbService.run(async (tx) => {
       await tx
         .update(wmsTables.fulfillmentOrders)
         .set({
@@ -324,10 +324,10 @@ export class DirectShipService {
       throw new BadRequestException('Some orders are not available for completion');
     }
 
-    await this.db.transaction(async (tx) => {
+    await this.dbService.run(async (tx) => {
       // canonical ship path per FO: FOI shippedQty, FO status='shipped', shippedAt, FulfillmentShipped event
       for (const fo of foRows) {
-        await this.fulfillmentsService.ship(fo.id, tx as unknown as DbTx);
+        await this.fulfillmentsService.ship(fo.id, tx);
       }
 
       // directShipStatus is drop_ship specific; ship() doesn't set it

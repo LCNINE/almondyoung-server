@@ -13,19 +13,15 @@ export class WarehouseReader {
     return this.dbService.db;
   }
 
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   async findAll(tx?: DbTx): Promise<Warehouse[]> {
-    return this.inTx(
+    return this.dbService.run(
       async (trx) => trx.select().from(wmsTables.warehouses).orderBy(asc(wmsTables.warehouses.name)),
       tx,
     );
   }
 
   async findOne(id: string, tx?: DbTx): Promise<Warehouse> {
-    const warehouse = await this.inTx(async (trx) => {
+    const warehouse = await this.dbService.run(async (trx) => {
       const [row] = await trx.select().from(wmsTables.warehouses).where(eq(wmsTables.warehouses.id, id)).limit(1);
       return row;
     }, tx);
@@ -38,7 +34,7 @@ export class WarehouseReader {
   }
 
   async findOneOrNull(id: string, tx?: DbTx): Promise<Warehouse | undefined> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const [row] = await trx.select().from(wmsTables.warehouses).where(eq(wmsTables.warehouses.id, id)).limit(1);
       return row;
     }, tx);
