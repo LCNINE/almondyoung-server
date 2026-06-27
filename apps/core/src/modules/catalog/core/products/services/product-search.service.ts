@@ -8,13 +8,13 @@ import {
   productMasterCategories,
 } from '../../../schema/catalog.schema';
 import { ProductQueryDto } from '../dto';
-import { DbTransaction } from '../../../catalog.types';
+import { DbTransaction, DbClient } from '../../../catalog.types';
 
 @Injectable()
 export class ProductSearchService {
   constructor(@InjectDb() private readonly db: DbService<PimSchema>) {}
 
-  private getClient(tx?: DbTransaction) {
+  private getClient(tx?: DbTransaction): DbClient {
     return tx ?? this.db.db;
   }
 

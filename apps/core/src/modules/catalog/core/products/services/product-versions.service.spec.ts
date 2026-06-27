@@ -42,7 +42,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     };
 
     const service = new ProductVersionsService(
-      {} as any,
+      { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
       productPublisher as any,
       outboxPublisher as any,
       pricingValidator as any,
@@ -402,7 +402,7 @@ describe('ProductVersionsService copy mappings', () => {
     };
 
     return new ProductVersionsService(
-      {} as any,
+      { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
       productPublisher as any,
       outboxPublisher as any,
       {} as any,
@@ -614,7 +614,7 @@ describe('ProductVersionsService deleteDraftVersion purchase constraint cleanup'
     };
 
     return new ProductVersionsService(
-      {} as any,
+      { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
       productPublisher as any,
       outboxPublisher as any,
       {} as any,

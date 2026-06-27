@@ -29,14 +29,6 @@ export class PricingCalculatorService {
     private readonly dbService: DbService<typeof pimSchema>,
   ) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   async calculateVariantPriceByVersion(
     versionId: string,
     variantId: string,
@@ -44,7 +36,7 @@ export class PricingCalculatorService {
     customerType: 'regular' | 'membership' = 'regular',
     tx?: DbTransaction,
   ): Promise<PriceCalculationResult> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const [version] = await trx
         .select({
           masterId: productMasterVersions.masterId,
@@ -163,7 +155,7 @@ export class PricingCalculatorService {
   }
 
   async calculateVariantPriceSet(versionId: string, variantId: string, tx?: DbTransaction): Promise<VariantPriceSet> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const [version] = await trx
         .select({
           masterId: productMasterVersions.masterId,
@@ -238,7 +230,7 @@ export class PricingCalculatorService {
     variantIds: string[],
     tx?: DbTransaction,
   ): Promise<VariantPriceSet[]> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const [version] = await trx
         .select({ masterId: productMasterVersions.masterId })
         .from(productMasterVersions)
@@ -322,7 +314,7 @@ export class PricingCalculatorService {
     membershipPriceRules: PricingRuleEntity[];
     tieredPriceRules: PricingRuleEntity[];
   }> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const conditions: SQL[] = [eq(productMasterPricingRules.versionId, versionId)];
 
       if (layer) {
@@ -356,7 +348,7 @@ export class PricingCalculatorService {
   }
 
   async matchesScope(variantId: string, rule: PricingRuleEntity, tx?: DbTransaction): Promise<boolean> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       switch (rule.scopeType) {
         case 'all_variants':
           return true;

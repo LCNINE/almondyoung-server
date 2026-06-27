@@ -3,7 +3,7 @@ import { DbService, InjectDb } from '@app/db';
 import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { type PimSchema, productMasterVersions, productAuditLog } from '../../schema/catalog.schema';
 import { BulkUpdateDto, BulkDeleteDto, BulkRestoreDto } from './dto';
-import { DbTransaction } from '../../catalog.types';
+import { DbTransaction, DbClient } from '../../catalog.types';
 import { ProductVersionsService } from '../../core/products/services/product-versions.service';
 import { ProductMastersService } from '../../core/products/services/product-masters.service';
 
@@ -15,7 +15,7 @@ export class ProductBulkService {
     private readonly productMastersService: ProductMastersService,
   ) {}
 
-  private getClient(tx?: DbTransaction) {
+  private getClient(tx?: DbTransaction): DbClient {
     return tx ?? this.db.db;
   }
 

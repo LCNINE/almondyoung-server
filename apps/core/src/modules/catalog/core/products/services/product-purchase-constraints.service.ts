@@ -28,14 +28,6 @@ type ProductVersionRef = {
 export class ProductPurchaseConstraintsService {
   constructor(@InjectDb() private readonly db: DbService<PimSchema>) {}
 
-  private get client() {
-    return this.db.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
-    return tx ? fn(tx) : this.client.transaction(fn);
-  }
-
   isDeleteIntent(input: UpsertPurchaseConstraintDto): boolean {
     return input.requiresMembership === false && input.lifetimeQuantityLimit == null;
   }
@@ -51,7 +43,7 @@ export class ProductPurchaseConstraintsService {
     versionId: string,
     tx?: DbTransaction,
   ): Promise<PurchaseConstraintReadModel | null> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       await this.assertVersionBelongsToMaster(masterId, versionId, tx);
 
       const [row] = await tx
@@ -85,7 +77,7 @@ export class ProductPurchaseConstraintsService {
   ): Promise<PurchaseConstraintReadModel | null> {
     this.assertValidInput(input);
 
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       await this.assertDraftVersion(masterId, versionId, tx);
 
       if (this.isDeleteIntent(input)) {
@@ -170,7 +162,7 @@ export class ProductPurchaseConstraintsService {
   }
 
   async deleteForDraft(masterId: string, versionId: string, tx?: DbTransaction): Promise<void> {
-    await this.inTx(async (tx) => {
+    await this.db.run(async (tx) => {
       await this.assertDraftVersion(masterId, versionId, tx);
 
       const mapping = await this.getMapping(masterId, versionId, tx);

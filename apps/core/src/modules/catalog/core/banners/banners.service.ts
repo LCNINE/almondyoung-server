@@ -27,16 +27,8 @@ import { BannerMapper } from './mappers';
 export class BannersService {
   constructor(@InjectDb() private readonly db: DbService<PimSchema>) {}
 
-  private get client() {
-    return this.db.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
-    return tx ? fn(tx) : this.client.transaction(fn);
-  }
-
   async createBannerGroup(dto: CreateBannerGroupDto, tx?: DbTransaction): Promise<BannerGroupResponseDto> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const existingGroup = await tx
         .select()
         .from(pimSchema.bannerGroups)
@@ -56,7 +48,7 @@ export class BannersService {
   }
 
   async getBannerGroupById(id: string, tx?: DbTransaction): Promise<BannerGroupResponseDto> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const [group] = await tx
         .select()
         .from(pimSchema.bannerGroups)
@@ -72,7 +64,7 @@ export class BannersService {
   }
 
   async getBannerGroupByCode(code: string, tx?: DbTransaction): Promise<BannerGroupWithBannersResponseDto> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const [group] = await tx
         .select()
         .from(pimSchema.bannerGroups)
@@ -106,7 +98,7 @@ export class BannersService {
   }
 
   async listBannerGroups(category?: string, tx?: DbTransaction): Promise<BannerGroupResponseDto[]> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const conditions: SQL[] = [isNull(pimSchema.bannerGroups.deletedAt)];
 
       if (category) {
@@ -124,7 +116,7 @@ export class BannersService {
   }
 
   async updateBannerGroup(id: string, dto: UpdateBannerGroupDto, tx?: DbTransaction): Promise<BannerGroupResponseDto> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const updateData = {
         ...dto,
         updatedAt: new Date(),
@@ -145,7 +137,7 @@ export class BannersService {
   }
 
   async deleteBannerGroup(id: string, deletedBy?: string, tx?: DbTransaction): Promise<void> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const now = new Date();
 
       await tx
@@ -166,7 +158,7 @@ export class BannersService {
   }
 
   async createBanner(dto: CreateBannerDto, tx?: DbTransaction): Promise<BannerResponseDto> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const [group] = await tx
         .select()
         .from(pimSchema.bannerGroups)
@@ -191,7 +183,7 @@ export class BannersService {
   }
 
   async getBannerById(id: string, tx?: DbTransaction): Promise<BannerResponseDto> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const [banner] = await tx
         .select()
         .from(pimSchema.banners)
@@ -211,7 +203,7 @@ export class BannersService {
     includeInactive: boolean = false,
     tx?: DbTransaction,
   ): Promise<BannerResponseDto[]> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const conditions: SQL[] = [
         eq(pimSchema.banners.bannerGroupId, bannerGroupId),
         isNull(pimSchema.banners.deletedAt),
@@ -232,7 +224,7 @@ export class BannersService {
   }
 
   async updateBanner(id: string, dto: UpdateBannerDto, tx?: DbTransaction): Promise<BannerResponseDto> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const updateData = {
         ...dto,
         displayStartAt: dto.displayStartAt ? new Date(dto.displayStartAt) : undefined,
@@ -255,7 +247,7 @@ export class BannersService {
   }
 
   async deleteBanner(id: string, deletedBy?: string, tx?: DbTransaction): Promise<void> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const now = new Date();
 
       const [deletedBanner] = await tx

@@ -2,18 +2,14 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { and, eq } from 'drizzle-orm';
 import { type PimSchema, productMasterVersions, productApprovalHistory } from '../../schema/catalog.schema';
-import { DbTransaction, NewProductApprovalHistory } from '../../catalog.types';
+import { DbTransaction, DbClient, NewProductApprovalHistory } from '../../catalog.types';
 
 @Injectable()
 export class ProductApprovalService {
   constructor(@InjectDb() private readonly db: DbService<PimSchema>) {}
 
-  private getClient(tx?: DbTransaction) {
+  private getClient(tx?: DbTransaction): DbClient {
     return tx ?? this.db.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
-    return tx ? fn(tx) : this.db.db.transaction(fn);
   }
 
   async submitForApproval(productId: string, userId: string, tx?: DbTransaction) {
@@ -53,7 +49,7 @@ export class ProductApprovalService {
   }
 
   async approve(productId: string, userId: string, comment?: string, tx?: DbTransaction) {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       const [product] = await trx.select().from(productMasterVersions).where(eq(productMasterVersions.id, productId));
 
       if (!product) {

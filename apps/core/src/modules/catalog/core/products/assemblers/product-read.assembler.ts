@@ -46,20 +46,12 @@ export class ProductReadAssembler {
     private readonly versionReadLoader: ProductVersionReadLoader,
   ) {}
 
-  private get client() {
-    return this.db.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
-    return tx ? fn(tx) : this.client.transaction(fn);
-  }
-
   async getVersionDetail(
     versionId: string,
     options?: ProductReadAssemblerOptions,
     tx?: DbTransaction,
   ): Promise<ProductDetailDto> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const locale = options?.locale ?? 'ko-KR';
       const include: Required<ProductReadAssemblerInclude> = {
         images: true,
@@ -168,14 +160,14 @@ export class ProductReadAssembler {
     options?: ProductReadAssemblerOptions,
     tx?: DbTransaction,
   ): Promise<ProductDetailDto> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const activeVersion = await this.versionReadLoader.getActiveVersion(tx, masterId);
       return this.getVersionDetail(activeVersion.id, options, tx);
     }, tx);
   }
 
   async getPrimaryImagesByVersionIds(versionIds: string[], tx?: DbTransaction): Promise<Map<string, string>> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       if (versionIds.length === 0) {
         return new Map();
       }
@@ -193,6 +185,6 @@ export class ProductReadAssembler {
   }
 
   async getImagesByVersionId(versionId: string, tx?: DbTransaction): Promise<ProductImage[]> {
-    return this.inTx(async (tx) => this.versionReadLoader.getImages(tx, versionId), tx);
+    return this.db.run(async (tx) => this.versionReadLoader.getImages(tx, versionId), tx);
   }
 }

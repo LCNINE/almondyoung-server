@@ -21,6 +21,7 @@ import { CategoryMapper, CategoryTagGroupsEntity, CategoryTagGroupItem } from '.
 import {
   ProductMaster,
   DbTransaction,
+  DbClient,
   NewProductCategory,
   ProductCategory,
   UpdateProductCategory,
@@ -47,17 +48,13 @@ export class ProductCategoriesService {
     private readonly outboxPublisher: OutboxPublisher,
   ) {}
 
-  private getClient(tx?: DbTransaction) {
+  private getClient(tx?: DbTransaction): DbClient {
     return tx ?? this.db.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
-    return tx ? fn(tx) : this.db.db.transaction(fn);
   }
 
   // 기본 CRUD
   async createCategory(data: CreateCategoryDto, tx?: DbTransaction): Promise<CategoryResponseDto> {
-    return this.inTx(async (client) => {
+    return this.db.run(async (client) => {
       const { tagGroupLinks, ...categoryData } = data;
 
       // parentId가 있으면 부모 카테고리 조회하여 level/path 계산
@@ -129,7 +126,7 @@ export class ProductCategoriesService {
   }
 
   async updateCategory(categoryId: string, data: UpdateCategoryDto, tx?: DbTransaction): Promise<CategoryResponseDto> {
-    return this.inTx(async (client) => {
+    return this.db.run(async (client) => {
       const { tagGroupLinks, ...categoryData } = data;
       const updatingCategoryData: UpdateProductCategory = categoryData;
       const [updatedCategory] = await client
@@ -213,7 +210,7 @@ export class ProductCategoriesService {
       await this.publishCategoryEvent(categoryId, 'deleted', null, txn);
     };
 
-    await this.inTx(executeDelete, tx);
+    await this.db.run(executeDelete, tx);
   }
 
   async getCategoryById(categoryId: string, tx?: DbTransaction): Promise<CategoryDetailResponseDto> {
@@ -379,7 +376,7 @@ export class ProductCategoriesService {
     };
 
     // 트랜잭션 처리
-    const result = await this.inTx(executeMove, tx);
+    const result = await this.db.run(executeMove, tx);
 
     const responseDto: CategoryResponseDto = CategoryMapper.toDto(result);
     return responseDto;
@@ -954,7 +951,7 @@ export class ProductCategoriesService {
       }
     };
 
-    await this.inTx(executeReorder, tx);
+    await this.db.run(executeReorder, tx);
   }
 
   async updateSortOrder(categoryId: string, sortOrder: number, tx?: DbTransaction): Promise<CategoryResponseDto> {
@@ -962,7 +959,7 @@ export class ProductCategoriesService {
       throw new BadRequestError('Sort order must be non-negative');
     }
 
-    return this.inTx(async (client) => {
+    return this.db.run(async (client) => {
       // 카테고리 존재 확인
       const [category] = await client
         .select()
@@ -1173,7 +1170,7 @@ export class ProductCategoriesService {
     dto: UpdateDisplaySettingsDto,
     tx?: DbTransaction,
   ): Promise<CategoryResponseDto> {
-    return this.inTx(async (client) => {
+    return this.db.run(async (client) => {
       const [category] = await client
         .select()
         .from(pimSchema.productCategories)
@@ -1210,7 +1207,7 @@ export class ProductCategoriesService {
    * 카테고리 SEO 설정 업데이트
    */
   async updateSeoConfig(categoryId: string, dto: UpdateSeoConfigDto, tx?: DbTransaction): Promise<CategoryResponseDto> {
-    return this.inTx(async (client) => {
+    return this.db.run(async (client) => {
       const [category] = await client
         .select()
         .from(pimSchema.productCategories)
@@ -1251,7 +1248,7 @@ export class ProductCategoriesService {
     dto: UpdateTemplateConfigDto,
     tx?: DbTransaction,
   ): Promise<CategoryResponseDto> {
-    return this.inTx(async (client) => {
+    return this.db.run(async (client) => {
       const [category] = await client
         .select()
         .from(pimSchema.productCategories)
@@ -1288,7 +1285,7 @@ export class ProductCategoriesService {
    * 카테고리 표시 여부 업데이트
    */
   async updateVisibility(categoryId: string, visible: boolean, tx?: DbTransaction): Promise<CategoryResponseDto> {
-    return this.inTx(async (client) => {
+    return this.db.run(async (client) => {
       const [category] = await client
         .select()
         .from(pimSchema.productCategories)
@@ -1326,7 +1323,7 @@ export class ProductCategoriesService {
    */
   private async _getAncestorCategoryIds(
     categoryId: string,
-    tx: DbTransaction,
+    tx: DbClient,
   ): Promise<Array<{ id: string; name: string; level: number }>> {
     const recursiveQuery = sql`
       WITH RECURSIVE ancestor_categories AS (

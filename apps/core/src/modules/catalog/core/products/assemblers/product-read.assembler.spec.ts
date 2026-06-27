@@ -54,7 +54,7 @@ describe('ProductReadAssembler shared loader integration', () => {
     };
     const tagReadLoader = { getTags: jest.fn().mockResolvedValue([]) };
     const assembler = new ProductReadAssembler(
-      { db: { transaction: jest.fn() } } as any,
+      { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
       priceCacheService as any,
       optionReadLoader as any,
       tagReadLoader as any,

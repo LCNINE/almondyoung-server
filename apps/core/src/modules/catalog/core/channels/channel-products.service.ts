@@ -8,6 +8,7 @@ import {
   SalesChannel,
   ProductMasterVersion,
   DbTransaction,
+  DbClient,
 } from '../../catalog.types';
 import { type PimSchema, channelProducts, salesChannels, productMasterVersions } from '../../schema/catalog.schema';
 import { eq, and, or, like, ilike, count, asc, desc, sql, inArray, SQL } from 'drizzle-orm';
@@ -25,7 +26,7 @@ export class ChannelProductsService {
     private readonly productSellableQuantity: ProductSellableQuantityService,
   ) {}
 
-  private getClient(tx?: DbTransaction) {
+  private getClient(tx?: DbTransaction): DbClient {
     return tx ?? this.db.db;
   }
 
