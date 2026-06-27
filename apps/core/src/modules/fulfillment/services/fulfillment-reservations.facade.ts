@@ -17,10 +17,6 @@ export class FulfillmentReservationsFacade {
     private readonly policies: PoliciesService,
   ) {}
 
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
-    return tx ? fn(tx) : this.db.db.transaction(fn);
-  }
-
   private readonly TERMINAL_STATUSES = ['shipped', 'completed', 'canceled'] as const;
 
   private readonly RESERVATION_TRANSFER_ALLOWED_STATUS_LIST = [
@@ -39,7 +35,7 @@ export class FulfillmentReservationsFacade {
     dto: { fulfillmentOrderItemId: string; quantity: number },
     tx?: DbTx,
   ) {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       if (dto.quantity <= 0) {
         throw new BadRequestException('Reserve quantity must be greater than 0');
       }
@@ -128,7 +124,7 @@ export class FulfillmentReservationsFacade {
     dto: { fulfillmentOrderItemId: string; quantity: number },
     tx?: DbTx,
   ) {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       // 잠금 순서 컨벤션: FO(id asc) → FOI(id asc) → stock_reservations(createdAt, id asc)
       const [preFoi] = await trx
         .select({
@@ -235,7 +231,7 @@ export class FulfillmentReservationsFacade {
     },
     tx?: DbTx,
   ) {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       if (dto.quantity <= 0) {
         throw new BadRequestException('이전 수량은 1 이상이어야 합니다.');
       }
