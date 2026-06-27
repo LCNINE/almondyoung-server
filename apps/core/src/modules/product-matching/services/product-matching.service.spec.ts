@@ -32,8 +32,8 @@ describe('ProductMatchingService strategy semantics', () => {
     };
     const transactionTxs = [...(options.transactionTxs ?? [])];
     const dbService = {
+      run: jest.fn(async (fn, tx) => tx ? fn(tx) : fn(transactionTxs.shift() ?? makeTx())),
       db: {
-        transaction: jest.fn(async (fn) => fn(transactionTxs.shift() ?? makeTx())),
         query: {
           skus: {
             findFirst: jest.fn().mockResolvedValue({ id: '44444444-4444-4444-4444-444444444444' }),
@@ -276,7 +276,7 @@ describe('ProductMatchingService strategy semantics', () => {
 
     await service.resolveMatchingPending(matching.id, { strategy: 'void' } as ResolveMatchingDto);
 
-    expect(dbService.db.transaction).toHaveBeenCalledTimes(2);
+    expect(dbService.run).toHaveBeenCalledTimes(2);
     expect(updateTx.updates[0]).toMatchObject({
       status: 'matched',
       strategy: 'void',
