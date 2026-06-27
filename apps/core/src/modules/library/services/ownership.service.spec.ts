@@ -67,7 +67,7 @@ describe('OwnershipService.getDownloadable — currentFileVersionId 라우팅 (�
   }
 
   function makeService(): OwnershipService {
-    const fakeDb: any = { db: {} };
+    const fakeDb: any = { db: {}, run: (fn: any, tx?: any) => fn(tx) };
     return new OwnershipService(fakeDb);
   }
 
@@ -191,7 +191,7 @@ describe('OwnershipService.listForCustomer — revokedAt IS NULL 필터 (이슈 
   }
 
   function makeService(): OwnershipService {
-    const fakeDb: any = { db: {} };
+    const fakeDb: any = { db: {}, run: (fn: any, tx?: any) => fn(tx) };
     return new OwnershipService(fakeDb);
   }
 
@@ -238,7 +238,7 @@ describe('OwnershipService.listForCustomer — revokedAt IS NULL 필터 (이슈 
  */
 describe('OwnershipService — 어드민 (#457)', () => {
   function makeService(): OwnershipService {
-    const fakeDb: any = { db: {} };
+    const fakeDb: any = { db: {}, run: (fn: any, tx?: any) => fn(tx) };
     return new OwnershipService(fakeDb);
   }
 
