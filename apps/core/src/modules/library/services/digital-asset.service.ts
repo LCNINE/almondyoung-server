@@ -1,5 +1,5 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
-import { DbService, InjectDb } from '@app/db';
+import { DbService, InjectDb, TxFor } from '@app/db';
 import { NotFoundError, BadRequestError } from '@app/shared';
 import { and, count, desc, eq, ilike, inArray, isNull, max as drizzleMax } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
@@ -15,7 +15,7 @@ import {
 } from '../dto/digital-asset-response.dto';
 import { FileServiceClient } from '../clients/file-service.client';
 
-type Tx = Parameters<Parameters<DbService<LibrarySchema>['db']['transaction']>[0]>[0];
+type LibraryTx = TxFor<LibrarySchema>;
 const DIGITAL_ASSET_FILE_CONTEXT_ID = 'digital-asset-file';
 
 @Injectable()
@@ -27,24 +27,16 @@ export class DigitalAssetService {
     @Optional() private readonly fileServiceClient?: FileServiceClient,
   ) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(fn: (tx: Tx) => Promise<T>, tx?: Tx): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   async createAsset(
     dto: CreateDigitalAssetDto,
     operatorId: string | undefined,
-    tx?: Tx,
+    tx?: LibraryTx,
   ): Promise<DigitalAssetResponseDto> {
     if (dto.initialFileId) {
       await this._assertFileReferenceUsable(dto.initialFileId);
     }
 
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const assetId = uuidv7();
       await trx.insert(digitalAssets).values({
         id: assetId,
@@ -73,9 +65,9 @@ export class DigitalAssetService {
     assetId: string,
     dto: UpdateDigitalAssetDto,
     operatorId: string | undefined,
-    tx?: Tx,
+    tx?: LibraryTx,
   ): Promise<DigitalAssetResponseDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       await this._assertAssetExists(assetId, trx);
 
       const patch: Partial<typeof digitalAssets.$inferInsert> = {
@@ -92,8 +84,8 @@ export class DigitalAssetService {
     }, tx);
   }
 
-  async deleteAsset(assetId: string, operatorId: string | undefined, tx?: Tx): Promise<void> {
-    return this.inTx(async (trx) => {
+  async deleteAsset(assetId: string, operatorId: string | undefined, tx?: LibraryTx): Promise<void> {
+    return this.dbService.run(async (trx) => {
       await this._assertAssetExists(assetId, trx);
       await trx
         .update(digitalAssets)
@@ -102,15 +94,15 @@ export class DigitalAssetService {
     }, tx);
   }
 
-  async getAsset(assetId: string, tx?: Tx): Promise<DigitalAssetResponseDto> {
-    return this.inTx((trx) => this._loadAssetOrThrow(assetId, trx), tx);
+  async getAsset(assetId: string, tx?: LibraryTx): Promise<DigitalAssetResponseDto> {
+    return this.dbService.run((trx) => this._loadAssetOrThrow(assetId, trx), tx);
   }
 
   async listAssets(
     filters: { q?: string; page?: number; limit?: number } = {},
-    tx?: Tx,
+    tx?: LibraryTx,
   ): Promise<DigitalAssetListResponseDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const page = Math.max(1, filters.page ?? 1);
       const limit = Math.min(100, Math.max(1, filters.limit ?? 20));
       const offset = (page - 1) * limit;
@@ -147,19 +139,19 @@ export class DigitalAssetService {
     assetId: string,
     dto: CreateFileVersionDto,
     operatorId: string | undefined,
-    tx?: Tx,
+    tx?: LibraryTx,
   ): Promise<DigitalAssetFileVersionDto> {
     await this._assertFileReferenceUsable(dto.fileId);
 
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       await this._assertAssetExists(assetId, trx);
       const row = await this._insertFileVersion(assetId, dto, operatorId, trx);
       return row;
     }, tx);
   }
 
-  async listFileVersions(assetId: string, tx?: Tx): Promise<DigitalAssetFileVersionDto[]> {
-    return this.inTx(async (trx) => {
+  async listFileVersions(assetId: string, tx?: LibraryTx): Promise<DigitalAssetFileVersionDto[]> {
+    return this.dbService.run(async (trx) => {
       await this._assertAssetExists(assetId, trx);
       const rows = await trx
         .select()
@@ -184,9 +176,9 @@ export class DigitalAssetService {
     assetId: string,
     versionId: string,
     operatorId: string | undefined,
-    tx?: Tx,
+    tx?: LibraryTx,
   ): Promise<DigitalAssetResponseDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const [assetRow] = await trx.select().from(digitalAssets).where(eq(digitalAssets.id, assetId));
       if (!assetRow || assetRow.deletedAt) {
         throw new NotFoundError(`Digital asset not found: ${assetId}`);
@@ -226,7 +218,7 @@ export class DigitalAssetService {
     assetId: string,
     dto: CreateFileVersionDto,
     operatorId: string | undefined,
-    trx: Tx,
+    trx: LibraryTx,
   ): Promise<DigitalAssetFileVersionDto> {
     const [maxRow] = await trx
       .select({ max: drizzleMax(digitalAssetFileVersions.version) })
@@ -260,7 +252,7 @@ export class DigitalAssetService {
     return row;
   }
 
-  private async _loadAssetOrThrow(assetId: string, trx: Tx): Promise<DigitalAssetResponseDto> {
+  private async _loadAssetOrThrow(assetId: string, trx: LibraryTx): Promise<DigitalAssetResponseDto> {
     const [row] = await trx.select().from(digitalAssets).where(eq(digitalAssets.id, assetId));
     if (!row || row.deletedAt) {
       throw new NotFoundError(`Digital asset not found: ${assetId}`);
@@ -277,7 +269,7 @@ export class DigitalAssetService {
     return this._toDto(row, currentVersion);
   }
 
-  private async _assertAssetExists(assetId: string, trx: Tx): Promise<void> {
+  private async _assertAssetExists(assetId: string, trx: LibraryTx): Promise<void> {
     const [row] = await trx
       .select({ id: digitalAssets.id, deletedAt: digitalAssets.deletedAt })
       .from(digitalAssets)
@@ -310,7 +302,7 @@ export class DigitalAssetService {
 
   private async _loadCurrentFileVersions(
     versionIds: string[],
-    trx: Tx,
+    trx: LibraryTx,
   ): Promise<Map<string, DigitalAssetFileVersionDto>> {
     if (versionIds.length === 0) return new Map();
     const rows = await trx

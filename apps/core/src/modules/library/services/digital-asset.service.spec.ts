@@ -64,7 +64,7 @@ describe('DigitalAssetService.rollbackToFileVersion', () => {
   }
 
   function makeService(): DigitalAssetService {
-    const fakeDb: any = { db: {} };
+    const fakeDb: any = { db: {}, run: (fn: any, tx?: any) => fn(tx) };
     return new DigitalAssetService(fakeDb);
   }
 

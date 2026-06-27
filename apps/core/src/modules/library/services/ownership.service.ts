@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { DbService, InjectDb } from '@app/db';
+import { DbService, InjectDb, TxFor } from '@app/db';
 import { BadRequestError, ForbiddenError, NotFoundError } from '@app/shared';
 import { and, count, desc, eq, inArray, isNotNull, isNull, type SQL } from 'drizzle-orm';
 
@@ -22,7 +22,7 @@ import {
   GrantOwnershipDto,
 } from '../dto/admin-ownership.dto';
 
-type Tx = Parameters<Parameters<DbService<LibrarySchema>['db']['transaction']>[0]>[0];
+type LibraryTx = TxFor<LibrarySchema>;
 
 export type OwnershipFilter = 'all' | 'new' | 'used';
 
@@ -36,20 +36,12 @@ export class OwnershipService {
 
   constructor(@InjectDb() private readonly dbService: DbService<LibrarySchema>) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(fn: (tx: Tx) => Promise<T>, tx?: Tx): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   async listForCustomer(
     customerId: string,
     opts: { skip?: number; take?: number; filter?: OwnershipFilter } = {},
-    tx?: Tx,
+    tx?: LibraryTx,
   ): Promise<OwnershipListResponseDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const skip = Math.max(0, opts.skip ?? 0);
       const take = Math.min(100, Math.max(1, opts.take ?? 20));
       const filter = opts.filter ?? 'all';
@@ -106,9 +98,9 @@ export class OwnershipService {
   async exercise(
     ownershipId: string,
     customerId: string,
-    tx?: Tx,
+    tx?: LibraryTx,
   ): Promise<OwnershipResponseDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const ownership = await this._loadOwnedOrThrow(ownershipId, customerId, trx);
 
       if (!ownership.ownership.exercisedAt) {
@@ -131,9 +123,9 @@ export class OwnershipService {
   async getDownloadable(
     ownershipId: string,
     customerId: string,
-    tx?: Tx,
+    tx?: LibraryTx,
   ): Promise<{ fileId: string; assetName: string; assetMimeType: string | null }> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { ownership, asset } = await this._loadOwnedOrThrow(ownershipId, customerId, trx);
 
       if (!ownership.exercisedAt) {
@@ -177,9 +169,9 @@ export class OwnershipService {
       skip?: number;
       take?: number;
     } = {},
-    tx?: Tx,
+    tx?: LibraryTx,
   ): Promise<AdminOwnershipListResponseDto> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const skip = Math.max(0, opts.skip ?? 0);
       const take = Math.min(100, Math.max(1, opts.take ?? 20));
       const status = opts.status ?? 'all';
@@ -220,8 +212,8 @@ export class OwnershipService {
    * 어드민 수동 부여. (customerId, assetId, salesOrderId) unique 로 멱등 —
    * 이미 있으면 기존 row 를 그대로 돌려준다.
    */
-  async grantManual(dto: GrantOwnershipDto, tx?: Tx): Promise<AdminOwnershipResponseDto> {
-    return this.inTx(async (trx) => {
+  async grantManual(dto: GrantOwnershipDto, tx?: LibraryTx): Promise<AdminOwnershipResponseDto> {
+    return this.dbService.run(async (trx) => {
       const [asset] = await trx
         .select({ id: digitalAssets.id })
         .from(digitalAssets)
@@ -304,8 +296,8 @@ export class OwnershipService {
   /**
    * 어드민 강제 회수. exercise 여부와 무관하게 revoke 한다 (고객 본인 다운로드 차단용).
    */
-  async adminRevoke(ownershipId: string, reason: string | null, tx?: Tx): Promise<AdminOwnershipResponseDto> {
-    return this.inTx(async (trx) => {
+  async adminRevoke(ownershipId: string, reason: string | null, tx?: LibraryTx): Promise<AdminOwnershipResponseDto> {
+    return this.dbService.run(async (trx) => {
       const updated = await trx
         .update(digitalAssetOwnerships)
         .set({ revokedAt: new Date(), revokedReason: reason })
@@ -322,8 +314,8 @@ export class OwnershipService {
   /**
    * 어드민 재발급. revoke 된 ownership 을 다시 활성화해 고객이 다시 다운로드할 수 있게 한다.
    */
-  async adminResend(ownershipId: string, tx?: Tx): Promise<AdminOwnershipResponseDto> {
-    return this.inTx(async (trx) => {
+  async adminResend(ownershipId: string, tx?: LibraryTx): Promise<AdminOwnershipResponseDto> {
+    return this.dbService.run(async (trx) => {
       const updated = await trx
         .update(digitalAssetOwnerships)
         .set({ revokedAt: null, revokedReason: null })
@@ -342,7 +334,7 @@ export class OwnershipService {
   private async _loadOwnedOrThrow(
     ownershipId: string,
     customerId: string,
-    trx: Tx,
+    trx: LibraryTx,
   ): Promise<{
     ownership: typeof digitalAssetOwnerships.$inferSelect;
     asset: typeof digitalAssets.$inferSelect;
@@ -366,7 +358,7 @@ export class OwnershipService {
     return row;
   }
 
-  private async _loadAdminDto(ownershipId: string, trx: Tx): Promise<AdminOwnershipResponseDto> {
+  private async _loadAdminDto(ownershipId: string, trx: LibraryTx): Promise<AdminOwnershipResponseDto> {
     const [row] = await trx
       .select({ ownership: digitalAssetOwnerships, asset: digitalAssets })
       .from(digitalAssetOwnerships)

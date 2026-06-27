@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DbService, InjectDb } from '@app/db';
+import { DbService, InjectDb, TxFor } from '@app/db';
 import { BadRequestError, ForbiddenError, NotFoundError } from '@app/shared';
 import { eq } from 'drizzle-orm';
 import { type MergedSchema } from '../../../platform/database/merged-schema';
@@ -13,22 +13,13 @@ import {
   type CsCaseComment,
 } from '../schema/customer-service.schema';
 
-type Db = DbService<MergedSchema>['db'];
-type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
+type CsTx = TxFor<MergedSchema>;
 
 @Injectable()
 export class CsCommentsService {
   constructor(@InjectDb() private readonly dbService: DbService<MergedSchema>) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(fn: (tx: Tx) => Promise<T>, tx?: Tx): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
-  private async loadCommentOrThrow(commentId: string, tx: Tx): Promise<CsCaseComment> {
+  private async loadCommentOrThrow(commentId: string, tx: CsTx): Promise<CsCaseComment> {
     const [row] = await tx.select().from(csCaseComments).where(eq(csCaseComments.id, commentId)).limit(1);
     if (!row) throw new NotFoundError(`CS comment ${commentId} not found`);
     return row;
@@ -40,7 +31,7 @@ export class CsCommentsService {
     }
   }
 
-  async addComment(csCaseId: string, dto: CreateCsCommentDto, authorId: string, tx?: Tx) {
+  async addComment(csCaseId: string, dto: CreateCsCommentDto, authorId: string, tx?: CsTx) {
     const body = dto.body?.trim();
     if (!body) throw new BadRequestError('Comment body must not be empty');
 
@@ -52,7 +43,7 @@ export class CsCommentsService {
       throw new BadRequestError('Attachment fileId must not be empty');
     }
 
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const [csCase] = await trx.select().from(csCases).where(eq(csCases.id, csCaseId)).limit(1);
       if (!csCase) throw new NotFoundError(`CS Case ${csCaseId} not found`);
 
@@ -82,11 +73,11 @@ export class CsCommentsService {
     }, tx);
   }
 
-  async editComment(csCaseId: string, commentId: string, dto: EditCsCommentDto, actorId: string, tx?: Tx) {
+  async editComment(csCaseId: string, commentId: string, dto: EditCsCommentDto, actorId: string, tx?: CsTx) {
     const body = dto.body?.trim();
     if (!body) throw new BadRequestError('Comment body must not be empty');
 
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const comment = await this.loadCommentOrThrow(commentId, trx);
       this.assertCommentBelongsToCase(comment, csCaseId);
       if (comment.deletedAt) throw new BadRequestError('Cannot edit a deleted comment');
@@ -101,8 +92,8 @@ export class CsCommentsService {
     }, tx);
   }
 
-  async deleteComment(csCaseId: string, commentId: string, actorId: string, tx?: Tx) {
-    return this.inTx(async (trx) => {
+  async deleteComment(csCaseId: string, commentId: string, actorId: string, tx?: CsTx) {
+    return this.dbService.run(async (trx) => {
       const comment = await this.loadCommentOrThrow(commentId, trx);
       this.assertCommentBelongsToCase(comment, csCaseId);
       if (comment.authorId !== actorId) throw new ForbiddenError('Only the author can delete this comment');

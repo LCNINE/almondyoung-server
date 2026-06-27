@@ -77,7 +77,7 @@ describe('LibraryService', () => {
   }
 
   function makeService(): LibraryService {
-    const fakeDbService: any = { db: {} };
+    const fakeDbService: any = { db: {}, run: (fn: any, tx?: any) => fn(tx) };
     return new LibraryService(fakeDbService);
   }
 
