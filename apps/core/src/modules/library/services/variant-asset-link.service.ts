@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { DbService, InjectDb } from '@app/db';
+import { AnyTx, DbService, InjectDb, TxFor } from '@app/db';
 import { NotFoundError } from '@app/shared';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 
@@ -14,15 +14,9 @@ import {
   DigitalAssetResponseDto,
 } from '../dto/digital-asset-response.dto';
 
-type Tx = Parameters<Parameters<DbService<LibrarySchema>['db']['transaction']>[0]>[0];
-
-/**
- * cloneLinksForVariant / inheritLinksFromTwins 는 catalog 트랜잭션 안에서 호출되며,
- * 그 트랜잭션은 PimSchema 타입을 들고 있다. drizzle 트랜잭션은 임의 table 에 대한
- * insert/select 가 schema 타입과 무관하게 작동하므로, 외부 BC 가 넘기는 트랜잭션을
- * 받기 위한 느슨한 타입을 둔다.
- */
-type AnyTx = { insert: any; select: any; delete: any; update: any };
+// Canonical per-BC tx type for this service's own transactions.
+// AnyTx (imported from @app/db) is used by cross-BC seam methods (cloneLinksForVariant, inheritLinksFromTwins, listAssetsForVariant).
+type LibraryTx = TxFor<LibrarySchema>;
 
 @Injectable()
 export class VariantAssetLinkService {
@@ -30,18 +24,10 @@ export class VariantAssetLinkService {
 
   constructor(@InjectDb() private readonly dbService: DbService<LibrarySchema>) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(fn: (tx: Tx) => Promise<T>, tx?: Tx): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   // tx 는 AnyTx 로 받아 다른 BC(catalog publish 등)의 트랜잭션도 그대로 전달할 수 있게 한다.
   // (동일 DB 내 테이블이라 런타임 안전; cloneLinksForVariant 와 동일한 cross-module tx 컨벤션)
   async listAssetsForVariant(variantId: string, tx?: AnyTx): Promise<DigitalAssetResponseDto[]> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const rows = await trx
         .select()
         .from(productVariantDigitalAssetLinks)
@@ -72,7 +58,7 @@ export class VariantAssetLinkService {
           updatedAt: a.updatedAt,
         };
       });
-    }, tx as Tx | undefined);
+    }, tx as LibraryTx | undefined);
   }
 
   /**
@@ -82,9 +68,9 @@ export class VariantAssetLinkService {
     variantId: string,
     assetIds: string[],
     operatorId: string | undefined,
-    tx?: Tx,
+    tx?: LibraryTx,
   ): Promise<void> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const unique = Array.from(new Set(assetIds));
       if (unique.length > 0) {
         const existing = await trx
@@ -118,9 +104,9 @@ export class VariantAssetLinkService {
     variantId: string,
     assetId: string,
     operatorId: string | undefined,
-    tx?: Tx,
+    tx?: LibraryTx,
   ): Promise<void> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const [asset] = await trx
         .select({ id: digitalAssets.id, deletedAt: digitalAssets.deletedAt })
         .from(digitalAssets)
@@ -135,8 +121,8 @@ export class VariantAssetLinkService {
     }, tx);
   }
 
-  async removeLink(variantId: string, assetId: string, tx?: Tx): Promise<void> {
-    return this.inTx(async (trx) => {
+  async removeLink(variantId: string, assetId: string, tx?: LibraryTx): Promise<void> {
+    return this.dbService.run(async (trx) => {
       await trx
         .delete(productVariantDigitalAssetLinks)
         .where(
@@ -219,7 +205,7 @@ export class VariantAssetLinkService {
 
   private async _loadFileVersions(
     versionIds: string[],
-    trx: Tx,
+    trx: LibraryTx,
   ): Promise<Map<string, DigitalAssetFileVersionDto>> {
     if (versionIds.length === 0) return new Map();
     const rows = await trx
