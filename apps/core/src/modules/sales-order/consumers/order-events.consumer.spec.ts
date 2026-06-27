@@ -58,9 +58,7 @@ describe('OrderEventsConsumer', () => {
       }),
     };
     const dbService = {
-      db: {
-        transaction: (fn: (tx: any) => Promise<unknown>) => fn(fakeTx),
-      },
+      run: jest.fn((fn: (tx: any) => Promise<unknown>, tx?: any) => tx ? fn(tx) : fn(fakeTx)),
     };
     return {
       salesOrders: {
