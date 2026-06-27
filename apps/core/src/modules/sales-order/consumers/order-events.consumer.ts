@@ -38,14 +38,6 @@ export class OrderEventsConsumer {
     private readonly dbService: DbService<typeof wmsSchema>,
   ) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   private async checkAndRecordEvent(
     eventId: string,
     orderId: string,
@@ -82,7 +74,7 @@ export class OrderEventsConsumer {
     });
 
     try {
-      await this.inTx(async (tx) => {
+      await this.dbService.run(async (tx) => {
         const externalOrderId = payload.externalOrderId ?? payload.orderId;
         const existing = await this.salesOrdersService.findByChannelOrderId(payload.salesChannel, externalOrderId, tx);
 
@@ -128,7 +120,7 @@ export class OrderEventsConsumer {
     });
 
     try {
-      await this.inTx(async (tx) => {
+      await this.dbService.run(async (tx) => {
         const salesOrder = await this.salesOrdersService.getOne(payload.orderId, tx);
         if (!salesOrder) {
           throw new NotFoundException(`Sales order ${payload.orderId} not found for OrderCancelled`);
@@ -178,7 +170,7 @@ export class OrderEventsConsumer {
     });
 
     try {
-      await this.inTx(async (tx) => {
+      await this.dbService.run(async (tx) => {
         const salesOrder = await this.salesOrdersService.getOne(payload.orderId, tx);
         if (!salesOrder) {
           this.logger.warn(`[OrderModified] Sales order not found, skipping: ${payload.orderId}`);
@@ -214,7 +206,7 @@ export class OrderEventsConsumer {
     });
 
     try {
-      await this.inTx(async (tx) => {
+      await this.dbService.run(async (tx) => {
         const salesOrder = await this.salesOrdersService.getOne(payload.orderId, tx);
         if (!salesOrder) {
           throw new NotFoundException(`Sales order ${payload.orderId} not found for OrderRefundCreated`);
