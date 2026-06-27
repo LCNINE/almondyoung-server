@@ -15,10 +15,6 @@ export class ReservationLifecycleService {
     private readonly productSellableQuantity: ProductSellableQuantityService,
   ) {}
 
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
-    return tx ? fn(tx) : this.db.db.transaction(fn);
-  }
-
   private async recalculateSellableQuantityForReservationSku(reservation: { skuId: string }, tx: DbTx): Promise<void> {
     await this.productSellableQuantity.recalculateAndPublishForSku(reservation.skuId, tx);
   }
@@ -32,7 +28,7 @@ export class ReservationLifecycleService {
     newStatus: string,
     tx?: DbTx,
   ): Promise<void> {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       switch (newStatus) {
         case 'canceled':
           await this.releaseFulfillmentOrderReservations(fulfillmentOrderId, 'FO canceled', trx);
@@ -62,7 +58,7 @@ export class ReservationLifecycleService {
     newStatus: string,
     tx?: DbTx,
   ): Promise<void> {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       switch (newStatus) {
         case 'canceled':
           await this.releaseMovementTaskReservations(movementTaskId, 'Movement task canceled', trx);
@@ -194,7 +190,7 @@ export class ReservationLifecycleService {
    * 예약 만료 배치 처리
    */
   async processExpiredReservations(tx?: DbTx): Promise<number> {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       const expiredReservations = await trx.query.stockReservations.findMany({
         where: and(
           eq(wmsTables.stockReservations.status, 'confirmed'),
@@ -246,7 +242,7 @@ export class ReservationLifecycleService {
     // 이동량 = min(splitQuantity, 원본 FOI confirmed 합계). FOI reservedQty와
     // FO totalReservedQty 갱신도 실제 이동량 기준으로 여기서 수행한다.
     // 잠금 컨벤션: FO/FOI는 호출자(split)가 잠그고, reservation row는 여기서 createdAt, id 순으로 잠근다.
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       let totalMoved = 0;
 
       for (const item of splitItems) {
@@ -352,7 +348,7 @@ export class ReservationLifecycleService {
    * FO 병합시 예약 통합
    */
   async handleFulfillmentOrderMerge(sourceFoIds: string[], targetFoId: string, tx?: DbTx): Promise<void> {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       for (const sourceFoId of sourceFoIds) {
         // 1. 소스 FO의 모든 예약 조회
         const sourceReservations = await this.unifiedReservation.getReservationsByTarget(
@@ -395,7 +391,7 @@ export class ReservationLifecycleService {
     transferQuantity: number,
     tx?: DbTx,
   ): Promise<void> {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       // 해당 아이템의 예약 조회
       const itemReservations = await trx.query.stockReservations.findMany({
         where: and(
@@ -458,7 +454,7 @@ export class ReservationLifecycleService {
     newQuantity: number,
     tx?: DbTx,
   ): Promise<void> {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       const quantityDiff = newQuantity - oldQuantity;
 
       if (quantityDiff === 0) return;

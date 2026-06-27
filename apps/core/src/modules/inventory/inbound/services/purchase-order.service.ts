@@ -30,19 +30,11 @@ export class PurchaseOrderService {
     private readonly transactionService: TransactionService,
   ) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   /**
    * 발주 생성
    */
   async createPurchaseOrder(createDto: CreatePurchaseOrderDto, tx?: DbTx): Promise<PurchaseOrderResponse> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       // 임시: 창고 라우팅 로직 (나중에 DTO로 받도록 개선)
       const destinationWarehouseId = createDto.destinationWarehouseId;
       const sourceWarehouseId = await this.getSupplierDefaultWarehouseId(createDto.supplierId, trx);
@@ -89,7 +81,7 @@ export class PurchaseOrderService {
     userId: string,
     tx?: DbTx,
   ): Promise<PurchaseOrderResponse> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const cartItems = await trx
         .select({
           id: wmsTables.purchaseOrderCart.id,
@@ -160,7 +152,7 @@ export class PurchaseOrderService {
     updateDto: UpdatePurchaseOrderStatusDto,
     tx?: DbTx,
   ): Promise<PurchaseOrderResponse> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const [existingPO] = await trx
         .select()
         .from(wmsTables.purchaseOrders)
@@ -205,7 +197,7 @@ export class PurchaseOrderService {
     updateDto: UpdatePurchaseOrderLinesDto,
     tx?: DbTx,
   ): Promise<PurchaseOrderResponse> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       // 1. PO 존재 및 상태 확인
       const [po] = await trx
         .select()
@@ -420,7 +412,7 @@ export class PurchaseOrderService {
    * 발주 조회
    */
   async getPurchaseOrderById(poId: string, tx?: DbTx): Promise<PurchaseOrderResponse> {
-    return this.inTx(async (trx: DbTx) => {
+    return this.dbService.run(async (trx: DbTx) => {
       const [po] = await trx
         .select()
         .from(wmsTables.purchaseOrders)
@@ -501,7 +493,7 @@ export class PurchaseOrderService {
       conditions.push(eq(wmsTables.purchaseOrders.type, type));
     }
 
-    const purchaseOrders = await this.inTx(
+    const purchaseOrders = await this.dbService.run(
       async (trx) =>
         trx
           .select()
@@ -514,7 +506,7 @@ export class PurchaseOrderService {
     );
     const results = [] as PurchaseOrderResponse[];
     for (const po of purchaseOrders) {
-      const lines = await this.inTx(
+      const lines = await this.dbService.run(
         async (trx) =>
           trx
             .select({
@@ -535,7 +527,7 @@ export class PurchaseOrderService {
       );
 
       const supplier = po.supplierId
-        ? await this.inTx(async (trx) => {
+        ? await this.dbService.run(async (trx) => {
             const [row] = await trx
               .select()
               .from(wmsTables.suppliers)
@@ -574,7 +566,7 @@ export class PurchaseOrderService {
    * 장바구니에 아이템 추가
    */
   async addToCart(addDto: AddToCartDto, userId: string, tx?: DbTx): Promise<CartItemResponse> {
-    const existingItem = await this.inTx(async (trx) => {
+    const existingItem = await this.dbService.run(async (trx) => {
       const [row] = await trx
         .select()
         .from(wmsTables.purchaseOrderCart)
@@ -590,7 +582,7 @@ export class PurchaseOrderService {
     }, tx);
 
     if (existingItem) {
-      await this.inTx(
+      await this.dbService.run(
         async (trx) =>
           trx
             .update(wmsTables.purchaseOrderCart)
@@ -604,7 +596,7 @@ export class PurchaseOrderService {
       );
       return this.getCartItemById(existingItem.id, userId, tx);
     } else {
-      const [cartItem] = await this.inTx(
+      const [cartItem] = await this.dbService.run(
         async (trx) =>
           trx
             .insert(wmsTables.purchaseOrderCart)
@@ -632,7 +624,7 @@ export class PurchaseOrderService {
     updateDto: UpdateCartItemDto,
     tx?: DbTx,
   ): Promise<CartItemResponse> {
-    const existingItem = await this.inTx(async (trx) => {
+    const existingItem = await this.dbService.run(async (trx) => {
       const [row] = await trx
         .select()
         .from(wmsTables.purchaseOrderCart)
@@ -645,7 +637,7 @@ export class PurchaseOrderService {
       throw new NotFoundException(`Cart item with ID ${itemId} not found or you don't have permission to modify it`);
     }
 
-    await this.inTx(
+    await this.dbService.run(
       async (trx) =>
         trx
           .update(wmsTables.purchaseOrderCart)
@@ -664,7 +656,7 @@ export class PurchaseOrderService {
    * 장바구니에서 아이템 제거
    */
   async removeFromCart(itemId: string, userId: string, tx?: DbTx): Promise<void> {
-    const result = await this.inTx(
+    const result = await this.dbService.run(
       async (trx) =>
         trx
           .delete(wmsTables.purchaseOrderCart)
@@ -689,7 +681,7 @@ export class PurchaseOrderService {
       conditions.push(eq(wmsTables.purchaseOrderCart.type, type));
     }
 
-    const cartItems = await this.inTx(
+    const cartItems = await this.dbService.run(
       async (trx) =>
         trx
           .select({
@@ -741,7 +733,7 @@ export class PurchaseOrderService {
    * 장바구니 아이템 조회
    */
   private async getCartItemById(itemId: string, userId: string, tx?: DbTx): Promise<CartItemResponse> {
-    const item = await this.inTx(async (trx) => {
+    const item = await this.dbService.run(async (trx) => {
       const [row] = await trx
         .select({
           id: wmsTables.purchaseOrderCart.id,
@@ -801,7 +793,7 @@ export class PurchaseOrderService {
       conditions.push(eq(wmsTables.purchaseOrderCart.type, type));
     }
 
-    await this.inTx(async (trx) => trx.delete(wmsTables.purchaseOrderCart).where(and(...conditions)), tx);
+    await this.dbService.run(async (trx) => trx.delete(wmsTables.purchaseOrderCart).where(and(...conditions)), tx);
 
     this.logger.log(`Cleared cart${type ? ` for type ${type}` : ''} for user ${userId}`);
   }
@@ -845,7 +837,7 @@ export class PurchaseOrderService {
       in_transfer_qty: number;
     }
 
-    const results = await this.inTx(async (trx) => trx.execute(query), tx);
+    const results = await this.dbService.run(async (trx) => trx.execute(query), tx);
     const rows = results as unknown as ReorderSuggestionRow[];
 
     return rows.map((row) => ({
@@ -876,7 +868,7 @@ export class PurchaseOrderService {
     submittedAt: Date;
     message: string;
   }> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       // Get PO
       const [po] = await trx
         .select()
@@ -928,7 +920,7 @@ export class PurchaseOrderService {
     approvedAt: Date;
     message: string;
   }> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       // Get PO
       const [po] = await trx
         .select()
@@ -983,7 +975,7 @@ export class PurchaseOrderService {
     reason: string;
     message: string;
   }> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       // Get PO
       const [po] = await trx
         .select()
