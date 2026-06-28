@@ -9,6 +9,7 @@ import { PricingMapper } from './mappers';
 import { PricingValidatorService } from './pricing-validator.service';
 import { PricingCalculatorService } from './pricing-calculator.service';
 import { v7 as uuidv7 } from 'uuid';
+import { deleteEntitiesIfUnmapped } from '../version-isolation/delete-if-unmapped';
 
 @Injectable()
 export class PricingService {
@@ -218,31 +219,17 @@ export class PricingService {
     }, tx);
   }
 
-  /**
-   * 고아 pricing rule 정리
-   * - 다른 버전이 참조하지 않는 경우만 삭제
-   * - Variants 정리 로직과 동일한 패턴
-   */
   private async _cleanupOrphanedPricingRules(candidateRuleIds: string[], tx: DbTransaction): Promise<void> {
-    if (candidateRuleIds.length === 0) {
-      return;
-    }
-
-    let deletedCount = 0;
-
-    for (const ruleId of candidateRuleIds) {
-      // 1. 이 rule을 참조하는 모든 버전 매핑 조회
-      const allMappings = await tx
-        .select()
-        .from(productMasterPricingRules)
-        .where(eq(productMasterPricingRules.pricingRuleId, ruleId));
-
-      // 2. 아무도 참조하지 않으면 삭제
-      if (allMappings.length === 0) {
-        await tx.delete(pricingRules).where(eq(pricingRules.id, ruleId));
-        deletedCount++;
-      }
-    }
+    const deletedCount = await deleteEntitiesIfUnmapped(
+      tx,
+      {
+        entityTable: pricingRules,
+        entityIdColumn: pricingRules.id,
+        junctionTable: productMasterPricingRules,
+        junctionFkColumn: productMasterPricingRules.pricingRuleId,
+      },
+      candidateRuleIds,
+    );
 
     if (deletedCount > 0) {
       this.logger.log(`Cleaned up ${deletedCount} orphaned pricing rules out of ${candidateRuleIds.length} candidates`);
