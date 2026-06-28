@@ -10,6 +10,7 @@ import {
   productPurchaseConstraints,
 } from '../../../schema/catalog.schema';
 import { UpsertPurchaseConstraintDto } from '../dto/purchase-constraints';
+import { deleteEntitiesIfUnmapped } from '../../version-isolation/delete-if-unmapped';
 
 type PurchaseConstraintMapping = {
   id: string;
@@ -271,13 +272,15 @@ export class ProductPurchaseConstraintsService {
   }
 
   private async deleteIfOrphan(purchaseConstraintId: string, tx: DbTransaction): Promise<void> {
-    const [{ value }] = await tx
-      .select({ value: count() })
-      .from(productMasterPurchaseConstraints)
-      .where(eq(productMasterPurchaseConstraints.purchaseConstraintId, purchaseConstraintId));
-
-    if (Number(value) === 0) {
-      await tx.delete(productPurchaseConstraints).where(eq(productPurchaseConstraints.id, purchaseConstraintId));
-    }
+    await deleteEntitiesIfUnmapped(
+      tx,
+      {
+        entityTable: productPurchaseConstraints,
+        entityIdColumn: productPurchaseConstraints.id,
+        junctionTable: productMasterPurchaseConstraints,
+        junctionFkColumn: productMasterPurchaseConstraints.purchaseConstraintId,
+      },
+      [purchaseConstraintId],
+    );
   }
 }
