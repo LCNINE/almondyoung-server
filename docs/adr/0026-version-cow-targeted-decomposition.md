@@ -22,7 +22,7 @@
   ```
 
   카운트는 fk 단일 기준으로 통일하고 `masterId` 추가 필터는 버린다(variant 카운트가 `:1393` 은 `(masterId, variantId)`, `:1052` 는 `variantId` 만 — variantId 가 전역 unique 라 동치이나, 통일로 이 drift 를 없앤다).
-- **위험하고 미테스트인 경로에 characterization test 를 붙인다.** variant CoW(`:390-418`)와 변경된 variantId 를 pricing rule 로 전파하는 cascade(`:503-578`, **현재 테스트 없음**)에 shared→clone / single→in-place / cascade-repoint 시나리오를 잠근다. masterId 필터 제거의 동치성(fk-only 카운트 == (masterId,fk) 카운트)도 테스트로 명시 고정한다.
+- **위험하고 미테스트인 경로에 characterization test 를 붙인다.** variant CoW(`:390-418`)와 변경된 variantId 를 pricing rule 로 전파하는 cascade(`:503-578`, **현재 테스트 없음**)에 shared→clone / single→in-place / cascade-repoint 시나리오를 잠근다. masterId 필터 제거는 variantId 가 전역 unique(한 master 소유)라는 사실에 근거한 동치 변경이다 — fake-tx 단위 테스트로는 DB uniqueness 불변식을 증명할 수 없으므로 별도 테스트로 고정하지 않고 이 동치 논증으로 갈음한다.
 
 ## Why this shape
 
