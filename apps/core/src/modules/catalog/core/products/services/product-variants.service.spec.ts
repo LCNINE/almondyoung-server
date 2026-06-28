@@ -179,3 +179,86 @@ describe('ProductVariantsService variant→pricing cascade CoW (docs/adr/0004)',
     expect(inPlace).toHaveLength(0);
   });
 });
+
+describe('ProductVariantsService updateVariantInDraft CoW decision', () => {
+  const limitSelect = (rows: unknown[]) => ({ from: () => ({ where: () => ({ limit: () => rows }) }) });
+  const arraySelect = (rows: unknown[]) => ({ from: () => ({ where: () => rows }) });
+  const joinSelect = (rows: unknown[]) => ({ from: () => ({ innerJoin: () => ({ where: () => rows }) }) });
+
+  function makeService() {
+    const productVersionsService = {
+      getVersionById: jest.fn().mockResolvedValue({ id: 'version-draft', masterId: 'master-1', status: 'draft' }),
+    };
+    const variantAssetLinkService = {
+      cloneLinksForVariant: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new ProductVariantsService(
+      { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
+      productVersionsService as any,
+      {} as any,
+      variantAssetLinkService as any,
+    );
+    return { service, variantAssetLinkService };
+  }
+
+  it('updates in place (no CoW) when the variant maps to this version only', async () => {
+    const { service, variantAssetLinkService } = makeService();
+    const tx: any = {
+      select: jest
+        .fn()
+        .mockReturnValueOnce(limitSelect([{ masterId: 'master-1', versionId: 'version-draft', variantId: 'variant-1' }]))
+        .mockReturnValueOnce(limitSelect([])), // no shared mapping
+      update: jest.fn(() => ({ set: () => ({ where: () => Promise.resolve() }) })),
+    };
+
+    const result = await service.updateVariantInDraft(
+      'master-1',
+      'version-draft',
+      'variant-1',
+      { variantName: 'Y' },
+      tx,
+    );
+
+    expect(result).toEqual({ variantId: 'variant-1', cowed: false });
+    expect(variantAssetLinkService.cloneLinksForVariant).not.toHaveBeenCalled();
+  });
+
+  it('clones the variant and cascades when the variant is shared with another version', async () => {
+    const { service, variantAssetLinkService } = makeService();
+    const tx: any = {
+      select: jest
+        .fn()
+        .mockReturnValueOnce(limitSelect([{ masterId: 'master-1', versionId: 'version-draft', variantId: 'old-variant' }]))
+        .mockReturnValueOnce(limitSelect([{ versionId: 'other-version' }])) // shared!
+        .mockReturnValueOnce(
+          limitSelect([
+            {
+              id: 'old-variant',
+              variantName: 'X',
+              imageId: null,
+              displayOrder: 0,
+              status: 'active',
+              isDefault: false,
+              variantCode: 'C',
+            },
+          ]),
+        ) // _cloneVariant source
+        .mockReturnValueOnce(arraySelect([])) // _cloneVariantOptionValues: none
+        .mockReturnValueOnce(joinSelect([])), // cascade: no pricing rules
+      insert: jest.fn(() => ({ values: () => Promise.resolve() })),
+      update: jest.fn(() => ({ set: () => ({ where: () => Promise.resolve() }) })),
+    };
+
+    const result = await service.updateVariantInDraft(
+      'master-1',
+      'version-draft',
+      'old-variant',
+      { variantName: 'Y' },
+      tx,
+    );
+
+    expect(result.cowed).toBe(true);
+    expect(result.variantId).not.toBe('old-variant');
+    expect(variantAssetLinkService.cloneLinksForVariant).toHaveBeenCalledWith('old-variant', result.variantId, tx);
+  });
+});
