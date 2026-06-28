@@ -50,6 +50,7 @@ import { ProductVersionsService } from './product-versions.service';
 import { PricingCalculatorService } from '../../pricing/pricing-calculator.service';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
 import { v7 as uuidv7 } from 'uuid';
+import { deleteEntitiesIfUnmapped } from '../../version-isolation/delete-if-unmapped';
 import { ProductVersionDto } from '../dto/entities/master-version.entity';
 import { MasterProductWithPrimaryVersionDto } from '../dto/products/product-response.dto';
 import { ProductMasterVersionEntity } from '../../../schema/catalog.schema.types';
@@ -1044,18 +1045,16 @@ export class ProductMastersService {
         );
 
       // 실제 variant 레코드 삭제 (다른 버전에서 사용되지 않는 경우)
-      if (existingMappings.length > 0) {
-        for (const { variantId } of existingMappings) {
-          const otherMappings = await tx
-            .select({ count: count() })
-            .from(productMasterVariants)
-            .where(eq(productMasterVariants.variantId, variantId));
-
-          if (otherMappings[0].count === 0) {
-            await tx.delete(productVariants).where(eq(productVariants.id, variantId));
-          }
-        }
-      }
+      await deleteEntitiesIfUnmapped(
+        tx,
+        {
+          entityTable: productVariants,
+          entityIdColumn: productVariants.id,
+          junctionTable: productMasterVariants,
+          junctionFkColumn: productMasterVariants.variantId,
+        },
+        existingMappings.map((m) => m.variantId),
+      );
 
       // 매핑 테이블과 Display 테이블을 통해 optionGroups 조회
       const optionGroups = await this._getVersionOptionGroupsWithDisplays(version.masterId, version.id, 'ko-KR', tx);
@@ -1394,20 +1393,16 @@ export class ProductMastersService {
     candidateConstraintIds: string[],
     tx: DbTransaction,
   ): Promise<void> {
-    if (candidateConstraintIds.length === 0) {
-      return;
-    }
-
-    for (const constraintId of new Set(candidateConstraintIds)) {
-      const remainingMappings = await tx
-        .select()
-        .from(productMasterPurchaseConstraints)
-        .where(eq(productMasterPurchaseConstraints.purchaseConstraintId, constraintId));
-
-      if (remainingMappings.length === 0) {
-        await tx.delete(productPurchaseConstraints).where(eq(productPurchaseConstraints.id, constraintId));
-      }
-    }
+    await deleteEntitiesIfUnmapped(
+      tx,
+      {
+        entityTable: productPurchaseConstraints,
+        entityIdColumn: productPurchaseConstraints.id,
+        junctionTable: productMasterPurchaseConstraints,
+        junctionFkColumn: productMasterPurchaseConstraints.purchaseConstraintId,
+      },
+      candidateConstraintIds,
+    );
   }
 
   /**
