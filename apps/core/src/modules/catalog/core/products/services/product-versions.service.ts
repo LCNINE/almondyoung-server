@@ -39,6 +39,7 @@ import { productVariantDigitalAssetLinks } from '../../../../library/schema/libr
 import { ProductSellableQuantityService } from '../../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { eq, and, sql, max as drizzleMax, isNull, inArray, asc, desc } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
+import { deleteEntitiesIfUnmapped } from '../../version-isolation/delete-if-unmapped';
 
 @Injectable()
 export class ProductVersionsService {
@@ -1383,23 +1384,16 @@ export class ProductVersionsService {
     candidateVariantIds: string[],
     tx: DbTransaction,
   ): Promise<void> {
-    let deletedCount = 0;
-
-    for (const variantId of candidateVariantIds) {
-      // 이 variant를 참조하는 다른 버전이 있는지 확인
-      const remainingMappings = await tx
-        .select({ versionId: productMasterVariants.versionId })
-        .from(productMasterVariants)
-        .where(and(eq(productMasterVariants.masterId, masterId), eq(productMasterVariants.variantId, variantId)));
-
-      if (remainingMappings.length === 0) {
-        // 더 이상 참조하는 버전이 없으면 삭제
-        await tx.delete(productVariants).where(eq(productVariants.id, variantId));
-
-        deletedCount++;
-        this.logger.log(`Deleted orphaned variant entity: ${variantId} (no longer referenced after draft deletion)`);
-      }
-    }
+    const deletedCount = await deleteEntitiesIfUnmapped(
+      tx,
+      {
+        entityTable: productVariants,
+        entityIdColumn: productVariants.id,
+        junctionTable: productMasterVariants,
+        junctionFkColumn: productMasterVariants.variantId,
+      },
+      candidateVariantIds,
+    );
 
     if (deletedCount > 0) {
       this.logger.log(`Cleaned up ${deletedCount} orphaned variant entities`);
@@ -1410,23 +1404,16 @@ export class ProductVersionsService {
    * 고아 pricing rule 정리 (deleteDraftVersion용)
    */
   private async _cleanupOrphanedPricingRules(candidateRuleIds: string[], tx: DbTransaction): Promise<void> {
-    if (candidateRuleIds.length === 0) {
-      return;
-    }
-
-    let deletedCount = 0;
-
-    for (const ruleId of candidateRuleIds) {
-      const allMappings = await tx
-        .select()
-        .from(productMasterPricingRules)
-        .where(eq(productMasterPricingRules.pricingRuleId, ruleId));
-
-      if (allMappings.length === 0) {
-        await tx.delete(pricingRules).where(eq(pricingRules.id, ruleId));
-        deletedCount++;
-      }
-    }
+    const deletedCount = await deleteEntitiesIfUnmapped(
+      tx,
+      {
+        entityTable: pricingRules,
+        entityIdColumn: pricingRules.id,
+        junctionTable: productMasterPricingRules,
+        junctionFkColumn: productMasterPricingRules.pricingRuleId,
+      },
+      candidateRuleIds,
+    );
 
     if (deletedCount > 0) {
       this.logger.log(`Cleaned up ${deletedCount} orphaned pricing rules`);
@@ -1437,23 +1424,16 @@ export class ProductVersionsService {
     candidateConstraintIds: string[],
     tx: DbTransaction,
   ): Promise<void> {
-    if (candidateConstraintIds.length === 0) {
-      return;
-    }
-
-    let deletedCount = 0;
-
-    for (const constraintId of new Set(candidateConstraintIds)) {
-      const allMappings = await tx
-        .select()
-        .from(productMasterPurchaseConstraints)
-        .where(eq(productMasterPurchaseConstraints.purchaseConstraintId, constraintId));
-
-      if (allMappings.length === 0) {
-        await tx.delete(productPurchaseConstraints).where(eq(productPurchaseConstraints.id, constraintId));
-        deletedCount++;
-      }
-    }
+    const deletedCount = await deleteEntitiesIfUnmapped(
+      tx,
+      {
+        entityTable: productPurchaseConstraints,
+        entityIdColumn: productPurchaseConstraints.id,
+        junctionTable: productMasterPurchaseConstraints,
+        junctionFkColumn: productMasterPurchaseConstraints.purchaseConstraintId,
+      },
+      candidateConstraintIds,
+    );
 
     if (deletedCount > 0) {
       this.logger.log(`Cleaned up ${deletedCount} orphaned purchase constraints`);
