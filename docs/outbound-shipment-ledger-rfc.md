@@ -156,11 +156,30 @@ fulfillment_order_items (변경)
 | Phase 2 FO 스냅샷 | ⬜ | |
 | Phase 3 contract | ⬜ | |
 
-## Open Questions
+## Resolved Decisions (grilled 2026-06-29)
 
-- **phase 경계 / exit criteria** 구체화 (각 phase 의 deploy gate, 롤백 기준).
-- **작업자(actor) → SHIP journal 귀속**: `shipment.openedBy` 를 `stock_journals.actorId` 로 흘리는 형태 확정.
-- (해소됨) packing 연산·송장분할·FOI 부분출고 상태·검수 모델 → Target Architecture 에 확정.
+### phase 경계 / exit criteria / deploy gate / 롤백
+
+전제: ADR-0027 결정 7 / Non-Goals 대로 **출고 기능은 아직 프로덕션 미사용** — 누수는 활발히 데이터를 깨는 중이 아니라 출고가 켜질 때를 대비한 선제 수정. 긴급도·롤백 위험이 그만큼 낮다.
+
+| Phase | 성격 | Exit criteria | Deploy gate | 롤백 |
+|---|---|---|---|---|
+| **0 고리 닫기** | additive, 무스키마 | **통합 스펙 GREEN(터널)을 머지 전 필수 게이트** + 단위 GREEN + `nest build core` 클린 | 마이그레이션 없어 독립 배포 가능. (단 develop 빌드 클린 선결.) | `ship()` 재배선 커밋 revert → release 동작 복귀. 되돌릴 데이터 없음(SHIP 은 immutable POSTED, 멱등키로 재실행 안전) |
+| **1 상자 라인** | additive 스키마(`shipment_lines` 신설) | 라인 단위 `consumeShipment` GREEN, FO 아직 1:1 | **Phase 0 와 deploy-between 게이트 불필요** (둘 다 additive — ADR-0005 §5 게이트는 destructive 전용). Phase 1 은 Phase 0 위 다음 PR. | 코드 revert (테이블 미사용이면 무해) |
+| **2 FO=스냅샷** | destructive(재배치) | dual-write→backfill→read 전환 각 단계 GREEN | 3-PR, **각 PR 사이 deploy 1회 필수** (ADR-0005 §5) | 단계별 revert |
+| **3 contract** | destructive drop | `uqActivePerFo`/`split()` 제거 후 회귀 GREEN | Phase 2 read 전환 deploy 후 1회 뒤 | drop 전 단계로 |
+
+핵심 규칙(ADR-0005): autodeploy 의 `sst deploy → migrate` 순서가 contract race 를, additive-only 컨벤션이 expand race 를 막는다 — 짝.
+
+### 작업자(actor) → SHIP journal 귀속
+
+**form = journal 경유** (기존 `receive()` 패턴과 동일). `stock_events` 에 actorId 직접 컬럼은 없고 `journalId → stock_journals.actorId` 만 존재하므로:
+
+- **Phase 1**: `consumeShipment` 가 `stock_journal`(sourceType=`SHIPMENT`, sourceId=shipmentId, actorId=`shipment.openedBy`) 1건 생성 → `InventoryCommandService.ship()` 에 `journalId?` 파라미터 추가(receive 와 대칭)해 그 SHIP 이벤트들을 한 journal 로 묶는다.
+- **Phase 0**: `ship()` 에 journalId 없음 → SHIP 이벤트 `journalId=null`(무귀속). 의도된 한계.
+- ⚠️ 부수 과제(Phase 1): `POST :id/ship` 컨트롤러·`FulfillmentsService.ship()` 가 현재 인증 operator 를 전혀 받지 않는다. actor 귀속은 스키마(`openedBy`)만으론 부족 — 컨트롤러에서 operator 캡처 → `openedBy` 전달 배선이 함께 필요.
+
+### (이전 해소) packing 연산·송장분할·FOI 부분출고 상태·검수 모델 → Target Architecture 에 확정.
 
 ## Immediate Next Step
 
