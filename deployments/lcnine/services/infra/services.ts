@@ -597,7 +597,12 @@ export function setup(infra: SharedInfra) {
   // 백엔드 서비스 URL은 storefront가 BACKEND_DOMAIN + 서비스 서브도메인 규칙으로 조립한다.
   new sst.aws.Nextjs('Storefront', {
     path: '../../../web/almondyoung-storefront',
-    domain: { name: domain('www') },
+    // apex(almondyoung-next.com)를 정식 도메인으로, www 는 거기로 301 리다이렉트.
+    // (site.ts canonical + sitemap 이 apex 기준이라 일치시킴.) dev 는 baseDomain 이
+    // lcnine-dev.com 공용 루트라 점유하면 안 되므로 그대로 www 만 쓴다.
+    domain: isDev
+      ? { name: domain('www') }
+      : { name: baseDomain, redirects: [domain('www')] },
     transform: {
       // CloudFront distribution에 위 WebACL 연결 → 스토어프론트 전체 IP 차단.
       cdn: (cdnArgs) => {
