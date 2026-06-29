@@ -183,9 +183,13 @@ export function MembershipForm({
           return
         }
         const attemptId = crypto.randomUUID()
-        await subscribeWithBillingMethod(selectedPlanId, selectedBillingMethodId, billingMode, attemptId)
+        const res = await subscribeWithBillingMethod(selectedPlanId, selectedBillingMethodId, billingMode, attemptId)
         if (billingMode === "recurring") {
-          const trialMsg = totalTrialDays > 0 ? `${totalTrialDays}일 무료 체험이 시작되었습니다! 체험 종료 후 자동으로 결제됩니다.` : "정기결제가 시작되었습니다."
+          // 재가입자는 backend가 무료체험을 제거하므로 실제 적용된 일수로 안내한다.
+          const appliedTrialDays = res.effectiveTrialDays ?? 0
+          const trialMsg = appliedTrialDays > 0
+            ? `${appliedTrialDays}일 무료 체험이 시작되었습니다! 체험 종료 후 자동으로 결제됩니다.`
+            : "정기결제가 시작되어 첫 결제가 진행됩니다."
           toast.success(trialMsg)
         } else {
           toast.success("멤버십 가입이 완료되었습니다.")

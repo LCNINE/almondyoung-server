@@ -10,6 +10,7 @@ import {
   jsonb,
   varchar,
   index,
+  uniqueIndex,
   primaryKey,
   serial,
 } from 'drizzle-orm/pg-core';
@@ -407,7 +408,8 @@ export const billingEvents = pgTable(
   },
   (table) => [
     index('idx_billing_events_contract').on(table.contractId),
-    index('idx_billing_events_payment_intent').on(table.paymentIntentId),
+    // 결과 이벤트 재전달 멱등: 같은 intent의 동일 결과를 한 번만 기록 (payment_intent_id NULL은 중복 허용)
+    uniqueIndex('uq_billing_events_intent_result').on(table.contractId, table.paymentIntentId, table.eventType),
   ],
 );
 

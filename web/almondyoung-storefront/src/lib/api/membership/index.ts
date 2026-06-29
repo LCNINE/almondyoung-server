@@ -267,8 +267,8 @@ export async function subscribeWithBillingMethod(
   billingMethodId: string,
   billingMode: 'one_time' | 'recurring' = 'one_time',
   checkoutAttemptId?: string,
-): Promise<{ contractId: string }> {
-  return await api<{ contractId: string }>(
+): Promise<{ contractId: string; effectiveTrialDays?: number }> {
+  return await api<{ contractId: string; effectiveTrialDays?: number }>(
     "membership",
     "/subscriptions/subscribe-with-method",
     {
