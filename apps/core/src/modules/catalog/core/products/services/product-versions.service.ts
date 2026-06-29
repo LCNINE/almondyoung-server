@@ -1,7 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { InjectStreamPublisher, OutboxPublisher, StreamPublisher } from '@app/events';
-import { ProductEvents, PRODUCT_STREAM } from '@packages/event-contracts';
+import { ProductEvents, PRODUCT_STREAM, type ProductSnapshot } from '@packages/event-contracts';
 import { PricingValidatorService } from '../../pricing/pricing-validator.service';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
 import { ProductReadAssembler } from '../assemblers/product-read.assembler';
@@ -18,8 +18,11 @@ import {
 import {
   type PimSchema,
   productMasters,
+  productCategories,
   productMasterCategories,
   productMasterVersions,
+  productOptionGroups,
+  productOptionValues,
   productMasterOptionGroups,
   productMasterVariants,
   productMasterPricingRules,
@@ -694,7 +697,7 @@ export class ProductVersionsService {
    * 해외직구 여부 변경 — draft 없이 active 버전을 직접 수정하고 채널에 재싱크.
    */
   async updateOverseas(masterId: string, isOverseas: boolean, tx?: DbTransaction): Promise<void> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const activeVersion = await this.getActiveVersion(masterId, tx);
 
       await tx
@@ -703,7 +706,7 @@ export class ProductVersionsService {
         .where(eq(productMasterVersions.id, activeVersion.id));
 
       const patchedVersion = { ...activeVersion, isOverseas };
-      await this._emitActiveVersionChangedEvent(patchedVersion, null, 'active', tx);
+      await this._emitActiveVersionChangedEvent(patchedVersion, null, 'published', tx);
 
       this.logger.log(`updateOverseas: master=${masterId} isOverseas=${isOverseas}`);
     }, tx);
@@ -841,7 +844,7 @@ export class ProductVersionsService {
     });
 
     if (!version) {
-      throw new NotFoundError(`Version ${versionId} not found`);
+      throw new NotFoundException(`Version ${versionId} not found`);
     }
 
     const categories = await this._buildCategoryTree(masterId, versionId, tx);
