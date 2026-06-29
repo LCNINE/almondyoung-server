@@ -110,7 +110,7 @@ export class InvoiceService {
    * phase 분리가 무력화된다. 트랜잭션 합성이 필요한 내부 재사용자는 DB 단계 헬퍼를 직접 쓸 것.
    * 동시 발행의 최종 방어선은 uq_invoices_fo_active partial unique index.
    */
-  async issueInvoice(request: IssueInvoiceRequest): Promise<string> {
+  async issueInvoice(request: IssueInvoiceRequest, operatorId?: string): Promise<string> {
     const { fulfillmentOrderId } = request;
     const issueMethod = request.issueMethod ?? this.defaultIssueMethod();
 
@@ -196,10 +196,17 @@ export class InvoiceService {
             trackingNo: invoiceNumber,
             carrier,
             status: 'created',
+            openedBy: operatorId ?? null,
           })
           .onConflictDoUpdate({
             target: wmsTables.shipments.fulfillmentOrderId,
-            set: { trackingNo: invoiceNumber, carrier, status: 'created', lastUpdated: new Date() },
+            set: {
+              trackingNo: invoiceNumber,
+              carrier,
+              status: 'created',
+              openedBy: operatorId ?? null,
+              lastUpdated: new Date(),
+            },
           });
 
         await trx

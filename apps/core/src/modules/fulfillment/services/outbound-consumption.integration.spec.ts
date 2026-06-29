@@ -15,13 +15,14 @@ import { ReservationLifecycleService } from '../../inventory/shared/services/res
 import { FifoLocationStrategy } from '../../inventory/core/services/location-resolution.strategy';
 
 /**
- * Phase 0 출고 고리 닫기 — 출고 소진(consume) 통합 테스트. rollback 전용 트랜잭션.
+ * Phase 1 출고 고리 닫기 — 상자(shipment) 단위 소진(consume) 통합 테스트. rollback 전용 트랜잭션.
  *
- * 성공 기준 (RFC / Phase 0 계획): 예약된 재고를 가진 FO 를 소진하면
+ * 성공 기준 (RFC / Phase 1): 예약된 재고를 가진 상자를 소진하면
  *   - on_hand 가 출고 수량만큼 감소하고,
  *   - 예약이 소진되며,
  *   - **available 는 불변**이고 (← 옛 버그면 살아남),
- *   - FOI 별 SHIP stock_event 가 1건씩 남는다.
+ *   - 상자 라인별 SHIP stock_event 가 1건씩 남고,
+ *   - 그 SHIP 들이 작업자(shipment.openedBy)에게 귀속된 한 journal 로 묶인다.
  *
  * 실행 (core dev DB는 VPC 내부 — 터널 필요):
  *   1) 별도 터미널: ./scripts/sst-tunnel.sh deployments/lcnine/services dev
@@ -76,12 +77,18 @@ describeIfDb('OutboundConsumptionService (DB integration, rollback-only)', () =>
     skuId: string;
     foId: string;
     foiId: string;
+    shipmentId: string;
+    openedBy: string;
   }
 
-  /** 창고/SKU/FO/FOI/예약 생성 + on_hand 시드. reservedQty=shippedQty=10, on_hand=onHand. */
+  /**
+   * 창고/SKU/FO/FOI/예약/상자(shipment)+상자라인 생성 + on_hand 시드.
+   * reservedQty=shippedQty=qty, on_hand=onHand. 상자 라인은 실제 packing 연산(ensureShipmentLines)으로 생성.
+   */
   async function createFixture(tx: DbTx, options: { onHand?: number; qty?: number } = {}): Promise<Fixture> {
     const onHand = options.onHand ?? 100;
     const qty = options.qty ?? 10;
+    const openedBy = randomUUID();
 
     const [warehouse] = await tx
       .insert(wmsTables.warehouses)
@@ -127,7 +134,16 @@ describeIfDb('OutboundConsumptionService (DB integration, rollback-only)', () =>
       status: 'confirmed',
     });
 
-    return { warehouseId: warehouse.id, skuId: sku.id, foId: fo.id, foiId: foi.id };
+    // 상자(shipment) — 자사 출고는 송장/라벨 선발급으로 상자가 선행한다. openedBy = 박스 연 작업자.
+    const [shipment] = await tx
+      .insert(wmsTables.shipments)
+      .values({ fulfillmentOrderId: fo.id, trackingNo: `IT-TRK-${randomUUID().slice(0, 8)}`, carrier: 'CJ', openedBy })
+      .returning();
+
+    // packing 연산 — FOI(shippedQty) 를 미러한 상자 라인 생성.
+    await consumption.ensureShipmentLines(shipment.id, fo.id, tx);
+
+    return { warehouseId: warehouse.id, skuId: sku.id, foId: fo.id, foiId: foi.id, shipmentId: shipment.id, openedBy };
   }
 
   async function onHandTotal(tx: DbTx, skuId: string, warehouseId: string) {
@@ -169,16 +185,22 @@ describeIfDb('OutboundConsumptionService (DB integration, rollback-only)', () =>
       expect(await onHandTotal(tx, f.skuId, f.warehouseId)).toBe(100);
       expect(await availableQty(tx, f.skuId, f.warehouseId)).toBe(90);
 
-      await consumption.consumeFulfillmentOrder(f.foId, tx);
+      await consumption.consumeShipment(f.shipmentId, tx);
 
       // 소진 후: on_hand 10 감소(=90), 예약 소진(reserved=0) → available 그대로 90
       expect(await onHandTotal(tx, f.skuId, f.warehouseId)).toBe(90);
       expect(await availableQty(tx, f.skuId, f.warehouseId)).toBe(90);
 
-      // SHIP 이벤트 1건 (qty=10, fromState=ON_HAND)
+      // SHIP 이벤트 1건 (qty=10, fromState=ON_HAND) + 작업자(openedBy) 귀속 journal 로 묶임
       const events = await shipEvents(tx, f.skuId);
       expect(events).toHaveLength(1);
       expect(events[0]).toMatchObject({ transitionType: 'SHIP', quantity: 10, fromState: 'ON_HAND' });
+      expect(events[0].journalId).toBeTruthy();
+      const [journal] = await tx
+        .select({ actorId: wmsTables.stockJournals.actorId, sourceType: wmsTables.stockJournals.sourceType })
+        .from(wmsTables.stockJournals)
+        .where(eq(wmsTables.stockJournals.id, events[0].journalId as string));
+      expect(journal).toMatchObject({ sourceType: 'SHIPMENT', actorId: f.openedBy });
 
       // 예약 소진 확인: confirmed 예약이 사라지고 FOI.reservedQty=0
       const confirmed = await tx
@@ -202,7 +224,7 @@ describeIfDb('OutboundConsumptionService (DB integration, rollback-only)', () =>
       const f = await createFixture(tx, { onHand: 100, qty: 10 });
 
       const before = await availableQty(tx, f.skuId, f.warehouseId);
-      await consumption.consumeFulfillmentOrder(f.foId, tx);
+      await consumption.consumeShipment(f.shipmentId, tx);
       const after = await availableQty(tx, f.skuId, f.warehouseId);
 
       expect(after).toBe(before);
@@ -214,8 +236,8 @@ describeIfDb('OutboundConsumptionService (DB integration, rollback-only)', () =>
     await inRollbackTx(async (tx) => {
       const f = await createFixture(tx, { onHand: 100, qty: 10 });
 
-      await consumption.consumeFulfillmentOrder(f.foId, tx);
-      await consumption.consumeFulfillmentOrder(f.foId, tx);
+      await consumption.consumeShipment(f.shipmentId, tx);
+      await consumption.consumeShipment(f.shipmentId, tx);
 
       expect(await onHandTotal(tx, f.skuId, f.warehouseId)).toBe(90);
       expect(await shipEvents(tx, f.skuId)).toHaveLength(1);
@@ -226,7 +248,7 @@ describeIfDb('OutboundConsumptionService (DB integration, rollback-only)', () =>
     await inRollbackTx(async (tx) => {
       const f = await createFixture(tx, { onHand: 5, qty: 10 });
 
-      await expect(consumption.consumeFulfillmentOrder(f.foId, tx)).rejects.toThrow();
+      await expect(consumption.consumeShipment(f.shipmentId, tx)).rejects.toThrow();
 
       expect(await onHandTotal(tx, f.skuId, f.warehouseId)).toBe(5);
     });

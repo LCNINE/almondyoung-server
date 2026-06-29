@@ -1101,7 +1101,7 @@ export class FulfillmentsService {
     }, tx);
   }
 
-  async assignShipment(id: string, dto: AssignShipmentDto, tx?: DbTx) {
+  async assignShipment(id: string, dto: AssignShipmentDto, operatorId?: string, tx?: DbTx) {
     return this.db.run(async (trx) => {
       // ship()과 동일한 row lock: SELECT → INSERT 사이 동시 요청 2개가 중복 shipment를 만드는 race 차단
       await trx.execute(sql`
@@ -1141,6 +1141,7 @@ export class FulfillmentsService {
         eta: dto.eta ? new Date(dto.eta) : null,
         splitStatus: false,
         fulfillmentOrderId: id,
+        openedBy: operatorId ?? null,
       });
 
       // picking/inspection/invoiced 진행 중에는 labeled로 역전이하지 않음
@@ -1232,7 +1233,18 @@ export class FulfillmentsService {
       // 출고 종결 = 재고원장 소진 (SHIP 이벤트 append + on_hand 차감 + 예약 소진).
       // 옛 'shipped' release 경로(예약만 환원 → 출고분이 가용으로 되살아나는 누수)를 대체한다.
       // (RFC §종결 seam / ADR-0027. 취소·만료의 환원은 cancel() 의 'canceled' 경로 유지.)
-      await this.outboundConsumption.consumeFulfillmentOrder(id, trx);
+      //
+      // drop_ship: 타사 소유 재고(예약·피킹 없음, 추적 불가)는 원장을 건드리지 않는다 —
+      //   상자 라인 생성·소진을 skip 하고 종결 전이+이벤트만 유지(공급사 전달로 출고 갈음).
+      // 자사(in_house/3pl): 상자(송장/라벨)가 선행돼야 한다 — 없으면 fail-loud.
+      // (RFC §Phase 1 상세 설계 #4·#5.)
+      if (fo.fulfillmentMode !== 'drop_ship') {
+        if (!shipment) {
+          throw new ConflictException(`Cannot ship FO ${id}: 출고 전 송장/라벨 발급(상자)이 필요합니다`);
+        }
+        await this.outboundConsumption.ensureShipmentLines(shipment.id, id, trx);
+        await this.outboundConsumption.consumeShipment(shipment.id, trx);
+      }
 
       const [salesOrderRow] = fo.salesOrderId
         ? await trx
