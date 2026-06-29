@@ -5,7 +5,10 @@ import { ICartModuleService } from '@medusajs/framework/types';
 import { PROMOTION_META_MODULE } from '../../../modules/promotion-meta';
 import PromotionMetaModuleService from '../../../modules/promotion-meta/service';
 import { toMetadataShape } from '../../../api/admin/promotions/helpers';
+import { isOverseasProduct, type MembershipProduct } from '../../../utils/membership-filter';
 // import { getInventoryValidationFailures } from '../../../utils/validate-inventory';
+
+const PERSONAL_CUSTOMS_CODE_PATTERN = /^[A-Za-z]\d{12}$/;
 
 completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
   const query = container.resolve(ContainerRegistrationKeys.QUERY);
@@ -65,6 +68,45 @@ completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
       await cartService.updateCarts(cart.id, { email: customer.email });
       // cart 객체도 업데이트 (이후 로직에서 사용될 수 있으므로)
       cart.email = customer.email;
+    }
+  }
+
+  // 해외직구 상품 통관부호 검증 — 주문 완료 직전 최종 방어
+  const { data: cartsWithItems } = await query.graph({
+    entity: 'cart',
+    fields: [
+      'id',
+      'shipping_address.metadata',
+      'items.variant.product.metadata',
+    ],
+    filters: { id: cart.id },
+  });
+
+  const fullCart = cartsWithItems?.[0] as any;
+  const cartItems: Array<{ variant?: { product?: MembershipProduct | null } | null }> = fullCart?.items ?? [];
+
+  const hasOverseasProduct = cartItems.some((item) => {
+    const product = item?.variant?.product;
+    return product ? isOverseasProduct(product as MembershipProduct) : false;
+  });
+
+  if (hasOverseasProduct) {
+    const personalCustomsCode = (fullCart?.shipping_address?.metadata as Record<string, unknown> | null)
+      ?.personalCustomsCode;
+    const code = typeof personalCustomsCode === 'string' ? personalCustomsCode.trim() : '';
+
+    if (!code) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        '해외직구 상품이 포함되어 있어 개인통관고유부호가 필요합니다.',
+      );
+    }
+
+    if (!PERSONAL_CUSTOMS_CODE_PATTERN.test(code)) {
+      throw new MedusaError(
+        MedusaError.Types.INVALID_DATA,
+        '해외직구 상품이 포함되어 있어 개인통관고유부호가 필요합니다.',
+      );
     }
   }
 

@@ -999,6 +999,11 @@ export default function OrderTable() {
                 합계: {r.totalAmount.toLocaleString()}
               </div>
             )}
+            {r.personalCustomsCode && (
+              <div className="text-amber-600 mt-0.5">
+                통관부호: {r.personalCustomsCode}
+              </div>
+            )}
             {r.address && (
               <div className="text-blue-500 mt-0.5 cursor-pointer hover:underline">
                 배송추적

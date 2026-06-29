@@ -183,6 +183,13 @@
       "when": 1782401258062,
       "tag": "20260625152738_add-fulfillment-kind-to-sales-order-lines",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1782450861633,
+      "tag": "20260626051421_add-is-overseas-column",
+      "breakpoints": true
     }
   ]
 }

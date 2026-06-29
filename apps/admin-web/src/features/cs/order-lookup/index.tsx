@@ -29,6 +29,7 @@ function parseAddress(sa: unknown): {
   recipient?: string;
   phone?: string;
   address?: string;
+  personalCustomsCode?: string;
 } {
   if (!sa) return {};
   let obj: any = sa;
@@ -45,6 +46,7 @@ function parseAddress(sa: unknown): {
     recipient: obj.recipientName ?? obj.recipient ?? undefined,
     phone: obj.phone ?? undefined,
     address: address || undefined,
+    personalCustomsCode: obj.personalCustomsCode ?? obj.customsCode ?? '',
   };
 }
 
@@ -159,6 +161,9 @@ export default function CsOrderLookup() {
           />
           <Field label="수령인" value={addr.recipient ?? order.customerName} />
           <Field label="배송지" value={addr.address} />
+          {addr.personalCustomsCode && (
+            <Field label="통관부호" value={addr.personalCustomsCode} />
+          )}
         </div>
       </section>
 

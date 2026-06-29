@@ -148,6 +148,7 @@ export class PimClient {
         hideMembershipPriceForNonMembers: data.hideMembershipPriceForNonMembers ?? data.isMembershipOnly ?? false,
         isMembershipOnly: data.hideMembershipPriceForNonMembers ?? data.isMembershipOnly ?? false,
         isVisibleToMembersOnly: data.isVisibleToMembersOnly ?? false,
+        isOverseas: data.isOverseas ?? false,
         purchaseConstraint: data.purchaseConstraint ?? undefined,
         isGiftcard: data.isGiftcard || false,
         discountable: data.discountable !== false,

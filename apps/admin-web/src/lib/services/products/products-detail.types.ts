@@ -45,6 +45,8 @@ export type ProductMasterDetail = {
   brand: string | null;
   status: string | null;
   isWholesaleOnly: boolean | null;
+  /** 해외직구 상품 여부 — 주문 단계에서 개인통관고유부호 입력 필수. */
+  isOverseas?: boolean | null;
   hideMembershipPriceForNonMembers?: boolean | null;
   isVisibleToMembersOnly?: boolean | null;
   /** @deprecated use hideMembershipPriceForNonMembers */
@@ -140,6 +142,8 @@ export type MasterVersionDetailDto = {
   seoDescription: string | null;
   seoKeywords: string[] | null;
   isWholesaleOnly: boolean | null;
+  /** 해외직구 상품 여부 — 주문 단계에서 개인통관고유부호 입력 필수. */
+  isOverseas?: boolean | null;
   hideMembershipPriceForNonMembers?: boolean | null;
   isVisibleToMembersOnly?: boolean | null;
   /** @deprecated use hideMembershipPriceForNonMembers */
@@ -180,6 +184,8 @@ export type UpdateMasterVersionDto = {
   categoryIds?: string[];
   primaryCategoryId?: string | null;
   isWholesaleOnly?: boolean;
+  /** 해외직구 상품 여부 — 주문 단계에서 개인통관고유부호 입력 필수. */
+  isOverseas?: boolean;
   hideMembershipPriceForNonMembers?: boolean;
   isVisibleToMembersOnly?: boolean;
   /** @deprecated use hideMembershipPriceForNonMembers */

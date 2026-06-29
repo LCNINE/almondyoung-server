@@ -128,6 +128,10 @@ export class MedusaOrderProvider implements ReplayableChannelOrderProvider {
       postalCode: addr?.postal_code ?? '',
       roadAddress: addr?.address_1 ?? '',
       detailAddress: addr?.address_2 ?? '',
+      personalCustomsCode:
+        (addr?.metadata?.personalCustomsCode as string | undefined) ??
+        (order.metadata?.personalCustomsCode as string | undefined) ??
+        undefined,
     };
 
     const walletIntentId = (order.payment_collections ?? [])

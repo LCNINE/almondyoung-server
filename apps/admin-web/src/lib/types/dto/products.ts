@@ -91,6 +91,8 @@ export interface UpdateMasterDto {
   images?: string[];
   specifications?: Record<string, string>;
   tags?: string[];
+  /** 해외직구 상품 여부 — 주문 단계에서 개인통관고유부호 입력 필수. */
+  isOverseas?: boolean;
 }
 
 /**
