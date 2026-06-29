@@ -876,6 +876,7 @@
     "changeSuccess": "決済方法を変更しました。",
     "changeFail": "決済方法の変更に失敗しました。",
     "trialStartedSuccess": "7日間の無料体験が始まりました! 体験終了後に自動で決済されます。",
+    "recurringStartedSuccess": "定期決済が開始され、初回のお支払いが行われます。",
     "subscribeFail": "サブスク登録に失敗しました。",
     "cmsPendingTitle": "口座登録審査中",
     "cmsPendingDesc": "効成CMS審査中です。審査完了（1〜2営業日）後、定期決済手段としてご利用いただけます。",

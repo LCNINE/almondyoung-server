@@ -166,13 +166,14 @@ export default function MembershipPaymentMethodPage() {
 
     try {
       setIsChanging(billingMethodId)
-      await subscribeWithBillingMethod(
+      const res = await subscribeWithBillingMethod(
         planId,
         billingMethodId,
         "recurring",
         crypto.randomUUID()
       )
-      toast.success(t("trialStartedSuccess"))
+      // 재가입자는 무료체험이 적용되지 않으므로 실제 적용된 일수로 안내한다.
+      toast.success((res.effectiveTrialDays ?? 0) > 0 ? t("trialStartedSuccess") : t("recurringStartedSuccess"))
       router.push(`/${countryCode}/mypage/membership/subscribe/success`)
     } catch {
       toast.error(t("subscribeFail"))
