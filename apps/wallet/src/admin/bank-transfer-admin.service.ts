@@ -165,6 +165,9 @@ export class BankTransferAdminService {
               payableAmount: intent.payableAmount,
               currency: intent.currency,
               occurredAt: now,
+              // 멤버십 등 후속 도메인이 이 입금확인이 무엇에 대한 결제인지 식별할 수 있도록
+              // intent.metadata 를 그대로 전파한다 (membership 컨슈머가 type=MEMBERSHIP_FEE 로 필터).
+              extra: { metadata: intent.metadata ?? null },
             }),
           },
         },
