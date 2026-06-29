@@ -499,6 +499,9 @@ export class BillingChargeConsumer {
           aggregateId: intentId ?? `billing-charge:${payload.idempotencyKey}`,
           partitionKey: `${payload.subscriberType}:${payload.subscriberRef}`,
           payload: {
+            // intent 생성 전 실패(agreement/method 부재)는 intentId가 없으므로 멱등 키로 안정 키를 내려준다.
+            // 구독자(membership)가 이 값을 결과 멱등 키로 사용한다.
+            intentId: intentId ?? `billing-charge:${payload.idempotencyKey}`,
             subscriberRef: payload.subscriberRef,
             subscriberType: payload.subscriberType,
             amount: payload.amount,
