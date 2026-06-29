@@ -25,6 +25,20 @@ export class SubscriptionContractReader {
   }
 
   /**
+   * 결제 Intent ID로 계약 조회 (환불 회수 경로용 — status 무관, 최신 1건)
+   */
+  async findByPaymentIntentId(intentId: string): Promise<Contract | null> {
+    const [contract] = await this.dbService.db
+      .select()
+      .from(schema.subscriptionContracts)
+      .where(eq(schema.subscriptionContracts.lastPaymentIntentId, intentId))
+      .orderBy(desc(schema.subscriptionContracts.createdAt))
+      .limit(1);
+
+    return contract || null;
+  }
+
+  /**
    * 계약 ID로 조회
    */
   async findById(contractId: string): Promise<Contract | null> {
