@@ -250,6 +250,7 @@ describe('FulfillmentsService', () => {
       ),
     };
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const outboundConsumption = { consumeFulfillmentOrder: jest.fn().mockResolvedValue(undefined) };
     const salesOrderAmendments = {
       create: jest.fn().mockImplementation(async (dto, operatorId) => {
         const row = {
@@ -291,6 +292,7 @@ describe('FulfillmentsService', () => {
       unifiedReservation as any,
       productSkuMapping as any,
       outbox as any,
+      outboundConsumption as any,
       salesOrderAmendments as any,
     );
 
@@ -304,6 +306,7 @@ describe('FulfillmentsService', () => {
       unifiedReservation,
       policies,
       outbox,
+      outboundConsumption,
       salesOrderAmendments,
     };
   }
@@ -1136,8 +1139,8 @@ describe('FulfillmentsService', () => {
     expect(state.fulfillmentOrderItems).toHaveLength(0);
   });
 
-  it('ship은 기존 confirmed reservation을 lifecycle로 해제한다', async () => {
-    const { service, reservationLifecycle } = makeService({
+  it('ship은 출고분을 재고원장에서 소진한다 (lifecycle release 가 아니라 consume 경로)', async () => {
+    const { service, outboundConsumption, reservationLifecycle } = makeService({
       fulfillmentOrders: [
         {
           id: 'fo-invoiced-1',
@@ -1166,7 +1169,10 @@ describe('FulfillmentsService', () => {
 
     await service.ship('fo-invoiced-1');
 
-    expect(reservationLifecycle.handleFulfillmentOrderStatusChange).toHaveBeenCalledWith(
+    // 소진 seam 으로 위임된다 (SHIP 이벤트 + 예약 소진).
+    expect(outboundConsumption.consumeFulfillmentOrder).toHaveBeenCalledWith('fo-invoiced-1', expect.anything());
+    // 옛 버그 경로('shipped' release) 는 더 이상 타지 않는다.
+    expect(reservationLifecycle.handleFulfillmentOrderStatusChange).not.toHaveBeenCalledWith(
       'fo-invoiced-1',
       'invoiced',
       'shipped',
