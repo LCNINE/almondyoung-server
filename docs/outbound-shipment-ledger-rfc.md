@@ -151,8 +151,8 @@ fulfillment_order_items (변경)
 | Phase | 상태 | 비고 |
 |---|---|---|
 | 설계 | ✅ 확정 | 본 RFC + ADR-0027 + CONTEXT.md |
-| Phase 0 고리 닫기 | 🟨 구현 완료(통합 미검증) | FIFO 순수함수 단위(5/5) + 재배선 단위(`fulfillments.service.spec` 81/81) GREEN, 빌드 클린. 통합 스펙 작성 완료이나 **dev 환경 삭제로 실행 보류**(skip 상태로 리포에 대기). |
-| Phase 1 상자 라인 | 🟨 구현 완료(통합 미검증) | 스키마(`shipment_lines`+`shipments.openedBy`, 마이그레이션 `20260629092035`)·`consumeShipment`/`ensureShipmentLines`·drop_ship 가드·fail-loud·journal(openedBy 귀속)·operator 배선 완료. 단위 GREEN(fulfillments 85, outbound-consumption 5, +invoice/direct-ship 회귀)·`nest build core` 클린. **통합은 dev 환경 부재로 보류**(integration spec 을 Phase 1 모델로 갱신·skip). |
+| Phase 0 고리 닫기 | 🟩 develop 머지(통합 미검증) | FIFO 순수함수 단위(5/5) + 재배선 단위 GREEN, 빌드 클린. **develop 머지됨**(Phase 1 과 함께 squash 커밋 `bd5a9efe5`). 통합 스펙은 `describeIfDb` skip 으로 대기. |
+| Phase 1 상자 라인 | 🟩 develop 머지(통합 미검증) | 스키마(`shipment_lines`+`shipments.openedBy`)·`consumeShipment`/`ensureShipmentLines`·drop_ship 가드·fail-loud·journal(openedBy 귀속)·operator 배선 완료. 단위 GREEN(fulfillments 85, outbound-consumption 5, +invoice/direct-ship 회귀)·`nest build core` 클린. **develop 머지됨**(squash `bd5a9efe5`; 머지 중 catalog 충돌 2건+중복 import 해소). **마이그레이션 `20260629092035` 적용 완료.** 단 통합 스펙(FIFO SQL·available 불변·작업자 journal)은 아직 미실행 — DATABASE_URL 닿는 환경에서 `describeIfDb` 해제해 실증 필요. |
 | Phase 2 FO 스냅샷 | ⬜ | |
 | Phase 3 contract | ⬜ | |
 
@@ -204,7 +204,9 @@ SO:FO 를 양쪽 optional 1:1 로 재정의(Phase 2)하면 "한 SO 를 자사 FO
 
 1. ~~ADR-0027 확정~~ ✅, ~~packing·검수·송장분할 데이터 모델 확정~~ ✅, ~~Phase 0 구현 계획 작성~~ ✅
 2. ~~**Phase 0 구현**~~ ✅ (코드 완료, 단위 GREEN, 빌드 클린). **통합 실행은 dev 환경 삭제로 보류** — `outbound-consumption.integration.spec.ts` 는 skip 된 채 대기. DB 환경 복구 시 `./scripts/test-core-integration.sh dev outbound-consumption.integration` 으로 성공 기준("on_hand N↓·available 불변·SHIP 1건") 최종 확정.
-3. ⚠️ **Phase 0 deploy 선결조건**: develop 빌드가 `#472`(overseas customs)의 catalog 컴파일 에러 2건(`product-versions.service.ts`, `projection-snapshot.assembler.ts` — 미import 심볼)으로 깨져 있음. Phase 0 는 additive 라 독립 머지 가능하나 **deploy 는 이 빌드 깨짐이 먼저 고쳐져야** 가능. (Phase 0 와 무관한 선행 이슈.)
+3. ~~⚠️ **Phase 0 deploy 선결조건**: develop 빌드가 `#472`(overseas customs)의 catalog 컴파일 에러 2건으로 깨져 있음~~ ✅ **해소** — 머지(`bd5a9efe5`) 시 catalog 충돌 2건(`product-versions.service.ts` import = `type ProductSnapshot`, `projection-snapshot.assembler.ts` = `isOverseas ?? false`)+auto-merge 중복 import 해소, `nest build core` 클린.
 4. ~~Phase 1(상자 라인 + packing 연산) 스키마·연산 상세 설계~~ ✅ (Resolved Decisions §Phase 1 상세 설계).
-5. **Phase 1 구현** (TDD): (a) 스키마 — `shipment_lines` 신설 + `shipments.openedBy` (`db:generate:core`), (b) `consumeShipment(shipmentId)` + `ensureShipmentLines` + drop_ship 가드 + fail-loud, (c) `InventoryCommandService.ship()` 에 `journalId?` + `consumeShipment` 의 journal 생성, (d) `issueInvoice`/`assignShipment` 에 operator(`@User`) → `openedBy` 배선, (e) `ship()` 을 `consumeFulfillmentOrder` → `consumeShipment` 로 전환. 단위 GREEN + `nest build core`. (통합은 dev 환경 부재로 로컬 PG 또는 보류.)
-6. 직배(drop-ship) 모델 추출 — 별도 ADR + phased plan (Phase 2 와 함께/뒤).
+5. ~~**Phase 1 구현** (TDD): 스키마(`shipment_lines`+`shipments.openedBy`)·`consumeShipment`/`ensureShipmentLines`·drop_ship 가드·fail-loud·`ship()` journalId·operator→openedBy 배선·`ship()`→`consumeShipment` 전환~~ ✅ **완료·develop 머지(`bd5a9efe5`)·마이그레이션 `20260629092035` 적용 완료.** 단위 GREEN + 빌드 클린.
+6. ⏭️ **통합 검증 빚**: `outbound-consumption.integration.spec.ts`(Phase 1 모델로 갱신됨)가 아직 `describeIfDb` skip. 마이그레이션은 적용됐으니, DATABASE_URL 닿는 환경에서 spec 을 실행해 성공 기준(on_hand N↓·available 불변·SHIP 1건/라인·작업자 journal 귀속) 실증. 배포 전 안전판.
+7. **Phase 2 — FO=스냅샷 (destructive)**: invoice↔shipment 재배치·FO-분할 은퇴·SO:FO 0..1:0..1. **새 브랜치 + dual-write→backfill+read→drop 3 PR, 각 PR 사이 deploy 1회 필수(ADR-0005 §5).** Phase 0+1 deploy 완료 후 시작.
+8. 직배(drop-ship) 모델 추출 — 별도 ADR + phased plan (Phase 2 와 함께/뒤, SO:FO 1:1 의존).
