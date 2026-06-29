@@ -2,6 +2,11 @@
   "metaTitle": "注文・決済",
   "logoAlt": "アーモンドロゴ",
   "logoAltAlmondyoung": "アーモンドヤング",
+  "paymentNotice": {
+    "title": "お支払い前にご確認ください",
+    "bankTransfer": "銀行振込でお支払いの場合は、画面下の[決済する]ボタンを押してください。次の画面で支払い方法を選べるので、そこで「銀行振込」をお選びください。",
+    "points": "貯まったポイントも、[決済する]を押した次の画面ですぐにご利用いただけます。"
+  },
   "header": {
     "title": "注文・決済",
     "breadcrumbCurrent": "注文・決済",

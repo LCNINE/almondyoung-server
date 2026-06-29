@@ -16,6 +16,7 @@
     "mailOrderNo": "Mail-Order Sales Reg. No.: 2019-Seoul Yeongdeungpo-1446",
     "phone": "Phone: 1877-7184",
     "address": "Address: 4F LCNINE, 42 Pyeongcheonro 832beon-gil, Dodong, Bucheon-si, Gyeonggi-do 14521, Korea",
+    "bankAccount": "Bank Transfer: KB Kookmin Bank 364301-04-228875 (Account holder: LCNINE Co., Ltd.)",
     "medicalTarget": "Training target: Medical professionals | Other training target: Medical professionals",
     "medicalInstitution": "Medical institution: Heartwell Clinic",
     "medicalAddress": "Institution address: 201-202, Theleave Sejong Tower, 126 Achasan-ro, Seongdong-gu, Seoul",
@@ -26,6 +27,7 @@
     "mobileBizNo": "Business Reg. No.: 467-86-01638",
     "mobileMailOrderNo": "Mail-Order Reg. No.: 2019-Seoul Yeongdeungpo-1446",
     "mobilePhone": "Phone: 1877-7184",
-    "mobileAddress": "4F, 42 Pyeongcheonro 832beon-gil, Dodong, Bucheon-si, Gyeonggi-do"
+    "mobileAddress": "4F, 42 Pyeongcheonro 832beon-gil, Dodong, Bucheon-si, Gyeonggi-do",
+    "mobileBankAccount": "Bank Transfer: KB Kookmin Bank 364301-04-228875 (LCNINE Co., Ltd.)"
   }
 }

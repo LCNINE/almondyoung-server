@@ -2,6 +2,11 @@
   "metaTitle": "주문/결제",
   "logoAlt": "아몬드 로고",
   "logoAltAlmondyoung": "아몬드영",
+  "paymentNotice": {
+    "title": "결제 전 꼭 확인해주세요",
+    "bankTransfer": "무통장입금(계좌이체)으로 결제하시려면, 화면 맨 아래 [결제하기] 버튼을 누르세요. 그다음 화면에서 결제 수단을 고를 수 있고, 거기서 ‘무통장입금’을 선택하시면 됩니다.",
+    "points": "그동안 쌓인 적립금도 [결제하기] 다음 화면에서 바로 사용할 수 있어요."
+  },
   "header": {
     "title": "주문/결제",
     "breadcrumbCurrent": "주문/결제",

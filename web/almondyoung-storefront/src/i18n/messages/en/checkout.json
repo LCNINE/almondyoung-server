@@ -2,6 +2,11 @@
   "metaTitle": "Order / Payment",
   "logoAlt": "Almond logo",
   "logoAltAlmondyoung": "Almondyoung",
+  "paymentNotice": {
+    "title": "Please check before paying",
+    "bankTransfer": "To pay by bank transfer, press the [Pay] button at the bottom of the screen. On the next screen you can choose a payment method — select “Bank Transfer” there.",
+    "points": "Any points you've earned can be used right on that next screen too."
+  },
   "header": {
     "title": "Order / Payment",
     "breadcrumbCurrent": "Order / Payment",
