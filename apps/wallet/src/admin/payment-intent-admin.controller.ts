@@ -196,6 +196,7 @@ export class PaymentIntentAdminController {
         intentId: id,
         reasonCode: dto.reasonCode,
         reasonMessage: dto.reasonMessage,
+        allowMembershipRefund: true, // admin 환불은 정책상 멤버십 차단을 우회하는 강제 환불
       });
       return refund;
     } catch (e: any) {
