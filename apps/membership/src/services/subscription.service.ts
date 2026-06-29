@@ -193,6 +193,20 @@ export class SubscriptionService {
   }
 
   /**
+   * 결제 환불에 따른 구독 회수 (confirmCheckoutIntent 의 역방향)
+   *
+   * wallet 이 발행하는 환불 성공 이벤트를 받아 해당 결제 intent 로 만들어진 구독을 무효화한다.
+   * 멤버십이 시작한 취소(cancelSubscription → 환불 요청)는 이미 CANCELLED 라 멱등 스킵된다.
+   */
+  async voidByPaymentIntent(intentId: string, reason: string) {
+    const contract = await this.contractReader.findByPaymentIntentId(intentId);
+    if (!contract) return; // 멤버십 결제가 아니거나 구독 미생성 — 무시
+    if (contract.status === 'CANCELLED') return; // 이미 회수됨 (취소→환불 경로 등) — 멱등
+
+    await this.subscriptionManager.voidSubscription(contract.userId, contract, reason);
+  }
+
+  /**
    * 구독 업그레이드
    *
    * ✅ 흐름만 표현: "현재 구독 조회 → 새 플랜 조회 → 업그레이드 실행"

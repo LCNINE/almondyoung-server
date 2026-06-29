@@ -23,6 +23,7 @@ describe('SubscriptionService - Layer Refactoring', () => {
     findActiveContract: jest.fn(),
     findPlan: jest.fn(),
     findContractsByUserId: jest.fn(),
+    findByPaymentIntentId: jest.fn(),
   };
 
   const mockSubscriptionCreator = {
@@ -177,6 +178,33 @@ describe('SubscriptionService - Layer Refactoring', () => {
 
       // Then
       expect(result).toHaveProperty('entitlement');
+    });
+  });
+
+  describe('voidByPaymentIntent', () => {
+    it('intent 로 만든 ACTIVE 구독을 무효화한다', async () => {
+      const contract = { id: 'c1', userId: 'u1', status: 'ACTIVE' };
+      mockContractReader.findByPaymentIntentId.mockResolvedValue(contract);
+
+      await service.voidByPaymentIntent('intent_1', '결제 환불');
+
+      expect(mockSubscriptionManager.voidSubscription).toHaveBeenCalledWith('u1', contract, '결제 환불');
+    });
+
+    it('해당 intent 의 구독이 없으면 아무것도 하지 않는다', async () => {
+      mockContractReader.findByPaymentIntentId.mockResolvedValue(null);
+
+      await service.voidByPaymentIntent('intent_1', '결제 환불');
+
+      expect(mockSubscriptionManager.voidSubscription).not.toHaveBeenCalled();
+    });
+
+    it('이미 CANCELLED 면 멱등하게 스킵한다 (취소→환불 경로 중복 방지)', async () => {
+      mockContractReader.findByPaymentIntentId.mockResolvedValue({ id: 'c1', userId: 'u1', status: 'CANCELLED' });
+
+      await service.voidByPaymentIntent('intent_1', '결제 환불');
+
+      expect(mockSubscriptionManager.voidSubscription).not.toHaveBeenCalled();
     });
   });
 });

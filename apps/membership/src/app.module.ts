@@ -8,6 +8,7 @@ import { MEMBERSHIP_STREAM, PAYMENT_STREAM } from '@packages/event-contracts/str
 import { WALLET_COMMAND_STREAM } from '@packages/event-contracts/streams/wallet-command.stream';
 import { BillingResultConsumer } from './consumers/billing-result.consumer';
 import { MembershipCheckoutConsumer } from './consumers/membership-checkout.consumer';
+import { MembershipRefundConsumer } from './consumers/membership-refund.consumer';
 import { WalletCommandPublisher } from './services/billing/wallet-command.publisher';
 import { membershipSchema } from './shared/schemas/entities/schema';
 import { ConfigModule } from '@nestjs/config';
@@ -87,6 +88,7 @@ import { JwtAuthGuard } from '@app/authorization';
   controllers: [
     BillingResultConsumer,
     MembershipCheckoutConsumer,
+    MembershipRefundConsumer,
     BillingController,
     AdminOperationsController,
     SubscriptionController,
