@@ -1,74 +1,67 @@
-import { listCategories } from "@/lib/api/medusa/categories"
-import { listProducts } from "@/lib/api/medusa/products"
+import { sdk } from "@/lib/config/medusa"
 import { siteConfig } from "@/lib/config/site"
-import { HttpTypes } from "@medusajs/types"
 import { MetadataRoute } from "next"
 
-// 검색엔진에 노출할 전체 URL 목록. countryCode 기본 region(kr) 기준.
-// - 정적 진입점(홈/베스트/신상/고객센터)
-// - 전체 카테고리: /category/{handle}  (라우트가 마지막 handle 만으로 조회 → 단일 세그먼트가 곧 canonical)
-// - 전체 상품: /products/{handle}
+// 검색엔진용 전체 URL 목록. countryCode 기본 region(kr) 기준.
+// medusa store API 를 직접 호출한다 (listProducts/getRegion 래퍼는 cookies 에 의존해
+// 라우트를 dynamic 으로 강제 → 매 요청 1만건 실시간 생성 → 504. 여기선 cookies 를 안 거쳐
+// force-static + ISR 로 빌드/주기 재생성하므로 런타임 timeout 이 없다).
+export const dynamic = "force-static"
+export const revalidate = 86400 // 하루 1회 백그라운드 재생성
+
 const REGION = "kr"
-const PRODUCT_PAGE_SIZE = 1000
-// ponytail: 6만개 상한(현재 ~1만). 넘으면 잘리므로 아래에서 warn + sitemap 5만 URL 한도도 그 즈음 도달 → generateSitemaps 로 분할할 것.
-const MAX_PRODUCT_PAGES = 60
+const PAGE_SIZE = 1000
+// ponytail: 6만개 상한(현재 ~1만). 넘으면 잘리므로 warn + generateSitemaps 로 분할할 것.
+const MAX_PAGES = 60
 
-async function getAllProductHandles(): Promise<string[]> {
+async function getProductHandles(): Promise<string[]> {
   const handles: string[] = []
-  let page = 1
+  let offset = 0
 
-  while (page <= MAX_PRODUCT_PAGES) {
-    const { response, nextPage } = await listProducts({
-      pageParam: page,
-      countryCode: REGION,
-      queryParams: { limit: PRODUCT_PAGE_SIZE, fields: "handle" },
+  for (let i = 0; i < MAX_PAGES; i++) {
+    const { products, count } = await sdk.client.fetch<{
+      products: { handle?: string }[]
+      count: number
+    }>("/store/products", {
+      query: { limit: PAGE_SIZE, offset, fields: "handle" },
     })
 
-    for (const product of response.products) {
-      if (product.handle) handles.push(product.handle)
-    }
+    for (const p of products) if (p.handle) handles.push(p.handle)
 
-    if (!nextPage) return handles
-    page = nextPage
+    offset += PAGE_SIZE
+    if (offset >= count) return handles
   }
 
   console.warn(
-    `[sitemap] 상품이 ${MAX_PRODUCT_PAGES * PRODUCT_PAGE_SIZE}개 상한에 도달해 일부가 누락됨 — sitemap 분할 필요`
+    `[sitemap] 상품이 ${MAX_PAGES * PAGE_SIZE}개 상한에 도달해 일부 누락 — sitemap 분할 필요`
   )
   return handles
 }
 
-function collectCategoryHandles(
-  categories: HttpTypes.StoreProductCategory[]
-): string[] {
-  const out: string[] = []
+async function getCategoryHandles(): Promise<string[]> {
+  // /store/product-categories 는 전체 카테고리를 flat 으로 반환(현재 329개 < limit).
+  const { product_categories } = await sdk.client.fetch<{
+    product_categories: { handle?: string }[]
+  }>("/store/product-categories", {
+    query: { limit: 1000, fields: "handle" },
+  })
 
-  const walk = (nodes: HttpTypes.StoreProductCategory[]) => {
-    for (const node of nodes) {
-      if (node.handle) out.push(node.handle)
-      if (node.category_children?.length) walk(node.category_children)
-    }
-  }
-
-  walk(categories)
-  return out
+  return product_categories
+    .map((c) => c.handle)
+    .filter((h): h is string => Boolean(h))
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = `https://${siteConfig.domainName}`
   const now = new Date()
 
-  const [productHandles, categories] = await Promise.all([
-    getAllProductHandles().catch(() => [] as string[]),
-    listCategories({ limit: 1000 }).catch(
-      () => [] as HttpTypes.StoreProductCategory[]
-    ),
+  const [productHandles, categoryHandles] = await Promise.all([
+    getProductHandles().catch(() => [] as string[]),
+    getCategoryHandles().catch(() => [] as string[]),
   ])
 
-  const categoryHandles = Array.from(
-    new Set(collectCategoryHandles(categories))
-  )
-  const uniqueProductHandles = Array.from(new Set(productHandles))
+  const uniqueCategories = Array.from(new Set(categoryHandles))
+  const uniqueProducts = Array.from(new Set(productHandles))
 
   const entry = (
     path: string,
@@ -90,7 +83,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   return [
     ...staticEntries,
-    ...categoryHandles.map((h) => entry(`/category/${h}`, "weekly", 0.7)),
-    ...uniqueProductHandles.map((h) => entry(`/products/${h}`, "weekly", 0.6)),
+    ...uniqueCategories.map((h) => entry(`/category/${h}`, "weekly", 0.7)),
+    ...uniqueProducts.map((h) => entry(`/products/${h}`, "weekly", 0.6)),
   ]
 }

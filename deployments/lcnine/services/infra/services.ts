@@ -602,7 +602,13 @@ export function setup(infra: SharedInfra) {
     // lcnine-dev.com 공용 루트라 점유하면 안 되므로 그대로 www 만 쓴다.
     domain: isDev
       ? { name: domain('www') }
-      : { name: baseDomain, redirects: [domain('www')] },
+      : {
+          name: baseDomain,
+          redirects: [domain('www')],
+          // 기존 hosted zone 에 ACM 검증 CNAME(www 인증서 잔재 등)이 이미 있어
+          // Route53 record 생성이 충돌하므로 덮어쓰기 허용.
+          dns: sst.aws.dns({ override: true }),
+        },
     transform: {
       // CloudFront distribution에 위 WebACL 연결 → 스토어프론트 전체 IP 차단.
       cdn: (cdnArgs) => {
