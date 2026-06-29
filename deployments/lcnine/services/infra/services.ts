@@ -625,6 +625,8 @@ export function setup(infra: SharedInfra) {
       },
     },
     environment: {
+      // GA4 측정 ID — live 만 주입해 dev 트래픽이 운영 속성에 섞이지 않게 한다.
+      ...(isDev ? {} : { NEXT_PUBLIC_GA_ID: 'G-QLQEGSPQP8' }),
       NEXT_PUBLIC_BASE_URL: storefrontUrl,
       NEXT_PUBLIC_DEFAULT_REGION: 'kr',
       NEXT_PUBLIC_WALLET_WEB_URL: url('wallet-web'),
