@@ -149,7 +149,14 @@ export async function autoFillShipping(container: MedusaContainer, cart: CartDat
   // === 3. 카트 업데이트 ===
   if (needsUpdate) {
     try {
-      await cartService.updateCarts([{ id: cart.id, ...updates }]);
+      // Medusa 는 metadata 를 머지하지 않고 통째로 교체한다. 기존 metadata 를 spread 해서
+      // 자동 채우기가 다른 키(특히 shipping_memo_*)를 날리지 않도록 보존한다.
+      const mergedMetadata = updates.metadata
+        ? { ...(cart.metadata ?? {}), ...updates.metadata }
+        : undefined;
+      await cartService.updateCarts([
+        { id: cart.id, ...updates, ...(mergedMetadata ? { metadata: mergedMetadata } : {}) },
+      ]);
       return true;
     } catch (err) {
       console.error('[autoFillShipping] Failed to update cart:', err);
