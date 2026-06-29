@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { SQL, and, count, desc, eq, gte, inArray, lte } from 'drizzle-orm';
+import { isCmsAgreementRegistered } from '../cms/cms-agreement-status';
 import {
   WalletSchema,
   billingAgreements,
@@ -45,11 +46,11 @@ function classifyCmsRow(input: ClassifyInput): ClassifyResult {
   }
 
   // REGISTERED 상태인데 동의자료가 미등록/실패인 경우: 출금 시 거부될 수 있으므로 처리 필요
-  if (input.cmsMemberStatus === 'REGISTERED' && input.agreementStatus !== '등록') {
+  if (input.cmsMemberStatus === 'REGISTERED' && !isCmsAgreementRegistered(input.agreementStatus)) {
     return { severity: 'WARNING', needsAction: true };
   }
 
-  if (input.agreementStatus !== '등록' && input.cmsMemberStatus === 'PENDING') {
+  if (!isCmsAgreementRegistered(input.agreementStatus) && input.cmsMemberStatus === 'PENDING') {
     return { severity: 'WARNING', needsAction: true };
   }
 
