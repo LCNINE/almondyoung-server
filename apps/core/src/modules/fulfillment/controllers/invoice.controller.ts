@@ -1,7 +1,10 @@
 import { Controller, Get, Post, Put, Body, Param, UsePipes } from '@nestjs/common';
+import { User } from '@app/authorization';
 import { InvoiceService } from '../services/invoice.service';
 import { ZodValidationPipe } from '@app/shared/pipes/zod-validation.pipe';
 import { z } from 'zod';
+
+type AuthenticatedUser = { id?: string; userId?: string; sub?: string } | undefined;
 
 const IssueInvoiceSchema = z.object({
   fulfillmentOrderId: z.string().uuid(),
@@ -27,10 +30,18 @@ export class InvoiceController {
   constructor(private readonly invoiceService: InvoiceService) {}
 
   @Post()
-  @UsePipes(new ZodValidationPipe(IssueInvoiceSchema))
-  async issueInvoice(@Body() dto: z.infer<typeof IssueInvoiceSchema>) {
-    const invoiceId = await this.invoiceService.issueInvoice(dto);
+  async issueInvoice(
+    @Body(new ZodValidationPipe(IssueInvoiceSchema)) dto: z.infer<typeof IssueInvoiceSchema>,
+    @User() user: AuthenticatedUser,
+  ) {
+    // 송장/라벨 발급 = 박스를 여는 행위 → 발급 작업자를 shipment.openedBy 로 캡처
+    // (출고 종결 시 SHIP journal.actorId 로 귀속). @Body 스코프 파이프 — @User 는 검증 대상 아님.
+    const invoiceId = await this.invoiceService.issueInvoice(dto, this.getUserId(user));
     return { invoiceId };
+  }
+
+  private getUserId(user: AuthenticatedUser): string | undefined {
+    return user?.id ?? user?.userId ?? user?.sub;
   }
 
   @Get(':id')

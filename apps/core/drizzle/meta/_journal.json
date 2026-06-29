@@ -190,6 +190,13 @@
       "when": 1782450861633,
       "tag": "20260626051421_add-is-overseas-column",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1782724835281,
+      "tag": "20260629092035_add-shipment-lines-and-opened-by",
+      "breakpoints": true
     }
   ]
 }

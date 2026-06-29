@@ -250,7 +250,10 @@ describe('FulfillmentsService', () => {
       ),
     };
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
-    const outboundConsumption = { consumeFulfillmentOrder: jest.fn().mockResolvedValue(undefined) };
+    const outboundConsumption = {
+      ensureShipmentLines: jest.fn().mockResolvedValue(undefined),
+      consumeShipment: jest.fn().mockResolvedValue(undefined),
+    };
     const salesOrderAmendments = {
       create: jest.fn().mockImplementation(async (dto, operatorId) => {
         const row = {
@@ -1160,6 +1163,7 @@ describe('FulfillmentsService', () => {
       ],
       shipments: [
         {
+          id: 'shipment-invoiced-1',
           fulfillmentOrderId: 'fo-invoiced-1',
           carrier: 'CJ',
           trackingNo: 'TRACK-1',
@@ -1169,8 +1173,13 @@ describe('FulfillmentsService', () => {
 
     await service.ship('fo-invoiced-1');
 
-    // 소진 seam 으로 위임된다 (SHIP 이벤트 + 예약 소진).
-    expect(outboundConsumption.consumeFulfillmentOrder).toHaveBeenCalledWith('fo-invoiced-1', expect.anything());
+    // 상자 단위 소진 seam 으로 위임된다 (상자 라인 생성 → SHIP 이벤트 + 예약 소진).
+    expect(outboundConsumption.ensureShipmentLines).toHaveBeenCalledWith(
+      'shipment-invoiced-1',
+      'fo-invoiced-1',
+      expect.anything(),
+    );
+    expect(outboundConsumption.consumeShipment).toHaveBeenCalledWith('shipment-invoiced-1', expect.anything());
     // 옛 버그 경로('shipped' release) 는 더 이상 타지 않는다.
     expect(reservationLifecycle.handleFulfillmentOrderStatusChange).not.toHaveBeenCalledWith(
       'fo-invoiced-1',
@@ -1232,6 +1241,41 @@ describe('FulfillmentsService', () => {
         await expect(service.ship(`fo-${status}`)).resolves.toBeDefined();
       },
     );
+
+    it('자사 FO에 상자(shipment)가 없으면 ship이 fail-loud로 ConflictException을 던진다', async () => {
+      const { service, outboundConsumption } = makeService({
+        fulfillmentOrders: [{ id: 'fo-no-shipment', salesOrderId, warehouseId, status: 'inspected' }],
+        fulfillmentOrderItems: [{ id: 'foi-1', fulfillmentOrderId: 'fo-no-shipment', skuId, qty: 2, reservedQty: 2, shippedQty: 0 }],
+        shipments: [],
+      });
+
+      await expect(service.ship('fo-no-shipment')).rejects.toThrow(ConflictException);
+      // 상자가 없으면 소진 경로로 진입하지 않는다.
+      expect(outboundConsumption.consumeShipment).not.toHaveBeenCalled();
+      expect(outboundConsumption.ensureShipmentLines).not.toHaveBeenCalled();
+    });
+
+    it('drop_ship FO는 상자 없이도 출고되지만 재고원장을 소진하지 않는다 (가드)', async () => {
+      const { service, outboundConsumption } = makeService({
+        fulfillmentOrders: [
+          {
+            id: 'fo-drop-guard',
+            salesOrderId,
+            warehouseId,
+            status: 'ready',
+            fulfillmentMode: 'drop_ship',
+            directShipStatus: 'forwarded',
+          },
+        ],
+        fulfillmentOrderItems: [{ id: 'foi-1', fulfillmentOrderId: 'fo-drop-guard', skuId, qty: 2, reservedQty: 0, shippedQty: 0 }],
+        shipments: [],
+      });
+
+      await expect(service.ship('fo-drop-guard')).resolves.toBeDefined();
+      // 타사 소유 재고 — 원장 비소진, 상자 라인 생성도 안 함.
+      expect(outboundConsumption.consumeShipment).not.toHaveBeenCalled();
+      expect(outboundConsumption.ensureShipmentLines).not.toHaveBeenCalled();
+    });
 
     it('drop_ship FO는 directShipStatus=forwarded일 때만 ship을 허용한다', async () => {
       const { service } = makeService({

@@ -140,7 +140,7 @@ fulfillment_order_items (변경)
 순서는 "고리부터 닫고, 구조는 뒤에" — destructive phase 사이엔 deploy 1회.
 
 - **Phase 0 — 고리 닫기 (additive, 현 1:1 모델 위에서)**: 현재 invoice=FO(1:1) 전제로 `markAsShipped`/`ship` 경로에 소진(SHIP 이벤트 + FIFO 로케이션 전략 + `reservation.consume`) 추가, release→consume 버그 수정. → §3 누수 즉시 해소. dead `InventoryCommandService.ship()` 부활. **계획: `implementation-plan-outbound-ledger-phase0.md`.**
-- **Phase 1 — 상자 라인 (additive)**: `shipment_lines` 신설, packing 연산(상자+라인 생성), `consumeShipment` 라인 단위 전환. (FO 는 아직 1:1)
+- **Phase 1 — 상자 라인 (additive)**: `shipment_lines` 신설, packing 연산(상자+라인 생성), `consumeShipment` 라인 단위 전환. (FO 는 아직 1:1) **상세 설계 확정 → Resolved Decisions §Phase 1 상세 설계.**
 - **Phase 2 — FO=스냅샷 (dual-write→backfill→read 전환)**: FO 를 SO 1:1 스냅샷으로, FO-분할 은퇴, invoice 를 shipment 로 재배치.
 - **Phase 3 — contract**: `uqActivePerFo`/`uqFulfillmentOrder` drop, `split()`/`handleFulfillmentOrderSplit` 제거.
 
@@ -152,7 +152,7 @@ fulfillment_order_items (변경)
 |---|---|---|
 | 설계 | ✅ 확정 | 본 RFC + ADR-0027 + CONTEXT.md |
 | Phase 0 고리 닫기 | 🟨 구현 완료(통합 미검증) | FIFO 순수함수 단위(5/5) + 재배선 단위(`fulfillments.service.spec` 81/81) GREEN, 빌드 클린. 통합 스펙 작성 완료이나 **dev 환경 삭제로 실행 보류**(skip 상태로 리포에 대기). |
-| Phase 1 상자 라인 | ⬜ | |
+| Phase 1 상자 라인 | 🟨 구현 완료(통합 미검증) | 스키마(`shipment_lines`+`shipments.openedBy`, 마이그레이션 `20260629092035`)·`consumeShipment`/`ensureShipmentLines`·drop_ship 가드·fail-loud·journal(openedBy 귀속)·operator 배선 완료. 단위 GREEN(fulfillments 85, outbound-consumption 5, +invoice/direct-ship 회귀)·`nest build core` 클린. **통합은 dev 환경 부재로 보류**(integration spec 을 Phase 1 모델로 갱신·skip). |
 | Phase 2 FO 스냅샷 | ⬜ | |
 | Phase 3 contract | ⬜ | |
 
@@ -181,9 +181,30 @@ fulfillment_order_items (변경)
 
 ### (이전 해소) packing 연산·송장분할·FOI 부분출고 상태·검수 모델 → Target Architecture 에 확정.
 
+### Phase 1 상세 설계 (grilled 2026-06-29)
+
+전제: **최소 고리 전환 (additive).** `shipment_line` 은 `{shipmentId, foiId, skuId, qty}` 뿐 — inspectedQty/forced/송장분할/자동완료/박스-스캔 UI 는 Phase 2(inspection 재작성, destructive)로. Target Architecture 의 박스 재배치(invoice↔shipment) 도 Phase 2.
+
+1. **상자 정체성 = 기존 `shipments` 재사용.** 이미 per-FO(`uqFulfillmentOrder`)라 'FO 아직 1:1' 과 일치. `shipment_lines.shipmentId → shipments.id`. additive 로 `shipments.openedBy` 컬럼만 추가. `trackingNo`/`carrier` 는 그대로 두고 Phase 2 에서 invoice 로 재배치.
+2. **`shipment_lines` 신설 (additive).** `{id, shipmentId→shipments, fulfillmentOrderItemId→FOI, skuId(원장용 denormalize), qty, createdAt}` + `unique(shipmentId, foiId)`(박스당 FOI 1행 — 멱등 ensure 의 `onConflictDoNothing` 근거, end-state M:N 에서도 성립) + `ck qty>0`.
+3. **packing 연산 = ship 경로 안의 `ensureShipmentLines`.** `ship(foId)` 가 shipment 을 **find(require)** → 그 FO 의 FOI 를 미러한 lines 생성 → `consumeShipment(shipmentId)`. 별도 UI/스캔 엔드포인트 없음(Phase 2). lines 는 Phase 1 에선 생성 즉시 소진되는 scaffolding(독립 운영가치는 Phase 2 부터) — expand-contract 의 정상 모양.
+4. **라벨 없는 자사 출고 = fail-loud (require shipment).** in_house/3pl FO 가 shipment 없이 ship 도달 시 throw('출고 전 송장/라벨 발급 필요'). 송장 선발급이 운영 원칙이고 end-state(박스 스캔=출고)의 불변식. ⇒ bare-box 생성·`trackingNo` nullable 마이그레이션 **불필요**. shipment 생성은 여전히 `issueInvoice`/`assignShipment` 한정. (기존 `ship` 스펙은 이미 owned FO 에 shipment 를 셋업하므로 회귀 없음 예상 — 구현 시 81개 확인.)
+5. **drop_ship 가드.** `fulfillmentMode='drop_ship'` 이면 `consumeShipment`·lines 생성 **skip** — 종결 전이(`shipped`)+`FulfillmentShipped` 이벤트는 유지(공급사 전달로 출고 갈음). 직배 재고는 우리 소유가 아니라 원장을 건드리면 안 됨. ⚠️ **Phase 0 가 drop_ship 도 무차별 consume → 직배 종결에 FIFO/warehouseId throw 잠재버그를 심었음(예약·피킹도 이미 skip 하면서 consume 만 안 막음). 이 가드가 그 버그도 동시 수정.** 직배 전면 추출은 아래 별도 워크스트림.
+6. **작업자 귀속 = openedBy(박스 연 사람).** shipment 생성(`issueInvoice`/`assignShipment`)에서 인증 operator 캡처 → `shipments.openedBy`. `consumeShipment` 가 `stock_journal{sourceType:'SHIPMENT', sourceId:shipmentId, actorId:openedBy}` 1건 생성 → `InventoryCommandService.ship()` 에 `journalId?` 추가(receive 와 대칭)해 SHIP 이벤트들을 한 journal 로 묶음. **직전 'actorId→SHIP journal 귀속' 결정의 "POST :id/ship operator 캡처" 는 정정** — 귀속이 openedBy 이므로 캡처 지점은 ship 이 아니라 `issueInvoice`/`assignShipment`(둘 다 현재 `@User` 없음). ship 컨트롤러 operator 불필요. openedBy null 이면 journal.actorId null(graceful, 무귀속).
+
+멱등: SHIP `idempotencyKey = ship:{shipmentId}:{lineId}:{locationId}`(Phase 0 의 foId 키에서 진화). reservation 소진은 1:1 이라 FO 단위 유지(shipment→FO 도출). FIFO 의 warehouseId 는 `shipment→FO.warehouseId` 에서 도출(Phase 1 `shipments` 에 warehouseId 없음 — Phase 2 추가).
+
+### 직배(drop-ship) 모델 추출 — 별도 워크스트림 (decided 2026-06-29)
+
+SO:FO 를 양쪽 optional 1:1 로 재정의(Phase 2)하면 "한 SO 를 자사 FO + 타사 직배 FO 로 쪼개기" 가 무너진다. 애초에 직배(타사 소유·추적 불가 재고를 **공급사에 주문 내역 전달로 출고 갈음**)를 FO 로 모델링한 것이 부적절했다 — FO 는 자사 출고 플로우(예약·피킹·소진)에 묶인 객체다. → **직배주문을 FO 바깥의 새 모듈/엔티티(자체 라이프사이클)로 추출.** SO 진입 시(주문매칭 성공 후) `FO 0..1개(디지털-only 등은 0) + 직배 공급사 수만큼의 직배주문` 으로 분기.
+
+본 outbound-ledger 프로젝트와 **별개 워크스트림**: SO:FO 1:1(Phase 2)에 의존하므로 그와 함께/뒤에, 자체 ADR + phased plan 으로. Phase 1 은 위 가드(5)로 임시 격리만. 기존 `fulfillmentMode='drop_ship'` 분기·`direct-ship.service`·`directShipStatus`·`outbound-batch`/예약-retry 의 drop_ship 제외 분기는 추출 완료 후 contract 대상. (어휘는 `CONTEXT.md` 직배주문 참고.)
+
 ## Immediate Next Step
 
 1. ~~ADR-0027 확정~~ ✅, ~~packing·검수·송장분할 데이터 모델 확정~~ ✅, ~~Phase 0 구현 계획 작성~~ ✅
 2. ~~**Phase 0 구현**~~ ✅ (코드 완료, 단위 GREEN, 빌드 클린). **통합 실행은 dev 환경 삭제로 보류** — `outbound-consumption.integration.spec.ts` 는 skip 된 채 대기. DB 환경 복구 시 `./scripts/test-core-integration.sh dev outbound-consumption.integration` 으로 성공 기준("on_hand N↓·available 불변·SHIP 1건") 최종 확정.
 3. ⚠️ **Phase 0 deploy 선결조건**: develop 빌드가 `#472`(overseas customs)의 catalog 컴파일 에러 2건(`product-versions.service.ts`, `projection-snapshot.assembler.ts` — 미import 심볼)으로 깨져 있음. Phase 0 는 additive 라 독립 머지 가능하나 **deploy 는 이 빌드 깨짐이 먼저 고쳐져야** 가능. (Phase 0 와 무관한 선행 이슈.)
-4. Phase 1(상자 라인 + packing 연산) 스키마·연산 상세 설계.
+4. ~~Phase 1(상자 라인 + packing 연산) 스키마·연산 상세 설계~~ ✅ (Resolved Decisions §Phase 1 상세 설계).
+5. **Phase 1 구현** (TDD): (a) 스키마 — `shipment_lines` 신설 + `shipments.openedBy` (`db:generate:core`), (b) `consumeShipment(shipmentId)` + `ensureShipmentLines` + drop_ship 가드 + fail-loud, (c) `InventoryCommandService.ship()` 에 `journalId?` + `consumeShipment` 의 journal 생성, (d) `issueInvoice`/`assignShipment` 에 operator(`@User`) → `openedBy` 배선, (e) `ship()` 을 `consumeFulfillmentOrder` → `consumeShipment` 로 전환. 단위 GREEN + `nest build core`. (통합은 dev 환경 부재로 로컬 PG 또는 보류.)
+6. 직배(drop-ship) 모델 추출 — 별도 ADR + phased plan (Phase 2 와 함께/뒤).
