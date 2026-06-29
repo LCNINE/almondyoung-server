@@ -5,6 +5,7 @@ import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import Link from "next/link"
 import { getTranslations } from "next-intl/server"
 import { ChevronDownIcon, ReviewPromptCard } from "../_components"
+import { PurchaseTracker } from "./purchase-tracker"
 import { HttpTypes } from "@medusajs/types"
 import { buildAddressLine } from "@/lib/utils/address-line"
 import { cartRequiresShipping, isDigitalItem } from "@/lib/api/medusa/shipping-method-policy"
@@ -112,6 +113,21 @@ export default async function CheckoutSuccessPage({
         </span>
         {t("success.completedSuffix")}
       </h1>
+
+      {/* GA4 purchase 이벤트 (소유권 검증된 order 가 있을 때만) */}
+      {order && (
+        <PurchaseTracker
+          transactionId={order.id}
+          value={order.total ?? 0}
+          currency={(order.currency_code ?? "krw").toUpperCase()}
+          items={(order.items ?? []).map((item) => ({
+            item_id: item.product_id ?? item.id,
+            item_name: item.title,
+            price: item.unit_price ?? 0,
+            quantity: item.quantity,
+          }))}
+        />
+      )}
 
       {/* 주문 요약 카드 */}
       <OrderSummaryCard order={order} countryCode={countryCode} />
