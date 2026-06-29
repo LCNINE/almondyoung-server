@@ -464,6 +464,8 @@ export function setup(infra: SharedInfra) {
     },
     environment: {
       DATABASE_URL: $interpolate`postgresql://${db.username}:${db.password}@${db.host}:${db.port}/medusa?sslmode=disable`,
+      // product_sort_index.review_count 주기 동기화(sync-product-sort-index)가 ugc 리뷰 수를 읽는 소스.
+      UGC_SOURCE_DB_URL: $interpolate`postgresql://${db.username}:${db.password}@${db.host}:${db.port}/ugc?sslmode=disable`,
       REDIS_URL: redisUrl(0),
       CACHE_REDIS_URL: redisUrl(1),
       MEDUSA_FF_CACHING: 'true',

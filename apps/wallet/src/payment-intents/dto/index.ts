@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsEnum,
   IsInt,
   IsNotEmpty,
@@ -241,6 +242,13 @@ export class RefundByIntentDto {
   @IsOptional()
   @IsString()
   reasonMessage?: string;
+
+  @ApiPropertyOptional({
+    description: '멤버십 결제 환불 차단을 우회 (admin 강제취소 예외 환불 전용). 일반/셀프 환불에서는 절대 설정 금지.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  allowMembershipRefund?: boolean;
 }
 
 export class RefundByIntentResponseDto {

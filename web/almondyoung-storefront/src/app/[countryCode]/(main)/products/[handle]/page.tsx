@@ -6,6 +6,7 @@ import { getRatingSummary } from "@/lib/api/ugc/reviews"
 import { addToRecentViews } from "@/lib/api/users/recent-views"
 import { isMembershipGroup } from "@/lib/utils/membership-group"
 import { getIsVisibleToMembersOnly } from "@/lib/utils/product-card"
+import { siteConfig } from "@/lib/config/site"
 import { Customer } from "@/lib/types/ui/medusa"
 import { listProducts } from "@lib/api/medusa/products"
 import { getRegion } from "@lib/api/medusa/regions"
@@ -77,8 +78,12 @@ export default async function Page(props: Props) {
   // 캐시 프라이밍 — 자식 컴포넌트들이 사용할 데이터를 미리 fetch 시작
   // React.cache()에 의해 동일 render 내 중복 호출은 이 Promise를 재사용
   const pimMasterId = pricedProduct.metadata?.pimMasterId as string
+  // 평점 요약은 구조화 데이터(JSON-LD)에도 쓰므로 await 한다. ProductTemplate 자식의
+  // 동일 호출은 React.cache() 로 재사용된다.
+  const ratingSummary = pimMasterId
+    ? await getRatingSummary(pimMasterId).catch(() => null)
+    : null
   if (pimMasterId) {
-    getRatingSummary(pimMasterId).catch(() => {})
     getQnaSummary(pimMasterId).catch(() => {})
     getProductDetailByMasterId(pimMasterId).catch(() => {})
   }
@@ -88,8 +93,31 @@ export default async function Page(props: Props) {
     addToRecentViews(pricedProduct.id).catch(() => {})
   }
 
+  // 검색결과 별점(rich snippet) + AI 파싱용 구조화 데이터.
+  // 리뷰 0개면 aggregateRating 을 빼서 빈 별점 패널티를 피한다.
+  const productSchema = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: pricedProduct.title,
+    ...(pricedProduct.thumbnail ? { image: [pricedProduct.thumbnail] } : {}),
+    url: `https://${siteConfig.domainName}/${params.countryCode}/products/${params.handle}`,
+    ...(ratingSummary && ratingSummary.totalCount > 0
+      ? {
+          aggregateRating: {
+            "@type": "AggregateRating",
+            ratingValue: ratingSummary.averageRating,
+            reviewCount: ratingSummary.totalCount,
+          },
+        }
+      : {}),
+  }
+
   return (
     <div className="md:bg-muted/50 min-h-screen bg-white">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(productSchema) }}
+      />
       <ProductTemplate
         product={pricedProduct}
         region={region}

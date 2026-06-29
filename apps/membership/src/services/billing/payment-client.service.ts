@@ -221,7 +221,9 @@ export class PaymentClientService {
     await firstValueFrom(
       this.httpService.post(
         `${walletApiUrl}/v1/payment-intents/${intentId}/refund`,
-        { amount, reasonCode, reasonMessage },
+        // 멤버십 결제는 wallet 에서 환불 차단됨. 이 경로는 admin 강제취소의 정책상 예외 환불이므로
+        // 차단을 우회한다 (셀프/일반 환불은 애초에 이 메서드를 호출하지 않음).
+        { amount, reasonCode, reasonMessage, allowMembershipRefund: true },
         {
           headers: {
             Authorization: `Bearer ${walletApiKey}`,

@@ -45,7 +45,9 @@ function makeContext(options: {
   succeededRefundedAmount?: number;   // SUCCEEDED-only total in the post-SUCCEEDED transaction
   providerResult?: { status: string; errorCode?: string; errorMessage?: string; providerRefundId?: string };
   pendingRefund?: ReturnType<typeof makeInsertedRefund>;  // for confirmManual tests
+  intentMetadata?: Record<string, unknown>;  // payment_intents.metadata for assertRefundable/getIntentUserId
 } = {}) {
+  const intentMetadata = options.intentMetadata ?? {};
   const charge = options.charge ?? makeCharge();
   const method = options.method ?? makeMethod();
   const refundableCharges = options.refundableCharges ?? [charge];
@@ -98,8 +100,8 @@ function makeContext(options: {
             orderBy: () => Promise.resolve(existingSucceededRefunds),
             limit: () => ({
               then: (cb: any) => {
-                // For paymentIntents query (getIntentUserId)
-                return Promise.resolve(cb([{ userId: USER_ID }]));
+                // For paymentIntents query (getIntentUserId / assertRefundable)
+                return Promise.resolve(cb([{ userId: USER_ID, metadata: intentMetadata }]));
               },
             }),
           }),
@@ -142,7 +144,7 @@ function makeContext(options: {
             then: (cb: any) => {
               callCount++;
               if (callCount === 1) return Promise.resolve(cb([pendingRefund]));
-              return Promise.resolve(cb([{ userId: USER_ID }]));
+              return Promise.resolve(cb([{ userId: USER_ID, metadata: intentMetadata }]));
             },
           }),
         }),
@@ -164,6 +166,34 @@ function makeContext(options: {
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('RefundsService', () => {
+
+  describe('멤버십 결제 환불 차단', () => {
+    it('create: MEMBERSHIP_FEE intent 는 환불 거절 (MEMBERSHIP_REFUND_NOT_ALLOWED)', async () => {
+      const { service } = makeContext({ intentMetadata: { type: 'MEMBERSHIP_FEE' } });
+      await expect(service.create({ chargeId: CHARGE_ID, amount: 5000 })).rejects.toThrow('멤버십 결제는 환불할 수 없습니다');
+    });
+
+    it('create: allowMembershipRefund=true (admin 강제취소 예외) 면 통과', async () => {
+      const { service } = makeContext({ intentMetadata: { type: 'MEMBERSHIP_FEE' } });
+      await expect(
+        service.create({ chargeId: CHARGE_ID, amount: 5000, allowMembershipRefund: true }),
+      ).resolves.toBeDefined();
+    });
+
+    it('confirmManual: 차단은 create() 길목에서만 — 이미 PENDING 인 건은 완료 허용', async () => {
+      const { service } = makeContext({
+        method: makeMethod('BANK_TRANSFER'),
+        pendingRefund: makeInsertedRefund(),
+        intentMetadata: { type: 'MEMBERSHIP_FEE' },
+      });
+      await expect(service.confirmManual(REFUND_ID)).resolves.toBeDefined();
+    });
+
+    it('일반 결제(metadata.type 없음)는 정상 환불', async () => {
+      const { service } = makeContext({ priorRefundedAmount: 0 });
+      await expect(service.create({ chargeId: CHARGE_ID, amount: 5000 })).resolves.toBeDefined();
+    });
+  });
 
   describe('중복/초과 환불 방지', () => {
     it('charge amount보다 큰 금액 환불 시 BadRequestException', async () => {
