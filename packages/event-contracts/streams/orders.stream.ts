@@ -35,6 +35,8 @@ export interface ShippingAddress {
   roadAddress: string;
   detailAddress: string;
   deliveryNote?: string;
+  /** 개인통관고유부호 — 해외직구(isOverseas) 상품 주문 시 필수 */
+  personalCustomsCode?: string;
 }
 
 export type SalesChannel = 'medusa' | 'naver' | 'coupang' | '3pl';
@@ -210,6 +212,7 @@ const ShippingAddressSchema = z.object({
   roadAddress: z.string(),
   detailAddress: z.string(),
   deliveryNote: z.string().optional(),
+  personalCustomsCode: z.string().optional(),
 });
 
 const OrderCreatedSchema = z.object({

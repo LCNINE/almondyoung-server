@@ -42,7 +42,7 @@ async function CheckoutManager({
 }) {
   let cart = (await retrieveCart(
     cartId,
-    "*items, +items.requires_shipping, +items.product_type, *items.product, *items.product.tags, *items.variant, +items.variant.inventory_quantity, +items.variant.manage_inventory, +items.variant.allow_backorder, *region, *customer, *shipping_methods, *promotions, +item_subtotal, +shipping_total, +total, +discount_total, +items.discount_total, +shipping_methods.discount_total, +payment_collection.id, +currency_code",
+    "*items, +items.requires_shipping, +items.product_type, *items.product, *items.product.metadata, *items.product.tags, *items.variant, +items.variant.inventory_quantity, +items.variant.manage_inventory, +items.variant.allow_backorder, *region, *customer, *shipping_methods, *promotions, +item_subtotal, +shipping_total, +total, +discount_total, +items.discount_total, +shipping_methods.discount_total, +payment_collection.id, +currency_code",
     "no-store"
   )) as CartResponseDto["cart"]
 

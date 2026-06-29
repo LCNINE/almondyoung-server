@@ -34,6 +34,7 @@ export class ProductMapper {
       isWholesaleOnly: version.isWholesaleOnly ?? false,
       hideMembershipPriceForNonMembers,
       isVisibleToMembersOnly: version.isVisibleToMembersOnly ?? false,
+      isOverseas: version.isOverseas ?? false,
       isMembershipOnly: hideMembershipPriceForNonMembers,
       createdAt: DateMapper.toNotNullString(version.createdAt),
       updatedAt: DateMapper.toNotNullString(version.updatedAt),

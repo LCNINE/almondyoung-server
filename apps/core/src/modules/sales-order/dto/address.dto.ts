@@ -31,4 +31,9 @@ export class AddressDto {
   @IsString()
   @IsOptional()
   deliveryNote?: string;
+
+  @ApiProperty({ description: '개인통관고유부호', required: false })
+  @IsString()
+  @IsOptional()
+  personalCustomsCode?: string;
 }

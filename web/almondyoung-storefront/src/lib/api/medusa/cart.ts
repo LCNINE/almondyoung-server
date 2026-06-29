@@ -28,7 +28,7 @@ import {
 
 // 카트 조회 시 사용하는 기본 fields
 const DEFAULT_CART_FIELDS =
-  "*items, +items.requires_shipping, +items.product_type, *region, *items.product, *items.variant, *items.variant.options, *items.variant.options.option, +items.variant.inventory_quantity, +items.variant.manage_inventory, +items.variant.allow_backorder, *items.thumbnail, *items.metadata, +items.total, +items.original_total, +items.compare_at_unit_price, *promotions, +shipping_methods, *customer, *customer.groups, customer_id, +payment_collection.id, +currency_code, +item_subtotal, +shipping_total, +total, +discount_total, +original_item_subtotal, +original_item_total"
+  "*items, +items.requires_shipping, +items.product_type, *region, *items.product, *items.product.metadata, *items.variant, *items.variant.options, *items.variant.options.option, +items.variant.inventory_quantity, +items.variant.manage_inventory, +items.variant.allow_backorder, *items.thumbnail, *items.metadata, +items.total, +items.original_total, +items.compare_at_unit_price, *promotions, +shipping_methods, *customer, *customer.groups, customer_id, +payment_collection.id, +currency_code, +item_subtotal, +shipping_total, +total, +discount_total, +original_item_subtotal, +original_item_total"
 
 /**
  * 카트 ID를 통해 카트 정보를 조회합니다. 만약 ID가 제공되지 않으면, 쿠키에 저장된 카트 ID를 사용합니다.

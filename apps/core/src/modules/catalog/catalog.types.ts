@@ -250,6 +250,7 @@ export interface CreateMasterDto {
   isWholesaleOnly?: boolean;
   hideMembershipPriceForNonMembers?: boolean;
   isVisibleToMembersOnly?: boolean;
+  isOverseas?: boolean;
   /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly?: boolean;
 
@@ -264,6 +265,7 @@ export interface MasterListItemDto {
   // basePrice removed - 가격은 pricing rules로 조회
   hideMembershipPriceForNonMembers: boolean;
   isVisibleToMembersOnly: boolean;
+  isOverseas: boolean;
   /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly: boolean;
   status: string;

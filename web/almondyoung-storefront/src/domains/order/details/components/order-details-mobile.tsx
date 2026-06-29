@@ -85,6 +85,9 @@ export const OrderDetailsMobile = ({
   const postalCode = address?.postal_code || "-"
   const primaryAddress = address?.address_1 || addressLine || "-"
   const detailAddress = address?.address_2 || "-"
+  // 해외직구 주문만 채워짐(체크아웃에서 shipping_address.metadata 에 저장).
+  const personalCustomsCode =
+    (address?.metadata?.personalCustomsCode as string) || ""
   const membershipDiscount = calculateMembershipDiscount(order.items ?? [])
   // 디지털 단독 주문이면 배송 정보를 숨긴다.
   const requiresShipping = cartRequiresShipping(order.items)
@@ -276,6 +279,14 @@ export const OrderDetailsMobile = ({
                 </dt>
                 <dd className="text-gray-800">{detailAddress}</dd>
               </div>
+              {personalCustomsCode && (
+                <div className="flex">
+                  <dt className="w-20 shrink-0 text-gray-500">
+                    {tLabels("personalCustomsCode")}
+                  </dt>
+                  <dd className="text-gray-800">{personalCustomsCode}</dd>
+                </div>
+              )}
             </dl>
             <OrderInfoCardDivider />
             <dl className="flex text-sm">

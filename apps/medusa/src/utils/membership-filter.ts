@@ -4,6 +4,7 @@ import { ContainerRegistrationKeys, MedusaError } from '@medusajs/framework/util
 export type ProductMetadata = {
   hideMembershipPriceForNonMembers?: boolean | string;
   isVisibleToMembersOnly?: boolean | string;
+  isOverseas?: boolean | string;
   /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly?: boolean | string;
   [key: string]: unknown;
@@ -49,6 +50,10 @@ export const isMembershipPriceHiddenProduct = (product: MembershipProduct): bool
 
 export const isVisibleToMembersOnlyProduct = (product: MembershipProduct): boolean => {
   return product.metadata?.isVisibleToMembersOnly === true || product.metadata?.isVisibleToMembersOnly === 'true';
+};
+
+export const isOverseasProduct = (product: MembershipProduct): boolean => {
+  return product.metadata?.isOverseas === true || product.metadata?.isOverseas === 'true';
 };
 
 export const filterProductsForMemberState = (products: MembershipProduct[], isMember: boolean): MembershipProduct[] => {
