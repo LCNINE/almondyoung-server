@@ -22,7 +22,7 @@ export const getProductForQuickAdd = async (
         id: [productId],
         region_id: region.id,
         fields:
-          "*variants.calculated_price,+variants.inventory_quantity,*variants.options,+variants.manage_inventory,+variants.allow_backorder,*options",
+          "*variants.calculated_price,+variants.inventory_quantity,*variants.options,+variants.manage_inventory,+variants.allow_backorder,+variants.metadata,*options",
       },
       headers,
     })
@@ -97,7 +97,7 @@ export const listProducts = async ({
           offset,
           region_id: region?.id,
           fields:
-            "*variants.calculated_price,+variants.inventory_quantity,+variants.manage_inventory,+variants.allow_backorder,*variants.options,*variants.images,+metadata,+tags,",
+            "*variants.calculated_price,+variants.inventory_quantity,+variants.manage_inventory,+variants.allow_backorder,+variants.metadata,*variants.options,*variants.images,+metadata,+tags,",
           ...queryParams,
         },
         headers,

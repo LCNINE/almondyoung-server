@@ -74,6 +74,9 @@
   "options": {
     "selectPlaceholder": "Please select an option",
     "soldOut": "Sold out",
+    "restockExpected": "Restock expected {date}",
+    "restockApproximate": "The restock date is approximate and may differ from the actual arrival.",
+    "restockInfoLabel": "About the restock date",
     "outOfStockSuffix": "({value} sold out)",
     "defaultLabel": "Default option",
     "directInput": "Enter qty",

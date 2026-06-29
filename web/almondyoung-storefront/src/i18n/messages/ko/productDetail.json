@@ -74,6 +74,9 @@
   "options": {
     "selectPlaceholder": "옵션을 선택해주세요",
     "soldOut": "품절",
+    "restockExpected": "{date} 입고 예정",
+    "restockApproximate": "입고 예정일은 대략적이며 실제 입고일과 다를 수 있어요",
+    "restockInfoLabel": "입고 예정일 안내",
     "outOfStockSuffix": "({value} 품절)",
     "defaultLabel": "기본 옵션값",
     "directInput": "직접입력",

@@ -44,8 +44,9 @@ const VariantStockList = ({
   // 재고관리 안 하는 variant는 popup의 목적과 무관하므로 제외
   const visible = variants
     .map((v) => ({ variant: v, stock: getVariantStock(v) }))
-    .filter((x): x is { variant: HttpTypes.StoreProductVariant; stock: number } =>
-      x.stock !== null
+    .filter(
+      (x): x is { variant: HttpTypes.StoreProductVariant; stock: number } =>
+        x.stock !== null
     )
 
   if (visible.length === 0) {
@@ -105,7 +106,8 @@ export function PartialSoldOutDialog({ product, variants, total }: Props) {
           >
             일부 품절
           </Badge>
-          {total <= LOW_STOCK_THRESHOLD && (
+
+          {total > 0 && total <= LOW_STOCK_THRESHOLD && (
             <span className="text-[12px] text-red-500">{total}개 남음</span>
           )}
         </button>
