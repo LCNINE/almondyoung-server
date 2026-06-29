@@ -1,5 +1,5 @@
 {
-  "id": "20ae5862-cfaf-45a9-ab94-eb9b9908ee36",
+  "id": "f13d6cae-b57c-4f25-ae08-2ef7bf361fb6",
   "prevId": "b0799908-ad3f-4939-bf94-f4af090a661e",
   "version": "7",
   "dialect": "postgresql",
@@ -81,17 +81,29 @@
           "method": "btree",
           "with": {}
         },
-        "idx_billing_events_payment_intent": {
-          "name": "idx_billing_events_payment_intent",
+        "uq_billing_events_intent_result": {
+          "name": "uq_billing_events_intent_result",
           "columns": [
+            {
+              "expression": "contract_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
             {
               "expression": "payment_intent_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
+            },
+            {
+              "expression": "event_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
             }
           ],
-          "isUnique": false,
+          "isUnique": true,
           "concurrently": false,
           "method": "btree",
           "with": {}

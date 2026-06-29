@@ -23,12 +23,6 @@ export class BillingOutcomeHandler {
 
   async handleSuccess(contractId: string, amount: number | null, paymentIntentId?: string): Promise<void> {
     const renewedUserId = await this.dbService.db.transaction(async (tx) => {
-      // 멱등: 같은 intent의 성공 이벤트가 재전달돼도 기간을 중복 연장하지 않는다.
-      if (paymentIntentId && (await this.isIntentProcessed(tx, contractId, paymentIntentId, 'CHARGE_SUCCESS'))) {
-        this.logger.log(`handleSuccess: already processed intent (${paymentIntentId}) — skip`);
-        return null;
-      }
-
       const row = await this.getContractWithPlan(tx, contractId);
       if (!row) {
         this.logger.warn(`handleSuccess: contract not found (${contractId})`);
@@ -53,18 +47,22 @@ export class BillingOutcomeHandler {
         .where(eq(schema.billingEvents.contractId, contractId));
       const attemptNo = Number(countRow?.count ?? 0) + 1;
 
+      // 멱등 마커(첫 쓰기): unique(contract_id, payment_intent_id, event_type) 충돌 시 0행 → 이미 처리됨.
+      // 같은 intent의 성공 이벤트가 재전달돼도 기간을 중복 연장하지 않는다(동시 consumer 포함).
+      const inserted = await tx
+        .insert(schema.billingEvents)
+        .values({ contractId, eventType: 'CHARGE_SUCCESS', attemptNo, amount, paymentIntentId: paymentIntentId ?? null })
+        .onConflictDoNothing()
+        .returning({ id: schema.billingEvents.id });
+      if (paymentIntentId && inserted.length === 0) {
+        this.logger.log(`handleSuccess: already processed intent (${paymentIntentId}) — skip`);
+        return null;
+      }
+
       const [batch] = await tx
         .insert(schema.eventBatches)
         .values({ type: 'BILLING_SUCCESS', effectiveDate: format(new Date(), 'yyyy-MM-dd') })
         .returning();
-
-      await tx.insert(schema.billingEvents).values({
-        contractId,
-        eventType: 'CHARGE_SUCCESS',
-        attemptNo,
-        amount,
-        paymentIntentId: paymentIntentId ?? null,
-      });
 
       const oldEndsAt = new Date(entitlement.endsAt);
       const baseDate = oldEndsAt > new Date() ? oldEndsAt : new Date();
@@ -118,26 +116,6 @@ export class BillingOutcomeHandler {
     }
   }
 
-  private async isIntentProcessed(
-    tx: DrizzleTransaction,
-    contractId: string,
-    paymentIntentId: string,
-    eventType: 'CHARGE_SUCCESS' | 'CHARGE_FAIL',
-  ): Promise<boolean> {
-    const [existing] = await tx
-      .select({ id: schema.billingEvents.id })
-      .from(schema.billingEvents)
-      .where(
-        and(
-          eq(schema.billingEvents.contractId, contractId),
-          eq(schema.billingEvents.paymentIntentId, paymentIntentId),
-          eq(schema.billingEvents.eventType, eventType),
-        ),
-      )
-      .limit(1);
-    return !!existing;
-  }
-
   // 결제수단 자체가 없는 경우: 재시도해도 동일 결과이므로 dunning 없이 즉시 해지
   private static readonly NO_PAYMENT_METHOD_ERRORS = new Set([
     'BILLING_AGREEMENT_NOT_FOUND',
@@ -151,12 +129,6 @@ export class BillingOutcomeHandler {
     paymentIntentId?: string,
   ): Promise<void> {
     const terminatedUserId = await this.dbService.db.transaction(async (tx) => {
-      // 멱등: 같은 intent의 실패 이벤트가 재전달돼도 dunning 횟수를 중복 증가시키지 않는다.
-      if (paymentIntentId && (await this.isIntentProcessed(tx, contractId, paymentIntentId, 'CHARGE_FAIL'))) {
-        this.logger.log(`handleFailure: already processed intent (${paymentIntentId}) — skip`);
-        return null;
-      }
-
       const [contract] = await tx
         .select({
           userId: schema.subscriptionContracts.userId,
@@ -195,17 +167,21 @@ export class BillingOutcomeHandler {
         .limit(1);
 
       const nextRetryAt = addHours(new Date(), DUNNING_RETRY_HOURS);
+      const attemptNo = dunning ? dunning.attempts + 1 : 1;
+
+      // 멱등 마커(첫 쓰기): unique(contract_id, payment_intent_id, event_type) 충돌 시 0행 → 이미 처리됨.
+      // 같은 intent의 실패 이벤트가 재전달돼도 dunning 횟수를 중복 증가시키지 않는다.
+      const insertedFail = await tx
+        .insert(schema.billingEvents)
+        .values({ contractId, eventType: 'CHARGE_FAIL', attemptNo, amount: null, paymentIntentId: paymentIntentId ?? null, errorCode, errorMessage })
+        .onConflictDoNothing()
+        .returning({ id: schema.billingEvents.id });
+      if (paymentIntentId && insertedFail.length === 0) {
+        this.logger.log(`handleFailure: already processed intent (${paymentIntentId}) — skip`);
+        return null;
+      }
 
       if (!dunning) {
-        await tx.insert(schema.billingEvents).values({
-          contractId,
-          eventType: 'CHARGE_FAIL',
-          attemptNo: 1,
-          amount: null,
-          paymentIntentId: paymentIntentId ?? null,
-          errorCode,
-          errorMessage,
-        });
         await tx.insert(schema.membershipDunningQueue).values({
           contractId,
           attempts: 1,
@@ -221,20 +197,10 @@ export class BillingOutcomeHandler {
 
         await this.recordBillingFailedEvent(tx, contractId, contract.userId, errorCode, 1);
       } else if (dunning.attempts < dunning.maxAttempts) {
-        const newAttempts = dunning.attempts + 1;
-        await tx.insert(schema.billingEvents).values({
-          contractId,
-          eventType: 'CHARGE_FAIL',
-          attemptNo: newAttempts,
-          amount: null,
-          paymentIntentId: paymentIntentId ?? null,
-          errorCode,
-          errorMessage,
-        });
         await tx
           .update(schema.membershipDunningQueue)
           .set({
-            attempts: newAttempts,
+            attempts: attemptNo,
             nextRetryAt,
             lastErrorCode: errorCode,
             lastErrorMessage: errorMessage,
@@ -246,7 +212,7 @@ export class BillingOutcomeHandler {
           .set({ billingInProgress: false, billingStartedAt: null, updatedAt: new Date() })
           .where(eq(schema.subscriptionContracts.id, contractId));
 
-        await this.recordBillingFailedEvent(tx, contractId, contract.userId, errorCode, newAttempts);
+        await this.recordBillingFailedEvent(tx, contractId, contract.userId, errorCode, attemptNo);
       } else {
         this.logger.log(`Dunning max attempts reached for contract ${contractId} — terminating`);
         await this.terminateSubscription(tx, contractId, contract.userId, 'PAYMENT_FAILURE_MAX_ATTEMPTS');
