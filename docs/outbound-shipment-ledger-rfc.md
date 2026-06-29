@@ -151,7 +151,7 @@ fulfillment_order_items (변경)
 | Phase | 상태 | 비고 |
 |---|---|---|
 | 설계 | ✅ 확정 | 본 RFC + ADR-0027 + CONTEXT.md |
-| Phase 0 고리 닫기 | 🟦 계획 완료 | `implementation-plan-outbound-ledger-phase0.md`; 코드 미착수 |
+| Phase 0 고리 닫기 | 🟨 구현 완료(통합 미검증) | FIFO 순수함수 단위(5/5) + 재배선 단위(`fulfillments.service.spec` 81/81) GREEN. 통합 스펙(`outbound-consumption.integration.spec.ts`) 작성 완료·**터널 실행 대기**. |
 | Phase 1 상자 라인 | ⬜ | |
 | Phase 2 FO 스냅샷 | ⬜ | |
 | Phase 3 contract | ⬜ | |
@@ -165,5 +165,6 @@ fulfillment_order_items (변경)
 ## Immediate Next Step
 
 1. ~~ADR-0027 확정~~ ✅, ~~packing·검수·송장분할 데이터 모델 확정~~ ✅, ~~Phase 0 구현 계획 작성~~ ✅
-2. **Phase 0 구현** — `implementation-plan-outbound-ledger-phase0.md` 의 TDD 순서대로.
-3. Phase 1(상자 라인 + packing 연산) 스키마·연산 상세 설계.
+2. ~~**Phase 0 구현**~~ ✅ (코드 완료, 단위 GREEN) → **통합 스펙을 터널에서 실행**해 "상자 N개 출고 → on_hand N 감소, available 불변" 성공 기준 확정. (`./scripts/sst-tunnel.sh deployments/lcnine/services dev` → `./scripts/test-core-integration.sh dev outbound-consumption.integration`)
+3. ⚠️ **Phase 0 deploy 선결조건**: develop 빌드가 `#472`(overseas customs)의 catalog 컴파일 에러 2건(`product-versions.service.ts`, `projection-snapshot.assembler.ts` — 미import 심볼)으로 깨져 있음. Phase 0 는 additive 라 독립 머지 가능하나 **deploy 는 이 빌드 깨짐이 먼저 고쳐져야** 가능. (Phase 0 와 무관한 선행 이슈.)
+4. Phase 1(상자 라인 + packing 연산) 스키마·연산 상세 설계.

@@ -16,6 +16,7 @@ import { OutboxService } from '../outbox/outbox.service';
 import { ProductSkuMappingService } from '../../product-matching/services/product-sku-mapping.service';
 import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
 import { UnifiedReservationService } from '../../inventory/shared/services/unified-reservation.service';
+import { OutboundConsumptionService } from './outbound-consumption.service';
 import { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
 import { CreateCompensationShipmentDto, CompensationShipmentItemDto } from '../dto/create-compensation-shipment.dto';
 import { SplitFulfillmentOrderDto } from '../dto/split-fulfillment-order.dto';
@@ -86,6 +87,7 @@ export class FulfillmentsService {
     private readonly unifiedReservation: UnifiedReservationService,
     private readonly productSkuMapping: ProductSkuMappingService,
     private readonly outbox: OutboxService,
+    private readonly outboundConsumption: OutboundConsumptionService,
     @Optional() private readonly salesOrderAmendments?: SalesOrderAmendmentsService,
   ) {}
 
@@ -1227,7 +1229,10 @@ export class FulfillmentsService {
         .set({ status: 'shipped', shippedAt: now, updatedAt: now })
         .where(eq(wmsTables.fulfillmentOrders.id, id));
 
-      await this.reservationLifecycle.handleFulfillmentOrderStatusChange(id, fo.status, 'shipped', trx);
+      // 출고 종결 = 재고원장 소진 (SHIP 이벤트 append + on_hand 차감 + 예약 소진).
+      // 옛 'shipped' release 경로(예약만 환원 → 출고분이 가용으로 되살아나는 누수)를 대체한다.
+      // (RFC §종결 seam / ADR-0027. 취소·만료의 환원은 cancel() 의 'canceled' 경로 유지.)
+      await this.outboundConsumption.consumeFulfillmentOrder(id, trx);
 
       const [salesOrderRow] = fo.salesOrderId
         ? await trx
