@@ -6,6 +6,7 @@ const intentStatusConfig: Record<string, { label: string; variant: 'default' | '
   CREATED: { label: '생성', variant: 'outline' },
   PROCESSING: { label: '처리중', variant: 'secondary' },
   REQUIRES_ACTION: { label: '액션필요', variant: 'secondary' },
+  AWAITING_DEPOSIT: { label: '입금대기중', variant: 'secondary' },
   AUTHORIZED: { label: '승인', variant: 'default' },
   SUCCEEDED: { label: '성공', variant: 'default' },
   CAPTURED: { label: '매입', variant: 'default' },
