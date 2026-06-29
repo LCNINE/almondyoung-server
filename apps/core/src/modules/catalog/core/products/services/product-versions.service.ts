@@ -691,6 +691,25 @@ export class ProductVersionsService {
   }
 
   /**
+   * 해외직구 여부 변경 — draft 없이 active 버전을 직접 수정하고 채널에 재싱크.
+   */
+  async updateOverseas(masterId: string, isOverseas: boolean, tx?: DbTransaction): Promise<void> {
+    return this.inTx(async (tx) => {
+      const activeVersion = await this.getActiveVersion(masterId, tx);
+
+      await tx
+        .update(productMasterVersions)
+        .set({ isOverseas, updatedAt: new Date() })
+        .where(eq(productMasterVersions.id, activeVersion.id));
+
+      const patchedVersion = { ...activeVersion, isOverseas };
+      await this._emitActiveVersionChangedEvent(patchedVersion, null, 'active', tx);
+
+      this.logger.log(`updateOverseas: master=${masterId} isOverseas=${isOverseas}`);
+    }, tx);
+  }
+
+  /**
    * Master의 Active 버전을 Inactive로 전환 (상품 비공개)
    */
   async unpublishMaster(masterId: string, tx?: DbTransaction): Promise<void> {
@@ -787,6 +806,366 @@ export class ProductVersionsService {
     );
   }
 
+  private async getVersionCategoryIds(masterId: string, versionId: string, tx: DbTransaction): Promise<string[]> {
+    const rows = await tx
+      .select({ categoryId: productMasterCategories.categoryId })
+      .from(productMasterCategories)
+      .where(and(eq(productMasterCategories.masterId, masterId), eq(productMasterCategories.versionId, versionId)));
+
+    return rows.map((row) => row.categoryId);
+  }
+
+  private async getPrimaryCategoryId(masterId: string, versionId: string, tx: DbTransaction): Promise<string | null> {
+    const [row] = await tx
+      .select({ categoryId: productMasterCategories.categoryId })
+      .from(productMasterCategories)
+      .where(
+        and(
+          eq(productMasterCategories.masterId, masterId),
+          eq(productMasterCategories.versionId, versionId),
+          eq(productMasterCategories.isPrimary, true),
+        ),
+      )
+      .limit(1);
+
+    return row?.categoryId ?? null;
+  }
+
+  /**
+   * 전체 ProductSnapshot 빌드 (Phase 2)
+   * 이벤트 페이로드에 포함할 모든 상품 데이터를 조회
+   */
+  private async _buildFullSnapshot(masterId: string, versionId: string, tx: DbTransaction): Promise<ProductSnapshot> {
+    const version = await tx.query.productMasterVersions.findFirst({
+      where: eq(productMasterVersions.id, versionId),
+    });
+
+    if (!version) {
+      throw new NotFoundError(`Version ${versionId} not found`);
+    }
+
+    const categories = await this._buildCategoryTree(masterId, versionId, tx);
+    const optionGroups = await this._getVersionOptionGroups(masterId, versionId, tx);
+    const variants = await this._getVersionVariants(versionId, tx);
+    const purchaseConstraint = await this._getVersionPurchaseConstraint(masterId, versionId, tx);
+
+    const images = await tx
+      .select()
+      .from(productImages)
+      .where(eq(productImages.versionId, versionId))
+      .orderBy(asc(productImages.sortOrder));
+
+    const tagRows = await tx
+      .select({
+        name: tagValues.name,
+      })
+      .from(productTagValues)
+      .innerJoin(tagValues, eq(productTagValues.tagValueId, tagValues.id))
+      .where(eq(productTagValues.versionId, versionId));
+
+    const fileServiceUrl = process.env.FILE_SERVICE_URL || '';
+    const primaryImage = images.find((img) => img.isPrimary);
+
+    return {
+      masterId,
+      versionId,
+      version: version.version,
+      name: version.name,
+      description: version.description || undefined,
+      descriptionHtml: version.descriptionHtml || undefined,
+      thumbnail: primaryImage ? `${fileServiceUrl}/files/${primaryImage.fileId}` : undefined,
+      images: images.map((img) => ({
+        fileId: img.fileId,
+        url: `${fileServiceUrl}/files/${img.fileId}`,
+        isPrimary: img.isPrimary,
+        sortOrder: img.sortOrder,
+      })),
+      seoTitle: version.seoTitle || undefined,
+      seoDescription: version.seoDescription || undefined,
+      seoKeywords: version.seoKeywords?.join(', ') || undefined,
+      categories,
+      brand: version.brand || undefined,
+      tags: tagRows.map((t) => t.name),
+      productType: version.productType || undefined,
+      fulfillmentKind: (version.fulfillmentKind || 'physical') as 'physical' | 'digital',
+      optionGroups,
+      variants,
+      status: version.status === 'inactive' ? 'draft' : version.status,
+      isWholesaleOnly: version.isWholesaleOnly || false,
+      hideMembershipPriceForNonMembers: version.hideMembershipPriceForNonMembers ?? version.isMembershipOnly ?? false,
+      isMembershipOnly: version.hideMembershipPriceForNonMembers ?? version.isMembershipOnly ?? false,
+      isVisibleToMembersOnly: version.isVisibleToMembersOnly ?? false,
+      isOverseas: version.isOverseas ?? false,
+      isGiftcard: false,
+      discountable: true,
+      purchaseConstraint,
+    };
+  }
+
+  private async _getVersionPurchaseConstraint(
+    masterId: string,
+    versionId: string,
+    tx: DbTransaction,
+  ): Promise<ProductSnapshot['purchaseConstraint']> {
+    const [row] = await tx
+      .select({
+        requiresMembership: productPurchaseConstraints.requiresMembership,
+        lifetimeQuantityLimit: productPurchaseConstraints.lifetimeQuantityLimit,
+      })
+      .from(productMasterPurchaseConstraints)
+      .innerJoin(
+        productPurchaseConstraints,
+        eq(productMasterPurchaseConstraints.purchaseConstraintId, productPurchaseConstraints.id),
+      )
+      .where(
+        and(
+          eq(productMasterPurchaseConstraints.masterId, masterId),
+          eq(productMasterPurchaseConstraints.versionId, versionId),
+        ),
+      )
+      .limit(1);
+
+    return row ?? undefined;
+  }
+
+  /**
+   * 카테고리 트리 빌드 (부모 경로 포함)
+   */
+  private async _buildCategoryTree(
+    masterId: string,
+    versionId: string,
+    tx: DbTransaction,
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      slug: string;
+      path: string;
+      parentId: string | null;
+      isActive: boolean;
+      visibility: boolean;
+      showOnMainCategory: boolean;
+      thumbnail?: string;
+    }>
+  > {
+    const categoryRows = await tx
+      .select({
+        categoryId: productMasterCategories.categoryId,
+      })
+      .from(productMasterCategories)
+      .where(eq(productMasterCategories.masterId, masterId));
+
+    if (categoryRows.length === 0) return [];
+
+    const categoryIds = categoryRows.map((r) => r.categoryId);
+
+    const categories = await tx.select().from(productCategories).where(inArray(productCategories.id, categoryIds));
+
+    const fileServiceUrl = process.env.FILE_SERVICE_URL || '';
+
+    const categoriesWithPath = await Promise.all(
+      categories.map(async (cat) => {
+        const path = await this._buildCategoryPath(cat.id, tx);
+        return {
+          id: cat.id,
+          name: cat.name,
+          slug: cat.slug,
+          path,
+          parentId: cat.parentId,
+          isActive: cat.isActive,
+          visibility: cat.visibility ?? true,
+          showOnMainCategory: cat.displaySettings?.showOnMainCategory ?? false,
+          thumbnail: cat.imageUrl ? `${fileServiceUrl}/files/${cat.imageUrl}` : undefined,
+        };
+      }),
+    );
+
+    return categoriesWithPath;
+  }
+
+  /**
+   * 카테고리 경로 재귀적으로 구성
+   */
+  private async _buildCategoryPath(categoryId: string, tx: DbTransaction): Promise<string> {
+    const pathParts: string[] = [];
+    let currentId: string | null = categoryId;
+
+    while (currentId) {
+      const category = await tx.query.productCategories.findFirst({
+        where: eq(productCategories.id, currentId),
+      });
+
+      if (!category) break;
+
+      pathParts.unshift(category.slug);
+      currentId = category.parentId;
+    }
+
+    return '/' + pathParts.join('/');
+  }
+
+  /**
+   * 버전의 옵션 그룹 조회
+   */
+  private async _getVersionOptionGroups(
+    masterId: string,
+    versionId: string,
+    tx: DbTransaction,
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      values: Array<{
+        id: string;
+        name: string;
+        colorCode?: string;
+        imageUrl?: string;
+      }>;
+    }>
+  > {
+    const optionGroupRows = await tx
+      .select({
+        optionGroupId: productMasterOptionGroups.optionGroupId,
+        displayName: productOptionGroupDisplays.displayName,
+      })
+      .from(productMasterOptionGroups)
+      .leftJoin(
+        productOptionGroupDisplays,
+        and(
+          eq(productMasterOptionGroups.optionGroupId, productOptionGroupDisplays.optionGroupId),
+          eq(productOptionGroupDisplays.versionId, versionId),
+        ),
+      )
+      .where(eq(productMasterOptionGroups.masterId, masterId));
+
+    const fileServiceUrl = process.env.FILE_SERVICE_URL || '';
+
+    const optionGroups = await Promise.all(
+      optionGroupRows.map(async (row) => {
+        const valueRows = await tx
+          .select({
+            id: productOptionValueDisplays.optionValueId,
+            name: productOptionValueDisplays.displayName,
+            colorCode: productOptionValueDisplays.colorCode,
+            imageUrl: productOptionValueDisplays.imageUrl,
+          })
+          .from(productOptionValueDisplays)
+          .where(and(eq(productOptionValueDisplays.versionId, versionId)));
+
+        return {
+          id: row.optionGroupId,
+          name: row.displayName || row.optionGroupId,
+          values: valueRows.map((v) => ({
+            id: v.id,
+            name: v.name,
+            colorCode: v.colorCode || undefined,
+            imageUrl: v.imageUrl ? `${fileServiceUrl}/files/${v.imageUrl}` : undefined,
+          })),
+        };
+      }),
+    );
+
+    return optionGroups;
+  }
+
+  /**
+   * 버전의 변형(Variants) 조회
+   */
+  private async _getVersionVariants(
+    versionId: string,
+    tx: DbTransaction,
+  ): Promise<
+    Array<{
+      id: string;
+      variantName: string;
+      sku: string;
+      variantCode?: string;
+      isDefault: boolean;
+      status: string;
+      optionCombination?: Array<{
+        name: string;
+        value: string;
+      }>;
+      basePrice: number;
+      membershipPrice?: number;
+      tieredPrices?: Array<{
+        minQuantity: number;
+        price: number;
+      }>;
+      weight?: number;
+      length?: number;
+      width?: number;
+      height?: number;
+      originCountry?: string;
+      midCode?: string;
+      hsCode?: string;
+      material?: string;
+    }>
+  > {
+    const variantRows = await tx
+      .select({
+        id: productVariants.id,
+        variantName: productVariants.variantName,
+        variantCode: productVariants.variantCode,
+        isDefault: productVariants.isDefault,
+        status: productVariants.status,
+      })
+      .from(productMasterVariants)
+      .innerJoin(productVariants, eq(productMasterVariants.variantId, productVariants.id))
+      .where(eq(productMasterVariants.versionId, versionId));
+
+    const cachedPrices = await this.priceCacheService.getCachedPriceSetsByVersion(versionId, tx);
+    const priceMap = new Map(cachedPrices.map((p) => [p.variantId, p]));
+
+    const variants = await Promise.all(
+      variantRows.map(async (variant) => {
+        const priceData = priceMap.get(variant.id);
+
+        const optionValues = await tx
+          .select({
+            optionGroupName: productOptionGroupDisplays.displayName,
+            optionValueName: productOptionValueDisplays.displayName,
+          })
+          .from(variantOptionValues)
+          .innerJoin(productOptionValues, eq(variantOptionValues.optionValueId, productOptionValues.id))
+          .innerJoin(
+            productOptionValueDisplays,
+            and(
+              eq(productOptionValues.id, productOptionValueDisplays.optionValueId),
+              eq(productOptionValueDisplays.versionId, versionId),
+            ),
+          )
+          .innerJoin(productOptionGroups, eq(productOptionValues.optionGroupId, productOptionGroups.id))
+          .innerJoin(
+            productOptionGroupDisplays,
+            and(
+              eq(productOptionGroups.id, productOptionGroupDisplays.optionGroupId),
+              eq(productOptionGroupDisplays.versionId, versionId),
+            ),
+          )
+          .where(eq(variantOptionValues.variantId, variant.id));
+
+        return {
+          id: variant.id,
+          variantName: variant.variantName || '',
+          sku: variant.id,
+          variantCode: variant.variantCode || undefined,
+          isDefault: variant.isDefault,
+          status: variant.status,
+          optionCombination: optionValues.map((ov) => ({
+            name: ov.optionGroupName || '',
+            value: ov.optionValueName || '',
+          })),
+          basePrice: priceData?.basePrice ?? 0,
+          membershipPrice: priceData?.membershipPrice || undefined,
+          tieredPrices: priceData?.tieredPrices || undefined,
+        };
+      }),
+    );
+
+    return variants;
+  }
+
   /**
    * publish 시 variant 변경 이벤트 발행
    */
@@ -846,6 +1225,7 @@ export class ProductVersionsService {
         'isWholesaleOnly',
         'hideMembershipPriceForNonMembers',
         'isVisibleToMembersOnly',
+        'isOverseas',
         'isMembershipOnly',
         'productType',
         'fulfillmentKind',

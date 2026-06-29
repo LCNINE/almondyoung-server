@@ -391,6 +391,7 @@
       "postcode": "우편번호",
       "address": "기본주소",
       "addressDetail": "상세주소",
+      "personalCustomsCode": "개인통관고유부호",
       "paymentInfo": "결제 정보",
       "paymentStatus": "결제상태",
       "paymentMethod": "결제수단",

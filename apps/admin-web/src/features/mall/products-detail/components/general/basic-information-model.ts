@@ -13,6 +13,7 @@ export type BasicInformationDetail = {
   seoDescription: string | null;
   seoKeywords: string[] | null;
   isWholesaleOnly: boolean | null;
+  isOverseas: boolean | null;
   hideMembershipPriceForNonMembers: boolean | null;
   isVisibleToMembersOnly: boolean | null;
   /** @deprecated use hideMembershipPriceForNonMembers */
@@ -28,6 +29,7 @@ export type BasicInformationFormValues = {
   seoDescription: string;
   seoKeywordsText: string;
   isWholesaleOnly: boolean;
+  isOverseas: boolean;
   hideMembershipPriceForNonMembers: boolean;
   isVisibleToMembersOnly: boolean;
   fulfillmentKind: 'physical' | 'digital';
@@ -74,6 +76,7 @@ export function toBasicInformationFormValues(
     seoDescription: detail.seoDescription ?? '',
     seoKeywordsText: detail.seoKeywords?.join(', ') ?? '',
     isWholesaleOnly: detail.isWholesaleOnly ?? false,
+    isOverseas: detail.isOverseas ?? false,
     hideMembershipPriceForNonMembers:
       detail.hideMembershipPriceForNonMembers ??
       detail.isMembershipOnly ??
@@ -144,6 +147,7 @@ export function toBasicInformationUpdateDto(
     seoDescription: trimToNullable(values.seoDescription),
     seoKeywords: parseSeoKeywords(values.seoKeywordsText),
     isWholesaleOnly: values.isWholesaleOnly,
+    isOverseas: values.isOverseas,
     hideMembershipPriceForNonMembers: values.hideMembershipPriceForNonMembers,
     isMembershipOnly: values.hideMembershipPriceForNonMembers,
     isVisibleToMembersOnly: values.isVisibleToMembersOnly,

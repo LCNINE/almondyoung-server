@@ -32,6 +32,7 @@ export type ProductDetailView = {
   seoDescription: string | null;
   seoKeywords: string[] | null;
   isWholesaleOnly: boolean | null;
+  isOverseas: boolean | null;
   hideMembershipPriceForNonMembers: boolean | null;
   isVisibleToMembersOnly: boolean | null;
   /** @deprecated use hideMembershipPriceForNonMembers */
@@ -66,6 +67,7 @@ function fromMaster(master: ProductMasterDetail): ProductDetailView {
     seoDescription: master.seoDescription,
     seoKeywords: master.seoKeywords,
     isWholesaleOnly: master.isWholesaleOnly,
+    isOverseas: master.isOverseas ?? null,
     hideMembershipPriceForNonMembers:
       master.hideMembershipPriceForNonMembers ?? master.isMembershipOnly,
     isVisibleToMembersOnly: master.isVisibleToMembersOnly ?? false,
@@ -96,6 +98,7 @@ function fromVersion(detail: MasterVersionDetailDto): ProductDetailView {
     seoDescription: detail.seoDescription,
     seoKeywords: detail.seoKeywords,
     isWholesaleOnly: detail.isWholesaleOnly,
+    isOverseas: detail.isOverseas ?? null,
     hideMembershipPriceForNonMembers:
       detail.hideMembershipPriceForNonMembers ?? detail.isMembershipOnly,
     isVisibleToMembersOnly: detail.isVisibleToMembersOnly ?? false,

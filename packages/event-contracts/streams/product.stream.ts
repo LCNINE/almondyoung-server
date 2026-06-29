@@ -157,6 +157,7 @@ export interface ProductSnapshot {
    */
   hideMembershipPriceForNonMembers: boolean;
   isVisibleToMembersOnly: boolean;
+  isOverseas: boolean;
   /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly: boolean;
   isGiftcard: boolean;
@@ -336,6 +337,7 @@ const ProductSnapshotSchema = z.object({
   // 멤버십가 공개 제한 (비회원에게 멤버십가 숨김) — 상품 노출/구매 제한 아님
   hideMembershipPriceForNonMembers: z.boolean(),
   isVisibleToMembersOnly: z.boolean(),
+  isOverseas: z.boolean(),
   // Deprecated alias kept for compatibility during expand phase.
   isMembershipOnly: z.boolean(),
   isGiftcard: z.boolean(),

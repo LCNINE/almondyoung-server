@@ -130,6 +130,14 @@
       }
     }
   },
+  "customsCode": {
+    "title": "Personal Customs Clearance Code",
+    "label": "Personal Customs Clearance Code",
+    "placeholder": "e.g. P123456789012",
+    "notice": "Overseas direct-purchase items require a personal customs clearance code for customs clearance.",
+    "lookupLink": "Look up / issue customs code",
+    "error": "Please enter a valid personal customs clearance code (1 letter + 12 digits)."
+  },
   "orderProducts": {
     "title": "Order items",
     "empty": "There are no order items.",
