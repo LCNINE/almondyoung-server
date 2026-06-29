@@ -105,6 +105,7 @@ export default async function Footer({ className }: { className?: string }) {
             <FooterInfoLine>{t("business.mailOrderNo")}</FooterInfoLine>
             <FooterInfoLine>{t("business.phone")}</FooterInfoLine>
             <FooterInfoLine>{t("business.address")}</FooterInfoLine>
+            <FooterInfoLine>{t("business.bankAccount")}</FooterInfoLine>
           </address>
           <div className="flex-1 space-y-1">
             <FooterInfoLine>{t("business.medicalTarget")}</FooterInfoLine>
@@ -191,6 +192,7 @@ export default async function Footer({ className }: { className?: string }) {
               <p>{t("business.mobileMailOrderNo")}</p>
               <p>{t("business.mobilePhone")}</p>
               <p>{t("business.mobileAddress")}</p>
+              <p>{t("business.mobileBankAccount")}</p>
             </address>
 
             <div className="mt-6 border-t border-stone-200 pt-4">
