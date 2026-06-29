@@ -2,7 +2,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { DbService, InjectDb } from '@app/db';
 import { NotFoundError } from '@app/shared';
 import { InjectStreamPublisher, OutboxPublisher, StreamPublisher } from '@app/events';
-import { ProductEvents, PRODUCT_STREAM, ProductSnapshot } from '@packages/event-contracts';
+import { ProductEvents, PRODUCT_STREAM, type ProductSnapshot } from '@packages/event-contracts';
 import { PricingValidatorService } from '../../pricing/pricing-validator.service';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
 import { ProductReadAssembler } from '../assemblers/product-read.assembler';
@@ -19,12 +19,12 @@ import {
 import {
   type PimSchema,
   productMasters,
-  productMasterCategories,
   productCategories,
+  productMasterCategories,
   productMasterVersions,
-  productMasterOptionGroups,
   productOptionGroups,
   productOptionValues,
+  productMasterOptionGroups,
   productMasterVariants,
   productMasterPricingRules,
   productOptionGroupDisplays,
@@ -845,7 +845,7 @@ export class ProductVersionsService {
     });
 
     if (!version) {
-      throw new NotFoundError(`Version ${versionId} not found`);
+      throw new NotFoundException(`Version ${versionId} not found`);
     }
 
     const categories = await this._buildCategoryTree(masterId, versionId, tx);

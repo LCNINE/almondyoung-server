@@ -10,10 +10,7 @@ import { AssignShipmentDto } from '../dto/assign-shipment.dto';
 import { ReserveDto } from '../dto/reserve.dto';
 import { UnreserveDto } from '../dto/unreserve.dto';
 import { TransferReservationDto } from '../dto/transfer-reservation.dto';
-import {
-  FulfillmentOrderResponseDto,
-  FulfillmentOrderListResponseDto,
-} from '../dto/fulfillment-order-response.dto';
+import { FulfillmentOrderResponseDto, FulfillmentOrderListResponseDto } from '../dto/fulfillment-order-response.dto';
 
 type AuthenticatedUser = { id?: string; userId?: string; sub?: string } | undefined;
 
@@ -48,8 +45,9 @@ export class FulfillmentsController {
   @Post(':id/assign-shipment')
   @ApiOperation({ summary: '배송 할당' })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
-  assignShipment(@Param('id') id: string, @Body() dto: AssignShipmentDto) {
-    return this.service.assignShipment(id, dto);
+  assignShipment(@Param('id') id: string, @Body() dto: AssignShipmentDto, @User() user: AuthenticatedUser) {
+    // 박스를 연(라벨 부여한) 작업자 = openedBy → 출고 종결 시 SHIP journal.actorId 로 귀속.
+    return this.service.assignShipment(id, dto, this.getUserId(user));
   }
 
   @Post(':id/ship')
@@ -81,7 +79,9 @@ export class FulfillmentsController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: '주문처리 상세 조회 (items, reservations, batch, shipment, invoice, adminAvailableActions 포함)' })
+  @ApiOperation({
+    summary: '주문처리 상세 조회 (items, reservations, batch, shipment, invoice, adminAvailableActions 포함)',
+  })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
   @ApiResponse({ status: 200, type: FulfillmentOrderResponseDto })
   getOne(@Param('id') id: string) {

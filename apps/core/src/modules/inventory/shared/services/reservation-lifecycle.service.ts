@@ -76,6 +76,18 @@ export class ReservationLifecycleService {
   /**
    * FO 예약 일괄 해제
    */
+  /**
+   * 출고 종결(소진)에 따른 FO 예약 닫기.
+   *
+   * 예약 row 를 닫고 reservedQty 를 0 으로 만드는 메커니즘은 환원(release)과 동일하다.
+   * 차이는 **호출자가 이미 SHIP 이벤트를 원장에 append(on_hand 차감)했다는 것** — 즉
+   * 가용으로 되돌리는 환원이 아니라 소진(consume)이다 (ADR-0027 결정 5 / RFC 종결 seam).
+   * 환원(취소·만료)은 `handleFulfillmentOrderStatusChange('canceled')` 로 간다.
+   */
+  async consumeFulfillmentOrderReservations(fulfillmentOrderId: string, tx: DbTx): Promise<void> {
+    await this.releaseFulfillmentOrderReservations(fulfillmentOrderId, 'FO shipped (consumed)', tx);
+  }
+
   private async releaseFulfillmentOrderReservations(
     fulfillmentOrderId: string,
     reason: string,

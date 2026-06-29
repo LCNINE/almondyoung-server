@@ -114,6 +114,7 @@ export class InventoryCommandService {
       occurredAt?: Date;
       idempotencyKey?: string;
       reason?: string;
+      journalId?: string;
     },
     tx?: DbTx,
   ) {
@@ -154,6 +155,7 @@ export class InventoryCommandService {
           occurredAt: input.occurredAt ?? new Date(),
           idempotencyKey: input.idempotencyKey,
           reason: input.reason,
+          journalId: input.journalId,
         },
         trx,
       );
@@ -177,6 +179,7 @@ export class InventoryCommandService {
             quantity: input.quantity,
             afterQuantity: afterQuantity,
             reason: input.reason,
+            journalId: input.journalId,
             occurredAt: (input.occurredAt ?? new Date()).toISOString(),
           },
         },

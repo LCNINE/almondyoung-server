@@ -1464,11 +1464,46 @@ export const shipments = pgTable(
     splitStatus: boolean('split_status').notNull().default(false),
     invoiceUrl: varchar('invoice_url', { length: 512 }),
     fulfillmentOrderId: uuid('fulfillment_order_id').references(() => fulfillmentOrders.id, { onDelete: 'set null' }),
+    // 박스를 연(생성한) 작업자 — 송장/라벨 발급(issueInvoice/assignShipment) 시 캡처.
+    // 출고 종결 시 SHIP 재고원장 이벤트의 작업자 귀속(stock_journals.actorId)이 이 값을 읽는다.
+    // (Phase 1 — RFC §Phase 1 상세 설계 #6. nullable: 캡처 안 된 흐름/기존 데이터는 무귀속.)
+    openedBy: uuid('opened_by'),
     lastUpdated: timestamp('last_updated', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     uqFulfillmentOrder: unique('uq_shipments_fulfillment_order_id').on(t.fulfillmentOrderId),
+  }),
+);
+
+/**
+ * 상자 라인(shipment_line) — 한 상자에 담긴 출고 라인 (Phase 1, additive).
+ * source 출고주문 라인(FOI)을 참조한다. 현재는 FO 1:1 이라 상자당 그 FO 의 FOI 를 미러하지만,
+ * 모델 자체는 FO↔상자 M:N(송장분할·합배송)을 표현할 수 있다(흐름 구현은 후속).
+ * `consumeShipment(shipmentId)` 가 라인별로 FIFO 차감 + 예약 소진의 단위로 쓴다.
+ */
+export const shipmentLines = pgTable(
+  'shipment_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    shipmentId: uuid('shipment_id')
+      .references(() => shipments.id, { onDelete: 'cascade' })
+      .notNull(),
+    fulfillmentOrderItemId: uuid('fulfillment_order_item_id')
+      .references(() => fulfillmentOrderItems.id, { onDelete: 'restrict' })
+      .notNull(),
+    // 원장 차감용 denormalize (FOI 의 skuId 와 동일). 라인만으로 SHIP 이벤트를 만들 수 있게.
+    skuId: uuid('sku_id')
+      .references(() => skus.id, { onDelete: 'restrict' })
+      .notNull(),
+    qty: integer('qty').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxShipment: index('idx_shipment_lines_shipment').on(t.shipmentId),
+    // 상자당 FOI 1행 — 멱등 ensure(onConflictDoNothing)의 근거. M:N end-state 에서도 성립.
+    uqShipmentFoi: unique('uq_shipment_lines_shipment_foi').on(t.shipmentId, t.fulfillmentOrderItemId),
+    ckQtyPositive: check('ck_shipment_lines_qty_positive', sql`${t.qty} > 0`),
   }),
 );
 
@@ -2269,6 +2304,7 @@ export const wmsTables = {
   outboundTaskItems,
   outboundTaskLines,
   shipments,
+  shipmentLines,
   shipmentTracking,
   returns,
   returnItems,
@@ -3329,6 +3365,9 @@ export type NewFulfillmentOrderBatch = InferInsertModel<typeof fulfillmentOrderB
 // Shipment Types
 export type Shipment = InferSelectModel<typeof shipments>;
 export type NewShipment = InferInsertModel<typeof shipments>;
+
+export type ShipmentLine = InferSelectModel<typeof shipmentLines>;
+export type NewShipmentLine = InferInsertModel<typeof shipmentLines>;
 
 export type ShipmentTracking = InferSelectModel<typeof shipmentTracking>;
 export type NewShipmentTracking = InferInsertModel<typeof shipmentTracking>;
