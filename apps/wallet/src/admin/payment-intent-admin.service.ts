@@ -494,6 +494,10 @@ export class PaymentIntentAdminService {
       conditions.push(eq(paymentIntents.userId, query.userId));
     }
 
+    if (query.userIds && query.userIds.length > 0) {
+      conditions.push(inArray(paymentIntents.userId, query.userIds));
+    }
+
     if (query.paymentMethodType) {
       conditions.push(eq(paymentMethods.type, query.paymentMethodType as any));
     }

@@ -13,6 +13,7 @@ import { QueryProvider } from "@lib/providers/query-provider"
 import { ThemeProvider } from "@lib/providers/theme-provider"
 import { getSEOTags, renderSchemaTags } from "@lib/seo"
 import { Metadata, Viewport } from "next"
+import Script from "next/script"
 import { NextIntlClientProvider } from "next-intl"
 import { getLocale, getMessages } from "next-intl/server"
 import { OverlayProvider } from "overlay-kit"
@@ -47,12 +48,26 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
     getMessages(),
   ])
 
+  // GA4 — NEXT_PUBLIC_GA_ID 는 live 빌드에만 주입된다(dev 데이터 오염 방지).
+  const gaId = process.env.NEXT_PUBLIC_GA_ID
+
   return (
     <html lang={locale} suppressHydrationWarning>
       <body
         suppressHydrationWarning
         className="overflow-x-clip [scrollbar-gutter:stable_both-edges]"
       >
+        {gaId && (
+          <>
+            <Script
+              src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`}
+              strategy="afterInteractive"
+            />
+            <Script id="ga4-init" strategy="afterInteractive">
+              {`window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${gaId}');`}
+            </Script>
+          </>
+        )}
         <NextIntlClientProvider locale={locale} messages={messages}>
           <QueryProvider>
             <OverlayProvider>

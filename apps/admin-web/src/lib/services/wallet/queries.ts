@@ -14,12 +14,16 @@ import { walletQueryKeys } from './query-keys';
 
 // ── Payment Intents ────────────────────────────────────────────────────────
 
-export const usePaymentIntentList = (query: PaymentIntentListQuery) => {
+export const usePaymentIntentList = (
+  query: PaymentIntentListQuery,
+  options?: { enabled?: boolean },
+) => {
   return useQuery({
     queryKey: walletQueryKeys.intentList(query),
     queryFn: () => walletApi.listPaymentIntents(query),
     staleTime: 30 * 1000,
     placeholderData: keepPreviousData,
+    enabled: options?.enabled ?? true,
   });
 };
 

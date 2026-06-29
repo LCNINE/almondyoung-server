@@ -176,6 +176,8 @@ export interface PaymentIntentListQuery {
   page?: number;
   limit?: number;
   q?: string;
+  /** 구매자 이름 검색을 user-service에서 해석한 userId 목록(콤마 구분) */
+  userIds?: string;
   status?: string;
   paymentMethodType?: string;
   dateFrom?: string;

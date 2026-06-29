@@ -25,6 +25,19 @@ export class AdminPaymentIntentListQueryDto extends PaginationQueryDto {
   userId?: string;
 
   @ApiPropertyOptional({
+    description: 'Filter by multiple user IDs (comma-separated). 구매자 이름 검색 시 user-service에서 해석한 userId 목록.',
+    isArray: true,
+    type: String,
+  })
+  @IsOptional()
+  @IsString({ each: true })
+  @Transform(({ value }) => {
+    const arr = Array.isArray(value) ? value : String(value).split(',');
+    return arr.map((v) => v.trim()).filter((v) => v.length > 0);
+  })
+  userIds?: string[];
+
+  @ApiPropertyOptional({
     description: 'Filter by payment method type (e.g. TOSS, POINTS, BANK_TRANSFER)',
   })
   @IsOptional()
