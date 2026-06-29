@@ -1,7 +1,8 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
+import { NotFoundError } from '@app/shared';
 import { InjectStreamPublisher, OutboxPublisher, StreamPublisher } from '@app/events';
-import { ProductEvents, PRODUCT_STREAM } from '@packages/event-contracts';
+import { ProductEvents, PRODUCT_STREAM, ProductSnapshot } from '@packages/event-contracts';
 import { PricingValidatorService } from '../../pricing/pricing-validator.service';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
 import { ProductReadAssembler } from '../assemblers/product-read.assembler';
@@ -19,8 +20,11 @@ import {
   type PimSchema,
   productMasters,
   productMasterCategories,
+  productCategories,
   productMasterVersions,
   productMasterOptionGroups,
+  productOptionGroups,
+  productOptionValues,
   productMasterVariants,
   productMasterPricingRules,
   productOptionGroupDisplays,
@@ -694,7 +698,7 @@ export class ProductVersionsService {
    * 해외직구 여부 변경 — draft 없이 active 버전을 직접 수정하고 채널에 재싱크.
    */
   async updateOverseas(masterId: string, isOverseas: boolean, tx?: DbTransaction): Promise<void> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const activeVersion = await this.getActiveVersion(masterId, tx);
 
       await tx
@@ -703,7 +707,7 @@ export class ProductVersionsService {
         .where(eq(productMasterVersions.id, activeVersion.id));
 
       const patchedVersion = { ...activeVersion, isOverseas };
-      await this._emitActiveVersionChangedEvent(patchedVersion, null, 'active', tx);
+      await this._emitActiveVersionChangedEvent(patchedVersion, null, 'published', tx);
 
       this.logger.log(`updateOverseas: master=${masterId} isOverseas=${isOverseas}`);
     }, tx);

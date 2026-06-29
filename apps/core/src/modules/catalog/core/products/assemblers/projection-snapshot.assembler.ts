@@ -72,6 +72,7 @@ export class ProjectionSnapshotAssembler {
       masterId,
       versionId,
       version: version.version,
+      isOverseas: version.isOverseas ?? false,
       name: version.name,
       description: version.description ?? undefined,
       descriptionHtml: version.descriptionHtml ?? undefined,
