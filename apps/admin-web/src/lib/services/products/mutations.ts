@@ -228,6 +228,24 @@ export const useUpdateMembersOnlyVisibility = (masterId: string, versionId: stri
 };
 
 /**
+ * 해외직구 여부 변경 (draft 없이 즉시 적용)
+ */
+export const useUpdateOverseas = (masterId: string, versionId: string | null) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (isOverseas: boolean) =>
+      products.masters.updateOverseas(masterId, isOverseas),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.master(masterId) });
+      if (versionId) {
+        queryClient.invalidateQueries({ queryKey: productQueryKeys.versionDetail(masterId, versionId) });
+      }
+    },
+  });
+};
+
+/**
  * @deprecated use useUpdateMembershipPriceVisibility
  */
 export const useUpdateMembershipVisibility = useUpdateMembershipPriceVisibility;

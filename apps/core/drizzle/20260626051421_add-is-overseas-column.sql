@@ -1,0 +1,1 @@
+ALTER TABLE "product_master_versions" ADD COLUMN "is_overseas" boolean DEFAULT false NOT NULL;

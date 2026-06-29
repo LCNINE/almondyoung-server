@@ -391,6 +391,7 @@
       "postcode": "Postal Code",
       "address": "Address",
       "addressDetail": "Address Detail",
+      "personalCustomsCode": "Personal Customs Code",
       "paymentInfo": "Payment Info",
       "paymentStatus": "Payment Status",
       "paymentMethod": "Payment Method",

@@ -613,6 +613,7 @@ export interface PimProductSnapshot {
   isWholesaleOnly?: boolean;
   hideMembershipPriceForNonMembers?: boolean;
   isVisibleToMembersOnly?: boolean;
+  isOverseas?: boolean;
   /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly?: boolean;
   purchaseConstraint?: PimPurchaseConstraint;
@@ -692,6 +693,7 @@ export interface MedusaProductPayload {
     isWholesaleOnly?: boolean;
     hideMembershipPriceForNonMembers?: boolean;
     isVisibleToMembersOnly?: boolean;
+    isOverseas?: boolean;
     /** @deprecated use hideMembershipPriceForNonMembers */
     isMembershipOnly?: boolean;
     pimPurchaseConstraint?: PimPurchaseConstraint | null;

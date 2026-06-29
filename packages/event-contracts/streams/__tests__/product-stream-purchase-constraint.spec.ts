@@ -26,6 +26,7 @@ const validPayload = {
     isWholesaleOnly: false,
     hideMembershipPriceForNonMembers: false,
     isVisibleToMembersOnly: false,
+    isOverseas: false,
     isMembershipOnly: false,
     isGiftcard: false,
     discountable: true,

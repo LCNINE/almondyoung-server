@@ -22,6 +22,7 @@ export interface ProductVersionDetailResponseDto {
   isWholesaleOnly: boolean;
   hideMembershipPriceForNonMembers: boolean;
   isVisibleToMembersOnly: boolean;
+  isOverseas: boolean;
   /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly: boolean;
   productType: string | null;
@@ -79,6 +80,7 @@ export class ProductVersionMapper {
       isWholesaleOnly: detail.isWholesaleOnly,
       hideMembershipPriceForNonMembers: detail.hideMembershipPriceForNonMembers ?? detail.isMembershipOnly ?? false,
       isVisibleToMembersOnly: detail.isVisibleToMembersOnly ?? false,
+      isOverseas: detail.isOverseas ?? false,
       isMembershipOnly: detail.hideMembershipPriceForNonMembers ?? detail.isMembershipOnly ?? false,
       productType: detail.productType,
       fulfillmentKind: (detail.fulfillmentKind ?? 'physical') as 'physical' | 'digital',

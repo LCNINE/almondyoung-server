@@ -147,6 +147,7 @@ export const productMasterVersions = pgTable(
     isMembershipOnly: boolean('is_membership_only').default(false).notNull(), // 멤버십가 공개 제한 — 비회원에게 멤버십가 숫자를 숨김 (상품 노출/구매 제한 아님; 구매 제한은 purchaseConstraint 사용)
     hideMembershipPriceForNonMembers: boolean('hide_membership_price_for_non_members').default(false).notNull(), // 멤버십가 공개 제한 canonical field
     isVisibleToMembersOnly: boolean('is_visible_to_members_only').default(false).notNull(), // 멤버십 회원 전용 노출 — 비회원 목록/검색/상세에서 숨김
+    isOverseas: boolean('is_overseas').default(false).notNull(), // 해외직구 상품 — 체크아웃 시 개인통관고유부호(personalCustomsCode) 필수
 
     // ===== Phase 1 NEW FIELDS START =====
     // Product Type

@@ -70,6 +70,7 @@ export interface PimProductSnapshot {
   isWholesaleOnly?: boolean;
   hideMembershipPriceForNonMembers?: boolean;
   isVisibleToMembersOnly?: boolean;
+  isOverseas?: boolean;
   /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly?: boolean;
   isGiftcard?: boolean;
@@ -175,6 +176,7 @@ export function transformPimToMedusa(
     hideMembershipPriceForNonMembers,
     isMembershipOnly: hideMembershipPriceForNonMembers,
     isVisibleToMembersOnly: snapshot.isVisibleToMembersOnly ?? false,
+    isOverseas: snapshot.isOverseas ?? false,
     productType: snapshot.productType,
     syncedAt: new Date().toISOString(),
   };

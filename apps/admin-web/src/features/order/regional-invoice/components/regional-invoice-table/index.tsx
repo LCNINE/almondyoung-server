@@ -125,6 +125,9 @@ export default function RegionalInvoiceTable() {
               <TableHead className="w-[60px] px-2 py-2 text-center border-r border-gray-300 text-black font-bold text-xs h-8">
                 우편번호
               </TableHead>
+              <TableHead className="w-[110px] px-2 py-2 text-center border-r border-gray-300 text-black font-bold text-xs h-8">
+                통관부호
+              </TableHead>
               <TableHead className="w-[120px] px-2 py-2 text-center border-gray-300 text-black font-bold text-xs h-8">
                 주문번호
               </TableHead>
@@ -237,6 +240,14 @@ export default function RegionalInvoiceTable() {
                         className="text-center border-r border-gray-300 px-1 py-3 align-middle text-black text-xs"
                       >
                         {item.postalCode}
+                      </TableCell>
+
+                      {/* 통관부호 — 해외직구 주문만 채워짐 (shippingAddress JSON) */}
+                      <TableCell
+                        rowSpan={maxProducts}
+                        className="text-center border-r border-gray-300 px-2 py-3 align-middle text-black break-words text-xs"
+                      >
+                        {item.shippingAddress?.personalCustomsCode ?? ''}
                       </TableCell>
 
                       <TableCell

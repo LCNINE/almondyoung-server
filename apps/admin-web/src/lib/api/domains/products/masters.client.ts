@@ -135,6 +135,16 @@ export const mastersClient = {
     );
   },
 
+  updateOverseas: async (
+    masterId: string,
+    isOverseas: boolean
+  ): Promise<void> => {
+    await client.patch(
+      `${ALMONDYOUNG_API_BASE_URL}/masters/${masterId}/overseas`,
+      { isOverseas }
+    );
+  },
+
   listByIds: async (
     ids: string[]
   ): Promise<{
