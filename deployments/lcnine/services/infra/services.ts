@@ -25,6 +25,13 @@ export function setup(infra: SharedInfra) {
   // 즉 root는 stage에 따라 dev. 접두사가 붙는 형태와 동일해야 한다.
   const backendRootDomain = isDev ? `dev.${baseDomain}` : baseDomain;
 
+  // storefront 정식 origin. live 에서는 apex(baseDomain)가 정식 도메인이고 www 는 거기로
+  // 향하는 301 redirect 인데, CloudFront 의 apex redirect 는 query string 을 버린다
+  // (확인: www/...?code&state → apex/... 로 query 유실). OAuth 콜백·revalidate POST 등
+  // storefront 를 가리키는 내부 URL 이 www 를 거치면 ?code&state / body 가 사라지므로
+  // 반드시 apex 로 직접 가리켜야 한다. dev 는 apex 가 공용 루트라 www 슬롯을 그대로 쓴다.
+  const storefrontUrl = isDev ? url('www') : `https://${baseDomain}`;
+
   // ─── Secrets ───
   const authSecret = new sst.Secret('AuthSecret');
   const awsS3AccessKeyId = new sst.Secret('AwsS3AccessKeyId');
@@ -210,7 +217,7 @@ export function setup(infra: SharedInfra) {
       MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
       // 상품/재고 동기화 직후 스토어프론트 on-demand 캐시 무효화 트리거.
       // 시크릿은 Storefront 의 REVALIDATE_SECRET 과 동일 값(StorefrontRevalidateSecret).
-      STOREFRONT_REVALIDATE_URL: $interpolate`${url('www')}/api/revalidate`,
+      STOREFRONT_REVALIDATE_URL: $interpolate`${storefrontUrl}/api/revalidate`,
       STOREFRONT_REVALIDATE_SECRET: storefrontRevalidateSecret.value,
       ALMOND_AUTH_URL: 'https://asia-northeast3-almond-auth.cloudfunctions.net/api',
       MEMBERSHIP_SERVICE_URL: url('membership'),
@@ -469,19 +476,19 @@ export function setup(infra: SharedInfra) {
       AUTH_SECRET: idpAuthSecret,
       MEDUSA_API_KEY: medusaApiKey.value,
       // CORS
-      STORE_CORS: [url('www'), 'https://almondyoung.com', 'https://www.almondyoung.com', 'http://localhost:8001'].join(
+      STORE_CORS: [storefrontUrl, 'https://almondyoung.com', 'https://www.almondyoung.com', 'http://localhost:8001'].join(
         ',',
       ),
       ADMIN_CORS: [url('medusa'), 'http://localhost:9000'].join(','),
       AUTH_CORS: [
         url('medusa'),
-        url('www'),
+        storefrontUrl,
         'https://almondyoung.com',
         'https://www.almondyoung.com',
         'http://localhost:8001',
       ].join(','),
       // Internal service URLs
-      FRONTEND_URL: url('www'),
+      FRONTEND_URL: storefrontUrl,
       USER_SERVICE_URL: idpUserServiceUrl,
       MEDUSA_BACKEND_URL: url('medusa'),
       // OIDC: medusa-config.js 는 AUTH_WEB_URL 이 truthy 일 때만 user-service-sso provider 를 등록한다.
@@ -491,7 +498,7 @@ export function setup(infra: SharedInfra) {
       OIDC_CLIENT_ID: 'medusa-storefront',
       OIDC_CLIENT_SECRET: medusaOidcClientSecret.value,
       OIDC_SCOPES: 'openid email profile',
-      SSO_DEFAULT_CALLBACK_URL: $interpolate`${url('www')}/kr/callback/oidc`,
+      SSO_DEFAULT_CALLBACK_URL: $interpolate`${storefrontUrl}/kr/callback/oidc`,
       WALLET_BASE_URL: url('wallet'),
       WALLET_API_KEY: walletApiKey.value,
       ALMOND_PAYMENT_ENDPOINT: url('wallet'),
@@ -537,7 +544,7 @@ export function setup(infra: SharedInfra) {
       OIDC_REDIRECT_URI: $interpolate`${url('admin')}/auth/callback`,
       OIDC_POST_LOGOUT_REDIRECT_URI: $interpolate`${url('admin')}/login`,
       OAUTH_JWKS_URL: $interpolate`${idpUserServiceUrl}/.well-known/jwks.json`,
-      NEXT_PUBLIC_STOREFRONT_URL: url('www'),
+      NEXT_PUBLIC_STOREFRONT_URL: storefrontUrl,
       NEXT_PUBLIC_STOREFRONT_DEFAULT_COUNTRY: 'kr',
       // OTEL: Lambda(VPC 밖)라 Alloy 우회, Grafana Cloud OTLP 게이트웨이로 직접 전송.
       OTEL_SERVICE_NAME: 'admin-web',
@@ -616,7 +623,7 @@ export function setup(infra: SharedInfra) {
       },
     },
     environment: {
-      NEXT_PUBLIC_BASE_URL: url('www'),
+      NEXT_PUBLIC_BASE_URL: storefrontUrl,
       NEXT_PUBLIC_DEFAULT_REGION: 'kr',
       NEXT_PUBLIC_WALLET_WEB_URL: url('wallet-web'),
       NEXT_PUBLIC_MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
