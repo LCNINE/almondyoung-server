@@ -198,27 +198,26 @@ Inventory 모듈은 **event sourcing** 으로 재고를 관리한다 (apps/core/
 - `stock_summary` — projection with optimistic locking (`version` field)
 - Event types: `IN`, `OUT`, `ADJUST`, `MOVE`, `RESERVE`, `CONFIRM`, `RELEASE`, `CANCEL`
 
-**Inventory Transaction Propagation** (strict rule):
+**Transaction Propagation** (strict rule — see `docs/adr/0025-single-transaction-runner.md`):
 ```typescript
-// Import DbTx only from inventory.schema.ts — never re-declare locally
+// Per-BC tx type, derived once via TxFor and named per BC. Import from the BC's
+// canonical home — DbTx from inventory.schema, DbTransaction from catalog.types, etc.
+// Never re-declare a local `type Tx = Parameters<...>` and never add a per-class inTx helper.
 import { DbTx, inventoryTables, inventorySchema } from 'apps/core/src/modules/inventory/schema/inventory.schema';
 
-// Standard helper in every service class
-private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
-  return tx ? fn(tx) : this.db.transaction(fn);
-}
-
-// Public methods: tx?: DbTx as last param
+// Use the single runner on the injected DbService — NOT a per-class inTx helper.
 async createFoo(dto: CreateFooDto, tx?: DbTx) {
-  return this.inTx(async (trx) => {
+  return this.dbService.run(async (trx) => {   // trx: DbTx inferred from DbService<S>
     // Use trx inside, never this.db
-    await this.otherService.doThing(trx);  // propagate!
+    await this.otherService.doThing(trx);      // propagate!
   }, tx);
 }
 
-// Private helpers: tx: DbTx required
+// Public methods: tx?: DbTx as last param. Private helpers: tx: DbTx required.
 private async loadFoo(tx: DbTx, id: string) { ... }
 ```
+
+Cross-BC **seam** services (those that legitimately span schemas, e.g. `ProductSellableQuantityService`) declare the wider `DbService<MergedSchema>` and accept `tx?: AnyTx`, narrowing once with `tx as TxFor<MergedSchema>` where they call `run`. `DbService<MergedSchema>` is the marker of a cross-BC service and must stay a short, reviewable list. Do **not** re-introduce per-class `inTx` helpers or `asTx(tx as unknown)` casts. `TxFor`, `AnyTx`, and `DbService.run` live in `@app/db`.
 
 **Inventory Query Rules:**
 - Prohibited: `db.query.*`, `with` relations, `any`/`as` casting

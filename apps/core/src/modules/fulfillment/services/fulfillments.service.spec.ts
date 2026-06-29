@@ -177,7 +177,10 @@ describe('FulfillmentsService', () => {
       businessLinks: options.businessLinks ?? [],
     };
     const tx = makeTx(state);
-    const db = { db: { transaction: jest.fn((fn) => fn(tx)) } };
+    const db = {
+      db: { transaction: jest.fn((fn) => fn(tx)) },
+      run: jest.fn((fn: (t: any) => any, aTx?: any) => fn(aTx ?? tx)),
+    };
     const productSkuMapping = {
       getByVariant: jest.fn().mockImplementation((requestedVariantId: string) => {
         if (options.matchingsByVariant && requestedVariantId in options.matchingsByVariant) {

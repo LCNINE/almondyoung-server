@@ -61,15 +61,11 @@ export class AllocationStrategyService {
     return this.dbService.db;
   }
 
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   /**
    * 메인 할당 메소드 - 전략에 따라 최적의 위치 선택
    */
   async allocateStock(request: AllocationRequest, tx?: DbTx): Promise<AllocationResult> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const strategy = request.strategy || 'FIFO';
 
       this.logger.log(

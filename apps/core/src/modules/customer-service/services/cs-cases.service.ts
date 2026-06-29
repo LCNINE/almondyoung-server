@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DbService, InjectDb } from '@app/db';
+import { DbService, InjectDb, TxFor } from '@app/db';
 import { BadRequestError, NotFoundError } from '@app/shared';
 import { and, desc, eq, inArray, or, type InferInsertModel } from 'drizzle-orm';
 import { type MergedSchema } from '../../../platform/database/merged-schema';
@@ -17,8 +17,7 @@ import {
 } from '../schema/customer-service.schema';
 import { CreateCsCaseDto } from '../dto/create-cs-case.dto';
 
-type Db = DbService<MergedSchema>['db'];
-type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
+type CsTx = TxFor<MergedSchema>;
 type BusinessLinkInsert = InferInsertModel<typeof wmsTables.businessLinks>;
 type BusinessLinkRow = typeof wmsTables.businessLinks.$inferSelect;
 type CsCaseCommentRow = typeof csCaseComments.$inferSelect;
@@ -37,17 +36,9 @@ const CS_CASE_REF_TYPE = 'cs_case';
 export class CsCasesService {
   constructor(@InjectDb() private readonly dbService: DbService<MergedSchema>) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(fn: (tx: Tx) => Promise<T>, tx?: Tx): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   /** Append an immutable system event row. NOT a Kafka event. */
   private async recordEvent(
-    tx: Tx,
+    tx: CsTx,
     csCaseId: string,
     type: CsCaseEventType,
     actorId: string | undefined,
@@ -61,7 +52,7 @@ export class CsCasesService {
     });
   }
 
-  private async loadCaseOrThrow(id: string, tx: Tx): Promise<CsCase> {
+  private async loadCaseOrThrow(id: string, tx: CsTx): Promise<CsCase> {
     const [csCase] = await tx.select().from(csCases).where(eq(csCases.id, id)).limit(1);
     if (!csCase) {
       throw new NotFoundError(`CS Case ${id} not found`);
@@ -69,8 +60,8 @@ export class CsCasesService {
     return csCase;
   }
 
-  async create(dto: CreateCsCaseDto, operatorId?: string, tx?: Tx) {
-    return this.inTx(async (trx) => {
+  async create(dto: CreateCsCaseDto, operatorId?: string, tx?: CsTx) {
+    return this.dbService.run(async (trx) => {
       const [created] = await trx
         .insert(csCases)
         .values({
@@ -91,8 +82,8 @@ export class CsCasesService {
     }, tx);
   }
 
-  async getOne(id: string, tx?: Tx) {
-    return this.inTx(async (trx) => {
+  async getOne(id: string, tx?: CsTx) {
+    return this.dbService.run(async (trx) => {
       const csCase = await this.loadCaseOrThrow(id, trx);
 
       const comments = await trx.select().from(csCaseComments).where(eq(csCaseComments.csCaseId, id));
@@ -127,8 +118,8 @@ export class CsCasesService {
     }, tx);
   }
 
-  async updateStatus(id: string, status: CsCase['status'], operatorId?: string, tx?: Tx) {
-    return this.inTx(async (trx) => {
+  async updateStatus(id: string, status: CsCase['status'], operatorId?: string, tx?: CsTx) {
+    return this.dbService.run(async (trx) => {
       const current = await this.loadCaseOrThrow(id, trx);
       const previousStatus = current.status;
       const labelIds = await this.loadCaseLabelIds(id, trx);
@@ -151,8 +142,8 @@ export class CsCasesService {
     }, tx);
   }
 
-  async assign(id: string, assigneeId: string | null, operatorId?: string, tx?: Tx) {
-    return this.inTx(async (trx) => {
+  async assign(id: string, assigneeId: string | null, operatorId?: string, tx?: CsTx) {
+    return this.dbService.run(async (trx) => {
       const current = await this.loadCaseOrThrow(id, trx);
       const previousAssignedTo = current.assignedTo ?? null;
       if (previousAssignedTo === (assigneeId ?? null)) {
@@ -177,8 +168,8 @@ export class CsCasesService {
     }, tx);
   }
 
-  async createBusinessLink(id: string, dto: CreateBusinessLinkDto, tx?: Tx) {
-    return this.inTx(async (trx) => {
+  async createBusinessLink(id: string, dto: CreateBusinessLinkDto, tx?: CsTx) {
+    return this.dbService.run(async (trx) => {
       await this.loadCaseOrThrow(id, trx);
       if (!dto.target) {
         throw new BadRequestError('Business link target is required');
@@ -217,8 +208,8 @@ export class CsCasesService {
     }, tx);
   }
 
-  async list(limit = 20, tx?: Tx) {
-    return this.inTx(async (trx) => {
+  async list(limit = 20, tx?: CsTx) {
+    return this.dbService.run(async (trx) => {
       const rows = await trx
         .select()
         .from(csCases)
@@ -239,12 +230,12 @@ export class CsCasesService {
     }, tx);
   }
 
-  private async loadCaseLabelIds(csCaseId: string, tx: Tx): Promise<string[]> {
+  private async loadCaseLabelIds(csCaseId: string, tx: CsTx): Promise<string[]> {
     const caseLabels = await tx.select().from(csCaseLabels).where(eq(csCaseLabels.csCaseId, csCaseId));
     return caseLabels.map((label) => label.labelId);
   }
 
-  private async assertSalesOrderReferenceExists(ref: BusinessLinkReference, tx: Tx): Promise<void> {
+  private async assertSalesOrderReferenceExists(ref: BusinessLinkReference, tx: CsTx): Promise<void> {
     if (ref.type !== 'sales_order' || !ref.id) {
       return;
     }

@@ -16,6 +16,7 @@
 - **신규 draft 편집 화면은 완성 흐름을 안내해야 한다.** 최초 draft version 은 의도적으로 불완전하게 생성되므로, 관리자 화면은 기본 정보·이미지·옵션/품목·가격정책·publish 같은 다음 작업을 체크리스트로 보여준다. 이 체크리스트는 대형 등록 폼을 대체하는 작성 흐름 안내이며, 각 항목은 해당 draft 편집 surface 로 이어져야 한다. 체크리스트는 안내용(advisory)이며 publish 차단 조건이 아니다. publish hard gate 는 서버의 명시적 검증(예: draft/inactive 여부, variantCode 충돌, 가격 계산 가능성)으로만 다룬다.
 - **버전 격리는 정션 + copy-on-write 로 구현된다.** `product_variants`, `product_option_groups`, `product_option_values`, `pricing_rules` 모두 version 컬럼이 없고, 버전 매핑은 정션 테이블 (`productMasterVariants`, `productMasterOptionGroups`, `productMasterPricingRules`) 이 가진다. draft 가 부모로부터 생기면 정션만 복사 — entity row 는 공유. **edit 시 그 entity 가 draft 외 다른 버전에도 매핑되어 있으면 새 row 를 clone 하고 draft 의 정션만 repoint** (CoW). draft 단독 매핑이면 in-place. 옵션 구조/값 변경에 의한 variant 재생성도 같은 원리 — `_regenerateVariantsForVersion` 의 `_findMatchingVariant` 가 부모 조합과 일치하는 variant 는 승계, 새 조합은 새 variant 발급. 직접 variant 편집은 version-scoped 엔드포인트(`PUT /masters/:masterId/versions/:versionId/variants/:variantId`)로만 가능 — 기존 글로벌 `PUT /variants/:id` 는 격리를 깨뜨리므로 사용 금지.
 - **CoW 는 cascading 된다.** variant CoW 가 일어나면, draft 의 pricing rule 중 그 variantId 를 `scopeTargetIds` 에 포함하는 룰도 함께 clone 되고 새 variantId 로 교체된다. 같은 트랜잭션 안에서 처리.
+- **가격 규칙은 per-row CoW 대상이 아니다.** variant 는 단독으로 온전한 데이터라 한 줄씩 버전 격리(공유면 clone, 단독이면 in-place)가 의미 있다. 그러나 가격 규칙은 여러 rule 이 쌓여 한 version 의 가격 구성("variant별/상황별 가격")을 이루므로, rule 한 줄을 독립적 버전 관리 단위로 보지 않는다. 따라서 가격 정책 편집은 version 단위 **whole-set 교체** (`replaceVersionRules`: 그 version 의 정션 전체 삭제 → 고아 rule 정리 → 새 rule 재삽입)로 다루고, variant 처럼 "공유면 clone, 단독이면 in-place" 분기를 두지 않는다. pricing rule 의 per-rule clone 은 오직 **variant CoW 의 cascade** (바로 위 항목)에서만 일어나며, 이는 버전 격리 결정이 아니라 변경된 variantId 참조를 draft 안에서 기계적으로 repoint 하는 것이다. per-rule CoW 로 두는 선택도 가능하지만 의도적으로 택하지 않았다.
 - **`variantCode` 는 unique 제약 없다.** 같은 master 의 active variant 와 draft variant 는 동일한 외부 코드(=물리적 상품 식별자)를 의도적으로 공유한다. 진짜 의도("현재 active 버전에 매달린 variant 끼리만 unique")는 정션 join 이 필요해 partial index 로 표현 불가하므로 DB 강제는 없다. publish 직전에 active 버전의 variant 들끼리 충돌 검증.
 - **판매상품 구매제약조건**은 한 판매상품 master 전체에 적용되는 구매 가능 조건이다. 개별 variant 가 아니라 master 기준으로 적용하며, 서로 다른 variant 별 구매제한이 필요하면 별도 판매상품 master 로 분리한다.
 - Catalog 는 멤버십의 상세 자격 모델을 알지 않는다. 판매상품 구매제약조건에는 멤버십 회원만 구매 가능한지 여부를 boolean 으로만 저장하고, 판매채널의 customer group 같은 구체 식별자는 channel-adapter/판매채널 설정이 번역한다.
@@ -86,6 +87,17 @@
 - 판매채널은 Core/관련 백엔드 SoT 의 projection 을 보유한다. 상품, 가격, 판매가능수량 등은 SoT 에서 계산되어 channel-adapter 를 통해 판매채널에 반영된다.
 - Medusa 는 WMS/재고 판단을 위해 Core API 를 직접 호출하지 않는다. 꼭 필요한 예외가 아니라면 Medusa 와 Core 의 commerce 경계는 channel-adapter 를 통해 연결한다.
 - _Avoid_: Medusa 를 Core 의 주문 하위 모듈처럼 취급하기, Medusa order id 를 Core sales order id 로 재사용하기, Medusa 에서 Core WMS/availability API 를 직접 호출하기.
+
+### 판매채널 Projection Snapshot
+- 정의: active 판매상품 version 을 판매채널이 자기 상품 projection 으로 반영할 수 있도록 Core Catalog 가 publish/rollback 시점에 전달하는 상품 상태 스냅샷.
+- 판매채널 Projection Snapshot 은 고객 화면 read model 이 아니라 channel-adapter 가 소비하는 active 판매상품 projection 계약이다.
+- 판매채널 Projection Snapshot 은 active version 에 대해서만 생성한다. draft/inactive 의 작성·열람 상태는 관리자 version detail 의 대상이지 판매채널 반영 대상이 아니다.
+- 판매상품이 unpublished 상태가 될 때는 판매채널 Projection Snapshot 없이 active version 이 없다는 상태만 전달한다.
+- 판매채널 Projection Snapshot 은 계산된 가격 projection 이 빠진 상태로 생성하지 않는다. 가격 projection 누락은 판매채널에 기본값으로 넘길 문제가 아니라 publish/republish 실패로 드러내야 하는 상태다.
+- 판매채널 Projection Snapshot 은 variant 가 0개인 active 판매상품에 대해 생성하지 않는다. 옵션 없는 판매상품도 기본 variant 1개가 있어야 하므로, variant 0개 active 상태는 정상 publish 흐름에서는 발생하지 않아야 하는 불완전한 상태다.
+- 판매채널 Projection Snapshot 의 상품 이미지 참조는 File UUID 를 일차 데이터로 다룬다. URL 문자열은 판매채널 adapter 가 필요할 때 자기 projection 형식에 맞춰 파생하는 값이지 Core Catalog 의 canonical 상품 상태가 아니다.
+- 기존 판매채널 Projection Snapshot contract 와 consumer 호환은 유지한다. 이미지 URL 필드가 남아 있어도 Core Catalog 의 의미상 canonical 값은 File UUID 이며, URL 필드는 호환/adapter 편의 값으로 취급한다.
+- _Avoid_: 일반 사용자용 read model, storefront read model.
 
 ### 채널주문 (Channel Order)
 - 정의: Medusa/Naver/Coupang 같은 판매 채널이 자기 주문 모델과 ID 체계로 보유하는 원천 주문.

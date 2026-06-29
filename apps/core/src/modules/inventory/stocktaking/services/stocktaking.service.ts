@@ -17,12 +17,8 @@ export class StocktakingService {
     private readonly dbService: DbService<typeof wmsSchema>,
   ) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
   async listSessions(query: ListStocktakingSessionsQueryDto, tx?: DbTx) {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const { stocktakingSessions } = wmsTables;
       const { warehouseId, status, startDate, endDate, page = 1, limit = 20 } = query;
       const offset = (page - 1) * limit;
@@ -55,7 +51,7 @@ export class StocktakingService {
    * Create new stocktaking session
    */
   async createSession(dto: CreateStocktakingSessionDto, tx?: DbTx) {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const { stocktakingSessions } = wmsTables;
 
       const result = await tx
@@ -76,7 +72,7 @@ export class StocktakingService {
    * Start stocktaking session
    */
   async startSession(sessionId: string, tx?: DbTx) {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const { stocktakingSessions } = wmsTables;
 
       const session = await tx.select().from(stocktakingSessions).where(eq(stocktakingSessions.id, sessionId)).limit(1);
@@ -106,7 +102,7 @@ export class StocktakingService {
    * Scan location barcode and load expected inventory
    */
   async scanLocation(dto: ScanLocationDto, tx?: DbTx) {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const { locations, stockLedgers, skus, stocktakingLines } = wmsTables;
 
       // Find location by barcode/code
@@ -170,7 +166,7 @@ export class StocktakingService {
    * Scan product barcode during counting
    */
   async scanProduct(dto: ScanProductDto, tx?: DbTx) {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const { skus, skuBarcodes, stocktakingLines } = wmsTables;
 
       // Find SKU by barcode
@@ -261,7 +257,7 @@ export class StocktakingService {
    * Update count manually
    */
   async updateCount(lineId: string, dto: UpdateCountDto, tx?: DbTx) {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const { stocktakingLines } = wmsTables;
 
       const line = await tx.select().from(stocktakingLines).where(eq(stocktakingLines.id, lineId)).limit(1);
@@ -297,7 +293,7 @@ export class StocktakingService {
    * Get variances (discrepancies)
    */
   async getVariances(sessionId: string, tx?: DbTx) {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const { stocktakingLines, skus, locations } = wmsTables;
 
       const lines = await tx
@@ -331,7 +327,7 @@ export class StocktakingService {
    * Generate stock adjustments for variances
    */
   async generateAdjustments(sessionId: string, dto: GenerateAdjustmentsDto, tx?: DbTx) {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const { stocktakingLines, stocktakingAdjustments, stockEvents, stocktakingSessions } = wmsTables;
 
       // Get session info first
@@ -403,7 +399,7 @@ export class StocktakingService {
    * Complete stocktaking session
    */
   async completeSession(sessionId: string, tx?: DbTx) {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const { stocktakingSessions, stocktakingLines, stocktakingAdjustments } = wmsTables;
 
       const session = await tx.select().from(stocktakingSessions).where(eq(stocktakingSessions.id, sessionId)).limit(1);
@@ -455,7 +451,4 @@ export class StocktakingService {
     }, tx);
   }
 
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
 }

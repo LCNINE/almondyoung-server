@@ -31,10 +31,6 @@ export class ReturnService {
     return this.dbService.db;
   }
 
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   /**
    * 1. 반품 요청 생성
    */
@@ -51,7 +47,7 @@ export class ReturnService {
     },
     tx?: DbTx,
   ): Promise<{ returnId: string; items: ReturnItem[] }> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       this.logger.log(`Creating return request for warehouse ${params.warehouseId}`);
 
       if (!params.orderId && !params.shipmentId) {
@@ -107,7 +103,7 @@ export class ReturnService {
     },
     tx?: DbTx,
   ) {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       this.logger.log(`Receiving return ${params.returnId}`);
 
       // 반품 조회
@@ -228,7 +224,7 @@ export class ReturnService {
     },
     tx?: DbTx,
   ) {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       this.logger.log(`Inspecting return ${params.returnId}`);
 
       // 반품 조회
@@ -325,7 +321,7 @@ export class ReturnService {
     },
     tx?: DbTx,
   ) {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       this.logger.log(`Processing return ${params.returnId}`);
 
       // 반품 조회

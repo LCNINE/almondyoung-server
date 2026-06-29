@@ -112,7 +112,10 @@ describe('InvoiceService (hanjin)', () => {
 
   function makeService(selectResults: unknown[][]) {
     const { tx, selectCalls, inserts, updates, deletes } = makeTx(selectResults);
-    const dbService: any = { db: { transaction: jest.fn((fn: (t: unknown) => unknown) => fn(tx)) } };
+    const dbService: any = {
+      db: { transaction: jest.fn((fn: (t: unknown) => unknown) => fn(tx)) },
+      run: jest.fn((fn: (t: any) => any, aTx?: any) => fn(aTx ?? tx)),
+    };
     const fulfillmentsService: any = { ship: jest.fn().mockResolvedValue(undefined) };
     const goodsflowProvider = makeFakeProvider();
     const hanjinProvider = makeFakeProvider();

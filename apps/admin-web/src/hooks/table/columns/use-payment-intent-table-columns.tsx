@@ -48,8 +48,8 @@ export const usePaymentIntentTableColumns = ({ userMap = {} }: UseColumnsOptions
         cell: ({ getValue, row }) => <StatusBadgeCell value={row.original.displayStatus ?? getValue()} type="intent" />,
       }),
       columnHelper.accessor('createdAt', {
-        header: '생성일',
-        cell: ({ getValue }) => <DateCell value={getValue()} />,
+        header: '생성일시',
+        cell: ({ getValue }) => <DateCell value={getValue()} withTime />,
       }),
     ],
     [userMap],

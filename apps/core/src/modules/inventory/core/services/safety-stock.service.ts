@@ -18,15 +18,11 @@ export interface SafetyStockWarning {
 export class SafetyStockService {
   constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
   /**
    * Get all SKUs below safety stock threshold
    */
   async getBelowSafetyStock(warehouseId?: string, tx?: DbTx): Promise<SafetyStockWarning[]> {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       // Build query conditions
       const conditions = [sql`COALESCE(${wmsViews.stockSummary.onHandQty}, 0)::int < ${wmsTables.skus.safetyStock}`];
 
@@ -65,7 +61,7 @@ export class SafetyStockService {
    * Check if specific SKU is below safety stock
    */
   async isBelowSafetyStock(skuId: string, warehouseId: string, tx?: DbTx): Promise<boolean> {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const result = await tx
         .select({
           safetyStock: wmsTables.skus.safetyStock,
@@ -104,7 +100,7 @@ export class SafetyStockService {
       shortfall: number;
     }>;
   } | null> {
-    return this.inTx(async (tx) => {
+    return this.dbService.run(async (tx) => {
       // Get SKU info
       const skuResult = await tx
         .select({
@@ -147,7 +143,4 @@ export class SafetyStockService {
     }, tx);
   }
 
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
 }

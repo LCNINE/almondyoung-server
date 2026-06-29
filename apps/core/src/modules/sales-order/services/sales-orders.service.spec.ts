@@ -136,7 +136,7 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
       delete: jest.fn(() => ({ where: () => [] })),
     };
 
-    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) } };
+    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) }, run: jest.fn((fn: any, t?: any) => t ? fn(t) : fn(tx)) };
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const reservationLifecycle = {
       handleFulfillmentOrderStatusChange: jest.fn().mockResolvedValue(undefined),
@@ -324,7 +324,7 @@ describe('SalesOrdersService.update accepted contract immutability', () => {
       })),
     };
 
-    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) } };
+    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) }, run: jest.fn((fn: any, t?: any) => t ? fn(t) : fn(tx)) };
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const service = new SalesOrdersService(
       db as any,
@@ -582,7 +582,7 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
       })),
     };
 
-    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) } };
+    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) }, run: jest.fn((fn: any, t?: any) => t ? fn(t) : fn(tx)) };
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const productSellableQuantity = { recalculateAndPublishForSku: jest.fn().mockResolvedValue(undefined) };
     const service = new SalesOrdersService(
@@ -1379,7 +1379,7 @@ describe('SalesOrderAmendmentsService.create', () => {
       update: jest.fn(),
     };
 
-    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) } };
+    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) }, run: jest.fn((fn: any, t?: any) => t ? fn(t) : fn(tx)) };
     const service = new SalesOrderAmendmentsService(db as any);
 
     return { service, state, tx };
@@ -1525,7 +1525,7 @@ describe('SalesOrdersService business links', () => {
       })),
     };
 
-    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) } };
+    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) }, run: jest.fn((fn: any, t?: any) => t ? fn(t) : fn(tx)) };
     const service = new SalesOrdersService(db as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any);
 
     return { service, state, tx };
@@ -1714,7 +1714,7 @@ describe('SalesOrdersService.cancel full cancel shipped evidence guard', () => {
       delete: jest.fn(() => ({ where: () => [] })),
     };
 
-    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) } };
+    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) }, run: jest.fn((fn: any, t?: any) => t ? fn(t) : fn(tx)) };
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const library = { revokeOwnershipsForOrderDetailed: jest.fn().mockResolvedValue({ revokedCount: 0, ownershipIds: [] }) };
     const backlog = { closeOpenForSalesOrder: jest.fn().mockResolvedValue(0) };
@@ -1792,7 +1792,7 @@ describe('SalesOrdersService.confirm() state guard', () => {
       insert: jest.fn(() => ({ values: () => ({ returning: jest.fn().mockResolvedValue([]) }) })),
     };
 
-    const db = { db: { ...tx, transaction: jest.fn((fn: any) => fn(tx)) } };
+    const db = { db: { ...tx, transaction: jest.fn((fn: any) => fn(tx)) }, run: jest.fn((fn: any, t?: any) => t ? fn(t) : fn(tx)) };
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
 
     const service = new SalesOrdersService(
@@ -1863,7 +1863,7 @@ describe('SalesOrdersService.confirm() state guard', () => {
         from: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }),
       })),
     };
-    const db = { db: { ...tx, transaction: jest.fn((fn: any) => fn(tx)) } };
+    const db = { db: { ...tx, transaction: jest.fn((fn: any) => fn(tx)) }, run: jest.fn((fn: any, t?: any) => t ? fn(t) : fn(tx)) };
     const service = new SalesOrdersService(db as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any);
     const { NotFoundException } = await import('@nestjs/common');
     await expect(service.confirm('nonexistent-id')).rejects.toThrow(NotFoundException);

@@ -100,14 +100,6 @@ export class InvoiceService {
     return provider;
   }
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   /**
    * 송장 발행 — 3단계 구조:
    *  1) 검증 + 라인 로드 (빠른 실패)
@@ -138,7 +130,7 @@ export class InvoiceService {
     }
 
     // Phase 1: 검증 + 발급에 필요한 라인 로드
-    const items = await this.inTx(async (trx) => {
+    const items = await this.dbService.run(async (trx) => {
       await this.assertIssuable(trx, fulfillmentOrderId);
       return this.loadInvoiceItems(trx, fulfillmentOrderId);
     });
@@ -176,7 +168,7 @@ export class InvoiceService {
 
     // Phase 3: 쓰기 트랜잭션 — lock 잡고 재검증 후 기록
     try {
-      return await this.inTx(async (trx) => {
+      return await this.dbService.run(async (trx) => {
         await this.assertIssuable(trx, fulfillmentOrderId, { forUpdate: true });
 
         const [invoice] = await trx
@@ -304,7 +296,7 @@ export class InvoiceService {
 
   /** 출력 — 검증(읽기) → provider 호출(tx 밖) → printed 전이(쓰기 tx). provider 호출 때문에 tx 인자를 받지 않는다. */
   async printInvoices(invoiceIds: string[]): Promise<{ printUri?: string }> {
-    const invoices = await this.inTx((trx) =>
+    const invoices = await this.dbService.run((trx) =>
       trx
         .select({
           id: wmsTables.invoices.id,
@@ -361,7 +353,7 @@ export class InvoiceService {
     const printResponse = await provider.generatePrintUri(serviceIds);
 
     // provider 호출 동안의 동시 전이(shipped/canceled)를 덮어쓰지 않도록 조건부 update
-    const updated = await this.inTx((trx) =>
+    const updated = await this.dbService.run((trx) =>
       trx
         .update(wmsTables.invoices)
         .set({ status: 'printed', printedAt: new Date() })
@@ -388,7 +380,7 @@ export class InvoiceService {
   }
 
   async markAsShipped(invoiceId: string, tx?: DbTx): Promise<void> {
-    await this.inTx(async (trx) => {
+    await this.dbService.run(async (trx) => {
       const invoice = await trx
         .select({
           id: wmsTables.invoices.id,
@@ -438,7 +430,7 @@ export class InvoiceService {
    * provider 호출 때문에 tx 인자를 받지 않는다.
    */
   async cancelInvoice(invoiceId: string): Promise<void> {
-    const invoice = await this.inTx((trx) =>
+    const invoice = await this.dbService.run((trx) =>
       trx
         .select({
           id: wmsTables.invoices.id,
@@ -469,7 +461,7 @@ export class InvoiceService {
       await provider.cancelInvoice(invoice.goodsflowServiceId);
     }
 
-    await this.inTx(async (trx) => {
+    await this.dbService.run(async (trx) => {
       // provider 호출 동안 상태가 바뀌었을 수 있으므로 재검증 — shipped 전이됐다면 내부 취소 중단.
       // (외부는 이미 취소된 불일치 상태 — 운영자 수동 정리 필요하므로 에러 로그)
       const current = await trx
@@ -528,7 +520,7 @@ export class InvoiceService {
   }
 
   async getInvoiceDetail(invoiceId: string, tx?: DbTx): Promise<InvoiceDetail> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const rows = await trx
         .select({
           id: wmsTables.invoices.id,
@@ -611,7 +603,7 @@ export class InvoiceService {
 
   /** 추적 — 조회만 DB, provider 호출은 tx 밖. provider 호출 때문에 tx 인자를 받지 않는다. */
   async trackInvoice(invoiceId: string) {
-    const invoice = await this.inTx((trx) =>
+    const invoice = await this.dbService.run((trx) =>
       trx
         .select({
           id: wmsTables.invoices.id,

@@ -61,18 +61,10 @@ export class OutboundBatchService {
 
   constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   async createBatch(dto: CreateOutboundBatchDto, tx?: DbTx): Promise<{ batchId: string; linkedFoCount: number }> {
     const { warehouseId: dtoWarehouseId, pickingMethod, name, scheduledPickingAt, salesOrderIds } = dto;
 
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       let foIdsToLink: string[] = [];
       let effectiveWarehouseId = dtoWarehouseId!;
 
@@ -178,7 +170,7 @@ export class OutboundBatchService {
   }
 
   async addFulfillmentOrdersToBatch(batchId: string, fulfillmentOrderIds: string[], tx?: DbTx): Promise<void> {
-    await this.inTx(async (trx) => {
+    await this.dbService.run(async (trx) => {
       const batchRows = await trx
         .select({
           id: wmsTables.outboundBatches.id,
@@ -253,7 +245,7 @@ export class OutboundBatchService {
   }
 
   async removeFulfillmentOrderFromBatch(batchId: string, fulfillmentOrderId: string, tx?: DbTx): Promise<void> {
-    await this.inTx(async (trx) => {
+    await this.dbService.run(async (trx) => {
       const batchRows = await trx
         .select({
           id: wmsTables.outboundBatches.id,
@@ -313,7 +305,7 @@ export class OutboundBatchService {
   }
 
   async startPicking(batchId: string, tx?: DbTx): Promise<void> {
-    await this.inTx(async (trx) => {
+    await this.dbService.run(async (trx) => {
       const batchRows = await trx
         .select({
           id: wmsTables.outboundBatches.id,
@@ -355,7 +347,7 @@ export class OutboundBatchService {
   }
 
   async completeBatch(batchId: string, tx?: DbTx): Promise<void> {
-    await this.inTx(async (trx) => {
+    await this.dbService.run(async (trx) => {
       const batchRows = await trx
         .select({ id: wmsTables.outboundBatches.id, status: wmsTables.outboundBatches.status })
         .from(wmsTables.outboundBatches)
@@ -408,7 +400,7 @@ export class OutboundBatchService {
   }
 
   async cancelBatch(batchId: string, tx?: DbTx): Promise<void> {
-    await this.inTx(async (trx) => {
+    await this.dbService.run(async (trx) => {
       const batchRows = await trx
         .select({ id: wmsTables.outboundBatches.id, status: wmsTables.outboundBatches.status })
         .from(wmsTables.outboundBatches)
@@ -446,7 +438,7 @@ export class OutboundBatchService {
   }
 
   async getBatchDetail(batchId: string, tx?: DbTx): Promise<OutboundBatchDetail> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const batchRows = await trx
         .select({
           id: wmsTables.outboundBatches.id,
@@ -530,7 +522,7 @@ export class OutboundBatchService {
   }
 
   async generatePickingList(batchId: string, tx?: DbTx): Promise<PickingListItem[]> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const batchRows = await trx
         .select({ id: wmsTables.outboundBatches.id })
         .from(wmsTables.outboundBatches)
@@ -602,7 +594,7 @@ export class OutboundBatchService {
       createdAt: Date;
     }>
   > {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const fulfillmentOrders = await trx
         .select({
           id: wmsTables.fulfillmentOrders.id,
@@ -660,7 +652,7 @@ export class OutboundBatchService {
       createdAt: Date;
     }>
   > {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const batches = await (warehouseId
         ? trx
             .select({

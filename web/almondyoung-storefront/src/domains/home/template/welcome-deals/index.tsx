@@ -6,7 +6,7 @@ import { collectCategoryIds } from "@/lib/utils/collect-category-ids"
 import { getWishlist } from "@lib/api/users/wishlist"
 import { WelcomeDealSection } from "../../components/sections/welcome-deal-section"
 
-const WELCOME_DEAL_HANDLE = "100won-welkeomdil"
+const WELCOME_DEAL_HANDLE = "cafe24-cat-498"
 
 export async function WelcomeDealWrapper({
   countryCode,

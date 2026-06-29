@@ -17,7 +17,7 @@ function makeClient(results: any[]) {
 
 function makeService(results: any[]) {
   const client = makeClient(results);
-  const db = { db: client } as any;
+  const db = { db: client, run: (fn: any, t?: any) => (t ? fn(t) : fn(client)) } as any;
   const productReadAssembler = {} as any;
   const productSellableQuantity = {
     recalculateAndPublishForMaster: jest.fn().mockResolvedValue(undefined),

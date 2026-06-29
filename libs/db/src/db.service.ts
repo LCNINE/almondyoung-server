@@ -2,7 +2,7 @@
 import { Injectable, Inject, OnApplicationShutdown, OnModuleDestroy } from '@nestjs/common';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as postgres from 'postgres';
-import { DrizzleSchema } from './types';
+import { DrizzleSchema, TxFor } from './types';
 
 export const DB_CONNECTION = 'DB_CONNECTION';
 export const DB_SCHEMA = 'DB_SCHEMA';
@@ -35,6 +35,16 @@ export class DbService<TSchema extends DrizzleSchema = Record<string, never>>
 
   get db(): PostgresJsDatabase<TSchema> {
     return this._db;
+  }
+
+  /**
+   * Single transaction runner. If `tx` is provided, runs `fn` inside it
+   * (propagation); otherwise opens a new transaction. Replaces the per-class
+   * `inTx` helper. The callback's tx type is derived from this DbService's
+   * schema (`TxFor<TSchema>`); cross-BC seam services inject a wider schema.
+   */
+  async run<T>(fn: (tx: TxFor<TSchema>) => Promise<T>, tx?: TxFor<TSchema>): Promise<T> {
+    return tx ? fn(tx) : this._db.transaction(fn);
   }
 
   async onModuleDestroy(): Promise<void> {

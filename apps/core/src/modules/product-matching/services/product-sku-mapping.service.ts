@@ -26,10 +26,6 @@ export class ProductSkuMappingService {
     private readonly fulfillmentBacklog: FulfillmentOrderCreationBacklogService,
   ) {}
 
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
-    return tx ? fn(tx) : this.dbService.db.transaction(fn);
-  }
-
   private hasAvailabilityOverride(policy: StockPolicyPatch): boolean {
     return !!policy && Object.prototype.hasOwnProperty.call(policy, 'availabilityOverride');
   }
@@ -98,7 +94,7 @@ export class ProductSkuMappingService {
       return { data: [] };
     }
 
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const uniqueVariantIds = [...new Set(variantIds.filter(Boolean))];
 
       if (uniqueVariantIds.length === 0) {
@@ -228,7 +224,7 @@ export class ProductSkuMappingService {
   }
 
   async getByVariant(variantId: string, tx?: DbTx) {
-    return await this.inTx(async (trx) => {
+    return await this.dbService.run(async (trx) => {
       const matching = await trx.query.productMatchings.findFirst({
         where: (m, { eq }) => eq(m.variantId, variantId),
       });
@@ -252,7 +248,7 @@ export class ProductSkuMappingService {
   }
 
   async upsert(variantId: string, dto: UpsertMatchingDto, tx?: DbTx) {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       if (!variantId) throw new BadRequestException('variantId required');
       const hasLinks = Array.isArray(dto.links) && dto.links.length > 0;
 
@@ -367,7 +363,7 @@ export class ProductSkuMappingService {
   }
 
   async updateVariantStockPolicy(variantId: string, dto: UpdateVariantStockPolicyDto, tx?: DbTx) {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       if (!variantId) throw new BadRequestException('variantId required');
 
       const policy: UpdateVariantStockPolicyDto = dto ?? {};
@@ -423,7 +419,7 @@ export class ProductSkuMappingService {
    * @returns 생성된 스냅샷 ID, 매핑이 없으면 null
    */
   async createSnapshotForVariant(variantId: string, warehouseId: string, tx?: DbTx): Promise<string | null> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       // 1. 현재 활성 SKU 매핑 조회 (productSkuMappings + productSkuMappingItems)
       const mappingInfo = await trx
         .select({
@@ -519,7 +515,7 @@ export class ProductSkuMappingService {
     isActive: boolean;
     mappings: Array<{ variantId: string; skuId: string; quantity: number }>;
   } | null> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const mappings = await trx
         .select()
         .from(wmsTables.productSkuMappings)
@@ -568,7 +564,7 @@ export class ProductSkuMappingService {
     warehouseId: string;
     mappings: Array<{ variantId: string; skuId: string; quantity: number }>;
   }> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const snapshots = await trx
         .select()
         .from(wmsTables.productSkuMappingSnapshots)
@@ -597,7 +593,7 @@ export class ProductSkuMappingService {
   }
 
   async getMastersBatchStats(masterIds: string[], tx?: DbTx) {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       if (!masterIds || masterIds.length === 0) {
         return [];
       }

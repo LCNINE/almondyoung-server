@@ -83,14 +83,6 @@ export class InspectionService {
     private readonly barcodeService: BarcodeService,
   ) {}
 
-  private get db() {
-    return this.dbService.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   // ───────────────────────────── 세션 시작 ─────────────────────────────
 
   async startInspectionSession(
@@ -103,7 +95,7 @@ export class InspectionService {
   ): Promise<InspectionSession> {
     const { fulfillmentOrderId, type, inspectorUserId } = request;
 
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const foRows = await trx
         .select({ id: wmsTables.fulfillmentOrders.id, status: wmsTables.fulfillmentOrders.status })
         .from(wmsTables.fulfillmentOrders)
@@ -222,7 +214,7 @@ export class InspectionService {
   }
 
   async getInspectionSession(sessionId: string, tx?: DbTx): Promise<InspectionSession> {
-    return this.inTx((trx) => this.loadInspectionSession(sessionId, trx), tx);
+    return this.dbService.run((trx) => this.loadInspectionSession(sessionId, trx), tx);
   }
 
   // ───────────────────────────── 아이템 검수 ─────────────────────────────
@@ -248,7 +240,7 @@ export class InspectionService {
       throw new BadRequestException('Inspected quantity must equal approved + rejected quantities');
     }
 
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const rows = await trx
         .select({
           id: wmsTables.fulfillmentOrderItems.id,
@@ -405,7 +397,7 @@ export class InspectionService {
   // ───────────────────────────── 세션 완료 ─────────────────────────────
 
   async completeInspectionSession(sessionId: string, inspectorUserId: string, tx?: DbTx): Promise<void> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const sessionRows = await trx
         .select({
           id: wmsTables.inspectionSessions.id,
@@ -481,7 +473,7 @@ export class InspectionService {
   async forceShipment(request: ForceShipmentRequest, tx?: DbTx): Promise<void> {
     const { sessionId, foiId, reason, authorizedBy, forceQty, note } = request;
 
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const rows = await trx
         .select({
           pickedQty: wmsTables.fulfillmentOrderItems.pickedQty,
@@ -553,7 +545,7 @@ export class InspectionService {
   // ───────────────────────────── 검수 초기화 ─────────────────────────────
 
   async resetInspection(foiId: string, inspectorUserId: string, tx?: DbTx): Promise<void> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const rows = await trx
         .select({ foStatus: wmsTables.fulfillmentOrders.status })
         .from(wmsTables.fulfillmentOrderItems)
@@ -629,7 +621,7 @@ export class InspectionService {
       timestamp: Date;
     }>
   > {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const rows = await trx
         .select({
           sessionId: wmsTables.inspectionItems.sessionId,
@@ -689,7 +681,7 @@ export class InspectionService {
       avgTime: number;
     }>;
   }> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const sessionConditions: SQL[] = [];
       if (filters?.inspectorUserId) {
         sessionConditions.push(eq(wmsTables.inspectionSessions.inspectorUserId, filters.inspectorUserId));
@@ -788,7 +780,7 @@ export class InspectionService {
   // ───────────────────────────── 일괄 승인 ─────────────────────────────
 
   async bulkApprove(sessionId: string, foiIds: string[], inspectorUserId: string, tx?: DbTx): Promise<number> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const rows = await trx
         .select({
           id: wmsTables.fulfillmentOrderItems.id,
@@ -878,7 +870,7 @@ export class InspectionService {
     totalIssues: number;
     canComplete: boolean;
   }> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const foRows = await trx
         .select({ id: wmsTables.fulfillmentOrders.id })
         .from(wmsTables.fulfillmentOrders)
@@ -963,7 +955,7 @@ export class InspectionService {
     context: { sessionId: string; fulfillmentOrderId?: string },
     tx?: DbTx,
   ): Promise<{ type: string; foiId: string; data: InspectionItem }> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       await this.assertActiveSession(context.sessionId, trx, context.fulfillmentOrderId);
       const foiId = await this.resolveFoiFromBarcode(barcode, context.sessionId, trx);
       const item = await this.loadInspectionItem(context.sessionId, foiId, trx);
@@ -981,7 +973,7 @@ export class InspectionService {
       throw new BadRequestException('Scan quantity must be positive');
     }
 
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       await this.assertActiveSession(sessionId, trx);
       const foiId = await this.resolveFoiFromBarcode(barcode, sessionId, trx);
 

@@ -73,12 +73,8 @@ export class PickingProcessService {
     return this.dbService.db;
   }
 
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
-    return tx ? fn(tx) : this.db.transaction(fn);
-  }
-
   async getPickingOperations(batchId: string, tx?: DbTx): Promise<PickingOperation[]> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const batchRows = await trx
         .select({ id: wmsTables.outboundBatches.id, pickingMethod: wmsTables.outboundBatches.pickingMethod })
         .from(wmsTables.outboundBatches)
@@ -161,7 +157,7 @@ export class PickingProcessService {
       throw new BadRequestException('Picked quantity must be positive');
     }
 
-    await this.inTx(async (trx) => {
+    await this.dbService.run(async (trx) => {
       const batchRows = await trx
         .select({
           id: wmsTables.outboundBatches.id,
@@ -246,7 +242,7 @@ export class PickingProcessService {
   }
 
   async getPickingProgress(batchId: string, tx?: DbTx): Promise<PickingProgress> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const batchRows = await trx
         .select({ id: wmsTables.outboundBatches.id, pickingMethod: wmsTables.outboundBatches.pickingMethod })
         .from(wmsTables.outboundBatches)
@@ -302,7 +298,7 @@ export class PickingProcessService {
   }
 
   async startIndividualPicking(fulfillmentOrderId: string, tx?: DbTx): Promise<IndividualPickingSession> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const foRows = await trx
         .select({ id: wmsTables.fulfillmentOrders.id, status: wmsTables.fulfillmentOrders.status })
         .from(wmsTables.fulfillmentOrders)
@@ -413,7 +409,7 @@ export class PickingProcessService {
       throw new BadRequestException('Picked quantity must be positive');
     }
 
-    await this.inTx(async (trx) => {
+    await this.dbService.run(async (trx) => {
       const rows = await trx
         .select({
           qty: wmsTables.fulfillmentOrderItems.qty,
@@ -459,7 +455,7 @@ export class PickingProcessService {
   }
 
   async completeIndividualPicking(fulfillmentOrderId: string, tx?: DbTx): Promise<void> {
-    await this.inTx(async (trx) => {
+    await this.dbService.run(async (trx) => {
       const items = await trx
         .select({ qty: wmsTables.fulfillmentOrderItems.qty, pickedQty: wmsTables.fulfillmentOrderItems.pickedQty })
         .from(wmsTables.fulfillmentOrderItems)
@@ -487,7 +483,7 @@ export class PickingProcessService {
   }
 
   async resetPickingForItem(foiId: string, tx?: DbTx): Promise<void> {
-    await this.inTx(async (trx) => {
+    await this.dbService.run(async (trx) => {
       const rows = await trx
         .select({ foStatus: wmsTables.fulfillmentOrders.status })
         .from(wmsTables.fulfillmentOrderItems)
@@ -529,7 +525,7 @@ export class PickingProcessService {
     },
     tx?: DbTx,
   ): Promise<{ type: string; data: unknown; actions: string[] }> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const parsed = this.barcodeService.parseBarcode(barcode);
 
       switch (parsed.type) {
@@ -558,7 +554,7 @@ export class PickingProcessService {
     context: { batchId?: string; warehouseId: string },
     tx?: DbTx,
   ): Promise<{ type: string; data: unknown; actions: string[] }> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { skuId, skuName, availableQty } = skuResult;
       const { batchId } = context;
 
@@ -594,7 +590,7 @@ export class PickingProcessService {
     context: { fulfillmentOrderId?: string; batchId?: string },
     tx?: DbTx,
   ): Promise<{ type: string; data: unknown; actions: string[] }> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const { foiId, fulfillmentOrderId, remainingQty, batchId } = foiResult;
 
       if (remainingQty <= 0) {
@@ -640,7 +636,7 @@ export class PickingProcessService {
     context: { warehouseId: string },
     tx?: DbTx,
   ): Promise<{ type: string; data: unknown; actions: string[] }> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const isValid = await this.barcodeService.validateLocationAccess(locationCode, context.warehouseId, trx);
 
       if (!isValid) {
@@ -663,7 +659,7 @@ export class PickingProcessService {
     },
     tx?: DbTx,
   ): Promise<{ success: boolean; message: string; data?: unknown }> {
-    return this.inTx(async (trx) => {
+    return this.dbService.run(async (trx) => {
       const parsed = this.barcodeService.parseBarcode(barcode);
 
       if (parsed.type === 'sku' && context.batchId) {

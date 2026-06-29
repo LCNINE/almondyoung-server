@@ -8,7 +8,7 @@ import { ProductPurchaseConstraintsService } from './product-purchase-constraint
 
 describe('ProductPurchaseConstraintsService decision helpers', () => {
   function makeService() {
-    return new ProductPurchaseConstraintsService({ db: {} } as any);
+    return new ProductPurchaseConstraintsService({ run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any);
   }
 
   it('treats disabled membership and null lifetime limit as delete intent', () => {
@@ -58,7 +58,7 @@ describe('ProductPurchaseConstraintsService decision helpers', () => {
 
 describe('ProductPurchaseConstraintsService copyMapping', () => {
   function makeService() {
-    return new ProductPurchaseConstraintsService({ db: {} } as any);
+    return new ProductPurchaseConstraintsService({ run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any);
   }
 
   function makeTx(selectResults: any[][]) {
@@ -159,7 +159,7 @@ describe('ProductPurchaseConstraintsService upsert/delete behavior', () => {
   };
 
   function makeService() {
-    return new ProductPurchaseConstraintsService({ db: {} } as any);
+    return new ProductPurchaseConstraintsService({ run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any);
   }
 
   function makeStatefulTx(initialState: Partial<FakeState>) {

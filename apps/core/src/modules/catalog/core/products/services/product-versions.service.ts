@@ -1,11 +1,11 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
-import { NotFoundError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
 import { InjectStreamPublisher, OutboxPublisher, StreamPublisher } from '@app/events';
-import { ProductEvents, PRODUCT_STREAM, ProductSnapshot } from '@packages/event-contracts';
+import { ProductEvents, PRODUCT_STREAM } from '@packages/event-contracts';
 import { PricingValidatorService } from '../../pricing/pricing-validator.service';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
 import { ProductReadAssembler } from '../assemblers/product-read.assembler';
+import { ProjectionSnapshotAssembler } from '../assemblers/projection-snapshot.assembler';
 import { VariantAssetLinkService } from '../../../../library/services/variant-asset-link.service';
 import {
   ProductMasterVersion,
@@ -19,15 +19,12 @@ import {
   type PimSchema,
   productMasters,
   productMasterCategories,
-  productCategories,
   productMasterVersions,
   productMasterOptionGroups,
   productMasterVariants,
   productMasterPricingRules,
   productOptionGroupDisplays,
   productOptionValueDisplays,
-  productOptionGroups,
-  productOptionValues,
   productVariants,
   variantOptionValues,
   pricingRules,
@@ -42,6 +39,7 @@ import { productVariantDigitalAssetLinks } from '../../../../library/schema/libr
 import { ProductSellableQuantityService } from '../../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { eq, and, sql, max as drizzleMax, isNull, inArray, asc, desc } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
+import { deleteEntitiesIfUnmapped } from '../../version-isolation/delete-if-unmapped';
 
 @Injectable()
 export class ProductVersionsService {
@@ -54,21 +52,14 @@ export class ProductVersionsService {
     private readonly outboxPublisher: OutboxPublisher,
     private readonly pricingValidator: PricingValidatorService,
     private readonly productReadAssembler: ProductReadAssembler,
+    private readonly projectionSnapshotAssembler: ProjectionSnapshotAssembler,
     private readonly priceCacheService: VariantPriceCacheService,
     private readonly variantAssetLinkService: VariantAssetLinkService,
     private readonly productSellableQuantity: ProductSellableQuantityService,
   ) {}
 
-  private get dbConn() {
-    return this.db.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
-    return tx ? fn(tx) : this.dbConn.transaction(fn);
-  }
-
   async getVersionTree(masterId: string, tx?: DbTransaction): Promise<VersionTreeNode[]> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const versions = await tx
         .select()
         .from(productMasterVersions)
@@ -116,7 +107,7 @@ export class ProductVersionsService {
   }
 
   async getActiveVersion(masterId: string, tx?: DbTransaction): Promise<ProductMasterVersion> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const result = await tx
         .select()
         .from(productMasterVersions)
@@ -139,7 +130,7 @@ export class ProductVersionsService {
   }
 
   async getVersionById(versionId: string, tx?: DbTransaction): Promise<ProductMasterVersion> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const [version] = await tx
         .select()
         .from(productMasterVersions)
@@ -159,7 +150,7 @@ export class ProductVersionsService {
   }
 
   async createInitialDraftVersion(masterId: string, userId: string, tx?: DbTransaction): Promise<ProductMasterVersion> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const [master] = await tx
         .select({ id: productMasters.id })
         .from(productMasters)
@@ -202,7 +193,7 @@ export class ProductVersionsService {
     copyMappings: boolean = true,
     tx?: DbTransaction,
   ): Promise<ProductMasterVersion> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const parent = await this.getVersionById(parentVersionId, tx);
 
       const maxVersionResult = await tx
@@ -259,12 +250,13 @@ export class ProductVersionsService {
    * - 다른 master 의 active 버전과 productCode 충돌 검증 (DB partial unique index와 이중 방어)
    */
   async publishVersion(versionId: string, tx?: DbTransaction): Promise<void> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const version = await this.getVersionById(versionId, tx);
 
       if (version.status !== 'draft' && version.status !== 'inactive') {
         throw new BadRequestException('Only draft or inactive versions can be published');
       }
+      const changeReason = version.status === 'inactive' ? 'rollback' : 'published';
 
       let previousActiveVersion: ProductMasterVersion | null = null;
 
@@ -279,17 +271,15 @@ export class ProductVersionsService {
       await this._validateVariantCodeUniqueness(versionId, tx);
       await this.validateProductCodeUniqueness(version, tx);
 
+      // 가격 검증 및 캐시 생성은 active 상태 변경 전에 완료되어야 한다.
+      await this.pricingValidator.validateCalculatedPrices(versionId, tx);
+      await this.priceCacheService.cachePricesForVersion(versionId, tx);
+
       // 기존 active를 inactive로
       await tx
         .update(productMasterVersions)
         .set({ status: 'inactive' })
         .where(and(eq(productMasterVersions.masterId, version.masterId), eq(productMasterVersions.status, 'active')));
-
-      // 가격 검증 (publish 시점)
-      await this.pricingValidator.validateCalculatedPrices(versionId, tx);
-
-      // 가격 캐시 생성 (publish 시점)
-      await this.priceCacheService.cachePricesForVersion(versionId, tx);
 
       // draft를 active로 publish
       await tx
@@ -310,7 +300,7 @@ export class ProductVersionsService {
       // 이벤트 발행: 추가/삭제된 variant
       await this._publishVariantChangeEvents(version, previousActiveVersion, tx);
 
-      await this._emitActiveVersionChangedEvent(version, previousActiveVersion, 'active', tx);
+      await this._emitActiveVersionChangedEvent(version, previousActiveVersion, changeReason, tx);
 
       const variantIdsToRecalculate = [
         ...(await this.getVersionVariants(version.masterId, version.id, tx)),
@@ -649,7 +639,7 @@ export class ProductVersionsService {
     hideMembershipPriceForNonMembers: boolean,
     tx?: DbTransaction,
   ): Promise<void> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const activeVersion = await this.getActiveVersion(masterId, tx);
 
       await tx
@@ -661,13 +651,7 @@ export class ProductVersionsService {
         })
         .where(eq(productMasterVersions.id, activeVersion.id));
 
-      // 변경된 값을 스냅샷에 반영하기 위해 in-memory 패치 후 이벤트 발행
-      const patchedVersion = {
-        ...activeVersion,
-        hideMembershipPriceForNonMembers,
-        isMembershipOnly: hideMembershipPriceForNonMembers,
-      };
-      await this._emitActiveVersionChangedEvent(patchedVersion, null, 'active', tx);
+      await this._emitActiveVersionChangedEvent(activeVersion, null, 'published', tx);
 
       this.logger.log(
         `updateMembershipPriceVisibility: master=${masterId} hideMembershipPriceForNonMembers=${hideMembershipPriceForNonMembers}`,
@@ -690,7 +674,7 @@ export class ProductVersionsService {
     isVisibleToMembersOnly: boolean,
     tx?: DbTransaction,
   ): Promise<void> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const activeVersion = await this.getActiveVersion(masterId, tx);
 
       await tx
@@ -698,8 +682,7 @@ export class ProductVersionsService {
         .set({ isVisibleToMembersOnly, updatedAt: new Date() })
         .where(eq(productMasterVersions.id, activeVersion.id));
 
-      const patchedVersion = { ...activeVersion, isVisibleToMembersOnly };
-      await this._emitActiveVersionChangedEvent(patchedVersion, null, 'active', tx);
+      await this._emitActiveVersionChangedEvent(activeVersion, null, 'published', tx);
 
       this.logger.log(
         `updateMembersOnlyVisibility: master=${masterId} isVisibleToMembersOnly=${isVisibleToMembersOnly}`,
@@ -730,7 +713,7 @@ export class ProductVersionsService {
    * Master의 Active 버전을 Inactive로 전환 (상품 비공개)
    */
   async unpublishMaster(masterId: string, tx?: DbTransaction): Promise<void> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const activeVersion = await this.getActiveVersion(masterId, tx);
 
       // active를 inactive로 전환
@@ -739,7 +722,7 @@ export class ProductVersionsService {
         .set({ status: 'inactive', updatedAt: new Date() })
         .where(eq(productMasterVersions.id, activeVersion.id));
 
-      await this._emitActiveVersionChangedEvent(activeVersion, activeVersion, 'inactive', tx);
+      await this._emitActiveVersionChangedEvent(activeVersion, activeVersion, 'unpublished', tx);
 
       const variantIds = await this.getVersionVariants(activeVersion.masterId, activeVersion.id, tx);
       await this.productSellableQuantity.recalculateAndPublishForVariants(variantIds, tx);
@@ -764,7 +747,7 @@ export class ProductVersionsService {
     const limit = filters?.limit ?? 15;
     const offset = (page - 1) * limit;
 
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const versions = await tx
         .select()
         .from(productMasterVersions)
@@ -786,23 +769,16 @@ export class ProductVersionsService {
   private async _emitActiveVersionChangedEvent(
     newVersion: ProductMasterVersion,
     previousActiveVersion: ProductMasterVersion | null,
-    targetStatus: 'active' | 'inactive',
+    changeReason: 'published' | 'unpublished' | 'rollback',
     tx: DbTransaction,
   ): Promise<void> {
-    const changeReason = targetStatus === 'inactive' ? 'unpublished' : previousActiveVersion ? 'rollback' : 'published';
-
-    const snapshot =
-      targetStatus === 'active' ? await this._buildFullSnapshot(newVersion.masterId, newVersion.id, tx) : null;
-
-    if ((changeReason === 'published' || changeReason === 'rollback') && !snapshot) {
-      throw new Error(
-        `ProductMasterActiveVersionChanged ${changeReason} event requires a full snapshot: masterId=${newVersion.masterId}, versionId=${newVersion.id}`,
-      );
-    }
-
-    const categoryIds = snapshot?.categories?.map((c) => c.id) || [];
-    const primaryCategoryId =
-      categoryIds.length > 0 ? await this.getPrimaryCategoryId(newVersion.masterId, newVersion.id, tx) : null;
+    const assembly =
+      changeReason === 'unpublished'
+        ? null
+        : await this.projectionSnapshotAssembler.assembleActiveVersionSnapshot(newVersion.masterId, newVersion.id, tx);
+    const snapshot = assembly?.snapshot ?? null;
+    const categoryIds = assembly?.categoryIds ?? [];
+    const primaryCategoryId = assembly?.primaryCategoryId ?? null;
 
     await this.outboxPublisher.saveEvent(
       {
@@ -812,8 +788,8 @@ export class ProductVersionsService {
         aggregateId: newVersion.masterId,
         payload: {
           masterId: newVersion.masterId,
-          versionId: targetStatus === 'active' ? newVersion.id : null,
-          name: targetStatus === 'active' ? newVersion.name : null,
+          versionId: changeReason === 'unpublished' ? null : newVersion.id,
+          name: changeReason === 'unpublished' ? null : (snapshot?.name ?? newVersion.name),
           previousActiveVersionId: previousActiveVersion?.id || null,
           categoryIds,
           primaryCategoryId,
@@ -1221,7 +1197,7 @@ export class ProductVersionsService {
   }
 
   async compareVersions(versionId1: string, versionId2: string, tx?: DbTransaction): Promise<VersionDiffDto[]> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const [version1, version2] = await Promise.all([
         this.getVersionById(versionId1, tx),
         this.getVersionById(versionId2, tx),
@@ -1287,7 +1263,7 @@ export class ProductVersionsService {
   }
 
   async canUserModifyVersion(versionId: string, userId: string, tx?: DbTransaction): Promise<boolean> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const version = await this.getVersionById(versionId, tx);
 
       if (version.status !== 'draft') {
@@ -1308,7 +1284,7 @@ export class ProductVersionsService {
     optionGroupId: string,
     tx?: DbTransaction,
   ): Promise<void> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       await tx.insert(productMasterOptionGroups).values({
         id: uuidv7(),
         masterId,
@@ -1325,7 +1301,7 @@ export class ProductVersionsService {
     optionGroupId: string,
     tx?: DbTransaction,
   ): Promise<void> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       await tx
         .delete(productMasterOptionGroups)
         .where(
@@ -1344,7 +1320,7 @@ export class ProductVersionsService {
     variantId: string,
     tx?: DbTransaction,
   ): Promise<void> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       await tx.insert(productMasterVariants).values({
         id: uuidv7(),
         masterId,
@@ -1361,7 +1337,7 @@ export class ProductVersionsService {
     variantId: string,
     tx?: DbTransaction,
   ): Promise<void> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       await tx
         .delete(productMasterVariants)
         .where(
@@ -1380,7 +1356,7 @@ export class ProductVersionsService {
     pricingRuleId: string,
     tx?: DbTransaction,
   ): Promise<void> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       await tx.insert(productMasterPricingRules).values({
         id: uuidv7(),
         masterId,
@@ -1397,7 +1373,7 @@ export class ProductVersionsService {
     pricingRuleId: string,
     tx?: DbTransaction,
   ): Promise<void> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       await tx
         .delete(productMasterPricingRules)
         .where(
@@ -1411,7 +1387,7 @@ export class ProductVersionsService {
   }
 
   async getVersionOptionGroups(masterId: string, versionId: string, tx?: DbTransaction): Promise<string[]> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const mappings = await tx
         .select()
         .from(productMasterOptionGroups)
@@ -1424,7 +1400,7 @@ export class ProductVersionsService {
   }
 
   async getVersionVariants(masterId: string, versionId: string, tx?: DbTransaction): Promise<string[]> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const mappings = await tx
         .select()
         .from(productMasterVariants)
@@ -1435,7 +1411,7 @@ export class ProductVersionsService {
   }
 
   async getVersionPricingRules(masterId: string, versionId: string, tx?: DbTransaction): Promise<string[]> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const mappings = await tx
         .select()
         .from(productMasterPricingRules)
@@ -1657,7 +1633,7 @@ export class ProductVersionsService {
    * Draft 버전 삭제 (고아 variant도 정리)
    */
   async deleteDraftVersion(versionId: string, tx?: DbTransaction): Promise<void> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const version = await this.getVersionById(versionId, tx);
 
       if (version.status !== 'draft') {
@@ -1788,23 +1764,16 @@ export class ProductVersionsService {
     candidateVariantIds: string[],
     tx: DbTransaction,
   ): Promise<void> {
-    let deletedCount = 0;
-
-    for (const variantId of candidateVariantIds) {
-      // 이 variant를 참조하는 다른 버전이 있는지 확인
-      const remainingMappings = await tx
-        .select({ versionId: productMasterVariants.versionId })
-        .from(productMasterVariants)
-        .where(and(eq(productMasterVariants.masterId, masterId), eq(productMasterVariants.variantId, variantId)));
-
-      if (remainingMappings.length === 0) {
-        // 더 이상 참조하는 버전이 없으면 삭제
-        await tx.delete(productVariants).where(eq(productVariants.id, variantId));
-
-        deletedCount++;
-        this.logger.log(`Deleted orphaned variant entity: ${variantId} (no longer referenced after draft deletion)`);
-      }
-    }
+    const deletedCount = await deleteEntitiesIfUnmapped(
+      tx,
+      {
+        entityTable: productVariants,
+        entityIdColumn: productVariants.id,
+        junctionTable: productMasterVariants,
+        junctionFkColumn: productMasterVariants.variantId,
+      },
+      candidateVariantIds,
+    );
 
     if (deletedCount > 0) {
       this.logger.log(`Cleaned up ${deletedCount} orphaned variant entities`);
@@ -1815,23 +1784,16 @@ export class ProductVersionsService {
    * 고아 pricing rule 정리 (deleteDraftVersion용)
    */
   private async _cleanupOrphanedPricingRules(candidateRuleIds: string[], tx: DbTransaction): Promise<void> {
-    if (candidateRuleIds.length === 0) {
-      return;
-    }
-
-    let deletedCount = 0;
-
-    for (const ruleId of candidateRuleIds) {
-      const allMappings = await tx
-        .select()
-        .from(productMasterPricingRules)
-        .where(eq(productMasterPricingRules.pricingRuleId, ruleId));
-
-      if (allMappings.length === 0) {
-        await tx.delete(pricingRules).where(eq(pricingRules.id, ruleId));
-        deletedCount++;
-      }
-    }
+    const deletedCount = await deleteEntitiesIfUnmapped(
+      tx,
+      {
+        entityTable: pricingRules,
+        entityIdColumn: pricingRules.id,
+        junctionTable: productMasterPricingRules,
+        junctionFkColumn: productMasterPricingRules.pricingRuleId,
+      },
+      candidateRuleIds,
+    );
 
     if (deletedCount > 0) {
       this.logger.log(`Cleaned up ${deletedCount} orphaned pricing rules`);
@@ -1842,23 +1804,16 @@ export class ProductVersionsService {
     candidateConstraintIds: string[],
     tx: DbTransaction,
   ): Promise<void> {
-    if (candidateConstraintIds.length === 0) {
-      return;
-    }
-
-    let deletedCount = 0;
-
-    for (const constraintId of new Set(candidateConstraintIds)) {
-      const allMappings = await tx
-        .select()
-        .from(productMasterPurchaseConstraints)
-        .where(eq(productMasterPurchaseConstraints.purchaseConstraintId, constraintId));
-
-      if (allMappings.length === 0) {
-        await tx.delete(productPurchaseConstraints).where(eq(productPurchaseConstraints.id, constraintId));
-        deletedCount++;
-      }
-    }
+    const deletedCount = await deleteEntitiesIfUnmapped(
+      tx,
+      {
+        entityTable: productPurchaseConstraints,
+        entityIdColumn: productPurchaseConstraints.id,
+        junctionTable: productMasterPurchaseConstraints,
+        junctionFkColumn: productMasterPurchaseConstraints.purchaseConstraintId,
+      },
+      candidateConstraintIds,
+    );
 
     if (deletedCount > 0) {
       this.logger.log(`Cleaned up ${deletedCount} orphaned purchase constraints`);

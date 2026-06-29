@@ -7,12 +7,8 @@ import { eq, and, sum } from 'drizzle-orm';
 export class AvailabilityService {
   constructor(private readonly db: DbService<typeof wmsSchema>) {}
 
-  private async inTx<T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx) {
-    return tx ? fn(tx) : this.db.db.transaction(fn);
-  }
-
   async getAvailableQuantity(skuId: string, warehouseId: string, tx?: DbTx) {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       const [onHand] = await trx
         .select({ qty: sum(wmsTables.stockLedgers.qty) })
         .from(wmsTables.stockLedgers)

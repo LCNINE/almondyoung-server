@@ -50,6 +50,7 @@ import { ProductVersionsService } from './product-versions.service';
 import { PricingCalculatorService } from '../../pricing/pricing-calculator.service';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
 import { v7 as uuidv7 } from 'uuid';
+import { deleteEntitiesIfUnmapped } from '../../version-isolation/delete-if-unmapped';
 import { ProductVersionDto } from '../dto/entities/master-version.entity';
 import { MasterProductWithPrimaryVersionDto } from '../dto/products/product-response.dto';
 import { ProductMasterVersionEntity } from '../../../schema/catalog.schema.types';
@@ -112,14 +113,6 @@ export class ProductMastersService {
     private readonly productMatchingService: ProductMatchingService | null,
   ) {}
 
-  private get client() {
-    return this.db.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
-    return tx ? fn(tx) : this.client.transaction(fn);
-  }
-
   /**
    * ProductVariantCreated 이벤트 발행
    *
@@ -180,7 +173,7 @@ export class ProductMastersService {
   }
 
   async createMaster(tx?: DbTransaction): Promise<ProductMasterVersion> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const masterId = uuidv7();
       const versionId = uuidv7();
 
@@ -349,7 +342,7 @@ export class ProductMastersService {
       conditions.push(isNull(productMasterVersions.deletedAt));
     }
 
-    const version = await this.inTx(async (tx) => {
+    const version = await this.db.run(async (tx) => {
       const result = await tx
         .select()
         .from(productMasterVersions)
@@ -379,7 +372,7 @@ export class ProductMastersService {
       conditions.push(isNull(productMasterVersions.deletedAt));
     }
 
-    const version = await this.inTx(async (tx) => {
+    const version = await this.db.run(async (tx) => {
       const result = await tx
         .select()
         .from(productMasterVersions)
@@ -396,7 +389,7 @@ export class ProductMastersService {
       throw new BadRequestException('Master ID is required');
     }
 
-    const masterWithVersion = await this.inTx(async (tx) => {
+    const masterWithVersion = await this.db.run(async (tx) => {
       const [result] = await tx
         .select()
         .from(productMasterVersions)
@@ -431,7 +424,7 @@ export class ProductMastersService {
       throw new BadRequestException('Master ID is required');
     }
 
-    const masterWithVersion = await this.inTx(async (tx) => {
+    const masterWithVersion = await this.db.run(async (tx) => {
       const [result] = await tx
         .select()
         .from(productMasterVersions)
@@ -464,7 +457,7 @@ export class ProductMastersService {
       throw new BadRequestException('Version ID is required');
     }
 
-    const versionWithImages = await this.inTx(async (tx) => {
+    const versionWithImages = await this.db.run(async (tx) => {
       const [version] = await tx.select().from(productMasterVersions).where(eq(productMasterVersions.id, versionId));
 
       if (!version) {
@@ -516,7 +509,7 @@ export class ProductMastersService {
     page: number;
     limit: number;
   }> {
-    return this.inTx(async (trx) => {
+    return this.db.run(async (trx) => {
       // ===== 페이징 기초 계산 =====
       const returnAll = filters?.page === undefined;
       const page = filters?.page ?? 1;
@@ -775,7 +768,7 @@ export class ProductMastersService {
       throw new BadRequestException('Version ID is required');
     }
 
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const existingVersion = await this.getVersionById(versionId, {}, tx);
 
       if (existingVersion.status !== 'draft') {
@@ -943,7 +936,7 @@ export class ProductMastersService {
       throw new BadRequestException('Master ID is required');
     }
 
-    await this.inTx(async (tx) => {
+    await this.db.run(async (tx) => {
       const version = await this.getVersionById(versionId, {}, tx);
       if (!version) {
         throw new NotFoundException(`Version not found: ${versionId}`);
@@ -969,7 +962,7 @@ export class ProductMastersService {
   }
 
   async generateDefaultVariant(versionId: string, tx?: DbTransaction): Promise<void> {
-    await this.inTx(async (tx) => {
+    await this.db.run(async (tx) => {
       const version = await this.getVersionById(versionId, {}, tx);
       if (!version) {
         throw new NotFoundException(`Version not found: ${versionId}`);
@@ -1030,7 +1023,7 @@ export class ProductMastersService {
       throw new BadRequestException('Version ID is required');
     }
 
-    await this.inTx(async (tx) => {
+    await this.db.run(async (tx) => {
       const version = await this.getVersionById(versionId, {}, tx);
       if (!version) {
         throw new NotFoundException(`Version not found: ${versionId}`);
@@ -1052,18 +1045,16 @@ export class ProductMastersService {
         );
 
       // 실제 variant 레코드 삭제 (다른 버전에서 사용되지 않는 경우)
-      if (existingMappings.length > 0) {
-        for (const { variantId } of existingMappings) {
-          const otherMappings = await tx
-            .select({ count: count() })
-            .from(productMasterVariants)
-            .where(eq(productMasterVariants.variantId, variantId));
-
-          if (otherMappings[0].count === 0) {
-            await tx.delete(productVariants).where(eq(productVariants.id, variantId));
-          }
-        }
-      }
+      await deleteEntitiesIfUnmapped(
+        tx,
+        {
+          entityTable: productVariants,
+          entityIdColumn: productVariants.id,
+          junctionTable: productMasterVariants,
+          junctionFkColumn: productMasterVariants.variantId,
+        },
+        existingMappings.map((m) => m.variantId),
+      );
 
       // 매핑 테이블과 Display 테이블을 통해 optionGroups 조회
       const optionGroups = await this._getVersionOptionGroupsWithDisplays(version.masterId, version.id, 'ko-KR', tx);
@@ -1077,7 +1068,7 @@ export class ProductMastersService {
       return false;
     }
 
-    const result = await this.inTx(async (tx) => {
+    const result = await this.db.run(async (tx) => {
       return await tx
         .select({ count: count() })
         .from(productMasters)
@@ -1143,7 +1134,7 @@ export class ProductMastersService {
    * Soft delete a product
    */
   async deleteVersion(id: string, userId: string, tx?: DbTransaction): Promise<ProductMasterVersion> {
-    const deleted = await this.inTx(async (tx) => {
+    const deleted = await this.db.run(async (tx) => {
       // Check if product exists and is not already deleted
       const product = await this.getVersionById(id, { includeDeleted: true }, tx);
       if (!product) {
@@ -1191,7 +1182,7 @@ export class ProductMastersService {
    * Restore a soft-deleted product
    */
   async restore(id: string, userId: string, tx?: DbTransaction): Promise<ProductMasterVersion> {
-    return await this.inTx(async (tx) => {
+    return await this.db.run(async (tx) => {
       // Find product including deleted ones
       const [product] = await tx.select().from(productMasterVersions).where(eq(productMasterVersions.id, id));
 
@@ -1236,7 +1227,7 @@ export class ProductMastersService {
    * Active 버전이 있었다면 ProductMasterDeleted 이벤트 발행
    */
   async deleteMaster(masterId: string, userId: string, tx?: DbTransaction): Promise<ProductMaster> {
-    return await this.inTx(async (tx) => {
+    return await this.db.run(async (tx) => {
       // 1. Master 존재 및 삭제 여부 확인
       const [master] = await tx.select().from(productMasters).where(eq(productMasters.id, masterId));
 
@@ -1280,7 +1271,7 @@ export class ProductMastersService {
    * Master 복원 (product_masters.deletedAt = null)
    */
   async restoreMaster(masterId: string, tx?: DbTransaction): Promise<ProductMaster> {
-    return await this.inTx(async (tx) => {
+    return await this.db.run(async (tx) => {
       // 1. Master 존재 확인 (includeDeleted)
       const [master] = await tx.select().from(productMasters).where(eq(productMasters.id, masterId));
 
@@ -1312,7 +1303,7 @@ export class ProductMastersService {
    * Get all soft-deleted products
    */
   async findDeleted(tx?: DbTransaction): Promise<MasterProductWithPrimaryVersionDto[]> {
-    return await this.inTx(async (tx) => {
+    return await this.db.run(async (tx) => {
       // 모든 master 를 가져오고, 각 master 에 보여줄 버전을 1) active, 2) inactive 최신, 3) 없으면 null 순서로 선택
       const masters = await tx.select().from(productMasters).where(isNotNull(productMasters.deletedAt)); // 삭제된 master 만 가져올 경우
 
@@ -1358,7 +1349,7 @@ export class ProductMastersService {
    * Hard delete (permanent) - use with caution
    */
   async hardDelete(id: string, userId: string, tx?: DbTransaction): Promise<{ deleted: boolean }> {
-    return await this.inTx(async (tx) => {
+    return await this.db.run(async (tx) => {
       // Check if product exists
       const [product] = await tx.select().from(productMasterVersions).where(eq(productMasterVersions.id, id));
 
@@ -1402,20 +1393,16 @@ export class ProductMastersService {
     candidateConstraintIds: string[],
     tx: DbTransaction,
   ): Promise<void> {
-    if (candidateConstraintIds.length === 0) {
-      return;
-    }
-
-    for (const constraintId of new Set(candidateConstraintIds)) {
-      const remainingMappings = await tx
-        .select()
-        .from(productMasterPurchaseConstraints)
-        .where(eq(productMasterPurchaseConstraints.purchaseConstraintId, constraintId));
-
-      if (remainingMappings.length === 0) {
-        await tx.delete(productPurchaseConstraints).where(eq(productPurchaseConstraints.id, constraintId));
-      }
-    }
+    await deleteEntitiesIfUnmapped(
+      tx,
+      {
+        entityTable: productPurchaseConstraints,
+        entityIdColumn: productPurchaseConstraints.id,
+        junctionTable: productMasterPurchaseConstraints,
+        junctionFkColumn: productMasterPurchaseConstraints.purchaseConstraintId,
+      },
+      candidateConstraintIds,
+    );
   }
 
   /**
@@ -2034,7 +2021,7 @@ export class ProductMastersService {
     },
     tx?: DbTransaction,
   ) {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       await tx.insert(productAuditLog).values({
         versionId: data.versionId,
         action: data.action,

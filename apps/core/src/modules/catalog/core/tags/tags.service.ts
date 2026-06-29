@@ -19,18 +19,10 @@ import { TagValueEntity } from '../../schema/catalog.schema.types';
 export class TagsService {
   constructor(@InjectDb() private readonly db: DbService<PimSchema>) {}
 
-  private get client() {
-    return this.db.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
-    return tx ? fn(tx) : this.client.transaction(fn);
-  }
-
   // ===== TAG GROUPS =====
 
   async createTagGroup(data: CreateTagGroupDto, tx?: DbTransaction): Promise<TagGroupWithValues> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const newTagGroupData: NewTagGroup = {
         name: data.name,
         description: data.description ?? null,
@@ -45,7 +37,7 @@ export class TagsService {
   }
 
   async getTagGroup(id: string, tx?: DbTransaction): Promise<TagGroupWithValues> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const [tagGroup] = await tx.select().from(pimSchema.tagGroups).where(eq(pimSchema.tagGroups.id, id));
 
       if (!tagGroup) {
@@ -63,7 +55,7 @@ export class TagsService {
   }
 
   async getTagGroupWithValues(id: string, tx?: DbTransaction): Promise<TagGroupWithValues> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const [tagGroup] = await tx.select().from(pimSchema.tagGroups).where(eq(pimSchema.tagGroups.id, id));
 
       if (!tagGroup) {
@@ -81,7 +73,7 @@ export class TagsService {
   }
 
   async listTagGroups(filters?: { isActive?: boolean }, tx?: DbTransaction): Promise<TagGroupWithValues[]> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const conditions: SQL[] = [];
       const isActiveFilter = filters?.isActive !== undefined ? filters.isActive : true;
       conditions.push(eq(pimSchema.tagGroups.isActive, isActiveFilter));
@@ -112,7 +104,7 @@ export class TagsService {
   }
 
   async updateTagGroup(id: string, data: UpdateTagGroupDto, tx?: DbTransaction): Promise<void> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       await this.getTagGroup(id, tx);
 
       const updateData: UpdateTagGroup = {
@@ -138,7 +130,7 @@ export class TagsService {
   }
 
   async deleteTagGroup(id: string, tx?: DbTransaction): Promise<void> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       await this.getTagGroup(id, tx);
 
       await tx
@@ -162,7 +154,7 @@ export class TagsService {
   // ===== TAG VALUES =====
 
   async createTagValue(data: CreateTagValueDto, tx?: DbTransaction): Promise<TagValueEntity> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const tagGroup = await this.getTagGroup(data.groupId, tx);
 
       if (tagGroup.values.some((value) => value.name === data.name)) {
@@ -187,7 +179,7 @@ export class TagsService {
   }
 
   async getTagValue(id: string, tx?: DbTransaction): Promise<TagValueEntity> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const [tagValue] = await tx.select().from(pimSchema.tagValues).where(eq(pimSchema.tagValues.id, id));
 
       if (!tagValue) {
@@ -199,7 +191,7 @@ export class TagsService {
   }
 
   async updateTagValue(id: string, data: UpdateTagValueDto, tx?: DbTransaction): Promise<void> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const existingValue = await this.getTagValue(id, tx);
 
       if (data.name) {
@@ -241,7 +233,7 @@ export class TagsService {
   }
 
   async deleteTagValue(id: string, tx?: DbTransaction): Promise<void> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       await this.getTagValue(id, tx);
 
       await tx

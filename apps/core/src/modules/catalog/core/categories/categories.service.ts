@@ -21,6 +21,7 @@ import { CategoryMapper, CategoryTagGroupsEntity, CategoryTagGroupItem } from '.
 import {
   ProductMaster,
   DbTransaction,
+  DbClient,
   NewProductCategory,
   ProductCategory,
   UpdateProductCategory,
@@ -47,17 +48,13 @@ export class ProductCategoriesService {
     private readonly outboxPublisher: OutboxPublisher,
   ) {}
 
-  private getClient(tx?: DbTransaction) {
+  private getClient(tx?: DbTransaction): DbClient {
     return tx ?? this.db.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
-    return tx ? fn(tx) : this.db.db.transaction(fn);
   }
 
   // 기본 CRUD
   async createCategory(data: CreateCategoryDto, tx?: DbTransaction): Promise<CategoryResponseDto> {
-    return this.inTx(async (client) => {
+    return this.db.run(async (client) => {
       const { tagGroupLinks, ...categoryData } = data;
 
       // parentId가 있으면 부모 카테고리 조회하여 level/path 계산
@@ -129,7 +126,7 @@ export class ProductCategoriesService {
   }
 
   async updateCategory(categoryId: string, data: UpdateCategoryDto, tx?: DbTransaction): Promise<CategoryResponseDto> {
-    return this.inTx(async (client) => {
+    return this.db.run(async (client) => {
       const { tagGroupLinks, ...categoryData } = data;
       const updatingCategoryData: UpdateProductCategory = categoryData;
       const [updatedCategory] = await client
@@ -213,7 +210,7 @@ export class ProductCategoriesService {
       await this.publishCategoryEvent(categoryId, 'deleted', null, txn);
     };
 
-    await this.inTx(executeDelete, tx);
+    await this.db.run(executeDelete, tx);
   }
 
   async getCategoryById(categoryId: string, tx?: DbTransaction): Promise<CategoryDetailResponseDto> {
@@ -379,7 +376,7 @@ export class ProductCategoriesService {
     };
 
     // 트랜잭션 처리
-    const result = await this.inTx(executeMove, tx);
+    const result = await this.db.run(executeMove, tx);
 
     const responseDto: CategoryResponseDto = CategoryMapper.toDto(result);
     return responseDto;
@@ -737,11 +734,7 @@ export class ProductCategoriesService {
     };
 
     // 트랜잭션 처리
-    if (tx) {
-      await executeMove(tx);
-    } else {
-      await this.db.db.transaction(executeMove);
-    }
+    await this.db.run(executeMove, tx);
   }
 
   // 고지훈 추가 - 기존 카테고리를 유지하면서 추가로 카테고리에 상품 연결 (다대다 지원)
@@ -827,11 +820,7 @@ export class ProductCategoriesService {
     };
 
     // 트랜잭션 처리
-    if (tx) {
-      await executeAdd(tx);
-    } else {
-      await this.db.db.transaction(executeAdd);
-    }
+    await this.db.run(executeAdd, tx);
   }
 
   // 검색 및 필터링
@@ -955,7 +944,7 @@ export class ProductCategoriesService {
       }
     };
 
-    await this.inTx(executeReorder, tx);
+    await this.db.run(executeReorder, tx);
   }
 
   async updateSortOrder(categoryId: string, sortOrder: number, tx?: DbTransaction): Promise<CategoryResponseDto> {
@@ -963,7 +952,7 @@ export class ProductCategoriesService {
       throw new BadRequestError('Sort order must be non-negative');
     }
 
-    return this.inTx(async (client) => {
+    return this.db.run(async (client) => {
       // 카테고리 존재 확인
       const [category] = await client
         .select()
@@ -1103,11 +1092,7 @@ export class ProductCategoriesService {
     };
 
     // 트랜잭션 처리
-    if (tx) {
-      await executeRebuild(tx);
-    } else {
-      await this.db.db.transaction(executeRebuild);
-    }
+    await this.db.run(executeRebuild, tx);
   }
 
   // ===== Event Publishing Helpers =====
@@ -1174,7 +1159,7 @@ export class ProductCategoriesService {
     dto: UpdateDisplaySettingsDto,
     tx?: DbTransaction,
   ): Promise<CategoryResponseDto> {
-    return this.inTx(async (client) => {
+    return this.db.run(async (client) => {
       const [category] = await client
         .select()
         .from(pimSchema.productCategories)
@@ -1211,7 +1196,7 @@ export class ProductCategoriesService {
    * 카테고리 SEO 설정 업데이트
    */
   async updateSeoConfig(categoryId: string, dto: UpdateSeoConfigDto, tx?: DbTransaction): Promise<CategoryResponseDto> {
-    return this.inTx(async (client) => {
+    return this.db.run(async (client) => {
       const [category] = await client
         .select()
         .from(pimSchema.productCategories)
@@ -1252,7 +1237,7 @@ export class ProductCategoriesService {
     dto: UpdateTemplateConfigDto,
     tx?: DbTransaction,
   ): Promise<CategoryResponseDto> {
-    return this.inTx(async (client) => {
+    return this.db.run(async (client) => {
       const [category] = await client
         .select()
         .from(pimSchema.productCategories)
@@ -1289,7 +1274,7 @@ export class ProductCategoriesService {
    * 카테고리 표시 여부 업데이트
    */
   async updateVisibility(categoryId: string, visible: boolean, tx?: DbTransaction): Promise<CategoryResponseDto> {
-    return this.inTx(async (client) => {
+    return this.db.run(async (client) => {
       const [category] = await client
         .select()
         .from(pimSchema.productCategories)
@@ -1327,7 +1312,7 @@ export class ProductCategoriesService {
    */
   private async _getAncestorCategoryIds(
     categoryId: string,
-    tx: DbTransaction,
+    tx: DbClient,
   ): Promise<Array<{ id: string; name: string; level: number }>> {
     const recursiveQuery = sql`
       WITH RECURSIVE ancestor_categories AS (
@@ -1432,10 +1417,8 @@ export class ProductCategoriesService {
    * 카테고리의 태그 그룹 연결 교체
    */
   async replaceTagGroupLinks(categoryId: string, links: CategoryTagGroupLinkDto[], tx?: DbTransaction): Promise<void> {
-    return this.db.db.transaction(async (trx) => {
-      const client = tx ?? trx;
-
-      const [category] = await client
+    return this.db.run(async (trx) => {
+      const [category] = await trx
         .select()
         .from(pimSchema.productCategories)
         .where(eq(pimSchema.productCategories.id, categoryId))
@@ -1445,12 +1428,12 @@ export class ProductCategoriesService {
         throw new NotFoundError(`Category not found: ${categoryId}`);
       }
 
-      await client.delete(pimSchema.categoryTagGroups).where(eq(pimSchema.categoryTagGroups.categoryId, categoryId));
+      await trx.delete(pimSchema.categoryTagGroups).where(eq(pimSchema.categoryTagGroups.categoryId, categoryId));
 
       if (links.length > 0) {
-        await this._linkTagGroups(categoryId, links, client);
+        await this._linkTagGroups(categoryId, links, trx);
       }
-    });
+    }, tx);
   }
 
   /**

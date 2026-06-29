@@ -2319,7 +2319,7 @@ export const wmsViews = {
  *──────────────────────────*/
 
 import { relations } from 'drizzle-orm';
-import { TypedDatabase } from '@app/db/types';
+import { TxFor } from '@app/db';
 
 export const holdersRelations = relations(holders, ({ many }) => ({
   skus: many(skus),
@@ -3182,7 +3182,7 @@ export const wmsSchema = {
   ...authorizationSchema,
 } as const;
 
-export type DbTx = Parameters<Parameters<TypedDatabase<typeof wmsSchema>['transaction']>[0]>[0];
+export type DbTx = TxFor<typeof wmsSchema>;
 
 /*───────────────────────────
  * TABLE TYPES (Select/Insert)

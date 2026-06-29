@@ -11,16 +11,8 @@ import { NoticeMapper } from './mappers';
 export class NoticesService {
   constructor(@InjectDb() private readonly db: DbService<PimSchema>) {}
 
-  private get client() {
-    return this.db.db;
-  }
-
-  private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction): Promise<T> {
-    return tx ? fn(tx) : this.client.transaction(fn);
-  }
-
   async createNotice(dto: CreateNoticeDto, tx?: DbTransaction): Promise<NoticeResponseDto> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const newNotice: NewNotice = {
         ...dto,
         displayStartAt: dto.displayStartAt ? new Date(dto.displayStartAt) : null,
@@ -34,7 +26,7 @@ export class NoticesService {
   }
 
   async getNoticeById(id: string, tx?: DbTransaction): Promise<NoticeResponseDto> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const [notice] = await tx
         .select()
         .from(pimSchema.notices)
@@ -60,7 +52,7 @@ export class NoticesService {
     } = {},
     tx?: DbTransaction,
   ): Promise<NoticeResponseDto[]> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const conditions: SQL[] = [isNull(pimSchema.notices.deletedAt)];
 
       if (options.category) {
@@ -99,7 +91,7 @@ export class NoticesService {
    * 스토어프론트용: 활성 + 게시기간 내인 공지만
    */
   async listPublicNotices(category?: string, tx?: DbTransaction): Promise<NoticeResponseDto[]> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const now = new Date();
 
       const conditions: SQL[] = [
@@ -124,7 +116,7 @@ export class NoticesService {
   }
 
   async updateNotice(id: string, dto: UpdateNoticeDto, tx?: DbTransaction): Promise<NoticeResponseDto> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const updateData = {
         ...dto,
         displayStartAt: dto.displayStartAt ? new Date(dto.displayStartAt) : undefined,
@@ -147,7 +139,7 @@ export class NoticesService {
   }
 
   async deleteNotice(id: string, deletedBy?: string, tx?: DbTransaction): Promise<void> {
-    return this.inTx(async (tx) => {
+    return this.db.run(async (tx) => {
       const now = new Date();
 
       const [deletedNotice] = await tx

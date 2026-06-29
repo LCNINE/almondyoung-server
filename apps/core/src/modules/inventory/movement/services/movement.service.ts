@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
-import { wmsTables, wmsSchema, DbTx, MovementJobLine, MovementJob } from '../../schema/inventory.schema';
+import { wmsTables, wmsSchema, MovementJobLine, MovementJob } from '../../schema/inventory.schema';
 import { MoveBatchDto } from '../dto/move-batch.dto';
 import { InterWarehouseTransferDto } from '../dto/inter-warehouse-transfer.dto';
 import { StockEventStore } from '../../core/repositories/stock-event.store';
@@ -50,7 +50,7 @@ export class MovementService {
     }
 
     // 트랜잭션: 저널→이벤트/원장→작업헤더/라인/로그
-    return this.db.transaction(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const occurredAt = dto.occurredAt ? new Date(dto.occurredAt) : new Date();
       const [journal] = await tx
         .insert(wmsTables.stockJournals)
@@ -104,7 +104,7 @@ export class MovementService {
             occurredAt,
             reason: line.memo ?? memo ?? undefined,
           },
-          tx as unknown as DbTx,
+          tx,
         );
 
         const [jobLine] = await tx
@@ -200,7 +200,7 @@ export class MovementService {
       throw new BadRequestException('Insufficient ON_HAND stock in source warehouse');
     }
 
-    return this.db.transaction(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const occurredAt = new Date();
       const [journal] = await tx.insert(wmsTables.stockJournals).values({ sourceType: 'MOVEMENT' }).returning();
 
@@ -231,7 +231,7 @@ export class MovementService {
           occurredAt,
           reason: dto.reason,
         },
-        tx as unknown as DbTx,
+        tx,
       );
 
       await tx.insert(wmsTables.movementJobLines).values({
@@ -252,7 +252,7 @@ export class MovementService {
    * 중국 창고에서 부천 창고로 이동 완료되면 부천 입고예정 활성화
    */
   async completeInterWarehouseMovement(movementJobId: string): Promise<void> {
-    return this.db.transaction(async (tx) => {
+    return this.dbService.run(async (tx) => {
       const job = await tx.query.movementJobs.findFirst({
         where: eq(wmsTables.movementJobs.id, movementJobId),
         with: { lines: true },
