@@ -14,6 +14,7 @@ import {
   ValidateMethodParams,
 } from '../providers/payment-provider.interface';
 import { WalletSchema, cmsWithdrawals } from '../schema';
+import { isCmsAgreementRegistered } from './cms-agreement-status';
 import { CmsApiClient } from './cms-api.client';
 import { CmsMemberService } from './cms-member.service';
 import { CmsAgreementService } from './cms-agreement.service';
@@ -86,7 +87,7 @@ export class CmsBatchProvider implements PaymentProvider {
 
     // 3. 동의자료 등록 여부 확인
     const agreements = await this.cmsAgreementService.findByCmsMemberId(member.cmsMemberId);
-    const hasRegistered = agreements.some((a) => a.status === '등록');
+    const hasRegistered = agreements.some((a) => isCmsAgreementRegistered(a.status));
     if (!hasRegistered) {
       return {
         status: 'FAILED',
