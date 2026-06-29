@@ -400,11 +400,15 @@ export const billingEvents = pgTable(
     eventType: text('event_type').notNull(), // CHARGE_ATTEMPT, CHARGE_SUCCESS, CHARGE_FAIL
     attemptNo: integer('attempt_no'),
     amount: integer('amount'),
+    paymentIntentId: text('payment_intent_id'), // wallet intentId — 결과 이벤트 재전달 멱등 키
     errorCode: text('error_code'),
     errorMessage: text('error_message'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [index('idx_billing_events_contract').on(table.contractId)],
+  (table) => [
+    index('idx_billing_events_contract').on(table.contractId),
+    index('idx_billing_events_payment_intent').on(table.paymentIntentId),
+  ],
 );
 
 // Dunning Queue Relations
