@@ -26,6 +26,7 @@ export type OrderLineRow = {
   customerName?: string; // 주문자
   receiverName?: string; // 수령자
   address?: string;
+  personalCustomsCode?: string; // 해외직구 개인통관고유부호 (해외직구 주문만)
   totalAmount?: number;
   shippingFee?: number;
   orderStatus: string;
@@ -196,6 +197,14 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
         return `${sa.roadAddress ?? ''} ${sa.detailAddress ?? ''}`.trim();
       })();
 
+      // 해외직구 주문만 채워짐 (shippingAddress JSON 안에 저장)
+      const personalCustomsCode =
+        shippingAddress && typeof shippingAddress === 'object'
+          ? (shippingAddress.personalCustomsCode ??
+            shippingAddress.customsCode ??
+            undefined)
+          : undefined;
+
       const lines: any[] = detail?.lines ?? [];
 
       // 주문의 모든 라인이 stock_deducted인지 확인
@@ -284,6 +293,7 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
           customerName,
           receiverName,
           address,
+          personalCustomsCode,
           totalAmount: detail?.totalAmount ?? listItem.totalAmount,
           shippingFee: detail?.shippingFee ?? 0,
           orderStatus: listItem.status,
