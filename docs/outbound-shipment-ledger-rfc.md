@@ -151,7 +151,7 @@ fulfillment_order_items (변경)
 | Phase | 상태 | 비고 |
 |---|---|---|
 | 설계 | ✅ 확정 | 본 RFC + ADR-0027 + CONTEXT.md |
-| Phase 0 고리 닫기 | 🟨 구현 완료(통합 미검증) | FIFO 순수함수 단위(5/5) + 재배선 단위(`fulfillments.service.spec` 81/81) GREEN. 통합 스펙(`outbound-consumption.integration.spec.ts`) 작성 완료·**터널 실행 대기**. |
+| Phase 0 고리 닫기 | 🟨 구현 완료(통합 미검증) | FIFO 순수함수 단위(5/5) + 재배선 단위(`fulfillments.service.spec` 81/81) GREEN, 빌드 클린. 통합 스펙 작성 완료이나 **dev 환경 삭제로 실행 보류**(skip 상태로 리포에 대기). |
 | Phase 1 상자 라인 | ⬜ | |
 | Phase 2 FO 스냅샷 | ⬜ | |
 | Phase 3 contract | ⬜ | |
@@ -164,7 +164,7 @@ fulfillment_order_items (변경)
 
 | Phase | 성격 | Exit criteria | Deploy gate | 롤백 |
 |---|---|---|---|---|
-| **0 고리 닫기** | additive, 무스키마 | **통합 스펙 GREEN(터널)을 머지 전 필수 게이트** + 단위 GREEN + `nest build core` 클린 | 마이그레이션 없어 독립 배포 가능. (단 develop 빌드 클린 선결.) | `ship()` 재배선 커밋 revert → release 동작 복귀. 되돌릴 데이터 없음(SHIP 은 immutable POSTED, 멱등키로 재실행 안전) |
+| **0 고리 닫기** | additive, 무스키마 | 단위 GREEN(FIFO 5/5, 재배선 81/81) + `nest build core` 클린 + 코드 리뷰. ⚠️ **통합 스펙 GREEN 은 원래 머지 전 게이트였으나 dev 환경 삭제로 실행 보류** — 스펙은 `describeIfDb` skip 으로 리포에 남고, DB 환경 복구 시 실행해 성공 기준("on_hand N↓·available 불변·SHIP 1건/FOI") 최종 확정. 그때까지 FIFO SQL·`stock_summary_view`·예약 닫기 상호작용은 실증 미검증. | 마이그레이션 없어 독립 배포 가능. (단 develop 빌드 클린 선결.) | `ship()` 재배선 커밋 revert → release 동작 복귀. 되돌릴 데이터 없음(SHIP 은 immutable POSTED, 멱등키로 재실행 안전) |
 | **1 상자 라인** | additive 스키마(`shipment_lines` 신설) | 라인 단위 `consumeShipment` GREEN, FO 아직 1:1 | **Phase 0 와 deploy-between 게이트 불필요** (둘 다 additive — ADR-0005 §5 게이트는 destructive 전용). Phase 1 은 Phase 0 위 다음 PR. | 코드 revert (테이블 미사용이면 무해) |
 | **2 FO=스냅샷** | destructive(재배치) | dual-write→backfill→read 전환 각 단계 GREEN | 3-PR, **각 PR 사이 deploy 1회 필수** (ADR-0005 §5) | 단계별 revert |
 | **3 contract** | destructive drop | `uqActivePerFo`/`split()` 제거 후 회귀 GREEN | Phase 2 read 전환 deploy 후 1회 뒤 | drop 전 단계로 |
@@ -184,6 +184,6 @@ fulfillment_order_items (변경)
 ## Immediate Next Step
 
 1. ~~ADR-0027 확정~~ ✅, ~~packing·검수·송장분할 데이터 모델 확정~~ ✅, ~~Phase 0 구현 계획 작성~~ ✅
-2. ~~**Phase 0 구현**~~ ✅ (코드 완료, 단위 GREEN) → **통합 스펙을 터널에서 실행**해 "상자 N개 출고 → on_hand N 감소, available 불변" 성공 기준 확정. (`./scripts/sst-tunnel.sh deployments/lcnine/services dev` → `./scripts/test-core-integration.sh dev outbound-consumption.integration`)
+2. ~~**Phase 0 구현**~~ ✅ (코드 완료, 단위 GREEN, 빌드 클린). **통합 실행은 dev 환경 삭제로 보류** — `outbound-consumption.integration.spec.ts` 는 skip 된 채 대기. DB 환경 복구 시 `./scripts/test-core-integration.sh dev outbound-consumption.integration` 으로 성공 기준("on_hand N↓·available 불변·SHIP 1건") 최종 확정.
 3. ⚠️ **Phase 0 deploy 선결조건**: develop 빌드가 `#472`(overseas customs)의 catalog 컴파일 에러 2건(`product-versions.service.ts`, `projection-snapshot.assembler.ts` — 미import 심볼)으로 깨져 있음. Phase 0 는 additive 라 독립 머지 가능하나 **deploy 는 이 빌드 깨짐이 먼저 고쳐져야** 가능. (Phase 0 와 무관한 선행 이슈.)
 4. Phase 1(상자 라인 + packing 연산) 스키마·연산 상세 설계.
