@@ -141,25 +141,6 @@ export class BillingOutcomeHandler {
 
       if (!contract) return null;
 
-      if (errorCode && BillingOutcomeHandler.NO_PAYMENT_METHOD_ERRORS.has(errorCode)) {
-        // 이미 정기결제 해지된 계약의 in-flight 결제 실패는 즉시 해지하지 않고 현재 주기 자연 만료에 맡긴다.
-        if (!contract.autoRenewal || contract.recurringCancelledAt) {
-          this.logger.log(
-            `[handleFailure] 해지된 계약의 결제 실패(${errorCode}) — 즉시 해지 생략, 자연 만료: contractId=${contractId}`,
-          );
-          await tx
-            .update(schema.subscriptionContracts)
-            .set({ billingInProgress: false, billingStartedAt: null, updatedAt: new Date() })
-            .where(eq(schema.subscriptionContracts.id, contractId));
-          return null;
-        }
-        this.logger.log(
-          `[handleFailure] 결제수단 없음(${errorCode}) — dunning 생략, 즉시 해지: contractId=${contractId}`,
-        );
-        await this.terminateSubscription(tx, contractId, contract.userId, errorCode);
-        return contract.userId;
-      }
-
       const [dunning] = await tx
         .select()
         .from(schema.membershipDunningQueue)
@@ -179,6 +160,26 @@ export class BillingOutcomeHandler {
       if (paymentIntentId && insertedFail.length === 0) {
         this.logger.log(`handleFailure: already processed intent (${paymentIntentId}) — skip`);
         return null;
+      }
+
+      // 결제수단 부재는 dunning 없이 즉시 해지. 멱등 마커 뒤에 두어 동시 재전달 시 중복 terminate를 막는다.
+      if (errorCode && BillingOutcomeHandler.NO_PAYMENT_METHOD_ERRORS.has(errorCode)) {
+        // 이미 정기결제 해지된 계약의 in-flight 결제 실패는 즉시 해지하지 않고 현재 주기 자연 만료에 맡긴다.
+        if (!contract.autoRenewal || contract.recurringCancelledAt) {
+          this.logger.log(
+            `[handleFailure] 해지된 계약의 결제 실패(${errorCode}) — 즉시 해지 생략, 자연 만료: contractId=${contractId}`,
+          );
+          await tx
+            .update(schema.subscriptionContracts)
+            .set({ billingInProgress: false, billingStartedAt: null, updatedAt: new Date() })
+            .where(eq(schema.subscriptionContracts.id, contractId));
+          return null;
+        }
+        this.logger.log(
+          `[handleFailure] 결제수단 없음(${errorCode}) — dunning 생략, 즉시 해지: contractId=${contractId}`,
+        );
+        await this.terminateSubscription(tx, contractId, contract.userId, errorCode);
+        return contract.userId;
       }
 
       if (!dunning) {

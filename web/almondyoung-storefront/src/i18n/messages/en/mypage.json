@@ -876,6 +876,7 @@
     "changeSuccess": "Payment method changed.",
     "changeFail": "Failed to change payment method.",
     "trialStartedSuccess": "Your 7-day free trial has started! Auto-billing begins after the trial.",
+    "recurringStartedSuccess": "Your subscription has started and the first payment is being processed.",
     "subscribeFail": "Failed to subscribe.",
     "cmsPendingTitle": "Account Registration Pending",
     "cmsPendingDesc": "Your account is under Hyosung CMS review. It will be available as a payment method once approved (1–2 business days).",
