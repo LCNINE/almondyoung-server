@@ -175,6 +175,7 @@ export class BillingReader {
           eq(schema.subscriptionContracts.autoRenewal, true),
           eq(schema.subscriptionContracts.isVoided, false),
           eq(schema.subscriptionContracts.billingInProgress, false),
+          isNull(schema.subscriptionEntitlement.pausedAt),
           lt(schema.subscriptionEntitlement.endsAt, graceDate),
           notInArray(schema.subscriptionContracts.status, ['EXPIRED', 'CANCELLED']),
           isNull(schema.membershipDunningQueue.id),
