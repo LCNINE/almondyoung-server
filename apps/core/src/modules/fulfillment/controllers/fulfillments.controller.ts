@@ -6,7 +6,6 @@ import { FulfillmentReservationsFacade } from '../services/fulfillment-reservati
 import { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
 import { CreateCompensationShipmentDto } from '../dto/create-compensation-shipment.dto';
 import { SplitFulfillmentOrderDto } from '../dto/split-fulfillment-order.dto';
-import { AssignShipmentDto } from '../dto/assign-shipment.dto';
 import { ReserveDto } from '../dto/reserve.dto';
 import { UnreserveDto } from '../dto/unreserve.dto';
 import { TransferReservationDto } from '../dto/transfer-reservation.dto';
@@ -40,21 +39,6 @@ export class FulfillmentsController {
   @ApiParam({ name: 'id', description: '분할할 주문처리 ID' })
   split(@Param('id') id: string, @Body() dto: SplitFulfillmentOrderDto) {
     return this.service.split(id, dto);
-  }
-
-  @Post(':id/assign-shipment')
-  @ApiOperation({ summary: '배송 할당' })
-  @ApiParam({ name: 'id', description: '주문처리 ID' })
-  assignShipment(@Param('id') id: string, @Body() dto: AssignShipmentDto, @User() user: AuthenticatedUser) {
-    // 박스를 연(라벨 부여한) 작업자 = openedBy → 출고 종결 시 SHIP journal.actorId 로 귀속.
-    return this.service.assignShipment(id, dto, this.getUserId(user));
-  }
-
-  @Post(':id/ship')
-  @ApiOperation({ summary: '출고 완료 처리 (FulfillmentShipped 이벤트 발행)' })
-  @ApiParam({ name: 'id', description: '주문처리 ID' })
-  ship(@Param('id') id: string) {
-    return this.service.ship(id);
   }
 
   @Post(':id/deliver')

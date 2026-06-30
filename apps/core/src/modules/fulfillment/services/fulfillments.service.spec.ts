@@ -250,10 +250,6 @@ describe('FulfillmentsService', () => {
       ),
     };
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
-    const outboundConsumption = {
-      ensureShipmentLines: jest.fn().mockResolvedValue(undefined),
-      consumeShipment: jest.fn().mockResolvedValue(undefined),
-    };
     const salesOrderAmendments = {
       create: jest.fn().mockImplementation(async (dto, operatorId) => {
         const row = {
@@ -295,7 +291,6 @@ describe('FulfillmentsService', () => {
       unifiedReservation as any,
       productSkuMapping as any,
       outbox as any,
-      outboundConsumption as any,
       salesOrderAmendments as any,
     );
 
@@ -309,7 +304,6 @@ describe('FulfillmentsService', () => {
       unifiedReservation,
       policies,
       outbox,
-      outboundConsumption,
       salesOrderAmendments,
     };
   }
@@ -1142,8 +1136,8 @@ describe('FulfillmentsService', () => {
     expect(state.fulfillmentOrderItems).toHaveLength(0);
   });
 
-  it('ship은 출고분을 재고원장에서 소진한다 (lifecycle release 가 아니라 consume 경로)', async () => {
-    const { service, outboundConsumption, reservationLifecycle } = makeService({
+  it('ship은 비-drop_ship(자사) FO 를 거부한다 — 자사 출고는 consumeShipment(검수 자동완료) 경유', async () => {
+    const { service } = makeService({
       fulfillmentOrders: [
         {
           id: 'fo-invoiced-1',
@@ -1161,32 +1155,9 @@ describe('FulfillmentsService', () => {
           reservedQty: 2,
         },
       ],
-      shipments: [
-        {
-          id: 'shipment-invoiced-1',
-          fulfillmentOrderId: 'fo-invoiced-1',
-          carrier: 'CJ',
-          trackingNo: 'TRACK-1',
-        },
-      ],
     });
 
-    await service.ship('fo-invoiced-1');
-
-    // 상자 단위 소진 seam 으로 위임된다 (상자 라인 생성 → SHIP 이벤트 + 예약 소진).
-    expect(outboundConsumption.ensureShipmentLines).toHaveBeenCalledWith(
-      'shipment-invoiced-1',
-      'fo-invoiced-1',
-      expect.anything(),
-    );
-    expect(outboundConsumption.consumeShipment).toHaveBeenCalledWith('shipment-invoiced-1', expect.anything());
-    // 옛 버그 경로('shipped' release) 는 더 이상 타지 않는다.
-    expect(reservationLifecycle.handleFulfillmentOrderStatusChange).not.toHaveBeenCalledWith(
-      'fo-invoiced-1',
-      'invoiced',
-      'shipped',
-      expect.anything(),
-    );
+    await expect(service.ship('fo-invoiced-1')).rejects.toThrow(ConflictException);
   });
 
   describe('ship guard', () => {
@@ -1230,33 +1201,19 @@ describe('FulfillmentsService', () => {
     });
 
     it.each(['invoiced', 'labeled', 'picked', 'inspecting', 'inspected'] as const)(
-      '%s 상태 일반 FO는 ship을 허용한다',
+      '%s 상태라도 일반(비-drop_ship) FO는 ship이 ConflictException을 던진다 — 자사 출고는 consumeShipment 경유',
       async (status) => {
         const { service } = makeService({
           fulfillmentOrders: [{ id: `fo-${status}`, salesOrderId, warehouseId, status }],
           fulfillmentOrderItems: [{ id: 'foi-1', fulfillmentOrderId: `fo-${status}`, skuId, qty: 2, reservedQty: 2, shippedQty: 0 }],
-          shipments: [{ fulfillmentOrderId: `fo-${status}`, carrier: 'CJ', trackingNo: 'TRK-1' }],
         });
 
-        await expect(service.ship(`fo-${status}`)).resolves.toBeDefined();
+        await expect(service.ship(`fo-${status}`)).rejects.toThrow(ConflictException);
       },
     );
 
-    it('자사 FO에 상자(shipment)가 없으면 ship이 fail-loud로 ConflictException을 던진다', async () => {
-      const { service, outboundConsumption } = makeService({
-        fulfillmentOrders: [{ id: 'fo-no-shipment', salesOrderId, warehouseId, status: 'inspected' }],
-        fulfillmentOrderItems: [{ id: 'foi-1', fulfillmentOrderId: 'fo-no-shipment', skuId, qty: 2, reservedQty: 2, shippedQty: 0 }],
-        shipments: [],
-      });
-
-      await expect(service.ship('fo-no-shipment')).rejects.toThrow(ConflictException);
-      // 상자가 없으면 소진 경로로 진입하지 않는다.
-      expect(outboundConsumption.consumeShipment).not.toHaveBeenCalled();
-      expect(outboundConsumption.ensureShipmentLines).not.toHaveBeenCalled();
-    });
-
-    it('drop_ship FO는 상자 없이도 출고되지만 재고원장을 소진하지 않는다 (가드)', async () => {
-      const { service, outboundConsumption } = makeService({
+    it('drop_ship FO는 상자 없이도 출고된다 (원장 비소진)', async () => {
+      const { service } = makeService({
         fulfillmentOrders: [
           {
             id: 'fo-drop-guard',
@@ -1272,9 +1229,6 @@ describe('FulfillmentsService', () => {
       });
 
       await expect(service.ship('fo-drop-guard')).resolves.toBeDefined();
-      // 타사 소유 재고 — 원장 비소진, 상자 라인 생성도 안 함.
-      expect(outboundConsumption.consumeShipment).not.toHaveBeenCalled();
-      expect(outboundConsumption.ensureShipmentLines).not.toHaveBeenCalled();
     });
 
     it('drop_ship FO는 directShipStatus=forwarded일 때만 ship을 허용한다', async () => {
@@ -1314,64 +1268,19 @@ describe('FulfillmentsService', () => {
     });
   });
 
-  describe('assignShipment guard', () => {
-    it('terminal 상태 FO에 shipment 등록 시 ConflictException을 던진다', async () => {
-      for (const status of ['shipped', 'completed', 'canceled']) {
-        const { service } = makeService({
-          fulfillmentOrders: [{ id: `fo-${status}`, salesOrderId, warehouseId, status }],
-          fulfillmentOrderItems: [],
-          shipments: [],
-        });
-
-        await expect(
-          service.assignShipment(`fo-${status}`, { trackingNo: 'TRK-1' }),
-        ).rejects.toThrow(ConflictException);
-      }
-    });
-
-    it('이미 shipment가 있는 FO에 중복 등록 시 ConflictException을 던진다', async () => {
-      const { service } = makeService({
-        fulfillmentOrders: [{ id: 'fo-labeled', salesOrderId, warehouseId, status: 'labeled' }],
-        fulfillmentOrderItems: [],
-        shipments: [{ id: 'ship-existing', fulfillmentOrderId: 'fo-labeled', trackingNo: 'TRK-1' }],
-      });
-
-      await expect(service.assignShipment('fo-labeled', { trackingNo: 'TRK-2' })).rejects.toThrow(ConflictException);
-    });
-
-    it.each(['picked', 'inspecting', 'inspected', 'invoiced'] as const)(
-      '%s 상태에서 assignShipment는 상태를 labeled로 역전이하지 않는다',
-      async (status) => {
-        const { service, state } = makeService({
-          fulfillmentOrders: [{ id: `fo-${status}`, salesOrderId, warehouseId, status }],
-          fulfillmentOrderItems: [],
-          shipments: [],
-        });
-
-        await service.assignShipment(`fo-${status}`, { trackingNo: 'TRK-NEW' });
-
-        expect(state.fulfillmentOrders[0].status).toBe(status);
-      },
-    );
-
-    it('ready 상태에서 assignShipment는 labeled로 전환한다', async () => {
-      const { service, state } = makeService({
-        fulfillmentOrders: [{ id: 'fo-ready', salesOrderId, warehouseId, status: 'ready' }],
-        fulfillmentOrderItems: [],
-        shipments: [],
-      });
-
-      await service.assignShipment('fo-ready', { trackingNo: 'TRK-READY' });
-
-      expect(state.fulfillmentOrders[0].status).toBe('labeled');
-    });
-  });
-
-  it('ship은 FulfillmentShipped outbox 이벤트를 발행한다', async () => {
+  it('ship(drop_ship)은 FulfillmentShipped outbox 이벤트를 발행한다', async () => {
     const { service, outbox } = makeService({
-      fulfillmentOrders: [{ id: 'fo-ship-1', salesOrderId, warehouseId, status: 'invoiced' }],
-      fulfillmentOrderItems: [{ id: 'foi-ship-1', fulfillmentOrderId: 'fo-ship-1', skuId, qty: 3, reservedQty: 3, shippedQty: 0 }],
-      shipments: [{ id: 'shipment-1', fulfillmentOrderId: 'fo-ship-1', carrier: 'CJ', trackingNo: 'TRK-001' }],
+      fulfillmentOrders: [
+        {
+          id: 'fo-ship-1',
+          salesOrderId,
+          warehouseId,
+          status: 'ready',
+          fulfillmentMode: 'drop_ship',
+          directShipStatus: 'forwarded',
+        },
+      ],
+      fulfillmentOrderItems: [{ id: 'foi-ship-1', fulfillmentOrderId: 'fo-ship-1', skuId, qty: 3, reservedQty: 0, shippedQty: 0 }],
     });
 
     await service.ship('fo-ship-1');
@@ -1727,9 +1636,10 @@ describe('FulfillmentsService', () => {
     const detail = await service.getOne('fo-detail', tx);
 
     expect(detail?.id).toBe('fo-detail');
+    // trackingNo/carrier 출처는 이제 active invoice (shipments 컬럼 폐기) — mock invoice 없음 → null.
     expect(detail?.shipment).toMatchObject({
       id: 'shipment-detail',
-      trackingNo: 'TRACK-001',
+      trackingNo: null,
     });
     expect(detail?.batch).toBeNull();
     expect(detail?.reservations).toHaveLength(0);
@@ -1739,7 +1649,7 @@ describe('FulfillmentsService', () => {
       skuCode: 'SKU-001',
     });
     expect(detail?.adminAvailableActions).toEqual(
-      expect.arrayContaining(['split', 'reserve', 'assignShipment', 'cancel', 'ship']),
+      expect.arrayContaining(['split', 'reserve', 'cancel', 'ship']),
     );
   });
 
@@ -1810,12 +1720,12 @@ describe('FulfillmentsService', () => {
       expect(detail?.adminAvailableActions).toContain('ship');
     });
 
-    it('ready 상태에서 ship이 없고 split/reserve/unreserve/transferReservation/assignShipment/cancel이 있다', async () => {
+    it('ready 상태에서 ship이 없고 split/reserve/unreserve/transferReservation/cancel이 있다', async () => {
       const { service, tx } = makeFoDetail('ready');
       const detail = await service.getOne('fo-action-test', tx);
       expect(detail?.adminAvailableActions).not.toContain('ship');
       expect(detail?.adminAvailableActions).toEqual(
-        expect.arrayContaining(['split', 'reserve', 'unreserve', 'transferReservation', 'assignShipment', 'cancel']),
+        expect.arrayContaining(['split', 'reserve', 'unreserve', 'transferReservation', 'cancel']),
       );
       expect(detail?.blockedReasons).toHaveLength(0);
     });
@@ -1827,7 +1737,7 @@ describe('FulfillmentsService', () => {
       expect(detail?.adminAvailableActions).not.toContain('unreserve');
       expect(detail?.adminAvailableActions).not.toContain('transferReservation');
       expect(detail?.adminAvailableActions).toContain('reserve');
-      expect(detail?.adminAvailableActions).toContain('assignShipment');
+      expect(detail?.adminAvailableActions).toContain('cancel');
       expect(detail?.blockedReasons).toContain('SHIPPED_EVIDENCE');
     });
 
