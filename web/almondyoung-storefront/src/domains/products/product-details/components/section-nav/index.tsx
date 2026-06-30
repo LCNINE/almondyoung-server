@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils"
 import { FEATURES } from "@/lib/config/features"
 import { useScrollSpyWindow } from "@/hooks/use-scroll-spy-window"
 import { usePathname, useSearchParams } from "next/navigation"
-import { useCallback, useEffect, useMemo, useRef } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslations } from "next-intl"
 
 export type SectionTab = "detail" | "review" | "qna"
@@ -13,7 +13,7 @@ export type SectionTab = "detail" | "review" | "qna"
 const VALID_TABS: SectionTab[] = FEATURES.qna
   ? ["detail", "review", "qna"]
   : ["detail", "review"]
-const NAV_OFFSET = 56
+const DEFAULT_SECTION_OFFSET = 160
 
 interface SectionTabsProps {
   reviewCountSlot?: React.ReactNode
@@ -32,7 +32,24 @@ export function SectionTabs({
   const tabParam = searchParams.get("tab") as SectionTab | null
 
   const tabIds = useMemo(() => VALID_TABS, [])
-  const activeIdRaw = useScrollSpyWindow(tabIds, { topOffset: NAV_OFFSET + 8 })
+
+  // 헤더 높이는 breakpoint(모바일/md+) 마다 다르므로 CSS 변수에서 읽어 resize 에 반응.
+  const [sectionOffset, setSectionOffset] = useState(DEFAULT_SECTION_OFFSET)
+
+  useEffect(() => {
+    const read = () => {
+      const raw = getComputedStyle(document.documentElement).getPropertyValue(
+        "--pdp-section-offset"
+      )
+      const n = parseInt(raw, 10)
+      if (!Number.isNaN(n)) setSectionOffset(n)
+    }
+    read()
+    window.addEventListener("resize", read)
+    return () => window.removeEventListener("resize", read)
+  }, [])
+
+  const activeIdRaw = useScrollSpyWindow(tabIds, { topOffset: sectionOffset })
   const activeTab: SectionTab =
     activeIdRaw && (VALID_TABS as string[]).includes(activeIdRaw)
       ? (activeIdRaw as SectionTab)
@@ -103,7 +120,7 @@ export function SectionTabs({
     <div className="w-full">
       <nav
         aria-label={t("ariaLabel")}
-        className="sticky top-0 z-10 mb-8 flex h-auto w-full border-b border-[#e5e5e5] bg-white"
+        className="sticky top-[var(--pdp-header-h)] z-10 mb-8 flex h-auto w-full border-b border-[#e5e5e5] bg-white"
       >
         <button
           type="button"

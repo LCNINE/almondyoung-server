@@ -16,7 +16,10 @@ export function SectionTabPanel({
     <section
       id={value}
       data-section-id={value}
-      className={cn("scroll-mt-14 lg:scroll-mt-16 pt-8 first:pt-0", className)}
+      className={cn(
+        "scroll-mt-[var(--pdp-section-offset)] pt-8 first:pt-0",
+        className
+      )}
     >
       {children}
     </section>
