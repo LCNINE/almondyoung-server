@@ -22,6 +22,19 @@ function getPlanLabel(durationDays: number): string {
   return `${durationDays}일`;
 }
 
+const CANCEL_REASON_LABELS: Record<string, string> = {
+  ADMIN_FORCED: '관리자 강제취소',
+  PAYMENT_FAILURE_MAX_ATTEMPTS: '결제 실패(재시도 초과)',
+  BILLING_AGREEMENT_NOT_FOUND: '결제수단 없음',
+  BILLING_METHOD_NOT_ACTIVE: '결제수단 비활성',
+};
+
+function getCancelReasonLabel(row: AdminMemberListItem): string {
+  const code = row.cancellationReasonCode ?? row.recurringCancellationReasonCode;
+  if (!code) return '-';
+  return CANCEL_REASON_LABELS[code] ?? code;
+}
+
 function useColumns(onEdit?: (row: AdminMemberListItem) => void, userMap: Record<string, UserInfo> = {}) {
   return useMemo(
     () => [
@@ -75,6 +88,11 @@ function useColumns(onEdit?: (row: AdminMemberListItem) => void, userMap: Record
             </span>
           );
         },
+      }),
+      columnHelper.accessor('cancellationReasonCode', {
+        id: 'cancelReason',
+        header: '해지 사유',
+        cell: ({ row }) => <span className="text-sm">{getCancelReasonLabel(row.original)}</span>,
       }),
       columnHelper.display({
         id: 'actions',

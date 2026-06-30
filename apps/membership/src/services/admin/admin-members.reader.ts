@@ -36,6 +36,9 @@ export interface AdminMemberListItem {
   pausedAt: string | null;
   createdAt: string;
   cancelledAt: string | null;
+  autoRenewal: boolean;
+  cancellationReasonCode: string | null;
+  recurringCancellationReasonCode: string | null;
 }
 
 export interface AdminMembersResponse {
@@ -246,6 +249,9 @@ export class AdminMembersReader {
         nextBillingDate: schema.subscriptionContracts.nextBillingDate,
         createdAt: schema.subscriptionContracts.createdAt,
         cancelledAt: schema.subscriptionContracts.cancelledAt,
+        autoRenewal: schema.subscriptionContracts.autoRenewal,
+        cancellationReasonCode: schema.subscriptionContracts.cancellationReasonCode,
+        recurringCancellationReasonCode: schema.subscriptionContracts.recurringCancellationReasonCode,
         planDurationDays: schema.plan.durationDays,
         tierCode: schema.tiers.code,
         tierPriority: schema.tiers.priorityLevel,
@@ -287,6 +293,9 @@ export class AdminMembersReader {
         pausedAt: r.pausedAt ? r.pausedAt.toISOString() : null,
         createdAt: r.createdAt.toISOString(),
         cancelledAt: r.cancelledAt ? r.cancelledAt.toISOString() : null,
+        autoRenewal: r.autoRenewal,
+        cancellationReasonCode: r.cancellationReasonCode,
+        recurringCancellationReasonCode: r.recurringCancellationReasonCode,
       };
     });
 
