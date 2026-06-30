@@ -197,6 +197,13 @@
       "when": 1782724835281,
       "tag": "20260629092035_add-shipment-lines-and-opened-by",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1782824163708,
+      "tag": "20260630125603_cluster-a-box-workflow",
+      "breakpoints": true
     }
   ]
 }
