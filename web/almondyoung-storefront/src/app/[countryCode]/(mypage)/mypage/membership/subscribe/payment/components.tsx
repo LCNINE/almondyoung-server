@@ -213,6 +213,11 @@ export function MembershipForm({
         }
       }
     } catch (error) {
+      // UNAUTHORIZED(토큰 만료)는 삼키지 않고 re-throw → error.tsx가 토큰 복구 처리
+      const err = error as Error & { digest?: string; status?: number }
+      if (err?.digest === "UNAUTHORIZED" || err?.message === "UNAUTHORIZED" || err?.status === 401) {
+        throw error
+      }
       if (error instanceof HttpApiError) {
         toast.error(error.message)
       } else {
@@ -222,12 +227,20 @@ export function MembershipForm({
     }
   }
 
-  const totalTrialDays = trialBenefits.reduce((acc, cur) => acc + cur.days, 0)
   const discountCount = discountBenefits.length
   const hasPendingMethods = cmsBillingStatuses.some((s) => s.cmsMemberStatus === "PENDING")
 
   const billingMode = form.watch("billingMode")
   const subscriptionType = form.watch("subscriptionType")
+
+  // 무료체험은 정기결제(recurring)일 때만, 선택한 플랜의 trialDays 기준으로 안내한다.
+  // (availableBenefits는 현재 비어 전달되므로 trialBenefits는 0이고, 플랜 trialDays가 실제 기준)
+  // 재가입자는 서버가 무료체험을 제거하므로 실제 적용 일수는 가입 응답 effectiveTrialDays로 확정된다.
+  const selectedPlan = subscriptionType === "yearly" ? yearlyPlan : monthlyPlan
+  const totalTrialDays =
+    billingMode === "recurring"
+      ? (selectedPlan?.plan?.trialDays ?? 0) + trialBenefits.reduce((acc, cur) => acc + cur.days, 0)
+      : 0
 
   useEffect(() => {
     setPolicyAgreed(false)
