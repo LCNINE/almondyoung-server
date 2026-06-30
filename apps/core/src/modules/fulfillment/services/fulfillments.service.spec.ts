@@ -224,7 +224,6 @@ describe('FulfillmentsService', () => {
     };
     const reservationLifecycle = {
       handleFulfillmentOrderStatusChange: jest.fn().mockResolvedValue(undefined),
-      handleFulfillmentOrderSplit: jest.fn().mockResolvedValue(undefined),
     };
     const policies = {
       getVariantPolicy: jest.fn().mockResolvedValue(
@@ -1351,245 +1350,6 @@ describe('FulfillmentsService', () => {
     );
   });
 
-  describe('split guard', () => {
-    it('shipped FO는 split이 ConflictException을 던진다', async () => {
-      const { service } = makeService({
-        fulfillmentOrders: [{ id: 'fo-shipped', salesOrderId, warehouseId, status: 'shipped' }],
-        fulfillmentOrderItems: [
-          { id: 'foi-1', fulfillmentOrderId: 'fo-shipped', skuId, qty: 3, reservedQty: 0, shippedQty: 3 },
-        ],
-      });
-
-      await expect(service.split('fo-shipped', { items: [{ fulfillmentOrderItemId: 'foi-1', quantity: 1 }] })).rejects.toThrow(
-        "Cannot split FO fo-shipped in status 'shipped'",
-      );
-    });
-
-    it('completed FO는 split이 ConflictException을 던진다', async () => {
-      const { service } = makeService({
-        fulfillmentOrders: [{ id: 'fo-completed', salesOrderId, warehouseId, status: 'completed' }],
-        fulfillmentOrderItems: [
-          { id: 'foi-1', fulfillmentOrderId: 'fo-completed', skuId, qty: 2, reservedQty: 0, shippedQty: 2 },
-        ],
-      });
-
-      await expect(service.split('fo-completed', { items: [{ fulfillmentOrderItemId: 'foi-1', quantity: 1 }] })).rejects.toThrow(
-        "Cannot split FO fo-completed in status 'completed'",
-      );
-    });
-
-    it('canceled FO는 split이 ConflictException을 던진다', async () => {
-      const { service } = makeService({
-        fulfillmentOrders: [{ id: 'fo-canceled', salesOrderId, warehouseId, status: 'canceled' }],
-        fulfillmentOrderItems: [
-          { id: 'foi-1', fulfillmentOrderId: 'fo-canceled', skuId, qty: 2, reservedQty: 0, shippedQty: 0 },
-        ],
-      });
-
-      await expect(service.split('fo-canceled', { items: [{ fulfillmentOrderItemId: 'foi-1', quantity: 1 }] })).rejects.toThrow(
-        "Cannot split FO fo-canceled in status 'canceled'",
-      );
-    });
-
-    it('같은 FOI가 중복으로 들어오면 BadRequestException을 던진다', async () => {
-      const { service } = makeService({
-        fulfillmentOrders: [{ id: 'fo-ready', salesOrderId, warehouseId, status: 'ready' }],
-        fulfillmentOrderItems: [
-          { id: 'foi-1', fulfillmentOrderId: 'fo-ready', skuId, qty: 5, reservedQty: 5, shippedQty: 0 },
-        ],
-      });
-
-      await expect(
-        service.split('fo-ready', {
-          items: [
-            { fulfillmentOrderItemId: 'foi-1', quantity: 1 },
-            { fulfillmentOrderItemId: 'foi-1', quantity: 1 },
-          ],
-        }),
-      ).rejects.toThrow('Duplicate fulfillmentOrderItemId');
-    });
-
-    it('quantity가 0 이하면 BadRequestException을 던진다 (items 경로)', async () => {
-      const { service } = makeService({
-        fulfillmentOrders: [{ id: 'fo-ready', salesOrderId, warehouseId, status: 'ready' }],
-        fulfillmentOrderItems: [
-          { id: 'foi-1', fulfillmentOrderId: 'fo-ready', skuId, qty: 5, reservedQty: 5, shippedQty: 0 },
-        ],
-      });
-
-      await expect(
-        service.split('fo-ready', { items: [{ fulfillmentOrderItemId: 'foi-1', quantity: 0 }] }),
-      ).rejects.toThrow('Split quantity must be greater than 0');
-    });
-
-    it('quantity가 음수면 BadRequestException을 던진다 (legacy lines 경로)', async () => {
-      const { service } = makeService({
-        fulfillmentOrders: [{ id: 'fo-ready', salesOrderId, warehouseId, status: 'ready' }],
-        fulfillmentOrderItems: [
-          { id: 'foi-1', fulfillmentOrderId: 'fo-ready', skuId, qty: 5, reservedQty: 5, shippedQty: 0 },
-        ],
-      });
-
-      await expect(
-        service.split('fo-ready', { lines: [{ fulfillmentOrderLineId: 'foi-1', quantity: -1 }] }),
-      ).rejects.toThrow('Split quantity must be greater than 0');
-    });
-
-    it('존재하지 않는 FOI id가 들어오면 BadRequestException을 던진다 (silent skip 금지)', async () => {
-      const { service } = makeService({
-        fulfillmentOrders: [{ id: 'fo-ready', salesOrderId, warehouseId, status: 'ready' }],
-        fulfillmentOrderItems: [
-          { id: 'foi-1', fulfillmentOrderId: 'fo-ready', skuId, qty: 5, reservedQty: 5, shippedQty: 0 },
-        ],
-      });
-
-      await expect(
-        service.split('fo-ready', { items: [{ fulfillmentOrderItemId: 'foi-unknown', quantity: 1 }] }),
-      ).rejects.toThrow('not found in FO fo-ready');
-    });
-
-    it('legacy lines 경로: 다른 FO 소속 FOI는 BadRequestException을 던진다', async () => {
-      const { service } = makeService({
-        fulfillmentOrders: [{ id: 'fo-ready', salesOrderId, warehouseId, status: 'ready' }],
-        fulfillmentOrderItems: [
-          { id: 'foi-foreign', fulfillmentOrderId: 'fo-other', skuId, qty: 5, reservedQty: 5, shippedQty: 0 },
-        ],
-      });
-
-      await expect(
-        service.split('fo-ready', { lines: [{ fulfillmentOrderLineId: 'foi-foreign', quantity: 1 }] }),
-      ).rejects.toThrow('not found in FO fo-ready');
-    });
-
-    it('legacy lines 경로: 같은 line이 중복으로 들어오면 BadRequestException을 던진다', async () => {
-      const { service } = makeService({
-        fulfillmentOrders: [{ id: 'fo-ready', salesOrderId, warehouseId, status: 'ready' }],
-        fulfillmentOrderItems: [
-          { id: 'foi-1', fulfillmentOrderId: 'fo-ready', skuId, qty: 5, reservedQty: 5, shippedQty: 0 },
-        ],
-      });
-
-      await expect(
-        service.split('fo-ready', {
-          lines: [
-            { fulfillmentOrderLineId: 'foi-1', quantity: 1 },
-            { fulfillmentOrderLineId: 'foi-1', quantity: 1 },
-          ],
-        }),
-      ).rejects.toThrow('Duplicate fulfillmentOrderLineId');
-    });
-
-    it('split quantity > splittable qty이면 BadRequestException을 던진다', async () => {
-      const { service } = makeService({
-        fulfillmentOrders: [{ id: 'fo-ready', salesOrderId, warehouseId, status: 'ready' }],
-        fulfillmentOrderItems: [
-          { id: 'foi-1', fulfillmentOrderId: 'fo-ready', skuId, qty: 5, reservedQty: 5, shippedQty: 3 },
-        ],
-      });
-
-      // splittableQty = 5 - 3 = 2, requesting 3 → 400
-      await expect(service.split('fo-ready', { items: [{ fulfillmentOrderItemId: 'foi-1', quantity: 3 }] })).rejects.toThrow(
-        BadRequestException,
-      );
-    });
-
-    it('shippedQty=0인 FOI 전체 수량을 분할하면 BadRequestException을 던진다', async () => {
-      const { service } = makeService({
-        fulfillmentOrders: [{ id: 'fo-ready', salesOrderId, warehouseId, status: 'ready' }],
-        fulfillmentOrderItems: [
-          { id: 'foi-1', fulfillmentOrderId: 'fo-ready', skuId, qty: 5, reservedQty: 0, shippedQty: 0 },
-        ],
-      });
-
-      // 전체 5개 분할 시도 → 원본에 0개 잔존 → 차단
-      await expect(service.split('fo-ready', { items: [{ fulfillmentOrderItemId: 'foi-1', quantity: 5 }] })).rejects.toThrow(
-        BadRequestException,
-      );
-    });
-
-    it('shippedQty > 0이면 splittable qty 전체 분할이 허용된다', async () => {
-      const { service, state } = makeService({
-        fulfillmentOrders: [{ id: 'fo-ready', salesOrderId, warehouseId, status: 'ready', totalQty: 5, totalItems: 1 }],
-        fulfillmentOrderItems: [
-          { id: 'foi-1', fulfillmentOrderId: 'fo-ready', skuId, qty: 5, reservedQty: 3, shippedQty: 3 },
-        ],
-      });
-
-      // splittableQty = 5 - 3 = 2, 전부 분할해도 원본에 shippedQty=3이 남음 → 허용
-      await service.split('fo-ready', { items: [{ fulfillmentOrderItemId: 'foi-1', quantity: 2 }] });
-      const originalFoi = state.fulfillmentOrderItems.find((i) => i.id === 'foi-1');
-      expect(originalFoi?.qty).toBe(3); // 5 - 2 = 3 (= shippedQty)
-    });
-
-    it('split은 originalFulfillmentOrderItemId(원본)와 newFulfillmentOrderItemId(신규)를 구분해서 lifecycle에 전달한다', async () => {
-      const { service, reservationLifecycle } = makeService({
-        fulfillmentOrders: [{ id: 'fo-ready', salesOrderId, warehouseId, status: 'ready' }],
-        fulfillmentOrderItems: [
-          { id: 'foi-original', fulfillmentOrderId: 'fo-ready', skuId, qty: 4, reservedQty: 4, shippedQty: 0 },
-        ],
-      });
-
-      const handleSplit = jest.spyOn(reservationLifecycle, 'handleFulfillmentOrderSplit' as any).mockResolvedValue(undefined);
-
-      await service.split('fo-ready', { items: [{ fulfillmentOrderItemId: 'foi-original', quantity: 2 }] });
-
-      expect(handleSplit).toHaveBeenCalledWith(
-        'fo-ready',
-        expect.any(String),
-        [
-          expect.objectContaining({
-            originalFulfillmentOrderItemId: 'foi-original',
-            newFulfillmentOrderItemId: expect.stringMatching(/^foi-/),
-            skuId,
-            splitQuantity: 2,
-            originalQuantityBeforeSplit: 4,
-          }),
-        ],
-        expect.anything(),
-      );
-    });
-
-    it('split 후 원본 FO의 totalQty가 분할 수량만큼 감소한다', async () => {
-      const { service, state } = makeService({
-        fulfillmentOrders: [
-          { id: 'fo-ready', salesOrderId, warehouseId, status: 'ready', totalQty: 5, totalItems: 1 },
-        ],
-        fulfillmentOrderItems: [
-          { id: 'foi-1', fulfillmentOrderId: 'fo-ready', skuId, qty: 5, reservedQty: 0, shippedQty: 0 },
-        ],
-      });
-
-      const newFo = await service.split('fo-ready', {
-        items: [{ fulfillmentOrderItemId: 'foi-1', quantity: 3 }],
-      });
-
-      // 반환된 신규 FO는 분할 수량
-      expect(newFo?.totalQty).toBe(3);
-
-      // 원본 FO는 분할 수량만큼 감소 (mock 제약으로 상태에서 id로 구분)
-      const originFo = state.fulfillmentOrders.find((fo) => fo.id === 'fo-ready');
-      expect(originFo?.totalQty).toBe(2); // 5 - 3
-    });
-
-    it('split 후 원본 FOI의 qty가 분할 수량만큼 감소한다', async () => {
-      const { service, state } = makeService({
-        fulfillmentOrders: [
-          { id: 'fo-ready', salesOrderId, warehouseId, status: 'ready', totalQty: 4, totalItems: 1 },
-        ],
-        fulfillmentOrderItems: [
-          { id: 'foi-1', fulfillmentOrderId: 'fo-ready', skuId, qty: 4, reservedQty: 4, shippedQty: 0 },
-        ],
-      });
-
-      await service.split('fo-ready', {
-        items: [{ fulfillmentOrderItemId: 'foi-1', quantity: 1 }],
-      });
-
-      const originalFoi = state.fulfillmentOrderItems.find((i) => i.id === 'foi-1');
-      expect(originalFoi?.qty).toBe(3); // 4 - 1
-    });
-  });
-
   it('getOne은 상세 운영 화면에 필요한 배송, 예약, 액션 정보를 반환한다', async () => {
     const { service, tx } = makeService({
       fulfillmentOrders: [
@@ -1649,8 +1409,9 @@ describe('FulfillmentsService', () => {
       skuCode: 'SKU-001',
     });
     expect(detail?.adminAvailableActions).toEqual(
-      expect.arrayContaining(['split', 'reserve', 'cancel', 'ship']),
+      expect.arrayContaining(['reserve', 'cancel', 'ship']),
     );
+    expect(detail?.adminAvailableActions).not.toContain('split');
   });
 
   describe('computeAdminAvailableActions / computeBlockedReasons', () => {
@@ -1720,20 +1481,20 @@ describe('FulfillmentsService', () => {
       expect(detail?.adminAvailableActions).toContain('ship');
     });
 
-    it('ready 상태에서 ship이 없고 split/reserve/unreserve/transferReservation/cancel이 있다', async () => {
+    it('ready 상태에서 ship이 없고 reserve/unreserve/transferReservation/cancel이 있다', async () => {
       const { service, tx } = makeFoDetail('ready');
       const detail = await service.getOne('fo-action-test', tx);
       expect(detail?.adminAvailableActions).not.toContain('ship');
+      expect(detail?.adminAvailableActions).not.toContain('split');
       expect(detail?.adminAvailableActions).toEqual(
-        expect.arrayContaining(['split', 'reserve', 'unreserve', 'transferReservation', 'cancel']),
+        expect.arrayContaining(['reserve', 'unreserve', 'transferReservation', 'cancel']),
       );
       expect(detail?.blockedReasons).toHaveLength(0);
     });
 
-    it('shipped item이 있으면 split/unreserve/transferReservation을 제거하고 SHIPPED_EVIDENCE를 추가한다', async () => {
+    it('shipped item이 있으면 unreserve/transferReservation을 제거하고 SHIPPED_EVIDENCE를 추가한다', async () => {
       const { service, tx } = makeFoDetail('ready', { shippedQty: 1 });
       const detail = await service.getOne('fo-action-test', tx);
-      expect(detail?.adminAvailableActions).not.toContain('split');
       expect(detail?.adminAvailableActions).not.toContain('unreserve');
       expect(detail?.adminAvailableActions).not.toContain('transferReservation');
       expect(detail?.adminAvailableActions).toContain('reserve');

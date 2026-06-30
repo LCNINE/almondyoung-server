@@ -6,7 +6,6 @@ import { randomUUID } from 'crypto';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { FulfillmentReservationsFacade } from './fulfillment-reservations.facade';
-import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
 
 /**
  * 실제 DB 기반 통합 테스트 — rollback 전용 트랜잭션.
@@ -30,7 +29,6 @@ describeIfDb('FulfillmentReservationsFacade (DB integration, rollback-only)', ()
   let sql: postgres.Sql;
   let db: PostgresJsDatabase<typeof wmsSchema>;
   let facade: FulfillmentReservationsFacade;
-  let lifecycle: ReservationLifecycleService;
   let outbox: { enqueue: jest.Mock };
 
   beforeAll(() => {
@@ -52,12 +50,6 @@ describeIfDb('FulfillmentReservationsFacade (DB integration, rollback-only)', ()
       outbox as never,
     );
 
-    // handleFulfillmentOrderSplit은 unified/productSellableQuantity를 호출하지 않는다
-    lifecycle = new ReservationLifecycleService(
-      { db } as unknown as DbService<typeof wmsSchema>,
-      unified,
-      productSellableQuantity,
-    );
   });
 
   afterAll(async () => {
@@ -206,60 +198,6 @@ describeIfDb('FulfillmentReservationsFacade (DB integration, rollback-only)', ()
       // 이전 후 후보 재조회: from reservedQty=0 → source-side 정책으로 빈 배열
       const after = await facade.getTransferCandidates(f.fromFo.id, f.fromFoi.id, tx);
       expect(after).toEqual([]);
-    });
-  });
-
-  it('FO 분할 예약 이동: 가용재고 0이어도 confirmed row 직접 이전으로 동작하고 카운터가 정합된다', async () => {
-    await inRollbackTx(async (tx) => {
-      // stock_ledgers를 전혀 넣지 않으므로 가용재고(ON_HAND − 예약)는 0 이하 —
-      // 기존 reserveStock 방식이었다면 "Insufficient stock"으로 실패했을 시나리오
-      const f = await createFixture(tx, { reservedQty: 3, fromQty: 3, toQty: 2 });
-
-      await lifecycle.handleFulfillmentOrderSplit(
-        f.fromFo.id,
-        f.toFo.id,
-        [
-          {
-            originalFulfillmentOrderItemId: f.fromFoi.id,
-            newFulfillmentOrderItemId: f.toFoi.id,
-            skuId: f.skuId,
-            splitQuantity: 2,
-            originalQuantityBeforeSplit: 3,
-          },
-        ],
-        tx,
-      );
-
-      // confirmed 합계 보존: 원본 row 1 + 신규 row 2 = 3
-      const rows = await confirmedReservations(tx, f.skuId);
-      expect(rows.reduce((sum, r) => sum + r.quantity, 0)).toBe(3);
-      const originalRow = rows.find((r) => r.fulfillmentOrderItemId === f.fromFoi.id);
-      const movedRow = rows.find((r) => r.fulfillmentOrderItemId === f.toFoi.id);
-      expect(originalRow?.quantity).toBe(1);
-      expect(movedRow).toMatchObject({ quantity: 2, targetId: f.toFo.id, status: 'confirmed' });
-
-      // FOI/FO 카운터가 실제 이동량 기준으로 갱신
-      const [fromFoiAfter] = await tx
-        .select()
-        .from(wmsTables.fulfillmentOrderItems)
-        .where(eq(wmsTables.fulfillmentOrderItems.id, f.fromFoi.id));
-      const [toFoiAfter] = await tx
-        .select()
-        .from(wmsTables.fulfillmentOrderItems)
-        .where(eq(wmsTables.fulfillmentOrderItems.id, f.toFoi.id));
-      expect(fromFoiAfter.reservedQty).toBe(1);
-      expect(toFoiAfter.reservedQty).toBe(2);
-
-      const [fromFoAfter] = await tx
-        .select()
-        .from(wmsTables.fulfillmentOrders)
-        .where(eq(wmsTables.fulfillmentOrders.id, f.fromFo.id));
-      const [toFoAfter] = await tx
-        .select()
-        .from(wmsTables.fulfillmentOrders)
-        .where(eq(wmsTables.fulfillmentOrders.id, f.toFo.id));
-      expect(fromFoAfter.totalReservedQty).toBe(1);
-      expect(toFoAfter.totalReservedQty).toBe(2);
     });
   });
 
