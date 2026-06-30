@@ -5,7 +5,6 @@ import { FulfillmentsService } from '../services/fulfillments.service';
 import { FulfillmentReservationsFacade } from '../services/fulfillment-reservations.facade';
 import { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
 import { CreateCompensationShipmentDto } from '../dto/create-compensation-shipment.dto';
-import { SplitFulfillmentOrderDto } from '../dto/split-fulfillment-order.dto';
 import { ReserveDto } from '../dto/reserve.dto';
 import { UnreserveDto } from '../dto/unreserve.dto';
 import { TransferReservationDto } from '../dto/transfer-reservation.dto';
@@ -32,13 +31,6 @@ export class FulfillmentsController {
   @ApiOperation({ summary: 'Create or link a fulfillment-only CS compensation shipment' })
   createCompensationShipment(@Body() dto: CreateCompensationShipmentDto, @User() user: AuthenticatedUser) {
     return this.service.createCompensationShipment(dto, this.getUserId(user));
-  }
-
-  @Post(':id/split')
-  @ApiOperation({ summary: '주문처리 분할' })
-  @ApiParam({ name: 'id', description: '분할할 주문처리 ID' })
-  split(@Param('id') id: string, @Body() dto: SplitFulfillmentOrderDto) {
-    return this.service.split(id, dto);
   }
 
   @Post(':id/deliver')
