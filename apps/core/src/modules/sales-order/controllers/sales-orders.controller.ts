@@ -5,7 +5,6 @@ import { SalesOrderAmendmentsService } from '../services/sales-order-amendments.
 import { StoreSalesOrdersService } from '../services/store-sales-orders.service';
 import { CreateSalesOrderDto } from '../dto/create-sales-order.dto';
 import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
-import { MergeSalesOrdersDto } from '../dto/merge-sales-orders.dto';
 import { SalesOrderResponseDto } from '../dto/sales-order-response.dto';
 import { SalesOrderFilterDto } from '../dto/sales-order-filter.dto';
 import { CreateBusinessLinkDto } from '../dto/create-business-link.dto';
@@ -68,13 +67,6 @@ export class SalesOrdersController {
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
   listAmendments(@Param('id') id: string) {
     return this.amendments.listForSalesOrder(id);
-  }
-
-  @Post('merge')
-  @ApiOperation({ summary: '판매 주문 병합', description: '여러 판매 주문을 하나로 병합합니다.' })
-  @ApiResponse({ status: 201, description: '판매 주문 병합 성공' })
-  merge(@Body() dto: MergeSalesOrdersDto) {
-    return this.service.merge(dto);
   }
 
   @Get('stats')
