@@ -34,6 +34,9 @@ export interface AdminMemberListItem {
   pausedAt: string | null;
   createdAt: string;
   cancelledAt: string | null;
+  autoRenewal: boolean;
+  cancellationReasonCode: string | null;
+  recurringCancellationReasonCode: string | null;
 }
 
 export interface AdminMembersResponse {
