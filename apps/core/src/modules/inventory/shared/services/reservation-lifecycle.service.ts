@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
-import { eq, and, asc, sql } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { UnifiedReservationService } from './unified-reservation.service';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 
@@ -32,16 +32,6 @@ export class ReservationLifecycleService {
       switch (newStatus) {
         case 'canceled':
           await this.releaseFulfillmentOrderReservations(fulfillmentOrderId, 'FO canceled', trx);
-          break;
-
-        case 'completed':
-        case 'shipped':
-          await this.releaseFulfillmentOrderReservations(fulfillmentOrderId, `FO ${newStatus}`, trx);
-          break;
-
-        case 'partially_shipped':
-          // 부분 출고시 출고된 만큼만 예약 해제
-          await this.handlePartialShipment(fulfillmentOrderId, trx);
           break;
       }
 
@@ -132,70 +122,6 @@ export class ReservationLifecycleService {
     }
 
     this.logger.log(`Released ${reservations.length} Movement task reservations. Reason: ${reason}`);
-  }
-
-  /**
-   * 부분 출고 처리 - 출고된 수량만큼 예약 해제
-   */
-  private async handlePartialShipment(fulfillmentOrderId: string, tx: DbTx): Promise<void> {
-    // FO 아이템별 출고 현황 조회
-    const items = await tx
-      .select()
-      .from(wmsTables.fulfillmentOrderItems)
-      .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId));
-
-    for (const item of items) {
-      const shippedQty = item.shippedQty || 0;
-
-      if (shippedQty > 0) {
-        // 해당 아이템의 예약 조회
-        const reservations = await tx
-          .select()
-          .from(wmsTables.stockReservations)
-          .where(
-            and(
-              eq(wmsTables.stockReservations.fulfillmentOrderItemId, item.id),
-              eq(wmsTables.stockReservations.status, 'confirmed'),
-            ),
-          );
-
-        // 출고된 수량만큼 예약 해제 (FIFO 방식)
-        let remainingToRelease = shippedQty;
-
-        for (const reservation of reservations) {
-          if (remainingToRelease <= 0) break;
-
-          const releaseQuantity = Math.min(reservation.quantity, remainingToRelease);
-
-          if (releaseQuantity === reservation.quantity) {
-            // 전체 예약 해제
-            await this.unifiedReservation.releaseReservation(reservation.id, tx);
-          } else {
-            // 부분 예약 해제 - 수량 조정
-            await tx
-              .update(wmsTables.stockReservations)
-              .set({
-                quantity: reservation.quantity - releaseQuantity,
-                updatedAt: new Date(),
-              })
-              .where(eq(wmsTables.stockReservations.id, reservation.id));
-
-            await this.recalculateSellableQuantityForReservationSku(reservation, tx);
-          }
-
-          remainingToRelease -= releaseQuantity;
-        }
-
-        // FO 아이템 예약 수량 업데이트
-        const remainingReserved = Math.max(0, item.reservedQty - shippedQty);
-        await tx
-          .update(wmsTables.fulfillmentOrderItems)
-          .set({ reservedQty: remainingReserved, updatedAt: new Date() })
-          .where(eq(wmsTables.fulfillmentOrderItems.id, item.id));
-      }
-    }
-
-    this.logger.log(`Handled partial shipment for FO ${fulfillmentOrderId}`);
   }
 
   /**
