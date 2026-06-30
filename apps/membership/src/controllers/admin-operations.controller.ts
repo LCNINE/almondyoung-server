@@ -718,7 +718,7 @@ export class AdminOperationsController {
       const result = await this.adminOperationsService.getMembersList({
         page: page ? Number(page) : 1,
         limit: limit ? Number(limit) : 20,
-        status: status as 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'EXPIRED' | undefined,
+        status: status as 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'EXPIRED' | 'RECURRING_CANCELLED' | undefined,
         q,
         userIds: normalizedUserIds,
         dateFrom,
