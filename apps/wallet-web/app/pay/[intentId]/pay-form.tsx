@@ -443,7 +443,7 @@ export function PayForm({
                   <p className="text-3xl font-bold">{formatAmount(intent.payableAmount, intent.currency)}</p>
                 </div>
                 {intent.expiresAt && (
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-muted-foreground" suppressHydrationWarning>
                     만료: {new Date(intent.expiresAt).toLocaleString('ko-KR')}
                   </p>
                 )}
