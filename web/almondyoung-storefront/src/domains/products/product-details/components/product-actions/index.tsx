@@ -34,7 +34,7 @@ import MobileActions from "./mobile-actions"
 import OptionSelect from "./option-select"
 import SelectedItemRow from "./selected-item-row"
 import { SelectedItem } from "./types"
-import { RestockNotice } from "./restock-notice"
+import { RestockNotice, pickEarliestRestock } from "./restock-notice"
 import { isWelcomeMembershipProduct } from "@/lib/utils/welcome-membership"
 import { isInsufficientInventoryError } from "@/lib/utils/cart-availability"
 
@@ -430,18 +430,21 @@ export default function ProductActions({
             </Button>
           ) : ( ... )} */}
 
-          {/* 재입고 알림기능추가되면 품절버튼 삭제 */}
+          {/* 품절 시: 입고예정 있으면 재입고 안내, 없으면 품절 버튼 */}
           {!allInStock && selectedItems.length > 0 ? (
-            <div className="flex w-full flex-col gap-1.5">
-              <RestockNotice variants={selectedItems.map((i) => i.variant)} />
-              <Button
-                variant="default"
-                disabled
-                className="h-12 w-full cursor-pointer text-base font-medium"
-                data-testid="sold-out-button"
-              >
-                {t("soldOut")}
-              </Button>
+            <div className="w-full">
+              {pickEarliestRestock(selectedItems.map((i) => i.variant)) ? (
+                <RestockNotice variants={selectedItems.map((i) => i.variant)} />
+              ) : (
+                <Button
+                  variant="default"
+                  disabled
+                  className="h-12 w-full cursor-pointer text-base font-medium"
+                  data-testid="sold-out-button"
+                >
+                  {t("soldOut")}
+                </Button>
+              )}
             </div>
           ) : (
             <>
