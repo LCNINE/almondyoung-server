@@ -1412,6 +1412,8 @@ export class FulfillmentsService {
         })
         .from(wmsTables.invoices)
         .where(and(eq(wmsTables.invoices.issuedForFulfillmentOrderId, id), ne(wmsTables.invoices.status, 'voided')))
+        // FO당 non-voided 송장이 둘 이상일 때(방어적) 결정성 — 가장 최근 발급분이 이김.
+        .orderBy(desc(wmsTables.invoices.createdAt))
         .limit(1),
       db
         .select({
@@ -1566,11 +1568,15 @@ export class FulfillmentsService {
           inArray(wmsTables.invoices.issuedForFulfillmentOrderId, fulfillmentOrderIds),
           ne(wmsTables.invoices.status, 'voided'),
         ),
-      );
+      )
+      // FO당 non-voided 송장이 둘 이상일 때(방어적) 결정성 — desc 정렬 + 최초 1건 채택 = 최신 송장이 이김.
+      .orderBy(desc(wmsTables.invoices.createdAt));
 
     const invoicesByFoId = new Map<string, (typeof invoices)[0]>();
     for (const invoice of invoices) {
-      invoicesByFoId.set(invoice.fulfillmentOrderId, invoice);
+      if (!invoicesByFoId.has(invoice.fulfillmentOrderId)) {
+        invoicesByFoId.set(invoice.fulfillmentOrderId, invoice);
+      }
     }
 
     const data = fulfillmentOrders.map((fo) => ({

@@ -805,10 +805,17 @@ export class StoreSalesOrdersService {
           inArray(inventoryTables.invoices.issuedForFulfillmentOrderId, foIds),
           inArray(inventoryTables.invoices.status, ['issued', 'used']),
         ),
-      );
+      )
+      // FO당 active 송장이 둘 이상일 때(방어적) 결정성 — desc 정렬 + 최초 1건 = 최신 송장.
+      .orderBy(desc(inventoryTables.invoices.createdAt));
 
-    // FO별 invoice 맵 (송장번호/carrier 출처)
-    const invoiceByFo = new Map(invoiceRows.map((inv) => [inv.issuedForFulfillmentOrderId, inv]));
+    // FO별 invoice 맵 (송장번호/carrier 출처) — desc 정렬이라 최초 1건이 최신.
+    const invoiceByFo = new Map<string, (typeof invoiceRows)[0]>();
+    for (const inv of invoiceRows) {
+      if (!invoiceByFo.has(inv.issuedForFulfillmentOrderId)) {
+        invoiceByFo.set(inv.issuedForFulfillmentOrderId, inv);
+      }
+    }
     // shipment별 tracking 이벤트 맵
     const eventsByShipment = new Map<string, typeof trackingEvents>();
     for (const evt of trackingEvents) {
