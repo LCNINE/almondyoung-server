@@ -1,14 +1,8 @@
 "use client"
 
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
 import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
 import { HttpTypes } from "@medusajs/types"
-import { Info } from "lucide-react"
+import { Calendar } from "lucide-react"
 import { useTranslations } from "next-intl"
 
 interface Props {
@@ -17,7 +11,7 @@ interface Props {
 
 // 품절 옵션들 중 가장 이른 입고예정일을 고른다.
 // 데이터(variant.metadata.inboundDate)가 없으면 null → 아무것도 렌더하지 않음.
-// metadata 는 core inbound_plans → Medusa variant.metadata 동기화로 채워질 예정.
+// metadata 는 core inbound_plans → Medusa variant.metadata 동기화로 채워짐 (sync-restock-to-medusa.ts).
 export function pickEarliestRestock(variants: Props["variants"]) {
   const candidates = variants
     .map((v) => {
@@ -33,35 +27,32 @@ export function pickEarliestRestock(variants: Props["variants"]) {
   return candidates[0]
 }
 
+/**
+ * 상세페이지 품절 시 "일시 품절 + 재입고 예정" 안내.
+ */
 export function RestockNotice({ variants }: Props) {
   const t = useTranslations("productDetail.options")
   const restock = pickEarliestRestock(variants)
   if (!restock) return null
 
   return (
-    <div className="flex items-center justify-center gap-1 text-[13px] text-gray-600">
-      <span>
-        {t("restockExpected", {
-          date: formatDate(restock.date, DATE_FORMATS.KO_DOT),
-        })}
+    <div className="flex w-full flex-col items-center gap-2">
+      <span className="text-[15px] font-bold text-gray-800">
+        {t("soldOutTemporary")}
       </span>
-      <TooltipProvider delayDuration={150}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              aria-label={t("restockInfoLabel")}
-              className="inline-flex text-gray-400 hover:text-gray-600 focus:outline-none"
-              onClick={(e) => e.preventDefault()}
-            >
-              <Info className="h-3.5 w-3.5" aria-hidden="true" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent className="max-w-[220px] text-center text-xs">
-            {t("restockApproximate")}
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
+      <div className="bg-yellow-30 flex h-12 w-full items-center justify-center gap-2 rounded-lg px-4">
+        <Calendar className="h-5 w-5 shrink-0 text-white" aria-hidden="true" />
+        <span className="text-[15px] font-bold text-white">
+          {t("restockExpected", {
+            date: formatDate(restock.date, DATE_FORMATS.KO_LONG),
+          })}
+        </span>
+      </div>
+      {restock.approximate && (
+        <span className="text-[11px] leading-tight text-gray-400">
+          {t("restockApproximate")}
+        </span>
+      )}
     </div>
   )
 }

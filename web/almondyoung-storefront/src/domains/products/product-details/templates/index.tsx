@@ -47,7 +47,7 @@ export async function ProductTemplate({
   return (
     <div className="min-h-screen bg-white pt-6">
       <div className="mx-auto max-w-[1360px] px-[15px] lg:px-[40px]">
-        <div className="py-2 lg:flex lg:gap-4">
+        <div className="py-2 lg:flex lg:items-start lg:gap-4">
           {/* 메인 콘텐츠 */}
           <main className="w-full min-w-0 flex-1 pb-24 lg:pb-0">
             <ImageGallery product={product} />
@@ -115,8 +115,8 @@ export async function ProductTemplate({
             </SectionTabsWrapper>
           </main>
 
-          <div className="lg:sticky lg:top-0 lg:flex lg:max-h-screen lg:w-full lg:max-w-[480px] lg:min-w-[383px] lg:flex-col lg:overflow-hidden">
-            <div className="hidden lg:block">
+          <div className="lg:sticky lg:top-[216px] lg:flex lg:h-[calc(100vh-216px)] lg:w-full lg:max-w-[480px] lg:min-w-[383px] lg:flex-col lg:overflow-hidden">
+            <div className="hidden lg:flex lg:shrink-0 lg:flex-col">
               <ProductSummary
                 brand={(product.metadata?.brand as string) ?? ""}
                 productName={product.title ?? ""}

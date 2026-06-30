@@ -1,6 +1,8 @@
 import { Badge } from "@/components/ui/badge"
 import DangerCircleIcon from "@/icons/danger-circle-icon"
+import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
 import { HttpTypes } from "@medusajs/types"
+import { Calendar } from "lucide-react"
 import { useMemo } from "react"
 import { PartialSoldOutDialog } from "./partial-sold-out-dialog"
 import { calculateStockStatus } from "./stock-status"
@@ -13,8 +15,18 @@ export function Quantity({ product }: Props) {
   const status = useMemo(() => calculateStockStatus(product), [product])
 
   switch (status.kind) {
-    case "soldOut":
-      return (
+    case "soldOut": {
+      // 품절 카드: 입고예정 있으면 재입고 날짜 표시, 없으면 품절 배지
+      const restockDate = (product.variants ?? [])
+        .map((v) => v?.metadata?.inboundDate)
+        .filter((d): d is string => typeof d === "string" && !!d)
+        .sort()[0]
+      return restockDate ? (
+        <span className="text-yellow-30 inline-flex items-center gap-1 text-[11px] font-medium">
+          <Calendar className="h-3 w-3" aria-hidden="true" />
+          {formatDate(restockDate, DATE_FORMATS.KO_DOT)} 재입고
+        </span>
+      ) : (
         <div>
           {/* TODO: 대체 상품 보기 버튼 및 기능 추가 필요 */}
           <Badge
@@ -25,6 +37,7 @@ export function Quantity({ product }: Props) {
           </Badge>
         </div>
       )
+    }
     case "partialSoldOut":
       return (
         <PartialSoldOutDialog

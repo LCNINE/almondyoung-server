@@ -74,7 +74,8 @@
   "options": {
     "selectPlaceholder": "オプションを選択してください",
     "soldOut": "売り切れ",
-    "restockExpected": "{date} 入荷予定",
+    "soldOutTemporary": "一時品切れ",
+    "restockExpected": "再入荷 : {date} 予定",
     "restockApproximate": "入荷予定日はおおよその目安で、実際の入荷日と異なる場合があります",
     "restockInfoLabel": "入荷予定日について",
     "outOfStockSuffix": "({value} 売り切れ)",

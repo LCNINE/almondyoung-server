@@ -42,7 +42,7 @@ export async function MainHeader() {
   }
 
   return (
-    <header className="overflow-visible bg-header-background">
+    <header className="sticky top-0 z-40 overflow-visible bg-header-background">
       <div className="container mx-auto max-w-[1360px] px-3.5 md:px-[40px]">
         <div className="hidden items-center justify-end gap-3 py-1.5 text-xs text-white/80 md:flex">
           <UserInfo />
