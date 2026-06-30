@@ -4,12 +4,13 @@ DROP TABLE "inspection_items" CASCADE;--> statement-breakpoint
 DROP TABLE "inspection_sessions" CASCADE;--> statement-breakpoint
 ALTER TABLE "invoices" DROP CONSTRAINT "invoices_invoice_number_unique";--> statement-breakpoint
 ALTER TABLE "shipments" DROP CONSTRAINT "uq_shipments_fulfillment_order_id";--> statement-breakpoint
-ALTER TABLE "inspection_issues" DROP CONSTRAINT "inspection_issues_session_id_inspection_sessions_id_fk";
+ALTER TABLE "inspection_issues" DROP CONSTRAINT IF EXISTS "inspection_issues_session_id_inspection_sessions_id_fk";
 --> statement-breakpoint
 ALTER TABLE "invoices" DROP CONSTRAINT "invoices_fulfillment_order_id_fulfillment_orders_id_fk";
 --> statement-breakpoint
 ALTER TABLE "shipments" DROP CONSTRAINT "shipments_fulfillment_order_id_fulfillment_orders_id_fk";
 --> statement-breakpoint
+DROP INDEX IF EXISTS "uq_invoices_fo_active";--> statement-breakpoint
 ALTER TABLE "invoices" ALTER COLUMN "status" SET DATA TYPE text;--> statement-breakpoint
 ALTER TABLE "invoices" ALTER COLUMN "status" SET DEFAULT 'issued'::text;--> statement-breakpoint
 DROP TYPE "public"."invoice_status";--> statement-breakpoint
@@ -27,7 +28,6 @@ ALTER TABLE "shipments" ALTER COLUMN "status" SET DATA TYPE "public"."shipment_s
 DROP INDEX "idx_inspection_issues_session";--> statement-breakpoint
 DROP INDEX "idx_invoices_fo";--> statement-breakpoint
 DROP INDEX "idx_invoices_number";--> statement-breakpoint
-DROP INDEX "uq_invoices_fo_active";--> statement-breakpoint
 ALTER TABLE "inspection_issues" ADD COLUMN "shipment_id" uuid;--> statement-breakpoint
 ALTER TABLE "invoices" ADD COLUMN "tracking_no" varchar(128) NOT NULL;--> statement-breakpoint
 ALTER TABLE "invoices" ADD COLUMN "carrier" "carrier";--> statement-breakpoint
