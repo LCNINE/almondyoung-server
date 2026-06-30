@@ -580,9 +580,38 @@ export class AdminMembersReader {
         .values({ type: 'AUTO_RENEWAL_CHANGED', effectiveDate: new Date().toISOString().split('T')[0] })
         .returning();
 
+      // 자동갱신 재활성 시 nextBillingDate가 비어 있으면(해지로 null이 된 경우) 현재 주기 종료일로 복구해 결제 재개를 보장
+      const updates: { autoRenewal: boolean; updatedAt: Date; nextBillingDate?: string } = {
+        autoRenewal,
+        updatedAt: new Date(),
+      };
+      if (autoRenewal) {
+        const [contract] = await tx
+          .select({
+            userId: schema.subscriptionContracts.userId,
+            nextBillingDate: schema.subscriptionContracts.nextBillingDate,
+          })
+          .from(schema.subscriptionContracts)
+          .where(eq(schema.subscriptionContracts.id, contractId))
+          .limit(1);
+        if (contract && !contract.nextBillingDate) {
+          const [ent] = await tx
+            .select({ endsAt: schema.subscriptionEntitlement.endsAt })
+            .from(schema.subscriptionEntitlement)
+            .where(
+              and(
+                eq(schema.subscriptionEntitlement.userId, contract.userId),
+                eq(schema.subscriptionEntitlement.isCurrent, true),
+              ),
+            )
+            .limit(1);
+          if (ent?.endsAt) updates.nextBillingDate = ent.endsAt;
+        }
+      }
+
       await tx
         .update(schema.subscriptionContracts)
-        .set({ autoRenewal, updatedAt: new Date() })
+        .set(updates)
         .where(eq(schema.subscriptionContracts.id, contractId));
 
       await this.contractEventManager.addEvent(
