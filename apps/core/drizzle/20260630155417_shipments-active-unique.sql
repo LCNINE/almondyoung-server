@@ -1,0 +1,2 @@
+ALTER TABLE "shipments" DROP CONSTRAINT "uq_shipments_fulfillment_order_id";--> statement-breakpoint
+CREATE UNIQUE INDEX "uq_shipments_fo_active" ON "shipments" USING btree ("opened_for_fulfillment_order_id") WHERE "shipments"."status" <> 'canceled';

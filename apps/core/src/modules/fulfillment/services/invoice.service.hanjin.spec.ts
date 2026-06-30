@@ -4,10 +4,12 @@ import { wmsTables } from '../../inventory/schema/inventory.schema';
 import { InvoiceService, IssueInvoiceRequest } from './invoice.service';
 
 /**
- * 한진 송장 발행/출력/취소/추적 격리 테스트.
+ * 한진 송장 발행/출력/취소(void)/추적 격리 테스트.
  * 실제 한진 API 계약 전이므로 fake provider 로 InvoiceService 의 계약만 검증한다:
- * - provider 응답 → invoices/shipments 저장 규칙
+ * - provider 응답 → invoices 저장 규칙(새 컬럼명: trackingNo/carrier/externalServiceId/issuedForFulfillmentOrderId)
  * - 상태 전이 가드, 취소 후 재발행, 동시 발행 방어(FOR UPDATE), 보상 취소
+ * - issueInvoice 는 선발급-only(박스 upsert 없음 — 박스는 송장 스캔에서 생성)
+ * - cancelInvoice 는 void 화(status='voided', 붙은 박스만 canceled)
  * - goodsflow 호환 유지
  */
 describe('InvoiceService (hanjin)', () => {
@@ -116,11 +118,10 @@ describe('InvoiceService (hanjin)', () => {
       db: { transaction: jest.fn((fn: (t: unknown) => unknown) => fn(tx)) },
       run: jest.fn((fn: (t: any) => any, aTx?: any) => fn(aTx ?? tx)),
     };
-    const fulfillmentsService: any = { ship: jest.fn().mockResolvedValue(undefined) };
     const goodsflowProvider = makeFakeProvider();
     const hanjinProvider = makeFakeProvider();
 
-    const service = new InvoiceService(dbService, fulfillmentsService, goodsflowProvider as any, hanjinProvider as any);
+    const service = new InvoiceService(dbService, goodsflowProvider as any, hanjinProvider as any);
     return {
       service,
       tx,
@@ -128,7 +129,6 @@ describe('InvoiceService (hanjin)', () => {
       inserts,
       updates,
       deletes,
-      fulfillmentsService,
       goodsflowProvider,
       hanjinProvider,
     };
@@ -160,7 +160,7 @@ describe('InvoiceService (hanjin)', () => {
   };
 
   describe('issueInvoice', () => {
-    it('hanjin 발행: provider 응답이 invoices 에 issueMethod/invoiceNumber/외부 service id 로 저장된다', async () => {
+    it('hanjin 발행: provider 응답이 invoices 에 issueMethod/trackingNo/외부 service id 로 저장된다', async () => {
       const { service, inserts, hanjinProvider } = makeService(issuableSelectResults());
 
       const invoiceId = await service.issueInvoice(issueRequest);
@@ -177,35 +177,22 @@ describe('InvoiceService (hanjin)', () => {
       const invoiceInsert = inserts.find((i) => i.table === wmsTables.invoices);
       expect(invoiceInsert?.values).toEqual(
         expect.objectContaining({
-          fulfillmentOrderId: foId,
-          invoiceNumber: '551234567890',
-          carrierCode: 'HANJIN',
+          issuedForFulfillmentOrderId: foId,
+          trackingNo: '551234567890',
+          carrier: 'HANJIN',
           issueMethod: 'hanjin',
-          goodsflowServiceId: 'HJ-SVC-001',
+          externalServiceId: 'HJ-SVC-001',
           status: 'issued',
         }),
       );
     });
 
-    it('hanjin 발행: shipments 에 trackingNo=운송장번호, carrier=HANJIN 으로 upsert 된다 (ship payload 근거)', async () => {
+    it('선발급-only: 박스(shipments) 는 더 이상 발급 시점에 생성되지 않는다', async () => {
       const { service, inserts } = makeService(issuableSelectResults());
 
       await service.issueInvoice(issueRequest);
 
-      const shipmentInsert = inserts.find((i) => i.table === wmsTables.shipments);
-      expect(shipmentInsert?.values).toEqual(
-        expect.objectContaining({
-          fulfillmentOrderId: foId,
-          trackingNo: '551234567890',
-          carrier: 'HANJIN',
-          status: 'created',
-        }),
-      );
-      expect(shipmentInsert?.onConflict).toEqual(
-        expect.objectContaining({
-          set: expect.objectContaining({ trackingNo: '551234567890', carrier: 'HANJIN' }),
-        }),
-      );
+      expect(inserts.find((i) => i.table === wmsTables.shipments)).toBeUndefined();
     });
 
     it('issueMethod 미지정: 한진 env 설정 시 hanjin 이 기본', async () => {
@@ -228,13 +215,13 @@ describe('InvoiceService (hanjin)', () => {
       expect(hanjinProvider.issueInvoice).not.toHaveBeenCalled();
     });
 
-    it('hanjin 발행 시 요청 carrierCode 가 달라도 HANJIN 으로 강제된다', async () => {
+    it('hanjin 발행 시 요청 carrierCode 가 달라도 carrier=HANJIN 으로 강제된다', async () => {
       const { service, inserts } = makeService(issuableSelectResults());
 
       await service.issueInvoice({ ...issueRequest, carrierCode: 'CJ' });
 
       const invoiceInsert = inserts.find((i) => i.table === wmsTables.invoices);
-      expect(invoiceInsert?.values).toEqual(expect.objectContaining({ carrierCode: 'HANJIN' }));
+      expect(invoiceInsert?.values).toEqual(expect.objectContaining({ carrier: 'HANJIN' }));
     });
 
     it('발행 성공 시 FO status 가 invoiced 로 전이된다', async () => {
@@ -270,7 +257,7 @@ describe('InvoiceService (hanjin)', () => {
       expect(hanjinProvider.issueInvoice).not.toHaveBeenCalled();
     });
 
-    it('중복 체크는 canceled 를 제외한다 — 취소 후 재발행 가능 (where 에 status <> canceled)', async () => {
+    it('중복 체크는 voided 를 제외한다 — 취소 후 재발행 가능 (where 에 status <> voided)', async () => {
       const { service, selectCalls } = makeService(issuableSelectResults());
 
       await service.issueInvoice(issueRequest);
@@ -279,7 +266,7 @@ describe('InvoiceService (hanjin)', () => {
       const duplicateCheckWhere = selectCalls[1].whereArgs[0];
       const rendered = dialect.sqlToQuery(duplicateCheckWhere as any);
       expect(rendered.sql).toContain('<>');
-      expect(rendered.params).toEqual(expect.arrayContaining([foId, 'canceled']));
+      expect(rendered.params).toEqual(expect.arrayContaining([foId, 'voided']));
     });
 
     it('쓰기 단계 FO 재조회는 FOR UPDATE 로 잠근다 (동시 발행 race 방어)', async () => {
@@ -328,13 +315,11 @@ describe('InvoiceService (hanjin)', () => {
 
       const invoiceInsert = inserts.find((i) => i.table === wmsTables.invoices);
       expect(invoiceInsert?.values).toEqual(
-        expect.objectContaining({ issueMethod: 'goodsflow', carrierCode: 'CJ', goodsflowServiceId: 'GF-SVC-001' }),
+        expect.objectContaining({ issueMethod: 'goodsflow', carrier: 'CJ', externalServiceId: 'GF-SVC-001' }),
       );
-      const shipmentInsert = inserts.find((i) => i.table === wmsTables.shipments);
-      expect(shipmentInsert?.values).toEqual(expect.objectContaining({ carrier: 'CJ', trackingNo: 'GF-INV-001' }));
     });
 
-    it('direct 발행: 운영자가 입력한 실제 운송장 번호가 invoice/shipment 에 저장된다', async () => {
+    it('direct 발행: 운영자가 입력한 실제 운송장 번호가 invoice 에 저장된다', async () => {
       const { service, inserts, goodsflowProvider, hanjinProvider } = makeService(issuableSelectResults());
 
       await service.issueInvoice({
@@ -351,13 +336,11 @@ describe('InvoiceService (hanjin)', () => {
       expect(invoiceInsert?.values).toEqual(
         expect.objectContaining({
           issueMethod: 'direct',
-          carrierCode: 'LOTTE',
-          invoiceNumber: '881122334455',
-          goodsflowServiceId: undefined,
+          carrier: 'LOTTE',
+          trackingNo: '881122334455',
+          externalServiceId: undefined,
         }),
       );
-      const shipmentInsert = inserts.find((i) => i.table === wmsTables.shipments);
-      expect(shipmentInsert?.values).toEqual(expect.objectContaining({ carrier: 'LOTTE', trackingNo: '881122334455' }));
     });
 
     it('direct 발행은 운송장 번호 없이는 차단된다 (내부발번이 고객 tracking 으로 나가는 사고 방지)', async () => {
@@ -374,7 +357,7 @@ describe('InvoiceService (hanjin)', () => {
       await service.issueInvoice({ ...issueRequest, issueMethod: 'self', carrierCode: 'CJ' });
 
       const invoiceInsert = inserts.find((i) => i.table === wmsTables.invoices);
-      expect((invoiceInsert?.values as { invoiceNumber: string }).invoiceNumber).toMatch(/^INV-/);
+      expect((invoiceInsert?.values as { trackingNo: string }).trackingNo).toMatch(/^INV-/);
     });
 
     it('carrier enum 에 없는 carrierCode 는 발행 자체가 거부된다 (CJ/빈 trackingNo fallback 사고 차단)', async () => {
@@ -391,26 +374,12 @@ describe('InvoiceService (hanjin)', () => {
 
       expect(inserts.length).toBe(0);
     });
-
-    it('발행 성공 시 shipment 는 항상 생성된다 (ship payload 의 carrier/trackingNo 보장)', async () => {
-      const { service, inserts } = makeService(issuableSelectResults());
-
-      await service.issueInvoice({
-        ...issueRequest,
-        issueMethod: 'direct',
-        carrierCode: 'LOGEN',
-        invoiceNumber: '881122334455',
-      });
-
-      const shipmentInsert = inserts.find((i) => i.table === wmsTables.shipments);
-      expect(shipmentInsert?.values).toEqual(expect.objectContaining({ carrier: 'LOGEN' }));
-    });
   });
 
   describe('printInvoices', () => {
-    it('hanjin invoice 출력: hanjin provider 의 printUri 반환, issued → printed', async () => {
+    it('hanjin invoice 출력: hanjin provider 의 printUri 반환, status 전이 없음(멱등)', async () => {
       const { service, updates, hanjinProvider } = makeService([
-        [{ id: 'inv-1', issueMethod: 'hanjin', goodsflowServiceId: 'HJ-SVC-001', status: 'issued' }],
+        [{ id: 'inv-1', issueMethod: 'hanjin', externalServiceId: 'HJ-SVC-001', status: 'issued' }],
       ]);
 
       const result = await service.printInvoices(['inv-1']);
@@ -418,15 +387,15 @@ describe('InvoiceService (hanjin)', () => {
       expect(hanjinProvider.generatePrintUri).toHaveBeenCalledWith(['HJ-SVC-001']);
       expect(result.printUri).toBe('https://print.hanjin.example/labels/1');
 
-      const invoiceUpdate = updates.find((u) => u.table === wmsTables.invoices);
-      expect(invoiceUpdate?.set).toEqual(expect.objectContaining({ status: 'printed' }));
+      // 인쇄는 외부 URI 생성만 — invoices status 를 바꾸지 않는다
+      expect(updates.find((u) => u.table === wmsTables.invoices)).toBeUndefined();
     });
 
     it('provider + direct 혼합 배치는 부분 출력 없이 전체 거부된다', async () => {
       const { service, hanjinProvider, updates } = makeService([
         [
-          { id: 'inv-1', issueMethod: 'hanjin', goodsflowServiceId: 'HJ-SVC-001', status: 'issued' },
-          { id: 'inv-2', issueMethod: 'direct', goodsflowServiceId: null, status: 'issued' },
+          { id: 'inv-1', issueMethod: 'hanjin', externalServiceId: 'HJ-SVC-001', status: 'issued' },
+          { id: 'inv-2', issueMethod: 'direct', externalServiceId: null, status: 'issued' },
         ],
       ]);
 
@@ -438,8 +407,8 @@ describe('InvoiceService (hanjin)', () => {
     it('외부 service id 가 없는 provider invoice 가 섞이면 전체 거부된다', async () => {
       const { service, hanjinProvider } = makeService([
         [
-          { id: 'inv-1', issueMethod: 'hanjin', goodsflowServiceId: 'HJ-SVC-001', status: 'issued' },
-          { id: 'inv-2', issueMethod: 'hanjin', goodsflowServiceId: null, status: 'issued' },
+          { id: 'inv-1', issueMethod: 'hanjin', externalServiceId: 'HJ-SVC-001', status: 'issued' },
+          { id: 'inv-2', issueMethod: 'hanjin', externalServiceId: null, status: 'issued' },
         ],
       ]);
 
@@ -450,8 +419,8 @@ describe('InvoiceService (hanjin)', () => {
     it('goodsflow/hanjin 혼합 배치 출력은 BadRequestException', async () => {
       const { service } = makeService([
         [
-          { id: 'inv-1', issueMethod: 'hanjin', goodsflowServiceId: 'HJ-SVC-001', status: 'issued' },
-          { id: 'inv-2', issueMethod: 'goodsflow', goodsflowServiceId: 'GF-SVC-001', status: 'issued' },
+          { id: 'inv-1', issueMethod: 'hanjin', externalServiceId: 'HJ-SVC-001', status: 'issued' },
+          { id: 'inv-2', issueMethod: 'goodsflow', externalServiceId: 'GF-SVC-001', status: 'issued' },
         ],
       ]);
 
@@ -460,17 +429,17 @@ describe('InvoiceService (hanjin)', () => {
 
     it('direct/self 만 있으면 출력 불가 (BadRequestException)', async () => {
       const { service } = makeService([
-        [{ id: 'inv-1', issueMethod: 'direct', goodsflowServiceId: null, status: 'issued' }],
+        [{ id: 'inv-1', issueMethod: 'direct', externalServiceId: null, status: 'issued' }],
       ]);
 
       await expect(service.printInvoices(['inv-1'])).rejects.toThrow(BadRequestException);
     });
 
-    it('shipped/canceled invoice 가 포함되면 출력 거부 — printed 로 회귀 방지', async () => {
+    it('issued 외 상태(voided 등) invoice 가 포함되면 출력 거부 — 멱등 인쇄는 issued 에서만', async () => {
       const { service, hanjinProvider, updates } = makeService([
         [
-          { id: 'inv-1', issueMethod: 'hanjin', goodsflowServiceId: 'HJ-SVC-001', status: 'issued' },
-          { id: 'inv-2', issueMethod: 'hanjin', goodsflowServiceId: 'HJ-SVC-002', status: 'shipped' },
+          { id: 'inv-1', issueMethod: 'hanjin', externalServiceId: 'HJ-SVC-001', status: 'issued' },
+          { id: 'inv-2', issueMethod: 'hanjin', externalServiceId: 'HJ-SVC-002', status: 'voided' },
         ],
       ]);
 
@@ -478,95 +447,76 @@ describe('InvoiceService (hanjin)', () => {
       expect(hanjinProvider.generatePrintUri).not.toHaveBeenCalled();
       expect(updates.length).toBe(0);
     });
-
-    it('printed 재출력은 허용된다 (멱등)', async () => {
-      const { service, hanjinProvider } = makeService([
-        [{ id: 'inv-1', issueMethod: 'hanjin', goodsflowServiceId: 'HJ-SVC-001', status: 'printed' }],
-      ]);
-
-      const result = await service.printInvoices(['inv-1']);
-
-      expect(hanjinProvider.generatePrintUri).toHaveBeenCalledWith(['HJ-SVC-001']);
-      expect(result.printUri).toBe('https://print.hanjin.example/labels/1');
-    });
   });
 
-  describe('markAsShipped', () => {
-    function shipSelectResults(invoice: Record<string, unknown>): unknown[][] {
-      return [[invoice]];
-    }
-
-    it('hanjin printed → shipped, FulfillmentsService.ship 위임', async () => {
-      const { service, fulfillmentsService } = makeService(
-        shipSelectResults({
-          id: 'inv-1',
-          fulfillmentOrderId: foId,
-          issueMethod: 'hanjin',
-          invoiceNumber: '551234567890',
-          status: 'printed',
-        }),
-      );
-
-      await service.markAsShipped('inv-1');
-
-      expect(fulfillmentsService.ship).toHaveBeenCalledWith(foId, expect.anything());
-    });
-
-    it('hanjin issued 상태에서는 ship 불가 (printed 필요)', async () => {
-      const { service } = makeService(
-        shipSelectResults({
-          id: 'inv-1',
-          fulfillmentOrderId: foId,
-          issueMethod: 'hanjin',
-          invoiceNumber: '551234567890',
-          status: 'issued',
-        }),
-      );
-
-      await expect(service.markAsShipped('inv-1')).rejects.toThrow(ConflictException);
-    });
-  });
-
-  describe('cancelInvoice', () => {
-    // select 순서: ① invoice 조회(읽기) → provider 취소(tx 밖) → ② invoice 상태 재검증 ③ 완료된 inspection session 조회
+  describe('cancelInvoice (void)', () => {
+    // select 순서: ① invoice 조회(읽기) → provider 취소(tx 밖) → ② invoice 상태/박스 재조회 ③ (박스 있으면) 박스 상태 조회
     const hanjinInvoiceRow = {
       id: 'inv-1',
-      fulfillmentOrderId: foId,
+      issuedForFulfillmentOrderId: foId,
       issueMethod: 'hanjin',
-      goodsflowServiceId: 'HJ-SVC-001',
+      externalServiceId: 'HJ-SVC-001',
       status: 'issued',
     };
-    const cancelableSelects = (inspections: unknown[] = []): unknown[][] => [
-      [hanjinInvoiceRow],
-      [{ status: 'issued' }],
-      inspections,
-    ];
 
-    it('hanjin invoice 취소: provider cancel 호출, invoice → canceled, FO → picked, shipment 정리', async () => {
-      const { service, updates, deletes, hanjinProvider } = makeService(cancelableSelects());
+    it('hanjin invoice void: provider cancel 호출, invoice → voided, FO → picked (박스 미연결)', async () => {
+      const { service, updates, hanjinProvider } = makeService([
+        [hanjinInvoiceRow],
+        [{ status: 'issued', shipmentId: null }],
+      ]);
 
       await service.cancelInvoice('inv-1');
 
       expect(hanjinProvider.cancelInvoice).toHaveBeenCalledWith('HJ-SVC-001');
 
       const invoiceUpdate = updates.find((u) => u.table === wmsTables.invoices);
-      expect(invoiceUpdate?.set).toEqual({ status: 'canceled' });
+      expect(invoiceUpdate?.set).toEqual(expect.objectContaining({ status: 'voided' }));
       const foUpdate = updates.find((u) => u.table === wmsTables.fulfillmentOrders);
       expect(foUpdate?.set).toEqual({ status: 'picked' });
-      expect(deletes.some((d) => d.table === wmsTables.shipments)).toBe(true);
+      expect(updates.find((u) => u.table === wmsTables.shipments)).toBeUndefined();
     });
 
-    it('검수 완료 FO 에서 발행한 송장 취소 시 FO 는 inspected 로 복귀한다 (검수 결과 유지)', async () => {
-      const { service, updates } = makeService(cancelableSelects([{ id: 'inspection-session-1' }]));
+    it('박스가 연결된 invoice void 시 출고 전 박스는 canceled 로 정리된다', async () => {
+      const { service, updates } = makeService([
+        [hanjinInvoiceRow],
+        [{ status: 'issued', shipmentId: 'box-1' }],
+        [{ status: 'open' }],
+      ]);
 
       await service.cancelInvoice('inv-1');
 
-      const foUpdate = updates.find((u) => u.table === wmsTables.fulfillmentOrders);
-      expect(foUpdate?.set).toEqual({ status: 'inspected' });
+      const shipmentUpdate = updates.find((u) => u.table === wmsTables.shipments);
+      expect(shipmentUpdate?.set).toEqual(expect.objectContaining({ status: 'canceled' }));
+      const invoiceUpdate = updates.find((u) => u.table === wmsTables.invoices);
+      expect(invoiceUpdate?.set).toEqual(expect.objectContaining({ status: 'voided' }));
     });
 
-    it('provider 취소 실패 시 내부 취소도 진행하지 않는다 (외부 송장 살아있는데 재발행되는 사고 방지)', async () => {
-      const { service, updates, hanjinProvider } = makeService(cancelableSelects());
+    it('박스가 이미 shipped 면 void 불가 (ConflictException) — provider 외부취소도 호출하지 않는다 (선검사)', async () => {
+      // 진입 read 에서 shipmentId 가 잡히면 provider 취소 *전* 에 박스 상태를 선검사한다.
+      const { service, updates, hanjinProvider } = makeService([
+        [{ ...hanjinInvoiceRow, shipmentId: 'box-1' }],
+        [{ status: 'shipped' }],
+      ]);
+
+      await expect(service.cancelInvoice('inv-1')).rejects.toThrow(ConflictException);
+      expect(hanjinProvider.cancelInvoice).not.toHaveBeenCalled();
+      expect(updates.find((u) => u.table === wmsTables.invoices)).toBeUndefined();
+    });
+
+    it('provider 취소 도중 박스가 shipped 로 전이되면 tx 내 backstop 이 void 를 중단한다', async () => {
+      // 진입 시점엔 박스 미연결(shipmentId 없음) → 선검사 통과 → provider 취소 후 tx 안에서 shipped 발견.
+      const { service, updates } = makeService([
+        [hanjinInvoiceRow],
+        [{ status: 'issued', shipmentId: 'box-1' }],
+        [{ status: 'shipped' }],
+      ]);
+
+      await expect(service.cancelInvoice('inv-1')).rejects.toThrow(ConflictException);
+      expect(updates.find((u) => u.table === wmsTables.invoices)).toBeUndefined();
+    });
+
+    it('provider 취소 실패 시 내부 void 도 진행하지 않는다 (외부 송장 살아있는데 재발행되는 사고 방지)', async () => {
+      const { service, updates, hanjinProvider } = makeService([[hanjinInvoiceRow]]);
       hanjinProvider.cancelInvoice.mockRejectedValue(new Error('Hanjin API error'));
 
       await expect(service.cancelInvoice('inv-1')).rejects.toThrow('Hanjin API error');
@@ -575,8 +525,8 @@ describe('InvoiceService (hanjin)', () => {
       expect(updates.find((u) => u.table === wmsTables.fulfillmentOrders)).toBeUndefined();
     });
 
-    it('이미 canceled 면 아무것도 하지 않는다 (멱등)', async () => {
-      const { service, updates, hanjinProvider } = makeService([[{ ...hanjinInvoiceRow, status: 'canceled' }]]);
+    it('이미 voided 면 아무것도 하지 않는다 (멱등)', async () => {
+      const { service, updates, hanjinProvider } = makeService([[{ ...hanjinInvoiceRow, status: 'voided' }]]);
 
       await service.cancelInvoice('inv-1');
 
@@ -584,24 +534,10 @@ describe('InvoiceService (hanjin)', () => {
       expect(updates.length).toBe(0);
     });
 
-    it('shipped invoice 는 취소 불가', async () => {
-      const { service } = makeService([[{ ...hanjinInvoiceRow, status: 'shipped' }]]);
-
-      await expect(service.cancelInvoice('inv-1')).rejects.toThrow(ConflictException);
-    });
-
-    it('provider 취소 도중 shipped 로 전이됐으면 내부 취소를 중단한다', async () => {
-      const { service, updates } = makeService([[hanjinInvoiceRow], [{ status: 'shipped' }]]);
-
-      await expect(service.cancelInvoice('inv-1')).rejects.toThrow(ConflictException);
-      expect(updates.find((u) => u.table === wmsTables.invoices)).toBeUndefined();
-    });
-
-    it('goodsflow invoice 취소 호환 유지', async () => {
+    it('goodsflow invoice void 호환 유지', async () => {
       const { service, goodsflowProvider } = makeService([
-        [{ ...hanjinInvoiceRow, issueMethod: 'goodsflow', goodsflowServiceId: 'GF-SVC-001' }],
-        [{ status: 'issued' }],
-        [],
+        [{ ...hanjinInvoiceRow, issueMethod: 'goodsflow', externalServiceId: 'GF-SVC-001' }],
+        [{ status: 'issued', shipmentId: null }],
       ]);
 
       await service.cancelInvoice('inv-1');
@@ -613,7 +549,7 @@ describe('InvoiceService (hanjin)', () => {
   describe('trackInvoice', () => {
     it('hanjin invoice 추적: hanjin provider 위임', async () => {
       const { service, hanjinProvider } = makeService([
-        [{ id: 'inv-1', issueMethod: 'hanjin', goodsflowServiceId: 'HJ-SVC-001' }],
+        [{ id: 'inv-1', issueMethod: 'hanjin', externalServiceId: 'HJ-SVC-001' }],
       ]);
 
       const tracking = await service.trackInvoice('inv-1');
@@ -624,7 +560,7 @@ describe('InvoiceService (hanjin)', () => {
 
     it('goodsflow invoice 추적 호환 유지', async () => {
       const { service, goodsflowProvider } = makeService([
-        [{ id: 'inv-1', issueMethod: 'goodsflow', goodsflowServiceId: 'GF-SVC-001' }],
+        [{ id: 'inv-1', issueMethod: 'goodsflow', externalServiceId: 'GF-SVC-001' }],
       ]);
 
       await service.trackInvoice('inv-1');
@@ -633,7 +569,7 @@ describe('InvoiceService (hanjin)', () => {
     });
 
     it('direct/self invoice 는 추적 불가 (BadRequestException)', async () => {
-      const { service } = makeService([[{ id: 'inv-1', issueMethod: 'direct', goodsflowServiceId: null }]]);
+      const { service } = makeService([[{ id: 'inv-1', issueMethod: 'direct', externalServiceId: null }]]);
 
       await expect(service.trackInvoice('inv-1')).rejects.toThrow(BadRequestException);
     });

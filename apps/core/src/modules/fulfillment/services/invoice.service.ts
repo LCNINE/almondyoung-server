@@ -3,7 +3,6 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx, carrierEnum } from '../../inventory/schema/inventory.schema';
 import { DbService } from '@app/db';
 import { and, eq, inArray, ne } from 'drizzle-orm';
-import { FulfillmentsService } from './fulfillments.service';
 
 interface ShippingAddressJson {
   recipientName?: string;
@@ -50,12 +49,10 @@ export interface InvoiceDetail {
   invoiceNumber: string;
   carrierCode?: string;
   issueMethod: InvoiceIssueMethod;
-  /** 외부 provider service id — 컬럼명은 goodsflow 시절 명명이지만 hanjin id 도 여기 저장 (기술부채) */
+  /** 외부 provider service id — 응답 필드명은 goodsflow 시절 명명 유지(컬럼은 externalServiceId) */
   goodsflowServiceId?: string;
-  status: 'issued' | 'printed' | 'shipped' | 'canceled';
+  status: 'issued' | 'used' | 'voided';
   issuedAt?: Date;
-  printedAt?: Date;
-  shippedAt?: Date;
   recipientName?: string;
   recipientAddress?: string;
   recipientPhone?: string;
@@ -75,7 +72,6 @@ export class InvoiceService {
 
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
-    private readonly fulfillmentsService: FulfillmentsService,
     goodsflowProvider: GoodsflowDeliveryProvider,
     private readonly hanjinProvider: HanjinDeliveryProvider,
   ) {
@@ -108,9 +104,9 @@ export class InvoiceService {
    *
    * 의도적으로 tx 인자를 받지 않는다 — provider 호출이 caller 트랜잭션 생명주기에 묶이면
    * phase 분리가 무력화된다. 트랜잭션 합성이 필요한 내부 재사용자는 DB 단계 헬퍼를 직접 쓸 것.
-   * 동시 발행의 최종 방어선은 uq_invoices_fo_active partial unique index.
+   * 동시 발행의 최종 방어선은 assertIssuable 의 활성(미-void) invoice 재검증(FOR UPDATE).
    */
-  async issueInvoice(request: IssueInvoiceRequest, operatorId?: string): Promise<string> {
+  async issueInvoice(request: IssueInvoiceRequest): Promise<string> {
     const { fulfillmentOrderId } = request;
     const issueMethod = request.issueMethod ?? this.defaultIssueMethod();
 
@@ -174,40 +170,18 @@ export class InvoiceService {
         const [invoice] = await trx
           .insert(wmsTables.invoices)
           .values({
-            fulfillmentOrderId,
-            invoiceNumber,
-            carrierCode,
+            issuedForFulfillmentOrderId: fulfillmentOrderId,
+            trackingNo: invoiceNumber,
+            carrier: carrierEnum.enumValues.find((v) => v === carrierCode) ?? requestCarrier ?? null,
             issueMethod,
-            goodsflowServiceId: externalServiceId,
+            externalServiceId,
             status: 'issued',
             issuedAt: new Date(),
           })
           .returning();
 
-        // 송장 발행 = 추적 가능한 shipment evidence 생성.
-        // ship() 은 shipments 에서 tracking payload 를 읽으므로, 여기서 upsert 하지 않으면
-        // FulfillmentShipped 가 carrier='CJ', trackingNumber='' 로 outbox 에 나간다.
-        // 입력 carrier 는 위에서 검증됐고, provider 응답 carrier 가 unknown 이면 검증된 입력값으로 fallback.
-        const carrier = carrierEnum.enumValues.find((v) => v === carrierCode) ?? requestCarrier ?? 'HANJIN';
-        await trx
-          .insert(wmsTables.shipments)
-          .values({
-            fulfillmentOrderId,
-            trackingNo: invoiceNumber,
-            carrier,
-            status: 'created',
-            openedBy: operatorId ?? null,
-          })
-          .onConflictDoUpdate({
-            target: wmsTables.shipments.fulfillmentOrderId,
-            set: {
-              trackingNo: invoiceNumber,
-              carrier,
-              status: 'created',
-              openedBy: operatorId ?? null,
-              lastUpdated: new Date(),
-            },
-          });
+        // 박스(shipments) upsert 제거: 박스는 송장 발급이 아니라 송장 스캔(EU3 openBoxByScan)에서 lazy 생성.
+        // issueInvoice 는 선발급-only. (RFC §Phase 2 #6.)
 
         await trx
           .update(wmsTables.fulfillmentOrders)
@@ -256,12 +230,15 @@ export class InvoiceService {
       throw new ConflictException(`Cannot issue invoice for FO in status: ${fulfillmentOrder.status}`);
     }
 
-    // canceled 는 중복으로 보지 않는다 — 취소 후 재발행 허용
+    // voided 는 중복으로 보지 않는다 — 취소 후 재발행 허용
     const existingRows = await trx
       .select({ id: wmsTables.invoices.id })
       .from(wmsTables.invoices)
       .where(
-        and(eq(wmsTables.invoices.fulfillmentOrderId, fulfillmentOrderId), ne(wmsTables.invoices.status, 'canceled')),
+        and(
+          eq(wmsTables.invoices.issuedForFulfillmentOrderId, fulfillmentOrderId),
+          ne(wmsTables.invoices.status, 'voided'),
+        ),
       )
       .limit(1);
 
@@ -301,14 +278,14 @@ export class InvoiceService {
     }));
   }
 
-  /** 출력 — 검증(읽기) → provider 호출(tx 밖) → printed 전이(쓰기 tx). provider 호출 때문에 tx 인자를 받지 않는다. */
+  /** 출력 — 검증(읽기) → provider 호출(tx 밖) → 외부 print URI 생성. status 전이 없음(멱등). provider 호출 때문에 tx 인자를 받지 않는다. */
   async printInvoices(invoiceIds: string[]): Promise<{ printUri?: string }> {
     const invoices = await this.dbService.run((trx) =>
       trx
         .select({
           id: wmsTables.invoices.id,
           issueMethod: wmsTables.invoices.issueMethod,
-          goodsflowServiceId: wmsTables.invoices.goodsflowServiceId,
+          externalServiceId: wmsTables.invoices.externalServiceId,
           status: wmsTables.invoices.status,
         })
         .from(wmsTables.invoices)
@@ -319,11 +296,11 @@ export class InvoiceService {
       throw new NotFoundException('Some invoices not found');
     }
 
-    // shipped/canceled 가 printed 로 회귀하는 것을 막는다. printed 재출력은 허용 (멱등).
-    const notPrintable = invoices.filter((inv) => inv.status !== 'issued' && inv.status !== 'printed');
+    // 인쇄는 issued 상태에서만 (voided/used 회귀 방지). 인쇄는 외부 URI 생성만 하고 status 는 바꾸지 않는다 — 재출력 멱등.
+    const notPrintable = invoices.filter((inv) => inv.status !== 'issued');
     if (notPrintable.length > 0) {
       throw new ConflictException(
-        `Cannot print invoices not in issued/printed status: ${notPrintable
+        `Cannot print invoices not in issued status: ${notPrintable
           .map((inv) => `${inv.id}(${inv.status})`)
           .join(', ')}`,
       );
@@ -338,7 +315,7 @@ export class InvoiceService {
       );
     }
 
-    const missingServiceId = invoices.filter((inv) => !inv.goodsflowServiceId);
+    const missingServiceId = invoices.filter((inv) => !inv.externalServiceId);
     if (missingServiceId.length > 0) {
       throw new BadRequestException(
         `Provider invoices missing external service id: ${missingServiceId.map((inv) => inv.id).join(', ')}`,
@@ -356,84 +333,18 @@ export class InvoiceService {
     const [method] = methods;
     const provider = this.getProvider(method);
 
-    const serviceIds = invoices.map((inv) => inv.goodsflowServiceId!);
+    const serviceIds = invoices.map((inv) => inv.externalServiceId!);
     const printResponse = await provider.generatePrintUri(serviceIds);
-
-    // provider 호출 동안의 동시 전이(shipped/canceled)를 덮어쓰지 않도록 조건부 update
-    const updated = await this.dbService.run((trx) =>
-      trx
-        .update(wmsTables.invoices)
-        .set({ status: 'printed', printedAt: new Date() })
-        .where(
-          and(
-            inArray(
-              wmsTables.invoices.id,
-              invoices.map((inv) => inv.id),
-            ),
-            inArray(wmsTables.invoices.status, ['issued', 'printed']),
-          ),
-        )
-        .returning({ id: wmsTables.invoices.id }),
-    );
-
-    if (updated.length !== invoices.length) {
-      this.logger.warn(
-        `printInvoices: ${invoices.length - updated.length}/${invoices.length} invoices transitioned during print and were not marked printed`,
-      );
-    }
 
     this.logger.log(`Generated print URI for ${invoices.length} invoices via ${method}`);
     return { printUri: printResponse.printUri };
   }
 
-  async markAsShipped(invoiceId: string, tx?: DbTx): Promise<void> {
-    await this.dbService.run(async (trx) => {
-      const invoice = await trx
-        .select({
-          id: wmsTables.invoices.id,
-          fulfillmentOrderId: wmsTables.invoices.fulfillmentOrderId,
-          issueMethod: wmsTables.invoices.issueMethod,
-          invoiceNumber: wmsTables.invoices.invoiceNumber,
-          status: wmsTables.invoices.status,
-        })
-        .from(wmsTables.invoices)
-        .where(eq(wmsTables.invoices.id, invoiceId))
-        .limit(1)
-        .then((rows) => rows[0]);
-
-      if (!invoice) {
-        throw new NotFoundException(`Invoice ${invoiceId} not found`);
-      }
-
-      if (invoice.status === 'shipped') return;
-
-      const isDirectOrSelf = invoice.issueMethod === 'direct' || invoice.issueMethod === 'self';
-      const allowedStatuses = isDirectOrSelf ? ['issued', 'printed'] : ['printed'];
-      if (!allowedStatuses.includes(invoice.status)) {
-        throw new ConflictException(`Cannot ship invoice in status: ${invoice.status}`);
-      }
-
-      if (!invoice.invoiceNumber) {
-        throw new BadRequestException('Cannot ship: invoiceNumber is required');
-      }
-
-      await trx
-        .update(wmsTables.invoices)
-        .set({ status: 'shipped', shippedAt: new Date() })
-        .where(eq(wmsTables.invoices.id, invoiceId));
-
-      // canonical ship path: FOI shippedQty, FO status='shipped', reservations, FulfillmentShipped event
-      await this.fulfillmentsService.ship(invoice.fulfillmentOrderId, trx);
-
-      this.logger.log(`Marked invoice ${invoiceId} as shipped`);
-    }, tx);
-  }
-
   /**
-   * 취소 — 조회(읽기) → provider 취소(tx 밖) → 내부 취소(쓰기 tx).
-   * provider 취소가 실패하면 내부 취소도 진행하지 않는다 — 외부 송장이 살아있는 채로
-   * 재발행이 가능해지면(unique index 가 canceled 를 제외하므로) 한 FO 에 외부 송장 2개가 생긴다.
-   * 운영자는 에러를 보고 재시도하거나 외부 송장을 수동 처리한 뒤 다시 취소한다.
+   * void 화 — 조회(읽기) → provider 취소(tx 밖) → 내부 void(쓰기 tx).
+   * provider 취소가 실패하면 내부 void 도 진행하지 않는다 — 외부 송장이 살아있는 채로
+   * 재발행이 가능해지면(unique index 가 voided 를 제외하므로) 한 박스에 외부 송장 2개가 생긴다.
+   * 운영자는 에러를 보고 재시도하거나 외부 송장을 수동 처리한 뒤 다시 void 한다.
    * provider 호출 때문에 tx 인자를 받지 않는다.
    */
   async cancelInvoice(invoiceId: string): Promise<void> {
@@ -441,9 +352,10 @@ export class InvoiceService {
       trx
         .select({
           id: wmsTables.invoices.id,
-          fulfillmentOrderId: wmsTables.invoices.fulfillmentOrderId,
+          issuedForFulfillmentOrderId: wmsTables.invoices.issuedForFulfillmentOrderId,
           issueMethod: wmsTables.invoices.issueMethod,
-          goodsflowServiceId: wmsTables.invoices.goodsflowServiceId,
+          externalServiceId: wmsTables.invoices.externalServiceId,
+          shipmentId: wmsTables.invoices.shipmentId,
           status: wmsTables.invoices.status,
         })
         .from(wmsTables.invoices)
@@ -456,73 +368,72 @@ export class InvoiceService {
       throw new NotFoundException(`Invoice ${invoiceId} not found`);
     }
 
-    if (invoice.status === 'canceled') return;
+    if (invoice.status === 'voided') return;
 
-    if (invoice.status === 'shipped') {
-      throw new ConflictException('Cannot cancel shipped invoice');
+    // provider 외부취소 *전* 박스-shipped 선검사 — 이미 출고된 박스면 외부 운송장을 취소하지 않는다.
+    // (외부 취소가 먼저 나간 뒤 내부 void 가 막히면 물리 소포가 취소된 운송장으로 이동하는 불일치가 생김)
+    if (invoice.shipmentId) {
+      const shipmentId = invoice.shipmentId;
+      const preBox = await this.dbService.run((trx) =>
+        trx
+          .select({ status: wmsTables.shipments.status })
+          .from(wmsTables.shipments)
+          .where(eq(wmsTables.shipments.id, shipmentId))
+          .limit(1)
+          .then((r) => r[0]),
+      );
+      if (preBox?.status === 'shipped') {
+        throw new ConflictException('Cannot void invoice: box already shipped');
+      }
     }
 
-    if (isProviderMethod(invoice.issueMethod) && invoice.goodsflowServiceId) {
-      const provider = this.getProvider(invoice.issueMethod);
-      // 실패 시 그대로 전파 — 내부 취소 전이를 막는다
-      await provider.cancelInvoice(invoice.goodsflowServiceId);
+    if (isProviderMethod(invoice.issueMethod) && invoice.externalServiceId) {
+      // 실패 시 그대로 전파 — 내부 void 전이를 막는다
+      await this.getProvider(invoice.issueMethod).cancelInvoice(invoice.externalServiceId);
     }
 
     await this.dbService.run(async (trx) => {
-      // provider 호출 동안 상태가 바뀌었을 수 있으므로 재검증 — shipped 전이됐다면 내부 취소 중단.
-      // (외부는 이미 취소된 불일치 상태 — 운영자 수동 정리 필요하므로 에러 로그)
+      // 박스 재조회 — provider 호출 동안 shipped 로 전이됐을 수 있으므로 race backstop 으로 재검사.
+      // 출고 전 박스면 canceled 로 정리, 그 사이 shipped 됐으면 void 중단(불일치는 운영자 수동 정리).
       const current = await trx
-        .select({ status: wmsTables.invoices.status })
+        .select({ status: wmsTables.invoices.status, shipmentId: wmsTables.invoices.shipmentId })
         .from(wmsTables.invoices)
         .where(eq(wmsTables.invoices.id, invoiceId))
         .limit(1)
-        .then((rows) => rows[0]);
+        .then((r) => r[0]);
 
-      if (current?.status === 'shipped') {
-        this.logger.error(
-          `Invoice ${invoiceId} was shipped during external cancel — external invoice is canceled but internal is shipped. Manual review required.`,
-        );
-        throw new ConflictException('Invoice was shipped during cancellation');
+      if (current?.shipmentId) {
+        const [box] = await trx
+          .select({ status: wmsTables.shipments.status })
+          .from(wmsTables.shipments)
+          .where(eq(wmsTables.shipments.id, current.shipmentId))
+          .limit(1);
+        if (box?.status === 'shipped') {
+          throw new ConflictException('Cannot void invoice: box already shipped');
+        }
+        await trx
+          .update(wmsTables.shipments)
+          .set({ status: 'canceled', lastUpdated: new Date() })
+          .where(eq(wmsTables.shipments.id, current.shipmentId));
       }
 
-      await trx.update(wmsTables.invoices).set({ status: 'canceled' }).where(eq(wmsTables.invoices.id, invoiceId));
-
-      // 발행 시 만든 shipment evidence 정리 — 아직 출고 전(created)인 경우에만.
-      // 재발행 시에는 issueInvoice 의 upsert 가 새 운송장 번호로 덮어쓴다.
       await trx
-        .delete(wmsTables.shipments)
-        .where(
-          and(
-            eq(wmsTables.shipments.fulfillmentOrderId, invoice.fulfillmentOrderId),
-            eq(wmsTables.shipments.status, 'created'),
-          ),
-        );
+        .update(wmsTables.invoices)
+        .set({ status: 'voided', voidedAt: new Date() })
+        .where(eq(wmsTables.invoices.id, invoiceId));
 
-      // 검수 완료 후 발행된 송장이면 취소 시 inspected 로 복귀 — 검수 결과는 송장 취소로 무효화되지 않는다
-      const completedInspections = await trx
-        .select({ id: wmsTables.inspectionSessions.id })
-        .from(wmsTables.inspectionSessions)
-        .where(
-          and(
-            eq(wmsTables.inspectionSessions.fulfillmentOrderId, invoice.fulfillmentOrderId),
-            eq(wmsTables.inspectionSessions.status, 'completed'),
-          ),
-        )
-        .limit(1);
-      const revertStatus = completedInspections[0] ? 'inspected' : 'picked';
-
+      // FO 되돌리기: 발행이 만든 'invoiced' 만 picked 로 복귀. inspection_sessions 조회(구 코드)는 제거 — 테이블 폐기됨.
       await trx
         .update(wmsTables.fulfillmentOrders)
-        .set({ status: revertStatus })
+        .set({ status: 'picked' })
         .where(
           and(
-            eq(wmsTables.fulfillmentOrders.id, invoice.fulfillmentOrderId),
-            // 발행이 만든 invoiced 상태만 되돌린다 — 다른 상태를 덮어쓰지 않게
+            eq(wmsTables.fulfillmentOrders.id, invoice.issuedForFulfillmentOrderId),
             eq(wmsTables.fulfillmentOrders.status, 'invoiced'),
           ),
         );
 
-      this.logger.log(`Canceled invoice ${invoiceId} (FO → ${revertStatus})`);
+      this.logger.log(`Voided invoice ${invoiceId}`);
     });
   }
 
@@ -531,21 +442,19 @@ export class InvoiceService {
       const rows = await trx
         .select({
           id: wmsTables.invoices.id,
-          fulfillmentOrderId: wmsTables.invoices.fulfillmentOrderId,
-          invoiceNumber: wmsTables.invoices.invoiceNumber,
-          carrierCode: wmsTables.invoices.carrierCode,
+          issuedForFulfillmentOrderId: wmsTables.invoices.issuedForFulfillmentOrderId,
+          trackingNo: wmsTables.invoices.trackingNo,
+          carrier: wmsTables.invoices.carrier,
           issueMethod: wmsTables.invoices.issueMethod,
-          goodsflowServiceId: wmsTables.invoices.goodsflowServiceId,
+          externalServiceId: wmsTables.invoices.externalServiceId,
           status: wmsTables.invoices.status,
           issuedAt: wmsTables.invoices.issuedAt,
-          printedAt: wmsTables.invoices.printedAt,
-          shippedAt: wmsTables.invoices.shippedAt,
           foShippingAddress: wmsTables.fulfillmentOrders.shippingAddress,
         })
         .from(wmsTables.invoices)
         .leftJoin(
           wmsTables.fulfillmentOrders,
-          eq(wmsTables.fulfillmentOrders.id, wmsTables.invoices.fulfillmentOrderId),
+          eq(wmsTables.fulfillmentOrders.id, wmsTables.invoices.issuedForFulfillmentOrderId),
         )
         .where(eq(wmsTables.invoices.id, invoiceId))
         .limit(1);
@@ -564,7 +473,7 @@ export class InvoiceService {
         })
         .from(wmsTables.fulfillmentOrderItems)
         .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId))
-        .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, invoice.fulfillmentOrderId));
+        .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, invoice.issuedForFulfillmentOrderId));
 
       const salesOrderLineIds = foiRows.map((r) => r.salesOrderLineId).filter((id): id is string => id !== null);
       const priceMap =
@@ -583,17 +492,18 @@ export class InvoiceService {
         : undefined;
       const recipientPhone = addr?.phone ?? undefined;
 
+      // 응답 계약 필드명은 admin-web 호환을 위해 옛 이름을 유지한다 —
+      // 컬럼 issuedForFulfillmentOrderId/trackingNo/carrier/externalServiceId 를
+      // fulfillmentOrderId/invoiceNumber/carrierCode/goodsflowServiceId 로 매핑.
       return {
         id: invoice.id,
-        fulfillmentOrderId: invoice.fulfillmentOrderId,
-        invoiceNumber: invoice.invoiceNumber,
-        carrierCode: invoice.carrierCode ?? undefined,
+        fulfillmentOrderId: invoice.issuedForFulfillmentOrderId,
+        invoiceNumber: invoice.trackingNo,
+        carrierCode: invoice.carrier ?? undefined,
         issueMethod: invoice.issueMethod,
-        goodsflowServiceId: invoice.goodsflowServiceId ?? undefined,
+        goodsflowServiceId: invoice.externalServiceId ?? undefined,
         status: invoice.status,
         issuedAt: invoice.issuedAt ?? undefined,
-        printedAt: invoice.printedAt ?? undefined,
-        shippedAt: invoice.shippedAt ?? undefined,
         recipientName,
         recipientAddress,
         recipientPhone,
@@ -615,7 +525,7 @@ export class InvoiceService {
         .select({
           id: wmsTables.invoices.id,
           issueMethod: wmsTables.invoices.issueMethod,
-          goodsflowServiceId: wmsTables.invoices.goodsflowServiceId,
+          externalServiceId: wmsTables.invoices.externalServiceId,
         })
         .from(wmsTables.invoices)
         .where(eq(wmsTables.invoices.id, invoiceId))
@@ -627,13 +537,13 @@ export class InvoiceService {
       throw new NotFoundException(`Invoice ${invoiceId} not found`);
     }
 
-    if (!isProviderMethod(invoice.issueMethod) || !invoice.goodsflowServiceId) {
+    if (!isProviderMethod(invoice.issueMethod) || !invoice.externalServiceId) {
       throw new BadRequestException('Tracking is only available for provider-issued invoices (goodsflow/hanjin)');
     }
 
     const provider = this.getProvider(invoice.issueMethod);
 
-    return provider.trackDelivery(invoice.goodsflowServiceId);
+    return provider.trackDelivery(invoice.externalServiceId);
   }
 
   private generateInvoiceNumber(): string {

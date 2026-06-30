@@ -5,24 +5,31 @@ import { randomUUID } from 'crypto';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { OutboundConsumptionService } from './outbound-consumption.service';
+import { ShipmentService } from './shipment.service';
 import { InventoryCommandService } from '../../inventory/core/services/inventory-command.service';
 import { LocationService } from '../../inventory/core/services/location.service';
 import { StockEventStore } from '../../inventory/core/repositories/stock-event.store';
-import { OutboxService } from '../../inventory/shared/outbox/outbox.service';
+import { OutboxService as InventoryOutboxService } from '../../inventory/shared/outbox/outbox.service';
+import { OutboxService as FulfillmentOutboxService } from '../outbox/outbox.service';
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { UnifiedReservationService } from '../../inventory/shared/services/unified-reservation.service';
 import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
 import { FifoLocationStrategy } from '../../inventory/core/services/location-resolution.strategy';
+import { BarcodeService } from '../../inventory/shared/services/barcode.service';
 
 /**
- * Phase 1 출고 고리 닫기 — 상자(shipment) 단위 소진(consume) 통합 테스트. rollback 전용 트랜잭션.
+ * Cluster A 출고 고리 닫기 — 상자(shipment) 단위 소진(consume) 통합 테스트. rollback 전용 트랜잭션.
  *
- * 성공 기준 (RFC / Phase 1): 예약된 재고를 가진 상자를 소진하면
- *   - on_hand 가 출고 수량만큼 감소하고,
- *   - 예약이 소진되며,
+ * 성공 기준 (RFC / Cluster A): 상자 N개 출고(`consumeShipment`)는 출고를 **전체 종결**한다 —
+ *   - on_hand 가 출고 수량(N)만큼 감소하고,
+ *   - 예약이 소진되며(release 아님),
  *   - **available 는 불변**이고 (← 옛 버그면 살아남),
  *   - 상자 라인별 SHIP stock_event 가 1건씩 남고,
- *   - 그 SHIP 들이 작업자(shipment.openedBy)에게 귀속된 한 journal 로 묶인다.
+ *   - 그 SHIP 들이 작업자(shipment.openedBy)에게 귀속된 한 journal 로 묶이며,
+ *   - FOI.shippedQty 가 누적되고 FOI/FO/박스 status 가 'shipped' 로 전이한다.
+ *
+ * ⚠️ 통합검증 빚: 이 spec 은 `describeIfDb`(DATABASE_URL 게이트)로 현재 **skip**. dev 환경 삭제로
+ * 실행 불가 — DATABASE_URL 닿는 환경에서 실행해 위 성공 기준을 실증해야 한다.
  *
  * 실행 (core dev DB는 VPC 내부 — 터널 필요):
  *   1) 별도 터미널: ./scripts/sst-tunnel.sh deployments/lcnine/services dev
@@ -40,23 +47,30 @@ describeIfDb('OutboundConsumptionService (DB integration, rollback-only)', () =>
   let db: PostgresJsDatabase<typeof wmsSchema>;
   let command: InventoryCommandService;
   let consumption: OutboundConsumptionService;
+  let shipmentService: ShipmentService;
 
   beforeAll(() => {
     sql = postgres(DATABASE_URL as string, { max: 1 });
     db = drizzle(sql, { schema: wmsSchema });
 
     const dbService = { db } as unknown as DbService<typeof wmsSchema>;
-    const outbox = new OutboxService(dbService);
-    const sellable = new ProductSellableQuantityService(dbService as never, outbox);
+    // 원장/예약 쪽은 inventory outbox, 종결(FulfillmentShipped) 발행은 fulfillment outbox 를 쓴다.
+    const invOutbox = new InventoryOutboxService(dbService);
+    const fulfillmentOutbox = new FulfillmentOutboxService(dbService);
+
+    const sellable = new ProductSellableQuantityService(dbService as never, invOutbox);
     const eventStore = new StockEventStore(dbService, sellable);
     const location = new LocationService(dbService);
-    command = new InventoryCommandService(dbService, eventStore, outbox, location);
+    command = new InventoryCommandService(dbService, eventStore, invOutbox, location);
 
     const unified = new UnifiedReservationService(dbService, sellable);
     const lifecycle = new ReservationLifecycleService(dbService, unified, sellable);
     const strategy = new FifoLocationStrategy();
 
-    consumption = new OutboundConsumptionService(dbService, strategy, command, lifecycle);
+    consumption = new OutboundConsumptionService(dbService, strategy, command, lifecycle, fulfillmentOutbox);
+
+    const barcode = new BarcodeService(dbService);
+    shipmentService = new ShipmentService(dbService, barcode, consumption);
   });
 
   afterAll(async () => {
@@ -72,23 +86,30 @@ describeIfDb('OutboundConsumptionService (DB integration, rollback-only)', () =>
     ).rejects.toThrow(Rollback);
   }
 
-  interface Fixture {
+  interface OrderSeed {
     warehouseId: string;
     skuId: string;
+    skuCode: string;
     foId: string;
     foiId: string;
+    operatorId: string;
+    qty: number;
+  }
+
+  interface Fixture extends OrderSeed {
     shipmentId: string;
-    openedBy: string;
   }
 
   /**
-   * 창고/SKU/FO/FOI/예약/상자(shipment)+상자라인 생성 + on_hand 시드.
-   * reservedQty=shippedQty=qty, on_hand=onHand. 상자 라인은 실제 packing 연산(ensureShipmentLines)으로 생성.
+   * 창고/SKU/FO/FOI/예약 + on_hand 시드. 상자/송장은 만들지 않는다 (호출자가 흐름에 맞게 생성).
+   * FOI.shippedQty 는 0 (검수가 직접 세팅 안 함 — consume 가 박스 소진마다 누적).
+   * sku.code 는 대문자 — 검수 스캔(barcode→code 매칭, parseBarcode 가 uppercase) 가 닿게.
    */
-  async function createFixture(tx: DbTx, options: { onHand?: number; qty?: number } = {}): Promise<Fixture> {
+  async function seedOrder(tx: DbTx, options: { onHand?: number; qty?: number } = {}): Promise<OrderSeed> {
     const onHand = options.onHand ?? 100;
     const qty = options.qty ?? 10;
-    const openedBy = randomUUID();
+    const operatorId = randomUUID();
+    const skuCode = `IT-${randomUUID().toUpperCase()}`;
 
     const [warehouse] = await tx
       .insert(wmsTables.warehouses)
@@ -100,10 +121,10 @@ describeIfDb('OutboundConsumptionService (DB integration, rollback-only)', () =>
       .returning();
     const [sku] = await tx
       .insert(wmsTables.skus)
-      .values({ name: 'it-sku', code: `IT-${randomUUID()}`, holderId: holder.id })
+      .values({ name: 'it-sku', code: skuCode, holderId: holder.id })
       .returning();
 
-    // on_hand 시드 — 시스템 기본존으로 RECEIVE/ADJUST_UP (FIFO 전략이 읽을 ON_HAND ledger 행).
+    // on_hand 시드 — 시스템 기본존으로 ADJUST_UP (FIFO 전략이 읽을 ON_HAND ledger 행).
     if (onHand > 0) {
       await command.adjustUp({ skuId: sku.id, warehouseId: warehouse.id, quantity: onHand, reason: 'SEED' }, tx);
     }
@@ -118,10 +139,10 @@ describeIfDb('OutboundConsumptionService (DB integration, rollback-only)', () =>
         totalQty: qty,
       })
       .returning();
-    // shippedQty 는 호출자 ship() 가 consume 직전에 세팅하는 값 — 여기서 직접 세팅해 소진 수량을 고정.
+    // shippedQty=0 — consume 가 누적한다 (옛 모델은 ship() 이 직접 세팅했으나 폐기).
     const [foi] = await tx
       .insert(wmsTables.fulfillmentOrderItems)
-      .values({ fulfillmentOrderId: fo.id, skuId: sku.id, qty, reservedQty: qty, shippedQty: qty })
+      .values({ fulfillmentOrderId: fo.id, skuId: sku.id, qty, reservedQty: qty, shippedQty: 0 })
       .returning();
 
     await tx.insert(wmsTables.stockReservations).values({
@@ -134,16 +155,38 @@ describeIfDb('OutboundConsumptionService (DB integration, rollback-only)', () =>
       status: 'confirmed',
     });
 
-    // 상자(shipment) — 자사 출고는 송장/라벨 선발급으로 상자가 선행한다. openedBy = 박스 연 작업자.
+    return { warehouseId: warehouse.id, skuId: sku.id, skuCode, foId: fo.id, foiId: foi.id, operatorId, qty };
+  }
+
+  /**
+   * seedOrder + 검수 완료 상태의 열린 상자 한 개 (`consumeShipment` 직접 호출용).
+   * 상자는 새 컬럼(warehouseId/openedForFulfillmentOrderId/status/openedBy)으로 insert 하고,
+   * 상자 라인은 직접 insert (ensureShipmentLines 폐기) — inspectedQty=qty(검수완료), forced=false.
+   */
+  async function createFixture(tx: DbTx, options: { onHand?: number; qty?: number } = {}): Promise<Fixture> {
+    const seed = await seedOrder(tx, options);
+
     const [shipment] = await tx
       .insert(wmsTables.shipments)
-      .values({ fulfillmentOrderId: fo.id, trackingNo: `IT-TRK-${randomUUID().slice(0, 8)}`, carrier: 'CJ', openedBy })
+      .values({
+        warehouseId: seed.warehouseId,
+        openedForFulfillmentOrderId: seed.foId,
+        status: 'open',
+        openedBy: seed.operatorId,
+        openedAt: new Date(),
+      })
       .returning();
 
-    // packing 연산 — FOI(shippedQty) 를 미러한 상자 라인 생성.
-    await consumption.ensureShipmentLines(shipment.id, fo.id, tx);
+    await tx.insert(wmsTables.shipmentLines).values({
+      shipmentId: shipment.id,
+      fulfillmentOrderItemId: seed.foiId,
+      skuId: seed.skuId,
+      qty: seed.qty,
+      inspectedQty: seed.qty,
+      forced: false,
+    });
 
-    return { warehouseId: warehouse.id, skuId: sku.id, foId: fo.id, foiId: foi.id, shipmentId: shipment.id, openedBy };
+    return { ...seed, shipmentId: shipment.id };
   }
 
   async function onHandTotal(tx: DbTx, skuId: string, warehouseId: string) {
@@ -164,9 +207,7 @@ describeIfDb('OutboundConsumptionService (DB integration, rollback-only)', () =>
     const [row] = await tx
       .select({ availableQty: wmsTables.stockSummary.availableQty })
       .from(wmsTables.stockSummary)
-      .where(
-        and(eq(wmsTables.stockSummary.skuId, skuId), eq(wmsTables.stockSummary.warehouseId, warehouseId)),
-      );
+      .where(and(eq(wmsTables.stockSummary.skuId, skuId), eq(wmsTables.stockSummary.warehouseId, warehouseId)));
     return row?.availableQty ?? 0;
   }
 
@@ -177,7 +218,25 @@ describeIfDb('OutboundConsumptionService (DB integration, rollback-only)', () =>
       .where(and(eq(wmsTables.stockEvents.skuId, skuId), eq(wmsTables.stockEvents.transitionType, 'SHIP')));
   }
 
-  it('출고 소진: on_hand 가 출고 수량만큼 감소하고 available 는 불변, SHIP 이벤트가 1건 남는다', async () => {
+  async function shipmentStatus(tx: DbTx, shipmentId: string) {
+    const [row] = await tx
+      .select({ status: wmsTables.shipments.status })
+      .from(wmsTables.shipments)
+      .where(eq(wmsTables.shipments.id, shipmentId))
+      .limit(1);
+    return row?.status ?? null;
+  }
+
+  async function foStatus(tx: DbTx, foId: string) {
+    const [row] = await tx
+      .select({ status: wmsTables.fulfillmentOrders.status })
+      .from(wmsTables.fulfillmentOrders)
+      .where(eq(wmsTables.fulfillmentOrders.id, foId))
+      .limit(1);
+    return row?.status ?? null;
+  }
+
+  it('상자 출고: on_hand 가 출고 수량만큼 감소·available 불변·SHIP 1건/라인, FOI/FO/박스 전체 종결', async () => {
     await inRollbackTx(async (tx) => {
       const f = await createFixture(tx, { onHand: 100, qty: 10 });
 
@@ -200,7 +259,7 @@ describeIfDb('OutboundConsumptionService (DB integration, rollback-only)', () =>
         .select({ actorId: wmsTables.stockJournals.actorId, sourceType: wmsTables.stockJournals.sourceType })
         .from(wmsTables.stockJournals)
         .where(eq(wmsTables.stockJournals.id, events[0].journalId as string));
-      expect(journal).toMatchObject({ sourceType: 'SHIPMENT', actorId: f.openedBy });
+      expect(journal).toMatchObject({ sourceType: 'SHIPMENT', actorId: f.operatorId });
 
       // 예약 소진 확인: confirmed 예약이 사라지고 FOI.reservedQty=0
       const confirmed = await tx
@@ -212,10 +271,19 @@ describeIfDb('OutboundConsumptionService (DB integration, rollback-only)', () =>
       expect(confirmed).toHaveLength(0);
 
       const [foi] = await tx
-        .select({ reservedQty: wmsTables.fulfillmentOrderItems.reservedQty })
+        .select({
+          reservedQty: wmsTables.fulfillmentOrderItems.reservedQty,
+          shippedQty: wmsTables.fulfillmentOrderItems.shippedQty,
+          status: wmsTables.fulfillmentOrderItems.status,
+        })
         .from(wmsTables.fulfillmentOrderItems)
         .where(eq(wmsTables.fulfillmentOrderItems.id, f.foiId));
       expect(foi.reservedQty).toBe(0);
+      // 전체 종결: FOI.shippedQty 누적(10) + FOI/FO/박스 status='shipped'
+      expect(foi.shippedQty).toBe(10);
+      expect(foi.status).toBe('shipped');
+      expect(await foStatus(tx, f.foId)).toBe('shipped');
+      expect(await shipmentStatus(tx, f.shipmentId)).toBe('shipped');
     });
   });
 
@@ -237,6 +305,7 @@ describeIfDb('OutboundConsumptionService (DB integration, rollback-only)', () =>
       const f = await createFixture(tx, { onHand: 100, qty: 10 });
 
       await consumption.consumeShipment(f.shipmentId, tx);
+      // 1회차로 박스 status='shipped' → 2회차는 early-return (no-op).
       await consumption.consumeShipment(f.shipmentId, tx);
 
       expect(await onHandTotal(tx, f.skuId, f.warehouseId)).toBe(90);
@@ -251,6 +320,44 @@ describeIfDb('OutboundConsumptionService (DB integration, rollback-only)', () =>
       await expect(consumption.consumeShipment(f.shipmentId, tx)).rejects.toThrow();
 
       expect(await onHandTotal(tx, f.skuId, f.warehouseId)).toBe(5);
+    });
+  });
+
+  it('end-to-end 박스 스캔: openBoxByScan → inspectScan(자동완료) 가 출고를 전체 종결한다', async () => {
+    await inRollbackTx(async (tx) => {
+      const seed = await seedOrder(tx, { onHand: 100, qty: 10 });
+
+      // 선발급 송장(issued) — 박스 스캔(open)의 입구.
+      const trackingNo = `IT-TRK-${randomUUID().slice(0, 8)}`;
+      await tx.insert(wmsTables.invoices).values({
+        trackingNo,
+        carrier: 'CJ',
+        issueMethod: 'self',
+        issuedForFulfillmentOrderId: seed.foId,
+        status: 'issued',
+      });
+
+      // 송장 스캔 → 박스 lazy open (라인 qty=잔량, inspectedQty=0).
+      const { shipmentId } = await shipmentService.openBoxByScan(trackingNo, seed.operatorId, tx);
+      expect(await shipmentStatus(tx, shipmentId)).toBe('open');
+
+      // 상품 검수 스캔 (qty 전량) → 전 라인 검수완료 → consumeShipment 자동발사.
+      await shipmentService.inspectScan(shipmentId, seed.skuCode, seed.qty, seed.operatorId, tx);
+
+      // 전체 종결: on_hand 감소·available 불변·박스/FO shipped.
+      expect(await onHandTotal(tx, seed.skuId, seed.warehouseId)).toBe(90);
+      expect(await availableQty(tx, seed.skuId, seed.warehouseId)).toBe(90);
+      expect(await shipmentStatus(tx, shipmentId)).toBe('shipped');
+      expect(await foStatus(tx, seed.foId)).toBe('shipped');
+      expect(await shipEvents(tx, seed.skuId)).toHaveLength(1);
+
+      // 박스에 매인 송장이 'used' 로 전이.
+      const [invoice] = await tx
+        .select({ status: wmsTables.invoices.status, shipmentId: wmsTables.invoices.shipmentId })
+        .from(wmsTables.invoices)
+        .where(eq(wmsTables.invoices.trackingNo, trackingNo))
+        .limit(1);
+      expect(invoice).toMatchObject({ status: 'used', shipmentId });
     });
   });
 });
