@@ -295,8 +295,7 @@ export class SubscriptionController {
     @Body(new ZodValidationPipe(DowngradeSubscriptionRequestSchema))
     downgradeSubscriptionDto: DowngradeSubscriptionRequest,
   ) {
-    // 참고: 서비스 로직에 downgradeSubscription 메소드가 필요합니다.
-    return this.subscriptionService.upgradeSubscription(userId, downgradeSubscriptionDto.newPlanId);
+    return this.subscriptionService.downgradeSubscription(userId, downgradeSubscriptionDto.newPlanId);
   }
 
   /**
