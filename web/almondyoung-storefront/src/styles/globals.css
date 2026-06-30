@@ -191,6 +191,8 @@ input[type="search"]::-webkit-search-results-decoration {
 }
 
 :root {
+  --pdp-header-h: 104px;
+  --pdp-section-offset: 160px;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -266,6 +268,14 @@ input[type="search"]::-webkit-search-results-decoration {
   --tab-border: var(--gray-10);
   --tab-accent: var(--gray-90);
   --tab-accent-foreground: var(--white);
+}
+
+/* md+ 에서 헤더가 유틸리티 행/검색바 노출로 더 커진다 (측정 184px). */
+@media (min-width: 768px) {
+  :root {
+    --pdp-header-h: 184px;
+    --pdp-section-offset: 240px;
+  }
 }
 
 .dark {
