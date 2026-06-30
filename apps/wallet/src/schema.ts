@@ -18,7 +18,17 @@ import { idempotencyKeys } from './domain/idempotency/idempotency.schema';
 
 // ─── Enums ───────────────────────────────────────────────────────────────────
 
-export const paymentMethodTypeEnum = pgEnum('payment_method_type', ['POINTS', 'CARD', 'BANK_TRANSFER', 'BNPL', 'TOSS', 'NICEPAY', 'TOSS_BILLING', 'NICEPAY_BILLING', 'CMS_BATCH']);
+export const paymentMethodTypeEnum = pgEnum('payment_method_type', [
+  'POINTS',
+  'CARD',
+  'BANK_TRANSFER',
+  'BNPL',
+  'TOSS',
+  'NICEPAY',
+  'TOSS_BILLING',
+  'NICEPAY_BILLING',
+  'CMS_BATCH',
+]);
 
 export const paymentIntentStatusEnum = pgEnum('payment_intent_status', [
   'CREATED',
@@ -47,6 +57,9 @@ export const chargeStatusEnum = pgEnum('charge_status', [
 ]);
 
 export const refundStatusEnum = pgEnum('refund_status', ['PENDING', 'SUCCEEDED', 'FAILED']);
+
+export const cashReceiptTypeEnum = pgEnum('cash_receipt_type', ['소득공제', '지출증빙']);
+export const cashReceiptStatusEnum = pgEnum('cash_receipt_status', ['ISSUED', 'CANCELED', 'FAILED']);
 
 export const paymentStateEntityTypeEnum = pgEnum('payment_state_entity_type', ['INTENT', 'CHARGE', 'REFUND']);
 
@@ -93,7 +106,12 @@ export const paymentIntentOrderDiscountKindEnum = pgEnum('payment_intent_order_d
 
 export const intentPurposeEnum = pgEnum('intent_purpose', ['PURCHASE', 'SUBSCRIPTION', 'REPAYMENT', 'PAYOUT']);
 
-export const checkoutSessionStatusEnum = pgEnum('checkout_session_status', ['PENDING', 'COMPLETED', 'EXPIRED', 'CANCELED']);
+export const checkoutSessionStatusEnum = pgEnum('checkout_session_status', [
+  'PENDING',
+  'COMPLETED',
+  'EXPIRED',
+  'CANCELED',
+]);
 
 export const billingMethodStatusEnum = pgEnum('billing_method_status', ['ACTIVE', 'REVOKED', 'DELETED', 'EXPIRED']);
 
@@ -101,7 +119,13 @@ export const billingAgreementStatusEnum = pgEnum('billing_agreement_status', ['A
 
 export const cmsMemberStatusEnum = pgEnum('cms_member_status', ['PENDING', 'REGISTERED', 'FAILED', 'DELETED']);
 
-export const cmsWithdrawalStatusEnum = pgEnum('cms_withdrawal_status', ['REQUESTED', 'PROCESSING', 'SUCCEEDED', 'FAILED', 'DELETED']);
+export const cmsWithdrawalStatusEnum = pgEnum('cms_withdrawal_status', [
+  'REQUESTED',
+  'PROCESSING',
+  'SUCCEEDED',
+  'FAILED',
+  'DELETED',
+]);
 
 // ─── Tables ──────────────────────────────────────────────────────────────────
 
@@ -373,6 +397,50 @@ export const refunds = pgTable(
   ],
 );
 
+export const cashReceipts = pgTable(
+  'cash_receipts',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    // 현금성(무통장) charge 에 매달린다 — 카드/포인트 charge 는 발급 대상 아님.
+    chargeId: uuid('charge_id')
+      .notNull()
+      .references(() => charges.id),
+    intentId: uuid('intent_id')
+      .notNull()
+      .references(() => paymentIntents.id),
+    userId: varchar('user_id', { length: 128 }),
+    type: cashReceiptTypeEnum('type').notNull(),
+    // 휴대폰번호(소득공제) 또는 사업자등록번호(지출증빙). 토스 customerIdentityNumber.
+    customerIdentityNumber: varchar('customer_identity_number', { length: 30 }).notNull(),
+    amount: integer('amount').notNull(),
+    currency: varchar('currency', { length: 3 }).notNull(),
+    status: cashReceiptStatusEnum('status').notNull(),
+    // 환불 연동: 누적 취소금액. canceledAmount >= amount 면 status='CANCELED'.
+    canceledAmount: integer('canceled_amount').notNull().default(0),
+    // 토스 응답값
+    receiptKey: varchar('receipt_key', { length: 200 }),
+    issueNumber: varchar('issue_number', { length: 9 }),
+    receiptUrl: text('receipt_url'),
+    errorCode: varchar('error_code', { length: 128 }),
+    errorMessage: text('error_message'),
+    requestPayload: jsonb('request_payload').$type<Record<string, unknown> | null>(),
+    responsePayload: jsonb('response_payload').$type<Record<string, unknown> | null>(),
+    issuedAt: timestamp('issued_at', { withTimezone: true }),
+    canceledAt: timestamp('canceled_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('cash_receipts_amount_positive', sql`${table.amount} > 0`),
+    // charge 당 살아있는(ISSUED) 현금영수증은 하나만 — 이중발급 방지
+    uniqueIndex('uq_cash_receipts_active_charge')
+      .on(table.chargeId)
+      .where(sql`${table.status} = 'ISSUED'`),
+    index('idx_cash_receipts_intent').on(table.intentId),
+    index('idx_cash_receipts_user_created_at').on(table.userId, table.createdAt),
+  ],
+);
+
 export const paymentStateTransitions = pgTable(
   'payment_state_transitions',
   {
@@ -609,7 +677,9 @@ export const billingAgreements = pgTable(
   {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: varchar('user_id', { length: 128 }).notNull(),
-    billingMethodId: uuid('billing_method_id').notNull().references(() => billingMethods.id),
+    billingMethodId: uuid('billing_method_id')
+      .notNull()
+      .references(() => billingMethods.id),
     subscriberRef: varchar('subscriber_ref', { length: 255 }).notNull(),
     subscriberType: varchar('subscriber_type', { length: 64 }).notNull(),
     status: billingAgreementStatusEnum('status').notNull().default('ACTIVE'),
@@ -631,7 +701,10 @@ export const checkoutSessions = pgTable(
     amount: integer('amount').notNull(),
     currency: varchar('currency', { length: 3 }).notNull(),
     purpose: intentPurposeEnum('purpose').notNull(),
-    metadata: jsonb('metadata').$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`),
+    metadata: jsonb('metadata')
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
     successUrl: text('success_url').notNull(),
     cancelUrl: text('cancel_url').notNull(),
     allowComposite: boolean('allow_composite').notNull().default(false),
@@ -651,7 +724,9 @@ export const cmsMembers = pgTable(
   'cms_members',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    billingMethodId: uuid('billing_method_id').notNull().references(() => billingMethods.id),
+    billingMethodId: uuid('billing_method_id')
+      .notNull()
+      .references(() => billingMethods.id),
     userId: varchar('user_id', { length: 128 }).notNull(),
     cmsMemberId: varchar('cms_member_id', { length: 20 }).notNull(),
     paymentCompany: varchar('payment_company', { length: 3 }).notNull(),
@@ -677,8 +752,12 @@ export const cmsWithdrawals = pgTable(
     id: uuid('id').defaultRandom().primaryKey(),
     cmsMemberId: varchar('cms_member_id', { length: 20 }).notNull(),
     transactionId: varchar('transaction_id', { length: 30 }).notNull(),
-    chargeId: uuid('charge_id').notNull().references(() => charges.id),
-    intentId: uuid('intent_id').notNull().references(() => paymentIntents.id),
+    chargeId: uuid('charge_id')
+      .notNull()
+      .references(() => charges.id),
+    intentId: uuid('intent_id')
+      .notNull()
+      .references(() => paymentIntents.id),
     paymentDate: varchar('payment_date', { length: 8 }).notNull(),
     amount: integer('amount').notNull(),
     status: cmsWithdrawalStatusEnum('status').notNull().default('REQUESTED'),
@@ -710,9 +789,7 @@ export const cmsAgreements = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [
-    index('idx_cms_agreements_cms_member_id').on(table.cmsMemberId),
-  ],
+  (table) => [index('idx_cms_agreements_cms_member_id').on(table.cmsMemberId)],
 );
 
 // ─── Type exports ─────────────────────────────────────────────────────────────
@@ -722,6 +799,8 @@ export type PaymentIntentStatus = (typeof paymentIntentStatusEnum.enumValues)[nu
 export type ChargeOperation = (typeof chargeOperationEnum.enumValues)[number];
 export type ChargeStatus = (typeof chargeStatusEnum.enumValues)[number];
 export type RefundStatus = (typeof refundStatusEnum.enumValues)[number];
+export type CashReceiptType = (typeof cashReceiptTypeEnum.enumValues)[number];
+export type CashReceiptStatus = (typeof cashReceiptStatusEnum.enumValues)[number];
 export type PaymentStateEntityType = (typeof paymentStateEntityTypeEnum.enumValues)[number];
 export type PaymentStateTriggerType = (typeof paymentStateTriggerTypeEnum.enumValues)[number];
 export type OutboxStatus = (typeof outboxStatusEnum.enumValues)[number];
@@ -750,6 +829,7 @@ export const walletSchema = {
   paymentIntentOrderDiscounts,
   charges,
   refunds,
+  cashReceipts,
   paymentStateTransitions,
   outboxEvents,
   providerWebhookReceipts,

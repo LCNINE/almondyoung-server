@@ -43,6 +43,13 @@
       "when": 1782095327159,
       "tag": "20260622022847_add-awaiting-deposit-status",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1782797382964,
+      "tag": "20260630052942_add-cash-receipts",
+      "breakpoints": true
     }
   ]
 }

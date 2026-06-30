@@ -367,3 +367,49 @@ export async function abandonPaymentIntent(intentId: string): Promise<void> {
     throw new Error(body?.message ?? `Abandon failed (${res.status})`);
   }
 }
+
+// ─── Cash receipts (현금영수증) ────────────────────────────────────────────────
+
+export type CashReceiptType = '소득공제' | '지출증빙';
+
+export interface CashReceipt {
+  id: string;
+  intentId: string;
+  type: CashReceiptType;
+  status: 'ISSUED' | 'CANCELED' | 'FAILED';
+  amount: number;
+  currency: string;
+  receiptUrl: string | null;
+  issueNumber: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+}
+
+/** 서버 컴포넌트용: 주문의 현금영수증 목록. cookieHeader = cookies().toString(). */
+export async function getCashReceipts(intentId: string, cookieHeader: string): Promise<CashReceipt[]> {
+  const res = await fetch(`${BASE_URL}/v1/cash-receipts?intentId=${encodeURIComponent(intentId)}`, {
+    headers: { Cookie: cookieHeader },
+    cache: 'no-store',
+  });
+  if (!res.ok) return [];
+  return res.json();
+}
+
+/** 클라이언트용: 현금영수증 발급 요청 (프록시 경유). */
+export async function issueCashReceipt(
+  intentId: string,
+  type: CashReceiptType,
+  customerIdentityNumber: string,
+): Promise<CashReceipt> {
+  const res = await fetchWithAuthBounce('/api/cash-receipts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ intentId, type, customerIdentityNumber }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.message ?? `현금영수증 발급 실패 (${res.status})`);
+  }
+  return res.json();
+}

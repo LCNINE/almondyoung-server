@@ -59,6 +59,10 @@ import { TossApproveService } from './payment-intents/toss-approve.service';
 import { RefundsService } from './refunds/refunds.service';
 import { RefundsController } from './refunds/refunds.controller';
 
+// Cash receipts (현금영수증)
+import { CashReceiptsService } from './cash-receipts/cash-receipts.service';
+import { CashReceiptsController } from './cash-receipts/cash-receipts.controller';
+
 // Admin
 import { PointsAdminService } from './admin/points-admin.service';
 import { PointsAdminController } from './admin/points-admin.controller';
@@ -374,6 +378,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     PaymentIntentsController,
     PaymentMethodsController,
     RefundsController,
+    CashReceiptsController,
     PointsAdminController,
     PaymentIntentAdminController,
     RefundAdminController,
@@ -462,6 +467,9 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
 
     // Refunds
     RefundsService,
+
+    // Cash receipts (현금영수증)
+    CashReceiptsService,
 
     // Admin
     PointsAdminService,

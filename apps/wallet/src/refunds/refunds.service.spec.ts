@@ -152,9 +152,11 @@ function makeContext(options: {
     }));
   }
 
+  const cashReceiptsService = { cancelForRefund: async () => undefined };
   const service = new RefundsService(
     db as any,
     chargesService as any,
+    cashReceiptsService as any,
     paymentMethodsService as any,
     providerRegistry as any,
     stateTransitionService as any,
