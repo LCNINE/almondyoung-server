@@ -9,7 +9,7 @@ import { ContractEventManager } from '../subscription/contract-event.manager';
 export interface AdminMembersQuery {
   page?: number;
   limit?: number;
-  status?: 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'EXPIRED';
+  status?: 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'EXPIRED' | 'RECURRING_CANCELLED';
   /** userId partial search */
   q?: string;
   /** filter by resolved userIds (from user-service lookup) */
@@ -224,6 +224,10 @@ export class AdminMembersReader {
       baseConditions.push(eq(schema.subscriptionContracts.status, 'CANCELLED'));
     } else if (status === 'EXPIRED') {
       baseConditions.push(eq(schema.subscriptionContracts.status, 'EXPIRED'));
+    } else if (status === 'RECURRING_CANCELLED') {
+      // 정기결제 해지(자동갱신 off)됐으나 현재 주기는 유효(ACTIVE)한 "해지 예약" 상태
+      baseConditions.push(eq(schema.subscriptionContracts.status, 'ACTIVE'));
+      baseConditions.push(eq(schema.subscriptionContracts.autoRenewal, false));
     }
 
     const whereClause = baseConditions.length > 0 ? and(...baseConditions) : undefined;
