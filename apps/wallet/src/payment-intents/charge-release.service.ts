@@ -28,9 +28,31 @@ export class ChargeReleaseService {
   ) {}
 
   async releaseIntentCharges(intent: ReleasableIntent, correlationId: string): Promise<void> {
-    // Cancel any active AUTHORIZE charge (DB only — no provider call needed for in-flight charges).
+    // 대부분의 in-flight charge(POINTS hold/TOSS 결제창 대기)는 외부에 확정된 상태가 없어 DB CANCELED만으로 충분하다.
+    // 그러나 CMS 배치는 PENDING 시점에 이미 효성에 출금신청(cms_withdrawals=REQUESTED)이 들어가 있으므로
+    // provider.cancel(효성 출금삭제)을 호출해야 실제 은행 출금이 막힌다. (호출 안 하면 intent는 CANCELED인데 돈은 빠져나간다)
     const activeCharge = await this.chargesService.findActiveByIntentAndOperation(intent.id, 'AUTHORIZE');
     if (activeCharge) {
+      const activeMethod = await this.paymentMethodsService.findById(activeCharge.paymentMethodId);
+      if (activeMethod && activeMethod.type === 'CMS_BATCH') {
+        try {
+          const provider = this.providerRegistry.getProviderOrThrow(activeMethod.type);
+          await provider.cancel({
+            chargeId: activeCharge.id,
+            intentId: intent.id,
+            paymentMethodId: activeCharge.paymentMethodId,
+            userId: intent.userId ?? '',
+            amount: activeCharge.amount,
+            currency: intent.currency,
+            idempotencyKey: `wallet:cancel:cms_batch:${activeCharge.id}:${correlationId}`,
+            correlationId,
+          });
+        } catch (err) {
+          this.logger.error(
+            `Failed to cancel in-flight CMS withdrawal: intentId=${intent.id}, chargeId=${activeCharge.id}, error=${err}`,
+          );
+        }
+      }
       await this.chargesService.updateStatus(activeCharge.id, 'CANCELED', {});
     }
 
