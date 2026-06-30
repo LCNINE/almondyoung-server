@@ -14,7 +14,6 @@ import { LibraryService } from '../../library/services/library.service';
 import { ORDER_EVENTS } from '../common/events';
 import { CreateSalesOrderDto } from '../dto/create-sales-order.dto';
 import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
-import { MergeSalesOrdersDto } from '../dto/merge-sales-orders.dto';
 import { SalesOrderFilterDto } from '../dto/sales-order-filter.dto';
 import { BusinessLinkReferenceDto, CreateBusinessLinkDto } from '../dto/create-business-link.dto';
 import { CancelSalesOrderDto } from '../dto/cancel-sales-order.dto';
@@ -141,14 +140,6 @@ function toCancelReason(reasonCode: string | null | undefined): OrderCancelledPa
     : 'ADMIN_CANCEL';
 }
 
-/** Phase 6에서 FulfillmentsService로 교체된다 */
-interface IFulfillmentsService {
-  create(
-    dto: { salesOrderId: string; warehouseId?: string; shippingAddress: any; lines: any[] },
-    tx?: DbTx,
-  ): Promise<any>;
-}
-
 @Injectable()
 export class SalesOrdersService {
   private readonly logger = new Logger(SalesOrdersService.name);
@@ -164,7 +155,6 @@ export class SalesOrdersService {
     private readonly fulfillmentBacklog: FulfillmentOrderCreationBacklogService,
     @Optional() private readonly audit?: AuditService,
     @Optional() private readonly metrics?: MetricsService,
-    @Optional() private readonly fulfillments?: IFulfillmentsService,
     @Optional() private readonly library?: LibraryService,
   ) {}
 
@@ -613,138 +603,6 @@ export class SalesOrdersService {
       );
       return updated;
     }, explicitTx);
-  }
-
-  async merge(dto: MergeSalesOrdersDto, tx?: DbTx) {
-    return this.db.run(async (trx) => {
-      const sourceIds: string[] = dto?.sourceOrderIds ?? [];
-      if (!Array.isArray(sourceIds) || sourceIds.length < 2) {
-        return { ok: false, reason: 'NEED_AT_LEAST_TWO_ORDERS' };
-      }
-
-      const sources = await trx
-        .select()
-        .from(wmsTables.salesOrders)
-        .where(inArray(wmsTables.salesOrders.id, sourceIds));
-      if (sources.length !== sourceIds.length) {
-        return { ok: false, reason: 'ORDER_NOT_FOUND' };
-      }
-
-      const base = sources[0];
-      const [merged] = await trx
-        .insert(wmsTables.salesOrders)
-        .values({
-          channelOrderId: dto.channelOrderId ?? base.channelOrderId,
-          salesChannel: (dto.salesChannel ?? base.salesChannel) as 'naver' | 'medusa' | 'coupang' | '3pl',
-          status: 'pending' as const,
-          customerName: dto.customer?.name ?? base.customerName,
-          customerEmail: dto.customer?.email ?? base.customerEmail,
-          customerPhone: dto.customer?.phone ?? base.customerPhone,
-          shippingAddress: (dto.shippingAddress ?? base.shippingAddress) as any,
-          shippingAddressHash: dto.shippingAddressHash ?? base.shippingAddressHash,
-          totalAmount: dto.totalAmount ?? base.totalAmount,
-          shippingFee: dto.shippingFee ?? base.shippingFee,
-          mergeGroupId: null,
-          isMerged: true,
-          orderDate: new Date(),
-          confirmedAt: null,
-          processedAt: null,
-        })
-        .returning();
-
-      const mergedLines: SalesOrderLineInsert[] = [];
-      for (const so of sources) {
-        const soLines = await trx
-          .select()
-          .from(wmsTables.salesOrderLines)
-          .where(eq(wmsTables.salesOrderLines.salesOrderId, so.id));
-        for (const l of soLines) {
-          mergedLines.push({
-            salesOrderId: merged.id,
-            variantId: l.variantId,
-            productMatchingId: l.productMatchingId,
-            productName: l.productName,
-            quantity: l.quantity,
-            unitPrice: l.unitPrice,
-            totalPrice: l.totalPrice,
-            status: 'pending',
-            suggestedQuantity: null,
-            unavailableSkuIds: null,
-            deductedAt: null,
-          });
-        }
-      }
-      if (mergedLines.length > 0) {
-        await trx.insert(wmsTables.salesOrderLines).values(mergedLines);
-      }
-
-      // 원본 SO의 FO 예약 해제 및 취소
-      const sourceFOs = await trx
-        .select()
-        .from(wmsTables.fulfillmentOrders)
-        .where(inArray(wmsTables.fulfillmentOrders.salesOrderId, sourceIds));
-      for (const fo of sourceFOs) {
-        const fois = await trx
-          .select()
-          .from(wmsTables.fulfillmentOrderItems)
-          .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fo.id));
-        const foiIds = fois.map((item) => item.id);
-        if (foiIds.length > 0) {
-          const skuIds = [...new Set(fois.map((item) => item.skuId))];
-          await trx
-            .update(wmsTables.stockReservations)
-            .set({ status: 'released' })
-            .where(inArray(wmsTables.stockReservations.fulfillmentOrderItemId, foiIds));
-          for (const skuId of skuIds) {
-            await this.productSellableQuantity.recalculateAndPublishForSku(skuId, trx);
-          }
-          await trx
-            .update(wmsTables.fulfillmentOrderItems)
-            .set({ reservedQty: 0, updatedAt: new Date() })
-            .where(inArray(wmsTables.fulfillmentOrderItems.id, foiIds));
-        }
-        await trx
-          .update(wmsTables.fulfillmentOrders)
-          .set({ status: 'canceled' })
-          .where(eq(wmsTables.fulfillmentOrders.id, fo.id));
-      }
-
-      // 원본 SO 취소
-      await trx
-        .update(wmsTables.salesOrders)
-        .set({ status: 'cancelled' })
-        .where(inArray(wmsTables.salesOrders.id, sourceIds));
-
-      // Phase 6: FulfillmentsService 연결 후 FO 재구성
-      if (this.fulfillments) {
-        try {
-          await this.fulfillments.create(
-            {
-              salesOrderId: merged.id,
-              warehouseId: dto.warehouseId ?? undefined,
-              shippingAddress: merged.shippingAddress as any,
-              lines: [],
-            },
-            trx,
-          );
-        } catch {
-          // 생성 실패는 무시 (후속 요청에서 생성 가능)
-        }
-      }
-
-      await this.outbox.enqueue(
-        {
-          eventType: 'ORDER_MERGED',
-          aggregateType: 'order',
-          aggregateId: merged.id,
-          partitionKey: merged.id,
-          payload: { targetOrderId: merged.id, sourceOrderIds: sourceIds },
-        },
-        trx,
-      );
-
-      return merged;
-    }, tx);
   }
 
   async getOne(id: string, tx?: DbTx) {
