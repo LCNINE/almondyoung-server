@@ -53,6 +53,9 @@ export class FileAccess {
 
   private async isMasterOrOwner(file: Upload, user: JwtPayload): Promise<boolean> {
     if (file.uploadedBy === user.userId) return true;
+    // master 역할은 그 자체로 통과 — ScopeGuard/MasterRoleGuard 와 동일 컨벤션.
+    // (admin master 계정은 roles: ['master'] 만 들고 오고 role→scope DB 매핑은 없음)
+    if (user.roles?.includes('master')) return true;
     // Service-to-service 위임 토큰 (예: core 의 FileServiceClient) 은 roles 없이
     // scopes: ['master'] 만 들고 옴 — AuthorizationService.hasScope 가 roles 기반이라
     // JWT scopes 도 직접 확인해야 위임 경로가 동작.
