@@ -147,6 +147,7 @@ export async function confirmPaymentIntent(
   intentId: string,
   paymentMethodId: string | null,
   pointsToApply?: number,
+  cashReceipt?: { type: CashReceiptType; customerIdentityNumber: string },
 ): Promise<ConfirmResult> {
   const res = await fetchWithAuthBounce(paymentIntentRoute(intentId, 'confirm'), {
     method: 'POST',
@@ -155,7 +156,7 @@ export async function confirmPaymentIntent(
       'Idempotency-Key': crypto.randomUUID(),
     },
     credentials: 'include',
-    body: JSON.stringify({ paymentMethodId, pointsToApply }),
+    body: JSON.stringify({ paymentMethodId, pointsToApply, cashReceipt }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));

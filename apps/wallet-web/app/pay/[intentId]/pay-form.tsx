@@ -155,6 +155,10 @@ export function PayForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bankTransferPending, setBankTransferPending] = useState<BankTransferPendingAction | null>(null);
+  // 현금영수증 (무통장입금 시): 입금확인 완료 시점에 자동 발급된다.
+  const [cashReceiptEnabled, setCashReceiptEnabled] = useState(false);
+  const [cashReceiptType, setCashReceiptType] = useState<'소득공제' | '지출증빙'>('소득공제');
+  const [cashReceiptNumber, setCashReceiptNumber] = useState('');
 
   // Toss 결제 실패/취소로 돌아온 경우(failUrl ?toss_fail=1) abandon 신호를 보내 REQUIRES_ACTION 으로
   // 묶인 포인트 hold 를 즉시 해제하고 intent 를 CREATED 로 soft reset 한다. best-effort — 실패해도
@@ -178,6 +182,7 @@ export function PayForm({
   }, [tossFailed, intent.id, region, router]);
 
   const isTossSelected = externalMethods.find((m) => m.id === selectedMethodId)?.type === 'TOSS';
+  const isBankTransferSelected = externalMethods.find((m) => m.id === selectedMethodId)?.type === 'BANK_TRANSFER';
 
   const isRecurring = intent.metadata?.billingMode === 'recurring';
   const isZeroAmount = intent.payableAmount === 0;
@@ -209,6 +214,18 @@ export function PayForm({
       setError('결제 수단을 선택해주세요.');
       return;
     }
+    // 무통장 + 현금영수증 신청 시 번호 검증 (숫자 8자리 이상)
+    let cashReceipt: { type: '소득공제' | '지출증빙'; customerIdentityNumber: string } | undefined;
+    if (isBankTransferSelected && cashReceiptEnabled) {
+      const digits = cashReceiptNumber.replace(/[^0-9]/g, '');
+      if (digits.length < 8) {
+        setError(
+          cashReceiptType === '소득공제' ? '휴대폰번호를 정확히 입력해주세요.' : '사업자등록번호를 정확히 입력해주세요.',
+        );
+        return;
+      }
+      cashReceipt = { type: cashReceiptType, customerIdentityNumber: digits };
+    }
     setLoading(true);
     setError(null);
     try {
@@ -216,6 +233,7 @@ export function PayForm({
         intent.id,
         remaining > 0 ? selectedMethodId : null,
         pts > 0 ? pts : undefined,
+        cashReceipt,
       );
 
       if (result.status === 'REQUIRES_ACTION' && result.nextAction?.type === 'TOSS_CHECKOUT') {
@@ -608,6 +626,55 @@ export function PayForm({
                       );
                     })}
                   </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* 현금영수증 (무통장입금 선택 시). 입금확인 완료 시점에 자동 발급된다. */}
+            {remainingAmount > 0 && isBankTransferSelected && (
+              <Card className="border shadow-sm border-border/60">
+                <CardContent className="p-6">
+                  <label className="flex items-center gap-2 text-sm font-semibold">
+                    <input
+                      type="checkbox"
+                      checked={cashReceiptEnabled}
+                      onChange={(e) => setCashReceiptEnabled(e.target.checked)}
+                    />
+                    현금영수증 신청
+                  </label>
+                  {cashReceiptEnabled && (
+                    <div className="mt-4 space-y-3">
+                      <div className="flex gap-4 text-sm">
+                        <label className="flex items-center gap-1.5">
+                          <input
+                            type="radio"
+                            name="cashReceiptType"
+                            checked={cashReceiptType === '소득공제'}
+                            onChange={() => setCashReceiptType('소득공제')}
+                          />
+                          소득공제(개인)
+                        </label>
+                        <label className="flex items-center gap-1.5">
+                          <input
+                            type="radio"
+                            name="cashReceiptType"
+                            checked={cashReceiptType === '지출증빙'}
+                            onChange={() => setCashReceiptType('지출증빙')}
+                          />
+                          지출증빙(사업자)
+                        </label>
+                      </div>
+                      <input
+                        inputMode="numeric"
+                        autoComplete="off"
+                        value={cashReceiptNumber}
+                        onChange={(e) => setCashReceiptNumber(e.target.value)}
+                        placeholder={cashReceiptType === '소득공제' ? '휴대폰번호 (01012345678)' : '사업자등록번호 (1234567890)'}
+                        className="w-full rounded-md border px-3 py-2 text-sm"
+                      />
+                      <p className="text-xs text-muted-foreground">입금이 확인되면 현금영수증이 자동 발급됩니다.</p>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}
