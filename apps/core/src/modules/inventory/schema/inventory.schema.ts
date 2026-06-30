@@ -1469,7 +1469,11 @@ export const shipments = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    uqFulfillmentOrder: unique('uq_shipments_fulfillment_order_id').on(t.openedForFulfillmentOrderId),
+    // 박스당 active(미취소) 박스 1개 — 취소 후 재발행·재스캔 허용 (invoices uq_invoices_shipment_active 와 대칭).
+    uqActivePerFo: uniqueIndex('uq_shipments_fo_active')
+      .on(t.openedForFulfillmentOrderId)
+      .where(sql`${t.status} <> 'canceled'`),
+    // 전수(취소 포함) FO 조회용 — 부분 unique 가 미취소만 인덱싱하므로 잉여 아님.
     idxOpenedForFo: index('idx_shipments_opened_for_fo').on(t.openedForFulfillmentOrderId),
   }),
 );

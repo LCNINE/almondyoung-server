@@ -1196,10 +1196,12 @@ export class FulfillmentsService {
         .where(eq(wmsTables.fulfillmentOrders.id, id));
 
       // 배송 완료 시각을 shipment_tracking에 기록 → buildTrackingView()가 deliveredAt으로 노출
+      // 부분 unique 후 FO당 취소박스+활성박스 공존 가능 — 취소박스를 delivered 로 잘못 갱신하지 않도록 활성 최신만.
       const [shipmentRow] = await trx
         .select({ id: wmsTables.shipments.id })
         .from(wmsTables.shipments)
-        .where(eq(wmsTables.shipments.openedForFulfillmentOrderId, id))
+        .where(and(eq(wmsTables.shipments.openedForFulfillmentOrderId, id), ne(wmsTables.shipments.status, 'canceled')))
+        .orderBy(desc(wmsTables.shipments.createdAt))
         .limit(1);
 
       if (shipmentRow) {
@@ -1421,7 +1423,9 @@ export class FulfillmentsService {
           status: wmsTables.shipments.status,
         })
         .from(wmsTables.shipments)
-        .where(eq(wmsTables.shipments.openedForFulfillmentOrderId, id))
+        // 부분 unique(WHERE status<>'canceled')로 FO당 박스가 여럿일 수 있음(취소분+활성1). 활성 최신만.
+        .where(and(eq(wmsTables.shipments.openedForFulfillmentOrderId, id), ne(wmsTables.shipments.status, 'canceled')))
+        .orderBy(desc(wmsTables.shipments.createdAt))
         .limit(1),
     ]);
 

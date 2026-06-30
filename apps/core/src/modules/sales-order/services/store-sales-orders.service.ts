@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { InjectTypedDb } from '@app/db';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne } from 'drizzle-orm';
 import { inventorySchema, inventoryTables, returnExchangeTables, wmsTables } from '../../inventory/schema/inventory.schema';
 import { calculatePartialCancellationRefund } from './partial-cancellation-refund-calculator';
 import {
@@ -782,10 +782,16 @@ export class StoreSalesOrdersService {
     }
 
     // shipments + 연결된 tracking 이벤트 조회. 박스는 FO 에 openedForFulfillmentOrderId 로 매인다.
+    // 부분 unique(WHERE status<>'canceled') 후 FO당 취소박스+활성박스 공존 가능 — 취소박스는 고객 추적뷰에서 제외.
     const shipmentRows = await this.db.db
       .select()
       .from(inventoryTables.shipments)
-      .where(inArray(inventoryTables.shipments.openedForFulfillmentOrderId, foIds));
+      .where(
+        and(
+          inArray(inventoryTables.shipments.openedForFulfillmentOrderId, foIds),
+          ne(inventoryTables.shipments.status, 'canceled'),
+        ),
+      );
 
     const shipmentIds = shipmentRows.map((s) => s.id);
     const trackingEvents =

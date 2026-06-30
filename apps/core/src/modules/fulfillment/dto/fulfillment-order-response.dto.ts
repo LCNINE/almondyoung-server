@@ -7,7 +7,7 @@ export class InvoiceSummaryDto {
   @ApiProperty()
   invoiceNumber: string;
 
-  @ApiProperty({ enum: ['issued', 'printed', 'shipped', 'canceled'] })
+  @ApiProperty({ enum: ['issued', 'used', 'voided'] })
   status: string;
 
   @ApiProperty({ nullable: true })
