@@ -154,7 +154,8 @@ export default function MembershipPaymentMethodPage() {
       await updateBillingAgreementMethod(agreement.id, billingMethodId)
       toast.success(t("changeSuccess"))
       setAgreement({ ...agreement, billingMethodId })
-    } catch {
+    } catch (error) {
+      if (isUnauthorizedError(error)) throw error
       toast.error(t("changeFail"))
     } finally {
       setIsChanging(null)
@@ -175,7 +176,8 @@ export default function MembershipPaymentMethodPage() {
       // 재가입자는 무료체험이 적용되지 않으므로 실제 적용된 일수로 안내한다.
       toast.success((res.effectiveTrialDays ?? 0) > 0 ? t("trialStartedSuccess") : t("recurringStartedSuccess"))
       router.push(`/${countryCode}/mypage/membership/subscribe/success`)
-    } catch {
+    } catch (error) {
+      if (isUnauthorizedError(error)) throw error
       toast.error(t("subscribeFail"))
     } finally {
       setIsChanging(null)
@@ -234,12 +236,12 @@ export default function MembershipPaymentMethodPage() {
   }
 
   const handleRegisterNewCard = () => {
-    const walletWebUrl =
-      process.env.NEXT_PUBLIC_WALLET_WEB_URL ?? "http://localhost:3200"
-    const returnUrl = window.location.href
-    const params = new URLSearchParams({ returnUrl })
-    if (agreement?.id) params.set("agreementId", agreement.id)
-    window.location.href = `${walletWebUrl}/billing-change?${params}`
+    // 정기결제는 효성 CMS 자동이체로만 운영하므로 신규 등록도 CMS 자동이체 위저드로 보낸다.
+    // (카드 빌링 provider는 현재 미등록 상태라 등록해도 정기결제에 사용할 수 없음)
+    const returnTo = encodeURIComponent(
+      window.location.pathname + window.location.search
+    )
+    router.push(`/${countryCode}/mypage/payment?returnTo=${returnTo}`)
   }
 
   const handleRegisterCmsBankAccount = () => {
