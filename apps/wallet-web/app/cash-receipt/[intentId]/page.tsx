@@ -5,6 +5,9 @@ import { SESSION_COOKIE_NAMES, backendAuthCookieFromToken } from '@/lib/auth/ses
 import { getCashReceipts, getPaymentIntent } from '@/lib/wallet-api';
 import { CashReceiptForm } from './cash-receipt-form';
 
+// 쿠키 기반 인증 가드 + 주문별 데이터라 정적 프리렌더/ISR 캐시 금지 (404 캐시 방지).
+export const dynamic = 'force-dynamic';
+
 interface Props {
   params: Promise<{ intentId: string }>;
 }
