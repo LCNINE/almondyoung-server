@@ -660,32 +660,31 @@ export class AdminMembersReader {
           restoredNextBillingDate = ent.endsAt;
         }
 
-        // (2) 정기결제 해지로 REVOKE 된 agreement 를 재생성한다. 해지 이력(recurringCancelledAt)이 있을 때만.
-        // 원래 생성과 같은 멱등키를 쓰면 wallet HTTP 멱등 캐시가 옛 응답을 replay 해 재생성이 no-op 될 수 있어
-        // 해지 시각을 섞은 별도 키를 쓴다(같은 재활성 재시도엔 안정, cancel→재활성 사이클마다 구분).
-        if (contract.recurringCancelledAt) {
-          try {
-            // 해지로 REVOKE 된 agreement 를 wallet 이 upsert 로 되살린다(DB-멱등). wallet 은 쓰기 API 에
-            // Idempotency-Key 헤더를 강제하므로 생략할 수 없다 → 시도마다 유니크한 키를 써서, 첫 시도가 5xx 로
-            // 실패해도 wallet 이 그 FAILED 응답을 24h 동안 replay 해 재시도를 막는 일을 방지한다.
-            // (upsert 라 중복 생성 위험 없음, 관리자 중복 요청은 상위 멱등 계층에서 차단됨)
-            await this.paymentClientService.createBillingAgreement(
-              contract.userId,
-              contractId,
-              undefined,
-              `membership:reactivate-agreement:${contractId}:${randomUUID()}`,
+        // (2) 청구 전에 유효한 wallet agreement 를 항상 보장한다. recurringCancelledAt(고객 정기해지)만
+        // 보고 재생성하면, agreement 를 애초에 가진 적 없는 일시결제 계약이 이 검증을 빠져나가 nextBillingDate 만
+        // 복구된 채 커밋되고, 다음 스케줄 청구가 BILLING_AGREEMENT_NOT_FOUND → 즉시 해지로 이어진다(Finding 3).
+        // createBillingAgreement 는 upsert(DB-멱등)라 이미 agreement 가 있는 계약(관리자가 끈 재개 등)엔 안전한
+        // no-op 이고, 등록 수단이 없는 계약은 여기서 404/400 으로 걸러 커밋 전에 거부한다.
+        try {
+          // wallet 은 쓰기 API 에 Idempotency-Key 헤더를 강제하므로 생략할 수 없다 → 시도마다 유니크한 키를 써서,
+          // 첫 시도가 5xx 로 실패해도 wallet 이 그 FAILED 응답을 24h 동안 replay 해 재시도를 막는 일을 방지한다.
+          // (upsert 라 중복 생성 위험 없음, 관리자 중복 요청은 상위 멱등 계층에서 차단됨)
+          await this.paymentClientService.createBillingAgreement(
+            contract.userId,
+            contractId,
+            undefined,
+            `membership:reactivate-agreement:${contractId}:${randomUUID()}`,
+          );
+        } catch (err) {
+          const status = isAxiosError(err) ? err.response?.status : undefined;
+          // wallet create 는 assertSelectableForRecurringBilling 로 "등록 수단 없음"→404, "비활성"→400 만 낸다.
+          // 그 두 신호만 재등록 유도로 매핑하고, 그 외(401/403/429/5xx/비-axios)는 오분류하지 않고 원본을 전파한다.
+          if (status !== undefined && [400, 404].includes(status)) {
+            throw new ConflictError(
+              '등록된 정기결제 수단이 없어 자동갱신을 재개할 수 없습니다. 결제수단을 다시 등록해 주세요.',
             );
-          } catch (err) {
-            const status = isAxiosError(err) ? err.response?.status : undefined;
-            // wallet create 는 assertSelectableForRecurringBilling 로 "등록 수단 없음"→404, "비활성"→400 만 낸다.
-            // 그 두 신호만 재등록 유도로 매핑하고, 그 외(401/403/429/5xx/비-axios)는 오분류하지 않고 원본을 전파한다.
-            if (status !== undefined && [400, 404].includes(status)) {
-              throw new ConflictError(
-                '등록된 정기결제 수단이 없어 자동갱신을 재개할 수 없습니다. 결제수단을 다시 등록해 주세요.',
-              );
-            }
-            throw err;
           }
+          throw err;
         }
       }
     }
