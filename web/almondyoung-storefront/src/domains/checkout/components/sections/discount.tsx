@@ -89,10 +89,11 @@ export const DiscountSection = ({
 
   const handleCouponChange = useCallback(
     (code: string) => {
+      const previousCoupon = selectedCoupon
       startTransition(async () => {
         try {
-          if (selectedCoupon) {
-            await removePromotionFromCart(cartId, [selectedCoupon])
+          if (previousCoupon) {
+            await removePromotionFromCart(cartId, [previousCoupon])
           }
           if (code) {
             await addPromotionToCart(cartId, [code])
@@ -104,6 +105,15 @@ export const DiscountSection = ({
           if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
             await tryRestoreTokenAndRedirect(countryCode)
             return
+          }
+          // 새 쿠폰 적용 실패 → 제거했던 기존 쿠폰 롤백
+          if (previousCoupon && code) {
+            try {
+              await addPromotionToCart(cartId, [previousCoupon])
+            } catch {
+              setSelectedCoupon("")
+              onCouponApplied?.()
+            }
           }
           if (err.digest === "COUPON_NOT_ASSIGNED") {
             toast.error(t("toasts.couponNotAssigned"))
@@ -126,24 +136,26 @@ export const DiscountSection = ({
         await removePromotionFromCart(cartId, [selectedCoupon])
         setSelectedCoupon("")
         onCouponApplied?.()
-      } catch (error) {
-        console.error("쿠폰 제거 실패:", error)
+      } catch {
+        toast.error(t("toasts.couponRemoveFailed"))
+        onCouponApplied?.()
       }
     })
-  }, [cartId, selectedCoupon, onCouponApplied])
+  }, [cartId, selectedCoupon, onCouponApplied, t])
 
   // 쿠폰 할인 금액 계산
   const appliedPromotion = selectedCoupon
     ? promotions.find((p) => p.code === selectedCoupon)
     : null
 
-  const couponDiscount = appliedPromotion
+  // 서버 계산 할인액(cartDiscountTotal) 우선 — 목록에 없는 직접입력 코드도 표시
+  const couponDiscount = selectedCoupon
     ? (cartDiscountTotal ??
-      (appliedPromotion.application_method?.type === "percentage"
+      (appliedPromotion?.application_method?.type === "percentage"
         ? Math.floor(
             itemSubtotal * (appliedPromotion.application_method.value / 100)
           )
-        : (appliedPromotion.application_method?.value ?? 0)))
+        : (appliedPromotion?.application_method?.value ?? 0)))
     : 0
 
   // 총 할인 금액 = 멤버십 할인 + 쿠폰 할인
@@ -173,7 +185,6 @@ export const DiscountSection = ({
           membershipDiscount={membershipDiscount}
           couponDiscount={couponDiscount}
           shipping={shipping}
-          appliedPromotion={appliedPromotion}
         />
 
         <hr className="border-t border-gray-100" />
@@ -276,7 +287,6 @@ interface DiscountRowProps {
   membershipDiscount: number
   couponDiscount: number
   shipping: ShippingInfo
-  appliedPromotion: Promotion | null | undefined
 }
 
 const DiscountRow = ({
@@ -285,7 +295,6 @@ const DiscountRow = ({
   totalDiscount,
   membershipDiscount,
   couponDiscount,
-  appliedPromotion,
 }: DiscountRowProps) => {
   const t = useTranslations("checkout.discount")
   const hasMembershipDiscount = isMembership && membershipDiscount > 0
@@ -322,7 +331,7 @@ const DiscountRow = ({
         </PriceRow>
       )}
 
-      {hasCouponDiscount && appliedPromotion && (
+      {hasCouponDiscount && (
         <PriceRow>
           <PriceRow.Label size="xs" tone="accent" weight="medium">
             {t("couponDiscount")}

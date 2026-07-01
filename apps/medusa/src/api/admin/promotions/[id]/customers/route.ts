@@ -1,5 +1,7 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys, Modules, MedusaError } from '@medusajs/framework/utils';
+import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
+import type PromotionMetaModuleService from '../../../../../modules/promotion-meta/service';
 
 interface RevokeBody {
   customer_ids: string[];
@@ -95,19 +97,34 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
     throw new MedusaError(MedusaError.Types.INVALID_DATA, 'customer_ids is required');
   }
 
+  const link = req.scope.resolve(ContainerRegistrationKeys.LINK);
   const remoteLink = req.scope.resolve(ContainerRegistrationKeys.REMOTE_LINK);
+  const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
 
-  const links = customer_ids.map((customerId) => ({
-    [Modules.CUSTOMER]: { customer_id: customerId },
-    [Modules.PROMOTION]: { promotion_id: promotionId },
-  }));
+  // 실제 연결된 고객만 — issued_count 과다 감소 방지.
+  // 위 GET과 동일하게 promotion_id로만 조회하고 customer_ids는 앱에서 필터 (link module 배열 필터 미신뢰).
+  const existingLinks = (await (link.getLinkModule(Modules.CUSTOMER, 'customer_id', Modules.PROMOTION, 'promotion_id') as any)
+    .list({ promotion_id: promotionId }, { select: ['customer_id'] })) as any[];
+  const linkedCustomerIds = new Set<string>(existingLinks.map((l) => l.customer_id));
+  const toRemove = customer_ids.filter((id) => linkedCustomerIds.has(id));
 
-  await remoteLink.dismiss(links);
+  if (toRemove.length > 0) {
+    await remoteLink.dismiss(
+      toRemove.map((customerId) => ({
+        [Modules.CUSTOMER]: { customer_id: customerId },
+        [Modules.PROMOTION]: { promotion_id: promotionId },
+      })),
+    );
+    // 회수한 링크 수만큼 발급 수량 카운트 원복
+    await Promise.all(
+      toRemove.map(() => promotionMetaService.releaseClaimSlot(promotionId).catch(() => {})),
+    );
+  }
 
   return res.status(200).json({
     success: true,
-    message: `${customer_ids.length} customer(s) revoked from promotion`,
+    message: `${toRemove.length} customer(s) revoked from promotion`,
     promotion_id: promotionId,
-    customer_ids,
+    customer_ids: toRemove,
   });
 }

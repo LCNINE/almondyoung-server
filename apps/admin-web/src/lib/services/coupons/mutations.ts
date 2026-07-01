@@ -38,8 +38,8 @@ export const useDeleteCoupon = () => {
 export const useAssignCoupon = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ medusaCustomerId, promotionIds }: { medusaCustomerId: string; promotionIds: string[] }) =>
-      medusaPromotionsApi.assignToCustomer(medusaCustomerId, promotionIds),
+    mutationFn: ({ medusaCustomerId, promotionIds, force }: { medusaCustomerId: string; promotionIds: string[]; force?: boolean }) =>
+      medusaPromotionsApi.assignToCustomer(medusaCustomerId, promotionIds, force),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: couponQueryKeys.all });
     },
