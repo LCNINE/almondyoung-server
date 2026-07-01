@@ -313,7 +313,9 @@ export class RecurringBillingAdminService {
 
       const agreements = agreementsByMemberId.get(r.cmsMember.cmsMemberId) ?? [];
       const aggStatus = aggregateAgreementStatus(agreements);
-      if (aggStatus !== '등록') {
+      // '확인'(상위기관 확인)도 정상 등록 상태이므로 isCmsAgreementRegistered로 일관 판정한다.
+      // 바로 '등록' 리터럴만 비교하면 '확인' 회원이 처리필요 목록에 유령으로 잡히고 카운트를 부풀린다.
+      if (!isCmsAgreementRegistered(aggStatus)) {
         seen.add(key);
         rows.push(this.buildMemberRow(r.cmsMember, r.billingMethod, r.billingAgreement, aggStatus, 'PROVIDER_MANDATE'));
       }
@@ -326,7 +328,9 @@ export class RecurringBillingAdminService {
 
       const agreements = agreementsByMemberId.get(r.cmsMember.cmsMemberId) ?? [];
       const aggStatus = aggregateAgreementStatus(agreements);
-      if (aggStatus !== '등록') {
+      // '확인'(상위기관 확인)도 정상 등록 상태이므로 isCmsAgreementRegistered로 일관 판정한다.
+      // 바로 '등록' 리터럴만 비교하면 '확인' 회원이 처리필요 목록에 유령으로 잡히고 카운트를 부풀린다.
+      if (!isCmsAgreementRegistered(aggStatus)) {
         seen.add(key);
         rows.push(this.buildMemberRow(r.cmsMember, r.billingMethod, r.billingAgreement, aggStatus, 'PROVIDER_MANDATE'));
       }
