@@ -168,6 +168,26 @@ export class CmsBatchProvider implements PaymentProvider {
       };
     }
 
+    // 멱등/상태 가드: deleteWithdrawal을 무조건 호출하면 (1) 이미 삭제된 출금 재취소가 FAILED로 보이고
+    // (2) 이미 정산성공한 출금을 취소시도해 잘못 FAILED 처리된다.
+    const [wd] = await this.dbService.db
+      .select({ status: cmsWithdrawals.status })
+      .from(cmsWithdrawals)
+      .where(eq(cmsWithdrawals.transactionId, transactionId))
+      .limit(1);
+    if (wd?.status === 'DELETED') {
+      // 이미 취소됨 → 재시도는 멱등 성공으로 간주
+      return { status: 'SUCCEEDED' };
+    }
+    if (wd?.status === 'SUCCEEDED') {
+      // 이미 은행 출금이 정산 완료 → 취소 불가(별도 환불/입금으로 처리)
+      return {
+        status: 'FAILED',
+        errorCode: 'CMS_ALREADY_SETTLED',
+        errorMessage: '이미 정산 완료된 출금은 취소할 수 없습니다.',
+      };
+    }
+
     // 마감 전이면 효성 출금삭제 API 호출
     const result = await this.cmsApi.deleteWithdrawal(transactionId);
     if (!result.ok) {

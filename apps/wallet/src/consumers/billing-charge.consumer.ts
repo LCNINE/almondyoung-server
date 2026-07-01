@@ -402,16 +402,30 @@ export class BillingChargeConsumer {
       }
 
       case 'PENDING': {
-        // CMS 배치: charge → PENDING, intent → PENDING_SETTLEMENT
-        await this.chargesService.updateStatus(chargeId, 'PENDING', {
-          providerTransactionId: result.providerTransactionId,
-          responsePayload: result.raw,
-        });
+        // CMS 배치: charge → PENDING, intent → PENDING_SETTLEMENT.
+        // 두 전이를 한 트랜잭션으로 묶어 중간 크래시 시 charge=PENDING / intent=PROCESSING 분열을 막는다.
+        await this.dbService.db.transaction(async (tx) => {
+          await this.chargesService.updateStatus(
+            chargeId,
+            'PENDING',
+            {
+              providerTransactionId: result.providerTransactionId,
+              responsePayload: result.raw,
+            },
+            tx,
+          );
 
-        await this.stateTransitionService.transitionIntent(intentId, 'PENDING_SETTLEMENT', {
-          correlationId,
-          reasonCode: 'PENDING_SETTLEMENT',
-          reasonMessage: 'Awaiting external settlement result (CMS batch)',
+          await this.stateTransitionService.transitionIntent(
+            intentId,
+            'PENDING_SETTLEMENT',
+            {
+              correlationId,
+              reasonCode: 'PENDING_SETTLEMENT',
+              reasonMessage: 'Awaiting external settlement result (CMS batch)',
+            },
+            undefined,
+            tx,
+          );
         });
 
         this.logger.log(

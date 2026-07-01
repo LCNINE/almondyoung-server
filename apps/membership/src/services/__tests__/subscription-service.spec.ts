@@ -7,6 +7,8 @@ import { SubscriptionCreator } from '../subscription/subscription.creator';
 import { SubscriptionManager } from '../subscription/subscription.manager';
 import { MembershipEventPublisher } from '../membership-event.publisher';
 import { PaymentClientService } from '../billing/payment-client.service';
+import { BillingManager } from '../billing/billing.manager';
+import { BillingReader } from '../billing/billing.reader';
 
 describe('SubscriptionService - Layer Refactoring', () => {
   let service: SubscriptionService;
@@ -36,12 +38,22 @@ describe('SubscriptionService - Layer Refactoring', () => {
   };
 
   const mockMembershipEventPublisher = {
-    publishStatusChanged: jest.fn(),
+    publishStatusChanged: jest.fn().mockResolvedValue(undefined),
   };
 
   const mockPaymentClientService = {
     createMembershipCheckoutIntent: jest.fn(),
     getWalletPaymentIntent: jest.fn(),
+    directCharge: jest.fn(),
+  };
+
+  const mockBillingManager = {
+    processSingleBilling: jest.fn(),
+  };
+
+  const mockBillingReader = {
+    findContractById: jest.fn(),
+    findDunningAttempts: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -75,6 +87,14 @@ describe('SubscriptionService - Layer Refactoring', () => {
         {
           provide: PaymentClientService,
           useValue: mockPaymentClientService,
+        },
+        {
+          provide: BillingManager,
+          useValue: mockBillingManager,
+        },
+        {
+          provide: BillingReader,
+          useValue: mockBillingReader,
         },
       ],
     }).compile();
@@ -116,6 +136,7 @@ describe('SubscriptionService - Layer Refactoring', () => {
         { id: planId, price: 10000, durationDays: 30 },
         { id: 'tier_001', code: 'PREMIUM' },
         {},
+        'one_time',
       );
       expect(mockMembershipEventPublisher.publishStatusChanged).toHaveBeenCalled();
     });

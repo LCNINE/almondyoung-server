@@ -390,7 +390,11 @@ export class SubscriptionService {
       userId,
       planDetails.plan,
       planDetails.tier,
-      { initialPaymentIntentId },
+      {
+        initialPaymentIntentId,
+        // one_time 첫 결제 금액을 함께 넘겨야 creator가 billingEvents에 CHARGE_SUCCESS를 남긴다(결제내역 누락 방지).
+        initialPaymentAmount: billingMode === 'one_time' ? planDetails.plan.price : undefined,
+      },
       billingMode,
     );
 

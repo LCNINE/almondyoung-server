@@ -146,42 +146,55 @@ export default function MembershipPaymentMethodPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const handleChangeMethod = async (billingMethodId: string) => {
-    if (!agreement || isChanging) return
+  const handleChangeMethod = (billingMethodId: string) => {
+    if (!agreement || isChanging || isActionPending) return
+    const currentAgreement = agreement
 
-    try {
-      setIsChanging(billingMethodId)
-      await updateBillingAgreementMethod(agreement.id, billingMethodId)
-      toast.success(t("changeSuccess"))
-      setAgreement({ ...agreement, billingMethodId })
-    } catch (error) {
-      if (isUnauthorizedError(error)) throw error
-      toast.error(t("changeFail"))
-    } finally {
-      setIsChanging(null)
-    }
+    // 인증 필요한 Server Action 호출은 startTransition 안에서 실행해야
+    // re-throw한 UNAUTHORIZED가 error.tsx로 전파돼 토큰 복구가 동작한다.
+    startActionTransition(async () => {
+      try {
+        setIsChanging(billingMethodId)
+        await updateBillingAgreementMethod(currentAgreement.id, billingMethodId)
+        toast.success(t("changeSuccess"))
+        setAgreement({ ...currentAgreement, billingMethodId })
+      } catch (error) {
+        if (isUnauthorizedError(error)) throw error
+        toast.error(t("changeFail"))
+      } finally {
+        setIsChanging(null)
+      }
+    })
   }
 
-  const handleSubscribeWithMethod = async (billingMethodId: string) => {
-    if (!planId || isChanging) return
+  const handleSubscribeWithMethod = (billingMethodId: string) => {
+    if (!planId || isChanging || isActionPending) return
+    const currentPlanId = planId
 
-    try {
-      setIsChanging(billingMethodId)
-      const res = await subscribeWithBillingMethod(
-        planId,
-        billingMethodId,
-        "recurring",
-        crypto.randomUUID()
-      )
-      // 재가입자는 무료체험이 적용되지 않으므로 실제 적용된 일수로 안내한다.
-      toast.success((res.effectiveTrialDays ?? 0) > 0 ? t("trialStartedSuccess") : t("recurringStartedSuccess"))
-      router.push(`/${countryCode}/mypage/membership/subscribe/success`)
-    } catch (error) {
-      if (isUnauthorizedError(error)) throw error
-      toast.error(t("subscribeFail"))
-    } finally {
-      setIsChanging(null)
-    }
+    startActionTransition(async () => {
+      try {
+        setIsChanging(billingMethodId)
+        const res = await subscribeWithBillingMethod(
+          currentPlanId,
+          billingMethodId,
+          "recurring",
+          crypto.randomUUID()
+        )
+        // 재가입자는 무료체험이 적용되지 않으므로 실제 적용된 일수로 안내한다.
+        const appliedTrialDays = res.effectiveTrialDays ?? 0
+        toast.success(
+          appliedTrialDays > 0
+            ? t("trialStartedSuccess", { days: appliedTrialDays })
+            : t("recurringStartedSuccess")
+        )
+        router.push(`/${countryCode}/mypage/membership/subscribe/success`)
+      } catch (error) {
+        if (isUnauthorizedError(error)) throw error
+        toast.error(t("subscribeFail"))
+      } finally {
+        setIsChanging(null)
+      }
+    })
   }
 
   const isUnauthorizedError = (error: unknown) => {

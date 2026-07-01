@@ -29,18 +29,6 @@ export class BillingOutcomeHandler {
         return null;
       }
 
-      const entitlement = await this.getActiveEntitlement(tx, row.userId);
-      if (!entitlement) {
-        this.logger.warn(
-          `handleSuccess: active entitlement not found (userId=${row.userId}) — clearing billingInProgress`,
-        );
-        await tx
-          .update(schema.subscriptionContracts)
-          .set({ billingInProgress: false, billingStartedAt: null, updatedAt: new Date() })
-          .where(eq(schema.subscriptionContracts.id, contractId));
-        return null;
-      }
-
       const [countRow] = await tx
         .select({ count: count() })
         .from(schema.billingEvents)
@@ -48,7 +36,8 @@ export class BillingOutcomeHandler {
       const attemptNo = Number(countRow?.count ?? 0) + 1;
 
       // 멱등 마커(첫 쓰기): unique(contract_id, payment_intent_id, event_type) 충돌 시 0행 → 이미 처리됨.
-      // 같은 intent의 성공 이벤트가 재전달돼도 기간을 중복 연장하지 않는다(동시 consumer 포함).
+      // 활성 권한 유무와 무관하게 먼저 기록한다 — 결제는 이미 wallet에서 캡처됐으므로 CHARGE_SUCCESS는
+      // 사실이고, 권한이 없어 연장을 못 하더라도 재전달이 중복 처리되면 안 된다.
       const inserted = await tx
         .insert(schema.billingEvents)
         .values({ contractId, eventType: 'CHARGE_SUCCESS', attemptNo, amount, paymentIntentId: paymentIntentId ?? null })
@@ -56,6 +45,19 @@ export class BillingOutcomeHandler {
         .returning({ id: schema.billingEvents.id });
       if (paymentIntentId && inserted.length === 0) {
         this.logger.log(`handleSuccess: already processed intent (${paymentIntentId}) — skip`);
+        return null;
+      }
+
+      const entitlement = await this.getActiveEntitlement(tx, row.userId);
+      if (!entitlement) {
+        // 결제는 캡처됐으나 연장할 활성 권한이 없음(가입취소 직후 in-flight 결제 등) → 수동 정산 필요.
+        this.logger.error(
+          `handleSuccess: 결제 캡처됐으나 활성 권한 없음 — 수동 정산/환불 필요 (userId=${row.userId}, intentId=${paymentIntentId}, amount=${amount})`,
+        );
+        await tx
+          .update(schema.subscriptionContracts)
+          .set({ billingInProgress: false, billingStartedAt: null, updatedAt: new Date() })
+          .where(eq(schema.subscriptionContracts.id, contractId));
         return null;
       }
 

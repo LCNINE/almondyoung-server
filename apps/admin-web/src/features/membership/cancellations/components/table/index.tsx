@@ -30,7 +30,10 @@ const CANCEL_REASON_LABELS: Record<string, string> = {
 };
 
 function getCancelReasonLabel(row: AdminMemberListItem): string {
+  // 1순위: 백엔드가 마스터 테이블에서 해석한 표시 텍스트(고객 자율 취소 사유 포함),
+  // 2순위: 시스템 코드 정적 라벨, 3순위: 원본 코드.
   const code = row.cancellationReasonCode ?? row.recurringCancellationReasonCode;
+  if (row.cancellationReasonText) return row.cancellationReasonText;
   if (!code) return '-';
   return CANCEL_REASON_LABELS[code] ?? code;
 }

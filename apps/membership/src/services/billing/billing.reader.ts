@@ -184,6 +184,19 @@ export class BillingReader {
   }
 
   /**
+   * 계약의 현재 더닝 재시도 횟수 조회 (없으면 0).
+   * 결제 멱등키 nonce로 사용해 재시도마다 새 커맨드가 되도록 한다.
+   */
+  async findDunningAttempts(contractId: string): Promise<number> {
+    const [row] = await this.dbService.db
+      .select({ attempts: schema.membershipDunningQueue.attempts })
+      .from(schema.membershipDunningQueue)
+      .where(eq(schema.membershipDunningQueue.contractId, contractId))
+      .limit(1);
+    return row?.attempts ?? 0;
+  }
+
+  /**
    * 계약 ID로 계약 조회
    */
   async findContractById(contractId: string): Promise<DueContract | null> {
