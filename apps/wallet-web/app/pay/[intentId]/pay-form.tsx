@@ -2,7 +2,12 @@
 
 import { useState, useEffect, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { confirmPaymentIntent, cancelPaymentIntent, abandonPaymentIntent } from '@/lib/wallet-api';
+import {
+  confirmPaymentIntent,
+  cancelPaymentIntent,
+  abandonPaymentIntent,
+  saveMyBusinessNumber,
+} from '@/lib/wallet-api';
 import { isWalletSessionExpiredError, redirectToWalletLogin } from '@/lib/auth-expired';
 import { buildReturnUrl } from '@/lib/return-url';
 import type {
@@ -268,6 +273,11 @@ export function PayForm({
           return;
         }
         cashReceipt = { type: '지출증빙', customerIdentityNumber: digits };
+        // #485: 사업자정보에 번호가 없던 사용자면(이미지로만 등록 등) 입력값 저장을 제안한다.
+        // 비어있을 때만 채우는 self-endpoint 라 best-effort — 결제 흐름을 막지 않는다.
+        if (!userBizNumber && window.confirm('입력하신 사업자번호를 저장할까요?\n다음 결제부터 자동으로 입력됩니다.')) {
+          void saveMyBusinessNumber(digits);
+        }
       }
     }
     setLoading(true);

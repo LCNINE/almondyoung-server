@@ -411,6 +411,25 @@ export async function getMyBusinessLicense(accessToken: string | undefined): Pro
   };
 }
 
+/**
+ * 지출증빙 현금영수증 입력 시, 사업자정보에 번호가 비어있던 사용자의 입력값을 저장 제안(#485).
+ * 서버 route handler 가 user-service self-endpoint 로 전달하며, 비어있을 때만 채운다. best-effort.
+ */
+export async function saveMyBusinessNumber(businessNumber: string): Promise<{ saved: boolean }> {
+  try {
+    const res = await fetch('/api/business-license', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ businessNumber }),
+    });
+    if (!res.ok) return { saved: false };
+    return (await res.json()) as { saved: boolean };
+  } catch {
+    return { saved: false };
+  }
+}
+
 // ─── Cash receipts (현금영수증) ────────────────────────────────────────────────
 
 export type CashReceiptType = '소득공제' | '지출증빙';
