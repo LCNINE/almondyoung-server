@@ -87,7 +87,16 @@ export class BillingOutcomeHandler {
 
       await tx
         .update(schema.subscriptionContracts)
-        .set({ nextBillingDate: newEndsAtStr, billingInProgress: false, billingStartedAt: null, updatedAt: new Date() })
+        .set({
+          nextBillingDate: newEndsAtStr,
+          billingInProgress: false,
+          billingStartedAt: null,
+          updatedAt: new Date(),
+          // 관리자 강제취소/환불은 contract.lastPaymentIntentId 로 최신 결제를 환불한다. 갱신마다 이 값을
+          // 동기화하지 않으면 가입 시점 intent(또는 null)에 고정돼 환불이 과거 결제로 나가거나 아예 안 나간다(Finding 1).
+          // 레거시 재전달로 intentId 가 없을 때는 기존 값을 유지한다(null 로 덮어쓰지 않음).
+          ...(paymentIntentId ? { lastPaymentIntentId: paymentIntentId } : {}),
+        })
         .where(eq(schema.subscriptionContracts.id, contractId));
 
       await tx.delete(schema.membershipDunningQueue).where(eq(schema.membershipDunningQueue.contractId, contractId));
@@ -268,6 +277,41 @@ export class BillingOutcomeHandler {
     this.membershipEventPublisher
       .publishStatusChanged({ userId, status: 'EXPIRED', occurredAt: new Date().toISOString(), contractId })
       .catch((e: unknown) => this.logger.warn(`Kafka 발행 실패 (EXPIRED): ${e instanceof Error ? e.message : String(e)}`));
+  }
+
+  // CMS 정산대기 intent 가 (관리자 취소·만료 등으로) CANCELED 되면 wallet 은 payment.intent.canceled 만
+  // 발행한다. 성공/실패와 달리 이 경로는 handleSuccess/handleFailure 를 타지 않으므로, 정기결제 선점
+  // (billingInProgress=true)이 자동으로 풀리지 않아 계약이 이후 스케줄러/만료에서 영구 제외된다(Finding 2).
+  // 여기서 선점만 해제하고, 결제수단 문제가 아니므로 dunning/해지는 하지 않는다.
+  async handleCanceled(contractId: string, paymentIntentId?: string): Promise<void> {
+    await this.dbService.db.transaction(async (tx) => {
+      // billingInProgress=true 인 계약만 원자적으로 해제한다. 취소 이벤트가 중복 전달되거나 이미
+      // 성공/실패로 해제된 뒤 도착해도 두 번째부터는 0행 → no-op 이 되어 감사 이벤트가 중복되지 않는다.
+      const released = await tx
+        .update(schema.subscriptionContracts)
+        .set({ billingInProgress: false, billingStartedAt: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(schema.subscriptionContracts.id, contractId),
+            eq(schema.subscriptionContracts.billingInProgress, true),
+          ),
+        )
+        .returning({ userId: schema.subscriptionContracts.userId });
+
+      if (released.length === 0) {
+        this.logger.log(`handleCanceled: 해제할 진행중 청구 없음 — skip (contractId=${contractId})`);
+        return;
+      }
+
+      await this.contractEventManager.addEvent(
+        tx,
+        contractId,
+        'BILLING_CANCELED',
+        { paymentIntentId: paymentIntentId ?? null },
+        'SYSTEM',
+        released[0].userId,
+      );
+    });
   }
 
   private async terminateSubscription(
