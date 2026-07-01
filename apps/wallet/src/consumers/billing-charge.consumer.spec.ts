@@ -482,6 +482,20 @@ describe('BillingChargeConsumer', () => {
     expect(dbService.db.insert).not.toHaveBeenCalled(); // FAILED 이벤트 발행 없음
   });
 
+  it('기존 CANCELED intent → 명시 skip (authorize/insert 없음)', async () => {
+    const payload = createPayload();
+    setupAgreementAndMethod();
+
+    dbService.db.select.mockReturnValueOnce(
+      mockSelectOnce([{ id: 'intent-canceled', status: 'CANCELED', updatedAt: new Date() }]),
+    );
+
+    await consumer.onBillingCharge(createMockEnvelope(payload), payload);
+
+    expect(mockProvider.authorize).not.toHaveBeenCalled();
+    expect(dbService.db.insert).not.toHaveBeenCalled();
+  });
+
   // ─── Billing agreement not found ───────────────────────────────────────
 
   it('billing agreement 없으면 실패 이벤트 발행 후 정상 리턴', async () => {

@@ -293,16 +293,18 @@ export class BillingOutcomeHandler {
       .catch((e: unknown) => this.logger.warn(`Kafka 발행 실패 (EXPIRED): ${e instanceof Error ? e.message : String(e)}`));
   }
 
-  // CMS 정산대기 intent 가 (관리자 취소·만료 등으로) CANCELED 되면 wallet 은 payment.intent.canceled 만
-  // 발행한다. 성공/실패와 달리 이 경로는 handleSuccess/handleFailure 를 타지 않으므로, 정기결제 선점
-  // (billingInProgress=true)이 자동으로 풀리지 않아 계약이 이후 스케줄러/만료에서 영구 제외된다(Finding 2).
-  // 여기서 선점만 해제하고, 결제수단 문제가 아니므로 dunning/해지는 하지 않는다.
+  // CMS 정산대기 intent 가 (관리자/사용자 명시 취소로) CANCELED 되면 wallet 은 payment.intent.canceled 만
+  // 발행한다. 성공/실패와 달리 이 경로는 handleSuccess/handleFailure 를 타지 않으므로 여기서 처리한다.
+  // 취소는 만료가 아니라 항상 의도적 액션이고(만료 잡은 PENDING_SETTLEMENT/AUTHORIZED 를 취소하지 않음),
+  // 취소 성공 = 효성 출금삭제로 돈은 안 빠진 상태다. 따라서 활성 자동갱신 계약이면 그 주기를 재청구한다:
+  // dunning attempts 를 nonce 로 증가시켜 다음 재시도가 '새 멱등키'로 나가게 한다. 옛 키를 그대로 재발행하면
+  // wallet 이 CANCELED intent 를 보고 no-op → billingInProgress 가 영구 stuck 된다(Finding 1). 자동갱신이
+  // 이미 꺼졌거나 해지/만료된 계약이면 관리자의 '완전 중단' 의도로 보고 재청구하지 않는다.
   async handleCanceled(contractId: string, paymentIntentId?: string): Promise<void> {
-    await this.dbService.db.transaction(async (tx) => {
+    const terminatedUserId = await this.dbService.db.transaction(async (tx) => {
       // 멱등 마커(첫 쓰기): unique(contract_id, payment_intent_id, event_type) 충돌 시 0행 → 이미 처리됨.
-      // 성공/실패와 달리 handleCanceled 는 billingInProgress 플래그만 보고 해제하므로, 이 마커가 없으면
-      // 옛 intent 의 취소가 재전달됐을 때(그 사이 새 청구가 billingInProgress 를 다시 선점) 새 선점을 잘못
-      // 풀어 중복 청구를 부른다. intent 단위로 취소를 한 번만 처리하도록 마커로 막는다(Finding 2).
+      // 옛 intent 취소가 재전달돼도(그 사이 새 청구가 billingInProgress 를 다시 선점) 새 선점을 잘못 풀거나
+      // 재청구를 중복 스케줄하지 않도록 intent 단위로 한 번만 처리한다.
       const insertedCancel = await tx
         .insert(schema.billingEvents)
         .values({ contractId, eventType: 'CHARGE_CANCELED', amount: null, paymentIntentId: paymentIntentId ?? null })
@@ -310,11 +312,11 @@ export class BillingOutcomeHandler {
         .returning({ id: schema.billingEvents.id });
       if (paymentIntentId && insertedCancel.length === 0) {
         this.logger.log(`handleCanceled: already processed intent (${paymentIntentId}) — skip`);
-        return;
+        return null;
       }
 
-      // billingInProgress=true 인 계약만 원자적으로 해제한다. 취소 이벤트가 중복 전달되거나 이미
-      // 성공/실패로 해제된 뒤 도착해도 두 번째부터는 0행 → no-op 이 되어 감사 이벤트가 중복되지 않는다.
+      // billingInProgress=true 인 계약만 원자적으로 해제하고, 재청구 분기용 계약 필드를 함께 읽는다.
+      // 이미 성공/실패로 해제된 뒤(또는 stale) 도착하면 0행 → no-op(재청구/감사 없음).
       const released = await tx
         .update(schema.subscriptionContracts)
         .set({ billingInProgress: false, billingStartedAt: null, updatedAt: new Date() })
@@ -324,12 +326,18 @@ export class BillingOutcomeHandler {
             eq(schema.subscriptionContracts.billingInProgress, true),
           ),
         )
-        .returning({ userId: schema.subscriptionContracts.userId });
+        .returning({
+          userId: schema.subscriptionContracts.userId,
+          autoRenewal: schema.subscriptionContracts.autoRenewal,
+          recurringCancelledAt: schema.subscriptionContracts.recurringCancelledAt,
+          status: schema.subscriptionContracts.status,
+        });
 
       if (released.length === 0) {
         this.logger.log(`handleCanceled: 해제할 진행중 청구 없음 — skip (contractId=${contractId})`);
-        return;
+        return null;
       }
+      const contract = released[0];
 
       await this.contractEventManager.addEvent(
         tx,
@@ -337,9 +345,73 @@ export class BillingOutcomeHandler {
         'BILLING_CANCELED',
         { paymentIntentId: paymentIntentId ?? null },
         'SYSTEM',
-        released[0].userId,
+        contract.userId,
       );
+
+      // 해지/종료 계약이면 재청구하지 않는다: 잔여 dunning 정리 후 자연 만료에 맡긴다.
+      if (
+        !contract.autoRenewal ||
+        contract.recurringCancelledAt ||
+        contract.status === 'CANCELLED' ||
+        contract.status === 'EXPIRED'
+      ) {
+        this.logger.log(`handleCanceled: 해지/종료 계약 — 재청구 생략·큐 정리, 자연 만료: contractId=${contractId}`);
+        await tx.delete(schema.membershipDunningQueue).where(eq(schema.membershipDunningQueue.contractId, contractId));
+        return null;
+      }
+
+      // 활성 자동갱신 계약: 취소된 주기를 새 멱등키로 재청구되게 dunning 을 생성/증가시킨다.
+      // 취소-기원 재청구는 즉시 대상이 되도록 nextRetryAt 을 now 로 둔다(실패 dunning 의 72h 지연과 구분).
+      const nextRetryAt = new Date();
+      const [dunning] = await tx
+        .select()
+        .from(schema.membershipDunningQueue)
+        .where(eq(schema.membershipDunningQueue.contractId, contractId))
+        .limit(1);
+
+      if (!dunning) {
+        await tx.insert(schema.membershipDunningQueue).values({
+          contractId,
+          attempts: 1,
+          maxAttempts: DUNNING_MAX_ATTEMPTS,
+          nextRetryAt,
+          lastErrorCode: 'BILLING_CANCELED',
+          lastErrorMessage: 'settlement intent canceled — rebill scheduled',
+        });
+        return null;
+      }
+      if (dunning.attempts < dunning.maxAttempts) {
+        await tx
+          .update(schema.membershipDunningQueue)
+          .set({
+            attempts: dunning.attempts + 1,
+            nextRetryAt,
+            lastErrorCode: 'BILLING_CANCELED',
+            lastErrorMessage: 'settlement intent canceled — rebill scheduled',
+            updatedAt: new Date(),
+          })
+          .where(eq(schema.membershipDunningQueue.id, dunning.id));
+        return null;
+      }
+
+      // 상한 도달: 반복 취소 안전밸브 → 해지.
+      this.logger.log(`handleCanceled: dunning 상한 도달 — 해지: contractId=${contractId}`);
+      await this.terminateSubscription(tx, contractId, contract.userId, 'BILLING_CANCEL_MAX_ATTEMPTS');
+      return contract.userId;
     });
+
+    if (terminatedUserId) {
+      this.membershipEventPublisher
+        .publishStatusChanged({
+          userId: terminatedUserId,
+          status: 'CANCELLED',
+          occurredAt: new Date().toISOString(),
+          contractId,
+        })
+        .catch((e: unknown) =>
+          this.logger.warn(`Kafka 발행 실패 (CANCELLED/cancel-max): ${e instanceof Error ? e.message : String(e)}`),
+        );
+    }
   }
 
   private async terminateSubscription(
