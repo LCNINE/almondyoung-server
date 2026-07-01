@@ -6,6 +6,7 @@ import { getVerificationStatus } from "@lib/api/users/verification-status"
 import { getBnplProfiles, getPointBalance } from "@lib/api/wallet"
 import AccountSection from "./components/account-section"
 import BankAccountWizard from "./components/bank-account-wizard/bank-account-wizard"
+import PaymentMethodModalAutoOpen from "./components/payment-method-modal-autoopen"
 import BnplSection from "./components/bnpl-section"
 import BnplVerificationWizard from "./components/bnpl-verification-wizard/bnpl-verification-wizard"
 import PaymentMenuList from "./components/payment-menu-list"
@@ -64,6 +65,9 @@ export default async function PaymentManager() {
 
       {/* 결제 수단 등록 모달 */}
       <BankAccountWizard user={currentUser} />
+
+      {/* openWizard=cms 진입 시 위저드 자동 오픈 */}
+      <PaymentMethodModalAutoOpen />
     </div>
   )
 }
