@@ -559,6 +559,14 @@
         "failed": "返金確認が必要"
       }
     },
+    "cashReceipt": {
+      "sectionTitle": "現金領収書",
+      "typeLabel": "種類",
+      "typeIncome": "所得控除用",
+      "typeExpense": "支出証憑用",
+      "issueNumber": "発行番号",
+      "viewReceipt": "領収書を見る"
+    },
     "cancelDialog": {
       "reasonLabel": "キャンセル理由",
       "otherPlaceholder": "キャンセル理由を入力してください（最大500文字）",

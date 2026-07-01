@@ -111,7 +111,12 @@ export async function getOrder(
     // +items.requires_shipping/product_type: 디지털 판별(다운로드 CTA·배송정보 숨김)에 필요 — 기본 필드에 없어 명시 요청
     .retrieve(
       orderId,
-      { fields: "+metadata,+items.requires_shipping,+items.product_type" },
+      {
+        // +payment_collections.payment_sessions: 세션 data.intentId(wallet 결제 intent)로
+        // 현금영수증(GET /v1/cash-receipts?intentId=)을 조회하기 위함.
+        fields:
+          "+metadata,+items.requires_shipping,+items.product_type,+payment_collections.payment_sessions.data",
+      },
       headers
     )
     .then(({ order }) => order)
