@@ -32,8 +32,9 @@ import { providerLabel } from "@lib/utils/billing-provider"
 import { useUser } from "@/contexts/user-context"
 import type { BillingMethodDto, CmsBillingMethodStatusDto } from "@lib/types/dto/wallet"
 import { Calendar, CreditCard, Gift } from "lucide-react"
+import { useTranslations } from "next-intl"
 import { useParams, useRouter } from "next/navigation"
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useState, useTransition } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 import { z } from "zod"
@@ -159,7 +160,14 @@ export function MembershipForm({
     defaultValues: formDefaultValues,
   })
 
-  async function onSubmit(data: z.infer<typeof subscriptionSchema>) {
+  const [isSubmitting, startTransition] = useTransition()
+  // 가입 결과 토스트는 payment-method 화면과 동일 메시지라 같은 키를 공유한다.
+  const tPm = useTranslations("mypage.membershipPaymentMethod")
+
+  function onSubmit(data: z.infer<typeof subscriptionSchema>) {
+    // 인증 필요한 Server Action 호출은 startTransition 안에서 실행해야
+    // catch에서 re-throw한 UNAUTHORIZED가 error.tsx로 전파돼 토큰 복구가 동작한다.
+    startTransition(async () => {
     try {
       if (!user) {
         toast.error("로그인이 필요합니다.")
@@ -187,10 +195,11 @@ export function MembershipForm({
         if (billingMode === "recurring") {
           // 재가입자는 backend가 무료체험을 제거하므로 실제 적용된 일수로 안내한다.
           const appliedTrialDays = res.effectiveTrialDays ?? 0
-          const trialMsg = appliedTrialDays > 0
-            ? `${appliedTrialDays}일 무료 체험이 시작되었습니다! 체험 종료 후 자동으로 결제됩니다.`
-            : "정기결제가 시작되어 첫 결제가 진행됩니다."
-          toast.success(trialMsg)
+          toast.success(
+            appliedTrialDays > 0
+              ? tPm("trialStartedSuccess", { days: appliedTrialDays })
+              : tPm("recurringStartedSuccess")
+          )
         } else {
           toast.success("멤버십 가입이 완료되었습니다.")
         }
@@ -213,6 +222,11 @@ export function MembershipForm({
         }
       }
     } catch (error) {
+      // UNAUTHORIZED(토큰 만료)는 삼키지 않고 re-throw → error.tsx가 토큰 복구 처리
+      const err = error as Error & { digest?: string; status?: number }
+      if (err?.digest === "UNAUTHORIZED" || err?.message === "UNAUTHORIZED" || err?.status === 401) {
+        throw error
+      }
       if (error instanceof HttpApiError) {
         toast.error(error.message)
       } else {
@@ -220,14 +234,23 @@ export function MembershipForm({
       }
       console.error(error)
     }
+    })
   }
 
-  const totalTrialDays = trialBenefits.reduce((acc, cur) => acc + cur.days, 0)
   const discountCount = discountBenefits.length
   const hasPendingMethods = cmsBillingStatuses.some((s) => s.cmsMemberStatus === "PENDING")
 
   const billingMode = form.watch("billingMode")
   const subscriptionType = form.watch("subscriptionType")
+
+  // 무료체험은 정기결제(recurring)일 때만, 선택한 플랜의 trialDays 기준으로 안내한다.
+  // (availableBenefits는 현재 비어 전달되므로 trialBenefits는 0이고, 플랜 trialDays가 실제 기준)
+  // 재가입자는 서버가 무료체험을 제거하므로 실제 적용 일수는 가입 응답 effectiveTrialDays로 확정된다.
+  const selectedPlan = subscriptionType === "yearly" ? yearlyPlan : monthlyPlan
+  const totalTrialDays =
+    billingMode === "recurring"
+      ? (selectedPlan?.plan?.trialDays ?? 0) + trialBenefits.reduce((acc, cur) => acc + cur.days, 0)
+      : 0
 
   useEffect(() => {
     setPolicyAgreed(false)
@@ -692,13 +715,13 @@ export function MembershipForm({
               disabled={
                 !form.watch("agreement") ||
                 !form.watch("subscriptionType") ||
-                form.formState.isSubmitting ||
+                isSubmitting ||
                 (billingMode === "one_time" && !policyAgreed) ||
                 (billingMode === "recurring" && !selectedBillingMethodId && hasPendingMethods)
               }
               type="submit"
             >
-              {form.formState.isSubmitting ? (
+              {isSubmitting ? (
                 <span className="flex items-center gap-2">
                   <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
                   처리중...

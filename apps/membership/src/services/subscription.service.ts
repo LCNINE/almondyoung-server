@@ -234,6 +234,27 @@ export class SubscriptionService {
   }
 
   /**
+   * 구독 다운그레이드
+   *
+   * ✅ 흐름만 표현: "현재 구독 조회 → 새 플랜 조회 → 다운그레이드 실행"
+   */
+  async downgradeSubscription(userId: string, newPlanId: string) {
+    const current = await this.entitlementService.getUserEntitlement(userId);
+    if (!current) throw new SubscriptionNotFoundException();
+
+    const newPlanDetails = await this.planService.getPlanDetails(newPlanId);
+    if (!newPlanDetails) throw new PlanNotFoundException();
+
+    return this.subscriptionManager.downgradeSubscription(
+      userId,
+      current.contract,
+      newPlanDetails.plan,
+      newPlanDetails.tier,
+      current.tier.priorityLevel,
+    );
+  }
+
+  /**
    * 구독 취소
    *
    * ✅ 흐름만 표현: "현재 구독 조회 → 무효화"
@@ -369,7 +390,11 @@ export class SubscriptionService {
       userId,
       planDetails.plan,
       planDetails.tier,
-      { initialPaymentIntentId },
+      {
+        initialPaymentIntentId,
+        // one_time 첫 결제 금액을 함께 넘겨야 creator가 billingEvents에 CHARGE_SUCCESS를 남긴다(결제내역 누락 방지).
+        initialPaymentAmount: billingMode === 'one_time' ? planDetails.plan.price : undefined,
+      },
       billingMode,
     );
 

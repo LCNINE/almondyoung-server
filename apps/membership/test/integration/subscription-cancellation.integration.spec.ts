@@ -16,6 +16,10 @@ import { PlanService } from '../../src/services/plan.service';
 import { PlanReader } from '../../src/services/plan/plan.reader';
 import { PlanManager } from '../../src/services/plan/plan.manager';
 import { MembershipPolicyService } from '../../src/services/membership-policy.service';
+import { MembershipEventPublisher } from '../../src/services/membership-event.publisher';
+import { PaymentClientService } from '../../src/services/billing/payment-client.service';
+import { BillingManager } from '../../src/services/billing/billing.manager';
+import { BillingReader } from '../../src/services/billing/billing.reader';
 import { membershipSchema, type MembershipSchema } from '../../src/shared/schemas/entities/schema';
 import * as schema from '../../src/shared/schemas/entities/schema';
 import { eq } from 'drizzle-orm';
@@ -73,6 +77,25 @@ describe('Subscription Cancellation Integration Tests', () => {
         PlanManager,
         // 정책 서비스
         MembershipPolicyService,
+        // BillingReader는 DbService만 의존하므로 실제 사용. 외부 부수효과 서비스(이벤트/결제/빌링커맨드)는
+        // 취소 통합테스트 대상이 아니므로 mock으로 대체한다.
+        BillingReader,
+        {
+          provide: MembershipEventPublisher,
+          useValue: { publishStatusChanged: jest.fn().mockResolvedValue(undefined) },
+        },
+        {
+          provide: PaymentClientService,
+          useValue: {
+            directCharge: jest.fn(),
+            refundMembershipPayment: jest.fn(),
+            revokeBillingAgreement: jest.fn(),
+          },
+        },
+        {
+          provide: BillingManager,
+          useValue: { processSingleBilling: jest.fn() },
+        },
       ],
     }).compile();
 

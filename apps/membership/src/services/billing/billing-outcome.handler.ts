@@ -29,18 +29,6 @@ export class BillingOutcomeHandler {
         return null;
       }
 
-      const entitlement = await this.getActiveEntitlement(tx, row.userId);
-      if (!entitlement) {
-        this.logger.warn(
-          `handleSuccess: active entitlement not found (userId=${row.userId}) — clearing billingInProgress`,
-        );
-        await tx
-          .update(schema.subscriptionContracts)
-          .set({ billingInProgress: false, billingStartedAt: null, updatedAt: new Date() })
-          .where(eq(schema.subscriptionContracts.id, contractId));
-        return null;
-      }
-
       const [countRow] = await tx
         .select({ count: count() })
         .from(schema.billingEvents)
@@ -48,7 +36,8 @@ export class BillingOutcomeHandler {
       const attemptNo = Number(countRow?.count ?? 0) + 1;
 
       // 멱등 마커(첫 쓰기): unique(contract_id, payment_intent_id, event_type) 충돌 시 0행 → 이미 처리됨.
-      // 같은 intent의 성공 이벤트가 재전달돼도 기간을 중복 연장하지 않는다(동시 consumer 포함).
+      // 활성 권한 유무와 무관하게 먼저 기록한다 — 결제는 이미 wallet에서 캡처됐으므로 CHARGE_SUCCESS는
+      // 사실이고, 권한이 없어 연장을 못 하더라도 재전달이 중복 처리되면 안 된다.
       const inserted = await tx
         .insert(schema.billingEvents)
         .values({ contractId, eventType: 'CHARGE_SUCCESS', attemptNo, amount, paymentIntentId: paymentIntentId ?? null })
@@ -56,6 +45,19 @@ export class BillingOutcomeHandler {
         .returning({ id: schema.billingEvents.id });
       if (paymentIntentId && inserted.length === 0) {
         this.logger.log(`handleSuccess: already processed intent (${paymentIntentId}) — skip`);
+        return null;
+      }
+
+      const entitlement = await this.getActiveEntitlement(tx, row.userId);
+      if (!entitlement) {
+        // 결제는 캡처됐으나 연장할 활성 권한이 없음(가입취소 직후 in-flight 결제 등) → 수동 정산 필요.
+        this.logger.error(
+          `handleSuccess: 결제 캡처됐으나 활성 권한 없음 — 수동 정산/환불 필요 (userId=${row.userId}, intentId=${paymentIntentId}, amount=${amount})`,
+        );
+        await tx
+          .update(schema.subscriptionContracts)
+          .set({ billingInProgress: false, billingStartedAt: null, updatedAt: new Date() })
+          .where(eq(schema.subscriptionContracts.id, contractId));
         return null;
       }
 
@@ -85,7 +87,16 @@ export class BillingOutcomeHandler {
 
       await tx
         .update(schema.subscriptionContracts)
-        .set({ nextBillingDate: newEndsAtStr, billingInProgress: false, billingStartedAt: null, updatedAt: new Date() })
+        .set({
+          nextBillingDate: newEndsAtStr,
+          billingInProgress: false,
+          billingStartedAt: null,
+          updatedAt: new Date(),
+          // 관리자 강제취소/환불은 contract.lastPaymentIntentId 로 최신 결제를 환불한다. 갱신마다 이 값을
+          // 동기화하지 않으면 가입 시점 intent(또는 null)에 고정돼 환불이 과거 결제로 나가거나 아예 안 나간다(Finding 1).
+          // 레거시 재전달로 intentId 가 없을 때는 기존 값을 유지한다(null 로 덮어쓰지 않음).
+          ...(paymentIntentId ? { lastPaymentIntentId: paymentIntentId } : {}),
+        })
         .where(eq(schema.subscriptionContracts.id, contractId));
 
       await tx.delete(schema.membershipDunningQueue).where(eq(schema.membershipDunningQueue.contractId, contractId));
@@ -134,6 +145,7 @@ export class BillingOutcomeHandler {
           userId: schema.subscriptionContracts.userId,
           autoRenewal: schema.subscriptionContracts.autoRenewal,
           recurringCancelledAt: schema.subscriptionContracts.recurringCancelledAt,
+          status: schema.subscriptionContracts.status,
         })
         .from(schema.subscriptionContracts)
         .where(eq(schema.subscriptionContracts.id, contractId))
@@ -162,19 +174,32 @@ export class BillingOutcomeHandler {
         return null;
       }
 
-      // 결제수단 부재는 dunning 없이 즉시 해지. 멱등 마커 뒤에 두어 동시 재전달 시 중복 terminate를 막는다.
+      // 해지/종료된 계약의 in-flight 결제 실패는 error-code 무관하게 재청구를 막는다: 선점 해제 + 잔여 dunning
+      // 제거 후 현재 주기 자연 만료에 맡긴다. (정기결제 중단: autoRenewal=false/recurringCancelledAt, 즉시·강제
+      // 취소: status=CANCELLED/EXPIRED) — 이 가드가 없으면 취소 뒤 도착한 결제 실패가 dunning 을 새로 만들고,
+      // dunning 스케줄러(findDunningItems)는 계약 상태를 보지 않아 해지 계약을 재청구한다(Finding 1).
+      if (
+        !contract.autoRenewal ||
+        contract.recurringCancelledAt ||
+        contract.status === 'CANCELLED' ||
+        contract.status === 'EXPIRED'
+      ) {
+        this.logger.log(
+          `[handleFailure] 해지/종료 계약 결제 실패(${errorCode}) — dunning 생략·큐 정리, 자연 만료: contractId=${contractId}`,
+        );
+        await tx
+          .update(schema.subscriptionContracts)
+          .set({ billingInProgress: false, billingStartedAt: null, updatedAt: new Date() })
+          .where(eq(schema.subscriptionContracts.id, contractId));
+        await tx
+          .delete(schema.membershipDunningQueue)
+          .where(eq(schema.membershipDunningQueue.contractId, contractId));
+        return null;
+      }
+
+      // 활성 계약에서 결제수단 부재는 재시도해도 동일 결과 → dunning 없이 즉시 해지.
+      // 멱등 마커 뒤에 두어 동시 재전달 시 중복 terminate를 막는다.
       if (errorCode && BillingOutcomeHandler.NO_PAYMENT_METHOD_ERRORS.has(errorCode)) {
-        // 이미 정기결제 해지된 계약의 in-flight 결제 실패는 즉시 해지하지 않고 현재 주기 자연 만료에 맡긴다.
-        if (!contract.autoRenewal || contract.recurringCancelledAt) {
-          this.logger.log(
-            `[handleFailure] 해지된 계약의 결제 실패(${errorCode}) — 즉시 해지 생략, 자연 만료: contractId=${contractId}`,
-          );
-          await tx
-            .update(schema.subscriptionContracts)
-            .set({ billingInProgress: false, billingStartedAt: null, updatedAt: new Date() })
-            .where(eq(schema.subscriptionContracts.id, contractId));
-          return null;
-        }
         this.logger.log(
           `[handleFailure] 결제수단 없음(${errorCode}) — dunning 생략, 즉시 해지: contractId=${contractId}`,
         );
@@ -266,6 +291,55 @@ export class BillingOutcomeHandler {
     this.membershipEventPublisher
       .publishStatusChanged({ userId, status: 'EXPIRED', occurredAt: new Date().toISOString(), contractId })
       .catch((e: unknown) => this.logger.warn(`Kafka 발행 실패 (EXPIRED): ${e instanceof Error ? e.message : String(e)}`));
+  }
+
+  // CMS 정산대기 intent 가 (관리자 취소·만료 등으로) CANCELED 되면 wallet 은 payment.intent.canceled 만
+  // 발행한다. 성공/실패와 달리 이 경로는 handleSuccess/handleFailure 를 타지 않으므로, 정기결제 선점
+  // (billingInProgress=true)이 자동으로 풀리지 않아 계약이 이후 스케줄러/만료에서 영구 제외된다(Finding 2).
+  // 여기서 선점만 해제하고, 결제수단 문제가 아니므로 dunning/해지는 하지 않는다.
+  async handleCanceled(contractId: string, paymentIntentId?: string): Promise<void> {
+    await this.dbService.db.transaction(async (tx) => {
+      // 멱등 마커(첫 쓰기): unique(contract_id, payment_intent_id, event_type) 충돌 시 0행 → 이미 처리됨.
+      // 성공/실패와 달리 handleCanceled 는 billingInProgress 플래그만 보고 해제하므로, 이 마커가 없으면
+      // 옛 intent 의 취소가 재전달됐을 때(그 사이 새 청구가 billingInProgress 를 다시 선점) 새 선점을 잘못
+      // 풀어 중복 청구를 부른다. intent 단위로 취소를 한 번만 처리하도록 마커로 막는다(Finding 2).
+      const insertedCancel = await tx
+        .insert(schema.billingEvents)
+        .values({ contractId, eventType: 'CHARGE_CANCELED', amount: null, paymentIntentId: paymentIntentId ?? null })
+        .onConflictDoNothing()
+        .returning({ id: schema.billingEvents.id });
+      if (paymentIntentId && insertedCancel.length === 0) {
+        this.logger.log(`handleCanceled: already processed intent (${paymentIntentId}) — skip`);
+        return;
+      }
+
+      // billingInProgress=true 인 계약만 원자적으로 해제한다. 취소 이벤트가 중복 전달되거나 이미
+      // 성공/실패로 해제된 뒤 도착해도 두 번째부터는 0행 → no-op 이 되어 감사 이벤트가 중복되지 않는다.
+      const released = await tx
+        .update(schema.subscriptionContracts)
+        .set({ billingInProgress: false, billingStartedAt: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(schema.subscriptionContracts.id, contractId),
+            eq(schema.subscriptionContracts.billingInProgress, true),
+          ),
+        )
+        .returning({ userId: schema.subscriptionContracts.userId });
+
+      if (released.length === 0) {
+        this.logger.log(`handleCanceled: 해제할 진행중 청구 없음 — skip (contractId=${contractId})`);
+        return;
+      }
+
+      await this.contractEventManager.addEvent(
+        tx,
+        contractId,
+        'BILLING_CANCELED',
+        { paymentIntentId: paymentIntentId ?? null },
+        'SYSTEM',
+        released[0].userId,
+      );
+    });
   }
 
   private async terminateSubscription(

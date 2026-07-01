@@ -84,6 +84,21 @@ export function buildRefundEventPayload(input: RefundEventInput): Record<string,
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/**
+ * intent.metadata 에 저장된 구독자 라우팅 정보(subscriberRef/subscriberType/purpose)를 이벤트 payload 의
+ * extra 로 뽑아낸다. 정기결제 청구 intent 는 이 값을 metadata 에 담고 있으며, membership 컨슈머는 이 필드로만
+ * 계약을 라우팅한다. 성공/실패(cms-settlement-poller)뿐 아니라 취소/만료 경로도 동일하게 실어야 membership 이
+ * billingInProgress 선점을 해제할 수 있다(Finding 2). 구독과 무관한 intent 는 값이 undefined 로 무해하다.
+ */
+export function subscriberExtraFromMetadata(metadata: unknown): Record<string, unknown> {
+  const m = (metadata ?? {}) as Record<string, unknown>;
+  return {
+    subscriberRef: m.subscriberRef as string | undefined,
+    subscriberType: m.subscriberType as string | undefined,
+    purpose: m.purpose as string | undefined,
+  };
+}
+
 export const GATEWAY_AGGREGATE_TYPE = 'PaymentGateway';
 
 export const GatewayEventType = {

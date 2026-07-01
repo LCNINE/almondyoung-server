@@ -6,6 +6,7 @@ import {
   GATEWAY_AGGREGATE_TYPE,
   GatewayEventType,
   buildPaymentIntentEventPayload,
+  subscriberExtraFromMetadata,
 } from '../messaging/gateway-event.builder';
 
 @Injectable()
@@ -37,6 +38,8 @@ export class CancelService {
           payableAmount: intent.payableAmount,
           currency: intent.currency,
           occurredAt: now,
+          // 구독 청구 intent 취소 시 membership 이 계약을 라우팅해 billingInProgress 를 해제하도록 실어준다(Finding 2).
+          extra: subscriberExtraFromMetadata(intent.metadata),
         }),
       },
     });

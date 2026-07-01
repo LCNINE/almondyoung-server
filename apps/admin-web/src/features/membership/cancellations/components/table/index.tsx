@@ -22,6 +22,22 @@ function getPlanLabel(durationDays: number): string {
   return `${durationDays}일`;
 }
 
+const CANCEL_REASON_LABELS: Record<string, string> = {
+  ADMIN_FORCED: '관리자 강제취소',
+  PAYMENT_FAILURE_MAX_ATTEMPTS: '결제 실패(재시도 초과)',
+  BILLING_AGREEMENT_NOT_FOUND: '결제수단 없음',
+  BILLING_METHOD_NOT_ACTIVE: '결제수단 비활성',
+};
+
+function getCancelReasonLabel(row: AdminMemberListItem): string {
+  // 1순위: 백엔드가 마스터 테이블에서 해석한 표시 텍스트(고객 자율 취소 사유 포함),
+  // 2순위: 시스템 코드 정적 라벨, 3순위: 원본 코드.
+  const code = row.cancellationReasonCode ?? row.recurringCancellationReasonCode;
+  if (row.cancellationReasonText) return row.cancellationReasonText;
+  if (!code) return '-';
+  return CANCEL_REASON_LABELS[code] ?? code;
+}
+
 function useColumns(onEdit?: (row: AdminMemberListItem) => void, userMap: Record<string, UserInfo> = {}) {
   return useMemo(
     () => [
@@ -75,6 +91,11 @@ function useColumns(onEdit?: (row: AdminMemberListItem) => void, userMap: Record
             </span>
           );
         },
+      }),
+      columnHelper.accessor('cancellationReasonCode', {
+        id: 'cancelReason',
+        header: '해지 사유',
+        cell: ({ row }) => <span className="text-sm">{getCancelReasonLabel(row.original)}</span>,
       }),
       columnHelper.display({
         id: 'actions',

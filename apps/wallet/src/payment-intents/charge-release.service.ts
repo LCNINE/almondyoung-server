@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { ChargesService } from '../charges/charges.service';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { ProviderRegistry } from '../providers/provider.registry';
@@ -28,9 +28,43 @@ export class ChargeReleaseService {
   ) {}
 
   async releaseIntentCharges(intent: ReleasableIntent, correlationId: string): Promise<void> {
-    // Cancel any active AUTHORIZE charge (DB only — no provider call needed for in-flight charges).
+    // 대부분의 in-flight charge(POINTS hold/TOSS 결제창 대기)는 외부에 확정된 상태가 없어 DB CANCELED만으로 충분하다.
+    // 그러나 CMS 배치는 PENDING 시점에 이미 효성에 출금신청(cms_withdrawals=REQUESTED)이 들어가 있으므로
+    // provider.cancel(효성 출금삭제)을 호출해야 실제 은행 출금이 막힌다. (호출 안 하면 intent는 CANCELED인데 돈은 빠져나간다)
     const activeCharge = await this.chargesService.findActiveByIntentAndOperation(intent.id, 'AUTHORIZE');
     if (activeCharge) {
+      const activeMethod = await this.paymentMethodsService.findById(activeCharge.paymentMethodId);
+      if (activeMethod && activeMethod.type === 'CMS_BATCH') {
+        // CMS는 PENDING 시점에 이미 효성 출금신청이 들어가 있으므로 provider.cancel(출금삭제)이
+        // 성공해야만 내부를 CANCELED로 전이한다. cancel은 실패 시 throw가 아니라 {status:'FAILED'}를
+        // 반환하므로 반드시 반환값을 검사한다. 실패(마감 후 취소불가 등)면 여기서 throw해 상위 호출자가
+        // intent를 CANCELED로 전이하지 못하게 막는다 — 안 그러면 돈은 빠지는데 취소완료로 보인다.
+        const provider = this.providerRegistry.getProviderOrThrow(activeMethod.type);
+        const result = await provider.cancel({
+          chargeId: activeCharge.id,
+          intentId: intent.id,
+          paymentMethodId: activeCharge.paymentMethodId,
+          userId: intent.userId ?? '',
+          amount: activeCharge.amount,
+          currency: intent.currency,
+          idempotencyKey: `wallet:cancel:cms_batch:${activeCharge.id}:${correlationId}`,
+          correlationId,
+        });
+        if (result.status !== 'SUCCEEDED') {
+          this.logger.error(
+            `CMS 출금 취소 실패 — 취소 중단(intent 비전이): intentId=${intent.id}, chargeId=${activeCharge.id}, code=${result.errorCode}, msg=${result.errorMessage}`,
+          );
+          // ApplicationException 은 wallet 멱등 인터셉터가 500 으로 캐시하므로(wallet 은 GlobalExceptionFilter
+          // 미등록) 반드시 HttpException 을 던진다. 그래야 유저 취소 경로가 409 응답 + 409 캐시가 된다.
+          // (wallet 전역 에러 정렬 = GlobalExceptionFilter 도입은 응답형태 영향 검증 포함 별도 PR)
+          throw new ConflictException({
+            error: result.errorCode ?? 'CMS_CANCEL_FAILED',
+            message: `CMS 출금 취소에 실패해 결제를 취소할 수 없습니다. (${result.errorCode ?? 'CMS_CANCEL_FAILED'})`,
+          });
+        }
+      }
+      // CMS는 위에서 성공했을 때만 도달. 비-CMS active charge(POINTS hold/TOSS 대기)는
+      // 외부 확정 상태가 없어 DB CANCELED만으로 충분하다.
       await this.chargesService.updateStatus(activeCharge.id, 'CANCELED', {});
     }
 

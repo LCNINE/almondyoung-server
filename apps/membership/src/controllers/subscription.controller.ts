@@ -295,8 +295,7 @@ export class SubscriptionController {
     @Body(new ZodValidationPipe(DowngradeSubscriptionRequestSchema))
     downgradeSubscriptionDto: DowngradeSubscriptionRequest,
   ) {
-    // 참고: 서비스 로직에 downgradeSubscription 메소드가 필요합니다.
-    return this.subscriptionService.upgradeSubscription(userId, downgradeSubscriptionDto.newPlanId);
+    return this.subscriptionService.downgradeSubscription(userId, downgradeSubscriptionDto.newPlanId);
   }
 
   /**
@@ -392,22 +391,17 @@ export class SubscriptionController {
     const userId = user?.userId;
     const email = user?.email ?? '';
     if (!userId) throw new BadRequestException('userId가 필요합니다');
-    try {
-      return await this.subscriptionService.subscribeWithBillingMethod(
-        userId,
-        body.planId,
-        email,
-        body.billingMethodId,
-        body.billingMode ?? 'one_time',
-        body.checkoutAttemptId,
-      );
-    } catch (e: any) {
-      const msg = (e?.message ?? '').toLowerCase();
-      if (msg.includes('already') || msg.includes('exists')) throw new BadRequestException(e.message);
-      if (msg.includes('not found') || msg.includes('plan')) throw new NotFoundException(e.message);
-      if (msg.includes('결제에 실패')) throw new BadRequestException(e.message);
-      throw new InternalServerErrorException(e.message);
-    }
+    // 도메인 예외(PlanNotFound 404 / ActiveSubscriptionExists 409 / SubscriptionBadRequest 400)는
+    // 각자 올바른 상태코드를 갖고 있으므로 글로벌 필터에 위임한다. 문자열 매칭 재매핑은
+    // '정기결제 설정에 실패' 같은 메시지를 500으로 떨어뜨려 원인 파악을 어렵게 했다.
+    return this.subscriptionService.subscribeWithBillingMethod(
+      userId,
+      body.planId,
+      email,
+      body.billingMethodId,
+      body.billingMode ?? 'one_time',
+      body.checkoutAttemptId,
+    );
   }
 
   /**

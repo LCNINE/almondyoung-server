@@ -13,6 +13,7 @@ import {
   GATEWAY_AGGREGATE_TYPE,
   GatewayEventType,
   buildPaymentIntentEventPayload,
+  subscriberExtraFromMetadata,
 } from '../messaging/gateway-event.builder';
 import { PaymentIntentsService } from '../payment-intents/payment-intents.service';
 
@@ -110,34 +111,60 @@ export class CmsSettlementPollerService {
     const correlationId = `cms-poller:${withdrawal.transactionId}`;
     const now = new Date().toISOString();
 
-    // 1. cms_withdrawal → SUCCEEDED
-    await this.dbService.db
-      .update(cmsWithdrawals)
-      .set({
-        status: 'SUCCEEDED',
-        resultCode: apiData.result?.code ?? null,
-        resultMessage: apiData.result?.message ?? null,
-        actualAmount: apiData.actualAmount ?? null,
-        fee: apiData.fee ?? null,
-        updatedAt: new Date(),
-      })
-      .where(eq(cmsWithdrawals.id, withdrawal.id));
-
-    // 2. charge → SUCCEEDED
-    await this.chargesService.updateStatus(withdrawal.chargeId, 'SUCCEEDED', {
-      providerTransactionId: withdrawal.transactionId,
-    });
-
-    // 3. intent 정보 조회 → AUTHORIZED + outbox event + auto-capture
     const intent = await this.paymentIntentsService.findById(withdrawal.intentId);
     if (!intent) {
       this.logger.error(`Intent not found for withdrawal ${withdrawal.transactionId}: ${withdrawal.intentId}`);
       return;
     }
 
+    // 가드: intent가 이미 종료상태(취소/실패)면 정산성공으로 charge/intent를 되살리지 않는다.
+    // (취소는 성공했지만 효성 출금이 그 사이 집행돼버린 레이스) 출금은 실제로 빠졌으므로
+    // withdrawal만 SUCCEEDED로 기록해 실태를 남기고, 수동 환불/정산 대상으로 둔다.
+    if (intent.status === 'CANCELED' || intent.status === 'FAILED') {
+      this.logger.error(
+        `[CMS][RECONCILE] 정산성공이나 intent가 이미 ${intent.status} — 출금은 집행됨, 수동 환불/정산 필요: ` +
+          `intentId=${withdrawal.intentId}, txId=${withdrawal.transactionId}`,
+      );
+      await this.dbService.db
+        .update(cmsWithdrawals)
+        .set({
+          status: 'SUCCEEDED',
+          resultCode: apiData.result?.code ?? null,
+          resultMessage: apiData.result?.message ?? null,
+          actualAmount: apiData.actualAmount ?? null,
+          fee: apiData.fee ?? null,
+          updatedAt: new Date(),
+        })
+        .where(eq(cmsWithdrawals.id, withdrawal.id));
+      return;
+    }
+
     const intentMeta = (intent.metadata as Record<string, unknown>) ?? {};
 
+    // withdrawal·charge·intent 전이를 한 트랜잭션으로 묶어 부분커밋 분열(예: charge만 SUCCEEDED)을 막는다.
     await this.dbService.db.transaction(async (tx) => {
+      // 1. cms_withdrawal → SUCCEEDED
+      await tx
+        .update(cmsWithdrawals)
+        .set({
+          status: 'SUCCEEDED',
+          resultCode: apiData.result?.code ?? null,
+          resultMessage: apiData.result?.message ?? null,
+          actualAmount: apiData.actualAmount ?? null,
+          fee: apiData.fee ?? null,
+          updatedAt: new Date(),
+        })
+        .where(eq(cmsWithdrawals.id, withdrawal.id));
+
+      // 2. charge → SUCCEEDED
+      await this.chargesService.updateStatus(
+        withdrawal.chargeId,
+        'SUCCEEDED',
+        { providerTransactionId: withdrawal.transactionId },
+        tx,
+      );
+
+      // 3. intent → AUTHORIZED (expected PENDING_SETTLEMENT — 이미 취소됐으면 여기서 throw → 전체 롤백)
       await this.stateTransitionService.transitionIntent(
         withdrawal.intentId,
         'AUTHORIZED',
@@ -157,11 +184,7 @@ export class CmsSettlementPollerService {
               payableAmount: intent.payableAmount,
               currency: intent.currency,
               occurredAt: now,
-              extra: {
-                subscriberRef: intentMeta.subscriberRef as string | undefined,
-                subscriberType: intentMeta.subscriberType as string | undefined,
-                purpose: intentMeta.purpose as string | undefined,
-              },
+              extra: subscriberExtraFromMetadata(intentMeta),
             }),
           },
         },
@@ -229,9 +252,7 @@ export class CmsSettlementPollerService {
               currency: intent.currency,
               occurredAt: now,
               extra: {
-                subscriberRef: intentMeta.subscriberRef as string | undefined,
-                subscriberType: intentMeta.subscriberType as string | undefined,
-                purpose: intentMeta.purpose as string | undefined,
+                ...subscriberExtraFromMetadata(intentMeta),
                 errorCode: apiData.result?.code,
                 errorMessage: apiData.result?.message,
               },
