@@ -160,7 +160,6 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
       backlog as any,
       undefined,
       undefined,
-      undefined,
       library as any,
     );
 
@@ -1723,7 +1722,7 @@ describe('SalesOrdersService.cancel full cancel shipped evidence guard', () => {
     const service = new SalesOrdersService(
       db as any, {} as any, outbox as any,
       reservationLifecycle as any, {} as any, {} as any,
-      backlog as any, undefined, undefined, undefined, library as any,
+      backlog as any, undefined, undefined, library as any,
     );
     return { service };
   }

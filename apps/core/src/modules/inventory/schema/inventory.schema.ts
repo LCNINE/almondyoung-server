@@ -1283,7 +1283,13 @@ export const fulfillmentOrders = pgTable('fulfillment_orders', {
   labelNo: varchar('label_no', { length: 64 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+},
+(t) => ({
+  // SO:FO 0..1:0..1 강제. standalone/보상 FO(salesOrderId=null)는 자연 제외.
+  uqSalesOrder: uniqueIndex('uq_fulfillment_orders_sales_order')
+    .on(t.salesOrderId)
+    .where(sql`${t.salesOrderId} IS NOT NULL`),
+}));
 
 export const fulfillmentOrderCreationBacklogs = pgTable(
   'fulfillment_order_creation_backlogs',
@@ -1313,23 +1319,6 @@ export const fulfillmentOrderCreationBacklogs = pgTable(
     idxWaitingVariantIds: index('idx_fo_creation_backlogs_waiting_variant_ids').using('gin', t.waitingVariantIds),
   }),
 );
-
-export const fulfillmentOrderLines = pgTable('fulfillment_order_lines', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  fulfillmentOrderId: uuid('fulfillment_order_id')
-    .references(() => fulfillmentOrders.id, { onDelete: 'cascade' })
-    .notNull(),
-  skuId: uuid('sku_id')
-    .references(() => skus.id, { onDelete: 'restrict' })
-    .notNull(),
-  quantity: integer('quantity').notNull(),
-  reservedQty: integer('reserved_qty').notNull().default(0),
-  pickedQty: integer('picked_qty').notNull().default(0),
-  shippedQty: integer('shipped_qty').notNull().default(0),
-  status: varchar('status', { length: 32 }).notNull().default('pending'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
 
 /*───────────────────────────
  * RESERVATIONS
@@ -1459,7 +1448,7 @@ export const shipments = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     // 박스 = 송장 한 장. 송장 스캔(open)에서 lazy 생성 (RFC §Phase 2 #6).
     warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }).notNull(),
-    // 자동완료 판정 기준 FO. A 는 FO 1:1(uq 유지). nullable: 합배송(B)에서 풀림.
+    // 자동완료 판정 기준 FO. FO↔상자 M:N 허용(B 에서 shipments unique drop). nullable: 합배송에서 미설정.
     openedForFulfillmentOrderId: uuid('opened_for_fulfillment_order_id').references(() => fulfillmentOrders.id, { onDelete: 'set null' }),
     status: shipmentStatusEnum('status').notNull().default('open'),
     openedBy: uuid('opened_by'),
@@ -1469,11 +1458,7 @@ export const shipments = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    // 박스당 active(미취소) 박스 1개 — 취소 후 재발행·재스캔 허용 (invoices uq_invoices_shipment_active 와 대칭).
-    uqActivePerFo: uniqueIndex('uq_shipments_fo_active')
-      .on(t.openedForFulfillmentOrderId)
-      .where(sql`${t.status} <> 'canceled'`),
-    // 전수(취소 포함) FO 조회용 — 부분 unique 가 미취소만 인덱싱하므로 잉여 아님.
+    // 전수(취소 포함) FO 조회용.
     idxOpenedForFo: index('idx_shipments_opened_for_fo').on(t.openedForFulfillmentOrderId),
   }),
 );
@@ -2250,7 +2235,6 @@ export const wmsTables = {
   stockReservations,
   fulfillmentOrders,
   fulfillmentOrderCreationBacklogs,
-  fulfillmentOrderLines,
   outboundTasks,
   outboundTaskOrders,
   outboundTaskItems,
@@ -2387,7 +2371,6 @@ export const skusRelations = relations(skus, ({ one, many }) => ({
   stockLedgers: many(stockLedgers),
   stockReservations: many(stockReservations),
   // Order relations
-  fulfillmentOrderLines: many(fulfillmentOrderLines),
   fulfillmentOrderItems: many(fulfillmentOrderItems),
   outboundTaskItems: many(outboundTaskItems),
   outboundTaskLines: many(outboundTaskLines),
@@ -2682,7 +2665,6 @@ export const fulfillmentOrdersRelations = relations(fulfillmentOrders, ({ one, m
     fields: [fulfillmentOrders.batchId],
     references: [outboundBatches.id],
   }),
-  lines: many(fulfillmentOrderLines),
   items: many(fulfillmentOrderItems),
   creationBacklogs: many(fulfillmentOrderCreationBacklogs),
   shipments: many(shipments),
@@ -2698,17 +2680,6 @@ export const fulfillmentOrderCreationBacklogsRelations = relations(fulfillmentOr
   fulfillmentOrder: one(fulfillmentOrders, {
     fields: [fulfillmentOrderCreationBacklogs.fulfillmentOrderId],
     references: [fulfillmentOrders.id],
-  }),
-}));
-
-export const fulfillmentOrderLinesRelations = relations(fulfillmentOrderLines, ({ one }) => ({
-  fulfillmentOrder: one(fulfillmentOrders, {
-    fields: [fulfillmentOrderLines.fulfillmentOrderId],
-    references: [fulfillmentOrders.id],
-  }),
-  sku: one(skus, {
-    fields: [fulfillmentOrderLines.skuId],
-    references: [skus.id],
   }),
 }));
 
@@ -3120,7 +3091,6 @@ export const wmsRelations = {
   // Fulfillment Order Relations
   fulfillmentOrdersRelations,
   fulfillmentOrderCreationBacklogsRelations,
-  fulfillmentOrderLinesRelations,
   fulfillmentOrderItemsRelations,
 
   // Outbound Relations
@@ -3294,9 +3264,6 @@ export type NewFulfillmentOrder = InferInsertModel<typeof fulfillmentOrders>;
 
 export type FulfillmentOrderCreationBacklog = InferSelectModel<typeof fulfillmentOrderCreationBacklogs>;
 export type NewFulfillmentOrderCreationBacklog = InferInsertModel<typeof fulfillmentOrderCreationBacklogs>;
-
-export type FulfillmentOrderLine = InferSelectModel<typeof fulfillmentOrderLines>;
-export type NewFulfillmentOrderLine = InferInsertModel<typeof fulfillmentOrderLines>;
 
 export type FulfillmentOrderItem = InferSelectModel<typeof fulfillmentOrderItems>;
 export type NewFulfillmentOrderItem = InferInsertModel<typeof fulfillmentOrderItems>;
