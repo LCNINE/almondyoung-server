@@ -113,15 +113,36 @@ describe('AdminMembersReader.updateAutoRenewal', () => {
     expect(transaction).not.toHaveBeenCalled();
   });
 
-  it('recurringCancelledAt 이 없으면(관리자가 끈 자동갱신 재개) wallet 호출 없이 상태만 복구한다', async () => {
-    const createBillingAgreement = jest.fn();
+  it('recurringCancelledAt 이 없어도(관리자가 끈 자동갱신 재개) 항상 agreement 를 재확인한 뒤 상태를 복구한다', async () => {
+    const createBillingAgreement = jest.fn().mockResolvedValue(undefined);
     const { reader, setSpy, transaction } = makeReader({
       contractRow: { userId: 'u1', nextBillingDate: '2026-08-01', recurringCancelledAt: null },
       createAgreement: createBillingAgreement,
     });
     await reader.updateAutoRenewal('c1', true, 'admin1');
-    expect(createBillingAgreement).not.toHaveBeenCalled();
+    // 재활성 대상이 실제로 유효한 wallet agreement 를 갖는지 항상 검증한다(멱등 upsert).
+    expect(createBillingAgreement).toHaveBeenCalledWith(
+      'u1',
+      'c1',
+      undefined,
+      expect.stringMatching(/^membership:reactivate-agreement:c1:/),
+    );
     expect(transaction).toHaveBeenCalled();
     expect(setSpy.mock.calls[0][0]).toMatchObject({ autoRenewal: true, recurringCancelledAt: null });
+  });
+
+  it('일시결제 등 등록수단 없는 계약(recurringCancelledAt 없음) 재활성은 404→ConflictError 로 거부하고 커밋하지 않는다', async () => {
+    // Finding 3: 이전엔 recurringCancelledAt 이 없으면 agreement 검증을 건너뛰어, 다음 스케줄 청구가
+    // BILLING_AGREEMENT_NOT_FOUND 로 계약을 즉시 해지시켰다. 이제 항상 agreement 를 보장하므로
+    // 등록수단이 없으면 상태를 커밋하기 전에 거부한다.
+    const createBillingAgreement = jest.fn().mockRejectedValue(axios404);
+    const { reader, transaction } = makeReader({
+      contractRow: { userId: 'u1', nextBillingDate: null, recurringCancelledAt: null },
+      entitlementRow: { endsAt: '2026-08-01' },
+      createAgreement: createBillingAgreement,
+    });
+    await expect(reader.updateAutoRenewal('c1', true, 'admin1')).rejects.toBeInstanceOf(ConflictError);
+    expect(createBillingAgreement).toHaveBeenCalled();
+    expect(transaction).not.toHaveBeenCalled();
   });
 });
