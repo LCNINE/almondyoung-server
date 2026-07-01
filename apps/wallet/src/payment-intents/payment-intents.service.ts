@@ -32,6 +32,11 @@ export const CANCELABLE_INTENT_STATUSES = [
   'PROCESSING',
   'REQUIRES_ACTION',
   'AWAITING_DEPOSIT',
+  // CMS 배치는 PENDING 시점에 이미 효성 출금신청이 들어가 있어, 정산 전 취소가
+  // ChargeReleaseService 의 CMS 출금삭제 분기까지 도달해야 실제 은행 출금이 막힌다.
+  // 상태머신(PENDING_SETTLEMENT → CANCELED)과 CMS 출금삭제 분기는 이미 준비돼 있고,
+  // 이 게이트만 상태를 인정하면 정산 전 취소 경로가 열린다.
+  'PENDING_SETTLEMENT',
   'AUTHORIZED',
   'SUCCEEDED',
 ] as const;
