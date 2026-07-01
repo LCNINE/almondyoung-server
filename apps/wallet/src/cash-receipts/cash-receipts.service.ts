@@ -10,6 +10,10 @@ import { TossApiClient } from '../providers/toss/toss-api.client';
 // 발급 가능한 인텐트 상태 (결제 완료된 건만)
 const PAYABLE_STATUSES = ['CAPTURED', 'SUCCEEDED'] as const;
 
+// intent_id 는 uuid 컬럼. 비-UUID(더미 intentId 등)로 조회하면 postgres 가 uuid 캐스팅에서
+// 터져 500 이 난다. 조회 전 형식을 검증해 안전하게 처리한다.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 @Injectable()
 export class CashReceiptsService {
   private readonly logger = new Logger(CashReceiptsService.name);
@@ -142,10 +146,38 @@ export class CashReceiptsService {
   }
 
   async findByIntent(intentId: string, userId: string): Promise<CashReceipt[]> {
+    if (!UUID_RE.test(intentId)) return [];
     return this.dbService.db
       .select()
       .from(cashReceipts)
       .where(and(eq(cashReceipts.intentId, intentId), eq(cashReceipts.userId, userId)))
+      .orderBy(asc(cashReceipts.createdAt));
+  }
+
+  // ─── 관리자용 ───
+  /** 관리자 발급: 인텐트 소유자(userId)를 조회해 그 사용자 명의로 발급한다. */
+  async issueAsAdmin(dto: {
+    intentId: string;
+    type: CashReceiptType;
+    customerIdentityNumber: string;
+  }): Promise<CashReceipt> {
+    const intent = await this.findIntentOrThrow(dto.intentId);
+    if (!intent.userId) {
+      throw new BadRequestException({
+        error: 'INTENT_HAS_NO_USER',
+        message: `주문에 사용자 정보가 없어 현금영수증을 발급할 수 없습니다: ${dto.intentId}`,
+      });
+    }
+    return this.issue(dto, intent.userId);
+  }
+
+  /** 관리자 조회: 소유자 스코프 없이 인텐트의 전체 현금영수증. */
+  async findByIntentForAdmin(intentId: string): Promise<CashReceipt[]> {
+    if (!UUID_RE.test(intentId)) return [];
+    return this.dbService.db
+      .select()
+      .from(cashReceipts)
+      .where(eq(cashReceipts.intentId, intentId))
       .orderBy(asc(cashReceipts.createdAt));
   }
 
@@ -177,11 +209,10 @@ export class CashReceiptsService {
   }
 
   private async findIntentOrThrow(intentId: string) {
-    const rows = await this.dbService.db
-      .select()
-      .from(paymentIntents)
-      .where(eq(paymentIntents.id, intentId))
-      .limit(1);
+    if (!UUID_RE.test(intentId)) {
+      throw new NotFoundException({ error: 'INTENT_NOT_FOUND', message: `Intent not found: ${intentId}` });
+    }
+    const rows = await this.dbService.db.select().from(paymentIntents).where(eq(paymentIntents.id, intentId)).limit(1);
     const intent = rows[0];
     if (!intent) {
       throw new NotFoundException({ error: 'INTENT_NOT_FOUND', message: `Intent not found: ${intentId}` });

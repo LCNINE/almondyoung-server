@@ -62,6 +62,7 @@ import { RefundsController } from './refunds/refunds.controller';
 // Cash receipts (현금영수증)
 import { CashReceiptsService } from './cash-receipts/cash-receipts.service';
 import { CashReceiptsController } from './cash-receipts/cash-receipts.controller';
+import { CashReceiptsAdminController } from './admin/cash-receipts-admin.controller';
 
 // Admin
 import { PointsAdminService } from './admin/points-admin.service';
@@ -379,6 +380,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     PaymentMethodsController,
     RefundsController,
     CashReceiptsController,
+    CashReceiptsAdminController,
     PointsAdminController,
     PaymentIntentAdminController,
     RefundAdminController,
