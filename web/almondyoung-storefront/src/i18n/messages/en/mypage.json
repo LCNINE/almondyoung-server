@@ -875,7 +875,7 @@
     "loadError": "Failed to load payment method information.",
     "changeSuccess": "Payment method changed.",
     "changeFail": "Failed to change payment method.",
-    "trialStartedSuccess": "Your 7-day free trial has started! Auto-billing begins after the trial.",
+    "trialStartedSuccess": "Your {days}-day free trial has started! Auto-billing begins after the trial.",
     "recurringStartedSuccess": "Your subscription has started and the first payment is being processed.",
     "subscribeFail": "Failed to subscribe.",
     "cmsPendingTitle": "Account Registration Pending",

@@ -8,6 +8,7 @@ import { SubscriptionCancellationManager } from '../subscription/subscription-ca
 import { MembershipPolicyService } from '../membership-policy.service';
 import { MembershipEventPublisher } from '../membership-event.publisher';
 import { CancellationReasonReader } from '../subscription/cancellation-reason.reader';
+import { PaymentClientService } from '../billing/payment-client.service';
 
 describe('SubscriptionCancellationService - Unified Cancellation', () => {
   let service: SubscriptionCancellationService;
@@ -55,7 +56,7 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
   };
 
   const mockMembershipEventPublisher = {
-    publishStatusChanged: jest.fn(),
+    publishStatusChanged: jest.fn().mockResolvedValue(undefined),
   };
 
   const mockCancellationReasonReader = {
@@ -102,6 +103,13 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
         {
           provide: CancellationReasonReader,
           useValue: mockCancellationReasonReader,
+        },
+        {
+          provide: PaymentClientService,
+          useValue: {
+            refundMembershipPayment: jest.fn().mockResolvedValue(undefined),
+            revokeBillingAgreement: jest.fn().mockResolvedValue(undefined),
+          },
         },
       ],
     }).compile();

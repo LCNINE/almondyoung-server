@@ -114,8 +114,8 @@ export class RecurringBillingService {
         const contract = await this.billingReader.findContractById(item.contractId);
 
         if (contract) {
-          // Manager로 결제 처리
-          await this.billingManager.processSingleBilling(contract);
+          // Manager로 결제 처리 — 더닝 attempts를 멱등키 nonce로 넘겨 매 재시도가 새 커맨드가 되게 한다
+          await this.billingManager.processSingleBilling(contract, item.attempts);
         }
       } catch (error) {
         this.logger.error(`Failed to process dunning item ${item.id}: ${error.message}`);
@@ -179,7 +179,8 @@ export class RecurringBillingService {
   async retryContractBilling(contractId: string): Promise<BillingResult> {
     const contract = await this.billingReader.findContractById(contractId);
     if (!contract) throw new Error(`Contract not found: ${contractId}`);
-    return this.billingManager.processSingleBilling(contract);
+    const attempts = await this.billingReader.findDunningAttempts(contractId);
+    return this.billingManager.processSingleBilling(contract, attempts);
   }
 
   private sleep(ms: number): Promise<void> {

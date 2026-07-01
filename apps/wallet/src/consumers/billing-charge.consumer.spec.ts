@@ -318,20 +318,23 @@ describe('BillingChargeConsumer', () => {
 
     await consumer.onBillingCharge(createMockEnvelope(payload), payload);
 
-    // Verify charge status set to PENDING
+    // Verify charge status set to PENDING (PENDING 분기는 charge+intent 전이를 한 트랜잭션으로 묶으므로 tx 인자가 전달됨)
     expect(chargesService.updateStatus).toHaveBeenCalledWith(
       'charge-002',
       'PENDING',
       expect.objectContaining({ providerTransactionId: 'cms-txn-001' }),
+      expect.anything(),
     );
 
-    // Verify intent transitioned to PENDING_SETTLEMENT
+    // Verify intent transitioned to PENDING_SETTLEMENT (expectedFromStatus 없음, tx 전달)
     expect(stateTransitionService.transitionIntent).toHaveBeenCalledWith(
       'intent-001',
       'PENDING_SETTLEMENT',
       expect.objectContaining({
         reasonCode: 'PENDING_SETTLEMENT',
       }),
+      undefined,
+      expect.anything(),
     );
 
     // Auto-capture should NOT be called for PENDING

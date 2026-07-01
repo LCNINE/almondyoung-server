@@ -106,4 +106,34 @@ describe('ChargeReleaseService', () => {
     expect(chargesService.updateStatus).not.toHaveBeenCalledWith('charge-fail', 'CANCELED', {});
     expect(chargesService.updateStatus).toHaveBeenCalledWith('charge-ok', 'CANCELED', {});
   });
+
+  it('does NOT mark a CMS active charge CANCELED and throws when provider cancel fails (W1)', async () => {
+    const active = makePointsCharge({ id: 'charge-cms', paymentMethodId: 'pm-cms' });
+    const { service, provider, chargesService } = makeContext({
+      activeCharge: active,
+      methodType: 'CMS_BATCH',
+    });
+    // cancel은 throw가 아니라 {status:'FAILED'} 값으로 실패를 알린다 (마감 후 취소불가 등).
+    provider.cancel.mockResolvedValue({ status: 'FAILED', errorCode: 'CMS_CUTOFF', errorMessage: '마감 후' });
+
+    await expect(service.releaseIntentCharges(INTENT, 'corr-1')).rejects.toThrow();
+
+    expect(provider.cancel).toHaveBeenCalledTimes(1);
+    // 효성 출금 삭제 실패 → 내부 charge를 CANCELED로 덮지 않는다 (돈은 살아있는데 취소완료로 보이는 것 방지).
+    expect(chargesService.updateStatus).not.toHaveBeenCalledWith('charge-cms', 'CANCELED', {});
+  });
+
+  it('marks a CMS active charge CANCELED only when provider cancel succeeds (W1)', async () => {
+    const active = makePointsCharge({ id: 'charge-cms', paymentMethodId: 'pm-cms' });
+    const { service, provider, chargesService } = makeContext({
+      activeCharge: active,
+      methodType: 'CMS_BATCH',
+    });
+    provider.cancel.mockResolvedValue({ status: 'SUCCEEDED' });
+
+    await service.releaseIntentCharges(INTENT, 'corr-1');
+
+    expect(provider.cancel).toHaveBeenCalledTimes(1);
+    expect(chargesService.updateStatus).toHaveBeenCalledWith('charge-cms', 'CANCELED', {});
+  });
 });

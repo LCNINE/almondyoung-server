@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ConflictError } from '@app/shared';
 import { DbService } from '@app/db';
 import { membershipSchema, pauseEvents } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
@@ -39,6 +40,8 @@ export interface AdminMemberListItem {
   autoRenewal: boolean;
   cancellationReasonCode: string | null;
   recurringCancellationReasonCode: string | null;
+  /** 취소 사유 코드를 마스터 테이블 displayText로 해석한 값(없으면 null → 화면은 코드/대체 라벨로 폴백) */
+  cancellationReasonText: string | null;
 }
 
 export interface AdminMembersResponse {
@@ -228,9 +231,11 @@ export class AdminMembersReader {
     } else if (status === 'EXPIRED') {
       baseConditions.push(eq(schema.subscriptionContracts.status, 'EXPIRED'));
     } else if (status === 'RECURRING_CANCELLED') {
-      // 정기결제 해지(자동갱신 off)됐으나 현재 주기는 유효(ACTIVE)한 "해지 예약" 상태
+      // 정기결제 해지됐으나 현재 주기는 유효(ACTIVE)한 "해지 예약" 상태.
+      // autoRenewal=false 는 one_time 가입자도 가지므로 식별자가 될 수 없다.
+      // recurringCancelledAt 은 cancelRecurringPayment 에서만 세팅되므로 이것이 유일한 기준.
       baseConditions.push(eq(schema.subscriptionContracts.status, 'ACTIVE'));
-      baseConditions.push(eq(schema.subscriptionContracts.autoRenewal, false));
+      baseConditions.push(isNotNull(schema.subscriptionContracts.recurringCancelledAt));
     }
 
     const whereClause = baseConditions.length > 0 ? and(...baseConditions) : undefined;
@@ -296,8 +301,33 @@ export class AdminMembersReader {
         autoRenewal: r.autoRenewal,
         cancellationReasonCode: r.cancellationReasonCode,
         recurringCancellationReasonCode: r.recurringCancellationReasonCode,
+        cancellationReasonText: null as string | null,
       };
     });
+
+    // 취소 사유 코드 → 표시 텍스트 해석. 고객 자율 취소 사유는 마스터 테이블에만 존재하므로
+    // 코드를 그대로 노출하지 않도록 displayText를 한 번에 조회해 매핑한다.
+    const reasonCodes = Array.from(
+      new Set(
+        data
+          .flatMap((d) => [d.cancellationReasonCode, d.recurringCancellationReasonCode])
+          .filter((c): c is string => !!c),
+      ),
+    );
+    if (reasonCodes.length > 0) {
+      const reasonRows = await this.dbService.db
+        .select({
+          code: schema.cancellationReasons.code,
+          displayText: schema.cancellationReasons.displayText,
+        })
+        .from(schema.cancellationReasons)
+        .where(inArray(schema.cancellationReasons.code, reasonCodes));
+      const textByCode = new Map(reasonRows.map((row) => [row.code, row.displayText]));
+      for (const d of data) {
+        const code = d.cancellationReasonCode ?? d.recurringCancellationReasonCode;
+        d.cancellationReasonText = code ? textByCode.get(code) ?? null : null;
+      }
+    }
 
     return { data, total, page, limit };
   }
@@ -593,12 +623,23 @@ export class AdminMembersReader {
         .values({ type: 'AUTO_RENEWAL_CHANGED', effectiveDate: new Date().toISOString().split('T')[0] })
         .returning();
 
-      // 자동갱신 재활성 시 nextBillingDate가 비어 있으면(해지로 null이 된 경우) 현재 주기 종료일로 복구해 결제 재개를 보장
-      const updates: { autoRenewal: boolean; updatedAt: Date; nextBillingDate?: string } = {
+      // 자동갱신 재활성: (1) 정기결제 취소 이력(recurringCancelledAt/사유)을 지워야 한다.
+      // 이게 남으면 billing-outcome.handler 가 "해지된 계약"으로 오분기해 결제실패 시 즉시해지를 건너뛴다.
+      // (2) nextBillingDate가 비어 있으면(해지로 null) 현재 주기 종료일로 복구해 결제 재개를 보장한다.
+      const updates: {
+        autoRenewal: boolean;
+        updatedAt: Date;
+        nextBillingDate?: string;
+        recurringCancelledAt?: Date | null;
+        recurringCancellationReasonCode?: string | null;
+      } = {
         autoRenewal,
         updatedAt: new Date(),
       };
       if (autoRenewal) {
+        updates.recurringCancelledAt = null;
+        updates.recurringCancellationReasonCode = null;
+
         const [contract] = await tx
           .select({
             userId: schema.subscriptionContracts.userId,
@@ -618,7 +659,14 @@ export class AdminMembersReader {
               ),
             )
             .limit(1);
-          if (ent?.endsAt) updates.nextBillingDate = ent.endsAt;
+          // 현재 주기가 이미 만료돼 활성 권한이 없으면 재활성만으로는 결제가 재개되지 않는다(좀비 상태).
+          // 조용한 no-op 대신 명확히 거부해 관리자가 재가입을 유도하도록 한다.
+          if (!ent?.endsAt) {
+            throw new ConflictError(
+              '이미 만료된 구독은 자동갱신 재활성으로 복구할 수 없습니다. 재가입이 필요합니다.',
+            );
+          }
+          updates.nextBillingDate = ent.endsAt;
         }
       }
 

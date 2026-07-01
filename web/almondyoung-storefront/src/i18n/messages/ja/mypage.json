@@ -875,7 +875,7 @@
     "loadError": "決済方法の情報の取得に失敗しました。",
     "changeSuccess": "決済方法を変更しました。",
     "changeFail": "決済方法の変更に失敗しました。",
-    "trialStartedSuccess": "7日間の無料体験が始まりました! 体験終了後に自動で決済されます。",
+    "trialStartedSuccess": "{days}日間の無料体験が始まりました! 体験終了後に自動で決済されます。",
     "recurringStartedSuccess": "定期決済が開始され、初回のお支払いが行われます。",
     "subscribeFail": "サブスク登録に失敗しました。",
     "cmsPendingTitle": "口座登録審査中",

@@ -887,7 +887,7 @@
     "loadError": "결제 수단 정보를 불러오는데 실패했습니다.",
     "changeSuccess": "결제 수단이 변경되었습니다.",
     "changeFail": "결제 수단 변경에 실패했습니다.",
-    "trialStartedSuccess": "7일 무료 체험이 시작되었습니다! 체험 종료 후 자동으로 결제됩니다.",
+    "trialStartedSuccess": "{days}일 무료 체험이 시작되었습니다! 체험 종료 후 자동으로 결제됩니다.",
     "recurringStartedSuccess": "정기결제가 시작되어 첫 결제가 진행됩니다.",
     "subscribeFail": "구독 등록에 실패했습니다.",
     "cmsPendingTitle": "계좌 등록 심사 중",
