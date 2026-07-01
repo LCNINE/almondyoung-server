@@ -92,7 +92,8 @@
     "sheetTitle": "Select options",
     "optionSelectTitle": "Select {title}",
     "soldOutToast": "The selected option is sold out.",
-    "soldOutToastNamed": "‘{option}’ is sold out and cannot be added."
+    "soldOutToastNamed": "‘{option}’ is sold out and cannot be added.",
+    "optionPriceExtra": "(+{amount} KRW)"
   },
   "cartModal": {
     "addingTitle": "Adding to cart",
@@ -106,6 +107,7 @@
   },
   "price": {
     "won": "KRW",
+    "priceFrom": "~",
     "membershipBadgeLabel": "Member price",
     "membershipOnlyPrice": "Members only",
     "memberSavings": "Save {amount} KRW by joining membership"
