@@ -273,7 +273,6 @@ export function PayForm({
           return;
         }
         cashReceipt = { type: '지출증빙', customerIdentityNumber: digits };
-        // #485: 사업자정보에 번호가 없던 사용자면(이미지로만 등록 등) 입력값 저장을 제안한다.
         // 비어있을 때만 채우는 self-endpoint 라 best-effort — 결제 흐름을 막지 않는다.
         if (!userBizNumber && window.confirm('입력하신 사업자번호를 저장할까요?\n다음 결제부터 자동으로 입력됩니다.')) {
           void saveMyBusinessNumber(digits);
@@ -688,15 +687,12 @@ export function PayForm({
             {remainingAmount > 0 && isBankTransferSelected && (
               <Card className="border shadow-sm border-border/60">
                 <CardContent className="p-6">
-                  <span className="mb-4 block text-sm font-semibold">증빙 신청 (선택)</span>
+                  <span className="block mb-4 text-sm font-semibold">증빙 신청 (선택)</span>
 
                   {/* 증빙 종류 select */}
                   <div className="flex items-center gap-3">
-                    <label className="w-20 shrink-0 text-sm text-muted-foreground">증빙</label>
-                    <Select
-                      value={evidenceType}
-                      onValueChange={(v) => handleEvidenceChange(v as typeof evidenceType)}
-                    >
+                    <label className="w-20 text-sm shrink-0 text-muted-foreground">증빙</label>
+                    <Select value={evidenceType} onValueChange={(v) => handleEvidenceChange(v as typeof evidenceType)}>
                       <SelectTrigger className="flex-1">
                         <SelectValue />
                       </SelectTrigger>
@@ -712,7 +708,7 @@ export function PayForm({
                   {evidenceType === 'CASH_INCOME' && (
                     <div className="mt-3 space-y-3">
                       <div className="flex items-center gap-3">
-                        <label className="w-20 shrink-0 text-sm text-muted-foreground">발급방법</label>
+                        <label className="w-20 text-sm shrink-0 text-muted-foreground">발급방법</label>
                         <div className="flex gap-4 text-sm">
                           <label className="flex items-center gap-1.5">
                             <input
@@ -735,7 +731,7 @@ export function PayForm({
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        <label className="w-20 shrink-0 text-sm text-muted-foreground">
+                        <label className="w-20 text-sm shrink-0 text-muted-foreground">
                           {cashReceiptMethod === 'PHONE' ? '휴대폰' : '카드번호'}
                         </label>
                         <input
@@ -744,7 +740,7 @@ export function PayForm({
                           value={cashReceiptNumber}
                           onChange={(e) => setCashReceiptNumber(e.target.value)}
                           placeholder={cashReceiptMethod === 'PHONE' ? '01012345678' : '현금영수증 카드번호'}
-                          className="flex-1 rounded-md border px-3 py-2 text-sm"
+                          className="flex-1 px-3 py-2 text-sm border rounded-md"
                         />
                       </div>
                       <p className="text-xs text-muted-foreground">입금이 확인되면 현금영수증이 자동 발급됩니다.</p>
@@ -755,14 +751,14 @@ export function PayForm({
                   {evidenceType === 'CASH_EXPENSE' && (
                     <div className="mt-3 space-y-3">
                       <div className="flex items-center gap-3">
-                        <label className="w-20 shrink-0 text-sm text-muted-foreground">사업자번호</label>
+                        <label className="w-20 text-sm shrink-0 text-muted-foreground">사업자번호</label>
                         <input
                           inputMode="numeric"
                           autoComplete="off"
                           value={cashReceiptNumber}
                           onChange={(e) => setCashReceiptNumber(e.target.value)}
                           placeholder="사업자등록번호 (1234567890)"
-                          className="flex-1 rounded-md border px-3 py-2 text-sm"
+                          className="flex-1 px-3 py-2 text-sm border rounded-md"
                         />
                       </div>
                       <p className="text-xs text-muted-foreground">입금이 확인되면 현금영수증이 자동 발급됩니다.</p>
