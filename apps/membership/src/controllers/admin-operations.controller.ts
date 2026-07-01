@@ -18,6 +18,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
+import { IdempotentAdminOp } from '../shared/idempotency/idempotent-admin-op.decorator';
 import { AdminOperationsService } from '../services/admin-operations.service';
 import { AdminMembersReader } from '../services/admin/admin-members.reader';
 import { SubscriptionCancellationService } from '../services/subscription-cancellation.service';
@@ -389,6 +390,7 @@ export class AdminOperationsController {
     type: ErrorResponseDto,
   })
   @UseGuards(JwtAuthGuard)
+  @IdempotentAdminOp('adjust')
   async adjustUserEntitlement(@User('userId') userId: string, @Body() dto: ExtendEntitlementRequestDto) {
     try {
       const adminId = userId;
@@ -578,6 +580,7 @@ export class AdminOperationsController {
     type: ErrorResponseDto,
   })
   @UseGuards(JwtAuthGuard)
+  @IdempotentAdminOp('force-cancel')
   async forceCancelSubscription(
     @User('userId') userId: string,
     @Param('contractId') contractId: string,
@@ -658,6 +661,7 @@ export class AdminOperationsController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: '관리자 직접 구독 지급 (일수 + 메모)' })
   @UseGuards(JwtAuthGuard)
+  @IdempotentAdminOp('grant')
   async grantSubscriptionByDays(
     @User('userId') adminId: string,
     @Param('userId') userId: string,
@@ -682,6 +686,7 @@ export class AdminOperationsController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '결제 수동 재시도' })
   @UseGuards(JwtAuthGuard)
+  @IdempotentAdminOp('retry-billing')
   async retryBilling(@User('userId') adminId: string, @Param('contractId') contractId: string) {
     try {
       const result = await this.adminOperationsService.retryBillingForContract(contractId);
@@ -836,6 +841,7 @@ export class AdminOperationsController {
   @Put('contracts/:contractId/auto-renewal')
   @ApiOperation({ summary: '자동 연장 설정 변경' })
   @UseGuards(JwtAuthGuard)
+  @IdempotentAdminOp('set-auto-renewal')
   async setAutoRenewal(
     @User('userId') adminId: string,
     @Param('contractId') contractId: string,

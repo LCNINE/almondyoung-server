@@ -57,7 +57,7 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
   };
 
   const mockMembershipEventPublisher = {
-    publishStatusChanged: jest.fn(),
+    publishStatusChanged: jest.fn().mockResolvedValue(undefined),
   };
 
   const mockCancellationReasonReader = {
