@@ -4,7 +4,7 @@ import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class GetUsersQueryDto {
   @ApiPropertyOptional({
-    description: '통합 검색어 (사용자명, 이메일, 로그인ID, 휴대전화에서 검색)',
+    description: '통합 검색어 (사용자명, 닉네임, 이메일, 로그인ID, 휴대전화에서 검색)',
   })
   @IsOptional()
   @IsString()

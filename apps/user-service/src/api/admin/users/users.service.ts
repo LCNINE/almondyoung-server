@@ -65,6 +65,7 @@ export class UsersService {
         const searchTerm = `%${q}%`;
         const orConditions = [
           ilike(schema.users.username, searchTerm),
+          ilike(schema.users.nickname, searchTerm),
           ilike(schema.users.email, searchTerm),
           ilike(schema.users.loginId, searchTerm),
           ilike(schema.profiles.phoneNumber, searchTerm),

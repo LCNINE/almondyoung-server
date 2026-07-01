@@ -1,44 +1,45 @@
-"use client";
+"use client"
 
-import Link from "next/link";
-import { useState, useTransition } from "react";
+import Link from "next/link"
+import { useState, useTransition } from "react"
 
-import { signUpAction } from "@/app/actions";
-import { BirthdayInput } from "@/components/birthday-input";
-import { PasswordInput } from "@/components/password-input";
-import { PhoneNumberInput } from "@/components/phone-number-input";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { signUpAction } from "@/app/actions"
+import { BirthdayInput } from "@/components/birthday-input"
+import { PasswordInput } from "@/components/password-input"
+import { PhoneNumberInput } from "@/components/phone-number-input"
+import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Field,
   FieldDescription,
   FieldError,
   FieldLabel,
-} from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
-import { useEmailAvailability } from "@/hooks/use-email-availability";
+} from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
+import { useEmailAvailability } from "@/hooks/use-email-availability"
 
 export function SignUpForm({ redirectTo }: { redirectTo: string }) {
-  const [pending, startTransition] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-  const [email, setEmail] = useState("");
-  const emailAvailability = useEmailAvailability(email);
-  const emailTaken = emailAvailability.status === "taken";
+  const [pending, startTransition] = useTransition()
+  const [error, setError] = useState<string | null>(null)
+  const [email, setEmail] = useState("")
+  const emailAvailability = useEmailAvailability(email)
+  const emailTaken = emailAvailability.status === "taken"
 
-  const onSubmit = (formData: FormData) => {
+  const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
     if (emailTaken) {
-      setError("이미 사용 중인 이메일입니다. 다른 이메일을 입력해주세요.");
-      return;
+      setError("이미 사용 중인 이메일입니다. 다른 이메일을 입력해주세요.")
+      return
     }
-    setError(null);
+    setError(null)
     startTransition(async () => {
-      const res = await signUpAction(formData);
-      if (res && !res.ok) setError(res.error);
-    });
-  };
+      const res = await signUpAction(new FormData(e.currentTarget))
+      if (res && !res.ok) setError(res.error)
+    })
+  }
 
   return (
-    <form action={onSubmit} className="flex flex-col gap-4">
+    <form onSubmit={onSubmit} className="flex flex-col gap-4">
       <input type="hidden" name="redirectTo" value={redirectTo} />
       <Field>
         <FieldLabel htmlFor="loginId">아이디</FieldLabel>
@@ -189,13 +190,13 @@ export function SignUpForm({ redirectTo }: { redirectTo: string }) {
         </Link>
       </Button>
     </form>
-  );
+  )
 }
 
 function EmailStatus({
   state,
 }: {
-  state: ReturnType<typeof useEmailAvailability>;
+  state: ReturnType<typeof useEmailAvailability>
 }) {
   switch (state.status) {
     case "checking":
@@ -203,22 +204,22 @@ function EmailStatus({
         <FieldDescription id="emailStatus">
           이메일 사용 가능 여부 확인 중...
         </FieldDescription>
-      );
+      )
     case "available":
       return (
         <FieldDescription id="emailStatus" className="text-emerald-600">
           사용 가능한 이메일입니다.
         </FieldDescription>
-      );
+      )
     case "taken":
       return (
         <FieldError id="emailStatus">이미 사용 중인 이메일입니다.</FieldError>
-      );
+      )
     case "invalid":
     case "error":
-      return <FieldError id="emailStatus">{state.message}</FieldError>;
+      return <FieldError id="emailStatus">{state.message}</FieldError>
     default:
-      return null;
+      return null
   }
 }
 
@@ -227,14 +228,14 @@ function Consent({
   label,
   required,
 }: {
-  name: string;
-  label: string;
-  required?: boolean;
+  name: string
+  label: string
+  required?: boolean
 }) {
   return (
     <label className="flex items-center gap-2">
       <Checkbox id={name} name={name} required={required} />
       {label}
     </label>
-  );
+  )
 }
