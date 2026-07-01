@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { SQL, and, count, desc, eq, gte, inArray, lte } from 'drizzle-orm';
+import { isCmsAgreementRegistered } from '../cms/cms-agreement-status';
 import {
   WalletSchema,
   billingAgreements,
@@ -45,11 +46,11 @@ function classifyCmsRow(input: ClassifyInput): ClassifyResult {
   }
 
   // REGISTERED 상태인데 동의자료가 미등록/실패인 경우: 출금 시 거부될 수 있으므로 처리 필요
-  if (input.cmsMemberStatus === 'REGISTERED' && input.agreementStatus !== '등록') {
+  if (input.cmsMemberStatus === 'REGISTERED' && !isCmsAgreementRegistered(input.agreementStatus)) {
     return { severity: 'WARNING', needsAction: true };
   }
 
-  if (input.agreementStatus !== '등록' && input.cmsMemberStatus === 'PENDING') {
+  if (!isCmsAgreementRegistered(input.agreementStatus) && input.cmsMemberStatus === 'PENDING') {
     return { severity: 'WARNING', needsAction: true };
   }
 
@@ -312,7 +313,9 @@ export class RecurringBillingAdminService {
 
       const agreements = agreementsByMemberId.get(r.cmsMember.cmsMemberId) ?? [];
       const aggStatus = aggregateAgreementStatus(agreements);
-      if (aggStatus !== '등록') {
+      // '확인'(상위기관 확인)도 정상 등록 상태이므로 isCmsAgreementRegistered로 일관 판정한다.
+      // 바로 '등록' 리터럴만 비교하면 '확인' 회원이 처리필요 목록에 유령으로 잡히고 카운트를 부풀린다.
+      if (!isCmsAgreementRegistered(aggStatus)) {
         seen.add(key);
         rows.push(this.buildMemberRow(r.cmsMember, r.billingMethod, r.billingAgreement, aggStatus, 'PROVIDER_MANDATE'));
       }
@@ -325,7 +328,9 @@ export class RecurringBillingAdminService {
 
       const agreements = agreementsByMemberId.get(r.cmsMember.cmsMemberId) ?? [];
       const aggStatus = aggregateAgreementStatus(agreements);
-      if (aggStatus !== '등록') {
+      // '확인'(상위기관 확인)도 정상 등록 상태이므로 isCmsAgreementRegistered로 일관 판정한다.
+      // 바로 '등록' 리터럴만 비교하면 '확인' 회원이 처리필요 목록에 유령으로 잡히고 카운트를 부풀린다.
+      if (!isCmsAgreementRegistered(aggStatus)) {
         seen.add(key);
         rows.push(this.buildMemberRow(r.cmsMember, r.billingMethod, r.billingAgreement, aggStatus, 'PROVIDER_MANDATE'));
       }

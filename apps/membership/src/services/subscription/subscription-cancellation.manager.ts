@@ -214,6 +214,11 @@ export class SubscriptionCancellationManager {
         })
         .where(eq(schema.subscriptionContracts.id, contract.id));
 
+      // 진행 중이던 dunning 잔여 항목 제거 — 해지 후 재청구 방지
+      await tx
+        .delete(schema.membershipDunningQueue)
+        .where(eq(schema.membershipDunningQueue.contractId, contract.id));
+
       return {
         type: 'RECURRING_CANCELLATION',
         contractId: contract.id,

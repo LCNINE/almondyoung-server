@@ -28,7 +28,7 @@ export class BillingResultConsumer {
     const contractId = payload.subscriberRef;
     this.logger.log(`[BillingResult] CHARGE_SUCCESS: contractId=${contractId}, intentId=${payload.intentId}`);
 
-    await this.billingOutcomeHandler.handleSuccess(contractId, payload.payableAmount ?? null);
+    await this.billingOutcomeHandler.handleSuccess(contractId, payload.payableAmount ?? null, payload.intentId);
   }
 
   @OnEvent('payments.events.v1', 'payment.intent.failed')
@@ -38,6 +38,11 @@ export class BillingResultConsumer {
     const contractId = payload.subscriberRef;
     this.logger.log(`[BillingResult] CHARGE_FAIL: contractId=${contractId}, errorCode=${payload.errorCode}`);
 
-    await this.billingOutcomeHandler.handleFailure(contractId, payload.errorCode ?? null, payload.errorMessage ?? null);
+    await this.billingOutcomeHandler.handleFailure(
+      contractId,
+      payload.errorCode ?? null,
+      payload.errorMessage ?? null,
+      payload.intentId,
+    );
   }
 }

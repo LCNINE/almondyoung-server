@@ -10,6 +10,7 @@ import {
   jsonb,
   varchar,
   index,
+  uniqueIndex,
   primaryKey,
   serial,
 } from 'drizzle-orm/pg-core';
@@ -400,11 +401,16 @@ export const billingEvents = pgTable(
     eventType: text('event_type').notNull(), // CHARGE_ATTEMPT, CHARGE_SUCCESS, CHARGE_FAIL
     attemptNo: integer('attempt_no'),
     amount: integer('amount'),
+    paymentIntentId: text('payment_intent_id'), // wallet intentId — 결과 이벤트 재전달 멱등 키
     errorCode: text('error_code'),
     errorMessage: text('error_message'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (table) => [index('idx_billing_events_contract').on(table.contractId)],
+  (table) => [
+    index('idx_billing_events_contract').on(table.contractId),
+    // 결과 이벤트 재전달 멱등: 같은 intent의 동일 결과를 한 번만 기록 (payment_intent_id NULL은 중복 허용)
+    uniqueIndex('uq_billing_events_intent_result').on(table.contractId, table.paymentIntentId, table.eventType),
+  ],
 );
 
 // Dunning Queue Relations

@@ -12,6 +12,9 @@ import { SubscriptionCreator } from './subscription/subscription.creator';
 import { SubscriptionManager } from './subscription/subscription.manager';
 import { MembershipEventPublisher } from './membership-event.publisher';
 import { PaymentClientService, WalletPaymentIntentResponse } from './billing/payment-client.service';
+import { BillingManager } from './billing/billing.manager';
+import { BillingReader } from './billing/billing.reader';
+import { format } from 'date-fns';
 
 /**
  * SubscriptionService (Business Layer)
@@ -41,6 +44,8 @@ export class SubscriptionService {
     private readonly subscriptionManager: SubscriptionManager,
     private readonly membershipEventPublisher: MembershipEventPublisher,
     private readonly paymentClientService: PaymentClientService,
+    private readonly billingManager: BillingManager,
+    private readonly billingReader: BillingReader,
   ) {}
 
   /**
@@ -381,6 +386,20 @@ export class SubscriptionService {
           await this.subscriptionManager.voidSubscription(userId, contract, '정기결제 설정 실패');
         }
         throw new SubscriptionBadRequestException('정기결제 설정에 실패했습니다. 잠시 후 다시 시도해주세요.');
+      }
+
+      // 가입 즉시 첫 결제: 체험이 없으면(nextBillingDate=오늘) 가입 시점에 청구한다.
+      // 체험(trial>0)이면 nextBillingDate가 미래라 일일 스케줄러가 그날 청구한다.
+      // 발행 실패해도 가입은 유지 — 다음 스케줄러가 재시도하고, 만료 유예가 그 사이를 보호한다.
+      const dueContract = await this.billingReader.findContractById(result.contractId);
+      const today = format(new Date(), 'yyyy-MM-dd');
+      if (dueContract?.nextBillingDate && dueContract.nextBillingDate <= today) {
+        const billingResult = await this.billingManager.processSingleBilling(dueContract);
+        if (!billingResult.success) {
+          this.logger.error(
+            `가입 즉시 첫 결제 발행 실패 (contractId=${result.contractId}): ${billingResult.errorMessage ?? billingResult.errorCode}`,
+          );
+        }
       }
     }
 

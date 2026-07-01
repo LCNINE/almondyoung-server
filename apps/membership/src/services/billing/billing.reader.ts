@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { eq, and, lte, lt, notInArray, isNull, not, exists } from 'drizzle-orm';
+import { subDays, parseISO, format } from 'date-fns';
 import * as schema from '../../shared/schemas/entities/schema';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 
@@ -151,6 +152,8 @@ export class BillingReader {
    * billingInProgress=true는 제외 — CMS처럼 결과가 다음 영업일에 오는 경우 만료 처리하면 안 됨
    */
   async findStuckEntitlements(today: string): Promise<{ entitlementId: string; userId: string; contractId: string }[]> {
+    // 갱신일 당일 publish 실패나 가입 직후 미결제를 다음 결제 시도 전에 만료시키지 않도록 하루 유예.
+    const graceDate = format(subDays(parseISO(today), 1), 'yyyy-MM-dd');
     return this.dbService.db
       .select({
         entitlementId: schema.subscriptionEntitlement.id,
@@ -172,7 +175,7 @@ export class BillingReader {
           eq(schema.subscriptionContracts.autoRenewal, true),
           eq(schema.subscriptionContracts.isVoided, false),
           eq(schema.subscriptionContracts.billingInProgress, false),
-          lt(schema.subscriptionEntitlement.endsAt, today),
+          lt(schema.subscriptionEntitlement.endsAt, graceDate),
           notInArray(schema.subscriptionContracts.status, ['EXPIRED', 'CANCELLED']),
           isNull(schema.membershipDunningQueue.id),
         ),

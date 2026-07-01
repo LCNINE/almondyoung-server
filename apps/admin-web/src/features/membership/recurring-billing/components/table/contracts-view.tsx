@@ -65,15 +65,19 @@ function AgreementStatusBadge({
       </Badge>
     );
   }
+  // 효성 동의자료 등록완료 상태: 등록 직후 '등록', 상위기관 확인 후 '확인'
+  const agreementOk = state.agreementStatus === '등록' || state.agreementStatus === '확인';
   const label =
     state.cmsMemberStatus === 'REGISTERED'
-      ? '사용 가능'
+      ? agreementOk
+        ? '사용 가능'
+        : '동의자료 확인 필요'
       : state.cmsMemberStatus === 'PENDING'
         ? '심사 중'
         : state.cmsMemberStatus === 'FAILED'
           ? '심사 실패'
           : (state.agreementStatus ?? '-');
-  const isOk = state.cmsMemberStatus === 'REGISTERED';
+  const isOk = state.cmsMemberStatus === 'REGISTERED' && agreementOk;
   const isBad = state.cmsMemberStatus === 'FAILED';
   return (
     <Badge

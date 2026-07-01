@@ -48,7 +48,7 @@ export class SubscriptionCreator {
     paymentRefs: CreateSubscriptionPaymentRefs = {},
     billingMode: 'one_time' | 'recurring' = 'one_time',
     skipTrial = false,
-  ): Promise<{ contractId: string; entitlementId: string }> {
+  ): Promise<{ contractId: string; entitlementId: string; effectiveTrialDays: number }> {
     if (billingMode === 'recurring' && plan.durationDays > RECURRING_MAX_DURATION_DAYS) {
       throw new BadRequestError(
         `정기결제는 월간 플랜(최대 ${RECURRING_MAX_DURATION_DAYS}일)만 지원합니다. (durationDays=${plan.durationDays})`,
@@ -144,6 +144,7 @@ export class SubscriptionCreator {
       return {
         contractId: contract.id,
         entitlementId: entitlement.id,
+        effectiveTrialDays,
       };
     });
   }
