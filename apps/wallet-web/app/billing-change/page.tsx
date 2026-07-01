@@ -5,6 +5,8 @@ import { isAccessTokenUsable, selfOrigin } from '@/lib/auth/access-token';
 import { SESSION_COOKIE_NAMES, getBackendAuthCookie } from '@/lib/auth/session-cookies';
 import { BillingChangeForm } from './billing-change-form';
 
+export const dynamic = 'force-dynamic';
+
 interface Props {
   searchParams: Promise<{
     returnUrl?: string;

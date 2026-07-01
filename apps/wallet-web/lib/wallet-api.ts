@@ -369,6 +369,48 @@ export async function abandonPaymentIntent(intentId: string): Promise<void> {
   }
 }
 
+// ─── Business license (사업자 정보 — 세금계산서/지출증빙 prefill용) ──────────────
+
+export interface BusinessLicenseInfo {
+  businessNumber: string | null;
+  representativeName: string | null;
+  phoneNumber: string | null;
+}
+
+/** 저장된 전화번호(+8210…, E.164)를 국내 표기(010…)로. 이미 0으로 시작하면 그대로. */
+function toKrLocalPhone(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const d = raw.replace(/[^0-9]/g, '');
+  return d.startsWith('82') ? `0${d.slice(2)}` : d;
+}
+
+export async function getMyBusinessLicense(accessToken: string | undefined): Promise<BusinessLicenseInfo | null> {
+  const base = process.env.OIDC_ISSUER_URL?.replace(/\/$/, '');
+  if (!base || !accessToken) return null;
+  const headers = { Authorization: `Bearer ${accessToken}` };
+
+  // user-service 는 전역 인터셉터로 응답을 { success, data } 로 감싼다. data 를 벗겨 반환.
+  const fetchJson = async (path: string): Promise<Record<string, unknown> | null> => {
+    try {
+      const res = await fetch(`${base}${path}`, { headers, cache: 'no-store' });
+      if (!res.ok) return null;
+      const json = (await res.json()) as { data?: Record<string, unknown> } | Record<string, unknown> | null;
+      return ((json as { data?: Record<string, unknown> })?.data ?? json) as Record<string, unknown> | null;
+    } catch {
+      return null;
+    }
+  };
+
+  const [license, profile] = await Promise.all([fetchJson('/business-licenses/me'), fetchJson('/users/me/profile')]);
+  const profileObj = (profile?.profile ?? null) as { phoneNumber?: string | null } | null;
+
+  return {
+    businessNumber: (license?.businessNumber as string | null) ?? null,
+    representativeName: (license?.representativeName as string | null) ?? null,
+    phoneNumber: toKrLocalPhone(profileObj?.phoneNumber ?? (profile?.phoneNumber as string | null)),
+  };
+}
+
 // ─── Cash receipts (현금영수증) ────────────────────────────────────────────────
 
 export type CashReceiptType = '소득공제' | '지출증빙';

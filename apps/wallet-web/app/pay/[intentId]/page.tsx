@@ -8,6 +8,7 @@ import {
   getPointsBalance,
   getBillingMethods,
   getAvailablePaymentMethods,
+  getMyBusinessLicense,
 } from '@/lib/wallet-api';
 import { buildReturnUrl } from '@/lib/return-url';
 import { PayForm } from './pay-form';
@@ -15,6 +16,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { CheckCircle2, XCircle } from 'lucide-react';
+
+// 쿠키 기반 인증 가드 + 결제별 동적 데이터라 CloudFront/Next 캐시 금지.
+// (이게 없으면 엣지가 옛 HTML 을 캐시해 옛 청크를 가리키는 stale 페이지가 서빙됨)
+export const dynamic = 'force-dynamic';
 
 interface Props {
   params: Promise<{ intentId: string }>;
@@ -99,6 +104,9 @@ export default async function PayPage({ params, searchParams }: Props) {
 
   const pointsBalance = await getPointsBalance(cookieHeader).catch(() => ({ confirmed: 0, reserved: 0, available: 0 }));
 
+  // 사업자 정보(사업자번호/대표자명) — 세금계산서·지출증빙 현금영수증 prefill 용. 없으면 null.
+  const businessInfo = await getMyBusinessLicense(accessToken);
+
   if (intent.status === 'CANCELED') {
     return (
       <div className="min-h-screen bg-muted/40 flex items-center justify-center p-4">
@@ -128,6 +136,7 @@ export default async function PayPage({ params, searchParams }: Props) {
       availableMethods={availableMethods}
       region={region ?? null}
       tossFailed={toss_fail === '1'}
+      businessInfo={businessInfo}
     />
   );
 }

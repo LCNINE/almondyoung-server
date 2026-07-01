@@ -40,7 +40,6 @@ export class BusinessLicensesController {
   @ApiResponse({ status: 200, description: '사업자 등록 정보 조회 성공' })
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
   @ApiResponse({ status: 403, description: '권한 없음' })
-  @RequireScopes('user:read')
   async getMyBusinessLicense(@CurrentUser() user: JwtPayload): Promise<BusinessLicenseResponseDto | null> {
     return this.businessLicensesService.getMyBusinessLicense(user.id);
   }

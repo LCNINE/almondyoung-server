@@ -5,12 +5,19 @@ import { useRouter } from 'next/navigation';
 import { confirmPaymentIntent, cancelPaymentIntent, abandonPaymentIntent } from '@/lib/wallet-api';
 import { isWalletSessionExpiredError, redirectToWalletLogin } from '@/lib/auth-expired';
 import { buildReturnUrl } from '@/lib/return-url';
-import type { AvailablePaymentMethod, PaymentIntent, PaymentMethod, PointsBalance } from '@/lib/wallet-api';
+import type {
+  AvailablePaymentMethod,
+  BusinessLicenseInfo,
+  PaymentIntent,
+  PaymentMethod,
+  PointsBalance,
+} from '@/lib/wallet-api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Lock,
   CreditCard,
@@ -37,6 +44,8 @@ interface Props {
   region?: string | null;
   /** Toss 결제가 실패/취소로 돌아왔을 때(failUrl ?toss_fail=1) true. mount 시 abandon 신호 전송. */
   tossFailed?: boolean;
+  /** 로그인 사용자의 사업자 정보 — 세금계산서/지출증빙 prefill 용. 없으면 null. */
+  businessInfo?: BusinessLicenseInfo | null;
 }
 
 interface BankTransferPendingAction {
@@ -129,6 +138,7 @@ export function PayForm({
   availableMethods,
   region,
   tossFailed,
+  businessInfo,
 }: Props) {
   const router = useRouter();
   const availableMethodMap = availableMethods ? new Map(availableMethods.map((method) => [method.code, method])) : null;
@@ -155,10 +165,39 @@ export function PayForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bankTransferPending, setBankTransferPending] = useState<BankTransferPendingAction | null>(null);
-  // 현금영수증 (무통장입금 시): 입금확인 완료 시점에 자동 발급된다.
-  const [cashReceiptEnabled, setCashReceiptEnabled] = useState(false);
-  const [cashReceiptType, setCashReceiptType] = useState<'소득공제' | '지출증빙'>('소득공제');
+  // 증빙 신청 (무통장입금 시) — 택일. 현금영수증과 세금계산서는 동시발급 불가.
+  // 현금영수증: 입금확인 완료 시 자동 발급. 세금계산서: 현재 UI/입력만 (발행 로직 미구현).
+  const [evidenceType, setEvidenceType] = useState<'NONE' | 'CASH_INCOME' | 'CASH_EXPENSE' | 'TAX_INVOICE'>('NONE');
+  // 소득공제 발급방법: 휴대폰 or 현금영수증카드 (토스 customerIdentityNumber 는 둘 다 허용)
+  const [cashReceiptMethod, setCashReceiptMethod] = useState<'PHONE' | 'CARD'>('PHONE');
   const [cashReceiptNumber, setCashReceiptNumber] = useState('');
+  // 세금계산서(사업자) 입력값 — 사업자번호/대표자명은 로그인 사용자 사업자정보로 prefill.
+  // ponytail: 현재 수집/검증 UI만, 백엔드 발행 연동은 트랙 B에서. 수신이메일은 발신 미연동이라 제외.
+  const [taxBizName, setTaxBizName] = useState('');
+  const [taxBizNumber, setTaxBizNumber] = useState(businessInfo?.businessNumber ?? '');
+  const [taxRepName, setTaxRepName] = useState(businessInfo?.representativeName ?? '');
+
+  const userPhone = (businessInfo?.phoneNumber ?? '').replace(/[^0-9]/g, '');
+  const userBizNumber = businessInfo?.businessNumber ?? '';
+
+  // 증빙 종류 선택 시 번호 prefill: 소득공제·휴대폰 → 사용자 휴대폰, 지출증빙 → 사업자번호.
+  function handleEvidenceChange(next: typeof evidenceType) {
+    setEvidenceType(next);
+    if (next === 'CASH_INCOME') {
+      setCashReceiptMethod('PHONE');
+      setCashReceiptNumber(userPhone);
+    } else if (next === 'CASH_EXPENSE') {
+      setCashReceiptNumber(userBizNumber);
+    } else {
+      setCashReceiptNumber('');
+    }
+  }
+
+  // 소득공제 발급방법 변경: 휴대폰 → 사용자 휴대폰 prefill, 현금영수증카드 → 비움(수동 입력).
+  function handleCashMethodChange(method: 'PHONE' | 'CARD') {
+    setCashReceiptMethod(method);
+    setCashReceiptNumber(method === 'PHONE' ? userPhone : '');
+  }
 
   // Toss 결제 실패/취소로 돌아온 경우(failUrl ?toss_fail=1) abandon 신호를 보내 REQUIRES_ACTION 으로
   // 묶인 포인트 hold 를 즉시 해제하고 intent 를 CREATED 로 soft reset 한다. best-effort — 실패해도
@@ -214,17 +253,35 @@ export function PayForm({
       setError('결제 수단을 선택해주세요.');
       return;
     }
-    // 무통장 + 현금영수증 신청 시 번호 검증 (숫자 8자리 이상)
+    // 무통장 + 증빙 신청 검증 (현금영수증/세금계산서 택일)
     let cashReceipt: { type: '소득공제' | '지출증빙'; customerIdentityNumber: string } | undefined;
-    if (isBankTransferSelected && cashReceiptEnabled) {
-      const digits = cashReceiptNumber.replace(/[^0-9]/g, '');
-      if (digits.length < 8) {
-        setError(
-          cashReceiptType === '소득공제' ? '휴대폰번호를 정확히 입력해주세요.' : '사업자등록번호를 정확히 입력해주세요.',
-        );
-        return;
+    if (isBankTransferSelected) {
+      if (evidenceType === 'CASH_INCOME') {
+        const digits = cashReceiptNumber.replace(/[^0-9]/g, '');
+        if (cashReceiptMethod === 'PHONE' && (digits.length < 10 || digits.length > 11)) {
+          setError('휴대폰번호를 정확히 입력해주세요.');
+          return;
+        }
+        if (cashReceiptMethod === 'CARD' && (digits.length < 13 || digits.length > 19)) {
+          setError('현금영수증 카드번호를 정확히 입력해주세요.');
+          return;
+        }
+        cashReceipt = { type: '소득공제', customerIdentityNumber: digits };
+      } else if (evidenceType === 'CASH_EXPENSE') {
+        const digits = cashReceiptNumber.replace(/[^0-9]/g, '');
+        if (digits.length !== 10) {
+          setError('사업자등록번호를 정확히 입력해주세요 (10자리).');
+          return;
+        }
+        cashReceipt = { type: '지출증빙', customerIdentityNumber: digits };
+      } else if (evidenceType === 'TAX_INVOICE') {
+        // ponytail: 세금계산서는 현재 입력/검증 UI 만 — 발행/저장 연동은 트랙 B(팝빌 등)에서.
+        const bizDigits = taxBizNumber.replace(/[^0-9]/g, '');
+        if (!taxBizName.trim() || bizDigits.length !== 10 || !taxRepName.trim()) {
+          setError('세금계산서 정보를 모두 정확히 입력해주세요 (사업자번호 10자리).');
+          return;
+        }
       }
-      cashReceipt = { type: cashReceiptType, customerIdentityNumber: digits };
     }
     setLoading(true);
     setError(null);
@@ -339,14 +396,14 @@ export function PayForm({
           <Card className="w-full border shadow-sm border-border/60">
             <CardContent className="p-6 space-y-5">
               <div className="flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                  <Landmark className="h-5 w-5" />
+                <div className="flex items-center justify-center rounded-full h-11 w-11 shrink-0 bg-primary/10 text-primary">
+                  <Landmark className="w-5 h-5" />
                 </div>
                 <div className="space-y-1">
                   <h1 className="text-lg font-semibold">주문이 접수되었습니다</h1>
                   <p className="text-sm text-muted-foreground">
-                    주문이 &lsquo;입금확인중&rsquo; 상태로 접수되었어요. 아래 계좌로 입금하시면
-                    관리자 확인 후 배송이 진행됩니다.
+                    주문이 &lsquo;입금확인중&rsquo; 상태로 접수되었어요. 아래 계좌로 입금하시면 관리자 확인 후 배송이
+                    진행됩니다.
                   </p>
                 </div>
               </div>
@@ -380,9 +437,9 @@ export function PayForm({
               <Alert>
                 <AlertCircle className="w-4 h-4" />
                 <AlertDescription>
-                  주문이 이미 <span className="font-medium">‘입금확인중’</span> 상태로 접수되어, 지금 바로
-                  아래 <span className="font-medium">‘주문 내역에서 확인’</span> 버튼으로 확인하실 수 있어요.
-                  입금이 확인되면 관리자 승인 후 결제가 완료됩니다.
+                  주문이 이미 <span className="font-medium">‘입금확인중’</span> 상태로 접수되어, 지금 바로 아래{' '}
+                  <span className="font-medium">‘주문 내역에서 확인’</span> 버튼으로 확인하실 수 있어요. 입금이 확인되면
+                  관리자 승인 후 결제가 완료됩니다.
                 </AlertDescription>
               </Alert>
 
@@ -594,7 +651,7 @@ export function PayForm({
             {remainingAmount > 0 && isTossSelected && TOSS_SUB_METHODS.length > 1 && (
               <Card className="border shadow-sm border-border/60">
                 <CardContent className="p-6">
-                  <span className="mb-4 block text-sm font-semibold">결제 방식 선택</span>
+                  <span className="block mb-4 text-sm font-semibold">결제 방식 선택</span>
                   <div className="space-y-2">
                     {TOSS_SUB_METHODS.map(({ value, label, desc }) => {
                       const isSelected = tossSubMethod === value;
@@ -630,49 +687,129 @@ export function PayForm({
               </Card>
             )}
 
-            {/* 현금영수증 (무통장입금 선택 시). 입금확인 완료 시점에 자동 발급된다. */}
+            {/* 증빙 신청 (무통장입금 선택 시) — 현금영수증/세금계산서 택일 */}
             {remainingAmount > 0 && isBankTransferSelected && (
               <Card className="border shadow-sm border-border/60">
                 <CardContent className="p-6">
-                  <label className="flex items-center gap-2 text-sm font-semibold">
-                    <input
-                      type="checkbox"
-                      checked={cashReceiptEnabled}
-                      onChange={(e) => setCashReceiptEnabled(e.target.checked)}
-                    />
-                    현금영수증 신청
-                  </label>
-                  {cashReceiptEnabled && (
-                    <div className="mt-4 space-y-3">
-                      <div className="flex gap-4 text-sm">
-                        <label className="flex items-center gap-1.5">
-                          <input
-                            type="radio"
-                            name="cashReceiptType"
-                            checked={cashReceiptType === '소득공제'}
-                            onChange={() => setCashReceiptType('소득공제')}
-                          />
-                          소득공제(개인)
-                        </label>
-                        <label className="flex items-center gap-1.5">
-                          <input
-                            type="radio"
-                            name="cashReceiptType"
-                            checked={cashReceiptType === '지출증빙'}
-                            onChange={() => setCashReceiptType('지출증빙')}
-                          />
-                          지출증빙(사업자)
-                        </label>
+                  <span className="mb-4 block text-sm font-semibold">증빙 신청 (선택)</span>
+
+                  {/* 증빙 종류 select */}
+                  <div className="flex items-center gap-3">
+                    <label className="w-20 shrink-0 text-sm text-muted-foreground">증빙</label>
+                    <Select
+                      value={evidenceType}
+                      onValueChange={(v) => handleEvidenceChange(v as typeof evidenceType)}
+                    >
+                      <SelectTrigger className="flex-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="NONE">신청 안 함</SelectItem>
+                        <SelectItem value="CASH_INCOME">현금영수증 (개인소득공제용)</SelectItem>
+                        <SelectItem value="CASH_EXPENSE">현금영수증 (사업자지출증빙용)</SelectItem>
+                        <SelectItem value="TAX_INVOICE">세금계산서 (사업자)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* 소득공제: 발급방법(휴대폰/현금영수증카드) + 번호 */}
+                  {evidenceType === 'CASH_INCOME' && (
+                    <div className="mt-3 space-y-3">
+                      <div className="flex items-center gap-3">
+                        <label className="w-20 shrink-0 text-sm text-muted-foreground">발급방법</label>
+                        <div className="flex gap-4 text-sm">
+                          <label className="flex items-center gap-1.5">
+                            <input
+                              type="radio"
+                              name="cashMethod"
+                              checked={cashReceiptMethod === 'PHONE'}
+                              onChange={() => handleCashMethodChange('PHONE')}
+                            />
+                            휴대폰
+                          </label>
+                          <label className="flex items-center gap-1.5">
+                            <input
+                              type="radio"
+                              name="cashMethod"
+                              checked={cashReceiptMethod === 'CARD'}
+                              onChange={() => handleCashMethodChange('CARD')}
+                            />
+                            현금영수증카드
+                          </label>
+                        </div>
                       </div>
-                      <input
-                        inputMode="numeric"
-                        autoComplete="off"
-                        value={cashReceiptNumber}
-                        onChange={(e) => setCashReceiptNumber(e.target.value)}
-                        placeholder={cashReceiptType === '소득공제' ? '휴대폰번호 (01012345678)' : '사업자등록번호 (1234567890)'}
-                        className="w-full rounded-md border px-3 py-2 text-sm"
-                      />
+                      <div className="flex items-center gap-3">
+                        <label className="w-20 shrink-0 text-sm text-muted-foreground">
+                          {cashReceiptMethod === 'PHONE' ? '휴대폰' : '카드번호'}
+                        </label>
+                        <input
+                          inputMode="numeric"
+                          autoComplete="off"
+                          value={cashReceiptNumber}
+                          onChange={(e) => setCashReceiptNumber(e.target.value)}
+                          placeholder={cashReceiptMethod === 'PHONE' ? '01012345678' : '현금영수증 카드번호'}
+                          className="flex-1 rounded-md border px-3 py-2 text-sm"
+                        />
+                      </div>
                       <p className="text-xs text-muted-foreground">입금이 확인되면 현금영수증이 자동 발급됩니다.</p>
+                    </div>
+                  )}
+
+                  {/* 지출증빙: 사업자번호 */}
+                  {evidenceType === 'CASH_EXPENSE' && (
+                    <div className="mt-3 space-y-3">
+                      <div className="flex items-center gap-3">
+                        <label className="w-20 shrink-0 text-sm text-muted-foreground">사업자번호</label>
+                        <input
+                          inputMode="numeric"
+                          autoComplete="off"
+                          value={cashReceiptNumber}
+                          onChange={(e) => setCashReceiptNumber(e.target.value)}
+                          placeholder="사업자등록번호 (1234567890)"
+                          className="flex-1 rounded-md border px-3 py-2 text-sm"
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">입금이 확인되면 현금영수증이 자동 발급됩니다.</p>
+                    </div>
+                  )}
+
+                  {/* 세금계산서 사업자 정보 (UI/입력만 — 발행 연동은 트랙 B) */}
+                  {evidenceType === 'TAX_INVOICE' && (
+                    <div className="mt-3 space-y-3">
+                      <div className="flex items-center gap-3">
+                        <label className="w-20 shrink-0 text-sm text-muted-foreground">상호</label>
+                        <input
+                          autoComplete="off"
+                          value={taxBizName}
+                          onChange={(e) => setTaxBizName(e.target.value)}
+                          placeholder="회사명"
+                          className="flex-1 rounded-md border px-3 py-2 text-sm"
+                        />
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <label className="w-20 shrink-0 text-sm text-muted-foreground">사업자번호</label>
+                        <input
+                          inputMode="numeric"
+                          autoComplete="off"
+                          value={taxBizNumber}
+                          onChange={(e) => setTaxBizNumber(e.target.value)}
+                          placeholder="1234567890"
+                          className="flex-1 rounded-md border px-3 py-2 text-sm"
+                        />
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <label className="w-20 shrink-0 text-sm text-muted-foreground">대표자명</label>
+                        <input
+                          autoComplete="off"
+                          value={taxRepName}
+                          onChange={(e) => setTaxRepName(e.target.value)}
+                          placeholder="대표자명"
+                          className="flex-1 rounded-md border px-3 py-2 text-sm"
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        입금 확인 후 영업일 기준 1~2일 내 세금계산서가 발행됩니다.
+                      </p>
                     </div>
                   )}
                 </CardContent>
