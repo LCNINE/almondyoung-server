@@ -138,25 +138,31 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       continue;
     }
 
+    // 검증 실패는 throw 대신 skip — 배치의 다른 쿠폰까지 막지 않는다. force로 우회 가능.
     if (!force) {
       if (promo.status !== 'active') {
-        throw new MedusaError(MedusaError.Types.NOT_ALLOWED, `비활성 쿠폰은 발급할 수 없습니다: ${promo.code}. force: true로 강제 발급하세요.`);
+        skipped.push({ promotion_id: promo.id, reason: 'inactive' });
+        continue;
       }
       if (promo.is_automatic) {
-        throw new MedusaError(MedusaError.Types.NOT_ALLOWED, `자동 쿠폰은 수동 발급할 수 없습니다: ${promo.code}`);
+        skipped.push({ promotion_id: promo.id, reason: 'automatic' });
+        continue;
       }
       if (promo.campaign) {
         const startsAt = promo.campaign.starts_at ? new Date(promo.campaign.starts_at) : null;
         const endsAt = promo.campaign.ends_at ? new Date(promo.campaign.ends_at) : null;
         if (startsAt && now < startsAt) {
-          throw new MedusaError(MedusaError.Types.NOT_ALLOWED, `아직 발급 기간이 아닙니다: ${promo.code}. force: true로 강제 발급하세요.`);
+          skipped.push({ promotion_id: promo.id, reason: 'not_started' });
+          continue;
         }
         if (endsAt && now > endsAt) {
-          throw new MedusaError(MedusaError.Types.NOT_ALLOWED, `기간이 만료된 쿠폰입니다: ${promo.code}. force: true로 강제 발급하세요.`);
+          skipped.push({ promotion_id: promo.id, reason: 'expired' });
+          continue;
         }
       }
       if (!meetsGroupRule(promo, customerGroupIds)) {
-        throw new MedusaError(MedusaError.Types.NOT_ALLOWED, `대상 고객 그룹이 아닙니다: ${promo.code}. force: true로 강제 발급하세요.`);
+        skipped.push({ promotion_id: promo.id, reason: 'group_mismatch' });
+        continue;
       }
     }
 
@@ -168,7 +174,8 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
     if (!force && maxClaims !== null) {
       const slot = await promotionMetaService.reserveClaimSlot(promo.id, maxClaims);
       if (slot === 'exhausted') {
-        throw new MedusaError(MedusaError.Types.NOT_ALLOWED, `발급 수량이 소진되었습니다: ${promo.code}. force: true로 강제 발급하세요.`);
+        skipped.push({ promotion_id: promo.id, reason: 'max_claims_exceeded' });
+        continue;
       }
       slotReserved = true;
     }
@@ -217,20 +224,36 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
     throw new MedusaError(MedusaError.Types.INVALID_DATA, 'promotion_ids is required and must be a non-empty array');
   }
 
+  const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
   const remoteLink = req.scope.resolve(ContainerRegistrationKeys.REMOTE_LINK);
+  const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
 
-  // Dismiss links between customer and promotions
-  const links = promotion_ids.map((promotionId) => ({
-    [Modules.CUSTOMER]: { customer_id: customerId },
-    [Modules.PROMOTION]: { promotion_id: promotionId },
-  }));
+  // 실제로 연결된 프로모션만 대상으로 — issued_count 과다 감소 방지
+  const { data: customers } = await query.graph({
+    entity: 'customer',
+    fields: ['id', 'promotions.id'],
+    filters: { id: customerId },
+  });
+  const linkedIds = new Set<string>((customers?.[0]?.promotions ?? []).map((p: any) => p.id));
+  const toRemove = promotion_ids.filter((id) => linkedIds.has(id));
 
-  await remoteLink.dismiss(links);
+  if (toRemove.length > 0) {
+    await remoteLink.dismiss(
+      toRemove.map((promotionId) => ({
+        [Modules.CUSTOMER]: { customer_id: customerId },
+        [Modules.PROMOTION]: { promotion_id: promotionId },
+      })),
+    );
+    // 회수했으니 발급 수량 카운트 원복
+    await Promise.all(
+      toRemove.map((id) => promotionMetaService.releaseClaimSlot(id).catch(() => {})),
+    );
+  }
 
   return res.status(200).json({
     success: true,
-    message: `${promotion_ids.length} promotion(s) removed from customer`,
+    message: `${toRemove.length} promotion(s) removed from customer`,
     customer_id: customerId,
-    promotion_ids,
+    promotion_ids: toRemove,
   });
 }

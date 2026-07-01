@@ -150,14 +150,6 @@ export function CouponDetailDialog({
               {AUTO_ISSUE_TRIGGER_LABELS[autoIssueTrigger]}
             </Row>
           )}
-          <Row label="발급 방식">
-            {visibility === 'assigned_only' ? '발급 고객 전용' : visibility === 'claimable' ? '발급받기' : '공개'}
-          </Row>
-          {visibility === 'claimable' && (
-            <Row label="총 발급 수량">
-              {maxClaims ? `${maxClaims.toLocaleString('ko-KR')}명 한정` : '무제한'}
-            </Row>
-          )}
           <Row label="유효 기간">{formatPeriod(c)}</Row>
           <Row label="생성일">{formatCouponDateTime(c.created_at) ?? '-'}</Row>
           {createdBy && <Row label="생성자">{createdBy}</Row>}

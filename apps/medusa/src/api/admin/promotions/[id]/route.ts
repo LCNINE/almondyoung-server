@@ -15,7 +15,8 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
 }
 
 export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
-  const { additional_data, ...rest } = req.validatedBody as PromotionMutationBody;
+  // validatedBody는 Medusa 코어 validator 미들웨어가 채운다. 미적용 시 body로 폴백해 크래시 방지.
+  const { additional_data, ...rest } = (req.validatedBody ?? req.body) as PromotionMutationBody;
   const promotionMetadata = extractMetaFromAdditionalData(additional_data);
 
   await updatePromotionsWorkflow(req.scope).run({

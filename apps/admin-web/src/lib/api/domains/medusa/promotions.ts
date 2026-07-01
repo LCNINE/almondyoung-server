@@ -58,6 +58,7 @@ export interface CreatePromotionPayload {
   code: string;
   type: 'standard';
   is_automatic: false;
+  status?: 'active' | 'inactive' | 'draft';
   application_method: {
     type: 'percentage' | 'fixed';
     value: number;
@@ -71,10 +72,22 @@ export interface CreatePromotionPayload {
     campaign_identifier: string;
     starts_at?: string;
     ends_at?: string;
-    budget?: { type: 'usage' | 'spend'; limit: number } | { type: 'use_by_attribute' | 'spend_by_attribute'; attribute: string; limit: number };
+    // spend 계열은 금액 기준이라 currency_code 필수
+    budget?:
+      | { type: 'usage'; limit: number }
+      | { type: 'spend'; limit: number; currency_code: string }
+      | { type: 'use_by_attribute'; attribute: string; limit: number }
+      | { type: 'spend_by_attribute'; attribute: string; limit: number; currency_code: string };
   };
   rules?: PromotionRule[];
   additional_data?: Record<string, unknown>;
+}
+
+export interface AssignPromotionResult {
+  success: boolean;
+  issued: string[];
+  skipped: { promotion_id: string; reason: string }[];
+  force: boolean;
 }
 
 export interface CouponCustomer {
@@ -138,11 +151,12 @@ export const medusaPromotionsApi = {
     await client.delete(`${MEDUSA_BASE_URL}/admin/promotions/${id}`);
   },
 
-  assignToCustomer: async (medusaCustomerId: string, promotionIds: string[]) => {
-    await client.post(
+  assignToCustomer: async (medusaCustomerId: string, promotionIds: string[], force = false): Promise<AssignPromotionResult> => {
+    const res = await client.post<AssignPromotionResult>(
       `${MEDUSA_BASE_URL}/admin/customers/${medusaCustomerId}/promotions`,
-      { promotion_ids: promotionIds }
+      { promotion_ids: promotionIds, force }
     );
+    return res.data;
   },
 
   getCustomers: async (promotionId: string, params: { limit?: number; offset?: number } = {}) => {

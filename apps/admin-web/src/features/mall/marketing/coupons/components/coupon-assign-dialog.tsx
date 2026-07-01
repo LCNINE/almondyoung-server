@@ -17,6 +17,17 @@ import { medusaCustomerApi } from '@/lib/api/domains/medusa';
 import { toast } from 'sonner';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
 
+// 발급 스킵 사유 → 안내 문구
+const SKIP_REASON_LABELS: Record<string, string> = {
+  inactive: '비활성 쿠폰입니다.',
+  automatic: '자동 적용 쿠폰은 수동 발급할 수 없습니다.',
+  not_started: '아직 발급 기간이 아닙니다.',
+  expired: '기간이 만료된 쿠폰입니다.',
+  group_mismatch: '대상 고객 그룹이 아닙니다.',
+  max_claims_exceeded: '발급 수량이 소진되었습니다.',
+  unknown: '발급할 수 없습니다.',
+};
+
 export function CouponAssignDialog({
   promotionId,
   promotionCode,
@@ -32,6 +43,7 @@ export function CouponAssignDialog({
   const [resolvedCustomer, setResolvedCustomer] = useState<{ id: string; email: string } | null>(null);
   const [lookupError, setLookupError] = useState('');
   const [isLookingUp, setIsLookingUp] = useState(false);
+  const [skipReason, setSkipReason] = useState<string | null>(null);
 
   const assignMutation = useAssignCoupon();
 
@@ -40,6 +52,7 @@ export function CouponAssignDialog({
     if (!trimmed) return;
     setLookupError('');
     setResolvedCustomer(null);
+    setSkipReason(null);
     setIsLookingUp(true);
     try {
       const res = await medusaCustomerApi.getCustomerByEmail(trimmed);
@@ -56,15 +69,28 @@ export function CouponAssignDialog({
     }
   };
 
-  const handleAssign = async () => {
+  const handleAssign = async (force = false) => {
     if (!resolvedCustomer) return;
+    setSkipReason(null);
     try {
-      await assignMutation.mutateAsync({
+      const result = await assignMutation.mutateAsync({
         medusaCustomerId: resolvedCustomer.id,
         promotionIds: [promotionId],
+        force,
       });
-      toast.success(`${resolvedCustomer.email}에게 쿠폰 [${promotionCode}] 발급 완료`);
-      handleClose();
+      if (result.issued.includes(promotionId)) {
+        toast.success(`${resolvedCustomer.email}에게 쿠폰 [${promotionCode}] 발급 완료`);
+        handleClose();
+        return;
+      }
+      const reason = result.skipped.find((s) => s.promotion_id === promotionId)?.reason;
+      if (reason === 'already_issued') {
+        toast.info('이미 발급된 고객입니다.');
+        handleClose();
+        return;
+      }
+      // 정책상 스킵 → 사유 표시 + 강제 발급 옵션 노출
+      setSkipReason(reason ?? 'unknown');
     } catch {
       toast.error('쿠폰 발급에 실패했습니다.');
     }
@@ -74,6 +100,7 @@ export function CouponAssignDialog({
     setEmail('');
     setResolvedCustomer(null);
     setLookupError('');
+    setSkipReason(null);
     onOpenChange(false);
   };
 
@@ -121,16 +148,33 @@ export function CouponAssignDialog({
               <span>{resolvedCustomer.email}</span>
             </div>
           )}
+
+          {skipReason && (
+            <div className="flex items-start gap-2 rounded-md bg-amber-50 p-2.5 text-sm text-amber-700">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{SKIP_REASON_LABELS[skipReason] ?? SKIP_REASON_LABELS.unknown} 강제 발급하시겠습니까?</span>
+            </div>
+          )}
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={handleClose}>취소</Button>
-          <Button
-            onClick={handleAssign}
-            disabled={assignMutation.isPending || !resolvedCustomer}
-          >
-            {assignMutation.isPending ? '발급 중...' : '발급'}
-          </Button>
+          {skipReason ? (
+            <Button
+              variant="destructive"
+              onClick={() => handleAssign(true)}
+              disabled={assignMutation.isPending || !resolvedCustomer}
+            >
+              {assignMutation.isPending ? '발급 중...' : '강제 발급'}
+            </Button>
+          ) : (
+            <Button
+              onClick={() => handleAssign(false)}
+              disabled={assignMutation.isPending || !resolvedCustomer}
+            >
+              {assignMutation.isPending ? '발급 중...' : '발급'}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

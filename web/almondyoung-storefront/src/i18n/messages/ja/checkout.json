@@ -198,6 +198,7 @@
       "couponApplyFailed": "クーポンの適用に失敗しました。しばらくしてから再度お試しください。",
       "couponLimitExceeded": "このクーポンの1人あたりの使用上限に達しました。",
       "couponNotAssigned": "このクーポンは発行済みのお客様のみご利用いただけます。",
+      "couponRemoveFailed": "クーポンの削除に失敗しました。しばらくしてから再度お試しください。",
       "claimAndApplyFailed": "クーポンの発行に失敗しました。しばらくしてから再度お試しください。",
       "claimSuccessApplyFailed": "クーポンは発行されましたが、現在のカートに適用できませんでした。クーポン一覧でご確認のうえご利用ください。"
     }
