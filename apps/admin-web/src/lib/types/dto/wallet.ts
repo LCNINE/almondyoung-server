@@ -352,3 +352,25 @@ export interface AdminRecurringBillingListQuery {
   paymentIntentId?: string;
   providerType?: 'CMS_BATCH' | 'TOSS_BILLING' | 'NICEPAY_BILLING';
 }
+
+// ── 현금영수증 (관리자) ──────────────────────────────────────────────────────
+export type AdminCashReceiptType = '소득공제' | '지출증빙';
+
+export interface AdminCashReceiptDto {
+  id: string;
+  intentId: string;
+  type: AdminCashReceiptType;
+  status: 'ISSUED' | 'CANCELED' | 'FAILED';
+  amount: number;
+  currency: string;
+  receiptUrl: string | null;
+  issueNumber: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+}
+
+export interface IssueCashReceiptPayload {
+  intentId: string;
+  type: AdminCashReceiptType;
+  customerIdentityNumber: string;
+}
