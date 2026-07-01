@@ -25,6 +25,7 @@ import {
   pointHolds,
   providerWebhookReceipts,
   refunds,
+  cashReceipts,
 } from './schema';
 
 export type WalletDb = DbService<WalletSchema>['db'];
@@ -67,6 +68,10 @@ export type UpdateCharge = Partial<Omit<NewCharge, 'id' | 'createdAt' | 'updated
 export type Refund = InferSelectModel<typeof refunds>;
 export type NewRefund = InferInsertModel<typeof refunds>;
 export type UpdateRefund = Partial<Omit<NewRefund, 'id' | 'createdAt' | 'updatedAt'>>;
+
+export type CashReceipt = InferSelectModel<typeof cashReceipts>;
+export type NewCashReceipt = InferInsertModel<typeof cashReceipts>;
+export type UpdateCashReceipt = Partial<Omit<NewCashReceipt, 'id' | 'createdAt' | 'updatedAt'>>;
 
 export type PaymentStateTransition = InferSelectModel<typeof paymentStateTransitions>;
 export type NewPaymentStateTransition = InferInsertModel<typeof paymentStateTransitions>;

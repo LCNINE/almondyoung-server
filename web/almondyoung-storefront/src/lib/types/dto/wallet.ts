@@ -293,3 +293,17 @@ export interface CashReceiptData {
   name: string // 상호명 또는 성명
   number: string // 사업자등록번호 또는 휴대폰번호
 }
+
+/** wallet 이 실제 발급한 현금영수증 레코드 (GET /v1/cash-receipts?intentId=) */
+export type IssuedCashReceiptDto = {
+  id: string
+  intentId: string
+  type: "소득공제" | "지출증빙"
+  status: "ISSUED" | "CANCELED" | "FAILED"
+  amount: number
+  currency: string
+  receiptUrl: string | null
+  issueNumber: string | null
+  errorMessage: string | null
+  createdAt: string
+}

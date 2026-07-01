@@ -25,6 +25,8 @@ import {
   UpdateRegionPayload,
   RegionMethodMatrixResponse,
   PutRegionMethodItem,
+  AdminCashReceiptDto,
+  IssueCashReceiptPayload,
 } from '@/lib/types/dto/wallet';
 import { client } from '../../client';
 
@@ -47,6 +49,26 @@ function idempotencyConfig() {
 }
 
 export const walletApi = {
+  // ── Cash Receipts (현금영수증, 관리자) ─────────────────────────────────────
+
+  getCashReceipts: async (intentId: string): Promise<AdminCashReceiptDto[]> => {
+    const res = await client.get(
+      `${BASE}/v1/admin/cash-receipts?intentId=${encodeURIComponent(intentId)}`
+    );
+    return res.data;
+  },
+
+  issueCashReceipt: async (
+    payload: IssueCashReceiptPayload
+  ): Promise<AdminCashReceiptDto> => {
+    const res = await client.post(
+      `${BASE}/v1/admin/cash-receipts`,
+      payload,
+      idempotencyConfig()
+    );
+    return res.data;
+  },
+
   // ── Payment Intents ──────────────────────────────────────────────────────
 
   listPaymentIntents: async (

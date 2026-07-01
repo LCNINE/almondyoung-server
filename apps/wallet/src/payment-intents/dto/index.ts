@@ -155,6 +155,18 @@ export class CreatePaymentIntentDto {
 
 // ─── Confirm Intent ───────────────────────────────────────────────────────────
 
+export class CashReceiptRequestDto {
+  @ApiProperty({ description: '소득공제(개인) 또는 지출증빙(사업자)', enum: ['소득공제', '지출증빙'] })
+  @IsEnum({ 소득공제: '소득공제', 지출증빙: '지출증빙' })
+  type: '소득공제' | '지출증빙';
+
+  @ApiProperty({ description: '소득공제: 휴대폰번호, 지출증빙: 사업자등록번호 (숫자만)' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(30)
+  customerIdentityNumber: string;
+}
+
 export class ConfirmPaymentIntentDto {
   @ApiPropertyOptional({
     description: 'Payment method ID to use for this payment (not required if pointsToApply covers the full amount)',
@@ -169,6 +181,12 @@ export class ConfirmPaymentIntentDto {
   @IsInt()
   @Min(0)
   pointsToApply?: number;
+
+  @ApiPropertyOptional({ description: '현금영수증 신청 정보 (무통장입금 시). 입금확인 완료 시 자동 발급.', type: CashReceiptRequestDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CashReceiptRequestDto)
+  cashReceipt?: CashReceiptRequestDto;
 }
 
 // ─── Toss Approve ─────────────────────────────────────────────────────────────

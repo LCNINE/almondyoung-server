@@ -559,6 +559,14 @@
         "failed": "환불 확인 필요"
       }
     },
+    "cashReceipt": {
+      "sectionTitle": "현금영수증",
+      "typeLabel": "종류",
+      "typeIncome": "소득공제용",
+      "typeExpense": "지출증빙용",
+      "issueNumber": "발급번호",
+      "viewReceipt": "영수증 보기"
+    },
     "cancelDialog": {
       "reasonLabel": "취소 사유",
       "otherPlaceholder": "취소 사유를 입력해주세요 (최대 500자)",

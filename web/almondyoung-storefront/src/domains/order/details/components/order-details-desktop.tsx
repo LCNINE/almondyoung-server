@@ -25,6 +25,8 @@ import {
   type CancelReasonCode,
 } from "@/components/orders/cancel-reason-form"
 import type { StoreOrderActionsResponse, StoreRefundStatus, RefundSummary } from "@/lib/api/orders/store-orders"
+import type { IssuedCashReceiptDto } from "@/lib/types/dto/wallet"
+import { CashReceiptInfo } from "./cash-receipt-info"
 import { cancelOrderByMedusaId } from "@/lib/api/orders/store-orders"
 import { HttpTypes } from "@medusajs/types"
 import { useTranslations } from "next-intl"
@@ -41,10 +43,12 @@ const KAKAO_CS_URL = "https://pf.kakao.com/_xaxgxazs"
 export const OrderDetailsDesktop = ({
   order,
   coreActions,
+  cashReceipts = [],
 }: {
   order: HttpTypes.StoreOrder | null
   countryCode: string
   coreActions?: StoreOrderActionsResponse
+  cashReceipts?: IssuedCashReceiptDto[]
 }) => {
   const tLabels = useTranslations("mypage.order.labels")
   const tStatus = useTranslations("mypage.order.status")
@@ -348,6 +352,7 @@ export const OrderDetailsDesktop = ({
                   ) : null}
                 </div>
               )}
+              <CashReceiptInfo cashReceipts={cashReceipts} />
             </div>
             <dl className="bg-gray-background space-y-2 p-3.5">
               <div className="flex items-center justify-between">

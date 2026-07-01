@@ -173,109 +173,111 @@ export function AddressBookSection() {
                   return 0
                 })
                 .map((address) => {
-                const fullAddress = buildAddressLine({
-                  province: address.province,
-                  city: address.city,
-                  address1: address.address_1,
-                  address2: address.address_2,
-                })
-                const name = [address.first_name, address.last_name]
-                  .filter(Boolean)
-                  .join(" ")
-                const addressName =
-                  (address.metadata?.shipping_address_name as string) ??
-                  address.address_name
-                const postalCode = address.postal_code ?? ""
-                const address1 = address.address_1 ?? ""
-                const address2 = address.address_2 ?? ""
-                const isActionLoading = actionLoadingId === address.id
+                  const fullAddress = buildAddressLine({
+                    province: address.province,
+                    city: address.city,
+                    address1: address.address_1,
+                    address2: address.address_2,
+                  })
+                  const name = [address.first_name, address.last_name]
+                    .filter(Boolean)
+                    .join(" ")
+                  const addressName =
+                    (address.metadata?.shipping_address_name as string) ??
+                    address.address_name
+                  const postalCode = address.postal_code ?? ""
+                  const address1 = address.address_1 ?? ""
+                  const address2 = address.address_2 ?? ""
+                  const isActionLoading = actionLoadingId === address.id
 
-                return (
-                  <div
-                    key={address.id}
-                    className={`relative rounded-lg border border-gray-200 p-4 transition-colors hover:border-gray-300 ${
-                      isActionLoading ? "pointer-events-none opacity-50" : ""
-                    }`}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1 pr-8">
-                        <div className="flex items-center gap-2">
-                          {addressName && (
-                            <span className="font-medium text-gray-900">
-                              {addressName}
-                            </span>
-                          )}
-                          <span
-                            className={
-                              addressName
-                                ? "text-sm text-gray-600"
-                                : "font-medium text-gray-900"
-                            }
-                          >
-                            {name}
-                          </span>
-                          {address.is_default_shipping && (
-                            <span className="rounded bg-[#e8f6ea] px-2 py-0.5 text-[11px] font-semibold text-[#2ba24c]">
-                              {t("defaultBadge")}
-                            </span>
-                          )}
-                        </div>
-                        {address.phone && (
-                          <p className="mt-1 text-sm text-gray-600">
-                            {formatPhoneNumber(address.phone)}
-                          </p>
-                        )}
-                        <dl className="mt-1 space-y-1 text-sm text-gray-600">
-                          <AddressRow
-                            label={tLabels("postcode")}
-                            value={postalCode}
-                          />
-                          <AddressRow
-                            label={tLabels("address")}
-                            value={address1 || fullAddress}
-                          />
-                          <AddressRow
-                            label={tLabels("addressDetail")}
-                            value={address2}
-                          />
-                        </dl>
-                      </div>
-
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            type="button"
-                            className="rounded p-1 hover:bg-gray-100"
-                          >
-                            <MoreVertical className="h-4 w-4 text-gray-500" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handleEdit(address)}>
-                            <Pencil className="mr-2 h-4 w-4" />
-                            {t("edit")}
-                          </DropdownMenuItem>
-                          {!address.is_default_shipping && (
-                            <DropdownMenuItem
-                              onClick={() => handleSetDefault(address.id)}
+                  return (
+                    <div
+                      key={address.id}
+                      className={`relative rounded-lg border border-gray-200 p-4 transition-colors hover:border-gray-300 ${
+                        isActionLoading ? "pointer-events-none opacity-50" : ""
+                      }`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 pr-8">
+                          <div className="flex items-center gap-2">
+                            {addressName && (
+                              <span className="font-medium text-gray-900">
+                                {addressName}
+                              </span>
+                            )}
+                            <span
+                              className={
+                                addressName
+                                  ? "text-sm text-gray-600"
+                                  : "font-medium text-gray-900"
+                              }
                             >
-                              <Star className="mr-2 h-4 w-4" />
-                              {t("setDefault")}
-                            </DropdownMenuItem>
+                              {name}
+                            </span>
+                            {address.is_default_shipping && (
+                              <span className="rounded bg-[#e8f6ea] px-2 py-0.5 text-[11px] font-semibold text-[#2ba24c]">
+                                {t("defaultBadge")}
+                              </span>
+                            )}
+                          </div>
+                          {address.phone && (
+                            <p className="mt-1 text-sm text-gray-600">
+                              {formatPhoneNumber(address.phone)}
+                            </p>
                           )}
-                          <DropdownMenuItem
-                            onClick={() => handleDelete(address.id)}
-                            className="text-red-600 focus:text-red-600"
-                          >
-                            <Trash2 className="mr-2 h-4 w-4" />
-                            {t("delete")}
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                          <dl className="mt-1 space-y-1 text-sm text-gray-600">
+                            <AddressRow
+                              label={tLabels("postcode")}
+                              value={postalCode}
+                            />
+                            <AddressRow
+                              label={tLabels("address")}
+                              value={address1 || fullAddress}
+                            />
+                            <AddressRow
+                              label={tLabels("addressDetail")}
+                              value={address2}
+                            />
+                          </dl>
+                        </div>
+
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              className="rounded p-1 hover:bg-gray-100"
+                            >
+                              <MoreVertical className="h-4 w-4 text-gray-500" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => handleEdit(address)}
+                            >
+                              <Pencil className="mr-2 h-4 w-4" />
+                              {t("edit")}
+                            </DropdownMenuItem>
+                            {!address.is_default_shipping && (
+                              <DropdownMenuItem
+                                onClick={() => handleSetDefault(address.id)}
+                              >
+                                <Star className="mr-2 h-4 w-4" />
+                                {t("setDefault")}
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuItem
+                              onClick={() => handleDelete(address.id)}
+                              className="text-red-600 focus:text-red-600"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              {t("delete")}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </div>
-                  </div>
-                )
-              })}
+                  )
+                })}
             </div>
           )}
         </CardContent>
@@ -293,7 +295,13 @@ export function AddressBookSection() {
   )
 }
 
-function AddressRow({ label, value }: { label: string; value?: string | null }) {
+function AddressRow({
+  label,
+  value,
+}: {
+  label: string
+  value?: string | null
+}) {
   return (
     <div className="flex items-start gap-2">
       <dt className="min-w-14 text-gray-500">{label}</dt>

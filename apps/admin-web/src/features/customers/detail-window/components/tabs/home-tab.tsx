@@ -1,6 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import { Star, User } from 'lucide-react';
+import { OrderDetailDialog } from './orders-tab';
 import { Button } from '@/components/ui/button';
 import { useCustomerById } from '@/lib/services/customers';
 import {
@@ -52,6 +54,8 @@ function Field({ label, value }: { label: string; value: string | null }) {
 export function HomeTab({ customerId }: { customerId: string }) {
   const { data: customer, isLoading } = useCustomerById(customerId);
   const profile = customer?.profile;
+  // 주문정보 행 클릭 시 주문내역 탭과 동일한 상세 다이얼로그(현금영수증 포함)를 연다.
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
 
   // user-service 회원 ↔ Medusa 고객은 이메일로 매칭한다.
   const email = customer?.email ?? '';
@@ -175,7 +179,8 @@ export function HomeTab({ customerId }: { customerId: string }) {
                 {orders.map((order) => (
                   <tr
                     key={order.id}
-                    className="border-b border-gray-100 last:border-0"
+                    onClick={() => setSelectedOrderId(order.id)}
+                    className="cursor-pointer border-b border-gray-100 last:border-0 hover:bg-gray-50"
                   >
                     <td className="py-2 pr-3 text-gray-900">
                       #{order.display_id}
@@ -199,6 +204,11 @@ export function HomeTab({ customerId }: { customerId: string }) {
           </div>
         )}
       </section>
+
+      <OrderDetailDialog
+        orderId={selectedOrderId}
+        onClose={() => setSelectedOrderId(null)}
+      />
     </div>
   );
 }

@@ -16,6 +16,8 @@ import {
 import { ChargePlan, ChargeSlot } from './charge-plan';
 import { ChargeResult } from '../providers/payment-provider.interface';
 
+type CashReceiptRequest = { type: '소득공제' | '지출증빙'; customerIdentityNumber: string };
+
 interface Phase1Result {
   plan: ChargePlan;
   userId: string;
@@ -43,7 +45,7 @@ export class ConfirmService {
 
   async confirm(
     intentId: string,
-    dto: { paymentMethodId?: string; pointsToApply?: number },
+    dto: { paymentMethodId?: string; pointsToApply?: number; cashReceipt?: CashReceiptRequest },
     correlationId: string,
   ): Promise<{ nextAction?: Record<string, unknown> }> {
     let phase1: Phase1Result | null = null;
@@ -60,7 +62,7 @@ export class ConfirmService {
 
   private async phase1Setup(
     intentId: string,
-    dto: { paymentMethodId?: string; pointsToApply?: number },
+    dto: { paymentMethodId?: string; pointsToApply?: number; cashReceipt?: CashReceiptRequest },
     correlationId: string,
     tx: DbTx,
   ): Promise<Phase1Result | null> {
@@ -187,11 +189,16 @@ export class ConfirmService {
     }
 
     // 9. Set intent.paymentMethodId and transition to PROCESSING
+    // 현금영수증 신청이 있으면 metadata 에 저장 — 무통장 입금확인(confirmDeposit) 완료 시 자동 발급에 사용.
     const intentPaymentMethodId = plan.primary.paymentMethodId;
+    const nextMetadata = dto.cashReceipt
+      ? { ...(intent.metadata ?? {}), cashReceipt: dto.cashReceipt }
+      : undefined;
     await tx
       .update(paymentIntents)
       .set({
         paymentMethodId: intentPaymentMethodId,
+        ...(nextMetadata ? { metadata: nextMetadata } : {}),
         version: sql`${paymentIntents.version} + 1`,
         updatedAt: new Date(),
       })

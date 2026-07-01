@@ -4,6 +4,7 @@ import { OrderDetailsDesktop } from "domains/order/details/components/order-deta
 import { OrderDetailsMobile } from "domains/order/details/components/order-details-mobile"
 import { getOrder } from "@/lib/api/medusa/orders"
 import { getOrderActionsByMedusaId } from "@/lib/api/orders/store-orders"
+import { getCashReceipts } from "@/lib/api/wallet"
 
 interface OrderDetailsPageProps {
   params: Promise<{ countryCode: string }>
@@ -24,6 +25,14 @@ export default async function OrderDetailsPage({
       : Promise.resolve(null),
   ])
 
+  // 결제 세션 data.intentId(wallet) 로 발급된 현금영수증 조회. 없으면 빈 배열.
+  const intentId = (
+    order?.payment_collections?.[0]?.payment_sessions?.[0]?.data as
+      | Record<string, unknown>
+      | undefined
+  )?.intentId as string | undefined
+  const cashReceipts = intentId ? await getCashReceipts(intentId) : []
+
   return (
     <WithHeaderLayout
       config={{
@@ -39,6 +48,7 @@ export default async function OrderDetailsPage({
             order={order}
             countryCode={countryCode}
             coreActions={coreActions ?? undefined}
+            cashReceipts={cashReceipts}
           />
         </MypageLayout>
       </div>
@@ -49,6 +59,7 @@ export default async function OrderDetailsPage({
           order={order}
           countryCode={countryCode}
           coreActions={coreActions ?? undefined}
+          cashReceipts={cashReceipts}
         />
       </div>
     </WithHeaderLayout>

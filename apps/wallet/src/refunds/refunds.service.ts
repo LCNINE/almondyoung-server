@@ -4,6 +4,7 @@ import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { WalletSchema, charges as chargesTable, refunds, paymentIntents } from '../schema';
 import { DbTx, Refund } from '../types';
 import { ChargesService } from '../charges/charges.service';
+import { CashReceiptsService } from '../cash-receipts/cash-receipts.service';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { ProviderRegistry } from '../providers/provider.registry';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
@@ -17,10 +18,21 @@ export class RefundsService {
   constructor(
     private readonly dbService: DbService<WalletSchema>,
     private readonly chargesService: ChargesService,
+    private readonly cashReceiptsService: CashReceiptsService,
     private readonly paymentMethodsService: PaymentMethodsService,
     private readonly providerRegistry: ProviderRegistry,
     private readonly stateTransitionService: StateTransitionService,
   ) {}
+
+  /** 환불 성공 시 발급된 현금영수증을 환불금액만큼 취소. best-effort — 실패해도 환불은 유지. */
+  private async cancelCashReceiptBestEffort(chargeId: string, amount: number): Promise<void> {
+    try {
+      await this.cashReceiptsService.cancelForRefund(chargeId, amount);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Cash receipt cancel-on-refund failed (refund kept): charge=${chargeId}, error=${message}`);
+    }
+  }
 
   async create(dto: CreateRefundDto): Promise<Refund> {
     // 1. Early validation (no lock needed)
@@ -177,6 +189,7 @@ export class RefundsService {
           );
         }
       });
+      await this.cancelCashReceiptBestEffort(charge.id, dto.amount);
     } else if (providerResult.status === 'PENDING') {
       // Refund is processing asynchronously
       await this.dbService.db.update(refunds).set({ updatedAt: new Date() }).where(eq(refunds.id, refund.id));
@@ -355,6 +368,7 @@ export class RefundsService {
         );
       }
     });
+    await this.cancelCashReceiptBestEffort(refund.chargeId, refund.amount);
 
     return this.findByIdOrThrow(refundId);
   }

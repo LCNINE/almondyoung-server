@@ -29,6 +29,17 @@ export interface TossBillingConfirmResponse {
   [key: string]: unknown;
 }
 
+export interface TossCashReceiptResponse {
+  receiptKey: string;
+  issueNumber: string;
+  issueStatus: 'IN_PROGRESS' | 'COMPLETED' | 'FAILED';
+  transactionType: 'CONFIRM' | 'CANCEL';
+  receiptUrl: string;
+  amount: number;
+  taxFreeAmount: number;
+  [key: string]: unknown;
+}
+
 export interface TossApiError {
   code: string;
   message: string;
@@ -84,6 +95,31 @@ export class TossApiClient {
       orderId,
       orderName: orderName ?? '정기결제',
     });
+  }
+
+  async issueCashReceipt(params: {
+    amount: number;
+    orderId: string;
+    orderName: string;
+    type: '소득공제' | '지출증빙';
+    customerIdentityNumber: string;
+    taxFreeAmount?: number;
+  }): Promise<TossApiResult<TossCashReceiptResponse>> {
+    const body: Record<string, unknown> = {
+      amount: params.amount,
+      orderId: params.orderId,
+      orderName: params.orderName,
+      type: params.type,
+      customerIdentityNumber: params.customerIdentityNumber,
+    };
+    if (params.taxFreeAmount !== undefined) body.taxFreeAmount = params.taxFreeAmount;
+    return this.post<TossCashReceiptResponse>('/cash-receipts', body);
+  }
+
+  async cancelCashReceipt(receiptKey: string, amount?: number): Promise<TossApiResult<TossCashReceiptResponse>> {
+    const body: Record<string, unknown> = {};
+    if (amount !== undefined) body.amount = amount;
+    return this.post<TossCashReceiptResponse>(`/cash-receipts/${receiptKey}/cancel`, body);
   }
 
   private async post<T>(

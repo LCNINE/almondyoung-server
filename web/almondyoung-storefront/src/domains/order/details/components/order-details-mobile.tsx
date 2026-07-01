@@ -32,6 +32,8 @@ import {
 } from "@/components/orders/cancel-reason-form"
 import type { StoreOrderActionsResponse, StoreRefundStatus, RefundSummary } from "@/lib/api/orders/store-orders"
 import { cancelOrderByMedusaId } from "@/lib/api/orders/store-orders"
+import type { IssuedCashReceiptDto } from "@/lib/types/dto/wallet"
+import { CashReceiptInfo } from "./cash-receipt-info"
 import { HttpTypes } from "@medusajs/types"
 import { useTranslations } from "next-intl"
 import { useState, useTransition } from "react"
@@ -47,10 +49,12 @@ const KAKAO_CS_URL = "https://pf.kakao.com/_xaxgxazs"
 export const OrderDetailsMobile = ({
   order,
   coreActions,
+  cashReceipts = [],
 }: {
   order: HttpTypes.StoreOrder | null
   countryCode: string
   coreActions?: StoreOrderActionsResponse
+  cashReceipts?: IssuedCashReceiptDto[]
 }) => {
   const tLabels = useTranslations("mypage.order.labels")
   const tStatus = useTranslations("mypage.order.status")
@@ -368,6 +372,7 @@ export const OrderDetailsMobile = ({
                 ) : null}
               </div>
             )}
+            <CashReceiptInfo cashReceipts={cashReceipts} />
           </OrderInfoCardRoot>
         </section>
         )}
