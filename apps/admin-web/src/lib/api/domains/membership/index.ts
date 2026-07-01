@@ -4,6 +4,10 @@ import { MEMBERSHIP_SERVICE_BASE_URL } from '@/const';
 import { AdminRecurringContractSummary } from '@/lib/types/dto/membership';
 import { client } from '../../client';
 
+// 관리자 운영 mutation 멱등 키. 호출마다 새 키를 발급한다 — axios 자동 재시도는 같은 config(=같은 키)를
+// 재사용하므로 타임아웃 후 재시도를 서버가 흡수하고, 더블클릭은 버튼 비활성으로 막힌다.
+const idemConfig = () => ({ headers: { 'Idempotency-Key': crypto.randomUUID() } });
+
 export interface AdminMembersQuery {
   page?: number;
   limit?: number;
@@ -37,6 +41,8 @@ export interface AdminMemberListItem {
   autoRenewal: boolean;
   cancellationReasonCode: string | null;
   recurringCancellationReasonCode: string | null;
+  /** 백엔드가 취소 사유 코드를 마스터 displayText로 해석한 값(없으면 null) */
+  cancellationReasonText: string | null;
 }
 
 export interface AdminMembersResponse {
@@ -197,7 +203,8 @@ export const membershipApi = {
   ): Promise<void> => {
     await client.put(
       `${MEMBERSHIP_SERVICE_BASE_URL}/admin/contracts/${encodeURIComponent(contractId)}/auto-renewal`,
-      { autoRenewal }
+      { autoRenewal },
+      idemConfig()
     );
   },
 
@@ -212,7 +219,8 @@ export const membershipApi = {
         userId,
         days,
         reason,
-      }
+      },
+      idemConfig()
     );
   },
 
@@ -294,7 +302,8 @@ export const membershipApi = {
   }> => {
     const res = await client.post(
       `${MEMBERSHIP_SERVICE_BASE_URL}/admin/subscriptions/${encodeURIComponent(contractId)}/force-cancel`,
-      body
+      body,
+      idemConfig()
     );
     return res.data;
   },
@@ -319,7 +328,9 @@ export const membershipApi = {
 
   retryBilling: async (contractId: string): Promise<void> => {
     await client.post(
-      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/billing/retry/${encodeURIComponent(contractId)}`
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/billing/retry/${encodeURIComponent(contractId)}`,
+      null,
+      idemConfig()
     );
   },
 
@@ -333,7 +344,8 @@ export const membershipApi = {
       {
         days,
         memo,
-      }
+      },
+      idemConfig()
     );
   },
 

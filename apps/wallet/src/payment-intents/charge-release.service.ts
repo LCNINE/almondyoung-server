@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConflictError } from '@app/shared';
 import { ChargesService } from '../charges/charges.service';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { ProviderRegistry } from '../providers/provider.registry';
@@ -35,24 +36,32 @@ export class ChargeReleaseService {
     if (activeCharge) {
       const activeMethod = await this.paymentMethodsService.findById(activeCharge.paymentMethodId);
       if (activeMethod && activeMethod.type === 'CMS_BATCH') {
-        try {
-          const provider = this.providerRegistry.getProviderOrThrow(activeMethod.type);
-          await provider.cancel({
-            chargeId: activeCharge.id,
-            intentId: intent.id,
-            paymentMethodId: activeCharge.paymentMethodId,
-            userId: intent.userId ?? '',
-            amount: activeCharge.amount,
-            currency: intent.currency,
-            idempotencyKey: `wallet:cancel:cms_batch:${activeCharge.id}:${correlationId}`,
-            correlationId,
-          });
-        } catch (err) {
+        // CMS는 PENDING 시점에 이미 효성 출금신청이 들어가 있으므로 provider.cancel(출금삭제)이
+        // 성공해야만 내부를 CANCELED로 전이한다. cancel은 실패 시 throw가 아니라 {status:'FAILED'}를
+        // 반환하므로 반드시 반환값을 검사한다. 실패(마감 후 취소불가 등)면 여기서 throw해 상위 호출자가
+        // intent를 CANCELED로 전이하지 못하게 막는다 — 안 그러면 돈은 빠지는데 취소완료로 보인다.
+        const provider = this.providerRegistry.getProviderOrThrow(activeMethod.type);
+        const result = await provider.cancel({
+          chargeId: activeCharge.id,
+          intentId: intent.id,
+          paymentMethodId: activeCharge.paymentMethodId,
+          userId: intent.userId ?? '',
+          amount: activeCharge.amount,
+          currency: intent.currency,
+          idempotencyKey: `wallet:cancel:cms_batch:${activeCharge.id}:${correlationId}`,
+          correlationId,
+        });
+        if (result.status !== 'SUCCEEDED') {
           this.logger.error(
-            `Failed to cancel in-flight CMS withdrawal: intentId=${intent.id}, chargeId=${activeCharge.id}, error=${err}`,
+            `CMS 출금 취소 실패 — 취소 중단(intent 비전이): intentId=${intent.id}, chargeId=${activeCharge.id}, code=${result.errorCode}, msg=${result.errorMessage}`,
+          );
+          throw new ConflictError(
+            `CMS 출금 취소에 실패해 결제를 취소할 수 없습니다. (${result.errorCode ?? 'CMS_CANCEL_FAILED'})`,
           );
         }
       }
+      // CMS는 위에서 성공했을 때만 도달. 비-CMS active charge(POINTS hold/TOSS 대기)는
+      // 외부 확정 상태가 없어 DB CANCELED만으로 충분하다.
       await this.chargesService.updateStatus(activeCharge.id, 'CANCELED', {});
     }
 

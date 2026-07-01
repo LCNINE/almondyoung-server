@@ -32,7 +32,7 @@ export class BillingManager {
     private readonly planService: PlanService,
   ) {}
 
-  async processSingleBilling(contract: DueContract): Promise<BillingResult> {
+  async processSingleBilling(contract: DueContract, attemptNo = 0): Promise<BillingResult> {
     // 동시 스케줄러 실행 대비: billingInProgress=false 조건부 선점 업데이트
     // RETURNING id — 다른 인스턴스가 먼저 선점했으면 빈 배열 반환 → 스킵
     const [locked] = await this.dbService.db
@@ -58,9 +58,10 @@ export class BillingManager {
       if (!plan) throw new Error(`Plan not found: ${contract.planId}`);
       if (!plan.plan.isActive) throw new Error(`Plan is not active: ${contract.planId}`);
 
-      // idempotencyKey를 nextBillingDate 기반으로 고정:
-      // wallet의 idempotency_keys가 같은 billing 주기의 중복 커맨드를 막는다.
-      const idempotencyKey = `membership:billing:${contract.id}:${contract.nextBillingDate}`;
+      // idempotencyKey: 같은 주기(nextBillingDate)의 동일 시도 중복은 막되, 더닝 재시도는
+      // attemptNo로 구분해 새 커맨드가 되게 한다. attemptNo를 빼면 재시도가 같은 키로 발행돼
+      // wallet이 직전 FAILED intent를 보고 no-op → 카드 재청구가 영영 일어나지 않는다.
+      const idempotencyKey = `membership:billing:${contract.id}:${contract.nextBillingDate}:${attemptNo}`;
 
       await this.walletCommandPublisher.publishBillingCharge({
         subscriberRef: contract.id,
