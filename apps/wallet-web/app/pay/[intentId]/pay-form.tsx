@@ -165,17 +165,11 @@ export function PayForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bankTransferPending, setBankTransferPending] = useState<BankTransferPendingAction | null>(null);
-  // 증빙 신청 (무통장입금 시) — 택일. 현금영수증과 세금계산서는 동시발급 불가.
-  // 현금영수증: 입금확인 완료 시 자동 발급. 세금계산서: 현재 UI/입력만 (발행 로직 미구현).
-  const [evidenceType, setEvidenceType] = useState<'NONE' | 'CASH_INCOME' | 'CASH_EXPENSE' | 'TAX_INVOICE'>('NONE');
+  // 증빙 신청 (무통장입금 시) — 현금영수증만. 입금확인 완료 시 자동 발급.
+  const [evidenceType, setEvidenceType] = useState<'NONE' | 'CASH_INCOME' | 'CASH_EXPENSE'>('NONE');
   // 소득공제 발급방법: 휴대폰 or 현금영수증카드 (토스 customerIdentityNumber 는 둘 다 허용)
   const [cashReceiptMethod, setCashReceiptMethod] = useState<'PHONE' | 'CARD'>('PHONE');
   const [cashReceiptNumber, setCashReceiptNumber] = useState('');
-  // 세금계산서(사업자) 입력값 — 사업자번호/대표자명은 로그인 사용자 사업자정보로 prefill.
-  // ponytail: 현재 수집/검증 UI만, 백엔드 발행 연동은 트랙 B에서. 수신이메일은 발신 미연동이라 제외.
-  const [taxBizName, setTaxBizName] = useState('');
-  const [taxBizNumber, setTaxBizNumber] = useState(businessInfo?.businessNumber ?? '');
-  const [taxRepName, setTaxRepName] = useState(businessInfo?.representativeName ?? '');
 
   const userPhone = (businessInfo?.phoneNumber ?? '').replace(/[^0-9]/g, '');
   const userBizNumber = businessInfo?.businessNumber ?? '';
@@ -274,13 +268,6 @@ export function PayForm({
           return;
         }
         cashReceipt = { type: '지출증빙', customerIdentityNumber: digits };
-      } else if (evidenceType === 'TAX_INVOICE') {
-        // ponytail: 세금계산서는 현재 입력/검증 UI 만 — 발행/저장 연동은 트랙 B(팝빌 등)에서.
-        const bizDigits = taxBizNumber.replace(/[^0-9]/g, '');
-        if (!taxBizName.trim() || bizDigits.length !== 10 || !taxRepName.trim()) {
-          setError('세금계산서 정보를 모두 정확히 입력해주세요 (사업자번호 10자리).');
-          return;
-        }
       }
     }
     setLoading(true);
@@ -707,7 +694,6 @@ export function PayForm({
                         <SelectItem value="NONE">신청 안 함</SelectItem>
                         <SelectItem value="CASH_INCOME">현금영수증 (개인소득공제용)</SelectItem>
                         <SelectItem value="CASH_EXPENSE">현금영수증 (사업자지출증빙용)</SelectItem>
-                        <SelectItem value="TAX_INVOICE">세금계산서 (사업자)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -770,46 +756,6 @@ export function PayForm({
                         />
                       </div>
                       <p className="text-xs text-muted-foreground">입금이 확인되면 현금영수증이 자동 발급됩니다.</p>
-                    </div>
-                  )}
-
-                  {/* 세금계산서 사업자 정보 (UI/입력만 — 발행 연동은 트랙 B) */}
-                  {evidenceType === 'TAX_INVOICE' && (
-                    <div className="mt-3 space-y-3">
-                      <div className="flex items-center gap-3">
-                        <label className="w-20 shrink-0 text-sm text-muted-foreground">상호</label>
-                        <input
-                          autoComplete="off"
-                          value={taxBizName}
-                          onChange={(e) => setTaxBizName(e.target.value)}
-                          placeholder="회사명"
-                          className="flex-1 rounded-md border px-3 py-2 text-sm"
-                        />
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <label className="w-20 shrink-0 text-sm text-muted-foreground">사업자번호</label>
-                        <input
-                          inputMode="numeric"
-                          autoComplete="off"
-                          value={taxBizNumber}
-                          onChange={(e) => setTaxBizNumber(e.target.value)}
-                          placeholder="1234567890"
-                          className="flex-1 rounded-md border px-3 py-2 text-sm"
-                        />
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <label className="w-20 shrink-0 text-sm text-muted-foreground">대표자명</label>
-                        <input
-                          autoComplete="off"
-                          value={taxRepName}
-                          onChange={(e) => setTaxRepName(e.target.value)}
-                          placeholder="대표자명"
-                          className="flex-1 rounded-md border px-3 py-2 text-sm"
-                        />
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        입금 확인 후 영업일 기준 1~2일 내 세금계산서가 발행됩니다.
-                      </p>
                     </div>
                   )}
                 </CardContent>
