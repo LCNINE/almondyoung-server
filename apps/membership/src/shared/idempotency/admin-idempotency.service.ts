@@ -76,6 +76,9 @@ export class AdminIdempotencyService {
           eq(adminOperationKeys.key, key),
           eq(adminOperationKeys.requestHash, requestHash),
           eq(adminOperationKeys.status, row.status),
+          // 만료 PROCESSING 재점유 시 SET status 가 불변이라 status 조건만으로는 동시 재점유를 못 막는다.
+          // 우리가 읽은 lockedUntil 을 본 한 요청만 승리하도록 CAS 가드를 건다(complete/fail 과 동일 패턴).
+          eq(adminOperationKeys.lockedUntil, row.lockedUntil),
         ),
       )
       .returning({ id: adminOperationKeys.id });

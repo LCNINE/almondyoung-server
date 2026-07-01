@@ -76,6 +76,16 @@ describe('AdminIdempotencyService.begin', () => {
     expect(res.kind).toBe('proceed');
   });
 
+  it('conflicts when a concurrent reclaim of a stale PROCESSING loses the race (0 rows)', async () => {
+    const svc = makeService({
+      insertReturn: [],
+      selectReturn: [{ requestHash: 'h1', status: 'PROCESSING', lockedUntil: past }],
+      updateReturn: [], // reclaim UPDATE가 0 rows 반환(실 DB에선 lockedUntil CAS 가드가 유발) → conflict 분기 검증
+    });
+    const res = await svc.begin('grant', 'k1', 'h1');
+    expect(res.kind).toBe('conflict');
+  });
+
   it('hashes semantically identical objects in a stable order', () => {
     const svc = makeService({});
     expect(svc.hashRequest({ body: { b: 2, a: 1 }, params: { id: 'c1' } })).toBe(
