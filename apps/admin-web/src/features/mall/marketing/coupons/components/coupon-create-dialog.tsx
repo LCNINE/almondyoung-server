@@ -191,16 +191,17 @@ export function CouponCreateDialog({
     if (discountType === 'percentage' && (value as number) > 100) return;
     if (targetType === 'items' && targetItems.length === 0) return;
 
+    // 1인당 한도는 campaign budget(use_by_attribute)로만 관리 — promotion_meta 컬럼은 제거됨
     const additional_data: Record<string, unknown> = {};
     if (trimmedName) additional_data.name = trimmedName;
-    if (maxUsesPerCustomer) additional_data.max_uses_per_customer = Number(maxUsesPerCustomer);
     if (visibility === 'claimable' && maxClaims) additional_data.max_claims = Number(maxClaims);
     if (me) additional_data.created_by = me.email || me.username;
     additional_data.visibility = visibility;
     if (autoIssueTrigger) additional_data.auto_issue_trigger = autoIssueTrigger;
 
     const hasCampaign = startsAt || endsAt || usageLimit || spendLimit || maxUsesPerCustomer;
-    const campaignIdentifier = `CAMP_${code.trim().toUpperCase()}`;
+    // 코드 재사용(삭제 후 재생성) 시 campaign_identifier 충돌 방지
+    const campaignIdentifier = `CAMP_${code.trim().toUpperCase()}_${Date.now()}`;
 
     const targetRules: PromotionTargetRule[] | undefined =
       targetType === 'items' && targetItems.length > 0
