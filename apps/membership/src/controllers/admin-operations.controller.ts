@@ -848,12 +848,8 @@ export class AdminOperationsController {
     @Param('contractId') contractId: string,
     @Body('autoRenewal') autoRenewal: boolean,
   ) {
-    try {
-      await this.adminOperationsService.setAutoRenewal(contractId, autoRenewal, adminId);
-      return { success: true, data: { contractId, autoRenewal } };
-    } catch (error) {
-      this.handleError(error, '자동 연장 설정 변경', contractId);
-    }
+    await this.adminOperationsService.setAutoRenewal(contractId, autoRenewal, adminId);
+    return { success: true, data: { contractId, autoRenewal } };
   }
 
   /**
