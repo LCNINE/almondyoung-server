@@ -15,6 +15,7 @@ import type {
   CreateIntentRequestDto,
   CreateIntentResponseDto,
   IntentDto,
+  IssuedCashReceiptDto,
   OnboardHmsBnplResponse,
   PointsBalanceDto,
   PointsEventRowDto,
@@ -521,6 +522,21 @@ export async function getIntent(intentId: string): Promise<IntentDto> {
     method: "GET",
     withAuth: true,
   })
+}
+
+/** 주문(intent)의 발급된 현금영수증 목록. 실패/미발급이면 빈 배열 (주문상세 표시용). */
+export async function getCashReceipts(
+  intentId: string
+): Promise<IssuedCashReceiptDto[]> {
+  try {
+    return await api<IssuedCashReceiptDto[]>("wallet", "/v1/cash-receipts", {
+      method: "GET",
+      params: { intentId },
+      withAuth: true,
+    })
+  } catch {
+    return []
+  }
 }
 
 // ==========================================

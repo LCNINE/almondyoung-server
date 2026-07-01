@@ -559,6 +559,14 @@
         "failed": "Refund issue"
       }
     },
+    "cashReceipt": {
+      "sectionTitle": "Cash Receipt",
+      "typeLabel": "Type",
+      "typeIncome": "Income deduction",
+      "typeExpense": "Expense proof",
+      "issueNumber": "Issue No.",
+      "viewReceipt": "View receipt"
+    },
     "cancelDialog": {
       "reasonLabel": "Cancellation Reason",
       "otherPlaceholder": "Please enter your cancellation reason (up to 500 characters)",

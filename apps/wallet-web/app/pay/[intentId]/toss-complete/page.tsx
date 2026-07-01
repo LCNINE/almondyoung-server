@@ -5,6 +5,9 @@ import { getBackendAuthCookie } from '@/lib/auth/session-cookies';
 import { buildReturnUrl } from '@/lib/return-url';
 import { createWebLogger } from '@packages/web-observability';
 
+// 쿠키 기반 + 동적 승인 처리라 CloudFront/Next 캐시 금지 (stale HTML/청크 방지).
+export const dynamic = 'force-dynamic';
+
 interface Props {
   params: Promise<{ intentId: string }>;
   searchParams: Promise<{ paymentKey?: string; orderId?: string; amount?: string; region?: string }>;

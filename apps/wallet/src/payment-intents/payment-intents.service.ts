@@ -226,7 +226,7 @@ export class PaymentIntentsService {
     const correlationId = `confirm:${intentId}:${Date.now()}`;
     return this.confirmService.confirm(
       intentId,
-      { paymentMethodId: dto.paymentMethodId, pointsToApply: dto.pointsToApply },
+      { paymentMethodId: dto.paymentMethodId, pointsToApply: dto.pointsToApply, cashReceipt: dto.cashReceipt },
       correlationId,
     );
   }

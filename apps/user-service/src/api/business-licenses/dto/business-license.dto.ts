@@ -63,6 +63,15 @@ export class UpdateBusinessLicenseDto {
   metadata?: BusinessMetadata;
 }
 
+// 내 사업자번호 채우기용 dto
+export class FillBusinessNumberDto {
+  @Transform(({ value }) => value?.replace(/-/g, ''))
+  @IsNotEmpty({ message: '사업자번호는 필수입니다.' })
+  @Length(10, 10, { message: '사업자번호는 10자리여야 합니다.' })
+  @IsString({ message: '사업자번호는 문자열이어야 합니다.' })
+  businessNumber: string;
+}
+
 // 사업자 정보 외부 조회용 dto (상태조회는 사업자번호만 필요)
 export class FetchBusinessLicenseDto {
   @Transform(({ value }) => value?.replace(/-/g, ''))

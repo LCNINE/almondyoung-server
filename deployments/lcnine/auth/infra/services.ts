@@ -20,10 +20,10 @@ export function setup(infra: IdpInfra) {
   const twilioAuthToken = new sst.Secret('TwilioAuthToken');
   const twilioServiceId = new sst.Secret('TwilioServiceId');
 
-  const cafe24ClientId = new sst.Secret("Cafe24ClientId");
-  const cafe24ClientSecret = new sst.Secret("Cafe24ClientSecret");
-  const cafe24ServiceKey = new sst.Secret("Cafe24ServiceKey");
-  const dataGoKrServiceKey = new sst.Secret("DataGoKrServiceKey");
+  const cafe24ClientId = new sst.Secret('Cafe24ClientId');
+  const cafe24ClientSecret = new sst.Secret('Cafe24ClientSecret');
+  const cafe24ServiceKey = new sst.Secret('Cafe24ServiceKey');
+  const dataGoKrServiceKey = new sst.Secret('DataGoKrServiceKey');
 
   // const awsS3AccessKeyId = new sst.Secret("AwsS3AccessKeyId");
   // const awsS3SecretAccessKey = new sst.Secret("AwsS3SecretAccessKey");
@@ -127,6 +127,7 @@ export function setup(infra: IdpInfra) {
       OAUTH_JWT_PUBLIC_KEY: oauthJwtPublicKey.value,
       OAUTH_JWT_KID: `lcnine-auth-${$app.stage}-1`,
       OAUTH_ISSUER_URL: userServiceUrl,
+      OIDC_ISSUER_URL: userServiceUrl,
       // ─── 기능별 Secret 미세팅 상태 (후속 활성화 시 주석 해제) ───
       // KAKAO_CLIENT_ID: kakaoClientId.value,
       // KAKAO_CLIENT_SECRET: kakaoClientSecret.value,
@@ -138,7 +139,7 @@ export function setup(infra: IdpInfra) {
       CAFE24_CLIENT_ID: cafe24ClientId.value,
       CAFE24_CLIENT_SECRET: cafe24ClientSecret.value,
       CAFE24_SERVICE_KEY: cafe24ServiceKey.value,
-      CAFE24_MALL_ID: "lcnine",
+      CAFE24_MALL_ID: 'lcnine',
       DATA_GO_KR_SERVICE_KEY: dataGoKrServiceKey.value,
       // AWS_ACCESS_KEY_ID: awsS3AccessKeyId.value,
       // AWS_SECRET_ACCESS_KEY: awsS3SecretAccessKey.value,

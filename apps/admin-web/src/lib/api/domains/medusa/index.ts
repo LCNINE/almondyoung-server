@@ -197,6 +197,8 @@ const ORDER_DETAIL_FIELDS = [
   'items.detail.shipped_quantity',
   'items.detail.delivered_quantity',
   '*shipping_address',
+  // 현금영수증 조회용 wallet intentId 가 결제 세션 data 에 들어있음.
+  'payment_collections.payment_sessions.data',
 ].join(',');
 
 export const medusaOrderApi = {

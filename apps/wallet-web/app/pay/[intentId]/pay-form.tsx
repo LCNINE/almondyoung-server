@@ -2,15 +2,27 @@
 
 import { useState, useEffect, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { confirmPaymentIntent, cancelPaymentIntent, abandonPaymentIntent } from '@/lib/wallet-api';
+import {
+  confirmPaymentIntent,
+  cancelPaymentIntent,
+  abandonPaymentIntent,
+  saveMyBusinessNumber,
+} from '@/lib/wallet-api';
 import { isWalletSessionExpiredError, redirectToWalletLogin } from '@/lib/auth-expired';
 import { buildReturnUrl } from '@/lib/return-url';
-import type { AvailablePaymentMethod, PaymentIntent, PaymentMethod, PointsBalance } from '@/lib/wallet-api';
+import type {
+  AvailablePaymentMethod,
+  BusinessLicenseInfo,
+  PaymentIntent,
+  PaymentMethod,
+  PointsBalance,
+} from '@/lib/wallet-api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Lock,
   CreditCard,
@@ -37,6 +49,8 @@ interface Props {
   region?: string | null;
   /** Toss 결제가 실패/취소로 돌아왔을 때(failUrl ?toss_fail=1) true. mount 시 abandon 신호 전송. */
   tossFailed?: boolean;
+  /** 로그인 사용자의 사업자 정보 — 세금계산서/지출증빙 prefill 용. 없으면 null. */
+  businessInfo?: BusinessLicenseInfo | null;
 }
 
 interface BankTransferPendingAction {
@@ -129,6 +143,7 @@ export function PayForm({
   availableMethods,
   region,
   tossFailed,
+  businessInfo,
 }: Props) {
   const router = useRouter();
   const availableMethodMap = availableMethods ? new Map(availableMethods.map((method) => [method.code, method])) : null;
@@ -155,6 +170,33 @@ export function PayForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bankTransferPending, setBankTransferPending] = useState<BankTransferPendingAction | null>(null);
+  // 증빙 신청 (무통장입금 시) — 현금영수증만. 입금확인 완료 시 자동 발급.
+  const [evidenceType, setEvidenceType] = useState<'NONE' | 'CASH_INCOME' | 'CASH_EXPENSE'>('NONE');
+  // 소득공제 발급방법: 휴대폰 or 현금영수증카드 (토스 customerIdentityNumber 는 둘 다 허용)
+  const [cashReceiptMethod, setCashReceiptMethod] = useState<'PHONE' | 'CARD'>('PHONE');
+  const [cashReceiptNumber, setCashReceiptNumber] = useState('');
+
+  const userPhone = (businessInfo?.phoneNumber ?? '').replace(/[^0-9]/g, '');
+  const userBizNumber = businessInfo?.businessNumber ?? '';
+
+  // 증빙 종류 선택 시 번호 prefill: 소득공제·휴대폰 → 사용자 휴대폰, 지출증빙 → 사업자번호.
+  function handleEvidenceChange(next: typeof evidenceType) {
+    setEvidenceType(next);
+    if (next === 'CASH_INCOME') {
+      setCashReceiptMethod('PHONE');
+      setCashReceiptNumber(userPhone);
+    } else if (next === 'CASH_EXPENSE') {
+      setCashReceiptNumber(userBizNumber);
+    } else {
+      setCashReceiptNumber('');
+    }
+  }
+
+  // 소득공제 발급방법 변경: 휴대폰 → 사용자 휴대폰 prefill, 현금영수증카드 → 비움(수동 입력).
+  function handleCashMethodChange(method: 'PHONE' | 'CARD') {
+    setCashReceiptMethod(method);
+    setCashReceiptNumber(method === 'PHONE' ? userPhone : '');
+  }
 
   // Toss 결제 실패/취소로 돌아온 경우(failUrl ?toss_fail=1) abandon 신호를 보내 REQUIRES_ACTION 으로
   // 묶인 포인트 hold 를 즉시 해제하고 intent 를 CREATED 로 soft reset 한다. best-effort — 실패해도
@@ -178,6 +220,7 @@ export function PayForm({
   }, [tossFailed, intent.id, region, router]);
 
   const isTossSelected = externalMethods.find((m) => m.id === selectedMethodId)?.type === 'TOSS';
+  const isBankTransferSelected = externalMethods.find((m) => m.id === selectedMethodId)?.type === 'BANK_TRANSFER';
 
   const isRecurring = intent.metadata?.billingMode === 'recurring';
   const isZeroAmount = intent.payableAmount === 0;
@@ -209,6 +252,33 @@ export function PayForm({
       setError('결제 수단을 선택해주세요.');
       return;
     }
+    // 무통장 + 증빙 신청 검증 (현금영수증/세금계산서 택일)
+    let cashReceipt: { type: '소득공제' | '지출증빙'; customerIdentityNumber: string } | undefined;
+    if (isBankTransferSelected) {
+      if (evidenceType === 'CASH_INCOME') {
+        const digits = cashReceiptNumber.replace(/[^0-9]/g, '');
+        if (cashReceiptMethod === 'PHONE' && (digits.length < 10 || digits.length > 11)) {
+          setError('휴대폰번호를 정확히 입력해주세요.');
+          return;
+        }
+        if (cashReceiptMethod === 'CARD' && (digits.length < 13 || digits.length > 19)) {
+          setError('현금영수증 카드번호를 정확히 입력해주세요.');
+          return;
+        }
+        cashReceipt = { type: '소득공제', customerIdentityNumber: digits };
+      } else if (evidenceType === 'CASH_EXPENSE') {
+        const digits = cashReceiptNumber.replace(/[^0-9]/g, '');
+        if (digits.length !== 10) {
+          setError('사업자등록번호를 정확히 입력해주세요 (10자리).');
+          return;
+        }
+        cashReceipt = { type: '지출증빙', customerIdentityNumber: digits };
+        // 비어있을 때만 채우는 self-endpoint 라 best-effort — 결제 흐름을 막지 않는다.
+        if (!userBizNumber && window.confirm('입력하신 사업자번호를 저장할까요?\n다음 결제부터 자동으로 입력됩니다.')) {
+          void saveMyBusinessNumber(digits);
+        }
+      }
+    }
     setLoading(true);
     setError(null);
     try {
@@ -216,6 +286,7 @@ export function PayForm({
         intent.id,
         remaining > 0 ? selectedMethodId : null,
         pts > 0 ? pts : undefined,
+        cashReceipt,
       );
 
       if (result.status === 'REQUIRES_ACTION' && result.nextAction?.type === 'TOSS_CHECKOUT') {
@@ -321,14 +392,14 @@ export function PayForm({
           <Card className="w-full border shadow-sm border-border/60">
             <CardContent className="p-6 space-y-5">
               <div className="flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                  <Landmark className="h-5 w-5" />
+                <div className="flex items-center justify-center rounded-full h-11 w-11 shrink-0 bg-primary/10 text-primary">
+                  <Landmark className="w-5 h-5" />
                 </div>
                 <div className="space-y-1">
                   <h1 className="text-lg font-semibold">주문이 접수되었습니다</h1>
                   <p className="text-sm text-muted-foreground">
-                    주문이 &lsquo;입금확인중&rsquo; 상태로 접수되었어요. 아래 계좌로 입금하시면
-                    관리자 확인 후 배송이 진행됩니다.
+                    주문이 &lsquo;입금확인중&rsquo; 상태로 접수되었어요. 아래 계좌로 입금하시면 관리자 확인 후 배송이
+                    진행됩니다.
                   </p>
                 </div>
               </div>
@@ -362,9 +433,9 @@ export function PayForm({
               <Alert>
                 <AlertCircle className="w-4 h-4" />
                 <AlertDescription>
-                  주문이 이미 <span className="font-medium">‘입금확인중’</span> 상태로 접수되어, 지금 바로
-                  아래 <span className="font-medium">‘주문 내역에서 확인’</span> 버튼으로 확인하실 수 있어요.
-                  입금이 확인되면 관리자 승인 후 결제가 완료됩니다.
+                  주문이 이미 <span className="font-medium">‘입금확인중’</span> 상태로 접수되어, 지금 바로 아래{' '}
+                  <span className="font-medium">‘주문 내역에서 확인’</span> 버튼으로 확인하실 수 있어요. 입금이 확인되면
+                  관리자 승인 후 결제가 완료됩니다.
                 </AlertDescription>
               </Alert>
 
@@ -425,7 +496,7 @@ export function PayForm({
                   <p className="text-3xl font-bold">{formatAmount(intent.payableAmount, intent.currency)}</p>
                 </div>
                 {intent.expiresAt && (
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-muted-foreground" suppressHydrationWarning>
                     만료: {new Date(intent.expiresAt).toLocaleString('ko-KR')}
                   </p>
                 )}
@@ -576,7 +647,7 @@ export function PayForm({
             {remainingAmount > 0 && isTossSelected && TOSS_SUB_METHODS.length > 1 && (
               <Card className="border shadow-sm border-border/60">
                 <CardContent className="p-6">
-                  <span className="mb-4 block text-sm font-semibold">결제 방식 선택</span>
+                  <span className="block mb-4 text-sm font-semibold">결제 방식 선택</span>
                   <div className="space-y-2">
                     {TOSS_SUB_METHODS.map(({ value, label, desc }) => {
                       const isSelected = tossSubMethod === value;
@@ -608,6 +679,91 @@ export function PayForm({
                       );
                     })}
                   </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* 증빙 신청 (무통장입금 선택 시) — 현금영수증/세금계산서 택일 */}
+            {remainingAmount > 0 && isBankTransferSelected && (
+              <Card className="border shadow-sm border-border/60">
+                <CardContent className="p-6">
+                  <span className="block mb-4 text-sm font-semibold">증빙 신청 (선택)</span>
+
+                  {/* 증빙 종류 select */}
+                  <div className="flex items-center gap-3">
+                    <label className="w-20 text-sm shrink-0 text-muted-foreground">증빙</label>
+                    <Select value={evidenceType} onValueChange={(v) => handleEvidenceChange(v as typeof evidenceType)}>
+                      <SelectTrigger className="flex-1">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="NONE">신청 안 함</SelectItem>
+                        <SelectItem value="CASH_INCOME">현금영수증 (개인소득공제용)</SelectItem>
+                        <SelectItem value="CASH_EXPENSE">현금영수증 (사업자지출증빙용)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* 소득공제: 발급방법(휴대폰/현금영수증카드) + 번호 */}
+                  {evidenceType === 'CASH_INCOME' && (
+                    <div className="mt-3 space-y-3">
+                      <div className="flex items-center gap-3">
+                        <label className="w-20 text-sm shrink-0 text-muted-foreground">발급방법</label>
+                        <div className="flex gap-4 text-sm">
+                          <label className="flex items-center gap-1.5">
+                            <input
+                              type="radio"
+                              name="cashMethod"
+                              checked={cashReceiptMethod === 'PHONE'}
+                              onChange={() => handleCashMethodChange('PHONE')}
+                            />
+                            휴대폰
+                          </label>
+                          <label className="flex items-center gap-1.5">
+                            <input
+                              type="radio"
+                              name="cashMethod"
+                              checked={cashReceiptMethod === 'CARD'}
+                              onChange={() => handleCashMethodChange('CARD')}
+                            />
+                            현금영수증카드
+                          </label>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <label className="w-20 text-sm shrink-0 text-muted-foreground">
+                          {cashReceiptMethod === 'PHONE' ? '휴대폰' : '카드번호'}
+                        </label>
+                        <input
+                          inputMode="numeric"
+                          autoComplete="off"
+                          value={cashReceiptNumber}
+                          onChange={(e) => setCashReceiptNumber(e.target.value)}
+                          placeholder={cashReceiptMethod === 'PHONE' ? '01012345678' : '현금영수증 카드번호'}
+                          className="flex-1 px-3 py-2 text-sm border rounded-md"
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">입금이 확인되면 현금영수증이 자동 발급됩니다.</p>
+                    </div>
+                  )}
+
+                  {/* 지출증빙: 사업자번호 */}
+                  {evidenceType === 'CASH_EXPENSE' && (
+                    <div className="mt-3 space-y-3">
+                      <div className="flex items-center gap-3">
+                        <label className="w-20 text-sm shrink-0 text-muted-foreground">사업자번호</label>
+                        <input
+                          inputMode="numeric"
+                          autoComplete="off"
+                          value={cashReceiptNumber}
+                          onChange={(e) => setCashReceiptNumber(e.target.value)}
+                          placeholder="사업자등록번호 (1234567890)"
+                          className="flex-1 px-3 py-2 text-sm border rounded-md"
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">입금이 확인되면 현금영수증이 자동 발급됩니다.</p>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             )}

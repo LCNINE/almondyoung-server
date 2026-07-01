@@ -147,6 +147,7 @@ export async function confirmPaymentIntent(
   intentId: string,
   paymentMethodId: string | null,
   pointsToApply?: number,
+  cashReceipt?: { type: CashReceiptType; customerIdentityNumber: string },
 ): Promise<ConfirmResult> {
   const res = await fetchWithAuthBounce(paymentIntentRoute(intentId, 'confirm'), {
     method: 'POST',
@@ -155,7 +156,7 @@ export async function confirmPaymentIntent(
       'Idempotency-Key': crypto.randomUUID(),
     },
     credentials: 'include',
-    body: JSON.stringify({ paymentMethodId, pointsToApply }),
+    body: JSON.stringify({ paymentMethodId, pointsToApply, cashReceipt }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -366,4 +367,111 @@ export async function abandonPaymentIntent(intentId: string): Promise<void> {
     const body = await res.json().catch(() => ({}));
     throw new Error(body?.message ?? `Abandon failed (${res.status})`);
   }
+}
+
+// ─── Business license (사업자 정보 — 세금계산서/지출증빙 prefill용) ──────────────
+
+export interface BusinessLicenseInfo {
+  businessNumber: string | null;
+  representativeName: string | null;
+  phoneNumber: string | null;
+}
+
+/** 저장된 전화번호(+8210…, E.164)를 국내 표기(010…)로. 이미 0으로 시작하면 그대로. */
+function toKrLocalPhone(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const d = raw.replace(/[^0-9]/g, '');
+  return d.startsWith('82') ? `0${d.slice(2)}` : d;
+}
+
+export async function getMyBusinessLicense(accessToken: string | undefined): Promise<BusinessLicenseInfo | null> {
+  const base = process.env.OIDC_ISSUER_URL?.replace(/\/$/, '');
+  if (!base || !accessToken) return null;
+  const headers = { Authorization: `Bearer ${accessToken}` };
+
+  // user-service 는 전역 인터셉터로 응답을 { success, data } 로 감싼다. data 를 벗겨 반환.
+  const fetchJson = async (path: string): Promise<Record<string, unknown> | null> => {
+    try {
+      const res = await fetch(`${base}${path}`, { headers, cache: 'no-store' });
+      if (!res.ok) return null;
+      const json = (await res.json()) as { data?: Record<string, unknown> } | Record<string, unknown> | null;
+      return ((json as { data?: Record<string, unknown> })?.data ?? json) as Record<string, unknown> | null;
+    } catch {
+      return null;
+    }
+  };
+
+  const [license, profile] = await Promise.all([fetchJson('/business-licenses/me'), fetchJson('/users/me/profile')]);
+  const profileObj = (profile?.profile ?? null) as { phoneNumber?: string | null } | null;
+
+  return {
+    businessNumber: (license?.businessNumber as string | null) ?? null,
+    representativeName: (license?.representativeName as string | null) ?? null,
+    phoneNumber: toKrLocalPhone(profileObj?.phoneNumber ?? (profile?.phoneNumber as string | null)),
+  };
+}
+
+/**
+ * 지출증빙 현금영수증 입력 시, 사업자정보에 번호가 비어있던 사용자의 입력값을 저장 제안(#485).
+ * 서버 route handler 가 user-service self-endpoint 로 전달하며, 비어있을 때만 채운다. best-effort.
+ */
+export async function saveMyBusinessNumber(businessNumber: string): Promise<{ saved: boolean }> {
+  try {
+    const res = await fetch('/api/business-license', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ businessNumber }),
+    });
+    if (!res.ok) return { saved: false };
+    return (await res.json()) as { saved: boolean };
+  } catch {
+    return { saved: false };
+  }
+}
+
+// ─── Cash receipts (현금영수증) ────────────────────────────────────────────────
+
+export type CashReceiptType = '소득공제' | '지출증빙';
+
+export interface CashReceipt {
+  id: string;
+  intentId: string;
+  type: CashReceiptType;
+  status: 'ISSUED' | 'CANCELED' | 'FAILED';
+  amount: number;
+  currency: string;
+  receiptUrl: string | null;
+  issueNumber: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+}
+
+/** 서버 컴포넌트용: 주문의 현금영수증 목록. cookieHeader = cookies().toString(). */
+export async function getCashReceipts(intentId: string, cookieHeader: string): Promise<CashReceipt[]> {
+  const res = await fetch(`${BASE_URL}/v1/cash-receipts?intentId=${encodeURIComponent(intentId)}`, {
+    headers: { Cookie: cookieHeader },
+    cache: 'no-store',
+  });
+  if (!res.ok) return [];
+  return res.json();
+}
+
+/** 클라이언트용: 현금영수증 발급 요청 (프록시 경유). */
+export async function issueCashReceipt(
+  intentId: string,
+  type: CashReceiptType,
+  customerIdentityNumber: string,
+): Promise<CashReceipt> {
+  const res = await fetchWithAuthBounce('/api/cash-receipts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ intentId, type, customerIdentityNumber }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.message ?? `현금영수증 발급 실패 (${res.status})`);
+  }
+  return res.json();
 }
