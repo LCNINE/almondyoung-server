@@ -3,7 +3,7 @@ import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { eq, and } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { DbService } from '@app/db';
-import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
+import { wmsTables, wmsViews, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { OutboundConsumptionService } from './outbound-consumption.service';
 import { ShipmentService } from './shipment.service';
 import { InventoryCommandService } from '../../inventory/core/services/inventory-command.service';
@@ -28,12 +28,16 @@ import { BarcodeService } from '../../inventory/shared/services/barcode.service'
  *   - 그 SHIP 들이 작업자(shipment.openedBy)에게 귀속된 한 journal 로 묶이며,
  *   - FOI.shippedQty 가 누적되고 FOI/FO/박스 status 가 'shipped' 로 전이한다.
  *
- * ⚠️ 통합검증 빚: 이 spec 은 `describeIfDb`(DATABASE_URL 게이트)로 현재 **skip**. dev 환경 삭제로
- * 실행 불가 — DATABASE_URL 닿는 환경에서 실행해 위 성공 기준을 실증해야 한다.
+ * 통합검증(2026-07-02 실증 완료): dev 환경 삭제로 여태 skip 이었으나 throwaway 로컬 Postgres 로
+ * 위 성공 기준 5개 GREEN 실증. `describeIfDb`(DATABASE_URL 게이트)는 DB 없는 CI 에서 graceful
+ * skip 용으로 유지. ⚠️ 통합 spec 은 쓰기 DB 필수·live 금지(rollback-only 이지만 데이터를 씀).
  *
- * 실행 (core dev DB는 VPC 내부 — 터널 필요):
- *   1) 별도 터미널: ./scripts/sst-tunnel.sh deployments/lcnine/services dev
- *   2) ./scripts/test-core-integration.sh dev outbound-consumption.integration
+ * 실행 (throwaway 로컬 Postgres — dev/live 불필요):
+ *   1) docker run -d --name almond-it-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=core_it \
+ *        -p 54329:5432 postgres:16-alpine
+ *   2) DATABASE_URL=postgresql://postgres:postgres@localhost:54329/core_it \
+ *        npx drizzle-kit migrate --config apps/core/drizzle.config.ts
+ *   3) DATABASE_URL=…54329/core_it npx jest --testPathPattern="outbound-consumption\.integration" --runInBand
  */
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -53,7 +57,13 @@ describeIfDb('OutboundConsumptionService (DB integration, rollback-only)', () =>
     sql = postgres(DATABASE_URL as string, { max: 1 });
     db = drizzle(sql, { schema: wmsSchema });
 
-    const dbService = { db } as unknown as DbService<typeof wmsSchema>;
+    // DbService 최소 대역 (ADR-0025 단일 러너): run(fn, tx) 은 tx 있으면 전파(fn(tx)),
+    // 없으면 새 트랜잭션. spec 은 항상 rollback tx 를 전파하므로 fn(tx) 경로만 탄다.
+    const dbService = {
+      db,
+      run: <T>(fn: (t: DbTx) => Promise<T>, tx?: DbTx): Promise<T> =>
+        tx ? fn(tx) : db.transaction((t) => fn(t as unknown as DbTx)),
+    } as unknown as DbService<typeof wmsSchema>;
     // 원장/예약 쪽은 inventory outbox, 종결(FulfillmentShipped) 발행은 fulfillment outbox 를 쓴다.
     const invOutbox = new InventoryOutboxService(dbService);
     const fulfillmentOutbox = new FulfillmentOutboxService(dbService);
@@ -205,9 +215,9 @@ describeIfDb('OutboundConsumptionService (DB integration, rollback-only)', () =>
 
   async function availableQty(tx: DbTx, skuId: string, warehouseId: string) {
     const [row] = await tx
-      .select({ availableQty: wmsTables.stockSummary.availableQty })
-      .from(wmsTables.stockSummary)
-      .where(and(eq(wmsTables.stockSummary.skuId, skuId), eq(wmsTables.stockSummary.warehouseId, warehouseId)));
+      .select({ availableQty: wmsViews.stockSummary.availableQty })
+      .from(wmsViews.stockSummary)
+      .where(and(eq(wmsViews.stockSummary.skuId, skuId), eq(wmsViews.stockSummary.warehouseId, warehouseId)));
     return row?.availableQty ?? 0;
   }
 
