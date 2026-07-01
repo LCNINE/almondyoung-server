@@ -92,7 +92,8 @@
     "sheetTitle": "オプション選択",
     "optionSelectTitle": "{title} 選択",
     "soldOutToast": "選択されたオプションは在庫切れのため追加できません。",
-    "soldOutToastNamed": "「{option}」は在庫切れのため追加できません。"
+    "soldOutToastNamed": "「{option}」は在庫切れのため追加できません。",
+    "optionPriceExtra": "(+{amount}ウォン)"
   },
   "cartModal": {
     "addingTitle": "カートに追加中",
@@ -106,6 +107,7 @@
   },
   "price": {
     "won": "ウォン",
+    "priceFrom": "~",
     "membershipBadgeLabel": "メンバー割引価格",
     "membershipOnlyPrice": "メンバーシップ会員のみ表示",
     "memberSavings": "メンバーシップ加入で {amount}ウォン節約"

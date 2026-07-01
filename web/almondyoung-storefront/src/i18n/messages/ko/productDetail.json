@@ -92,7 +92,8 @@
     "sheetTitle": "옵션 선택",
     "optionSelectTitle": "{title} 선택",
     "soldOutToast": "선택하신 옵션이 품절되어 담을 수 없습니다.",
-    "soldOutToastNamed": "‘{option}’ 옵션이 품절되어 담을 수 없습니다."
+    "soldOutToastNamed": "‘{option}’ 옵션이 품절되어 담을 수 없습니다.",
+    "optionPriceExtra": "(+{amount}원)"
   },
   "cartModal": {
     "addingTitle": "장바구니에 담는 중",
@@ -106,6 +107,7 @@
   },
   "price": {
     "won": "원",
+    "priceFrom": "~",
     "membershipBadgeLabel": "멤버십할인가",
     "membershipOnlyPrice": "멤버십 회원 공개",
     "memberSavings": "멤버십 가입 시 {amount}원 절약"

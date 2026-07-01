@@ -1,7 +1,10 @@
 "use client"
 
 import { ProductMembershipBadge } from "@/components/shared/badges/product-membership-badge"
-import { getProductPrice } from "@/lib/utils/get-product-price"
+import {
+  getPricesForVariant,
+  getProductPrice,
+} from "@/lib/utils/get-product-price"
 import { getIsMembershipOnly } from "@/lib/utils/product-card"
 import { HttpTypes } from "@medusajs/types"
 import { useTranslations } from "next-intl"
@@ -51,6 +54,15 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
 
   const showOriginalPrice = cheapestPrice.calculated_price_number < cheapestPrice.original_price_number
 
+  // 옵션마다 가격이 다르면 대표가는 "최저가"이므로 "~"를 붙여 시작가임을 알림
+  const variantAmounts =
+    product.variants
+      ?.map((v) => getPricesForVariant(v)?.calculated_price_number)
+      .filter((n): n is number => typeof n === "number") ?? []
+  const hasPriceRange =
+    variantAmounts.length > 1 &&
+    Math.min(...variantAmounts) !== Math.max(...variantAmounts)
+
   // 멤버십가 비공개 상품: 비회원에게도 일반 판매가는 그대로 보여주고,
   // 아래 멤버십가 프로모션 영역에서 숫자 대신 "멤버십 회원 공개"를 표시
   const showMembershipPriceHiddenNotice = !hasMembership && isMembershipOnly
@@ -75,6 +87,7 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
             <span className="text-xl font-bold">
               {cheapestPrice.calculated_price_number.toLocaleString()}
               {t("won")}
+              {hasPriceRange && t("priceFrom")}
             </span>
           </div>
         </div>
@@ -83,6 +96,7 @@ export default function ProductPreviewPrice({ hasMembership, product }: Props) {
           <span className="text-xl font-bold">
             {cheapestPrice.calculated_price_number.toLocaleString()}
             {t("won")}
+            {hasPriceRange && t("priceFrom")}
           </span>
 
           {cheapestPrice.percentage_diff &&
