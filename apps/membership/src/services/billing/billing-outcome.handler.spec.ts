@@ -79,42 +79,84 @@ describe('BillingOutcomeHandler.handleSuccess', () => {
   });
 });
 
-// handleCanceled: CMS 정산대기 intent 취소 시 billingInProgress 선점을 해제한다(Finding 2).
-// inserted: billingEvents(CHARGE_CANCELED) 멱등 마커의 onConflictDoNothing.returning 결과.
-//   비어있으면 = 같은 intent 취소가 이미 처리됨(재전달) → 해제하면 안 된다.
-function makeCanceledHandler(opts: { released: unknown[]; inserted?: unknown[] }) {
+// handleCanceled: 활성 자동갱신 계약의 CMS 정산대기 취소는 dunning 을 생성/증가시켜 다음 재시도가 새
+// 멱등키로 나가게 한다(Finding 1). 해지/종료 계약은 재청구하지 않는다.
+// released: billingInProgress 해제 update().where().returning() 결과(계약 가드 필드 포함).
+// inserted: CHARGE_CANCELED 멱등 마커 결과. 비어있으면 = 재전달 → 해제/재청구 안 함.
+function makeCanceledHandler(opts: {
+  released: Array<{ userId: string; autoRenewal?: boolean; recurringCancelledAt?: Date | null; status?: string }>;
+  inserted?: unknown[];
+  dunning?: { id: string; attempts: number; maxAttempts: number } | null;
+}) {
   const setSpy = jest.fn();
   const insertValuesSpy = jest.fn();
+  const deleteSpy = jest.fn();
+
+  const where = () => ({
+    returning: () => Promise.resolve(opts.released),
+    then: (res: (v: unknown) => unknown, rej: (e: unknown) => unknown) => Promise.resolve(undefined).then(res, rej),
+  });
   const update = jest.fn(() => ({
     set: (v: unknown) => {
       setSpy(v);
-      return { where: () => ({ returning: () => Promise.resolve(opts.released) }) };
+      return { where };
     },
   }));
+
+  const selectBuilder = (limitResult: unknown[]) => {
+    const b: Record<string, unknown> = {};
+    b.from = () => b;
+    b.where = () => b;
+    b.limit = () => Promise.resolve(limitResult);
+    return b;
+  };
+  const select = jest.fn(() => selectBuilder(opts.dunning ? [opts.dunning] : []));
+
   const insert = jest.fn(() => ({
     values: (v: unknown) => {
       insertValuesSpy(v);
-      return { onConflictDoNothing: () => ({ returning: () => Promise.resolve(opts.inserted ?? [{ id: 'be1' }]) }) };
+      return {
+        onConflictDoNothing: () => ({ returning: () => Promise.resolve(opts.inserted ?? [{ id: 'be1' }]) }),
+        returning: () => Promise.resolve([{ id: 'batch1' }]),
+        then: (res: (x: unknown) => unknown, rej: (e: unknown) => unknown) => Promise.resolve(undefined).then(res, rej),
+      };
     },
   }));
-  const tx = { update, insert };
+
+  const del = jest.fn(() => ({
+    where: () => {
+      deleteSpy();
+      return Promise.resolve(undefined);
+    },
+  }));
+
+  const tx = { update, insert, select, delete: del };
   const transaction = jest.fn((cb: (t: unknown) => unknown) => cb(tx));
   const dbService = { db: { transaction } };
   const addEvent = jest.fn().mockResolvedValue(undefined);
   const contractEventManager = { addEvent };
-  const membershipEventPublisher = { publishStatusChanged: jest.fn().mockResolvedValue(undefined) };
+  const publishStatusChanged = jest.fn().mockResolvedValue(undefined);
+  const membershipEventPublisher = { publishStatusChanged };
   const handler = new BillingOutcomeHandler(
     dbService as never,
     contractEventManager as never,
     membershipEventPublisher as never,
   );
-  return { handler, setSpy, addEvent, insertValuesSpy };
+
+  const findInsert = (pred: (v: Record<string, unknown>) => boolean) =>
+    insertValuesSpy.mock.calls.map((c) => c[0] as Record<string, unknown>).find((v) => v && pred(v));
+  const findSet = (pred: (v: Record<string, unknown>) => boolean) =>
+    setSpy.mock.calls.map((c) => c[0] as Record<string, unknown>).find((v) => v && pred(v));
+  return { handler, setSpy, addEvent, insertValuesSpy, deleteSpy, publishStatusChanged, findInsert, findSet };
 }
 
 describe('BillingOutcomeHandler.handleCanceled', () => {
-  it('billingInProgress 선점을 해제하고 BILLING_CANCELED 감사 이벤트를 기록한다', async () => {
-    const { handler, setSpy, addEvent } = makeCanceledHandler({ released: [{ userId: 'u1' }] });
+  const ACTIVE = { userId: 'u1', autoRenewal: true, recurringCancelledAt: null, status: 'ACTIVE' };
+
+  it('활성 자동갱신 계약 취소 → 선점 해제 + BILLING_CANCELED + dunning 생성(attempts=1)', async () => {
+    const { handler, setSpy, addEvent, findInsert } = makeCanceledHandler({ released: [ACTIVE], dunning: null });
     await handler.handleCanceled('c1', 'intent-x');
+
     expect(setSpy).toHaveBeenCalledWith(expect.objectContaining({ billingInProgress: false, billingStartedAt: null }));
     expect(addEvent).toHaveBeenCalledWith(
       expect.anything(),
@@ -124,18 +166,51 @@ describe('BillingOutcomeHandler.handleCanceled', () => {
       'SYSTEM',
       'u1',
     );
+    // 새 멱등키 확보용 dunning 생성 (attempts=1)
+    expect(findInsert((v) => 'attempts' in v && 'maxAttempts' in v)).toMatchObject({ contractId: 'c1', attempts: 1 });
   });
 
-  it('해제할 진행중 청구가 없으면(중복 전달/이미 처리) 감사 이벤트를 남기지 않는다', async () => {
+  it('기존 dunning(attempts=1) 있는 활성 계약 취소 → attempts=2 로 증가', async () => {
+    const { handler, findSet } = makeCanceledHandler({
+      released: [ACTIVE],
+      dunning: { id: 'd1', attempts: 1, maxAttempts: 3 },
+    });
+    await handler.handleCanceled('c1', 'intent-x');
+    // dunning update set: attempts 만 있고 billingInProgress 는 없는 set 호출을 찾는다.
+    expect(findSet((v) => 'attempts' in v && !('billingInProgress' in v))).toMatchObject({ attempts: 2 });
+  });
+
+  it('자동갱신 off 계약 취소 → dunning 생성 안 함 + 큐 정리(delete)', async () => {
+    const { handler, insertValuesSpy, deleteSpy } = makeCanceledHandler({
+      released: [{ userId: 'u1', autoRenewal: false, recurringCancelledAt: new Date(), status: 'ACTIVE' }],
+      dunning: null,
+    });
+    await handler.handleCanceled('c1', 'intent-x');
+    // 마커 insert 1회만 — dunning insert 없음.
+    const dunningInsert = insertValuesSpy.mock.calls
+      .map((c) => c[0] as Record<string, unknown>)
+      .find((v) => v && 'attempts' in v);
+    expect(dunningInsert).toBeUndefined();
+    expect(deleteSpy).toHaveBeenCalled();
+  });
+
+  it('dunning 상한 도달 계약 취소 → 해지 + CANCELLED 상태 발행', async () => {
+    const { handler, publishStatusChanged } = makeCanceledHandler({
+      released: [ACTIVE],
+      dunning: { id: 'd1', attempts: 3, maxAttempts: 3 },
+    });
+    await handler.handleCanceled('c1', 'intent-x');
+    expect(publishStatusChanged).toHaveBeenCalledWith(expect.objectContaining({ status: 'CANCELLED', contractId: 'c1' }));
+  });
+
+  it('해제할 진행중 청구가 없으면(중복/이미 처리) 감사 이벤트를 남기지 않는다', async () => {
     const { handler, addEvent } = makeCanceledHandler({ released: [] });
     await handler.handleCanceled('c1', 'intent-x');
     expect(addEvent).not.toHaveBeenCalled();
   });
 
-  it('같은 intent 의 취소가 재전달되면(멱등 마커 충돌) 선점을 해제하지 않는다', async () => {
-    // 마커 삽입이 0행 = 이 intent 취소는 이미 처리됨. 이후 새 청구가 billingInProgress 를 다시 잡았어도
-    // 옛 intent 의 재전달 취소가 그 선점을 풀어선 안 된다.
-    const { handler, setSpy, addEvent } = makeCanceledHandler({ released: [{ userId: 'u1' }], inserted: [] });
+  it('같은 intent 취소 재전달(멱등 마커 충돌)이면 선점을 해제하지 않는다', async () => {
+    const { handler, setSpy, addEvent } = makeCanceledHandler({ released: [ACTIVE], inserted: [] });
     await handler.handleCanceled('c1', 'intent-x');
     expect(setSpy).not.toHaveBeenCalled();
     expect(addEvent).not.toHaveBeenCalled();

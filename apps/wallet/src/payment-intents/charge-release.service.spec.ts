@@ -149,4 +149,43 @@ describe('ChargeReleaseService', () => {
     expect(provider.cancel).toHaveBeenCalledTimes(1);
     expect(chargesService.updateStatus).toHaveBeenCalledWith('charge-cms', 'CANCELED', {});
   });
+
+  // ─── Finding 2: 정산완료 SUCCEEDED CMS charge 는 branch 2 에서도 결과를 검사해야 한다 ───
+
+  it('정산완료 SUCCEEDED CMS charge 취소 실패(CMS_ALREADY_SETTLED) 시 CANCELED 로 덮지 않고 throw', async () => {
+    const settled = makePointsCharge({ id: 'charge-cms-settled', paymentMethodId: 'pm-cms' });
+    const { service, provider, chargesService } = makeContext({
+      succeededCharges: [settled],
+      methodType: 'CMS_BATCH',
+    });
+    provider.cancel.mockResolvedValue({
+      status: 'FAILED',
+      errorCode: 'CMS_ALREADY_SETTLED',
+      errorMessage: '이미 정산 완료',
+    });
+
+    await expect(service.releaseIntentCharges(INTENT, 'corr-1')).rejects.toThrow();
+    expect(provider.cancel).toHaveBeenCalledTimes(1);
+    // 돈은 이미 빠졌는데 취소완료로 보이는 것 방지 — charge 를 CANCELED 로 덮지 않는다.
+    expect(chargesService.updateStatus).not.toHaveBeenCalledWith('charge-cms-settled', 'CANCELED', {});
+  });
+
+  it('정산완료 CMS 취소 거부는 409 HttpException 이다', async () => {
+    const settled = makePointsCharge({ id: 'charge-cms-settled', paymentMethodId: 'pm-cms' });
+    const { service, provider } = makeContext({ succeededCharges: [settled], methodType: 'CMS_BATCH' });
+    provider.cancel.mockResolvedValue({ status: 'FAILED', errorCode: 'CMS_ALREADY_SETTLED', errorMessage: '이미 정산 완료' });
+
+    const err = await service.releaseIntentCharges(INTENT, 'corr-1').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(HttpException);
+    expect((err as HttpException).getStatus()).toBe(409);
+  });
+
+  it('SUCCEEDED CMS charge 취소 성공 시 CANCELED 로 표기한다', async () => {
+    const settled = makePointsCharge({ id: 'charge-cms-settled', paymentMethodId: 'pm-cms' });
+    const { service, provider, chargesService } = makeContext({ succeededCharges: [settled], methodType: 'CMS_BATCH' });
+    provider.cancel.mockResolvedValue({ status: 'SUCCEEDED' });
+
+    await service.releaseIntentCharges(INTENT, 'corr-1');
+    expect(chargesService.updateStatus).toHaveBeenCalledWith('charge-cms-settled', 'CANCELED', {});
+  });
 });

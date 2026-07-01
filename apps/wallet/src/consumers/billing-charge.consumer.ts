@@ -191,6 +191,15 @@ export class BillingChargeConsumer {
           return;
         }
 
+        case 'CANCELED':
+          // 이 키의 intent 는 이미 취소됨. 취소된 주기의 재청구는 membership 이 새 멱등키로 발행하므로
+          // 정상 흐름에선 이 분기에 도달하지 않는다. 도달했다면 소각된 키의 재발행이므로 silent default
+          // 대신 명시 로그로 진단 가능하게 한다.
+          this.logger.warn(
+            `[BillingCharge] 이미 취소된 intent 키 재수신 — skip (intentId=${existingId}, key=${payload.idempotencyKey})`,
+          );
+          return;
+
         default:
           this.logger.warn(
             `[BillingCharge] Unexpected intent status (${existingStatus}): intentId=${existingId}, skip`,
