@@ -248,22 +248,24 @@ export default function MembershipPaymentMethodPage() {
     })
   }
 
-  const handleRegisterNewCard = () => {
-    // 정기결제는 효성 CMS 자동이체로만 운영하므로 신규 등록도 CMS 자동이체 위저드로 보낸다.
-    // (카드 빌링 provider는 현재 미등록 상태라 등록해도 정기결제에 사용할 수 없음)
+  const pushToCmsRegistration = () => {
+    // CMS 자동이체 등록 위저드로 이동. openWizard=cms 로 위저드 자동 오픈,
+    // returnTo 파라미터로 등록 완료 후 멤버십 결제수단 화면으로 복귀.
     const returnTo = encodeURIComponent(
       window.location.pathname + window.location.search
     )
-    router.push(`/${countryCode}/mypage/payment?returnTo=${returnTo}`)
+    router.push(`/${countryCode}/mypage/payment?openWizard=cms&returnTo=${returnTo}`)
+  }
+
+  const handleRegisterNewCard = () => {
+    // 정기결제는 효성 CMS 자동이체로만 운영하므로 신규 등록도 CMS 자동이체 위저드로 보낸다.
+    // (카드 빌링 provider는 현재 미등록 상태라 등록해도 정기결제에 사용할 수 없음)
+    pushToCmsRegistration()
   }
 
   const handleRegisterCmsBankAccount = () => {
     // 실패한 CMS 계좌 재등록 — 은행계좌 등록 흐름이 있는 결제 관리 페이지로 이동
-    // returnTo 파라미터로 등록 완료 후 멤버십 결제수단 화면으로 복귀
-    const returnTo = encodeURIComponent(
-      window.location.pathname + window.location.search
-    )
-    router.push(`/${countryCode}/mypage/payment?returnTo=${returnTo}`)
+    pushToCmsRegistration()
   }
 
   const handleReregisterFailedMethod = (billingMethodId: string) => {
