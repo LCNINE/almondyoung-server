@@ -145,6 +145,7 @@ export class BillingOutcomeHandler {
           userId: schema.subscriptionContracts.userId,
           autoRenewal: schema.subscriptionContracts.autoRenewal,
           recurringCancelledAt: schema.subscriptionContracts.recurringCancelledAt,
+          status: schema.subscriptionContracts.status,
         })
         .from(schema.subscriptionContracts)
         .where(eq(schema.subscriptionContracts.id, contractId))
@@ -173,19 +174,32 @@ export class BillingOutcomeHandler {
         return null;
       }
 
-      // 결제수단 부재는 dunning 없이 즉시 해지. 멱등 마커 뒤에 두어 동시 재전달 시 중복 terminate를 막는다.
+      // 해지/종료된 계약의 in-flight 결제 실패는 error-code 무관하게 재청구를 막는다: 선점 해제 + 잔여 dunning
+      // 제거 후 현재 주기 자연 만료에 맡긴다. (정기결제 중단: autoRenewal=false/recurringCancelledAt, 즉시·강제
+      // 취소: status=CANCELLED/EXPIRED) — 이 가드가 없으면 취소 뒤 도착한 결제 실패가 dunning 을 새로 만들고,
+      // dunning 스케줄러(findDunningItems)는 계약 상태를 보지 않아 해지 계약을 재청구한다(Finding 1).
+      if (
+        !contract.autoRenewal ||
+        contract.recurringCancelledAt ||
+        contract.status === 'CANCELLED' ||
+        contract.status === 'EXPIRED'
+      ) {
+        this.logger.log(
+          `[handleFailure] 해지/종료 계약 결제 실패(${errorCode}) — dunning 생략·큐 정리, 자연 만료: contractId=${contractId}`,
+        );
+        await tx
+          .update(schema.subscriptionContracts)
+          .set({ billingInProgress: false, billingStartedAt: null, updatedAt: new Date() })
+          .where(eq(schema.subscriptionContracts.id, contractId));
+        await tx
+          .delete(schema.membershipDunningQueue)
+          .where(eq(schema.membershipDunningQueue.contractId, contractId));
+        return null;
+      }
+
+      // 활성 계약에서 결제수단 부재는 재시도해도 동일 결과 → dunning 없이 즉시 해지.
+      // 멱등 마커 뒤에 두어 동시 재전달 시 중복 terminate를 막는다.
       if (errorCode && BillingOutcomeHandler.NO_PAYMENT_METHOD_ERRORS.has(errorCode)) {
-        // 이미 정기결제 해지된 계약의 in-flight 결제 실패는 즉시 해지하지 않고 현재 주기 자연 만료에 맡긴다.
-        if (!contract.autoRenewal || contract.recurringCancelledAt) {
-          this.logger.log(
-            `[handleFailure] 해지된 계약의 결제 실패(${errorCode}) — 즉시 해지 생략, 자연 만료: contractId=${contractId}`,
-          );
-          await tx
-            .update(schema.subscriptionContracts)
-            .set({ billingInProgress: false, billingStartedAt: null, updatedAt: new Date() })
-            .where(eq(schema.subscriptionContracts.id, contractId));
-          return null;
-        }
         this.logger.log(
           `[handleFailure] 결제수단 없음(${errorCode}) — dunning 생략, 즉시 해지: contractId=${contractId}`,
         );
@@ -285,6 +299,20 @@ export class BillingOutcomeHandler {
   // 여기서 선점만 해제하고, 결제수단 문제가 아니므로 dunning/해지는 하지 않는다.
   async handleCanceled(contractId: string, paymentIntentId?: string): Promise<void> {
     await this.dbService.db.transaction(async (tx) => {
+      // 멱등 마커(첫 쓰기): unique(contract_id, payment_intent_id, event_type) 충돌 시 0행 → 이미 처리됨.
+      // 성공/실패와 달리 handleCanceled 는 billingInProgress 플래그만 보고 해제하므로, 이 마커가 없으면
+      // 옛 intent 의 취소가 재전달됐을 때(그 사이 새 청구가 billingInProgress 를 다시 선점) 새 선점을 잘못
+      // 풀어 중복 청구를 부른다. intent 단위로 취소를 한 번만 처리하도록 마커로 막는다(Finding 2).
+      const insertedCancel = await tx
+        .insert(schema.billingEvents)
+        .values({ contractId, eventType: 'CHARGE_CANCELED', amount: null, paymentIntentId: paymentIntentId ?? null })
+        .onConflictDoNothing()
+        .returning({ id: schema.billingEvents.id });
+      if (paymentIntentId && insertedCancel.length === 0) {
+        this.logger.log(`handleCanceled: already processed intent (${paymentIntentId}) — skip`);
+        return;
+      }
+
       // billingInProgress=true 인 계약만 원자적으로 해제한다. 취소 이벤트가 중복 전달되거나 이미
       // 성공/실패로 해제된 뒤 도착해도 두 번째부터는 0행 → no-op 이 되어 감사 이벤트가 중복되지 않는다.
       const released = await tx

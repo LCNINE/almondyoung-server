@@ -1,5 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConflictError } from '@app/shared';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { ChargesService } from '../charges/charges.service';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { ProviderRegistry } from '../providers/provider.registry';
@@ -55,9 +54,13 @@ export class ChargeReleaseService {
           this.logger.error(
             `CMS 출금 취소 실패 — 취소 중단(intent 비전이): intentId=${intent.id}, chargeId=${activeCharge.id}, code=${result.errorCode}, msg=${result.errorMessage}`,
           );
-          throw new ConflictError(
-            `CMS 출금 취소에 실패해 결제를 취소할 수 없습니다. (${result.errorCode ?? 'CMS_CANCEL_FAILED'})`,
-          );
+          // ApplicationException 은 wallet 멱등 인터셉터가 500 으로 캐시하므로(wallet 은 GlobalExceptionFilter
+          // 미등록) 반드시 HttpException 을 던진다. 그래야 유저 취소 경로가 409 응답 + 409 캐시가 된다.
+          // (wallet 전역 에러 정렬 = GlobalExceptionFilter 도입은 응답형태 영향 검증 포함 별도 PR)
+          throw new ConflictException({
+            error: result.errorCode ?? 'CMS_CANCEL_FAILED',
+            message: `CMS 출금 취소에 실패해 결제를 취소할 수 없습니다. (${result.errorCode ?? 'CMS_CANCEL_FAILED'})`,
+          });
         }
       }
       // CMS는 위에서 성공했을 때만 도달. 비-CMS active charge(POINTS hold/TOSS 대기)는

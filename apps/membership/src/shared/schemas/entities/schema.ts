@@ -398,7 +398,7 @@ export const billingEvents = pgTable(
     contractId: uuid('contract_id')
       .notNull()
       .references(() => subscriptionContracts.id),
-    eventType: text('event_type').notNull(), // CHARGE_ATTEMPT, CHARGE_SUCCESS, CHARGE_FAIL
+    eventType: text('event_type').notNull(), // CHARGE_ATTEMPT, CHARGE_SUCCESS, CHARGE_FAIL, CHARGE_CANCELED
     attemptNo: integer('attempt_no'),
     amount: integer('amount'),
     paymentIntentId: text('payment_intent_id'), // wallet intentId — 결과 이벤트 재전달 멱등 키

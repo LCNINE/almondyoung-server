@@ -160,6 +160,9 @@ export class PaymentIntentAdminController {
       await this.paymentIntentsService.cancel(id);
       return { status: 'SUCCEEDED' };
     } catch (e: any) {
+      // 서비스가 이미 HttpException(예: CMS 마감 후 취소불가 → 409)을 던졌으면 상태코드를 보존해 통과시킨다.
+      // 메시지 정규식 매핑은 도메인 Error 전용 — HttpException 을 500 으로 격하시키지 않는다(Finding 3).
+      if (e instanceof HttpException) throw e;
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('not found')) throw new NotFoundException(e.message);
       if (msg.match(/already|invalid|failed|required|exceed/)) throw new BadRequestException(e.message);
