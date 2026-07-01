@@ -187,7 +187,12 @@ export class PaymentClientService {
     }
   }
 
-  async createBillingAgreement(userId: string, contractId: string, billingMethodId?: string): Promise<void> {
+  async createBillingAgreement(
+    userId: string,
+    contractId: string,
+    billingMethodId?: string,
+    idempotencyKey?: string,
+  ): Promise<void> {
     const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
 
     await firstValueFrom(
@@ -203,7 +208,7 @@ export class PaymentClientService {
           headers: {
             Authorization: `Bearer ${walletApiKey}`,
             'Content-Type': 'application/json',
-            'Idempotency-Key': `membership:billing-agreement:${userId}:${contractId}`,
+            'Idempotency-Key': idempotencyKey ?? `membership:billing-agreement:${userId}:${contractId}`,
           },
         },
       ),

@@ -6,6 +6,9 @@ import * as schema from '../../shared/schemas/entities/schema';
 import { eq, and, desc, asc, ilike, gte, lte, inArray, SQL, count, isNull, isNotNull, notInArray, sql } from 'drizzle-orm';
 import { endOfDay } from 'date-fns';
 import { ContractEventManager } from '../subscription/contract-event.manager';
+import { isAxiosError } from 'axios';
+import { randomUUID } from 'crypto';
+import { PaymentClientService } from '../billing/payment-client.service';
 
 export interface AdminMembersQuery {
   page?: number;
@@ -190,6 +193,7 @@ export class AdminMembersReader {
   constructor(
     private readonly dbService: DbService<typeof membershipSchema>,
     private readonly contractEventManager: ContractEventManager,
+    private readonly paymentClientService: PaymentClientService,
   ) {}
 
   async findAllWithDetails(query: AdminMembersQuery): Promise<AdminMembersResponse> {
@@ -617,39 +621,26 @@ export class AdminMembersReader {
   }
 
   async updateAutoRenewal(contractId: string, autoRenewal: boolean, adminId: string): Promise<void> {
-    await this.dbService.db.transaction(async (tx) => {
-      const [batch] = await tx
-        .insert(schema.eventBatches)
-        .values({ type: 'AUTO_RENEWAL_CHANGED', effectiveDate: new Date().toISOString().split('T')[0] })
-        .returning();
+    // 자동갱신 재활성: membership 상태를 커밋하기 전에 wallet billing agreement 를 먼저 복구한다.
+    // 고객 정기결제 해지(cancelRecurringPayment)는 wallet agreement 를 REVOKE 하므로, 상태만 되살리면
+    // 다음 스케줄 청구가 BILLING_AGREEMENT_NOT_FOUND 로 실패하고, recurringCancelledAt 을 지운 탓에
+    // billing-outcome.handler 가 활성 계약으로 보고 즉시 해지한다. agreement 복구 성공 후에만 커밋한다.
+    let restoredNextBillingDate: string | undefined;
+    if (autoRenewal) {
+      const [contract] = await this.dbService.db
+        .select({
+          userId: schema.subscriptionContracts.userId,
+          nextBillingDate: schema.subscriptionContracts.nextBillingDate,
+          recurringCancelledAt: schema.subscriptionContracts.recurringCancelledAt,
+        })
+        .from(schema.subscriptionContracts)
+        .where(eq(schema.subscriptionContracts.id, contractId))
+        .limit(1);
 
-      // 자동갱신 재활성: (1) 정기결제 취소 이력(recurringCancelledAt/사유)을 지워야 한다.
-      // 이게 남으면 billing-outcome.handler 가 "해지된 계약"으로 오분기해 결제실패 시 즉시해지를 건너뛴다.
-      // (2) nextBillingDate가 비어 있으면(해지로 null) 현재 주기 종료일로 복구해 결제 재개를 보장한다.
-      const updates: {
-        autoRenewal: boolean;
-        updatedAt: Date;
-        nextBillingDate?: string;
-        recurringCancelledAt?: Date | null;
-        recurringCancellationReasonCode?: string | null;
-      } = {
-        autoRenewal,
-        updatedAt: new Date(),
-      };
-      if (autoRenewal) {
-        updates.recurringCancelledAt = null;
-        updates.recurringCancellationReasonCode = null;
-
-        const [contract] = await tx
-          .select({
-            userId: schema.subscriptionContracts.userId,
-            nextBillingDate: schema.subscriptionContracts.nextBillingDate,
-          })
-          .from(schema.subscriptionContracts)
-          .where(eq(schema.subscriptionContracts.id, contractId))
-          .limit(1);
-        if (contract && !contract.nextBillingDate) {
-          const [ent] = await tx
+      if (contract) {
+        // (1) 해지로 nextBillingDate 가 null 이면 현재 주기 종료일로 복구해 결제 재개를 보장한다.
+        if (!contract.nextBillingDate) {
+          const [ent] = await this.dbService.db
             .select({ endsAt: schema.subscriptionEntitlement.endsAt })
             .from(schema.subscriptionEntitlement)
             .where(
@@ -666,8 +657,59 @@ export class AdminMembersReader {
               '이미 만료된 구독은 자동갱신 재활성으로 복구할 수 없습니다. 재가입이 필요합니다.',
             );
           }
-          updates.nextBillingDate = ent.endsAt;
+          restoredNextBillingDate = ent.endsAt;
         }
+
+        // (2) 정기결제 해지로 REVOKE 된 agreement 를 재생성한다. 해지 이력(recurringCancelledAt)이 있을 때만.
+        // 원래 생성과 같은 멱등키를 쓰면 wallet HTTP 멱등 캐시가 옛 응답을 replay 해 재생성이 no-op 될 수 있어
+        // 해지 시각을 섞은 별도 키를 쓴다(같은 재활성 재시도엔 안정, cancel→재활성 사이클마다 구분).
+        if (contract.recurringCancelledAt) {
+          try {
+            // 해지로 REVOKE 된 agreement 를 wallet 이 upsert 로 되살린다(DB-멱등). wallet 은 쓰기 API 에
+            // Idempotency-Key 헤더를 강제하므로 생략할 수 없다 → 시도마다 유니크한 키를 써서, 첫 시도가 5xx 로
+            // 실패해도 wallet 이 그 FAILED 응답을 24h 동안 replay 해 재시도를 막는 일을 방지한다.
+            // (upsert 라 중복 생성 위험 없음, 관리자 중복 요청은 상위 멱등 계층에서 차단됨)
+            await this.paymentClientService.createBillingAgreement(
+              contract.userId,
+              contractId,
+              undefined,
+              `membership:reactivate-agreement:${contractId}:${randomUUID()}`,
+            );
+          } catch (err) {
+            const status = isAxiosError(err) ? err.response?.status : undefined;
+            // wallet create 는 assertSelectableForRecurringBilling 로 "등록 수단 없음"→404, "비활성"→400 만 낸다.
+            // 그 두 신호만 재등록 유도로 매핑하고, 그 외(401/403/429/5xx/비-axios)는 오분류하지 않고 원본을 전파한다.
+            if (status !== undefined && [400, 404].includes(status)) {
+              throw new ConflictError(
+                '등록된 정기결제 수단이 없어 자동갱신을 재개할 수 없습니다. 결제수단을 다시 등록해 주세요.',
+              );
+            }
+            throw err;
+          }
+        }
+      }
+    }
+
+    await this.dbService.db.transaction(async (tx) => {
+      const [batch] = await tx
+        .insert(schema.eventBatches)
+        .values({ type: 'AUTO_RENEWAL_CHANGED', effectiveDate: new Date().toISOString().split('T')[0] })
+        .returning();
+
+      const updates: {
+        autoRenewal: boolean;
+        updatedAt: Date;
+        nextBillingDate?: string;
+        recurringCancelledAt?: Date | null;
+        recurringCancellationReasonCode?: string | null;
+      } = {
+        autoRenewal,
+        updatedAt: new Date(),
+      };
+      if (autoRenewal) {
+        updates.recurringCancelledAt = null;
+        updates.recurringCancellationReasonCode = null;
+        if (restoredNextBillingDate) updates.nextBillingDate = restoredNextBillingDate;
       }
 
       await tx
