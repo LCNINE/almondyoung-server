@@ -52,6 +52,22 @@ describe('ExpirationJob', () => {
     );
     expect(result.expired).toBe(1);
   });
+
+  it('정산대기 구독 intent 만료 취소 시 CANCELED payload 에 subscriberRef/Type 을 실어 membership 이 선점을 풀게 한다', async () => {
+    // Finding 2: 만료 경로도 취소 이벤트에 subscriber 정보를 실어야 membership 이 billingInProgress 를 해제한다.
+    const due = {
+      id: 'intent-sub',
+      userId: 'user-1',
+      currency: 'KRW',
+      metadata: { subscriberRef: 'contract-7', subscriberType: 'MEMBERSHIP', purpose: 'SUBSCRIPTION' },
+    };
+    const { job, stateTransitionService } = makeContext({ dueIntents: [due as never] });
+
+    await job.expireDueIntents();
+
+    const opts = stateTransitionService.transitionIntent.mock.calls[0][2];
+    expect(opts.outboxEvent.payload).toMatchObject({ subscriberRef: 'contract-7', subscriberType: 'MEMBERSHIP' });
+  });
 });
 
 describe('ExpirationJob — expirable statuses', () => {

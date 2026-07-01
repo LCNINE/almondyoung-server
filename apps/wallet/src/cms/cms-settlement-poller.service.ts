@@ -13,6 +13,7 @@ import {
   GATEWAY_AGGREGATE_TYPE,
   GatewayEventType,
   buildPaymentIntentEventPayload,
+  subscriberExtraFromMetadata,
 } from '../messaging/gateway-event.builder';
 import { PaymentIntentsService } from '../payment-intents/payment-intents.service';
 
@@ -183,11 +184,7 @@ export class CmsSettlementPollerService {
               payableAmount: intent.payableAmount,
               currency: intent.currency,
               occurredAt: now,
-              extra: {
-                subscriberRef: intentMeta.subscriberRef as string | undefined,
-                subscriberType: intentMeta.subscriberType as string | undefined,
-                purpose: intentMeta.purpose as string | undefined,
-              },
+              extra: subscriberExtraFromMetadata(intentMeta),
             }),
           },
         },
@@ -255,9 +252,7 @@ export class CmsSettlementPollerService {
               currency: intent.currency,
               occurredAt: now,
               extra: {
-                subscriberRef: intentMeta.subscriberRef as string | undefined,
-                subscriberType: intentMeta.subscriberType as string | undefined,
-                purpose: intentMeta.purpose as string | undefined,
+                ...subscriberExtraFromMetadata(intentMeta),
                 errorCode: apiData.result?.code,
                 errorMessage: apiData.result?.message,
               },
