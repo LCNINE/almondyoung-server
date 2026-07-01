@@ -45,7 +45,7 @@ export function CouponDetailDialog({
 
   if (!c) return null;
 
-  const { name, maxUsesPerCustomer, maxClaims, createdBy, visibility, autoIssueTrigger } = getCouponMeta(c);
+  const { name, maxClaims, createdBy, visibility, autoIssueTrigger } = getCouponMeta(c);
 
   const storefrontUrl = process.env.NEXT_PUBLIC_STOREFRONT_URL ?? '';
   const defaultCountry = process.env.NEXT_PUBLIC_STOREFRONT_DEFAULT_COUNTRY ?? 'kr';
