@@ -35,10 +35,17 @@ export function RefundRequestsContent() {
   const rows = data?.data ?? [];
   const total = data?.total ?? 0;
 
-  const handleApprove = async (id: string) => {
+  const handleApprove = async (r: RefundRequestDto) => {
     try {
-      await approve.mutateAsync({ id });
-      toast.success('환불 승인 완료 — 토스가 환불계좌로 송금합니다 (약 2영업일)');
+      const res = await approve.mutateAsync({ id: r.id, intentId: r.intentId, amount: r.amount });
+      const cancel = res.cancel as { error?: string; skipped?: string } | undefined;
+      if (cancel && 'error' in cancel && cancel.error) {
+        toast.warning('환불은 완료됐으나 주문 취소에 실패했습니다. 주문 상태를 수동 확인해 주세요.');
+      } else if (cancel?.skipped === 'already_shipped') {
+        toast.warning('환불 완료. 단 이미 출고된 주문이라 자동 취소되지 않았습니다. 물류 확인이 필요합니다.');
+      } else {
+        toast.success('환불 승인 완료 — 주문 취소 및 환불 송금 처리됨 (약 2영업일)');
+      }
     } catch (e) {
       toast.error(errMessage(e, '환불 승인 실패'));
     }
@@ -129,7 +136,7 @@ export function RefundRequestsContent() {
                           </AlertDialogHeader>
                           <AlertDialogFooter>
                             <AlertDialogCancel>취소</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => handleApprove(r.id)}>승인 및 환불 실행</AlertDialogAction>
+                            <AlertDialogAction onClick={() => handleApprove(r)}>승인 및 환불 실행</AlertDialogAction>
                           </AlertDialogFooter>
                         </AlertDialogContent>
                       </AlertDialog>
