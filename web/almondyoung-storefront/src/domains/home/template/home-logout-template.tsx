@@ -2,6 +2,7 @@ import { ErrorBoundary } from "@/components/shared/error-boundary"
 import { MainSectionSkeleton } from "@/components/skeletons/page-skeletons"
 import { Suspense } from "react"
 import { HeroBanner } from "../components/banner/hero-banner"
+import { HomeQuickLinks } from "../components/quick-links"
 import { HomeSection } from "../components/shared/home-section"
 import { CategoryBestProductsWrapper } from "./best-categories"
 import { InterestCategoriesSlot } from "./interest-categories"
@@ -127,6 +128,8 @@ export async function HomeLogoutTemplate({
     <div className="w-full">
       {/* 메인 히어로 배너 */}
       <HeroBanner />
+
+      <HomeQuickLinks />
 
       {/* 관심 카테고리 슬롯 (선택 배너 또는 선택된 카테고리 베스트) */}
       <HomeSection>
