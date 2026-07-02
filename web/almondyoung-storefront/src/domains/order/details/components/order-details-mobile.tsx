@@ -129,7 +129,9 @@ export const OrderDetailsMobile = ({
       order.fulfillment_status === "fulfilled" ||
       order.fulfillment_status === "partially_fulfilled")
 
-  const statusLabel = coreActions
+  const statusLabel = refundRequestStatus === "REQUESTED"
+    ? tRefundRequest("requested")
+    : coreActions
     ? getCoreDisplayStatus(coreActions)
     : tStatus(
         order.status === "canceled"

@@ -122,7 +122,9 @@ export const OrderDetailsDesktop = ({
   const showSelfCancel = canCancel && !isBankTransferConfirmed
   const showBankTransferCancelGuide = canCancel && isBankTransferConfirmed
 
-  const statusLabel = coreActions
+  const statusLabel = refundRequestStatus === "REQUESTED"
+    ? tRefundRequest("requested")
+    : coreActions
     ? getCoreDisplayStatus(coreActions)
     : tStatus(
         order.status === "canceled"
