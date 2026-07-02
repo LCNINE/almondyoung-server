@@ -443,7 +443,7 @@
       "cancelSuccessManual": "Order cancelled. Refund will be processed by customer support.",
       "cancelError": "An error occurred during cancellation.",
       "contactCs": "Contact Support",
-      "bankTransferCancelGuide": "To cancel or refund a bank transfer order, please use ‘Request refund’ below.",
+      "bankTransferCancelGuide": "To cancel or refund a bank transfer order, please use the ‘Request refund’ button.",
       "bankTransferRefundNotice": "Unpaid orders are automatically canceled after the deposit deadline (7 days). To cancel or refund after deposit, enter your refund account (bank, account number, account holder) via ‘Request refund’. After admin review, the refund is sent to that account (about 2 business days). The account holder name must match exactly.",
       "download": "Download"
     },

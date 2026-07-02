@@ -410,7 +410,7 @@ export const OrderDetailsDesktop = ({
         </div>
       </section>
 
-      <section className="flex justify-center gap-2.5">
+      <section className="flex flex-wrap justify-center gap-2.5">
         <LocalizedClientLink
           href="/mypage/order/list"
           className="inline-flex items-center justify-center rounded-[5px] px-4 py-3 text-sm font-medium text-amber-500 outline-1 outline-amber-500"
