@@ -210,7 +210,7 @@ export const OrderDetailsDesktop = ({
       <section className="mb-[35px] space-y-3 border border-gray-200 p-7">
         <div className="flex items-center gap-3">
           <h2 className="text-2xl font-bold text-black">{statusLabel}</h2>
-          <OrderStatusBadges actions={coreActions} medusaStatus={order.status} />
+          <OrderStatusBadges actions={coreActions} medusaStatus={order.status} refundRequestStatus={refundRequestStatus} />
         </div>
         {depositAccount && depositAccount.accountNumber && (
           <DepositAccountInfo account={depositAccount} />

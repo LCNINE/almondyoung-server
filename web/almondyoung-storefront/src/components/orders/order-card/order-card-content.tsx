@@ -54,6 +54,8 @@ interface OrderCardContentProps {
    * 무통장 주문 식별 및 버튼 노출 제어에 사용.
    */
   bankTransferStatus?: string
+  /** wallet 환불신청 상태(REQUESTED 등). 목록 카드 상태/뱃지/버튼 반영 */
+  refundRequestStatus?: string
 }
 
 export default function OrderCardContent({
@@ -75,6 +77,7 @@ export default function OrderCardContent({
   cancelUnavailableReason: cancelUnavailableReasonProp,
   channelInfo: channelInfoProp,
   bankTransferStatus,
+  refundRequestStatus,
 }: OrderCardContentProps) {
   const availableActions = coreActions?.availableActions ?? availableActionsProp
   const cancelUnavailableReason = coreActions?.cancelUnavailableReason ?? cancelUnavailableReasonProp
@@ -100,7 +103,12 @@ export default function OrderCardContent({
   const canConfirmPurchase =
     paymentStatus === "authorized" && !isConfirmed && !isBankTransferAwaitingDeposit
   // Core projection 기준 주 상태 텍스트. Core 조회 실패 시 Medusa status로 fallback.
-  const displayStatus = coreActions ? getCoreDisplayStatus(coreActions) : status
+  const hasPendingRefundRequest = refundRequestStatus === "REQUESTED"
+  const displayStatus = hasPendingRefundRequest
+    ? "환불 신청됨 · 처리 대기중"
+    : coreActions
+      ? getCoreDisplayStatus(coreActions)
+      : status
 
   // Core 액션 목록이 있으면 그것을 기준으로, 없으면 Medusa 상태 기반 fallback
   const canCancel = availableActions ? availableActions.includes("cancel") : false
@@ -185,7 +193,7 @@ export default function OrderCardContent({
                   )}
                 </div>
                 {/* Core 상태 badge — 주문/출고/환불 분리 */}
-                <OrderStatusBadges actions={coreActions} />
+                <OrderStatusBadges actions={coreActions} refundRequestStatus={refundRequestStatus} />
                 {/* 취소 불가 사유 안내 */}
                 {cancelUnavailableReason && !canCancel && cancelTooltip && (
                   <p className="text-[10px] text-muted-foreground">{cancelTooltip}</p>
@@ -312,7 +320,13 @@ export default function OrderCardContent({
                 주문 취소
               </DropdownMenuItem>
             )}
-            {showBankTransferCancelGuide && (
+            {showBankTransferCancelGuide && hasPendingRefundRequest && (
+              <DropdownMenuItem disabled className="flex items-center gap-2 text-gray-400">
+                <RotateCcw className="h-4 w-4" />
+                환불 신청됨
+              </DropdownMenuItem>
+            )}
+            {showBankTransferCancelGuide && !hasPendingRefundRequest && (
               <DropdownMenuItem asChild>
                 <LocalizedClientLink
                   href={`/mypage/order/details?orderId=${orderId}`}
@@ -374,6 +388,10 @@ export default function OrderCardContent({
             onClick={() => setShowCancelDialog(true)}
           >
             주문취소
+          </CustomButton>
+        ) : showBankTransferCancelGuide && hasPendingRefundRequest ? (
+          <CustomButton variant="outline" color="secondary" size="md" fullWidth disabled>
+            환불 신청됨
           </CustomButton>
         ) : showBankTransferCancelGuide ? (
           <LocalizedClientLink href={`/mypage/order/details?orderId=${orderId}`}>

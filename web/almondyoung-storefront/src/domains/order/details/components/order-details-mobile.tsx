@@ -310,7 +310,7 @@ export const OrderDetailsMobile = ({
             </dl>
             {coreActions && (
               <div className="mt-2">
-                <OrderStatusBadges actions={coreActions} />
+                <OrderStatusBadges actions={coreActions} refundRequestStatus={refundRequestStatus} />
               </div>
             )}
             {cancelUnavailableReason &&

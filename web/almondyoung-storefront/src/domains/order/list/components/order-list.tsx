@@ -3,13 +3,17 @@
 import { PageTitle } from "@/components/shared/page-title"
 import { Button } from "@/components/ui/button"
 import { getOrders } from "@/lib/api/medusa/orders"
-import { getOrderActionsByMedusaId, type StoreOrderActionsResponse } from "@/lib/api/orders/store-orders"
+import {
+  getOrderActionsByMedusaId,
+  type StoreOrderActionsResponse,
+} from "@/lib/api/orders/store-orders"
 import OrderCard from "@components/orders/order-card/order-card"
 import OrderCardContent from "@components/orders/order-card/order-card-content"
 import type { HttpTypes } from "@medusajs/types"
 import { Loader2, Package } from "lucide-react"
 import { useTranslations } from "next-intl"
-import { useMemo, useState, useTransition } from "react"
+import { useEffect, useMemo, useState, useTransition } from "react"
+import { getActiveRefundRequest } from "@/lib/api/wallet"
 import { OrderFilter, type FilterOptions } from "./shared/order-filter"
 
 interface OrderItem {
@@ -57,7 +61,8 @@ const getOrderStatusKey = (order: HttpTypes.StoreOrder): string => {
   if (order.payment_status === "awaiting") return "paymentPending"
   if (order.fulfillment_status === "fulfilled") return "delivered"
   if (order.fulfillment_status === "shipped") return "shipping"
-  if (order.fulfillment_status === "partially_fulfilled") return "partialShipping"
+  if (order.fulfillment_status === "partially_fulfilled")
+    return "partialShipping"
   if (order.fulfillment_status === "not_fulfilled") return "preparing"
   return "paid"
 }
@@ -122,14 +127,16 @@ const mapStoreOrderToOrderItem = (
       })),
     variantId: firstItem?.variant_id ?? "",
     bankTransferStatus:
-      ((order.metadata as Record<string, unknown> | null)?.bank_transfer_status as
-        | string
-        | undefined) ?? undefined,
+      ((order.metadata as Record<string, unknown> | null)
+        ?.bank_transfer_status as string | undefined) ?? undefined,
   }
 }
 
 /** FilterOptions의 year/month 값으로 API에 넘길 날짜 범위를 계산한다. */
-function computeDateRange(filter: FilterOptions): { dateFrom?: string; dateTo?: string } {
+function computeDateRange(filter: FilterOptions): {
+  dateFrom?: string
+  dateTo?: string
+} {
   if (!filter.year) return {}
 
   const year = parseInt(filter.year)
@@ -163,12 +170,61 @@ export function OrderList({
   const tEmpty = useTranslations("mypage.empty")
 
   const [filter, setFilter] = useState<FilterOptions>({ year: "", month: "" })
-  const [currentDateRange, setCurrentDateRange] = useState<{ dateFrom?: string; dateTo?: string }>({})
-  const [rawOrders, setRawOrders] = useState<HttpTypes.StoreOrder[]>(initialOrders)
-  const [actionsMap, setActionsMap] = useState<Record<string, StoreOrderActionsResponse>>(initialActionsMap)
+  const [currentDateRange, setCurrentDateRange] = useState<{
+    dateFrom?: string
+    dateTo?: string
+  }>({})
+  const [rawOrders, setRawOrders] =
+    useState<HttpTypes.StoreOrder[]>(initialOrders)
+  const [actionsMap, setActionsMap] =
+    useState<Record<string, StoreOrderActionsResponse>>(initialActionsMap)
+  // 주문별 wallet 환불신청 상태(REQUESTED 등). 무통장 확정 주문만 조회. "" = 조회했지만 없음.
+  const [refundMap, setRefundMap] = useState<Record<string, string>>({})
   const [totalCount, setTotalCount] = useState(initialCount)
   const [isFiltering, startFilterTransition] = useTransition()
   const [isPending, startLoadMoreTransition] = useTransition()
+
+  // 무통장 확정 주문에 한해 환불신청 상태를 조회해 목록 뱃지/버튼에 반영.
+  useEffect(() => {
+    const targets = rawOrders.filter((o) => {
+      const bts = (o.metadata as Record<string, unknown> | null)
+        ?.bank_transfer_status
+      const intentId = (
+        o.payment_collections?.[0]?.payment_sessions?.[0]?.data as
+          | Record<string, unknown>
+          | undefined
+      )?.intentId as string | undefined
+      return bts === "confirmed" && !!intentId && !(o.id in refundMap)
+    })
+    if (targets.length === 0) return
+    let cancelled = false
+    void (async () => {
+      const results = await Promise.allSettled(
+        targets.map(async (o) => {
+          const intentId = (
+            o.payment_collections![0]!.payment_sessions![0]!.data as Record<
+              string,
+              unknown
+            >
+          ).intentId as string
+          const rr = await getActiveRefundRequest(intentId)
+          return [o.id, rr?.status ?? ""] as const
+        })
+      )
+      if (cancelled) return
+      setRefundMap((prev) => {
+        const next = { ...prev }
+        results.forEach((r, idx) => {
+          if (r.status === "fulfilled") next[r.value[0]] = r.value[1]
+          else next[targets[idx]!.id] = ""
+        })
+        return next
+      })
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [rawOrders, refundMap])
 
   const hasMore = rawOrders.length < totalCount
 
@@ -183,14 +239,20 @@ export function OrderList({
     setCurrentDateRange(dateRange)
 
     startFilterTransition(async () => {
-      const result = await getOrders({ limit: LOAD_MORE_LIMIT, offset: 0, ...dateRange })
+      const result = await getOrders({
+        limit: LOAD_MORE_LIMIT,
+        offset: 0,
+        ...dateRange,
+      })
 
       if (result) {
         setRawOrders(result.orders ?? [])
         setTotalCount(result.count ?? 0)
 
         const newActions = await Promise.allSettled(
-          (result.orders ?? []).map((o: HttpTypes.StoreOrder) => getOrderActionsByMedusaId(o.id))
+          (result.orders ?? []).map((o: HttpTypes.StoreOrder) =>
+            getOrderActionsByMedusaId(o.id)
+          )
         )
         const nextMap: Record<string, StoreOrderActionsResponse> = {}
         newActions.forEach((r, idx) => {
@@ -218,7 +280,9 @@ export function OrderList({
           setTotalCount(result.count)
         }
         const newActions = await Promise.allSettled(
-          result.orders.map((o: HttpTypes.StoreOrder) => getOrderActionsByMedusaId(o.id))
+          result.orders.map((o: HttpTypes.StoreOrder) =>
+            getOrderActionsByMedusaId(o.id)
+          )
         )
         setActionsMap((prev) => {
           const next = { ...prev }
@@ -313,6 +377,7 @@ export function OrderList({
                 variantId={order.variantId}
                 coreActions={actionsMap[order.orderId]}
                 bankTransferStatus={order.bankTransferStatus}
+                refundRequestStatus={refundMap[order.orderId]}
               />
             </OrderCard>
           ))}
