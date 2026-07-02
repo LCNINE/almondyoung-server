@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Body, Query } from '@nestjs/common';
+import { User } from '@app/authorization';
 import { BenefitTrackingService } from '../services/benefit-tracking.service';
 import { RecordDiscountDto, CycleBenefitDto } from '../shared/dto/benefit-tracking.dto';
 
@@ -50,7 +51,8 @@ export class BenefitTrackingController {
    * 사용자에게 "지금 이 주기 동안 얼마나 절약했는지" 보여주기
    */
   @Get('current')
-  async getCurrentCycleBenefit(@Query('userId') userId: string): Promise<CycleBenefitDto> {
+  async getCurrentCycleBenefit(@User('userId') userId: string): Promise<CycleBenefitDto> {
+    // userId 는 인증된 주체에서만 취하고 query 파라미터는 신뢰하지 않는다(IDOR 방지).
     // 활성 구독이 없으면 서비스가 NotFoundError(404)를 던지고 GlobalExceptionFilter 가 매핑한다.
     return this.benefitTrackingService.getCurrentCycleBenefit(userId);
   }
@@ -60,7 +62,8 @@ export class BenefitTrackingController {
    * 사용자의 전체 혜택 히스토리 (최근 N개 주기)
    */
   @Get('history')
-  async getCycleBenefitHistory(@Query('userId') userId: string, @Query('limit') limit?: number) {
+  async getCycleBenefitHistory(@User('userId') userId: string, @Query('limit') limit?: number) {
+    // userId 는 인증된 주체에서만 취한다(IDOR 방지).
     return this.benefitTrackingService.getCycleBenefitHistory(userId, limit || 12);
   }
 }

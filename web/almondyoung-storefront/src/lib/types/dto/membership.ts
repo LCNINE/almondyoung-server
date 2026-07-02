@@ -30,6 +30,9 @@ export interface SubscriptionDetailsDto {
   userId: string
   planId: string
   status: SubscriptionStatus
+  autoRenewal?: boolean
+  pausedAt?: string | null
+  recurringCancelledAt?: string | null
   startDate: string
   endDate: string | null
   createdAt: string

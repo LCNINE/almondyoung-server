@@ -1,4 +1,16 @@
-import { Body, Controller, ForbiddenException, Get, HttpCode, Param, Post, Req } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  HttpCode,
+  NotFoundException,
+  Param,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PaymentIntentsService } from './payment-intents.service';
 import { RefundsService } from '../refunds/refunds.service';
@@ -31,6 +43,23 @@ export class PaymentIntentsController {
   ): Promise<PaymentIntentResponseDto> {
     // This endpoint is API-key gated; userId comes from the request body (trusted server)
     const intent = await this.service.create(dto);
+    return this.toResponse(intent);
+  }
+
+  // 주의: 정적 경로는 `:id` 동적 경로보다 먼저 선언해야 매칭 충돌이 없다.
+  @Get('by-idempotency-key')
+  @ApiOperation({ summary: 'Look up a payment intent by billing idempotency key (API-key, server-to-server)' })
+  async findByIdempotencyKey(@Query('key') key: string): Promise<PaymentIntentResponseDto> {
+    if (!key) {
+      throw new BadRequestException({ error: 'BAD_REQUEST', message: 'key query param is required' });
+    }
+    const intent = await this.service.findByIdempotencyKey(key);
+    if (!intent) {
+      throw new NotFoundException({
+        error: 'INTENT_NOT_FOUND',
+        message: `No payment intent for idempotencyKey: ${key}`,
+      });
+    }
     return this.toResponse(intent);
   }
 

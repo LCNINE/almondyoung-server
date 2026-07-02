@@ -11,23 +11,16 @@ import {
   BadRequestException,
   InternalServerErrorException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiSecurity, ApiQuery, ApiBody } from '@nestjs/swagger';
-// import { AuthGuard } from '@nestjs/passport'; // 실제 AuthGuard 대신 DevAuthGuard를 사용합니다.
+import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { SubscriptionService } from '../services/subscription.service';
 import { SubscriptionCancellationService } from '../services/subscription-cancellation.service';
 import { CancellationReasonReader } from '../services/subscription/cancellation-reason.reader';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import {
-  CreateSubscriptionRequestSchema,
-  CreateSubscriptionRequest,
   CreateCheckoutIntentRequestSchema,
   CreateCheckoutIntentRequest,
   ConfirmCheckoutIntentRequestSchema,
   ConfirmCheckoutIntentRequest,
-  UpgradeSubscriptionRequestSchema,
-  UpgradeSubscriptionRequest,
-  DowngradeSubscriptionRequestSchema,
-  DowngradeSubscriptionRequest,
   CancelSubscriptionRequestSchema,
   CancelSubscriptionRequest,
   SubscribeWithMethodRequestSchema,
@@ -42,11 +35,8 @@ import {
   CancellationReasonsResponseDto,
 } from '../shared/dto/response.dto';
 import {
-  CreateSubscriptionRequestDto,
   CreateCheckoutIntentRequestDto,
   ConfirmCheckoutIntentRequestDto,
-  UpgradeSubscriptionRequestDto,
-  DowngradeSubscriptionRequestDto,
   CancelSubscriptionRequestDto,
 } from '../shared/dto/request.dto';
 import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
@@ -96,59 +86,8 @@ export class SubscriptionController {
   async getCurrentSubscriptionDetails(@User('userId') userId: string) {
     return this.subscriptionService.getCurrentSubscriptionDetails(userId);
   }
-  /**
-   * 구독 생성
-   */
-  @Post()
-  @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({
-    summary: '새 구독 생성',
-    description: '지정된 플랜으로 새로운 구독을 생성합니다.',
-  })
-  @ApiQuery({
-    name: 'userId',
-    description: '사용자 ID (개발용)',
-    required: false,
-    example: 'test_user_001',
-  })
-  @ApiBody({ type: CreateSubscriptionRequestDto })
-  @ApiResponse({
-    status: 201,
-    description: '구독 생성 성공',
-    type: SubscriptionDetailsResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: '잘못된 요청 데이터',
-    type: ErrorResponseDto,
-  })
-  @ApiResponse({
-    status: 404,
-    description: '플랜을 찾을 수 없음',
-    type: ErrorResponseDto,
-  })
-  @UseGuards(JwtAuthGuard)
-  async createSubscription(
-    @User() user: { userId: string; email?: string },
-    @Body(new ZodValidationPipe(CreateSubscriptionRequestSchema))
-    createSubscriptionDto: CreateSubscriptionRequest,
-  ) {
-    const userId = user?.userId;
-    const email = user?.email;
-    console.log('📥 구독 생성 요청:', {
-      userId,
-      planId: createSubscriptionDto.planId,
-    });
-
-    if (!userId) {
-      throw new BadRequestException('userId가 필요합니다');
-    }
-    if (!email) {
-      throw new BadRequestException('email이 필요합니다');
-    }
-
-    return this.subscriptionService.createSubscription(userId, createSubscriptionDto.planId, email);
-  }
+  // 구독 생성은 결제 확인을 거친 경로(checkout-intent → confirm-checkout-intent, subscribe-with-method)로만
+  // 이뤄진다. 결제 없이 계약/권한을 발급하던 `POST /subscriptions` 직접 경로는 무료 멤버십 발급 취약점이라 제거했다.
 
   @Post('checkout-intent')
   @HttpCode(HttpStatus.CREATED)
@@ -228,75 +167,9 @@ export class SubscriptionController {
     return this.subscriptionService.confirmCheckoutIntent(dto.intentId);
   }
 
-  /**
-   * 구독 업그레이드
-   */
-  @Post('upgrade')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: '구독 업그레이드',
-    description: '현재 구독을 더 높은 등급의 플랜으로 업그레이드합니다.',
-  })
-  @ApiSecurity('dev-user-id')
-  @ApiBody({ type: UpgradeSubscriptionRequestDto })
-  @ApiResponse({
-    status: 200,
-    description: '구독 업그레이드 성공',
-    type: SubscriptionDetailsResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: '업그레이드 불가능한 플랜',
-    type: ErrorResponseDto,
-  })
-  @ApiResponse({
-    status: 404,
-    description: '활성 구독 또는 플랜을 찾을 수 없음',
-    type: ErrorResponseDto,
-  })
-  @UseGuards(JwtAuthGuard) // 🚨 임시 가드 사용
-  async upgradeSubscription(
-    @User('userId') userId: string,
-    @Body(new ZodValidationPipe(UpgradeSubscriptionRequestSchema))
-    upgradeSubscriptionDto: UpgradeSubscriptionRequest,
-  ) {
-    return this.subscriptionService.upgradeSubscription(userId, upgradeSubscriptionDto.newPlanId);
-  }
-
-  /**
-   * 구독 다운그레이드
-   */
-  @Post('downgrade')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: '구독 다운그레이드',
-    description: '현재 구독을 더 낮은 등급의 플랜으로 다운그레이드합니다.',
-  })
-  @ApiSecurity('dev-user-id')
-  @ApiBody({ type: DowngradeSubscriptionRequestDto })
-  @ApiResponse({
-    status: 200,
-    description: '구독 다운그레이드 성공',
-    type: SubscriptionDetailsResponseDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: '다운그레이드 불가능한 플랜',
-    type: ErrorResponseDto,
-  })
-  @ApiResponse({
-    status: 404,
-    description: '활성 구독 또는 플랜을 찾을 수 없음',
-    type: ErrorResponseDto,
-  })
-  @UseGuards(JwtAuthGuard) // 🚨 임시 가드 사용
-  async downgradeSubscription(
-    @User('userId') userId: string,
-    @Body(new ZodValidationPipe(DowngradeSubscriptionRequestSchema))
-    downgradeSubscriptionDto: DowngradeSubscriptionRequest,
-  ) {
-    return this.subscriptionService.downgradeSubscription(userId, downgradeSubscriptionDto.newPlanId);
-  }
+  // 플랜 변경(업그레이드/다운그레이드)은 비례정산·결제가 필요하다. 결제 없이 새 기간을 발급하던
+  // `POST /upgrade`·`POST /downgrade` 직접 경로는 무료 상위티어 발급 취약점이라 제거했다.
+  // 유료 플랜 변경은 결제 경로 위에서 별도로 구현한다(subscriptionManager 메서드는 그때 재사용).
 
   /**
    * 구독 취소

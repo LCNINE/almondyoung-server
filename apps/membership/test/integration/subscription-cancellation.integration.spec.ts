@@ -87,9 +87,11 @@ describe('Subscription Cancellation Integration Tests', () => {
         {
           provide: PaymentClientService,
           useValue: {
-            directCharge: jest.fn(),
-            refundMembershipPayment: jest.fn(),
-            revokeBillingAgreement: jest.fn(),
+            directCharge: jest.fn().mockResolvedValue(undefined),
+            refundMembershipPayment: jest.fn().mockResolvedValue(undefined),
+            refundByIntent: jest.fn().mockResolvedValue(undefined),
+            // async 메서드라 항상 Promise 를 반환한다 — fire-and-forget `.catch()` 대상이므로 반드시 resolved promise.
+            revokeBillingAgreement: jest.fn().mockResolvedValue(undefined),
           },
         },
         {
