@@ -133,9 +133,26 @@ export function RefundRequestsContent() {
                           </AlertDialogFooter>
                         </AlertDialogContent>
                       </AlertDialog>
-                      <Button size="sm" variant="outline" disabled={busy} onClick={() => handleReject(r.id)}>
-                        거절
-                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button size="sm" variant="outline" disabled={busy}>
+                            거절
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>환불 요청 거절</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              {r.holderName} 고객의 {r.amount.toLocaleString('ko-KR')}원 환불 요청을 거절합니다. 실제
+                              환불은 실행되지 않습니다.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>취소</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => handleReject(r.id)}>거절 처리</AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </div>
                   </td>
                 </tr>
