@@ -110,6 +110,32 @@ export function setup() {
     },
   });
 
+  // ─── 공용 ECR(sst-asset) 이미지 정리 정책 ───
+  // sst-asset 은 부트스트랩이 만든 계정/리전 공용 리포로, 모든 SST 앱·스테이지의 컨테이너
+  // 이미지가 여기로 push 된다. 매 배포마다 직전 이미지가 untagged 로 남아 저장 비용이 무한
+  // 증가하므로 "untagged 14일 경과분 자동 만료" lifecycle 을 건다 (현재 참조 중인 tagged 는 보존).
+  // 공용 리소스라 dev/live 가 동시에 관리하면 서로 덮어써 충돌 → live 스테이지에서만 소유한다.
+  if (!isDev) {
+    new aws.ecr.LifecyclePolicy("SstAssetLifecycle", {
+      repository: "sst-asset",
+      policy: JSON.stringify({
+        rules: [
+          {
+            rulePriority: 1,
+            description: "Expire untagged images older than 14 days",
+            selection: {
+              tagStatus: "untagged",
+              countType: "sinceImagePushed",
+              countUnit: "days",
+              countNumber: 14,
+            },
+            action: { type: "expire" },
+          },
+        ],
+      }),
+    });
+  }
+
   return {
     isDev,
     vpc,

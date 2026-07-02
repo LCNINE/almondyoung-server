@@ -152,6 +152,7 @@ export function setup(opts?: { baseDomain?: string }) {
       cpu?: string; // e.g. "0.25 vCPU", "1 vCPU", "2 vCPU"
       memory?: string; // e.g. "0.5 GB", "2 GB", "4 GB"
       scaling?: { min: number; max: number };
+      architecture?: 'x86_64' | 'arm64'; // 기본 x86_64. arm64(Graviton) = 동일 성능 ~20% 저렴.
     },
   ) =>
     new sst.aws.Service(name, {
@@ -160,6 +161,7 @@ export function setup(opts?: { baseDomain?: string }) {
       ...(opts.cpu ? { cpu: opts.cpu as any } : {}),
       ...(opts.memory ? { memory: opts.memory as any } : {}),
       ...(opts.scaling ? { scaling: opts.scaling } : {}),
+      ...(opts.architecture ? { architecture: opts.architecture } : {}),
       loadBalancer: {
         instance: alb,
         rules: [
