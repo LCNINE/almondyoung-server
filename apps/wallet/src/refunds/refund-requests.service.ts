@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { PaginatedResponseDto } from '@app/shared';
-import { and, desc, eq, count } from 'drizzle-orm';
+import { and, desc, eq, count, inArray } from 'drizzle-orm';
 import { WalletSchema, paymentIntents, paymentMethods, refundRequests } from '../schema';
 import { RefundRequest } from '../types';
 import { ChargesService } from '../charges/charges.service';
@@ -94,7 +94,12 @@ export class RefundRequestsService {
     }
   }
 
-  /** 고객: 해당 intent 의 대기중(REQUESTED) 환불 요청. 없으면 null. 주문내역에서 '환불 신청됨' 표시용. */
+  /**
+   * 고객: 해당 intent 의 재신청을 막아야 하는 환불 요청. 없으면 null.
+   * - REQUESTED: 처리 대기중 → 주문내역 '환불 신청됨'
+   * - APPROVED: 환불 완료 → 주문내역 '환불 완료' (재신청 불가)
+   * REJECTED/CANCELED 는 무시 → 고객이 재신청 가능.
+   */
   async findActiveByIntent(intentId: string, userId: string): Promise<RefundRequest | null> {
     const rows = await this.dbService.db
       .select()
@@ -103,9 +108,10 @@ export class RefundRequestsService {
         and(
           eq(refundRequests.intentId, intentId),
           eq(refundRequests.userId, userId),
-          eq(refundRequests.status, 'REQUESTED'),
+          inArray(refundRequests.status, ['REQUESTED', 'APPROVED']),
         ),
       )
+      .orderBy(desc(refundRequests.createdAt))
       .limit(1);
     return rows[0] ?? null;
   }

@@ -46,7 +46,7 @@ export const OrderDetailsDesktop = ({
   cashReceipts = [],
   intentId,
   depositAccount,
-  hasActiveRefundRequest = false,
+  refundRequestStatus,
 }: {
   order: HttpTypes.StoreOrder | null
   countryCode: string
@@ -54,7 +54,7 @@ export const OrderDetailsDesktop = ({
   cashReceipts?: IssuedCashReceiptDto[]
   intentId?: string
   depositAccount?: BankTransferDepositAccount | null
-  hasActiveRefundRequest?: boolean
+  refundRequestStatus?: string
 }) => {
   const tLabels = useTranslations("mypage.order.labels")
   const tStatus = useTranslations("mypage.order.status")
@@ -450,12 +450,12 @@ export const OrderDetailsDesktop = ({
             {tActions("cancelOrder")}
           </button>
         )}
-        {showBankTransferCancelGuide && intentId && !hasActiveRefundRequest && (
+        {showBankTransferCancelGuide && intentId && !refundRequestStatus && (
           <RefundRequestDialog intentId={intentId} />
         )}
-        {showBankTransferCancelGuide && hasActiveRefundRequest && (
+        {showBankTransferCancelGuide && refundRequestStatus && (
           <span className="inline-flex cursor-not-allowed items-center justify-center rounded-[5px] px-4 py-3 text-sm text-gray-400 outline-1 outline-gray-200">
-            {tRefundRequest("requested")}
+            {tRefundRequest(refundRequestStatus === "APPROVED" ? "refunded" : "requested")}
           </span>
         )}
         {!canCancel && cancelUnavailableReason && cancelUnavailableReason !== "already_cancelled" && (

@@ -596,7 +596,8 @@
       "submitting": "Submitting...",
       "success": "Your refund request has been received and will be processed after review.",
       "error": "Failed to submit refund request. Please try again.",
-      "requested": "Refund requested · pending"
+      "requested": "Refund requested · pending",
+      "refunded": "Refunded"
     },
     "depositAccount": {
       "title": "Deposit account",

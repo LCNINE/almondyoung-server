@@ -596,7 +596,8 @@
       "submitting": "신청 중...",
       "success": "환불 신청이 접수되었습니다. 확인 후 처리됩니다.",
       "error": "환불 신청에 실패했습니다. 다시 시도해 주세요.",
-      "requested": "환불 신청됨 · 처리 대기중"
+      "requested": "환불 신청됨 · 처리 대기중",
+      "refunded": "환불 완료"
     },
     "depositAccount": {
       "title": "입금 계좌 안내",

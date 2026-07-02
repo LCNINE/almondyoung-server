@@ -55,7 +55,7 @@ export default async function OrderDetailsPage({
             cashReceipts={cashReceipts}
             intentId={intentId}
             depositAccount={depositAccount}
-            hasActiveRefundRequest={!!refundRequest}
+            refundRequestStatus={refundRequest?.status}
           />
         </MypageLayout>
       </div>
@@ -69,7 +69,7 @@ export default async function OrderDetailsPage({
           cashReceipts={cashReceipts}
           intentId={intentId}
           depositAccount={depositAccount}
-          hasActiveRefundRequest={!!refundRequest}
+          refundRequestStatus={refundRequest?.status}
         />
       </div>
     </WithHeaderLayout>

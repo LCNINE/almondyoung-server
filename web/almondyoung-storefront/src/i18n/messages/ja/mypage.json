@@ -596,7 +596,8 @@
       "submitting": "申請中...",
       "success": "返金申請を受け付けました。確認後に処理されます。",
       "error": "返金申請に失敗しました。もう一度お試しください。",
-      "requested": "返金申請済み · 処理待ち"
+      "requested": "返金申請済み · 処理待ち",
+      "refunded": "返金完了"
     },
     "depositAccount": {
       "title": "入金口座のご案内",
