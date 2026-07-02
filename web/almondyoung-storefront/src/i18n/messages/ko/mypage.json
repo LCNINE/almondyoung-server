@@ -443,8 +443,8 @@
       "cancelSuccessManual": "주문은 취소되었습니다. 환불은 고객센터에서 확인 후 처리됩니다.",
       "cancelError": "취소 처리 중 오류가 발생했습니다.",
       "contactCs": "고객센터 문의",
-      "bankTransferCancelGuide": "무통장입금 주문 취소는 고객센터로 문의해 주세요.",
-      "bankTransferRefundNotice": "입금 전 미입금 주문은 입금 기한(7일) 경과 시 자동 취소됩니다. 입금 후 취소·환불은 고객센터로 환불 계좌(은행·계좌번호·예금주)를 알려주셔야 하며, 예금주명이 정확해야 합니다. 환불은 영업일 기준 약 2일 소요됩니다.",
+      "bankTransferCancelGuide": "무통장입금 주문의 취소·환불은 ‘환불 신청’ 버튼으로 신청해 주세요.",
+      "bankTransferRefundNotice": "입금 전 미입금 주문은 입금 기한(7일) 경과 시 자동 취소됩니다. 입금 후 취소·환불은 ‘환불 신청’에서 환불 계좌(은행·계좌번호·예금주)를 입력해 주세요. 관리자 확인 후 입력하신 계좌로 환불되며(약 2영업일), 예금주명이 정확해야 합니다.",
       "download": "다운로드"
     },
     "delivery": {
@@ -578,6 +578,37 @@
         "DELAY": "배송 지연",
         "OTHER": "기타"
       }
+    },
+    "refundRequest": {
+      "trigger": "환불 신청",
+      "title": "환불 계좌 신청",
+      "description": "환불받으실 계좌 정보를 입력해 주세요. 관리자 확인 후 입력하신 계좌로 환불됩니다(약 2영업일). 예금주명이 정확해야 합니다.",
+      "bank": "은행",
+      "bankPlaceholder": "은행 선택",
+      "accountNumber": "계좌번호",
+      "accountNumberPlaceholder": "숫자만 입력",
+      "holderName": "예금주명",
+      "holderNamePlaceholder": "예금주명",
+      "reason": "환불 사유 (선택)",
+      "reasonPlaceholder": "환불 사유를 입력해 주세요",
+      "cancel": "취소",
+      "submit": "환불 신청",
+      "submitting": "신청 중...",
+      "success": "환불 신청이 접수되었습니다. 확인 후 처리됩니다.",
+      "error": "환불 신청에 실패했습니다. 다시 시도해 주세요.",
+      "requested": "환불 신청됨 · 처리 대기중",
+      "refunded": "환불 완료"
+    },
+    "depositAccount": {
+      "title": "입금 계좌 안내",
+      "bank": "은행",
+      "accountNumber": "계좌번호",
+      "copy": "복사",
+      "copied": "계좌번호가 복사되었습니다.",
+      "holder": "예금주",
+      "amount": "입금 금액",
+      "dueDate": "입금 기한",
+      "notice": "아래 계좌로 입금해 주세요. 입금자명이 달라도 무방합니다. 입금 확인 후 자동 확인까지 시간이 소요될 수 있으며, 확인되면 배송이 진행됩니다."
     }
   },
   "membership": {

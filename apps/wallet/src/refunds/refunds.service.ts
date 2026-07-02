@@ -120,6 +120,7 @@ export class RefundsService {
         correlationId,
         reasonCode: dto.reasonCode,
         providerData: method.providerData,
+        refundReceiveAccount: dto.refundReceiveAccount,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
