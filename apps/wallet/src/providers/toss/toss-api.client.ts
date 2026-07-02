@@ -29,6 +29,25 @@ export interface TossBillingConfirmResponse {
   [key: string]: unknown;
 }
 
+export interface TossVirtualAccount {
+  accountType: string;
+  accountNumber: string;
+  bankCode: string;
+  customerName: string;
+  dueDate: string;
+  [key: string]: unknown;
+}
+
+export interface TossVirtualAccountResponse {
+  paymentKey: string;
+  orderId: string;
+  status: string; // WAITING_FOR_DEPOSIT
+  totalAmount: number;
+  secret: string;
+  virtualAccount: TossVirtualAccount;
+  [key: string]: unknown;
+}
+
 export interface TossCashReceiptResponse {
   receiptKey: string;
   issueNumber: string;
@@ -95,6 +114,29 @@ export class TossApiClient {
       orderId,
       orderName: orderName ?? '정기결제',
     });
+  }
+
+  async issueVirtualAccount(params: {
+    amount: number;
+    orderId: string;
+    orderName: string;
+    customerName: string;
+    bank: string;
+    validHours?: number;
+    customerEmail?: string;
+    customerMobilePhone?: string;
+  }): Promise<TossApiResult<TossVirtualAccountResponse>> {
+    const body: Record<string, unknown> = {
+      amount: params.amount,
+      orderId: params.orderId,
+      orderName: params.orderName,
+      customerName: params.customerName,
+      bank: params.bank,
+    };
+    if (params.validHours !== undefined) body.validHours = params.validHours;
+    if (params.customerEmail) body.customerEmail = params.customerEmail;
+    if (params.customerMobilePhone) body.customerMobilePhone = params.customerMobilePhone;
+    return this.post<TossVirtualAccountResponse>('/virtual-accounts', body);
   }
 
   async issueCashReceipt(params: {

@@ -26,6 +26,10 @@ export const walletEnvSchema = z.object({
   CORS_ORIGINS: z.string().optional(),
   TOSS_SECRET_KEY: z.string().min(1).optional(),
   TOSS_CLIENT_KEY: z.string().min(1).optional(),
+  // 무통장입금(토스 가상계좌) — bank: 토스에 넘길 두 자리 은행 코드(계약 은행), bank_name: 고객 표시명
+  TOSS_VIRTUAL_ACCOUNT_BANK: z.string().min(1).optional(),
+  TOSS_VIRTUAL_ACCOUNT_BANK_NAME: z.string().min(1).optional(),
+  WALLET_BANK_TRANSFER_DEPOSIT_WINDOW_HOURS: z.string().regex(/^\d+$/).optional(),
   NICEPAY_CLIENT_KEY: z.string().min(1).optional(),
   NICEPAY_SECRET_KEY: z.string().min(1).optional(),
   // Kafka
