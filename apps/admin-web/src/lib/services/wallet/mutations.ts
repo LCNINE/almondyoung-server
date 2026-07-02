@@ -50,6 +50,7 @@ export const useRefundIntent = (intentId: string) => {
       amount: number;
       reasonCode?: string;
       reasonMessage?: string;
+      refundReceiveAccount?: { bank: string; accountNumber: string; holderName: string };
     }) => walletApi.refundIntent(intentId, dto),
     onSuccess: () => {
       queryClient.invalidateQueries({
@@ -60,6 +61,28 @@ export const useRefundIntent = (intentId: string) => {
       });
       queryClient.invalidateQueries({ queryKey: walletQueryKeys.intents() });
       queryClient.invalidateQueries({ queryKey: walletQueryKeys.refunds() });
+    },
+  });
+};
+
+export const useApproveRefundRequest = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { id: string; adminNote?: string }) => walletApi.approveRefundRequest(vars.id, vars.adminNote),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.refundRequests() });
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.refunds() });
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.intents() });
+    },
+  });
+};
+
+export const useRejectRefundRequest = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { id: string; adminNote?: string }) => walletApi.rejectRefundRequest(vars.id, vars.adminNote),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.refundRequests() });
     },
   });
 };

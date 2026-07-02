@@ -11,7 +11,7 @@ import {
   RefundResult,
   ValidateMethodParams,
 } from '../payment-provider.interface';
-import { WalletSchema, paymentMethods } from '../../schema';
+import { WalletSchema, charges, paymentMethods } from '../../schema';
 import { TossApiClient } from '../toss/toss-api.client';
 
 const DEFAULT_DEPOSIT_WINDOW_HOURS = 72;
@@ -129,9 +129,47 @@ export class BankTransferPaymentProvider implements PaymentProvider {
     return { status: 'SUCCEEDED' };
   }
 
-  async refund(_params: RefundParams): Promise<RefundResult> {
-    // 가상계좌 환불은 고객 환불계좌가 필요해 수동 처리한다 — 확인 전까지 PENDING 유지.
-    return { status: 'PENDING' };
+  async refund(params: RefundParams): Promise<RefundResult> {
+    // 환불계좌가 없으면 자동환불 불가 → 수동환불(PENDING) 폴백 (관리자가 외부 처리 후 완료 기록).
+    if (!params.refundReceiveAccount) {
+      return { status: 'PENDING' };
+    }
+
+    // 발급 시 charges.responsePayload 에 스냅샷된 paymentKey 로 토스 가상계좌 환불(계좌로 송금)을 호출한다.
+    const paymentKey = await this.getPaymentKey(params.chargeId);
+    if (!paymentKey) {
+      //  대상 charge 에 paymentKey 스냅샷이 없으면(구건 등) 자동환불 불가 → 수동 폴백.
+      return { status: 'PENDING' };
+    }
+
+    const result = await this.tossApi.cancelPayment(
+      paymentKey,
+      params.reasonCode ?? '고객 요청',
+      params.amount,
+      params.idempotencyKey,
+      params.refundReceiveAccount,
+    );
+    if (result.ok) {
+      return { status: 'SUCCEEDED', providerRefundId: paymentKey };
+    }
+    return { status: 'FAILED', errorCode: result.error.code, errorMessage: result.error.message };
+  }
+
+  /** 발급 시 스냅샷된 paymentKey 를 charge 에서 읽는다 (webhook 확정건은 providerTransactionId 에도 있음). */
+  private async getPaymentKey(chargeId: string): Promise<string | undefined> {
+    const rows = await this.dbService.db
+      .select({ providerTransactionId: charges.providerTransactionId, responsePayload: charges.responsePayload })
+      .from(charges)
+      .where(eq(charges.id, chargeId))
+      .limit(1);
+    const row = rows[0];
+    if (!row) return undefined;
+    const fromPayload = (row.responsePayload as { paymentKey?: unknown } | null)?.paymentKey;
+    if (typeof fromPayload === 'string' && fromPayload) return fromPayload;
+    // 수동확정 placeholder('BANK_TRANSFER_CONFIRMED')는 실제 paymentKey 가 아니므로 제외.
+    const ptid = row.providerTransactionId ?? undefined;
+    if (ptid && ptid !== 'BANK_TRANSFER_CONFIRMED') return ptid;
+    return undefined;
   }
 
   private depositWindowHours(): number {

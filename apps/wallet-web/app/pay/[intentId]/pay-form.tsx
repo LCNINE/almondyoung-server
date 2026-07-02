@@ -399,7 +399,7 @@ export function PayForm({
                   <h1 className="text-lg font-semibold">주문이 접수되었습니다</h1>
                   <p className="text-sm text-muted-foreground">
                     주문이 &lsquo;입금확인중&rsquo; 상태로 접수되었어요. 아래 계좌로 입금하시면 입금 확인 후 배송이
-                    진행됩니다.
+                    진행됩니다. 입금 확인 후 자동 확인까지 시간이 소요될 수 있어요.
                   </p>
                 </div>
               </div>
@@ -430,14 +430,19 @@ export function PayForm({
                 </div>
               </dl>
 
-              <Alert>
+              <Alert className="break-keep">
                 <AlertCircle className="w-4 h-4" />
-                <AlertDescription>
+                <AlertDescription className="break-keep">
                   주문이 이미 <span className="font-medium">‘입금확인중’</span> 상태로 접수되어, 지금 바로 아래{' '}
                   <span className="font-medium">‘주문 내역에서 확인’</span> 버튼으로 확인하실 수 있어요. 입금이 확인되면
                   자동으로 결제가 완료됩니다.
                 </AlertDescription>
               </Alert>
+
+              <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground space-y-1 break-keep">
+                <p>· 입금 기한(7일) 내 미입금 시 주문은 자동 취소됩니다.</p>
+                <p>· 입금 후 취소·환불은 주문 내역에서 직접 신청하실 수 있으며, 영업일 기준 약 2일 소요됩니다.</p>
+              </div>
 
               <div className="space-y-2">
                 {orderListUrl && (

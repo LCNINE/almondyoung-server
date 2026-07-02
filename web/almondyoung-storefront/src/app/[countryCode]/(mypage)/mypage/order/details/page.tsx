@@ -4,7 +4,7 @@ import { OrderDetailsDesktop } from "domains/order/details/components/order-deta
 import { OrderDetailsMobile } from "domains/order/details/components/order-details-mobile"
 import { getOrder } from "@/lib/api/medusa/orders"
 import { getOrderActionsByMedusaId } from "@/lib/api/orders/store-orders"
-import { getCashReceipts } from "@/lib/api/wallet"
+import { getCashReceipts, getBankTransferDepositAccount, getActiveRefundRequest } from "@/lib/api/wallet"
 
 interface OrderDetailsPageProps {
   params: Promise<{ countryCode: string }>
@@ -31,7 +31,11 @@ export default async function OrderDetailsPage({
       | Record<string, unknown>
       | undefined
   )?.intentId as string | undefined
-  const cashReceipts = intentId ? await getCashReceipts(intentId) : []
+  const [cashReceipts, depositAccount, refundRequest] = await Promise.all([
+    intentId ? getCashReceipts(intentId) : Promise.resolve([]),
+    intentId ? getBankTransferDepositAccount(intentId) : Promise.resolve(null),
+    intentId ? getActiveRefundRequest(intentId) : Promise.resolve(null),
+  ])
 
   return (
     <WithHeaderLayout
@@ -49,6 +53,9 @@ export default async function OrderDetailsPage({
             countryCode={countryCode}
             coreActions={coreActions ?? undefined}
             cashReceipts={cashReceipts}
+            intentId={intentId}
+            depositAccount={depositAccount}
+            hasActiveRefundRequest={!!refundRequest}
           />
         </MypageLayout>
       </div>
@@ -60,6 +67,9 @@ export default async function OrderDetailsPage({
           countryCode={countryCode}
           coreActions={coreActions ?? undefined}
           cashReceipts={cashReceipts}
+          intentId={intentId}
+          depositAccount={depositAccount}
+          hasActiveRefundRequest={!!refundRequest}
         />
       </div>
     </WithHeaderLayout>

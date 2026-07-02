@@ -25,6 +25,14 @@ export interface ChargeParams {
   metadata?: Record<string, unknown>;
 }
 
+/** 가상계좌(무통장) 환불 시 환불받을 계좌 — 토스가 이 계좌로 송금한다. */
+export interface RefundReceiveAccount {
+  /** 토스 2자리 은행코드 (예: 국민 06) */
+  bank: string;
+  accountNumber: string;
+  holderName: string;
+}
+
 export interface RefundParams {
   refundId: string;
   chargeId: string;
@@ -37,6 +45,8 @@ export interface RefundParams {
   reasonCode?: string;
   providerData?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
+  /** 무통장(가상계좌) 입금 후 환불에 필요. 미제공 시 provider 는 수동환불(PENDING) 로 폴백. */
+  refundReceiveAccount?: RefundReceiveAccount;
 }
 
 export interface ChargeResult {

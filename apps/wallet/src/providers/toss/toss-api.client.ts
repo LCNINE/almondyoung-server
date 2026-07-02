@@ -87,9 +87,12 @@ export class TossApiClient {
     cancelReason: string,
     cancelAmount?: number,
     idempotencyKey?: string,
+    // 가상계좌 결제의 입금 후 환불은 환불받을 계좌가 필수 (토스가 그 계좌로 송금).
+    refundReceiveAccount?: { bank: string; accountNumber: string; holderName: string },
   ): Promise<TossApiResult<TossCancelResponse>> {
     const body: Record<string, unknown> = { cancelReason };
     if (cancelAmount !== undefined) body.cancelAmount = cancelAmount;
+    if (refundReceiveAccount) body.refundReceiveAccount = refundReceiveAccount;
     return this.post<TossCancelResponse>(
       `/payments/${paymentKey}/cancel`,
       body,

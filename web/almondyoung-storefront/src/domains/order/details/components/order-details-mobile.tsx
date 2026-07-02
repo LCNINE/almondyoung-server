@@ -39,28 +39,35 @@ import { useTranslations } from "next-intl"
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
+import { RefundRequestDialog } from "./refund-request-dialog"
+import { DepositAccountInfo } from "./deposit-account-info"
+import type { BankTransferDepositAccount } from "@/lib/api/wallet"
 
 const formatAmount = (value?: number | null) =>
   `${(value ?? 0).toLocaleString()}원`
-
-/** 무통장입금 주문 취소 안내용 고객센터 카카오채널 링크 */
-const KAKAO_CS_URL = "https://pf.kakao.com/_xaxgxazs"
 
 export const OrderDetailsMobile = ({
   order,
   coreActions,
   cashReceipts = [],
+  intentId,
+  depositAccount,
+  hasActiveRefundRequest = false,
 }: {
   order: HttpTypes.StoreOrder | null
   countryCode: string
   coreActions?: StoreOrderActionsResponse
   cashReceipts?: IssuedCashReceiptDto[]
+  intentId?: string
+  depositAccount?: BankTransferDepositAccount | null
+  hasActiveRefundRequest?: boolean
 }) => {
   const tLabels = useTranslations("mypage.order.labels")
   const tStatus = useTranslations("mypage.order.status")
   const tActions = useTranslations("mypage.order.actions")
   const tPaymentStatus = useTranslations("mypage.order.paymentStatus")
   const tRefundInfo = useTranslations("mypage.order.refundInfo")
+  const tRefundRequest = useTranslations("mypage.order.refundRequest")
   const router = useRouter()
   const [showCancelDialog, setShowCancelDialog] = useState(false)
   const [isCancelling, startCancelTransition] = useTransition()
@@ -383,6 +390,11 @@ export const OrderDetailsMobile = ({
             <p className="mt-2 text-sm text-gray-500">
               {tLabels("items", { count: order.items?.length ?? 0 })}
             </p>
+            {depositAccount && depositAccount.accountNumber && (
+              <div className="mt-3">
+                <DepositAccountInfo account={depositAccount} />
+              </div>
+            )}
           </div>
 
           <div className="border-border-muted border-t p-4">
@@ -469,12 +481,13 @@ export const OrderDetailsMobile = ({
                 {tActions("cancelOrder")}
               </CustomButton>
             )}
-            {showBankTransferCancelGuide && (
-              <a href={KAKAO_CS_URL} target="_blank" rel="noopener noreferrer">
-                <CustomButton variant="outline" size="sm">
-                  {tActions("contactCs")}
-                </CustomButton>
-              </a>
+            {showBankTransferCancelGuide && intentId && !hasActiveRefundRequest && (
+              <RefundRequestDialog intentId={intentId} />
+            )}
+            {showBankTransferCancelGuide && hasActiveRefundRequest && (
+              <span className="inline-flex cursor-not-allowed items-center justify-center rounded-[5px] px-4 py-3 text-sm text-gray-400 outline-1 outline-gray-200">
+                {tRefundRequest("requested")}
+              </span>
             )}
             {!canCancel &&
               cancelUnavailableReason &&
