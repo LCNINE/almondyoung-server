@@ -1,9 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { format } from 'date-fns';
+import { format, subMinutes } from 'date-fns';
 import { BillingReader } from './billing.reader';
 import { BillingManager, BillingResult } from './billing.manager';
 import { BillingOutcomeHandler } from './billing-outcome.handler';
+import { PaymentClientService } from './payment-client.service';
+
+/** 결과 이벤트를 이 시간(분) 넘게 못 받은 진행 중 청구는 reconcile 대상으로 본다. */
+const RECONCILE_THRESHOLD_MINUTES = 30;
 
 // 하위 호환성을 위한 타입 export
 export type { BillingResult } from './billing.manager';
@@ -26,6 +30,7 @@ export class RecurringBillingService {
     private readonly billingReader: BillingReader,
     private readonly billingManager: BillingManager,
     private readonly billingOutcomeHandler: BillingOutcomeHandler,
+    private readonly paymentClient: PaymentClientService,
   ) {}
 
   /**
@@ -43,6 +48,76 @@ export class RecurringBillingService {
       this.logger.log(`Daily billing completed - Success: ${successCount}, Failed: ${failureCount}`);
     } catch (error) {
       this.logger.error(`Daily billing scheduler failed: ${error.message}`, error.stack);
+    }
+  }
+
+  /**
+   * 정기결제 결과 reconciliation (매 30분)
+   *
+   * wallet 결과 이벤트가 유실/지연되어 billingInProgress 가 오래 걸려 있는 계약을, 저장된 멱등키로
+   * wallet 권위 상태를 되물어 스스로 정합화한다. 이벤트 기반 동기화의 불확실성을 SoT 미보유측(membership)이
+   * 해소하는 경로. billing_events 유니크 멱등 마커 덕에 실제 이벤트와 레이스해도 안전하다.
+   */
+  @Cron(CronExpression.EVERY_30_MINUTES)
+  async reconcileStuckBillings(): Promise<void> {
+    const threshold = subMinutes(new Date(), RECONCILE_THRESHOLD_MINUTES);
+    const stuck = await this.billingReader.findStuckBillingForReconcile(threshold);
+    if (stuck.length === 0) return;
+
+    this.logger.log(`[reconcile] 진행 중 청구 정합화 대상 ${stuck.length}건`);
+    for (const { contractId, idempotencyKey } of stuck) {
+      try {
+        await this.reconcileOne(contractId, idempotencyKey);
+      } catch (err) {
+        this.logger.error(
+          `[reconcile] 실패 (contractId=${contractId}): ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+  }
+
+  /**
+   * 단건 정합화: 멱등키로 wallet intent 를 조회해 상태별로 결과 핸들러에 위임한다.
+   * - CAPTURED/AUTHORIZED/SUCCEEDED → 성공 처리(기간 연장·락 해제)
+   * - FAILED → 실패 처리(더닝/해지)
+   * - CANCELED → 취소 처리
+   * - 진행 중(PENDING_SETTLEMENT 등) → 대기(다음 주기 재확인)
+   * - intent 없음(커맨드 유실) → 락 해제 후 다음 스케줄러가 재발행
+   */
+  private async reconcileOne(contractId: string, idempotencyKey: string): Promise<void> {
+    const intent = await this.paymentClient.getWalletIntentByIdempotencyKey(idempotencyKey);
+
+    if (!intent) {
+      this.logger.warn(`[reconcile] intent 없음(커맨드 유실 추정) → 락 해제: contractId=${contractId}`);
+      await this.billingManager.releaseBillingLock(contractId);
+      return;
+    }
+
+    const status = String(intent.status);
+    switch (status) {
+      // AUTHORIZED 를 성공으로 인정하는 근거: 라이브 provider 인 CMS(효성)는 AUTHORIZED = 출금성공(실제 금전 이동)
+      // 이고 capture 는 no-op formality 다. 여기서 CAPTURED 로 좁히면 정산 성공 후 auto-capture 누락 시
+      // "돈은 빠졌는데 혜택 미연장"이 되어 더 위험하다. 단, 승인≠매출확정인 provider(카드 빌링)를 켜면
+      // 그 provider 에 한해 성공 기준을 CAPTURED 로 게이팅해야 한다(wallet 이 providerType/금전확정 여부를 노출해야 함).
+      case 'CAPTURED':
+      case 'AUTHORIZED':
+      case 'SUCCEEDED':
+        await this.billingOutcomeHandler.handleSuccess(contractId, intent.payableAmount, intent.id);
+        break;
+      case 'FAILED':
+        await this.billingOutcomeHandler.handleFailure(
+          contractId,
+          'RECONCILED_FAILED',
+          'wallet 조회로 확인된 실패(이벤트 유실 정합화)',
+          intent.id,
+        );
+        break;
+      case 'CANCELED':
+        await this.billingOutcomeHandler.handleCanceled(contractId, intent.id);
+        break;
+      default:
+        // CREATED/PROCESSING/PENDING/PENDING_SETTLEMENT/REQUIRES_ACTION 등 아직 진행 중 — 다음 주기 재확인
+        this.logger.log(`[reconcile] 진행 중 상태 유지(대기): contractId=${contractId}, status=${status}`);
     }
   }
 

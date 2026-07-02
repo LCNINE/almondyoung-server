@@ -154,6 +154,8 @@ export const subscriptionContracts = pgTable(
     billingInProgress: boolean('billing_in_progress').notNull().default(false),
     // billingInProgress=true로 전환된 시각. updatedAt은 다른 업데이트에 의해 덮힐 수 있어 별도 컬럼으로 관리
     billingStartedAt: timestamp('billing_started_at', { withTimezone: true }),
+    // 진행 중 청구에 사용한 wallet 멱등키. 결과 이벤트 유실 시 이 키로 wallet 권위 상태를 되물어(reconcile) 락을 스스로 해소한다.
+    billingIdempotencyKey: text('billing_idempotency_key'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index('idx_subscription_billing_date').on(table.billingDate)],

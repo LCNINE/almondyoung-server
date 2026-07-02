@@ -190,15 +190,32 @@ describe('SubscriptionService - Layer Refactoring', () => {
       const userId = 'test_user_001';
 
       mockEntitlementService.getUserEntitlement.mockResolvedValue({
-        entitlement: { id: 'entitlement_001' },
-        contract: { id: 'contract_001' },
+        entitlement: { id: 'entitlement_001', startsAt: '2026-06-01', endsAt: '2026-07-01', pausedAt: null },
+        contract: {
+          id: 'contract_001',
+          userId,
+          planId: 'plan_001',
+          status: 'ACTIVE',
+          autoRenewal: true,
+          billingDate: null,
+          nextBillingDate: '2026-07-01',
+          recurringCancelledAt: null,
+        },
+        plan: { id: 'plan_001', tierId: 'tier_001', price: 10000, currency: 'KRW', durationDays: 30, trialDays: 0, isActive: true },
+        tier: { id: 'tier_001', code: 'GOLD', name: 'Gold', priorityLevel: 1 },
       });
 
       // When
       const result = await service.getCurrentSubscriptionDetails(userId);
 
-      // Then
-      expect(result).toHaveProperty('entitlement');
+      // Then: 평탄한 형태로 톱레벨 status/autoRenewal 이 노출된다
+      expect(result).toMatchObject({
+        id: 'contract_001',
+        status: 'ACTIVE',
+        autoRenewal: true,
+        endDate: '2026-07-01',
+      });
+      expect(result?.tier).toMatchObject({ code: 'GOLD' });
     });
   });
 

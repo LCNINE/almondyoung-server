@@ -13,6 +13,11 @@ import { PlanService } from '../../src/services/plan.service';
 import { PlanReader } from '../../src/services/plan/plan.reader';
 import { PlanManager } from '../../src/services/plan/plan.manager';
 import { PaymentClientService } from '../../src/services/billing/payment-client.service';
+import { BillingOutcomeHandler } from '../../src/services/billing/billing-outcome.handler';
+import { ContractEventManager } from '../../src/services/subscription/contract-event.manager';
+import { MembershipEventPublisher } from '../../src/services/membership-event.publisher';
+import { WalletCommandPublisher } from '../../src/services/billing/wallet-command.publisher';
+import { MembershipPolicyService } from '../../src/services/membership-policy.service';
 import { membershipSchema, type MembershipSchema } from '../../src/shared/schemas/entities/schema';
 import * as schema from '../../src/shared/schemas/entities/schema';
 import { eq, and } from 'drizzle-orm';
@@ -61,6 +66,17 @@ describe('Recurring Billing & Pause Integration Tests', () => {
         RecurringBillingService,
         BillingReader,
         BillingManager,
+        BillingOutcomeHandler,
+        ContractEventManager,
+        {
+          provide: MembershipEventPublisher,
+          useValue: { publishStatusChanged: jest.fn().mockResolvedValue(undefined) },
+        },
+        {
+          provide: WalletCommandPublisher,
+          useValue: { publishBillingCharge: jest.fn().mockResolvedValue(undefined) },
+        },
+        MembershipPolicyService,
         PauseService,
         PauseReader,
         PauseManager,
@@ -366,18 +382,48 @@ describe('Recurring Billing & Pause Integration Tests', () => {
           ),
         );
 
+      // 일시정지 시작 시점에는 종료일을 동결한다(연장 없음). 미리 연장하면 조기 재개 시 회수 못 해
+      // 무료 연장 익스플로잇이 되므로, 실제 연장은 재개 시 '실제 정지된 일수'만큼만 적용한다.
       expect(updatedEntitlement.pausedAt).not.toBeNull();
-      expect(updatedEntitlement.endsAt).toBe(format(addDays(new Date(originalEndsAt), 30), 'yyyy-MM-dd'));
+      expect(updatedEntitlement.endsAt).toBe(originalEndsAt);
 
-      // Contract 확인
       const [updatedContract] = await dbService.db
         .select()
         .from(schema.subscriptionContracts)
         .where(eq(schema.subscriptionContracts.userId, testUserId));
 
-      expect(updatedContract.nextBillingDate).toBe(
-        format(addDays(new Date(originalNextBillingDate!), 30), 'yyyy-MM-dd'),
-      );
+      // 정지 중에는 findDueContracts 가 pausedAt 로 청구를 막으므로 nextBillingDate 도 그대로 둔다.
+      expect(updatedContract.nextBillingDate).toBe(originalNextBillingDate);
+
+      // 재개 시: pausedAt 을 10일 전으로 backdate 해 '실제 10일 정지' 상황을 만들고, 그만큼만 연장되는지 확인.
+      await dbService.db
+        .update(schema.subscriptionEntitlement)
+        .set({ pausedAt: addDays(new Date(), -10) })
+        .where(eq(schema.subscriptionEntitlement.id, updatedEntitlement.id));
+      const [backdated] = await dbService.db
+        .select()
+        .from(schema.subscriptionEntitlement)
+        .where(eq(schema.subscriptionEntitlement.id, updatedEntitlement.id));
+
+      await pauseManager.resumePause(testUserId, backdated);
+
+      const [resumed] = await dbService.db
+        .select()
+        .from(schema.subscriptionEntitlement)
+        .where(
+          and(
+            eq(schema.subscriptionEntitlement.userId, testUserId),
+            eq(schema.subscriptionEntitlement.isCurrent, true),
+          ),
+        );
+      expect(resumed.pausedAt).toBeNull();
+      expect(resumed.endsAt).toBe(format(addDays(new Date(originalEndsAt), 10), 'yyyy-MM-dd'));
+
+      const [resumedContract] = await dbService.db
+        .select()
+        .from(schema.subscriptionContracts)
+        .where(eq(schema.subscriptionContracts.userId, testUserId));
+      expect(resumedContract.nextBillingDate).toBe(format(addDays(new Date(originalNextBillingDate!), 10), 'yyyy-MM-dd'));
     });
 
     it('✅ 일시정지 중에는 정기결제 대상에서 제외', async () => {
@@ -416,7 +462,17 @@ describe('Recurring Billing & Pause Integration Tests', () => {
 
       await pauseManager.startPause(testUserId, entitlement, new Date(), addDays(new Date(), 30));
 
-      // 2. 재개
+      // 2. 재개 — 실제 30일 정지 상황을 만들기 위해 pausedAt 을 30일 전으로 backdate(테스트는 즉시 실행되므로).
+      //    재개는 '실제 정지 일수'만큼 endsAt·nextBillingDate 를 밀어준다.
+      await dbService.db
+        .update(schema.subscriptionEntitlement)
+        .set({ pausedAt: addDays(new Date(), -30) })
+        .where(
+          and(
+            eq(schema.subscriptionEntitlement.userId, testUserId),
+            eq(schema.subscriptionEntitlement.isCurrent, true),
+          ),
+        );
       const [pausedEntitlement] = await dbService.db
         .select()
         .from(schema.subscriptionEntitlement)

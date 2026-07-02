@@ -48,13 +48,16 @@ import {
   AdminSubscribeUserRequestDto,
 } from '../shared/dto/request.dto';
 import { JwtAuthGuard, User } from '@app/authorization';
+import { MembershipAdminAuth } from '../shared/decorators/admin-auth.decorator';
 import { SubscriptionService } from '../services/subscription.service';
 /**
  * 관리자 운영 컨트롤러
+ *
+ * 인증은 전역 JwtAuthGuard 가 담당하고, 여기서는 admin/master 역할 인가를 강제한다.
  */
 @ApiTags('admin')
 @Controller('admin')
-@UseGuards(JwtAuthGuard) // 모든 API에 관리자 인증 가드 적용
+@MembershipAdminAuth()
 @UseFilters(SubscriptionExceptionFilter)
 export class AdminOperationsController {
   private readonly logger = new Logger(AdminOperationsController.name);
@@ -609,6 +612,12 @@ export class AdminOperationsController {
       this.handleError(error, '강제 구독 취소');
     }
   }
+
+  // 관리자 무상 플랜 변경(comp)은 별도 설계가 필요해 아직 노출하지 않는다.
+  // subscriptionManager.upgrade/downgrade 는 planId·권한만 바꾸고 정기결제 축(nextBillingDate/billingDate/
+  // autoRenewal/agreement)과 감사 주체(ADMIN)를 정리하지 않아, 정기결제 회원에게 쓰면 기존 청구일에
+  // 새 플랜 가격으로 청구되는 오청구가 난다. "무상 comp"인지 "즉시 유료 변경"인지 의미도 분리해야 한다.
+  // → 청구축 재설정 + 감사주체 + admin-web UI 를 갖춘 전용 comp 경로로 구현 예정.
 
   /**
    * 여러 사용자의 멤버십 정보 일괄 조회

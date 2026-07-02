@@ -1,12 +1,14 @@
-import { Controller, Post, Get, HttpCode, HttpStatus, UseGuards, Param, Query } from '@nestjs/common';
+import { Controller, Post, Get, HttpCode, HttpStatus, Param, Query } from '@nestjs/common';
 import { BillingResult, RecurringBillingService } from '../services/billing/recurring-billing.service';
 import { PaymentClientService } from '../services/billing/payment-client.service';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import { UseFilters } from '@nestjs/common';
+import { MembershipAdminAuth } from '../shared/decorators/admin-auth.decorator';
 /**
  * 정기결제 관리 컨트롤러 (관리자 전용)
  */
 @Controller('admin/billing')
+@MembershipAdminAuth()
 @UseFilters(SubscriptionExceptionFilter)
 export class BillingController {
   constructor(
