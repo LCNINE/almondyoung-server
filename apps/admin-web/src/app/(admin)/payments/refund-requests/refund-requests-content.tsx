@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { toast } from 'sonner';
@@ -87,7 +88,17 @@ export function RefundRequestsContent() {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id} className="border-t">
-                  <td className="p-3 font-mono text-xs">{r.intentId.slice(0, 8)}…</td>
+                  <td className="p-3 font-mono text-xs">
+                    <Link
+                      href={`/payments/${r.intentId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline"
+                      title="결제 상세(주문자·상품) 새 탭에서 열기"
+                    >
+                      {r.intentId.slice(0, 8)}…
+                    </Link>
+                  </td>
                   <td className="p-3 font-medium">
                     {r.amount.toLocaleString('ko-KR')} {r.currency}
                   </td>
