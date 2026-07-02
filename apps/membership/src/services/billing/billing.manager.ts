@@ -32,12 +32,35 @@ export class BillingManager {
     private readonly planService: PlanService,
   ) {}
 
+  /**
+   * 진행 중 선점(billingInProgress) 해제 — reconciliation 에서 wallet 에 intent 가 없어(커맨드 유실)
+   * 재시도가 필요할 때 호출. 다음 스케줄러가 다시 청구를 발행할 수 있게 한다.
+   */
+  async releaseBillingLock(contractId: string): Promise<void> {
+    await this.dbService.db
+      .update(schema.subscriptionContracts)
+      .set({ billingInProgress: false, billingStartedAt: null, billingIdempotencyKey: null, updatedAt: new Date() })
+      .where(eq(schema.subscriptionContracts.id, contractId));
+  }
+
   async processSingleBilling(contract: DueContract, attemptNo = 0): Promise<BillingResult> {
+    // idempotencyKey: 같은 주기(nextBillingDate)의 동일 시도 중복은 막되, 더닝 재시도는
+    // attemptNo로 구분해 새 커맨드가 되게 한다. attemptNo를 빼면 재시도가 같은 키로 발행돼
+    // wallet이 직전 FAILED intent를 보고 no-op → 카드 재청구가 영영 일어나지 않는다.
+    // lock 선점과 같은 UPDATE 로 원자적으로 저장한다 — 따로 저장하면 그 사이 크래시 시
+    // billingInProgress=true·키=null 로 reconciliation 조회에서 영구 누락된다.
+    const idempotencyKey = `membership:billing:${contract.id}:${contract.nextBillingDate}:${attemptNo}`;
+
     // 동시 스케줄러 실행 대비: billingInProgress=false 조건부 선점 업데이트
     // RETURNING id — 다른 인스턴스가 먼저 선점했으면 빈 배열 반환 → 스킵
     const [locked] = await this.dbService.db
       .update(schema.subscriptionContracts)
-      .set({ billingInProgress: true, billingStartedAt: new Date(), updatedAt: new Date() })
+      .set({
+        billingInProgress: true,
+        billingStartedAt: new Date(),
+        billingIdempotencyKey: idempotencyKey,
+        updatedAt: new Date(),
+      })
       .where(
         and(
           eq(schema.subscriptionContracts.id, contract.id),
@@ -58,11 +81,6 @@ export class BillingManager {
       if (!plan) throw new Error(`Plan not found: ${contract.planId}`);
       if (!plan.plan.isActive) throw new Error(`Plan is not active: ${contract.planId}`);
 
-      // idempotencyKey: 같은 주기(nextBillingDate)의 동일 시도 중복은 막되, 더닝 재시도는
-      // attemptNo로 구분해 새 커맨드가 되게 한다. attemptNo를 빼면 재시도가 같은 키로 발행돼
-      // wallet이 직전 FAILED intent를 보고 no-op → 카드 재청구가 영영 일어나지 않는다.
-      const idempotencyKey = `membership:billing:${contract.id}:${contract.nextBillingDate}:${attemptNo}`;
-
       await this.walletCommandPublisher.publishBillingCharge({
         subscriberRef: contract.id,
         subscriberType: 'MEMBERSHIP',
@@ -78,10 +96,10 @@ export class BillingManager {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`Error processing billing for contract ${contract.id}: ${msg}`);
-      // Publish 실패 시 플래그 복구 — 다음 스케줄러가 재시도 가능하도록
+      // Publish 실패 시 플래그·키 복구 — 다음 스케줄러가 재시도 가능하도록
       await this.dbService.db
         .update(schema.subscriptionContracts)
-        .set({ billingInProgress: false, billingStartedAt: null, updatedAt: new Date() })
+        .set({ billingInProgress: false, billingStartedAt: null, billingIdempotencyKey: null, updatedAt: new Date() })
         .where(eq(schema.subscriptionContracts.id, contract.id));
       return {
         contractId: contract.id,

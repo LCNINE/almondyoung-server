@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
-import { eq, and, inArray, gte } from 'drizzle-orm';
+import { eq, and, inArray, gte, isNull } from 'drizzle-orm';
 
 type Entitlement = typeof schema.subscriptionEntitlement.$inferSelect;
 
@@ -112,6 +112,8 @@ export class EntitlementReader {
           inArray(schema.subscriptionEntitlement.userId, userIds),
           eq(schema.subscriptionEntitlement.isCurrent, true),
           gte(schema.subscriptionEntitlement.endsAt, today),
+          // 일시정지 중인 권한은 혜택(메두사 할인그룹) 대상에서 제외 — 정지 중 무료 혜택 방지
+          isNull(schema.subscriptionEntitlement.pausedAt),
         ),
       );
 

@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import {
   WalletSchema,
@@ -258,6 +258,21 @@ export class PaymentIntentsService {
       })),
       orderDiscounts,
     };
+  }
+
+  /**
+   * 빌링 멱등키로 intent 조회 — 정기결제를 요청한 구독 서비스(membership)가 결과 이벤트 유실 시
+   * 권위 상태를 되물어(reconcile) 자신의 락/상태를 스스로 맞추기 위한 서버-투-서버 조회 경로.
+   */
+  async findByIdempotencyKey(idempotencyKey: string) {
+    const rows = await this.dbService.db
+      .select({ id: paymentIntents.id })
+      .from(paymentIntents)
+      .where(sql`${paymentIntents.metadata}->>'idempotencyKey' = ${idempotencyKey}`)
+      .limit(1);
+    const id = rows[0]?.id;
+    if (!id) return null;
+    return this.findById(id);
   }
 
   async findByIdOrThrow(id: string): Promise<typeof paymentIntents.$inferSelect> {

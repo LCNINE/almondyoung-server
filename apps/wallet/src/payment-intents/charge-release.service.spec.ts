@@ -26,7 +26,8 @@ function makeContext(
     methodType?: string;
   } = {},
 ) {
-  const provider = { cancel: jest.fn().mockResolvedValue(undefined) };
+  // provider.cancel 은 항상 ChargeResult 를 반환한다(throw 아님). 기본은 성공.
+  const provider = { cancel: jest.fn().mockResolvedValue({ status: 'SUCCEEDED' }) };
 
   const chargesService = {
     findActiveByIntentAndOperation: jest
@@ -91,21 +92,20 @@ describe('ChargeReleaseService', () => {
     expect(provider.cancel).not.toHaveBeenCalled();
   });
 
-  it('continues releasing remaining charges when one provider cancel throws', async () => {
+  it('정산완료(SUCCEEDED) 비-CMS charge 취소가 FAILED 를 반환하면 throw 하고 CANCELED 로 덮지 않는다', async () => {
+    // TOSS/NICEPAY 빌링처럼 이미 확정된 매출은 provider 취소가 실제 성공해야만 CANCELED 로 전이할 수 있다.
+    // 실패를 무시하고 CANCELED 로 덮으면 돈은 빠졌는데 취소완료로 보인다.
     const failing = makePointsCharge({ id: 'charge-fail', paymentMethodId: 'pm-1' });
-    const ok = makePointsCharge({ id: 'charge-ok', paymentMethodId: 'pm-2' });
+    const rest = makePointsCharge({ id: 'charge-rest', paymentMethodId: 'pm-2' });
     const { service, provider, chargesService } = makeContext({
-      succeededCharges: [failing, ok],
+      succeededCharges: [failing, rest],
     });
-    provider.cancel.mockRejectedValueOnce(new Error('provider boom'));
+    provider.cancel.mockResolvedValueOnce({ status: 'FAILED', errorCode: 'TOSS_CANCEL_REJECTED' });
 
-    await expect(service.releaseIntentCharges(INTENT, 'corr-1')).resolves.toBeUndefined();
+    await expect(service.releaseIntentCharges(INTENT, 'corr-1')).rejects.toThrow();
 
-    // Both charges were attempted despite the first failing.
-    expect(provider.cancel).toHaveBeenCalledTimes(2);
-    // The failed charge is left as-is; only the successfully released one is marked CANCELED.
+    // 첫 charge 취소 실패 시점에 throw → 실패한 charge 를 CANCELED 로 덮지 않는다.
     expect(chargesService.updateStatus).not.toHaveBeenCalledWith('charge-fail', 'CANCELED', {});
-    expect(chargesService.updateStatus).toHaveBeenCalledWith('charge-ok', 'CANCELED', {});
   });
 
   it('does NOT mark a CMS active charge CANCELED and throws when provider cancel fails (W1)', async () => {

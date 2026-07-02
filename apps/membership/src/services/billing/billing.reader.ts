@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { eq, and, lte, lt, notInArray, isNull, not, exists } from 'drizzle-orm';
+import { eq, and, lte, lt, notInArray, isNull, isNotNull, not, exists } from 'drizzle-orm';
 import { subDays, parseISO, format } from 'date-fns';
 import * as schema from '../../shared/schemas/entities/schema';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
@@ -72,6 +72,8 @@ export class BillingReader {
           eq(schema.subscriptionContracts.isVoided, false),
           eq(schema.subscriptionContracts.autoRenewal, true),
           eq(schema.subscriptionContracts.billingInProgress, false),
+          // 취소·만료 계약은 청구 대상에서 제외(정리 누락에 대한 방어선)
+          notInArray(schema.subscriptionContracts.status, ['CANCELLED', 'EXPIRED']),
           isNull(schema.subscriptionEntitlement.pausedAt),
           lte(schema.subscriptionContracts.nextBillingDate, date),
           // dunning 처리 중인 계약은 dunning 스케줄러가 담당 — 메인 스케줄러 제외
@@ -181,6 +183,30 @@ export class BillingReader {
           isNull(schema.membershipDunningQueue.id),
         ),
       );
+  }
+
+  /**
+   * reconciliation 대상 조회: billingInProgress=true 인 채 임계 시간(threshold)을 넘긴 계약.
+   * 결과 이벤트를 오래 못 받은 건이므로 저장된 멱등키로 wallet 권위 상태를 되물어야 한다.
+   */
+  async findStuckBillingForReconcile(
+    threshold: Date,
+  ): Promise<{ contractId: string; idempotencyKey: string }[]> {
+    const rows = await this.dbService.db
+      .select({
+        contractId: schema.subscriptionContracts.id,
+        idempotencyKey: schema.subscriptionContracts.billingIdempotencyKey,
+      })
+      .from(schema.subscriptionContracts)
+      .where(
+        and(
+          eq(schema.subscriptionContracts.billingInProgress, true),
+          lt(schema.subscriptionContracts.billingStartedAt, threshold),
+          isNotNull(schema.subscriptionContracts.billingIdempotencyKey),
+        ),
+      );
+    return rows
+      .filter((r): r is { contractId: string; idempotencyKey: string } => r.idempotencyKey !== null);
   }
 
   /**

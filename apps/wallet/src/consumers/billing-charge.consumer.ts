@@ -4,7 +4,7 @@ import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { BillingChargePayload } from '@packages/event-contracts/streams/wallet-command.stream';
 import { DomainEvent } from '@packages/event-contracts/types';
 import { DbService } from '@app/db';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { WalletSchema, paymentIntents, outboxEvents, IntentPurpose } from '../schema';
 import { BillingAgreementService } from '../billing/billing-agreement.service';
@@ -518,7 +518,9 @@ export class BillingChargeConsumer {
         buildOutboxInsertValues({
           eventType: GatewayEventType.INTENT_FAILED,
           aggregateType: GATEWAY_AGGREGATE_TYPE,
-          aggregateId: intentId ?? `billing-charge:${payload.idempotencyKey}`,
+          // aggregate_id 는 uuid 컬럼이라 intent 가 없을 땐 문자열 키를 넣을 수 없다(22P02).
+          // 합성 UUID 를 쓰되, 구독자 라우팅/멱등은 partitionKey 와 payload.intentId 로 처리한다.
+          aggregateId: intentId ?? randomUUID(),
           partitionKey: `${payload.subscriberType}:${payload.subscriberRef}`,
           payload: {
             // intent 생성 전 실패(agreement/method 부재)는 intentId가 없으므로 멱등 키로 안정 키를 내려준다.
