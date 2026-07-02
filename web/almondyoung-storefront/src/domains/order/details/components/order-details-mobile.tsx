@@ -484,9 +484,14 @@ export const OrderDetailsMobile = ({
                 </CustomButton>
               )}
             {showBankTransferCancelGuide && (
-              <p className="w-full text-[11px] text-muted-foreground">
-                {tActions("bankTransferCancelGuide")}
-              </p>
+              <div className="w-full space-y-1">
+                <p className="text-[11px] text-muted-foreground">
+                  {tActions("bankTransferCancelGuide")}
+                </p>
+                <p className="text-[11px] text-muted-foreground whitespace-pre-line">
+                  {tActions("bankTransferRefundNotice")}
+                </p>
+              </div>
             )}
           </div>
         </section>

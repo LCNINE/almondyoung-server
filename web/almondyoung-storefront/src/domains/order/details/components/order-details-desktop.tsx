@@ -460,9 +460,14 @@ export const OrderDetailsDesktop = ({
           </span>
         )}
         {showBankTransferCancelGuide && (
-          <p className="w-full text-xs text-muted-foreground">
-            {tActions("bankTransferCancelGuide")}
-          </p>
+          <div className="w-full space-y-1">
+            <p className="text-xs text-muted-foreground">
+              {tActions("bankTransferCancelGuide")}
+            </p>
+            <p className="text-xs text-muted-foreground whitespace-pre-line">
+              {tActions("bankTransferRefundNotice")}
+            </p>
+          </div>
         )}
       </section>
 
