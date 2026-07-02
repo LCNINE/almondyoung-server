@@ -6,9 +6,12 @@ import { FIXED_CATEGORIES } from "@/lib/constants/categories"
 import { getInterestCategoryKeys } from "@/lib/data/cookies"
 import type { StoreProductCategoryTree } from "@/lib/types/medusa-category"
 import { cn } from "@/lib/utils"
-import { ChevronRight } from "lucide-react"
 import { getTranslations } from "next-intl/server"
 import Image from "next/image"
+import {
+  MobileQuickLinks,
+  type MobileQuickLinkItem,
+} from "./mobile-quick-links"
 
 const DABEAU_IMAGE_URL =
   "https://almondyoung-public.s3.ap-northeast-2.amazonaws.com/storefront/quick-links/dabeau-2.png"
@@ -31,7 +34,11 @@ type CategoryQuickLink = {
   imageUrl: string | null
 }
 
-export async function HomeQuickLinks() {
+export async function HomeQuickLinks({
+  variant = "home",
+}: {
+  variant?: "home" | "desktopHeader"
+}) {
   const tCategories = await getTranslations("categories")
   const interestKeys = await getInterestCategoryKeys()
   const interestKeySet = new Set(interestKeys)
@@ -89,26 +96,58 @@ export async function HomeQuickLinks() {
       }
     }
   )
+  const isDesktopHeader = variant === "desktopHeader"
+  const mobileItems: MobileQuickLinkItem[] = [
+    ...externalLinks,
+    ...categoryLinks.map((link) => ({
+      ...link,
+      external: false,
+    })),
+  ]
 
   return (
-    <section className="w-full border-b border-gray-100 bg-[#fbfaf8]">
-      <div className="container mx-auto max-w-[1360px] px-3.5 py-4 md:px-[40px] md:py-5">
+    <section
+      className={cn(
+        "w-full border-b",
+        isDesktopHeader
+          ? "border-header-border bg-header-background"
+          : "border-gray-100 bg-white md:bg-[#fbfaf8]"
+      )}
+    >
+      <div
+        className={cn(
+          "container mx-auto max-w-[1360px]",
+          isDesktopHeader
+            ? "px-[40px] py-1.5"
+            : "px-3.5 py-4 md:px-[40px] md:py-5"
+        )}
+      >
         <div className="relative">
+          {!isDesktopHeader && <MobileQuickLinks items={mobileItems} />}
+
           <nav
             aria-label="추천 바로가기"
-            className="scrollbar-hide grid auto-cols-[76px] grid-flow-col gap-3 overflow-x-auto px-0.5 pb-1 md:auto-cols-auto md:grid-flow-row md:grid-cols-6 md:gap-x-5 md:gap-y-5 md:overflow-visible md:pb-0 xl:grid-cols-[repeat(13,minmax(0,1fr))]"
+            className={cn(
+              "scrollbar-hide overflow-x-auto px-0.5",
+              isDesktopHeader
+                ? "grid auto-cols-max grid-flow-col items-center gap-5 overflow-visible pb-0"
+                : "hidden md:grid md:auto-cols-auto md:grid-flow-row md:grid-cols-6 md:grid-rows-none md:gap-x-5 md:gap-y-5 md:overflow-visible md:pb-0 xl:grid-cols-[repeat(13,minmax(0,1fr))]"
+            )}
           >
-            <div className="hidden w-full max-w-[78px] justify-self-center md:block">
-              <CategoryDropdown
-                categories={dropdownCategories}
-                variant="quickLink"
-              />
-            </div>
+            {!isDesktopHeader && (
+              <div className="hidden w-full max-w-[78px] justify-self-center md:block">
+                <CategoryDropdown
+                  categories={dropdownCategories}
+                  variant="quickLink"
+                />
+              </div>
+            )}
 
             {externalLinks.map((link) => (
               <ExternalQuickLink
                 key={`${link.label}-${link.href}`}
                 link={link}
+                compact={isDesktopHeader}
               />
             ))}
 
@@ -118,37 +157,47 @@ export async function HomeQuickLinks() {
                 name={link.label}
                 href={link.href}
                 imageUrl={link.imageUrl}
-                sizes="(min-width: 768px) 78px, 68px"
-                className="w-full max-w-[78px] justify-self-center rounded-lg px-0.5 py-1 transition-opacity hover:opacity-90"
+                sizes={
+                  isDesktopHeader ? "24px" : "(min-width: 768px) 78px, 54px"
+                }
+                className={cn(
+                  "justify-self-center rounded-lg px-0.5 py-1 transition-opacity hover:opacity-90",
+                  isDesktopHeader
+                    ? "w-auto min-w-max flex-row gap-1.5 text-xs [&>div]:h-5 [&>div]:w-5 [&>span]:min-h-0 [&>span]:text-[12px] [&>span]:font-medium [&>span]:text-white/85 hover:[&>span]:text-white"
+                    : "w-full max-w-[54px] md:max-w-[78px]"
+                )}
               />
             ))}
           </nav>
-
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute top-0 right-0 flex h-[92px] w-14 items-center justify-end bg-gradient-to-l from-[#fbfaf8] via-[#fbfaf8]/90 to-transparent md:hidden"
-          >
-            <span className="flex h-7 w-7 items-center justify-center rounded-full border border-gray-200 bg-white/95 text-gray-500 shadow-sm">
-              <ChevronRight className="h-4 w-4" />
-            </span>
-          </div>
         </div>
       </div>
     </section>
   )
 }
 
-function ExternalQuickLink({ link }: { link: QuickLink }) {
+function ExternalQuickLink({
+  link,
+  compact = false,
+}: {
+  link: QuickLink
+  compact?: boolean
+}) {
   return (
     <a
       href={link.href}
       target="_blank"
       rel="noreferrer"
-      className="flex min-w-0 flex-col items-center gap-2 rounded-lg px-0.5 py-1 transition-opacity hover:opacity-90 md:w-full md:max-w-[78px] md:justify-self-center"
+      className={cn(
+        "flex min-w-0 items-center rounded-lg px-0.5 py-1 transition-opacity hover:opacity-90",
+        compact
+          ? "w-auto flex-row gap-1.5 text-xs text-white/85 hover:text-white"
+          : "w-full max-w-[54px] flex-col gap-2 justify-self-center md:max-w-[78px]"
+      )}
     >
       <span
         className={cn(
           "relative aspect-square w-full overflow-hidden rounded-lg border border-gray-100 shadow-sm",
+          compact && "h-5 w-5 rounded-none border-0 shadow-none",
           link.imageWrapClassName ?? "bg-gray-100"
         )}
       >
@@ -156,11 +205,22 @@ function ExternalQuickLink({ link }: { link: QuickLink }) {
           src={link.imageUrl}
           alt={link.label}
           fill
-          sizes="(min-width: 768px) 78px, 68px"
-          className={cn("object-cover", link.imageClassName)}
+          sizes={compact ? "24px" : "(min-width: 768px) 78px, 54px"}
+          className={cn(
+            "object-cover",
+            link.imageClassName,
+            compact && "object-contain p-0"
+          )}
         />
       </span>
-      <span className="line-clamp-2 min-h-[2.4em] text-center text-[12px] leading-tight font-semibold text-gray-700 md:text-[13px]">
+      <span
+        className={cn(
+          "line-clamp-2 text-center leading-tight font-semibold text-gray-700",
+          compact
+            ? "min-h-0 text-[12px] font-medium text-current"
+            : "min-h-[2.4em] text-[12px] md:text-[13px]"
+        )}
+      >
         {(link.displayLabel ?? link.label).split("\n").map((line) => (
           <span key={line} className="block">
             {line}

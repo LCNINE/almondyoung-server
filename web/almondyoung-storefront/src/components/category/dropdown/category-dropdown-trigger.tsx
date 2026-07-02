@@ -6,9 +6,20 @@ import { useTranslations } from "next-intl"
 export function CategoryDropdownTrigger({
   variant = "header",
 }: {
-  variant?: "header" | "quickLink"
+  variant?: "header" | "quickLink" | "headerTile"
 }) {
   const t = useTranslations("header.categoryDropdown")
+
+  if (variant === "headerTile") {
+    return (
+      <>
+        <Menu className="h-7 w-7" />
+        <span className="text-[12px] leading-none font-medium">
+          {t("trigger")}
+        </span>
+      </>
+    )
+  }
 
   if (variant === "quickLink") {
     return (
