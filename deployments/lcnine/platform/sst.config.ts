@@ -20,7 +20,10 @@ export default $config({
 
     const infra = shared.setup();
     services.setup(infra);
-    console.setup(infra);
+    // Redpanda Console(Kafka 점검용 관리 UI, 데이터 경로 아님)은 비-live 에서만 띄운다.
+    // live 에서는 전용 ALB(~$16/월)+Fargate 비용과 무인증 인터넷 노출을 피한다.
+    // 라이브 Kafka 점검이 필요하면 `sst tunnel --stage live` + rpk, 또는 일시적으로 재배포.
+    if (infra.isDev) console.setup(infra);
 
     return {
       vpcId: infra.vpc.id,
