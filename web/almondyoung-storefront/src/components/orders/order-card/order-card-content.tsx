@@ -27,9 +27,6 @@ import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
 
-/** 무통장입금 주문 취소 안내용 고객센터 카카오채널 링크 */
-const KAKAO_CS_URL = "https://pf.kakao.com/_xaxgxazs"
-
 interface OrderCardContentProps {
   orderId: string
   status: string
@@ -193,10 +190,10 @@ export default function OrderCardContent({
                 {cancelUnavailableReason && !canCancel && cancelTooltip && (
                   <p className="text-[10px] text-muted-foreground">{cancelTooltip}</p>
                 )}
-                {/* 무통장입금 주문 취소 안내 */}
+                {/* 무통장입금 주문 취소·환불 안내 */}
                 {showBankTransferCancelGuide && (
                   <p className="text-[10px] text-muted-foreground">
-                    무통장입금 주문 취소는 고객센터로 문의해 주세요.
+                    무통장입금 주문의 취소·환불은 주문 상세에서 신청할 수 있어요.
                   </p>
                 )}
               </div>
@@ -317,15 +314,13 @@ export default function OrderCardContent({
             )}
             {showBankTransferCancelGuide && (
               <DropdownMenuItem asChild>
-                <a
-                  href={KAKAO_CS_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <LocalizedClientLink
+                  href={`/mypage/order/details?orderId=${orderId}`}
                   className="flex cursor-pointer items-center gap-2"
                 >
-                  <ExternalLink className="h-4 w-4" />
-                  취소 문의 (고객센터)
-                </a>
+                  <RotateCcw className="h-4 w-4" />
+                  환불 신청
+                </LocalizedClientLink>
               </DropdownMenuItem>
             )}
             {!canCancel && channelInfo?.cancelUrl && (
@@ -381,11 +376,11 @@ export default function OrderCardContent({
             주문취소
           </CustomButton>
         ) : showBankTransferCancelGuide ? (
-          <a href={KAKAO_CS_URL} target="_blank" rel="noopener noreferrer">
+          <LocalizedClientLink href={`/mypage/order/details?orderId=${orderId}`}>
             <CustomButton variant="outline" color="secondary" size="md" fullWidth>
-              고객센터 문의
+              환불 신청
             </CustomButton>
-          </a>
+          </LocalizedClientLink>
         ) : cancelUnavailableReason && channelInfo?.cancelUrl ? (
           <a href={channelInfo.cancelUrl} target="_blank" rel="noopener noreferrer">
             <CustomButton variant="outline" color="secondary" size="md" fullWidth>
