@@ -518,6 +518,11 @@ export const mainMenus: MainMenu[] = [
         path: '/payments/refunds',
       },
       {
+        id: 'refund-request-list',
+        title: '환불 신청 관리',
+        path: '/payments/refund-requests',
+      },
+      {
         id: 'bank-transfer-list',
         title: '무통장입금 확인',
         path: '/payments/bank-transfers',

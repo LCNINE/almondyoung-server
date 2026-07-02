@@ -57,6 +57,13 @@ export const chargeStatusEnum = pgEnum('charge_status', [
 ]);
 
 export const refundStatusEnum = pgEnum('refund_status', ['PENDING', 'SUCCEEDED', 'FAILED']);
+// 고객이 제출한 환불 요청(무통장/가상계좌)의 처리 상태. 관리자가 검토 후 승인 시 실제 환불 실행.
+export const refundRequestStatusEnum = pgEnum('refund_request_status', [
+  'REQUESTED',
+  'APPROVED',
+  'REJECTED',
+  'CANCELED',
+]);
 
 export const cashReceiptTypeEnum = pgEnum('cash_receipt_type', ['소득공제', '지출증빙']);
 export const cashReceiptStatusEnum = pgEnum('cash_receipt_status', ['ISSUED', 'CANCELED', 'FAILED']);
@@ -394,6 +401,45 @@ export const refunds = pgTable(
     index('idx_refunds_charge_id').on(table.chargeId),
     index('idx_refunds_intent_id').on(table.intentId),
     index('idx_refunds_status_created_at').on(table.status, table.createdAt),
+  ],
+);
+
+// 고객이 무통장(가상계좌) 주문에 대해 제출한 환불 요청. 관리자가 검토 후 승인 시 실제 환불 실행.
+export const refundRequests = pgTable(
+  'refund_requests',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    intentId: uuid('intent_id')
+      .notNull()
+      .references(() => paymentIntents.id),
+    chargeId: uuid('charge_id')
+      .notNull()
+      .references(() => charges.id),
+    userId: varchar('user_id', { length: 128 }),
+    amount: integer('amount').notNull(),
+    currency: varchar('currency', { length: 3 }).notNull(),
+    // 고객이 제출한 환불받을 계좌
+    bankCode: varchar('bank_code', { length: 8 }).notNull(), // 토스 2자리 은행코드
+    bankName: varchar('bank_name', { length: 64 }),
+    accountNumber: varchar('account_number', { length: 32 }).notNull(),
+    holderName: varchar('holder_name', { length: 64 }).notNull(),
+    status: refundRequestStatusEnum('status').notNull().default('REQUESTED'),
+    reason: text('reason'), // 고객 사유
+    adminNote: text('admin_note'), // 관리자 처리 메모
+    refundId: uuid('refund_id').references(() => refunds.id), // 승인 실행 시 생성된 환불
+    processedBy: varchar('processed_by', { length: 128 }),
+    processedAt: timestamp('processed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('refund_requests_amount_positive', sql`${table.amount} > 0`),
+    index('idx_refund_requests_intent_id').on(table.intentId),
+    index('idx_refund_requests_status_created_at').on(table.status, table.createdAt),
+    // 한 intent 에 대기중(REQUESTED) 요청은 하나만 — 중복 신청 방지
+    uniqueIndex('uq_refund_requests_intent_active')
+      .on(table.intentId)
+      .where(sql`${table.status} = 'REQUESTED'`),
   ],
 );
 
@@ -829,6 +875,7 @@ export const walletSchema = {
   paymentIntentOrderDiscounts,
   charges,
   refunds,
+  refundRequests,
   cashReceipts,
   paymentStateTransitions,
   outboxEvents,

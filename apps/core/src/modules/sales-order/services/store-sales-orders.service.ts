@@ -143,6 +143,53 @@ export class StoreSalesOrdersService {
   }
 
   /**
+   * Wallet 에서 이미 환불이 완료된 결제(무통장 환불신청 승인 등)의 주문을 취소한다.
+   * core→wallet 재환불 없이 sales_order 취소 + 재고 복원만 수행하고, walletRefund effect 를
+   * SUCCEEDED 로 기록해 감사 타임라인에 남긴다. walletIntentId 로 medusa 주문을 찾으며,
+   * 없거나(직접결제 등) 이미 취소/출고면 멱등 처리한다.
+   */
+  async cancelByWalletIntentAfterRefund(
+    intentId: string,
+    opts: { reasonCode?: string; amount?: number } = {},
+  ): Promise<{ status: string; skipped?: string }> {
+    const so = await this.db.db
+      .select()
+      .from(inventoryTables.salesOrders)
+      .where(
+        and(
+          eq(inventoryTables.salesOrders.walletIntentId, intentId),
+          eq(inventoryTables.salesOrders.salesChannel, 'medusa'),
+        ),
+      )
+      .limit(1)
+      .then((r) => r[0]);
+
+    if (!so) return { status: 'skipped', skipped: 'no_sales_order' };
+    if (so.status === 'cancelled') return { status: 'cancelled', skipped: 'already_cancelled' };
+    if (so.status === 'shipped' || so.status === 'delivered') {
+      this.logger.warn(
+        `[cancelByWalletIntentAfterRefund] SO ${so.id} already ${so.status} (intent=${intentId}). 환불은 완료됐으나 출고 이후라 취소 스킵.`,
+      );
+      return { status: so.status, skipped: 'already_shipped' };
+    }
+
+    await this.salesOrdersService.cancel(so.id, {
+      reasonCode: opts.reasonCode ?? 'CUSTOMER_REFUND_REQUEST',
+      cancelledBy: 'admin:refund-approval',
+      walletRefund: {
+        externalRef: `wallet:refund:intent:${intentId}`,
+        refundStatus: 'SUCCEEDED',
+        ...(opts.amount ? { amount: opts.amount } : {}),
+      },
+    });
+
+    this.logger.log(
+      `[cancelByWalletIntentAfterRefund] SO ${so.id} cancelled (intent=${intentId}, refund already done in wallet)`,
+    );
+    return { status: 'cancelled' };
+  }
+
+  /**
    * 운영자 수동 환불 완료 확인.
    *
    * PG/은행 환불을 이미 외부에서 처리한 사실을 운영자가 확인하고 내부 상태를 완료로 기록한다.

@@ -132,6 +132,23 @@ export interface PendingBankTransferDto {
   createdAt: string;
 }
 
+export interface RefundRequestDto {
+  id: string;
+  intentId: string;
+  chargeId: string;
+  userId: string | null;
+  amount: number;
+  currency: string;
+  bankCode: string;
+  bankName: string | null;
+  accountNumber: string;
+  holderName: string;
+  status: 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'CANCELED';
+  reason: string | null;
+  adminNote: string | null;
+  createdAt: string;
+}
+
 // ─── Points ─────────────────────────────────────────────────────────────────
 
 export interface PointsBalanceDto {

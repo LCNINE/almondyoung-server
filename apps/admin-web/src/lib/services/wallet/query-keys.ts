@@ -19,6 +19,11 @@ export const walletQueryKeys = {
   refundList: (query: RefundListQuery) =>
     [...walletQueryKeys.refunds(), 'list', query] as const,
 
+  // Refund requests (무통장 환불 요청 큐)
+  refundRequests: () => [...walletQueryKeys.all, 'refund-requests'] as const,
+  refundRequestList: (page?: number, limit?: number) =>
+    [...walletQueryKeys.refundRequests(), 'list', { page, limit }] as const,
+
   // Bank transfers
   bankTransfers: () => [...walletQueryKeys.all, 'bank-transfers'] as const,
   bankTransferList: (page?: number, limit?: number) =>

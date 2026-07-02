@@ -8,7 +8,7 @@ import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
 import { SalesOrderResponseDto } from '../dto/sales-order-response.dto';
 import { SalesOrderFilterDto } from '../dto/sales-order-filter.dto';
 import { CreateBusinessLinkDto } from '../dto/create-business-link.dto';
-import { CancelSalesOrderDto } from '../dto/cancel-sales-order.dto';
+import { CancelSalesOrderDto, CancelByIntentDto } from '../dto/cancel-sales-order.dto';
 
 @ApiTags('Sales Orders')
 @Controller('sales-orders')
@@ -51,6 +51,16 @@ export class SalesOrdersController {
       reasonCode: dto.reasonCode,
       reasonDetail: dto.reasonDetail,
       lines: dto.lines,
+    });
+  }
+
+  @Post('cancel-by-intent')
+  @ApiOperation({ summary: '환불 완료된 결제의 주문 취소 (재환불 없음) — Wallet 환불 승인 후 호출' })
+  @ApiResponse({ status: 201, description: '{ status, skipped? } 반환' })
+  cancelByIntent(@Body() dto: CancelByIntentDto) {
+    return this.storeSalesOrders.cancelByWalletIntentAfterRefund(dto.intentId, {
+      reasonCode: dto.reasonCode,
+      amount: dto.amount,
     });
   }
 

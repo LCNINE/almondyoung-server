@@ -54,7 +54,7 @@ export async function getOrders(params?: {
 }): Promise<HttpTypes.StoreOrderListResponse | null> {
   const filters: HttpTypes.StoreOrderFilters & Record<string, unknown> = {
     fields:
-      "id,display_id,status,fulfillment_status,payment_status,created_at,updated_at,total,currency_code,metadata,*items,*items.variant,*items.variant.product,*payment_collections,*payment_collections.payment_sessions",
+      "id,display_id,status,fulfillment_status,payment_status,created_at,updated_at,total,currency_code,metadata,*items,*items.variant,*items.variant.product,*payment_collections,*payment_collections.payment_sessions,+payment_collections.payment_sessions.data",
     order: "-created_at",
   }
 
