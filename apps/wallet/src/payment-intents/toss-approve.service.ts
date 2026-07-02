@@ -12,6 +12,7 @@ import {
   buildPaymentIntentEventPayload,
 } from '../messaging/gateway-event.builder';
 import { TossApiClient } from '../providers/toss/toss-api.client';
+import { CashReceiptsService } from '../cash-receipts/cash-receipts.service';
 
 @Injectable()
 export class TossApproveService {
@@ -23,6 +24,7 @@ export class TossApproveService {
     private readonly autoCaptureService: AutoCaptureService,
     private readonly stateTransitionService: StateTransitionService,
     private readonly tossApi: TossApiClient,
+    private readonly cashReceiptsService: CashReceiptsService,
   ) {}
 
   async approve(
@@ -94,6 +96,22 @@ export class TossApproveService {
     });
 
     await this.autoCaptureService.attemptAutoCapture(charge.intentId, correlationId);
+
+    // 무통장(토스 가상계좌) 입금이 웹훅으로 자동확인된 경우, confirm 단계에서 고객이 신청한
+    // 현금영수증을 여기서 발급한다
+    // 발급 실패가 결제확정을 되돌리지 않는다.
+    const cashReceipt = intent.metadata?.cashReceipt as
+      | { type: '소득공제' | '지출증빙'; customerIdentityNumber: string }
+      | undefined;
+    if (cashReceipt && intent.userId) {
+      try {
+        await this.cashReceiptsService.issue({ intentId: intent.id, ...cashReceipt }, intent.userId);
+        this.logger.log(`cash receipt issued on webhook capture: intentId=${intent.id}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.error(`cash receipt auto-issue failed (webhook capture): intentId=${intent.id}, error=${message}`);
+      }
+    }
   }
 
   async finalizeFailure(charge: Charge, errorCode: string, correlationId: string): Promise<void> {

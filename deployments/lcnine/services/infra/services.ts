@@ -80,6 +80,9 @@ export function setup(infra: SharedInfra) {
   const bankTransferBankName = new sst.Secret('BankTransferBankName', '');
   const bankTransferAccountNumber = new sst.Secret('BankTransferAccountNumber', '');
   const bankTransferAccountHolder = new sst.Secret('BankTransferAccountHolder', '');
+  // 무통장입금 = 토스 가상계좌. bank: 토스에 넘길 두 자리 은행 코드(계약 은행), name: 고객 표시명.
+  const tossVirtualAccountBank = new sst.Secret('TossVirtualAccountBank', '');
+  const tossVirtualAccountBankName = new sst.Secret('TossVirtualAccountBankName', '');
 
   // Medusa
   const medusaJwtSecret = new sst.Secret('MedusaJwtSecret');
@@ -381,6 +384,9 @@ export function setup(infra: SharedInfra) {
       BANK_TRANSFER_BANK_NAME: bankTransferBankName.value,
       BANK_TRANSFER_ACCOUNT_NUMBER: bankTransferAccountNumber.value,
       BANK_TRANSFER_ACCOUNT_HOLDER: bankTransferAccountHolder.value,
+      // 무통장입금 = 토스 가상계좌 발급/자동확인. bank 코드 미설정 시 provider 가 명확히 FAILED 반환.
+      TOSS_VIRTUAL_ACCOUNT_BANK: tossVirtualAccountBank.value,
+      TOSS_VIRTUAL_ACCOUNT_BANK_NAME: tossVirtualAccountBankName.value,
       // 무통장 입금 대기 만료 윈도우(시간). 미설정 시 코드 기본값 72h.
       // 입금확인을 수동으로 하고 주말/연휴가 있어, 입금했는데 자동취소되는 사고를 막기 위해 7일(168h)로 설정.
       WALLET_BANK_TRANSFER_DEPOSIT_WINDOW_HOURS: '168',
