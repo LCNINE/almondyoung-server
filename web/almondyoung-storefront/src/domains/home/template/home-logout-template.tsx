@@ -129,7 +129,9 @@ export async function HomeLogoutTemplate({
       {/* 메인 히어로 배너 */}
       <HeroBanner />
 
-      <HomeQuickLinks />
+      <div className="md:hidden">
+        <HomeQuickLinks />
+      </div>
 
       {/* 관심 카테고리 슬롯 (선택 배너 또는 선택된 카테고리 베스트) */}
       <HomeSection>

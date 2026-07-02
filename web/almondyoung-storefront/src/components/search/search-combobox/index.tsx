@@ -7,6 +7,7 @@ import { useParams, useRouter } from "next/navigation"
 import { useSearchHistory } from "@/hooks/ui/use-search-history"
 import { useSearchSheetStore } from "@/hooks/ui/use-search-sheet-store"
 import { getSuggestions } from "@lib/api/pim/search"
+import { cn } from "@/lib/utils"
 
 /**
  * 이 컴포넌트는 검색 입력(SearchInput)과 팝오버(SearchPopover)를 조합하여
@@ -17,7 +18,13 @@ import { getSuggestions } from "@lib/api/pim/search"
  * 팝오버(SearchPopover)는 검색어를 입력할 때 보이며, 최근 검색어, 인기 검색어 등
  * 확장적인 검색 관련 정보를 보여줄 수 있습니다.
  */
-export function SearchCombobox() {
+export function SearchCombobox({
+  inputClassName,
+  className,
+}: {
+  inputClassName?: string
+  className?: string
+}) {
   const [isOpen, setIsOpen] = useState(false)
   const [suggestions, setSuggestions] = useState<string[]>([])
 
@@ -47,7 +54,9 @@ export function SearchCombobox() {
     debounceTimer.current = setTimeout(async () => {
       const result = await getSuggestions({ q: searchTerm, size: 5 })
       if ("data" in result && result.data) {
-        setSuggestions(result.data.items.map((i: { keyword: string }) => i.keyword))
+        setSuggestions(
+          result.data.items.map((i: { keyword: string }) => i.keyword)
+        )
       } else {
         setSuggestions([])
       }
@@ -79,12 +88,18 @@ export function SearchCombobox() {
   }
 
   return (
-    <SearchPopover isOpen={isOpen} setIsOpen={setIsOpen} suggestions={suggestions}>
+    <SearchPopover
+      isOpen={isOpen}
+      setIsOpen={setIsOpen}
+      suggestions={suggestions}
+    >
       <SearchInput
         searchTerm={searchTerm}
         setSearchTerm={setSearchTerm}
         onSearchKeyword={handleSearchKeyword}
         onSearch={handleSearch}
+        inputClassName={inputClassName}
+        className={cn(className)}
       />
     </SearchPopover>
   )
