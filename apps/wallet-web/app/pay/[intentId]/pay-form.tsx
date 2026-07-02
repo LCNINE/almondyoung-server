@@ -398,7 +398,7 @@ export function PayForm({
                 <div className="space-y-1">
                   <h1 className="text-lg font-semibold">주문이 접수되었습니다</h1>
                   <p className="text-sm text-muted-foreground">
-                    주문이 &lsquo;입금확인중&rsquo; 상태로 접수되었어요. 아래 계좌로 입금하시면 관리자 확인 후 배송이
+                    주문이 &lsquo;입금확인중&rsquo; 상태로 접수되었어요. 아래 계좌로 입금하시면 입금 확인 후 배송이
                     진행됩니다.
                   </p>
                 </div>
@@ -435,7 +435,7 @@ export function PayForm({
                 <AlertDescription>
                   주문이 이미 <span className="font-medium">‘입금확인중’</span> 상태로 접수되어, 지금 바로 아래{' '}
                   <span className="font-medium">‘주문 내역에서 확인’</span> 버튼으로 확인하실 수 있어요. 입금이 확인되면
-                  관리자 승인 후 결제가 완료됩니다.
+                  자동으로 결제가 완료됩니다.
                 </AlertDescription>
               </Alert>
 

@@ -444,6 +444,7 @@
       "cancelError": "An error occurred during cancellation.",
       "contactCs": "Contact Support",
       "bankTransferCancelGuide": "To cancel a bank transfer order, please contact customer support.",
+      "bankTransferRefundNotice": "Unpaid orders are automatically canceled after the deposit deadline (7 days). To cancel or refund after deposit, please provide your refund account (bank, account number, account holder) to customer support; the account holder name must match exactly. Refunds take about 2 business days.",
       "download": "Download"
     },
     "delivery": {
