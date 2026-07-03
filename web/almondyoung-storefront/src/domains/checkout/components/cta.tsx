@@ -46,7 +46,7 @@ export const PCFixedCTA = ({
   const t = useTranslations("checkout.cta")
   const tCart = useTranslations("cart")
   return (
-    <div className="fixed right-0 bottom-0 left-0 hidden bg-white shadow-[0px_-6px_18px_-2px_rgba(0,0,0,0.25)] lg:block">
+    <div className="fixed right-0 bottom-0 left-0 z-99 hidden bg-white shadow-[0px_-6px_18px_-2px_rgba(0,0,0,0.25)] lg:block">
       <div className="container mx-auto max-w-[1360px] px-[40px] py-4">
         <div className="flex items-center justify-between">
           <p className="text-base text-gray-600">{t("pcAgreement")}</p>
