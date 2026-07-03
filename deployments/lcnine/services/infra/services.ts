@@ -197,6 +197,8 @@ export function setup(infra: SharedInfra) {
   });
 
   createService('ChannelAdapter', {
+    // arm64(Graviton) Fargate — 동일 성능에 ~20% 저렴. 문제 시 이 줄만 지우면 x86 복귀.
+    architecture: 'arm64',
     dockerfile: 'apps/channel-adapter/Dockerfile',
     domainSlug: 'channel-adapter',
     port: 3000,
@@ -245,6 +247,8 @@ export function setup(infra: SharedInfra) {
   });
 
   createService('Membership', {
+    // arm64(Graviton) Fargate — 동일 성능에 ~20% 저렴. 문제 시 이 줄만 지우면 x86 복귀.
+    architecture: 'arm64',
     dockerfile: 'apps/membership/Dockerfile',
     domainSlug: 'membership',
     port: 3000,
@@ -303,6 +307,8 @@ export function setup(infra: SharedInfra) {
   });
 
   createService('Core', {
+    // arm64(Graviton) Fargate — 동일 성능에 ~20% 저렴. 문제 시 이 줄만 지우면 x86 복귀.
+    architecture: 'arm64',
     dockerfile: 'apps/core/Dockerfile',
     domainSlug: 'core',
     port: 3000,
@@ -351,6 +357,8 @@ export function setup(infra: SharedInfra) {
   });
 
   createService('Wallet', {
+    // arm64(Graviton) Fargate — 동일 성능에 ~20% 저렴. 문제 시 이 줄만 지우면 x86 복귀.
+    architecture: 'arm64',
     dockerfile: 'apps/wallet/Dockerfile',
     domainSlug: 'wallet',
     port: 3000,
@@ -400,6 +408,8 @@ export function setup(infra: SharedInfra) {
   });
 
   createService('FileService', {
+    // arm64(Graviton) Fargate — 동일 성능에 ~20% 저렴. 문제 시 이 줄만 지우면 x86 복귀.
+    architecture: 'arm64',
     dockerfile: 'apps/file-service/Dockerfile',
     domainSlug: 'file',
     port: 3000,
