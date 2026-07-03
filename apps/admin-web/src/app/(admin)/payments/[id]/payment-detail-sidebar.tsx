@@ -44,7 +44,7 @@ function PaymentMethodInfoContent({ intentId }: { intentId: string }) {
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
             <span className="text-muted-foreground">유형</span>
-            <PaymentMethodTypeCell value={pm.type} />
+            <PaymentMethodTypeCell value={pm.type} tossVirtualAccount={data.tossVirtualAccount} />
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">표시명</span>

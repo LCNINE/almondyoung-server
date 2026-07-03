@@ -8,7 +8,18 @@ const methodTypeLabels: Record<string, string> = {
   BANK_TRANSFER: '무통장입금',
 };
 
-export function PaymentMethodTypeCell({ value }: { value: string | null | undefined }) {
+export function PaymentMethodTypeCell({
+  value,
+  tossVirtualAccount,
+}: {
+  value: string | null | undefined;
+  /** BANK_TRANSFER 중 토스 가상계좌 발급 건이면 true (구 직접입금 건과 구분) */
+  tossVirtualAccount?: boolean;
+}) {
   if (!value) return <PlaceholderCell />;
-  return <span className="text-sm">{methodTypeLabels[value] ?? value}</span>;
+  const label =
+    value === 'BANK_TRANSFER' && tossVirtualAccount
+      ? '토스 가상계좌'
+      : (methodTypeLabels[value] ?? value);
+  return <span className="text-sm">{label}</span>;
 }

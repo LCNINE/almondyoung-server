@@ -56,6 +56,8 @@ export class BankTransferAdminService {
         bankName: sql<string | null>`${charges.responsePayload}->'nextAction'->>'bankName'`,
         accountNumber: sql<string | null>`${charges.responsePayload}->'nextAction'->>'accountNumber'`,
         accountHolder: sql<string | null>`${charges.responsePayload}->'nextAction'->>'accountHolder'`,
+        // 토스 가상계좌 발급 건에만 paymentKey 가 스냅샷됨 (구 직접입금 건과 구분)
+        paymentKey: sql<string | null>`${charges.responsePayload}->>'paymentKey'`,
       })
       .from(paymentIntents)
       .innerJoin(paymentMethods, eq(paymentIntents.paymentMethodId, paymentMethods.id))
@@ -85,6 +87,7 @@ export class BankTransferAdminService {
       bankName: r.bankName || null,
       accountNumber: r.accountNumber || null,
       accountHolder: r.accountHolder || null,
+      tossVirtualAccount: !!r.paymentKey,
     }));
 
     return { data, total, page, limit };
