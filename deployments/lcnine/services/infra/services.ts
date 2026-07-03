@@ -550,6 +550,9 @@ export function setup(infra: SharedInfra) {
   // 아래 7개 변수는 누락 시 OpenNext 빌드가 실패한다 (apps/admin-web/src/lib/auth/env.ts 참조).
   new sst.aws.Nextjs('AdminWeb', {
     path: '../../../apps/admin-web',
+    // arm64(Graviton) Lambda — server 함수 ~20% 저렴. 문제 시 이 줄만 지우면 x86 복귀.
+    // (image optimizer 는 SST 가 항상 arm64 로 빌드.)
+    server: { architecture: 'arm64' },
     domain: { name: domain('admin') },
     environment: {
       AUTH_SECRET: authSecret.value,
@@ -632,6 +635,9 @@ export function setup(infra: SharedInfra) {
   // 백엔드 서비스 URL은 storefront가 BACKEND_DOMAIN + 서비스 서브도메인 규칙으로 조립한다.
   new sst.aws.Nextjs('Storefront', {
     path: '../../../web/almondyoung-storefront',
+    // arm64(Graviton) Lambda — server 함수 ~20% 저렴. 문제 시 이 줄만 지우면 x86 복귀.
+    // (image optimizer 는 SST 가 항상 arm64 로 빌드.)
+    server: { architecture: 'arm64' },
     // apex(almondyoung-next.com)를 정식 도메인으로, www 는 거기로 301 리다이렉트.
     // (site.ts canonical + sitemap 이 apex 기준이라 일치시킴.) dev 는 baseDomain 이
     // lcnine-dev.com 공용 루트라 점유하면 안 되므로 그대로 www 만 쓴다.
@@ -690,6 +696,9 @@ export function setup(infra: SharedInfra) {
   // RP 코드: apps/wallet-web/lib/auth/*, app/login, app/auth/callback, app/api/auth/{refresh,signout}, middleware.ts.
   new sst.aws.Nextjs('WalletWeb', {
     path: '../../../apps/wallet-web',
+    // arm64(Graviton) Lambda — server 함수 ~20% 저렴. 문제 시 이 줄만 지우면 x86 복귀.
+    // (image optimizer 는 SST 가 항상 arm64 로 빌드.)
+    server: { architecture: 'arm64' },
     domain: { name: domain('wallet-web') },
     environment: {
       NEXT_PUBLIC_WALLET_API_URL: url('wallet'),
