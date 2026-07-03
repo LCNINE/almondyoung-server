@@ -1,6 +1,5 @@
 import { CategoryDropdown } from "@/components/category/dropdown"
 import { CategoryThumbnail } from "@/domains/category/components/category-thumbnail"
-import { getCategoryThumbnail } from "@/domains/category/utils/category-thumbnail"
 import { listCategories } from "@/lib/api/medusa/categories"
 import { FIXED_CATEGORIES } from "@/lib/constants/categories"
 import { getInterestCategoryKeys } from "@/lib/data/cookies"
@@ -17,6 +16,22 @@ const DABEAU_IMAGE_URL =
   "https://almondyoung-public.s3.ap-northeast-2.amazonaws.com/storefront/quick-links/dabeau-2.png"
 const ALMOND_YOUNG_PLAY_IMAGE_URL =
   "https://almondyoung-public.s3.ap-northeast-2.amazonaws.com/storefront/quick-links/amdp-logo-white.png"
+const CATEGORY_ICON_BASE_URL =
+  "https://almondyoung-public.s3.ap-northeast-2.amazonaws.com/storefront/category-icons"
+const CATEGORY_ICON_VERSION = "20260703-2"
+
+const CATEGORY_ICON_URLS: Record<string, string> = {
+  "lash-perm": `${CATEGORY_ICON_BASE_URL}/lash-perm.png?v=${CATEGORY_ICON_VERSION}`,
+  "lash-extension": `${CATEGORY_ICON_BASE_URL}/lash-extension.png?v=${CATEGORY_ICON_VERSION}`,
+  "semi-permanent": `${CATEGORY_ICON_BASE_URL}/semi-permanent.png?v=${CATEGORY_ICON_VERSION}`,
+  nail: `${CATEGORY_ICON_BASE_URL}/nail.png?v=${CATEGORY_ICON_VERSION}`,
+  tattoo: `${CATEGORY_ICON_BASE_URL}/tattoo.png?v=${CATEGORY_ICON_VERSION}`,
+  skincare: `${CATEGORY_ICON_BASE_URL}/skincare.png?v=${CATEGORY_ICON_VERSION}`,
+  hair: `${CATEGORY_ICON_BASE_URL}/hair.png?v=${CATEGORY_ICON_VERSION}`,
+  waxing: `${CATEGORY_ICON_BASE_URL}/waxing.png?v=${CATEGORY_ICON_VERSION}`,
+  nomond: `${CATEGORY_ICON_BASE_URL}/nomond.png?v=${CATEGORY_ICON_VERSION}`,
+  "shop-meal": `${CATEGORY_ICON_BASE_URL}/shop-meal.png?v=${CATEGORY_ICON_VERSION}`,
+}
 
 type QuickLink = {
   label: string
@@ -29,6 +44,7 @@ type QuickLink = {
 }
 
 type CategoryQuickLink = {
+  key: string
   label: string
   href: string
   imageUrl: string | null
@@ -83,16 +99,11 @@ export async function HomeQuickLinks({
 
   const categoryLinks: CategoryQuickLink[] = orderedCategories.map(
     (category) => {
-      const categoryForThumbnail = {
-        id: category.id,
-        name: category.name,
-        handle: category.handle,
-      } as StoreProductCategoryTree
-
       return {
+        key: category.key,
         label: tCategories(category.key),
         href: `/category/${category.handle}`,
-        imageUrl: getCategoryThumbnail(categoryForThumbnail),
+        imageUrl: CATEGORY_ICON_URLS[category.key] ?? null,
       }
     }
   )
@@ -111,7 +122,7 @@ export async function HomeQuickLinks({
         "w-full border-b",
         isDesktopHeader
           ? "border-header-border bg-header-background"
-          : "border-gray-100 bg-white md:bg-[#fbfaf8]"
+          : "border-gray-100 bg-white xl:bg-[#fbfaf8]"
       )}
     >
       <div
@@ -119,7 +130,7 @@ export async function HomeQuickLinks({
           "container mx-auto max-w-[1360px]",
           isDesktopHeader
             ? "px-[40px] py-1.5"
-            : "px-3.5 py-4 md:px-[40px] md:py-5"
+            : "px-3.5 py-4 xl:px-[40px] xl:py-5"
         )}
       >
         <div className="relative">
@@ -130,12 +141,12 @@ export async function HomeQuickLinks({
             className={cn(
               "scrollbar-hide overflow-x-auto px-0.5",
               isDesktopHeader
-                ? "grid auto-cols-max grid-flow-col items-center gap-5 overflow-visible pb-0"
-                : "hidden md:grid md:auto-cols-auto md:grid-flow-row md:grid-cols-6 md:grid-rows-none md:gap-x-5 md:gap-y-5 md:overflow-visible md:pb-0 xl:grid-cols-[repeat(13,minmax(0,1fr))]"
+                ? "ml-[96px] grid auto-cols-max grid-flow-col items-center gap-5 overflow-visible pb-0"
+                : "hidden xl:grid xl:auto-cols-auto xl:grid-flow-row xl:grid-cols-[repeat(13,minmax(0,1fr))] xl:grid-rows-none xl:gap-x-5 xl:gap-y-5 xl:overflow-visible xl:pb-0"
             )}
           >
             {!isDesktopHeader && (
-              <div className="hidden w-full max-w-[78px] justify-self-center md:block">
+              <div className="hidden w-full max-w-[78px] justify-self-center xl:block">
                 <CategoryDropdown
                   categories={dropdownCategories}
                   variant="quickLink"
@@ -164,7 +175,7 @@ export async function HomeQuickLinks({
                   "justify-self-center rounded-lg px-0.5 py-1 transition-opacity hover:opacity-90",
                   isDesktopHeader
                     ? "w-auto min-w-max flex-row gap-1.5 text-xs [&>div]:h-5 [&>div]:w-5 [&>span]:min-h-0 [&>span]:text-[12px] [&>span]:font-medium [&>span]:text-white/85 hover:[&>span]:text-white"
-                    : "w-full max-w-[54px] md:max-w-[78px]"
+                    : "w-full max-w-[54px] xl:max-w-[78px]"
                 )}
               />
             ))}
@@ -197,7 +208,7 @@ function ExternalQuickLink({
       <span
         className={cn(
           "relative aspect-square w-full overflow-hidden rounded-lg border border-gray-100 shadow-sm",
-          compact && "h-5 w-5 rounded-none border-0 shadow-none",
+          compact && "h-6 w-6 rounded-full border-0 bg-white/95 shadow-none",
           link.imageWrapClassName ?? "bg-gray-100"
         )}
       >
@@ -207,9 +218,9 @@ function ExternalQuickLink({
           fill
           sizes={compact ? "24px" : "(min-width: 768px) 78px, 54px"}
           className={cn(
-            "object-cover",
+            "rounded-[inherit] object-cover",
             link.imageClassName,
-            compact && "object-contain p-0"
+            compact && "object-contain p-1"
           )}
         />
       </span>

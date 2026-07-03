@@ -19,7 +19,7 @@ export async function HomeLoggedInTemplate({
       {/* 메인 히어로 배너 */}
       <HeroBanner />
 
-      <div className="md:hidden">
+      <div className="xl:hidden">
         <HomeQuickLinks />
       </div>
 
