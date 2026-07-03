@@ -1,7 +1,9 @@
 {
   "utility": {
     "shipping": "Orders & Shipping",
-    "support": "Support"
+    "support": "Support",
+    "login": "Log in",
+    "signup": "Sign up"
   },
   "userInfo": {
     "logout": "Log out"

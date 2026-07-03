@@ -8,7 +8,7 @@ import { listCategories } from "@/lib/api/medusa/categories"
 import { getTranslations } from "next-intl/server"
 import { Logo } from "./logo"
 import { AccountMenu } from "./user-actions"
-import { UserInfo } from "./user-info"
+import { MobileAuthLinks, UserInfo } from "./user-info"
 
 type Categories = Awaited<ReturnType<typeof listCategories>>
 
@@ -26,9 +26,8 @@ export async function MainHeader() {
     <header className="bg-header-background xl:border-header-border sticky top-0 z-40 overflow-visible xl:border-b">
       <div className="xl:hidden">
         <div className="flex h-8 items-center justify-end gap-3 border-b border-white/10 px-3 text-[12px] text-white/85">
-          <LocalizedClientLink href="/login">로그인</LocalizedClientLink>
-          <LocalizedClientLink href="/signup">회원가입</LocalizedClientLink>
-          <LocalizedClientLink href="/cs">고객센터</LocalizedClientLink>
+          <MobileAuthLinks />
+          <LocalizedClientLink href="/cs">{t("support")}</LocalizedClientLink>
         </div>
 
         <div className="flex items-center justify-between gap-3 px-3 pt-2">
