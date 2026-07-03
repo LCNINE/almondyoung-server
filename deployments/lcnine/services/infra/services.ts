@@ -456,6 +456,8 @@ export function setup(infra: SharedInfra) {
   });
 
   createService('Medusa', {
+    // arm64(Graviton) Fargate — 동일 성능에 ~20% 저렴. 문제 시 이 줄만 지우면 x86 복귀.
+    architecture: 'arm64',
     dockerfile: 'apps/medusa/Dockerfile',
     domainSlug: 'medusa',
     port: 9000,
