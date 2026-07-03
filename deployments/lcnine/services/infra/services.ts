@@ -466,7 +466,7 @@ export function setup(infra: SharedInfra) {
     // 운영 기본 용량. 백필/이벤트 대응 시 일시적으로 올리고, 끝나면 원복한다.
     cpu: '0.5 vCPU',
     memory: '1 GB',
-    scaling: { min: 2, max: 2 },
+    scaling: { min: 1, max: 1 },
     buildArgs: {
       VITE_USER_SERVICE_URL: idpUserServiceUrl,
       MEDUSA_BACKEND_URL: url('medusa'),
