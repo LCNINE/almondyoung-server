@@ -23,8 +23,8 @@ export async function MainHeader() {
   }
 
   return (
-    <header className="bg-header-background md:border-header-border sticky top-0 z-40 overflow-visible md:border-b">
-      <div className="md:hidden">
+    <header className="bg-header-background xl:border-header-border sticky top-0 z-40 overflow-visible xl:border-b">
+      <div className="xl:hidden">
         <div className="flex h-8 items-center justify-end gap-3 border-b border-white/10 px-3 text-[12px] text-white/85">
           <LocalizedClientLink href="/login">로그인</LocalizedClientLink>
           <LocalizedClientLink href="/signup">회원가입</LocalizedClientLink>
@@ -41,7 +41,7 @@ export async function MainHeader() {
         </div>
       </div>
 
-      <div className="hidden md:block">
+      <div className="hidden xl:block">
         <div className="container mx-auto max-w-[1360px] px-[40px]">
           <div className="flex items-center justify-end gap-3 py-1.5 text-xs text-white/80">
             <UserInfo />

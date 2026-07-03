@@ -3,6 +3,7 @@
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { cn } from "@/lib/utils"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
+import { ChevronLeft, ChevronRight } from "lucide-react"
 import Image from "next/image"
 import { useMemo, useRef, useState } from "react"
 
@@ -20,32 +21,80 @@ const PAGE_SIZE = 10
 
 export function MobileQuickLinks({ items }: { items: MobileQuickLinkItem[] }) {
   const [activePage, setActivePage] = useState(0)
-  const scrollerRef = useRef<HTMLDivElement>(null)
+  const touchStartX = useRef<number | null>(null)
   const pages = useMemo(() => chunk(items, PAGE_SIZE), [items])
 
   if (pages.length === 0) return null
 
+  const goToPage = (pageIndex: number) => {
+    setActivePage(Math.min(Math.max(pageIndex, 0), pages.length - 1))
+  }
+
+  const handleTouchEnd = (clientX: number) => {
+    if (touchStartX.current === null) return
+
+    const deltaX = clientX - touchStartX.current
+    touchStartX.current = null
+
+    if (Math.abs(deltaX) < 40) return
+    goToPage(activePage + (deltaX < 0 ? 1 : -1))
+  }
+
   return (
-    <div className="md:hidden">
+    <div className="xl:hidden">
       <div
-        ref={scrollerRef}
-        onScroll={(event) => {
-          const element = event.currentTarget
-          const nextPage = Math.round(element.scrollLeft / element.clientWidth)
-          setActivePage(Math.min(Math.max(nextPage, 0), pages.length - 1))
+        className="relative overflow-hidden"
+        onTouchStart={(event) => {
+          touchStartX.current = event.touches[0]?.clientX ?? null
         }}
-        className="scrollbar-hide flex snap-x snap-mandatory overflow-x-auto scroll-smooth"
+        onTouchEnd={(event) => {
+          handleTouchEnd(event.changedTouches[0]?.clientX ?? 0)
+        }}
+        onTouchCancel={() => {
+          touchStartX.current = null
+        }}
       >
-        {pages.map((page, pageIndex) => (
-          <div
-            key={pageIndex}
-            className="grid min-w-full snap-start grid-cols-5 grid-rows-2 gap-y-3 px-0.5"
-          >
-            {page.map((item) => (
-              <MobileQuickLink key={`${item.label}-${item.href}`} item={item} />
-            ))}
+        <div
+          className="flex transition-transform duration-300 ease-out"
+          style={{ transform: `translateX(-${activePage * 100}%)` }}
+        >
+          {pages.map((page, pageIndex) => (
+            <div
+              key={pageIndex}
+              className="grid min-w-full grid-cols-5 grid-rows-2 gap-y-3 px-0.5"
+            >
+              {page.map((item) => (
+                <MobileQuickLink
+                  key={`${item.label}-${item.href}`}
+                  item={item}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+
+        {pages.length > 1 && (
+          <div className="pointer-events-none absolute inset-y-0 right-1 left-1 hidden items-center justify-between md:flex">
+            <button
+              type="button"
+              aria-label="이전 바로가기"
+              disabled={activePage === 0}
+              onClick={() => goToPage(activePage - 1)}
+              className="pointer-events-auto flex h-8 w-8 items-center justify-center rounded-full border border-gray-100 bg-white/95 text-gray-700 shadow-sm transition-opacity disabled:opacity-0"
+            >
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <button
+              type="button"
+              aria-label="다음 바로가기"
+              disabled={activePage === pages.length - 1}
+              onClick={() => goToPage(activePage + 1)}
+              className="pointer-events-auto flex h-8 w-8 items-center justify-center rounded-full border border-gray-100 bg-white/95 text-gray-700 shadow-sm transition-opacity disabled:opacity-0"
+            >
+              <ChevronRight className="h-5 w-5" />
+            </button>
           </div>
-        ))}
+        )}
       </div>
 
       {pages.length > 1 && (
