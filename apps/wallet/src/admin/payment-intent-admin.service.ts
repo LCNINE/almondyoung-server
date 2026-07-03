@@ -81,6 +81,14 @@ export class PaymentIntentAdminService {
         userId: paymentIntents.userId,
         createdAt: paymentIntents.createdAt,
         paymentMethodType: paymentMethods.type,
+        // 토스 가상계좌 발급 건은 AUTHORIZE charge responsePayload 에 paymentKey 가 스냅샷된다.
+        // 구 국민은행 직접입금 건에는 없음 — BANK_TRANSFER 표시 구분용.
+        tossVirtualAccount: sql<boolean>`exists (
+          select 1 from ${charges}
+          where ${charges.intentId} = ${paymentIntents.id}
+            and ${charges.operation} = 'AUTHORIZE'
+            and ${charges.responsePayload} ->> 'paymentKey' is not null
+        )`,
       })
       .from(paymentIntents)
       .leftJoin(paymentMethods, eq(paymentMethods.id, paymentIntents.paymentMethodId))
@@ -100,6 +108,7 @@ export class PaymentIntentAdminService {
       refundedAmount: refundSummaries.get(r.id)?.succeededAmount ?? 0,
       userId: r.userId,
       paymentMethodType: r.paymentMethodType ?? null,
+      tossVirtualAccount: r.tossVirtualAccount,
       createdAt: r.createdAt,
     }));
 
@@ -170,6 +179,13 @@ export class PaymentIntentAdminService {
 
     // Charges
     const chargeRows = await db.select().from(charges).where(eq(charges.intentId, id)).orderBy(asc(charges.createdAt));
+
+    // 토스 가상계좌 발급 건은 AUTHORIZE charge responsePayload 에 paymentKey 가 스냅샷된다 (구 직접입금 건과 구분).
+    const tossVirtualAccount = chargeRows.some(
+      (c) =>
+        c.operation === 'AUTHORIZE' &&
+        typeof (c.responsePayload as { paymentKey?: unknown } | null)?.paymentKey === 'string',
+    );
 
     const chargeData: AdminChargeResponseDto[] = chargeRows.map((c) => ({
       id: c.id,
@@ -254,6 +270,7 @@ export class PaymentIntentAdminService {
       refundedAmount: refundSummary.succeededAmount,
       userId: intent.userId,
       paymentMethodId: intent.paymentMethodId,
+      tossVirtualAccount,
       clientSecret: intent.clientSecret,
       returnUrl: intent.returnUrl,
       metadata: intent.metadata,

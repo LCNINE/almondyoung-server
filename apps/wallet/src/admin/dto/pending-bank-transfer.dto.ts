@@ -36,4 +36,7 @@ export class PendingBankTransferResponseDto {
 
   @ApiPropertyOptional({ description: '입금 안내 예금주 (authorize 시 스냅샷)' })
   accountHolder: string | null;
+
+  @ApiProperty({ description: '토스 가상계좌 발급 건 여부 (false = 구 국민은행 직접입금 건)' })
+  tossVirtualAccount: boolean;
 }

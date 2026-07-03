@@ -102,6 +102,12 @@ export class AdminPaymentIntentListItemDto {
   @ApiPropertyOptional({ description: 'Payment method type from the AUTHORIZE charge' })
   paymentMethodType: string | null;
 
+  @ApiProperty({
+    description:
+      '토스 가상계좌 발급 건 여부. AUTHORIZE charge 에 토스 paymentKey 가 스냅샷돼 있으면 true. paymentMethodType=BANK_TRANSFER 일 때만 의미 있음 (구 국민은행 직접입금 건과 구분용).',
+  })
+  tossVirtualAccount: boolean;
+
   @ApiProperty()
   createdAt: Date;
 }
@@ -186,6 +192,12 @@ export class AdminPaymentIntentDetailResponseDto {
 
   @ApiPropertyOptional()
   paymentMethodId: string | null;
+
+  @ApiProperty({
+    description:
+      '토스 가상계좌 발급 건 여부. BANK_TRANSFER 결제수단일 때만 의미 있음 (구 국민은행 직접입금 건과 구분용).',
+  })
+  tossVirtualAccount: boolean;
 
   @ApiProperty()
   clientSecret: string;
