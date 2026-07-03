@@ -70,6 +70,13 @@ export class UsersService {
           ilike(schema.users.loginId, searchTerm),
           ilike(schema.profiles.phoneNumber, searchTerm),
         ];
+        const digits = q.replace(/[^0-9]/g, '');
+        if (/^0\d{9,10}$/.test(digits)) {
+          orConditions.push(ilike(schema.profiles.phoneNumber, `%+82${digits.slice(1)}%`));
+        } else if (digits.length >= 4 && digits !== q) {
+          // 하이픈 등이 섞인 부분 번호 입력 (예: 3799-9187)
+          orConditions.push(ilike(schema.profiles.phoneNumber, `%${digits}%`));
+        }
         // q 가 UUID 형태면 유저 ID 정확 매칭도 허용 (고객조회에서 userId 로 검색하는 케이스)
         const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         if (UUID_RE.test(q)) {
@@ -107,8 +114,7 @@ export class UsersService {
       const [{ count: total }] = await countQuery;
 
       // data query
-      const orderColumn =
-        sortBy === 'phoneNumber' ? schema.profiles.phoneNumber : (schema.users as any)[sortBy];
+      const orderColumn = sortBy === 'phoneNumber' ? schema.profiles.phoneNumber : (schema.users as any)[sortBy];
       const orderExpr = sortOrder === 'asc' ? asc(orderColumn) : desc(orderColumn);
 
       const dataQuery = client
