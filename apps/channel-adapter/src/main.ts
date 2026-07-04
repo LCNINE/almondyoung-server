@@ -4,13 +4,8 @@ import { NestFactory } from '@nestjs/core';
 import { Logger } from 'nestjs-pino';
 import { AdapterModule } from './adapter.module';
 import { ValidationPipe } from '@nestjs/common';
-// import {
-//   FastifyAdapter,
-//   NestFastifyApplication,
-// } from '@nestjs/platform-fastify';
+import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { join } from 'path';
-import { writeFileSync, mkdirSync } from 'fs';
 import { EventsModule, createKafkaConfigFromEnv } from '@app/events';
 import {
   FULFILLMENT_STREAM,
@@ -20,9 +15,9 @@ import {
 } from '@packages/event-contracts/streams';
 
 async function bootstrap() {
-  const app = await NestFactory.create(
+  const app = await NestFactory.create<NestFastifyApplication>(
     AdapterModule,
-    // new FastifyAdapter(),
+    new FastifyAdapter(),
     { bufferLogs: true },
   );
   app.useLogger(app.get(Logger));
@@ -42,23 +37,6 @@ async function bootstrap() {
   // OpenAPI 스펙 생성
   const document = SwaggerModule.createDocument(app, config);
 
-  // Swagger JSON 파일 apps/channel-adapter/swagger-spec.json에 저장 (개발 환경만)
-  // if (process.env.NODE_ENV !== 'production') {
-  //   const swaggerJsonPath = join(
-  //     process.cwd(),
-  //     'apps',
-  //     'channel-adapter',
-  //     'swagger-spec.json',
-  //   );
-
-  //   mkdirSync(join(process.cwd(), 'apps', 'channel-adapter'), {
-  //     recursive: true,
-  //   });
-
-  //   writeFileSync(swaggerJsonPath, JSON.stringify(document, null, 2));
-  //   console.log(`Swagger JSON 생성됨: ${swaggerJsonPath}`);
-  // }
-
   // Swagger UI (서버에서 바로 확인 가능)
   SwaggerModule.setup('/docs', app, document, {
     yamlDocumentUrl: '/docs.yaml',
@@ -69,22 +47,16 @@ async function bootstrap() {
     },
   });
 
-  // YAML 문서 charset 헤더 설정
-  // app.getHttpAdapter().getInstance().addHook('onSend', (request, reply, payload, done) => {
-  //   if (request.url === '/docs.yaml') {
-  //     reply.header('Content-Type', 'application/x-yaml; charset=utf-8');
-  //   }
-  //   done();
-  // });
-
-  // 파일 업로드 등 Fastify 설정
-  // await app.register(require('@fastify/multipart'), {
-  //   attachFieldsToBody: false,
-  //   limits: {
-  //     fileSize: 1024 * 1024 * 10,
-  //     files: 1,
-  //   },
-  // });
+  // YAML 문서 charset 헤더 설정 (analytics/ugc 패턴)
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .addHook('onSend', (request, reply, payload, done) => {
+      if (request.url === '/docs.yaml') {
+        reply.header('Content-Type', 'application/x-yaml; charset=utf-8');
+      }
+      done();
+    });
 
   // CORS 허용
   app.enableCors({
@@ -97,14 +69,6 @@ async function bootstrap() {
     ],
     credentials: true,
   });
-
-  // 정적 파일 서빙 설정
-  // const htmlPath = join(process.cwd(), 'html');
-  // await app.register(require('@fastify/static'), {
-  //   root: htmlPath,
-  //   prefix: '/html/',
-  // });
-  // console.log(`정적 파일 서빙 경로: ${htmlPath}`);
 
   console.log(`Current NODE_ENV: ${process.env.NODE_ENV}`);
   // 테스트 환경을 제외하고 Kafka Consumer 연결 (dev/prod)
