@@ -32,7 +32,10 @@ const APPS = [
 const INITIAL_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 30_000;
 const STABLE_UPTIME_MS = 60_000; // 이 시간 이상 살아있었으면 안정 기동으로 보고 백오프 리셋
-const GRACEFUL_TIMEOUT_MS = 55_000;
+// ECS Fargate 기본 stopTimeout=30s (SST 가 container stopTimeout 을 노출하지 않아 상향 불가).
+// ECS 가 30s 에 SIGKILL 하기 전에 스스로 정리하고 exit 0 하도록 28s 로 잡는다.
+// channel-adapter inbox drain(INBOX_SHUTDOWN_DRAIN_MS=25s)이 최장 → 30s 안에 fits.
+const GRACEFUL_TIMEOUT_MS = 28_000;
 
 const ALL_PREFIXES = APPS.map((a) => `${a.prefix}__`);
 
@@ -108,7 +111,10 @@ function start(app) {
     entry.backoffMs = Math.min(entry.backoffMs * 2, MAX_BACKOFF_MS);
 
     log(`${app.dir} exited; restarting`, { code, signal, uptimeMs: uptime, restartInMs: wait });
-    const timer = setTimeout(() => start(app), wait);
+    const timer = setTimeout(() => {
+      if (shuttingDown) return; // 종료 중이면 재기동하지 않는다 (백오프 대기 중 SIGTERM 대비)
+      start(app);
+    }, wait);
     timer.unref();
   });
 }
