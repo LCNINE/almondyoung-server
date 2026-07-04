@@ -180,9 +180,12 @@ export function setup(infra: SharedInfra) {
   // 각 태스크는 BUNDLE_APPS(dir 목록) env 로 담당 앱만 실행하고 같은 이미지/supervisor 를 공유한다.
   // 각 앱 env 를 `<PREFIX>__KEY` 로 병합 → 컨테이너 안 supervisor.mjs 가 프리픽스를 벗겨 앱별 프로세스에
   // 주입. 외부 URL/Kafka group/OTEL_SERVICE_NAME 전부 유지(클라 무변경).
-  // priority 는 옛 개별 서비스(110~200)와 겹치지 않는 301~306 사용. Pulumi 는 create-before-delete 라
-  // 같은 priority 면 배포 중 "옛 룰 남은 채 번들 룰 생성" → ALB priority 충돌로 실패. 겹치지 않게 하면
-  // 번들 룰 생성(옛 룰이 낮은 번호라 삭제 전까지 우선) → 옛 서비스 삭제 시 host 별 seamless 전환(무중단).
+  // priority 211~216: Pulumi 는 create-before-delete 라 현재 AWS 에 존재하는 어떤 룰과도 안 겹쳐야
+  // 배포가 안 깨진다. 존재 목록 = 옛 개별서비스(110~200) + keeper(145/180/190/210) + 직전 실패 배포가
+  // 남긴 partial ServicesBundle 룰(301~306, 타깃없어 503). 211~216 은 전부 비어있고 위치가 중요:
+  //  - keeper 최대(210)보다 커서 배포 중 옛 서비스(110~200)가 healthy 로 계속 서빙(A/B 부팅 무중단).
+  //  - 301~306(dead)보다 작아 옛것 삭제 시 dead partial 룰을 건너뛰고 A/B 로 seamless 전환(503 없음).
+  // 각 룰은 고유 hostHeader 매칭이라 번호 자체의 순서 의미는 없고 "겹침 회피 + 위치"만 중요.
   // 문제 앱만 다시 개별 createService() 로 떼어내면 부분 롤백 가능 (docs 설계 §6).
   const withPrefix = (prefix: string, env: Record<string, $util.Output<string> | string>) =>
     Object.fromEntries(Object.entries(env).map(([k, v]) => [`${prefix}__${k}`, v]));
@@ -263,9 +266,9 @@ export function setup(infra: SharedInfra) {
     scaling: { min: 1, max: 1 },
     link: [db],
     apps: [
-      { slug: 'analytics', port: 3040, priority: 301 },
-      { slug: 'channel-adapter', port: 3001, priority: 302 },
-      { slug: 'membership', port: 3002, priority: 303 },
+      { slug: 'analytics', port: 3040, priority: 211 },
+      { slug: 'channel-adapter', port: 3001, priority: 212 },
+      { slug: 'membership', port: 3002, priority: 213 },
     ],
     environment: {
       BUNDLE_APPS: 'analytics,channel-adapter,membership',
@@ -284,9 +287,9 @@ export function setup(infra: SharedInfra) {
     scaling: { min: 1, max: 1 },
     link: [db],
     apps: [
-      { slug: 'notification', port: 3003, priority: 304 },
-      { slug: 'search', port: 3004, priority: 305 },
-      { slug: 'ugc', port: 3030, priority: 306 },
+      { slug: 'notification', port: 3003, priority: 214 },
+      { slug: 'search', port: 3004, priority: 215 },
+      { slug: 'ugc', port: 3030, priority: 216 },
     ],
     environment: {
       BUNDLE_APPS: 'notification,search,ugc-service',
