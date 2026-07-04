@@ -207,6 +207,87 @@ export function setup(opts?: { baseDomain?: string }) {
       },
     });
 
+  // ─── Bundle service helper (다중 호스트 → 다중 룰) ───
+  // 경량 서비스 여러 개를 한 태스크에 묶는 전용 헬퍼. createService(단일 룰)와 별개로 둬서
+  // 기존 단일 서비스(Core/Wallet 등)에 영향 없음. SharedAlb 에 앱별 hostHeader 룰을 priority
+  // 로 구분해 얹는다. host-header 는 SST conditions 가 직접 표현 못 하므로 (기존 단일 룰과 동일하게)
+  // transform.listenerRule 로 주입하되, 룰이 여러 개라 args.priority → hostname 매핑으로 룰별 지정.
+  const createBundleService = (
+    name: string,
+    opts: {
+      dockerfile: string;
+      apps: { slug: string; port: number; priority: number; healthPath?: string }[];
+      environment: Record<string, $util.Output<string> | string>;
+      link?: sst.Linkable<any>[];
+      cpu?: string;
+      memory?: string;
+      scaling?: { min: number; max: number };
+      architecture?: 'x86_64' | 'arm64';
+    },
+  ) => {
+    const hostByPriority: Record<number, string> = {};
+    for (const a of opts.apps) hostByPriority[a.priority] = domain(a.slug);
+
+    return new sst.aws.Service(name, {
+      cluster,
+      link: opts.link,
+      ...(opts.cpu ? { cpu: opts.cpu as any } : {}),
+      ...(opts.memory ? { memory: opts.memory as any } : {}),
+      ...(opts.scaling ? { scaling: opts.scaling } : {}),
+      ...(opts.architecture ? { architecture: opts.architecture } : {}),
+      loadBalancer: {
+        instance: alb,
+        rules: opts.apps.map((a) => ({
+          listen: '443/https' as const,
+          forward: `${a.port}/http` as const,
+          conditions: { path: '/*' }, // 검증 통과용 placeholder — transform 이 hostHeader 로 덮어씀
+          priority: a.priority,
+        })),
+        health: Object.fromEntries(
+          opts.apps.map((a) => [
+            `${a.port}/http`,
+            {
+              path: a.healthPath ?? '/health',
+              interval: '30 seconds',
+              timeout: '5 seconds',
+              healthyThreshold: 2,
+              unhealthyThreshold: 5,
+            },
+          ]),
+        ) as Record<string, any>,
+      },
+      image: {
+        context: dockerContext,
+        dockerfile: opts.dockerfile,
+      },
+      environment: {
+        // 공유 env (프리픽스 없음) — supervisor 가 모든 자식에 상속시킨다.
+        NODE_ENV: 'production',
+        ...(otelExporterOtlpEndpoint ? { OTEL_EXPORTER_OTLP_ENDPOINT: otelExporterOtlpEndpoint } : {}),
+        // 앱별 env 는 호출부에서 `<PREFIX>__KEY` 로 병합해 넘긴다.
+        ...opts.environment,
+      },
+      transform: {
+        service: (args: Record<string, any>) => {
+          args.networkConfiguration = vpc.privateSubnets.apply((subnets) =>
+            vpc.securityGroups.apply((sgs) => ({
+              assignPublicIp: false,
+              subnets,
+              securityGroups: sgs,
+            })),
+          );
+        },
+        listenerRule: (args: Record<string, any>) => {
+          // args.priority 는 위 rules 에서 넘긴 리터럴 숫자. 매핑이 없으면 hostHeader 없이 '/*'
+          // 로 남아 해당 포트가 모든 host 를 받아 라우팅이 오염되므로 조용히 넘기지 말고 크게 실패.
+          const host = hostByPriority[args.priority];
+          if (!host) throw new Error(`ServicesBundle: priority ${args.priority} 에 매핑된 hostname 이 없음`);
+          args.conditions = [{ hostHeader: { values: [host] } }];
+        },
+      },
+    });
+  };
+
   return {
     isDev,
     vpc,
@@ -224,6 +305,7 @@ export function setup(opts?: { baseDomain?: string }) {
     serviceDiscoveryName,
     kafkaEnv,
     createService,
+    createBundleService,
   };
 }
 

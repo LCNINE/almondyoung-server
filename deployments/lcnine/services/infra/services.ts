@@ -19,6 +19,7 @@ export function setup(infra: SharedInfra) {
     serviceDiscoveryName,
     setOtelExporterOtlpEndpoint,
     createService,
+    createBundleService,
   } = infra;
 
   // storefront/auth-web 등이 BACKEND_DOMAIN + 서비스 서브도메인 규칙으로 백엔드 URL을 조립한다.
@@ -170,139 +171,131 @@ export function setup(infra: SharedInfra) {
   //  Services
   // ═══════════════════════════════════════════
 
-  createService('Analytics', {
-    // arm64(Graviton) Fargate — 동일 성능에 ~20% 저렴. 문제 시 이 줄만 지우면 x86 복귀.
+  // ═══════════════════════════════════════════
+  //  ServicesBundle — 경량 서비스 6개를 Fargate 태스크 2개(3+3)에 통합 (비용 절감)
+  // ═══════════════════════════════════════════
+  // 개별 태스크 6개(Analytics/ChannelAdapter/Membership/Notification/UgcService/Search) 통합.
+  // ECS service 는 LB 설정(타깃그룹)을 **최대 5개**만 허용 → 6개를 한 서비스에 못 붙인다.
+  // 그래서 3+3 으로 나눈 태스크 2개(ServicesBundleA/B). 비용 동일: 2×(0.25vCPU/1GB)=0.5vCPU/2GB.
+  // 각 태스크는 BUNDLE_APPS(dir 목록) env 로 담당 앱만 실행하고 같은 이미지/supervisor 를 공유한다.
+  // 각 앱 env 를 `<PREFIX>__KEY` 로 병합 → 컨테이너 안 supervisor.mjs 가 프리픽스를 벗겨 앱별 프로세스에
+  // 주입. 외부 URL/Kafka group/OTEL_SERVICE_NAME 전부 유지(클라 무변경).
+  // priority 211~216: Pulumi 는 create-before-delete 라 현재 AWS 에 존재하는 어떤 룰과도 안 겹쳐야
+  // 배포가 안 깨진다. 존재 목록 = 옛 개별서비스(110~200) + keeper(145/180/190/210) + 직전 실패 배포가
+  // 남긴 partial ServicesBundle 룰(301~306, 타깃없어 503). 211~216 은 전부 비어있고 위치가 중요:
+  //  - keeper 최대(210)보다 커서 배포 중 옛 서비스(110~200)가 healthy 로 계속 서빙(A/B 부팅 무중단).
+  //  - 301~306(dead)보다 작아 옛것 삭제 시 dead partial 룰을 건너뛰고 A/B 로 seamless 전환(503 없음).
+  // 각 룰은 고유 hostHeader 매칭이라 번호 자체의 순서 의미는 없고 "겹침 회피 + 위치"만 중요.
+  // 문제 앱만 다시 개별 createService() 로 떼어내면 부분 롤백 가능 (docs 설계 §6).
+  const withPrefix = (prefix: string, env: Record<string, $util.Output<string> | string>) =>
+    Object.fromEntries(Object.entries(env).map(([k, v]) => [`${prefix}__${k}`, v]));
+
+  // 앱별 env (프리픽스 부여). 태스크에는 담당 앱 것만 병합해 넘긴다.
+  const analyticsEnv = withPrefix('ANALYTICS', {
+    DATABASE_URL: dbUrl('analytics'),
+    ...kafkaEnv('analytics', 'analytics-group'),
+    AUTH_SECRET: authSecret.value,
+    OIDC_ISSUER_URL: idpUserServiceUrl,
+  });
+  const channelAdapterEnv = withPrefix('CHANNEL_ADAPTER', {
+    DATABASE_URL: dbUrl('channel_adapter'),
+    ...kafkaEnv('channel-adapter', 'channel-adapter-group'),
+    CHANNEL_ADAPTER_INTERNAL_KEY: channelAdapterInternalKey.value,
+    MEDUSA_API_KEY: medusaApiKey.value,
+    MEDUSA_API_URL: url('medusa'),
+    MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
+    STOREFRONT_REVALIDATE_URL: $interpolate`${storefrontUrl}/api/revalidate`,
+    STOREFRONT_REVALIDATE_SECRET: storefrontRevalidateSecret.value,
+    ALMOND_AUTH_URL: 'https://asia-northeast3-almond-auth.cloudfunctions.net/api',
+    MEMBERSHIP_SERVICE_URL: url('membership'),
+    USER_SERVICE_URL: idpUserServiceUrl,
+    PIM_API_URL: url('core'),
+    NAVER_API_ENDPOINT: 'https://dummy.com',
+    NAVER_CLIENT_ID: '1',
+    NAVER_CLIENT_SECRET: '1',
+    COUPANG_ACCESS_KEY: '1',
+    COUPANG_SECRET_KEY: '1',
+    COUPANG_VENDOR_ID: '1',
+    SKIP_VARIANTS_WITHOUT_PRICE: 'true',
+    INBOX_MAX_CONCURRENT_HANDLERS: '1',
+    INBOX_HANDLER_START_INTERVAL_MS: '10000',
+    INBOX_PROCESSING_LEASE_MS: '900000',
+    INBOX_SHUTDOWN_DRAIN_MS: '25000',
+  });
+  const membershipEnv = withPrefix('MEMBERSHIP', {
+    DATABASE_URL: dbUrl('membership'),
+    ...kafkaEnv('membership', 'membership-group'),
+    WALLET_API_KEY: walletApiKey.value,
+    WALLET_API_URL: url('wallet'),
+    OIDC_ISSUER_URL: idpUserServiceUrl,
+  });
+  const notificationEnv = withPrefix('NOTIFICATION', {
+    DATABASE_URL: dbUrl('notification'),
+    ...kafkaEnv('notification', 'notification-group'),
+    NHN_API_URL: 'https://api-alimtalk.cloud.toast.com',
+    NHN_APP_KEY: nhnAppKey.value,
+    NHN_SECRET_KEY: nhnSecretKey.value,
+    NHN_SENDER_KEY: nhnSenderKey.value,
+    NHN_PLUS_FRIEND_ID: '@아몬드영',
+    RESEND_API_KEY: resendApiKey.value,
+    RESEND_BASE_URL: 'https://api.resend.com',
+    RESEND_FROM: `noreply@mail.${baseDomain}`,
+    RESEND_FROM_NAME: '아몬드영',
+    RESEND_WEBHOOK_SECRET: resendWebhookSecret.value,
+  });
+  const ugcEnv = withPrefix('UGC', {
+    DATABASE_URL: dbUrl('ugc'),
+    ...kafkaEnv('ugc-service', 'ugc-service-group'),
+    AUTH_SECRET: authSecret.value,
+    JWT_ISSUER: 'almondyoung-auth',
+    OIDC_ISSUER_URL: idpUserServiceUrl,
+  });
+  const searchEnv = withPrefix('SEARCH', {
+    // TEMP: OpenSearch(VPC) 트러블슈팅 동안 Railway 폴백 (개별 서비스와 동일 값 유지).
+    OPENSEARCH_NODE: 'https://opensearch-development.up.railway.app',
+    SEARCH_PRODUCTS_INDEX: 'search_products',
+    ...kafkaEnv('search', 'search-indexer-group'),
+  });
+
+  // 태스크 A: analytics + channel-adapter + membership (타깃그룹 3개 ≤ 5)
+  createBundleService('ServicesBundleA', {
     architecture: 'arm64',
-    dockerfile: 'apps/analytics/Dockerfile',
-    domainSlug: 'analytics',
-    port: 3040,
-    priority: 110,
+    dockerfile: 'deployments/lcnine/services/bundle/Dockerfile',
+    cpu: '0.25 vCPU',
+    memory: '1 GB',
+    scaling: { min: 1, max: 1 },
     link: [db],
-    loadBalancerHealth: {
-      '3040/http': {
-        path: '/health',
-        interval: '30 seconds',
-        timeout: '5 seconds',
-        healthyThreshold: 2,
-        unhealthyThreshold: 5,
-      },
-    },
+    apps: [
+      { slug: 'analytics', port: 3040, priority: 211 },
+      { slug: 'channel-adapter', port: 3001, priority: 212 },
+      { slug: 'membership', port: 3002, priority: 213 },
+    ],
     environment: {
-      DATABASE_URL: dbUrl('analytics'),
-      ...kafkaEnv('analytics', 'analytics-group'),
-      AUTH_SECRET: authSecret.value,
-      // OIDC: storefront/admin-web 의 RS256 토큰 검증용. JWKS endpoint 는 라이브러리가 자동 파생.
-      OIDC_ISSUER_URL: idpUserServiceUrl,
+      BUNDLE_APPS: 'analytics,channel-adapter,membership',
+      ...analyticsEnv,
+      ...channelAdapterEnv,
+      ...membershipEnv,
     },
   });
 
-  createService('ChannelAdapter', {
-    // arm64(Graviton) Fargate — 동일 성능에 ~20% 저렴. 문제 시 이 줄만 지우면 x86 복귀.
+  // 태스크 B: notification + search + ugc (타깃그룹 3개 ≤ 5)
+  createBundleService('ServicesBundleB', {
     architecture: 'arm64',
-    dockerfile: 'apps/channel-adapter/Dockerfile',
-    domainSlug: 'channel-adapter',
-    port: 3000,
-    priority: 120,
+    dockerfile: 'deployments/lcnine/services/bundle/Dockerfile',
+    cpu: '0.25 vCPU',
+    memory: '1 GB',
+    scaling: { min: 1, max: 1 },
     link: [db],
-    loadBalancerHealth: {
-      '3000/http': {
-        path: '/health',
-        interval: '30 seconds',
-        timeout: '5 seconds',
-        healthyThreshold: 2,
-        unhealthyThreshold: 5,
-      },
-    },
+    apps: [
+      { slug: 'notification', port: 3003, priority: 214 },
+      { slug: 'search', port: 3004, priority: 215 },
+      { slug: 'ugc', port: 3030, priority: 216 },
+    ],
     environment: {
-      DATABASE_URL: dbUrl('channel_adapter'),
-      // 2026-05-27: this is the intended durable consumer group for channel-adapter.
-      // Existing Kafka backlog is disposable, so no offset migration is required.
-      ...kafkaEnv('channel-adapter', 'channel-adapter-group'),
-      CHANNEL_ADAPTER_INTERNAL_KEY: channelAdapterInternalKey.value,
-      MEDUSA_API_KEY: medusaApiKey.value,
-      MEDUSA_API_URL: url('medusa'),
-      MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
-      // 상품/재고 동기화 직후 스토어프론트 on-demand 캐시 무효화 트리거.
-      // 시크릿은 Storefront 의 REVALIDATE_SECRET 과 동일 값(StorefrontRevalidateSecret).
-      STOREFRONT_REVALIDATE_URL: $interpolate`${storefrontUrl}/api/revalidate`,
-      STOREFRONT_REVALIDATE_SECRET: storefrontRevalidateSecret.value,
-      ALMOND_AUTH_URL: 'https://asia-northeast3-almond-auth.cloudfunctions.net/api',
-      MEMBERSHIP_SERVICE_URL: url('membership'),
-      USER_SERVICE_URL: idpUserServiceUrl,
-      PIM_API_URL: url('core'),
-      NAVER_API_ENDPOINT: 'https://dummy.com',
-      NAVER_CLIENT_ID: '1',
-      NAVER_CLIENT_SECRET: '1',
-      COUPANG_ACCESS_KEY: '1',
-      COUPANG_SECRET_KEY: '1',
-      COUPANG_VENDOR_ID: '1',
-      SKIP_VARIANTS_WITHOUT_PRICE: 'true',
-      // 2026-06-16: PIM→Medusa 동기화(InboxWorker)가 Medusa를 과부하시켜 504 유발한 사고 후
-      // task-local 동시 handler 수와 handler 시작 간격으로 외부 API 압력을 직접 제한한다.
-      INBOX_MAX_CONCURRENT_HANDLERS: '1',
-      INBOX_HANDLER_START_INTERVAL_MS: '10000',
-      INBOX_PROCESSING_LEASE_MS: '900000',
-      INBOX_SHUTDOWN_DRAIN_MS: '25000',
-    },
-  });
-
-  createService('Membership', {
-    // arm64(Graviton) Fargate — 동일 성능에 ~20% 저렴. 문제 시 이 줄만 지우면 x86 복귀.
-    architecture: 'arm64',
-    dockerfile: 'apps/membership/Dockerfile',
-    domainSlug: 'membership',
-    port: 3000,
-    priority: 130,
-    link: [db],
-    loadBalancerHealth: {
-      '3000/http': {
-        path: '/health',
-        interval: '30 seconds',
-        timeout: '5 seconds',
-        healthyThreshold: 2,
-        unhealthyThreshold: 5,
-      },
-    },
-    environment: {
-      DATABASE_URL: dbUrl('membership'),
-      ...kafkaEnv('membership', 'membership-group'),
-      WALLET_API_KEY: walletApiKey.value,
-      WALLET_API_URL: url('wallet'),
-      // OIDC: storefront 의 RS256 토큰 검증용. (이전엔 hardcoded default 에 의존했지만 정식화됨.)
-      OIDC_ISSUER_URL: idpUserServiceUrl,
-    },
-  });
-
-  createService('Notification', {
-    // 카나리: arm64(Graviton) Fargate — 동일 성능에 ~20% 저렴. 문제 시 이 줄만 지우면 x86 복귀.
-    architecture: 'arm64',
-    dockerfile: 'apps/notification/Dockerfile',
-    domainSlug: 'notification',
-    port: 3000,
-    priority: 140,
-    link: [db],
-    loadBalancerHealth: {
-      '3000/http': {
-        path: '/health',
-        interval: '30 seconds',
-        timeout: '5 seconds',
-        healthyThreshold: 2,
-        unhealthyThreshold: 5,
-      },
-    },
-    environment: {
-      DATABASE_URL: dbUrl('notification'),
-      ...kafkaEnv('notification', 'notification-group'),
-      NHN_API_URL: 'https://api-alimtalk.cloud.toast.com',
-      NHN_APP_KEY: nhnAppKey.value,
-      NHN_SECRET_KEY: nhnSecretKey.value,
-      NHN_SENDER_KEY: nhnSenderKey.value,
-      NHN_PLUS_FRIEND_ID: '@아몬드영',
-      RESEND_API_KEY: resendApiKey.value,
-      RESEND_BASE_URL: 'https://api.resend.com',
-      RESEND_FROM: `noreply@mail.${baseDomain}`,
-      RESEND_FROM_NAME: '아몬드영',
-      RESEND_WEBHOOK_SECRET: resendWebhookSecret.value,
+      BUNDLE_APPS: 'notification,search,ugc-service',
+      ...notificationEnv,
+      ...searchEnv,
+      ...ugcEnv,
     },
   });
 
@@ -335,24 +328,6 @@ export function setup(infra: SharedInfra) {
       WALLET_API_KEY: walletApiKey.value,
       // 디지털 자산 다운로드: library ownership 다운로드 시 file-service signed URL 호출
       FILE_SERVICE_URL: url('file'),
-    },
-  });
-
-  createService('UgcService', {
-    // arm64(Graviton) Fargate — 동일 성능에 ~20% 저렴. 문제 시 이 줄만 지우면 x86 복귀.
-    architecture: 'arm64',
-    dockerfile: 'apps/ugc-service/Dockerfile',
-    domainSlug: 'ugc',
-    port: 3030,
-    priority: 160,
-    link: [db],
-    environment: {
-      DATABASE_URL: dbUrl('ugc'),
-      ...kafkaEnv('ugc-service', 'ugc-service-group'),
-      AUTH_SECRET: authSecret.value,
-      JWT_ISSUER: 'almondyoung-auth',
-      // OIDC: storefront 의 RS256 토큰 검증용.
-      OIDC_ISSUER_URL: idpUserServiceUrl,
     },
   });
 
@@ -430,31 +405,6 @@ export function setup(infra: SharedInfra) {
     },
   });
 
-  createService('Search', {
-    // arm64(Graviton) Fargate — 동일 성능에 ~20% 저렴. 문제 시 이 줄만 지우면 x86 복귀.
-    architecture: 'arm64',
-    dockerfile: 'apps/search/Dockerfile',
-    domainSlug: 'search',
-    port: 3000,
-    priority: 200,
-    loadBalancerHealth: {
-      '3000/http': {
-        path: '/health',
-        interval: '30 seconds',
-        timeout: '5 seconds',
-        healthyThreshold: 2,
-        unhealthyThreshold: 5,
-      },
-    },
-    environment: {
-      // TEMP: AWS OpenSearch(VPC) 연결 트러블슈팅 동안 Railway 자체호스팅 인스턴스로 폴백.
-      //       복구되면 opensearch.url/username/password 로 되돌릴 것.
-      OPENSEARCH_NODE: 'https://opensearch-development.up.railway.app',
-      SEARCH_PRODUCTS_INDEX: 'search_products',
-      ...kafkaEnv('search', 'search-indexer-group'),
-    },
-  });
-
   createService('Medusa', {
     // arm64(Graviton) Fargate — 동일 성능에 ~20% 저렴. 문제 시 이 줄만 지우면 x86 복귀.
     architecture: 'arm64',
@@ -466,7 +416,7 @@ export function setup(infra: SharedInfra) {
     // 운영 기본 용량. 백필/이벤트 대응 시 일시적으로 올리고, 끝나면 원복한다.
     cpu: '0.5 vCPU',
     memory: '1 GB',
-    scaling: { min: 2, max: 2 },
+    scaling: { min: 1, max: 1 },
     buildArgs: {
       VITE_USER_SERVICE_URL: idpUserServiceUrl,
       MEDUSA_BACKEND_URL: url('medusa'),
