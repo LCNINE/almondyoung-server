@@ -1,14 +1,9 @@
 // apps/notification/src/shared/controllers/webhook.controller.ts
-import { Controller, Post, Body, Headers, HttpCode, Req, BadRequestException } from '@nestjs/common';
-import { Request } from 'express';
+import { Controller, Post, Body, Headers, HttpCode, Req, BadRequestException, RawBodyRequest } from '@nestjs/common';
+import { FastifyRequest } from 'fastify';
 import { ApiTags, ApiOperation, ApiResponse, ApiHeader, ApiBody } from '@nestjs/swagger';
 import { WebhookService } from '../services/webhook.service';
 import { ResendWebhookEvent } from '../../provider/providers/email/resend-webhook.dto';
-
-// Request 타입 확장
-interface RequestWithRawBody extends Request {
-  rawBody?: string;
-}
 
 @ApiTags('webhooks')
 @Controller('webhooks')
@@ -90,7 +85,7 @@ export class WebhookController {
   @ApiResponse({ status: 200, description: '웹훅 처리 성공' })
   @ApiResponse({ status: 400, description: '잘못된 웹훅 헤더' })
   async handleResend(
-    @Req() req: RequestWithRawBody,
+    @Req() req: RawBodyRequest<FastifyRequest>,
     @Body() body: ResendWebhookEvent,
     @Headers('svix-id') svixId: string,
     @Headers('svix-timestamp') svixTimestamp: string,
@@ -108,7 +103,7 @@ export class WebhookController {
     };
 
     // Raw body가 있으면 string으로 사용, 없으면 parsed body 사용
-    const payload = req.rawBody ? req.rawBody : body;
+    const payload = req.rawBody ? req.rawBody.toString('utf8') : body;
 
     await this.webhookService.handleResendWebhook(payload, headers);
 
@@ -135,8 +130,8 @@ export class WebhookController {
   })
   @ApiResponse({ status: 200, description: '웹훅 처리 성공' })
   @ApiResponse({ status: 401, description: '웹훅 서명 검증 실패' })
-  async handleTwilio(@Req() req: Request, @Body() data: any, @Headers('X-Twilio-Signature') signature?: string) {
-    const requestUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
+  async handleTwilio(@Req() req: FastifyRequest, @Body() data: any, @Headers('X-Twilio-Signature') signature?: string) {
+    const requestUrl = `${req.protocol}://${req.headers.host}${req.url}`;
     await this.webhookService.handleTwilioWebhook(data, signature, requestUrl);
     return { received: true };
   }
@@ -176,12 +171,12 @@ export class WebhookController {
   @ApiResponse({ status: 200, description: '웹훅 처리 성공' })
   @ApiResponse({ status: 401, description: '웹훅 서명 검증 실패' })
   async handleKakao(
-    @Req() req: RequestWithRawBody,
+    @Req() req: RawBodyRequest<FastifyRequest>,
     @Body() body: any,
     @Headers('X-Toast-Webhook-Signature') signature?: string,
   ) {
     // Raw body가 있으면 string으로 사용, 없으면 parsed body 사용
-    const payload = req.rawBody ? req.rawBody : body;
+    const payload = req.rawBody ? req.rawBody.toString('utf8') : body;
 
     await this.webhookService.handleKakaoWebhook(payload, signature);
     return { received: true };
