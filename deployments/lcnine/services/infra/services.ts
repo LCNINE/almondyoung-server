@@ -177,7 +177,10 @@ export function setup(infra: SharedInfra) {
   // 개별 태스크 6개(Analytics/ChannelAdapter/Membership/Notification/UgcService/Search) → 1개.
   // 각 앱 env 를 `<PREFIX>__KEY` 로 병합해 넘기면 컨테이너 안 supervisor.mjs 가 프리픽스를 벗겨
   // 앱별 Node 프로세스에 주입한다. 외부 URL/Kafka group/OTEL_SERVICE_NAME 전부 유지(클라 무변경).
-  // priority(110/120/130/140/160/200)는 기존 개별 서비스 값 재사용.
+  // priority 는 옛 개별 서비스(110~200)와 겹치지 않는 301~306 사용. Pulumi 는 create-before-delete
+  // 라 같은 priority 로 두면 배포 중 "옛 룰이 아직 있는데 번들 룰 생성" → ALB priority 충돌로 배포 실패.
+  // 겹치지 않게 하면: 번들 룰 생성(옛 룰이 낮은 번호라 삭제 전까지 우선) → 옛 서비스 삭제 시 host 별로
+  // 번들로 seamless 전환(무중단). 각 룰은 고유 hostHeader 매칭이라 번호 자체는 순서 의미 없음.
   // 문제 앱만 다시 개별 createService() 로 떼어내면 부분 롤백 가능 (docs 설계 §6).
   const withPrefix = (prefix: string, env: Record<string, $util.Output<string> | string>) =>
     Object.fromEntries(Object.entries(env).map(([k, v]) => [`${prefix}__${k}`, v]));
@@ -190,12 +193,12 @@ export function setup(infra: SharedInfra) {
     scaling: { min: 1, max: 1 },
     link: [db],
     apps: [
-      { slug: 'analytics', port: 3040, priority: 110 },
-      { slug: 'channel-adapter', port: 3001, priority: 120 },
-      { slug: 'membership', port: 3002, priority: 130 },
-      { slug: 'notification', port: 3003, priority: 140 },
-      { slug: 'ugc', port: 3030, priority: 160 },
-      { slug: 'search', port: 3004, priority: 200 },
+      { slug: 'analytics', port: 3040, priority: 301 },
+      { slug: 'channel-adapter', port: 3001, priority: 302 },
+      { slug: 'membership', port: 3002, priority: 303 },
+      { slug: 'notification', port: 3003, priority: 304 },
+      { slug: 'ugc', port: 3030, priority: 305 },
+      { slug: 'search', port: 3004, priority: 306 },
     ],
     environment: {
       ...withPrefix('ANALYTICS', {
