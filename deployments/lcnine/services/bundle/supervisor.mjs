@@ -37,6 +37,15 @@ const STABLE_UPTIME_MS = 60_000; // 이 시간 이상 살아있었으면 안정 
 // channel-adapter inbox drain(INBOX_SHUTDOWN_DRAIN_MS=25s)이 최장 → 30s 안에 fits.
 const GRACEFUL_TIMEOUT_MS = 28_000;
 
+// 한 태스크가 실행할 앱 부분집합. ECS service 는 LB 설정(타깃그룹)을 최대 5개만 허용하므로
+// 6개를 한 서비스에 못 붙인다 → 여러 태스크로 나누고 각 태스크가 BUNDLE_APPS(dir 콤마목록)로
+// 담당 앱을 지정한다. 미설정 시(로컬 등) 전체 실행.
+const ONLY = (process.env.BUNDLE_APPS ?? '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+const RUN_APPS = ONLY.length ? APPS.filter((a) => ONLY.includes(a.dir)) : APPS;
+
 const ALL_PREFIXES = APPS.map((a) => `${a.prefix}__`);
 
 /** service_name 라벨을 박은 JSON 한 줄 로그 (Loki 필터용). */
@@ -151,5 +160,9 @@ function shutdown(signal) {
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGINT', () => shutdown('SIGINT'));
 
-log(`supervisor starting ${APPS.length} apps`, { apps: APPS.map((a) => a.dir) });
-for (const app of APPS) start(app);
+if (!RUN_APPS.length) {
+  log('no apps to run — BUNDLE_APPS 가 어떤 앱과도 매칭되지 않음', { BUNDLE_APPS: process.env.BUNDLE_APPS });
+  process.exit(1);
+}
+log(`supervisor starting ${RUN_APPS.length} apps`, { apps: RUN_APPS.map((a) => a.dir) });
+for (const app of RUN_APPS) start(app);

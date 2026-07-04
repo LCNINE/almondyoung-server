@@ -172,100 +172,127 @@ export function setup(infra: SharedInfra) {
   // ═══════════════════════════════════════════
 
   // ═══════════════════════════════════════════
-  //  ServicesBundle — 경량 서비스 6개를 단일 Fargate 태스크에 통합 (비용 절감)
+  //  ServicesBundle — 경량 서비스 6개를 Fargate 태스크 2개(3+3)에 통합 (비용 절감)
   // ═══════════════════════════════════════════
-  // 개별 태스크 6개(Analytics/ChannelAdapter/Membership/Notification/UgcService/Search) → 1개.
-  // 각 앱 env 를 `<PREFIX>__KEY` 로 병합해 넘기면 컨테이너 안 supervisor.mjs 가 프리픽스를 벗겨
-  // 앱별 Node 프로세스에 주입한다. 외부 URL/Kafka group/OTEL_SERVICE_NAME 전부 유지(클라 무변경).
-  // priority 는 옛 개별 서비스(110~200)와 겹치지 않는 301~306 사용. Pulumi 는 create-before-delete
-  // 라 같은 priority 로 두면 배포 중 "옛 룰이 아직 있는데 번들 룰 생성" → ALB priority 충돌로 배포 실패.
-  // 겹치지 않게 하면: 번들 룰 생성(옛 룰이 낮은 번호라 삭제 전까지 우선) → 옛 서비스 삭제 시 host 별로
-  // 번들로 seamless 전환(무중단). 각 룰은 고유 hostHeader 매칭이라 번호 자체는 순서 의미 없음.
+  // 개별 태스크 6개(Analytics/ChannelAdapter/Membership/Notification/UgcService/Search) 통합.
+  // ECS service 는 LB 설정(타깃그룹)을 **최대 5개**만 허용 → 6개를 한 서비스에 못 붙인다.
+  // 그래서 3+3 으로 나눈 태스크 2개(ServicesBundleA/B). 비용 동일: 2×(0.25vCPU/1GB)=0.5vCPU/2GB.
+  // 각 태스크는 BUNDLE_APPS(dir 목록) env 로 담당 앱만 실행하고 같은 이미지/supervisor 를 공유한다.
+  // 각 앱 env 를 `<PREFIX>__KEY` 로 병합 → 컨테이너 안 supervisor.mjs 가 프리픽스를 벗겨 앱별 프로세스에
+  // 주입. 외부 URL/Kafka group/OTEL_SERVICE_NAME 전부 유지(클라 무변경).
+  // priority 는 옛 개별 서비스(110~200)와 겹치지 않는 301~306 사용. Pulumi 는 create-before-delete 라
+  // 같은 priority 면 배포 중 "옛 룰 남은 채 번들 룰 생성" → ALB priority 충돌로 실패. 겹치지 않게 하면
+  // 번들 룰 생성(옛 룰이 낮은 번호라 삭제 전까지 우선) → 옛 서비스 삭제 시 host 별 seamless 전환(무중단).
   // 문제 앱만 다시 개별 createService() 로 떼어내면 부분 롤백 가능 (docs 설계 §6).
   const withPrefix = (prefix: string, env: Record<string, $util.Output<string> | string>) =>
     Object.fromEntries(Object.entries(env).map(([k, v]) => [`${prefix}__${k}`, v]));
 
-  createBundleService('ServicesBundle', {
+  // 앱별 env (프리픽스 부여). 태스크에는 담당 앱 것만 병합해 넘긴다.
+  const analyticsEnv = withPrefix('ANALYTICS', {
+    DATABASE_URL: dbUrl('analytics'),
+    ...kafkaEnv('analytics', 'analytics-group'),
+    AUTH_SECRET: authSecret.value,
+    OIDC_ISSUER_URL: idpUserServiceUrl,
+  });
+  const channelAdapterEnv = withPrefix('CHANNEL_ADAPTER', {
+    DATABASE_URL: dbUrl('channel_adapter'),
+    ...kafkaEnv('channel-adapter', 'channel-adapter-group'),
+    CHANNEL_ADAPTER_INTERNAL_KEY: channelAdapterInternalKey.value,
+    MEDUSA_API_KEY: medusaApiKey.value,
+    MEDUSA_API_URL: url('medusa'),
+    MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
+    STOREFRONT_REVALIDATE_URL: $interpolate`${storefrontUrl}/api/revalidate`,
+    STOREFRONT_REVALIDATE_SECRET: storefrontRevalidateSecret.value,
+    ALMOND_AUTH_URL: 'https://asia-northeast3-almond-auth.cloudfunctions.net/api',
+    MEMBERSHIP_SERVICE_URL: url('membership'),
+    USER_SERVICE_URL: idpUserServiceUrl,
+    PIM_API_URL: url('core'),
+    NAVER_API_ENDPOINT: 'https://dummy.com',
+    NAVER_CLIENT_ID: '1',
+    NAVER_CLIENT_SECRET: '1',
+    COUPANG_ACCESS_KEY: '1',
+    COUPANG_SECRET_KEY: '1',
+    COUPANG_VENDOR_ID: '1',
+    SKIP_VARIANTS_WITHOUT_PRICE: 'true',
+    INBOX_MAX_CONCURRENT_HANDLERS: '1',
+    INBOX_HANDLER_START_INTERVAL_MS: '10000',
+    INBOX_PROCESSING_LEASE_MS: '900000',
+    INBOX_SHUTDOWN_DRAIN_MS: '25000',
+  });
+  const membershipEnv = withPrefix('MEMBERSHIP', {
+    DATABASE_URL: dbUrl('membership'),
+    ...kafkaEnv('membership', 'membership-group'),
+    WALLET_API_KEY: walletApiKey.value,
+    WALLET_API_URL: url('wallet'),
+    OIDC_ISSUER_URL: idpUserServiceUrl,
+  });
+  const notificationEnv = withPrefix('NOTIFICATION', {
+    DATABASE_URL: dbUrl('notification'),
+    ...kafkaEnv('notification', 'notification-group'),
+    NHN_API_URL: 'https://api-alimtalk.cloud.toast.com',
+    NHN_APP_KEY: nhnAppKey.value,
+    NHN_SECRET_KEY: nhnSecretKey.value,
+    NHN_SENDER_KEY: nhnSenderKey.value,
+    NHN_PLUS_FRIEND_ID: '@아몬드영',
+    RESEND_API_KEY: resendApiKey.value,
+    RESEND_BASE_URL: 'https://api.resend.com',
+    RESEND_FROM: `noreply@mail.${baseDomain}`,
+    RESEND_FROM_NAME: '아몬드영',
+    RESEND_WEBHOOK_SECRET: resendWebhookSecret.value,
+  });
+  const ugcEnv = withPrefix('UGC', {
+    DATABASE_URL: dbUrl('ugc'),
+    ...kafkaEnv('ugc-service', 'ugc-service-group'),
+    AUTH_SECRET: authSecret.value,
+    JWT_ISSUER: 'almondyoung-auth',
+    OIDC_ISSUER_URL: idpUserServiceUrl,
+  });
+  const searchEnv = withPrefix('SEARCH', {
+    // TEMP: OpenSearch(VPC) 트러블슈팅 동안 Railway 폴백 (개별 서비스와 동일 값 유지).
+    OPENSEARCH_NODE: 'https://opensearch-development.up.railway.app',
+    SEARCH_PRODUCTS_INDEX: 'search_products',
+    ...kafkaEnv('search', 'search-indexer-group'),
+  });
+
+  // 태스크 A: analytics + channel-adapter + membership (타깃그룹 3개 ≤ 5)
+  createBundleService('ServicesBundleA', {
     architecture: 'arm64',
     dockerfile: 'deployments/lcnine/services/bundle/Dockerfile',
-    cpu: '0.5 vCPU',
-    memory: '2 GB',
+    cpu: '0.25 vCPU',
+    memory: '1 GB',
     scaling: { min: 1, max: 1 },
     link: [db],
     apps: [
       { slug: 'analytics', port: 3040, priority: 301 },
       { slug: 'channel-adapter', port: 3001, priority: 302 },
       { slug: 'membership', port: 3002, priority: 303 },
-      { slug: 'notification', port: 3003, priority: 304 },
-      { slug: 'ugc', port: 3030, priority: 305 },
-      { slug: 'search', port: 3004, priority: 306 },
     ],
     environment: {
-      ...withPrefix('ANALYTICS', {
-        DATABASE_URL: dbUrl('analytics'),
-        ...kafkaEnv('analytics', 'analytics-group'),
-        AUTH_SECRET: authSecret.value,
-        OIDC_ISSUER_URL: idpUserServiceUrl,
-      }),
-      ...withPrefix('CHANNEL_ADAPTER', {
-        DATABASE_URL: dbUrl('channel_adapter'),
-        ...kafkaEnv('channel-adapter', 'channel-adapter-group'),
-        CHANNEL_ADAPTER_INTERNAL_KEY: channelAdapterInternalKey.value,
-        MEDUSA_API_KEY: medusaApiKey.value,
-        MEDUSA_API_URL: url('medusa'),
-        MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
-        STOREFRONT_REVALIDATE_URL: $interpolate`${storefrontUrl}/api/revalidate`,
-        STOREFRONT_REVALIDATE_SECRET: storefrontRevalidateSecret.value,
-        ALMOND_AUTH_URL: 'https://asia-northeast3-almond-auth.cloudfunctions.net/api',
-        MEMBERSHIP_SERVICE_URL: url('membership'),
-        USER_SERVICE_URL: idpUserServiceUrl,
-        PIM_API_URL: url('core'),
-        NAVER_API_ENDPOINT: 'https://dummy.com',
-        NAVER_CLIENT_ID: '1',
-        NAVER_CLIENT_SECRET: '1',
-        COUPANG_ACCESS_KEY: '1',
-        COUPANG_SECRET_KEY: '1',
-        COUPANG_VENDOR_ID: '1',
-        SKIP_VARIANTS_WITHOUT_PRICE: 'true',
-        INBOX_MAX_CONCURRENT_HANDLERS: '1',
-        INBOX_HANDLER_START_INTERVAL_MS: '10000',
-        INBOX_PROCESSING_LEASE_MS: '900000',
-        INBOX_SHUTDOWN_DRAIN_MS: '25000',
-      }),
-      ...withPrefix('MEMBERSHIP', {
-        DATABASE_URL: dbUrl('membership'),
-        ...kafkaEnv('membership', 'membership-group'),
-        WALLET_API_KEY: walletApiKey.value,
-        WALLET_API_URL: url('wallet'),
-        OIDC_ISSUER_URL: idpUserServiceUrl,
-      }),
-      ...withPrefix('NOTIFICATION', {
-        DATABASE_URL: dbUrl('notification'),
-        ...kafkaEnv('notification', 'notification-group'),
-        NHN_API_URL: 'https://api-alimtalk.cloud.toast.com',
-        NHN_APP_KEY: nhnAppKey.value,
-        NHN_SECRET_KEY: nhnSecretKey.value,
-        NHN_SENDER_KEY: nhnSenderKey.value,
-        NHN_PLUS_FRIEND_ID: '@아몬드영',
-        RESEND_API_KEY: resendApiKey.value,
-        RESEND_BASE_URL: 'https://api.resend.com',
-        RESEND_FROM: `noreply@mail.${baseDomain}`,
-        RESEND_FROM_NAME: '아몬드영',
-        RESEND_WEBHOOK_SECRET: resendWebhookSecret.value,
-      }),
-      ...withPrefix('UGC', {
-        DATABASE_URL: dbUrl('ugc'),
-        ...kafkaEnv('ugc-service', 'ugc-service-group'),
-        AUTH_SECRET: authSecret.value,
-        JWT_ISSUER: 'almondyoung-auth',
-        OIDC_ISSUER_URL: idpUserServiceUrl,
-      }),
-      ...withPrefix('SEARCH', {
-        // TEMP: OpenSearch(VPC) 트러블슈팅 동안 Railway 폴백 (개별 서비스와 동일 값 유지).
-        OPENSEARCH_NODE: 'https://opensearch-development.up.railway.app',
-        SEARCH_PRODUCTS_INDEX: 'search_products',
-        ...kafkaEnv('search', 'search-indexer-group'),
-      }),
+      BUNDLE_APPS: 'analytics,channel-adapter,membership',
+      ...analyticsEnv,
+      ...channelAdapterEnv,
+      ...membershipEnv,
+    },
+  });
+
+  // 태스크 B: notification + search + ugc (타깃그룹 3개 ≤ 5)
+  createBundleService('ServicesBundleB', {
+    architecture: 'arm64',
+    dockerfile: 'deployments/lcnine/services/bundle/Dockerfile',
+    cpu: '0.25 vCPU',
+    memory: '1 GB',
+    scaling: { min: 1, max: 1 },
+    link: [db],
+    apps: [
+      { slug: 'notification', port: 3003, priority: 304 },
+      { slug: 'search', port: 3004, priority: 305 },
+      { slug: 'ugc', port: 3030, priority: 306 },
+    ],
+    environment: {
+      BUNDLE_APPS: 'notification,search,ugc-service',
+      ...notificationEnv,
+      ...searchEnv,
+      ...ugcEnv,
     },
   });
 
