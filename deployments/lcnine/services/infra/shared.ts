@@ -66,49 +66,10 @@ export function setup(opts?: { baseDomain?: string }) {
   const redisUrl = (dbIndex: number) =>
     $interpolate`rediss://${redis.username}:${encodedRedisPassword}@${redis.host}:${redis.port}/${dbIndex}`;
 
-  // ─── OpenSearch (VPC, single-AZ, t3.small.search) ───
-  // sst.aws.OpenSearch 는 vpc 옵션을 직접 받지 않아 transform.domain 으로 vpcOptions 를 주입한다.
-  // 한국어 형태소 분석은 AWS-managed `analysis-nori` 패키지를 도메인에 associate 해서 활성화 (built-in 아님).
-  // 패키지 ID 는 region + EngineVersion 별로 다름 — 아래 값은 ap-northeast-2 / OpenSearch_2.17.
-  // 엔진 버전 업그레이드 시 `aws opensearch describe-packages --filters Name=PackageName,Value=analysis-nori` 로 새 ID 조회.
-  const vpcInfo = aws.ec2.getVpcOutput({ id: vpc.id });
-  const opensearchSg = new aws.ec2.SecurityGroup('OpensearchSg', {
-    vpcId: vpc.id,
-    description: 'Allow HTTPS to OpenSearch domain from within VPC',
-    ingress: [
-      {
-        protocol: 'tcp',
-        fromPort: 443,
-        toPort: 443,
-        cidrBlocks: [vpcInfo.cidrBlock],
-      },
-    ],
-    egress: [{ protocol: '-1', fromPort: 0, toPort: 0, cidrBlocks: ['0.0.0.0/0'] }],
-  });
-  const opensearch = new sst.aws.OpenSearch('Opensearch', {
-    instance: 't3.small',
-    storage: '10 GB',
-    transform: {
-      domain: (args) => {
-        args.vpcOptions = {
-          subnetIds: vpc.privateSubnets.apply((ids) => [ids[0]]),
-          securityGroupIds: [opensearchSg.id],
-        };
-      },
-    },
-  });
-  // Pulumi-aws 의 PackageAssociation 기본 wait 가 10분이라 t3.small 도메인 plugin install +
-  // rolling restart 에 부족할 때가 많다 — 60분으로 늘려둔다.
-  new aws.opensearch.PackageAssociation(
-    'OpensearchNoriAssociation',
-    {
-      packageId: 'G267799487',
-      domainName: opensearch.nodes.domain!.domainName,
-    },
-    {
-      customTimeouts: { create: '60m', update: '60m', delete: '60m' },
-    },
-  );
+  // ─── Search: OpenSearch 도메인 제거됨 ───
+  // search 서비스는 Railway(opensearch-development.up.railway.app)를 사용한다 (services.ts searchEnv).
+  // AWS OpenSearch 도메인(t3.small)은 어떤 서비스도 참조하지 않는 고아 자원이라 비용절감 차원에서 삭제.
+  // nori 형태소 분석이 다시 필요해지면 도메인 + OpensearchSg + OpensearchNoriAssociation 을 복원하면 됨.
 
   // ─── Common env builders ───
   let otelExporterOtlpEndpoint: $util.Output<string> | string | undefined;
@@ -294,7 +255,6 @@ export function setup(opts?: { baseDomain?: string }) {
     cluster,
     db,
     redis,
-    opensearch,
     dbUrl,
     redisUrl,
     baseDomain,
