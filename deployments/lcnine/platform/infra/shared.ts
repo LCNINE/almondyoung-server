@@ -50,10 +50,13 @@ export function setup() {
     role: redpandaRole.name,
   });
 
-  // Docker Hub pull 필요 → public subnet에 둠. SG는 VPC CIDR 내부 ingress만 허용하므로
-  // 9092 포트가 공용 IP로 노출되지는 않음. EBS는 AZ 귀속이라 인스턴스도 동일 AZ 고정.
-  const redpandaSubnetId = vpc.nodes.publicSubnets.apply((s) => s[0].id);
-  const redpandaAz = vpc.nodes.publicSubnets.apply((s) => s[0].availabilityZone);
+  // private subnet 배치 — Docker Hub pull 은 NAT(fck-nat EIP) 경유. 퍼블릭 IPv4 는 존재만으로
+  // 월 $3.65 과금이라 제거 (원래 public subnet 이었던 유일한 이유가 이미지 pull). EBS는 AZ
+  // 귀속이라 인스턴스도 동일 AZ 고정 — privateSubnets[0] 과 publicSubnets[0] 은 같은 첫 번째
+  // AZ 라 기존 EBS 볼륨 위치와 일치. 배포 plan 에서 RedpandaData(EBS) 가 replace 로 뜨면
+  // AZ 불일치이므로 즉시 중단할 것 (데이터 유실).
+  const redpandaSubnetId = vpc.nodes.privateSubnets.apply((s) => s[0].id);
+  const redpandaAz = vpc.nodes.privateSubnets.apply((s) => s[0].availabilityZone);
 
   const redpandaEbs = new aws.ebs.Volume("RedpandaData", {
     availabilityZone: redpandaAz,
@@ -81,19 +84,28 @@ export function setup() {
     .readFileSync(path.join($cli.paths.root, "redpanda.cloud-init.sh"), "utf8")
     .replace(/__REDPANDA_ADVERTISE_DNS__/g, redpandaDns);
 
-  const redpandaInstance = new aws.ec2.Instance("Redpanda", {
-    ami: redpandaAmiId,
-    instanceType: "t4g.micro",
-    subnetId: redpandaSubnetId,
-    availabilityZone: redpandaAz,
-    vpcSecurityGroupIds: vpc.securityGroups,
-    associatePublicIpAddress: true,
-    iamInstanceProfile: redpandaInstanceProfile.name,
-    userData: redpandaUserData,
-    // AL2023 AMI 스냅샷이 30GB라 그 이하로 못 줄임.
-    rootBlockDevice: { volumeSize: 30, volumeType: "gp3", encrypted: true },
-    tags: { Name: `${$app.name}-${$app.stage}-redpanda` },
-  });
+  const redpandaInstance = new aws.ec2.Instance(
+    "Redpanda",
+    {
+      ami: redpandaAmiId,
+      instanceType: "t4g.micro",
+      subnetId: redpandaSubnetId,
+      availabilityZone: redpandaAz,
+      vpcSecurityGroupIds: vpc.securityGroups,
+      associatePublicIpAddress: false,
+      iamInstanceProfile: redpandaInstanceProfile.name,
+      userData: redpandaUserData,
+      // AL2023 AMI 스냅샷이 30GB라 그 이하로 못 줄임.
+      rootBlockDevice: { volumeSize: 30, volumeType: "gp3", encrypted: true },
+      tags: { Name: `${$app.name}-${$app.stage}-redpanda` },
+    },
+    {
+      // subnet 변경은 인스턴스 replace. 기본(create-before-delete)이면 EBS 가 옛 인스턴스에
+      // 붙어 있어 새 인스턴스의 VolumeAttachment 생성이 실패한다. 옛 것을 먼저 내려(EBS 자동
+      // 분리) 새 것을 만드는 순서로 강제 — 그 사이 Redpanda 다운타임은 outbox 재시도가 흡수.
+      deleteBeforeReplace: true,
+    },
+  );
 
   new aws.ec2.VolumeAttachment("RedpandaDataAttach", {
     deviceName: "/dev/sdf",

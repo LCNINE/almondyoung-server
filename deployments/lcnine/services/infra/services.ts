@@ -8,9 +8,7 @@ export function setup(infra: SharedInfra) {
     vpc,
     cluster,
     db,
-    redis,
     dbUrl,
-    redisUrl,
     baseDomain,
     domain,
     url,
@@ -411,11 +409,30 @@ export function setup(infra: SharedInfra) {
     domainSlug: 'medusa',
     port: 9000,
     priority: 210,
-    link: [db, redis],
+    link: [db],
     // 운영 기본 용량. 백필/이벤트 대응 시 일시적으로 올리고, 끝나면 원복한다.
     cpu: '0.5 vCPU',
-    memory: '1 GB',
+    // 1 GB → 2 GB: valkey 사이드카(256MB cap) 동거분 확보. 메모리 0.5GB당 ~$1.5/월이라
+    // ElastiCache 제거(-$17.5/월) 대비 미미. Medusa 단독 시절 1GB 로 돌았음을 참고.
+    memory: '2 GB',
     scaling: { min: 1, max: 1 },
+    // ElastiCache 대체: 같은 태스크의 valkey 사이드카 (shared.ts 의 Redis 제거 주석 참조).
+    // - noeviction: event-bus/workflow-engine 이 BullMQ 큐로 쓰므로 키 eviction 은 유실 사고.
+    //   가득 차면 쓰기 에러가 나게 두는 편이 안전 (256MB, 데모 트래픽 기준 여유).
+    // - appendonly no + save '': 디스크 영속 불필요 (재시작 유실 허용이 이 설계의 전제).
+    sidecars: [
+      {
+        name: 'valkey',
+        image: 'valkey/valkey:8-alpine',
+        command: [
+          'valkey-server',
+          '--maxmemory', '256mb',
+          '--maxmemory-policy', 'noeviction',
+          '--appendonly', 'no',
+          '--save', '',
+        ],
+      },
+    ],
     buildArgs: {
       VITE_USER_SERVICE_URL: idpUserServiceUrl,
       MEDUSA_BACKEND_URL: url('medusa'),
@@ -441,8 +458,9 @@ export function setup(infra: SharedInfra) {
       DATABASE_URL: $interpolate`postgresql://${db.username}:${db.password}@${db.host}:${db.port}/medusa?sslmode=disable`,
       // product_sort_index.review_count 주기 동기화(sync-product-sort-index)가 ugc 리뷰 수를 읽는 소스.
       UGC_SOURCE_DB_URL: $interpolate`postgresql://${db.username}:${db.password}@${db.host}:${db.port}/ugc?sslmode=disable`,
-      REDIS_URL: redisUrl(0),
-      CACHE_REDIS_URL: redisUrl(1),
+      // valkey 사이드카 (같은 태스크, localhost). DB 인덱스 분리는 ElastiCache 시절과 동일.
+      REDIS_URL: 'redis://localhost:6379/0',
+      CACHE_REDIS_URL: 'redis://localhost:6379/1',
       MEDUSA_FF_CACHING: 'true',
       // Auth
       JWT_SECRET: medusaJwtSecret.value,
@@ -534,50 +552,22 @@ export function setup(infra: SharedInfra) {
     },
   });
 
-  // ─── storefront WAF (CloudFront IP 차단) ───
+  // ─── storefront IP 차단 (CloudFront Function) ───
   // 레거시 cafe24 상점/보안 설정에서 차단하던 IP를 뉴 아몬드영 스토어프론트에도 동일 적용.
-  // CloudFront에 붙는 WAF는 global scope = us-east-1 강제이므로 전용 provider로 생성한다.
-  const wafUsEast1 = new aws.Provider('WafUsEast1', { region: 'us-east-1' });
-
-  const storefrontBlockIpSet = new aws.wafv2.IpSet(
-    'StorefrontBlockIpSet',
-    {
-      scope: 'CLOUDFRONT',
-      ipAddressVersion: 'IPV4',
-      // 단일 IP는 /32. cafe24 상점/보안 설정의 차단 목록과 동기화한다.
-      addresses: ['125.60.32.38/32', '211.252.157.13/32', '210.220.13.170/32', '210.95.250.112/32', '210.90.35.236/32'],
-    },
-    { provider: wafUsEast1 },
-  );
-
-  const storefrontWebAclResource = new aws.wafv2.WebAcl(
-    'StorefrontWebAcl',
-    {
-      scope: 'CLOUDFRONT',
-      defaultAction: { allow: {} }, // 기본 허용, IPSet에 든 IP만 차단
-      rules: [
-        {
-          name: 'block-cafe24-ips',
-          priority: 1,
-          action: { block: {} },
-          statement: {
-            ipSetReferenceStatement: { arn: storefrontBlockIpSet.arn },
-          },
-          visibilityConfig: {
-            cloudwatchMetricsEnabled: true,
-            metricName: 'block-cafe24-ips',
-            sampledRequestsEnabled: true,
-          },
-        },
-      ],
-      visibilityConfig: {
-        cloudwatchMetricsEnabled: true,
-        metricName: 'StorefrontWebAcl',
-        sampledRequestsEnabled: true,
-      },
-    },
-    { provider: wafUsEast1 },
-  );
+  // 원래 WAF(WebACL + IPSet)였으나 고정비($5+룰$1)+요청당 과금으로 월 ~$20 → SST 가 어차피
+  // 만드는 viewer-request CloudFront Function 에 코드 주입(injection)으로 대체 (요청 1M당
+  // $0.10, 월 2M 무료). 차단 목록 변경 시 아래 배열만 수정해 재배포.
+  const storefrontBlockedIps = [
+    '125.60.32.38',
+    '211.252.157.13',
+    '210.220.13.170',
+    '210.95.250.112',
+    '210.90.35.236',
+  ];
+  const storefrontBlockIpInjection = `
+  if (${JSON.stringify(storefrontBlockedIps)}.includes(event.viewer.ip)) {
+    return { statusCode: 403, statusDescription: "Forbidden" };
+  }`;
 
   // ─── storefront (Next.js / OpenNext, CloudFront) ───
   // Medusa STORE_CORS/AUTH_CORS에 이미 url("www")로 등록되어 있다.
@@ -599,11 +589,9 @@ export function setup(infra: SharedInfra) {
           // Route53 record 생성이 충돌하므로 덮어쓰기 허용.
           dns: sst.aws.dns({ override: true }),
         },
-    transform: {
-      // CloudFront distribution에 위 WebACL 연결 → 스토어프론트 전체 IP 차단.
-      cdn: (cdnArgs) => {
-        cdnArgs.webAclArn = storefrontWebAclResource.arn;
-      },
+    // viewer-request 함수에 IP 차단 코드 주입 → 정적 자산 포함 전체 behavior 에서 403.
+    edge: {
+      viewerRequest: { injection: storefrontBlockIpInjection },
     },
     environment: {
       // GA4 측정 ID — live 만 주입해 dev 트래픽이 운영 속성에 섞이지 않게 한다.

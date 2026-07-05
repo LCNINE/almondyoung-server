@@ -58,11 +58,13 @@ export function setup() {
       link?: sst.Linkable[];
       loadBalancerHealth?: Record<string, any>;
       serviceName: string;
+      architecture?: "x86_64" | "arm64"; // 기본 x86_64. arm64(Graviton) = 동일 성능 ~20% 저렴.
     },
   ) =>
     new sst.aws.Service(name, {
       cluster,
       link: opts.link,
+      ...(opts.architecture ? { architecture: opts.architecture } : {}),
       loadBalancer: {
         instance: userAlb,
         rules: [
