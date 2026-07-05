@@ -45,8 +45,9 @@ import {
   tagValues,
   tagGroups,
 } from '../../../schema/catalog.schema';
-import { eq, and, ilike, count, asc, desc, inArray, isNull, isNotNull, sql } from 'drizzle-orm';
+import { eq, and, or, ilike, count, asc, desc, gte, lte, inArray, isNull, isNotNull, sql } from 'drizzle-orm';
 import { ProductVersionsService } from './product-versions.service';
+import { resolveMasterSort } from './product-masters-sort.util';
 import { PricingCalculatorService } from '../../pricing/pricing-calculator.service';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
 import { v7 as uuidv7 } from 'uuid';
@@ -493,6 +494,12 @@ export class ProductMastersService {
       limit?: number;
       deleted?: boolean;
       ids?: string[];
+      productType?: 'regular_sale' | 'limited_edition';
+      approvalStatus?: 'draft' | 'pending' | 'approved' | 'rejected';
+      createdFrom?: string;
+      createdTo?: string;
+      sort?: 'createdAt' | 'name' | 'updatedAt';
+      order?: 'asc' | 'desc';
     },
     tx?: DbTransaction,
   ): Promise<{
@@ -594,14 +601,37 @@ export class ProductMastersService {
         whereConditions.push(ilike(productMasterVersions.brand, `%${filters.brand}%`));
       }
 
-      // name 검색 필터
+      // 키워드 검색: 상품명 + 품번코드 부분 일치 (대소문자 무시)
       if (filters?.name) {
-        whereConditions.push(ilike(productMasterVersions.name, `%${filters.name}%`));
+        whereConditions.push(
+          or(
+            ilike(productMasterVersions.name, `%${filters.name}%`),
+            ilike(productMasterVersions.productCode, `%${filters.name}%`),
+          ),
+        );
       }
 
       // ids 필터 (배치 조회용)
       if (filters?.ids && filters.ids.length > 0) {
         whereConditions.push(inArray(productMasters.id, filters.ids));
+      }
+
+      // 상품 유형 필터
+      if (filters?.productType) {
+        whereConditions.push(eq(productMasterVersions.productType, filters.productType));
+      }
+
+      // 승인 상태 필터
+      if (filters?.approvalStatus) {
+        whereConditions.push(eq(productMasterVersions.approvalStatus, filters.approvalStatus));
+      }
+
+      // 등록일 범위 필터 — 화면 '등록일' 컬럼과 동일하게 product_masters.createdAt 기준
+      if (filters?.createdFrom) {
+        whereConditions.push(gte(productMasters.createdAt, new Date(filters.createdFrom)));
+      }
+      if (filters?.createdTo) {
+        whereConditions.push(lte(productMasters.createdAt, new Date(filters.createdTo)));
       }
 
       // 모드별 버전 필터: active는 productMasterVersions 컬럼으로, 다른 모드는 ranked subquery의 rn=1로.
@@ -670,7 +700,9 @@ export class ProductMastersService {
           : dataBaseQuery;
 
       const filteredDataQuery = whereClause ? dataQueryWithCategory.where(whereClause) : dataQueryWithCategory;
-      const orderedQuery = filteredDataQuery.orderBy(desc(productMasterVersions.createdAt));
+      const { column: sortColumn, direction: sortDirection } = resolveMasterSort(filters?.sort, filters?.order);
+      // 안정 페이지네이션을 위해 master id 를 2차 정렬키로 고정
+      const orderedQuery = filteredDataQuery.orderBy(sortDirection(sortColumn), desc(productMasters.id));
 
       const rawData = await (returnAll ? orderedQuery : orderedQuery.limit(limit).offset(offset));
 
