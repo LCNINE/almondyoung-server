@@ -130,6 +130,13 @@ export interface MastersQuery {
   status?: ProductStatus;
   /** active(기본): active 버전만 / active-or-inactive: active 우선, 없으면 최신 inactive 포함 / all: draft만 있는 상품 포함 */
   mode?: 'active' | 'active-or-inactive' | 'all';
+  productType?: 'regular_sale' | 'limited_edition';
+  approvalStatus?: 'draft' | 'pending' | 'approved' | 'rejected';
+  /** 등록일 범위 시작(ISO). product_masters.createdAt 기준 */
+  createdFrom?: string;
+  createdTo?: string;
+  sort?: 'createdAt' | 'name' | 'updatedAt';
+  order?: 'asc' | 'desc';
   limit?: number;
   page?: number;
 }
