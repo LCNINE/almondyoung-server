@@ -54,17 +54,20 @@ export function setup(opts?: { baseDomain?: string }) {
   // ─── Database ───
   const db = new sst.aws.Postgres('Db', {
     vpc,
-    instance: 't4g.medium',
+    // t4g.small(2GB): 데모 트래픽 + 논리 DB 11개 기준 다운사이즈 (비용 절감, medium 대비 -$37/월).
+    // 메모리 압박(스왑/커넥션 실패) 관측 시 't4g.medium' 으로 원복 — 인스턴스 클래스 변경은
+    // in-place modify 로 수 분 다운타임만 발생.
+    instance: 't4g.small',
   });
 
   const dbUrl = (dbName: string) =>
     $interpolate`postgresql://${db.username}:${db.password}@${db.host}:${db.port}/${dbName}?sslmode=require`;
 
-  // ─── Redis (ElastiCache Serverless) ───
-  const redis = new sst.aws.Redis('Redis', { vpc, cluster: false });
-  const encodedRedisPassword = redis.password?.apply((p) => encodeURIComponent(p));
-  const redisUrl = (dbIndex: number) =>
-    $interpolate`rediss://${redis.username}:${encodedRedisPassword}@${redis.host}:${redis.port}/${dbIndex}`;
+  // ─── Redis: ElastiCache 제거됨 ───
+  // 유일한 컨슈머가 Medusa(replica 1 고정)라 ElastiCache(cache.t4g.micro, $17.5/월) 대신
+  // Medusa 태스크 안에 valkey 사이드카 컨테이너를 띄워 localhost 로 붙는다 (services.ts 참조).
+  // 캐시/이벤트버스 용도라 태스크 재시작 시 데이터 유실은 허용. Medusa 를 다시 스케일아웃하거나
+  // 다른 서비스가 Redis 를 쓰게 되면 ElastiCache 를 복원할 것.
 
   // ─── Search: OpenSearch 도메인 제거됨 ───
   // search 서비스는 Railway(opensearch-development.up.railway.app)를 사용한다 (services.ts searchEnv).
@@ -114,6 +117,9 @@ export function setup(opts?: { baseDomain?: string }) {
       memory?: string; // e.g. "0.5 GB", "2 GB", "4 GB"
       scaling?: { min: number; max: number };
       architecture?: 'x86_64' | 'arm64'; // 기본 x86_64. arm64(Graviton) = 동일 성능 ~20% 저렴.
+      // 메인 앱 옆에 붙는 보조 컨테이너 (예: Medusa 의 valkey). 지정 시 image/environment 는
+      // 'main' 컨테이너로 내려가고 ALB 룰도 'main' 으로 향한다. 같은 태스크라 localhost 로 통신.
+      sidecars?: { name: string; image: string; command?: string[] }[],
     },
   ) =>
     new sst.aws.Service(name, {
@@ -129,22 +135,45 @@ export function setup(opts?: { baseDomain?: string }) {
           {
             listen: '443/https',
             forward: `${opts.port}/http` as const,
+            // 다중 컨테이너일 때만 SST 가 container 지정을 요구한다.
+            ...(opts.sidecars?.length ? { container: 'main' } : {}),
             conditions: { path: '/*' },
             priority: opts.priority,
           },
         ],
         health: opts.loadBalancerHealth,
       },
-      image: {
-        context: dockerContext,
-        dockerfile: opts.dockerfile,
-        args: opts.buildArgs,
-      },
-      environment: {
-        ...baseEnv(opts.domainSlug),
-        PORT: String(opts.port),
-        ...opts.environment,
-      },
+      ...(opts.sidecars?.length
+        ? {
+            containers: [
+              {
+                name: 'main',
+                image: {
+                  context: dockerContext,
+                  dockerfile: opts.dockerfile,
+                  args: opts.buildArgs,
+                },
+                environment: {
+                  ...baseEnv(opts.domainSlug),
+                  PORT: String(opts.port),
+                  ...opts.environment,
+                },
+              },
+              ...opts.sidecars,
+            ],
+          }
+        : {
+            image: {
+              context: dockerContext,
+              dockerfile: opts.dockerfile,
+              args: opts.buildArgs,
+            },
+            environment: {
+              ...baseEnv(opts.domainSlug),
+              PORT: String(opts.port),
+              ...opts.environment,
+            },
+          }),
       transform: {
         ...opts.transform,
         service: (args: Record<string, any>) => {
@@ -254,9 +283,7 @@ export function setup(opts?: { baseDomain?: string }) {
     vpc,
     cluster,
     db,
-    redis,
     dbUrl,
-    redisUrl,
     baseDomain,
     domain,
     url,
