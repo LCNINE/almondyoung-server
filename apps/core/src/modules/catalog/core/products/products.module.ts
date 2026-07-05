@@ -5,7 +5,6 @@ import { ProductMasterVersionsController } from './controllers/product-master-ve
 import { ProductPurchaseConstraintsController } from './controllers/product-purchase-constraints.controller';
 import { ProductMastersService } from './services/product-masters.service';
 import { ProductVariantsService } from './services/product-variants.service';
-import { ProductSearchService } from './services/product-search.service';
 import { ProductVersionsService } from './services/product-versions.service';
 import { ProductPurchaseConstraintsService } from './services/product-purchase-constraints.service';
 import { PricingModule } from '../pricing/pricing.module';
@@ -31,7 +30,6 @@ import { ProductSellableQuantityModule } from '../../../inventory/product-sellab
   providers: [
     ProductMastersService,
     ProductVariantsService,
-    ProductSearchService,
     ProductVersionsService,
     ProductPurchaseConstraintsService,
     ProductReadAssembler,
@@ -43,7 +41,6 @@ import { ProductSellableQuantityModule } from '../../../inventory/product-sellab
   exports: [
     ProductMastersService,
     ProductVariantsService,
-    ProductSearchService,
     ProductVersionsService,
     ProductPurchaseConstraintsService,
     ProductReadAssembler,
