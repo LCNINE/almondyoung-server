@@ -9,7 +9,6 @@ export function setup(infra: SharedInfra) {
     cluster,
     db,
     redis,
-    opensearch,
     dbUrl,
     redisUrl,
     baseDomain,
@@ -251,7 +250,7 @@ export function setup(infra: SharedInfra) {
     OIDC_ISSUER_URL: idpUserServiceUrl,
   });
   const searchEnv = withPrefix('SEARCH', {
-    // TEMP: OpenSearch(VPC) 트러블슈팅 동안 Railway 폴백 (개별 서비스와 동일 값 유지).
+    // search 백엔드는 Railway OpenSearch. AWS OpenSearch 도메인은 미사용으로 제거됨 (shared.ts 참조).
     OPENSEARCH_NODE: 'https://opensearch-development.up.railway.app',
     SEARCH_PRODUCTS_INDEX: 'search_products',
     ...kafkaEnv('search', 'search-indexer-group'),
