@@ -2,7 +2,6 @@ import {
   Controller,
   Get,
   Post,
-  Put,
   Patch,
   Delete,
   Body,
@@ -17,12 +16,9 @@ import { DateMapper } from '../../../common/mappers';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { ProductMastersService } from '../services/product-masters.service';
 import { ProductVersionsService } from '../services/product-versions.service';
-import { ZodValidationPipe } from '@app/shared';
 import {
   MasterProductWithPrimaryVersionDto,
   ProductDto,
-  ProductListItemDto,
-  ProductListResponseDto,
   ProductSummaryDto,
 } from '../dto/products/product-response.dto';
 import { ProductMapper } from '../mappers/product.mapper';
@@ -154,7 +150,8 @@ export class ProductMastersController {
     name: 'approvalStatus',
     required: false,
     enum: ['draft', 'pending', 'approved', 'rejected'],
-    description: '승인 상태',
+    description:
+      "승인 상태. mode='active'(기본)에선 승인된 active 버전만 조회되므로 draft/pending/rejected 필터는 mode='all'과 함께 사용.",
   })
   @ApiQuery({
     name: 'createdFrom',

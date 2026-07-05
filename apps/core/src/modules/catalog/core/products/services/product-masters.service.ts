@@ -621,7 +621,9 @@ export class ProductMastersService {
         whereConditions.push(eq(productMasterVersions.productType, filters.productType));
       }
 
-      // 승인 상태 필터
+      // 승인 상태 필터: mode 와 교차한다. 기본 mode='active' 는 status='active'(대개 approved) 버전만
+      // 보여주므로, draft/pending/rejected 로 필터하려면 mode='all'(또는 'active-or-inactive')을
+      // 함께 지정해야 한다. 승인 대기 전용 조회는 GET /masters/pending-approval 참고.
       if (filters?.approvalStatus) {
         whereConditions.push(eq(productMasterVersions.approvalStatus, filters.approvalStatus));
       }
