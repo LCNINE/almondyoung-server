@@ -491,7 +491,7 @@ export function setup(infra: SharedInfra) {
       S3_BUCKET: 'almondyoung-medusa-digital-asset',
       // Admin & logging
       MEDUSA_ADMIN_ONBOARDING_TYPE: 'default',
-      LOG_LEVEL: 'debug',
+      LOG_LEVEL: 'info',
     },
   });
 

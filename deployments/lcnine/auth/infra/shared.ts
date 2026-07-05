@@ -85,6 +85,20 @@ export function setup() {
         PORT: String(opts.port),
         ...opts.environment,
       },
+      transform: {
+        service: (args: Record<string, any>) => {
+          // Route outbound traffic through the platform VPC NAT (fixed EIP) instead of a
+          // per-task public IP. SST defaults its Service to public subnets + assignPublicIp,
+          // costing a public IPv4 per task; override to private subnets like the services stack.
+          args.networkConfiguration = vpc.privateSubnets.apply((subnets) =>
+            vpc.securityGroups.apply((sgs) => ({
+              assignPublicIp: false,
+              subnets,
+              securityGroups: sgs,
+            })),
+          );
+        },
+      },
     });
 
   return {
