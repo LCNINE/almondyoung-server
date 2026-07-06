@@ -415,7 +415,7 @@ export function setup(infra: SharedInfra) {
     // 1 GB → 2 GB: valkey 사이드카(256MB cap) 동거분 확보. 메모리 0.5GB당 ~$1.5/월이라
     // ElastiCache 제거(-$17.5/월) 대비 미미. Medusa 단독 시절 1GB 로 돌았음을 참고.
     memory: '2 GB',
-    scaling: { min: 1, max: 1 },
+    scaling: { min: 1, max: 2 },
     // ElastiCache 대체: 같은 태스크의 valkey 사이드카 (shared.ts 의 Redis 제거 주석 참조).
     // - noeviction: event-bus/workflow-engine 이 BullMQ 큐로 쓰므로 키 eviction 은 유실 사고.
     //   가득 차면 쓰기 에러가 나게 두는 편이 안전 (256MB, 데모 트래픽 기준 여유).
@@ -426,10 +426,14 @@ export function setup(infra: SharedInfra) {
         image: 'valkey/valkey:8-alpine',
         command: [
           'valkey-server',
-          '--maxmemory', '256mb',
-          '--maxmemory-policy', 'noeviction',
-          '--appendonly', 'no',
-          '--save', '',
+          '--maxmemory',
+          '256mb',
+          '--maxmemory-policy',
+          'noeviction',
+          '--appendonly',
+          'no',
+          '--save',
+          '',
         ],
       },
     ],
@@ -471,9 +475,12 @@ export function setup(infra: SharedInfra) {
       AUTH_SECRET: idpAuthSecret,
       MEDUSA_API_KEY: medusaApiKey.value,
       // CORS
-      STORE_CORS: [storefrontUrl, 'https://almondyoung.com', 'https://www.almondyoung.com', 'http://localhost:8001'].join(
-        ',',
-      ),
+      STORE_CORS: [
+        storefrontUrl,
+        'https://almondyoung.com',
+        'https://www.almondyoung.com',
+        'http://localhost:8001',
+      ].join(','),
       ADMIN_CORS: [url('medusa'), 'http://localhost:9000'].join(','),
       AUTH_CORS: [
         url('medusa'),
@@ -557,13 +564,7 @@ export function setup(infra: SharedInfra) {
   // 원래 WAF(WebACL + IPSet)였으나 고정비($5+룰$1)+요청당 과금으로 월 ~$20 → SST 가 어차피
   // 만드는 viewer-request CloudFront Function 에 코드 주입(injection)으로 대체 (요청 1M당
   // $0.10, 월 2M 무료). 차단 목록 변경 시 아래 배열만 수정해 재배포.
-  const storefrontBlockedIps = [
-    '125.60.32.38',
-    '211.252.157.13',
-    '210.220.13.170',
-    '210.95.250.112',
-    '210.90.35.236',
-  ];
+  const storefrontBlockedIps = ['125.60.32.38', '211.252.157.13', '210.220.13.170', '210.95.250.112', '210.90.35.236'];
   const storefrontBlockIpInjection = `
   if (${JSON.stringify(storefrontBlockedIps)}.includes(event.viewer.ip)) {
     return { statusCode: 403, statusDescription: "Forbidden" };
