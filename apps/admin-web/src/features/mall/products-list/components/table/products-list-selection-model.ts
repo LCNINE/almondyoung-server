@@ -4,6 +4,9 @@ export type SelectedProductSnapshot = {
   masterId: string;
   name: string;
   thumbnail: string | null;
+  hideMembershipPriceForNonMembers: boolean;
+  isVisibleToMembersOnly: boolean;
+  isOverseas: boolean;
 };
 
 /** 유지되는 선택 상태(rowSelection)에서 선택된 masterId 만 뽑는다. */
@@ -18,7 +21,12 @@ function snapshotsEqual(
   b: SelectedProductSnapshot,
 ): boolean {
   return (
-    a.masterId === b.masterId && a.name === b.name && a.thumbnail === b.thumbnail
+    a.masterId === b.masterId &&
+    a.name === b.name &&
+    a.thumbnail === b.thumbnail &&
+    a.hideMembershipPriceForNonMembers === b.hideMembershipPriceForNonMembers &&
+    a.isVisibleToMembersOnly === b.isVisibleToMembersOnly &&
+    a.isOverseas === b.isOverseas
   );
 }
 
@@ -48,7 +56,15 @@ export function reconcileSelectedSnapshots(
 
   for (const id of selectedIdsFromRowSelection(rowSelection)) {
     next[id] =
-      byId.get(id) ?? prev[id] ?? { masterId: id, name: id, thumbnail: null };
+      byId.get(id) ??
+      prev[id] ?? {
+        masterId: id,
+        name: id,
+        thumbnail: null,
+        hideMembershipPriceForNonMembers: false,
+        isVisibleToMembersOnly: false,
+        isOverseas: false,
+      };
   }
 
   return { changed: !snapshotMapsEqual(prev, next), next };

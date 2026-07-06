@@ -8,7 +8,23 @@ const snap = (
   masterId: string,
   name = masterId,
   thumbnail: string | null = null,
-): SelectedProductSnapshot => ({ masterId, name, thumbnail });
+  flags: Partial<
+    Pick<
+      SelectedProductSnapshot,
+      | 'hideMembershipPriceForNonMembers'
+      | 'isVisibleToMembersOnly'
+      | 'isOverseas'
+    >
+  > = {}
+): SelectedProductSnapshot => ({
+  masterId,
+  name,
+  thumbnail,
+  hideMembershipPriceForNonMembers: false,
+  isVisibleToMembersOnly: false,
+  isOverseas: false,
+  ...flags,
+});
 
 describe('selectedIdsFromRowSelection', () => {
   it('truthy 값을 가진 키만 반환한다', () => {
@@ -73,6 +89,9 @@ describe('reconcileSelectedSnapshots', () => {
       masterId: 'orphan',
       name: 'orphan',
       thumbnail: null,
+      hideMembershipPriceForNonMembers: false,
+      isVisibleToMembersOnly: false,
+      isOverseas: false,
     });
   });
 
@@ -85,5 +104,16 @@ describe('reconcileSelectedSnapshots', () => {
     );
     expect(changed).toBe(true);
     expect(next.p1).toEqual(snap('p1', '상품1-수정', 'thumb1.jpg'));
+  });
+
+  it('정책 플래그만 바뀌어도 changed=true 로 갱신한다', () => {
+    const prev = { p1: snap('p1', '상품1', 't.jpg', { isOverseas: false }) };
+    const { changed, next } = reconcileSelectedSnapshots(
+      prev,
+      { p1: true },
+      [snap('p1', '상품1', 't.jpg', { isOverseas: true })],
+    );
+    expect(changed).toBe(true);
+    expect(next.p1.isOverseas).toBe(true);
   });
 });

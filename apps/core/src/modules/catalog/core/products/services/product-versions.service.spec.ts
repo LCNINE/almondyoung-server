@@ -390,6 +390,40 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     expect(emit).toHaveBeenNthCalledWith(1, draftVersion, previousActiveVersion, 'published', tx);
     expect(emit).toHaveBeenNthCalledWith(2, inactiveVersion, previousActiveVersion, 'rollback', tx);
   });
+
+  it('updateExposurePolicy: 제공된 플래그만 set 하고 이벤트를 published로 1회 발행한다', async () => {
+    const { service, outboxPublisher, projectionSnapshotAssembler } = makeService();
+    projectionSnapshotAssembler.assembleActiveVersionSnapshot.mockResolvedValue({
+      snapshot: { name: 'N' },
+      categoryIds: [],
+      primaryCategoryId: null,
+    });
+    jest
+      .spyOn(service as any, 'getActiveVersion')
+      .mockResolvedValue({ id: 'v1', masterId: 'm1', name: 'N' });
+
+    const where = jest.fn().mockResolvedValue(undefined);
+    const set = jest.fn().mockReturnValue({ where });
+    const tx = { update: jest.fn().mockReturnValue({ set }) } as any;
+
+    await service.updateExposurePolicy(
+      'm1',
+      { isVisibleToMembersOnly: true, hideMembershipPriceForNonMembers: false },
+      tx,
+    );
+
+    const setArg = set.mock.calls[0][0];
+    expect(setArg).toMatchObject({
+      isVisibleToMembersOnly: true,
+      hideMembershipPriceForNonMembers: false,
+      isMembershipOnly: false, // deprecated 컬럼 미러
+    });
+    expect(setArg.isOverseas).toBeUndefined(); // 미제공 플래그는 건드리지 않음
+    expect(outboxPublisher.saveEvent).toHaveBeenCalledTimes(1);
+    const [event, txArg] = outboxPublisher.saveEvent.mock.calls[0];
+    expect(event.payload.changeReason).toBe('published');
+    expect(txArg).toBe(tx);
+  });
 });
 
 describe('ProductVersionsService copy mappings', () => {

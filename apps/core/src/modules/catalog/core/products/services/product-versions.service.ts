@@ -714,6 +714,44 @@ export class ProductVersionsService {
   }
 
   /**
+   * 운영 노출 정책(멤버십가 비공개/회원 전용 노출/해외직구)을 한 번의 UPDATE + 한 번의
+   * 이벤트로 반영한다. undefined 아닌 필드만 변경. draft 없이 active 버전 직접 수정 후 채널 재싱크.
+   */
+  async updateExposurePolicy(
+    masterId: string,
+    patch: {
+      hideMembershipPriceForNonMembers?: boolean;
+      isVisibleToMembersOnly?: boolean;
+      isOverseas?: boolean;
+    },
+    tx?: DbTransaction,
+  ): Promise<void> {
+    return this.db.run(async (tx) => {
+      const activeVersion = await this.getActiveVersion(masterId, tx);
+
+      const set: Partial<typeof productMasterVersions.$inferInsert> = { updatedAt: new Date() };
+      if (patch.hideMembershipPriceForNonMembers !== undefined) {
+        set.hideMembershipPriceForNonMembers = patch.hideMembershipPriceForNonMembers;
+        set.isMembershipOnly = patch.hideMembershipPriceForNonMembers; // deprecated 컬럼 미러 (단건 경로와 동일)
+      }
+      if (patch.isVisibleToMembersOnly !== undefined) {
+        set.isVisibleToMembersOnly = patch.isVisibleToMembersOnly;
+      }
+      if (patch.isOverseas !== undefined) {
+        set.isOverseas = patch.isOverseas;
+      }
+
+      await tx.update(productMasterVersions).set(set).where(eq(productMasterVersions.id, activeVersion.id));
+
+      // 스냅샷은 _emit 내부에서 같은 tx로 UPDATE 이후의 DB 상태를 다시 조회해 조립하므로,
+      // 갱신 전 activeVersion 객체를 그대로 넘겨도 새 값이 반영된다 (단건 경로와 동일).
+      await this._emitActiveVersionChangedEvent(activeVersion, null, 'published', tx);
+
+      this.logger.log(`updateExposurePolicy: master=${masterId} patch=${JSON.stringify(patch)}`);
+    }, tx);
+  }
+
+  /**
    * Master의 Active 버전을 Inactive로 전환 (상품 비공개)
    */
   async unpublishMaster(masterId: string, tx?: DbTransaction): Promise<void> {

@@ -175,6 +175,8 @@ export interface MasterSummaryDto {
   isVisibleToMembersOnly: boolean;
   /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly: boolean;
+  /** 해외직구 상품 여부 — 체크아웃 시 개인통관고유부호 필수. (목록 API가 이미 반환) */
+  isOverseas: boolean;
   status: ProductStatus;
   createdAt: string;
   optionGroupNames: string[];
@@ -957,6 +959,19 @@ export interface BulkUpdateResultDto {
   updated: number;
   products: unknown[];
   /** status: 'active'(일괄 재공개) 경로에서만 채워진다 — 검증 실패한 상품 목록. */
+  failed?: BulkUpdateFailureDto[];
+}
+
+export interface BulkUpdatePolicyDto {
+  productIds: string[];
+  hideMembershipPriceForNonMembers?: boolean;
+  isVisibleToMembersOnly?: boolean;
+  isOverseas?: boolean;
+}
+
+// POST /masters/bulk/policy 응답 모양 (products 없음).
+export interface BulkPolicyResultDto {
+  updated: number;
   failed?: BulkUpdateFailureDto[];
 }
 
