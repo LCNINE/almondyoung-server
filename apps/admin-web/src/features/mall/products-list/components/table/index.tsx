@@ -48,6 +48,12 @@ export function ProductsListTable() {
   const rowSelection = table.getState().rowSelection;
   const selectedIds = selectedIdsFromRowSelection(rowSelection);
 
+  // 스냅샷(selectedItems)은 effect 로 한 틱 늦게 갱신되므로, 표시용 목록은 현재
+  // 선택 상태로 즉시 필터해 개별 해제가 프레임 지연 없이 반영되도록 한다.
+  const selectedItemsList = Object.values(selectedItems).filter(
+    (it) => rowSelection[it.masterId]
+  );
+
   // 선택되는 순간 그 행은 반드시 현재 페이지에 로드돼 있으므로,
   // 이름/썸네일 스냅샷을 담아 교차 페이지/필터에서도 목록을 보여줄 수 있게 한다.
   useEffect(() => {
@@ -78,7 +84,7 @@ export function ProductsListTable() {
       {selectedIds.length > 0 && (
         <div className="fixed z-50 flex items-center gap-2 p-2 pl-4 -translate-x-1/2 border rounded-lg shadow-lg bottom-6 left-1/2 bg-background">
           <SelectedProductsModal
-            items={Object.values(selectedItems)}
+            items={selectedItemsList}
             count={selectedIds.length}
             onRemove={(masterId) =>
               table.setRowSelection((prev) => {
@@ -138,7 +144,7 @@ export function ProductsListTable() {
         onOpenChange={(open) => !open && setModalAction(null)}
         action={modalAction}
         selectedIds={selectedIds}
-        selectedItems={Object.values(selectedItems)}
+        selectedItems={selectedItemsList}
         onSuccess={handleSuccess}
       />
     </div>
