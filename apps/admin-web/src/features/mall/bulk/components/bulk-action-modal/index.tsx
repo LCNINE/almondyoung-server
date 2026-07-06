@@ -39,6 +39,7 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   action: BulkActionType | null;
   selectedIds: string[];
+  selectedItems?: { masterId: string; name: string }[];
   onSuccess: () => void;
 }
 
@@ -47,6 +48,7 @@ export function BulkActionModal({
   onOpenChange,
   action,
   selectedIds,
+  selectedItems,
   onSuccess,
 }: Props) {
   const [status, setStatus] = useState('');
@@ -210,9 +212,24 @@ export function BulkActionModal({
           )}
 
           {(action === 'delete' || action === 'restore') && (
-            <p className="text-sm text-destructive">
-              이 작업은 되돌릴 수 있습니다.
-            </p>
+            <div className="space-y-2">
+              <p className="text-sm text-destructive">
+                이 작업은 되돌릴 수 있습니다.
+              </p>
+              {selectedItems && selectedItems.length > 0 && (
+                <ul className="p-2 space-y-1 overflow-y-auto text-xs border rounded-md max-h-40 text-muted-foreground">
+                  {selectedItems.map((item) => (
+                    <li
+                      key={item.masterId}
+                      className="truncate text-foreground"
+                      title={item.name}
+                    >
+                      {item.name}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           )}
         </div>
 
