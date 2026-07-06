@@ -18,12 +18,14 @@ import {
   BulkActionModal,
   type BulkActionType,
 } from '@/features/mall/bulk/components/bulk-action-modal';
+import { BulkPolicyModal } from '@/features/mall/bulk/components/bulk-policy-modal';
 import { SelectedProductsModal } from '../selected-products-modal';
 
 const PAGE_SIZE = 20;
 
 export function ProductsListTable() {
   const [modalAction, setModalAction] = useState<BulkActionType | null>(null);
+  const [policyOpen, setPolicyOpen] = useState(false);
 
   const { searchParams: query } = useProductsListTableQuery({
     pageSize: PAGE_SIZE,
@@ -111,6 +113,13 @@ export function ProductsListTable() {
           </Button>
           <Button
             size="sm"
+            variant="outline"
+            onClick={() => setPolicyOpen(true)}
+          >
+            운영 노출 정책 변경
+          </Button>
+          <Button
+            size="sm"
             variant="destructive"
             onClick={() => setModalAction('delete')}
           >
@@ -146,6 +155,14 @@ export function ProductsListTable() {
         open={modalAction !== null}
         onOpenChange={(open) => !open && setModalAction(null)}
         action={modalAction}
+        selectedIds={selectedIds}
+        selectedItems={selectedItemsList}
+        onSuccess={handleSuccess}
+      />
+
+      <BulkPolicyModal
+        open={policyOpen}
+        onOpenChange={setPolicyOpen}
         selectedIds={selectedIds}
         selectedItems={selectedItemsList}
         onSuccess={handleSuccess}
