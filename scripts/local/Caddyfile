@@ -1,0 +1,51 @@
+# dev 서버 노트북용 리버스 프록시 — sst dev 의 host 기반 라우팅 재현 (docs/local-dev.md)
+# 실행: sudo caddy run --config scripts/local/Caddyfile
+# 전제: *.dev.lcnine-dev.com A 레코드가 이 노트북(Tailscale IP)을 가리켜야 함.
+# http:// prefix = 인증서 발급 시도 안 함 (사설 IP 라 HTTP-01 불가). 접속은 http 로.
+
+http://core.dev.lcnine-dev.com {
+	reverse_proxy localhost:3100
+}
+http://user.dev.lcnine-dev.com {
+	reverse_proxy localhost:3000
+}
+http://wallet.dev.lcnine-dev.com {
+	reverse_proxy localhost:5001
+}
+http://medusa.dev.lcnine-dev.com {
+	reverse_proxy localhost:9000
+}
+http://membership.dev.lcnine-dev.com {
+	reverse_proxy localhost:3001
+}
+http://channel-adapter.dev.lcnine-dev.com {
+	reverse_proxy localhost:3003
+}
+http://notification.dev.lcnine-dev.com {
+	reverse_proxy localhost:3050
+}
+http://file.dev.lcnine-dev.com {
+	reverse_proxy localhost:3010
+}
+http://ugc.dev.lcnine-dev.com {
+	reverse_proxy localhost:3030
+}
+http://analytics.dev.lcnine-dev.com {
+	reverse_proxy localhost:3040
+}
+http://search.dev.lcnine-dev.com {
+	reverse_proxy localhost:3060
+}
+# 프론트를 노트북에서 함께 띄우는 경우
+http://www.dev.lcnine-dev.com {
+	reverse_proxy localhost:8000
+}
+http://auth.dev.lcnine-dev.com {
+	reverse_proxy localhost:8001
+}
+http://admin.dev.lcnine-dev.com {
+	reverse_proxy localhost:3200
+}
+http://wallet-web.dev.lcnine-dev.com {
+	reverse_proxy localhost:3300
+}
