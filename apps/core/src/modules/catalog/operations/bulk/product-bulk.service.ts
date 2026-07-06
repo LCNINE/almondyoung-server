@@ -50,9 +50,14 @@ export class ProductBulkService {
         await this.db.run(run, tx);
         updated += 1;
       } catch (error) {
-        // active 버전이 없는 master 는 부분 실패로 수집 — 나머지는 계속
+        // active 버전이 없거나(NotFound) 스냅샷 조립 불가(BadRequest, 예: 활성 variant 0개)한 master 는
+        // 부분 실패로 수집하고 나머지는 계속한다 (기존 bulkSoftDelete/bulkRestore 와 동일 패턴).
         if (error instanceof NotFoundException) {
           failed.push({ masterId, name: null, reason: 'active 버전이 없어 노출 정책을 적용할 수 없습니다.' });
+          continue;
+        }
+        if (error instanceof BadRequestException) {
+          failed.push({ masterId, name: null, reason: error.message });
           continue;
         }
         throw error;

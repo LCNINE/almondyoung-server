@@ -11,9 +11,11 @@ const snap = (
   flags: Partial<
     Pick<
       SelectedProductSnapshot,
-      'hideMembershipPriceForNonMembers' | 'isVisibleToMembersOnly' | 'isOverseas'
+      | 'hideMembershipPriceForNonMembers'
+      | 'isVisibleToMembersOnly'
+      | 'isOverseas'
     >
-  > = {},
+  > = {}
 ): SelectedProductSnapshot => ({
   masterId,
   name,
