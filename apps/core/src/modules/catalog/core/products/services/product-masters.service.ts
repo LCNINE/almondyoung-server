@@ -173,7 +173,7 @@ export class ProductMastersService {
     }
   }
 
-  async createMaster(tx?: DbTransaction): Promise<ProductMasterVersion> {
+  async createMaster(ownerId: string, tx?: DbTransaction): Promise<ProductMasterVersion> {
     return this.db.run(async (tx) => {
       const masterId = uuidv7();
       const versionId = uuidv7();
@@ -183,14 +183,16 @@ export class ProductMastersService {
         .insert(productMasters)
         .values({
           id: masterId,
+          createdBy: ownerId,
         })
         .returning();
 
-      // 2. 첫 번째 버전 생성
+      // 2. 첫 번째 버전 생성 (생성자를 draft 소유자로 기록 → '내 작성중 상품' 목록의 기준)
       const versionData = {
         id: versionId,
         masterId: masterId,
-        createdBy: '00000000-0000-0000-0000-000000000000',
+        draftOwnerId: ownerId,
+        createdBy: ownerId,
         status: 'draft' as const,
       };
 
