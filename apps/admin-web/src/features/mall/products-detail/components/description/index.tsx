@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useRef, useState } from 'react';
-import { ChevronDown, Save } from 'lucide-react';
+import { ChevronDown, Save, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { CardErrorBoundary } from '@/components/admin-ui-experimental/common/card-error-boundary';
 import { Container } from '@/components/admin-ui-experimental/common/container';
@@ -38,11 +38,34 @@ function insertAtCursor(
   return `${prefix}${needsLeadingNewline ? '\n' : ''}${insert}${needsTrailingNewline ? '\n' : ''}${suffix}`;
 }
 
-function LegacyHtmlPreview({ html }: { html: string }) {
+function LegacyHtmlPreview({
+  html,
+  canClear,
+  onClear,
+  pending,
+}: {
+  html: string;
+  canClear: boolean;
+  onClear: () => void;
+  pending: boolean;
+}) {
   return (
     <div>
-      <div className="mb-2 text-xs font-medium text-muted-foreground">
-        레거시 HTML 미리보기
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="text-xs font-medium text-muted-foreground">
+          레거시 HTML 미리보기
+        </div>
+        {canClear ? (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={pending}
+            onClick={onClear}
+          >
+            <Trash2 data-icon="inline-start" />
+            {pending ? '삭제 중...' : '레거시 HTML 비우기'}
+          </Button>
+        ) : null}
       </div>
       <div
         className="p-3 prose-sm prose border rounded-md max-w-none bg-muted/20"
@@ -84,6 +107,26 @@ function ProductDetailDescriptionContent({ masterId, versionId }: Props) {
             err instanceof Error
               ? err.message
               : '상품 상세설명 저장에 실패했습니다.'
+          ),
+      }
+    );
+  };
+
+  const handleClearLegacy = () => {
+    if (!data.versionId) return;
+    updateVersion.mutate(
+      {
+        masterId,
+        versionId: data.versionId,
+        dto: { descriptionHtml: null },
+      },
+      {
+        onSuccess: () => toast.success('레거시 HTML을 비웠습니다.'),
+        onError: (err) =>
+          toast.error(
+            err instanceof Error
+              ? err.message
+              : '레거시 HTML 삭제에 실패했습니다.'
           ),
       }
     );
@@ -148,7 +191,12 @@ function ProductDetailDescriptionContent({ masterId, versionId }: Props) {
         )}
 
         {!data.description && data.descriptionHtml ? (
-          <LegacyHtmlPreview html={data.descriptionHtml} />
+          <LegacyHtmlPreview
+            html={data.descriptionHtml}
+            canClear={canEdit}
+            onClear={handleClearLegacy}
+            pending={updateVersion.isPending}
+          />
         ) : null}
       </CollapsibleContent>
 
