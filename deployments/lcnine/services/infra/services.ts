@@ -411,11 +411,14 @@ export function setup(infra: SharedInfra) {
     priority: 210,
     link: [db],
     // 운영 기본 용량. 백필/이벤트 대응 시 일시적으로 올리고, 끝나면 원복한다.
-    cpu: '0.5 vCPU',
+    // 0.5 → 1 vCPU: 스케일아웃(max 2) 대신 수직 확장. valkey 사이드카가 태스크 로컬
+    // 상태(세션 + BullMQ 큐)라 태스크가 2개면 세션 공유가 깨지고 큐도 갈라진다.
+    cpu: '1 vCPU',
     // 1 GB → 2 GB: valkey 사이드카(256MB cap) 동거분 확보. 메모리 0.5GB당 ~$1.5/월이라
     // ElastiCache 제거(-$17.5/월) 대비 미미. Medusa 단독 시절 1GB 로 돌았음을 참고.
     memory: '2 GB',
-    scaling: { min: 1, max: 2 },
+    // max 1 고정: valkey 가 사이드카인 한 스케일아웃 금지 (위 cpu 주석 참조).
+    scaling: { min: 1, max: 1 },
     // ElastiCache 대체: 같은 태스크의 valkey 사이드카 (shared.ts 의 Redis 제거 주석 참조).
     // - noeviction: event-bus/workflow-engine 이 BullMQ 큐로 쓰므로 키 eviction 은 유실 사고.
     //   가득 차면 쓰기 에러가 나게 두는 편이 안전 (256MB, 데모 트래픽 기준 여유).
