@@ -10,6 +10,7 @@ import { DataTable } from '@/components/data-table';
 import { membershipApi } from '@/lib/api/domains/membership';
 import { AdminRecurringBillingRow } from '@/lib/types/dto/wallet';
 import { AdminRecurringContractSummary } from '@/lib/types/dto/membership';
+import { useUserNames } from '@/hooks/use-user-names';
 import { RecurringBillingDetailDialog } from '../detail-dialog';
 import { RecurringContractsView } from './contracts-view';
 
@@ -48,6 +49,12 @@ function RecurringBillingCmsTable({ query }: { query: ReturnType<typeof useRecur
     staleTime: 30 * 1000,
   });
 
+  const userIds = useMemo(
+    () => [...new Set((data?.data ?? []).map((r) => r.userId).filter(Boolean))],
+    [data?.data],
+  );
+  const userMap = useUserNames(userIds);
+
   const contractMap = useMemo(() => {
     const map: Record<string, AdminRecurringContractSummary> = {};
     for (const c of contracts ?? []) {
@@ -67,6 +74,7 @@ function RecurringBillingCmsTable({ query }: { query: ReturnType<typeof useRecur
       if (wId) pollWithdrawal.mutate(wId);
     },
     view: query.view,
+    userMap,
   });
 
   const { table } = useDataTable({
@@ -90,6 +98,7 @@ function RecurringBillingCmsTable({ query }: { query: ReturnType<typeof useRecur
       />
       <RecurringBillingDetailDialog
         row={selectedRow}
+        userInfo={selectedRow ? userMap[selectedRow.userId] : undefined}
         contract={
           selectedRow?.subscriberRef ? contractMap[selectedRow.subscriberRef] : undefined
         }
