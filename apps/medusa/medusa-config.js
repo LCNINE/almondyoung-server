@@ -13,7 +13,10 @@ module.exports = defineConfig({
     // Neon serverless DB용 connection pool 최적화
     databaseDriverOptions: {
       connection: {
-        ssl: { rejectUnauthorized: false },
+        // 로컬 docker postgres 는 SSL 미지원 (docs/local-dev.md)
+        ssl: /localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL || '')
+          ? false
+          : { rejectUnauthorized: false },
       },
       pool: {
         min: 2,
