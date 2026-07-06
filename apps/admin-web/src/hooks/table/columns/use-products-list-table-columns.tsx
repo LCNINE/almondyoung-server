@@ -10,6 +10,7 @@ import { DateCell } from '@/components/table/table-cells/common';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { resolvePublicFileUrl } from '@/lib/utils/file-url';
+import { ShortId } from '@/components/admin-ui-experimental/common/copy/short-id';
 
 const columnHelper = createColumnHelper<MasterSummaryDto>();
 
@@ -57,6 +58,7 @@ export function useProductsListTableColumns() {
     () => [
       columnHelper.display({
         id: 'select',
+        meta: { clickTogglesRowSelection: true },
         header: ({ table }) => (
           <Checkbox
             checked={
@@ -68,20 +70,19 @@ export function useProductsListTableColumns() {
             onClick={(e) => e.stopPropagation()}
           />
         ),
+        // 표시 전용 — 선택 토글은 DataTableRoot 의 셀 onClick(meta.clickTogglesRowSelection)이 담당한다.
+        // 이 컬럼은 DataTableRoot 안에서만 렌더해야 선택이 동작한다.
         cell: ({ row }) => (
           <Checkbox
             checked={row.getIsSelected()}
-            onCheckedChange={(value) => row.toggleSelected(!!value)}
             aria-label="행 선택"
-            onClick={(e) => e.stopPropagation()}
+            className="pointer-events-none"
           />
         ),
       }),
       columnHelper.accessor('masterId', {
         header: '품번코드',
-        cell: ({ getValue }) => (
-          <span className="break-all text-xs text-muted-foreground">{getValue()}</span>
-        ),
+        cell: ({ getValue }) => <ShortId value={getValue()} />,
       }),
       columnHelper.accessor('thumbnail', {
         header: '이미지',
