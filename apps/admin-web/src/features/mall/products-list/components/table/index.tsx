@@ -137,6 +137,7 @@ export function ProductsListTable() {
         onOpenChange={(open) => !open && setModalAction(null)}
         action={modalAction}
         selectedIds={selectedIds}
+        selectedItems={Object.values(selectedItems)}
         onSuccess={handleSuccess}
       />
     </div>
