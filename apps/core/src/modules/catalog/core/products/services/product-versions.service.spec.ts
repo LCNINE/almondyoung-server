@@ -842,3 +842,57 @@ describe('ProductVersionsService deleteDraftVersion purchase constraint cleanup'
     ]);
   });
 });
+
+describe('ProductVersionsService.getMyDraftVersions', () => {
+  function makeBareService() {
+    return new ProductVersionsService(
+      { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+  }
+
+  it('returns caller drafts with a count-based total (not the page length)', async () => {
+    const rows = [
+      {
+        masterId: 'm1',
+        versionId: 'v1',
+        name: 'A',
+        thumbnail: null,
+        brand: null,
+        productType: 'regular_sale',
+        createdAt: new Date('2026-07-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-07-06T00:00:00.000Z'),
+      },
+    ];
+    const tx: any = {
+      select: jest.fn(() => {
+        const builder: any = {
+          from: () => builder,
+          innerJoin: () => builder,
+          where: () => builder,
+          orderBy: () => builder,
+          limit: () => builder,
+          offset: () => Promise.resolve(rows),
+          // count 쿼리는 .where() 결과를 await → then 으로 [{ value }] 반환
+          then: (resolve: any, reject: any) => Promise.resolve([{ value: 7 }]).then(resolve, reject),
+        };
+        return builder;
+      }),
+    };
+
+    const service = makeBareService();
+    const result = await service.getMyDraftVersions('user-1', { page: 2, limit: 10 }, tx);
+
+    expect(result.total).toBe(7);
+    expect(result.page).toBe(2);
+    expect(result.limit).toBe(10);
+    expect(result.data).toEqual(rows);
+  });
+});
