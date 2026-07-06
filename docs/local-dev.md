@@ -49,13 +49,31 @@ AWS dev 스테이지가 제거되어, 개발은 사내 노트북에서 로컬 �
    npm run db:migrate:local        # drizzle 서비스 전체 (셸에서 localhost URL 주입 — 원격 DB 절대 안 건드림)
    cd apps/medusa && DATABASE_URL=postgresql://postgres:postgres@localhost:5432/medusa npx medusa db:migrate --execute-safe-links
    ```
-7. **서비스 실행** (필요한 것만)
+7. **서비스 실행**
+
+   **일괄 기동 (dev 서버 노트북용 권장)** — 한 번 빌드 후 nest 서비스 10개 + medusa 를 전부 띄운다:
+   ```bash
+   sudo apt install -y tmux   # 최초 1회
+   tmux                        # 터미널 닫아도 유지되게 tmux 안에서
+   npm run start:all:local     # 빌드 → 일괄 기동. 로그는 logs/<서비스>.log
+   # tmux 에서 빠져나오기: Ctrl+B 누른 뒤 D / 다시 붙기: tmux attach
+   ```
+   코드 업데이트 반영: `git pull` 후 Ctrl+C 로 내리고 다시 `npm run start:all:local`.
+   빌드 생략 재시작: `SKIP_BUILD=1 ./scripts/local/start-all.sh`
+
+   **개별 실행 (개발 머신용)** — watch 모드:
    ```bash
    npm run start:main:dev          # core
    npm run start:user-service:dev
    npm run start:wallet:dev
    # ...
    ```
+
+8. **(선택) live 데이터 복제** — 빈 DB 대신 라이브 데이터로 시작하려면 (AWS 로그인 + tunnel 권한 필요):
+   ```bash
+   ./scripts/local/refresh-from-live.sh   # live RDS → 로컬 PG 전체 덤프/복원
+   ```
+   ⚠️ 라이브 개인정보가 노트북에 복제되므로 회사 기기에서만.
 
 ## 윈도우 노트북인 경우 (WSL2)
 
