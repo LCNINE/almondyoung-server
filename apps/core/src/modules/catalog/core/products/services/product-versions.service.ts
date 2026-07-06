@@ -853,7 +853,7 @@ export class ProductVersionsService {
           masterId: productMasterVersions.masterId,
           versionId: productMasterVersions.id,
           name: productMasterVersions.name,
-          thumbnail: productMasterVersions.thumbnail,
+          thumbnail: productImages.fileId,
           brand: productMasterVersions.brand,
           productType: productMasterVersions.productType,
           createdAt: productMasterVersions.createdAt,
@@ -861,6 +861,10 @@ export class ProductVersionsService {
         })
         .from(productMasterVersions)
         .innerJoin(productMasters, eq(productMasters.id, productMasterVersions.masterId))
+        .leftJoin(
+          productImages,
+          and(eq(productImages.versionId, productMasterVersions.id), eq(productImages.isPrimary, true)),
+        )
         .where(whereClause)
         .orderBy(orderFn(sortColumn))
         .limit(limit)

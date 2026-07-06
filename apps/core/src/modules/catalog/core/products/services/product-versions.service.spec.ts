@@ -876,6 +876,7 @@ describe('ProductVersionsService.getMyDraftVersions', () => {
         const builder: any = {
           from: () => builder,
           innerJoin: () => builder,
+          leftJoin: () => builder,
           where: () => builder,
           orderBy: () => builder,
           limit: () => builder,
