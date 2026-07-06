@@ -57,6 +57,31 @@ AWS dev 스테이지가 제거되어, 개발은 사내 노트북에서 로컬 �
    # ...
    ```
 
+## 윈도우 노트북인 경우 (WSL2)
+
+레포 스크립트가 bash 라 cmd/PowerShell 에선 안 돈다. 전부 WSL2 안에서 실행한다.
+
+1. PowerShell(관리자): `wsl --install` → 재부팅 → Ubuntu 초기 설정
+2. **Docker Desktop** 설치 → Settings 에서 *WSL 2 based engine* + *WSL integration (Ubuntu)* 켜기
+3. 이후 모든 작업은 **Ubuntu(WSL) 터미널**에서. 레포는 반드시 WSL 홈(`~/`)에 clone — `/mnt/c/...` (윈도우 디스크) 에 두면 빌드가 수 배 느리고 파일 워처가 깨진다:
+   ```bash
+   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash && source ~/.bashrc
+   nvm install 22
+   git clone git@github.com:LCNINE/almondyoung-server.git ~/almondyoung-server && cd ~/almondyoung-server
+   npm install
+   tar xzf /mnt/c/Users/<윈도우계정>/Downloads/almondyoung-local-envs.tgz   # .env 묶음을 다운로드 폴더에 받아둔 경우
+   ```
+4. 나머지는 체크리스트 4~7 과 동일 (`docker compose up -d` → `npm run db:migrate:local` → 서비스 실행).
+
+**다른 기기에서 WSL2 서버로 접속하기** — WSL2 는 NAT 뒤라 윈도우 밖에서 바로 안 보인다. 둘 중 하나:
+- **Tailscale 을 WSL(Ubuntu) 안에 설치** (제일 간단): `curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up`. WSL 이 자기 tailscale IP 를 받아 포트포워딩 없이 `http://<tailscale IP>:<포트>` 로 접속.
+- **같은 LAN 만 필요하면** Windows 11 미러드 네트워킹: 윈도우 사용자 폴더에 `.wslconfig` 작성 후 `wsl --shutdown`:
+  ```
+  [wsl2]
+  networkingMode=mirrored
+  ```
+  그리고 윈도우 방화벽에서 해당 포트 인바운드 허용. 이러면 `http://<윈도우 IP>:<포트>` 로 접속.
+
 ## 다른 사람이 이 노트북에 접속하기
 
 앱들이 `0.0.0.0` 바인딩이라 서버 쪽 설정은 필요 없다.
