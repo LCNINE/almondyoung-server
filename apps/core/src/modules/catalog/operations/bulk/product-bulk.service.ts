@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { DbService, InjectDb } from '@app/db';
 import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { type PimSchema, productMasterVersions, productAuditLog } from '../../schema/catalog.schema';
-import { BulkUpdateDto, BulkDeleteDto, BulkRestoreDto } from './dto';
+import { BulkUpdateDto, BulkDeleteDto, BulkRestoreDto, BulkPolicyDto } from './dto';
 import { DbTransaction, DbClient } from '../../catalog.types';
 import { ProductVersionsService } from '../../core/products/services/product-versions.service';
 import { ProductMastersService } from '../../core/products/services/product-masters.service';
@@ -17,6 +17,54 @@ export class ProductBulkService {
 
   private getClient(tx?: DbTransaction): DbClient {
     return tx ?? this.db.db;
+  }
+
+  /**
+   * 선택 상품의 운영 노출 정책(멤버십가 비공개/회원 전용 노출/해외직구) 일괄 변경.
+   * undefined 아닌 플래그만 반영. active 버전이 없는 master 는 failed 로 수집한다.
+   * master 단위 독립 처리 — 각 건이 자체 이벤트를 발행(Medusa·검색·analytics 재싱크).
+   */
+  async bulkUpdatePolicy(dto: BulkPolicyDto, tx?: DbTransaction) {
+    const patch: {
+      hideMembershipPriceForNonMembers?: boolean;
+      isVisibleToMembersOnly?: boolean;
+      isOverseas?: boolean;
+    } = {};
+    if (dto.hideMembershipPriceForNonMembers !== undefined)
+      patch.hideMembershipPriceForNonMembers = dto.hideMembershipPriceForNonMembers;
+    if (dto.isVisibleToMembersOnly !== undefined) patch.isVisibleToMembersOnly = dto.isVisibleToMembersOnly;
+    if (dto.isOverseas !== undefined) patch.isOverseas = dto.isOverseas;
+
+    if (Object.keys(patch).length === 0) {
+      throw new BadRequestException('변경할 노출 정책 항목이 없습니다.');
+    }
+
+    let updated = 0;
+    const failed: { masterId: string; name: string | null; reason: string }[] = [];
+
+    for (const masterId of dto.productIds) {
+      const run = async (trx: DbTransaction) => {
+        await this.productVersionsService.updateExposurePolicy(masterId, patch, trx);
+      };
+      try {
+        await this.db.run(run, tx);
+        updated += 1;
+      } catch (error) {
+        // active 버전이 없거나(NotFound) 스냅샷 조립 불가(BadRequest, 예: 활성 variant 0개)한 master 는
+        // 부분 실패로 수집하고 나머지는 계속한다 (기존 bulkSoftDelete/bulkRestore 와 동일 패턴).
+        if (error instanceof NotFoundException) {
+          failed.push({ masterId, name: null, reason: 'active 버전이 없어 노출 정책을 적용할 수 없습니다.' });
+          continue;
+        }
+        if (error instanceof BadRequestException) {
+          failed.push({ masterId, name: null, reason: error.message });
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    return { updated, failed };
   }
 
   async bulkUpdate(dto: BulkUpdateDto, userId: string, tx?: DbTransaction) {

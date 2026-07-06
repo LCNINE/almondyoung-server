@@ -25,6 +25,7 @@ import {
   useBulkRestoreMasters,
 } from '@/lib/services/products';
 import type { BulkUpdateFailureDto } from '@/lib/types/dto/products';
+import { BulkFailureList } from '@/features/mall/bulk/components/bulk-failure-list';
 
 export type BulkActionType =
   | 'status'
@@ -152,23 +153,7 @@ export function BulkActionModal({
             </div>
           )}
 
-          {failedItems.length > 0 && (
-            <div className="space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-3">
-              <p className="text-sm font-medium text-destructive">
-                실패한 상품 ({failedItems.length}개)
-              </p>
-              <ul className="max-h-40 space-y-1 overflow-y-auto text-xs text-muted-foreground">
-                {failedItems.map((item) => (
-                  <li key={item.masterId}>
-                    <span className="font-medium text-foreground">
-                      {item.name ?? item.masterId}
-                    </span>{' '}
-                    — {item.reason}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <BulkFailureList items={failedItems} />
 
           {action === 'approvalStatus' && (
             <div className="space-y-2">
