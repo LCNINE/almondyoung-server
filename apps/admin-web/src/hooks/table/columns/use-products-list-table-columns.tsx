@@ -57,6 +57,7 @@ export function useProductsListTableColumns() {
     () => [
       columnHelper.display({
         id: 'select',
+        meta: { clickTogglesRowSelection: true },
         header: ({ table }) => (
           <Checkbox
             checked={
@@ -71,9 +72,8 @@ export function useProductsListTableColumns() {
         cell: ({ row }) => (
           <Checkbox
             checked={row.getIsSelected()}
-            onCheckedChange={(value) => row.toggleSelected(!!value)}
             aria-label="행 선택"
-            onClick={(e) => e.stopPropagation()}
+            className="pointer-events-none"
           />
         ),
       }),

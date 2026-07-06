@@ -97,14 +97,28 @@ export function DataTableRoot<TData extends RowData>({
                   className={href ? 'cursor-pointer' : ''}
                   onClick={href ? () => handleRowClick(href) : undefined}
                 >
-                  {row.getVisibleCells().map((cell) => (
-                    <Table.Cell key={cell.id}>
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext()
-                      )}
-                    </Table.Cell>
-                  ))}
+                  {row.getVisibleCells().map((cell) => {
+                    const togglesSelection =
+                      cell.column.columnDef.meta?.clickTogglesRowSelection;
+                    return (
+                      <Table.Cell
+                        key={cell.id}
+                        onClick={
+                          togglesSelection
+                            ? (e) => {
+                                e.stopPropagation();
+                                row.toggleSelected();
+                              }
+                            : undefined
+                        }
+                      >
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext()
+                        )}
+                      </Table.Cell>
+                    );
+                  })}
                 </Table.Row>
               );
             })
