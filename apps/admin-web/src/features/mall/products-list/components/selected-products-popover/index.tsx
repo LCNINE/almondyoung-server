@@ -12,12 +12,14 @@ import type { SelectedProductSnapshot } from '../table/products-list-selection-m
 
 type Props = {
   items: SelectedProductSnapshot[];
+  count: number;
   onRemove: (masterId: string) => void;
   onClearAll: () => void;
 };
 
 export function SelectedProductsPopover({
   items,
+  count,
   onRemove,
   onClearAll,
 }: Props) {
@@ -29,7 +31,7 @@ export function SelectedProductsPopover({
           variant="ghost"
           className="text-sm text-muted-foreground whitespace-nowrap"
         >
-          {items.length}개 선택됨
+          {count}개 선택됨
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-80 p-0">

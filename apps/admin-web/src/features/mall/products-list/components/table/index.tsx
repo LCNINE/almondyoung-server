@@ -79,6 +79,7 @@ export function ProductsListTable() {
         <div className="fixed z-50 flex items-center gap-2 p-2 pl-4 -translate-x-1/2 border rounded-lg shadow-lg bottom-6 left-1/2 bg-background">
           <SelectedProductsPopover
             items={Object.values(selectedItems)}
+            count={selectedIds.length}
             onRemove={(masterId) =>
               table.setRowSelection((prev) => {
                 const next = { ...prev };

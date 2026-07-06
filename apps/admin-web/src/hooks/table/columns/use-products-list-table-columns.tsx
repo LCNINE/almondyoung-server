@@ -69,6 +69,8 @@ export function useProductsListTableColumns() {
             onClick={(e) => e.stopPropagation()}
           />
         ),
+        // 표시 전용 — 선택 토글은 DataTableRoot 의 셀 onClick(meta.clickTogglesRowSelection)이 담당한다.
+        // 이 컬럼은 DataTableRoot 안에서만 렌더해야 선택이 동작한다.
         cell: ({ row }) => (
           <Checkbox
             checked={row.getIsSelected()}

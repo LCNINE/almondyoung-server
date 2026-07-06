@@ -75,4 +75,15 @@ describe('reconcileSelectedSnapshots', () => {
       thumbnail: null,
     });
   });
+
+  it('같은 키 집합에서 한 필드만 바뀌면 changed=true 로 갱신한다', () => {
+    const prev = { p1: snap('p1', '상품1', 'thumb1.jpg') };
+    const { changed, next } = reconcileSelectedSnapshots(
+      prev,
+      { p1: true },
+      [snap('p1', '상품1-수정', 'thumb1.jpg')],
+    );
+    expect(changed).toBe(true);
+    expect(next.p1).toEqual(snap('p1', '상품1-수정', 'thumb1.jpg'));
+  });
 });
