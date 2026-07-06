@@ -1,6 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import {
+  selectedIdsFromRowSelection,
+  reconcileSelectedSnapshots,
+  type SelectedProductSnapshot,
+} from './products-list-selection-model';
 import { useMastersSummary } from '@/lib/services/products/queries';
 import { useDataTable } from '@/hooks/use-data-table';
 import { useProductsListTableColumns } from '@/hooks/table/columns/use-products-list-table-columns';
@@ -35,12 +40,37 @@ export function ProductsListTable() {
     enableRowSelection: true,
   });
 
-  const selectedIds = table
-    .getSelectedRowModel()
-    .rows.map((r) => r.original.masterId);
+  const [selectedItems, setSelectedItems] = useState<
+    Record<string, SelectedProductSnapshot>
+  >({});
+
+  const rowSelection = table.getState().rowSelection;
+  const selectedIds = selectedIdsFromRowSelection(rowSelection);
+
+  // 선택되는 순간 그 행은 반드시 현재 페이지에 로드돼 있으므로,
+  // 이름/썸네일 스냅샷을 담아 교차 페이지/필터에서도 목록을 보여줄 수 있게 한다.
+  useEffect(() => {
+    const currentRows: SelectedProductSnapshot[] = (data?.data ?? []).map(
+      (r) => ({
+        masterId: r.masterId,
+        name: r.name,
+        thumbnail: r.thumbnail ?? null,
+      })
+    );
+    setSelectedItems((prev) => {
+      const { changed, next } = reconcileSelectedSnapshots(
+        prev,
+        rowSelection,
+        currentRows
+      );
+      return changed ? next : prev;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowSelection, data]);
 
   function handleSuccess() {
     table.resetRowSelection();
+    setSelectedItems({});
   }
 
   return (
