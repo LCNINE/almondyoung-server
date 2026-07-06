@@ -1,7 +1,8 @@
 'use client';
 
-import { Suspense, useEffect, useRef, useState } from 'react';
-import { ChevronDown, Save, Trash2 } from 'lucide-react';
+import { RefObject, Suspense, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { ChevronDown, ChevronUp, Save, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { CardErrorBoundary } from '@/components/admin-ui-experimental/common/card-error-boundary';
 import { Container } from '@/components/admin-ui-experimental/common/container';
@@ -14,12 +15,19 @@ import {
 } from '@/components/ui/collapsible';
 import { Spinner } from '@/components/ui/spinner';
 import { Textarea } from '@/components/ui/textarea';
+import { useInViewport } from '@/lib/hooks/use-in-viewport';
 import { useUpdateMasterVersion } from '@/lib/services/products/mutations';
 import { useProductDetailSuspense } from '@/lib/services/products/use-product-detail';
 import { MarkdownImageUploadButton } from './markdown-image-upload-button';
 import { ProductDescriptionMarkdown } from './product-description-markdown';
+import { shouldShowFloatingCollapse } from './product-description-floating-collapse';
 
 type Props = { masterId: string; versionId: string | null };
+
+type ContentProps = Props & {
+  /** 접기 시 스크롤을 되돌릴 섹션 카드 ref */
+  sectionRef: RefObject<HTMLDivElement | null>;
+};
 
 function insertAtCursor(
   textarea: HTMLTextAreaElement | null,
@@ -75,10 +83,16 @@ function LegacyHtmlPreview({
   );
 }
 
-function ProductDetailDescriptionContent({ masterId, versionId }: Props) {
+function ProductDetailDescriptionContent({
+  masterId,
+  versionId,
+  sectionRef,
+}: ContentProps) {
   const { data } = useProductDetailSuspense(masterId, versionId);
   const updateVersion = useUpdateMasterVersion();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
   const canEdit =
     data.source === 'version' &&
     data.status === 'draft' &&
@@ -88,9 +102,27 @@ function ProductDetailDescriptionContent({ masterId, versionId }: Props) {
     (data.description ?? '').trim().length > 0 || Boolean(data.descriptionHtml);
   const [open, setOpen] = useState(!hasContent);
 
+  // 펼쳐진 본문은 화면에 있는데 하단 실제 접기 버튼은 화면 밖일 때만 floating 버튼을 띄운다.
+  const contentVisible = useInViewport(contentRef, { enabled: open });
+  const triggerFullyVisible = useInViewport(triggerRef, { threshold: 1 });
+  const showFloatingCollapse = shouldShowFloatingCollapse({
+    open,
+    contentVisible,
+    triggerFullyVisible,
+  });
+
+  // createPortal 은 클라이언트에서만 — SSR 가드
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   useEffect(() => {
     setDraft(data.description ?? '');
   }, [data.versionId, data.description]);
+
+  const handleFloatingCollapse = () => {
+    setOpen(false);
+    sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   const handleSave = () => {
     if (!data.versionId) return;
@@ -143,7 +175,10 @@ function ProductDetailDescriptionContent({ masterId, versionId }: Props) {
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="p-4">
-      <CollapsibleContent className="flex flex-col gap-4 data-[state=closed]:hidden">
+      <CollapsibleContent
+        ref={contentRef}
+        className="flex flex-col gap-4 data-[state=closed]:hidden"
+      >
         {canEdit ? (
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-2">
@@ -215,22 +250,41 @@ function ProductDetailDescriptionContent({ masterId, versionId }: Props) {
         </div>
       ) : null}
 
-      <CollapsibleTrigger asChild>
-        <Button variant="outline" className="justify-center w-full gap-1 mt-4">
-          {open ? '상품설명 접기' : '상품설명 더보기'}
-          <ChevronDown
-            className="transition-transform duration-200 size-4"
-            style={{ transform: open ? 'rotate(180deg)' : undefined }}
-          />
-        </Button>
-      </CollapsibleTrigger>
+      <div ref={triggerRef} className="mt-4">
+        <CollapsibleTrigger asChild>
+          <Button variant="outline" className="justify-center w-full gap-1">
+            {open ? '상품설명 접기' : '상품설명 더보기'}
+            <ChevronDown
+              className="transition-transform duration-200 size-4"
+              style={{ transform: open ? 'rotate(180deg)' : undefined }}
+            />
+          </Button>
+        </CollapsibleTrigger>
+      </div>
+
+      {mounted && showFloatingCollapse
+        ? createPortal(
+            <div className="fixed z-40 -translate-x-1/2 duration-200 bottom-6 left-1/2 animate-in fade-in slide-in-from-bottom-4">
+              <Button
+                variant="outline"
+                onClick={handleFloatingCollapse}
+                className="gap-1 shadow-lg"
+              >
+                <ChevronUp className="size-4" />
+                상품설명 접기
+              </Button>
+            </div>,
+            document.body
+          )
+        : null}
     </Collapsible>
   );
 }
 
 export function ProductDetailDescription({ masterId, versionId }: Props) {
+  const sectionRef = useRef<HTMLDivElement>(null);
   return (
-    <Container>
+    <Container ref={sectionRef} className="scroll-mt-4">
       <Header title="상품 상세설명" />
       <CardErrorBoundary>
         <Suspense
@@ -243,6 +297,7 @@ export function ProductDetailDescription({ masterId, versionId }: Props) {
           <ProductDetailDescriptionContent
             masterId={masterId}
             versionId={versionId}
+            sectionRef={sectionRef}
           />
         </Suspense>
       </CardErrorBoundary>
