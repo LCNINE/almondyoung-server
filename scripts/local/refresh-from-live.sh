@@ -19,7 +19,9 @@
 set -euo pipefail
 
 REGION=ap-northeast-2
-LOCAL="-h localhost -p 5432 -U postgres"        # 로컬 docker PG (pw=postgres)
+# 복원 대상 PG. 기본은 이 머신의 docker PG, 다른 머신(예: dev 노트북)에 넣을 땐
+#   LOCAL_PG_HOST=<노트북 tailscale IP> ./scripts/local/refresh-from-live.sh
+LOCAL="-h ${LOCAL_PG_HOST:-localhost} -p 5432 -U postgres"   # pw=postgres
 export PGCONNECT_TIMEOUT=10
 
 # 호스트/시크릿은 하드코딩하지 않고 실행 시 AWS 에서 조회한다.
