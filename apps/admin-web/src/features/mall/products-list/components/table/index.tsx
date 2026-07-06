@@ -18,6 +18,7 @@ import {
   BulkActionModal,
   type BulkActionType,
 } from '@/features/mall/bulk/components/bulk-action-modal';
+import { SelectedProductsPopover } from '../selected-products-popover';
 
 const PAGE_SIZE = 20;
 
@@ -65,7 +66,6 @@ export function ProductsListTable() {
       );
       return changed ? next : prev;
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rowSelection, data]);
 
   function handleSuccess() {
@@ -77,9 +77,17 @@ export function ProductsListTable() {
     <div>
       {selectedIds.length > 0 && (
         <div className="fixed z-50 flex items-center gap-2 p-2 pl-4 -translate-x-1/2 border rounded-lg shadow-lg bottom-6 left-1/2 bg-background">
-          <span className="text-sm text-muted-foreground whitespace-nowrap">
-            {selectedIds.length}개 선택됨
-          </span>
+          <SelectedProductsPopover
+            items={Object.values(selectedItems)}
+            onRemove={(masterId) =>
+              table.setRowSelection((prev) => {
+                const next = { ...prev };
+                delete next[masterId];
+                return next;
+              })
+            }
+            onClearAll={() => table.resetRowSelection()}
+          />
           <Button size="sm" variant="outline">
             <Download className="w-3 h-3 mr-1" />
             엑셀 다운로드
@@ -98,13 +106,6 @@ export function ProductsListTable() {
           >
             <Trash2 className="w-3 h-3 mr-1" />
             선택 삭제
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => table.resetRowSelection()}
-          >
-            선택 해제
           </Button>
         </div>
       )}
