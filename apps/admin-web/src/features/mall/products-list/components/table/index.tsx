@@ -18,7 +18,7 @@ import {
   BulkActionModal,
   type BulkActionType,
 } from '@/features/mall/bulk/components/bulk-action-modal';
-import { SelectedProductsPopover } from '../selected-products-popover';
+import { SelectedProductsModal } from '../selected-products-modal';
 
 const PAGE_SIZE = 20;
 
@@ -77,7 +77,7 @@ export function ProductsListTable() {
     <div>
       {selectedIds.length > 0 && (
         <div className="fixed z-50 flex items-center gap-2 p-2 pl-4 -translate-x-1/2 border rounded-lg shadow-lg bottom-6 left-1/2 bg-background">
-          <SelectedProductsPopover
+          <SelectedProductsModal
             items={Object.values(selectedItems)}
             count={selectedIds.length}
             onRemove={(masterId) =>
@@ -102,7 +102,7 @@ export function ProductsListTable() {
           </Button>
           <Button
             size="sm"
-            variant="outline"
+            variant="destructive"
             onClick={() => setModalAction('delete')}
           >
             <Trash2 className="w-3 h-3 mr-1" />

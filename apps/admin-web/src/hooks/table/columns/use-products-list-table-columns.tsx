@@ -10,6 +10,7 @@ import { DateCell } from '@/components/table/table-cells/common';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { resolvePublicFileUrl } from '@/lib/utils/file-url';
+import { ShortId } from '@/components/admin-ui-experimental/common/copy/short-id';
 
 const columnHelper = createColumnHelper<MasterSummaryDto>();
 
@@ -81,9 +82,7 @@ export function useProductsListTableColumns() {
       }),
       columnHelper.accessor('masterId', {
         header: '품번코드',
-        cell: ({ getValue }) => (
-          <span className="break-all text-xs text-muted-foreground">{getValue()}</span>
-        ),
+        cell: ({ getValue }) => <ShortId value={getValue()} />,
       }),
       columnHelper.accessor('thumbnail', {
         header: '이미지',
