@@ -62,6 +62,9 @@ export function ProductsListTable() {
         masterId: r.masterId,
         name: r.name,
         thumbnail: r.thumbnail ?? null,
+        hideMembershipPriceForNonMembers: r.hideMembershipPriceForNonMembers,
+        isVisibleToMembersOnly: r.isVisibleToMembersOnly,
+        isOverseas: r.isOverseas,
       })
     );
     setSelectedItems((prev) => {
