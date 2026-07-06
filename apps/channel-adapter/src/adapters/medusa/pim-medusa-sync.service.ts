@@ -607,6 +607,11 @@ export class PimMedusaSyncService {
         status: 'active',
         rules: { 'customer.groups.id': [MEMBERSHIP_GROUP_ID] },
       });
+      // Replace, not append: clear this product's existing prices before adding the current ones,
+      // otherwise re-sync accumulates duplicate rows and a stale-lower price wins (Medusa applies
+      // the lowest). Remove→add briefly leaves the product without a membership price; that only
+      // ever falls back to the higher base price, so it never undercharges.
+      await this.medusaClient.removeProductFromPriceList(listId, medusaProductId);
       await this.medusaClient.addPricesToPriceList(listId, membershipPrices);
     }
 
@@ -618,6 +623,8 @@ export class PimMedusaSyncService {
         type: 'sale',
         status: 'active',
       });
+      // Replace, not append (same rationale as the membership list above).
+      await this.medusaClient.removeProductFromPriceList(listId, medusaProductId);
       await this.medusaClient.addPricesToPriceList(listId, prices);
     }
   }
