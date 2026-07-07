@@ -222,6 +222,28 @@ export class BillingReader {
     return row?.attempts ?? 0;
   }
 
+  /** 계약의 dunning(결제 실패 재시도 대기) 항목 조회. 없으면 null. */
+  async findDunningByContractId(contractId: string): Promise<{
+    attempts: number;
+    maxAttempts: number;
+    nextRetryAt: Date;
+    lastErrorCode: string | null;
+    lastErrorMessage: string | null;
+  } | null> {
+    const [row] = await this.dbService.db
+      .select({
+        attempts: schema.membershipDunningQueue.attempts,
+        maxAttempts: schema.membershipDunningQueue.maxAttempts,
+        nextRetryAt: schema.membershipDunningQueue.nextRetryAt,
+        lastErrorCode: schema.membershipDunningQueue.lastErrorCode,
+        lastErrorMessage: schema.membershipDunningQueue.lastErrorMessage,
+      })
+      .from(schema.membershipDunningQueue)
+      .where(eq(schema.membershipDunningQueue.contractId, contractId))
+      .limit(1);
+    return row ?? null;
+  }
+
   /**
    * 계약 ID로 계약 조회
    */

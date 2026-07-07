@@ -190,6 +190,22 @@ export interface StuckBillingContractsResponse {
   total: number;
 }
 
+export interface DunningListItem {
+  contractId: string;
+  userId: string;
+  attempts: number;
+  maxAttempts: number;
+  nextRetryAt: string;
+  lastErrorCode: string | null;
+  lastErrorMessage: string | null;
+  createdAt: string;
+}
+
+export interface DunningListResponse {
+  data: DunningListItem[];
+  total: number;
+}
+
 @Injectable()
 export class AdminMembersReader {
   constructor(
@@ -876,6 +892,41 @@ export class AdminMembersReader {
           hoursElapsed: Math.floor((now - since.getTime()) / (1000 * 60 * 60)),
         };
       }),
+      total: rows.length,
+    };
+  }
+
+  /** 결제 실패 재시도 대기(dunning) 중인 계약 목록 — 다음 재시도 임박 순. */
+  async findDunningList(): Promise<DunningListResponse> {
+    const rows = await this.dbService.db
+      .select({
+        contractId: schema.membershipDunningQueue.contractId,
+        userId: schema.subscriptionContracts.userId,
+        attempts: schema.membershipDunningQueue.attempts,
+        maxAttempts: schema.membershipDunningQueue.maxAttempts,
+        nextRetryAt: schema.membershipDunningQueue.nextRetryAt,
+        lastErrorCode: schema.membershipDunningQueue.lastErrorCode,
+        lastErrorMessage: schema.membershipDunningQueue.lastErrorMessage,
+        createdAt: schema.membershipDunningQueue.createdAt,
+      })
+      .from(schema.membershipDunningQueue)
+      .innerJoin(
+        schema.subscriptionContracts,
+        eq(schema.membershipDunningQueue.contractId, schema.subscriptionContracts.id),
+      )
+      .orderBy(asc(schema.membershipDunningQueue.nextRetryAt));
+
+    return {
+      data: rows.map((r) => ({
+        contractId: r.contractId,
+        userId: r.userId,
+        attempts: r.attempts,
+        maxAttempts: r.maxAttempts,
+        nextRetryAt: r.nextRetryAt.toISOString(),
+        lastErrorCode: r.lastErrorCode,
+        lastErrorMessage: r.lastErrorMessage,
+        createdAt: r.createdAt.toISOString(),
+      })),
       total: rows.length,
     };
   }
