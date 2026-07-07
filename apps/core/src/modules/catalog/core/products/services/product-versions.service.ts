@@ -41,7 +41,7 @@ import {
 import { productMatchings, productVariantSkuLinks } from '../../../../inventory/schema/inventory.schema';
 import { productVariantDigitalAssetLinks } from '../../../../library/schema/library.schema';
 import { ProductSellableQuantityService } from '../../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
-import { eq, and, sql, max as drizzleMax, isNull, inArray, asc, desc } from 'drizzle-orm';
+import { eq, and, sql, max as drizzleMax, isNull, inArray, asc, desc, ilike, count } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 import { deleteEntitiesIfUnmapped } from '../../version-isolation/delete-if-unmapped';
 
@@ -802,6 +802,81 @@ export class ProductVersionsService {
         page,
         limit,
       };
+    }, tx);
+  }
+
+  async getMyDraftVersions(
+    userId: string,
+    filters?: {
+      page?: number;
+      limit?: number;
+      q?: string;
+      sort?: 'updatedAt' | 'createdAt';
+      order?: 'asc' | 'desc';
+    },
+    tx?: DbTransaction,
+  ): Promise<{
+    data: Array<{
+      masterId: string;
+      versionId: string;
+      name: string;
+      thumbnail: string | null;
+      brand: string | null;
+      productType: string;
+      createdAt: Date;
+      updatedAt: Date;
+    }>;
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const page = filters?.page ?? 1;
+    const limit = filters?.limit ?? 20;
+    const offset = (page - 1) * limit;
+
+    const sortColumn =
+      filters?.sort === 'createdAt' ? productMasterVersions.createdAt : productMasterVersions.updatedAt;
+    const orderFn = filters?.order === 'asc' ? asc : desc;
+
+    // and() 는 undefined 조건을 자동으로 무시한다.
+    const whereClause = and(
+      eq(productMasterVersions.status, 'draft'),
+      eq(productMasterVersions.draftOwnerId, userId),
+      isNull(productMasterVersions.deletedAt),
+      isNull(productMasters.deletedAt),
+      filters?.q ? ilike(productMasterVersions.name, `%${filters.q}%`) : undefined,
+    );
+
+    return this.db.run(async (tx) => {
+      const rows = await tx
+        .select({
+          masterId: productMasterVersions.masterId,
+          versionId: productMasterVersions.id,
+          name: productMasterVersions.name,
+          thumbnail: productImages.fileId,
+          brand: productMasterVersions.brand,
+          productType: productMasterVersions.productType,
+          createdAt: productMasterVersions.createdAt,
+          updatedAt: productMasterVersions.updatedAt,
+        })
+        .from(productMasterVersions)
+        .innerJoin(productMasters, eq(productMasters.id, productMasterVersions.masterId))
+        .leftJoin(
+          productImages,
+          and(eq(productImages.versionId, productMasterVersions.id), eq(productImages.isPrimary, true)),
+        )
+        .where(whereClause)
+        .orderBy(orderFn(sortColumn))
+        .limit(limit)
+        .offset(offset);
+
+      const [{ value: total }] = await tx
+        .select({ value: count() })
+        .from(productMasterVersions)
+        .innerJoin(productMasters, eq(productMasters.id, productMasterVersions.masterId))
+        .where(whereClause);
+
+      return { data: rows, total: Number(total), page, limit };
     }, tx);
   }
 

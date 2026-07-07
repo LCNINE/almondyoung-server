@@ -32,6 +32,8 @@ export const productQueryKeys = {
   master: (id: string) => [...productQueryKeys.masters, id] as const,
   masterPricePreview: (id: string) =>
     [...productQueryKeys.master(id), 'price-preview'] as const,
+  myDrafts: (query: Record<string, any>) =>
+    ['product-versions', 'my-drafts', query] as const,
 
   // 제품 변형 관련
   variants: ['variants'] as const,

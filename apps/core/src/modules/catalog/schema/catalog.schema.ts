@@ -222,6 +222,7 @@ export const productMasterVersions = pgTable(
     index('idx_versions_approval_status').on(table.approvalStatus),
     index('idx_versions_deleted_at').on(table.deletedAt),
     index('idx_versions_supplier').on(table.supplierId),
+    index('idx_versions_draft_owner').on(table.draftOwnerId),
     index('idx_versions_sales_dates').on(table.salesStartDate, table.salesEndDate),
     uniqueIndex('unique_master_active_version')
       .on(table.masterId)
