@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
-import { eq, and, inArray, gte, isNull } from 'drizzle-orm';
+import { eq, and, inArray, gte, isNull, desc } from 'drizzle-orm';
 
 type Entitlement = typeof schema.subscriptionEntitlement.$inferSelect;
 
@@ -79,6 +79,8 @@ export class EntitlementReader {
           // endsAt 체크 안 함: 만료일 당일에도 결제 완료까지 멤버십 유지
         ),
       )
+      // 재가입 등 계약 복수 시 옛 계약과 임의 매칭 방지 — 최신 계약
+      .orderBy(desc(schema.subscriptionContracts.createdAt), desc(schema.subscriptionContracts.id))
       .limit(1)
       .then((results) => (results.length > 0 ? results[0] : null));
   }
@@ -123,8 +125,9 @@ export class EntitlementReader {
   async getBulkUserEntitlementDetails(userIds: string[]) {
     if (!userIds.length) return [];
 
+    // user별 최신 계약 1건만 — 단건 경로와 동일하게 옛 계약 미스바인딩 방지
     return await this.dbService.db
-      .select({
+      .selectDistinctOn([schema.subscriptionEntitlement.userId], {
         entitlement: schema.subscriptionEntitlement,
         contract: schema.subscriptionContracts,
         plan: schema.plan,
@@ -145,6 +148,11 @@ export class EntitlementReader {
           inArray(schema.subscriptionEntitlement.userId, userIds),
           eq(schema.subscriptionEntitlement.isCurrent, true),
         ),
+      )
+      .orderBy(
+        schema.subscriptionEntitlement.userId,
+        desc(schema.subscriptionContracts.createdAt),
+        desc(schema.subscriptionContracts.id),
       );
   }
 }
