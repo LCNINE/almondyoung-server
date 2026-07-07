@@ -45,20 +45,21 @@ const LEGACY_SERVICE_PATHS: Record<BackendService, string> = {
   ugc: "ugc",
 }
 
+// docs/local-dev.md 의 로컬 포트맵과 동일하게 유지할 것
 const LOCAL_SERVICE_URLS: Record<BackendService, string> = {
-  users: "http://localhost:3030", // user-service
-  wms: "http://localhost:3000", // core (pim+wms 통합)
+  users: "http://localhost:3000", // user-service
+  wms: "http://localhost:3100", // core (pim+wms 통합)
   channelAdapter: "http://localhost:3003",
-  fs: "http://localhost:3000", // file-service
-  library: "http://localhost:3000", // core (라이브러리 모듈)
-  medusa: "http://localhost:8080",
+  fs: "http://localhost:3010", // file-service
+  library: "http://localhost:3100", // core (라이브러리 모듈)
+  medusa: "http://localhost:9000",
   membership: "http://localhost:3001",
-  notification: "http://localhost:5001",
-  pim: "http://localhost:3000", // core (pim+wms 통합)
-  search: "http://localhost:3004",
+  notification: "http://localhost:3050",
+  pim: "http://localhost:3100", // core (pim+wms 통합)
+  search: "http://localhost:3060",
   wallet: "http://localhost:5001",
   anly: "http://localhost:3040",
-  ugc: "http://localhost:3031",
+  ugc: "http://localhost:3030",
 }
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, "")
