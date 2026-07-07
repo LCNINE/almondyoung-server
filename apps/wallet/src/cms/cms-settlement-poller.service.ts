@@ -206,32 +206,66 @@ export class CmsSettlementPollerService {
     const correlationId = `cms-poller:${withdrawal.transactionId}`;
     const now = new Date().toISOString();
 
-    // 1. cms_withdrawal → FAILED
-    await this.dbService.db
-      .update(cmsWithdrawals)
-      .set({
-        status: 'FAILED',
-        resultCode: apiData.result?.code ?? null,
-        resultMessage: apiData.result?.message ?? null,
-        updatedAt: new Date(),
-      })
-      .where(eq(cmsWithdrawals.id, withdrawal.id));
-
-    // 2. charge → FAILED
-    await this.chargesService.updateStatus(withdrawal.chargeId, 'FAILED', {
-      errorCode: apiData.result?.code ?? 'CMS_WITHDRAWAL_FAILED',
-      errorMessage: apiData.result?.message ?? 'CMS withdrawal failed',
-    });
-
     const intent = await this.paymentIntentsService.findById(withdrawal.intentId);
     if (!intent) {
       this.logger.error(`Intent not found for withdrawal ${withdrawal.transactionId}: ${withdrawal.intentId}`);
+      // 재폴링 방지 — withdrawal만 FAILED
+      await this.dbService.db
+        .update(cmsWithdrawals)
+        .set({
+          status: 'FAILED',
+          resultCode: apiData.result?.code ?? null,
+          resultMessage: apiData.result?.message ?? null,
+          updatedAt: new Date(),
+        })
+        .where(eq(cmsWithdrawals.id, withdrawal.id));
+      return;
+    }
+
+    // 이미 종료상태면 재전이(불법) 없이 withdrawal만 FAILED 기록
+    if (intent.status === 'CANCELED' || intent.status === 'FAILED') {
+      this.logger.warn(
+        `[CMS] 출금 실패이나 intent가 이미 ${intent.status}: withdrawal만 FAILED 기록. intentId=${withdrawal.intentId}, txId=${withdrawal.transactionId}`,
+      );
+      await this.dbService.db
+        .update(cmsWithdrawals)
+        .set({
+          status: 'FAILED',
+          resultCode: apiData.result?.code ?? null,
+          resultMessage: apiData.result?.message ?? null,
+          updatedAt: new Date(),
+        })
+        .where(eq(cmsWithdrawals.id, withdrawal.id));
       return;
     }
 
     const intentMeta = (intent.metadata as Record<string, unknown>) ?? {};
 
+    // 성공 경로와 대칭 — 한 tx로 묶어 부분커밋 고아(withdrawal=FAILED인데 intent는 PENDING_SETTLEMENT stuck) 방지
     await this.dbService.db.transaction(async (tx) => {
+      // 1. cms_withdrawal → FAILED
+      await tx
+        .update(cmsWithdrawals)
+        .set({
+          status: 'FAILED',
+          resultCode: apiData.result?.code ?? null,
+          resultMessage: apiData.result?.message ?? null,
+          updatedAt: new Date(),
+        })
+        .where(eq(cmsWithdrawals.id, withdrawal.id));
+
+      // 2. charge → FAILED
+      await this.chargesService.updateStatus(
+        withdrawal.chargeId,
+        'FAILED',
+        {
+          errorCode: apiData.result?.code ?? 'CMS_WITHDRAWAL_FAILED',
+          errorMessage: apiData.result?.message ?? 'CMS withdrawal failed',
+        },
+        tx,
+      );
+
+      // 3. intent → FAILED (expected PENDING_SETTLEMENT)
       await this.stateTransitionService.transitionIntent(
         withdrawal.intentId,
         'FAILED',
