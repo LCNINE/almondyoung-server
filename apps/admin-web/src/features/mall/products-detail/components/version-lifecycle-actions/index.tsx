@@ -15,7 +15,6 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Container } from '@/components/admin-ui-experimental/common/container';
@@ -92,11 +91,7 @@ export function VersionLifecycleActions({ masterId, versionId }: Props) {
 
   return (
     <Container className="divide-y-0 bg-background">
-      <Header
-        title="Version 발행 및 삭제"
-        subtitle="서버 검증을 통과하면 이 version이 active version으로 전환됩니다."
-        right={<Badge variant="secondary">체크리스트 차단 없음</Badge>}
-      />
+      <Header title="상품 등록" />
 
       <div className="flex flex-col gap-4 px-6 pb-6">
         {error && (
