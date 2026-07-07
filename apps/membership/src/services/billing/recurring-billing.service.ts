@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { format, subMinutes } from 'date-fns';
+import { SubscriptionException, SubscriptionNotFoundException } from '../../shared/exceptions/subscription.exceptions';
 import { BillingReader } from './billing.reader';
 import { BillingManager, BillingResult } from './billing.manager';
 import { BillingOutcomeHandler } from './billing-outcome.handler';
@@ -250,12 +251,48 @@ export class RecurringBillingService {
 
   /**
    * 특정 계약에 대해 결제 즉시 재시도 (관리자용)
+   *
+   * 건강한 계약(미래 청구일·dunning 없음)에 발행하면 새 멱등키로 다음 주기 요금이 즉시
+   * 실출금되므로, 재시도가 정당한 상태인지 먼저 검증한다.
    */
   async retryContractBilling(contractId: string): Promise<BillingResult> {
     const contract = await this.billingReader.findContractById(contractId);
-    if (!contract) throw new Error(`Contract not found: ${contractId}`);
-    const attempts = await this.billingReader.findDunningAttempts(contractId);
-    return this.billingManager.processSingleBilling(contract, attempts);
+    if (!contract) throw new SubscriptionNotFoundException();
+
+    if (contract.status !== 'ACTIVE') {
+      throw new SubscriptionException(
+        `해지/만료된 계약에는 청구를 재시도할 수 없습니다. (status=${contract.status})`,
+        'CONTRACT_NOT_ACTIVE',
+        HttpStatus.CONFLICT,
+      );
+    }
+    if (!contract.autoRenewal) {
+      throw new SubscriptionException(
+        '자동갱신이 꺼진 계약에는 청구를 재시도할 수 없습니다.',
+        'AUTO_RENEWAL_DISABLED',
+        HttpStatus.CONFLICT,
+      );
+    }
+    if (contract.billingInProgress) {
+      throw new SubscriptionException(
+        '이미 청구가 진행 중입니다. 결과 확인 후 다시 시도하세요.',
+        'BILLING_IN_PROGRESS',
+        HttpStatus.CONFLICT,
+      );
+    }
+
+    const dunning = await this.billingReader.findDunningByContractId(contractId);
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const isDue = contract.nextBillingDate != null && contract.nextBillingDate <= today;
+    if (!dunning && !isDue) {
+      throw new SubscriptionException(
+        `아직 청구 예정일이 아닙니다. (nextBillingDate=${contract.nextBillingDate ?? '-'}) 재시도하면 다음 주기 요금이 즉시 출금됩니다.`,
+        'BILLING_NOT_DUE',
+        HttpStatus.CONFLICT,
+      );
+    }
+
+    return this.billingManager.processSingleBilling(contract, dunning?.attempts ?? 0);
   }
 
   private sleep(ms: number): Promise<void> {

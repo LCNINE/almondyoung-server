@@ -2,6 +2,7 @@ import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 import { type SubscriberConfig, type SubscriberArgs } from '@medusajs/medusa';
 
 const MEMBERSHIP_SERVICE_URL = process.env.MEMBERSHIP_SERVICE_URL || 'http://localhost:3040';
+const MEMBERSHIP_INTERNAL_KEY = process.env.MEMBERSHIP_INTERNAL_KEY || '';
 
 const WELCOME_MEMBERSHIP_TAG = 'welcome-membership';
 
@@ -101,7 +102,10 @@ export default async function handleWelcomeMembershipOrder({ event, container }:
     if (eventName === 'order.placed') {
       await fetch(`${MEMBERSHIP_SERVICE_URL}/welcome-membership/eligibility/${userId}/purchased`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${MEMBERSHIP_INTERNAL_KEY}`,
+        },
         body: JSON.stringify({ orderId }),
         signal: AbortSignal.timeout(5000),
       });
@@ -115,6 +119,7 @@ export default async function handleWelcomeMembershipOrder({ event, container }:
 
       await fetch(`${MEMBERSHIP_SERVICE_URL}/welcome-membership/eligibility/${userId}/purchased`, {
         method: 'DELETE',
+        headers: { Authorization: `Bearer ${MEMBERSHIP_INTERNAL_KEY}` },
         signal: AbortSignal.timeout(5000),
       });
       logger.info(`[WelcomeMembership] Reverted purchase: userId=${userId}, orderId=${orderId}`);

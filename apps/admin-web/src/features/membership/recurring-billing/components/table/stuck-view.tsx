@@ -23,7 +23,7 @@ export function StuckBillingView() {
   const [selected, setSelected] = useState<StuckBillingContractItem | null>(null);
   const [reason, setReason] = useState('');
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['stuck-billing-contracts', THRESHOLD_HOURS],
     queryFn: () => membershipApi.getStuckBillingContracts(THRESHOLD_HOURS),
     staleTime: 30_000,
@@ -54,6 +54,13 @@ export function StuckBillingView() {
 
       {isLoading ? (
         <p className="text-sm text-muted-foreground">불러오는 중...</p>
+      ) : isError ? (
+        <div className="flex flex-col items-center gap-2 rounded-md border py-8">
+          <p className="text-sm text-destructive">목록을 불러오지 못했습니다.</p>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            다시 시도
+          </Button>
+        </div>
       ) : rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">선점 고착 계약이 없습니다.</p>
       ) : (
