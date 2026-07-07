@@ -79,6 +79,7 @@ export interface BillingEventItem {
   eventType: string;
   attemptNo: number | null;
   amount: number | null;
+  paymentIntentId: string | null;
   errorCode: string | null;
   errorMessage: string | null;
   createdAt: string;
@@ -136,6 +137,7 @@ export interface AdminBillingHistoryItem {
   eventType: string;
   attemptNo: number | null;
   amount: number | null;
+  paymentIntentId: string | null;
   errorCode: string | null;
   errorMessage: string | null;
   createdAt: string;
@@ -326,12 +328,15 @@ export const membershipApi = {
     return res.data;
   },
 
-  retryBilling: async (contractId: string): Promise<void> => {
-    await client.post(
+  retryBilling: async (
+    contractId: string
+  ): Promise<{ contractId: string; success: boolean; errorCode?: string; errorMessage?: string }> => {
+    const res = await client.post(
       `${MEMBERSHIP_SERVICE_BASE_URL}/admin/billing/retry/${encodeURIComponent(contractId)}`,
       null,
       idemConfig()
     );
+    return res.data;
   },
 
   grantSubscriptionByDays: async (
