@@ -9,7 +9,7 @@ const CURRENT_BENEFIT_KEYS = [
   "benefit05",
   "benefit06",
   "benefit07",
-  "benefit08",
+  // "benefit08", // ponytail: 이달의 쿠폰 혜택 임시 숨김 — 재노출 시 주석 해제
 ] as const
 
 const UPCOMING_BENEFIT_KEYS = [
