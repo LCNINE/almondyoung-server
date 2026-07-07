@@ -182,6 +182,8 @@ export interface MasterSummaryDto {
   optionGroupNames: string[];
   variantCount: number;
   priceSummary: PriceSummaryDto | null;
+  /** active 버전 품목 기준 품절 집계. none=판매가능, partial=부분품절, all=전체품절. */
+  soldOutState: 'none' | 'partial' | 'all';
 }
 
 export interface MasterSummaryListResponseDto {

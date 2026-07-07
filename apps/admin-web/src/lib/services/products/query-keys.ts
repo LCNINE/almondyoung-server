@@ -21,8 +21,11 @@ export const productQueryKeys = {
   masters: ['masters'] as const,
   mastersList: (query: Record<string, any>) =>
     [...productQueryKeys.masters, 'list', query] as const,
+  // 모든 summary-list 쿼리를 한 번에 무효화할 때 쓴다
+  mastersSummaryLists: () =>
+    [...productQueryKeys.masters, 'summary-list'] as const,
   mastersSummaryList: (query: Record<string, any>) =>
-    [...productQueryKeys.masters, 'summary-list', query] as const,
+    [...productQueryKeys.mastersSummaryLists(), query] as const,
   mastersBatch: (ids: string[]) =>
     [
       ...productQueryKeys.masters,

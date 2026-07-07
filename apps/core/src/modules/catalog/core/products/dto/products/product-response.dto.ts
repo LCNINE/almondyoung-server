@@ -194,4 +194,10 @@ export class ProductSummaryDto {
     nullable: true,
   })
   priceSummary: PriceSummaryDto | null;
+
+  @ApiProperty({
+    description: '품절 집계 (active 버전 품목 기준): none=판매가능, partial=부분품절, all=전체품절',
+    enum: ['none', 'partial', 'all'],
+  })
+  soldOutState: 'none' | 'partial' | 'all';
 }
