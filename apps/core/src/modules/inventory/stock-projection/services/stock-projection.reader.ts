@@ -68,7 +68,7 @@ export class StockProjectionReader {
     query: GetStockSummaryListQueryDto,
     tx?: DbTx,
   ): Promise<PaginatedResponseDto<StockSummaryListItemDto>> {
-    const { skuId, warehouseId, page = 1, limit = 20 } = query;
+    const { skuId, warehouseId, search, page = 1, limit = 20 } = query;
     const offset = (page - 1) * limit;
 
     return this.dbService.run(async (trx) => {
@@ -82,6 +82,20 @@ export class StockProjectionReader {
       }
       if (warehouseId) {
         conditions.push(eq(v.warehouseId, warehouseId));
+      }
+      if (search?.trim()) {
+        const like = `%${search.trim()}%`;
+        // 3소스(SKU 라벨/코드 + 활성 버전 상품명)를 union 해 매칭되는 sku_id로 뷰를 필터.
+        conditions.push(sql`${v.skuId} IN (
+          SELECT s.id FROM skus s WHERE s.name ILIKE ${like} OR s.code ILIKE ${like}
+          UNION
+          SELECT l.sku_id
+          FROM product_master_versions pmv
+          JOIN product_master_variants pmvar ON pmvar.version_id = pmv.id
+          JOIN product_matchings pm ON pm.variant_id = pmvar.variant_id
+          JOIN product_variant_sku_links l ON l.product_matching_id = pm.id
+          WHERE pmv.name ILIKE ${like} AND pmv.status = 'active' AND pmv.deleted_at IS NULL
+        )`);
       }
 
       const rows = await trx
