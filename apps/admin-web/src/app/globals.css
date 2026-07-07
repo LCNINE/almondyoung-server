@@ -7,14 +7,6 @@
 
 @custom-variant dark (&:is(.dark *));
 
-@theme {
-  --color-background: hsl(0 0% 100%);
-  --color-foreground: hsl(0 0% 9%);
-  --color-border: hsl(0 0% 90%);
-  --color-input: hsl(0 0% 87%);
-  --color-ring: hsl(0 0% 50%);
-}
-
 :root {
   /* 사이드바 너비 설정 */
   --sidebar-width: 20rem;
@@ -51,6 +43,14 @@
 
   --card: hsl(0 0% 100%);
   --card-foreground: hsl(240 10% 3.9%);
+
+  /* surfaces & lines — shadcn neutral (다크모드 스왑) */
+  --background: hsl(0 0% 100%);
+  --foreground: hsl(240 10% 3.9%);
+  --border: hsl(240 5.9% 90%);
+  --input: hsl(240 5.9% 90%);
+  --ring: hsl(240 10% 3.9%);
+  --radius: 0.5rem;
 
   /* === 새로운 색상 시스템 === */
   /* 사이드바 색상 */
@@ -181,6 +181,13 @@
   --card: hsl(240 10% 3.9%);
   --card-foreground: hsl(240 4.8% 95.9%);
 
+  /* surfaces & lines — shadcn neutral (dark) */
+  --background: hsl(240 10% 3.9%);
+  --foreground: hsl(0 0% 98%);
+  --border: hsl(240 3.7% 15.9%);
+  --input: hsl(240 3.7% 15.9%);
+  --ring: hsl(240 4.9% 83.9%);
+
   /* 다크모드에서는 동일한 색상 사용 */
   --sidebar-bg: #1E154B;
   --sidebar-active: #2F31A8;
@@ -222,6 +229,13 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
+
+  /* surfaces & lines */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
 
   /* 새로운 색상 시스템 */
   --color-sidebar-bg: var(--sidebar-bg);
@@ -303,7 +317,7 @@
 
 @layer base {
   * {
-    @apply border-border/50 outline-ring/50;
+    @apply border-border outline-ring/50;
   }
 
   body {

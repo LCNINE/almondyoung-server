@@ -63,6 +63,7 @@ import type {
   VariantMatchingBatchItemDto,
 } from '@/lib/types/dto/matching';
 import { VariantMatchingPanel } from '@/features/matching/products/components/variant-editor-dialog';
+import { VariantStockAdjustDialog } from './variant-stock-adjust-dialog';
 import {
   canEditProductVariants,
   toBulkProductVariantUpdateDto,
@@ -343,6 +344,8 @@ function VariantsTable({
     useState<ProductVariantTableRow | null>(null);
   const [matchingEditingVariant, setMatchingEditingVariant] =
     useState<ProductVariantTableRow | null>(null);
+  const [adjustingVariant, setAdjustingVariant] =
+    useState<ProductVariantTableRow | null>(null);
   const [pendingPolicyVariantId, setPendingPolicyVariantId] = useState<
     string | null
   >(null);
@@ -392,6 +395,7 @@ function VariantsTable({
             pendingVariantId: pendingPolicyVariantId,
             onPolicyChange: handlePolicyChange,
             onEditMatching: setMatchingEditingVariant,
+            onAdjustStock: setAdjustingVariant,
           }
         : undefined,
     [
@@ -518,6 +522,16 @@ function VariantsTable({
           open={!!matchingEditingVariant}
           onOpenChange={(open) => {
             if (!open) setMatchingEditingVariant(null);
+          }}
+        />
+      )}
+
+      {adjustingVariant && (
+        <VariantStockAdjustDialog
+          variant={adjustingVariant}
+          open={!!adjustingVariant}
+          onOpenChange={(open) => {
+            if (!open) setAdjustingVariant(null);
           }}
         />
       )}
