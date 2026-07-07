@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import Link from 'next/link';
 import { toast } from 'sonner';
 import { Crown, CalendarClock, SlidersHorizontal } from 'lucide-react';
 import {
@@ -609,8 +610,12 @@ function BillingTab({
 
   const handleRetry = async () => {
     try {
-      await retryBillingMutation.mutateAsync(contractId);
-      toast.success('결제 재시도 요청이 전송되었습니다.');
+      const result = await retryBillingMutation.mutateAsync(contractId);
+      if (result.success) {
+        toast.success('결제 재시도 요청이 전송되었습니다.');
+      } else {
+        toast.error(result.errorMessage ?? result.errorCode ?? '결제 재시도가 처리되지 않았습니다.');
+      }
     } catch {
       toast.error('결제 재시도에 실패했습니다.');
     }
@@ -641,13 +646,14 @@ function BillingTab({
               <TableHead>상태</TableHead>
               <TableHead className="text-right">결제액</TableHead>
               <TableHead>오류</TableHead>
+              <TableHead>결제 상세</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {!events?.length ? (
               <TableRow>
                 <TableCell
-                  colSpan={4}
+                  colSpan={5}
                   className="py-8 text-center text-muted-foreground"
                 >
                   결제 기록이 없습니다.
@@ -671,6 +677,20 @@ function BillingTab({
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {ev.errorCode ?? '-'}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {ev.paymentIntentId ? (
+                        <Link
+                          href={`/payments/${ev.paymentIntentId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline"
+                        >
+                          wallet 상세
+                        </Link>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
                     </TableCell>
                   </TableRow>
                 );

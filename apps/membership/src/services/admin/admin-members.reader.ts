@@ -81,6 +81,7 @@ export interface BillingEventItem {
   eventType: string;
   attemptNo: number | null;
   amount: number | null;
+  paymentIntentId: string | null;
   errorCode: string | null;
   errorMessage: string | null;
   createdAt: string;
@@ -113,6 +114,7 @@ export interface AdminBillingHistoryItem {
   eventType: string;
   attemptNo: number | null;
   amount: number | null;
+  paymentIntentId: string | null;
   errorCode: string | null;
   errorMessage: string | null;
   createdAt: string;
@@ -460,6 +462,7 @@ export class AdminMembersReader {
       eventType: schema.billingEvents.eventType,
       attemptNo: schema.billingEvents.attemptNo,
       amount: schema.billingEvents.amount,
+      paymentIntentId: schema.billingEvents.paymentIntentId,
       errorCode: schema.billingEvents.errorCode,
       errorMessage: schema.billingEvents.errorMessage,
       createdAt: schema.billingEvents.createdAt,
@@ -484,6 +487,7 @@ export class AdminMembersReader {
     eventType: string;
     attemptNo: number | null;
     amount: number | null;
+    paymentIntentId: string | null;
     errorCode: string | null;
     errorMessage: string | null;
     createdAt: Date;
@@ -510,6 +514,18 @@ export class AdminMembersReader {
       .where(eq(schema.subscriptionContracts.id, contractId))
       .limit(1);
     return row ?? null;
+  }
+
+  async findContractPaymentRefsByUserId(
+    userId: string,
+  ): Promise<{ contractId: string; lastPaymentIntentId: string | null }[]> {
+    return this.dbService.db
+      .select({
+        contractId: schema.subscriptionContracts.id,
+        lastPaymentIntentId: schema.subscriptionContracts.lastPaymentIntentId,
+      })
+      .from(schema.subscriptionContracts)
+      .where(eq(schema.subscriptionContracts.userId, userId));
   }
 
   async findAllBillingHistory(query: AdminBillingHistoryQuery): Promise<AdminBillingHistoryResponse> {
@@ -539,6 +555,7 @@ export class AdminMembersReader {
           eventType: schema.billingEvents.eventType,
           attemptNo: schema.billingEvents.attemptNo,
           amount: schema.billingEvents.amount,
+          paymentIntentId: schema.billingEvents.paymentIntentId,
           errorCode: schema.billingEvents.errorCode,
           errorMessage: schema.billingEvents.errorMessage,
           createdAt: schema.billingEvents.createdAt,
@@ -559,6 +576,7 @@ export class AdminMembersReader {
         eventType: r.eventType,
         attemptNo: r.attemptNo,
         amount: r.amount,
+        paymentIntentId: r.paymentIntentId,
         errorCode: r.errorCode,
         errorMessage: r.errorMessage,
         createdAt: r.createdAt.toISOString(),

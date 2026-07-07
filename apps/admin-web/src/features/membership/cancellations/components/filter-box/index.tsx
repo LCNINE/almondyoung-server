@@ -11,7 +11,7 @@ import {
   FormSelect,
 } from '@/components/common/form';
 import { Button } from '@/components/ui/button';
-import { DatePreset, DATE_PRESET_OPTIONS, computeDateRange } from '@/lib/utils/date';
+import { DatePreset, DATE_PRESET_OPTIONS, computeDateRange, toLocalDateString } from '@/lib/utils/date';
 
 type SearchType = 'userId' | 'member';
 type DateCriteria = 'createdAt' | 'cancelledAt';
@@ -103,8 +103,8 @@ export function CancellationsFilterBox() {
               onChange={(range) =>
                 setFilters((p) => ({
                   ...p,
-                  dateFrom: range?.from ? range.from.toISOString().slice(0, 10) : '',
-                  dateTo: range?.to ? range.to.toISOString().slice(0, 10) : '',
+                  dateFrom: range?.from ? toLocalDateString(range.from) : '',
+                  dateTo: range?.to ? toLocalDateString(range.to) : '',
                 }))
               }
             />
