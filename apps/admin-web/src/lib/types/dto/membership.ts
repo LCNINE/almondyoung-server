@@ -50,6 +50,22 @@ export interface StuckBillingContractsResponse {
   total: number;
 }
 
+export interface DunningListItem {
+  contractId: string;
+  userId: string;
+  attempts: number;
+  maxAttempts: number;
+  nextRetryAt: string;
+  lastErrorCode: string | null;
+  lastErrorMessage: string | null;
+  createdAt: string;
+}
+
+export interface DunningListResponse {
+  data: DunningListItem[];
+  total: number;
+}
+
 export interface AgreementStateEntry {
   billingAgreementId: string;
   billingMethodId: string;
