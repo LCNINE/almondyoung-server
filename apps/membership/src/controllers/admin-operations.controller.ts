@@ -75,6 +75,11 @@ export class AdminOperationsController {
     const contextInfo = context ? ` (${context})` : '';
     this.logger.error(`❌ ${operation} 실패${contextInfo}:`, msg);
 
+    // 서비스가 이미 상태코드를 결정한 예외(SubscriptionException 등)는 그대로 전달한다.
+    if (error instanceof HttpException) {
+      throw error;
+    }
+
     if (msg.includes('not found') || msg.includes('찾을 수 없')) {
       throw new HttpException(`요청한 리소스를 찾을 수 없습니다.`, HttpStatus.NOT_FOUND);
     }

@@ -58,6 +58,9 @@ export function setup(infra: SharedInfra) {
   const channelAdapterInternalKey = new sst.Secret('ChannelAdapterInternalKey');
   const medusaApiKey = new sst.Secret('MedusaApiKey');
 
+  // Membership — 서버 간(internal) 라우트 인증 키 (channel-adapter/medusa → membership)
+  const membershipInternalKey = new sst.Secret('MembershipInternalKey');
+
   // Notification
   const nhnAppKey = new sst.Secret('NhnAppKey');
   const nhnSecretKey = new sst.Secret('NhnSecretKey');
@@ -198,6 +201,7 @@ export function setup(infra: SharedInfra) {
     DATABASE_URL: dbUrl('channel_adapter'),
     ...kafkaEnv('channel-adapter', 'channel-adapter-group'),
     CHANNEL_ADAPTER_INTERNAL_KEY: channelAdapterInternalKey.value,
+    MEMBERSHIP_INTERNAL_KEY: membershipInternalKey.value,
     MEDUSA_API_KEY: medusaApiKey.value,
     MEDUSA_API_URL: url('medusa'),
     MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
@@ -224,6 +228,7 @@ export function setup(infra: SharedInfra) {
     ...kafkaEnv('membership', 'membership-group'),
     WALLET_API_KEY: walletApiKey.value,
     WALLET_API_URL: url('wallet'),
+    MEMBERSHIP_INTERNAL_KEY: membershipInternalKey.value,
     OIDC_ISSUER_URL: idpUserServiceUrl,
   });
   const notificationEnv = withPrefix('NOTIFICATION', {
@@ -521,6 +526,7 @@ export function setup(infra: SharedInfra) {
       WALLET_API_KEY: walletApiKey.value,
       ALMOND_PAYMENT_ENDPOINT: url('wallet'),
       MEMBERSHIP_SERVICE_URL: url('membership'),
+      MEMBERSHIP_INTERNAL_KEY: membershipInternalKey.value,
       UGC_SERVICE_URL: url('ugc'),
       MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
       // S3

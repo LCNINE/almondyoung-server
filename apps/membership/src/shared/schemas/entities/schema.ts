@@ -412,6 +412,8 @@ export const billingEvents = pgTable(
     index('idx_billing_events_contract').on(table.contractId),
     // 결과 이벤트 재전달 멱등: 같은 intent의 동일 결과를 한 번만 기록 (payment_intent_id NULL은 중복 허용)
     uniqueIndex('uq_billing_events_intent_result').on(table.contractId, table.paymentIntentId, table.eventType),
+    // 계약 간 intent 재사용(replay) 차단: 한 intent 의 동일 결과는 전체에서 한 번만 — 같은 결제로 새 계약을 재발급하지 못한다
+    uniqueIndex('uq_billing_events_intent_event').on(table.paymentIntentId, table.eventType),
   ],
 );
 

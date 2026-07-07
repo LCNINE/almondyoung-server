@@ -607,6 +607,7 @@ function BillingTab({
 }) {
   const { data: events, isLoading } = useMemberBillingEvents(userId);
   const retryBillingMutation = useRetryBilling();
+  const [retryConfirmOpen, setRetryConfirmOpen] = useState(false);
 
   const handleRetry = async () => {
     try {
@@ -618,6 +619,8 @@ function BillingTab({
       }
     } catch {
       toast.error('결제 재시도에 실패했습니다.');
+    } finally {
+      setRetryConfirmOpen(false);
     }
   };
 
@@ -630,7 +633,7 @@ function BillingTab({
           <Button
             size="sm"
             variant="outline"
-            onClick={handleRetry}
+            onClick={() => setRetryConfirmOpen(true)}
             disabled={retryBillingMutation.isPending}
             className="text-xs h-7"
           >
@@ -638,6 +641,48 @@ function BillingTab({
           </Button>
         </div>
       )}
+      <Dialog
+        open={retryConfirmOpen}
+        onOpenChange={(o) => {
+          if (!o && !retryBillingMutation.isPending) setRetryConfirmOpen(false);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>결제 수동 재시도</DialogTitle>
+            <DialogDescription>
+              회원의 등록된 결제수단으로 즉시 실제 청구가 발행됩니다. 대상을
+              확인한 후 진행해주세요.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-md bg-muted p-3 text-xs space-y-1">
+            <p>
+              회원 ID: <span className="font-mono">{userId}</span>
+            </p>
+            <p>
+              계약 ID: <span className="font-mono">{contractId}</span>
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={retryBillingMutation.isPending}
+              onClick={() => setRetryConfirmOpen(false)}
+            >
+              취소
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={retryBillingMutation.isPending}
+              onClick={handleRetry}
+            >
+              {retryBillingMutation.isPending ? '청구 중...' : '즉시 청구'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Card className="py-0 overflow-hidden">
         <Table>
           <TableHeader>

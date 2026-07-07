@@ -76,6 +76,15 @@ export class BadRequestException extends SubscriptionException {
   }
 }
 
+/**
+ * 이미 구독 생성에 사용된 결제(payment intent)를 재사용하려 할 때 사용합니다.
+ */
+export class PaymentIntentAlreadyUsedException extends SubscriptionException {
+  constructor() {
+    super('이미 구독 생성에 사용된 결제입니다.', 'PAYMENT_INTENT_ALREADY_USED', HttpStatus.CONFLICT);
+  }
+}
+
 // =================================================================
 // [제거] 아래 예외들은 PolicyViolationException으로 대체되거나,
 // 서비스 로직 내 일반 예외로 처리되어 더 이상 필요하지 않습니다.
