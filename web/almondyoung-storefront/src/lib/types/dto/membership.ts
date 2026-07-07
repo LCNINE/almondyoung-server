@@ -33,6 +33,7 @@ export interface SubscriptionDetailsDto {
   autoRenewal?: boolean
   pausedAt?: string | null
   recurringCancelledAt?: string | null
+  paymentActionNeeded?: boolean
   startDate: string
   endDate: string | null
   createdAt: string
