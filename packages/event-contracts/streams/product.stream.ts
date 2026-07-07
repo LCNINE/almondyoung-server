@@ -152,8 +152,14 @@ export interface ProductSnapshot {
    * true면 비회원에게 멤버십가 숫자(variant.metadata.membershipPrice)를 숨기고
    * "멤버십 회원 공개"로 표시한다. 상품 노출/구매를 제한하는 플래그가 아니다 —
    * 구매 제한은 purchaseConstraint로 표현한다.
-   * (주의: purchaseConstraint는 현재 Medusa metadata로 전파만 되고,
-   *  Medusa cart/checkout 단의 구매 차단 enforcement는 아직 구현되지 않았다.)
+   * (주의: purchaseConstraint는 현재 Medusa metadata(pimPurchaseConstraint)로 전파만 되고,
+   *  이 값을 읽는 범용 cart/checkout enforcement는 Medusa에 없다.
+   *  단, 웰컴 멤버십 상품(welcome-membership 태그)만은 별도 하드코딩 경로 —
+   *  handle-validate-cart-items-inventory.ts 의 validateWelcomeMembership — 가
+   *  자격(평생 1회) + 수량(1개)을 차단한다. 즉 "웰컴 상품 평생 1개" 정책만 쓰는 동안은
+   *  enforcement 공백이 실질 문제가 되지 않는다. 어드민이 다른 상품에
+   *  purchaseConstraint를 설정하는 순간부터는 강제되지 않으므로,
+   *  그때 hook 일반화 + 유저별 평생 구매수량 집계 API가 필요하다.)
    */
   hideMembershipPriceForNonMembers: boolean;
   isVisibleToMembersOnly: boolean;
