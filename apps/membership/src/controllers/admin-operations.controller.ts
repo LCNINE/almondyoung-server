@@ -932,6 +932,21 @@ export class AdminOperationsController {
   }
 
   /**
+   * 결제 실패 재시도 대기(dunning) 계약 목록 — 운영자 결제실패 대응용.
+   * GET /admin/dunning
+   */
+  @Get('dunning')
+  @ApiOperation({ summary: '결제 실패 재시도 대기(dunning) 계약 목록' })
+  @UseGuards(JwtAuthGuard)
+  async getDunningList() {
+    try {
+      return await this.adminMembersReader.findDunningList();
+    } catch (error) {
+      this.handleError(error, 'dunning 목록 조회');
+    }
+  }
+
+  /**
    * 관리자 수동 조작: billingInProgress 플래그 해제.
    * wallet 결과 이벤트가 영구적으로 오지 않는 경우 사용.
    * 감사 이벤트(BILLING_PROGRESS_RESET_BY_ADMIN)를 남기고 reason 필수.
