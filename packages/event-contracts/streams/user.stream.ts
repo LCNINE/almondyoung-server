@@ -42,6 +42,8 @@ export interface UserUpdatedAddressPayload {
 
 export interface UserUpdatedPayload {
   userId: string;
+  /** 이메일 변경 시에만 포함 (예: cafe24 이메일 이관). Medusa customer email 동기화 트리거. */
+  email?: string;
   username?: string;
   nickname?: string;
   phoneNumber?: string;
@@ -143,6 +145,7 @@ const UserUpdatedAddressSchema = z.object({
 
 const UserUpdatedSchema = z.object({
   userId: z.string().min(1),
+  email: z.string().email().optional(),
   username: z.string().min(1).optional(),
   nickname: z.string().optional(),
   phoneNumber: z.string().optional(),

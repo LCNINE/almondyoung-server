@@ -231,6 +231,21 @@ export class Cafe24LinkService {
     }
 
     await this.applyMigration(userId, key, cafe24Value, client);
+
+    // 이메일 이관은 Medusa customer email 과의 정합성이 깨지는 지점 — 변경 사실을 이벤트로 전파해
+    // Medusa 가 customer email 을 따라 갱신하게 한다 (미전파 시 멤버십 그룹 sync 의 유령고객 가드 오작동).
+    if (key === 'email') {
+      try {
+        await this.eventPublisher.publishEvent({
+          eventType: 'UserUpdated',
+          aggregateId: userId,
+          payload: { userId, email: cafe24Value },
+        });
+      } catch (err) {
+        this.logger.error(`Failed to publish UserUpdated(email) event for userId=${userId}`, err?.message);
+      }
+    }
+
     return this.lookupMigrationItem(userId, key, tx);
   }
 
