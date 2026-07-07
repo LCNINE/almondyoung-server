@@ -78,6 +78,23 @@ function useColumns() {
           </span>
         ),
       }),
+      columnHelper.accessor('paymentIntentId', {
+        header: '결제 상세',
+        cell: ({ getValue }) => {
+          const intentId = getValue();
+          if (!intentId) return <span className="text-sm text-muted-foreground">-</span>;
+          return (
+            <Link
+              href={`/payments/${intentId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-primary hover:underline"
+            >
+              wallet 상세
+            </Link>
+          );
+        },
+      }),
     ],
     [],
   );

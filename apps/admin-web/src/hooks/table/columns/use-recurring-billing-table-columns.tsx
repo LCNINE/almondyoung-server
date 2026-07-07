@@ -63,7 +63,12 @@ function intentStatusLabel(status: string | undefined): string {
 
 function formatDate(str: string | undefined | null): string {
   if (!str) return '-';
-  return new Date(str).toLocaleDateString('ko-KR', {
+  // CMS paymentDate는 YYYYMMDD — new Date(str)로는 Invalid Date
+  const date = /^\d{8}$/.test(str)
+    ? new Date(`${str.slice(0, 4)}-${str.slice(4, 6)}-${str.slice(6, 8)}`)
+    : new Date(str);
+  if (Number.isNaN(date.getTime())) return '-';
+  return date.toLocaleDateString('ko-KR', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
