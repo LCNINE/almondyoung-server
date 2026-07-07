@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useState } from "react"
+import { useCallback, useState, useTransition } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Image from "next/image"
 import { ChevronDown, ChevronRight, ChevronUp } from "lucide-react"
@@ -47,7 +47,7 @@ function HistoryCard({
   const t = useTranslations("mypage.membership")
   const [open, setOpen] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
-  const [isCancelling, setIsCancelling] = useState(false)
+  const [isCancelling, startTransition] = useTransition()
 
   const planLabel = (durationDays?: number): string => {
     if (!durationDays) return ""
@@ -87,27 +87,30 @@ function HistoryCard({
       ? item.endDate
       : item.nextBillingDate
 
-  const handleCancel = async ({
+  const handleCancel = ({
     reasonCode,
     reasonText,
   }: {
     reasonCode: string
     reasonText?: string
   }) => {
-    try {
-      setIsCancelling(true)
-      await cancelSubscription(reasonCode, reasonText)
-      setModalOpen(false)
-      onCancelled()
-      pollCartRefreshUntilGroupRemoved(() => {
-        toast.success(t("billing.cartPriceUpdated"))
-        router.refresh()
-      })
-    } catch {
-      // 에러는 서버에서 처리
-    } finally {
-      setIsCancelling(false)
-    }
+    startTransition(async () => {
+      try {
+        await cancelSubscription(reasonCode, reasonText)
+        setModalOpen(false)
+        onCancelled()
+        pollCartRefreshUntilGroupRemoved(() => {
+          toast.success(t("billing.cartPriceUpdated"))
+          router.refresh()
+        })
+      } catch (error) {
+        const err = error as Error & { digest?: string }
+        // UNAUTHORIZED는 re-throw → error.tsx 토큰 복구
+        if (err?.digest === "UNAUTHORIZED" || err?.message === "UNAUTHORIZED") throw error
+        console.error("멤버십 해지 실패:", error)
+        toast.error(t("history.cancelFailed"))
+      }
+    })
   }
 
   return (

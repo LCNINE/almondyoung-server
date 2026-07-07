@@ -1,7 +1,7 @@
 "use client"
 
 import { useParams, useRouter } from "next/navigation"
-import { useMemo, useState } from "react"
+import { useMemo, useState, useTransition } from "react"
 import { ChevronRight } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { IconTextButton } from "../../../components/icon-button"
@@ -64,7 +64,7 @@ export default function SubscriberSection({
   hasCafe24Link,
 }: SubscriberSectionProps) {
   const [open, setOpen] = useState(false)
-  const [isCancelling, setIsCancelling] = useState(false)
+  const [isCancelling, startTransition] = useTransition()
   const router = useRouter()
   const params = useParams()
   const countryCode = (params?.countryCode as string) ?? "kr"
@@ -171,21 +171,24 @@ export default function SubscriberSection({
         setOpen={setOpen}
         reasons={hasCancellationReasons ? cancellationReasons : []}
         isSubmitting={isCancelling}
-        onConfirm={async ({ reasonCode, reasonText }) => {
-          try {
-            setIsCancelling(true)
-            await cancelSubscription(reasonCode, reasonText)
-            setOpen(false)
-            router.push(`/${countryCode}/mypage/membership`)
-            pollCartRefreshUntilGroupRemoved(() => {
-              toast.success(t("billing.cartPriceUpdated"))
-              router.refresh()
-            })
-          } catch (error) {
-            console.error("멤버십 해지 실패:", error)
-          } finally {
-            setIsCancelling(false)
-          }
+        onConfirm={({ reasonCode, reasonText }) => {
+          startTransition(async () => {
+            try {
+              await cancelSubscription(reasonCode, reasonText)
+              setOpen(false)
+              router.push(`/${countryCode}/mypage/membership`)
+              pollCartRefreshUntilGroupRemoved(() => {
+                toast.success(t("billing.cartPriceUpdated"))
+                router.refresh()
+              })
+            } catch (error) {
+              const err = error as Error & { digest?: string }
+              // UNAUTHORIZED는 re-throw → error.tsx 토큰 복구
+              if (err?.digest === "UNAUTHORIZED" || err?.message === "UNAUTHORIZED") throw error
+              console.error("멤버십 해지 실패:", error)
+              toast.error(t("history.cancelFailed"))
+            }
+          })
         }}
       />
     </>

@@ -82,6 +82,14 @@ export default function MemberDetails({
             <strong className="text-black">{fmt(nextBillingDate)}</strong>
           </p>
         </figcaption>
+      ) : membershipData?.autoRenewal === false ? (
+        // 정기해지/일시결제 — "다음 결제 예정일"이 아니라 이용 종료일을 안내
+        <figcaption className="text-center font-['Pretendard'] text-sm font-normal text-black">
+          {t.rich("billing.membershipEndsNotice", {
+            date: fmt(membershipData?.endDate ?? membershipData?.currentPeriodEnd),
+            strong: (chunks) => <strong>{chunks}</strong>,
+          })}
+        </figcaption>
       ) : (
         <figcaption className="text-center font-['Pretendard'] text-sm font-normal text-black">
           {t.rich("billing.nextBillingNotice", {
