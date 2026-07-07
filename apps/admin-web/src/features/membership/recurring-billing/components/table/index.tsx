@@ -13,6 +13,7 @@ import { AdminRecurringContractSummary } from '@/lib/types/dto/membership';
 import { RecurringBillingDetailDialog } from '../detail-dialog';
 import { RecurringContractsView } from './contracts-view';
 import { StuckBillingView } from './stuck-view';
+import { DunningView } from './dunning-view';
 
 const PAGE_SIZE = 20;
 
@@ -25,6 +26,10 @@ export function RecurringBillingTable() {
 
   if (query.view === 'stuck') {
     return <StuckBillingView />;
+  }
+
+  if (query.view === 'dunning') {
+    return <DunningView />;
   }
 
   return <RecurringBillingCmsTable query={query} />;

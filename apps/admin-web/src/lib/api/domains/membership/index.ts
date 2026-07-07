@@ -405,6 +405,13 @@ export const membershipApi = {
     return res.data;
   },
 
+  getDunningList: async (): Promise<
+    import('@/lib/types/dto/membership').DunningListResponse
+  > => {
+    const res = await client.get(`${MEMBERSHIP_SERVICE_BASE_URL}/admin/dunning`);
+    return res.data;
+  },
+
   resetBillingInProgress: async (
     contractId: string,
     reason: string

@@ -611,6 +611,7 @@
       "trialEndAutoStart": "無料体験後の自動決済開始日: {date}",
       "nextBillingNotice": "次回決済予定日は {date} です",
       "membershipEndsNotice": "{date} まで利用後、自動終了します（自動更新なし）",
+      "paymentActionNeeded": "お支払いの確認が必要です。決済手段をご確認いただくか、サポートまでお問い合わせください。",
       "trialEndAutoStartLabel": "体験終了後の自動決済開始日",
       "cartPriceUpdated": "カート価格を更新しました。",
       "paymentMethod": "月額決済方法を変更",

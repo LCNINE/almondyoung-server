@@ -71,6 +71,11 @@ export default function MemberDetails({
 
   return (
     <div className="flex w-full flex-col items-center gap-4">
+      {membershipData?.paymentActionNeeded && (
+        <p className="w-full rounded-md bg-amber-50 px-3 py-2 text-center text-sm text-amber-800">
+          {t("billing.paymentActionNeeded")}
+        </p>
+      )}
       {/* 1. 계정 상태 및 플랜 관리 */}
       {isInTrial ? (
         <figcaption className="flex flex-col items-center gap-1.5 font-['Pretendard']">

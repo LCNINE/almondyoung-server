@@ -611,6 +611,7 @@
       "trialEndAutoStart": "Auto-billing starts after trial: {date}",
       "nextBillingNotice": "Your next billing date is {date}",
       "membershipEndsNotice": "Your membership ends on {date} (no auto-renewal)",
+      "paymentActionNeeded": "Please review your payment. Check your payment method or contact support.",
       "trialEndAutoStartLabel": "Auto-billing starts after trial",
       "cartPriceUpdated": "Cart prices updated.",
       "paymentMethod": "Change payment method",

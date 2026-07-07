@@ -611,6 +611,7 @@
       "trialEndAutoStart": "무료 체험 후 자동 결제 시작일: {date}",
       "nextBillingNotice": "다음 결제 예정일은 {date} 입니다",
       "membershipEndsNotice": "{date} 까지 이용 후 자동 종료됩니다 (자동갱신 없음)",
+      "paymentActionNeeded": "결제 확인이 필요합니다. 결제 수단을 확인하시거나 고객센터로 문의해 주세요.",
       "trialEndAutoStartLabel": "체험 종료 후 자동 결제 시작일",
       "cartPriceUpdated": "장바구니 가격이 업데이트되었습니다.",
       "paymentMethod": "월회비 결제수단 변경",
