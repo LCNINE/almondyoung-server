@@ -57,7 +57,10 @@ import { MasterProductWithPrimaryVersionDto } from '../dto/products/product-resp
 import { ProductMasterVersionEntity } from '../../../schema/catalog.schema.types';
 import { ProductReadAssembler } from '../assemblers/product-read.assembler';
 import { ProductMatchingService } from '../../../../product-matching/services/product-matching.service';
-import { ProductSellableQuantityService } from '../../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
+import {
+  ProductSellableQuantityService,
+  SoldOutState,
+} from '../../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 
 type VersionOptionValueDisplay = {
   optionValueId: string;
@@ -512,6 +515,7 @@ export class ProductMastersService {
         variantCount: number;
         thumbnail: string | null;
         priceSummary: PriceSummary | null;
+        soldOutState: SoldOutState;
       };
     }[];
     total: number;
@@ -754,6 +758,9 @@ export class ProductMastersService {
 
       const priceSummaryMap = await this.priceCacheService.getPriceSummariesByVersionIds(versionIds, trx);
 
+      // 한 번에 모든 품절 상태 집계 (materialized projection 기준, 상수 쿼리 1회)
+      const soldOutStateMap = await this.productSellableQuantity.getSoldOutStateByVersionIds(versionIds, trx);
+
       // Map으로 변환 (O(1) 조회)
       const optionGroupNamesMap = new Map(optionGroupNamesResult.map((item) => [item.versionId, item.names]));
       const variantCountMap = new Map(variantCounts.map((item) => [item.versionId, item.count]));
@@ -775,6 +782,7 @@ export class ProductMastersService {
             variantCount: variantCountMap.get(version.id) ?? 0,
             thumbnail: thumbnailMap.get(version.id) ?? null,
             priceSummary: priceSummaryMap.get(version.id) ?? null,
+            soldOutState: soldOutStateMap.get(version.id) ?? 'none',
           },
         };
       });

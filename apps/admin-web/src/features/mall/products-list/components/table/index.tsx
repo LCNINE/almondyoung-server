@@ -43,6 +43,8 @@ export function ProductsListTable() {
     enableRowSelection: true,
   });
 
+  console.log('data:', data);
+
   const [selectedItems, setSelectedItems] = useState<
     Record<string, SelectedProductSnapshot>
   >({});
