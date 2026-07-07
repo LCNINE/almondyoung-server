@@ -62,6 +62,9 @@ export class SubscriptionService {
     if (!data) return null;
 
     const { entitlement, contract, plan, tier } = data;
+    // 고객 노출은 보수적으로: 결제 재시도 내부값(횟수/다음시각/사유)은 노출하지 않고
+    // "결제 확인 필요" 여부만 boolean 으로 내려준다.
+    const paymentActionNeeded = (await this.billingReader.findDunningByContractId(contract.id)) !== null;
     const tierDto = tier
       ? {
           id: tier.id,
@@ -82,6 +85,7 @@ export class SubscriptionService {
       autoRenewal: contract.autoRenewal,
       pausedAt: entitlement.pausedAt ?? null,
       recurringCancelledAt: contract.recurringCancelledAt ?? null,
+      paymentActionNeeded,
       startDate: entitlement.startsAt,
       endDate: entitlement.endsAt,
       currentPeriodStart: entitlement.startsAt,
