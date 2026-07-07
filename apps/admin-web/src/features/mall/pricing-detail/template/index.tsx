@@ -102,7 +102,10 @@ export default function PricingDetailTemplate({ masterId }: Props) {
       { masterId, versionId: selectedVersionId, dto },
       {
         onSuccess: () => toast.success('가격 룰이 저장되었습니다.'),
-        onError: () => toast.error('저장에 실패했습니다.'),
+        onError: (e: any) => {
+          const detail = e?.response?.data?.message;
+          toast.error(typeof detail === 'string' ? detail : '저장에 실패했습니다.');
+        },
       },
     );
   };
@@ -187,6 +190,8 @@ export default function PricingDetailTemplate({ masterId }: Props) {
                 readonly={isReadonly}
                 isSaving={replaceRules.isPending}
                 isDeleting={deleteRules.isPending}
+                optionGroups={selectedVersionDetail?.optionGroups ?? []}
+                variantOptions={variants}
                 onSave={handleSave}
                 onDelete={handleDelete}
               />

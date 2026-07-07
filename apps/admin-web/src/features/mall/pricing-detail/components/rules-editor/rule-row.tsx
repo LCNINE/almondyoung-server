@@ -11,7 +11,9 @@ import {
 } from '@/components/ui/select';
 import { ChevronUp, ChevronDown, Trash2 } from 'lucide-react';
 import type { PricingLayer, PricingScopeType, PricingOperationType, PricingRuleInput } from '@/lib/types/dto/products';
+import type { ProductOptionGroup } from '@/lib/services/products/products-detail.types';
 import { fromServerScale, toServerScale } from '@/lib/services/products/transformers';
+import { RuleScopeTarget, type ScopeTargetVariant } from './rule-scope-target';
 
 const SCOPE_LABELS: Record<PricingScopeType, string> = {
   all_variants: '전체',
@@ -31,6 +33,8 @@ interface Props {
   total: number;
   layer: PricingLayer;
   readonly: boolean;
+  optionGroups: ProductOptionGroup[];
+  variantOptions: ScopeTargetVariant[];
   onChange: (index: number, updated: PricingRuleInput) => void;
   onMoveUp: (index: number) => void;
   onMoveDown: (index: number) => void;
@@ -43,6 +47,8 @@ export function RuleRow({
   total,
   layer,
   readonly,
+  optionGroups,
+  variantOptions,
   onChange,
   onMoveUp,
   onMoveDown,
@@ -68,26 +74,50 @@ export function RuleRow({
     onChange(index, { ...rule, operationType: val, operationValue });
   };
 
+  // 범위를 바꾸면 대상은 항상 초기화한다. 전체는 대상이 없고,
+  // 옵션값 IDs 와 variant IDs 는 서로 호환되지 않기 때문.
+  const handleScopeChange = (val: PricingScopeType) => {
+    onChange(index, {
+      ...rule,
+      scopeType: val,
+      scopeTargetIds: val === 'all_variants' ? undefined : [],
+    });
+  };
+
+  const needsTarget = rule.scopeType === 'with_option' || rule.scopeType === 'variants';
+
   return (
     <tr className="border-b text-sm">
       <td className="px-3 py-2 text-center text-muted-foreground">{index + 1}</td>
-      <td className="px-3 py-2">
-        <Select
-          value={rule.scopeType}
-          onValueChange={(v) => onChange(index, { ...rule, scopeType: v as PricingScopeType })}
-          disabled={readonly}
-        >
-          <SelectTrigger className="h-8 w-32 text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {(Object.keys(SCOPE_LABELS) as PricingScopeType[]).map((k) => (
-              <SelectItem key={k} value={k} className="text-xs">
-                {SCOPE_LABELS[k]}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <td className="px-3 py-2 align-top">
+        <div className="flex flex-col gap-1.5">
+          <Select
+            value={rule.scopeType}
+            onValueChange={(v) => handleScopeChange(v as PricingScopeType)}
+            disabled={readonly}
+          >
+            <SelectTrigger className="h-8 w-32 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.keys(SCOPE_LABELS) as PricingScopeType[]).map((k) => (
+                <SelectItem key={k} value={k} className="text-xs">
+                  {SCOPE_LABELS[k]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {needsTarget && (
+            <RuleScopeTarget
+              scopeType={rule.scopeType as 'with_option' | 'variants'}
+              optionGroups={optionGroups}
+              variantOptions={variantOptions}
+              value={rule.scopeTargetIds ?? []}
+              onChange={(ids) => onChange(index, { ...rule, scopeTargetIds: ids })}
+              readonly={readonly}
+            />
+          )}
+        </div>
       </td>
       <td className="px-3 py-2">
         <Select
