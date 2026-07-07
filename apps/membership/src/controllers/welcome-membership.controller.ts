@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Public } from '@app/authorization';
+import { MembershipInternalAuth } from '../shared/decorators/internal-auth.decorator';
 import { WelcomeMembershipService } from '../services/welcome-membership.service';
 
 /**
@@ -44,7 +45,7 @@ export class WelcomeMembershipController {
    * Medusa confirm-purchase 워크플로에서 호출
    */
   @Post('eligibility/:userId/purchased')
-  @Public()
+  @MembershipInternalAuth()
   @ApiOperation({ summary: '웰컴 멤버십 구매 완료 기록' })
   async markPurchased(@Param('userId') userId: string, @Body() body: { orderId: string }) {
     try {
@@ -63,7 +64,7 @@ export class WelcomeMembershipController {
    * Medusa order.canceled 이벤트에서 호출
    */
   @Delete('eligibility/:userId/purchased')
-  @Public()
+  @MembershipInternalAuth()
   @ApiOperation({ summary: '웰컴 멤버십 구매 이력 되돌리기 (주문 취소 시)' })
   async revertPurchase(@Param('userId') userId: string) {
     try {

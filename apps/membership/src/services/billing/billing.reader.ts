@@ -141,6 +141,8 @@ export class BillingReader {
           eq(schema.subscriptionEntitlement.isCurrent, true),
           eq(schema.subscriptionContracts.autoRenewal, false),
           eq(schema.subscriptionContracts.isVoided, false),
+          // 일시정지 중엔 endsAt 이 동결된 채 지나갈 수 있다 — 재개 시 정지 일수만큼 연장되므로 만료 대상이 아니다.
+          isNull(schema.subscriptionEntitlement.pausedAt),
           lt(schema.subscriptionEntitlement.endsAt, today),
           notInArray(schema.subscriptionContracts.status, ['EXPIRED', 'CANCELLED']),
         ),
@@ -213,15 +215,6 @@ export class BillingReader {
    * 계약의 현재 더닝 재시도 횟수 조회 (없으면 0).
    * 결제 멱등키 nonce로 사용해 재시도마다 새 커맨드가 되도록 한다.
    */
-  async findDunningAttempts(contractId: string): Promise<number> {
-    const [row] = await this.dbService.db
-      .select({ attempts: schema.membershipDunningQueue.attempts })
-      .from(schema.membershipDunningQueue)
-      .where(eq(schema.membershipDunningQueue.contractId, contractId))
-      .limit(1);
-    return row?.attempts ?? 0;
-  }
-
   /** 계약의 dunning(결제 실패 재시도 대기) 항목 조회. 없으면 null. */
   async findDunningByContractId(contractId: string): Promise<{
     attempts: number;
@@ -245,9 +238,11 @@ export class BillingReader {
   }
 
   /**
-   * 계약 ID로 계약 조회
+   * 계약 ID로 계약 조회 (수동 재시도 검증에 필요한 상태 필드 포함)
    */
-  async findContractById(contractId: string): Promise<DueContract | null> {
+  async findContractById(
+    contractId: string,
+  ): Promise<(DueContract & { status: string; autoRenewal: boolean; billingInProgress: boolean }) | null> {
     const [contract] = await this.dbService.db
       .select({
         id: schema.subscriptionContracts.id,
@@ -257,6 +252,9 @@ export class BillingReader {
         paymentProfileId: schema.subscriptionContracts.paymentProfileId,
         isPastDue: schema.subscriptionContracts.isPastDue,
         billingRetryCount: schema.subscriptionContracts.billingRetryCount,
+        status: schema.subscriptionContracts.status,
+        autoRenewal: schema.subscriptionContracts.autoRenewal,
+        billingInProgress: schema.subscriptionContracts.billingInProgress,
       })
       .from(schema.subscriptionContracts)
       .where(eq(schema.subscriptionContracts.id, contractId))

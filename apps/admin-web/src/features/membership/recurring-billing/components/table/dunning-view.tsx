@@ -2,10 +2,11 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { membershipApi } from '@/lib/api/domains/membership';
 
 export function DunningView() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['dunning-list'],
     queryFn: () => membershipApi.getDunningList(),
     staleTime: 30_000,
@@ -21,6 +22,13 @@ export function DunningView() {
 
       {isLoading ? (
         <p className="text-sm text-muted-foreground">불러오는 중...</p>
+      ) : isError ? (
+        <div className="flex flex-col items-center gap-2 rounded-md border py-8">
+          <p className="text-sm text-destructive">목록을 불러오지 못했습니다.</p>
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            다시 시도
+          </Button>
+        </div>
       ) : rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">재시도 대기 중인 계약이 없습니다.</p>
       ) : (

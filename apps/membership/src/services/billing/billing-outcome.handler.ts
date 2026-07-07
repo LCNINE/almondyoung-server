@@ -38,10 +38,14 @@ export class BillingOutcomeHandler {
       // 멱등 마커(첫 쓰기): unique(contract_id, payment_intent_id, event_type) 충돌 시 0행 → 이미 처리됨.
       // 활성 권한 유무와 무관하게 먼저 기록한다 — 결제는 이미 wallet에서 캡처됐으므로 CHARGE_SUCCESS는
       // 사실이고, 권한이 없어 연장을 못 하더라도 재전달이 중복 처리되면 안 된다.
+      // target 명시: 재전달 멱등은 (contract, intent, type) 충돌만 조용히 skip 한다.
+      // 전역 uq_billing_events_intent_event(다른 계약에 같은 intent) 충돌은 데이터 이상이므로 throw 되게 둔다.
       const inserted = await tx
         .insert(schema.billingEvents)
         .values({ contractId, eventType: 'CHARGE_SUCCESS', attemptNo, amount, paymentIntentId: paymentIntentId ?? null })
-        .onConflictDoNothing()
+        .onConflictDoNothing({
+          target: [schema.billingEvents.contractId, schema.billingEvents.paymentIntentId, schema.billingEvents.eventType],
+        })
         .returning({ id: schema.billingEvents.id });
       if (paymentIntentId && inserted.length === 0) {
         this.logger.log(`handleSuccess: already processed intent (${paymentIntentId}) — skip`);
@@ -167,7 +171,9 @@ export class BillingOutcomeHandler {
       const insertedFail = await tx
         .insert(schema.billingEvents)
         .values({ contractId, eventType: 'CHARGE_FAIL', attemptNo, amount: null, paymentIntentId: paymentIntentId ?? null, errorCode, errorMessage })
-        .onConflictDoNothing()
+        .onConflictDoNothing({
+          target: [schema.billingEvents.contractId, schema.billingEvents.paymentIntentId, schema.billingEvents.eventType],
+        })
         .returning({ id: schema.billingEvents.id });
       if (paymentIntentId && insertedFail.length === 0) {
         this.logger.log(`handleFailure: already processed intent (${paymentIntentId}) — skip`);
@@ -308,7 +314,9 @@ export class BillingOutcomeHandler {
       const insertedCancel = await tx
         .insert(schema.billingEvents)
         .values({ contractId, eventType: 'CHARGE_CANCELED', amount: null, paymentIntentId: paymentIntentId ?? null })
-        .onConflictDoNothing()
+        .onConflictDoNothing({
+          target: [schema.billingEvents.contractId, schema.billingEvents.paymentIntentId, schema.billingEvents.eventType],
+        })
         .returning({ id: schema.billingEvents.id });
       if (paymentIntentId && insertedCancel.length === 0) {
         this.logger.log(`handleCanceled: already processed intent (${paymentIntentId}) — skip`);

@@ -11,6 +11,8 @@ export const membershipEnvSchema = z
     PAYMENT_SERVER_URL: z.string().url().optional(),
     WALLET_API_URL: z.string().url().optional(),
     WALLET_API_KEY: z.string().min(1).optional(),
+    // 서버 간(internal) 라우트 인증 키 (channel-adapter/medusa → membership)
+    MEMBERSHIP_INTERNAL_KEY: z.string().min(1).optional(),
     // Auth — dual-mode: AUTH_SECRET (HS256 legacy) 또는 OIDC_ISSUER_URL (RS256/OIDC), 둘 중 하나 필수.
     AUTH_SECRET: z.string().min(1).optional(),
     OIDC_ISSUER_URL: z.string().url().optional(),
@@ -20,6 +22,15 @@ export const membershipEnvSchema = z
   .refine((data) => !!data.AUTH_SECRET || !!data.OIDC_ISSUER_URL, {
     message: 'Either AUTH_SECRET (HS256) or OIDC_ISSUER_URL (RS256) must be set',
     path: ['AUTH_SECRET'],
+  })
+  // reconciliation 크론이 wallet 권위 조회에 의존하므로, 운영에서 누락되면 조용히 죽는 대신 부팅을 막는다.
+  .refine((data) => data.NODE_ENV !== 'production' || (!!data.WALLET_API_URL && !!data.WALLET_API_KEY), {
+    message: 'WALLET_API_URL and WALLET_API_KEY are required in production',
+    path: ['WALLET_API_URL'],
+  })
+  .refine((data) => data.NODE_ENV !== 'production' || !!data.MEMBERSHIP_INTERNAL_KEY, {
+    message: 'MEMBERSHIP_INTERNAL_KEY is required in production',
+    path: ['MEMBERSHIP_INTERNAL_KEY'],
   });
 
 export type MembershipEnvConfig = z.infer<typeof membershipEnvSchema>;

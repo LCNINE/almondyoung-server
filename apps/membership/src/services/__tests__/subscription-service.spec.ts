@@ -53,7 +53,6 @@ describe('SubscriptionService - Layer Refactoring', () => {
 
   const mockBillingReader = {
     findContractById: jest.fn(),
-    findDunningAttempts: jest.fn(),
     findDunningByContractId: jest.fn().mockResolvedValue(null),
   };
 

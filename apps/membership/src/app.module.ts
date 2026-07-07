@@ -61,6 +61,7 @@ import { AdminIdempotencyInterceptor } from './shared/idempotency/admin-idempote
 import { AuthorizationModule } from '@app/authorization';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtAuthGuard } from '@app/authorization';
+import { InternalApiKeyGuard } from './shared/guards/internal-api-key.guard';
 
 @Module({
   imports: [
@@ -109,6 +110,7 @@ import { JwtAuthGuard } from '@app/authorization';
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
     },
+    InternalApiKeyGuard,
     // Business Layer (Services)
     PlanService,
     AdminOperationsService,

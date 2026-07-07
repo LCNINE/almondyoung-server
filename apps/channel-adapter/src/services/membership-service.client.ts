@@ -16,6 +16,11 @@ export class MembershipServiceClient {
     return this.configService.get<string>('MEMBERSHIP_SERVICE_URL') || '';
   }
 
+  private getAuthHeaders(): Record<string, string> {
+    const key = this.configService.get<string>('MEMBERSHIP_INTERNAL_KEY');
+    return key ? { Authorization: `Bearer ${key}` } : {};
+  }
+
   /**
    * 멤버십 서비스 internal grant 엔드포인트 호출.
    * 이미 활성 구독이 있으면 멤버십 서비스가 no-op으로 처리한다.
@@ -24,7 +29,11 @@ export class MembershipServiceClient {
     const url = `${this.getBaseUrl()}/internal/grant`;
     try {
       const response = await firstValueFrom(
-        this.httpService.post<{ granted: boolean; reason?: string }>(url, { userId, days, memo }),
+        this.httpService.post<{ granted: boolean; reason?: string }>(
+          url,
+          { userId, days, memo },
+          { headers: this.getAuthHeaders() },
+        ),
       );
       return { granted: response.data?.granted ?? false };
     } catch (error) {
@@ -42,7 +51,7 @@ export class MembershipServiceClient {
     const url = `${this.getBaseUrl()}/internal/memberships/active`;
     try {
       const response = await firstValueFrom(
-        this.httpService.post<{ activeUserIds: string[] }>(url, { userIds }),
+        this.httpService.post<{ activeUserIds: string[] }>(url, { userIds }, { headers: this.getAuthHeaders() }),
       );
       return response.data?.activeUserIds ?? [];
     } catch (error) {
