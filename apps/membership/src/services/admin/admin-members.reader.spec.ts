@@ -146,3 +146,38 @@ describe('AdminMembersReader.updateAutoRenewal', () => {
     expect(transaction).not.toHaveBeenCalled();
   });
 });
+
+describe('AdminMembersReader.findDunningList', () => {
+  it('dunning row 를 필드 매핑 + Date→ISO 로 투영한다', async () => {
+    const rows = [
+      {
+        contractId: 'c1',
+        userId: 'u1',
+        attempts: 2,
+        maxAttempts: 3,
+        nextRetryAt: new Date('2026-07-05T00:00:00Z'),
+        lastErrorCode: 'INSUFFICIENT_FUNDS',
+        lastErrorMessage: '잔액 부족',
+        createdAt: new Date('2026-07-01T00:00:00Z'),
+      },
+    ];
+    const db = {
+      select: () => ({ from: () => ({ innerJoin: () => ({ orderBy: () => Promise.resolve(rows) }) }) }),
+    };
+    const reader = new AdminMembersReader({ db } as never, {} as never, {} as never);
+
+    const res = await reader.findDunningList();
+
+    expect(res.total).toBe(1);
+    expect(res.data[0]).toEqual({
+      contractId: 'c1',
+      userId: 'u1',
+      attempts: 2,
+      maxAttempts: 3,
+      nextRetryAt: '2026-07-05T00:00:00.000Z',
+      lastErrorCode: 'INSUFFICIENT_FUNDS',
+      lastErrorMessage: '잔액 부족',
+      createdAt: '2026-07-01T00:00:00.000Z',
+    });
+  });
+});
