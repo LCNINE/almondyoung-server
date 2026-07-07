@@ -82,3 +82,38 @@ describe('CmsSettlementPollerService.handleWithdrawalSuccess (W2 reconcile guard
     expect(autoCaptureService.attemptAutoCapture).toHaveBeenCalled();
   });
 });
+
+// 실패 경로도 성공 경로와 대칭: withdrawal·charge·intent 를 한 tx 로 묶어 부분커밋 고아를 막고,
+// 이미 종료된 intent 는 재전이하지 않는다.
+const failApiData = { status: '출금실패', result: { code: '9999', message: '잔액부족' } } as never;
+
+describe('CmsSettlementPollerService.handleWithdrawalFailure (single-tx + terminal guard)', () => {
+  it('PENDING_SETTLEMENT intent → charge FAILED + intent FAILED 를 한 tx 로 처리', async () => {
+    const { poller, db, chargesService, stateTransitionService } = makePoller('PENDING_SETTLEMENT');
+
+    await (poller as never as { handleWithdrawalFailure: (w: unknown, a: unknown) => Promise<void> })
+      .handleWithdrawalFailure(withdrawal, failApiData);
+
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+    expect(chargesService.updateStatus).toHaveBeenCalledWith('charge-1', 'FAILED', expect.anything(), expect.anything());
+    expect(stateTransitionService.transitionIntent).toHaveBeenCalledWith(
+      'intent-1',
+      'FAILED',
+      expect.anything(),
+      'PENDING_SETTLEMENT',
+      expect.anything(),
+    );
+  });
+
+  it('이미 CANCELED 인 intent → withdrawal 만 FAILED 기록, charge/intent 전이 없음(불법전이 방지)', async () => {
+    const { poller, db, chargesService, stateTransitionService } = makePoller('CANCELED');
+
+    await (poller as never as { handleWithdrawalFailure: (w: unknown, a: unknown) => Promise<void> })
+      .handleWithdrawalFailure(withdrawal, failApiData);
+
+    expect(db.update).toHaveBeenCalledTimes(1); // withdrawal 단건 update
+    expect(db.transaction).not.toHaveBeenCalled();
+    expect(chargesService.updateStatus).not.toHaveBeenCalled();
+    expect(stateTransitionService.transitionIntent).not.toHaveBeenCalled();
+  });
+});
