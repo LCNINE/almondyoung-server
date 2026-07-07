@@ -219,6 +219,7 @@ export const mainMenus: MainMenu[] = [
         title: '등록',
         path: '/mall/product-registration',
       },
+      { id: 'product-drafts', title: '작성중인 상품', path: '/mall/my-drafts' },
       {
         id: 'product-category',
         title: '분류/카테고리',

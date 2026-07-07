@@ -61,9 +61,9 @@ export class ProductMastersController {
     type: ProductDto,
   })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async createMaster(): Promise<ProductDto> {
+  async createMaster(@User() user: { userId: string }): Promise<ProductDto> {
     try {
-      const master = await this.productMastersService.createMaster();
+      const master = await this.productMastersService.createMaster(user.userId);
       return ProductMapper.toDto(master, []);
     } catch (error) {
       console.error('Create master error:', error);

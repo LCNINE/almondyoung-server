@@ -1,15 +1,14 @@
 'use client';
 
 import { createColumnHelper } from '@tanstack/react-table';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { ImageOff } from 'lucide-react';
 import type { MasterSummaryDto } from '@/lib/types/dto/products';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DateCell } from '@/components/table/table-cells/common';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { resolvePublicFileUrl } from '@/lib/utils/file-url';
+import { ProductThumbnailCell } from '@/components/table/table-cells/product-thumbnail-cell';
 import { ShortId } from '@/components/admin-ui-experimental/common/copy/short-id';
 
 const columnHelper = createColumnHelper<MasterSummaryDto>();
@@ -20,36 +19,6 @@ const STATUS_LABELS: Record<string, string> = {
   draft: '임시저장',
   archived: '보관',
 };
-
-function ProductThumbnailCell({
-  thumbnail,
-}: {
-  thumbnail: string | null | undefined;
-}) {
-  const [failedSrc, setFailedSrc] = useState<string | null>(null);
-  const src = resolvePublicFileUrl(thumbnail);
-  const loadFailed = src !== null && failedSrc === src;
-
-  if (!src || loadFailed) {
-    return (
-      <div className="mx-auto flex h-14 w-14 flex-col items-center justify-center rounded bg-muted text-muted-foreground">
-        <ImageOff className="h-4 w-4" aria-hidden="true" />
-        <span className="mt-0.5 text-[9px]">이미지 없음</span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="mx-auto h-14 w-14 overflow-hidden rounded bg-muted">
-      <img
-        src={src}
-        alt="상품 이미지"
-        className="h-full w-full object-cover"
-        onError={() => setFailedSrc(src)}
-      />
-    </div>
-  );
-}
 
 export function useProductsListTableColumns() {
   const router = useRouter();

@@ -839,6 +839,33 @@ export interface CreateDraftVersionDto {
   copyMappings?: boolean;
 }
 
+export interface MyDraftListItem {
+  masterId: string;
+  versionId: string;
+  name: string;
+  thumbnail: string | null;
+  brand: string | null;
+  productType: string;
+  status: 'draft';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MyDraftsQuery {
+  page?: number;
+  limit?: number;
+  q?: string;
+  sort?: 'updatedAt' | 'createdAt';
+  order?: 'asc' | 'desc';
+}
+
+export interface MyDraftsResponse {
+  data: MyDraftListItem[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 // ===== 채널 리스팅 =====
 
 export interface ChannelListingDto {
