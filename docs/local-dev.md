@@ -36,6 +36,9 @@ AWS dev 스테이지가 제거되어, 개발은 사내 노트북에서 로컬 �
    | notification | 3050 | | search | 3060 |
    | core | 3100 | | wallet | 5001 |
    | medusa | 9000 | | storefront / auth-web | 8000 / 8001 |
+   | admin-web | 8002 | | wallet-web | 3200 |
+
+   프론트엔드 4개(storefront 8000 / auth-web 8001 / admin-web 8002 / wallet-web 3200)는 각 앱 `package.json` 의 `dev` 스크립트에 이 포트가 `-p` 로 박혀 있어 `npm run dev` 만으로 뜬다. admin-web 8002·wallet-web 3200 은 OIDC redirect_uri(각 앱 env + user_service `oauth_clients`)와도 일치해야 로그인이 된다.
 
    각 앱 `.env` 공통 키:
    ```
