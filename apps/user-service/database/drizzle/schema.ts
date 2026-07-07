@@ -87,6 +87,7 @@ export const users = pgTable('users', {
   email: varchar('email', { length: 60 }).notNull().unique(),
   password: varchar('password', { length: 255 }),
   isEmailVerified: boolean('is_email_verified').notNull().default(false),
+  mustChangePassword: boolean('must_change_password').notNull().default(false),
   lastActivityAt: timestamp('last_activity_at')
     .default(sql`now()`)
     .notNull(),

@@ -967,7 +967,10 @@ export class AuthService {
     const saltOrRounds = 10;
     const hash = await bcrypt.hash(newPassword, saltOrRounds);
 
-    await client.update(userServiceSchema.users).set({ password: hash }).where(eq(userServiceSchema.users.id, userId));
+    await client
+      .update(userServiceSchema.users)
+      .set({ password: hash, mustChangePassword: false })
+      .where(eq(userServiceSchema.users.id, userId));
   }
 
   async checkPassword(password: string, userId: string, tx?: DbTransaction): Promise<void> {

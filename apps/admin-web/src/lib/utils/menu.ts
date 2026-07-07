@@ -8,6 +8,7 @@ export interface MenuItem {
   children?: MenuItem[];
   isComingSoon?: boolean;
   path?: string;
+  requireRole?: string[];
 }
 
 export interface MainMenu {
@@ -42,6 +43,7 @@ export const mainMenus: MainMenu[] = [
             id: 'admin-accounts',
             title: '관리자 계정',
             path: '/users',
+            requireRole: ['master'],
           },
         ],
       },
