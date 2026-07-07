@@ -34,7 +34,9 @@ export function useProductsListTableColumns() {
               table.getIsAllPageRowsSelected() ||
               (table.getIsSomePageRowsSelected() && 'indeterminate')
             }
-            onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+            onCheckedChange={(value) =>
+              table.toggleAllPageRowsSelected(!!value)
+            }
             aria-label="전체 선택"
             onClick={(e) => e.stopPropagation()}
           />
@@ -61,13 +63,15 @@ export function useProductsListTableColumns() {
         header: '상품명/옵션/브랜드',
         cell: ({ row }) => (
           <div className="space-y-0.5">
-            <p className="break-words text-sm font-medium leading-tight text-blue-800">
+            <p className="text-sm font-medium leading-tight text-blue-800 break-words">
               {row.original.name}
             </p>
             <p className="text-xs text-muted-foreground">
               {row.original.optionGroupNames.join(' / ') || '-'}
             </p>
-            <p className="text-xs text-muted-foreground">{row.original.brand ?? '-'}</p>
+            <p className="text-xs text-muted-foreground">
+              {row.original.brand ?? '-'}
+            </p>
           </div>
         ),
       }),
@@ -86,7 +90,7 @@ export function useProductsListTableColumns() {
         header: '판매가/멤버십가',
         cell: ({ getValue }) => {
           const summary = getValue();
-          if (!summary) return <div className="text-right text-sm">-</div>;
+          if (!summary) return <div className="text-sm text-right">-</div>;
           const fmtRange = (min: number, max: number) =>
             min === max
               ? `${min.toLocaleString()}원`
@@ -97,7 +101,10 @@ export function useProductsListTableColumns() {
                 {fmtRange(summary.minBasePrice, summary.maxBasePrice)}
               </p>
               <p className="text-xs text-muted-foreground">
-                {fmtRange(summary.minMembershipPrice, summary.maxMembershipPrice)}
+                {fmtRange(
+                  summary.minMembershipPrice,
+                  summary.maxMembershipPrice
+                )}
               </p>
             </div>
           );
@@ -105,8 +112,19 @@ export function useProductsListTableColumns() {
       }),
       columnHelper.accessor('status', {
         header: '상태',
-        cell: ({ getValue }) => {
-          const status = getValue();
+        cell: ({ row }) => {
+          const { status, soldOutState } = row.original;
+
+          if (
+            status === 'active' &&
+            (soldOutState === 'all' || soldOutState === 'partial')
+          ) {
+            return (
+              <Badge variant="destructive">
+                {soldOutState === 'all' ? '품절' : '부분품절'}
+              </Badge>
+            );
+          }
           const label = STATUS_LABELS[status] ?? status;
           const variant =
             status === 'active'

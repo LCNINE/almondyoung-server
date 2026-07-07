@@ -193,7 +193,7 @@ function ProductVariantEditDrawer({
   return (
     <Drawer open={open} onOpenChange={handleOpenChange} direction="right">
       <DrawerContent>
-        <form onSubmit={handleSubmit} className="flex h-full flex-col">
+        <form onSubmit={handleSubmit} className="flex flex-col h-full">
           <DrawerHeader>
             <DrawerTitle>품목 수정</DrawerTitle>
             <DrawerDescription>
@@ -202,7 +202,7 @@ function ProductVariantEditDrawer({
             </DrawerDescription>
           </DrawerHeader>
 
-          <div className="flex flex-1 flex-col gap-4 overflow-auto px-4 pb-4">
+          <div className="flex flex-col flex-1 gap-4 px-4 pb-4 overflow-auto">
             <div className="flex flex-col gap-2">
               <Label htmlFor="product-variant-name">품목 이름</Label>
               <Input
@@ -305,7 +305,7 @@ function ProductVariantMatchingDrawer({
             {getVariantDisplayName(variant)}
           </DrawerDescription>
         </DrawerHeader>
-        <ScrollArea className="min-h-0 flex-1 px-4 pb-4">
+        <ScrollArea className="flex-1 min-h-0 px-4 pb-4">
           <VariantMatchingPanel
             variantId={variant.id}
             variantName={getVariantDisplayName(variant)}
@@ -460,7 +460,7 @@ function VariantsTable({
   return (
     <>
       {editable && selectedRows.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 border-b bg-muted/50 p-3">
+        <div className="flex flex-wrap items-center gap-2 p-3 border-b bg-muted/50">
           <span className="text-sm text-muted-foreground">
             {selectedRows.length}개 선택됨
           </span>
