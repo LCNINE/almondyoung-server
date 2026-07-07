@@ -8,6 +8,7 @@ import { getMenuById, type MenuItem } from '@/lib/utils/menu';
 import { Badge } from '@/components/ui/badge';
 import { useOrderStats } from '@/lib/services/orders';
 import { useAdminUserCount } from '@/lib/services/users';
+import { usePermission } from '@/hooks/use-permission';
 import {
   Sidebar,
   SidebarContent,
@@ -43,6 +44,20 @@ function findParentPath(
   return null;
 }
 
+// requireRole 이 걸린 항목은 해당 role 보유자에게만 노출
+function filterMenuByRole(
+  items: MenuItem[],
+  hasRole: (roles: string[]) => boolean | undefined,
+): MenuItem[] {
+  return items
+    .filter((item) => !item.requireRole || hasRole(item.requireRole) === true)
+    .map((item) =>
+      item.children
+        ? { ...item, children: filterMenuByRole(item.children, hasRole) }
+        : item,
+    );
+}
+
 export function AppSidebar({
   activeMenu,
   activeItem,
@@ -51,6 +66,11 @@ export function AppSidebar({
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
 
   const currentMenu = getMenuById(activeMenu);
+
+  const { hasRole } = usePermission();
+  const visibleChildren = currentMenu
+    ? filterMenuByRole(currentMenu.children, hasRole)
+    : [];
 
   // activeItem이 변경될 때 부모 메뉴들을 자동으로 펼침
   useEffect(() => {
@@ -138,7 +158,7 @@ export function AppSidebar({
       <SidebarContent>
         <SidebarGroup>
           <SidebarMenu>
-            {currentMenu.children.map((item) => (
+            {visibleChildren.map((item) => (
               <SidebarMenuItemRecursive
                 key={item.id}
                 item={item}

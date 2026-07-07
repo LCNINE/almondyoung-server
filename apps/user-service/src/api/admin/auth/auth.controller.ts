@@ -11,16 +11,9 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post()
-  @RequireScopes('master', 'admin:users:modify')
+  @RequireScopes('master')
   async createAccount(@Body() createAccountDto: CreateAccountDto) {
-    try {
-      return this.authService.createAccount(createAccountDto);
-    } catch (error) {
-      if (error.message.includes('already exists')) {
-        throw new HttpException(error.message, HttpStatus.BAD_REQUEST);
-      }
-      throw new HttpException('Failed to create account', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
+    return this.authService.createAccount(createAccountDto);
   }
 
   @Patch('change-password')
