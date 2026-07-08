@@ -9,11 +9,13 @@ WHERE a.line_id = dup.id
   AND dup.sku_id = keep.sku_id
   AND dup.location_id IS NOT DISTINCT FROM keep.location_id
   AND (dup.created_at, dup.id) < (keep.created_at, keep.id);
+--> statement-breakpoint
 -- 2) 라인당 중복 조정 정리 (keep newest) → adjustments(line_id) unique 보장
 DELETE FROM "stocktaking_adjustments" a
 USING "stocktaking_adjustments" b
 WHERE a.line_id = b.line_id
   AND (a.created_at, a.id) < (b.created_at, b.id);
+--> statement-breakpoint
 -- 3) 중복(비-keeper) 라인 삭제 → 이제 매달린 조정이 없어 FK 안전, lines unique 보장
 DELETE FROM "stocktaking_lines" dup
 USING "stocktaking_lines" keep

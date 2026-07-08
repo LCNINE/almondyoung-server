@@ -455,7 +455,7 @@ export class StocktakingService {
               stockEventId: eventId,
               adjustmentQuantity: Math.abs(delta),
               adjustmentType: delta > 0 ? 'INCREASE' : 'DECREASE',
-              reason: `Variance detected: ${line.variance}`,
+              reason: `Stocktaking adjustment ${delta > 0 ? '+' : ''}${delta} (session ${sessionId})`,
             })
             .onConflictDoNothing({ target: stocktakingAdjustments.lineId });
 
