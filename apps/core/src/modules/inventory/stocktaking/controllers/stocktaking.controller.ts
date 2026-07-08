@@ -85,4 +85,13 @@ export class StocktakingController {
   async completeSession(@Param('id') id: string) {
     return this.stocktakingService.completeSession(id);
   }
+
+  @Post('sessions/:id/cancel')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '재고 실사 취소 (Cancel stocktaking session)' })
+  @ApiParam({ name: 'id', description: 'Session ID' })
+  @ApiResponse({ status: 200, description: 'Session cancelled' })
+  async cancelSession(@Param('id') id: string) {
+    return this.stocktakingService.cancelSession(id);
+  }
 }

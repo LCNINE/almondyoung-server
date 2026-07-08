@@ -225,6 +225,13 @@
       "when": 1783371698629,
       "tag": "20260706210138_add-draft-owner-id-index",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1783531080084,
+      "tag": "20260708171800_stocktaking-uniques",
+      "breakpoints": true
     }
   ]
 }

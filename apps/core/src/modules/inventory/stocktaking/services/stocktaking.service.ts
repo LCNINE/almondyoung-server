@@ -9,12 +9,15 @@ import { ScanLocationDto } from '../dto/scan-location.dto';
 import { ScanProductDto } from '../dto/scan-product.dto';
 import { UpdateCountDto } from '../dto/update-count.dto';
 import { GenerateAdjustmentsDto } from '../dto/generate-adjustments.dto';
+import { InventoryCommandService } from '../../core/services/inventory-command.service';
+import { AdjustmentPreviewItem } from '../dto/adjustment-preview.dto';
 
 @Injectable()
 export class StocktakingService {
   constructor(
     @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
+    private readonly commandService: InventoryCommandService,
   ) {}
 
   async listSessions(query: ListStocktakingSessionsQueryDto, tx?: DbTx) {
@@ -105,6 +108,8 @@ export class StocktakingService {
     return this.dbService.run(async (tx) => {
       const { locations, stockLedgers, skus, stocktakingLines } = wmsTables;
 
+      await this.assertInProgress(tx, dto.sessionId);
+
       // Find location by barcode/code
       const location = await tx.select().from(locations).where(eq(locations.code, dto.locationBarcode)).limit(1);
 
@@ -145,7 +150,7 @@ export class StocktakingService {
       }));
 
       if (linesToCreate.length > 0) {
-        await tx.insert(stocktakingLines).values(linesToCreate);
+        await tx.insert(stocktakingLines).values(linesToCreate).onConflictDoNothing();
       }
 
       return {
@@ -168,6 +173,8 @@ export class StocktakingService {
   async scanProduct(dto: ScanProductDto, tx?: DbTx) {
     return this.dbService.run(async (tx) => {
       const { skus, skuBarcodes, stocktakingLines } = wmsTables;
+
+      await this.assertInProgress(tx, dto.sessionId);
 
       // Find SKU by barcode
       const barcodeResult = await tx
@@ -266,6 +273,8 @@ export class StocktakingService {
         throw new NotFoundException(`Line ${lineId} not found`);
       }
 
+      await this.assertInProgress(tx, line[0].sessionId);
+
       const variance = dto.countedQuantity - line[0].expectedQuantity;
 
       await tx
@@ -324,96 +333,142 @@ export class StocktakingService {
   }
 
   /**
-   * Generate stock adjustments for variances
+   * 미리보기(dry-run): variance 라인의 라이브 delta 를 계산만 한다. 영속 없음.
+   * 실제 적용은 completeSession(§5) 에서 원자적으로 수행한다.
    */
   async generateAdjustments(sessionId: string, dto: GenerateAdjustmentsDto, tx?: DbTx) {
     return this.dbService.run(async (tx) => {
-      const { stocktakingLines, stocktakingAdjustments, stockEvents, stocktakingSessions } = wmsTables;
+      const { stocktakingLines, stocktakingSessions } = wmsTables;
 
-      // Get session info first
-      const session = await tx.select().from(stocktakingSessions).where(eq(stocktakingSessions.id, sessionId)).limit(1);
+      const [session] = await tx
+        .select()
+        .from(stocktakingSessions)
+        .where(eq(stocktakingSessions.id, sessionId))
+        .limit(1);
+      if (!session) throw new NotFoundException(`Session ${sessionId} not found`);
 
-      if (!session[0]) {
-        throw new NotFoundException(`Session ${sessionId} not found`);
-      }
-
-      // Build filter for lines
       const conditions = [
         eq(stocktakingLines.sessionId, sessionId),
         sql`${stocktakingLines.variance} IS NOT NULL AND ${stocktakingLines.variance} != 0`,
         sql`${stocktakingLines.countedQuantity} IS NOT NULL`,
       ];
-
       if (dto.lineIds && dto.lineIds.length > 0) {
         conditions.push(sql`${stocktakingLines.id} = ANY(${dto.lineIds}::uuid[])`);
       }
-
-      const linesToAdjust = await tx
+      const lines = await tx
         .select()
         .from(stocktakingLines)
         .where(and(...conditions));
 
-      let adjustmentsCreated = 0;
-      let eventsPosted = 0;
-
-      for (const line of linesToAdjust) {
-        // Create stock event for adjustment
-        const eventResult = await tx
-          .insert(stockEvents)
-          .values({
-            skuId: line.skuId,
-            toWarehouseId: session[0].warehouseId,
-            toLocationId: line.locationId,
-            transitionType: line.variance! > 0 ? 'ADJUST_UP' : 'ADJUST_DOWN',
-            quantity: Math.abs(line.variance!),
-            fromState: line.variance! > 0 ? null : 'ON_HAND',
-            toState: line.variance! > 0 ? 'ON_HAND' : null,
-            occurredAt: new Date(),
-            reason: `Stocktaking adjustment - Session ${sessionId}`,
-          })
-          .returning();
-
-        // Create adjustment record
-        await tx.insert(stocktakingAdjustments).values({
-          sessionId,
+      const preview: AdjustmentPreviewItem[] = [];
+      for (const line of lines) {
+        const counted = line.countedQuantity ?? 0;
+        const currentOnHand = await this.computeOnHand(tx, line.skuId, session.warehouseId, line.locationId);
+        const delta = counted - currentOnHand;
+        if (delta === 0) continue;
+        preview.push({
           lineId: line.id,
-          stockEventId: eventResult[0].id,
-          adjustmentQuantity: Math.abs(line.variance!),
-          adjustmentType: line.variance! > 0 ? 'INCREASE' : 'DECREASE',
-          reason: `Variance detected: ${line.variance}`,
+          skuId: line.skuId,
+          locationId: line.locationId,
+          countedQuantity: counted,
+          currentOnHand,
+          delta,
+          adjustmentType: delta > 0 ? 'INCREASE' : 'DECREASE',
         });
-
-        adjustmentsCreated++;
-        eventsPosted++;
       }
 
       return {
-        adjustmentsCreated,
-        eventsPosted,
-        message: `${adjustmentsCreated}개의 조정이 생성되었습니다.`,
+        adjustmentsCreated: preview.length, // 하위호환: 적용 예정 수
+        eventsPosted: 0, // 미리보기 — 아직 적용 안 됨
+        message: `${preview.length}개 조정이 미리보기로 계산되었습니다 (완료 시 적용).`,
+        preview,
       };
     }, tx);
   }
 
   /**
-   * Complete stocktaking session
+   * 실사 완료 — variance 라인을 원장에 원자 적용(adjustUp/adjustDown, 라이브 delta)하고 세션 종결.
    */
   async completeSession(sessionId: string, tx?: DbTx) {
     return this.dbService.run(async (tx) => {
       const { stocktakingSessions, stocktakingLines, stocktakingAdjustments } = wmsTables;
 
-      const session = await tx.select().from(stocktakingSessions).where(eq(stocktakingSessions.id, sessionId)).limit(1);
+      const [session] = await tx
+        .select()
+        .from(stocktakingSessions)
+        .where(eq(stocktakingSessions.id, sessionId))
+        .for('update');
+      if (!session) throw new NotFoundException(`Session ${sessionId} not found`);
+      if (session.status !== 'in_progress') throw new BadRequestException(`Session is not in progress`);
 
-      if (!session[0]) {
-        throw new NotFoundException(`Session ${sessionId} not found`);
+      const lines = await tx
+        .select()
+        .from(stocktakingLines)
+        .where(
+          and(
+            eq(stocktakingLines.sessionId, sessionId),
+            sql`${stocktakingLines.variance} IS NOT NULL AND ${stocktakingLines.variance} != 0`,
+            sql`${stocktakingLines.countedQuantity} IS NOT NULL`,
+          ),
+        )
+        .for('update');
+
+      let adjustmentsApplied = 0;
+      for (const line of lines) {
+        const counted = line.countedQuantity ?? 0;
+        const currentOnHand = await this.computeOnHand(tx, line.skuId, session.warehouseId, line.locationId);
+        const delta = counted - currentOnHand;
+
+        if (delta !== 0) {
+          const idempotencyKey = `stocktaking:${sessionId}:${line.id}`;
+          const reason = `stocktaking:${sessionId}`;
+          const { eventId } =
+            delta > 0
+              ? await this.commandService.adjustUp(
+                  {
+                    skuId: line.skuId,
+                    warehouseId: session.warehouseId,
+                    locationId: line.locationId,
+                    quantity: delta,
+                    idempotencyKey,
+                    reason,
+                  },
+                  tx,
+                )
+              : await this.commandService.adjustDown(
+                  {
+                    skuId: line.skuId,
+                    warehouseId: session.warehouseId,
+                    locationId: line.locationId,
+                    quantity: -delta,
+                    idempotencyKey,
+                    reason,
+                  },
+                  tx,
+                );
+
+          await tx
+            .insert(stocktakingAdjustments)
+            .values({
+              sessionId,
+              lineId: line.id,
+              stockEventId: eventId,
+              adjustmentQuantity: Math.abs(delta),
+              adjustmentType: delta > 0 ? 'INCREASE' : 'DECREASE',
+              reason: `Stocktaking adjustment ${delta > 0 ? '+' : ''}${delta} (session ${sessionId})`,
+            })
+            .onConflictDoNothing({ target: stocktakingAdjustments.lineId });
+
+          adjustmentsApplied++;
+        }
+
+        await tx
+          .update(stocktakingLines)
+          .set({ status: 'adjusted', updatedAt: new Date() })
+          .where(eq(stocktakingLines.id, line.id));
       }
 
-      if (session[0].status !== 'in_progress') {
-        throw new BadRequestException(`Session is not in progress`);
-      }
-
-      // Get summary statistics
-      const lineStats = await tx
+      const [lineStats] = await tx
         .select({
           total: sql<number>`count(*)`,
           withVariances: sql<number>`count(*) FILTER (WHERE ${stocktakingLines.variance} != 0)`,
@@ -421,34 +476,76 @@ export class StocktakingService {
         .from(stocktakingLines)
         .where(eq(stocktakingLines.sessionId, sessionId));
 
-      const adjustmentStats = await tx
-        .select({
-          count: sql<number>`count(*)`,
-        })
-        .from(stocktakingAdjustments)
-        .where(eq(stocktakingAdjustments.sessionId, sessionId));
-
-      // Update session status
+      const completedAt = new Date();
       await tx
         .update(stocktakingSessions)
-        .set({
-          status: 'completed',
-          completedAt: new Date(),
-          updatedAt: new Date(),
-        })
+        .set({ status: 'completed', completedAt, updatedAt: completedAt })
         .where(eq(stocktakingSessions.id, sessionId));
 
       return {
         sessionId,
-        status: 'completed',
-        completedAt: new Date(),
+        status: 'completed' as const,
+        completedAt,
         summary: {
-          totalLines: Number(lineStats[0]?.total ?? 0),
-          discrepanciesFound: Number(lineStats[0]?.withVariances ?? 0),
-          adjustmentsApplied: Number(adjustmentStats[0]?.count ?? 0),
+          totalLines: Number(lineStats?.total ?? 0),
+          discrepanciesFound: Number(lineStats?.withVariances ?? 0),
+          adjustmentsApplied,
         },
       };
     }, tx);
   }
 
+  private async computeOnHand(
+    tx: DbTx,
+    skuId: string,
+    warehouseId: string,
+    locationId: string | null,
+  ): Promise<number> {
+    const { stockLedgers } = wmsTables;
+    const [row] = await tx
+      .select({ qty: stockLedgers.qty })
+      .from(stockLedgers)
+      .where(
+        and(
+          eq(stockLedgers.skuId, skuId),
+          eq(stockLedgers.warehouseId, warehouseId),
+          locationId ? eq(stockLedgers.locationId, locationId) : sql`${stockLedgers.locationId} IS NULL`,
+          eq(stockLedgers.stockState, 'ON_HAND'),
+        ),
+      )
+      .limit(1);
+    return row?.qty ?? 0;
+  }
+
+  private async assertInProgress(tx: DbTx, sessionId: string): Promise<void> {
+    const { stocktakingSessions } = wmsTables;
+    const [session] = await tx
+      .select({ status: stocktakingSessions.status })
+      .from(stocktakingSessions)
+      .where(eq(stocktakingSessions.id, sessionId))
+      .limit(1)
+      .for('update');
+    if (!session) throw new NotFoundException(`Session ${sessionId} not found`);
+    if (session.status !== 'in_progress') throw new BadRequestException(`Session is not in progress`);
+  }
+
+  async cancelSession(sessionId: string, tx?: DbTx) {
+    return this.dbService.run(async (tx) => {
+      const { stocktakingSessions } = wmsTables;
+      const [session] = await tx
+        .select()
+        .from(stocktakingSessions)
+        .where(eq(stocktakingSessions.id, sessionId))
+        .for('update');
+      if (!session) throw new NotFoundException(`Session ${sessionId} not found`);
+      if (session.status === 'completed' || session.status === 'cancelled') {
+        throw new BadRequestException(`Session is already ${session.status}`);
+      }
+      await tx
+        .update(stocktakingSessions)
+        .set({ status: 'cancelled', updatedAt: new Date() })
+        .where(eq(stocktakingSessions.id, sessionId));
+      return { sessionId, status: 'cancelled' as const, message: '재고 실사를 취소했습니다.' };
+    }, tx);
+  }
 }
