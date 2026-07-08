@@ -105,6 +105,8 @@ export class StocktakingService {
     return this.dbService.run(async (tx) => {
       const { locations, stockLedgers, skus, stocktakingLines } = wmsTables;
 
+      await this.assertInProgress(tx, dto.sessionId);
+
       // Find location by barcode/code
       const location = await tx.select().from(locations).where(eq(locations.code, dto.locationBarcode)).limit(1);
 
@@ -168,6 +170,8 @@ export class StocktakingService {
   async scanProduct(dto: ScanProductDto, tx?: DbTx) {
     return this.dbService.run(async (tx) => {
       const { skus, skuBarcodes, stocktakingLines } = wmsTables;
+
+      await this.assertInProgress(tx, dto.sessionId);
 
       // Find SKU by barcode
       const barcodeResult = await tx
@@ -265,6 +269,8 @@ export class StocktakingService {
       if (!line[0]) {
         throw new NotFoundException(`Line ${lineId} not found`);
       }
+
+      await this.assertInProgress(tx, line[0].sessionId);
 
       const variance = dto.countedQuantity - line[0].expectedQuantity;
 
@@ -448,6 +454,37 @@ export class StocktakingService {
           adjustmentsApplied: Number(adjustmentStats[0]?.count ?? 0),
         },
       };
+    }, tx);
+  }
+
+  private async assertInProgress(tx: DbTx, sessionId: string): Promise<void> {
+    const { stocktakingSessions } = wmsTables;
+    const [session] = await tx
+      .select({ status: stocktakingSessions.status })
+      .from(stocktakingSessions)
+      .where(eq(stocktakingSessions.id, sessionId))
+      .limit(1);
+    if (!session) throw new NotFoundException(`Session ${sessionId} not found`);
+    if (session.status !== 'in_progress') throw new BadRequestException(`Session is not in progress`);
+  }
+
+  async cancelSession(sessionId: string, tx?: DbTx) {
+    return this.dbService.run(async (tx) => {
+      const { stocktakingSessions } = wmsTables;
+      const [session] = await tx
+        .select()
+        .from(stocktakingSessions)
+        .where(eq(stocktakingSessions.id, sessionId))
+        .for('update');
+      if (!session) throw new NotFoundException(`Session ${sessionId} not found`);
+      if (session.status === 'completed' || session.status === 'cancelled') {
+        throw new BadRequestException(`Session is already ${session.status}`);
+      }
+      await tx
+        .update(stocktakingSessions)
+        .set({ status: 'cancelled', updatedAt: new Date() })
+        .where(eq(stocktakingSessions.id, sessionId));
+      return { sessionId, status: 'cancelled' as const, message: '재고 실사를 취소했습니다.' };
     }, tx);
   }
 }
