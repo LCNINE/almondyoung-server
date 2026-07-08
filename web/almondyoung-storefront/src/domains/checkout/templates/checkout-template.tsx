@@ -9,6 +9,10 @@ import { PaymentTotalSection } from "@/domains/checkout/components/sections/paym
 import { ShippingSection } from "@/domains/checkout/components/sections/shipping"
 import type { ShippingMemo } from "@/domains/checkout/components/sections/shipping/types"
 import {
+  isSameShippingMemo,
+  readShippingMemo,
+} from "@/domains/checkout/components/sections/shipping/utils"
+import {
   cartHasOverseasItem,
   isValidPersonalCustomsCode,
 } from "@/domains/checkout/utils/customs"
@@ -130,12 +134,9 @@ export default function CheckoutTemplate({
   const [error, setError] = useState<string | null>(null)
 
   // 배송 메모 상태
-  const [shippingMemo, setShippingMemo] = useState<ShippingMemo>(() => ({
-    type: (cart?.metadata?.shipping_memo_type as string) || "",
-    custom: (cart?.metadata?.shipping_memo_custom as string) || "",
-    hasEntrance: (cart?.metadata?.has_entrance as boolean) || false,
-    entrancePassword: (cart?.metadata?.entrance_password as string) || "",
-  }))
+  const [shippingMemo, setShippingMemo] = useState<ShippingMemo>(() =>
+    readShippingMemo(cart?.metadata)
+  )
 
   const handleShippingMemoChange = useCallback((memo: ShippingMemo) => {
     setShippingMemo(memo)
@@ -191,8 +192,14 @@ export default function CheckoutTemplate({
         return
       }
 
-      // 결제 전 배송 메모 저장 (배송이 필요한 카트에서만)
-      if (requiresShipping) {
+      // 배송이 필요한 카트에서만 배송메모를 저장한다.
+      // 사용자가 메모를 바꾸지 않아 카트에 이미 같은 값이 있으면 저장을 건너뛴다.
+      const memoChanged = !isSameShippingMemo(
+        shippingMemo,
+        readShippingMemo(cart?.metadata)
+      )
+
+      if (requiresShipping && memoChanged) {
         await updateCart(
           {
             metadata: {
@@ -316,7 +323,7 @@ export default function CheckoutTemplate({
   }
 
   return (
-    <main className="bg-muted min-h-screen w-full">
+    <main className="w-full min-h-screen bg-muted">
       <PCHeader />
 
       <div className="container mx-auto px-4 lg:px-[40px] lg:py-8">
@@ -360,13 +367,13 @@ export default function CheckoutTemplate({
 
           {/* 무통장입금/적립금은 다음 단계(결제 화면)에서 선택·사용 가능 — 미리 안내 */}
           <Card className="mb-8 shadow-none">
-            <CardHeader className="flex-row items-center gap-2 space-y-0 p-4 pb-3 lg:p-6 lg:pb-4">
+            <CardHeader className="flex-row items-center gap-2 p-4 pb-3 space-y-0 lg:p-6 lg:pb-4">
               <Info className="size-5 shrink-0 text-[#F29219]" />
               <CardTitle className="text-base font-bold lg:text-lg">
                 {tNotice("title")}
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3 p-4 pt-0 lg:p-6 lg:pt-0">
+            <CardContent className="p-4 pt-0 space-y-3 lg:p-6 lg:pt-0">
               <div className="flex items-start gap-2.5">
                 <Banknote className="mt-0.5 size-5 shrink-0 text-[#F29219]" />
                 <p className="text-sm leading-relaxed text-gray-700 lg:text-[15px]">
@@ -386,8 +393,8 @@ export default function CheckoutTemplate({
 
       {/* 에러 메시지 표시 */}
       {error && (
-        <div className="fixed top-20 left-1/2 z-50 mx-4 w-full max-w-md -translate-x-1/2">
-          <div className="rounded-lg border border-red-400 bg-red-100 p-4 text-red-700 shadow-lg">
+        <div className="fixed z-50 w-full max-w-md mx-4 -translate-x-1/2 top-20 left-1/2">
+          <div className="p-4 text-red-700 bg-red-100 border border-red-400 rounded-lg shadow-lg">
             <div className="flex items-center justify-between">
               <strong>{tProcess("errorPrefix")}</strong>
               <button
