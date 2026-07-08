@@ -161,8 +161,9 @@ export class ProductReadAssembler {
     tx?: DbTransaction,
   ): Promise<ProductDetailDto> {
     return this.db.run(async (tx) => {
-      const activeVersion = await this.versionReadLoader.getActiveVersion(tx, masterId);
-      return this.getVersionDetail(activeVersion.id, options, tx);
+      // active 우선, 없으면 최신 draft 로 폴백 — 방금 등록해 active 버전이 아직 없는 상품도 열람 가능.
+      const version = await this.versionReadLoader.getViewableVersion(tx, masterId);
+      return this.getVersionDetail(version.id, options, tx);
     }, tx);
   }
 
