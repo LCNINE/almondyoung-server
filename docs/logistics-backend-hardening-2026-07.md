@@ -37,8 +37,8 @@
 | ID | 상태 | 위치 | 결함 | 실패 시나리오 |
 |---|---|---|---|---|
 | P0-1 ✅검증 | ⬜ | `movement/services/movement.service.ts:220-235, 254-300` | 창고간 이동이 `toState:null` MOVE 로 **출발지만 차감** — IN_TRANSFER 미기록, complete 는 입고예정 expectedDate 만 갱신 | PO 외 ad-hoc 이동 100개 → 출발 창고 -100, 어디에도 +100 없음 = 영구 소실. 무손실 경로(`TransferService.transferBetweenWarehouses`, ON_HAND→IN_TRANSFER→ON_HAND)가 있으나 컨트롤러에 미연결 |
-| P0-2 ✅검증 | ⬜ | `stocktaking/services/stocktaking.service.ts:361-374` | 실사 조정이 `tx.insert(stockEvents)` **직접 INSERT** — StockEventStore 우회 → 원장/판매가능수량/outbox 미반영 | 실사 확정해도 시스템 재고 불변. `stocktakingAdjustments.stockEventId` 는 원장 미반영 유령 이벤트를 참조 |
-| P0-3 ✅검증 | ⬜ | `stocktaking.service.ts:329-396` | 실사 조정 멱등성/재실행 방지 부재 (세션 상태 미검사, 처리 플래그 없음) | `generate-adjustments` 2회 호출 → 조정 2배 생성 (P0-2 수정 즉시 실피해로 전환 — **P0-2 와 반드시 함께 수정**) |
+| P0-2 ✅검증 | 🟩 | `stocktaking/services/stocktaking.service.ts:361-374` | 실사 조정이 `tx.insert(stockEvents)` **직접 INSERT** — StockEventStore 우회 → 원장/판매가능수량/outbox 미반영 | 실사 확정해도 시스템 재고 불변. `stocktakingAdjustments.stockEventId` 는 원장 미반영 유령 이벤트를 참조 |
+| P0-3 ✅검증 | 🟩 | `stocktaking.service.ts:329-396` | 실사 조정 멱등성/재실행 방지 부재 (세션 상태 미검사, 처리 플래그 없음) | `generate-adjustments` 2회 호출 → 조정 2배 생성 (P0-2 수정 즉시 실피해로 전환 — **P0-2 와 반드시 함께 수정**) |
 | P0-4 ✅검증 | ⬜ | `core/services/inventory-correction.service.ts:48, 93, 134` | `correctReceipt`/`reportTransportLoss`/`processDefectiveItems` 가 fromState/toState 미설정 → `ck_events_side_present`(`schema:812`) 위반 | 세 메서드 모두 **dead code**(모듈·컨트롤러 미등록, 호출처 0) — 배선하는 순간 즉시 500. 이미 `createEvent` 경유라 작업은 '재배선'이 아니라 **상태 인자 채우기 + `correctReceipt` ADJUST_DOWN 창고 사이드 버그(to\*→from\*) + P3-2 tx 전파** (착수 재확인 2026-07-08) |
 | P0-5 ✅검증 | ⬜ | `shared/services/reservation-lifecycle.service.ts:130-157` | `processExpiredReservations` 의 `timeoutAt < now()` 필터가 **주석 처리** — 호출 시 confirmed 예약 전체 해제. 현재 호출처 0건(dead 지뢰) | 누군가 크론/컨트롤러에 배선하는 순간 전 예약 해제 → 대량 초과판매. **제거가 답** |
 
@@ -66,8 +66,8 @@
 | P2-2 | ⬜ | `core/services/sku-location-movement.service.ts:86-99` | `recordMovement` 가 원장을 건드리지 않는 "이동"을 completed 로 기록 → 로케이션 grain 원장과 물리 위치 불일치 → FIFO 소진이 틀린 로케이션 선택 가능. **단 컨트롤러 라우트 전부 주석처리 — 현재 호출 불가(잠복). 수정 = `moveInternal` 위임** (착수 재확인 2026-07-08) |
 | P2-3 | ⬜ | `inbound/services/inbound.service.ts:782-787` | 초과 수령 무제한 허용 (expectedQty 상한/경고 없음) |
 | P2-4 | ⬜ | `inbound.service.ts:107,191,270,760`, `movement.service.ts:92` | 입고/이동 경로 전부 `idempotencyKey` 미전달 — 재전송 시 중복 입고(재고 2배). `stock_events.idempotencyKey` 방어막 무력화. **(+`returnInbound:915`·`createInterWarehouseTransfer:220` 동일). 진짜 재-POST 방어엔 클라이언트 요청 키 필요 — inbound line id 는 이벤트 후 생성이라 못 씀** (착수 재확인 2026-07-08) |
-| P2-5 | ⬜ | `stocktaking.service.ts:139-149`, `schema:1716` | 실사 라인 무조건 INSERT — (session×sku×location) unique 없음, 동시 세션 로케이션 배타 제어 없음 → 재스캔/동시 실사 시 이중 조정 |
-| P2-6 | ⬜ | `stocktaking` 전반 | 실사가 expected 를 스캔 시점 ON_HAND 스냅샷으로만 계산 — 카운팅 중 예약/이동 미고려 (variance-delta 방식의 이중 계산 위험) |
+| P2-5 | 🟩 | `stocktaking.service.ts:139-149`, `schema:1716` | 실사 라인 무조건 INSERT — (session×sku×location) unique 없음, 동시 세션 로케이션 배타 제어 없음 → 재스캔/동시 실사 시 이중 조정. **완료(작업1): `(session,sku,location)` unique(NULLS NOT DISTINCT) + `scanLocation` onConflictDoNothing** |
+| P2-6 | 🟩 | `stocktaking` 전반 | 실사가 expected 를 스캔 시점 ON_HAND 스냅샷으로만 계산 — 카운팅 중 예약/이동 미고려 (variance-delta 방식의 이중 계산 위험). **완료(작업1): 완료 시 라이브 delta(counted−현재ON_HAND)로 이중계산 위험 해소; 카운팅 중 표시 expected 스냅샷은 조정 정확성에 무영향** |
 | P2-7 | ⬜ | `core/services/location.service.ts:534-551` | 로케이션 삭제에 재고 가드 없음 → 도메인 에러 대신 FK 위반 500. qty=0 잔여 row 케이스도 정리 필요 |
 | P2-8 | ⬜ | `warehouse/services/warehouse.manager.ts:70-78` | 창고 삭제 in-use 검사와 삭제가 다른 트랜잭션 (TOCTOU) — 최악 500 |
 | P2-9 | ⬜ | `fifo-allocate.ts:27-34` vs `allocation-strategy.service.ts:337` | FIFO 이중 구현 정렬 기준 불일치 (fifoRank+updatedAt vs updatedAt만) — 계획 로케이션 ≠ 실소진 로케이션 |
@@ -98,8 +98,8 @@
 | ID | 상태 | 공백 | 비고 |
 |---|---|---|---|
 | W1 | ⬜ | 창고간 이동의 안전한 엔드포인트 부재 | P0-1 해소 = `POST /movement/inter-warehouse` 를 `TransferService` 2단계 경로로 재배선 (또는 입고예정 연계를 job↔plan FK 로 명시) |
-| W2 | ⬜ | 실사 세션 취소 불가 | `cancelled` enum 만 존재(`schema:128`), 세터/라우트 없음 |
-| W3 | ⬜ | 실사 complete ↔ generateAdjustments 순서·원자성 미정의 | 확정 전 조정 가능, 확정 후 재조정 가능 — 상태기계로 잠금 (P0-3 과 함께) |
+| W2 | 🟩 | 실사 세션 취소 불가 | `cancelled` enum 만 존재(`schema:128`), 세터/라우트 없음. **완료(작업1): `cancelSession` + `POST /stocktaking/sessions/:id/cancel` 신설(draft·in_progress→cancelled, FOR UPDATE)** |
+| W3 | 🟩 | 실사 complete ↔ generateAdjustments 순서·원자성 미정의 | 확정 전 조정 가능, 확정 후 재조정 가능 — 상태기계로 잠금 (P0-3 과 함께). **완료(작업1): complete 가 단일 tx 에서 원자 적용+종결, generate 는 무영속 미리보기로 격하** |
 | W4 | ⬜ | 토탈피킹 미구현 | `picking-process.service.ts:89,177,257` throw. `total_picking` 배치는 피킹에서 막힘. 로케이션 전략 seam 은 준비됨 — 스프린트 범위 여부 결정 |
 | W5 | ⬜ | 합배송·송장분할(`splitShipment`) 흐름 미구현 | 모델(M:N)만 개방 — RFC Non-Goal. 착수 시 P2-1 선행 필수 |
 | W6 | ⬜ | 직배(drop-ship) 별도 엔티티 추출 미착수 | `fulfillmentMode='drop_ship'` 분기 산재(`shipment.service.ts:68`, `fulfillments.service.ts:411,872`, `reservation-retry.worker.ts:89`, `outbound-batch.service.ts:215`). 혼합주문이 단일 FO 로 생성되어 직배 품목이 자사 FO 에 흡수되는 잠재버그 상존 — 별도 워크스트림(RFC 명기) |
@@ -128,6 +128,12 @@
 > - P0-2 의 'outbox 미반영'은 `createEvent` 가 outbox 를 enqueue 하지 않기 때문 — outbox 는 상위 래퍼 `InventoryCommandService`(adjustUp/adjustDown)가 넣는다. 따라서 실사 조정은 bare `createEvent` 가 아닌 **`InventoryCommandService.adjustUp/adjustDown` 으로 재배선**해야 ledger+sellable+outbox 가 한 tx 에 산다.
 > - 직접 INSERT 위반의 실제 사정거리는 프로덕션 `stocktaking.service.ts:362` **단 1곳**(나머지 수량변경 경로는 이미 store 경유). arch test 는 이 1파일 봉인 + 회귀 방지용.
 > - P0-4·P2-2 는 라이브가 아닌 **잠복 지뢰**(각각 미배선 dead code / 라우트 주석처리). 실제 라이브 P0 파괴는 실사(P0-2/P0-3)뿐 → 착수 1순위.
+
+> **✅ 작업 1 (실사 정상화) 완료 — 2026-07-09:** P0-2·P0-3·P2-5·P2-6(실사 라이브 delta)·W2·W3 해소 + **직접 INSERT 금지 아키텍처 테스트**(`inventory-write-boundary.arch.spec.ts`) 신설. 완료 시점 원장 원자 적용(`InventoryCommandService.adjustUp/adjustDown`, 라이브 delta), `generateAdjustments`→미리보기 격하, 세션 상태기계(cancel + scan/count 가드, 세션 FOR UPDATE).
+> - 브랜치 `feat/stocktaking-normalization` (6 커밋, tip `12eaebd88`) → **develop 스쿼시 머지 `e9ce5597d`** (2026-07-09).
+> - 설계 `docs/superpowers/specs/2026-07-09-stocktaking-normalization-design.md` · 계획 `docs/superpowers/plans/2026-07-09-stocktaking-normalization.md`.
+> - ⏸ **배포 전 확인**: (1) prod/dev 실사 데이터 유무 — 있으면 마이그레이션 dedup phase 분리(spec §10 #1). (2) dev DB 부재로 통합 테스트 런타임·마이그레이션 적용(`db:setup`) 미실행 — DB 복구 시 실행(arch test·tsc·lint 는 통과).
+> - **WS-A 잔여(미착수)**: P0-4, P2-2, P2-4, P2-14(events↔ledgers reconcile 잡).
 
 **WS-B. 레거시 경로 은퇴** — P0-1, P0-5, P1-6, P2-11, P3-4, P3-5, W1, W2
 inter-warehouse 컨트롤러를 `TransferService` 로 재배선, dead 지뢰(`processExpiredReservations`, `FulfillmentOrderTransactionService` 출고 경로, dead enum, `outbound_tasks`) 제거. destructive 스키마 변경은 expand-contract(ADR-0005 §5) 준수.
