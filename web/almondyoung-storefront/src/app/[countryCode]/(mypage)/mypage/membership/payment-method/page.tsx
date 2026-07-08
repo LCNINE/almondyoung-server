@@ -16,11 +16,19 @@ import type {
   CmsBillingMethodStatusDto,
 } from "@lib/types/dto/wallet"
 import { useParams, useRouter, useSearchParams } from "next/navigation"
-import { useEffect, useMemo, useRef, useState, useTransition } from "react"
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react"
 import { toast } from "sonner"
 import { useTranslations } from "next-intl"
 import { MembershipPaymentMethodSkeleton } from "@/components/skeletons/page-skeletons"
 import { providerLabel } from "@lib/utils/billing-provider"
+import { getCmsFailureReasonKey } from "@lib/utils/cms-failure-reason"
 import { formatDate } from "@lib/utils/format-date"
 import { deleteBillingMethodAction } from "./actions"
 
@@ -112,29 +120,38 @@ export default function MembershipPaymentMethodPage() {
     }
   }, [searchParams, isSubscribeFlow, t])
 
+  const loadMethods = useCallback(async () => {
+    const [agreements, methods, cmsStatuses, subscription] = await Promise.all([
+      getBillingAgreements(),
+      getBillingMethods(),
+      getCmsBillingMethodStatuses(),
+      isSubscribeFlow
+        ? Promise.resolve(null)
+        : getCurrentSubscription().catch(() => null),
+    ])
+
+    const membershipAgreement =
+      agreements.find(
+        (a) => a.subscriberType === "MEMBERSHIP" && a.status === "ACTIVE"
+      ) ?? null
+
+    setAgreement(membershipAgreement)
+    setAllMethods(methods.filter((m) => m.status === "ACTIVE"))
+    setCmsBillingStatuses(cmsStatuses)
+    setNextBillingDate(subscription?.nextBillingDate ?? null)
+  }, [isSubscribeFlow])
+
+  // 삭제가 거부되는 경우(예: stale FAILED로 알고 삭제했으나 서버가 REGISTERED로
+  // 재확인·차단, ADR-0027 §5-4) 최신 상태를 다시 불러와 화면 불일치를 해소한다.
+  const refreshMethods = useCallback(() => {
+    loadMethods().catch(() => {})
+  }, [loadMethods])
+
   useEffect(() => {
     async function load() {
       try {
         setIsLoading(true)
-        const [agreements, methods, cmsStatuses, subscription] =
-          await Promise.all([
-            getBillingAgreements(),
-            getBillingMethods(),
-            getCmsBillingMethodStatuses(),
-            isSubscribeFlow
-              ? Promise.resolve(null)
-              : getCurrentSubscription().catch(() => null),
-          ])
-
-        const membershipAgreement =
-          agreements.find(
-            (a) => a.subscriberType === "MEMBERSHIP" && a.status === "ACTIVE"
-          ) ?? null
-
-        setAgreement(membershipAgreement)
-        setAllMethods(methods.filter((m) => m.status === "ACTIVE"))
-        setCmsBillingStatuses(cmsStatuses)
-        setNextBillingDate(subscription?.nextBillingDate ?? null)
+        await loadMethods()
       } catch {
         toast.error(t("loadError"))
       } finally {
@@ -232,6 +249,7 @@ export default function MembershipPaymentMethodPage() {
         const result = await deleteBillingMethodAction(billingMethodId)
         if (!result.success) {
           toast.error(result.error ?? t("deleteFail"))
+          refreshMethods()
           return
         }
 
@@ -249,12 +267,15 @@ export default function MembershipPaymentMethodPage() {
   }
 
   const pushToCmsRegistration = () => {
-    // CMS 자동이체 등록 위저드로 이동. openWizard=cms 로 위저드 자동 오픈,
-    // returnTo 파라미터로 등록 완료 후 멤버십 결제수단 화면으로 복귀.
-    const returnTo = encodeURIComponent(
-      window.location.pathname + window.location.search
-    )
-    router.push(`/${countryCode}/mypage/payment?openWizard=cms&returnTo=${returnTo}`)
+    // CMS 자동이체 등록은 wallet-web 으로 통일한다. /billing-change 는 기존 CMS 수단 유무로
+    // 신규등록/변경을 자동 판별하고, 자체 auth 가드(/auth/ensure)로 세션을 복구한다.
+    // 등록 완료 시 returnUrl(현재 화면 + cardChanged=1)로 복귀해 기존 자동구독 흐름을 잇는다.
+    const returnUrl = window.location.href
+    const walletWebUrl =
+      process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
+    window.location.href = `${walletWebUrl}/billing-change?returnUrl=${encodeURIComponent(
+      returnUrl
+    )}`
   }
 
   const handleRegisterNewCard = () => {
@@ -278,6 +299,7 @@ export default function MembershipPaymentMethodPage() {
         const result = await deleteBillingMethodAction(billingMethodId)
         if (!result.success) {
           toast.error(result.error ?? t("deleteFail"))
+          refreshMethods()
           return
         }
 
@@ -364,12 +386,14 @@ export default function MembershipPaymentMethodPage() {
             )}
           </dd>
         </div>
-        {status?.resultMessage && (
+        {status?.cmsMemberStatus === "FAILED" && (
           <div className="sm:col-span-2">
             <dt className="font-semibold text-gray-500">
               {t("cmsFailedReason")}
             </dt>
-            <dd>{status.resultMessage}</dd>
+            <dd>
+              {t(`cmsFailureReason.${getCmsFailureReasonKey(status.resultCode)}`)}
+            </dd>
           </div>
         )}
       </dl>
@@ -617,6 +641,9 @@ export default function MembershipPaymentMethodPage() {
                     <p className="text-xs leading-relaxed text-amber-700">
                       {t("cmsPendingNotice")}
                     </p>
+                    <p className="text-xs leading-relaxed font-medium text-amber-800">
+                      {t("cmsReceiptSmsNotice")}
+                    </p>
                     {renderMethodDetails(m.billingMethodId, null, m)}
                     <div className="flex justify-end gap-2">
                       <button
@@ -681,11 +708,12 @@ export default function MembershipPaymentMethodPage() {
                         {t("cmsFailedBadge")}
                       </span>
                     </div>
-                    {m.resultMessage && (
-                      <p className="text-xs text-red-600">
-                        {t("cmsFailedReason")}: {m.resultMessage}
-                      </p>
-                    )}
+                    <p className="text-xs text-red-600">
+                      {t("cmsFailedReason")}:{" "}
+                      {t(
+                        `cmsFailureReason.${getCmsFailureReasonKey(m.resultCode)}`
+                      )}
+                    </p>
                     <p className="text-xs leading-relaxed text-red-700">
                       {t("cmsFailedNotice")}
                     </p>

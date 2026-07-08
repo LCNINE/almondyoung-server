@@ -902,6 +902,14 @@
     "cmsPendingNotice": "자동이체 심사에는 1~2영업일이 소요됩니다. 심사 완료 후 정기결제 수단으로 선택 가능합니다.",
     "cmsFailedNotice": "심사에 실패한 계좌입니다. 계좌를 다시 등록해 주세요.",
     "cmsFailedReason": "실패 사유",
+    "cmsReceiptSmsNotice": "은행에서 보내는 ‘자동이체 등록 접수’ 안내(문자 등)는 최종 승인이 아닙니다. 최종 결과는 이 화면에서 확인해주세요.",
+    "cmsFailureReason": {
+      "mismatch": "계좌주 정보(성함·생년월일/사업자번호)가 은행 등록정보와 달라 등록되지 않았습니다. 본인 명의 계좌인지, 정보가 정확한지 확인 후 다시 등록해주세요.",
+      "unverifiedAccount": "실명확인이 안 된 계좌입니다. 은행에서 실명확인 후 다시 등록해주세요.",
+      "accountNumber": "계좌번호를 다시 확인해주세요.",
+      "unusableAccount": "자동이체로 사용할 수 없는 계좌입니다. 다른 계좌로 등록해주세요.",
+      "default": "계좌 등록에 실패했습니다. 계좌 정보를 확인 후 다시 시도해주세요."
+    },
     "cmsReregister": "다시 등록",
     "viewDetails": "상세",
     "hideDetails": "접기",

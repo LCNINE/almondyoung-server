@@ -28,7 +28,10 @@ import BankAgreementStep from "./step3"
 
 type Step = "method" | "bank" | "account" | "agreement"
 
-// 결제 수단 선택 모달 컴포넌트
+// @deprecated 잔존 폼. CMS 자동이체 등록은 wallet-web(/billing-change, /pay/[intentId]/billing-setup)으로
+// 통일됐고, 멤버십 등록 CTA는 더 이상 이 위저드를 타지 않는다. 현재는 나중결제(BNPL) 계좌 등록/변경
+// 플로우(bnpl-verification-wizard/step3, change-account-sheet)에서만 열린다. BNPL도 결국 wallet-web으로
+// 이관 예정이며, 그 작업에서 이 위저드를 제거한다. 그 전까지는 코드 참조가 살아있어 삭제하지 않는다.
 export default function BankAccountWizard({ user }: { user: UserDetail }) {
   const { isOpen, closeModal } = usePaymentMethodModalStore() // 결제 수단 선택 모달
   const { closeModal: closeBnplModal } = useBnplModalStore() // 나중결제 결제 수단관리 모달창 닫기
@@ -59,16 +62,33 @@ export default function BankAccountWizard({ user }: { user: UserDetail }) {
   const [state, formAction, pending] = useActionState(onboardHmsBnpl, null)
   const [isPending, startTransition] = useTransition()
 
+  // payerNumber = 사업자번호 10자리(사업자) 또는 생년월일 6자리(개인).
+  // 사업자 정보가 있으면 사업자번호를 우선 사용하고, 없으면 아래 effect가 생년월일을 동기화한다.
+  const [hasBusinessNumber, setHasBusinessNumber] = useState(false)
+
   useEffect(() => {
     const fetchBusinessInfo = async () => {
       const businessInfo = await getMyBusiness()
-      if (businessInfo) {
+      if (businessInfo?.businessNumber) {
         form.setValue("payerNumber", businessInfo.businessNumber as string)
+        setHasBusinessNumber(true)
       }
     }
 
     fetchBusinessInfo()
   }, [isOpen])
+
+  // 개인 가입자: birthDate 입력이 payerNumber의 유일한 소스다. 사업자번호가 없을 때
+  // 생년월일(YYYY-MM-DD 8자리 또는 YYMMDD 6자리)의 끝 6자리를 payerNumber(YYMMDD)로
+  // 반영한다. 이게 없으면 개인은 정상 입력을 해도 payerNumber="" 로 제출돼 등록이 막힌다.
+  // (구 subscribe 폼의 payerNumber 입력칸이 위저드 리팩터에서 누락된 회귀 복구)
+  const birthDateValue = form.watch("birthDate")
+  useEffect(() => {
+    if (hasBusinessNumber) return
+    const digits = (birthDateValue ?? "").replace(/\D/g, "")
+    const yymmdd = digits.length >= 6 ? digits.slice(-6) : digits
+    form.setValue("payerNumber", yymmdd)
+  }, [birthDateValue, hasBusinessNumber, form])
 
   useEffect(() => {
     if (user.profile?.birthDate) {

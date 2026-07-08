@@ -24,6 +24,7 @@ import type {
 } from "@lib/types/dto/wallet"
 import { api } from "../api"
 import { HttpApiError } from "../api-error"
+import { isValidPayerNumber } from "@lib/utils/payer-number"
 
 const DEFAULT_BNPL_PROFILE_COOKIE = "wallet_default_bnpl_profile_id"
 
@@ -331,6 +332,14 @@ export async function onboardHmsBnpl(
       return {
         success: false,
         message: "계좌 등록 정보 형식이 올바르지 않습니다.",
+      }
+    }
+
+    if (!isValidPayerNumber(payerNumber)) {
+      return {
+        success: false,
+        message:
+          "생년월일 또는 사업자등록번호가 올바르지 않습니다. 다시 확인해주세요.",
       }
     }
 

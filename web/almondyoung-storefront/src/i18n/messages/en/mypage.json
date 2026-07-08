@@ -890,6 +890,14 @@
     "cmsPendingNotice": "Account review takes 1-2 business days. You can select this as a payment method after approval.",
     "cmsFailedNotice": "This account failed review. Please re-register.",
     "cmsFailedReason": "Failure reason",
+    "cmsReceiptSmsNotice": "A bank notice that your automatic debit ‘registration was received’ (e.g. by SMS) is not final approval. Please check the final result on this screen.",
+    "cmsFailureReason": {
+      "mismatch": "The account holder details (name, date of birth / business number) don't match the bank's records, so registration failed. Please make sure it's an account in your own name with correct details, then register again.",
+      "unverifiedAccount": "This account has not passed real-name verification. Please verify it with your bank and register again.",
+      "accountNumber": "Please double-check the account number.",
+      "unusableAccount": "This account can't be used for automatic debit. Please register a different account.",
+      "default": "Account registration failed. Please check the account details and try again."
+    },
     "cmsReregister": "Re-register",
     "viewDetails": "Details",
     "hideDetails": "Hide",
