@@ -23,7 +23,10 @@ export async function MainHeader() {
   }
 
   return (
-    <header className="bg-header-background xl:border-header-border sticky top-0 z-40 overflow-visible xl:border-b">
+    <header
+      id="site-header"
+      className="bg-header-background xl:border-header-border sticky top-0 z-40 overflow-visible xl:border-b"
+    >
       <div className="xl:hidden">
         <div className="flex h-8 items-center justify-end gap-3 border-b border-white/10 px-3 text-[12px] text-white/85">
           <MobileAuthLinks />
