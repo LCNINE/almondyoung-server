@@ -2,6 +2,7 @@ import {
   AnyPgColumn,
   boolean,
   check,
+  date,
   index,
   integer,
   jsonb,
@@ -101,6 +102,29 @@ export const billingAgreementStatusEnum = pgEnum('billing_agreement_status', ['A
 
 export const cmsMemberStatusEnum = pgEnum('cms_member_status', ['PENDING', 'REGISTERED', 'FAILED', 'DELETED']);
 
+// ADR-0027 §3-1. MANDATE_PENDING(결제수단 심사 대기)과 PAST_DUE(진짜 결제 실패)를 분리 —
+// 심사 대기 중 실패는 더닝/미수로 세지 않는다.
+export const invoiceStatusEnum = pgEnum('invoice_status', [
+  'DRAFT',
+  'OPEN',
+  'MANDATE_PENDING',
+  'ATTEMPTING',
+  'PAST_DUE',
+  'PAID',
+  'UNCOLLECTIBLE',
+  'MANDATE_REJECTED',
+  'VOID',
+]);
+
+export const subscriptionBillingMethodRoleEnum = pgEnum('subscription_billing_method_role', ['PRIMARY', 'BACKUP']);
+
+export const subscriptionBillingMethodStatusEnum = pgEnum('subscription_billing_method_status', [
+  'ACTIVE',
+  'PENDING_MANDATE',
+  'REVOKED',
+  'FAILED',
+]);
+
 export const cmsWithdrawalStatusEnum = pgEnum('cms_withdrawal_status', ['REQUESTED', 'PROCESSING', 'SUCCEEDED', 'FAILED', 'DELETED']);
 
 // ─── Tables ──────────────────────────────────────────────────────────────────
@@ -198,6 +222,8 @@ export const paymentIntents = pgTable(
     purpose: intentPurposeEnum('purpose').notNull().default('PURCHASE'),
     userId: varchar('user_id', { length: 128 }),
     paymentMethodId: uuid('payment_method_id').references(() => paymentMethods.id),
+    // ADR-0027 §3-2. 인보이스 1 : intent(=출금 시도) 다. 인보이스 기반 정기결제에만 세팅.
+    invoiceId: uuid('invoice_id').references((): AnyPgColumn => invoices.id),
     clientSecret: varchar('client_secret', { length: 64 }).notNull(),
     returnUrl: text('return_url'),
     metadata: jsonb('metadata')
@@ -218,6 +244,9 @@ export const paymentIntents = pgTable(
     index('idx_payment_intents_status_expires_at').on(table.status, table.expiresAt),
     index('idx_payment_intents_status_action_expires_at').on(table.status, table.actionExpiresAt),
     index('idx_payment_intents_user_created_at').on(table.userId, table.createdAt),
+    index('idx_payment_intents_invoice_id')
+      .on(table.invoiceId)
+      .where(sql`${table.invoiceId} IS NOT NULL`),
     uniqueIndex('idx_payment_intents_billing_idempotency_key')
       .on(sql`(${table.metadata}->>'idempotencyKey')`)
       .where(sql`${table.metadata}->>'idempotencyKey' IS NOT NULL`),
@@ -715,6 +744,119 @@ export const cmsAgreements = pgTable(
   ],
 );
 
+// ─── Invoice (미수금) Tables — ADR-0027 ──────────────────────────────────────
+// 정기결제 청구 1건의 진실 원천. 청구 스케줄·재시도·더닝·미수 판정을 wallet이 단일 소유하고,
+// membership 은 invoice 결과 이벤트(paid/failed/uncollectible)만 구독한다.
+
+export const invoices = pgTable(
+  'invoices',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    // 'MEMBERSHIP' 등 문자열 태그 — 특정 서비스 enum 에 결합하지 않는다.
+    subscriberType: varchar('subscriber_type', { length: 64 }).notNull(),
+    subscriberRef: varchar('subscriber_ref', { length: 255 }).notNull(),
+    // 청구 대상 결제수단(생성 시점의 primary). 폴백 시도는 intent 단위로 기록된다.
+    billingMethodId: uuid('billing_method_id')
+      .notNull()
+      .references(() => billingMethods.id),
+    amountDue: integer('amount_due').notNull(),
+    currency: varchar('currency', { length: 3 }).notNull(),
+    // 이 인보이스가 커버하는 구독 주기
+    periodStart: date('period_start').notNull(),
+    periodEnd: date('period_end').notNull(),
+    // 최초 출금 예정일
+    dueDate: date('due_date').notNull(),
+    status: invoiceStatusEnum('status').notNull().default('OPEN'),
+    // 더닝 카운트 — MANDATE_PENDING 중 실패는 세지 않는다(next_attempt_at 만 미룸).
+    attemptCount: integer('attempt_count').notNull().default(0),
+    // 재시도 정책은 생성 커맨드가 실어준다(ADR-0027 §10-1) — wallet 은 subscriber 별 정책 무지 유지.
+    maxAttempts: integer('max_attempts').notNull().default(3),
+    retryIntervalHours: integer('retry_interval_hours').notNull().default(72),
+    // 다음 charge 시도 시각. 스케줄 대상 상태(OPEN/MANDATE_PENDING/PAST_DUE)는 NOT NULL 강제 —
+    // executor 가 (status, next_attempt_at <= now()) 만 보고 스캔해도 놓치는 인보이스가 없다.
+    // OPEN 생성 시 due_date 로 초기화. 터미널은 NULL 강제, DRAFT/ATTEMPTING 은 제약 없음(자유).
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }),
+    // 터미널(PAID/UNCOLLECTIBLE/MANDATE_REJECTED/VOID) 도달 시각
+    finalizedAt: timestamp('finalized_at', { withTimezone: true }),
+    // subscriber 가 만든 자연 키(주기당 1) — 예: 'membership:invoice:<contractId>:<periodStart>'
+    idempotencyKey: text('idempotency_key').notNull(),
+    metadata: jsonb('metadata')
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default(sql`'{}'::jsonb`),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check('invoices_amount_due_non_negative', sql`${table.amountDue} >= 0`),
+    check('invoices_period_valid', sql`${table.periodEnd} >= ${table.periodStart}`),
+    check('invoices_attempt_count_non_negative', sql`${table.attemptCount} >= 0`),
+    check('invoices_max_attempts_positive', sql`${table.maxAttempts} > 0`),
+    check('invoices_retry_interval_hours_positive', sql`${table.retryIntervalHours} > 0`),
+    // 터미널 ⇔ finalized_at 세팅 (동치)
+    check(
+      'invoices_terminal_finalized_consistency',
+      sql`(${table.status} IN ('PAID', 'UNCOLLECTIBLE', 'MANDATE_REJECTED', 'VOID')) = (${table.finalizedAt} IS NOT NULL)`,
+    ),
+    // 스케줄 대상 상태는 next_attempt_at 필수, 터미널은 금지. DRAFT/ATTEMPTING 은 자유(집행 중·미확정).
+    check(
+      'invoices_next_attempt_status_consistency',
+      sql`(
+        (${table.status} IN ('OPEN', 'MANDATE_PENDING', 'PAST_DUE') AND ${table.nextAttemptAt} IS NOT NULL)
+        OR (${table.status} IN ('PAID', 'UNCOLLECTIBLE', 'MANDATE_REJECTED', 'VOID') AND ${table.nextAttemptAt} IS NULL)
+        OR ${table.status} IN ('DRAFT', 'ATTEMPTING')
+      )`,
+    ),
+    uniqueIndex('uq_invoices_idempotency_key').on(table.idempotencyKey),
+    index('idx_invoices_subscriber').on(table.subscriberType, table.subscriberRef),
+    index('idx_invoices_status_next_attempt_at')
+      .on(table.status, table.nextAttemptAt)
+      .where(sql`${table.nextAttemptAt} IS NOT NULL`),
+  ],
+);
+
+// 구독 1 : 결제수단 다 (PRIMARY/BACKUP) — ADR-0027 §3-3.
+// 결제수단 변경은 replace 가 아니라 append + soft-revoke 로 이력을 보존한다.
+// billing_agreements(구독당 1 유니크)를 단계적으로 대체.
+export const subscriptionBillingMethods = pgTable(
+  'subscription_billing_methods',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    subscriberType: varchar('subscriber_type', { length: 64 }).notNull(),
+    subscriberRef: varchar('subscriber_ref', { length: 255 }).notNull(),
+    billingMethodId: uuid('billing_method_id')
+      .notNull()
+      .references(() => billingMethods.id),
+    role: subscriptionBillingMethodRoleEnum('role').notNull().default('PRIMARY'),
+    status: subscriptionBillingMethodStatusEnum('status').notNull().default('PENDING_MANDATE'),
+    // BACKUP 폴백 순서(작을수록 먼저)
+    priority: integer('priority').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (table) => [
+    // 활성 PRIMARY 는 구독당 하나만 (PENDING_MANDATE 는 교체 중 병존 허용 — 승격 시 옛 것 revoke)
+    uniqueIndex('uq_subscription_billing_methods_active_primary')
+      .on(table.subscriberType, table.subscriberRef)
+      .where(sql`${table.role} = 'PRIMARY' AND ${table.status} = 'ACTIVE'`),
+    // 심사 대기 PRIMARY 도 구독당 하나만 — 여러 개면 승인 후 승격 대상이 비결정적
+    uniqueIndex('uq_subscription_billing_methods_pending_primary')
+      .on(table.subscriberType, table.subscriberRef)
+      .where(sql`${table.role} = 'PRIMARY' AND ${table.status} = 'PENDING_MANDATE'`),
+    // 같은 결제수단을 활성/대기 상태로 중복 연결 금지 — 폴백 시 중복 출금 방지
+    uniqueIndex('uq_subscription_billing_methods_live_method')
+      .on(table.subscriberType, table.subscriberRef, table.billingMethodId)
+      .where(sql`${table.status} IN ('ACTIVE', 'PENDING_MANDATE')`),
+    // 활성/대기 BACKUP 의 priority 중복 금지 — 폴백 순서 결정성 보장
+    uniqueIndex('uq_subscription_billing_methods_live_backup_priority')
+      .on(table.subscriberType, table.subscriberRef, table.priority)
+      .where(sql`${table.role} = 'BACKUP' AND ${table.status} IN ('ACTIVE', 'PENDING_MANDATE')`),
+    index('idx_subscription_billing_methods_subscriber').on(table.subscriberType, table.subscriberRef),
+    index('idx_subscription_billing_methods_billing_method_id').on(table.billingMethodId),
+  ],
+);
+
 // ─── Type exports ─────────────────────────────────────────────────────────────
 
 export type PaymentMethodType = (typeof paymentMethodTypeEnum.enumValues)[number];
@@ -736,6 +878,9 @@ export type BillingMethodStatus = (typeof billingMethodStatusEnum.enumValues)[nu
 export type BillingAgreementStatus = (typeof billingAgreementStatusEnum.enumValues)[number];
 export type CmsMemberStatus = (typeof cmsMemberStatusEnum.enumValues)[number];
 export type CmsWithdrawalStatus = (typeof cmsWithdrawalStatusEnum.enumValues)[number];
+export type InvoiceStatus = (typeof invoiceStatusEnum.enumValues)[number];
+export type SubscriptionBillingMethodRole = (typeof subscriptionBillingMethodRoleEnum.enumValues)[number];
+export type SubscriptionBillingMethodStatus = (typeof subscriptionBillingMethodStatusEnum.enumValues)[number];
 
 // ─── Schema object ────────────────────────────────────────────────────────────
 
@@ -764,6 +909,8 @@ export const walletSchema = {
   cmsMembers,
   cmsWithdrawals,
   cmsAgreements,
+  invoices,
+  subscriptionBillingMethods,
 };
 
 export { idempotencyKeys };

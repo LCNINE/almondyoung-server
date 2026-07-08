@@ -43,6 +43,13 @@
       "when": 1782095327159,
       "tag": "20260622022847_add-awaiting-deposit-status",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783492814187,
+      "tag": "20260708064014_add-invoice-and-subscription-billing-method",
+      "breakpoints": true
     }
   ]
 }
