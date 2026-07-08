@@ -176,7 +176,9 @@ export async function approveToss(
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${process.env.WALLET_API_KEY ?? ''}`,
-      'Idempotency-Key': crypto.randomUUID(),
+      // 결정론적 키: 중복 콜백(뒤로가기·새로고침·웹훅 경합) 재진입 시 wallet 멱등성 레이어가
+      // 첫 승인 성공 응답을 그대로 반환하게 한다. 랜덤 UUID면 매번 재실행 → NO_REQUIRES_ACTION_CHARGE 실패화면.
+      'Idempotency-Key': `toss-approve:${intentId}:${paymentKey}`,
     },
     body: JSON.stringify({ paymentKey, orderId, amount }),
   });
