@@ -145,7 +145,7 @@ export class StocktakingService {
       }));
 
       if (linesToCreate.length > 0) {
-        await tx.insert(stocktakingLines).values(linesToCreate);
+        await tx.insert(stocktakingLines).values(linesToCreate).onConflictDoNothing();
       }
 
       return {
@@ -450,5 +450,4 @@ export class StocktakingService {
       };
     }, tx);
   }
-
 }

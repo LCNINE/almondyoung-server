@@ -1739,6 +1739,9 @@ export const stocktakingLines = pgTable(
     idxStocktakingLineSession: index('idx_stocktaking_line_session').on(t.sessionId),
     idxStocktakingLineSku: index('idx_stocktaking_line_sku').on(t.skuId),
     idxStocktakingLineLocation: index('idx_stocktaking_line_location').on(t.locationId),
+    uqStocktakingLine: unique('uq_stocktaking_line_session_sku_location')
+      .on(t.sessionId, t.skuId, t.locationId)
+      .nullsNotDistinct(),
   }),
 );
 
@@ -1763,6 +1766,7 @@ export const stocktakingAdjustments = pgTable(
   (t) => ({
     idxAdjustmentSession: index('idx_adjustment_session').on(t.sessionId),
     idxAdjustmentLine: index('idx_adjustment_line').on(t.lineId),
+    uqStocktakingAdjustmentLine: unique('uq_stocktaking_adjustment_line').on(t.lineId),
   }),
 );
 
