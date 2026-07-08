@@ -6,7 +6,7 @@
 export function insertAtCursor(
   current: string,
   insert: string,
-  selection?: { start: number; end: number },
+  selection?: { start: number; end: number }
 ): string {
   if (!selection) {
     const needsLeadingNewline = current.length > 0 && !current.endsWith('\n');
