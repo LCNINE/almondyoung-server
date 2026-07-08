@@ -223,6 +223,9 @@ export function PayForm({
   const isBankTransferSelected = externalMethods.find((m) => m.id === selectedMethodId)?.type === 'BANK_TRANSFER';
 
   const isRecurring = intent.metadata?.billingMode === 'recurring';
+  // 멤버십 결제(type: MEMBERSHIP_FEE)는 포인트 사용 불가 — 정기결제 자동갱신 시 포인트 재적용이
+  // 불가능하고, 멤버십은 적립 혜택 대상이 아니므로 결제수단(카드 등)으로만 결제한다.
+  const isMembership = intent.metadata?.type === 'MEMBERSHIP_FEE';
   const isZeroAmount = intent.payableAmount === 0;
   const maxPoints = Math.min(availablePoints, intent.payableAmount);
   const remainingAmount = intent.payableAmount - (usePoints ? pointsAmount : 0);
@@ -439,7 +442,7 @@ export function PayForm({
                 </AlertDescription>
               </Alert>
 
-              <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground space-y-1 break-keep">
+              <div className="p-3 space-y-1 text-xs rounded-md bg-muted/50 text-muted-foreground break-keep">
                 <p>· 입금 기한(7일) 내 미입금 시 주문은 자동 취소됩니다.</p>
                 <p>· 입금 후 취소·환불은 주문 내역에서 직접 신청하실 수 있으며, 영업일 기준 약 2일 소요됩니다.</p>
               </div>
@@ -515,8 +518,16 @@ export function PayForm({
 
           {/* 우측 패널: 포인트 + 결제수단 + CTA */}
           <div className="flex-1 space-y-4">
+            {/* 멤버십 결제 안내 — 포인트 사용 불가 */}
+            {isMembership && !isZeroAmount && (
+              <Alert className="break-keep">
+                <Coins className="w-4 h-4" />
+                <AlertDescription className="break-keep">멤버십 결제에는 포인트를 사용할 수 없습니다.</AlertDescription>
+              </Alert>
+            )}
+
             {/* 포인트 사용 카드 */}
-            {!isZeroAmount && (
+            {!isZeroAmount && !isMembership && (
               <Card className="border shadow-sm border-border/60">
                 <CardContent className="p-6">
                   <div className="flex items-center justify-between mb-4">
