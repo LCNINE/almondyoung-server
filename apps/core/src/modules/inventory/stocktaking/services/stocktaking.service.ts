@@ -463,7 +463,8 @@ export class StocktakingService {
       .select({ status: stocktakingSessions.status })
       .from(stocktakingSessions)
       .where(eq(stocktakingSessions.id, sessionId))
-      .limit(1);
+      .limit(1)
+      .for('update');
     if (!session) throw new NotFoundException(`Session ${sessionId} not found`);
     if (session.status !== 'in_progress') throw new BadRequestException(`Session is not in progress`);
   }
