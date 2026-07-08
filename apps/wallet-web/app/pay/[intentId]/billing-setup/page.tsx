@@ -2,6 +2,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { isAccessTokenUsable, selfOrigin } from '@/lib/auth/access-token';
 import { SESSION_COOKIE_NAMES } from '@/lib/auth/session-cookies';
+import { safeReturnUrl } from '@/lib/return-url';
 import { BillingSetupForm } from './billing-setup-form';
 
 interface Props {
@@ -29,7 +30,7 @@ export default async function BillingSetupPage({ params, searchParams }: Props) 
 
   return (
     <BillingSetupForm
-      returnUrl={returnUrl ? decodeURIComponent(returnUrl) : '/'}
+      returnUrl={safeReturnUrl(returnUrl)}
       initialError={initialError}
       mode={mode === 'initial' ? 'initial' : undefined}
     />
