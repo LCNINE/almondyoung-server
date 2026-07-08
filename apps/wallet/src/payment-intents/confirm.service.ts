@@ -77,6 +77,15 @@ export class ConfirmService {
 
     const pointsToApply = dto.pointsToApply ?? 0;
 
+    // 멤버십 결제(type: MEMBERSHIP_FEE)에는 포인트 사용 불가. 프론트에서 포인트 UI 를 숨기지만
+    // API 직접 호출로 pointsToApply 를 실어 보내는 우회를 서버에서 차단한다.
+    if (pointsToApply > 0 && intent.metadata?.type === 'MEMBERSHIP_FEE') {
+      throw new BadRequestException({
+        error: 'POINTS_NOT_APPLICABLE_TO_MEMBERSHIP',
+        message: 'Points cannot be applied to a membership payment',
+      });
+    }
+
     if (intent.payableAmount === 0) {
       if (pointsToApply > 0) {
         throw new BadRequestException({
