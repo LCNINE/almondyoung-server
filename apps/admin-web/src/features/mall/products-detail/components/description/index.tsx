@@ -2,7 +2,7 @@
 
 import { RefObject, Suspense, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, ChevronUp, Save, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Pencil, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { CardErrorBoundary } from '@/components/admin-ui-experimental/common/card-error-boundary';
 import { Container } from '@/components/admin-ui-experimental/common/container';
@@ -14,11 +14,10 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { Spinner } from '@/components/ui/spinner';
-import { Textarea } from '@/components/ui/textarea';
 import { useInViewport } from '@/lib/hooks/use-in-viewport';
 import { useUpdateMasterVersion } from '@/lib/services/products/mutations';
 import { useProductDetailSuspense } from '@/lib/services/products/use-product-detail';
-import { MarkdownImageUploadButton } from './markdown-image-upload-button';
+import { ProductDescriptionFocusEditor } from './product-description-focus-editor';
 import { ProductDescriptionMarkdown } from './product-description-markdown';
 import { shouldShowFloatingCollapse } from './product-description-floating-collapse';
 
@@ -28,23 +27,6 @@ type ContentProps = Props & {
   /** 접기 시 스크롤을 되돌릴 섹션 카드 ref */
   sectionRef: RefObject<HTMLDivElement | null>;
 };
-
-function insertAtCursor(
-  textarea: HTMLTextAreaElement | null,
-  current: string,
-  insert: string
-): string {
-  if (!textarea)
-    return `${current}${current.endsWith('\n') || current.length === 0 ? '' : '\n'}${insert}\n`;
-
-  const start = textarea.selectionStart;
-  const end = textarea.selectionEnd;
-  const prefix = current.slice(0, start);
-  const suffix = current.slice(end);
-  const needsLeadingNewline = prefix.length > 0 && !prefix.endsWith('\n');
-  const needsTrailingNewline = suffix.length > 0 && !suffix.startsWith('\n');
-  return `${prefix}${needsLeadingNewline ? '\n' : ''}${insert}${needsTrailingNewline ? '\n' : ''}${suffix}`;
-}
 
 function LegacyHtmlPreview({
   html,
@@ -90,14 +72,13 @@ function ProductDetailDescriptionContent({
 }: ContentProps) {
   const { data } = useProductDetailSuspense(masterId, versionId);
   const updateVersion = useUpdateMasterVersion();
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLDivElement>(null);
   const canEdit =
     data.source === 'version' &&
     data.status === 'draft' &&
     Boolean(data.versionId);
-  const [draft, setDraft] = useState(data.description ?? '');
+  const [overlayOpen, setOverlayOpen] = useState(false);
   const hasContent =
     (data.description ?? '').trim().length > 0 || Boolean(data.descriptionHtml);
   const [open, setOpen] = useState(!hasContent);
@@ -115,22 +96,18 @@ function ProductDetailDescriptionContent({
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  useEffect(() => {
-    setDraft(data.description ?? '');
-  }, [data.versionId, data.description]);
-
   const handleFloatingCollapse = () => {
     setOpen(false);
     sectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  const handleSave = () => {
+  const handleSave = (value: string) => {
     if (!data.versionId) return;
     updateVersion.mutate(
       {
         masterId,
         versionId: data.versionId,
-        dto: { description: draft.trim().length > 0 ? draft : null },
+        dto: { description: value.trim().length > 0 ? value : null },
       },
       {
         onSuccess: () => toast.success('상품 상세설명을 저장했습니다.'),
@@ -164,61 +141,36 @@ function ProductDetailDescriptionContent({
     );
   };
 
-  const insertMarkdown = (markdown: string) => {
-    setDraft((current) =>
-      insertAtCursor(textareaRef.current, current, markdown)
-    );
-    textareaRef.current?.focus();
-  };
-
-  const previewValue = canEdit ? draft : (data.description ?? '');
+  // 카드는 항상 '저장된' 값을 읽기전용으로 보여준다.
+  const previewValue = data.description ?? '';
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="p-4">
+      {canEdit ? (
+        <div className="flex justify-end mb-3">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setOverlayOpen(true)}
+          >
+            <Pencil data-icon="inline-start" />
+            편집
+          </Button>
+        </div>
+      ) : null}
+
       <CollapsibleContent
         ref={contentRef}
         className="flex flex-col gap-4 data-[state=closed]:hidden"
       >
-        {canEdit ? (
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-sm font-medium">Markdown</div>
-              <div className="flex items-center gap-2">
-                <MarkdownImageUploadButton
-                  disabled={updateVersion.isPending}
-                  onInsert={insertMarkdown}
-                />
-                <Button
-                  size="sm"
-                  disabled={updateVersion.isPending}
-                  onClick={handleSave}
-                >
-                  <Save data-icon="inline-start" />
-                  {updateVersion.isPending ? '저장 중...' : '저장'}
-                </Button>
-              </div>
-            </div>
-            <Textarea
-              ref={textareaRef}
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              rows={12}
-              placeholder="Markdown으로 상품 상세설명을 작성하세요."
-            />
-          </div>
-        ) : (
+        {!canEdit ? (
           <div className="px-3 py-2 text-sm border rounded-md bg-muted/20 text-muted-foreground">
             상품 상세설명은 draft version에서만 수정할 수 있습니다.
           </div>
-        )}
+        ) : null}
 
         {previewValue.trim().length > 0 ? (
-          <div>
-            <div className="mb-2 text-xs font-medium text-muted-foreground">
-              Markdown 미리보기
-            </div>
-            <ProductDescriptionMarkdown value={previewValue} />
-          </div>
+          <ProductDescriptionMarkdown value={previewValue} />
         ) : (
           <div className="px-3 py-6 text-sm text-center border border-dashed rounded-md text-muted-foreground">
             Markdown 상세설명이 비어 있습니다.
@@ -277,6 +229,16 @@ function ProductDetailDescriptionContent({
             document.body
           )
         : null}
+
+      {canEdit ? (
+        <ProductDescriptionFocusEditor
+          open={overlayOpen}
+          onOpenChange={setOverlayOpen}
+          initialValue={data.description ?? ''}
+          onSave={handleSave}
+          pending={updateVersion.isPending}
+        />
+      ) : null}
     </Collapsible>
   );
 }
