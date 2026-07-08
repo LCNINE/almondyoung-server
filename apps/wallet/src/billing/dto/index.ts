@@ -1,5 +1,7 @@
-import { IsIn, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Matches, MaxLength } from 'class-validator';
+import { IsIn, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Matches, MaxLength, Validate } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsValidPayerNumberConstraint } from '../../cms/payer-number';
+import { IsValidCmsBankCodeConstraint } from '../../cms/cms-banks';
 
 // ─── Billing Method DTOs ────────────────────────────────────────────────────
 
@@ -77,12 +79,15 @@ export class CmsBankAccountDto {
   @IsString()
   @IsNotEmpty()
   @Matches(/^\d{3}$/, { message: 'paymentCompany must be a 3-digit bank code' })
+  @Validate(IsValidCmsBankCodeConstraint)
   @MaxLength(3)
   paymentCompany: string;
 
   @ApiProperty({ description: '예금주명', maxLength: 15 })
   @IsString()
   @IsNotEmpty()
+  // 앞뒤 공백·공백만으로 구성된 이름을 차단. 사업자 예금주명은 (주) 등 특수문자를 포함할 수 있어 문자 종류는 제한하지 않는다.
+  @Matches(/^\S(?:.*\S)?$/, { message: 'payerName must not have leading or trailing whitespace' })
   @MaxLength(15)
   payerName: string;
 
@@ -90,12 +95,14 @@ export class CmsBankAccountDto {
   @IsString()
   @IsNotEmpty()
   @Matches(/^(\d{6}|\d{10})$/, { message: 'payerNumber must be 6 or 10 digits' })
+  @Validate(IsValidPayerNumberConstraint)
   @MaxLength(10)
   payerNumber: string;
 
-  @ApiProperty({ description: '계좌번호 (숫자만)', maxLength: 16 })
+  @ApiProperty({ description: '계좌번호 (숫자만, 4~16자리)', maxLength: 16 })
   @IsString()
   @IsNotEmpty()
+  @Matches(/^\d{4,16}$/, { message: 'paymentNumber must be 4 to 16 digits' })
   @MaxLength(16)
   paymentNumber: string;
 

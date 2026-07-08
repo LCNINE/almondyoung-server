@@ -252,6 +252,7 @@ export class BillingMethodController {
       const userId = req.jwtUserId!;
       await this.service.revoke(id, userId);
     } catch (e: any) {
+      if (isCmsOperationError(e)) this.mapCmsError(e);
       const msg = (e?.message ?? '').toLowerCase();
       if (msg.includes('not found') || msg.includes('inactive')) throw new NotFoundException(e.message);
       throw new InternalServerErrorException(e.message);

@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import { WalletSchema, cmsMembers } from '../schema';
 import { CmsMemberService } from './cms-member.service';
 import { CmsApiClient } from './cms-api.client';
+import { interpretLiveCmsMemberStatus } from './cms-member-status';
 
 @Injectable()
 export class CmsMemberPollerService {
@@ -54,18 +55,18 @@ export class CmsMemberPollerService {
       }
 
       const memberData = result.data.member;
-      const apiStatus = memberData.status ?? '';
       const resultCode = memberData.result?.code ?? undefined;
       const resultMessage = memberData.result?.message ?? undefined;
 
-      if (apiStatus === '신청완료') {
+      const liveStatus = interpretLiveCmsMemberStatus(memberData.status);
+      if (liveStatus === 'REGISTERED') {
         await this.cmsMemberService.updateStatus(member.id, 'REGISTERED', resultCode, resultMessage);
         this.logger.log(`CMS member ${member.cmsMemberId} registered successfully`);
-      } else if (apiStatus === '신청실패') {
+      } else if (liveStatus === 'FAILED') {
         await this.cmsMemberService.updateStatus(member.id, 'FAILED', resultCode, resultMessage);
         this.logger.warn(`CMS member ${member.cmsMemberId} registration failed: ${resultMessage}`);
       }
-      // 그 외(신청중 등): 다음 주기에 재조회
+      // IN_FLIGHT(신청중 등): 다음 주기에 재조회
     } catch (err) {
       this.logger.error(`Error polling CMS member ${member.cmsMemberId}: ${err}`);
     }
