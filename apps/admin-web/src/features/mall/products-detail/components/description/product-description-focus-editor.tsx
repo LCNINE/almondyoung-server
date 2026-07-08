@@ -53,7 +53,10 @@ export function ProductDescriptionFocusEditor({
   };
 
   const handleOpenChange = (next: boolean) => {
-    if (!next && draft !== initialValue) {
+    // dirty 판정은 저장 매핑(공백만 → null → '')과 동일하게 정규화해서 비교한다.
+    // 그래야 공백만 입력 후 저장한 직후 닫을 때 false "미저장" 경고가 뜨지 않는다.
+    const normalizedDraft = draft.trim().length > 0 ? draft : '';
+    if (!next && normalizedDraft !== initialValue) {
       const confirmed = window.confirm(
         '저장하지 않은 변경이 있습니다. 편집을 닫을까요?'
       );
@@ -64,7 +67,10 @@ export function ProductDescriptionFocusEditor({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="flex h-[92vh] w-[96vw] max-w-[96vw] flex-col gap-0 p-0 sm:max-w-[1400px]">
+      <DialogContent
+        aria-describedby={undefined}
+        className="flex h-[92vh] w-[96vw] max-w-[96vw] flex-col gap-0 p-0 sm:max-w-[1400px]"
+      >
         {/* pr-14: 우상단 기본 닫기(X) 버튼과 저장 버튼이 겹치지 않도록 여백 확보 */}
         <DialogHeader className="flex flex-row items-center justify-between gap-2 border-b px-4 py-3 pr-14 text-left">
           <DialogTitle>상품 상세설명 편집</DialogTitle>
