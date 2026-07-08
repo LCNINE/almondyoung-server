@@ -665,6 +665,17 @@ export function setup(infra: SharedInfra) {
       WALLET_API_URL: url('wallet'),
       WALLET_API_KEY: walletApiKey.value,
       TOSS_CLIENT_KEY: tossClientKey.value,
+      // storefront 복귀 URL 오픈 리다이렉트 allowlist. CMS 등록/변경 후 returnUrl(=storefront 절대 URL)로
+      // 복귀할 때 허용 origin 을 제한한다. Medusa STORE_CORS 와 동일한 신뢰 origin 을 유지하되,
+      // live 는 apex(baseDomain)가 정식 도메인이고 www 는 거기로 301 redirect(Storefront domain 설정)라
+      // 사용자가 apex 에서 들어오므로 apex origin 도 포함한다.
+      WALLET_ALLOWED_RETURN_ORIGINS: [
+        url('www'),
+        ...(isDev ? [] : [`https://${baseDomain}`]),
+        'https://almondyoung.com',
+        'https://www.almondyoung.com',
+        'http://localhost:8001',
+      ].join(','),
       // OIDC (wallet-web RP). client_id 는 시더와 동일하게 'wallet-web'.
       OIDC_ISSUER_URL: idpUserServiceUrl,
       OIDC_AUTHORIZATION_URL: $interpolate`${idpAuthWebUrl}/oauth/authorize`,
