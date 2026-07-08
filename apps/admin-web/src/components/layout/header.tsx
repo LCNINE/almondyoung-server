@@ -155,7 +155,7 @@ export function Header({ activeMenu, activeItem, onMenuChange }: HeaderProps) {
   }, []);
 
   return (
-    <header className="bg-white border-b border-gray-200 shadow-sm">
+    <header className="sticky top-0 z-30 bg-white border-b border-gray-200 shadow-sm">
       <div className="flex items-center justify-between px-4 py-3 lg:px-6 lg:py-4">
         {/* 햄버거 (모바일) */}
         <MobileNav
@@ -175,7 +175,7 @@ export function Header({ activeMenu, activeItem, onMenuChange }: HeaderProps) {
         </Link>
 
         {/* 메인 메뉴 (데스크톱) */}
-        <nav className="items-center flex-1 min-w-0 hidden gap-0.5 overflow-x-auto lg:flex xl:gap-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <nav className="items-center flex-1 min-w-0 hidden gap-0.5 lg:flex xl:gap-2 flex-wrap">
           {mainMenus.map((menu) => {
             const IconComponent = iconMap[menu.icon as keyof typeof iconMap];
             const isActive = activeMenu === menu.id;
