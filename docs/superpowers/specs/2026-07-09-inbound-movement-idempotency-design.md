@@ -110,7 +110,10 @@ async simpleInbound(dto: SimpleInboundDto, tx?: DbTx) {
 
 - 9개 요청 DTO에 `idempotencyKey: string` 추가 — `@IsString() @IsNotEmpty() @MaxLength(100)`, **required**.
 - admin-web `lib/api/domains/inventory/inbound.client.ts` · `movement.client.ts`: 해당 mutation payload에 `idempotencyKey` 포함.
-- **키 생성 위치 규칙**: mutation **variables 생성 시점**(폼 submit 핸들러 등)에 `crypto.randomUUID()`. mutationFn 내부 생성 금지 — react-query 자동 재시도가 mutationFn을 같은 variables로 재실행하므로, variables에 있어야 재시도가 같은 키를 재사용한다.
+- **키 수명주기 (계획 수립 시 구체화)**: 대상 mutation 전부가 `lib/services/inventory/mutations.ts` 한 파일을 경유하므로, 키 관리를 central 래퍼 훅 `useIdempotentMutation`으로 통일한다 — 컴포넌트 call site 무수정.
+  - 키는 훅의 `useRef`에 유지 → react-query 자동 재시도와 **네트워크 오류 후 사용자 재클릭이 같은 키를 재사용** (서버 replay = P2-4 핵심 시나리오 방어).
+  - **성공 시** 키 교체(다음 제출은 새 작업), **4xx 거부 시** 교체(서버 미커밋 확정 — 사용자가 폼을 고쳐 재제출하면 새 요청).
+  - **네트워크/타임아웃/5xx 시** 키 유지 — 서버가 커밋했을 수 있으므로 재클릭이 저장 응답을 replay해야 함.
 
 ## 6. 배포 / 운영
 
