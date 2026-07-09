@@ -18,7 +18,7 @@ import { FrequentMenu } from "../../components/mobile/frequent-menu"
 import { MobileHeader } from "../../components/mobile/mobile-header"
 import { QuickLinks } from "../../components/mobile/quick-links"
 import {
-  ShippingItemsSkeleton,
+  MypageHomeOrderListSkeleton,
   ShippingStatusSkeleton,
 } from "../../components/shared/mypage-skeletons"
 import { withMypageTimeout } from "./wrappers/mypage-timeout"
@@ -99,7 +99,7 @@ export async function MyPageTemplate({ countryCode }: { countryCode: string }) {
             )}
 
             <div className="mt-6">
-              <Suspense fallback={<ShippingItemsSkeleton />}>
+              <Suspense fallback={<MypageHomeOrderListSkeleton />}>
                 <OrderListWrapper />
               </Suspense>
             </div>
