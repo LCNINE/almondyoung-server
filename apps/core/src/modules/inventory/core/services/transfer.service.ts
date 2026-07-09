@@ -119,10 +119,12 @@ export class TransferService {
     return this.dbService.run(async (trx) => {
       this.logger.log(`Executing transfer job ${params.jobId}`);
 
-      // Job 조회
-      const movementJob = await trx.query.movementJobs.findFirst({
-        where: eq(wmsTables.movementJobs.id, params.jobId),
-      });
+      // Job 헤더를 FOR UPDATE 로 잠가 같은 jobId 동시 실행을 직렬화 (이중출고 방지)
+      const [movementJob] = await trx
+        .select()
+        .from(wmsTables.movementJobs)
+        .where(eq(wmsTables.movementJobs.id, params.jobId))
+        .for('update');
 
       if (!movementJob) {
         throw new NotFoundException(`Movement job ${params.jobId} not found`);
@@ -155,10 +157,16 @@ export class TransferService {
 
       this.logger.log(`Transfer type: ${isInterWarehouse ? 'Inter-warehouse' : 'Intra-warehouse'}`);
 
+      let executed = 0;
       // 각 라인 실행
       for (const line of lines) {
         if (!line.fromLocationId || !line.toLocationId) {
           throw new BadRequestException(`Line ${line.id} has invalid location IDs`);
+        }
+
+        // 이미 실행된 라인은 skip — 기완료 잡 재-PATCH(더블클릭/재시도) 시 이중출고 방지
+        if (line.eventId) {
+          continue;
         }
 
         if (isInterWarehouse) {
@@ -236,13 +244,14 @@ export class TransferService {
 
           this.logger.log(`Executed intra-warehouse move for line ${line.id}: ${result.eventId}`);
         }
+        executed++;
       }
 
       this.logger.log(`Transfer job ${params.jobId} execution completed`);
 
       return {
         jobId: params.jobId,
-        linesExecuted: lines.length,
+        linesExecuted: executed,
       };
     }, tx);
   }
