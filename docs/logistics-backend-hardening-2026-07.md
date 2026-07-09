@@ -140,7 +140,7 @@
 > - 검증: 단위(대사/severity/크론/메트릭)·arch 경계 회귀·tsc·lint(eslint 0) GREEN. ⏸ 통합 스펙 6건(정상·수량불일치·원장행부재·missing-derived[P0-2 우회클래스]·warehouseId/skuId 필터)은 dev DB 복구 시 실행(작업 1 ⏸ 항목과 동일).
 
 > **✅ 작업 3 (요청 멱등화, P2-4) 구현 완료 — 2026-07-09:** 전용 `inventory_idempotency_requests` 테이블(unique(endpoint,key), 응답 jsonb) + `InventoryIdempotencyService.withIdempotency` 래퍼 신설 — 신규 키는 handler 실행+응답 저장, 중복 키는 저장 응답 replay(본문 해시 불일치·처리중은 409 ConflictError), 30일 보존 야간 크론(purge). `InboundService` 7개 핸들러(simpleInbound·simpleInboundFullscan·individualInbound·receiveFromPlan·putawayFromOrigin·returnInbound·cancelInbound) + `MovementService` 2개 핸들러(moveImmediately·createInterWarehouseTransfer) 전부 래핑, DTO `idempotencyKey` required. `stock_events.idempotencyKey` 는 이벤트 파생 키로 병행 유지(하위 세분화 방어). admin-web 은 `useIdempotentMutation` 훅으로 키 수명주기(생성·mutation 성공/실패 시 재사용/폐기) 래핑 — 컴포넌트 call site 무수정.
-> - 브랜치 `feat/inbound-movement-idempotency` (SDD 7태스크) — tip `<TASK7_COMMIT_HASH>`, develop 미머지.
+> - 브랜치 `feat/inbound-movement-idempotency` (SDD 7태스크) — tip `7d176c9e8`, develop 미머지.
 > - 설계 `docs/superpowers/specs/2026-07-09-inbound-movement-idempotency-design.md` · 계획 `docs/superpowers/plans/2026-07-09-inbound-movement-idempotency.md`.
 > - 검증: 단위(래퍼 6케이스 + purge 1 + 배선 7+2)·arch 경계 회귀·tsc·lint GREEN. admin-web `tsc --noEmit` GREEN(컴포넌트 call site 무수정). ⏸ 통합 스펙 4건(simpleInbound replay·returnInbound replay·다른 본문 409·movement.move 래퍼 replay)은 dev DB 복구 시 실행(작업 1·2 ⏸ 항목과 동일).
 > - **WS-A 잔여(미착수)**: P0-4, P2-2.
