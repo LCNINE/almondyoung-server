@@ -1,8 +1,10 @@
 // src/lib/services/inventory/mutations.ts
 'use client';
 
+import { useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { inventoryQueryKeys } from './query-keys';
+import { isCustomError } from '../../api/customError';
 import { inventoryMatchingClient } from '../../api/domains/inventory';
 import { stocksClient } from '../../api/domains/inventory/stocks.client';
 import { skusClient } from '../../api/domains/inventory/skus.client';
@@ -74,6 +76,31 @@ import type {
   ProcessReturnDto,
   MoveBatchRequestDto,
 } from '../../types/dto/inventory';
+
+/**
+ * 멱등 키 수명주기를 관리하는 mutation 래퍼 (P2-4, 스펙 §5).
+ * - 키를 ref 로 유지: react-query 재시도·네트워크 오류 후 재클릭이 같은 키 재사용 → 서버 replay
+ * - 성공 시 키 교체(다음 제출은 새 작업), 4xx 시 교체(서버 미커밋 확정)
+ * - 네트워크/타임아웃/5xx 는 키 유지: 서버가 커밋했을 수 있으므로 재시도가 replay 돼야 함
+ */
+function useIdempotentMutation<TVars, TData>(opts: {
+  mutationFn: (vars: TVars, idempotencyKey: string) => Promise<TData>;
+  onSuccess?: (data: TData, vars: TVars) => void;
+}) {
+  const keyRef = useRef<string>(crypto.randomUUID());
+  return useMutation({
+    mutationFn: (vars: TVars) => opts.mutationFn(vars, keyRef.current),
+    onSuccess: (data, vars) => {
+      keyRef.current = crypto.randomUUID();
+      opts.onSuccess?.(data, vars);
+    },
+    onError: (error) => {
+      if (isCustomError(error) && error.statusCode < 500) {
+        keyRef.current = crypto.randomUUID();
+      }
+    },
+  });
+}
 
 export const useAdjustStock = () => {
   const queryClient = useQueryClient();
@@ -704,8 +731,8 @@ export const useClearCart = () => {
 // 입고 관련 뮤테이션
 export const useSimpleInbound = () => {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: SimpleInboundDto) => inboundClient.simple(data),
+  return useIdempotentMutation({
+    mutationFn: (data: SimpleInboundDto, idempotencyKey) => inboundClient.simple({ ...data, idempotencyKey }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inbounds });
     },
@@ -714,8 +741,8 @@ export const useSimpleInbound = () => {
 
 export const useSimpleFullscanInbound = () => {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: SimpleInboundDto) => inboundClient.simpleFullscan(data),
+  return useIdempotentMutation({
+    mutationFn: (data: SimpleInboundDto, idempotencyKey) => inboundClient.simpleFullscan({ ...data, idempotencyKey }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inbounds });
     },
@@ -724,8 +751,8 @@ export const useSimpleFullscanInbound = () => {
 
 export const useIndividualInbound = () => {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: IndividualInboundDto) => inboundClient.individual(data),
+  return useIdempotentMutation({
+    mutationFn: (data: IndividualInboundDto, idempotencyKey) => inboundClient.individual({ ...data, idempotencyKey }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inbounds });
     },
@@ -761,8 +788,8 @@ export const useAddInboundPlanItems = () => {
 
 export const useReceiveFromPlan = () => {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: ReceiveFromPlanDto) => inboundClient.plans.receive(data),
+  return useIdempotentMutation({
+    mutationFn: (data: ReceiveFromPlanDto, idempotencyKey) => inboundClient.plans.receive({ ...data, idempotencyKey }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inbounds });
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundPending() });
@@ -772,8 +799,8 @@ export const useReceiveFromPlan = () => {
 
 export const usePutaway = () => {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: PutawayRequestDto) => inboundClient.putaway(data),
+  return useIdempotentMutation({
+    mutationFn: (data: PutawayRequestDto, idempotencyKey) => inboundClient.putaway({ ...data, idempotencyKey }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundReceipts() });
     },
@@ -782,8 +809,8 @@ export const usePutaway = () => {
 
 export const useReturnInbound = () => {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: ReturnInboundDto) => inboundClient.return(data),
+  return useIdempotentMutation({
+    mutationFn: (data: ReturnInboundDto, idempotencyKey) => inboundClient.return({ ...data, idempotencyKey }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundReceipts() });
     },
@@ -792,8 +819,8 @@ export const useReturnInbound = () => {
 
 export const useCancelInbound = () => {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: CancelInboundDto) => inboundClient.cancel(data),
+  return useIdempotentMutation({
+    mutationFn: (data: CancelInboundDto, idempotencyKey) => inboundClient.cancel({ ...data, idempotencyKey }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundReceipts() });
     },
@@ -863,8 +890,8 @@ export const useProcessReturn = () => {
 
 export const useMoveImmediately = () => {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: MoveBatchRequestDto) => movementClient.moveImmediately(data),
+  return useIdempotentMutation({
+    mutationFn: (data: MoveBatchRequestDto, idempotencyKey) => movementClient.moveImmediately({ ...data, idempotencyKey }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory', 'movement', 'history'] });
     },

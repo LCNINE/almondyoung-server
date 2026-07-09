@@ -232,6 +232,13 @@
       "when": 1783531080084,
       "tag": "20260708171800_stocktaking-uniques",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1783578271732,
+      "tag": "20260709062431_add-inventory-idempotency-requests",
+      "breakpoints": true
     }
   ]
 }
