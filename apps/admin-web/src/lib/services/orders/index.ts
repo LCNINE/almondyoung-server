@@ -97,7 +97,6 @@ export {
   useReserveFulfillment,
   useUnreserveFulfillment,
   useTransferFulfillmentReservation,
-  useAssignFulfillmentShipment,
   useDeliverFulfillment,
 } from './mutations';
 

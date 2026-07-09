@@ -1,36 +1,16 @@
 'use client';
 
-import { useState } from 'react';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { AlertTriangle, PackageCheck } from 'lucide-react';
 import {
-  useAssignFulfillmentShipment,
   useDeliverFulfillment,
   orderQueryKeys,
 } from '@/lib/services/orders';
-import type { FulfillmentOrderDetail, AssignShipmentRequest } from '@/lib/types/dto/fulfillment';
-
-const CARRIER_LABELS: Record<string, string> = {
-  CJ: 'CJ대한통운',
-  HANJIN: '한진택배',
-  LOTTE: '롯데택배',
-  LOGEN: '로젠택배',
-  KDEXP: '경동택배',
-  CJGLS: 'CJ GLS',
-};
+import type { FulfillmentOrderDetail } from '@/lib/types/dto/fulfillment';
 
 function extractErrorMessage(err: unknown): string {
   if (err && typeof err === 'object') {
@@ -44,35 +24,9 @@ function extractErrorMessage(err: unknown): string {
 
 export function ShipmentTab({ fo }: { fo: FulfillmentOrderDetail }) {
   const queryClient = useQueryClient();
-  const canAssign = fo.adminAvailableActions.includes('assignShipment');
   const canDeliver = fo.adminAvailableActions.includes('deliver');
 
-  const [trackingNo, setTrackingNo] = useState('');
-  const [carrier, setCarrier] = useState<AssignShipmentRequest['carrier']>('CJ');
-  const [eta, setEta] = useState('');
-
-  const assignShipment = useAssignFulfillmentShipment(fo.id);
   const deliver = useDeliverFulfillment(fo.id);
-
-  const handleAssignShipment = async () => {
-    if (!trackingNo.trim()) {
-      toast.error('운송장 번호를 입력하세요.');
-      return;
-    }
-    try {
-      await assignShipment.mutateAsync({
-        trackingNo: trackingNo.trim(),
-        carrier,
-        eta: eta.trim() || undefined,
-      });
-      toast.success('운송장 정보가 등록되었습니다.');
-      setTrackingNo('');
-      setCarrier('CJ');
-      setEta('');
-    } catch (err) {
-      toast.error(`운송장 등록 실패: ${extractErrorMessage(err)}`);
-    }
-  };
 
   const handleDeliver = async () => {
     try {
@@ -129,66 +83,6 @@ export function ShipmentTab({ fo }: { fo: FulfillmentOrderDetail }) {
               <p>미등록</p>
             </div>
           )}
-        </div>
-      </section>
-
-      {/* 운송장 등록 (assignShipment) */}
-      <section>
-        <h3 className="mb-1 text-sm font-semibold">운송장 등록</h3>
-        <p className="mb-3 text-xs text-muted-foreground">
-          추적번호를 등록하면 FO에 shipment 레코드가 연결됩니다. 출고 완료 전에 등록을 권장합니다.
-        </p>
-        {!canAssign && (
-          <p className="mb-2 text-xs text-muted-foreground">
-            현재 FO 상태({fo.status})에서는 운송장 등록이 허용되지 않습니다.
-          </p>
-        )}
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="flex flex-col gap-1">
-            <Label className="text-xs">택배사 (필수)</Label>
-            <Select
-              value={carrier}
-              onValueChange={(v) => setCarrier(v as AssignShipmentRequest['carrier'])}
-              disabled={!canAssign}
-            >
-              <SelectTrigger className="w-36">
-                <SelectValue placeholder="택배사 선택" />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.entries(CARRIER_LABELS).map(([code, label]) => (
-                  <SelectItem key={code} value={code}>{label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-1">
-            <Label className="text-xs">운송장 번호 (필수)</Label>
-            <Input
-              value={trackingNo}
-              onChange={(e) => setTrackingNo(e.target.value)}
-              placeholder="예: 1234567890"
-              className="w-48"
-              disabled={!canAssign}
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <Label className="text-xs">예상 도착일 (선택)</Label>
-            <Input
-              type="date"
-              value={eta}
-              onChange={(e) => setEta(e.target.value)}
-              className="w-40"
-              disabled={!canAssign}
-            />
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleAssignShipment}
-            disabled={!canAssign || assignShipment.isPending || !trackingNo.trim()}
-          >
-            {assignShipment.isPending ? '등록 중...' : '운송장 등록'}
-          </Button>
         </div>
       </section>
 

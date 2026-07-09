@@ -35,7 +35,6 @@ import type {
   ReserveRequest,
   UnreserveRequest,
   TransferReservationRequest,
-  AssignShipmentRequest,
   InspectByScanRequest,
 } from '@/lib/types/dto/fulfillment';
 
@@ -854,17 +853,6 @@ export const useTransferFulfillmentReservation = (id: string) => {
   return useMutation({
     mutationFn: (data: TransferReservationRequest) =>
       orders.fulfillments.transferReservation(id, data),
-    onSuccess: () => {
-      invalidateFulfillment(queryClient, id);
-    },
-  });
-};
-
-export const useAssignFulfillmentShipment = (id: string) => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: AssignShipmentRequest) =>
-      orders.fulfillments.assignShipment(id, data),
     onSuccess: () => {
       invalidateFulfillment(queryClient, id);
     },

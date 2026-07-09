@@ -17,7 +17,6 @@ import type {
   UnreserveRequest,
   TransferReservationRequest,
   TransferCandidate,
-  AssignShipmentRequest,
 } from '@/lib/types/dto/fulfillment';
 
 const BASE = `${ALMONDYOUNG_API_BASE_URL}/fulfillments`;
@@ -75,11 +74,6 @@ export const fulfillmentsClient = {
     const res = await client.get(`${BASE}/${encodeURIComponent(id)}/transfer-candidates`, {
       params: { fromFulfillmentOrderItemId },
     });
-    return res.data;
-  },
-
-  assignShipment: async (id: string, data: AssignShipmentRequest): Promise<unknown> => {
-    const res = await client.post(`${BASE}/${encodeURIComponent(id)}/assign-shipment`, data);
     return res.data;
   },
 

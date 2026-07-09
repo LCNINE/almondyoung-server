@@ -173,13 +173,6 @@ export interface TransferCandidate {
   sameFulfillmentOrder: boolean;
 }
 
-/** POST /fulfillments/:id/assign-shipment body */
-export interface AssignShipmentRequest {
-  trackingNo: string;
-  carrier?: 'CJ' | 'HANJIN' | 'LOTTE' | 'LOGEN' | 'KDEXP' | 'CJGLS';
-  eta?: string;
-}
-
 export interface FulfillmentOrderItemInput {
   salesOrderId: string;
   salesOrderLineId: string;
