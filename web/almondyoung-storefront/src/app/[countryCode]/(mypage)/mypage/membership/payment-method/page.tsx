@@ -26,6 +26,7 @@ import {
 } from "react"
 import { toast } from "sonner"
 import { useTranslations } from "next-intl"
+import { isInvoiceBillingEnabled } from "@lib/utils/invoice-billing"
 import { MembershipPaymentMethodSkeleton } from "@/components/skeletons/page-skeletons"
 import { providerLabel } from "@lib/utils/billing-provider"
 import { getCmsFailureReasonKey } from "@lib/utils/cms-failure-reason"
@@ -317,12 +318,17 @@ export default function MembershipPaymentMethodPage() {
   }
 
   useEffect(() => {
-    if (!autoSubscribeOnLoad.current || isLoading || otherMethods.length === 0)
-      return
+    if (!autoSubscribeOnLoad.current || isLoading) return
+    // 선적용: 갓 등록한 심사 중(PENDING) 계좌로도 즉시 가입한다.
+    const pendingCandidate = isInvoiceBillingEnabled()
+      ? pendingCmsMethods.find((s) => s.billingMethodId !== agreement?.billingMethodId)
+      : undefined
+    const targetMethodId = otherMethods[0]?.id ?? pendingCandidate?.billingMethodId
+    if (!targetMethodId) return
     autoSubscribeOnLoad.current = false
-    handleSubscribeWithMethod(otherMethods[0].id)
+    handleSubscribeWithMethod(targetMethodId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoading, otherMethods])
+  }, [isLoading, otherMethods, pendingCmsMethods])
 
   if (isLoading) {
     return <MembershipPaymentMethodSkeleton />

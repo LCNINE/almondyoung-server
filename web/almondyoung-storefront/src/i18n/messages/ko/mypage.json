@@ -622,7 +622,9 @@
       "orderCountUnit": "{count}건",
       "trialEndImmediately": "무료 체험을 해지하면 즉시 이용이 종료됩니다. (자동 결제 예정일: {date})",
       "cancelNotice": "해지 시 {date}까지 서비스를 이용하실 수 있으며, 이후 자동 결제가 중단됩니다.",
-      "cancelRecurring": "정기결제 해지하기"
+      "cancelRecurring": "정기결제 해지하기",
+      "mandatePendingNotice": "결제수단 은행 확인 중입니다(1~2영업일). 멤버십은 정상 이용 가능하며, 확인 완료 후 첫 결제가 자동 출금됩니다. 은행의 ‘자동이체 등록 접수’ 문자는 최종 승인이 아닙니다.",
+      "paymentActionCta": "결제 수단 확인하기"
     },
     "stats": {
       "monthlySavings": "이번달 멤버십으로 절약한 금액",

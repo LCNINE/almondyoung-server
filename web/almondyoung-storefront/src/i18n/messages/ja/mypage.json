@@ -622,7 +622,9 @@
       "orderCountUnit": "{count} 件",
       "trialEndImmediately": "無料体験を解約すると即時利用が終了します。(自動決済予定日: {date})",
       "cancelNotice": "解約しても {date} までサービスを利用でき、その後自動決済が停止します。",
-      "cancelRecurring": "定期決済を解約する"
+      "cancelRecurring": "定期決済を解約する",
+      "mandatePendingNotice": "お支払い口座を銀行で確認中です（1～2営業日）。メンバーシップはすでにご利用いただけます。確認完了後に初回のお支払いが引き落とされます。",
+      "paymentActionCta": "決済手段を確認する"
     },
     "stats": {
       "monthlySavings": "今月の節約金額",

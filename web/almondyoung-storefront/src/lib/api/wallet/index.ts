@@ -135,9 +135,13 @@ export async function getApickAccount(bankCode: string, accountNumber: string) {
 /**
  * 내 빌링 수단(정기결제 카드) 목록 조회
  */
-export async function getBillingMethods(): Promise<BillingMethodDto[]> {
+export async function getBillingMethods(opts?: {
+  /** ADR-0027 선적용: 심사 중(PENDING) CMS 수단 포함 — 인보이스 경로 정기가입 전용 */
+  includePendingMandate?: boolean
+}): Promise<BillingMethodDto[]> {
+  const qs = opts?.includePendingMandate ? "?includePendingMandate=true" : ""
   try {
-    return await api<BillingMethodDto[]>("wallet", "/v1/billing-methods", {
+    return await api<BillingMethodDto[]>("wallet", `/v1/billing-methods${qs}`, {
       method: "GET",
       cache: "no-store",
       withAuth: true,

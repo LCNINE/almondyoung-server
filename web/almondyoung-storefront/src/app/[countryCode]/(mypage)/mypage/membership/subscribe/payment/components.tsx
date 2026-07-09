@@ -27,6 +27,7 @@ import { HttpApiError } from "@lib/api/api-error"
 import { getBillingMethods, getCmsBillingMethodStatuses } from "@lib/api/wallet"
 import { subscribeWithBillingMethod, createMembershipCheckoutIntent } from "@lib/api/membership"
 import { setPendingPaymentMode } from "@lib/utils/checkout-intent-map"
+import { isInvoiceBillingEnabled } from "@lib/utils/invoice-billing"
 import { cn } from "@lib/utils"
 import { providerLabel } from "@lib/utils/billing-provider"
 import { useUser } from "@/contexts/user-context"
@@ -124,7 +125,10 @@ export function MembershipForm({
   const [policyAgreed, setPolicyAgreed] = useState(false)
 
   useEffect(() => {
-    Promise.all([getBillingMethods(), getCmsBillingMethodStatuses()])
+    Promise.all([
+      getBillingMethods({ includePendingMandate: isInvoiceBillingEnabled() }),
+      getCmsBillingMethodStatuses(),
+    ])
       .then(([methods, cmsStatuses]) => {
         setBillingMethods(methods.filter((m) => m.status === "ACTIVE"))
         setCmsBillingStatuses(cmsStatuses)
@@ -238,7 +242,10 @@ export function MembershipForm({
   }
 
   const discountCount = discountBenefits.length
+  const invoiceBillingEnabled = isInvoiceBillingEnabled()
   const hasPendingMethods = cmsBillingStatuses.some((s) => s.cmsMemberStatus === "PENDING")
+  // 선적용(인보이스 경로)이 켜지면 심사 중 계좌도 가입 가능 — PENDING 이 제출을 막지 않는다.
+  const pendingBlocksSubmit = hasPendingMethods && !invoiceBillingEnabled
 
   const billingMode = form.watch("billingMode")
   const subscriptionType = form.watch("subscriptionType")
@@ -274,8 +281,8 @@ export function MembershipForm({
         const trialLabel = totalTrialDays > 0 ? `${totalTrialDays}일 무료체험` : "정기결제"
         return `${trialLabel} 시작하기`
       }
-      if (hasPendingMethods) return "심사 완료 후 정기결제 가능"
-      return "자동이체 계좌 심사 신청하기"
+      if (pendingBlocksSubmit) return "심사 완료 후 정기결제 가능"
+      return invoiceBillingEnabled ? "자동이체 계좌 등록하고 바로 시작하기" : "자동이체 계좌 심사 신청하기"
     }
 
     if (selectedBillingMethodId) return "이 결제수단으로 구독하기"
@@ -432,7 +439,11 @@ export function MembershipForm({
                         </button>
                         {subscriptionType !== "yearly" && field.value === "recurring" && (
                           <p className="rounded-md bg-amber-50 border border-amber-100 px-3 py-2 text-xs leading-relaxed text-amber-700">
-                            새 자동이체 계좌를 등록하는 경우 효성 CMS 심사에 <strong>1~2영업일</strong>이 걸립니다. 즉시 이용하려면 &apos;한번만 결제&apos;를 선택해 주세요.
+                            {invoiceBillingEnabled ? (
+                              <>가입 즉시 멤버십이 적용됩니다. 새 자동이체 계좌는 은행 확인(1~2영업일) 후 첫 결제가 출금되며, 확인이 거절되면 멤버십이 해지될 수 있습니다.</>
+                            ) : (
+                              <>새 자동이체 계좌를 등록하는 경우 효성 CMS 심사에 <strong>1~2영업일</strong>이 걸립니다. 즉시 이용하려면 &apos;한번만 결제&apos;를 선택해 주세요.</>
+                            )}
                           </p>
                         )}
                         {subscriptionType === "yearly" && (
@@ -554,6 +565,11 @@ export function MembershipForm({
                       <span className="w-fit rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
                         {providerLabel(method.providerType)}
                       </span>
+                      {method.cmsMemberStatus === "PENDING" && (
+                        <span className="w-fit rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                          은행 확인 중 · 가입 즉시 적용, 승인 후 출금
+                        </span>
+                      )}
                     </div>
                     {selectedBillingMethodId === method.id && (
                       <span className="text-primary text-xs font-semibold">선택됨</span>
@@ -571,7 +587,11 @@ export function MembershipForm({
                 >
                   <CreditCard className="h-5 w-5 shrink-0 text-gray-400" />
                   <p className="text-sm text-gray-600">
-                    {billingMode === "recurring" ? "새 자동이체 계좌 심사 신청 후 시작" : "새 결제수단으로 결제하기"}
+                    {billingMode === "recurring"
+                      ? invoiceBillingEnabled
+                        ? "새 자동이체 계좌 등록 후 바로 시작"
+                        : "새 자동이체 계좌 심사 신청 후 시작"
+                      : "새 결제수단으로 결제하기"}
                   </p>
                   {selectedBillingMethodId === null && (
                     <span className="text-primary ml-auto text-xs font-semibold">선택됨</span>
@@ -717,7 +737,7 @@ export function MembershipForm({
                 !form.watch("subscriptionType") ||
                 isSubmitting ||
                 (billingMode === "one_time" && !policyAgreed) ||
-                (billingMode === "recurring" && !selectedBillingMethodId && hasPendingMethods)
+                (billingMode === "recurring" && !selectedBillingMethodId && pendingBlocksSubmit)
               }
               type="submit"
             >

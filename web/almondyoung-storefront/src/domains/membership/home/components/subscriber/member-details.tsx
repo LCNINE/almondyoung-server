@@ -1,9 +1,12 @@
 "use client"
 
-import React from "react"
+import React, { useEffect, useState } from "react"
 import { differenceInCalendarDays } from "date-fns"
 import { useTranslations } from "next-intl"
+import { useParams, useRouter } from "next/navigation"
 import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
+import { getCmsBillingMethodStatuses } from "@lib/api/wallet"
+import { isInvoiceBillingEnabled } from "@lib/utils/invoice-billing"
 import type {
   CycleBenefitDto,
   SubscriptionDetailsDto,
@@ -22,6 +25,26 @@ export default function MemberDetails({
   currentBenefit,
 }: MemberDetailsProps) {
   const t = useTranslations("mypage.membership")
+  const router = useRouter()
+  const params = useParams()
+  const countryCode =
+    typeof params.countryCode === "string" ? params.countryCode : "kr"
+
+  // 선적용: 계좌 심사 대기 중이면 "은행 확인 중" 배너(접수 SMS 오인 방지)
+  const [hasPendingMandate, setHasPendingMandate] = useState(false)
+  useEffect(() => {
+    if (!isInvoiceBillingEnabled()) return
+    if (membershipData?.autoRenewal !== true) return
+    getCmsBillingMethodStatuses()
+      .then((statuses) =>
+        setHasPendingMandate(
+          statuses.some(
+            (s) => s.billingMethodStatus === "ACTIVE" && s.cmsMemberStatus === "PENDING"
+          )
+        )
+      )
+      .catch(() => {})
+  }, [membershipData?.autoRenewal])
 
   function StatCard({
     label,
@@ -72,8 +95,20 @@ export default function MemberDetails({
   return (
     <div className="flex w-full flex-col items-center gap-4">
       {membershipData?.paymentActionNeeded && (
-        <p className="w-full rounded-md bg-amber-50 px-3 py-2 text-center text-sm text-amber-800">
-          {t("billing.paymentActionNeeded")}
+        <div className="w-full rounded-md bg-amber-50 px-3 py-2 text-center text-sm text-amber-800">
+          <p>{t("billing.paymentActionNeeded")}</p>
+          <button
+            type="button"
+            onClick={() => router.push(`/${countryCode}/mypage/membership/payment-method`)}
+            className="mt-1 text-xs font-semibold underline underline-offset-2"
+          >
+            {t("billing.paymentActionCta")}
+          </button>
+        </div>
+      )}
+      {!membershipData?.paymentActionNeeded && hasPendingMandate && (
+        <p className="w-full rounded-md bg-sky-50 px-3 py-2 text-center text-sm text-sky-800">
+          {t("billing.mandatePendingNotice")}
         </p>
       )}
       {/* 1. 계정 상태 및 플랜 관리 */}

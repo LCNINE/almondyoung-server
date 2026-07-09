@@ -128,6 +128,8 @@ export type BillingMethodDto = {
   status: "ACTIVE" | "REVOKED" | "DELETED" | "EXPIRED"
   expiresAt: string | null
   createdAt: string
+  /** CMS 수단의 심사 상태 (PENDING=심사 중). includePendingMandate 조회 시 내려옴 */
+  cmsMemberStatus?: string | null
 }
 
 /*───────────────────────────
