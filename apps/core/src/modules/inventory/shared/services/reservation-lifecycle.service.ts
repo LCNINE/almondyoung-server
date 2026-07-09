@@ -125,38 +125,6 @@ export class ReservationLifecycleService {
   }
 
   /**
-   * 예약 만료 배치 처리
-   */
-  async processExpiredReservations(tx?: DbTx): Promise<number> {
-    return this.db.run(async (trx) => {
-      const expiredReservations = await trx.query.stockReservations.findMany({
-        where: and(
-          eq(wmsTables.stockReservations.status, 'confirmed'),
-          // timeoutAt < now()
-        ),
-      });
-
-      let releasedCount = 0;
-
-      for (const reservation of expiredReservations) {
-        try {
-          await this.unifiedReservation.releaseReservation(reservation.id, trx);
-          releasedCount++;
-        } catch (error) {
-          this.logger.warn(
-            `Failed to release expired reservation ${reservation.id}: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          );
-        }
-      }
-
-      this.logger.log(`Processed ${releasedCount} expired reservations`);
-      return releasedCount;
-    }, tx);
-  }
-
-  /**
    * FO 아이템 수량 변경시 예약 조정
    */
   async adjustReservationOnQuantityChange(
