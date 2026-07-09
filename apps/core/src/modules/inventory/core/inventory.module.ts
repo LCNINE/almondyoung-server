@@ -26,6 +26,7 @@ import { AllocationStrategyService } from './services/allocation-strategy.servic
 import { FifoLocationStrategy, LOCATION_RESOLUTION_STRATEGY } from './services/location-resolution.strategy';
 import { ReservationCronService } from './services/reservation-cron.service';
 import { LedgerReconciliationService } from './services/ledger-reconciliation.service';
+import { InventoryIdempotencyService } from './services/inventory-idempotency.service';
 import { ReturnService } from './services/return.service';
 import { TransferService } from './services/transfer.service';
 import { HolderService } from './services/holder.service';
@@ -63,6 +64,7 @@ import { OutboxService } from '../shared/outbox/outbox.service';
     { provide: LOCATION_RESOLUTION_STRATEGY, useClass: FifoLocationStrategy },
     ReservationCronService,
     LedgerReconciliationService,
+    InventoryIdempotencyService,
     ReturnService,
     TransferService,
     HolderService,
@@ -82,6 +84,7 @@ import { OutboxService } from '../shared/outbox/outbox.service';
     ReturnService,
     TransferService,
     HolderService,
+    InventoryIdempotencyService,
     OutboxService,
   ],
 })
