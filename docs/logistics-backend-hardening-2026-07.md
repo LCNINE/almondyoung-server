@@ -36,11 +36,11 @@
 
 | ID | 상태 | 위치 | 결함 | 실패 시나리오 |
 |---|---|---|---|---|
-| P0-1 ✅검증 | ⬜ | `movement/services/movement.service.ts:220-235, 254-300` | 창고간 이동이 `toState:null` MOVE 로 **출발지만 차감** — IN_TRANSFER 미기록, complete 는 입고예정 expectedDate 만 갱신 | PO 외 ad-hoc 이동 100개 → 출발 창고 -100, 어디에도 +100 없음 = 영구 소실. 무손실 경로(`TransferService.transferBetweenWarehouses`, ON_HAND→IN_TRANSFER→ON_HAND)가 있으나 컨트롤러에 미연결 |
+| P0-1 ✅검증 | ⬜ | `movement/services/movement.service.ts:174-253(create), 259-305(complete)` | 창고간 이동이 `toState:null` MOVE 로 **출발지만 차감**(`:232`) — IN_TRANSFER 미기록, complete 는 입고예정 expectedDate 만 갱신 | PO 외 ad-hoc 이동 100개 → 출발 창고 -100, 어디에도 +100 없음 = 영구 소실. **(착수 재확인 2026-07-10)** 무손실 경로는 `StockEventService.transferBetweenWarehouses`(`stock-event.service.ts:142-196`, transferShip→transferReceive = ON_HAND→IN_TRANSFER→ON_HAND)이며 `TransferService.executeTransferJob` 경유로 `inventory/transfers` 컨트롤러에 **이미 배선됨** — 감사의 "미연결" 서술은 부정확. 실제 문제는 손실 경로 `POST /movement/inter-warehouse` 가 **병존 노출**(`movement.controller.ts:14`). 재배선 시 간극: DTO 에 `toLocationId` 부재(도착 로케이션 결정 규칙 필요), 작업3 멱등 래퍼(`withIdempotency`)와 transferShip/Receive 이벤트 키 상호작용 확인, `movementJobs.warehouseId` 의미 차이(손실=to, Transfer=from). complete 쪽은 멱등 래퍼도 없음 |
 | P0-2 ✅검증 | 🟩 | `stocktaking/services/stocktaking.service.ts:361-374` | 실사 조정이 `tx.insert(stockEvents)` **직접 INSERT** — StockEventStore 우회 → 원장/판매가능수량/outbox 미반영 | 실사 확정해도 시스템 재고 불변. `stocktakingAdjustments.stockEventId` 는 원장 미반영 유령 이벤트를 참조 |
 | P0-3 ✅검증 | 🟩 | `stocktaking.service.ts:329-396` | 실사 조정 멱등성/재실행 방지 부재 (세션 상태 미검사, 처리 플래그 없음) | `generate-adjustments` 2회 호출 → 조정 2배 생성 (P0-2 수정 즉시 실피해로 전환 — **P0-2 와 반드시 함께 수정**) |
 | P0-4 ✅검증 | 🟩 | `core/services/inventory-correction.service.ts` (삭제됨) | `correctReceipt`/`reportTransportLoss`/`processDefectiveItems` 가 fromState/toState 미설정 → `ck_events_side_present`(`schema:812`) 위반 | 세 메서드 모두 **dead code**(모듈·컨트롤러 미등록, 호출처 0) — 배선하는 순간 즉시 500. **완료(작업4): 서비스 전량 삭제** — 어느 모듈에도 미등록(주입조차 불가)·컨트롤러/DTO 없음·미래 의도 표시 없음이라, 규칙에 맞게 고쳐 살려두기보다 제거. 재고정정/운송분실/불량처리 기능은 필요 시 규칙 준수(`InventoryCommandService` 경유)로 신규 작성 |
-| P0-5 ✅검증 | ⬜ | `shared/services/reservation-lifecycle.service.ts:130-157` | `processExpiredReservations` 의 `timeoutAt < now()` 필터가 **주석 처리** — 호출 시 confirmed 예약 전체 해제. 현재 호출처 0건(dead 지뢰) | 누군가 크론/컨트롤러에 배선하는 순간 전 예약 해제 → 대량 초과판매. **제거가 답** |
+| P0-5 ✅검증 | ⬜ | `shared/services/reservation-lifecycle.service.ts:130-157` | `processExpiredReservations` 의 `timeoutAt < now()` 필터가 **주석 처리**(`:135`) — 호출 시 confirmed 예약 전체 해제. 현재 호출처 0건(dead 지뢰) | 누군가 크론/컨트롤러에 배선하는 순간 전 예약 해제 → 대량 초과판매. **제거가 답**. **(착수 재확인 2026-07-10)** 사실 유지 — 호출처 0(테스트 포함). 정상 만료 경로 `releaseExpiredReservations`(`unified-reservation.service.ts:283-310`, 올바른 timeoutAt 필터 `:296-297`) + 10분 크론(`reservation-cron.service.ts:17`)이 살아있어 순수한 깨진 중복. **메서드만 삭제** — 서비스는 활성 호출 4곳(`outbound-consumption:136`, `fulfillment-order-transaction:191`, `fulfillments:1027`, `sales-orders:481`)이라 존치, 모듈 배선 정리 불요 |
 
 ### P1 — 높음 (오동작이 곧 돈/재고로 이어지는 경로)
 
@@ -51,7 +51,7 @@
 | P1-3 ✅검증 | ⬜ | fulfillment 전역 (`fulfillments.service.ts:804`, `fulfillment-reservations.facade.ts:92`) | FO 예약 `timeoutAt=null` — 만료 크론(`unified-reservation.service.ts:296`) 대상에서 영구 제외 | ship/cancel 없이 방치된 FO 의 예약이 available 을 영구 잠금(과소판매). 타임아웃 정책 결정 + 잔존 예약 모니터링 필요 |
 | P1-4 | ⬜ | `core/services/unified-reservation.service.ts:257-277, 56-79` | 가용 확인→예약 INSERT 사이 락 없음 (TOCTOU) | 동시 요청 둘 다 available=10 을 읽고 각각 10 예약 → `reserved(20) > on_hand(10)` = 초과판매. ADR-0011 의 "감수" 범위를 넘어 단일 창고 내에서도 발생 |
 | P1-5 | ⬜ | `core/services/inventory-command.service.ts:366-428` | `adjustDown` 이 confirmed 예약을 무시하고 로케이션 ON_HAND 만 검증 | `on_hand=10, reserved=10` 에서 adjustDown 5 성공 → `on_hand < reserved` 모순 → 이후 FIFO 소진 throw 로 출고 실패 |
-| P1-6 | ⬜ | `services/fulfillment-order-transaction.service.ts:344` | 예약을 dead 상태값 `status='active'` 로 조회 (실제 예약은 전부 `'confirmed'` 생성, `unified-reservation.service.ts:75`) | 이 경로 사용 시 예약 전량을 0 으로 보고 배치 가용 과다 계산 → 이미 묶인 재고를 할당 가능으로 오판 |
+| P1-6 | ⬜ | `services/fulfillment-order-transaction.service.ts:344` | 예약을 dead 상태값 `status='active'` 로 조회 (실제 예약은 전부 `'confirmed'` 생성, `unified-reservation.service.ts:75`) | 이 경로 사용 시 예약 전량을 0 으로 보고 배치 가용 과다 계산 → 이미 묶인 재고를 할당 가능으로 오판. **(착수 재확인 2026-07-10)** 버그 코드 실재하나 유일 호출자 `createFulfillmentOrder`(`:51`)가 dead — 컨트롤러 `POST /fulfillment-orders` 는 GoneException(`fulfillment-order.controller.ts:19-21`), 그 외 호출처 0. 즉 P0-4/P2-2 와 같은 **잠복 지뢰**로 강등. 해소 = `createFulfillmentOrder` + private 헬퍼 3종(`checkStockAvailability` 포함) 삭제 — P3-5 코드 정리와 한 몸 |
 | P1-7 ✅검증 | ⬜ | `sales_orders.status` 전이 3곳뿐 (`sales-orders.service.ts:357,418,555`) | `processing/shipped/delivered` 미전이 — ADR-0017 이 Core 소유로 명시한 상태들이 미구현 | `getStats()` 출고완료 통계 항상 0(`:831`), `cannotShip` 쿼리 confirmed 전제로 누락. **결정 필요**: FulfillmentShipped 소비로 전이 구현 vs 저장 상태 최소화 선언 + 통계 FO 기준 전환 |
 | P1-8 | ⬜ | `store-return-exchange.service.ts:493-513, 748-756` | 반품 환불에서 `already_refunded` 를 완료로 매핑 안 함 (취소 경로 `store-sales-orders.service.ts:682-696` 는 매핑 — 불일치) | 환불은 성공했는데 반품이 `refund_pending` 고착, 재시도로 탈출 불가(수동 처리 필요) |
 | P1-9 | ⬜ | `store-return-exchange.service.ts:448-513` | 반품 완료 2단계(환불 호출)가 tx 밖 — 환불 성공 후 크래시 시 상태 불일치 | 돈은 나갔는데 `refund_pending` 유지. P1-8 때문에 자동 복구도 안 됨 — 복구 가능한 상태기계로 |
@@ -72,7 +72,7 @@
 | P2-8 | ⬜ | `warehouse/services/warehouse.manager.ts:70-78` | 창고 삭제 in-use 검사와 삭제가 다른 트랜잭션 (TOCTOU) — 최악 500 |
 | P2-9 | ⬜ | `fifo-allocate.ts:27-34` vs `allocation-strategy.service.ts:337` | FIFO 이중 구현 정렬 기준 불일치 (fifoRank+updatedAt vs updatedAt만) — 계획 로케이션 ≠ 실소진 로케이션 |
 | P2-10 | ⬜ | `outbound-consumption.service.ts:198` | active invoice 부재 시 `carrier:'CJ'` 하드코딩 + trackingNumber `''` 발행 — 불변식 위반을 잘못된 데이터로 다운스트림 전파 |
-| P2-11 | ⬜ | `fulfillments.service.ts:1076` | `computeAdminAvailableActions` 가 은퇴한 `POST /fulfillments/:id/ship` 을 광고 → UI 렌더 시 404 (RFC Cluster A 후속 #1) |
+| P2-11 | ⬜ | `modules/fulfillment/services/fulfillments.service.ts:1075-1077` | `computeAdminAvailableActions` 가 은퇴한 `POST /fulfillments/:id/ship` 을 광고 → UI 렌더 시 404 (RFC Cluster A 후속 #1). **(착수 재확인 2026-07-10) 라이브 404 확정** — admin-web `shipment-tab.tsx:234` 가 버튼 실렌더, 클릭 시 부재 라우트 호출(`fulfillments.client.ts:86`). ship 외 광고 액션 8종 라우트는 전부 실존. 수정 시 **admin-web 동시 수정 필수**(canShip 블록·`useShipFulfillment`·client `ship()`). 부수 발견: 서버가 광고하지 않는 `assignShipment`(`shipment-tab.tsx:48`)/`split`(`split-tab.tsx:62`) 데드 버튼 2건 — 반대 방향 계약 불일치(404 아닌 영구 비활성), 같은 PR 에서 처리 검토 |
 | P2-12 | ⬜ | `store-sales-orders.service.ts:624`, `store-return-exchange.service.ts:730` | Wallet Idempotency-Key 가 호출마다 randomUUID — 동시 실행 시 이중 환불 방어가 전적으로 Wallet 측 refundable 검증에 위임 |
 | P2-13 | ⬜ | `partial-cancellation-refund-calculator.ts:124-146` | 부분취소 환불 추정치가 이전 취소 기환불액 미차감 — 항상 manual_pending 이라 자동 과다환불은 없으나 운영자 표시 합계가 총액 초과 가능 |
 | P2-14 | 🟩 | events↔ledgers 대사 부재 | `stock_events`(진실)↔`stock_ledgers`(파생) 를 재검증/복구하는 reconcile 잡·엔드포인트 없음. `calculateQuantityAsOf`(`stock-event.store.ts:204`) primitive 만 존재 — P0 우회 버그류 탐지 장치로 신설. **완료(작업2 — develop 스쿼시 머지 `ae5f979c0`)**: 탐지 전용 대사 잡 신설, §5 WS-A 작업 2 블록 참조 |
@@ -85,8 +85,8 @@
 | P3-1 | ⬜ | sales-order·fulfillment·inventory 구세대 서비스 전반 | `@app/shared` 도메인 에러 대신 Nest HttpException throw. **단순 스타일 아님**: backlog 워커가 `error instanceof BadRequestException` + 응답 문자열/code 파싱으로 제어흐름 결정(`worker.ts:135,164-179`) — 에러 리팩터 시 매칭 누락 주문이 자동 재시도(wake)에서 조용히 탈락. 코드를 실은 타입 있는 도메인 예외로 이관 + 워커 문자열 파싱 제거를 **한 세트로** |
 | P3-2 | ⬜ | `inventory-correction.service.ts:34,83,124`, `location.service.ts:135,240,450`, backlog `worker.ts:61` | ADR-0025 이탈: `this.db.transaction` 직접 호출, `tx?` 전파 없음. `location.service.getLocationById`(`:62`) 의 tx 이탈 latent 버그 포함 |
 | P3-3 | ⬜ | `product-sellable-quantity.service.ts:204~485`, `outbox.service.ts:19`, `audit.service.ts:261` | seam 서비스의 반복 `as MergedTx` + `as unknown as` 캐스트, `payload as any` — ADR-0025 의 1회 narrowing 원칙으로 정돈 |
-| P3-4 | ⬜ | 스키마/enum 전반 | dead 값 정리: FO status `reserving/labeled/inspecting/inspected/pending`(세터 없음 — invoice 게이트 `invoice.service.ts:229` 의 `inspected` 분기 도달 불가), reservation `pending/active`, shipment `failed/in_transit/delivered`(추적 전용), `eventTypeEnum` 의 RESERVE/CONFIRM/RELEASE/CANCEL(원장 미사용 — "예약도 이벤트소싱" 착시, review §5-3) |
-| P3-5 | ⬜ | `outbound_tasks`/`outbound_task_items/lines` + `FulfillmentOrderTransactionService` | 평행/유휴 상태 서브시스템 — batch 경로와 이중 구현(할당 경로 중복: `outbound-batch.service.ts:153` vs `fulfillment-order-transaction.service.ts:261`). dead 출고 경로(`shipFulfillmentOrder`/`completeFulfillmentOrder`)는 RFC 명기 지뢰 — 은퇴 |
+| P3-4 | ⬜ | 스키마/enum 전반 | dead 값 정리: FO status `reserving/labeled/inspecting/inspected/pending`(세터 없음 — invoice 게이트 `invoice.service.ts:229` 의 `inspected` 분기 도달 불가), reservation `pending/active`, shipment `failed/in_transit`, `eventTypeEnum` 의 RESERVE/CONFIRM/RELEASE/CANCEL(원장 미사용 — "예약도 이벤트소싱" 착시, review §5-3), transitionType `MARK_DEFECT/REWORK_GOOD`(작업4 후 producer 0). **(착수 재확인 2026-07-10 정정)**: ① shipment `delivered` 는 **dead 아님**(`fulfillments.service.ts:969` 가 실제 set) — 대상 제외. delivery-provider 의 `in_transit/delivered/failed` 는 별개 타입(`DeliveryStatus`)이라 무관. ② FO `pending`(`transaction.service.ts:152`)·reservation `active`(`:122,344`)는 dead `createFulfillmentOrder` 안에 리터럴 producer 잔존 — **P1-6/P3-5 코드 삭제 선행 필요**. ③ 전부 `pgEnum` — Postgres 는 enum 값 DROP 미지원, 값 제거는 타입 재생성 = **destructive → expand-contract 필수**. `inspected` 게이트 도달 불가 판정은 확정 |
+| P3-5 | ⬜ | `outbound_tasks`/`outbound_task_items/lines` + `FulfillmentOrderTransactionService` | 평행/유휴 상태 서브시스템 — batch 경로와 이중 구현(할당 경로 중복: `outbound-batch.service.ts:152` vs `fulfillment-order-transaction.service.ts:259-262`). **(착수 재확인 2026-07-10 정정)**: ① `shipFulfillmentOrder`/`completeFulfillmentOrder` 는 **이미 부재**(grep 0건 — 감사 서술 outdated). ② outbound_task 3(+`outbound_task_orders`)개 테이블은 **런타임 참조 0**(admin-web 포함) — 스키마 정의/relations/타입 export 만 잔존, 서비스와 무관한 별개 dead 자산. drop 은 expand-contract 로. ③ 서비스 **통째 은퇴 불가** — `cancelFulfillmentOrder`/`updateFulfillmentOrderPriority` 가 admin-web 라이브(`fulfillment-order.client.ts:97,108`), `allocate` 라우트도 배선 live(FE 호출 0). dead 범위 = `createFulfillmentOrder`+헬퍼 3종(P1-6 버그 포함)+Gone POST 핸들러+`consolidation.service.ts:6,171` 죽은 주입 |
 | P3-6 | ⬜ | 인가 | JWT 인증은 글로벌(APP_GUARD)이나 **역할 기반 인가 부재** — 발주 승인·재고 조정·창고 삭제에 role 통제 없음 |
 | P3-7 | ⬜ | 규칙 정합 | CLAUDE.md "Inventory 금지: `db.query.*`/`with`" vs ADR-0025 "per-BC 가드레일로 유지" 상충 — inventory 전반에서 광범위 사용 중. 규칙을 한쪽으로 확정하고 문서 정리 |
 | P3-8 | ⬜ | `safety-stock.service.ts:25,64,103` 등 | `run` 람다 파라미터가 바깥 `tx` 와 동명(shadowing) — 무해하나 실수 유발 |
@@ -97,7 +97,7 @@
 
 | ID | 상태 | 공백 | 비고 |
 |---|---|---|---|
-| W1 | ⬜ | 창고간 이동의 안전한 엔드포인트 부재 | P0-1 해소 = `POST /movement/inter-warehouse` 를 `TransferService` 2단계 경로로 재배선 (또는 입고예정 연계를 job↔plan FK 로 명시) |
+| W1 | ⬜ | 창고간 이동의 안전한 엔드포인트 부재 | **(착수 재확인 2026-07-10 정정)** 안전 엔드포인트는 이미 존재 — `inventory/transfers` 2단계(`POST` 생성 → `PATCH :id/execute`)가 `StockEventService.transferBetweenWarehouses` 무손실 경로로 배선됨. W1 의 실체 = 손실 경로 `POST /movement/inter-warehouse` 의 병존. 해소 = 해당 엔드포인트를 무손실 경로로 재배선(도착 로케이션 결정 규칙 신설 필요 — DTO 에 `toLocationId` 부재) 또는 은퇴 후 transfers 경로로 일원화. P0-1 과 동일 작업 |
 | W2 | 🟩 | 실사 세션 취소 불가 | `cancelled` enum 만 존재(`schema:128`), 세터/라우트 없음. **완료(작업1): `cancelSession` + `POST /stocktaking/sessions/:id/cancel` 신설(draft·in_progress→cancelled, FOR UPDATE)** |
 | W3 | 🟩 | 실사 complete ↔ generateAdjustments 순서·원자성 미정의 | 확정 전 조정 가능, 확정 후 재조정 가능 — 상태기계로 잠금 (P0-3 과 함께). **완료(작업1): complete 가 단일 tx 에서 원자 적용+종결, generate 는 무영속 미리보기로 격하** |
 | W4 | ⬜ | 토탈피킹 미구현 | `picking-process.service.ts:89,177,257` throw. `total_picking` 배치는 피킹에서 막힘. 로케이션 전략 seam 은 준비됨 — 스프린트 범위 여부 결정 |
@@ -148,12 +148,23 @@
 > - **P0-4**: `InventoryCorrectionService` 전량 삭제(파일 1개). 어느 모듈에도 미등록이라 배선 정리 불필요, 전용 DTO 없음, `stockJournals.sourceType`(varchar)라 스키마 무영향.
 > - **P2-2**: `SkuLocationMovementService` + `SkuLocationMovementController` + `dto/sku-location-movements/`(4개) 삭제 + `inventory.module.ts` 배선 5줄 제거. **`sku_location_movements` 테이블은 존치** — 향후 재고이동 기능 재도입 예정 + ADR-0005 §5 destructive DROP 회피(코드 제거와 스키마 DROP 분리 원칙). 재도입 시 `moveInternal` 위임으로 원장 정합.
 > - 스키마/마이그레이션 무변경. dead enum(`MARK_DEFECT`/`REWORK_GOOD` producer 0화)은 P3-4 통합 정리로 이관.
-> - 브랜치 `feat/correction-movement-normalization` (커밋 `5ac16a263`) — develop 머지 대기.
+> - 브랜치 `feat/correction-movement-normalization` (커밋 `5ac16a263`) → **develop 스쿼시 머지 `4afb106ae`** (2026-07-09). 삭제분 워킹트리 반영 확인(2026-07-10).
 > - 검증: `nest build core`(tsc/webpack) exit 0 · eslint 0 · arch 경계 회귀(`inventory-write-boundary.arch.spec.ts`) PASS · 저장소 전역 참조 0 재확인. 스키마 무변경이라 dev DB 의존 ⏸ 항목 없음.
 > - **WS-A 잔여(미착수): 없음** — WS-A 전 항목(P0-2·P0-3·P0-4·P2-2·P2-4·P2-5·P2-6·P2-14·W3) 완료.
 
-**WS-B. 레거시 경로 은퇴** — P0-1, P0-5, P1-6, P2-11, P3-4, P3-5, W1, W2
-inter-warehouse 컨트롤러를 `TransferService` 로 재배선, dead 지뢰(`processExpiredReservations`, `FulfillmentOrderTransactionService` 출고 경로, dead enum, `outbound_tasks`) 제거. destructive 스키마 변경은 expand-contract(ADR-0005 §5) 준수.
+**WS-B. 레거시 경로 은퇴** — P0-1, P0-5, P1-6, P2-11, P3-4, P3-5, W1 *(W2 는 작업1에서 기해소 — 목록에서 제외)*
+inter-warehouse 손실 엔드포인트를 무손실 경로로 재배선, dead 지뢰(`processExpiredReservations` 메서드, `createFulfillmentOrder` 경로, dead enum, `outbound_tasks` 테이블) 제거. destructive 스키마 변경은 expand-contract(ADR-0005 §5) 준수.
+
+> **착수 재확인(2026-07-10) — 5개 영역 병렬 검증 완료. 요지:**
+> - **사실 유지**: P0-1(라인 밀림, `toState:null` @ `:232`) · P0-5(메서드만 삭제, 서비스 존치) · P2-11(라이브 404 확정, admin-web 동시 수정 필수) · enum dead 판정 대부분.
+> - **정정**: W1(안전 경로는 이미 `inventory/transfers` 에 배선 — 실체는 손실 경로 병존) · P1-6(유일 호출자 dead → 잠복 지뢰로 강등) · P3-5(`ship/completeFulfillmentOrder` 이미 부재, 서비스 통째 은퇴 불가 — dead 부분만 절제) · P3-4(shipment `delivered` 는 live producer 존재, 대상 제외).
+> - **의존성**: P3-4 의 FO `pending`·reservation `active` 리터럴 producer 가 dead `createFulfillmentOrder` 안에 있어 P1-6/P3-5 코드 삭제가 선행. 전 enum 이 pgEnum 이라 값 제거는 expand-contract.
+>
+> **권장 작업 분할(순서대로):**
+> 1. **작업 5 — dead 지뢰 일괄 소거(코드만)**: P0-5 메서드 삭제 + P1-6/P3-5 코드부(`createFulfillmentOrder`+헬퍼 3종+Gone POST 핸들러+consolidation 죽은 주입). 순수 삭제·스키마 무변경·저위험 1 PR. P3-4 선행조건.
+> 2. **작업 6 — P0-1/W1 창고간 이동 무손실화**: WS-B 유일의 라이브 P0. 설계 필요 — 도착 로케이션 결정 규칙, DTO `toLocationId` 간극, `withIdempotency`×transferShip/Receive 멱등 상호작용, `movementJobs.warehouseId` 의미 차이, complete 경로 처분.
+> 3. **작업 7 — P2-11 ship 광고 정리**: 서버 `:1075-1077` 제거+spec 2곳 + admin-web(canShip 블록·훅·client) 동시. 부수 데드 버튼 2건(`assignShipment`/`split`) 처리 여부 포함.
+> 4. **작업 8 — P3-4/P3-5 스키마 contract**: dead reader 정리(invoice `inspected` 게이트 등) 후 pgEnum 값 재생성 + `outbound_task` 4테이블 DROP — expand-contract 별도 PR, 사이 deploy 필수.
 
 **WS-C. 예약 보강** — P1-3, P1-4, P1-5, P2-1, P2-9
 reserve 경로 잠금(ledger FOR UPDATE 또는 sku+warehouse advisory lock), adjustDown 예약 고려, FO 예약 타임아웃 정책 + 잔존 모니터링, 소진의 라인 단위 전환, reserved≤on_hand 대사 체크(잡).
@@ -163,4 +174,4 @@ reserve 경로 잠금(ledger FOR UPDATE 또는 sku+warehouse advisory lock), adj
 
 **WS-E. 컨벤션/횡단** — P3-1(워커 파싱 제거와 한 세트), P3-2, P3-3, P3-6, P3-7, P3-8, P2-3, P2-5~P2-8, P2-10, W8, W9
 
-권장 착수 순서: **WS-A·WS-B 의 P0 5건 먼저**(재고 무결성) → WS-D 의 포이즌 2건(P1-1/P1-2) → WS-C → 나머지. P0-2 와 P0-3 은 반드시 한 PR 로. P3-1 은 backlog 워커 제어흐름과 얽혀 있으므로 독립 PR + FO 생성 실패 시나리오 회귀 테스트 필수.
+권장 착수 순서: **WS-A·WS-B 의 P0 5건 먼저**(재고 무결성 — WS-A 3건 완료, 잔여 P0-1·P0-5 는 WS-B 작업 5·6) → WS-D 의 포이즌 2건(P1-1/P1-2) → WS-C → 나머지. ~~P0-2 와 P0-3 은 반드시 한 PR 로~~(작업1 완료). P3-1 은 backlog 워커 제어흐름과 얽혀 있으므로 독립 PR + FO 생성 실패 시나리오 회귀 테스트 필수.
