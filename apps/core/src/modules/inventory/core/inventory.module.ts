@@ -12,6 +12,7 @@ import { ReservationController } from './controllers/reservation.controller';
 import { ReturnController } from './controllers/return.controller';
 import { TransferController } from './controllers/transfer.controller';
 import { HolderController } from './controllers/holder.controller';
+import { LedgerReconciliationController } from './controllers/ledger-reconciliation.controller';
 
 // Services
 import { StockEventService } from './services/stock-event.service';
@@ -47,6 +48,7 @@ import { OutboxService } from '../shared/outbox/outbox.service';
     ReturnController,
     TransferController,
     HolderController,
+    LedgerReconciliationController,
   ],
   providers: [
     StockEventService,
