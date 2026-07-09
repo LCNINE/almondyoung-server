@@ -139,4 +139,31 @@ describeIfDb('ledger reconciliation (DB integration, rollback-only)', () => {
       expect(report.totalDriftGrains).toBe(0); // b 의 drift 는 필터로 제외
     });
   });
+
+  it('원장 행은 있는데 뒷받침 이벤트가 없으면 drift 탐지 (derivedQty=0, P0-2 우회 클래스)', async () => {
+    await inRollbackTx(async (tx) => {
+      const s = await seed(tx, 5);
+      // 원장은 남긴 채 이벤트만 삭제 → 이벤트 파생 = 0, 원장 = 5
+      await tx.delete(wmsTables.stockEvents).where(eq(wmsTables.stockEvents.skuId, s.sku.id));
+      const report = await recon.reconcile({ warehouseId: s.wh.id }, tx);
+      expect(report.totalDriftGrains).toBe(1);
+      expect(report.drifts[0]).toMatchObject({
+        skuId: s.sku.id,
+        derivedQty: 0,
+        ledgerQty: 5,
+        delta: 5,
+        severity: 'MISMATCH',
+      });
+    });
+  });
+
+  it('skuId 필터가 다른 SKU 의 drift 를 제외한다', async () => {
+    await inRollbackTx(async (tx) => {
+      const a = await seed(tx, 10);
+      const b = await seed(tx, 10);
+      await tx.update(wmsTables.stockLedgers).set({ qty: 99 }).where(grainWhere(b));
+      const report = await recon.reconcile({ skuId: a.sku.id }, tx);
+      expect(report.totalDriftGrains).toBe(0); // b 의 drift 는 skuId 필터로 제외
+    });
+  });
 });

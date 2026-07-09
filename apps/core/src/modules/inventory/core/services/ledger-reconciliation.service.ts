@@ -60,6 +60,8 @@ export class LedgerReconciliationService {
     const warehouseId = filter?.warehouseId;
     const skuId = filter?.skuId;
 
+    // 참고: warehouseId/skuId 필터는 FULL OUTER JOIN 이후 coalesce 결과에 걸려
+    // 출력 행만 좁힌다 — derived CTE 의 이벤트 집계는 전 카탈로그를 스캔한다.
     const query = sql`
       WITH derived AS (
         SELECT sku_id, wh, loc, state, SUM(q)::int AS derived_qty FROM (
@@ -141,7 +143,9 @@ export class LedgerReconciliationService {
           JSON.stringify(report.drifts.slice(0, 20)),
       );
     } catch (error) {
-      this.logger.error(`Ledger reconciliation job failed: ${error.message}`, error.stack);
+      const message = error instanceof Error ? error.message : String(error);
+      const stack = error instanceof Error ? error.stack : undefined;
+      this.logger.error(`Ledger reconciliation job failed: ${message}`, stack);
     }
   }
 }
