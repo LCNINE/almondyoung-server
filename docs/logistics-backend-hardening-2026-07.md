@@ -135,9 +135,9 @@
 > - ⏸ **배포 전 확인**: (1) prod/dev 실사 데이터 유무 — 있으면 마이그레이션 dedup phase 분리(spec §10 #1). (2) dev DB 부재로 통합 테스트 런타임·마이그레이션 적용(`db:setup`) 미실행 — DB 복구 시 실행(arch test·tsc·lint 는 통과).
 
 > **✅ 작업 2 (원장 대사, P2-14) 구현 완료 — 2026-07-09, 미머지:** events↔ledgers 대사 잡 신설 — **탐지 전용·무상태**(수리(repair)·drift 이력 테이블은 의도적 비목표, 마이그레이션 없음). 단일 SQL 스냅샷 대사 쿼리(grain unpivot → FULL OUTER JOIN, POSTED·non-void 필터 = `applyProjection` 동형) + 야간 크론(03:00 KST, `LedgerReconciliationService`) + 온디맨드 `GET /inventory/ledger-reconciliation` + Prometheus 게이지 `wms_ledger_drift_grains`(severity 라벨, 정상 시 0 명시 set). 작업 1 의 정적 쓰기 경계(arch spec)의 **런타임/데이터 레벨 짝**.
-> - 브랜치 `feat/ledger-reconciliation` (6 커밋, tip `6c8b9daf7`) — develop 미머지, 머지 후 해시 기입.
+> - 브랜치 `feat/ledger-reconciliation` (8 커밋, tip `f7c2cee07`, SDD 4태스크 + 최종리뷰 fix) — develop 미머지, 머지 후 해시 기입.
 > - 설계 `docs/superpowers/specs/2026-07-09-ledger-reconciliation-design.md` · 계획 `docs/superpowers/plans/2026-07-09-ledger-reconciliation.md`.
-> - 검증: 단위(대사/severity/크론/메트릭)·arch 경계 회귀·tsc·lint GREEN. ⏸ 통합 스펙 4건은 dev DB 복구 시 실행(작업 1 ⏸ 항목과 동일).
+> - 검증: 단위(대사/severity/크론/메트릭)·arch 경계 회귀·tsc·lint(eslint 0) GREEN. ⏸ 통합 스펙 6건(정상·수량불일치·원장행부재·missing-derived[P0-2 우회클래스]·warehouseId/skuId 필터)은 dev DB 복구 시 실행(작업 1 ⏸ 항목과 동일).
 > - **WS-A 잔여(미착수)**: P0-4, P2-2, P2-4.
 
 **WS-B. 레거시 경로 은퇴** — P0-1, P0-5, P1-6, P2-11, P3-4, P3-5, W1, W2
