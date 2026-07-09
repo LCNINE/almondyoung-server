@@ -3,7 +3,6 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema } from '../../inventory/schema/inventory.schema';
 import { DbService } from '@app/db';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
-import { FulfillmentOrderTransactionService } from './fulfillment-order-transaction.service';
 
 export interface ConsolidationCandidate {
   salesOrderId: string | null;
@@ -166,10 +165,7 @@ export class ConsolidationService {
     },
   ];
 
-  constructor(
-    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
-    private readonly fulfillmentOrderTransactionService: FulfillmentOrderTransactionService,
-  ) {}
+  constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
 
   private get db() {
     return this.dbService.db;
