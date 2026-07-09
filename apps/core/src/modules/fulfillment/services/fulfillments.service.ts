@@ -1072,9 +1072,6 @@ export class FulfillmentsService {
       }
       actions.push('cancel');
     }
-    if (['invoiced', 'labeled', 'picked', 'inspecting', 'inspected'].includes(fo.status)) {
-      actions.push('ship');
-    }
     if (fo.status === 'shipped') {
       actions.push('deliver');
     }
