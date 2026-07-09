@@ -1409,8 +1409,9 @@ describe('FulfillmentsService', () => {
       skuCode: 'SKU-001',
     });
     expect(detail?.adminAvailableActions).toEqual(
-      expect.arrayContaining(['reserve', 'cancel', 'ship']),
+      expect.arrayContaining(['reserve', 'cancel']),
     );
+    expect(detail?.adminAvailableActions).not.toContain('ship');
     expect(detail?.adminAvailableActions).not.toContain('split');
   });
 
@@ -1475,10 +1476,10 @@ describe('FulfillmentsService', () => {
       expect(detail?.blockedReasons).toContain('TERMINAL_STATUS');
     });
 
-    it('inspected 상태에서 ship이 허용된다', async () => {
-      const { service, tx } = makeFoDetail('inspected');
+    it('invoiced 상태에서 ship이 더 이상 광고되지 않는다 (라우트 은퇴)', async () => {
+      const { service, tx } = makeFoDetail('invoiced');
       const detail = await service.getOne('fo-action-test', tx);
-      expect(detail?.adminAvailableActions).toContain('ship');
+      expect(detail?.adminAvailableActions).not.toContain('ship');
     });
 
     it('ready 상태에서 ship이 없고 reserve/unreserve/transferReservation/cancel이 있다', async () => {

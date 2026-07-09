@@ -31,11 +31,9 @@ import type {
   ForwardDirectShipOrdersRequest,
   CompleteDirectShipOrdersRequest,
   CreateStandaloneFulfillmentRequest,
-  SplitFulfillmentOrderRequest,
   ReserveRequest,
   UnreserveRequest,
   TransferReservationRequest,
-  AssignShipmentRequest,
   InspectByScanRequest,
 } from '@/lib/types/dto/fulfillment';
 
@@ -807,17 +805,6 @@ export const useCreateFulfillmentOrder = () => {
   });
 };
 
-export const useSplitFulfillmentOrder = (id: string) => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: SplitFulfillmentOrderRequest) =>
-      orders.fulfillments.split(id, data),
-    onSuccess: () => {
-      invalidateFulfillment(queryClient, id);
-    },
-  });
-};
-
 export const useCheckFulfillmentAvailability = (id: string) => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -856,31 +843,6 @@ export const useTransferFulfillmentReservation = (id: string) => {
       orders.fulfillments.transferReservation(id, data),
     onSuccess: () => {
       invalidateFulfillment(queryClient, id);
-    },
-  });
-};
-
-export const useAssignFulfillmentShipment = (id: string) => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: AssignShipmentRequest) =>
-      orders.fulfillments.assignShipment(id, data),
-    onSuccess: () => {
-      invalidateFulfillment(queryClient, id);
-    },
-  });
-};
-
-export const useShipFulfillment = (boundId?: string) => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (id?: string) => {
-      const targetId = boundId ?? id;
-      if (!targetId) throw new Error('Fulfillment id is required');
-      return orders.fulfillments.ship(targetId);
-    },
-    onSuccess: (_, id) => {
-      invalidateFulfillment(queryClient, boundId ?? id!);
     },
   });
 };
