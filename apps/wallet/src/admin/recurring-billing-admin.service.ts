@@ -119,6 +119,9 @@ export class RecurringBillingAdminService {
       withdrawalRequestedResult,
       withdrawalProcessingResult,
       withdrawalFailedResult,
+      invoicePastDueResult,
+      invoiceUncollectibleResult,
+      invoiceMandateRejectedResult,
     ] = await Promise.all([
       this.fetchNeedsActionRows(),
       this.db.select({ value: count() }).from(cmsMembers).where(eq(cmsMembers.status, 'PENDING')),
@@ -126,6 +129,10 @@ export class RecurringBillingAdminService {
       this.db.select({ value: count() }).from(cmsWithdrawals).where(eq(cmsWithdrawals.status, 'REQUESTED')),
       this.db.select({ value: count() }).from(cmsWithdrawals).where(eq(cmsWithdrawals.status, 'PROCESSING')),
       this.db.select({ value: count() }).from(cmsWithdrawals).where(eq(cmsWithdrawals.status, 'FAILED')),
+      // 인보이스 모델의 미수 지표(ADR-0027 §6): 재시도 중(PAST_DUE)·최종 미수(UNCOLLECTIBLE)·계좌 거절(MANDATE_REJECTED)
+      this.db.select({ value: count() }).from(invoices).where(eq(invoices.status, 'PAST_DUE')),
+      this.db.select({ value: count() }).from(invoices).where(eq(invoices.status, 'UNCOLLECTIBLE')),
+      this.db.select({ value: count() }).from(invoices).where(eq(invoices.status, 'MANDATE_REJECTED')),
     ]);
 
     return {
@@ -135,6 +142,9 @@ export class RecurringBillingAdminService {
       withdrawalRequested: withdrawalRequestedResult[0]?.value ?? 0,
       settlementPending: withdrawalProcessingResult[0]?.value ?? 0,
       withdrawalFailed: withdrawalFailedResult[0]?.value ?? 0,
+      invoicePastDue: invoicePastDueResult[0]?.value ?? 0,
+      invoiceUncollectible: invoiceUncollectibleResult[0]?.value ?? 0,
+      invoiceMandateRejected: invoiceMandateRejectedResult[0]?.value ?? 0,
     };
   }
 
