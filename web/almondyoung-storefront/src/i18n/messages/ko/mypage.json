@@ -190,6 +190,8 @@
     "orderTitle": "주문 내역이 없습니다",
     "orderDescription": "첫 주문을 시작해보세요",
     "orderPeriodTitle": "해당 기간에 주문 내역이 없습니다",
+    "orderSearchTitle": "검색 결과가 없습니다",
+    "orderSearchDescription": "다른 검색어로 시도해보세요",
     "orderPeriodDescription": "다른 기간을 선택해보세요"
   },
   "account": {
@@ -424,6 +426,8 @@
       "productSuffix": "외 {count}건",
       "defaultProductName": "상품",
       "searchPlaceholder": "주문한 상품을 검색할 수 있어요!",
+      "clearSearch": "검색어 초기화",
+      "searchResultCount": "‘{q}’ 검색결과 {count}건",
       "prevPage": "이전",
       "nextPage": "다음",
       "recent6m": "최근 6개월"

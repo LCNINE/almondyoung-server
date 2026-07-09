@@ -1,7 +1,11 @@
 import { Body, Controller, Get, HttpCode, Param, Post } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { User } from '@app/authorization';
-import { StoreCancelOrderDto, StoreOrderActionsResponseDto } from '../dto/store-order-actions.dto';
+import {
+  StoreBatchOrderActionsRequestDto,
+  StoreCancelOrderDto,
+  StoreOrderActionsResponseDto,
+} from '../dto/store-order-actions.dto';
 import { StoreOrderTrackingResponseDto } from '../dto/store-order-tracking.dto';
 import { StoreSalesOrdersService } from '../services/store-sales-orders.service';
 
@@ -51,6 +55,20 @@ export class StoreSalesOrdersController {
     @User() customer: AuthenticatedCustomer,
   ): Promise<StoreOrderActionsResponseDto> {
     return this.service.getActionsByChannelOrder(channelOrderId, customer.userId);
+  }
+
+  @Post('by-channel-order/actions/batch')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: '고객 주문 가능 액션 배치 조회 (Medusa 주문 ID 기반)',
+    description:
+      '주문목록 한 페이지 분량의 액션을 1콜로 조회합니다. 미수집·타인 주문은 응답에서 제외되며, 응답 항목은 channelOrderId 로 매핑합니다.',
+  })
+  getActionsByChannelOrderBatch(
+    @Body() dto: StoreBatchOrderActionsRequestDto,
+    @User() customer: AuthenticatedCustomer,
+  ): Promise<StoreOrderActionsResponseDto[]> {
+    return this.service.getActionsByChannelOrderBatch(dto.channelOrderIds, customer.userId);
   }
 
   @Post('by-channel-order/:channelOrderId/cancel-request')

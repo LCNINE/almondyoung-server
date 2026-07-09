@@ -1,5 +1,8 @@
 import { authenticate, defineMiddlewares } from '@medusajs/framework/http';
+import { validateAndTransformQuery } from '@medusajs/framework';
 import { adminRouteMiddlewares } from './admin/middlewares';
+import { listTransformQueryConfig as ordersListQueryConfig } from './store/orders-list/query-config';
+import { StoreGetOrdersListParams } from './store/orders-list/validators';
 import { perCustomerLimitMiddleware } from './store/carts/middlewares/per-customer-limit';
 import { rejectAwaitingDepositCompleteMiddleware } from './store/carts/middlewares/reject-awaiting-deposit-complete';
 import { membershipPriceVisibilityMiddleware } from './store/products/middlewares/membership-price-visibility';
@@ -93,6 +96,16 @@ export default defineMiddlewares({
     {
       matcher: '/store/orders/:id/confirm-purchase',
       middlewares: [authenticate('customer', ['session', 'bearer'])],
+    },
+    {
+      // 커스텀 주문 목록(기간 필터 지원) — 본인 주문만 조회 가능하도록 인증 필수.
+      // validateAndTransformQuery(확장 validator)로 created_at 을 허용하고 fields 를 정규화한다.
+      matcher: '/store/orders-list',
+      method: 'GET',
+      middlewares: [
+        authenticate('customer', ['session', 'bearer']),
+        validateAndTransformQuery(StoreGetOrdersListParams, ordersListQueryConfig),
+      ],
     },
   ],
 });

@@ -2,14 +2,8 @@
 
 import { PageTitle } from "@/components/shared/page-title"
 import { Button } from "@/components/ui/button"
-import { getOrders } from "@/lib/api/medusa/orders"
-import {
-  getOrderActionsByMedusaId,
-  type StoreOrderActionsResponse,
-} from "@/lib/api/orders/store-orders"
-import { getActiveRefundRequest } from "@/lib/api/wallet"
-import { useSearchFilter } from "@/hooks/use-search-filter"
-import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
+import { Input } from "@/components/ui/input"
+import { type StoreOrderActionsResponse } from "@/lib/api/orders/store-orders"
 import OrderActions from "@components/orders/order-card/order-actions"
 import OrderSummaryCard from "@components/orders/order-card/order-summary-card"
 import { getCoreDisplayStatus } from "@components/orders/order-status-badges"
@@ -20,11 +14,12 @@ import {
   Loader2,
   Package,
   Search,
+  X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useTranslations } from "next-intl"
-import { useEffect, useMemo, useState, useTransition } from "react"
-import { type FilterOptions } from "./order-filter"
+import { usePathname, useRouter } from "next/navigation"
+import { useMemo, useTransition } from "react"
 
 interface OrderItem {
   orderId: string
@@ -45,20 +40,24 @@ interface OrderItem {
   bankTransferStatus?: string
 }
 
-interface OrderListClientProps {
-  initialOrders: HttpTypes.StoreOrder[]
-  initialCount: number
-  initialLimit: number
+interface OrderListProps {
+  orders: HttpTypes.StoreOrder[]
+  /** 1-base 현재 페이지 */
+  page: number
+  /** 전체 페이지 수 */
+  pageCount: number
+  /** "recent" 또는 연도 문자열 */
+  period: string
+  /** 상품명 검색어 (없으면 "") */
+  q: string
+  /** 필터 적용된 전체 주문 수 (검색 결과 요약 표시용) */
+  count: number
+  actionsMap: Record<string, StoreOrderActionsResponse>
+  refundMap: Record<string, string>
   hasError?: boolean
-  initialActionsMap?: Record<string, StoreOrderActionsResponse>
   /** 마이페이지 홈 안에 끼워 넣어 쓸 때 true — 페이지 전용 여백/최소높이 제거 */
   embedded?: boolean
 }
-
-/** 한 페이지 기본 건수 (단, 같은 날짜 주문은 잘리지 않게 경계까지 확장) */
-const PAGE_SIZE = 5
-/** 페이지네이션용 클라 전체 로드 상한 */
-const FETCH_LIMIT = 100
 
 const getOrderStatusKey = (order: HttpTypes.StoreOrder): string => {
   if (order.status === "canceled") return "cancelled"
@@ -147,194 +146,48 @@ const mapStoreOrderToOrderItem = (
   }
 }
 
-/** FilterOptions의 year/month 값으로 API에 넘길 날짜 범위를 계산한다. */
-function computeDateRange(filter: FilterOptions): {
-  dateFrom?: string
-  dateTo?: string
-} {
-  if (!filter.year) return {}
-
-  const year = parseInt(filter.year)
-  if (isNaN(year)) return {}
-
-  if (!filter.month) {
-    return {
-      dateFrom: new Date(year, 0, 1).toISOString(),
-      dateTo: new Date(year, 11, 31, 23, 59, 59, 999).toISOString(),
-    }
-  }
-
-  const monthIndex = parseInt(filter.month) - 1
-  if (isNaN(monthIndex)) return {}
-
-  return {
-    dateFrom: new Date(year, monthIndex, 1).toISOString(),
-    dateTo: new Date(year, monthIndex + 1, 0, 23, 59, 59, 999).toISOString(),
-  }
-}
-
-/** 검색 대상 텍스트: 주문 내 상품명 전체 */
-const orderSearchText = (o: HttpTypes.StoreOrder) =>
-  (o.items ?? [])
-    .map((it) => it.title || it.variant?.product?.title || "")
-    .join(" ")
-
-/** created_at 의 날짜 키 (YYYY-MM-DD) */
-const dayKey = (o: HttpTypes.StoreOrder) =>
-  formatDate(o.created_at, DATE_FORMATS.ISO_DATE)
-
-/**
- * 페이지당 PAGE_SIZE 건씩 나누되, 페이지 경계가 날짜 중간을 가르지 않도록
- * 마지막 건과 같은 날짜의 주문은 모두 같은 페이지에 포함시킨다.
- */
-function paginateByDate(
-  orders: HttpTypes.StoreOrder[],
-  size: number
-): HttpTypes.StoreOrder[][] {
-  const pages: HttpTypes.StoreOrder[][] = []
-  let i = 0
-  while (i < orders.length) {
-    let end = Math.min(i + size, orders.length)
-    if (end < orders.length) {
-      const boundary = dayKey(orders[end - 1]!)
-      while (end < orders.length && dayKey(orders[end]!) === boundary) end++
-    }
-    pages.push(orders.slice(i, end))
-    i = end
-  }
-  return pages
-}
-
 export function OrderList({
-  initialOrders,
+  orders: rawOrders,
+  page,
+  pageCount,
+  period,
+  q,
+  count,
+  actionsMap,
+  refundMap,
   hasError = false,
-  initialActionsMap = {},
   embedded = false,
-}: OrderListClientProps) {
+}: OrderListProps) {
   const tStatus = useTranslations("mypage.order.status")
   const tList = useTranslations("mypage.order.list")
   const tEmpty = useTranslations("mypage.empty")
 
-  const [period, setPeriod] = useState<string>("recent")
-  const [rawOrders, setRawOrders] =
-    useState<HttpTypes.StoreOrder[]>(initialOrders)
-  const [actionsMap, setActionsMap] =
-    useState<Record<string, StoreOrderActionsResponse>>(initialActionsMap)
-  const [refundMap, setRefundMap] = useState<Record<string, string>>({})
-  const [page, setPage] = useState(0)
-  const [isFiltering, startFilterTransition] = useTransition()
+  const router = useRouter()
+  const pathname = usePathname()
+  const [isPending, startTransition] = useTransition()
 
-  // 상품명 검색
-  const {
-    input: searchInput,
-    setInput: setSearchInput,
-    filtered: filteredRaw,
-  } = useSearchFilter(rawOrders, orderSearchText)
-
-  const pages = useMemo(
-    () => paginateByDate(filteredRaw, PAGE_SIZE),
-    [filteredRaw]
-  )
-  const safePage = Math.min(page, Math.max(0, pages.length - 1))
-  const pageRaw = useMemo(() => pages[safePage] ?? [], [pages, safePage])
   const orders = useMemo(
-    () => pageRaw.map((o) => mapStoreOrderToOrderItem(o, { tStatus, tList })),
-    [pageRaw, tStatus, tList]
+    () => rawOrders.map((o) => mapStoreOrderToOrderItem(o, { tStatus, tList })),
+    [rawOrders, tStatus, tList]
   )
 
-  // 현재 페이지 주문의 Core 액션(상태/버튼) 조회
-  useEffect(() => {
-    const targets = pageRaw.filter((o) => !(o.id in actionsMap))
-    if (targets.length === 0) return
-    let cancelled = false
-    void (async () => {
-      const results = await Promise.allSettled(
-        targets.map((o) => getOrderActionsByMedusaId(o.id))
-      )
-      if (cancelled) return
-      setActionsMap((prev) => {
-        const next = { ...prev }
-        results.forEach((r, i) => {
-          if (r.status === "fulfilled") next[targets[i]!.id] = r.value
-        })
-        return next
-      })
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [pageRaw, actionsMap])
-
-  // 현재 페이지 무통장 확정 주문의 환불신청 상태 조회
-  useEffect(() => {
-    const targets = pageRaw.filter((o) => {
-      const bts = (o.metadata as Record<string, unknown> | null)
-        ?.bank_transfer_status
-      const intentId = (
-        o.payment_collections?.[0]?.payment_sessions?.[0]?.data as
-          | Record<string, unknown>
-          | undefined
-      )?.intentId as string | undefined
-      return bts === "confirmed" && !!intentId && !(o.id in refundMap)
+  const navigate = (next: { page?: number; period?: string; q?: string }) => {
+    const nextPage = next.page ?? 1
+    const nextPeriod = next.period ?? period
+    const nextQ = (next.q ?? q).trim()
+    const params = new URLSearchParams()
+    if (nextPage > 1) params.set("page", String(nextPage))
+    if (nextPeriod !== "recent") params.set("period", nextPeriod)
+    if (nextQ) params.set("q", nextQ)
+    const qs = params.toString()
+    startTransition(() => {
+      router.push(qs ? `${pathname}?${qs}` : pathname)
     })
-    if (targets.length === 0) return
-    let cancelled = false
-    void (async () => {
-      const results = await Promise.allSettled(
-        targets.map(async (o) => {
-          const intentId = (
-            o.payment_collections![0]!.payment_sessions![0]!.data as Record<
-              string,
-              unknown
-            >
-          ).intentId as string
-          const rr = await getActiveRefundRequest(intentId)
-          return [o.id, rr?.status ?? ""] as const
-        })
-      )
-      if (cancelled) return
-      setRefundMap((prev) => {
-        const next = { ...prev }
-        results.forEach((r, idx) => {
-          if (r.status === "fulfilled") next[r.value[0]] = r.value[1]
-          else next[targets[idx]!.id] = ""
-        })
-        return next
-      })
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [pageRaw, refundMap])
+  }
 
   // 기간 pill: "recent"(최근 6개월) 또는 연도 문자열
   const currentYear = new Date().getFullYear()
   const years = Array.from({ length: 6 }, (_, i) => currentYear - i)
-
-  const handlePeriodChange = (next: string) => {
-    setPeriod(next)
-    setPage(0)
-    let range: { dateFrom?: string; dateTo?: string }
-    if (next === "recent") {
-      const from = new Date()
-      from.setMonth(from.getMonth() - 6)
-      range = { dateFrom: from.toISOString(), dateTo: new Date().toISOString() }
-    } else {
-      range = computeDateRange({ year: next, month: "" } as FilterOptions)
-    }
-    startFilterTransition(async () => {
-      const result = await getOrders({
-        limit: FETCH_LIMIT,
-        offset: 0,
-        ...range,
-      })
-      if (result) {
-        setRawOrders(result.orders ?? [])
-        setActionsMap({})
-        setRefundMap({})
-      }
-    })
-  }
 
   if (hasError) {
     return (
@@ -344,15 +197,21 @@ export function OrderList({
     )
   }
 
-  // 원본 데이터가 없으면 빈 화면
-  if (initialOrders.length === 0 && !isFiltering) {
+  // 기본 진입(최근 6개월 1페이지, 검색 없음)이 비어있으면 주문 자체가 없는 상태
+  if (
+    orders.length === 0 &&
+    page === 1 &&
+    period === "recent" &&
+    !q &&
+    !isPending
+  ) {
     return (
-      <div className="bg-muted min-h-screen px-3 py-4 md:bg-transparent md:px-6">
+      <div className="min-h-screen px-3 py-4 bg-muted md:bg-transparent md:px-6">
         <div className="hidden md:block">
           <PageTitle>{tList("title")}</PageTitle>
         </div>
         <div className="flex min-h-[400px] flex-col items-center justify-center gap-4">
-          <Package className="h-12 w-12 text-gray-300" />
+          <Package className="w-12 h-12 text-gray-300" />
           <div className="text-center">
             <p className="text-lg font-medium text-gray-600">
               {tEmpty("orderTitle")}
@@ -374,27 +233,49 @@ export function OrderList({
       )}
     >
       {/* 검색 + 기간 필터 */}
-      <div className="space-y-3 bg-white px-4 py-3 md:bg-transparent md:p-0">
+      <div className="px-4 py-3 space-y-3 bg-white md:bg-transparent md:p-0">
         <div className="hidden md:block">
           <PageTitle>{tList("title")}</PageTitle>
         </div>
-        <div className="relative md:mt-5 md:max-w-xl">
-          <input
-            value={searchInput}
-            onChange={(e) => {
-              setSearchInput(e.target.value)
-              setPage(0)
-            }}
+        {/* 상품명 검색 */}
+        <form
+          className="relative md:mt-5 md:max-w-xl"
+          onSubmit={(e) => {
+            e.preventDefault()
+            const value = new FormData(e.currentTarget).get("q")
+            navigate({ page: 1, q: String(value ?? "") })
+          }}
+        >
+          <Input
+            name="q"
+            key={q}
+            defaultValue={q}
             placeholder={tList("searchPlaceholder")}
-            className="focus:border-primary w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 pr-10 text-sm outline-none"
+            className={cn("bg-white", q ? "pr-16" : "pr-10")}
           />
-          <Search className="absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-gray-400" />
-        </div>
-        {/* 기간 필터 pill (PC 전용) */}
-        <div className="hidden gap-2 overflow-x-auto md:flex [&::-webkit-scrollbar]:hidden">
+          {/* 검색 적용 중일 때만 초기화(X) 노출 */}
+          {q && (
+            <button
+              type="button"
+              aria-label={tList("clearSearch")}
+              onClick={() => navigate({ page: 1, q: "" })}
+              className="absolute -translate-y-1/2 cursor-pointer top-1/2 right-9 rounded-full bg-gray-300 p-0.5 hover:bg-gray-400"
+            >
+              <X className="w-3 h-3 text-white" />
+            </button>
+          )}
+          <button
+            type="submit"
+            aria-label={tList("searchPlaceholder")}
+            className="absolute -translate-y-1/2 cursor-pointer top-1/2 right-3"
+          >
+            <Search className="w-4 h-4 text-gray-400" />
+          </button>
+        </form>
+        <div className="flex gap-2 overflow-x-auto [&::-webkit-scrollbar]:hidden">
           <button
             type="button"
-            onClick={() => handlePeriodChange("recent")}
+            onClick={() => navigate({ page: 1, period: "recent" })}
             className={cn(
               "shrink-0 rounded-full border px-3.5 py-1 text-sm font-medium whitespace-nowrap transition-colors",
               period === "recent"
@@ -408,7 +289,7 @@ export function OrderList({
             <button
               key={y}
               type="button"
-              onClick={() => handlePeriodChange(String(y))}
+              onClick={() => navigate({ page: 1, period: String(y) })}
               className={cn(
                 "shrink-0 rounded-full border px-3.5 py-1 text-sm font-medium whitespace-nowrap transition-colors",
                 period === String(y)
@@ -420,21 +301,37 @@ export function OrderList({
             </button>
           ))}
         </div>
+        {/* 검색 적용 중: 결과 요약 + 검색어 초기화 버튼 (눈에 띄는 해제 지점) */}
+        {q && !isPending && (
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="text-sm text-gray-700">
+              {tList("searchResultCount", { q, count })}
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate({ page: 1, q: "" })}
+              className="hover:border-primary hover:text-primary flex cursor-pointer items-center gap-1 rounded-full border border-gray-300 px-2.5 py-1 text-xs text-gray-600 transition-colors"
+            >
+              <X className="w-3 h-3" />
+              {tList("clearSearch")}
+            </button>
+          </div>
+        )}
       </div>
 
-      {isFiltering ? (
+      {isPending ? (
         <div className="flex min-h-[200px] items-center justify-center">
-          <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+          <Loader2 className="w-6 h-6 text-gray-400 animate-spin" />
         </div>
       ) : orders.length === 0 ? (
         <div className="flex min-h-[300px] flex-col items-center justify-center gap-4">
-          <Package className="h-12 w-12 text-gray-300" />
+          <Package className="w-12 h-12 text-gray-300" />
           <div className="text-center">
             <p className="text-lg font-medium text-gray-600">
-              {tEmpty("orderPeriodTitle")}
+              {tEmpty(q ? "orderSearchTitle" : "orderPeriodTitle")}
             </p>
             <p className="mt-1 text-sm text-gray-400">
-              {tEmpty("orderPeriodDescription")}
+              {tEmpty(q ? "orderSearchDescription" : "orderPeriodDescription")}
             </p>
           </div>
         </div>
@@ -480,25 +377,23 @@ export function OrderList({
             })}
           </section>
 
-          {pages.length > 1 && (
+          {pageCount > 1 && (
             <div className="flex items-center justify-center gap-2 py-6">
               <Button
                 variant="outline"
-                disabled={safePage === 0}
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={page <= 1 || isPending}
+                onClick={() => navigate({ page: page - 1 })}
               >
-                <ChevronLeft className="mr-1 h-4 w-4" />
+                <ChevronLeft className="w-4 h-4 mr-1" />
                 {tList("prevPage")}
               </Button>
               <Button
                 variant="outline"
-                disabled={safePage >= pages.length - 1}
-                onClick={() =>
-                  setPage((p) => Math.min(pages.length - 1, p + 1))
-                }
+                disabled={page >= pageCount || isPending}
+                onClick={() => navigate({ page: page + 1 })}
               >
                 {tList("nextPage")}
-                <ChevronRight className="ml-1 h-4 w-4" />
+                <ChevronRight className="w-4 h-4 ml-1" />
               </Button>
             </div>
           )}

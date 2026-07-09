@@ -23,7 +23,13 @@ import {
 } from "../../components/shared/mypage-skeletons"
 import { withMypageTimeout } from "./wrappers/mypage-timeout"
 
-export async function MyPageTemplate({ countryCode }: { countryCode: string }) {
+export async function MyPageTemplate({
+  countryCode,
+  orderListParams,
+}: {
+  countryCode: string
+  orderListParams: { page: number; period: string; q: string }
+}) {
   const [currentUser, { isAdmin }, pointBalance] = await Promise.all([
     fetchMe(),
     checkAdminScope(),
@@ -48,9 +54,9 @@ export async function MyPageTemplate({ countryCode }: { countryCode: string }) {
   return (
     <>
       {/* 모바일 콘텐츠 - lg 미만 */}
-      <div className="bg-muted block lg:hidden">
+      <div className="block bg-muted lg:hidden">
         {/* 프로필 영역 */}
-        <div className="bg-primary/90 space-y-3 px-6 pt-4 pb-5">
+        <div className="px-6 pt-4 pb-5 space-y-3 bg-primary/90">
           <MobileHeader
             userName={(currentUser as UserDetail)?.username}
             isMembership={isMembershipPricing}
@@ -64,19 +70,19 @@ export async function MyPageTemplate({ countryCode }: { countryCode: string }) {
         </div>
 
         {/* 퀵메뉴 */}
-        <div className="bg-white px-6 py-4">
+        <div className="px-6 py-4 bg-white">
           <QuickLinks />
         </div>
 
         {/* 주문 내역 */}
-        <div className="mt-2 bg-white px-6 py-5">
+        <div className="px-6 py-5 mt-2 bg-white">
           <Suspense fallback={<ShippingStatusSkeleton />}>
             <ShippingStatusWrapper />
           </Suspense>
         </div>
 
         {/* 자주 쓰는 메뉴 */}
-        <div className="mt-2 bg-white px-6 py-5">
+        <div className="px-6 py-5 mt-2 bg-white">
           <FrequentMenu />
         </div>
       </div>
@@ -100,7 +106,11 @@ export async function MyPageTemplate({ countryCode }: { countryCode: string }) {
 
             <div className="mt-6">
               <Suspense fallback={<MypageHomeOrderListSkeleton />}>
-                <OrderListWrapper />
+                <OrderListWrapper
+                  page={orderListParams.page}
+                  period={orderListParams.period}
+                  q={orderListParams.q}
+                />
               </Suspense>
             </div>
           </div>

@@ -190,6 +190,8 @@
     "orderTitle": "注文履歴はありません",
     "orderDescription": "最初のご注文をどうぞ。",
     "orderPeriodTitle": "選択した期間に注文履歴がありません",
+    "orderSearchTitle": "検索結果がありません",
+    "orderSearchDescription": "別のキーワードでお試しください",
     "orderPeriodDescription": "別の期間を選択してください。"
   },
   "account": {
@@ -424,6 +426,8 @@
       "productSuffix": "他 {count}件",
       "defaultProductName": "商品",
       "searchPlaceholder": "注文した商品を検索できます",
+      "clearSearch": "検索語をクリア",
+      "searchResultCount": "「{q}」の検索結果 {count}件",
       "prevPage": "前へ",
       "nextPage": "次へ",
       "recent6m": "直近6か月"

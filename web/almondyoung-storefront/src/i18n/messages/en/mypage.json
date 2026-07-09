@@ -190,6 +190,8 @@
     "orderTitle": "No order history",
     "orderDescription": "Start your first order.",
     "orderPeriodTitle": "No orders in the selected period",
+    "orderSearchTitle": "No results found",
+    "orderSearchDescription": "Try a different search term",
     "orderPeriodDescription": "Try a different period."
   },
   "account": {
@@ -424,6 +426,8 @@
       "productSuffix": "and {count} more",
       "defaultProductName": "Item",
       "searchPlaceholder": "Search your ordered products",
+      "clearSearch": "Clear search",
+      "searchResultCount": "{count} results for ‘{q}’",
       "prevPage": "Previous",
       "nextPage": "Next",
       "recent6m": "Last 6 months"

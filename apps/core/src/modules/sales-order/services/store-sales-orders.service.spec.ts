@@ -257,6 +257,56 @@ describe('StoreSalesOrdersService', () => {
     });
   });
 
+  describe('getActionsByChannelOrderBatch', () => {
+    // makeContext 는 findSoOrThrow(limit) 전제라, builder 를 직접 await 하는 배치 쿼리용 mock 을 따로 만든다.
+    function makeBatchContext(sos: ReturnType<typeof makeSo>[]) {
+      let whereCallIndex = 0;
+      const dbMock = {
+        db: {
+          select: jest.fn().mockImplementation(() => ({
+            from: jest.fn().mockImplementation(() => ({
+              where: jest.fn().mockImplementation(() => {
+                const idx = whereCallIndex++;
+                return {
+                  // idx 0: 배치 SO 조회, idx 1+: SO별 FO 조회(빈 목록)
+                  then: jest.fn((fn: (r: unknown[]) => unknown) => fn(idx === 0 ? sos : [])),
+                  limit: jest.fn().mockReturnValue({
+                    then: jest.fn((fn: (r: unknown[]) => unknown) => fn([])),
+                  }),
+                };
+              }),
+            })),
+          })),
+        },
+      };
+      const service = new StoreSalesOrdersService(
+        dbMock as any,
+        { cancel: jest.fn(), createBusinessLink: jest.fn() } as any,
+        { refundByIntent: jest.fn() } as any,
+      );
+      return { service, dbMock };
+    }
+
+    it('DB가 반환한 본인 주문만 SO별 액션 뷰로 매핑한다 (미수집 id는 제외)', async () => {
+      const { service } = makeBatchContext([
+        makeSo({ walletIntentId: null }),
+        makeSo({ id: 'so-002', channelOrderId: 'medusa-order-002', walletIntentId: null }),
+      ]);
+      const result = await service.getActionsByChannelOrderBatch(
+        [CHANNEL_ORDER_ID, 'medusa-order-002', 'medusa-order-unknown'],
+        CUSTOMER_ID,
+      );
+      expect(result.map((r) => r.channelOrderId)).toEqual([CHANNEL_ORDER_ID, 'medusa-order-002']);
+      expect(result[0]!.availableActions).toContain('cancel');
+    });
+
+    it('빈 id 목록이면 DB 조회 없이 빈 배열을 반환한다', async () => {
+      const { service, dbMock } = makeBatchContext([]);
+      await expect(service.getActionsByChannelOrderBatch([], CUSTOMER_ID)).resolves.toEqual([]);
+      expect(dbMock.db.select).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getActionsByChannelOrder', () => {
     it('취소된 주문에 walletIntentId가 있으면 refundStatus=pending', async () => {
       const { service } = makeContext({ so: makeSo({ status: 'cancelled' }) });

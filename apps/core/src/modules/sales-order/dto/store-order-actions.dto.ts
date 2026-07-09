@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { ArrayMaxSize, ArrayNotEmpty, IsArray, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export type StoreOrderAction = 'cancel' | 'track' | 'return' | 'exchange' | 'receipt';
 
@@ -102,6 +102,20 @@ export class StoreOrderActionsResponseDto {
     cancelUrl?: string;
     returnUrl?: string;
   };
+}
+
+export class StoreBatchOrderActionsRequestDto {
+  @ApiProperty({
+    description: 'Medusa 주문 ID 목록 (한 페이지 분량)',
+    type: String,
+    isArray: true,
+    example: ['order_01ABC', 'order_01DEF'],
+  })
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  channelOrderIds: string[];
 }
 
 export class StoreCancelOrderDto {
