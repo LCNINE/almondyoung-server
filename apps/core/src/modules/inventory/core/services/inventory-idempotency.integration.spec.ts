@@ -86,7 +86,10 @@ describeIfDb('inventory idempotency (DB integration, rollback-only)', () => {
 
       const r1 = await inbound.simpleInbound(dto, tx);
       const r2 = await inbound.simpleInbound(dto, tx);
-      expect(r2).toEqual(r1);
+      // r2는 jsonb round-trip(Date → ISO 문자열)을 거친 replay 응답이라 r1(Date 객체 포함,
+      // live 핸들러 응답)과 객체 동일(toEqual)이 아니다 — wire-equivalent(직렬화 동등)일 뿐.
+      // HTTP 레이어에서는 둘 다 JSON 응답이라 클라이언트 관점에서는 동일하다.
+      expect(r2).toEqual(JSON.parse(JSON.stringify(r1)));
 
       const events = await tx.select().from(wmsTables.stockEvents).where(eq(wmsTables.stockEvents.skuId, sku.id));
       expect(events).toHaveLength(1);

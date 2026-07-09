@@ -28,7 +28,7 @@ export class MovementService {
       if (!dto.lines?.length) throw new BadRequestException('lines required');
 
       // 기본 유효성: 동일 창고, 동일 로케이션 금지, 수량>0
-      const locations = await this.db.query.locations.findMany({
+      const locations = await tx.query.locations.findMany({
         where: (l, { inArray }) =>
           inArray(l.id, [...dto.lines.map((l) => l.fromLocationId), ...dto.lines.map((l) => l.toLocationId)]),
       });
@@ -36,7 +36,7 @@ export class MovementService {
 
       // SKU 존재 검증
       const skuIds = Array.from(new Set(dto.lines.map((l) => l.skuId)));
-      const skus = await this.db.query.skus.findMany({ where: (s, { inArray }) => inArray(s.id, skuIds) });
+      const skus = await tx.query.skus.findMany({ where: (s, { inArray }) => inArray(s.id, skuIds) });
       if (skus.length !== skuIds.length) {
         throw new BadRequestException('one or more skuId not found');
       }
@@ -106,7 +106,7 @@ export class MovementService {
             quantity: line.quantity,
             occurredAt,
             reason: line.memo ?? memo ?? undefined,
-            idempotencyKey: `${dto.idempotencyKey}:${i}`,
+            idempotencyKey: `movement.move:${dto.idempotencyKey}:${i}`,
           },
           tx,
         );
@@ -177,7 +177,7 @@ export class MovementService {
         throw new BadRequestException('Source and destination warehouses must be different');
       }
 
-      const warehouses = await this.db
+      const warehouses = await tx
         .select({ id: wmsTables.warehouses.id })
         .from(wmsTables.warehouses)
         .where(inArray(wmsTables.warehouses.id, [dto.fromWarehouseId, dto.toWarehouseId]));
@@ -185,7 +185,7 @@ export class MovementService {
         throw new BadRequestException('One or both warehouse IDs are invalid');
       }
 
-      const skuRows = await this.db
+      const skuRows = await tx
         .select({ id: wmsTables.skus.id })
         .from(wmsTables.skus)
         .where(eq(wmsTables.skus.id, dto.skuId))
@@ -194,7 +194,7 @@ export class MovementService {
         throw new BadRequestException(`SKU ${dto.skuId} not found`);
       }
 
-      const stockRow = await this.db.query.stockLedgers.findFirst({
+      const stockRow = await tx.query.stockLedgers.findFirst({
         where: and(
           eq(wmsTables.stockLedgers.skuId, dto.skuId),
           eq(wmsTables.stockLedgers.warehouseId, dto.fromWarehouseId),
@@ -234,7 +234,7 @@ export class MovementService {
           quantity: dto.quantity,
           occurredAt,
           reason: dto.reason,
-          idempotencyKey: dto.idempotencyKey,
+          idempotencyKey: `movement.inter-warehouse:${dto.idempotencyKey}`,
         },
         tx,
       );

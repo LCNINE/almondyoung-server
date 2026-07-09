@@ -115,7 +115,7 @@ export class InboundService {
             occurredAt: new Date(),
             reason: 'simple_inbound',
             journalId: journal.id,
-            idempotencyKey: `${dto.idempotencyKey}:${i}`,
+            idempotencyKey: `inbound.simple:${dto.idempotencyKey}:${i}`,
           },
           tx,
         );
@@ -200,7 +200,7 @@ export class InboundService {
             occurredAt: new Date(),
             reason: 'simple_inbound_fullscan',
             journalId: journal.id,
-            idempotencyKey: `${dto.idempotencyKey}:${i}`,
+            idempotencyKey: `inbound.simple-fullscan:${dto.idempotencyKey}:${i}`,
           },
           tx,
         );
@@ -280,7 +280,7 @@ export class InboundService {
           occurredAt: new Date(),
           reason: 'individual_inbound',
           journalId: journal.id,
-          idempotencyKey: dto.idempotencyKey,
+          idempotencyKey: `inbound.individual:${dto.idempotencyKey}`,
         },
         tx,
       );
@@ -771,7 +771,7 @@ export class InboundService {
           occurredAt: new Date(),
           reason: 'planned_inbound',
           journalId: journal.id,
-          idempotencyKey: dto.idempotencyKey,
+          idempotencyKey: `inbound.plans.receive:${dto.idempotencyKey}`,
         },
         tx,
       );
@@ -862,7 +862,7 @@ export class InboundService {
           toLocationId: dto.toLocationId,
           quantity: dto.quantity,
           reason: 'putaway_internal_move',
-          idempotencyKey: dto.idempotencyKey,
+          idempotencyKey: `inbound.putaway:${dto.idempotencyKey}`,
         },
         tx,
       );
@@ -929,7 +929,7 @@ export class InboundService {
           quantity: dto.quantity,
           occurredAt: new Date(),
           reason: 'RETURN',
-          idempotencyKey: dto.idempotencyKey,
+          idempotencyKey: `inbound.return:${dto.idempotencyKey}`,
         },
         tx,
       );

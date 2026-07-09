@@ -19,9 +19,7 @@ export class InventoryIdempotencyService {
   private static readonly RETENTION_DAYS = 30;
   private readonly logger = new Logger(InventoryIdempotencyService.name);
 
-  constructor(
-    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
-  ) {}
+  constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
 
   /**
    * 요청(핸들러) 단위 멱등 래퍼 — 스펙 §4.2.
@@ -48,10 +46,10 @@ export class InventoryIdempotencyService {
 
       if (inserted.length > 0) {
         const result = await handler(trx);
-        await trx
-          .update(t)
-          .set({ response: result ?? null })
-          .where(eq(t.id, inserted[0].id));
+        if (result == null) {
+          throw new Error('withIdempotency handler must not resolve null/undefined — response null 은 처리 중 표식');
+        }
+        await trx.update(t).set({ response: result }).where(eq(t.id, inserted[0].id));
         return result;
       }
 
@@ -60,13 +58,15 @@ export class InventoryIdempotencyService {
         .from(t)
         .where(and(eq(t.endpoint, endpoint), eq(t.key, key)))
         .limit(1);
+      // 스펙 §4.2: hash 불일치("키 재사용")를 처리 중 판정보다 먼저 검사한다 — 다른 본문으로
+      // 키를 재사용한 요청은 처리 중 여부와 무관하게 항상 재사용 오류로 귀결돼야 한다.
+      if (existing && existing.requestHash !== requestHash) {
+        throw new ConflictError(`idempotencyKey 재사용: 같은 키로 다른 요청 본문 (${endpoint}, key=${key})`);
+      }
       // ON CONFLICT 가 빈 결과 = 경쟁 tx 커밋 완료 → READ COMMITTED 에서 row 가시.
       // 미가시(경쟁 tx 진행 중 등 이례 상황)면 처리 중으로 간주.
       if (!existing || existing.response === null) {
         throw new ConflictError(`동일 요청이 처리 중입니다: ${endpoint} (key=${key})`);
-      }
-      if (existing.requestHash !== requestHash) {
-        throw new ConflictError(`idempotencyKey 재사용: 같은 키로 다른 요청 본문 (${endpoint}, key=${key})`);
       }
       // jsonb round-trip 값 — 저장 시점 handler 반환값과 동형이라는 계약. jsonb 조회 타입이
       // unknown 이라 캐스트 불가피 (정당화 주석, CLAUDE.md 타입 규칙)

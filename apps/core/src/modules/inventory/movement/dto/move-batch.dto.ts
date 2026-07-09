@@ -68,6 +68,6 @@ export class MoveBatchDto {
   @ApiProperty({ description: '요청 멱등 키 — 클라이언트 생성 UUID, 같은 작업의 재시도는 같은 값 재사용' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @MaxLength(90)
   idempotencyKey: string;
 }

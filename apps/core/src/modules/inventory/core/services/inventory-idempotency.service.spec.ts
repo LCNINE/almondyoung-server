@@ -96,6 +96,16 @@ describe('InventoryIdempotencyService.withIdempotency', () => {
     const svc = build(trx);
     await expect(svc.withIdempotency('inbound.simple', 'k-1', dto, jest.fn())).rejects.toThrow(ConflictError);
   });
+
+  it('신규 키: handler 가 null/undefined 로 resolve 하면 throw 하고 응답을 저장하지 않는다', async () => {
+    const { trx, whereUpdate } = makeTrx({ insertedIds: [{ id: 'row-1' }] });
+    const svc = build(trx);
+    const handler = jest.fn().mockResolvedValue(null);
+    await expect(svc.withIdempotency('inbound.simple', 'k-1', dto, handler)).rejects.toThrow(
+      /must not resolve null\/undefined/,
+    );
+    expect(whereUpdate).not.toHaveBeenCalled();
+  });
 });
 
 describe('InventoryIdempotencyService.purgeExpired', () => {
