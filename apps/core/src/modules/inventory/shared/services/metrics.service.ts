@@ -91,6 +91,15 @@ export class MetricsService implements OnModuleInit {
     registers: [register],
   });
 
+  // 원장 대사 메트릭 — stock_ledgers 와 이벤트 파생 수량의 불일치 grain 수.
+  // setLedgerDrift 가 매 대사 실행 후 두 severity 라벨을 항상 set 한다(정상 시 0).
+  private readonly ledgerDriftGauge = new Gauge({
+    name: 'wms_ledger_drift_grains',
+    help: 'Number of stock ledger grains whose qty disagrees with the event-derived quantity',
+    labelNames: ['severity'],
+    registers: [register],
+  });
+
   onModuleInit() {
     // 기본 시스템 메트릭 수집 시작
     collectDefaultMetrics({ register });
@@ -221,6 +230,14 @@ export class MetricsService implements OnModuleInit {
   recordHealthCheck(component: string, status: 'healthy' | 'unhealthy', responseTimeMs: number) {
     this.healthGauge.set({ component }, status === 'healthy' ? 1 : 0);
     this.healthResponseTime.observe({ component }, responseTimeMs / 1000);
+  }
+
+  /**
+   * 원장 대사 결과 기록 — 정상 실행도 0 을 써서 이전 값 잔존을 막는다.
+   */
+  setLedgerDrift(counts: { mismatch: number; critical: number }) {
+    this.ledgerDriftGauge.set({ severity: 'MISMATCH' }, counts.mismatch);
+    this.ledgerDriftGauge.set({ severity: 'CRITICAL' }, counts.critical);
   }
 
   /**
