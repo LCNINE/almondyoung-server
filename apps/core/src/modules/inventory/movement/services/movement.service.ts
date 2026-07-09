@@ -5,6 +5,7 @@ import { wmsTables, wmsSchema, MovementJobLine, MovementJob } from '../../schema
 import { MoveBatchDto } from '../dto/move-batch.dto';
 import { InterWarehouseTransferDto } from '../dto/inter-warehouse-transfer.dto';
 import { StockEventStore } from '../../core/repositories/stock-event.store';
+import { InventoryIdempotencyService } from '../../core/services/inventory-idempotency.service';
 import { and, eq, inArray } from 'drizzle-orm';
 
 @Injectable()
@@ -12,6 +13,7 @@ export class MovementService {
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly stockEventStore: StockEventStore,
+    private readonly idempotency: InventoryIdempotencyService,
   ) {}
 
   private get db() {
@@ -20,37 +22,38 @@ export class MovementService {
 
   async moveImmediately(dto: MoveBatchDto): Promise<{ job: MovementJob; lines: MovementJobLine[] }> {
     const { warehouseId, actorId, memo } = dto;
-    if (!dto.lines?.length) throw new BadRequestException('lines required');
-
-    // 기본 유효성: 동일 창고, 동일 로케이션 금지, 수량>0
-    const locations = await this.db.query.locations.findMany({
-      where: (l, { inArray }) =>
-        inArray(l.id, [...dto.lines.map((l) => l.fromLocationId), ...dto.lines.map((l) => l.toLocationId)]),
-    });
-    const locMap = new Map(locations.map((l) => [l.id, l] as const));
-
-    // SKU 존재 검증
-    const skuIds = Array.from(new Set(dto.lines.map((l) => l.skuId)));
-    const skus = await this.db.query.skus.findMany({ where: (s, { inArray }) => inArray(s.id, skuIds) });
-    if (skus.length !== skuIds.length) {
-      throw new BadRequestException('one or more skuId not found');
-    }
-
-    for (const line of dto.lines) {
-      if (line.fromLocationId === line.toLocationId) {
-        throw new BadRequestException('from/to locations must be different');
-      }
-      const from = locMap.get(line.fromLocationId);
-      const to = locMap.get(line.toLocationId);
-      if (!from || !to) throw new BadRequestException('invalid location id in lines');
-      if (from.warehouseId !== warehouseId || to.warehouseId !== warehouseId) {
-        throw new BadRequestException('all locations must belong to provided warehouseId');
-      }
-      if (line.quantity <= 0) throw new BadRequestException('quantity must be positive');
-    }
 
     // 트랜잭션: 저널→이벤트/원장→작업헤더/라인/로그
-    return this.dbService.run(async (tx) => {
+    return this.idempotency.withIdempotency('movement.move', dto.idempotencyKey, dto, async (tx) => {
+      if (!dto.lines?.length) throw new BadRequestException('lines required');
+
+      // 기본 유효성: 동일 창고, 동일 로케이션 금지, 수량>0
+      const locations = await this.db.query.locations.findMany({
+        where: (l, { inArray }) =>
+          inArray(l.id, [...dto.lines.map((l) => l.fromLocationId), ...dto.lines.map((l) => l.toLocationId)]),
+      });
+      const locMap = new Map(locations.map((l) => [l.id, l] as const));
+
+      // SKU 존재 검증
+      const skuIds = Array.from(new Set(dto.lines.map((l) => l.skuId)));
+      const skus = await this.db.query.skus.findMany({ where: (s, { inArray }) => inArray(s.id, skuIds) });
+      if (skus.length !== skuIds.length) {
+        throw new BadRequestException('one or more skuId not found');
+      }
+
+      for (const line of dto.lines) {
+        if (line.fromLocationId === line.toLocationId) {
+          throw new BadRequestException('from/to locations must be different');
+        }
+        const from = locMap.get(line.fromLocationId);
+        const to = locMap.get(line.toLocationId);
+        if (!from || !to) throw new BadRequestException('invalid location id in lines');
+        if (from.warehouseId !== warehouseId || to.warehouseId !== warehouseId) {
+          throw new BadRequestException('all locations must belong to provided warehouseId');
+        }
+        if (line.quantity <= 0) throw new BadRequestException('quantity must be positive');
+      }
+
       const occurredAt = dto.occurredAt ? new Date(dto.occurredAt) : new Date();
       const [journal] = await tx
         .insert(wmsTables.stockJournals)
@@ -74,7 +77,7 @@ export class MovementService {
 
       const lineOutputs: MovementJobLine[] = [];
 
-      for (const line of dto.lines) {
+      for (const [i, line] of dto.lines.entries()) {
         // 음수 방지: from 그레인 수량 확인(간단 체크)
         const fromQtyRow = await tx.query.stockLedgers.findFirst({
           where: and(
@@ -103,6 +106,7 @@ export class MovementService {
             quantity: line.quantity,
             occurredAt,
             reason: line.memo ?? memo ?? undefined,
+            idempotencyKey: `${dto.idempotencyKey}:${i}`,
           },
           tx,
         );
@@ -168,39 +172,39 @@ export class MovementService {
   }
 
   async createInterWarehouseTransfer(dto: InterWarehouseTransferDto): Promise<{ jobId: string }> {
-    if (dto.fromWarehouseId === dto.toWarehouseId) {
-      throw new BadRequestException('Source and destination warehouses must be different');
-    }
+    return this.idempotency.withIdempotency('movement.inter-warehouse', dto.idempotencyKey, dto, async (tx) => {
+      if (dto.fromWarehouseId === dto.toWarehouseId) {
+        throw new BadRequestException('Source and destination warehouses must be different');
+      }
 
-    const warehouses = await this.db
-      .select({ id: wmsTables.warehouses.id })
-      .from(wmsTables.warehouses)
-      .where(inArray(wmsTables.warehouses.id, [dto.fromWarehouseId, dto.toWarehouseId]));
-    if (warehouses.length !== 2) {
-      throw new BadRequestException('One or both warehouse IDs are invalid');
-    }
+      const warehouses = await this.db
+        .select({ id: wmsTables.warehouses.id })
+        .from(wmsTables.warehouses)
+        .where(inArray(wmsTables.warehouses.id, [dto.fromWarehouseId, dto.toWarehouseId]));
+      if (warehouses.length !== 2) {
+        throw new BadRequestException('One or both warehouse IDs are invalid');
+      }
 
-    const skuRows = await this.db
-      .select({ id: wmsTables.skus.id })
-      .from(wmsTables.skus)
-      .where(eq(wmsTables.skus.id, dto.skuId))
-      .limit(1);
-    if (!skuRows[0]) {
-      throw new BadRequestException(`SKU ${dto.skuId} not found`);
-    }
+      const skuRows = await this.db
+        .select({ id: wmsTables.skus.id })
+        .from(wmsTables.skus)
+        .where(eq(wmsTables.skus.id, dto.skuId))
+        .limit(1);
+      if (!skuRows[0]) {
+        throw new BadRequestException(`SKU ${dto.skuId} not found`);
+      }
 
-    const stockRow = await this.db.query.stockLedgers.findFirst({
-      where: and(
-        eq(wmsTables.stockLedgers.skuId, dto.skuId),
-        eq(wmsTables.stockLedgers.warehouseId, dto.fromWarehouseId),
-        eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
-      ),
-    });
-    if (!stockRow || stockRow.qty < dto.quantity) {
-      throw new BadRequestException('Insufficient ON_HAND stock in source warehouse');
-    }
+      const stockRow = await this.db.query.stockLedgers.findFirst({
+        where: and(
+          eq(wmsTables.stockLedgers.skuId, dto.skuId),
+          eq(wmsTables.stockLedgers.warehouseId, dto.fromWarehouseId),
+          eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
+        ),
+      });
+      if (!stockRow || stockRow.qty < dto.quantity) {
+        throw new BadRequestException('Insufficient ON_HAND stock in source warehouse');
+      }
 
-    return this.dbService.run(async (tx) => {
       const occurredAt = new Date();
       const [journal] = await tx.insert(wmsTables.stockJournals).values({ sourceType: 'MOVEMENT' }).returning();
 
@@ -230,6 +234,7 @@ export class MovementService {
           quantity: dto.quantity,
           occurredAt,
           reason: dto.reason,
+          idempotencyKey: dto.idempotencyKey,
         },
         tx,
       );
