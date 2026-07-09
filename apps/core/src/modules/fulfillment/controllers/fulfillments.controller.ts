@@ -5,15 +5,10 @@ import { FulfillmentsService } from '../services/fulfillments.service';
 import { FulfillmentReservationsFacade } from '../services/fulfillment-reservations.facade';
 import { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
 import { CreateCompensationShipmentDto } from '../dto/create-compensation-shipment.dto';
-import { SplitFulfillmentOrderDto } from '../dto/split-fulfillment-order.dto';
-import { AssignShipmentDto } from '../dto/assign-shipment.dto';
 import { ReserveDto } from '../dto/reserve.dto';
 import { UnreserveDto } from '../dto/unreserve.dto';
 import { TransferReservationDto } from '../dto/transfer-reservation.dto';
-import {
-  FulfillmentOrderResponseDto,
-  FulfillmentOrderListResponseDto,
-} from '../dto/fulfillment-order-response.dto';
+import { FulfillmentOrderResponseDto, FulfillmentOrderListResponseDto } from '../dto/fulfillment-order-response.dto';
 
 type AuthenticatedUser = { id?: string; userId?: string; sub?: string } | undefined;
 
@@ -38,27 +33,6 @@ export class FulfillmentsController {
     return this.service.createCompensationShipment(dto, this.getUserId(user));
   }
 
-  @Post(':id/split')
-  @ApiOperation({ summary: '주문처리 분할' })
-  @ApiParam({ name: 'id', description: '분할할 주문처리 ID' })
-  split(@Param('id') id: string, @Body() dto: SplitFulfillmentOrderDto) {
-    return this.service.split(id, dto);
-  }
-
-  @Post(':id/assign-shipment')
-  @ApiOperation({ summary: '배송 할당' })
-  @ApiParam({ name: 'id', description: '주문처리 ID' })
-  assignShipment(@Param('id') id: string, @Body() dto: AssignShipmentDto) {
-    return this.service.assignShipment(id, dto);
-  }
-
-  @Post(':id/ship')
-  @ApiOperation({ summary: '출고 완료 처리 (FulfillmentShipped 이벤트 발행)' })
-  @ApiParam({ name: 'id', description: '주문처리 ID' })
-  ship(@Param('id') id: string) {
-    return this.service.ship(id);
-  }
-
   @Post(':id/deliver')
   @ApiOperation({ summary: '배송 완료 처리 (고객 수령 확인, FulfillmentDelivered 이벤트 발행)' })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
@@ -81,7 +55,9 @@ export class FulfillmentsController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: '주문처리 상세 조회 (items, reservations, batch, shipment, invoice, adminAvailableActions 포함)' })
+  @ApiOperation({
+    summary: '주문처리 상세 조회 (items, reservations, batch, shipment, invoice, adminAvailableActions 포함)',
+  })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
   @ApiResponse({ status: 200, type: FulfillmentOrderResponseDto })
   getOne(@Param('id') id: string) {

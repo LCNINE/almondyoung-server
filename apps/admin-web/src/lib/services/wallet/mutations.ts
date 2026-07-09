@@ -1,6 +1,7 @@
 'use client';
 
 import { walletApi } from '@/lib/api/domains/wallet';
+import { salesOrders } from '@/lib/api/domains/orders';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { walletQueryKeys } from './query-keys';
 import type {
@@ -50,6 +51,7 @@ export const useRefundIntent = (intentId: string) => {
       amount: number;
       reasonCode?: string;
       reasonMessage?: string;
+      refundReceiveAccount?: { bank: string; accountNumber: string; holderName: string };
     }) => walletApi.refundIntent(intentId, dto),
     onSuccess: () => {
       queryClient.invalidateQueries({
@@ -60,6 +62,36 @@ export const useRefundIntent = (intentId: string) => {
       });
       queryClient.invalidateQueries({ queryKey: walletQueryKeys.intents() });
       queryClient.invalidateQueries({ queryKey: walletQueryKeys.refunds() });
+    },
+  });
+};
+
+export const useApproveRefundRequest = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    // 1) Wallet 환불 실행 → 2) 성공 시 core 주문 취소(재환불 없음).
+    // 환불은 이미 완료됐으므로 core 취소 실패는 refund 자체를 되돌리지 않고 결과로만 보고한다.
+    mutationFn: async (vars: { id: string; intentId: string; amount?: number; adminNote?: string }) => {
+      await walletApi.approveRefundRequest(vars.id, vars.adminNote);
+      const cancel = await salesOrders
+        .cancelSalesOrderByIntent(vars.intentId, { amount: vars.amount })
+        .catch((error: unknown) => ({ error: error instanceof Error ? error.message : '주문 취소 호출 실패' }));
+      return { cancel };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.refundRequests() });
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.refunds() });
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.intents() });
+    },
+  });
+};
+
+export const useRejectRefundRequest = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { id: string; adminNote?: string }) => walletApi.rejectRefundRequest(vars.id, vars.adminNote),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.refundRequests() });
     },
   });
 };

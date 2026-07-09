@@ -5,6 +5,8 @@ import { client } from '../../client';
 import type {
   MasterVersionDto,
   CreateDraftVersionDto,
+  MyDraftsQuery,
+  MyDraftsResponse,
 } from '../../../types/dto/products';
 import type {
   BulkUpdateProductVariantDto,
@@ -23,6 +25,19 @@ const base = (masterId: string) =>
 export const versionsClient = {
   listByMaster: async (masterId: string): Promise<MasterVersionDto[]> =>
     (await client.get(base(masterId))).data,
+
+  listMyDrafts: async (query: MyDraftsQuery = {}): Promise<MyDraftsResponse> =>
+    (
+      await client.get(`${ALMONDYOUNG_API_BASE_URL}/versions/my-drafts`, {
+        params: {
+          page: query.page,
+          limit: query.limit,
+          q: query.q,
+          sort: query.sort,
+          order: query.order,
+        },
+      })
+    ).data,
 
   getActive: async (masterId: string): Promise<MasterVersionDto> =>
     (await client.get(`${base(masterId)}/active`)).data,

@@ -2,6 +2,7 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { matchingQueryKeys } from './query-keys';
+import { productQueryKeys } from '@/lib/services/products/query-keys';
 import { matchingClient } from '@/lib/api/domains/matching';
 import type {
   ResolveMatchingDto,
@@ -156,6 +157,7 @@ export const useUpdateVariantStockPolicy = () => {
       queryClient.invalidateQueries({
         queryKey: matchingQueryKeys.orderLineLists(),
       });
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.mastersSummaryLists() });
     },
   });
 };
@@ -208,6 +210,7 @@ export const useUpsertVariantMatching = () => {
         queryKey: matchingQueryKeys.orderLineLists(),
       });
       queryClient.invalidateQueries({ queryKey: matchingQueryKeys.all });
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.mastersSummaryLists() });
     },
   });
 };

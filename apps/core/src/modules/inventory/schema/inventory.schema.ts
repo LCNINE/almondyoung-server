@@ -89,7 +89,7 @@ export const warehouseTypeEnum = pgEnum('warehouse_type', ['domestic', 'overseas
 export const reservationStatusEnum = pgEnum('reservation_status', ['pending', 'confirmed', 'released', 'active']);
 export const taskStatusEnum = pgEnum('task_status', ['created', 'picking', 'packed', 'shipped', 'canceled']);
 export const unavailableReasonEnum = pgEnum('unavailable_reason', ['pb', 'foreign', 'low_margin']);
-export const shipmentStatusEnum = pgEnum('shipment_status', ['created', 'in_transit', 'delivered', 'failed']);
+export const shipmentStatusEnum = pgEnum('shipment_status', ['open', 'shipped', 'in_transit', 'delivered', 'failed', 'canceled']);
 export const carrierEnum = pgEnum('carrier', ['CJ', 'HANJIN', 'LOTTE', 'LOGEN', 'KDEXP', 'CJGLS']);
 export const returnStatusEnum = pgEnum('return_status', [
   'requested',
@@ -216,7 +216,7 @@ export const outboxStatusEnum = pgEnum('outbox_status', ['pending', 'published',
 export const pickingMethodEnum = pgEnum('picking_method', ['individual', 'total_picking']);
 export const batchStatusEnum = pgEnum('batch_status', ['created', 'picking', 'completed', 'canceled']);
 export const invoiceMethodEnum = pgEnum('invoice_method', ['goodsflow', 'direct', 'self', 'hanjin']);
-export const invoiceStatusEnum = pgEnum('invoice_status', ['issued', 'printed', 'shipped', 'canceled']);
+export const invoiceStatusEnum = pgEnum('invoice_status', ['issued', 'used', 'voided']);
 
 // Audit system enums
 export const auditEventTypeEnum = pgEnum('audit_event_type', [
@@ -1283,7 +1283,13 @@ export const fulfillmentOrders = pgTable('fulfillment_orders', {
   labelNo: varchar('label_no', { length: 64 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+},
+(t) => ({
+  // SO:FO 0..1:0..1 강제. standalone/보상 FO(salesOrderId=null)는 자연 제외.
+  uqSalesOrder: uniqueIndex('uq_fulfillment_orders_sales_order')
+    .on(t.salesOrderId)
+    .where(sql`${t.salesOrderId} IS NOT NULL`),
+}));
 
 export const fulfillmentOrderCreationBacklogs = pgTable(
   'fulfillment_order_creation_backlogs',
@@ -1313,23 +1319,6 @@ export const fulfillmentOrderCreationBacklogs = pgTable(
     idxWaitingVariantIds: index('idx_fo_creation_backlogs_waiting_variant_ids').using('gin', t.waitingVariantIds),
   }),
 );
-
-export const fulfillmentOrderLines = pgTable('fulfillment_order_lines', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  fulfillmentOrderId: uuid('fulfillment_order_id')
-    .references(() => fulfillmentOrders.id, { onDelete: 'cascade' })
-    .notNull(),
-  skuId: uuid('sku_id')
-    .references(() => skus.id, { onDelete: 'restrict' })
-    .notNull(),
-  quantity: integer('quantity').notNull(),
-  reservedQty: integer('reserved_qty').notNull().default(0),
-  pickedQty: integer('picked_qty').notNull().default(0),
-  shippedQty: integer('shipped_qty').notNull().default(0),
-  status: varchar('status', { length: 32 }).notNull().default('pending'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
 
 /*───────────────────────────
  * RESERVATIONS
@@ -1457,18 +1446,54 @@ export const shipments = pgTable(
   'shipments',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    trackingNo: varchar('tracking_no', { length: 64 }).notNull(),
-    carrier: carrierEnum('carrier').notNull().default('CJ'),
-    status: shipmentStatusEnum('status').notNull().default('created'),
-    eta: timestamp('eta', { withTimezone: true }),
-    splitStatus: boolean('split_status').notNull().default(false),
-    invoiceUrl: varchar('invoice_url', { length: 512 }),
-    fulfillmentOrderId: uuid('fulfillment_order_id').references(() => fulfillmentOrders.id, { onDelete: 'set null' }),
+    // 박스 = 송장 한 장. 송장 스캔(open)에서 lazy 생성 (RFC §Phase 2 #6).
+    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'restrict' }).notNull(),
+    // 자동완료 판정 기준 FO. FO↔상자 M:N 허용(B 에서 shipments unique drop). nullable: 합배송에서 미설정.
+    openedForFulfillmentOrderId: uuid('opened_for_fulfillment_order_id').references(() => fulfillmentOrders.id, { onDelete: 'set null' }),
+    status: shipmentStatusEnum('status').notNull().default('open'),
+    openedBy: uuid('opened_by'),
+    openedAt: timestamp('opened_at', { withTimezone: true }).notNull().defaultNow(),
+    shippedAt: timestamp('shipped_at', { withTimezone: true }),
     lastUpdated: timestamp('last_updated', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    uqFulfillmentOrder: unique('uq_shipments_fulfillment_order_id').on(t.fulfillmentOrderId),
+    // 전수(취소 포함) FO 조회용.
+    idxOpenedForFo: index('idx_shipments_opened_for_fo').on(t.openedForFulfillmentOrderId),
+  }),
+);
+
+/**
+ * 상자 라인(shipment_line) — 한 상자에 담긴 출고 라인 (Phase 1, additive).
+ * source 출고주문 라인(FOI)을 참조한다. 현재는 FO 1:1 이라 상자당 그 FO 의 FOI 를 미러하지만,
+ * 모델 자체는 FO↔상자 M:N(송장분할·합배송)을 표현할 수 있다(흐름 구현은 후속).
+ * `consumeShipment(shipmentId)` 가 라인별로 FIFO 차감 + 예약 소진의 단위로 쓴다.
+ */
+export const shipmentLines = pgTable(
+  'shipment_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    shipmentId: uuid('shipment_id')
+      .references(() => shipments.id, { onDelete: 'cascade' })
+      .notNull(),
+    fulfillmentOrderItemId: uuid('fulfillment_order_item_id')
+      .references(() => fulfillmentOrderItems.id, { onDelete: 'restrict' })
+      .notNull(),
+    // 원장 차감용 denormalize (FOI 의 skuId 와 동일). 라인만으로 SHIP 이벤트를 만들 수 있게.
+    skuId: uuid('sku_id')
+      .references(() => skus.id, { onDelete: 'restrict' })
+      .notNull(),
+    qty: integer('qty').notNull(),
+    inspectedQty: integer('inspected_qty').notNull().default(0),
+    forced: boolean('forced').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxShipment: index('idx_shipment_lines_shipment').on(t.shipmentId),
+    // 상자당 FOI 1행 — 멱등 ensure(onConflictDoNothing)의 근거. M:N end-state 에서도 성립.
+    uqShipmentFoi: unique('uq_shipment_lines_shipment_foi').on(t.shipmentId, t.fulfillmentOrderItemId),
+    ckQtyPositive: check('ck_shipment_lines_qty_positive', sql`${t.qty} > 0`),
+    ckInspectedRange: check('ck_shipment_lines_inspected_range', sql`${t.inspectedQty} >= 0 AND ${t.inspectedQty} <= ${t.qty}`),
   }),
 );
 
@@ -1714,6 +1739,9 @@ export const stocktakingLines = pgTable(
     idxStocktakingLineSession: index('idx_stocktaking_line_session').on(t.sessionId),
     idxStocktakingLineSku: index('idx_stocktaking_line_sku').on(t.skuId),
     idxStocktakingLineLocation: index('idx_stocktaking_line_location').on(t.locationId),
+    uqStocktakingLine: unique('uq_stocktaking_line_session_sku_location')
+      .on(t.sessionId, t.skuId, t.locationId)
+      .nullsNotDistinct(),
   }),
 );
 
@@ -1738,6 +1766,7 @@ export const stocktakingAdjustments = pgTable(
   (t) => ({
     idxAdjustmentSession: index('idx_adjustment_session').on(t.sessionId),
     idxAdjustmentLine: index('idx_adjustment_line').on(t.lineId),
+    uqStocktakingAdjustmentLine: unique('uq_stocktaking_adjustment_line').on(t.lineId),
   }),
 );
 
@@ -2057,60 +2086,8 @@ export const fulfillmentOrderItems = pgTable(
 );
 
 /*───────────────────────────
- * INSPECTION (검수) — 영속화 테이블 3종
+ * INSPECTION (검수) — inspection_issues 만 영속(세션/아이템 폐기, 박스 라인으로 흡수)
  *──────────────────────────*/
-
-// 검수 세션 (FO 단위). status/type 는 varchar (FOI status 컨벤션 따름)
-export const inspectionSessions = pgTable(
-  'inspection_sessions',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    fulfillmentOrderId: uuid('fulfillment_order_id')
-      .references(() => fulfillmentOrders.id, { onDelete: 'cascade' })
-      .notNull(),
-    type: varchar('type', { length: 16 }).notNull().default('individual'), // individual | batch
-    status: varchar('status', { length: 16 }).notNull().default('active'), // active | completed | paused
-    inspectorUserId: varchar('inspector_user_id', { length: 255 }),
-    totalItems: integer('total_items').notNull().default(0),
-    inspectedItems: integer('inspected_items').notNull().default(0),
-    completedItems: integer('completed_items').notNull().default(0),
-    issues: integer('issues').notNull().default(0),
-    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
-    completedAt: timestamp('completed_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    idxFulfillmentOrder: index('idx_inspection_sessions_fo').on(t.fulfillmentOrderId),
-    idxStatus: index('idx_inspection_sessions_status').on(t.status),
-  }),
-);
-
-// 검수 아이템 (세션 × FOI). 세션 내 FOI 당 1행 (upsert)
-export const inspectionItems = pgTable(
-  'inspection_items',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    sessionId: uuid('session_id')
-      .references(() => inspectionSessions.id, { onDelete: 'cascade' })
-      .notNull(),
-    foiId: uuid('foi_id')
-      .references(() => fulfillmentOrderItems.id, { onDelete: 'cascade' })
-      .notNull(),
-    inspectedQty: integer('inspected_qty').notNull().default(0),
-    approvedQty: integer('approved_qty').notNull().default(0),
-    rejectedQty: integer('rejected_qty').notNull().default(0),
-    status: varchar('status', { length: 16 }).notNull().default('pending'), // pending | inspecting | approved | rejected | partial
-    lastInspectedAt: timestamp('last_inspected_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    idxSession: index('idx_inspection_items_session').on(t.sessionId),
-    idxFoi: index('idx_inspection_items_foi').on(t.foiId),
-    uqSessionFoi: unique('uq_inspection_items_session_foi').on(t.sessionId, t.foiId),
-  }),
-);
 
 // 검수 이슈 (불량/수량불일치 등). FOI 단위 누적 기록
 export const inspectionIssues = pgTable(
@@ -2120,7 +2097,8 @@ export const inspectionIssues = pgTable(
     foiId: uuid('foi_id')
       .references(() => fulfillmentOrderItems.id, { onDelete: 'cascade' })
       .notNull(),
-    sessionId: uuid('session_id').references(() => inspectionSessions.id, { onDelete: 'set null' }),
+    // 구 sessionId(→inspection_sessions, 폐기) → 박스 참조.
+    shipmentId: uuid('shipment_id').references(() => shipments.id, { onDelete: 'set null' }),
     type: varchar('type', { length: 32 }).notNull(), // quantity_mismatch | quality_issue | damage | wrong_item | other
     severity: varchar('severity', { length: 16 }).notNull(), // minor | major | critical
     description: text('description').notNull().default(''),
@@ -2133,7 +2111,7 @@ export const inspectionIssues = pgTable(
   },
   (t) => ({
     idxFoi: index('idx_inspection_issues_foi').on(t.foiId),
-    idxSession: index('idx_inspection_issues_session').on(t.sessionId),
+    idxShipment: index('idx_inspection_issues_shipment').on(t.shipmentId),
   }),
 );
 
@@ -2198,30 +2176,28 @@ export const invoices = pgTable(
   'invoices',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    fulfillmentOrderId: uuid('fulfillment_order_id')
-      .references(() => fulfillmentOrders.id, { onDelete: 'cascade' })
-      .notNull(),
-    invoiceNumber: varchar('invoice_number', { length: 128 }).notNull().unique(),
-    carrierCode: varchar('carrier_code', { length: 32 }),
+    // 운송장번호 = 택배사 API 발급 번호 (구 invoiceNumber).
+    trackingNo: varchar('tracking_no', { length: 128 }).notNull().unique(),
+    // 구 carrierCode(varchar) → carrierEnum.
+    carrier: carrierEnum('carrier'),
     issueMethod: invoiceMethodEnum('issue_method').notNull(),
-    // 기술부채: 컬럼명은 goodsflow 시절 명명이지만 실제로는 모든 외부 배송 provider(goodsflow/hanjin)의
-    // external service id 공용 저장소. rename 은 expand-contract 3 PR 비용이라 보류 (ADR-0005 §5).
-    goodsflowServiceId: varchar('goodsflow_service_id', { length: 255 }),
+    // 구 goodsflowServiceId — goodsflow/hanjin 공용 외부 service id.
+    externalServiceId: varchar('external_service_id', { length: 255 }),
+    // 선발급(미리 출력) 추적용 — 발급 시점의 FO.
+    issuedForFulfillmentOrderId: uuid('issued_for_fulfillment_order_id').references(() => fulfillmentOrders.id, { onDelete: 'cascade' }).notNull(),
+    // 박스 open(송장 스캔) 시 세팅. 선발급 동안 null. void 된 송장도 보존(이력).
+    shipmentId: uuid('shipment_id').references(() => shipments.id, { onDelete: 'set null' }),
     status: invoiceStatusEnum('status').notNull().default('issued'),
     issuedAt: timestamp('issued_at', { withTimezone: true }).notNull().defaultNow(),
-    printedAt: timestamp('printed_at', { withTimezone: true }),
-    shippedAt: timestamp('shipped_at', { withTimezone: true }),
+    voidedAt: timestamp('voided_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    idxFulfillmentOrder: index('idx_invoices_fo').on(t.fulfillmentOrderId),
-    idxInvoiceNumber: index('idx_invoices_number').on(t.invoiceNumber),
+    idxIssuedForFo: index('idx_invoices_issued_for_fo').on(t.issuedForFulfillmentOrderId),
+    idxTrackingNo: index('idx_invoices_tracking_no').on(t.trackingNo),
     idxStatus: index('idx_invoices_status').on(t.status),
-    // FO 당 활성(미취소) invoice 1개 보장 — 동시 발행 race 의 DB 레벨 방어선.
-    // canceled 는 제외하므로 취소 후 재발행이 가능하다.
-    uqActivePerFo: uniqueIndex('uq_invoices_fo_active')
-      .on(t.fulfillmentOrderId)
-      .where(sql`${t.status} <> 'canceled'`),
+    idxShipment: index('idx_invoices_shipment').on(t.shipmentId),
+    uqActivePerShipment: uniqueIndex('uq_invoices_shipment_active').on(t.shipmentId).where(sql`${t.status} <> 'voided'`),
   }),
 );
 
@@ -2263,12 +2239,12 @@ export const wmsTables = {
   stockReservations,
   fulfillmentOrders,
   fulfillmentOrderCreationBacklogs,
-  fulfillmentOrderLines,
   outboundTasks,
   outboundTaskOrders,
   outboundTaskItems,
   outboundTaskLines,
   shipments,
+  shipmentLines,
   shipmentTracking,
   returns,
   returnItems,
@@ -2299,8 +2275,6 @@ export const wmsTables = {
   productSkuMappingItems,
   productSkuMappingSnapshots,
   fulfillmentOrderItems,
-  inspectionSessions,
-  inspectionItems,
   inspectionIssues,
   outboundBatches,
   fulfillmentOrderBatches,
@@ -2401,7 +2375,6 @@ export const skusRelations = relations(skus, ({ one, many }) => ({
   stockLedgers: many(stockLedgers),
   stockReservations: many(stockReservations),
   // Order relations
-  fulfillmentOrderLines: many(fulfillmentOrderLines),
   fulfillmentOrderItems: many(fulfillmentOrderItems),
   outboundTaskItems: many(outboundTaskItems),
   outboundTaskLines: many(outboundTaskLines),
@@ -2696,7 +2669,6 @@ export const fulfillmentOrdersRelations = relations(fulfillmentOrders, ({ one, m
     fields: [fulfillmentOrders.batchId],
     references: [outboundBatches.id],
   }),
-  lines: many(fulfillmentOrderLines),
   items: many(fulfillmentOrderItems),
   creationBacklogs: many(fulfillmentOrderCreationBacklogs),
   shipments: many(shipments),
@@ -2712,17 +2684,6 @@ export const fulfillmentOrderCreationBacklogsRelations = relations(fulfillmentOr
   fulfillmentOrder: one(fulfillmentOrders, {
     fields: [fulfillmentOrderCreationBacklogs.fulfillmentOrderId],
     references: [fulfillmentOrders.id],
-  }),
-}));
-
-export const fulfillmentOrderLinesRelations = relations(fulfillmentOrderLines, ({ one }) => ({
-  fulfillmentOrder: one(fulfillmentOrders, {
-    fields: [fulfillmentOrderLines.fulfillmentOrderId],
-    references: [fulfillmentOrders.id],
-  }),
-  sku: one(skus, {
-    fields: [fulfillmentOrderLines.skuId],
-    references: [skus.id],
   }),
 }));
 
@@ -2817,8 +2778,12 @@ export const fulfillmentOrderBatchesRelations = relations(fulfillmentOrderBatche
 // Shipment Relations
 export const shipmentsRelations = relations(shipments, ({ one, many }) => ({
   fulfillmentOrder: one(fulfillmentOrders, {
-    fields: [shipments.fulfillmentOrderId],
+    fields: [shipments.openedForFulfillmentOrderId],
     references: [fulfillmentOrders.id],
+  }),
+  warehouse: one(warehouses, {
+    fields: [shipments.warehouseId],
+    references: [warehouses.id],
   }),
   shipmentTracking: many(shipmentTracking),
   returns: many(returns),
@@ -2845,8 +2810,12 @@ export const returnsRelations = relations(returns, ({ one }) => ({
 // Invoice Relations
 export const invoicesRelations = relations(invoices, ({ one }) => ({
   fulfillmentOrder: one(fulfillmentOrders, {
-    fields: [invoices.fulfillmentOrderId],
+    fields: [invoices.issuedForFulfillmentOrderId],
     references: [fulfillmentOrders.id],
+  }),
+  shipment: one(shipments, {
+    fields: [invoices.shipmentId],
+    references: [shipments.id],
   }),
 }));
 
@@ -3126,7 +3095,6 @@ export const wmsRelations = {
   // Fulfillment Order Relations
   fulfillmentOrdersRelations,
   fulfillmentOrderCreationBacklogsRelations,
-  fulfillmentOrderLinesRelations,
   fulfillmentOrderItemsRelations,
 
   // Outbound Relations
@@ -3301,9 +3269,6 @@ export type NewFulfillmentOrder = InferInsertModel<typeof fulfillmentOrders>;
 export type FulfillmentOrderCreationBacklog = InferSelectModel<typeof fulfillmentOrderCreationBacklogs>;
 export type NewFulfillmentOrderCreationBacklog = InferInsertModel<typeof fulfillmentOrderCreationBacklogs>;
 
-export type FulfillmentOrderLine = InferSelectModel<typeof fulfillmentOrderLines>;
-export type NewFulfillmentOrderLine = InferInsertModel<typeof fulfillmentOrderLines>;
-
 export type FulfillmentOrderItem = InferSelectModel<typeof fulfillmentOrderItems>;
 export type NewFulfillmentOrderItem = InferInsertModel<typeof fulfillmentOrderItems>;
 
@@ -3329,6 +3294,9 @@ export type NewFulfillmentOrderBatch = InferInsertModel<typeof fulfillmentOrderB
 // Shipment Types
 export type Shipment = InferSelectModel<typeof shipments>;
 export type NewShipment = InferInsertModel<typeof shipments>;
+
+export type ShipmentLine = InferSelectModel<typeof shipmentLines>;
+export type NewShipmentLine = InferInsertModel<typeof shipmentLines>;
 
 export type ShipmentTracking = InferSelectModel<typeof shipmentTracking>;
 export type NewShipmentTracking = InferInsertModel<typeof shipmentTracking>;

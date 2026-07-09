@@ -10,6 +10,7 @@ import React, { useState } from "react"
 import { useTranslations } from "next-intl"
 import OptionSelect from "./option-select"
 import SelectedItemRow from "./selected-item-row"
+import { RestockNotice, pickEarliestRestock } from "./restock-notice"
 import { SelectedItem } from "./types"
 
 type MobileActionsProps = {
@@ -86,16 +87,22 @@ const MobileActions: React.FC<MobileActionsProps> = ({
             </Button>
           ) : ( ... )} */}
 
-          {/* 재입고 알림기능추가되면 품절버튼 삭제 */}
+          {/* 품절 시: 입고예정 있으면 재입고 안내, 없으면 품절 버튼 */}
           {isSimple && !inStock ? (
-            <Button
-              variant="default"
-              disabled
-              className="h-12 w-full cursor-pointer text-base font-medium"
-              data-testid="sold-out-button"
-            >
-              {t("soldOut")}
-            </Button>
+            <div className="w-full">
+              {pickEarliestRestock(selectedItems.map((i) => i.variant)) ? (
+                <RestockNotice variants={selectedItems.map((i) => i.variant)} />
+              ) : (
+                <Button
+                  variant="default"
+                  disabled
+                  className="h-12 w-full cursor-pointer text-base font-medium"
+                  data-testid="sold-out-button"
+                >
+                  {t("soldOut")}
+                </Button>
+              )}
+            </div>
           ) : (
             <>
               <Button
@@ -207,16 +214,22 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                 </Button>
               ) : ( ... )} */}
 
-              {/* 재입고 알림기능추가되면 품절버튼 삭제 */}
+              {/* 품절 시: 입고예정 있으면 재입고 안내, 없으면 품절 버튼 */}
               {!inStock && selectedItems.length > 0 ? (
-                <Button
-                  variant="default"
-                  disabled
-                  className="h-12 w-full cursor-pointer text-base font-medium"
-                  data-testid="sold-out-button"
-                >
-                  {t("soldOut")}
-                </Button>
+                <div className="w-full">
+                  {pickEarliestRestock(selectedItems.map((i) => i.variant)) ? (
+                    <RestockNotice variants={selectedItems.map((i) => i.variant)} />
+                  ) : (
+                    <Button
+                      variant="default"
+                      disabled
+                      className="h-12 w-full cursor-pointer text-base font-medium"
+                      data-testid="sold-out-button"
+                    >
+                      {t("soldOut")}
+                    </Button>
+                  )}
+                </div>
               ) : (
                 <>
                   <Button

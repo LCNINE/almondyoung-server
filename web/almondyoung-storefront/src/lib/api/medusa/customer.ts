@@ -160,7 +160,8 @@ export const addCustomerAddress = async (
       revalidateTag(customerCacheTag)
       return { success: true, error: null }
     })
-    .catch((err) => {
+    .catch(async (err) => {
+      await handleMedusaAuthError(err)
       return { success: false, error: err.toString() }
     })
 }
@@ -186,7 +187,8 @@ export const createCustomerShippingAddress = async (
       revalidateTag(customerCacheTag)
       return { success: true, error: null }
     })
-    .catch((err) => {
+    .catch(async (err) => {
+      await handleMedusaAuthError(err)
       return { success: false, error: err.toString() }
     })
 }
@@ -205,7 +207,8 @@ export const deleteCustomerAddress = async (
       revalidateTag(customerCacheTag)
       return { success: true, error: null }
     })
-    .catch((err) => {
+    .catch(async (err) => {
+      await handleMedusaAuthError(err)
       return { success: false, error: err.toString() }
     })
 }
@@ -260,7 +263,8 @@ export const setDefaultShippingAddress = async (
       revalidateTag(customerCacheTag)
       return { success: true, error: null }
     })
-    .catch((err) => {
+    .catch(async (err) => {
+      await handleMedusaAuthError(err)
       return { success: false, error: err.toString() }
     })
 }
@@ -280,7 +284,8 @@ export const updateCustomerShippingAddress = async (
       revalidateTag(customerCacheTag)
       return { success: true, error: null }
     })
-    .catch((err) => {
+    .catch(async (err) => {
+      await handleMedusaAuthError(err)
       return { success: false, error: err.toString() }
     })
 }

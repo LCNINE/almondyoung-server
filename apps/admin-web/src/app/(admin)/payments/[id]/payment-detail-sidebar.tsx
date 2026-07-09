@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { TOSS_BANKS } from '@/lib/constants/toss-banks';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -43,7 +44,7 @@ function PaymentMethodInfoContent({ intentId }: { intentId: string }) {
         <div className="space-y-2 text-sm">
           <div className="flex justify-between">
             <span className="text-muted-foreground">유형</span>
-            <PaymentMethodTypeCell value={pm.type} />
+            <PaymentMethodTypeCell value={pm.type} tossVirtualAccount={data.tossVirtualAccount} />
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">표시명</span>
@@ -79,6 +80,14 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
   const [refundAmount, setRefundAmount] = useState<number | ''>('');
   const [refundReasonCode, setRefundReasonCode] = useState('');
   const [refundReasonMessage, setRefundReasonMessage] = useState('');
+  // 무통장(가상계좌) 환불은 토스에 환불받을 계좌를 넘겨야 자동 송금된다.
+  const [refundBank, setRefundBank] = useState('');
+  const [refundAccountNumber, setRefundAccountNumber] = useState('');
+  const [refundHolderName, setRefundHolderName] = useState('');
+
+  const isBankTransfer = data.paymentMethod?.type === 'BANK_TRANSFER';
+  // 무통장 환불은 환불계좌 3필드가 모두 있어야 자동 처리 가능.
+  const bankRefundReady = !isBankTransfer || (!!refundBank && !!refundAccountNumber && !!refundHolderName);
 
   const canCapture = data.status === 'AUTHORIZED';
   // AWAITING_DEPOSIT(무통장 입금대기) 포함 — 미입금 건을 입금확인 전에 거절/취소할 수 있어야 한다.
@@ -119,14 +128,29 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
     }
   };
 
+  const resetRefundForm = () => {
+    setRefundOpen(false);
+    setRefundChargeId('');
+    setRefundAmount('');
+    setRefundReasonCode('');
+    setRefundReasonMessage('');
+    setRefundBank('');
+    setRefundAccountNumber('');
+    setRefundHolderName('');
+  };
+
   const handleRefund = async () => {
-    if (!refundChargeId || !refundAmount) return;
+    if (!refundChargeId || !refundAmount || !bankRefundReady) return;
     try {
       const result = await refund.mutateAsync({
         chargeId: refundChargeId,
         amount: refundAmount as number,
         reasonCode: refundReasonCode || undefined,
         reasonMessage: refundReasonMessage || undefined,
+        // 무통장 환불계좌 (있으면 토스가 해당 계좌로 자동 송금)
+        refundReceiveAccount: isBankTransfer
+          ? { bank: refundBank, accountNumber: refundAccountNumber.replace(/[^0-9]/g, ''), holderName: refundHolderName }
+          : undefined,
       });
       if (result.status === 'FAILED') {
         toast.error(`환불 실패: ${result.reasonMessage ?? result.reasonCode ?? 'PG 오류'}`);
@@ -134,19 +158,11 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
       }
       if (result.status === 'PENDING') {
         toast.info('환불 대기 중: 무통장 입금 환불은 수동 송금이 필요합니다. 환불 내역에서 완료 처리해 주세요.');
-        setRefundOpen(false);
-        setRefundChargeId('');
-        setRefundAmount('');
-        setRefundReasonCode('');
-        setRefundReasonMessage('');
+        resetRefundForm();
         return;
       }
       toast.success('환불 처리 완료');
-      setRefundOpen(false);
-      setRefundChargeId('');
-      setRefundAmount('');
-      setRefundReasonCode('');
-      setRefundReasonMessage('');
+      resetRefundForm();
     } catch (e) {
       toast.error(errMessage(e, '환불 처리 실패'));
     }
@@ -311,6 +327,45 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
                 placeholder="관리자 환불 처리"
               />
             </div>
+            {isBankTransfer && (
+              <div className="space-y-3 rounded-md border border-amber-200 bg-amber-50 p-3">
+                <p className="text-xs text-amber-700">
+                  무통장(가상계좌) 환불 — 환불받을 계좌로 토스가 자동 송금합니다. 예금주명이 정확해야 하며(실명 검증), 약 2영업일 소요됩니다.
+                </p>
+                <div className="space-y-2">
+                  <Label>환불 은행</Label>
+                  <select
+                    className="w-full border rounded p-2 text-sm"
+                    value={refundBank}
+                    onChange={(e) => setRefundBank(e.target.value)}
+                  >
+                    <option value="">은행 선택</option>
+                    {TOSS_BANKS.map((b) => (
+                      <option key={b.code} value={b.code}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label>환불 계좌번호</Label>
+                  <Input
+                    value={refundAccountNumber}
+                    onChange={(e) => setRefundAccountNumber(e.target.value)}
+                    placeholder="숫자만 입력"
+                    inputMode="numeric"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>예금주명</Label>
+                  <Input
+                    value={refundHolderName}
+                    onChange={(e) => setRefundHolderName(e.target.value)}
+                    placeholder="예금주명"
+                  />
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setRefundOpen(false)}>
@@ -318,7 +373,7 @@ function ActionButtonsContent({ intentId }: { intentId: string }) {
             </Button>
             <Button
               onClick={handleRefund}
-              disabled={refund.isPending || !refundChargeId || !refundAmount}
+              disabled={refund.isPending || !refundChargeId || !refundAmount || !bankRefundReady}
             >
               {refund.isPending ? '처리 중...' : '환불 실행'}
             </Button>

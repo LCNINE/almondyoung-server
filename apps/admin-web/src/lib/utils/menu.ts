@@ -8,6 +8,7 @@ export interface MenuItem {
   children?: MenuItem[];
   isComingSoon?: boolean;
   path?: string;
+  requireRole?: string[];
 }
 
 export interface MainMenu {
@@ -42,6 +43,7 @@ export const mainMenus: MainMenu[] = [
             id: 'admin-accounts',
             title: '관리자 계정',
             path: '/users',
+            requireRole: ['master'],
           },
         ],
       },
@@ -217,6 +219,7 @@ export const mainMenus: MainMenu[] = [
         title: '등록',
         path: '/mall/product-registration',
       },
+      { id: 'product-drafts', title: '작성중인 상품', path: '/mall/my-drafts' },
       {
         id: 'product-category',
         title: '분류/카테고리',
@@ -516,6 +519,11 @@ export const mainMenus: MainMenu[] = [
         id: 'refund-list',
         title: '환불 내역',
         path: '/payments/refunds',
+      },
+      {
+        id: 'refund-request-list',
+        title: '환불 신청 관리',
+        path: '/payments/refund-requests',
       },
       {
         id: 'bank-transfer-list',

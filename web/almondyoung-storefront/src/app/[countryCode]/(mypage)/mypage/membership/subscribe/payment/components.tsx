@@ -43,6 +43,10 @@ import { z } from "zod"
 // 순수 UI용 타입 정의
 type SubscriptionType = "monthly" | "yearly" | null
 
+// 정기결제(CMS 자동이체) 일시 비활성화 스위치. CMS 재개 시 true 로 되돌리면 원복.
+// ponytail: 연간구독 선택 시 정기결제가 비활성화되던 로직을 항상 적용하는 단일 플래그.
+const RECURRING_ENABLED = false
+
 type MemberBenefitCommon = {
   id: string
   title: string
@@ -154,7 +158,7 @@ export function MembershipForm({
       existingSubType === "monthly" || existingSubType === "yearly"
         ? existingSubType
         : undefined,
-    billingMode: "recurring" as const,
+    billingMode: RECURRING_ENABLED ? ("recurring" as const) : ("one_time" as const),
     agreement: false,
   }
 
@@ -249,6 +253,8 @@ export function MembershipForm({
 
   const billingMode = form.watch("billingMode")
   const subscriptionType = form.watch("subscriptionType")
+  // 정기결제 비활성화 조건: 기능 스위치 OFF 이거나 연간 플랜(1회 결제만 지원).
+  const recurringDisabled = !RECURRING_ENABLED || subscriptionType === "yearly"
 
   // 무료체험은 정기결제(recurring)일 때만, 선택한 플랜의 trialDays 기준으로 안내한다.
   // (availableBenefits는 현재 비어 전달되므로 trialBenefits는 0이고, 플랜 trialDays가 실제 기준)
@@ -267,10 +273,10 @@ export function MembershipForm({
   }, [billingMode])
 
   useEffect(() => {
-    if (subscriptionType === "yearly") {
+    if (recurringDisabled) {
       form.setValue("billingMode", "one_time")
     }
-  }, [subscriptionType, form])
+  }, [recurringDisabled, form])
 
   function getSubmitButtonLabel() {
     if (!form.watch("agreement")) return "약관에 동의해주세요"
@@ -413,16 +419,16 @@ export function MembershipForm({
                       <div className="flex flex-col gap-2">
                         <button
                           type="button"
-                          disabled={subscriptionType === "yearly"}
+                          disabled={recurringDisabled}
                           className={cn(
                             "flex cursor-pointer flex-col rounded-md border-2 p-3 text-left",
-                            subscriptionType === "yearly"
+                            recurringDisabled
                               ? "cursor-not-allowed border-border bg-muted opacity-50"
                               : field.value === "recurring"
                                 ? "bg-primary/5 border-primary"
                                 : "bg-popover hover:bg-accent border-border"
                           )}
-                          onClick={() => subscriptionType !== "yearly" && field.onChange("recurring")}
+                          onClick={() => !recurringDisabled && field.onChange("recurring")}
                         >
                           <div className="flex items-center gap-3">
                             <Gift className="h-5 w-5 shrink-0 text-emerald-500" />
@@ -432,12 +438,12 @@ export function MembershipForm({
                                 {totalTrialDays > 0 ? `${totalTrialDays}일 무료 체험 후 ` : ""}등록하신 자동이체 수단으로 매월 결제
                               </p>
                             </div>
-                            {subscriptionType !== "yearly" && (
+                            {!recurringDisabled && (
                               <Badge className="ml-auto shrink-0 bg-emerald-500 text-white">추천</Badge>
                             )}
                           </div>
                         </button>
-                        {subscriptionType !== "yearly" && field.value === "recurring" && (
+                        {!recurringDisabled && field.value === "recurring" && (
                           <p className="rounded-md bg-amber-50 border border-amber-100 px-3 py-2 text-xs leading-relaxed text-amber-700">
                             {invoiceBillingEnabled ? (
                               <>가입 즉시 멤버십이 적용됩니다. 새 자동이체 계좌는 은행 확인(1~2영업일) 후 첫 결제가 출금되며, 확인이 거절되면 멤버십이 해지될 수 있습니다.</>
@@ -446,11 +452,15 @@ export function MembershipForm({
                             )}
                           </p>
                         )}
-                        {subscriptionType === "yearly" && (
+                        {subscriptionType === "yearly" ? (
                           <p className="text-muted-foreground text-xs px-1">
                             연간 플랜은 1회 결제만 지원합니다.
                           </p>
-                        )}
+                        ) : !RECURRING_ENABLED ? (
+                          <p className="text-muted-foreground text-xs px-1">
+                            현재 정기결제는 준비 중입니다. 한번만 결제로 이용해 주세요.
+                          </p>
+                        ) : null}
                         <button
                           type="button"
                           className={cn(

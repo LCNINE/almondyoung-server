@@ -443,7 +443,8 @@
       "cancelSuccessManual": "注文はキャンセルされました。返金はカスタマーサポートで確認後に処理されます。",
       "cancelError": "キャンセル処理中にエラーが発生しました。",
       "contactCs": "カスタマーサポートへ問い合わせ",
-      "bankTransferCancelGuide": "銀行振込注文のキャンセルはカスタマーサポートへお問い合わせください。",
+      "bankTransferCancelGuide": "銀行振込注文のキャンセル・返金は、「返金申請」ボタンからお申し込みください。",
+      "bankTransferRefundNotice": "入金前の未入金注文は、入金期限（7日）を過ぎると自動的にキャンセルされます。入金後のキャンセル・返金は「返金申請」で返金口座（銀行・口座番号・口座名義）を入力してください。管理者確認後、その口座へ返金され（約2営業日）、口座名義が正確である必要があります。",
       "download": "ダウンロード"
     },
     "delivery": {
@@ -559,6 +560,14 @@
         "failed": "返金確認が必要"
       }
     },
+    "cashReceipt": {
+      "sectionTitle": "現金領収書",
+      "typeLabel": "種類",
+      "typeIncome": "所得控除用",
+      "typeExpense": "支出証憑用",
+      "issueNumber": "発行番号",
+      "viewReceipt": "領収書を見る"
+    },
     "cancelDialog": {
       "reasonLabel": "キャンセル理由",
       "otherPlaceholder": "キャンセル理由を入力してください（最大500文字）",
@@ -569,6 +578,37 @@
         "DELAY": "配送遅延",
         "OTHER": "その他"
       }
+    },
+    "refundRequest": {
+      "trigger": "返金申請",
+      "title": "返金口座の申請",
+      "description": "返金を受け取る口座情報を入力してください。管理者確認後、入力された口座へ返金されます（約2営業日）。口座名義が正確である必要があります。",
+      "bank": "銀行",
+      "bankPlaceholder": "銀行を選択",
+      "accountNumber": "口座番号",
+      "accountNumberPlaceholder": "数字のみ入力",
+      "holderName": "口座名義",
+      "holderNamePlaceholder": "口座名義",
+      "reason": "返金理由（任意）",
+      "reasonPlaceholder": "返金理由を入力してください",
+      "cancel": "キャンセル",
+      "submit": "返金申請",
+      "submitting": "申請中...",
+      "success": "返金申請を受け付けました。確認後に処理されます。",
+      "error": "返金申請に失敗しました。もう一度お試しください。",
+      "requested": "返金申請済み · 処理待ち",
+      "refunded": "返金完了"
+    },
+    "depositAccount": {
+      "title": "入金口座のご案内",
+      "bank": "銀行",
+      "accountNumber": "口座番号",
+      "copy": "コピー",
+      "copied": "口座番号をコピーしました。",
+      "holder": "口座名義",
+      "amount": "入金金額",
+      "dueDate": "入金期限",
+      "notice": "下記の口座へご入金ください。振込名義が異なっても問題ありません。入金後の自動確認まで時間がかかる場合があり、確認後に配送されます。"
     }
   },
   "membership": {

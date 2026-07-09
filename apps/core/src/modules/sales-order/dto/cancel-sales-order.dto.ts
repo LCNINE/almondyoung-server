@@ -159,3 +159,20 @@ export class CancelSalesOrderDto {
   @IsOptional()
   metadata?: Record<string, unknown>;
 }
+
+export class CancelByIntentDto {
+  @ApiProperty({ description: '취소할 주문의 Wallet 결제 intent ID' })
+  @IsString()
+  intentId: string;
+
+  @ApiProperty({ description: '취소 사유 코드', required: false })
+  @IsString()
+  @IsOptional()
+  reasonCode?: string;
+
+  @ApiProperty({ description: '환불 금액(감사 기록용)', required: false })
+  @IsInt()
+  @Min(0)
+  @IsOptional()
+  amount?: number;
+}

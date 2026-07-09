@@ -27,8 +27,8 @@ export class InvoiceController {
   constructor(private readonly invoiceService: InvoiceService) {}
 
   @Post()
-  @UsePipes(new ZodValidationPipe(IssueInvoiceSchema))
-  async issueInvoice(@Body() dto: z.infer<typeof IssueInvoiceSchema>) {
+  async issueInvoice(@Body(new ZodValidationPipe(IssueInvoiceSchema)) dto: z.infer<typeof IssueInvoiceSchema>) {
+    // 선발급-only: 박스는 송장 스캔(openBoxByScan) 시점에 lazy 생성되므로 발급 작업자 캡처는 여기서 하지 않는다.
     const invoiceId = await this.invoiceService.issueInvoice(dto);
     return { invoiceId };
   }
@@ -42,12 +42,6 @@ export class InvoiceController {
   @UsePipes(new ZodValidationPipe(PrintInvoicesSchema))
   async printInvoices(@Body() dto: z.infer<typeof PrintInvoicesSchema>) {
     return this.invoiceService.printInvoices(dto.invoiceIds);
-  }
-
-  @Put(':id/ship')
-  async markAsShipped(@Param('id') invoiceId: string) {
-    await this.invoiceService.markAsShipped(invoiceId);
-    return { message: 'Invoice marked as shipped successfully' };
   }
 
   @Put(':id/cancel')

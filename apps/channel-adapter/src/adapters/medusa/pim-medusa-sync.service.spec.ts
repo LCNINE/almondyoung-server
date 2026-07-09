@@ -147,3 +147,77 @@ describe('PimMedusaSyncService.handleProductMasterDeleted', () => {
     expect(medusaClient.setProductToDraft).not.toHaveBeenCalled();
   });
 });
+
+describe('PimMedusaSyncService.syncPriceLists (replace semantics)', () => {
+  const OLD_GROUP = process.env.MEDUSA_MEMBERSHIP_GROUP_ID;
+
+  beforeAll(() => {
+    process.env.MEDUSA_MEMBERSHIP_GROUP_ID = 'cusgroup_membership';
+  });
+  afterAll(() => {
+    process.env.MEDUSA_MEMBERSHIP_GROUP_ID = OLD_GROUP;
+  });
+
+  function createService() {
+    const calls: string[] = [];
+    const medusaClient = {
+      ensurePriceList: jest.fn(async (payload: { name: string }) => {
+        if (payload.name === 'Membership Prices') return 'plist_membership';
+        return `plist_${payload.name.replace(/\s+/g, '_')}`;
+      }),
+      removeProductFromPriceList: jest.fn(async () => {
+        calls.push('remove');
+      }),
+      addPricesToPriceList: jest.fn(async () => {
+        calls.push('add');
+      }),
+    };
+    const mappingRepo = { findByPimMasterId: jest.fn(), update: jest.fn() };
+    const storefrontRevalidate = { revalidateProduct: jest.fn() };
+    const service = new PimMedusaSyncService(
+      medusaClient as any,
+      mappingRepo as any,
+      storefrontRevalidate as any,
+    );
+    return { service, medusaClient, calls };
+  }
+
+  it('removes the product from the membership list before adding new prices so a re-sync replaces stale duplicates', async () => {
+    const { service, medusaClient, calls } = createService();
+    const snapshot = {
+      variants: [{ id: 'pim-var-1', membershipPrice: 34000, tieredPrices: [] }],
+    };
+    const medusaVariants = [{ id: 'variant_m1', metadata: { pimVariantId: 'pim-var-1' } }];
+
+    await (service as any).syncPriceLists(snapshot, 'prod_1', medusaVariants);
+
+    expect(medusaClient.removeProductFromPriceList).toHaveBeenCalledWith('plist_membership', 'prod_1');
+    expect(medusaClient.addPricesToPriceList).toHaveBeenCalledWith('plist_membership', [
+      { amount: 34000, currency_code: 'krw', variant_id: 'variant_m1' },
+    ]);
+    expect(calls).toEqual(['remove', 'add']);
+  });
+
+  it('removes the product from each tier list before adding tier prices so tier duplicates are replaced too', async () => {
+    const { service, medusaClient, calls } = createService();
+    const snapshot = {
+      variants: [
+        {
+          id: 'pim-var-1',
+          membershipPrice: 0,
+          tieredPrices: [{ minQuantity: 5, price: 9000 }],
+        },
+      ],
+    };
+    const medusaVariants = [{ id: 'variant_m1', metadata: { pimVariantId: 'pim-var-1' } }];
+
+    await (service as any).syncPriceLists(snapshot, 'prod_1', medusaVariants);
+
+    const tierListId = 'plist_Tiered_Prices_-_Min_5';
+    expect(medusaClient.removeProductFromPriceList).toHaveBeenCalledWith(tierListId, 'prod_1');
+    expect(medusaClient.addPricesToPriceList).toHaveBeenCalledWith(tierListId, [
+      { amount: 9000, currency_code: 'krw', variant_id: 'variant_m1', min_quantity: 5 },
+    ]);
+    expect(calls).toEqual(['remove', 'add']);
+  });
+});

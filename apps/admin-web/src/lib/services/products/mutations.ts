@@ -42,6 +42,7 @@ import type {
   BulkUpdateDto,
   BulkDeleteDto,
   BulkRestoreDto,
+  BulkUpdatePolicyDto,
 } from '@/lib/types/dto/products';
 import type {
   BulkUpdateProductVariantDto,
@@ -914,6 +915,16 @@ export const useBulkRestoreMasters = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (dto: BulkRestoreDto) => products.bulk.restore(dto),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.masters });
+    },
+  });
+};
+
+export const useBulkUpdatePolicy = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: BulkUpdatePolicyDto) => products.bulk.policy(dto),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: productQueryKeys.masters });
     },

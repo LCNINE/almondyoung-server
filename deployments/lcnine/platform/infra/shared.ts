@@ -50,10 +50,13 @@ export function setup() {
     role: redpandaRole.name,
   });
 
-  // Docker Hub pull 필요 → public subnet에 둠. SG는 VPC CIDR 내부 ingress만 허용하므로
-  // 9092 포트가 공용 IP로 노출되지는 않음. EBS는 AZ 귀속이라 인스턴스도 동일 AZ 고정.
-  const redpandaSubnetId = vpc.nodes.publicSubnets.apply((s) => s[0].id);
-  const redpandaAz = vpc.nodes.publicSubnets.apply((s) => s[0].availabilityZone);
+  // private subnet 배치 — Docker Hub pull 은 NAT(fck-nat EIP) 경유. 퍼블릭 IPv4 는 존재만으로
+  // 월 $3.65 과금이라 제거 (원래 public subnet 이었던 유일한 이유가 이미지 pull). EBS는 AZ
+  // 귀속이라 인스턴스도 동일 AZ 고정 — privateSubnets[0] 과 publicSubnets[0] 은 같은 첫 번째
+  // AZ 라 기존 EBS 볼륨 위치와 일치. 배포 plan 에서 RedpandaData(EBS) 가 replace 로 뜨면
+  // AZ 불일치이므로 즉시 중단할 것 (데이터 유실).
+  const redpandaSubnetId = vpc.nodes.privateSubnets.apply((s) => s[0].id);
+  const redpandaAz = vpc.nodes.privateSubnets.apply((s) => s[0].availabilityZone);
 
   const redpandaEbs = new aws.ebs.Volume("RedpandaData", {
     availabilityZone: redpandaAz,
@@ -81,19 +84,28 @@ export function setup() {
     .readFileSync(path.join($cli.paths.root, "redpanda.cloud-init.sh"), "utf8")
     .replace(/__REDPANDA_ADVERTISE_DNS__/g, redpandaDns);
 
-  const redpandaInstance = new aws.ec2.Instance("Redpanda", {
-    ami: redpandaAmiId,
-    instanceType: "t4g.micro",
-    subnetId: redpandaSubnetId,
-    availabilityZone: redpandaAz,
-    vpcSecurityGroupIds: vpc.securityGroups,
-    associatePublicIpAddress: true,
-    iamInstanceProfile: redpandaInstanceProfile.name,
-    userData: redpandaUserData,
-    // AL2023 AMI 스냅샷이 30GB라 그 이하로 못 줄임.
-    rootBlockDevice: { volumeSize: 30, volumeType: "gp3", encrypted: true },
-    tags: { Name: `${$app.name}-${$app.stage}-redpanda` },
-  });
+  const redpandaInstance = new aws.ec2.Instance(
+    "Redpanda",
+    {
+      ami: redpandaAmiId,
+      instanceType: "t4g.micro",
+      subnetId: redpandaSubnetId,
+      availabilityZone: redpandaAz,
+      vpcSecurityGroupIds: vpc.securityGroups,
+      associatePublicIpAddress: false,
+      iamInstanceProfile: redpandaInstanceProfile.name,
+      userData: redpandaUserData,
+      // AL2023 AMI 스냅샷이 30GB라 그 이하로 못 줄임.
+      rootBlockDevice: { volumeSize: 30, volumeType: "gp3", encrypted: true },
+      tags: { Name: `${$app.name}-${$app.stage}-redpanda` },
+    },
+    {
+      // subnet 변경은 인스턴스 replace. 기본(create-before-delete)이면 EBS 가 옛 인스턴스에
+      // 붙어 있어 새 인스턴스의 VolumeAttachment 생성이 실패한다. 옛 것을 먼저 내려(EBS 자동
+      // 분리) 새 것을 만드는 순서로 강제 — 그 사이 Redpanda 다운타임은 outbox 재시도가 흡수.
+      deleteBeforeReplace: true,
+    },
+  );
 
   new aws.ec2.VolumeAttachment("RedpandaDataAttach", {
     deviceName: "/dev/sdf",
@@ -109,6 +121,32 @@ export function setup() {
       AWS_INSTANCE_IPV4: redpandaInstance.privateIp,
     },
   });
+
+  // ─── 공용 ECR(sst-asset) 이미지 정리 정책 ───
+  // sst-asset 은 부트스트랩이 만든 계정/리전 공용 리포로, 모든 SST 앱·스테이지의 컨테이너
+  // 이미지가 여기로 push 된다. 매 배포마다 직전 이미지가 untagged 로 남아 저장 비용이 무한
+  // 증가하므로 "untagged 14일 경과분 자동 만료" lifecycle 을 건다 (현재 참조 중인 tagged 는 보존).
+  // 공용 리소스라 dev/live 가 동시에 관리하면 서로 덮어써 충돌 → live 스테이지에서만 소유한다.
+  if (!isDev) {
+    new aws.ecr.LifecyclePolicy("SstAssetLifecycle", {
+      repository: "sst-asset",
+      policy: JSON.stringify({
+        rules: [
+          {
+            rulePriority: 1,
+            description: "Expire untagged images older than 14 days",
+            selection: {
+              tagStatus: "untagged",
+              countType: "sinceImagePushed",
+              countUnit: "days",
+              countNumber: 14,
+            },
+            action: { type: "expire" },
+          },
+        ],
+      }),
+    });
+  }
 
   return {
     isDev,

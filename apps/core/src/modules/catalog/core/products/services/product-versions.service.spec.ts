@@ -390,6 +390,40 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     expect(emit).toHaveBeenNthCalledWith(1, draftVersion, previousActiveVersion, 'published', tx);
     expect(emit).toHaveBeenNthCalledWith(2, inactiveVersion, previousActiveVersion, 'rollback', tx);
   });
+
+  it('updateExposurePolicy: 제공된 플래그만 set 하고 이벤트를 published로 1회 발행한다', async () => {
+    const { service, outboxPublisher, projectionSnapshotAssembler } = makeService();
+    projectionSnapshotAssembler.assembleActiveVersionSnapshot.mockResolvedValue({
+      snapshot: { name: 'N' },
+      categoryIds: [],
+      primaryCategoryId: null,
+    });
+    jest
+      .spyOn(service as any, 'getActiveVersion')
+      .mockResolvedValue({ id: 'v1', masterId: 'm1', name: 'N' });
+
+    const where = jest.fn().mockResolvedValue(undefined);
+    const set = jest.fn().mockReturnValue({ where });
+    const tx = { update: jest.fn().mockReturnValue({ set }) } as any;
+
+    await service.updateExposurePolicy(
+      'm1',
+      { isVisibleToMembersOnly: true, hideMembershipPriceForNonMembers: false },
+      tx,
+    );
+
+    const setArg = set.mock.calls[0][0];
+    expect(setArg).toMatchObject({
+      isVisibleToMembersOnly: true,
+      hideMembershipPriceForNonMembers: false,
+      isMembershipOnly: false, // deprecated 컬럼 미러
+    });
+    expect(setArg.isOverseas).toBeUndefined(); // 미제공 플래그는 건드리지 않음
+    expect(outboxPublisher.saveEvent).toHaveBeenCalledTimes(1);
+    const [event, txArg] = outboxPublisher.saveEvent.mock.calls[0];
+    expect(event.payload.changeReason).toBe('published');
+    expect(txArg).toBe(tx);
+  });
 });
 
 describe('ProductVersionsService copy mappings', () => {
@@ -806,5 +840,60 @@ describe('ProductVersionsService deleteDraftVersion purchase constraint cleanup'
     expect(tx.state.purchaseConstraints).toEqual([
       { id: 'constraint-id', requiresMembership: true, lifetimeQuantityLimit: 3 },
     ]);
+  });
+});
+
+describe('ProductVersionsService.getMyDraftVersions', () => {
+  function makeBareService() {
+    return new ProductVersionsService(
+      { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+  }
+
+  it('returns caller drafts with a count-based total (not the page length)', async () => {
+    const rows = [
+      {
+        masterId: 'm1',
+        versionId: 'v1',
+        name: 'A',
+        thumbnail: null,
+        brand: null,
+        productType: 'regular_sale',
+        createdAt: new Date('2026-07-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-07-06T00:00:00.000Z'),
+      },
+    ];
+    const tx: any = {
+      select: jest.fn(() => {
+        const builder: any = {
+          from: () => builder,
+          innerJoin: () => builder,
+          leftJoin: () => builder,
+          where: () => builder,
+          orderBy: () => builder,
+          limit: () => builder,
+          offset: () => Promise.resolve(rows),
+          // count 쿼리는 .where() 결과를 await → then 으로 [{ value }] 반환
+          then: (resolve: any, reject: any) => Promise.resolve([{ value: 7 }]).then(resolve, reject),
+        };
+        return builder;
+      }),
+    };
+
+    const service = makeBareService();
+    const result = await service.getMyDraftVersions('user-1', { page: 2, limit: 10 }, tx);
+
+    expect(result.total).toBe(7);
+    expect(result.page).toBe(2);
+    expect(result.limit).toBe(10);
+    expect(result.data).toEqual(rows);
   });
 });

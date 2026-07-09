@@ -199,66 +199,6 @@ export class FulfillmentOrderTransactionService {
     }, tx);
   }
 
-  async completeFulfillmentOrder(fulfillmentOrderId: string, tx?: DbTx): Promise<void> {
-    return this.dbService.run(async (trx) => {
-      const foRows = await trx
-        .select({ id: wmsTables.fulfillmentOrders.id, status: wmsTables.fulfillmentOrders.status })
-        .from(wmsTables.fulfillmentOrders)
-        .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId))
-        .limit(1);
-      const fulfillmentOrder = foRows[0];
-
-      if (!fulfillmentOrder) {
-        throw new BadRequestException(`Fulfillment order ${fulfillmentOrderId} not found`);
-      }
-
-      if (fulfillmentOrder.status === 'completed') return;
-
-      await trx
-        .update(wmsTables.fulfillmentOrders)
-        .set({ status: 'completed', updatedAt: new Date(), totalReservedQty: 0 })
-        .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
-
-      await this.reservationLifecycle.handleFulfillmentOrderStatusChange(
-        fulfillmentOrderId,
-        fulfillmentOrder.status,
-        'completed',
-        trx,
-      );
-
-      this.logger.log(`Completed FO ${fulfillmentOrderId} and released reservations`);
-    }, tx);
-  }
-
-  async shipFulfillmentOrder(fulfillmentOrderId: string, tx?: DbTx): Promise<void> {
-    return this.dbService.run(async (trx) => {
-      const foRows = await trx
-        .select({ id: wmsTables.fulfillmentOrders.id, status: wmsTables.fulfillmentOrders.status })
-        .from(wmsTables.fulfillmentOrders)
-        .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId))
-        .limit(1);
-      const fulfillmentOrder = foRows[0];
-
-      if (!fulfillmentOrder) {
-        throw new BadRequestException(`Fulfillment order ${fulfillmentOrderId} not found`);
-      }
-
-      await trx
-        .update(wmsTables.fulfillmentOrders)
-        .set({ status: 'shipped', shippedAt: new Date(), totalReservedQty: 0 })
-        .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
-
-      await this.reservationLifecycle.handleFulfillmentOrderStatusChange(
-        fulfillmentOrderId,
-        fulfillmentOrder.status,
-        'shipped',
-        trx,
-      );
-
-      this.logger.log(`Shipped FO ${fulfillmentOrderId} and released reservations`);
-    }, tx);
-  }
-
   async updateFulfillmentOrderPriority(
     fulfillmentOrderId: string,
     priority: 'normal' | 'high' | 'urgent',

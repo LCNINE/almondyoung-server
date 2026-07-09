@@ -6,6 +6,8 @@ import { SESSION_COOKIE_NAMES, getBackendAuthCookie } from '@/lib/auth/session-c
 import { safeReturnUrl } from '@/lib/return-url';
 import { BillingChangeForm } from './billing-change-form';
 
+export const dynamic = 'force-dynamic';
+
 interface Props {
   searchParams: Promise<{
     returnUrl?: string;

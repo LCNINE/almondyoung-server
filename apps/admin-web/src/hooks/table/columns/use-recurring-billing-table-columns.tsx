@@ -2,10 +2,12 @@
 
 import { createColumnHelper } from '@tanstack/react-table';
 import { useMemo } from 'react';
+import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { AdminRecurringBillingRow } from '@/lib/types/dto/wallet';
 import { cmsFailureReason } from '@/lib/utils/cms-failure-reason';
+import { UserInfo } from '@/hooks/use-user-names';
 
 const columnHelper = createColumnHelper<AdminRecurringBillingRow>();
 
@@ -79,31 +81,36 @@ type UseColumnsOptions = {
   onPollMember?: (row: AdminRecurringBillingRow) => void;
   onPollWithdrawal?: (row: AdminRecurringBillingRow) => void;
   view?: string;
+  userMap?: Record<string, UserInfo>;
 };
 
 export const useRecurringBillingTableColumns = ({
   onDetail,
   onPollMember,
   onPollWithdrawal,
+  userMap = {},
 }: UseColumnsOptions = { onDetail: () => {} }) => {
   return useMemo(
     () => [
       columnHelper.accessor('userId', {
-        header: '고객 ID',
+        header: '고객',
         cell: ({ getValue }) => {
           const id = getValue();
-          const short = id ? `${id.slice(0, 8)}...` : '-';
+          if (!id) return <span className="text-muted-foreground text-sm">-</span>;
+          const user = userMap[id];
           return (
-            <div className="flex items-center gap-1">
-              <span className="font-mono text-xs">{short}</span>
-              <button
-                type="button"
-                className="text-muted-foreground hover:text-foreground text-xs"
-                onClick={() => navigator.clipboard.writeText(id ?? '')}
-                title="복사"
+            <div className="flex flex-col">
+              <Link
+                href={`/customer-window/${id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-primary text-xs hover:underline"
               >
-                복사
-              </button>
+                {user?.loginId || `${id.slice(0, 8)}...`}
+              </Link>
+              {user?.username && (
+                <span className="text-muted-foreground text-xs">{user.username}</span>
+              )}
             </div>
           );
         },
@@ -228,6 +235,6 @@ export const useRecurringBillingTableColumns = ({
         },
       }),
     ],
-    [onDetail, onPollMember, onPollWithdrawal],
+    [onDetail, onPollMember, onPollWithdrawal, userMap],
   );
 };

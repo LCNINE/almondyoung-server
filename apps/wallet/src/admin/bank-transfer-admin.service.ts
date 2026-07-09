@@ -4,6 +4,7 @@ import { PaginatedResponseDto } from '@app/shared';
 import { and, count, desc, eq, inArray, sql } from 'drizzle-orm';
 import { WalletSchema, charges, paymentIntents, paymentMethods } from '../schema';
 import { ChargesService } from '../charges/charges.service';
+import { CashReceiptsService } from '../cash-receipts/cash-receipts.service';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
 import {
   GATEWAY_AGGREGATE_TYPE,
@@ -19,6 +20,7 @@ export class BankTransferAdminService {
   constructor(
     private readonly dbService: DbService<WalletSchema>,
     private readonly chargesService: ChargesService,
+    private readonly cashReceiptsService: CashReceiptsService,
     private readonly stateTransitionService: StateTransitionService,
   ) {}
 
@@ -54,6 +56,8 @@ export class BankTransferAdminService {
         bankName: sql<string | null>`${charges.responsePayload}->'nextAction'->>'bankName'`,
         accountNumber: sql<string | null>`${charges.responsePayload}->'nextAction'->>'accountNumber'`,
         accountHolder: sql<string | null>`${charges.responsePayload}->'nextAction'->>'accountHolder'`,
+        // 토스 가상계좌 발급 건에만 paymentKey 가 스냅샷됨 (구 직접입금 건과 구분)
+        paymentKey: sql<string | null>`${charges.responsePayload}->>'paymentKey'`,
       })
       .from(paymentIntents)
       .innerJoin(paymentMethods, eq(paymentIntents.paymentMethodId, paymentMethods.id))
@@ -83,6 +87,7 @@ export class BankTransferAdminService {
       bankName: r.bankName || null,
       accountNumber: r.accountNumber || null,
       accountHolder: r.accountHolder || null,
+      tossVirtualAccount: !!r.paymentKey,
     }));
 
     return { data, total, page, limit };
@@ -177,5 +182,20 @@ export class BankTransferAdminService {
     });
 
     this.logger.log(`confirmDeposit succeeded: intentId=${intentId}`);
+
+    // 결제완료(입금확인) 시점에 현금영수증 자동 발급 — confirm 단계에서 고객이 신청한 경우.
+    // best-effort: 발급 실패가 입금확인을 되돌리지 않는다 (결제는 이미 완료됨).
+    const cashReceipt = intent.metadata?.cashReceipt as
+      | { type: '소득공제' | '지출증빙'; customerIdentityNumber: string }
+      | undefined;
+    if (cashReceipt && intent.userId) {
+      try {
+        await this.cashReceiptsService.issue({ intentId, ...cashReceipt }, intent.userId);
+        this.logger.log(`cash receipt issued on deposit confirm: intentId=${intentId}`);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.error(`cash receipt auto-issue failed (deposit confirmed): intentId=${intentId}, error=${message}`);
+      }
+    }
   }
 }

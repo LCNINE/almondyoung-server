@@ -6,6 +6,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
+import { getPricesForVariant } from "@/lib/utils/get-product-price"
 import { HttpTypes } from "@medusajs/types"
 import { useMemo } from "react"
 import { useTranslations } from "next-intl"
@@ -55,14 +56,26 @@ export default function OptionSelect({
   selectedValues,
 }: OptionSelectProps) {
   const t = useTranslations("productDetail.options")
-  const { visibleValues, outOfStockSet } = useMemo(() => {
+  const { visibleValues, outOfStockSet, priceByValue } = useMemo(() => {
     const allValues = (option.values ?? []).map((v) => v.value)
     if (!variants) {
-      return { visibleValues: allValues, outOfStockSet: new Set<string>() }
+      return {
+        visibleValues: allValues,
+        outOfStockSet: new Set<string>(),
+        priceByValue: {} as Record<string, number>,
+      }
     }
+
+    // 최저가(대표가와 동일 기준) — 옵션 상대가 (+N) 계산용
+    const pricedAmounts = variants
+      .map((v) => getPricesForVariant(v)?.calculated_price_number)
+      .filter((n): n is number => typeof n === "number")
+    const cheapest = pricedAmounts.length ? Math.min(...pricedAmounts) : 0
 
     const visible: string[] = []
     const outOfStock = new Set<string>()
+    // 값 → 최저가 대비 추가금(extra). 최저가 옵션은 0.
+    const priceByValue: Record<string, number> = {}
 
     for (const value of allValues) {
       const matchingVariants = variants.filter((v) => {
@@ -80,13 +93,33 @@ export default function OptionSelect({
       if (!matchingVariants.some(hasStock)) {
         outOfStock.add(value)
       }
+
+      // ponytail: 옵션값이 variant 1개에만 매핑될 때만 가격 표기. 다중옵션 상품은
+      // 값 하나가 여러 가격에 걸쳐 모호하므로 생략(단일옵션 니들류가 실제 대상).
+      if (matchingVariants.length === 1) {
+        const p = getPricesForVariant(matchingVariants[0])
+        if (p) {
+          priceByValue[value] = p.calculated_price_number - cheapest
+        }
+      }
     }
 
-    return { visibleValues: visible, outOfStockSet: outOfStock }
+    return { visibleValues: visible, outOfStockSet: outOfStock, priceByValue }
   }, [option, variants, selectedOptions])
 
   // 값이 많으면 드롭다운으로 전환해 세로 공간을 절약
   const useDropdown = visibleValues.length > DROPDOWN_THRESHOLD
+
+  const renderPriceLabel = (value: string) => {
+    const extra = priceByValue[value]
+    // 최저가 대비 추가금이 있을 때만 표기. 최저가 옵션은 라벨 없음.
+    if (!extra || extra <= 0) return null
+    return (
+      <span className="text-xs whitespace-nowrap opacity-70">
+        {t("optionPriceExtra", { amount: extra.toLocaleString() })}
+      </span>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-y-3">
@@ -113,7 +146,12 @@ export default function OptionSelect({
                   disabled={isOutOfStock}
                   data-testid="option-select-item"
                 >
-                  {isOutOfStock ? t("outOfStockSuffix", { value: v }) : v}
+                  <span className="flex w-full items-center justify-between gap-3">
+                    <span>
+                      {isOutOfStock ? t("outOfStockSuffix", { value: v }) : v}
+                    </span>
+                    {renderPriceLabel(v)}
+                  </span>
                 </SelectItem>
               )
             })}
@@ -138,7 +176,12 @@ export default function OptionSelect({
                 )}
                 data-testid="option-button"
               >
-                {isOutOfStock ? t("outOfStockSuffix", { value: v }) : v}
+                <span className="flex flex-col items-center leading-tight">
+                  <span>
+                    {isOutOfStock ? t("outOfStockSuffix", { value: v }) : v}
+                  </span>
+                  {renderPriceLabel(v)}
+                </span>
               </button>
             )
           })}

@@ -1,9 +1,10 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import {
   WalletSchema,
+  charges,
   paymentIntents,
   paymentIntentItems,
   paymentIntentItemDiscounts,
@@ -187,6 +188,50 @@ export class PaymentIntentsService {
     return rows[0] ?? null;
   }
 
+  /**
+   * 무통장(가상계좌) 주문의 입금 안내 계좌를 조회한다. wallet-web 결제화면을 벗어난 고객이
+   * 주문내역에서 다시 계좌를 확인할 수 있도록 한다. 발급 시 charges.responsePayload.nextAction 에
+   * 스냅샷된 은행/계좌번호/예금주를 반환. 소유자가 아니거나 입금대기 계좌가 없으면 null.
+   */
+  async getBankTransferDepositAccount(
+    intentId: string,
+    userId: string,
+  ): Promise<{
+    bankName: string | null;
+    accountNumber: string | null;
+    accountHolder: string | null;
+    dueDate: string | null;
+    amount: number;
+    currency: string;
+  } | null> {
+    const intent = await this.dbService.db
+      .select()
+      .from(paymentIntents)
+      .where(eq(paymentIntents.id, intentId))
+      .limit(1)
+      .then((r) => r[0]);
+    if (!intent || intent.userId !== userId) return null;
+
+    const [charge] = await this.dbService.db
+      .select({ responsePayload: charges.responsePayload })
+      .from(charges)
+      .where(and(eq(charges.intentId, intentId), eq(charges.operation, 'AUTHORIZE'), eq(charges.status, 'REQUIRES_ACTION')))
+      .orderBy(desc(charges.createdAt))
+      .limit(1);
+
+    const nextAction = (charge?.responsePayload as { nextAction?: Record<string, unknown> } | null)?.nextAction;
+    if (!nextAction || nextAction.type !== 'BANK_TRANSFER_PENDING') return null;
+
+    return {
+      bankName: (nextAction.bankName as string) || null,
+      accountNumber: (nextAction.accountNumber as string) || null,
+      accountHolder: (nextAction.accountHolder as string) || null,
+      dueDate: (nextAction.dueDate as string) || null,
+      amount: intent.payableAmount,
+      currency: intent.currency,
+    };
+  }
+
   async findById(id: string) {
     const rows = await this.dbService.db.select().from(paymentIntents).where(eq(paymentIntents.id, id)).limit(1);
     const intent = rows[0] ?? null;
@@ -246,7 +291,7 @@ export class PaymentIntentsService {
     const correlationId = `confirm:${intentId}:${Date.now()}`;
     return this.confirmService.confirm(
       intentId,
-      { paymentMethodId: dto.paymentMethodId, pointsToApply: dto.pointsToApply },
+      { paymentMethodId: dto.paymentMethodId, pointsToApply: dto.pointsToApply, cashReceipt: dto.cashReceipt },
       correlationId,
     );
   }

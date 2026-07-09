@@ -12,6 +12,7 @@ import { ReservationController } from './controllers/reservation.controller';
 import { ReturnController } from './controllers/return.controller';
 import { TransferController } from './controllers/transfer.controller';
 import { HolderController } from './controllers/holder.controller';
+import { LedgerReconciliationController } from './controllers/ledger-reconciliation.controller';
 
 // Services
 import { StockEventService } from './services/stock-event.service';
@@ -22,7 +23,9 @@ import { InventoryQueryService } from './services/inventory-query.service';
 import { SkuManagersService } from './services/sku-managers.service';
 import { SkuLocationMovementService } from './services/sku-location-movement.service';
 import { AllocationStrategyService } from './services/allocation-strategy.service';
+import { FifoLocationStrategy, LOCATION_RESOLUTION_STRATEGY } from './services/location-resolution.strategy';
 import { ReservationCronService } from './services/reservation-cron.service';
+import { LedgerReconciliationService } from './services/ledger-reconciliation.service';
 import { ReturnService } from './services/return.service';
 import { TransferService } from './services/transfer.service';
 import { HolderService } from './services/holder.service';
@@ -45,6 +48,7 @@ import { OutboxService } from '../shared/outbox/outbox.service';
     ReturnController,
     TransferController,
     HolderController,
+    LedgerReconciliationController,
   ],
   providers: [
     StockEventService,
@@ -56,7 +60,9 @@ import { OutboxService } from '../shared/outbox/outbox.service';
     SkuManagersService,
     SkuLocationMovementService,
     AllocationStrategyService,
+    { provide: LOCATION_RESOLUTION_STRATEGY, useClass: FifoLocationStrategy },
     ReservationCronService,
+    LedgerReconciliationService,
     ReturnService,
     TransferService,
     HolderService,
@@ -72,6 +78,7 @@ import { OutboxService } from '../shared/outbox/outbox.service';
     SkuManagersService,
     SkuLocationMovementService,
     AllocationStrategyService,
+    LOCATION_RESOLUTION_STRATEGY,
     ReturnService,
     TransferService,
     HolderService,

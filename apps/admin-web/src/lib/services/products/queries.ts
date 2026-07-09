@@ -15,6 +15,7 @@ import type {
   MasterDto,
   MastersQuery,
   MastersResponseDto,
+  MyDraftsQuery,
   PricePreviewDto,
   VariantDto,
   VariantsQuery,
@@ -114,6 +115,18 @@ export const useMastersSummary = (query: MastersQuery = {}) => {
   return useQuery({
     queryKey: productQueryKeys.mastersSummaryList(query),
     queryFn: () => products.masters.getListSummary(query),
+    staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+};
+
+/**
+ * 내 작성중(임시저장) 상품 목록 조회
+ */
+export const useMyDrafts = (query: MyDraftsQuery = {}) => {
+  return useQuery({
+    queryKey: productQueryKeys.myDrafts(query),
+    queryFn: () => products.versions.listMyDrafts(query),
     staleTime: 30 * 1000,
     gcTime: 5 * 60 * 1000,
   });

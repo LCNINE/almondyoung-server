@@ -45,8 +45,9 @@ import {
   tagValues,
   tagGroups,
 } from '../../../schema/catalog.schema';
-import { eq, and, ilike, count, asc, desc, inArray, isNull, isNotNull, sql } from 'drizzle-orm';
+import { eq, and, or, ilike, count, asc, desc, gte, lte, inArray, isNull, isNotNull, sql } from 'drizzle-orm';
 import { ProductVersionsService } from './product-versions.service';
+import { resolveMasterSort } from './product-masters-sort.util';
 import { PricingCalculatorService } from '../../pricing/pricing-calculator.service';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
 import { v7 as uuidv7 } from 'uuid';
@@ -56,7 +57,10 @@ import { MasterProductWithPrimaryVersionDto } from '../dto/products/product-resp
 import { ProductMasterVersionEntity } from '../../../schema/catalog.schema.types';
 import { ProductReadAssembler } from '../assemblers/product-read.assembler';
 import { ProductMatchingService } from '../../../../product-matching/services/product-matching.service';
-import { ProductSellableQuantityService } from '../../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
+import {
+  ProductSellableQuantityService,
+  SoldOutState,
+} from '../../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 
 type VersionOptionValueDisplay = {
   optionValueId: string;
@@ -172,7 +176,7 @@ export class ProductMastersService {
     }
   }
 
-  async createMaster(tx?: DbTransaction): Promise<ProductMasterVersion> {
+  async createMaster(ownerId: string, tx?: DbTransaction): Promise<ProductMasterVersion> {
     return this.db.run(async (tx) => {
       const masterId = uuidv7();
       const versionId = uuidv7();
@@ -182,14 +186,16 @@ export class ProductMastersService {
         .insert(productMasters)
         .values({
           id: masterId,
+          createdBy: ownerId,
         })
         .returning();
 
-      // 2. 첫 번째 버전 생성
+      // 2. 첫 번째 버전 생성 (생성자를 draft 소유자로 기록 → '내 작성중 상품' 목록의 기준)
       const versionData = {
         id: versionId,
         masterId: masterId,
-        createdBy: '00000000-0000-0000-0000-000000000000',
+        draftOwnerId: ownerId,
+        createdBy: ownerId,
         status: 'draft' as const,
       };
 
@@ -493,6 +499,12 @@ export class ProductMastersService {
       limit?: number;
       deleted?: boolean;
       ids?: string[];
+      productType?: 'regular_sale' | 'limited_edition';
+      approvalStatus?: 'draft' | 'pending' | 'approved' | 'rejected';
+      createdFrom?: string;
+      createdTo?: string;
+      sort?: 'createdAt' | 'name' | 'updatedAt';
+      order?: 'asc' | 'desc';
     },
     tx?: DbTransaction,
   ): Promise<{
@@ -503,6 +515,7 @@ export class ProductMastersService {
         variantCount: number;
         thumbnail: string | null;
         priceSummary: PriceSummary | null;
+        soldOutState: SoldOutState;
       };
     }[];
     total: number;
@@ -594,14 +607,39 @@ export class ProductMastersService {
         whereConditions.push(ilike(productMasterVersions.brand, `%${filters.brand}%`));
       }
 
-      // name 검색 필터
+      // 키워드 검색: 상품명 + 품번코드 부분 일치 (대소문자 무시)
       if (filters?.name) {
-        whereConditions.push(ilike(productMasterVersions.name, `%${filters.name}%`));
+        whereConditions.push(
+          or(
+            ilike(productMasterVersions.name, `%${filters.name}%`),
+            ilike(productMasterVersions.productCode, `%${filters.name}%`),
+          ),
+        );
       }
 
       // ids 필터 (배치 조회용)
       if (filters?.ids && filters.ids.length > 0) {
         whereConditions.push(inArray(productMasters.id, filters.ids));
+      }
+
+      // 상품 유형 필터
+      if (filters?.productType) {
+        whereConditions.push(eq(productMasterVersions.productType, filters.productType));
+      }
+
+      // 승인 상태 필터: mode 와 교차한다. 기본 mode='active' 는 status='active'(대개 approved) 버전만
+      // 보여주므로, draft/pending/rejected 로 필터하려면 mode='all'(또는 'active-or-inactive')을
+      // 함께 지정해야 한다. 승인 대기 전용 조회는 GET /masters/pending-approval 참고.
+      if (filters?.approvalStatus) {
+        whereConditions.push(eq(productMasterVersions.approvalStatus, filters.approvalStatus));
+      }
+
+      // 등록일 범위 필터 — 화면 '등록일' 컬럼과 동일하게 product_masters.createdAt 기준
+      if (filters?.createdFrom) {
+        whereConditions.push(gte(productMasters.createdAt, new Date(filters.createdFrom)));
+      }
+      if (filters?.createdTo) {
+        whereConditions.push(lte(productMasters.createdAt, new Date(filters.createdTo)));
       }
 
       // 모드별 버전 필터: active는 productMasterVersions 컬럼으로, 다른 모드는 ranked subquery의 rn=1로.
@@ -670,7 +708,9 @@ export class ProductMastersService {
           : dataBaseQuery;
 
       const filteredDataQuery = whereClause ? dataQueryWithCategory.where(whereClause) : dataQueryWithCategory;
-      const orderedQuery = filteredDataQuery.orderBy(desc(productMasterVersions.createdAt));
+      const { column: sortColumn, direction: sortDirection } = resolveMasterSort(filters?.sort, filters?.order);
+      // 안정 페이지네이션을 위해 master id 를 2차 정렬키로 고정
+      const orderedQuery = filteredDataQuery.orderBy(sortDirection(sortColumn), desc(productMasters.id));
 
       const rawData = await (returnAll ? orderedQuery : orderedQuery.limit(limit).offset(offset));
 
@@ -718,6 +758,9 @@ export class ProductMastersService {
 
       const priceSummaryMap = await this.priceCacheService.getPriceSummariesByVersionIds(versionIds, trx);
 
+      // 한 번에 모든 품절 상태 집계 (materialized projection 기준, 상수 쿼리 1회)
+      const soldOutStateMap = await this.productSellableQuantity.getSoldOutStateByVersionIds(versionIds, trx);
+
       // Map으로 변환 (O(1) 조회)
       const optionGroupNamesMap = new Map(optionGroupNamesResult.map((item) => [item.versionId, item.names]));
       const variantCountMap = new Map(variantCounts.map((item) => [item.versionId, item.count]));
@@ -739,6 +782,7 @@ export class ProductMastersService {
             variantCount: variantCountMap.get(version.id) ?? 0,
             thumbnail: thumbnailMap.get(version.id) ?? null,
             priceSummary: priceSummaryMap.get(version.id) ?? null,
+            soldOutState: soldOutStateMap.get(version.id) ?? 'none',
           },
         };
       });

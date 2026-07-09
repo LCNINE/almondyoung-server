@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
-import { eq, inArray, asc, desc, sql, count, and } from 'drizzle-orm';
+import { eq, inArray, desc, sql, count, and, ne } from 'drizzle-orm';
 import { PoliciesService } from './policies.service';
 import { AvailabilityService } from './availability.service';
 import { FULFILLMENT_EVENTS } from '../events';
@@ -18,9 +18,7 @@ import { ReservationLifecycleService } from '../../inventory/shared/services/res
 import { UnifiedReservationService } from '../../inventory/shared/services/unified-reservation.service';
 import { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
 import { CreateCompensationShipmentDto, CompensationShipmentItemDto } from '../dto/create-compensation-shipment.dto';
-import { SplitFulfillmentOrderDto } from '../dto/split-fulfillment-order.dto';
-import { AssignShipmentDto } from '../dto/assign-shipment.dto';
-import { FulfillmentShippedPayload, FulfillmentDeliveredPayload, FulfillmentCancelledPayload, Carrier } from '@packages/event-contracts/streams';
+import { FulfillmentShippedPayload, FulfillmentDeliveredPayload, FulfillmentCancelledPayload } from '@packages/event-contracts/streams';
 import { SalesOrderAmendmentsService } from '../../sales-order/services/sales-order-amendments.service';
 import { SalesOrderAmendmentDeltaDto } from '../../sales-order/dto/create-sales-order-amendment.dto';
 
@@ -854,362 +852,35 @@ export class FulfillmentsService {
     return policy.inventoryManagement;
   }
 
-  async split(id: string, dto: SplitFulfillmentOrderDto, tx?: DbTx) {
-    return this.db.run(async (trx) => {
-      // 잠금 순서 컨벤션 (ready 상태 재고 조정 액션 공통): FO(id asc) → FOI(id asc) → reservation
-      // origin FO를 잠가 reserve/unreserve/transferReservation과의 동시 실행을 직렬화한다
-      const [origin] = await trx
-        .select()
-        .from(wmsTables.fulfillmentOrders)
-        .where(eq(wmsTables.fulfillmentOrders.id, id))
-        .limit(1)
-        .for('update');
-      if (!origin) return null;
-
-      const TERMINAL_STATUSES = ['shipped', 'completed', 'canceled'];
-      if (TERMINAL_STATUSES.includes(origin.status)) {
-        throw new ConflictException(`Cannot split FO ${id} in status '${origin.status}'`);
-      }
-
-      const [newFo] = await trx
-        .insert(wmsTables.fulfillmentOrders)
-        .values({
-          salesOrderId: origin.salesOrderId,
-          warehouseId: origin.warehouseId,
-          ownerId: origin.ownerId,
-          fulfillmentMode: origin.fulfillmentMode,
-          priority: origin.priority,
-          status: 'created',
-          shippingAddress: origin.shippingAddress,
-          labelNo: null,
-        })
-        .returning();
-
-      const itemMoves = dto?.items ?? [];
-      const legacyMoves = dto?.lines ?? [];
-      let splitItemCount = 0;
-      let splitTotalQty = 0;
-
-      type SplitReservationMove = {
-        originalFulfillmentOrderItemId: string;
-        newFulfillmentOrderItemId: string;
-        skuId: string;
-        splitQuantity: number;
-        originalQuantityBeforeSplit: number;
-      };
-
-      if (itemMoves.length > 0) {
-        const splitItems: SplitReservationMove[] = [];
-
-        // 같은 FOI 중복 요청은 잠근 snapshot 값을 반복 사용해 qty/reservedQty 카운터를 깨뜨리므로 거부
-        const requestedItemIds = itemMoves.map((mv) => mv.fulfillmentOrderItemId);
-        if (new Set(requestedItemIds).size !== requestedItemIds.length) {
-          throw new BadRequestException('Duplicate fulfillmentOrderItemId in split request');
-        }
-        // DTO @Min(1)과 별개로 서비스 불변식으로도 차단 — 내부 호출/validation pipe 누락 시
-        // quantity<=0은 qty 0 신규 FOI 또는 origin qty 증가(음수 이동)를 만들 수 있다
-        if (itemMoves.some((mv) => mv.quantity <= 0)) {
-          throw new BadRequestException('Split quantity must be greater than 0');
-        }
-
-        // 대상 FOI를 id 순서로 한 번에 잠금 — stale reservedQty/qty 덮어쓰기 방지
-        const lockedItems = await trx
-          .select()
-          .from(wmsTables.fulfillmentOrderItems)
-          .where(
-            and(
-              inArray(wmsTables.fulfillmentOrderItems.id, requestedItemIds),
-              eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, id),
-            ),
-          )
-          .orderBy(asc(wmsTables.fulfillmentOrderItems.id))
-          .for('update');
-        const lockedItemById = new Map(lockedItems.map((item) => [item.id, item]));
-
-        for (const mv of itemMoves) {
-          const item = lockedItemById.get(mv.fulfillmentOrderItemId);
-          if (!item || item.fulfillmentOrderId !== id) {
-            throw new BadRequestException(`FOI ${mv.fulfillmentOrderItemId} not found in FO ${id}`);
-          }
-
-          const splittableQty = item.qty - item.shippedQty;
-          if (splittableQty <= 0) continue;
-
-          if (mv.quantity > splittableQty) {
-            throw new BadRequestException(
-              `Cannot split ${mv.quantity} of FOI ${item.id}: only ${splittableQty} units are splittable (shippedQty=${item.shippedQty})`,
-            );
-          }
-
-          const moveQty = mv.quantity;
-
-          if (item.qty - moveQty < 1 && item.shippedQty === 0) {
-            throw new BadRequestException(
-              `Cannot split all qty from FOI ${item.id}: at least 1 unit must remain on the origin`,
-            );
-          }
-
-          const originalQtyBeforeSplit = item.qty;
-
-          // reservedQty는 여기서 만지지 않는다 — 예약 row 이동과 카운터 갱신은
-          // reservationLifecycle.handleFulfillmentOrderSplit이 실제 이동량 기준으로 일괄 수행
-          await trx
-            .update(wmsTables.fulfillmentOrderItems)
-            .set({
-              qty: item.qty - moveQty,
-              updatedAt: new Date(),
-            })
-            .where(eq(wmsTables.fulfillmentOrderItems.id, item.id));
-
-          const [newItem] = await trx
-            .insert(wmsTables.fulfillmentOrderItems)
-            .values({
-              fulfillmentOrderId: newFo.id,
-              salesOrderId: item.salesOrderId,
-              salesOrderLineId: item.salesOrderLineId,
-              mappingSnapshotId: item.mappingSnapshotId,
-              variantId: item.variantId,
-              skuId: item.skuId,
-              qty: moveQty,
-              reservedQty: 0,
-              pickedQty: 0,
-              shippedQty: 0,
-              status: 'pending',
-            })
-            .returning();
-
-          splitItems.push({
-            originalFulfillmentOrderItemId: item.id,
-            newFulfillmentOrderItemId: newItem.id,
-            skuId: item.skuId,
-            splitQuantity: moveQty,
-            originalQuantityBeforeSplit: originalQtyBeforeSplit,
-          });
-          splitItemCount += 1;
-          splitTotalQty += moveQty;
-        }
-
-        if (splitItems.length > 0) {
-          await this.reservationLifecycle.handleFulfillmentOrderSplit(id, newFo.id, splitItems, trx);
-        }
-      } else if (legacyMoves.length > 0) {
-        this.logger.warn(`[split] Using deprecated 'lines' field. Please use 'items' instead.`);
-
-        const splitItems: SplitReservationMove[] = [];
-
-        // legacy 경로도 items 경로와 동일한 불변식 적용: 중복 거부 + 수량 양수 + FO 멤버십 강제
-        const requestedLineIds = legacyMoves.map((mv) => mv.fulfillmentOrderLineId);
-        if (new Set(requestedLineIds).size !== requestedLineIds.length) {
-          throw new BadRequestException('Duplicate fulfillmentOrderLineId in split request');
-        }
-        if (legacyMoves.some((mv) => mv.quantity <= 0)) {
-          throw new BadRequestException('Split quantity must be greater than 0');
-        }
-
-        const lockedLegacyItems = await trx
-          .select()
-          .from(wmsTables.fulfillmentOrderItems)
-          .where(
-            and(
-              inArray(wmsTables.fulfillmentOrderItems.id, requestedLineIds),
-              eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, id),
-            ),
-          )
-          .orderBy(asc(wmsTables.fulfillmentOrderItems.id))
-          .for('update');
-        const lockedLegacyItemById = new Map(lockedLegacyItems.map((item) => [item.id, item]));
-
-        for (const mv of legacyMoves) {
-          const item = lockedLegacyItemById.get(mv.fulfillmentOrderLineId);
-          if (!item || item.fulfillmentOrderId !== id) {
-            throw new BadRequestException(`FOI ${mv.fulfillmentOrderLineId} not found in FO ${id}`);
-          }
-          const moveQty = Math.min(mv.quantity, item.qty - item.shippedQty);
-          if (moveQty <= 0) continue;
-
-          if (item.qty - moveQty < 1 && item.shippedQty === 0) {
-            throw new BadRequestException(
-              `Cannot split all qty from FOI ${item.id}: at least 1 unit must remain on the origin`,
-            );
-          }
-
-          const originalQtyBeforeSplit = item.qty;
-
-          // reservedQty는 reservationLifecycle이 실제 이동량 기준으로 갱신
-          await trx
-            .update(wmsTables.fulfillmentOrderItems)
-            .set({
-              qty: item.qty - moveQty,
-              updatedAt: new Date(),
-            })
-            .where(eq(wmsTables.fulfillmentOrderItems.id, item.id));
-
-          const [newItem] = await trx
-            .insert(wmsTables.fulfillmentOrderItems)
-            .values({
-              fulfillmentOrderId: newFo.id,
-              salesOrderId: item.salesOrderId,
-              salesOrderLineId: item.salesOrderLineId,
-              mappingSnapshotId: item.mappingSnapshotId,
-              variantId: item.variantId,
-              skuId: item.skuId,
-              qty: moveQty,
-              reservedQty: 0,
-              pickedQty: 0,
-              shippedQty: 0,
-              status: 'pending',
-            })
-            .returning();
-
-          splitItems.push({
-            originalFulfillmentOrderItemId: item.id,
-            newFulfillmentOrderItemId: newItem.id,
-            skuId: item.skuId,
-            splitQuantity: moveQty,
-            originalQuantityBeforeSplit: originalQtyBeforeSplit,
-          });
-          splitItemCount += 1;
-          splitTotalQty += moveQty;
-        }
-
-        if (splitItems.length > 0) {
-          await this.reservationLifecycle.handleFulfillmentOrderSplit(id, newFo.id, splitItems, trx);
-        }
-      }
-
-      if (splitItemCount === 0) {
-        throw new BadRequestException('Fulfillment order split requires at least one movable item');
-      }
-
-      await trx
-        .update(wmsTables.fulfillmentOrders)
-        .set({ totalItems: splitItemCount, totalQty: splitTotalQty, updatedAt: new Date() })
-        .where(eq(wmsTables.fulfillmentOrders.id, newFo.id));
-
-      await trx
-        .update(wmsTables.fulfillmentOrders)
-        .set({ totalQty: origin.totalQty - splitTotalQty, updatedAt: new Date() })
-        .where(eq(wmsTables.fulfillmentOrders.id, id));
-
-      return {
-        ...newFo,
-        totalItems: splitItemCount,
-        totalQty: splitTotalQty,
-      };
-    }, tx);
-  }
-
-  async assignShipment(id: string, dto: AssignShipmentDto, tx?: DbTx) {
-    return this.db.run(async (trx) => {
-      // ship()과 동일한 row lock: SELECT → INSERT 사이 동시 요청 2개가 중복 shipment를 만드는 race 차단
-      await trx.execute(sql`
-        SELECT id
-        FROM ${wmsTables.fulfillmentOrders}
-        WHERE ${wmsTables.fulfillmentOrders.id} = ${id}
-        FOR UPDATE
-      `);
-
-      const [fo] = await trx
-        .select()
-        .from(wmsTables.fulfillmentOrders)
-        .where(eq(wmsTables.fulfillmentOrders.id, id))
-        .limit(1);
-      if (!fo) {
-        throw new NotFoundException(`Fulfillment order ${id} not found`);
-      }
-
-      const ASSIGN_SHIPMENT_TERMINAL = new Set(['shipped', 'completed', 'canceled']);
-      if (ASSIGN_SHIPMENT_TERMINAL.has(fo.status)) {
-        throw new ConflictException(`Cannot assign shipment to FO ${id} in terminal status '${fo.status}'`);
-      }
-
-      const [existingShipment] = await trx
-        .select({ id: wmsTables.shipments.id })
-        .from(wmsTables.shipments)
-        .where(eq(wmsTables.shipments.fulfillmentOrderId, id))
-        .limit(1);
-      if (existingShipment) {
-        throw new ConflictException(`Shipment already exists for FO ${id}`);
-      }
-
-      await trx.insert(wmsTables.shipments).values({
-        trackingNo: dto.trackingNo,
-        carrier: (dto.carrier ?? 'CJ') as Carrier,
-        status: 'created',
-        eta: dto.eta ? new Date(dto.eta) : null,
-        splitStatus: false,
-        fulfillmentOrderId: id,
-      });
-
-      // picking/inspection/invoiced 진행 중에는 labeled로 역전이하지 않음
-      const NO_REGRESS_STATUSES = new Set(['picked', 'inspecting', 'inspected', 'invoiced']);
-      if (!NO_REGRESS_STATUSES.has(fo.status)) {
-        await trx
-          .update(wmsTables.fulfillmentOrders)
-          .set({ status: 'labeled' })
-          .where(eq(wmsTables.fulfillmentOrders.id, id));
-        // FulfillmentLabeled 는 구독하는 서비스가 없어 발행하지 않는다 (설계 원칙: 미구독 이벤트 미발행).
-      }
-
-      return this.getOne(id, trx);
-    }, tx);
-  }
-
+  /** drop_ship 완료 전용(내부) — direct-ship.service 가 공급사 전달 완료 시 호출.
+   *  타사 재고라 원장·예약·박스를 건드리지 않고 FO 종결 전이 + FulfillmentShipped 이벤트만.
+   *  자사(in_house/3pl) 출고는 검수 자동완료→consumeShipment(ShipmentService)가 담당. */
   async ship(id: string, tx?: DbTx) {
     return this.db.run(async (trx) => {
-      await trx.execute(sql`
-        SELECT id
-        FROM ${wmsTables.fulfillmentOrders}
-        WHERE ${wmsTables.fulfillmentOrders.id} = ${id}
-        FOR UPDATE
-      `);
-
+      await trx.execute(
+        sql`SELECT id FROM ${wmsTables.fulfillmentOrders} WHERE ${wmsTables.fulfillmentOrders.id} = ${id} FOR UPDATE`,
+      );
       const [fo] = await trx
         .select()
         .from(wmsTables.fulfillmentOrders)
         .where(eq(wmsTables.fulfillmentOrders.id, id))
         .limit(1);
-      if (!fo) {
-        throw new NotFoundException(`Fulfillment order ${id} not found`);
-      }
-
-      // 이미 shipped: idempotent return (invoice/direct-ship 경유 중복 호출 방어)
-      if (fo.status === 'shipped') {
-        return this.getOne(id, trx);
-      }
-
-      if (fo.status === 'completed' || fo.status === 'canceled') {
+      if (!fo) throw new NotFoundException(`Fulfillment order ${id} not found`);
+      if (fo.status === 'shipped') return this.getOne(id, trx);
+      if (fo.status === 'completed' || fo.status === 'canceled')
         throw new ConflictException(`Cannot ship FO ${id} in terminal status '${fo.status}'`);
-      }
+      if (fo.fulfillmentMode !== 'drop_ship')
+        throw new ConflictException(
+          `ship() 은 drop_ship 전용입니다. 자사 출고는 검수 자동완료(consumeShipment)를 거칩니다.`,
+        );
+      if (fo.directShipStatus !== 'forwarded')
+        throw new ConflictException(
+          `Cannot ship drop_ship FO ${id}: directShipStatus must be 'forwarded', got '${fo.directShipStatus ?? 'null'}'`,
+        );
 
-      if (fo.fulfillmentMode === 'drop_ship') {
-        if (fo.directShipStatus !== 'forwarded') {
-          throw new ConflictException(
-            `Cannot ship drop_ship FO ${id}: directShipStatus must be 'forwarded', got '${fo.directShipStatus ?? 'null'}'`,
-          );
-        }
-      } else {
-        const SHIP_ALLOWED = new Set(['invoiced', 'labeled', 'picked', 'inspecting', 'inspected']);
-        if (!SHIP_ALLOWED.has(fo.status)) {
-          throw new ConflictException(
-            `Cannot ship FO ${id} in status '${fo.status}'. Allowed: invoiced, labeled, picked, inspecting, inspected`,
-          );
-        }
-      }
-
-      const [shipment] = await trx
-        .select()
-        .from(wmsTables.shipments)
-        .where(eq(wmsTables.shipments.fulfillmentOrderId, id))
-        .limit(1);
-
-      await trx.execute(sql`
-        SELECT id
-        FROM ${wmsTables.fulfillmentOrderItems}
-        WHERE ${wmsTables.fulfillmentOrderItems.fulfillmentOrderId} = ${id}
-        FOR UPDATE
-      `);
-
+      await trx.execute(
+        sql`SELECT id FROM ${wmsTables.fulfillmentOrderItems} WHERE ${wmsTables.fulfillmentOrderItems.fulfillmentOrderId} = ${id} FOR UPDATE`,
+      );
       const items = await trx
         .select()
         .from(wmsTables.fulfillmentOrderItems)
@@ -1221,13 +892,10 @@ export class FulfillmentsService {
           .set({ shippedQty: item.qty, status: 'shipped', updatedAt: now })
           .where(eq(wmsTables.fulfillmentOrderItems.id, item.id));
       }
-
       await trx
         .update(wmsTables.fulfillmentOrders)
         .set({ status: 'shipped', shippedAt: now, updatedAt: now })
         .where(eq(wmsTables.fulfillmentOrders.id, id));
-
-      await this.reservationLifecycle.handleFulfillmentOrderStatusChange(id, fo.status, 'shipped', trx);
 
       const [salesOrderRow] = fo.salesOrderId
         ? await trx
@@ -1236,25 +904,15 @@ export class FulfillmentsService {
             .where(eq(wmsTables.salesOrders.id, fo.salesOrderId))
             .limit(1)
         : [];
-
       const shippedPayload: FulfillmentShippedPayload = {
         fulfillmentId: id,
         orderId: fo.salesOrderId ?? '',
         channelOrderId: salesOrderRow?.channelOrderId ?? undefined,
-        trackingInfo: {
-          carrier: (shipment?.carrier as Carrier) ?? 'CJ',
-          trackingNumber: shipment?.trackingNo ?? '',
-          invoiceUrl: shipment?.invoiceUrl ?? undefined,
-        },
+        trackingInfo: { carrier: 'CJ', trackingNumber: '', invoiceUrl: undefined },
         shippedAt: now.toISOString(),
-        estimatedDeliveryDate: shipment?.eta?.toISOString(),
-        shippedItems: items.map((item) => ({
-          fulfillmentItemId: item.id,
-          skuId: item.skuId,
-          shippedQty: item.qty,
-        })),
+        estimatedDeliveryDate: undefined,
+        shippedItems: items.map((item) => ({ fulfillmentItemId: item.id, skuId: item.skuId, shippedQty: item.qty })),
       };
-
       await this.outbox.enqueue(
         {
           eventType: FULFILLMENT_EVENTS.SHIPPED,
@@ -1265,7 +923,6 @@ export class FulfillmentsService {
         },
         trx,
       );
-
       return this.getOne(id, trx);
     }, tx);
   }
@@ -1293,10 +950,12 @@ export class FulfillmentsService {
         .where(eq(wmsTables.fulfillmentOrders.id, id));
 
       // 배송 완료 시각을 shipment_tracking에 기록 → buildTrackingView()가 deliveredAt으로 노출
+      // 부분 unique 후 FO당 취소박스+활성박스 공존 가능 — 취소박스를 delivered 로 잘못 갱신하지 않도록 활성 최신만.
       const [shipmentRow] = await trx
         .select({ id: wmsTables.shipments.id })
         .from(wmsTables.shipments)
-        .where(eq(wmsTables.shipments.fulfillmentOrderId, id))
+        .where(and(eq(wmsTables.shipments.openedForFulfillmentOrderId, id), ne(wmsTables.shipments.status, 'canceled')))
+        .orderBy(desc(wmsTables.shipments.createdAt))
         .limit(1);
 
       if (shipmentRow) {
@@ -1404,7 +1063,6 @@ export class FulfillmentsService {
     const actions: string[] = [];
 
     if (!isTerminal) {
-      if (!hasShippedItems) actions.push('split');
       actions.push('reserve');
       if (!hasShippedItems) {
         actions.push('unreserve');
@@ -1412,7 +1070,7 @@ export class FulfillmentsService {
           actions.push('transferReservation');
         }
       }
-      actions.push('assignShipment', 'cancel');
+      actions.push('cancel');
     }
     if (['invoiced', 'labeled', 'picked', 'inspecting', 'inspected'].includes(fo.status)) {
       actions.push('ship');
@@ -1497,30 +1155,47 @@ export class FulfillmentsService {
         .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId))
         .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, id))
         .orderBy(wmsTables.fulfillmentOrderItems.createdAt),
+      // 응답 필드명(invoiceNumber/carrierCode)은 admin-web 호환을 위해 유지 — 값 출처만
+      // 신 컬럼(trackingNo/carrier)으로. active invoice(voided 제외)만.
       db
         .select({
           id: wmsTables.invoices.id,
-          invoiceNumber: wmsTables.invoices.invoiceNumber,
+          invoiceNumber: wmsTables.invoices.trackingNo,
           status: wmsTables.invoices.status,
-          carrierCode: wmsTables.invoices.carrierCode,
+          carrierCode: wmsTables.invoices.carrier,
           issueMethod: wmsTables.invoices.issueMethod,
         })
         .from(wmsTables.invoices)
-        .where(eq(wmsTables.invoices.fulfillmentOrderId, id))
+        .where(and(eq(wmsTables.invoices.issuedForFulfillmentOrderId, id), ne(wmsTables.invoices.status, 'voided')))
+        // FO당 non-voided 송장이 둘 이상일 때(방어적) 결정성 — 가장 최근 발급분이 이김.
+        .orderBy(desc(wmsTables.invoices.createdAt))
         .limit(1),
       db
         .select({
           id: wmsTables.shipments.id,
-          trackingNo: wmsTables.shipments.trackingNo,
-          carrier: wmsTables.shipments.carrier,
           status: wmsTables.shipments.status,
-          eta: wmsTables.shipments.eta,
-          invoiceUrl: wmsTables.shipments.invoiceUrl,
         })
         .from(wmsTables.shipments)
-        .where(eq(wmsTables.shipments.fulfillmentOrderId, id))
+        // 부분 unique(WHERE status<>'canceled')로 FO당 박스가 여럿일 수 있음(취소분+활성1). 활성 최신만.
+        .where(and(eq(wmsTables.shipments.openedForFulfillmentOrderId, id), ne(wmsTables.shipments.status, 'canceled')))
+        .orderBy(desc(wmsTables.shipments.createdAt))
         .limit(1),
     ]);
+
+    // shipment 응답의 trackingNo/carrier 는 더 이상 shipments 컬럼이 아니라 active invoice 출처.
+    // eta/invoiceUrl 은 신 모델에 출처 없음 → null.
+    const activeInvoice = invoiceRows[0] ?? null;
+    const shipmentRow = shipmentRows[0] ?? null;
+    const shipment = shipmentRow
+      ? {
+          id: shipmentRow.id,
+          trackingNo: activeInvoice?.invoiceNumber ?? null,
+          carrier: activeInvoice?.carrierCode ?? null,
+          status: shipmentRow.status,
+          eta: null,
+          invoiceUrl: null,
+        }
+      : null;
 
     const itemIds = items.map((i) => i.id);
     const reservations =
@@ -1578,7 +1253,7 @@ export class FulfillmentsService {
     return {
       ...fulfillmentOrder,
       invoice: invoiceRows[0] || null,
-      shipment: shipmentRows[0] || null,
+      shipment,
       batch: batchRow,
       items: itemsWithSku,
       reservations,
@@ -1633,21 +1308,32 @@ export class FulfillmentsService {
 
     const fulfillmentOrderIds = fulfillmentOrders.map((fo) => fo.id);
 
+    // 응답 필드명(invoiceNumber/carrierCode)은 admin-web 호환 유지 — 값 출처만 신 컬럼.
+    // active invoice(voided 제외)만.
     const invoices = await db
       .select({
         id: wmsTables.invoices.id,
-        fulfillmentOrderId: wmsTables.invoices.fulfillmentOrderId,
-        invoiceNumber: wmsTables.invoices.invoiceNumber,
+        fulfillmentOrderId: wmsTables.invoices.issuedForFulfillmentOrderId,
+        invoiceNumber: wmsTables.invoices.trackingNo,
         status: wmsTables.invoices.status,
-        carrierCode: wmsTables.invoices.carrierCode,
+        carrierCode: wmsTables.invoices.carrier,
         issueMethod: wmsTables.invoices.issueMethod,
       })
       .from(wmsTables.invoices)
-      .where(inArray(wmsTables.invoices.fulfillmentOrderId, fulfillmentOrderIds));
+      .where(
+        and(
+          inArray(wmsTables.invoices.issuedForFulfillmentOrderId, fulfillmentOrderIds),
+          ne(wmsTables.invoices.status, 'voided'),
+        ),
+      )
+      // FO당 non-voided 송장이 둘 이상일 때(방어적) 결정성 — desc 정렬 + 최초 1건 채택 = 최신 송장이 이김.
+      .orderBy(desc(wmsTables.invoices.createdAt));
 
     const invoicesByFoId = new Map<string, (typeof invoices)[0]>();
     for (const invoice of invoices) {
-      invoicesByFoId.set(invoice.fulfillmentOrderId, invoice);
+      if (!invoicesByFoId.has(invoice.fulfillmentOrderId)) {
+        invoicesByFoId.set(invoice.fulfillmentOrderId, invoice);
+      }
     }
 
     const data = fulfillmentOrders.map((fo) => ({

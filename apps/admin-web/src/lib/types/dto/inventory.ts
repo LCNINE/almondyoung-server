@@ -853,6 +853,7 @@ export interface StockQuery {
 export interface StockSummaryQuery {
   skuId?: string;
   warehouseId?: string;
+  search?: string;
   page?: number;
   limit?: number;
 }

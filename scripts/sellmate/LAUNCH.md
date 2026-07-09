@@ -131,7 +131,13 @@ bash scripts/sellmate/run.sh live sync-stock apps/core/tmp/             # 반영
 > ⚠️ **재고매칭(SKU↔변형)이 끝난 뒤부터는 sync-stock 만으로 스토어프론트가 갱신되지 않는다.**
 > sync-stock 은 core 재고(ledger/event)만 바꾸고 sellable 프로젝션은 건드리지 않는다.
 > 그래서 매칭된 SKU 의 재고가 바뀌면 스크립트가 경고를 띄우고 **exit code 2** 로 끝난다.
-> 이때는 바뀐 SKU 들에 대해 `recalculateAndPublishForSku` 재계산을 별도로 돌려야 노출 수량이 반영된다.
+> 이때는 재계산 스크립트를 짝으로 실행하면 된다 (최근 24시간 sellmate-sync 가 건드린 매칭 variant 재계산 + 발행):
+>
+> ```bash
+> DRY_RUN=1 bash scripts/sellmate/run.sh live recalc-sellable .   # 대상 확인
+> bash scripts/sellmate/run.sh live recalc-sellable .             # 실제 재계산
+> ```
+>
 > (매칭 전 단계라 무시해도 되는 상황이면 `SKIP_SELLABLE_CHECK=1` 로 재실행해 0 종료시킬 수 있다.)
 >
 > 즉 운영 중 반복 재고 동기화는 "sync-stock → 재계산" 이 한 쌍이다. sync-stock 단독 반복은 매칭 전에만 안전.

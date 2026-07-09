@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { InjectTypedDb } from '@app/db';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne } from 'drizzle-orm';
 import { inventorySchema, inventoryTables, returnExchangeTables, wmsTables } from '../../inventory/schema/inventory.schema';
 import { calculatePartialCancellationRefund } from './partial-cancellation-refund-calculator';
 import {
@@ -140,6 +140,53 @@ export class StoreSalesOrdersService {
     );
 
     return { status: 'cancelled', refundStatus };
+  }
+
+  /**
+   * Wallet 에서 이미 환불이 완료된 결제(무통장 환불신청 승인 등)의 주문을 취소한다.
+   * core→wallet 재환불 없이 sales_order 취소 + 재고 복원만 수행하고, walletRefund effect 를
+   * SUCCEEDED 로 기록해 감사 타임라인에 남긴다. walletIntentId 로 medusa 주문을 찾으며,
+   * 없거나(직접결제 등) 이미 취소/출고면 멱등 처리한다.
+   */
+  async cancelByWalletIntentAfterRefund(
+    intentId: string,
+    opts: { reasonCode?: string; amount?: number } = {},
+  ): Promise<{ status: string; skipped?: string }> {
+    const so = await this.db.db
+      .select()
+      .from(inventoryTables.salesOrders)
+      .where(
+        and(
+          eq(inventoryTables.salesOrders.walletIntentId, intentId),
+          eq(inventoryTables.salesOrders.salesChannel, 'medusa'),
+        ),
+      )
+      .limit(1)
+      .then((r) => r[0]);
+
+    if (!so) return { status: 'skipped', skipped: 'no_sales_order' };
+    if (so.status === 'cancelled') return { status: 'cancelled', skipped: 'already_cancelled' };
+    if (so.status === 'shipped' || so.status === 'delivered') {
+      this.logger.warn(
+        `[cancelByWalletIntentAfterRefund] SO ${so.id} already ${so.status} (intent=${intentId}). 환불은 완료됐으나 출고 이후라 취소 스킵.`,
+      );
+      return { status: so.status, skipped: 'already_shipped' };
+    }
+
+    await this.salesOrdersService.cancel(so.id, {
+      reasonCode: opts.reasonCode ?? 'CUSTOMER_REFUND_REQUEST',
+      cancelledBy: 'admin:refund-approval',
+      walletRefund: {
+        externalRef: `wallet:refund:intent:${intentId}`,
+        refundStatus: 'SUCCEEDED',
+        ...(opts.amount ? { amount: opts.amount } : {}),
+      },
+    });
+
+    this.logger.log(
+      `[cancelByWalletIntentAfterRefund] SO ${so.id} cancelled (intent=${intentId}, refund already done in wallet)`,
+    );
+    return { status: 'cancelled' };
   }
 
   /**
@@ -781,11 +828,17 @@ export class StoreSalesOrdersService {
       };
     }
 
-    // shipments + 연결된 tracking 이벤트 조회
+    // shipments + 연결된 tracking 이벤트 조회. 박스는 FO 에 openedForFulfillmentOrderId 로 매인다.
+    // 부분 unique(WHERE status<>'canceled') 후 FO당 취소박스+활성박스 공존 가능 — 취소박스는 고객 추적뷰에서 제외.
     const shipmentRows = await this.db.db
       .select()
       .from(inventoryTables.shipments)
-      .where(inArray(inventoryTables.shipments.fulfillmentOrderId, foIds));
+      .where(
+        and(
+          inArray(inventoryTables.shipments.openedForFulfillmentOrderId, foIds),
+          ne(inventoryTables.shipments.status, 'canceled'),
+        ),
+      );
 
     const shipmentIds = shipmentRows.map((s) => s.id);
     const trackingEvents =
@@ -796,19 +849,26 @@ export class StoreSalesOrdersService {
             .where(inArray(inventoryTables.shipmentTracking.shipmentId, shipmentIds))
         : [];
 
-    // invoices에서 송장번호/carrier 보완 (shipments에 없는 경우 대비)
+    // invoices 가 trackingNo/carrier 의 유일한 출처(신 모델: shipments 컬럼 폐기). active(voided 제외)만.
     const invoiceRows = await this.db.db
       .select()
       .from(inventoryTables.invoices)
       .where(
         and(
-          inArray(inventoryTables.invoices.fulfillmentOrderId, foIds),
-          inArray(inventoryTables.invoices.status, ['shipped', 'printed', 'issued']),
+          inArray(inventoryTables.invoices.issuedForFulfillmentOrderId, foIds),
+          inArray(inventoryTables.invoices.status, ['issued', 'used']),
         ),
-      );
+      )
+      // FO당 active 송장이 둘 이상일 때(방어적) 결정성 — desc 정렬 + 최초 1건 = 최신 송장.
+      .orderBy(desc(inventoryTables.invoices.createdAt));
 
-    // FO별 invoice 맵
-    const invoiceByFo = new Map(invoiceRows.map((inv) => [inv.fulfillmentOrderId, inv]));
+    // FO별 invoice 맵 (송장번호/carrier 출처) — desc 정렬이라 최초 1건이 최신.
+    const invoiceByFo = new Map<string, (typeof invoiceRows)[0]>();
+    for (const inv of invoiceRows) {
+      if (!invoiceByFo.has(inv.issuedForFulfillmentOrderId)) {
+        invoiceByFo.set(inv.issuedForFulfillmentOrderId, inv);
+      }
+    }
     // shipment별 tracking 이벤트 맵
     const eventsByShipment = new Map<string, typeof trackingEvents>();
     for (const evt of trackingEvents) {
@@ -823,39 +883,43 @@ export class StoreSalesOrdersService {
 
     if (shipmentRows.length > 0) {
       for (const s of shipmentRows) {
-        if (!s.fulfillmentOrderId) continue;
-        const fo = foById.get(s.fulfillmentOrderId);
+        if (!s.openedForFulfillmentOrderId) continue;
+        const foId = s.openedForFulfillmentOrderId;
+        const fo = foById.get(foId);
+        const inv = invoiceByFo.get(foId);
+        const carrier = normalizeCarrierCode(inv?.carrier ?? null);
+        const trackingNumber = inv?.trackingNo ?? '';
         const events = (eventsByShipment.get(s.id) ?? [])
           .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
           .map((e) => ({ status: e.status, location: e.location ?? null, timestamp: e.timestamp }));
         const delivered = events.find((e) => e.status === 'delivered');
 
         shipmentDtos.push({
-          fulfillmentOrderId: s.fulfillmentOrderId,
-          carrier: s.carrier,
-          carrierName: CARRIER_NAMES[s.carrier] ?? s.carrier,
-          trackingNumber: s.trackingNo,
-          trackingUrl: buildTrackingUrl(s.carrier, s.trackingNo) ?? s.invoiceUrl ?? null,
+          fulfillmentOrderId: foId,
+          carrier,
+          carrierName: CARRIER_NAMES[carrier] ?? carrier,
+          trackingNumber,
+          trackingUrl: trackingNumber ? buildTrackingUrl(carrier, trackingNumber) : null,
           status: s.status,
-          shippedAt: fo?.shippedAt ?? null,
+          shippedAt: fo?.shippedAt ?? s.shippedAt ?? null,
           deliveredAt: delivered?.timestamp ?? null,
-          eta: s.eta ?? null,
+          eta: null,
           trackingEvents: events,
         });
       }
     } else {
-      // shipments 없음 → invoices에서 기본 정보 조립
+      // shipments 없음 → invoices에서 기본 정보 조립 (선발급 송장만 있고 박스 미개봉 상태)
       for (const [foId, inv] of invoiceByFo) {
         const fo = foById.get(foId);
-        const carrier = normalizeCarrierCode(inv.carrierCode);
+        const carrier = normalizeCarrierCode(inv.carrier ?? null);
         shipmentDtos.push({
           fulfillmentOrderId: foId,
           carrier,
           carrierName: CARRIER_NAMES[carrier] ?? carrier,
-          trackingNumber: inv.invoiceNumber,
-          trackingUrl: buildTrackingUrl(carrier, inv.invoiceNumber),
-          status: inv.status === 'shipped' ? 'in_transit' : 'created',
-          shippedAt: fo?.shippedAt ?? inv.shippedAt ?? null,
+          trackingNumber: inv.trackingNo,
+          trackingUrl: buildTrackingUrl(carrier, inv.trackingNo),
+          status: 'created',
+          shippedAt: fo?.shippedAt ?? null,
           deliveredAt: null,
           eta: null,
           trackingEvents: [],

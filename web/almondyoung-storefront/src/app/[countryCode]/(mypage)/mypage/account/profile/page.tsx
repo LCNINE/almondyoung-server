@@ -34,10 +34,7 @@ export default async function AccountProfilePage() {
       <MypageLayout>
         <div className="bg-white px-3 py-4 md:min-h-screen md:px-6">
           <PageTitle>{t("profile")}</PageTitle>
-          <ProfileEdit
-            userData={userData}
-            identitiesState={identitiesState}
-          />
+          <ProfileEdit userData={userData} identitiesState={identitiesState} />
         </div>
       </MypageLayout>
       <Suspense fallback={null}>

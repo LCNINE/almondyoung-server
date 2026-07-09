@@ -4,6 +4,7 @@ import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { WalletSchema, charges as chargesTable, refunds, paymentIntents } from '../schema';
 import { DbTx, Refund } from '../types';
 import { ChargesService } from '../charges/charges.service';
+import { CashReceiptsService } from '../cash-receipts/cash-receipts.service';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { ProviderRegistry } from '../providers/provider.registry';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
@@ -17,10 +18,21 @@ export class RefundsService {
   constructor(
     private readonly dbService: DbService<WalletSchema>,
     private readonly chargesService: ChargesService,
+    private readonly cashReceiptsService: CashReceiptsService,
     private readonly paymentMethodsService: PaymentMethodsService,
     private readonly providerRegistry: ProviderRegistry,
     private readonly stateTransitionService: StateTransitionService,
   ) {}
+
+  /** 환불 성공 시 발급된 현금영수증을 환불금액만큼 취소. best-effort — 실패해도 환불은 유지. */
+  private async cancelCashReceiptBestEffort(chargeId: string, amount: number): Promise<void> {
+    try {
+      await this.cashReceiptsService.cancelForRefund(chargeId, amount);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Cash receipt cancel-on-refund failed (refund kept): charge=${chargeId}, error=${message}`);
+    }
+  }
 
   async create(dto: CreateRefundDto): Promise<Refund> {
     // 1. Early validation (no lock needed)
@@ -46,6 +58,7 @@ export class RefundsService {
         message: `Refund amount (${dto.amount}) exceeds charge amount (${charge.amount})`,
       });
     }
+    await this.assertRefundable(charge.intentId, dto.allowMembershipRefund);
 
     const method = await this.paymentMethodsService.findById(charge.paymentMethodId);
     if (!method) {
@@ -107,6 +120,7 @@ export class RefundsService {
         correlationId,
         reasonCode: dto.reasonCode,
         providerData: method.providerData,
+        refundReceiveAccount: dto.refundReceiveAccount,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -176,6 +190,7 @@ export class RefundsService {
           );
         }
       });
+      await this.cancelCashReceiptBestEffort(charge.id, dto.amount);
     } else if (providerResult.status === 'PENDING') {
       // Refund is processing asynchronously
       await this.dbService.db.update(refunds).set({ updatedAt: new Date() }).where(eq(refunds.id, refund.id));
@@ -200,7 +215,7 @@ export class RefundsService {
 
   async createByIntent(
     intentId: string,
-    dto: { amount: number; reasonCode?: string; reasonMessage?: string },
+    dto: { amount: number; reasonCode?: string; reasonMessage?: string; allowMembershipRefund?: boolean },
   ): Promise<Refund[]> {
     const refundableCharges = await this.chargesService.findRefundableByIntent(intentId);
     if (refundableCharges.length === 0) {
@@ -236,6 +251,7 @@ export class RefundsService {
         amount: share,
         reasonCode: dto.reasonCode,
         reasonMessage: dto.reasonMessage,
+        allowMembershipRefund: dto.allowMembershipRefund,
       });
       results.push(refund);
       remaining -= share;
@@ -273,6 +289,26 @@ export class RefundsService {
     return rows[0]?.userId ?? null;
   }
 
+  /**
+   * 멤버십 결제(metadata.type === 'MEMBERSHIP_FEE')는 정책상 환불 불가.
+   * 멤버십 fee intent 는 일반상품 items 를 절대 포함하지 않는 독립 intent 라
+   * (membership → wallet 직접 생성), 이 가드가 일반상품 환불을 막을 일은 없다.
+   */
+  private async assertRefundable(intentId: string, allowMembershipRefund = false): Promise<void> {
+    if (allowMembershipRefund) return; // admin 강제취소 예외 환불 — 정책상 허용된 우회
+    const rows = await this.dbService.db
+      .select({ metadata: paymentIntents.metadata })
+      .from(paymentIntents)
+      .where(eq(paymentIntents.id, intentId))
+      .limit(1);
+    if (rows[0]?.metadata?.type === 'MEMBERSHIP_FEE') {
+      throw new BadRequestException({
+        error: 'MEMBERSHIP_REFUND_NOT_ALLOWED',
+        message: '멤버십 결제는 환불할 수 없습니다.',
+      });
+    }
+  }
+
   async confirmManual(refundId: string): Promise<Refund> {
     const refund = await this.findByIdOrThrow(refundId);
     if (refund.status !== 'PENDING') {
@@ -288,6 +324,8 @@ export class RefundsService {
 
     const userId = await this.getIntentUserId(refund.intentId);
     if (!userId) throw new Error(`Intent not found for refund: ${refundId}`);
+    // 멤버십 환불 차단은 create() 단일 길목에서 처리한다. 여기 도달한 PENDING 환불은
+    // create() 가 이미 허용한 건(= admin 강제취소 예외)뿐이라 완료를 막지 않는다.
     const now = new Date().toISOString();
     const correlationId = `manual-confirm:${refundId}`;
 
@@ -331,6 +369,7 @@ export class RefundsService {
         );
       }
     });
+    await this.cancelCashReceiptBestEffort(refund.chargeId, refund.amount);
 
     return this.findByIdOrThrow(refundId);
   }

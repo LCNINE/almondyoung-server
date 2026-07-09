@@ -16,6 +16,7 @@ import { OutboxDispatcherService } from './outbox/outbox-dispatcher.service';
 
 // Services
 import { FulfillmentsService } from './services/fulfillments.service';
+import { OutboundConsumptionService } from './services/outbound-consumption.service';
 import { FulfillmentOrderCreationBacklogWorker } from './services/fulfillment-order-creation-backlog.worker';
 import { FulfillmentOrderReservationRetryWorker } from './services/fulfillment-order-reservation-retry.worker';
 import { FulfillmentOrderTransactionService } from './services/fulfillment-order-transaction.service';
@@ -24,7 +25,7 @@ import { AvailabilityService } from './services/availability.service';
 import { PoliciesService } from './services/policies.service';
 import { OutboundBatchService } from './services/outbound-batch.service';
 import { PickingProcessService } from './services/picking-process.service';
-import { InspectionService } from './services/inspection.service';
+import { ShipmentService } from './services/shipment.service';
 import { ConsolidationService } from './services/consolidation.service';
 import { DirectShipService } from './services/direct-ship.service';
 import { InvoiceService } from './services/invoice.service';
@@ -36,7 +37,7 @@ import { FulfillmentsController } from './controllers/fulfillments.controller';
 import { FulfillmentOrderController } from './controllers/fulfillment-order.controller';
 import { OutboundBatchController } from './controllers/outbound-batch.controller';
 import { PickingController } from './controllers/picking.controller';
-import { InspectionController } from './controllers/inspection.controller';
+import { ShipmentController } from './controllers/shipment.controller';
 import { ConsolidationController } from './controllers/consolidation.controller';
 import { DirectShipController } from './controllers/direct-ship.controller';
 import { InvoiceController } from './controllers/invoice.controller';
@@ -74,7 +75,7 @@ import { LocationOptimizationController } from './controllers/location-optimizat
     FulfillmentOrderController,
     OutboundBatchController,
     PickingController,
-    InspectionController,
+    ShipmentController,
     ConsolidationController,
     DirectShipController,
     InvoiceController,
@@ -87,6 +88,7 @@ import { LocationOptimizationController } from './controllers/location-optimizat
 
     // Core fulfillment services
     FulfillmentsService,
+    OutboundConsumptionService,
     FulfillmentOrderCreationBacklogWorker,
     FulfillmentOrderReservationRetryWorker,
     FulfillmentOrderTransactionService,
@@ -97,7 +99,7 @@ import { LocationOptimizationController } from './controllers/location-optimizat
     // Outbound process services
     OutboundBatchService,
     PickingProcessService,
-    InspectionService,
+    ShipmentService,
     ConsolidationService,
     DirectShipService,
     InvoiceService,
