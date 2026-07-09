@@ -21,7 +21,6 @@ import {
 import { FoStatusBadge } from '@/components/table/table-cells/fulfillment';
 import { useFulfillmentOrder } from '@/lib/services/orders/queries';
 import {
-  useShipFulfillment,
   useCancelFulfillment,
   useReserveFulfillmentItem,
 } from '@/lib/services/orders/mutations';
@@ -94,7 +93,6 @@ function ConfirmActionButton({
 
 export function FulfillmentDetail({ id }: { id: string }) {
   const { data, isLoading } = useFulfillmentOrder(id);
-  const shipMutation = useShipFulfillment();
   const cancelMutation = useCancelFulfillment();
   const reserveMutation = useReserveFulfillmentItem();
 
@@ -122,15 +120,6 @@ export function FulfillmentDetail({ id }: { id: string }) {
     reservations: data.reservations ?? [],
     adminAvailableActions: data.adminAvailableActions ?? [],
     blockedReasons: data.blockedReasons ?? [],
-  };
-
-  const handleShip = async () => {
-    try {
-      await shipMutation.mutateAsync(id);
-      toast.success('출고 처리되었습니다.');
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : '출고 처리에 실패했습니다.');
-    }
   };
 
   const handleCancel = async () => {
@@ -162,13 +151,6 @@ export function FulfillmentDetail({ id }: { id: string }) {
         <div className="flex items-center justify-between p-3">
           <Header title="출고주문 상세" />
           <div className="flex gap-2">
-            <ConfirmActionButton
-              label="출고"
-              title="출고 처리"
-              description="이 출고주문을 출고 처리하시겠습니까? 모든 라인이 배송 상태로 전환됩니다."
-              onConfirm={handleShip}
-              disabled={isTerminal || shipMutation.isPending}
-            />
             <ConfirmActionButton
               label="취소"
               title="출고주문 취소"

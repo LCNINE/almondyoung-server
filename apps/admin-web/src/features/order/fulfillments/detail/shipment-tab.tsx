@@ -15,10 +15,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { AlertTriangle, Truck, PackageCheck } from 'lucide-react';
+import { AlertTriangle, PackageCheck } from 'lucide-react';
 import {
   useAssignFulfillmentShipment,
-  useShipFulfillment,
   useDeliverFulfillment,
   orderQueryKeys,
 } from '@/lib/services/orders';
@@ -46,7 +45,6 @@ function extractErrorMessage(err: unknown): string {
 export function ShipmentTab({ fo }: { fo: FulfillmentOrderDetail }) {
   const queryClient = useQueryClient();
   const canAssign = fo.adminAvailableActions.includes('assignShipment');
-  const canShip = fo.adminAvailableActions.includes('ship');
   const canDeliver = fo.adminAvailableActions.includes('deliver');
 
   const [trackingNo, setTrackingNo] = useState('');
@@ -54,7 +52,6 @@ export function ShipmentTab({ fo }: { fo: FulfillmentOrderDetail }) {
   const [eta, setEta] = useState('');
 
   const assignShipment = useAssignFulfillmentShipment(fo.id);
-  const ship = useShipFulfillment(fo.id);
   const deliver = useDeliverFulfillment(fo.id);
 
   const handleAssignShipment = async () => {
@@ -74,15 +71,6 @@ export function ShipmentTab({ fo }: { fo: FulfillmentOrderDetail }) {
       setEta('');
     } catch (err) {
       toast.error(`운송장 등록 실패: ${extractErrorMessage(err)}`);
-    }
-  };
-
-  const handleShip = async () => {
-    try {
-      await ship.mutateAsync(undefined);
-      toast.success('출고 완료 처리되었습니다. FO 상태가 shipped로 전환됩니다.');
-    } catch (err) {
-      toast.error(`출고 완료 처리 실패: ${extractErrorMessage(err)}`);
     }
   };
 
@@ -202,40 +190,6 @@ export function ShipmentTab({ fo }: { fo: FulfillmentOrderDetail }) {
             {assignShipment.isPending ? '등록 중...' : '운송장 등록'}
           </Button>
         </div>
-      </section>
-
-      {/* 출고 완료 (ship) */}
-      <section className="rounded-md border p-4">
-        <div className="mb-2 flex items-center gap-2">
-          <Truck className="h-4 w-4 text-muted-foreground" />
-          <h3 className="text-sm font-semibold">출고 완료 처리</h3>
-          <Badge variant="outline" className="text-xs">ship</Badge>
-        </div>
-        <p className="mb-2 text-xs text-muted-foreground">
-          창고에서 상품이 물리적으로 출고되었을 때 실행합니다.
-          FO 상태가 <span className="font-mono font-medium">shipped</span>로 전환되고
-          <span className="font-mono"> FulfillmentShipped</span> 이벤트가 발행됩니다.
-        </p>
-        <Alert className="mb-3">
-          <AlertTriangle />
-          <AlertDescription>
-            출고 완료 전 송장번호 또는 운송장 추적번호가 등록되어 있는지 확인하세요.
-            ship 액션은 FO 상태가 invoiced / labeled / picked / inspecting / inspected일 때만 활성화됩니다.
-          </AlertDescription>
-        </Alert>
-        {!canShip && (
-          <p className="mb-2 text-xs text-muted-foreground">
-            현재 FO 상태({fo.status})에서는 출고 완료 처리가 허용되지 않습니다.
-            {fo.adminAvailableActions.length > 0 &&
-              ` 가능한 액션: ${fo.adminAvailableActions.join(', ')}`}
-          </p>
-        )}
-        <Button
-          onClick={handleShip}
-          disabled={!canShip || ship.isPending}
-        >
-          {ship.isPending ? '처리 중...' : '출고 완료 처리'}
-        </Button>
       </section>
 
       {/* 배송 완료 (deliver) — 고객 수령 확인 */}

@@ -83,11 +83,6 @@ export const fulfillmentsClient = {
     return res.data;
   },
 
-  ship: async (id: string): Promise<unknown> => {
-    const res = await client.post(`${BASE}/${encodeURIComponent(id)}/ship`);
-    return res.data;
-  },
-
   deliver: async (id: string): Promise<unknown> => {
     const res = await client.post(`${BASE}/${encodeURIComponent(id)}/deliver`);
     return res.data;

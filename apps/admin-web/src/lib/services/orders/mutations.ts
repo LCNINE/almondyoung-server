@@ -871,20 +871,6 @@ export const useAssignFulfillmentShipment = (id: string) => {
   });
 };
 
-export const useShipFulfillment = (boundId?: string) => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (id?: string) => {
-      const targetId = boundId ?? id;
-      if (!targetId) throw new Error('Fulfillment id is required');
-      return orders.fulfillments.ship(targetId);
-    },
-    onSuccess: (_, id) => {
-      invalidateFulfillment(queryClient, boundId ?? id!);
-    },
-  });
-};
-
 export const useDeliverFulfillment = (id: string) => {
   const queryClient = useQueryClient();
   return useMutation({
