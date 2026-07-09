@@ -115,6 +115,8 @@ import { CmsSettlementPollerService } from './cms/cms-settlement-poller.service'
 import { InvoiceOutcomeService } from './invoices/invoice-outcome.service';
 import { InvoiceExecutorService } from './invoices/invoice-executor.service';
 import { InvoiceCommandConsumer } from './invoices/invoice-command.consumer';
+import { InvoiceController } from './invoices/invoice.controller';
+import { InvoiceQueryService } from './invoices/invoice-query.service';
 
 // Dev helpers (dev/test only — ENABLE_DEV_CMS_HELPERS=true + NODE_ENV !== 'production')
 import { CmsDevController } from './dev/cms-dev.controller';
@@ -392,6 +394,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     CheckoutSessionController,
     CmsAgreementController,
     RecurringBillingAdminController,
+    InvoiceController,
     UgcCommandConsumer,
     BillingChargeConsumer,
     InvoiceCommandConsumer,
@@ -495,6 +498,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
 
     // Invoices (ADR-0027)
     InvoiceOutcomeService,
+    InvoiceQueryService,
     InvoiceExecutorService,
 
     // Dev helpers (conditional — only when ENABLE_DEV_CMS_HELPERS=true + non-production)

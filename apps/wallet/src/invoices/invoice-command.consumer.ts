@@ -3,8 +3,8 @@ import { OnEvent, EventPayload, EventsExceptionFilter } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { CreateInvoicePayload, VoidInvoicePayload } from '@packages/event-contracts/streams/wallet-command.stream';
 import { DbService } from '@app/db';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { and, eq, inArray } from 'drizzle-orm';
 import { WalletSchema, invoices, outboxEvents } from '../schema';
 import { BillingAgreementService } from '../billing/billing-agreement.service';
 import { BillingMethodService } from '../billing/billing-method.service';
@@ -39,10 +39,13 @@ export class InvoiceCommandConsumer {
     );
 
     // 0원 청구는 집행 불가(charge 는 amount > 0) — 컨슈머 검증이 꺼진 배포에서도 stuck 인보이스를 막는다.
+    // 조용히 drop 하면 subscriber 가 결과를 영영 못 받아 선적용 자격이 회수되지 않으므로(무료 고착),
+    // mandate.rejected 를 멱등 발행해 폐루프를 닫는다.
     if (!Number.isInteger(payload.amount) || payload.amount <= 0) {
       this.logger.error(
-        `[CreateInvoice] Invalid amount ${payload.amount} — skip (subscriberRef=${payload.subscriberRef}, key=${payload.idempotencyKey})`,
+        `[CreateInvoice] Invalid amount ${payload.amount} — reject (subscriberRef=${payload.subscriberRef}, key=${payload.idempotencyKey})`,
       );
+      await this.emitMandateRejectedWithoutInvoice(payload, null, 'INVALID_AMOUNT', '청구 금액이 유효하지 않습니다');
       return;
     }
 
@@ -63,24 +66,11 @@ export class InvoiceCommandConsumer {
       this.logger.error(
         `[CreateInvoice] No usable billing method: subscriberRef=${payload.subscriberRef}, billingMethodId=${billingMethodId ?? '-'}`,
       );
-      await this.dbService.db.insert(outboxEvents).values(
-        buildOutboxInsertValues({
-          eventType: InvoiceEventType.MANDATE_REJECTED,
-          aggregateType: INVOICE_AGGREGATE_TYPE,
-          // 인보이스가 없으므로 멱등키 기반 안정 키를 payload 에 내려준다.
-          aggregateId: randomUUID(),
-          partitionKey: invoicePartitionKey(payload.subscriberType, payload.subscriberRef),
-          payload: {
-            invoiceId: null,
-            idempotencyKey: payload.idempotencyKey,
-            billingMethodId,
-            subscriberType: payload.subscriberType,
-            subscriberRef: payload.subscriberRef,
-            reasonCode: 'BILLING_METHOD_NOT_ACTIVE',
-            reason: '유효한 정기결제 수단이 없습니다',
-            occurredAt: new Date().toISOString(),
-          },
-        }),
+      await this.emitMandateRejectedWithoutInvoice(
+        payload,
+        billingMethodId,
+        'BILLING_METHOD_NOT_ACTIVE',
+        '유효한 정기결제 수단이 없습니다',
       );
       return;
     }
@@ -122,6 +112,53 @@ export class InvoiceCommandConsumer {
       return;
     }
     this.logger.log(`[CreateInvoice] Created invoice ${inserted[0].id} (key=${payload.idempotencyKey})`);
+  }
+
+  /**
+   * 인보이스 행을 만들 수 없는 거절(결제수단 부재·무효 금액)을 mandate.rejected 로 통지한다.
+   * 인보이스가 없어 dedupe 근거가 없으므로, payload 에 실은 멱등키로 이미 발행됐는지 확인해 커맨드
+   * 재전달 시 재발행을 억제한다(터미널 인보이스의 reEmit 은 별개 — 여기선 중복 억제). aggregate_id 는
+   * UUID 컬럼이라 결정적 문자열을 넣을 수 없어, 멱등키는 payload 로만 라우팅한다.
+   */
+  private async emitMandateRejectedWithoutInvoice(
+    payload: CreateInvoicePayload,
+    billingMethodId: string | null,
+    reasonCode: string,
+    reason: string,
+  ): Promise<void> {
+    const [existing] = await this.dbService.db
+      .select({ id: outboxEvents.id })
+      .from(outboxEvents)
+      .where(
+        and(
+          eq(outboxEvents.eventType, InvoiceEventType.MANDATE_REJECTED),
+          sql`${outboxEvents.payload} ->> 'idempotencyKey' = ${payload.idempotencyKey}`,
+        ),
+      )
+      .limit(1);
+    if (existing) {
+      this.logger.log(`[CreateInvoice] mandate.rejected already emitted (key=${payload.idempotencyKey}) — skip`);
+      return;
+    }
+
+    await this.dbService.db.insert(outboxEvents).values(
+      buildOutboxInsertValues({
+        eventType: InvoiceEventType.MANDATE_REJECTED,
+        aggregateType: INVOICE_AGGREGATE_TYPE,
+        aggregateId: randomUUID(),
+        partitionKey: invoicePartitionKey(payload.subscriberType, payload.subscriberRef),
+        payload: {
+          invoiceId: null,
+          idempotencyKey: payload.idempotencyKey,
+          billingMethodId,
+          subscriberType: payload.subscriberType,
+          subscriberRef: payload.subscriberRef,
+          reasonCode,
+          reason,
+          occurredAt: new Date().toISOString(),
+        },
+      }),
+    );
   }
 
   @OnEvent('wallet.commands.v1', 'VoidInvoice')
