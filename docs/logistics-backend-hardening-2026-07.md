@@ -153,7 +153,7 @@
 > - 검증: `nest build core`(tsc/webpack) exit 0 · eslint 0 · arch 경계 회귀(`inventory-write-boundary.arch.spec.ts`) PASS · 저장소 전역 참조 0 재확인. 스키마 무변경이라 dev DB 의존 ⏸ 항목 없음.
 > - **WS-A 잔여(미착수): 없음** — WS-A 전 항목(P0-2·P0-3·P0-4·P2-2·P2-4·P2-5·P2-6·P2-14·W3) 완료.
 
-**WS-B. 레거시 경로 은퇴** — P0-5, P1-6, P2-11, P3-4, P3-5 *(W2 는 작업1에서 기해소 — 목록에서 제외)*
+**WS-B. 레거시 경로 은퇴** — P0-1, P0-5, P1-6, P2-11, P3-4, P3-5, W1 *(W2 는 작업1에서 기해소 — 목록에서 제외)*
 inter-warehouse 손실 엔드포인트를 무손실 경로로 재배선, dead 지뢰(`processExpiredReservations` 메서드, `createFulfillmentOrder` 경로, dead enum, `outbound_tasks` 테이블) 제거. destructive 스키마 변경은 expand-contract(ADR-0005 §5) 준수.
 
 > **착수 재확인(2026-07-10) — 5개 영역 병렬 검증 완료. 요지:**
@@ -172,7 +172,7 @@ inter-warehouse 손실 엔드포인트를 무손실 경로로 재배선, dead �
 > - **P1-6 + P3-5 코드부**: `FulfillmentOrderTransactionService.createFulfillmentOrder` + 전용 헬퍼 3종(`validateItems`/`getActiveMappingId`/`checkStockAvailability`) + 파일 내부 인터페이스 2종(`CreateFulfillmentOrderDto`/`FulfillmentOrderResult`) 삭제. `checkStockAvailability` 의 dead `status='active'` 예약 집계 버그(P1-6) 동반 제거. 유일 호출자가 GoneException 뒤 dead 여서 잠복. 부속 배선: 컨트롤러 `POST /fulfillment-orders` Gone 핸들러 + `consolidation.service.ts` 죽은 주입 제거. **존치**: `cancel`/`updatePriority`(admin-web 라이브)·`allocate`(라우트 live) — 서비스 파일·모듈 배선 유지.
 > - **P3-4 선행조건 충족**: 이번 삭제로 FO `status='pending'`·reservation `status='active'` 의 **리터럴 producer 가 0**이 됨. pgEnum 값 재생성(destructive, expand-contract)은 작업 8 소유로 유지.
 > - **P3-5 잔여**: `outbound_task`/`outbound_task_items/lines`(+`outbound_task_orders`) 4테이블 DROP 은 작업 8(expand-contract). 코드부는 본 작업으로 종결.
-> - 브랜치 `feat/dead-path-sweep` (2 커밋: `[inventory]` P0-5 `713a73861` + `[fulfillment]` P1-6/P3-5 `09c00dcdb`). develop **미머지**(push 준비 상태).
+> - 브랜치 `feat/dead-path-sweep` (2 커밋: `[inventory]` P0-5 `713a73861` + `[fulfillment]` P1-6/P3-5 `09c00dcdb`) → **develop 스쿼시 머지 `cc8a6161f`** (2026-07-10).
 > - 검증: `nest build core`(tsc/webpack) exit 0 · 삭제 심볼(`processExpiredReservations`·transaction 서비스 `createFulfillmentOrder`·`checkStockAvailability`·`getActiveMappingId`·`FulfillmentOrderResult`) 저장소 전역 참조 0 (`fulfillments.service` 의 private `createFulfillmentOrderFromItems` 는 별개 심볼, 존치 재확인) · arch 경계 회귀(`inventory-write-boundary.arch.spec.ts`) PASS · fulfillment 단위 spec 10 suite / 190 test PASS · 변경 4파일 eslint **신규** error 0 (기존 `require-await` 3건은 미변경 메서드에서 HEAD 부터 존재 — repo 전역 lint 는 기존부터 대량 error 상태로 본 작업과 무관). 스키마 무변경이라 dev DB 의존 ⏸ 항목 없음.
 
 > **✅ 작업 6 (창고간 이동 무손실화, P0-1·W1) 완료 — 2026-07-10:** 손실 경로(Path A `movement/inter-warehouse`)를 하드 삭제해 무손실 경로 `inventory/transfers`(Path B)로 일원화. 호출자 전수 감사(FE·BE·타 앱)로 은퇴가 재배선보다 적합함을 확정 — Path A inter-warehouse 는 모노레포 호출자 0(라이브 지뢰), `complete` 는 완전 dead, Path B 는 admin-web 라이브.
@@ -180,6 +180,8 @@ inter-warehouse 손실 엔드포인트를 무손실 경로로 재배선, dead �
 > - **Path B 경량 하드닝**: `executeTransferJob` 에 job 헤더 `FOR UPDATE`(동시 실행 직렬화) + 실행된 라인 skip(재-PATCH 이중출고 차단). Path B 첫 테스트(단위: 재실행 가드·무손실 라우팅 / 통합 ⏸: 보존·재실행 불변).
 > - 스키마·마이그레이션 무변경(작업 4 와 동일). 검증: `nest build core` exit 0 · 삭제 심볼 소스 참조 0 · arch 경계(`inventory-write-boundary.arch.spec.ts`) PASS · 단위 GREEN · 통합 ⏸(dev DB 복구 시).
 > - 설계 `docs/superpowers/specs/2026-07-10-inter-warehouse-movement-retirement-design.md` · 계획 `docs/superpowers/plans/2026-07-10-inter-warehouse-movement-retirement.md`.
+> - 브랜치 `feat/inter-warehouse-retirement` → **develop 스쿼시 머지 `536687448`** (2026-07-10).
+> - **스프린트 P0 5건 전량 해소** — WS-B 잔여는 작업 7(P2-11)·작업 8(P3-4·P3-5 스키마 contract)뿐.
 
 **WS-C. 예약 보강** — P1-3, P1-4, P1-5, P2-1, P2-9
 reserve 경로 잠금(ledger FOR UPDATE 또는 sku+warehouse advisory lock), adjustDown 예약 고려, FO 예약 타임아웃 정책 + 잔존 모니터링, 소진의 라인 단위 전환, reserved≤on_hand 대사 체크(잡).
@@ -189,4 +191,4 @@ reserve 경로 잠금(ledger FOR UPDATE 또는 sku+warehouse advisory lock), adj
 
 **WS-E. 컨벤션/횡단** — P3-1(워커 파싱 제거와 한 세트), P3-2, P3-3, P3-6, P3-7, P3-8, P2-3, P2-5~P2-8, P2-10, W8, W9
 
-권장 착수 순서: **WS-A·WS-B 의 P0 5건 먼저**(재고 무결성 — WS-A 3건 완료, 잔여 P0-1·P0-5 는 WS-B 작업 5·6) → WS-D 의 포이즌 2건(P1-1/P1-2) → WS-C → 나머지. ~~P0-2 와 P0-3 은 반드시 한 PR 로~~(작업1 완료). P3-1 은 backlog 워커 제어흐름과 얽혀 있으므로 독립 PR + FO 생성 실패 시나리오 회귀 테스트 필수.
+권장 착수 순서: ~~**WS-A·WS-B 의 P0 5건 먼저**(재고 무결성)~~ **P0 5건 전량 완료(작업 1~6, 2026-07-10)** → WS-D 의 포이즌 2건(P1-1/P1-2) → WS-C → 나머지 (WS-B 잔여 작업 7·8 은 병행 가능). ~~P0-2 와 P0-3 은 반드시 한 PR 로~~(작업1 완료). P3-1 은 backlog 워커 제어흐름과 얽혀 있으므로 독립 PR + FO 생성 실패 시나리오 회귀 테스트 필수.
