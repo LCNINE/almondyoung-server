@@ -6,21 +6,18 @@ import { getPointBalance } from "@lib/api/wallet"
 import type { UserDetail } from "@lib/types/ui/user"
 import { Suspense } from "react"
 
-import { PaymentInfoWrapper } from "./wrappers/payment-info-wrapper"
-import { ShippingItemsWrapper } from "./wrappers/shipping-items-wrapper"
+import { OrderListWrapper } from "./wrappers/order-list-wrapper"
 import { ShippingStatusWrapper } from "./wrappers/shipping-status-wrapper"
 
 import { retrieveCart } from "@/lib/api/medusa/cart"
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import type { CustomerGroupRef } from "@/lib/utils/membership-group"
 import { isMembershipGroup } from "@/lib/utils/membership-group"
-import { QuickMenuSection } from "../../components/desktop/quick-menu-section"
 import { UserProfileSection } from "../../components/desktop/user-profile-section"
 import { FrequentMenu } from "../../components/mobile/frequent-menu"
 import { MobileHeader } from "../../components/mobile/mobile-header"
 import { QuickLinks } from "../../components/mobile/quick-links"
 import {
-  PaymentInfoSkeleton,
   ShippingItemsSkeleton,
   ShippingStatusSkeleton,
 } from "../../components/shared/mypage-skeletons"
@@ -101,15 +98,11 @@ export async function MyPageTemplate({ countryCode }: { countryCode: string }) {
               </div>
             )}
 
-            <QuickMenuSection />
-
-            <Suspense fallback={<ShippingItemsSkeleton />}>
-              <ShippingItemsWrapper />
-            </Suspense>
-
-            <Suspense fallback={<PaymentInfoSkeleton />}>
-              <PaymentInfoWrapper />
-            </Suspense>
+            <div className="mt-6">
+              <Suspense fallback={<ShippingItemsSkeleton />}>
+                <OrderListWrapper />
+              </Suspense>
+            </div>
           </div>
         </MypageLayout>
       </div>

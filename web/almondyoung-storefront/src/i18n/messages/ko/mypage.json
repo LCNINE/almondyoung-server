@@ -151,7 +151,7 @@
     "settings": "설정",
     "won": "원",
     "benefitActive": "혜택 이용중",
-    "membershipJoinCta": "멤버십 가입하고 혜택 받기"
+    "membershipJoinCta": "구독하고 혜택 받기"
   },
   "shipping": {
     "title": "배송 중 상품",
@@ -161,7 +161,9 @@
     "shopNow": "쇼핑하러 가기",
     "orderNumber": "주문번호 {number}",
     "detailAriaLabel": "상세보기",
-    "orderTitle": "주문 내역"
+    "orderTitle": "주문 내역",
+    "trackButton": "배송 조회",
+    "trackToast": "배송 조회는 준비 중이에요. 고객센터로 문의해 주세요."
   },
   "banner": {
     "savingsThisMonth": "이번달 <strong>{amount}원</strong> 절약했어요!",
@@ -420,7 +422,11 @@
       "items": "상품 {count}건",
       "totalQuantity": "총 수량 {count}개",
       "productSuffix": "외 {count}건",
-      "defaultProductName": "상품"
+      "defaultProductName": "상품",
+      "searchPlaceholder": "주문한 상품을 검색할 수 있어요!",
+      "prevPage": "이전",
+      "nextPage": "다음",
+      "recent6m": "최근 6개월"
     },
     "filter": {
       "label": "필터",

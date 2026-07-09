@@ -31,22 +31,6 @@ export function ShippingItemsSkeleton() {
 }
 
 /**
- * 결제 정보 섹션 스켈레톤 (데스크탑)
- */
-export function PaymentInfoSkeleton() {
-  return (
-    <section className="self-stretch bg-white">
-      <div className="flex flex-col items-center justify-center gap-4 py-6 pl-7">
-        <Skeleton className="h-6 w-32" />
-        <Skeleton className="h-4 w-40" />
-        <Skeleton className="h-6 w-24" />
-        <Skeleton className="h-8 w-48 rounded-[5px]" />
-      </div>
-    </section>
-  )
-}
-
-/**
  * 주문 내역 가로 카드 스켈레톤 (모바일)
  */
 export function ShippingStatusSkeleton() {

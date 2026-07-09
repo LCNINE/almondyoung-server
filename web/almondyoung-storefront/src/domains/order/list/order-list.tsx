@@ -7,14 +7,24 @@ import {
   getOrderActionsByMedusaId,
   type StoreOrderActionsResponse,
 } from "@/lib/api/orders/store-orders"
-import OrderCard from "@components/orders/order-card/order-card"
-import OrderCardContent from "@components/orders/order-card/order-card-content"
+import { getActiveRefundRequest } from "@/lib/api/wallet"
+import { useSearchFilter } from "@/hooks/use-search-filter"
+import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
+import OrderActions from "@components/orders/order-card/order-actions"
+import OrderSummaryCard from "@components/orders/order-card/order-summary-card"
+import { getCoreDisplayStatus } from "@components/orders/order-status-badges"
 import type { HttpTypes } from "@medusajs/types"
-import { Loader2, Package } from "lucide-react"
+import {
+  ChevronLeft,
+  ChevronRight,
+  Loader2,
+  Package,
+  Search,
+} from "lucide-react"
+import { cn } from "@/lib/utils"
 import { useTranslations } from "next-intl"
 import { useEffect, useMemo, useState, useTransition } from "react"
-import { getActiveRefundRequest } from "@/lib/api/wallet"
-import { OrderFilter, type FilterOptions } from "./shared/order-filter"
+import { type FilterOptions } from "./order-filter"
 
 interface OrderItem {
   orderId: string
@@ -41,9 +51,14 @@ interface OrderListClientProps {
   initialLimit: number
   hasError?: boolean
   initialActionsMap?: Record<string, StoreOrderActionsResponse>
+  /** 마이페이지 홈 안에 끼워 넣어 쓸 때 true — 페이지 전용 여백/최소높이 제거 */
+  embedded?: boolean
 }
 
-const LOAD_MORE_LIMIT = 20
+/** 한 페이지 기본 건수 (단, 같은 날짜 주문은 잘리지 않게 경계까지 확장) */
+const PAGE_SIZE = 5
+/** 페이지네이션용 클라 전체 로드 상한 */
+const FETCH_LIMIT = 100
 
 const getOrderStatusKey = (order: HttpTypes.StoreOrder): string => {
   if (order.status === "canceled") return "cancelled"
@@ -158,35 +173,101 @@ function computeDateRange(filter: FilterOptions): {
   }
 }
 
+/** 검색 대상 텍스트: 주문 내 상품명 전체 */
+const orderSearchText = (o: HttpTypes.StoreOrder) =>
+  (o.items ?? [])
+    .map((it) => it.title || it.variant?.product?.title || "")
+    .join(" ")
+
+/** created_at 의 날짜 키 (YYYY-MM-DD) */
+const dayKey = (o: HttpTypes.StoreOrder) =>
+  formatDate(o.created_at, DATE_FORMATS.ISO_DATE)
+
+/**
+ * 페이지당 PAGE_SIZE 건씩 나누되, 페이지 경계가 날짜 중간을 가르지 않도록
+ * 마지막 건과 같은 날짜의 주문은 모두 같은 페이지에 포함시킨다.
+ */
+function paginateByDate(
+  orders: HttpTypes.StoreOrder[],
+  size: number
+): HttpTypes.StoreOrder[][] {
+  const pages: HttpTypes.StoreOrder[][] = []
+  let i = 0
+  while (i < orders.length) {
+    let end = Math.min(i + size, orders.length)
+    if (end < orders.length) {
+      const boundary = dayKey(orders[end - 1]!)
+      while (end < orders.length && dayKey(orders[end]!) === boundary) end++
+    }
+    pages.push(orders.slice(i, end))
+    i = end
+  }
+  return pages
+}
+
 export function OrderList({
   initialOrders,
-  initialCount,
-  initialLimit: _initialLimit,
   hasError = false,
   initialActionsMap = {},
+  embedded = false,
 }: OrderListClientProps) {
   const tStatus = useTranslations("mypage.order.status")
   const tList = useTranslations("mypage.order.list")
   const tEmpty = useTranslations("mypage.empty")
 
-  const [filter, setFilter] = useState<FilterOptions>({ year: "", month: "" })
-  const [currentDateRange, setCurrentDateRange] = useState<{
-    dateFrom?: string
-    dateTo?: string
-  }>({})
+  const [period, setPeriod] = useState<string>("recent")
   const [rawOrders, setRawOrders] =
     useState<HttpTypes.StoreOrder[]>(initialOrders)
   const [actionsMap, setActionsMap] =
     useState<Record<string, StoreOrderActionsResponse>>(initialActionsMap)
-  // 주문별 wallet 환불신청 상태(REQUESTED 등). 무통장 확정 주문만 조회. "" = 조회했지만 없음.
   const [refundMap, setRefundMap] = useState<Record<string, string>>({})
-  const [totalCount, setTotalCount] = useState(initialCount)
+  const [page, setPage] = useState(0)
   const [isFiltering, startFilterTransition] = useTransition()
-  const [isPending, startLoadMoreTransition] = useTransition()
 
-  // 무통장 확정 주문에 한해 환불신청 상태를 조회해 목록 뱃지/버튼에 반영.
+  // 상품명 검색
+  const {
+    input: searchInput,
+    setInput: setSearchInput,
+    filtered: filteredRaw,
+  } = useSearchFilter(rawOrders, orderSearchText)
+
+  const pages = useMemo(
+    () => paginateByDate(filteredRaw, PAGE_SIZE),
+    [filteredRaw]
+  )
+  const safePage = Math.min(page, Math.max(0, pages.length - 1))
+  const pageRaw = useMemo(() => pages[safePage] ?? [], [pages, safePage])
+  const orders = useMemo(
+    () => pageRaw.map((o) => mapStoreOrderToOrderItem(o, { tStatus, tList })),
+    [pageRaw, tStatus, tList]
+  )
+
+  // 현재 페이지 주문의 Core 액션(상태/버튼) 조회
   useEffect(() => {
-    const targets = rawOrders.filter((o) => {
+    const targets = pageRaw.filter((o) => !(o.id in actionsMap))
+    if (targets.length === 0) return
+    let cancelled = false
+    void (async () => {
+      const results = await Promise.allSettled(
+        targets.map((o) => getOrderActionsByMedusaId(o.id))
+      )
+      if (cancelled) return
+      setActionsMap((prev) => {
+        const next = { ...prev }
+        results.forEach((r, i) => {
+          if (r.status === "fulfilled") next[targets[i]!.id] = r.value
+        })
+        return next
+      })
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [pageRaw, actionsMap])
+
+  // 현재 페이지 무통장 확정 주문의 환불신청 상태 조회
+  useEffect(() => {
+    const targets = pageRaw.filter((o) => {
       const bts = (o.metadata as Record<string, unknown> | null)
         ?.bank_transfer_status
       const intentId = (
@@ -224,75 +305,33 @@ export function OrderList({
     return () => {
       cancelled = true
     }
-  }, [rawOrders, refundMap])
+  }, [pageRaw, refundMap])
 
-  const hasMore = rawOrders.length < totalCount
+  // 기간 pill: "recent"(최근 6개월) 또는 연도 문자열
+  const currentYear = new Date().getFullYear()
+  const years = Array.from({ length: 6 }, (_, i) => currentYear - i)
 
-  const orders: OrderItem[] = useMemo(
-    () => rawOrders.map((o) => mapStoreOrderToOrderItem(o, { tStatus, tList })),
-    [rawOrders, tStatus, tList]
-  )
-
-  const handleFilterChange = (newFilter: FilterOptions) => {
-    setFilter(newFilter)
-    const dateRange = computeDateRange(newFilter)
-    setCurrentDateRange(dateRange)
-
+  const handlePeriodChange = (next: string) => {
+    setPeriod(next)
+    setPage(0)
+    let range: { dateFrom?: string; dateTo?: string }
+    if (next === "recent") {
+      const from = new Date()
+      from.setMonth(from.getMonth() - 6)
+      range = { dateFrom: from.toISOString(), dateTo: new Date().toISOString() }
+    } else {
+      range = computeDateRange({ year: next, month: "" } as FilterOptions)
+    }
     startFilterTransition(async () => {
       const result = await getOrders({
-        limit: LOAD_MORE_LIMIT,
+        limit: FETCH_LIMIT,
         offset: 0,
-        ...dateRange,
+        ...range,
       })
-
       if (result) {
         setRawOrders(result.orders ?? [])
-        setTotalCount(result.count ?? 0)
-
-        const newActions = await Promise.allSettled(
-          (result.orders ?? []).map((o: HttpTypes.StoreOrder) =>
-            getOrderActionsByMedusaId(o.id)
-          )
-        )
-        const nextMap: Record<string, StoreOrderActionsResponse> = {}
-        newActions.forEach((r, idx) => {
-          const order = (result.orders ?? [])[idx]
-          if (r.status === "fulfilled" && order) {
-            nextMap[order.id] = r.value
-          }
-        })
-        setActionsMap(nextMap)
-      }
-    })
-  }
-
-  const handleLoadMore = () => {
-    startLoadMoreTransition(async () => {
-      const result = await getOrders({
-        limit: LOAD_MORE_LIMIT,
-        offset: rawOrders.length,
-        ...currentDateRange,
-      })
-
-      if (result?.orders) {
-        setRawOrders((prev) => [...prev, ...result.orders])
-        if (typeof result.count === "number") {
-          setTotalCount(result.count)
-        }
-        const newActions = await Promise.allSettled(
-          result.orders.map((o: HttpTypes.StoreOrder) =>
-            getOrderActionsByMedusaId(o.id)
-          )
-        )
-        setActionsMap((prev) => {
-          const next = { ...prev }
-          newActions.forEach((r, idx) => {
-            if (r.status === "fulfilled" && result.orders[idx]) {
-              next[result.orders[idx]!.id] = r.value
-            }
-          })
-          return next
-        })
+        setActionsMap({})
+        setRefundMap({})
       }
     })
   }
@@ -305,11 +344,13 @@ export function OrderList({
     )
   }
 
-  // 원본 데이터가 없으면 필터 없이 빈 화면
+  // 원본 데이터가 없으면 빈 화면
   if (initialOrders.length === 0 && !isFiltering) {
     return (
-      <div className="min-h-screen bg-white px-3 py-4 md:px-6">
-        <PageTitle>{tList("title")}</PageTitle>
+      <div className="bg-muted min-h-screen px-3 py-4 md:bg-transparent md:px-6">
+        <div className="hidden md:block">
+          <PageTitle>{tList("title")}</PageTitle>
+        </div>
         <div className="flex min-h-[400px] flex-col items-center justify-center gap-4">
           <Package className="h-12 w-12 text-gray-300" />
           <div className="text-center">
@@ -326,15 +367,60 @@ export function OrderList({
   }
 
   return (
-    <div className="min-h-screen bg-white px-3 py-4 md:px-6">
-      <PageTitle>{tList("title")}</PageTitle>
-      <section className="my-5">
-        <OrderFilter
-          onFilterChange={handleFilterChange}
-          defaultYear={filter.year}
-          defaultMonth={filter.month}
-        />
-      </section>
+    <div
+      className={cn(
+        "bg-muted md:bg-transparent",
+        embedded ? "md:px-0 md:py-0" : "min-h-screen md:px-6 md:py-4"
+      )}
+    >
+      {/* 검색 + 기간 필터 */}
+      <div className="space-y-3 bg-white px-4 py-3 md:bg-transparent md:p-0">
+        <div className="hidden md:block">
+          <PageTitle>{tList("title")}</PageTitle>
+        </div>
+        <div className="relative md:mt-5 md:max-w-xl">
+          <input
+            value={searchInput}
+            onChange={(e) => {
+              setSearchInput(e.target.value)
+              setPage(0)
+            }}
+            placeholder={tList("searchPlaceholder")}
+            className="focus:border-primary w-full rounded-lg border border-gray-200 bg-white px-4 py-2.5 pr-10 text-sm outline-none"
+          />
+          <Search className="absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 text-gray-400" />
+        </div>
+        {/* 기간 필터 pill (PC 전용) */}
+        <div className="hidden gap-2 overflow-x-auto md:flex [&::-webkit-scrollbar]:hidden">
+          <button
+            type="button"
+            onClick={() => handlePeriodChange("recent")}
+            className={cn(
+              "shrink-0 rounded-full border px-3.5 py-1 text-sm font-medium whitespace-nowrap transition-colors",
+              period === "recent"
+                ? "border-primary bg-primary text-white"
+                : "hover:border-primary border-gray-200 text-gray-600"
+            )}
+          >
+            {tList("recent6m")}
+          </button>
+          {years.map((y) => (
+            <button
+              key={y}
+              type="button"
+              onClick={() => handlePeriodChange(String(y))}
+              className={cn(
+                "shrink-0 rounded-full border px-3.5 py-1 text-sm font-medium whitespace-nowrap transition-colors",
+                period === String(y)
+                  ? "border-primary bg-primary text-white"
+                  : "hover:border-primary border-gray-200 text-gray-600"
+              )}
+            >
+              {y}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {isFiltering ? (
         <div className="flex min-h-[200px] items-center justify-center">
@@ -353,58 +439,70 @@ export function OrderList({
           </div>
         </div>
       ) : (
-        <section className="space-y-6">
-          {orders.map((order) => (
-            <OrderCard
-              key={order.orderId}
-              orderId={order.orderId}
-              orderDate={order.orderDate}
-              orderNumber={order.orderNumber}
-            >
-              <OrderCardContent
-                orderId={order.orderId}
-                status={order.status}
-                paymentStatus={order.paymentStatus}
-                deliveryInfo={order.deliveryInfo}
-                shippingNote={order.shippingNote}
-                productName={order.productName}
-                productImage={order.productImage}
-                price={order.price}
-                quantity={order.quantity}
-                options={order.options}
-                showInquiry={order.showInquiry}
-                orderItems={order.orderItems}
-                variantId={order.variantId}
-                coreActions={actionsMap[order.orderId]}
-                bankTransferStatus={order.bankTransferStatus}
-                refundRequestStatus={refundMap[order.orderId]}
-              />
-            </OrderCard>
-          ))}
+        <>
+          <section className="mt-2 space-y-2 md:mt-4 md:space-y-6">
+            {orders.map((order) => {
+              const actions = actionsMap[order.orderId]
+              const refund = refundMap[order.orderId]
+              const displayStatus =
+                refund === "REQUESTED"
+                  ? "환불 신청됨 · 처리 대기중"
+                  : actions
+                    ? getCoreDisplayStatus(actions)
+                    : order.status
+              return (
+                <OrderSummaryCard
+                  key={order.orderId}
+                  orderId={order.orderId}
+                  orderDate={order.orderDate}
+                  orderNumber={order.orderNumber}
+                  status={displayStatus}
+                  deliveryInfo={order.deliveryInfo}
+                  productName={order.productName}
+                  productImage={order.productImage}
+                  price={order.price}
+                  quantity={order.quantity}
+                  options={order.options}
+                >
+                  <OrderActions
+                    orderId={order.orderId}
+                    paymentStatus={order.paymentStatus}
+                    productName={order.productName}
+                    variantId={order.variantId}
+                    orderItems={order.orderItems}
+                    showInquiry={order.showInquiry}
+                    coreActions={actions}
+                    bankTransferStatus={order.bankTransferStatus}
+                    refundRequestStatus={refund}
+                  />
+                </OrderSummaryCard>
+              )
+            })}
+          </section>
 
-          {hasMore && (
-            <div className="flex justify-center pt-4 pb-8">
+          {pages.length > 1 && (
+            <div className="flex items-center justify-center gap-2 py-6">
               <Button
                 variant="outline"
-                onClick={handleLoadMore}
-                disabled={isPending}
-                className="w-full max-w-xs"
+                disabled={safePage === 0}
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
               >
-                {isPending ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {tList("loadingMore")}
-                  </>
-                ) : (
-                  tList("loadMore", {
-                    loaded: rawOrders.length,
-                    total: totalCount,
-                  })
-                )}
+                <ChevronLeft className="mr-1 h-4 w-4" />
+                {tList("prevPage")}
+              </Button>
+              <Button
+                variant="outline"
+                disabled={safePage >= pages.length - 1}
+                onClick={() =>
+                  setPage((p) => Math.min(pages.length - 1, p + 1))
+                }
+              >
+                {tList("nextPage")}
+                <ChevronRight className="ml-1 h-4 w-4" />
               </Button>
             </div>
           )}
-        </section>
+        </>
       )}
     </div>
   )

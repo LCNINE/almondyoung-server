@@ -1,7 +1,10 @@
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
-import { OrderList } from "@/domains/order/list/components/order-list"
+import { OrderList } from "@/domains/order/list/order-list"
 import { getOrders } from "@/lib/api/medusa/orders"
-import { getOrderActionsByMedusaId, type StoreOrderActionsResponse } from "@/lib/api/orders/store-orders"
+import {
+  getOrderActionsByMedusaId,
+  type StoreOrderActionsResponse,
+} from "@/lib/api/orders/store-orders"
 import { WithHeaderLayout } from "@components/layout"
 import { Metadata } from "next"
 import { getTranslations } from "next-intl/server"
@@ -11,7 +14,10 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: t("orderList") }
 }
 
-const INITIAL_LIMIT = 20
+// 클라에서 검색·페이지네이션(5건/페이지)을 처리하므로 목록은 넉넉히 한 번에 받는다.
+const INITIAL_LIMIT = 100
+// SSR Core 액션 조회는 첫 페이지분만(나머지는 클라에서 페이지 이동 시 조회).
+const SSR_ACTIONS_COUNT = 8
 
 export default async function OrderListPage() {
   const t = await getTranslations("mypage.menu")
@@ -20,7 +26,7 @@ export default async function OrderListPage() {
   // Core 액션을 병렬로 조회. 실패한 주문은 null로 처리해 렌더를 블로킹하지 않음.
   const orders = ordersData?.orders ?? []
   const actionsResults = await Promise.allSettled(
-    orders.map((o) => getOrderActionsByMedusaId(o.id))
+    orders.slice(0, SSR_ACTIONS_COUNT).map((o) => getOrderActionsByMedusaId(o.id))
   )
   const actionsMap: Record<string, StoreOrderActionsResponse> = {}
   actionsResults.forEach((result, idx) => {
