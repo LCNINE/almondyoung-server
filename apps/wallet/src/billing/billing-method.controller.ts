@@ -11,6 +11,7 @@ import {
   Post,
   Put,
   Body,
+  Query,
   Req,
   UseInterceptors,
 } from '@nestjs/common';
@@ -228,19 +229,30 @@ export class BillingMethodController {
   @Get()
   @WalletJwtAuth()
   @ApiOperation({ summary: 'List billing methods for the authenticated user' })
-  async list(@Req() req: AuthenticatedRequest): Promise<BillingMethodResponseDto[]> {
+  async list(
+    @Req() req: AuthenticatedRequest,
+    @Query('includePendingMandate') includePendingMandate?: string,
+  ): Promise<BillingMethodResponseDto[]> {
     const userId = req.jwtUserId!;
     const [methods, cmsStatuses] = await Promise.all([
       this.service.getUserBillingMethods(userId),
       this.service.getUserCmsBillingMethodStatuses(userId),
     ]);
-    // CMS_BATCH는 REGISTERED + 동의자료 등록(agreementStatus=등록)까지 확인 — 미달 수단은 결제 불가
-    const selectableCmsIds = new Set(
-      cmsStatuses.filter((s) => s.isSelectableForRecurringBilling).map((s) => s.billingMethodId),
-    );
+    // CMS_BATCH 는 REGISTERED+동의자료 등록까지 확인. includePendingMandate=true 면
+    // 선적용 가입을 위해 심사 중(PENDING) 수단도 포함한다(FAILED/DELETED 는 제외).
+    const pendingAllowed = includePendingMandate === 'true';
+    const statusByMethodId = new Map(cmsStatuses.map((s) => [s.billingMethodId, s]));
     return methods
-      .filter((m) => m.providerType !== 'CMS_BATCH' || selectableCmsIds.has(m.id))
-      .map((m) => this.toResponse(m));
+      .filter((m) => {
+        if (m.providerType !== 'CMS_BATCH') return true;
+        const s = statusByMethodId.get(m.id);
+        if (s?.isSelectableForRecurringBilling) return true;
+        return pendingAllowed && s?.cmsMemberStatus === 'PENDING';
+      })
+      .map((m) => ({
+        ...this.toResponse(m),
+        cmsMemberStatus: statusByMethodId.get(m.id)?.cmsMemberStatus ?? null,
+      }));
   }
 
   @Delete(':id')

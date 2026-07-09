@@ -6,6 +6,7 @@ import { WalletSchema, cmsMembers } from '../schema';
 import { CmsMemberService } from './cms-member.service';
 import { CmsApiClient } from './cms-api.client';
 import { interpretLiveCmsMemberStatus } from './cms-member-status';
+import { InvoiceOutcomeService } from '../invoices/invoice-outcome.service';
 
 @Injectable()
 export class CmsMemberPollerService {
@@ -15,6 +16,7 @@ export class CmsMemberPollerService {
     private readonly cmsMemberService: CmsMemberService,
     private readonly cmsApi: CmsApiClient,
     private readonly dbService: DbService<WalletSchema>,
+    private readonly invoiceOutcomeService: InvoiceOutcomeService,
   ) {}
 
   /**
@@ -61,9 +63,18 @@ export class CmsMemberPollerService {
       const liveStatus = interpretLiveCmsMemberStatus(memberData.status);
       if (liveStatus === 'REGISTERED') {
         await this.cmsMemberService.updateStatus(member.id, 'REGISTERED', resultCode, resultMessage);
+        // ADR-0027: 심사 통과 — MANDATE_PENDING 인보이스의 다음 시도를 즉시로 당겨 출금을 앞당긴다.
+        await this.invoiceOutcomeService.pullForwardMandatePending(member.billingMethodId);
         this.logger.log(`CMS member ${member.cmsMemberId} registered successfully`);
       } else if (liveStatus === 'FAILED') {
         await this.cmsMemberService.updateStatus(member.id, 'FAILED', resultCode, resultMessage);
+        // ADR-0027 §7. 심사 최종 거절 — 이 결제수단에 걸린 인보이스를 MANDATE_REJECTED 로 종결하고
+        // mandate.rejected 를 발행해 subscriber(membership)가 선적용 자격을 회수하게 한다.
+        await this.invoiceOutcomeService.rejectMandateForBillingMethod(
+          member.billingMethodId,
+          resultCode ?? 'CMS_MEMBER_FAILED',
+          resultMessage ?? 'CMS 계좌 심사 거절',
+        );
         this.logger.warn(`CMS member ${member.cmsMemberId} registration failed: ${resultMessage}`);
       }
       // IN_FLIGHT(신청중 등): 다음 주기에 재조회

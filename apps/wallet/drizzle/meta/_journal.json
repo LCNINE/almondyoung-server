@@ -50,6 +50,20 @@
       "when": 1783492814187,
       "tag": "20260708064014_add-invoice-and-subscription-billing-method",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783502263255,
+      "tag": "20260708091743_invoice-amount-positive",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1783558100288,
+      "tag": "20260709004820_one-live-intent-per-invoice",
+      "breakpoints": true
     }
   ]
 }

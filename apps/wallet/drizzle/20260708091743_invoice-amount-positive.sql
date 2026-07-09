@@ -1,0 +1,2 @@
+ALTER TABLE "invoices" DROP CONSTRAINT "invoices_amount_due_non_negative";--> statement-breakpoint
+ALTER TABLE "invoices" ADD CONSTRAINT "invoices_amount_due_positive" CHECK ("invoices"."amount_due" > 0);

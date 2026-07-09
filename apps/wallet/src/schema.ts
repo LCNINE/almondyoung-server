@@ -247,6 +247,10 @@ export const paymentIntents = pgTable(
     index('idx_payment_intents_invoice_id')
       .on(table.invoiceId)
       .where(sql`${table.invoiceId} IS NOT NULL`),
+    // 인보이스당 진행 중 시도는 1개 — 동시 집행(크론/수동/다중 인스턴스)의 이중 출금을 DB 레벨 차단.
+    uniqueIndex('uq_payment_intents_live_invoice')
+      .on(table.invoiceId)
+      .where(sql`${table.invoiceId} IS NOT NULL AND ${table.status} IN ('CREATED', 'PROCESSING', 'PENDING_SETTLEMENT')`),
     uniqueIndex('idx_payment_intents_billing_idempotency_key')
       .on(sql`(${table.metadata}->>'idempotencyKey')`)
       .where(sql`${table.metadata}->>'idempotencyKey' IS NOT NULL`),
@@ -788,7 +792,8 @@ export const invoices = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    check('invoices_amount_due_non_negative', sql`${table.amountDue} >= 0`),
+    // 0원 청구 금지 — charge(amount > 0) 집행이 불가능한 인보이스가 생기면 영구 stuck 이다.
+    check('invoices_amount_due_positive', sql`${table.amountDue} > 0`),
     check('invoices_period_valid', sql`${table.periodEnd} >= ${table.periodStart}`),
     check('invoices_attempt_count_non_negative', sql`${table.attemptCount} >= 0`),
     check('invoices_max_attempts_positive', sql`${table.maxAttempts} > 0`),

@@ -1,4 +1,4 @@
-import { IsIn, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Matches, MaxLength, Validate } from 'class-validator';
+import { IsBoolean, IsIn, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, Matches, MaxLength, Validate } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsValidPayerNumberConstraint } from '../../cms/payer-number';
 import { IsValidCmsBankCodeConstraint } from '../../cms/cms-banks';
@@ -117,6 +117,11 @@ export class CmsBankAccountDto {
 export class BillingMethodResponseDto {
   @ApiProperty()
   id: string;
+
+  @ApiPropertyOptional({
+    description: 'CMS 수단의 심사 상태 (PENDING=심사 중, REGISTERED=사용 가능). 비 CMS 수단은 null.',
+  })
+  cmsMemberStatus?: string | null;
 
   @ApiProperty()
   userId: string;
@@ -243,6 +248,14 @@ export class CreateBillingAgreementDto {
   @IsOptional()
   @IsUUID()
   billingMethodId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'ADR-0027 선적용: CMS 계좌가 심사 중(PENDING)이어도 agreement 생성을 허용. 인보이스 기반 정기결제 경로 전용 — 심사 대기는 wallet 인보이스(MANDATE_PENDING)가 흡수한다.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  allowPendingMandate?: boolean;
 }
 
 export class DirectBillingChargeDto {

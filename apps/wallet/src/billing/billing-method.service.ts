@@ -190,7 +190,11 @@ export class BillingMethodService {
       .where(and(eq(billingMethods.userId, userId), eq(billingMethods.status, 'ACTIVE')));
   }
 
-  async assertSelectableForRecurringBilling(userId: string, billingMethodId: string): Promise<BillingMethod> {
+  async assertSelectableForRecurringBilling(
+    userId: string,
+    billingMethodId: string,
+    opts?: { allowPendingMandate?: boolean },
+  ): Promise<BillingMethod> {
     const method = await this.findById(billingMethodId);
     if (!method || method.userId !== userId || method.status !== 'ACTIVE') {
       throw new Error('billing method not found or inactive');
@@ -202,6 +206,16 @@ export class BillingMethodService {
 
     const statuses = await this.getUserCmsBillingMethodStatuses(userId);
     const status = statuses.find((row) => row.billingMethodId === billingMethodId);
+
+    // 선적용: 심사 중(PENDING) 계좌 허용 — 대기는 인보이스가 흡수, 거절은 mandate.rejected 로 회수.
+    // FAILED/DELETED 는 거부.
+    if (opts?.allowPendingMandate) {
+      if (!status || status.cmsMemberStatus === 'FAILED' || status.cmsMemberStatus === 'DELETED') {
+        throw new Error('CMS billing method is not ready for recurring billing');
+      }
+      return method;
+    }
+
     if (!status?.isSelectableForRecurringBilling) {
       throw new Error('CMS billing method is not ready for recurring billing');
     }
