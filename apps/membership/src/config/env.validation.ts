@@ -13,6 +13,8 @@ export const membershipEnvSchema = z
     WALLET_API_KEY: z.string().min(1).optional(),
     // 서버 간(internal) 라우트 인증 키 (channel-adapter/medusa → membership)
     MEMBERSHIP_INTERNAL_KEY: z.string().min(1).optional(),
+    // 'true' 면 신규 정기 가입이 인보이스(선적용) 경로를 탄다(기존 계약은 billing_path 고정).
+    MEMBERSHIP_INVOICE_BILLING_ENABLED: z.enum(['true', 'false']).optional(),
     // Auth — dual-mode: AUTH_SECRET (HS256 legacy) 또는 OIDC_ISSUER_URL (RS256/OIDC), 둘 중 하나 필수.
     AUTH_SECRET: z.string().min(1).optional(),
     OIDC_ISSUER_URL: z.string().url().optional(),

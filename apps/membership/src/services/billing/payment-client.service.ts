@@ -216,6 +216,7 @@ export class PaymentClientService {
     contractId: string,
     billingMethodId?: string,
     idempotencyKey?: string,
+    opts?: { allowPendingMandate?: boolean },
   ): Promise<void> {
     const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
 
@@ -227,6 +228,8 @@ export class PaymentClientService {
           subscriberRef: contractId,
           subscriberType: 'MEMBERSHIP',
           ...(billingMethodId ? { billingMethodId } : {}),
+          // ADR-0027 선적용: 인보이스 경로는 CMS 심사 중 계좌도 정기결제 수단으로 허용
+          ...(opts?.allowPendingMandate ? { allowPendingMandate: true } : {}),
         },
         {
           headers: {
@@ -239,12 +242,7 @@ export class PaymentClientService {
     );
   }
 
-  async refundByIntent(
-    intentId: string,
-    amount: number,
-    reasonCode?: string,
-    reasonMessage?: string,
-  ): Promise<void> {
+  async refundByIntent(intentId: string, amount: number, reasonCode?: string, reasonMessage?: string): Promise<void> {
     const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
 
     await firstValueFrom(
@@ -288,7 +286,8 @@ export class PaymentClientService {
   }): Promise<{ intentId: string; status: string }> {
     const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
 
-    const idempotencyKey = params.idempotencyKey ?? `membership:direct-charge:${params.userId}:${params.billingMethodId}:${params.amount}`;
+    const idempotencyKey =
+      params.idempotencyKey ?? `membership:direct-charge:${params.userId}:${params.billingMethodId}:${params.amount}`;
 
     const response = await firstValueFrom(
       this.httpService.post<{ intentId: string; status: string }>(

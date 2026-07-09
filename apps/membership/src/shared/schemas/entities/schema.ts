@@ -150,6 +150,8 @@ export const subscriptionContracts = pgTable(
     }),
     recurringCancellationReasonCode: text('recurring_cancellation_reason_code'),
     autoRenewal: boolean('auto_renewal').notNull().default(true),
+    // 청구 경로(ADR-0027 dual-path). 계약 생성 시점의 flag 로 고정 — 토글이 진행 중 계약에 영향 없음.
+    billingPath: text('billing_path').notNull().default('CHARGE'), // 'CHARGE' | 'INVOICE'
     // 결제 커맨드 발행 후 결과 이벤트 수신 전까지 true — 스케줄러 중복 실행 방지
     billingInProgress: boolean('billing_in_progress').notNull().default(false),
     // billingInProgress=true로 전환된 시각. updatedAt은 다른 업데이트에 의해 덮힐 수 있어 별도 컬럼으로 관리

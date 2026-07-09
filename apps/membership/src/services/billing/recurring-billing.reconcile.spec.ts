@@ -20,9 +20,12 @@ describe('RecurringBillingService.reconcileStuckBillings', () => {
     };
     const paymentClient = { getWalletIntentByIdempotencyKey: jest.fn().mockResolvedValue(intent) };
 
+    const invoiceBillingManager = { issueInvoiceForContract: jest.fn().mockResolvedValue({ success: true }) };
+
     const service = new RecurringBillingService(
       billingReader as never,
       billingManager as never,
+      invoiceBillingManager as never,
       billingOutcomeHandler as never,
       paymentClient as never,
     );
@@ -38,7 +41,12 @@ describe('RecurringBillingService.reconcileStuckBillings', () => {
   it('FAILED → handleFailure 로 위임', async () => {
     const { service, billingOutcomeHandler } = makeService({ id: 'i1', status: 'FAILED', payableAmount: 10000 });
     await service.reconcileStuckBillings();
-    expect(billingOutcomeHandler.handleFailure).toHaveBeenCalledWith('c1', 'RECONCILED_FAILED', expect.any(String), 'i1');
+    expect(billingOutcomeHandler.handleFailure).toHaveBeenCalledWith(
+      'c1',
+      'RECONCILED_FAILED',
+      expect.any(String),
+      'i1',
+    );
   });
 
   it('CANCELED → handleCanceled 로 위임', async () => {

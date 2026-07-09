@@ -53,6 +53,7 @@ export class SubscriptionCreator {
     paymentRefs: CreateSubscriptionPaymentRefs = {},
     billingMode: 'one_time' | 'recurring' = 'one_time',
     skipTrial = false,
+    billingPath: 'CHARGE' | 'INVOICE' = 'CHARGE',
   ): Promise<{ contractId: string; entitlementId: string; effectiveTrialDays: number }> {
     if (billingMode === 'recurring' && plan.durationDays > RECURRING_MAX_DURATION_DAYS) {
       throw new BadRequestError(
@@ -115,6 +116,7 @@ export class SubscriptionCreator {
           userId,
           planId: plan.id,
           autoRenewal,
+          billingPath: billingMode === 'recurring' ? billingPath : 'CHARGE',
           billingDate: billingDate.toISOString().split('T')[0],
           nextBillingDate: nextBillingDate ? nextBillingDate.toISOString().split('T')[0] : null,
           lastPaymentIntentId: paymentRefs.initialPaymentIntentId ?? null,

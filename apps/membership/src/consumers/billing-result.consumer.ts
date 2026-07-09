@@ -1,5 +1,5 @@
-import { Controller, Logger, UseInterceptors } from '@nestjs/common';
-import { OnEvent, EventPayload } from '@app/events';
+import { Controller, Logger, UseFilters, UseInterceptors } from '@nestjs/common';
+import { OnEvent, EventPayload, EventsExceptionFilter } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { BillingOutcomeHandler } from '../services/billing/billing-outcome.handler';
 
@@ -13,13 +13,12 @@ interface IntentEventPayload {
 }
 
 @Controller()
+@UseFilters(EventsExceptionFilter)
 @UseInterceptors(EventTypeGuard)
 export class BillingResultConsumer {
   private readonly logger = new Logger(BillingResultConsumer.name);
 
-  constructor(
-    private readonly billingOutcomeHandler: BillingOutcomeHandler,
-  ) {}
+  constructor(private readonly billingOutcomeHandler: BillingOutcomeHandler) {}
 
   @OnEvent('payments.events.v1', 'payment.intent.authorized')
   async onIntentAuthorized(@EventPayload() payload: IntentEventPayload) {

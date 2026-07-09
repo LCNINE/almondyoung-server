@@ -1,5 +1,5 @@
-import { Controller, Logger, UseInterceptors } from '@nestjs/common';
-import { OnEvent, EventPayload } from '@app/events';
+import { Controller, Logger, UseFilters, UseInterceptors } from '@nestjs/common';
+import { OnEvent, EventPayload, EventsExceptionFilter } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { SubscriptionService } from '../services/subscription.service';
 
@@ -16,6 +16,7 @@ interface RefundEventPayload {
  * voidByPaymentIntent 에서 멱등 스킵된다.
  */
 @Controller()
+@UseFilters(EventsExceptionFilter)
 @UseInterceptors(EventTypeGuard)
 export class MembershipRefundConsumer {
   private readonly logger = new Logger(MembershipRefundConsumer.name);

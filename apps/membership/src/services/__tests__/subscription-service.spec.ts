@@ -9,6 +9,8 @@ import { MembershipEventPublisher } from '../membership-event.publisher';
 import { PaymentClientService } from '../billing/payment-client.service';
 import { BillingManager } from '../billing/billing.manager';
 import { BillingReader } from '../billing/billing.reader';
+import { InvoiceBillingManager } from '../billing/invoice-billing.manager';
+import { ConfigService } from '@nestjs/config';
 
 describe('SubscriptionService - Layer Refactoring', () => {
   let service: SubscriptionService;
@@ -56,6 +58,15 @@ describe('SubscriptionService - Layer Refactoring', () => {
     findDunningByContractId: jest.fn().mockResolvedValue(null),
   };
 
+  const mockInvoiceBillingManager = {
+    issueInvoiceForContract: jest.fn().mockResolvedValue({ success: true }),
+    voidInvoicesForContract: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const mockConfigService = {
+    get: jest.fn().mockReturnValue(undefined),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -95,6 +106,14 @@ describe('SubscriptionService - Layer Refactoring', () => {
         {
           provide: BillingReader,
           useValue: mockBillingReader,
+        },
+        {
+          provide: InvoiceBillingManager,
+          useValue: mockInvoiceBillingManager,
+        },
+        {
+          provide: ConfigService,
+          useValue: mockConfigService,
         },
       ],
     }).compile();

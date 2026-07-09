@@ -1,5 +1,5 @@
-import { Controller, Logger, UseInterceptors } from '@nestjs/common';
-import { OnEvent, EventPayload } from '@app/events';
+import { Controller, Logger, UseFilters, UseInterceptors } from '@nestjs/common';
+import { OnEvent, EventPayload, EventsExceptionFilter } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { SubscriptionService } from '../services/subscription.service';
 import { ActiveSubscriptionExistsException } from '../shared/exceptions/subscription.exceptions';
@@ -19,6 +19,7 @@ interface CapturedEventPayload {
  * 멤버십 건이면 동일한 구독 생성 로직을 비동기로 마저 처리한다.
  */
 @Controller()
+@UseFilters(EventsExceptionFilter)
 @UseInterceptors(EventTypeGuard)
 export class MembershipCheckoutConsumer {
   private readonly logger = new Logger(MembershipCheckoutConsumer.name);

@@ -18,6 +18,8 @@ import { PlanManager } from '../../src/services/plan/plan.manager';
 import { MembershipPolicyService } from '../../src/services/membership-policy.service';
 import { MembershipEventPublisher } from '../../src/services/membership-event.publisher';
 import { PaymentClientService } from '../../src/services/billing/payment-client.service';
+import { InvoiceBillingManager } from '../../src/services/billing/invoice-billing.manager';
+import { ConfigService } from '@nestjs/config';
 import { BillingManager } from '../../src/services/billing/billing.manager';
 import { BillingReader } from '../../src/services/billing/billing.reader';
 import { membershipSchema, type MembershipSchema } from '../../src/shared/schemas/entities/schema';
@@ -97,6 +99,17 @@ describe('Subscription Cancellation Integration Tests', () => {
         {
           provide: BillingManager,
           useValue: { processSingleBilling: jest.fn() },
+        },
+        {
+          provide: InvoiceBillingManager,
+          useValue: {
+            issueInvoiceForContract: jest.fn().mockResolvedValue({ success: true }),
+            voidInvoicesForContract: jest.fn().mockResolvedValue(undefined),
+          },
+        },
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn().mockReturnValue(undefined) },
         },
       ],
     }).compile();

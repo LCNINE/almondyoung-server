@@ -17,6 +17,7 @@ import { BillingOutcomeHandler } from '../../src/services/billing/billing-outcom
 import { ContractEventManager } from '../../src/services/subscription/contract-event.manager';
 import { MembershipEventPublisher } from '../../src/services/membership-event.publisher';
 import { WalletCommandPublisher } from '../../src/services/billing/wallet-command.publisher';
+import { InvoiceBillingManager } from '../../src/services/billing/invoice-billing.manager';
 import { MembershipPolicyService } from '../../src/services/membership-policy.service';
 import { membershipSchema, type MembershipSchema } from '../../src/shared/schemas/entities/schema';
 import * as schema from '../../src/shared/schemas/entities/schema';
@@ -74,8 +75,13 @@ describe('Recurring Billing & Pause Integration Tests', () => {
         },
         {
           provide: WalletCommandPublisher,
-          useValue: { publishBillingCharge: jest.fn().mockResolvedValue(undefined) },
+          useValue: {
+            publishBillingCharge: jest.fn().mockResolvedValue(undefined),
+            publishCreateInvoice: jest.fn().mockResolvedValue(undefined),
+            publishVoidInvoice: jest.fn().mockResolvedValue(undefined),
+          },
         },
+        InvoiceBillingManager,
         MembershipPolicyService,
         PauseService,
         PauseReader,

@@ -13,6 +13,8 @@ export interface DueContract {
   paymentProfileId: string | null;
   isPastDue: boolean;
   billingRetryCount: number;
+  /** ADR-0027 dual-path: 'CHARGE'(레거시) | 'INVOICE'(선적용 인보이스) */
+  billingPath: string;
 }
 
 export interface DunningItem {
@@ -58,6 +60,7 @@ export class BillingReader {
         paymentProfileId: schema.subscriptionContracts.paymentProfileId,
         isPastDue: schema.subscriptionContracts.isPastDue,
         billingRetryCount: schema.subscriptionContracts.billingRetryCount,
+        billingPath: schema.subscriptionContracts.billingPath,
       })
       .from(schema.subscriptionContracts)
       .innerJoin(
@@ -191,9 +194,7 @@ export class BillingReader {
    * reconciliation 대상 조회: billingInProgress=true 인 채 임계 시간(threshold)을 넘긴 계약.
    * 결과 이벤트를 오래 못 받은 건이므로 저장된 멱등키로 wallet 권위 상태를 되물어야 한다.
    */
-  async findStuckBillingForReconcile(
-    threshold: Date,
-  ): Promise<{ contractId: string; idempotencyKey: string }[]> {
+  async findStuckBillingForReconcile(threshold: Date): Promise<{ contractId: string; idempotencyKey: string }[]> {
     const rows = await this.dbService.db
       .select({
         contractId: schema.subscriptionContracts.id,
@@ -207,8 +208,7 @@ export class BillingReader {
           isNotNull(schema.subscriptionContracts.billingIdempotencyKey),
         ),
       );
-    return rows
-      .filter((r): r is { contractId: string; idempotencyKey: string } => r.idempotencyKey !== null);
+    return rows.filter((r): r is { contractId: string; idempotencyKey: string } => r.idempotencyKey !== null);
   }
 
   /**
@@ -252,6 +252,7 @@ export class BillingReader {
         paymentProfileId: schema.subscriptionContracts.paymentProfileId,
         isPastDue: schema.subscriptionContracts.isPastDue,
         billingRetryCount: schema.subscriptionContracts.billingRetryCount,
+        billingPath: schema.subscriptionContracts.billingPath,
         status: schema.subscriptionContracts.status,
         autoRenewal: schema.subscriptionContracts.autoRenewal,
         billingInProgress: schema.subscriptionContracts.billingInProgress,

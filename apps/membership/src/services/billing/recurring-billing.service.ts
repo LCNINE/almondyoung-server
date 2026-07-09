@@ -4,6 +4,7 @@ import { format, subMinutes } from 'date-fns';
 import { SubscriptionException, SubscriptionNotFoundException } from '../../shared/exceptions/subscription.exceptions';
 import { BillingReader } from './billing.reader';
 import { BillingManager, BillingResult } from './billing.manager';
+import { InvoiceBillingManager } from './invoice-billing.manager';
 import { BillingOutcomeHandler } from './billing-outcome.handler';
 import { PaymentClientService } from './payment-client.service';
 
@@ -30,6 +31,7 @@ export class RecurringBillingService {
   constructor(
     private readonly billingReader: BillingReader,
     private readonly billingManager: BillingManager,
+    private readonly invoiceBillingManager: InvoiceBillingManager,
     private readonly billingOutcomeHandler: BillingOutcomeHandler,
     private readonly paymentClient: PaymentClientService,
   ) {}
@@ -138,7 +140,12 @@ export class RecurringBillingService {
     // 2. 각 계약에 대해 결제 처리 (Manager 사용)
     for (const contract of dueContracts) {
       try {
-        const result = await this.billingManager.processSingleBilling(contract);
+        // 인보이스 계약은 CreateInvoice 재발행 — paid 가 nextBillingDate 를 전진시키기 전까지의
+        // 일일 재발행(멱등)이 유실 reconcile 을 겸한다.
+        const result =
+          contract.billingPath === 'INVOICE'
+            ? await this.invoiceBillingManager.issueInvoiceForContract(contract)
+            : await this.billingManager.processSingleBilling(contract);
         results.push(result);
 
         await this.sleep(1000); // API 부하 방지
@@ -288,6 +295,16 @@ export class RecurringBillingService {
       throw new SubscriptionException(
         `아직 청구 예정일이 아닙니다. (nextBillingDate=${contract.nextBillingDate ?? '-'}) 재시도하면 다음 주기 요금이 즉시 출금됩니다.`,
         'BILLING_NOT_DUE',
+        HttpStatus.CONFLICT,
+      );
+    }
+
+    // 인보이스 계약의 재시도는 wallet 이 소유 — 커맨드 재발행은 dedupe 로 무동작(거짓 성공)이라
+    // 실제 동작하는 인보이스 탭 '즉시 집행'으로 안내한다.
+    if (contract.billingPath === 'INVOICE') {
+      throw new SubscriptionException(
+        '인보이스 경로 계약입니다. 재시도는 [정기결제 관리 > 인보이스] 탭에서 해당 인보이스를 즉시 집행하세요.',
+        'INVOICE_PATH_CONTRACT',
         HttpStatus.CONFLICT,
       );
     }
