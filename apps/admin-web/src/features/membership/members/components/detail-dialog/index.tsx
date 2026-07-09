@@ -617,8 +617,12 @@ function BillingTab({
       } else {
         toast.error(result.errorMessage ?? result.errorCode ?? '결제 재시도가 처리되지 않았습니다.');
       }
-    } catch {
-      toast.error('결제 재시도에 실패했습니다.');
+    } catch (err: unknown) {
+      // 서버 안내 메시지를 노출한다 — 인보이스 경로 계약은 백엔드가 409(INVOICE_PATH_CONTRACT,
+      // "인보이스 탭에서 즉시 집행")로 막으므로, 일반 문구로 덮으면 운영자가 조치 방법을 알 수 없다.
+      const anyErr = err as { response?: { data?: { message?: string } }; message?: string };
+      const serverMsg = anyErr?.response?.data?.message ?? anyErr?.message;
+      toast.error(serverMsg && typeof serverMsg === 'string' ? serverMsg : '결제 재시도에 실패했습니다.');
     } finally {
       setRetryConfirmOpen(false);
     }

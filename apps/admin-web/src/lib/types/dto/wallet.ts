@@ -327,6 +327,10 @@ export interface AdminRecurringBillingOverview {
   withdrawalRequested: number;
   settlementPending: number;
   withdrawalFailed: number;
+  /** 인보이스 미수 지표(ADR-0027 §6) */
+  invoicePastDue: number;
+  invoiceUncollectible: number;
+  invoiceMandateRejected: number;
 }
 
 export interface AdminRecurringBillingListQuery {

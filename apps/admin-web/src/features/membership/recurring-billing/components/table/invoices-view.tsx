@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -41,7 +42,13 @@ const STATUS_FILTER_OPTIONS: { value: '' | AdminRecurringInvoiceStatus; label: s
 
 export function RecurringInvoicesView() {
   const queryClient = useQueryClient();
-  const [status, setStatus] = useState<'' | AdminRecurringInvoiceStatus>('');
+  const searchParams = useSearchParams();
+  // 요약 카드에서 status 필터를 걸어 진입할 수 있으므로 URL 값으로 초기화한다(미수 지표 딥링크).
+  const urlStatus = searchParams.get('status');
+  const initialStatus = STATUS_FILTER_OPTIONS.some((o) => o.value === urlStatus)
+    ? (urlStatus as AdminRecurringInvoiceStatus)
+    : '';
+  const [status, setStatus] = useState<'' | AdminRecurringInvoiceStatus>(initialStatus);
   const [searchRef, setSearchRef] = useState('');
   const [appliedRef, setAppliedRef] = useState('');
   const [page, setPage] = useState(1);
@@ -96,7 +103,15 @@ export function RecurringInvoicesView() {
           variant="outline"
           size="sm"
           disabled={runDue.isPending}
-          onClick={() => runDue.mutate()}
+          onClick={() => {
+            if (
+              window.confirm(
+                '만기된 모든 인보이스를 즉시 집행합니다. 유효한 결제수단이 있는 건은 실제 출금이 발생합니다. 진행할까요?',
+              )
+            ) {
+              runDue.mutate();
+            }
+          }}
         >
           {runDue.isPending ? '실행 중...' : '만기 인보이스 일괄 집행'}
         </Button>
@@ -192,7 +207,8 @@ export function RecurringInvoicesView() {
             </thead>
             <tbody>
               {rows.map((r: AdminRecurringInvoiceRow) => {
-                const badge = STATUS_LABEL[r.status];
+                // 백엔드가 새 상태를 추가해도 화면이 깨지지 않도록 fallback.
+                const badge = STATUS_LABEL[r.status] ?? { label: r.status, variant: 'outline' as const };
                 return (
                   <tr key={r.id} className="border-b last:border-0">
                     <td className="p-2">
