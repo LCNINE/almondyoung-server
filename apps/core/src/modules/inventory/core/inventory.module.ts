@@ -7,7 +7,6 @@ import { ProductSellableQuantityModule } from '../product-sellable-quantity/prod
 import { InventoryController } from './controllers/inventory.controller';
 import { LocationController } from './controllers/location.controller';
 import { SkuManagersController, ManagerSkusController } from './controllers/sku-managers.controller';
-import { SkuLocationMovementController } from './controllers/sku-location-movement.controller';
 import { ReservationController } from './controllers/reservation.controller';
 import { ReturnController } from './controllers/return.controller';
 import { TransferController } from './controllers/transfer.controller';
@@ -21,7 +20,6 @@ import { LocationService } from './services/location.service';
 import { InventoryCommandService } from './services/inventory-command.service';
 import { InventoryQueryService } from './services/inventory-query.service';
 import { SkuManagersService } from './services/sku-managers.service';
-import { SkuLocationMovementService } from './services/sku-location-movement.service';
 import { AllocationStrategyService } from './services/allocation-strategy.service';
 import { FifoLocationStrategy, LOCATION_RESOLUTION_STRATEGY } from './services/location-resolution.strategy';
 import { ReservationCronService } from './services/reservation-cron.service';
@@ -44,7 +42,6 @@ import { OutboxService } from '../shared/outbox/outbox.service';
     LocationController,
     SkuManagersController,
     ManagerSkusController,
-    SkuLocationMovementController,
     ReservationController,
     ReturnController,
     TransferController,
@@ -59,7 +56,6 @@ import { OutboxService } from '../shared/outbox/outbox.service';
     InventoryCommandService,
     InventoryQueryService,
     SkuManagersService,
-    SkuLocationMovementService,
     AllocationStrategyService,
     { provide: LOCATION_RESOLUTION_STRATEGY, useClass: FifoLocationStrategy },
     ReservationCronService,
@@ -78,7 +74,6 @@ import { OutboxService } from '../shared/outbox/outbox.service';
     InventoryCommandService,
     InventoryQueryService,
     SkuManagersService,
-    SkuLocationMovementService,
     AllocationStrategyService,
     LOCATION_RESOLUTION_STRATEGY,
     ReturnService,
