@@ -3,10 +3,9 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, MovementJobLine, MovementJob } from '../../schema/inventory.schema';
 import { MoveBatchDto } from '../dto/move-batch.dto';
-import { InterWarehouseTransferDto } from '../dto/inter-warehouse-transfer.dto';
 import { StockEventStore } from '../../core/repositories/stock-event.store';
 import { InventoryIdempotencyService } from '../../core/services/inventory-idempotency.service';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 
 @Injectable()
 export class MovementService {
@@ -168,139 +167,6 @@ export class MovementService {
           gte(w.timestamp, since),
         ),
       orderBy: (w, { desc }) => [desc(w.timestamp)],
-    });
-  }
-
-  async createInterWarehouseTransfer(dto: InterWarehouseTransferDto): Promise<{ jobId: string }> {
-    return this.idempotency.withIdempotency('movement.inter-warehouse', dto.idempotencyKey, dto, async (tx) => {
-      if (dto.fromWarehouseId === dto.toWarehouseId) {
-        throw new BadRequestException('Source and destination warehouses must be different');
-      }
-
-      const warehouses = await tx
-        .select({ id: wmsTables.warehouses.id })
-        .from(wmsTables.warehouses)
-        .where(inArray(wmsTables.warehouses.id, [dto.fromWarehouseId, dto.toWarehouseId]));
-      if (warehouses.length !== 2) {
-        throw new BadRequestException('One or both warehouse IDs are invalid');
-      }
-
-      const skuRows = await tx
-        .select({ id: wmsTables.skus.id })
-        .from(wmsTables.skus)
-        .where(eq(wmsTables.skus.id, dto.skuId))
-        .limit(1);
-      if (!skuRows[0]) {
-        throw new BadRequestException(`SKU ${dto.skuId} not found`);
-      }
-
-      const stockRow = await tx.query.stockLedgers.findFirst({
-        where: and(
-          eq(wmsTables.stockLedgers.skuId, dto.skuId),
-          eq(wmsTables.stockLedgers.warehouseId, dto.fromWarehouseId),
-          eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
-        ),
-      });
-      if (!stockRow || stockRow.qty < dto.quantity) {
-        throw new BadRequestException('Insufficient ON_HAND stock in source warehouse');
-      }
-
-      const occurredAt = new Date();
-      const [journal] = await tx.insert(wmsTables.stockJournals).values({ sourceType: 'MOVEMENT' }).returning();
-
-      // warehouseId = toWarehouseId: completeInterWarehouseMovement에서 destination plan 조회 기준
-      const [job] = await tx
-        .insert(wmsTables.movementJobs)
-        .values({
-          warehouseId: dto.toWarehouseId,
-          occurredAt,
-          journalId: journal.id,
-          totalQuantity: dto.quantity,
-          memo: dto.reason,
-        })
-        .returning();
-
-      // toLocationId 미확정이므로 fromState 차감만 기록 (toState는 completeInterWarehouseMovement에서 처리)
-      const event = await this.stockEventStore.createEvent(
-        {
-          journalId: journal.id,
-          skuId: dto.skuId,
-          fromWarehouseId: dto.fromWarehouseId,
-          fromLocationId: stockRow.locationId,
-          toWarehouseId: dto.toWarehouseId,
-          fromState: 'ON_HAND',
-          toState: null,
-          transitionType: 'MOVE',
-          quantity: dto.quantity,
-          occurredAt,
-          reason: dto.reason,
-          idempotencyKey: `movement.inter-warehouse:${dto.idempotencyKey}`,
-        },
-        tx,
-      );
-
-      await tx.insert(wmsTables.movementJobLines).values({
-        jobId: job.id,
-        skuId: dto.skuId,
-        quantity: dto.quantity,
-        fromLocationId: stockRow.locationId,
-        eventId: event?.id,
-        memo: dto.reason,
-      });
-
-      return { jobId: job.id };
-    });
-  }
-
-  /**
-   * 창고간 이동 완료 시 destination plan 활성화
-   * 중국 창고에서 부천 창고로 이동 완료되면 부천 입고예정 활성화
-   */
-  async completeInterWarehouseMovement(movementJobId: string): Promise<void> {
-    return this.dbService.run(async (tx) => {
-      const job = await tx.query.movementJobs.findFirst({
-        where: eq(wmsTables.movementJobs.id, movementJobId),
-        with: { lines: true },
-      });
-
-      if (!job) {
-        throw new BadRequestException(`Movement job ${movementJobId} not found`);
-      }
-
-      // 기존 이동 완료 로직은 이미 moveImmediately에서 처리됨
-
-      // 🔥 추가: destination plan 활성화
-      const affectedSkus = job.lines.map((line) => line.skuId);
-
-      if (affectedSkus.length === 0) return;
-
-      // 해당 SKU의 destination plan들 찾기
-      const destinationPlans = await tx.query.inboundPlans.findMany({
-        where: and(
-          eq(wmsTables.inboundPlans.planType, 'destination'),
-          eq(wmsTables.inboundPlans.warehouseId, job.warehouseId), // 목적지 창고
-          eq(wmsTables.inboundPlans.status, 'pending'),
-        ),
-        with: {
-          items: {
-            where: (item, { inArray }) => inArray(item.skuId, affectedSkus),
-          },
-        },
-      });
-
-      // destination plan의 예상 입고일 설정
-      for (const plan of destinationPlans) {
-        if (plan.items.length > 0) {
-          // 해당 SKU가 포함된 plan만
-          await tx
-            .update(wmsTables.inboundPlans)
-            .set({
-              expectedDate: new Date(), // 즉시 입고 가능
-              updatedAt: new Date(),
-            })
-            .where(eq(wmsTables.inboundPlans.id, plan.id));
-        }
-      }
     });
   }
 }
