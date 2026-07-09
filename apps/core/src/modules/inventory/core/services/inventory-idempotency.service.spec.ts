@@ -103,10 +103,10 @@ describe('InventoryIdempotencyService.purgeExpired', () => {
     const whereDelete = jest.fn().mockReturnValue({
       returning: jest.fn().mockResolvedValue([{ id: 'a' }, { id: 'b' }]),
     });
-    const db = { delete: jest.fn().mockReturnValue({ where: whereDelete }) };
-    const dbService = { db, run: jest.fn() } as never;
+    const trx = { delete: jest.fn().mockReturnValue({ where: whereDelete }) };
+    const dbService = { run: (fn: (t: unknown) => Promise<unknown>) => fn(trx) } as never;
     const svc = new InventoryIdempotencyService(dbService);
     await expect(svc.purgeExpired()).resolves.toBe(2);
-    expect(db.delete).toHaveBeenCalled();
+    expect(trx.delete).toHaveBeenCalled();
   });
 });

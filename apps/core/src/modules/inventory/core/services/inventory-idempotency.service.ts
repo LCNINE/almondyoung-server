@@ -78,10 +78,12 @@ export class InventoryIdempotencyService {
   @Cron('30 3 * * *', { name: 'inventory-idempotency-purge', timeZone: 'Asia/Seoul' })
   async purgeExpired(): Promise<number> {
     const cutoff = new Date(Date.now() - InventoryIdempotencyService.RETENTION_DAYS * 24 * 60 * 60 * 1000);
-    const deleted = await this.dbService.db
-      .delete(wmsTables.inventoryIdempotencyRequests)
-      .where(lt(wmsTables.inventoryIdempotencyRequests.createdAt, cutoff))
-      .returning({ id: wmsTables.inventoryIdempotencyRequests.id });
+    const deleted = await this.dbService.run(async (trx) =>
+      trx
+        .delete(wmsTables.inventoryIdempotencyRequests)
+        .where(lt(wmsTables.inventoryIdempotencyRequests.createdAt, cutoff))
+        .returning({ id: wmsTables.inventoryIdempotencyRequests.id }),
+    );
     this.logger.log(`idempotency purge: ${deleted.length} rows (< ${cutoff.toISOString()})`);
     return deleted.length;
   }
