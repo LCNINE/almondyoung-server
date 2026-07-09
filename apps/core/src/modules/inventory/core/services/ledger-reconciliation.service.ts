@@ -1,9 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { sql } from 'drizzle-orm';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { StockStateEnum } from '../../schema/enum-values';
+import { MetricsService } from '../../shared/services/metrics.service';
 
 export type LedgerDriftSeverity = 'CRITICAL' | 'MISMATCH';
 
@@ -43,7 +45,10 @@ export function classifyDriftSeverity(derivedQty: number): LedgerDriftSeverity {
 export class LedgerReconciliationService {
   private readonly logger = new Logger(LedgerReconciliationService.name);
 
-  constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
+  constructor(
+    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
+    private readonly metrics: MetricsService,
+  ) {}
 
   /**
    * stock_events(진실) ↔ stock_ledgers(파생) 대사. 불일치 grain 만 반환.
@@ -111,5 +116,32 @@ export class LedgerReconciliationService {
       criticalCount,
       drifts,
     };
+  }
+
+  /**
+   * 야간 전 카탈로그 대사. drift 를 로그 + Prometheus 게이지로 표면화.
+   * 잡 자체 예외가 스케줄러를 죽이지 않도록 try/catch 로 감싼다.
+   */
+  @Cron('0 3 * * *', { name: 'ledger-reconciliation', timeZone: 'Asia/Seoul' })
+  async scheduledReconcile(): Promise<void> {
+    try {
+      const report = await this.reconcile();
+      const mismatch = report.totalDriftGrains - report.criticalCount;
+      this.metrics.setLedgerDrift({ mismatch, critical: report.criticalCount });
+
+      if (report.totalDriftGrains === 0) {
+        this.logger.log('✅ Ledger reconciliation clean — no drift');
+        return;
+      }
+
+      // silent truncation 금지 — 총 건수를 먼저 명시하고 앞 20건만 상세 로그.
+      this.logger.error(
+        `❌ Ledger drift: ${report.totalDriftGrains} grains (critical=${report.criticalCount}). ` +
+          `Showing first 20: ` +
+          JSON.stringify(report.drifts.slice(0, 20)),
+      );
+    } catch (error) {
+      this.logger.error(`Ledger reconciliation job failed: ${error.message}`, error.stack);
+    }
   }
 }

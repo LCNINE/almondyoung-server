@@ -34,7 +34,10 @@ describeIfDb('ledger reconciliation (DB integration, rollback-only)', () => {
     const eventStore = new StockEventStore(dbService, sellable);
     const location = new LocationService(dbService);
     command = new InventoryCommandService(dbService, eventStore, outbox, location);
-    recon = new LedgerReconciliationService(dbService);
+    const metricsStub = {
+      setLedgerDrift: () => undefined,
+    } as unknown as import('../../shared/services/metrics.service').MetricsService;
+    recon = new LedgerReconciliationService(dbService, metricsStub);
   });
   afterAll(async () => {
     await sql.end();
