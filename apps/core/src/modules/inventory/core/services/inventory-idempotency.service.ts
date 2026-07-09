@@ -1,6 +1,7 @@
 import { createHash } from 'crypto';
-import { Injectable } from '@nestjs/common';
-import { and, eq } from 'drizzle-orm';
+import { Injectable, Logger } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
+import { and, eq, lt } from 'drizzle-orm';
 import { InjectTypedDb, DbService } from '@app/db';
 import { ConflictError } from '@app/shared';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
@@ -15,6 +16,9 @@ export function computeRequestHash(body: unknown): string {
 
 @Injectable()
 export class InventoryIdempotencyService {
+  private static readonly RETENTION_DAYS = 30;
+  private readonly logger = new Logger(InventoryIdempotencyService.name);
+
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
   ) {}
@@ -68,5 +72,17 @@ export class InventoryIdempotencyService {
       // unknown 이라 캐스트 불가피 (정당화 주석, CLAUDE.md 타입 규칙)
       return existing.response as T;
     }, tx);
+  }
+
+  /** 멱등 기록 보존 크론 — 재전송 방어 window(30일) 초과분 정리. 야간 03:30 KST (스펙 §6). */
+  @Cron('30 3 * * *', { name: 'inventory-idempotency-purge', timeZone: 'Asia/Seoul' })
+  async purgeExpired(): Promise<number> {
+    const cutoff = new Date(Date.now() - InventoryIdempotencyService.RETENTION_DAYS * 24 * 60 * 60 * 1000);
+    const deleted = await this.dbService.db
+      .delete(wmsTables.inventoryIdempotencyRequests)
+      .where(lt(wmsTables.inventoryIdempotencyRequests.createdAt, cutoff))
+      .returning({ id: wmsTables.inventoryIdempotencyRequests.id });
+    this.logger.log(`idempotency purge: ${deleted.length} rows (< ${cutoff.toISOString()})`);
+    return deleted.length;
   }
 }

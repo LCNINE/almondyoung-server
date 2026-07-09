@@ -97,3 +97,16 @@ describe('InventoryIdempotencyService.withIdempotency', () => {
     await expect(svc.withIdempotency('inbound.simple', 'k-1', dto, jest.fn())).rejects.toThrow(ConflictError);
   });
 });
+
+describe('InventoryIdempotencyService.purgeExpired', () => {
+  it('30일 초과 row 를 삭제하고 삭제 건수를 반환한다', async () => {
+    const whereDelete = jest.fn().mockReturnValue({
+      returning: jest.fn().mockResolvedValue([{ id: 'a' }, { id: 'b' }]),
+    });
+    const db = { delete: jest.fn().mockReturnValue({ where: whereDelete }) };
+    const dbService = { db, run: jest.fn() } as never;
+    const svc = new InventoryIdempotencyService(dbService);
+    await expect(svc.purgeExpired()).resolves.toBe(2);
+    expect(db.delete).toHaveBeenCalled();
+  });
+});
