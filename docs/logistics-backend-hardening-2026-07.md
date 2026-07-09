@@ -36,7 +36,7 @@
 
 | ID | 상태 | 위치 | 결함 | 실패 시나리오 |
 |---|---|---|---|---|
-| P0-1 ✅검증 | ⬜ | `movement/services/movement.service.ts:174-253(create), 259-305(complete)` | 창고간 이동이 `toState:null` MOVE 로 **출발지만 차감**(`:232`) — IN_TRANSFER 미기록, complete 는 입고예정 expectedDate 만 갱신 | PO 외 ad-hoc 이동 100개 → 출발 창고 -100, 어디에도 +100 없음 = 영구 소실. **(착수 재확인 2026-07-10)** 무손실 경로는 `StockEventService.transferBetweenWarehouses`(`stock-event.service.ts:142-196`, transferShip→transferReceive = ON_HAND→IN_TRANSFER→ON_HAND)이며 `TransferService.executeTransferJob` 경유로 `inventory/transfers` 컨트롤러에 **이미 배선됨** — 감사의 "미연결" 서술은 부정확. 실제 문제는 손실 경로 `POST /movement/inter-warehouse` 가 **병존 노출**(`movement.controller.ts:14`). 재배선 시 간극: DTO 에 `toLocationId` 부재(도착 로케이션 결정 규칙 필요), 작업3 멱등 래퍼(`withIdempotency`)와 transferShip/Receive 이벤트 키 상호작용 확인, `movementJobs.warehouseId` 의미 차이(손실=to, Transfer=from). complete 쪽은 멱등 래퍼도 없음 |
+| P0-1 ✅검증 | 🟩 | `movement/services/movement.service.ts:174-253(create), 259-305(complete)` | 창고간 이동이 `toState:null` MOVE 로 **출발지만 차감**(`:232`) — IN_TRANSFER 미기록, complete 는 입고예정 expectedDate 만 갱신 | PO 외 ad-hoc 이동 100개 → 출발 창고 -100, 어디에도 +100 없음 = 영구 소실. **(착수 재확인 2026-07-10)** 무손실 경로는 `StockEventService.transferBetweenWarehouses`(`stock-event.service.ts:142-196`, transferShip→transferReceive = ON_HAND→IN_TRANSFER→ON_HAND)이며 `TransferService.executeTransferJob` 경유로 `inventory/transfers` 컨트롤러에 **이미 배선됨** — 감사의 "미연결" 서술은 부정확. 실제 문제는 손실 경로 `POST /movement/inter-warehouse` 가 **병존 노출**(`movement.controller.ts:14`). 재배선 시 간극: DTO 에 `toLocationId` 부재(도착 로케이션 결정 규칙 필요), 작업3 멱등 래퍼(`withIdempotency`)와 transferShip/Receive 이벤트 키 상호작용 확인, `movementJobs.warehouseId` 의미 차이(손실=to, Transfer=from). complete 쪽은 멱등 래퍼도 없음 |
 | P0-2 ✅검증 | 🟩 | `stocktaking/services/stocktaking.service.ts:361-374` | 실사 조정이 `tx.insert(stockEvents)` **직접 INSERT** — StockEventStore 우회 → 원장/판매가능수량/outbox 미반영 | 실사 확정해도 시스템 재고 불변. `stocktakingAdjustments.stockEventId` 는 원장 미반영 유령 이벤트를 참조 |
 | P0-3 ✅검증 | 🟩 | `stocktaking.service.ts:329-396` | 실사 조정 멱등성/재실행 방지 부재 (세션 상태 미검사, 처리 플래그 없음) | `generate-adjustments` 2회 호출 → 조정 2배 생성 (P0-2 수정 즉시 실피해로 전환 — **P0-2 와 반드시 함께 수정**) |
 | P0-4 ✅검증 | 🟩 | `core/services/inventory-correction.service.ts` (삭제됨) | `correctReceipt`/`reportTransportLoss`/`processDefectiveItems` 가 fromState/toState 미설정 → `ck_events_side_present`(`schema:812`) 위반 | 세 메서드 모두 **dead code**(모듈·컨트롤러 미등록, 호출처 0) — 배선하는 순간 즉시 500. **완료(작업4): 서비스 전량 삭제** — 어느 모듈에도 미등록(주입조차 불가)·컨트롤러/DTO 없음·미래 의도 표시 없음이라, 규칙에 맞게 고쳐 살려두기보다 제거. 재고정정/운송분실/불량처리 기능은 필요 시 규칙 준수(`InventoryCommandService` 경유)로 신규 작성 |
@@ -97,7 +97,7 @@
 
 | ID | 상태 | 공백 | 비고 |
 |---|---|---|---|
-| W1 | ⬜ | 창고간 이동의 안전한 엔드포인트 부재 | **(착수 재확인 2026-07-10 정정)** 안전 엔드포인트는 이미 존재 — `inventory/transfers` 2단계(`POST` 생성 → `PATCH :id/execute`)가 `StockEventService.transferBetweenWarehouses` 무손실 경로로 배선됨. W1 의 실체 = 손실 경로 `POST /movement/inter-warehouse` 의 병존. 해소 = 해당 엔드포인트를 무손실 경로로 재배선(도착 로케이션 결정 규칙 신설 필요 — DTO 에 `toLocationId` 부재) 또는 은퇴 후 transfers 경로로 일원화. P0-1 과 동일 작업 |
+| W1 | 🟩 | 창고간 이동의 안전한 엔드포인트 부재 | **(착수 재확인 2026-07-10 정정)** 안전 엔드포인트는 이미 존재 — `inventory/transfers` 2단계(`POST` 생성 → `PATCH :id/execute`)가 `StockEventService.transferBetweenWarehouses` 무손실 경로로 배선됨. W1 의 실체 = 손실 경로 `POST /movement/inter-warehouse` 의 병존. 해소 = 해당 엔드포인트를 무손실 경로로 재배선(도착 로케이션 결정 규칙 신설 필요 — DTO 에 `toLocationId` 부재) 또는 은퇴 후 transfers 경로로 일원화. P0-1 과 동일 작업 |
 | W2 | 🟩 | 실사 세션 취소 불가 | `cancelled` enum 만 존재(`schema:128`), 세터/라우트 없음. **완료(작업1): `cancelSession` + `POST /stocktaking/sessions/:id/cancel` 신설(draft·in_progress→cancelled, FOR UPDATE)** |
 | W3 | 🟩 | 실사 complete ↔ generateAdjustments 순서·원자성 미정의 | 확정 전 조정 가능, 확정 후 재조정 가능 — 상태기계로 잠금 (P0-3 과 함께). **완료(작업1): complete 가 단일 tx 에서 원자 적용+종결, generate 는 무영속 미리보기로 격하** |
 | W4 | ⬜ | 토탈피킹 미구현 | `picking-process.service.ts:89,177,257` throw. `total_picking` 배치는 피킹에서 막힘. 로케이션 전략 seam 은 준비됨 — 스프린트 범위 여부 결정 |
@@ -107,6 +107,7 @@
 | W8 | ⬜ | 입고 바코드 검수 ↔ 실입고 단절 | `verifyInboundByBarcode`(`inbound.service.ts:1080`) 가 단순 조회 — 검수 결과가 `receiveFromPlan` 에 연결 안 됨 |
 | W9 | ⬜ | 로케이션 capacity 미집행 | 스키마/DTO 에만 존재, 입고/적치/이동 검증 없음 |
 | W10 | ⬜ | 운영 확인 필요: `confirm`(출고확정) 이 FO 생성 트리거가 아님 | FO 생성은 OrderCreated 시점 backlog — confirm 은 스냅샷 생성뿐(`sales-orders.service.ts:306-362`). ADR-0010 서술과 어긋남 — 의도 확인 후 문서 또는 코드 정정 |
+| W11 | ⬜ | 외화 PO 크로스보더 인바운드(source 플랜 → 창고간 이송 → destination 플랜 활성화) 미완성 | 삭제한 `completeInterWarehouseMovement` 가 닫으려던 루프. Path A(소실)·Path B(즉시 atomic) 어느 쪽도 지속 IN_TRANSFER(중국→한국 다일 운송)를 모델링 안 함. 부수: `purchase-order.service.ts:313` 이 만드는 `planType='destination'`(expectedDate=null) 플랜이 활성화 경로 없이 pending 잔존 → `stock_summary` 뷰 `transit_out`/`inbound_pending` 에 영구 반영(기존 조건, 작업 6 이 악화 아님). 착수 시 2단계 상태기계·receive API·도착 로케이션 규칙 설계 필요 |
 
 ---
 
@@ -152,7 +153,7 @@
 > - 검증: `nest build core`(tsc/webpack) exit 0 · eslint 0 · arch 경계 회귀(`inventory-write-boundary.arch.spec.ts`) PASS · 저장소 전역 참조 0 재확인. 스키마 무변경이라 dev DB 의존 ⏸ 항목 없음.
 > - **WS-A 잔여(미착수): 없음** — WS-A 전 항목(P0-2·P0-3·P0-4·P2-2·P2-4·P2-5·P2-6·P2-14·W3) 완료.
 
-**WS-B. 레거시 경로 은퇴** — P0-1, P0-5, P1-6, P2-11, P3-4, P3-5, W1 *(W2 는 작업1에서 기해소 — 목록에서 제외)*
+**WS-B. 레거시 경로 은퇴** — P0-5, P1-6, P2-11, P3-4, P3-5 *(W2 는 작업1에서 기해소 — 목록에서 제외)*
 inter-warehouse 손실 엔드포인트를 무손실 경로로 재배선, dead 지뢰(`processExpiredReservations` 메서드, `createFulfillmentOrder` 경로, dead enum, `outbound_tasks` 테이블) 제거. destructive 스키마 변경은 expand-contract(ADR-0005 §5) 준수.
 
 > **착수 재확인(2026-07-10) — 5개 영역 병렬 검증 완료. 요지:**
@@ -173,6 +174,12 @@ inter-warehouse 손실 엔드포인트를 무손실 경로로 재배선, dead �
 > - **P3-5 잔여**: `outbound_task`/`outbound_task_items/lines`(+`outbound_task_orders`) 4테이블 DROP 은 작업 8(expand-contract). 코드부는 본 작업으로 종결.
 > - 브랜치 `feat/dead-path-sweep` (2 커밋: `[inventory]` P0-5 `713a73861` + `[fulfillment]` P1-6/P3-5 `09c00dcdb`). develop **미머지**(push 준비 상태).
 > - 검증: `nest build core`(tsc/webpack) exit 0 · 삭제 심볼(`processExpiredReservations`·transaction 서비스 `createFulfillmentOrder`·`checkStockAvailability`·`getActiveMappingId`·`FulfillmentOrderResult`) 저장소 전역 참조 0 (`fulfillments.service` 의 private `createFulfillmentOrderFromItems` 는 별개 심볼, 존치 재확인) · arch 경계 회귀(`inventory-write-boundary.arch.spec.ts`) PASS · fulfillment 단위 spec 10 suite / 190 test PASS · 변경 4파일 eslint **신규** error 0 (기존 `require-await` 3건은 미변경 메서드에서 HEAD 부터 존재 — repo 전역 lint 는 기존부터 대량 error 상태로 본 작업과 무관). 스키마 무변경이라 dev DB 의존 ⏸ 항목 없음.
+
+> **✅ 작업 6 (창고간 이동 무손실화, P0-1·W1) 완료 — 2026-07-10:** 손실 경로(Path A `movement/inter-warehouse`)를 하드 삭제해 무손실 경로 `inventory/transfers`(Path B)로 일원화. 호출자 전수 감사(FE·BE·타 앱)로 은퇴가 재배선보다 적합함을 확정 — Path A inter-warehouse 는 모노레포 호출자 0(라이브 지뢰), `complete` 는 완전 dead, Path B 는 admin-web 라이브.
+> - **P0-1/W1**: `createInterWarehouseTransfer`(출발지만 차감 `toState:null` 소실) + 죽은 `completeInterWarehouseMovement` + 두 라우트(`POST /movement/inter-warehouse`·`/jobs/:id/complete`) + `InterWarehouseTransferDto` + 스펙 케이스 삭제. 동일창고 batch(`moveImmediately`, admin-web 라이브)·조회 라우트 존치. `movementJobs.warehouseId` 의 `to` 의미 사용처 소멸로 divergence 자동 해소.
+> - **Path B 경량 하드닝**: `executeTransferJob` 에 job 헤더 `FOR UPDATE`(동시 실행 직렬화) + 실행된 라인 skip(재-PATCH 이중출고 차단). Path B 첫 테스트(단위: 재실행 가드·무손실 라우팅 / 통합 ⏸: 보존·재실행 불변).
+> - 스키마·마이그레이션 무변경(작업 4 와 동일). 검증: `nest build core` exit 0 · 삭제 심볼 소스 참조 0 · arch 경계(`inventory-write-boundary.arch.spec.ts`) PASS · 단위 GREEN · 통합 ⏸(dev DB 복구 시).
+> - 설계 `docs/superpowers/specs/2026-07-10-inter-warehouse-movement-retirement-design.md` · 계획 `docs/superpowers/plans/2026-07-10-inter-warehouse-movement-retirement.md`.
 
 **WS-C. 예약 보강** — P1-3, P1-4, P1-5, P2-1, P2-9
 reserve 경로 잠금(ledger FOR UPDATE 또는 sku+warehouse advisory lock), adjustDown 예약 고려, FO 예약 타임아웃 정책 + 잔존 모니터링, 소진의 라인 단위 전환, reserved≤on_hand 대사 체크(잡).
