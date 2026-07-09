@@ -320,10 +320,12 @@ export default function MembershipPaymentMethodPage() {
   useEffect(() => {
     if (!autoSubscribeOnLoad.current || isLoading) return
     // 선적용: 갓 등록한 심사 중(PENDING) 계좌로도 즉시 가입한다.
+    // 이때 방금 등록한 PENDING 계좌를 최우선으로 삼는다 — 기존 REGISTERED 계좌가
+    // otherMethods 에 남아 있어도 그쪽으로 가입되면 안 된다.
     const pendingCandidate = isInvoiceBillingEnabled()
       ? pendingCmsMethods.find((s) => s.billingMethodId !== agreement?.billingMethodId)
       : undefined
-    const targetMethodId = otherMethods[0]?.id ?? pendingCandidate?.billingMethodId
+    const targetMethodId = pendingCandidate?.billingMethodId ?? otherMethods[0]?.id
     if (!targetMethodId) return
     autoSubscribeOnLoad.current = false
     handleSubscribeWithMethod(targetMethodId)
