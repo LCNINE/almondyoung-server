@@ -118,7 +118,7 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
                 <p className={`mt-1 text-xs ${agreementUploadFailed ? 'text-amber-700' : 'text-emerald-700'}`}>
                   {agreementUploadFailed
                     ? '동의자료 등록에 실패했습니다. 관리자가 수동으로 처리해야 정기결제가 가능해집니다. 고객센터에 문의해주세요.'
-                    : `효성 CMS 심사 후 1~2 영업일 내 최종 확정됩니다.${isRegister ? ' 등록 완료 시 정기결제가 자동으로 시작됩니다.' : ' 다음 결제부터 새 계좌로 자동 출금됩니다.'} 은행에서 오는 ‘자동이체 등록 접수’ 안내(문자 등)는 최종 승인이 아니며, 최종 결과는 결제수단 관리 화면에서 확인할 수 있습니다.`}
+                    : `효성 CMS 심사 후 1~2 영업일 내 최종 확정됩니다.${isRegister ? ' 확인 버튼을 눌러 돌아간 화면에서 멤버십 가입을 마무리해 주세요 — 가입 후에는 심사 승인과 함께 결제가 자동 출금됩니다.' : ' 다음 결제부터 새 계좌로 자동 출금됩니다.'} 은행에서 오는 ‘자동이체 등록 접수’ 안내(문자 등)는 최종 승인이 아니며, 최종 결과는 결제수단 관리 화면에서 확인할 수 있습니다.`}
                 </p>
               </div>
             </CardContent>
