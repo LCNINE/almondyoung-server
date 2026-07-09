@@ -24,6 +24,7 @@ export class InventoryIdempotencyService {
    * 신규 키: handler 실행 후 반환값을 같은 tx 에서 response 로 저장(throw 시 키까지 롤백).
    * 중복 키: 본문 해시 일치 시 저장 응답 replay, 불일치 시 409.
    * 동시 중복은 UNIQUE(endpoint,key) INSERT 의 행 락 대기로 직렬화된다.
+   * 계약: handler 는 null/undefined 로 resolve 하면 안 된다 — response null 은 "처리 중" 표식이라 완료 replay 가 영구 409 가 된다.
    */
   async withIdempotency<T>(
     endpoint: string,
