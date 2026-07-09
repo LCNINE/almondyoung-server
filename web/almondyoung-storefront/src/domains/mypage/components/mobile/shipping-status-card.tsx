@@ -15,7 +15,7 @@ function OrderCard({ item }: { item: OrderItem }) {
       href={`/mypage/order/details?orderId=${item.id}`}
       className="w-[160px] shrink-0"
     >
-      <div className="flex h-full flex-col gap-3 rounded-lg border border-[#ececec] bg-white p-3.5 transition-opacity hover:opacity-80">
+      <div className="flex h-full flex-col gap-3 rounded-lg border border-[#ececec] bg-white p-3.5 transition-colors hover:bg-gray-50">
         <span className={`text-[15px] leading-snug font-bold ${statusColor}`}>
           {item.statusLabel}
         </span>

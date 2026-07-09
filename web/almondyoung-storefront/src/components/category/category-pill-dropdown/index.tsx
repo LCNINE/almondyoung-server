@@ -19,10 +19,10 @@ const categoryOptions = [
 ] as const
 
 const triggerFont = "font-['Pretendard'] text-xs"
-const triggerColor = "text-[#ffa500]"
-const triggerBorder = "border border-[#ffa500]"
+const triggerColor = "text-primary"
+const triggerBorder = "border-primary border"
 const triggerBg = "bg-white"
-const hoverBg = "hover:bg-orange-50"
+const hoverBg = "hover:bg-primary/5"
 
 export default function CategoryPillDropdown() {
   const t = useTranslations("category.pillDropdown")
@@ -52,7 +52,7 @@ export default function CategoryPillDropdown() {
           <span>{t(selectedKey)}</span>
           <Triangle
             className="h-2.5 w-2.5 rotate-180"
-            fill="#FFA500"
+            fill="#f29219"
             strokeWidth={0}
           />
         </button>
@@ -69,11 +69,7 @@ export default function CategoryPillDropdown() {
           <DropdownMenuItem
             key={option.id}
             onSelect={() => setSelectedId(option.id)}
-            className={cn(
-              "focus:bg-orange-50",
-              triggerFont,
-              "text-black"
-            )}
+            className={cn("focus:bg-primary/5", triggerFont, "text-black")}
           >
             {t(option.labelKey)}
           </DropdownMenuItem>
