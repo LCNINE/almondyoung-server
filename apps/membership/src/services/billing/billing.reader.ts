@@ -212,6 +212,39 @@ export class BillingReader {
   }
 
   /**
+   * INVOICE 경로 reconciliation 대상 조회: 현재 주기 인보이스가 아직 결제 확정되지 않은
+   * 활성 인보이스 계약. paid 는 nextBillingDate 를 periodEnd(미래)로 전진시키므로 nextBillingDate<=today
+   * 는 "이번 주기 미확정" 을 뜻한다 — 이 계약들의 멱등키로 wallet 인보이스 권위 상태를 되묻는다.
+   * (INVOICE 경로는 billingInProgress 락을 쓰지 않아 findStuckBillingForReconcile 이 커버하지 못한다.)
+   */
+  async findInvoiceContractsForReconcile(today: string): Promise<{ contractId: string; periodStart: string }[]> {
+    const rows = await this.dbService.db
+      .select({
+        contractId: schema.subscriptionContracts.id,
+        periodStart: schema.subscriptionContracts.nextBillingDate,
+      })
+      .from(schema.subscriptionContracts)
+      .innerJoin(
+        schema.subscriptionEntitlement,
+        and(
+          eq(schema.subscriptionEntitlement.userId, schema.subscriptionContracts.userId),
+          eq(schema.subscriptionEntitlement.isCurrent, true),
+        ),
+      )
+      .where(
+        and(
+          eq(schema.subscriptionContracts.billingPath, 'INVOICE'),
+          eq(schema.subscriptionContracts.isVoided, false),
+          notInArray(schema.subscriptionContracts.status, ['CANCELLED', 'EXPIRED']),
+          isNull(schema.subscriptionEntitlement.pausedAt),
+          isNotNull(schema.subscriptionContracts.nextBillingDate),
+          lte(schema.subscriptionContracts.nextBillingDate, today),
+        ),
+      );
+    return rows.filter((r): r is { contractId: string; periodStart: string } => r.periodStart !== null);
+  }
+
+  /**
    * 계약의 현재 더닝 재시도 횟수 조회 (없으면 0).
    * 결제 멱등키 nonce로 사용해 재시도마다 새 커맨드가 되도록 한다.
    */

@@ -21,12 +21,19 @@ describe('RecurringBillingService.reconcileStuckBillings', () => {
     const paymentClient = { getWalletIntentByIdempotencyKey: jest.fn().mockResolvedValue(intent) };
 
     const invoiceBillingManager = { issueInvoiceForContract: jest.fn().mockResolvedValue({ success: true }) };
+    const invoiceOutcomeHandler = {
+      handlePaid: jest.fn().mockResolvedValue(undefined),
+      handleUncollectible: jest.fn().mockResolvedValue(undefined),
+      handleVoided: jest.fn().mockResolvedValue(undefined),
+      handleMandateRejected: jest.fn().mockResolvedValue(undefined),
+    };
 
     const service = new RecurringBillingService(
       billingReader as never,
       billingManager as never,
       invoiceBillingManager as never,
       billingOutcomeHandler as never,
+      invoiceOutcomeHandler as never,
       paymentClient as never,
     );
     return { service, billingManager, billingOutcomeHandler };
