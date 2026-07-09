@@ -3,7 +3,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { MovementService } from '../services/movement.service';
 import { MoveBatchDto } from '../dto/move-batch.dto';
 import { MovementJobWithLinesDto, MovementHistoryResponseDto } from '../dto/movement-response.dto';
-import { MovementJobMapper, MovementJobLineMapper, MovementWorkLogMapper } from '../mappers/movement.mapper';
+import { MovementJobMapper, MovementWorkLogMapper } from '../mappers/movement.mapper';
 
 @ApiTags('Movement')
 @Controller('movement')
