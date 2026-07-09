@@ -26,7 +26,6 @@ import {
 } from '@/lib/services/orders/mutations';
 import type { FulfillmentMode, FulfillmentOrderPriority } from '@/lib/types/dto/fulfillment';
 import { InventoryTab } from '../../detail/inventory-tab';
-import { SplitTab } from '../../detail/split-tab';
 import { ShipmentTab } from '../../detail/shipment-tab';
 import { DirectShipTab } from '../../detail/direct-ship-tab';
 import { HistoryTab } from '../../detail/history-tab';
@@ -267,7 +266,6 @@ export function FulfillmentDetail({ id }: { id: string }) {
           <Tabs defaultValue="inventory" className="w-full">
             <TabsList className="flex h-auto flex-wrap justify-start">
               <TabsTrigger value="inventory">재고</TabsTrigger>
-              <TabsTrigger value="split">분할</TabsTrigger>
               <TabsTrigger value="shipment">배송</TabsTrigger>
               {fo.fulfillmentMode === 'drop_ship' && (
                 <TabsTrigger value="direct-ship">직배</TabsTrigger>
@@ -276,9 +274,6 @@ export function FulfillmentDetail({ id }: { id: string }) {
             </TabsList>
             <TabsContent value="inventory">
               <InventoryTab fo={fo} />
-            </TabsContent>
-            <TabsContent value="split">
-              <SplitTab fo={fo} />
             </TabsContent>
             <TabsContent value="shipment">
               <ShipmentTab fo={fo} />

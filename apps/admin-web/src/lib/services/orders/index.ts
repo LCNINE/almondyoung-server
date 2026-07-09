@@ -92,7 +92,6 @@ export {
   useAnalyzeConsolidation,
   useAutoConsolidate,
   // FO 액션 (Core /fulfillments canonical)
-  useSplitFulfillmentOrder,
   useCheckFulfillmentAvailability,
   useReserveFulfillment,
   useUnreserveFulfillment,

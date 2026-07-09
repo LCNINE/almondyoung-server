@@ -12,7 +12,6 @@ import type {
   FulfillmentOutboxEvent,
   ListFulfillmentsQuery,
   CreateFulfillmentOrderRequest,
-  SplitFulfillmentOrderRequest,
   ReserveRequest,
   UnreserveRequest,
   TransferReservationRequest,
@@ -39,11 +38,6 @@ export const fulfillmentsClient = {
 
   create: async (data: CreateFulfillmentOrderRequest): Promise<FulfillmentOrder> => {
     const res = await client.post(BASE, data);
-    return res.data;
-  },
-
-  split: async (id: string, data: SplitFulfillmentOrderRequest): Promise<FulfillmentOrder> => {
-    const res = await client.post(`${BASE}/${encodeURIComponent(id)}/split`, data);
     return res.data;
   },
 

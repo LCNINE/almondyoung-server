@@ -31,7 +31,6 @@ import type {
   ForwardDirectShipOrdersRequest,
   CompleteDirectShipOrdersRequest,
   CreateStandaloneFulfillmentRequest,
-  SplitFulfillmentOrderRequest,
   ReserveRequest,
   UnreserveRequest,
   TransferReservationRequest,
@@ -802,17 +801,6 @@ export const useCreateFulfillmentOrder = () => {
       orders.fulfillmentOrder.createStandalone(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillments });
-    },
-  });
-};
-
-export const useSplitFulfillmentOrder = (id: string) => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: SplitFulfillmentOrderRequest) =>
-      orders.fulfillments.split(id, data),
-    onSuccess: () => {
-      invalidateFulfillment(queryClient, id);
     },
   });
 };

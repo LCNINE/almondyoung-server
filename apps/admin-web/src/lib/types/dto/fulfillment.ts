@@ -131,16 +131,6 @@ export type FulfillmentOrdersQuery = ListFulfillmentsQuery & {
   status?: FulfillmentOrderStatus;
 };
 
-/** POST /fulfillments/:id/split body */
-export interface SplitFulfillmentOrderItem {
-  fulfillmentOrderItemId: string;
-  quantity: number;
-}
-
-export interface SplitFulfillmentOrderRequest {
-  items: SplitFulfillmentOrderItem[];
-}
-
 /** POST /fulfillments/:id/reserve body */
 export interface ReserveRequest {
   fulfillmentOrderItemId: string;
