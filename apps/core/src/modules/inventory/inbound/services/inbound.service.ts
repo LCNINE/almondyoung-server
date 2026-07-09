@@ -8,6 +8,7 @@ import { SkuCatalogService } from '../../sku-catalog/services/sku-catalog.servic
 import { InventoryCommandService } from '../../core/services/inventory-command.service';
 import { LocationService } from '../../core/services/location.service';
 import { StockEventStore } from '../../core/repositories/stock-event.store';
+import { InventoryIdempotencyService } from '../../core/services/inventory-idempotency.service';
 import { SimpleInboundDto, IndividualInboundDto, UpdateInboundLineMemoDto } from '../dto/simple-inbound.dto';
 import {
   CancelInboundDto,
@@ -32,6 +33,7 @@ export class InboundService {
     private readonly commandService: InventoryCommandService,
     private readonly locationService: LocationService,
     private readonly eventStore: StockEventStore,
+    private readonly idempotency: InventoryIdempotencyService,
   ) {}
 
   private get db() {
@@ -71,7 +73,7 @@ export class InboundService {
   // 간편입고: 지정 창고/로케이션에 여러 SKU를 즉시 입고
   async simpleInbound(dto: SimpleInboundDto, tx?: DbTx) {
     const { warehouseId, items } = dto;
-    return this.dbService.run(async (tx) => {
+    return this.idempotency.withIdempotency('inbound.simple', dto.idempotencyKey, dto, async (tx) => {
       // 간편입고는 항상 시스템 입고기본존으로 (보장 선행)
       await this.locationService.ensureSystemLocations(warehouseId, tx);
       const inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default', tx);
@@ -100,7 +102,7 @@ export class InboundService {
 
       let totalQty = 0;
       const lines: InboundReceiptLine[] = [];
-      for (const item of items) {
+      for (const [i, item] of items.entries()) {
         const sku = await this.skuCatalogService.findById(item.skuId, tx);
         if (!sku) throw new NotFoundException(`SKU ${item.skuId} not found`);
 
@@ -113,6 +115,7 @@ export class InboundService {
             occurredAt: new Date(),
             reason: 'simple_inbound',
             journalId: journal.id,
+            idempotencyKey: `${dto.idempotencyKey}:${i}`,
           },
           tx,
         );
@@ -157,7 +160,7 @@ export class InboundService {
   // 전수조사 간편입고: 처리 로직은 동일하나 회차/로그의 method를 구분
   async simpleInboundFullscan(dto: SimpleInboundDto, tx?: DbTx) {
     const { warehouseId, items } = dto;
-    return this.dbService.run(async (tx) => {
+    return this.idempotency.withIdempotency('inbound.simple-fullscan', dto.idempotencyKey, dto, async (tx) => {
       await this.locationService.ensureSystemLocations(warehouseId, tx);
       const inboundZone = await this.locationService.getSystemLocationByRole(warehouseId, 'inbound_default', tx);
       if (!inboundZone) throw new BadRequestException('입고 기본존이 존재하지 않습니다.');
@@ -185,7 +188,7 @@ export class InboundService {
 
       let totalQty = 0;
       const lines: InboundReceiptLine[] = [];
-      for (const item of items) {
+      for (const [i, item] of items.entries()) {
         const sku = await this.skuCatalogService.findById(item.skuId, tx);
         if (!sku) throw new NotFoundException(`SKU ${item.skuId} not found`);
         const { eventId } = await this.commandService.receive(
@@ -197,6 +200,7 @@ export class InboundService {
             occurredAt: new Date(),
             reason: 'simple_inbound_fullscan',
             journalId: journal.id,
+            idempotencyKey: `${dto.idempotencyKey}:${i}`,
           },
           tx,
         );
@@ -235,7 +239,7 @@ export class InboundService {
   // 개별입고: 단일 SKU를 지정 로케이션(옵션, 없으면 기본입고존)으로 입고
   async individualInbound(dto: IndividualInboundDto, tx?: DbTx) {
     const { warehouseId, skuId, quantity } = dto;
-    return this.dbService.run(async (tx) => {
+    return this.idempotency.withIdempotency('inbound.individual', dto.idempotencyKey, dto, async (tx) => {
       let effectiveLocationId = dto.locationId ?? null;
       if (!effectiveLocationId) {
         await this.locationService.ensureSystemLocations(warehouseId, tx);
@@ -276,6 +280,7 @@ export class InboundService {
           occurredAt: new Date(),
           reason: 'individual_inbound',
           journalId: journal.id,
+          idempotencyKey: dto.idempotencyKey,
         },
         tx,
       );
@@ -719,7 +724,7 @@ export class InboundService {
 
   // 입고예정 아이템 기반 실입고 처리
   async receiveFromPlan(dto: ReceiveFromPlanDto, tx?: DbTx) {
-    return this.dbService.run(async (tx) => {
+    return this.idempotency.withIdempotency('inbound.plans.receive', dto.idempotencyKey, dto, async (tx) => {
       const item = await tx.query.inboundPlanItems.findFirst({
         where: eq(wmsTables.inboundPlanItems.id, dto.planItemId),
       });
@@ -766,6 +771,7 @@ export class InboundService {
           occurredAt: new Date(),
           reason: 'planned_inbound',
           journalId: journal.id,
+          idempotencyKey: dto.idempotencyKey,
         },
         tx,
       );
@@ -809,7 +815,7 @@ export class InboundService {
 
   // 즉시 적치(원위치 → 목적지)
   async putawayFromOrigin(dto: PutawayRequestDto, tx?: DbTx) {
-    return this.dbService.run(async (tx) => {
+    return this.idempotency.withIdempotency('inbound.putaway', dto.idempotencyKey, dto, async (tx) => {
       const line = await tx.query.inboundReceiptLines.findFirst({
         where: eq(wmsTables.inboundReceiptLines.id, dto.lineId),
       });
@@ -856,6 +862,7 @@ export class InboundService {
           toLocationId: dto.toLocationId,
           quantity: dto.quantity,
           reason: 'putaway_internal_move',
+          idempotencyKey: dto.idempotencyKey,
         },
         tx,
       );
@@ -883,7 +890,7 @@ export class InboundService {
 
   // 회송
   async returnInbound(dto: ReturnInboundDto, tx?: DbTx) {
-    return this.dbService.run(async (tx) => {
+    return this.idempotency.withIdempotency('inbound.return', dto.idempotencyKey, dto, async (tx) => {
       const line = await tx.query.inboundReceiptLines.findFirst({
         where: eq(wmsTables.inboundReceiptLines.id, dto.lineId),
       });
@@ -922,6 +929,7 @@ export class InboundService {
           quantity: dto.quantity,
           occurredAt: new Date(),
           reason: 'RETURN',
+          idempotencyKey: dto.idempotencyKey,
         },
         tx,
       );
@@ -949,7 +957,7 @@ export class InboundService {
 
   // 입고취소
   async cancelInbound(dto: CancelInboundDto, tx?: DbTx) {
-    return this.dbService.run(async (tx) => {
+    return this.idempotency.withIdempotency('inbound.cancel', dto.idempotencyKey, dto, async (tx) => {
       const line = await tx.query.inboundReceiptLines.findFirst({
         where: eq(wmsTables.inboundReceiptLines.id, dto.lineId),
       });

@@ -41,6 +41,12 @@ export class SimpleInboundDto {
   @ValidateNested({ each: true })
   @Type(() => SimpleInboundItemDto)
   items: SimpleInboundItemDto[];
+
+  @ApiProperty({ description: '요청 멱등 키 — 클라이언트 생성 UUID, 같은 작업의 재시도는 같은 값 재사용' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  idempotencyKey: string;
 }
 
 export class IndividualInboundDto {
@@ -67,6 +73,12 @@ export class IndividualInboundDto {
   @ApiProperty({ description: '입고 메모', required: false })
   @IsOptional()
   memo?: string;
+
+  @ApiProperty({ description: '요청 멱등 키 — 클라이언트 생성 UUID, 같은 작업의 재시도는 같은 값 재사용' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  idempotencyKey: string;
 }
 
 export class PutawayRequestDto {
@@ -84,6 +96,12 @@ export class PutawayRequestDto {
   @IsNumber()
   @Min(1)
   quantity: number;
+
+  @ApiProperty({ description: '요청 멱등 키 — 클라이언트 생성 UUID, 같은 작업의 재시도는 같은 값 재사용' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  idempotencyKey: string;
 }
 
 export class ReturnInboundDto {
@@ -100,6 +118,12 @@ export class ReturnInboundDto {
   @ApiProperty({ description: '회송 사유', required: false })
   @IsOptional()
   reason?: string;
+
+  @ApiProperty({ description: '요청 멱등 키 — 클라이언트 생성 UUID, 같은 작업의 재시도는 같은 값 재사용' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  idempotencyKey: string;
 }
 
 export class CancelInboundDto {
@@ -112,6 +136,12 @@ export class CancelInboundDto {
   @IsNumber()
   @Min(1)
   quantity: number;
+
+  @ApiProperty({ description: '요청 멱등 키 — 클라이언트 생성 UUID, 같은 작업의 재시도는 같은 값 재사용' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  idempotencyKey: string;
 }
 
 export class CreateInboundPlanDto {
@@ -198,6 +228,12 @@ export class ReceiveFromPlanDto {
   @ApiProperty({ description: '입고 메모', required: false })
   @IsOptional()
   memo?: string;
+
+  @ApiProperty({ description: '요청 멱등 키 — 클라이언트 생성 UUID, 같은 작업의 재시도는 같은 값 재사용' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  idempotencyKey: string;
 }
 
 export class UpdateInboundLineMemoDto {
