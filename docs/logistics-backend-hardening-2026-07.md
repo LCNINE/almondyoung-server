@@ -72,7 +72,7 @@
 | P2-8 | ⬜ | `warehouse/services/warehouse.manager.ts:70-78` | 창고 삭제 in-use 검사와 삭제가 다른 트랜잭션 (TOCTOU) — 최악 500 |
 | P2-9 | ⬜ | `fifo-allocate.ts:27-34` vs `allocation-strategy.service.ts:337` | FIFO 이중 구현 정렬 기준 불일치 (fifoRank+updatedAt vs updatedAt만) — 계획 로케이션 ≠ 실소진 로케이션 |
 | P2-10 | ⬜ | `outbound-consumption.service.ts:198` | active invoice 부재 시 `carrier:'CJ'` 하드코딩 + trackingNumber `''` 발행 — 불변식 위반을 잘못된 데이터로 다운스트림 전파 |
-| P2-11 | ⬜ | `modules/fulfillment/services/fulfillments.service.ts:1075-1077` | `computeAdminAvailableActions` 가 은퇴한 `POST /fulfillments/:id/ship` 을 광고 → UI 렌더 시 404 (RFC Cluster A 후속 #1). **(착수 재확인 2026-07-10) 라이브 404 확정** — admin-web `shipment-tab.tsx:234` 가 버튼 실렌더, 클릭 시 부재 라우트 호출(`fulfillments.client.ts:86`). ship 외 광고 액션 8종 라우트는 전부 실존. 수정 시 **admin-web 동시 수정 필수**(canShip 블록·`useShipFulfillment`·client `ship()`). 부수 발견: 서버가 광고하지 않는 `assignShipment`(`shipment-tab.tsx:48`)/`split`(`split-tab.tsx:62`) 데드 버튼 2건 — 반대 방향 계약 불일치(404 아닌 영구 비활성), 같은 PR 에서 처리 검토 |
+| P2-11 | 🟩 | `modules/fulfillment/services/fulfillments.service.ts:1075-1077` | `computeAdminAvailableActions` 가 은퇴한 `POST /fulfillments/:id/ship` 을 광고 → UI 렌더 시 404 (RFC Cluster A 후속 #1). **(착수 재확인 2026-07-10) 라이브 404 확정** — admin-web `shipment-tab.tsx:234` 가 버튼 실렌더, 클릭 시 부재 라우트 호출(`fulfillments.client.ts:86`). ship 외 광고 액션 8종 라우트는 전부 실존. 수정 시 **admin-web 동시 수정 필수**(canShip 블록·`useShipFulfillment`·client `ship()`). 부수 발견: 서버가 광고하지 않는 `assignShipment`(`shipment-tab.tsx:48`)/`split`(`split-tab.tsx:62`) 데드 버튼 2건 — 반대 방향 계약 불일치(404 아닌 영구 비활성), 같은 PR 에서 처리 검토. **✅ 작업 7 완료(2026-07-10)**: 서버 광고 블록 삭제 + admin-web ship(헤더+탭)·assignShipment·split(탭째) 3건 전량 제거(수직 슬라이스 3커밋). 서버 `ship()` 메서드(direct-ship 내부 호출) 존치. 부수 발견: ship 호출자가 상세 헤더에도 있었음(2곳), 0-importer 데드 부모 `detail/index.tsx` 동반 삭제. |
 | P2-12 | ⬜ | `store-sales-orders.service.ts:624`, `store-return-exchange.service.ts:730` | Wallet Idempotency-Key 가 호출마다 randomUUID — 동시 실행 시 이중 환불 방어가 전적으로 Wallet 측 refundable 검증에 위임 |
 | P2-13 | ⬜ | `partial-cancellation-refund-calculator.ts:124-146` | 부분취소 환불 추정치가 이전 취소 기환불액 미차감 — 항상 manual_pending 이라 자동 과다환불은 없으나 운영자 표시 합계가 총액 초과 가능 |
 | P2-14 | 🟩 | events↔ledgers 대사 부재 | `stock_events`(진실)↔`stock_ledgers`(파생) 를 재검증/복구하는 reconcile 잡·엔드포인트 없음. `calculateQuantityAsOf`(`stock-event.store.ts:204`) primitive 만 존재 — P0 우회 버그류 탐지 장치로 신설. **완료(작업2 — develop 스쿼시 머지 `ae5f979c0`)**: 탐지 전용 대사 잡 신설, §5 WS-A 작업 2 블록 참조 |
@@ -183,6 +183,15 @@ inter-warehouse 손실 엔드포인트를 무손실 경로로 재배선, dead �
 > - 브랜치 `feat/inter-warehouse-retirement` → **develop 스쿼시 머지 `536687448`** (2026-07-10).
 > - **스프린트 P0 5건 전량 해소** — WS-B 잔여는 작업 7(P2-11)·작업 8(P3-4·P3-5 스키마 contract)뿐.
 
+> **✅ 작업 7 (ship 광고 정리, P2-11) 완료 — 2026-07-10:** 은퇴한 `POST /fulfillments/:id/ship` 광고와 서버 미광고 데드 액션(assignShipment/split)의 admin-web UI 를 전량 제거. FE↔BE 계약 정합화. 스키마 무변경(작업 4·5·6 과 동일 성격).
+> - **서버**: `computeAdminAvailableActions` 의 ship push 블록 삭제(`fulfillments.service.ts:1075-1077`). `ship()` 메서드(`:858`, direct-ship 내부 호출 라이브) 불가침. spec: `invoiced` 상태 ship 미광고 회귀 가드로 교체 + getOne 상세 단언에서 ship 제거.
+> - **admin-web (수직 슬라이스 3커밋, 각 tsc 완결)**: ship(상세 헤더 버튼 + shipment-tab 섹션, 둘 다 404 호출) · assignShipment(영구 비활성 폼) · split(항상 차단 Alert 뜨는 데드 탭 — 탭째 제거) 각각 UI+훅+배럴+client+DTO 완결 제거. 0-importer 데드 부모 `detail/index.tsx` 동반 삭제. shipment-tab 은 정보표시·deliver 섹션 존치로 탭 유지.
+> - **부수 발견**: ship 호출자가 상세 헤더에도 존재(2곳)했음. split 은 합배송/송장분할(W5) 착수 시 재스캐폴딩.
+> - 브랜치 `feat/ship-advertisement-cleanup` (5커밋: 서버 1 + admin-web 슬라이스 3 + 문서 1) → develop 스쿼시 머지 예정.
+> - 설계 `docs/superpowers/specs/2026-07-10-ship-advertisement-cleanup-design.md` · 계획 `docs/superpowers/plans/2026-07-10-ship-advertisement-cleanup.md`.
+> - 검증: `nest build core` exit 0 · fulfillment 단위(60)/arch 경계 spec PASS · admin-web `type-check` 신규 에러 0(repo 기존 TS7006 debt 74건은 무관)·삭제 심볼 저장소 전역 참조 0 · 변경 파일 eslint error 0. 스키마 무변경이라 dev DB 의존 ⏸ 없음.
+> - **WS-B 잔여**: 작업 8(P3-4·P3-5 스키마 contract, expand-contract)뿐.
+
 **WS-C. 예약 보강** — P1-3, P1-4, P1-5, P2-1, P2-9
 reserve 경로 잠금(ledger FOR UPDATE 또는 sku+warehouse advisory lock), adjustDown 예약 고려, FO 예약 타임아웃 정책 + 잔존 모니터링, 소진의 라인 단위 전환, reserved≤on_hand 대사 체크(잡).
 
@@ -191,4 +200,4 @@ reserve 경로 잠금(ledger FOR UPDATE 또는 sku+warehouse advisory lock), adj
 
 **WS-E. 컨벤션/횡단** — P3-1(워커 파싱 제거와 한 세트), P3-2, P3-3, P3-6, P3-7, P3-8, P2-3, P2-5~P2-8, P2-10, W8, W9
 
-권장 착수 순서: ~~**WS-A·WS-B 의 P0 5건 먼저**(재고 무결성)~~ **P0 5건 전량 완료(작업 1~6, 2026-07-10)** → WS-D 의 포이즌 2건(P1-1/P1-2) → WS-C → 나머지 (WS-B 잔여 작업 7·8 은 병행 가능). ~~P0-2 와 P0-3 은 반드시 한 PR 로~~(작업1 완료). P3-1 은 backlog 워커 제어흐름과 얽혀 있으므로 독립 PR + FO 생성 실패 시나리오 회귀 테스트 필수.
+권장 착수 순서: ~~**WS-A·WS-B 의 P0 5건 먼저**(재고 무결성)~~ **P0 5건 전량 완료(작업 1~6, 2026-07-10)** → WS-D 의 포이즌 2건(P1-1/P1-2) → WS-C → 나머지 (WS-B 잔여 작업 8 은 병행 가능). ~~P0-2 와 P0-3 은 반드시 한 PR 로~~(작업1 완료). P3-1 은 backlog 워커 제어흐름과 얽혀 있으므로 독립 PR + FO 생성 실패 시나리오 회귀 테스트 필수.
