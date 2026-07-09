@@ -91,6 +91,10 @@ apps/medusa/cellmate-*.csv
 apps/medusa/cellmate-*.json
 apps/medusa/cellmate-*.xls
 apps/medusa/cellmate-*.xlsx
+apps/medusa/payment-order-*.csv
+apps/medusa/payment-order-*.json
+apps/medusa/payment-order-*.xlsx
+apps/medusa/.~lock.*
 apps/medusa/sellmate-orders-*.json
 apps/medusa/orders-sellmate-*.xls
 apps/medusa/weekly-sales-summary-*.xls
