@@ -98,17 +98,30 @@ async simpleInbound(dto: SimpleInboundDto, tx?: DbTx) {
 
 ### 4.4 이벤트 레벨 심층 방어 (파생 키)
 
-래퍼와 별개로 각 원장 쓰기 호출에 파생 키 전달:
+래퍼와 별개로 각 원장 쓰기 호출에 파생 키 전달. **키는 `endpoint` 네임스페이스를 접두해 생성**한다 —
+형식은 `` `${endpoint}:${dto.idempotencyKey}` `` (단건) / `` `${endpoint}:${dto.idempotencyKey}:${i}` `` (루프),
+`endpoint`는 각 메서드가 `withIdempotency` 호출에 쓰는 것과 동일한 논리 이름(§3 표).
 
-- 단건 경로(individual, putaway, return, move 단건, inter-warehouse): `dto.idempotencyKey` 그대로.
-- 루프 경로(simple, simple-fullscan, plans/receive의 items 루프, move의 lines 루프): `` `${dto.idempotencyKey}:${i}` ``.
+- 단건 경로: `` `inbound.individual:${dto.idempotencyKey}` ``, `` `inbound.plans.receive:${dto.idempotencyKey}` ``,
+  `` `inbound.putaway:${dto.idempotencyKey}` ``, `` `inbound.return:${dto.idempotencyKey}` ``,
+  `` `movement.inter-warehouse:${dto.idempotencyKey}` ``.
+- 루프 경로: `` `inbound.simple:${dto.idempotencyKey}:${i}` ``, `` `inbound.simple-fullscan:${dto.idempotencyKey}:${i}` ``,
+  `` `movement.move:${dto.idempotencyKey}:${i}` ``.
 - `cancelInbound`의 `reverseEvent`는 원 이벤트 역분개로 자체 멱등 — 파생 키 제외.
 
-`stock_events.idempotency_key`는 varchar(128) 전역 unique — UUID(36) + `:i` suffix로 충분. DTO `@MaxLength(100)`로 여유 확보.
+**근거 (최종리뷰 2026-07-09)**: `stock_events.idempotency_key`는 전역 UNIQUE다. 네임스페이스 없이 `dto.idempotencyKey`를
+그대로 쓰면, 클라이언트가 같은 키 문자열을 서로 다른 엔드포인트(예: `inbound.return`과 `movement.move`)에
+재사용했을 때 두 번째 호출의 이벤트 INSERT가 `onConflictDoNothing`으로 조용히 스킵된다 — `withIdempotency`
+래퍼는 (endpoint, key) 복합 unique라 신규 요청으로 통과하므로, 원장 이벤트 없이 receipt/counter만 갱신되는
+half-state가 발생한다. endpoint 접두로 교차-엔드포인트 충돌을 원천 차단한다.
+
+`stock_events.idempotency_key`는 varchar(128) 전역 unique. 최악 예산: `movement.inter-warehouse`(24자) +
+`:`(1) + key(90, §5) + `:` + 인덱스(최대 3자리) = 119 < 128. DTO `@MaxLength(90)`로 여유 확보(§5).
 
 ## 5. DTO / admin-web
 
-- 9개 요청 DTO에 `idempotencyKey: string` 추가 — `@IsString() @IsNotEmpty() @MaxLength(100)`, **required**.
+- 9개 요청 DTO에 `idempotencyKey: string` 추가 — `@IsString() @IsNotEmpty() @MaxLength(90)`, **required**.
+  90 = §4.4 파생 키 길이 예산(`movement.inter-warehouse:` 접두 24자 + `:`+인덱스 최대 4자 여유를 varchar(128) 안에 확보).
 - admin-web `lib/api/domains/inventory/inbound.client.ts` · `movement.client.ts`: 해당 mutation payload에 `idempotencyKey` 포함.
 - **키 수명주기 (계획 수립 시 구체화)**: 대상 mutation 전부가 `lib/services/inventory/mutations.ts` 한 파일을 경유하므로, 키 관리를 central 래퍼 훅 `useIdempotentMutation`으로 통일한다 — 컴포넌트 call site 무수정.
   - 키는 훅의 `useRef`에 유지 → react-query 자동 재시도와 **네트워크 오류 후 사용자 재클릭이 같은 키를 재사용** (서버 replay = P2-4 핵심 시나리오 방어).

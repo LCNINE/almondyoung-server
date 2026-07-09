@@ -759,6 +759,29 @@ export const locations = pgTable(
 // indexes moved into table definitions above
 
 /*───────────────────────────
+ * REQUEST IDEMPOTENCY (P2-4)
+ * 입고/이동 요청 전체의 멱등 기록. 이벤트 레벨 stock_events.idempotency_key 와 별개의
+ * 요청(핸들러) 레벨 방어 — 스펙 docs/superpowers/specs/2026-07-09-inbound-movement-idempotency-design.md §4.1
+ *──────────────────────────*/
+export const inventoryIdempotencyRequests = pgTable(
+  'inventory_idempotency_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    endpoint: varchar('endpoint', { length: 64 }).notNull(),
+    key: varchar('key', { length: 128 }).notNull(),
+    // SHA-256(JSON.stringify(dto)) hex — 키 오용(같은 키, 다른 본문) 감지
+    requestHash: varchar('request_hash', { length: 64 }).notNull(),
+    // null = 처리 중(커밋 전에는 외부 미관찰). 완료 시 핸들러 반환값 저장
+    response: jsonb('response'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqEndpointKey: uniqueIndex('uq_inv_idem_requests_endpoint_key').on(t.endpoint, t.key),
+    idxCreatedAt: index('idx_inv_idem_requests_created_at').on(t.createdAt),
+  }),
+);
+
+/*───────────────────────────
  * STOCK LEDGER
  *──────────────────────────*/
 export const stockJournals = pgTable('stock_journals', {
@@ -2264,6 +2287,7 @@ export const wmsTables = {
   movementWorkLogs,
   auditLogs,
   outboxEvents,
+  inventoryIdempotencyRequests,
 
   // Stocktaking
   stocktakingSessions,

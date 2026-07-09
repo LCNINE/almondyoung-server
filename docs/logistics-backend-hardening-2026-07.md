@@ -65,7 +65,7 @@
 | P2-1 | ⬜ | `outbound-consumption.service.ts:70-73, 136` | `consumeShipment` 가 FO 1:1 가정 — `openedForFo=null` 이면 throw, 예약 소진이 박스 라인이 아닌 **FO 전량** 단위. 합배송/송장분할(M:N) 흐름을 열기 전에 라인 단위 소진으로 전환 필요 (스키마는 이미 M:N 개방) |
 | P2-2 | ⬜ | `core/services/sku-location-movement.service.ts:86-99` | `recordMovement` 가 원장을 건드리지 않는 "이동"을 completed 로 기록 → 로케이션 grain 원장과 물리 위치 불일치 → FIFO 소진이 틀린 로케이션 선택 가능. **단 컨트롤러 라우트 전부 주석처리 — 현재 호출 불가(잠복). 수정 = `moveInternal` 위임** (착수 재확인 2026-07-08) |
 | P2-3 | ⬜ | `inbound/services/inbound.service.ts:782-787` | 초과 수령 무제한 허용 (expectedQty 상한/경고 없음) |
-| P2-4 | ⬜ | `inbound.service.ts:107,191,270,760`, `movement.service.ts:92` | 입고/이동 경로 전부 `idempotencyKey` 미전달 — 재전송 시 중복 입고(재고 2배). `stock_events.idempotencyKey` 방어막 무력화. **(+`returnInbound:915`·`createInterWarehouseTransfer:220` 동일). 진짜 재-POST 방어엔 클라이언트 요청 키 필요 — inbound line id 는 이벤트 후 생성이라 못 씀** (착수 재확인 2026-07-08) |
+| P2-4 | 🟩 | `inbound.service.ts:107,191,270,760`, `movement.service.ts:92` | 입고/이동 경로 전부 `idempotencyKey` 미전달 — 재전송 시 중복 입고(재고 2배). `stock_events.idempotencyKey` 방어막 무력화. **(+`returnInbound:915`·`createInterWarehouseTransfer:220` 동일). 진짜 재-POST 방어엔 클라이언트 요청 키 필요 — inbound line id 는 이벤트 후 생성이라 못 씀** (착수 재확인 2026-07-08) **완료(작업3): 전용 idempotency 테이블+래퍼로 9개 경로 요청 멱등화, 이벤트 파생 키 병행, admin-web 키 수명주기 래퍼** |
 | P2-5 | 🟩 | `stocktaking.service.ts:139-149`, `schema:1716` | 실사 라인 무조건 INSERT — (session×sku×location) unique 없음, 동시 세션 로케이션 배타 제어 없음 → 재스캔/동시 실사 시 이중 조정. **완료(작업1): `(session,sku,location)` unique(NULLS NOT DISTINCT) + `scanLocation` onConflictDoNothing** |
 | P2-6 | 🟩 | `stocktaking` 전반 | 실사가 expected 를 스캔 시점 ON_HAND 스냅샷으로만 계산 — 카운팅 중 예약/이동 미고려 (variance-delta 방식의 이중 계산 위험). **완료(작업1): 완료 시 라이브 delta(counted−현재ON_HAND)로 이중계산 위험 해소; 카운팅 중 표시 expected 스냅샷은 조정 정확성에 무영향** |
 | P2-7 | ⬜ | `core/services/location.service.ts:534-551` | 로케이션 삭제에 재고 가드 없음 → 도메인 에러 대신 FK 위반 500. qty=0 잔여 row 케이스도 정리 필요 |
@@ -135,10 +135,15 @@
 > - ⏸ **배포 전 확인**: (1) prod/dev 실사 데이터 유무 — 있으면 마이그레이션 dedup phase 분리(spec §10 #1). (2) dev DB 부재로 통합 테스트 런타임·마이그레이션 적용(`db:setup`) 미실행 — DB 복구 시 실행(arch test·tsc·lint 는 통과).
 
 > **✅ 작업 2 (원장 대사, P2-14) 구현 완료 — 2026-07-09, 미머지:** events↔ledgers 대사 잡 신설 — **탐지 전용·무상태**(수리(repair)·drift 이력 테이블은 의도적 비목표, 마이그레이션 없음). 단일 SQL 스냅샷 대사 쿼리(grain unpivot → FULL OUTER JOIN, POSTED·non-void 필터 = `applyProjection` 동형) + 야간 크론(03:00 KST, `LedgerReconciliationService`) + 온디맨드 `GET /inventory/ledger-reconciliation` + Prometheus 게이지 `wms_ledger_drift_grains`(severity 라벨, 정상 시 0 명시 set). 작업 1 의 정적 쓰기 경계(arch spec)의 **런타임/데이터 레벨 짝**.
-> - 브랜치 `feat/ledger-reconciliation` (8 커밋, tip `f7c2cee07`, SDD 4태스크 + 최종리뷰 fix) — develop 미머지, 머지 후 해시 기입.
+> - 브랜치 `feat/ledger-reconciliation` (8 커밋, tip `f7c2cee07`, SDD 4태스크 + 최종리뷰 fix) → **develop 스쿼시 머지 `ae5f979c0`** (2026-07-09).
 > - 설계 `docs/superpowers/specs/2026-07-09-ledger-reconciliation-design.md` · 계획 `docs/superpowers/plans/2026-07-09-ledger-reconciliation.md`.
 > - 검증: 단위(대사/severity/크론/메트릭)·arch 경계 회귀·tsc·lint(eslint 0) GREEN. ⏸ 통합 스펙 6건(정상·수량불일치·원장행부재·missing-derived[P0-2 우회클래스]·warehouseId/skuId 필터)은 dev DB 복구 시 실행(작업 1 ⏸ 항목과 동일).
-> - **WS-A 잔여(미착수)**: P0-4, P2-2, P2-4.
+
+> **✅ 작업 3 (요청 멱등화, P2-4) 구현 완료 — 2026-07-09:** 전용 `inventory_idempotency_requests` 테이블(unique(endpoint,key), 응답 jsonb) + `InventoryIdempotencyService.withIdempotency` 래퍼 신설 — 신규 키는 handler 실행+응답 저장, 중복 키는 저장 응답 replay(본문 해시 불일치·처리중은 409 ConflictError), 30일 보존 야간 크론(purge). `InboundService` 7개 핸들러(simpleInbound·simpleInboundFullscan·individualInbound·receiveFromPlan·putawayFromOrigin·returnInbound·cancelInbound) + `MovementService` 2개 핸들러(moveImmediately·createInterWarehouseTransfer) 전부 래핑, DTO `idempotencyKey` required. `stock_events.idempotencyKey` 는 이벤트 파생 키로 병행 유지(하위 세분화 방어). admin-web 은 `useIdempotentMutation` 훅으로 키 수명주기(생성·mutation 성공/실패 시 재사용/폐기) 래핑 — 컴포넌트 call site 무수정.
+> - 브랜치 `feat/inbound-movement-idempotency` (SDD 7태스크) — tip `7d176c9e8`, develop 미머지.
+> - 설계 `docs/superpowers/specs/2026-07-09-inbound-movement-idempotency-design.md` · 계획 `docs/superpowers/plans/2026-07-09-inbound-movement-idempotency.md`.
+> - 검증: 단위(래퍼 6케이스 + purge 1 + 배선 7+2)·arch 경계 회귀·tsc·lint GREEN. admin-web `tsc --noEmit` GREEN(컴포넌트 call site 무수정). ⏸ 통합 스펙 4건(simpleInbound replay·returnInbound replay·다른 본문 409·movement.move 래퍼 replay)은 dev DB 복구 시 실행(작업 1·2 ⏸ 항목과 동일).
+> - **WS-A 잔여(미착수)**: P0-4, P2-2.
 
 **WS-B. 레거시 경로 은퇴** — P0-1, P0-5, P1-6, P2-11, P3-4, P3-5, W1, W2
 inter-warehouse 컨트롤러를 `TransferService` 로 재배선, dead 지뢰(`processExpiredReservations`, `FulfillmentOrderTransactionService` 출고 경로, dead enum, `outbound_tasks`) 제거. destructive 스키마 변경은 expand-contract(ADR-0005 §5) 준수.
