@@ -185,7 +185,10 @@ export default function MembershipPaymentMethodPage() {
     })
   }
 
-  const handleSubscribeWithMethod = (billingMethodId: string) => {
+  const handleSubscribeWithMethod = (
+    billingMethodId: string,
+    opts?: { pendingMandate?: boolean }
+  ) => {
     if (!planId || isChanging || isActionPending) return
     const currentPlanId = planId
 
@@ -203,7 +206,10 @@ export default function MembershipPaymentMethodPage() {
         toast.success(
           appliedTrialDays > 0
             ? t("trialStartedSuccess", { days: appliedTrialDays })
-            : t("recurringStartedSuccess")
+            : opts?.pendingMandate
+              ? // 선적용: 심사 중 계좌로 가입 — 첫 출금은 승인 후. "첫 결제 진행" 문구는 사실과 다르다.
+                t("pendingMandateSubscribeSuccess")
+              : t("recurringStartedSuccess")
         )
         router.push(`/${countryCode}/mypage/membership/subscribe/success`)
       } catch (error) {
@@ -328,7 +334,10 @@ export default function MembershipPaymentMethodPage() {
     const targetMethodId = pendingCandidate?.billingMethodId ?? otherMethods[0]?.id
     if (!targetMethodId) return
     autoSubscribeOnLoad.current = false
-    handleSubscribeWithMethod(targetMethodId)
+    // 심사 중(PENDING) 계좌로 선적용 가입하는 경우엔 첫 출금이 승인 후임을 정직하게 안내한다.
+    handleSubscribeWithMethod(targetMethodId, {
+      pendingMandate: targetMethodId === pendingCandidate?.billingMethodId,
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, otherMethods, pendingCmsMethods])
 
@@ -652,8 +661,30 @@ export default function MembershipPaymentMethodPage() {
                     <p className="text-xs leading-relaxed font-medium text-amber-800">
                       {t("cmsReceiptSmsNotice")}
                     </p>
+                    {/* 선적용: 심사 중이어도 지금 바로 구독을 시작할 수 있음을 안내 */}
+                    {isSubscribeFlow && isInvoiceBillingEnabled() && (
+                      <p className="text-xs leading-relaxed text-amber-700">
+                        {t("pendingSubscribeHint")}
+                      </p>
+                    )}
                     {renderMethodDetails(m.billingMethodId, null, m)}
                     <div className="flex justify-end gap-2">
+                      {/* PENDING 계좌 수동 구독(선적용) — 자동가입 effect 실패/미도달 시에도 가입을 완료할 수 있게 한다 */}
+                      {isSubscribeFlow && isInvoiceBillingEnabled() && (
+                        <button
+                          className="rounded-sm bg-amber-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-amber-700 disabled:opacity-50"
+                          onClick={() =>
+                            handleSubscribeWithMethod(m.billingMethodId, {
+                              pendingMandate: true,
+                            })
+                          }
+                          disabled={!!isChanging || isActionPending}
+                        >
+                          {isChanging === m.billingMethodId
+                            ? t("processing")
+                            : t("subscribeWithPendingMethod")}
+                        </button>
+                      )}
                       <button
                         className="rounded-sm border border-amber-300 bg-white px-2.5 py-1.5 text-xs font-normal text-amber-800 shadow-sm hover:bg-amber-50"
                         onClick={() =>
