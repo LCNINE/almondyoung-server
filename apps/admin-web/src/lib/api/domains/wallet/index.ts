@@ -18,6 +18,8 @@ import {
   AdminRecurringBillingOverview,
   AdminRecurringBillingRow,
   AdminRecurringBillingListQuery,
+  AdminRecurringInvoiceRow,
+  AdminRecurringInvoiceListQuery,
   PaymentMethodCatalogDto,
   UpdateCatalogPayload,
   RegionDto,
@@ -318,6 +320,35 @@ export const walletApi = {
       {
         headers: { 'Idempotency-Key': crypto.randomUUID() },
       }
+    );
+    return res.data;
+  },
+
+  // 인보이스(ADR-0027) — 청구 권위 상태 목록 / 수동 집행
+  listRecurringInvoices: async (
+    query: AdminRecurringInvoiceListQuery
+  ): Promise<PaginatedResponse<AdminRecurringInvoiceRow>> => {
+    const qs = buildQueryString(query as Record<string, unknown>);
+    const res = await client.get(
+      `${BASE}/v1/admin/recurring-billing/invoices${qs ? `?${qs}` : ''}`
+    );
+    return res.data;
+  },
+
+  runDueInvoices: async (): Promise<{ message: string }> => {
+    const res = await client.post(
+      `${BASE}/v1/admin/recurring-billing/invoices/run-due`,
+      undefined,
+      idempotencyConfig()
+    );
+    return res.data;
+  },
+
+  executeInvoice: async (id: string): Promise<{ message: string }> => {
+    const res = await client.post(
+      `${BASE}/v1/admin/recurring-billing/invoices/${id}/execute`,
+      undefined,
+      idempotencyConfig()
     );
     return res.data;
   },

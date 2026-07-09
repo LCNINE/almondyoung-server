@@ -14,6 +14,7 @@ import { RecurringBillingDetailDialog } from '../detail-dialog';
 import { RecurringContractsView } from './contracts-view';
 import { StuckBillingView } from './stuck-view';
 import { DunningView } from './dunning-view';
+import { RecurringInvoicesView } from './invoices-view';
 
 const PAGE_SIZE = 20;
 
@@ -30,6 +31,10 @@ export function RecurringBillingTable() {
 
   if (query.view === 'dunning') {
     return <DunningView />;
+  }
+
+  if (query.view === 'invoices') {
+    return <RecurringInvoicesView />;
   }
 
   return <RecurringBillingCmsTable query={query} />;

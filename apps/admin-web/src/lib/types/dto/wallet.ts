@@ -332,7 +332,7 @@ export interface AdminRecurringBillingOverview {
 export interface AdminRecurringBillingListQuery {
   page?: number;
   limit?: number;
-  view?: 'needs-action' | 'members' | 'withdrawals' | 'contracts' | 'stuck' | 'dunning';
+  view?: 'needs-action' | 'members' | 'withdrawals' | 'contracts' | 'stuck' | 'dunning' | 'invoices';
   dateType?: 'updatedAt' | 'createdAt' | 'paymentDate' | 'nextBillingDate';
   dateFrom?: string;
   dateTo?: string;
@@ -349,4 +349,49 @@ export interface AdminRecurringBillingListQuery {
   transactionId?: string;
   paymentIntentId?: string;
   providerType?: 'CMS_BATCH' | 'TOSS_BILLING' | 'NICEPAY_BILLING';
+}
+
+// ── 인보이스(ADR-0027) — 정기결제 청구 1건의 권위 상태 ─────────────────────────
+
+export type AdminRecurringInvoiceStatus =
+  | 'DRAFT'
+  | 'OPEN'
+  | 'MANDATE_PENDING'
+  | 'ATTEMPTING'
+  | 'PAST_DUE'
+  | 'PAID'
+  | 'UNCOLLECTIBLE'
+  | 'MANDATE_REJECTED'
+  | 'VOID';
+
+export interface AdminRecurringInvoiceRow {
+  id: string;
+  status: AdminRecurringInvoiceStatus;
+  subscriberType: string;
+  subscriberRef: string;
+  userId: string | null;
+  billingMethodId: string;
+  billingMethodDisplayName: string | null;
+  amountDue: number;
+  currency: string;
+  periodStart: string;
+  periodEnd: string;
+  dueDate: string;
+  attemptCount: number;
+  maxAttempts: number;
+  nextAttemptAt: string | null;
+  finalizedAt: string | null;
+  isExecutable: boolean;
+  lastErrorCode: string | null;
+  lastErrorMessage: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminRecurringInvoiceListQuery {
+  page?: number;
+  limit?: number;
+  status?: AdminRecurringInvoiceStatus;
+  subscriberRef?: string;
+  userId?: string;
 }
