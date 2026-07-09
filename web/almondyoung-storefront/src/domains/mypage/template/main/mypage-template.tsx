@@ -7,8 +7,6 @@ import type { UserDetail } from "@lib/types/ui/user"
 import { Suspense } from "react"
 
 import { PaymentInfoWrapper } from "./wrappers/payment-info-wrapper"
-import { PointsBannerWrapper } from "./wrappers/points-banner-wrapper"
-import { SavingsBannerWrapper } from "./wrappers/savings-banner-wrapper"
 import { ShippingItemsWrapper } from "./wrappers/shipping-items-wrapper"
 import { ShippingStatusWrapper } from "./wrappers/shipping-status-wrapper"
 
@@ -16,17 +14,13 @@ import { retrieveCart } from "@/lib/api/medusa/cart"
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import type { CustomerGroupRef } from "@/lib/utils/membership-group"
 import { isMembershipGroup } from "@/lib/utils/membership-group"
-import { MENU_SECTIONS } from "../../components/constants/mypage-constants"
 import { QuickMenuSection } from "../../components/desktop/quick-menu-section"
 import { UserProfileSection } from "../../components/desktop/user-profile-section"
-import { MenuList } from "../../components/mobile/menu-list"
+import { FrequentMenu } from "../../components/mobile/frequent-menu"
 import { MobileHeader } from "../../components/mobile/mobile-header"
-import PayLaterBanner from "../../components/mobile/paylater-banner"
 import { QuickLinks } from "../../components/mobile/quick-links"
 import {
   PaymentInfoSkeleton,
-  PointsBannerSkeleton,
-  SavingsBannerSkeleton,
   ShippingItemsSkeleton,
   ShippingStatusSkeleton,
 } from "../../components/shared/mypage-skeletons"
@@ -43,8 +37,6 @@ export async function MyPageTemplate({ countryCode }: { countryCode: string }) {
     })),
   ])
 
-  const isPayLaterBannerEnabled = false // bnpl 기능 미연결로 임시 비활성화
-
   const [customer, cart] = await Promise.all([
     withMypageTimeout(retrieveCustomer(), null),
     withMypageTimeout(retrieveCart(undefined, undefined, "no-store"), null),
@@ -59,40 +51,36 @@ export async function MyPageTemplate({ countryCode }: { countryCode: string }) {
   return (
     <>
       {/* 모바일 콘텐츠 - lg 미만 */}
-      <div className="block lg:hidden">
-        <div className="mx-auto">
-          <div className="bg-muted space-y-4 px-6 py-4">
-            <MobileHeader
-              userName={(currentUser as UserDetail)?.username}
-              isMembership={isMembershipPricing}
-            />
+      <div className="bg-muted block lg:hidden">
+        {/* 프로필 영역 */}
+        <div className="bg-primary/90 space-y-3 px-6 pt-4 pb-5">
+          <MobileHeader
+            userName={(currentUser as UserDetail)?.username}
+            isMembership={isMembershipPricing}
+            pointAvailable={pointBalance.available}
+          />
 
-            {/* 관리자 버튼 */}
-            {isAdmin && (
-              <div className="pb-2">
-                <AdminAccessButton
-                  countryCode={countryCode}
-                  className="w-full"
-                />
-              </div>
-            )}
+          {/* 관리자 버튼 */}
+          {isAdmin && (
+            <AdminAccessButton countryCode={countryCode} className="w-full" />
+          )}
+        </div>
 
-            <Suspense fallback={<SavingsBannerSkeleton />}>
-              <SavingsBannerWrapper />
-            </Suspense>
+        {/* 퀵메뉴 */}
+        <div className="bg-white px-6 py-4">
+          <QuickLinks />
+        </div>
 
-            <Suspense fallback={<PointsBannerSkeleton />}>
-              <PointsBannerWrapper />
-            </Suspense>
+        {/* 주문 내역 */}
+        <div className="mt-2 bg-white px-6 py-5">
+          <Suspense fallback={<ShippingStatusSkeleton />}>
+            <ShippingStatusWrapper />
+          </Suspense>
+        </div>
 
-            <QuickLinks />
-
-            <Suspense fallback={<ShippingStatusSkeleton />}>
-              <ShippingStatusWrapper />
-            </Suspense>
-          </div>
-          {isPayLaterBannerEnabled && <PayLaterBanner />}
-          <MenuList sections={MENU_SECTIONS} />
+        {/* 자주 쓰는 메뉴 */}
+        <div className="mt-2 bg-white px-6 py-5">
+          <FrequentMenu />
         </div>
       </div>
 

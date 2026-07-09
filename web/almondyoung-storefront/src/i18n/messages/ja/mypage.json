@@ -40,7 +40,8 @@
     "wish": "お気に入り",
     "rebuy": "よく購入",
     "recent": "最近見た商品",
-    "customInfo": "カスタマイズ"
+    "customInfo": "カスタマイズ",
+    "allMenu": "すべてのメニュー"
   },
   "coupon": {
     "myCoupons": "マイクーポン",
@@ -148,7 +149,9 @@
     "pointTitle": "アーモンドヨン ポイント",
     "pointAriaLabel": "アーモンドヨン ポイントを表示",
     "settings": "設定",
-    "won": "ウォン"
+    "won": "ウォン",
+    "benefitActive": "特典利用中",
+    "membershipJoinCta": "加入して特典を受ける"
   },
   "shipping": {
     "title": "配送中の商品",
@@ -157,7 +160,8 @@
     "emptyDescription": "新しい商品をご注文ください。",
     "shopNow": "ショッピングへ",
     "orderNumber": "注文番号 {number}",
-    "detailAriaLabel": "詳細表示"
+    "detailAriaLabel": "詳細表示",
+    "orderTitle": "注文履歴"
   },
   "banner": {
     "savingsThisMonth": "今月 <strong>{amount}ウォン</strong> 節約しました!",
@@ -1073,5 +1077,14 @@
       "small": "2〜3人 小規模",
       "large": "4人以上 中・大規模"
     }
+  },
+  "frequent": {
+    "title": "よく使うメニュー",
+    "viewAll": "すべて表示",
+    "orderList": "注文履歴",
+    "wish": "お気に入り",
+    "review": "レビュー管理",
+    "myInfo": "会員情報",
+    "cs": "カスタマーセンター"
   }
 }

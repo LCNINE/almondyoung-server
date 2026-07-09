@@ -40,7 +40,8 @@
     "wish": "찜한상품",
     "rebuy": "자주산상품",
     "recent": "최근 본 상품",
-    "customInfo": "맞춤정보"
+    "customInfo": "맞춤정보",
+    "allMenu": "전체메뉴"
   },
   "coupon": {
     "myCoupons": "내 쿠폰",
@@ -148,7 +149,9 @@
     "pointTitle": "아몬드영 적립금",
     "pointAriaLabel": "아몬드영 적립금 보기",
     "settings": "설정",
-    "won": "원"
+    "won": "원",
+    "benefitActive": "혜택 이용중",
+    "membershipJoinCta": "멤버십 가입하고 혜택 받기"
   },
   "shipping": {
     "title": "배송 중 상품",
@@ -157,7 +160,8 @@
     "emptyDescription": "새로운 상품을 주문해보세요",
     "shopNow": "쇼핑하러 가기",
     "orderNumber": "주문번호 {number}",
-    "detailAriaLabel": "상세보기"
+    "detailAriaLabel": "상세보기",
+    "orderTitle": "주문 내역"
   },
   "banner": {
     "savingsThisMonth": "이번달 <strong>{amount}원</strong> 절약했어요!",
@@ -1073,5 +1077,14 @@
       "small": "2~3인 소형샵",
       "large": "4인 이상 중형/대형샵"
     }
+  },
+  "frequent": {
+    "title": "자주 사용하는 메뉴",
+    "viewAll": "전체보기",
+    "orderList": "주문내역",
+    "wish": "찜한상품",
+    "review": "리뷰관리",
+    "myInfo": "내정보관리",
+    "cs": "고객센터"
   }
 }

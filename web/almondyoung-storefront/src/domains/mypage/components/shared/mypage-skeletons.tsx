@@ -47,59 +47,25 @@ export function PaymentInfoSkeleton() {
 }
 
 /**
- * 절약 배너 스켈레톤 (모바일)
- */
-export function SavingsBannerSkeleton() {
-  return (
-    <section className="flex items-center justify-between rounded-lg bg-yellow-100 p-3">
-      <div className="flex items-center gap-2">
-        <Skeleton className="h-5 w-12 rounded bg-purple-200" />
-        <Skeleton className="h-4 w-40" />
-      </div>
-      <Skeleton className="h-5 w-5" />
-    </section>
-  )
-}
-
-/**
- * 포인트 배너 스켈레톤 (모바일)
- */
-export function PointsBannerSkeleton() {
-  return (
-    <section className="flex w-full items-center justify-between rounded-[10px] bg-white px-4 py-3.5 shadow-sm">
-      <Skeleton className="h-3 w-32" />
-      <div className="flex items-center gap-2">
-        <Skeleton className="h-3 w-12" />
-        <Skeleton className="h-4 w-20" />
-        <Skeleton className="h-4 w-4 rounded-full" />
-      </div>
-    </section>
-  )
-}
-
-/**
- * 배송 상태 카드 스켈레톤 (모바일)
+ * 주문 내역 가로 카드 스켈레톤 (모바일)
  */
 export function ShippingStatusSkeleton() {
   return (
     <section className="flex w-full flex-col gap-3">
-      <h2 className="text-base font-bold text-black">배송 중 상품</h2>
-      <div className="flex flex-col gap-4 rounded-[10px] border-[0.5px] border-[#d9d9d9] bg-white px-4 py-3.5">
-        <div className="flex flex-col gap-4">
-          {Array.from({ length: 2 }).map((_, index) => (
-            <div
-              key={`shipping-mobile-skeleton-${index}`}
-              className="flex items-center gap-4"
-            >
-              <Skeleton className="h-[45px] w-11 rounded-[5px]" />
-              <div className="flex flex-1 flex-col gap-2">
-                <Skeleton className="h-3 w-2/3" />
-                <Skeleton className="h-4 w-1/2" />
-              </div>
-              <Skeleton className="h-6 w-6 rounded-full" />
-            </div>
-          ))}
-        </div>
+      <div className="flex items-center justify-between">
+        <Skeleton className="h-5 w-20" />
+        <Skeleton className="h-4 w-14" />
+      </div>
+      <div className="-mx-6 flex gap-3 overflow-hidden px-6">
+        {Array.from({ length: 3 }).map((_, index) => (
+          <div
+            key={`shipping-mobile-skeleton-${index}`}
+            className="w-[160px] shrink-0 rounded-lg border border-[#ececec] bg-white p-3.5"
+          >
+            <Skeleton className="mb-2 h-4 w-2/3" />
+            <Skeleton className="aspect-square w-full rounded-md" />
+          </div>
+        ))}
       </div>
     </section>
   )

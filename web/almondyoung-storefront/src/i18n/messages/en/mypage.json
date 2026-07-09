@@ -40,7 +40,8 @@
     "wish": "Wishlist",
     "rebuy": "Frequent",
     "recent": "Recently Viewed",
-    "customInfo": "Preferences"
+    "customInfo": "Preferences",
+    "allMenu": "All menu"
   },
   "coupon": {
     "myCoupons": "My Coupons",
@@ -148,7 +149,9 @@
     "pointTitle": "Almondyoung Points",
     "pointAriaLabel": "View Almondyoung points",
     "settings": "Settings",
-    "won": "KRW"
+    "won": "KRW",
+    "benefitActive": "Benefits active",
+    "membershipJoinCta": "Join & get benefits"
   },
   "shipping": {
     "title": "In Transit",
@@ -157,7 +160,8 @@
     "emptyDescription": "Place a new order to see items here.",
     "shopNow": "Start shopping",
     "orderNumber": "Order #{number}",
-    "detailAriaLabel": "View details"
+    "detailAriaLabel": "View details",
+    "orderTitle": "Orders"
   },
   "banner": {
     "savingsThisMonth": "You saved <strong>{amount} KRW</strong> this month!",
@@ -1073,5 +1077,14 @@
       "small": "2–3 staff (Small)",
       "large": "4+ staff (Medium/Large)"
     }
+  },
+  "frequent": {
+    "title": "Frequently Used",
+    "viewAll": "View all",
+    "orderList": "Orders",
+    "wish": "Wishlist",
+    "review": "Reviews",
+    "myInfo": "My Info",
+    "cs": "Support"
   }
 }

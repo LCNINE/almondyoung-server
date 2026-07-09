@@ -95,6 +95,11 @@ const getLegacyGatewayBaseUrl = (service: BackendService) => {
 
 export const getBackendBaseUrl = (service: BackendService) => {
   if (!isRailwayBackend()) {
+    // 로컬 file-service 데모셋에 없는 이미지를 라이브 fs 에서 읽고 싶을 때 override.
+    // 예: NEXT_PUBLIC_FS_BASE_URL=https://file.almondyoung-next.com
+    if (service === "fs" && process.env.NEXT_PUBLIC_FS_BASE_URL) {
+      return trimTrailingSlash(process.env.NEXT_PUBLIC_FS_BASE_URL)
+    }
     return LOCAL_SERVICE_URLS[service]
   }
 
