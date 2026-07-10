@@ -17,3 +17,19 @@ describe('product query keys', () => {
     ]);
   });
 });
+
+describe('productImports query keys', () => {
+  it('list 키는 page 를 포함한다', () => {
+    expect(productQueryKeys.productImportsList(2)).toEqual([
+      'product-imports',
+      'list',
+      2,
+    ]);
+  });
+  it('detail 키는 sessionId 를 포함한다', () => {
+    expect(productQueryKeys.productImport('s1')).toEqual([
+      'product-imports',
+      's1',
+    ]);
+  });
+});

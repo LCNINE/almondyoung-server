@@ -1004,15 +1004,6 @@ export interface BulkPolicyResultDto {
   failed?: BulkUpdateFailureDto[];
 }
 
-// ===== CSV 관련 =====
-
-export interface CsvImportResultDto {
-  success: boolean;
-  imported: number;
-  failed: number;
-  errors: string[];
-}
-
 // ===== 감사 로그 관련 =====
 
 export interface AuditLogItemDto {
