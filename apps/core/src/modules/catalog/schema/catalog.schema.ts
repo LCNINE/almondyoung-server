@@ -972,6 +972,50 @@ export const notices = pgTable(
   ],
 );
 
+// ===== PRODUCT IMPORT (엑셀 대량등록 세션) =====
+export const productImportSessionStatusEnum = pgEnum('product_import_session_status', ['completed', 'archived']);
+export const productImportItemStatusEnum = pgEnum('product_import_item_status', ['created', 'failed']);
+
+export const productImportSessions = pgTable(
+  'product_import_sessions',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    fileName: varchar('file_name', { length: 500 }),
+    uploadedBy: uuid('uploaded_by'),
+    totalRows: integer('total_rows').notNull().default(0),
+    createdCount: integer('created_count').notNull().default(0),
+    failedCount: integer('failed_count').notNull().default(0),
+    status: productImportSessionStatusEnum('status').notNull().default('completed'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    committedAt: timestamp('committed_at'),
+  },
+  (table) => [
+    index('idx_import_sessions_uploaded_by').on(table.uploadedBy),
+    index('idx_import_sessions_created_at').on(table.createdAt),
+  ],
+);
+
+export const productImportItems = pgTable(
+  'product_import_items',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    sessionId: uuid('session_id')
+      .notNull()
+      .references(() => productImportSessions.id, { onDelete: 'cascade' }),
+    rowNumber: integer('row_number').notNull(),
+    productKey: varchar('product_key', { length: 255 }),
+    status: productImportItemStatusEnum('status').notNull(),
+    masterId: uuid('master_id'),
+    errorMessage: text('error_message'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => [index('idx_import_items_session').on(table.sessionId)],
+);
+
 // Catalog BC 스키마 (ex-PIM)
 export const catalogSchema = {
   productCategories,
@@ -1005,6 +1049,8 @@ export const catalogSchema = {
   bannerGroups,
   banners,
   notices,
+  productImportSessions,
+  productImportItems,
 };
 
 // ===== RELATIONS =====
