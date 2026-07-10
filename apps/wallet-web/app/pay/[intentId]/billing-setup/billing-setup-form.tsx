@@ -12,6 +12,7 @@ import { CheckCircle2, RefreshCw, AlertCircle, ChevronLeft } from 'lucide-react'
 import { CMS_BANKS, getBankName } from '@/lib/cms-banks';
 import { CmsSignaturePad } from '@/components/cms-signature-pad';
 import { isValidPayerNumber } from '@/lib/payer-number';
+import { buildReturnUrl } from '@/lib/return-url';
 
 interface BillingSetupFormProps {
   returnUrl: string;
@@ -29,6 +30,8 @@ export function BillingSetupForm({ returnUrl, initialError, mode }: BillingSetup
   const [error, setError] = useState<string | null>(initialError ?? null);
   const [done, setDone] = useState(false);
   const [agreementUploadFailed, setAgreementUploadFailed] = useState(false);
+  // 백엔드가 반환한 새 결제수단 id — 복귀 후 선적용 자동가입이 이 수단을 곧바로 쓰도록 returnUrl 에 싣는다.
+  const [billingMethodId, setBillingMethodId] = useState<string | null>(null);
 
   const [paymentCompany, setPaymentCompany] = useState('');
   const [payerName, setPayerName] = useState('');
@@ -65,7 +68,11 @@ export function BillingSetupForm({ returnUrl, initialError, mode }: BillingSetup
         credentials: 'include',
         body: formData,
       });
-      const data = (await res.json().catch(() => ({}))) as { error?: string; agreementUploadFailed?: boolean };
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        agreementUploadFailed?: boolean;
+        id?: string;
+      };
       if (!res.ok) {
         setError(data.error ?? '계좌 등록에 실패했습니다. 정보를 다시 확인해주세요.');
         setStep('details');
@@ -74,6 +81,7 @@ export function BillingSetupForm({ returnUrl, initialError, mode }: BillingSetup
       if (data.agreementUploadFailed) {
         setAgreementUploadFailed(true);
       }
+      if (data.id) setBillingMethodId(data.id);
       setDone(true);
     } catch {
       setError('계좌 등록 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
@@ -110,7 +118,12 @@ export function BillingSetupForm({ returnUrl, initialError, mode }: BillingSetup
               </div>
             </CardContent>
           </Card>
-          <Button onClick={() => router.replace(returnUrl)} className="w-full h-11 font-semibold">
+          <Button
+            onClick={() =>
+              router.replace(billingMethodId ? buildReturnUrl(returnUrl, { billingMethodId }) : returnUrl)
+            }
+            className="w-full h-11 font-semibold"
+          >
             확인
           </Button>
         </div>

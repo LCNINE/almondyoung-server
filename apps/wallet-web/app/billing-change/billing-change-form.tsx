@@ -12,6 +12,7 @@ import { CreditCard, AlertCircle, CheckCircle2, ChevronLeft } from 'lucide-react
 import { CMS_BANKS, getBankName } from '@/lib/cms-banks';
 import { CmsSignaturePad } from '@/components/cms-signature-pad';
 import { isValidPayerNumber } from '@/lib/payer-number';
+import { buildReturnUrl } from '@/lib/return-url';
 
 interface BillingChangeFormProps {
   returnUrl: string;
@@ -31,6 +32,8 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
   const [error, setError] = useState<string | null>(initialError ?? null);
   const [done, setDone] = useState(false);
   const [agreementUploadFailed, setAgreementUploadFailed] = useState(false);
+  // 신규 등록 시 백엔드가 반환한 새 결제수단 id — 복귀 후 선적용 자동가입이 이 수단을 쓰도록 returnUrl 에 싣는다.
+  const [newBillingMethodId, setNewBillingMethodId] = useState<string | null>(null);
 
   const [paymentCompany, setPaymentCompany] = useState('');
   const [payerName, setPayerName] = useState('');
@@ -78,7 +81,11 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
         : `/api/billing/cms-update-with-agreement/${billingMethodId}`;
       const method = isRegister ? 'POST' : 'PUT';
       const res = await fetch(url, { method, credentials: 'include', body: formData });
-      const data = (await res.json().catch(() => ({}))) as { error?: string; agreementUploadFailed?: boolean };
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        agreementUploadFailed?: boolean;
+        id?: string;
+      };
       if (!res.ok) {
         setError(data.error ?? (isRegister ? '계좌 등록에 실패했습니다.' : '계좌 변경에 실패했습니다.'));
         setStep('details');
@@ -87,6 +94,8 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
       if (data.agreementUploadFailed) {
         setAgreementUploadFailed(true);
       }
+      // 신규 등록 응답의 새 id 만 실어 보낸다(변경은 기존 수단이라 auto-subscribe 가 이미 알고 있음).
+      if (isRegister && data.id) setNewBillingMethodId(data.id);
       setDone(true);
     } catch {
       setError(isRegister ? '계좌 등록 중 오류가 발생했습니다.' : '계좌 변경 중 오류가 발생했습니다.');
@@ -123,7 +132,16 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
               </div>
             </CardContent>
           </Card>
-          <Button onClick={() => router.replace(returnUrlWithFlag)} className="w-full h-11 font-semibold">
+          <Button
+            onClick={() =>
+              router.replace(
+                newBillingMethodId
+                  ? buildReturnUrl(returnUrlWithFlag, { billingMethodId: newBillingMethodId })
+                  : returnUrlWithFlag,
+              )
+            }
+            className="w-full h-11 font-semibold"
+          >
             확인
           </Button>
         </div>
