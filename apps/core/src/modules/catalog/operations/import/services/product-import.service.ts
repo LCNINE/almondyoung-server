@@ -39,7 +39,7 @@ export class ProductImportService {
       status: r.errors.length === 0 ? 'valid' : 'invalid',
       errors: r.errors.map((e) => `[${e.sheet} ${e.rowNumber}행] ${e.message}`),
       resolved: {
-        name: String(r.version.name ?? r.raw.name ?? ''),
+        name: typeof r.version.name === 'string' ? r.version.name : (r.raw.name ?? ''),
         categoryNames: r.categoryNames,
         variantCount: this.variantCount(r),
       },
@@ -53,7 +53,10 @@ export class ProductImportService {
     return this.manager.commit({ fileName, userId, records });
   }
 
-  async getSessions(page: number, limit: number): Promise<{ data: SessionSummaryDto[]; total: number; page: number; limit: number }> {
+  async getSessions(
+    page: number,
+    limit: number,
+  ): Promise<{ data: SessionSummaryDto[]; total: number; page: number; limit: number }> {
     const { data, total } = await this.reader.getSessions(page, limit);
     return { data: data.map((s) => this.toSummary(s)), total, page, limit };
   }

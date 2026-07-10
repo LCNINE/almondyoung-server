@@ -24,8 +24,12 @@ describe('ProductImportParser', () => {
 
     const parsed = await parser.parse(buf);
 
-    expect(parsed.products).toEqual([{ rowNumber: 1, cells: { productKey: 'P1', name: '니트', marketPrice: '19000' } }]);
-    expect(parsed.options).toEqual([{ rowNumber: 1, cells: { productKey: 'P1', optionName: '색상', optionValues: '빨강|파랑' } }]);
+    expect(parsed.products).toEqual([
+      { rowNumber: 1, cells: { productKey: 'P1', name: '니트', marketPrice: '19000' } },
+    ]);
+    expect(parsed.options).toEqual([
+      { rowNumber: 1, cells: { productKey: 'P1', optionName: '색상', optionValues: '빨강|파랑' } },
+    ]);
   });
 
   it('Products 시트가 없으면 BadRequestError', async () => {

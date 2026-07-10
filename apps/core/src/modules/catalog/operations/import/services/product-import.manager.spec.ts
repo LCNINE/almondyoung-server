@@ -107,3 +107,48 @@ describe('ProductImportManager.commit', () => {
     );
   });
 });
+
+describe('ProductImportManager.publishSession', () => {
+  it('created 아이템의 draft 가 모두 존재하면 전부 publish 한다', async () => {
+    const { manager, reader, productVersionsService } = makeHarness();
+    reader.getSession.mockResolvedValue({
+      items: [{ status: 'created', masterId: 'm1' } as any, { status: 'created', masterId: 'm2' } as any],
+    });
+    reader.getDraftVersionId.mockResolvedValueOnce('v1').mockResolvedValueOnce('v2');
+
+    const result = await manager.publishSession('sess-1');
+
+    expect(result).toEqual({ published: 2, failed: [] });
+    expect(productVersionsService.publishVersion).toHaveBeenCalledTimes(2);
+  });
+
+  it('이미 active(draft 없음)인 마스터는 건너뛴다(멱등)', async () => {
+    const { manager, reader, productVersionsService } = makeHarness();
+    reader.getSession.mockResolvedValue({
+      items: [{ status: 'created', masterId: 'm1' } as any, { status: 'created', masterId: 'm2' } as any],
+    });
+    reader.getDraftVersionId.mockResolvedValueOnce(null).mockResolvedValueOnce('v2');
+
+    const result = await manager.publishSession('sess-1');
+
+    expect(result.published).toBe(1);
+    expect(result.failed).toEqual([]);
+    expect(productVersionsService.publishVersion).toHaveBeenCalledTimes(1);
+  });
+
+  it('한 마스터의 publish 실패가 나머지를 막지 않고 failed 에 수집된다', async () => {
+    const { manager, reader, productVersionsService } = makeHarness();
+    reader.getSession.mockResolvedValue({
+      items: [{ status: 'created', masterId: 'm1' } as any, { status: 'created', masterId: 'm2' } as any],
+    });
+    reader.getDraftVersionId.mockResolvedValueOnce('v1').mockResolvedValueOnce('v2');
+    productVersionsService.publishVersion
+      .mockRejectedValueOnce(new Error('가격 미설정'))
+      .mockResolvedValueOnce(undefined);
+
+    const result = await manager.publishSession('sess-1');
+
+    expect(result.published).toBe(1);
+    expect(result.failed).toEqual([{ masterId: 'm1', reason: '가격 미설정' }]);
+  });
+});

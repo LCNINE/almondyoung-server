@@ -21,7 +21,9 @@ async function buf(rows: string[][]): Promise<Buffer> {
 
 function makeService() {
   const reader = { loadCategoryTree: jest.fn(async () => []) } as any;
-  const manager = { commit: jest.fn(async () => ({ sessionId: 's1', createdCount: 1, failedCount: 0, items: [] })) } as any;
+  const manager = {
+    commit: jest.fn(async () => ({ sessionId: 's1', createdCount: 1, failedCount: 0, items: [] })),
+  } as any;
   const service = new ProductImportService(
     new ProductImportParser(),
     new ProductImportNormalizer(),
@@ -35,7 +37,12 @@ function makeService() {
 describe('ProductImportService.validate', () => {
   it('유효/무효 행을 집계한 프리뷰를 DB 쓰기 없이 반환한다', async () => {
     const { service, manager } = makeService();
-    const preview = await service.validate(await buf([['P1', '니트', '19000'], ['P2', '', '-1']]));
+    const preview = await service.validate(
+      await buf([
+        ['P1', '니트', '19000'],
+        ['P2', '', '-1'],
+      ]),
+    );
 
     expect(preview.totalRows).toBe(2);
     expect(preview.validCount).toBe(1);

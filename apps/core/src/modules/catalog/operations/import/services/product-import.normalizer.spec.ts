@@ -19,7 +19,10 @@ describe('ProductImportNormalizer', () => {
   const normalizer = new ProductImportNormalizer();
 
   it('categoryPath(이름 경로)를 leaf id 로 해석하고 이름도 기록한다', () => {
-    const [rec] = normalizer.normalize(parsed([{ productKey: 'P1', name: '니트A', categoryPath: '여성패션>니트' }]), CATEGORIES);
+    const [rec] = normalizer.normalize(
+      parsed([{ productKey: 'P1', name: '니트A', categoryPath: '여성패션>니트' }]),
+      CATEGORIES,
+    );
     expect(rec.categoryIds).toEqual(['c-knit']);
     expect(rec.primaryCategoryId).toBe('c-knit');
     expect(rec.categoryNames).toEqual(['여성패션', '니트']);
@@ -27,7 +30,10 @@ describe('ProductImportNormalizer', () => {
   });
 
   it('해석 불가 categoryPath 는 에러', () => {
-    const [rec] = normalizer.normalize(parsed([{ productKey: 'P1', name: 'x', categoryPath: '없는>경로' }]), CATEGORIES);
+    const [rec] = normalizer.normalize(
+      parsed([{ productKey: 'P1', name: 'x', categoryPath: '없는>경로' }]),
+      CATEGORIES,
+    );
     expect(rec.categoryIds).toEqual([]);
     expect(rec.errors.some((e) => e.sheet === 'Products' && /카테고리/.test(e.message))).toBe(true);
   });
@@ -55,7 +61,13 @@ describe('ProductImportNormalizer', () => {
   });
 
   it('파일 내 중복 productKey 는 에러', () => {
-    const recs = normalizer.normalize(parsed([{ productKey: 'P1', name: 'a' }, { productKey: 'P1', name: 'b' }]), CATEGORIES);
+    const recs = normalizer.normalize(
+      parsed([
+        { productKey: 'P1', name: 'a' },
+        { productKey: 'P1', name: 'b' },
+      ]),
+      CATEGORIES,
+    );
     expect(recs[1].errors.some((e) => /중복/.test(e.message))).toBe(true);
   });
 

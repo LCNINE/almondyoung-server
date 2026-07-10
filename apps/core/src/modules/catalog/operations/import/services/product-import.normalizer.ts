@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { ParsedWorkbook, CategoryNode, ProductRecord, NormalizedOption, RowError } from '../dto/import.types';
+import { ParsedWorkbook, CategoryNode, ProductRecord, NormalizedOption } from '../dto/import.types';
 
 const VALUE_DELIMITER = '|';
 
@@ -66,7 +66,10 @@ export class ProductImportNormalizer {
         .split(VALUE_DELIMITER)
         .map((v) => v.trim())
         .filter((v) => v !== '');
-      const option: NormalizedOption = { displayName: optionName, values: values.map((displayName) => ({ displayName })) };
+      const option: NormalizedOption = {
+        displayName: optionName,
+        values: values.map((displayName) => ({ displayName })),
+      };
 
       const target = byKey.get(productKey);
       if (!target) {
@@ -107,7 +110,10 @@ export class ProductImportNormalizer {
       return { id: bySlugHit.id, names };
     }
 
-    const segments = path.split('>').map((s) => s.trim()).filter((s) => s !== '');
+    const segments = path
+      .split('>')
+      .map((s) => s.trim())
+      .filter((s) => s !== '');
     if (segments.length === 0) return null;
 
     let parentId: string | null = null;

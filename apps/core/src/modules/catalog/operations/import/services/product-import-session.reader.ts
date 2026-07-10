@@ -29,7 +29,8 @@ export class ProductImportSessionReader {
             slug: productCategories.slug,
             parentId: productCategories.parentId,
           })
-          .from(productCategories),
+          .from(productCategories)
+          .where(eq(productCategories.isActive, true)),
       tx,
     );
   }

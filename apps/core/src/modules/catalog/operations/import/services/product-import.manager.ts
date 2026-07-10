@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectDb, DbService } from '@app/db';
 import { eq } from 'drizzle-orm';
 import { type PimSchema, productImportSessions, productImportItems } from '../../../schema/catalog.schema';
-import { UpdateProductMasterVersion, DbTransaction } from '../../../catalog.types';
+import { UpdateProductMasterVersion } from '../../../catalog.types';
 import { ProductMastersService } from '../../../core/products/services/product-masters.service';
 import { ProductVersionsService } from '../../../core/products/services/product-versions.service';
 import { ProductImportSessionReader, ItemRow } from './product-import-session.reader';
@@ -101,19 +101,16 @@ export class ProductImportManager {
     status: 'created' | 'failed',
     masterId: string | null,
     errorMessage: string | null,
-    tx?: DbTransaction,
   ) {
-    return this.db.run(
-      (trx) =>
-        trx.insert(productImportItems).values({
-          sessionId,
-          rowNumber: record.rowNumber,
-          productKey: record.productKey,
-          status,
-          masterId: masterId ?? undefined,
-          errorMessage: errorMessage ?? undefined,
-        }),
-      tx,
+    return this.db.run((trx) =>
+      trx.insert(productImportItems).values({
+        sessionId,
+        rowNumber: record.rowNumber,
+        productKey: record.productKey,
+        status,
+        masterId: masterId ?? undefined,
+        errorMessage: errorMessage ?? undefined,
+      }),
     );
   }
 
@@ -130,9 +127,9 @@ export class ProductImportManager {
 
     for (const item of created) {
       const { masterId } = item;
-      const draftVersionId = await this.reader.getDraftVersionId(masterId);
-      if (!draftVersionId) continue; // 이미 publish 됨(active) → skip (멱등)
       try {
+        const draftVersionId = await this.reader.getDraftVersionId(masterId);
+        if (!draftVersionId) continue; // 이미 publish 됨(active) → skip (멱등)
         await this.db.run((trx) => this.productVersionsService.publishVersion(draftVersionId, trx));
         published += 1;
       } catch (error) {
