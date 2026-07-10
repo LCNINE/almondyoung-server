@@ -11,6 +11,7 @@ import { categoriesClient } from './categories.client';
 import { channelProductsClient } from './channel-products.client';
 import { channelsClient } from './channels.client';
 import { csvClient } from './csv.client';
+import { productImportClient } from './product-import.client';
 import { mastersClient } from './masters.client';
 import { pricingClient } from './pricing.client';
 import { tagsClient } from './tags.client';
@@ -31,6 +32,7 @@ export const products = {
   versions: versionsClient,
   bulk: bulkClient,
   csv: csvClient,
+  productImport: productImportClient,
   audit: auditClient,
   approval: approvalClient,
 };
@@ -48,5 +50,6 @@ export { pricingClient } from './pricing.client';
 export { versionsClient } from './versions.client';
 export { bulkClient } from './bulk.client';
 export { csvClient } from './csv.client';
+export { productImportClient } from './product-import.client';
 export { auditClient } from './audit.client';
 export { approvalClient } from './approval.client';
