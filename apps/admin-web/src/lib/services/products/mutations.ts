@@ -1017,3 +1017,39 @@ export const useDeleteNotice = () => {
     },
   });
 };
+
+// ===== 대량등록(엑셀 임포트) 뮤테이션 =====
+
+/** 워크북 검증(무상태 프리뷰) */
+export const useValidateImport = () => {
+  return useMutation({
+    mutationFn: (file: File) => products.productImport.validate(file),
+  });
+};
+
+/** 워크북 커밋(세션 + draft 상품 일괄 생성) */
+export const useCommitImport = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => products.productImport.commit(file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.productImports,
+      });
+    },
+  });
+};
+
+/** 세션 draft 일괄 게시 */
+export const usePublishSession = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (sessionId: string) =>
+      products.productImport.publish(sessionId),
+    onSuccess: (_res, sessionId) => {
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.productImport(sessionId),
+      });
+    },
+  });
+};
