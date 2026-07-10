@@ -198,12 +198,29 @@
   "account": {
     "accountInfo": {
       "title": "Account Info",
+      "securityGroup": "Account security",
+      "profileGroup": "My information",
       "password": "Password",
       "email": "Email",
       "phone": "Phone",
+      "name": "Name",
+      "nickname": "Nickname",
+      "birthday": "Date of birth",
+      "loginId": "ID",
       "verifyNeeded": "Verification needed",
       "verified": "Verified",
       "verifiedToast": "Your email has been verified.",
+      "editField": {
+        "editTitle": "Edit {label}",
+        "save": "Save",
+        "saving": "Saving...",
+        "cancel": "Cancel",
+        "saved": "Saved.",
+        "failed": "Failed to save. Please try again later.",
+        "nameRequired": "Please enter your name.",
+        "nicknameRequired": "Please enter a nickname.",
+        "birthdayInvalid": "Enter 8 digits for your date of birth. (e.g. 19941024)"
+      },
       "verifyDialog": {
         "title": "Verify your email",
         "description": "We will send a verification link to {email}. Verifying your email helps secure your account and keeps you informed with important Almond Young updates.",
@@ -224,7 +241,26 @@
         "resendCode": "Resend code",
         "changeTitle": "Change your phone number",
         "changeDescription": "SMS or data charges may apply.",
-        "next": "Next"
+        "next": "Next",
+        "sendCodeEmail": "Get code via email",
+        "codeDescriptionEmail": "To protect your account, enter the code sent to {email}. The code expires 3 minutes after sending.",
+        "codeSentHint": "We sent a verification code to protect your account. It expires in 3 minutes."
+      },
+      "gateDialog": {
+        "introTitle": "Verify it's you before changing your password",
+        "introDescription": "Complete verification by receiving a code via SMS or email.",
+        "sendCodeSms": "Get code via SMS",
+        "sendCodeEmail": "Get code via email",
+        "codeTitle": "Enter the code we just sent",
+        "codeDescriptionSms": "To protect your account, enter the code sent to {phone}. The code expires 3 minutes after sending.",
+        "codeDescriptionEmail": "To protect your account, enter the code sent to {email}. The code expires 3 minutes after sending.",
+        "submit": "Verify and continue",
+        "verifying": "Verifying...",
+        "resendCode": "Resend code",
+        "expired": "The code has expired",
+        "resendCountdown": "You can resend in {timer}s.",
+        "noPhone": "No registered phone number.",
+        "codeSentHint": "We sent a verification code to protect your account. It expires in 3 minutes."
       }
     },
     "labels": {

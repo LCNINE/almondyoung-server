@@ -65,6 +65,45 @@ export async function updateProfileAction(
   return { success: true }
 }
 
+/**
+ * 프로필 단일 필드 수정 (이름/닉네임/생년월일)
+ */
+export async function updateProfileFieldAction(
+  field: "username" | "nickname" | "birthday",
+  value: string
+): Promise<{ success: boolean; error?: "required" | "invalid" | "unknown" }> {
+  const trimmed = value.trim()
+  const body: Record<string, string> = {}
+
+  if (field === "birthday") {
+    // formatBirthday 는 검증을 안 하므로(빈/부분입력이 "--" 로 통과) 여기서 8자리+월일 범위 확인
+    const m = trimmed.match(/^(\d{4})(\d{2})(\d{2})$/)
+    if (!m || +m[2] < 1 || +m[2] > 12 || +m[3] < 1 || +m[3] > 31) {
+      return { success: false, error: "invalid" }
+    }
+    body.birthDate = formatBirthday(trimmed)
+  } else {
+    if (!trimmed) return { success: false, error: "required" }
+    body[field] = trimmed
+  }
+
+  try {
+    await api("users", "/users/me", {
+      method: "PATCH",
+      body,
+      withAuth: true,
+    })
+  } catch (error) {
+    if (error instanceof HttpApiError && error.status === 401) {
+      throw error
+    }
+    return { success: false, error: "unknown" }
+  }
+
+  revalidatePath("/mypage")
+  return { success: true }
+}
+
 export async function updatePhoneNumberAction(
   phoneNumber: string
 ): Promise<{ success: boolean; error?: string }> {

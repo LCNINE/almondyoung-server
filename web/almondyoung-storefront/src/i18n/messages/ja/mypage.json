@@ -198,12 +198,29 @@
   "account": {
     "accountInfo": {
       "title": "アカウント情報",
+      "securityGroup": "アカウントセキュリティ",
+      "profileGroup": "マイ情報",
       "password": "パスワード",
       "email": "メール",
       "phone": "携帯電話",
+      "name": "名前",
+      "nickname": "ニックネーム",
+      "birthday": "生年月日",
+      "loginId": "ID",
       "verifyNeeded": "認証が必要",
       "verified": "認証済み",
       "verifiedToast": "メールアドレスが認証されました。",
+      "editField": {
+        "editTitle": "{label}の変更",
+        "save": "保存",
+        "saving": "保存中...",
+        "cancel": "キャンセル",
+        "saved": "保存しました。",
+        "failed": "保存に失敗しました。しばらくしてからもう一度お試しください。",
+        "nameRequired": "名前を入力してください。",
+        "nicknameRequired": "ニックネームを入力してください。",
+        "birthdayInvalid": "生年月日を8桁で入力してください。（例：19941024）"
+      },
       "verifyDialog": {
         "title": "メールアドレスを認証してください",
         "description": "認証リンクを {email} 宛てにお送りします。メールを認証するとアカウントの安全性が高まり、アーモンドヤングからの大切なお知らせを受け取れます。",
@@ -224,7 +241,26 @@
         "resendCode": "コードを再送する",
         "changeTitle": "携帯電話番号を変更してください",
         "changeDescription": "SMSまたはデータ通信料が発生する場合があります。",
-        "next": "次へ"
+        "next": "次へ",
+        "sendCodeEmail": "メールでコードを受け取る",
+        "codeDescriptionEmail": "アカウント保護のため、{email} 宛てに送信されたコードを入力してください。コードは送信から3分後に失効します。",
+        "codeSentHint": "アカウント保護のため認証コードを送信しました。コードは3分後に失効します。"
+      },
+      "gateDialog": {
+        "introTitle": "パスワードを変更する前にご本人確認が必要です",
+        "introDescription": "SMSまたはメールでコードを受け取り、本人確認を完了してください。",
+        "sendCodeSms": "SMSでコードを受け取る",
+        "sendCodeEmail": "メールでコードを受け取る",
+        "codeTitle": "お送りしたコードを入力してください",
+        "codeDescriptionSms": "アカウント保護のため、{phone} 宛てに送信されたコードを入力してください。コードは送信から3分後に失効します。",
+        "codeDescriptionEmail": "アカウント保護のため、{email} 宛てに送信されたコードを入力してください。コードは送信から3分後に失効します。",
+        "submit": "確認して続ける",
+        "verifying": "確認中...",
+        "resendCode": "コードを再送する",
+        "expired": "認証時間が切れました",
+        "resendCountdown": "{timer}秒後に再送できます。",
+        "noPhone": "登録された携帯番호가 없습니다.",
+        "codeSentHint": "アカウント保護のため認証コードを送信しました。コードは3分後に失効します。"
       }
     },
     "labels": {

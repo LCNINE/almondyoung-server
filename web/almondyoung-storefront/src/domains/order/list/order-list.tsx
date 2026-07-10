@@ -269,7 +269,7 @@ export function OrderList({
               type="button"
               aria-label={tList("clearSearch")}
               onClick={() => navigate({ page: 1, q: "" })}
-              className="absolute -translate-y-1/2 cursor-pointer top-1/2 right-9 rounded-full bg-gray-300 p-0.5 hover:bg-gray-400"
+              className="absolute top-1/2 right-9 -translate-y-1/2 cursor-pointer rounded-full bg-gray-300 p-0.5 hover:bg-gray-400"
             >
               <X className="w-3 h-3 text-white" />
             </button>

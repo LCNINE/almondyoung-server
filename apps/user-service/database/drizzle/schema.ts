@@ -33,7 +33,14 @@ export const statusEnum = pgEnum('status', [
   'rejected', // 거절됨
 ]);
 
-export const phoneVerificationPurposeEnum = pgEnum('phone_verification_purpose', ['phone_verify', 'pin_reset']);
+export const phoneVerificationPurposeEnum = pgEnum('phone_verification_purpose', [
+  'phone_verify',
+  'pin_reset',
+  'password_change',
+]);
+
+// 이메일 코드(OTP) 인증 용도 — 문자 대신 이메일로 6자리 코드 받기
+export const emailVerificationPurposeEnum = pgEnum('email_verification_purpose', ['phone_verify', 'password_change']);
 
 export const oauthCodeChallengeMethodEnum = pgEnum('oauth_code_challenge_method', ['S256']);
 
@@ -366,6 +373,37 @@ export const phoneVerifications = pgTable(
   }),
 );
 
+// ==================== 이메일 코드(OTP) 인증 테이블 ====================
+// phone_verifications 미러 — 채널만 이메일. 6자리 코드/3분 만료/시도 제한.
+export const emailVerifications = pgTable(
+  'email_verifications',
+  {
+    id: serial('id').primaryKey(),
+    email: varchar('email', { length: 320 }).notNull(),
+    code: varchar('code', { length: 6 }).notNull(),
+
+    // 용도 구분
+    purpose: emailVerificationPurposeEnum('purpose').notNull(),
+
+    // 검증 관련
+    isVerified: boolean('is_verified').default(false).notNull(),
+    verifiedAt: timestamp('verified_at'),
+    isExpired: boolean('is_expired').default(false).notNull(),
+
+    // 보안 관련
+    attempts: integer('attempts').default(0).notNull(),
+    maxAttempts: integer('max_attempts').default(3).notNull(),
+
+    // 시간 관련
+    expiresAt: timestamp('expires_at').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    emailIdx: index('email_verifications_email_idx').on(table.email),
+    purposeIdx: index('email_verifications_purpose_idx').on(table.purpose),
+  }),
+);
+
 /*───────────────────────────
  * OAUTH 2.0 (Authorization Code + PKCE) — IdP role
  *──────────────────────────*/
@@ -613,6 +651,7 @@ export const userServiceTables = {
   wishlist,
   userRecentViews,
   phoneVerifications,
+  emailVerifications,
   oauthClients,
   oauthAuthorizationCodes,
   oauthTokens,
@@ -645,6 +684,7 @@ export const userServiceEnums = {
   shopTypeEnum,
   statusEnum,
   phoneVerificationPurposeEnum,
+  emailVerificationPurposeEnum,
   oauthCodeChallengeMethodEnum,
 } as const;
 
