@@ -42,8 +42,8 @@ export const transitionTypeEnum = pgEnum('transition_type', [
   'MOVE', // 이동 (창고내/창고간 통합)
 
   // 품질 관리
-  'MARK_DEFECT', // ON_HAND → DEFECTIVE (불량 지정)
-  'REWORK_GOOD', // DEFECTIVE → ON_HAND (불량 양품화)
+  'MARK_DEFECT', // ON_HAND → DEFECTIVE (불량 지정) — DEAD(producer 0, 작업4 이후), 제거 예정: dev DB 복구 후(현황판 작업8b)
+  'REWORK_GOOD', // DEFECTIVE → ON_HAND (불량 양품화) — DEAD(producer 0, 작업4 이후), 제거 예정: dev DB 복구 후(현황판 작업8b)
   'SCRAP', // (ON_HAND|DEFECTIVE) → null (폐기)
 
   // 수동 조정 (reason 필드로 상세 사유 기록)
@@ -54,9 +54,11 @@ export const transitionTypeEnum = pgEnum('transition_type', [
 // 창고 타입 추가
 export const warehouseTypeEnum = pgEnum('warehouse_type', ['domestic', 'overseas', 'bonded', 'return']);
 
+// DEAD 값(producer 0) — 제거 예정: dev DB 복구 후(현황판 작업8b). 'pending'(컬럼 default이나 실 insert는 항상 'confirmed')·'active'. 라이브: confirmed/released.
 export const reservationStatusEnum = pgEnum('reservation_status', ['pending', 'confirmed', 'released', 'active']);
 export const taskStatusEnum = pgEnum('task_status', ['created', 'picking', 'packed', 'shipped', 'canceled']);
 export const unavailableReasonEnum = pgEnum('unavailable_reason', ['pb', 'foreign', 'low_margin']);
+// DEAD 값(producer 0) — 제거 예정: dev DB 복구 후(현황판 작업8b). 'in_transit'·'failed'. 라이브: open/shipped/delivered/canceled. (delivery-provider의 DeliveryStatus는 별개 타입)
 export const shipmentStatusEnum = pgEnum('shipment_status', ['open', 'shipped', 'in_transit', 'delivered', 'failed', 'canceled']);
 export const carrierEnum = pgEnum('carrier', ['CJ', 'HANJIN', 'LOTTE', 'LOGEN', 'KDEXP', 'CJGLS']);
 export const returnStatusEnum = pgEnum('return_status', [
@@ -149,6 +151,8 @@ export const eventTypeOrderEnum = pgEnum('event_type_order', [
 ]);
 
 export const taskPriorityEnum = pgEnum('task_priority', ['normal', 'high', 'urgent']);
+// DEAD 값(producer 0) — 제거 예정: dev DB 복구 후(현황판 작업8b). 'reserving'·'labeled'·'inspecting'·'inspected'·'pending'.
+// (라이브: created/ready/unfulfillable/allocated/picking/picked/invoiced/shipped/completed/canceled/forwarded. 'inspected' 는 invoice.service.ts 게이트 reader 잔존이나 도달 불가)
 export const fulfillmentStatusEnum = pgEnum('fulfillment_status', [
   'created',
   'reserving',
