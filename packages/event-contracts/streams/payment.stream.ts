@@ -362,6 +362,28 @@ export interface InvoiceVoidedPayload {
 }
 
 // ==========================================
+// payment.intent.* — wallet outbox dispatcher 가 결제 인텐트 상태 전이마다 발행하는 도트-표기 이벤트.
+// 발행측 상수는 apps/wallet 의 GatewayEventType(gateway-event.builder.ts) 이며 이 계약과 문자열이 일치한다.
+// 소비: channel-adapter(Medusa 전달), membership 레거시 CHARGE 경로(billing-result.consumer).
+// payload 는 buildPaymentIntentEventPayload 공통 형태 + 인텐트별 extra(구독 라우팅 subscriberRef/Type 등)라
+// passthrough 로 확장 필드를 보존한다.
+// ==========================================
+
+export interface PaymentIntentEventPayload {
+  intentId: string;
+  userId: string;
+  status: string;
+  payableAmount: number;
+  currency: string;
+  occurredAt: string;
+  /** 정기결제 청구 인텐트의 구독 라우팅(intent.metadata 에서 승격) — 구독과 무관하면 없음 */
+  subscriberRef?: string;
+  subscriberType?: string;
+  purpose?: string;
+  [key: string]: unknown;
+}
+
+// ==========================================
 // 2. Zod 스키마 정의
 // ==========================================
 
@@ -711,6 +733,26 @@ const InvoiceVoidedSchema = z.object({
   occurredAt: z.string().min(1),
 });
 
+// payment.intent.* 공통 스키마.
+// 이 이벤트 계열은 계약화 이전부터 wallet outbox 로 발행돼 channel-adapter(→Medusa 주문 흐름) 등이
+// validateOnConsume 로 소비하고 있었다. 계약 등록만으로 소비검증이 켜져 라이브 주문 트래픽이 DLQ 로
+// 새는 회귀를 막기 위해, 스키마는 의도적으로 관대하게(전 필드 optional + passthrough) 둔다.
+// 기대 형태는 위 PaymentIntentEventPayload 인터페이스가 문서화한다.
+// 런타임은 관대하게(전 필드 optional) 검증하되, 소비자 타입 힌트는 위 인터페이스로 rich 하게 유지한다.
+const PaymentIntentEventSchema = z
+  .object({
+    intentId: z.string().optional(),
+    userId: z.string().optional(),
+    status: z.string().optional(),
+    payableAmount: z.number().optional(),
+    currency: z.string().optional(),
+    occurredAt: z.string().optional(),
+    subscriberRef: z.string().optional(),
+    subscriberType: z.string().optional(),
+    purpose: z.string().optional(),
+  })
+  .catchall(z.unknown()) as unknown as z.ZodType<PaymentIntentEventPayload>;
+
 export const PAYMENT_STREAM = stream({
   topic: 'payments.events.v1',
   partitions: 6,
@@ -793,6 +835,40 @@ export const PAYMENT_STREAM = stream({
     ),
     'mandate.rejected': event<'mandate.rejected', MandateRejectedPayload>('mandate.rejected', MandateRejectedSchema),
     'invoice.voided': event<'invoice.voided', InvoiceVoidedPayload>('invoice.voided', InvoiceVoidedSchema),
+
+    // --- Payment Intent Events (wallet outbox dispatcher, 도트 표기) ---
+    'payment.intent.created': event<'payment.intent.created', PaymentIntentEventPayload>(
+      'payment.intent.created',
+      PaymentIntentEventSchema,
+    ),
+    'payment.intent.authorized': event<'payment.intent.authorized', PaymentIntentEventPayload>(
+      'payment.intent.authorized',
+      PaymentIntentEventSchema,
+    ),
+    'payment.intent.succeeded': event<'payment.intent.succeeded', PaymentIntentEventPayload>(
+      'payment.intent.succeeded',
+      PaymentIntentEventSchema,
+    ),
+    'payment.intent.captured': event<'payment.intent.captured', PaymentIntentEventPayload>(
+      'payment.intent.captured',
+      PaymentIntentEventSchema,
+    ),
+    'payment.intent.partially_captured': event<'payment.intent.partially_captured', PaymentIntentEventPayload>(
+      'payment.intent.partially_captured',
+      PaymentIntentEventSchema,
+    ),
+    'payment.intent.failed': event<'payment.intent.failed', PaymentIntentEventPayload>(
+      'payment.intent.failed',
+      PaymentIntentEventSchema,
+    ),
+    'payment.intent.canceled': event<'payment.intent.canceled', PaymentIntentEventPayload>(
+      'payment.intent.canceled',
+      PaymentIntentEventSchema,
+    ),
+    'payment.intent.awaiting_deposit': event<'payment.intent.awaiting_deposit', PaymentIntentEventPayload>(
+      'payment.intent.awaiting_deposit',
+      PaymentIntentEventSchema,
+    ),
   },
 });
 
