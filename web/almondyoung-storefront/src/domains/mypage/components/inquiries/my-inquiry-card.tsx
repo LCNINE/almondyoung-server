@@ -127,7 +127,7 @@ export function MyInquiryCard({
                       <button
                         key={fileId}
                         type="button"
-                        className="relative h-20 w-20 cursor-pointer overflow-hidden rounded-lg border border-gray-200 transition-opacity hover:opacity-80"
+                        className="relative h-20 w-20 cursor-pointer overflow-hidden rounded-lg border border-gray-200 transition hover:brightness-95"
                         onClick={() => handleImageClick(index)}
                       >
                         <Image

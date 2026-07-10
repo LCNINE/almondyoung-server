@@ -1,5 +1,6 @@
 {
   "section": {
+    "shopping": "쇼핑 활동",
     "orderShipping": "주문 및 배송",
     "accountManagement": "계정 관리",
     "benefits": "혜택 및 서비스"
@@ -40,7 +41,8 @@
     "wish": "찜한상품",
     "rebuy": "자주산상품",
     "recent": "최근 본 상품",
-    "customInfo": "맞춤정보"
+    "customInfo": "맞춤정보",
+    "allMenu": "전체메뉴"
   },
   "coupon": {
     "myCoupons": "내 쿠폰",
@@ -148,7 +150,9 @@
     "pointTitle": "아몬드영 적립금",
     "pointAriaLabel": "아몬드영 적립금 보기",
     "settings": "설정",
-    "won": "원"
+    "won": "원",
+    "benefitActive": "혜택 이용중",
+    "membershipJoinCta": "구독하고 혜택 받기"
   },
   "shipping": {
     "title": "배송 중 상품",
@@ -157,7 +161,10 @@
     "emptyDescription": "새로운 상품을 주문해보세요",
     "shopNow": "쇼핑하러 가기",
     "orderNumber": "주문번호 {number}",
-    "detailAriaLabel": "상세보기"
+    "detailAriaLabel": "상세보기",
+    "orderTitle": "주문 내역",
+    "trackButton": "배송 조회",
+    "trackToast": "배송 조회는 준비 중이에요. 고객센터로 문의해 주세요."
   },
   "banner": {
     "savingsThisMonth": "이번달 <strong>{amount}원</strong> 절약했어요!",
@@ -184,9 +191,78 @@
     "orderTitle": "주문 내역이 없습니다",
     "orderDescription": "첫 주문을 시작해보세요",
     "orderPeriodTitle": "해당 기간에 주문 내역이 없습니다",
+    "orderSearchTitle": "검색 결과가 없습니다",
+    "orderSearchDescription": "다른 검색어로 시도해보세요",
     "orderPeriodDescription": "다른 기간을 선택해보세요"
   },
   "account": {
+    "accountInfo": {
+      "title": "계정 정보",
+      "securityGroup": "계정 보안",
+      "profileGroup": "내 정보",
+      "password": "비밀번호",
+      "email": "이메일",
+      "phone": "휴대폰",
+      "name": "이름",
+      "nickname": "닉네임",
+      "birthday": "생년월일",
+      "loginId": "아이디",
+      "verifyNeeded": "인증 필요",
+      "verified": "인증 완료",
+      "verifiedToast": "이메일이 인증되었습니다.",
+      "editField": {
+        "editTitle": "{label} 수정",
+        "save": "저장",
+        "saving": "저장 중...",
+        "cancel": "취소",
+        "saved": "저장되었습니다.",
+        "failed": "저장에 실패했습니다. 잠시 후 다시 시도해주세요.",
+        "nameRequired": "이름을 입력해주세요.",
+        "nicknameRequired": "닉네임을 입력해주세요.",
+        "birthdayInvalid": "생년월일 8자리를 입력해주세요. (예: 19941024)"
+      },
+      "verifyDialog": {
+        "title": "이메일을 인증하세요",
+        "description": "인증 링크를 {email} 주소로 보내드리겠습니다. 이메일을 인증하면 계정 보안을 강화하고 중요한 아몬드영 소식을 받아보실 수 있습니다.",
+        "sendLink": "링크 받기",
+        "cancel": "취소",
+        "sentTitle": "이메일 수신함을 확인하세요",
+        "sentDescription": "{email} 주소로 인증 링크를 보내드렸습니다. 이메일 내의 링크를 클릭해 이 이메일 주소를 인증하세요.",
+        "done": "완료",
+        "sendFailed": "인증 메일 발송에 실패했습니다. 잠시 후 다시 시도해주세요."
+      },
+      "phoneDialog": {
+        "introTitle": "먼저 본인 확인을 해볼까요?",
+        "introDescription": "정보를 변경하기 전에 간단한 확인이 필요합니다.",
+        "sendCodeSms": "문자로 코드 받기",
+        "codeTitle": "방금 보내드린 코드를 입력하세요",
+        "codeDescription": "계정 보호를 위해 {phone}(으)로 보내드린 코드를 입력해 주세요. 코드는 발송 3분 후에 만료됩니다.",
+        "submit": "제출하기",
+        "resendCode": "코드 다시 받기",
+        "changeTitle": "휴대폰 번호를 변경하세요",
+        "changeDescription": "문자 또는 데이터 요금이 부과될 수 있습니다.",
+        "next": "다음",
+        "sendCodeEmail": "이메일로 코드 받기",
+        "codeDescriptionEmail": "계정 보호를 위해 {email}(으)로 보내드린 코드를 입력해 주세요. 코드는 발송 3분 후에 만료됩니다.",
+        "codeSentHint": "계정 보호를 위해 인증 코드를 보내드렸어요. 코드는 3분 후 만료됩니다."
+      },
+      "gateDialog": {
+        "introTitle": "비밀번호를 변경하기 전에 본인 확인이 필요해요",
+        "introDescription": "문자 또는 이메일로 코드를 받아 본인 확인을 완료해주세요.",
+        "sendCodeSms": "문자로 코드 받기",
+        "sendCodeEmail": "이메일로 코드 받기",
+        "codeTitle": "방금 보내드린 코드를 입력하세요",
+        "codeDescriptionSms": "계정 보호를 위해 {phone}(으)로 보내드린 코드를 입력해 주세요. 코드는 발송 3분 후에 만료됩니다.",
+        "codeDescriptionEmail": "계정 보호를 위해 {email}(으)로 보내드린 코드를 입력해 주세요. 코드는 발송 3분 후에 만료됩니다.",
+        "submit": "확인하고 계속하기",
+        "verifying": "확인 중...",
+        "resendCode": "코드 다시 받기",
+        "expired": "인증시간이 만료되었습니다",
+        "resendCountdown": "{timer}초 후에 재전송할 수 있습니다.",
+        "noPhone": "등록된 휴대폰 번호가 없습니다.",
+        "codeSentHint": "계정 보호를 위해 인증 코드를 보내드렸어요. 코드는 3분 후 만료됩니다."
+      }
+    },
     "labels": {
       "email": "이메일",
       "name": "이름",
@@ -416,7 +492,13 @@
       "items": "상품 {count}건",
       "totalQuantity": "총 수량 {count}개",
       "productSuffix": "외 {count}건",
-      "defaultProductName": "상품"
+      "defaultProductName": "상품",
+      "searchPlaceholder": "주문한 상품을 검색할 수 있어요!",
+      "clearSearch": "검색어 초기화",
+      "searchResultCount": "‘{q}’ 검색결과 {count}건",
+      "prevPage": "이전",
+      "nextPage": "다음",
+      "recent6m": "최근 6개월"
     },
     "filter": {
       "label": "필터",
@@ -1073,5 +1155,14 @@
       "small": "2~3인 소형샵",
       "large": "4인 이상 중형/대형샵"
     }
+  },
+  "frequent": {
+    "title": "자주 사용하는 메뉴",
+    "viewAll": "전체보기",
+    "orderList": "주문내역",
+    "wish": "찜한상품",
+    "review": "리뷰관리",
+    "myInfo": "내정보관리",
+    "cs": "고객센터"
   }
 }

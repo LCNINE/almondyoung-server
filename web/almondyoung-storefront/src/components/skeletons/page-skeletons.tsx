@@ -1,5 +1,9 @@
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
+import {
+  MypageHomeOrderListSkeleton,
+  ShippingStatusSkeleton,
+} from "@/domains/mypage/components/shared/mypage-skeletons"
 
 const repeat = (count: number) => Array.from({ length: count })
 
@@ -882,22 +886,43 @@ export function SitemapSkeleton() {
 
 export function MypageHomeSkeleton() {
   return (
-    <div className="bg-white">
-      <div className="block lg:hidden">
-        <div className="container mx-auto px-4 py-6">
-          <Skeleton className="h-20 w-full rounded-xl" />
-          <div className="mt-6 space-y-4">
-            {repeat(4).map((_, index) => (
-              <Skeleton
-                key={`mypage-mobile-${index}`}
-                className="h-14 w-full rounded-lg"
-              />
-            ))}
+    <>
+      {/* 모바일 - 실제 홈(프로필/퀵메뉴/배송현황/자주쓰는메뉴) 미러링 */}
+      <div className="bg-muted block lg:hidden">
+        <div className="bg-primary/90 space-y-3 px-6 pt-4 pb-5">
+          <div className="flex items-center gap-2.5">
+            <Skeleton className="h-10 w-10 rounded-full bg-white/40" />
+            <Skeleton className="h-6 w-32 bg-white/40" />
           </div>
+          <Skeleton className="h-14 w-full rounded-xl bg-white/70" />
+        </div>
+        <div className="flex items-center justify-between bg-white px-6 py-4">
+          {repeat(4).map((_, index) => (
+            <div
+              key={`mypage-quick-${index}`}
+              className="flex flex-1 flex-col items-center gap-[6px]"
+            >
+              <Skeleton className="h-[27px] w-[27px] rounded-md" />
+              <Skeleton className="h-3 w-12" />
+            </div>
+          ))}
+        </div>
+        <div className="mt-2 bg-white px-6 py-5">
+          <ShippingStatusSkeleton />
+        </div>
+        <div className="mt-2 space-y-4 bg-white px-6 py-5">
+          {repeat(4).map((_, index) => (
+            <Skeleton
+              key={`mypage-menu-${index}`}
+              className="h-5 w-full rounded"
+            />
+          ))}
         </div>
       </div>
+
+      {/* 데스크탑 - MypageLayout(브레드크럼+사이드바) + 프로필 카드 + 주문목록 미러링 */}
       <div className="hidden lg:block">
-        <main className="md:bg-muted w-full bg-white">
+        <main className="w-full bg-white">
           <div className="container mx-auto max-w-[1360px]">
             <div className="inner md:px-[40px] md:py-10">
               <Skeleton className="mb-6 h-4 w-32" />
@@ -912,15 +937,27 @@ export function MypageHomeSkeleton() {
                     ))}
                   </div>
                 </aside>
-                <section className="content-area w-full min-w-0 flex-1 space-y-6">
-                  <Skeleton className="h-24 w-full rounded-xl" />
-                  <div className="grid grid-cols-2 gap-4">
-                    {repeat(4).map((_, index) => (
-                      <Skeleton
-                        key={`mypage-card-${index}`}
-                        className="h-28 w-full rounded-xl"
-                      />
-                    ))}
+                <section className="content-area w-full min-w-0 flex-1">
+                  {/* 프로필 카드 */}
+                  <div className="mb-6 overflow-hidden rounded-xl border border-gray-100">
+                    <div className="flex items-center gap-3 p-5 sm:gap-4 sm:p-6">
+                      <Skeleton className="size-10 rounded-full" />
+                      <Skeleton className="h-6 w-28" />
+                      <Skeleton className="h-7 w-36 rounded-full" />
+                    </div>
+                    <div className="flex divide-x divide-gray-100 border-t border-gray-100 bg-white">
+                      <div className="flex flex-1 items-center justify-between px-5 py-4">
+                        <Skeleton className="h-4 w-12" />
+                        <Skeleton className="h-5 w-20" />
+                      </div>
+                      <div className="flex flex-1 items-center justify-between px-5 py-4">
+                        <Skeleton className="h-4 w-12" />
+                        <Skeleton className="h-5 w-20" />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-6">
+                    <MypageHomeOrderListSkeleton />
                   </div>
                 </section>
               </div>
@@ -928,7 +965,7 @@ export function MypageHomeSkeleton() {
           </div>
         </main>
       </div>
-    </div>
+    </>
   )
 }
 

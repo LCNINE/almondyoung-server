@@ -6,33 +6,30 @@ import { getPointBalance } from "@lib/api/wallet"
 import type { UserDetail } from "@lib/types/ui/user"
 import { Suspense } from "react"
 
-import { PaymentInfoWrapper } from "./wrappers/payment-info-wrapper"
-import { PointsBannerWrapper } from "./wrappers/points-banner-wrapper"
-import { SavingsBannerWrapper } from "./wrappers/savings-banner-wrapper"
-import { ShippingItemsWrapper } from "./wrappers/shipping-items-wrapper"
+import { OrderListWrapper } from "./wrappers/order-list-wrapper"
 import { ShippingStatusWrapper } from "./wrappers/shipping-status-wrapper"
 
 import { retrieveCart } from "@/lib/api/medusa/cart"
 import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import type { CustomerGroupRef } from "@/lib/utils/membership-group"
 import { isMembershipGroup } from "@/lib/utils/membership-group"
-import { MENU_SECTIONS } from "../../components/constants/mypage-constants"
-import { QuickMenuSection } from "../../components/desktop/quick-menu-section"
 import { UserProfileSection } from "../../components/desktop/user-profile-section"
-import { MenuList } from "../../components/mobile/menu-list"
+import { FrequentMenu } from "../../components/mobile/frequent-menu"
 import { MobileHeader } from "../../components/mobile/mobile-header"
-import PayLaterBanner from "../../components/mobile/paylater-banner"
 import { QuickLinks } from "../../components/mobile/quick-links"
 import {
-  PaymentInfoSkeleton,
-  PointsBannerSkeleton,
-  SavingsBannerSkeleton,
-  ShippingItemsSkeleton,
+  MypageHomeOrderListSkeleton,
   ShippingStatusSkeleton,
 } from "../../components/shared/mypage-skeletons"
 import { withMypageTimeout } from "./wrappers/mypage-timeout"
 
-export async function MyPageTemplate({ countryCode }: { countryCode: string }) {
+export async function MyPageTemplate({
+  countryCode,
+  orderListParams,
+}: {
+  countryCode: string
+  orderListParams: { page: number; period: string; q: string }
+}) {
   const [currentUser, { isAdmin }, pointBalance] = await Promise.all([
     fetchMe(),
     checkAdminScope(),
@@ -42,8 +39,6 @@ export async function MyPageTemplate({ countryCode }: { countryCode: string }) {
       reserved: 0,
     })),
   ])
-
-  const isPayLaterBannerEnabled = false // bnpl 기능 미연결로 임시 비활성화
 
   const [customer, cart] = await Promise.all([
     withMypageTimeout(retrieveCustomer(), null),
@@ -59,40 +54,36 @@ export async function MyPageTemplate({ countryCode }: { countryCode: string }) {
   return (
     <>
       {/* 모바일 콘텐츠 - lg 미만 */}
-      <div className="block lg:hidden">
-        <div className="mx-auto">
-          <div className="bg-muted space-y-4 px-6 py-4">
-            <MobileHeader
-              userName={(currentUser as UserDetail)?.username}
-              isMembership={isMembershipPricing}
-            />
+      <div className="block bg-muted lg:hidden">
+        {/* 프로필 영역 */}
+        <div className="px-6 pt-4 pb-5 space-y-3 bg-primary/90">
+          <MobileHeader
+            userName={(currentUser as UserDetail)?.username}
+            isMembership={isMembershipPricing}
+            pointAvailable={pointBalance.available}
+          />
 
-            {/* 관리자 버튼 */}
-            {isAdmin && (
-              <div className="pb-2">
-                <AdminAccessButton
-                  countryCode={countryCode}
-                  className="w-full"
-                />
-              </div>
-            )}
+          {/* 관리자 버튼 */}
+          {isAdmin && (
+            <AdminAccessButton countryCode={countryCode} className="w-full" />
+          )}
+        </div>
 
-            <Suspense fallback={<SavingsBannerSkeleton />}>
-              <SavingsBannerWrapper />
-            </Suspense>
+        {/* 퀵메뉴 */}
+        <div className="px-6 py-4 bg-white">
+          <QuickLinks />
+        </div>
 
-            <Suspense fallback={<PointsBannerSkeleton />}>
-              <PointsBannerWrapper />
-            </Suspense>
+        {/* 주문 내역 */}
+        <div className="px-6 py-5 mt-2 bg-white">
+          <Suspense fallback={<ShippingStatusSkeleton />}>
+            <ShippingStatusWrapper />
+          </Suspense>
+        </div>
 
-            <QuickLinks />
-
-            <Suspense fallback={<ShippingStatusSkeleton />}>
-              <ShippingStatusWrapper />
-            </Suspense>
-          </div>
-          {isPayLaterBannerEnabled && <PayLaterBanner />}
-          <MenuList sections={MENU_SECTIONS} />
+        {/* 자주 쓰는 메뉴 */}
+        <div className="px-6 py-5 mt-2 bg-white">
+          <FrequentMenu />
         </div>
       </div>
 
@@ -113,15 +104,15 @@ export async function MyPageTemplate({ countryCode }: { countryCode: string }) {
               </div>
             )}
 
-            <QuickMenuSection />
-
-            <Suspense fallback={<ShippingItemsSkeleton />}>
-              <ShippingItemsWrapper />
-            </Suspense>
-
-            <Suspense fallback={<PaymentInfoSkeleton />}>
-              <PaymentInfoWrapper />
-            </Suspense>
+            <div className="mt-6">
+              <Suspense fallback={<MypageHomeOrderListSkeleton />}>
+                <OrderListWrapper
+                  page={orderListParams.page}
+                  period={orderListParams.period}
+                  q={orderListParams.q}
+                />
+              </Suspense>
+            </div>
           </div>
         </MypageLayout>
       </div>

@@ -971,6 +971,24 @@ export class AuthService {
       .update(userServiceSchema.users)
       .set({ password: hash, mustChangePassword: false })
       .where(eq(userServiceSchema.users.id, userId));
+
+    // 비밀번호 변경 완료 알림 메일 (넷플릭스식 보안 알림) — 이메일이 있는 경우만
+    if (user.email) {
+      // 계정 페이지는 스토어프론트(마이페이지)에 있음. prod=FRONTEND_URL(스토어프론트 도메인),
+      // 로컬=localhost:8000 (FRONTEND_URL 은 로컬에서 auth-web=8001 이라 사용 불가). account-linking 컨벤션 미러.
+      const isProd = this.configService.get('NODE_ENV') === 'production';
+      const storefrontUrl = isProd ? this.configService.getOrThrow<string>('FRONTEND_URL') : 'http://localhost:8000';
+      await this.eventPublisher.publishEvent({
+        eventType: 'UserPasswordChanged',
+        aggregateId: userId,
+        payload: {
+          userId,
+          email: user.email,
+          name: user.username?.trim() || '고객',
+          accountUrl: `${storefrontUrl}/kr/mypage/account/profile`,
+        },
+      });
+    }
   }
 
   async checkPassword(password: string, userId: string, tx?: DbTransaction): Promise<void> {

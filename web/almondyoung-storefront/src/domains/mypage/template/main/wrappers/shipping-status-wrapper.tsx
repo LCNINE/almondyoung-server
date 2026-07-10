@@ -12,7 +12,7 @@ import { withMypageTimeout } from "./mypage-timeout"
  * 배송 상태 카드 Wrapper
  */
 export async function ShippingStatusWrapper() {
-  const ordersData = await withMypageTimeout(getOrders({ limit: 10 }), null)
+  const ordersData = await withMypageTimeout(getOrders({ limit: 12 }), null)
 
   // 1) 표시 대상 주문 선별(기존 로직 유지) → 2) 선별된 주문만 Core 상태 조회해 실제 라벨 계산
   const candidates = (ordersData?.orders || [])
@@ -22,7 +22,7 @@ export async function ShippingStatusWrapper() {
       shippingStatus: resolveMypageShippingStatus(order),
     }))
     .filter((c: any) => c.shippingStatus !== null)
-    .slice(0, 2)
+    .slice(0, 12)
 
   const orderList: OrderItem[] = await Promise.all(
     candidates.map(async ({ order, shippingStatus }: any) => {
