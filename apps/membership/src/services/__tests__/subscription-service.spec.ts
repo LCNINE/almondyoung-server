@@ -263,6 +263,28 @@ describe('SubscriptionService - Layer Refactoring', () => {
     });
   });
 
+  describe('adminCreateSubscription', () => {
+    it('recurring 은 결제수단/약정 없이 완결 불가라 거부한다', async () => {
+      await expect(service.adminCreateSubscription('u1', 'plan_001', 'recurring')).rejects.toThrow();
+      // 계약을 만들지 않아야 한다
+      expect(mockSubscriptionCreator.createNewSubscription).not.toHaveBeenCalled();
+    });
+
+    it('one_time 은 계약을 생성한다', async () => {
+      mockEntitlementService.getUserEntitlement.mockResolvedValue(null);
+      mockPlanService.getPlanDetails.mockResolvedValue({
+        plan: { id: 'plan_001', price: 10000, durationDays: 30, isActive: true },
+        tier: { id: 'tier_001', code: 'GOLD' },
+      });
+      mockSubscriptionCreator.createNewSubscription.mockResolvedValue({ contractId: 'c1' });
+
+      const result = await service.adminCreateSubscription('u1', 'plan_001', 'one_time');
+
+      expect(result).toEqual({ contractId: 'c1' });
+      expect(mockSubscriptionCreator.createNewSubscription).toHaveBeenCalled();
+    });
+  });
+
   describe('voidByPaymentIntent', () => {
     it('intent 로 만든 ACTIVE 구독을 무효화한다', async () => {
       const contract = { id: 'c1', userId: 'u1', status: 'ACTIVE' };

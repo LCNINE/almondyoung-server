@@ -545,6 +545,14 @@ export class SubscriptionService {
    * 관리자 직접 구독 등록 (무료체험 미적용, 즉시 결제 없음)
    */
   async adminCreateSubscription(userId: string, planId: string, billingMode: 'one_time' | 'recurring') {
+    // 관리자 직접 등록은 결제수단·약정을 입력받지 않으므로 recurring 계약을 완결할 수 없다.
+    // 그대로 두면 결제수단 없는 ACTIVE 계약이 만들어져 스케줄러에서 발산한다 — 명시적으로 거부한다.
+    // 정기결제는 고객이 결제수단을 등록해야 하고, 관리자 무상 부여는 grant(구독 지급)를 사용한다.
+    if (billingMode === 'recurring') {
+      throw new SubscriptionBadRequestException(
+        '관리자 직접 등록은 정기결제(recurring)를 지원하지 않습니다. one_time 으로 등록하거나 구독 지급(grant)을 사용하세요.',
+      );
+    }
     const [existing, planDetails] = await Promise.all([
       this.entitlementService.getUserEntitlement(userId),
       this.planService.getPlanDetails(planId),
