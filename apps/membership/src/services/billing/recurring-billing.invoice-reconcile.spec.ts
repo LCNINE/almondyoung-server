@@ -92,3 +92,73 @@ describe('RecurringBillingService.reconcileStuckInvoices', () => {
     expect(invoiceOutcomeHandler.handleUncollectible).not.toHaveBeenCalled();
   });
 });
+
+describe('RecurringBillingService.reconcileInvoiceForContract (관리자 강제 정합화)', () => {
+  function makeService(contract: unknown, invoice: unknown) {
+    const billingReader = {
+      findContractById: jest.fn().mockResolvedValue(contract),
+    };
+    const invoiceOutcomeHandler = {
+      handlePaid: jest.fn().mockResolvedValue(undefined),
+      handleUncollectible: jest.fn().mockResolvedValue(undefined),
+      handleVoided: jest.fn().mockResolvedValue(undefined),
+      handleMandateRejected: jest.fn().mockResolvedValue(undefined),
+    };
+    const paymentClient = { getWalletInvoiceByIdempotencyKey: jest.fn().mockResolvedValue(invoice) };
+    const service = new RecurringBillingService(
+      billingReader as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      invoiceOutcomeHandler as never,
+      paymentClient as never,
+    );
+    return { service, invoiceOutcomeHandler, paymentClient };
+  }
+
+  const invoicePaid = {
+    invoiceId: 'inv1',
+    subscriberType: 'MEMBERSHIP',
+    subscriberRef: 'c1',
+    periodEnd: '2026-08-01',
+    amount: 10000,
+    intentId: 'i1',
+    status: 'PAID',
+  };
+
+  it('INVOICE 계약 + PAID → nextBillingDate 로 조회하고 status 반환, handlePaid 위임', async () => {
+    const { service, invoiceOutcomeHandler, paymentClient } = makeService(
+      { id: 'c1', billingPath: 'INVOICE', nextBillingDate: '2026-07-01' },
+      invoicePaid,
+    );
+    const result = await service.reconcileInvoiceForContract('c1');
+    expect(paymentClient.getWalletInvoiceByIdempotencyKey).toHaveBeenCalledWith('membership:invoice:c1:2026-07-01');
+    expect(invoiceOutcomeHandler.handlePaid).toHaveBeenCalledWith('c1', 'inv1', '2026-08-01', 10000, 'i1');
+    expect(result).toEqual({ contractId: 'c1', periodStart: '2026-07-01', invoiceStatus: 'PAID' });
+  });
+
+  it('인보이스 미발행이면 invoiceStatus=null 로 대기 보고', async () => {
+    const { service, invoiceOutcomeHandler } = makeService(
+      { id: 'c1', billingPath: 'INVOICE', nextBillingDate: '2026-07-01' },
+      null,
+    );
+    const result = await service.reconcileInvoiceForContract('c1');
+    expect(result.invoiceStatus).toBeNull();
+    expect(invoiceOutcomeHandler.handlePaid).not.toHaveBeenCalled();
+  });
+
+  it('CHARGE 계약이면 INVOICE_PATH_ONLY 로 거부', async () => {
+    const { service } = makeService({ id: 'c1', billingPath: 'CHARGE', nextBillingDate: '2026-07-01' }, invoicePaid);
+    await expect(service.reconcileInvoiceForContract('c1')).rejects.toMatchObject({ code: 'INVOICE_PATH_ONLY' });
+  });
+
+  it('nextBillingDate 없으면 NO_BILLING_PERIOD 로 거부', async () => {
+    const { service } = makeService({ id: 'c1', billingPath: 'INVOICE', nextBillingDate: null }, invoicePaid);
+    await expect(service.reconcileInvoiceForContract('c1')).rejects.toMatchObject({ code: 'NO_BILLING_PERIOD' });
+  });
+
+  it('계약 없음이면 예외', async () => {
+    const { service } = makeService(null, invoicePaid);
+    await expect(service.reconcileInvoiceForContract('c1')).rejects.toBeDefined();
+  });
+});

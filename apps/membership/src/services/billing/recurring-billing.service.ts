@@ -159,13 +159,13 @@ export class RecurringBillingService {
    * - 비터미널(OPEN/MANDATE_PENDING/ATTEMPTING/PAST_DUE) → 대기(다음 주기 재확인)
    * - 인보이스 없음(커맨드 유실/미발행) → 대기(다음 일일 스케줄러가 재발행)
    */
-  private async reconcileOneInvoice(contractId: string, periodStart: string): Promise<void> {
+  private async reconcileOneInvoice(contractId: string, periodStart: string): Promise<string | null> {
     const idempotencyKey = `membership:invoice:${contractId}:${periodStart}`;
     const invoice = await this.paymentClient.getWalletInvoiceByIdempotencyKey(idempotencyKey);
 
     if (!invoice) {
       this.logger.log(`[invoice-reconcile] 인보이스 미발행(대기): contractId=${contractId}, key=${idempotencyKey}`);
-      return;
+      return null;
     }
 
     switch (invoice.status) {
@@ -191,6 +191,40 @@ export class RecurringBillingService {
         // DRAFT/OPEN/MANDATE_PENDING/ATTEMPTING/PAST_DUE — 아직 진행 중, 다음 주기 재확인
         this.logger.log(`[invoice-reconcile] 진행 중 상태 유지(대기): contractId=${contractId}, status=${invoice.status}`);
     }
+    return invoice.status;
+  }
+
+  /**
+   * 관리자 수동 트리거: 특정 INVOICE 계약을 즉시 권위 정합화한다(30분 크론을 기다리지 않음).
+   * wallet 인보이스 권위 상태를 되물어 터미널이면 자격 반영, 비터미널이면 대기 상태를 그대로 보고한다.
+   * 반환된 invoiceStatus 로 admin 이 구독(자격)↔인보이스(결제) 발산의 실제 원인을 확인한다.
+   */
+  async reconcileInvoiceForContract(
+    contractId: string,
+  ): Promise<{ contractId: string; periodStart: string; invoiceStatus: string | null }> {
+    const contract = await this.billingReader.findContractById(contractId);
+    if (!contract) {
+      throw new SubscriptionNotFoundException();
+    }
+    if (contract.billingPath !== 'INVOICE') {
+      throw new SubscriptionException(
+        'INVOICE 경로 계약만 인보이스 정합화가 가능합니다(레거시 CHARGE 는 수동 재시도 사용).',
+        'INVOICE_PATH_ONLY',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    if (!contract.nextBillingDate) {
+      throw new SubscriptionException(
+        '현재 청구 주기(nextBillingDate)가 없어 정합화 대상이 아닙니다.',
+        'NO_BILLING_PERIOD',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+    const invoiceStatus = await this.reconcileOneInvoice(contractId, contract.nextBillingDate);
+    this.logger.log(
+      `[invoice-reconcile] 관리자 수동 정합화: contractId=${contractId}, periodStart=${contract.nextBillingDate}, invoiceStatus=${invoiceStatus ?? '미발행'}`,
+    );
+    return { contractId, periodStart: contract.nextBillingDate, invoiceStatus };
   }
 
   /**

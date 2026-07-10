@@ -716,6 +716,26 @@ export class AdminOperationsController {
   }
 
   /**
+   * INVOICE 계약 강제 정합화 — wallet 인보이스 권위 상태를 즉시 되물어 구독(자격)↔인보이스(결제)
+   * 발산을 해소한다. 이벤트 유실로 선지급 자격이 미회수된 계약을 관리자가 30분 크론 없이 바로 확정.
+   *
+   * POST /admin/billing/reconcile-invoice/:contractId
+   */
+  @Post('billing/reconcile-invoice/:contractId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'INVOICE 계약 강제 정합화 (구독↔인보이스 대조)' })
+  @UseGuards(JwtAuthGuard)
+  async reconcileInvoice(@User('userId') adminId: string, @Param('contractId') contractId: string) {
+    this.logger.log(`인보이스 강제 정합화 요청: ${contractId} (관리자: ${adminId})`);
+    try {
+      const result = await this.adminOperationsService.reconcileInvoiceForContract(contractId);
+      return { success: true, data: result };
+    } catch (error) {
+      this.handleError(error, '인보이스 강제 정합화', contractId);
+    }
+  }
+
+  /**
    * 멤버십 회원 목록 조회 (관리자 어드민용)
    *
    * GET /admin/members?page=1&limit=20&status=ACTIVE&q=userId&dateFrom=&dateTo=
