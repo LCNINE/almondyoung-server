@@ -277,54 +277,47 @@ describe('Recurring Billing & Pause Integration Tests', () => {
   });
 
   describe('정기결제 처리', () => {
-    it('✅ 정상 결제 성공 - 권한 연장 및 다음 결제일 설정', async () => {
+    it('✅ 정상 결제 - BillingCharge 커맨드 발행(비동기 모델)', async () => {
+      // 신모델: processSingleBilling 은 동기 결제/intent 생성을 하지 않고 BillingCharge 커맨드를 발행하고
+      // billingInProgress 락을 건다. 권한 연장·nextBillingDate 전진·lastPaymentIntentId 는 wallet 결과
+      // 이벤트를 받은 BillingOutcomeHandler 가 처리한다(별도 스펙에서 검증).
       const contract = await billingReader.findContractById(testContractId);
       expect(contract).toBeDefined();
 
       const result = await billingManager.processSingleBilling(contract!);
 
       expect(result.success).toBe(true);
-      expect(result.paymentIntentId).toBe('mock-intent-id');
-      expect(result.paymentAttemptId).toBe('mock-transaction-id');
+      expect(result.contractId).toBe(testContractId);
 
-      // Contract 상태 확인
       const [updatedContract] = await dbService.db
         .select()
         .from(schema.subscriptionContracts)
         .where(eq(schema.subscriptionContracts.id, testContractId));
 
-      expect(updatedContract.isPastDue).toBe(false);
-      expect(updatedContract.billingRetryCount).toBe(0);
-      expect(updatedContract.lastPaymentIntentId).toBe('mock-intent-id');
-
-      // nextBillingDate가 30일 후로 설정되었는지 확인
-      const expectedNextBilling = format(addDays(new Date(), 30), 'yyyy-MM-dd');
-      expect(updatedContract.nextBillingDate).toBe(expectedNextBilling);
+      // 커맨드 발행 후 결과 이벤트 전까지 락 유지
+      expect(updatedContract.billingInProgress).toBe(true);
     });
 
-    it('❌ 비활성화된 플랜은 결제 실패', async () => {
+    it('✅ 비활성화된 플랜은 결제 실패 결과 반환(throw 아님)', async () => {
       // 플랜 비활성화
-      await dbService.db
-        .update(schema.plan)
-        .set({
-          isActive: false,
-        })
-        .where(eq(schema.plan.id, testPlanId));
+      await dbService.db.update(schema.plan).set({ isActive: false }).where(eq(schema.plan.id, testPlanId));
 
       const contract = await billingReader.findContractById(testContractId);
 
-      await expect(billingManager.processSingleBilling(contract!)).rejects.toThrow('Plan is not active');
+      // 신모델: 배치 처리라 예외를 던지지 않고 실패 결과를 반환한다(한 계약 실패가 배치를 멈추지 않게).
+      const result = await billingManager.processSingleBilling(contract!);
+      expect(result.success).toBe(false);
+      expect(result.errorCode).toBe('BILLING_COMMAND_FAILED');
+      expect(result.errorMessage).toContain('Plan is not active');
 
       // 플랜 다시 활성화 (다른 테스트 영향 방지)
-      await dbService.db
-        .update(schema.plan)
-        .set({
-          isActive: true,
-        })
-        .where(eq(schema.plan.id, testPlanId));
+      await dbService.db.update(schema.plan).set({ isActive: true }).where(eq(schema.plan.id, testPlanId));
     });
 
-    it('✅ 결제 실패 - Dunning 큐 추가', async () => {
+    // 결제 실패→dunning 은 이제 wallet 결과 이벤트를 받은 BillingOutcomeHandler 가 처리한다(비동기).
+    // processSingleBilling 은 커맨드만 발행하므로 동기 실패코드/dunning 을 여기서 검증할 수 없다.
+    // dunning 적립은 billing-outcome 계열 스펙에서 검증한다. recurring 실결제 경로 개통 후 재작성.
+    it.skip('✅ 결제 실패 - Dunning 큐 추가 (비동기 outcome 경로로 이관)', async () => {
       // Payment Client Mock을 실패로 변경
       jest.spyOn(paymentClient, 'processPayment').mockResolvedValueOnce({
         success: false,

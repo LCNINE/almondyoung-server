@@ -3,6 +3,8 @@ import { BenefitTrackingService } from '../benefit-tracking.service';
 import { SubscriptionService } from '../subscription.service';
 import { PlanService } from '../plan.service';
 import { EntitlementService } from '../entitlement.service';
+import { BenefitReader } from '../benefit/benefit.reader';
+import { BenefitManager } from '../benefit/benefit.manager';
 import { DbModule, DbService } from '@app/db';
 import { membershipSchema, type MembershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
@@ -18,8 +20,6 @@ import { eq } from 'drizzle-orm';
  */
 describe('BenefitTrackingService (Integration)', () => {
   let service: BenefitTrackingService;
-  let subscriptionService: SubscriptionService;
-  let planService: PlanService;
   let dbService: DbService<MembershipSchema>;
   let module: TestingModule;
 
@@ -27,25 +27,49 @@ describe('BenefitTrackingService (Integration)', () => {
   let testTierId: string;
   let testPlanId: string;
   let testUserId: string;
+  let testContractId: string;
 
   beforeAll(async () => {
+    if (!process.env.DATABASE_URL) {
+      throw new Error('DATABASE_URL is not set. Please check your .env file.');
+    }
+
     module = await Test.createTestingModule({
       imports: [
         DbModule.forRoot({
-          config: {
-            connectionString:
-              process.env.DATABASE_URL ||
-              'postgresql://neondb_owner:npg_VR7yj1uOfPTs@ep-divine-hill-a1nspuc3-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require',
-          },
+          config: { connectionString: process.env.DATABASE_URL },
           schema: membershipSchema,
         }),
       ],
-      providers: [BenefitTrackingService, SubscriptionService, PlanService, EntitlementService],
+      // BenefitTrackingService 의 실제 대상은 BenefitReader/BenefitManager(둘 다 DbService 만 의존)다.
+      // SubscriptionService 는 getActiveSubscription 만 쓰이므로 테스트 구독 데이터로 mock 한다(무거운 의존 트리 회피).
+      providers: [
+        BenefitTrackingService,
+        BenefitReader,
+        BenefitManager,
+        {
+          provide: SubscriptionService,
+          useValue: {
+            // 테스트 사용자만 활성 구독을 갖는다 — 그 외 userId 는 null(구독 없음)로 실제 동작을 재현한다.
+            getActiveSubscription: jest.fn(async (userId: string) =>
+              userId === testUserId
+                ? {
+                    id: testContractId,
+                    userId,
+                    billingDate: new Date('2025-10-15'),
+                    type: 'MONTHLY' as const,
+                    tierId: testTierId,
+                  }
+                : null,
+            ),
+          },
+        },
+        { provide: PlanService, useValue: {} },
+        { provide: EntitlementService, useValue: {} },
+      ],
     }).compile();
 
     service = module.get<BenefitTrackingService>(BenefitTrackingService);
-    subscriptionService = module.get<SubscriptionService>(SubscriptionService);
-    planService = module.get<PlanService>(PlanService);
     dbService = module.get<DbService<MembershipSchema>>(DbService);
   });
 
@@ -286,7 +310,8 @@ describe('BenefitTrackingService (Integration)', () => {
       .values({
         tierId: testTierId,
         price: 100000,
-        durationDays: 365,
+        // 혜택 주기는 30일(월) 경계로 검증하므로 월간 플랜으로 둔다(getActiveSubscription type=MONTHLY).
+        durationDays: 30,
         trialDays: 3,
         currency: 'KRW',
         isActive: true,
@@ -298,14 +323,18 @@ describe('BenefitTrackingService (Integration)', () => {
     testUserId = 'test-user-' + Date.now();
 
     // 4. 구독 계약 생성 (billingDate = 2025-10-15)
-    await dbService.db.insert(schema.subscriptionContracts).values({
-      userId: testUserId,
-      planId: testPlanId,
-      billingDate: '2025-10-15',
-      nextBillingDate: '2026-10-15',
-      leadDays: 0,
-      isVoided: false,
-    });
+    const [contract] = await dbService.db
+      .insert(schema.subscriptionContracts)
+      .values({
+        userId: testUserId,
+        planId: testPlanId,
+        billingDate: '2025-10-15',
+        nextBillingDate: '2025-11-15',
+        leadDays: 0,
+        isVoided: false,
+      })
+      .returning();
+    testContractId = contract.id;
 
     // 5. 권한 생성
     await dbService.db.insert(schema.subscriptionEntitlement).values({
