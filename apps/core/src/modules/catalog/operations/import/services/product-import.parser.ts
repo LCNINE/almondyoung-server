@@ -1,3 +1,4 @@
+import { Injectable } from '@nestjs/common';
 import * as ExcelJS from 'exceljs';
 import { BadRequestError } from '@app/shared';
 import { ParsedWorkbook, RawRow } from '../dto/import.types';
@@ -6,6 +7,7 @@ export const MAX_PRODUCT_ROWS = 1000;
 
 const REQUIRED_PRODUCT_HEADERS = ['productKey', 'name'];
 
+@Injectable()
 export class ProductImportParser {
   async parse(buffer: Buffer): Promise<ParsedWorkbook> {
     const wb = new ExcelJS.Workbook();

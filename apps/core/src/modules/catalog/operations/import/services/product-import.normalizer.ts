@@ -1,7 +1,9 @@
+import { Injectable } from '@nestjs/common';
 import { ParsedWorkbook, CategoryNode, ProductRecord, NormalizedOption, RowError } from '../dto/import.types';
 
 const VALUE_DELIMITER = '|';
 
+@Injectable()
 export class ProductImportNormalizer {
   normalize(parsed: ParsedWorkbook, categories: CategoryNode[]): ProductRecord[] {
     const bySlug = new Map(categories.map((c) => [c.slug, c]));

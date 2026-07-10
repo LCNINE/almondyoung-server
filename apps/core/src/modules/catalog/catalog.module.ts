@@ -14,7 +14,7 @@ import { NoticesModule } from './core/notices/notices.module';
 // Operations modules
 import { ApprovalModule } from './operations/approval/approval.module';
 import { BulkModule } from './operations/bulk/bulk.module';
-import { CsvModule } from './operations/csv/csv.module';
+import { ProductImportModule } from './operations/import/product-import.module';
 import { AuditModule } from './operations/audit/audit.module';
 
 // Analytics modules
@@ -39,7 +39,7 @@ import { DashboardModule } from './analytics/dashboard/dashboard.module';
     // Operations
     ApprovalModule,
     BulkModule,
-    CsvModule,
+    ProductImportModule,
     AuditModule,
     // Analytics
     DashboardModule,

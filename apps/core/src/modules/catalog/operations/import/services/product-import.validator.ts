@@ -1,3 +1,4 @@
+import { Injectable } from '@nestjs/common';
 import { ProductRecord } from '../dto/import.types';
 
 export const MAX_VARIANT_COMBINATIONS = 100;
@@ -17,6 +18,7 @@ const STRING_FIELDS = [
   'seller',
 ];
 
+@Injectable()
 export class ProductImportValidator {
   validate(records: ProductRecord[]): ProductRecord[] {
     for (const record of records) {
