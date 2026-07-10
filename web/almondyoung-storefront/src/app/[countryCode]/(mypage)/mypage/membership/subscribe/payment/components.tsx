@@ -43,9 +43,10 @@ import { z } from "zod"
 // 순수 UI용 타입 정의
 type SubscriptionType = "monthly" | "yearly" | null
 
-// 정기결제(CMS 자동이체) 일시 비활성화 스위치. CMS 재개 시 true 로 되돌리면 원복.
-// ponytail: 연간구독 선택 시 정기결제가 비활성화되던 로직을 항상 적용하는 단일 플래그.
-const RECURRING_ENABLED = false
+// 정기결제(CMS 자동이체) 개통 여부 = 인보이스(선적용) 정기결제 플래그와 연동한다.
+// 플래그가 켜지면 월간 정기가입(선적용 인보이스 경로)이 폼에서 열리고, 꺼지면 one_time 만 노출한다.
+// (연간구독은 별도로 always one_time — recurringDisabled 에서 처리.)
+const RECURRING_ENABLED = isInvoiceBillingEnabled()
 
 type MemberBenefitCommon = {
   id: string

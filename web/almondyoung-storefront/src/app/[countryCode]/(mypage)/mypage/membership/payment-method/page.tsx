@@ -325,19 +325,21 @@ export default function MembershipPaymentMethodPage() {
 
   useEffect(() => {
     if (!autoSubscribeOnLoad.current || isLoading) return
-    // 선적용: 갓 등록한 심사 중(PENDING) 계좌로도 즉시 가입한다.
-    // 이때 방금 등록한 PENDING 계좌를 최우선으로 삼는다 — 기존 REGISTERED 계좌가
-    // otherMethods 에 남아 있어도 그쪽으로 가입되면 안 된다.
+    // wallet-web 이 방금 등록한 계좌 id 를 returnUrl 로 넘기면 그 계좌를 최우선으로 삼는다.
+    // (넘어오지 않으면 기존 우선순위: 심사 중 PENDING → 첫 other. 임의 계좌로 가입되는 것을 막는다.)
+    const registeredMethodId = searchParams.get("billingMethodId")
     const pendingCandidate = isInvoiceBillingEnabled()
       ? pendingCmsMethods.find((s) => s.billingMethodId !== agreement?.billingMethodId)
       : undefined
-    const targetMethodId = pendingCandidate?.billingMethodId ?? otherMethods[0]?.id
+    const targetMethodId =
+      registeredMethodId ?? pendingCandidate?.billingMethodId ?? otherMethods[0]?.id
     if (!targetMethodId) return
     autoSubscribeOnLoad.current = false
     // 심사 중(PENDING) 계좌로 선적용 가입하는 경우엔 첫 출금이 승인 후임을 정직하게 안내한다.
-    handleSubscribeWithMethod(targetMethodId, {
-      pendingMandate: targetMethodId === pendingCandidate?.billingMethodId,
-    })
+    const isPendingTarget =
+      targetMethodId === pendingCandidate?.billingMethodId ||
+      pendingCmsMethods.some((s) => s.billingMethodId === targetMethodId)
+    handleSubscribeWithMethod(targetMethodId, { pendingMandate: isPendingTarget })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, otherMethods, pendingCmsMethods])
 
