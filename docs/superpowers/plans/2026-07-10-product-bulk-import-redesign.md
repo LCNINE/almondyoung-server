@@ -110,16 +110,16 @@ export const productImportItems = pgTable(
 );
 ```
 
-- [ ] **Step 2: `catalogSchema` 객체에 등록**
+- [ ] **Step 2: `catalogSchema` 객체에 테이블 등록**
 
-`catalog.schema.ts:976` 의 `export const catalogSchema = {` 객체 안, 마지막 테이블 뒤에 4개 항목 추가:
+`catalog.schema.ts:976` 의 `export const catalogSchema = {` 객체 안, 마지막 테이블 뒤에 **테이블 2개만** 추가:
 
 ```ts
-  productImportSessionStatusEnum,
-  productImportItemStatusEnum,
   productImportSessions,
   productImportItems,
 ```
+
+> ⚠️ pgEnum(`productImportSessionStatusEnum`, `productImportItemStatusEnum`)은 `catalogSchema` 에 넣지 **않는다**. `DrizzleSchema`(`libs/db/src/types.ts`)는 table/relation/view 만 허용하므로 enum 을 등록하면 catalog 전역이 TS2344 로 깨진다. 이는 이 파일의 기존 관례와도 일치(기존 standalone enum `ProductMasterVersionStatusEnum` 등도 `catalogSchema` 에 미등록). enum 은 정의·export·컬럼 사용만 하면 된다.
 
 - [ ] **Step 3: 타입체크로 스키마 유효성 확인**
 
