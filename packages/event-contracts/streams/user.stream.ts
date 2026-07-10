@@ -30,6 +30,23 @@ export interface UserEmailVerifiedPayload {
   name: string;
 }
 
+/** 이메일로 6자리 인증 코드(OTP) 발송 요청 — 문자 대신 이메일로 코드 받기 */
+export interface UserVerificationCodePayload {
+  userId: string;
+  email: string;
+  name: string;
+  code: string;
+}
+
+/** 비밀번호 변경 완료 알림 (넷플릭스식 보안 알림 메일 트리거) */
+export interface UserPasswordChangedPayload {
+  userId: string;
+  email: string;
+  name: string;
+  /** 계정 페이지 링크 (메일 내 "계정 페이지" 버튼) */
+  accountUrl: string;
+}
+
 export interface UserUpdatedAddressPayload {
   address_1: string;
   address_2?: string;
@@ -133,6 +150,20 @@ const UserEmailVerifiedSchema = z.object({
   name: z.string().min(1),
 });
 
+const UserVerificationCodeSchema = z.object({
+  userId: z.string().min(1),
+  email: z.string().email(),
+  name: z.string().min(1),
+  code: z.string().min(4).max(8),
+});
+
+const UserPasswordChangedSchema = z.object({
+  userId: z.string().min(1),
+  email: z.string().email(),
+  name: z.string().min(1),
+  accountUrl: z.string().url(),
+});
+
 const UserUpdatedAddressSchema = z.object({
   address_1: z.string().min(1),
   address_2: z.string().optional(),
@@ -222,6 +253,14 @@ export const USER_STREAM = stream({
     UserCreated: event<'UserCreated', UserCreatedPayload>('UserCreated', UserCreatedSchema),
     UserVerification: event<'UserVerification', UserVerificationPayload>('UserVerification', UserVerificationSchema),
     UserEmailVerified: event<'UserEmailVerified', UserEmailVerifiedPayload>('UserEmailVerified', UserEmailVerifiedSchema),
+    UserVerificationCode: event<'UserVerificationCode', UserVerificationCodePayload>(
+      'UserVerificationCode',
+      UserVerificationCodeSchema,
+    ),
+    UserPasswordChanged: event<'UserPasswordChanged', UserPasswordChangedPayload>(
+      'UserPasswordChanged',
+      UserPasswordChangedSchema,
+    ),
     UserUpdated: event<'UserUpdated', UserUpdatedPayload>('UserUpdated', UserUpdatedSchema),
     UserDeleted: event<'UserDeleted', UserDeletedPayload>('UserDeleted', UserDeletedSchema),
     UserDormantConverted: event<'UserDormantConverted', UserDormantConvertedPayload>('UserDormantConverted', UserDormantConvertedSchema),

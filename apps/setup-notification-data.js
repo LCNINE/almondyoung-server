@@ -40,6 +40,40 @@ const templates = [
     }
   },
   {
+    templateKey: 'USER_VERIFICATION_CODE_EMAIL',
+    name: '이메일 인증 코드',
+    category: 'SYSTEM',
+    contents: {
+      EMAIL: {
+        ko: {
+          subject: '[아몬드영] 인증 코드 {{code}}',
+          body: `<!doctype html><html lang="ko"><body style="margin:0;padding:0;background-color:#f5f5f5;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f5;padding:32px 16px;"><tr><td align="center"><table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;padding:40px 32px;font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;"><tr><td style="font-size:22px;font-weight:800;color:#f29219;padding-bottom:24px;">아몬드영</td></tr><tr><td style="font-size:24px;font-weight:700;color:#111111;padding-bottom:16px;">인증 코드를 입력해 주세요</td></tr><tr><td style="font-size:15px;line-height:1.6;color:#444444;padding-bottom:24px;">{{name}}님, 안녕하세요.<br/>요청하신 인증 코드는 아래와 같습니다.</td></tr><tr><td align="center" style="padding-bottom:24px;"><div style="display:inline-block;background-color:#f7f7f7;border:1px solid #e5e5e5;border-radius:10px;padding:18px 32px;font-size:34px;font-weight:800;letter-spacing:8px;color:#111111;">{{code}}</div></td></tr><tr><td style="font-size:13px;color:#888888;padding-bottom:32px;">이 코드는 3분 내에 만료됩니다. 본인이 요청하지 않았다면 이 메일을 무시하셔도 됩니다.</td></tr><tr><td style="border-top:1px solid #eeeeee;padding-top:20px;font-size:12px;line-height:1.6;color:#aaaaaa;">본 메일은 발신 전용입니다.<br/>&copy; Almond Young. All rights reserved.</td></tr></table></td></tr></table></body></html>`
+        }
+      }
+    },
+    variablesSchema: {
+      name: { type: 'string', required: true, description: '사용자 이름' },
+      code: { type: 'string', required: true, description: '6자리 인증 코드' }
+    }
+  },
+  {
+    templateKey: 'USER_PASSWORD_CHANGED_EMAIL',
+    name: '비밀번호 변경 알림',
+    category: 'SYSTEM',
+    contents: {
+      EMAIL: {
+        ko: {
+          subject: '[아몬드영] 비밀번호가 변경되었습니다',
+          body: `<!doctype html><html lang="ko"><body style="margin:0;padding:0;background-color:#f5f5f5;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f5f5f5;padding:32px 16px;"><tr><td align="center"><table role="presentation" width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;padding:40px 32px;font-family:'Apple SD Gothic Neo','Malgun Gothic',sans-serif;"><tr><td style="font-size:22px;font-weight:800;color:#f29219;padding-bottom:24px;">아몬드영</td></tr><tr><td style="font-size:24px;font-weight:700;color:#111111;padding-bottom:16px;">비밀번호 변경 알림</td></tr><tr><td style="font-size:15px;line-height:1.6;color:#444444;padding-bottom:24px;">{{name}}님, 안녕하세요.<br/>회원님의 비밀번호가 변경되었습니다. 계정 정보를 확인하거나 변경하시려면 아래 계정 페이지에서 확인해 주세요.</td></tr><tr><td align="center" style="padding-bottom:24px;"><a href="{{accountUrl}}" style="display:inline-block;background-color:#111111;color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;padding:14px 28px;border-radius:8px;">계정 페이지</a></td></tr><tr><td style="font-size:13px;color:#888888;padding-bottom:32px;">본인이 요청한 변경이 아니라면, 보안을 위해 즉시 고객센터로 연락해 주세요.</td></tr><tr><td style="border-top:1px solid #eeeeee;padding-top:20px;font-size:12px;line-height:1.6;color:#aaaaaa;">본 메일은 발신 전용입니다.<br/>&copy; Almond Young. All rights reserved.</td></tr></table></td></tr></table></body></html>`
+        }
+      }
+    },
+    variablesSchema: {
+      name: { type: 'string', required: true, description: '사용자 이름' },
+      accountUrl: { type: 'string', required: true, description: '계정 페이지 링크' }
+    }
+  },
+  {
     templateKey: 'USER_FIND_ID_EMAIL',
     name: 'ID 찾기',
     category: 'SYSTEM',
@@ -206,6 +240,24 @@ const eventMappings = [
     name: '사용자 이메일 인증',
     description: '회원가입 시 이메일 인증 알림',
     templateKey: 'USER_VERIFICATION_EMAIL',
+    category: 'SYSTEM',
+    defaultChannels: ['EMAIL'],
+    priority: 'HIGH'
+  },
+  {
+    eventKey: 'USER_VERIFICATION_CODE',
+    name: '사용자 이메일 인증 코드',
+    description: '문자 대신 이메일로 6자리 인증 코드 발송',
+    templateKey: 'USER_VERIFICATION_CODE_EMAIL',
+    category: 'SYSTEM',
+    defaultChannels: ['EMAIL'],
+    priority: 'HIGH'
+  },
+  {
+    eventKey: 'USER_PASSWORD_CHANGED',
+    name: '비밀번호 변경 알림',
+    description: '비밀번호 변경 완료 시 보안 알림 메일',
+    templateKey: 'USER_PASSWORD_CHANGED_EMAIL',
     category: 'SYSTEM',
     defaultChannels: ['EMAIL'],
     priority: 'HIGH'

@@ -118,6 +118,11 @@ template-data.json
 *.png
 *.jpeg
 *.gif
+# 단, 앱에 필요한 정적 자산(public 폴더)은 커밋 대상
+!web/*/public/**/*.jpg
+!web/*/public/**/*.png
+!web/*/public/**/*.jpeg
+!web/*/public/**/*.gif
 
 # Documentation files (test guides)
 *_TEST_GUIDE.md

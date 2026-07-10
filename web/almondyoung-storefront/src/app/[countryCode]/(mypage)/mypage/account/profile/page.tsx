@@ -1,5 +1,6 @@
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { PageTitle } from "@/components/shared/page-title"
+import { EmailVerifiedToast } from "@/domains/mypage/components/account/email-verified-toast"
 import { ProfileEdit } from "@/domains/mypage/components/account/profile-edit"
 import { SocialLinkResultToast } from "@/domains/mypage/components/account/social-link-result-toast"
 import { getIdentitiesWithFallback } from "@/lib/api/users/auth/identities"
@@ -39,6 +40,7 @@ export default async function AccountProfilePage() {
       </MypageLayout>
       <Suspense fallback={null}>
         <SocialLinkResultToast />
+        <EmailVerifiedToast />
       </Suspense>
     </WithHeaderLayout>
   )

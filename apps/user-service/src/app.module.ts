@@ -21,6 +21,7 @@ import { BusinessLicensesModule } from './api/business-licenses/business-license
 import { Cafe24Module } from './api/cafe24/cafe24.module';
 import { Cafe24LinkModule } from './api/cafe24-link/cafe24-link.module';
 import { ConsentsModule } from './api/consents/consents.module';
+import { EmailVerificationModule } from './api/email-verification/email-verification.module';
 import { FileModule } from './api/file/file.module';
 import { RecentViewsModule } from './api/recent-views/recent-views.module';
 import { ShopModule } from './api/shop/shop.module';
@@ -137,6 +138,7 @@ const staticRoot = existsSync(join(__dirname, 'static')) ? join(__dirname, 'stat
     OAuthModule,
     WellKnownModule,
     UsersModule,
+    EmailVerificationModule,
     ...optionalModules,
     ShopModule,
     ConsentsModule,

@@ -4,6 +4,8 @@ import { OnEvent, EventPayload, EventEnvelope, EventsExceptionFilter } from '@ap
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import {
   UserVerificationPayload,
+  UserVerificationCodePayload,
+  UserPasswordChangedPayload,
   UserFindIdPayload,
   UserResetPasswordPayload,
 } from '@packages/event-contracts/streams/user.stream';
@@ -66,6 +68,80 @@ export class UserEventConsumer {
       this.logger.log(`[Event] Dispatched USER_VERIFICATION notification for ${payload.email}`);
     } catch (error) {
       this.logger.error(`[Event] Failed to process USER_VERIFICATION notification: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  @OnEvent('users.events.v1', 'UserVerificationCode')
+  async onUserVerificationCode(
+    @EventEnvelope() envelope: DomainEvent<UserVerificationCodePayload>,
+    @EventPayload() payload: UserVerificationCodePayload,
+  ) {
+    this.logger.log(
+      `[Event] Received UserVerificationCode: ${payload.userId} (correlationId: ${envelope.correlationId})`,
+    );
+    try {
+      const eventMapping = await this.eventMappingService.getEventMapping('USER_VERIFICATION_CODE');
+      if (!eventMapping || !eventMapping.isActive) {
+        this.logger.warn(`Event mapping for USER_VERIFICATION_CODE not found or inactive.`);
+        return;
+      }
+
+      const sendDto: SendNotificationDto = {
+        userId: payload.userId,
+        channels: eventMapping.defaultChannels as any,
+        category: eventMapping.category as NotificationCategory,
+        templateKey: eventMapping.templateKey,
+        eventKey: eventMapping.eventKey,
+        payload: payload,
+        correlationId: envelope.correlationId,
+        priority: eventMapping.priority as any,
+        variables: {
+          name: payload.name,
+          code: payload.code,
+        },
+      };
+      await this.notificationDispatcherService.send(sendDto);
+      this.logger.log(`[Event] Dispatched USER_VERIFICATION_CODE notification for ${payload.email}`);
+    } catch (error) {
+      this.logger.error(`[Event] Failed to process USER_VERIFICATION_CODE notification: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  @OnEvent('users.events.v1', 'UserPasswordChanged')
+  async onUserPasswordChanged(
+    @EventEnvelope() envelope: DomainEvent<UserPasswordChangedPayload>,
+    @EventPayload() payload: UserPasswordChangedPayload,
+  ) {
+    this.logger.log(
+      `[Event] Received UserPasswordChanged: ${payload.userId} (correlationId: ${envelope.correlationId})`,
+    );
+    try {
+      const eventMapping = await this.eventMappingService.getEventMapping('USER_PASSWORD_CHANGED');
+      if (!eventMapping || !eventMapping.isActive) {
+        this.logger.warn(`Event mapping for USER_PASSWORD_CHANGED not found or inactive.`);
+        return;
+      }
+
+      const sendDto: SendNotificationDto = {
+        userId: payload.userId,
+        channels: eventMapping.defaultChannels as any,
+        category: eventMapping.category as NotificationCategory,
+        templateKey: eventMapping.templateKey,
+        eventKey: eventMapping.eventKey,
+        payload: payload,
+        correlationId: envelope.correlationId,
+        priority: eventMapping.priority as any,
+        variables: {
+          name: payload.name,
+          accountUrl: payload.accountUrl,
+        },
+      };
+      await this.notificationDispatcherService.send(sendDto);
+      this.logger.log(`[Event] Dispatched USER_PASSWORD_CHANGED notification for ${payload.email}`);
+    } catch (error) {
+      this.logger.error(`[Event] Failed to process USER_PASSWORD_CHANGED notification: ${error.message}`, error.stack);
       throw error;
     }
   }

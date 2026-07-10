@@ -2,7 +2,12 @@ import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundEx
 import { createHash } from 'crypto';
 import { InjectTypedDb } from '@app/db';
 import { and, desc, eq, inArray, ne } from 'drizzle-orm';
-import { inventorySchema, inventoryTables, returnExchangeTables, wmsTables } from '../../inventory/schema/inventory.schema';
+import {
+  inventorySchema,
+  inventoryTables,
+  returnExchangeTables,
+  wmsTables,
+} from '../../inventory/schema/inventory.schema';
 import { calculatePartialCancellationRefund } from './partial-cancellation-refund-calculator';
 import {
   RefundSummaryDto,
@@ -14,10 +19,7 @@ import {
   StoreOrderActionsResponseDto,
   StoreRefundStatus,
 } from '../dto/store-order-actions.dto';
-import {
-  StoreOrderTrackingResponseDto,
-  StoreShipmentDto,
-} from '../dto/store-order-tracking.dto';
+import { StoreOrderTrackingResponseDto, StoreShipmentDto } from '../dto/store-order-tracking.dto';
 import { SalesOrdersService } from './sales-orders.service';
 import { WalletRefundClient } from './wallet-refund.client';
 
@@ -40,8 +42,22 @@ const FO_SHIPPED_STATUSES = new Set(['shipped', 'completed']);
 const FO_PACKED_STATUSES = new Set(['picked', 'inspecting', 'invoiced', 'labeled', 'forwarded']);
 const FO_PICKING_STATUSES = new Set(['picking', 'allocated']);
 
-const ACTIVE_RETURN_STATUSES = ['requested', 'approved', 'collection_pending', 'collected', 'inspected', 'refund_pending'] as const;
-const ACTIVE_EXCHANGE_STATUSES = ['requested', 'approved', 'collection_pending', 'collected', 'inspected', 'refund_pending'] as const;
+const ACTIVE_RETURN_STATUSES = [
+  'requested',
+  'approved',
+  'collection_pending',
+  'collected',
+  'inspected',
+  'refund_pending',
+] as const;
+const ACTIVE_EXCHANGE_STATUSES = [
+  'requested',
+  'approved',
+  'collection_pending',
+  'collected',
+  'inspected',
+  'refund_pending',
+] as const;
 const VALID_REFUND_STATUSES = new Set<StoreRefundStatus>(['none', 'pending', 'manual_pending', 'succeeded', 'failed']);
 
 @Injectable()
@@ -49,7 +65,8 @@ export class StoreSalesOrdersService {
   private readonly logger = new Logger(StoreSalesOrdersService.name);
 
   constructor(
-    @InjectTypedDb<typeof inventorySchema>() private readonly db: { db: import('drizzle-orm/postgres-js').PostgresJsDatabase<typeof inventorySchema> },
+    @InjectTypedDb<typeof inventorySchema>()
+    private readonly db: { db: import('drizzle-orm/postgres-js').PostgresJsDatabase<typeof inventorySchema> },
     private readonly salesOrdersService: SalesOrdersService,
     private readonly walletRefundClient: WalletRefundClient,
   ) {}
@@ -61,7 +78,11 @@ export class StoreSalesOrdersService {
     return this.buildActionsView(so);
   }
 
-  async cancelRequest(orderId: string, customerId: string, dto: StoreCancelOrderDto): Promise<StoreOrderActionsResponseDto> {
+  async cancelRequest(
+    orderId: string,
+    customerId: string,
+    dto: StoreCancelOrderDto,
+  ): Promise<StoreOrderActionsResponseDto> {
     const so = await this.findSoOrThrow({ id: orderId }, customerId);
     return this.processCancelRequest(so, customerId, dto);
   }
@@ -244,10 +265,12 @@ export class StoreSalesOrdersService {
               })
               .map((r) => (r.metadata as Record<string, unknown>).completedRefundLinkId as string),
           );
-          return rows.find((r) => {
-            const m = r.metadata as Record<string, unknown>;
-            return m?.refundStatus === 'manual_pending' && !completedIds.has(r.id);
-          }) ?? null;
+          return (
+            rows.find((r) => {
+              const m = r.metadata as Record<string, unknown>;
+              return m?.refundStatus === 'manual_pending' && !completedIds.has(r.id);
+            }) ?? null
+          );
         });
     })();
 
@@ -336,10 +359,14 @@ export class StoreSalesOrdersService {
     }
 
     // failed 또는 링크 없음 → 새 per-attempt key로 실제 PG 재호출
-    const refundStatus = await this.requestWalletRefundAfterCancel(so, {}, {
-      attemptType: 'retry',
-      actor: 'admin',
-    });
+    const refundStatus = await this.requestWalletRefundAfterCancel(
+      so,
+      {},
+      {
+        attemptType: 'retry',
+        actor: 'admin',
+      },
+    );
     return { refundStatus };
   }
 
@@ -348,6 +375,30 @@ export class StoreSalesOrdersService {
   async getActionsByChannelOrder(channelOrderId: string, customerId: string): Promise<StoreOrderActionsResponseDto> {
     const so = await this.findSoOrThrow({ channelOrderId, salesChannel: 'medusa' }, customerId);
     return this.buildActionsView(so);
+  }
+
+  /**
+   * 주문목록 페이지용 배치 조회
+   */
+  async getActionsByChannelOrderBatch(
+    channelOrderIds: string[],
+    customerId: string,
+  ): Promise<StoreOrderActionsResponseDto[]> {
+    if (channelOrderIds.length === 0) return [];
+
+    const sos = await this.db.db
+      .select()
+      .from(inventoryTables.salesOrders)
+      .where(
+        and(
+          inArray(inventoryTables.salesOrders.channelOrderId, channelOrderIds),
+          eq(inventoryTables.salesOrders.salesChannel, 'medusa'),
+          eq(inventoryTables.salesOrders.customerId, customerId),
+        ),
+      );
+
+    // SO당 select 1~3개 × 페이지(≤100건 제한) Promise.all. 느려지면 buildActionsView 쿼리 배치화.
+    return Promise.all(sos.map((so) => this.buildActionsView(so)));
   }
 
   async cancelRequestByChannelOrder(
@@ -381,13 +432,20 @@ export class StoreSalesOrdersService {
       .then((r) => r[0]);
 
     if (!so) throw new NotFoundException('주문을 찾을 수 없습니다.');
-    if (customerId !== undefined && so.customerId !== customerId) throw new ForbiddenException('본인 주문만 접근할 수 있습니다.');
+    if (customerId !== undefined && so.customerId !== customerId)
+      throw new ForbiddenException('본인 주문만 접근할 수 있습니다.');
     return so;
   }
 
-  private async buildActionsView(so: SalesOrderRow, overrideRefundStatus?: StoreRefundStatus): Promise<StoreOrderActionsResponseDto> {
+  private async buildActionsView(
+    so: SalesOrderRow,
+    overrideRefundStatus?: StoreRefundStatus,
+  ): Promise<StoreOrderActionsResponseDto> {
     const fos = await this.db.db
-      .select({ status: inventoryTables.fulfillmentOrders.status, shippedAt: inventoryTables.fulfillmentOrders.shippedAt })
+      .select({
+        status: inventoryTables.fulfillmentOrders.status,
+        shippedAt: inventoryTables.fulfillmentOrders.shippedAt,
+      })
       .from(inventoryTables.fulfillmentOrders)
       .where(eq(inventoryTables.fulfillmentOrders.salesOrderId, so.id));
 
@@ -402,8 +460,8 @@ export class StoreSalesOrdersService {
     let refundSummary: RefundSummaryDto | undefined;
 
     // cancellation_linked_wallet_refund 조회: 취소된 주문 + 부분취소(manual_pending) 모두 해당
-    const needsRefundLookup = (so.status === 'cancelled' && !overrideRefundStatus) ||
-      (so.status !== 'cancelled' && so.walletIntentId);
+    const needsRefundLookup =
+      (so.status === 'cancelled' && !overrideRefundStatus) || (so.status !== 'cancelled' && so.walletIntentId);
 
     if (needsRefundLookup) {
       const refundLinks = await this.db.db
@@ -427,16 +485,18 @@ export class StoreSalesOrdersService {
       if (so.status === 'cancelled' && !overrideRefundStatus) {
         if (latestLink) {
           const stored = (latestLink.metadata as Record<string, unknown>)?.refundStatus;
-          refundStatus = (typeof stored === 'string' && VALID_REFUND_STATUSES.has(stored as StoreRefundStatus))
-            ? (stored as StoreRefundStatus)
-            : 'pending';
+          refundStatus =
+            typeof stored === 'string' && VALID_REFUND_STATUSES.has(stored as StoreRefundStatus)
+              ? (stored as StoreRefundStatus)
+              : 'pending';
         } else {
           refundStatus = so.walletIntentId ? 'pending' : 'none';
         }
       }
 
       // refundSummary 조립: 취소/부분취소 모두 지원
-      const summaryLink = latestLink ??
+      const summaryLink =
+        latestLink ??
         // 아직 cancelled가 아닌 주문에서 manual_pending 부분취소 링크 탐색
         refundLinks.find((r) => {
           const m = r.metadata as Record<string, unknown>;
@@ -445,9 +505,12 @@ export class StoreSalesOrdersService {
 
       if (summaryLink) {
         const m = summaryLink.metadata as Record<string, unknown>;
-        const summaryStatus = (typeof m?.refundStatus === 'string' && VALID_REFUND_STATUSES.has(m.refundStatus as StoreRefundStatus))
-          ? (m.refundStatus as StoreRefundStatus)
-          : (refundStatus !== 'none' ? refundStatus : undefined);
+        const summaryStatus =
+          typeof m?.refundStatus === 'string' && VALID_REFUND_STATUSES.has(m.refundStatus as StoreRefundStatus)
+            ? (m.refundStatus as StoreRefundStatus)
+            : refundStatus !== 'none'
+              ? refundStatus
+              : undefined;
 
         if (summaryStatus && summaryStatus !== 'none') {
           // 부분취소(manual_pending)는 refundEstimateAmount, 전체취소는 amount
@@ -543,9 +606,7 @@ export class StoreSalesOrdersService {
       // 현재는 결제확인된 주문(authorized/captured)만 수집되므로 walletIntentId가 있으면 항상 paid.
       // 무통장입금 도입 시 Wallet intent status를 확인해 'awaiting_payment'로 분기한다.
       paymentStatus: so.walletIntentId ? 'paid' : undefined,
-      channelInfo: isChannelOrder
-        ? { channel: so.salesChannel, ...CHANNEL_CANCEL_URLS[so.salesChannel] }
-        : undefined,
+      channelInfo: isChannelOrder ? { channel: so.salesChannel, ...CHANNEL_CANCEL_URLS[so.salesChannel] } : undefined,
     };
   }
 
@@ -561,7 +622,10 @@ export class StoreSalesOrdersService {
     }
 
     const fos = await this.db.db
-      .select({ status: inventoryTables.fulfillmentOrders.status, shippedAt: inventoryTables.fulfillmentOrders.shippedAt })
+      .select({
+        status: inventoryTables.fulfillmentOrders.status,
+        shippedAt: inventoryTables.fulfillmentOrders.shippedAt,
+      })
       .from(inventoryTables.fulfillmentOrders)
       .where(eq(inventoryTables.fulfillmentOrders.salesOrderId, so.id));
 
@@ -579,7 +643,10 @@ export class StoreSalesOrdersService {
       cancelledBy: `customer:${customerId}`,
     });
 
-    const refundStatus = await this.requestWalletRefundAfterCancel(so, dto, { actor: 'customer', attemptType: 'initial' });
+    const refundStatus = await this.requestWalletRefundAfterCancel(so, dto, {
+      actor: 'customer',
+      attemptType: 'initial',
+    });
     return this.buildActionsView({ ...so, status: 'cancelled' }, refundStatus);
   }
 
@@ -625,9 +692,7 @@ export class StoreSalesOrdersService {
     const amount = options?.amountOverride ?? so.totalAmount;
 
     if (!amount || amount <= 0) {
-      this.logger.warn(
-        `[WalletRefund] SO ${so.id} has invalid amount=${amount}. Skipping auto-refund.`,
-      );
+      this.logger.warn(`[WalletRefund] SO ${so.id} has invalid amount=${amount}. Skipping auto-refund.`);
       await this.recordWalletRefundLink(so.id, {
         refundStatus: 'manual_pending',
         note: `amount=${amount} 이 유효하지 않아 수동 처리 필요`,
@@ -988,12 +1053,25 @@ const CARRIER_NAMES: Record<string, string> = {
 
 // Invoice carrierCode 필드는 varchar라 실제 값이 다양할 수 있음 — canonical 코드로 정규화
 const CARRIER_CODE_ALIASES: Record<string, string> = {
-  'CJ대한통운': 'CJ', 'CJ 대한통운': 'CJ', cj: 'CJ',
-  한진택배: 'HANJIN', 한진: 'HANJIN', hanjin: 'HANJIN',
-  롯데택배: 'LOTTE', 롯데: 'LOTTE', '롯데글로벌로지스': 'LOTTE', lotte: 'LOTTE',
-  로젠택배: 'LOGEN', 로젠: 'LOGEN', logen: 'LOGEN',
-  경동택배: 'KDEXP', 경동: 'KDEXP', kdexp: 'KDEXP',
-  'CJ-GLS': 'CJGLS', 'CJ GLS': 'CJGLS', cjgls: 'CJGLS',
+  CJ대한통운: 'CJ',
+  'CJ 대한통운': 'CJ',
+  cj: 'CJ',
+  한진택배: 'HANJIN',
+  한진: 'HANJIN',
+  hanjin: 'HANJIN',
+  롯데택배: 'LOTTE',
+  롯데: 'LOTTE',
+  롯데글로벌로지스: 'LOTTE',
+  lotte: 'LOTTE',
+  로젠택배: 'LOGEN',
+  로젠: 'LOGEN',
+  logen: 'LOGEN',
+  경동택배: 'KDEXP',
+  경동: 'KDEXP',
+  kdexp: 'KDEXP',
+  'CJ-GLS': 'CJGLS',
+  'CJ GLS': 'CJGLS',
+  cjgls: 'CJGLS',
 };
 
 function normalizeCarrierCode(raw: string | null | undefined): string {

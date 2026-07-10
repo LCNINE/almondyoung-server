@@ -1,5 +1,4 @@
 import { getOrders } from "@lib/api/medusa/orders"
-import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
 import { ShippingItemsSection } from "../../../components/desktop/shipping-items-section"
 import type { ShippingOrder } from "../../../types/mypage-types"
 import {
@@ -48,12 +47,13 @@ export async function ShippingItemsWrapper() {
 
       return {
         orderId: order.id,
+        createdAt: order.created_at ?? "",
         status: statusLabel,
         paymentStatus: order.payment_status ?? "unknown",
         deliveryInfo: "",
         shippingNote: "",
         productName,
-        productImage: getThumbnailUrl(productImage),
+        productImage,
         price,
         quantity: order.items?.length || 0,
         options,
