@@ -295,11 +295,7 @@ export const SIDEBAR_SECTIONS: {
         label: "mypage.menu.profile",
         path: "/mypage/account/profile",
       },
-      {
-        id: "account-password",
-        label: "mypage.menu.password",
-        path: "/mypage/account/password",
-      },
+      // 비밀번호 변경은 회원정보 수정 페이지의 계정 정보 카드에서 진입
       {
         id: "account-cafe24",
         label: "mypage.menu.cafe24",

@@ -30,9 +30,9 @@ import {
   updateProfileAction,
   type ProfileActionState,
 } from "../actions/profile"
+import { AccountInfoCard } from "./account-info-card"
 import { AddressBookSection } from "./address-book-section"
 import { InterestCategoriesSection } from "./interest-categories-section"
-import { PhoneSection } from "./phone-section"
 import { SocialLinkSection } from "./social-link-section"
 
 const INPUT_CLASSNAME =
@@ -96,6 +96,13 @@ export function ProfileEdit({
 
   return (
     <div className="space-y-6 py-2 md:py-4">
+      {/* 계정 정보 (비밀번호/이메일/휴대폰) */}
+      <AccountInfoCard
+        email={userData.email || ""}
+        isEmailVerified={userData.isEmailVerified ?? false}
+        phoneNumber={userData.profile?.phoneNumber ?? null}
+      />
+
       {/* 기본 정보 */}
       <Card>
         <CardHeader>
@@ -130,21 +137,6 @@ export function ProfileEdit({
                 <div className="relative">
                   <Input
                     value={userData.loginId || ""}
-                    readOnly
-                    disabled
-                    className="bg-gray-20 h-11 cursor-not-allowed rounded-md border border-gray-200 px-4 text-sm text-black"
-                  />
-                </div>
-              </div>
-
-              {/* 이메일 (읽기 전용) */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">
-                  {t("labels.email")}
-                </Label>
-                <div className="relative">
-                  <Input
-                    value={userData.email || ""}
                     readOnly
                     disabled
                     className="bg-gray-20 h-11 cursor-not-allowed rounded-md border border-gray-200 px-4 text-sm text-black"
@@ -220,11 +212,6 @@ export function ProfileEdit({
 
       {/* 소셜 계정 연동 */}
       {/* <SocialLinkSection identitiesState={identitiesState} /> */}
-
-      {/* 휴대폰 번호 변경 */}
-      <PhoneSection
-        initialPhoneNumber={userData.profile?.phoneNumber ?? null}
-      />
 
       {/* 관심 카테고리 */}
       <InterestCategoriesSection

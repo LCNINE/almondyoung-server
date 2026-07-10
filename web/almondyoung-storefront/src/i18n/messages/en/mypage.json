@@ -196,6 +196,37 @@
     "orderPeriodDescription": "Try a different period."
   },
   "account": {
+    "accountInfo": {
+      "title": "Account Info",
+      "password": "Password",
+      "email": "Email",
+      "phone": "Phone",
+      "verifyNeeded": "Verification needed",
+      "verified": "Verified",
+      "verifiedToast": "Your email has been verified.",
+      "verifyDialog": {
+        "title": "Verify your email",
+        "description": "We will send a verification link to {email}. Verifying your email helps secure your account and keeps you informed with important Almond Young updates.",
+        "sendLink": "Send link",
+        "cancel": "Cancel",
+        "sentTitle": "Check your inbox",
+        "sentDescription": "We sent a verification link to {email}. Click the link in the email to verify this email address.",
+        "done": "Done",
+        "sendFailed": "Failed to send the verification email. Please try again later."
+      },
+      "phoneDialog": {
+        "introTitle": "Let's verify it's you first",
+        "introDescription": "A quick check is needed before changing your info.",
+        "sendCodeSms": "Get code via SMS",
+        "codeTitle": "Enter the code we just sent",
+        "codeDescription": "To protect your account, enter the code sent to {phone}. The code expires 3 minutes after sending.",
+        "submit": "Submit",
+        "resendCode": "Resend code",
+        "changeTitle": "Change your phone number",
+        "changeDescription": "SMS or data charges may apply.",
+        "next": "Next"
+      }
+    },
     "labels": {
       "email": "Email",
       "name": "Name",

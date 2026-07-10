@@ -196,6 +196,37 @@
     "orderPeriodDescription": "別の期間を選択してください。"
   },
   "account": {
+    "accountInfo": {
+      "title": "アカウント情報",
+      "password": "パスワード",
+      "email": "メール",
+      "phone": "携帯電話",
+      "verifyNeeded": "認証が必要",
+      "verified": "認証済み",
+      "verifiedToast": "メールアドレスが認証されました。",
+      "verifyDialog": {
+        "title": "メールアドレスを認証してください",
+        "description": "認証リンクを {email} 宛てにお送りします。メールを認証するとアカウントの安全性が高まり、アーモンドヤングからの大切なお知らせを受け取れます。",
+        "sendLink": "リンクを受け取る",
+        "cancel": "キャンセル",
+        "sentTitle": "受信トレイをご確認ください",
+        "sentDescription": "{email} 宛てに認証リンクをお送りしました。メール内のリンクをクリックして、このメールアドレスを認証してください。",
+        "done": "完了",
+        "sendFailed": "認証メールの送信に失敗しました。しばらくしてからもう一度お試しください。"
+      },
+      "phoneDialog": {
+        "introTitle": "まずご本人確認をしましょう",
+        "introDescription": "情報を変更する前に簡単な確認が必要です。",
+        "sendCodeSms": "SMSでコードを受け取る",
+        "codeTitle": "お送りしたコードを入力してください",
+        "codeDescription": "アカウント保護のため、{phone} 宛てに送信されたコードを入力してください。コードは送信から3分後に失効します。",
+        "submit": "送信する",
+        "resendCode": "コードを再送する",
+        "changeTitle": "携帯電話番号を変更してください",
+        "changeDescription": "SMSまたはデータ通信料が発生する場合があります。",
+        "next": "次へ"
+      }
+    },
     "labels": {
       "email": "メール",
       "name": "氏名",
