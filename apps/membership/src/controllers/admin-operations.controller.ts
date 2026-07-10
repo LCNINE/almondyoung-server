@@ -16,7 +16,11 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
+import { DLQHandler, createKafkaConfigFromEnv, getDLQTopicName } from '@app/events';
+import { PAYMENT_STREAM } from '@packages/event-contracts/streams/payment.stream';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
 import { IdempotentAdminOp } from '../shared/idempotency/idempotent-admin-op.decorator';
 import { AdminOperationsService } from '../services/admin-operations.service';
@@ -68,6 +72,7 @@ export class AdminOperationsController {
     private readonly cancellationService: SubscriptionCancellationService,
     private readonly contractEventManager: ContractEventManager,
     private readonly adminMembersReader: AdminMembersReader,
+    @Optional() private readonly dlqHandler?: DLQHandler,
   ) {}
 
   private handleError(error: unknown, operation: string, context?: string): never {
@@ -973,6 +978,40 @@ export class AdminOperationsController {
       return await this.adminMembersReader.resetBillingInProgress(contractId, adminId, reason.trim());
     } catch (error) {
       this.handleError(error, '결제 대기 플래그 해제');
+    }
+  }
+
+  /**
+   * 결제 이벤트 DLQ 재구동 — 포이즌/일시장애로 DLQ 에 쌓인 payments.events.v1 메시지를 원본 토픽으로 재발행.
+   * 안정 컨슈머 그룹으로 이미 드레인한 오프셋은 건너뛰므로 반복 호출해도 새 메시지만 처리한다.
+   *
+   * POST /admin/dlq/reprocess  { topic?, maxMessages? }
+   */
+  @Post('dlq/reprocess')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '결제 이벤트 DLQ 재구동 (원본 토픽으로 재발행)' })
+  @UseGuards(JwtAuthGuard)
+  async reprocessDlq(@Body('topic') topic?: string, @Body('maxMessages') maxMessages?: number) {
+    if (!this.dlqHandler) {
+      throw new ServiceUnavailableException('DLQ 핸들러가 활성화돼 있지 않습니다.');
+    }
+    const kafka = createKafkaConfigFromEnv();
+    if (!kafka) {
+      throw new ServiceUnavailableException('KAFKA_BROKERS 미설정 — DLQ 재구동 불가.');
+    }
+    const originalTopic = topic?.trim() || PAYMENT_STREAM.topic.topic;
+    const dlqTopic = getDLQTopicName(originalTopic);
+    this.logger.log(`DLQ 재구동 요청: ${dlqTopic}`);
+    try {
+      const result = await this.dlqHandler.drainAndReprocess({
+        dlqTopic,
+        kafka,
+        maxMessages: maxMessages && maxMessages > 0 ? Number(maxMessages) : undefined,
+      });
+      this.logger.log(`✅ DLQ 재구동 완료: ${dlqTopic} → ${JSON.stringify(result)}`);
+      return { success: true, data: { dlqTopic, ...result } };
+    } catch (error) {
+      this.handleError(error, 'DLQ 재구동', dlqTopic);
     }
   }
 }

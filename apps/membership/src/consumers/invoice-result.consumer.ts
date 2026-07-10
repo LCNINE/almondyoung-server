@@ -23,9 +23,32 @@ export class InvoiceResultConsumer {
 
   constructor(private readonly invoiceOutcomeHandler: InvoiceOutcomeHandler) {}
 
+  /**
+   * 인보이스 결과의 유일한 구독자는 membership 이다. subscriberType 이 MEMBERSHIP 이 아니거나
+   * subscriberRef 등 필수 라우팅 필드가 비면 처리 대상이 아니라 걸러내되, 조용히 버리지 않고 경고로 남긴다.
+   * (계약 위반·오라우팅·subscriberType 오타 같은 발산 신호가 무음 드롭에 묻히는 것을 막는다.)
+   */
+  private isForMembership(eventType: string, payload: { subscriberType?: string; subscriberRef?: string }): boolean {
+    if (payload.subscriberType !== 'MEMBERSHIP') {
+      this.logger.warn(
+        `[InvoiceResult] ${eventType} 드롭: 예상치 못한 subscriberType=${payload.subscriberType ?? '(없음)'}, ref=${payload.subscriberRef ?? '-'}`,
+      );
+      return false;
+    }
+    if (!payload.subscriberRef) {
+      this.logger.warn(`[InvoiceResult] ${eventType} 드롭: MEMBERSHIP 이벤트에 subscriberRef 누락`);
+      return false;
+    }
+    return true;
+  }
+
   @OnEvent('payments.events.v1', 'invoice.paid')
   async onInvoicePaid(@EventPayload() payload: InvoicePaidPayload) {
-    if (payload.subscriberType !== 'MEMBERSHIP' || !payload.subscriberRef || !payload.periodEnd) return;
+    if (!this.isForMembership('invoice.paid', payload)) return;
+    if (!payload.periodEnd) {
+      this.logger.warn(`[InvoiceResult] invoice.paid 드롭: periodEnd 누락 (ref=${payload.subscriberRef})`);
+      return;
+    }
 
     this.logger.log(
       `[InvoiceResult] PAID: contractId=${payload.subscriberRef}, invoiceId=${payload.invoiceId}, periodEnd=${payload.periodEnd}`,
@@ -41,7 +64,7 @@ export class InvoiceResultConsumer {
 
   @OnEvent('payments.events.v1', 'invoice.payment_failed')
   async onInvoicePaymentFailed(@EventPayload() payload: InvoicePaymentFailedPayload) {
-    if (payload.subscriberType !== 'MEMBERSHIP' || !payload.subscriberRef) return;
+    if (!this.isForMembership('invoice.payment_failed', payload)) return;
 
     this.logger.log(
       `[InvoiceResult] PAYMENT_FAILED: contractId=${payload.subscriberRef}, invoiceId=${payload.invoiceId}, attempt=${payload.attemptCount}, errorCode=${payload.errorCode}`,
@@ -58,7 +81,7 @@ export class InvoiceResultConsumer {
 
   @OnEvent('payments.events.v1', 'invoice.uncollectible')
   async onInvoiceUncollectible(@EventPayload() payload: InvoiceUncollectiblePayload) {
-    if (payload.subscriberType !== 'MEMBERSHIP' || !payload.subscriberRef) return;
+    if (!this.isForMembership('invoice.uncollectible', payload)) return;
 
     this.logger.warn(
       `[InvoiceResult] UNCOLLECTIBLE: contractId=${payload.subscriberRef}, invoiceId=${payload.invoiceId}, errorCode=${payload.errorCode}`,
@@ -72,7 +95,7 @@ export class InvoiceResultConsumer {
 
   @OnEvent('payments.events.v1', 'invoice.voided')
   async onInvoiceVoided(@EventPayload() payload: InvoiceVoidedPayload) {
-    if (payload.subscriberType !== 'MEMBERSHIP' || !payload.subscriberRef) return;
+    if (!this.isForMembership('invoice.voided', payload)) return;
 
     this.logger.warn(
       `[InvoiceResult] VOIDED: contractId=${payload.subscriberRef}, invoiceId=${payload.invoiceId}, reason=${payload.reason}`,
@@ -82,7 +105,7 @@ export class InvoiceResultConsumer {
 
   @OnEvent('payments.events.v1', 'mandate.rejected')
   async onMandateRejected(@EventPayload() payload: MandateRejectedPayload) {
-    if (payload.subscriberType !== 'MEMBERSHIP' || !payload.subscriberRef) return;
+    if (!this.isForMembership('mandate.rejected', payload)) return;
 
     this.logger.warn(
       `[InvoiceResult] MANDATE_REJECTED: contractId=${payload.subscriberRef}, invoiceId=${payload.invoiceId ?? '-'}, reasonCode=${payload.reasonCode}`,

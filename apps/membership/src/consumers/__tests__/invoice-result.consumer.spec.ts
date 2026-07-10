@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { InvoiceResultConsumer } from '../invoice-result.consumer';
 
 function makeConsumer() {
@@ -80,5 +81,14 @@ describe('InvoiceResultConsumer 라우팅', () => {
     await consumer.onMandateRejected({ invoiceId: 'i', subscriberType: 'MEMBERSHIP' });
     expect(handler.handlePaid).not.toHaveBeenCalled();
     expect(handler.handleMandateRejected).not.toHaveBeenCalled();
+  });
+
+  it('예상치 못한 subscriberType 은 조용히 버리지 않고 경고로 남긴다', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { consumer, handler } = makeConsumer();
+    await consumer.onInvoiceUncollectible({ invoiceId: 'i', subscriberType: 'PARTNER', subscriberRef: 'x' } as never);
+    expect(handler.handleUncollectible).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('subscriberType=PARTNER'));
+    warn.mockRestore();
   });
 });
