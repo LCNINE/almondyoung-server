@@ -6,7 +6,8 @@ import { HomeQuickLinks } from "../components/quick-links"
 import { HomeSection } from "../components/shared/home-section"
 import { CategoryBestProductsWrapper } from "./best-categories"
 import { InterestCategoriesSlot } from "./interest-categories"
-import { WelcomeDealWrapper } from "./welcome-deals"
+// import { WelcomeDealWrapper } from "./welcome-deals" // 웰컴딜 보류로 홈 섹션 숨김
+
 import MembershipBanner from "../components/banner/membership-banner"
 
 /*
@@ -158,14 +159,14 @@ export async function HomeLogoutTemplate({
       {/* 멤버쉽 배너 */}
       <MembershipBanner />
 
-      {/* 웰컴 딜 섹션 - 신규 회원 대상 할인 상품 */}
-      <HomeSection>
+      {/* 웰컴 딜 섹션 - 웰컴딜 보류로 숨김 (재개 시 주석 해제) */}
+      {/* <HomeSection>
         <ErrorBoundary fallback={<div>웰컴 딜 섹션을 불러오지 못했어요.</div>}>
           <Suspense fallback={<MainSectionSkeleton />}>
             <WelcomeDealWrapper countryCode={countryCode} />
           </Suspense>
         </ErrorBoundary>
-      </HomeSection>
+      </HomeSection> */}
     </div>
   )
 }
