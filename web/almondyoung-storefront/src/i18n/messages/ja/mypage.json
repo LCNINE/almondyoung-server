@@ -666,6 +666,24 @@
       "mandatePendingNotice": "お支払い口座を銀行で確認中です（1～2営業日）。メンバーシップはすでにご利用いただけます。確認完了後に初回のお支払いが引き落とされます。",
       "paymentActionCta": "決済手段を確認する"
     },
+    "invoices": {
+      "title": "定期決済の請求履歴",
+      "retry": "再決済する",
+      "retrying": "再試行中...",
+      "retrySuccess": "再決済をリクエストしました。まもなくステータスが更新されます。",
+      "retryError": "再決済のリクエストに失敗しました。しばらくしてから再度お試しください。",
+      "status": {
+        "DRAFT": "準備中",
+        "OPEN": "請求予定",
+        "MANDATE_PENDING": "口座確認中",
+        "ATTEMPTING": "決済処理中",
+        "PAST_DUE": "決済失敗",
+        "PAID": "決済完了",
+        "UNCOLLECTIBLE": "未払い",
+        "MANDATE_REJECTED": "口座登録拒否",
+        "VOID": "取消済み"
+      }
+    },
     "stats": {
       "monthlySavings": "今月の節約金額",
       "monthlyOrders": "今月の注文件数",

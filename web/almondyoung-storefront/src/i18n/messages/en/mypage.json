@@ -666,6 +666,24 @@
       "mandatePendingNotice": "Your bank account is being verified (1–2 business days). Your membership is active now; the first payment will be withdrawn after verification.",
       "paymentActionCta": "Review payment method"
     },
+    "invoices": {
+      "title": "Billing history",
+      "retry": "Retry payment",
+      "retrying": "Retrying...",
+      "retrySuccess": "Payment retry requested. The status will update shortly.",
+      "retryError": "Failed to request retry. Please try again later.",
+      "status": {
+        "DRAFT": "Preparing",
+        "OPEN": "Scheduled",
+        "MANDATE_PENDING": "Verifying account",
+        "ATTEMPTING": "Processing",
+        "PAST_DUE": "Payment failed",
+        "PAID": "Paid",
+        "UNCOLLECTIBLE": "Unpaid",
+        "MANDATE_REJECTED": "Account rejected",
+        "VOID": "Voided"
+      }
+    },
     "stats": {
       "monthlySavings": "Savings this month",
       "monthlyOrders": "Orders this month",

@@ -24,6 +24,7 @@ import type {
   RangeSavingsDto,
 } from "@lib/types/dto/membership-savings"
 import MembershipHistorySection from "./subscriber-history-section"
+import MembershipInvoicesSection from "./membership-invoices-section"
 import type { PlanWithTier } from "@lib/types/membership"
 
 /**
@@ -143,6 +144,7 @@ export default function SubscriberSection({
         benefits={buildPlanBenefits(yearlyPlan)}
         variant="annual"
       />
+      <MembershipInvoicesSection />
       <MembershipHistorySection
         rangeSavings={rangeSavings}
         subscriptionHistory={subscriptionHistory}

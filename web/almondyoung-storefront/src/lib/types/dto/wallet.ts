@@ -309,3 +309,31 @@ export type IssuedCashReceiptDto = {
   errorMessage: string | null
   createdAt: string
 }
+
+/** 고객 본인 인보이스(멤버십 정기결제 청구) — GET /v1/me/invoices */
+export type MyInvoiceStatus =
+  | "DRAFT"
+  | "OPEN"
+  | "MANDATE_PENDING"
+  | "ATTEMPTING"
+  | "PAST_DUE"
+  | "PAID"
+  | "UNCOLLECTIBLE"
+  | "MANDATE_REJECTED"
+  | "VOID"
+
+export interface MyInvoiceDto {
+  invoiceId: string
+  status: MyInvoiceStatus
+  periodStart: string
+  periodEnd: string
+  amountDue: number
+  currency: string
+  dueDate: string
+  attemptCount: number
+  maxAttempts: number
+  nextAttemptAt: string | null
+  lastErrorCode: string | null
+  isRetryable: boolean
+  createdAt: string
+}

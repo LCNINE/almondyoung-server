@@ -16,6 +16,7 @@ import type {
   CreateIntentResponseDto,
   IntentDto,
   IssuedCashReceiptDto,
+  MyInvoiceDto,
   OnboardHmsBnplResponse,
   PointsBalanceDto,
   PointsEventRowDto,
@@ -195,6 +196,37 @@ export async function getCmsBillingMethodStatuses(): Promise<
   } catch {
     return []
   }
+}
+
+/**
+ * 고객 본인 멤버십 인보이스 목록 조회 (구독 계약이 없으면 빈 배열)
+ */
+export async function getMyInvoices(): Promise<MyInvoiceDto[]> {
+  try {
+    return await api<MyInvoiceDto[]>("wallet", "/v1/me/invoices", {
+      method: "GET",
+      cache: "no-store",
+      withAuth: true,
+    })
+  } catch {
+    return []
+  }
+}
+
+/**
+ * 미납(PAST_DUE) 인보이스 즉시 재시도. mutation 이므로 UNAUTHORIZED 는 re-throw 해 error.tsx 로 전파.
+ */
+export async function retryInvoicePaymentAction(
+  invoiceId: string
+): Promise<{ invoiceId: string; retried: boolean }> {
+  return await api<{ invoiceId: string; retried: boolean }>(
+    "wallet",
+    `/v1/me/invoices/${invoiceId}/retry`,
+    {
+      method: "POST",
+      withAuth: true,
+    }
+  )
 }
 
 /**
