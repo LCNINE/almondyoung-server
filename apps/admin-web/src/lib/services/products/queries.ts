@@ -633,3 +633,23 @@ export const useNotice = (id: string) => {
     staleTime: 2 * 60 * 1000,
   });
 };
+
+// ===== 대량등록(엑셀 임포트) 쿼리 =====
+
+/** 임포트 세션 목록(페이지네이션, limit 20 고정) */
+export const useImportSessions = (page: number) => {
+  return useQuery({
+    queryKey: productQueryKeys.productImportsList(page),
+    queryFn: () => products.productImport.getSessions(page, 20),
+    staleTime: 30 * 1000,
+  });
+};
+
+/** 임포트 세션 상세(성공/실패 아이템 전체) */
+export const useImportSession = (sessionId: string) => {
+  return useQuery({
+    queryKey: productQueryKeys.productImport(sessionId),
+    queryFn: () => products.productImport.getSession(sessionId),
+    enabled: !!sessionId,
+  });
+};

@@ -162,4 +162,11 @@ export const productQueryKeys = {
   pendingApprovals: ['approval', 'pending'] as const,
   approvalHistory: (masterId: string) =>
     ['approval', 'history', masterId] as const,
+
+  // 대량등록(엑셀 임포트) 관련
+  productImports: ['product-imports'] as const,
+  productImportsList: (page: number) =>
+    [...productQueryKeys.productImports, 'list', page] as const,
+  productImport: (sessionId: string) =>
+    [...productQueryKeys.productImports, sessionId] as const,
 } as const;
