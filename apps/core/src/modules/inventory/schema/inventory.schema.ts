@@ -42,8 +42,8 @@ export const transitionTypeEnum = pgEnum('transition_type', [
   'MOVE', // 이동 (창고내/창고간 통합)
 
   // 품질 관리
-  'MARK_DEFECT', // ON_HAND → DEFECTIVE (불량 지정)
-  'REWORK_GOOD', // DEFECTIVE → ON_HAND (불량 양품화)
+  'MARK_DEFECT', // ON_HAND → DEFECTIVE (불량 지정) — DEAD(producer 0, 작업4 이후), 제거 예정: dev DB 복구 후(현황판 작업8b)
+  'REWORK_GOOD', // DEFECTIVE → ON_HAND (불량 양품화) — DEAD(producer 0, 작업4 이후), 제거 예정: dev DB 복구 후(현황판 작업8b)
   'SCRAP', // (ON_HAND|DEFECTIVE) → null (폐기)
 
   // 수동 조정 (reason 필드로 상세 사유 기록)
@@ -51,44 +51,14 @@ export const transitionTypeEnum = pgEnum('transition_type', [
   'ADJUST_DOWN', // ON_HAND → null (재고 감소)
 ]);
 
-// 확장된 이벤트 타입
-export const eventTypeEnum = pgEnum('event_type', [
-  // 입고 관련
-  'IN', // 일반 입고
-  'IN_DOMESTIC', // 국내 거래처 입고
-  'IN_OVERSEAS', // 해외 거래처 입고
-  'IN_RETURN', // 반품 입고
-
-  // 출고 관련
-  'OUT', // 일반 출고
-  'OUT_ORDER', // 주문 출고
-  'OUT_DAMAGE', // 파손 출고
-  'OUT_LOSS', // 분실 출고
-  'OUT_DISPOSAL', // 폐기 출고
-
-  // 이동 관련
-  'MOVE', // 일반 이동
-  'MOVE_INTER_WAREHOUSE', // 창고 간 이동
-  'MOVE_INTRA_WAREHOUSE', // 창고 내 이동
-
-  // 조정 관련
-  'ADJUST', // 일반 조정
-  'ADJUST_MANUAL', // 관리자 수동 조정
-  'ADJUST_INVENTORY', // 재고 실사 조정
-
-  // 예약 관련
-  'RESERVE',
-  'CONFIRM',
-  'RELEASE',
-  'CANCEL',
-]);
-
 // 창고 타입 추가
 export const warehouseTypeEnum = pgEnum('warehouse_type', ['domestic', 'overseas', 'bonded', 'return']);
 
+// DEAD 값(producer 0) — 제거 예정: dev DB 복구 후(현황판 작업8b). 'pending'(컬럼 default이나 실 insert는 항상 'confirmed')·'active'. 라이브: confirmed/released.
 export const reservationStatusEnum = pgEnum('reservation_status', ['pending', 'confirmed', 'released', 'active']);
 export const taskStatusEnum = pgEnum('task_status', ['created', 'picking', 'packed', 'shipped', 'canceled']);
 export const unavailableReasonEnum = pgEnum('unavailable_reason', ['pb', 'foreign', 'low_margin']);
+// DEAD 값(producer 0) — 제거 예정: dev DB 복구 후(현황판 작업8b). 'in_transit'·'failed'. 라이브: open/shipped/delivered/canceled. (delivery-provider의 DeliveryStatus는 별개 타입)
 export const shipmentStatusEnum = pgEnum('shipment_status', ['open', 'shipped', 'in_transit', 'delivered', 'failed', 'canceled']);
 export const carrierEnum = pgEnum('carrier', ['CJ', 'HANJIN', 'LOTTE', 'LOGEN', 'KDEXP', 'CJGLS']);
 export const returnStatusEnum = pgEnum('return_status', [
@@ -181,6 +151,8 @@ export const eventTypeOrderEnum = pgEnum('event_type_order', [
 ]);
 
 export const taskPriorityEnum = pgEnum('task_priority', ['normal', 'high', 'urgent']);
+// DEAD 값(producer 0) — 제거 예정: dev DB 복구 후(현황판 작업8b). 'reserving'·'labeled'·'inspecting'·'inspected'·'pending'.
+// (라이브: created/ready/unfulfillable/allocated/picking/picked/invoiced/shipped/completed/canceled/forwarded. 'inspected' 는 invoice.service.ts 게이트 reader 잔존이나 도달 불가)
 export const fulfillmentStatusEnum = pgEnum('fulfillment_status', [
   'created',
   'reserving',
@@ -1385,84 +1357,6 @@ export const stockReservations = pgTable(
 );
 
 /*───────────────────────────
- * OUTBOUND TASKS
- *──────────────────────────*/
-export const outboundTasks = pgTable('outbound_tasks', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  warehouseId: uuid('warehouse_id')
-    .references(() => warehouses.id)
-    .notNull(),
-  mergeGroupId: varchar('merge_group_id', { length: 64 }).references(() => mergeGroups.id, { onDelete: 'set null' }), // 합배송 그룹 참조
-  status: taskStatusEnum('status').notNull().default('created'),
-  priority: taskPriorityEnum('priority').notNull().default('normal'),
-
-  totalItems: integer('total_items').notNull().default(0), // 총 품목 수
-  totalQuantity: integer('total_quantity').notNull().default(0), // 총 수량
-
-  assignedTo: uuid('assigned_to'), // 작업자 ID
-  requiresGiftWrap: boolean('requires_gift_wrap').notNull().default(false), // 선물포장 필요
-  temperatureControlled: boolean('temperature_controlled').notNull().default(false), // 온도 제어 필요
-
-  unavailableReason: unavailableReasonEnum('unavailable_reason'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
-
-// 바구니와 주문 연결 테이블 추가
-export const outboundTaskOrders = pgTable(
-  'outbound_task_orders',
-  {
-    taskId: uuid('task_id')
-      .references(() => outboundTasks.id, { onDelete: 'cascade' })
-      .notNull(),
-    orderId: uuid('order_id')
-      .references(() => salesOrders.id, { onDelete: 'cascade' })
-      .notNull(),
-
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    pk: primaryKey(t.taskId, t.orderId),
-  }),
-);
-
-// outbound_task_items 수정
-export const outboundTaskItems = pgTable(
-  'outbound_task_items',
-  {
-    taskId: uuid('task_id')
-      .references(() => outboundTasks.id, { onDelete: 'cascade' })
-      .notNull(),
-    skuId: uuid('sku_id')
-      .references(() => skus.id)
-      .notNull(),
-
-    quantityPending: integer('quantity_pending').notNull().default(0),
-    quantityPicking: integer('quantity_picking').notNull().default(0),
-    quantityPicked: integer('quantity_picked').notNull().default(0),
-
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    pk: primaryKey(t.taskId, t.skuId),
-  }),
-);
-
-export const outboundTaskLines = pgTable('outbound_task_lines', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  taskId: uuid('task_id')
-    .references(() => outboundTasks.id, { onDelete: 'cascade' })
-    .notNull(),
-  skuId: uuid('sku_id')
-    .references(() => skus.id, { onDelete: 'restrict' })
-    .notNull(),
-  quantity: integer('quantity').notNull(),
-  locationId: uuid('location_id').references(() => locations.id, { onDelete: 'set null' }),
-  scannedBarcode: varchar('scanned_barcode', { length: 64 }),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
-
-/*───────────────────────────
  * SHIPMENTS
  *──────────────────────────*/
 export const shipments = pgTable(
@@ -2262,10 +2156,6 @@ export const wmsTables = {
   stockReservations,
   fulfillmentOrders,
   fulfillmentOrderCreationBacklogs,
-  outboundTasks,
-  outboundTaskOrders,
-  outboundTaskItems,
-  outboundTaskLines,
   shipments,
   shipmentLines,
   shipmentTracking,
@@ -2400,8 +2290,6 @@ export const skusRelations = relations(skus, ({ one, many }) => ({
   stockReservations: many(stockReservations),
   // Order relations
   fulfillmentOrderItems: many(fulfillmentOrderItems),
-  outboundTaskItems: many(outboundTaskItems),
-  outboundTaskLines: many(outboundTaskLines),
   // Purchase/Inbound relations
   purchaseOrderLines: many(purchaseOrderLines),
   purchaseOrderCart: many(purchaseOrderCart),
@@ -2490,7 +2378,6 @@ export const warehousesRelations = relations(warehouses, ({ many }) => ({
   stockLedgers: many(stockLedgers),
   stockReservations: many(stockReservations),
   fulfillmentOrders: many(fulfillmentOrders),
-  outboundTasks: many(outboundTasks),
   outboundBatches: many(outboundBatches),
   movementJobs: many(movementJobs),
   inboundReceipts: many(inboundReceipts),
@@ -2539,7 +2426,6 @@ export const locationsRelations = relations(locations, ({ one, many }) => ({
   inboundReceipts: many(inboundReceipts),
   inboundReceiptLines: many(inboundReceiptLines),
   movementJobLines: many(movementJobLines),
-  outboundTaskLines: many(outboundTaskLines),
   skusPrimary: many(skus, {
     relationName: 'primaryLocation',
   }),
@@ -2642,7 +2528,6 @@ export const salesOrdersRelations = relations(salesOrders, ({ many }) => ({
   fulfillmentOrderCreationBacklogs: many(fulfillmentOrderCreationBacklogs),
   orderEvents: many(orderEvents),
   cancellations: many(salesOrderCancellations),
-  outboundTaskOrders: many(outboundTaskOrders),
   returns: many(returns),
 }));
 
@@ -2669,10 +2554,6 @@ export const salesOrderCancellationsRelations = relations(salesOrderCancellation
     fields: [salesOrderCancellations.salesOrderId],
     references: [salesOrders.id],
   }),
-}));
-
-export const mergeGroupsRelations = relations(mergeGroups, ({ many }) => ({
-  outboundTasks: many(outboundTasks),
 }));
 
 // Fulfillment Order Relations
@@ -2725,58 +2606,6 @@ export const fulfillmentOrderItemsRelations = relations(fulfillmentOrderItems, (
     references: [productSkuMappingSnapshots.id],
   }),
   stockReservations: many(stockReservations),
-}));
-
-// Outbound Relations
-export const outboundTasksRelations = relations(outboundTasks, ({ one, many }) => ({
-  warehouse: one(warehouses, {
-    fields: [outboundTasks.warehouseId],
-    references: [warehouses.id],
-  }),
-  mergeGroup: one(mergeGroups, {
-    fields: [outboundTasks.mergeGroupId],
-    references: [mergeGroups.id],
-  }),
-  outboundTaskOrders: many(outboundTaskOrders),
-  outboundTaskItems: many(outboundTaskItems),
-  outboundTaskLines: many(outboundTaskLines),
-}));
-
-export const outboundTaskOrdersRelations = relations(outboundTaskOrders, ({ one }) => ({
-  task: one(outboundTasks, {
-    fields: [outboundTaskOrders.taskId],
-    references: [outboundTasks.id],
-  }),
-  order: one(salesOrders, {
-    fields: [outboundTaskOrders.orderId],
-    references: [salesOrders.id],
-  }),
-}));
-
-export const outboundTaskItemsRelations = relations(outboundTaskItems, ({ one }) => ({
-  task: one(outboundTasks, {
-    fields: [outboundTaskItems.taskId],
-    references: [outboundTasks.id],
-  }),
-  sku: one(skus, {
-    fields: [outboundTaskItems.skuId],
-    references: [skus.id],
-  }),
-}));
-
-export const outboundTaskLinesRelations = relations(outboundTaskLines, ({ one }) => ({
-  task: one(outboundTasks, {
-    fields: [outboundTaskLines.taskId],
-    references: [outboundTasks.id],
-  }),
-  sku: one(skus, {
-    fields: [outboundTaskLines.skuId],
-    references: [skus.id],
-  }),
-  location: one(locations, {
-    fields: [outboundTaskLines.locationId],
-    references: [locations.id],
-  }),
 }));
 
 export const outboundBatchesRelations = relations(outboundBatches, ({ one, many }) => ({
@@ -3114,7 +2943,6 @@ export const wmsRelations = {
   salesOrderLinesRelations,
   orderEventsRelations,
   salesOrderCancellationsRelations,
-  mergeGroupsRelations,
 
   // Fulfillment Order Relations
   fulfillmentOrdersRelations,
@@ -3122,10 +2950,6 @@ export const wmsRelations = {
   fulfillmentOrderItemsRelations,
 
   // Outbound Relations
-  outboundTasksRelations,
-  outboundTaskOrdersRelations,
-  outboundTaskItemsRelations,
-  outboundTaskLinesRelations,
   outboundBatchesRelations,
   fulfillmentOrderBatchesRelations,
 
@@ -3295,19 +3119,6 @@ export type NewFulfillmentOrderCreationBacklog = InferInsertModel<typeof fulfill
 
 export type FulfillmentOrderItem = InferSelectModel<typeof fulfillmentOrderItems>;
 export type NewFulfillmentOrderItem = InferInsertModel<typeof fulfillmentOrderItems>;
-
-// Outbound Types
-export type OutboundTask = InferSelectModel<typeof outboundTasks>;
-export type NewOutboundTask = InferInsertModel<typeof outboundTasks>;
-
-export type OutboundTaskOrder = InferSelectModel<typeof outboundTaskOrders>;
-export type NewOutboundTaskOrder = InferInsertModel<typeof outboundTaskOrders>;
-
-export type OutboundTaskItem = InferSelectModel<typeof outboundTaskItems>;
-export type NewOutboundTaskItem = InferInsertModel<typeof outboundTaskItems>;
-
-export type OutboundTaskLine = InferSelectModel<typeof outboundTaskLines>;
-export type NewOutboundTaskLine = InferInsertModel<typeof outboundTaskLines>;
 
 export type OutboundBatch = InferSelectModel<typeof outboundBatches>;
 export type NewOutboundBatch = InferInsertModel<typeof outboundBatches>;
