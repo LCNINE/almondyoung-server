@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDb, DbService } from '@app/db';
 import { NotFoundError } from '@app/shared';
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, count, desc, eq, isNull } from 'drizzle-orm';
 import {
   type PimSchema,
   productCategories,
@@ -36,17 +36,16 @@ export class ProductImportSessionReader {
 
   async getSessions(page = 1, limit = 20, tx?: DbTransaction) {
     const offset = (page - 1) * limit;
-    const data = await this.db.run(
-      (trx) =>
-        trx
-          .select()
-          .from(productImportSessions)
-          .orderBy(desc(productImportSessions.createdAt))
-          .limit(limit)
-          .offset(offset),
-      tx,
-    );
-    return { data, total: data.length, page, limit };
+    return this.db.run(async (trx) => {
+      const data = await trx
+        .select()
+        .from(productImportSessions)
+        .orderBy(desc(productImportSessions.createdAt))
+        .limit(limit)
+        .offset(offset);
+      const [totalRow] = await trx.select({ value: count() }).from(productImportSessions);
+      return { data, total: Number(totalRow?.value ?? 0), page, limit };
+    }, tx);
   }
 
   async getSession(sessionId: string, tx?: DbTransaction): Promise<{ session: SessionRow; items: ItemRow[] }> {
