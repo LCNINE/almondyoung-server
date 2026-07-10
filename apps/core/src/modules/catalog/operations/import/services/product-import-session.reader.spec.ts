@@ -8,7 +8,8 @@ function makeDb(rows: any[]) {
     where: () => chain,
     orderBy: () => chain,
     limit: () => chain,
-    offset: () => Promise.resolve(rows),
+    offset: () => chain,
+    then: (resolve: (v: any) => void) => resolve(rows),
   };
   return { run: (fn: any, t?: any) => (t ? fn(t) : fn({ select: () => chain })) } as any;
 }

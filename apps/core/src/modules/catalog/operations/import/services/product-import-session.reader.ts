@@ -55,8 +55,7 @@ export class ProductImportSessionReader {
         .select()
         .from(productImportSessions)
         .where(eq(productImportSessions.id, sessionId))
-        .limit(1)
-        .offset(0);
+        .limit(1);
       if (!session) throw new NotFoundError(`임포트 세션을 찾을 수 없습니다: ${sessionId}`);
       const items = await trx
         .select()
