@@ -4,7 +4,6 @@ import {
   eventStatusEnum,
   stockStateEnum,
   transitionTypeEnum,
-  eventTypeEnum,
   warehouseTypeEnum,
   reservationStatusEnum,
   taskStatusEnum,
@@ -57,9 +56,6 @@ export type StockStateEnum = (typeof stockStateValues)[number];
 
 export const transitionTypeValues = transitionTypeEnum.enumValues;
 export type TransitionTypeEnum = (typeof transitionTypeValues)[number];
-
-export const eventTypeValues = eventTypeEnum.enumValues;
-export type EventTypeEnum = (typeof eventTypeValues)[number];
 
 export const warehouseTypeValues = warehouseTypeEnum.enumValues;
 export type WarehouseTypeEnum = (typeof warehouseTypeValues)[number];
