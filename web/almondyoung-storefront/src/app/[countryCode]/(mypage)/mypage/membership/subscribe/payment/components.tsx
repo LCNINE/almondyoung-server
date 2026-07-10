@@ -35,7 +35,7 @@ import type { BillingMethodDto, CmsBillingMethodStatusDto } from "@lib/types/dto
 import { Calendar, CreditCard, Gift } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { useParams, useRouter } from "next/navigation"
-import React, { useEffect, useState, useTransition } from "react"
+import React, { useEffect, useMemo, useState, useTransition } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 import { z } from "zod"
@@ -68,19 +68,23 @@ type MembershipDiscountBenefit = MemberBenefitCommon & {
 
 type MemberBenefit = MembershipTrialBenefit | MembershipDiscountBenefit
 
-const subscriptionSchema = z.object({
-  subscriptionType: z
-    .enum(["monthly", "yearly"])
-    .optional()
-    .refine((val) => val === "monthly" || val === "yearly", {
-      message: "구독 유형을 선택해주세요",
+// 검증 메시지는 사용자 노출 문구라 호출부에서 i18n 메시지를 주입한다(CLAUDE.md zod 빌더 패턴).
+const buildSubscriptionSchema = (m: { selectType: string; agreeTerms: string }) =>
+  z.object({
+    subscriptionType: z
+      .enum(["monthly", "yearly"])
+      .optional()
+      .refine((val) => val === "monthly" || val === "yearly", {
+        message: m.selectType,
+      }),
+    billingMode: z.enum(["recurring", "one_time"]),
+    discountBenefitId: z.string().optional(),
+    agreement: z.boolean().refine((value) => value === true, {
+      message: m.agreeTerms,
     }),
-  billingMode: z.enum(["recurring", "one_time"]),
-  discountBenefitId: z.string().optional(),
-  agreement: z.boolean().refine((value) => value === true, {
-    message: "약관에 동의해주세요",
-  }),
-})
+  })
+
+type SubscriptionFormValues = z.infer<ReturnType<typeof buildSubscriptionSchema>>
 
 type MembershipFormProps = {
   monthlyPlan: {
@@ -162,27 +166,32 @@ export function MembershipForm({
     agreement: false,
   }
 
-  const form = useForm<z.infer<typeof subscriptionSchema>>({
+  // 가입 결과 토스트/검증 메시지는 payment-method 화면과 동일 문구라 같은 네임스페이스를 공유한다.
+  const tPm = useTranslations("mypage.membershipPaymentMethod")
+  const subscriptionSchema = useMemo(
+    () => buildSubscriptionSchema({ selectType: tPm("selectSubscriptionType"), agreeTerms: tPm("agreeTermsRequired") }),
+    [tPm]
+  )
+
+  const form = useForm<SubscriptionFormValues>({
     mode: "onChange",
     resolver: zodResolver(subscriptionSchema),
     defaultValues: formDefaultValues,
   })
 
   const [isSubmitting, startTransition] = useTransition()
-  // 가입 결과 토스트는 payment-method 화면과 동일 메시지라 같은 키를 공유한다.
-  const tPm = useTranslations("mypage.membershipPaymentMethod")
 
-  function onSubmit(data: z.infer<typeof subscriptionSchema>) {
+  function onSubmit(data: SubscriptionFormValues) {
     // 인증 필요한 Server Action 호출은 startTransition 안에서 실행해야
     // catch에서 re-throw한 UNAUTHORIZED가 error.tsx로 전파돼 토큰 복구가 동작한다.
     startTransition(async () => {
     try {
       if (!user) {
-        toast.error("로그인이 필요합니다.")
+        toast.error(tPm("loginRequired"))
         return
       }
       if (!data.subscriptionType) {
-        toast.error("구독 유형을 선택해주세요.")
+        toast.error(tPm("selectSubscriptionType"))
         return
       }
 
@@ -195,7 +204,7 @@ export function MembershipForm({
 
       if (selectedBillingMethodId) {
         if (billingMode === "one_time" && !policyAgreed) {
-          toast.error("결제 및 환불 정책에 동의해주세요.")
+          toast.error(tPm("agreePolicyRequired"))
           return
         }
         const attemptId = crypto.randomUUID()
@@ -209,17 +218,17 @@ export function MembershipForm({
               : tPm("recurringStartedSuccess")
           )
         } else {
-          toast.success("멤버십 가입이 완료되었습니다.")
+          toast.success(tPm("membershipJoinedSuccess"))
         }
         router.push(`/${countryCode}/mypage/membership/subscribe/success`)
       } else {
         // 신규 결제수단: 정기결제는 자동이체 수단 먼저 등록 필요, 한번만결제는 wallet-web으로 바로 이동
         if (billingMode === "recurring") {
-          toast.info("정기결제를 시작하려면 먼저 자동이체 수단을 등록해주세요.")
+          toast.info(tPm("registerAutoDebitFirst"))
           router.push(`/${countryCode}/mypage/membership/payment-method?redirect=subscribe&planId=${selectedPlanId}`)
         } else {
           if (!policyAgreed) {
-            toast.error("결제 및 환불 정책에 동의해주세요.")
+            toast.error(tPm("agreePolicyRequired"))
             return
           }
           const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
@@ -238,7 +247,7 @@ export function MembershipForm({
       if (error instanceof HttpApiError) {
         toast.error(error.message)
       } else {
-        toast.error(error instanceof Error ? error.message : "멤버십 등록에 실패했습니다.")
+        toast.error(error instanceof Error ? error.message : tPm("membershipJoinFailed"))
       }
       console.error(error)
     }
@@ -279,20 +288,19 @@ export function MembershipForm({
   }, [recurringDisabled, form])
 
   function getSubmitButtonLabel() {
-    if (!form.watch("agreement")) return "약관에 동의해주세요"
-    if (billingMode === "one_time" && !policyAgreed) return "결제 및 환불 정책에 동의해주세요"
+    if (!form.watch("agreement")) return tPm("agreeTermsRequired")
+    if (billingMode === "one_time" && !policyAgreed) return tPm("agreePolicyRequired")
 
     if (billingMode === "recurring") {
       if (selectedBillingMethodId) {
-        const trialLabel = totalTrialDays > 0 ? `${totalTrialDays}일 무료체험` : "정기결제"
-        return `${trialLabel} 시작하기`
+        return totalTrialDays > 0 ? tPm("startWithTrial", { days: totalTrialDays }) : tPm("startRecurring")
       }
-      if (pendingBlocksSubmit) return "심사 완료 후 정기결제 가능"
-      return invoiceBillingEnabled ? "자동이체 계좌 등록하고 바로 시작하기" : "자동이체 계좌 심사 신청하기"
+      if (pendingBlocksSubmit) return tPm("recurringAfterReview")
+      return invoiceBillingEnabled ? tPm("registerAndStart") : tPm("applyAutoDebitReview")
     }
 
-    if (selectedBillingMethodId) return "이 결제수단으로 구독하기"
-    return "새 결제수단으로 결제하기"
+    if (selectedBillingMethodId) return tPm("subscribeWithThisMethod")
+    return tPm("payWithNewMethod")
   }
   const hasPrice = subscriptionType == "monthly" || subscriptionType == "yearly"
   let firstPrice =
