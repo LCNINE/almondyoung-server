@@ -206,11 +206,21 @@ export function OrderList({
     !isPending
   ) {
     return (
-      <div className="min-h-screen px-3 py-4 bg-muted md:bg-transparent md:px-6">
+      <div
+        className={cn(
+          "bg-muted md:bg-transparent",
+          embedded ? "md:px-0 md:py-0" : "min-h-screen px-3 py-4 md:px-6"
+        )}
+      >
         <div className="hidden md:block">
           <PageTitle>{tList("title")}</PageTitle>
         </div>
-        <div className="flex min-h-[400px] flex-col items-center justify-center gap-4">
+        <div
+          className={cn(
+            "flex flex-col items-center justify-center gap-4",
+            embedded ? "min-h-[240px]" : "min-h-[400px]"
+          )}
+        >
           <Package className="w-12 h-12 text-gray-300" />
           <div className="text-center">
             <p className="text-lg font-medium text-gray-600">
