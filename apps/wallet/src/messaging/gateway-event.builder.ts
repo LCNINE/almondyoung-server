@@ -101,6 +101,7 @@ export function subscriberExtraFromMetadata(metadata: unknown): Record<string, u
 
 export const GATEWAY_AGGREGATE_TYPE = 'PaymentGateway';
 
+// payment.intent.* 문자열은 event-contracts 의 PAYMENT_STREAM 에 동일하게 선언돼 있다(계약 SoT).
 export const GatewayEventType = {
   INTENT_CREATED: 'payment.intent.created',
   INTENT_AUTHORIZED: 'payment.intent.authorized',
