@@ -124,6 +124,7 @@ import { InvoiceOutcomeService } from './invoices/invoice-outcome.service';
 import { InvoiceExecutorService } from './invoices/invoice-executor.service';
 import { InvoiceCommandConsumer } from './invoices/invoice-command.consumer';
 import { InvoiceController } from './invoices/invoice.controller';
+import { MyInvoiceController } from './invoices/my-invoice.controller';
 import { InvoiceQueryService } from './invoices/invoice-query.service';
 
 // Dev helpers (dev/test only — ENABLE_DEV_CMS_HELPERS=true + NODE_ENV !== 'production')
@@ -407,6 +408,7 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     CmsAgreementController,
     RecurringBillingAdminController,
     InvoiceController,
+    MyInvoiceController,
     UgcCommandConsumer,
     BillingChargeConsumer,
     InvoiceCommandConsumer,
