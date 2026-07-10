@@ -109,7 +109,7 @@ DRAFT ─▶ OPEN ─▶ MANDATE_PENDING ─▶ ATTEMPTING ─▶ PAID (terminal
              │        │  └───(승인 전 재시도, 더닝 아님)
              │        ▼                  ▼
              │   MANDATE_REJECTED    PAST_DUE ─▶ (재시도 소진) ─▶ UNCOLLECTIBLE (terminal)
-             │     (terminal)                          
+             │     (terminal)
              └─▶ VOID (terminal; 구독 취소/무효화)
 ```
 
