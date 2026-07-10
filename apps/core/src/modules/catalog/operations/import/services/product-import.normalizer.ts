@@ -113,10 +113,11 @@ export class ProductImportNormalizer {
     let parentId: string | null = null;
     let current: CategoryNode | null = null;
     for (const segment of segments) {
-      const siblings = (byParent.get(parentId) ?? []).filter((c) => c.name === segment);
-      if (siblings.length !== 1) return null; // 미존재 또는 모호
-      current = siblings[0];
-      parentId = current.id;
+      const matches = (byParent.get(parentId) ?? []).filter((c) => c.name === segment);
+      const only = matches.length === 1 ? matches[0] : undefined;
+      if (!only) return null; // 미존재 또는 모호
+      current = only;
+      parentId = only.id;
     }
     if (!current) return null;
     return { id: current.id, names: this.ancestorNames(current, byId) };

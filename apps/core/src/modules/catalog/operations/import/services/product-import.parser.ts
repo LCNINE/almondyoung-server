@@ -12,7 +12,19 @@ export class ProductImportParser {
   async parse(buffer: Buffer): Promise<ParsedWorkbook> {
     const wb = new ExcelJS.Workbook();
     try {
-      await wb.xlsx.load(buffer);
+      // exceljs's index.d.ts ships its own ambient `interface Buffer extends ArrayBuffer {}`
+      // shim (for use without @types/node). It merges with @types/node's generic
+      // `Buffer<T>`, and TypeScript expands that merge to a hybrid type only inside
+      // exceljs's own file, so no cast of the *value* on our side (e.g. `buffer as
+      // Buffer<ArrayBuffer>`, even `as unknown as Buffer`) can satisfy `.load()`'s
+      // declared param — every attempt still triggers TS2345. The runtime value is a
+      // real Node Buffer and `.load()` works correctly with it; we only need to
+      // re-declare the method's call-site type locally (outside exceljs's poisoned
+      // merge) so `buffer: Buffer` type-checks against it.
+      const xlsx = wb.xlsx as unknown as {
+        load(buffer: Buffer, options?: Partial<ExcelJS.XlsxReadOptions>): Promise<ExcelJS.Workbook>;
+      };
+      await xlsx.load(buffer);
     } catch {
       throw new BadRequestError('유효한 엑셀(.xlsx) 파일이 아닙니다.');
     }
