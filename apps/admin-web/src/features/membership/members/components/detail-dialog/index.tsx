@@ -46,6 +46,7 @@ import {
   useAdjustEntitlement,
   useForceCancelSubscription,
   useRetryBilling,
+  useReconcileInvoice,
   useGrantSubscriptionByDays,
 } from '@/lib/services/membership';
 import { useUserNames } from '@/hooks/use-user-names';
@@ -607,7 +608,22 @@ function BillingTab({
 }) {
   const { data: events, isLoading } = useMemberBillingEvents(userId);
   const retryBillingMutation = useRetryBilling();
+  const reconcileMutation = useReconcileInvoice();
   const [retryConfirmOpen, setRetryConfirmOpen] = useState(false);
+  const [reconcileResult, setReconcileResult] = useState<string | null>(null);
+
+  const handleReconcile = async () => {
+    setReconcileResult(null);
+    try {
+      const res = await reconcileMutation.mutateAsync(contractId);
+      setReconcileResult(res.invoiceStatus ?? '미발행(대기)');
+      toast.success(`정합화 완료 — 권위 결제 상태: ${res.invoiceStatus ?? '인보이스 미발행(대기)'}`);
+    } catch (err: unknown) {
+      const anyErr = err as { response?: { data?: { message?: string } }; message?: string };
+      const serverMsg = anyErr?.response?.data?.message ?? anyErr?.message;
+      toast.error(serverMsg && typeof serverMsg === 'string' ? serverMsg : '정합화에 실패했습니다.');
+    }
+  };
 
   const handleRetry = async () => {
     try {
@@ -632,8 +648,8 @@ function BillingTab({
 
   return (
     <div className="space-y-3">
-      {allowRetry && (
-        <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        {allowRetry && (
           <Button
             size="sm"
             variant="outline"
@@ -643,6 +659,22 @@ function BillingTab({
           >
             {retryBillingMutation.isPending ? '처리 중...' : '결제 수동 재시도'}
           </Button>
+        )}
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={handleReconcile}
+          disabled={reconcileMutation.isPending}
+          title="wallet 인보이스 권위 상태를 되물어 구독(자격)↔인보이스(결제) 발산을 해소 (INVOICE 계약 전용)"
+          className="text-xs h-7"
+        >
+          {reconcileMutation.isPending ? '정합화 중...' : '강제 정합화'}
+        </Button>
+      </div>
+      {reconcileResult && (
+        <div className="rounded-md border border-dashed p-2 text-xs text-muted-foreground">
+          권위 결제 상태(인보이스): <span className="font-medium text-foreground">{reconcileResult}</span> — 자격은 이
+          상태에 맞춰 정합화되었습니다.
         </div>
       )}
       <Dialog

@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { walletApi } from '@/lib/api/domains/wallet';
+import { membershipApi } from '@/lib/api/domains/membership';
 import {
   AdminRecurringInvoiceRow,
   AdminRecurringInvoiceStatus,
@@ -86,6 +87,20 @@ export function RecurringInvoicesView() {
     },
     onError: (err: unknown) =>
       toast.error(err instanceof Error ? err.message : '집행에 실패했습니다.'),
+  });
+
+  // membership 이 자기 멱등키로 wallet 인보이스 권위 상태를 즉시 되물어 구독(자격)↔인보이스(결제) 발산을 해소.
+  const reconcile = useMutation({
+    mutationFn: (contractId: string) => membershipApi.reconcileInvoice(contractId),
+    onSuccess: (res) => {
+      invalidate();
+      const label = res.invoiceStatus
+        ? STATUS_LABEL[res.invoiceStatus as AdminRecurringInvoiceStatus]?.label ?? res.invoiceStatus
+        : '인보이스 미발행(대기)';
+      toast.success(`정합화 완료 — 권위 상태: ${label}`);
+    },
+    onError: (err: unknown) =>
+      toast.error(err instanceof Error ? err.message : '정합화에 실패했습니다.'),
   });
 
   const rows = data?.data ?? [];
@@ -244,16 +259,27 @@ export function RecurringInvoicesView() {
                     </td>
                     <td className="p-2 text-xs">{r.billingMethodDisplayName ?? '-'}</td>
                     <td className="p-2 text-right">
-                      {r.isExecutable ? (
+                      <div className="flex items-center justify-end gap-1">
+                        {r.isExecutable ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={execute.isPending}
+                            onClick={() => execute.mutate(r.id)}
+                          >
+                            즉시 집행
+                          </Button>
+                        ) : null}
                         <Button
-                          variant="outline"
+                          variant="ghost"
                           size="sm"
-                          disabled={execute.isPending}
-                          onClick={() => execute.mutate(r.id)}
+                          disabled={reconcile.isPending}
+                          title="wallet 인보이스 권위 상태를 되물어 자격을 즉시 정합화"
+                          onClick={() => reconcile.mutate(r.subscriberRef)}
                         >
-                          즉시 집행
+                          정합화
                         </Button>
-                      ) : null}
+                      </div>
                     </td>
                   </tr>
                 );
