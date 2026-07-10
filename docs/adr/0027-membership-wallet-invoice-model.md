@@ -146,6 +146,8 @@ subscription_billing_method
 - **백업결제**: PRIMARY 실패 시 `priority` 순으로 BACKUP 시도. (Phase 4)
 - `billing_agreements`는 이 테이블로 대체하거나, 당분간 병존 후 흡수.
 
+> **현재 배선 상태(정정)**: `subscription_billing_methods` 테이블·enum(role/status)은 Phase 1 에서 additive shadow schema 로만 생성됐고 **아직 어떤 코드 경로에도 배선되지 않았다**. 결제수단은 여전히 `billing_agreements`(구독당 1개, 유니크)로만 동작하며, 1:다·append+soft-revoke·백업 폴백은 Phase 4 과제다. 초기 PR 설명의 "결제수단 1:N + soft-revoke 완료"는 과장으로, 실제 완료된 것은 스키마 예약뿐이다.
+
 ### 3-4. membership 쪽 변경 (제거가 핵심)
 
 - `subscription_contracts.billingInProgress` / `billingStartedAt` / `billingIdempotencyKey` **제거** → wallet 인보이스가 진행상태를 소유.
