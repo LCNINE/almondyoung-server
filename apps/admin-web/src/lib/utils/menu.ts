@@ -240,9 +240,9 @@ export const mainMenus: MainMenu[] = [
       { id: 'deleted-products', title: '휴지통(삭제상품 관리)' },
       { id: 'product-bulk', title: '일괄 작업', path: '/mall/bulk' },
       {
-        id: 'product-csv',
-        title: 'CSV 가져오기/내보내기',
-        path: '/mall/csv',
+        id: 'product-imports',
+        title: '엑셀 대량등록',
+        path: '/mall/product-imports',
       },
       { id: 'product-audit', title: '감사 이력/승인', path: '/mall/audit' },
       {

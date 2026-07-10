@@ -931,19 +931,6 @@ export const useBulkUpdatePolicy = () => {
   });
 };
 
-// ===== CSV =====
-
-export const useCsvBulkImport = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ file, userId }: { file: File; userId: string }) =>
-      products.csv.bulkImport(file, userId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.masters });
-    },
-  });
-};
-
 // ===== 승인 =====
 
 export const useSubmitApproval = () => {
