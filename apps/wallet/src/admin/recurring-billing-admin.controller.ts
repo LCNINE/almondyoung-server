@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   Controller,
   Get,
   HttpCode,
@@ -49,6 +50,8 @@ export class RecurringBillingAdminController {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes('not found')) throw new NotFoundException(msg);
+      // 집행 가능 상태가 아님(이미 PAID/터미널/진행중 등) = 비즈니스 충돌이지 서버 오류가 아니다.
+      if (msg.includes('not schedulable')) throw new ConflictException(msg);
       throw new InternalServerErrorException(msg);
     }
   }
