@@ -14,6 +14,7 @@ import { PlanReader } from '../../src/services/plan/plan.reader';
 import { PlanManager } from '../../src/services/plan/plan.manager';
 import { PaymentClientService } from '../../src/services/billing/payment-client.service';
 import { BillingOutcomeHandler } from '../../src/services/billing/billing-outcome.handler';
+import { InvoiceOutcomeHandler } from '../../src/services/billing/invoice-outcome.handler';
 import { ContractEventManager } from '../../src/services/subscription/contract-event.manager';
 import { MembershipEventPublisher } from '../../src/services/membership-event.publisher';
 import { WalletCommandPublisher } from '../../src/services/billing/wallet-command.publisher';
@@ -68,6 +69,17 @@ describe('Recurring Billing & Pause Integration Tests', () => {
         BillingReader,
         BillingManager,
         BillingOutcomeHandler,
+        // pause 테스트는 인보이스 결과를 다루지 않으므로 mock — RecurringBillingService 의존만 채운다.
+        {
+          provide: InvoiceOutcomeHandler,
+          useValue: {
+            handlePaid: jest.fn(),
+            handlePaymentFailed: jest.fn(),
+            handleUncollectible: jest.fn(),
+            handleVoided: jest.fn(),
+            handleMandateRejected: jest.fn(),
+          },
+        },
         ContractEventManager,
         {
           provide: MembershipEventPublisher,

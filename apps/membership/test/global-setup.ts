@@ -13,6 +13,8 @@ tsNode.register({
 const baseUrl = require('path').resolve(__dirname, '../../../');
 tsConfigPaths.register({
   baseUrl: baseUrl,
+  // root tsconfig.json 의 paths 와 정합되게 유지한다 — AppModule 이 전이 import 하는
+  // @packages/*·@app/authorization 이 빠지면 globalSetup 이 모듈 해석 실패로 죽는다.
   paths: {
     '@app/db': ['libs/db/src'],
     '@app/db/*': ['libs/db/src/*'],
@@ -20,6 +22,14 @@ tsConfigPaths.register({
     '@app/events/*': ['libs/events/src/*'],
     '@app/shared': ['libs/shared/src'],
     '@app/shared/*': ['libs/shared/src/*'],
+    '@app/authorization': ['libs/authorization/src'],
+    '@app/authorization/*': ['libs/authorization/src/*'],
+    '@packages/event-contracts': ['packages/event-contracts'],
+    '@packages/event-contracts/*': ['packages/event-contracts/*'],
+    '@packages/domain-types': ['packages/domain-types'],
+    '@packages/domain-types/*': ['packages/domain-types/*'],
+    '@packages/product-description': ['packages/product-description'],
+    '@packages/product-description/*': ['packages/product-description/*'],
   },
 });
 

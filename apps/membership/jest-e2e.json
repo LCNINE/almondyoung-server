@@ -9,9 +9,14 @@
     }]
   },
   "moduleNameMapper": {
+    "^@app/auth-core(|/.*)$": "<rootDir>/../../../libs/auth-core/src/$1",
+    "^@app/authorization(|/.*)$": "<rootDir>/../../../libs/authorization/src/$1",
     "^@app/db(|/.*)$": "<rootDir>/../../../libs/db/src/$1",
     "^@app/events(|/.*)$": "<rootDir>/../../../libs/events/src/$1",
-    "^@app/shared(|/.*)$": "<rootDir>/../../../libs/shared/src/$1"
+    "^@app/shared(|/.*)$": "<rootDir>/../../../libs/shared/src/$1",
+    "^@packages/event-contracts/(.*)$": "<rootDir>/../../../packages/event-contracts/$1",
+    "^@packages/domain-types(|/.*)$": "<rootDir>/../../../packages/domain-types$1",
+    "^@packages/product-description(|/.*)$": "<rootDir>/../../../packages/product-description$1"
   },
   "globalSetup": "<rootDir>/global-setup.ts",
   "testTimeout": 60000,
