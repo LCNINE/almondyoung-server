@@ -59,8 +59,16 @@ export function UploadStep({ onFileSelected }: Props) {
       </Button>
 
       <div
-        className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-muted-foreground/30 p-8 transition-colors hover:border-primary/50"
+        role="button"
+        tabIndex={0}
+        className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-muted-foreground/30 p-8 transition-colors hover:border-primary/50 focus:border-primary/50 focus:outline-none"
         onClick={() => fileRef.current?.click()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            fileRef.current?.click();
+          }
+        }}
       >
         <Upload className="h-8 w-8 text-muted-foreground" />
         <p className="text-sm text-muted-foreground">

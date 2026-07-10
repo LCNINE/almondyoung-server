@@ -8,8 +8,6 @@ import { Header } from '@/components/admin-ui-experimental/common/header/header'
 import { useImportSessions } from '@/lib/services/products';
 import { Plus } from 'lucide-react';
 
-const LIMIT = 20;
-
 export function SessionList() {
   const router = useRouter();
   const [page, setPage] = useState(1);
@@ -17,7 +15,7 @@ export function SessionList() {
 
   const sessions = data?.data ?? [];
   const total = data?.total ?? 0;
-  const maxPage = Math.max(1, Math.ceil(total / LIMIT));
+  const maxPage = Math.max(1, Math.ceil(total / (data?.limit ?? 20)));
 
   return (
     <div className="flex flex-col gap-y-4">
