@@ -9,64 +9,17 @@ import {
   Query,
   HttpCode,
   HttpStatus,
-  BadRequestException,
   NotFoundException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { UnifiedReservationService } from '../../shared/services/unified-reservation.service';
-import { ReserveStockDto, ReleaseReservationDto } from '../dto/reservation/reserve-stock.dto';
+import { ReleaseReservationDto } from '../dto/reservation/reserve-stock.dto';
 import { ReservationDto, ReservationSummaryDto } from '../dto/reservation/reservation-response.dto';
 
 @ApiTags('Inventory - Reservations')
 @Controller('inventory/reservations')
 export class ReservationController {
   constructor(private readonly unifiedReservation: UnifiedReservationService) {}
-
-  /**
-   * 재고 예약 생성
-   */
-  @Post()
-  @ApiOperation({
-    summary: '재고 예약 생성',
-    description: '주문(FO) 또는 이동 작업(Movement Task)에 대한 재고 예약을 생성합니다.',
-  })
-  @ApiResponse({
-    status: 201,
-    description: '예약 생성 성공',
-    type: ReservationDto,
-  })
-  @ApiResponse({
-    status: 400,
-    description: '잘못된 요청 (수량 부족 등)',
-  })
-  @ApiResponse({
-    status: 409,
-    description: '재고 부족',
-  })
-  async reserveStock(@Body() dto: ReserveStockDto): Promise<ReservationDto> {
-    try {
-      const reservation = await this.unifiedReservation.reserveStock({
-        targetType: dto.targetType,
-        targetId: dto.targetId,
-        skuId: dto.skuId,
-        warehouseId: dto.warehouseId,
-        quantity: dto.quantity,
-        fulfillmentOrderItemId: dto.fulfillmentOrderItemId,
-        timeoutAt: dto.timeoutAt ? new Date(dto.timeoutAt) : undefined,
-        reason: dto.reason,
-      });
-
-      return reservation as ReservationDto;
-    } catch (error) {
-      if (error.message?.includes('Insufficient stock')) {
-        throw new BadRequestException(error.message);
-      }
-      if (error.message?.includes('not found')) {
-        throw new NotFoundException(error.message);
-      }
-      throw error;
-    }
-  }
 
   /**
    * 예약 해제
@@ -112,7 +65,7 @@ export class ReservationController {
   @ApiQuery({
     name: 'targetType',
     description: '대상 타입',
-    enum: ['FULFILLMENT_ORDER', 'MOVEMENT_TASK'],
+    enum: ['FULFILLMENT_ORDER'],
     example: 'FULFILLMENT_ORDER',
   })
   @ApiQuery({

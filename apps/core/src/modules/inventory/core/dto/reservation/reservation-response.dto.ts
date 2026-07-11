@@ -9,10 +9,10 @@ export class ReservationDto {
 
   @ApiProperty({
     description: '예약 대상 타입',
-    enum: ['FULFILLMENT_ORDER', 'MOVEMENT_TASK'],
+    enum: ['FULFILLMENT_ORDER'],
     example: 'FULFILLMENT_ORDER',
   })
-  targetType: string;
+  targetType: 'FULFILLMENT_ORDER';
 
   @ApiProperty({
     description: '예약 대상 ID',

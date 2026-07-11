@@ -1324,8 +1324,8 @@ export const stockReservations = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
 
     // 통합 예약 대상 정보
-    targetType: varchar('target_type', { length: 50 }).notNull(), // 'FULFILLMENT_ORDER' | 'MOVEMENT_TASK'
-    targetId: uuid('target_id').notNull(), // FO ID 또는 Movement Task ID
+    targetType: varchar('target_type', { length: 50 }).notNull(), // 'FULFILLMENT_ORDER' 만 사용 (구 이동작업 예약 타입 제거)
+    targetId: uuid('target_id').notNull(), // FO ID
 
     // 기존 FO 호환성을 위해 유지 (nullable로 변경)
     fulfillmentOrderItemId: uuid('fulfillment_order_item_id').references(() => fulfillmentOrderItems.id, {

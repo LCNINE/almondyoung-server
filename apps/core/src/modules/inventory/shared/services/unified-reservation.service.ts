@@ -5,7 +5,7 @@ import { eq, and, inArray, sum, sql, lt, isNotNull } from 'drizzle-orm';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 
 export interface ReserveStockDto {
-  targetType: 'FULFILLMENT_ORDER' | 'MOVEMENT_TASK';
+  targetType: 'FULFILLMENT_ORDER';
   targetId: string;
   skuId: string;
   warehouseId: string;
