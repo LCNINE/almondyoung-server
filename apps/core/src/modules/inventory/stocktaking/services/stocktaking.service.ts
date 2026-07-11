@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
+import { acquireStockAvailabilityLocks } from '../../shared/locks/stock-availability-lock';
 import { count, desc, eq, and, gte, lte, sql } from 'drizzle-orm';
 import { CreateStocktakingSessionDto } from '../dto/create-session.dto';
 import { ListStocktakingSessionsQueryDto } from '../dto/list-sessions-query.dto';
@@ -14,6 +15,8 @@ import { AdjustmentPreviewItem } from '../dto/adjustment-preview.dto';
 
 @Injectable()
 export class StocktakingService {
+  private readonly logger = new Logger(StocktakingService.name);
+
   constructor(
     @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
@@ -413,6 +416,12 @@ export class StocktakingService {
         )
         .for('update');
 
+      // 변경 라인 전체 (sku, warehouse) 락 일괄 획득 — 라인별 adjustDown 락 누적의 데드락 방지
+      await acquireStockAvailabilityLocks(
+        tx,
+        lines.map((line) => ({ skuId: line.skuId, warehouseId: session.warehouseId })),
+      );
+
       let adjustmentsApplied = 0;
       for (const line of lines) {
         const counted = line.countedQuantity ?? 0;
@@ -443,6 +452,7 @@ export class StocktakingService {
                     quantity: -delta,
                     idempotencyKey,
                     reason,
+                    bypassReservationGuard: true, // 실사 = 물리적 사실, 실물 우선
                   },
                   tx,
                 );
@@ -458,6 +468,15 @@ export class StocktakingService {
               reason: `Stocktaking adjustment ${delta > 0 ? '+' : ''}${delta} (session ${sessionId})`,
             })
             .onConflictDoNothing({ target: stocktakingAdjustments.lineId });
+
+          if (delta < 0) {
+            const bal = await this.commandService.getWarehouseReservationBalance(tx, line.skuId, session.warehouseId);
+            if (bal.onHand < bal.reserved) {
+              this.logger.warn(
+                `실사 하향으로 on_hand<reserved: sku=${line.skuId} wh=${session.warehouseId} on_hand=${bal.onHand} reserved=${bal.reserved} — 대사잡·후속 예약 정리 필요`,
+              );
+            }
+          }
 
           adjustmentsApplied++;
         }
