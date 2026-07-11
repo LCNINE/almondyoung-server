@@ -217,7 +217,7 @@ export function FulfillmentDetail({ id }: { id: string }) {
             <tbody>
               {fo.items.map((item) => {
                 const remaining = item.qty - item.reservedQty;
-                const canReserve = remaining > 0 && !isTerminal;
+                const canReserve = remaining > 0 && fo.adminAvailableActions.includes('reserve');
                 return (
                   <tr key={item.id} className="border-b last:border-0">
                     <td className="py-2 pr-3">
