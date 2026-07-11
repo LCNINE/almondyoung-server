@@ -1,7 +1,7 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { LedgerReconciliationService } from '../services/ledger-reconciliation.service';
-import { LedgerReconciliationReportDto } from '../dto/ledger-reconciliation.dto';
+import { LedgerReconciliationReportDto, ReservationDriftReportDto } from '../dto/ledger-reconciliation.dto';
 
 @ApiTags('Inventory - Ledger Reconciliation')
 @Controller('inventory/ledger-reconciliation')
@@ -21,5 +21,20 @@ export class LedgerReconciliationController {
     @Query('skuId') skuId?: string,
   ): Promise<LedgerReconciliationReportDto> {
     return this.reconciliationService.reconcile({ warehouseId, skuId });
+  }
+
+  @Get('reservations')
+  @ApiOperation({
+    summary: '예약 불변식 대사 (탐지 전용)',
+    description: 'ON_HAND 원장 합 < confirmed 예약 합 인 (sku,warehouse) grain 을 조회합니다.',
+  })
+  @ApiQuery({ name: 'warehouseId', required: false })
+  @ApiQuery({ name: 'skuId', required: false })
+  @ApiResponse({ status: 200, type: ReservationDriftReportDto })
+  async getReservationReconciliation(
+    @Query('warehouseId') warehouseId?: string,
+    @Query('skuId') skuId?: string,
+  ): Promise<ReservationDriftReportDto> {
+    return this.reconciliationService.reconcileReservations({ warehouseId, skuId });
   }
 }

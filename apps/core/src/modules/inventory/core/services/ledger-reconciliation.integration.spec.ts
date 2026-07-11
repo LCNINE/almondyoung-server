@@ -166,4 +166,22 @@ describeIfDb('ledger reconciliation (DB integration, rollback-only)', () => {
       expect(report.totalDriftGrains).toBe(0); // b 의 drift 는 skuId 필터로 제외
     });
   });
+
+  it('reconcileReservations 는 예약>ON_HAND grain 을 잡는다', async () => {
+    await inRollbackTx(async (tx) => {
+      // fixture: ON_HAND 4, confirmed 예약 10 → shortfall 6
+      const s = await seed(tx, 4);
+      await tx.insert(wmsTables.stockReservations).values({
+        targetType: 'FULFILLMENT_ORDER',
+        targetId: randomUUID(),
+        skuId: s.sku.id,
+        warehouseId: s.wh.id,
+        quantity: 10,
+        status: 'confirmed',
+      });
+      const report = await recon.reconcileReservations({ skuId: s.sku.id, warehouseId: s.wh.id }, tx);
+      expect(report.totalDriftGrains).toBe(1);
+      expect(report.drifts[0].shortfall).toBe(6);
+    });
+  });
 });

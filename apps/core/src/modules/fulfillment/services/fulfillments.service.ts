@@ -16,6 +16,7 @@ import { OutboxService } from '../outbox/outbox.service';
 import { ProductSkuMappingService } from '../../product-matching/services/product-sku-mapping.service';
 import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
 import { UnifiedReservationService } from '../../inventory/shared/services/unified-reservation.service';
+import { acquireStockAvailabilityLocks } from '../../inventory/shared/locks/stock-availability-lock';
 import { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
 import { CreateCompensationShipmentDto, CompensationShipmentItemDto } from '../dto/create-compensation-shipment.dto';
 import { FulfillmentShippedPayload, FulfillmentDeliveredPayload, FulfillmentCancelledPayload } from '@packages/event-contracts/streams';
@@ -792,6 +793,13 @@ export class FulfillmentsService {
 
     let totalReservedQty = 0;
     const failures: ReservationFailureDetail[] = [];
+
+    // 멀티-SKU 예약: 전 SKU 락을 (skuId,warehouseId) 정렬로 일괄 획득 → 교차 데드락 방지.
+    // (내부 reserveStock 의 단일 락은 같은 tx 재획득이라 무해)
+    await acquireStockAvailabilityLocks(
+      trx,
+      items.map((item) => ({ skuId: item.skuId, warehouseId })),
+    );
 
     for (const item of items) {
       const requiresStockReservation = await this.requiresStockReservation(item.variantId, trx);

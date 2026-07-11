@@ -40,3 +40,31 @@ export class LedgerReconciliationReportDto {
   @ApiProperty({ description: '불일치 grain 목록', type: [LedgerDriftRowDto] })
   drifts: LedgerDriftRowDto[];
 }
+
+export class ReservationDriftRowDto {
+  @ApiProperty({ description: 'SKU ID' })
+  skuId: string;
+
+  @ApiProperty({ description: '창고 ID' })
+  warehouseId: string;
+
+  @ApiProperty({ description: '창고 ON_HAND 원장 합' })
+  onHandQty: number;
+
+  @ApiProperty({ description: 'confirmed 예약 합' })
+  reservedQty: number;
+
+  @ApiProperty({ description: 'reservedQty - onHandQty (>0)' })
+  shortfall: number;
+}
+
+export class ReservationDriftReportDto {
+  @ApiProperty({ description: '대사 실행 시각', type: String, format: 'date-time' })
+  checkedAt: Date;
+
+  @ApiProperty({ description: '예약 초과 grain 총 수' })
+  totalDriftGrains: number;
+
+  @ApiProperty({ description: '예약 초과 grain 목록', type: [ReservationDriftRowDto] })
+  drifts: ReservationDriftRowDto[];
+}
