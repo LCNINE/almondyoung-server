@@ -60,7 +60,7 @@ export class ReservationController {
   @Get('by-target')
   @ApiOperation({
     summary: 'Target별 예약 조회',
-    description: 'FO 또는 Movement Task가 예약한 모든 SKU 정보를 조회합니다.',
+    description: 'FO가 예약한 모든 SKU 정보를 조회합니다.',
   })
   @ApiQuery({
     name: 'targetType',
