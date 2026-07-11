@@ -315,6 +315,11 @@ export class FulfillmentReservationsFacade {
         throw new BadRequestException('출처와 대상 FOI의 SKU가 다릅니다.');
       }
 
+      // W6 방어선: drop_ship 은 타사 재고 — 예약을 이전으로 주입/유출할 수 없다(source·target 양방향 차단).
+      if (fromFo.fulfillmentMode === 'drop_ship' || toFo.fulfillmentMode === 'drop_ship') {
+        throw new ConflictException('drop_ship 출고주문은 예약 이전 대상이 될 수 없습니다 (타사 재고).');
+      }
+
       if (!fromFo.warehouseId || !toFo.warehouseId) {
         throw new BadRequestException('FO에 창고가 지정되어 있지 않습니다.');
       }

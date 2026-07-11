@@ -319,8 +319,20 @@ describe('FulfillmentReservationsFacade', () => {
     function makeTransferTx(opts: {
       fromFoi: { id: string; fulfillmentOrderId: string; skuId: string; qty: number; reservedQty: number };
       toFoi: { id: string; fulfillmentOrderId: string; skuId: string; qty: number; reservedQty: number };
-      fromFo: { id: string; status: string; warehouseId: string; totalReservedQty: number };
-      toFo: { id: string; status: string; warehouseId: string; totalReservedQty: number };
+      fromFo: {
+        id: string;
+        status: string;
+        warehouseId: string;
+        totalReservedQty: number;
+        fulfillmentMode?: string | null;
+      };
+      toFo: {
+        id: string;
+        status: string;
+        warehouseId: string;
+        totalReservedQty: number;
+        fulfillmentMode?: string | null;
+      };
       fromReservations?: Array<{ id: string; quantity: number }>;
     }) {
       const fromRes = (opts.fromReservations ?? [{ id: 'res-1', quantity: opts.fromFoi.reservedQty }]).map((r) => ({
@@ -517,6 +529,54 @@ describe('FulfillmentReservationsFacade', () => {
         quantity: 1,
         status: 'confirmed',
       });
+    });
+
+    // ─────────────────────────────────────────────────────────────
+    // 신규: drop_ship 가드 (from·to 양방향)
+    // ─────────────────────────────────────────────────────────────
+
+    it('fromFo가 drop_ship이면 예약 이전이 ConflictException으로 차단된다 (타사 재고 불변식)', async () => {
+      const { facade, tx, captured } = makeTransferTx({
+        fromFoi: { id: fromFoiId, fulfillmentOrderId, skuId, qty: 2, reservedQty: 2 },
+        toFoi: { id: toFoiId, fulfillmentOrderId: toFoId, skuId, qty: 2, reservedQty: 0 },
+        fromFo: {
+          id: fulfillmentOrderId,
+          status: 'ready',
+          warehouseId,
+          totalReservedQty: 2,
+          fulfillmentMode: 'drop_ship',
+        },
+        toFo: { id: toFoId, status: 'created', warehouseId, totalReservedQty: 0 },
+      });
+
+      await expect(
+        facade.transferReservation(
+          fulfillmentOrderId,
+          { fromFulfillmentOrderItemId: fromFoiId, toFulfillmentOrderItemId: toFoiId, quantity: 1 },
+          tx,
+        ),
+      ).rejects.toThrow(ConflictException);
+      expect(captured.insertedReservations).toHaveLength(0);
+      expect(captured.reservationUpdates).toHaveLength(0);
+    });
+
+    it('toFo가 drop_ship이면 예약 주입이 ConflictException으로 차단된다 (타사 재고 불변식)', async () => {
+      const { facade, tx, captured } = makeTransferTx({
+        fromFoi: { id: fromFoiId, fulfillmentOrderId, skuId, qty: 2, reservedQty: 2 },
+        toFoi: { id: toFoiId, fulfillmentOrderId: toFoId, skuId, qty: 2, reservedQty: 0 },
+        fromFo: { id: fulfillmentOrderId, status: 'ready', warehouseId, totalReservedQty: 2 },
+        toFo: { id: toFoId, status: 'created', warehouseId, totalReservedQty: 0, fulfillmentMode: 'drop_ship' },
+      });
+
+      await expect(
+        facade.transferReservation(
+          fulfillmentOrderId,
+          { fromFulfillmentOrderItemId: fromFoiId, toFulfillmentOrderItemId: toFoiId, quantity: 1 },
+          tx,
+        ),
+      ).rejects.toThrow(ConflictException);
+      expect(captured.insertedReservations).toHaveLength(0);
+      expect(captured.reservationUpdates).toHaveLength(0);
     });
 
     it('잠금 순서 컨벤션을 지킨다: FOI 사전조회 → FO 잠금 → FOI 잠금 → reservation 잠금', async () => {
