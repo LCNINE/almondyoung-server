@@ -107,6 +107,19 @@ export class MetricsService implements OnModuleInit {
     registers: [register],
   });
 
+  // 좀비 예약 대사 메트릭 — terminal FO 인데 confirmed 로 남은 예약 행 수(직전 대사 heal 전 탐지값).
+  private readonly zombieReservationsGauge = new Gauge({
+    name: 'wms_zombie_reservations_grains',
+    help: 'Number of confirmed reservations still attached to terminal fulfillment orders (last reconcile, pre-heal)',
+    registers: [register],
+  });
+
+  private readonly zombieReservationsHealedCounter = new Counter({
+    name: 'wms_zombie_reservations_healed_total',
+    help: 'Cumulative number of zombie reservations released by reconciliation',
+    registers: [register],
+  });
+
   onModuleInit() {
     // 기본 시스템 메트릭 수집 시작
     collectDefaultMetrics({ register });
@@ -250,6 +263,16 @@ export class MetricsService implements OnModuleInit {
   /** 예약 초과 grain 수 — 정상 실행도 0 을 써서 이전 값 잔존을 막는다. */
   setReservedOverOnHand(count: number) {
     this.reservedOverOnHandGauge.set(count);
+  }
+
+  /** 직전 좀비 대사에서 탐지된 예약 행 수 — 정상 실행도 0 을 써서 이전 값 잔존을 막는다. */
+  setZombieReservations(count: number) {
+    this.zombieReservationsGauge.set(count);
+  }
+
+  /** 대사로 release 한 좀비 예약 누적 수. */
+  incZombieReservationsHealed(count: number) {
+    if (count > 0) this.zombieReservationsHealedCounter.inc(count);
   }
 
   /**
