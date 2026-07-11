@@ -25,7 +25,7 @@ P1-4 와 P1-5 를 **한 세트**로 묶는 이유: 둘 다 이 불변식을 깨�
 - **transferShip 도 불변식 위반 경로**: `transferShip`(`inventory-command.service.ts:196-230`)이 ON_HAND→IN_TRANSFER 로 출발창고 ON_HAND 를 예약 해제 없이 감소. 라이브 배선: `inventory/transfers`(admin-web) → `transferBetweenWarehouses`(`stock-event.service.ts:105`) → `transferShip`(`:125`). **작업 6 이 살린 Path B**.
 - **집계 부품 존재**: `getTotalReservedQuantity(skuId, warehouseId, tx)`(`unified-reservation.service.ts:155`) — 창고 grain confirmed 예약 합. 단 core 의 `adjustDown` 은 `stockReservations` 직접 쿼리로 계산(주입 순환 회피).
 - **가용 정의 3종**: `getAvailableStock`(unified) ≈ `AvailabilityService.getAvailableQuantity`(`availability.service.ts:10`) = ON_HAND−reserved(transit_out 미차감) vs 뷰 `stock_summary.availableQty`(`inventory.schema.ts:882`) = ON_HAND−reserved−transit_out. `transit_out`(`:920-933`)은 **IN_TRANSFER 원장이 아니라** pending 이송 inbound_plan(`expected−received`, W11 크로스보더)에서 계산.
-- **`ship()`(`inventory-command.service.ts:108`, "예약 없이 직접 출고")는 호출자 0(dead)** — 무관.
+- **`ship()`(`inventory-command.service.ts:108`, "예약 없이 직접 출고")는 라이브** — `outbound-consumption.service.ts:98`(SHIP 소진)이 호출(최초 서술 "dead" 정정, 최종리뷰). 락 미획득이나 on_hand·reserved 를 함께 감소 → reserve/guard 의 available 읽기가 **단일 스냅샷**이면 무해(§5·최종리뷰 I-1 참조).
 - **스키마 무변경**: 잠금=advisory(스키마 불요), 가드=기존 테이블 쿼리, drift=쿼리, bypass=코드 파라미터. 마이그레이션 없음.
 
 ## 3. 결정 (브레인스토밍, 2026-07-11)
@@ -49,7 +49,7 @@ P1-4 와 P1-5 를 **한 세트**로 묶는 이유: 둘 다 이 불변식을 깨�
 
 ### 3.4 잠금(Q2) — advisory xact lock + shared 헬퍼 + 정렬 내장 배치형
 
-- **프리미티브**: `pg_advisory_xact_lock` 키 = `hashtextextended(skuId || ':' || warehouseId, 0)`. 불변식이 물리 row 없는 `(sku,warehouse)` **논리 집계**라 advisory 가 적합(예약은 INSERT 라 FOR UPDATE 앵커 row 없음). tx 종료 시 자동 해제. 해시 충돌은 64-bit 라 드문 오탐 직렬화(정확성 안전).
+- **프리미티브**: `pg_advisory_xact_lock` 키 = `hashtext('${skuId}:${warehouseId}')` (선례 `product-sellable-quantity.service.ts:272` 미러 — 구현 시 `hashtextextended` 에서 `hashtext` 로 확정). 불변식이 물리 row 없는 `(sku,warehouse)` **논리 집계**라 advisory 가 적합(예약은 INSERT 라 FOR UPDATE 앵커 row 없음). tx 종료 시 자동 해제. 충돌은 32-bit(birthday ~77k) 라도 드문 오탐 직렬화만(정확성 안전).
 - **위치**: `inventory/shared` 무상태 헬퍼 한 곳(키 파생 단일화). core 는 이미 shared 를 import(`OutboxService`) → 순환 없음.
 - **정렬**: 멀티키 tx 는 정렬 내장 배치 헬퍼로 일괄 획득 → 규율 누수 없음.
 
@@ -69,7 +69,7 @@ export async function acquireStockAvailabilityLock(
   trx: DbTx, skuId: string, warehouseId: string,
 ): Promise<void> {
   await trx.execute(
-    sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${skuId}:${warehouseId}`}, 0))`,
+    sql`SELECT pg_advisory_xact_lock(hashtext(${`${skuId}:${warehouseId}`}))`,
   );
 }
 
@@ -127,7 +127,8 @@ private async assertReservationInvariant(
 ## 5. 불가침 (라이브 — 회귀 가드)
 
 - **락 면제 경로**(불변식 무해 — 문서 근거 남김):
-  - **SHIP 소진**(`outbound-consumption`): on_hand·reserved 를 **lockstep 으로 함께 감소**(reserved→shipped) → available 불변, TOCTOU 없음.
+  - **SHIP 소진**(`outbound-consumption:98` → `inventoryCommand.ship()`, 라이브): on_hand·reserved 를 함께 감소(reserved→shipped) → available 불변이라 **락 없이도 불변식 무해**. 단 전제조건: reserve/guard 의 available 읽기가 **단일 스냅샷**이어야 함 — 2-statement 읽기면 SHIP 커밋이 두 읽기 사이 끼어 torn read(초과예약) 발생. 최종리뷰 I-1 로 `getAvailableStock`·`getWarehouseReservationBalance` 를 단일 statement 화하여 해소.
+- **알려진 미가드 잔여(WS-D — 최종리뷰 I-2)**: `reverseEvent`(`stock-event.store.ts:300`, RECEIVE→ADJUST_DOWN projection 직접 적용 — `InventoryCommandService` 우회로 락·가드 모두 없음)가 당일 입고취소(`inbound.service.ts:1010`)·`stock-projection.manager.ts:10` 로 라이브. 예약 걸린 당일 입고분 취소 시 on_hand<reserved 가능. **능동 가드 안 함**(lower-level 프리미티브·좁은 경로) — 대사잡 게이지 `wms_reserved_over_onhand_grains` 가 탐지, 능동 처분은 WS-D 잔여.
   - **`transferReceive`**(`:232`): ON_HAND 증가.
   - **`moveInternal`**(`:479`): 창고 내 이동, 창고 합 불변.
   - **`releaseReservation`·`releaseExpiredReservations`**: available 증가.
