@@ -149,35 +149,6 @@ export class ReservationController {
   }
 
   /**
-   * 만료된 예약 처리 (관리자용)
-   */
-  @Post('expire-stale')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: '만료된 예약 일괄 해제',
-    description: 'timeoutAt이 지난 예약을 일괄 해제합니다 (관리자 또는 Cron Job 용도).',
-  })
-  @ApiResponse({
-    status: 200,
-    description: '해제된 예약 개수',
-    schema: {
-      type: 'object',
-      properties: {
-        releasedCount: { type: 'number', example: 5 },
-        message: { type: 'string', example: 'Released 5 expired reservations' },
-      },
-    },
-  })
-  async expireStaleReservations(): Promise<{ releasedCount: number; message: string }> {
-    const releasedCount = await this.unifiedReservation.releaseExpiredReservations();
-
-    return {
-      releasedCount,
-      message: `Released ${releasedCount} expired reservations`,
-    };
-  }
-
-  /**
    * 예약 정합성 정리 (관리자용) — terminal FO 의 잔존 confirmed 예약을 대사 후 해제.
    */
   @Post('reconcile')

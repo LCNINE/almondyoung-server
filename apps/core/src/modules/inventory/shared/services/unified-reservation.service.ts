@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
-import { eq, and, sum, sql, lt, isNotNull } from 'drizzle-orm';
+import { eq, and, sum, sql } from 'drizzle-orm';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 import { acquireStockAvailabilityLock } from '../locks/stock-availability-lock';
 
@@ -230,37 +230,5 @@ export class UnifiedReservationService {
           AS available
     `)) as unknown as { available: number | string }[];
     return Number(rows[0]?.available ?? 0);
-  }
-
-  /**
-   * 예약 만료 처리 (배치 작업용)
-   */
-  async releaseExpiredReservations(tx?: DbTx): Promise<number> {
-    return this.db.run(async (trx) => {
-      const now = new Date();
-
-      const result = await trx
-        .update(wmsTables.stockReservations)
-        .set({
-          status: 'released',
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(wmsTables.stockReservations.status, 'confirmed'),
-            isNotNull(wmsTables.stockReservations.timeoutAt),
-            lt(wmsTables.stockReservations.timeoutAt, now),
-          ),
-        )
-        .returning();
-
-      const skuIds = [...new Set(result.map((reservation) => reservation.skuId))];
-      for (const skuId of skuIds) {
-        await this.productSellableQuantity.recalculateAndPublishForSku(skuId, trx);
-      }
-
-      this.logger.log(`Released ${result.length} expired reservations`);
-      return result.length;
-    }, tx);
   }
 }
