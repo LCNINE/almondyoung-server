@@ -20,7 +20,6 @@ import { LocationService } from './services/location.service';
 import { InventoryCommandService } from './services/inventory-command.service';
 import { InventoryQueryService } from './services/inventory-query.service';
 import { SkuManagersService } from './services/sku-managers.service';
-import { AllocationStrategyService } from './services/allocation-strategy.service';
 import { FifoLocationStrategy, LOCATION_RESOLUTION_STRATEGY } from './services/location-resolution.strategy';
 import { ReservationCronService } from './services/reservation-cron.service';
 import { LedgerReconciliationService } from './services/ledger-reconciliation.service';
@@ -56,7 +55,6 @@ import { OutboxService } from '../shared/outbox/outbox.service';
     InventoryCommandService,
     InventoryQueryService,
     SkuManagersService,
-    AllocationStrategyService,
     { provide: LOCATION_RESOLUTION_STRATEGY, useClass: FifoLocationStrategy },
     ReservationCronService,
     LedgerReconciliationService,
@@ -74,7 +72,6 @@ import { OutboxService } from '../shared/outbox/outbox.service';
     InventoryCommandService,
     InventoryQueryService,
     SkuManagersService,
-    AllocationStrategyService,
     LOCATION_RESOLUTION_STRATEGY,
     ReturnService,
     TransferService,
