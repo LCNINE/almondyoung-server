@@ -21,7 +21,15 @@ export function sortAndDedupeStockPairs(pairs: StockPair[]): StockPair[] {
     }
   }
   return unique.sort((a, b) =>
-    a.skuId === b.skuId ? a.warehouseId.localeCompare(b.warehouseId) : a.skuId.localeCompare(b.skuId),
+    a.skuId === b.skuId
+      ? a.warehouseId < b.warehouseId
+        ? -1
+        : a.warehouseId > b.warehouseId
+          ? 1
+          : 0
+      : a.skuId < b.skuId
+        ? -1
+        : 1,
   );
 }
 

@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
-import { eq, and, inArray, sum, sql, lt, isNotNull } from 'drizzle-orm';
+import { eq, and, sum, sql, lt, isNotNull } from 'drizzle-orm';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 import { acquireStockAvailabilityLock } from '../locks/stock-availability-lock';
 
@@ -219,24 +219,17 @@ export class UnifiedReservationService {
   private async getAvailableStock(skuId: string, warehouseId: string, tx?: DbTx): Promise<number> {
     const db = tx ?? this.db.db;
 
-    // ON_HAND 재고 조회
-    const onHandResult = await db
-      .select({ quantity: sum(wmsTables.stockLedgers.qty) })
-      .from(wmsTables.stockLedgers)
-      .where(
-        and(
-          eq(wmsTables.stockLedgers.skuId, skuId),
-          eq(wmsTables.stockLedgers.warehouseId, warehouseId),
-          eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
-        ),
-      );
-
-    const onHand = Number(onHandResult[0]?.quantity || 0);
-
-    // 예약된 수량 조회
-    const reserved = await this.getTotalReservedQuantity(skuId, warehouseId, tx);
-
-    return onHand - reserved;
+    // 단일 스냅샷: on_hand 와 reserved 를 한 statement 로 계산 → READ COMMITTED 에서 SHIP 소진 등
+    // 비-락 경로가 두 읽기 사이 커밋될 때의 torn read(초과예약) 차단.
+    const rows = (await db.execute(sql`
+      SELECT
+        COALESCE((SELECT SUM(qty) FROM stock_ledgers
+                   WHERE sku_id = ${skuId} AND warehouse_id = ${warehouseId} AND stock_state = 'ON_HAND'), 0)
+        - COALESCE((SELECT SUM(quantity) FROM stock_reservations
+                     WHERE sku_id = ${skuId} AND warehouse_id = ${warehouseId} AND status = 'confirmed'), 0)
+          AS available
+    `)) as unknown as { available: number | string }[];
+    return Number(rows[0]?.available ?? 0);
   }
 
   /**

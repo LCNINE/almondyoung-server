@@ -176,6 +176,7 @@ export class LedgerReconciliationService {
          AND ${warehouseId ? sql`r.warehouse_id = ${warehouseId}` : sql`true`}
     `;
     const result = await this.dbService.run(async (trx) => trx.execute(query), tx);
+    // execute() 원시 결과 타이핑 — reconcile() 과 동일한 문서화된 캐스트.
     const rawRows = result as unknown as ReservationDriftQueryRow[];
     const drifts: ReservationDriftRow[] = rawRows.map((r) => {
       const onHandQty = Number(r.on_hand_qty);

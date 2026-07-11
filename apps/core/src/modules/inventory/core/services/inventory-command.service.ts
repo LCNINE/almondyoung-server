@@ -4,7 +4,7 @@ import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { StockEventStore } from '../repositories/stock-event.store';
 import { OutboxService } from '../../shared/outbox/outbox.service';
 import { LocationService } from './location.service';
-import { eq, and, gt, desc, sum } from 'drizzle-orm';
+import { eq, and, gt, desc, sql } from 'drizzle-orm';
 import { acquireStockAvailabilityLock } from '../../shared/locks/stock-availability-lock';
 
 @Injectable()
@@ -372,27 +372,15 @@ export class InventoryCommandService {
     skuId: string,
     warehouseId: string,
   ): Promise<{ onHand: number; reserved: number }> {
-    const [oh] = await trx
-      .select({ q: sum(wmsTables.stockLedgers.qty) })
-      .from(wmsTables.stockLedgers)
-      .where(
-        and(
-          eq(wmsTables.stockLedgers.skuId, skuId),
-          eq(wmsTables.stockLedgers.warehouseId, warehouseId),
-          eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
-        ),
-      );
-    const [rv] = await trx
-      .select({ q: sum(wmsTables.stockReservations.quantity) })
-      .from(wmsTables.stockReservations)
-      .where(
-        and(
-          eq(wmsTables.stockReservations.skuId, skuId),
-          eq(wmsTables.stockReservations.warehouseId, warehouseId),
-          eq(wmsTables.stockReservations.status, 'confirmed'),
-        ),
-      );
-    return { onHand: Number(oh?.q ?? 0), reserved: Number(rv?.q ?? 0) };
+    // 단일 스냅샷 (torn read 방지 — I-1 과 동일)
+    const rows = (await trx.execute(sql`
+      SELECT
+        COALESCE((SELECT SUM(qty) FROM stock_ledgers
+                   WHERE sku_id = ${skuId} AND warehouse_id = ${warehouseId} AND stock_state = 'ON_HAND'), 0) AS on_hand,
+        COALESCE((SELECT SUM(quantity) FROM stock_reservations
+                   WHERE sku_id = ${skuId} AND warehouse_id = ${warehouseId} AND status = 'confirmed'), 0) AS reserved
+    `)) as unknown as { on_hand: number | string; reserved: number | string }[];
+    return { onHand: Number(rows[0]?.on_hand ?? 0), reserved: Number(rows[0]?.reserved ?? 0) };
   }
 
   /** 락 획득 후 호출. 창고 합산 예약 불변식 위반 시 409. */
@@ -478,7 +466,7 @@ export class InventoryCommandService {
       }
       const afterQuantity = currentQuantity - input.quantity;
 
-      // 2.5. 예약 불변식 가드 (물리적 사실이면 건너뜀)
+      // 3.5. 예약 불변식 가드 (물리적 사실이면 건너뜀)
       if (!input.bypassReservationGuard) {
         await this.assertReservationInvariant(trx, input.skuId, input.warehouseId, input.quantity);
       }
