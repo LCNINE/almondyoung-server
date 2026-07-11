@@ -41,6 +41,32 @@ export function classifyDriftSeverity(derivedQty: number): LedgerDriftSeverity {
   return derivedQty < 0 ? 'CRITICAL' : 'MISMATCH';
 }
 
+export interface ReservationDriftRow {
+  skuId: string;
+  warehouseId: string;
+  onHandQty: number;
+  reservedQty: number;
+  shortfall: number; // reservedQty - onHandQty (>0)
+}
+
+export interface ReservationDriftReport {
+  checkedAt: Date;
+  totalDriftGrains: number;
+  drifts: ReservationDriftRow[];
+}
+
+/** (sku,warehouse) 원장 ON_HAND 합 < confirmed 예약 합 이면 drift. 뷰 미사용(raw 합). */
+export function isReservationOverReserved(onHandSum: number, reservedSum: number): boolean {
+  return reservedSum > onHandSum;
+}
+
+interface ReservationDriftQueryRow {
+  sku_id: string;
+  warehouse_id: string;
+  on_hand_qty: number | string;
+  reserved_qty: number | string;
+}
+
 @Injectable()
 export class LedgerReconciliationService {
   private readonly logger = new Logger(LedgerReconciliationService.name);
@@ -121,6 +147,51 @@ export class LedgerReconciliationService {
   }
 
   /**
+   * (sku,warehouse) 예약 불변식 대사 — ON_HAND 원장 합 < confirmed 예약 합 grain 만 반환.
+   * raw 합 직접 집계(뷰 availableQty 의 transit_out 반영 금지 → 거짓 경보 방지).
+   */
+  async reconcileReservations(
+    filter?: { warehouseId?: string; skuId?: string },
+    tx?: DbTx,
+  ): Promise<ReservationDriftReport> {
+    const warehouseId = filter?.warehouseId;
+    const skuId = filter?.skuId;
+    const query = sql`
+      WITH on_hand AS (
+        SELECT sku_id, warehouse_id, SUM(qty)::int AS qty
+          FROM stock_ledgers WHERE stock_state = 'ON_HAND'
+         GROUP BY sku_id, warehouse_id
+      ), reserved AS (
+        SELECT sku_id, warehouse_id, SUM(quantity)::int AS qty
+          FROM stock_reservations WHERE status = 'confirmed'
+         GROUP BY sku_id, warehouse_id
+      )
+      SELECT r.sku_id, r.warehouse_id,
+             coalesce(o.qty, 0) AS on_hand_qty,
+             r.qty              AS reserved_qty
+        FROM reserved r
+        LEFT JOIN on_hand o ON o.sku_id = r.sku_id AND o.warehouse_id = r.warehouse_id
+       WHERE r.qty > coalesce(o.qty, 0)
+         AND ${skuId ? sql`r.sku_id = ${skuId}` : sql`true`}
+         AND ${warehouseId ? sql`r.warehouse_id = ${warehouseId}` : sql`true`}
+    `;
+    const result = await this.dbService.run(async (trx) => trx.execute(query), tx);
+    const rawRows = result as unknown as ReservationDriftQueryRow[];
+    const drifts: ReservationDriftRow[] = rawRows.map((r) => {
+      const onHandQty = Number(r.on_hand_qty);
+      const reservedQty = Number(r.reserved_qty);
+      return {
+        skuId: r.sku_id,
+        warehouseId: r.warehouse_id,
+        onHandQty,
+        reservedQty,
+        shortfall: reservedQty - onHandQty,
+      };
+    });
+    return { checkedAt: new Date(), totalDriftGrains: drifts.length, drifts };
+  }
+
+  /**
    * 야간 전 카탈로그 대사. drift 를 로그 + Prometheus 게이지로 표면화.
    * 잡 자체 예외가 스케줄러를 죽이지 않도록 try/catch 로 감싼다.
    */
@@ -133,15 +204,23 @@ export class LedgerReconciliationService {
 
       if (report.totalDriftGrains === 0) {
         this.logger.log('✅ Ledger reconciliation clean — no drift');
-        return;
+      } else {
+        // silent truncation 금지 — 총 건수를 먼저 명시하고 앞 20건만 상세 로그.
+        this.logger.error(
+          `❌ Ledger drift: ${report.totalDriftGrains} grains (critical=${report.criticalCount}). ` +
+            `Showing first 20: ` +
+            JSON.stringify(report.drifts.slice(0, 20)),
+        );
       }
 
-      // silent truncation 금지 — 총 건수를 먼저 명시하고 앞 20건만 상세 로그.
-      this.logger.error(
-        `❌ Ledger drift: ${report.totalDriftGrains} grains (critical=${report.criticalCount}). ` +
-          `Showing first 20: ` +
-          JSON.stringify(report.drifts.slice(0, 20)),
-      );
+      const resReport = await this.reconcileReservations();
+      this.metrics.setReservedOverOnHand(resReport.totalDriftGrains);
+      if (resReport.totalDriftGrains > 0) {
+        this.logger.error(
+          `❌ Reserved-over-onhand: ${resReport.totalDriftGrains} grains. First 20: ` +
+            JSON.stringify(resReport.drifts.slice(0, 20)),
+        );
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const stack = error instanceof Error ? error.stack : undefined;

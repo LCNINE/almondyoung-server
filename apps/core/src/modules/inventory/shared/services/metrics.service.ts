@@ -100,6 +100,13 @@ export class MetricsService implements OnModuleInit {
     registers: [register],
   });
 
+  // 예약 불변식 대사 메트릭 — (sku,warehouse) 의 confirmed 예약 합이 ON_HAND 원장 합을 초과하는 grain 수.
+  private readonly reservedOverOnHandGauge = new Gauge({
+    name: 'wms_reserved_over_onhand_grains',
+    help: 'Number of (sku,warehouse) grains whose confirmed reservations exceed ON_HAND',
+    registers: [register],
+  });
+
   onModuleInit() {
     // 기본 시스템 메트릭 수집 시작
     collectDefaultMetrics({ register });
@@ -238,6 +245,11 @@ export class MetricsService implements OnModuleInit {
   setLedgerDrift(counts: { mismatch: number; critical: number }) {
     this.ledgerDriftGauge.set({ severity: 'MISMATCH' }, counts.mismatch);
     this.ledgerDriftGauge.set({ severity: 'CRITICAL' }, counts.critical);
+  }
+
+  /** 예약 초과 grain 수 — 정상 실행도 0 을 써서 이전 값 잔존을 막는다. */
+  setReservedOverOnHand(count: number) {
+    this.reservedOverOnHandGauge.set(count);
   }
 
   /**
