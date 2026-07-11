@@ -1109,7 +1109,7 @@ export class FulfillmentsService {
     if (fo.status === 'shipped') {
       actions.push('deliver');
     }
-    if (fo.fulfillmentMode === 'drop_ship' && !isTerminal) {
+    if (isDropShip && !isTerminal) {
       const dsStatus = fo.directShipStatus;
       if (!dsStatus || dsStatus === 'pending') actions.push('forwardDropShip');
       if (dsStatus === 'forwarded') actions.push('completeDropShip');
