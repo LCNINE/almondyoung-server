@@ -13,13 +13,17 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { UnifiedReservationService } from '../../shared/services/unified-reservation.service';
+import { FulfillmentReservationReconciliationService } from '../services/fulfillment-reservation-reconciliation.service';
 import { ReleaseReservationDto } from '../dto/reservation/reserve-stock.dto';
 import { ReservationDto, ReservationSummaryDto } from '../dto/reservation/reservation-response.dto';
 
 @ApiTags('Inventory - Reservations')
 @Controller('inventory/reservations')
 export class ReservationController {
-  constructor(private readonly unifiedReservation: UnifiedReservationService) {}
+  constructor(
+    private readonly unifiedReservation: UnifiedReservationService,
+    private readonly reconciliation: FulfillmentReservationReconciliationService,
+  ) {}
 
   /**
    * 예약 해제
@@ -145,31 +149,27 @@ export class ReservationController {
   }
 
   /**
-   * 만료된 예약 처리 (관리자용)
+   * 예약 정합성 정리 (관리자용) — terminal FO 의 잔존 confirmed 예약을 대사 후 해제.
    */
-  @Post('expire-stale')
+  @Post('reconcile')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: '만료된 예약 일괄 해제',
-    description: 'timeoutAt이 지난 예약을 일괄 해제합니다 (관리자 또는 Cron Job 용도).',
+    summary: '예약 정합성 정리',
+    description: 'terminal FO(shipped/completed/canceled)에 남은 confirmed 예약(좀비)을 탐지·해제합니다.',
   })
   @ApiResponse({
     status: 200,
-    description: '해제된 예약 개수',
+    description: '해제 결과',
     schema: {
       type: 'object',
       properties: {
-        releasedCount: { type: 'number', example: 5 },
-        message: { type: 'string', example: 'Released 5 expired reservations' },
+        healedFos: { type: 'number', example: 2 },
+        healedReservations: { type: 'number', example: 5 },
       },
     },
   })
-  async expireStaleReservations(): Promise<{ releasedCount: number; message: string }> {
-    const releasedCount = await this.unifiedReservation.releaseExpiredReservations();
-
-    return {
-      releasedCount,
-      message: `Released ${releasedCount} expired reservations`,
-    };
+  async reconcileReservations(): Promise<{ healedFos: number; healedReservations: number }> {
+    const result = await this.reconciliation.reconcileAndHeal();
+    return { healedFos: result.healedFos, healedReservations: result.healedReservations };
   }
 }

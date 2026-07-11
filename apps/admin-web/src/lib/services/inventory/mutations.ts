@@ -594,10 +594,10 @@ export const useReleaseReservation = () => {
   });
 };
 
-export const useExpireStaleReservations = () => {
+export const useReconcileReservations = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: () => reservationsClient.expireStaleReservations(),
+    mutationFn: () => reservationsClient.reconcileReservations(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inventory', 'reservations'] });
     },

@@ -3,7 +3,6 @@ import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { eq } from 'drizzle-orm';
 import { UnifiedReservationService } from './unified-reservation.service';
-import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 
 @Injectable()
 export class ReservationLifecycleService {
@@ -12,12 +11,7 @@ export class ReservationLifecycleService {
   constructor(
     private readonly db: DbService<typeof wmsSchema>,
     private readonly unifiedReservation: UnifiedReservationService,
-    private readonly productSellableQuantity: ProductSellableQuantityService,
   ) {}
-
-  private async recalculateSellableQuantityForReservationSku(reservation: { skuId: string }, tx: DbTx): Promise<void> {
-    await this.productSellableQuantity.recalculateAndPublishForSku(reservation.skuId, tx);
-  }
 
   /**
    * FO 상태 변경시 예약 처리
@@ -54,11 +48,20 @@ export class ReservationLifecycleService {
     await this.releaseFulfillmentOrderReservations(fulfillmentOrderId, 'FO shipped (consumed)', tx);
   }
 
+  /**
+   * 대사·발생원 sweep 용 public 진입 — terminal FO 의 잔존 confirmed 예약을 전량 release.
+   * release 는 available 을 되돌릴 뿐 SHIP 원장을 append 하지 않는다(consume 과 동일 메커니즘).
+   * @returns release 된 예약 행 수
+   */
+  async releaseLeftoverReservations(fulfillmentOrderId: string, reason: string, tx: DbTx): Promise<number> {
+    return this.releaseFulfillmentOrderReservations(fulfillmentOrderId, reason, tx);
+  }
+
   private async releaseFulfillmentOrderReservations(
     fulfillmentOrderId: string,
     reason: string,
     tx: DbTx,
-  ): Promise<void> {
+  ): Promise<number> {
     // 1. FO의 모든 예약 조회
     const reservations = await this.unifiedReservation.getReservationsByTarget(
       'FULFILLMENT_ORDER',
@@ -83,5 +86,6 @@ export class ReservationLifecycleService {
       .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
 
     this.logger.log(`Released ${reservations.length} FO reservations. Reason: ${reason}`);
+    return reservations.length;
   }
 }

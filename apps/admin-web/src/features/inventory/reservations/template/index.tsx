@@ -10,7 +10,7 @@ import {
   useReservationsBySku,
   useReservationsByTarget,
   useReservationSummary,
-  useExpireStaleReservations,
+  useReconcileReservations,
 } from '@/lib/services/inventory';
 import type { ReservationTargetType } from '@/lib/types/dto/inventory';
 import { ReservationsTable } from '../components/reservations-table';
@@ -35,7 +35,7 @@ export default function ReservationsTemplate() {
   const [summaryWarehouseId, setSummaryWarehouseId] = useState('');
   const [committedSummaryWarehouseId, setCommittedSummaryWarehouseId] = useState('');
 
-  const expireMutation = useExpireStaleReservations();
+  const reconcileMutation = useReconcileReservations();
 
   const { data: skuReservations = [], isLoading: isSkuLoading } = useReservationsBySku(
     committedSkuId,
@@ -49,12 +49,12 @@ export default function ReservationsTemplate() {
     committedSummaryWarehouseId
   );
 
-  const handleExpireStale = async () => {
+  const handleReconcile = async () => {
     try {
-      const result = await expireMutation.mutateAsync();
-      toast.success(`만료된 예약 ${result.releasedCount}건이 해제되었습니다.`);
+      const result = await reconcileMutation.mutateAsync();
+      toast.success(`예약 정합성 정리 완료: ${result.healedReservations}건 해제 (${result.healedFos}개 주문)`);
     } catch {
-      toast.error('만료된 예약 해제에 실패했습니다.');
+      toast.error('예약 정합성 정리에 실패했습니다.');
     }
   };
 
@@ -81,10 +81,10 @@ export default function ReservationsTemplate() {
           <Button
             variant="outline"
             size="sm"
-            onClick={handleExpireStale}
-            disabled={expireMutation.isPending}
+            onClick={handleReconcile}
+            disabled={reconcileMutation.isPending}
           >
-            {expireMutation.isPending ? '처리 중...' : '만료된 예약 일괄 해제'}
+            {reconcileMutation.isPending ? '처리 중...' : '예약 정합성 정리'}
           </Button>
         }
       />
