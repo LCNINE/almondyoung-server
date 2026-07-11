@@ -111,48 +111,6 @@ export class UnifiedReservationService {
   }
 
   /**
-   * 예약 이전 (FO간, Task간)
-   */
-  async transferReservation(
-    fromReservationId: string,
-    toTargetType: 'FULFILLMENT_ORDER' | 'MOVEMENT_TASK',
-    toTargetId: string,
-    tx?: DbTx,
-  ): Promise<Reservation> {
-    return this.db.run(async (trx) => {
-      // 기존 예약 해제
-      await this.releaseReservation(fromReservationId, trx);
-
-      // 기존 예약 정보 조회
-      const oldReservation = await trx.query.stockReservations.findFirst({
-        where: eq(wmsTables.stockReservations.id, fromReservationId),
-      });
-
-      if (!oldReservation) {
-        throw new BadRequestException(`Reservation ${fromReservationId} not found`);
-      }
-
-      // 새 예약 생성
-      const newReservation = await this.reserveStock(
-        {
-          targetType: toTargetType,
-          targetId: toTargetId,
-          skuId: oldReservation.skuId,
-          warehouseId: oldReservation.warehouseId,
-          quantity: oldReservation.quantity,
-          fulfillmentOrderItemId: oldReservation.fulfillmentOrderItemId || undefined,
-          reason: `Transferred from ${oldReservation.targetType}:${oldReservation.targetId}`,
-        },
-        trx,
-      );
-
-      this.logger.log(`Transferred reservation ${fromReservationId} to ${toTargetType}:${toTargetId}`);
-
-      return newReservation;
-    }, tx);
-  }
-
-  /**
    * 특정 Target의 예약 현황 조회 (FO/Task가 어떤 SKU를 예약했는지)
    */
   async getReservationsByTarget(targetType: string, targetId: string, tx?: DbTx): Promise<Reservation[]> {

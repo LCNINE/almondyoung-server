@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
-import { eq, and } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { UnifiedReservationService } from './unified-reservation.service';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 
@@ -36,30 +36,6 @@ export class ReservationLifecycleService {
       }
 
       this.logger.log(`Handled FO ${fulfillmentOrderId} status change: ${oldStatus} → ${newStatus}`);
-    }, tx);
-  }
-
-  /**
-   * Movement Task 상태 변경시 예약 처리
-   */
-  async handleMovementTaskStatusChange(
-    movementTaskId: string,
-    oldStatus: string,
-    newStatus: string,
-    tx?: DbTx,
-  ): Promise<void> {
-    return this.db.run(async (trx) => {
-      switch (newStatus) {
-        case 'canceled':
-          await this.releaseMovementTaskReservations(movementTaskId, 'Movement task canceled', trx);
-          break;
-
-        case 'completed':
-          await this.releaseMovementTaskReservations(movementTaskId, 'Movement task completed', trx);
-          break;
-      }
-
-      this.logger.log(`Handled Movement task ${movementTaskId} status change: ${oldStatus} → ${newStatus}`);
     }, tx);
   }
 
@@ -107,97 +83,5 @@ export class ReservationLifecycleService {
       .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
 
     this.logger.log(`Released ${reservations.length} FO reservations. Reason: ${reason}`);
-  }
-
-  /**
-   * Movement Task 예약 일괄 해제
-   */
-  private async releaseMovementTaskReservations(movementTaskId: string, reason: string, tx: DbTx): Promise<void> {
-    // 1. Movement Task의 모든 예약 조회
-    const reservations = await this.unifiedReservation.getReservationsByTarget('MOVEMENT_TASK', movementTaskId, tx);
-
-    // 2. 각 예약 해제
-    for (const reservation of reservations) {
-      await this.unifiedReservation.releaseReservation(reservation.id, tx);
-    }
-
-    this.logger.log(`Released ${reservations.length} Movement task reservations. Reason: ${reason}`);
-  }
-
-  /**
-   * FO 아이템 수량 변경시 예약 조정
-   */
-  async adjustReservationOnQuantityChange(
-    fulfillmentOrderItemId: string,
-    oldQuantity: number,
-    newQuantity: number,
-    tx?: DbTx,
-  ): Promise<void> {
-    return this.db.run(async (trx) => {
-      const quantityDiff = newQuantity - oldQuantity;
-
-      if (quantityDiff === 0) return;
-
-      const reservations = await trx.query.stockReservations.findMany({
-        where: and(
-          eq(wmsTables.stockReservations.fulfillmentOrderItemId, fulfillmentOrderItemId),
-          eq(wmsTables.stockReservations.status, 'confirmed'),
-        ),
-      });
-
-      if (quantityDiff > 0) {
-        // 수량 증가: 추가 예약 필요
-        if (reservations.length > 0) {
-          const firstReservation = reservations[0];
-          await this.unifiedReservation.reserveStock(
-            {
-              targetType: 'FULFILLMENT_ORDER',
-              targetId: firstReservation.targetId,
-              skuId: firstReservation.skuId,
-              warehouseId: firstReservation.warehouseId,
-              quantity: quantityDiff,
-              fulfillmentOrderItemId: fulfillmentOrderItemId,
-              reason: 'Quantity increased',
-            },
-            trx,
-          );
-        }
-      } else {
-        // 수량 감소: 예약 해제 필요
-        let remainingToRelease = Math.abs(quantityDiff);
-
-        for (const reservation of reservations) {
-          if (remainingToRelease <= 0) break;
-
-          const releaseQuantity = Math.min(reservation.quantity, remainingToRelease);
-
-          if (releaseQuantity === reservation.quantity) {
-            await this.unifiedReservation.releaseReservation(reservation.id, trx);
-          } else {
-            await trx
-              .update(wmsTables.stockReservations)
-              .set({
-                quantity: reservation.quantity - releaseQuantity,
-                updatedAt: new Date(),
-              })
-              .where(eq(wmsTables.stockReservations.id, reservation.id));
-
-            await this.recalculateSellableQuantityForReservationSku(reservation, trx);
-          }
-
-          remainingToRelease -= releaseQuantity;
-        }
-      }
-
-      // FO 아이템 예약 수량 업데이트
-      await trx
-        .update(wmsTables.fulfillmentOrderItems)
-        .set({ reservedQty: newQuantity })
-        .where(eq(wmsTables.fulfillmentOrderItems.id, fulfillmentOrderItemId));
-
-      this.logger.log(
-        `Adjusted reservations for FOI ${fulfillmentOrderItemId}: ${oldQuantity} → ${newQuantity} (${quantityDiff > 0 ? '+' : ''}${quantityDiff})`,
-      );
-    }, tx);
   }
 }

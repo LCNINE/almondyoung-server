@@ -84,41 +84,6 @@ export class StockEventService {
   }
 
   /**
-   * 재고 예약 처리
-   * @deprecated Use UnifiedReservationService.reserveStock() directly
-   */
-  async reserveStock(
-    skuId: string,
-    quantity: number,
-    warehouseId: string,
-    targetType: 'FULFILLMENT_ORDER' | 'MOVEMENT_TASK',
-    targetId: string,
-    reason?: string,
-    tx?: DbTx,
-  ) {
-    this.logger.log(`Reserving ${quantity} units of SKU ${skuId} for ${targetType}:${targetId}`);
-
-    return this.dbService.run(async (executor) => {
-      // UnifiedReservationService를 활용한 예약 생성
-      const reservation = await this.unifiedReservation.reserveStock(
-        {
-          targetType,
-          targetId,
-          skuId,
-          warehouseId,
-          quantity,
-          reason,
-        },
-        executor,
-      );
-
-      this.logger.log(`Successfully reserved: ${reservation.id}`);
-
-      return reservation;
-    }, tx);
-  }
-
-  /**
    * 재고 예약 해제
    * @deprecated Use UnifiedReservationService.releaseReservation() directly
    */
