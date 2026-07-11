@@ -222,4 +222,31 @@ describeIfDb('FulfillmentReservationsFacade (DB integration, rollback-only)', ()
       expect(candidates).toEqual([]);
     });
   });
+
+  it('getTransferCandidates는 drop_ship 후보를 제외하고 null-mode(in_house) 후보는 보존한다', async () => {
+    await inRollbackTx(async (tx) => {
+      const f = await createFixture(tx); // toFo 는 fulfillmentMode 미지정 = null(in_house)
+
+      // 같은 sku·warehouse 에 drop_ship 후보 FO+FOI 추가 (shortage 존재)
+      const [dsFo] = await tx
+        .insert(wmsTables.fulfillmentOrders)
+        .values({
+          warehouseId: f.warehouseId,
+          status: 'created',
+          totalItems: 1,
+          totalQty: 2,
+          fulfillmentMode: 'drop_ship',
+        })
+        .returning();
+      const [dsFoi] = await tx
+        .insert(wmsTables.fulfillmentOrderItems)
+        .values({ fulfillmentOrderId: dsFo.id, skuId: f.skuId, qty: 2, reservedQty: 0 })
+        .returning();
+
+      const candidates = await facade.getTransferCandidates(f.fromFo.id, f.fromFoi.id, tx);
+      const ids = candidates.map((c) => c.id);
+      expect(ids).toContain(f.toFoi.id); // null-mode(in_house) 후보 보존
+      expect(ids).not.toContain(dsFoi.id); // drop_ship 후보 제외
+    });
+  });
 });

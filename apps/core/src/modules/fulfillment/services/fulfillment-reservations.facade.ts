@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
-import { eq, and, asc, gt, ne, inArray } from 'drizzle-orm';
+import { eq, and, asc, gt, ne, inArray, isNull, or } from 'drizzle-orm';
 import { UnifiedReservationService } from '../../inventory/shared/services/unified-reservation.service';
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { PoliciesService } from './policies.service';
@@ -492,6 +492,12 @@ export class FulfillmentReservationsFacade {
           eq(wmsTables.fulfillmentOrders.warehouseId, fromFo.warehouseId),
           inArray(wmsTables.fulfillmentOrders.status, [...this.RESERVATION_TRANSFER_ALLOWED_STATUS_LIST]),
           gt(wmsTables.fulfillmentOrderItems.qty, wmsTables.fulfillmentOrderItems.reservedQty),
+          // W6 방어선: drop_ship 후보 제외. fulfillmentMode 는 nullable(=in_house 기본)이라
+          // 단순 ne 는 null-mode 후보를 잘못 제외 → NULL-safe(or isNull)로 in_house 보존.
+          or(
+            isNull(wmsTables.fulfillmentOrders.fulfillmentMode),
+            ne(wmsTables.fulfillmentOrders.fulfillmentMode, 'drop_ship'),
+          ),
         ),
       )
       .orderBy(asc(wmsTables.fulfillmentOrders.createdAt), asc(wmsTables.fulfillmentOrderItems.id))
