@@ -23,6 +23,7 @@ import { SkuManagersService } from './services/sku-managers.service';
 import { FifoLocationStrategy, LOCATION_RESOLUTION_STRATEGY } from './services/location-resolution.strategy';
 import { ReservationCronService } from './services/reservation-cron.service';
 import { LedgerReconciliationService } from './services/ledger-reconciliation.service';
+import { FulfillmentReservationReconciliationService } from './services/fulfillment-reservation-reconciliation.service';
 import { InventoryIdempotencyService } from './services/inventory-idempotency.service';
 import { ReturnService } from './services/return.service';
 import { TransferService } from './services/transfer.service';
@@ -58,6 +59,7 @@ import { OutboxService } from '../shared/outbox/outbox.service';
     { provide: LOCATION_RESOLUTION_STRATEGY, useClass: FifoLocationStrategy },
     ReservationCronService,
     LedgerReconciliationService,
+    FulfillmentReservationReconciliationService,
     InventoryIdempotencyService,
     ReturnService,
     TransferService,

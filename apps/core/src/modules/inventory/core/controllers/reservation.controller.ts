@@ -13,13 +13,17 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery } from '@nestjs/swagger';
 import { UnifiedReservationService } from '../../shared/services/unified-reservation.service';
+import { FulfillmentReservationReconciliationService } from '../services/fulfillment-reservation-reconciliation.service';
 import { ReleaseReservationDto } from '../dto/reservation/reserve-stock.dto';
 import { ReservationDto, ReservationSummaryDto } from '../dto/reservation/reservation-response.dto';
 
 @ApiTags('Inventory - Reservations')
 @Controller('inventory/reservations')
 export class ReservationController {
-  constructor(private readonly unifiedReservation: UnifiedReservationService) {}
+  constructor(
+    private readonly unifiedReservation: UnifiedReservationService,
+    private readonly reconciliation: FulfillmentReservationReconciliationService,
+  ) {}
 
   /**
    * 예약 해제
@@ -171,5 +175,30 @@ export class ReservationController {
       releasedCount,
       message: `Released ${releasedCount} expired reservations`,
     };
+  }
+
+  /**
+   * 예약 정합성 정리 (관리자용) — terminal FO 의 잔존 confirmed 예약을 대사 후 해제.
+   */
+  @Post('reconcile')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: '예약 정합성 정리',
+    description: 'terminal FO(shipped/completed/canceled)에 남은 confirmed 예약(좀비)을 탐지·해제합니다.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: '해제 결과',
+    schema: {
+      type: 'object',
+      properties: {
+        healedFos: { type: 'number', example: 2 },
+        healedReservations: { type: 'number', example: 5 },
+      },
+    },
+  })
+  async reconcileReservations(): Promise<{ healedFos: number; healedReservations: number }> {
+    const result = await this.reconciliation.reconcileAndHeal();
+    return { healedFos: result.healedFos, healedReservations: result.healedReservations };
   }
 }
