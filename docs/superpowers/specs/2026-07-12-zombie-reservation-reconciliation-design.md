@@ -101,7 +101,7 @@ async releaseLeftoverReservations(foId: string, reason: string, tx: DbTx): Promi
 
 **B-1. 탐지** `detectZombieReservations(filter?, tx?)`:
 - 단일 SQL 스냅샷: `stock_reservations`(`status='confirmed'`) ⋈ `fulfillmentOrders`(`status IN ('shipped','completed','canceled')`) on `targetType='FULFILLMENT_ORDER' AND targetId = fo.id`. 선택 필터 `warehouseId`/`skuId`.
-- 반환 `ZombieReservationReport { checkedAt, totalZombieFos, totalZombieQty, rows: ZombieRow[] }`, `ZombieRow = { foId, foStatus, skuId, warehouseId, quantity, reservationId }`. Task 10 `*DriftReport` 형태 미러.
+- 반환 `ZombieReservationReport { checkedAt, totalZombieReservations, totalZombieFos, rows: ZombieReservationRow[] }`, `ZombieReservationRow = { reservationId, foId, foStatus, skuId, warehouseId, quantity }`. Task 10 `*DriftReport` 형태 미러. (`totalZombieReservations` = 예약 행 수, `healedReservations` 와 의미 정렬.)
 
 **B-2. heal** `reconcileAndHeal(filter?, tx?)`:
 - `detectZombieReservations` → **FO 단위로 그룹** → FO 별 `this.dbService.run(trx => reservationLifecycle.releaseLeftoverReservations(foId, 'reconcile: terminal FO leftover', trx), tx)`.
