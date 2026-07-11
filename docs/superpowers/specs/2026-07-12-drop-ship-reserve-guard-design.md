@@ -80,7 +80,7 @@ if (!isTerminal) {
 - `ship()`/`markDelivered()` 의 기존 sweep — 방치 정책의 heal 기전, 손대지 않음.
 - `UnifiedReservationService.reserveStock`(코어)·facade 의 FO→FOI 잠금 순서·over-reserve 불변식(`:84-90`).
 
-## 6. 테스트 (전부 유닛 · 스키마 무변경)
+## 6. 테스트 (본체 가드·광고는 유닛 · getTransferCandidates 필터는 deferred 통합 · 스키마 무변경)
 `fulfillment-reservations.facade.spec.ts` (`makeFacade` 에 `foFulfillmentMode`, 후보용 `toFoFulfillmentMode` 옵션 추가):
 - reserve on drop_ship FO → `ConflictException`.
 - transferReservation 에서 fromFo drop_ship → throw / toFo drop_ship → throw.
@@ -92,6 +92,8 @@ if (!isTerminal) {
 - **null-mode(in_house 기본) → `reserve` 존재**(회귀).
 - in_house 명시(`'in_house'`) → `reserve`·`transferReservation`(status 허용 시) 존재(회귀).
 
+**getTransferCandidates 필터(SQL-level) — 유닛 mock 은 WHERE 를 무시하므로 유닛 검증 불가.** 실 안전망은 `transferReservation` THROW(유닛 검증됨) — 후보 필터는 UX 방어선. SQL 정합은 **기존 deferred 통합 spec**(`fulfillment-reservations.facade.integration.spec.ts`, `DATABASE_URL` 없으면 auto-skip)에 1건 추가로 검증: drop_ship 후보 제외 **+ null-mode(in_house) 후보 보존**. dev DB 부재 시 auto-skip, `isolatedModules`-off `tsc` 로 타입체크(작업 10 판례).
+
 ## 7. 비목표 / 후속
 - 잔존 데이터 일회 정리·대사잡 non-terminal 확장 — **비목표**(§3.1 방치 확정).
 - `@app/shared` 도메인 에러 이관 — P3-1 별건.
@@ -99,6 +101,6 @@ if (!isTerminal) {
 - admin-web MOVEMENT_TASK 필터 잔재(작업 9 잔여 (b)) — 무관, FE 후속 티켓 유지.
 
 ## 8. 검증 게이트 (공통 규약)
-`nest build core` exit 0 · arch 경계 spec(`inventory-write-boundary.arch.spec.ts`) PASS · fulfillment 유닛 spec PASS · 삭제/신규 심볼 정합 · 변경 파일 **신규** eslint error 0(repo 전역 lint 는 상시 debt — 전역 판정 금지) · admin-web `type-check` 신규 0. 통합 spec 없음. 스키마 무변경이라 dev DB 의존 ⏸ 없음.
+`nest build core` exit 0 · arch 경계 spec(`inventory-write-boundary.arch.spec.ts`) PASS · fulfillment 유닛 spec PASS · 삭제/신규 심볼 정합 · 변경 파일 **신규** eslint error 0(repo 전역 lint 는 상시 debt — 전역 판정 금지) · admin-web `type-check` 신규 0. getTransferCandidates deferred 통합 spec 1건은 `isolatedModules`-off `tsc` 로 타입체크(dev DB 부재로 런타임 ⏸). 스키마 무변경.
 
 브랜치 `feat/drop-ship-reserve-guard` → 이 spec + plan → develop **스쿼시 머지** → 현황판 §5 WS-D 갱신(작업 11b 완료 블록 + §2 관련 행).
