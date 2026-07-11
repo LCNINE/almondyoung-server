@@ -68,6 +68,13 @@ export class FulfillmentReservationsFacade {
       if (this.TERMINAL_STATUSES.includes(fo.status as never)) {
         throw new ConflictException(`Cannot reserve for FO ${fo.id} in status '${fo.status}'`);
       }
+      // W6(직배 별도 엔티티 추출) 전까지의 방어선: drop_ship 은 타사 재고라
+      // 자사 예약을 생성하지 않는다. warehouseId 검사보다 앞에 두어 명확한 사유를 반환.
+      if (fo.fulfillmentMode === 'drop_ship') {
+        throw new ConflictException(
+          `Cannot reserve for drop_ship FO ${fo.id}: 타사 재고라 자사 예약을 생성하지 않습니다`,
+        );
+      }
       if (!fo.warehouseId) {
         throw new BadRequestException(`FO ${fo.id} has no warehouseId`);
       }

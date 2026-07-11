@@ -19,6 +19,7 @@ describe('FulfillmentReservationsFacade', () => {
       firstItemQty?: number;
       firstItemReservedQty?: number;
       firstItemFulfillmentOrderId?: string;
+      foFulfillmentMode?: string | null;
       reservations?: Array<{ id: string; skuId: string; quantity: number }>;
       extraItems?: Array<Record<string, any>>;
       toFo?: { id: string; status: string; warehouseId: string; totalReservedQty: number };
@@ -27,6 +28,7 @@ describe('FulfillmentReservationsFacade', () => {
     const fo = {
       id: fulfillmentOrderId,
       status: options.foStatus ?? 'unfulfillable',
+      fulfillmentMode: options.foFulfillmentMode ?? null,
       warehouseId,
       totalReservedQty: 1,
       reservationFailureReason: 'RESERVATION_FAILED',
@@ -237,6 +239,15 @@ describe('FulfillmentReservationsFacade', () => {
       await expect(
         facade.reserve(fulfillmentOrderId, { fulfillmentOrderItemId, quantity: 2 }, tx),
       ).rejects.toThrow(BadRequestException);
+      expect(unified.reserveStock).not.toHaveBeenCalled();
+    });
+
+    it('drop_ship FO에 reserve 요청하면 ConflictException을 던진다 (타사 재고 불변식)', async () => {
+      const { facade, tx, unified } = makeFacade({ foFulfillmentMode: 'drop_ship' });
+
+      await expect(
+        facade.reserve(fulfillmentOrderId, { fulfillmentOrderItemId, quantity: 1 }, tx),
+      ).rejects.toThrow(ConflictException);
       expect(unified.reserveStock).not.toHaveBeenCalled();
     });
 
