@@ -1,10 +1,11 @@
-import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { StockEventStore } from '../repositories/stock-event.store';
 import { OutboxService } from '../../shared/outbox/outbox.service';
 import { LocationService } from './location.service';
-import { eq, and, gt, desc } from 'drizzle-orm';
+import { eq, and, gt, desc, sum } from 'drizzle-orm';
+import { acquireStockAvailabilityLock } from '../../shared/locks/stock-availability-lock';
 
 @Injectable()
 export class InventoryCommandService {
@@ -207,6 +208,8 @@ export class InventoryCommandService {
   ) {
     if (input.quantity <= 0) throw new BadRequestException('quantity must be positive');
     const exec = async (trx: DbTx) => {
+      await acquireStockAvailabilityLock(trx, input.skuId, input.fromWarehouseId);
+      await this.assertReservationInvariant(trx, input.skuId, input.fromWarehouseId, input.quantity);
       const event = await this.eventStore.createEvent(
         {
           skuId: input.skuId,
@@ -363,6 +366,50 @@ export class InventoryCommandService {
     return this.dbService.run(exec, tx);
   }
 
+  /** 창고 grain ON_HAND 합·confirmed 예약 합 (가드 + 실사 inline warn 공용). */
+  async getWarehouseReservationBalance(
+    trx: DbTx,
+    skuId: string,
+    warehouseId: string,
+  ): Promise<{ onHand: number; reserved: number }> {
+    const [oh] = await trx
+      .select({ q: sum(wmsTables.stockLedgers.qty) })
+      .from(wmsTables.stockLedgers)
+      .where(
+        and(
+          eq(wmsTables.stockLedgers.skuId, skuId),
+          eq(wmsTables.stockLedgers.warehouseId, warehouseId),
+          eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
+        ),
+      );
+    const [rv] = await trx
+      .select({ q: sum(wmsTables.stockReservations.quantity) })
+      .from(wmsTables.stockReservations)
+      .where(
+        and(
+          eq(wmsTables.stockReservations.skuId, skuId),
+          eq(wmsTables.stockReservations.warehouseId, warehouseId),
+          eq(wmsTables.stockReservations.status, 'confirmed'),
+        ),
+      );
+    return { onHand: Number(oh?.q ?? 0), reserved: Number(rv?.q ?? 0) };
+  }
+
+  /** 락 획득 후 호출. 창고 합산 예약 불변식 위반 시 409. */
+  private async assertReservationInvariant(
+    trx: DbTx,
+    skuId: string,
+    warehouseId: string,
+    removingQty: number,
+  ): Promise<void> {
+    const { onHand, reserved } = await this.getWarehouseReservationBalance(trx, skuId, warehouseId);
+    if (violatesReservationInvariant(onHand, reserved, removingQty)) {
+      throw new ConflictException(
+        `예약된 재고는 감소/이동할 수 없습니다. 창고 ON_HAND ${onHand} − ${removingQty} < 예약 ${reserved}`,
+      );
+    }
+  }
+
   async adjustDown(
     input: {
       skuId: string;
@@ -372,11 +419,15 @@ export class InventoryCommandService {
       occurredAt?: Date;
       idempotencyKey?: string;
       reason?: string;
+      bypassReservationGuard?: boolean; // 실사·파손 등 물리적 사실만 true
     },
     tx?: DbTx,
   ) {
     if (input.quantity <= 0) throw new BadRequestException('quantity must be positive');
     const exec = async (trx: DbTx) => {
+      // 0. (sku,warehouse) 직렬화 — bypass 여도 락은 획득
+      await acquireStockAvailabilityLock(trx, input.skuId, input.warehouseId);
+
       // 1. SKU 정보 조회
       const sku = await trx.query.skus.findFirst({
         where: (s, { eq }) => eq(s.id, input.skuId),
@@ -426,6 +477,11 @@ export class InventoryCommandService {
         );
       }
       const afterQuantity = currentQuantity - input.quantity;
+
+      // 2.5. 예약 불변식 가드 (물리적 사실이면 건너뜀)
+      if (!input.bypassReservationGuard) {
+        await this.assertReservationInvariant(trx, input.skuId, input.warehouseId, input.quantity);
+      }
 
       // 4. Stock Event 생성
       const event = await this.eventStore.createEvent(
@@ -522,4 +578,9 @@ export class InventoryCommandService {
     };
     return this.dbService.run(exec, tx);
   }
+}
+
+/** 차감/이동 후 창고 ON_HAND 합이 confirmed 예약 합보다 적어지면 true. */
+export function violatesReservationInvariant(onHandSum: number, reservedSum: number, removingQty: number): boolean {
+  return onHandSum - removingQty < reservedSum;
 }
