@@ -20,9 +20,8 @@ export const LOCATION_RESOLUTION_STRATEGY = Symbol('LOCATION_RESOLUTION_STRATEGY
  * FIFO 어댑터 — (sku, warehouse) 의 raw ON_HAND `stock_ledgers` 행을 읽어
  * fifoRank(nulls last) → updatedAt 순으로 그리디 할당한다.
  *
- * ⚠️ `AllocationStrategyService.getAvailableLocations` 를 쓰지 않는다 — 그건
- * available(=on_hand−reserved) 를 보므로, 예약을 동시에 소진하는 이 경로에서 쓰면
- * 이중 차감된다. 여기서는 raw ON_HAND 만 본다.
+ * ⚠️ available(=on_hand−reserved) 차감 조회를 쓰지 않는다 — 예약을 동시에
+ * 소진하는 이 경로에서 그걸 쓰면 이중 차감된다. 여기서는 raw ON_HAND 만 본다.
  */
 @Injectable()
 export class FifoLocationStrategy implements LocationResolutionStrategy {
