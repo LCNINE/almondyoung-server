@@ -190,6 +190,7 @@ export class StockEventService {
           locationId,
           quantity,
           reason: `DAMAGE: ${reason}`,
+          bypassReservationGuard: true, // 파손 = 물리적 사실
         },
         executor,
       );
