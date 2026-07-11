@@ -1258,9 +1258,9 @@ export interface ReservationSummaryDto {
   byTarget: ReservationSummaryTargetDto[];
 }
 
-export interface ExpireStaleReservationsResponseDto {
-  releasedCount: number;
-  message: string;
+export interface ReconcileReservationsResponseDto {
+  healedFos: number;
+  healedReservations: number;
 }
 
 // ===== 재고 실사 (Stocktaking) =====

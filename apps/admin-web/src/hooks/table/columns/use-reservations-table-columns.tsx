@@ -87,13 +87,6 @@ export const useReservationsTableColumns = (actions: RowActions) => {
           <span className="text-sm text-muted-foreground">{getValue() ?? '-'}</span>
         ),
       }),
-      columnHelper.accessor('timeoutAt', {
-        header: '만료 시각',
-        cell: ({ getValue }) => {
-          const v = getValue();
-          return v ? <DateCell value={v} /> : <span className="text-muted-foreground">-</span>;
-        },
-      }),
       columnHelper.accessor('createdAt', {
         header: '생성일시',
         cell: ({ getValue }) => <DateCell value={getValue()} />,
