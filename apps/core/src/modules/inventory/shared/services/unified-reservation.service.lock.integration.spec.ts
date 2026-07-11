@@ -64,7 +64,7 @@ describeIfDb('UnifiedReservationService reserve lock (DB integration)', () => {
     const loc = (
       await db
         .insert(wmsTables.locations)
-        .values({ warehouseId: wh.id, code: `L-${randomUUID().slice(0, 8)}` })
+        .values({ warehouseId: wh.id, code: `L-${randomUUID().slice(0, 8)}`, locationType: 'standard' })
         .returning()
     )[0];
     await db
