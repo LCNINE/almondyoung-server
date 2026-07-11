@@ -3,6 +3,7 @@ import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { eq, and, inArray, sum, sql, lt, isNotNull } from 'drizzle-orm';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
+import { acquireStockAvailabilityLock } from '../locks/stock-availability-lock';
 
 export interface ReserveStockDto {
   targetType: 'FULFILLMENT_ORDER';
@@ -55,6 +56,9 @@ export class UnifiedReservationService {
    */
   async reserveStock(dto: ReserveStockDto, tx?: DbTx): Promise<Reservation> {
     return this.db.run(async (trx) => {
+      // 0. (sku,warehouse) 직렬화 — available 확인↔INSERT 사이 TOCTOU 차단
+      await acquireStockAvailabilityLock(trx, dto.skuId, dto.warehouseId);
+
       // 1. 사용가능한 재고 확인
       const availableStock = await this.getAvailableStock(dto.skuId, dto.warehouseId, trx);
 
