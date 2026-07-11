@@ -1092,11 +1092,15 @@ export class FulfillmentsService {
     const hasShippedItems = items.some((i) => i.shippedQty > 0);
     const actions: string[] = [];
 
+    // W6(직배 별도 엔티티 추출) 전까지의 방어선: drop_ship 은 타사 재고라 자사 예약이 없다.
+    // reserve/transferReservation 은 예약을 생성/주입하므로 광고 제외. unreserve 는 잔존 예약
+    // 수동 해제 escape hatch 로 유지(facade 도 unreserve 는 drop_ship 가드하지 않음).
+    const isDropShip = fo.fulfillmentMode === 'drop_ship';
     if (!isTerminal) {
-      actions.push('reserve');
+      if (!isDropShip) actions.push('reserve');
       if (!hasShippedItems) {
         actions.push('unreserve');
-        if (TRANSFER_ALLOWED_STATUSES.has(fo.status)) {
+        if (!isDropShip && TRANSFER_ALLOWED_STATUSES.has(fo.status)) {
           actions.push('transferReservation');
         }
       }
