@@ -74,7 +74,7 @@ describeIfDb('OutboundConsumptionService (DB integration, rollback-only)', () =>
     command = new InventoryCommandService(dbService, eventStore, invOutbox, location);
 
     const unified = new UnifiedReservationService(dbService, sellable);
-    const lifecycle = new ReservationLifecycleService(dbService, unified, sellable);
+    const lifecycle = new ReservationLifecycleService(dbService, unified);
     const strategy = new FifoLocationStrategy();
 
     consumption = new OutboundConsumptionService(dbService, strategy, command, lifecycle, fulfillmentOutbox);

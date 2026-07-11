@@ -111,6 +111,11 @@ export class FulfillmentReservationReconciliationService {
 
     let healedFos = 0;
     let healedReservations = 0;
+    // heal 은 매칭된 FO 하나당 releaseLeftoverReservations 로 그 FO 의 confirmed 예약을 전량 release 한다
+    // (terminal FO 위의 confirmed 예약은 전부 좀비이므로 전량 release 가 맞다).
+    // 따라서 warehouseId/skuId filter 를 주면 filter 로 좁혀진 totalZombieReservations 보다
+    // healedReservations 가 더 클 수 있다(같은 FO 에 filter 밖 SKU/창고 예약이 섞여 있는 경우).
+    // 운영 cron/엔드포인트는 filter 없이 호출하므로 프로덕션에서는 발생하지 않는다.
     for (const foId of foIds) {
       try {
         const released = await this.dbService.run(
