@@ -224,6 +224,7 @@ describe('FulfillmentsService', () => {
     };
     const reservationLifecycle = {
       handleFulfillmentOrderStatusChange: jest.fn().mockResolvedValue(undefined),
+      releaseLeftoverReservations: jest.fn().mockResolvedValue(0),
     };
     const policies = {
       getVariantPolicy: jest.fn().mockResolvedValue(
@@ -1316,6 +1317,47 @@ describe('FulfillmentsService', () => {
       expect.objectContaining({ eventType: 'FulfillmentDelivered' }),
       expect.anything(),
     );
+  });
+
+  describe('발생원 예약 sweep (작업 11 P1-3)', () => {
+    it('ship(drop_ship) 이 잔존 예약 방어 sweep 을 같은 tx 로 호출한다', async () => {
+      const { service, reservationLifecycle } = makeService({
+        fulfillmentOrders: [
+          {
+            id: 'fo-ship-1',
+            salesOrderId,
+            warehouseId,
+            status: 'ready',
+            fulfillmentMode: 'drop_ship',
+            directShipStatus: 'forwarded',
+          },
+        ],
+        fulfillmentOrderItems: [{ id: 'foi-ship-1', fulfillmentOrderId: 'fo-ship-1', skuId, qty: 3, reservedQty: 0, shippedQty: 0 }],
+      });
+
+      await service.ship('fo-ship-1');
+
+      expect(reservationLifecycle.releaseLeftoverReservations).toHaveBeenCalledWith(
+        'fo-ship-1',
+        'reconcile: drop_ship invariant sweep',
+        expect.anything(),
+      );
+    });
+
+    it('markDelivered 가 잔존 예약 방어 sweep 을 같은 tx 로 호출한다', async () => {
+      const { service, reservationLifecycle } = makeService({
+        fulfillmentOrders: [{ id: 'fo-delivered-1', salesOrderId, warehouseId, status: 'shipped' }],
+        shipments: [{ id: 'shipment-2', fulfillmentOrderId: 'fo-delivered-1', trackingNo: 'TRK-002', carrier: 'CJ' }],
+      });
+
+      await service.markDelivered('fo-delivered-1');
+
+      expect(reservationLifecycle.releaseLeftoverReservations).toHaveBeenCalledWith(
+        'fo-delivered-1',
+        'reconcile: FO delivered leftover',
+        expect.anything(),
+      );
+    });
   });
 
   it('cancel은 ready/unfulfillable FO의 기존 confirmed reservation을 lifecycle로 해제한다', async () => {
