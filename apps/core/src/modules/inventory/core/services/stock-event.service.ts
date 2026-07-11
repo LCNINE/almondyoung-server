@@ -8,7 +8,6 @@ import { SkuCreationSource } from '../../sku-catalog/dto/create-sku.dto';
 import { StockEventStore } from '../repositories/stock-event.store';
 import { InventoryCommandService } from '../services/inventory-command.service';
 import { UnifiedReservationService } from '../../shared/services/unified-reservation.service';
-import { AllocationStrategyService } from './allocation-strategy.service';
 
 @Injectable()
 export class StockEventService {
@@ -19,7 +18,6 @@ export class StockEventService {
     private readonly eventStore: StockEventStore,
     private readonly commandService: InventoryCommandService,
     private readonly unifiedReservation: UnifiedReservationService,
-    private readonly allocationStrategy: AllocationStrategyService,
   ) {}
 
   /**

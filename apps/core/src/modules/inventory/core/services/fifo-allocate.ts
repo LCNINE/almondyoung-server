@@ -6,7 +6,7 @@
  * 가용 합이 요청량보다 적으면 불변식 위반으로 throw (RFC §7 / ADR-0027 결정 7).
  *
  * raw ON_HAND 만 본다 — 예약은 보지 않는다. 이 경로가 예약을 동시에 소진하므로
- * available(=on_hand−reserved) 기반 `AllocationStrategyService` 를 쓰면 이중 차감된다.
+ * available(=on_hand−reserved) 기반으로 할당하면 예약 동시 소진 경로에서 이중 차감된다.
  */
 export interface OnHandLedgerRow {
   locationId: string;

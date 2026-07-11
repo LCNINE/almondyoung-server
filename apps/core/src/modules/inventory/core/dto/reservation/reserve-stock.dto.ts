@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsInt, IsOptional, IsEnum, IsDateString, Min, IsBoolean, IsArray } from 'class-validator';
+import { IsString, IsInt, IsOptional, IsEnum, IsDateString, Min } from 'class-validator';
 
 export enum ReservationTargetType {
   FULFILLMENT_ORDER = 'FULFILLMENT_ORDER',
@@ -74,65 +74,6 @@ export class ReserveStockDto {
   @IsOptional()
   @IsString()
   reason?: string;
-}
-
-export class AllocateStockDto {
-  @ApiProperty({
-    description: 'SKU ID',
-    example: '550e8400-e29b-41d4-a716-446655440001',
-  })
-  @IsString()
-  skuId: string;
-
-  @ApiProperty({
-    description: '요청 수량',
-    example: 50,
-    minimum: 1,
-  })
-  @IsInt()
-  @Min(1)
-  requestedQuantity: number;
-
-  @ApiProperty({
-    description: '창고 ID (선택적)',
-    example: '550e8400-e29b-41d4-a716-446655440002',
-    required: false,
-    nullable: true,
-  })
-  @IsOptional()
-  @IsString()
-  warehouseId?: string;
-
-  @ApiProperty({
-    description: '선호 위치 ID 목록 (선택적)',
-    example: ['550e8400-e29b-41d4-a716-446655440010', '550e8400-e29b-41d4-a716-446655440011'],
-    required: false,
-    type: [String],
-  })
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  preferredLocationIds?: string[];
-
-  @ApiProperty({
-    description: '할당 전략',
-    enum: ['FIFO', 'LOCATION_PRIORITY', 'MULTI_WAREHOUSE', 'CLOSEST_EXPIRY'],
-    example: 'FIFO',
-    required: false,
-  })
-  @IsOptional()
-  @IsEnum(['FIFO', 'LOCATION_PRIORITY', 'MULTI_WAREHOUSE', 'CLOSEST_EXPIRY'])
-  strategy?: 'FIFO' | 'LOCATION_PRIORITY' | 'MULTI_WAREHOUSE' | 'CLOSEST_EXPIRY';
-
-  @ApiProperty({
-    description: '부분 할당 허용 여부',
-    example: true,
-    required: false,
-    default: false,
-  })
-  @IsOptional()
-  @IsBoolean()
-  allowPartial?: boolean;
 }
 
 export class ReleaseReservationDto {
