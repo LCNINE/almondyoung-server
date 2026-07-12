@@ -1,14 +1,7 @@
-import {
-  Controller,
-  Logger,
-  NotFoundException,
-  BadRequestException,
-  UseInterceptors,
-  UseFilters,
-} from '@nestjs/common';
+import { Controller, Logger, NotFoundException, BadRequestException, UseInterceptors } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
-import { OnEvent, EventPayload, EventEnvelope, EventsExceptionFilter, RetryPolicy } from '@app/events';
+import { OnEvent, EventPayload, EventEnvelope, RetryPolicy } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import type {
   OrderCreatedPayload,
@@ -34,7 +27,6 @@ import { and, eq } from 'drizzle-orm';
  */
 @Controller()
 @UseInterceptors(EventTypeGuard)
-@UseFilters(EventsExceptionFilter)
 export class OrderEventsConsumer {
   private readonly logger = new Logger(OrderEventsConsumer.name);
 

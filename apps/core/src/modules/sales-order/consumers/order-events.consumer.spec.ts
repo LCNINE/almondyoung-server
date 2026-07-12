@@ -11,8 +11,7 @@ import type {
 import type { MessageEnvelope } from '@packages/event-contracts/types';
 import 'reflect-metadata';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
-import { EXCEPTION_FILTERS_METADATA } from '@nestjs/common/constants';
-import { EventsExceptionFilter, RETRY_POLICY_METADATA } from '@app/events';
+import { RETRY_POLICY_METADATA } from '@app/events';
 
 /**
  * ADR-0010 wiring 검증.
@@ -402,9 +401,9 @@ describe('OrderEventsConsumer', () => {
 /**
  * 작업 13 (WS-D, P1-1·P1-2) 회귀 가드.
  *
- * 근본 원인은 컨슈머에 EventsExceptionFilter 미부착이라 실패 메시지가
- * offset 미커밋 → 무한 포이즌이 된 것. 누군가 필터/분류를 제거하면 재발하므로
- * wiring 을 메타데이터 레벨에서 봉인한다 (이 spec 의 기존 wiring-drift 방지 철학과 동일).
+ * 재시도/DLQ 처리는 EventRetryInterceptor 가 EventsModule 에서 전역(APP_INTERCEPTOR)
+ * 자동 등록된다 (봉인: libs/events/src/events.module.spec.ts). 여기서는 컨슈머별
+ * @RetryPolicy 분류 계약만 메타데이터 레벨에서 봉인한다.
  */
 describe('OrderEventsConsumer poison classification (작업 13)', () => {
   interface RetryMeta {
@@ -414,11 +413,6 @@ describe('OrderEventsConsumer poison classification (작업 13)', () => {
   const proto = OrderEventsConsumer.prototype as unknown as Record<string, unknown>;
   const retryPolicyOf = (handler: unknown): RetryMeta | undefined =>
     Reflect.getMetadata(RETRY_POLICY_METADATA, handler as object) as RetryMeta | undefined;
-
-  it('attaches EventsExceptionFilter (재시도→DLQ→offset commit)', () => {
-    const filters = (Reflect.getMetadata(EXCEPTION_FILTERS_METADATA, OrderEventsConsumer) as unknown[]) ?? [];
-    expect(filters).toContain(EventsExceptionFilter);
-  });
 
   it('classifies OrderCancelled SO-not-found + post-ship reject as non-retryable (즉시 DLQ)', () => {
     const policy = retryPolicyOf(proto.handleOrderCancelled);
