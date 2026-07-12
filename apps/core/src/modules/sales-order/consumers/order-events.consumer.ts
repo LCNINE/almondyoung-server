@@ -1,9 +1,16 @@
-import { Controller, Logger, NotFoundException, UseInterceptors } from '@nestjs/common';
+import {
+  Controller,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  UseInterceptors,
+  UseFilters,
+} from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
-import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
+import { OnEvent, EventPayload, EventEnvelope, EventsExceptionFilter, RetryPolicy } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
-import {
+import type {
   OrderCreatedPayload,
   OrderCancelledPayload,
   OrderModifiedPayload,
@@ -27,6 +34,7 @@ import { and, eq } from 'drizzle-orm';
  */
 @Controller()
 @UseInterceptors(EventTypeGuard)
+@UseFilters(EventsExceptionFilter)
 export class OrderEventsConsumer {
   private readonly logger = new Logger(OrderEventsConsumer.name);
 
@@ -65,6 +73,7 @@ export class OrderEventsConsumer {
   }
 
   @OnEvent('orders.events.v1', 'OrderCreated')
+  @RetryPolicy({ maxRetries: 5, backoff: 'exponential', initialDelayMs: 1000, maxDelayMs: 15000 })
   async handleOrderCreated(
     @EventPayload() payload: OrderCreatedPayload,
     @EventEnvelope() envelope: MessageEnvelope<OrderCreatedPayload>,
@@ -111,6 +120,7 @@ export class OrderEventsConsumer {
   }
 
   @OnEvent('orders.events.v1', 'OrderCancelled')
+  @RetryPolicy({ nonRetryableErrors: [NotFoundException, BadRequestException] })
   async handleOrderCancelled(
     @EventPayload() payload: OrderCancelledPayload,
     @EventEnvelope() envelope: MessageEnvelope<OrderCancelledPayload>,
@@ -197,6 +207,7 @@ export class OrderEventsConsumer {
   }
 
   @OnEvent('orders.events.v1', 'OrderRefundCreated')
+  @RetryPolicy({ nonRetryableErrors: [NotFoundException] })
   async handleOrderRefundCreated(
     @EventPayload() payload: OrderRefundCreatedPayload,
     @EventEnvelope() envelope: MessageEnvelope<OrderRefundCreatedPayload>,

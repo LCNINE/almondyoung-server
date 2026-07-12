@@ -9,6 +9,10 @@ import type {
   OrderRefundCreatedPayload,
 } from '@packages/event-contracts';
 import type { MessageEnvelope } from '@packages/event-contracts/types';
+import 'reflect-metadata';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { EXCEPTION_FILTERS_METADATA } from '@nestjs/common/constants';
+import { EventsExceptionFilter, RETRY_POLICY_METADATA } from '@app/events';
 
 /**
  * ADR-0010 wiring 검증.
@@ -220,7 +224,7 @@ describe('OrderEventsConsumer', () => {
     expect(mocks.library.revokeOwnershipsForOrder).not.toHaveBeenCalled();
   });
 
-  it('OrderCancelled 대상 SalesOrder 가 없으면 lifecycle 신호를 재시도 가능하게 실패시킨다', async () => {
+  it('OrderCancelled 대상 SalesOrder 가 없으면 throw 로 실패를 표면화한다 (필터가 non-retryable 로 분류 → 즉시 DLQ)', async () => {
     const mocks = makeMocks();
     const consumer = makeConsumer(mocks);
     const payload = {
@@ -368,7 +372,7 @@ describe('OrderEventsConsumer', () => {
     ).toBe(false);
   });
 
-  it('OrderRefundCreated 대상 SalesOrder 가 없으면 lifecycle 신호를 재시도 가능하게 실패시킨다', async () => {
+  it('OrderRefundCreated 대상 SalesOrder 가 없으면 throw 로 실패를 표면화한다 (필터가 non-retryable 로 분류 → 즉시 DLQ)', async () => {
     const mocks = makeMocks();
     const consumer = makeConsumer(mocks);
     const payload = {
@@ -392,5 +396,48 @@ describe('OrderEventsConsumer', () => {
     );
 
     expect(mocks.txInserts).toHaveLength(0);
+  });
+});
+
+/**
+ * 작업 13 (WS-D, P1-1·P1-2) 회귀 가드.
+ *
+ * 근본 원인은 컨슈머에 EventsExceptionFilter 미부착이라 실패 메시지가
+ * offset 미커밋 → 무한 포이즌이 된 것. 누군가 필터/분류를 제거하면 재발하므로
+ * wiring 을 메타데이터 레벨에서 봉인한다 (이 spec 의 기존 wiring-drift 방지 철학과 동일).
+ */
+describe('OrderEventsConsumer poison classification (작업 13)', () => {
+  interface RetryMeta {
+    maxRetries?: number;
+    nonRetryableErrors?: unknown[];
+  }
+  const proto = OrderEventsConsumer.prototype as unknown as Record<string, unknown>;
+  const retryPolicyOf = (handler: unknown): RetryMeta | undefined =>
+    Reflect.getMetadata(RETRY_POLICY_METADATA, handler as object) as RetryMeta | undefined;
+
+  it('attaches EventsExceptionFilter (재시도→DLQ→offset commit)', () => {
+    const filters = (Reflect.getMetadata(EXCEPTION_FILTERS_METADATA, OrderEventsConsumer) as unknown[]) ?? [];
+    expect(filters).toContain(EventsExceptionFilter);
+  });
+
+  it('classifies OrderCancelled SO-not-found + post-ship reject as non-retryable (즉시 DLQ)', () => {
+    const policy = retryPolicyOf(proto.handleOrderCancelled);
+    expect(policy?.nonRetryableErrors).toEqual(expect.arrayContaining([NotFoundException, BadRequestException]));
+  });
+
+  it('classifies OrderRefundCreated SO-not-found as non-retryable (즉시 DLQ)', () => {
+    const policy = retryPolicyOf(proto.handleOrderRefundCreated);
+    expect(policy?.nonRetryableErrors).toEqual([NotFoundException]);
+  });
+
+  it('gives OrderCreated a more generous retry budget (P2-15 완화, no non-retryable business class)', () => {
+    const policy = retryPolicyOf(proto.handleOrderCreated);
+    expect(policy?.maxRetries).toBe(5);
+    expect(policy?.nonRetryableErrors).toBeUndefined();
+  });
+
+  it('leaves OrderModified on the default policy (수정 무시 = 의도적 무변경)', () => {
+    const policy = retryPolicyOf(proto.handleOrderModified);
+    expect(policy).toBeUndefined();
   });
 });
