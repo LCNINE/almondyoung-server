@@ -6,6 +6,8 @@ import { and, or, eq, lte, gte, isNull } from 'drizzle-orm';
 import { sql } from 'drizzle-orm/sql';
 import { StockStateEnum } from '../../schema/enum-values';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
+import { acquireStockAvailabilityLock } from '../../shared/locks/stock-availability-lock';
+import { assertReservationInvariant } from '../../shared/locks/reservation-invariant';
 
 // TransitionType alias for strong typing
 type TransitionType = (typeof wmsTables.stockEvents.$inferInsert)['transitionType'];
@@ -305,6 +307,14 @@ export class StockEventStore {
       if (!original) throw new BadRequestException(`Event ${eventId} not found`);
       if (original.eventStatus !== 'POSTED') {
         throw new BadRequestException('PENDING/VOIDED 이벤트는 역분개할 수 없습니다.');
+      }
+
+      // 역분개가 ON_HAND 를 순감소시키면(RECEIVE/ADJUST_UP 등 취소) 예약 불변식 가드.
+      // 락·가드는 감소 방향만 — 증가·창고내이동(net-0)은 면제(작업 10 §5 락 면제 경로와 일관).
+      const dec = reversalOnHandDecrement(original);
+      if (dec) {
+        await acquireStockAvailabilityLock(trx, dec.skuId, dec.warehouseId);
+        await assertReservationInvariant(trx, dec.skuId, dec.warehouseId, dec.quantity);
       }
 
       // 전이 타입 역매핑
