@@ -371,3 +371,22 @@ export class StockEventStore {
     return map[t] ?? 'ADJUST_DOWN';
   }
 }
+
+/**
+ * 역분개가 창고 ON_HAND 를 순감소시키는지 판정.
+ * reverseEvent 는 원 이벤트의 to-측을 from-측(감소)으로 반전한다. 따라서 ON_HAND 순감소 창고 =
+ * original.toWarehouseId (original.toState === 'ON_HAND' 일 때). 창고내 이동(from==to, 양쪽 ON_HAND)은
+ * 순변화 0 → 제외. 증가/비-ON_HAND 방향(SHIP·ADJUST_DOWN·SCRAP 역분개 등)은 null → 락·가드 면제.
+ */
+export function reversalOnHandDecrement(original: {
+  skuId: string;
+  fromWarehouseId: string | null;
+  toWarehouseId: string | null;
+  fromState: StockStateEnum | null;
+  toState: StockStateEnum | null;
+  quantity: number;
+}): { skuId: string; warehouseId: string; quantity: number } | null {
+  if (original.toState !== 'ON_HAND' || original.toWarehouseId == null) return null;
+  if (original.fromState === 'ON_HAND' && original.fromWarehouseId === original.toWarehouseId) return null;
+  return { skuId: original.skuId, warehouseId: original.toWarehouseId, quantity: original.quantity };
+}
