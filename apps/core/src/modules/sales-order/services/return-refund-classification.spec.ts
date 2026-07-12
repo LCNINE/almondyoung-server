@@ -8,10 +8,14 @@ describe('classifyRefundOutcome (규율 1·3)', () => {
     expect(classifyRefundOutcome({ kind: 'already_refunded', errorCode: 'X', errorMessage: 'm' })).toBe('succeeded');
   });
   it('failed determinate=true → failed (다음 재시도 N+1)', () => {
-    expect(classifyRefundOutcome({ kind: 'failed', errorCode: 'X', errorMessage: 'm', determinate: true })).toBe('failed');
+    expect(classifyRefundOutcome({ kind: 'failed', errorCode: 'X', errorMessage: 'm', determinate: true })).toBe(
+      'failed',
+    );
   });
   it('failed determinate=false(5xx) → pending (같은 key 재생)', () => {
-    expect(classifyRefundOutcome({ kind: 'failed', errorCode: 'X', errorMessage: 'm', determinate: false })).toBe('pending');
+    expect(classifyRefundOutcome({ kind: 'failed', errorCode: 'X', errorMessage: 'm', determinate: false })).toBe(
+      'pending',
+    );
   });
   it('in_flight → pending (규율 3)', () => {
     expect(classifyRefundOutcome({ kind: 'in_flight', errorCode: 'X', errorMessage: 'm' })).toBe('pending');
