@@ -325,6 +325,8 @@ export class SalesOrdersService {
         return this.getOne(id, trx);
       }
 
+      // shipped/delivered/processing 는 producer 0(작업 15, ADR-0017)이라 도달 불가하나,
+      // 미래 값 부활 시 confirm 재진입을 막도록 방어적으로 존치한다.
       const NON_CONFIRMABLE = new Set(['cancelled', 'shipped', 'delivered', 'timeout', 'processing']);
       if (NON_CONFIRMABLE.has(salesOrder.status)) {
         throw new ConflictException(
