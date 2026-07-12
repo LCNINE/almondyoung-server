@@ -29,13 +29,11 @@ describeIfDb('FulfillmentReservationsFacade (DB integration, rollback-only)', ()
   let sql: postgres.Sql;
   let db: PostgresJsDatabase<typeof wmsSchema>;
   let facade: FulfillmentReservationsFacade;
-  let outbox: { enqueue: jest.Mock };
 
   beforeAll(() => {
     sql = postgres(DATABASE_URL as string, { max: 1 });
     db = drizzle(sql, { schema: wmsSchema });
 
-    outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     // transfer/candidates 경로는 unified/productSellableQuantity를 호출하지 않고,
     // FOI variantId가 null이면 policies도 호출하지 않는다 — 호출되면 테스트가 실패하도록 미구현 stub
     const unified = {} as never;
@@ -47,9 +45,7 @@ describeIfDb('FulfillmentReservationsFacade (DB integration, rollback-only)', ()
       unified,
       productSellableQuantity,
       policies,
-      outbox as never,
     );
-
   });
 
   afterAll(async () => {
@@ -193,7 +189,6 @@ describeIfDb('FulfillmentReservationsFacade (DB integration, rollback-only)', ()
         .where(eq(wmsTables.fulfillmentOrders.id, f.toFo.id));
       expect(fromFoAfter).toMatchObject({ status: 'created', totalReservedQty: 0 });
       expect(toFoAfter).toMatchObject({ status: 'ready', totalReservedQty: 2 });
-      expect(outbox.enqueue).toHaveBeenCalledWith(expect.objectContaining({ aggregateId: f.toFo.id }), tx);
 
       // 이전 후 후보 재조회: from reservedQty=0 → source-side 정책으로 빈 배열
       const after = await facade.getTransferCandidates(f.fromFo.id, f.fromFoi.id, tx);
@@ -220,6 +215,33 @@ describeIfDb('FulfillmentReservationsFacade (DB integration, rollback-only)', ()
       // source-side 정책: picking 상태 FO의 후보 조회도 빈 배열
       const candidates = await facade.getTransferCandidates(f.fromFo.id, f.fromFoi.id, tx);
       expect(candidates).toEqual([]);
+    });
+  });
+
+  it('getTransferCandidates는 drop_ship 후보를 제외하고 null-mode(in_house) 후보는 보존한다', async () => {
+    await inRollbackTx(async (tx) => {
+      const f = await createFixture(tx); // toFo 는 fulfillmentMode 미지정 = null(in_house)
+
+      // 같은 sku·warehouse 에 drop_ship 후보 FO+FOI 추가 (shortage 존재)
+      const [dsFo] = await tx
+        .insert(wmsTables.fulfillmentOrders)
+        .values({
+          warehouseId: f.warehouseId,
+          status: 'created',
+          totalItems: 1,
+          totalQty: 2,
+          fulfillmentMode: 'drop_ship',
+        })
+        .returning();
+      const [dsFoi] = await tx
+        .insert(wmsTables.fulfillmentOrderItems)
+        .values({ fulfillmentOrderId: dsFo.id, skuId: f.skuId, qty: 2, reservedQty: 0 })
+        .returning();
+
+      const candidates = await facade.getTransferCandidates(f.fromFo.id, f.fromFoi.id, tx);
+      const ids = candidates.map((c) => c.id);
+      expect(ids).toContain(f.toFoi.id); // null-mode(in_house) 후보 보존
+      expect(ids).not.toContain(dsFoi.id); // drop_ship 후보 제외
     });
   });
 });
