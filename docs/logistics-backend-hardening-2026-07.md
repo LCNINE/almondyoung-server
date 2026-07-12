@@ -291,6 +291,16 @@ reserve 경로 잠금(ledger FOR UPDATE 또는 sku+warehouse advisory lock), adj
 > - **배선 레벨 결정**: 작업 10 은 store 를 lower-level 로 남겼는데(호출부가 락·가드 소유), 표면 B 가 임의 이벤트라 호출부 각개 래핑은 누락 위험 → `StockEventStore.reverseEvent` 내부 일괄(판단 번복) vs 호출부 2곳+C 처분. **내부 일괄이 누락 없는 쪽**이나 store 의 낮은 레이어 원칙과 상충 — 설계에서 명시 결정.
 > - **가드 정책**: 입고취소·이벤트취소는 실사·파손과 달리 물리적 사실이 아닌 **시스템 정정** → bypass 가 아닌 THROW 대상이 자연스러움. 단 방향 분기 필요: ON_HAND **감소** 방향 reversal(IN 계열 취소)만 락+가드 대상, 증가 방향(OUT 계열 취소)은 가드 불요.
 
+> **✅ 작업 11b (drop_ship 예약/이전 주입 가드) 완료 — 2026-07-12:** drop_ship FO 의 "자사 재고 예약 없음" 불변식을 예약 **생성 경로**에서 강제. 작업 11 부수 발견(operator 수동 `/reserve` 가드 부재 + 광고 노출 → sweep-warn 도달)을 봉합. 스키마 무변경(작업 4·5·6·7·9·10·11 판례).
+> - **facade 가드(본체)**: `reserve`(drop_ship THROW)·`transferReservation`(from·to 양방향 THROW)·`getTransferCandidates`(NULL-safe drop_ship 후보 제외 — `or(isNull, ne)` 로 null-mode=in_house 보존). `unreserve` 는 무가드 유지(예약 감소 방향, 잔존 정리 escape hatch).
+> - **광고**: `computeAdminAvailableActions` 에서 drop_ship non-terminal → `reserve`·`transferReservation` 제외, `unreserve`·`cancel`·`forwardDropShip` 유지.
+> - **admin-web**: surface #1 인라인 예약 버튼을 `adminAvailableActions.includes('reserve')` 서버 계약 기반으로 전환(surface #2 InventoryTab·unreserve/transfer 섹션은 광고 게이트라 자동 반영).
+> - **잔존 데이터 = 방치**: 배포 전 non-terminal drop_ship FO 의 기존 confirmed 예약은 terminal 도달 시 기존 `ship()`/`markDelivered()` sweep 이 heal. 일회 정리·대사잡 non-terminal 확장은 비목표(작업 12·구 8b 판례).
+> - 설계 `docs/superpowers/specs/2026-07-12-drop-ship-reserve-guard-design.md` · 계획 `docs/superpowers/plans/2026-07-12-drop-ship-reserve-guard.md`.
+> - 브랜치 `feat/drop-ship-reserve-guard` → develop **스쿼시 머지 `<TBD>`**(머지 시 해시 기입).
+> - 검증: `nest build core` exit 0 · arch 경계(`inventory-write-boundary.arch.spec.ts`) PASS · facade/service 유닛 신규 6건 포함 GREEN(3 suites, 120 tests) · admin-web `type-check` 신규 0(현재 baseline 자체가 clean, exit 0). **eslint 재확인 결과 브리핑 기대치와 상이** — 변경 파일 신규 error 0 이 아니라 **13건**(facade.spec.ts +4 · fulfillments.service.spec.ts +9, `develop` 대비 diff): 전부 신규 추가 테스트 코드 내부(`no-unsafe-assignment`/`no-unsafe-call`/`no-unsafe-member-access`/`prettier`) — 프로덕션 코드(`fulfillment-reservations.facade.ts`·`fulfillments.service.ts`)는 0건, 파일 기존 패턴(`any`-타입 mock 파괴·private 메서드 브래킷 호출)과 동일 계열의 연장. getTransferCandidates 필터는 deferred 통합 spec 1건(DB 없으면 auto-skip · isolatedModules-off tsc 타입체크 CLEAN). 스키마 무변경이라 dev DB ⏸ 없음.
+> - **WS-D 잔여**: 작업 13(컨슈머 포이즌 P1-1·P1-2)·작업 14(반품 환불 상태기계)·작업 15(SO 상태) + 작업 10b(reverseEvent) + ② 보류(게이지 실측).
+
 **WS-E. 컨벤션/횡단** — P3-1(워커 파싱 제거와 한 세트), P3-2, P3-3, P3-6, P3-7, P3-8, P2-3, P2-5~P2-8, P2-10, W8, W9
 
 권장 착수 순서: ~~**WS-A·WS-B 의 P0 5건 먼저**(재고 무결성)~~ **P0 5건 전량 완료(작업 1~6, 2026-07-10)** → WS-D 의 포이즌 2건(P1-1/P1-2) → ~~WS-C~~ → 나머지. **WS-A·WS-B·WS-C 완료**(WS-B 의 물리 enum 값 제거 = 구 작업 8b, WS-C 의 라인 단위 소진 = 작업 12 — 둘 다 의도적 비목표. WS-C 실작업은 작업 9~11 로 완료). ~~P0-2 와 P0-3 은 반드시 한 PR 로~~(작업1 완료). P3-1 은 backlog 워커 제어흐름과 얽혀 있으므로 독립 PR + FO 생성 실패 시나리오 회귀 테스트 필수.

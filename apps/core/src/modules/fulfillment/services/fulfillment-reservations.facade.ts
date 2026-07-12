@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
-import { eq, and, asc, gt, ne, inArray } from 'drizzle-orm';
+import { eq, and, asc, gt, ne, inArray, isNull, or } from 'drizzle-orm';
 import { UnifiedReservationService } from '../../inventory/shared/services/unified-reservation.service';
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { PoliciesService } from './policies.service';
@@ -67,6 +67,13 @@ export class FulfillmentReservationsFacade {
       }
       if (this.TERMINAL_STATUSES.includes(fo.status as never)) {
         throw new ConflictException(`Cannot reserve for FO ${fo.id} in status '${fo.status}'`);
+      }
+      // W6(직배 별도 엔티티 추출) 전까지의 방어선: drop_ship 은 타사 재고라
+      // 자사 예약을 생성하지 않는다. warehouseId 검사보다 앞에 두어 명확한 사유를 반환.
+      if (fo.fulfillmentMode === 'drop_ship') {
+        throw new ConflictException(
+          `Cannot reserve for drop_ship FO ${fo.id}: 타사 재고라 자사 예약을 생성하지 않습니다`,
+        );
       }
       if (!fo.warehouseId) {
         throw new BadRequestException(`FO ${fo.id} has no warehouseId`);
@@ -308,6 +315,11 @@ export class FulfillmentReservationsFacade {
         throw new BadRequestException('출처와 대상 FOI의 SKU가 다릅니다.');
       }
 
+      // W6 방어선: drop_ship 은 타사 재고 — 예약을 이전으로 주입/유출할 수 없다(source·target 양방향 차단).
+      if (fromFo.fulfillmentMode === 'drop_ship' || toFo.fulfillmentMode === 'drop_ship') {
+        throw new ConflictException('drop_ship 출고주문은 예약 이전 대상이 될 수 없습니다 (타사 재고).');
+      }
+
       if (!fromFo.warehouseId || !toFo.warehouseId) {
         throw new BadRequestException('FO에 창고가 지정되어 있지 않습니다.');
       }
@@ -480,6 +492,12 @@ export class FulfillmentReservationsFacade {
           eq(wmsTables.fulfillmentOrders.warehouseId, fromFo.warehouseId),
           inArray(wmsTables.fulfillmentOrders.status, [...this.RESERVATION_TRANSFER_ALLOWED_STATUS_LIST]),
           gt(wmsTables.fulfillmentOrderItems.qty, wmsTables.fulfillmentOrderItems.reservedQty),
+          // W6 방어선: drop_ship 후보 제외. fulfillmentMode 는 nullable(=in_house 기본)이라
+          // 단순 ne 는 null-mode 후보를 잘못 제외 → NULL-safe(or isNull)로 in_house 보존.
+          or(
+            isNull(wmsTables.fulfillmentOrders.fulfillmentMode),
+            ne(wmsTables.fulfillmentOrders.fulfillmentMode, 'drop_ship'),
+          ),
         ),
       )
       .orderBy(asc(wmsTables.fulfillmentOrders.createdAt), asc(wmsTables.fulfillmentOrderItems.id))
