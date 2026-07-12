@@ -2,7 +2,20 @@ import { BadRequestException, ConflictException, Injectable, Logger, NotFoundExc
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
-import { eq, inArray, desc, and, or, gte, lte, count, sql, isNotNull, type InferInsertModel, type SQL } from 'drizzle-orm';
+import {
+  eq,
+  inArray,
+  desc,
+  and,
+  or,
+  gte,
+  lte,
+  count,
+  sql,
+  isNotNull,
+  type InferInsertModel,
+  type SQL,
+} from 'drizzle-orm';
 import { PoliciesService } from './policies.service';
 import { OutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
