@@ -3274,6 +3274,8 @@ export const exchangeReasonCodeEnum = pgEnum('exchange_reason_code', [
   'other',
 ]);
 
+export const returnRefundAttemptStatusEnum = pgEnum('return_refund_attempt_status', ['pending', 'succeeded', 'failed']);
+
 export const returnRequests = pgTable(
   'return_requests',
   {
@@ -3315,6 +3317,33 @@ export const returnRequestItems = pgTable(
   (t) => ({
     idxReturnRequestItemsRequest: index('idx_return_request_items_request').on(t.returnRequestId),
     idxReturnRequestItemsOrderLine: index('idx_return_request_items_order_line').on(t.salesOrderLineId),
+  }),
+);
+
+export const returnRefundAttempts = pgTable(
+  'return_refund_attempts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    returnRequestId: uuid('return_request_id')
+      .references(() => returnRequests.id, { onDelete: 'cascade' })
+      .notNull(),
+    attemptNumber: integer('attempt_number').notNull(),
+    // = correlationId = Wallet Idempotency-Key. 시도별 결정적 key 의 단일 진실(SoT).
+    idempotencyKey: text('idempotency_key').notNull(),
+    // Wallet body 의 SoT — 재사용(재생) 시 동일 amount 강제 (body-hash 일치).
+    amount: integer('amount').notNull(),
+    status: returnRefundAttemptStatusEnum('status').notNull().default('pending'),
+    walletOutcome: jsonb('wallet_outcome'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqReturnRefundAttemptNumber: unique('uq_return_refund_attempt_number').on(t.returnRequestId, t.attemptNumber),
+    // 불변식: 반품당 in-flight(pending) attempt 최대 1개 — Phase A 의 "pending 재사용" 규칙을 DB 로 강제
+    uqReturnRefundAttemptPending: uniqueIndex('uq_return_refund_attempt_pending')
+      .on(t.returnRequestId)
+      .where(sql`${t.status} = 'pending'`),
+    idxReturnRefundAttemptsRequest: index('idx_return_refund_attempts_request').on(t.returnRequestId),
   }),
 );
 
@@ -3365,6 +3394,7 @@ export const returnExchangeTables = {
   returnRequestItems,
   exchangeRequests,
   exchangeRequestItems,
+  returnRefundAttempts,
 } as const;
 
 export const returnExchangeSchema = {
@@ -3377,6 +3407,9 @@ export type NewReturnRequest = InferInsertModel<typeof returnRequests>;
 
 export type ReturnRequestItem = InferSelectModel<typeof returnRequestItems>;
 export type NewReturnRequestItem = InferInsertModel<typeof returnRequestItems>;
+
+export type ReturnRefundAttempt = InferSelectModel<typeof returnRefundAttempts>;
+export type NewReturnRefundAttempt = InferInsertModel<typeof returnRefundAttempts>;
 
 // Exchange Request Types
 export type ExchangeRequest = InferSelectModel<typeof exchangeRequests>;
