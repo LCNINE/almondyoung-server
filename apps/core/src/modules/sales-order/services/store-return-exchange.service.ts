@@ -1304,15 +1304,20 @@ export class StoreReturnExchangeService {
       return orderTotal;
     }
 
-    // totalPrice 또는 unitPrice × quantity를 라인 무게로 사용
-    const allLinesTotals = allLines.reduce((acc, l) => acc + (l.totalPrice ?? (l.unitPrice ?? 0) * l.quantity), 0);
+    // totalPrice 또는 unitPrice × quantity를 라인 무게로 사용 (분모·분자 동일 기준)
+    const lineWeight = (l: { unitPrice: number | null; quantity: number; totalPrice: number | null }): number =>
+      l.totalPrice ?? (l.unitPrice ?? 0) * l.quantity;
+
+    const allLinesTotals = allLines.reduce((acc, l) => acc + lineWeight(l), 0);
     if (allLinesTotals <= 0) {
       return returnItems.reduce((acc, item) => acc + item.quantity * (item.unitPrice ?? 0), 0);
     }
 
     const returnedLinesTotals = allLines.reduce((acc, l) => {
       const returnQty = returnQtyByLineId.get(l.id) ?? 0;
-      return acc + returnQty * (l.unitPrice ?? 0);
+      if (returnQty <= 0 || l.quantity <= 0) return acc;
+      // 라인 무게를 반품수량 비율로 배분 (할인 포함 기준)
+      return acc + (lineWeight(l) * returnQty) / l.quantity;
     }, 0);
 
     const productSubtotal = Math.max(0, orderTotal - orderShippingFee);

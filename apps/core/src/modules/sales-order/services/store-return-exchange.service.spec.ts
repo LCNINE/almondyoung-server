@@ -841,3 +841,38 @@ describe('StoreReturnExchangeService.retryReturnRefund', () => {
     expect(id1).not.toBe(id2);
   });
 });
+
+// ── calculateReturnRefund (P1-10) tests ───────────────────────────────────────
+describe('StoreReturnExchangeService.calculateReturnRefund (P1-10 기준 통일)', () => {
+  // private 메서드 → 인스턴스 통해 호출 (기존 스펙의 private 접근 관행과 동일)
+  function calc(service: StoreReturnExchangeService, ...args: unknown[]): number {
+    return (service as unknown as { calculateReturnRefund: (...a: unknown[]) => number }).calculateReturnRefund(...args);
+  }
+
+  it('할인 라인 부분반품 시 분자도 totalPrice 기준으로 비례(과대환불 없음)', () => {
+    const service = new StoreReturnExchangeService({ db: {} } as never, {} as never);
+    // 라인A: qty2 unitPrice 10000 이나 totalPrice 12000(주문할인 반영, 8000 할인)
+    // 라인B: qty1 unitPrice 5000 totalPrice 5000
+    // 주문 totalAmount 17000, 배송비 0 → productSubtotal 17000
+    // 라인A 1개만 반품: 분모=12000+5000=17000, 라인A 무게=12000, 반품비중=1/2 → 6000
+    // 반품액 = round(6000 * 17000 / 17000) = 6000
+    const returnItems = [{ salesOrderLineId: 'A', quantity: 1, unitPrice: 10000 }];
+    const allLines = [
+      { id: 'A', quantity: 2, unitPrice: 10000, totalPrice: 12000 },
+      { id: 'B', quantity: 1, unitPrice: 5000, totalPrice: 5000 },
+    ];
+    expect(calc(service, returnItems, allLines, 17000, 0)).toBe(6000);
+  });
+
+  it('할인 없는 라인은 기존과 동일(unitPrice×qty = totalPrice)', () => {
+    const service = new StoreReturnExchangeService({ db: {} } as never, {} as never);
+    const returnItems = [{ salesOrderLineId: 'A', quantity: 1, unitPrice: 10000 }];
+    const allLines = [
+      { id: 'A', quantity: 2, unitPrice: 10000, totalPrice: 20000 },
+      { id: 'B', quantity: 1, unitPrice: 5000, totalPrice: 5000 },
+    ];
+    // 분모 25000, 라인A 무게 20000, 반품비중 1/2 → 10000; productSubtotal 25000
+    // round(10000 * 25000 / 25000) = 10000
+    expect(calc(service, returnItems, allLines, 25000, 0)).toBe(10000);
+  });
+});
