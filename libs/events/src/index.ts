@@ -33,6 +33,9 @@ export * from './filters/events-exception.filter';
 export * from './validation/schema-validation.util';
 export * from './interceptors/schema-validation.interceptor';
 
+// Retry Interceptor (전역 APP_INTERCEPTOR — EventsModule forRoot/forConsumerModule 자동 등록)
+export * from './interceptors/event-retry.interceptor';
+
 // Graceful Shutdown
 export * from './shutdown/graceful-shutdown.service';
 

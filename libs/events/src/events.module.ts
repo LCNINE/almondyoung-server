@@ -12,6 +12,7 @@ import { StreamPublisher } from './publishers/stream-publisher.service';
 import { DLQHandler } from './dlq/dlq-handler.service';
 import { SchemaValidationInterceptor } from './interceptors/schema-validation.interceptor';
 import { ChainContextInterceptor } from './interceptors/chain-context.interceptor';
+import { EventRetryInterceptor } from './interceptors/event-retry.interceptor';
 import { GracefulShutdownService } from './shutdown/graceful-shutdown.service';
 import { EventChainService } from './tracking/event-chain.service';
 import { EventTrackingService } from './tracking/event-tracking.service';
@@ -176,7 +177,15 @@ export class EventsModule {
       { provide: EventTraceReader, useClass: EventTraceReader },
     ];
 
+    // 재시도/분류/DLQ/offset commit — 반드시 최외곽(다른 인터셉터보다 먼저 등록)이어야
+    // SchemaValidationError 등 안쪽 인터셉터의 에러도 분류망에 잡힌다.
+    const retryInterceptorProvider = {
+      provide: APP_INTERCEPTOR,
+      useClass: EventRetryInterceptor,
+    };
+
     const providers = [
+      retryInterceptorProvider, // 최외곽 — 등록 순서가 래핑 순서
       ...publisherProviders,
       ...(dlqProvider ? [dlqProvider] : []),
       ...outboxProviders,
@@ -215,7 +224,7 @@ export class EventsModule {
         ]),
       ],
       providers,
-      exports: providers.map((p) => p.provide),
+      exports: providers.filter((p) => p.provide !== APP_INTERCEPTOR).map((p) => p.provide),
     };
   }
 
@@ -251,6 +260,13 @@ export class EventsModule {
         }
       : null;
 
+    // 재시도/분류/DLQ/offset commit — 반드시 최외곽(다른 인터셉터보다 먼저 등록)이어야
+    // SchemaValidationError 등 안쪽 인터셉터의 에러도 분류망에 잡힌다.
+    const retryInterceptorProvider = {
+      provide: APP_INTERCEPTOR,
+      useClass: EventRetryInterceptor,
+    };
+
     // Schema Validation Interceptor 제공자
     const interceptorProvider = {
       provide: APP_INTERCEPTOR,
@@ -285,6 +301,7 @@ export class EventsModule {
 
     const providers = [
       ...(dlqProvider ? [dlqProvider] : []),
+      retryInterceptorProvider, // 최외곽 — 등록 순서가 래핑 순서
       interceptorProvider, // 스키마 검증 Interceptor는 항상 등록
       chainInterceptorProvider, // chain context 전파 인터셉터
       shutdownProvider, // Graceful shutdown 항상 등록
