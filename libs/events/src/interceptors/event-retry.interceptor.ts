@@ -70,10 +70,12 @@ export class EventRetryInterceptor implements NestInterceptor {
     );
     const disableDLQ = this.reflector.get<boolean | undefined>(DISABLE_DLQ_METADATA, handler) ?? false;
 
-    retryPolicy.nonRetryableErrors = retryPolicy.nonRetryableErrors ?? [];
-    if (!retryPolicy.nonRetryableErrors.includes(SchemaValidationError)) {
-      retryPolicy.nonRetryableErrors.push(SchemaValidationError);
+    // 방어 복사 — @RetryPolicy 메타데이터가 소유한 배열을 in-place 변형하지 않는다
+    const nonRetryable = [...(retryPolicy.nonRetryableErrors ?? [])];
+    if (!nonRetryable.includes(SchemaValidationError)) {
+      nonRetryable.push(SchemaValidationError);
     }
+    retryPolicy.nonRetryableErrors = nonRetryable;
 
     return defer(() => this.executeWithRetry(next, handler.name, kafkaContext, retryPolicy, disableDLQ));
   }
@@ -170,6 +172,8 @@ export class EventRetryInterceptor implements NestInterceptor {
     try {
       const value = message.value;
       const jsonString: string = Buffer.isBuffer(value) ? value.toString('utf-8') : String(value ?? '{}');
+      // as 정당화: JSON.parse 는 unknown 을 반환하며 런타임 스키마 검증은 SchemaValidationInterceptor 소관.
+      // DLQ 전송은 실패 메시지 보존이 목적이라 envelope 형태를 신뢰하고 전달한다 (schema-validation.interceptor.ts:70 과 동일 관례).
       const envelope = JSON.parse(jsonString) as MessageEnvelope;
 
       await this.dlqHandler!.sendToDLQ({
