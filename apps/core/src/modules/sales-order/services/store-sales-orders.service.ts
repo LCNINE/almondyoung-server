@@ -543,12 +543,12 @@ export class StoreSalesOrdersService {
     } else if (so.status === 'cancelled') {
       availableActions.push('receipt');
       cancelUnavailableReason = 'already_cancelled';
-    } else if (hasShippedEvidence || so.status === 'shipped' || so.status === 'delivered') {
+    } else if (hasShippedEvidence) {
       availableActions.push('track');
       availableActions.push('receipt');
       cancelUnavailableReason = 'already_shipped';
       // return/exchange: 배송완료 상태 + 진행 중인 claim 없을 때만 허용
-      const isDelivered = so.status === 'delivered' || fulfillmentStatus === 'delivered';
+      const isDelivered = fulfillmentStatus === 'delivered';
       if (isDelivered) {
         const [activeReturn, activeExchange] = await Promise.all([
           this.db.db
