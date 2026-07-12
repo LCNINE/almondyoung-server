@@ -46,7 +46,7 @@
 
 ### 3.2 EventsModule 등록
 
-- `forRoot`(`events.module.ts:79`)·`forConsumerModule`(`:239`) 양쪽 providers 배열에 `APP_INTERCEPTOR`로 추가하되 **`SchemaValidationInterceptor`보다 앞(바깥)** — 전역 인터셉터는 등록 순서대로 감싸므로, 스키마 검증 에러도 재시도 인터셉터의 분류망(SchemaValidationError → 즉시 DLQ)에 잡힌다. 지금까지 필터가 잡던 경로의 대체. (구현 시 정정 2026-07-13: forRoot 에는 기존 APP_INTERCEPTOR 가 없었다 — SchemaValidation·ChainContext 는 forConsumerModule 소속. forRoot 등록은 '최외곽' 조건이 자명하게 충족되며, forConsumer(main.ts 부트스트랩)만 쓰는 앱의 컨슈머도 forRoot 경유로 커버하기 위해 유지. forRoot exports 의 APP_INTERCEPTOR 누수 필터도 함께 추가.)
+- `forRoot`(`events.module.ts:79`)·`forConsumerModule`(`:239`) 양쪽 providers 배열에 `APP_INTERCEPTOR`로 추가하되 **`SchemaValidationInterceptor`보다 앞(바깥)** — 전역 인터셉터는 등록 순서대로 감싸므로, 스키마 검증 에러도 재시도 인터셉터의 분류망(SchemaValidationError → 즉시 DLQ)에 잡힌다. 지금까지 필터가 잡던 경로의 대체. (구현 시 정정 2026-07-13: forRoot 에는 기존 APP_INTERCEPTOR 가 없었다 — SchemaValidation·ChainContext 는 forConsumerModule 소속. forRoot 등록은 '최외곽' 조건이 자명하게 충족되며, forRoot 등록 유지는 hybrid 앱(HTTP+컨슈머 혼재) 방어 목적. 단 **apps/search 는 forConsumer(main.ts)만 사용하고 forRoot/forConsumerModule 어느 쪽도 import 하지 않아 전역 등록이 닿지 않는다** — 유일한 미커버 앱, 이슈로 분리(최종리뷰 발견 2026-07-13). forRoot exports 의 APP_INTERCEPTOR 누수 필터도 함께 추가.)
 - **중복 등록 무해성**: 한 앱에서 여러 모듈이 forRoot/forConsumerModule을 호출(core는 4곳+)해 인터셉터가 중첩되지만, 에러는 최내곽 재시도 인터셉터가 잡아 삼키므로 바깥 인스턴스들은 정상 완료만 관찰 — 의미론 불변. (SchemaValidation 중복 실행은 기존 특성, 본 작업 무관.)
 
 ### 3.3 필터 제거

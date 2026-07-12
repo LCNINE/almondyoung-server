@@ -30,6 +30,7 @@ class CapturingServer extends Server implements CustomTransportStrategy {
 }
 
 const handlerCalls: unknown[] = [];
+const retryHandlerCalls: unknown[] = [];
 
 @Controller()
 class WiringTestConsumer {
@@ -44,6 +45,13 @@ class WiringTestConsumer {
   handleWiringTested(@EventPayload() payload: { poison: boolean }): Promise<void> {
     handlerCalls.push(payload);
     return Promise.reject(new NotFoundException('so not found'));
+  }
+
+  @OnEvent('wiring.retry.v1', 'WiringRetried')
+  @RetryPolicy({ maxRetries: 1, backoff: 'fixed', initialDelayMs: 1, maxDelayMs: 1 })
+  handleWiringRetried(@EventPayload() payload: { poison: boolean }): Promise<void> {
+    retryHandlerCalls.push(payload);
+    return Promise.reject(new Error('transient failure'));
   }
 }
 
@@ -68,6 +76,12 @@ describe('EventRetryInterceptor 실배선 (RpcContextCreator 바인딩 경로)',
 
   afterAll(async () => {
     await app.close();
+  });
+
+  beforeEach(() => {
+    handlerCalls.length = 0;
+    retryHandlerCalls.length = 0;
+    dlq.sendToDLQ.mockClear();
   });
 
   it('포이즌 메시지 → 실플럼빙 통과 → 분류(즉시 DLQ) → 에러 미전파(offset commit 등가)', async () => {
@@ -104,6 +118,42 @@ describe('EventRetryInterceptor 실배선 (RpcContextCreator 바인딩 경로)',
     const contextMatcher: unknown = expect.objectContaining({ consumer: 'handleWiringTested' });
     expect(dlq.sendToDLQ).toHaveBeenCalledWith(
       expect.objectContaining({ originalTopic: 'wiring.test.v1', context: contextMatcher }),
+    );
+  });
+
+  it('retryable 에러 → 실플럼빙에서도 next.handle() 재호출이 핸들러를 재실행(1+maxRetries) → 에러 미전파, DLQ 1회', async () => {
+    const boundHandler = strategy.getHandlerByPattern('wiring.retry.v1');
+    expect(boundHandler).toBeDefined();
+
+    const envelope = {
+      messageType: 'WiringRetried',
+      source: { aggregateId: 'agg-w2' },
+      payload: { poison: true },
+    };
+    const message = {
+      value: Buffer.from(JSON.stringify(envelope)),
+      offset: '9',
+      headers: {},
+    } as unknown as KafkaMessage;
+    const kafkaContext = new KafkaContext([
+      message,
+      0,
+      'wiring.retry.v1',
+      {} as unknown as Consumer,
+      jest.fn().mockResolvedValue(undefined),
+      {} as unknown as Producer,
+    ]);
+
+    const resultOrStream: unknown = await boundHandler!(envelope, kafkaContext);
+    if (isObservable(resultOrStream)) {
+      await lastValueFrom(resultOrStream, { defaultValue: undefined });
+    }
+
+    expect(retryHandlerCalls).toHaveLength(2); // 1 + maxRetries(1) — 실플럼빙에서 next.handle() 재호출이 핸들러를 재실행함을 봉인
+    expect(dlq.sendToDLQ).toHaveBeenCalledTimes(1);
+    const retryContextMatcher: unknown = expect.objectContaining({ consumer: 'handleWiringRetried' });
+    expect(dlq.sendToDLQ).toHaveBeenCalledWith(
+      expect.objectContaining({ originalTopic: 'wiring.retry.v1', context: retryContextMatcher }),
     );
   });
 });

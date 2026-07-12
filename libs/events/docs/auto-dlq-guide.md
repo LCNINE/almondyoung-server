@@ -243,6 +243,8 @@ export class CustomDLQConsumer {
 6. **재시도 실패**: DLQ로 자동 전송, Kafka offset commit
 7. **로그 기록**: 모든 과정이 상세히 로깅됨
 
+> `context.retryCount` = **총 실패 시도 수** (초기 시도 포함; nonRetryable 즉시 DLQ 인 경우 1). `attemptHistory` 길이와 같다.
+
 ## 기본 설정
 
 ```typescript

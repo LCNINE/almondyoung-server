@@ -37,6 +37,21 @@ type NormalizedRetryPolicy = ReturnType<typeof normalizeRetryPolicy>;
 /** backoff 대기 중 이 간격마다 heartbeat 호출 (max.poll.interval 초과·리밸런스 방지) */
 const HEARTBEAT_INTERVAL_MS = 3000;
 
+/**
+ * DLQ 전송 실패 표식 — 중첩 등록된 바깥 EventRetryInterceptor 인스턴스가
+ * 이를 핸들러 에러로 오분류해 재시도하지 않고 그대로 통과시키기 위한 마커.
+ * (offset 미커밋 → Kafka 재전달이 의도된 의미론)
+ */
+export class DlqDeliveryError extends Error {
+  constructor(
+    message: string,
+    readonly cause?: unknown,
+  ) {
+    super(message);
+    this.name = 'DlqDeliveryError';
+  }
+}
+
 @Injectable()
 export class EventRetryInterceptor implements NestInterceptor {
   private readonly logger = new Logger(EventRetryInterceptor.name);
@@ -94,6 +109,10 @@ export class EventRetryInterceptor implements NestInterceptor {
         // next.handle()을 시도마다 새로 호출 — 핸들러 재실행
         return await lastValueFrom(next.handle(), { defaultValue: undefined });
       } catch (error) {
+        if (error instanceof DlqDeliveryError) {
+          throw error; // 안쪽 중첩 인스턴스의 DLQ 실패 — 재분류 없이 그대로 전파
+        }
+
         const failure = error instanceof Error ? error : new Error(String(error));
         retryContext = updateRetryContext(retryContext, failure);
         const retriesSoFar = retryContext.attemptNumber - 1; // 초기 시도 제외한 재시도 횟수
@@ -150,7 +169,7 @@ export class EventRetryInterceptor implements NestInterceptor {
       return;
     }
 
-    await this.sendToDLQ(kafkaContext, error, handlerName, retryContext);
+    await this.sendToDLQ(kafkaContext, error, handlerName, retryContext, this.dlqHandler);
 
     this.logger.error(`❌ Handler failed after ${retries} retries: ${handlerName}`, {
       error: error.message,
@@ -165,6 +184,7 @@ export class EventRetryInterceptor implements NestInterceptor {
     error: Error,
     consumerName: string,
     retryContext: RetryContext,
+    dlqHandler: DLQHandler,
   ): Promise<void> {
     const message = kafkaContext.getMessage();
     const topic = kafkaContext.getTopic();
@@ -176,7 +196,7 @@ export class EventRetryInterceptor implements NestInterceptor {
       // DLQ 전송은 실패 메시지 보존이 목적이라 envelope 형태를 신뢰하고 전달한다 (schema-validation.interceptor.ts:70 과 동일 관례).
       const envelope = JSON.parse(jsonString) as MessageEnvelope;
 
-      await this.dlqHandler!.sendToDLQ({
+      await dlqHandler.sendToDLQ({
         originalTopic: topic,
         originalMessage: envelope,
         error,
@@ -202,7 +222,7 @@ export class EventRetryInterceptor implements NestInterceptor {
         offset: message.offset,
       });
       // DLQ 전송 실패는 치명적 — 에러를 던져 offset 미커밋 → Kafka 재전달
-      throw dlqError;
+      throw new DlqDeliveryError(dlqError instanceof Error ? dlqError.message : String(dlqError), dlqError);
     }
   }
 

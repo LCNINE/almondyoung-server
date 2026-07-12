@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/unbound-method, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return --
+   테스트 픽스처가 TestConsumer.prototype.handleX 를 unbound 로 전달하는 것이 이 스펙의 핵심 설계(실핸들러 메타데이터 조회 검증)이고, jest mock 접근은 기존 spec 관례와 동일 계열. */
 import { CallHandler } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ExecutionContextHost } from '@nestjs/core/helpers/execution-context-host';
@@ -7,7 +9,7 @@ import { defer, lastValueFrom, Observable } from 'rxjs';
 import { SchemaValidationError } from '@packages/event-contracts/types';
 import { RetryPolicy, DisableDLQ } from '../retry/retry-policy.decorator';
 import { DLQHandler } from '../dlq/dlq-handler.service';
-import { EventRetryInterceptor } from './event-retry.interceptor';
+import { DlqDeliveryError, EventRetryInterceptor } from './event-retry.interceptor';
 
 class PermanentError extends Error {}
 class TransientError extends Error {}
@@ -196,6 +198,18 @@ describe('EventRetryInterceptor', () => {
 
     await expect(run(TestConsumer.prototype.handleClassified, nextFrom(impl), ctx)).rejects.toThrow('rr error');
     expect(dlq.sendToDLQ).not.toHaveBeenCalled();
+  });
+
+  it('DlqDeliveryError(중첩 인스턴스의 DLQ 실패 마커) → 재분류 없이 그대로 전파, 핸들러 재실행/DLQ 재호출 없음', async () => {
+    const { ctx } = makeKafkaContext();
+    const impl = jest.fn().mockRejectedValue(new DlqDeliveryError('kafka producer down', new Error('root cause')));
+
+    await expect(run(TestConsumer.prototype.handleRetryable, nextFrom(impl), ctx)).rejects.toThrow(
+      'kafka producer down',
+    );
+
+    expect(impl).toHaveBeenCalledTimes(1); // 재시도로 오분류되지 않음 — 핸들러 재실행 없음
+    expect(dlq.sendToDLQ).not.toHaveBeenCalled(); // 바깥 인스턴스가 다시 DLQ 전송을 시도하지 않음
   });
 
   it('SchemaValidationError는 정책 무관 항상 nonRetryable (즉시 DLQ)', async () => {
