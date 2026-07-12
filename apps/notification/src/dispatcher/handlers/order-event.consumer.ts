@@ -1,6 +1,6 @@
 // apps/notification/src/dispatcher/handlers/order-event.consumer.ts
-import { Controller, Logger, UseFilters, UseInterceptors } from '@nestjs/common';
-import { OnEvent, EventPayload, EventEnvelope, EventsExceptionFilter } from '@app/events';
+import { Controller, Logger, UseInterceptors } from '@nestjs/common';
+import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { OrderCreatedPayload, OrderPaymentCompletedPayload } from '@packages/event-contracts/streams/orders.stream';
 import { DomainEvent } from '@packages/event-contracts/types';
@@ -17,7 +17,6 @@ import { SendNotificationDto } from '../dto/send-notification.dto';
  * - OrderPaymentCompleted: 결제 완료
  */
 @Controller()
-@UseFilters(EventsExceptionFilter)
 @UseInterceptors(EventTypeGuard)
 export class OrderEventConsumer {
   private readonly logger = new Logger(OrderEventConsumer.name);

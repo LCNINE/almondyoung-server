@@ -27,7 +27,6 @@ export * from './dlq/dlq-handler.service';
 // Retry & Auto DLQ
 export * from './retry/retry-policy.types';
 export * from './retry/retry-policy.decorator';
-export * from './filters/events-exception.filter';
 
 // Schema Validation (util and interceptor only, types are in packages)
 export * from './validation/schema-validation.util';

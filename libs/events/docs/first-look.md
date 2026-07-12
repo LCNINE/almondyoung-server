@@ -123,7 +123,7 @@
 
   P0 (즉시 필요) → ✅ **모두 완료!**
 
-  1. ✅ 자동 DLQ 처리: EventsExceptionFilter로 자동 전송 완료
+  1. ✅ 자동 DLQ 처리: EventRetryInterceptor(전역 등록)로 자동 전송 완료
   2. ⏳ Idempotency: Redis 기반 중복 메시지 감지 (남음)
   3. ✅ Graceful Shutdown: GracefulShutdownService 구현 완료
 
