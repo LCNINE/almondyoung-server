@@ -27,11 +27,13 @@ export * from './dlq/dlq-handler.service';
 // Retry & Auto DLQ
 export * from './retry/retry-policy.types';
 export * from './retry/retry-policy.decorator';
-export * from './filters/events-exception.filter';
 
 // Schema Validation (util and interceptor only, types are in packages)
 export * from './validation/schema-validation.util';
 export * from './interceptors/schema-validation.interceptor';
+
+// Retry Interceptor (전역 APP_INTERCEPTOR — EventsModule forRoot/forConsumerModule 자동 등록)
+export * from './interceptors/event-retry.interceptor';
 
 // Graceful Shutdown
 export * from './shutdown/graceful-shutdown.service';
