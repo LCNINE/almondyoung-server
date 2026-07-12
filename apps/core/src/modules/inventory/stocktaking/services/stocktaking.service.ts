@@ -3,6 +3,7 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { acquireStockAvailabilityLocks } from '../../shared/locks/stock-availability-lock';
+import { readWarehouseReservationBalance } from '../../shared/locks/reservation-invariant';
 import { count, desc, eq, and, gte, lte, sql } from 'drizzle-orm';
 import { CreateStocktakingSessionDto } from '../dto/create-session.dto';
 import { ListStocktakingSessionsQueryDto } from '../dto/list-sessions-query.dto';
@@ -470,7 +471,7 @@ export class StocktakingService {
             .onConflictDoNothing({ target: stocktakingAdjustments.lineId });
 
           if (delta < 0) {
-            const bal = await this.commandService.getWarehouseReservationBalance(tx, line.skuId, session.warehouseId);
+            const bal = await readWarehouseReservationBalance(tx, line.skuId, session.warehouseId);
             if (bal.onHand < bal.reserved) {
               this.logger.warn(
                 `실사 하향으로 on_hand<reserved: sku=${line.skuId} wh=${session.warehouseId} on_hand=${bal.onHand} reserved=${bal.reserved} — 대사잡·후속 예약 정리 필요`,

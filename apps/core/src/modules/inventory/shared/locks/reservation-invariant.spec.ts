@@ -1,4 +1,4 @@
-import { violatesReservationInvariant } from './inventory-command.service';
+import { violatesReservationInvariant } from './reservation-invariant';
 
 describe('violatesReservationInvariant', () => {
   it('차감 후 ON_HAND 가 예약보다 적으면 위반', () => {
