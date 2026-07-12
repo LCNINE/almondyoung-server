@@ -790,6 +790,20 @@ export class StoreSalesOrdersService {
         });
         return 'manual_pending';
       }
+      case 'in_flight': {
+        await this.recordWalletRefundLink(so.id, {
+          refundStatus: 'manual_pending',
+          intentId: so.walletIntentId,
+          amount,
+          note: `환불 처리 중(Idempotency in-flight): ${outcome.errorMessage}`,
+          reasonCode: dto.reasonCode,
+          attemptType,
+          actor,
+          correlationId,
+          extraMetadata: options?.extraMetadata,
+        });
+        return 'manual_pending';
+      }
       case 'no_intent_id':
       default: {
         return 'manual_pending';
