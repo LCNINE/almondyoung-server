@@ -460,9 +460,6 @@ export class StoreReturnExchangeService {
    * Phase B(tx 밖): attempt 행의 key·amount 로 Wallet 호출
    * Phase C(tx, FOR UPDATE): classifyRefundOutcome 로 attempt 행 + 반품 상태 전이
    */
-  // adminId 는 completeReturnRequest/retryReturnRefund 와 시그니처 대칭 유지용 — attempt 단위 admin 귀속은
-  // 범위 밖(Phase 1 의 insertBusinessLink 에만 기록됨).
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private async attemptReturnRefund(returnRequestId: string, adminId: string): Promise<ReturnRequest> {
     // ── Phase A ──────────────────────────────────────────────────────────────
     const claim = await this.db.db.transaction(async (tx) => {
@@ -551,7 +548,7 @@ export class StoreReturnExchangeService {
     const decision = classifyRefundOutcome(outcome);
     return this.db.db.transaction(async (tx) => {
       const rr = await this.findReturnRequestOrThrow(returnRequestId, tx, { forUpdate: true });
-      await this.insertRefundAuditLink(tx, returnRequestId, attempt, outcome);
+      await this.insertRefundAuditLink(tx, returnRequestId, attempt, outcome, adminId);
 
       const walletOutcomeMeta = {
         kind: outcome.kind,
@@ -574,6 +571,10 @@ export class StoreReturnExchangeService {
       }
 
       if (decision === 'failed') {
+        // 경합 방어: 동시 success 가 이미 완료시킨 attempt 를 stale failed 로 뒤집지 않는다
+        // (뒤집으면 다음 재시도가 N+1 새 key 로 이중환불 경로를 연다). Phase C 는 return_request
+        // FOR UPDATE 로 직렬화 → rr.status==='completed' 확인이 "first terminal wins" 를 보장.
+        if (rr.status === 'completed') return rr;
         // 확정 실패 → attempt 닫음 (다음 재시도가 N+1). RR refund_pending 유지.
         await tx
           .update(returnExchangeTables.returnRefundAttempts)
@@ -586,6 +587,7 @@ export class StoreReturnExchangeService {
       }
 
       // decision === 'pending' — 불확정. attempt pending 유지(같은 key 재생), RR refund_pending 유지.
+      if (rr.status === 'completed') return rr; // 경합: 동시 success 완료분을 덮어쓰지 않음
       await tx
         .update(returnExchangeTables.returnRefundAttempts)
         .set({ walletOutcome: walletOutcomeMeta, updatedAt: new Date() })
@@ -1290,6 +1292,7 @@ export class StoreReturnExchangeService {
     returnRequestId: string,
     attempt: { idempotencyKey: string; amount: number; attemptNumber: number },
     outcome: WalletRefundOutcome,
+    adminId: string,
   ): Promise<void> {
     const refundId =
       outcome.kind === 'success' || outcome.kind === 'partial_pending' ? outcome.refunds?.[0]?.refundId : undefined;
@@ -1304,6 +1307,7 @@ export class StoreReturnExchangeService {
         amount: attempt.amount,
         correlationId: attempt.idempotencyKey,
         attemptN: attempt.attemptNumber,
+        retriedBy: adminId,
       },
     });
   }

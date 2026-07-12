@@ -786,11 +786,19 @@ describe('StoreReturnExchangeService.attemptReturnRefund (상태기계)', () => 
     maxN?: number;
     onUpdate?: (table: unknown, set: Record<string, unknown>) => void;
     completedRr?: Record<string, unknown>;
+    // 경합 시뮬레이션: returnRequests 의 2번째 이후 select(Phase C)에 다른 행을 반환.
+    // 미지정 시 기존 동작(항상 opts.rr) 유지 — 기존 테스트 영향 없음.
+    rrPhaseC?: Record<string, unknown>;
   }) {
     const insertedAttempts: Record<string, unknown>[] = [];
     let attemptSel = 0; // Phase A 의 attempts 조회 순서: 1=pending 조회, 2=max(N) 조회
+    let rrSel = 0; // returnRequests 조회 순서: 1=Phase A, 2번째 이후=Phase C
     const rowsFor = (table: unknown): unknown[] => {
-      if (table === returnExchangeTables.returnRequests) return [opts.rr];
+      if (table === returnExchangeTables.returnRequests) {
+        rrSel++;
+        if (rrSel > 1 && opts.rrPhaseC) return [opts.rrPhaseC];
+        return [opts.rr];
+      }
       if (table === wmsTables.salesOrders) return [SO];
       if (table === wmsTables.salesOrderLines) return ORDER_LINES;
       if (table === returnExchangeTables.returnRequestItems) return RETURN_ITEMS;
@@ -951,6 +959,49 @@ describe('StoreReturnExchangeService.attemptReturnRefund (상태기계)', () => 
     expect(result.status).toBe('refund_pending');
     // attempt status 는 pending 유지 (set 에 status 미포함)
     expect(setCalls.every((s) => s.status === undefined)).toBe(true);
+  });
+
+  it('경합: Phase C 진입 시 RR 이 이미 completed 면 stale failed 분류가 attempt 를 뒤집지 않음', async () => {
+    // Phase A 시점엔 refund_pending(+pending attempt 재사용)이지만, Wallet 호출(Phase B) 동안
+    // 동시 success 가 이미 RR 을 completed 로 만들었다고 가정 → Phase C select 는 completed 를 본다.
+    // 가드가 없으면 stale determinate-failed 분류가 attempt 를 failed 로 뒤집어 이중환불 경로(N+1)를 연다.
+    const pending = {
+      id: 'att-1',
+      returnRequestId: RR_ID,
+      attemptNumber: 1,
+      idempotencyKey: `return:${RR_ID}:refund:1`,
+      amount: 5000,
+      status: 'pending',
+    };
+    const setCalls: Record<string, unknown>[] = [];
+    const tx = makeTx({
+      rr: makeReturnRequest({ status: 'refund_pending' }),
+      pendingAttempt: pending,
+      rrPhaseC: makeReturnRequest({ status: 'completed' }),
+      onUpdate: (t, set) => {
+        if (t === returnExchangeTables.returnRefundAttempts) setCalls.push(set);
+      },
+    });
+    const wallet = makeWalletClient();
+    (wallet.refundByIntent as jest.Mock).mockResolvedValue({
+      kind: 'failed',
+      errorCode: 'ERR',
+      errorMessage: 'm',
+      determinate: true,
+    });
+    const service = new StoreReturnExchangeService(makeDbFrom(tx) as never, wallet as never);
+
+    // attemptReturnRefund 는 private — retryReturnRefund 의 outer refund_pending 가드(추가 select 1회)를
+    // 거치지 않고 Phase A/B/C 만 정확히 재현하기 위해 직접 호출.
+    const result = await (
+      service as unknown as {
+        attemptReturnRefund: (id: string, adminId: string) => Promise<{ status: string }>;
+      }
+    ).attemptReturnRefund(RR_ID, 'admin-1');
+
+    expect(result.status).toBe('completed');
+    // 경합 가드로 인해 attempt 를 failed 로 뒤집는 update(set.status==='failed')가 호출되지 않아야 함.
+    expect(setCalls.some((s) => s.status === 'failed')).toBe(false);
   });
 
   it('walletIntentId 없으면 BadRequestException', async () => {
