@@ -535,11 +535,20 @@ Expected: build exit 0 · arch PASS(직접 INSERT 는 store 내부라 무영향)
 
 - [ ] **Step 5: deferred 통합 spec 타입체크 (런타임 아님)**
 
-Run:
+jest 는 `isolatedModules` 라 skip spec 을 타입체크하지 않고, `tsconfig.app.json` 은 spec 을 build 에서 제외한다. 그래서 임시 tsconfig 를 **repo 안**(`apps/core/`)에 두어 spec 만 타입체크한다 — 스크래치패드는 repo 외부라 `@types` 해석에 실패(작업 11b 발견). Run:
+
 ```bash
-npx tsc --noEmit -p apps/core/tsconfig.app.json 2>&1 | grep -i "reverse-event-guard" || echo "OK: no type errors in reverse-event-guard.integration.spec"
+cat > apps/core/tsconfig.reverse-guard-check.json <<'JSON'
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": { "isolatedModules": false, "noEmit": true, "skipLibCheck": true },
+  "include": ["src/modules/inventory/core/repositories/reverse-event-guard.integration.spec.ts"]
+}
+JSON
+npx tsc -p apps/core/tsconfig.reverse-guard-check.json && echo "OK: spec typechecks"
+rm apps/core/tsconfig.reverse-guard-check.json
 ```
-Expected: `OK: ...` (해당 spec 타입에러 0). 로컬 jest 실행 시엔 `describe.skip` 으로 **SKIP**(dev DB 없음).
+Expected: `OK: spec typechecks` (타입에러 0). 임시 tsconfig 는 반드시 삭제(커밋 금지). 로컬 jest 실행 시엔 `describe.skip` 으로 **SKIP**(dev DB 없음).
 
 - [ ] **Step 6: 변경 파일 신규 eslint 확인**
 
