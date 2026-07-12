@@ -838,7 +838,7 @@ export class SalesOrdersService {
 
     // 출고완료: confirmed SO 중 FO 가 출고 증거를 가진 건수. SO.status 는 processing/shipped/
     // delivered 로 전이하지 않으므로(작업 15, ADR-0017) FO(status + shippedAt)에서 도출한다.
-    // 표시 레이어(deriveFulfillmentStatus/hasShippedEvidence)와 동일한 출고 증거 정의.
+    // 표시 레이어의 `hasShippedEvidence`(store-sales-orders)와 동일한 출고 증거 정의.
     const outboundCompleteRows = await db
       .select({ id: wmsTables.salesOrders.id })
       .from(wmsTables.salesOrders)

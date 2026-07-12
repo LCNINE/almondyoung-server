@@ -15,7 +15,7 @@ Core의 판매주문(`sales_orders.status`)과 Wallet의 환불(`refunds.status`
 | Wallet `refunds.status` | Wallet | `PENDING`, `SUCCEEDED`, `FAILED` |
 | 표시 상태 (derived) | API layer | 아래 정의 |
 
-> **작업 15 (2026-07-13) 정정 (D2):** `sales_orders.status` 의 `processing / shipped / delivered` 는 enum 정의만 존재하고 **producer 가 0** 이다(전이시키는 코드 없음). SO 의 출고/배송 진실은 저장 상태가 아니라 **`fulfillmentOrders.status` + `shippedAt` 에서 도출**하는 것이 SoT 다 — 고객 배송조회(`deriveOverallTrackingStatus`)·관리자 표시(`deriveFulfillmentStatus`)·`getStats().outboundComplete` 전부 FO 에서 도출한다. SO 저장 상태의 실 lifecycle 는 `pending → confirmed → cancelled/timeout` 이다. 세 dead 값의 물리 제거는 비목표(마커로 재사용 잠금).
+> **작업 15 (2026-07-13) 정정 (D2):** `sales_orders.status` 의 `processing / shipped / delivered` 는 enum 정의만 존재하고 **producer 가 0** 이다(전이시키는 코드 없음). SO 의 출고/배송 진실은 저장 상태가 아니라 **`fulfillmentOrders.status` + `shippedAt` 에서 도출**하는 것이 SoT 다 — 고객 배송조회(`deriveOverallTrackingStatus`)·관리자 표시(`deriveFulfillmentStatus`)·`getStats().outboundComplete` 전부 FO 에서 도출한다. SO 저장 상태의 실 lifecycle 는 `pending → confirmed → cancelled` 이다(`timeout` 도 현재 producer 0 인 예약 값). 세 dead 값의 물리 제거는 비목표(마커로 재사용 잠금).
 
 ## 표시 상태 정의 (고객·관리자 공통)
 
@@ -34,7 +34,7 @@ Core의 판매주문(`sales_orders.status`)과 Wallet의 환불(`refunds.status`
 | `EXCHANGE_COMPLETE` | (미래) exchange_request resolved | 교환 완료 | 교환 완료 |
 | `DELIVERED` | FO `completed` (배송완료) | 배송 완료 | 배송 완료 |
 | `SHIPPING` | FO shipped-evidence (`status ∈ {shipped, completed}` 또는 `shippedAt ≠ null`) | 배송 중 | 출고 완료 / 배송 중 |
-| `PREPARING` | SO `confirmed` or `processing`, FO 출고 전 | 상품 준비 중 | 피킹/패킹 진행 중 |
+| `PREPARING` | SO `confirmed`, FO 출고 전 | 상품 준비 중 | 피킹/패킹 진행 중 |
 | `PAYMENT_COMPLETE` | SO `confirmed`, FO 없음 | 결제 완료 | 결제 완료 (출고 대기) |
 | `PENDING` | SO `pending` | 결제 확인 중 | 결제 대기 |
 | `TIMEOUT` | SO `timeout` | 주문 시간 초과 | 타임아웃 |

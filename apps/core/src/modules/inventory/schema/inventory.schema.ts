@@ -121,7 +121,7 @@ export const orderStatusEnum = pgEnum('order_status', [
   'pending', // 주문 생성 (결제 대기)
   'confirmed', // 주문 확정 (결제 완료)
   // DEAD 값(producer 0, 작업 15) — SO 출고/배송 진실은 FO(fulfillmentOrders.status + shippedAt)
-  // 도출이 SoT 다(ADR-0017). 저장 SO.status 는 pending→confirmed→cancelled/timeout 만 전이한다.
+  // 도출이 SoT 다(ADR-0017). SO.status 의 실 전이는 pending→confirmed→cancelled 뿐이다(timeout 도 현재 producer 0 인 예약 값).
   // 재사용 금지. 물리 제거(pgEnum recast)는 destructive·저가치라 비목표(구 8b 판례).
   'processing', // [DEAD] 미사용 — 도달 불가
   'shipped', // [DEAD] 미사용 — FO 도출로 대체
