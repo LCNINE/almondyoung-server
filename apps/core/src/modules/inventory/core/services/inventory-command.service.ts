@@ -527,12 +527,4 @@ export class InventoryCommandService {
     };
     return this.dbService.run(exec, tx);
   }
-
-  async reverseEvent(input: { eventId: string; reason: string }, tx?: DbTx) {
-    const exec = async (trx: DbTx) => {
-      const rev = await this.eventStore.reverseEvent(input.eventId, input.reason, trx);
-      return { eventId: rev?.id ?? null };
-    };
-    return this.dbService.run(exec, tx);
-  }
 }
