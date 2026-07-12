@@ -102,4 +102,37 @@ describe('WalletRefundClient — already_refunded 파싱', () => {
     const result = await client.refundByIntent('intent-1', 1000, { correlationId: 'c1' });
     expect(result.kind).toBe('wallet_unavailable');
   });
+
+  it('4xx(비즈니스 거부)는 failed determinate=true', async () => {
+    global.fetch = mockFetch(400, { error: 'INVALID_AMOUNT', message: 'Amount must be positive' });
+    const client = new WalletRefundClient();
+    const result = await client.refundByIntent('intent-1', -1, { correlationId: 'c1' });
+    expect(result.kind).toBe('failed');
+    if (result.kind === 'failed') expect(result.determinate).toBe(true);
+  });
+
+  it('5xx(서버 오류)는 failed determinate=false (불확정)', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      statusText: 'Service Unavailable',
+      json: jest.fn().mockResolvedValue({ error: 'UPSTREAM_DOWN', message: 'try later' }),
+    });
+    const client = new WalletRefundClient();
+    const result = await client.refundByIntent('intent-1', 1000, { correlationId: 'c1' });
+    expect(result.kind).toBe('failed');
+    if (result.kind === 'failed') expect(result.determinate).toBe(false);
+  });
+
+  it('409 IDEMPOTENCY_KEY_IN_FLIGHT 는 in_flight kind', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      statusText: 'Conflict',
+      json: jest.fn().mockResolvedValue({ error: 'IDEMPOTENCY_KEY_IN_FLIGHT', message: 'in progress' }),
+    });
+    const client = new WalletRefundClient();
+    const result = await client.refundByIntent('intent-1', 1000, { correlationId: 'c1' });
+    expect(result.kind).toBe('in_flight');
+  });
 });
