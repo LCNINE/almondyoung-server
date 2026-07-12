@@ -1,10 +1,4 @@
-import {
-  Controller,
-  Logger,
-  NotFoundException,
-  BadRequestException,
-  UseInterceptors,
-} from '@nestjs/common';
+import { Controller, Logger, NotFoundException, BadRequestException, UseInterceptors } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { OnEvent, EventPayload, EventEnvelope, RetryPolicy } from '@app/events';
