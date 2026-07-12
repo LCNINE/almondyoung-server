@@ -1,6 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { randomUUID } from 'crypto';
-import { and, eq, inArray, sum } from 'drizzle-orm';
+import { and, desc, eq, inArray, max, sum } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { InjectTypedDb } from '@app/db';
 import {
@@ -23,7 +22,8 @@ import {
   StoreCreateExchangeRequestDto,
   StoreExchangeRequestResponseDto,
 } from '../dto/store-exchange-request.dto';
-import { WalletRefundClient } from './wallet-refund.client';
+import { WalletRefundClient, WalletRefundOutcome } from './wallet-refund.client';
+import { classifyRefundOutcome } from './return-refund-classification';
 
 type SalesOrderRow = typeof inventoryTables.salesOrders.$inferSelect;
 type ReturnRequestRow = typeof returnExchangeTables.returnRequests.$inferSelect;
@@ -400,111 +400,172 @@ export class StoreReturnExchangeService {
   }
 
   async completeReturnRequest(returnRequestId: string, adminId: string): Promise<ReturnRequest> {
-    const salesOrder = await this.db.db
-      .select({
-        id: wmsTables.salesOrders.id,
-        walletIntentId: wmsTables.salesOrders.walletIntentId,
-        totalAmount: wmsTables.salesOrders.totalAmount,
-        shippingFee: wmsTables.salesOrders.shippingFee,
-      })
-      .from(wmsTables.salesOrders)
-      .innerJoin(returnExchangeTables.returnRequests, eq(returnExchangeTables.returnRequests.salesOrderId, wmsTables.salesOrders.id))
-      .where(eq(returnExchangeTables.returnRequests.id, returnRequestId))
-      .limit(1)
-      .then((r) => r[0]);
-
-    const [allOrderLines, returnItems] = await Promise.all([
-      this.db.db
-        .select({
-          id: wmsTables.salesOrderLines.id,
-          quantity: wmsTables.salesOrderLines.quantity,
-          unitPrice: wmsTables.salesOrderLines.unitPrice,
-          totalPrice: wmsTables.salesOrderLines.totalPrice,
-        })
-        .from(wmsTables.salesOrderLines)
-        .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrder!.id)),
-      this.db.db
-        .select({
-          salesOrderLineId: returnExchangeTables.returnRequestItems.salesOrderLineId,
-          quantity: returnExchangeTables.returnRequestItems.quantity,
-          unitPrice: wmsTables.salesOrderLines.unitPrice,
-        })
-        .from(returnExchangeTables.returnRequestItems)
-        .leftJoin(wmsTables.salesOrderLines, eq(returnExchangeTables.returnRequestItems.salesOrderLineId, wmsTables.salesOrderLines.id))
-        .where(eq(returnExchangeTables.returnRequestItems.returnRequestId, returnRequestId)),
-    ]);
-
-    const refundAmount = this.calculateReturnRefund(
-      returnItems,
-      allOrderLines,
-      salesOrder?.totalAmount ?? null,
-      salesOrder?.shippingFee ?? 0,
-    );
-    // 환불할 금액이 없으면 즉시 완료. 있으면 refund_pending 경유 후 Wallet 성공 시 completed.
-    const immediateComplete = refundAmount <= 0;
-    const needsRefund = !immediateComplete && !!salesOrder?.walletIntentId;
-
-    // Phase 1: inspected → refund_pending (or completed when no refund needed)
-    const updatedRequest = await this.db.db.transaction(async (tx) => {
-      const rr = await this.findReturnRequestOrThrow(returnRequestId, tx);
+    // Phase 1: inspected → refund_pending (or completed). 금액 계산도 tx 내에서.
+    const phase1 = await this.db.db.transaction(async (tx) => {
+      const rr = await this.findReturnRequestOrThrow(returnRequestId, tx, { forUpdate: true });
       if (rr.status !== 'inspected') {
         throw new ConflictException(`반품 요청 상태가 'inspected'가 아닙니다. 현재 상태: ${rr.status}`);
       }
+
+      const salesOrder = await tx
+        .select({
+          id: wmsTables.salesOrders.id,
+          walletIntentId: wmsTables.salesOrders.walletIntentId,
+          totalAmount: wmsTables.salesOrders.totalAmount,
+          shippingFee: wmsTables.salesOrders.shippingFee,
+        })
+        .from(wmsTables.salesOrders)
+        .where(eq(wmsTables.salesOrders.id, rr.salesOrderId))
+        .limit(1)
+        .then((r) => r[0]);
+
+      const refundAmount = salesOrder ? await this.computeReturnRefundAmount(returnRequestId, salesOrder, tx) : 0;
+      const immediateComplete = refundAmount <= 0;
+      const needsRefund = !immediateComplete && !!salesOrder?.walletIntentId;
 
       const now = new Date();
       const nextStatus = immediateComplete ? 'completed' : 'refund_pending';
       const [result] = await tx
         .update(returnExchangeTables.returnRequests)
-        .set({
-          status: nextStatus,
-          ...(immediateComplete ? { completedAt: now } : {}),
-          updatedAt: now,
-        })
+        .set({ status: nextStatus, ...(immediateComplete ? { completedAt: now } : {}), updatedAt: now })
         .where(eq(returnExchangeTables.returnRequests.id, returnRequestId))
         .returning();
-
       await this.insertBusinessLink(tx, 'return_request', returnRequestId, rr.salesOrderId, 'return_lifecycle_event', {
         event: immediateComplete ? 'return_completed' : 'return_refund_pending',
         adminId,
         timestamp: now.toISOString(),
       });
 
-      return result;
-    });
-
-    if (immediateComplete || !needsRefund) {
       if (!immediateComplete && salesOrder && !salesOrder.walletIntentId) {
         this.logger.warn(
           `[ReturnRefund] No walletIntentId for SO ${salesOrder.id}, return ${returnRequestId}. Manual refund required.`,
         );
       }
-      return updatedRequest;
+      return { updatedRequest: result, immediateComplete, needsRefund };
+    });
+
+    if (phase1.immediateComplete || !phase1.needsRefund) {
+      return phase1.updatedRequest;
     }
 
-    // Phase 2: Wallet 환불 시도. 성공 시 completed, 실패 시 refund_pending 유지 (수동 처리 필요)
-    const correlationId = `return:${returnRequestId}:refund`;
+    // Phase 2+: 통합 상태기계 (intent-first attempt 행 + 결정적 key)
+    return this.attemptReturnRefund(returnRequestId, adminId);
+  }
+
+  /**
+   * refund_pending 반품을 Wallet 환불로 종결(성공)하거나 재시도 가능 상태로 유지한다.
+   * intent-first attempt 행이 idempotency key·amount 의 SoT (규율 2). 초회·재시도 공용.
+   *
+   * Phase A(tx, FOR UPDATE): 행 잠금 + pending attempt 재사용 or 신규 attempt INSERT (Wallet 호출 전 durable)
+   * Phase B(tx 밖): attempt 행의 key·amount 로 Wallet 호출
+   * Phase C(tx, FOR UPDATE): classifyRefundOutcome 로 attempt 행 + 반품 상태 전이
+   */
+  // adminId 는 completeReturnRequest/retryReturnRefund 와 시그니처 대칭 유지용 — attempt 단위 admin 귀속은
+  // 범위 밖(Phase 1 의 insertBusinessLink 에만 기록됨).
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private async attemptReturnRefund(returnRequestId: string, adminId: string): Promise<ReturnRequest> {
+    // ── Phase A ──────────────────────────────────────────────────────────────
+    const claim = await this.db.db.transaction(async (tx) => {
+      const rr = await this.findReturnRequestOrThrow(returnRequestId, tx, { forUpdate: true });
+      if (rr.status === 'completed') {
+        return { done: rr, attempt: null, walletIntentId: null as string | null };
+      }
+      if (rr.status !== 'refund_pending') {
+        throw new ConflictException(`환불 시도는 'refund_pending' 상태에서만 가능합니다. 현재 상태: ${rr.status}`);
+      }
+
+      const salesOrder = await tx
+        .select({
+          id: wmsTables.salesOrders.id,
+          walletIntentId: wmsTables.salesOrders.walletIntentId,
+          totalAmount: wmsTables.salesOrders.totalAmount,
+          shippingFee: wmsTables.salesOrders.shippingFee,
+        })
+        .from(wmsTables.salesOrders)
+        .where(eq(wmsTables.salesOrders.id, rr.salesOrderId))
+        .limit(1)
+        .then((r) => r[0]);
+
+      if (!salesOrder?.walletIntentId) {
+        throw new BadRequestException('walletIntentId가 없어 환불이 불가합니다. 수동 완료를 사용하세요.');
+      }
+
+      // pending attempt 재사용 (복구/in-flight) — 같은 key·amount (규율 2)
+      const pending = await tx
+        .select()
+        .from(returnExchangeTables.returnRefundAttempts)
+        .where(
+          and(
+            eq(returnExchangeTables.returnRefundAttempts.returnRequestId, returnRequestId),
+            eq(returnExchangeTables.returnRefundAttempts.status, 'pending'),
+          ),
+        )
+        .orderBy(desc(returnExchangeTables.returnRefundAttempts.attemptNumber))
+        .limit(1)
+        .then((r) => r[0]);
+
+      if (pending) {
+        return { done: null, attempt: pending, walletIntentId: salesOrder.walletIntentId };
+      }
+
+      // 신규 attempt (N = max+1) — 규율 1: pending 없을 때만(직전 확정 failed 또는 최초)
+      const amount = await this.computeReturnRefundAmount(returnRequestId, salesOrder, tx);
+      if (amount <= 0) {
+        throw new BadRequestException('환불 금액이 0원 이하입니다. 수동 완료를 사용하세요.');
+      }
+      const maxRow = await tx
+        .select({ maxN: max(returnExchangeTables.returnRefundAttempts.attemptNumber) })
+        .from(returnExchangeTables.returnRefundAttempts)
+        .where(eq(returnExchangeTables.returnRefundAttempts.returnRequestId, returnRequestId))
+        .then((r) => r[0]);
+      const attemptNumber = (maxRow?.maxN ?? 0) + 1;
+      const idempotencyKey = `return:${returnRequestId}:refund:${attemptNumber}`;
+      const [attempt] = await tx
+        .insert(returnExchangeTables.returnRefundAttempts)
+        .values({ returnRequestId, attemptNumber, idempotencyKey, amount, status: 'pending' })
+        .returning();
+      return { done: null, attempt, walletIntentId: salesOrder.walletIntentId };
+    });
+
+    if (claim.done) return claim.done;
+    const attempt = claim.attempt;
+
+    // ── Phase B (tx 밖) ────────────────────────────────────────────────────────
+    let outcome: WalletRefundOutcome;
     try {
-      const outcome = await this.walletRefundClient.refundByIntent(salesOrder!.walletIntentId!, refundAmount, {
+      outcome = await this.walletRefundClient.refundByIntent(claim.walletIntentId, attempt.amount, {
         reasonCode: 'RETURN_COMPLETED',
-        correlationId,
+        correlationId: attempt.idempotencyKey,
       });
+    } catch (err) {
+      // 네트워크 예외 등 = 불확정. attempt pending 유지 → 같은 key 재생 (규율 1).
+      this.logger.error(
+        `[ReturnRefund] Wallet call threw for return ${returnRequestId} attempt ${attempt.attemptNumber}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return this.db.db.transaction((tx) => this.findReturnRequestOrThrow(returnRequestId, tx));
+    }
 
-      // partial_pending = 무통장 등 비동기 처리 중 → 실제 환불 완료 아님. success만 completed 허용.
-      const refundSucceeded = outcome.kind === 'success';
-      await this.db.db.insert(wmsTables.businessLinks).values({
-        sourceType: 'return_request',
-        sourceId: returnRequestId,
-        targetType: 'wallet_refund',
-        targetExternalRef: refundSucceeded || outcome.kind === 'partial_pending'
-          ? `wallet:refund:${outcome.refunds?.[0]?.refundId ?? correlationId}`
-          : `wallet:intent:${salesOrder!.walletIntentId}`,
-        relationName: 'return_linked_wallet_refund',
-        metadata: { outcome: outcome.kind, amount: refundAmount, correlationId },
-      });
+    // ── Phase C ──────────────────────────────────────────────────────────────
+    const decision = classifyRefundOutcome(outcome);
+    return this.db.db.transaction(async (tx) => {
+      const rr = await this.findReturnRequestOrThrow(returnRequestId, tx, { forUpdate: true });
+      await this.insertRefundAuditLink(tx, returnRequestId, attempt, outcome);
 
-      if (refundSucceeded) {
+      const walletOutcomeMeta = {
+        kind: outcome.kind,
+        errorCode: 'errorCode' in outcome ? outcome.errorCode : undefined,
+      };
+
+      if (decision === 'succeeded') {
+        await tx
+          .update(returnExchangeTables.returnRefundAttempts)
+          .set({ status: 'succeeded', walletOutcome: walletOutcomeMeta, updatedAt: new Date() })
+          .where(eq(returnExchangeTables.returnRefundAttempts.id, attempt.id));
+        if (rr.status === 'completed') return rr; // 경합: 이미 완료
         const now = new Date();
-        const [completed] = await this.db.db
+        const [completed] = await tx
           .update(returnExchangeTables.returnRequests)
           .set({ status: 'completed', completedAt: now, updatedAt: now })
           .where(eq(returnExchangeTables.returnRequests.id, returnRequestId))
@@ -512,22 +573,28 @@ export class StoreReturnExchangeService {
         return completed;
       }
 
-      if (outcome.kind === 'partial_pending') {
-        this.logger.warn(
-          `[ReturnRefund] Wallet refund partial_pending for return ${returnRequestId}. Manual confirmation required.`,
-        );
-      } else {
+      if (decision === 'failed') {
+        // 확정 실패 → attempt 닫음 (다음 재시도가 N+1). RR refund_pending 유지.
+        await tx
+          .update(returnExchangeTables.returnRefundAttempts)
+          .set({ status: 'failed', walletOutcome: walletOutcomeMeta, updatedAt: new Date() })
+          .where(eq(returnExchangeTables.returnRefundAttempts.id, attempt.id));
         this.logger.error(
-          `[ReturnRefund] Wallet refund ${outcome.kind} for return ${returnRequestId}. Staying refund_pending for manual resolution.`,
+          `[ReturnRefund] Determinate failure for return ${returnRequestId} attempt ${attempt.attemptNumber}: ${JSON.stringify(walletOutcomeMeta)}`,
         );
+        return rr;
       }
-      return updatedRequest;
-    } catch (err) {
-      this.logger.error(
-        `[ReturnRefund] Wallet refund threw for return ${returnRequestId}: ${err instanceof Error ? err.message : String(err)}`,
+
+      // decision === 'pending' — 불확정. attempt pending 유지(같은 key 재생), RR refund_pending 유지.
+      await tx
+        .update(returnExchangeTables.returnRefundAttempts)
+        .set({ walletOutcome: walletOutcomeMeta, updatedAt: new Date() })
+        .where(eq(returnExchangeTables.returnRefundAttempts.id, attempt.id));
+      this.logger.warn(
+        `[ReturnRefund] Indeterminate outcome for return ${returnRequestId} attempt ${attempt.attemptNumber} (${outcome.kind}). Staying refund_pending; same key retries.`,
       );
-      return updatedRequest;
-    }
+      return rr;
+    });
   }
 
   // ── Admin: state transitions (exchange) ──────────────────────────────────
@@ -665,106 +732,8 @@ export class StoreReturnExchangeService {
     if (rr.status !== 'refund_pending') {
       throw new ConflictException(`환불 재시도는 'refund_pending' 상태에서만 가능합니다. 현재 상태: ${rr.status}`);
     }
-
-    const salesOrder = await this.db.db
-      .select({
-        id: wmsTables.salesOrders.id,
-        walletIntentId: wmsTables.salesOrders.walletIntentId,
-        totalAmount: wmsTables.salesOrders.totalAmount,
-        shippingFee: wmsTables.salesOrders.shippingFee,
-      })
-      .from(wmsTables.salesOrders)
-      .where(eq(wmsTables.salesOrders.id, rr.salesOrderId))
-      .limit(1)
-      .then((r) => r[0]);
-
-    if (!salesOrder?.walletIntentId) {
-      throw new BadRequestException('walletIntentId가 없어 환불 재시도가 불가합니다. 수동 완료를 사용하세요.');
-    }
-
-    const [allOrderLines, returnItems] = await Promise.all([
-      this.db.db
-        .select({
-          id: wmsTables.salesOrderLines.id,
-          quantity: wmsTables.salesOrderLines.quantity,
-          unitPrice: wmsTables.salesOrderLines.unitPrice,
-          totalPrice: wmsTables.salesOrderLines.totalPrice,
-        })
-        .from(wmsTables.salesOrderLines)
-        .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrder.id)),
-      this.db.db
-        .select({
-          salesOrderLineId: returnExchangeTables.returnRequestItems.salesOrderLineId,
-          quantity: returnExchangeTables.returnRequestItems.quantity,
-          unitPrice: wmsTables.salesOrderLines.unitPrice,
-        })
-        .from(returnExchangeTables.returnRequestItems)
-        .leftJoin(wmsTables.salesOrderLines, eq(returnExchangeTables.returnRequestItems.salesOrderLineId, wmsTables.salesOrderLines.id))
-        .where(eq(returnExchangeTables.returnRequestItems.returnRequestId, returnRequestId)),
-    ]);
-
-    const refundAmount = this.calculateReturnRefund(
-      returnItems,
-      allOrderLines,
-      salesOrder.totalAmount,
-      salesOrder.shippingFee,
-    );
-    if (refundAmount <= 0) {
-      throw new BadRequestException('환불 금액이 0원 이하입니다. 수동 완료를 사용하세요.');
-    }
-
-    // UUID로 재시도마다 고유한 correlation ID 생성.
-    // 카운트 기반 key는 동시 재시도 시 같은 번호가 나와 Wallet이 첫 실패 응답을 재생할 수 있음.
-    const priorAttempts = await this.db.db
-      .select({ id: wmsTables.businessLinks.id })
-      .from(wmsTables.businessLinks)
-      .where(
-        and(
-          eq(wmsTables.businessLinks.sourceType, 'return_request'),
-          eq(wmsTables.businessLinks.sourceId, returnRequestId),
-          eq(wmsTables.businessLinks.relationName, 'return_linked_wallet_refund'),
-        ),
-      )
-      .then((r) => r.length);
-    const attemptN = priorAttempts + 1;
-    const correlationId = `return:${returnRequestId}:refund:retry:${randomUUID()}`;
-    try {
-      const outcome = await this.walletRefundClient.refundByIntent(salesOrder.walletIntentId, refundAmount, {
-        reasonCode: 'RETURN_COMPLETED',
-        correlationId,
-      });
-
-      await this.db.db.insert(wmsTables.businessLinks).values({
-        sourceType: 'return_request',
-        sourceId: returnRequestId,
-        targetType: 'wallet_refund',
-        targetExternalRef: outcome.kind === 'success' || outcome.kind === 'partial_pending'
-          ? `wallet:refund:${outcome.refunds?.[0]?.refundId ?? correlationId}`
-          : `wallet:intent:${salesOrder.walletIntentId}`,
-        relationName: 'return_linked_wallet_refund',
-        metadata: { outcome: outcome.kind, amount: refundAmount, correlationId, retriedBy: adminId, attemptN },
-      });
-
-      if (outcome.kind === 'success') {
-        const now = new Date();
-        const [completed] = await this.db.db
-          .update(returnExchangeTables.returnRequests)
-          .set({ status: 'completed', completedAt: now, updatedAt: now })
-          .where(eq(returnExchangeTables.returnRequests.id, returnRequestId))
-          .returning();
-        return completed;
-      }
-
-      this.logger.warn(
-        `[ReturnRefund] Retry ${outcome.kind} for return ${returnRequestId}. Staying refund_pending.`,
-      );
-      return rr;
-    } catch (err) {
-      this.logger.error(
-        `[ReturnRefund] Retry threw for return ${returnRequestId}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      return rr;
-    }
+    // walletIntentId·금액 가드는 attemptReturnRefund Phase A 가 수행(BadRequestException).
+    return this.attemptReturnRefund(returnRequestId, adminId);
   }
 
   /**
@@ -980,13 +949,13 @@ export class StoreReturnExchangeService {
   private async findReturnRequestOrThrow(
     returnRequestId: string,
     tx: Parameters<Parameters<typeof this.db.db.transaction>[0]>[0],
+    opts?: { forUpdate?: boolean },
   ): Promise<ReturnRequestRow> {
-    const rr = await tx
+    const base = tx
       .select()
       .from(returnExchangeTables.returnRequests)
-      .where(eq(returnExchangeTables.returnRequests.id, returnRequestId))
-      .limit(1)
-      .then((r) => r[0]);
+      .where(eq(returnExchangeTables.returnRequests.id, returnRequestId));
+    const rr = await (opts?.forUpdate ? base.for('update') : base).limit(1).then((r) => r[0]);
 
     if (!rr) throw new NotFoundException(`반품 요청을 찾을 수 없습니다: ${returnRequestId}`);
     return rr;
@@ -1276,6 +1245,67 @@ export class StoreReturnExchangeService {
       })),
       createdAt: returnRequest.createdAt,
     };
+  }
+
+  /** 반품 환불 금액 계산 — 주문/라인/반품라인을 로드해 calculateReturnRefund 위임. tx 컨텍스트 전용. */
+  private async computeReturnRefundAmount(
+    returnRequestId: string,
+    salesOrder: { id: string; totalAmount: number | null; shippingFee: number },
+    tx: Parameters<Parameters<typeof this.db.db.transaction>[0]>[0],
+  ): Promise<number> {
+    const [allOrderLines, returnItems] = await Promise.all([
+      tx
+        .select({
+          id: wmsTables.salesOrderLines.id,
+          quantity: wmsTables.salesOrderLines.quantity,
+          unitPrice: wmsTables.salesOrderLines.unitPrice,
+          totalPrice: wmsTables.salesOrderLines.totalPrice,
+        })
+        .from(wmsTables.salesOrderLines)
+        .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrder.id)),
+      tx
+        .select({
+          salesOrderLineId: returnExchangeTables.returnRequestItems.salesOrderLineId,
+          quantity: returnExchangeTables.returnRequestItems.quantity,
+          unitPrice: wmsTables.salesOrderLines.unitPrice,
+        })
+        .from(returnExchangeTables.returnRequestItems)
+        .leftJoin(
+          wmsTables.salesOrderLines,
+          eq(returnExchangeTables.returnRequestItems.salesOrderLineId, wmsTables.salesOrderLines.id),
+        )
+        .where(eq(returnExchangeTables.returnRequestItems.returnRequestId, returnRequestId)),
+    ]);
+    return this.calculateReturnRefund(
+      returnItems,
+      allOrderLines,
+      salesOrder.totalAmount ?? null,
+      salesOrder.shippingFee ?? 0,
+    );
+  }
+
+  /** 환불 시도 감사 로그 (기존 return_linked_wallet_refund businessLink 연속 — 상태 SoT 는 attempt 행). */
+  private async insertRefundAuditLink(
+    tx: Parameters<Parameters<typeof this.db.db.transaction>[0]>[0],
+    returnRequestId: string,
+    attempt: { idempotencyKey: string; amount: number; attemptNumber: number },
+    outcome: WalletRefundOutcome,
+  ): Promise<void> {
+    const refundId =
+      outcome.kind === 'success' || outcome.kind === 'partial_pending' ? outcome.refunds?.[0]?.refundId : undefined;
+    await tx.insert(wmsTables.businessLinks).values({
+      sourceType: 'return_request',
+      sourceId: returnRequestId,
+      targetType: 'wallet_refund',
+      targetExternalRef: refundId ? `wallet:refund:${refundId}` : `wallet:key:${attempt.idempotencyKey}`,
+      relationName: 'return_linked_wallet_refund',
+      metadata: {
+        outcome: outcome.kind,
+        amount: attempt.amount,
+        correlationId: attempt.idempotencyKey,
+        attemptN: attempt.attemptNumber,
+      },
+    });
   }
 
   /**
