@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Body,
+  Query,
   UseFilters,
   HttpCode,
   HttpStatus,
@@ -339,6 +340,7 @@ export class SubscriptionController {
         email,
         cancelSubscriptionDto.reasonCode,
         cancelSubscriptionDto.reasonText,
+        cancelSubscriptionDto.refundReceiveAccount,
       );
     } catch (e: any) {
       const msg = (e?.message ?? '').toLowerCase();
@@ -373,6 +375,37 @@ export class SubscriptionController {
   @UseGuards(JwtAuthGuard) // 🚨 임시 가드 사용
   async getSubscriptionHistory(@User('userId') userId: string) {
     return this.subscriptionService.getSubscriptionHistory(userId);
+  }
+
+  /**
+   * 구독 이력 조회 (페이지네이션)
+   *
+   * ⚠️ 반드시 wildcard/파라미터 라우트보다 먼저 선언되어야 합니다.
+   */
+  @Get('history/paged')
+  @ApiOperation({
+    summary: '구독 이력 페이지네이션 조회',
+    description: '사용자의 구독 이력을 limit/offset 기반으로 페이지네이션하여 조회합니다.',
+  })
+  @ApiQuery({ name: 'limit', description: '페이지 크기 (기본 10, 1~50)', required: false, example: 10 })
+  @ApiQuery({ name: 'offset', description: '건너뛸 개수 (기본 0, 최소 0)', required: false, example: 0 })
+  @ApiResponse({
+    status: 200,
+    description: '구독 이력 조회 성공',
+  })
+  @UseGuards(JwtAuthGuard) // 🚨 임시 가드 사용
+  async getSubscriptionHistoryPaged(
+    @User('userId') userId: string,
+    @Query('limit') limitRaw?: string,
+    @Query('offset') offsetRaw?: string,
+  ) {
+    const parsedLimit = Number(limitRaw);
+    const limit = Number.isNaN(parsedLimit) ? 10 : Math.min(50, Math.max(1, Math.trunc(parsedLimit)));
+
+    const parsedOffset = Number(offsetRaw);
+    const offset = Number.isNaN(parsedOffset) ? 0 : Math.max(0, Math.trunc(parsedOffset));
+
+    return this.subscriptionService.getSubscriptionHistoryPaged(userId, limit, offset);
   }
 
   /**

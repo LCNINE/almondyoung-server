@@ -9,6 +9,10 @@ import {
 import { CancellationReasonReader } from './subscription/cancellation-reason.reader';
 import { MembershipEventPublisher } from './membership-event.publisher';
 import { PaymentClientService } from './billing/payment-client.service';
+import { BenefitReader } from './benefit/benefit.reader';
+import { RefundEligibility } from './subscription/subscription-cancellation.manager';
+
+type RefundReceiveAccount = { bank: string; accountNumber: string; holderName: string };
 
 // 하위 호환성을 위한 타입 export
 export type {
@@ -45,6 +49,7 @@ export class SubscriptionCancellationService {
     private readonly reasonReader: CancellationReasonReader,
     private readonly membershipEventPublisher: MembershipEventPublisher,
     private readonly paymentClientService: PaymentClientService,
+    private readonly benefitReader: BenefitReader,
   ) {}
 
   /**
@@ -57,6 +62,7 @@ export class SubscriptionCancellationService {
     email: string,
     reasonCode: string,
     reasonText?: string,
+    refundReceiveAccount?: RefundReceiveAccount,
   ): Promise<ImmediateCancellationResult | RecurringCancellationResult> {
     // 1. ACTIVE 계약 조회
     const data = await this.contractReader.findContractWithPlan(userId);
@@ -72,7 +78,8 @@ export class SubscriptionCancellationService {
       throw new Error('Active subscription not found');
     }
 
-    const eligibility = await this.cancellationManager.checkRefundEligibility(data.contract, data.plan);
+    // 이번 주기 혜택 미사용이면 결제액 전액 환불 대상 (단건/정기 공통)
+    const eligibility = await this.resolveRefundEligibility(userId, data.contract, data.plan);
 
     const result = eligibility.eligible
       ? await this.cancellationManager.cancelImmediately(
@@ -85,7 +92,29 @@ export class SubscriptionCancellationService {
         )
       : await this.cancellationManager.cancelRecurringPayment(userId, data.contract, reasonCode, reasonText);
 
-    if (result.type === 'RECURRING_CANCELLATION') {
+    // 환불 실행 — eligible 이고 결제 intent 가 있을 때만. 실패해도 취소 자체는 유지되고
+    // 최종 상태는 wallet 의 환불 완료/실패 이벤트(RefundEventHandler)가 확정한다.
+    if (eligibility.eligible && data.contract.lastPaymentIntentId && eligibility.amount > 0) {
+      try {
+        await this.paymentClientService.refundByIntent(
+          data.contract.lastPaymentIntentId,
+          eligibility.amount,
+          reasonCode,
+          reasonText,
+          refundReceiveAccount,
+        );
+      } catch (err) {
+        this.logger.error(
+          `셀프해지 환불 요청 실패 (contractId=${data.contract.id}, intentId=${data.contract.lastPaymentIntentId}, amount=${eligibility.amount}): ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+          err instanceof Error ? err.stack : undefined,
+        );
+      }
+    }
+
+    // 정기결제 계약이면 billing_agreement 회수 (즉시취소/정기중단 공통)
+    if (result.type === 'RECURRING_CANCELLATION' || data.contract.autoRenewal) {
       this.paymentClientService
         .revokeBillingAgreement(data.contract.id)
         .catch((err: Error) =>
@@ -109,6 +138,34 @@ export class SubscriptionCancellationService {
     });
 
     return result;
+  }
+
+  /**
+   * 셀프 해지 환불 자격 판단
+   *
+   * 정책: 이번 결제 주기에 멤버십 혜택(멤버십가 구매·웰컴딜 등 할인 적용 주문)을 하나도
+   * 사용하지 않았고, 환불 대상 결제 intent 가 있으면 결제액 전액 환불 대상.
+   * 혜택을 한 번이라도 사용했으면 환불 불가 (기간 만료까지 이용 후 종료).
+   */
+  private async resolveRefundEligibility(
+    userId: string,
+    contract: { billingDate: string; lastPaymentIntentId: string | null },
+    plan: { price: number; durationDays: number },
+  ): Promise<RefundEligibility> {
+    if (!contract.lastPaymentIntentId) {
+      return { eligible: false, reason: '환불 대상 결제 내역 없음', amount: 0 };
+    }
+
+    const subscriptionType = plan.durationDays === 30 ? 'MONTHLY' : 'YEAR';
+    const cycle = await this.benefitReader.findCurrentCycleBenefit(userId, new Date(contract.billingDate), subscriptionType);
+    const benefitUsed = cycle.orderCount > 0 || cycle.totalDiscountAmount > 0;
+
+    if (benefitUsed) {
+      return { eligible: false, reason: '이번 주기 혜택 사용 이력 있음', amount: 0 };
+    }
+
+    // ponytail: 전액 환불. 부분 환불(일할 계산)이 필요해지면 여기서 amount 를 산정.
+    return { eligible: true, reason: '이번 주기 혜택 미사용', amount: plan.price };
   }
 
   /**

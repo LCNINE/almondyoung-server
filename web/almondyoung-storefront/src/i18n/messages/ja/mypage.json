@@ -732,6 +732,7 @@
       "expectedEndDate": "終了予定日",
       "trialEndAutoStart": "無料体験後の自動決済開始日: {date}",
       "nextBillingNotice": "次回決済予定日は {date} です",
+      "membershipEndNotice": "メンバーシップ利用終了予定日は {date} です",
       "trialEndAutoStartLabel": "体験終了後の自動決済開始日",
       "cartPriceUpdated": "カート価格を更新しました。",
       "paymentMethod": "月額決済方法を変更",
@@ -863,7 +864,9 @@
       "legacyHistory": "従来のアモンドヤン ODOK履歴を見る",
       "joinAndBenefits": "アモンドヤン ODOK加入・特典確認",
       "subscribe": "登録する",
+      "viewBenefitsGuide": "ODOK特典を詳しく見る",
       "cancelMembership": "ODOKを解約",
+      "cancelWarning": "メンバーシップを解約するとこれらの特典がすべて消えます",
       "heroTitle": "アモンドヤン ODOK サービス",
       "heroGrandOpen": "GRAND OPEN",
       "priceNoticeMonthlyYearly": "* 有料メンバーシップ 月 4,990ウォン / 年 49,900ウォン",
@@ -881,7 +884,8 @@
       "upcomingTitle1": "近日登場: ",
       "upcomingTitle2": "公開予定の特典",
       "upcomingDescription": "より多くの特典をご用意中です",
-      "planNameDefault": "年間"
+      "planNameDefault": "年間",
+      "guideTitle": "ODOK特典のご案内"
     },
     "cancel": {
       "titleNoUsage": "今月の特典利用がないため",
@@ -893,7 +897,15 @@
       "etcPlaceholder": "解約理由を入力してください",
       "cancelButton": "キャンセル",
       "confirmButton": "完了",
-      "processing": "処理中..."
+      "processing": "処理中...",
+      "titleUsedLine1": "今月の会員特典をすでにご利用されています。",
+      "titleUsedLine2": "返金はなく、利用期間終了までメンバーシップは維持されます。",
+      "refundAccountHeading": "返金先口座（銀行振込の場合）",
+      "refundAccountNote": "銀行振込（バーチャル口座）でお支払いの場合はご入力ください。カード決済の場合は空欄のままで自動返金されます。",
+      "bankPlaceholder": "銀行を選択",
+      "accountNumberPlaceholder": "口座番号（数字のみ）",
+      "holderNamePlaceholder": "口座名義",
+      "refundAccountIncomplete": "返金先口座は銀行・口座番号・名義をすべてご入力ください。"
     }
   },
   "orderActions": {
@@ -978,7 +990,7 @@
     "plansLoadFailDescription": "しばらくしてから再度お試しください。"
   },
   "membershipPaymentMethod": {
-    "pageTitle": "メンバーシップ決済方法管理",
+    "pageTitle": "決済方法管理",
     "backAria": "戻る",
     "currentCardTitle": "現在の定期決済方法",
     "registeredCard": "登録済み決済方法",

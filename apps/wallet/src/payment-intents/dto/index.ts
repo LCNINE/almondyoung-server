@@ -11,7 +11,7 @@ import {
   ValidateNested,
   IsArray,
 } from 'class-validator';
-import { RefundResponseDto } from '../../refunds/dto';
+import { RefundResponseDto, RefundReceiveAccountDto } from '../../refunds/dto';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { PaymentIntentStatus } from '../../schema';
@@ -267,6 +267,15 @@ export class RefundByIntentDto {
   @IsOptional()
   @IsBoolean()
   allowMembershipRefund?: boolean;
+
+  @ApiPropertyOptional({
+    description: '무통장(가상계좌) 결제 환불받을 계좌. 제공 시 토스가 해당 계좌로 자동 송금.',
+    type: RefundReceiveAccountDto,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => RefundReceiveAccountDto)
+  refundReceiveAccount?: RefundReceiveAccountDto;
 }
 
 export class RefundByIntentResponseDto {
