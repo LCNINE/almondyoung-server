@@ -90,6 +90,7 @@ export class ProductEventsConsumer {
       min_membership_price: membershipPrices.length > 0 ? Math.min(...membershipPrices) : null,
       max_membership_price: membershipPrices.length > 0 ? Math.max(...membershipPrices) : null,
       status: snapshot.status ?? 'active',
+      is_visible_to_members_only: snapshot.isVisibleToMembersOnly ?? false,
       changed_at: payload.changedAt,
       updated_at: payload.changedAt,
     };

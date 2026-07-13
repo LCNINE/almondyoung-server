@@ -72,6 +72,8 @@ export async function SearchContainer({
   if (keyword) {
     try {
       // 1. search 서비스 OpenSearch 검색으로 productId 목록 가져오기
+      // isMembership 을 전달해 비회원에겐 멤버십 전용 노출 상품을 소스에서 제외 →
+      // pagination.total/totalPages 가 실제 노출 개수와 일치.
       const searchApiResult = await searchProducts({
         q: keyword,
         page: pageParam,
@@ -81,6 +83,7 @@ export async function SearchContainer({
         brands: brandList,
         minPrice: minPrice ? parseInt(minPrice, 10) : undefined,
         maxPrice: maxPrice ? parseInt(maxPrice, 10) : undefined,
+        includeMembersOnly: isMembership,
       })
 
       if ("data" in searchApiResult && searchApiResult.data) {
@@ -110,8 +113,8 @@ export async function SearchContainer({
           })
         }
 
-        // TODO(#433 follow-up): add isVisibleToMembersOnly to the search index/query
-        // so pagination.total and totalPages exclude hidden products before Medusa hydration.
+        // 소스(search 서비스)에서 이미 멤버십 전용 노출을 제외하므로 total/totalPages 는 정확하다.
+        // 아래 JS 필터는 아직 재색인 안 된 문서(is_visible_to_members_only 필드 없음)에 대한 방어층.
         const visibleItems = filterProductsByMembershipVisibility(
           items,
           isMembership

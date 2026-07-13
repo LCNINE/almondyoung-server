@@ -1,7 +1,7 @@
 "use server"
 
 import { sdk } from "@/lib/config/medusa"
-import { getAuthHeaders, getCacheOptions } from "@lib/data/cookies"
+import { getAuthHeaders, getMembershipAwareCacheTags } from "@lib/data/cookies"
 import type { HttpTypes } from "@medusajs/types"
 import type { ProductSortBy, ProductSortOrder } from "@/lib/types/common/filter"
 import { getRegion, retrieveRegion } from "./regions"
@@ -72,16 +72,14 @@ export const listProducts = async ({
     ...(await getAuthHeaders()),
   }
 
-  // handle 조회 시 방문자 무관 태그를 추가해 재고 변경 시 revalidateTag 로 무효화 가능하게.
-  const cacheOptions = await getCacheOptions("products")
+  // 목록 태그는 멤버십/로그인 상태별로 분리(회원/비회원 캐시 격리).
+  // handle 조회 시엔 방문자 무관 태그를 추가해 재고 변경 시 revalidateTag 로 무효화 가능하게.
+  const listTags = await getMembershipAwareCacheTags("products")
   const handleTag =
     typeof queryParams?.handle === "string"
       ? [`product-${queryParams.handle}`]
       : []
-  const tags = [
-    ...("tags" in cacheOptions ? cacheOptions.tags : []),
-    ...handleTag,
-  ]
+  const tags = [...listTags, ...handleTag]
   const next = {
     ...(tags.length ? { tags } : {}),
     revalidate: 3600,
@@ -173,8 +171,9 @@ export const listProductsSorted = async ({
     ...(await getAuthHeaders()),
   }
 
+  const listTags = await getMembershipAwareCacheTags("products")
   const next = {
-    ...(await getCacheOptions("products")),
+    ...(listTags.length ? { tags: listTags } : {}),
     revalidate: 3600,
   }
 
