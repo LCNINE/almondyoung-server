@@ -4,6 +4,7 @@ import { ProductSearchQueryDto } from './dto/product-search-query.dto';
 import { ProductSearchItemDto, ProductSearchResponseDto } from './dto/product-search-response.dto';
 import { OpenSearchService } from './opensearch.service';
 import {
+  MEMBERS_ONLY_FIELD_MAPPINGS,
   PRODUCTS_INDEX_MAPPINGS,
   PRODUCTS_INDEX_SETTINGS,
   REVIEW_FIELDS_MAPPINGS,
@@ -245,6 +246,16 @@ export class ProductIndexService implements OnModuleInit {
     } catch (error) {
       this.logger.warn(`putMapping for review fields failed (non-fatal): ${error.message}`);
     }
+
+    // Ensure members-only visibility field mapping exists (additive PUT — 기존 인덱스에도 적용)
+    try {
+      await client.indices.putMapping({
+        index,
+        body: MEMBERS_ONLY_FIELD_MAPPINGS,
+      });
+    } catch (error) {
+      this.logger.warn(`putMapping for members-only field failed (non-fatal): ${error.message}`);
+    }
   }
 
   private async executeSearch(params: {
@@ -395,6 +406,16 @@ export class ProductIndexService implements OnModuleInit {
     if (query.maxPrice !== undefined) {
       filters.push({
         range: { min_base_price: { lte: query.maxPrice } },
+      });
+    }
+
+    // 멤버십 아닌 사용자에겐 멤버십 전용 노출 상품을 제외한다.
+    // filter 안에서 걸러야 pagination.total/totalPages 가 소스에서 정확해진다(사후 필터의 count 불일치 방지).
+    // 플래그 미지정 시 fail-closed(제외)로 동작. must_not term(true) 이라 아직 backfill 안 된
+    // 기존 문서(필드 없음)는 제외되지 않음 — 하위호환.
+    if (!query.includeMembersOnly) {
+      filters.push({
+        bool: { must_not: [{ term: { is_visible_to_members_only: true } }] },
       });
     }
 
