@@ -484,6 +484,28 @@ ICU MessageFormat 에서 single quote `'` 는 placeholder 이스케이프 문자
 - 신규 페이지/컴포넌트에 텍스트를 추가하면 **항상** 해당 namespace 의 ko/en/ja 3개 파일에 키 추가 후 `t()` 로 참조
 - 기존 페이지에 텍스트를 새로 넣을 때도 같은 namespace 파일 안에 추가 (예: `messages/{ko,en,ja}/productDetail.json` 의 `summary.*` 에 새 키 더하기)
 
+## 로컬 캐시 2겹 (데이터 바꿨는데 스토어프론트에 반영 안 될 때)
+
+Medusa 데이터(재고·`manage_inventory`·variant `metadata` 등)를 DB에서 직접 바꿨는데 스토어프론트에 안 뜨면, **캐시가 두 겹**이라서다. 둘 다 비워야 반영된다.
+
+1. **Medusa Redis 응답 캐시** (`@medusajs/caching-redis`, 로컬 `almondyoung-server-redis-1`, 키 프리픽스 `mc:`). 앱이 쓰는 쿼리(`limit`/`offset` 포함) 결과가 통째로 캐싱된다. **주의**: 캐시 키는 쿼리 문자열별이라, `curl`로 단순 쿼리(limit 없이) 때리면 캐시 미스로 최신이 나와 "DB엔 반영됐네" 착각하기 쉽다 — 실제 앱 경로(limit/offset 포함)가 stale 인 것.
+2. **Next.js fetch 캐시** (storefront 상품 fetch `revalidate: 3600`). turbopack dev 는 이걸 **메모리**에 들고 있어 서버 재시작 전엔 잘 안 비워진다.
+
+반영 순서 (Medusa 먼저, 그다음 Next):
+
+```bash
+# 1) Medusa 응답 캐시 flush (DB에서 재계산하게)
+redis-cli -n 0 --scan --pattern 'mc:*' | xargs -r redis-cli -n 0 del
+
+# 2) storefront 해당 상품 캐시 무효화 (handle = 스토어프론트 URL 의 UUID = Medusa handle)
+curl -s -X POST http://localhost:8000/api/revalidate \
+  -H 'content-type: application/json' \
+  -H "x-revalidate-secret: $REVALIDATE_SECRET" \
+  -d '{"handle":"<product-handle>"}'
+```
+
+`REVALIDATE_SECRET` 은 `.env.local` 참고. 2)로도 안 되면 turbopack in-memory fetch 캐시라 **storefront dev 서버 재시작**(`npm run dev`)이 확실하다. (운영에선 이 revalidate 를 channel-adapter 가 재고 변경 이벤트 때 자동 호출한다 — `src/app/api/revalidate/route.ts` 주석 참고.)
+
 ## 경로 Alias
 
 ```typescript
