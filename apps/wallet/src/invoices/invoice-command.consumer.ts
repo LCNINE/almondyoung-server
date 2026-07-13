@@ -180,19 +180,26 @@ export class InvoiceCommandConsumer {
       `[VoidInvoice] subscriberRef=${payload.subscriberRef}, reason=${payload.reason} — ${voided.length} invoice(s) voided`,
     );
 
+    // ATTEMPTING 은 즉시 무효화하지 않되(출금이 이미 나갔을 수 있음), void 요청을 마커로 남긴다.
+    // 정산이 실패로 돌아오면 registerAttemptFailure 가 이 마커를 보고 재시도(더닝) 대신 VOID 로
+    // 종결한다 — 해지된 구독의 계좌에서 재출금되는 것을 막는다. 정산 성공은 그대로 PAID(대금 정당).
     const attempting = await this.dbService.db
-      .select({ id: invoices.id })
-      .from(invoices)
+      .update(invoices)
+      .set({
+        metadata: sql`${invoices.metadata} || jsonb_build_object('voidRequested', true, 'voidReason', ${payload.reason ?? 'SUBSCRIPTION_CANCELLED'}::text)`,
+        updatedAt: new Date(),
+      })
       .where(
         and(
           eq(invoices.subscriberType, payload.subscriberType),
           eq(invoices.subscriberRef, payload.subscriberRef),
           eq(invoices.status, 'ATTEMPTING'),
         ),
-      );
+      )
+      .returning({ id: invoices.id });
     if (attempting.length > 0) {
       this.logger.warn(
-        `[VoidInvoice] 집행 중(ATTEMPTING) 인보이스 ${attempting.map((r) => r.id).join(', ')} 은 무효화하지 않음 — 정산 결과 대기`,
+        `[VoidInvoice] 집행 중(ATTEMPTING) 인보이스 ${attempting.map((r) => r.id).join(', ')} 은 즉시 무효화하지 않고 void 마커만 기록 — 정산 실패 시 VOID 종결`,
       );
     }
   }

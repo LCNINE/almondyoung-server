@@ -97,6 +97,26 @@ describe('InvoiceOutcomeService.registerAttemptFailure', () => {
     expect(updates).toHaveLength(0);
     expect(inserted).toHaveLength(0);
   });
+
+  it('void 요청된 인보이스(집행 중 취소)의 정산 실패는 재시도 대신 VOID 로 종결', async () => {
+    const { service, updates, inserted } = makeService({
+      ...baseInvoice,
+      attemptCount: 0,
+      metadata: { voidRequested: true, voidReason: 'SUBSCRIPTION_CANCELLED' },
+    });
+
+    await service.registerAttemptFailure('inv-1', 'intent-1', 'Q999', '잔액부족');
+
+    const update = updates[0];
+    expect(update.status).toBe('VOID');
+    expect(update.finalizedAt).toBeInstanceOf(Date);
+    expect(update.nextAttemptAt).toBeNull();
+    // 더닝(PAST_DUE) 재시도로 이어지지 않아야 한다 — 해지된 구독 재출금 방지
+    expect(update.attemptCount).toBeUndefined();
+    expect(inserted[0].eventType).toBe('invoice.voided');
+    const payload = inserted[0].payload as Record<string, unknown>;
+    expect(payload.reason).toBe('SUBSCRIPTION_CANCELLED');
+  });
 });
 
 describe('InvoiceOutcomeService.markPaid', () => {

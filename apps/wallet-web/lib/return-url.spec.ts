@@ -18,6 +18,12 @@ describe('safeReturnUrl', () => {
     expect(safeReturnUrl('data:text/html,<script>1</script>')).toBe('/');
   });
 
+  it('blocks backslash protocol-relative bypass that URL parsers normalize to //host', () => {
+    expect(safeReturnUrl('/\\evil.com')).toBe('/');
+    expect(safeReturnUrl('/\\/evil.com')).toBe('/');
+    expect(safeReturnUrl('//\\evil.com')).toBe('/');
+  });
+
   it('fails closed for cross-origin when no allowlist env is configured', () => {
     delete process.env.ALLOWED_RETURN_HOST_SUFFIXES;
     delete process.env.WALLET_ALLOWED_RETURN_ORIGINS;

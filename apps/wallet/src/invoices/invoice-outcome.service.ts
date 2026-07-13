@@ -75,6 +75,36 @@ export class InvoiceOutcomeService {
       const invoice = await this.lockNonTerminal(tx, invoiceId);
       if (!invoice) return;
 
+      // 구독 취소(VoidInvoice)가 이 인보이스의 집행 중에 도착해 void 마커가 남아 있으면,
+      // 실패를 재시도(더닝)로 이어가지 않고 VOID 로 종결한다 — 해지된 구독의 계좌에서
+      // 재출금되는 것을 막는다. (정산 성공은 markPaid 가 그대로 PAID 처리; 대금은 정당.)
+      if (invoice.metadata.voidRequested) {
+        const reason = (invoice.metadata.voidReason as string | undefined) ?? 'SUBSCRIPTION_CANCELLED';
+        await tx
+          .update(invoices)
+          .set({
+            status: 'VOID',
+            finalizedAt: new Date(),
+            nextAttemptAt: null,
+            updatedAt: new Date(),
+            metadata: { ...invoice.metadata, voidReason: reason, lastFailedIntentId: intentId },
+          })
+          .where(eq(invoices.id, invoiceId));
+
+        await tx.insert(outboxEvents).values(
+          buildOutboxInsertValues({
+            eventType: InvoiceEventType.VOIDED,
+            aggregateType: INVOICE_AGGREGATE_TYPE,
+            aggregateId: invoice.id,
+            partitionKey: invoicePartitionKey(invoice.subscriberType, invoice.subscriberRef),
+            payload: { ...buildInvoiceVoidedPayload(invoice, { reason, canceledIntentId: intentId }) },
+          }),
+        );
+
+        this.logger.warn(`Invoice ${invoiceId} VOID — 집행 중 취소 요청된 인보이스의 정산 실패 (reason=${reason})`);
+        return;
+      }
+
       // 같은 시도(intent)의 실패가 두 경로(정산 폴러/stale reconcile)로 중복 도착해도
       // attempt_count 는 한 번만 오른다 — 조기 UNCOLLECTIBLE 방지.
       if (intentId && invoice.metadata.lastFailedIntentId === intentId) {

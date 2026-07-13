@@ -124,7 +124,10 @@ export default function MembershipPaymentMethodPage() {
   const loadMethods = useCallback(async () => {
     const [agreements, methods, cmsStatuses, subscription] = await Promise.all([
       getBillingAgreements(),
-      getBillingMethods(),
+      // 선적용(INVOICE) 경로에선 심사 중(PENDING) 계좌도 정기결제 수단이므로 목록에 포함해야
+      // currentMethod 로 해석된다. 빼면 승인 대기 1~2일 동안 currentMethod=null 이 되어
+      // '결제 수단을 불러올 수 없습니다' 오류가 뜬다('가입 즉시 적용' 안내와 모순).
+      getBillingMethods({ includePendingMandate: isInvoiceBillingEnabled() }),
       getCmsBillingMethodStatuses(),
       isSubscribeFlow
         ? Promise.resolve(null)

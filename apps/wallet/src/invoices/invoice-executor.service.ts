@@ -4,7 +4,7 @@ import { DbService } from '@app/db';
 import { randomBytes } from 'node:crypto';
 import { and, count, desc, eq, inArray, lt, lte } from 'drizzle-orm';
 import { addMinutes, addHours, addDays, subHours } from 'date-fns';
-import { WalletSchema, invoices, paymentIntents, paymentStateTransitions, InvoiceStatus } from '../schema';
+import { WalletSchema, invoices, paymentIntents, paymentStateTransitions, cmsWithdrawals, InvoiceStatus } from '../schema';
 import { Invoice, BillingMethod, PaymentIntent } from '../types';
 import { BillingMethodService } from '../billing/billing-method.service';
 import { BillingAgreementService } from '../billing/billing-agreement.service';
@@ -556,8 +556,23 @@ export class InvoiceExecutorService {
           }
           case 'CREATED':
           case 'PROCESSING':
-            // provider 호출 전후 크래시로 영영 안 끝나는 in-flight — 닫지 않으면 인보이스가
-            // ATTEMPTING 에 영구 고착된다. 미집계 터미널(CANCELED)로 닫고 재스케줄.
+            // provider 호출 전후 크래시로 영영 안 끝나는 in-flight. 닫고 재스케줄하기 전에
+            // write-ahead 로 남긴 출금 요청이 이미 효성에 접수됐는지 확인해야 한다 — 접수된
+            // 출금을 모른 채 재스케줄하면 새 intent 로 이중 출금된다. 살아있는 출금(REQUESTED/
+            // PROCESSING)이 있으면 취소 대신 PENDING_SETTLEMENT 로 승격해 정산 폴러에 맡기고
+            // 인보이스는 ATTEMPTING 을 유지한다.
+            if (await this.hasLiveWithdrawal(latest.id)) {
+              this.logger.warn(
+                `[reconcile] Invoice ${invoice.id} intent ${latest.id} (${latest.status}) has live withdrawal — adopt as PENDING_SETTLEMENT (이중출금 방지)`,
+              );
+              await this.stateTransitionService.transitionIntent(latest.id, 'PENDING_SETTLEMENT', {
+                correlationId: `invoice-reconcile:${invoice.id}`,
+                reasonCode: 'PENDING_SETTLEMENT',
+                reasonMessage: `Write-ahead withdrawal in flight; poller will settle (stuck ${latest.status} beyond ${ATTEMPTING_STALE_HOURS}h)`,
+                triggeredByType: 'SYSTEM',
+              });
+              break;
+            }
             this.logger.warn(
               `[reconcile] Invoice ${invoice.id} stuck in-flight intent ${latest.id} (${latest.status}) — cancel & reschedule`,
             );
@@ -596,6 +611,16 @@ export class InvoiceExecutorService {
       .orderBy(desc(paymentStateTransitions.occurredAt))
       .limit(1);
     return transition?.reasonCode === 'PROVIDER_EXCEPTION' || transition?.reasonCode === 'INVOICE_ATTEMPT_STUCK';
+  }
+
+  /** 이 intent 로 이미 효성에 접수됐을 수 있는 출금(write-ahead)이 살아있는지 판정. */
+  private async hasLiveWithdrawal(intentId: string): Promise<boolean> {
+    const [live] = await this.dbService.db
+      .select({ id: cmsWithdrawals.id })
+      .from(cmsWithdrawals)
+      .where(and(eq(cmsWithdrawals.intentId, intentId), inArray(cmsWithdrawals.status, ['REQUESTED', 'PROCESSING'])))
+      .limit(1);
+    return !!live;
   }
 
   private async findLatestIntent(invoiceId: string): Promise<PaymentIntent | undefined> {

@@ -437,6 +437,56 @@ describe('Recurring Billing & Pause Integration Tests', () => {
       expect(resumedContract.nextBillingDate).toBe(format(addDays(new Date(originalNextBillingDate!), 10), 'yyyy-MM-dd'));
     });
 
+    it('✅ INVOICE 경로 미결 주기는 재개 시 nextBillingDate 를 밀지 않는다(이중 인보이스 방지)', async () => {
+      // 현재 주기가 미결(nextBillingDate<=today)인 INVOICE 계약: shift 하면 멱등키가 바뀌어
+      // 같은 주기에 두 번째 인보이스가 발행되고 이중 출금된다. periodStart 보존이 정답.
+      const today = format(new Date(), 'yyyy-MM-dd');
+      await dbService.db
+        .update(schema.subscriptionContracts)
+        .set({ billingPath: 'INVOICE', nextBillingDate: today })
+        .where(eq(schema.subscriptionContracts.id, testContractId));
+
+      const [entitlement] = await dbService.db
+        .select()
+        .from(schema.subscriptionEntitlement)
+        .where(
+          and(
+            eq(schema.subscriptionEntitlement.userId, testUserId),
+            eq(schema.subscriptionEntitlement.isCurrent, true),
+          ),
+        );
+
+      await pauseManager.startPause(testUserId, entitlement, new Date(), addDays(new Date(), 30));
+
+      const [paused] = await dbService.db
+        .select()
+        .from(schema.subscriptionEntitlement)
+        .where(
+          and(
+            eq(schema.subscriptionEntitlement.userId, testUserId),
+            eq(schema.subscriptionEntitlement.isCurrent, true),
+          ),
+        );
+      // 실제 10일 정지 상황을 만든다.
+      await dbService.db
+        .update(schema.subscriptionEntitlement)
+        .set({ pausedAt: addDays(new Date(), -10) })
+        .where(eq(schema.subscriptionEntitlement.id, paused.id));
+      const [backdated] = await dbService.db
+        .select()
+        .from(schema.subscriptionEntitlement)
+        .where(eq(schema.subscriptionEntitlement.id, paused.id));
+
+      await pauseManager.resumePause(testUserId, backdated);
+
+      const [resumedContract] = await dbService.db
+        .select()
+        .from(schema.subscriptionContracts)
+        .where(eq(schema.subscriptionContracts.id, testContractId));
+      // nextBillingDate 는 그대로(미결 주기 periodStart 보존) — entitlement 만 정지분 연장.
+      expect(resumedContract.nextBillingDate).toBe(today);
+    });
+
     it('✅ 일시정지 중에는 정기결제 대상에서 제외', async () => {
       // 일시정지 실행
       const [entitlement] = await dbService.db

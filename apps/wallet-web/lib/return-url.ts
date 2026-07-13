@@ -40,8 +40,9 @@ function selfOriginFromEnv(): string | undefined {
  */
 export function safeReturnUrl(returnUrl: string | undefined | null, fallback = '/'): string {
   if (!returnUrl) return fallback;
-  // 상대경로 허용 (단, 프로토콜-상대 //host 는 차단)
-  if (returnUrl.startsWith('/') && !returnUrl.startsWith('//')) return returnUrl;
+  // 상대경로 허용. 단, 두 번째 문자가 '/' 또는 '\' 인 경우는 차단한다 — '//host' 는 프로토콜-상대
+  // URL 이고, '/\host'(및 백슬래시 변형)는 WHATWG URL 파서가 '//host' 로 정규화해 외부로 이탈한다.
+  if (returnUrl.startsWith('/') && !/^\/[/\\]/.test(returnUrl)) return returnUrl;
 
   let target: URL;
   try {
