@@ -1,5 +1,6 @@
 import { cn } from "@lib/utils"
 import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
+import { SoldOutOverlay } from "@/components/products/sold-out-overlay"
 import Image from "next/image"
 
 export function ProductThumbnail({
@@ -32,11 +33,7 @@ export function ProductThumbnail({
         className="pointer-events-none h-full object-cover transition-transform duration-300 will-change-transform select-none group-hover:scale-105"
       />
       {rank}
-      {isSoldOut && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/20 transition-opacity duration-300 group-hover:opacity-15">
-          <span className="text-base font-bold text-white">품절</span>
-        </div>
-      )}
+      {isSoldOut && <SoldOutOverlay />}
       {action}
     </div>
   )
