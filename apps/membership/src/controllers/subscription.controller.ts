@@ -13,7 +13,6 @@ import {
   InternalServerErrorException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiSecurity, ApiQuery, ApiBody } from '@nestjs/swagger';
-// import { AuthGuard } from '@nestjs/passport'; // 실제 AuthGuard 대신 DevAuthGuard를 사용합니다.
 import { SubscriptionService } from '../services/subscription.service';
 import { SubscriptionCancellationService } from '../services/subscription-cancellation.service';
 import { CancellationReasonReader } from '../services/subscription/cancellation-reason.reader';
@@ -54,8 +53,7 @@ import { ZodValidationPipe } from '../shared/pipes/zod-validation.pipe';
 import { JwtAuthGuard, User } from '@app/authorization';
 /**
  * 구독 관리 컨트롤러
- * 🚨 [주의] 현재 개발용 임시 인증 가드(DevAuthGuard)를 사용하고 있습니다.
- * 실제 프로덕션 배포 전 반드시 실제 인증 가드(AuthGuard('jwt'))로 교체해야 합니다.
+ * 인증: JwtAuthGuard(= AuthGuard('jwt')) 적용. @Public()/@OptionalAuth() 로 우회.
  */
 @ApiTags('subscriptions')
 @Controller('subscriptions')
@@ -393,7 +391,7 @@ export class SubscriptionController {
     status: 200,
     description: '구독 이력 조회 성공',
   })
-  @UseGuards(JwtAuthGuard) // 🚨 임시 가드 사용
+  @UseGuards(JwtAuthGuard)
   async getSubscriptionHistoryPaged(
     @User('userId') userId: string,
     @Query('limit') limitRaw?: string,
