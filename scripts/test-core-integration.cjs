@@ -1,4 +1,5 @@
 /**
+ * ⚠️ DEPRECATED: dev 스테이지 폐기됨. 로컬은 `npm run test:core:integration:local` 사용.
  * core dev DB 대상 통합 테스트 러너 (rollback-only spec 전용).
  * `sst shell` 안에서 실행되어 SST Db 리소스 자격증명으로 DATABASE_URL을 만들고 jest를 돌린다.
  * 직접 호출하지 말고 scripts/test-core-integration.sh 를 사용할 것.
