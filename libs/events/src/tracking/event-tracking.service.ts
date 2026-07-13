@@ -14,7 +14,10 @@ export class EventTrackingService {
   private readonly logger = new Logger(EventTrackingService.name);
 
   constructor(
-    private readonly dbService: DbService,
+    // ponytail: @Optional — search 등 Postgres DbService 없는 컨슈머 앱에서 EventsModule DI가
+    // 깨지지 않도록. DB 없으면 트래킹은 no-op (아래 guard).
+    @Optional()
+    private readonly dbService: DbService | undefined,
     private readonly eventChainService: EventChainService,
     @Optional()
     @Inject(EVENT_TRACKING_SERVICE_NAME)
@@ -35,7 +38,8 @@ export class EventTrackingService {
     },
     tx?: DbTx,
   ): Promise<void> {
-    const db = (tx ?? this.dbService.db) as any;
+    const db = (tx ?? this.dbService?.db) as any;
+    if (!db) return; // DbService 없는 앱(search)에선 트래킹 skip
     await db.insert(event_resource_links).values({
       id: v7(),
       eventId: params.eventId,
@@ -75,7 +79,8 @@ export class EventTrackingService {
       return;
     }
 
-    const db = (tx ?? this.dbService.db) as any;
+    const db = (tx ?? this.dbService?.db) as any;
+    if (!db) return; // DbService 없는 앱(search)에선 트래킹 skip
     await db.insert(event_resource_links).values({
       id: v7(),
       eventId,
