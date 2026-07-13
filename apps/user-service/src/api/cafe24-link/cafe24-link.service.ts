@@ -486,7 +486,7 @@ export class Cafe24LinkService {
 
     if (typeof value === 'string') {
       const trimmed = value.trim();
-      if (/^\\d{8}$/.test(trimmed)) {
+      if (/^\d{8}$/.test(trimmed)) {
         const year = trimmed.slice(0, 4);
         const month = trimmed.slice(4, 6);
         const day = trimmed.slice(6, 8);
