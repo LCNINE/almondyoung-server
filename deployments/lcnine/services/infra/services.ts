@@ -567,7 +567,7 @@ export function setup(infra: SharedInfra) {
   // 원래 WAF(WebACL + IPSet)였으나 고정비($5+룰$1)+요청당 과금으로 월 ~$20 → SST 가 어차피
   // 만드는 viewer-request CloudFront Function 에 코드 주입(injection)으로 대체 (요청 1M당
   // $0.10, 월 2M 무료). 차단 목록 변경 시 아래 배열만 수정해 재배포.
-  const storefrontBlockedIps = ['125.60.32.38', '211.252.157.13', '210.220.13.170', '210.95.250.112', '210.90.35.236'];
+  const storefrontBlockedIps = ['125.60.32.38', '211.252.157.13', '210.220.13.170', '210.95.250.112', '210.90.35.236', '125.60.33.79'];
   const storefrontBlockIpInjection = `
   if (${JSON.stringify(storefrontBlockedIps)}.includes(event.viewer.ip)) {
     return { statusCode: 403, statusDescription: "Forbidden" };
