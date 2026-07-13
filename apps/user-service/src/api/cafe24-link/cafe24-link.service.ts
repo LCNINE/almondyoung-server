@@ -576,7 +576,23 @@ export class Cafe24LinkService {
   }
 
   private normalizePhone(value: string) {
-    return value.replace(/\\D/g, '');
+    return value.replace(/\D/g, '');
+  }
+
+  /**
+   * 한국 휴대폰 번호를 E.164('+82…')로 정규화한다. web/auth-web 의 normalizePhoneNumber 와 동일 규칙.
+   * 파싱 불가하면 null (호출부가 원본 보존을 선택).
+   */
+  private toE164Kr(value: string): string | null {
+    const trimmed = value.trim();
+    if (/^\+[1-9]\d{7,14}$/.test(trimmed)) return trimmed; // 이미 E.164
+    const digits = trimmed.replace(/\D/g, '');
+    if (digits.startsWith('82')) {
+      const e164 = `+${digits}`;
+      return /^\+[1-9]\d{7,14}$/.test(e164) ? e164 : null;
+    }
+    if (/^01\d{8,9}$/.test(digits)) return `+82${digits.slice(1)}`;
+    return null;
   }
 
   private async applyMigration(
@@ -606,12 +622,16 @@ export class Cafe24LinkService {
         return;
       }
       case 'phone': {
+        // cafe24 는 '010-1234-5678' 로컬 형식으로 내려주는데, 나머지 시스템(가입/로그인/비번찾기)은
+        // profiles.phoneNumber 를 E.164('+821012345678')로 저장·비교한다. 정규화 없이 원본을 저장하면
+        // 비밀번호/아이디 찾기 매칭이 영구히 깨진다. 파싱 불가한 값만 원본 보존(데이터 유실 방지).
+        const phoneNumber = this.toE164Kr(cafe24Value) ?? cafe24Value;
         await client
           .insert(profiles)
-          .values({ userId, phoneNumber: cafe24Value })
+          .values({ userId, phoneNumber })
           .onConflictDoUpdate({
             target: profiles.userId,
-            set: { phoneNumber: cafe24Value },
+            set: { phoneNumber },
           });
         return;
       }
