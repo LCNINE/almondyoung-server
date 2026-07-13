@@ -694,9 +694,9 @@
     }
   },
   "membership": {
-    "logoAlt": "멤버십 로고",
-    "defaultTierName": "멤버십",
-    "membershipName": "아몬드영 멤버십",
+    "logoAlt": "오독 ODOK 로고",
+    "defaultTierName": "오독",
+    "membershipName": "아몬드영 오독 ODOK",
     "noBenefitInfo": "혜택 정보가 없습니다.",
     "status": {
       "ACTIVE": "이용 중",
@@ -846,7 +846,7 @@
       }
     },
     "history": {
-      "title": "멤버십 이용 기록",
+      "title": "오독 이용 기록",
       "subscriptionHistory": "구독 이력",
       "noSubscriptionHistory": "구독 이력이 없습니다.",
       "savingsTitle": "절약 기록",
@@ -860,11 +860,11 @@
       "adjGrantedByAdmin": "관리자 지급 +{days}일",
       "adjExtended": "+{days}일 연장",
       "adjReduced": "-{days}일 차감",
-      "legacyHistory": "기존 아몬드영 멤버십 내역 확인하기",
-      "joinAndBenefits": "아몬드영 멤버십 가입하기 및 혜택 확인하기",
+      "legacyHistory": "기존 아몬드영 오독 내역 확인하기",
+      "joinAndBenefits": "아몬드영 오독 가입하기 및 혜택 확인하기",
       "subscribe": "구독하기",
-      "cancelMembership": "멤버십 해지하기",
-      "heroTitle": "아몬드영 멤버십 서비스",
+      "cancelMembership": "오독 해지하기",
+      "heroTitle": "아몬드영 오독 ODOK 서비스",
       "heroGrandOpen": "GRAND OPEN",
       "priceNoticeMonthlyYearly": "* 유료 멤버십 월 4,990원 / 연 49,900원",
       "priceNoticeFreeMonths": "* 연간 구독 시 2개월 무료 사용"
