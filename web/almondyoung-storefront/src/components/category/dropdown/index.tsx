@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import {
   NavigationMenu,
   NavigationMenuContent,
@@ -23,9 +24,16 @@ export function CategoryDropdown({
 }: CategoryDropdownProps) {
   const isQuickLink = variant === "quickLink"
   const isHeaderTile = variant === "headerTile"
+  // Radix 기본 닫힘 디바운스를 우회: 메뉴 영역을 벗어나면 즉시 닫히도록 값을 직접 제어.
+  const [value, setValue] = useState("")
 
   return (
     <NavigationMenu
+      value={value}
+      onValueChange={setValue}
+      delayDuration={0}
+      skipDelayDuration={0}
+      onPointerLeave={() => setValue("")}
       className={cn(
         "z-[100] [&_.origin-top-center]:z-[100] [&_.origin-top-center]:animate-none! [&_.origin-top-center]:rounded-none [&_.origin-top-center]:border-0 [&_.origin-top-center]:bg-transparent [&_.origin-top-center]:shadow-none [&_.origin-top-center]:duration-0 [&>div]:z-[100]",
         isQuickLink || isHeaderTile
@@ -39,6 +47,7 @@ export function CategoryDropdown({
         )}
       >
         <NavigationMenuItem
+          value="category"
           className={cn((isQuickLink || isHeaderTile) && "w-full")}
         >
           <NavigationMenuTrigger
@@ -57,6 +66,7 @@ export function CategoryDropdown({
           <NavigationMenuContent className="left-0 animate-none!">
             <div
               className={cn(
+                "motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-top-1 motion-safe:duration-150 motion-safe:ease-out",
                 "rounded-tr-lg rounded-b-lg border border-gray-200 bg-white p-6 shadow-xl",
                 isQuickLink || isHeaderTile
                   ? "w-[min(1280px,calc(100vw-28px))]"
