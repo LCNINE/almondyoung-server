@@ -101,12 +101,7 @@ describeIfDb('InventoryCommandService.receive 입고 무손실 (DB integration, 
       const events = await tx
         .select({ quantity: wmsTables.stockEvents.quantity })
         .from(wmsTables.stockEvents)
-        .where(
-          and(
-            eq(wmsTables.stockEvents.skuId, sku.id),
-            eq(wmsTables.stockEvents.transitionType, 'RECEIVE'),
-          ),
-        );
+        .where(and(eq(wmsTables.stockEvents.skuId, sku.id), eq(wmsTables.stockEvents.transitionType, 'RECEIVE')));
       expect(events).toHaveLength(1);
       expect(events[0].quantity).toBe(30);
     });
