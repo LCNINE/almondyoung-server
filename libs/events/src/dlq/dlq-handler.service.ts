@@ -14,6 +14,7 @@ import { MessageEnvelope } from '@packages/event-contracts/types';
 import { getDLQTopicName } from '@packages/event-contracts/types';
 import { generateMessageId } from '../utils/message-id.util';
 import { DLQMessage } from './dlq.types';
+import { dlqMessagesTotal, dlqSendFailuresTotal } from './dlq.metrics';
 
 @Injectable()
 export class DLQHandler {
@@ -114,6 +115,12 @@ export class DLQHandler {
         retryCount: params.context.retryCount,
       });
 
+      dlqMessagesTotal.inc({
+        topic: params.originalTopic,
+        consumer: params.context.consumer,
+        error: params.error.name,
+      });
+
       // TODO: 필요 시 DB에도 저장
       // await this.saveDLQToDatabase(dlqMessage);
 
@@ -122,6 +129,11 @@ export class DLQHandler {
       //   await this.sendAlert(dlqMessage);
       // }
     } catch (error) {
+      dlqSendFailuresTotal.inc({
+        topic: params.originalTopic,
+        consumer: params.context.consumer,
+      });
+
       this.logger.error(`❌ CRITICAL: Failed to send message to DLQ`, {
         originalTopic: params.originalTopic,
         dlqTopic,
