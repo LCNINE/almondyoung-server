@@ -112,6 +112,30 @@ AWS dev 스테이지가 제거되어, 개발은 사내 노트북에서 로컬 �
 - macOS 는 첫 실행 시 방화벽 허용 프롬프트만 수락하면 됨. 리눅스는 `ufw allow <포트>`.
 - DB 도 직접 붙어야 하면 `postgresql://postgres:postgres@<노트북 IP>:5432/<논리DB>` (compose 가 5432 를 노출).
 
+## 물류 통합 테스트 (jest, 로컬 DB)
+
+inventory/fulfillment 도메인의 통합 테스트(`*.integration.spec.ts`)는 서비스를 직접 와이어링해 실제 postgres 에 대고 도메인 불변식을 검증한다. HTTP·auth·Kafka 를 경유하지 않으므로 `.env` 도 불필요하다.
+
+```bash
+npm run test:core:integration:local                       # 전체 integration
+npm run test:core:integration:local -- receive.integration  # 특정 패턴만
+```
+
+⚠️ 패턴 없이 맨 커맨드로 돌리면 `*.integration.spec.ts` 전체가 매칭되는데, 여기엔 core 가 아닌 다른 앱(membership/wallet/channel-adapter 등)의 스펙도 걸린다 — 그 스펙들은 각자의 논리 DB 를 기대하므로 core DB 로 돌리면 실패한다. 항상 좁히는 패턴(예: `-- golden-path.integration`)을 붙일 것.
+
+러너(`scripts/local/test-core-integration-local.sh`)가 compose postgres 기동 → core 마이그레이션 → jest(`--runInBand`)를 한 번에 한다. 대부분의 spec 은 **rollback-only**(케이스를 tx 로 감싸고 끝에 `Rollback` throw)라 DB 를 더럽히지 않고 Kafka 도 불필요(outbox 는 mock).
+
+**새 통합 테스트 작성 레시피** — `inventory-command.service.receive.integration.spec.ts` 를 템플릿으로:
+
+1. `const DATABASE_URL = process.env.DATABASE_URL; const describeIfDb = DATABASE_URL ? describe : describe.skip;` 게이트.
+2. `beforeAll` 에서 `postgres(DATABASE_URL, { max: 1 })` → `drizzle(sql, { schema: wmsSchema })`, DbService 최소 대역 `{ db, run }`, 서비스 직접 `new`. outbox 는 `new InventoryOutboxService(dbService)`.
+3. `inRollbackTx(fn)` 헬퍼로 각 케이스를 감싸고, 픽스처(warehouse/holder/sku/location `locationType: 'zone'`)는 `randomUUID()` 접미사로 tx 안에서 insert.
+4. 검증은 `trx.select().from(wmsTables.stockLedgers)`(재고 투영) / `wmsTables.stockEvents`(이벤트 로그)로. `stock_summary` 는 VIEW 라 검증에 쓰지 않는다.
+
+**SO×FO×출고 종단 스펙 (2026-07)**: `sales-order-to-fulfillment.conversion` / `fulfillment-stock-allocation` / `outbound-batch-pick-ship` / `so-to-ship.golden-path` 4개는 세 BC(sales-order·fulfillment·inventory)를 한 tx로 관통하는 종단 스펙이다. 공용 와이어링/픽스처/숫자 어서션은 `apps/core/src/modules/fulfillment/services/__support__/` 에 있다. 재고 숫자 정합성은 골든값 + 보존식 + 이벤트로그 대조(I1~I6, 설계 스펙 참고)로 검증한다. 실행 예: `npm run test:core:integration:local -- golden-path.integration`.
+
+**커밋형 caveat**: `unified-reservation.service.lock.integration.spec.ts`(동시 락)·`store-return-exchange.refund.integration.spec.ts` 2개는 롤백 불가라 unique 접미사 행을 남긴다. pristine 이 필요하면 `docker compose down -v && docker compose up -d` 후 `npm run db:migrate:local`.
+
 ## 아직 로컬화 안 된 것
 
 - **OIDC SSO 로그인 플로우** (storefront/admin 로그인): user-service DB 에 `oauth_clients` 시드가 필요하고 auth-web(8001)도 띄워야 한다. 백엔드 API 자체는 SSO 없이 동작.
