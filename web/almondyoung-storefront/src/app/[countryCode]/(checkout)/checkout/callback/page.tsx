@@ -164,7 +164,7 @@ export default function CallbackPage() {
       <div className="w-full max-w-md rounded-lg bg-white p-8 shadow-lg">
         <div className="flex flex-col items-center">
           {/* Loading Spinner */}
-          <div className="mb-4 h-16 w-16 animate-spin rounded-full border-b-2 border-[#F29219]"></div>
+          <div className="mb-4 h-16 w-16 animate-spin rounded-full border-b-2 border-[#ff6600]"></div>
 
           <h2 className="mb-2 text-2xl font-bold text-gray-900">
             {t("processingTitle")}

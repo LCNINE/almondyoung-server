@@ -37,7 +37,7 @@ const PurchaseReportDashboard = () => {
         message:
           "아래 제품 재고확인이 필요할것 같아요.\n샵에 남은 재고를 확인해보고 늦지않게 재료주문 하세요.",
         date: "2025-04-23",
-        color: "#F29219",
+        color: "#ff6600",
         products: [
           {
             id: 1,

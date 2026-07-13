@@ -371,7 +371,7 @@ export default function NonSubscriberSection({
                 </h2>
                 <CustomButton
                   onClick={handleSubscribe}
-                  className="mb-4 h-12 w-full max-w-sm cursor-pointer rounded-lg bg-[#f29219] text-base font-semibold text-white hover:bg-[#d98317]"
+                  className="mb-4 h-12 w-full max-w-sm cursor-pointer rounded-lg bg-[#ff6600] text-base font-semibold text-white hover:bg-[#d98317]"
                 >
                   {t("history.subscribe")}
                 </CustomButton>

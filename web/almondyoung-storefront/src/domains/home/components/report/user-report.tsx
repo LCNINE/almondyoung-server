@@ -35,7 +35,7 @@ export default function UserReport() {
   return (
     <article className="flex flex-col self-stretch overflow-hidden rounded-[15px] bg-[#f4f4f4]">
       {/* 1. HEADER */}
-      <header className="flex items-start justify-between self-stretch bg-[#f29219] p-5">
+      <header className="flex items-start justify-between self-stretch bg-[#ff6600] p-5">
         <div className="flex flex-col items-start gap-[9px]">
           <h2 className="text-lg font-bold text-white">
             이유진 원장님 구매 리포트
@@ -97,7 +97,7 @@ export default function UserReport() {
           <div className="flex flex-col self-stretch rounded-[10px] bg-white p-[18px]">
             <div className="flex items-start justify-between self-stretch">
               <div className="flex flex-col items-start gap-[9px]">
-                <span className="rounded-[3px] bg-[#f4f4f4] px-1 py-0.5 text-[10px] text-[#f29219]">
+                <span className="rounded-[3px] bg-[#f4f4f4] px-1 py-0.5 text-[10px] text-[#ff6600]">
                   재료 주문 알림
                 </span>
                 <p className="text-sm">
@@ -173,7 +173,7 @@ export default function UserReport() {
         <div className="flex flex-col gap-3.5 self-stretch rounded-[10px] bg-white p-[18px]">
           <div className="flex items-start justify-between self-stretch">
             <div className="flex flex-col items-start gap-1">
-              <span className="rounded-[3px] bg-[#f4f4f4] px-1 py-0.5 text-[10px] text-[#f29219]">
+              <span className="rounded-[3px] bg-[#f4f4f4] px-1 py-0.5 text-[10px] text-[#ff6600]">
                 리뷰 적립금
               </span>
               <p className="text-sm">
@@ -231,7 +231,7 @@ export default function UserReport() {
             </div>
             <button
               type="button"
-              className="flex h-9 w-full items-center justify-center rounded-[3px] bg-[#f29219] p-2.5"
+              className="flex h-9 w-full items-center justify-center rounded-[3px] bg-[#ff6600] p-2.5"
             >
               <p className="text-center text-[11px] text-white">
                 리뷰 남기고 적립금 받기

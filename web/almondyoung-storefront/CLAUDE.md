@@ -2,6 +2,16 @@
 
 이 문서는 Claude Code가 이 프로젝트에서 작업할 때 참고하는 가이드라인입니다.
 
+## 디자인 시스템 (UI 작업 시 필독)
+
+**UI(컴포넌트·화면·스타일)를 만들거나 수정할 때는 반드시 [`DESIGN.md`](./DESIGN.md)를 먼저 읽고 그 규격(Karrot/Seed Design 기반)을 따른다.** 색·라운드·보더·포커스링은 `src/styles/globals.css`의 CSS 변수에 이미 매핑돼 있으니 하드코딩 hex 대신 시맨틱 유틸을 쓴다.
+
+- Primary/브랜드 `#ff6600` = `bg-primary`/`text-primary` (CTA·활성에만 아껴 사용)
+- 텍스트 `text-foreground`(#1a1c20, 순수검정 금지) · 보조 `text-muted-foreground`
+- 면 `bg-muted`(#f7f8f9)·`bg-secondary`(#f3f4f5) · 보더 `border-border`(#dcdee3)
+- 4px 그리드, radius 8/12/16/24px, 그림자 3단계, 스프링 모션 금지
+- 옛 오렌지 `#f29219` 신규 사용 금지 (전부 `#ff6600`로 이관 완료)
+
 ## 프로젝트 개요
 
 - **프로젝트명**: 아몬드영 스토어프론트 (medusa-next)

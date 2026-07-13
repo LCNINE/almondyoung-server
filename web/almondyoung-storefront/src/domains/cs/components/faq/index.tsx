@@ -20,7 +20,7 @@ export function Faq() {
           <AccordionItem key={id} value={id}>
             <AccordionTrigger className="text-left hover:no-underline">
               <div className="flex items-start gap-2">
-                <span className="shrink-0 rounded bg-[#f29219]/10 px-2 py-0.5 text-xs font-medium text-[#f29219]">
+                <span className="shrink-0 rounded bg-[#ff6600]/10 px-2 py-0.5 text-xs font-medium text-[#ff6600]">
                   {t(`items.${id}.category` as `items.1.category`)}
                 </span>
                 <span className="text-sm font-medium">
