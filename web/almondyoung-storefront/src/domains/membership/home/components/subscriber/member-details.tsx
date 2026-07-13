@@ -33,13 +33,13 @@ export default function MemberDetails({
     unit: string
   }) {
     return (
-      <article className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl bg-amber-50 py-4">
-        <h3 className="text-center text-xs font-normal text-gray-800">
+      <article className="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border border-border bg-muted py-4">
+        <h3 className="text-muted-foreground text-center text-xs font-normal">
           {label}
         </h3>
         <div className="flex items-baseline justify-center gap-1">
-          <span className="text-lg font-bold text-black">{value}</span>
-          <span className="text-xs leading-4 text-gray-900">{unit}</span>
+          <span className="text-foreground text-lg font-bold">{value}</span>
+          <span className="text-muted-foreground text-xs leading-4">{unit}</span>
         </div>
       </article>
     )
@@ -52,11 +52,11 @@ export default function MemberDetails({
   const isInTrial = !!billingDate && billingDate > today
   const trialDaysRemaining = isInTrial ? differenceInCalendarDays(billingDate, today) : 0
 
-  const nextBillingDate = isInTrial
-    ? membershipData?.billingDate
-    : (membershipData?.nextBillingDate ??
-        membershipData?.currentPeriodEnd ??
-        membershipData?.endDate)
+  // 정기결제는 다음 결제일이 있고, 1회결제는 없음(null) → 이용 종료일만 존재
+  const recurringNextBillingDate = membershipData?.nextBillingDate ?? null
+  const isRecurring = isInTrial || !!recurringNextBillingDate
+  const membershipEndDate =
+    membershipData?.currentPeriodEnd ?? membershipData?.endDate ?? null
 
   const tierCode =
     membershipData?.tier?.code ?? membershipData?.plan?.tier?.code ?? "-"
@@ -74,56 +74,52 @@ export default function MemberDetails({
       {/* 1. 계정 상태 및 플랜 관리 */}
       {isInTrial ? (
         <figcaption className="flex flex-col items-center gap-1.5 font-['Pretendard']">
-          <span className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">
+          <span className="bg-primary/10 text-primary inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold">
             {t("subscription.freeTrialRemaining", { days: trialDaysRemaining })}
           </span>
           <p className="text-center text-sm text-gray-600">
             {t("billing.trialEndAutoStartLabel")}:{" "}
-            <strong className="text-black">{fmt(nextBillingDate)}</strong>
+            <strong className="text-black">
+              {fmt(membershipData?.billingDate)}
+            </strong>
           </p>
         </figcaption>
-      ) : (
+      ) : isRecurring ? (
         <figcaption className="text-center font-['Pretendard'] text-sm font-normal text-black">
           {t.rich("billing.nextBillingNotice", {
-            date: fmt(nextBillingDate),
+            date: fmt(recurringNextBillingDate),
             strong: (chunks) => <strong>{chunks}</strong>,
           })}
         </figcaption>
+      ) : (
+        <figcaption className="text-center font-['Pretendard'] text-sm font-normal text-black">
+          {t("billing.membershipEndNotice", { date: fmt(membershipEndDate) })}
+        </figcaption>
       )}
-      <div className="flex items-center gap-2">
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 rounded-md bg-yellow-100 px-2 py-1">
-            <span className="text-xs font-bold text-yellow-700">
-              {tierName}
-            </span>
-          </div>
-          <div className="flex h-5 items-center justify-center rounded-md bg-indigo-100 px-2">
-            <span className="text-xs leading-3 font-bold text-indigo-500">
-              {tierCode}
-            </span>
-          </div>
-        </div>
-        <button
-          type="button"
-          className="text-xs font-medium text-amber-500 underline"
-        >
-          {t("stats.change")}
-        </button>
+      <div className="flex items-center gap-1.5">
+        <span className="bg-primary/10 text-primary rounded-md px-2 py-1 text-xs font-bold">
+          {tierName}
+        </span>
+        <span className="bg-secondary text-muted-foreground rounded-md px-2 py-1 text-xs font-bold">
+          {tierCode}
+        </span>
       </div>
 
       {/* 2. 구분선 */}
       <hr className="w-full border-t border-gray-200" />
 
       {/* 3. 통계 대시보드 (이제 이 컴포넌트의 일부) */}
-      <article className="flex w-full flex-col justify-center gap-2 rounded-xl bg-amber-50 py-6">
-        <h3 className="text-center text-sm font-normal text-gray-800">
+      <article className="flex w-full flex-col justify-center gap-2 rounded-xl border border-border bg-white py-6">
+        <h3 className="text-muted-foreground text-center text-sm font-normal">
           {t("stats.monthlySavings")}
         </h3>
         <div className="flex items-end justify-center gap-1">
-          <span className="text-2xl font-bold text-black">
+          <span className="text-primary text-2xl font-bold">
             {savingsTotal.toLocaleString()}
           </span>
-          <span className="text-xs leading-5 text-gray-900">{t("stats.unitWon")}</span>
+          <span className="text-muted-foreground text-xs leading-5">
+            {t("stats.unitWon")}
+          </span>
         </div>
       </article>
 

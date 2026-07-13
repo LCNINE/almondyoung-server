@@ -732,6 +732,7 @@
       "expectedEndDate": "구독 종료 예정일",
       "trialEndAutoStart": "무료 체험 후 자동 결제 시작일: {date}",
       "nextBillingNotice": "다음 결제 예정일은 {date} 입니다",
+      "membershipEndNotice": "멤버십 이용 종료 예정일은 {date} 입니다",
       "trialEndAutoStartLabel": "체험 종료 후 자동 결제 시작일",
       "cartPriceUpdated": "장바구니 가격이 업데이트되었습니다.",
       "paymentMethod": "월회비 결제수단 변경",
@@ -863,7 +864,9 @@
       "legacyHistory": "기존 아몬드영 오독 내역 확인하기",
       "joinAndBenefits": "아몬드영 오독 가입하기 및 혜택 확인하기",
       "subscribe": "구독하기",
+      "viewBenefitsGuide": "오독 혜택 자세히 보기",
       "cancelMembership": "오독 해지하기",
+      "cancelWarning": "멤버십을 해지하면 이 모든 혜택이 사라져요",
       "heroTitle": "아몬드영 오독 ODOK 서비스",
       "heroGrandOpen": "GRAND OPEN",
       "priceNoticeMonthlyYearly": "* 유료 멤버십 월 4,990원 / 연 49,900원",
@@ -881,7 +884,8 @@
       "upcomingTitle1": "곧 만날 ",
       "upcomingTitle2": "출시 예정 혜택",
       "upcomingDescription": "더 많은 혜택이 준비되어 있습니다",
-      "planNameDefault": "연간"
+      "planNameDefault": "연간",
+      "guideTitle": "오독 혜택 안내"
     },
     "cancel": {
       "titleNoUsage": "이번 달 혜택 사용 내역이 없어",
@@ -893,7 +897,15 @@
       "etcPlaceholder": "취소 사유를 입력해주세요",
       "cancelButton": "취소",
       "confirmButton": "완료",
-      "processing": "처리중..."
+      "processing": "처리중...",
+      "titleUsedLine1": "이번 달 멤버십 혜택을 이미 사용하셨어요.",
+      "titleUsedLine2": "환불 없이 이용 기간까지 멤버십이 유지됩니다.",
+      "refundAccountHeading": "환불받을 계좌 (무통장 결제 시)",
+      "refundAccountNote": "무통장(가상계좌)으로 결제하셨다면 입력해 주세요. 카드로 결제하셨다면 비워두시면 자동으로 환불됩니다.",
+      "bankPlaceholder": "은행 선택",
+      "accountNumberPlaceholder": "계좌번호 (숫자만)",
+      "holderNamePlaceholder": "예금주명",
+      "refundAccountIncomplete": "환불 계좌는 은행·계좌번호·예금주를 모두 입력해 주세요."
     }
   },
   "page": {
@@ -990,7 +1002,7 @@
     "plansLoadFailDescription": "잠시 후 다시 시도해주세요."
   },
   "membershipPaymentMethod": {
-    "pageTitle": "멤버십 결제 수단 관리",
+    "pageTitle": "결제 수단 관리",
     "backAria": "뒤로 가기",
     "currentCardTitle": "현재 정기결제 수단",
     "registeredCard": "등록된 결제수단",

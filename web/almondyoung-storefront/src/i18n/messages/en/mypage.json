@@ -732,6 +732,7 @@
       "expectedEndDate": "Expected end date",
       "trialEndAutoStart": "Auto-billing starts after trial: {date}",
       "nextBillingNotice": "Your next billing date is {date}",
+      "membershipEndNotice": "Your membership ends on {date}",
       "trialEndAutoStartLabel": "Auto-billing starts after trial",
       "cartPriceUpdated": "Cart prices updated.",
       "paymentMethod": "Change payment method",
@@ -863,7 +864,9 @@
       "legacyHistory": "View previous Almondyoung ODOK history",
       "joinAndBenefits": "Join Almondyoung ODOK and see benefits",
       "subscribe": "Subscribe",
+      "viewBenefitsGuide": "See ODOK benefits",
       "cancelMembership": "Cancel ODOK",
+      "cancelWarning": "Cancelling your membership removes all these benefits",
       "heroTitle": "Almondyoung ODOK Service",
       "heroGrandOpen": "GRAND OPEN",
       "priceNoticeMonthlyYearly": "* Paid membership: 4,990 KRW / month, 49,900 KRW / year",
@@ -881,7 +884,8 @@
       "upcomingTitle1": "Coming soon: ",
       "upcomingTitle2": "Upcoming benefits",
       "upcomingDescription": "More benefits are on the way.",
-      "planNameDefault": "Annual"
+      "planNameDefault": "Annual",
+      "guideTitle": "ODOK Benefits"
     },
     "cancel": {
       "titleNoUsage": "No benefits used this month —",
@@ -893,7 +897,15 @@
       "etcPlaceholder": "Please enter a reason",
       "cancelButton": "Cancel",
       "confirmButton": "Confirm",
-      "processing": "Processing..."
+      "processing": "Processing...",
+      "titleUsedLine1": "You've already used this month's membership benefits.",
+      "titleUsedLine2": "No refund will be issued, and your membership stays active until the period ends.",
+      "refundAccountHeading": "Refund account (for bank transfer payments)",
+      "refundAccountNote": "Enter this if you paid by bank transfer (virtual account). If you paid by card, leave it blank and the refund is automatic.",
+      "bankPlaceholder": "Select bank",
+      "accountNumberPlaceholder": "Account number (digits only)",
+      "holderNamePlaceholder": "Account holder name",
+      "refundAccountIncomplete": "Please fill in the bank, account number, and holder name for the refund account."
     }
   },
   "orderActions": {
@@ -978,7 +990,7 @@
     "plansLoadFailDescription": "Please try again later."
   },
   "membershipPaymentMethod": {
-    "pageTitle": "Manage membership payment method",
+    "pageTitle": "Payment method",
     "backAria": "Back",
     "currentCardTitle": "Current recurring payment method",
     "registeredCard": "Registered payment method",
