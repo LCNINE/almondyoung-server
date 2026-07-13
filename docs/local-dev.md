@@ -121,6 +121,8 @@ npm run test:core:integration:local                       # 전체 integration
 npm run test:core:integration:local -- receive.integration  # 특정 패턴만
 ```
 
+⚠️ 패턴 없이 맨 커맨드로 돌리면 `*.integration.spec.ts` 전체가 매칭되는데, 여기엔 core 가 아닌 다른 앱(membership/wallet/channel-adapter 등)의 스펙도 걸린다 — 그 스펙들은 각자의 논리 DB 를 기대하므로 core DB 로 돌리면 실패한다. 항상 좁히는 패턴(예: `-- golden-path.integration`)을 붙일 것.
+
 러너(`scripts/local/test-core-integration-local.sh`)가 compose postgres 기동 → core 마이그레이션 → jest(`--runInBand`)를 한 번에 한다. 대부분의 spec 은 **rollback-only**(케이스를 tx 로 감싸고 끝에 `Rollback` throw)라 DB 를 더럽히지 않고 Kafka 도 불필요(outbox 는 mock).
 
 **새 통합 테스트 작성 레시피** — `inventory-command.service.receive.integration.spec.ts` 를 템플릿으로:

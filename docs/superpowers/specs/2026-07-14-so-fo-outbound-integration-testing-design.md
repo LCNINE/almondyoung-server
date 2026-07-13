@@ -29,13 +29,15 @@
 | ID | 불변식 | 근거 |
 |---|---|---|
 | **I1 이벤트↔원장** | 부호합 `Σ(RECEIVE.qty) − Σ(SHIP.qty) == Σ stock_ledgers.qty WHERE stockState='ON_HAND'` (sku·warehouse별) | event log = 진실의 원천. 프로젝션 drift·이벤트 누락 차단 |
-| **I2 가용재고 항등** | `stock_summary_view.availableQty == onHand − Σ(stock_reservations.qty WHERE status='confirmed')` (transit_out=0 전제) | 예약은 별도 테이블. 뷰가 수식과 일치하는지 |
+| **I2 가용재고 항등** | `stock_summary_view.availableQty == onHand − Σ(stock_reservations.qty WHERE status='confirmed')` (transit_out=0 전제) | 예약은 별도 테이블. 뷰가 수식과 일치하는지 † |
 | **I3 예약 3중 합** | `FO.totalReservedQty == Σ FOI.reservedQty == Σ confirmed reservations(targetId=FO.id)` | FO/라인/예약테이블 3자 합 일치 |
 | **I4 라인 수량 흐름** | FOI별 `reservedQty → pickedQty → shippedQty` 각 단계 `== qty`, `shippedQty>=qty ⇒ FOI.status='shipped'` | 피킹·검수·출고 수량 누락 방지 |
 | **I5 출고 불변 (ADR-0027)** | `consumeShipment` 전후: `onHand ↓ shipped` AND `Σconfirmed ↓ shipped` → **`availableQty` 불변** | 예약이 "해제"가 아니라 "소진"되므로 가용량 보존 |
 | **I6 물질보존** | sku별 테스트 종료 시 `receivedTotal == onHandRemaining + shippedTotal` | 재고가 생기지도 사라지지도 않음 |
 
 부호 맵: `RECEIVE, ADJUST_UP → +` / `SHIP, ADJUST_DOWN, SCRAP → −` / `MOVE → 0`(창고 내 이동). 본 시나리오가 실제로 생성하는 이벤트는 RECEIVE·SHIP 뿐.
+
+† **I2 정확화**: `stock_summary_view` 는 materialized 아닌 **live VIEW** 이고, I2 가 읽는 `onHand`/`confirmedReserved` 프로브도 뷰가 참조하는 것과 **같은 base table**(`stock_ledgers`, `stock_reservations`)을 직접 읽는다. 따라서 I2 는 base-table/projection 간 drift 를 검출하지 못한다(뷰가 어차피 그 base table 을 실시간 재계산하므로 X==X 에 가까움) — 실질적으로 검증하는 것은 **뷰 산술 자체의 회귀**(`on_hand − reserved − transit_out` 공식이 깨지는 경우)와 **`transit_out=0` 전제**뿐이다. base-table 값이 잘못 쌓였는지(진짜 drift)를 잡는 것은 I1(이벤트↔원장 대조)과 각 체크포인트의 골든값이다. (참고: CLAUDE.md 의 "stock_summary = projection with version" 서술은 stale — 스키마가 이를 VIEW 로 전환했다.)
 
 ## §B. 공용 지원 모듈
 

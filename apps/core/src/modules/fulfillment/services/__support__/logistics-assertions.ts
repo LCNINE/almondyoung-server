@@ -38,6 +38,10 @@ export async function onHandAt(tx: DbTx, skuId: string, locationId: string): Pro
   return row?.qty ?? 0;
 }
 
+// 주의: stock_summary_view 는 materialized 아닌 live VIEW 라 availableFromView 는 매 호출마다
+// on_hand − reserved − transit_out 을 base table 에서 즉시 재계산한다. 즉 이 값을 쓰는 I2 검증은
+// "뷰 산술 회귀 + transit_out=0 전제"만 잡고 base-table/projection drift 는 잡지 못한다 — 진짜
+// drift 검출은 I1(netFromEvents == onHand)이 담당한다.
 export async function availableFromView(tx: DbTx, skuId: string, warehouseId: string): Promise<number> {
   const [row] = await tx
     .select({ availableQty: wmsViews.stockSummary.availableQty })
@@ -94,10 +98,13 @@ export async function assertStockConsistent(
   expect(oh).toBe(args.onHand); // 골든값
   expect(await netFromEvents(tx, args.skuId)).toBe(oh); // I1
   expect(await confirmedReserved(tx, args.skuId, args.warehouseId)).toBe(args.reserved);
-  expect(await availableFromView(tx, args.skuId, args.warehouseId)).toBe(oh - args.reserved); // I2
+  expect(await availableFromView(tx, args.skuId, args.warehouseId)).toBe(oh - args.reserved); // I2 — live VIEW 재계산 검증, base-table drift 는 미검출(위 availableFromView 주석 참고)
 }
 
 // I3(예약 3중 합): FO.totalReservedQty == Σ FOI.reservedQty == Σ confirmed 예약(targetId=FO).
+// 주의: 이 함수는 3자 "상호" 일치만 검증하며 절대값 앵커가 없다 — 세 값이 다같이 틀려도(예: 전부 0)
+// 이 함수 단독으로는 통과한다. 반드시 골든값을 쥔 assertStockConsistent(..., reserved: <골든값>)와
+// 짝지어 호출해서 절대값을 앵커링할 것.
 export async function assertFoReservationAgg(tx: DbTx, fulfillmentOrderId: string): Promise<void> {
   const [fo] = await tx
     .select({ total: wmsTables.fulfillmentOrders.totalReservedQty })
@@ -122,11 +129,26 @@ export async function assertFoReservationAgg(tx: DbTx, fulfillmentOrderId: strin
   expect(fo.total).toBe(resSum);
 }
 
+// sumReceived/sumShipped 가 실제로 커버하는 이벤트 타입. 이 밖의 타입(ADJUST_DOWN/SCRAP 등)이
+// 섞이면 두 합계에서 조용히 누락되어 보존식이 거짓으로 통과할 수 있다 — assertConservation 가드용.
+const CONSERVATION_COVERED_TYPES = new Set(['RECEIVE', 'ADJUST_UP', 'SHIP']);
+
 // I6(물질보존): 골든 received/shipped 와 이벤트합·원장을 교차 확인. received == onHand + shipped.
 export async function assertConservation(
   tx: DbTx,
   args: { skuId: string; warehouseId: string; received: number; shipped: number },
 ): Promise<void> {
+  // 가드: sumReceived 는 RECEIVE+ADJUST_UP, sumShipped 는 SHIP 만 센다. 이 sku 에 그 밖의
+  // transitionType(ADJUST_DOWN/SCRAP 등)이 하나라도 발생했다면 보존식이 조용히 깨질 수 있으므로,
+  // 본 검증 전에 발생한 타입이 커버 집합 밖으로 새지 않았는지 먼저 확인한다. 현재 스위트는
+  // RECEIVE/SHIP 만 생성하므로 이 가드는 no-op 이지만, 향후 회귀를 미리 막는다.
+  const typeRows = await tx
+    .selectDistinct({ t: wmsTables.stockEvents.transitionType })
+    .from(wmsTables.stockEvents)
+    .where(eq(wmsTables.stockEvents.skuId, args.skuId));
+  const uncovered = typeRows.map((r) => r.t as string).filter((t) => !CONSERVATION_COVERED_TYPES.has(t));
+  expect(uncovered).toEqual([]);
+
   const oh = await onHand(tx, args.skuId, args.warehouseId);
   expect(await sumReceived(tx, args.skuId)).toBe(args.received);
   expect(await sumShipped(tx, args.skuId)).toBe(args.shipped);

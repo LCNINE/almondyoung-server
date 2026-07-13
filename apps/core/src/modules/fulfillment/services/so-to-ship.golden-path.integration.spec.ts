@@ -100,8 +100,10 @@ describeIfDb('SO→출고 골든패스 E2E (DB integration, rollback-only)', () 
       await assertStockConsistent(tx, { skuId: A.skuId, warehouseId, onHand: 10, reserved: 5 });
       await assertFoReservationAgg(tx, fo1.id);
 
-      // t2: SO-2 변환 시도(매칭X) → throw → backlog awaiting_matching.
-      await expect(w.fulfillments.create({ salesOrderId: so2.salesOrderId, warehouseId }, tx)).rejects.toThrow();
+      // t2: SO-2 변환 시도(매칭X) → throw(BadRequestException, payload.code) → backlog awaiting_matching.
+      await expect(w.fulfillments.create({ salesOrderId: so2.salesOrderId, warehouseId }, tx)).rejects.toMatchObject({
+        response: { code: 'PRODUCT_SKU_MATCHING_REQUIRED' },
+      });
       await w.backlog.enqueueForSalesOrder(so2.salesOrderId, tx);
       await tx
         .update(wmsTables.fulfillmentOrderCreationBacklogs)
