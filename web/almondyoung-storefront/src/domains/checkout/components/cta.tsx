@@ -55,7 +55,7 @@ export const PCFixedCTA = ({
             disabled={loading || disabled}
             size="lg"
             color="primary"
-            className="min-w-[403px] cursor-pointer rounded-[5px] bg-[#F29219] px-4 py-[14px] text-[19px] font-bold text-white hover:bg-[#F29219]/90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="min-w-[403px] cursor-pointer rounded-[5px] bg-[#ff6600] px-4 py-[14px] text-[19px] font-bold text-white hover:bg-[#ff6600]/90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading
               ? t("processing")

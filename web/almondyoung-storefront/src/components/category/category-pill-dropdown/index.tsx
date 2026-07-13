@@ -52,7 +52,7 @@ export default function CategoryPillDropdown() {
           <span>{t(selectedKey)}</span>
           <Triangle
             className="h-2.5 w-2.5 rotate-180"
-            fill="#f29219"
+            fill="#ff6600"
             strokeWidth={0}
           />
         </button>

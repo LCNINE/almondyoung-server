@@ -15,7 +15,7 @@ const VALID_TABS: CsTab[] = FEATURES.qna
   : ["faq", "notice"]
 
 const triggerClassName =
-  "flex-1 cursor-pointer !rounded-none !border-0 !border-b-2 !border-b-transparent !bg-transparent px-4 py-3 text-sm font-bold text-[#666666] !shadow-none transition-colors focus-visible:!ring-0 focus-visible:!outline-none !after:hidden data-[state=active]:!border-0 data-[state=active]:!border-b-2 data-[state=active]:!border-b-[#f29219] data-[state=active]:!bg-transparent data-[state=active]:!text-[#f29219] data-[state=active]:!shadow-none hover:!bg-transparent hover:text-[#f29219]"
+  "flex-1 cursor-pointer !rounded-none !border-0 !border-b-2 !border-b-transparent !bg-transparent px-4 py-3 text-sm font-bold text-[#666666] !shadow-none transition-colors focus-visible:!ring-0 focus-visible:!outline-none !after:hidden data-[state=active]:!border-0 data-[state=active]:!border-b-2 data-[state=active]:!border-b-[#ff6600] data-[state=active]:!bg-transparent data-[state=active]:!text-[#ff6600] data-[state=active]:!shadow-none hover:!bg-transparent hover:text-[#ff6600]"
 
 interface CsTabsProps {
   children: React.ReactNode
