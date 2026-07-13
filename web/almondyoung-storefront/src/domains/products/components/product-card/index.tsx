@@ -11,6 +11,8 @@ import React, { useEffect, useMemo, useState } from "react"
 import ProductPrice from "./price"
 import Thumbnail from "../thumbnail"
 import { Quantity } from "./quantity"
+import { calculateStockStatus } from "./quantity/stock-status"
+import { SoldOutOverlay } from "@/components/products/sold-out-overlay"
 
 type RatingSummary = {
   averageRating: number
@@ -119,6 +121,10 @@ export default function ProductCard({
   const isDigital = isDigitalProduct(product)
 
   const isSingleOption = (product.variants?.length ?? 0) <= 1
+  const isSoldOut = useMemo(
+    () => calculateStockStatus(product).kind === "soldOut",
+    [product]
+  )
   const productReviewId =
     typeof product.metadata?.pimMasterId === "string"
       ? product.metadata.pimMasterId
@@ -157,7 +163,17 @@ export default function ProductCard({
             thumbnail={product.thumbnail}
             images={product.images}
             size="full"
-            overlay={overlay}
+            overlay={
+              <>
+                {overlay}
+                {isSoldOut && (
+                  <SoldOutOverlay
+                    variants={product.variants}
+                    className="rounded-large"
+                  />
+                )}
+              </>
+            }
           />
 
           {isDigital && (
@@ -200,7 +216,7 @@ export default function ProductCard({
               />
             )}
 
-            <Quantity product={product} />
+            {!isSoldOut && <Quantity product={product} />}
           </div>
         </div>
       </div>
