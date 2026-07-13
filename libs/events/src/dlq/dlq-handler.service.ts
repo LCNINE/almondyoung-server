@@ -123,11 +123,6 @@ export class DLQHandler {
 
       // TODO: 필요 시 DB에도 저장
       // await this.saveDLQToDatabase(dlqMessage);
-
-      // TODO: 중요한 에러는 알림 발송
-      // if (this.shouldAlert(params.originalTopic, params.error)) {
-      //   await this.sendAlert(dlqMessage);
-      // }
     } catch (error) {
       dlqSendFailuresTotal.inc({
         topic: params.originalTopic,
@@ -224,25 +219,5 @@ export class DLQHandler {
 
     // TODO: DB 업데이트
     // await this.markAsResolved(params.dlqMessageId, params.reason);
-  }
-
-  /**
-   * 알림이 필요한지 판단
-   */
-  private shouldAlert(topic: string, error: Error): boolean {
-    // 중요한 도메인은 즉시 알림
-    const criticalTopics = ['orders.events.v1', 'payments.events.v1'];
-
-    if (criticalTopics.some((t) => topic.includes(t))) {
-      return true;
-    }
-
-    // 특정 에러는 즉시 알림
-    const criticalErrors = ['DatabaseError', 'TimeoutError', 'FatalError'];
-    if (criticalErrors.includes(error.name)) {
-      return true;
-    }
-
-    return false;
   }
 }
