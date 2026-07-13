@@ -164,7 +164,7 @@ export class SubscriptionCancellationService {
       return { eligible: false, reason: '이번 주기 혜택 사용 이력 있음', amount: 0 };
     }
 
-    // ponytail: 전액 환불. 부분 환불(일할 계산)이 필요해지면 여기서 amount 를 산정.
+    // 정책: 이번 주기 혜택 미사용이면 결제액 전액 환불 (일할 계산/부분 환불은 하지 않음).
     return { eligible: true, reason: '이번 주기 혜택 미사용', amount: plan.price };
   }
 

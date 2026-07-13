@@ -28,7 +28,7 @@ import { FastifyRequest } from 'fastify';
 import { JwtAuthGuard, User } from '@app/authorization';
 /**
  * 일시정지 관리 컨트롤러
- * 🚨 [주의] 현재 개발용 임시 인증 가드(DevAuthGuard)를 사용하고 있습니다.
+ * 인증: JwtAuthGuard(= AuthGuard('jwt')) 적용.
  */
 @ApiTags('pause')
 @Controller('pause')
