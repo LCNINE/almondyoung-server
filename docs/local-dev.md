@@ -130,6 +130,8 @@ npm run test:core:integration:local -- receive.integration  # 특정 패턴만
 3. `inRollbackTx(fn)` 헬퍼로 각 케이스를 감싸고, 픽스처(warehouse/holder/sku/location `locationType: 'zone'`)는 `randomUUID()` 접미사로 tx 안에서 insert.
 4. 검증은 `trx.select().from(wmsTables.stockLedgers)`(재고 투영) / `wmsTables.stockEvents`(이벤트 로그)로. `stock_summary` 는 VIEW 라 검증에 쓰지 않는다.
 
+**SO×FO×출고 종단 스펙 (2026-07)**: `sales-order-to-fulfillment.conversion` / `fulfillment-stock-allocation` / `outbound-batch-pick-ship` / `so-to-ship.golden-path` 4개는 세 BC(sales-order·fulfillment·inventory)를 한 tx로 관통하는 종단 스펙이다. 공용 와이어링/픽스처/숫자 어서션은 `apps/core/src/modules/fulfillment/services/__support__/` 에 있다. 재고 숫자 정합성은 골든값 + 보존식 + 이벤트로그 대조(I1~I6, 설계 스펙 참고)로 검증한다. 실행 예: `npm run test:core:integration:local -- golden-path.integration`.
+
 **커밋형 caveat**: `unified-reservation.service.lock.integration.spec.ts`(동시 락)·`store-return-exchange.refund.integration.spec.ts` 2개는 롤백 불가라 unique 접미사 행을 남긴다. pristine 이 필요하면 `docker compose down -v && docker compose up -d` 후 `npm run db:migrate:local`.
 
 ## 아직 로컬화 안 된 것
