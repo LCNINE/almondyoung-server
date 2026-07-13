@@ -8,10 +8,12 @@ import {
 import { DbService } from '@app/db';
 import { PaginatedResponseDto } from '@app/shared';
 import { and, desc, eq, count, inArray } from 'drizzle-orm';
-import { WalletSchema, paymentIntents, paymentMethods, refundRequests } from '../schema';
+import { WalletSchema, outboxEvents, paymentIntents, paymentMethods, refundRequests } from '../schema';
 import { RefundRequest } from '../types';
 import { ChargesService } from '../charges/charges.service';
 import { RefundsService } from './refunds.service';
+import { buildOutboxInsertValues } from '../messaging/outbox-event.util';
+import { GATEWAY_AGGREGATE_TYPE, GatewayEventType } from '../messaging/gateway-event.builder';
 
 type CreateRefundRequestInput = {
   bankCode: string;
@@ -68,29 +70,48 @@ export class RefundRequestsService {
     }
 
     try {
-      const inserted = await this.dbService.db
-        .insert(refundRequests)
-        .values({
-          intentId,
-          chargeId: charge.id,
-          userId,
-          amount: charge.amount,
-          currency: charge.currency,
-          bankCode: input.bankCode,
-          bankName: input.bankName ?? null,
-          accountNumber: input.accountNumber.replace(/[^0-9]/g, ''),
-          holderName: input.holderName,
-          status: 'REQUESTED',
-          reason: input.reason ?? null,
-        })
-        .returning();
-      return inserted[0]!;
-    } catch (e) {
-      // uq_refund_requests_intent_active: 대기중 요청 중복 방지
-      throw new ConflictException({
-        error: 'REFUND_REQUEST_ALREADY_EXISTS',
-        message: '이미 처리 대기 중인 환불 요청이 있습니다.',
+      // 환불 신청 insert 와 outbox 이벤트를 원자적으로 기록(transactional outbox).
+      // 이벤트는 channel-adapter → Medusa 로 전달돼 주문에 refund_status='requested' marker 를
+      // 달아 승인 전까지 WMS 수집/발송에서 제외한다.
+      const inserted = await this.dbService.db.transaction(async (tx) => {
+        const rows = await tx
+          .insert(refundRequests)
+          .values({
+            intentId,
+            chargeId: charge.id,
+            userId,
+            amount: charge.amount,
+            currency: charge.currency,
+            bankCode: input.bankCode,
+            bankName: input.bankName ?? null,
+            accountNumber: input.accountNumber.replace(/[^0-9]/g, ''),
+            holderName: input.holderName,
+            status: 'REQUESTED',
+            reason: input.reason ?? null,
+          })
+          .returning();
+        const row = rows[0]!;
+        await tx.insert(outboxEvents).values(
+          buildOutboxInsertValues({
+            eventType: GatewayEventType.INTENT_REFUND_REQUESTED,
+            aggregateType: GATEWAY_AGGREGATE_TYPE,
+            aggregateId: intentId,
+            payload: { intentId, refundRequestId: row.id, occurredAt: new Date().toISOString() },
+          }),
+        );
+        return row;
       });
+      return inserted;
+    } catch (e) {
+      // uq_refund_requests_intent_active: 대기중 요청 중복 방지 (unique violation 만 conflict 로 매핑).
+      // 그 외 오류(outbox insert 실패 등)는 삼키지 않고 전파 — 중복으로 오인 표시하지 않는다.
+      if ((e as { code?: string })?.code === '23505') {
+        throw new ConflictException({
+          error: 'REFUND_REQUEST_ALREADY_EXISTS',
+          message: '이미 처리 대기 중인 환불 요청이 있습니다.',
+        });
+      }
+      throw e;
     }
   }
 
@@ -168,15 +189,26 @@ export class RefundRequestsService {
     return updated[0]!;
   }
 
-  /** 관리자 거절. */
+  /** 관리자 거절. 주문의 refund_status marker 를 해제해 다시 수집/발송 대상이 되게 한다. */
   async reject(id: string, adminId: string, adminNote?: string): Promise<RefundRequest> {
-    await this.loadRequestable(id);
-    const updated = await this.dbService.db
-      .update(refundRequests)
-      .set({ status: 'REJECTED', processedBy: adminId, processedAt: new Date(), adminNote: adminNote ?? null, updatedAt: new Date() })
-      .where(eq(refundRequests.id, id))
-      .returning();
-    return updated[0]!;
+    const req = await this.loadRequestable(id);
+    const updated = await this.dbService.db.transaction(async (tx) => {
+      const rows = await tx
+        .update(refundRequests)
+        .set({ status: 'REJECTED', processedBy: adminId, processedAt: new Date(), adminNote: adminNote ?? null, updatedAt: new Date() })
+        .where(eq(refundRequests.id, id))
+        .returning();
+      await tx.insert(outboxEvents).values(
+        buildOutboxInsertValues({
+          eventType: GatewayEventType.INTENT_REFUND_REQUEST_REJECTED,
+          aggregateType: GATEWAY_AGGREGATE_TYPE,
+          aggregateId: req.intentId,
+          payload: { intentId: req.intentId, refundRequestId: id, occurredAt: new Date().toISOString() },
+        }),
+      );
+      return rows[0]!;
+    });
+    return updated;
   }
 
   private async loadRequestable(id: string): Promise<RefundRequest> {
