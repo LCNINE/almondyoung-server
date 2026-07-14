@@ -10,10 +10,10 @@ import type { ZodSchema } from './schema-validation.types';
  * Kafka 토픽 설정
  */
 export interface StreamTopicConfig {
-  topic: string;                       // 'orders.events.v1'
-  dlqTopic?: string;                   // 'orders.events.v1.dlq' (자동 생성 가능)
-  partitions?: number;                 // 파티션 수 (기본값: Kafka 설정)
-  replicationFactor?: number;          // 복제 계수 (기본값: Kafka 설정)
+  topic: string; // 'orders.events.v1'
+  dlqTopic?: string; // 'orders.events.v1.dlq' (자동 생성 가능)
+  partitions?: number; // 파티션 수 (기본값: Kafka 설정)
+  replicationFactor?: number; // 복제 계수 (기본값: Kafka 설정)
 }
 
 /**
@@ -34,12 +34,9 @@ export interface StreamTopicConfig {
  * type OrderCreatedEvent = EventType<'OrderCreated', OrderCreatedPayload>;
  * // => { messageType: 'OrderCreated'; schema?: ZodSchema<OrderCreatedPayload> }
  */
-export interface EventType<
-  TMessageType extends string = string,
-  TPayload = unknown,
-> {
+export interface EventType<TMessageType extends string = string, TPayload = unknown> {
   messageType: TMessageType;
-  schema?: ZodSchema<TPayload>;        // Zod 스키마 (런타임 검증용, 선택)
+  schema?: ZodSchema<TPayload>; // Zod 스키마 (런타임 검증용, 선택)
 }
 
 /**
@@ -56,27 +53,23 @@ export type StreamEventTypes = Record<string, EventType<any, any>>;
 /**
  * Payload 타입 추출 헬퍼
  */
-export type ExtractPayloadType<T> = T extends EventType<any, infer TPayload>
-  ? TPayload
-  : never;
+export type ExtractPayloadType<T> = T extends EventType<any, infer TPayload> ? TPayload : never;
 
 /**
  * MessageType 추출 헬퍼
  */
-export type ExtractMessageType<T> = T extends EventType<infer TMessageType, any>
-  ? TMessageType
-  : never;
+export type ExtractMessageType<T> = T extends EventType<infer TMessageType, any> ? TMessageType : never;
 
 /**
  * Consumer 설정
  */
 export interface ConsumerConfig {
   groupId: string;
-  sessionTimeout?: number;             // ms (기본: 30000)
-  heartbeatInterval?: number;          // ms (기본: 3000)
-  maxPollInterval?: number;            // ms (기본: 300000)
-  autoCommit?: boolean;                // 기본: false
-  autoCommitInterval?: number;         // ms
+  sessionTimeout?: number; // ms (기본: 30000)
+  heartbeatInterval?: number; // ms (기본: 3000)
+  maxPollInterval?: number; // ms (기본: 300000)
+  autoCommit?: boolean; // 기본: false
+  autoCommitInterval?: number; // ms
 }
 
 /**
@@ -96,8 +89,10 @@ export interface ConsumerConfig {
  */
 export interface StreamConfig<TEvents extends StreamEventTypes = StreamEventTypes> {
   topic: StreamTopicConfig;
-  aggregateType: string;               // 'Order', 'User', 'Stock'
+  aggregateType: string; // 'Order', 'User', 'Stock'
   events: TEvents;
+  /** Resolve the Kafka message key from a validated event payload. */
+  partitionKey?: (payload: any) => string;
 
   // Consumer 설정 (선택, forConsumer()에서 사용)
   consumer?: ConsumerConfig;
@@ -112,17 +107,25 @@ export interface KafkaConfig {
   groupId?: string;
 
   // 보안 설정
-  ssl?: boolean | {
-    rejectUnauthorized?: boolean;
-    ca?: string[];
-    key?: string;
-    cert?: string;
-  };
+  ssl?:
+    | boolean
+    | {
+        rejectUnauthorized?: boolean;
+        ca?: string[];
+        key?: string;
+        cert?: string;
+      };
   sasl?:
     | { mechanism: 'plain'; username: string; password: string }
     | { mechanism: 'scram-sha-256'; username: string; password: string }
     | { mechanism: 'scram-sha-512'; username: string; password: string }
-    | { mechanism: 'aws'; authorizationIdentity: string; accessKeyId: string; secretAccessKey: string; sessionToken?: string }
+    | {
+        mechanism: 'aws';
+        authorizationIdentity: string;
+        accessKeyId: string;
+        secretAccessKey: string;
+        sessionToken?: string;
+      }
     | { mechanism: 'oauthbearer'; oauthBearerProvider: () => Promise<{ value: string }> };
 
   // 재시도 설정
@@ -139,7 +142,7 @@ export interface KafkaConfig {
  */
 export interface KafkaEnvironmentConfig {
   KAFKA_CLIENT_ID: string;
-  KAFKA_BROKERS: string;               // 콤마로 구분된 브로커 목록
+  KAFKA_BROKERS: string; // 콤마로 구분된 브로커 목록
   KAFKA_GROUP_ID?: string;
 
   // Confluent Cloud / MSK 등
@@ -147,7 +150,7 @@ export interface KafkaEnvironmentConfig {
   KAFKA_API_SECRET?: string;
 
   // SSL 설정
-  KAFKA_SSL?: string;                  // 'true' | 'false'
+  KAFKA_SSL?: string; // 'true' | 'false'
 }
 
 /**

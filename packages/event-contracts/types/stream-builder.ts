@@ -20,10 +20,7 @@ import type { ZodSchema } from './schema-validation.types';
  * const OrderCreated = event('OrderCreated', OrderCreatedSchema);
  * type OrderCreatedPayload = z.infer<typeof OrderCreatedSchema>;
  */
-export function event<
-  TMessageType extends string,
-  TPayload = unknown,
->(
+export function event<TMessageType extends string, TPayload = unknown>(
   messageType: TMessageType,
   schema?: ZodSchema<TPayload>,
 ): EventType<TMessageType, TPayload> {
@@ -54,13 +51,21 @@ export function event<
  * //   OrderCancelled: EventType<'OrderCancelled', OrderCancelledPayload>
  * // }
  */
-export function stream<TEvents extends StreamEventTypes>(config: {
+type StreamDefinition<TEvents extends StreamEventTypes> = {
   topic: string;
   partitions?: number;
   dlqTopic?: string;
   aggregateType: string;
   events: TEvents;
-}): StreamConfig<TEvents> {
+};
+
+export function stream<TEvents extends StreamEventTypes>(
+  config: StreamDefinition<TEvents> & { partitionKey: (payload: any) => string },
+): StreamConfig<TEvents> & { partitionKey: (payload: any) => string };
+export function stream<TEvents extends StreamEventTypes>(config: StreamDefinition<TEvents>): StreamConfig<TEvents>;
+export function stream<TEvents extends StreamEventTypes>(
+  config: StreamDefinition<TEvents> & { partitionKey?: (payload: any) => string },
+): StreamConfig<TEvents> {
   return {
     topic: {
       topic: config.topic,
@@ -69,6 +74,7 @@ export function stream<TEvents extends StreamEventTypes>(config: {
     },
     aggregateType: config.aggregateType,
     events: config.events,
+    partitionKey: config.partitionKey,
   };
 }
 
@@ -89,14 +95,12 @@ export type EventKeysOf<TStream extends StreamConfig<any>> =
  * type Payload = EventPayloadOf<typeof ORDER_STREAM, 'OrderCreated'>;
  * // => OrderCreatedPayload
  */
-export type EventPayloadOf<
-  TStream extends StreamConfig<any>,
-  K extends EventKeysOf<TStream>,
-> = TStream extends StreamConfig<infer TEvents>
-  ? TEvents[K] extends EventType<any, infer TPayload>
-    ? TPayload
-    : never
-  : never;
+export type EventPayloadOf<TStream extends StreamConfig<any>, K extends EventKeysOf<TStream>> =
+  TStream extends StreamConfig<infer TEvents>
+    ? TEvents[K] extends EventType<any, infer TPayload>
+      ? TPayload
+      : never
+    : never;
 
 /**
  * Stream에서 특정 이벤트의 MessageType 추출
@@ -105,11 +109,9 @@ export type EventPayloadOf<
  * type MsgType = EventMessageTypeOf<typeof ORDER_STREAM, 'OrderCreated'>;
  * // => 'OrderCreated'
  */
-export type EventMessageTypeOf<
-  TStream extends StreamConfig<any>,
-  K extends EventKeysOf<TStream>,
-> = TStream extends StreamConfig<infer TEvents>
-  ? TEvents[K] extends EventType<infer TMessageType, any>
-    ? TMessageType
-    : never
-  : never;
+export type EventMessageTypeOf<TStream extends StreamConfig<any>, K extends EventKeysOf<TStream>> =
+  TStream extends StreamConfig<infer TEvents>
+    ? TEvents[K] extends EventType<infer TMessageType, any>
+      ? TMessageType
+      : never
+    : never;

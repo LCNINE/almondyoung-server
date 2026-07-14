@@ -16,6 +16,12 @@ export * from './orders.stream';
 // Fulfillment Stream
 export * from './fulfillments.stream';
 
+// Shipment Stream
+export * from './shipments.stream';
+
+// Fulfillment V2 Stream
+export * from './fulfillments-v2.stream';
+
 // Payment Stream
 export * from './payment.stream';
 
