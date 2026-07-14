@@ -850,6 +850,8 @@
       "title": "Membership history",
       "subscriptionHistory": "Subscription history",
       "noSubscriptionHistory": "No subscription history.",
+      "loadMore": "Load more ({loaded}/{total})",
+      "loadingMore": "Loading...",
       "savingsTitle": "Savings record",
       "savingsTotal": "Total {amount} KRW",
       "savingsEmpty": "No savings yet.",

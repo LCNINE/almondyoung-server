@@ -850,6 +850,8 @@
       "title": "멤버십 이용 기록",
       "subscriptionHistory": "구독 이력",
       "noSubscriptionHistory": "구독 이력이 없습니다.",
+      "loadMore": "더 보기 ({loaded}/{total})",
+      "loadingMore": "불러오는 중...",
       "savingsTitle": "절약 기록",
       "savingsTotal": "총 {amount}원",
       "savingsEmpty": "절약 내역이 없습니다.",

@@ -850,6 +850,8 @@
       "title": "メンバーシップ 利用履歴",
       "subscriptionHistory": "サブスク履歴",
       "noSubscriptionHistory": "サブスク履歴がありません。",
+      "loadMore": "もっと見る ({loaded}/{total})",
+      "loadingMore": "読み込み中...",
       "savingsTitle": "節約記録",
       "savingsTotal": "合計 {amount} ウォン",
       "savingsEmpty": "節約履歴がありません。",
