@@ -270,5 +270,68 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
       // 혜택을 사용했으므로 환불은 실행되지 않아야 함
       expect(mockPaymentClientService.refundByIntent).not.toHaveBeenCalled();
     });
+
+    it('재가입한 두번째 멤버십은 현재 계약 billingDate 로만 혜택을 조회 → 이번 주기 미사용이면 전액 환불', async () => {
+      // Given: 과거 첫 멤버십에서 웰컴딜을 썼더라도, 두번째(재가입) 멤버십의 현재 주기엔
+      // 아무 할인 구매가 없다. 환불 판정은 lifetime 이 아니라 "현재 계약의 현재 주기"만 본다.
+      const userId = 'rejoin_user_001';
+      const email = 'rejoin@example.com';
+      const secondBillingDate = '2025-06-20'; // 재가입 계약의 새 billingDate
+      const contract = {
+        id: 'contract_second',
+        userId,
+        planId: 'plan_001',
+        billingDate: secondBillingDate,
+        lastPaymentIntentId: 'intent_second',
+        autoRenewal: false,
+        status: 'ACTIVE',
+        createdAt: new Date(),
+      };
+      const plan = {
+        id: 'plan_001',
+        tierId: 'tier_001',
+        price: 10000,
+        trialDays: 0,
+        durationDays: 30,
+      };
+
+      mockEntitlementService.checkAndUpdateSubscription.mockResolvedValue(true);
+      mockContractReader.findContractWithPlan.mockResolvedValue({ contract, plan });
+      // 두번째 멤버십 현재 주기엔 사용 이력 없음 (과거 웰컴딜은 다른 주기라 여기 안 잡힘)
+      mockBenefitReader.findCurrentCycleBenefit.mockResolvedValue({
+        orderCount: 0,
+        totalDiscountAmount: 0,
+      });
+      mockCancellationManager.cancelImmediately.mockResolvedValue({
+        type: 'IMMEDIATE_CANCELLATION',
+        contractId: 'contract_second',
+        status: 'CANCELLED',
+        cancelledAt: new Date(),
+        refundEligible: true,
+        refundAmount: 10000,
+        refundStatus: 'PENDING',
+        message: '',
+      });
+
+      // When
+      const result = await service.cancelSubscription(userId, email, 'NO_LONGER_NEEDED');
+
+      // Then
+      expect(result.type).toBe('IMMEDIATE_CANCELLATION');
+      // 혜택 조회는 현재(두번째) 계약의 billingDate 로만 이뤄져야 한다 (lifetime 조회가 아님)
+      expect(mockBenefitReader.findCurrentCycleBenefit).toHaveBeenCalledWith(
+        userId,
+        new Date(secondBillingDate),
+        'MONTHLY',
+      );
+      // 전액 환불이 두번째 멤버십의 intent 로 실행되어야 한다
+      expect(mockPaymentClientService.refundByIntent).toHaveBeenCalledWith(
+        'intent_second',
+        10000,
+        'NO_LONGER_NEEDED',
+        undefined,
+        undefined,
+      );
+    });
   });
 });
