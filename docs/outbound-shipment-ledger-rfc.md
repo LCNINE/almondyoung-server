@@ -4,6 +4,8 @@
 
 작성 2026-06-29. **Phase 0·1·A(클러스터 A)·B(FO 정체성) 전부 구현·develop 머지·live 마이그레이션 적용·배포 완료. 통합검증 빚 청산(2026-07-02): `outbound-consumption.integration.spec.ts` 를 throwaway 로컬 Postgres 로 실증 — 성공 기준 5개 GREEN(on_hand N↓·available 불변·SHIP 1건/라인·작업자 journal 귀속·`openBoxByScan→inspectScan` 자동완료 e2e). 프로덕션 버그 0건, spec 하네스 결함 2건만 수정(가짜 DbService 대역의 ADR-0025 `run()` 누락, `stockSummary` 뷰는 `wmsViews` 네임스페이스). 본 프로젝트 핵심 작업 완료.** 이 문서가 본 프로젝트의 상황판(허브)이다.
 
+> **후속 목표 설계(2026-07-14):** 합배송·송장분할·백오더·다중 피킹 전략·recall을 포함한 다음 단계 결정은 [`outbound-consolidation-split-backorder-decision-record.md`](./outbound-consolidation-split-backorder-decision-record.md)를 따른다. 이 RFC는 구현된 현재 단계의 기록으로 유효하지만, lazy shipment 생성, FO 기준 invoice 발급, FIFO-at-dispatch와 합배송/토탈피킹 Non-Goal은 후속 목표에서 대체된다.
+
 - 핵심 결정의 *이유*: [`docs/adr/0027-outbound-shipment-consumes-stock-ledger.md`](./adr/0027-outbound-shipment-consumes-stock-ledger.md)
 - 발견 과정·증거: [`docs/inventory-ledger-binding-review.md`](./inventory-ledger-binding-review.md)
 - 도메인 어휘: `CONTEXT.md` (출고주문 / 재고예약 / 출고작업 / 상자·운송장번호)
