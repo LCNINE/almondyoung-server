@@ -139,6 +139,12 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   const visibilityById = new Map<string, string>(
     metas.map((m: any) => [m.promotion_id, toMetadataShape(m)?.visibility as string ?? 'public'])
   );
+  // 발급 수량 소진된 claimable 쿠폰은 목록에서 제외 (발급받기 눌러도 실패)
+  const isClaimExhausted = (promotionId: string): boolean => {
+    const m = metas.find((r: any) => r.promotion_id === promotionId);
+    if (!m || m.max_claims == null) return false;
+    return Number(m.issued_count ?? 0) >= Number(m.max_claims);
+  };
 
   const assignedPromotionIds = new Set<string>();
   const customer = customers?.[0];
@@ -166,6 +172,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       !assignedPromotionIds.has(promo.id) &&
       isValidPromotion(promo) &&
       visibilityById.get(promo.id) === 'claimable' &&
+      !isClaimExhausted(promo.id) &&
       meetsGroupRule(promo, customerGroupIds)
     )
     .slice(0, CLAIMABLE_LIMIT)

@@ -83,6 +83,14 @@ class PromotionMetaModuleService extends MedusaService({ PromotionMeta, Promotio
     }
   }
 
+  /** 프로모션 삭제 시 발급 로그 전체 정리(고아 로우 방지). */
+  async removeAllIssueLogs(promotionId: string): Promise<void> {
+    const records = await (this as any).listPromotionIssueLogs({ promotion_id: promotionId });
+    if (records.length > 0) {
+      await (this as any).deletePromotionIssueLogs(records.map((r: any) => r.id));
+    }
+  }
+
   /**
    * Atomically reserve a claim slot. Returns 'ok' if a slot was reserved, 'exhausted' if maxClaims reached.
    * Uses UPDATE ... WHERE issued_count < maxClaims to prevent concurrent overclaims.

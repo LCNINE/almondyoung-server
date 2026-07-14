@@ -47,7 +47,8 @@ export function CouponDetailDialog({
 
   const { name, maxClaims, createdBy, visibility, autoIssueTrigger } = getCouponMeta(c);
 
-  const storefrontUrl = process.env.NEXT_PUBLIC_STOREFRONT_URL ?? '';
+  // 끝 슬래시 제거 — 환경변수에 trailing slash 가 있어도 이중 슬래시 방지
+  const storefrontUrl = (process.env.NEXT_PUBLIC_STOREFRONT_URL ?? '').replace(/\/+$/, '');
   const defaultCountry = process.env.NEXT_PUBLIC_STOREFRONT_DEFAULT_COUNTRY ?? 'kr';
   const handleCopyClaimLink = async () => {
     const url = `${storefrontUrl}/${defaultCountry}/coupons/claim?code=${encodeURIComponent(c.code)}`;
