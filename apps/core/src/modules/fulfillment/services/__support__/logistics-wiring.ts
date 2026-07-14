@@ -26,6 +26,9 @@ import { OutboundBatchService } from '../outbound-batch.service';
 import { PickingProcessService } from '../picking-process.service';
 import { ProductSkuMappingService } from '../../../product-matching/services/product-sku-mapping.service';
 import { FulfillmentOrderCreationBacklogService } from '../../backlog/fulfillment-order-creation-backlog.service';
+import { FulfillmentProgressService } from '../fulfillment-progress.service';
+import { FulfillmentInvariantService } from '../fulfillment-invariant.service';
+import { ShipmentReservationService } from '../shipment-reservation.service';
 
 export class Rollback extends Error {}
 
@@ -61,12 +64,16 @@ export interface Wired {
   productSkuMapping: ProductSkuMappingService;
   fulfillments: FulfillmentsService;
   reservationsFacade: FulfillmentReservationsFacade;
+  shipmentReservations: ShipmentReservationService;
   retryWorker: FulfillmentOrderReservationRetryWorker;
   outboundBatch: OutboundBatchService;
   picking: PickingProcessService;
 }
 
-export function wireLogistics(dbService: DbService<typeof wmsSchema>): Wired {
+export function wireLogistics(
+  dbService: DbService<typeof wmsSchema>,
+  workflowMode: 'legacy' | 'maintenance' | 'v2' = 'legacy',
+): Wired {
   const invOutbox = new InventoryOutboxService(dbService);
   const fulfillmentOutbox = new FulfillmentOutboxService(dbService);
   const sellable = new ProductSellableQuantityService(dbService as never, invOutbox);
@@ -76,7 +83,7 @@ export function wireLogistics(dbService: DbService<typeof wmsSchema>): Wired {
   const unified = new UnifiedReservationService(dbService, sellable);
   const lifecycle = new ReservationLifecycleService(dbService, unified);
   const strategy = new FifoLocationStrategy();
-  const workflowGate = new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'legacy' }));
+  const workflowGate = new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: workflowMode }));
   const consumption = new OutboundConsumptionService(
     dbService,
     strategy,
@@ -91,6 +98,9 @@ export function wireLogistics(dbService: DbService<typeof wmsSchema>): Wired {
   const availability = new AvailabilityService(dbService);
   const backlog = new FulfillmentOrderCreationBacklogService(dbService, workflowGate);
   const productSkuMapping = new ProductSkuMappingService(dbService, sellable, backlog);
+  const progress = new FulfillmentProgressService();
+  const invariant = new FulfillmentInvariantService();
+  const shipmentReservations = new ShipmentReservationService(dbService, unified, progress, invariant);
   const fulfillments = new FulfillmentsService(
     dbService,
     policies,
@@ -101,9 +111,15 @@ export function wireLogistics(dbService: DbService<typeof wmsSchema>): Wired {
     fulfillmentOutbox,
     workflowGate,
     undefined,
+    shipmentReservations,
   );
   const reservationsFacade = new FulfillmentReservationsFacade(dbService, unified, sellable, policies, workflowGate);
-  const retryWorker = new FulfillmentOrderReservationRetryWorker(dbService, reservationsFacade, workflowGate);
+  const retryWorker = new FulfillmentOrderReservationRetryWorker(
+    dbService,
+    reservationsFacade,
+    workflowGate,
+    shipmentReservations,
+  );
   const outboundBatch = new OutboundBatchService(dbService, workflowGate);
   const picking = new PickingProcessService(dbService, barcode, workflowGate);
 
@@ -125,6 +141,7 @@ export function wireLogistics(dbService: DbService<typeof wmsSchema>): Wired {
     productSkuMapping,
     fulfillments,
     reservationsFacade,
+    shipmentReservations,
     retryWorker,
     outboundBatch,
     picking,

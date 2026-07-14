@@ -47,6 +47,7 @@ describe('FulfillmentOrderCreationBacklogWorker', () => {
       requiresPhysicalFulfillmentOrder?: boolean;
       requiresPhysicalFulfillmentOrderError?: Error;
       shouldRunFoCreation?: boolean;
+      createReturnsNull?: boolean;
     } = {},
   ) {
     const tx = options.tx ?? makeTx();
@@ -76,7 +77,7 @@ describe('FulfillmentOrderCreationBacklogWorker', () => {
       }),
       create: jest.fn().mockImplementation(async () => {
         if (options.createError) throw options.createError;
-        return options.fulfillmentOrder ?? { id: 'fo-1', status: 'ready' };
+        return options.createReturnsNull ? null : (options.fulfillmentOrder ?? { id: 'fo-1', status: 'ready' });
       }),
     };
     const warehouses = {
@@ -123,6 +124,16 @@ describe('FulfillmentOrderCreationBacklogWorker', () => {
 
     expect(fulfillments.requiresPhysicalFulfillmentOrder).toHaveBeenCalledWith(salesOrderId, expect.anything());
     expect(fulfillments.create).not.toHaveBeenCalled();
+    expect(backlog.markNotRequired).toHaveBeenCalledWith(backlogId, expect.anything());
+    expect(backlog.markCompleted).not.toHaveBeenCalled();
+  });
+
+  it('marks the backlog not_required when the final V2 locked routing check returns no FO', async () => {
+    const { worker, backlog, fulfillments } = makeWorker({ createReturnsNull: true });
+
+    await worker.processOne(backlogId);
+
+    expect(fulfillments.create).toHaveBeenCalled();
     expect(backlog.markNotRequired).toHaveBeenCalledWith(backlogId, expect.anything());
     expect(backlog.markCompleted).not.toHaveBeenCalled();
   });

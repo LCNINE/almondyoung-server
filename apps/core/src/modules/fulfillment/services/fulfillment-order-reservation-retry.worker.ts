@@ -1,14 +1,15 @@
-import { BadRequestException, ConflictException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
-import { and, asc, eq, gt, isNotNull, isNull, ne, or } from 'drizzle-orm';
+import { and, asc, eq, gt, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { FulfillmentReservationsFacade } from './fulfillment-reservations.facade';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
+import { ShipmentReservationService } from './shipment-reservation.service';
 
 /**
- * unfulfillable FO 자동 재예약 워커.
+ * Reservation retry worker.
  *
  * FO 생성 시 자동 예약이 실패하면 status='unfulfillable'(RESERVATION_FAILED)로 남고
  * 이후 재고가 늘어나도 스스로 복구되지 않는다. 이 워커가 주기적으로
@@ -19,7 +20,9 @@ import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
  * 예약/상태 전환/READY outbox는 전부 FulfillmentReservationsFacade.reserve()에
  * 위임한다 — 잠금 컨벤션(FO→FOI)과 over-reserve 불변식도 그쪽이 방어선.
  *
- * status='created'(운영자가 의도적으로 예약 해제한 상태 포함)는 건드리지 않는다.
+ * In V2 the candidate is an under-reserved active Draft shipment line, ordered
+ * by its original requestedAt. The legacy FO facade remains isolated below for
+ * legacy mode only and is never dual-read by V2.
  */
 @Injectable()
 export class FulfillmentOrderReservationRetryWorker {
@@ -31,6 +34,7 @@ export class FulfillmentOrderReservationRetryWorker {
     private readonly dbService: DbService<typeof wmsSchema>,
     private readonly reservations: FulfillmentReservationsFacade,
     private readonly workflowGate: FulfillmentWorkflowGate,
+    @Optional() private readonly shipmentReservations?: ShipmentReservationService,
   ) {}
 
   private get db() {
@@ -79,6 +83,35 @@ export class FulfillmentOrderReservationRetryWorker {
       return [];
     }
 
+    if (this.isV2Workflow()) {
+      const rows = await this.exec(tx).execute<{ id: string }>(sql`
+        SELECT sl.id
+          FROM shipment_lines sl
+          JOIN shipments shipment ON shipment.id = sl.shipment_id
+          JOIN stock_summary_view summary
+            ON summary.sku_id = sl.sku_id
+           AND summary.warehouse_id = shipment.warehouse_id
+         WHERE shipment.status = 'draft'
+           AND summary.available_qty > 0
+           AND sl.qty > COALESCE((
+             SELECT SUM(reservation.quantity)
+               FROM stock_reservations reservation
+              WHERE reservation.target_type = 'SHIPMENT_LINE'
+                AND reservation.shipment_line_id = sl.id
+                AND reservation.status = 'confirmed'
+           ), 0)
+         ORDER BY COALESCE((
+           SELECT MIN(COALESCE(reservation.requested_at, reservation.created_at))
+             FROM stock_reservations reservation
+            WHERE reservation.target_type = 'SHIPMENT_LINE'
+              AND reservation.shipment_line_id = sl.id
+              AND reservation.status = 'confirmed'
+         ), sl.created_at), sl.id
+         LIMIT ${limit}
+      `);
+      return rows as unknown as Array<{ id: string }>;
+    }
+
     const fo = wmsTables.fulfillmentOrders;
     const foi = wmsTables.fulfillmentOrderItems;
     const summary = wmsSchema.stockSummary;
@@ -115,6 +148,23 @@ export class FulfillmentOrderReservationRetryWorker {
       return;
     }
 
+    if (this.isV2Workflow()) {
+      if (!this.shipmentReservations) throw new Error('ShipmentReservationService is required for V2 retry');
+      const [line] = await this.exec(tx)
+        .select({ qty: wmsTables.shipmentLines.qty })
+        .from(wmsTables.shipmentLines)
+        .where(eq(wmsTables.shipmentLines.id, fulfillmentOrderId))
+        .limit(1);
+      if (!line) return;
+      const result = await this.shipmentReservations.reservePartial(fulfillmentOrderId, line.qty, tx);
+      if (result.mutated) {
+        this.logger.log(
+          `V2 reservation retry added ${result.reservedQty} unit(s) to shipment line ${fulfillmentOrderId}`,
+        );
+      }
+      return;
+    }
+
     const foi = wmsTables.fulfillmentOrderItems;
     const items = await this.exec(tx)
       .select({ id: foi.id, qty: foi.qty, reservedQty: foi.reservedQty })
@@ -145,5 +195,10 @@ export class FulfillmentOrderReservationRetryWorker {
     if (reservedCount > 0) {
       this.logger.log(`Reservation retry reserved ${reservedCount} item(s) for unfulfillable FO ${fulfillmentOrderId}`);
     }
+  }
+
+  private isV2Workflow(): boolean {
+    // Some legacy unit fixtures intentionally supply the pre-V2 gate surface.
+    return typeof this.workflowGate.getMode === 'function' && this.workflowGate.getMode() === 'v2';
   }
 }

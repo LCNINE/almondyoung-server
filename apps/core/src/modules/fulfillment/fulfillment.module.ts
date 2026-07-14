@@ -39,6 +39,7 @@ import { HanjinDeliveryProvider } from './services/hanjin-delivery.provider';
 import { FulfillmentProgressService } from './services/fulfillment-progress.service';
 import { FulfillmentInvariantService } from './services/fulfillment-invariant.service';
 import { FulfillmentReconciliationService } from './services/fulfillment-reconciliation.service';
+import { ShipmentReservationService } from './services/shipment-reservation.service';
 
 // Controllers
 import { FulfillmentsController } from './controllers/fulfillments.controller';
@@ -116,7 +117,13 @@ import { LocationOptimizationController } from './controllers/location-optimizat
     FulfillmentProgressService,
     FulfillmentInvariantService,
     FulfillmentReconciliationService,
+    ShipmentReservationService,
   ],
-  exports: [FulfillmentProgressService, FulfillmentInvariantService, FulfillmentReconciliationService],
+  exports: [
+    FulfillmentProgressService,
+    FulfillmentInvariantService,
+    FulfillmentReconciliationService,
+    ShipmentReservationService,
+  ],
 })
 export class FulfillmentModule {}

@@ -123,6 +123,8 @@ export class FulfillmentOrderCreationBacklogWorker {
       if (fulfillmentOrder?.id) {
         await this.backlog.markCompleted(backlog.id, fulfillmentOrder.id, tx);
       } else {
+        // V2 create performs the final locked routing check. A concurrently
+        // resolved digital/void-only order intentionally returns no FO/Draft.
         await this.backlog.markNotRequired(backlog.id, tx);
       }
     } catch (error) {

@@ -19,10 +19,15 @@ import { UnifiedReservationService } from '../../inventory/shared/services/unifi
 import { acquireStockAvailabilityLocks } from '../../inventory/shared/locks/stock-availability-lock';
 import { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
 import { CreateCompensationShipmentDto, CompensationShipmentItemDto } from '../dto/create-compensation-shipment.dto';
-import { FulfillmentShippedPayload, FulfillmentDeliveredPayload, FulfillmentCancelledPayload } from '@packages/event-contracts/streams';
+import {
+  FulfillmentShippedPayload,
+  FulfillmentDeliveredPayload,
+  FulfillmentCancelledPayload,
+} from '@packages/event-contracts/streams';
 import { SalesOrderAmendmentsService } from '../../sales-order/services/sales-order-amendments.service';
 import { SalesOrderAmendmentDeltaDto } from '../../sales-order/dto/create-sales-order-amendment.dto';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
+import { ShipmentReservationService } from './shipment-reservation.service';
 
 type FulfillmentStatus = (typeof wmsTables.fulfillmentOrders.status.enumValues)[number];
 
@@ -88,6 +93,7 @@ export class FulfillmentsService {
     private readonly outbox: OutboxService,
     private readonly workflowGate: FulfillmentWorkflowGate,
     @Optional() private readonly salesOrderAmendments?: SalesOrderAmendmentsService,
+    @Optional() private readonly shipmentReservation?: ShipmentReservationService,
   ) {}
 
   async requiresPhysicalFulfillmentOrder(salesOrderId: string, tx?: DbTx): Promise<boolean> {
@@ -98,6 +104,12 @@ export class FulfillmentsService {
   }
 
   async create(dto: CreateFulfillmentOrderDto, tx?: DbTx) {
+    const workflowMode =
+      typeof this.workflowGate.getMode === 'function' ? this.workflowGate.getMode() : ('legacy' as const);
+    if (workflowMode === 'v2') {
+      this.workflowGate.assertV2MutationAllowed('fulfillment.create_v2');
+      return this.createV2(dto, tx);
+    }
     this.workflowGate.assertMutationAllowed('fulfillment.create');
     return this.db.run(async (trx) => {
       try {
@@ -213,6 +225,242 @@ export class FulfillmentsService {
         throw error;
       }
     }, tx);
+  }
+
+  private async createV2(dto: CreateFulfillmentOrderDto, tx?: DbTx) {
+    if (!this.shipmentReservation) {
+      throw new Error('ShipmentReservationService is required for V2 fulfillment creation');
+    }
+    const shipmentReservation = this.shipmentReservation;
+
+    // Fail before opening the creation transaction when the request is known to
+    // contain physical demand. Digital-only SOs remain a no-FO route.
+    if (
+      dto.fulfillmentMode !== 'drop_ship' &&
+      !dto.warehouseId &&
+      (await this.hasWarehouseControlledDemandPreflight(dto, tx))
+    ) {
+      throw new BadRequestException({
+        code: 'V2_PHYSICAL_FULFILLMENT_REQUIRES_WAREHOUSE',
+        message: 'A warehouse is required for V2 physical fulfillment',
+      });
+    }
+
+    return this.db.run(async (trx) => {
+      let salesOrder: typeof wmsTables.salesOrders.$inferSelect | undefined;
+      if (dto.salesOrderId) {
+        await trx.execute(sql`
+          SELECT id FROM ${wmsTables.salesOrders}
+          WHERE ${wmsTables.salesOrders.id} = ${dto.salesOrderId}
+          FOR UPDATE
+        `);
+        [salesOrder] = await trx
+          .select()
+          .from(wmsTables.salesOrders)
+          .where(eq(wmsTables.salesOrders.id, dto.salesOrderId))
+          .limit(1);
+        if (!salesOrder) throw new BadRequestException(`Sales order ${dto.salesOrderId} not found`);
+        if (salesOrder.status === 'cancelled') {
+          throw new BadRequestException(`Cannot create fulfillment for cancelled sales order ${dto.salesOrderId}`);
+        }
+
+        const [existing] = await trx
+          .select()
+          .from(wmsTables.fulfillmentOrders)
+          .where(eq(wmsTables.fulfillmentOrders.salesOrderId, dto.salesOrderId))
+          .limit(1);
+        if (existing) return this.getOne(existing.id, trx);
+      }
+
+      const requestedItems = Array.isArray(dto.items) ? dto.items : [];
+      const legacyLines = Array.isArray(dto.lines) ? dto.lines : [];
+      if (dto.salesOrderId && (requestedItems.length > 0 || legacyLines.length > 0)) {
+        throw new BadRequestException({
+          code: 'SALES_ORDER_ITEMS_DERIVED_FROM_MATCHING',
+          message: 'Fulfillment items for a sales order must be derived from product-SKU matching.',
+        });
+      }
+
+      let itemsToInsert: Omit<FulfillmentOrderItemInsert, 'fulfillmentOrderId'>[];
+      if (requestedItems.length > 0) {
+        const referenced = requestedItems.find((item) => item.salesOrderId || item.salesOrderLineId);
+        if (referenced) {
+          throw new BadRequestException({
+            code: 'FULFILLMENT_ITEM_SO_REFERENCE_NOT_ALLOWED',
+            message: 'Explicit V2 fulfillment items cannot carry sales-order references.',
+          });
+        }
+        itemsToInsert = requestedItems.map((item) => {
+          if (!item.skuId || !item.quantity || item.quantity <= 0) {
+            throw new BadRequestException('Invalid item data: skuId and positive quantity are required');
+          }
+          return {
+            salesOrderId: null,
+            salesOrderLineId: null,
+            mappingSnapshotId: item.mappingSnapshotId ?? null,
+            variantId: item.variantId ?? null,
+            skuId: item.skuId,
+            qty: item.quantity,
+            reservedQty: 0,
+            pickedQty: 0,
+            shippedQty: 0,
+            status: 'pending',
+          };
+        });
+      } else if (legacyLines.length > 0) {
+        itemsToInsert = legacyLines.map((line) => {
+          if (!line.skuId || !line.quantity || line.quantity <= 0) {
+            throw new BadRequestException('Invalid line data: skuId and positive quantity are required');
+          }
+          return {
+            salesOrderId: null,
+            salesOrderLineId: null,
+            mappingSnapshotId: null,
+            variantId: null,
+            skuId: line.skuId,
+            qty: line.quantity,
+            reservedQty: 0,
+            pickedQty: 0,
+            shippedQty: 0,
+            status: 'pending',
+          };
+        });
+      } else if (dto.salesOrderId) {
+        itemsToInsert = await this.buildItemsFromSalesOrder(dto.salesOrderId, trx);
+      } else {
+        throw new BadRequestException('Fulfillment order requires items or salesOrderId');
+      }
+
+      // Digital-only/void-matched sales orders do not create a placeholder FO.
+      if (itemsToInsert.length === 0 && dto.salesOrderId) return null;
+      if (itemsToInsert.length === 0) throw new BadRequestException('Fulfillment order items cannot be empty');
+      await this.validateSkuRows(itemsToInsert, dto.ownerId ?? null, trx);
+      const uniqueSkuIds = [...new Set(itemsToInsert.map((item) => item.skuId))];
+      const skuRows = await trx
+        .select({
+          id: wmsTables.skus.id,
+          stockType: wmsTables.skus.stockType,
+          deliveryProfileId: wmsTables.skus.deliveryProfileId,
+        })
+        .from(wmsTables.skus)
+        .where(inArray(wmsTables.skus.id, uniqueSkuIds));
+      const dropShippedSkuCount = skuRows.filter((row) => row.stockType === 'drop_shipped').length;
+      if (dto.fulfillmentMode === 'drop_ship' || dropShippedSkuCount === skuRows.length) {
+        // Explicit direct mode and all-drop_shipped demand never enter the V2
+        // warehouse shipment/reservation model.
+        return this.createFulfillmentOrderFromItems(
+          {
+            ...dto,
+            fulfillmentMode: 'drop_ship',
+            shippingAddress:
+              dto.shippingAddress ??
+              (salesOrder?.shippingAddress as CreateFulfillmentOrderDto['shippingAddress'] | undefined),
+          },
+          itemsToInsert,
+          trx,
+        );
+      }
+      if (dropShippedSkuCount > 0) {
+        throw new BadRequestException({
+          code: 'V2_MIXED_DIRECT_AND_WAREHOUSE_FULFILLMENT',
+          message: 'drop_shipped and warehouse-controlled SKUs require separate fulfillment routes',
+        });
+      }
+      if (!dto.warehouseId) {
+        throw new BadRequestException({
+          code: 'V2_PHYSICAL_FULFILLMENT_REQUIRES_WAREHOUSE',
+          message: 'A warehouse is required for V2 physical fulfillment',
+        });
+      }
+      await this.validateWarehouseExists(dto.warehouseId, trx);
+
+      const [fo] = await trx
+        .insert(wmsTables.fulfillmentOrders)
+        .values({
+          salesOrderId: dto.salesOrderId ?? null,
+          warehouseId: dto.warehouseId,
+          ownerId: dto.ownerId ?? null,
+          fulfillmentMode: dto.fulfillmentMode ?? 'in_house',
+          priority: dto.priority ?? 'normal',
+          status: 'created',
+          totalItems: itemsToInsert.length,
+          totalQty: itemsToInsert.reduce((total, item) => total + item.qty, 0),
+          totalReservedQty: 0,
+          shippingAddress: dto.shippingAddress ?? salesOrder?.shippingAddress ?? null,
+        })
+        .returning();
+      const insertedItems = await trx
+        .insert(wmsTables.fulfillmentOrderItems)
+        .values(itemsToInsert.map((item) => ({ ...item, fulfillmentOrderId: fo.id })))
+        .returning();
+
+      const profileIds = skuRows.map((row) => row.deliveryProfileId);
+      const profiles = new Set(profileIds);
+      const compatibleProfileId =
+        profileIds.every((profileId): profileId is string => profileId !== null) && profiles.size === 1
+          ? profileIds[0]
+          : null;
+      const [shipment] = await trx
+        .insert(wmsTables.shipments)
+        .values({
+          warehouseId: dto.warehouseId,
+          status: 'draft',
+          shippingProfileId: compatibleProfileId ?? null,
+          recipientSnapshot: dto.shippingAddress ?? salesOrder?.shippingAddress ?? null,
+        })
+        .returning();
+      const shipmentLines = await trx
+        .insert(wmsTables.shipmentLines)
+        .values(
+          insertedItems.map((item) => ({
+            shipmentId: shipment.id,
+            fulfillmentOrderItemId: item.id,
+            skuId: item.skuId,
+            qty: item.qty,
+          })),
+        )
+        .returning();
+
+      // Acquire every stock key first so multi-SKU orders cannot deadlock each
+      // other by sales-order line order. reservePartial safely re-enters the locks.
+      await acquireStockAvailabilityLocks(
+        trx,
+        shipmentLines.map((line) => ({ skuId: line.skuId, warehouseId: dto.warehouseId as string })),
+      );
+      let mutated = false;
+      for (const line of shipmentLines.sort((a, b) => a.id.localeCompare(b.id))) {
+        const result = await shipmentReservation.reservePartial(line.id, line.qty, trx);
+        mutated ||= result.mutated;
+      }
+      if (!mutated) await shipmentReservation.recompute(shipment.id, trx);
+
+      this.logger.log(`Created V2 Draft shipment ${shipment.id} for fulfillment order ${fo.id}`);
+      return this.getOne(fo.id, trx);
+    }, tx);
+  }
+
+  private async hasWarehouseControlledDemandPreflight(dto: CreateFulfillmentOrderDto, tx?: DbTx): Promise<boolean> {
+    const executor = (tx ?? this.db.db) as unknown as DbTx;
+    let skuIds: string[];
+    if ((dto.items?.length ?? 0) > 0) {
+      skuIds = dto.items?.map((item) => item.skuId) ?? [];
+    } else if ((dto.lines?.length ?? 0) > 0) {
+      skuIds = dto.lines?.map((line) => line.skuId) ?? [];
+    } else if (dto.salesOrderId) {
+      const items = await this.buildItemsFromSalesOrder(dto.salesOrderId, executor);
+      skuIds = items.map((item) => item.skuId);
+    } else {
+      return true;
+    }
+    if (skuIds.length === 0) return false;
+
+    const skuRows = await executor
+      .select({ stockType: wmsTables.skus.stockType })
+      .from(wmsTables.skus)
+      .where(inArray(wmsTables.skus.id, [...new Set(skuIds)]));
+    // Unknown SKU IDs are validated by the locked command path. Treat them as
+    // warehouse-controlled here so a missing warehouse still fails closed.
+    return skuRows.length !== new Set(skuIds).size || skuRows.some((row) => row.stockType !== 'drop_shipped');
   }
 
   async createCompensationShipment(dto: CreateCompensationShipmentDto, operatorId?: string, tx?: DbTx) {
@@ -719,7 +967,10 @@ export class FulfillmentsService {
 
   // 디지털 라인 판별: fulfillmentKind='digital' 또는 requiresShipping=false.
   // null(미지정, 기존 데이터/외부 채널)은 물리로 간주.
-  private isDigitalFulfillmentLine(line: { fulfillmentKind?: string | null; requiresShipping?: boolean | null }): boolean {
+  private isDigitalFulfillmentLine(line: {
+    fulfillmentKind?: string | null;
+    requiresShipping?: boolean | null;
+  }): boolean {
     return line.fulfillmentKind === 'digital' || line.requiresShipping === false;
   }
 
@@ -1124,10 +1375,7 @@ export class FulfillmentsService {
     return actions;
   }
 
-  private computeBlockedReasons(
-    fo: { status: string },
-    items: Array<{ shippedQty: number }>,
-  ): string[] {
+  private computeBlockedReasons(fo: { status: string }, items: Array<{ shippedQty: number }>): string[] {
     const reasons: string[] = [];
     if (['shipped', 'completed', 'canceled'].includes(fo.status)) {
       reasons.push('TERMINAL_STATUS');
@@ -1152,10 +1400,7 @@ export class FulfillmentsService {
         updatedAt: wmsTables.outboxEvents.updatedAt,
       })
       .from(wmsTables.outboxEvents)
-      .where(and(
-        eq(wmsTables.outboxEvents.aggregateType, 'fulfillment'),
-        eq(wmsTables.outboxEvents.aggregateId, id),
-      ))
+      .where(and(eq(wmsTables.outboxEvents.aggregateType, 'fulfillment'), eq(wmsTables.outboxEvents.aggregateId, id)))
       .orderBy(desc(wmsTables.outboxEvents.createdAt));
   }
 
@@ -1315,21 +1560,19 @@ export class FulfillmentsService {
     const db = tx ?? this.db.db;
 
     // status 쿼리 문자열을 enum 으로 안전 narrowing (잘못된 값은 무시)
-    const statusFilter =
-      params.status && isFulfillmentStatus(params.status) ? params.status : undefined;
+    const statusFilter = params.status && isFulfillmentStatus(params.status) ? params.status : undefined;
     const conditions = [
       statusFilter ? eq(wmsTables.fulfillmentOrders.status, statusFilter) : undefined,
       params.warehouseId ? eq(wmsTables.fulfillmentOrders.warehouseId, params.warehouseId) : undefined,
-      params.fulfillmentMode ? eq(wmsTables.fulfillmentOrders.fulfillmentMode, params.fulfillmentMode as any) : undefined,
+      params.fulfillmentMode
+        ? eq(wmsTables.fulfillmentOrders.fulfillmentMode, params.fulfillmentMode as any)
+        : undefined,
       params.salesOrderId ? eq(wmsTables.fulfillmentOrders.salesOrderId, params.salesOrderId) : undefined,
       params.priority ? eq(wmsTables.fulfillmentOrders.priority, params.priority as any) : undefined,
     ].filter(Boolean);
     const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-    const [totalRow] = await db
-      .select({ value: count() })
-      .from(wmsTables.fulfillmentOrders)
-      .where(whereClause);
+    const [totalRow] = await db.select({ value: count() }).from(wmsTables.fulfillmentOrders).where(whereClause);
     const total = totalRow?.value ?? 0;
 
     const fulfillmentOrders = await db
