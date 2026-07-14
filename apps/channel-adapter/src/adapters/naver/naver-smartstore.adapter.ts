@@ -63,8 +63,14 @@ import {
 const InternalDispatchCommandSchema = z.object({
   type: z.literal('dispatch.ship'), // executeCommand와 일치시킴
   orderId: z.string(),
-  productOrderIds: z.array(z.string()).optional(),
-  productOrderId: z.string().optional(), // 단일 상품 주문의 경우
+  items: z
+    .array(
+      z.object({
+        orderItemId: z.string().min(1),
+        quantity: z.number().int().positive(),
+      }),
+    )
+    .min(1),
   tracking: z.object({
     companyCode: z.string(),
     number: z.string(),
@@ -94,12 +100,7 @@ const DELIVERY_COMPANY_MAPPING: Record<string, DeliveryCompanyCode> = {
  * 내부 명령을 네이버 API 요청으로 변환하는 헬퍼 함수 (Adapter 전용)
  */
 function transformInternalCommandToNaverRequest(command: InternalDispatchCommand): NaverDispatchRequest {
-  // productOrderIds 결정 (배열 또는 단일 값)
-  const productOrderIds = command.productOrderIds || (command.productOrderId ? [command.productOrderId] : []);
-
-  if (productOrderIds.length === 0) {
-    throw new Error('productOrderIds 또는 productOrderId가 필요합니다');
-  }
+  const productOrderIds = command.items.map(({ orderItemId }) => orderItemId);
 
   // 택배사 코드 매핑
   const deliveryCompanyCode =
@@ -422,6 +423,30 @@ export class NaverSmartstoreAdapter implements ChannelAdapter {
     }
   }
 
+  async reconcileCommand(command: ChannelCommand): Promise<{ applied: boolean; evidence?: Record<string, unknown> }> {
+    if (command.type !== 'dispatch.ship' || !command.items?.length) return { applied: false };
+
+    const productOrderIds = command.items.map((item) => item.orderItemId);
+    const response = await this.naverOrderClient.getOrderDetails(productOrderIds);
+    const details = (response.data ?? []) as Array<{
+      productOrder?: { productOrderId?: string; productOrderStatus?: string };
+      delivery?: { trackingNumber?: string; deliveryCompanyCode?: string; deliveryCompany?: string };
+    }>;
+    const expectedCompany = DELIVERY_COMPANY_MAPPING[command.tracking.companyCode] || DELIVERY_COMPANY_MAPPING.DEFAULT;
+
+    const applied = productOrderIds.every((productOrderId) => {
+      const detail = details.find((candidate) => String(candidate.productOrder?.productOrderId) === productOrderId);
+      if (!detail || detail.delivery?.trackingNumber !== command.tracking.number) return false;
+      const actualCompany = detail.delivery.deliveryCompanyCode ?? detail.delivery.deliveryCompany;
+      return !actualCompany || actualCompany === expectedCompany;
+    });
+
+    return {
+      applied,
+      evidence: { productOrderIds, trackingNumber: command.tracking.number, matchedCount: details.length },
+    };
+  }
+
   async executeQuery(query: ChannelQuery): Promise<any> {
     try {
       switch (query.type) {
@@ -572,7 +597,7 @@ export class NaverSmartstoreAdapter implements ChannelAdapter {
   private async executeDispatchConfirm(command: any): Promise<SyncResult> {
     console.log('📦 네이버 발송처리 실행:', {
       orderId: command.orderId,
-      productOrderIds: command.productOrderIds,
+      productOrderIds: command.items?.map((item) => item.orderItemId),
       tracking: command.tracking,
     });
 

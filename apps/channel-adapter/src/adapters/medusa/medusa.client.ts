@@ -182,6 +182,7 @@ export class MedusaClient {
   private readonly salesChannelCache = new Map<string, string>(); // key: name
   private defaultShippingProfileId?: string;
   private projectionStockLocationId?: string;
+  private shipmentProjectionQueues?: Map<string, Promise<void>>;
   // 대용량 상품일 때 한번에 보내는 variants 수를 제한 (unknown_error 완화 목적)
   private readonly MAX_VARIANTS_PER_REQUEST = 30;
 
@@ -1425,8 +1426,7 @@ export class MedusaClient {
     const previousBackorder = (medusaVariant as { allow_backorder?: boolean }).allow_backorder ?? false;
     // 수동품절은 선판매(백오더)를 이긴다 — 강제 품절이 의도이므로 allow_backorder 를 끈다.
     // 그 외엔 선판매 정책(preStockSellable)을 그대로 반영해 해제 시 복원되게 한다.
-    const desiredBackorder =
-      input.availabilityOverride === 'manual_out_of_stock' ? false : !!input.preStockSellable;
+    const desiredBackorder = input.availabilityOverride === 'manual_out_of_stock' ? false : !!input.preStockSellable;
     const newStock = shouldManageInventory ? Math.max(0, Math.trunc(input.sellableQuantity || 0)) : 0;
 
     const variantUpdate: { id: string; manage_inventory?: boolean; allow_backorder?: boolean } = {
@@ -1715,6 +1715,206 @@ export class MedusaClient {
       }
       this.logger.error(`Failed to update Medusa order shipping projection: ${orderId}`, fetchError.message);
       throw new Error(`Medusa updateOrderShippingProjection failed: ${fetchError.message}`);
+    }
+  }
+
+  /**
+   * Additive V2 shipment/attempt projection. Unlike the V1 compatibility projection,
+   * this keeps immutable attempt history and derives partial progress from the array.
+   */
+  async updateOrderShipmentAttemptProjection(
+    orderId: string,
+    event:
+      | {
+          operation: 'dispatch';
+          payload: import('@packages/event-contracts/streams').ShipmentShippedPayload;
+          order: import('@packages/event-contracts/streams').ShipmentEventOrder;
+        }
+      | {
+          operation: 'delivery';
+          payload: import('@packages/event-contracts/streams').ShipmentDeliveredPayload;
+        }
+      | {
+          operation: 'recall';
+          payload: import('@packages/event-contracts/streams').ShipmentDispatchRecalledPayload;
+        },
+  ): Promise<void> {
+    return this.serializeShipmentProjection(orderId, () => this.doUpdateOrderShipmentAttemptProjection(orderId, event));
+  }
+
+  private async serializeShipmentProjection<T>(orderId: string, work: () => Promise<T>): Promise<T> {
+    const queues = (this.shipmentProjectionQueues ??= new Map());
+    const ready = (queues.get(orderId) ?? Promise.resolve()).catch(() => undefined);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const queued = ready.then(() => held);
+    queues.set(orderId, queued);
+
+    await ready;
+    try {
+      return await work();
+    } finally {
+      release();
+      if (queues.get(orderId) === queued) queues.delete(orderId);
+    }
+  }
+
+  private async doUpdateOrderShipmentAttemptProjection(
+    orderId: string,
+    event:
+      | {
+          operation: 'dispatch';
+          payload: import('@packages/event-contracts/streams').ShipmentShippedPayload;
+          order: import('@packages/event-contracts/streams').ShipmentEventOrder;
+        }
+      | {
+          operation: 'delivery';
+          payload: import('@packages/event-contracts/streams').ShipmentDeliveredPayload;
+        }
+      | {
+          operation: 'recall';
+          payload: import('@packages/event-contracts/streams').ShipmentDispatchRecalledPayload;
+        },
+  ): Promise<void> {
+    try {
+      const existing = await this.sdk.client.fetch<{ order: { metadata?: Record<string, unknown> } }>(
+        `/admin/orders/${encodeURIComponent(orderId)}`,
+        { method: 'GET' },
+      );
+      const existingMeta = (existing?.order?.metadata as Record<string, unknown>) ?? {};
+      const attempts = Array.isArray(existingMeta.coreShipmentAttempts)
+        ? [...(existingMeta.coreShipmentAttempts as Array<Record<string, unknown>>)]
+        : [];
+      const shipments = Array.isArray(existingMeta.coreShipments)
+        ? [...(existingMeta.coreShipments as Array<Record<string, unknown>>)]
+        : [];
+      const attemptId = event.payload.dispatchAttemptId;
+      const attemptIndex = attempts.findIndex((attempt) => attempt.dispatchAttemptId === attemptId);
+      const previousAttempt = attemptIndex >= 0 ? attempts[attemptIndex] : {};
+
+      if (event.operation !== 'dispatch' && attemptIndex < 0) {
+        throw new Error(`Cannot ${event.operation} unknown dispatch attempt ${attemptId} for Medusa order ${orderId}`);
+      }
+
+      let nextAttempt: Record<string, unknown>;
+      if (event.operation === 'dispatch') {
+        nextAttempt = {
+          ...previousAttempt,
+          shipmentId: event.payload.shipmentId,
+          dispatchAttemptId: attemptId,
+          attemptNo: event.payload.attemptNo,
+          status: 'shipped',
+          isPartial: event.order.isPartial,
+          dispatchedAt: event.payload.dispatchedAt,
+          invoice: event.payload.invoice,
+          lines: event.order.lines.map((line) => ({
+            shipmentLineId: line.shipmentLineId,
+            salesOrderLineId: line.salesOrderLineId,
+            channelOrderItemId: line.channelOrderItemId,
+            skuId: line.skuId,
+            qty: line.qty,
+            isPartialQuantity: line.isPartialQuantity,
+          })),
+        };
+      } else if (event.operation === 'delivery') {
+        if (previousAttempt.status === 'recalled') {
+          const ignoredDeliveryEvents = Array.isArray(previousAttempt.ignoredDeliveryEvents)
+            ? [...(previousAttempt.ignoredDeliveryEvents as Array<Record<string, unknown>>)]
+            : [];
+          if (!ignoredDeliveryEvents.some((ignored) => ignored.providerEventId === event.payload.providerEventId)) {
+            ignoredDeliveryEvents.push({
+              providerEventId: event.payload.providerEventId,
+              deliveredAt: event.payload.deliveredAt,
+              ignoredReason: 'dispatch_attempt_recalled',
+            });
+          }
+          nextAttempt = { ...previousAttempt, ignoredDeliveryEvents };
+        } else {
+          nextAttempt = {
+            ...previousAttempt,
+            shipmentId: event.payload.shipmentId,
+            dispatchAttemptId: attemptId,
+            attemptNo: event.payload.attemptNo,
+            status: 'delivered',
+            providerEventId: event.payload.providerEventId,
+            deliveredAt: event.payload.deliveredAt,
+          };
+        }
+      } else {
+        nextAttempt = {
+          ...previousAttempt,
+          shipmentId: event.payload.shipmentId,
+          dispatchAttemptId: attemptId,
+          attemptNo: event.payload.attemptNo,
+          status: 'recalled',
+          recallOperationId: event.payload.recallOperationId,
+          recalledAt: event.payload.recalledAt,
+        };
+      }
+
+      if (attemptIndex >= 0) attempts[attemptIndex] = nextAttempt;
+      else attempts.push(nextAttempt);
+
+      const shipmentId = event.payload.shipmentId;
+      const shipmentAttempts = attempts.filter((attempt) => attempt.shipmentId === shipmentId);
+      const shipmentAttemptIds = shipmentAttempts.map((attempt) => attempt.dispatchAttemptId);
+      const latestShipmentAttempt = [...shipmentAttempts].sort(
+        (left, right) => Number(right.attemptNo ?? 0) - Number(left.attemptNo ?? 0),
+      )[0];
+      const latestActiveShipmentAttempt = [...shipmentAttempts]
+        .filter((attempt) => attempt.status !== 'recalled')
+        .sort((left, right) => Number(right.attemptNo ?? 0) - Number(left.attemptNo ?? 0))[0];
+      const shipmentIndex = shipments.findIndex((shipment) => shipment.shipmentId === shipmentId);
+      const nextShipment = {
+        ...(shipmentIndex >= 0 ? shipments[shipmentIndex] : {}),
+        shipmentId,
+        attemptIds: shipmentAttemptIds,
+        latestAttemptId: latestShipmentAttempt?.dispatchAttemptId,
+        status: (latestActiveShipmentAttempt ?? latestShipmentAttempt)?.status,
+      };
+      if (shipmentIndex >= 0) shipments[shipmentIndex] = nextShipment;
+      else shipments.push(nextShipment);
+
+      const activeAttempts = attempts.filter((attempt) => attempt.status !== 'recalled');
+      const deliveredAttempts = activeAttempts.filter((attempt) => attempt.status === 'delivered');
+      const hasFullOrderAttempt = activeAttempts.some((attempt) => attempt.isPartial === false);
+      const derivedStatus =
+        attempts.length > 0 && activeAttempts.length === 0
+          ? 'recalled'
+          : deliveredAttempts.length === activeAttempts.length && activeAttempts.length > 0
+            ? hasFullOrderAttempt
+              ? 'delivered'
+              : 'partially_delivered'
+            : hasFullOrderAttempt
+              ? 'shipped'
+              : 'partially_shipped';
+
+      await this.sdk.client.fetch(`/admin/orders/${encodeURIComponent(orderId)}`, {
+        method: 'POST',
+        body: {
+          metadata: {
+            ...existingMeta,
+            coreShippingStatus: derivedStatus,
+            coreShipments: shipments,
+            coreShipmentAttempts: attempts,
+            coreShipmentProgress: {
+              attemptCount: attempts.length,
+              activeAttemptCount: activeAttempts.length,
+              deliveredAttemptCount: deliveredAttempts.length,
+              recalledAttemptCount: attempts.length - activeAttempts.length,
+            },
+          },
+        } as Record<string, unknown>,
+      });
+    } catch (error) {
+      const fetchError = error as FetchError;
+      if (fetchError.status === 404) {
+        this.logger.warn(`Medusa shipment projection skipped; order not found: ${orderId}`);
+        return;
+      }
+      throw new Error(`Medusa shipment projection failed: ${fetchError.message}`);
     }
   }
 

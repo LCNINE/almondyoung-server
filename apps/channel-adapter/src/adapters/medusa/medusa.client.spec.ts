@@ -5,6 +5,192 @@ jest.mock('./medusa-sdk.config', () => ({
 
 import { MedusaClient } from './medusa.client';
 
+describe('MedusaClient shipment attempt projection', () => {
+  it('keeps split shipment history as arrays and recalls only the referenced attempt', async () => {
+    let metadata: Record<string, unknown> = {};
+    const fetch = jest.fn(async (_path: string, options: { method: string; body?: any }) => {
+      if (options.method === 'GET') return { order: { metadata } };
+      metadata = options.body.metadata;
+      return { order: { metadata } };
+    });
+    const client = Object.create(MedusaClient.prototype) as MedusaClient;
+    (client as any).sdk = { client: { fetch } };
+
+    const order = {
+      salesOrderId: 'so-1',
+      fulfillmentOrderId: 'fo-1',
+      salesChannel: 'medusa' as const,
+      channelOrderId: 'order_medusa_1',
+      isPartial: true,
+      lines: [
+        {
+          shipmentLineId: 'shipment-line-1',
+          fulfillmentOrderItemId: 'foi-1',
+          salesOrderLineId: 'sales-order-line-1',
+          channelOrderItemId: 'item-1',
+          skuId: 'sku-1',
+          qty: 1,
+          isPartialQuantity: false,
+        },
+      ],
+    };
+    const first = {
+      shipmentId: 'shipment-1',
+      dispatchAttemptId: 'attempt-1',
+      attemptNo: 1,
+      warehouseId: 'warehouse-1',
+      dispatchedAt: '2026-07-14T00:00:00.000Z',
+      invoice: { invoiceId: 'invoice-1', carrier: 'HANJIN' as const, trackingNo: 'TRACK-1' },
+      orders: [order],
+    };
+    await client.updateOrderShipmentAttemptProjection('order_medusa_1', {
+      operation: 'dispatch',
+      payload: first,
+      order,
+    });
+
+    const completedOrder = { ...order, isPartial: false, lines: [{ ...order.lines[0], shipmentLineId: 'line-2' }] };
+    await client.updateOrderShipmentAttemptProjection('order_medusa_1', {
+      operation: 'dispatch',
+      payload: {
+        ...first,
+        shipmentId: 'shipment-2',
+        dispatchAttemptId: 'attempt-2',
+        attemptNo: 2,
+        invoice: { ...first.invoice, invoiceId: 'invoice-2', trackingNo: 'TRACK-2' },
+        orders: [completedOrder],
+      },
+      order: completedOrder,
+    });
+
+    await client.updateOrderShipmentAttemptProjection('order_medusa_1', {
+      operation: 'recall',
+      payload: {
+        shipmentId: 'shipment-1',
+        dispatchAttemptId: 'attempt-1',
+        attemptNo: 1,
+        recallOperationId: 'recall-1',
+        recalledAt: '2026-07-14T01:00:00.000Z',
+      },
+    });
+
+    await client.updateOrderShipmentAttemptProjection('order_medusa_1', {
+      operation: 'delivery',
+      payload: {
+        shipmentId: 'shipment-1',
+        dispatchAttemptId: 'attempt-1',
+        attemptNo: 1,
+        providerEventId: 'late-delivery-1',
+        deliveredAt: '2026-07-14T02:00:00.000Z',
+      },
+    });
+
+    expect(metadata.coreShippingStatus).toBe('shipped');
+    expect(metadata.coreShipments).toHaveLength(2);
+    expect(metadata.coreShipmentAttempts).toEqual([
+      expect.objectContaining({
+        dispatchAttemptId: 'attempt-1',
+        status: 'recalled',
+        recallOperationId: 'recall-1',
+        ignoredDeliveryEvents: [
+          expect.objectContaining({
+            providerEventId: 'late-delivery-1',
+            ignoredReason: 'dispatch_attempt_recalled',
+          }),
+        ],
+      }),
+      expect.objectContaining({
+        dispatchAttemptId: 'attempt-2',
+        status: 'shipped',
+        invoice: expect.objectContaining({ invoiceId: 'invoice-2', trackingNo: 'TRACK-2' }),
+      }),
+    ]);
+    expect(metadata.coreShipmentProgress).toEqual({
+      attemptCount: 2,
+      activeAttemptCount: 1,
+      deliveredAttemptCount: 0,
+      recalledAttemptCount: 1,
+    });
+  });
+
+  it('serializes concurrent updates for one order so neither attempt is lost', async () => {
+    let metadata: Record<string, unknown> = {};
+    const fetch = jest.fn(async (_path: string, options: { method: string; body?: any }) => {
+      if (options.method === 'GET') {
+        await Promise.resolve();
+        return { order: { metadata } };
+      }
+      metadata = options.body.metadata;
+      return { order: { metadata } };
+    });
+    const client = Object.create(MedusaClient.prototype) as MedusaClient;
+    (client as any).sdk = { client: { fetch } };
+    const order = {
+      salesOrderId: '55555555-5555-4555-8555-555555555555',
+      fulfillmentOrderId: '66666666-6666-4666-8666-666666666666',
+      salesChannel: 'medusa' as const,
+      channelOrderId: 'order_medusa_1',
+      isPartial: true,
+      lines: [
+        {
+          shipmentLineId: '77777777-7777-4777-8777-777777777777',
+          fulfillmentOrderItemId: '88888888-8888-4888-8888-888888888888',
+          salesOrderLineId: '99999999-9999-4999-8999-999999999999',
+          channelOrderItemId: 'item-1',
+          skuId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          qty: 1,
+          isPartialQuantity: false,
+        },
+      ],
+    };
+    const event = (suffix: '1' | '2') => ({
+      operation: 'dispatch' as const,
+      payload: {
+        shipmentId: suffix === '1' ? '11111111-1111-4111-8111-111111111111' : '12121212-1212-4212-8212-121212121212',
+        dispatchAttemptId:
+          suffix === '1' ? '22222222-2222-4222-8222-222222222222' : '13131313-1313-4313-8313-131313131313',
+        attemptNo: Number(suffix),
+        warehouseId: '33333333-3333-4333-8333-333333333333',
+        dispatchedAt: `2026-07-14T00:0${suffix}:00.000Z`,
+        invoice: {
+          invoiceId: suffix === '1' ? '44444444-4444-4444-8444-444444444444' : '14141414-1414-4414-8414-141414141414',
+          carrier: 'HANJIN' as const,
+          trackingNo: `TRACK-${suffix}`,
+        },
+        orders: [order],
+      },
+      order,
+    });
+
+    await Promise.all([
+      client.updateOrderShipmentAttemptProjection('order_medusa_1', event('1')),
+      client.updateOrderShipmentAttemptProjection('order_medusa_1', event('2')),
+    ]);
+
+    expect(metadata.coreShipmentAttempts).toHaveLength(2);
+  });
+
+  it('rejects delivery or recall of an attempt that has never been projected', async () => {
+    const client = Object.create(MedusaClient.prototype) as MedusaClient;
+    (client as any).sdk = {
+      client: { fetch: jest.fn().mockResolvedValue({ order: { metadata: {} } }) },
+    };
+
+    await expect(
+      client.updateOrderShipmentAttemptProjection('order_medusa_1', {
+        operation: 'recall',
+        payload: {
+          shipmentId: '11111111-1111-4111-8111-111111111111',
+          dispatchAttemptId: '22222222-2222-4222-8222-222222222222',
+          attemptNo: 1,
+          recallOperationId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
+          recalledAt: '2026-07-14T01:00:00.000Z',
+        },
+      }),
+    ).rejects.toThrow('unknown dispatch attempt');
+  });
+});
+
 describe('MedusaClient.listOrders', () => {
   it('keeps Payment Accepted and lifecycle orders client-side without unsupported payment_status query filters', async () => {
     const authorizedOrder = {
