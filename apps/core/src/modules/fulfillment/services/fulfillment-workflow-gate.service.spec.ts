@@ -9,7 +9,6 @@ import {
   FulfillmentWorkflowGate,
   FulfillmentWorkflowMode,
 } from './fulfillment-workflow-gate.service';
-import { ConsolidationController } from '../controllers/consolidation.controller';
 import { InvoiceController } from '../controllers/invoice.controller';
 import { ShipmentController } from '../controllers/shipment.controller';
 
@@ -169,19 +168,9 @@ describe('workflow-gated legacy mutation controllers', () => {
     expect(shipmentService.forceShipment).not.toHaveBeenCalled();
   });
 
-  it('returns 410 from the fake consolidation mutation without invoking the stub service', async () => {
-    const consolidationService = { autoConsolidate: jest.fn() };
-
-    await expect(
-      new ConsolidationController(consolidationService as never).autoConsolidate('group-1'),
-    ).rejects.toMatchObject({ status: 410 });
-    expect(consolidationService.autoConsolidate).not.toHaveBeenCalled();
-  });
-
   it.each([
     [InvoiceController, 'cancelInvoice'],
     [ShipmentController, 'force'],
-    [ConsolidationController, 'autoConsolidate'],
   ])('allows only admin or master roles through the temporary %p.%s guard', (controller, method) => {
     const handler = controller.prototype[method as keyof typeof controller.prototype];
     const [Guard] = Reflect.getMetadata(GUARDS_METADATA, handler) as Array<

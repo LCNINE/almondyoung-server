@@ -61,6 +61,24 @@ type ShipmentManifestSnapshot = {
   }>;
 };
 
+type CancelResponse = {
+  operationId: string;
+  operationStatus: 'pending' | 'completed';
+  shipmentId: string;
+  manifestVersion: number;
+  shipment?: ShipmentManifestSnapshot;
+};
+
+type PendingCancellationIntent = {
+  kind: 'cancel_outstanding';
+  shipmentId: string;
+  expectedManifestVersion: number;
+  lines: CancelShipmentOutstandingDto['lines'];
+  reason: string;
+  csCaseId: string | null;
+  note: string | null;
+};
+
 function uniqueSorted(values: readonly string[]): string[] {
   return [...new Set(values)].sort();
 }
@@ -401,13 +419,6 @@ export class ShipmentPlanningService {
       'cancellation line',
     );
 
-    type CancelResponse = {
-      operationId: string;
-      operationStatus: 'pending' | 'completed';
-      shipmentId: string;
-      manifestVersion: number;
-      shipment?: ShipmentManifestSnapshot;
-    };
     return this.commands.execute<CancelResponse>(
       {
         commandType: 'shipment.cancel_outstanding',
@@ -515,6 +526,149 @@ export class ShipmentPlanningService {
     );
   }
 
+  /** Resume the exact durable cancellation after invoice/work/custody/picking prerequisites have cleared. */
+  async resumePendingCancellation(operationId: string, tx?: DbTx): Promise<CancelResponse> {
+    this.workflowGate.assertV2MutationAllowed('shipment.cancel_outstanding.resume');
+    return this.dbService.run(async (trx) => {
+      const [optimisticOperation] = await trx
+        .select()
+        .from(wmsTables.shipmentOperations)
+        .where(eq(wmsTables.shipmentOperations.id, operationId))
+        .limit(1);
+      if (!optimisticOperation || optimisticOperation.type !== 'cancel') {
+        throw new NotFoundException(`Cancellation operation ${operationId} not found`);
+      }
+      if (optimisticOperation.status === 'completed') {
+        return this.completedCancellationResponse(operationId, trx);
+      }
+      if (optimisticOperation.status !== 'pending') {
+        throw this.conflict(
+          'CANCELLATION_OPERATION_NOT_PENDING',
+          `Cancellation operation ${operationId} is ${optimisticOperation.status}`,
+        );
+      }
+
+      const pending = this.pendingCancellationIntent(optimisticOperation.afterManifestSnapshot);
+      const aggregate = await this.lockAggregate(pending.shipmentId, trx);
+      const [operation] = await trx
+        .select()
+        .from(wmsTables.shipmentOperations)
+        .where(eq(wmsTables.shipmentOperations.id, operationId))
+        .limit(1)
+        .for('update');
+      if (!operation || operation.type !== 'cancel') {
+        throw new NotFoundException(`Cancellation operation ${operationId} not found`);
+      }
+      if (operation.status === 'completed') {
+        return this.completedCancellationResponse(operationId, trx);
+      }
+      if (operation.status !== 'pending') {
+        throw this.conflict(
+          'CANCELLATION_OPERATION_NOT_PENDING',
+          `Cancellation operation ${operationId} is ${operation.status}`,
+        );
+      }
+      const lockedPending = this.pendingCancellationIntent(operation.afterManifestSnapshot);
+      if (JSON.stringify(lockedPending) !== JSON.stringify(pending)) {
+        throw this.conflict('CANCELLATION_OPERATION_CHANGED_RETRY', 'Cancellation intent changed; retry resume');
+      }
+      const [member] = await trx
+        .select({ shipmentId: wmsTables.shipmentOperationMembers.shipmentId })
+        .from(wmsTables.shipmentOperationMembers)
+        .where(
+          and(
+            eq(wmsTables.shipmentOperationMembers.operationId, operationId),
+            eq(wmsTables.shipmentOperationMembers.shipmentId, pending.shipmentId),
+            eq(wmsTables.shipmentOperationMembers.role, 'source'),
+          ),
+        )
+        .limit(1);
+      if (!member) {
+        throw this.conflict(
+          'CANCELLATION_OPERATION_MEMBER_MISSING',
+          `Cancellation operation ${operationId} is not attached to shipment ${pending.shipmentId}`,
+        );
+      }
+      if (
+        aggregate.shipment.status !== 'recovery_required' ||
+        aggregate.shipment.recoveryCode !== 'CANCEL_REPLAN_PENDING'
+      ) {
+        throw this.conflict(
+          'CANCELLATION_SOURCE_STATE_CHANGED',
+          `Shipment ${pending.shipmentId} is not waiting for cancellation replan`,
+        );
+      }
+      this.assertShipmentVersion(aggregate.shipment, pending.expectedManifestVersion);
+      const lineById = new Map(aggregate.lines.map((line) => [line.id, line]));
+      const selected = pending.lines.map((request) => {
+        const line = lineById.get(request.shipmentLineId);
+        if (!line) {
+          throw this.conflict(
+            'CANCELLATION_LINE_CHANGED',
+            `Shipment line ${request.shipmentLineId} is no longer in ${pending.shipmentId}`,
+          );
+        }
+        if (line.lineVersion !== request.expectedLineVersion || request.qty > line.qty) {
+          throw this.conflict('CANCELLATION_LINE_CHANGED', `Shipment line ${line.id} changed before resume`);
+        }
+        return { request, line };
+      });
+
+      await this.assertNoActiveInvoice(pending.shipmentId, trx);
+      await this.assertNoCustodyOrActiveWork(aggregate, trx);
+      await this.assertNoActivePickingPlan(pending.shipmentId, trx);
+      await trx
+        .update(wmsTables.shipments)
+        .set({ status: 'draft', recoveryCode: null, plannedAt: null, lastUpdated: new Date() })
+        .where(eq(wmsTables.shipments.id, pending.shipmentId));
+      await trx
+        .delete(wmsTables.shipmentOperationMembers)
+        .where(
+          and(
+            eq(wmsTables.shipmentOperationMembers.operationId, operationId),
+            eq(wmsTables.shipmentOperationMembers.shipmentId, pending.shipmentId),
+            eq(wmsTables.shipmentOperationMembers.role, 'source'),
+          ),
+        );
+
+      const dto: CancelShipmentOutstandingDto = {
+        expectedManifestVersion: pending.expectedManifestVersion,
+        lines: pending.lines,
+        reason: pending.reason,
+        csCaseId: pending.csCaseId ?? undefined,
+        note: pending.note ?? undefined,
+      };
+      const actor = { id: operation.operatorId, roles: [] };
+      await this.applyDraftCancellation(
+        aggregate,
+        selected,
+        operation.id,
+        dto,
+        actor,
+        trx,
+        (operation.beforeManifestSnapshot as ShipmentManifestSnapshot | null) ?? undefined,
+      );
+      const after = this.snapshot(await this.loadAggregate(pending.shipmentId, trx));
+      const response: CancelResponse = {
+        operationId,
+        operationStatus: 'completed',
+        shipmentId: pending.shipmentId,
+        manifestVersion: after.manifestVersion,
+        shipment: after,
+      };
+      await trx
+        .update(wmsTables.fulfillmentCommandRequests)
+        .set({
+          resourceType: 'shipment',
+          resourceId: pending.shipmentId,
+          responseSnapshot: response,
+          updatedAt: new Date(),
+        })
+        .where(eq(wmsTables.fulfillmentCommandRequests.operationId, operationId));
+      return response;
+    }, tx);
+  }
+
   async getShipmentDetail(shipmentId: string, tx?: DbTx): Promise<ShipmentDetailResponseDto> {
     return this.dbService.run(async (trx) => {
       const aggregate = await this.loadAggregate(shipmentId, trx);
@@ -574,7 +728,9 @@ export class ShipmentPlanningService {
     dto: CancelShipmentOutstandingDto,
     actor: ShipmentPlanningActor,
     tx: DbTx,
+    operationBefore?: ShipmentManifestSnapshot,
   ): Promise<void> {
+    const before = operationBefore ?? this.snapshot(aggregate);
     const confirmed = await this.confirmedReservationQtyByLine(
       selected.map((entry) => entry.line.id),
       tx,
@@ -650,7 +806,7 @@ export class ShipmentPlanningService {
       role: 'source' | 'target';
       before: ShipmentManifestSnapshot | null;
       after: ShipmentManifestSnapshot;
-    }> = [{ shipmentId: aggregate.shipment.id, role: 'source', before: this.snapshot(aggregate), after: sourceAfter }];
+    }> = [{ shipmentId: aggregate.shipment.id, role: 'source', before, after: sourceAfter }];
     if (tombstone) {
       members.push({
         shipmentId: tombstone.id,
@@ -663,7 +819,7 @@ export class ShipmentPlanningService {
     await this.auditCommand(tx, actor, 'shipment.cancel_outstanding', operationId, dto.reason, {
       shipmentId: aggregate.shipment.id,
       canceledLines: selected.map(({ request }) => request),
-      before: this.snapshot(aggregate),
+      before,
       after: members.map((member) => member.after),
     });
   }
@@ -1115,6 +1271,26 @@ export class ShipmentPlanningService {
     if (reservationVersion !== undefined && shipment.reservationVersion !== reservationVersion) {
       throw this.conflict('SHIPMENT_STALE_RESERVATION_VERSION', `Shipment ${shipment.id} reservations have changed`);
     }
+  }
+
+  private pendingCancellationIntent(value: unknown): PendingCancellationIntent {
+    const record = value as { pendingIntent?: PendingCancellationIntent } | null;
+    if (!record?.pendingIntent || record.pendingIntent.kind !== 'cancel_outstanding') {
+      throw this.conflict('CANCELLATION_PENDING_INTENT_MISSING', 'Pending cancellation intent is missing');
+    }
+    return record.pendingIntent;
+  }
+
+  private async completedCancellationResponse(operationId: string, tx: DbTx): Promise<CancelResponse> {
+    const [command] = await tx
+      .select({ response: wmsTables.fulfillmentCommandRequests.responseSnapshot })
+      .from(wmsTables.fulfillmentCommandRequests)
+      .where(eq(wmsTables.fulfillmentCommandRequests.operationId, operationId))
+      .limit(1);
+    if (!command?.response) {
+      throw this.conflict('CANCELLATION_COMMAND_RESULT_MISSING', 'Completed cancellation result is missing');
+    }
+    return command.response as CancelResponse;
   }
 
   private assertNoDuplicateIds(ids: string[], label: string): void {
