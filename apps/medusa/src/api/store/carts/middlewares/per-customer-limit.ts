@@ -15,7 +15,9 @@ export const perCustomerLimitMiddleware = async (req: any, res: any, next: any) 
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
   const promotionMetaService = req.scope.resolve(PROMOTION_META_MODULE);
 
-  for (const code of promoCodes) {
+  for (const rawCode of promoCodes) {
+    // 코드는 대문자 저장이 규약 — preview(toUpperCase)와 게이트 조회를 일치시킨다.
+    const code = rawCode.trim().toUpperCase();
     const { data: promotions } = await query.graph({
       entity: 'promotion',
       fields: ['id'],

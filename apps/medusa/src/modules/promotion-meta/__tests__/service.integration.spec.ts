@@ -68,6 +68,14 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         expect(await service.isAlreadyIssued('cust_a', 'promo_multi')).toBe(false);
         expect(await service.isAlreadyIssued('cust_b', 'promo_multi')).toBe(true);
       });
+
+      it('removeAllIssueLogs purges every log for the promotion (promotion delete)', async () => {
+        await service.recordIssue('cust_x', 'promo_del', 'admin_manual');
+        await service.recordIssue('cust_y', 'promo_del', 'customer_claim');
+        await service.removeAllIssueLogs('promo_del');
+        expect(await service.isAlreadyIssued('cust_x', 'promo_del')).toBe(false);
+        expect(await service.isAlreadyIssued('cust_y', 'promo_del')).toBe(false);
+      });
     });
   },
 });
