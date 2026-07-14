@@ -197,7 +197,9 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       if (isDuplicate) {
         skipped.push({ promotion_id: promo.id, reason: 'already_issued' });
       } else {
-        throw e;
+        // 배치 resilient: transient 링크 에러도 throw 하지 않고 skip — 나머지 쿠폰 처리 계속.
+        // (자동발급 issue-coupons 는 반대로 throw 해서 channel-adapter 재시도를 유발한다.)
+        skipped.push({ promotion_id: promo.id, reason: 'link_error' });
       }
     }
   }
@@ -244,9 +246,12 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
         [Modules.PROMOTION]: { promotion_id: promotionId },
       })),
     );
-    // 회수했으니 발급 수량 카운트 원복
+    // 회수했으니 발급 수량 카운트 원복 + 발급 로그 soft-delete(자동발급 재발급 허용)
     await Promise.all(
-      toRemove.map((id) => promotionMetaService.releaseClaimSlot(id).catch(() => {})),
+      toRemove.flatMap((id) => [
+        promotionMetaService.releaseClaimSlot(id).catch(() => {}),
+        promotionMetaService.removeIssueLog(customerId, id).catch(() => {}),
+      ]),
     );
   }
 

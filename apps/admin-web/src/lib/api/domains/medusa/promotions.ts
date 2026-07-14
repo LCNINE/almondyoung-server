@@ -10,7 +10,12 @@ export interface PromotionRule {
 }
 
 export interface PromotionTargetRule {
-  attribute: 'product_id' | 'product_category_id' | 'product_collection_id' | 'product_type_id';
+  // Medusa 라인아이템 컨텍스트 경로. 플랫 키는 매칭 불가 → dotted 경로만 사용.
+  attribute:
+    | 'items.product.id'
+    | 'items.product.categories.id'
+    | 'items.product.collection_id'
+    | 'items.product.type_id';
   operator: 'in';
   values: string[];
 }

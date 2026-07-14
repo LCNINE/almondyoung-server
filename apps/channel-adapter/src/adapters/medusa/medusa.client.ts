@@ -1951,8 +1951,19 @@ export class MedusaClient {
       return { issued, skipped };
     } catch (error) {
       const fetchError = error as FetchError;
+      const status = fetchError.status;
+      // 영구 실패(4xx, 429 제외)는 재시도해도 계속 실패 → throw 하지 않고 소진 처리.
+      // 재시도해봤자 inbox 재시도 5회 + 리컨실이 매일 무한 재구동하는 문제를 막는다.
+      const isPermanent = typeof status === 'number' && status >= 400 && status < 500 && status !== 429;
+      if (isPermanent) {
+        this.logger.error(
+          `issuePromotionsByTrigger permanent failure (customerId=${customerId}, trigger=${trigger}, status=${status}): ${fetchError.message} — 재시도 안 함`,
+        );
+        return { issued: 0, skipped: 0 };
+      }
+      // transient(5xx / 429 / 네트워크)만 throw → inbox 재시도 + 리컨실 재구동.
       this.logger.warn(
-        `issuePromotionsByTrigger failed (customerId=${customerId}, trigger=${trigger}): ${fetchError.message}`,
+        `issuePromotionsByTrigger transient failure (customerId=${customerId}, trigger=${trigger}, status=${status ?? 'n/a'}): ${fetchError.message}`,
       );
       throw new Error(`Medusa issuePromotionsByTrigger failed: ${fetchError.message}`);
     }

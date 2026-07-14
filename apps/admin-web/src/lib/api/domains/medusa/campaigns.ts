@@ -35,7 +35,7 @@ export interface CreateCampaignPayload {
   description?: string;
   starts_at?: string;
   ends_at?: string;
-  budget?: { type: 'usage' | 'spend'; limit: number };
+  budget?: { type: 'usage' | 'spend'; limit: number; currency_code?: string };
 }
 
 export interface UpdateCampaignPayload {

@@ -12,13 +12,9 @@ export async function formatExpiry(promo: Promotion) {
 
 export async function CouponTemplate() {
   const t = await getTranslations("mypage.coupon")
-  const data = await getMyPromotions({ limit: 50 }).catch(() => ({
-    promotions: [],
-    claimable_promotions: [],
-    count: 0,
-    offset: 0,
-    limit: 50,
-  }))
+  // API 실패를 빈 목록으로 삼키지 않는다 — 인증/서버 오류는 error.tsx로 전파해
+  // 토큰 복구 또는 에러 화면을 띄운다("쿠폰 없음" 오표기 방지).
+  const data = await getMyPromotions({ limit: 50 })
 
   const coupons = data.promotions as Promotion[]
   const claimableCoupons = (data.claimable_promotions ?? []) as Promotion[]

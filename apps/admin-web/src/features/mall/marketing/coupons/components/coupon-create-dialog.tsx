@@ -47,6 +47,14 @@ function generateCode() {
 
 type TargetAttribute = 'product_id' | 'product_category_id' | 'product_collection_id';
 
+// Medusa 라인아이템 컨텍스트가 노출하는 실제 경로로 매핑한다.
+// 플랫 키(product_category_id 등)는 라인아이템에 없어 룰이 절대 매칭되지 않음.
+const TARGET_ATTR_TO_MEDUSA: Record<TargetAttribute, PromotionTargetRule['attribute']> = {
+  product_id: 'items.product.id',
+  product_category_id: 'items.product.categories.id',
+  product_collection_id: 'items.product.collection_id',
+};
+
 interface SelectedItem {
   id: string;
   label: string;
@@ -205,7 +213,7 @@ export function CouponCreateDialog({
 
     const targetRules: PromotionTargetRule[] | undefined =
       targetType === 'items' && targetItems.length > 0
-        ? [{ attribute: targetAttribute, operator: 'in', values: targetItems.map((i) => i.id) }]
+        ? [{ attribute: TARGET_ATTR_TO_MEDUSA[targetAttribute], operator: 'in', values: targetItems.map((i) => i.id) }]
         : undefined;
 
     const promotionRules = [
