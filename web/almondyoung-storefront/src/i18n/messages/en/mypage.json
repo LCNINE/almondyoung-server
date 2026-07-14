@@ -900,12 +900,17 @@
       "processing": "Processing...",
       "titleUsedLine1": "You've already used this month's membership benefits.",
       "titleUsedLine2": "No refund will be issued, and your membership stays active until the period ends.",
-      "refundAccountHeading": "Refund account (for bank transfer payments)",
-      "refundAccountNote": "Enter this if you paid by bank transfer (virtual account). If you paid by card, leave it blank and the refund is automatic.",
+      "refundAccountHeading": "Refund account",
+      "refundAccountNote": "Enter the account you’d like your refund sent to, and we’ll refund the full amount you paid.",
       "bankPlaceholder": "Select bank",
       "accountNumberPlaceholder": "Account number (digits only)",
       "holderNamePlaceholder": "Account holder name",
-      "refundAccountIncomplete": "Please fill in the bank, account number, and holder name for the refund account."
+      "refundAccountIncomplete": "Please enter the bank, account number, and holder name.",
+      "next": "Next",
+      "back": "Back",
+      "refundStepTitle": "Confirm your refund details",
+      "stepReasonLabel": "Cancellation reason step",
+      "stepRefundLabel": "Refund details step"
     }
   },
   "orderActions": {

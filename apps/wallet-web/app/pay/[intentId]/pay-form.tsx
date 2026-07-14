@@ -150,8 +150,13 @@ export function PayForm({
   const isAvailableInRegion = (type: string) => !availableMethodMap || availableMethodMap.has(type);
   const regionLabel = getRegionLabel(region);
 
+  // 멤버십(MEMBERSHIP_FEE)은 무통장(가상계좌) 결제만 허용한다 — 카드/간편결제 비노출.
+  // 무통장은 자동갱신 불가라 멤버십은 1회결제로만 굴러가며, 정기결제(CMS 등)는 추후 별도 경로.
+  const isMembership = intent.metadata?.type === 'MEMBERSHIP_FEE';
+
   const externalMethods = methods
     .filter((m) => m.type !== 'POINTS' && isAvailableInRegion(m.type))
+    .filter((m) => !isMembership || m.type === 'BANK_TRANSFER')
     .sort((a, b) => {
       const aOrder = availableMethodMap?.get(a.type)?.sortOrder ?? 0;
       const bOrder = availableMethodMap?.get(b.type)?.sortOrder ?? 0;
@@ -223,9 +228,7 @@ export function PayForm({
   const isBankTransferSelected = externalMethods.find((m) => m.id === selectedMethodId)?.type === 'BANK_TRANSFER';
 
   const isRecurring = intent.metadata?.billingMode === 'recurring';
-  // 멤버십 결제(type: MEMBERSHIP_FEE)는 포인트 사용 불가 — 정기결제 자동갱신 시 포인트 재적용이
-  // 불가능하고, 멤버십은 적립 혜택 대상이 아니므로 결제수단(카드 등)으로만 결제한다.
-  const isMembership = intent.metadata?.type === 'MEMBERSHIP_FEE';
+  // 멤버십 결제(type: MEMBERSHIP_FEE)는 포인트 사용 불가 — 멤버십은 적립 혜택 대상이 아니다.
   const isZeroAmount = intent.payableAmount === 0;
   const maxPoints = Math.min(availablePoints, intent.payableAmount);
   const remainingAmount = intent.payableAmount - (usePoints ? pointsAmount : 0);

@@ -7,7 +7,7 @@ import { getTranslations } from "next-intl/server"
 export default async function MembershipBenefitsPage() {
   const t = await getTranslations("mypage.membership")
   const subscription = await getCurrentSubscription().catch(() => null)
-  const isMember = subscription?.status === "ACTIVE"
+  const isMember = !!subscription
 
   return (
     <WithHeaderLayout

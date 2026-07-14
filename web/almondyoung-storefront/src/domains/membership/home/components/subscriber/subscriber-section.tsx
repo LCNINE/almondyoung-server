@@ -25,6 +25,7 @@ import type {
   RangeSavingsDto,
 } from "@lib/types/dto/membership-savings"
 import type { PlanWithTier } from "@lib/types/membership"
+import { Button } from "@/components/ui/button"
 
 /**
  * 멤버십 가입자 전용 섹션
@@ -74,7 +75,8 @@ export default function SubscriberSection({
   // 최종 환불 여부·금액은 서버가 확정하고, 여기선 모달 문구/환불계좌 노출을 위한 예측만 한다.
   const refundEligible =
     !currentBenefit ||
-    (currentBenefit.orderCount === 0 && currentBenefit.totalDiscountAmount === 0)
+    (currentBenefit.orderCount === 0 &&
+      currentBenefit.totalDiscountAmount === 0)
 
   const buildPlanBenefits = (plan?: PlanWithTier) => {
     if (!plan) return []
@@ -92,17 +94,17 @@ export default function SubscriberSection({
   const yearlyPlan = plans.find((plan) => plan.plan.durationDays === 365)
   const yearlyMonthlyPrice = yearlyPlan
     ? Math.round(
-      yearlyPlan.plan.price / Math.max(1, yearlyPlan.plan.durationDays / 30)
-    )
+        yearlyPlan.plan.price / Math.max(1, yearlyPlan.plan.durationDays / 30)
+      )
     : null
   const discountRate =
     yearlyPlan && monthlyPlan
       ? Math.max(
-        0,
-        Math.round(
-          (1 - yearlyPlan.plan.price / (monthlyPlan.plan.price * 12)) * 100
+          0,
+          Math.round(
+            (1 - yearlyPlan.plan.price / (monthlyPlan.plan.price * 12)) * 100
+          )
         )
-      )
       : null
 
   return (
@@ -120,7 +122,9 @@ export default function SubscriberSection({
         <IconTextButton
           label={t("billing.paymentMethod")}
           size="full"
-          onClick={() => router.push(`/${countryCode}/mypage/membership/payment-method`)}
+          onClick={() =>
+            router.push(`/${countryCode}/mypage/membership/payment-method`)
+          }
         />
       </section>
       <MembershipPlanCard
@@ -128,18 +132,28 @@ export default function SubscriberSection({
         price={yearlyPlan?.plan.price ?? 0}
         period={
           yearlyPlan
-            ? t("subscription.annualLongWithMonths", { months: Math.round(yearlyPlan.plan.durationDays / 30) })
+            ? t("subscription.annualLongWithMonths", {
+                months: Math.round(yearlyPlan.plan.durationDays / 30),
+              })
             : t("subscription.annualLong")
         }
         monthlyPrice={
           yearlyMonthlyPrice != null
-            ? t("billing.amountWon", { amount: yearlyMonthlyPrice.toLocaleString() })
+            ? t("billing.amountWon", {
+                amount: yearlyMonthlyPrice.toLocaleString(),
+              })
             : "-"
         }
-        discountRate={discountRate != null ? t("subscription.savingsRate", { discountRate }) : "-"}
+        discountRate={
+          discountRate != null
+            ? t("subscription.savingsRate", { discountRate })
+            : "-"
+        }
         benefitText={
           yearlyPlan?.plan.trialDays
-            ? t("subscription.freeTrialTitle", { days: yearlyPlan.plan.trialDays })
+            ? t("subscription.freeTrialTitle", {
+                days: yearlyPlan.plan.trialDays,
+              })
             : undefined
         }
         benefits={buildPlanBenefits(yearlyPlan)}
@@ -150,7 +164,7 @@ export default function SubscriberSection({
         {/* 구독 이력(별도 라우트, 페이지네이션) */}
         <LocalizedClientLink
           href="/mypage/membership/history"
-          className="text-foreground hover:bg-muted flex items-center justify-between rounded-lg border border-border bg-white px-4 py-3.5 text-sm font-medium transition-colors"
+          className="text-foreground hover:bg-muted border-border flex items-center justify-between rounded-lg border bg-white px-4 py-3.5 text-sm font-medium transition-colors"
         >
           <span>{t("history.subscriptionHistory")}</span>
           <ChevronRight className="text-muted-foreground h-4 w-4" />
@@ -158,7 +172,7 @@ export default function SubscriberSection({
         {/* 오독 혜택 안내(별도 라우트) */}
         <LocalizedClientLink
           href="/mypage/membership/benefits"
-          className="text-foreground hover:bg-muted flex items-center justify-between rounded-lg border border-border bg-white px-4 py-3.5 text-sm font-medium transition-colors"
+          className="text-foreground hover:bg-muted border-border flex items-center justify-between rounded-lg border bg-white px-4 py-3.5 text-sm font-medium transition-colors"
         >
           <span>{t("history.viewBenefitsGuide")}</span>
           <ChevronRight className="text-muted-foreground h-4 w-4" />
@@ -169,21 +183,17 @@ export default function SubscriberSection({
             href={LEGACY_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-foreground hover:bg-muted flex items-center justify-between rounded-lg border border-border bg-white px-4 py-3.5 text-sm font-medium transition-colors"
+            className="text-foreground hover:bg-muted border-border flex items-center justify-between rounded-lg border bg-white px-4 py-3.5 text-sm font-medium transition-colors"
           >
             <span>{t("history.legacyHistory")}</span>
             <ChevronRight className="text-muted-foreground h-4 w-4" />
           </a>
         )}
-        {/* 해지 버튼 — 왼쪽 정렬 + 경고 문구 */}
+        {/* 해지 버튼 */}
         <div className="mt-2 flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            className="text-foreground hover:bg-muted shrink-0 rounded-lg border border-border bg-white px-4 py-2.5 text-sm font-medium transition-colors"
-          >
+          <Button variant={"destructive"} onClick={() => setOpen(true)}>
             {t("history.cancelMembership")}
-          </button>
+          </Button>
           <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
             <AlertCircle className="h-4 w-4 shrink-0" />
             {t("history.cancelWarning")}
@@ -199,7 +209,11 @@ export default function SubscriberSection({
         onConfirm={async ({ reasonCode, reasonText, refundReceiveAccount }) => {
           try {
             setIsCancelling(true)
-            await cancelSubscription(reasonCode, reasonText, refundReceiveAccount)
+            await cancelSubscription(
+              reasonCode,
+              reasonText,
+              refundReceiveAccount
+            )
             setOpen(false)
             router.push(`/${countryCode}/mypage/membership`)
             pollCartRefreshUntilGroupRemoved(() => {

@@ -33,6 +33,7 @@ export async function getCurrentSubscription(): Promise<SubscriptionDetailsDto |
     )
     return normalizeCurrentSubscription(raw)
   } catch (error) {
+    console.error("에러에러:", error)
     if (error instanceof HttpApiError && error.status === 404) {
       return null
     }
@@ -147,7 +148,11 @@ export async function getCancellationReasons(): Promise<
 export async function cancelSubscription(
   reasonCode: string,
   reasonText?: string,
-  refundReceiveAccount?: { bank: string; accountNumber: string; holderName: string }
+  refundReceiveAccount?: {
+    bank: string
+    accountNumber: string
+    holderName: string
+  }
 ) {
   return await api("membership", "/subscriptions/cancel", {
     method: "POST",
