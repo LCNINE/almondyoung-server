@@ -88,7 +88,7 @@ export default function MemberDetails({
       <hr className="w-full border-t border-gray-200" />
 
       {/* 3. 이번달 절약 금액 히어로  */}
-      <article className="border-border flex w-full flex-col justify-center gap-1.5 rounded-2xl border bg-white py-6">
+      <article className="flex w-full flex-col justify-center gap-1.5 rounded-2xl bg-white py-6">
         <h3 className="text-muted-foreground text-center text-sm font-medium">
           {t("stats.monthlySavings")}
         </h3>
