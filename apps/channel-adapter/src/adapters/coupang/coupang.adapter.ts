@@ -419,7 +419,8 @@ export class CoupangAdapter implements ChannelAdapter {
         const internalEvent: InternalOrderEvent = {
           channelType: 'coupang',
           externalOrderId: orderSheet.orderId.toString(),
-          externalProductOrderId: orderItem.vendorItemId.toString(),
+          externalProductOrderId: orderItem.orderItemId?.toString(),
+          productId: orderItem.vendorItemId.toString(),
           status: mapCoupangStatusToInternal(orderSheet.status),
           lastChangedType: 'ORDER_STATUS_CHANGED',
           lastChangedAt: orderSheet.orderedAt,
@@ -481,7 +482,8 @@ export class CoupangAdapter implements ChannelAdapter {
     const internalEvent: InternalOrderEvent = {
       channelType: 'coupang',
       externalOrderId: orderSheet.orderId.toString(),
-      externalProductOrderId: firstOrderItem.vendorItemId.toString(),
+      externalProductOrderId: firstOrderItem.orderItemId?.toString(),
+      productId: firstOrderItem.vendorItemId.toString(),
       status: mapCoupangStatusToInternal(orderSheet.status),
       lastChangedType: 'SINGLE_ORDER_QUERY', // 단건 조회임을 명시
       lastChangedAt: orderSheet.orderedAt,

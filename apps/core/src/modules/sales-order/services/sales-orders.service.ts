@@ -100,6 +100,10 @@ type PriorPartialCancellationContext = {
   cancelledByLine: Map<string, number>;
   preservedShippedByFulfillmentItem: Map<string, number>;
 };
+type V2PlanningSalesOrderLineIdentity = {
+  id: string;
+  channelOrderItemId: string | null;
+};
 
 const ACCEPTED_CONTRACT_CHANNELS = new Set(['medusa', 'naver', 'coupang']);
 const CONTRACT_PATCH_FIELDS: SalesOrderContractField[] = [
@@ -172,6 +176,8 @@ export class SalesOrdersService {
   ) {}
 
   async create(dto: CreateSalesOrderDto, tx?: DbTx) {
+    this.assertUniqueTrustedChannelOrderItemIds(dto.salesChannel, Array.isArray(dto.lines) ? dto.lines : []);
+
     const timer = this.metrics?.startOrderTimer('create');
 
     return this.db.run(async (trx) => {
@@ -218,6 +224,8 @@ export class SalesOrdersService {
             !policy.inventoryManagement || policy.preStockSellable || policy.alwaysSellableZeroStock;
           values.push({
             salesOrderId: order.id,
+            channelOrderItemId: l.channelOrderItemId ?? null,
+            channelProductId: l.channelProductId ?? null,
             variantId: l.variantId,
             productMatchingId: l.productMatchingId ?? null,
             productName: l.productName ?? '',
@@ -884,6 +892,29 @@ export class SalesOrdersService {
       walletIntentId: payload.walletIntentId,
     };
     return this.create(dto, tx);
+  }
+
+  /**
+   * Task 10's V2 planning gate calls this before a trusted channel order can
+   * enter Planned. Expand-phase legacy rows remain readable/storable as null,
+   * but an internal ID must never be substituted for missing provider identity.
+   */
+  assertV2PlanningExternalLineIdentity(
+    salesChannel: string,
+    lines: V2PlanningSalesOrderLineIdentity[],
+  ): void {
+    if (!ACCEPTED_CONTRACT_CHANNELS.has(salesChannel)) {
+      return;
+    }
+
+    const missingLineIds = lines
+      .filter((line) => !line.channelOrderItemId?.trim())
+      .map((line) => line.id);
+    if (missingLineIds.length > 0) {
+      throw new BadRequestException(
+        `V2 planning requires channelOrderItemId for trusted channel lines: ${missingLineIds.join(', ')}`,
+      );
+    }
   }
 
   async updateFromEvent(id: string, changes: OrderModifiedPayload['changes'], tx?: DbTx) {
@@ -1994,6 +2025,8 @@ export class SalesOrdersService {
 
   private convertOrderItems(items: OrderItem[]) {
     return items.map((item) => ({
+      channelOrderItemId: item.orderItemId,
+      channelProductId: item.channelProductId,
       variantId: item.variantId,
       productName: item.productName,
       quantity: item.quantity,
@@ -2002,5 +2035,28 @@ export class SalesOrdersService {
       fulfillmentKind: item.fulfillmentKind,
       requiresShipping: item.requiresShipping,
     }));
+  }
+
+  private assertUniqueTrustedChannelOrderItemIds(
+    salesChannel: string,
+    lines: Array<{ channelOrderItemId?: string }>,
+  ): void {
+    if (!ACCEPTED_CONTRACT_CHANNELS.has(salesChannel)) {
+      return;
+    }
+
+    const seen = new Set<string>();
+    for (const line of lines) {
+      const orderItemId = line.channelOrderItemId?.trim();
+      if (!orderItemId) {
+        continue;
+      }
+      if (seen.has(orderItemId)) {
+        throw new BadRequestException(
+          `Duplicate channel order item ID in ${salesChannel} order: ${orderItemId}`,
+        );
+      }
+      seen.add(orderItemId);
+    }
   }
 }

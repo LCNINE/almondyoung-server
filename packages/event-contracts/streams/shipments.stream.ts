@@ -29,6 +29,8 @@ const ShipmentEventLineSchema = z
     fulfillmentOrderItemId: CoreUuidSchema,
     salesOrderLineId: CoreUuidSchema,
     channelOrderItemId: NonEmptyIdSchema,
+    /** Provider listing/product identity when it was captured at order ingress. */
+    channelProductId: NonEmptyIdSchema.optional(),
     skuId: CoreUuidSchema,
     qty: PositiveQuantitySchema,
     /** True only when this attempt ships less than the remaining quantity of this line. */

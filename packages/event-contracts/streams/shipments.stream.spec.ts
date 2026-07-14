@@ -31,6 +31,7 @@ const SHIPPED_PAYLOAD = {
           fulfillmentOrderItemId: '88888888-8888-4888-8888-888888888888',
           salesOrderLineId: '99999999-9999-4999-8999-999999999999',
           channelOrderItemId: 'channel-order-item-1',
+          channelProductId: 'channel-product-1',
           skuId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
           qty: 1,
           isPartialQuantity: false,
@@ -79,6 +80,17 @@ describe('SHIPMENT_STREAM', () => {
         orders: [{ ...SHIPPED_PAYLOAD.orders[0], lines: [line] }],
       }),
     ).toThrow();
+  });
+
+  it('accepts a legacy shipment line without channelProductId', () => {
+    const line = { ...SHIPPED_PAYLOAD.orders[0].lines[0] };
+    delete line.channelProductId;
+    expect(() =>
+      shippedSchema.parse({
+        ...SHIPPED_PAYLOAD,
+        orders: [{ ...SHIPPED_PAYLOAD.orders[0], lines: [line] }],
+      }),
+    ).not.toThrow();
   });
 
   it('uses UUIDs for Core-owned identities while keeping external channel ids opaque', () => {

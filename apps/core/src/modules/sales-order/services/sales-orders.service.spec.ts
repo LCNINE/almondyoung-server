@@ -1,6 +1,226 @@
 import { wmsTables } from '../../inventory/schema/inventory.schema';
 import { SalesOrderAmendmentsService } from './sales-order-amendments.service';
 import { SalesOrdersService } from './sales-orders.service';
+import { ORDER_STREAM, SHIPMENT_STREAM, type OrderCreatedPayload } from '@packages/event-contracts/streams';
+
+describe('SalesOrdersService external order-line identity', () => {
+  const salesOrderId = '11111111-1111-4111-8111-111111111111';
+  const variantId = '22222222-2222-4222-8222-222222222222';
+
+  function payload(items: OrderCreatedPayload['items']): OrderCreatedPayload {
+    return {
+      orderId: 'event-order-1',
+      externalOrderId: 'channel-order-1',
+      salesChannel: 'naver',
+      customerId: null,
+      items,
+      totalAmount: 1000,
+      subtotalAmount: 1000,
+      shippingAmount: 0,
+      discountAmount: 0,
+      currency: 'KRW',
+      shippingAddress: {
+        recipientName: 'Recipient',
+        phone: '',
+        postalCode: '',
+        roadAddress: '',
+        detailAddress: '',
+      },
+      status: 'confirmed',
+      createdAt: '2026-07-14T01:00:00.000Z',
+    };
+  }
+
+  function item(overrides: Partial<OrderCreatedPayload['items'][number]> = {}) {
+    return {
+      orderItemId: 'naver-product-order-1',
+      channelProductId: 'naver-product-1',
+      skuId: variantId,
+      masterId: 'master-1',
+      versionId: 'version-1',
+      variantId,
+      productName: 'Product',
+      quantity: 1,
+      unitPrice: 1000,
+      totalPrice: 1000,
+      ...overrides,
+    };
+  }
+
+  function makeService() {
+    const state = {
+      salesOrders: [] as Array<Record<string, any>>,
+      salesOrderLines: [] as Array<Record<string, any>>,
+    };
+    const tx: any = {
+      insert: jest.fn((table: unknown) => ({
+        values: (values: Record<string, any> | Array<Record<string, any>>) => {
+          if (table === wmsTables.salesOrders) {
+            const row = { id: salesOrderId, ...(values as Record<string, any>) };
+            state.salesOrders.push(row);
+            return { returning: jest.fn().mockResolvedValue([row]) };
+          }
+          if (table === wmsTables.salesOrderLines) {
+            const rows = Array.isArray(values) ? values : [values];
+            state.salesOrderLines.push(
+              ...rows.map((row, index) => ({
+                id: `sales-order-line-${index + 1}`,
+                ...row,
+              })),
+            );
+          }
+          return Promise.resolve();
+        },
+      })),
+    };
+    const db = { run: jest.fn((fn: (trx: any) => unknown, explicitTx?: any) => fn(explicitTx ?? tx)) };
+    const policies = {
+      getVariantPolicy: jest.fn().mockResolvedValue({
+        inventoryManagement: false,
+        preStockSellable: false,
+        alwaysSellableZeroStock: false,
+      }),
+    };
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const service = new SalesOrdersService(
+      db as any,
+      policies as any,
+      outbox as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    return { service, state, tx };
+  }
+
+  it('round-trips provider IDs through OrderCreated, Core SO line, and ShipmentShipped', async () => {
+    const { service, state } = makeService();
+    const orderEvent = ORDER_STREAM.events.OrderCreated.schema!.parse(payload([item()]));
+
+    await service.createFromEvent(orderEvent);
+
+    expect(state.salesOrderLines[0]).toMatchObject({
+      channelOrderItemId: 'naver-product-order-1',
+      channelProductId: 'naver-product-1',
+    });
+
+    const shipmentEvent = {
+      shipmentId: '33333333-3333-4333-8333-333333333333',
+      dispatchAttemptId: '44444444-4444-4444-8444-444444444444',
+      attemptNo: 1,
+      warehouseId: '55555555-5555-4555-8555-555555555555',
+      dispatchedAt: '2026-07-14T02:00:00.000Z',
+      invoice: {
+        invoiceId: '66666666-6666-4666-8666-666666666666',
+        carrier: 'CJ' as const,
+        trackingNo: 'tracking-1',
+      },
+      orders: [
+        {
+          salesOrderId,
+          fulfillmentOrderId: '77777777-7777-4777-8777-777777777777',
+          salesChannel: 'naver' as const,
+          channelOrderId: 'channel-order-1',
+          isPartial: false,
+          lines: [
+            {
+              shipmentLineId: '88888888-8888-4888-8888-888888888888',
+              fulfillmentOrderItemId: '99999999-9999-4999-8999-999999999999',
+              salesOrderLineId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+              channelOrderItemId: state.salesOrderLines[0].channelOrderItemId,
+              skuId: variantId,
+              qty: 1,
+              isPartialQuantity: false,
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(SHIPMENT_STREAM.events.ShipmentShipped.schema!.parse(shipmentEvent)).toEqual(shipmentEvent);
+    expect(shipmentEvent.orders[0].lines[0].channelOrderItemId).toBe(orderEvent.items[0].orderItemId);
+    expect(state.salesOrderLines[0].channelProductId).toBe(orderEvent.items[0].channelProductId);
+  });
+
+  it('stores absent legacy/manual identity as null without using channelOrderId', async () => {
+    const { service, state } = makeService();
+
+    await service.create({
+      channelOrderId: 'must-not-be-a-line-id',
+      salesChannel: '3pl',
+      shippingAddress: {
+        recipientName: 'Recipient',
+        phone: '',
+        postalCode: '',
+        roadAddress: '',
+        detailAddress: '',
+      },
+      lines: [{ variantId, productName: 'Manual product', quantity: 1 }],
+    });
+
+    expect(state.salesOrderLines[0]).toMatchObject({
+      channelOrderItemId: null,
+      channelProductId: null,
+    });
+    expect(state.salesOrderLines[0].channelOrderItemId).not.toBe('must-not-be-a-line-id');
+  });
+
+  it.each([
+    {
+      name: 'order-item-only',
+      input: { orderItemId: 'provider-order-item-only', channelProductId: undefined },
+      stored: { channelOrderItemId: 'provider-order-item-only', channelProductId: null },
+    },
+    {
+      name: 'product-only',
+      input: { orderItemId: undefined, channelProductId: 'provider-product-only' },
+      stored: { channelOrderItemId: null, channelProductId: 'provider-product-only' },
+    },
+  ])('stores a present $name identity without copying it into the other field', async ({ input, stored }) => {
+    const { service, state } = makeService();
+
+    await service.createFromEvent(payload([item(input)]));
+
+    expect(state.salesOrderLines[0]).toMatchObject(stored);
+  });
+
+  it('rejects duplicate trusted channel order-item IDs before inserting the order', async () => {
+    const { service, state } = makeService();
+
+    await expect(
+      service.createFromEvent(
+        payload([
+          item(),
+          item({ channelProductId: 'different-product', variantId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }),
+        ]),
+      ),
+    ).rejects.toThrow('Duplicate channel order item ID');
+    expect(state.salesOrders).toHaveLength(0);
+  });
+
+  it('allows an expand-phase missing identity but blocks it at the V2 planning boundary', async () => {
+    const { service, state } = makeService();
+    const legacyItem = item({ orderItemId: undefined, channelProductId: undefined });
+
+    await service.createFromEvent(payload([legacyItem]));
+
+    expect(state.salesOrderLines[0]).toMatchObject({
+      channelOrderItemId: null,
+      channelProductId: null,
+    });
+    expect(() =>
+      service.assertV2PlanningExternalLineIdentity('naver', [
+        { id: state.salesOrderLines[0].id, channelOrderItemId: state.salesOrderLines[0].channelOrderItemId },
+      ]),
+    ).toThrow('V2 planning requires channelOrderItemId');
+    expect(() =>
+      service.assertV2PlanningExternalLineIdentity('3pl', [
+        { id: state.salesOrderLines[0].id, channelOrderItemId: null },
+      ]),
+    ).not.toThrow();
+  });
+});
 
 function collectSqlFragments(value: unknown, seen = new WeakSet<object>()): string[] {
   if (typeof value === 'string') return [value];
@@ -666,12 +886,16 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
     ]);
     expect(outbox.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
-        eventType: expect.any(String),
+        eventType: 'SalesOrderCancelled',
         payload: expect.objectContaining({
-          orderCancellationId: 'cancellation-1',
+          orderId: salesOrderId,
+          channelOrderId: 'medusa_order_partial_1',
+          reason: 'CUSTOMER_REQUEST',
+          cancelledBy: 'admin-1',
           cancellationScope: 'partial',
           cancelledLines: [{ salesOrderLineId, quantity: 1 }],
-          walletRefundRef: 'wallet:refund:rf_partial_1',
+          refundRequired: false,
+          refundAmount: 5000,
         }),
       }),
       tx,
@@ -846,10 +1070,13 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
     ]);
     expect(outbox.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
+        eventType: 'SalesOrderCancelled',
         payload: expect.objectContaining({
-          orderCancellationId: 'cancellation-1',
-          postShipmentHandoffRefs: ['return:request:ret_partial_1'],
-          walletRefundRef: 'wallet:refund:rf_partial_shipped_1',
+          orderId: salesOrderId,
+          cancellationScope: 'partial',
+          cancelledLines: [{ salesOrderLineId, quantity: 1 }],
+          refundRequired: false,
+          refundAmount: 5000,
         }),
       }),
       expect.anything(),
@@ -956,9 +1183,12 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
     );
     expect(outbox.enqueue).toHaveBeenLastCalledWith(
       expect.objectContaining({
+        eventType: 'SalesOrderCancelled',
         payload: expect.objectContaining({
-          orderCancellationId: 'cancellation-2',
-          postShipmentHandoffRefs: ['return:request:ret_partial_2'],
+          orderId: salesOrderId,
+          cancellationScope: 'partial',
+          cancelledLines: [{ salesOrderLineId, quantity: 1 }],
+          refundRequired: false,
         }),
       }),
       expect.anything(),
@@ -1034,8 +1264,12 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
     ]);
     expect(outbox.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
+        eventType: 'SalesOrderCancelled',
         payload: expect.objectContaining({
-          postShipmentHandoffRefs: ['return:request:ret_fo_level_shipped'],
+          orderId: salesOrderId,
+          cancellationScope: 'partial',
+          cancelledLines: [{ salesOrderLineId, quantity: 1 }],
+          refundRequired: false,
         }),
       }),
       expect.anything(),
@@ -1112,8 +1346,12 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
     ]);
     expect(outbox.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
+        eventType: 'SalesOrderCancelled',
         payload: expect.objectContaining({
-          postShipmentHandoffRefs: ['return:request:ret_fo_level_partial_counter'],
+          orderId: salesOrderId,
+          cancellationScope: 'partial',
+          cancelledLines: [{ salesOrderLineId, quantity: 1 }],
+          refundRequired: false,
         }),
       }),
       expect.anything(),

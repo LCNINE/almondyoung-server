@@ -114,7 +114,7 @@ export class MedusaOrderProvider implements ReplayableChannelOrderProvider {
         versionId: pimVersionId,
         variantId: pimVariantId,
         productName: item.title ?? item.variant?.title ?? item.variant_id ?? item.id,
-        channelProductId: item.variant_id ?? item.id,
+        ...(item.variant_id ? { channelProductId: item.variant_id } : {}),
         quantity: item.quantity ?? 1,
         unitPrice: item.unit_price ?? 0,
         totalPrice: (item.unit_price ?? 0) * (item.quantity ?? 1),

@@ -799,6 +799,10 @@ export class NaverSmartstoreAdapter implements ChannelAdapter {
         channelType: 'naver_smartstore',
         externalOrderId: typedInfo.order?.orderId || '',
         externalProductOrderId: typedInfo.productOrder?.productOrderId || '',
+        productId:
+          typedInfo.productOrder?.productId === undefined || typedInfo.productOrder?.productId === null
+            ? undefined
+            : String(typedInfo.productOrder.productId),
         status: this.mapNaverStatusToInternal(typedInfo.productOrder?.productOrderStatus || ''),
         paymentDate: typedInfo.order?.paymentDate || '',
         quantity: typedInfo.productOrder?.quantity || 0,
