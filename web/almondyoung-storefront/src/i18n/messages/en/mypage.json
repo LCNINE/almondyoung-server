@@ -743,7 +743,8 @@
       "orderCountUnit": "{count} orders",
       "trialEndImmediately": "Cancelling your free trial ends service immediately. (Auto-billing scheduled for: {date})",
       "cancelNotice": "After cancelling you can still use the service until {date}, after which auto-billing stops.",
-      "cancelRecurring": "Cancel auto-renewal"
+      "cancelRecurring": "Cancel auto-renewal",
+      "addPayment": "Add membership payment"
     },
     "stats": {
       "monthlySavings": "Savings this month",
@@ -911,7 +912,8 @@
       "refundStepTitle": "Confirm your refund details",
       "stepReasonLabel": "Cancellation reason step",
       "stepRefundLabel": "Refund details step"
-    }
+    },
+    "manageTitle": "Membership"
   },
   "orderActions": {
     "trackDelivery": "Track delivery",
