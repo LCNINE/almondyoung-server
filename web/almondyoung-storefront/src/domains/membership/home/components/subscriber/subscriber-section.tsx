@@ -2,7 +2,7 @@
 
 import { useParams, useRouter } from "next/navigation"
 import { useMemo, useState } from "react"
-import { AlertCircle, ChevronRight } from "lucide-react"
+import { ChevronRight, ExternalLink } from "lucide-react"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { useTranslations } from "next-intl"
 import { MembershipCancelModal } from "../../../components/modal"
@@ -23,7 +23,6 @@ import type {
   RangeSavingsDto,
 } from "@lib/types/dto/membership-savings"
 import type { PlanWithTier } from "@lib/types/membership"
-import { Button } from "@/components/ui/button"
 
 /**
  * 멤버십 가입자 전용 섹션
@@ -46,6 +45,10 @@ interface SubscriberSectionProps {
   benefitHistory: CycleBenefitHistoryDto | null
   hasCafe24Link: boolean
 }
+
+/** 설정 리스트 한 행 (Karrot 설정 리스트: 56px 높이, 16px 타이틀) */
+const ROW =
+  "text-foreground hover:bg-muted flex items-center justify-between px-4 py-4 text-base font-medium transition-colors"
 
 const LEGACY_URL =
   process.env.NEXT_PUBLIC_LEGACY_MEMBERSHIP_HISTORY_URL ??
@@ -77,32 +80,11 @@ export default function SubscriberSection({
 
   return (
     <>
-      {/* 멤버십 관리 헤더 (타이틀 + 결제수단 변경) */}
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-foreground text-lg font-bold">
-          {t("manageTitle")}
-        </h2>
-
-        {/* TODO: CMS 기능이 정상동작하면 이걸로 변경  */}
-        {/* <Button
-          variant={"outline"}
-          onClick={() =>
-            router.push(`/${countryCode}/mypage/membership/payment-method`)
-          }
-        >
-          {t("billing.paymentMethod")}
-        </Button> */}
-
-        {/* CMS 전까지는 무통장 1회결제라 다음 기간 재결제(추가결제)로 안내 , 이후엔 이 버튼제거하고 위에 TODO적힌거로 할것! */}
-        <Button
-          variant={"outline"}
-          onClick={() =>
-            router.push(`/${countryCode}/mypage/membership/subscribe/payment`)
-          }
-        >
-          {t("billing.addPayment")}
-        </Button>
-      </div>
+      {/* 멤버십 관리 헤더 */}
+      {/* TODO: CMS 기능이 정상동작하면 결제수단 변경(/mypage/membership/payment-method) 버튼 추가 */}
+      <h2 className="text-foreground mb-3 text-lg font-bold">
+        {t("manageTitle")}
+      </h2>
 
       {/* 멤버십 회원 전용 섹션 */}
       <MembershipStatusSection>
@@ -113,42 +95,45 @@ export default function SubscriberSection({
         />
       </MembershipStatusSection>
       {/* 하단 액션 그룹 */}
-      <div className="mt-6 flex flex-col gap-2">
-        {/* 구독 이력(별도 라우트, 페이지네이션) */}
-        <LocalizedClientLink
-          href="/mypage/membership/history"
-          className="text-foreground hover:bg-muted border-border flex items-center justify-between rounded-lg border bg-white px-4 py-3.5 text-sm font-medium transition-colors"
-        >
-          <span>{t("history.subscriptionHistory")}</span>
-          <ChevronRight className="text-muted-foreground h-4 w-4" />
-        </LocalizedClientLink>
-        {/* 멤버십 혜택 안내(별도 라우트) */}
-        <LocalizedClientLink
-          href="/mypage/membership/benefits"
-          className="text-foreground hover:bg-muted border-border flex items-center justify-between rounded-lg border bg-white px-4 py-3.5 text-sm font-medium transition-colors"
-        >
-          <span>{t("history.viewBenefitsGuide")}</span>
-          <ChevronRight className="text-muted-foreground h-4 w-4" />
-        </LocalizedClientLink>
-        {/* 기존 아몬드영 멤버십 내역 (Cafe24 연동 고객 전용) */}
-        {hasCafe24Link && (
-          <a
-            href={LEGACY_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-foreground hover:bg-muted border-border flex items-center justify-between rounded-lg border bg-white px-4 py-3.5 text-sm font-medium transition-colors"
+      <div className="mt-6">
+        {/* 설정 리스트: 행마다 카드를 두르지 않고 카드 하나를 hairline 으로 나눈다 */}
+        <div className="border-border divide-border divide-y overflow-hidden rounded-xl border bg-white">
+          {/* 구독 이력(별도 라우트, 페이지네이션) */}
+          <LocalizedClientLink href="/mypage/membership/history" className={ROW}>
+            <span>{t("history.subscriptionHistory")}</span>
+            <ChevronRight className="h-4 w-4 shrink-0 text-[#b0b3ba]" />
+          </LocalizedClientLink>
+          {/* 멤버십 혜택 안내(별도 라우트) */}
+          <LocalizedClientLink
+            href="/mypage/membership/benefits"
+            className={ROW}
           >
-            <span>{t("history.legacyHistory")}</span>
-            <ChevronRight className="text-muted-foreground h-4 w-4" />
-          </a>
-        )}
-        {/* 해지 버튼 */}
-        <div className="mt-2 flex items-center gap-3">
-          <Button variant={"destructive"} onClick={() => setOpen(true)}>
+            <span>{t("history.viewBenefitsGuide")}</span>
+            <ChevronRight className="h-4 w-4 shrink-0 text-[#b0b3ba]" />
+          </LocalizedClientLink>
+          {/* 기존 아몬드영 멤버십 내역 (Cafe24 연동 고객 전용) */}
+          {hasCafe24Link && (
+            <a
+              href={LEGACY_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={ROW}
+            >
+              <span>{t("history.legacyHistory")}</span>
+              <ExternalLink className="h-4 w-4 shrink-0 text-[#b0b3ba]" />
+            </a>
+          )}
+        </div>
+        {/* 해지 (파괴적 액션이라 리스트 밖, 눈에 덜 띄는 텍스트 버튼) */}
+        <div className="mt-6 flex flex-col items-start gap-2">
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="text-muted-foreground hover:text-foreground text-sm underline underline-offset-4 transition-colors"
+          >
             {t("history.cancelMembership")}
-          </Button>
-          <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
-            <AlertCircle className="h-4 w-4 shrink-0" />
+          </button>
+          <p className="text-muted-foreground text-xs">
             {t("history.cancelWarning")}
           </p>
         </div>
