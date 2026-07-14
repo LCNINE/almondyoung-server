@@ -743,7 +743,8 @@
       "orderCountUnit": "{count} 件",
       "trialEndImmediately": "無料体験を解約すると即時利用が終了します。(自動決済予定日: {date})",
       "cancelNotice": "解約しても {date} までサービスを利用でき、その後自動決済が停止します。",
-      "cancelRecurring": "定期決済を解約する"
+      "cancelRecurring": "定期決済を解約する",
+      "addPayment": "メンバーシップ追加決済"
     },
     "stats": {
       "monthlySavings": "今月の節約金額",
@@ -911,7 +912,8 @@
       "refundStepTitle": "返金情報をご確認ください",
       "stepReasonLabel": "解約理由ステップ",
       "stepRefundLabel": "返金情報ステップ"
-    }
+    },
+    "manageTitle": "メンバーシップ管理"
   },
   "orderActions": {
     "trackDelivery": "配送照会",

@@ -743,7 +743,8 @@
       "orderCountUnit": "{count}건",
       "trialEndImmediately": "무료 체험을 해지하면 즉시 이용이 종료됩니다. (자동 결제 예정일: {date})",
       "cancelNotice": "해지 시 {date}까지 서비스를 이용하실 수 있으며, 이후 자동 결제가 중단됩니다.",
-      "cancelRecurring": "정기결제 해지하기"
+      "cancelRecurring": "정기결제 해지하기",
+      "addPayment": "멤버십 추가결제"
     },
     "stats": {
       "monthlySavings": "이번달 멤버십으로 절약한 금액",
@@ -911,7 +912,8 @@
       "refundStepTitle": "환불 정보를 확인해 주세요",
       "stepReasonLabel": "해지 사유 단계",
       "stepRefundLabel": "환불 정보 단계"
-    }
+    },
+    "manageTitle": "멤버십 관리"
   },
   "page": {
     "trackDelivery": "배송 조회",

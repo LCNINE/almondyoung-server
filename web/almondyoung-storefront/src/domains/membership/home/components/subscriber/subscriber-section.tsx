@@ -5,9 +5,7 @@ import { useMemo, useState } from "react"
 import { AlertCircle, ChevronRight } from "lucide-react"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { useTranslations } from "next-intl"
-import { IconTextButton } from "../../../components/icon-button"
 import { MembershipCancelModal } from "../../../components/modal"
-import MembershipPlanCard from "../membership-benefit-card"
 import MembershipStatusSection from "domains/membership/components/status-selection"
 import MemberDetails from "./member-details"
 import { cancelSubscription } from "@/lib/api/membership"
@@ -55,7 +53,6 @@ const LEGACY_URL =
 
 export default function SubscriberSection({
   membershipData,
-  plans,
   currentSavings,
   cancellationReasons,
   currentBenefit,
@@ -78,37 +75,35 @@ export default function SubscriberSection({
     (currentBenefit.orderCount === 0 &&
       currentBenefit.totalDiscountAmount === 0)
 
-  const buildPlanBenefits = (plan?: PlanWithTier) => {
-    if (!plan) return []
-    const benefits = []
-    if (plan.plan.trialDays > 0) {
-      benefits.push({
-        id: `${plan.plan.id}-trial`,
-        title: t("subscription.freeTrialTitle", { days: plan.plan.trialDays }),
-      })
-    }
-    return benefits
-  }
-
-  const monthlyPlan = plans.find((plan) => plan.plan.durationDays === 30)
-  const yearlyPlan = plans.find((plan) => plan.plan.durationDays === 365)
-  const yearlyMonthlyPrice = yearlyPlan
-    ? Math.round(
-        yearlyPlan.plan.price / Math.max(1, yearlyPlan.plan.durationDays / 30)
-      )
-    : null
-  const discountRate =
-    yearlyPlan && monthlyPlan
-      ? Math.max(
-          0,
-          Math.round(
-            (1 - yearlyPlan.plan.price / (monthlyPlan.plan.price * 12)) * 100
-          )
-        )
-      : null
-
   return (
     <>
+      {/* 멤버십 관리 헤더 (타이틀 + 결제수단 변경) */}
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-foreground text-lg font-bold">
+          {t("manageTitle")}
+        </h2>
+
+        {/* TODO: CMS 기능이 정상동작하면 이걸로 변경  */}
+        {/* <Button
+          variant={"outline"}
+          onClick={() =>
+            router.push(`/${countryCode}/mypage/membership/payment-method`)
+          }
+        >
+          {t("billing.paymentMethod")}
+        </Button> */}
+
+        {/* CMS 전까지는 무통장 1회결제라 다음 기간 재결제(추가결제)로 안내 , 이후엔 이 버튼제거하고 위에 TODO적힌거로 할것! */}
+        <Button
+          variant={"outline"}
+          onClick={() =>
+            router.push(`/${countryCode}/mypage/membership/subscribe/payment`)
+          }
+        >
+          {t("billing.addPayment")}
+        </Button>
+      </div>
+
       {/* 멤버십 회원 전용 섹션 */}
       <MembershipStatusSection>
         <MemberDetails
@@ -117,48 +112,6 @@ export default function SubscriberSection({
           currentBenefit={currentBenefit}
         />
       </MembershipStatusSection>
-      <section className="mb-6 flex flex-col gap-4">
-        {/* 월회비 결제수단 변경 */}
-        <IconTextButton
-          label={t("billing.paymentMethod")}
-          size="full"
-          onClick={() =>
-            router.push(`/${countryCode}/mypage/membership/payment-method`)
-          }
-        />
-      </section>
-      <MembershipPlanCard
-        planName={yearlyPlan?.tier?.name ?? t("benefits.planNameDefault")}
-        price={yearlyPlan?.plan.price ?? 0}
-        period={
-          yearlyPlan
-            ? t("subscription.annualLongWithMonths", {
-                months: Math.round(yearlyPlan.plan.durationDays / 30),
-              })
-            : t("subscription.annualLong")
-        }
-        monthlyPrice={
-          yearlyMonthlyPrice != null
-            ? t("billing.amountWon", {
-                amount: yearlyMonthlyPrice.toLocaleString(),
-              })
-            : "-"
-        }
-        discountRate={
-          discountRate != null
-            ? t("subscription.savingsRate", { discountRate })
-            : "-"
-        }
-        benefitText={
-          yearlyPlan?.plan.trialDays
-            ? t("subscription.freeTrialTitle", {
-                days: yearlyPlan.plan.trialDays,
-              })
-            : undefined
-        }
-        benefits={buildPlanBenefits(yearlyPlan)}
-        variant="annual"
-      />
       {/* 하단 액션 그룹 */}
       <div className="mt-6 flex flex-col gap-2">
         {/* 구독 이력(별도 라우트, 페이지네이션) */}
