@@ -31,7 +31,7 @@ export class OutboundBatchController {
   constructor(private readonly outboundBatchService: OutboundBatchService) {}
 
   @Post()
-  @ApiOperation({ summary: '아웃바운드 배치 생성' })
+  @ApiOperation({ summary: '아웃바운드 배치 생성 (legacy)', deprecated: true })
   @ApiResponse({ status: 201, description: '아웃바운드 배치 생성 성공 — { batchId, linkedFoCount }' })
   @UsePipes(new ZodValidationPipe(CreateBatchSchema))
   async createBatch(@Body() dto: z.infer<typeof CreateBatchSchema>) {
@@ -70,7 +70,7 @@ export class OutboundBatchController {
   }
 
   @Post(':id/fulfillment-orders')
-  @ApiOperation({ summary: '배치에 주문처리 추가' })
+  @ApiOperation({ summary: '배치에 주문처리 추가 (legacy)', deprecated: true })
   @ApiParam({ name: 'id', description: '배치 ID' })
   // 파이프는 @Body 에만 스코프한다. 메서드 레벨 @UsePipes 는 @Param('id') 문자열까지
   // object 스키마로 파싱해 "Validation failed" 로 터뜨린다.
@@ -83,7 +83,7 @@ export class OutboundBatchController {
   }
 
   @Delete(':id/fulfillment-orders/:foId')
-  @ApiOperation({ summary: '배치에서 주문처리 제거' })
+  @ApiOperation({ summary: '배치에서 주문처리 제거 (legacy)', deprecated: true })
   @ApiParam({ name: 'id', description: '배치 ID' })
   @ApiParam({ name: 'foId', description: '제거할 주문처리 ID' })
   async removeFulfillmentOrder(@Param('id') batchId: string, @Param('foId') fulfillmentOrderId: string) {
@@ -92,7 +92,7 @@ export class OutboundBatchController {
   }
 
   @Post(':id/start-picking')
-  @ApiOperation({ summary: '배치 피킹 시작' })
+  @ApiOperation({ summary: '배치 피킹 시작 (legacy)', deprecated: true })
   @ApiParam({ name: 'id', description: '배치 ID' })
   async startPicking(@Param('id') batchId: string) {
     await this.outboundBatchService.startPicking(batchId);
@@ -100,7 +100,7 @@ export class OutboundBatchController {
   }
 
   @Post(':id/complete')
-  @ApiOperation({ summary: '배치 완료' })
+  @ApiOperation({ summary: '배치 완료 (legacy)', deprecated: true })
   @ApiParam({ name: 'id', description: '배치 ID' })
   async completeBatch(@Param('id') batchId: string) {
     await this.outboundBatchService.completeBatch(batchId);
@@ -108,7 +108,7 @@ export class OutboundBatchController {
   }
 
   @Post(':id/cancel')
-  @ApiOperation({ summary: '배치 취소' })
+  @ApiOperation({ summary: '배치 취소 (legacy)', deprecated: true })
   @ApiParam({ name: 'id', description: '배치 ID' })
   async cancelBatch(@Param('id') batchId: string) {
     await this.outboundBatchService.cancelBatch(batchId);

@@ -71,6 +71,10 @@ export class FulfillmentOrderTransactionService {
     }, tx);
   }
 
+  /**
+   * Legacy-only FO allocation. The workflow gate closes this writer in V2 so new
+   * membership can exist only as an outbound_batch_work_item owned by a shipment.
+   */
   async allocateToOutboundBatch(fulfillmentOrderId: string, batchId: string, tx?: DbTx): Promise<void> {
     this.workflowGate.assertMutationAllowed('fulfillment_order.allocate');
     return this.dbService.run(async (trx) => {

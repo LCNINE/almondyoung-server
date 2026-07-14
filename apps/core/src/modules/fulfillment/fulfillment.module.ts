@@ -44,6 +44,7 @@ import { FulfillmentCommandService } from './services/fulfillment-command.servic
 import { ShipmentPlanningService } from './services/shipment-planning.service';
 import { InvoiceOrchestrator } from './services/invoice-orchestrator.service';
 import { InvoiceRecoveryWorker } from './services/invoice-recovery.worker';
+import { OutboundBatchOrchestrator } from './services/outbound-batch-orchestrator.service';
 
 // Controllers
 import { FulfillmentsController } from './controllers/fulfillments.controller';
@@ -57,6 +58,7 @@ import { InvoiceController } from './controllers/invoice.controller';
 import { LocationOptimizationController } from './controllers/location-optimization.controller';
 import { ShipmentPlanningController } from './controllers/shipment-planning.controller';
 import { ShipmentInvoiceController } from './controllers/shipment-invoice.controller';
+import { OutboundBatchV2Controller } from './controllers/outbound-batch-v2.controller';
 
 @Module({
   imports: [
@@ -88,6 +90,8 @@ import { ShipmentInvoiceController } from './controllers/shipment-invoice.contro
   controllers: [
     FulfillmentsController,
     FulfillmentOrderController,
+    // Static V2 outbound-batch routes must be registered before the legacy `:id` reader.
+    OutboundBatchV2Controller,
     OutboundBatchController,
     PickingController,
     ShipmentController,
@@ -130,6 +134,7 @@ import { ShipmentInvoiceController } from './controllers/shipment-invoice.contro
     ShipmentPlanningService,
     InvoiceOrchestrator,
     InvoiceRecoveryWorker,
+    OutboundBatchOrchestrator,
   ],
   exports: [
     FulfillmentProgressService,
@@ -139,6 +144,7 @@ import { ShipmentInvoiceController } from './controllers/shipment-invoice.contro
     FulfillmentCommandService,
     ShipmentPlanningService,
     InvoiceOrchestrator,
+    OutboundBatchOrchestrator,
   ],
 })
 export class FulfillmentModule {}

@@ -117,6 +117,22 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
     };
   }
 
+  async function seedActiveWorkItem(tx: DbTx, warehouseId: string, shipmentId: string, waitingOperationId?: string) {
+    const [batch] = await tx
+      .insert(wmsTables.outboundBatches)
+      .values({
+        batchNumber: `planning-test-${randomUUID()}`,
+        warehouseId,
+        pickingMethod: 'individual',
+      })
+      .returning();
+    const [workItem] = await tx
+      .insert(wmsTables.outboundBatchWorkItems)
+      .values({ batchId: batch.id, shipmentId, waitingOperationId })
+      .returning();
+    return workItem;
+  }
+
   it('splits 10 into 6/4 unreserved-first, replays, and rejects a changed request for the same key', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await physicalFixture(tx, 10, 6);
@@ -194,6 +210,7 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
   it('stores a durable cancellation intent when a Planned shipment must reopen', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await physicalFixture(tx, 3, 3);
+      const workItem = await seedActiveWorkItem(tx, fixture.warehouseId, fixture.shipment.id);
       await tx
         .update(wmsTables.shipments)
         .set({ status: 'planned' })
@@ -224,6 +241,10 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
         .select()
         .from(wmsTables.shipments)
         .where(eq(wmsTables.shipments.id, fixture.shipment.id));
+      const [waitingWorkItem] = await tx
+        .select()
+        .from(wmsTables.outboundBatchWorkItems)
+        .where(eq(wmsTables.outboundBatchWorkItems.id, workItem.id));
       expect(operation).toMatchObject({ status: 'pending', idempotencyKey: key });
       expect(operation.afterManifestSnapshot).toMatchObject({
         pendingIntent: {
@@ -232,8 +253,70 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
         },
       });
       expect(member.afterManifestSnapshot).toEqual(operation.afterManifestSnapshot);
+      expect(waitingWorkItem.waitingOperationId).toBe(result.operationId);
       expect(shipment).toMatchObject({ status: 'recovery_required', recoveryCode: 'CANCEL_REPLAN_PENDING' });
       expect(shipment.manifestVersion).toBe(fixture.shipment.manifestVersion);
+    });
+  });
+
+  it('rejects replacing a work item waiting operation and rolls the new cancellation back', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await physicalFixture(tx, 3, 3);
+      const existingOperationId = randomUUID();
+      await tx.insert(wmsTables.shipmentOperations).values({
+        id: existingOperationId,
+        type: 'consolidate',
+        status: 'pending',
+        operatorId: actor.id,
+        reason: 'existing recovery prerequisite',
+        idempotencyKey: `existing-wait-${randomUUID()}`,
+        requestHash: '0'.repeat(64),
+      });
+      const workItem = await seedActiveWorkItem(tx, fixture.warehouseId, fixture.shipment.id, existingOperationId);
+      await tx
+        .update(wmsTables.shipments)
+        .set({ status: 'planned' })
+        .where(eq(wmsTables.shipments.id, fixture.shipment.id));
+      const key = `conflicting-pending-cancel-${randomUUID()}`;
+
+      let error: unknown;
+      try {
+        await tx.transaction((nestedTx) =>
+          planning.cancelOutstanding(
+            fixture.shipment.id,
+            {
+              expectedManifestVersion: fixture.shipment.manifestVersion,
+              reason: 'must not replace existing recovery',
+              lines: [{ shipmentLineId: fixture.line.id, expectedLineVersion: fixture.line.lineVersion, qty: 1 }],
+            },
+            key,
+            actor,
+            nestedTx as unknown as DbTx,
+          ),
+        );
+      } catch (caught) {
+        error = caught;
+      }
+
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).getResponse()).toMatchObject({
+        code: 'CANCELLATION_WORK_ITEM_ALREADY_WAITING',
+      });
+      const [unchangedWorkItem] = await tx
+        .select()
+        .from(wmsTables.outboundBatchWorkItems)
+        .where(eq(wmsTables.outboundBatchWorkItems.id, workItem.id));
+      const [unchangedShipment] = await tx
+        .select()
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, fixture.shipment.id));
+      const [rolledBackCommand] = await tx
+        .select({ id: wmsTables.fulfillmentCommandRequests.id })
+        .from(wmsTables.fulfillmentCommandRequests)
+        .where(eq(wmsTables.fulfillmentCommandRequests.idempotencyKey, key));
+      expect(unchangedWorkItem.waitingOperationId).toBe(existingOperationId);
+      expect(unchangedShipment.status).toBe('planned');
+      expect(rolledBackCommand).toBeUndefined();
     });
   });
 

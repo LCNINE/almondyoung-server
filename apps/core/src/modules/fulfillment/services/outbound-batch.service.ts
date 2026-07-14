@@ -1,8 +1,15 @@
-import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+  GoneException,
+} from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { DbService } from '@app/db';
-import { and, eq, inArray, isNull, desc, lt, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, desc, lt, ne, sql } from 'drizzle-orm';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 
 export interface CreateOutboundBatchDto {
@@ -54,6 +61,38 @@ export interface PickingListItem {
     qty: number;
     pickedQty: number;
   }>;
+}
+
+export function deriveOutboundBatchV2ReadSummary(
+  rows: Array<{ workItemId: string; status: string; shipmentLineId: string | null; lineQty: number | null }>,
+  storedStatus: 'created' | 'picking' | 'completed' | 'canceled',
+): {
+  status: 'created' | 'picking' | 'completed' | 'canceled';
+  totalItems: number;
+  totalQty: number;
+} {
+  const statusByItem = new Map<string, string>();
+  let totalItems = 0;
+  let totalQty = 0;
+  for (const row of rows) {
+    statusByItem.set(row.workItemId, row.status);
+    if (!['completed', 'excluded'].includes(row.status) && row.shipmentLineId) {
+      totalItems += 1;
+      totalQty += row.lineQty ?? 0;
+    }
+  }
+  const includedStatuses = [...statusByItem.values()].filter((status) => status !== 'excluded');
+  const status =
+    storedStatus === 'completed' || storedStatus === 'canceled'
+      ? storedStatus
+      : includedStatuses.length === 0
+        ? 'created'
+        : includedStatuses.every((value) => value === 'completed')
+          ? 'completed'
+          : includedStatuses.some((value) => value !== 'queued')
+            ? 'picking'
+            : 'created';
+  return { status, totalItems, totalQty };
 }
 
 @Injectable()
@@ -114,9 +153,7 @@ export class OutboundBatchService {
 
         const foWarehouseId = eligible[0].warehouseId!;
         if (dtoWarehouseId && dtoWarehouseId !== foWarehouseId) {
-          throw new ConflictException(
-            `요청한 창고(${dtoWarehouseId})와 주문처리 창고(${foWarehouseId})가 다릅니다.`,
-          );
+          throw new ConflictException(`요청한 창고(${dtoWarehouseId})와 주문처리 창고(${foWarehouseId})가 다릅니다.`);
         }
 
         foIdsToLink = eligible.map((fo) => fo.id);
@@ -471,7 +508,8 @@ export class OutboundBatchService {
         throw new NotFoundException(`Outbound batch ${batchId} not found`);
       }
 
-      const fos = await trx
+      const v2Summary = await this.getV2ReadSummary(batch.id, batch.status, trx);
+      let fos = await trx
         .select({
           id: wmsTables.fulfillmentOrders.id,
           status: wmsTables.fulfillmentOrders.status,
@@ -483,7 +521,7 @@ export class OutboundBatchService {
         .where(eq(wmsTables.fulfillmentOrders.batchId, batchId));
 
       const foIds = fos.map((fo) => fo.id);
-      const items =
+      let items =
         foIds.length === 0
           ? []
           : await trx
@@ -498,15 +536,62 @@ export class OutboundBatchService {
               })
               .from(wmsTables.fulfillmentOrderItems)
               .where(inArray(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, foIds));
+      if (v2Summary) {
+        const v2Rows = await trx
+          .select({
+            id: wmsTables.fulfillmentOrderItems.id,
+            fulfillmentOrderId: wmsTables.fulfillmentOrderItems.fulfillmentOrderId,
+            salesOrderId: wmsTables.fulfillmentOrderItems.salesOrderId,
+            salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
+            skuId: wmsTables.fulfillmentOrderItems.skuId,
+            qty: wmsTables.shipmentLines.qty,
+            // Compatibility field keeps its deprecated FO meaning; inspection is not picking progress.
+            pickedQty: wmsTables.fulfillmentOrderItems.pickedQty,
+            foStatus: wmsTables.fulfillmentOrders.status,
+            priority: wmsTables.fulfillmentOrders.priority,
+          })
+          .from(wmsTables.outboundBatchWorkItems)
+          .innerJoin(
+            wmsTables.shipmentLines,
+            eq(wmsTables.shipmentLines.shipmentId, wmsTables.outboundBatchWorkItems.shipmentId),
+          )
+          .innerJoin(
+            wmsTables.fulfillmentOrderItems,
+            eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+          )
+          .innerJoin(
+            wmsTables.fulfillmentOrders,
+            eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
+          )
+          .where(
+            and(
+              eq(wmsTables.outboundBatchWorkItems.batchId, batchId),
+              ne(wmsTables.outboundBatchWorkItems.status, 'excluded'),
+            ),
+          );
+        const foMap = new Map<string, (typeof fos)[number]>();
+        for (const row of v2Rows) {
+          const current = foMap.get(row.fulfillmentOrderId);
+          foMap.set(row.fulfillmentOrderId, {
+            id: row.fulfillmentOrderId,
+            status: row.foStatus,
+            priority: row.priority,
+            totalItems: (current?.totalItems ?? 0) + 1,
+            totalQty: (current?.totalQty ?? 0) + row.qty,
+          });
+        }
+        fos = [...foMap.values()];
+        items = v2Rows.map(({ foStatus: _foStatus, priority: _priority, ...item }) => item);
+      }
 
       return {
         id: batch.id,
         name: batch.name ?? '',
         warehouseId: batch.warehouseId,
         pickingMethod: batch.pickingMethod,
-        status: batch.status,
-        totalItems: batch.totalItems ?? 0,
-        totalQty: batch.totalQty ?? 0,
+        status: v2Summary?.status ?? batch.status,
+        totalItems: v2Summary?.totalItems ?? batch.totalItems ?? 0,
+        totalQty: v2Summary?.totalQty ?? batch.totalQty ?? 0,
         scheduledPickingAt: batch.scheduledPickingAt ?? undefined,
         startedAt: batch.startedAt ?? undefined,
         completedAt: batch.completedAt ?? undefined,
@@ -541,6 +626,19 @@ export class OutboundBatchService {
       const batch = batchRows[0];
       if (!batch) {
         throw new NotFoundException(`Outbound batch ${batchId} not found`);
+      }
+
+      const [v2WorkItem] = await trx
+        .select({ id: wmsTables.outboundBatchWorkItems.id })
+        .from(wmsTables.outboundBatchWorkItems)
+        .where(eq(wmsTables.outboundBatchWorkItems.batchId, batchId))
+        .limit(1);
+      if (v2WorkItem) {
+        throw new GoneException({
+          code: 'OUTBOUND_BATCH_V2_PICKING_PLAN_REQUIRED',
+          message: 'Legacy FO picking lists are unavailable for shipment work-item batches',
+          batchId,
+        });
       }
 
       const rows = await trx
@@ -694,17 +792,49 @@ export class OutboundBatchService {
             .from(wmsTables.outboundBatches)
             .orderBy(desc(wmsTables.outboundBatches.createdAt)));
 
-      return batches.map((batch) => ({
-        id: batch.id,
-        name: batch.name ?? '',
-        warehouseId: batch.warehouseId,
-        pickingMethod: batch.pickingMethod,
-        status: batch.status,
-        totalItems: batch.totalItems ?? 0,
-        totalQty: batch.totalQty ?? 0,
-        scheduledPickingAt: batch.scheduledPickingAt ?? undefined,
-        createdAt: batch.createdAt,
-      }));
+      return Promise.all(
+        batches.map(async (batch) => {
+          const v2Summary = await this.getV2ReadSummary(batch.id, batch.status, trx);
+          return {
+            id: batch.id,
+            name: batch.name ?? '',
+            warehouseId: batch.warehouseId,
+            pickingMethod: batch.pickingMethod,
+            status: v2Summary?.status ?? batch.status,
+            totalItems: v2Summary?.totalItems ?? batch.totalItems ?? 0,
+            totalQty: v2Summary?.totalQty ?? batch.totalQty ?? 0,
+            scheduledPickingAt: batch.scheduledPickingAt ?? undefined,
+            createdAt: batch.createdAt,
+          };
+        }),
+      );
     }, tx);
+  }
+
+  /** Temporary V1 read compatibility. V2 never writes legacy batch totals/status or FO links. */
+  private async getV2ReadSummary(
+    batchId: string,
+    storedStatus: 'created' | 'picking' | 'completed' | 'canceled',
+    tx: DbTx,
+  ): Promise<{
+    status: 'created' | 'picking' | 'completed' | 'canceled';
+    totalItems: number;
+    totalQty: number;
+  } | null> {
+    const rows = await tx
+      .select({
+        workItemId: wmsTables.outboundBatchWorkItems.id,
+        status: wmsTables.outboundBatchWorkItems.status,
+        shipmentLineId: wmsTables.shipmentLines.id,
+        lineQty: wmsTables.shipmentLines.qty,
+      })
+      .from(wmsTables.outboundBatchWorkItems)
+      .leftJoin(
+        wmsTables.shipmentLines,
+        eq(wmsTables.shipmentLines.shipmentId, wmsTables.outboundBatchWorkItems.shipmentId),
+      )
+      .where(eq(wmsTables.outboundBatchWorkItems.batchId, batchId));
+    if (!rows.length) return null;
+    return deriveOutboundBatchV2ReadSummary(rows, storedStatus);
   }
 }

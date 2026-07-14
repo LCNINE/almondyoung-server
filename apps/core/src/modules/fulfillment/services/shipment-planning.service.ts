@@ -467,6 +467,7 @@ export class ShipmentPlanningService {
 
         if (await this.requiresDurableReplan(aggregate, tx)) {
           await this.requireScope(actor, FULFILLMENT_SCOPE.SHIPMENT_REOPEN);
+          await this.markActiveWorkItemWaitingForCancellation(shipmentId, operation.id, tx);
           await tx
             .update(wmsTables.shipments)
             .set({ status: 'recovery_required', recoveryCode: 'CANCEL_REPLAN_PENDING', lastUpdated: new Date() })
@@ -1038,6 +1039,39 @@ export class ShipmentPlanningService {
       )
       .limit(1);
     if (balance) throw this.conflict('SHIPMENT_CUSTODY_EXISTS', 'Explicit unpick is required before editing custody');
+  }
+
+  private async markActiveWorkItemWaitingForCancellation(
+    shipmentId: string,
+    operationId: string,
+    tx: DbTx,
+  ): Promise<void> {
+    const [workItem] = await tx
+      .select({
+        id: wmsTables.outboundBatchWorkItems.id,
+        waitingOperationId: wmsTables.outboundBatchWorkItems.waitingOperationId,
+      })
+      .from(wmsTables.outboundBatchWorkItems)
+      .where(
+        and(
+          eq(wmsTables.outboundBatchWorkItems.shipmentId, shipmentId),
+          inArray(wmsTables.outboundBatchWorkItems.status, [...ACTIVE_WORK_ITEM_STATUSES]),
+        ),
+      )
+      .orderBy(asc(wmsTables.outboundBatchWorkItems.id))
+      .limit(1)
+      .for('update');
+    if (!workItem) return;
+    if (workItem.waitingOperationId && workItem.waitingOperationId !== operationId) {
+      throw this.conflict(
+        'CANCELLATION_WORK_ITEM_ALREADY_WAITING',
+        `Work item ${workItem.id} already waits for operation ${workItem.waitingOperationId}`,
+      );
+    }
+    await tx
+      .update(wmsTables.outboundBatchWorkItems)
+      .set({ waitingOperationId: operationId, updatedAt: new Date() })
+      .where(eq(wmsTables.outboundBatchWorkItems.id, workItem.id));
   }
 
   private async assertNoActivePickingPlan(shipmentId: string, tx: DbTx): Promise<void> {
