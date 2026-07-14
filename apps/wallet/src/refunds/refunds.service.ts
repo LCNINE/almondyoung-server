@@ -215,7 +215,13 @@ export class RefundsService {
 
   async createByIntent(
     intentId: string,
-    dto: { amount: number; reasonCode?: string; reasonMessage?: string; allowMembershipRefund?: boolean },
+    dto: {
+      amount: number;
+      reasonCode?: string;
+      reasonMessage?: string;
+      allowMembershipRefund?: boolean;
+      refundReceiveAccount?: CreateRefundDto['refundReceiveAccount'];
+    },
   ): Promise<Refund[]> {
     const refundableCharges = await this.chargesService.findRefundableByIntent(intentId);
     if (refundableCharges.length === 0) {
@@ -252,6 +258,7 @@ export class RefundsService {
         reasonCode: dto.reasonCode,
         reasonMessage: dto.reasonMessage,
         allowMembershipRefund: dto.allowMembershipRefund,
+        refundReceiveAccount: dto.refundReceiveAccount,
       });
       results.push(refund);
       remaining -= share;

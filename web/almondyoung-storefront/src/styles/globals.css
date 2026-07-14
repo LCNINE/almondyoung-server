@@ -17,6 +17,14 @@ input[type="search"]::-webkit-search-results-decoration {
   display: none;
 }
 
+/* Tailwind v4 preflight 가 버튼 커서를 default 로 리셋 → 클릭 가능한 요소에 포인터 복구 */
+@layer base {
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
 /* 상품 상세 HTML 스타일 */
 .product-detail-html {
   line-height: 1.6;

@@ -4,17 +4,13 @@ import { useState } from "react"
 import { ChevronDown, ChevronUp } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
-import type { RangeSavingsDto } from "@lib/types/dto/membership-savings"
 import type {
-  CycleBenefitHistoryDto,
   SubscriptionAdjustmentDto,
   SubscriptionHistoryItemDto,
 } from "@lib/types/dto/membership"
 
 interface MembershipHistorySectionProps {
-  rangeSavings: RangeSavingsDto | null
   subscriptionHistory: SubscriptionHistoryItemDto[]
-  benefitHistory: CycleBenefitHistoryDto | null
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -183,29 +179,9 @@ function HistoryCard({ item }: { item: SubscriptionHistoryItemDto }) {
 }
 
 export default function MembershipHistorySection({
-  rangeSavings,
   subscriptionHistory,
-  benefitHistory,
 }: MembershipHistorySectionProps) {
   const t = useTranslations("mypage.membership")
-
-  const formatMonth = (value: string) => {
-    const [year, month] = value.split("-")
-    if (!year || !month) return value
-    return t("subscription.yearMonthFormat", { year, month: Number(month) })
-  }
-
-  const sortedMonthlyBreakdown = rangeSavings?.monthlyBreakdown
-    ? [...rangeSavings.monthlyBreakdown].sort((a, b) =>
-        b.yearMonth.localeCompare(a.yearMonth)
-      )
-    : []
-
-  const sortedCycles = benefitHistory?.cycles
-    ? [...benefitHistory.cycles].sort((a, b) =>
-        b.cycleStartDate.localeCompare(a.cycleStartDate)
-      )
-    : []
 
   const sortedSubscriptionHistory = [...subscriptionHistory].sort((a, b) =>
     b.createdAt.localeCompare(a.createdAt)
@@ -213,73 +189,6 @@ export default function MembershipHistorySection({
 
   return (
     <section className="mt-6 flex flex-col gap-4">
-      <div className="rounded-xl border border-gray-200 bg-white p-4">
-        <div className="flex items-baseline justify-between gap-2">
-          <h3 className="text-sm font-semibold text-gray-900">{t("history.savingsTitle")}</h3>
-          {rangeSavings?.totalSavings != null && (
-            <p className="text-xs text-gray-500">
-              {t("history.savingsTotal", { amount: rangeSavings.totalSavings.toLocaleString() })}
-            </p>
-          )}
-        </div>
-        <div className="mt-3 space-y-2">
-          {sortedMonthlyBreakdown.length ? (
-            sortedMonthlyBreakdown.map((item) => (
-              <div
-                key={item.yearMonth}
-                className="flex items-center justify-between rounded-lg bg-amber-50 px-3 py-2 text-sm"
-              >
-                <span className="font-medium text-gray-800">
-                  {formatMonth(item.yearMonth)}
-                </span>
-                <div className="flex items-center gap-2 text-xs text-gray-600">
-                  <span>{t("billing.orderCountUnit", { count: item.orderCount.toLocaleString() })}</span>
-                  <span className="font-semibold text-gray-900">
-                    {t("billing.amountWon", { amount: item.savings.toLocaleString() })}
-                  </span>
-                </div>
-              </div>
-            ))
-          ) : (
-            <p className="text-sm text-gray-500">{t("history.savingsEmpty")}</p>
-          )}
-        </div>
-      </div>
-
-      {benefitHistory && (
-        <div className="rounded-xl border border-gray-200 bg-white p-4">
-          <div className="flex items-baseline justify-between gap-2">
-            <h3 className="text-sm font-semibold text-gray-900">{t("history.benefitsTitle")}</h3>
-            <p className="text-xs text-gray-500">
-              {t("history.benefitsTotal", { amount: benefitHistory.totalDiscountAllTime.toLocaleString() })}
-            </p>
-          </div>
-          <div className="mt-3 space-y-2">
-            {sortedCycles.length ? (
-              sortedCycles.map((cycle) => (
-                <div
-                  key={`${cycle.cycleStartDate}-${cycle.cycleEndDate}`}
-                  className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2 text-sm"
-                >
-                  <span className="font-medium text-gray-800">
-                    {formatDate(cycle.cycleStartDate, DATE_FORMATS.KO_DOT)} ~{" "}
-                    {formatDate(cycle.cycleEndDate, DATE_FORMATS.KO_DOT)}
-                  </span>
-                  <div className="flex items-center gap-2 text-xs text-gray-600">
-                    <span>{t("billing.orderCountUnit", { count: cycle.orderCount.toLocaleString() })}</span>
-                    <span className="font-semibold text-gray-900">
-                      {t("billing.amountWon", { amount: cycle.totalDiscountAmount.toLocaleString() })}
-                    </span>
-                  </div>
-                </div>
-              ))
-            ) : (
-              <p className="text-sm text-gray-500">{t("history.benefitsEmpty")}</p>
-            )}
-          </div>
-        </div>
-      )}
-
       <div className="rounded-xl border border-gray-200 bg-white p-4">
         <h3 className="mb-3 text-sm font-semibold text-gray-900">{t("history.subscriptionHistory")}</h3>
         {sortedSubscriptionHistory.length ? (

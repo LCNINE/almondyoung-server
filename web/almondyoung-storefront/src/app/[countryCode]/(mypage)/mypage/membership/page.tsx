@@ -33,8 +33,12 @@ export default async function MembershipPage() {
   ])
 
   const membershipData: SubscriptionDetailsDto | null = subscription ?? null
-  const isMember = membershipData?.status === "ACTIVE"
-  const hasCafe24Link = !!(cafe24Info && "data" in cafe24Info && cafe24Info.data)
+  const isMember = !!membershipData
+  const hasCafe24Link = !!(
+    cafe24Info &&
+    "data" in cafe24Info &&
+    cafe24Info.data
+  )
 
   let currentSavings = null
   let rangeSavings = null

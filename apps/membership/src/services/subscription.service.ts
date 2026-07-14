@@ -300,6 +300,61 @@ export class SubscriptionService {
   }
 
   /**
+   * 구독 이력 조회
+   */
+  async getSubscriptionHistoryPaged(userId: string, limit: number, offset: number) {
+    const [rows, total, currentEntitlementData, adjustmentEvents] = await Promise.all([
+      this.contractReader.findContractsByUserIdWithPlanPaged(userId, limit, offset),
+      this.contractReader.countContractsByUserId(userId),
+      this.entitlementService.getUserEntitlement(userId),
+      this.contractReader.findAdjustmentEventsByUserId(userId),
+    ]);
+
+    const currentEndsAt = currentEntitlementData?.entitlement.endsAt ?? null;
+
+    const adjustmentsByContract = new Map<string, typeof adjustmentEvents>();
+    for (const e of adjustmentEvents) {
+      const list = adjustmentsByContract.get(e.contractId) ?? [];
+      list.push(e);
+      adjustmentsByContract.set(e.contractId, list);
+    }
+
+    const items = rows.map(({ contract, plan, tier }) => {
+      const contractAdjustments = (adjustmentsByContract.get(contract.id) ?? []).map((e) => {
+        const meta = e.metadata as { days?: number; previousEndsAt?: string; newEndsAt?: string; reason?: string };
+        return {
+          id: e.id,
+          eventType: e.eventType,
+          days: meta.days ?? 0,
+          previousEndsAt: meta.previousEndsAt ?? null,
+          newEndsAt: meta.newEndsAt ?? null,
+          reason: meta.reason ?? null,
+          createdAt: e.createdAt.toISOString(),
+        };
+      });
+
+      return {
+        id: contract.id,
+        userId: contract.userId,
+        planId: contract.planId,
+        status: contract.status,
+        billingDate: contract.billingDate,
+        nextBillingDate: contract.nextBillingDate ?? null,
+        cancelledAt: contract.cancelledAt?.toISOString() ?? null,
+        autoRenewal: contract.autoRenewal,
+        createdAt: contract.createdAt.toISOString(),
+        updatedAt: contract.updatedAt.toISOString(),
+        endDate: contract.status === 'ACTIVE' ? currentEndsAt : null,
+        plan: { price: plan.price, currency: plan.currency ?? 'KRW', durationDays: plan.durationDays },
+        tier: tier?.id ? { code: tier.code } : null,
+        adjustments: contractAdjustments,
+      };
+    });
+
+    return { items, total };
+  }
+
+  /**
    * 활성 구독 정보 조회
    *
    * ✅ 흐름만 표현: "활성 계약 조회 → 구독 타입 판단"
