@@ -1,12 +1,11 @@
 "use client"
 
 import { useState } from "react"
-import { useParams, useRouter } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { ChevronDown, ChevronRight, ChevronUp } from "lucide-react"
 import { useTranslations } from "next-intl"
-import { CustomButton } from "@/components/shared/custom-buttons"
-import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { MembershipCancelModal } from "@/domains/membership/components/modal"
+import MembershipBenefitsGuide from "./membership-benefits-guide"
 import { cancelSubscription } from "@lib/api/membership"
 import { toast } from "sonner"
 import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
@@ -15,6 +14,7 @@ import type {
   CancellationReasonDto,
   SubscriptionHistoryItemDto,
 } from "@lib/types/dto/membership"
+import { Button } from "@/components/ui/button"
 
 const LEGACY_URL =
   process.env.NEXT_PUBLIC_LEGACY_MEMBERSHIP_HISTORY_URL ??
@@ -224,7 +224,7 @@ function HistoryCard({
                         date: fmt(item.nextBillingDate),
                       })}
                 </p>
-                <button
+                <Button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation()
@@ -233,7 +233,7 @@ function HistoryCard({
                   className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50"
                 >
                   {t("billing.cancelRecurring")}
-                </button>
+                </Button>
               </div>
             )}
           </div>
@@ -245,6 +245,7 @@ function HistoryCard({
         setOpen={setModalOpen}
         reasons={cancellationReasons}
         isSubmitting={isCancelling}
+        refundEligible={false}
         onConfirm={handleCancel}
       />
     </>
@@ -263,14 +264,8 @@ export default function NonSubscriberSection({
   cancellationReasons,
 }: Props) {
   const router = useRouter()
-  const params = useParams()
-  const countryCode = (params?.countryCode as string) ?? "kr"
   const t = useTranslations("mypage.membership")
   const hasHistory = subscriptionHistory.length > 0
-
-  const handleSubscribe = () => {
-    router.push(`/${countryCode}/mypage/membership/subscribe/payment`)
-  }
 
   const handleCancelled = () => {
     router.refresh()
@@ -310,29 +305,8 @@ export default function NonSubscriberSection({
         </a>
       )}
 
-      {/* 오독 멤버십 가입 유도 + 혜택 안내(별도 라우트) */}
-      <section className="mt-2 rounded-2xl border border-gray-200 bg-white p-5">
-        <h2 className="text-base font-bold text-gray-900">
-          {t("history.heroTitle")}
-        </h2>
-        <div className="mt-1 space-y-0.5 text-xs text-gray-500">
-          <p>{t("history.priceNoticeMonthlyYearly")}</p>
-          <p>{t("history.priceNoticeFreeMonths")}</p>
-        </div>
-        <CustomButton
-          onClick={handleSubscribe}
-          className="mt-4 h-12 w-full cursor-pointer rounded-lg bg-primary text-base font-semibold text-white hover:bg-[#e14d00]"
-        >
-          {t("history.subscribe")}
-        </CustomButton>
-        <LocalizedClientLink
-          href="/mypage/membership/benefits"
-          className="mt-3 flex items-center justify-center gap-1 text-sm font-medium text-primary"
-        >
-          {t("history.viewBenefitsGuide")}
-          <ChevronRight className="h-4 w-4" />
-        </LocalizedClientLink>
-      </section>
+      {/* 오독 멤버십 가입 유도 + 혜택 안내 */}
+      <MembershipBenefitsGuide showSubscribeCta />
     </div>
   )
 }

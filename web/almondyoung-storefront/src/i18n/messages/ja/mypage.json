@@ -900,12 +900,17 @@
       "processing": "処理中...",
       "titleUsedLine1": "今月の会員特典をすでにご利用されています。",
       "titleUsedLine2": "返金はなく、利用期間終了までメンバーシップは維持されます。",
-      "refundAccountHeading": "返金先口座（銀行振込の場合）",
-      "refundAccountNote": "銀行振込（バーチャル口座）でお支払いの場合はご入力ください。カード決済の場合は空欄のままで自動返金されます。",
+      "refundAccountHeading": "返金先口座",
+      "refundAccountNote": "返金をご希望の口座情報をご入力いただくと、お支払い金額を全額返金いたします。",
       "bankPlaceholder": "銀行を選択",
       "accountNumberPlaceholder": "口座番号（数字のみ）",
       "holderNamePlaceholder": "口座名義",
-      "refundAccountIncomplete": "返金先口座は銀行・口座番号・名義をすべてご入力ください。"
+      "refundAccountIncomplete": "銀行・口座番号・名義をすべてご入力ください。",
+      "next": "次へ",
+      "back": "戻る",
+      "refundStepTitle": "返金情報をご確認ください",
+      "stepReasonLabel": "解約理由ステップ",
+      "stepRefundLabel": "返金情報ステップ"
     }
   },
   "orderActions": {
