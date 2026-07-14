@@ -36,6 +36,9 @@ import { DirectShipService } from './services/direct-ship.service';
 import { InvoiceService } from './services/invoice.service';
 import { GoodsflowDeliveryProvider } from './services/goodsflow-delivery.provider';
 import { HanjinDeliveryProvider } from './services/hanjin-delivery.provider';
+import { FulfillmentProgressService } from './services/fulfillment-progress.service';
+import { FulfillmentInvariantService } from './services/fulfillment-invariant.service';
+import { FulfillmentReconciliationService } from './services/fulfillment-reconciliation.service';
 
 // Controllers
 import { FulfillmentsController } from './controllers/fulfillments.controller';
@@ -110,6 +113,10 @@ import { LocationOptimizationController } from './controllers/location-optimizat
     InvoiceService,
     GoodsflowDeliveryProvider,
     HanjinDeliveryProvider,
+    FulfillmentProgressService,
+    FulfillmentInvariantService,
+    FulfillmentReconciliationService,
   ],
+  exports: [FulfillmentProgressService, FulfillmentInvariantService, FulfillmentReconciliationService],
 })
 export class FulfillmentModule {}
