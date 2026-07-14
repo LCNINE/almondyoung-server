@@ -152,7 +152,7 @@
     "settings": "設定",
     "won": "ウォン",
     "benefitActive": "特典利用中",
-    "membershipJoinCta": "加入して特典を受ける"
+    "membershipJoinCta": "メンバーシップ特典に加入する"
   },
   "shipping": {
     "title": "配送中の商品",
@@ -694,9 +694,9 @@
     }
   },
   "membership": {
-    "logoAlt": "ODOK ロゴ",
-    "defaultTierName": "ODOK",
-    "membershipName": "アモンドヤン ODOK",
+    "logoAlt": "メンバーシップ ロゴ",
+    "defaultTierName": "メンバーシップ",
+    "membershipName": "アモンドヤン メンバーシップ",
     "noBenefitInfo": "特典情報がありません。",
     "status": {
       "ACTIVE": "利用中",
@@ -846,7 +846,7 @@
       }
     },
     "history": {
-      "title": "ODOK 利用履歴",
+      "title": "メンバーシップ 利用履歴",
       "subscriptionHistory": "サブスク履歴",
       "noSubscriptionHistory": "サブスク履歴がありません。",
       "savingsTitle": "節約記録",
@@ -860,11 +860,11 @@
       "adjGrantedByAdmin": "管理者付与 +{days}日",
       "adjExtended": "+{days}日延長",
       "adjReduced": "-{days}日減算",
-      "legacyHistory": "従来のアモンドヤン ODOK履歴を見る",
-      "joinAndBenefits": "アモンドヤン ODOK加入・特典確認",
+      "legacyHistory": "従来のアモンドヤン メンバーシップ履歴を見る",
+      "joinAndBenefits": "アモンドヤン メンバーシップ加入・特典確認",
       "subscribe": "登録する",
-      "cancelMembership": "ODOKを解約",
-      "heroTitle": "アモンドヤン ODOK サービス",
+      "cancelMembership": "メンバーシップを解約",
+      "heroTitle": "アモンドヤン メンバーシップ サービス",
       "heroGrandOpen": "GRAND OPEN",
       "priceNoticeMonthlyYearly": "* 有料メンバーシップ 月 4,990ウォン / 年 49,900ウォン",
       "priceNoticeFreeMonths": "* 年間プランで 2ヶ月無料"
