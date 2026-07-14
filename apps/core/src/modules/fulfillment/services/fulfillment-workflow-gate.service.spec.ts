@@ -30,6 +30,7 @@ describe('FulfillmentWorkflowGate', () => {
     expect(gate.shouldEnqueueFo(undefined, false)).toBe(true);
     expect(gate.shouldRunFoCreation()).toBe(true);
     expect(gate.shouldRunReservationRetry()).toBe(true);
+    expect(gate.shouldRunInvoiceRecovery()).toBe(false);
     expect(() => gate.assertMutationAllowed('shipment.force')).not.toThrow();
   });
 
@@ -39,6 +40,7 @@ describe('FulfillmentWorkflowGate', () => {
     expect(gate.shouldEnqueueFo(cutoverAt, true)).toBe(false);
     expect(gate.shouldRunFoCreation()).toBe(false);
     expect(gate.shouldRunReservationRetry()).toBe(false);
+    expect(gate.shouldRunInvoiceRecovery()).toBe(false);
     expect(gate.shouldDispatchFulfillmentEvents()).toBe(false);
 
     try {
@@ -62,6 +64,7 @@ describe('FulfillmentWorkflowGate', () => {
     expect(gate.shouldEnqueueFo(cutoverAt, true)).toBe(true);
     expect(gate.shouldEnqueueFo('2026-07-14T03:00:00.001Z', true)).toBe(true);
     expect(gate.shouldEnqueueFo('2026-07-14T03:00:00.001Z', false)).toBe(false);
+    expect(gate.shouldRunInvoiceRecovery()).toBe(true);
   });
 
   it('keeps legacy mutations closed in v2 while retaining the explicit drop-ship path', () => {

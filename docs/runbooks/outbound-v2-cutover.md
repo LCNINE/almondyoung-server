@@ -148,6 +148,29 @@ All checks must be true:
 
 Run verify a second time; it is read-only and idempotent. Attach both reports to the release ticket.
 
+### Provider issue/void rehearsal gate
+
+Do not enable shipment invoice issuance merely because provider credentials are present. The provider must publish and
+the integration owner must verify all of the following contract evidence first:
+
+- a stable issue idempotency key is accepted and a repeated request returns the same label, or the provider offers a
+  query by that key before any repeat;
+- a known service ID can be queried and void outcome is distinguishable from timeout/unknown outcome;
+- provider 4xx rejection, 408/429/5xx, transport timeout and malformed success responses are classified using the
+  production adapter;
+- issue succeeds in the sandbox, the Core finalization is deliberately interrupted, and recovery converges to one
+  `invoice_operations` row and one active shipment invoice without a second label;
+- void succeeds in the sandbox, Core finalization is deliberately interrupted, and recovery converges without exposing
+  the waiting cancel/consolidation target early;
+- the release ticket records the provider contract version, sandbox operation IDs, Core operation IDs, request hashes,
+  attempt counts, final states and two-person review. Do not attach API keys, recipient PII or complete provider payloads.
+
+The current Goodsflow compatibility adapter can query and void an existing known service ID, but it has no verified
+idempotent issue or issue-key lookup contract. The Hanjin adapter remains disabled even when environment credentials are
+present because its official endpoint, authentication, idempotency and status contracts have not been verified. Both
+providers therefore fail closed for new V2 issuance until the above evidence exists. This is a release blocker, not a
+reason to mark a provider capability as supported in code.
+
 Then deploy/enable V2 Core with:
 
 ```text

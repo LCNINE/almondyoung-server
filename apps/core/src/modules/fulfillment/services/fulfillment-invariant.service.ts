@@ -272,7 +272,11 @@ export class FulfillmentInvariantService {
    * Must run inside the mutation transaction. A recursive pre-read finds the entire
    * FOI↔shipment connected component, then durable rows are locked in the canonical order.
    */
-  async assertFulfillmentOrders(fulfillmentOrderIds: readonly string[], tx: DbTx): Promise<void> {
+  async assertFulfillmentOrders(
+    fulfillmentOrderIds: readonly string[],
+    tx: DbTx,
+    options: { ignoredInvoiceIds?: readonly string[] } = {},
+  ): Promise<void> {
     const ids = [...new Set(fulfillmentOrderIds)].sort();
     if (ids.length === 0) throw new NotFoundException('No fulfillment orders supplied for invariant check');
 
@@ -525,12 +529,13 @@ export class FulfillmentInvariantService {
           .for('update')
       : [];
 
+    const ignoredInvoiceIds = new Set(options.ignoredInvoiceIds ?? []);
     const violations = collectFulfillmentInvariantViolations({
       fulfillmentOrderItems,
       shipments,
       shipmentLines,
       reservations,
-      invoices,
+      invoices: invoices.filter((invoice) => !ignoredInvoiceIds.has(invoice.id)),
       sessions,
       sessionBalances,
       dispatchAttempts,

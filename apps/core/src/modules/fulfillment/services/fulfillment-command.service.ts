@@ -77,12 +77,21 @@ export class FulfillmentCommandService {
         }
 
         if (result.operationId) {
+          const operationTable =
+            result.resourceType === 'invoice_operation'
+              ? wmsTables.invoiceOperations
+              : result.resourceType === 'shipment_operation' || result.resourceType === 'shipment'
+                ? wmsTables.shipmentOperations
+                : null;
+          if (!operationTable) {
+            throw new Error(`Unsupported operation resource type: ${result.resourceType}`);
+          }
           const [operation] = await trx
-            .select({ id: wmsTables.shipmentOperations.id })
-            .from(wmsTables.shipmentOperations)
-            .where(eq(wmsTables.shipmentOperations.id, result.operationId))
+            .select({ id: operationTable.id })
+            .from(operationTable)
+            .where(eq(operationTable.id, result.operationId))
             .limit(1);
-          if (!operation) throw new Error(`Shipment operation ${result.operationId} does not exist`);
+          if (!operation) throw new Error(`${result.resourceType} ${result.operationId} does not exist`);
         }
 
         await trx

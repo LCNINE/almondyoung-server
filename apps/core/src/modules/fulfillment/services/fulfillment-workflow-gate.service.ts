@@ -119,6 +119,10 @@ export class FulfillmentWorkflowGate implements OnModuleInit {
     return this.mode !== 'maintenance';
   }
 
+  shouldRunInvoiceRecovery(): boolean {
+    return this.mode === 'v2';
+  }
+
   shouldDispatchFulfillmentEvents(): boolean {
     return this.mode !== 'maintenance';
   }
