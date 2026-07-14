@@ -36,7 +36,7 @@ export function MobileHeader({
         </LocalizedClientLink>
       </header>
 
-      {/* 오독(ODOK) 멤버십 카드 */}
+      {/* 멤버십 카드 */}
       <div className="rounded-xl bg-white p-4 shadow-sm">
         <LocalizedClientLink
           href={
@@ -52,10 +52,7 @@ export function MobileHeader({
             )}
           >
             <span className="flex items-baseline gap-1">
-              <span className="text-lg font-extrabold text-primary">오독</span>
-              <span className="text-[10px] font-bold tracking-wide text-primary/70">
-                ODOK
-              </span>
+              <span className="text-lg font-extrabold text-primary">멤버십</span>
             </span>
             {isMembership ? (
               <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary">
