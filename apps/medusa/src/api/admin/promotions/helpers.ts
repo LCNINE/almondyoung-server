@@ -42,6 +42,8 @@ export function toMetadataShape(record: any): Record<string, unknown> | null {
   result.visibility = record.visibility ?? 'public';
   if (record.max_claims != null) result.max_claims = record.max_claims;
   if (record.auto_issue_trigger != null) result.auto_issue_trigger = record.auto_issue_trigger;
+  // 읽기 전용 발급 카운터 — 관리자 발급 현황 표시용(클라 write 대상 아님)
+  if (record.issued_count != null) result.issued_count = record.issued_count;
   return Object.keys(result).length > 0 ? result : null;
 }
 

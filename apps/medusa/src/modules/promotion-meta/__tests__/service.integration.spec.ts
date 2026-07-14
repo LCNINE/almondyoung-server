@@ -69,6 +69,14 @@ moduleIntegrationTestRunner<PromotionMetaModuleService>({
         expect(await service.isAlreadyIssued('cust_b', 'promo_multi')).toBe(true);
       });
 
+      it('setIssuedCount reconciles the counter to the given value and floors negatives', async () => {
+        await service.upsert({ promotion_id: 'promo_set', max_claims: 100 });
+        await service.setIssuedCount('promo_set', 37);
+        expect(Number((await service.getByPromotionId('promo_set'))?.issued_count)).toEqual(37);
+        await service.setIssuedCount('promo_set', -5);
+        expect(Number((await service.getByPromotionId('promo_set'))?.issued_count)).toEqual(0);
+      });
+
       it('removeAllIssueLogs purges every log for the promotion (promotion delete)', async () => {
         await service.recordIssue('cust_x', 'promo_del', 'admin_manual');
         await service.recordIssue('cust_y', 'promo_del', 'customer_claim');

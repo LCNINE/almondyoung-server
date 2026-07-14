@@ -158,6 +158,7 @@
     "zero": "0ウォン",
     "amountMinusWon": "-{amount}ウォン",
     "couponLabel": "クーポン",
+    "notApplicable": "適用条件を満たしていません",
     "available": "利用可能",
     "availableCount": "利用可能 ({count})",
     "percentDiscount": "{value}% 割引",

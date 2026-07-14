@@ -39,6 +39,7 @@ export interface CouponMeta {
   name: string | undefined;
   maxDiscountAmount: number | null;
   maxClaims: number | null;
+  issuedCount: number | null;
   createdBy: string | undefined;
   visibility: 'public' | 'claimable' | 'assigned_only';
   autoIssueTrigger: AutoIssueTrigger | null;
@@ -50,6 +51,7 @@ export function getCouponMeta(coupon: MedusaPromotion): CouponMeta {
     name: meta.name as string | undefined,
     maxDiscountAmount: meta.max_discount_amount != null ? Number(meta.max_discount_amount) : null,
     maxClaims: meta.max_claims != null ? Number(meta.max_claims) : null,
+    issuedCount: meta.issued_count != null ? Number(meta.issued_count) : null,
     createdBy: meta.created_by as string | undefined,
     visibility: (meta.visibility as 'public' | 'claimable' | 'assigned_only') ?? 'public',
     autoIssueTrigger: (meta.auto_issue_trigger as AutoIssueTrigger) ?? null,

@@ -158,6 +158,7 @@
     "zero": "0 KRW",
     "amountMinusWon": "-{amount} KRW",
     "couponLabel": "Coupon",
+    "notApplicable": "Conditions not met",
     "available": "Available",
     "availableCount": "Available ({count})",
     "percentDiscount": "{value}% off",
