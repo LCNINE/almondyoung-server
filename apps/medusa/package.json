@@ -20,6 +20,7 @@
     "backfill:default-shipping-profile": "medusa exec ./src/scripts/backfill-default-shipping-profile.ts",
     "purge:pim-backfill": "medusa exec ./src/scripts/purge-pim-backfill.ts",
     "backfill:sellable-inventory": "medusa exec ./src/scripts/backfill-sellable-inventory-projections.ts",
+    "backfill:issued-count": "medusa exec ./src/scripts/backfill-issued-count.ts",
     "repair:product-links": "medusa exec ./src/scripts/repair-product-links.ts",
     "disable-inventory": "medusa exec ./src/scripts/disable-inventory-management.ts",
     "fetch:sellmate": "medusa exec ./src/scripts/fetch-orders-sellmate.ts",

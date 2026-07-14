@@ -45,7 +45,7 @@ export function CouponDetailDialog({
 
   if (!c) return null;
 
-  const { name, maxClaims, createdBy, visibility, autoIssueTrigger } = getCouponMeta(c);
+  const { name, maxClaims, issuedCount, createdBy, visibility, autoIssueTrigger } = getCouponMeta(c);
 
   // 끝 슬래시 제거 — 환경변수에 trailing slash 가 있어도 이중 슬래시 방지
   const storefrontUrl = (process.env.NEXT_PUBLIC_STOREFRONT_URL ?? '').replace(/\/+$/, '');
@@ -149,6 +149,13 @@ export function CouponDetailDialog({
           {autoIssueTrigger && (
             <Row label="자동 발급">
               {AUTO_ISSUE_TRIGGER_LABELS[autoIssueTrigger]}
+            </Row>
+          )}
+          {visibility === 'claimable' && (
+            <Row label="발급 현황">
+              {maxClaims != null
+                ? `${(issuedCount ?? 0).toLocaleString('ko-KR')} / ${maxClaims.toLocaleString('ko-KR')}명`
+                : `${(issuedCount ?? 0).toLocaleString('ko-KR')}명 (무제한)`}
             </Row>
           )}
           <Row label="유효 기간">{formatPeriod(c)}</Row>

@@ -125,6 +125,16 @@ class PromotionMetaModuleService extends MedusaService({ PromotionMeta, Promotio
       [promotionId],
     );
   }
+
+  /** issued_count 를 실제 링크 수로 정합화(backfill). 음수는 0으로 보정. */
+  async setIssuedCount(promotionId: string, count: number): Promise<void> {
+    const safe = Math.max(0, Math.floor(count));
+    const em = (this as any).baseRepository_.manager_;
+    await em.execute(
+      `UPDATE "promotion_meta" SET "issued_count" = ? WHERE "promotion_id" = ?`,
+      [safe, promotionId],
+    );
+  }
 }
 
 export default PromotionMetaModuleService;

@@ -467,6 +467,12 @@ export function CouponCreateDialog({
             </div>
           </div>
 
+          <p className="text-xs text-muted-foreground">
+            세 한도는 캠페인 예산을 공유해 <b>동시에 설정할 수 없습니다</b>. 일반적으로 프로모션은
+            &lsquo;1인당 사용 제한&rsquo; 또는 &lsquo;총 사용 횟수(선착순)&rsquo; 중 하나를 씁니다.
+            발급받기(claimable) 쿠폰의 &lsquo;총 발급 수량&rsquo;은 <b>발급</b> 상한이라 위 <b>사용</b> 한도와 별개로 함께 설정할 수 있습니다.
+          </p>
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label>총 사용 횟수 제한</Label>

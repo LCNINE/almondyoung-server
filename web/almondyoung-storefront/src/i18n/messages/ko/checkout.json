@@ -158,6 +158,7 @@
     "zero": "0원",
     "amountMinusWon": "-{amount}원",
     "couponLabel": "쿠폰",
+    "notApplicable": "적용 조건 미충족",
     "available": "사용가능",
     "availableCount": "사용가능 ({count})",
     "percentDiscount": "{value}% 할인",

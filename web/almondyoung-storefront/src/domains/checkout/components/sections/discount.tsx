@@ -72,7 +72,6 @@ export const DiscountSection = ({
   cartId,
   isMembership = false,
   membershipDiscount,
-  itemSubtotal,
   cartDiscountTotal,
   shipping,
   promotions,
@@ -143,20 +142,10 @@ export const DiscountSection = ({
     })
   }, [cartId, selectedCoupon, onCouponApplied, t])
 
-  // 쿠폰 할인 금액 계산
-  const appliedPromotion = selectedCoupon
-    ? promotions.find((p) => p.code === selectedCoupon)
-    : null
-
-  // 서버 계산 할인액(cartDiscountTotal) 우선 — 목록에 없는 직접입력 코드도 표시
-  const couponDiscount = selectedCoupon
-    ? (cartDiscountTotal ??
-      (appliedPromotion?.application_method?.type === "percentage"
-        ? Math.floor(
-            itemSubtotal * (appliedPromotion.application_method.value / 100)
-          )
-        : (appliedPromotion?.application_method?.value ?? 0)))
-    : 0
+  // 서버 계산 할인액(cartDiscountTotal)만 신뢰 — 항상 number이므로 클라 재계산 폴백 불필요
+  const couponDiscount = selectedCoupon ? (cartDiscountTotal ?? 0) : 0
+  // 쿠폰은 붙었으나 서버 할인이 0 = 룰 미충족(최소구매액 등) → 정직 표기
+  const couponNotApplied = !!selectedCoupon && couponDiscount === 0
 
   // 총 할인 금액 = 멤버십 할인 + 쿠폰 할인
   const totalDiscount = membershipDiscount + couponDiscount
@@ -206,14 +195,16 @@ export const DiscountSection = ({
           {selectedCoupon ? (
             <div className="flex items-center justify-between rounded-[5px] border border-[#ff6600] px-3 py-2.5">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-[#ff6600] lg:text-sm">
-                  {(() => {
-                    const promo = promotions.find(
-                      (p) => p.code === selectedCoupon
-                    )
-                    if (!promo) return selectedCoupon
-                    return formatPromoLabel(promo)
-                  })()}
+                <span className={`text-xs font-medium lg:text-sm ${couponNotApplied ? "text-gray-400" : "text-[#ff6600]"}`}>
+                  {couponNotApplied
+                    ? t("notApplicable")
+                    : (() => {
+                        const promo = promotions.find(
+                          (p) => p.code === selectedCoupon
+                        )
+                        if (!promo) return selectedCoupon
+                        return formatPromoLabel(promo)
+                      })()}
                 </span>
                 <span className="text-[10px] text-gray-500 lg:text-xs">
                   ({selectedCoupon})
