@@ -52,7 +52,7 @@ export interface InvoiceDetail {
   issueMethod: InvoiceIssueMethod;
   /** 외부 provider service id — 응답 필드명은 goodsflow 시절 명명 유지(컬럼은 externalServiceId) */
   goodsflowServiceId?: string;
-  status: 'issued' | 'used' | 'voided';
+  status: 'issued' | 'used' | 'voided' | 'issuing' | 'voiding' | 'recovery_required';
   issuedAt?: Date;
   recipientName?: string;
   recipientAddress?: string;

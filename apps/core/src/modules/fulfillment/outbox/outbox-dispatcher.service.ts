@@ -17,6 +17,10 @@ import {
   CORE_ORDER_STREAM,
   CoreOrderEvents,
   SalesOrderCancelledPayload,
+  SHIPMENT_STREAM,
+  ShipmentEvents,
+  FULFILLMENT_V2_STREAM,
+  FulfillmentV2Events,
 } from '@packages/event-contracts/streams';
 import { wmsTables, wmsSchema } from '../../inventory/schema/inventory.schema';
 import { eq, and, lte, sql, inArray } from 'drizzle-orm';
@@ -53,6 +57,10 @@ export class OutboxDispatcherService implements OnModuleInit {
     private readonly inventoryPublisher: StreamPublisher<InventoryEvents>,
     @InjectStreamPublisher(CORE_ORDER_STREAM.topic.topic)
     private readonly coreOrderPublisher: StreamPublisher<CoreOrderEvents>,
+    @InjectStreamPublisher(SHIPMENT_STREAM.topic.topic)
+    private readonly shipmentPublisher: StreamPublisher<ShipmentEvents>,
+    @InjectStreamPublisher(FULFILLMENT_V2_STREAM.topic.topic)
+    private readonly fulfillmentV2Publisher: StreamPublisher<FulfillmentV2Events>,
     private readonly workflowGate: FulfillmentWorkflowGate,
   ) {}
 
@@ -78,11 +86,14 @@ export class OutboxDispatcherService implements OnModuleInit {
             AND LOWER(aggregate_type) NOT IN ('fulfillment', 'fulfillment_order', 'fulfillmentorder', 'shipment')
             AND LOWER(event_type) NOT LIKE 'fulfillment%'
             AND LOWER(event_type) NOT LIKE 'shipment%'
+            AND topic IS DISTINCT FROM ${SHIPMENT_STREAM.topic.topic}
+            AND topic IS DISTINCT FROM ${FULFILLMENT_V2_STREAM.topic.topic}
           `;
 
       const events = await this.db.db.transaction(async (tx) => {
         const pendingEvents = await tx.execute<{
           id: string;
+          topic: string | null;
           event_type: string;
           aggregate_type: string;
           aggregate_id: string;
@@ -92,6 +103,7 @@ export class OutboxDispatcherService implements OnModuleInit {
         }>(sql`
           SELECT
             id,
+            topic,
             event_type,
             aggregate_type,
             aggregate_id,
@@ -149,6 +161,7 @@ export class OutboxDispatcherService implements OnModuleInit {
 
   private async publishEvent(event: {
     id: string;
+    topic: string | null;
     event_type: string;
     aggregate_type: string;
     aggregate_id: string;
@@ -157,7 +170,25 @@ export class OutboxDispatcherService implements OnModuleInit {
     attempts: number;
   }) {
     try {
-      if (event.aggregate_type === 'Stock' || event.aggregate_type === 'ProductSellableQuantity') {
+      if (event.topic === SHIPMENT_STREAM.topic.topic) {
+        await this.shipmentPublisher.publishEvent({
+          eventType: event.event_type as keyof ShipmentEvents,
+          aggregateId: event.aggregate_id,
+          payload: event.payload as any,
+          metadata: { partitionKey: event.partition_key },
+        });
+      } else if (event.topic === FULFILLMENT_V2_STREAM.topic.topic) {
+        await this.fulfillmentV2Publisher.publishEvent({
+          eventType: event.event_type as keyof FulfillmentV2Events,
+          aggregateId: event.aggregate_id,
+          payload: event.payload as any,
+          metadata: { partitionKey: event.partition_key },
+        });
+      } else if (event.topic !== null) {
+        // Explicit topics never fall through to aggregate/event guessing. Keeping the row
+        // pending makes a bad producer configuration observable and retryable.
+        throw new Error(`Unknown explicit outbox topic: ${event.topic}`);
+      } else if (event.aggregate_type === 'Stock' || event.aggregate_type === 'ProductSellableQuantity') {
         await this.inventoryPublisher.publishEvent({
           eventType: event.event_type as keyof InventoryEvents,
           aggregateId: event.aggregate_id,
@@ -173,16 +204,11 @@ export class OutboxDispatcherService implements OnModuleInit {
           payload: event.payload as unknown as SalesOrderCancelledPayload,
           metadata: { partitionKey: event.partition_key },
         });
-      } else if (
-        event.event_type === 'OrderCancelled' ||
-        event.event_type === 'ORDER_CANCELLED'
-      ) {
+      } else if (event.event_type === 'OrderCancelled' || event.event_type === 'ORDER_CANCELLED') {
         // 레거시 outbox 소진: 구형 payload는 OrderCancelledSchema 필수 필드(reason, cancelledBy 등)가
         // 없어 Kafka 발행 시 검증 오류가 발생한다. Channel Adapter는 이미 core.orders.events.v1/
         // SalesOrderCancelled 를 구독하므로 이 이벤트는 Kafka 미발행, published 처리한다.
-        this.logger.warn(
-          `레거시 취소 이벤트 건너뜀: ${event.id} (${event.event_type}) — Kafka 미발행, published 처리`,
-        );
+        this.logger.warn(`레거시 취소 이벤트 건너뜀: ${event.id} (${event.event_type}) — Kafka 미발행, published 처리`);
       } else {
         await this.fulfillmentPublisher.publishEvent({
           eventType: event.event_type as keyof FulfillmentEvents,

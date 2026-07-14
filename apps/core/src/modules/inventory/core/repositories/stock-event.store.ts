@@ -132,6 +132,7 @@ export class StockEventStore {
         .update(wmsTables.stockLedgers)
         .set({
           qty: sql`${wmsTables.stockLedgers.qty} - ${params.quantity}`,
+          version: sql`${wmsTables.stockLedgers.version} + 1`,
           updatedAt: now,
         })
         .where(
@@ -174,6 +175,7 @@ export class StockEventStore {
           ],
           set: {
             qty: sql`${wmsTables.stockLedgers.qty} + ${params.quantity}`,
+            version: sql`${wmsTables.stockLedgers.version} + 1`,
             updatedAt: now,
           },
         });

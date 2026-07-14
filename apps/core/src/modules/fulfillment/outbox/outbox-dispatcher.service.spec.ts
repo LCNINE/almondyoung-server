@@ -1,3 +1,4 @@
+import { FULFILLMENT_V2_STREAM, SHIPMENT_STREAM } from '@packages/event-contracts/streams';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { OutboxDispatcherService } from './outbox-dispatcher.service';
 
@@ -22,6 +23,8 @@ describe('OutboxDispatcherService workflow filtering', () => {
         {} as never,
         {} as never,
         {} as never,
+        {} as never,
+        {} as never,
         { shouldDispatchFulfillmentEvents: () => shouldDispatchFulfillmentEvents } as never,
       ),
       getAcquiredSql: () => new PgDialect().sqlToQuery(acquiredQuery as never).sql.replace(/\s+/g, ' '),
@@ -36,6 +39,8 @@ describe('OutboxDispatcherService workflow filtering', () => {
     expect(getAcquiredSql()).toContain("LOWER(aggregate_type) NOT IN ('fulfillment', 'fulfillment_order'");
     expect(getAcquiredSql()).toContain("LOWER(event_type) NOT LIKE 'fulfillment%'");
     expect(getAcquiredSql()).toContain("LOWER(event_type) NOT LIKE 'shipment%'");
+    expect(getAcquiredSql()).toContain('topic IS DISTINCT FROM $1');
+    expect(getAcquiredSql()).toContain('topic IS DISTINCT FROM $2');
   });
 
   it('does not add the maintenance filter in legacy or v2 operation', async () => {
@@ -45,5 +50,91 @@ describe('OutboxDispatcherService workflow filtering', () => {
 
     expect(getAcquiredSql()).not.toContain('LOWER(aggregate_type) NOT IN');
     expect(getAcquiredSql()).not.toContain("LOWER(event_type) NOT LIKE 'fulfillment%'");
+  });
+});
+
+describe('OutboxDispatcherService explicit topic routing', () => {
+  function fixture() {
+    const where = jest.fn().mockResolvedValue(undefined);
+    const set = jest.fn().mockReturnValue({ where });
+    const update = jest.fn().mockReturnValue({ set });
+    const db = { db: { update } };
+    const fulfillment = { publishEvent: jest.fn().mockResolvedValue(undefined) };
+    const inventory = { publishEvent: jest.fn().mockResolvedValue(undefined) };
+    const coreOrder = { publishEvent: jest.fn().mockResolvedValue(undefined) };
+    const shipment = { publishEvent: jest.fn().mockResolvedValue(undefined) };
+    const fulfillmentV2 = { publishEvent: jest.fn().mockResolvedValue(undefined) };
+    const workflowGate = { shouldDispatchFulfillmentEvents: jest.fn().mockReturnValue(true) };
+    const service = new OutboxDispatcherService(
+      db as never,
+      fulfillment as never,
+      inventory as never,
+      coreOrder as never,
+      shipment as never,
+      fulfillmentV2 as never,
+      workflowGate as never,
+    );
+
+    return { service, fulfillment, inventory, coreOrder, shipment, fulfillmentV2, set };
+  }
+
+  const baseEvent = {
+    id: '00000000-0000-4000-8000-000000000001',
+    topic: null,
+    event_type: 'FulfillmentReady',
+    aggregate_type: 'Fulfillment',
+    aggregate_id: '00000000-0000-4000-8000-000000000002',
+    partition_key: '00000000-0000-4000-8000-000000000002',
+    payload: {},
+    attempts: 0,
+  };
+
+  it('routes shipment and fulfillment-v2 topics only to their typed publishers', async () => {
+    const f = fixture();
+    await (f.service as any).publishEvent({
+      ...baseEvent,
+      topic: SHIPMENT_STREAM.topic.topic,
+      event_type: 'ShipmentShipped',
+      aggregate_type: 'Shipment',
+    });
+    await (f.service as any).publishEvent({
+      ...baseEvent,
+      id: '00000000-0000-4000-8000-000000000003',
+      topic: FULFILLMENT_V2_STREAM.topic.topic,
+      event_type: 'FulfillmentProgressed',
+      aggregate_type: 'FulfillmentOrder',
+    });
+
+    expect(f.shipment.publishEvent).toHaveBeenCalledTimes(1);
+    expect(f.shipment.publishEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'ShipmentShipped', metadata: { partitionKey: baseEvent.partition_key } }),
+    );
+    expect(f.fulfillmentV2.publishEvent).toHaveBeenCalledTimes(1);
+    expect(f.fulfillmentV2.publishEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'FulfillmentProgressed' }),
+    );
+    expect(f.fulfillment.publishEvent).not.toHaveBeenCalled();
+    expect(f.inventory.publishEvent).not.toHaveBeenCalled();
+    expect(f.coreOrder.publishEvent).not.toHaveBeenCalled();
+  });
+
+  it('uses aggregate/event inference only for topicless legacy rows', async () => {
+    const f = fixture();
+    await (f.service as any).publishEvent(baseEvent);
+    expect(f.fulfillment.publishEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails an unknown explicit topic closed and leaves it retryable', async () => {
+    const f = fixture();
+    await expect((f.service as any).publishEvent({ ...baseEvent, topic: 'unexpected.events.v1' })).rejects.toThrow(
+      'Unknown explicit outbox topic: unexpected.events.v1',
+    );
+
+    expect(f.fulfillment.publishEvent).not.toHaveBeenCalled();
+    expect(f.shipment.publishEvent).not.toHaveBeenCalled();
+    expect(f.fulfillmentV2.publishEvent).not.toHaveBeenCalled();
+    expect(f.set).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'pending', attempts: 1, nextAttemptAt: expect.any(Date) }),
+    );
   });
 });
