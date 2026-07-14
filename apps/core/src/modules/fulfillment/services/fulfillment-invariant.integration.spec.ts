@@ -101,10 +101,33 @@ describeIfDb('fulfillment-invariant (PostgreSQL locks and read-only reconciliati
   });
 
   it('holds an exact FOI FOR UPDATE lock until the mutation transaction ends', async () => {
-    await inRollbackTx(async (tx) => {
-      const f = await fixture(tx);
-      await invariant.assertFulfillmentOrders([f.fulfillmentOrder.id], tx);
+    const f = await db.transaction((tx) => fixture(tx as unknown as DbTx));
+    let releaseOwner!: () => void;
+    const ownerReleased = new Promise<void>((resolve) => {
+      releaseOwner = resolve;
+    });
+    let ownerLocked!: () => void;
+    let ownerFailed!: (error: unknown) => void;
+    const locked = new Promise<void>((resolve, reject) => {
+      ownerLocked = resolve;
+      ownerFailed = reject;
+    });
+    const owner = db
+      .transaction(async (tx) => {
+        await invariant.assertFulfillmentOrders([f.fulfillmentOrder.id], tx as unknown as DbTx);
+        ownerLocked();
+        await ownerReleased;
+      })
+      .then(
+        () => undefined,
+        (error: unknown) => {
+          ownerFailed(error);
+          return error;
+        },
+      );
 
+    try {
+      await locked;
       let lockError: unknown;
       try {
         await contenderClient.begin(async (contender) => {
@@ -115,7 +138,20 @@ describeIfDb('fulfillment-invariant (PostgreSQL locks and read-only reconciliati
         lockError = error;
       }
       expect(lockError).toMatchObject({ code: '55P03' });
-    });
+    } finally {
+      releaseOwner();
+      const ownerError = await owner;
+      await db.transaction(async (tx) => {
+        await tx.delete(wmsTables.shipments).where(eq(wmsTables.shipments.id, f.shipment.id));
+        await tx.delete(wmsTables.salesOrders).where(eq(wmsTables.salesOrders.id, f.salesOrder.id));
+        await tx.delete(wmsTables.skus).where(eq(wmsTables.skus.id, f.sku.id));
+        await tx.delete(wmsTables.holders).where(eq(wmsTables.holders.id, f.holder.id));
+        await tx.delete(wmsTables.warehouses).where(eq(wmsTables.warehouses.id, f.warehouse.id));
+      });
+      if (ownerError) {
+        throw ownerError;
+      }
+    }
   });
 
   it('reconciliation reports the violating ID and never auto-corrects it', async () => {
