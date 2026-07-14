@@ -11,13 +11,25 @@ interface SearchInputProps extends React.HTMLAttributes<HTMLDivElement> {
   setSearchTerm: (searchTerm: string) => void
   onSearchKeyword: (searchTerm: string) => void
   onSearch: () => void
+  inputClassName?: string
 }
 
 export const SearchInput = forwardRef<HTMLDivElement, SearchInputProps>(
-  ({ searchTerm, setSearchTerm, onSearchKeyword, onSearch, ...props }, ref) => {
+  (
+    {
+      searchTerm,
+      setSearchTerm,
+      onSearchKeyword,
+      onSearch,
+      inputClassName,
+      className,
+      ...props
+    },
+    ref
+  ) => {
     const t = useTranslations("search")
     return (
-      <div ref={ref} {...props} className="w-full">
+      <div ref={ref} {...props} className={cn("w-full", className)}>
         <div className="relative w-full">
           <Input
             type="search"
@@ -34,7 +46,10 @@ export const SearchInput = forwardRef<HTMLDivElement, SearchInputProps>(
               onSearchKeyword(e.key)
             }}
             placeholder={t("inputPlaceholder")}
-            className="w-full rounded-xl border-none bg-gray-100 py-4 pr-20 pl-5 text-sm font-normal transition-all placeholder:text-gray-400 focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-yellow-400 focus-visible:ring-offset-0"
+            className={cn(
+              "w-full rounded-xl border-none bg-gray-100 py-4 pr-20 pl-5 text-sm font-normal transition-all placeholder:text-gray-400 focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-yellow-400 focus-visible:ring-offset-0",
+              inputClassName
+            )}
           />
           <div className="absolute top-1/2 right-3.5 flex -translate-y-1/2 items-center gap-2.5">
             {searchTerm && (

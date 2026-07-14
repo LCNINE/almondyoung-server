@@ -1868,3 +1868,76 @@ describe('SalesOrdersService.confirm() state guard', () => {
     await expect(service.confirm('nonexistent-id')).rejects.toThrow(NotFoundException);
   });
 });
+
+describe('SalesOrdersService.getStats() — 출고완료 FO 도출 (작업 15)', () => {
+  // getStats 의 6개 쿼리 체인을 (from 테이블, innerJoin 테이블, groupBy 여부)로 판별해
+  // 캔드 결과를 돌려주는 목. drizzle 연산자(and/or/eq/inArray/isNotNull)는 실제 실행돼도
+  // AST 만 만들고 DB 를 건드리지 않으므로 목이 인자를 무시하면 된다.
+  function makeStatsService(canned: {
+    today: number;
+    statusCounts: Array<{ status: string; cnt: number }>;
+    waitingMatch: unknown[];
+    cannotShip: unknown[];
+    directShip: unknown[];
+    outboundComplete: unknown[];
+  }): SalesOrdersService {
+    function builder() {
+      const state: { from?: unknown; joins: unknown[]; grouped: boolean } = { joins: [], grouped: false };
+      const resolveRows = (): unknown[] => {
+        const { from, joins } = state;
+        if (from === wmsTables.salesOrders && joins.length === 0) {
+          return state.grouped ? canned.statusCounts : [{ cnt: canned.today }];
+        }
+        if (from === wmsTables.salesOrders && joins.includes(wmsTables.fulfillmentOrders)) {
+          return canned.outboundComplete;
+        }
+        if (from === wmsTables.salesOrders && joins.includes(wmsTables.salesOrderLines)) {
+          return canned.cannotShip;
+        }
+        if (from === wmsTables.fulfillmentOrders && joins.includes(wmsTables.salesOrders)) {
+          return canned.directShip;
+        }
+        if (from === wmsTables.fulfillmentOrderCreationBacklogs && joins.includes(wmsTables.salesOrders)) {
+          return canned.waitingMatch;
+        }
+        return [];
+      };
+      const b: any = {
+        from: (t: unknown) => { state.from = t; return b; },
+        innerJoin: (t: unknown) => { state.joins.push(t); return b; },
+        where: () => b,
+        groupBy: () => { state.grouped = true; return b; },
+        then: (onF: any, onR: any) => Promise.resolve(resolveRows()).then(onF, onR),
+      };
+      return b;
+    }
+    const db = { db: { select: () => builder() } };
+    return new SalesOrdersService(
+      db as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any,
+    );
+  }
+
+  it('outboundComplete 는 FO 출고행 수이며 dead SO.status 합(processing/shipped/delivered)과 무관하다', async () => {
+    const service = makeStatsService({
+      today: 3,
+      // OLD 코드라면 shipped(5)+delivered(3)+processing(1)=9 를 반환했을 것
+      statusCounts: [
+        { status: 'confirmed', cnt: 10 },
+        { status: 'shipped', cnt: 5 },
+        { status: 'delivered', cnt: 3 },
+        { status: 'processing', cnt: 1 },
+      ],
+      waitingMatch: [],
+      cannotShip: [], // 비우면 partialOutbound 2차 쿼리 스킵
+      directShip: [],
+      outboundComplete: [{ id: 'so-a' }, { id: 'so-b' }], // FO 출고 증거 있는 confirmed SO 2건
+    });
+
+    const stats = await service.getStats();
+
+    expect(stats.outboundComplete).toBe(2); // FO 도출 — dead status 합(9)이 아님
+    expect(stats.outboundRequested).toBe(10); // byStatus('confirmed') 유지
+    expect(stats.outboundComplete).toBeLessThanOrEqual(stats.outboundRequested); // 완료 ⊆ 요청
+    expect(stats.todayCount).toBe(3);
+  });
+});

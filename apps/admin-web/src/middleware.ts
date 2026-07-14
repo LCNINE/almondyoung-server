@@ -4,6 +4,7 @@ import { createRemoteJWKSet, jwtVerify, type JWTVerifyOptions } from 'jose';
 
 const ACCESS_TOKEN = 'accessToken';
 const REFRESH_TOKEN = 'refreshToken';
+const CHANGE_PASSWORD_PATH = '/account/change-password';
 
 const PUBLIC_PATHS = [
   '/login',
@@ -75,7 +76,11 @@ export async function middleware(request: NextRequest) {
   // 네비게이션당 1회만 들르는 Node 라우트 `/auth/ensure` 로 보내 거기서 refresh 한다.
   // SPA 내부 fetch 의 refresh 는 여전히 client.ts(Web Locks)가 담당.
   try {
-    await verifyAccessToken(accessToken);
+    const { payload } = await verifyAccessToken(accessToken);
+    const mustChange = payload.must_change_password === true;
+    if (mustChange && pathname !== CHANGE_PASSWORD_PATH) {
+      return NextResponse.redirect(new URL(CHANGE_PASSWORD_PATH, request.nextUrl.origin));
+    }
     return NextResponse.next();
   } catch {
     return bounce(request, hasRefreshToken);

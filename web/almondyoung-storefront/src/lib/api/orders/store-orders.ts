@@ -30,7 +30,12 @@ export interface StoreOrderTrackingResponse {
   shipments: StoreShipment[]
 }
 
-export type StoreOrderAction = "cancel" | "track" | "return" | "exchange" | "receipt"
+export type StoreOrderAction =
+  | "cancel"
+  | "track"
+  | "return"
+  | "exchange"
+  | "receipt"
 
 export type StoreFulfillmentStatus =
   | "not_created"
@@ -82,7 +87,7 @@ export interface StoreOrderActionsResponse {
   availableActions: StoreOrderAction[]
   cancelUnavailableReason?: StoreCancelUnavailableReason
   /** 결제 상태. 무통장입금 미확인 시 'awaiting_payment', 확인 완료 시 'paid'. */
-  paymentStatus?: 'paid' | 'awaiting_payment'
+  paymentStatus?: "paid" | "awaiting_payment"
   refundSummary?: RefundSummary
   channelInfo?: {
     channel: string
@@ -92,7 +97,12 @@ export interface StoreOrderActionsResponse {
 }
 
 export interface StoreCancelOrderRequest {
-  reasonCode?: "CHANGE_OF_MIND" | "WRONG_ORDER" | "FOUND_CHEAPER" | "DELAY" | "OTHER"
+  reasonCode?:
+    | "CHANGE_OF_MIND"
+    | "WRONG_ORDER"
+    | "FOUND_CHEAPER"
+    | "DELAY"
+    | "OTHER"
   reasonDetail?: string
 }
 
@@ -104,6 +114,25 @@ export async function getOrderActionsByMedusaId(
     "wms",
     `/store/orders/by-channel-order/${encodeURIComponent(medusaOrderId)}/actions`,
     { method: "GET", withAuth: true }
+  )
+}
+
+/**
+ * 주문목록 페이지용 배치 조회
+ * 미수집·타인 주문은 응답에서 빠지므로 channelOrderId 로 매핑해 사용한다.
+ */
+export async function getOrderActionsBatchByMedusaId(
+  medusaOrderIds: string[]
+): Promise<StoreOrderActionsResponse[]> {
+  if (medusaOrderIds.length === 0) return []
+  return api<StoreOrderActionsResponse[]>(
+    "wms",
+    "/store/orders/by-channel-order/actions/batch",
+    {
+      method: "POST",
+      body: { channelOrderIds: medusaOrderIds },
+      withAuth: true,
+    }
   )
 }
 

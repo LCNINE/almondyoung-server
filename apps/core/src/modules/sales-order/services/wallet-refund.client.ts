@@ -21,7 +21,8 @@ export interface WalletRefundByIntentResponse {
 export type WalletRefundOutcome =
   | { kind: 'success'; refunds: WalletRefundResult[] }
   | { kind: 'partial_pending'; refunds: WalletRefundResult[] }
-  | { kind: 'failed'; errorCode: string; errorMessage: string }
+  | { kind: 'failed'; errorCode: string; errorMessage: string; determinate: boolean }
+  | { kind: 'in_flight'; errorCode: string; errorMessage: string }
   | { kind: 'already_refunded'; errorCode: string; errorMessage: string }
   | { kind: 'no_intent_id' }
   | { kind: 'wallet_unavailable'; errorMessage: string };
@@ -112,10 +113,7 @@ export class WalletRefundClient {
       // Wallet이 "이미 환불 완료" 또는 "환불 가능 금액 초과(= 이미 환불됨)"를 반환하면
       // 실패가 아니라 "이미 환불 완료"로 정상화한다. failed로 남기면 운영자가 잘못된
       // 실패를 계속 보게 되어 혼란이 발생한다.
-      const ALREADY_REFUNDED_CODES = new Set([
-        'REFUND_AMOUNT_EXCEEDS_AVAILABLE',
-        'REFUND_AMOUNT_EXCEEDS_TOTAL',
-      ]);
+      const ALREADY_REFUNDED_CODES = new Set(['REFUND_AMOUNT_EXCEEDS_AVAILABLE', 'REFUND_AMOUNT_EXCEEDS_TOTAL']);
       // errorCode 외에도 메시지 문자열에서 패턴 매칭 (방어적 처리)
       const alreadyRefundedByMessage =
         typeof errorMessage === 'string' &&
@@ -128,10 +126,19 @@ export class WalletRefundClient {
         return { kind: 'already_refunded', errorCode, errorMessage };
       }
 
+      // 409 처리중 = 불확정 (규율 3). 같은 key 재시도 버킷이며 N 증가 금지.
+      if (response.status === 409 && errorCode === 'IDEMPOTENCY_KEY_IN_FLIGHT') {
+        this.logger.warn(
+          `[WalletRefundClient] In-flight for intent ${intentId}: correlationId=${options.correlationId}`,
+        );
+        return { kind: 'in_flight', errorCode, errorMessage };
+      }
+
       this.logger.error(
         `[WalletRefundClient] Wallet returned ${response.status} for intent ${intentId}: ${errorCode} ${errorMessage}`,
       );
-      return { kind: 'failed', errorCode, errorMessage };
+      // 4xx = Wallet 이 확정적으로 미환불(determinate). 5xx = 불확정(환불 여부 불명).
+      return { kind: 'failed', errorCode, errorMessage, determinate: response.status < 500 };
     }
 
     let data: WalletRefundByIntentResponse;
@@ -167,6 +174,7 @@ export class WalletRefundClient {
         kind: 'failed',
         errorCode: failed?.reasonCode ?? 'REFUND_FAILED',
         errorMessage: failed?.reasonMessage ?? 'Wallet refund failed',
+        determinate: true,
       };
     }
     if (hasPending) {

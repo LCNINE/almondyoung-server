@@ -12,7 +12,7 @@ export default function BenefitDetailSection() {
       <div className="flex flex-col items-center gap-4 mb-8">
         <h2 className="text-2xl md:text-3xl font-bold text-center">
           <span className="text-white">{t("detailTitle1")}</span>
-          <span className="text-[#f29219]">{t("detailTitle2")}</span>
+          <span className="text-[#ff6600]">{t("detailTitle2")}</span>
         </h2>
       </div>
 
@@ -25,7 +25,7 @@ export default function BenefitDetailSection() {
           >
             <CardHeader className="pb-3">
               <div className="flex items-center gap-3">
-                <span className="text-[#f29219] text-lg font-bold">
+                <span className="text-[#ff6600] text-lg font-bold">
                   {benefit.number}
                 </span>
                 <CardTitle className="text-white text-base">

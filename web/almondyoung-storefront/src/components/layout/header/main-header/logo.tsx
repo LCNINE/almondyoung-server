@@ -4,8 +4,23 @@ import Image from "next/image"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 
-export function Logo() {
+export function Logo({ tone = "light" }: { tone?: "light" | "dark" }) {
   const { countryCode } = useParams()
+
+  if (tone === "dark") {
+    return (
+      <Link
+        href={`/${countryCode}`}
+        className="flex h-12 items-center text-[28px] leading-none font-black tracking-normal whitespace-nowrap text-[#3f3a34] italic"
+      >
+        ALMOND
+        <span className="border-primary mx-1 inline-flex h-8 w-5 rotate-12 items-center justify-center rounded-[50%] border-[3px] text-transparent">
+          O
+        </span>
+        YOUNG
+      </Link>
+    )
+  }
 
   return (
     <Link href={`/${countryCode}`}>

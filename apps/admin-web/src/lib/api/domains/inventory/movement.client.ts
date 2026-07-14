@@ -7,6 +7,7 @@ import type {
   MovementJobWithLinesDto,
   MovementHistoryResponseDto,
   MovementHistoryQuery,
+  WithIdempotencyKey,
 } from '../../../types/dto/inventory';
 
 function buildQueryString(query: Record<string, unknown>): string {
@@ -21,7 +22,7 @@ function buildQueryString(query: Record<string, unknown>): string {
 
 export const movementClient = {
   moveImmediately: async (
-    data: MoveBatchRequestDto
+    data: WithIdempotencyKey<MoveBatchRequestDto>
   ): Promise<MovementJobWithLinesDto> => {
     const response = await client.post(`${ALMONDYOUNG_API_BASE_URL}/movement/move`, data);
     return response.data;

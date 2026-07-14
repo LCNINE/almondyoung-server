@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ⚠️ DEPRECATED: dev 스테이지 폐기됨. 로컬은 `npm run test:core:integration:local` 사용.
 # core dev DB 대상 통합 테스트 (rollback-only — DB에 데이터를 남기지 않는 spec만 대상).
 #
 # 사전조건: 별도 터미널에서 VPC 터널이 떠 있어야 한다.

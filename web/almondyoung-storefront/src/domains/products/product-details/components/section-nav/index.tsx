@@ -33,20 +33,21 @@ export function SectionTabs({
 
   const tabIds = useMemo(() => VALID_TABS, [])
 
-  // 헤더 높이는 breakpoint(모바일/md+) 마다 다르므로 CSS 변수에서 읽어 resize 에 반응.
+  const navRef = useRef<HTMLElement>(null)
   const [sectionOffset, setSectionOffset] = useState(DEFAULT_SECTION_OFFSET)
 
   useEffect(() => {
-    const read = () => {
-      const raw = getComputedStyle(document.documentElement).getPropertyValue(
-        "--pdp-section-offset"
-      )
-      const n = parseInt(raw, 10)
-      if (!Number.isNaN(n)) setSectionOffset(n)
+    const measure = () => {
+      const headerH = document.getElementById("site-header")?.offsetHeight ?? 0
+      const navH = navRef.current?.offsetHeight ?? 0
+      const root = document.documentElement.style
+      root.setProperty("--pdp-header-h", `${headerH}px`)
+      root.setProperty("--pdp-section-offset", `${headerH + navH}px`)
+      setSectionOffset(headerH + navH)
     }
-    read()
-    window.addEventListener("resize", read)
-    return () => window.removeEventListener("resize", read)
+    measure()
+    window.addEventListener("resize", measure)
+    return () => window.removeEventListener("resize", measure)
   }, [])
 
   const activeIdRaw = useScrollSpyWindow(tabIds, { topOffset: sectionOffset })
@@ -112,15 +113,16 @@ export function SectionTabs({
     cn(
       "flex-1 cursor-pointer border-0 border-b-2 px-4 py-3 text-sm font-bold transition-colors focus-visible:outline-none lg:text-base",
       active
-        ? "border-b-[#f29219] text-[#f29219]"
+        ? "border-b-[#ff6600] text-[#ff6600]"
         : "border-b-transparent text-[#666666] hover:text-[#333333]"
     )
 
   return (
     <div className="w-full">
       <nav
+        ref={navRef}
         aria-label={t("ariaLabel")}
-        className="sticky top-[var(--pdp-header-h)] z-10 mb-8 flex h-auto w-full border-b border-[#e5e5e5] bg-white"
+        className="sticky top-(--pdp-header-h) z-10 mb-8 flex h-auto w-full border-b border-[#e5e5e5] bg-white"
       >
         <button
           type="button"

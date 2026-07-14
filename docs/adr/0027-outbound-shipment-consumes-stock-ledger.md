@@ -6,6 +6,8 @@ Accepted (구현 대기). 2026-06-29. 상황판: `docs/outbound-shipment-ledger-
 
 **Amended 2026-06-30** — 종결 트리거 변경: 이전엔 "송장(상자 라벨) 스캔 = 종결 트리거"로 결정했으나, 물류팀 요구로 **송장 스캔 = 박스 open**, **종결 트리거 = 박스 전 라인의 검수 자동완료**로 바꿈. 소진 *단위*가 상자라는 핵심 결정은 불변, 트리거 *타이밍*만 이동(#1·#4 반영). 상세 = RFC §Phase 2 (클러스터 A).
 
+**Extended 2026-07-14** — 합배송·송장분할·백오더·다중 피킹 전략·출고 회수와 batch 재고 세션의 후속 결정은 [`docs/outbound-consolidation-split-backorder-decision-record.md`](../outbound-consolidation-split-backorder-decision-record.md)에 정리한다. 본 ADR의 “shipment가 원장 소진 단위”라는 결정은 유지한다. 다만 shipment 선생성, shipment 기준 invoice, 부분예약과 shipment별 즉시 정산이 기존 구현 흐름을 확장·대체한다.
+
 ## Context
 
 재고는 event-sourced 원장(`stock_events` → `stock_ledgers` → `stock_summary_view`)으로 관리한다. 원본 설계(`docs/inventory_event_mutable.md`)는 출고작업 종결 시 단일 "출고완료" 이벤트를 append 해 원장 일관성을 유지하도록 의도했다.

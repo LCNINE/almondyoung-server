@@ -315,6 +315,13 @@ export async function signInAction(formData: FormData): Promise<ActionResult> {
     const tokens = await signIn({ loginId, password, rememberMe })
     userId = await promoteTokens(tokens, rememberMe, reauthUserId || undefined)
   } catch (e) {
+    if (e instanceof ApiError) {
+      const msg =
+        e.status === 400 || e.status === 401
+          ? "아이디 또는 비밀번호가 올바르지 않습니다."
+          : "로그인 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+      return { ok: false, error: msg }
+    }
     return { ok: false, error: e instanceof Error ? e.message : "로그인 실패" }
   }
 

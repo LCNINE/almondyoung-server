@@ -2,7 +2,20 @@ import { BadRequestException, ConflictException, Injectable, Logger, NotFoundExc
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
-import { eq, inArray, desc, and, or, gte, lte, count, sql, type InferInsertModel, type SQL } from 'drizzle-orm';
+import {
+  eq,
+  inArray,
+  desc,
+  and,
+  or,
+  gte,
+  lte,
+  count,
+  sql,
+  isNotNull,
+  type InferInsertModel,
+  type SQL,
+} from 'drizzle-orm';
 import { PoliciesService } from './policies.service';
 import { OutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
@@ -325,6 +338,8 @@ export class SalesOrdersService {
         return this.getOne(id, trx);
       }
 
+      // shipped/delivered/processing 는 producer 0(작업 15, ADR-0017)이라 도달 불가하나,
+      // 미래 값 부활 시 confirm 재진입을 막도록 방어적으로 존치한다.
       const NON_CONFIRMABLE = new Set(['cancelled', 'shipped', 'delivered', 'timeout', 'processing']);
       if (NON_CONFIRMABLE.has(salesOrder.status)) {
         throw new ConflictException(
@@ -821,6 +836,25 @@ export class SalesOrdersService {
       )
       .where(eq(wmsTables.fulfillmentOrders.fulfillmentMode, 'drop_ship'));
 
+    // 출고완료: confirmed SO 중 FO 가 출고 증거를 가진 건수. SO.status 는 processing/shipped/
+    // delivered 로 전이하지 않으므로(작업 15, ADR-0017) FO(status + shippedAt)에서 도출한다.
+    // 표시 레이어의 `hasShippedEvidence`(store-sales-orders)와 동일한 출고 증거 정의.
+    const outboundCompleteRows = await db
+      .select({ id: wmsTables.salesOrders.id })
+      .from(wmsTables.salesOrders)
+      .innerJoin(wmsTables.fulfillmentOrders, eq(wmsTables.fulfillmentOrders.salesOrderId, wmsTables.salesOrders.id))
+      .where(
+        and(
+          gte(wmsTables.salesOrders.orderDate, fourteenDaysAgo),
+          eq(wmsTables.salesOrders.status, 'confirmed'),
+          or(
+            inArray(wmsTables.fulfillmentOrders.status, ['shipped', 'completed']),
+            isNotNull(wmsTables.fulfillmentOrders.shippedAt),
+          ),
+        ),
+      )
+      .groupBy(wmsTables.salesOrders.id); // DISTINCT so.id — 미래 SO:다중 FO 이중계산 방지
+
     return {
       todayCount: Number(todayResult.cnt),
       outboundRequested: byStatus('confirmed'),
@@ -828,7 +862,7 @@ export class SalesOrdersService {
       cannotShip: cannotShipRows.length,
       partialOutbound: partialOutboundCount,
       waitingMatching: waitingMatchRows.length,
-      outboundComplete: byStatus('processing') + byStatus('shipped') + byStatus('delivered'),
+      outboundComplete: outboundCompleteRows.length,
     };
   }
 

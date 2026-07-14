@@ -272,3 +272,57 @@ describe('ProductMastersService hardDelete purchase constraint cleanup', () => {
     expect(tx.state.purchaseConstraints).toEqual([]);
   });
 });
+
+describe('ProductMastersService.createMaster ownership', () => {
+  function makeService() {
+    const productPublisher = {
+      publishEvent: jest.fn().mockResolvedValue(undefined),
+    };
+    const outboxPublisher = {
+      saveEvent: jest.fn().mockResolvedValue(undefined),
+    };
+    const productSellableQuantity = {
+      recalculateAndPublishForMaster: jest.fn().mockResolvedValue([]),
+    };
+
+    const service = new ProductMastersService(
+      { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
+      productPublisher as any,
+      outboxPublisher as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      productSellableQuantity as any,
+      null,
+    );
+
+    return { service, productPublisher, outboxPublisher, productSellableQuantity };
+  }
+
+  it('records the creating user as draft owner and creator on the initial version', async () => {
+    const { service } = makeService();
+    const insertedValues: any[] = [];
+    const tx: any = {
+      insert: jest.fn(() => ({
+        values: (v: any) => {
+          insertedValues.push(v);
+          return { returning: () => [{ id: v.id ?? 'generated-id', ...v }] };
+        },
+      })),
+    };
+    // publishVariantCreatedEvent 은 이벤트 발행이라 스텁 처리(deleteMaster 테스트의 _emit* 스텁과 동일 패턴)
+    (service as any).publishVariantCreatedEvent = jest.fn().mockResolvedValue(undefined);
+
+    await service.createMaster('user-123', tx);
+
+    const versionValues = insertedValues.find((v) => v.status === 'draft' && 'masterId' in v);
+    expect(versionValues.draftOwnerId).toBe('user-123');
+    expect(versionValues.createdBy).toBe('user-123');
+
+    const masterValues = insertedValues.find(
+      (v) => 'id' in v && !('masterId' in v) && !('variantName' in v)
+    );
+    expect(masterValues.createdBy).toBe('user-123');
+  });
+});

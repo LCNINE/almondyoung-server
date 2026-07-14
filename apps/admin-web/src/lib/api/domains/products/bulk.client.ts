@@ -7,6 +7,8 @@ import type {
   BulkRestoreDto,
   BulkOperationResultDto,
   BulkUpdateResultDto,
+  BulkUpdatePolicyDto,
+  BulkPolicyResultDto,
 } from '@/lib/types/dto/products';
 import { client } from '../../client';
 
@@ -30,6 +32,14 @@ export const bulkClient = {
   restore: async (dto: BulkRestoreDto): Promise<BulkOperationResultDto> => {
     const response = await client.post(
       `${ALMONDYOUNG_API_BASE_URL}/masters/bulk/restore`,
+      dto
+    );
+    return response.data;
+  },
+
+  policy: async (dto: BulkUpdatePolicyDto): Promise<BulkPolicyResultDto> => {
+    const response = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/masters/bulk/policy`,
       dto
     );
     return response.data;

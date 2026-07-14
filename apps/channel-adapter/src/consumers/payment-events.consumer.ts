@@ -26,6 +26,8 @@ const MEDUSA_PAYMENT_EVENT_TYPES = [
   'payment.intent.authorized',
   'payment.intent.captured',
   'payment.intent.awaiting_deposit',
+  'payment.intent.refund_requested',
+  'payment.intent.refund_request_rejected',
   'payment.intent.succeeded',
   'payment.intent.failed',
   'payment.intent.canceled',
@@ -97,6 +99,21 @@ export class PaymentEventsConsumer {
    */
   @OnEvent('payments.events.v1', 'payment.intent.awaiting_deposit')
   async handleIntentAwaitingDeposit(@EventEnvelope() envelope: MessageEnvelope) {
+    await this.forwardToMedusa(envelope);
+  }
+
+  /**
+   * 무통장 환불 '신청'(REQUESTED) — Medusa 가 주문에 refund_status='requested' marker 를 달아
+   * 승인 전까지 WMS 수집/발송에서 제외하도록 전달. 거절 시 marker 해제 이벤트로 복원.
+   * intentId 기반이라 별도 channelOrderId 보강 불필요(Medusa hook 이 intent→order 역추적).
+   */
+  @OnEvent('payments.events.v1', 'payment.intent.refund_requested')
+  async handleIntentRefundRequested(@EventEnvelope() envelope: MessageEnvelope) {
+    await this.forwardToMedusa(envelope);
+  }
+
+  @OnEvent('payments.events.v1', 'payment.intent.refund_request_rejected')
+  async handleIntentRefundRequestRejected(@EventEnvelope() envelope: MessageEnvelope) {
     await this.forwardToMedusa(envelope);
   }
 

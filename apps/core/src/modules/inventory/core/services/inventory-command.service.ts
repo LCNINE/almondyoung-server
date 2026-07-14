@@ -5,6 +5,8 @@ import { StockEventStore } from '../repositories/stock-event.store';
 import { OutboxService } from '../../shared/outbox/outbox.service';
 import { LocationService } from './location.service';
 import { eq, and, gt, desc } from 'drizzle-orm';
+import { acquireStockAvailabilityLock } from '../../shared/locks/stock-availability-lock';
+import { assertReservationInvariant } from '../../shared/locks/reservation-invariant';
 
 @Injectable()
 export class InventoryCommandService {
@@ -207,6 +209,8 @@ export class InventoryCommandService {
   ) {
     if (input.quantity <= 0) throw new BadRequestException('quantity must be positive');
     const exec = async (trx: DbTx) => {
+      await acquireStockAvailabilityLock(trx, input.skuId, input.fromWarehouseId);
+      await assertReservationInvariant(trx, input.skuId, input.fromWarehouseId, input.quantity);
       const event = await this.eventStore.createEvent(
         {
           skuId: input.skuId,
@@ -372,11 +376,15 @@ export class InventoryCommandService {
       occurredAt?: Date;
       idempotencyKey?: string;
       reason?: string;
+      bypassReservationGuard?: boolean; // 실사·파손 등 물리적 사실만 true
     },
     tx?: DbTx,
   ) {
     if (input.quantity <= 0) throw new BadRequestException('quantity must be positive');
     const exec = async (trx: DbTx) => {
+      // 0. (sku,warehouse) 직렬화 — bypass 여도 락은 획득
+      await acquireStockAvailabilityLock(trx, input.skuId, input.warehouseId);
+
       // 1. SKU 정보 조회
       const sku = await trx.query.skus.findFirst({
         where: (s, { eq }) => eq(s.id, input.skuId),
@@ -426,6 +434,11 @@ export class InventoryCommandService {
         );
       }
       const afterQuantity = currentQuantity - input.quantity;
+
+      // 3.5. 예약 불변식 가드 (물리적 사실이면 건너뜀)
+      if (!input.bypassReservationGuard) {
+        await assertReservationInvariant(trx, input.skuId, input.warehouseId, input.quantity);
+      }
 
       // 4. Stock Event 생성
       const event = await this.eventStore.createEvent(
@@ -511,14 +524,6 @@ export class InventoryCommandService {
         trx,
       );
       return { eventId: event?.id ?? null };
-    };
-    return this.dbService.run(exec, tx);
-  }
-
-  async reverseEvent(input: { eventId: string; reason: string }, tx?: DbTx) {
-    const exec = async (trx: DbTx) => {
-      const rev = await this.eventStore.reverseEvent(input.eventId, input.reason, trx);
-      return { eventId: rev?.id ?? null };
     };
     return this.dbService.run(exec, tx);
   }

@@ -8,6 +8,20 @@
       "when": 1779113726786,
       "tag": "20260518141526_baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1783370047655,
+      "tag": "20260706203407_add-must-change-password",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783663333407,
+      "tag": "20260710060213_add-email-verifications",
+      "breakpoints": true
     }
   ]
 }

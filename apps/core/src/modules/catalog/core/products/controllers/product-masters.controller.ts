@@ -2,7 +2,6 @@ import {
   Controller,
   Get,
   Post,
-  Put,
   Patch,
   Delete,
   Body,
@@ -17,12 +16,9 @@ import { DateMapper } from '../../../common/mappers';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { ProductMastersService } from '../services/product-masters.service';
 import { ProductVersionsService } from '../services/product-versions.service';
-import { ZodValidationPipe } from '@app/shared';
 import {
   MasterProductWithPrimaryVersionDto,
   ProductDto,
-  ProductListItemDto,
-  ProductListResponseDto,
   ProductSummaryDto,
 } from '../dto/products/product-response.dto';
 import { ProductMapper } from '../mappers/product.mapper';
@@ -31,6 +27,7 @@ import { PimSchema } from '../../../schema/catalog.schema';
 import { PaginatedResponseDto } from '../../../common/dto';
 import { ApiOkResponsePaginated } from '../../../common/decorators';
 import { ProductMasterMapper } from '../mappers';
+import { ListProductMastersQueryDto } from '../dto/list-product-masters-query.dto';
 
 @ApiTags('Product Masters')
 @Controller('masters')
@@ -64,9 +61,9 @@ export class ProductMastersController {
     type: ProductDto,
   })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async createMaster(): Promise<ProductDto> {
+  async createMaster(@User() user: { userId: string }): Promise<ProductDto> {
     try {
-      const master = await this.productMastersService.createMaster();
+      const master = await this.productMastersService.createMaster(user.userId);
       return ProductMapper.toDto(master, []);
     } catch (error) {
       console.error('Create master error:', error);
@@ -143,38 +140,55 @@ export class ProductMastersController {
     type: String,
     description: 'master ID 목록 (UUID 콤마 구분, 예: id1,id2,id3). 지정 시 페이지네이션 무시하고 일치 항목만 반환',
   })
+  @ApiQuery({
+    name: 'productType',
+    required: false,
+    enum: ['regular_sale', 'limited_edition'],
+    description: '상품 유형',
+  })
+  @ApiQuery({
+    name: 'approvalStatus',
+    required: false,
+    enum: ['draft', 'pending', 'approved', 'rejected'],
+    description:
+      "승인 상태. mode='active'(기본)에선 승인된 active 버전만 조회되므로 draft/pending/rejected 필터는 mode='all'과 함께 사용.",
+  })
+  @ApiQuery({
+    name: 'createdFrom',
+    required: false,
+    type: String,
+    description: '등록일 시작(ISO). product_masters.createdAt 기준',
+  })
+  @ApiQuery({ name: 'createdTo', required: false, type: String, description: '등록일 종료(ISO)' })
+  @ApiQuery({
+    name: 'sort',
+    required: false,
+    enum: ['createdAt', 'name', 'updatedAt'],
+    description: '정렬 기준 (기본 createdAt)',
+  })
+  @ApiQuery({ name: 'order', required: false, enum: ['asc', 'desc'], description: '정렬 방향 (기본 desc)' })
   @ApiOkResponsePaginated(ProductSummaryDto, {
     description: '상품 목록 조회 성공',
   })
   @ApiResponse({ status: 500, description: '서버 오류' })
-  async getMasters(
-    @Query()
-    query: {
-      page?: string;
-      limit?: string;
-      categoryId?: string;
-      brand?: string;
-      q?: string;
-      name?: string;
-      mode?: 'active' | 'active-or-inactive' | 'all';
-      deleted?: string;
-      ids?: string;
-    },
-  ): Promise<PaginatedResponseDto<ProductSummaryDto>> {
-    const ids = query.ids
-      ?.split(',')
-      .map((id) => id.trim())
-      .filter((id) => id.length > 0);
+  async getMasters(@Query() query: ListProductMastersQueryDto): Promise<PaginatedResponseDto<ProductSummaryDto>> {
+    const keyword = (query.q ?? query.name)?.trim() || undefined;
 
     const filters = {
-      page: query.page ? parseInt(query.page) : undefined,
-      limit: query.limit ? parseInt(query.limit) : undefined,
+      page: query.page,
+      limit: query.limit,
       categoryId: query.categoryId,
       brand: query.brand,
-      name: query.q?.trim() || query.name?.trim() || undefined,
+      name: keyword,
       mode: query.mode,
-      deleted: query.deleted === 'true',
-      ids: ids && ids.length > 0 ? ids : undefined,
+      productType: query.productType,
+      approvalStatus: query.approvalStatus,
+      createdFrom: query.createdFrom,
+      createdTo: query.createdTo,
+      sort: query.sort,
+      order: query.order,
+      deleted: query.deleted ?? false,
+      ids: query.ids && query.ids.length > 0 ? query.ids : undefined,
     };
 
     const result = await this.productMastersService.getMasters(filters);

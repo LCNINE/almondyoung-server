@@ -19,7 +19,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Pencil } from 'lucide-react';
+import { PackagePlus, Pencil } from 'lucide-react';
 
 const STATUS_LABELS: Record<string, string> = {
   active: '활성',
@@ -43,6 +43,7 @@ type MatchingActions = {
   pendingVariantId?: string | null;
   onPolicyChange: (row: ProductVariantTableRow, policy: StockPolicyDto) => void;
   onEditMatching: (row: ProductVariantTableRow) => void;
+  onAdjustStock: (row: ProductVariantTableRow) => void;
 };
 
 export function useProductVariantsTableColumns(
@@ -259,19 +260,38 @@ export function useProductVariantsTableColumns(
             columnHelper.display({
               id: 'matchingActions',
               header: '',
-              cell: ({ row }) => (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    matchingActions.onEditMatching(row.original);
-                  }}
-                >
-                  <Pencil data-icon="inline-start" />
-                  매칭
-                </Button>
-              ),
+              cell: ({ row }) => {
+                const hasSku =
+                  (row.original.matchingInfo?.matching?.links?.length ?? 0) > 0;
+                return (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!hasSku}
+                      title={hasSku ? undefined : '매칭된 SKU가 없습니다'}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        matchingActions.onAdjustStock(row.original);
+                      }}
+                    >
+                      <PackagePlus data-icon="inline-start" />
+                      재고조정
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        matchingActions.onEditMatching(row.original);
+                      }}
+                    >
+                      <Pencil data-icon="inline-start" />
+                      매칭
+                    </Button>
+                  </div>
+                );
+              },
             }),
           ]
         : [];

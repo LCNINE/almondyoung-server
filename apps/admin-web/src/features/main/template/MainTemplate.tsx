@@ -12,7 +12,7 @@ import { QuickActionsCard } from '@/features/main/quick-actions/QuickActionsCard
 import { useOrderStats, useSalesOrders, usePendingMatchings } from '@/lib/services/orders';
 import { useQuestions } from '@/lib/services/qna';
 import { useAllUserCount } from '@/lib/services/users';
-import { usePendingBankTransfers } from '@/lib/services/wallet';
+import { usePendingBankTransfers, useRefundRequests } from '@/lib/services/wallet';
 import type { SalesOrderStatus } from '@/lib/types/dto/orders';
 import {
   Banknote,
@@ -21,6 +21,7 @@ import {
   ChevronRight,
   Headphones,
   Package,
+  RotateCcw,
   ShoppingBag,
   Users,
 } from 'lucide-react';
@@ -55,6 +56,7 @@ export default function MainTemplate() {
   const { data: userCount, isLoading: isUserCountLoading } = useAllUserCount();
   const { data: qnaData, isLoading: isQnaLoading } = useQuestions({ limit: 1, status: 'active' });
   const { data: bankTransfers, isLoading: isBankTransfersLoading } = usePendingBankTransfers(1, 1);
+  const { data: refundRequests, isLoading: isRefundRequestsLoading } = useRefundRequests(1, 1);
   const { data: recentOrdersData, isLoading: isOrdersLoading } = useSalesOrders({ limit: 5 });
 
   const stats = [
@@ -106,6 +108,16 @@ export default function MainTemplate() {
       path: '/payments/bank-transfers',
       highlight: (v: number) => v > 0,
     },
+    {
+      label: '환불 신청',
+      value: refundRequests?.total,
+      isLoading: isRefundRequestsLoading,
+      icon: RotateCcw,
+      iconBg: 'bg-rose-50',
+      iconColor: 'text-rose-600',
+      path: '/payments/refund-requests',
+      highlight: (v: number) => v > 0,
+    },
   ];
 
   const recentOrders = recentOrdersData?.data ?? [];
@@ -123,7 +135,7 @@ export default function MainTemplate() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         {stats.map((stat) => {
           const Icon = stat.icon;
           const isHighlighted = stat.value != null && stat.highlight?.(stat.value);

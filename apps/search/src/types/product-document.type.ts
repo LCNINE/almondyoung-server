@@ -113,6 +113,7 @@ export const PRODUCTS_INDEX_MAPPINGS = {
     min_membership_price: { type: 'long' as const },
     max_membership_price: { type: 'long' as const },
     status: { type: 'keyword' as const },
+    is_visible_to_members_only: { type: 'boolean' as const },
     changed_at: { type: 'date' as const },
     updated_at: { type: 'date' as const },
     review_count: { type: 'integer' as const },
@@ -133,6 +134,13 @@ export const REVIEW_FIELDS_MAPPINGS = {
   },
 } as const;
 
+// 기존 인덱스에 additive 로 putMapping 하기 위한 필드 (멤버십 전용 노출)
+export const MEMBERS_ONLY_FIELD_MAPPINGS = {
+  properties: {
+    is_visible_to_members_only: { type: 'boolean' as const },
+  },
+} as const;
+
 export interface SearchProductDocument {
   master_id: string;
   version_id: string;
@@ -149,6 +157,7 @@ export interface SearchProductDocument {
   min_membership_price: number | null;
   max_membership_price: number | null;
   status: string;
+  is_visible_to_members_only: boolean;
   changed_at: string;
   updated_at: string;
   review_count?: number;

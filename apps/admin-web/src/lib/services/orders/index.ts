@@ -75,7 +75,6 @@ export {
   useAdminManualRefundComplete,
   // 출고주문(FO) 액션
   useCreateFulfillmentOrder,
-  useShipFulfillment,
   useCancelFulfillment,
   useReserveFulfillmentItem,
   // 출고 배치 (D2)
@@ -93,12 +92,10 @@ export {
   useAnalyzeConsolidation,
   useAutoConsolidate,
   // FO 액션 (Core /fulfillments canonical)
-  useSplitFulfillmentOrder,
   useCheckFulfillmentAvailability,
   useReserveFulfillment,
   useUnreserveFulfillment,
   useTransferFulfillmentReservation,
-  useAssignFulfillmentShipment,
   useDeliverFulfillment,
 } from './mutations';
 

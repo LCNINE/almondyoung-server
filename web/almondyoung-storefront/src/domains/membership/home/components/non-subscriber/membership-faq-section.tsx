@@ -17,7 +17,7 @@ export default function MembershipFAQSection() {
       <div className="flex flex-col items-center gap-4 mb-8">
         <h2 className="text-2xl md:text-3xl font-bold text-center">
           <span className="text-white">{t("faqTitle1")}</span>
-          <span className="text-[#f29219]">{t("faqTitle2")}</span>
+          <span className="text-[#ff6600]">{t("faqTitle2")}</span>
         </h2>
       </div>
 
@@ -28,7 +28,7 @@ export default function MembershipFAQSection() {
             value={`item-${index}`}
             className="border-white/10"
           >
-            <AccordionTrigger className="text-white text-sm text-left hover:no-underline hover:text-[#f29219] [&>svg]:text-white">
+            <AccordionTrigger className="text-white text-sm text-left hover:no-underline hover:text-[#ff6600] [&>svg]:text-white">
               {faq.question}
             </AccordionTrigger>
             <AccordionContent className="text-white/70 text-sm">

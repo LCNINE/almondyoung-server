@@ -271,6 +271,7 @@ export class OAuthManager {
               email: user.email,
               login_id: user.loginId,
               roles,
+              must_change_password: user.mustChangePassword ?? false,
             }
           : {}),
       },

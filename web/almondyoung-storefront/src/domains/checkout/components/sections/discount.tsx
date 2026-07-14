@@ -204,9 +204,9 @@ export const DiscountSection = ({
 
           {/* 적용된 쿠폰 표시 */}
           {selectedCoupon ? (
-            <div className="flex items-center justify-between rounded-[5px] border border-[#F29219] px-3 py-2.5">
+            <div className="flex items-center justify-between rounded-[5px] border border-[#ff6600] px-3 py-2.5">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-medium text-[#F29219] lg:text-sm">
+                <span className="text-xs font-medium text-[#ff6600] lg:text-sm">
                   {(() => {
                     const promo = promotions.find(
                       (p) => p.code === selectedCoupon

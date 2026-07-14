@@ -1,5 +1,6 @@
 {
   "section": {
+    "shopping": "ショッピング活動",
     "orderShipping": "注文・配送",
     "accountManagement": "アカウント管理",
     "benefits": "特典・サービス"
@@ -40,7 +41,8 @@
     "wish": "お気に入り",
     "rebuy": "よく購入",
     "recent": "最近見た商品",
-    "customInfo": "カスタマイズ"
+    "customInfo": "カスタマイズ",
+    "allMenu": "すべてのメニュー"
   },
   "coupon": {
     "myCoupons": "マイクーポン",
@@ -148,7 +150,9 @@
     "pointTitle": "アーモンドヨン ポイント",
     "pointAriaLabel": "アーモンドヨン ポイントを表示",
     "settings": "設定",
-    "won": "ウォン"
+    "won": "ウォン",
+    "benefitActive": "特典利用中",
+    "membershipJoinCta": "加入して特典を受ける"
   },
   "shipping": {
     "title": "配送中の商品",
@@ -157,7 +161,10 @@
     "emptyDescription": "新しい商品をご注文ください。",
     "shopNow": "ショッピングへ",
     "orderNumber": "注文番号 {number}",
-    "detailAriaLabel": "詳細表示"
+    "detailAriaLabel": "詳細表示",
+    "orderTitle": "注文履歴",
+    "trackButton": "配送照会",
+    "trackToast": "配送照会は準備中です。カスタマーセンターへお問い合わせください。"
   },
   "banner": {
     "savingsThisMonth": "今月 <strong>{amount}ウォン</strong> 節約しました!",
@@ -184,9 +191,78 @@
     "orderTitle": "注文履歴はありません",
     "orderDescription": "最初のご注文をどうぞ。",
     "orderPeriodTitle": "選択した期間に注文履歴がありません",
+    "orderSearchTitle": "検索結果がありません",
+    "orderSearchDescription": "別のキーワードでお試しください",
     "orderPeriodDescription": "別の期間を選択してください。"
   },
   "account": {
+    "accountInfo": {
+      "title": "アカウント情報",
+      "securityGroup": "アカウントセキュリティ",
+      "profileGroup": "マイ情報",
+      "password": "パスワード",
+      "email": "メール",
+      "phone": "携帯電話",
+      "name": "名前",
+      "nickname": "ニックネーム",
+      "birthday": "生年月日",
+      "loginId": "ID",
+      "verifyNeeded": "認証が必要",
+      "verified": "認証済み",
+      "verifiedToast": "メールアドレスが認証されました。",
+      "editField": {
+        "editTitle": "{label}の変更",
+        "save": "保存",
+        "saving": "保存中...",
+        "cancel": "キャンセル",
+        "saved": "保存しました。",
+        "failed": "保存に失敗しました。しばらくしてからもう一度お試しください。",
+        "nameRequired": "名前を入力してください。",
+        "nicknameRequired": "ニックネームを入力してください。",
+        "birthdayInvalid": "生年月日を8桁で入力してください。（例：19941024）"
+      },
+      "verifyDialog": {
+        "title": "メールアドレスを認証してください",
+        "description": "認証リンクを {email} 宛てにお送りします。メールを認証するとアカウントの安全性が高まり、アーモンドヤングからの大切なお知らせを受け取れます。",
+        "sendLink": "リンクを受け取る",
+        "cancel": "キャンセル",
+        "sentTitle": "受信トレイをご確認ください",
+        "sentDescription": "{email} 宛てに認証リンクをお送りしました。メール内のリンクをクリックして、このメールアドレスを認証してください。",
+        "done": "完了",
+        "sendFailed": "認証メールの送信に失敗しました。しばらくしてからもう一度お試しください。"
+      },
+      "phoneDialog": {
+        "introTitle": "まずご本人確認をしましょう",
+        "introDescription": "情報を変更する前に簡単な確認が必要です。",
+        "sendCodeSms": "SMSでコードを受け取る",
+        "codeTitle": "お送りしたコードを入力してください",
+        "codeDescription": "アカウント保護のため、{phone} 宛てに送信されたコードを入力してください。コードは送信から3分後に失効します。",
+        "submit": "送信する",
+        "resendCode": "コードを再送する",
+        "changeTitle": "携帯電話番号を変更してください",
+        "changeDescription": "SMSまたはデータ通信料が発生する場合があります。",
+        "next": "次へ",
+        "sendCodeEmail": "メールでコードを受け取る",
+        "codeDescriptionEmail": "アカウント保護のため、{email} 宛てに送信されたコードを入力してください。コードは送信から3分後に失効します。",
+        "codeSentHint": "アカウント保護のため認証コードを送信しました。コードは3分後に失効します。"
+      },
+      "gateDialog": {
+        "introTitle": "パスワードを変更する前にご本人確認が必要です",
+        "introDescription": "SMSまたはメールでコードを受け取り、本人確認を完了してください。",
+        "sendCodeSms": "SMSでコードを受け取る",
+        "sendCodeEmail": "メールでコードを受け取る",
+        "codeTitle": "お送りしたコードを入力してください",
+        "codeDescriptionSms": "アカウント保護のため、{phone} 宛てに送信されたコードを入力してください。コードは送信から3分後に失効します。",
+        "codeDescriptionEmail": "アカウント保護のため、{email} 宛てに送信されたコードを入力してください。コードは送信から3分後に失効します。",
+        "submit": "確認して続ける",
+        "verifying": "確認中...",
+        "resendCode": "コードを再送する",
+        "expired": "認証時間が切れました",
+        "resendCountdown": "{timer}秒後に再送できます。",
+        "noPhone": "登録された携帯番호가 없습니다.",
+        "codeSentHint": "アカウント保護のため認証コードを送信しました。コードは3分後に失効します。"
+      }
+    },
     "labels": {
       "email": "メール",
       "name": "氏名",
@@ -416,7 +492,13 @@
       "items": "商品 {count}件",
       "totalQuantity": "合計数量 {count}",
       "productSuffix": "他 {count}件",
-      "defaultProductName": "商品"
+      "defaultProductName": "商品",
+      "searchPlaceholder": "注文した商品を検索できます",
+      "clearSearch": "検索語をクリア",
+      "searchResultCount": "「{q}」の検索結果 {count}件",
+      "prevPage": "前へ",
+      "nextPage": "次へ",
+      "recent6m": "直近6か月"
     },
     "filter": {
       "label": "フィルター",
@@ -443,7 +525,8 @@
       "cancelSuccessManual": "注文はキャンセルされました。返金はカスタマーサポートで確認後に処理されます。",
       "cancelError": "キャンセル処理中にエラーが発生しました。",
       "contactCs": "カスタマーサポートへ問い合わせ",
-      "bankTransferCancelGuide": "銀行振込注文のキャンセルはカスタマーサポートへお問い合わせください。",
+      "bankTransferCancelGuide": "銀行振込注文のキャンセル・返金は、「返金申請」ボタンからお申し込みください。",
+      "bankTransferRefundNotice": "入金前の未入金注文は、入金期限（7日）を過ぎると自動的にキャンセルされます。入金後のキャンセル・返金は「返金申請」で返金口座（銀行・口座番号・口座名義）を入力してください。管理者確認後、その口座へ返金され（約2営業日）、口座名義が正確である必要があります。",
       "download": "ダウンロード"
     },
     "delivery": {
@@ -577,12 +660,43 @@
         "DELAY": "配送遅延",
         "OTHER": "その他"
       }
+    },
+    "refundRequest": {
+      "trigger": "返金申請",
+      "title": "返金口座の申請",
+      "description": "返金を受け取る口座情報を入力してください。管理者確認後、入力された口座へ返金されます（約2営業日）。口座名義が正確である必要があります。",
+      "bank": "銀行",
+      "bankPlaceholder": "銀行を選択",
+      "accountNumber": "口座番号",
+      "accountNumberPlaceholder": "数字のみ入力",
+      "holderName": "口座名義",
+      "holderNamePlaceholder": "口座名義",
+      "reason": "返金理由（任意）",
+      "reasonPlaceholder": "返金理由を入力してください",
+      "cancel": "キャンセル",
+      "submit": "返金申請",
+      "submitting": "申請中...",
+      "success": "返金申請を受け付けました。確認後に処理されます。",
+      "error": "返金申請に失敗しました。もう一度お試しください。",
+      "requested": "返金申請済み · 処理待ち",
+      "refunded": "返金完了"
+    },
+    "depositAccount": {
+      "title": "入金口座のご案内",
+      "bank": "銀行",
+      "accountNumber": "口座番号",
+      "copy": "コピー",
+      "copied": "口座番号をコピーしました。",
+      "holder": "口座名義",
+      "amount": "入金金額",
+      "dueDate": "入金期限",
+      "notice": "下記の口座へご入金ください。振込名義が異なっても問題ありません。入金後の自動確認まで時間がかかる場合があり、確認後に配送されます。"
     }
   },
   "membership": {
-    "logoAlt": "メンバーシップロゴ",
-    "defaultTierName": "メンバーシップ",
-    "membershipName": "アモンドヤン メンバーシップ",
+    "logoAlt": "ODOK ロゴ",
+    "defaultTierName": "ODOK",
+    "membershipName": "アモンドヤン ODOK",
     "noBenefitInfo": "特典情報がありません。",
     "status": {
       "ACTIVE": "利用中",
@@ -732,7 +846,7 @@
       }
     },
     "history": {
-      "title": "メンバーシップ利用履歴",
+      "title": "ODOK 利用履歴",
       "subscriptionHistory": "サブスク履歴",
       "noSubscriptionHistory": "サブスク履歴がありません。",
       "savingsTitle": "節約記録",
@@ -746,11 +860,11 @@
       "adjGrantedByAdmin": "管理者付与 +{days}日",
       "adjExtended": "+{days}日延長",
       "adjReduced": "-{days}日減算",
-      "legacyHistory": "従来のアモンドヤン メンバーシップ履歴を見る",
-      "joinAndBenefits": "アモンドヤン メンバーシップ加入・特典確認",
+      "legacyHistory": "従来のアモンドヤン ODOK履歴を見る",
+      "joinAndBenefits": "アモンドヤン ODOK加入・特典確認",
       "subscribe": "登録する",
-      "cancelMembership": "メンバーシップを解約",
-      "heroTitle": "アモンドヤン メンバーシップ サービス",
+      "cancelMembership": "ODOKを解約",
+      "heroTitle": "アモンドヤン ODOK サービス",
       "heroGrandOpen": "GRAND OPEN",
       "priceNoticeMonthlyYearly": "* 有料メンバーシップ 月 4,990ウォン / 年 49,900ウォン",
       "priceNoticeFreeMonths": "* 年間プランで 2ヶ月無料"
@@ -1041,5 +1155,14 @@
       "small": "2〜3人 小規模",
       "large": "4人以上 中・大規模"
     }
+  },
+  "frequent": {
+    "title": "よく使うメニュー",
+    "viewAll": "すべて表示",
+    "orderList": "注文履歴",
+    "wish": "お気に入り",
+    "review": "レビュー管理",
+    "myInfo": "会員情報",
+    "cs": "カスタマーセンター"
   }
 }

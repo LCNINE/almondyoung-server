@@ -42,8 +42,8 @@ export const transitionTypeEnum = pgEnum('transition_type', [
   'MOVE', // 이동 (창고내/창고간 통합)
 
   // 품질 관리
-  'MARK_DEFECT', // ON_HAND → DEFECTIVE (불량 지정)
-  'REWORK_GOOD', // DEFECTIVE → ON_HAND (불량 양품화)
+  'MARK_DEFECT', // ON_HAND → DEFECTIVE (불량 지정) — DEAD(producer 0, 작업4 이후), 제거 예정: dev DB 복구 후(현황판 작업8b)
+  'REWORK_GOOD', // DEFECTIVE → ON_HAND (불량 양품화) — DEAD(producer 0, 작업4 이후), 제거 예정: dev DB 복구 후(현황판 작업8b)
   'SCRAP', // (ON_HAND|DEFECTIVE) → null (폐기)
 
   // 수동 조정 (reason 필드로 상세 사유 기록)
@@ -51,44 +51,14 @@ export const transitionTypeEnum = pgEnum('transition_type', [
   'ADJUST_DOWN', // ON_HAND → null (재고 감소)
 ]);
 
-// 확장된 이벤트 타입
-export const eventTypeEnum = pgEnum('event_type', [
-  // 입고 관련
-  'IN', // 일반 입고
-  'IN_DOMESTIC', // 국내 거래처 입고
-  'IN_OVERSEAS', // 해외 거래처 입고
-  'IN_RETURN', // 반품 입고
-
-  // 출고 관련
-  'OUT', // 일반 출고
-  'OUT_ORDER', // 주문 출고
-  'OUT_DAMAGE', // 파손 출고
-  'OUT_LOSS', // 분실 출고
-  'OUT_DISPOSAL', // 폐기 출고
-
-  // 이동 관련
-  'MOVE', // 일반 이동
-  'MOVE_INTER_WAREHOUSE', // 창고 간 이동
-  'MOVE_INTRA_WAREHOUSE', // 창고 내 이동
-
-  // 조정 관련
-  'ADJUST', // 일반 조정
-  'ADJUST_MANUAL', // 관리자 수동 조정
-  'ADJUST_INVENTORY', // 재고 실사 조정
-
-  // 예약 관련
-  'RESERVE',
-  'CONFIRM',
-  'RELEASE',
-  'CANCEL',
-]);
-
 // 창고 타입 추가
 export const warehouseTypeEnum = pgEnum('warehouse_type', ['domestic', 'overseas', 'bonded', 'return']);
 
+// DEAD 값(producer 0) — 제거 예정: dev DB 복구 후(현황판 작업8b). 'pending'(컬럼 default이나 실 insert는 항상 'confirmed')·'active'. 라이브: confirmed/released.
 export const reservationStatusEnum = pgEnum('reservation_status', ['pending', 'confirmed', 'released', 'active']);
 export const taskStatusEnum = pgEnum('task_status', ['created', 'picking', 'packed', 'shipped', 'canceled']);
 export const unavailableReasonEnum = pgEnum('unavailable_reason', ['pb', 'foreign', 'low_margin']);
+// DEAD 값(producer 0) — 제거 예정: dev DB 복구 후(현황판 작업8b). 'in_transit'·'failed'. 라이브: open/shipped/delivered/canceled. (delivery-provider의 DeliveryStatus는 별개 타입)
 export const shipmentStatusEnum = pgEnum('shipment_status', ['open', 'shipped', 'in_transit', 'delivered', 'failed', 'canceled']);
 export const carrierEnum = pgEnum('carrier', ['CJ', 'HANJIN', 'LOTTE', 'LOGEN', 'KDEXP', 'CJGLS']);
 export const returnStatusEnum = pgEnum('return_status', [
@@ -150,9 +120,12 @@ export const systemLocationRoleEnum = pgEnum('system_location_role', ['inbound_d
 export const orderStatusEnum = pgEnum('order_status', [
   'pending', // 주문 생성 (결제 대기)
   'confirmed', // 주문 확정 (결제 완료)
-  'processing', // 처리 중 (일괄주문확정 완료)
-  'shipped', // 출고 완료
-  'delivered', // 배송 완료
+  // DEAD 값(producer 0, 작업 15) — SO 출고/배송 진실은 FO(fulfillmentOrders.status + shippedAt)
+  // 도출이 SoT 다(ADR-0017). SO.status 의 실 전이는 pending→confirmed→cancelled 뿐이다(timeout 도 현재 producer 0 인 예약 값).
+  // 재사용 금지. 물리 제거(pgEnum recast)는 destructive·저가치라 비목표(구 8b 판례).
+  'processing', // [DEAD] 미사용 — 도달 불가
+  'shipped', // [DEAD] 미사용 — FO 도출로 대체
+  'delivered', // [DEAD] 미사용 — FO 도출로 대체
   'cancelled', // 취소
   'timeout', // 타임아웃
 ]);
@@ -181,6 +154,8 @@ export const eventTypeOrderEnum = pgEnum('event_type_order', [
 ]);
 
 export const taskPriorityEnum = pgEnum('task_priority', ['normal', 'high', 'urgent']);
+// DEAD 값(producer 0) — 제거 예정: dev DB 복구 후(현황판 작업8b). 'reserving'·'labeled'·'inspecting'·'inspected'·'pending'.
+// (라이브: created/ready/unfulfillable/allocated/picking/picked/invoiced/shipped/completed/canceled/forwarded. 'inspected' 는 invoice.service.ts 게이트 reader 잔존이나 도달 불가)
 export const fulfillmentStatusEnum = pgEnum('fulfillment_status', [
   'created',
   'reserving',
@@ -759,6 +734,29 @@ export const locations = pgTable(
 // indexes moved into table definitions above
 
 /*───────────────────────────
+ * REQUEST IDEMPOTENCY (P2-4)
+ * 입고/이동 요청 전체의 멱등 기록. 이벤트 레벨 stock_events.idempotency_key 와 별개의
+ * 요청(핸들러) 레벨 방어 — 스펙 docs/superpowers/specs/2026-07-09-inbound-movement-idempotency-design.md §4.1
+ *──────────────────────────*/
+export const inventoryIdempotencyRequests = pgTable(
+  'inventory_idempotency_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    endpoint: varchar('endpoint', { length: 64 }).notNull(),
+    key: varchar('key', { length: 128 }).notNull(),
+    // SHA-256(JSON.stringify(dto)) hex — 키 오용(같은 키, 다른 본문) 감지
+    requestHash: varchar('request_hash', { length: 64 }).notNull(),
+    // null = 처리 중(커밋 전에는 외부 미관찰). 완료 시 핸들러 반환값 저장
+    response: jsonb('response'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqEndpointKey: uniqueIndex('uq_inv_idem_requests_endpoint_key').on(t.endpoint, t.key),
+    idxCreatedAt: index('idx_inv_idem_requests_created_at').on(t.createdAt),
+  }),
+);
+
+/*───────────────────────────
  * STOCK LEDGER
  *──────────────────────────*/
 export const stockJournals = pgTable('stock_journals', {
@@ -1329,8 +1327,8 @@ export const stockReservations = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
 
     // 통합 예약 대상 정보
-    targetType: varchar('target_type', { length: 50 }).notNull(), // 'FULFILLMENT_ORDER' | 'MOVEMENT_TASK'
-    targetId: uuid('target_id').notNull(), // FO ID 또는 Movement Task ID
+    targetType: varchar('target_type', { length: 50 }).notNull(), // 'FULFILLMENT_ORDER' 만 사용 (구 이동작업 예약 타입 제거)
+    targetId: uuid('target_id').notNull(), // FO ID
 
     // 기존 FO 호환성을 위해 유지 (nullable로 변경)
     fulfillmentOrderItemId: uuid('fulfillment_order_item_id').references(() => fulfillmentOrderItems.id, {
@@ -1360,84 +1358,6 @@ export const stockReservations = pgTable(
     statusIdx: index('stock_reservations_status_idx').on(t.status),
   }),
 );
-
-/*───────────────────────────
- * OUTBOUND TASKS
- *──────────────────────────*/
-export const outboundTasks = pgTable('outbound_tasks', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  warehouseId: uuid('warehouse_id')
-    .references(() => warehouses.id)
-    .notNull(),
-  mergeGroupId: varchar('merge_group_id', { length: 64 }).references(() => mergeGroups.id, { onDelete: 'set null' }), // 합배송 그룹 참조
-  status: taskStatusEnum('status').notNull().default('created'),
-  priority: taskPriorityEnum('priority').notNull().default('normal'),
-
-  totalItems: integer('total_items').notNull().default(0), // 총 품목 수
-  totalQuantity: integer('total_quantity').notNull().default(0), // 총 수량
-
-  assignedTo: uuid('assigned_to'), // 작업자 ID
-  requiresGiftWrap: boolean('requires_gift_wrap').notNull().default(false), // 선물포장 필요
-  temperatureControlled: boolean('temperature_controlled').notNull().default(false), // 온도 제어 필요
-
-  unavailableReason: unavailableReasonEnum('unavailable_reason'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
-
-// 바구니와 주문 연결 테이블 추가
-export const outboundTaskOrders = pgTable(
-  'outbound_task_orders',
-  {
-    taskId: uuid('task_id')
-      .references(() => outboundTasks.id, { onDelete: 'cascade' })
-      .notNull(),
-    orderId: uuid('order_id')
-      .references(() => salesOrders.id, { onDelete: 'cascade' })
-      .notNull(),
-
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    pk: primaryKey(t.taskId, t.orderId),
-  }),
-);
-
-// outbound_task_items 수정
-export const outboundTaskItems = pgTable(
-  'outbound_task_items',
-  {
-    taskId: uuid('task_id')
-      .references(() => outboundTasks.id, { onDelete: 'cascade' })
-      .notNull(),
-    skuId: uuid('sku_id')
-      .references(() => skus.id)
-      .notNull(),
-
-    quantityPending: integer('quantity_pending').notNull().default(0),
-    quantityPicking: integer('quantity_picking').notNull().default(0),
-    quantityPicked: integer('quantity_picked').notNull().default(0),
-
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    pk: primaryKey(t.taskId, t.skuId),
-  }),
-);
-
-export const outboundTaskLines = pgTable('outbound_task_lines', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  taskId: uuid('task_id')
-    .references(() => outboundTasks.id, { onDelete: 'cascade' })
-    .notNull(),
-  skuId: uuid('sku_id')
-    .references(() => skus.id, { onDelete: 'restrict' })
-    .notNull(),
-  quantity: integer('quantity').notNull(),
-  locationId: uuid('location_id').references(() => locations.id, { onDelete: 'set null' }),
-  scannedBarcode: varchar('scanned_barcode', { length: 64 }),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
 
 /*───────────────────────────
  * SHIPMENTS
@@ -1739,6 +1659,9 @@ export const stocktakingLines = pgTable(
     idxStocktakingLineSession: index('idx_stocktaking_line_session').on(t.sessionId),
     idxStocktakingLineSku: index('idx_stocktaking_line_sku').on(t.skuId),
     idxStocktakingLineLocation: index('idx_stocktaking_line_location').on(t.locationId),
+    uqStocktakingLine: unique('uq_stocktaking_line_session_sku_location')
+      .on(t.sessionId, t.skuId, t.locationId)
+      .nullsNotDistinct(),
   }),
 );
 
@@ -1763,6 +1686,7 @@ export const stocktakingAdjustments = pgTable(
   (t) => ({
     idxAdjustmentSession: index('idx_adjustment_session').on(t.sessionId),
     idxAdjustmentLine: index('idx_adjustment_line').on(t.lineId),
+    uqStocktakingAdjustmentLine: unique('uq_stocktaking_adjustment_line').on(t.lineId),
   }),
 );
 
@@ -2235,10 +2159,6 @@ export const wmsTables = {
   stockReservations,
   fulfillmentOrders,
   fulfillmentOrderCreationBacklogs,
-  outboundTasks,
-  outboundTaskOrders,
-  outboundTaskItems,
-  outboundTaskLines,
   shipments,
   shipmentLines,
   shipmentTracking,
@@ -2260,6 +2180,7 @@ export const wmsTables = {
   movementWorkLogs,
   auditLogs,
   outboxEvents,
+  inventoryIdempotencyRequests,
 
   // Stocktaking
   stocktakingSessions,
@@ -2372,8 +2293,6 @@ export const skusRelations = relations(skus, ({ one, many }) => ({
   stockReservations: many(stockReservations),
   // Order relations
   fulfillmentOrderItems: many(fulfillmentOrderItems),
-  outboundTaskItems: many(outboundTaskItems),
-  outboundTaskLines: many(outboundTaskLines),
   // Purchase/Inbound relations
   purchaseOrderLines: many(purchaseOrderLines),
   purchaseOrderCart: many(purchaseOrderCart),
@@ -2462,7 +2381,6 @@ export const warehousesRelations = relations(warehouses, ({ many }) => ({
   stockLedgers: many(stockLedgers),
   stockReservations: many(stockReservations),
   fulfillmentOrders: many(fulfillmentOrders),
-  outboundTasks: many(outboundTasks),
   outboundBatches: many(outboundBatches),
   movementJobs: many(movementJobs),
   inboundReceipts: many(inboundReceipts),
@@ -2511,7 +2429,6 @@ export const locationsRelations = relations(locations, ({ one, many }) => ({
   inboundReceipts: many(inboundReceipts),
   inboundReceiptLines: many(inboundReceiptLines),
   movementJobLines: many(movementJobLines),
-  outboundTaskLines: many(outboundTaskLines),
   skusPrimary: many(skus, {
     relationName: 'primaryLocation',
   }),
@@ -2614,7 +2531,6 @@ export const salesOrdersRelations = relations(salesOrders, ({ many }) => ({
   fulfillmentOrderCreationBacklogs: many(fulfillmentOrderCreationBacklogs),
   orderEvents: many(orderEvents),
   cancellations: many(salesOrderCancellations),
-  outboundTaskOrders: many(outboundTaskOrders),
   returns: many(returns),
 }));
 
@@ -2641,10 +2557,6 @@ export const salesOrderCancellationsRelations = relations(salesOrderCancellation
     fields: [salesOrderCancellations.salesOrderId],
     references: [salesOrders.id],
   }),
-}));
-
-export const mergeGroupsRelations = relations(mergeGroups, ({ many }) => ({
-  outboundTasks: many(outboundTasks),
 }));
 
 // Fulfillment Order Relations
@@ -2697,58 +2609,6 @@ export const fulfillmentOrderItemsRelations = relations(fulfillmentOrderItems, (
     references: [productSkuMappingSnapshots.id],
   }),
   stockReservations: many(stockReservations),
-}));
-
-// Outbound Relations
-export const outboundTasksRelations = relations(outboundTasks, ({ one, many }) => ({
-  warehouse: one(warehouses, {
-    fields: [outboundTasks.warehouseId],
-    references: [warehouses.id],
-  }),
-  mergeGroup: one(mergeGroups, {
-    fields: [outboundTasks.mergeGroupId],
-    references: [mergeGroups.id],
-  }),
-  outboundTaskOrders: many(outboundTaskOrders),
-  outboundTaskItems: many(outboundTaskItems),
-  outboundTaskLines: many(outboundTaskLines),
-}));
-
-export const outboundTaskOrdersRelations = relations(outboundTaskOrders, ({ one }) => ({
-  task: one(outboundTasks, {
-    fields: [outboundTaskOrders.taskId],
-    references: [outboundTasks.id],
-  }),
-  order: one(salesOrders, {
-    fields: [outboundTaskOrders.orderId],
-    references: [salesOrders.id],
-  }),
-}));
-
-export const outboundTaskItemsRelations = relations(outboundTaskItems, ({ one }) => ({
-  task: one(outboundTasks, {
-    fields: [outboundTaskItems.taskId],
-    references: [outboundTasks.id],
-  }),
-  sku: one(skus, {
-    fields: [outboundTaskItems.skuId],
-    references: [skus.id],
-  }),
-}));
-
-export const outboundTaskLinesRelations = relations(outboundTaskLines, ({ one }) => ({
-  task: one(outboundTasks, {
-    fields: [outboundTaskLines.taskId],
-    references: [outboundTasks.id],
-  }),
-  sku: one(skus, {
-    fields: [outboundTaskLines.skuId],
-    references: [skus.id],
-  }),
-  location: one(locations, {
-    fields: [outboundTaskLines.locationId],
-    references: [locations.id],
-  }),
 }));
 
 export const outboundBatchesRelations = relations(outboundBatches, ({ one, many }) => ({
@@ -3086,7 +2946,6 @@ export const wmsRelations = {
   salesOrderLinesRelations,
   orderEventsRelations,
   salesOrderCancellationsRelations,
-  mergeGroupsRelations,
 
   // Fulfillment Order Relations
   fulfillmentOrdersRelations,
@@ -3094,10 +2953,6 @@ export const wmsRelations = {
   fulfillmentOrderItemsRelations,
 
   // Outbound Relations
-  outboundTasksRelations,
-  outboundTaskOrdersRelations,
-  outboundTaskItemsRelations,
-  outboundTaskLinesRelations,
   outboundBatchesRelations,
   fulfillmentOrderBatchesRelations,
 
@@ -3268,19 +3123,6 @@ export type NewFulfillmentOrderCreationBacklog = InferInsertModel<typeof fulfill
 export type FulfillmentOrderItem = InferSelectModel<typeof fulfillmentOrderItems>;
 export type NewFulfillmentOrderItem = InferInsertModel<typeof fulfillmentOrderItems>;
 
-// Outbound Types
-export type OutboundTask = InferSelectModel<typeof outboundTasks>;
-export type NewOutboundTask = InferInsertModel<typeof outboundTasks>;
-
-export type OutboundTaskOrder = InferSelectModel<typeof outboundTaskOrders>;
-export type NewOutboundTaskOrder = InferInsertModel<typeof outboundTaskOrders>;
-
-export type OutboundTaskItem = InferSelectModel<typeof outboundTaskItems>;
-export type NewOutboundTaskItem = InferInsertModel<typeof outboundTaskItems>;
-
-export type OutboundTaskLine = InferSelectModel<typeof outboundTaskLines>;
-export type NewOutboundTaskLine = InferInsertModel<typeof outboundTaskLines>;
-
 export type OutboundBatch = InferSelectModel<typeof outboundBatches>;
 export type NewOutboundBatch = InferInsertModel<typeof outboundBatches>;
 
@@ -3435,6 +3277,8 @@ export const exchangeReasonCodeEnum = pgEnum('exchange_reason_code', [
   'other',
 ]);
 
+export const returnRefundAttemptStatusEnum = pgEnum('return_refund_attempt_status', ['pending', 'succeeded', 'failed']);
+
 export const returnRequests = pgTable(
   'return_requests',
   {
@@ -3476,6 +3320,33 @@ export const returnRequestItems = pgTable(
   (t) => ({
     idxReturnRequestItemsRequest: index('idx_return_request_items_request').on(t.returnRequestId),
     idxReturnRequestItemsOrderLine: index('idx_return_request_items_order_line').on(t.salesOrderLineId),
+  }),
+);
+
+export const returnRefundAttempts = pgTable(
+  'return_refund_attempts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    returnRequestId: uuid('return_request_id')
+      .references(() => returnRequests.id, { onDelete: 'cascade' })
+      .notNull(),
+    attemptNumber: integer('attempt_number').notNull(),
+    // = correlationId = Wallet Idempotency-Key. 시도별 결정적 key 의 단일 진실(SoT).
+    idempotencyKey: text('idempotency_key').notNull(),
+    // Wallet body 의 SoT — 재사용(재생) 시 동일 amount 강제 (body-hash 일치).
+    amount: integer('amount').notNull(),
+    status: returnRefundAttemptStatusEnum('status').notNull().default('pending'),
+    walletOutcome: jsonb('wallet_outcome'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqReturnRefundAttemptNumber: unique('uq_return_refund_attempt_number').on(t.returnRequestId, t.attemptNumber),
+    // 불변식: 반품당 in-flight(pending) attempt 최대 1개 — Phase A 의 "pending 재사용" 규칙을 DB 로 강제
+    uqReturnRefundAttemptPending: uniqueIndex('uq_return_refund_attempt_pending')
+      .on(t.returnRequestId)
+      .where(sql`${t.status} = 'pending'`),
+    idxReturnRefundAttemptsRequest: index('idx_return_refund_attempts_request').on(t.returnRequestId),
   }),
 );
 
@@ -3526,6 +3397,7 @@ export const returnExchangeTables = {
   returnRequestItems,
   exchangeRequests,
   exchangeRequestItems,
+  returnRefundAttempts,
 } as const;
 
 export const returnExchangeSchema = {
@@ -3538,6 +3410,9 @@ export type NewReturnRequest = InferInsertModel<typeof returnRequests>;
 
 export type ReturnRequestItem = InferSelectModel<typeof returnRequestItems>;
 export type NewReturnRequestItem = InferInsertModel<typeof returnRequestItems>;
+
+export type ReturnRefundAttempt = InferSelectModel<typeof returnRefundAttempts>;
+export type NewReturnRefundAttempt = InferInsertModel<typeof returnRefundAttempts>;
 
 // Exchange Request Types
 export type ExchangeRequest = InferSelectModel<typeof exchangeRequests>;

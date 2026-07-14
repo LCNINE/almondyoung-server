@@ -27,6 +27,7 @@ import type {
   InboundPendingListResponseDto,
   InboundActionResponse,
   InboundLineMemoResponse,
+  WithIdempotencyKey,
 } from '../../../types/dto/inventory';
 
 const BASE = `${ALMONDYOUNG_API_BASE_URL}/inbound`;
@@ -42,17 +43,17 @@ function buildQueryString(query: Record<string, unknown>): string {
 }
 
 export const inboundClient = {
-  simple: async (data: SimpleInboundDto): Promise<SimpleInboundResponseDto> => {
+  simple: async (data: WithIdempotencyKey<SimpleInboundDto>): Promise<SimpleInboundResponseDto> => {
     const response = await client.post(`${BASE}/simple`, data);
     return response.data;
   },
 
-  simpleFullscan: async (data: SimpleInboundDto): Promise<SimpleInboundResponseDto> => {
+  simpleFullscan: async (data: WithIdempotencyKey<SimpleInboundDto>): Promise<SimpleInboundResponseDto> => {
     const response = await client.post(`${BASE}/simple-fullscan`, data);
     return response.data;
   },
 
-  individual: async (data: IndividualInboundDto): Promise<IndividualInboundResponseDto> => {
+  individual: async (data: WithIdempotencyKey<IndividualInboundDto>): Promise<IndividualInboundResponseDto> => {
     const response = await client.post(`${BASE}/individual`, data);
     return response.data;
   },
@@ -86,17 +87,17 @@ export const inboundClient = {
     return response.data;
   },
 
-  putaway: async (data: PutawayRequestDto): Promise<InboundActionResponse> => {
+  putaway: async (data: WithIdempotencyKey<PutawayRequestDto>): Promise<InboundActionResponse> => {
     const response = await client.post(`${BASE}/putaway`, data);
     return response.data;
   },
 
-  return: async (data: ReturnInboundDto): Promise<InboundActionResponse> => {
+  return: async (data: WithIdempotencyKey<ReturnInboundDto>): Promise<InboundActionResponse> => {
     const response = await client.post(`${BASE}/return`, data);
     return response.data;
   },
 
-  cancel: async (data: CancelInboundDto): Promise<InboundActionResponse> => {
+  cancel: async (data: WithIdempotencyKey<CancelInboundDto>): Promise<InboundActionResponse> => {
     const response = await client.post(`${BASE}/cancel`, data);
     return response.data;
   },
@@ -133,7 +134,7 @@ export const inboundClient = {
       return response.data;
     },
 
-    receive: async (data: ReceiveFromPlanDto): Promise<ReceiveFromPlanResponseDto> => {
+    receive: async (data: WithIdempotencyKey<ReceiveFromPlanDto>): Promise<ReceiveFromPlanResponseDto> => {
       const response = await client.post(`${BASE}/plans/receive`, data);
       return response.data;
     },

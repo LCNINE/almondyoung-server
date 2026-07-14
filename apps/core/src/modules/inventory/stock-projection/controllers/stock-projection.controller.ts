@@ -33,6 +33,7 @@ export class StockProjectionController {
   })
   @ApiQuery({ name: 'skuId', required: false, description: 'SKU ID 필터' })
   @ApiQuery({ name: 'warehouseId', required: false, description: '창고 ID 필터' })
+  @ApiQuery({ name: 'search', required: false, description: 'SKU 이름 검색어 (부분일치)' })
   @ApiOkResponsePaginated(StockSummaryListItemDto)
   async listStockSummaries(
     @Query() query: GetStockSummaryListQueryDto,

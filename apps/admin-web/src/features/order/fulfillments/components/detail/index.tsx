@@ -21,13 +21,11 @@ import {
 import { FoStatusBadge } from '@/components/table/table-cells/fulfillment';
 import { useFulfillmentOrder } from '@/lib/services/orders/queries';
 import {
-  useShipFulfillment,
   useCancelFulfillment,
   useReserveFulfillmentItem,
 } from '@/lib/services/orders/mutations';
 import type { FulfillmentMode, FulfillmentOrderPriority } from '@/lib/types/dto/fulfillment';
 import { InventoryTab } from '../../detail/inventory-tab';
-import { SplitTab } from '../../detail/split-tab';
 import { ShipmentTab } from '../../detail/shipment-tab';
 import { DirectShipTab } from '../../detail/direct-ship-tab';
 import { HistoryTab } from '../../detail/history-tab';
@@ -94,7 +92,6 @@ function ConfirmActionButton({
 
 export function FulfillmentDetail({ id }: { id: string }) {
   const { data, isLoading } = useFulfillmentOrder(id);
-  const shipMutation = useShipFulfillment();
   const cancelMutation = useCancelFulfillment();
   const reserveMutation = useReserveFulfillmentItem();
 
@@ -122,15 +119,6 @@ export function FulfillmentDetail({ id }: { id: string }) {
     reservations: data.reservations ?? [],
     adminAvailableActions: data.adminAvailableActions ?? [],
     blockedReasons: data.blockedReasons ?? [],
-  };
-
-  const handleShip = async () => {
-    try {
-      await shipMutation.mutateAsync(id);
-      toast.success('출고 처리되었습니다.');
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : '출고 처리에 실패했습니다.');
-    }
   };
 
   const handleCancel = async () => {
@@ -162,13 +150,6 @@ export function FulfillmentDetail({ id }: { id: string }) {
         <div className="flex items-center justify-between p-3">
           <Header title="출고주문 상세" />
           <div className="flex gap-2">
-            <ConfirmActionButton
-              label="출고"
-              title="출고 처리"
-              description="이 출고주문을 출고 처리하시겠습니까? 모든 라인이 배송 상태로 전환됩니다."
-              onConfirm={handleShip}
-              disabled={isTerminal || shipMutation.isPending}
-            />
             <ConfirmActionButton
               label="취소"
               title="출고주문 취소"
@@ -236,7 +217,7 @@ export function FulfillmentDetail({ id }: { id: string }) {
             <tbody>
               {fo.items.map((item) => {
                 const remaining = item.qty - item.reservedQty;
-                const canReserve = remaining > 0 && !isTerminal;
+                const canReserve = remaining > 0 && fo.adminAvailableActions.includes('reserve');
                 return (
                   <tr key={item.id} className="border-b last:border-0">
                     <td className="py-2 pr-3">
@@ -285,7 +266,6 @@ export function FulfillmentDetail({ id }: { id: string }) {
           <Tabs defaultValue="inventory" className="w-full">
             <TabsList className="flex h-auto flex-wrap justify-start">
               <TabsTrigger value="inventory">재고</TabsTrigger>
-              <TabsTrigger value="split">분할</TabsTrigger>
               <TabsTrigger value="shipment">배송</TabsTrigger>
               {fo.fulfillmentMode === 'drop_ship' && (
                 <TabsTrigger value="direct-ship">직배</TabsTrigger>
@@ -294,9 +274,6 @@ export function FulfillmentDetail({ id }: { id: string }) {
             </TabsList>
             <TabsContent value="inventory">
               <InventoryTab fo={fo} />
-            </TabsContent>
-            <TabsContent value="split">
-              <SplitTab fo={fo} />
             </TabsContent>
             <TabsContent value="shipment">
               <ShipmentTab fo={fo} />

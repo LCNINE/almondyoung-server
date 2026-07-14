@@ -8,7 +8,6 @@ import { SkuCreationSource } from '../../sku-catalog/dto/create-sku.dto';
 import { StockEventStore } from '../repositories/stock-event.store';
 import { InventoryCommandService } from '../services/inventory-command.service';
 import { UnifiedReservationService } from '../../shared/services/unified-reservation.service';
-import { AllocationStrategyService } from './allocation-strategy.service';
 
 @Injectable()
 export class StockEventService {
@@ -19,7 +18,6 @@ export class StockEventService {
     private readonly eventStore: StockEventStore,
     private readonly commandService: InventoryCommandService,
     private readonly unifiedReservation: UnifiedReservationService,
-    private readonly allocationStrategy: AllocationStrategyService,
   ) {}
 
   /**
@@ -81,41 +79,6 @@ export class StockEventService {
   // 재고 출고 처리 (보류)
   async processStockOut(stockId: string, quantity: number, orderId?: string, reason?: string) {
     throw new BadRequestException('processStockOut: transition-based 구현 대기');
-  }
-
-  /**
-   * 재고 예약 처리
-   * @deprecated Use UnifiedReservationService.reserveStock() directly
-   */
-  async reserveStock(
-    skuId: string,
-    quantity: number,
-    warehouseId: string,
-    targetType: 'FULFILLMENT_ORDER' | 'MOVEMENT_TASK',
-    targetId: string,
-    reason?: string,
-    tx?: DbTx,
-  ) {
-    this.logger.log(`Reserving ${quantity} units of SKU ${skuId} for ${targetType}:${targetId}`);
-
-    return this.dbService.run(async (executor) => {
-      // UnifiedReservationService를 활용한 예약 생성
-      const reservation = await this.unifiedReservation.reserveStock(
-        {
-          targetType,
-          targetId,
-          skuId,
-          warehouseId,
-          quantity,
-          reason,
-        },
-        executor,
-      );
-
-      this.logger.log(`Successfully reserved: ${reservation.id}`);
-
-      return reservation;
-    }, tx);
   }
 
   /**
@@ -227,6 +190,7 @@ export class StockEventService {
           locationId,
           quantity,
           reason: `DAMAGE: ${reason}`,
+          bypassReservationGuard: true, // 파손 = 물리적 사실
         },
         executor,
       );

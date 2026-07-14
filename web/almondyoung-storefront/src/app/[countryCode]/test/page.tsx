@@ -42,7 +42,7 @@ const Switch = ({ checked, onCheckedChange }: SwitchProps) => {
       onClick={() => onCheckedChange(!checked)}
       className={cn(
         "relative h-[30px] w-[50px] shrink-0 rounded-full transition-colors duration-200 ease-in-out focus:outline-none",
-        checked ? "bg-[#f29219]" : "bg-[#e5e5ea]" // 활성화 시 브랜드 컬러, 비활성화 시 회색
+        checked ? "bg-[#ff6600]" : "bg-[#e5e5ea]" // 활성화 시 브랜드 컬러, 비활성화 시 회색
       )}
     >
       <span

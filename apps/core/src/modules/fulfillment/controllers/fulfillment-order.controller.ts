@@ -1,4 +1,4 @@
-import { Controller, Post, Put, Delete, Body, Param, UsePipes, GoneException } from '@nestjs/common';
+import { Controller, Post, Put, Delete, Body, Param, UsePipes } from '@nestjs/common';
 import { FulfillmentOrderTransactionService } from '../services/fulfillment-order-transaction.service';
 import { ZodValidationPipe } from '@app/shared/pipes/zod-validation.pipe';
 import { z } from 'zod';
@@ -14,11 +14,6 @@ const AllocateToBatchSchema = z.object({
 @Controller('fulfillment-orders')
 export class FulfillmentOrderController {
   constructor(private readonly fulfillmentOrderTransactionService: FulfillmentOrderTransactionService) {}
-
-  @Post()
-  async createFulfillmentOrder() {
-    throw new GoneException('POST /fulfillment-orders is deprecated. Use POST /fulfillments as the canonical path.');
-  }
 
   @Delete(':id')
   async cancelFulfillmentOrder(@Param('id') fulfillmentOrderId: string) {

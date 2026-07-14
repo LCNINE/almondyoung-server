@@ -154,7 +154,21 @@ export interface UserVerificationStatusDto {
 export type SendTwilioMessageDto = {
   countryCode: string
   phoneNumber: string
-  purpose?: "forget_pin" | "phone_verify"
+  purpose?: "forget_pin" | "phone_verify" | "password_change"
+}
+
+/*───────────────────────────
+ * 이메일 인증 코드(OTP) — 문자 대신 이메일로 코드 받기
+ *──────────────────────────*/
+export type EmailOtpPurpose = "password_change" | "phone_verify"
+
+export type SendEmailCodeDto = {
+  purpose?: EmailOtpPurpose
+}
+
+export type VerifyEmailCodeDto = {
+  code: string
+  purpose?: EmailOtpPurpose
 }
 
 /*───────────────────────────
