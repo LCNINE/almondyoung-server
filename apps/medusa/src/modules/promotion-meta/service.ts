@@ -61,7 +61,13 @@ class PromotionMetaModuleService extends MedusaService({ PromotionMeta, Promotio
     try {
       await (this as any).createPromotionIssueLogs({ customer_id: customerId, promotion_id: promotionId, trigger });
     } catch (e: any) {
-      const isDuplicate = e?.code === '23505' || e?.message?.includes('unique') || e?.message?.includes('duplicate');
+      // MedusaService는 unique 위반을 "... already exists" 메시지로 감싸므로 pg 23505 매칭만으론 부족하다.
+      const msg = String(e?.message ?? '').toLowerCase();
+      const isDuplicate =
+        e?.code === '23505' ||
+        msg.includes('unique') ||
+        msg.includes('duplicate') ||
+        msg.includes('already exists');
       if (!isDuplicate) throw e;
     }
   }

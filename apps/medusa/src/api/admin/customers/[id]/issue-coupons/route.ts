@@ -97,7 +97,8 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       await promotionMetaService.recordIssue(customerId, promo.id, trigger);
       issued.push({ promotion_id: promo.id, code: promo.code });
     } catch (e: any) {
-      const isDuplicate = e?.code === '23505' || e?.message?.includes('unique') || e?.message?.includes('duplicate');
+      const dupMsg = String(e?.message ?? '').toLowerCase();
+      const isDuplicate = e?.code === '23505' || dupMsg.includes('unique') || dupMsg.includes('duplicate') || dupMsg.includes('already exists');
       if (isDuplicate) {
         if (meta.max_claims != null) await promotionMetaService.releaseClaimSlot(promo.id).catch(() => {});
         await promotionMetaService.recordIssue(customerId, promo.id, trigger).catch(() => {});
