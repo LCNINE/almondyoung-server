@@ -928,10 +928,8 @@ export class ShipmentPlanningService {
       .limit(1);
     if (!profile) throw new NotFoundException(`Shipping profile ${requestedProfileId} not found`);
     const modes = uniqueSorted(aggregate.lines.map((line) => line.fulfillmentMode ?? 'in_house'));
-    if (
-      !profile.supportedFulfillmentModes ||
-      modes.some((mode) => !profile.supportedFulfillmentModes.includes(mode as never))
-    ) {
+    const supportedFulfillmentModes = profile.supportedFulfillmentModes;
+    if (!supportedFulfillmentModes || modes.some((mode) => !supportedFulfillmentModes.includes(mode as never))) {
       throw this.conflict('SHIPMENT_PROFILE_INCOMPATIBLE', 'Shipping profile does not support the fulfillment mode');
     }
     const requiredSnapshots = [profile.senderSnapshot, profile.originAddressSnapshot, profile.returnAddressSnapshot];
