@@ -20,6 +20,7 @@ import {
 } from '@packages/event-contracts/streams';
 import { wmsTables, wmsSchema } from '../../inventory/schema/inventory.schema';
 import { eq, and, lte, sql, inArray } from 'drizzle-orm';
+import { FulfillmentWorkflowGate } from '../services/fulfillment-workflow-gate.service';
 
 type FulfillmentPayload =
   | FulfillmentCreatedPayload
@@ -52,6 +53,7 @@ export class OutboxDispatcherService implements OnModuleInit {
     private readonly inventoryPublisher: StreamPublisher<InventoryEvents>,
     @InjectStreamPublisher(CORE_ORDER_STREAM.topic.topic)
     private readonly coreOrderPublisher: StreamPublisher<CoreOrderEvents>,
+    private readonly workflowGate: FulfillmentWorkflowGate,
   ) {}
 
   onModuleInit() {
@@ -70,6 +72,13 @@ export class OutboxDispatcherService implements OnModuleInit {
     try {
       const batchSize = 100;
       let processedCount = 0;
+      const fulfillmentEventFilter = this.workflowGate.shouldDispatchFulfillmentEvents()
+        ? sql``
+        : sql`
+            AND LOWER(aggregate_type) NOT IN ('fulfillment', 'fulfillment_order', 'fulfillmentorder', 'shipment')
+            AND LOWER(event_type) NOT LIKE 'fulfillment%'
+            AND LOWER(event_type) NOT LIKE 'shipment%'
+          `;
 
       const events = await this.db.db.transaction(async (tx) => {
         const pendingEvents = await tx.execute<{
@@ -92,6 +101,7 @@ export class OutboxDispatcherService implements OnModuleInit {
           FROM ${wmsTables.outboxEvents}
           WHERE status = 'pending'
             AND next_attempt_at <= NOW()
+            ${fulfillmentEventFilter}
           ORDER BY created_at ASC
           LIMIT ${batchSize}
           FOR UPDATE SKIP LOCKED

@@ -12,6 +12,7 @@ describe('FulfillmentOrderReservationRetryWorker', () => {
     // retryOne의 FOI 조회 결과 — select 호출 순서대로 pop
     itemsPerCall?: Array<Array<{ id: string; qty: number; reservedQty: number }>>;
     reserveImpl?: jest.Mock;
+    shouldRunReservationRetry?: boolean;
   }) {
     const candidates = options.candidates ?? [];
     const itemsQueue = [...(options.itemsPerCall ?? [])];
@@ -44,9 +45,16 @@ describe('FulfillmentOrderReservationRetryWorker', () => {
     const reservations = {
       reserve: options.reserveImpl ?? jest.fn().mockResolvedValue({}),
     };
+    const workflowGate = {
+      shouldRunReservationRetry: jest.fn(() => options.shouldRunReservationRetry ?? true),
+    };
 
-    const worker = new FulfillmentOrderReservationRetryWorker(db as never, reservations as never);
-    return { worker, db, reservations };
+    const worker = new FulfillmentOrderReservationRetryWorker(
+      db as never,
+      reservations as never,
+      workflowGate as never,
+    );
+    return { worker, db, reservations, workflowGate };
   }
 
   it('후보가 없으면 reserve를 호출하지 않는다', async () => {
@@ -149,7 +157,12 @@ describe('FulfillmentOrderReservationRetryWorker', () => {
       },
     };
     const reservations = { reserve: jest.fn() };
-    const worker = new FulfillmentOrderReservationRetryWorker(db as never, reservations as never);
+    const workflowGate = { shouldRunReservationRetry: jest.fn().mockReturnValue(true) };
+    const worker = new FulfillmentOrderReservationRetryWorker(
+      db as never,
+      reservations as never,
+      workflowGate as never,
+    );
 
     const first = worker.retryUnfulfillable();
     await worker.retryUnfulfillable(); // 두 번째 호출은 가드에 걸려 즉시 반환
@@ -158,5 +171,20 @@ describe('FulfillmentOrderReservationRetryWorker', () => {
 
     resolveCandidates([]);
     await first;
+  });
+
+  it('maintenance에서는 후보 조회와 직접 재시도를 모두 중지한다', async () => {
+    const { worker, db, reservations } = makeWorker({
+      candidates: [{ id: foId1 }],
+      shouldRunReservationRetry: false,
+    });
+
+    await worker.retryUnfulfillable();
+    await expect(worker.findCandidates(20)).resolves.toEqual([]);
+    await worker.retryOne(foId1);
+
+    expect(db.db.selectDistinct).not.toHaveBeenCalled();
+    expect(db.db.select).not.toHaveBeenCalled();
+    expect(reservations.reserve).not.toHaveBeenCalled();
   });
 });

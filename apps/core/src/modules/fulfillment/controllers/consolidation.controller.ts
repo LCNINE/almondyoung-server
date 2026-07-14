@@ -1,11 +1,6 @@
-import { Controller, Get, Post, Body, Param, Query, UsePipes } from '@nestjs/common';
+import { Controller, Get, GoneException, Post, Param, Query, UseGuards } from '@nestjs/common';
+import { RolesGuard } from '@app/authorization';
 import { ConsolidationGroup, ConsolidationService } from '../services/consolidation.service';
-import { ZodValidationPipe } from '@app/shared/pipes/zod-validation.pipe';
-import { z } from 'zod';
-
-const AutoConsolidateSchema = z.object({
-  groupId: z.string(),
-});
 
 @Controller('consolidation')
 export class ConsolidationController {
@@ -43,10 +38,14 @@ export class ConsolidationController {
   }
 
   @Post('groups/:groupId/auto-consolidate')
-  @UsePipes(new ZodValidationPipe(AutoConsolidateSchema))
+  @UseGuards(RolesGuard('master', 'admin'))
   async autoConsolidate(@Param('groupId') groupId: string) {
-    const result = await this.consolidationService.autoConsolidate(groupId);
-    return { message: 'Auto-consolidation completed successfully', ...result };
+    throw new GoneException({
+      statusCode: 410,
+      error: 'CONSOLIDATION_NOT_IMPLEMENTED',
+      code: 'CONSOLIDATION_NOT_IMPLEMENTED',
+      message: `Consolidation group ${groupId} cannot be mutated until the V2 planner is available`,
+    });
   }
 
   @Get('reports/:warehouseId')

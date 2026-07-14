@@ -45,6 +45,7 @@ describeIfDb('FulfillmentReservationsFacade (DB integration, rollback-only)', ()
       unified,
       productSellableQuantity,
       policies,
+      { assertMutationAllowed: jest.fn() } as never,
     );
   });
 

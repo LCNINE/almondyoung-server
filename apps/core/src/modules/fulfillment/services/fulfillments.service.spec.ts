@@ -291,6 +291,7 @@ describe('FulfillmentsService', () => {
       unifiedReservation as any,
       productSkuMapping as any,
       outbox as any,
+      { assertMutationAllowed: jest.fn(), assertOperationalMutationAllowed: jest.fn() } as any,
       salesOrderAmendments as any,
     );
 

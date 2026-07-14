@@ -85,7 +85,6 @@ export function CreateBatchDialog({ open, onOpenChange }: Props) {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="individual">개별 피킹</SelectItem>
-                <SelectItem value="total_picking">합산 피킹</SelectItem>
               </SelectContent>
             </Select>
           </div>

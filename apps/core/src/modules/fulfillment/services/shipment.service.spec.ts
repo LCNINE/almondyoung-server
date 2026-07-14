@@ -87,7 +87,9 @@ describe('ShipmentService', () => {
     const barcode = { parseBarcode: jest.fn() };
     const consume = { consumeShipment: jest.fn().mockResolvedValue(undefined) };
 
-    const service = new ShipmentService(db as any, barcode as any, consume as any);
+    const service = new ShipmentService(db as any, barcode as any, consume as any, {
+      assertMutationAllowed: jest.fn(),
+    } as any);
     return { service, tx, state, barcode, consume };
   }
 

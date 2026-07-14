@@ -158,6 +158,7 @@ describe('FulfillmentReservationsFacade', () => {
       unified as any,
       productSellableQuantity as any,
       policies as any,
+      { assertMutationAllowed: jest.fn() } as any,
     );
 
     return { facade, state, tx, unified, productSellableQuantity, policies, outbox };
@@ -435,6 +436,7 @@ describe('FulfillmentReservationsFacade', () => {
         unified as any,
         productSellableQuantity as any,
         policies as any,
+        { assertMutationAllowed: jest.fn() } as any,
       );
 
       return { facade, tx, captured, unified };

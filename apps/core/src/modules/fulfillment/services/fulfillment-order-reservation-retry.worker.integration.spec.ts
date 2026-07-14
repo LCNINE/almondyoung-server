@@ -6,6 +6,8 @@ import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { FulfillmentReservationsFacade } from './fulfillment-reservations.facade';
 import { FulfillmentOrderReservationRetryWorker } from './fulfillment-order-reservation-retry.worker';
+import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
+import { ConfigService } from '@nestjs/config';
 import { UnifiedReservationService } from '../../inventory/shared/services/unified-reservation.service';
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { OutboxService as InventoryOutboxService } from '../../inventory/shared/outbox/outbox.service';
@@ -43,9 +45,15 @@ describeIfDb('FulfillmentOrderReservationRetryWorker (DB integration, rollback-o
     const sellable = new ProductSellableQuantityService(dbService as never, inventoryOutbox);
     const unified = new UnifiedReservationService(dbService, sellable);
     const policies = {} as never;
-    const facade = new FulfillmentReservationsFacade(dbService, unified, sellable as never, policies, outbox as never);
+    const facade = new FulfillmentReservationsFacade(dbService, unified, sellable as never, policies, {
+      assertMutationAllowed: jest.fn(),
+    } as never);
 
-    worker = new FulfillmentOrderReservationRetryWorker(dbService, facade);
+    worker = new FulfillmentOrderReservationRetryWorker(
+      dbService,
+      facade,
+      new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'legacy' })),
+    );
   });
 
   beforeEach(() => {

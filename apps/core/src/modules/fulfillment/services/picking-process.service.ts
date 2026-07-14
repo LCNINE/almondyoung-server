@@ -4,6 +4,7 @@ import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.sch
 import { DbService } from '@app/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { BarcodeService, FOIScanResult, SkuScanResult } from '../../inventory/shared/services/barcode.service';
+import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 
 export interface PickingOperation {
   batchId: string;
@@ -67,6 +68,7 @@ export class PickingProcessService {
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly barcodeService: BarcodeService,
+    private readonly workflowGate: FulfillmentWorkflowGate,
   ) {}
 
   private get db() {
@@ -151,6 +153,7 @@ export class PickingProcessService {
   }
 
   async pickItem(request: PickItemRequest, tx?: DbTx): Promise<void> {
+    this.workflowGate.assertMutationAllowed('picking.batch_pick');
     const { batchId, skuId, pickedQty, locationCode, pickerUserId } = request;
 
     if (pickedQty <= 0) {
@@ -298,6 +301,7 @@ export class PickingProcessService {
   }
 
   async startIndividualPicking(fulfillmentOrderId: string, tx?: DbTx): Promise<IndividualPickingSession> {
+    this.workflowGate.assertMutationAllowed('picking.start_individual');
     return this.dbService.run(async (trx) => {
       const foRows = await trx
         .select({ id: wmsTables.fulfillmentOrders.id, status: wmsTables.fulfillmentOrders.status })
@@ -405,6 +409,7 @@ export class PickingProcessService {
   }
 
   async pickIndividualItem(foiId: string, pickedQty: number, pickerUserId?: string, tx?: DbTx): Promise<void> {
+    this.workflowGate.assertMutationAllowed('picking.pick_individual_item');
     if (pickedQty <= 0) {
       throw new BadRequestException('Picked quantity must be positive');
     }
@@ -455,6 +460,7 @@ export class PickingProcessService {
   }
 
   async completeIndividualPicking(fulfillmentOrderId: string, tx?: DbTx): Promise<void> {
+    this.workflowGate.assertMutationAllowed('picking.complete_individual');
     await this.dbService.run(async (trx) => {
       const items = await trx
         .select({ qty: wmsTables.fulfillmentOrderItems.qty, pickedQty: wmsTables.fulfillmentOrderItems.pickedQty })
@@ -483,6 +489,7 @@ export class PickingProcessService {
   }
 
   async resetPickingForItem(foiId: string, tx?: DbTx): Promise<void> {
+    this.workflowGate.assertMutationAllowed('picking.reset_item');
     await this.dbService.run(async (trx) => {
       const rows = await trx
         .select({ foStatus: wmsTables.fulfillmentOrders.status })
@@ -659,6 +666,7 @@ export class PickingProcessService {
     },
     tx?: DbTx,
   ): Promise<{ success: boolean; message: string; data?: unknown }> {
+    this.workflowGate.assertMutationAllowed('picking.pick_by_scan');
     return this.dbService.run(async (trx) => {
       const parsed = this.barcodeService.parseBarcode(barcode);
 

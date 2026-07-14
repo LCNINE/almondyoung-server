@@ -15,6 +15,7 @@ interface ShippingAddressJson {
 import { DeliveryProvider, DeliveryRequest } from './delivery-provider.interface';
 import { GoodsflowDeliveryProvider } from './goodsflow-delivery.provider';
 import { HanjinDeliveryProvider } from './hanjin-delivery.provider';
+import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 
 export type InvoiceIssueMethod = 'goodsflow' | 'hanjin' | 'direct' | 'self';
 
@@ -74,6 +75,7 @@ export class InvoiceService {
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     goodsflowProvider: GoodsflowDeliveryProvider,
     private readonly hanjinProvider: HanjinDeliveryProvider,
+    private readonly workflowGate: FulfillmentWorkflowGate,
   ) {
     this.deliveryProviders = new Map();
     this.deliveryProviders.set('goodsflow', goodsflowProvider);
@@ -107,6 +109,7 @@ export class InvoiceService {
    * 동시 발행의 최종 방어선은 assertIssuable 의 활성(미-void) invoice 재검증(FOR UPDATE).
    */
   async issueInvoice(request: IssueInvoiceRequest): Promise<string> {
+    this.workflowGate.assertMutationAllowed('invoice.issue');
     const { fulfillmentOrderId } = request;
     const issueMethod = request.issueMethod ?? this.defaultIssueMethod();
 
@@ -280,6 +283,7 @@ export class InvoiceService {
 
   /** 출력 — 검증(읽기) → provider 호출(tx 밖) → 외부 print URI 생성. status 전이 없음(멱등). provider 호출 때문에 tx 인자를 받지 않는다. */
   async printInvoices(invoiceIds: string[]): Promise<{ printUri?: string }> {
+    this.workflowGate.assertMutationAllowed('invoice.print');
     const invoices = await this.dbService.run((trx) =>
       trx
         .select({
@@ -348,6 +352,7 @@ export class InvoiceService {
    * provider 호출 때문에 tx 인자를 받지 않는다.
    */
   async cancelInvoice(invoiceId: string): Promise<void> {
+    this.workflowGate.assertMutationAllowed('invoice.void');
     const invoice = await this.dbService.run((trx) =>
       trx
         .select({

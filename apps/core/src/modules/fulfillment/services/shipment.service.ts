@@ -4,6 +4,7 @@ import { eq } from 'drizzle-orm';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { BarcodeService } from '../../inventory/shared/services/barcode.service';
 import { OutboundConsumptionService } from './outbound-consumption.service';
+import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 
 /**
  * 박스(shipment) 수명주기의 작업자 동작 진입점 (Cluster A, EU3).
@@ -24,6 +25,7 @@ export class ShipmentService {
     @InjectTypedDb<typeof wmsSchema>() private readonly db: DbService<typeof wmsSchema>,
     private readonly barcode: BarcodeService,
     private readonly outboundConsumption: OutboundConsumptionService,
+    private readonly workflowGate: FulfillmentWorkflowGate,
   ) {}
 
   /**
@@ -34,6 +36,7 @@ export class ShipmentService {
    * (qty = 잔량 = qty - shippedQty). drop_ship FO·warehouse 부재·이미 사용/무효 송장은 거부.
    */
   async openBoxByScan(trackingNo: string, operatorId?: string, tx?: DbTx): Promise<{ shipmentId: string }> {
+    this.workflowGate.assertMutationAllowed('shipment.open');
     return this.db.run(async (trx) => {
       const [invoice] = await trx
         .select({
@@ -136,6 +139,7 @@ export class ShipmentService {
     operatorId?: string,
     tx?: DbTx,
   ): Promise<void> {
+    this.workflowGate.assertMutationAllowed('shipment.inspect');
     return this.db.run(async (trx) => {
       await this.loadOpenBox(trx, shipmentId, '검수');
 
@@ -179,6 +183,7 @@ export class ShipmentService {
    * 로 종결한다(부분 강제 후 잔여 미완료가 있으면 종결하지 않음).
    */
   async forceShipment(shipmentId: string, foiId: string | undefined, operatorId?: string, tx?: DbTx): Promise<void> {
+    this.workflowGate.assertMutationAllowed('shipment.force');
     return this.db.run(async (trx) => {
       await this.loadOpenBox(trx, shipmentId, '강제출고');
 

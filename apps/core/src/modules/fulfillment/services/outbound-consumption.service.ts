@@ -11,6 +11,7 @@ import { ReservationLifecycleService } from '../../inventory/shared/services/res
 import { OutboxService } from '../outbox/outbox.service';
 import { FULFILLMENT_EVENTS } from '../events';
 import { FulfillmentShippedPayload } from '@packages/event-contracts/streams';
+import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 
 /**
  * 출고 종결 seam (Cluster A). 상자(shipment) 단위로 출고를 **전체 종결**한다.
@@ -33,6 +34,7 @@ export class OutboundConsumptionService {
     private readonly inventoryCommand: InventoryCommandService,
     private readonly reservationLifecycle: ReservationLifecycleService,
     private readonly outbox: OutboxService,
+    private readonly workflowGate: FulfillmentWorkflowGate,
   ) {}
 
   /**
@@ -48,6 +50,7 @@ export class OutboundConsumptionService {
    * ship:{shipmentId}:{lineId}:{locationId}`, journal 은 `ship:{shipmentId}`.
    */
   async consumeShipment(shipmentId: string, tx?: DbTx): Promise<void> {
+    this.workflowGate.assertMutationAllowed('shipment.consume');
     return this.db.run(async (trx) => {
       const [shipment] = await trx
         .select({

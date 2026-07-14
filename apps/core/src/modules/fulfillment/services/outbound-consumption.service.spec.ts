@@ -86,6 +86,7 @@ describe('OutboundConsumptionService', () => {
   function makeService(
     state: FakeState,
     chunks: Array<{ locationId: string; qty: number }> = [{ locationId: 'loc-1', qty: 1 }],
+    workflowGate = { assertMutationAllowed: jest.fn() },
   ) {
     const tx = makeTx(state);
     const db = { run: jest.fn((fn: (t: any) => any, aTx?: any) => fn(aTx ?? tx)) };
@@ -100,8 +101,9 @@ describe('OutboundConsumptionService', () => {
       inventoryCommand as any,
       reservationLifecycle as any,
       outbox as any,
+      workflowGate as any,
     );
-    return { service, tx, state, locationStrategy, inventoryCommand, reservationLifecycle, outbox };
+    return { service, tx, db, state, locationStrategy, inventoryCommand, reservationLifecycle, outbox, workflowGate };
   }
 
   describe('consumeShipment', () => {
@@ -114,6 +116,20 @@ describe('OutboundConsumptionService', () => {
       stockJournals: [],
       invoices: [{ id: 'inv-1', shipmentId: 'ship-1', status: 'used', trackingNo: 'TRACK-1', carrier: 'CJ' }],
       salesOrders: [{ id: 'so-1', channelOrderId: 'co-1' }],
+    });
+
+    it('checks the workflow gate before a direct service call can touch the database', async () => {
+      const rejection = new Error('maintenance');
+      const workflowGate = {
+        assertMutationAllowed: jest.fn(() => {
+          throw rejection;
+        }),
+      };
+      const { service, db } = makeService(baseState(), undefined, workflowGate);
+
+      await expect(service.consumeShipment('ship-1')).rejects.toBe(rejection);
+      expect(workflowGate.assertMutationAllowed).toHaveBeenCalledWith('shipment.consume');
+      expect(db.run).not.toHaveBeenCalled();
     });
 
     it('상자 라인을 작업자(openedBy)에게 귀속된 한 journal 로 묶어 SHIP 한다', async () => {

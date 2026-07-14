@@ -20,9 +20,7 @@ import {
   useConsolidationSavings,
   useConsolidationRules,
   useAnalyzeConsolidation,
-  useAutoConsolidate,
 } from '@/lib/services/orders';
-import { toast } from 'sonner';
 
 export default function ConsolidationTemplate() {
   const { data: warehouses = [] } = useWarehouses();
@@ -34,12 +32,6 @@ export default function ConsolidationTemplate() {
   const { data: rules = [] } = useConsolidationRules();
 
   const analyze = useAnalyzeConsolidation(warehouseId);
-  const autoConsolidate = useAutoConsolidate();
-
-  const handleAutoConsolidate = async (groupId: string) => {
-    toast.warning('자동 합포장 기능은 현재 서버 미구현(stub) 상태입니다. 실제 FO 변경이 없습니다.');
-    await autoConsolidate.mutateAsync(groupId);
-  };
 
   return (
     <Container className="divide-y-0">
@@ -122,11 +114,10 @@ export default function ConsolidationTemplate() {
                           variant="outline"
                           size="sm"
                           className="h-6 text-xs"
-                          onClick={() => handleAutoConsolidate(g.groupId)}
-                          disabled={autoConsolidate.isPending}
-                          title="서버 미구현 — 실제 변경 없음"
+                          disabled
+                          title="V2 합포장 계획 기능이 배포될 때까지 사용할 수 없습니다."
                         >
-                          합포장 (미구현)
+                          합포장 (준비 중)
                         </Button>
                       </div>
                     ))}

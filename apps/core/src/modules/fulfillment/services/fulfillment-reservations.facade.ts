@@ -5,6 +5,7 @@ import { eq, and, asc, gt, ne, inArray, isNull, or } from 'drizzle-orm';
 import { UnifiedReservationService } from '../../inventory/shared/services/unified-reservation.service';
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { PoliciesService } from './policies.service';
+import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 
 @Injectable()
 export class FulfillmentReservationsFacade {
@@ -15,6 +16,7 @@ export class FulfillmentReservationsFacade {
     private readonly unified: UnifiedReservationService,
     private readonly productSellableQuantity: ProductSellableQuantityService,
     private readonly policies: PoliciesService,
+    private readonly workflowGate: FulfillmentWorkflowGate,
   ) {}
 
   private readonly TERMINAL_STATUSES = ['shipped', 'completed', 'canceled'] as const;
@@ -35,6 +37,7 @@ export class FulfillmentReservationsFacade {
     dto: { fulfillmentOrderItemId: string; quantity: number },
     tx?: DbTx,
   ) {
+    this.workflowGate.assertMutationAllowed('reservation.reserve');
     return this.db.run(async (trx) => {
       if (dto.quantity <= 0) {
         throw new BadRequestException('Reserve quantity must be greater than 0');
@@ -131,6 +134,7 @@ export class FulfillmentReservationsFacade {
     dto: { fulfillmentOrderItemId: string; quantity: number },
     tx?: DbTx,
   ) {
+    this.workflowGate.assertMutationAllowed('reservation.unreserve');
     return this.db.run(async (trx) => {
       // 잠금 순서 컨벤션: FO(id asc) → FOI(id asc) → stock_reservations(createdAt, id asc)
       const [preFoi] = await trx
@@ -238,6 +242,7 @@ export class FulfillmentReservationsFacade {
     },
     tx?: DbTx,
   ) {
+    this.workflowGate.assertMutationAllowed('reservation.transfer');
     return this.db.run(async (trx) => {
       if (dto.quantity <= 0) {
         throw new BadRequestException('이전 수량은 1 이상이어야 합니다.');

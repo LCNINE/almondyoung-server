@@ -4,6 +4,7 @@ import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.sch
 import { DbService } from '@app/db';
 import { eq } from 'drizzle-orm';
 import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
+import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 
 @Injectable()
 export class FulfillmentOrderTransactionService {
@@ -12,9 +13,11 @@ export class FulfillmentOrderTransactionService {
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly reservationLifecycle: ReservationLifecycleService,
+    private readonly workflowGate: FulfillmentWorkflowGate,
   ) {}
 
   async cancelFulfillmentOrder(fulfillmentOrderId: string, tx?: DbTx): Promise<void> {
+    this.workflowGate.assertMutationAllowed('fulfillment_order.cancel');
     return this.dbService.run(async (trx) => {
       const foRows = await trx
         .select({ id: wmsTables.fulfillmentOrders.id, status: wmsTables.fulfillmentOrders.status })
@@ -52,6 +55,7 @@ export class FulfillmentOrderTransactionService {
     priority: 'normal' | 'high' | 'urgent',
     tx?: DbTx,
   ): Promise<void> {
+    this.workflowGate.assertMutationAllowed('fulfillment_order.update_priority');
     return this.dbService.run(async (trx) => {
       const [updated] = await trx
         .update(wmsTables.fulfillmentOrders)
@@ -68,6 +72,7 @@ export class FulfillmentOrderTransactionService {
   }
 
   async allocateToOutboundBatch(fulfillmentOrderId: string, batchId: string, tx?: DbTx): Promise<void> {
+    this.workflowGate.assertMutationAllowed('fulfillment_order.allocate');
     return this.dbService.run(async (trx) => {
       const foRows = await trx
         .select({

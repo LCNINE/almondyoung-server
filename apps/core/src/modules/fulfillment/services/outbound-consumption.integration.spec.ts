@@ -77,10 +77,14 @@ describeIfDb('OutboundConsumptionService (DB integration, rollback-only)', () =>
     const lifecycle = new ReservationLifecycleService(dbService, unified);
     const strategy = new FifoLocationStrategy();
 
-    consumption = new OutboundConsumptionService(dbService, strategy, command, lifecycle, fulfillmentOutbox);
+    consumption = new OutboundConsumptionService(dbService, strategy, command, lifecycle, fulfillmentOutbox, {
+      assertMutationAllowed: jest.fn(),
+    } as any);
 
     const barcode = new BarcodeService(dbService);
-    shipmentService = new ShipmentService(dbService, barcode, consumption);
+    shipmentService = new ShipmentService(dbService, barcode, consumption, {
+      assertMutationAllowed: jest.fn(),
+    } as any);
   });
 
   afterAll(async () => {

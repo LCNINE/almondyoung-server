@@ -5,6 +5,7 @@ import { DbService } from '@app/db';
 import { and, eq, inArray, desc, isNull, or, sql } from 'drizzle-orm';
 import * as ExcelJS from 'exceljs';
 import { FulfillmentsService } from './fulfillments.service';
+import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 
 export interface DirectShipCustomerInfo {
   customerName: string | null;
@@ -78,6 +79,7 @@ export class DirectShipService {
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly fulfillmentsService: FulfillmentsService,
+    private readonly workflowGate: FulfillmentWorkflowGate,
   ) {}
 
   private get db() {
@@ -264,6 +266,7 @@ export class DirectShipService {
   }
 
   async forwardOrdersToCompany(fulfillmentOrderIds: string[], companyName: string): Promise<void> {
+    this.workflowGate.assertOperationalMutationAllowed('direct_ship.forward');
     const holderId = await this.lookupHolderByName(companyName);
 
     const foRows = await this.db
@@ -309,6 +312,7 @@ export class DirectShipService {
   }
 
   async markOrdersAsCompleted(fulfillmentOrderIds: string[], completedBy: string): Promise<void> {
+    this.workflowGate.assertOperationalMutationAllowed('direct_ship.complete');
     const foRows = await this.db
       .select({ id: wmsTables.fulfillmentOrders.id })
       .from(wmsTables.fulfillmentOrders)

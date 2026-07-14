@@ -22,6 +22,7 @@ import { CreateCompensationShipmentDto, CompensationShipmentItemDto } from '../d
 import { FulfillmentShippedPayload, FulfillmentDeliveredPayload, FulfillmentCancelledPayload } from '@packages/event-contracts/streams';
 import { SalesOrderAmendmentsService } from '../../sales-order/services/sales-order-amendments.service';
 import { SalesOrderAmendmentDeltaDto } from '../../sales-order/dto/create-sales-order-amendment.dto';
+import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 
 type FulfillmentStatus = (typeof wmsTables.fulfillmentOrders.status.enumValues)[number];
 
@@ -85,6 +86,7 @@ export class FulfillmentsService {
     private readonly unifiedReservation: UnifiedReservationService,
     private readonly productSkuMapping: ProductSkuMappingService,
     private readonly outbox: OutboxService,
+    private readonly workflowGate: FulfillmentWorkflowGate,
     @Optional() private readonly salesOrderAmendments?: SalesOrderAmendmentsService,
   ) {}
 
@@ -96,6 +98,7 @@ export class FulfillmentsService {
   }
 
   async create(dto: CreateFulfillmentOrderDto, tx?: DbTx) {
+    this.workflowGate.assertMutationAllowed('fulfillment.create');
     return this.db.run(async (trx) => {
       try {
         if (dto.salesOrderId) {
@@ -213,6 +216,7 @@ export class FulfillmentsService {
   }
 
   async createCompensationShipment(dto: CreateCompensationShipmentDto, operatorId?: string, tx?: DbTx) {
+    this.workflowGate.assertMutationAllowed('fulfillment.create_compensation');
     if (!this.salesOrderAmendments) {
       throw new Error('SalesOrderAmendmentsService is required to create compensation shipments');
     }
@@ -864,6 +868,7 @@ export class FulfillmentsService {
    *  타사 재고라 원장·예약·박스를 건드리지 않고 FO 종결 전이 + FulfillmentShipped 이벤트만.
    *  자사(in_house/3pl) 출고는 검수 자동완료→consumeShipment(ShipmentService)가 담당. */
   async ship(id: string, tx?: DbTx) {
+    this.workflowGate.assertOperationalMutationAllowed('fulfillment.drop_ship');
     return this.db.run(async (trx) => {
       await trx.execute(
         sql`SELECT id FROM ${wmsTables.fulfillmentOrders} WHERE ${wmsTables.fulfillmentOrders.id} = ${id} FOR UPDATE`,
@@ -947,6 +952,7 @@ export class FulfillmentsService {
   }
 
   async markDelivered(id: string, tx?: DbTx) {
+    this.workflowGate.assertMutationAllowed('fulfillment.mark_delivered');
     return this.db.run(async (trx) => {
       const [fo] = await trx
         .select()
@@ -1039,6 +1045,7 @@ export class FulfillmentsService {
     },
     tx?: DbTx,
   ) {
+    this.workflowGate.assertMutationAllowed('fulfillment.cancel');
     return this.db.run(async (trx) => {
       const [fo] = await trx
         .select()

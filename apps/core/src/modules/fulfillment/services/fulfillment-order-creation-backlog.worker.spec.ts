@@ -46,6 +46,7 @@ describe('FulfillmentOrderCreationBacklogWorker', () => {
       createError?: Error;
       requiresPhysicalFulfillmentOrder?: boolean;
       requiresPhysicalFulfillmentOrderError?: Error;
+      shouldRunFoCreation?: boolean;
     } = {},
   ) {
     const tx = options.tx ?? makeTx();
@@ -81,15 +82,19 @@ describe('FulfillmentOrderCreationBacklogWorker', () => {
     const warehouses = {
       getDefaultId: jest.fn(() => warehouseId),
     };
+    const workflowGate = {
+      shouldRunFoCreation: jest.fn(() => options.shouldRunFoCreation ?? true),
+    };
 
     const worker = new FulfillmentOrderCreationBacklogWorker(
       db as any,
       backlog as any,
       fulfillments as any,
       warehouses as any,
+      workflowGate as any,
     );
 
-    return { worker, tx, db, backlog, fulfillments, warehouses };
+    return { worker, tx, db, backlog, fulfillments, warehouses, workflowGate };
   }
 
   it('creates a fulfillment order and completes the backlog', async () => {
@@ -197,5 +202,16 @@ describe('FulfillmentOrderCreationBacklogWorker', () => {
     expect(backlog.markFailed).toHaveBeenCalledWith(first.id, first.attempts, crash);
     expect(fulfillments.create).toHaveBeenCalledTimes(1);
     expect(backlog.markCompleted).toHaveBeenCalledWith(second.id, 'fo-1', expect.anything());
+  });
+
+  it('does not claim or process backlog rows while fulfillment is in maintenance', async () => {
+    const { worker, db, backlog, fulfillments } = makeWorker({ shouldRunFoCreation: false });
+
+    await worker.processPending();
+    await worker.processOne(backlogId);
+
+    expect(backlog.claimPending).not.toHaveBeenCalled();
+    expect(db.db.transaction).not.toHaveBeenCalled();
+    expect(fulfillments.create).not.toHaveBeenCalled();
   });
 });

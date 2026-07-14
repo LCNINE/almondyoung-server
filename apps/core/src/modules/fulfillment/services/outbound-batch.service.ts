@@ -3,6 +3,7 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { DbService } from '@app/db';
 import { and, eq, inArray, isNull, desc, lt, sql } from 'drizzle-orm';
+import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 
 export interface CreateOutboundBatchDto {
   warehouseId?: string;
@@ -59,9 +60,13 @@ export interface PickingListItem {
 export class OutboundBatchService {
   private readonly logger = new Logger(OutboundBatchService.name);
 
-  constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
+  constructor(
+    @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
+    private readonly workflowGate: FulfillmentWorkflowGate,
+  ) {}
 
   async createBatch(dto: CreateOutboundBatchDto, tx?: DbTx): Promise<{ batchId: string; linkedFoCount: number }> {
+    this.workflowGate.assertMutationAllowed('batch.create');
     const { warehouseId: dtoWarehouseId, pickingMethod, name, scheduledPickingAt, salesOrderIds } = dto;
 
     return this.dbService.run(async (trx) => {
@@ -170,6 +175,7 @@ export class OutboundBatchService {
   }
 
   async addFulfillmentOrdersToBatch(batchId: string, fulfillmentOrderIds: string[], tx?: DbTx): Promise<void> {
+    this.workflowGate.assertMutationAllowed('batch.add_fulfillment_orders');
     await this.dbService.run(async (trx) => {
       const batchRows = await trx
         .select({
@@ -245,6 +251,7 @@ export class OutboundBatchService {
   }
 
   async removeFulfillmentOrderFromBatch(batchId: string, fulfillmentOrderId: string, tx?: DbTx): Promise<void> {
+    this.workflowGate.assertMutationAllowed('batch.remove_fulfillment_order');
     await this.dbService.run(async (trx) => {
       const batchRows = await trx
         .select({
@@ -305,6 +312,7 @@ export class OutboundBatchService {
   }
 
   async startPicking(batchId: string, tx?: DbTx): Promise<void> {
+    this.workflowGate.assertMutationAllowed('batch.start_picking');
     await this.dbService.run(async (trx) => {
       const batchRows = await trx
         .select({
@@ -347,6 +355,7 @@ export class OutboundBatchService {
   }
 
   async completeBatch(batchId: string, tx?: DbTx): Promise<void> {
+    this.workflowGate.assertMutationAllowed('batch.complete');
     await this.dbService.run(async (trx) => {
       const batchRows = await trx
         .select({ id: wmsTables.outboundBatches.id, status: wmsTables.outboundBatches.status })
@@ -400,6 +409,7 @@ export class OutboundBatchService {
   }
 
   async cancelBatch(batchId: string, tx?: DbTx): Promise<void> {
+    this.workflowGate.assertMutationAllowed('batch.cancel');
     await this.dbService.run(async (trx) => {
       const batchRows = await trx
         .select({ id: wmsTables.outboundBatches.id, status: wmsTables.outboundBatches.status })

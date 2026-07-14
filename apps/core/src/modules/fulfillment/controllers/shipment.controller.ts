@@ -1,9 +1,10 @@
-import { Controller, Post, Body, Param } from '@nestjs/common';
+import { Controller, Post, Body, Param, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiParam } from '@nestjs/swagger';
-import { User } from '@app/authorization';
+import { RolesGuard, User } from '@app/authorization';
 import { ZodValidationPipe } from '@app/shared/pipes/zod-validation.pipe';
 import { z } from 'zod';
 import { ShipmentService } from '../services/shipment.service';
+import { FulfillmentWorkflowGate } from '../services/fulfillment-workflow-gate.service';
 
 type AuthenticatedUser = { id?: string; userId?: string; sub?: string } | undefined;
 
@@ -20,11 +21,18 @@ const ForceSchema = z.object({ foiId: z.string().uuid().optional() });
 @ApiTags('Shipments')
 @Controller('shipments')
 export class ShipmentController {
-  constructor(private readonly shipments: ShipmentService) {}
+  constructor(
+    private readonly shipments: ShipmentService,
+    private readonly workflowGate: FulfillmentWorkflowGate,
+  ) {}
 
   @Post('scan')
   @ApiOperation({ summary: '송장 스캔으로 박스 open' })
-  async scan(@Body(new ZodValidationPipe(ScanSchema)) dto: z.infer<typeof ScanSchema>, @User() user?: AuthenticatedUser) {
+  async scan(
+    @Body(new ZodValidationPipe(ScanSchema)) dto: z.infer<typeof ScanSchema>,
+    @User() user?: AuthenticatedUser,
+  ) {
+    this.workflowGate.assertMutationAllowed('shipment.open');
     return this.shipments.openBoxByScan(dto.trackingNo, this.userId(user));
   }
 
@@ -36,11 +44,13 @@ export class ShipmentController {
     @Body(new ZodValidationPipe(InspectScanSchema)) dto: z.infer<typeof InspectScanSchema>,
     @User() user?: AuthenticatedUser,
   ) {
+    this.workflowGate.assertMutationAllowed('shipment.inspect');
     await this.shipments.inspectScan(id, dto.barcode, dto.quantity ?? 1, this.userId(user));
     return { ok: true };
   }
 
   @Post(':id/force')
+  @UseGuards(RolesGuard('master', 'admin'))
   @ApiOperation({ summary: '강제출고 (자동완료 override)' })
   @ApiParam({ name: 'id', description: '박스(shipment) ID' })
   async force(
@@ -48,6 +58,7 @@ export class ShipmentController {
     @Body(new ZodValidationPipe(ForceSchema)) dto: z.infer<typeof ForceSchema>,
     @User() user?: AuthenticatedUser,
   ) {
+    this.workflowGate.assertMutationAllowed('shipment.force');
     await this.shipments.forceShipment(id, dto.foiId, this.userId(user));
     return { ok: true };
   }

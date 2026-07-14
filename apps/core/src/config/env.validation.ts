@@ -1,5 +1,10 @@
 import { z } from 'zod';
 
+const optionalIsoTimestamp = z.preprocess(
+  (value) => (value === '' ? undefined : value),
+  z.string().datetime({ offset: true }).optional(),
+);
+
 export const almondyoungEnvSchema = z
   .object({
     // Server
@@ -22,6 +27,10 @@ export const almondyoungEnvSchema = z
     KAFKA_GROUP_ID: z.string().optional(),
     KAFKA_API_KEY: z.string().optional(),
     KAFKA_API_SECRET: z.string().optional(),
+
+    // Fulfillment hard-cutover workflow gate
+    FULFILLMENT_WORKFLOW_MODE: z.enum(['legacy', 'maintenance', 'v2']).optional(),
+    FULFILLMENT_V2_CUTOVER_AT: optionalIsoTimestamp,
 
     // Elasticsearch (Catalog)
     ELASTICSEARCH_NODE: z.string().url().optional(),
@@ -56,7 +65,30 @@ export const almondyoungEnvSchema = z
   .refine((data) => !!data.AUTH_SECRET || !!data.OIDC_ISSUER_URL, {
     message: 'Either AUTH_SECRET (HS256) or OIDC_ISSUER_URL (RS256) must be set',
     path: ['AUTH_SECRET'],
-  });
+  })
+  .superRefine((data, ctx) => {
+    const allowsLegacyDefault = data.NODE_ENV === 'development' || data.NODE_ENV === 'test';
+    if (!allowsLegacyDefault && !data.FULFILLMENT_WORKFLOW_MODE) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'FULFILLMENT_WORKFLOW_MODE is required outside development and test',
+        path: ['FULFILLMENT_WORKFLOW_MODE'],
+      });
+    }
+
+    if (data.FULFILLMENT_WORKFLOW_MODE === 'v2' && !data.FULFILLMENT_V2_CUTOVER_AT) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'FULFILLMENT_V2_CUTOVER_AT is required when FULFILLMENT_WORKFLOW_MODE=v2',
+        path: ['FULFILLMENT_V2_CUTOVER_AT'],
+      });
+    }
+  })
+  .transform((data) => ({
+    ...data,
+    // Local development and tests retain the characterized V1 behavior unless explicitly overridden.
+    FULFILLMENT_WORKFLOW_MODE: data.FULFILLMENT_WORKFLOW_MODE ?? ('legacy' as const),
+  }));
 
 export type AlmondyoungEnvConfig = z.infer<typeof almondyoungEnvSchema>;
 

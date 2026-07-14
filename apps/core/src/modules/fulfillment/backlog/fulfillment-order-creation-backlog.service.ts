@@ -3,11 +3,17 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { DbTx, FulfillmentOrderCreationBacklog, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { and, eq, inArray, sql } from 'drizzle-orm';
+import { FulfillmentWorkflowGate } from '../services/fulfillment-workflow-gate.service';
 
 export type FulfillmentCreationMissingLine = {
   salesOrderLineId: string;
   variantId: string;
   reason: string;
+};
+
+export type FulfillmentBacklogEnqueueContext = {
+  eventOccurredAt: string | Date | null | undefined;
+  isNewSalesOrder: boolean;
 };
 
 const OPEN_BACKLOG_STATUSES = ['pending', 'failed', 'processing', 'awaiting_matching'] as const;
@@ -19,13 +25,27 @@ export class FulfillmentOrderCreationBacklogService {
   constructor(
     @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
+    private readonly workflowGate: FulfillmentWorkflowGate,
   ) {}
 
   private get db() {
     return this.dbService.db;
   }
 
-  async enqueueForSalesOrder(salesOrderId: string, tx?: DbTx): Promise<FulfillmentOrderCreationBacklog | undefined> {
+  async enqueueForSalesOrder(
+    salesOrderId: string,
+    contextOrTx?: FulfillmentBacklogEnqueueContext | DbTx,
+    tx?: DbTx,
+  ): Promise<FulfillmentOrderCreationBacklog | undefined> {
+    const context = this.isEnqueueContext(contextOrTx)
+      ? contextOrTx
+      : { eventOccurredAt: undefined, isNewSalesOrder: true };
+    const transaction = this.isEnqueueContext(contextOrTx) ? tx : contextOrTx;
+
+    if (!this.workflowGate.shouldEnqueueFo(context.eventOccurredAt, context.isNewSalesOrder)) {
+      return undefined;
+    }
+
     return this.dbService.run(async (trx) => {
       const [inserted] = await trx
         .insert(wmsTables.fulfillmentOrderCreationBacklogs)
@@ -47,7 +67,7 @@ export class FulfillmentOrderCreationBacklogService {
       return trx.query.fulfillmentOrderCreationBacklogs.findFirst({
         where: eq(wmsTables.fulfillmentOrderCreationBacklogs.salesOrderId, salesOrderId),
       });
-    }, tx);
+    }, transaction);
   }
 
   async findById(id: string, tx?: DbTx): Promise<FulfillmentOrderCreationBacklog | undefined> {
@@ -61,6 +81,10 @@ export class FulfillmentOrderCreationBacklogService {
   }
 
   async claimPending(limit = 20): Promise<FulfillmentOrderCreationBacklog[]> {
+    if (!this.workflowGate.shouldRunFoCreation()) {
+      return [];
+    }
+
     return this.db.transaction(async (tx) => {
       const rows = await tx.execute<{ id: string }>(sql`
         SELECT id
@@ -196,6 +220,10 @@ export class FulfillmentOrderCreationBacklogService {
   }
 
   async wakeBacklogsWaitingForVariant(variantId: string, tx?: DbTx): Promise<number> {
+    if (!this.workflowGate.shouldRunFoCreation()) {
+      return 0;
+    }
+
     return this.dbService.run(async (trx) => {
       const updated = await trx
         .update(wmsTables.fulfillmentOrderCreationBacklogs)
@@ -271,6 +299,12 @@ export class FulfillmentOrderCreationBacklogService {
     const delays = [10, 30, 60, 300, 900];
     const delaySeconds = delays[Math.min(Math.max(attempts - 1, 0), delays.length - 1)];
     return new Date(Date.now() + delaySeconds * 1000);
+  }
+
+  private isEnqueueContext(
+    value: FulfillmentBacklogEnqueueContext | DbTx | undefined,
+  ): value is FulfillmentBacklogEnqueueContext {
+    return Boolean(value && typeof value === 'object' && 'isNewSalesOrder' in value);
   }
 
   private serializeError(error: unknown) {

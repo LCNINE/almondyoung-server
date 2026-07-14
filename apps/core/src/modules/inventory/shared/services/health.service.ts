@@ -3,6 +3,7 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema } from '../../schema/inventory.schema';
 import { TypedDatabase, DbService } from '@app/db';
 import { MetricsService } from './metrics.service';
+import { ConfigService } from '@nestjs/config';
 
 interface HealthCheckResult {
   status: 'healthy' | 'unhealthy';
@@ -27,6 +28,7 @@ export class HealthService {
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly metrics?: MetricsService,
+    private readonly config?: ConfigService,
   ) {}
 
   private get db() {
@@ -128,6 +130,15 @@ export class HealthService {
       };
       overallStatus = 'unhealthy';
     }
+
+    checks.fulfillmentWorkflow = {
+      status: 'healthy',
+      responseTime: 0,
+      details: {
+        mode: this.config?.get<string>('FULFILLMENT_WORKFLOW_MODE') ?? 'legacy',
+        cutoverAt: this.config?.get<string>('FULFILLMENT_V2_CUTOVER_AT') ?? null,
+      },
+    };
 
     return {
       status: overallStatus,

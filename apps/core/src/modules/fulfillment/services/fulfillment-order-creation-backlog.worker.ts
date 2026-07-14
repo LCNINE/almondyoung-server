@@ -10,6 +10,7 @@ import {
   FulfillmentOrderCreationBacklogService,
 } from '../backlog/fulfillment-order-creation-backlog.service';
 import { FulfillmentsService } from './fulfillments.service';
+import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 
 @Injectable()
 export class FulfillmentOrderCreationBacklogWorker {
@@ -22,6 +23,7 @@ export class FulfillmentOrderCreationBacklogWorker {
     private readonly backlog: FulfillmentOrderCreationBacklogService,
     private readonly fulfillments: FulfillmentsService,
     private readonly warehouses: WarehouseService,
+    private readonly workflowGate: FulfillmentWorkflowGate,
   ) {}
 
   private get db() {
@@ -30,6 +32,10 @@ export class FulfillmentOrderCreationBacklogWorker {
 
   @Cron(CronExpression.EVERY_10_SECONDS)
   async processPending() {
+    if (!this.workflowGate.shouldRunFoCreation()) {
+      return;
+    }
+
     if (this.isProcessing) {
       this.logger.debug('Previous fulfillment creation backlog run is still active, skipping');
       return;
@@ -58,6 +64,10 @@ export class FulfillmentOrderCreationBacklogWorker {
   }
 
   async processOne(backlogId: string) {
+    if (!this.workflowGate.shouldRunFoCreation()) {
+      return;
+    }
+
     await this.db.transaction(async (tx) => {
       const backlog = await this.backlog.findById(backlogId, tx);
       if (!backlog || backlog.status !== 'processing') {

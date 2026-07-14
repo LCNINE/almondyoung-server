@@ -121,7 +121,9 @@ describe('InvoiceService (hanjin)', () => {
     const goodsflowProvider = makeFakeProvider();
     const hanjinProvider = makeFakeProvider();
 
-    const service = new InvoiceService(dbService, goodsflowProvider as any, hanjinProvider as any);
+    const service = new InvoiceService(dbService, goodsflowProvider as any, hanjinProvider as any, {
+      assertMutationAllowed: jest.fn(),
+    } as any);
     return {
       service,
       tx,

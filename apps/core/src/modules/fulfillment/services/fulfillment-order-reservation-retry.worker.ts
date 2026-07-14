@@ -5,6 +5,7 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { and, asc, eq, gt, isNotNull, isNull, ne, or } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { FulfillmentReservationsFacade } from './fulfillment-reservations.facade';
+import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 
 /**
  * unfulfillable FO 자동 재예약 워커.
@@ -29,6 +30,7 @@ export class FulfillmentOrderReservationRetryWorker {
     @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
     private readonly reservations: FulfillmentReservationsFacade,
+    private readonly workflowGate: FulfillmentWorkflowGate,
   ) {}
 
   private get db() {
@@ -41,6 +43,10 @@ export class FulfillmentOrderReservationRetryWorker {
 
   @Cron(CronExpression.EVERY_10_SECONDS)
   async retryUnfulfillable() {
+    if (!this.workflowGate.shouldRunReservationRetry()) {
+      return;
+    }
+
     if (this.isProcessing) {
       this.logger.debug('Previous reservation retry run is still active, skipping');
       return;
@@ -69,6 +75,10 @@ export class FulfillmentOrderReservationRetryWorker {
    * 오래된 주문부터 재고를 가져가도록 createdAt asc.
    */
   async findCandidates(limit: number, tx?: DbTx): Promise<Array<{ id: string }>> {
+    if (!this.workflowGate.shouldRunReservationRetry()) {
+      return [];
+    }
+
     const fo = wmsTables.fulfillmentOrders;
     const foi = wmsTables.fulfillmentOrderItems;
     const summary = wmsSchema.stockSummary;
@@ -101,6 +111,10 @@ export class FulfillmentOrderReservationRetryWorker {
    * ready 전환 + 실패사유 초기화를 처리한다. (FulfillmentReady 이벤트는 구독 서비스가 없어 발행하지 않는다.)
    */
   async retryOne(fulfillmentOrderId: string, tx?: DbTx) {
+    if (!this.workflowGate.shouldRunReservationRetry()) {
+      return;
+    }
+
     const foi = wmsTables.fulfillmentOrderItems;
     const items = await this.exec(tx)
       .select({ id: foi.id, qty: foi.qty, reservedQty: foi.reservedQty })

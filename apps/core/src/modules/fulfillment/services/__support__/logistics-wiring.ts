@@ -20,6 +20,8 @@ import { AvailabilityService } from '../availability.service';
 import { FulfillmentsService } from '../fulfillments.service';
 import { FulfillmentReservationsFacade } from '../fulfillment-reservations.facade';
 import { FulfillmentOrderReservationRetryWorker } from '../fulfillment-order-reservation-retry.worker';
+import { FulfillmentWorkflowGate } from '../fulfillment-workflow-gate.service';
+import { ConfigService } from '@nestjs/config';
 import { OutboundBatchService } from '../outbound-batch.service';
 import { PickingProcessService } from '../picking-process.service';
 import { ProductSkuMappingService } from '../../../product-matching/services/product-sku-mapping.service';
@@ -74,12 +76,20 @@ export function wireLogistics(dbService: DbService<typeof wmsSchema>): Wired {
   const unified = new UnifiedReservationService(dbService, sellable);
   const lifecycle = new ReservationLifecycleService(dbService, unified);
   const strategy = new FifoLocationStrategy();
-  const consumption = new OutboundConsumptionService(dbService, strategy, command, lifecycle, fulfillmentOutbox);
+  const workflowGate = new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'legacy' }));
+  const consumption = new OutboundConsumptionService(
+    dbService,
+    strategy,
+    command,
+    lifecycle,
+    fulfillmentOutbox,
+    workflowGate,
+  );
   const barcode = new BarcodeService(dbService);
-  const shipment = new ShipmentService(dbService, barcode, consumption);
+  const shipment = new ShipmentService(dbService, barcode, consumption, workflowGate);
   const policies = new PoliciesService(dbService);
   const availability = new AvailabilityService(dbService);
-  const backlog = new FulfillmentOrderCreationBacklogService(dbService);
+  const backlog = new FulfillmentOrderCreationBacklogService(dbService, workflowGate);
   const productSkuMapping = new ProductSkuMappingService(dbService, sellable, backlog);
   const fulfillments = new FulfillmentsService(
     dbService,
@@ -89,12 +99,13 @@ export function wireLogistics(dbService: DbService<typeof wmsSchema>): Wired {
     unified,
     productSkuMapping,
     fulfillmentOutbox,
+    workflowGate,
     undefined,
   );
-  const reservationsFacade = new FulfillmentReservationsFacade(dbService, unified, sellable, policies);
-  const retryWorker = new FulfillmentOrderReservationRetryWorker(dbService, reservationsFacade);
-  const outboundBatch = new OutboundBatchService(dbService);
-  const picking = new PickingProcessService(dbService, barcode);
+  const reservationsFacade = new FulfillmentReservationsFacade(dbService, unified, sellable, policies, workflowGate);
+  const retryWorker = new FulfillmentOrderReservationRetryWorker(dbService, reservationsFacade, workflowGate);
+  const outboundBatch = new OutboundBatchService(dbService, workflowGate);
+  const picking = new PickingProcessService(dbService, barcode, workflowGate);
 
   return {
     invOutbox,
