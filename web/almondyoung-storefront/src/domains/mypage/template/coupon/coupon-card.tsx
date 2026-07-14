@@ -36,7 +36,12 @@ export function CouponCard({
         setClaimed(true)
         toast.success(t("toasts.claimSuccess"))
         router.refresh()
-      } catch {
+      } catch (error: unknown) {
+        const err = error as Error & { digest?: string }
+        // UNAUTHORIZED는 삼키지 않고 re-throw → error.tsx 토큰 복구 처리
+        if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
+          throw error
+        }
         toast.error(t("toasts.claimFailed"))
       }
     })

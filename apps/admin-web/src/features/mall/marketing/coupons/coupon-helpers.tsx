@@ -65,6 +65,12 @@ export function StatusBadge({ status }: { status: string }) {
 }
 
 export const TARGET_ATTR_LABEL: Record<string, string> = {
+  // Medusa dotted 경로(현행 저장 형식)
+  'items.product.id': '특정 상품',
+  'items.product.categories.id': '특정 카테고리',
+  'items.product.collection_id': '특정 컬렉션',
+  'items.product.type_id': '특정 상품 유형',
+  // 레거시 플랫 키(과거 저장분 표시 호환)
   product_id: '특정 상품',
   product_category_id: '특정 카테고리',
   product_collection_id: '특정 컬렉션',

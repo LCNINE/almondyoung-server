@@ -25,6 +25,7 @@ const SKIP_REASON_LABELS: Record<string, string> = {
   expired: '기간이 만료된 쿠폰입니다.',
   group_mismatch: '대상 고객 그룹이 아닙니다.',
   max_claims_exceeded: '발급 수량이 소진되었습니다.',
+  link_error: '발급 처리 중 오류가 발생했습니다. 다시 시도해주세요.',
   unknown: '발급할 수 없습니다.',
 };
 
@@ -91,8 +92,10 @@ export function CouponAssignDialog({
       }
       // 정책상 스킵 → 사유 표시 + 강제 발급 옵션 노출
       setSkipReason(reason ?? 'unknown');
-    } catch {
-      toast.error('쿠폰 발급에 실패했습니다.');
+    } catch (e: unknown) {
+      // 백엔드 구체 메시지 우선 노출
+      const msg = (e as any)?.response?.data?.message ?? '쿠폰 발급에 실패했습니다.';
+      toast.error(msg);
     }
   };
 

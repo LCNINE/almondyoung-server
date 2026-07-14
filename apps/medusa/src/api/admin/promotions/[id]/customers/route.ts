@@ -115,9 +115,12 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
         [Modules.PROMOTION]: { promotion_id: promotionId },
       })),
     );
-    // 회수한 링크 수만큼 발급 수량 카운트 원복
+    // 회수한 링크 수만큼 발급 수량 카운트 원복 + 발급 로그 soft-delete(자동발급 재발급 허용)
     await Promise.all(
-      toRemove.map(() => promotionMetaService.releaseClaimSlot(promotionId).catch(() => {})),
+      toRemove.flatMap((customerId) => [
+        promotionMetaService.releaseClaimSlot(promotionId).catch(() => {}),
+        promotionMetaService.removeIssueLog(customerId, promotionId).catch(() => {}),
+      ]),
     );
   }
 

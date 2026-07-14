@@ -48,7 +48,14 @@ export function CampaignCreateDialog({
         ...(startsAt ? { starts_at: new Date(startsAt).toISOString() } : {}),
         ...(endsAt ? { ends_at: new Date(endsAt).toISOString() } : {}),
         ...(budgetType && budgetLimit
-          ? { budget: { type: budgetType, limit: Number(budgetLimit) } }
+          ? {
+              budget: {
+                type: budgetType,
+                limit: Number(budgetLimit),
+                // spend 예산은 금액 기준이라 Medusa refine이 currency_code를 요구한다.
+                ...(budgetType === 'spend' ? { currency_code: 'krw' } : {}),
+              },
+            }
           : {}),
       });
       toast.success('캠페인이 생성되었습니다.');

@@ -67,6 +67,17 @@ class PromotionMetaModuleService extends MedusaService({ PromotionMeta, Promotio
   }
 
   /**
+   * 회수 시 발급 로그를 soft-delete 한다. partial unique index(deleted_at IS NULL)가
+   * 재발급을 허용하도록 — 그렇지 않으면 자동발급 dedup(isAlreadyIssued)이 영구 skip 한다.
+   */
+  async removeIssueLog(customerId: string, promotionId: string): Promise<void> {
+    const records = await (this as any).listPromotionIssueLogs({ customer_id: customerId, promotion_id: promotionId });
+    if (records.length > 0) {
+      await (this as any).deletePromotionIssueLogs(records.map((r: any) => r.id));
+    }
+  }
+
+  /**
    * Atomically reserve a claim slot. Returns 'ok' if a slot was reserved, 'exhausted' if maxClaims reached.
    * Uses UPDATE ... WHERE issued_count < maxClaims to prevent concurrent overclaims.
    * Note: issued_count starts at 0 post-migration. For promotions created before this migration

@@ -2,7 +2,7 @@
 
 import { sdk } from "@/lib/config/medusa"
 import { getAuthHeaders, getCacheTag } from "@/lib/data/cookies"
-import { HttpApiError } from "@/lib/api/api-error"
+import { HttpApiError, ApiAuthError } from "@/lib/api/api-error"
 import medusaError from "@/lib/utils/medusa-error"
 import { HttpTypes } from "@medusajs/types"
 import { revalidateTag } from "next/cache"
@@ -62,21 +62,31 @@ export const addPromotionToCart = async (
       revalidateTag(cartCacheTag)
       return cart
     })
-    .catch((error) => {
-      // The Medusa JS SDK throws the response body when status is not 2xx.
-      // Detect our per-customer limit middleware error so the client can show a specific message.
-      if (error?.code === "COUPON_LIMIT_EXCEEDED") {
-        const e = new HttpApiError(error.message ?? "쿠폰 사용 한도 초과", 400, "BAD_REQUEST")
-        e.digest = "COUPON_LIMIT_EXCEEDED"
-        throw e
-      }
-      if (error?.code === "COUPON_NOT_ASSIGNED") {
-        const e = new HttpApiError(error.message ?? "발급된 고객 전용 쿠폰", 400, "BAD_REQUEST")
-        e.digest = "COUPON_NOT_ASSIGNED"
-        throw e
-      }
-      medusaError(error)
-    })
+    .catch(throwCouponError)
+}
+
+/**
+ * Medusa JS SDK의 FetchError는 응답 body의 code/type를 버리고 message/status만 보존한다.
+ * 그래서 백엔드 미들웨어가 message에 머신 토큰(COUPON_NOT_ASSIGNED 등)을 싣고,
+ * 여기서 status/토큰을 digest로 변환해 discount.tsx가 로케일별 문구로 분기하게 한다.
+ */
+function throwCouponError(error: any): never {
+  // 401 → 토큰 복구 플로우(error.tsx) 트리거
+  if (error?.status === 401) {
+    throw new ApiAuthError()
+  }
+  const token: string | undefined = error?.code ?? error?.message
+  if (token === "COUPON_LIMIT_EXCEEDED") {
+    const e = new HttpApiError("COUPON_LIMIT_EXCEEDED", 400, "BAD_REQUEST")
+    e.digest = "COUPON_LIMIT_EXCEEDED"
+    throw e
+  }
+  if (token === "COUPON_NOT_ASSIGNED") {
+    const e = new HttpApiError("COUPON_NOT_ASSIGNED", 400, "BAD_REQUEST")
+    e.digest = "COUPON_NOT_ASSIGNED"
+    throw e
+  }
+  medusaError(error)
 }
 
 export const removePromotionFromCart = async (
@@ -102,7 +112,7 @@ export const removePromotionFromCart = async (
       revalidateTag(cartCacheTag)
       return cart
     })
-    .catch(medusaError)
+    .catch(throwCouponError)
 }
 
 export type CouponPreviewResult = {

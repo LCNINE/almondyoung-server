@@ -37,7 +37,8 @@ export default async function CouponClaimPage({ params, searchParams }: PageProp
 
   if (!valid || !promotion) {
     if (reason === "LOGIN_REQUIRED") {
-      const loginHref = `/${countryCode}/login?redirect_to=${encodeURIComponent(`/${countryCode}/coupons/claim?code=${code}`)}`
+      // code는 개별 인코딩 — &/# 포함 코드가 로그인 왕복 후 절단되지 않도록.
+      const loginHref = `/${countryCode}/login?redirect_to=${encodeURIComponent(`/${countryCode}/coupons/claim?code=${encodeURIComponent(code)}`)}`
       return (
         <PageShell>
           <div className="text-center space-y-4">
@@ -53,7 +54,9 @@ export default async function CouponClaimPage({ params, searchParams }: PageProp
     const message =
       reason === "COUPON_EXPIRED" ? t("couponExpired")
       : reason === "COUPON_INACTIVE" ? t("couponInactive")
+      : reason === "COUPON_NOT_STARTED" ? t("couponNotStarted")
       : reason === "COUPON_GROUP_RESTRICTED" ? t("couponGroupRestricted")
+      : reason === "COUPON_NOT_ASSIGNED" ? t("couponNotAssigned")
       : t("couponNotFound")
 
     return <ErrorState message={message} />
