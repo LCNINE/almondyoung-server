@@ -26,7 +26,7 @@ export function UserProfileSection({
       aria-label={t("ariaLabel")}
       className="mb-6 overflow-hidden rounded-xl border border-gray-100"
     >
-      {/* 상단: 아바타 + 이름 + 오독 멤버십 */}
+      {/* 상단: 아바타 + 이름 + 멤버십 */}
       <div className="bg-primary flex flex-wrap items-center gap-3 p-5 sm:gap-4 sm:p-6">
         <div
           className="grid size-10 place-items-center rounded-full bg-white shadow-sm"
@@ -39,7 +39,7 @@ export function UserProfileSection({
           <span className="text-lg text-white/80">{t("honorific")}</span>
         </strong>
 
-        {/* 오독(ODOK) 멤버십 뱃지 */}
+        {/* 멤버십 뱃지 */}
         <LocalizedClientLink
           href={
             isMembership
@@ -48,10 +48,7 @@ export function UserProfileSection({
           }
         >
           <span className="ring-primary/15 inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white px-3 py-1 whitespace-nowrap shadow-sm ring-1 transition-colors hover:bg-gray-50">
-            <span className="text-primary text-base font-extrabold">오독</span>
-            <span className="text-primary/70 text-[10px] font-bold tracking-wide">
-              ODOK
-            </span>
+            <span className="text-primary text-base font-extrabold">멤버십</span>
             {isMembership ? (
               <span className="text-primary flex items-center gap-0.5 text-sm font-bold">
                 <Crown className="size-3.5" aria-hidden />

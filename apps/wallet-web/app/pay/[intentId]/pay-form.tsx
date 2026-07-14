@@ -518,14 +518,6 @@ export function PayForm({
 
           {/* 우측 패널: 포인트 + 결제수단 + CTA */}
           <div className="flex-1 space-y-4">
-            {/* 멤버십 결제 안내 — 포인트 사용 불가 */}
-            {isMembership && !isZeroAmount && (
-              <Alert className="break-keep">
-                <Coins className="w-4 h-4" />
-                <AlertDescription className="break-keep">멤버십 결제에는 포인트를 사용할 수 없습니다.</AlertDescription>
-              </Alert>
-            )}
-
             {/* 포인트 사용 카드 */}
             {!isZeroAmount && !isMembership && (
               <Card className="border shadow-sm border-border/60">

@@ -152,7 +152,7 @@
     "settings": "Settings",
     "won": "KRW",
     "benefitActive": "Benefits active",
-    "membershipJoinCta": "Join & get benefits"
+    "membershipJoinCta": "Join membership benefits"
   },
   "shipping": {
     "title": "In Transit",
@@ -694,9 +694,9 @@
     }
   },
   "membership": {
-    "logoAlt": "ODOK logo",
-    "defaultTierName": "ODOK",
-    "membershipName": "Almondyoung ODOK",
+    "logoAlt": "Membership logo",
+    "defaultTierName": "Membership",
+    "membershipName": "Almondyoung Membership",
     "noBenefitInfo": "No benefit information.",
     "status": {
       "ACTIVE": "Active",
@@ -846,7 +846,7 @@
       }
     },
     "history": {
-      "title": "ODOK history",
+      "title": "Membership history",
       "subscriptionHistory": "Subscription history",
       "noSubscriptionHistory": "No subscription history.",
       "savingsTitle": "Savings record",
@@ -860,11 +860,11 @@
       "adjGrantedByAdmin": "Admin granted +{days} days",
       "adjExtended": "+{days} days extended",
       "adjReduced": "-{days} days deducted",
-      "legacyHistory": "View previous Almondyoung ODOK history",
-      "joinAndBenefits": "Join Almondyoung ODOK and see benefits",
+      "legacyHistory": "View previous Almondyoung Membership history",
+      "joinAndBenefits": "Join Almondyoung Membership and see benefits",
       "subscribe": "Subscribe",
-      "cancelMembership": "Cancel ODOK",
-      "heroTitle": "Almondyoung ODOK Service",
+      "cancelMembership": "Cancel Membership",
+      "heroTitle": "Almondyoung Membership Service",
       "heroGrandOpen": "GRAND OPEN",
       "priceNoticeMonthlyYearly": "* Paid membership: 4,990 KRW / month, 49,900 KRW / year",
       "priceNoticeFreeMonths": "* Get 2 months free with annual subscription"
