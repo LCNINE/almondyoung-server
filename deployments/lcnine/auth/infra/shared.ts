@@ -58,11 +58,13 @@ export function setup() {
       link?: sst.Linkable[];
       loadBalancerHealth?: Record<string, any>;
       serviceName: string;
+      architecture?: "x86_64" | "arm64"; // 기본 x86_64. arm64(Graviton) = 동일 성능 ~20% 저렴.
     },
   ) =>
     new sst.aws.Service(name, {
       cluster,
       link: opts.link,
+      ...(opts.architecture ? { architecture: opts.architecture } : {}),
       loadBalancer: {
         instance: userAlb,
         rules: [
@@ -84,6 +86,20 @@ export function setup() {
         ...baseEnv(opts.serviceName),
         PORT: String(opts.port),
         ...opts.environment,
+      },
+      transform: {
+        service: (args: Record<string, any>) => {
+          // Route outbound traffic through the platform VPC NAT (fixed EIP) instead of a
+          // per-task public IP. SST defaults its Service to public subnets + assignPublicIp,
+          // costing a public IPv4 per task; override to private subnets like the services stack.
+          args.networkConfiguration = vpc.privateSubnets.apply((subnets) =>
+            vpc.securityGroups.apply((sgs) => ({
+              assignPublicIp: false,
+              subnets,
+              securityGroups: sgs,
+            })),
+          );
+        },
       },
     });
 

@@ -7,6 +7,8 @@ import {
   AdminUsersQuery,
   AdminUsersResponse,
   AdminUserRolesResponseDto,
+  CreateAdminAccountDto,
+  CreateAdminAccountResult,
   ReplaceUserRolesDto,
   UpdateMyProfileDto,
 } from '@/lib/types/dto/user';
@@ -90,5 +92,16 @@ export const userApi = {
       `${USER_SERVICE_BASE_URL}/admin/users/${userId}/roles`,
       dto
     );
+  },
+
+  // 어드민(master 전용) - 관리자 계정 생성. 초기 비밀번호는 서버가 생성해 1회 반환한다.
+  createAdminAccount: async (
+    dto: CreateAdminAccountDto
+  ): Promise<CreateAdminAccountResult> => {
+    const response = await client.post<CreateAdminAccountResult>(
+      `${USER_SERVICE_BASE_URL}/admin/auth`,
+      dto
+    );
+    return response.data;
   },
 };

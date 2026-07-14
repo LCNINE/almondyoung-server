@@ -29,7 +29,8 @@ export function usePaymentIntentTableFilters(): Filter[] {
         { label: '토스 빌링', value: 'TOSS_BILLING' },
         { label: 'CMS 자동이체', value: 'CMS_BATCH' },
         { label: '포인트', value: 'POINTS' },
-        { label: '무통장입금', value: 'BANK_TRANSFER' },
+        // 토스 가상계좌 + 구 직접입금 모두 BANK_TRANSFER 로 저장됨 (구분은 목록의 결제수단 컬럼에서)
+        { label: '무통장입금/가상계좌', value: 'BANK_TRANSFER' },
       ],
     },
   ];

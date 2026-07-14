@@ -1,7 +1,7 @@
 "use client"
 
 import LocalizedClientLink from "@/components/shared/localized-client-link"
-import { Eye, Heart, Package, ShoppingBag } from "lucide-react"
+import { Eye, Heart, LayoutGrid, Package } from "lucide-react"
 import { useTranslations } from "next-intl"
 import React from "react"
 
@@ -30,28 +30,28 @@ export function QuickLinks() {
 
   return (
     <nav
-      className="flex w-full items-center justify-between rounded-[10px] bg-white py-[15px] shadow-sm"
+      className="flex w-full items-center justify-between"
       aria-label={t("orderList")}
     >
       <QuickMenuItem
         label={t("orderList")}
-        icon={<Package size={27} className="text-amber-500" />}
+        icon={<Package size={27} className="text-primary" />}
         href="/mypage/order/list"
       />
       <QuickMenuItem
         label={t("wish")}
-        icon={<Heart size={27} className="text-amber-500" />}
+        icon={<Heart size={27} className="text-primary" />}
         href="/mypage/wish"
       />
       <QuickMenuItem
-        label={t("rebuy")}
-        icon={<ShoppingBag size={27} className="text-amber-500" />}
-        href="/mypage/rebuy"
+        label={t("recent")}
+        icon={<Eye size={27} className="text-primary" />}
+        href="/mypage/recent"
       />
       <QuickMenuItem
-        label={t("recent")}
-        icon={<Eye size={27} className="text-amber-500" />}
-        href="/mypage/recent"
+        label={t("allMenu")}
+        icon={<LayoutGrid size={27} className="text-primary" />}
+        href="/mypage/menu"
       />
     </nav>
   )

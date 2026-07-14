@@ -223,6 +223,9 @@ export function PayForm({
   const isBankTransferSelected = externalMethods.find((m) => m.id === selectedMethodId)?.type === 'BANK_TRANSFER';
 
   const isRecurring = intent.metadata?.billingMode === 'recurring';
+  // 멤버십 결제(type: MEMBERSHIP_FEE)는 포인트 사용 불가 — 정기결제 자동갱신 시 포인트 재적용이
+  // 불가능하고, 멤버십은 적립 혜택 대상이 아니므로 결제수단(카드 등)으로만 결제한다.
+  const isMembership = intent.metadata?.type === 'MEMBERSHIP_FEE';
   const isZeroAmount = intent.payableAmount === 0;
   const maxPoints = Math.min(availablePoints, intent.payableAmount);
   const remainingAmount = intent.payableAmount - (usePoints ? pointsAmount : 0);
@@ -398,8 +401,8 @@ export function PayForm({
                 <div className="space-y-1">
                   <h1 className="text-lg font-semibold">주문이 접수되었습니다</h1>
                   <p className="text-sm text-muted-foreground">
-                    주문이 &lsquo;입금확인중&rsquo; 상태로 접수되었어요. 아래 계좌로 입금하시면 관리자 확인 후 배송이
-                    진행됩니다.
+                    주문이 &lsquo;입금확인중&rsquo; 상태로 접수되었어요. 아래 계좌로 입금하시면 입금 확인 후 배송이
+                    진행됩니다. 입금 확인 후 자동 확인까지 시간이 소요될 수 있어요.
                   </p>
                 </div>
               </div>
@@ -430,14 +433,19 @@ export function PayForm({
                 </div>
               </dl>
 
-              <Alert>
+              <Alert className="break-keep">
                 <AlertCircle className="w-4 h-4" />
-                <AlertDescription>
+                <AlertDescription className="break-keep">
                   주문이 이미 <span className="font-medium">‘입금확인중’</span> 상태로 접수되어, 지금 바로 아래{' '}
                   <span className="font-medium">‘주문 내역에서 확인’</span> 버튼으로 확인하실 수 있어요. 입금이 확인되면
-                  관리자 승인 후 결제가 완료됩니다.
+                  자동으로 결제가 완료됩니다.
                 </AlertDescription>
               </Alert>
+
+              <div className="p-3 space-y-1 text-xs rounded-md bg-muted/50 text-muted-foreground break-keep">
+                <p>· 입금 기한(7일) 내 미입금 시 주문은 자동 취소됩니다.</p>
+                <p>· 입금 후 취소·환불은 주문 내역에서 직접 신청하실 수 있으며, 영업일 기준 약 2일 소요됩니다.</p>
+              </div>
 
               <div className="space-y-2">
                 {orderListUrl && (
@@ -510,8 +518,16 @@ export function PayForm({
 
           {/* 우측 패널: 포인트 + 결제수단 + CTA */}
           <div className="flex-1 space-y-4">
+            {/* 멤버십 결제 안내 — 포인트 사용 불가 */}
+            {isMembership && !isZeroAmount && (
+              <Alert className="break-keep">
+                <Coins className="w-4 h-4" />
+                <AlertDescription className="break-keep">멤버십 결제에는 포인트를 사용할 수 없습니다.</AlertDescription>
+              </Alert>
+            )}
+
             {/* 포인트 사용 카드 */}
-            {!isZeroAmount && (
+            {!isZeroAmount && !isMembership && (
               <Card className="border shadow-sm border-border/60">
                 <CardContent className="p-6">
                   <div className="flex items-center justify-between mb-4">

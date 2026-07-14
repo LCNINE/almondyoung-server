@@ -23,6 +23,7 @@ import {
   useVariantMatching,
   useVariantStockPolicy,
   useUpsertVariantMatching,
+  useUpdateVariantStockPolicy,
   useSetMatchingPriority,
   useChangeMatchingStrategy,
   getMatchingStrategyDecisionLabel,
@@ -33,6 +34,7 @@ import {
 } from '@/lib/services/matching';
 import { matchingQueryKeys } from '@/lib/services/matching';
 import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { SkuLookupSection } from './sku-lookup-section';
 import { StrategySection } from './strategy-section';
 import { StockPolicySection } from './stock-policy-section';
@@ -71,6 +73,7 @@ export function VariantMatchingPanel({
     isMatchingFetched && !current
   );
   const upsert = useUpsertVariantMatching();
+  const updateStockPolicy = useUpdateVariantStockPolicy();
   const setPriority = useSetMatchingPriority();
   const setStrategy = useChangeMatchingStrategy();
   const queryClient = useQueryClient();
@@ -101,6 +104,23 @@ export function VariantMatchingPanel({
       setStockPolicy(normalizeStockPolicy(variantStockPolicy));
     }
   }, [current, isMatchingFetched, variantStockPolicy]);
+
+  // 재고 정책은 인라인 테이블 체크박스와 동일하게 체크 즉시 저장한다
+  // (같은 mutation → 같은 query invalidate 라 테이블/목록과 자동 동기화).
+  const handleStockPolicyChange = (policy: StockPolicyDto) => {
+    const normalized = normalizeStockPolicy(policy);
+    setStockPolicy(normalized);
+    updateStockPolicy.mutate(
+      { variantId, data: normalized },
+      {
+        onError: (error) => {
+          toast.error(
+            error instanceof Error ? error.message : '재고 정책 저장에 실패했습니다.'
+          );
+        },
+      }
+    );
+  };
 
   const handleSave = async () => {
     const currentSkuLinks = getCurrentSkuLinks(current);
@@ -168,7 +188,7 @@ export function VariantMatchingPanel({
     upsert.isPending || setPriority.isPending || setStrategy.isPending;
 
   return (
-    <div className="space-y-4 py-2">
+    <div className="py-2 space-y-4">
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium">{variantName ?? variantId}</span>
         {current?.status && (
@@ -206,7 +226,7 @@ export function VariantMatchingPanel({
         onPriorityChange={setPriorityState}
       />
 
-      <StockPolicySection value={stockPolicy} onChange={setStockPolicy} />
+      <StockPolicySection value={stockPolicy} onChange={handleStockPolicyChange} />
 
       <div className="flex justify-end">
         <Button size="sm" onClick={handleSave} disabled={isLoading}>
@@ -248,7 +268,7 @@ export function VariantEditorDialog({
               Variant 목록
             </p>
             <ScrollArea className="h-[360px]">
-              <div className="space-y-1 pr-1">
+              <div className="pr-1 space-y-1">
                 {variants.map((v) => (
                   <button
                     key={v.id}
@@ -280,7 +300,7 @@ export function VariantEditorDialog({
                 />
               </ScrollArea>
             ) : (
-              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+              <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
                 왼쪽에서 variant를 선택하세요.
               </div>
             )}

@@ -63,6 +63,8 @@ export function setup(infra: IdpInfra) {
   // ─── user-service ───
   // Dockerfile이 libs/, packages/, apps/user-service/ 를 복사하므로 context는 모노레포 루트.
   createBackendService('UserService', {
+    // arm64(Graviton) Fargate — 동일 성능에 ~20% 저렴. 문제 시 이 줄만 지우면 x86 복귀.
+    architecture: 'arm64',
     dockerfile: 'apps/user-service/Dockerfile',
     dockerContext: '../../../',
     port: 3000,

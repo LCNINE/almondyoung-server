@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { eq, inArray, and, countDistinct } from 'drizzle-orm';
 import { event_resource_links } from './tracking.schema';
@@ -19,9 +19,14 @@ export interface TraceLink {
 
 @Injectable()
 export class EventTraceReader {
-  constructor(private readonly dbService: DbService) {}
+  // ponytail: @Optional — search 등 DbService 없는 앱에서 EventsModule DI가 깨지지 않도록.
+  // 트레이스 조회 API가 없는(=DB 없는) 앱에선 이 reader가 호출될 일이 없다.
+  constructor(@Optional() private readonly dbService: DbService | undefined) {}
 
   private get db() {
+    if (!this.dbService) {
+      throw new Error('EventTraceReader: DbService unavailable (no DB in this app)');
+    }
     return this.dbService.db as any;
   }
 

@@ -43,6 +43,12 @@ export const useBankTransferTableColumns = ({ userMap = {} }: UseColumnsOptions 
           );
         },
       }),
+      columnHelper.accessor('tossVirtualAccount', {
+        header: '유형',
+        cell: ({ getValue }) => (
+          <span className="text-sm">{getValue() ? '토스 가상계좌' : '무통장입금'}</span>
+        ),
+      }),
       columnHelper.display({
         id: 'bankAccount',
         header: '입금 계좌',

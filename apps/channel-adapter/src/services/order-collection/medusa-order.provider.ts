@@ -67,8 +67,15 @@ export class MedusaOrderProvider implements ReplayableChannelOrderProvider {
     const isAwaitingBankDeposit =
       (order.metadata as Record<string, unknown> | null | undefined)?.bank_transfer_status === 'awaiting_deposit' &&
       order.payment_status !== 'captured';
+    // 환불 '신청'(승인 전) 주문은 수집/발송에서 제외 — 고객이 환불을 원했는데 출고되는 휴먼 에러 방지.
+    // wallet 환불신청 시 payment-events hook 이 refund_status='requested' 를 달고, 거절 시 해제한다.
+    const isRefundRequested =
+      (order.metadata as Record<string, unknown> | null | undefined)?.refund_status === 'requested';
     const eligibleForOrderCreation =
-      PAYMENT_ACCEPTED_STATUSES.has(order.payment_status) && order.status !== 'canceled' && !isAwaitingBankDeposit;
+      PAYMENT_ACCEPTED_STATUSES.has(order.payment_status) &&
+      order.status !== 'canceled' &&
+      !isAwaitingBankDeposit &&
+      !isRefundRequested;
     const lifecycleStatusSnapshot = this.isLifecycleStatusSnapshot(order);
     const hasLifecycleObservation = lifecycleStatusSnapshot || this.hasLifecycleObservation(order);
     if (!eligibleForOrderCreation && !hasLifecycleObservation) {

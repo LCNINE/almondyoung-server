@@ -39,6 +39,7 @@ export interface UserInfo {
  */
 export interface ShippingOrder {
   orderId: string
+  createdAt: string
   status: string
   paymentStatus: string
   deliveryInfo: string

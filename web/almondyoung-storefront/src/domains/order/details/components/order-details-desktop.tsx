@@ -33,28 +33,35 @@ import { useTranslations } from "next-intl"
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
+import { RefundRequestDialog } from "./refund-request-dialog"
+import { DepositAccountInfo } from "./deposit-account-info"
+import type { BankTransferDepositAccount } from "@/lib/api/wallet"
 
 const formatAmount = (value?: number | null) =>
   `${(value ?? 0).toLocaleString()}원`
-
-/** 무통장입금 주문 취소 안내용 고객센터 카카오채널 링크 */
-const KAKAO_CS_URL = "https://pf.kakao.com/_xaxgxazs"
 
 export const OrderDetailsDesktop = ({
   order,
   coreActions,
   cashReceipts = [],
+  intentId,
+  depositAccount,
+  refundRequestStatus,
 }: {
   order: HttpTypes.StoreOrder | null
   countryCode: string
   coreActions?: StoreOrderActionsResponse
   cashReceipts?: IssuedCashReceiptDto[]
+  intentId?: string
+  depositAccount?: BankTransferDepositAccount | null
+  refundRequestStatus?: string
 }) => {
   const tLabels = useTranslations("mypage.order.labels")
   const tStatus = useTranslations("mypage.order.status")
   const tActions = useTranslations("mypage.order.actions")
   const tPaymentStatus = useTranslations("mypage.order.paymentStatus")
   const tRefundInfo = useTranslations("mypage.order.refundInfo")
+  const tRefundRequest = useTranslations("mypage.order.refundRequest")
   const router = useRouter()
   const [showCancelDialog, setShowCancelDialog] = useState(false)
   const [isCancelling, startCancelTransition] = useTransition()
@@ -115,7 +122,9 @@ export const OrderDetailsDesktop = ({
   const showSelfCancel = canCancel && !isBankTransferConfirmed
   const showBankTransferCancelGuide = canCancel && isBankTransferConfirmed
 
-  const statusLabel = coreActions
+  const statusLabel = refundRequestStatus === "REQUESTED"
+    ? tRefundRequest("requested")
+    : coreActions
     ? getCoreDisplayStatus(coreActions)
     : tStatus(
         order.status === "canceled"
@@ -201,8 +210,11 @@ export const OrderDetailsDesktop = ({
       <section className="mb-[35px] space-y-3 border border-gray-200 p-7">
         <div className="flex items-center gap-3">
           <h2 className="text-2xl font-bold text-black">{statusLabel}</h2>
-          <OrderStatusBadges actions={coreActions} medusaStatus={order.status} />
+          <OrderStatusBadges actions={coreActions} medusaStatus={order.status} refundRequestStatus={refundRequestStatus} />
         </div>
+        {depositAccount && depositAccount.accountNumber && (
+          <DepositAccountInfo account={depositAccount} />
+        )}
         {order.items?.map((item) => {
           const thumbnail = getThumbnailUrl(
             item.thumbnail ?? item.variant?.product?.thumbnail ?? ""
@@ -400,7 +412,7 @@ export const OrderDetailsDesktop = ({
         </div>
       </section>
 
-      <section className="flex justify-center gap-2.5">
+      <section className="flex flex-wrap justify-center gap-2.5">
         <LocalizedClientLink
           href="/mypage/order/list"
           className="inline-flex items-center justify-center rounded-[5px] px-4 py-3 text-sm font-medium text-amber-500 outline-1 outline-amber-500"
@@ -440,16 +452,13 @@ export const OrderDetailsDesktop = ({
             {tActions("cancelOrder")}
           </button>
         )}
-        {showBankTransferCancelGuide && (
-          <a
-            href={KAKAO_CS_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center justify-center rounded-[5px] px-4 py-3 text-sm text-black outline-1 outline-zinc-400"
-            title={tActions("bankTransferCancelGuide")}
-          >
-            {tActions("contactCs")}
-          </a>
+        {showBankTransferCancelGuide && intentId && !refundRequestStatus && (
+          <RefundRequestDialog intentId={intentId} />
+        )}
+        {showBankTransferCancelGuide && refundRequestStatus && (
+          <span className="inline-flex cursor-not-allowed items-center justify-center rounded-[5px] px-4 py-3 text-sm text-gray-400 outline-1 outline-gray-200">
+            {tRefundRequest(refundRequestStatus === "APPROVED" ? "refunded" : "requested")}
+          </span>
         )}
         {!canCancel && cancelUnavailableReason && cancelUnavailableReason !== "already_cancelled" && (
           <span
@@ -460,9 +469,14 @@ export const OrderDetailsDesktop = ({
           </span>
         )}
         {showBankTransferCancelGuide && (
-          <p className="w-full text-xs text-muted-foreground">
-            {tActions("bankTransferCancelGuide")}
-          </p>
+          <div className="w-full space-y-1">
+            <p className="text-xs text-muted-foreground">
+              {tActions("bankTransferCancelGuide")}
+            </p>
+            <p className="text-xs text-muted-foreground whitespace-pre-line">
+              {tActions("bankTransferRefundNotice")}
+            </p>
+          </div>
         )}
       </section>
 

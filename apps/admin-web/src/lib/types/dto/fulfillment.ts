@@ -131,16 +131,6 @@ export type FulfillmentOrdersQuery = ListFulfillmentsQuery & {
   status?: FulfillmentOrderStatus;
 };
 
-/** POST /fulfillments/:id/split body */
-export interface SplitFulfillmentOrderItem {
-  fulfillmentOrderItemId: string;
-  quantity: number;
-}
-
-export interface SplitFulfillmentOrderRequest {
-  items: SplitFulfillmentOrderItem[];
-}
-
 /** POST /fulfillments/:id/reserve body */
 export interface ReserveRequest {
   fulfillmentOrderItemId: string;
@@ -171,13 +161,6 @@ export interface TransferCandidate {
   reservedQty: number;
   shortage: number;
   sameFulfillmentOrder: boolean;
-}
-
-/** POST /fulfillments/:id/assign-shipment body */
-export interface AssignShipmentRequest {
-  trackingNo: string;
-  carrier?: 'CJ' | 'HANJIN' | 'LOTTE' | 'LOGEN' | 'KDEXP' | 'CJGLS';
-  eta?: string;
 }
 
 export interface FulfillmentOrderItemInput {

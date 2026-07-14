@@ -16,6 +16,7 @@ import { OutboxService } from '../outbox/outbox.service';
 import { ProductSkuMappingService } from '../../product-matching/services/product-sku-mapping.service';
 import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
 import { UnifiedReservationService } from '../../inventory/shared/services/unified-reservation.service';
+import { acquireStockAvailabilityLocks } from '../../inventory/shared/locks/stock-availability-lock';
 import { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
 import { CreateCompensationShipmentDto, CompensationShipmentItemDto } from '../dto/create-compensation-shipment.dto';
 import { FulfillmentShippedPayload, FulfillmentDeliveredPayload, FulfillmentCancelledPayload } from '@packages/event-contracts/streams';
@@ -793,6 +794,13 @@ export class FulfillmentsService {
     let totalReservedQty = 0;
     const failures: ReservationFailureDetail[] = [];
 
+    // 멀티-SKU 예약: 전 SKU 락을 (skuId,warehouseId) 정렬로 일괄 획득 → 교차 데드락 방지.
+    // (내부 reserveStock 의 단일 락은 같은 tx 재획득이라 무해)
+    await acquireStockAvailabilityLocks(
+      trx,
+      items.map((item) => ({ skuId: item.skuId, warehouseId })),
+    );
+
     for (const item of items) {
       const requiresStockReservation = await this.requiresStockReservation(item.variantId, trx);
       if (!requiresStockReservation) {
@@ -897,6 +905,17 @@ export class FulfillmentsService {
         .set({ status: 'shipped', shippedAt: now, updatedAt: now })
         .where(eq(wmsTables.fulfillmentOrders.id, id));
 
+      // drop_ship 불변식("자사 재고 예약 없음") 방어 sweep — 잔존 confirmed 예약이 있으면
+      // 좀비가 되므로 같은 tx 로 즉시 해제. 정상 drop_ship 은 항상 0건(no-op).
+      const sweptOnShip = await this.reservationLifecycle.releaseLeftoverReservations(
+        id,
+        'reconcile: drop_ship invariant sweep',
+        trx,
+      );
+      if (sweptOnShip > 0) {
+        this.logger.warn(`drop_ship FO ${id} 에서 잔존 예약 ${sweptOnShip}건 sweep — 예약 없음 불변식 위반`);
+      }
+
       const [salesOrderRow] = fo.salesOrderId
         ? await trx
             .select({ channelOrderId: wmsTables.salesOrders.channelOrderId })
@@ -948,6 +967,17 @@ export class FulfillmentsService {
         .update(wmsTables.fulfillmentOrders)
         .set({ status: 'completed', updatedAt: now })
         .where(eq(wmsTables.fulfillmentOrders.id, id));
+
+      // consume 없이 shipped→completed 로 온 FO 의 잔존 예약 방어 sweep.
+      // 정상 소진 경로는 ship 시 이미 release 되어 0건(no-op).
+      const sweptOnDelivered = await this.reservationLifecycle.releaseLeftoverReservations(
+        id,
+        'reconcile: FO delivered leftover',
+        trx,
+      );
+      if (sweptOnDelivered > 0) {
+        this.logger.warn(`Delivered FO ${id} 에서 잔존 예약 ${sweptOnDelivered}건 sweep`);
+      }
 
       // 배송 완료 시각을 shipment_tracking에 기록 → buildTrackingView()가 deliveredAt으로 노출
       // 부분 unique 후 FO당 취소박스+활성박스 공존 가능 — 취소박스를 delivered 로 잘못 갱신하지 않도록 활성 최신만.
@@ -1062,23 +1092,24 @@ export class FulfillmentsService {
     const hasShippedItems = items.some((i) => i.shippedQty > 0);
     const actions: string[] = [];
 
+    // W6(직배 별도 엔티티 추출) 전까지의 방어선: drop_ship 은 타사 재고라 자사 예약이 없다.
+    // reserve/transferReservation 은 예약을 생성/주입하므로 광고 제외. unreserve 는 잔존 예약
+    // 수동 해제 escape hatch 로 유지(facade 도 unreserve 는 drop_ship 가드하지 않음).
+    const isDropShip = fo.fulfillmentMode === 'drop_ship';
     if (!isTerminal) {
-      actions.push('reserve');
+      if (!isDropShip) actions.push('reserve');
       if (!hasShippedItems) {
         actions.push('unreserve');
-        if (TRANSFER_ALLOWED_STATUSES.has(fo.status)) {
+        if (!isDropShip && TRANSFER_ALLOWED_STATUSES.has(fo.status)) {
           actions.push('transferReservation');
         }
       }
       actions.push('cancel');
     }
-    if (['invoiced', 'labeled', 'picked', 'inspecting', 'inspected'].includes(fo.status)) {
-      actions.push('ship');
-    }
     if (fo.status === 'shipped') {
       actions.push('deliver');
     }
-    if (fo.fulfillmentMode === 'drop_ship' && !isTerminal) {
+    if (isDropShip && !isTerminal) {
       const dsStatus = fo.directShipStatus;
       if (!dsStatus || dsStatus === 'pending') actions.push('forwardDropShip');
       if (dsStatus === 'forwarded') actions.push('completeDropShip');

@@ -12,12 +12,10 @@ import type {
   FulfillmentOutboxEvent,
   ListFulfillmentsQuery,
   CreateFulfillmentOrderRequest,
-  SplitFulfillmentOrderRequest,
   ReserveRequest,
   UnreserveRequest,
   TransferReservationRequest,
   TransferCandidate,
-  AssignShipmentRequest,
 } from '@/lib/types/dto/fulfillment';
 
 const BASE = `${ALMONDYOUNG_API_BASE_URL}/fulfillments`;
@@ -40,11 +38,6 @@ export const fulfillmentsClient = {
 
   create: async (data: CreateFulfillmentOrderRequest): Promise<FulfillmentOrder> => {
     const res = await client.post(BASE, data);
-    return res.data;
-  },
-
-  split: async (id: string, data: SplitFulfillmentOrderRequest): Promise<FulfillmentOrder> => {
-    const res = await client.post(`${BASE}/${encodeURIComponent(id)}/split`, data);
     return res.data;
   },
 
@@ -75,16 +68,6 @@ export const fulfillmentsClient = {
     const res = await client.get(`${BASE}/${encodeURIComponent(id)}/transfer-candidates`, {
       params: { fromFulfillmentOrderItemId },
     });
-    return res.data;
-  },
-
-  assignShipment: async (id: string, data: AssignShipmentRequest): Promise<unknown> => {
-    const res = await client.post(`${BASE}/${encodeURIComponent(id)}/assign-shipment`, data);
-    return res.data;
-  },
-
-  ship: async (id: string): Promise<unknown> => {
-    const res = await client.post(`${BASE}/${encodeURIComponent(id)}/ship`);
     return res.data;
   },
 

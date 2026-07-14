@@ -236,12 +236,14 @@ export class CustomDLQConsumer {
 ## 작동 원리
 
 1. **에러 발생**: 핸들러에서 에러가 throw됨
-2. **Exception Filter 캐치**: `EventsExceptionFilter`가 에러를 자동으로 캐치
+2. **Interceptor 캐치**: 전역 등록된 `EventRetryInterceptor`가 에러를 캐치 (별도 부착 불필요)
 3. **재시도 정책 조회**: 핸들러의 `@RetryPolicy` 메타데이터 조회
 4. **재시도 실행**: 백오프 전략에 따라 재시도
 5. **재시도 성공**: 정상 처리됨, Kafka offset commit
 6. **재시도 실패**: DLQ로 자동 전송, Kafka offset commit
 7. **로그 기록**: 모든 과정이 상세히 로깅됨
+
+> `context.retryCount` = **총 실패 시도 수** (초기 시도 포함; nonRetryable 즉시 DLQ 인 경우 1). `attemptHistory` 길이와 같다.
 
 ## 기본 설정
 
@@ -258,23 +260,23 @@ export class CustomDLQConsumer {
 ## 로그 예시
 
 ```
-[EventsExceptionFilter] Event handler failed: handleOrderCreated
+[EventRetryInterceptor] Event handler failed: handleOrderCreated
   error: "Customer ID is required"
   topic: "orders.events.v1"
   partition: 0
   offset: "12345"
 
-[EventsExceptionFilter] Retrying in 1000ms... (attempt 1/3)
-[EventsExceptionFilter] Retrying in 2000ms... (attempt 2/3)
-[EventsExceptionFilter] ✅ Retry succeeded on attempt 2
+[EventRetryInterceptor] Retrying in 1000ms... (attempt 1/3)
+[EventRetryInterceptor] Retrying in 2000ms... (attempt 2/3)
+[EventRetryInterceptor] ✅ Retry succeeded on attempt 2
 
 --- 또는 ---
 
-[EventsExceptionFilter] Retrying in 1000ms... (attempt 1/3)
-[EventsExceptionFilter] Retrying in 2000ms... (attempt 2/3)
-[EventsExceptionFilter] Retrying in 4000ms... (attempt 3/3)
+[EventRetryInterceptor] Retrying in 1000ms... (attempt 1/3)
+[EventRetryInterceptor] Retrying in 2000ms... (attempt 2/3)
+[EventRetryInterceptor] Retrying in 4000ms... (attempt 3/3)
 [DLQHandler] 📤 Message sent to DLQ after 3 failed attempts
-[EventsExceptionFilter] ❌ Handler failed after 3 retries: handleOrderCreated
+[EventRetryInterceptor] ❌ Handler failed after 3 retries: handleOrderCreated
 ```
 
 ## 주의사항

@@ -193,38 +193,39 @@ input[type="search"]::-webkit-search-results-decoration {
 :root {
   --pdp-header-h: 104px;
   --pdp-section-offset: 160px;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: #f29219;
+  /* Karrot / Seed Design 시맨틱 리매핑 (light) */
+  --background: #ffffff;
+  --foreground: #1a1c20;
+  --card: #ffffff;
+  --card-foreground: #1a1c20;
+  --popover: #ffffff;
+  --popover-foreground: #1a1c20;
+  --primary: #ff6600;
   --primary-foreground: #ffffff;
-  --secondary: #ffffff;
-  --secondary-foreground: #1c1c1e;
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --secondary: #f3f4f5;
+  --secondary-foreground: #1a1c20;
+  --muted: #f7f8f9;
+  --muted-foreground: #868b94;
+  --accent: #f3f4f5;
+  --accent-foreground: #1a1c20;
+  --destructive: #fa342c;
+  --border: #dcdee3;
+  --input: #dcdee3;
+  --ring: #5e98fe;
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --radius: 0.75rem;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #1a1c20;
+  --sidebar-primary: #1a1c20;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f3f4f5;
+  --sidebar-accent-foreground: #1a1c20;
+  --sidebar-border: #dcdee3;
+  --sidebar-ring: #5e98fe;
 
   /* 폰트 및 컬러 팔레트 */
   --font-geist-sans: "Pretendard", sans-serif;
@@ -244,8 +245,8 @@ input[type="search"]::-webkit-search-results-decoration {
   --gray-90: #1c1c1e;
   --yellow-10: #fff7e5;
   --yellow-20: #ffe8b3;
-  --yellow-30: #f29219;
-  --yellow-40: #df7b00;
+  --yellow-30: #ff6600;
+  --yellow-40: #e14d00;
   --yellow-50: #a86200;
   --red-30: #f54527;
   --red-40: #c7321f;
@@ -261,7 +262,7 @@ input[type="search"]::-webkit-search-results-decoration {
   --header-background: #57534e;
   --header-foreground: var(--foreground);
   --header-border: #44403c;
-  --button-accent: var(--yellow-30);
+  --button-accent: var(--primary);
   --button-accent-foreground: var(--gray-0);
   --tab-background: var(--white);
   --tab-foreground: var(--gray-90);
@@ -270,8 +271,7 @@ input[type="search"]::-webkit-search-results-decoration {
   --tab-accent-foreground: var(--white);
 }
 
-/* md+ 에서 헤더가 유틸리티 행/검색바 노출로 더 커진다 (측정 184px). */
-@media (min-width: 768px) {
+@media (min-width: 1280px) {
   :root {
     --pdp-header-h: 184px;
     --pdp-section-offset: 240px;
@@ -285,7 +285,7 @@ input[type="search"]::-webkit-search-results-decoration {
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: #f29219;
+  --primary: #ff6600;
   --primary-foreground: #ffffff;
   --secondary: #2c2c2e;
   --secondary-foreground: #ffffff;

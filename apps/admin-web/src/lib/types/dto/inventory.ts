@@ -3,6 +3,9 @@
 
 import type { UUID } from './common';
 
+/** 서버가 required 로 요구하는 요청 멱등 키를 부착한 wire 타입 (P2-4) */
+export type WithIdempotencyKey<T> = T & { idempotencyKey: string };
+
 // ===== 재고 기본 정보 =====
 export interface StockDto {
   skuId: string;
@@ -853,6 +856,7 @@ export interface StockQuery {
 export interface StockSummaryQuery {
   skuId?: string;
   warehouseId?: string;
+  search?: string;
   page?: number;
   limit?: number;
 }
@@ -1254,9 +1258,9 @@ export interface ReservationSummaryDto {
   byTarget: ReservationSummaryTargetDto[];
 }
 
-export interface ExpireStaleReservationsResponseDto {
-  releasedCount: number;
-  message: string;
+export interface ReconcileReservationsResponseDto {
+  healedFos: number;
+  healedReservations: number;
 }
 
 // ===== 재고 실사 (Stocktaking) =====

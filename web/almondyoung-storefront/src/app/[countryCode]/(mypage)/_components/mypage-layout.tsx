@@ -13,7 +13,7 @@ export default function MypageLayout({ children }: MypageLayoutProps) {
         <div className="inner md:px-[40px] md:py-10">
           <MypageBreadcrumb />
           <div className="flex flex-row gap-8">
-            <aside className="hidden w-[280px] shrink-0 lg:block">
+            <aside className="hidden w-[180px] shrink-0 lg:block">
               <div className="sticky top-10">
                 <MypageSidebar />
               </div>

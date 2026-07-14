@@ -9,6 +9,7 @@ import { isOverseasProduct, type MembershipProduct } from '../../../utils/member
 // import { getInventoryValidationFailures } from '../../../utils/validate-inventory';
 
 const PERSONAL_CUSTOMS_CODE_PATTERN = /^[A-Za-z]\d{12}$/;
+const WELCOME_MEMBERSHIP_TAG = 'welcome-membership';
 
 completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
   const query = container.resolve(ContainerRegistrationKeys.QUERY);
@@ -31,10 +32,7 @@ completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
 
       if (metaShape?.visibility === 'assigned_only' || metaShape?.visibility === 'claimable') {
         if (!cart.customer_id) {
-          throw new MedusaError(
-            MedusaError.Types.INVALID_DATA,
-            '이 쿠폰은 발급된 고객만 사용할 수 있습니다.',
-          );
+          throw new MedusaError(MedusaError.Types.INVALID_DATA, '이 쿠폰은 발급된 고객만 사용할 수 있습니다.');
         }
         const { data: customers } = await query.graph({
           entity: 'customer',
@@ -43,13 +41,9 @@ completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
         });
         const isAssigned = (customers?.[0]?.promotions ?? []).some((p: any) => p.id === promo.id);
         if (!isAssigned) {
-          throw new MedusaError(
-            MedusaError.Types.INVALID_DATA,
-            '이 쿠폰은 발급된 고객만 사용할 수 있습니다.',
-          );
+          throw new MedusaError(MedusaError.Types.INVALID_DATA, '이 쿠폰은 발급된 고객만 사용할 수 있습니다.');
         }
       }
-
     }
   }
 
@@ -74,16 +68,14 @@ completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
   // 해외직구 상품 통관부호 검증 — 주문 완료 직전 최종 방어
   const { data: cartsWithItems } = await query.graph({
     entity: 'cart',
-    fields: [
-      'id',
-      'shipping_address.metadata',
-      'items.variant.product.metadata',
-    ],
+    fields: ['id', 'shipping_address.metadata', 'items.variant.product.metadata', 'items.variant.product.tags.value'],
     filters: { id: cart.id },
   });
 
   const fullCart = cartsWithItems?.[0] as any;
-  const cartItems: Array<{ variant?: { product?: MembershipProduct | null } | null }> = fullCart?.items ?? [];
+  const cartItems: Array<{
+    variant?: { product?: (MembershipProduct & { tags?: Array<{ value?: string }> }) | null } | null;
+  }> = fullCart?.items ?? [];
 
   const hasOverseasProduct = cartItems.some((item) => {
     const product = item?.variant?.product;
@@ -106,6 +98,47 @@ completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
       throw new MedusaError(
         MedusaError.Types.INVALID_DATA,
         '해외직구 상품이 포함되어 있어 개인통관고유부호가 필요합니다.',
+      );
+    }
+  }
+
+  // ── 웰컴 멤버십: 유저당 평생 1개 (진행 중 주문 포함) 최종 방어 ──
+  // addToCart hook 은 "장바구니당 1개"만 막는다. 무통장입금처럼 결제확정(capture) 전에는
+  // has_purchased 가 아직 false 라, 장바구니를 새로 만들어 주문을 반복하면 add 단계
+  // 자격검증을 통과해버린다. 주문 생성 직전에 "이미 취소되지 않은 웰컴 주문이 있는가"를
+  // 직접 확인해 그 갭을 닫는다. 취소/만료 주문은 canceled_at 로 자동 제외되어 재구매가
+  // 가능하다
+  const cartHasWelcome = cartItems.some((item) =>
+    (item?.variant?.product?.tags ?? []).some((tag) => tag?.value === WELCOME_MEMBERSHIP_TAG),
+  );
+
+  if (cartHasWelcome && cart.customer_id) {
+    const { data: welcomeTags } = await query.graph({
+      entity: 'product_tag',
+      fields: ['id', 'products.id'],
+      filters: { value: WELCOME_MEMBERSHIP_TAG },
+    });
+    const welcomeProductIds = new Set<string>(
+      (welcomeTags ?? []).flatMap((t: any) => (t.products ?? []).map((p: any) => p.id as string)),
+    );
+
+    // 고객별 주문 전체 스캔. 웰컴 카트일 때만 타므로 대부분의 주문엔 영향 없음.
+    // 주문 이력이 수백 건인 고객이 웰컴을 담는 극단 케이스에서만 느려질 수 있음.
+    const { data: customerOrders } = await query.graph({
+      entity: 'order',
+      fields: ['id', 'canceled_at', 'items.product_id'],
+      filters: { customer_id: cart.customer_id },
+    });
+
+    const hasOpenWelcomeOrder = (customerOrders ?? []).some(
+      (order: any) =>
+        !order.canceled_at && (order.items ?? []).some((item: any) => welcomeProductIds.has(item.product_id)),
+    );
+
+    if (hasOpenWelcomeOrder) {
+      throw new MedusaError(
+        MedusaError.Types.NOT_ALLOWED,
+        '이미 웰컴 멤버십 상품을 주문하셨습니다. 웰컴 상품은 1인당 1개만 구매 가능합니다.',
       );
     }
   }

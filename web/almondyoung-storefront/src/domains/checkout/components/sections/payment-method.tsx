@@ -24,13 +24,13 @@ export const PaymentMethodSection = ({
         onClick={() => setSelectedMethod("payLater")}
         className={`hover:bg-gray-10! flex w-full cursor-pointer items-start gap-3 rounded-[10px] border p-[30px] transition-all ${
           selectedMethod === "payLater"
-            ? "border-[#F29219] bg-orange-50/10 ring-1 ring-[#F29219]"
+            ? "border-[#ff6600] bg-orange-50/10 ring-1 ring-[#ff6600]"
             : "border-[#d9d9d9] bg-white hover:bg-gray-50"
         }`}
       >
         <div className="mt-0.5 shrink-0">
           {selectedMethod === "payLater" ? (
-            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#F29219]">
+            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#ff6600]">
               <div className="h-2.5 w-2.5 rounded-full bg-white" />
             </div>
           ) : (
@@ -49,10 +49,10 @@ export const PaymentMethodSection = ({
           </div>
 
           <div
-            className={`relative mt-2 w-64 overflow-hidden rounded-xl bg-linear-to-br from-[#2C2C2E] to-[#1C1C1E] p-6 text-white shadow-lg sm:h-44 sm:w-72 ${selectedMethod === "payLater" ? "opacity-100 ring-2 ring-[#F29219]/30" : "opacity-70 grayscale"} transition-all duration-300`}
+            className={`relative mt-2 w-64 overflow-hidden rounded-xl bg-linear-to-br from-[#2C2C2E] to-[#1C1C1E] p-6 text-white shadow-lg sm:h-44 sm:w-72 ${selectedMethod === "payLater" ? "opacity-100 ring-2 ring-[#ff6600]/30" : "opacity-70 grayscale"} transition-all duration-300`}
           >
             <div className="absolute -top-10 -right-10 h-32 w-32 rounded-full bg-white/5 blur-2xl" />
-            <div className="absolute -bottom-8 -left-8 h-32 w-32 rounded-full bg-[#F29219]/20 blur-2xl" />
+            <div className="absolute -bottom-8 -left-8 h-32 w-32 rounded-full bg-[#ff6600]/20 blur-2xl" />
 
             <div className="relative z-10 flex h-full flex-col justify-between">
               <div className="flex items-start justify-between">

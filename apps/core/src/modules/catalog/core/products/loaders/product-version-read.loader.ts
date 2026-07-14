@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   DbTransaction,
   ProductImage,
@@ -40,7 +40,11 @@ export type ProductVersionVariantFragment = ProductVariant & {
 @Injectable()
 export class ProductVersionReadLoader {
   async getVersionById(tx: DbTransaction, versionId: string): Promise<ProductMasterVersion> {
-    const [version] = await tx.select().from(productMasterVersions).where(eq(productMasterVersions.id, versionId)).limit(1);
+    const [version] = await tx
+      .select()
+      .from(productMasterVersions)
+      .where(eq(productMasterVersions.id, versionId))
+      .limit(1);
 
     if (!version) {
       throw new NotFoundException(`Version ${versionId} not found`);
@@ -69,6 +73,38 @@ export class ProductVersionReadLoader {
     }
 
     return result[0].product_master_versions;
+  }
+
+  /**
+   * 상세 조회용 버전 선택: active 우선, 없으면 최신 버전(draft 포함)으로 폴백.
+   * getActiveVersion 과 달리 draft-only 신규 상품도 열람 가능하다. 편집/발행/채널 동기화처럼
+   * 진짜 active 가 필요한 경로는 계속 getActiveVersion 을 쓴다.
+   */
+  async getViewableVersion(tx: DbTransaction, masterId: string): Promise<ProductMasterVersion> {
+    const rows = await tx
+      .select()
+      .from(productMasterVersions)
+      .innerJoin(productMasters, eq(productMasterVersions.masterId, productMasters.id))
+      .where(
+        and(
+          eq(productMasterVersions.masterId, masterId),
+          isNull(productMasters.deletedAt),
+          isNull(productMasterVersions.deletedAt),
+        ),
+      )
+      .orderBy(
+        // active(0) → inactive(1) → draft(2), 동순위는 최신순
+        sql`CASE ${productMasterVersions.status} WHEN 'active' THEN 0 WHEN 'inactive' THEN 1 ELSE 2 END`,
+        desc(productMasterVersions.createdAt),
+      );
+
+    // 마스터당 버전 수는 적어 전체 fetch 후 [0]. 폭증하면 .limit(1) 추가.
+    const version = rows[0];
+    if (!version) {
+      throw new NotFoundException(`No version found for master ${masterId}`);
+    }
+
+    return version.product_master_versions;
   }
 
   async getCategories(

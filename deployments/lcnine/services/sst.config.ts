@@ -22,7 +22,6 @@ export default $config({
 
     return {
       dbHost: infra.db.host,
-      redisHost: infra.redis.host,
       medusaUrl: infra.url("medusa"),
       walletUrl: infra.url("wallet"),
       storefrontUrl: infra.url("www"),

@@ -1,15 +1,15 @@
 'use client';
 
 import { createColumnHelper } from '@tanstack/react-table';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { ImageOff } from 'lucide-react';
 import type { MasterSummaryDto } from '@/lib/types/dto/products';
 import { Checkbox } from '@/components/ui/checkbox';
 import { DateCell } from '@/components/table/table-cells/common';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { resolvePublicFileUrl } from '@/lib/utils/file-url';
+import { ProductThumbnailCell } from '@/components/table/table-cells/product-thumbnail-cell';
+import { ShortId } from '@/components/admin-ui-experimental/common/copy/short-id';
 
 const columnHelper = createColumnHelper<MasterSummaryDto>();
 
@@ -20,36 +20,6 @@ const STATUS_LABELS: Record<string, string> = {
   archived: '보관',
 };
 
-function ProductThumbnailCell({
-  thumbnail,
-}: {
-  thumbnail: string | null | undefined;
-}) {
-  const [failedSrc, setFailedSrc] = useState<string | null>(null);
-  const src = resolvePublicFileUrl(thumbnail);
-  const loadFailed = src !== null && failedSrc === src;
-
-  if (!src || loadFailed) {
-    return (
-      <div className="mx-auto flex h-14 w-14 flex-col items-center justify-center rounded bg-muted text-muted-foreground">
-        <ImageOff className="h-4 w-4" aria-hidden="true" />
-        <span className="mt-0.5 text-[9px]">이미지 없음</span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="mx-auto h-14 w-14 overflow-hidden rounded bg-muted">
-      <img
-        src={src}
-        alt="상품 이미지"
-        className="h-full w-full object-cover"
-        onError={() => setFailedSrc(src)}
-      />
-    </div>
-  );
-}
-
 export function useProductsListTableColumns() {
   const router = useRouter();
 
@@ -57,31 +27,33 @@ export function useProductsListTableColumns() {
     () => [
       columnHelper.display({
         id: 'select',
+        meta: { clickTogglesRowSelection: true },
         header: ({ table }) => (
           <Checkbox
             checked={
               table.getIsAllPageRowsSelected() ||
               (table.getIsSomePageRowsSelected() && 'indeterminate')
             }
-            onCheckedChange={(value) => table.toggleAllPageRowsSelected(!!value)}
+            onCheckedChange={(value) =>
+              table.toggleAllPageRowsSelected(!!value)
+            }
             aria-label="전체 선택"
             onClick={(e) => e.stopPropagation()}
           />
         ),
+        // 표시 전용 — 선택 토글은 DataTableRoot 의 셀 onClick(meta.clickTogglesRowSelection)이 담당한다.
+        // 이 컬럼은 DataTableRoot 안에서만 렌더해야 선택이 동작한다.
         cell: ({ row }) => (
           <Checkbox
             checked={row.getIsSelected()}
-            onCheckedChange={(value) => row.toggleSelected(!!value)}
             aria-label="행 선택"
-            onClick={(e) => e.stopPropagation()}
+            className="pointer-events-none"
           />
         ),
       }),
       columnHelper.accessor('masterId', {
         header: '품번코드',
-        cell: ({ getValue }) => (
-          <span className="break-all text-xs text-muted-foreground">{getValue()}</span>
-        ),
+        cell: ({ getValue }) => <ShortId value={getValue()} />,
       }),
       columnHelper.accessor('thumbnail', {
         header: '이미지',
@@ -91,13 +63,15 @@ export function useProductsListTableColumns() {
         header: '상품명/옵션/브랜드',
         cell: ({ row }) => (
           <div className="space-y-0.5">
-            <p className="break-words text-sm font-medium leading-tight text-blue-800">
+            <p className="text-sm font-medium leading-tight text-blue-800 break-words">
               {row.original.name}
             </p>
             <p className="text-xs text-muted-foreground">
               {row.original.optionGroupNames.join(' / ') || '-'}
             </p>
-            <p className="text-xs text-muted-foreground">{row.original.brand ?? '-'}</p>
+            <p className="text-xs text-muted-foreground">
+              {row.original.brand ?? '-'}
+            </p>
           </div>
         ),
       }),
@@ -116,7 +90,7 @@ export function useProductsListTableColumns() {
         header: '판매가/멤버십가',
         cell: ({ getValue }) => {
           const summary = getValue();
-          if (!summary) return <div className="text-right text-sm">-</div>;
+          if (!summary) return <div className="text-sm text-right">-</div>;
           const fmtRange = (min: number, max: number) =>
             min === max
               ? `${min.toLocaleString()}원`
@@ -127,7 +101,10 @@ export function useProductsListTableColumns() {
                 {fmtRange(summary.minBasePrice, summary.maxBasePrice)}
               </p>
               <p className="text-xs text-muted-foreground">
-                {fmtRange(summary.minMembershipPrice, summary.maxMembershipPrice)}
+                {fmtRange(
+                  summary.minMembershipPrice,
+                  summary.maxMembershipPrice
+                )}
               </p>
             </div>
           );
@@ -135,8 +112,19 @@ export function useProductsListTableColumns() {
       }),
       columnHelper.accessor('status', {
         header: '상태',
-        cell: ({ getValue }) => {
-          const status = getValue();
+        cell: ({ row }) => {
+          const { status, soldOutState } = row.original;
+
+          if (
+            status === 'active' &&
+            (soldOutState === 'all' || soldOutState === 'partial')
+          ) {
+            return (
+              <Badge variant="destructive">
+                {soldOutState === 'all' ? '품절' : '부분품절'}
+              </Badge>
+            );
+          }
           const label = STATUS_LABELS[status] ?? status;
           const variant =
             status === 'active'

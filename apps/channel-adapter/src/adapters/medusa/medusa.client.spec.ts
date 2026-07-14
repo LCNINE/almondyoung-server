@@ -410,3 +410,30 @@ describe('MedusaClient product sellable inventory projection', () => {
     });
   });
 });
+
+describe('MedusaClient.removeProductFromPriceList', () => {
+  const logger = {
+    log: jest.fn(),
+    warn: jest.fn(),
+    debug: jest.fn(),
+    error: jest.fn(),
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("clears all of a product's prices in a price list via the products remove route so re-sync replaces instead of appends", async () => {
+    const fetch = jest.fn().mockResolvedValue({ price_list: { id: 'plist_1' } });
+    const client = Object.create(MedusaClient.prototype) as MedusaClient;
+    (client as any).sdk = { client: { fetch } };
+    (client as any).logger = logger;
+
+    await client.removeProductFromPriceList('plist_1', 'prod_123');
+
+    expect(fetch).toHaveBeenCalledWith('/admin/price-lists/plist_1/products', {
+      method: 'post',
+      body: { remove: ['prod_123'] },
+    });
+  });
+});

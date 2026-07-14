@@ -1,9 +1,11 @@
 import {
   getValidPricingVariantId,
+  hasRuleMissingScopeTarget,
   selectPricingVariants,
   toPricingVariantsFromMaster,
   toPricingVariantsFromVersion,
 } from './pricing-detail-model';
+import type { PricingRuleInput } from '@/lib/types/dto/products';
 
 describe('pricing detail model', () => {
   const masterVariants = [
@@ -66,5 +68,42 @@ describe('pricing detail model', () => {
         toPricingVariantsFromVersion(versionVariants),
       ),
     ).toBe('variant-draft-9');
+  });
+});
+
+describe('hasRuleMissingScopeTarget', () => {
+  const rule = (over: Partial<PricingRuleInput>): PricingRuleInput => ({
+    order: 1,
+    layer: 'base_price',
+    scopeType: 'all_variants',
+    operationType: 'override',
+    operationValue: 0,
+    ...over,
+  });
+
+  it('is false when all_variants rules have no targets', () => {
+    expect(hasRuleMissingScopeTarget([rule({ scopeType: 'all_variants' })])).toBe(false);
+  });
+
+  it('is false when option-scoped rules carry at least one target', () => {
+    expect(
+      hasRuleMissingScopeTarget([
+        rule({ scopeType: 'with_option', scopeTargetIds: ['ov-1'] }),
+        rule({ scopeType: 'variants', scopeTargetIds: ['v-1', 'v-2'] }),
+      ]),
+    ).toBe(false);
+  });
+
+  it('is true when a with_option rule has an empty or missing target list', () => {
+    expect(hasRuleMissingScopeTarget([rule({ scopeType: 'with_option', scopeTargetIds: [] })])).toBe(
+      true,
+    );
+    expect(hasRuleMissingScopeTarget([rule({ scopeType: 'with_option' })])).toBe(true);
+  });
+
+  it('is true when a variants rule has no targets', () => {
+    expect(
+      hasRuleMissingScopeTarget([rule({ scopeType: 'variants', scopeTargetIds: undefined })]),
+    ).toBe(true);
   });
 });

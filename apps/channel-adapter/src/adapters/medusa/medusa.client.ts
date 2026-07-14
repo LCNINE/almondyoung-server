@@ -1820,6 +1820,33 @@ export class MedusaClient {
     }
   }
 
+  /**
+   * Remove ALL of a product's prices from a price list.
+   *
+   * `addPricesToPriceList` is append-only (`{create}`), so re-syncing a product accumulates
+   * duplicate price rows for the same variant. Medusa applies the lowest matching price, so a
+   * stale-lower duplicate silently wins over the intended new value. Calling this before adding
+   * makes a re-sync a replace: the products remove route resolves the product's variants →
+   * price_sets → price_list price ids server-side and batch-deletes them (no client-side scan of
+   * the whole list, which the price-list prices endpoint offers no variant filter for).
+   */
+  async removeProductFromPriceList(priceListId: string, productId: string): Promise<void> {
+    try {
+      this.logger.debug(`Removing product ${productId} prices from list ${priceListId}`);
+      // Medusa v2 Admin API: POST /admin/price-lists/:id/products {remove} deletes the product's
+      // price-list prices in one server-side batch.
+      await this.sdk.client.fetch(`/admin/price-lists/${priceListId}/products`, {
+        method: 'post',
+        body: { remove: [productId] },
+      });
+      this.logger.log(`Removed product ${productId} prices from list ${priceListId}`);
+    } catch (error) {
+      const fetchError = error as FetchError;
+      this.logger.error(`Failed to remove product ${productId} from list ${priceListId}: ${fetchError.message}`);
+      throw new Error(`Medusa removeProductFromPriceList failed: ${fetchError.message}`);
+    }
+  }
+
   // ===== Customers & Groups =====
   async findCustomerByEmail(email: string): Promise<HttpTypes.AdminCustomer | null> {
     try {

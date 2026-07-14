@@ -6,6 +6,7 @@ export interface TokenPayload {
   roles: string[];
   email: string;
   login_id: string;
+  must_change_password: boolean;
 }
 
 const OAUTH_JWKS_URL = process.env.OAUTH_JWKS_URL;
@@ -40,6 +41,7 @@ export async function getTokenPayload(): Promise<TokenPayload | null> {
       roles: (payload.roles as string[]) ?? [],
       email: (payload.email as string) ?? '',
       login_id: (payload.login_id as string) ?? '',
+      must_change_password: (payload.must_change_password as boolean) ?? false,
     };
   } catch {
     return null;

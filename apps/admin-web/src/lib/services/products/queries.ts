@@ -15,6 +15,7 @@ import type {
   MasterDto,
   MastersQuery,
   MastersResponseDto,
+  MyDraftsQuery,
   PricePreviewDto,
   VariantDto,
   VariantsQuery,
@@ -114,6 +115,18 @@ export const useMastersSummary = (query: MastersQuery = {}) => {
   return useQuery({
     queryKey: productQueryKeys.mastersSummaryList(query),
     queryFn: () => products.masters.getListSummary(query),
+    staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+};
+
+/**
+ * 내 작성중(임시저장) 상품 목록 조회
+ */
+export const useMyDrafts = (query: MyDraftsQuery = {}) => {
+  return useQuery({
+    queryKey: productQueryKeys.myDrafts(query),
+    queryFn: () => products.versions.listMyDrafts(query),
     staleTime: 30 * 1000,
     gcTime: 5 * 60 * 1000,
   });
@@ -618,5 +631,25 @@ export const useNotice = (id: string) => {
     queryFn: () => products.notices.get(id),
     enabled: !!id,
     staleTime: 2 * 60 * 1000,
+  });
+};
+
+// ===== 대량등록(엑셀 임포트) 쿼리 =====
+
+/** 임포트 세션 목록(페이지네이션, limit 20 고정) */
+export const useImportSessions = (page: number) => {
+  return useQuery({
+    queryKey: productQueryKeys.productImportsList(page),
+    queryFn: () => products.productImport.getSessions(page, 20),
+    staleTime: 30 * 1000,
+  });
+};
+
+/** 임포트 세션 상세(성공/실패 아이템 전체) */
+export const useImportSession = (sessionId: string) => {
+  return useQuery({
+    queryKey: productQueryKeys.productImport(sessionId),
+    queryFn: () => products.productImport.getSession(sessionId),
+    enabled: !!sessionId,
   });
 };

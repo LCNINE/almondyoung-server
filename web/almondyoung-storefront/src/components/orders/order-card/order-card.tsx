@@ -3,19 +3,14 @@ import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { ArrowRight } from "lucide-react"
 
 interface OrderCardProps {
-  /** 주문 ID */
   orderId: string
-  /** 주문 날짜 (예: "6월 15일") */
   orderDate: string
-  /** 주문번호 */
   orderNumber?: string
-  /** 메인 콘텐츠 영역 */
   children: ReactNode
 }
 
 /**
  * 주문 카드 래퍼 컴포넌트
- * article과 header를 포함하며, children으로 메인 콘텐츠를 받습니다.
  */
 export default function OrderCard({
   orderId,
@@ -24,7 +19,7 @@ export default function OrderCard({
   children,
 }: OrderCardProps) {
   return (
-    <article className="rounded-none bg-white md:rounded-[10px] md:border md:border-gray-200 md:p-5">
+    <article className="border-y border-gray-200 bg-white p-4 md:rounded-[10px] md:border md:p-5">
       {/* 헤더 - container */}
       <header className="mb-1.5 flex items-start justify-between md:mb-5">
         <div>

@@ -4,7 +4,7 @@ import { getTranslations } from "next-intl/server"
 export async function CsHeader() {
   const t = await getTranslations("cs.header")
   return (
-    <div className="bg-gradient-to-r from-[#f29219] to-[#f5a623] px-4 py-8 text-white">
+    <div className="bg-gradient-to-r from-[#ff6600] to-[#ff8a3d] px-4 py-8 text-white">
       <div className="mx-auto max-w-3xl text-center">
         <div className="mb-3 flex items-center justify-center gap-2">
           <Headphones className="h-8 w-8" />

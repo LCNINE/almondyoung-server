@@ -33,6 +33,8 @@ export const searchProducts = async (params?: {
   sort?: string
   page?: number
   size?: number
+  // 멤버십 회원이면 true — 멤버십 전용 노출 상품을 결과·총개수에 포함
+  includeMembersOnly?: boolean
 }): Promise<ApiResponse<SearchServiceProductsResponse>> => {
   try {
     const searchParams = new URLSearchParams()
@@ -53,6 +55,8 @@ export const searchProducts = async (params?: {
     if (params?.sort) searchParams.set("sort", params.sort)
     if (params?.page) searchParams.set("page", params.page.toString())
     if (params?.size) searchParams.set("size", params.size.toString())
+    if (params?.includeMembersOnly)
+      searchParams.set("includeMembersOnly", "true")
 
     const queryString = searchParams.toString()
     const path = queryString ? `/search/products?${queryString}` : "/search/products"

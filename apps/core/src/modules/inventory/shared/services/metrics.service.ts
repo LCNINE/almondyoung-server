@@ -91,6 +91,35 @@ export class MetricsService implements OnModuleInit {
     registers: [register],
   });
 
+  // 원장 대사 메트릭 — stock_ledgers 와 이벤트 파생 수량의 불일치 grain 수.
+  // setLedgerDrift 가 매 대사 실행 후 두 severity 라벨을 항상 set 한다(정상 시 0).
+  private readonly ledgerDriftGauge = new Gauge({
+    name: 'wms_ledger_drift_grains',
+    help: 'Number of stock ledger grains whose qty disagrees with the event-derived quantity',
+    labelNames: ['severity'],
+    registers: [register],
+  });
+
+  // 예약 불변식 대사 메트릭 — (sku,warehouse) 의 confirmed 예약 합이 ON_HAND 원장 합을 초과하는 grain 수.
+  private readonly reservedOverOnHandGauge = new Gauge({
+    name: 'wms_reserved_over_onhand_grains',
+    help: 'Number of (sku,warehouse) grains whose confirmed reservations exceed ON_HAND',
+    registers: [register],
+  });
+
+  // 좀비 예약 대사 메트릭 — terminal FO 인데 confirmed 로 남은 예약 행 수(직전 대사 heal 전 탐지값).
+  private readonly zombieReservationsGauge = new Gauge({
+    name: 'wms_zombie_reservations_grains',
+    help: 'Number of confirmed reservations still attached to terminal fulfillment orders (last reconcile, pre-heal)',
+    registers: [register],
+  });
+
+  private readonly zombieReservationsHealedCounter = new Counter({
+    name: 'wms_zombie_reservations_healed_total',
+    help: 'Cumulative number of zombie reservations released by reconciliation',
+    registers: [register],
+  });
+
   onModuleInit() {
     // 기본 시스템 메트릭 수집 시작
     collectDefaultMetrics({ register });
@@ -221,6 +250,29 @@ export class MetricsService implements OnModuleInit {
   recordHealthCheck(component: string, status: 'healthy' | 'unhealthy', responseTimeMs: number) {
     this.healthGauge.set({ component }, status === 'healthy' ? 1 : 0);
     this.healthResponseTime.observe({ component }, responseTimeMs / 1000);
+  }
+
+  /**
+   * 원장 대사 결과 기록 — 정상 실행도 0 을 써서 이전 값 잔존을 막는다.
+   */
+  setLedgerDrift(counts: { mismatch: number; critical: number }) {
+    this.ledgerDriftGauge.set({ severity: 'MISMATCH' }, counts.mismatch);
+    this.ledgerDriftGauge.set({ severity: 'CRITICAL' }, counts.critical);
+  }
+
+  /** 예약 초과 grain 수 — 정상 실행도 0 을 써서 이전 값 잔존을 막는다. */
+  setReservedOverOnHand(count: number) {
+    this.reservedOverOnHandGauge.set(count);
+  }
+
+  /** 직전 좀비 대사에서 탐지된 예약 행 수 — 정상 실행도 0 을 써서 이전 값 잔존을 막는다. */
+  setZombieReservations(count: number) {
+    this.zombieReservationsGauge.set(count);
+  }
+
+  /** 대사로 release 한 좀비 예약 누적 수. */
+  incZombieReservationsHealed(count: number) {
+    if (count > 0) this.zombieReservationsHealedCounter.inc(count);
   }
 
   /**

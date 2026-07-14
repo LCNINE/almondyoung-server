@@ -36,16 +36,32 @@ function makeSo(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeContext(options: {
-  so?: ReturnType<typeof makeSo>;
-  fos?: { status: string; shippedAt: Date | null }[];
-  walletOutcome?: WalletRefundOutcome;
-  cancelError?: Error;
-  businessLinkError?: Error;
-} = {}) {
+function makeContext(
+  options: {
+    so?: ReturnType<typeof makeSo>;
+    fos?: { status: string; shippedAt: Date | null }[];
+    walletOutcome?: WalletRefundOutcome;
+    cancelError?: Error;
+    businessLinkError?: Error;
+  } = {},
+) {
   const so = options.so ?? makeSo();
   const fos = options.fos ?? [];
-  const walletOutcome = options.walletOutcome ?? { kind: 'success', refunds: [{ refundId: 'rf-001', intentId: WALLET_INTENT_ID, status: 'SUCCEEDED', amount: 50000, currency: 'KRW', reasonCode: null, reasonMessage: null, manualConfirmable: false }] };
+  const walletOutcome = options.walletOutcome ?? {
+    kind: 'success',
+    refunds: [
+      {
+        refundId: 'rf-001',
+        intentId: WALLET_INTENT_ID,
+        status: 'SUCCEEDED',
+        amount: 50000,
+        currency: 'KRW',
+        reasonCode: null,
+        reasonMessage: null,
+        manualConfirmable: false,
+      },
+    ],
+  };
 
   // Each where() call gets a fresh mock object so we can distinguish:
   //   call 0: findSoOrThrow — limit().then() → [so]
@@ -128,7 +144,18 @@ describe('StoreSalesOrdersService', () => {
       const { service } = makeContext({
         walletOutcome: {
           kind: 'partial_pending',
-          refunds: [{ refundId: 'rf-002', intentId: WALLET_INTENT_ID, status: 'PENDING', amount: 50000, currency: 'KRW', reasonCode: null, reasonMessage: null, manualConfirmable: true }],
+          refunds: [
+            {
+              refundId: 'rf-002',
+              intentId: WALLET_INTENT_ID,
+              status: 'PENDING',
+              amount: 50000,
+              currency: 'KRW',
+              reasonCode: null,
+              reasonMessage: null,
+              manualConfirmable: true,
+            },
+          ],
         },
       });
       const result = await service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {});
@@ -146,7 +173,11 @@ describe('StoreSalesOrdersService', () => {
 
     it('Wallet이 already_refunded 반환 시 refundStatus=succeeded (이미 환불 완료)', async () => {
       const { service } = makeContext({
-        walletOutcome: { kind: 'already_refunded', errorCode: 'REFUND_AMOUNT_EXCEEDS_AVAILABLE', errorMessage: '환불 가능 금액 초과' },
+        walletOutcome: {
+          kind: 'already_refunded',
+          errorCode: 'REFUND_AMOUNT_EXCEEDS_AVAILABLE',
+          errorMessage: '환불 가능 금액 초과',
+        },
       });
       const result = await service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {});
       expect(result.refundStatus).toBe('succeeded');
@@ -164,6 +195,15 @@ describe('StoreSalesOrdersService', () => {
     it('Wallet 서비스 unavailable 시 refundStatus=manual_pending (취소는 유지)', async () => {
       const { service } = makeContext({
         walletOutcome: { kind: 'wallet_unavailable', errorMessage: 'Connection refused' },
+      });
+      const result = await service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {});
+      expect(result.refundStatus).toBe('manual_pending');
+      expect(result.orderStatus).toBe('cancelled');
+    });
+
+    it('Wallet이 in_flight 반환 시 refundStatus=manual_pending (취소는 유지, 이중환불 없음)', async () => {
+      const { service } = makeContext({
+        walletOutcome: { kind: 'in_flight', errorCode: 'IDEMPOTENCY_KEY_IN_FLIGHT', errorMessage: 'in progress' },
       });
       const result = await service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {});
       expect(result.refundStatus).toBe('manual_pending');
@@ -254,6 +294,56 @@ describe('StoreSalesOrdersService', () => {
       await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('getActionsByChannelOrderBatch', () => {
+    // makeContext 는 findSoOrThrow(limit) 전제라, builder 를 직접 await 하는 배치 쿼리용 mock 을 따로 만든다.
+    function makeBatchContext(sos: ReturnType<typeof makeSo>[]) {
+      let whereCallIndex = 0;
+      const dbMock = {
+        db: {
+          select: jest.fn().mockImplementation(() => ({
+            from: jest.fn().mockImplementation(() => ({
+              where: jest.fn().mockImplementation(() => {
+                const idx = whereCallIndex++;
+                return {
+                  // idx 0: 배치 SO 조회, idx 1+: SO별 FO 조회(빈 목록)
+                  then: jest.fn((fn: (r: unknown[]) => unknown) => fn(idx === 0 ? sos : [])),
+                  limit: jest.fn().mockReturnValue({
+                    then: jest.fn((fn: (r: unknown[]) => unknown) => fn([])),
+                  }),
+                };
+              }),
+            })),
+          })),
+        },
+      };
+      const service = new StoreSalesOrdersService(
+        dbMock as any,
+        { cancel: jest.fn(), createBusinessLink: jest.fn() } as any,
+        { refundByIntent: jest.fn() } as any,
+      );
+      return { service, dbMock };
+    }
+
+    it('DB가 반환한 본인 주문만 SO별 액션 뷰로 매핑한다 (미수집 id는 제외)', async () => {
+      const { service } = makeBatchContext([
+        makeSo({ walletIntentId: null }),
+        makeSo({ id: 'so-002', channelOrderId: 'medusa-order-002', walletIntentId: null }),
+      ]);
+      const result = await service.getActionsByChannelOrderBatch(
+        [CHANNEL_ORDER_ID, 'medusa-order-002', 'medusa-order-unknown'],
+        CUSTOMER_ID,
+      );
+      expect(result.map((r) => r.channelOrderId)).toEqual([CHANNEL_ORDER_ID, 'medusa-order-002']);
+      expect(result[0]!.availableActions).toContain('cancel');
+    });
+
+    it('빈 id 목록이면 DB 조회 없이 빈 배열을 반환한다', async () => {
+      const { service, dbMock } = makeBatchContext([]);
+      await expect(service.getActionsByChannelOrderBatch([], CUSTOMER_ID)).resolves.toEqual([]);
+      expect(dbMock.db.select).not.toHaveBeenCalled();
     });
   });
 
@@ -349,27 +439,31 @@ describe('StoreSalesOrdersService', () => {
   });
 
   // adminCancelRequest mock: SO를 항상 반환 (부분취소 시 두 번 조회됨)
-  function makeAdminContext(options: {
-    so?: ReturnType<typeof makeSo>;
-    walletOutcome?: WalletRefundOutcome;
-    cancelError?: Error;
-    orderLines?: Array<{ id: string; quantity: number; unitPrice: number | null }>;
-  } = {}) {
+  function makeAdminContext(
+    options: {
+      so?: ReturnType<typeof makeSo>;
+      walletOutcome?: WalletRefundOutcome;
+      cancelError?: Error;
+      orderLines?: Array<{ id: string; quantity: number; unitPrice: number | null }>;
+    } = {},
+  ) {
     const so = options.so ?? makeSo();
     // Default order lines matching the cancelled line in tests
     const orderLines = options.orderLines ?? [{ id: 'line-001', quantity: 2, unitPrice: 25000 }];
     const walletOutcome = options.walletOutcome ?? {
       kind: 'success',
-      refunds: [{
-        refundId: 'rf-001',
-        intentId: WALLET_INTENT_ID,
-        status: 'SUCCEEDED',
-        amount: 50000,
-        currency: 'KRW',
-        reasonCode: null,
-        reasonMessage: null,
-        manualConfirmable: false,
-      }],
+      refunds: [
+        {
+          refundId: 'rf-001',
+          intentId: WALLET_INTENT_ID,
+          status: 'SUCCEEDED',
+          amount: 50000,
+          currency: 'KRW',
+          reasonCode: null,
+          reasonMessage: null,
+          manualConfirmable: false,
+        },
+      ],
     };
 
     const dbMock = {
@@ -512,29 +606,34 @@ describe('StoreSalesOrdersService', () => {
   });
 
   // retryWalletRefund mock: cancelled SO + businessLinks를 상태별로 제어
-  function makeRetryContext(options: {
-    so?: ReturnType<typeof makeSo>;
-    currentRefundStatus?: string;
-    walletOutcome?: WalletRefundOutcome;
-  } = {}) {
+  function makeRetryContext(
+    options: {
+      so?: ReturnType<typeof makeSo>;
+      currentRefundStatus?: string;
+      walletOutcome?: WalletRefundOutcome;
+    } = {},
+  ) {
     const so = options.so ?? makeSo({ status: 'cancelled' });
     const walletOutcome = options.walletOutcome ?? {
       kind: 'success',
-      refunds: [{
-        refundId: 'rf-002',
-        intentId: WALLET_INTENT_ID,
-        status: 'SUCCEEDED',
-        amount: 50000,
-        currency: 'KRW',
-        reasonCode: null,
-        reasonMessage: null,
-        manualConfirmable: false,
-      }],
+      refunds: [
+        {
+          refundId: 'rf-002',
+          intentId: WALLET_INTENT_ID,
+          status: 'SUCCEEDED',
+          amount: 50000,
+          currency: 'KRW',
+          reasonCode: null,
+          reasonMessage: null,
+          manualConfirmable: false,
+        },
+      ],
     };
 
-    const refundLink = options.currentRefundStatus !== undefined
-      ? { metadata: { refundStatus: options.currentRefundStatus } }
-      : undefined;
+    const refundLink =
+      options.currentRefundStatus !== undefined
+        ? { metadata: { refundStatus: options.currentRefundStatus } }
+        : undefined;
 
     const dbMock = {
       db: {

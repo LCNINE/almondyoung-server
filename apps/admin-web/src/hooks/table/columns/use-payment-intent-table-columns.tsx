@@ -41,7 +41,9 @@ export const usePaymentIntentTableColumns = ({ userMap = {} }: UseColumnsOptions
       }),
       columnHelper.accessor('paymentMethodType', {
         header: '결제수단',
-        cell: ({ getValue }) => <PaymentMethodTypeCell value={getValue()} />,
+        cell: ({ getValue, row }) => (
+          <PaymentMethodTypeCell value={getValue()} tossVirtualAccount={row.original.tossVirtualAccount} />
+        ),
       }),
       columnHelper.accessor('status', {
         header: '상태',

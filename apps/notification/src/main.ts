@@ -6,45 +6,20 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { EventsModule, createKafkaConfigFromEnv } from '@app/events';
 import { USER_STREAM, ORDER_STREAM, PAYMENT_STREAM } from '@packages/event-contracts';
 import { Logger } from 'nestjs-pino';
-import { applyAlbKeepAlive } from '@app/shared';
+import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { NotificationModule } from './notification.module';
 import { AllExceptionsFilter } from './shared/filters/exception.filter';
 import { LoggingInterceptor } from './shared/interceptors/logging.interceptor';
-import * as bodyParser from 'body-parser';
 
 async function bootstrap() {
-  const app = await NestFactory.create(NotificationModule, {
-    bodyParser: false, // 기본 body parser 비활성화
+  const app = await NestFactory.create<NestFastifyApplication>(NotificationModule, new FastifyAdapter(), {
+    rawBody: true, // 웹훅 서명 검증용 raw body (req.rawBody: Buffer). 기존 body-parser verify 훅 대체.
     bufferLogs: true,
   });
   app.useLogger(app.get(Logger));
 
-  // Raw body를 저장하는 미들웨어 (웹훅용)
-  const rawBodyBuffer = (req: any, res: any, buffer: Buffer, encoding: BufferEncoding) => {
-    if (buffer && buffer.length) {
-      req.rawBody = buffer.toString(encoding || 'utf8');
-    }
-  };
-
-  // 웹훅 경로에는 raw body 파서 적용
-  app.use(
-    '/webhooks/resend',
-    bodyParser.json({
-      verify: rawBodyBuffer,
-    }),
-  );
-
-  // Kakao 웹훅 경로에도 raw body 파서 적용
-  app.use(
-    '/webhooks/kakao',
-    bodyParser.json({
-      verify: rawBodyBuffer,
-    }),
-  );
-
-  // 나머지 경로에는 일반 JSON 파서 적용
-  app.use(bodyParser.json({ verify: rawBodyBuffer }));
-  app.use(bodyParser.urlencoded({ extended: true }));
+  // NOTE: 기존 body-parser urlencoded 파서는 제거됨. urlencoded 를 쓰던 경로는 Twilio 웹훅뿐이며
+  // 현재 휴면(TWILIO_* env 미설정, 서명검증 TODO). 재활성화 시 @fastify/formbody 등록 필요.
 
   // Global pipes
   app.useGlobalPipes(
@@ -102,11 +77,16 @@ async function bootstrap() {
     },
   });
 
-  // YAML 문서 charset 헤더 설정 (Express)
-  app.use('/api/docs.yaml', (req, res, next) => {
-    res.setHeader('Content-Type', 'application/x-yaml; charset=utf-8');
-    next();
-  });
+  // YAML 문서 charset 헤더 설정 (analytics/ugc 패턴)
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .addHook('onSend', (request, reply, payload, done) => {
+      if (request.url === '/api/docs.yaml') {
+        reply.header('Content-Type', 'application/x-yaml; charset=utf-8');
+      }
+      done();
+    });
 
   // Kafka Consumer 연결
   const consumerOptions = EventsModule.forConsumer({
@@ -121,8 +101,7 @@ async function bootstrap() {
   console.log('🚀 Kafka Consumer 연결 완료 (USER_STREAM, ORDER_STREAM, PAYMENT_STREAM 구독)');
 
   const port = process.env.PORT ?? 5001;
-  applyAlbKeepAlive(app.getHttpServer());
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
 
   console.log(`Notification service is running on port ${port}`);
   console.log(`Swagger documentation available at http://localhost:${port}/api/docs`);

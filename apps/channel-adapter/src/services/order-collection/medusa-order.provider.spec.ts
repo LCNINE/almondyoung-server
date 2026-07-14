@@ -213,6 +213,21 @@ describe('MedusaOrderProvider', () => {
     expect(result.lifecycleEvents ?? []).toHaveLength(0);
   });
 
+  it('환불 신청(refund_status=requested) 주문은 승인 전이라 수집(OrderCreated)에서 제외한다', async () => {
+    const provider = new MedusaOrderProvider({
+      listOrders: jest.fn().mockResolvedValue([
+        // 입금까지 완료(captured)됐어도 고객이 환불을 신청한 상태면 출고하면 안 됨
+        bankTransferOrder({ payment_status: 'captured', metadata: { refund_status: 'requested' } }),
+      ]),
+    } as any);
+
+    const result = await provider.fetchOrders(null);
+
+    expect(result.orders).toHaveLength(0);
+    expect(result.failures).toHaveLength(0);
+    expect(result.lifecycleEvents ?? []).toHaveLength(0);
+  });
+
   it('입금 확인 후(captured)에는 awaiting_deposit metadata 가 남아있어도 수집한다', async () => {
     const provider = new MedusaOrderProvider({
       listOrders: jest.fn().mockResolvedValue([

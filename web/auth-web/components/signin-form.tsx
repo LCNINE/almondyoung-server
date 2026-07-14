@@ -36,7 +36,9 @@ export function SignInForm({
   // (서버는 reauthUserId 로 엄격 매칭하므로 hidden 값 변조도 차단된다.)
   const hasPrefilledLoginId = isReauth && prefilledLoginId.length > 0
 
-  const onSubmit = (formData: FormData) => {
+  const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    const formData = new FormData(e.currentTarget)
     setError(null)
     startTransition(async () => {
       const res = await signInAction(formData)
@@ -45,7 +47,7 @@ export function SignInForm({
   }
 
   return (
-    <form action={onSubmit} className="flex flex-col gap-4">
+    <form onSubmit={onSubmit} className="flex flex-col gap-4">
       <input type="hidden" name="redirectTo" value={redirectTo} />
       <input type="hidden" name="reauthUserId" value={reauthUserId} />
       {hasPrefilledLoginId ? (
