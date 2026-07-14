@@ -193,7 +193,8 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       issued.push(promo.id);
     } catch (e: any) {
       if (slotReserved) await promotionMetaService.releaseClaimSlot(promo.id).catch(() => {});
-      const isDuplicate = e?.code === '23505' || e?.message?.includes('unique') || e?.message?.includes('duplicate');
+      const dupMsg = String(e?.message ?? '').toLowerCase();
+      const isDuplicate = e?.code === '23505' || dupMsg.includes('unique') || dupMsg.includes('duplicate') || dupMsg.includes('already exists');
       if (isDuplicate) {
         skipped.push({ promotion_id: promo.id, reason: 'already_issued' });
       } else {
