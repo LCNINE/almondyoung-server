@@ -9,13 +9,13 @@ import type {
   SubscriptionHistoryItemDto,
 } from "@lib/types/dto/membership"
 
-const STATUS_STYLE: Record<string, string> = {
-  ACTIVE: "bg-[#e7f7f0] text-[#079171]",
-  PAUSED: "bg-[#fff4e5] text-[#9b7821]",
-  RECURRING_CANCELLED: "bg-secondary text-muted-foreground",
-  CANCELLED: "bg-[#fdecea] text-destructive",
-  ENDED: "bg-secondary text-muted-foreground",
-  EXPIRED: "bg-secondary text-muted-foreground",
+const STATUS_DOT: Record<string, string> = {
+  ACTIVE: "bg-[#079171]",
+  RECURRING_CANCELLED: "bg-[#fa342c]",
+  PAUSED: "bg-[#f2ac1c]",
+  CANCELLED: "bg-[#fa342c]",
+  ENDED: "bg-muted-foreground",
+  EXPIRED: "bg-muted-foreground",
 }
 
 function AdjustmentRow({ adj }: { adj: SubscriptionAdjustmentDto }) {
@@ -125,11 +125,20 @@ export default function HistoryCard({
                 : ""}
           </span>
         </div>
+
+        {/* 상태 */}
         <span
-          className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
-            STATUS_STYLE[item.status] ?? "bg-secondary text-muted-foreground"
+          className={`flex shrink-0 items-center gap-1.5 text-xs font-medium ${
+            item.status === "ACTIVE"
+              ? "text-foreground"
+              : "text-muted-foreground"
           }`}
         >
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${
+              STATUS_DOT[item.status] ?? "bg-muted-foreground"
+            }`}
+          />
           {statusLabel(item.status)}
         </span>
         {open ? (

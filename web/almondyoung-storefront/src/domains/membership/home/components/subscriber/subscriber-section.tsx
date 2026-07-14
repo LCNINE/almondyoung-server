@@ -99,7 +99,10 @@ export default function SubscriberSection({
         {/* 설정 리스트: 행마다 카드를 두르지 않고 카드 하나를 hairline 으로 나눈다 */}
         <div className="border-border divide-border divide-y overflow-hidden rounded-xl border bg-white">
           {/* 구독 이력(별도 라우트, 페이지네이션) */}
-          <LocalizedClientLink href="/mypage/membership/history" className={ROW}>
+          <LocalizedClientLink
+            href="/mypage/membership/history"
+            className={ROW}
+          >
             <span>{t("history.subscriptionHistory")}</span>
             <ChevronRight className="h-4 w-4 shrink-0 text-[#b0b3ba]" />
           </LocalizedClientLink>
