@@ -807,7 +807,7 @@ export function PayForm({
                 ) : (
                   <>
                     <Lock className="w-4 h-4" />
-                    {formatAmount(intent.payableAmount, intent.currency)} 결제하기
+                    {formatAmount(remainingAmount, intent.currency)} 결제하기
                   </>
                 )}
               </Button>
