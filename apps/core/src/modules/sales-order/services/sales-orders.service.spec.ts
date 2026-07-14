@@ -219,6 +219,15 @@ describe('SalesOrdersService external order-line identity', () => {
         { id: state.salesOrderLines[0].id, channelOrderItemId: null },
       ]),
     ).not.toThrow();
+    expect(() =>
+      service.assertV2PlanningExternalLineIdentity('naver', [
+        {
+          id: state.salesOrderLines[0].id,
+          channelOrderItemId: 'legacy-duplicated-id',
+          channelProductId: 'legacy-duplicated-id',
+        },
+      ]),
+    ).toThrow('trusted channelOrderItemId');
   });
 });
 
@@ -356,7 +365,10 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
       delete: jest.fn(() => ({ where: () => [] })),
     };
 
-    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) }, run: jest.fn((fn: any, t?: any) => t ? fn(t) : fn(tx)) };
+    const db = {
+      db: { ...tx, transaction: jest.fn((fn) => fn(tx)) },
+      run: jest.fn((fn: any, t?: any) => (t ? fn(t) : fn(tx))),
+    };
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const reservationLifecycle = {
       handleFulfillmentOrderStatusChange: jest.fn().mockResolvedValue(undefined),
@@ -395,7 +407,7 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
       cancelledBy: 'admin-1',
     });
 
-    expect(tx.execute).toHaveBeenCalledTimes(3); // SO FOR UPDATE + FO FOR UPDATE + FOI FOR UPDATE
+    expect(tx.execute).toHaveBeenCalledTimes(4); // SO lock + V2 history probe + FO/FOI locks
     expect(state.salesOrders[0].status).toBe('cancelled');
     expect(state.salesOrderLines).toEqual(originalLines);
     expect(state.salesOrderCancellations).toEqual([
@@ -465,7 +477,7 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
 
     await service.cancel(salesOrderId);
 
-    expect(tx.execute).toHaveBeenCalledTimes(1);
+    expect(tx.execute).toHaveBeenCalledTimes(2); // SO lock + V2 history probe
     expect(backlog.closeOpenForSalesOrder).toHaveBeenCalledWith(salesOrderId, tx);
     expect(state.salesOrderCancellations).toHaveLength(1);
     expect(outbox.enqueue).not.toHaveBeenCalled();
@@ -543,7 +555,10 @@ describe('SalesOrdersService.update accepted contract immutability', () => {
       })),
     };
 
-    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) }, run: jest.fn((fn: any, t?: any) => t ? fn(t) : fn(tx)) };
+    const db = {
+      db: { ...tx, transaction: jest.fn((fn) => fn(tx)) },
+      run: jest.fn((fn: any, t?: any) => (t ? fn(t) : fn(tx))),
+    };
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const service = new SalesOrdersService(
       db as any,
@@ -801,7 +816,10 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
       })),
     };
 
-    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) }, run: jest.fn((fn: any, t?: any) => t ? fn(t) : fn(tx)) };
+    const db = {
+      db: { ...tx, transaction: jest.fn((fn) => fn(tx)) },
+      run: jest.fn((fn: any, t?: any) => (t ? fn(t) : fn(tx))),
+    };
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const productSellableQuantity = { recalculateAndPublishForSku: jest.fn().mockResolvedValue(undefined) };
     const service = new SalesOrdersService(
@@ -1616,7 +1634,10 @@ describe('SalesOrderAmendmentsService.create', () => {
       update: jest.fn(),
     };
 
-    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) }, run: jest.fn((fn: any, t?: any) => t ? fn(t) : fn(tx)) };
+    const db = {
+      db: { ...tx, transaction: jest.fn((fn) => fn(tx)) },
+      run: jest.fn((fn: any, t?: any) => (t ? fn(t) : fn(tx))),
+    };
     const service = new SalesOrderAmendmentsService(db as any);
 
     return { service, state, tx };
@@ -1762,7 +1783,10 @@ describe('SalesOrdersService business links', () => {
       })),
     };
 
-    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) }, run: jest.fn((fn: any, t?: any) => t ? fn(t) : fn(tx)) };
+    const db = {
+      db: { ...tx, transaction: jest.fn((fn) => fn(tx)) },
+      run: jest.fn((fn: any, t?: any) => (t ? fn(t) : fn(tx))),
+    };
     const service = new SalesOrdersService(db as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any);
 
     return { service, state, tx };
@@ -1899,11 +1923,13 @@ describe('SalesOrdersService.cancel full cancel shipped evidence guard', () => {
     return result;
   }
 
-  function makeService(options: {
-    foStatus?: string;
-    foShippedAt?: Date | null;
-    foiShippedQty?: number;
-  } = {}) {
+  function makeService(
+    options: {
+      foStatus?: string;
+      foShippedAt?: Date | null;
+      foiShippedQty?: number;
+    } = {},
+  ) {
     const { foStatus = 'ready', foShippedAt = null, foiShippedQty = 0 } = options;
 
     const fo = {
@@ -1929,7 +1955,16 @@ describe('SalesOrdersService.cancel full cancel shipped evidence guard', () => {
 
     const selectRowsFor = (table: unknown): any[] => {
       if (table === wmsTables.salesOrders) {
-        return [{ id: salesOrderId, status: 'confirmed', salesChannel: 'medusa', channelOrderId: 'ch-1', shippingAddress: {}, orderDate: new Date() }];
+        return [
+          {
+            id: salesOrderId,
+            status: 'confirmed',
+            salesChannel: 'medusa',
+            channelOrderId: 'ch-1',
+            shippingAddress: {},
+            orderDate: new Date(),
+          },
+        ];
       }
       if (table === wmsTables.salesOrderCancellations) return [];
       if (table === wmsTables.salesOrderLines) return [{ id: 'sol-guard-1', salesOrderId, quantity: 2 }];
@@ -1947,50 +1982,64 @@ describe('SalesOrdersService.cancel full cancel shipped evidence guard', () => {
         }),
       })),
       update: jest.fn(() => ({ set: () => ({ where: () => [] }) })),
-      insert: jest.fn(() => ({ values: () => ({ returning: jest.fn().mockResolvedValue([{ id: 'cancel-1', effects: [], metadata: {} }]) }) })),
+      insert: jest.fn(() => ({
+        values: () => ({ returning: jest.fn().mockResolvedValue([{ id: 'cancel-1', effects: [], metadata: {} }]) }),
+      })),
       delete: jest.fn(() => ({ where: () => [] })),
     };
 
-    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) }, run: jest.fn((fn: any, t?: any) => t ? fn(t) : fn(tx)) };
+    const db = {
+      db: { ...tx, transaction: jest.fn((fn) => fn(tx)) },
+      run: jest.fn((fn: any, t?: any) => (t ? fn(t) : fn(tx))),
+    };
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
-    const library = { revokeOwnershipsForOrderDetailed: jest.fn().mockResolvedValue({ revokedCount: 0, ownershipIds: [] }) };
+    const library = {
+      revokeOwnershipsForOrderDetailed: jest.fn().mockResolvedValue({ revokedCount: 0, ownershipIds: [] }),
+    };
     const backlog = { closeOpenForSalesOrder: jest.fn().mockResolvedValue(0) };
     const reservationLifecycle = { handleFulfillmentOrderStatusChange: jest.fn().mockResolvedValue(undefined) };
 
     const service = new SalesOrdersService(
-      db as any, {} as any, outbox as any,
-      reservationLifecycle as any, {} as any, {} as any,
-      backlog as any, undefined, undefined, library as any,
+      db as any,
+      {} as any,
+      outbox as any,
+      reservationLifecycle as any,
+      {} as any,
+      {} as any,
+      backlog as any,
+      undefined,
+      undefined,
+      library as any,
     );
     return { service };
   }
 
   it('rejects full cancel when a fulfillment order has status shipped', async () => {
     const { service } = makeService({ foStatus: 'shipped' });
-    await expect(
-      service.cancel(salesOrderId, { reasonCode: 'CUSTOMER_REQUEST' }),
-    ).rejects.toThrow('출고 완료된 항목이 포함된 주문은 전체 취소를 할 수 없습니다');
+    await expect(service.cancel(salesOrderId, { reasonCode: 'CUSTOMER_REQUEST' })).rejects.toThrow(
+      '출고 완료된 항목이 포함된 주문은 전체 취소를 할 수 없습니다',
+    );
   });
 
   it('rejects full cancel when a fulfillment order has status completed', async () => {
     const { service } = makeService({ foStatus: 'completed' });
-    await expect(
-      service.cancel(salesOrderId, { reasonCode: 'CUSTOMER_REQUEST' }),
-    ).rejects.toThrow('출고 완료된 항목이 포함된 주문은 전체 취소를 할 수 없습니다');
+    await expect(service.cancel(salesOrderId, { reasonCode: 'CUSTOMER_REQUEST' })).rejects.toThrow(
+      '출고 완료된 항목이 포함된 주문은 전체 취소를 할 수 없습니다',
+    );
   });
 
   it('rejects full cancel when a fulfillment order has shippedAt set (status still ready)', async () => {
     const { service } = makeService({ foStatus: 'ready', foShippedAt: new Date('2026-05-30T10:00:00.000Z') });
-    await expect(
-      service.cancel(salesOrderId, { reasonCode: 'CUSTOMER_REQUEST' }),
-    ).rejects.toThrow('출고 완료된 항목이 포함된 주문은 전체 취소를 할 수 없습니다');
+    await expect(service.cancel(salesOrderId, { reasonCode: 'CUSTOMER_REQUEST' })).rejects.toThrow(
+      '출고 완료된 항목이 포함된 주문은 전체 취소를 할 수 없습니다',
+    );
   });
 
   it('rejects full cancel when a fulfillment order item has shippedQty > 0', async () => {
     const { service } = makeService({ foStatus: 'ready', foiShippedQty: 1 });
-    await expect(
-      service.cancel(salesOrderId, { reasonCode: 'CUSTOMER_REQUEST' }),
-    ).rejects.toThrow('출고 수량이 있는 항목이 포함되어 전체 취소를 할 수 없습니다');
+    await expect(service.cancel(salesOrderId, { reasonCode: 'CUSTOMER_REQUEST' })).rejects.toThrow(
+      '출고 수량이 있는 항목이 포함되어 전체 취소를 할 수 없습니다',
+    );
   });
 
   // happy path (ready FO, shippedQty=0 → cancel proceeds) is covered by the existing
@@ -2013,8 +2062,7 @@ describe('SalesOrdersService.confirm() state guard', () => {
       select: jest.fn(() => ({
         from: (table: unknown) => ({
           where: () => ({
-            limit: (n: number) =>
-              Promise.resolve(table === wmsTables.salesOrders ? state.salesOrders.slice(0, n) : []),
+            limit: (n: number) => Promise.resolve(table === wmsTables.salesOrders ? state.salesOrders.slice(0, n) : []),
           }),
         }),
       })),
@@ -2029,7 +2077,10 @@ describe('SalesOrdersService.confirm() state guard', () => {
       insert: jest.fn(() => ({ values: () => ({ returning: jest.fn().mockResolvedValue([]) }) })),
     };
 
-    const db = { db: { ...tx, transaction: jest.fn((fn: any) => fn(tx)) }, run: jest.fn((fn: any, t?: any) => t ? fn(t) : fn(tx)) };
+    const db = {
+      db: { ...tx, transaction: jest.fn((fn: any) => fn(tx)) },
+      run: jest.fn((fn: any, t?: any) => (t ? fn(t) : fn(tx))),
+    };
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
 
     const service = new SalesOrdersService(
@@ -2043,9 +2094,11 @@ describe('SalesOrdersService.confirm() state guard', () => {
     );
 
     // getOne calls complex multi-table queries; stub it to return the current state
-    jest.spyOn(service, 'getOne').mockImplementation(
-      async () => ({ id: salesOrderId, status: state.salesOrders[0]?.status ?? 'confirmed' } as any),
-    );
+    jest
+      .spyOn(service, 'getOne')
+      .mockImplementation(
+        async () => ({ id: salesOrderId, status: state.salesOrders[0]?.status ?? 'confirmed' }) as any,
+      );
 
     return { service, state, tx };
   }
@@ -2100,7 +2153,10 @@ describe('SalesOrdersService.confirm() state guard', () => {
         from: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }),
       })),
     };
-    const db = { db: { ...tx, transaction: jest.fn((fn: any) => fn(tx)) }, run: jest.fn((fn: any, t?: any) => t ? fn(t) : fn(tx)) };
+    const db = {
+      db: { ...tx, transaction: jest.fn((fn: any) => fn(tx)) },
+      run: jest.fn((fn: any, t?: any) => (t ? fn(t) : fn(tx))),
+    };
     const service = new SalesOrdersService(db as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any);
     const { NotFoundException } = await import('@nestjs/common');
     await expect(service.confirm('nonexistent-id')).rejects.toThrow(NotFoundException);
@@ -2141,18 +2197,25 @@ describe('SalesOrdersService.getStats() — 출고완료 FO 도출 (작업 15)',
         return [];
       };
       const b: any = {
-        from: (t: unknown) => { state.from = t; return b; },
-        innerJoin: (t: unknown) => { state.joins.push(t); return b; },
+        from: (t: unknown) => {
+          state.from = t;
+          return b;
+        },
+        innerJoin: (t: unknown) => {
+          state.joins.push(t);
+          return b;
+        },
         where: () => b,
-        groupBy: () => { state.grouped = true; return b; },
+        groupBy: () => {
+          state.grouped = true;
+          return b;
+        },
         then: (onF: any, onR: any) => Promise.resolve(resolveRows()).then(onF, onR),
       };
       return b;
     }
     const db = { db: { select: () => builder() } };
-    return new SalesOrdersService(
-      db as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any,
-    );
+    return new SalesOrdersService(db as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any);
   }
 
   it('outboundComplete 는 FO 출고행 수이며 dead SO.status 합(processing/shipped/delivered)과 무관하다', async () => {

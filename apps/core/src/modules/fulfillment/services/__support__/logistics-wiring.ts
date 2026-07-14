@@ -112,6 +112,7 @@ export function wireLogistics(
     workflowGate,
     undefined,
     shipmentReservations,
+    progress,
   );
   const reservationsFacade = new FulfillmentReservationsFacade(dbService, unified, sellable, policies, workflowGate);
   const retryWorker = new FulfillmentOrderReservationRetryWorker(

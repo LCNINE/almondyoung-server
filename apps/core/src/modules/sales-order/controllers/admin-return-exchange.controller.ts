@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Param, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { IsArray, IsOptional, IsString, MaxLength, ValidateNested, IsInt, Min } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -8,6 +8,7 @@ import { StoreSalesOrdersService } from '../services/store-sales-orders.service'
 
 interface AuthenticatedAdmin {
   userId: string;
+  roles?: string[];
 }
 
 export class AdminDecideRequestDto {
@@ -62,8 +63,23 @@ export class AdminReturnExchangeController {
   @HttpCode(200)
   @ApiOperation({ summary: '관리자 주문 취소 + Wallet 자동 환불 연동' })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
-  adminCancelOrder(@Param('id') id: string, @Body() dto: AdminCancelOrderDto) {
-    return this.storeSalesOrdersService.adminCancelRequest(id, dto);
+  adminCancelOrder(
+    @Param('id') id: string,
+    @Body() dto: AdminCancelOrderDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @User() admin: AuthenticatedAdmin,
+  ) {
+    if (!idempotencyKey?.trim()) {
+      throw new BadRequestException('Idempotency-Key header is required');
+    }
+    return this.storeSalesOrdersService.adminCancelRequest(id, {
+      ...dto,
+      fulfillmentCommandContext: {
+        idempotencyKey: idempotencyKey.trim(),
+        actorId: admin.userId,
+        actorRoles: admin.roles ?? [],
+      },
+    });
   }
 
   @Post('sales-orders/:id/retry-refund')
@@ -120,11 +136,7 @@ export class AdminReturnExchangeController {
   @HttpCode(200)
   @ApiOperation({ summary: '반품 요청 승인 (관리자)' })
   @ApiParam({ name: 'id', description: '반품 요청 ID' })
-  approveReturnRequest(
-    @Param('id') id: string,
-    @User() admin: AuthenticatedAdmin,
-    @Body() dto: AdminDecideRequestDto,
-  ) {
+  approveReturnRequest(@Param('id') id: string, @User() admin: AuthenticatedAdmin, @Body() dto: AdminDecideRequestDto) {
     return this.service.approveReturnRequest(id, admin.userId, dto.adminNote);
   }
 
@@ -132,11 +144,7 @@ export class AdminReturnExchangeController {
   @HttpCode(200)
   @ApiOperation({ summary: '반품 요청 거절 (관리자)' })
   @ApiParam({ name: 'id', description: '반품 요청 ID' })
-  rejectReturnRequest(
-    @Param('id') id: string,
-    @User() admin: AuthenticatedAdmin,
-    @Body() dto: AdminDecideRequestDto,
-  ) {
+  rejectReturnRequest(@Param('id') id: string, @User() admin: AuthenticatedAdmin, @Body() dto: AdminDecideRequestDto) {
     return this.service.rejectReturnRequest(id, admin.userId, dto.adminNote);
   }
 
@@ -144,10 +152,7 @@ export class AdminReturnExchangeController {
   @HttpCode(200)
   @ApiOperation({ summary: '반품 수거 대기 처리 (관리자)' })
   @ApiParam({ name: 'id', description: '반품 요청 ID' })
-  markReturnCollectionPending(
-    @Param('id') id: string,
-    @User() admin: AuthenticatedAdmin,
-  ) {
+  markReturnCollectionPending(@Param('id') id: string, @User() admin: AuthenticatedAdmin) {
     return this.service.markCollectionPending(id, admin.userId);
   }
 
@@ -155,10 +160,7 @@ export class AdminReturnExchangeController {
   @HttpCode(200)
   @ApiOperation({ summary: '반품 수거 완료 처리 (관리자)' })
   @ApiParam({ name: 'id', description: '반품 요청 ID' })
-  markReturnCollected(
-    @Param('id') id: string,
-    @User() admin: AuthenticatedAdmin,
-  ) {
+  markReturnCollected(@Param('id') id: string, @User() admin: AuthenticatedAdmin) {
     return this.service.markCollected(id, admin.userId);
   }
 
@@ -166,10 +168,7 @@ export class AdminReturnExchangeController {
   @HttpCode(200)
   @ApiOperation({ summary: '반품 검수 완료 처리 (관리자)' })
   @ApiParam({ name: 'id', description: '반품 요청 ID' })
-  markReturnInspected(
-    @Param('id') id: string,
-    @User() admin: AuthenticatedAdmin,
-  ) {
+  markReturnInspected(@Param('id') id: string, @User() admin: AuthenticatedAdmin) {
     return this.service.markInspected(id, admin.userId);
   }
 
@@ -177,10 +176,7 @@ export class AdminReturnExchangeController {
   @HttpCode(200)
   @ApiOperation({ summary: '반품 처리 완료 (관리자)' })
   @ApiParam({ name: 'id', description: '반품 요청 ID' })
-  completeReturnRequest(
-    @Param('id') id: string,
-    @User() admin: AuthenticatedAdmin,
-  ) {
+  completeReturnRequest(@Param('id') id: string, @User() admin: AuthenticatedAdmin) {
     return this.service.completeReturnRequest(id, admin.userId);
   }
 
@@ -188,10 +184,7 @@ export class AdminReturnExchangeController {
   @HttpCode(200)
   @ApiOperation({ summary: '반품 환불 재시도 (관리자) — refund_pending 상태에서만 가능' })
   @ApiParam({ name: 'id', description: '반품 요청 ID' })
-  retryReturnRefund(
-    @Param('id') id: string,
-    @User() admin: AuthenticatedAdmin,
-  ) {
+  retryReturnRefund(@Param('id') id: string, @User() admin: AuthenticatedAdmin) {
     return this.service.retryReturnRefund(id, admin.userId);
   }
 
@@ -199,11 +192,7 @@ export class AdminReturnExchangeController {
   @HttpCode(200)
   @ApiOperation({ summary: '반품 수동 환불 완료 (관리자) — refund_pending 상태에서만 가능' })
   @ApiParam({ name: 'id', description: '반품 요청 ID' })
-  manualCompleteReturn(
-    @Param('id') id: string,
-    @User() admin: AuthenticatedAdmin,
-    @Body() dto: AdminDecideRequestDto,
-  ) {
+  manualCompleteReturn(@Param('id') id: string, @User() admin: AuthenticatedAdmin, @Body() dto: AdminDecideRequestDto) {
     return this.service.manualCompleteReturn(id, admin.userId, dto.adminNote);
   }
 
@@ -280,10 +269,7 @@ export class AdminReturnExchangeController {
   @HttpCode(200)
   @ApiOperation({ summary: '교환 검수 완료 처리 (관리자)' })
   @ApiParam({ name: 'id', description: '교환 요청 ID' })
-  markExchangeInspected(
-    @Param('id') id: string,
-    @User() admin: AuthenticatedAdmin,
-  ) {
+  markExchangeInspected(@Param('id') id: string, @User() admin: AuthenticatedAdmin) {
     return this.service.markExchangeInspected(id, admin.userId);
   }
 
@@ -291,10 +277,7 @@ export class AdminReturnExchangeController {
   @HttpCode(200)
   @ApiOperation({ summary: '교환 처리 완료 (관리자)' })
   @ApiParam({ name: 'id', description: '교환 요청 ID' })
-  completeExchangeRequest(
-    @Param('id') id: string,
-    @User() admin: AuthenticatedAdmin,
-  ) {
+  completeExchangeRequest(@Param('id') id: string, @User() admin: AuthenticatedAdmin) {
     return this.service.completeExchangeRequest(id, admin.userId);
   }
 }

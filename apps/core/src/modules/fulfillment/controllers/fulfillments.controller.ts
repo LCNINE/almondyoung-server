@@ -1,5 +1,14 @@
 import { Controller, Get, Post, Body, Param, Query, BadRequestException } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
+import {
+  ApiBody,
+  ApiExtraModels,
+  ApiOperation,
+  ApiParam,
+  ApiQuery,
+  ApiResponse,
+  ApiTags,
+  getSchemaPath,
+} from '@nestjs/swagger';
 import { User } from '@app/authorization';
 import { FulfillmentsService } from '../services/fulfillments.service';
 import { FulfillmentReservationsFacade } from '../services/fulfillment-reservations.facade';
@@ -8,11 +17,16 @@ import { CreateCompensationShipmentDto } from '../dto/create-compensation-shipme
 import { ReserveDto } from '../dto/reserve.dto';
 import { UnreserveDto } from '../dto/unreserve.dto';
 import { TransferReservationDto } from '../dto/transfer-reservation.dto';
-import { FulfillmentOrderResponseDto, FulfillmentOrderListResponseDto } from '../dto/fulfillment-order-response.dto';
+import {
+  FulfillmentOrderListResponseDto,
+  FulfillmentOrderResponseDto,
+  FulfillmentOrderV2ResponseDto,
+} from '../dto/fulfillment-order-response.dto';
 
 type AuthenticatedUser = { id?: string; userId?: string; sub?: string } | undefined;
 
 @ApiTags('Fulfillments')
+@ApiExtraModels(FulfillmentOrderResponseDto, FulfillmentOrderV2ResponseDto)
 @Controller('fulfillments')
 export class FulfillmentsController {
   constructor(
@@ -59,7 +73,15 @@ export class FulfillmentsController {
     summary: '주문처리 상세 조회 (items, reservations, batch, shipment, invoice, adminAvailableActions 포함)',
   })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
-  @ApiResponse({ status: 200, type: FulfillmentOrderResponseDto })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(FulfillmentOrderResponseDto) },
+        { $ref: getSchemaPath(FulfillmentOrderV2ResponseDto) },
+      ],
+    },
+  })
   getOne(@Param('id') id: string) {
     return this.service.getOne(id);
   }

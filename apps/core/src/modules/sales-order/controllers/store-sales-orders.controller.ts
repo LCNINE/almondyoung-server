@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, Post } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Param, Post } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { User } from '@app/authorization';
 import {
@@ -11,6 +11,7 @@ import { StoreSalesOrdersService } from '../services/store-sales-orders.service'
 
 interface AuthenticatedCustomer {
   userId: string;
+  roles?: string[];
 }
 
 @ApiTags('Store - Orders')
@@ -21,10 +22,7 @@ export class StoreSalesOrdersController {
   @Get(':id/actions')
   @ApiOperation({ summary: '고객 주문 가능 액션 조회 (Core SO ID 기반)' })
   @ApiParam({ name: 'id', description: 'Core 판매주문 ID (UUID)' })
-  getActions(
-    @Param('id') id: string,
-    @User() customer: AuthenticatedCustomer,
-  ): Promise<StoreOrderActionsResponseDto> {
+  getActions(@Param('id') id: string, @User() customer: AuthenticatedCustomer): Promise<StoreOrderActionsResponseDto> {
     return this.service.getActions(id, customer.userId);
   }
 
@@ -36,8 +34,16 @@ export class StoreSalesOrdersController {
     @Param('id') id: string,
     @Body() dto: StoreCancelOrderDto,
     @User() customer: AuthenticatedCustomer,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<StoreOrderActionsResponseDto> {
-    return this.service.cancelRequest(id, customer.userId, dto);
+    if (!idempotencyKey?.trim()) {
+      throw new BadRequestException('Idempotency-Key header is required');
+    }
+    return this.service.cancelRequest(id, customer.userId, dto, {
+      idempotencyKey: idempotencyKey.trim(),
+      actorId: customer.userId,
+      actorRoles: customer.roles ?? [],
+    });
   }
 
   /**
@@ -82,8 +88,16 @@ export class StoreSalesOrdersController {
     @Param('channelOrderId') channelOrderId: string,
     @Body() dto: StoreCancelOrderDto,
     @User() customer: AuthenticatedCustomer,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ): Promise<StoreOrderActionsResponseDto> {
-    return this.service.cancelRequestByChannelOrder(channelOrderId, customer.userId, dto);
+    if (!idempotencyKey?.trim()) {
+      throw new BadRequestException('Idempotency-Key header is required');
+    }
+    return this.service.cancelRequestByChannelOrder(channelOrderId, customer.userId, dto, {
+      idempotencyKey: idempotencyKey.trim(),
+      actorId: customer.userId,
+      actorRoles: customer.roles ?? [],
+    });
   }
 
   @Get('by-channel-order/:channelOrderId/tracking')

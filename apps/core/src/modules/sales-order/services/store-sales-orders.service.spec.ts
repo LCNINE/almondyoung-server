@@ -43,6 +43,9 @@ function makeContext(
     walletOutcome?: WalletRefundOutcome;
     cancelError?: Error;
     businessLinkError?: Error;
+    v2Outstanding?: boolean;
+    cancellationReplay?: boolean;
+    replayError?: Error;
   } = {},
 ) {
   const so = options.so ?? makeSo();
@@ -62,6 +65,8 @@ function makeContext(
       },
     ],
   };
+  let recordedRefundMetadata: Record<string, unknown> | undefined;
+  let transactionTail = Promise.resolve();
 
   // Each where() call gets a fresh mock object so we can distinguish:
   //   call 0: findSoOrThrow — limit().then() → [so]
@@ -72,6 +77,7 @@ function makeContext(
   let whereCallIndex = 0;
   const dbMock = {
     db: {
+      execute: jest.fn().mockResolvedValue(options.v2Outstanding ? [{ id: 'v2-shipment' }] : []),
       select: jest.fn().mockImplementation(() => ({
         from: jest.fn().mockImplementation(() => ({
           where: jest.fn().mockImplementation(() => {
@@ -82,6 +88,7 @@ function makeContext(
               }),
               then: jest.fn((fn: (r: unknown[]) => unknown) => fn(fos)),
               orderBy: jest.fn().mockReturnValue({
+                then: jest.fn((fn: (r: unknown[]) => unknown) => fn([])),
                 limit: jest.fn().mockReturnValue({
                   then: jest.fn((fn: (r: unknown[]) => unknown) => fn([])),
                 }),
@@ -90,6 +97,23 @@ function makeContext(
           }),
         })),
       })),
+      transaction: jest.fn((fn: (tx: unknown) => Promise<unknown>) => {
+        let executeCount = 0;
+        const tx = {
+          execute: jest.fn(() => {
+            executeCount += 1;
+            return Promise.resolve(
+              executeCount === 2 && recordedRefundMetadata ? [{ metadata: recordedRefundMetadata }] : [],
+            );
+          }),
+        };
+        const result = transactionTail.then(() => fn(tx));
+        transactionTail = result.then(
+          () => undefined,
+          () => undefined,
+        );
+        return result;
+      }),
     },
   };
 
@@ -99,7 +123,13 @@ function makeContext(
       : jest.fn().mockResolvedValue(undefined),
     createBusinessLink: options.businessLinkError
       ? jest.fn().mockRejectedValue(options.businessLinkError)
-      : jest.fn().mockResolvedValue(undefined),
+      : jest.fn().mockImplementation((_salesOrderId: string, dto: { metadata?: Record<string, unknown> }) => {
+          recordedRefundMetadata = dto.metadata;
+          return Promise.resolve(undefined);
+        }),
+    validateCancellationReplay: options.replayError
+      ? jest.fn().mockRejectedValue(options.replayError)
+      : jest.fn().mockResolvedValue(options.cancellationReplay ?? false),
   };
 
   const walletClientMock: Partial<WalletRefundClient> = {
@@ -277,6 +307,70 @@ describe('StoreSalesOrdersService', () => {
         '이미 출고된 주문은 취소할 수 없습니다.',
       );
       expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
+    });
+
+    it('V2 Draft outstanding이 남아 있으면 부분 출고 증거가 있어도 잔여 취소를 coordinator에 위임한다', async () => {
+      const { service, salesOrdersServiceMock } = makeContext({
+        so: makeSo({ status: 'shipped' }),
+        fos: [{ status: 'shipped', shippedAt: new Date() }],
+        v2Outstanding: true,
+      });
+      await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).resolves.toBeDefined();
+      expect(salesOrdersServiceMock.cancel).toHaveBeenCalled();
+    });
+
+    it('동일 취소 key replay는 cancelled status guard보다 먼저 stored view를 반환한다', async () => {
+      const { service, salesOrdersServiceMock, walletClientMock } = makeContext({
+        so: makeSo({ status: 'cancelled' }),
+        cancellationReplay: true,
+      });
+      const context = { idempotencyKey: 'same-key', actorId: CUSTOMER_ID, actorRoles: ['customer'] };
+      await expect(
+        service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {}, context),
+      ).resolves.toBeDefined();
+      expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
+      expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
+    });
+
+    it('동일 취소 key에 다른 hash면 replay shortcut 없이 mismatch를 전파한다', async () => {
+      const mismatch = new Error('FULFILLMENT_IDEMPOTENCY_MISMATCH');
+      const { service } = makeContext({ so: makeSo({ status: 'cancelled' }), replayError: mismatch });
+      const context = { idempotencyKey: 'reused-key', actorId: CUSTOMER_ID, actorRoles: ['customer'] };
+      await expect(
+        service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, { reasonCode: 'OTHER' }, context),
+      ).rejects.toThrow('FULFILLMENT_IDEMPOTENCY_MISMATCH');
+    });
+
+    it('동일 key 동시 환불은 DB claim을 재생해 Wallet을 정확히 한 번만 호출한다', async () => {
+      const { service, salesOrdersServiceMock, walletClientMock } = makeContext();
+      const once = service as unknown as {
+        requestWalletRefundOnce: (
+          so: ReturnType<typeof makeSo>,
+          dto: Record<string, never>,
+          idempotencyKey: string,
+          options: { attemptType: 'initial'; actor: 'customer' },
+        ) => Promise<string>;
+      };
+
+      const results = await Promise.all([
+        once.requestWalletRefundOnce(makeSo(), {}, 'same-concurrent-key', {
+          attemptType: 'initial',
+          actor: 'customer',
+        }),
+        once.requestWalletRefundOnce(makeSo(), {}, 'same-concurrent-key', {
+          attemptType: 'initial',
+          actor: 'customer',
+        }),
+      ]);
+
+      expect(results).toEqual(['succeeded', 'succeeded']);
+      expect(walletClientMock.refundByIntent).toHaveBeenCalledTimes(1);
+      expect(salesOrdersServiceMock.createBusinessLink).toHaveBeenCalledTimes(1);
+      expect(walletClientMock.refundByIntent).toHaveBeenCalledWith(
+        WALLET_INTENT_ID,
+        50000,
+        expect.objectContaining({ correlationId: expect.stringMatching(/^cancel:so-001:initial:[a-f0-9]{32}$/) }),
+      );
     });
 
     it('주문을 찾을 수 없을 때 404', async () => {

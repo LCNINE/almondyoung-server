@@ -40,6 +40,8 @@ import { FulfillmentProgressService } from './services/fulfillment-progress.serv
 import { FulfillmentInvariantService } from './services/fulfillment-invariant.service';
 import { FulfillmentReconciliationService } from './services/fulfillment-reconciliation.service';
 import { ShipmentReservationService } from './services/shipment-reservation.service';
+import { FulfillmentCommandService } from './services/fulfillment-command.service';
+import { ShipmentPlanningService } from './services/shipment-planning.service';
 
 // Controllers
 import { FulfillmentsController } from './controllers/fulfillments.controller';
@@ -51,6 +53,7 @@ import { ConsolidationController } from './controllers/consolidation.controller'
 import { DirectShipController } from './controllers/direct-ship.controller';
 import { InvoiceController } from './controllers/invoice.controller';
 import { LocationOptimizationController } from './controllers/location-optimization.controller';
+import { ShipmentPlanningController } from './controllers/shipment-planning.controller';
 
 @Module({
   imports: [
@@ -89,6 +92,7 @@ import { LocationOptimizationController } from './controllers/location-optimizat
     DirectShipController,
     InvoiceController,
     LocationOptimizationController,
+    ShipmentPlanningController,
   ],
   providers: [
     // Outbox
@@ -118,12 +122,16 @@ import { LocationOptimizationController } from './controllers/location-optimizat
     FulfillmentInvariantService,
     FulfillmentReconciliationService,
     ShipmentReservationService,
+    FulfillmentCommandService,
+    ShipmentPlanningService,
   ],
   exports: [
     FulfillmentProgressService,
     FulfillmentInvariantService,
     FulfillmentReconciliationService,
     ShipmentReservationService,
+    FulfillmentCommandService,
+    ShipmentPlanningService,
   ],
 })
 export class FulfillmentModule {}

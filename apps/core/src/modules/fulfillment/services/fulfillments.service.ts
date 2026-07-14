@@ -28,6 +28,7 @@ import { SalesOrderAmendmentsService } from '../../sales-order/services/sales-or
 import { SalesOrderAmendmentDeltaDto } from '../../sales-order/dto/create-sales-order-amendment.dto';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
+import { FulfillmentProgressService } from './fulfillment-progress.service';
 
 type FulfillmentStatus = (typeof wmsTables.fulfillmentOrders.status.enumValues)[number];
 
@@ -79,6 +80,10 @@ const AMENDMENT_REF_TYPE = 'sales_order_amendment';
 const FULFILLMENT_ORDER_REF_TYPE = 'fulfillment_order';
 const COMPENSATION_ALLOWED_SALES_ORDER_STATUSES = new Set(['confirmed', 'processing', 'shipped', 'delivered']);
 
+function uniqueStrings(values: readonly string[]): string[] {
+  return [...new Set(values)].sort();
+}
+
 @Injectable()
 export class FulfillmentsService {
   private readonly logger = new Logger(FulfillmentsService.name);
@@ -94,6 +99,7 @@ export class FulfillmentsService {
     private readonly workflowGate: FulfillmentWorkflowGate,
     @Optional() private readonly salesOrderAmendments?: SalesOrderAmendmentsService,
     @Optional() private readonly shipmentReservation?: ShipmentReservationService,
+    @Optional() private readonly fulfillmentProgress?: FulfillmentProgressService,
   ) {}
 
   async requiresPhysicalFulfillmentOrder(salesOrderId: string, tx?: DbTx): Promise<boolean> {
@@ -1432,6 +1438,7 @@ export class FulfillmentsService {
           reservedQty: wmsTables.fulfillmentOrderItems.reservedQty,
           pickedQty: wmsTables.fulfillmentOrderItems.pickedQty,
           shippedQty: wmsTables.fulfillmentOrderItems.shippedQty,
+          canceledQty: wmsTables.fulfillmentOrderItems.canceledQty,
           status: wmsTables.fulfillmentOrderItems.status,
         })
         .from(wmsTables.fulfillmentOrderItems)
@@ -1524,6 +1531,7 @@ export class FulfillmentsService {
         reservedQty: wmsTables.fulfillmentOrderItems.reservedQty,
         pickedQty: wmsTables.fulfillmentOrderItems.pickedQty,
         shippedQty: wmsTables.fulfillmentOrderItems.shippedQty,
+        canceledQty: wmsTables.fulfillmentOrderItems.canceledQty,
         status: wmsTables.fulfillmentOrderItems.status,
         salesOrderId: wmsTables.fulfillmentOrderItems.salesOrderId,
         salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
@@ -1532,6 +1540,94 @@ export class FulfillmentsService {
       .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.fulfillmentOrderItems.skuId))
       .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, id))
       .orderBy(wmsTables.fulfillmentOrderItems.createdAt);
+
+    if (this.workflowGate.getMode() === 'v2') {
+      if (!this.fulfillmentProgress) throw new Error('FulfillmentProgressService is required for V2 reads');
+      const allShipmentLines =
+        itemIds.length === 0
+          ? []
+          : await db
+              .select({
+                id: wmsTables.shipmentLines.id,
+                fulfillmentOrderItemId: wmsTables.shipmentLines.fulfillmentOrderItemId,
+                shipmentId: wmsTables.shipmentLines.shipmentId,
+                shipmentStatus: wmsTables.shipments.status,
+                qty: wmsTables.shipmentLines.qty,
+                inspectedQty: wmsTables.shipmentLines.inspectedQty,
+                reservedQty: wmsTables.shipmentLines.reservedQty,
+                manifestVersion: wmsTables.shipments.manifestVersion,
+                reservationVersion: wmsTables.shipments.reservationVersion,
+                shippingProfileId: wmsTables.shipments.shippingProfileId,
+              })
+              .from(wmsTables.shipmentLines)
+              .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.shipmentLines.shipmentId))
+              .where(inArray(wmsTables.shipmentLines.fulfillmentOrderItemId, itemIds));
+      const activeLines = allShipmentLines.filter((line) =>
+        ['draft', 'planned', 'recovery_required'].includes(line.shipmentStatus),
+      );
+      const activeLineIds = activeLines.map((line) => line.id);
+      const v2Reservations =
+        activeLineIds.length === 0
+          ? []
+          : await db
+              .select({
+                id: wmsTables.stockReservations.id,
+                shipmentLineId: wmsTables.stockReservations.shipmentLineId,
+                skuId: wmsTables.stockReservations.skuId,
+                warehouseId: wmsTables.stockReservations.warehouseId,
+                quantity: wmsTables.stockReservations.quantity,
+                status: wmsTables.stockReservations.status,
+                requestedAt: wmsTables.stockReservations.requestedAt,
+              })
+              .from(wmsTables.stockReservations)
+              .where(
+                and(
+                  inArray(wmsTables.stockReservations.shipmentLineId, activeLineIds),
+                  eq(wmsTables.stockReservations.status, 'confirmed'),
+                ),
+              );
+      const progress = this.fulfillmentProgress.projectOrder(
+        items.map((item) => {
+          const itemLines = activeLines.filter((line) => line.fulfillmentOrderItemId === item.id);
+          const lineIds = new Set(itemLines.map((line) => line.id));
+          return {
+            id: item.id,
+            qty: item.qty,
+            shippedQty: item.shippedQty,
+            canceledQty: item.canceledQty,
+            confirmedReservedQty: v2Reservations
+              .filter((reservation) => reservation.shipmentLineId && lineIds.has(reservation.shipmentLineId))
+              .reduce((total, reservation) => total + reservation.quantity, 0),
+            activeLineQty: itemLines.reduce((total, line) => total + line.qty, 0),
+            processing: item.pickedQty > 0 || itemLines.some((line) => line.inspectedQty > 0),
+            recoveryRequired: itemLines.some((line) => line.shipmentStatus === 'recovery_required'),
+          };
+        }),
+      );
+      const shipmentIds = uniqueStrings(allShipmentLines.map((line) => line.shipmentId));
+      const shipmentList = shipmentIds.map((shipmentId) => {
+        const lines = allShipmentLines.filter((line) => line.shipmentId === shipmentId);
+        const first = lines[0];
+        return {
+          id: shipmentId,
+          status: first.shipmentStatus,
+          manifestVersion: first.manifestVersion,
+          reservationVersion: first.reservationVersion,
+          shippingProfileId: first.shippingProfileId,
+          qty: lines.reduce((total, line) => total + line.qty, 0),
+          reservedQty: lines.reduce((total, line) => total + line.reservedQty, 0),
+        };
+      });
+      return {
+        ...fulfillmentOrder,
+        progress,
+        shipments: shipmentList,
+        items: itemsWithSku,
+        reservations: v2Reservations,
+        adminAvailableActions,
+        blockedReasons,
+      };
+    }
 
     return {
       ...fulfillmentOrder,

@@ -1,4 +1,16 @@
-import { Controller, Get, Post, Patch, Body, Param, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Headers,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { User } from '@app/authorization';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { SalesOrderAmendmentsService } from '../services/sales-order-amendments.service';
@@ -46,11 +58,28 @@ export class SalesOrdersController {
   @ApiOperation({ summary: '판매 주문 취소 (관리자 경로 — Wallet 환불 포함)' })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
   @ApiResponse({ status: 200, description: '취소 성공. { status, refundStatus } 반환' })
-  cancel(@Param('id') id: string, @Body() dto: CancelSalesOrderDto = {}) {
+  cancel(
+    @Param('id') id: string,
+    @Body() dto: CancelSalesOrderDto = {},
+    @Headers('idempotency-key') idempotencyKey?: string,
+    @User() user?: { userId?: string; id?: string; sub?: string; roles?: string[] },
+  ) {
+    const actorId = user?.userId ?? user?.id ?? user?.sub;
+    if (!idempotencyKey?.trim()) {
+      throw new BadRequestException('Idempotency-Key header is required');
+    }
+    if (!actorId) {
+      throw new UnauthorizedException('Authenticated actor is required');
+    }
     return this.storeSalesOrders.adminCancelRequest(id, {
       reasonCode: dto.reasonCode,
       reasonDetail: dto.reasonDetail,
       lines: dto.lines,
+      fulfillmentCommandContext: {
+        idempotencyKey: idempotencyKey.trim(),
+        actorId,
+        actorRoles: Array.isArray(user?.roles) ? user.roles : [],
+      },
     });
   }
 

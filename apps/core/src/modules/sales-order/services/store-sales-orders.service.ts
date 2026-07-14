@@ -1,11 +1,12 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { InjectTypedDb } from '@app/db';
-import { and, desc, eq, inArray, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import {
   inventorySchema,
   inventoryTables,
   returnExchangeTables,
+  DbTx,
   wmsTables,
 } from '../../inventory/schema/inventory.schema';
 import { calculatePartialCancellationRefund } from './partial-cancellation-refund-calculator';
@@ -82,9 +83,10 @@ export class StoreSalesOrdersService {
     orderId: string,
     customerId: string,
     dto: StoreCancelOrderDto,
+    fulfillmentCommandContext?: { idempotencyKey: string; actorId: string; actorRoles: string[] },
   ): Promise<StoreOrderActionsResponseDto> {
     const so = await this.findSoOrThrow({ id: orderId }, customerId);
-    return this.processCancelRequest(so, customerId, dto);
+    return this.processCancelRequest(so, customerId, dto, fulfillmentCommandContext);
   }
 
   /**
@@ -95,9 +97,26 @@ export class StoreSalesOrdersService {
    */
   async adminCancelRequest(
     orderId: string,
-    dto: { reasonCode?: string; reasonDetail?: string; lines?: Array<{ salesOrderLineId: string; quantity: number }> },
+    dto: {
+      reasonCode?: string;
+      reasonDetail?: string;
+      lines?: Array<{ salesOrderLineId: string; quantity: number }>;
+      fulfillmentCommandContext?: { idempotencyKey: string; actorId: string; actorRoles: string[] };
+    },
   ): Promise<{ status: string; refundStatus: string; refundEstimateAmount?: number; manualReason?: string | null }> {
     const so = await this.findSoOrThrow({ id: orderId });
+    if (
+      dto.fulfillmentCommandContext &&
+      (await this.salesOrdersService.validateCancellationReplay(so.id, {
+        sourceKey: dto.fulfillmentCommandContext.idempotencyKey,
+        reasonCode: dto.reasonCode,
+        reasonDetail: dto.reasonDetail,
+        lines: dto.lines,
+      }))
+    ) {
+      const replay = await this.buildActionsView(so);
+      return { status: so.status, refundStatus: replay.refundStatus };
+    }
     if (so.status === 'cancelled') throw new BadRequestException('이미 취소된 주문입니다.');
     if (so.status === 'timeout') throw new BadRequestException('타임아웃된 주문은 취소할 수 없습니다.');
 
@@ -106,6 +125,7 @@ export class StoreSalesOrdersService {
       reasonDetail: dto.reasonDetail,
       lines: dto.lines,
       cancelledBy: 'admin',
+      fulfillmentCommandContext: dto.fulfillmentCommandContext,
     });
 
     if (dto.lines && dto.lines.length > 0) {
@@ -154,11 +174,19 @@ export class StoreSalesOrdersService {
       };
     }
 
-    const refundStatus = await this.requestWalletRefundAfterCancel(
-      { ...so, status: 'cancelled' } as SalesOrderRow,
-      { reasonCode: dto.reasonCode },
-      { actor: 'admin', attemptType: 'initial' },
-    );
+    const refundOptions = { actor: 'admin' as const, attemptType: 'initial' as const };
+    const refundStatus = dto.fulfillmentCommandContext
+      ? await this.requestWalletRefundOnce(
+          { ...so, status: 'cancelled' } as SalesOrderRow,
+          { reasonCode: dto.reasonCode },
+          dto.fulfillmentCommandContext.idempotencyKey,
+          refundOptions,
+        )
+      : await this.requestWalletRefundAfterCancel(
+          { ...so, status: 'cancelled' } as SalesOrderRow,
+          { reasonCode: dto.reasonCode },
+          refundOptions,
+        );
 
     return { status: 'cancelled', refundStatus };
   }
@@ -405,9 +433,10 @@ export class StoreSalesOrdersService {
     channelOrderId: string,
     customerId: string,
     dto: StoreCancelOrderDto,
+    fulfillmentCommandContext?: { idempotencyKey: string; actorId: string; actorRoles: string[] },
   ): Promise<StoreOrderActionsResponseDto> {
     const so = await this.findSoOrThrow({ channelOrderId, salesChannel: 'medusa' }, customerId);
-    return this.processCancelRequest(so, customerId, dto);
+    return this.processCancelRequest(so, customerId, dto, fulfillmentCommandContext);
   }
 
   // ── Private 헬퍼 ─────────────────────────────────────────────────────────
@@ -614,7 +643,18 @@ export class StoreSalesOrdersService {
     so: SalesOrderRow,
     customerId: string,
     dto: StoreCancelOrderDto,
+    fulfillmentCommandContext?: { idempotencyKey: string; actorId: string; actorRoles: string[] },
   ): Promise<StoreOrderActionsResponseDto> {
+    if (
+      fulfillmentCommandContext &&
+      (await this.salesOrdersService.validateCancellationReplay(so.id, {
+        sourceKey: fulfillmentCommandContext.idempotencyKey,
+        reasonCode: dto.reasonCode,
+        reasonDetail: dto.reasonDetail,
+      }))
+    ) {
+      return this.buildActionsView(so);
+    }
     if (so.status === 'cancelled') throw new BadRequestException('이미 취소된 주문입니다.');
     if (so.status === 'timeout') throw new BadRequestException('타임아웃된 주문은 취소할 수 없습니다.');
     if (so.salesChannel !== 'medusa') {
@@ -630,10 +670,11 @@ export class StoreSalesOrdersService {
       .where(eq(inventoryTables.fulfillmentOrders.salesOrderId, so.id));
 
     const fulfillmentStatus = this.deriveFulfillmentStatus(fos);
+    const hasV2Outstanding = await this.hasV2OutstandingShipment(so.id);
     if (fulfillmentStatus === 'picking' || fulfillmentStatus === 'packed') {
       throw new BadRequestException('피킹이 시작된 주문은 직접 취소할 수 없습니다. 고객센터로 문의해 주세요.');
     }
-    if (this.hasShippedEvidence(fos) || so.status === 'shipped' || so.status === 'delivered') {
+    if (!hasV2Outstanding && (this.hasShippedEvidence(fos) || so.status === 'shipped' || so.status === 'delivered')) {
       throw new BadRequestException('이미 출고된 주문은 취소할 수 없습니다.');
     }
 
@@ -641,13 +682,59 @@ export class StoreSalesOrdersService {
       reasonCode: dto.reasonCode,
       reasonDetail: dto.reasonDetail,
       cancelledBy: `customer:${customerId}`,
+      fulfillmentCommandContext,
     });
 
-    const refundStatus = await this.requestWalletRefundAfterCancel(so, dto, {
-      actor: 'customer',
-      attemptType: 'initial',
-    });
+    const refundOptions = { actor: 'customer' as const, attemptType: 'initial' as const };
+    const refundStatus = fulfillmentCommandContext
+      ? await this.requestWalletRefundOnce(so, dto, fulfillmentCommandContext.idempotencyKey, refundOptions)
+      : await this.requestWalletRefundAfterCancel(so, dto, refundOptions);
     return this.buildActionsView({ ...so, status: 'cancelled' }, refundStatus);
+  }
+
+  private async requestWalletRefundOnce(
+    so: SalesOrderRow,
+    dto: StoreCancelOrderDto,
+    idempotencyKey: string,
+    options: { attemptType: 'initial'; actor: 'customer' | 'admin' },
+  ): Promise<StoreRefundStatus> {
+    const keyDigest = createHash('sha256').update(idempotencyKey.trim()).digest('hex').slice(0, 32);
+    const correlationId = `cancel:${so.id}:initial:${keyDigest}`;
+    return this.db.db.transaction(async (rawTx) => {
+      const tx = rawTx as unknown as DbTx;
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${correlationId}, 0))`);
+      const rows = await tx.execute(sql`
+        SELECT metadata
+          FROM business_links
+         WHERE source_type = 'sales_order'
+           AND source_id = ${so.id}
+           AND relation_name = 'cancellation_linked_wallet_refund'
+           AND metadata->>'correlationId' = ${correlationId}
+         ORDER BY created_at DESC
+         LIMIT 1
+      `);
+      const existing = Array.from(rows as unknown as ArrayLike<{ metadata?: Record<string, unknown> }>)[0];
+      const storedStatus = existing?.metadata?.refundStatus;
+      if (typeof storedStatus === 'string' && VALID_REFUND_STATUSES.has(storedStatus as StoreRefundStatus)) {
+        return storedStatus as StoreRefundStatus;
+      }
+      return this.requestWalletRefundAfterCancel(so, dto, { ...options, correlationId, tx });
+    });
+  }
+
+  private async hasV2OutstandingShipment(salesOrderId: string): Promise<boolean> {
+    const rows = await this.db.db.execute(sql`
+      SELECT s.id
+        FROM shipments s
+        JOIN shipment_lines sl ON sl.shipment_id = s.id
+        JOIN fulfillment_order_items foi ON foi.id = sl.fulfillment_order_item_id
+        JOIN fulfillment_orders fo ON fo.id = foi.fulfillment_order_id
+       WHERE fo.sales_order_id = ${salesOrderId}
+         AND s.opened_for_fulfillment_order_id IS NULL
+         AND s.status IN ('draft', 'planned', 'recovery_required')
+       LIMIT 1
+    `);
+    return Array.from(rows as unknown as ArrayLike<unknown>).length > 0;
   }
 
   /**
@@ -667,6 +754,7 @@ export class StoreSalesOrdersService {
       correlationId?: string;
       amountOverride?: number;
       extraMetadata?: Record<string, unknown>;
+      tx?: DbTx;
     },
   ): Promise<StoreRefundStatus> {
     const attemptType = options?.attemptType ?? 'initial';
@@ -677,14 +765,18 @@ export class StoreSalesOrdersService {
         `[WalletRefund] No walletIntentId for SO ${so.id} (channelOrderId=${so.channelOrderId}). ` +
           'Refund must be processed manually.',
       );
-      await this.recordWalletRefundLink(so.id, {
-        refundStatus: 'manual_pending',
-        note: 'walletIntentId가 없어 수동 처리 필요',
-        reasonCode: dto.reasonCode,
-        attemptType,
-        actor,
-        extraMetadata: options?.extraMetadata,
-      });
+      await this.recordWalletRefundLink(
+        so.id,
+        {
+          refundStatus: 'manual_pending',
+          note: 'walletIntentId가 없어 수동 처리 필요',
+          reasonCode: dto.reasonCode,
+          attemptType,
+          actor,
+          extraMetadata: options?.extraMetadata,
+        },
+        options?.tx,
+      );
       return 'manual_pending';
     }
 
@@ -693,16 +785,20 @@ export class StoreSalesOrdersService {
 
     if (!amount || amount <= 0) {
       this.logger.warn(`[WalletRefund] SO ${so.id} has invalid amount=${amount}. Skipping auto-refund.`);
-      await this.recordWalletRefundLink(so.id, {
-        refundStatus: 'manual_pending',
-        note: `amount=${amount} 이 유효하지 않아 수동 처리 필요`,
-        intentId: so.walletIntentId,
-        reasonCode: dto.reasonCode,
-        attemptType,
-        actor,
-        correlationId,
-        extraMetadata: options?.extraMetadata,
-      });
+      await this.recordWalletRefundLink(
+        so.id,
+        {
+          refundStatus: 'manual_pending',
+          note: `amount=${amount} 이 유효하지 않아 수동 처리 필요`,
+          intentId: so.walletIntentId,
+          reasonCode: dto.reasonCode,
+          attemptType,
+          actor,
+          correlationId,
+          extraMetadata: options?.extraMetadata,
+        },
+        options?.tx,
+      );
       return 'manual_pending';
     }
 
@@ -715,93 +811,117 @@ export class StoreSalesOrdersService {
     switch (outcome.kind) {
       case 'success': {
         const refundId = outcome.refunds[0]?.refundId;
-        await this.recordWalletRefundLink(so.id, {
-          refundStatus: 'succeeded',
-          intentId: so.walletIntentId,
-          refundId,
-          amount,
-          reasonCode: dto.reasonCode,
-          attemptType,
-          actor,
-          correlationId,
-          extraMetadata: options?.extraMetadata,
-        });
+        await this.recordWalletRefundLink(
+          so.id,
+          {
+            refundStatus: 'succeeded',
+            intentId: so.walletIntentId,
+            refundId,
+            amount,
+            reasonCode: dto.reasonCode,
+            attemptType,
+            actor,
+            correlationId,
+            extraMetadata: options?.extraMetadata,
+          },
+          options?.tx,
+        );
         return 'succeeded';
       }
       case 'partial_pending': {
         const refundId = outcome.refunds[0]?.refundId;
-        await this.recordWalletRefundLink(so.id, {
-          refundStatus: 'pending',
-          intentId: so.walletIntentId,
-          refundId,
-          amount,
-          note: '무통장 입금 또는 비동기 처리 중 — Wallet에서 확인 필요',
-          reasonCode: dto.reasonCode,
-          attemptType,
-          actor,
-          correlationId,
-          extraMetadata: options?.extraMetadata,
-        });
+        await this.recordWalletRefundLink(
+          so.id,
+          {
+            refundStatus: 'pending',
+            intentId: so.walletIntentId,
+            refundId,
+            amount,
+            note: '무통장 입금 또는 비동기 처리 중 — Wallet에서 확인 필요',
+            reasonCode: dto.reasonCode,
+            attemptType,
+            actor,
+            correlationId,
+            extraMetadata: options?.extraMetadata,
+          },
+          options?.tx,
+        );
         return 'pending';
       }
       case 'already_refunded': {
-        await this.recordWalletRefundLink(so.id, {
-          refundStatus: 'succeeded',
-          intentId: so.walletIntentId,
-          amount,
-          note: `이미 환불 완료 (Wallet: ${outcome.errorCode})`,
-          reasonCode: dto.reasonCode,
-          attemptType,
-          actor,
-          correlationId,
-          errorCode: outcome.errorCode,
-          errorMessage: outcome.errorMessage,
-          extraMetadata: options?.extraMetadata,
-        });
+        await this.recordWalletRefundLink(
+          so.id,
+          {
+            refundStatus: 'succeeded',
+            intentId: so.walletIntentId,
+            amount,
+            note: `이미 환불 완료 (Wallet: ${outcome.errorCode})`,
+            reasonCode: dto.reasonCode,
+            attemptType,
+            actor,
+            correlationId,
+            errorCode: outcome.errorCode,
+            errorMessage: outcome.errorMessage,
+            extraMetadata: options?.extraMetadata,
+          },
+          options?.tx,
+        );
         return 'succeeded';
       }
       case 'failed': {
-        await this.recordWalletRefundLink(so.id, {
-          refundStatus: 'failed',
-          intentId: so.walletIntentId,
-          amount,
-          note: `Wallet 환불 실패: ${outcome.errorCode} — ${outcome.errorMessage}`,
-          reasonCode: dto.reasonCode,
-          attemptType,
-          actor,
-          correlationId,
-          errorCode: outcome.errorCode,
-          errorMessage: outcome.errorMessage,
-          extraMetadata: options?.extraMetadata,
-        });
+        await this.recordWalletRefundLink(
+          so.id,
+          {
+            refundStatus: 'failed',
+            intentId: so.walletIntentId,
+            amount,
+            note: `Wallet 환불 실패: ${outcome.errorCode} — ${outcome.errorMessage}`,
+            reasonCode: dto.reasonCode,
+            attemptType,
+            actor,
+            correlationId,
+            errorCode: outcome.errorCode,
+            errorMessage: outcome.errorMessage,
+            extraMetadata: options?.extraMetadata,
+          },
+          options?.tx,
+        );
         return 'failed';
       }
       case 'wallet_unavailable': {
-        await this.recordWalletRefundLink(so.id, {
-          refundStatus: 'manual_pending',
-          intentId: so.walletIntentId,
-          amount,
-          note: `Wallet 연결 불가: ${outcome.errorMessage}`,
-          reasonCode: dto.reasonCode,
-          attemptType,
-          actor,
-          correlationId,
-          extraMetadata: options?.extraMetadata,
-        });
+        await this.recordWalletRefundLink(
+          so.id,
+          {
+            refundStatus: 'manual_pending',
+            intentId: so.walletIntentId,
+            amount,
+            note: `Wallet 연결 불가: ${outcome.errorMessage}`,
+            reasonCode: dto.reasonCode,
+            attemptType,
+            actor,
+            correlationId,
+            extraMetadata: options?.extraMetadata,
+          },
+          options?.tx,
+        );
         return 'manual_pending';
       }
       case 'in_flight': {
-        await this.recordWalletRefundLink(so.id, {
-          refundStatus: 'manual_pending',
-          intentId: so.walletIntentId,
-          amount,
-          note: `환불 처리 중(Idempotency in-flight): ${outcome.errorMessage}`,
-          reasonCode: dto.reasonCode,
-          attemptType,
-          actor,
-          correlationId,
-          extraMetadata: options?.extraMetadata,
-        });
+        await this.recordWalletRefundLink(
+          so.id,
+          {
+            refundStatus: 'manual_pending',
+            intentId: so.walletIntentId,
+            amount,
+            note: `환불 처리 중(Idempotency in-flight): ${outcome.errorMessage}`,
+            reasonCode: dto.reasonCode,
+            attemptType,
+            actor,
+            correlationId,
+            extraMetadata: options?.extraMetadata,
+          },
+          options?.tx,
+        );
         return 'manual_pending';
       }
       case 'no_intent_id':
@@ -827,35 +947,43 @@ export class StoreSalesOrdersService {
       errorMessage?: string;
       extraMetadata?: Record<string, unknown>;
     },
+    tx?: DbTx,
   ): Promise<void> {
     try {
-      await this.salesOrdersService.createBusinessLink(salesOrderId, {
-        relationName: 'cancellation_linked_wallet_refund',
-        target: {
-          type: 'wallet_refund',
-          externalRef: info.refundId
-            ? `wallet:refund:${info.refundId}`
-            : info.intentId
-              ? `wallet:intent:${info.intentId}`
-              : `wallet:manual:${salesOrderId}`,
+      await this.salesOrdersService.createBusinessLink(
+        salesOrderId,
+        {
+          relationName: 'cancellation_linked_wallet_refund',
+          target: {
+            type: 'wallet_refund',
+            externalRef: info.refundId
+              ? `wallet:refund:${info.refundId}`
+              : info.intentId
+                ? `wallet:intent:${info.intentId}`
+                : `wallet:manual:${salesOrderId}`,
+          },
+          metadata: {
+            refundStatus: info.refundStatus,
+            intentId: info.intentId ?? null,
+            refundId: info.refundId ?? null,
+            amount: info.amount ?? null,
+            reasonCode: info.reasonCode ?? null,
+            note: info.note ?? null,
+            attemptType: info.attemptType ?? null,
+            actor: info.actor ?? null,
+            correlationId: info.correlationId ?? null,
+            errorCode: info.errorCode ?? null,
+            errorMessage: info.errorMessage ?? null,
+            ...(info.extraMetadata ?? {}),
+          },
         },
-        metadata: {
-          refundStatus: info.refundStatus,
-          intentId: info.intentId ?? null,
-          refundId: info.refundId ?? null,
-          amount: info.amount ?? null,
-          reasonCode: info.reasonCode ?? null,
-          note: info.note ?? null,
-          attemptType: info.attemptType ?? null,
-          actor: info.actor ?? null,
-          correlationId: info.correlationId ?? null,
-          errorCode: info.errorCode ?? null,
-          errorMessage: info.errorMessage ?? null,
-          ...(info.extraMetadata ?? {}),
-        },
-      });
+        tx,
+      );
     } catch (err) {
-      // business link 기록 실패는 취소/환불 결과에 영향을 주지 않는다
+      // A keyed single-flight must persist its replay result before releasing
+      // the advisory lock. The stable Wallet correlation makes a retry safe.
+      if (tx) throw err;
+      // Legacy/unkeyed callers retain the historical best-effort timeline behavior.
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(`[WalletRefund] Failed to record business link for SO ${salesOrderId}: ${message}`);
     }
