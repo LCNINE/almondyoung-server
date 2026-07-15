@@ -73,7 +73,7 @@
   },
   "options": {
     "selectPlaceholder": "Please select an option",
-    "soldOut": "Discontinued",
+    "soldOut": "Sold out",
     "soldOutTemporary": "Temporarily sold out",
     "restockExpected": "Restock: {date}",
     "restockApproximate": "The restock date is approximate and may differ from the actual arrival.",
