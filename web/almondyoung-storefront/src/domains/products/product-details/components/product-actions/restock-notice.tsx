@@ -12,7 +12,14 @@ interface Props {
 // 품절 옵션들 중 가장 이른 입고예정일을 고른다.
 // 데이터(variant.metadata.inboundDate)가 없으면 null → 아무것도 렌더하지 않음.
 // metadata 는 core inbound_plans → Medusa variant.metadata 동기화로 채워짐 (sync-restock-to-medusa.ts).
+// ponytail: 임시 - 재입고 예정 노출 전면 중단 스위치. false 면 호출부 3곳
+// (index.tsx, mobile-actions.tsx x2) 이 모두 품절 버튼으로 떨어져 RestockNotice 가 안 뜬다.
+// 되돌리려면 true 로만 바꾸면 원복. 상품 카드 쪽은 product-card/quantity/index.tsx 참고.
+const RESTOCK_NOTICE_ENABLED: boolean = false
+
 export function pickEarliestRestock(variants: Props["variants"]) {
+  if (!RESTOCK_NOTICE_ENABLED) return null
+
   const candidates = variants
     .map((v) => {
       const date = v?.metadata?.inboundDate
