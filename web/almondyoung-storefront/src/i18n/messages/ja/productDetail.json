@@ -73,7 +73,7 @@
   },
   "options": {
     "selectPlaceholder": "オプションを選択してください",
-    "soldOut": "販売中止",
+    "soldOut": "売り切れ",
     "soldOutTemporary": "一時品切れ",
     "restockExpected": "再入荷 : {date} 予定",
     "restockApproximate": "入荷予定日はおおよその目安で、実際の入荷日と異なる場合があります",
