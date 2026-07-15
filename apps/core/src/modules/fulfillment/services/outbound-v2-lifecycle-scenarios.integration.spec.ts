@@ -21,7 +21,7 @@ import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentProgressService } from './fulfillment-progress.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
-import { canonicalShipmentRecipientHash, InvoiceOrchestrator } from './invoice-orchestrator.service';
+import { InvoiceOrchestrator } from './invoice-orchestrator.service';
 import { OutboundBatchOrchestrator } from './outbound-batch-orchestrator.service';
 import { ShipmentDispatchService } from './shipment-dispatch.service';
 import { ShipmentPlanningService } from './shipment-planning.service';
@@ -343,114 +343,6 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
       ],
       outboxAggregateIds: [shipment.id, fulfillmentOrder.id],
     };
-  }
-
-  async function seedRecalledAttemptHistory(tx: DbTx, world: LifecycleWorld) {
-    const item = world.items[0];
-    const [shipment] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, item.shipmentId));
-    const attemptId = randomUUID();
-    const recallOperationId = randomUUID();
-    const dispatchedAt = new Date('2026-07-15T00:00:00.000Z');
-    const recalledAt = new Date('2026-07-15T01:00:00.000Z');
-    const [invoice] = await tx
-      .insert(wmsTables.invoices)
-      .values({
-        trackingNo: `LIFECYCLE-OLD-${randomUUID()}`,
-        carrier: 'CJ',
-        issueMethod: 'self',
-        externalServiceId: `lifecycle-old-service-${randomUUID()}`,
-        issuedForFulfillmentOrderId: world.fulfillmentOrderId,
-        shipmentId: item.shipmentId,
-        manifestVersion: shipment.manifestVersion,
-        recipientHash: canonicalShipmentRecipientHash(shipment.recipientSnapshot),
-        status: 'voided',
-        voidedAt: recalledAt,
-      })
-      .returning();
-    const [dispatchJournal] = await tx
-      .insert(wmsTables.stockJournals)
-      .values({
-        sourceType: 'SHIPMENT_DISPATCH_ATTEMPT',
-        sourceId: attemptId,
-        idempotencyKey: `lifecycle-old-dispatch-${randomUUID()}`,
-      })
-      .returning();
-    const [reversalJournal] = await tx
-      .insert(wmsTables.stockJournals)
-      .values({
-        sourceType: 'SHIPMENT_RECALL',
-        sourceId: recallOperationId,
-        idempotencyKey: `lifecycle-old-recall-${randomUUID()}`,
-      })
-      .returning();
-    const [attempt] = await tx
-      .insert(wmsTables.dispatchAttempts)
-      .values({
-        id: attemptId,
-        shipmentId: item.shipmentId,
-        attemptNo: 1,
-        status: 'recalled',
-        idempotencyKey: `lifecycle-old-attempt-${randomUUID()}`,
-        invoiceId: invoice.id,
-        stockJournalId: dispatchJournal.id,
-        reversalJournalId: reversalJournal.id,
-        dispatchedAt,
-        recalledAt,
-      })
-      .returning();
-    const [event] = await tx
-      .insert(wmsTables.stockEvents)
-      .values({
-        journalId: dispatchJournal.id,
-        skuId: world.skuId,
-        fromWarehouseId: world.warehouseId,
-        fromLocationId: world.sourceLocationId,
-        fromState: 'ON_HAND',
-        transitionType: 'SHIP',
-        quantity: item.qty,
-        occurredAt: dispatchedAt,
-        idempotencyKey: `lifecycle-old-event-${randomUUID()}`,
-        eventStatus: 'POSTED',
-      })
-      .returning();
-    await tx.insert(wmsTables.outboxEvents).values({
-      topic: 'inventory.events.v1',
-      eventType: 'StockShipped',
-      aggregateType: 'Stock',
-      aggregateId: event.id,
-      partitionKey: world.skuId,
-      idempotencyKey: `stock-event:${event.id}`,
-      payload: {
-        stockEventId: event.id,
-        skuId: world.skuId,
-        quantity: item.qty,
-        warehouseId: world.warehouseId,
-        locationId: world.sourceLocationId,
-        outboundType: 'ORDER',
-        shippedAt: dispatchedAt.toISOString(),
-      },
-    });
-    const [source] = await tx
-      .insert(wmsTables.dispatchAttemptSources)
-      .values({
-        dispatchAttemptId: attempt.id,
-        shipmentLineId: item.shipmentLineId,
-        sourceLocationId: world.sourceLocationId,
-        qty: item.qty,
-        stockEventId: event.id,
-      })
-      .returning();
-    const [tracking] = await tx
-      .insert(wmsTables.shipmentTracking)
-      .values({
-        shipmentId: item.shipmentId,
-        dispatchAttemptId: attempt.id,
-        providerEventId: `lifecycle-old-tracking-${randomUUID()}`,
-        status: 'shipped',
-        timestamp: dispatchedAt,
-      })
-      .returning();
-    return { attempt, invoice, source, tracking };
   }
 
   async function checkpoint(
@@ -1064,43 +956,64 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
     await inRollbackTx(db, async (tx) => {
       const world = await seedWorld(tx, 3, 3);
       const item = world.items[0];
-      const history = await seedRecalledAttemptHistory(tx, world);
+
+      // Attempt 1 is produced by driving scenario 13's chain for real. Planting a
+      // recalled attempt by hand leaves 13→14 unexercised: a recall that returned
+      // state redispatch cannot consume would still pass.
       await planAndIssue(tx, world, item.shipmentId);
       await stageBatch(tx, world, [item.shipmentId]);
+      const first = await lastScan(tx, world, item.shipmentId, `lifecycle-case14-first-${randomUUID()}`);
+      const recalled = await recall(tx, item.shipmentId, first.dispatchAttemptId!);
+
       const [attemptOneBefore] = await tx
         .select()
         .from(wmsTables.dispatchAttempts)
-        .where(eq(wmsTables.dispatchAttempts.id, history.attempt.id));
+        .where(eq(wmsTables.dispatchAttempts.id, first.dispatchAttemptId!));
       const sourcesBefore = await tx
         .select()
         .from(wmsTables.dispatchAttemptSources)
-        .where(eq(wmsTables.dispatchAttemptSources.dispatchAttemptId, history.attempt.id));
-      const trackingBefore = await tx
-        .select()
-        .from(wmsTables.shipmentTracking)
-        .where(eq(wmsTables.shipmentTracking.dispatchAttemptId, history.attempt.id));
+        .where(eq(wmsTables.dispatchAttemptSources.dispatchAttemptId, first.dispatchAttemptId!));
+      const recallEvidence = [
+        {
+          shipmentId: item.shipmentId,
+          operationId: recalled.operationId,
+          fulfillmentOrderIds: [world.fulfillmentOrderId],
+        },
+      ];
       await checkpoint(tx, world, {
         onHandQty: 3,
         reservedQty: 3,
-        outboxCount: 0,
+        outboxCount: 5,
         inventoryOutboxCount: 1,
         dispatchAttemptCount: 1,
         dispatchSourceCount: 1,
         shipEventCount: 1,
+        dispatchAttemptIds: [first.dispatchAttemptId!],
+        fullyShippedFulfillmentOrderIds: [world.fulfillmentOrderId],
+        recalls: recallEvidence,
       });
+
+      await planAndIssue(tx, world, item.shipmentId);
+      await stageBatch(tx, world, [item.shipmentId]);
       const second = await lastScan(tx, world, item.shipmentId, `lifecycle-case14-second-${randomUUID()}`);
       expect(second.attemptNo).toBe(2);
       await checkpoint(tx, world, {
         onHandQty: 0,
         reservedQty: 0,
-        outboxCount: 3,
+        // 7, not 8. The v1 full-completion projection is keyed `${foId}:fully-shipped`
+        // and was already enqueued by attempt 1, so redispatch adds only
+        // ShipmentShipped + FulfillmentProgressed. expectExactOutboxTopology pins
+        // this: one v1 row for two attempts.
+        outboxCount: 7,
         inventoryOutboxCount: 2,
         dispatchAttemptCount: 2,
         dispatchSourceCount: 2,
         shipEventCount: 2,
-        dispatchAttemptIds: [second.dispatchAttemptId!],
+        dispatchAttemptIds: [first.dispatchAttemptId!, second.dispatchAttemptId!],
         fullyShippedFulfillmentOrderIds: [world.fulfillmentOrderId],
+        recalls: recallEvidence,
       });
+
       const attempts = await tx
         .select()
         .from(wmsTables.dispatchAttempts)
@@ -1114,14 +1027,18 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
         await tx
           .select()
           .from(wmsTables.dispatchAttemptSources)
-          .where(eq(wmsTables.dispatchAttemptSources.dispatchAttemptId, history.attempt.id)),
+          .where(eq(wmsTables.dispatchAttemptSources.dispatchAttemptId, first.dispatchAttemptId!)),
       ).toEqual(sourcesBefore);
+      // A recallable attempt carries no tracking, so there is no tracking history to
+      // preserve here: recordProviderEvent only accepts in_transit/delivered and
+      // recall rejects both (shipment-recall.service.ts:201). This asserts redispatch
+      // does not invent one on the old attempt.
       expect(
         await tx
           .select()
           .from(wmsTables.shipmentTracking)
-          .where(eq(wmsTables.shipmentTracking.dispatchAttemptId, history.attempt.id)),
-      ).toEqual(trackingBefore);
+          .where(eq(wmsTables.shipmentTracking.dispatchAttemptId, first.dispatchAttemptId!)),
+      ).toEqual([]);
       expect(attempts[1].invoiceId).not.toBe(attempts[0].invoiceId);
     });
   });
