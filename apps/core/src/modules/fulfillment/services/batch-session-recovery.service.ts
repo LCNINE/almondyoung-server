@@ -91,11 +91,12 @@ export class BatchSessionRecoveryService {
 
   async rebuildFromEvents(sessionId: string, tx?: DbTx): Promise<BatchSessionReconciliationResult> {
     return this.dbService.run(async (trx) => {
-      // Stock-control locks must precede plan/session locks. Dispatch removes
-      // controlled stock under attempt/source -> stock locks and settles the
-      // session afterwards, so taking them in the opposite order can deadlock.
-      const preparedSources = await this.prepareReplayStockLocks(sessionId, trx);
+      // Canonical lifecycle order shared with dispatch is
+      // plan -> session -> balances -> sorted stock-control locks. Holding the
+      // session header freezes the append-only replay stream while stock is
+      // locked and revalidated below.
       const session = await this.lockPlanThenSession(sessionId, trx);
+      await this.loadBalances(sessionId, trx);
       const events = await this.loadEvents(sessionId, trx);
       const replay = this.replay(session, events);
       replay.issues.push(...(await this.validatePersistedPlan(session, events, replay, trx)));
@@ -106,6 +107,7 @@ export class BatchSessionRecoveryService {
         return { sessionId, healthy: false, recoveryRequired: true, issues: replay.issues };
       }
 
+      const preparedSources = await this.prepareReplayStockLocks(events, sessionId, trx);
       const stockIssues = await this.validateReplayStockControl(session, replay, preparedSources, trx);
       if (stockIssues.length > 0) {
         await this.markRecoveryRequired(session, stockIssues, trx, 'rebuild_stock_rejected');
@@ -208,17 +210,9 @@ export class BatchSessionRecoveryService {
     return this.lockSession(sessionId, tx);
   }
 
-  private async prepareReplayStockLocks(sessionId: string, tx: DbTx): Promise<ReplaySourceLock[]> {
-    const [session] = await tx
-      .select()
-      .from(wmsTables.batchInventorySessions)
-      .where(eq(wmsTables.batchInventorySessions.id, sessionId))
-      .limit(1);
-    if (!session) throw new NotFoundException(`Batch inventory session ${sessionId} not found`);
-    const events = await this.loadEvents(sessionId, tx);
-    // HAND_IN identities form the immutable source-key universe. A concurrent
-    // return or dispatch settlement may reduce/remove a live replay balance
-    // before the later session lock, but it cannot introduce a new source key.
+  private async prepareReplayStockLocks(events: EventRow[], sessionId: string, tx: DbTx): Promise<ReplaySourceLock[]> {
+    // HAND_IN identities form the immutable source-key universe. Replay may
+    // reduce/remove a live balance, but it cannot introduce a new source key.
     const unresolved = this.handInSourceKeys(events);
     if (unresolved.length === 0) return [];
 
@@ -245,7 +239,7 @@ export class BatchSessionRecoveryService {
       sources.map((source) => ({ skuId: source.skuId, warehouseId: source.warehouseId })),
     );
     // Advisory locks are pair-grained; exact ON_HAND rows are then locked in a
-    // deterministic SKU/warehouse/location order before any session row lock.
+    // deterministic SKU/warehouse/location order after session balances.
     for (const source of sources) {
       await this.controlledStock.getAvailability(
         {

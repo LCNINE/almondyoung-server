@@ -1,5 +1,4 @@
 import { wmsTables } from '../../inventory/schema/inventory.schema';
-import { FULFILLMENT_EVENTS } from '../events';
 import { OutboundConsumptionService } from './outbound-consumption.service';
 
 /**
@@ -9,7 +8,7 @@ import { OutboundConsumptionService } from './outbound-consumption.service';
  *   - 상자 라인이 소진 단위 (FOI 가 아니라)
  *   - SHIP 이벤트가 한 journal 로 묶여 작업자(openedBy)에게 귀속
  *   - 라인별 idempotencyKey = ship:{shipmentId}:{lineId}:{locationId}
- *   - FOI.shippedQty 누적 + FOI/박스 status 전이 + FulfillmentShipped 이벤트 발행
+ *   - FOI.shippedQty 누적 + FOI/박스 status 전이, 자사 V1 외부-dispatch 미발행
  *   - 박스가 이미 'shipped' 면 멱등 early-return (원장 무영향)
  */
 describe('OutboundConsumptionService', () => {
@@ -100,7 +99,6 @@ describe('OutboundConsumptionService', () => {
       locationStrategy as any,
       inventoryCommand as any,
       reservationLifecycle as any,
-      outbox as any,
       workflowGate as any,
     );
     return { service, tx, db, state, locationStrategy, inventoryCommand, reservationLifecycle, outbox, workflowGate };
@@ -195,28 +193,13 @@ describe('OutboundConsumptionService', () => {
       expect(state.fulfillmentOrders[0].status).toBe('shipped');
     });
 
-    it('FulfillmentShipped 이벤트를 발행한다 (active invoice 의 trackingNo/carrier 사용)', async () => {
+    it('legacy 자사 출고에서는 FulfillmentShipped V1을 직접 발행하지 않는다', async () => {
       const state = baseState();
       const { service, outbox } = makeService(state, [{ locationId: 'loc-1', qty: 3 }]);
 
       await service.consumeShipment('ship-1');
 
-      expect(outbox.enqueue).toHaveBeenCalledTimes(1);
-      expect(outbox.enqueue).toHaveBeenCalledWith(
-        expect.objectContaining({
-          eventType: FULFILLMENT_EVENTS.SHIPPED,
-          aggregateType: 'fulfillment',
-          aggregateId: 'fo-1',
-          payload: expect.objectContaining({
-            fulfillmentId: 'fo-1',
-            orderId: 'so-1',
-            channelOrderId: 'co-1',
-            trackingInfo: expect.objectContaining({ carrier: 'CJ', trackingNumber: 'TRACK-1' }),
-            shippedItems: [expect.objectContaining({ fulfillmentItemId: 'foi-1', skuId: 'sku-1', shippedQty: 3 })],
-          }),
-        }),
-        expect.anything(),
-      );
+      expect(outbox.enqueue).not.toHaveBeenCalled();
     });
 
     it('박스가 이미 shipped 면 멱등 early-return — 원장/예약/이벤트 무영향', async () => {

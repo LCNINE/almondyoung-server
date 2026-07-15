@@ -67,6 +67,11 @@ describe('SHIPMENT_STREAM', () => {
     expect(shippedSchema.parse(SHIPPED_PAYLOAD)).toEqual(SHIPPED_PAYLOAD);
   });
 
+  it('publishes an internal shipment attempt without fabricating an external order identity', () => {
+    const internalAttempt = { ...SHIPPED_PAYLOAD, orders: [] };
+    expect(shippedSchema.parse(internalAttempt)).toEqual(internalAttempt);
+  });
+
   it('requires the explicit per-order partial-dispatch signal', () => {
     const { isPartial: _missing, ...order } = SHIPPED_PAYLOAD.orders[0];
     expect(() => shippedSchema.parse({ ...SHIPPED_PAYLOAD, orders: [order] })).toThrow();
@@ -83,8 +88,8 @@ describe('SHIPMENT_STREAM', () => {
   });
 
   it('accepts a legacy shipment line without channelProductId', () => {
-    const line = { ...SHIPPED_PAYLOAD.orders[0].lines[0] };
-    delete line.channelProductId;
+    const { channelProductId: _missing, ...line } = SHIPPED_PAYLOAD.orders[0].lines[0];
+    expect(_missing).toBe('channel-product-1');
     expect(() =>
       shippedSchema.parse({
         ...SHIPPED_PAYLOAD,
@@ -296,6 +301,11 @@ describe('FULFILLMENT_V2_STREAM', () => {
     expect(progressedSchema.parse(PROGRESS_PAYLOAD)).toEqual(PROGRESS_PAYLOAD);
   });
 
+  it('parses standalone fulfillment progress without a sales order', () => {
+    const standalone = { ...PROGRESS_PAYLOAD, salesOrderId: null };
+    expect(progressedSchema.parse(standalone)).toEqual(standalone);
+  });
+
   it.each([-1, 1.5])('rejects invalid progress quantity %p', (invalidQty) => {
     expect(() => progressedSchema.parse({ ...PROGRESS_PAYLOAD, outstandingQty: invalidQty })).toThrow();
   });
@@ -305,6 +315,21 @@ describe('FULFILLMENT_V2_STREAM', () => {
       reopenedSchema.parse({
         fulfillmentOrderId: PROGRESS_PAYLOAD.fulfillmentOrderId,
         salesOrderId: PROGRESS_PAYLOAD.salesOrderId,
+        dispatchAttemptId: PROGRESS_PAYLOAD.dispatchAttemptId,
+        recallOperationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+        reopenedAt: '2026-07-14T03:00:00.000Z',
+        shippedQty: 0,
+        canceledQty: 0,
+        outstandingQty: 2,
+      }),
+    ).not.toThrow();
+  });
+
+  it('parses a standalone fulfillment reopen without a sales order', () => {
+    expect(() =>
+      reopenedSchema.parse({
+        fulfillmentOrderId: PROGRESS_PAYLOAD.fulfillmentOrderId,
+        salesOrderId: null,
         dispatchAttemptId: PROGRESS_PAYLOAD.dispatchAttemptId,
         recallOperationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
         reopenedAt: '2026-07-14T03:00:00.000Z',

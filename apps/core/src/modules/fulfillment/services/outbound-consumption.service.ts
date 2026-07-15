@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { InventoryCommandService } from '../../inventory/core/services/inventory-command.service';
 import {
@@ -8,16 +8,13 @@ import {
   LocationResolutionStrategy,
 } from '../../inventory/core/services/location-resolution.strategy';
 import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
-import { OutboxService } from '../outbox/outbox.service';
-import { FULFILLMENT_EVENTS } from '../events';
-import { FulfillmentShippedPayload } from '@packages/event-contracts/streams';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 
 /**
  * 출고 종결 seam (Cluster A). 상자(shipment) 단위로 출고를 **전체 종결**한다.
  *
  * fulfillment 모듈에 둔다 — 종결은 `InventoryCommandService`(원장 쓰기) + 예약 닫기 +
- * FOI/FO/박스 status 전이 + FulfillmentShipped 이벤트 발행을 함께 오케스트레이션하므로,
+ * FOI/FO/박스 status 전이를 함께 오케스트레이션하므로,
  * shared 에 두면 core↔shared 순환이 생긴다.
  * (inventory→fulfillment 역방향 import 없음 → 순환 없음.)
  *
@@ -33,7 +30,6 @@ export class OutboundConsumptionService {
     @Inject(LOCATION_RESOLUTION_STRATEGY) private readonly locationStrategy: LocationResolutionStrategy,
     private readonly inventoryCommand: InventoryCommandService,
     private readonly reservationLifecycle: ReservationLifecycleService,
-    private readonly outbox: OutboxService,
     private readonly workflowGate: FulfillmentWorkflowGate,
   ) {}
 
@@ -44,7 +40,8 @@ export class OutboundConsumptionService {
    * append(on_hand 차감) + 예약을 **소진**(release 아님). on_hand 와 reserved 가 함께
    * 줄어 available 은 불변 (ADR-0027 결정 5). SHIP 들은 한 `stock_journal` 로 묶여
    * 작업자(`shipment.openedBy`)에게 귀속된다. 이어서 FOI.shippedQty 누적·FOI/FO/박스
-   * status 전이·FulfillmentShipped 이벤트 발행까지 한 트랜잭션으로 끝낸다.
+   * status 전이까지 한 트랜잭션으로 끝낸다. 외부 자사출고 신호는 V2의
+   * ShipmentShipped consumer만 소유하며 이 legacy seam은 V1을 발행하지 않는다.
    *
    * 멱등: 박스가 이미 'shipped' 면 early-return. SHIP `idempotencyKey =
    * ship:{shipmentId}:{lineId}:{locationId}`, journal 은 `ship:{shipmentId}`.
@@ -148,75 +145,8 @@ export class OutboundConsumptionService {
         .set({ status: 'shipped', shippedAt: now, updatedAt: now })
         .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
 
-      // FulfillmentShipped 이벤트 발행 (구 ship() 에서 이관).
-      await this.emitFulfillmentShipped(trx, shipmentId, fulfillmentOrderId, lines, now);
-
       this.logger.log(`Consumed shipment ${shipmentId}: ${lines.length} line(s) shipped to ledger`);
     }, tx);
-  }
-
-  /**
-   * FulfillmentShipped 이벤트를 outbox 로 발행한다 (구 `ship()` 에서 이관).
-   * trackingInfo 는 active invoice(`shipmentId` + `status='used'`)에서 가져온다 (없으면 graceful 기본값).
-   */
-  private async emitFulfillmentShipped(
-    trx: DbTx,
-    shipmentId: string,
-    fulfillmentOrderId: string,
-    lines: Array<{ foiId: string; skuId: string; qty: number }>,
-    now: Date,
-  ): Promise<void> {
-    const [fo] = await trx
-      .select({ salesOrderId: wmsTables.fulfillmentOrders.salesOrderId })
-      .from(wmsTables.fulfillmentOrders)
-      .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId))
-      .limit(1);
-    const salesOrderId = fo?.salesOrderId ?? null;
-
-    const [salesOrderRow] = salesOrderId
-      ? await trx
-          .select({ channelOrderId: wmsTables.salesOrders.channelOrderId })
-          .from(wmsTables.salesOrders)
-          .where(eq(wmsTables.salesOrders.id, salesOrderId))
-          .limit(1)
-      : [];
-
-    const [invoice] = await trx
-      .select({ trackingNo: wmsTables.invoices.trackingNo, carrier: wmsTables.invoices.carrier })
-      .from(wmsTables.invoices)
-      .where(and(eq(wmsTables.invoices.shipmentId, shipmentId), eq(wmsTables.invoices.status, 'used')))
-      .limit(1);
-    if (!invoice) {
-      // 'used' 전이 생산자는 EU3 openBoxByScan — 정상 흐름엔 항상 존재. 부재는 불변식 위반에 가까움.
-      this.logger.warn(
-        `자사 출고 종결인데 shipment ${shipmentId} 의 active(used) invoice 가 없음 — trackingNumber 빈 값으로 발행`,
-      );
-    }
-
-    const payload: FulfillmentShippedPayload = {
-      fulfillmentId: fulfillmentOrderId,
-      orderId: salesOrderId ?? '',
-      channelOrderId: salesOrderRow?.channelOrderId ?? undefined,
-      trackingInfo: {
-        carrier: invoice?.carrier ?? 'CJ',
-        trackingNumber: invoice?.trackingNo ?? '',
-        invoiceUrl: undefined,
-      },
-      shippedAt: now.toISOString(),
-      estimatedDeliveryDate: undefined,
-      shippedItems: lines.map((l) => ({ fulfillmentItemId: l.foiId, skuId: l.skuId, shippedQty: l.qty })),
-    };
-
-    await this.outbox.enqueue(
-      {
-        eventType: FULFILLMENT_EVENTS.SHIPPED,
-        aggregateType: 'fulfillment',
-        aggregateId: fulfillmentOrderId,
-        partitionKey: salesOrderId ?? fulfillmentOrderId,
-        payload,
-      },
-      trx,
-    );
   }
 
   /**

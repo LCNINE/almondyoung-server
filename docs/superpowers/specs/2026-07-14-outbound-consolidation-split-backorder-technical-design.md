@@ -619,6 +619,8 @@ orders[] {
 
 합배송 shipment는 `orders[]`에 여러 주문이 들어간다. 수취인 주소 같은 PII는 channel dispatch에 필요하지 않으므로 이벤트에 싣지 않는다. shipment 이벤트 partition key는 `shipmentId`, FO progress 이벤트는 `fulfillmentOrderId`를 사용하고 consumer 멱등키는 `dispatchAttemptId` 또는 recall operation ID다.
 
+`orders[]`는 신뢰 가능한 외부 주문 identity가 있는 channel dispatch 대상만 담는다. standalone/보상 FO처럼 `salesOrderId`가 없는 내부 출고도 `ShipmentShipped`와 `FulfillmentProgressed`를 발행하되 `orders=[]`, `FulfillmentProgressed.salesOrderId=null`로 표현하고, 외부 adapter command와 V1 completion projection은 만들지 않는다. 이렇게 해서 물리 출고 사실을 누락하거나 내부 ID를 외부 주문 ID로 조작하지 않는다.
+
 스키마는 additive하게 먼저 배포하고 consumer가 신규 이벤트를 수용한 뒤 producer를 켠다.
 
 ### 7.2 channel-adapter

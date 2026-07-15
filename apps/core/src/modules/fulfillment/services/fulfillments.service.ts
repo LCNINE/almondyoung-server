@@ -1123,7 +1123,7 @@ export class FulfillmentsService {
 
   /** drop_ship 완료 전용(내부) — direct-ship.service 가 공급사 전달 완료 시 호출.
    *  타사 재고라 원장·예약·박스를 건드리지 않고 FO 종결 전이 + FulfillmentShipped 이벤트만.
-   *  자사(in_house/3pl) 출고는 검수 자동완료→consumeShipment(ShipmentService)가 담당. */
+   *  자사 V2 출고는 ShipmentDispatchService의 session-backed dispatch attempt가 담당한다. */
   async ship(id: string, tx?: DbTx) {
     this.workflowGate.assertOperationalMutationAllowed('fulfillment.drop_ship');
     return this.db.run(async (trx) => {
@@ -1141,7 +1141,7 @@ export class FulfillmentsService {
         throw new ConflictException(`Cannot ship FO ${id} in terminal status '${fo.status}'`);
       if (fo.fulfillmentMode !== 'drop_ship')
         throw new ConflictException(
-          `ship() 은 drop_ship 전용입니다. 자사 출고는 검수 자동완료(consumeShipment)를 거칩니다.`,
+          `ship() 은 drop_ship 전용입니다. 자사 출고는 shipment dispatch attempt를 거칩니다.`,
         );
       if (fo.directShipStatus !== 'forwarded')
         throw new ConflictException(

@@ -51,6 +51,7 @@ import { DiscretePickingStrategy } from './picking/discrete-picking.strategy';
 import { PICKING_STRATEGIES, PickingStrategyRegistry } from './picking/picking-strategy.registry';
 import { AggregateThenSortPickingStrategy } from './picking/aggregate-then-sort.strategy';
 import { PickToTotePickingStrategy } from './picking/pick-to-tote.strategy';
+import { ShipmentDispatchService } from './services/shipment-dispatch.service';
 
 // Controllers
 import { FulfillmentsController } from './controllers/fulfillments.controller';
@@ -131,6 +132,7 @@ import { ToteController } from './controllers/tote.controller';
     OutboundBatchService,
     PickingProcessService,
     ShipmentService,
+    ShipmentDispatchService,
     ConsolidationService,
     DirectShipService,
     InvoiceService,

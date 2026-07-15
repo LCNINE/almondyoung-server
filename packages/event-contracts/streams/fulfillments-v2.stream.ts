@@ -15,7 +15,8 @@ const SettledQuantitySchema = z.number().int().nonnegative();
 const FulfillmentProgressSummarySchema = z
   .object({
     fulfillmentOrderId: CoreUuidSchema,
-    salesOrderId: CoreUuidSchema,
+    /** Null for standalone/internal fulfillment orders. */
+    salesOrderId: CoreUuidSchema.nullable(),
     dispatchAttemptId: CoreUuidSchema,
     progressedAt: z.string().datetime(),
     shippedQty: SettledQuantitySchema,
@@ -27,7 +28,8 @@ const FulfillmentProgressSummarySchema = z
 const FulfillmentReopenedSchema = z
   .object({
     fulfillmentOrderId: CoreUuidSchema,
-    salesOrderId: CoreUuidSchema,
+    /** Null for standalone/internal fulfillment orders. */
+    salesOrderId: CoreUuidSchema.nullable(),
     dispatchAttemptId: CoreUuidSchema,
     recallOperationId: CoreUuidSchema,
     reopenedAt: z.string().datetime(),

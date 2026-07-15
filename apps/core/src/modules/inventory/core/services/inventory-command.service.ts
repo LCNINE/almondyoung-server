@@ -120,12 +120,16 @@ export class InventoryCommandService {
       reason?: string;
       journalId?: string;
       batchSessionDispatch?: BatchSessionDispatchAuthorization;
+      deferSellableProjection?: boolean;
     },
     tx?: DbTx,
   ) {
     if (input.quantity <= 0) throw new BadRequestException('quantity must be positive');
     if (input.batchSessionDispatch && !tx) {
       throw new Error('batchSessionDispatch requires the caller dispatch transaction');
+    }
+    if (input.deferSellableProjection && (!input.batchSessionDispatch || !tx)) {
+      throw new Error('deferSellableProjection is restricted to a caller-owned batch dispatch transaction');
     }
     const exec = async (trx: DbTx) => {
       // 1. SKU 정보 조회
@@ -165,6 +169,7 @@ export class InventoryCommandService {
           reason: input.reason,
           journalId: input.journalId,
           batchSessionDispatch: input.batchSessionDispatch,
+          deferSellableProjection: input.deferSellableProjection,
         },
         trx,
       );

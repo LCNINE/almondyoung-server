@@ -33,6 +33,13 @@ type CreateEventInput = {
   idempotencyKey?: string;
   reason?: string;
   batchSessionDispatch?: BatchSessionDispatchAuthorization;
+  /**
+   * A shipment dispatch removes the matching reservation in the same caller
+   * transaction. Publishing between the ledger decrement and that release
+   * would expose a transient, incorrect sellable quantity, so the dispatch
+   * owner publishes once after both mutations are complete.
+   */
+  deferSellableProjection?: boolean;
 };
 
 @Injectable()
@@ -57,6 +64,9 @@ export class StockEventStore {
   async createEvent(input: CreateEventInput, tx?: DbTx) {
     if (input.batchSessionDispatch && !tx) {
       throw new Error('batchSessionDispatch requires the caller dispatch transaction');
+    }
+    if (input.deferSellableProjection && (!input.batchSessionDispatch || !tx)) {
+      throw new Error('deferSellableProjection is restricted to a caller-owned batch dispatch transaction');
     }
     return this.dbService.run(async (trx) => {
       // 1) 이벤트 삽입 (멱등키가 있으면 중복 방지)
@@ -113,7 +123,9 @@ export class StockEventStore {
         quantity: event.quantity,
       });
 
-      await this.productSellableQuantity.recalculateAndPublishForSku(event.skuId, trx);
+      if (!input.deferSellableProjection) {
+        await this.productSellableQuantity.recalculateAndPublishForSku(event.skuId, trx);
+      }
 
       this.logger.debug(`Created ${event.transitionType} ev#${event.id} sku=${event.skuId} qty=${event.quantity}`);
       return event;

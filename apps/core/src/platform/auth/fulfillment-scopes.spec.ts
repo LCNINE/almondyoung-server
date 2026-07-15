@@ -59,7 +59,7 @@ describe('fulfillment authorization contract', () => {
   it('uses the JWT actor even if a legacy request body contains a forged operatorId', async () => {
     const shipmentService = { forceShipment: jest.fn().mockResolvedValue(undefined) };
     const workflowGate = new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'legacy' }));
-    const controller = new ShipmentController(shipmentService as never, workflowGate);
+    const controller = new ShipmentController(shipmentService as never, workflowGate, {} as never);
 
     await controller.force('11111111-1111-4111-8111-111111111111', { operatorId: 'forged-body-actor' } as never, {
       id: 'jwt-actor',

@@ -160,6 +160,7 @@ export class ShipmentDispatchInboxWorker {
     const operation = this.operationForEvent(eventType);
     if (eventType === 'ShipmentShipped') {
       const shipped = payload as ShipmentShippedPayload;
+      if (shipped.orders.length === 0) return;
       await this.dbService.db
         .insert(channelDispatchOperations)
         .values(

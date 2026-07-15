@@ -61,7 +61,11 @@ const ShipmentShippedSchema = z
     warehouseId: CoreUuidSchema,
     dispatchedAt: z.string().datetime(),
     invoice: ShipmentInvoiceSchema,
-    orders: z.array(ShipmentEventOrderSchema).min(1),
+    /**
+     * External channel orders affected by this attempt. Standalone/internal
+     * fulfillment attempts still publish the shipment fact with an empty list.
+     */
+    orders: z.array(ShipmentEventOrderSchema),
   })
   .strict()
   .superRefine((payload, context) => {

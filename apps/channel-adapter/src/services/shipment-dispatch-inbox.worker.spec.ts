@@ -84,6 +84,21 @@ function makeWorker() {
 }
 
 describe('ShipmentDispatchInboxWorker routing', () => {
+  it('accepts an internal shipment fact without creating a channel operation', async () => {
+    const { worker, factory } = makeWorker();
+    const internal = worker as unknown as {
+      ensureOperations(
+        inboxEventId: string,
+        eventType: 'ShipmentShipped',
+        payload: ShipmentShippedPayload,
+      ): Promise<void>;
+    };
+
+    await expect(internal.ensureOperations('inbox-internal', 'ShipmentShipped', SHIPPED)).resolves.toBeUndefined();
+
+    expect(factory.getAdapter).not.toHaveBeenCalled();
+  });
+
   it('routes each mixed-channel order to exactly its own adapter with external IDs', async () => {
     const { worker, factory, naverExecute, coupangExecute } = makeWorker();
     const naverOrder = makeOrder('naver');

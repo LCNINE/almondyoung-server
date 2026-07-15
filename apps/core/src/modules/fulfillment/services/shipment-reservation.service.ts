@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import {
   acquireStockAvailabilityLock,
@@ -37,6 +37,19 @@ export type PartialReservationResult = {
   reservationVersion: number;
 };
 
+export type DispatchReservationLine = {
+  shipmentLineId: string;
+  quantity: number;
+};
+
+export type DispatchReservationConsumption = {
+  shipmentId: string;
+  attemptId: string;
+  consumedQuantity: number;
+  affectedReservationIds: string[];
+  affectedSkuIds: string[];
+};
+
 export function computePartialReservationQuantity(input: {
   requestedQty: number;
   outstandingQty: number;
@@ -63,6 +76,23 @@ export class ShipmentReservationService {
     private readonly progress: FulfillmentProgressService,
     private readonly invariant: FulfillmentInvariantService,
   ) {}
+
+  /**
+   * Acquire the shared FOI/shipment/line/reservation graph order used by every
+   * V2 reservation mutation before a dispatch locks invoice/work/session rows.
+   */
+  async lockShipmentGraphForDispatch(shipmentId: string, tx: DbTx): Promise<void> {
+    const lineIds = await tx
+      .select({ id: wmsTables.shipmentLines.id })
+      .from(wmsTables.shipmentLines)
+      .where(eq(wmsTables.shipmentLines.shipmentId, shipmentId))
+      .orderBy(asc(wmsTables.shipmentLines.id));
+    if (lineIds.length === 0) throw new NotFoundException(`Shipment ${shipmentId} has no lines`);
+
+    const contexts: LineContext[] = [];
+    for (const line of lineIds) contexts.push(await this.loadLineContext(line.id, tx));
+    await this.lockConnectedComponents(contexts, tx);
+  }
 
   async reservePartial(shipmentLineId: string, requestedQty: number, tx?: DbTx): Promise<PartialReservationResult> {
     assertPositiveInteger('requestedQty', requestedQty);
@@ -317,6 +347,133 @@ export class ShipmentReservationService {
         targetReservationVersion: await this.loadReservationVersion(target.shipmentId, trx),
       };
     }, tx);
+  }
+
+  /**
+   * Terminally consumes the exact shipment-line claims used by a dispatch.
+   *
+   * The dispatch owner must already hold the canonical shipment graph and
+   * stock-availability locks. Sellable publication and fulfillment projection
+   * are deliberately deferred until `finalizeDispatchConsumption`, after the
+   * SHIP ledger events and progress writes have completed in the same tx.
+   */
+  async consumeForDispatch(
+    shipmentId: string,
+    attemptId: string,
+    expectedLines: readonly DispatchReservationLine[],
+    tx: DbTx,
+  ): Promise<DispatchReservationConsumption> {
+    if (!shipmentId || !attemptId) throw new BadRequestException('shipmentId and attemptId are required');
+    if (expectedLines.length === 0) throw new BadRequestException('Dispatch reservation lines are required');
+
+    const quantities = new Map<string, number>();
+    for (const line of expectedLines) {
+      assertPositiveInteger('dispatch quantity', line.quantity);
+      if (quantities.has(line.shipmentLineId)) {
+        throw new BadRequestException(`Duplicate dispatch reservation line ${line.shipmentLineId}`);
+      }
+      quantities.set(line.shipmentLineId, line.quantity);
+    }
+
+    const lineIds = [...quantities.keys()].sort();
+    const lines = await tx
+      .select({
+        id: wmsTables.shipmentLines.id,
+        shipmentId: wmsTables.shipmentLines.shipmentId,
+        skuId: wmsTables.shipmentLines.skuId,
+        qty: wmsTables.shipmentLines.qty,
+        warehouseId: wmsTables.shipments.warehouseId,
+      })
+      .from(wmsTables.shipmentLines)
+      .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.shipmentLines.shipmentId))
+      .where(inArray(wmsTables.shipmentLines.id, lineIds))
+      .orderBy(asc(wmsTables.shipmentLines.id));
+    if (lines.length !== lineIds.length || lines.some((line) => line.shipmentId !== shipmentId)) {
+      throw new ConflictException(`Dispatch reservation lines do not exactly belong to shipment ${shipmentId}`);
+    }
+
+    await this.lockConfirmedReservations(lineIds, tx);
+    const reservations = await tx
+      .select()
+      .from(wmsTables.stockReservations)
+      .where(
+        and(
+          eq(wmsTables.stockReservations.targetType, 'SHIPMENT_LINE'),
+          inArray(wmsTables.stockReservations.shipmentLineId, lineIds),
+          eq(wmsTables.stockReservations.status, 'confirmed'),
+          isNull(wmsTables.stockReservations.invalidatedAt),
+        ),
+      )
+      .orderBy(asc(wmsTables.stockReservations.createdAt), asc(wmsTables.stockReservations.id));
+
+    const reservationsByLine = new Map<string, ConfirmedReservation[]>();
+    for (const reservation of reservations) {
+      if (!reservation.shipmentLineId) continue;
+      const bucket = reservationsByLine.get(reservation.shipmentLineId) ?? [];
+      bucket.push(reservation);
+      reservationsByLine.set(reservation.shipmentLineId, bucket);
+    }
+
+    for (const line of lines) {
+      const expected = quantities.get(line.id)!;
+      if (expected !== line.qty) {
+        throw new ConflictException(
+          `Dispatch must consume the full shipment line ${line.id}: expected ${line.qty}, received ${expected}`,
+        );
+      }
+      const confirmed = (reservationsByLine.get(line.id) ?? []).reduce((total, row) => total + row.quantity, 0);
+      if (confirmed !== expected) {
+        throw new ConflictException(
+          `Shipment line ${line.id} requires exactly ${expected} confirmed reservations; found ${confirmed}`,
+        );
+      }
+      for (const reservation of reservationsByLine.get(line.id) ?? []) {
+        if (
+          reservation.targetId !== line.id ||
+          reservation.skuId !== line.skuId ||
+          reservation.warehouseId !== line.warehouseId
+        ) {
+          throw new ConflictException(
+            `Reservation ${reservation.id} ownership does not match shipment line ${line.id}`,
+          );
+        }
+      }
+    }
+
+    const now = new Date();
+    const reservationIds = reservations.map((row) => row.id);
+    if (reservationIds.length > 0) {
+      await tx
+        .update(wmsTables.stockReservations)
+        .set({
+          status: 'released',
+          stateReason: `shipment-dispatch:${attemptId}`,
+          invalidatedAt: now,
+          updatedAt: now,
+        })
+        .where(inArray(wmsTables.stockReservations.id, reservationIds));
+    }
+    await tx
+      .update(wmsTables.shipmentLines)
+      .set({ reservedQty: 0, lineVersion: sql`${wmsTables.shipmentLines.lineVersion} + 1` })
+      .where(inArray(wmsTables.shipmentLines.id, lineIds));
+    await this.bumpReservationVersions([shipmentId], tx);
+
+    return {
+      shipmentId,
+      attemptId,
+      consumedQuantity: expectedLines.reduce((total, line) => total + line.quantity, 0),
+      affectedReservationIds: reservationIds,
+      affectedSkuIds: [...new Set(lines.map((line) => line.skuId))].sort(),
+    };
+  }
+
+  /** Publish one final sellable state per SKU, then refresh progress/invariants. */
+  async finalizeDispatchConsumption(shipmentId: string, affectedSkuIds: readonly string[], tx: DbTx): Promise<void> {
+    for (const skuId of [...new Set(affectedSkuIds)].sort()) {
+      await this.unifiedReservation.recalculateSellableForSku(skuId, tx);
+    }
+    await this.recompute(shipmentId, tx);
   }
 
   /** Refresh V2 read models and run the locked-row invariant before commit. */

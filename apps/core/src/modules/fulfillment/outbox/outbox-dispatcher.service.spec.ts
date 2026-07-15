@@ -1,4 +1,4 @@
-import { FULFILLMENT_V2_STREAM, SHIPMENT_STREAM } from '@packages/event-contracts/streams';
+import { FULFILLMENT_STREAM, FULFILLMENT_V2_STREAM, SHIPMENT_STREAM } from '@packages/event-contracts/streams';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { OutboxDispatcherService } from './outbox-dispatcher.service';
 
@@ -6,9 +6,9 @@ describe('OutboxDispatcherService workflow filtering', () => {
   function makeDispatcher(shouldDispatchFulfillmentEvents: boolean) {
     let acquiredQuery: unknown;
     const tx = {
-      execute: jest.fn(async (query: unknown) => {
+      execute: jest.fn((query: unknown) => {
         acquiredQuery = query;
-        return [];
+        return Promise.resolve([]);
       }),
     };
     const db = {
@@ -54,6 +54,22 @@ describe('OutboxDispatcherService workflow filtering', () => {
 });
 
 describe('OutboxDispatcherService explicit topic routing', () => {
+  interface TestOutboxEvent {
+    id: string;
+    topic: string | null;
+    event_type: string;
+    aggregate_type: string;
+    aggregate_id: string;
+    partition_key: string;
+    payload: Record<string, unknown>;
+    attempts: number;
+  }
+
+  function publish(service: OutboxDispatcherService, event: TestOutboxEvent): Promise<void> {
+    const testHarness = service as unknown as { publishEvent(row: TestOutboxEvent): Promise<void> };
+    return testHarness.publishEvent(event);
+  }
+
   function fixture() {
     const where = jest.fn().mockResolvedValue(undefined);
     const set = jest.fn().mockReturnValue({ where });
@@ -89,22 +105,33 @@ describe('OutboxDispatcherService explicit topic routing', () => {
     attempts: 0,
   };
 
-  it('routes shipment and fulfillment-v2 topics only to their typed publishers', async () => {
+  it('routes explicit fulfillment-v1, shipment and fulfillment-v2 topics only to their typed publishers', async () => {
     const f = fixture();
-    await (f.service as any).publishEvent({
+    await publish(f.service, {
       ...baseEvent,
+      topic: FULFILLMENT_STREAM.topic.topic,
+      event_type: 'FulfillmentShipped',
+      aggregate_type: 'Fulfillment',
+    });
+    await publish(f.service, {
+      ...baseEvent,
+      id: '00000000-0000-4000-8000-000000000003',
       topic: SHIPMENT_STREAM.topic.topic,
       event_type: 'ShipmentShipped',
       aggregate_type: 'Shipment',
     });
-    await (f.service as any).publishEvent({
+    await publish(f.service, {
       ...baseEvent,
-      id: '00000000-0000-4000-8000-000000000003',
+      id: '00000000-0000-4000-8000-000000000004',
       topic: FULFILLMENT_V2_STREAM.topic.topic,
       event_type: 'FulfillmentProgressed',
       aggregate_type: 'FulfillmentOrder',
     });
 
+    expect(f.fulfillment.publishEvent).toHaveBeenCalledTimes(1);
+    expect(f.fulfillment.publishEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'FulfillmentShipped', metadata: { partitionKey: baseEvent.partition_key } }),
+    );
     expect(f.shipment.publishEvent).toHaveBeenCalledTimes(1);
     expect(f.shipment.publishEvent).toHaveBeenCalledWith(
       expect.objectContaining({ eventType: 'ShipmentShipped', metadata: { partitionKey: baseEvent.partition_key } }),
@@ -113,20 +140,19 @@ describe('OutboxDispatcherService explicit topic routing', () => {
     expect(f.fulfillmentV2.publishEvent).toHaveBeenCalledWith(
       expect.objectContaining({ eventType: 'FulfillmentProgressed' }),
     );
-    expect(f.fulfillment.publishEvent).not.toHaveBeenCalled();
     expect(f.inventory.publishEvent).not.toHaveBeenCalled();
     expect(f.coreOrder.publishEvent).not.toHaveBeenCalled();
   });
 
   it('uses aggregate/event inference only for topicless legacy rows', async () => {
     const f = fixture();
-    await (f.service as any).publishEvent(baseEvent);
+    await publish(f.service, baseEvent);
     expect(f.fulfillment.publishEvent).toHaveBeenCalledTimes(1);
   });
 
   it('fails an unknown explicit topic closed and leaves it retryable', async () => {
     const f = fixture();
-    await expect((f.service as any).publishEvent({ ...baseEvent, topic: 'unexpected.events.v1' })).rejects.toThrow(
+    await expect(publish(f.service, { ...baseEvent, topic: 'unexpected.events.v1' })).rejects.toThrow(
       'Unknown explicit outbox topic: unexpected.events.v1',
     );
 
@@ -134,7 +160,7 @@ describe('OutboxDispatcherService explicit topic routing', () => {
     expect(f.shipment.publishEvent).not.toHaveBeenCalled();
     expect(f.fulfillmentV2.publishEvent).not.toHaveBeenCalled();
     expect(f.set).toHaveBeenCalledWith(
-      expect.objectContaining({ status: 'pending', attempts: 1, nextAttemptAt: expect.any(Date) }),
+      expect.objectContaining({ status: 'pending', attempts: 1, nextAttemptAt: expect.any(Date) as unknown }),
     );
   });
 });

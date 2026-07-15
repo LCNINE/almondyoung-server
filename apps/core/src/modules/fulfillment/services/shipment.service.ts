@@ -7,15 +7,15 @@ import { OutboundConsumptionService } from './outbound-consumption.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 
 /**
- * 박스(shipment) 수명주기의 작업자 동작 진입점 (Cluster A, EU3).
+ * Legacy 박스(shipment) 수명주기의 작업자 동작 진입점 (Cluster A, EU3).
  *
  * 박스는 **송장 스캔으로 lazy 하게** 태어난다(`openBoxByScan`). 검수 스캔(`inspectScan`)이
  * `shipment_line.inspectedQty` 를 올리고, 박스의 전 라인이 검수 완료되면 같은 트랜잭션 안에서
  * EU2 의 `consumeShipment` 가 자동 발사돼 출고가 전체 종결된다. `forceShipment` 는 그 자동완료의
  * 유일한 override — 미검수 라인을 강제로 충족 처리하고 종결시킨다.
  *
- * 종결 오케스트레이션(원장 차감·예약 소진·이벤트 발행)은 `OutboundConsumptionService` 가 갖는다.
- * 이 서비스는 박스/라인 상태 전이와 자동완료 판정만 책임진다.
+ * 이 경로는 workflow gate가 legacy 모드에만 열어 둔다. V2 inspection/dispatch는
+ * `ShipmentDispatchService`가 session allocation과 dispatch attempt를 통해 처리한다.
  */
 @Injectable()
 export class ShipmentService {
@@ -132,13 +132,7 @@ export class ShipmentService {
    * 를 quantity 만큼 올린다(qty 상한). 박스의 전 라인이 검수 완료되면 같은 트랜잭션 안에서
    * `consumeShipment` 를 자동 발사해 출고를 전체 종결한다.
    */
-  async inspectScan(
-    shipmentId: string,
-    barcode: string,
-    quantity = 1,
-    operatorId?: string,
-    tx?: DbTx,
-  ): Promise<void> {
+  async inspectScan(shipmentId: string, barcode: string, quantity = 1, operatorId?: string, tx?: DbTx): Promise<void> {
     this.workflowGate.assertMutationAllowed('shipment.inspect');
     return this.db.run(async (trx) => {
       await this.loadOpenBox(trx, shipmentId, '검수');

@@ -89,7 +89,6 @@ export function wireLogistics(
     strategy,
     command,
     lifecycle,
-    fulfillmentOutbox,
     workflowGate,
   );
   const barcode = new BarcodeService(dbService);

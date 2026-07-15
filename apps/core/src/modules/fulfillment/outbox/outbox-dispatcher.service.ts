@@ -23,7 +23,7 @@ import {
   FulfillmentV2Events,
 } from '@packages/event-contracts/streams';
 import { wmsTables, wmsSchema } from '../../inventory/schema/inventory.schema';
-import { eq, and, lte, sql, inArray } from 'drizzle-orm';
+import { eq, and, sql, inArray } from 'drizzle-orm';
 import { FulfillmentWorkflowGate } from '../services/fulfillment-workflow-gate.service';
 
 type FulfillmentPayload =
@@ -170,7 +170,14 @@ export class OutboxDispatcherService implements OnModuleInit {
     attempts: number;
   }) {
     try {
-      if (event.topic === SHIPMENT_STREAM.topic.topic) {
+      if (event.topic === FULFILLMENT_STREAM.topic.topic) {
+        await this.fulfillmentPublisher.publishEvent({
+          eventType: event.event_type as keyof FulfillmentEvents,
+          aggregateId: event.aggregate_id,
+          payload: event.payload as unknown as FulfillmentPayload,
+          metadata: { partitionKey: event.partition_key },
+        });
+      } else if (event.topic === SHIPMENT_STREAM.topic.topic) {
         await this.shipmentPublisher.publishEvent({
           eventType: event.event_type as keyof ShipmentEvents,
           aggregateId: event.aggregate_id,

@@ -10,7 +10,6 @@ import { InventoryCommandService } from '../../inventory/core/services/inventory
 import { LocationService } from '../../inventory/core/services/location.service';
 import { StockEventStore } from '../../inventory/core/repositories/stock-event.store';
 import { OutboxService as InventoryOutboxService } from '../../inventory/shared/outbox/outbox.service';
-import { OutboxService as FulfillmentOutboxService } from '../outbox/outbox.service';
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { UnifiedReservationService } from '../../inventory/shared/services/unified-reservation.service';
 import { ReservationLifecycleService } from '../../inventory/shared/services/reservation-lifecycle.service';
@@ -64,9 +63,8 @@ describeIfDb('OutboundConsumptionService (DB integration, rollback-only)', () =>
       run: <T>(fn: (t: DbTx) => Promise<T>, tx?: DbTx): Promise<T> =>
         tx ? fn(tx) : db.transaction((t) => fn(t as unknown as DbTx)),
     } as unknown as DbService<typeof wmsSchema>;
-    // 원장/예약 쪽은 inventory outbox, 종결(FulfillmentShipped) 발행은 fulfillment outbox 를 쓴다.
+    // Legacy 자사 종결은 inventory outbox만 쓰고 외부 dispatch V1은 발행하지 않는다.
     const invOutbox = new InventoryOutboxService(dbService);
-    const fulfillmentOutbox = new FulfillmentOutboxService(dbService);
 
     const sellable = new ProductSellableQuantityService(dbService as never, invOutbox);
     const eventStore = new StockEventStore(dbService, sellable);
@@ -77,7 +75,7 @@ describeIfDb('OutboundConsumptionService (DB integration, rollback-only)', () =>
     const lifecycle = new ReservationLifecycleService(dbService, unified);
     const strategy = new FifoLocationStrategy();
 
-    consumption = new OutboundConsumptionService(dbService, strategy, command, lifecycle, fulfillmentOutbox, {
+    consumption = new OutboundConsumptionService(dbService, strategy, command, lifecycle, {
       assertMutationAllowed: jest.fn(),
     } as any);
 

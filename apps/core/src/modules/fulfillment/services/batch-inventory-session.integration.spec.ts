@@ -744,29 +744,25 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
       );
       expect(returned.session.status).toBe('settled');
 
-      // The uncommitted return holds plan/session. Recovery must first lock the
-      // immutable HAND_IN stock universe, then wait and replay the committed
-      // terminal event instead of comparing its stale pre-lock quantity.
+      // The uncommitted return holds plan/session. Recovery must wait there
+      // without taking the stock advisory lock, then replay the committed
+      // terminal event before it acquires and revalidates stock.
       rebuildPromise = services.recovery.rebuildFromEvents(session.id);
       const stockLockKey = `${fixture.source.skuId}:${fixture.source.warehouseId}`;
-      let stockLockObserved = false;
-      for (let attempt = 0; attempt < 100 && !stockLockObserved; attempt += 1) {
-        const [lockState] = await concurrentClient<{ locked: boolean }[]>`
-          SELECT EXISTS (
-            SELECT 1
-            FROM pg_locks
-            WHERE locktype = 'advisory'
-              AND granted
-              AND pid <> pg_backend_pid()
-              AND classid::bigint = ((hashtext(${stockLockKey})::bigint >> 32) & 4294967295)
-              AND objid::bigint = (hashtext(${stockLockKey})::bigint & 4294967295)
-              AND objsubid = 1
-          ) AS locked
-        `;
-        stockLockObserved = lockState.locked;
-        if (!stockLockObserved) await new Promise((resolve) => setTimeout(resolve, 10));
-      }
-      expect(stockLockObserved).toBe(true);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const [lockState] = await concurrentClient<{ locked: boolean }[]>`
+        SELECT EXISTS (
+          SELECT 1
+          FROM pg_locks
+          WHERE locktype = 'advisory'
+            AND granted
+            AND pid <> pg_backend_pid()
+            AND classid::bigint = ((hashtext(${stockLockKey})::bigint >> 32) & 4294967295)
+            AND objid::bigint = (hashtext(${stockLockKey})::bigint & 4294967295)
+            AND objsubid = 1
+        ) AS locked
+      `;
+      expect(lockState.locked).toBe(false);
     });
 
     expect(await rebuildPromise).toMatchObject({ healthy: true, recoveryRequired: false });

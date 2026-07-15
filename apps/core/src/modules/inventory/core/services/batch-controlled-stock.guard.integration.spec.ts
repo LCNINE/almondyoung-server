@@ -26,6 +26,7 @@ describeIfDb('BatchControlledStockGuard common removal boundary (PostgreSQL inte
   let guard: BatchControlledStockGuard;
   let eventStore: StockEventStore;
   let command: InventoryCommandService;
+  let recalculateSellable: jest.SpiedFunction<ProductSellableQuantityService['recalculateAndPublishForSku']>;
 
   beforeAll(() => {
     client = postgres(DATABASE_URL as string, { max: 2 });
@@ -38,6 +39,7 @@ describeIfDb('BatchControlledStockGuard common removal boundary (PostgreSQL inte
     guard = new BatchControlledStockGuard();
     const outbox = new OutboxService(dbService);
     const sellable = new ProductSellableQuantityService(dbService as never, outbox);
+    recalculateSellable = jest.spyOn(sellable, 'recalculateAndPublishForSku');
     eventStore = new StockEventStore(dbService, sellable, guard);
     command = new InventoryCommandService(dbService, eventStore, outbox, new LocationService(dbService), guard);
   });
@@ -341,16 +343,22 @@ describeIfDb('BatchControlledStockGuard common removal boundary (PostgreSQL inte
           sessionId: fixture.session.id,
           dispatchAttemptSourceId: fixture.dispatchSource.id,
         },
+        deferSellableProjection: true,
       };
       await expect(command.ship(input)).rejects.toThrow('requires the caller dispatch transaction');
+      await expect(command.ship({ ...input, batchSessionDispatch: undefined }, tx)).rejects.toThrow(
+        'deferSellableProjection is restricted',
+      );
       await expectSavepointConflict(tx, (savepoint) =>
-        command.ship({ ...input, batchSessionDispatch: undefined }, savepoint),
+        command.ship({ ...input, batchSessionDispatch: undefined, deferSellableProjection: undefined }, savepoint),
       );
 
+      recalculateSellable.mockClear();
       const first = await command.ship(input, tx);
       const replay = await command.ship(input, tx);
       if (!first.eventId) throw new Error('Authorized dispatch did not return its stock event');
       expect(replay.eventId).toBe(first.eventId);
+      expect(recalculateSellable).not.toHaveBeenCalled();
       expect(await onHand(tx, fixture.sku.id, fixture.warehouse.id, fixture.source.id)).toBe(0);
       const [linked] = await tx
         .select({ stockEventId: wmsTables.dispatchAttemptSources.stockEventId })

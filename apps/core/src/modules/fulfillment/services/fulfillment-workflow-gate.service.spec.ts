@@ -165,7 +165,7 @@ describe('workflow-gated legacy mutation controllers', () => {
       new InvoiceController(invoiceService as never, maintenanceGate).cancelInvoice('invoice-1'),
     ).rejects.toMatchObject({ response: expect.objectContaining({ code: FULFILLMENT_MAINTENANCE_CODE }) });
     await expect(
-      new ShipmentController(shipmentService as never, maintenanceGate).force('shipment-1', {}, undefined),
+      new ShipmentController(shipmentService as never, maintenanceGate, {} as never).force('shipment-1', {}, undefined),
     ).rejects.toMatchObject({ response: expect.objectContaining({ code: FULFILLMENT_MAINTENANCE_CODE }) });
     expect(invoiceService.cancelInvoice).not.toHaveBeenCalled();
     expect(shipmentService.forceShipment).not.toHaveBeenCalled();
