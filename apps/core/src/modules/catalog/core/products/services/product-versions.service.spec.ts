@@ -40,6 +40,10 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     const productSellableQuantity = {
       recalculateAndPublishForVariants: jest.fn().mockResolvedValue(undefined),
     };
+    const purchaseConstraints = {
+      getForVersion: jest.fn().mockResolvedValue(null),
+      upsertForVersion: jest.fn().mockResolvedValue(null),
+    };
 
     const service = new ProductVersionsService(
       { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
@@ -51,6 +55,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
       priceCacheService as any,
       {} as any,
       productSellableQuantity as any,
+      purchaseConstraints as any,
     );
 
     return {
@@ -61,6 +66,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
       pricingValidator,
       priceCacheService,
       productSellableQuantity,
+      purchaseConstraints,
     };
   }
 
@@ -391,6 +397,48 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     expect(emit).toHaveBeenNthCalledWith(2, inactiveVersion, previousActiveVersion, 'rollback', tx);
   });
 
+  it('updateRequiresMembership: active 버전의 구매 제약을 upsert 하고 이벤트를 1회 발행한다', async () => {
+    const { service, outboxPublisher, projectionSnapshotAssembler, purchaseConstraints } = makeService();
+    projectionSnapshotAssembler.assembleActiveVersionSnapshot.mockResolvedValue({
+      snapshot: { name: 'N' },
+      categoryIds: [],
+      primaryCategoryId: null,
+    });
+    jest.spyOn(service as any, 'getActiveVersion').mockResolvedValue({ id: 'v1', masterId: 'm1', name: 'N' });
+    const tx = {} as any;
+
+    await service.updateRequiresMembership('m1', true, tx);
+
+    expect(purchaseConstraints.upsertForVersion).toHaveBeenCalledWith(
+      'm1',
+      'v1',
+      { requiresMembership: true, lifetimeQuantityLimit: null },
+      tx,
+    );
+    expect(outboxPublisher.saveEvent).toHaveBeenCalledTimes(1);
+    expect(outboxPublisher.saveEvent.mock.calls[0][0].payload.changeReason).toBe('published');
+  });
+
+  it('updateRequiresMembership: 기존 lifetimeQuantityLimit 을 보존한다', async () => {
+    const { service, projectionSnapshotAssembler, purchaseConstraints } = makeService();
+    projectionSnapshotAssembler.assembleActiveVersionSnapshot.mockResolvedValue({
+      snapshot: { name: 'N' },
+      categoryIds: [],
+      primaryCategoryId: null,
+    });
+    jest.spyOn(service as any, 'getActiveVersion').mockResolvedValue({ id: 'v1', masterId: 'm1', name: 'N' });
+    purchaseConstraints.getForVersion.mockResolvedValue({ id: 'c1', requiresMembership: false, lifetimeQuantityLimit: 3 });
+
+    await service.updateRequiresMembership('m1', true, {} as any);
+
+    expect(purchaseConstraints.upsertForVersion).toHaveBeenCalledWith(
+      'm1',
+      'v1',
+      { requiresMembership: true, lifetimeQuantityLimit: 3 },
+      expect.anything(),
+    );
+  });
+
   it('updateExposurePolicy: 제공된 플래그만 set 하고 이벤트를 published로 1회 발행한다', async () => {
     const { service, outboxPublisher, projectionSnapshotAssembler } = makeService();
     projectionSnapshotAssembler.assembleActiveVersionSnapshot.mockResolvedValue({
@@ -439,6 +487,7 @@ describe('ProductVersionsService copy mappings', () => {
       { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
       productPublisher as any,
       outboxPublisher as any,
+      {} as any,
       {} as any,
       {} as any,
       {} as any,
@@ -651,6 +700,7 @@ describe('ProductVersionsService deleteDraftVersion purchase constraint cleanup'
       { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
       productPublisher as any,
       outboxPublisher as any,
+      {} as any,
       {} as any,
       {} as any,
       {} as any,

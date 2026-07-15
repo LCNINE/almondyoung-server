@@ -41,6 +41,7 @@ import {
 import { productMatchings, productVariantSkuLinks } from '../../../../inventory/schema/inventory.schema';
 import { productVariantDigitalAssetLinks } from '../../../../library/schema/library.schema';
 import { ProductSellableQuantityService } from '../../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
+import { ProductPurchaseConstraintsService } from './product-purchase-constraints.service';
 import { eq, and, sql, max as drizzleMax, isNull, inArray, asc, desc, ilike, count } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 import { deleteEntitiesIfUnmapped } from '../../version-isolation/delete-if-unmapped';
@@ -60,6 +61,7 @@ export class ProductVersionsService {
     private readonly priceCacheService: VariantPriceCacheService,
     private readonly variantAssetLinkService: VariantAssetLinkService,
     private readonly productSellableQuantity: ProductSellableQuantityService,
+    private readonly purchaseConstraints: ProductPurchaseConstraintsService,
   ) {}
 
   async getVersionTree(masterId: string, tx?: DbTransaction): Promise<VersionTreeNode[]> {
@@ -691,6 +693,29 @@ export class ProductVersionsService {
       this.logger.log(
         `updateMembersOnlyVisibility: master=${masterId} isVisibleToMembersOnly=${isVisibleToMembersOnly}`,
       );
+    }, tx);
+  }
+
+  /**
+   * 멤버십 전용 구매 여부 변경 — draft 없이 active 버전을 직접 수정하고 채널에 재싱크.
+   * 값이 별도 테이블이라 updateExposurePolicy 의 단일 UPDATE 에는 얹지 못한다.
+   * lifetimeQuantityLimit 은 보존 — 이 토글이 구매수량 제한을 지우면 안 된다.
+   */
+  async updateRequiresMembership(masterId: string, requiresMembership: boolean, tx?: DbTransaction): Promise<void> {
+    return this.db.run(async (tx) => {
+      const activeVersion = await this.getActiveVersion(masterId, tx);
+      const current = await this.purchaseConstraints.getForVersion(masterId, activeVersion.id, tx);
+
+      await this.purchaseConstraints.upsertForVersion(
+        masterId,
+        activeVersion.id,
+        { requiresMembership, lifetimeQuantityLimit: current?.lifetimeQuantityLimit ?? null },
+        tx,
+      );
+
+      await this._emitActiveVersionChangedEvent(activeVersion, null, 'published', tx);
+
+      this.logger.log(`updateRequiresMembership: master=${masterId} requiresMembership=${requiresMembership}`);
     }, tx);
   }
 

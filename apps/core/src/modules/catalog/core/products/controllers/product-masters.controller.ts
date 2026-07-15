@@ -382,6 +382,30 @@ export class ProductMastersController {
     return { success: true, masterId, isVisibleToMembersOnly: body.isVisibleToMembersOnly };
   }
 
+  @Patch(':masterId/requires-membership')
+  @ApiOperation({
+    summary: '멤버십 전용 구매 변경',
+    description:
+      'draft 없이 active 버전의 구매 제약(requiresMembership)을 직접 수정합니다. 체크 시 비회원·일반회원에게는 품절로 표시되어 구매할 수 없고, 멤버십 회원만 구매할 수 있습니다. 상품 노출 자체는 제한하지 않습니다(노출 제한은 members-only-visibility).',
+  })
+  @ApiParam({ name: 'masterId', description: 'Master ID' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { requiresMembership: { type: 'boolean' } },
+      required: ['requiresMembership'],
+    },
+  })
+  @ApiResponse({ status: 200, description: '성공' })
+  @ApiResponse({ status: 404, description: 'Active 버전 없음' })
+  async updateRequiresMembership(
+    @Param('masterId') masterId: string,
+    @Body() body: { requiresMembership: boolean },
+  ) {
+    await this.productVersionsService.updateRequiresMembership(masterId, body.requiresMembership);
+    return { success: true, masterId, requiresMembership: body.requiresMembership };
+  }
+
   @Patch(':masterId/overseas')
   @ApiOperation({
     summary: '해외직구 여부 변경',
