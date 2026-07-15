@@ -1129,6 +1129,113 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
         'ck_picking_plan_member_versions',
       );
 
+      const [shortPickOperation] = await tx
+        .insert(wmsTables.shipmentOperations)
+        .values({
+          type: 'short_pick',
+          operatorId: randomUUID(),
+          reason: 'source shortage',
+          idempotencyKey: `retire-short-pick-${randomUUID()}`,
+          requestHash: 'a'.repeat(64),
+        })
+        .returning();
+      await tx
+        .update(wmsTables.pickingPlanMembers)
+        .set({
+          retiredAt: new Date(),
+          retireReason: 'source shortage reconciled',
+          retiredByOperationId: shortPickOperation.id,
+          retiredByOperationType: 'short_pick',
+        })
+        .where(
+          and(
+            eq(wmsTables.pickingPlanMembers.planId, plan.id),
+            eq(wmsTables.pickingPlanMembers.shipmentId, f.shipment.id),
+          ),
+        );
+      const [retiredMember] = await tx
+        .select()
+        .from(wmsTables.pickingPlanMembers)
+        .where(
+          and(
+            eq(wmsTables.pickingPlanMembers.planId, plan.id),
+            eq(wmsTables.pickingPlanMembers.shipmentId, f.shipment.id),
+          ),
+        );
+      expect(retiredMember).toMatchObject({
+        retireReason: 'source shortage reconciled',
+        retiredByOperationId: shortPickOperation.id,
+        retiredByOperationType: 'short_pick',
+      });
+
+      const [incompleteRetirementShipment] = await tx
+        .insert(wmsTables.shipments)
+        .values({ warehouseId: f.warehouse.id })
+        .returning();
+      await expectViolation(
+        tx,
+        (sp) =>
+          sp.insert(wmsTables.pickingPlanMembers).values({
+            planId: plan.id,
+            shipmentId: incompleteRetirementShipment.id,
+            manifestVersion: 1,
+            reservationVersion: 1,
+            retiredAt: new Date(),
+            retireReason: 'missing operation ownership',
+          }),
+        'ck_picking_plan_member_retirement',
+      );
+
+      const [replanOperation] = await tx
+        .insert(wmsTables.shipmentOperations)
+        .values({
+          type: 'replan',
+          operatorId: randomUUID(),
+          reason: 'not a short pick',
+          idempotencyKey: `retire-replan-${randomUUID()}`,
+          requestHash: 'b'.repeat(64),
+        })
+        .returning();
+      const [wrongOperationShipment] = await tx
+        .insert(wmsTables.shipments)
+        .values({ warehouseId: f.warehouse.id })
+        .returning();
+      await expectViolation(
+        tx,
+        (sp) =>
+          sp.insert(wmsTables.pickingPlanMembers).values({
+            planId: plan.id,
+            shipmentId: wrongOperationShipment.id,
+            manifestVersion: 1,
+            reservationVersion: 1,
+            retiredAt: new Date(),
+            retireReason: 'wrong operation type',
+            retiredByOperationId: replanOperation.id,
+            retiredByOperationType: 'short_pick',
+          }),
+        'fk_picking_plan_member_retirement_operation',
+      );
+
+      const [blankReasonShipment] = await tx
+        .insert(wmsTables.shipments)
+        .values({ warehouseId: f.warehouse.id })
+        .returning();
+      await expectViolation(
+        tx,
+        (sp) =>
+          sp.insert(wmsTables.pickingPlanMembers).values({
+            planId: plan.id,
+            shipmentId: blankReasonShipment.id,
+            manifestVersion: 1,
+            reservationVersion: 1,
+            retiredAt: new Date(),
+            retireReason: '   ',
+            retiredByOperationId: shortPickOperation.id,
+            retiredByOperationType: 'short_pick',
+          }),
+        'ck_picking_plan_member_retirement',
+      );
+
       const allocation = {
         planId: plan.id,
         shipmentLineId: f.shipmentLine.id,

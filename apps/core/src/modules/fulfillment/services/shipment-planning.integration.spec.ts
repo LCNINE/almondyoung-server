@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import * as postgres from 'postgres';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -474,6 +474,248 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
         tx,
       );
       expect(planned.shipment.status).toBe('planned');
+    });
+  });
+
+  it('retires only the short-picked member, preserves shared plan history, and allows that shipment to plan again', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const short = await physicalFixture(tx, 1, 1);
+      const secondVariantId = randomUUID();
+      const secondSku = await seedSku(tx, short.holderId);
+      await tx.insert(wmsTables.stockLedgers).values({
+        skuId: secondSku.skuId,
+        warehouseId: short.warehouseId,
+        locationId: short.locationId,
+        stockState: 'ON_HAND',
+        qty: 1,
+      });
+      const secondOrder = await seedSalesOrder(tx, { lines: [{ variantId: secondVariantId, quantity: 1 }] });
+      await tx
+        .update(wmsTables.salesOrders)
+        .set({ shippingAddress: COMPLETE_RECIPIENT })
+        .where(eq(wmsTables.salesOrders.id, secondOrder.salesOrderId));
+      await tx
+        .update(wmsTables.salesOrderLines)
+        .set({ channelOrderItemId: `item-${randomUUID()}`, channelProductId: `product-${randomUUID()}` })
+        .where(eq(wmsTables.salesOrderLines.id, secondOrder.lineIds[0]));
+      await seedMatching(tx, { variantId: secondVariantId, skuId: secondSku.skuId });
+      await wired.fulfillments.create({ salesOrderId: secondOrder.salesOrderId, warehouseId: short.warehouseId }, tx);
+      const [successfulLine] = await tx
+        .select({ line: wmsTables.shipmentLines, shipment: wmsTables.shipments })
+        .from(wmsTables.shipmentLines)
+        .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.shipmentLines.shipmentId))
+        .innerJoin(
+          wmsTables.fulfillmentOrderItems,
+          eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+        )
+        .innerJoin(
+          wmsTables.fulfillmentOrders,
+          eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
+        )
+        .where(eq(wmsTables.fulfillmentOrders.salesOrderId, secondOrder.salesOrderId));
+
+      const [profile] = await tx
+        .insert(wmsTables.deliveryProfiles)
+        .values({
+          name: `short-pick-replan-${randomUUID()}`,
+          sourceType: 'in_house',
+          senderSnapshot: { name: 'Sender' },
+          originAddressSnapshot: { address: 'Origin' },
+          returnAddressSnapshot: { address: 'Return' },
+          carrierAccountRef: 'carrier-account-short-pick',
+          supportedFulfillmentModes: ['in_house'],
+        })
+        .returning();
+      await tx.update(wmsTables.skus).set({ deliveryProfileId: profile.id }).where(eq(wmsTables.skus.id, short.skuId));
+      await tx
+        .update(wmsTables.shipments)
+        .set({ status: 'planned', plannedAt: new Date() })
+        .where(eq(wmsTables.shipments.id, successfulLine.shipment.id));
+
+      const [batch] = await tx
+        .insert(wmsTables.outboundBatches)
+        .values({
+          batchNumber: `short-pick-shared-${randomUUID()}`,
+          warehouseId: short.warehouseId,
+          pickingMethod: 'individual',
+          status: 'picking',
+        })
+        .returning();
+      const [plan] = await tx
+        .insert(wmsTables.pickingPlans)
+        .values({
+          batchId: batch.id,
+          strategy: 'discrete',
+          status: 'active',
+          createdBy: actor.id,
+        })
+        .returning();
+      await tx.insert(wmsTables.pickingPlanMembers).values([
+        {
+          planId: plan.id,
+          shipmentId: short.shipment.id,
+          manifestVersion: short.shipment.manifestVersion,
+          reservationVersion: short.shipment.reservationVersion,
+        },
+        {
+          planId: plan.id,
+          shipmentId: successfulLine.shipment.id,
+          manifestVersion: successfulLine.shipment.manifestVersion,
+          reservationVersion: successfulLine.shipment.reservationVersion,
+        },
+      ]);
+      const allocations = await tx
+        .insert(wmsTables.pickingSourceAllocations)
+        .values([
+          {
+            planId: plan.id,
+            shipmentLineId: short.line.id,
+            sourceLocationId: short.locationId,
+            qty: 1,
+            sourceStockVersion: 1,
+          },
+          {
+            planId: plan.id,
+            shipmentLineId: successfulLine.line.id,
+            sourceLocationId: short.locationId,
+            qty: 1,
+            sourceStockVersion: 1,
+          },
+        ])
+        .returning();
+      const [session] = await tx
+        .insert(wmsTables.batchInventorySessions)
+        .values({ batchId: batch.id, handedInQty: 2, returnedQty: 1, status: 'active' })
+        .returning();
+      await tx.insert(wmsTables.batchInventorySessionBalances).values({
+        sessionId: session.id,
+        skuId: secondSku.skuId,
+        sourceLocationId: short.locationId,
+        custodyType: 'PACKING',
+        custodyRef: `work-item:${randomUUID()}`,
+        shipmentLineId: successfulLine.line.id,
+        qty: 1,
+      });
+      await tx.insert(wmsTables.batchInventorySessionEvents).values([
+        {
+          sessionId: session.id,
+          idempotencyKey: `start:${plan.id}:${allocations[0].id}`,
+          eventType: 'HAND_IN',
+          skuId: short.skuId,
+          quantity: 1,
+          toCustodyType: 'AT_SOURCE',
+          toSourceLocationId: short.locationId,
+          payload: { planId: plan.id, allocationId: allocations[0].id, shipmentLineId: short.line.id },
+        },
+        {
+          sessionId: session.id,
+          idempotencyKey: `start:${plan.id}:${allocations[1].id}`,
+          eventType: 'HAND_IN',
+          skuId: secondSku.skuId,
+          quantity: 1,
+          toCustodyType: 'AT_SOURCE',
+          toSourceLocationId: short.locationId,
+          payload: { planId: plan.id, allocationId: allocations[1].id, shipmentLineId: successfulLine.line.id },
+        },
+        {
+          sessionId: session.id,
+          idempotencyKey: `return-short:${randomUUID()}`,
+          eventType: 'RETURN_TO_SOURCE',
+          skuId: short.skuId,
+          quantity: 1,
+          fromCustodyType: 'AT_SOURCE',
+          fromSourceLocationId: short.locationId,
+          payload: { shipmentLineId: short.line.id, actorId: actor.id },
+        },
+      ]);
+      await tx.insert(wmsTables.outboundBatchWorkItems).values([
+        {
+          batchId: batch.id,
+          shipmentId: short.shipment.id,
+          status: 'excluded',
+          exclusionReason: 'short-pick custody reconciled',
+        },
+        {
+          batchId: batch.id,
+          shipmentId: successfulLine.shipment.id,
+          status: 'picking',
+          pickerId: actor.id,
+          pickerClaimedAt: new Date(),
+          leaseExpiresAt: new Date(Date.now() + 60_000),
+        },
+      ]);
+      const [shortPickOperation] = await tx
+        .insert(wmsTables.shipmentOperations)
+        .values({
+          type: 'short_pick',
+          operatorId: actor.id,
+          reason: 'one unit missing at source',
+          idempotencyKey: `short-pick-${randomUUID()}`,
+          requestHash: 'c'.repeat(64),
+        })
+        .returning();
+      await tx.insert(wmsTables.shipmentOperationMembers).values({
+        operationId: shortPickOperation.id,
+        shipmentId: short.shipment.id,
+        role: 'source',
+        beforeManifestVersion: short.shipment.manifestVersion,
+      });
+
+      const retired = await planning.retirePickingPlanMemberForShortPick(
+        {
+          planId: plan.id,
+          shipmentId: short.shipment.id,
+          operationId: shortPickOperation.id,
+          reason: 'one unit missing at source',
+        },
+        tx,
+      );
+      expect(retired.replayed).toBe(false);
+      expect(
+        await planning.retirePickingPlanMemberForShortPick(
+          {
+            planId: plan.id,
+            shipmentId: short.shipment.id,
+            operationId: shortPickOperation.id,
+            reason: 'one unit missing at source',
+          },
+          tx,
+        ),
+      ).toMatchObject({ replayed: true, retiredAt: retired.retiredAt });
+
+      const activeMembers = await tx
+        .select({ shipmentId: wmsTables.pickingPlanMembers.shipmentId })
+        .from(wmsTables.pickingPlanMembers)
+        .where(and(eq(wmsTables.pickingPlanMembers.planId, plan.id), isNull(wmsTables.pickingPlanMembers.retiredAt)));
+      expect(activeMembers).toEqual([{ shipmentId: successfulLine.shipment.id }]);
+      expect(
+        await tx
+          .select()
+          .from(wmsTables.pickingSourceAllocations)
+          .where(eq(wmsTables.pickingSourceAllocations.planId, plan.id)),
+      ).toHaveLength(2);
+      expect(
+        await tx
+          .select()
+          .from(wmsTables.batchInventorySessionEvents)
+          .where(eq(wmsTables.batchInventorySessionEvents.sessionId, session.id)),
+      ).toHaveLength(3);
+      expect(
+        (await tx.select().from(wmsTables.pickingPlans).where(eq(wmsTables.pickingPlans.id, plan.id)))[0].status,
+      ).toBe('active');
+
+      const replanned = await planning.plan(
+        short.shipment.id,
+        {
+          shippingProfileId: profile.id,
+          expectedManifestVersion: short.shipment.manifestVersion,
+          expectedReservationVersion: short.shipment.reservationVersion,
+        },
+        `replan-after-short-pick-${randomUUID()}`,
+        actor,
+        tx,
+      );
+      expect(replanned.shipment.status).toBe('planned');
     });
   });
 

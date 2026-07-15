@@ -982,6 +982,7 @@ class PickToToteContractState {
 
 function createPickToToteContractFixture(): PickingStrategyContractFixture {
   const state = new PickToToteContractState();
+  let shipmentARetired = false;
   const tx = {
     select: jest.fn(() => new QueryResult(state.selectRows())),
     insert: jest.fn(() => new ContractInsertResult(state)),
@@ -1053,7 +1054,14 @@ function createPickToToteContractFixture(): PickingStrategyContractFixture {
   ]);
   jest.spyOn(strategy as any, 'planStalenessReason').mockResolvedValue(null);
   jest.spyOn(strategy as any, 'assertActivePlanSession').mockResolvedValue(undefined);
-  jest.spyOn(strategy as any, 'assertPlanMembers').mockResolvedValue(undefined);
+  jest.spyOn(strategy as any, 'assertPlanMembers').mockImplementation(async (_planId, shipmentIds: string[]) => {
+    if (shipmentARetired && shipmentIds.includes(PICKING_CONTRACT_IDS.shipmentA)) {
+      throw new ConflictException({
+        code: 'PICKING_SHIPMENT_NOT_IN_PLAN',
+        message: 'Retired shipment is not an active plan member',
+      });
+    }
+  });
   jest.spyOn(strategy as any, 'acquireToteLock').mockResolvedValue(undefined);
   jest
     .spyOn(strategy as any, 'lockAndAssertPickerClaim')
@@ -1126,6 +1134,25 @@ function createPickToToteContractFixture(): PickingStrategyContractFixture {
       const replay = await strategy.scan(input);
       return { first, replay };
     },
+    retireShipmentA: () => {
+      shipmentARetired = true;
+      Object.assign(state.workItems[PICKING_CONTRACT_IDS.workItemA], {
+        status: 'short_pick_recovery',
+        recoveryReason: 'one unit missing',
+      });
+    },
+    attemptRetiredShipmentA: () =>
+      strategy.assignTote({
+        batchId: PICKING_CONTRACT_IDS.batch,
+        planId: PICKING_CONTRACT_IDS.plan,
+        sessionId: PICKING_CONTRACT_IDS.session,
+        workItemId: PICKING_CONTRACT_IDS.workItemA,
+        shipmentId: PICKING_CONTRACT_IDS.shipmentA,
+        toteBarcode: 'TOTE-CONTRACT',
+        actor: { id: PICKING_CONTRACT_IDS.actor, roles: ['logistics_worker'] },
+        expectedLeaseVersion: 1,
+        idempotencyKey: 'retired-assign-tote-a',
+      }),
     snapshot: () => {
       const custodyTotal = (type: ContractCustodyType) =>
         state.balances.filter((balance) => balance.custodyType === type).reduce((sum, balance) => sum + balance.qty, 0);

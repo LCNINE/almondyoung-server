@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { AuthorizationService } from '@app/authorization';
 import { DbService, InjectTypedDb } from '@app/db';
-import { and, asc, eq, gt, inArray, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
@@ -1026,6 +1026,7 @@ export class ConsolidationService {
         .where(
           and(
             eq(wmsTables.pickingPlanMembers.shipmentId, aggregate.shipment.id),
+            isNull(wmsTables.pickingPlanMembers.retiredAt),
             inArray(wmsTables.pickingPlans.status, ['draft', 'active']),
           ),
         )

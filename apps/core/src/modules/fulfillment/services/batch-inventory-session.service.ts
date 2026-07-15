@@ -47,6 +47,51 @@ export interface SettleBatchCustodyInput extends ReturnBatchCustodyInput {
   dispatchAttemptSourceId: string;
 }
 
+export const APPROVED_SHORTAGE_REASON_CODES = ['MISSING', 'DAMAGED', 'DEFECTIVE'] as const;
+export type ApprovedShortageReasonCode = (typeof APPROVED_SHORTAGE_REASON_CODES)[number];
+
+export function isApprovedShortageReasonCode(value: unknown): value is ApprovedShortageReasonCode {
+  return typeof value === 'string' && APPROVED_SHORTAGE_REASON_CODES.includes(value as ApprovedShortageReasonCode);
+}
+
+export interface ApproveBatchShortageInput {
+  sessionId: string;
+  idempotencyKey: string;
+  shortPickOperationId: string;
+  shipmentLineId: string;
+  quantity: number;
+  from: BatchInventoryBucket;
+  reasonCode: ApprovedShortageReasonCode;
+  reason: string;
+  approverId: string;
+}
+
+export interface ReturnShortPickCustodyInput {
+  sessionId: string;
+  idempotencyKey: string;
+  shortPickOperationId: string;
+  shipmentLineId: string;
+  quantity: number;
+  from: BatchInventoryBucket;
+  reason: string;
+  actorId: string;
+}
+
+export type ShortPickOperationIntentProof = {
+  kind: 'short_pick';
+  operationId: string;
+  shipmentId: string;
+  sessionId: string;
+  actorId: string;
+  reason: string;
+  lines: Array<{
+    shipmentLineId: string;
+    sourceLocationId: string;
+    shortQty: number;
+    allocationQty: number;
+  }>;
+};
+
 export interface BatchInventorySessionFaultInjector {
   afterEventAppended?(eventType: string, sessionId: string, tx: DbTx): Promise<void> | void;
 }
@@ -73,8 +118,102 @@ function bucketKey(bucket: SessionEventSide): string {
   return [bucket.custodyType, bucket.sourceLocationId, bucket.custodyRef ?? '', bucket.shipmentLineId ?? ''].join('|');
 }
 
+function stableJson(value: unknown, ancestors: Set<object>, arrayElement = false): string | undefined {
+  if (value === null) return 'null';
+  if (typeof value === 'string' || typeof value === 'boolean') return JSON.stringify(value);
+  if (typeof value === 'number') return Number.isFinite(value) ? JSON.stringify(value) : 'null';
+  if (typeof value === 'bigint') throw new TypeError('BigInt is not JSON serializable');
+  if (typeof value === 'undefined' || typeof value === 'function' || typeof value === 'symbol') {
+    return arrayElement ? 'null' : undefined;
+  }
+  if (value instanceof Date) return JSON.stringify(value.toJSON());
+  if (ancestors.has(value)) throw new TypeError('Circular structure is not JSON serializable');
+
+  ancestors.add(value);
+  try {
+    if (Array.isArray(value)) {
+      return `[${Array.from(value, (entry) => stableJson(entry, ancestors, true) ?? 'null').join(',')}]`;
+    }
+    const record = value as Record<string, unknown>;
+    const entries = Object.keys(record)
+      .sort()
+      .flatMap((key) => {
+        const serialized = stableJson(record[key], ancestors);
+        return serialized === undefined ? [] : [`${JSON.stringify(key)}:${serialized}`];
+      });
+    return `{${entries.join(',')}}`;
+  } finally {
+    ancestors.delete(value);
+  }
+}
+
+function recordOf(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
+export function shortPickOperationIntentOf(snapshot: unknown): ShortPickOperationIntentProof | null {
+  const intent = recordOf(recordOf(snapshot).intent);
+  if (
+    intent.kind !== 'short_pick' ||
+    typeof intent.operationId !== 'string' ||
+    typeof intent.shipmentId !== 'string' ||
+    typeof intent.sessionId !== 'string' ||
+    typeof intent.actorId !== 'string' ||
+    typeof intent.reason !== 'string' ||
+    !Array.isArray(intent.lines) ||
+    intent.lines.length === 0
+  ) {
+    return null;
+  }
+  const lines: ShortPickOperationIntentProof['lines'] = [];
+  const pairs = new Set<string>();
+  for (const value of intent.lines) {
+    const line = recordOf(value);
+    if (
+      typeof line.shipmentLineId !== 'string' ||
+      typeof line.sourceLocationId !== 'string' ||
+      !Number.isSafeInteger(line.shortQty) ||
+      Number(line.shortQty) < 0 ||
+      !Number.isSafeInteger(line.allocationQty) ||
+      Number(line.allocationQty) < Number(line.shortQty)
+    ) {
+      return null;
+    }
+    const pair = `${line.shipmentLineId}:${line.sourceLocationId}`;
+    if (pairs.has(pair)) return null;
+    pairs.add(pair);
+    lines.push({
+      shipmentLineId: line.shipmentLineId,
+      sourceLocationId: line.sourceLocationId,
+      shortQty: Number(line.shortQty),
+      allocationQty: Number(line.allocationQty),
+    });
+  }
+  return {
+    kind: 'short_pick',
+    operationId: intent.operationId,
+    shipmentId: intent.shipmentId,
+    sessionId: intent.sessionId,
+    actorId: intent.actorId,
+    reason: intent.reason,
+    lines,
+  };
+}
+
 export function canonicalBatchSessionRequestHash(value: unknown): string {
-  return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  const canonical = stableJson(value, new Set());
+  if (canonical === undefined) throw new TypeError('Request must be JSON serializable');
+  return createHash('sha256').update(canonical).digest('hex');
+}
+
+export function remainingShortPickAllocation(input: {
+  allocatedQty: number;
+  activeAttributedQty: number;
+  returnedQty: number;
+  settledQty: number;
+  shortageQty: number;
+}): number {
+  return input.allocatedQty - input.activeAttributedQty - input.returnedQty - input.settledQty - input.shortageQty;
 }
 
 @Injectable()
@@ -606,11 +745,78 @@ export class BatchInventorySessionService {
     );
   }
 
+  async approveShortage(input: ApproveBatchShortageInput, tx?: DbTx) {
+    const from = normalizedBucket(input.from);
+    if (!input.shortPickOperationId.trim()) throw new BadRequestException('shortPickOperationId is required');
+    if (!input.shipmentLineId.trim()) throw new BadRequestException('shipmentLineId is required');
+    if (!isApprovedShortageReasonCode(input.reasonCode)) {
+      throw new BadRequestException('reasonCode must be one of MISSING, DAMAGED, DEFECTIVE');
+    }
+    if (!input.reason.trim()) throw new BadRequestException('reason is required');
+    if (!input.approverId.trim()) throw new BadRequestException('approverId is required');
+    if (from.shipmentLineId && from.shipmentLineId !== input.shipmentLineId) {
+      throw new BadRequestException('Shortage attribution must match the source custody shipment line');
+    }
+
+    return this.mutate(
+      {
+        sessionId: input.sessionId,
+        idempotencyKey: input.idempotencyKey,
+        eventType: 'APPROVE_SHORTAGE',
+        actorId: input.approverId,
+        skuId: input.from.skuId,
+        quantity: input.quantity,
+        from,
+        to: null,
+        context: {
+          shortPickOperationId: input.shortPickOperationId,
+          shipmentLineId: input.shipmentLineId,
+          sourceLocationId: from.sourceLocationId,
+          reasonCode: input.reasonCode,
+          reason: input.reason.trim(),
+          approverId: input.approverId,
+        },
+      },
+      tx,
+    );
+  }
+
+  async returnShortPickCustody(input: ReturnShortPickCustodyInput, tx?: DbTx) {
+    const from = normalizedBucket(input.from);
+    if (!input.shortPickOperationId.trim()) throw new BadRequestException('shortPickOperationId is required');
+    if (!input.shipmentLineId.trim()) throw new BadRequestException('shipmentLineId is required');
+    if (!input.reason.trim()) throw new BadRequestException('reason is required');
+    if (!input.actorId.trim()) throw new BadRequestException('actorId is required');
+    if (from.shipmentLineId && from.shipmentLineId !== input.shipmentLineId) {
+      throw new BadRequestException('Short-pick return attribution must match the source custody shipment line');
+    }
+
+    return this.mutate(
+      {
+        sessionId: input.sessionId,
+        idempotencyKey: input.idempotencyKey,
+        eventType: 'RETURN_TO_SOURCE',
+        actorId: input.actorId,
+        skuId: input.from.skuId,
+        quantity: input.quantity,
+        from,
+        to: null,
+        context: {
+          shortPickOperationId: input.shortPickOperationId,
+          shipmentLineId: input.shipmentLineId,
+          sourceLocationId: from.sourceLocationId,
+          reason: input.reason.trim(),
+        },
+      },
+      tx,
+    );
+  }
+
   private async mutate(
     input: {
       sessionId: string;
       idempotencyKey: string;
-      eventType: 'MOVE_CUSTODY' | 'RETURN_TO_SOURCE' | 'SETTLE_FOR_DISPATCH';
+      eventType: 'MOVE_CUSTODY' | 'RETURN_TO_SOURCE' | 'SETTLE_FOR_DISPATCH' | 'APPROVE_SHORTAGE';
       actorId: string;
       skuId: string;
       quantity: number;
@@ -631,8 +837,13 @@ export class BatchInventorySessionService {
     const fingerprint = canonicalBatchSessionRequestHash(input);
 
     return this.dbService.run(async (trx) => {
-      // Canonical order for every lifecycle path is plan -> session. The immutable
-      // HAND_IN identity may be read optimistically, then is revalidated after locks.
+      const shortPickOperation =
+        typeof input.context?.shortPickOperationId === 'string'
+          ? await this.lockShortPickOperation(input.context.shortPickOperationId, trx)
+          : null;
+      // Short-pick commands already own their durable operation, then all session
+      // lifecycle paths continue in plan -> session order. HAND_IN identity is
+      // read optimistically and revalidated after those locks.
       const planId = await this.sessionPlanId(input.sessionId, trx);
       const [plan] = await trx
         .select({ id: wmsTables.pickingPlans.id })
@@ -663,6 +874,14 @@ export class BatchInventorySessionService {
         }
         return { session, event: replay, replayed: true };
       }
+      if (shortPickOperation && shortPickOperation.status !== 'pending') {
+        throw this.conflict(
+          shortPickOperation.status === 'completed'
+            ? 'SESSION_SHORTAGE_OPERATION_COMPLETED'
+            : 'SESSION_SHORTAGE_OPERATION_RECOVERY_ONLY',
+          `A ${shortPickOperation.status} short-pick operation permits only exact existing event replay`,
+        );
+      }
       if (session.status !== 'active') {
         throw this.conflict('SESSION_NOT_MUTABLE', `Batch inventory session ${input.sessionId} is ${session.status}`);
       }
@@ -682,6 +901,12 @@ export class BatchInventorySessionService {
           },
           trx,
         );
+      }
+      if (input.eventType === 'APPROVE_SHORTAGE') {
+        await this.assertShortageAllocation(input, planId, shortPickOperation?.intent ?? null, trx);
+      }
+      if (input.eventType === 'RETURN_TO_SOURCE' && typeof input.context?.shortPickOperationId === 'string') {
+        await this.assertShortageAllocation(input, planId, shortPickOperation?.intent ?? null, trx);
       }
 
       await this.assertLineAssignment(input.sessionId, input.skuId, input.from, trx);
@@ -784,6 +1009,8 @@ export class BatchInventorySessionService {
             input.eventType === 'RETURN_TO_SOURCE' ? session.returnedQty + input.quantity : session.returnedQty,
           settledQty:
             input.eventType === 'SETTLE_FOR_DISPATCH' ? session.settledQty + input.quantity : session.settledQty,
+          shortageQty:
+            input.eventType === 'APPROVE_SHORTAGE' ? session.shortageQty + input.quantity : session.shortageQty,
           updatedAt: sql`now()`,
         })
         .where(
@@ -812,11 +1039,238 @@ export class BatchInventorySessionService {
           idempotencyKey: input.idempotencyKey,
           sessionId: input.sessionId,
           sequence: session.version,
+          ...(typeof input.context?.shortPickOperationId === 'string' ? input.context : {}),
         },
         trx,
       );
       return { session: updated, event, replayed: false };
     }, tx);
+  }
+
+  private async assertShortageAllocation(
+    input: {
+      sessionId: string;
+      idempotencyKey: string;
+      eventType: 'MOVE_CUSTODY' | 'RETURN_TO_SOURCE' | 'SETTLE_FOR_DISPATCH' | 'APPROVE_SHORTAGE';
+      actorId: string;
+      skuId: string;
+      quantity: number;
+      from: SessionEventSide;
+      to: SessionEventSide | null;
+      context?: Record<string, unknown>;
+    },
+    planId: string,
+    intent: ShortPickOperationIntentProof | null,
+    tx: DbTx,
+  ): Promise<void> {
+    const shortPickOperationId = input.context?.shortPickOperationId;
+    const shipmentLineId = input.context?.shipmentLineId;
+    const sourceLocationId = input.context?.sourceLocationId;
+    if (
+      typeof shortPickOperationId !== 'string' ||
+      typeof shipmentLineId !== 'string' ||
+      sourceLocationId !== input.from.sourceLocationId
+    ) {
+      throw new BadRequestException('Approved shortage requires exact operation, line, and source attribution');
+    }
+    const intentLine = intent?.lines.find(
+      (line) => line.shipmentLineId === shipmentLineId && line.sourceLocationId === sourceLocationId,
+    );
+    if (
+      !intent ||
+      intent.operationId !== shortPickOperationId ||
+      intent.sessionId !== input.sessionId ||
+      intent.actorId !== input.actorId ||
+      input.context?.reason !== intent.reason ||
+      !intentLine
+    ) {
+      throw this.conflict(
+        'SESSION_SHORTAGE_OPERATION_INTENT_MISMATCH',
+        'Custody reconciliation is outside the immutable short-pick operation intent',
+      );
+    }
+
+    const [operationLine] = await tx
+      .select({ shipmentId: wmsTables.shipmentLines.shipmentId })
+      .from(wmsTables.shipmentLines)
+      .innerJoin(
+        wmsTables.shipmentOperationMembers,
+        and(
+          eq(wmsTables.shipmentOperationMembers.shipmentId, wmsTables.shipmentLines.shipmentId),
+          eq(wmsTables.shipmentOperationMembers.operationId, shortPickOperationId),
+          eq(wmsTables.shipmentOperationMembers.role, 'source'),
+        ),
+      )
+      .where(eq(wmsTables.shipmentLines.id, shipmentLineId))
+      .limit(1)
+      .for('update');
+    if (!operationLine) {
+      throw this.conflict(
+        'SESSION_SHORTAGE_OPERATION_OWNERSHIP_MISMATCH',
+        'Short-pick operation does not own the attributed shipment line as a source member',
+      );
+    }
+
+    const [duplicateOperation] = await tx
+      .select({ idempotencyKey: wmsTables.batchInventorySessionEvents.idempotencyKey })
+      .from(wmsTables.batchInventorySessionEvents)
+      .where(
+        and(
+          eq(wmsTables.batchInventorySessionEvents.sessionId, input.sessionId),
+          eq(wmsTables.batchInventorySessionEvents.eventType, input.eventType),
+          sql`${wmsTables.batchInventorySessionEvents.payload}->>'shortPickOperationId' = ${shortPickOperationId}`,
+          sql`${wmsTables.batchInventorySessionEvents.payload}->>'shipmentLineId' = ${shipmentLineId}`,
+          sql`${wmsTables.batchInventorySessionEvents.payload}->>'sourceLocationId' = ${sourceLocationId}`,
+          eq(wmsTables.batchInventorySessionEvents.fromCustodyType, input.from.custodyType),
+          sql`${wmsTables.batchInventorySessionEvents.fromCustodyRef} IS NOT DISTINCT FROM ${input.from.custodyRef}`,
+          sql`${wmsTables.batchInventorySessionEvents.fromShipmentLineId} IS NOT DISTINCT FROM ${input.from.shipmentLineId}::uuid`,
+        ),
+      )
+      .limit(1);
+    if (duplicateOperation) {
+      throw this.conflict(
+        'SESSION_SHORTAGE_OPERATION_DUPLICATE',
+        'Short-pick operation already recorded this line/source custody outcome',
+      );
+    }
+
+    const [allocation] = await tx
+      .select({
+        id: wmsTables.pickingSourceAllocations.id,
+        qty: wmsTables.pickingSourceAllocations.qty,
+        skuId: wmsTables.shipmentLines.skuId,
+      })
+      .from(wmsTables.pickingSourceAllocations)
+      .innerJoin(
+        wmsTables.shipmentLines,
+        eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
+      )
+      .where(
+        and(
+          eq(wmsTables.pickingSourceAllocations.planId, planId),
+          eq(wmsTables.pickingSourceAllocations.shipmentLineId, shipmentLineId),
+          eq(wmsTables.pickingSourceAllocations.sourceLocationId, sourceLocationId),
+        ),
+      )
+      .limit(1)
+      .for('update');
+    if (!allocation || allocation.skuId !== input.skuId) {
+      throw this.conflict(
+        'SESSION_SHORTAGE_NOT_ALLOCATED',
+        'Approved shortage does not match an exact persisted picking allocation',
+      );
+    }
+
+    const [terminal] = await tx.execute<{
+      returnedQty: number;
+      settledQty: number;
+      shortageQty: number;
+      operationReturnedQty: number;
+      operationShortageQty: number;
+    }>(sql`
+      SELECT
+        coalesce(sum(quantity) FILTER (
+          WHERE event_type = 'RETURN_TO_SOURCE'
+            AND (from_shipment_line_id = ${shipmentLineId}::uuid OR payload->>'shipmentLineId' = ${shipmentLineId})
+        ), 0)::int AS "returnedQty",
+        coalesce(sum(quantity) FILTER (
+          WHERE event_type = 'SETTLE_FOR_DISPATCH' AND from_shipment_line_id = ${shipmentLineId}::uuid
+        ), 0)::int AS "settledQty",
+        coalesce(sum(quantity) FILTER (
+          WHERE event_type = 'APPROVE_SHORTAGE' AND payload->>'shipmentLineId' = ${shipmentLineId}
+        ), 0)::int AS "shortageQty",
+        coalesce(sum(quantity) FILTER (
+          WHERE event_type = 'RETURN_TO_SOURCE'
+            AND payload->>'shortPickOperationId' = ${shortPickOperationId}
+            AND payload->>'shipmentLineId' = ${shipmentLineId}
+            AND payload->>'sourceLocationId' = ${sourceLocationId}
+        ), 0)::int AS "operationReturnedQty",
+        coalesce(sum(quantity) FILTER (
+          WHERE event_type = 'APPROVE_SHORTAGE'
+            AND payload->>'shortPickOperationId' = ${shortPickOperationId}
+            AND payload->>'shipmentLineId' = ${shipmentLineId}
+            AND payload->>'sourceLocationId' = ${sourceLocationId}
+        ), 0)::int AS "operationShortageQty"
+      FROM batch_inventory_session_events
+      WHERE session_id = ${input.sessionId}::uuid
+        AND (
+          from_source_location_id = ${sourceLocationId}::uuid
+          OR payload->>'sourceLocationId' = ${sourceLocationId}
+        )
+    `);
+    const operationReturnedQty = Number(terminal?.operationReturnedQty ?? 0);
+    const operationShortageQty = Number(terminal?.operationShortageQty ?? 0);
+    if (input.eventType === 'APPROVE_SHORTAGE' && operationShortageQty + input.quantity > intentLine.shortQty) {
+      throw this.conflict(
+        'SESSION_SHORTAGE_EXCEEDS_OPERATION_INTENT',
+        `Approved shortage exceeds immutable intent quantity ${intentLine.shortQty}`,
+      );
+    }
+    const intendedReturnQty = intentLine.allocationQty - intentLine.shortQty;
+    if (input.eventType === 'RETURN_TO_SOURCE' && operationReturnedQty + input.quantity > intendedReturnQty) {
+      throw this.conflict(
+        'SESSION_RETURN_EXCEEDS_OPERATION_INTENT',
+        `Terminal return exceeds immutable intent quantity ${intendedReturnQty}`,
+      );
+    }
+    const [activeAttributed] = await tx
+      .select({ qty: sql<number>`coalesce(sum(${wmsTables.batchInventorySessionBalances.qty}), 0)::int` })
+      .from(wmsTables.batchInventorySessionBalances)
+      .where(
+        and(
+          eq(wmsTables.batchInventorySessionBalances.sessionId, input.sessionId),
+          eq(wmsTables.batchInventorySessionBalances.shipmentLineId, shipmentLineId),
+          eq(wmsTables.batchInventorySessionBalances.sourceLocationId, sourceLocationId),
+          ne(wmsTables.batchInventorySessionBalances.custodyType, 'SETTLED'),
+        ),
+      );
+    const allocationRemaining = remainingShortPickAllocation({
+      allocatedQty: allocation.qty,
+      activeAttributedQty: Number(activeAttributed?.qty ?? 0),
+      returnedQty: Number(terminal?.returnedQty ?? 0),
+      settledQty: Number(terminal?.settledQty ?? 0),
+      shortageQty: Number(terminal?.shortageQty ?? 0),
+    });
+    const newlyAttributedQty = input.from.shipmentLineId ? 0 : input.quantity;
+    if (newlyAttributedQty > allocationRemaining) {
+      throw this.conflict(
+        'SESSION_SHORTAGE_EXCEEDS_ALLOCATION',
+        `Short-pick custody outcome exceeds allocation ${allocation.id}: remaining=${allocationRemaining}`,
+      );
+    }
+  }
+
+  private async lockShortPickOperation(
+    shortPickOperationId: string,
+    tx: DbTx,
+  ): Promise<{ status: 'pending' | 'recovery_required' | 'completed'; intent: ShortPickOperationIntentProof }> {
+    const [operation] = await tx
+      .select({
+        type: wmsTables.shipmentOperations.type,
+        status: wmsTables.shipmentOperations.status,
+        snapshot: wmsTables.shipmentOperations.beforeManifestSnapshot,
+      })
+      .from(wmsTables.shipmentOperations)
+      .where(eq(wmsTables.shipmentOperations.id, shortPickOperationId))
+      .limit(1)
+      .for('update');
+    const intent = shortPickOperationIntentOf(operation?.snapshot);
+    if (
+      !operation ||
+      operation.type !== 'short_pick' ||
+      !['pending', 'recovery_required', 'completed'].includes(operation.status) ||
+      !intent ||
+      intent.operationId !== shortPickOperationId
+    ) {
+      throw this.conflict(
+        'SESSION_SHORTAGE_OPERATION_INVALID',
+        'Custody reconciliation requires an exact short-pick operation with immutable intent',
+      );
+    }
+    return {
+      status: operation.status as 'pending' | 'recovery_required' | 'completed',
+      intent,
+    };
   }
 
   private async lockSession(sessionId: string, tx: DbTx): Promise<SessionRow> {

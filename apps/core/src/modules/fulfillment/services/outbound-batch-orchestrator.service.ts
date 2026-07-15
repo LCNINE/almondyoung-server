@@ -831,6 +831,7 @@ export class OutboundBatchOrchestrator {
         .where(
           and(
             eq(wmsTables.pickingPlanMembers.shipmentId, aggregate.shipment.id),
+            isNull(wmsTables.pickingPlanMembers.retiredAt),
             inArray(wmsTables.pickingPlans.status, ['draft', 'active']),
           ),
         )
@@ -899,6 +900,7 @@ export class OutboundBatchOrchestrator {
             .where(
               and(
                 eq(wmsTables.pickingPlanMembers.shipmentId, shipmentId),
+                isNull(wmsTables.pickingPlanMembers.retiredAt),
                 inArray(wmsTables.pickingPlans.status, ['draft', 'active']),
               ),
             )

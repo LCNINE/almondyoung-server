@@ -435,6 +435,121 @@ describeIfDb('InvoiceOrchestrator (DB integration)', () => {
     await orchestrator.processOperation(fulfilled[0].value.operationId);
   });
 
+  it('serializes invoice finalization behind the short-pick owner root without a lock cycle', async () => {
+    const fixture = await committedPlannedFixture();
+    const { orchestrator } = services();
+    const issued = await orchestrator.issueForShipment(
+      fixture.shipment.shipmentId,
+      issueRequest(fixture.shipment.manifestVersion),
+      `invoice-before-short-pick-lock-${randomUUID()}`,
+      actor,
+    );
+    await orchestrator.processOperation(issued.operationId);
+    const shortPickOperationId = randomUUID();
+    await db.transaction(async (tx) => {
+      await tx.insert(wmsTables.shipmentOperations).values({
+        id: shortPickOperationId,
+        type: 'short_pick',
+        status: 'pending',
+        operatorId: actor.id,
+        reason: 'lock-order integration',
+        idempotencyKey: `short-pick-lock-${randomUUID()}`,
+        requestHash: 'd'.repeat(64),
+      });
+      await tx.insert(wmsTables.shipmentOperationMembers).values({
+        operationId: shortPickOperationId,
+        shipmentId: fixture.shipment.shipmentId,
+        role: 'source',
+        beforeManifestVersion: fixture.shipment.manifestVersion,
+      });
+    });
+
+    const concurrentDb = makeDb(DATABASE_URL as string);
+    let announceOwnerLock!: () => void;
+    const ownerLocked = new Promise<void>((resolve) => {
+      announceOwnerLock = resolve;
+    });
+    let announceInvoiceAttempt!: () => void;
+    const invoiceAttempted = new Promise<void>((resolve) => {
+      announceInvoiceAttempt = resolve;
+    });
+    let allowResumeInvoiceLock!: () => void;
+    const resumeInvoiceGate = new Promise<void>((resolve) => {
+      allowResumeInvoiceLock = resolve;
+    });
+    try {
+      const directResume = concurrentDb.db.transaction(async (tx) => {
+        await tx.execute(sql`SET LOCAL lock_timeout = '2s'`);
+        await tx.execute(sql`SET LOCAL statement_timeout = '5s'`);
+        await tx
+          .select({ id: wmsTables.shipmentOperations.id })
+          .from(wmsTables.shipmentOperations)
+          .where(eq(wmsTables.shipmentOperations.id, shortPickOperationId))
+          .limit(1)
+          .for('update');
+        await tx
+          .select({ operationId: wmsTables.shipmentOperationMembers.operationId })
+          .from(wmsTables.shipmentOperationMembers)
+          .where(
+            and(
+              eq(wmsTables.shipmentOperationMembers.operationId, shortPickOperationId),
+              eq(wmsTables.shipmentOperationMembers.role, 'source'),
+            ),
+          )
+          .limit(1)
+          .for('update');
+        announceOwnerLock();
+        await resumeInvoiceGate;
+        await tx
+          .select({ id: wmsTables.invoices.id })
+          .from(wmsTables.invoices)
+          .where(eq(wmsTables.invoices.id, issued.invoiceId as string))
+          .limit(1)
+          .for('update');
+      });
+      await ownerLocked;
+
+      const invoiceFinalize = db.transaction(async (tx) => {
+        await tx.execute(sql`SET LOCAL lock_timeout = '2s'`);
+        await tx.execute(sql`SET LOCAL statement_timeout = '5s'`);
+        announceInvoiceAttempt();
+        await (
+          orchestrator as unknown as {
+            lockShortPickResumeOwnerIfApplicable(
+              operationId: string,
+              shipmentId: string,
+              transaction: DbTx,
+            ): Promise<boolean>;
+          }
+        ).lockShortPickResumeOwnerIfApplicable(
+          shortPickOperationId,
+          fixture.shipment.shipmentId,
+          tx as unknown as DbTx,
+        );
+        await tx
+          .select({ id: wmsTables.invoices.id })
+          .from(wmsTables.invoices)
+          .where(eq(wmsTables.invoices.id, issued.invoiceId as string))
+          .limit(1)
+          .for('update');
+      });
+      await invoiceAttempted;
+      // Give the independent finalizer connection time to wait on the root
+      // operation. It must not hold the invoice while it waits.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      allowResumeInvoiceLock();
+
+      await Promise.all([directResume, invoiceFinalize]);
+    } finally {
+      allowResumeInvoiceLock();
+      await concurrentDb.sql.end();
+      await db
+        .delete(wmsTables.shipmentOperationMembers)
+        .where(eq(wmsTables.shipmentOperationMembers.operationId, shortPickOperationId));
+      await db.delete(wmsTables.shipmentOperations).where(eq(wmsTables.shipmentOperations.id, shortPickOperationId));
+    }
+  });
+
   it('does not resume consolidation after an unknown void and queries before retrying the same operation', async () => {
     const fixture = await committedPlannedFixture();
     const provider = fakeProvider();

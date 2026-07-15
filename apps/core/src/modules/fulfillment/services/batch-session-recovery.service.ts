@@ -1,11 +1,16 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
-import { asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { BatchControlledStockGuard } from '../../inventory/core/services/batch-controlled-stock.guard';
 import { acquireStockAvailabilityLocks } from '../../inventory/shared/locks/stock-availability-lock';
-import { BatchInventoryCustodyType, canonicalBatchSessionRequestHash } from './batch-inventory-session.service';
+import {
+  BatchInventoryCustodyType,
+  canonicalBatchSessionRequestHash,
+  isApprovedShortageReasonCode,
+  shortPickOperationIntentOf,
+} from './batch-inventory-session.service';
 
 type SessionRow = typeof wmsTables.batchInventorySessions.$inferSelect;
 type EventRow = typeof wmsTables.batchInventorySessionEvents.$inferSelect;
@@ -51,6 +56,12 @@ export interface BatchSessionReconciliationResult {
 
 function payloadOf(payload: unknown): Record<string, unknown> {
   return payload && typeof payload === 'object' && !Array.isArray(payload) ? (payload as Record<string, unknown>) : {};
+}
+
+function requestContextOf(payload: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(payload).filter(([key]) => !['sequence', 'requestHash', 'actorId'].includes(key)),
+  );
 }
 
 function bucketKey(bucket: ReplayBucket): string {
@@ -535,6 +546,7 @@ export class BatchSessionRecoveryService {
           sourceStockVersion: allocation.sourceStockVersion,
         });
       } else {
+        const persistedContext = requestContextOf(payload);
         const canonicalRequest: Record<string, unknown> = {
           sessionId: event.sessionId,
           idempotencyKey: event.idempotencyKey,
@@ -545,11 +557,16 @@ export class BatchSessionRecoveryService {
           from: canonicalFrom,
           to: canonicalTo,
         };
+        if (Object.keys(persistedContext).length > 0) canonicalRequest.context = persistedContext;
         if (typeof payload.actorId !== 'string' || !payload.actorId.trim()) {
           issues.push(`event ${event.id} has no actor identity`);
         }
         if (event.eventType === 'SETTLE_FOR_DISPATCH') {
-          canonicalRequest.context = { dispatchAttemptSourceId: payload.dispatchAttemptSourceId };
+          const exactContext = { dispatchAttemptSourceId: payload.dispatchAttemptSourceId };
+          if (canonicalBatchSessionRequestHash(persistedContext) !== canonicalBatchSessionRequestHash(exactContext)) {
+            issues.push(`SETTLE_FOR_DISPATCH event ${event.id} context is not exact`);
+          }
+          canonicalRequest.context = exactContext;
           if (typeof payload.dispatchAttemptSourceId !== 'string') {
             issues.push(`SETTLE_FOR_DISPATCH event ${event.id} has no dispatch source identity`);
           } else {
@@ -586,6 +603,135 @@ export class BatchSessionRecoveryService {
               issues.push(`SETTLE_FOR_DISPATCH event ${event.id} no longer owns its exact SHIP source`);
             }
           }
+        } else if (
+          event.eventType === 'APPROVE_SHORTAGE' ||
+          (event.eventType === 'RETURN_TO_SOURCE' && typeof payload.shortPickOperationId === 'string')
+        ) {
+          const shortPickOperationId = payload.shortPickOperationId;
+          const shipmentLineId = payload.shipmentLineId;
+          const sourceLocationId = payload.sourceLocationId;
+          const reason = payload.reason;
+          const allocation = allocations.find(
+            (candidate) =>
+              candidate.shipmentLineId === shipmentLineId && candidate.sourceLocationId === sourceLocationId,
+          );
+          if (
+            typeof shortPickOperationId !== 'string' ||
+            typeof shipmentLineId !== 'string' ||
+            typeof sourceLocationId !== 'string' ||
+            typeof reason !== 'string' ||
+            !reason.trim() ||
+            !allocation ||
+            allocation.skuId !== event.skuId ||
+            !from ||
+            from.sourceLocationId !== sourceLocationId ||
+            (from.shipmentLineId !== null && from.shipmentLineId !== shipmentLineId)
+          ) {
+            issues.push(`${event.eventType} event ${event.id} has invalid short-pick allocation attribution`);
+          }
+          const [operationOwner] =
+            typeof shortPickOperationId === 'string' && typeof shipmentLineId === 'string'
+              ? await tx
+                  .select({
+                    type: wmsTables.shipmentOperations.type,
+                    status: wmsTables.shipmentOperations.status,
+                    snapshot: wmsTables.shipmentOperations.beforeManifestSnapshot,
+                    memberShipmentId: wmsTables.shipmentOperationMembers.shipmentId,
+                  })
+                  .from(wmsTables.shipmentOperations)
+                  .innerJoin(
+                    wmsTables.shipmentOperationMembers,
+                    and(
+                      eq(wmsTables.shipmentOperationMembers.operationId, wmsTables.shipmentOperations.id),
+                      eq(wmsTables.shipmentOperationMembers.role, 'source'),
+                    ),
+                  )
+                  .innerJoin(
+                    wmsTables.shipmentLines,
+                    and(
+                      eq(wmsTables.shipmentLines.shipmentId, wmsTables.shipmentOperationMembers.shipmentId),
+                      eq(wmsTables.shipmentLines.id, shipmentLineId),
+                    ),
+                  )
+                  .where(eq(wmsTables.shipmentOperations.id, shortPickOperationId))
+                  .limit(1)
+              : [];
+          if (
+            !operationOwner ||
+            operationOwner.type !== 'short_pick' ||
+            !['pending', 'completed', 'recovery_required'].includes(operationOwner.status)
+          ) {
+            issues.push(`${event.eventType} event ${event.id} has no valid short-pick source operation owner`);
+          } else {
+            const intent = shortPickOperationIntentOf(operationOwner.snapshot);
+            const intentLine = intent?.lines.find(
+              (line) => line.shipmentLineId === shipmentLineId && line.sourceLocationId === sourceLocationId,
+            );
+            const shortageTotal = events
+              .filter((candidate) => {
+                const candidatePayload = payloadOf(candidate.payload);
+                return (
+                  candidate.eventType === 'APPROVE_SHORTAGE' &&
+                  candidatePayload.shortPickOperationId === shortPickOperationId &&
+                  candidatePayload.shipmentLineId === shipmentLineId &&
+                  candidatePayload.sourceLocationId === sourceLocationId
+                );
+              })
+              .reduce((total, candidate) => total + candidate.quantity, 0);
+            const returnedTotal = events
+              .filter((candidate) => {
+                const candidatePayload = payloadOf(candidate.payload);
+                return (
+                  candidate.eventType === 'RETURN_TO_SOURCE' &&
+                  candidatePayload.shortPickOperationId === shortPickOperationId &&
+                  candidatePayload.shipmentLineId === shipmentLineId &&
+                  candidatePayload.sourceLocationId === sourceLocationId
+                );
+              })
+              .reduce((total, candidate) => total + candidate.quantity, 0);
+            if (
+              !intent ||
+              intent.operationId !== shortPickOperationId ||
+              intent.shipmentId !== operationOwner.memberShipmentId ||
+              intent.sessionId !== event.sessionId ||
+              intent.actorId !== payload.actorId ||
+              intent.reason !== reason ||
+              !intentLine ||
+              !allocation ||
+              intentLine.allocationQty !== allocation.quantity ||
+              shortageTotal !== intentLine.shortQty ||
+              returnedTotal !== intentLine.allocationQty - intentLine.shortQty
+            ) {
+              issues.push(`${event.eventType} event ${event.id} differs from immutable short-pick operation intent`);
+            }
+          }
+          if (event.eventType === 'APPROVE_SHORTAGE') {
+            if (
+              !isApprovedShortageReasonCode(payload.reasonCode) ||
+              typeof payload.approverId !== 'string' ||
+              payload.approverId !== payload.actorId
+            ) {
+              issues.push(`APPROVE_SHORTAGE event ${event.id} has invalid approval evidence`);
+            }
+            const exactContext = {
+              shortPickOperationId,
+              shipmentLineId,
+              sourceLocationId,
+              reasonCode: payload.reasonCode,
+              reason,
+              approverId: payload.approverId,
+            };
+            if (canonicalBatchSessionRequestHash(persistedContext) !== canonicalBatchSessionRequestHash(exactContext)) {
+              issues.push(`APPROVE_SHORTAGE event ${event.id} context is not exact`);
+            }
+            canonicalRequest.context = exactContext;
+          } else {
+            const exactContext = { shortPickOperationId, shipmentLineId, sourceLocationId, reason };
+            if (canonicalBatchSessionRequestHash(persistedContext) !== canonicalBatchSessionRequestHash(exactContext)) {
+              issues.push(`RETURN_TO_SOURCE event ${event.id} short-pick context is not exact`);
+            }
+            canonicalRequest.context = exactContext;
+          }
         }
         expectedHash = canonicalBatchSessionRequestHash(canonicalRequest);
       }
@@ -608,6 +754,35 @@ export class BatchSessionRecoveryService {
     }
     if (startEvents.length !== allocations.length || seenAllocationIds.size !== allocations.length) {
       issues.push('HAND_IN event set does not exactly cover persisted plan allocations');
+    }
+    for (const allocation of allocations) {
+      const activeAttributedQty = replay.balances
+        .filter(
+          (balance) =>
+            balance.shipmentLineId === allocation.shipmentLineId &&
+            balance.sourceLocationId === allocation.sourceLocationId &&
+            balance.custodyType !== 'SETTLED',
+        )
+        .reduce((total, balance) => total + Math.max(0, balance.qty), 0);
+      let returnedQty = 0;
+      let settledQty = 0;
+      let shortageQty = 0;
+      for (const event of events) {
+        if (event.fromSourceLocationId !== allocation.sourceLocationId) continue;
+        const payload = payloadOf(event.payload);
+        const attributedLineId = event.fromShipmentLineId ?? payload.shipmentLineId;
+        if (attributedLineId !== allocation.shipmentLineId) continue;
+        if (event.eventType === 'RETURN_TO_SOURCE') returnedQty += event.quantity;
+        else if (event.eventType === 'SETTLE_FOR_DISPATCH') settledQty += event.quantity;
+        else if (event.eventType === 'APPROVE_SHORTAGE') shortageQty += event.quantity;
+      }
+      const accountedQty = activeAttributedQty + returnedQty + settledQty + shortageQty;
+      if (accountedQty > allocation.quantity) {
+        issues.push(
+          `allocation ${allocation.id} line custody exceeds persisted quantity: ` +
+            `allocated=${allocation.quantity}, accounted=${accountedQty}`,
+        );
+      }
     }
     return issues;
   }

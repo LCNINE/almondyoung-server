@@ -19,6 +19,7 @@ import {
   index,
   uniqueIndex,
   check,
+  foreignKey,
   AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { authorizationSchema } from '@app/authorization';
@@ -2413,6 +2414,9 @@ export const shipmentOperations = pgTable(
   },
   (t) => ({
     uqShipmentOperationIdempotency: unique('uq_shipment_operation_idempotency').on(t.type, t.idempotencyKey),
+    // Allows immutable picking-plan retirement history to prove that its owner
+    // is the exact shipment operation/type pair, not merely an arbitrary UUID.
+    uqShipmentOperationIdType: unique('uq_shipment_operations_id_type').on(t.id, t.type),
     idxShipmentOperationStatus: index('idx_shipment_operation_status').on(t.status, t.createdAt),
     ckShipmentOperationRequestHash: check('ck_shipment_operation_request_hash', sql`length(${t.requestHash}) = 64`),
     ckShipmentOperationCompletion: check(
@@ -2596,14 +2600,43 @@ export const pickingPlanMembers = pgTable(
       .notNull(),
     manifestVersion: integer('manifest_version').notNull(),
     reservationVersion: integer('reservation_version').notNull(),
+    retiredAt: timestamp('retired_at', { withTimezone: true }),
+    retireReason: text('retire_reason'),
+    retiredByOperationId: uuid('retired_by_operation_id'),
+    retiredByOperationType: shipmentOperationTypeEnum('retired_by_operation_type'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     pk: primaryKey(t.planId, t.shipmentId),
     idxPickingPlanMemberShipment: index('idx_picking_plan_members_shipment').on(t.shipmentId),
+    idxActivePickingPlanMemberShipment: index('idx_picking_plan_members_active_shipment')
+      .on(t.shipmentId)
+      .where(sql`${t.retiredAt} IS NULL`),
+    fkPickingPlanMemberRetirementOperation: foreignKey({
+      name: 'fk_picking_plan_member_retirement_operation',
+      columns: [t.retiredByOperationId, t.retiredByOperationType],
+      foreignColumns: [shipmentOperations.id, shipmentOperations.type],
+    }).onDelete('restrict'),
     ckPickingPlanMemberVersions: check(
       'ck_picking_plan_member_versions',
       sql`${t.manifestVersion} > 0 AND ${t.reservationVersion} > 0`,
+    ),
+    ckPickingPlanMemberRetirement: check(
+      'ck_picking_plan_member_retirement',
+      sql`(
+        ${t.retiredAt} IS NULL
+        AND ${t.retireReason} IS NULL
+        AND ${t.retiredByOperationId} IS NULL
+        AND ${t.retiredByOperationType} IS NULL
+      ) OR (
+        ${t.retiredAt} IS NOT NULL
+        AND ${t.retireReason} IS NOT NULL
+        AND length(btrim(${t.retireReason})) > 0
+        AND ${t.retiredByOperationId} IS NOT NULL
+        AND ${t.retiredByOperationType} IS NOT NULL
+        AND ${t.retiredByOperationType} = 'short_pick'
+        AND ${t.retiredAt} >= ${t.createdAt}
+      )`,
     ),
   }),
 );

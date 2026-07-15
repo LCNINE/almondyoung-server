@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectTypedDb, DbService } from '@app/db';
 import { AuthorizationService } from '@app/authorization';
-import { and, asc, eq, gt, inArray, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import {
@@ -69,6 +69,22 @@ type CancelResponse = {
   shipment?: ShipmentManifestSnapshot;
 };
 
+export type RetirePickingPlanMemberForShortPickInput = {
+  planId: string;
+  shipmentId: string;
+  operationId: string;
+  reason: string;
+};
+
+export type RetiredPickingPlanMember = {
+  planId: string;
+  shipmentId: string;
+  operationId: string;
+  reason: string;
+  retiredAt: Date;
+  replayed: boolean;
+};
+
 type PendingCancellationIntent = {
   kind: 'cancel_outstanding';
   shipmentId: string;
@@ -109,6 +125,164 @@ export class ShipmentPlanningService {
     private readonly authorization: AuthorizationService,
     private readonly workflowGate: FulfillmentWorkflowGate,
   ) {}
+
+  /**
+   * Retires one shipment from a shared picking plan without deleting its
+   * immutable member/allocation history. The first mutation is owned only by
+   * an exact pending/recovery-required short-pick operation; an exact replay
+   * remains readable after that operation completes.
+   */
+  async retirePickingPlanMemberForShortPick(
+    input: RetirePickingPlanMemberForShortPickInput,
+    tx?: DbTx,
+  ): Promise<RetiredPickingPlanMember> {
+    const reason = input.reason?.trim();
+    if (!reason) throw new BadRequestException('retirement reason must be a non-blank string');
+
+    return this.dbService.run(async (trx) => {
+      const [optimisticOperation] = await trx
+        .select({
+          id: wmsTables.shipmentOperations.id,
+          type: wmsTables.shipmentOperations.type,
+          status: wmsTables.shipmentOperations.status,
+        })
+        .from(wmsTables.shipmentOperations)
+        .where(eq(wmsTables.shipmentOperations.id, input.operationId))
+        .limit(1);
+      if (
+        !optimisticOperation ||
+        optimisticOperation.type !== 'short_pick' ||
+        !['pending', 'recovery_required', 'completed'].includes(optimisticOperation.status)
+      ) {
+        throw this.conflict(
+          'PICKING_PLAN_RETIREMENT_OPERATION_INVALID',
+          'Picking plan retirement requires an exact resumable short-pick operation',
+        );
+      }
+      const [operation] = await trx
+        .select({
+          id: wmsTables.shipmentOperations.id,
+          type: wmsTables.shipmentOperations.type,
+          status: wmsTables.shipmentOperations.status,
+        })
+        .from(wmsTables.shipmentOperations)
+        .where(eq(wmsTables.shipmentOperations.id, input.operationId))
+        .limit(1)
+        .for('update');
+      if (
+        !operation ||
+        operation.type !== 'short_pick' ||
+        !['pending', 'recovery_required', 'completed'].includes(operation.status)
+      ) {
+        throw this.conflict(
+          'PICKING_PLAN_RETIREMENT_OPERATION_INVALID',
+          'Picking plan retirement requires an exact resumable short-pick operation',
+        );
+      }
+      const [plan] = await trx
+        .select({ id: wmsTables.pickingPlans.id, status: wmsTables.pickingPlans.status })
+        .from(wmsTables.pickingPlans)
+        .where(eq(wmsTables.pickingPlans.id, input.planId))
+        .limit(1)
+        .for('update');
+      if (!plan) throw new NotFoundException(`Picking plan ${input.planId} not found`);
+
+      const [member] = await trx
+        .select()
+        .from(wmsTables.pickingPlanMembers)
+        .where(
+          and(
+            eq(wmsTables.pickingPlanMembers.planId, input.planId),
+            eq(wmsTables.pickingPlanMembers.shipmentId, input.shipmentId),
+          ),
+        )
+        .limit(1)
+        .for('update');
+      if (!member) {
+        throw new NotFoundException(`Shipment ${input.shipmentId} is not a member of picking plan ${input.planId}`);
+      }
+      if (member.retiredAt) {
+        if (
+          member.retiredByOperationId !== input.operationId ||
+          member.retiredByOperationType !== 'short_pick' ||
+          member.retireReason !== reason
+        ) {
+          throw this.conflict(
+            'PICKING_PLAN_MEMBER_RETIREMENT_MISMATCH',
+            `Picking plan member ${input.planId}/${input.shipmentId} was retired by another intent`,
+          );
+        }
+        return {
+          planId: member.planId,
+          shipmentId: member.shipmentId,
+          operationId: member.retiredByOperationId,
+          reason: member.retireReason,
+          retiredAt: member.retiredAt,
+          replayed: true,
+        };
+      }
+      if (!['active', 'completed'].includes(plan.status)) {
+        throw this.conflict(
+          'PICKING_PLAN_NOT_RETIRABLE',
+          `Picking plan ${input.planId} is ${plan.status}; short-pick retirement requires active or completed history`,
+        );
+      }
+      if (!['pending', 'recovery_required'].includes(operation.status)) {
+        throw this.conflict(
+          'PICKING_PLAN_RETIREMENT_OPERATION_INVALID',
+          'Picking plan retirement requires the exact resumable short-pick operation',
+        );
+      }
+      const [sourceMember] = await trx
+        .select({ operationId: wmsTables.shipmentOperationMembers.operationId })
+        .from(wmsTables.shipmentOperationMembers)
+        .where(
+          and(
+            eq(wmsTables.shipmentOperationMembers.operationId, operation.id),
+            eq(wmsTables.shipmentOperationMembers.shipmentId, input.shipmentId),
+            eq(wmsTables.shipmentOperationMembers.role, 'source'),
+          ),
+        )
+        .limit(1);
+      if (!sourceMember) {
+        throw this.conflict(
+          'PICKING_PLAN_RETIREMENT_OPERATION_INVALID',
+          `Short-pick operation ${operation.id} does not own shipment ${input.shipmentId}`,
+        );
+      }
+
+      const [retired] = await trx
+        .update(wmsTables.pickingPlanMembers)
+        .set({
+          retiredAt: new Date(),
+          retireReason: reason,
+          retiredByOperationId: operation.id,
+          retiredByOperationType: operation.type,
+        })
+        .where(
+          and(
+            eq(wmsTables.pickingPlanMembers.planId, input.planId),
+            eq(wmsTables.pickingPlanMembers.shipmentId, input.shipmentId),
+            isNull(wmsTables.pickingPlanMembers.retiredAt),
+          ),
+        )
+        .returning();
+      if (!retired) {
+        throw this.conflict(
+          'PICKING_PLAN_MEMBER_RETIREMENT_STALE',
+          `Picking plan member ${input.planId}/${input.shipmentId} changed while retiring`,
+        );
+      }
+      return {
+        planId: retired.planId,
+        shipmentId: retired.shipmentId,
+        operationId: operation.id,
+        reason,
+        retiredAt: retired.retiredAt!,
+        replayed: false,
+      };
+    }, tx);
+  }
 
   async split(
     shipmentId: string,
@@ -1082,6 +1256,7 @@ export class ShipmentPlanningService {
       .where(
         and(
           eq(wmsTables.pickingPlanMembers.shipmentId, shipmentId),
+          isNull(wmsTables.pickingPlanMembers.retiredAt),
           inArray(wmsTables.pickingPlans.status, ['draft', 'active']),
         ),
       )
@@ -1265,6 +1440,7 @@ export class ShipmentPlanningService {
         .where(
           and(
             eq(wmsTables.pickingPlanMembers.shipmentId, aggregate.shipment.id),
+            isNull(wmsTables.pickingPlanMembers.retiredAt),
             inArray(wmsTables.pickingPlans.status, ['draft', 'active']),
           ),
         )

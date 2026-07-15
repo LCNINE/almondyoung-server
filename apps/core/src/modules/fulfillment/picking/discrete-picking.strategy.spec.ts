@@ -126,6 +126,7 @@ function makeService(selectRows: unknown[][] = []) {
   const workflowGate = { assertV2MutationAllowed: jest.fn() };
   const Strategy = DiscretePickingStrategy as any;
   const service: DiscretePickingStrategy = new Strategy({}, commands, workflowGate, {}, sessions, {}, {}, {});
+  jest.spyOn(service as any, 'assertPlanMembers').mockResolvedValue(undefined);
   return { service, commands, sessions, workflowGate, tx };
 }
 

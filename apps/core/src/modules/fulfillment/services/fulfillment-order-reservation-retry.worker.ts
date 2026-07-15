@@ -105,7 +105,13 @@ export class FulfillmentOrderReservationRetryWorker {
              FROM stock_reservations reservation
             WHERE reservation.target_type = 'SHIPMENT_LINE'
               AND reservation.shipment_line_id = sl.id
-              AND reservation.status = 'confirmed'
+              AND (
+                reservation.status = 'confirmed'
+                OR (
+                  reservation.status = 'released'
+                  AND reservation.state_reason LIKE 'short-pick:%'
+                )
+              )
          ), sl.created_at), sl.id
          LIMIT ${limit}
       `);

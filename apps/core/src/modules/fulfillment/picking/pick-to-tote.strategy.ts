@@ -146,7 +146,12 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
           const storedMembers = await trx
             .select({ shipmentId: wmsTables.pickingPlanMembers.shipmentId })
             .from(wmsTables.pickingPlanMembers)
-            .where(eq(wmsTables.pickingPlanMembers.planId, optimisticDraftId))
+            .where(
+              and(
+                eq(wmsTables.pickingPlanMembers.planId, optimisticDraftId),
+                isNull(wmsTables.pickingPlanMembers.retiredAt),
+              ),
+            )
             .orderBy(asc(wmsTables.pickingPlanMembers.shipmentId));
           const storedShipmentIds = storedMembers.map((member) => member.shipmentId);
           if (storedShipmentIds.join(',') !== shipmentIds.join(',')) {
@@ -194,7 +199,9 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
           const lockedMembers = await trx
             .select({ shipmentId: wmsTables.pickingPlanMembers.shipmentId })
             .from(wmsTables.pickingPlanMembers)
-            .where(eq(wmsTables.pickingPlanMembers.planId, openPlan.id))
+            .where(
+              and(eq(wmsTables.pickingPlanMembers.planId, openPlan.id), isNull(wmsTables.pickingPlanMembers.retiredAt)),
+            )
             .orderBy(asc(wmsTables.pickingPlanMembers.shipmentId))
             .for('update');
           const storedShipmentIds = lockedMembers.map((member) => member.shipmentId);
@@ -224,7 +231,12 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
             const members = await trx
               .select({ shipmentId: wmsTables.pickingPlanMembers.shipmentId })
               .from(wmsTables.pickingPlanMembers)
-              .where(eq(wmsTables.pickingPlanMembers.planId, openPlan.id))
+              .where(
+                and(
+                  eq(wmsTables.pickingPlanMembers.planId, openPlan.id),
+                  isNull(wmsTables.pickingPlanMembers.retiredAt),
+                ),
+              )
               .orderBy(asc(wmsTables.pickingPlanMembers.shipmentId));
             const response: PickingPlanResult = {
               state: 'planned',
@@ -373,7 +385,9 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
         const memberRows = await trx
           .select({ shipmentId: wmsTables.pickingPlanMembers.shipmentId })
           .from(wmsTables.pickingPlanMembers)
-          .where(eq(wmsTables.pickingPlanMembers.planId, input.planId));
+          .where(
+            and(eq(wmsTables.pickingPlanMembers.planId, input.planId), isNull(wmsTables.pickingPlanMembers.retiredAt)),
+          );
         const shipmentIds = uniqueSorted(memberRows.map((member) => member.shipmentId));
         let invalidationReason: string | null = null;
         try {
@@ -1558,7 +1572,7 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
     const members = await tx
       .select()
       .from(wmsTables.pickingPlanMembers)
-      .where(eq(wmsTables.pickingPlanMembers.planId, planId))
+      .where(and(eq(wmsTables.pickingPlanMembers.planId, planId), isNull(wmsTables.pickingPlanMembers.retiredAt)))
       .orderBy(asc(wmsTables.pickingPlanMembers.shipmentId))
       .for('update');
     const shipmentById = new Map(aggregate.shipments.map((shipment) => [shipment.id, shipment]));
@@ -1788,7 +1802,11 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
       .select({ shipmentId: wmsTables.pickingPlanMembers.shipmentId })
       .from(wmsTables.pickingPlanMembers)
       .where(
-        and(eq(wmsTables.pickingPlanMembers.planId, planId), inArray(wmsTables.pickingPlanMembers.shipmentId, ids)),
+        and(
+          eq(wmsTables.pickingPlanMembers.planId, planId),
+          inArray(wmsTables.pickingPlanMembers.shipmentId, ids),
+          isNull(wmsTables.pickingPlanMembers.retiredAt),
+        ),
       )
       .orderBy(asc(wmsTables.pickingPlanMembers.shipmentId))
       .for('update');

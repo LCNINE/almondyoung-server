@@ -1,4 +1,5 @@
 import { ConflictException } from '@nestjs/common';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { FulfillmentOrderReservationRetryWorker } from './fulfillment-order-reservation-retry.worker';
 
 describe('FulfillmentOrderReservationRetryWorker', () => {
@@ -186,5 +187,32 @@ describe('FulfillmentOrderReservationRetryWorker', () => {
     expect(db.db.selectDistinct).not.toHaveBeenCalled();
     expect(db.db.select).not.toHaveBeenCalled();
     expect(reservations.reserve).not.toHaveBeenCalled();
+  });
+
+  it('V2 후보 공정성은 confirmed와 short-pick released 수요의 requestedAt을 함께 사용한다', async () => {
+    let capturedQuery: unknown;
+    const db = {
+      db: {
+        execute: jest.fn((query: unknown) => {
+          capturedQuery = query;
+          return Promise.resolve([]);
+        }),
+      },
+    };
+    const workflowGate = {
+      shouldRunReservationRetry: jest.fn(() => true),
+      getMode: jest.fn(() => 'v2'),
+    };
+    const worker = new FulfillmentOrderReservationRetryWorker(
+      db as never,
+      { reserve: jest.fn() } as never,
+      workflowGate as never,
+    );
+
+    await expect(worker.findCandidates(20)).resolves.toEqual([]);
+    const rendered = new PgDialect().sqlToQuery(capturedQuery as never).sql.replace(/\s+/g, ' ');
+    expect(rendered).toContain("reservation.status = 'confirmed'");
+    expect(rendered).toContain("reservation.status = 'released'");
+    expect(rendered).toContain("reservation.state_reason LIKE 'short-pick:%'");
   });
 });

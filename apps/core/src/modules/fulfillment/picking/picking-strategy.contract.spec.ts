@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/require-await */
+import { ConflictException } from '@nestjs/common';
 import {
   CompletePickInput,
   PickingStrategy,
@@ -59,6 +60,8 @@ export interface PickingContractSnapshot {
 export interface PickingStrategyContractFixture {
   strategy: PickingStrategy;
   pickShipmentA(): Promise<{ first: unknown; replay: unknown }>;
+  retireShipmentA(): void;
+  attemptRetiredShipmentA(): Promise<unknown>;
   snapshot(): PickingContractSnapshot;
 }
 
@@ -227,6 +230,22 @@ export function definePickingStrategyContract(label: string, createFixture: Pick
       expect(snapshot.custody).toMatchObject({ worker: 0, sorting: 0, packing: 0, total: 5, handedIn: 5 });
       expect(snapshot.workItemStatuses).toMatchObject({
         [PICKING_CONTRACT_IDS.workItemA]: 'queued',
+        [PICKING_CONTRACT_IDS.workItemB]: 'picking',
+      });
+    });
+
+    it('rejects scans for a retired member while the sibling work item stays active', async () => {
+      await fixture.strategy.plan(planInput());
+      await fixture.strategy.start(startInput());
+      fixture.retireShipmentA();
+
+      await expect(fixture.attemptRetiredShipmentA()).rejects.toMatchObject({
+        response: expect.objectContaining({
+          code: expect.stringMatching(/^PICKING_(SHIPMENT_NOT_IN_PLAN|STALE_CLAIM)$/),
+        }),
+      });
+      expect(fixture.snapshot().workItemStatuses).toMatchObject({
+        [PICKING_CONTRACT_IDS.workItemA]: 'short_pick_recovery',
         [PICKING_CONTRACT_IDS.workItemB]: 'picking',
       });
     });
@@ -528,6 +547,7 @@ class ProductionDiscreteState {
 
 function createProductionDiscreteFixture(): PickingStrategyContractFixture {
   const state = new ProductionDiscreteState();
+  let shipmentARetired = false;
   const tx = {
     select: jest.fn(() => new QueryResult(state.selectRows())),
     insert: jest.fn(() => new InsertResult(state)),
@@ -608,6 +628,14 @@ function createProductionDiscreteFixture(): PickingStrategyContractFixture {
   ]);
   jest.spyOn(strategy as any, 'planStalenessReason').mockResolvedValue(null);
   jest.spyOn(strategy as any, 'assertActivePlanSession').mockResolvedValue(undefined);
+  jest.spyOn(strategy as any, 'assertPlanMembers').mockImplementation(async (_planId, shipmentIds: string[]) => {
+    if (shipmentARetired && shipmentIds.includes(PICKING_CONTRACT_IDS.shipmentA)) {
+      throw new ConflictException({
+        code: 'PICKING_SHIPMENT_NOT_IN_PLAN',
+        message: 'Retired shipment is not an active plan member',
+      });
+    }
+  });
   jest
     .spyOn(strategy as any, 'lockAndAssertPickerClaim')
     .mockImplementation(async (workItemId) => state.workItems[workItemId]);
@@ -625,6 +653,14 @@ function createProductionDiscreteFixture(): PickingStrategyContractFixture {
       const replay = await strategy.scan(input);
       return { first, replay };
     },
+    retireShipmentA: () => {
+      shipmentARetired = true;
+      Object.assign(state.workItems[PICKING_CONTRACT_IDS.workItemA], {
+        status: 'short_pick_recovery',
+        recoveryReason: 'one unit missing',
+      });
+    },
+    attemptRetiredShipmentA: () => strategy.scan(scanInput('A', 1, 'retired-scan-a')),
     snapshot: () => {
       const custodyTotal = (type: CustodyType) =>
         state.balances.filter((balance) => balance.custodyType === type).reduce((sum, balance) => sum + balance.qty, 0);

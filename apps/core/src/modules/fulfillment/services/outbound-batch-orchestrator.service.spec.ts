@@ -1,6 +1,7 @@
 import { ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { GUARDS_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { REQUIRED_SCOPES_KEY } from '@app/authorization';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { DbTx } from '../../inventory/schema/inventory.schema';
 import { OutboundBatchV2Controller } from '../controllers/outbound-batch-v2.controller';
@@ -15,7 +16,10 @@ const UUIDS = {
 };
 
 class QueryResult implements PromiseLike<unknown[]> {
-  constructor(private readonly rows: unknown[]) {}
+  constructor(
+    private readonly rows: unknown[],
+    private readonly captureWhere?: (predicate: unknown) => void,
+  ) {}
 
   from(): this {
     return this;
@@ -25,7 +29,8 @@ class QueryResult implements PromiseLike<unknown[]> {
     return this;
   }
 
-  where(): this {
+  where(predicate: unknown): this {
+    this.captureWhere?.(predicate);
     return this;
   }
 
@@ -79,6 +84,18 @@ function makeService() {
     {} as never,
   );
   return { service, commands, workflowGate };
+}
+
+function servicePolicy(service: OutboundBatchOrchestrator) {
+  return service as unknown as {
+    assertExcludable(
+      aggregate: {
+        shipment: { id: string; status: string };
+        lines: Array<{ id: string; inspectedQty: number }>;
+      },
+      transaction: DbTx,
+    ): Promise<void>;
+  };
 }
 
 describe('OutboundBatchOrchestrator policy', () => {
@@ -182,6 +199,34 @@ describe('OutboundBatchOrchestrator policy', () => {
     const code = typeof response === 'object' && response !== null && 'code' in response ? response.code : response;
     expect(code).toBe('WORK_ITEM_TOTE_RELEASE_REQUIRED');
     expect(select).toHaveBeenCalledTimes(4);
+  });
+
+  it('excludes retired membership from active-plan exclusion checks', async () => {
+    const predicates: unknown[] = [];
+    const select = jest.fn(() => new QueryResult([], (predicate) => predicates.push(predicate)));
+    const tx = { select } as unknown as DbTx;
+    const policy = servicePolicy(makeService().service);
+
+    await expect(
+      policy.assertExcludable(
+        {
+          shipment: { id: '55555555-5555-4555-8555-555555555555', status: 'ready' },
+          lines: [{ id: '77777777-7777-4777-8777-777777777777', inspectedQty: 0 }],
+        },
+        tx,
+      ),
+    ).resolves.toBeUndefined();
+
+    const rendered = predicates.map((predicate) =>
+      new PgDialect().sqlToQuery(predicate as never).sql.replace(/\s+/g, ' '),
+    );
+    expect(
+      rendered.some(
+        (query) =>
+          query.includes('"picking_plan_members"."retired_at" is null') &&
+          query.includes('"picking_plans"."status" in'),
+      ),
+    ).toBe(true);
   });
 
   it('rejects named handoff from a non-manager before claiming a command row', async () => {

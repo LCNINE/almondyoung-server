@@ -9,6 +9,7 @@ import {
 import { UnifiedReservationService } from '../../inventory/shared/services/unified-reservation.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentProgressService, FulfillmentOrderItemProgressInput } from './fulfillment-progress.service';
+import { shortPickOperationIntentOf, ShortPickOperationIntentProof } from './batch-inventory-session.service';
 
 const ACTIVE_SHIPMENT_STATUSES = ['draft', 'planned', 'recovery_required'] as const;
 
@@ -25,6 +26,14 @@ type LineContext = {
 };
 
 type ConfirmedReservation = typeof wmsTables.stockReservations.$inferSelect;
+
+type ShortPickOperationOwner = {
+  memberOperationId: string;
+  shipmentId: string;
+  type: string;
+  status: string;
+  intent: ShortPickOperationIntentProof | null;
+};
 
 export type PartialReservationResult = {
   shipmentLineId: string;
@@ -50,12 +59,51 @@ export type DispatchReservationConsumption = {
   affectedSkuIds: string[];
 };
 
+export type ShortPickReservationInvalidation = {
+  shipmentLineId: string;
+  shortPickOperationId: string;
+  invalidatedQty: number;
+  totalReservedQty: number;
+  affectedReservationIds: string[];
+  reservationVersion: number;
+  replayed: boolean;
+};
+
 export function computePartialReservationQuantity(input: {
   requestedQty: number;
   outstandingQty: number;
   availableQty: number;
 }): number {
   return Math.max(0, Math.min(input.requestedQty, input.outstandingQty, input.availableQty));
+}
+
+export function earliestReservationDemandAt(fallback: Date, ...candidates: Array<Date | null | undefined>): Date {
+  return candidates.reduce<Date>(
+    (earliest, candidate) => (candidate && candidate.getTime() < earliest.getTime() ? candidate : earliest),
+    fallback,
+  );
+}
+
+export function normalizeReservationDemandAt(value: Date | string | null | undefined, fallback: Date): Date {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? fallback : value;
+  if (typeof value !== 'string') return fallback;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? fallback : parsed;
+}
+
+export function planOldestReservationInvalidation(
+  reservations: ReadonlyArray<{ id: string; quantity: number }>,
+  qty: number,
+): Array<{ id: string; invalidatedQty: number; remainingQty: number }> {
+  let remaining = qty;
+  const plan: Array<{ id: string; invalidatedQty: number; remainingQty: number }> = [];
+  for (const reservation of reservations) {
+    if (remaining === 0) break;
+    const invalidatedQty = Math.min(remaining, reservation.quantity);
+    plan.push({ id: reservation.id, invalidatedQty, remainingQty: reservation.quantity - invalidatedQty });
+    remaining -= invalidatedQty;
+  }
+  return plan;
 }
 
 function assertPositiveInteger(name: string, value: number): void {
@@ -105,7 +153,23 @@ export class ShipmentReservationService {
       this.assertDraft(line, 'reserve');
       await acquireStockAvailabilityLock(trx, line.skuId, line.warehouseId);
 
+      const [releasedShortPickDemand] = await trx
+        .select({
+          requestedAt: sql<
+            Date | string | null
+          >`min(coalesce(${wmsTables.stockReservations.requestedAt}, ${wmsTables.stockReservations.createdAt}))`,
+        })
+        .from(wmsTables.stockReservations)
+        .where(
+          and(
+            eq(wmsTables.stockReservations.targetType, 'SHIPMENT_LINE'),
+            eq(wmsTables.stockReservations.shipmentLineId, line.id),
+            eq(wmsTables.stockReservations.status, 'released'),
+            sql`${wmsTables.stockReservations.stateReason} LIKE 'short-pick:%'`,
+          ),
+        );
       const reservations = await this.loadConfirmedReservations(line.id, trx);
+      const demandRequestedAt = normalizeReservationDemandAt(releasedShortPickDemand?.requestedAt, line.createdAt);
       const confirmedQty = reservations.reduce((total, row) => total + row.quantity, 0);
       const outstandingQty = Math.max(0, line.qty - confirmedQty);
       const availableQty = await this.unifiedReservation.getAvailableQuantity(line.skuId, line.warehouseId, trx);
@@ -130,7 +194,14 @@ export class ShipmentReservationService {
         // partial release/transfer, preserving one fairness timestamp per claim.
         await trx
           .update(wmsTables.stockReservations)
-          .set({ quantity: reservations[0].quantity + quantity, updatedAt: new Date() })
+          .set({
+            quantity: reservations[0].quantity + quantity,
+            requestedAt: earliestReservationDemandAt(
+              demandRequestedAt,
+              reservations[0].requestedAt ?? reservations[0].createdAt,
+            ),
+            updatedAt: new Date(),
+          })
           .where(eq(wmsTables.stockReservations.id, reservations[0].id));
         reservationId = reservations[0].id;
         await this.unifiedReservation.recalculateSellableForSku(line.skuId, trx);
@@ -143,7 +214,7 @@ export class ShipmentReservationService {
             skuId: line.skuId,
             warehouseId: line.warehouseId,
             quantity,
-            requestedAt: line.createdAt,
+            requestedAt: demandRequestedAt,
             stockLockHeld: true,
             reason: 'Shipment line partial reservation',
           },
@@ -246,6 +317,145 @@ export class ShipmentReservationService {
         totalReservedQty: confirmedQty - qty,
         affectedReservationIds: [...new Set(affectedReservationIds)],
         reservationVersion: await this.loadReservationVersion(line.shipmentId, trx),
+      };
+    }, tx);
+  }
+
+  async invalidateForShortPick(
+    shipmentLineId: string,
+    qty: number,
+    shortPickOperationId: string,
+    tx?: DbTx,
+  ): Promise<ShortPickReservationInvalidation> {
+    assertPositiveInteger('qty', qty);
+    if (!shortPickOperationId.trim()) throw new BadRequestException('shortPickOperationId is required');
+    const stateReason = `short-pick:${shortPickOperationId}`;
+
+    return this.db.run(async (trx) => {
+      const initial = await this.loadLineContext(shipmentLineId, trx);
+      const lockedOperationOwner = await this.loadShortPickOperationOwner(
+        shortPickOperationId,
+        initial.shipmentId,
+        trx,
+      );
+      this.assertValidShortPickOperationOwner(lockedOperationOwner, shortPickOperationId, initial.shipmentId);
+
+      // Canonical short-pick mutation order is operation/member -> reservation
+      // graph -> invoice/work/plan/session/custody.
+      await this.lockConnectedComponents([initial], trx);
+      const line = await this.loadLineContext(shipmentLineId, trx);
+      this.assertStableContext(initial, line);
+      if (lockedOperationOwner.shipmentId !== line.shipmentId) {
+        throw new ConflictException('Short-pick operation ownership changed while acquiring reservation locks');
+      }
+      const intendedShortQty = lockedOperationOwner.intent.lines
+        .filter((intentLine) => intentLine.shipmentLineId === line.id)
+        .reduce((total, intentLine) => total + intentLine.shortQty, 0);
+      if (intendedShortQty !== qty) {
+        throw new ConflictException(
+          `Reservation invalidation quantity ${qty} differs from immutable short-pick intent ${intendedShortQty}`,
+        );
+      }
+      if (!ACTIVE_SHIPMENT_STATUSES.includes(line.shipmentStatus as (typeof ACTIVE_SHIPMENT_STATUSES)[number])) {
+        throw new ConflictException(
+          `Cannot invalidate short-pick reservation for ${line.shipmentStatus} shipment ${line.shipmentId}`,
+        );
+      }
+      await acquireStockAvailabilityLock(trx, line.skuId, line.warehouseId);
+
+      const replayRows = await trx
+        .select({ id: wmsTables.stockReservations.id, quantity: wmsTables.stockReservations.quantity })
+        .from(wmsTables.stockReservations)
+        .where(
+          and(
+            eq(wmsTables.stockReservations.targetType, 'SHIPMENT_LINE'),
+            eq(wmsTables.stockReservations.shipmentLineId, line.id),
+            eq(wmsTables.stockReservations.status, 'released'),
+            eq(wmsTables.stockReservations.stateReason, stateReason),
+          ),
+        )
+        .orderBy(asc(wmsTables.stockReservations.createdAt), asc(wmsTables.stockReservations.id));
+      if (replayRows.length > 0) {
+        const replayedQty = replayRows.reduce((total, row) => total + row.quantity, 0);
+        if (replayedQty !== qty) {
+          throw new ConflictException(
+            `Short-pick operation ${shortPickOperationId} was already used for quantity ${replayedQty}`,
+          );
+        }
+        const current = await this.selectConfirmedReservations(line.id, trx);
+        return {
+          shipmentLineId,
+          shortPickOperationId,
+          invalidatedQty: replayedQty,
+          totalReservedQty: current.reduce((total, row) => total + row.quantity, 0),
+          affectedReservationIds: replayRows.map((row) => row.id),
+          reservationVersion: await this.loadReservationVersion(line.shipmentId, trx),
+          replayed: true,
+        };
+      }
+      if (lockedOperationOwner.status !== 'pending') {
+        throw new ConflictException(
+          `A ${lockedOperationOwner.status} short-pick operation permits only exact reservation replay`,
+        );
+      }
+
+      const reservations = await this.loadConfirmedReservations(line.id, trx);
+      const confirmedQty = reservations.reduce((total, row) => total + row.quantity, 0);
+      if (qty > confirmedQty) {
+        throw new ConflictException(
+          `Cannot invalidate short-pick quantity ${qty}; shipment line ${line.id} has ${confirmedQty} confirmed`,
+        );
+      }
+
+      const now = new Date();
+      const invalidatedReservationIds: string[] = [];
+      const invalidationPlan = planOldestReservationInvalidation(reservations, qty);
+      for (const planned of invalidationPlan) {
+        const reservation = reservations.find((candidate) => candidate.id === planned.id)!;
+        const invalidated = planned.invalidatedQty;
+        if (invalidated === reservation.quantity) {
+          await trx
+            .update(wmsTables.stockReservations)
+            .set({ status: 'released', stateReason, invalidatedAt: now, updatedAt: now })
+            .where(eq(wmsTables.stockReservations.id, reservation.id));
+          invalidatedReservationIds.push(reservation.id);
+        } else {
+          await trx
+            .update(wmsTables.stockReservations)
+            .set({ quantity: reservation.quantity - invalidated, updatedAt: now })
+            .where(eq(wmsTables.stockReservations.id, reservation.id));
+          const [split] = await trx
+            .insert(wmsTables.stockReservations)
+            .values({
+              targetType: 'SHIPMENT_LINE',
+              targetId: line.id,
+              shipmentLineId: line.id,
+              skuId: line.skuId,
+              warehouseId: line.warehouseId,
+              quantity: invalidated,
+              status: 'released',
+              timeoutAt: reservation.timeoutAt,
+              reason: reservation.reason,
+              requestedAt: reservation.requestedAt ?? reservation.createdAt,
+              stateReason,
+              invalidatedAt: now,
+            })
+            .returning({ id: wmsTables.stockReservations.id });
+          invalidatedReservationIds.push(split.id);
+        }
+      }
+
+      await this.unifiedReservation.recalculateSellableForSku(line.skuId, trx);
+      await this.bumpReservationVersions([line.shipmentId], trx);
+      await this.recompute(line.shipmentId, trx);
+      return {
+        shipmentLineId,
+        shortPickOperationId,
+        invalidatedQty: qty,
+        totalReservedQty: confirmedQty - qty,
+        affectedReservationIds: invalidatedReservationIds,
+        reservationVersion: await this.loadReservationVersion(line.shipmentId, trx),
+        replayed: false,
       };
     }, tx);
   }
@@ -628,6 +838,61 @@ export class ShipmentReservationService {
   private async loadConfirmedReservations(shipmentLineId: string, tx: DbTx): Promise<ConfirmedReservation[]> {
     await this.lockConfirmedReservations([shipmentLineId], tx);
     return this.selectConfirmedReservations(shipmentLineId, tx);
+  }
+
+  private async loadShortPickOperationOwner(
+    operationId: string,
+    shipmentId: string,
+    tx: DbTx,
+  ): Promise<ShortPickOperationOwner | undefined> {
+    const [operation] = await tx
+      .select({
+        type: wmsTables.shipmentOperations.type,
+        status: wmsTables.shipmentOperations.status,
+        snapshot: wmsTables.shipmentOperations.beforeManifestSnapshot,
+      })
+      .from(wmsTables.shipmentOperations)
+      .where(eq(wmsTables.shipmentOperations.id, operationId))
+      .limit(1)
+      .for('update');
+    if (!operation) return undefined;
+    const [member] = await tx
+      .select({
+        memberOperationId: wmsTables.shipmentOperationMembers.operationId,
+        shipmentId: wmsTables.shipmentOperationMembers.shipmentId,
+      })
+      .from(wmsTables.shipmentOperationMembers)
+      .where(
+        and(
+          eq(wmsTables.shipmentOperationMembers.operationId, operationId),
+          eq(wmsTables.shipmentOperationMembers.shipmentId, shipmentId),
+          eq(wmsTables.shipmentOperationMembers.role, 'source'),
+        ),
+      )
+      .limit(1)
+      .for('update');
+    return member ? { ...operation, ...member, intent: shortPickOperationIntentOf(operation.snapshot) } : undefined;
+  }
+
+  private assertValidShortPickOperationOwner(
+    owner: ShortPickOperationOwner | undefined,
+    operationId: string,
+    shipmentId: string,
+  ): asserts owner is ShortPickOperationOwner & { intent: ShortPickOperationIntentProof } {
+    if (
+      !owner ||
+      owner.memberOperationId !== operationId ||
+      owner.shipmentId !== shipmentId ||
+      owner.type !== 'short_pick' ||
+      !['pending', 'recovery_required', 'completed'].includes(owner.status) ||
+      !owner.intent ||
+      owner.intent.operationId !== operationId ||
+      owner.intent.shipmentId !== shipmentId
+    ) {
+      throw new ConflictException(
+        `Reservation invalidation requires an exact short-pick operation intent owning shipment ${shipmentId}`,
+      );
+    }
   }
 
   private async lockConfirmedReservations(shipmentLineIds: readonly string[], tx: DbTx): Promise<void> {

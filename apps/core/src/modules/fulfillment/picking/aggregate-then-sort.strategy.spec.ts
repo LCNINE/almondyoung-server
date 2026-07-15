@@ -448,6 +448,7 @@ function createHarness(): AggregateHarness {
     .mockResolvedValue([{ skuId: IDS.sku, sourceLocationId: IDS.source, stockVersion: 7, remainingQty: 5 }]);
   jest.spyOn(strategy as any, 'planStalenessReason').mockResolvedValue(null);
   jest.spyOn(strategy as any, 'assertActivePlanSession').mockResolvedValue(undefined);
+  jest.spyOn(strategy as any, 'assertPlanMembers').mockResolvedValue(undefined);
   jest.spyOn(strategy as any, 'acquireCartLock').mockResolvedValue(undefined);
   jest
     .spyOn(strategy as any, 'assertCartOwnedBy')
@@ -821,6 +822,15 @@ describe('AggregateThenSortPickingStrategy focused custody behavior', () => {
 
 function createProductionAggregateFixture(): PickingStrategyContractFixture {
   const harness = createHarness();
+  let shipmentARetired = false;
+  (harness.strategy as any).assertPlanMembers.mockImplementation(async (_planId: string, shipmentIds: string[]) => {
+    if (shipmentARetired && shipmentIds.includes(IDS.shipmentA)) {
+      throw new ConflictException({
+        code: 'PICKING_SHIPMENT_NOT_IN_PLAN',
+        message: 'Retired shipment is not an active plan member',
+      });
+    }
+  });
   return {
     strategy: harness.strategy,
     pickShipmentA: async () => {
@@ -832,6 +842,14 @@ function createProductionAggregateFixture(): PickingStrategyContractFixture {
       const replay = await harness.strategy.scan(sort);
       return { first, replay };
     },
+    retireShipmentA: () => {
+      shipmentARetired = true;
+      Object.assign(harness.state.workItems[IDS.workItemA], {
+        status: 'short_pick_recovery',
+        recoveryReason: 'one unit missing',
+      });
+    },
+    attemptRetiredShipmentA: () => harness.strategy.scan(sortInput('A', 1, { idempotencyKey: 'retired-sort-a' })),
     snapshot: () => {
       const custodyTotal = (type: CustodyType) =>
         harness.state.balances

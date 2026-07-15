@@ -401,7 +401,11 @@ export class ShipmentDispatchService {
       .select()
       .from(wmsTables.pickingPlanMembers)
       .where(
-        and(eq(wmsTables.pickingPlanMembers.planId, planId), eq(wmsTables.pickingPlanMembers.shipmentId, shipmentId)),
+        and(
+          eq(wmsTables.pickingPlanMembers.planId, planId),
+          eq(wmsTables.pickingPlanMembers.shipmentId, shipmentId),
+          isNull(wmsTables.pickingPlanMembers.retiredAt),
+        ),
       )
       .limit(1);
     if (

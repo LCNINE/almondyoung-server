@@ -133,7 +133,12 @@ export class DiscretePickingStrategy implements PickingStrategy {
           const storedMembers = await trx
             .select({ shipmentId: wmsTables.pickingPlanMembers.shipmentId })
             .from(wmsTables.pickingPlanMembers)
-            .where(eq(wmsTables.pickingPlanMembers.planId, optimisticDraftId))
+            .where(
+              and(
+                eq(wmsTables.pickingPlanMembers.planId, optimisticDraftId),
+                isNull(wmsTables.pickingPlanMembers.retiredAt),
+              ),
+            )
             .orderBy(asc(wmsTables.pickingPlanMembers.shipmentId));
           const storedShipmentIds = storedMembers.map((member) => member.shipmentId);
           if (storedShipmentIds.join(',') !== shipmentIds.join(',')) {
@@ -181,7 +186,9 @@ export class DiscretePickingStrategy implements PickingStrategy {
           const lockedMembers = await trx
             .select({ shipmentId: wmsTables.pickingPlanMembers.shipmentId })
             .from(wmsTables.pickingPlanMembers)
-            .where(eq(wmsTables.pickingPlanMembers.planId, openPlan.id))
+            .where(
+              and(eq(wmsTables.pickingPlanMembers.planId, openPlan.id), isNull(wmsTables.pickingPlanMembers.retiredAt)),
+            )
             .orderBy(asc(wmsTables.pickingPlanMembers.shipmentId))
             .for('update');
           const storedShipmentIds = lockedMembers.map((member) => member.shipmentId);
@@ -211,7 +218,12 @@ export class DiscretePickingStrategy implements PickingStrategy {
             const members = await trx
               .select({ shipmentId: wmsTables.pickingPlanMembers.shipmentId })
               .from(wmsTables.pickingPlanMembers)
-              .where(eq(wmsTables.pickingPlanMembers.planId, openPlan.id))
+              .where(
+                and(
+                  eq(wmsTables.pickingPlanMembers.planId, openPlan.id),
+                  isNull(wmsTables.pickingPlanMembers.retiredAt),
+                ),
+              )
               .orderBy(asc(wmsTables.pickingPlanMembers.shipmentId));
             const response: PickingPlanResult = {
               state: 'planned',
@@ -360,7 +372,9 @@ export class DiscretePickingStrategy implements PickingStrategy {
         const memberRows = await trx
           .select({ shipmentId: wmsTables.pickingPlanMembers.shipmentId })
           .from(wmsTables.pickingPlanMembers)
-          .where(eq(wmsTables.pickingPlanMembers.planId, input.planId));
+          .where(
+            and(eq(wmsTables.pickingPlanMembers.planId, input.planId), isNull(wmsTables.pickingPlanMembers.retiredAt)),
+          );
         const shipmentIds = uniqueSorted(memberRows.map((member) => member.shipmentId));
         let invalidationReason: string | null = null;
         try {
@@ -460,6 +474,7 @@ export class DiscretePickingStrategy implements PickingStrategy {
           trx,
         );
         await this.assertActivePlanSession(input.planId, input.sessionId, input.batchId, trx);
+        await this.assertPlanMembers(input.planId, [input.shipmentId], trx);
         const [line] = await trx
           .select({ shipmentId: wmsTables.shipmentLines.shipmentId, skuId: wmsTables.shipmentLines.skuId })
           .from(wmsTables.shipmentLines)
@@ -592,6 +607,7 @@ export class DiscretePickingStrategy implements PickingStrategy {
           throw this.conflict('PICKING_HANDOFF_STALE', 'Picker handoff returned an unexpected work item state');
         }
         await this.assertActivePlanSession(input.planId, input.sessionId, input.batchId, trx);
+        await this.assertPlanMembers(input.planId, [input.shipmentId], trx);
         const balances = await this.loadPositiveShipmentCustody(input.sessionId, input.shipmentId, trx);
         this.assertExclusiveWorkerCustody(balances, oldOwnerId);
 
@@ -667,6 +683,7 @@ export class DiscretePickingStrategy implements PickingStrategy {
           trx,
         );
         await this.assertActivePlanSession(input.planId, input.sessionId, input.batchId, trx);
+        await this.assertPlanMembers(input.planId, [input.shipmentId], trx);
         const allocations = await this.loadShipmentAllocations(input.planId, input.shipmentId, trx);
         const packingRef = `${PACKING_REF_PREFIX}${input.workItemId}`;
         for (const allocation of allocations) {
@@ -790,6 +807,7 @@ export class DiscretePickingStrategy implements PickingStrategy {
         const item = await this.loadWorkItem(input.workItemId, trx, true);
         this.assertWorkItemIdentity(item, input.batchId, input.shipmentId);
         await this.assertActivePlanSession(input.planId, input.sessionId, input.batchId, trx);
+        await this.assertPlanMembers(input.planId, [input.shipmentId], trx);
         if (item.leaseVersion !== input.expectedLeaseVersion) {
           throw this.conflict('PICKING_STALE_CLAIM', `Work item ${item.id} lease version changed`);
         }
@@ -1206,7 +1224,7 @@ export class DiscretePickingStrategy implements PickingStrategy {
     const members = await tx
       .select()
       .from(wmsTables.pickingPlanMembers)
-      .where(eq(wmsTables.pickingPlanMembers.planId, planId))
+      .where(and(eq(wmsTables.pickingPlanMembers.planId, planId), isNull(wmsTables.pickingPlanMembers.retiredAt)))
       .orderBy(asc(wmsTables.pickingPlanMembers.shipmentId))
       .for('update');
     const shipmentById = new Map(aggregate.shipments.map((shipment) => [shipment.id, shipment]));
@@ -1376,6 +1394,28 @@ export class DiscretePickingStrategy implements PickingStrategy {
       throw this.conflict('PICKING_STALE_CLAIM', `Worker ${actorId} does not own the active picker lease`);
     }
     return item;
+  }
+
+  private async assertPlanMembers(planId: string, shipmentIds: string[], tx: DbTx): Promise<void> {
+    const ids = uniqueSorted(shipmentIds);
+    if (!ids.length || ids.length !== shipmentIds.length) {
+      throw new BadRequestException('Plan member shipments must be unique and non-empty');
+    }
+    const rows = await tx
+      .select({ shipmentId: wmsTables.pickingPlanMembers.shipmentId })
+      .from(wmsTables.pickingPlanMembers)
+      .where(
+        and(
+          eq(wmsTables.pickingPlanMembers.planId, planId),
+          inArray(wmsTables.pickingPlanMembers.shipmentId, ids),
+          isNull(wmsTables.pickingPlanMembers.retiredAt),
+        ),
+      )
+      .orderBy(asc(wmsTables.pickingPlanMembers.shipmentId))
+      .for('update');
+    if (rows.length !== ids.length || rows.some((row, index) => row.shipmentId !== ids[index])) {
+      throw this.conflict('PICKING_SHIPMENT_NOT_IN_PLAN', 'Every requested shipment must belong to the active plan');
+    }
   }
 
   private async loadWorkItem(workItemId: string, tx: DbTx, lock = false): Promise<WorkItemRow> {

@@ -1,6 +1,7 @@
 import { NotFoundException, ValidationPipe } from '@nestjs/common';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { ScopeGuard } from '@app/authorization';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { ConsolidationController } from '../controllers/consolidation.controller';
 import { CreateConsolidationDto } from '../dto/consolidation.dto';
@@ -94,6 +95,53 @@ describe('ConsolidationService command boundary', () => {
     const failed = harness(dbService).service;
     Object.assign(failed, { loadAggregate: jest.fn().mockRejectedValue(unexpected) });
     await expect(failed.findCandidates('warehouse')).rejects.toBe(unexpected);
+  });
+
+  it('does not treat retired membership in a shared active plan as a consolidation blocker', async () => {
+    const predicates: unknown[] = [];
+    class Query implements PromiseLike<unknown[]> {
+      from(): this {
+        return this;
+      }
+      innerJoin(): this {
+        return this;
+      }
+      where(predicate: unknown): this {
+        predicates.push(predicate);
+        return this;
+      }
+      limit(): Promise<unknown[]> {
+        return Promise.resolve([]);
+      }
+      then<TResult1 = unknown[], TResult2 = never>(
+        onfulfilled?: ((value: unknown[]) => TResult1 | PromiseLike<TResult1>) | null,
+        onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+      ): PromiseLike<TResult1 | TResult2> {
+        return Promise.resolve([]).then(onfulfilled, onrejected);
+      }
+    }
+    const tx = { select: () => new Query() };
+    const service = harness().service as unknown as {
+      loadBlockers(
+        aggregate: { shipment: { id: string }; lines: Array<{ id: string; inspectedQty: number }> },
+        transaction: unknown,
+      ): Promise<string[]>;
+    };
+
+    await expect(
+      service.loadBlockers({ shipment: { id: first }, lines: [{ id: second, inspectedQty: 0 }] }, tx),
+    ).resolves.toEqual([]);
+
+    const rendered = predicates.map((predicate) =>
+      new PgDialect().sqlToQuery(predicate as never).sql.replace(/\s+/g, ' '),
+    );
+    expect(
+      rendered.some(
+        (query) =>
+          query.includes('"picking_plan_members"."retired_at" is null') &&
+          query.includes('"picking_plans"."status" in'),
+      ),
+    ).toBe(true);
   });
 
   it('sorts whole source shipments before hashing so request order is immaterial', async () => {

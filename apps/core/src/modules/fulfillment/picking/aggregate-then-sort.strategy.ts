@@ -154,7 +154,12 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
           const storedMembers = await trx
             .select({ shipmentId: wmsTables.pickingPlanMembers.shipmentId })
             .from(wmsTables.pickingPlanMembers)
-            .where(eq(wmsTables.pickingPlanMembers.planId, optimisticDraftId))
+            .where(
+              and(
+                eq(wmsTables.pickingPlanMembers.planId, optimisticDraftId),
+                isNull(wmsTables.pickingPlanMembers.retiredAt),
+              ),
+            )
             .orderBy(asc(wmsTables.pickingPlanMembers.shipmentId));
           const storedShipmentIds = storedMembers.map((member) => member.shipmentId);
           if (storedShipmentIds.join(',') !== shipmentIds.join(',')) {
@@ -203,7 +208,9 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
           const lockedMembers = await trx
             .select({ shipmentId: wmsTables.pickingPlanMembers.shipmentId })
             .from(wmsTables.pickingPlanMembers)
-            .where(eq(wmsTables.pickingPlanMembers.planId, openPlan.id))
+            .where(
+              and(eq(wmsTables.pickingPlanMembers.planId, openPlan.id), isNull(wmsTables.pickingPlanMembers.retiredAt)),
+            )
             .orderBy(asc(wmsTables.pickingPlanMembers.shipmentId))
             .for('update');
           const storedShipmentIds = lockedMembers.map((member) => member.shipmentId);
@@ -358,7 +365,9 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
         const members = await trx
           .select({ shipmentId: wmsTables.pickingPlanMembers.shipmentId })
           .from(wmsTables.pickingPlanMembers)
-          .where(eq(wmsTables.pickingPlanMembers.planId, input.planId));
+          .where(
+            and(eq(wmsTables.pickingPlanMembers.planId, input.planId), isNull(wmsTables.pickingPlanMembers.retiredAt)),
+          );
         const shipmentIds = uniqueSorted(members.map((member) => member.shipmentId));
         let invalidationReason: string | null = null;
         try {
@@ -463,11 +472,19 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
             wmsTables.shipmentLines,
             eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
           )
+          .innerJoin(
+            wmsTables.pickingPlanMembers,
+            and(
+              eq(wmsTables.pickingPlanMembers.planId, wmsTables.pickingSourceAllocations.planId),
+              eq(wmsTables.pickingPlanMembers.shipmentId, wmsTables.shipmentLines.shipmentId),
+            ),
+          )
           .where(
             and(
               eq(wmsTables.pickingSourceAllocations.planId, input.planId),
               eq(wmsTables.pickingSourceAllocations.sourceLocationId, input.sourceLocationId),
               eq(wmsTables.shipmentLines.skuId, input.skuId),
+              isNull(wmsTables.pickingPlanMembers.retiredAt),
             ),
           );
         if (Number(allocated?.qty ?? 0) <= 0) {
@@ -553,6 +570,7 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
           trx,
         );
         await this.assertActivePlanSession(input.planId, input.sessionId, input.batchId, trx);
+        await this.assertPlanMembers(input.planId, [input.shipmentId], trx);
         await this.assertCartOwnedBy(input.sessionId, input.batchId, cartId, input.actor.id, trx, true);
         const [line] = await trx
           .select({ shipmentId: wmsTables.shipmentLines.shipmentId, skuId: wmsTables.shipmentLines.skuId })
@@ -811,6 +829,7 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
           throw this.conflict('PICKING_HANDOFF_STALE', 'Picker handoff returned an unexpected work item state');
         }
         await this.assertActivePlanSession(input.planId, input.sessionId, input.batchId, trx);
+        await this.assertPlanMembers(input.planId, [input.shipmentId], trx);
         const balances = await this.assertAggregateAssignedCustody(
           input.sessionId,
           input.shipmentId,
@@ -892,6 +911,7 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
           trx,
         );
         await this.assertActivePlanSession(input.planId, input.sessionId, input.batchId, trx);
+        await this.assertPlanMembers(input.planId, [input.shipmentId], trx);
         const allocations = await this.loadShipmentAllocations(input.planId, input.shipmentId, trx);
         const sortingRef = this.sortingRef(input.workItemId, input.actor.id);
         const packingRef = this.packingRef(input.workItemId);
@@ -1007,6 +1027,7 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
         const item = await this.loadWorkItem(input.workItemId, trx, true);
         this.assertWorkItemIdentity(item, input.batchId, input.shipmentId);
         await this.assertActivePlanSession(input.planId, input.sessionId, input.batchId, trx);
+        await this.assertPlanMembers(input.planId, [input.shipmentId], trx);
         if (item.leaseVersion !== input.expectedLeaseVersion) {
           throw this.conflict('PICKING_STALE_CLAIM', `Work item ${item.id} lease version changed`);
         }
@@ -1397,7 +1418,7 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
     const members = await tx
       .select()
       .from(wmsTables.pickingPlanMembers)
-      .where(eq(wmsTables.pickingPlanMembers.planId, planId))
+      .where(and(eq(wmsTables.pickingPlanMembers.planId, planId), isNull(wmsTables.pickingPlanMembers.retiredAt)))
       .orderBy(asc(wmsTables.pickingPlanMembers.shipmentId))
       .for('update');
     const shipmentById = new Map(aggregate.shipments.map((shipment) => [shipment.id, shipment]));
@@ -1568,6 +1589,28 @@ export class AggregateThenSortPickingStrategy implements AggregateThenSortStrate
       throw this.conflict('PICKING_STALE_CLAIM', `Worker ${actorId} does not own the active picker lease`);
     }
     return item;
+  }
+
+  private async assertPlanMembers(planId: string, shipmentIds: string[], tx: DbTx): Promise<void> {
+    const ids = uniqueSorted(shipmentIds);
+    if (!ids.length || ids.length !== shipmentIds.length) {
+      throw new BadRequestException('Plan member shipments must be unique and non-empty');
+    }
+    const rows = await tx
+      .select({ shipmentId: wmsTables.pickingPlanMembers.shipmentId })
+      .from(wmsTables.pickingPlanMembers)
+      .where(
+        and(
+          eq(wmsTables.pickingPlanMembers.planId, planId),
+          inArray(wmsTables.pickingPlanMembers.shipmentId, ids),
+          isNull(wmsTables.pickingPlanMembers.retiredAt),
+        ),
+      )
+      .orderBy(asc(wmsTables.pickingPlanMembers.shipmentId))
+      .for('update');
+    if (rows.length !== ids.length || rows.some((row, index) => row.shipmentId !== ids[index])) {
+      throw this.conflict('PICKING_SHIPMENT_NOT_IN_PLAN', 'Every requested shipment must belong to the active plan');
+    }
   }
 
   private async loadWorkItem(workItemId: string, tx: DbTx, lock = false): Promise<WorkItemRow> {

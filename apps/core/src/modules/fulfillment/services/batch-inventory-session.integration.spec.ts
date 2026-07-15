@@ -315,6 +315,391 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
     });
   });
 
+  it('attributes pooled short-pick outcomes to one allocation without consuming sibling custody', async () => {
+    await inRollbackTx(async (tx) => {
+      const fixture = await seedPlan(tx, { quantity: 3 });
+      const suffix = randomUUID();
+      const [salesOrder] = await tx
+        .insert(wmsTables.salesOrders)
+        .values({
+          channelOrderId: `session-sibling-${suffix}`,
+          salesChannel: 'medusa',
+          shippingAddress: {},
+          orderDate: new Date(),
+        })
+        .returning();
+      const [fulfillmentOrder] = await tx
+        .insert(wmsTables.fulfillmentOrders)
+        .values({ salesOrderId: salesOrder.id, warehouseId: fixture.source.warehouseId })
+        .returning();
+      const [item] = await tx
+        .insert(wmsTables.fulfillmentOrderItems)
+        .values({ fulfillmentOrderId: fulfillmentOrder.id, skuId: fixture.source.skuId, qty: 2 })
+        .returning();
+      const [siblingShipment] = await tx
+        .insert(wmsTables.shipments)
+        .values({
+          warehouseId: fixture.source.warehouseId,
+          openedForFulfillmentOrderId: fulfillmentOrder.id,
+          status: 'planned',
+          recipientSnapshot: { name: 'Sibling fixture' },
+          plannedAt: new Date(),
+        })
+        .returning();
+      const [siblingLine] = await tx
+        .insert(wmsTables.shipmentLines)
+        .values({
+          shipmentId: siblingShipment.id,
+          fulfillmentOrderItemId: item.id,
+          skuId: fixture.source.skuId,
+          qty: 2,
+        })
+        .returning();
+      await tx.insert(wmsTables.stockReservations).values({
+        targetType: 'SHIPMENT_LINE',
+        targetId: siblingLine.id,
+        shipmentLineId: siblingLine.id,
+        skuId: fixture.source.skuId,
+        warehouseId: fixture.source.warehouseId,
+        quantity: 2,
+        status: 'confirmed',
+        requestedAt: new Date(),
+      });
+      await tx.insert(wmsTables.outboundBatchWorkItems).values({
+        batchId: fixture.batch.id,
+        shipmentId: siblingShipment.id,
+        status: 'queued',
+      });
+      await tx.insert(wmsTables.pickingPlanMembers).values({
+        planId: fixture.plan.id,
+        shipmentId: siblingShipment.id,
+        manifestVersion: siblingShipment.manifestVersion,
+        reservationVersion: siblingShipment.reservationVersion,
+      });
+      await tx.insert(wmsTables.pickingSourceAllocations).values({
+        planId: fixture.plan.id,
+        shipmentLineId: siblingLine.id,
+        sourceLocationId: fixture.source.locationId,
+        qty: 2,
+        sourceStockVersion: fixture.source.stockVersion,
+      });
+
+      const session = await services.sessions.startSession(fixture.batch.id, fixture.plan.id, tx);
+      const cartRef = randomUUID();
+      await services.sessions.moveCustody(
+        {
+          sessionId: session.id,
+          idempotencyKey: `pooled-cart-${randomUUID()}`,
+          actorId,
+          quantity: 5,
+          from: {
+            skuId: fixture.source.skuId,
+            sourceLocationId: fixture.source.locationId,
+            custodyType: 'AT_SOURCE',
+          },
+          to: {
+            skuId: fixture.source.skuId,
+            sourceLocationId: fixture.source.locationId,
+            custodyType: 'BULK_CART',
+            custodyRef: cartRef,
+          },
+        },
+        tx,
+      );
+      const tote = {
+        skuId: fixture.source.skuId,
+        sourceLocationId: fixture.source.locationId,
+        custodyType: 'TOTE' as const,
+        custodyRef: randomUUID(),
+        shipmentLineId: fixture.line.id,
+      };
+      const packing = {
+        ...tote,
+        custodyType: 'PACKING' as const,
+        custodyRef: randomUUID(),
+      };
+      const sorting = {
+        ...tote,
+        custodyType: 'SORTING' as const,
+        custodyRef: randomUUID(),
+      };
+      for (const to of [tote, packing, sorting]) {
+        await services.sessions.moveCustody(
+          {
+            sessionId: session.id,
+            idempotencyKey: `attribute-${to.custodyType}-${randomUUID()}`,
+            actorId,
+            quantity: 1,
+            from: {
+              skuId: fixture.source.skuId,
+              sourceLocationId: fixture.source.locationId,
+              custodyType: 'BULK_CART',
+              custodyRef: cartRef,
+            },
+            to,
+          },
+          tx,
+        );
+      }
+      const operationId = randomUUID();
+      const operationReason = 'confirmed physical shortage';
+      const [operation] = await tx
+        .insert(wmsTables.shipmentOperations)
+        .values({
+          id: operationId,
+          type: 'short_pick',
+          operatorId: actorId,
+          reason: operationReason,
+          idempotencyKey: `session-short-${randomUUID()}`,
+          requestHash: 'd'.repeat(64),
+          beforeManifestSnapshot: {
+            intent: {
+              kind: 'short_pick',
+              operationId,
+              shipmentId: fixture.shipment.id,
+              sessionId: session.id,
+              actorId,
+              reason: operationReason,
+              lines: [
+                {
+                  shipmentLineId: fixture.line.id,
+                  sourceLocationId: fixture.source.locationId,
+                  shortQty: 1,
+                  allocationQty: 3,
+                },
+              ],
+            },
+          },
+        })
+        .returning();
+      await tx.insert(wmsTables.shipmentOperationMembers).values({
+        operationId: operation.id,
+        shipmentId: fixture.shipment.id,
+        role: 'source',
+      });
+
+      const returned = await services.sessions.returnShortPickCustody(
+        {
+          sessionId: session.id,
+          idempotencyKey: `short-return-${randomUUID()}`,
+          shortPickOperationId: operation.id,
+          shipmentLineId: fixture.line.id,
+          quantity: 1,
+          from: tote,
+          reason: operationReason,
+          actorId,
+        },
+        tx,
+      );
+      const secondReturn = await services.sessions.returnShortPickCustody(
+        {
+          sessionId: session.id,
+          idempotencyKey: `short-return-sorting-${randomUUID()}`,
+          shortPickOperationId: operation.id,
+          shipmentLineId: fixture.line.id,
+          quantity: 1,
+          from: sorting,
+          reason: operationReason,
+          actorId,
+        },
+        tx,
+      );
+      const shortageInput = {
+        sessionId: session.id,
+        idempotencyKey: `shortage-${randomUUID()}`,
+        shortPickOperationId: operation.id,
+        shipmentLineId: fixture.line.id,
+        quantity: 1,
+        from: packing,
+        reasonCode: 'DAMAGED' as const,
+        reason: operationReason,
+        approverId: actorId,
+      };
+      const shortage = await services.sessions.approveShortage(shortageInput, tx);
+      expect(returned.replayed).toBe(false);
+      expect(secondReturn.replayed).toBe(false);
+      expect(shortage.session.returnedQty).toBe(2);
+      expect(shortage.session.shortageQty).toBe(1);
+      expect((await services.sessions.approveShortage(shortageInput, tx)).replayed).toBe(true);
+      await expectConflict(
+        services.sessions.approveShortage({ ...shortageInput, quantity: 2 }, tx),
+        'SESSION_IDEMPOTENCY_MISMATCH',
+      );
+
+      const wrongOperationId = randomUUID();
+      const [wrongOperation] = await tx
+        .insert(wmsTables.shipmentOperations)
+        .values({
+          id: wrongOperationId,
+          type: 'short_pick',
+          operatorId: actorId,
+          reason: operationReason,
+          idempotencyKey: `session-wrong-${randomUUID()}`,
+          requestHash: 'e'.repeat(64),
+          beforeManifestSnapshot: {
+            intent: {
+              kind: 'short_pick',
+              operationId: wrongOperationId,
+              shipmentId: fixture.shipment.id,
+              sessionId: session.id,
+              actorId,
+              reason: operationReason,
+              lines: [
+                {
+                  shipmentLineId: fixture.line.id,
+                  sourceLocationId: fixture.source.locationId,
+                  shortQty: 1,
+                  allocationQty: 3,
+                },
+              ],
+            },
+          },
+        })
+        .returning();
+      await expectConflict(
+        services.sessions.approveShortage(
+          {
+            ...shortageInput,
+            idempotencyKey: `wrong-owner-${randomUUID()}`,
+            shortPickOperationId: wrongOperation.id,
+            from: {
+              skuId: fixture.source.skuId,
+              sourceLocationId: fixture.source.locationId,
+              custodyType: 'BULK_CART',
+              custodyRef: cartRef,
+            },
+          },
+          tx,
+        ),
+        'SESSION_SHORTAGE_OPERATION_OWNERSHIP_MISMATCH',
+      );
+      await expectConflict(
+        services.sessions.approveShortage(
+          {
+            ...shortageInput,
+            idempotencyKey: `sibling-overdraw-${randomUUID()}`,
+            from: {
+              skuId: fixture.source.skuId,
+              sourceLocationId: fixture.source.locationId,
+              custodyType: 'BULK_CART',
+              custodyRef: cartRef,
+            },
+          },
+          tx,
+        ),
+        'SESSION_SHORTAGE_EXCEEDS_OPERATION_INTENT',
+      );
+      const [siblingPooled] = await tx
+        .select()
+        .from(wmsTables.batchInventorySessionBalances)
+        .where(
+          and(
+            eq(wmsTables.batchInventorySessionBalances.sessionId, session.id),
+            eq(wmsTables.batchInventorySessionBalances.custodyType, 'BULK_CART'),
+          ),
+        );
+      expect(siblingPooled.qty).toBe(2);
+      expect(await services.recovery.reconcile(session.id, tx)).toMatchObject({ healthy: true });
+
+      await tx
+        .update(wmsTables.shipmentOperations)
+        .set({
+          beforeManifestSnapshot: {
+            intent: {
+              kind: 'short_pick',
+              operationId: operation.id,
+              shipmentId: fixture.shipment.id,
+              sessionId: session.id,
+              actorId,
+              reason: operationReason,
+              lines: [
+                {
+                  shipmentLineId: fixture.line.id,
+                  sourceLocationId: fixture.source.locationId,
+                  shortQty: 2,
+                  allocationQty: 3,
+                },
+              ],
+            },
+          },
+        })
+        .where(eq(wmsTables.shipmentOperations.id, operation.id));
+      const tamperedIntent = await services.recovery.reconcile(session.id, tx);
+      expect(tamperedIntent).toMatchObject({ healthy: false, recoveryRequired: true });
+      expect(tamperedIntent.issues.join(' ')).toContain('differs from immutable short-pick operation intent');
+      await tx
+        .update(wmsTables.shipmentOperations)
+        .set({ beforeManifestSnapshot: operation.beforeManifestSnapshot })
+        .where(eq(wmsTables.shipmentOperations.id, operation.id));
+      expect(await services.recovery.rebuildFromEvents(session.id, tx)).toMatchObject({ healthy: true });
+
+      await tx
+        .update(wmsTables.shipmentOperations)
+        .set({ status: 'recovery_required', lastError: 'invoice void retry pending' })
+        .where(eq(wmsTables.shipmentOperations.id, operation.id));
+      expect((await services.sessions.approveShortage(shortageInput, tx)).replayed).toBe(true);
+      await expectConflict(
+        services.sessions.approveShortage({ ...shortageInput, idempotencyKey: `recovery-new-${randomUUID()}` }, tx),
+        'SESSION_SHORTAGE_OPERATION_RECOVERY_ONLY',
+      );
+
+      await tx
+        .update(wmsTables.shipmentOperations)
+        .set({ status: 'completed', lastError: null, completedAt: new Date() })
+        .where(eq(wmsTables.shipmentOperations.id, operation.id));
+      expect((await services.sessions.approveShortage(shortageInput, tx)).replayed).toBe(true);
+      await expectConflict(
+        services.sessions.approveShortage({ ...shortageInput, idempotencyKey: `completed-new-${randomUUID()}` }, tx),
+        'SESSION_SHORTAGE_OPERATION_COMPLETED',
+      );
+      await expectConflict(
+        services.sessions.returnShortPickCustody(
+          {
+            ...shortageInput,
+            idempotencyKey: `completed-grain-${randomUUID()}`,
+            from: {
+              skuId: fixture.source.skuId,
+              sourceLocationId: fixture.source.locationId,
+              custodyType: 'BULK_CART',
+              custodyRef: cartRef,
+            },
+            reason: operationReason,
+            actorId,
+          },
+          tx,
+        ),
+        'SESSION_SHORTAGE_OPERATION_COMPLETED',
+      );
+      await expectConflict(
+        services.sessions.returnShortPickCustody(
+          {
+            ...shortageInput,
+            idempotencyKey: `completed-line-${randomUUID()}`,
+            shipmentLineId: siblingLine.id,
+            from: {
+              skuId: fixture.source.skuId,
+              sourceLocationId: fixture.source.locationId,
+              custodyType: 'BULK_CART',
+              custodyRef: cartRef,
+            },
+            reason: operationReason,
+            actorId,
+          },
+          tx,
+        ),
+        'SESSION_SHORTAGE_OPERATION_COMPLETED',
+      );
+
+      await tx
+        .update(wmsTables.batchInventorySessionEvents)
+        .set({ payload: { ...(shortage.event.payload as object), requestHash: '0'.repeat(64) } })
+        .where(eq(wmsTables.batchInventorySessionEvents.id, shortage.event.id));
+      const rejected = await services.recovery.rebuildFromEvents(session.id, tx);
+      expect(rejected).toMatchObject({ healthy: false, recoveryRequired: true });
+      expect(rejected.issues.join(' ')).toContain('canonical request hash differs');
+    });
+  });
+
   it('rolls event and balance back together when the process crashes between the stages', async () => {
     await inRollbackTx(async (tx) => {
       const fixture = await seedPlan(tx);
@@ -492,6 +877,70 @@ describeIfDb('BatchInventorySessionService (PostgreSQL integration)', () => {
         .from(wmsTables.batchInventorySessionBalances)
         .where(eq(wmsTables.batchInventorySessionBalances.id, worker.id));
       expect(unchangedWorker.qty).toBe(2);
+    });
+  });
+
+  it('replays generic MOVE_CUSTODY context independent of key order and rejects tampering', async () => {
+    await inRollbackTx(async (tx) => {
+      const fixture = await seedPlan(tx);
+      const session = await services.sessions.startSession(fixture.batch.id, fixture.plan.id, tx);
+      const moved = await services.sessions.moveCustody(
+        {
+          sessionId: session.id,
+          idempotencyKey: `context-move-${randomUUID()}`,
+          actorId,
+          quantity: 1,
+          from: {
+            skuId: fixture.source.skuId,
+            sourceLocationId: fixture.source.locationId,
+            custodyType: 'AT_SOURCE',
+          },
+          to: {
+            skuId: fixture.source.skuId,
+            sourceLocationId: fixture.source.locationId,
+            custodyType: 'TOTE',
+            custodyRef: randomUUID(),
+            shipmentLineId: fixture.line.id,
+          },
+          context: {
+            inspection: { outcome: 'accepted', station: 'station-1' },
+            tote: { slot: 2, label: 'T-2' },
+          },
+        },
+        tx,
+      );
+      expect(await services.recovery.reconcile(session.id, tx)).toMatchObject({ healthy: true });
+
+      const payload = moved.event.payload as Record<string, unknown>;
+      await tx
+        .update(wmsTables.batchInventorySessionEvents)
+        .set({
+          payload: {
+            tote: { label: 'T-2', slot: 2 },
+            inspection: { station: 'station-1', outcome: 'accepted' },
+            actorId: payload.actorId,
+            requestHash: payload.requestHash,
+            sequence: payload.sequence,
+          },
+        })
+        .where(eq(wmsTables.batchInventorySessionEvents.id, moved.event.id));
+      expect(await services.recovery.reconcile(session.id, tx)).toMatchObject({ healthy: true });
+
+      await tx
+        .update(wmsTables.batchInventorySessionEvents)
+        .set({
+          payload: {
+            tote: { label: 'T-2', slot: 2 },
+            inspection: { station: 'station-1', outcome: 'rejected' },
+            actorId: payload.actorId,
+            requestHash: payload.requestHash,
+            sequence: payload.sequence,
+          },
+        })
+        .where(eq(wmsTables.batchInventorySessionEvents.id, moved.event.id));
+      const rejected = await services.recovery.reconcile(session.id, tx);
+      expect(rejected).toMatchObject({ healthy: false, recoveryRequired: true });
+      expect(rejected.issues.join(' ')).toContain('canonical request hash differs');
     });
   });
 

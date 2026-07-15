@@ -51,10 +51,13 @@ describe('InvoiceOrchestrator provider crash recovery', () => {
     } as any;
   }
 
-  function makeService(capabilities?: {
-    issue: { safeToRepeat: boolean; lookupByIdempotencyKey: boolean };
-    void: { safeToRepeat: boolean; lookupByServiceId: boolean };
-  }) {
+  function makeService(
+    capabilities?: {
+      issue: { safeToRepeat: boolean; lookupByIdempotencyKey: boolean };
+      void: { safeToRepeat: boolean; lookupByServiceId: boolean };
+    },
+    moduleRef: { get?: jest.Mock } = {},
+  ) {
     const provider = {
       maxRequestDurationMs: 1_000,
       capabilities: capabilities ?? {
@@ -77,10 +80,30 @@ describe('InvoiceOrchestrator provider crash recovery', () => {
       provider as never,
       provider as never,
       {} as never,
-      {} as never,
+      moduleRef as never,
     );
-    return { service, provider };
+    return { service, provider, moduleRef };
   }
+
+  it('routes a succeeded short-pick invoice void through the circular-safe ModuleRef resume handler', async () => {
+    const shortPick = { resumePending: jest.fn().mockResolvedValue(undefined) };
+    const moduleRef = { get: jest.fn(() => shortPick) };
+    const { service } = makeService(undefined, moduleRef);
+    const tx = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          where: jest.fn(() => ({ limit: jest.fn().mockResolvedValue([{ type: 'short_pick', status: 'pending' }]) })),
+        })),
+      })),
+    };
+
+    await (
+      service as unknown as { resumeWaitingOperation(id: string, trx: unknown): Promise<void> }
+    ).resumeWaitingOperation('operation-1', tx);
+
+    expect(moduleRef.get).toHaveBeenCalledWith(expect.any(Function), { strict: false });
+    expect(shortPick.resumePending).toHaveBeenCalledWith('operation-1', tx);
+  });
 
   it('durably stores provider success before finalizing the invoice', async () => {
     const { service, provider } = makeService();
@@ -116,6 +139,67 @@ describe('InvoiceOrchestrator provider crash recovery', () => {
     expect(finalize).toHaveBeenCalledWith('operation-1');
   });
 
+  it('locks the short-pick resume owner before manifest and invoice finalization rows', async () => {
+    const { service } = makeService();
+    const order: string[] = [];
+    const current = operation({
+      operation: 'void',
+      resumeOperationId: 'short-pick-1',
+      providerResponse: {},
+      providerRequest: {
+        kind: 'void',
+        provider: 'goodsflow',
+        externalServiceId: 'service-1',
+        operationContext: { operationId: 'operation-1', idempotencyKey: 'operation-1' },
+        commandContext,
+      },
+    });
+    const optimisticTx = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          where: jest.fn(() => ({ limit: jest.fn().mockResolvedValue([current]) })),
+        })),
+      })),
+    };
+    const finalTx = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          where: jest.fn(() => ({
+            limit: jest.fn(() => ({
+              for: jest.fn(async () => {
+                order.push('invoice-operation');
+                return [current];
+              }),
+            })),
+          })),
+        })),
+      })),
+      update: jest.fn(() => ({
+        set: jest.fn(() => ({ where: jest.fn().mockResolvedValue(undefined) })),
+      })),
+    };
+    let transaction = 0;
+    (service as any).dbService = {
+      run: (fn: (tx: unknown) => unknown) => fn(transaction++ === 0 ? optimisticTx : finalTx),
+    };
+    jest.spyOn(service as any, 'lockShortPickResumeOwnerIfApplicable').mockImplementation(async () => {
+      order.push('short-pick-owner');
+      return true;
+    });
+    jest.spyOn(service as any, 'lockManifest').mockImplementation(async () => {
+      order.push('manifest');
+      return { shipment: { id: 'shipment-1' }, fulfillmentOrderIds: [] };
+    });
+    jest.spyOn(service as any, 'resumeWaitingOperation').mockImplementation(async () => {
+      order.push('resume');
+    });
+    jest.spyOn(service as any, 'auditOutcome').mockResolvedValue(undefined);
+
+    await (service as any).finalizeProviderSuccess('operation-1');
+
+    expect(order).toEqual(['short-pick-owner', 'manifest', 'invoice-operation', 'resume']);
+  });
+
   it('re-reads a durable provider response and schedules finalization retry even when provider repeat is unsupported', async () => {
     const { service } = makeService({
       issue: { safeToRepeat: false, lookupByIdempotencyKey: false },
@@ -147,6 +231,69 @@ describe('InvoiceOrchestrator provider crash recovery', () => {
 
     expect(updates[0].set).toMatchObject({ status: 'recovery_required' });
     expect(updates[0].set.nextRetryAt).toBeInstanceOf(Date);
+  });
+
+  it('keeps a short-pick resume void retryable after the general maximum attempt count', async () => {
+    const shortPick = { markInvoiceRecoveryRequired: jest.fn().mockResolvedValue(undefined) };
+    const { service } = makeService(undefined, { get: jest.fn(() => shortPick) });
+    const current = operation({
+      operation: 'void',
+      resumeOperationId: 'short-pick-1',
+      attempts: 8,
+      providerRequest: {
+        kind: 'void',
+        provider: 'goodsflow',
+        externalServiceId: 'service-1',
+        operationContext: { operationId: 'operation-1', idempotencyKey: 'operation-1' },
+        commandContext,
+      },
+    });
+    const selectedRows = [
+      { label: 'short-pick-type', rows: [{ type: 'short_pick' }] },
+      { label: 'short-pick-operation', rows: [{ type: 'short_pick' }] },
+      { label: 'short-pick-source-member', rows: [{ shipmentId: current.shipmentId }] },
+      { label: 'invoice', rows: [{ id: current.invoiceId }] },
+      { label: 'invoice-operation', rows: [current] },
+    ];
+    const order: string[] = [];
+    const updates: Array<Record<string, unknown>> = [];
+    const tx = {
+      select: jest.fn(() => {
+        const selected = selectedRows.shift() ?? { label: 'unknown', rows: [] };
+        return {
+          from: jest.fn(() => ({
+            where: jest.fn(() => ({
+              limit: jest.fn(() => ({
+                for: jest.fn(async () => {
+                  order.push(selected.label);
+                  return selected.rows;
+                }),
+                then: (resolve: (value: unknown[]) => unknown) => Promise.resolve(selected.rows).then(resolve),
+              })),
+            })),
+          })),
+        };
+      }),
+      update: jest.fn(() => ({
+        set: jest.fn((set: Record<string, unknown>) => {
+          updates.push(set);
+          return { where: jest.fn().mockResolvedValue(undefined) };
+        }),
+      })),
+    };
+    (service as any).dbService = { run: (fn: (trx: unknown) => unknown) => fn(tx) };
+    (service as any).audit = { logUserActionRequired: jest.fn().mockResolvedValue(undefined) };
+
+    await (service as any).recordFailure(current, new Error('short-pick resume still blocked'));
+
+    expect(updates[0]).toMatchObject({ status: 'recovery_required' });
+    expect(updates[0].nextRetryAt).toBeInstanceOf(Date);
+    expect(order).toEqual(['short-pick-operation', 'short-pick-source-member', 'invoice', 'invoice-operation']);
+    expect(shortPick.markInvoiceRecoveryRequired).toHaveBeenCalledWith(
+      'short-pick-1',
+      expect.any(DeliveryProviderError),
+      tx,
+    );
   });
 
   it('voids the local issuing placeholder when unsupported is known before any provider side effect', async () => {

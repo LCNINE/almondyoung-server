@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { BadRequestException } from '@nestjs/common';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import * as postgres from 'postgres';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -315,6 +315,208 @@ describeIfDb('V2 draft shipment partial reservation (DB integration)', () => {
     });
   });
 
+  it('invalidates only oldest short-pick quantity, preserves good fairness, and replays the exact operation', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await physicalOrder(tx, { quantity: 10, onHand: 10 });
+      await wired.fulfillments.create({ salesOrderId: fixture.salesOrderId, warehouseId: fixture.warehouseId }, tx);
+      const loaded = await loadV2(tx, fixture.salesOrderId);
+      const [original] = await tx
+        .select()
+        .from(wmsTables.stockReservations)
+        .where(eq(wmsTables.stockReservations.shipmentLineId, loaded.line.id));
+      const newerRequestedAt = new Date((original.requestedAt ?? original.createdAt).getTime() + 60_000);
+      await tx
+        .update(wmsTables.stockReservations)
+        .set({ quantity: 6 })
+        .where(eq(wmsTables.stockReservations.id, original.id));
+      await tx.insert(wmsTables.stockReservations).values({
+        targetType: 'SHIPMENT_LINE',
+        targetId: loaded.line.id,
+        shipmentLineId: loaded.line.id,
+        skuId: fixture.skuId,
+        warehouseId: fixture.warehouseId,
+        quantity: 4,
+        status: 'confirmed',
+        requestedAt: newerRequestedAt,
+        reason: 'newer good claim',
+      });
+      const operationId = randomUUID();
+      const operationActorId = randomUUID();
+      const [operation] = await tx
+        .insert(wmsTables.shipmentOperations)
+        .values({
+          id: operationId,
+          type: 'short_pick',
+          operatorId: operationActorId,
+          reason: 'confirmed physical shortage',
+          idempotencyKey: `reservation-short-${randomUUID()}`,
+          requestHash: 'a'.repeat(64),
+          beforeManifestSnapshot: {
+            intent: {
+              kind: 'short_pick',
+              operationId,
+              shipmentId: loaded.shipment.id,
+              sessionId: randomUUID(),
+              actorId: operationActorId,
+              reason: 'confirmed physical shortage',
+              lines: [
+                {
+                  shipmentLineId: loaded.line.id,
+                  sourceLocationId: fixture.locationId,
+                  shortQty: 7,
+                  allocationQty: 10,
+                },
+              ],
+            },
+          },
+        })
+        .returning();
+      await tx.insert(wmsTables.shipmentOperationMembers).values({
+        operationId: operation.id,
+        shipmentId: loaded.shipment.id,
+        role: 'source',
+      });
+
+      const invalidated = await wired.shipmentReservations.invalidateForShortPick(loaded.line.id, 7, operation.id, tx);
+      expect(invalidated).toMatchObject({
+        invalidatedQty: 7,
+        totalReservedQty: 3,
+        replayed: false,
+      });
+      const rows = await tx
+        .select()
+        .from(wmsTables.stockReservations)
+        .where(eq(wmsTables.stockReservations.shipmentLineId, loaded.line.id));
+      const good = rows.filter((row) => row.status === 'confirmed');
+      const bad = rows.filter((row) => row.stateReason === `short-pick:${operation.id}`);
+      expect(good).toHaveLength(1);
+      expect(good[0]).toMatchObject({ quantity: 3, requestedAt: newerRequestedAt });
+      expect(bad.reduce((total, row) => total + row.quantity, 0)).toBe(7);
+      expect(bad.every((row) => row.status === 'released' && row.invalidatedAt !== null)).toBe(true);
+
+      const replay = await wired.shipmentReservations.invalidateForShortPick(loaded.line.id, 7, operation.id, tx);
+      expect(replay).toMatchObject({ replayed: true, invalidatedQty: 7, totalReservedQty: 3 });
+      const versionAfterReplay = (await loadV2(tx, fixture.salesOrderId)).shipment.reservationVersion;
+      expect(versionAfterReplay).toBe(invalidated.reservationVersion);
+      await expect(
+        wired.shipmentReservations.invalidateForShortPick(loaded.line.id, 8, operation.id, tx),
+      ).rejects.toThrow('differs from immutable short-pick intent 7');
+      await tx
+        .update(wmsTables.shipmentOperations)
+        .set({ status: 'recovery_required', lastError: 'invoice void retry pending' })
+        .where(eq(wmsTables.shipmentOperations.id, operation.id));
+      await expect(
+        wired.shipmentReservations.invalidateForShortPick(loaded.line.id, 7, operation.id, tx),
+      ).resolves.toMatchObject({ replayed: true, invalidatedQty: 7 });
+
+      await tx
+        .update(wmsTables.shipmentOperations)
+        .set({ status: 'completed', lastError: null, completedAt: new Date() })
+        .where(eq(wmsTables.shipmentOperations.id, operation.id));
+      await expect(
+        wired.shipmentReservations.invalidateForShortPick(loaded.line.id, 7, operation.id, tx),
+      ).resolves.toMatchObject({ replayed: true, invalidatedQty: 7 });
+      const [unintendedItem] = await tx
+        .insert(wmsTables.fulfillmentOrderItems)
+        .values({ fulfillmentOrderId: loaded.fo.id, skuId: fixture.skuId, qty: 1 })
+        .returning();
+      const [unintendedLine] = await tx
+        .insert(wmsTables.shipmentLines)
+        .values({
+          shipmentId: loaded.shipment.id,
+          fulfillmentOrderItemId: unintendedItem.id,
+          skuId: fixture.skuId,
+          qty: 1,
+        })
+        .returning();
+      await tx.insert(wmsTables.stockReservations).values({
+        targetType: 'SHIPMENT_LINE',
+        targetId: unintendedLine.id,
+        shipmentLineId: unintendedLine.id,
+        skuId: fixture.skuId,
+        warehouseId: fixture.warehouseId,
+        quantity: 1,
+        status: 'confirmed',
+        requestedAt: unintendedLine.createdAt,
+      });
+      await expect(
+        wired.shipmentReservations.invalidateForShortPick(unintendedLine.id, 1, operation.id, tx),
+      ).rejects.toThrow('differs from immutable short-pick intent 0');
+
+      const [wrongOperation] = await tx
+        .insert(wmsTables.shipmentOperations)
+        .values({
+          type: 'replan',
+          operatorId: randomUUID(),
+          reason: 'wrong operation type',
+          idempotencyKey: `reservation-wrong-${randomUUID()}`,
+          requestHash: 'b'.repeat(64),
+        })
+        .returning();
+      await tx.insert(wmsTables.shipmentOperationMembers).values({
+        operationId: wrongOperation.id,
+        shipmentId: loaded.shipment.id,
+        role: 'source',
+      });
+      await expect(
+        wired.shipmentReservations.invalidateForShortPick(loaded.line.id, 1, wrongOperation.id, tx),
+      ).rejects.toThrow('requires an exact short-pick operation intent');
+
+      const overOperationId = randomUUID();
+      const overActorId = randomUUID();
+      const [overOperation] = await tx
+        .insert(wmsTables.shipmentOperations)
+        .values({
+          id: overOperationId,
+          type: 'short_pick',
+          operatorId: overActorId,
+          reason: 'over shortage',
+          idempotencyKey: `reservation-over-${randomUUID()}`,
+          requestHash: 'c'.repeat(64),
+          beforeManifestSnapshot: {
+            intent: {
+              kind: 'short_pick',
+              operationId: overOperationId,
+              shipmentId: loaded.shipment.id,
+              sessionId: randomUUID(),
+              actorId: overActorId,
+              reason: 'over shortage',
+              lines: [
+                {
+                  shipmentLineId: loaded.line.id,
+                  sourceLocationId: fixture.locationId,
+                  shortQty: 4,
+                  allocationQty: 10,
+                },
+              ],
+            },
+          },
+        })
+        .returning();
+      await tx.insert(wmsTables.shipmentOperationMembers).values({
+        operationId: overOperation.id,
+        shipmentId: loaded.shipment.id,
+        role: 'source',
+      });
+      await expect(
+        wired.shipmentReservations.invalidateForShortPick(loaded.line.id, 4, overOperation.id, tx),
+      ).rejects.toThrow('has 3 confirmed');
+
+      await wired.shipmentReservations.reservePartial(loaded.line.id, 1, tx);
+      const [retried] = await tx
+        .select()
+        .from(wmsTables.stockReservations)
+        .where(
+          and(
+            eq(wmsTables.stockReservations.shipmentLineId, loaded.line.id),
+            eq(wmsTables.stockReservations.status, 'confirmed'),
+          ),
+        );
+      expect(retried.quantity).toBe(4);
+      expect(retried.requestedAt?.getTime()).toBe((original.requestedAt ?? original.createdAt).getTime());
+    });
+  });
+
   it('transfers a partial claim to an existing compatible Draft line with quantity/time/version conservation', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await physicalOrder(tx, { quantity: 10, onHand: 10 });
@@ -479,6 +681,141 @@ describeIfDb('V2 draft shipment partial reservation (DB integration)', () => {
         await tx.delete(wmsTables.fulfillmentOrderItems).where(eq(wmsTables.fulfillmentOrderItems.id, ids.itemId));
         await tx.delete(wmsTables.fulfillmentOrders).where(eq(wmsTables.fulfillmentOrders.id, ids.foId));
         await tx.delete(wmsTables.stockLedgers).where(eq(wmsTables.stockLedgers.skuId, ids.skuId));
+        await tx.delete(wmsTables.skus).where(eq(wmsTables.skus.id, ids.skuId));
+        await tx.delete(wmsTables.holders).where(eq(wmsTables.holders.id, ids.holderId));
+        await tx.delete(wmsTables.locations).where(eq(wmsTables.locations.id, ids.locationId));
+        await tx.delete(wmsTables.warehouses).where(eq(wmsTables.warehouses.id, ids.warehouseId));
+      });
+    }
+  });
+
+  it('avoids an operation/graph cycle between reservation replay and resume-style graph locking', async () => {
+    const ids = await db.transaction(async (tx) => {
+      const { warehouseId, locationId } = await seedWarehouseWithZone(tx);
+      const { holderId } = await seedHolder(tx);
+      const { skuId } = await seedSku(tx, holderId);
+      const [fo] = await tx
+        .insert(wmsTables.fulfillmentOrders)
+        .values({ warehouseId, totalItems: 1, totalQty: 1 })
+        .returning();
+      const [item] = await tx
+        .insert(wmsTables.fulfillmentOrderItems)
+        .values({ fulfillmentOrderId: fo.id, skuId, qty: 1 })
+        .returning();
+      const [shipment] = await tx.insert(wmsTables.shipments).values({ warehouseId, status: 'draft' }).returning();
+      const [line] = await tx
+        .insert(wmsTables.shipmentLines)
+        .values({ shipmentId: shipment.id, fulfillmentOrderItemId: item.id, skuId, qty: 1 })
+        .returning();
+      const operationId = randomUUID();
+      const actorId = randomUUID();
+      await tx.insert(wmsTables.shipmentOperations).values({
+        id: operationId,
+        type: 'short_pick',
+        status: 'pending',
+        operatorId: actorId,
+        reason: 'concurrency proof',
+        idempotencyKey: `reservation-cycle-${randomUUID()}`,
+        requestHash: 'f'.repeat(64),
+        beforeManifestSnapshot: {
+          intent: {
+            kind: 'short_pick',
+            operationId,
+            shipmentId: shipment.id,
+            sessionId: randomUUID(),
+            actorId,
+            reason: 'concurrency proof',
+            lines: [
+              {
+                shipmentLineId: line.id,
+                sourceLocationId: locationId,
+                shortQty: 1,
+                allocationQty: 1,
+              },
+            ],
+          },
+        },
+      });
+      await tx.insert(wmsTables.shipmentOperationMembers).values({
+        operationId,
+        shipmentId: shipment.id,
+        role: 'source',
+      });
+      await tx.insert(wmsTables.stockReservations).values({
+        targetType: 'SHIPMENT_LINE',
+        targetId: line.id,
+        shipmentLineId: line.id,
+        skuId,
+        warehouseId,
+        quantity: 1,
+        status: 'released',
+        requestedAt: line.createdAt,
+        stateReason: `short-pick:${operationId}`,
+        invalidatedAt: new Date(),
+      });
+      return {
+        warehouseId,
+        locationId,
+        holderId,
+        skuId,
+        foId: fo.id,
+        itemId: item.id,
+        shipmentId: shipment.id,
+        lineId: line.id,
+        operationId,
+      };
+    });
+
+    const concurrentDb = makeDb(DATABASE_URL as string);
+    const concurrent = wireLogistics(makeDbService(concurrentDb.db), 'v2');
+    let announceOperationLock!: () => void;
+    const operationLocked = new Promise<void>((resolve) => {
+      announceOperationLock = resolve;
+    });
+    let allowGraphLock!: () => void;
+    const graphGate = new Promise<void>((resolve) => {
+      allowGraphLock = resolve;
+    });
+    let resumeStyle: Promise<void> | undefined;
+    let reservationReplay: ReturnType<typeof wired.shipmentReservations.invalidateForShortPick> | undefined;
+    try {
+      resumeStyle = concurrentDb.db.transaction(async (tx) => {
+        await tx.execute(sql`SET LOCAL lock_timeout = '2s'`);
+        await tx.execute(sql`SET LOCAL statement_timeout = '5s'`);
+        await tx.execute(sql`
+          SELECT operation.id
+            FROM shipment_operations operation
+            JOIN shipment_operation_members member ON member.operation_id = operation.id
+           WHERE operation.id = ${ids.operationId}::uuid
+             AND member.shipment_id = ${ids.shipmentId}::uuid
+             AND member.role = 'source'
+           FOR UPDATE
+        `);
+        announceOperationLock();
+        await graphGate;
+        await concurrent.shipmentReservations.lockShipmentGraphForDispatch(ids.shipmentId, tx as unknown as DbTx);
+      });
+      await operationLocked;
+      reservationReplay = wired.shipmentReservations.invalidateForShortPick(ids.lineId, 1, ids.operationId);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      allowGraphLock();
+
+      const [, replay] = await Promise.all([resumeStyle, reservationReplay]);
+      expect(replay).toMatchObject({ replayed: true, invalidatedQty: 1 });
+    } finally {
+      allowGraphLock();
+      await Promise.allSettled([resumeStyle ?? Promise.resolve(), reservationReplay ?? Promise.resolve()]);
+      await concurrentDb.sql.end();
+      await db.transaction(async (tx) => {
+        await tx.delete(wmsTables.stockReservations).where(eq(wmsTables.stockReservations.shipmentLineId, ids.lineId));
+        await tx
+          .delete(wmsTables.shipmentOperationMembers)
+          .where(eq(wmsTables.shipmentOperationMembers.operationId, ids.operationId));
+        await tx.delete(wmsTables.shipmentOperations).where(eq(wmsTables.shipmentOperations.id, ids.operationId));
+        await tx.delete(wmsTables.shipmentLines).where(eq(wmsTables.shipmentLines.id, ids.lineId));
+        await tx.delete(wmsTables.shipments).where(eq(wmsTables.shipments.id, ids.shipmentId));
+        await tx.delete(wmsTables.fulfillmentOrderItems).where(eq(wmsTables.fulfillmentOrderItems.id, ids.itemId));
+        await tx.delete(wmsTables.fulfillmentOrders).where(eq(wmsTables.fulfillmentOrders.id, ids.foId));
         await tx.delete(wmsTables.skus).where(eq(wmsTables.skus.id, ids.skuId));
         await tx.delete(wmsTables.holders).where(eq(wmsTables.holders.id, ids.holderId));
         await tx.delete(wmsTables.locations).where(eq(wmsTables.locations.id, ids.locationId));
