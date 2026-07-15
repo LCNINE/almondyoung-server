@@ -10,25 +10,13 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
-import {
-  ApiBody,
-  ApiExtraModels,
-  ApiOperation,
-  ApiParam,
-  ApiQuery,
-  ApiResponse,
-  ApiTags,
-  getSchemaPath,
-} from '@nestjs/swagger';
+import { ApiBody, ApiExtraModels, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RequireScopes, ScopeGuard, User } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { FulfillmentsService } from '../services/fulfillments.service';
 import { FulfillmentReservationsFacade } from '../services/fulfillment-reservations.facade';
 import { ShipmentPlanningService } from '../services/shipment-planning.service';
 import { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
-import { CreateCompensationShipmentDto } from '../dto/create-compensation-shipment.dto';
-import { ReserveDto } from '../dto/reserve.dto';
-import { UnreserveDto } from '../dto/unreserve.dto';
 import { TransferReservationDto } from '../dto/transfer-reservation.dto';
 import {
   FulfillmentOrderListResponseDto,
@@ -56,12 +44,6 @@ export class FulfillmentsController {
     return this.service.create(dto);
   }
 
-  @Post('compensation-shipments')
-  @ApiOperation({ summary: 'Create or link a fulfillment-only CS compensation shipment' })
-  createCompensationShipment(@Body() dto: CreateCompensationShipmentDto, @User() user: AuthenticatedUser) {
-    return this.service.createCompensationShipment(dto, this.getUserId(user));
-  }
-
   @Post(':id/deliver')
   @ApiOperation({ summary: '배송 완료 처리 (고객 수령 확인, FulfillmentDelivered 이벤트 발행)' })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
@@ -85,18 +67,10 @@ export class FulfillmentsController {
 
   @Get(':id')
   @ApiOperation({
-    summary: '주문처리 상세 조회 (items, reservations, batch, shipment, invoice, adminAvailableActions 포함)',
+    summary: '주문처리 상세 조회 (progress, shipments, items, reservations, adminAvailableActions 포함)',
   })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
-  @ApiResponse({
-    status: 200,
-    schema: {
-      oneOf: [
-        { $ref: getSchemaPath(FulfillmentOrderResponseDto) },
-        { $ref: getSchemaPath(FulfillmentOrderV2ResponseDto) },
-      ],
-    },
-  })
+  @ApiResponse({ status: 200, type: FulfillmentOrderV2ResponseDto })
   getOne(@Param('id') id: string) {
     return this.service.getOne(id);
   }
@@ -138,33 +112,6 @@ export class FulfillmentsController {
       salesOrderId: salesOrderId || undefined,
       priority: priority || undefined,
     });
-  }
-
-  @Post(':id/check-availability')
-  @ApiOperation({ summary: '재고 가용성 확인' })
-  @ApiParam({ name: 'id', description: '주문처리 ID' })
-  checkAvailability(@Param('id') id: string) {
-    return this.service.checkAvailability(id);
-  }
-
-  @Post(':id/reserve')
-  @UseGuards(ScopeGuard)
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
-  @ApiOperation({ summary: '재고 예약' })
-  @ApiParam({ name: 'id', description: '주문처리 ID' })
-  @ApiBody({ type: ReserveDto })
-  reserve(@Param('id') id: string, @Body() dto: ReserveDto) {
-    return this.reservations.reserve(id, dto);
-  }
-
-  @Post(':id/unreserve')
-  @UseGuards(ScopeGuard)
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
-  @ApiOperation({ summary: '재고 예약 해제' })
-  @ApiParam({ name: 'id', description: '주문처리 ID' })
-  @ApiBody({ type: UnreserveDto })
-  unreserve(@Param('id') id: string, @Body() dto: UnreserveDto) {
-    return this.reservations.unreserve(id, dto);
   }
 
   @Post(':id/transfer-reservation')

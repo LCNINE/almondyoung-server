@@ -11,18 +11,14 @@ import { LocationService } from '../../../inventory/core/services/location.servi
 import { InventoryCommandService } from '../../../inventory/core/services/inventory-command.service';
 import { UnifiedReservationService } from '../../../inventory/shared/services/unified-reservation.service';
 import { ReservationLifecycleService } from '../../../inventory/shared/services/reservation-lifecycle.service';
-import { FifoLocationStrategy } from '../../../inventory/core/services/location-resolution.strategy';
 import { BarcodeService } from '../../../inventory/shared/services/barcode.service';
-import { OutboundConsumptionService } from '../outbound-consumption.service';
-import { ShipmentService } from '../shipment.service';
 import { PoliciesService } from '../policies.service';
 import { AvailabilityService } from '../availability.service';
 import { FulfillmentsService } from '../fulfillments.service';
 import { FulfillmentReservationsFacade } from '../fulfillment-reservations.facade';
 import { FulfillmentOrderReservationRetryWorker } from '../fulfillment-order-reservation-retry.worker';
-import { FulfillmentWorkflowGate } from '../fulfillment-workflow-gate.service';
+import { FulfillmentWorkflowGate, type FulfillmentWorkflowMode } from '../fulfillment-workflow-gate.service';
 import { ConfigService } from '@nestjs/config';
-import { OutboundBatchService } from '../outbound-batch.service';
 import { PickingProcessService } from '../picking-process.service';
 import { ProductSkuMappingService } from '../../../product-matching/services/product-sku-mapping.service';
 import { FulfillmentOrderCreationBacklogService } from '../../backlog/fulfillment-order-creation-backlog.service';
@@ -55,9 +51,7 @@ export interface Wired {
   command: InventoryCommandService;
   unified: UnifiedReservationService;
   lifecycle: ReservationLifecycleService;
-  consumption: OutboundConsumptionService;
   barcode: BarcodeService;
-  shipment: ShipmentService;
   policies: PoliciesService;
   availability: AvailabilityService;
   backlog: FulfillmentOrderCreationBacklogService;
@@ -66,13 +60,12 @@ export interface Wired {
   reservationsFacade: FulfillmentReservationsFacade;
   shipmentReservations: ShipmentReservationService;
   retryWorker: FulfillmentOrderReservationRetryWorker;
-  outboundBatch: OutboundBatchService;
   picking: PickingProcessService;
 }
 
 export function wireLogistics(
   dbService: DbService<typeof wmsSchema>,
-  workflowMode: 'legacy' | 'maintenance' | 'v2' = 'legacy',
+  workflowMode: FulfillmentWorkflowMode = 'v2',
 ): Wired {
   const invOutbox = new InventoryOutboxService(dbService);
   const fulfillmentOutbox = new FulfillmentOutboxService(dbService);
@@ -82,17 +75,15 @@ export function wireLogistics(
   const command = new InventoryCommandService(dbService, eventStore, invOutbox, location);
   const unified = new UnifiedReservationService(dbService, sellable);
   const lifecycle = new ReservationLifecycleService(dbService, unified);
-  const strategy = new FifoLocationStrategy();
-  const workflowGate = new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: workflowMode }));
-  const consumption = new OutboundConsumptionService(
-    dbService,
-    strategy,
-    command,
-    lifecycle,
-    workflowGate,
+  // 로컬 컨벤션(.env.wms.example)과 동일한 epoch cutover — "모든 주문이 커토버 이후" 를 참으로 만든다.
+  // cutover 미설정이면 v2 게이트가 fail-closed 라 backlog enqueue 가 전부 거부된다.
+  const workflowGate = new FulfillmentWorkflowGate(
+    new ConfigService({
+      FULFILLMENT_WORKFLOW_MODE: workflowMode,
+      FULFILLMENT_V2_CUTOVER_AT: '1970-01-01T00:00:00.000Z',
+    }),
   );
   const barcode = new BarcodeService(dbService);
-  const shipment = new ShipmentService(dbService, barcode, consumption, workflowGate);
   const policies = new PoliciesService(dbService);
   const availability = new AvailabilityService(dbService);
   const backlog = new FulfillmentOrderCreationBacklogService(dbService, workflowGate);
@@ -102,26 +93,16 @@ export function wireLogistics(
   const shipmentReservations = new ShipmentReservationService(dbService, unified, progress, invariant);
   const fulfillments = new FulfillmentsService(
     dbService,
-    policies,
-    availability,
     lifecycle,
-    unified,
     productSkuMapping,
     fulfillmentOutbox,
     workflowGate,
-    undefined,
     shipmentReservations,
     progress,
   );
-  const reservationsFacade = new FulfillmentReservationsFacade(dbService, unified, sellable, policies, workflowGate);
-  const retryWorker = new FulfillmentOrderReservationRetryWorker(
-    dbService,
-    reservationsFacade,
-    workflowGate,
-    shipmentReservations,
-  );
-  const outboundBatch = new OutboundBatchService(dbService, workflowGate);
-  const picking = new PickingProcessService(dbService, barcode, workflowGate);
+  const reservationsFacade = new FulfillmentReservationsFacade(dbService, policies, workflowGate);
+  const retryWorker = new FulfillmentOrderReservationRetryWorker(dbService, workflowGate, shipmentReservations);
+  const picking = new PickingProcessService(dbService);
 
   return {
     invOutbox,
@@ -132,9 +113,7 @@ export function wireLogistics(
     command,
     unified,
     lifecycle,
-    consumption,
     barcode,
-    shipment,
     policies,
     availability,
     backlog,
@@ -143,7 +122,6 @@ export function wireLogistics(
     reservationsFacade,
     shipmentReservations,
     retryWorker,
-    outboundBatch,
     picking,
   };
 }

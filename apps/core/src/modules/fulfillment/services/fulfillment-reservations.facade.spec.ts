@@ -10,299 +10,6 @@ describe('FulfillmentReservationsFacade', () => {
   const skuId = '44444444-4444-4444-4444-444444444444';
   const otherSkuId = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 
-  function makeFacade(
-    options: {
-      foStatus?: string;
-      firstItemVariantId?: string | null;
-      firstItemShippedQty?: number;
-      policyInventoryManagement?: boolean;
-      firstItemQty?: number;
-      firstItemReservedQty?: number;
-      firstItemFulfillmentOrderId?: string;
-      foFulfillmentMode?: string | null;
-      reservations?: Array<{ id: string; skuId: string; quantity: number }>;
-      extraItems?: Array<Record<string, any>>;
-      toFo?: { id: string; status: string; warehouseId: string; totalReservedQty: number };
-    } = {},
-  ) {
-    const fo = {
-      id: fulfillmentOrderId,
-      status: options.foStatus ?? 'unfulfillable',
-      fulfillmentMode: options.foFulfillmentMode ?? null,
-      warehouseId,
-      totalReservedQty: 1,
-      reservationFailureReason: 'RESERVATION_FAILED',
-      reservationFailureDetails: { failedItems: [{ skuId }] },
-    };
-    const state = {
-      fo,
-      toFo: options.toFo ?? null,
-      items: [
-        {
-          id: fulfillmentOrderItemId,
-          fulfillmentOrderId: options.firstItemFulfillmentOrderId ?? fulfillmentOrderId,
-          variantId: options.firstItemVariantId ?? null,
-          skuId,
-          qty: options.firstItemQty ?? 1,
-          reservedQty: options.firstItemReservedQty ?? 0,
-          shippedQty: options.firstItemShippedQty ?? 0,
-        },
-        {
-          id: '55555555-5555-5555-5555-555555555555',
-          fulfillmentOrderId,
-          variantId: null,
-          skuId: '66666666-6666-6666-6666-666666666666',
-          qty: 1,
-          reservedQty: 1,
-          shippedQty: 0,
-        },
-        ...(options.extraItems ?? []),
-      ],
-    };
-
-    // select 체인 mock: where/orderBy/limit 어디서 끊겨도 awaitable, .for('update')는 즉시 rows 반환
-    const makeChain = (rowsArr: any[]) => {
-      const chain: any = {
-        where: () => chain,
-        orderBy: () => chain,
-        limit: () => chain,
-        for: () => rowsArr,
-        then: (resolve: any, reject: any) => Promise.resolve(rowsArr).then(resolve, reject),
-      };
-      return chain;
-    };
-
-    const tx: any = {
-      query: {
-        fulfillmentOrderItems: {
-          findFirst: jest.fn().mockImplementation((opts?: { where?: unknown }) => {
-            return state.items.find((item) => {
-              if (!opts?.where) return true;
-              // Approximate: match by the string in the where clause. We inspect calls by id.
-              return true;
-            });
-          }),
-          findMany: jest.fn().mockImplementation(() => state.items),
-        },
-        fulfillmentOrders: {
-          findFirst: jest.fn().mockImplementation((opts?: { where?: unknown }) => {
-            if (state.toFo) {
-              // Return toFo on the 2nd call (for transferReservation)
-              const callCount = (tx.query.fulfillmentOrders.findFirst as jest.Mock).mock.calls.length;
-              if (callCount > 1) return state.toFo;
-            }
-            return state.fo;
-          }),
-        },
-      },
-      select: jest.fn(() => ({
-        from: (table: unknown) => {
-          if (table === wmsTables.fulfillmentOrderItems) return makeChain([state.items[0]]);
-          if (table === wmsTables.fulfillmentOrders) return makeChain([state.fo]);
-          if (table === wmsTables.stockReservations) {
-            return makeChain(
-              (options.reservations ?? []).map((r) => ({
-                targetType: 'FULFILLMENT_ORDER',
-                targetId: state.fo.id,
-                fulfillmentOrderItemId: state.items[0].id,
-                warehouseId,
-                status: 'confirmed',
-                createdAt: new Date('2026-01-01'),
-                ...r,
-              })),
-            );
-          }
-          return makeChain([]);
-        },
-      })),
-      update: jest.fn((table: unknown) => ({
-        set: (set: Record<string, unknown>) => ({
-          where: (_where: unknown) => {
-            if (table === wmsTables.fulfillmentOrderItems) {
-              state.items[0] = { ...state.items[0], ...set };
-            }
-            if (table === wmsTables.fulfillmentOrders) {
-              state.fo = { ...state.fo, ...set };
-            }
-            return [];
-          },
-        }),
-      })),
-    };
-
-    const unified = {
-      reserveStock: jest.fn().mockResolvedValue({ id: 'reservation-1' }),
-      getReservationsByTarget: jest.fn().mockResolvedValue(options.reservations ?? []),
-      releaseReservation: jest.fn().mockResolvedValue(undefined),
-    };
-    const outbox = {
-      enqueue: jest.fn().mockResolvedValue(undefined),
-    };
-    const policies = {
-      getVariantPolicy: jest.fn().mockResolvedValue({
-        inventoryManagement: options.policyInventoryManagement ?? true,
-        preStockSellable: false,
-        alwaysSellableZeroStock: false,
-      }),
-    };
-    const productSellableQuantity = {
-      recalculateAndPublishForSku: jest.fn().mockResolvedValue(undefined),
-    };
-
-    const dbMock = {
-      run: jest.fn((fn: (t: any) => any, aTx?: any) => fn(aTx ?? tx)),
-      db: tx,
-    };
-    const facade = new FulfillmentReservationsFacade(
-      dbMock as any,
-      unified as any,
-      productSellableQuantity as any,
-      policies as any,
-      { assertMutationAllowed: jest.fn() } as any,
-    );
-
-    return { facade, state, tx, unified, productSellableQuantity, policies, outbox };
-  }
-
-  describe('reserve', () => {
-    it('manual reserve로 모든 item이 예약되면 FO를 ready로 바꾼다 (READY 이벤트는 미구독이라 발행하지 않는다)', async () => {
-      const { facade, state, tx, unified, outbox } = makeFacade();
-
-      await facade.reserve(fulfillmentOrderId, { fulfillmentOrderItemId, quantity: 1 }, tx);
-
-      expect(unified.reserveStock).toHaveBeenCalledWith(
-        expect.objectContaining({
-          targetType: 'FULFILLMENT_ORDER',
-          targetId: fulfillmentOrderId,
-          fulfillmentOrderItemId,
-          skuId,
-          warehouseId,
-          quantity: 1,
-        }),
-        tx,
-      );
-      expect(state.fo).toMatchObject({
-        status: 'ready',
-        totalReservedQty: 2,
-        reservationFailureReason: null,
-        reservationFailureDetails: null,
-      });
-      // FulfillmentReady 는 구독 서비스가 없어 발행하지 않는다.
-      expect(outbox.enqueue).not.toHaveBeenCalled();
-    });
-
-    it('labeled FO는 수동 예약 refresh가 ready로 되돌리지 않고 READY 이벤트도 내지 않는다', async () => {
-      const { facade, state, tx, outbox } = makeFacade({ foStatus: 'labeled' });
-
-      await facade.reserve(fulfillmentOrderId, { fulfillmentOrderItemId, quantity: 1 }, tx);
-
-      expect(state.fo.status).toBe('labeled');
-      expect(outbox.enqueue).not.toHaveBeenCalled();
-    });
-
-    it('URL FO id와 FOI 소속 FO id가 다르면 BadRequestException을 던진다', async () => {
-      const { facade, tx } = makeFacade({ firstItemFulfillmentOrderId: otherFulfillmentOrderId });
-
-      await expect(
-        facade.reserve(fulfillmentOrderId, { fulfillmentOrderItemId, quantity: 1 }, tx),
-      ).rejects.toThrow(BadRequestException);
-    });
-
-    it('shipped FO에 reserve 요청하면 ConflictException을 던진다', async () => {
-      const { facade, tx } = makeFacade({ foStatus: 'shipped' });
-
-      await expect(
-        facade.reserve(fulfillmentOrderId, { fulfillmentOrderItemId, quantity: 1 }, tx),
-      ).rejects.toThrow(ConflictException);
-    });
-
-    it('completed FO에 reserve 요청하면 ConflictException을 던진다', async () => {
-      const { facade, tx } = makeFacade({ foStatus: 'completed' });
-
-      await expect(
-        facade.reserve(fulfillmentOrderId, { fulfillmentOrderItemId, quantity: 1 }, tx),
-      ).rejects.toThrow(ConflictException);
-    });
-
-    it('quantity가 0 이하면 BadRequestException을 던진다', async () => {
-      const { facade, tx, unified } = makeFacade();
-
-      await expect(
-        facade.reserve(fulfillmentOrderId, { fulfillmentOrderItemId, quantity: 0 }, tx),
-      ).rejects.toThrow(BadRequestException);
-      expect(unified.reserveStock).not.toHaveBeenCalled();
-    });
-
-    it('FOI 부족분(qty - reservedQty)을 초과하는 over-reserve는 BadRequestException을 던진다', async () => {
-      // qty=2, reservedQty=1 → 부족분 1인데 2개 예약 시도
-      const { facade, tx, unified } = makeFacade({ firstItemQty: 2, firstItemReservedQty: 1 });
-
-      await expect(
-        facade.reserve(fulfillmentOrderId, { fulfillmentOrderItemId, quantity: 2 }, tx),
-      ).rejects.toThrow(BadRequestException);
-      expect(unified.reserveStock).not.toHaveBeenCalled();
-    });
-
-    it('drop_ship FO에 reserve 요청하면 ConflictException을 던진다 (타사 재고 불변식)', async () => {
-      const { facade, tx, unified } = makeFacade({ foFulfillmentMode: 'drop_ship' });
-
-      await expect(
-        facade.reserve(fulfillmentOrderId, { fulfillmentOrderItemId, quantity: 1 }, tx),
-      ).rejects.toThrow(ConflictException);
-      expect(unified.reserveStock).not.toHaveBeenCalled();
-    });
-
-    it('FOI 부족분 이내의 reserve는 성공한다', async () => {
-      const { facade, tx, unified } = makeFacade({ firstItemQty: 3, firstItemReservedQty: 1 });
-
-      await facade.reserve(fulfillmentOrderId, { fulfillmentOrderItemId, quantity: 2 }, tx);
-
-      expect(unified.reserveStock).toHaveBeenCalledWith(expect.objectContaining({ quantity: 2 }), tx);
-    });
-  });
-
-  describe('unreserve', () => {
-    it('pending FO가 예약을 잃으면 picking 대상에 남지 않도록 created로 내린다', async () => {
-      const { facade, state, tx, unified } = makeFacade({
-        foStatus: 'pending',
-        firstItemReservedQty: 1,
-        reservations: [{ id: 'reservation-1', skuId, quantity: 1 }],
-      });
-
-      await facade.unreserve(fulfillmentOrderId, { fulfillmentOrderItemId, quantity: 1 }, tx);
-
-      expect(unified.releaseReservation).toHaveBeenCalledWith('reservation-1', tx);
-      expect(state.fo).toMatchObject({
-        status: 'created',
-        totalReservedQty: 1,
-      });
-    });
-
-    it('URL FO id와 FOI 소속 FO id가 다르면 BadRequestException을 던진다', async () => {
-      const { facade, tx } = makeFacade({ firstItemFulfillmentOrderId: otherFulfillmentOrderId });
-
-      await expect(
-        facade.unreserve(fulfillmentOrderId, { fulfillmentOrderItemId, quantity: 1 }, tx),
-      ).rejects.toThrow(BadRequestException);
-    });
-
-    it('shipped FO에 unreserve 요청하면 ConflictException을 던진다', async () => {
-      const { facade, tx } = makeFacade({ foStatus: 'shipped' });
-
-      await expect(
-        facade.unreserve(fulfillmentOrderId, { fulfillmentOrderItemId, quantity: 1 }, tx),
-      ).rejects.toThrow(ConflictException);
-    });
-
-    it('shippedQty > 0인 FOI에 unreserve 요청하면 shipped evidence guard가 ConflictException을 던진다', async () => {
-      const { facade, tx } = makeFacade({ foStatus: 'ready', firstItemShippedQty: 1 });
-
-      await expect(
-        facade.unreserve(fulfillmentOrderId, { fulfillmentOrderItemId, quantity: 1 }, tx),
-      ).rejects.toThrow(ConflictException);
-    });
-  });
-
   describe('transferReservation', () => {
     // ─────────────────────────────────────────────────────────────
     // 헬퍼 IDs
@@ -423,8 +130,6 @@ describe('FulfillmentReservationsFacade', () => {
         })),
       };
 
-      const unified = { reserveStock: jest.fn(), getReservationsByTarget: jest.fn(), releaseReservation: jest.fn() };
-      const productSellableQuantity = { recalculateAndPublishForSku: jest.fn().mockResolvedValue(undefined) };
       const policies = { getVariantPolicy: jest.fn().mockResolvedValue({ inventoryManagement: true }) };
 
       const dbMock2 = {
@@ -433,13 +138,11 @@ describe('FulfillmentReservationsFacade', () => {
       };
       const facade = new FulfillmentReservationsFacade(
         dbMock2 as any,
-        unified as any,
-        productSellableQuantity as any,
         policies as any,
-        { assertMutationAllowed: jest.fn() } as any,
+        { assertV2MutationAllowed: jest.fn() } as any,
       );
 
-      return { facade, tx, captured, unified };
+      return { facade, tx, captured };
     }
 
     // ─────────────────────────────────────────────────────────────
@@ -506,8 +209,8 @@ describe('FulfillmentReservationsFacade', () => {
     // 신규: 성공 케이스
     // ─────────────────────────────────────────────────────────────
 
-    it('cross-FO 이전 성공: reserveStock 미호출, 새 reservation row 삽입', async () => {
-      const { facade, tx, captured, unified } = makeTransferTx({
+    it('cross-FO 이전 성공: 새 reservation row 삽입', async () => {
+      const { facade, tx, captured } = makeTransferTx({
         fromFoi: { id: fromFoiId, fulfillmentOrderId, skuId, qty: 2, reservedQty: 2 },
         toFoi: { id: toFoiId, fulfillmentOrderId: toFoId, skuId, qty: 2, reservedQty: 0 },
         fromFo: { id: fulfillmentOrderId, status: 'ready', warehouseId, totalReservedQty: 2 },
@@ -520,7 +223,6 @@ describe('FulfillmentReservationsFacade', () => {
         tx,
       );
 
-      expect(unified.reserveStock).not.toHaveBeenCalled();
       expect(captured.insertedReservations).toHaveLength(1);
       expect(captured.insertedReservations[0]).toMatchObject({
         targetType: 'FULFILLMENT_ORDER',
@@ -831,18 +533,16 @@ describe('FulfillmentReservationsFacade', () => {
       expect(captured.foUpdateSets[1]).toHaveProperty('totalReservedQty');
     });
 
-    it('가용재고가 없는 deadlock 상황에서도 기존 예약 이동은 성공한다', async () => {
-      // reserveStock은 가용재고 0이면 ConflictException을 던지도록 설정
-      const { facade, tx, captured, unified } = makeTransferTx({
+    it('가용재고 조회 없이 기존 confirmed 예약 이동만으로 성공한다', async () => {
+      const { facade, tx, captured } = makeTransferTx({
         fromFoi: { id: fromFoiId, fulfillmentOrderId, skuId, qty: 2, reservedQty: 2 },
         toFoi: { id: toFoiId, fulfillmentOrderId: toFoId, skuId, qty: 2, reservedQty: 0 },
         fromFo: { id: fulfillmentOrderId, status: 'unfulfillable', warehouseId, totalReservedQty: 2 },
         toFo: { id: toFoId, status: 'unfulfillable', warehouseId, totalReservedQty: 0 },
         fromReservations: [{ id: 'res-1', quantity: 2 }],
       });
-      unified.reserveStock.mockRejectedValue(new ConflictException('Insufficient stock'));
 
-      // 새 구현은 reserveStock을 호출하지 않으므로 예외 없이 성공해야 함
+      // transfer 는 가용재고 재확인 없이 기존 confirmed row 를 직접 이동하므로 재고 0 이어도 성공한다
       await expect(
         facade.transferReservation(
           fulfillmentOrderId,
@@ -851,7 +551,6 @@ describe('FulfillmentReservationsFacade', () => {
         ),
       ).resolves.not.toThrow();
 
-      expect(unified.reserveStock).not.toHaveBeenCalled();
       expect(captured.insertedReservations).toHaveLength(1);
     });
   });

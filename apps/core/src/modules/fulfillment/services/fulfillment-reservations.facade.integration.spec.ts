@@ -3,9 +3,9 @@ import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { eq, and } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
-import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { FulfillmentReservationsFacade } from './fulfillment-reservations.facade';
+import { makeDbService } from './__support__';
 
 /**
  * 실제 DB 기반 통합 테스트 — rollback 전용 트랜잭션.
@@ -34,19 +34,12 @@ describeIfDb('FulfillmentReservationsFacade (DB integration, rollback-only)', ()
     sql = postgres(DATABASE_URL as string, { max: 1 });
     db = drizzle(sql, { schema: wmsSchema });
 
-    // transfer/candidates 경로는 unified/productSellableQuantity를 호출하지 않고,
-    // FOI variantId가 null이면 policies도 호출하지 않는다 — 호출되면 테스트가 실패하도록 미구현 stub
-    const unified = {} as never;
-    const productSellableQuantity = {} as never;
+    // FOI variantId가 null이면 policies는 호출되지 않는다 — 호출되면 테스트가 실패하도록 미구현 stub
     const policies = {} as never;
 
-    facade = new FulfillmentReservationsFacade(
-      { db } as unknown as DbService<typeof wmsSchema>,
-      unified,
-      productSellableQuantity,
-      policies,
-      { assertMutationAllowed: jest.fn() } as never,
-    );
+    facade = new FulfillmentReservationsFacade(makeDbService(db), policies, {
+      assertV2MutationAllowed: jest.fn(),
+    } as never);
   });
 
   afterAll(async () => {

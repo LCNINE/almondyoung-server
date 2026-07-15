@@ -26,7 +26,7 @@ describe('FulfillmentsController V2 admin contract', () => {
     );
   });
 
-  it.each(['reserve', 'unreserve', 'shipments'] as const)(
+  it.each(['shipments'] as const)(
     'requires warehouse operate scope for %s',
     (methodName) => {
       const method = Object.getOwnPropertyDescriptor(FulfillmentsController.prototype, methodName)?.value as object;

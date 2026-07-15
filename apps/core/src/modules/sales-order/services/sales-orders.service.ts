@@ -32,6 +32,8 @@ import { MetricsService } from '../../inventory/shared/services/metrics.service'
 import { ProductSkuMappingService } from '../../product-matching/services/product-sku-mapping.service';
 import { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
 import { LibraryService } from '../../library/services/library.service';
+import { randomUUID } from 'crypto';
+import { CORE_ORDER_STREAM, FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
 import { ORDER_EVENTS } from '../common/events';
 import { CreateSalesOrderDto } from '../dto/create-sales-order.dto';
 import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
@@ -216,6 +218,10 @@ export class SalesOrdersService {
 
         await this.outbox.enqueue(
           {
+            // 역사적 폴백 목적지 보존: topicless 시절 dispatcher catch-all 이 이 이벤트를
+            // fulfillments.events.v1 로 실어 왔다. 재라우팅은 컨슈머 분석이 필요한 별도 결정.
+            topic: FULFILLMENT_STREAM.topic.topic,
+            idempotencyKey: `order-created:${order.id}`,
             eventType: ORDER_EVENTS.CREATED,
             aggregateType: 'order',
             aggregateId: order.id,
@@ -320,6 +326,10 @@ export class SalesOrdersService {
 
         await this.outbox.enqueue(
           {
+            // 역사적 폴백 목적지 보존 (위 ORDER_CREATED 참조). 수정 이벤트는 주문당 여러 번이
+            // 정당하므로 자연 멱등키가 없다 — 호출마다 고유 키로 topicless 시절의 무중복 동작 유지.
+            topic: FULFILLMENT_STREAM.topic.topic,
+            idempotencyKey: `order-modified:${id}:${randomUUID()}`,
             eventType: ORDER_EVENTS.MODIFIED,
             aggregateType: 'order',
             aggregateId: id,
@@ -610,6 +620,8 @@ export class SalesOrdersService {
 
       await this.outbox.enqueue(
         {
+          topic: CORE_ORDER_STREAM.topic.topic,
+          idempotencyKey: `so-cancelled:${cancellation.id}`,
           eventType: 'SalesOrderCancelled',
           aggregateType: 'Order',
           aggregateId: id,
@@ -1187,6 +1199,8 @@ export class SalesOrdersService {
 
     await this.outbox.enqueue(
       {
+        topic: CORE_ORDER_STREAM.topic.topic,
+        idempotencyKey: `so-cancelled:${cancellation.id}`,
         eventType: 'SalesOrderCancelled',
         aggregateType: 'Order',
         aggregateId: salesOrderId,
@@ -1521,6 +1535,8 @@ export class SalesOrdersService {
     );
     await this.outbox.enqueue(
       {
+        topic: CORE_ORDER_STREAM.topic.topic,
+        idempotencyKey: `so-cancelled:${cancellation.id}`,
         eventType: 'SalesOrderCancelled',
         aggregateType: 'Order',
         aggregateId: salesOrderId,

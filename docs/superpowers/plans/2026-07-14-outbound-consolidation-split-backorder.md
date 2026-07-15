@@ -2,46 +2,84 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-## 다음 세션 핸드오프 (2026-07-16 세션 종료 시점)
+## 다음 세션 핸드오프 (2026-07-16 세션 2 종료 시점 — PR A 코드 완료)
 
 > 이 절이 세션 간 인수인계 지점이다. 별도 핸드오프 문서를 만들지 않는다 — 이 플랜이 SoT 이고,
-> 사본을 두면 어긋난다(이번 세션에만 낡은 서술을 두 번 고쳤다). 작업이 끝나면 이 절을 지운다.
+> 사본을 두면 어긋난다. 작업이 끝나면 이 절을 지운다.
 
-**첫 행동: 미커밋 워킹트리를 처리할 것.** 12 개 파일에 PR A 의 일부(모드 제거)가 커밋되지 않은 채 남아 있다. **red 상태라 커밋하지 않았다** — `fulfillment-order-reservation-retry.worker.integration.spec.ts` 2 건이 실패한다. 이유는 결함이 아니라 아래 "A1/A2 분리 불가" 다. 둘 중 하나를 고르고 시작한다.
+**PR A (V1 코드 제거 + outbox topic 강제) 는 코드·검증 완료.** 이전 세션의 미커밋 12 파일을 이어받아
+완성했다. 남은 것은 배포와 그 이후 단계다:
 
-- **이어받기** — 그대로 PR A 를 완성해 green 으로 만든 뒤 커밋.
-- **버리기** — `git checkout -- .` 후 깨끗하게 재시작. 근거가 이 플랜에 다 있어 재현 비용이 낮다(설계 결정은 아래에 적어뒀다).
+1. **배포 전 유일한 사람 결정: `FULFILLMENT_V2_CUTOVER_AT` 확정.** 매니페스트에
+   `2026-07-16T00:00:00.000Z` 가 잠정값으로 있다. 자연스러운 선택은 **v2 go-live(배포) 시각** —
+   cleanup 이 기존 FO 를 전부 지우므로 "cutover 이전 주문 = 수동 처리" 결정과 정합한다. 불변값이며
+   epoch 로 바꾸지 말 것: 이 타임스탬프는 DB 상태와 무관하게 옛 이벤트 재전달을 영구 불활성화하는
+   유일한 stateless 가드다(`shouldEnqueueFo` 의 도메인 시각 비교). 이번 세션에 사용자와 재확인한 결정.
+2. **배포** (`sst deploy`) — expand 마이그레이션은 이미 적용돼 있으므로 이 배포부터 topicless outbox
+   write 가 물리적으로 불가능해진다.
+3. **운영자 정리** — `DELETE FROM outbox_events WHERE status='published'` + FO cleanup (런북
+   allowlist 절차). 런북 머리에 "현행 절차" 배너를 넣어 legacy 시절 의식과 구분해 뒀다.
+4. **PR B** — `topic`/`idempotency_key` NOT NULL + V1 컬럼/테이블/enum 드롭 → `migrate`.
+   "제거 범위 실측" 절의 표(사장 enum 12 값, `fulfillment_order_batches` 등)가 그대로 PR B 의 사양이다.
+   Goodsflow 코드 제거 여부(enum 값 `goodsflow` 포함)도 PR B 시점에 결정.
 
-미커밋 변경에 담긴 **설계 결정 세 가지** (버리더라도 이 결정은 유효하다):
+**PR A 에서 원래 목록에 없던 실측/결정** (다음 세션이 알아야 할 것):
 
-1. `FulfillmentWorkflowMode` = `'maintenance' | 'v2'` — `legacy` 제거.
-2. **기본값을 만들지 않는다.** `legacy` 기본값은 "옛 안전 동작 유지" 를 뜻했는데 V1 이 없으면 어떤 기본값도 조용히 실제 운영 모드를 고르는 것이 된다. 미설정/옛 값은 게이트 생성자와 env 검증 양쪽에서 크게 실패한다. dev/test 예외도 없앴고, `.env.example` 두 개는 `v2` + epoch cutover 로 갱신했다(로컬은 "모든 주문이 커토버 이후" 가 맞다).
-3. 배포 매니페스트 → `v2` + `FULFILLMENT_V2_CUTOVER_AT`. **이 시각은 미확정이다** (아래 미결 참조).
+- topicless 호출부는 12 곳이 아니라 **13 곳**이었다(`inventory-command.service.ts` 의 `ship()` 비배치
+  갈래가 하나 더). 전부 명시 topic + idempotencyKey 로 전환 — **폴백 목적지 보존 원칙**: ORDER_CREATED/
+  ORDER_MODIFIED 2 곳은 역사적 catch-all 목적지(`fulfillments.events.v1`)를 그대로 명시했다(주석 있음).
+  재라우팅은 컨슈머 분석이 필요한 별도 결정.
+- **dispatcher 잠재 버그 동시 해소**: 명시 topic 분기가 3개뿐이라 `inventory.events.v1` 을 명시로 넘기면
+  "Unknown explicit topic" 으로 죽었다(V2 batch dispatch 경로가 이미 밟고 있던 지뢰). 명시 분기를 5개
+  스트림 전부로 확장하고 폴백은 fail-closed throw 로 대체 + 스펙 커버.
+- `assertMutationAllowed`(410)·`FULFILLMENT_LEGACY_CLOSED_CODE`·`FULFILLMENT_V2_NOT_ACTIVE_CODE`(409)
+  제거. `assertV2MutationAllowed` 는 운영 게이트로의 위임만 남기고 이름은 호출부 의도 표현용으로 유지.
+- **FO 수동 reserve/unreserve 는 라우트째 은퇴** (facade `reserve`/`unreserve`, 컨트롤러 라우트,
+  admin-web 훅/다이얼로그). `adminAvailableActions` 도 더 이상 광고하지 않는다. 남은 수동 개입은
+  transfer 뿐. V2 예약은 shipment line 단위 자동(부분예약 + retry worker).
+- V2 create 는 digital/void-only 주문에 **placeholder FO 를 만들지 않는다(null 반환)** — V1 의
+  completed 빈 FO 동작과 다르고, 스펙도 그렇게 고정했다.
+- V1 의미론을 단언하던 스펙은 삭제가 맞다: `fulfillment-stock-allocation.integration`(FO 단위
+  할당/unfulfillable/retry), retry worker 통합 스펙(V2 커버리지는
+  `shipment-reservation.integration.spec.ts:120-121` 에 이미 있음), golden-path·batch-pick-ship 등.
+- `wireLogistics` 의 게이트에 **epoch cutover 를 명시** — cutover 미설정 v2 게이트는 fail-closed 라
+  backlog enqueue 가 전부 거부된다(conversion 통합 스펙이 이걸로 깨졌었다).
 
-**PR A 작업 목록** (한 덩어리로 간다 — 쪼갤 수 없다):
+**검증 결과** (이 세션 실측):
 
-- V1 서비스 제거 ~4,600 줄: `invoice.service`(559) · `picking-process.service`(1,017) · `outbound-batch.service`(840) · `outbound-consumption.service`(175) · `shipment.service`(262) · `fulfillments.service`(1,742). **`fulfillments.service` 는 통째 삭제 불가** — drop-ship·digital-only 경로가 섞여 있어 정밀 수술이 필요하다. 각 서비스는 3~6 개 non-spec 파일이 참조한다.
-- outbox topicless 호출부 12 곳 + 두 outbox 서비스의 topicless union 갈래 제거 (파일별 건수는 "outbox 4,767 행" 절 참조).
-- V1 컨트롤러·모듈 배선·V1 스펙·admin-web V1 클라이언트.
-- 게이트 정리: V1 이 사라지면 `assertMutationAllowed` 와 `FULFILLMENT_LEGACY_CLOSED_CODE` 가 미사용이 되고, **`FULFILLMENT_V2_NOT_ACTIVE_CODE`(409) 분기는 이미 도달 불가**다(모드가 maintenance|v2 뿐이라 maintenance 에서 503 이 먼저 나간다). `fulfillment-workflow-gate.service.spec.ts` 에 이 사실이 주석으로 박혀 있다.
+- core 프로덕션 tsc(`tsconfig.app.json`) exit 0. 루트 tsc apps/core **신규 0** (87 vs HEAD 89 —
+  "신규"로 보이는 5줄은 전부 HEAD 동일 에러의 라인 이동, 개별 대조 완료).
+- 변경 파일 eslint(--fix 없이) HEAD 대조 **신규 0** (대량 음수 델타).
+- 유닛: core 모듈 706 passed. 잔여 실패 2 스위트(`partial-cancellation-refund-calculator`,
+  `product-sellable-quantity.calculator`)는 **HEAD 에서도 동일 실패** — 기존 debt.
+- 통합(fresh 로컬 DB): outbound-v2 **8 suites/56 tests 전부 green**, core 통합 35 passed / 4 failed 중
+  1건(`logistics-support`)은 이 세션의 헬퍼 삭제 실수(상수 오삭제)로 즉시 복구, 나머지 3건
+  (`inventory-command.adjust`·`unified-reservation.lock`·`stocktaking-uniques`)은 **HEAD 에서도 같은
+  메시지로 실패** — 기존 debt (`{db}` 캐스팅 스펙이 `dbService.run` 부재로 죽는 패턴 등).
+- admin-web tsc **신규 0** (전후 diff 동일), V1 식별자 rg 게이트 0 히트.
+- 사보타주: 호출부에서 topic 한 줄 제거 → TS2345 red 확인 → 복원 green. dispatcher fail-closed 는
+  스펙 전환 과정에서 red 를 직접 관측(옛 폴백 기대 테스트가 새 throw 로 깨지는 것).
 
-**A1/A2 분리 불가 (실측).** `legacy` 만 제거하고 V1 코드를 남기면 V1 스펙이 통과할 수 없다 — 게이트에 막히거나 픽스처가 안 맞는다. 실제로 retry worker 스펙에서 `findCandidates` 가 v2 에서 `[]` 를 반환한다(Task 9 이 후보 선정을 shipment line 기준으로 바꿨는데 스펙은 V1 형태 픽스처를 심는다). ADR-0005 §5 의 2 PR 분할은 **코드(A1+A2 한 덩어리) → 배포 → 마이그레이션(B)** 이지, 코드 안을 다시 쪼개는 것이 아니다.
+**검증 레시피와 이 레포의 함정** (유지 — 다음 세션도 그대로 쓸 것):
 
-**검증 레시피와 이 레포의 함정** (이번 세션에 값을 치르고 배운 것):
+- **타입체크를 절대 개수로 보지 말 것.** 루트 tsc 는 수천 개 상시 에러(대부분 `web/` 스토어프론트).
+  변경 전후 diff 로 *신규 0* 을 확인한다. 별도 worktree 로 HEAD 기준선을 만들면 stash 없이 안전하다 —
+  단 untracked 생성물 차이로 절대 개수가 어긋나므로 반드시 파일 단위로 대조한다.
+  `apps/*/tsconfig.app.json` 은 spec 제외 — 스펙 검증은 루트로.
+- **lint 도 같은 방식.** `npm run lint` 는 전역 `--fix` 라 검증에 쓸 수 없다. 변경 파일만
+  `npx eslint --format json`(--fix 없이) 후 HEAD worktree 와 (파일,규칙) 단위 카운터로 대조.
+- **`rg -r` 주의.** `-r` 은 replace 다.
+- **통합 러너**: `npm run test:core:integration:local -- "apps/core.*integration"` (Docker).
+  로컬 DB 는 커밋형 스펙 잔재가 누적된다 — 전역 0-count 단언 스펙이 있으므로 판정 전
+  `DROP DATABASE core WITH (FORCE); CREATE DATABASE core;` 로 리셋할 것.
+- **사보타주 규율**: 가드를 고쳤으면 일부러 부숴 red 를 확인하고 되돌린다. 되돌릴 때 `git checkout --
+  <file>` 금지(세션의 정당한 미커밋 변경까지 날린다) — 넣었던 줄만 정확히 되빼는 방식으로.
 
-- **타입체크를 절대 개수로 보지 말 것.** 루트 `tsconfig.json --noEmit` 은 **4,789 개**의 상시 에러를 낸다. 반드시 변경 전후를 대조해 *신규 0* 을 확인한다(`git stash` 로 HEAD 를 만들어 diff). `apps/*/tsconfig.app.json` 은 spec 을 제외하므로 스펙 검증에 쓰면 파일을 읽지도 않고 exit 0 이 난다 — 루트를 쓴다.
-- **lint 도 같은 방식.** `npm run lint` 는 전역 `--fix` 라 검증에 쓸 수 없다. 변경 파일만 `npx eslint`(--fix 없이) 후 HEAD 와 대조. 요약줄(`✖ N problems`)이 섞이지 않게 규칙 라인만 걸러야 한다.
-- **`rg -r` 주의.** `-r` 은 replace 다. `rg -rn`/`rg -ril` 처럼 붙여 쓰면 뒤 글자가 치환 문자열로 먹혀 출력이 조용히 거짓말을 한다. 이번 세션에 세 번 당했다.
-- **테스트 스위트**: `npm run test:core:integration:local -- outbound-v2` → 8 suites / 56 tests (Docker 필요). 러너는 npm 기준이다 — 아래 "Verification command set" 의 yarn 표기는 이 레포와 맞지 않는다.
-- **사보타주 규율**: 가드를 고쳤으면 일부러 부숴 red 를 확인하고 되돌린다. 단 **프로덕션 보안 설정을 약화시켜 재증명하지 말 것** — 이번에 `ValidationPipe` 의 `whitelist` 를 false 로 되돌리려다 막혔고, 그게 옳았다(이미 증명된 사실이라 불필요했다).
+**미결** (사람 결정):
 
-**미결 2 건** (둘 다 사람이 정해야 한다):
-
-1. **`FULFILLMENT_V2_CUTOVER_AT` 확정.** 매니페스트에 `2026-07-16T00:00:00.000Z` 를 넣어뒀으나 임의값이다. 불변이고, 이 시각 이전 주문은 FO 가 생기지 않으며 자동 backfill 도 없다 — 한진 인도 후 그 주문들을 출고하려면 수동 처리 대상이 된다. **배포 전 확정.**
-2. **`invoice_method` 의 `direct`/`self` 유지 결정은 났다**(유지 — V2 수동 발행 경로의 착지점). 다만 그 수동 발행 경로 자체를 언제 만들지는 미정. 한진 계약이 idempotency 를 노출하지 않으면 이것이 유일한 출구가 된다.
-
-**이번 세션 커밋** (모두 `feat/outbound-v2-consolidation-backorder`, push 안 함):
-`372e17526` 시나리오 14 실제 recall · `aeea7aec7` Task 23 후속 3 건 · `59ce8f4ba` 한진 결정+Task 25 실측 · `5b977a0fc` Task 25 언블록 · `b44648b7b` live DB 실측.
+1. **`FULFILLMENT_V2_CUTOVER_AT` 확정** — 위 1번. 배포 전 유일한 블로커.
+2. V2 수동 발행 경로 시점(한진 계약이 idempotency 를 노출하지 않을 때의 유일한 출구), Goodsflow
+   코드/enum 제거 여부 — 둘 다 PR B 이전까지 결정하면 된다.
 
 ---
 

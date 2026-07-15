@@ -3,20 +3,17 @@ import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { and, eq } from 'drizzle-orm';
 
+// topic 과 idempotencyKey 는 필수다 — topicless V1 expand 호환 갈래는 Task 25 에서 제거됐고,
+// 새 topicless write 는 컴파일 단계에서 막힌다 (dispatcher 폴백 라우팅도 함께 제거됨).
 type OutboxEnqueueParams = {
+  topic: string;
+  idempotencyKey: string;
   eventType: string;
   aggregateType: string;
   aggregateId: string;
   partitionKey: string;
   payload: unknown;
-} & (
-  | { topic: string; idempotencyKey: string }
-  | {
-      /** @deprecated Topicless writes are V1 expand compatibility only; remove in Task 25. */
-      topic?: undefined;
-      idempotencyKey?: undefined;
-    }
-);
+};
 
 @Injectable()
 export class OutboxService {
@@ -39,7 +36,7 @@ export class OutboxService {
         .onConflictDoNothing()
         .returning();
 
-      if (inserted || !params.topic || !params.idempotencyKey) return inserted;
+      if (inserted) return inserted;
 
       const [existing] = await trx
         .select()

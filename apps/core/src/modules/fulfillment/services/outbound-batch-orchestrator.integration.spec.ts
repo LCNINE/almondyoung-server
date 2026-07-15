@@ -297,14 +297,6 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       .from(wmsTables.outboundBatches)
       .where(eq(wmsTables.outboundBatches.id, created.batchId));
     expect(storedBatch).toEqual({ status: 'created', totalItems: 0, totalQty: 0 });
-    const compatibilityRead = await wired.outboundBatch.getBatchDetail(created.batchId);
-    expect(compatibilityRead).toMatchObject({ status: 'created', totalItems: 1, totalQty: 3 });
-    expect(compatibilityRead.fulfillmentOrders).toEqual([
-      expect.objectContaining({ id: fixture.fulfillmentOrder.id, totalItems: 1, totalQty: 3 }),
-    ]);
-    await expect(wired.outboundBatch.generatePickingList(created.batchId)).rejects.toMatchObject({
-      response: expect.objectContaining({ code: 'OUTBOUND_BATCH_V2_PICKING_PLAN_REQUIRED' }),
-    });
     const [fo] = await db
       .select({ batchId: wmsTables.fulfillmentOrders.batchId })
       .from(wmsTables.fulfillmentOrders)
@@ -331,15 +323,6 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       .from(wmsTables.outboundBatches)
       .where(eq(wmsTables.outboundBatches.id, created.batchId));
     expect(storedAfterClaim).toEqual({ status: 'created', totalItems: 0, totalQty: 0 });
-    const compatibilityAfterClaim = await wired.outboundBatch.getBatchDetail(created.batchId);
-    expect(compatibilityAfterClaim).toMatchObject({ status: 'picking', totalItems: 1, totalQty: 3 });
-    expect(compatibilityAfterClaim.fulfillmentOrders[0].items).toEqual([
-      expect.objectContaining({ id: fixture.item.id, qty: 3, pickedQty: fixture.item.pickedQty }),
-    ]);
-    const listSummary = (await wired.outboundBatch.getBatches(fixture.warehouseId)).find(
-      (candidate) => candidate.id === created.batchId,
-    );
-    expect(listSummary).toMatchObject({ status: 'picking', totalItems: 1, totalQty: 3 });
   });
 
   it('allows a recalled dispatch history through batch add and exclusion while preserving the old attempt', async () => {
@@ -754,11 +737,6 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
     expect((await services.batches.listBatches({ status: 'created' })).map((row) => row.id)).not.toContain(
       batch.batchId,
     );
-    const legacyCompletedDetail = await wired.outboundBatch.getBatchDetail(batch.batchId);
-    expect(legacyCompletedDetail).toMatchObject({ status: 'completed', totalItems: 0, totalQty: 0 });
-    expect(legacyCompletedDetail.fulfillmentOrders).toEqual([
-      expect.objectContaining({ id: fixtureA.fulfillmentOrder.id }),
-    ]);
 
     await expect(
       services.batches.addShipment(batch.batchId, fixtureB.shipment.id, `closed-add-b-${randomUUID()}`, master),

@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { ShipmentDispatchEventReversal, StockEventStore } from '../repositories/stock-event.store';
@@ -83,6 +84,8 @@ export class InventoryCommandService {
       // 4. Outbox에 이벤트 추가
       await this.outboxService.enqueue(
         {
+          topic: INVENTORY_STREAM.topic.topic,
+          idempotencyKey: `stock-event:${event.id}`,
           eventType: 'StockReceived',
           aggregateType: 'Stock',
           aggregateId: event.id,
@@ -180,6 +183,8 @@ export class InventoryCommandService {
 
       // 4. Outbox에 이벤트 추가 ✅
       const outboxEvent = {
+        topic: INVENTORY_STREAM.topic.topic,
+        idempotencyKey: `stock-event:${event.id}`,
         eventType: 'StockShipped',
         aggregateType: 'Stock',
         aggregateId: event.id,
@@ -203,7 +208,7 @@ export class InventoryCommandService {
               aggregateType: 'Stock',
               aggregateId: event.id,
               partitionKey: input.skuId,
-              topic: 'inventory.events.v1',
+              topic: INVENTORY_STREAM.topic.topic,
               idempotencyKey: `stock-event:${event.id}`,
               payload: {
                 stockEventId: event.id,
@@ -466,6 +471,8 @@ export class InventoryCommandService {
       // 4. Outbox에 이벤트 추가 ✅
       await this.outboxService.enqueue(
         {
+          topic: INVENTORY_STREAM.topic.topic,
+          idempotencyKey: `stock-event:${event.id}`,
           eventType: 'StockAdjusted',
           aggregateType: 'Stock',
           aggregateId: event.id,
@@ -605,6 +612,8 @@ export class InventoryCommandService {
       // 4. Outbox에 이벤트 추가 ✅
       await this.outboxService.enqueue(
         {
+          topic: INVENTORY_STREAM.topic.topic,
+          idempotencyKey: `stock-event:${event.id}`,
           eventType: 'StockAdjusted',
           aggregateType: 'Stock',
           aggregateId: event.id,

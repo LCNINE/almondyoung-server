@@ -16,8 +16,6 @@ describe('FulfillmentReservationsFacade V2 transfer command', () => {
     const facade = new FulfillmentReservationsFacade(
       {} as never,
       {} as never,
-      {} as never,
-      {} as never,
       workflowGate as never,
       commands as never,
     );
@@ -42,6 +40,6 @@ describe('FulfillmentReservationsFacade V2 transfer command', () => {
       expect.objectContaining({ commandType: 'reservation.transfer', idempotencyKey: 'transfer-key' }),
       expect.any(Function),
     );
-    expect(transferReservation).toHaveBeenCalledWith('fo-1', dto, tx, true);
+    expect(transferReservation).toHaveBeenCalledWith('fo-1', dto, tx);
   });
 });

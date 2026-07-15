@@ -1,4 +1,10 @@
-import { FULFILLMENT_STREAM, FULFILLMENT_V2_STREAM, SHIPMENT_STREAM } from '@packages/event-contracts/streams';
+import {
+  CORE_ORDER_STREAM,
+  FULFILLMENT_STREAM,
+  FULFILLMENT_V2_STREAM,
+  INVENTORY_STREAM,
+  SHIPMENT_STREAM,
+} from '@packages/event-contracts/streams';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { OutboxDispatcherService } from './outbox-dispatcher.service';
 
@@ -144,16 +150,46 @@ describe('OutboxDispatcherService explicit topic routing', () => {
     expect(f.coreOrder.publishEvent).not.toHaveBeenCalled();
   });
 
-  it('uses aggregate/event inference only for topicless legacy rows', async () => {
+  it('routes explicit inventory and core-order topics to their typed publishers', async () => {
     const f = fixture();
-    await publish(f.service, baseEvent);
-    expect(f.fulfillment.publishEvent).toHaveBeenCalledTimes(1);
+    await publish(f.service, {
+      ...baseEvent,
+      id: '00000000-0000-4000-8000-000000000005',
+      topic: INVENTORY_STREAM.topic.topic,
+      event_type: 'StockAdjusted',
+      aggregate_type: 'Stock',
+    });
+    await publish(f.service, {
+      ...baseEvent,
+      id: '00000000-0000-4000-8000-000000000006',
+      topic: CORE_ORDER_STREAM.topic.topic,
+      event_type: 'SalesOrderCancelled',
+      aggregate_type: 'Order',
+    });
+
+    expect(f.inventory.publishEvent).toHaveBeenCalledTimes(1);
+    expect(f.inventory.publishEvent).toHaveBeenCalledWith(expect.objectContaining({ eventType: 'StockAdjusted' }));
+    expect(f.coreOrder.publishEvent).toHaveBeenCalledTimes(1);
+    expect(f.coreOrder.publishEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'SalesOrderCancelled' }),
+    );
+    expect(f.fulfillment.publishEvent).not.toHaveBeenCalled();
+  });
+
+  it('fails a topicless legacy row closed instead of guessing its destination', async () => {
+    // topicless 폴백 라우팅은 Task 25 에서 제거됐다 — enqueue 가 topic 을 컴파일 타임에 강제하므로
+    // 새 topicless row 는 만들어질 수 없고, 남아 있던 published 행은 dispatcher 가 leasing 하지 않는다.
+    const f = fixture();
+    await expect(publish(f.service, baseEvent)).rejects.toThrow('Unknown outbox topic: (topicless legacy row)');
+    expect(f.fulfillment.publishEvent).not.toHaveBeenCalled();
+    expect(f.inventory.publishEvent).not.toHaveBeenCalled();
+    expect(f.coreOrder.publishEvent).not.toHaveBeenCalled();
   });
 
   it('fails an unknown explicit topic closed and leaves it retryable', async () => {
     const f = fixture();
     await expect(publish(f.service, { ...baseEvent, topic: 'unexpected.events.v1' })).rejects.toThrow(
-      'Unknown explicit outbox topic: unexpected.events.v1',
+      'Unknown outbox topic: unexpected.events.v1',
     );
 
     expect(f.fulfillment.publishEvent).not.toHaveBeenCalled();

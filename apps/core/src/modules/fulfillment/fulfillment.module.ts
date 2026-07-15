@@ -21,19 +21,14 @@ import { OutboxDispatcherService } from './outbox/outbox-dispatcher.service';
 
 // Services
 import { FulfillmentsService } from './services/fulfillments.service';
-import { OutboundConsumptionService } from './services/outbound-consumption.service';
 import { FulfillmentOrderCreationBacklogWorker } from './services/fulfillment-order-creation-backlog.worker';
 import { FulfillmentOrderReservationRetryWorker } from './services/fulfillment-order-reservation-retry.worker';
-import { FulfillmentOrderTransactionService } from './services/fulfillment-order-transaction.service';
 import { FulfillmentReservationsFacade } from './services/fulfillment-reservations.facade';
 import { AvailabilityService } from './services/availability.service';
 import { PoliciesService } from './services/policies.service';
-import { OutboundBatchService } from './services/outbound-batch.service';
 import { PickingProcessService } from './services/picking-process.service';
-import { ShipmentService } from './services/shipment.service';
 import { ConsolidationService } from './services/consolidation.service';
 import { DirectShipService } from './services/direct-ship.service';
-import { InvoiceService } from './services/invoice.service';
 import { GoodsflowDeliveryProvider } from './services/goodsflow-delivery.provider';
 import { HanjinDeliveryProvider } from './services/hanjin-delivery.provider';
 import { FulfillmentProgressService } from './services/fulfillment-progress.service';
@@ -59,13 +54,9 @@ import { ShipmentRecallService } from './services/shipment-recall.service';
 
 // Controllers
 import { FulfillmentsController } from './controllers/fulfillments.controller';
-import { FulfillmentOrderController } from './controllers/fulfillment-order.controller';
-import { OutboundBatchController } from './controllers/outbound-batch.controller';
-import { PickingController } from './controllers/picking.controller';
 import { ShipmentController } from './controllers/shipment.controller';
 import { ConsolidationController } from './controllers/consolidation.controller';
 import { DirectShipController } from './controllers/direct-ship.controller';
-import { InvoiceController } from './controllers/invoice.controller';
 import { LocationOptimizationController } from './controllers/location-optimization.controller';
 import { FulfillmentOperationController, ShipmentPlanningController } from './controllers/shipment-planning.controller';
 import { ShipmentInvoiceController } from './controllers/shipment-invoice.controller';
@@ -105,18 +96,13 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
   ],
   controllers: [
     FulfillmentsController,
-    FulfillmentOrderController,
-    // Static V2 outbound-batch routes must be registered before the legacy `:id` reader.
     OutboundBatchV2Controller,
     PickingV2Controller,
     PickingCommandV2Controller,
     ToteController,
-    OutboundBatchController,
-    PickingController,
     ShipmentController,
     ConsolidationController,
     DirectShipController,
-    InvoiceController,
     LocationOptimizationController,
     ShipmentPlanningController,
     FulfillmentOperationController,
@@ -133,18 +119,14 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
 
     // Core fulfillment services
     FulfillmentsService,
-    OutboundConsumptionService,
     FulfillmentOrderCreationBacklogWorker,
     FulfillmentOrderReservationRetryWorker,
-    FulfillmentOrderTransactionService,
     FulfillmentReservationsFacade,
     AvailabilityService,
     PoliciesService,
 
     // Outbound process services
-    OutboundBatchService,
     PickingProcessService,
-    ShipmentService,
     ShipmentDispatchService,
     ShipmentDeliveryTrackingService,
     ShipmentShortPickService,
@@ -152,7 +134,6 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ToteLifecycleService,
     ConsolidationService,
     DirectShipService,
-    InvoiceService,
     GoodsflowDeliveryProvider,
     HanjinDeliveryProvider,
     FulfillmentProgressService,

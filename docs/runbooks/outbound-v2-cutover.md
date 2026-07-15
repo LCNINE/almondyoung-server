@@ -1,5 +1,27 @@
 # Outbound V2 hard-cutover runbook
 
+> **⚠️ 현행 절차 (Task 25 PR A 이후) — 아래 본문보다 이 절이 우선한다.**
+>
+> V1 출고 코드와 `legacy` 워크플로 모드는 코드에서 제거됐다. `FULFILLMENT_WORKFLOW_MODE` 는
+> `maintenance | v2` 뿐이고, 옛 값(`legacy`)이나 미설정은 **모든 환경에서 Core 부팅 실패**다
+> (`apps/core/src/config/env.validation.ts`). 본문 중 "mode=legacy 로 배포/확인" 을 지시하는
+> 단계는 PR A 이전 코드에서만 성립하던 역사 기록이므로 따르지 말 것.
+>
+> 은퇴는 세 단계로 간다 (플랜 "outbox 4,767 행" 절의 정정된 순서):
+>
+> 1. **PR A 배포** — V1 코드 제거 + outbox topic/idempotencyKey 컴파일 강제.
+>    배포 전 `FULFILLMENT_V2_CUTOVER_AT` 를 확정해 매니페스트에 넣는다(불변 — 이 시각 이전 주문은
+>    FO 가 생기지 않고 자동 backfill 도 없다).
+> 2. **운영자 정리** — 새 topicless write 가 불가능해진 상태에서
+>    `DELETE FROM outbox_events WHERE status='published'` + FO cleanup(아래 allowlist 절차).
+>    이 삭제는 마이그레이션에 넣지 않는다(CLAUDE.md 의 광범위 delete 금지).
+> 3. **PR B `migrate`** — `topic`/`idempotency_key` NOT NULL 강화 + V1 컬럼/테이블/enum 드롭.
+>    contract 이므로 반드시 deploy(1) 가 끝난 뒤에 migrate 한다 (ADR-0005 §5).
+>
+> 이 릴리스 시점 실측(2026-07-16): 출고 이력 0 (SHIP 이벤트·dispatch_attempts·invoices·shipments
+> 전부 0 행), 따라서 본문의 스냅샷/워터마크/관찰기간 의식 대부분은 보호 대상이 없다. cleanup 의
+> "SHIP 이벤트 발견 시 중단" 가드는 그 전제를 **검증하는** 장치이므로 유지한다.
+
 This runbook removes V1 fulfillment work data while preserving sales orders, master data, and the stock journal/event/ledger.
 It is a maintenance-window procedure, not an online migration. Never use it to convert or drain individual V1 rows.
 

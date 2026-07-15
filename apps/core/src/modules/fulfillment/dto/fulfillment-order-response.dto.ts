@@ -1,22 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-export class InvoiceSummaryDto {
-  @ApiProperty()
-  id: string;
-
-  @ApiProperty()
-  invoiceNumber: string;
-
-  @ApiProperty({ enum: ['issued', 'used', 'voided'] })
-  status: string;
-
-  @ApiProperty({ nullable: true })
-  carrierCode: string | null;
-
-  @ApiProperty({ enum: ['goodsflow', 'hanjin', 'direct', 'self'] })
-  issueMethod: string;
-}
-
 export class FulfillmentOrderItemDto {
   @ApiProperty({ description: 'Fulfillment Order Item ID' })
   id: string;
@@ -85,34 +68,6 @@ export class ReservationSummaryDto {
 
   @ApiProperty({ nullable: true, required: false })
   requestedAt?: Date | null;
-}
-
-export class ShipmentSummaryDto {
-  @ApiProperty()
-  id: string;
-
-  @ApiProperty()
-  trackingNo: string;
-
-  @ApiProperty()
-  carrier: string;
-
-  @ApiProperty()
-  status: string;
-
-  @ApiProperty({ nullable: true })
-  eta: Date | null;
-
-  @ApiProperty({ nullable: true })
-  invoiceUrl: string | null;
-}
-
-export class BatchSummaryDto {
-  @ApiProperty()
-  id: string;
-
-  @ApiProperty()
-  batchNumber: string;
 }
 
 export class FulfillmentV2ProgressItemDto {
@@ -275,15 +230,6 @@ export class FulfillmentOrderResponseDto {
 
   @ApiProperty()
   updatedAt: Date;
-
-  @ApiProperty({ type: InvoiceSummaryDto, nullable: true })
-  invoice: InvoiceSummaryDto | null;
-
-  @ApiProperty({ type: ShipmentSummaryDto, nullable: true, required: false })
-  shipment?: ShipmentSummaryDto | null;
-
-  @ApiProperty({ type: BatchSummaryDto, nullable: true, required: false })
-  batch?: BatchSummaryDto | null;
 
   @ApiProperty({
     description: 'FOI 라인 (상세 조회 시에만 포함)',

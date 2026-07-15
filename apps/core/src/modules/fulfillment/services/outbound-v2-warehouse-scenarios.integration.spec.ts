@@ -176,7 +176,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       audit,
     );
     const registry = new PickingStrategyRegistry(dbService, [discrete, aggregate, tote]);
-    const picking = new PickingProcessService(dbService, new BarcodeService(dbService), workflow, registry);
+    const picking = new PickingProcessService(dbService, registry);
 
     const inventoryOutbox = new InventoryOutboxService(dbService);
     const sellable = new ProductSellableQuantityService(dbService as never, inventoryOutbox);

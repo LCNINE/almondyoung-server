@@ -8,12 +8,10 @@ import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { ForceShipmentDispatchDto, ShipmentInspectionScanDto } from '../dto/shipment-dispatch.dto';
 import { FulfillmentWorkflowGate } from '../services/fulfillment-workflow-gate.service';
 import { ShipmentDispatchService } from '../services/shipment-dispatch.service';
-import { ShipmentService } from '../services/shipment.service';
 import { ShipmentController } from './shipment.controller';
 
 describe('ShipmentController V2 dispatch commands', () => {
   function fixture() {
-    const legacy = {};
     const workflowGate = { assertV2MutationAllowed: jest.fn() };
     const inspectionScan = jest.fn().mockResolvedValue({ shipmentId: 'shipment-1', status: 'inspecting' });
     const forceDispatch = jest.fn().mockResolvedValue({ shipmentId: 'shipment-1', dispatchAttemptId: 'attempt-1' });
@@ -21,7 +19,7 @@ describe('ShipmentController V2 dispatch commands', () => {
       inspectionScan,
       forceDispatch,
     };
-    const controller = new ShipmentController(legacy as never, workflowGate as never, dispatch);
+    const controller = new ShipmentController(workflowGate as never, dispatch);
     return { controller, workflowGate, inspectionScan, forceDispatch };
   }
 
@@ -114,10 +112,7 @@ describe('ShipmentController V2 dispatch commands', () => {
   });
 
   it('requires ShipmentDispatchService in the Nest controller graph', async () => {
-    const baseProviders = [
-      { provide: ShipmentService, useValue: {} },
-      { provide: FulfillmentWorkflowGate, useValue: { assertV2MutationAllowed: jest.fn() } },
-    ];
+    const baseProviders = [{ provide: FulfillmentWorkflowGate, useValue: { assertV2MutationAllowed: jest.fn() } }];
     const guard = { canActivate: jest.fn().mockReturnValue(true) };
     const missingDispatchBuilder = Test.createTestingModule({
       controllers: [ShipmentController],

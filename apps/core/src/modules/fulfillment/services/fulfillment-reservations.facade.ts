@@ -2,8 +2,6 @@ import { Injectable, BadRequestException, ConflictException, Logger, Optional } 
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { eq, and, asc, gt, ne, inArray, isNull, or } from 'drizzle-orm';
-import { UnifiedReservationService } from '../../inventory/shared/services/unified-reservation.service';
-import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { PoliciesService } from './policies.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { FulfillmentCommandService } from './fulfillment-command.service';
@@ -14,14 +12,10 @@ export class FulfillmentReservationsFacade {
 
   constructor(
     private readonly db: DbService<typeof wmsSchema>,
-    private readonly unified: UnifiedReservationService,
-    private readonly productSellableQuantity: ProductSellableQuantityService,
     private readonly policies: PoliciesService,
     private readonly workflowGate: FulfillmentWorkflowGate,
     @Optional() private readonly commands?: FulfillmentCommandService,
   ) {}
-
-  private readonly TERMINAL_STATUSES = ['shipped', 'completed', 'canceled'] as const;
 
   private readonly RESERVATION_TRANSFER_ALLOWED_STATUS_LIST = [
     'created',
@@ -33,197 +27,6 @@ export class FulfillmentReservationsFacade {
   private readonly RESERVATION_TRANSFER_ALLOWED_STATUSES = new Set<string>(
     this.RESERVATION_TRANSFER_ALLOWED_STATUS_LIST,
   );
-
-  async reserve(urlFulfillmentOrderId: string, dto: { fulfillmentOrderItemId: string; quantity: number }, tx?: DbTx) {
-    this.workflowGate.assertMutationAllowed('reservation.reserve');
-    return this.db.run(async (trx) => {
-      if (dto.quantity <= 0) {
-        throw new BadRequestException('Reserve quantity must be greater than 0');
-      }
-
-      // 잠금 순서 컨벤션: FO(id asc) → FOI(id asc). FO id 발견용 사전 조회는 잠금 없이.
-      const [preFoi] = await trx
-        .select({
-          id: wmsTables.fulfillmentOrderItems.id,
-          fulfillmentOrderId: wmsTables.fulfillmentOrderItems.fulfillmentOrderId,
-        })
-        .from(wmsTables.fulfillmentOrderItems)
-        .where(eq(wmsTables.fulfillmentOrderItems.id, dto.fulfillmentOrderItemId));
-      if (!preFoi) {
-        throw new BadRequestException(`FOI ${dto.fulfillmentOrderItemId} not found`);
-      }
-      if (preFoi.fulfillmentOrderId !== urlFulfillmentOrderId) {
-        throw new BadRequestException(
-          `FOI ${preFoi.id} belongs to FO ${preFoi.fulfillmentOrderId}, not ${urlFulfillmentOrderId}`,
-        );
-      }
-
-      const [fo] = await trx
-        .select()
-        .from(wmsTables.fulfillmentOrders)
-        .where(eq(wmsTables.fulfillmentOrders.id, preFoi.fulfillmentOrderId))
-        .for('update');
-      if (!fo) {
-        throw new BadRequestException(`FO ${preFoi.fulfillmentOrderId} not found`);
-      }
-      if (this.TERMINAL_STATUSES.includes(fo.status as never)) {
-        throw new ConflictException(`Cannot reserve for FO ${fo.id} in status '${fo.status}'`);
-      }
-      // W6(직배 별도 엔티티 추출) 전까지의 방어선: drop_ship 은 타사 재고라
-      // 자사 예약을 생성하지 않는다. warehouseId 검사보다 앞에 두어 명확한 사유를 반환.
-      if (fo.fulfillmentMode === 'drop_ship') {
-        throw new ConflictException(
-          `Cannot reserve for drop_ship FO ${fo.id}: 타사 재고라 자사 예약을 생성하지 않습니다`,
-        );
-      }
-      if (!fo.warehouseId) {
-        throw new BadRequestException(`FO ${fo.id} has no warehouseId`);
-      }
-
-      const [foi] = await trx
-        .select()
-        .from(wmsTables.fulfillmentOrderItems)
-        .where(eq(wmsTables.fulfillmentOrderItems.id, dto.fulfillmentOrderItemId))
-        .for('update');
-      if (!foi) {
-        throw new BadRequestException(`FOI ${dto.fulfillmentOrderItemId} not found`);
-      }
-
-      // over-reserve 방지 불변식: 재고가 있어도 FOI 부족분(qty - reservedQty)을 초과해 예약할 수 없다
-      const foiShortage = foi.qty - (foi.reservedQty || 0);
-      if (dto.quantity > foiShortage) {
-        throw new BadRequestException(
-          `Cannot reserve ${dto.quantity} for FOI ${foi.id}: only ${Math.max(foiShortage, 0)} unreserved (qty=${foi.qty}, reservedQty=${foi.reservedQty || 0})`,
-        );
-      }
-
-      const reservation = await this.unified.reserveStock(
-        {
-          targetType: 'FULFILLMENT_ORDER',
-          targetId: fo.id,
-          skuId: foi.skuId,
-          warehouseId: fo.warehouseId,
-          quantity: dto.quantity,
-          fulfillmentOrderItemId: foi.id,
-          reason: 'Fulfillment order item reservation',
-        },
-        trx,
-      );
-
-      await trx
-        .update(wmsTables.fulfillmentOrderItems)
-        .set({ reservedQty: (foi.reservedQty || 0) + dto.quantity, updatedAt: new Date() })
-        .where(eq(wmsTables.fulfillmentOrderItems.id, foi.id));
-
-      await trx
-        .update(wmsTables.fulfillmentOrders)
-        .set({ totalReservedQty: (fo.totalReservedQty || 0) + dto.quantity, updatedAt: new Date() })
-        .where(eq(wmsTables.fulfillmentOrders.id, fo.id));
-
-      await this.refreshReservationStatus(fo.id, trx);
-
-      this.logger.log(`Reserved ${dto.quantity} of SKU ${foi.skuId} for FO ${fo.id} (FOI ${foi.id})`);
-      return reservation;
-    }, tx);
-  }
-
-  async unreserve(urlFulfillmentOrderId: string, dto: { fulfillmentOrderItemId: string; quantity: number }, tx?: DbTx) {
-    this.workflowGate.assertMutationAllowed('reservation.unreserve');
-    return this.db.run(async (trx) => {
-      // 잠금 순서 컨벤션: FO(id asc) → FOI(id asc) → stock_reservations(createdAt, id asc)
-      const [preFoi] = await trx
-        .select({
-          id: wmsTables.fulfillmentOrderItems.id,
-          fulfillmentOrderId: wmsTables.fulfillmentOrderItems.fulfillmentOrderId,
-        })
-        .from(wmsTables.fulfillmentOrderItems)
-        .where(eq(wmsTables.fulfillmentOrderItems.id, dto.fulfillmentOrderItemId));
-      if (!preFoi) {
-        throw new BadRequestException(`FOI ${dto.fulfillmentOrderItemId} not found`);
-      }
-      if (preFoi.fulfillmentOrderId !== urlFulfillmentOrderId) {
-        throw new BadRequestException(
-          `FOI ${preFoi.id} belongs to FO ${preFoi.fulfillmentOrderId}, not ${urlFulfillmentOrderId}`,
-        );
-      }
-
-      const [fo] = await trx
-        .select()
-        .from(wmsTables.fulfillmentOrders)
-        .where(eq(wmsTables.fulfillmentOrders.id, preFoi.fulfillmentOrderId))
-        .for('update');
-      if (!fo) {
-        throw new BadRequestException(`FO ${preFoi.fulfillmentOrderId} not found`);
-      }
-      if (this.TERMINAL_STATUSES.includes(fo.status as never)) {
-        throw new ConflictException(`Cannot unreserve for FO ${fo.id} in status '${fo.status}'`);
-      }
-
-      const [foi] = await trx
-        .select()
-        .from(wmsTables.fulfillmentOrderItems)
-        .where(eq(wmsTables.fulfillmentOrderItems.id, dto.fulfillmentOrderItemId))
-        .for('update');
-      if (!foi) {
-        throw new BadRequestException(`FOI ${dto.fulfillmentOrderItemId} not found`);
-      }
-      if (foi.shippedQty > 0) {
-        throw new ConflictException(
-          `Cannot unreserve FOI ${foi.id}: shipped evidence exists (shippedQty=${foi.shippedQty})`,
-        );
-      }
-
-      // 해당 FOI의 confirmed row만 잠그고 차감 — 같은 FO·SKU의 다른 FOI 예약을 건드리지 않는다
-      const reservations = await trx
-        .select()
-        .from(wmsTables.stockReservations)
-        .where(
-          and(
-            eq(wmsTables.stockReservations.targetType, 'FULFILLMENT_ORDER'),
-            eq(wmsTables.stockReservations.targetId, fo.id),
-            eq(wmsTables.stockReservations.fulfillmentOrderItemId, foi.id),
-            eq(wmsTables.stockReservations.skuId, foi.skuId),
-            eq(wmsTables.stockReservations.status, 'confirmed'),
-          ),
-        )
-        .orderBy(asc(wmsTables.stockReservations.createdAt), asc(wmsTables.stockReservations.id))
-        .for('update');
-
-      let remaining = dto.quantity;
-      for (const r of reservations) {
-        if (remaining <= 0) break;
-        if (r.quantity <= remaining) {
-          await this.unified.releaseReservation(r.id, trx);
-          remaining -= r.quantity;
-        } else {
-          await trx
-            .update(wmsTables.stockReservations)
-            .set({ quantity: r.quantity - remaining, updatedAt: new Date() })
-            .where(and(eq(wmsTables.stockReservations.id, r.id), eq(wmsTables.stockReservations.status, 'confirmed')));
-          remaining = 0;
-        }
-      }
-
-      const released = dto.quantity - Math.max(0, remaining);
-      if (released > 0) {
-        await this.productSellableQuantity.recalculateAndPublishForSku(foi.skuId, trx);
-      }
-
-      await trx
-        .update(wmsTables.fulfillmentOrderItems)
-        .set({ reservedQty: Math.max(0, (foi.reservedQty || 0) - released), updatedAt: new Date() })
-        .where(eq(wmsTables.fulfillmentOrderItems.id, foi.id));
-
-      await trx
-        .update(wmsTables.fulfillmentOrders)
-        .set({ totalReservedQty: Math.max(0, (fo.totalReservedQty || 0) - released), updatedAt: new Date() })
-        .where(eq(wmsTables.fulfillmentOrders.id, fo.id));
-
-      await this.refreshReservationStatus(fo.id, trx);
-
-      this.logger.log(`Unreserved ${released}/${dto.quantity} of SKU ${foi.skuId} for FO ${fo.id} (FOI ${foi.id})`);
-    }, tx);
-  }
 
   async transferReservation(
     urlFulfillmentOrderId: string,
@@ -238,9 +41,7 @@ export class FulfillmentReservationsFacade {
       note?: string;
     },
     tx?: DbTx,
-    skipWorkflowGate = false,
   ) {
-    if (!skipWorkflowGate) this.workflowGate.assertMutationAllowed('reservation.transfer');
     return this.db.run(async (trx) => {
       if (dto.quantity <= 0) {
         throw new BadRequestException('이전 수량은 1 이상이어야 합니다.');
@@ -460,7 +261,7 @@ export class FulfillmentReservationsFacade {
         canonicalRequest: { fulfillmentOrderId: urlFulfillmentOrderId, ...dto },
       },
       async (tx, commandRequestId) => {
-        await this.transferReservation(urlFulfillmentOrderId, dto, tx, true);
+        await this.transferReservation(urlFulfillmentOrderId, dto, tx);
         const response = {
           operationId: commandRequestId,
           fulfillmentOrderId: urlFulfillmentOrderId,

@@ -1,16 +1,11 @@
 import { ServiceUnavailableException } from '@nestjs/common';
-import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { ConfigService } from '@nestjs/config';
 import { validateAlmondyoungEnv } from '../../../config/env.validation';
 import {
   FULFILLMENT_MAINTENANCE_CODE,
-  FULFILLMENT_LEGACY_CLOSED_CODE,
-  FULFILLMENT_V2_NOT_ACTIVE_CODE,
   FulfillmentWorkflowGate,
   FulfillmentWorkflowMode,
 } from './fulfillment-workflow-gate.service';
-import { InvoiceController } from '../controllers/invoice.controller';
-import { ShipmentController } from '../controllers/shipment.controller';
 
 describe('FulfillmentWorkflowGate', () => {
   const cutoverAt = '2026-07-14T03:00:00.000Z';
@@ -24,14 +19,12 @@ describe('FulfillmentWorkflowGate', () => {
     );
   }
 
-  it('allows characterized legacy enqueue behavior and workers', () => {
-    const gate = makeGate('legacy');
-
-    expect(gate.shouldEnqueueFo(undefined, false)).toBe(true);
-    expect(gate.shouldRunFoCreation()).toBe(true);
-    expect(gate.shouldRunReservationRetry()).toBe(true);
-    expect(gate.shouldRunInvoiceRecovery()).toBe(false);
-    expect(() => gate.assertMutationAllowed('shipment.force')).not.toThrow();
+  // `legacy` 는 V1 출고 경로와 함께 제거됐다. 조용히 v2 로 넘어가면 커토버 워터마크를 무시한 채
+  // 출고가 도는 사고가 되므로, 옛 값과 미설정 모두 생성자에서 크게 실패해야 한다.
+  it.each([['legacy'], [undefined], ['']])('refuses to construct with a removed or missing mode: %p', (mode) => {
+    expect(() => new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: mode }))).toThrow(
+      /must be 'maintenance' or 'v2'/,
+    );
   });
 
   it('stops enqueue, workers, dispatcher and mutations in maintenance with the stable response code', () => {
@@ -44,7 +37,7 @@ describe('FulfillmentWorkflowGate', () => {
     expect(gate.shouldDispatchFulfillmentEvents()).toBe(false);
 
     try {
-      gate.assertMutationAllowed('invoice.void');
+      gate.assertOperationalMutationAllowed('invoice.void');
       throw new Error('expected maintenance rejection');
     } catch (error) {
       expect(error).toBeInstanceOf(ServiceUnavailableException);
@@ -67,31 +60,25 @@ describe('FulfillmentWorkflowGate', () => {
     expect(gate.shouldRunInvoiceRecovery()).toBe(true);
   });
 
-  it('keeps legacy mutations closed in v2 while retaining the explicit drop-ship path', () => {
+  // V1 전용 assertMutationAllowed(410) 는 V1 출고 경로와 함께 제거됐다 — v2 에서 남는 게이트 표면은
+  // 운영/V2 게이트 둘뿐이고, 모두 통과해야 한다.
+  it('allows operational and V2 mutations in v2', () => {
     const gate = makeGate('v2', cutoverAt);
 
-    expect(() => gate.assertMutationAllowed('shipment.open')).toThrow();
-    try {
-      gate.assertMutationAllowed('invoice.issue');
-      throw new Error('expected legacy mutation rejection');
-    } catch (error) {
-      expect((error as ServiceUnavailableException).getResponse()).toMatchObject({
-        error: FULFILLMENT_LEGACY_CLOSED_CODE,
-        mutationKind: 'invoice.issue',
-      });
-    }
     expect(() => gate.assertOperationalMutationAllowed('fulfillment.drop_ship')).not.toThrow();
     expect(() => gate.assertV2MutationAllowed('shipment.plan')).not.toThrow();
   });
 
-  it('does not allow V2 commands before V2 activation', () => {
-    const gate = makeGate('legacy');
+  // 모드가 maintenance|v2 뿐이라 옛 FULFILLMENT_V2_NOT_ACTIVE(409) 분기는 도달 불가가 되어
+  // assertMutationAllowed 와 함께 제거됐다. 남은 동작(maintenance 는 V2 명령도 503)을 고정한다.
+  it('rejects V2 commands in maintenance with the maintenance code, not the V2-inactive code', () => {
+    const gate = makeGate('maintenance');
     try {
       gate.assertV2MutationAllowed('shipment.plan');
-      throw new Error('expected V2 inactive rejection');
+      throw new Error('expected maintenance rejection');
     } catch (error) {
       expect((error as ServiceUnavailableException).getResponse()).toMatchObject({
-        error: FULFILLMENT_V2_NOT_ACTIVE_CODE,
+        error: FULFILLMENT_MAINTENANCE_CODE,
       });
     }
   });
@@ -118,12 +105,16 @@ describe('fulfillment workflow environment validation', () => {
     KAFKA_BROKERS: 'localhost:9092',
   };
 
-  it('defaults to legacy only outside production', () => {
-    expect(validateAlmondyoungEnv({ ...base, NODE_ENV: 'test' }).FULFILLMENT_WORKFLOW_MODE).toBe('legacy');
+  // 기본값이 없다. `legacy` 기본값은 "옛 안전 동작 유지" 를 뜻했는데 V1 이 없는 지금 어떤 기본값도
+  // 조용히 실제 운영 모드를 고르는 것이 되므로, dev/test 라고 봐주지 않는다.
+  it.each([['test'], ['development'], ['production']])('requires an explicit mode in %s', (nodeEnv) => {
+    expect(() => validateAlmondyoungEnv({ ...base, NODE_ENV: nodeEnv })).toThrow(
+      '[Almondyoung Server] Invalid environment variables',
+    );
   });
 
-  it('rejects a missing mode in production', () => {
-    expect(() => validateAlmondyoungEnv({ ...base, NODE_ENV: 'production' })).toThrow(
+  it('rejects the removed legacy mode', () => {
+    expect(() => validateAlmondyoungEnv({ ...base, NODE_ENV: 'test', FULFILLMENT_WORKFLOW_MODE: 'legacy' })).toThrow(
       '[Almondyoung Server] Invalid environment variables',
     );
   });
@@ -151,45 +142,5 @@ describe('fulfillment workflow environment validation', () => {
         FULFILLMENT_V2_CUTOVER_AT: '2026-07-14T03:00:00.000Z',
       }).FULFILLMENT_V2_CUTOVER_AT,
     ).toBe('2026-07-14T03:00:00.000Z');
-  });
-});
-
-describe('workflow-gated legacy mutation controllers', () => {
-  const maintenanceGate = new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'maintenance' }));
-
-  it('rejects invoice void and force shipment before invoking their legacy services', async () => {
-    const invoiceService = { cancelInvoice: jest.fn() };
-    const shipmentService = { forceShipment: jest.fn() };
-
-    await expect(
-      new InvoiceController(invoiceService as never, maintenanceGate).cancelInvoice('invoice-1'),
-    ).rejects.toMatchObject({ response: expect.objectContaining({ code: FULFILLMENT_MAINTENANCE_CODE }) });
-    await expect(
-      new ShipmentController(shipmentService as never, maintenanceGate, {} as never).force('shipment-1', {}, undefined),
-    ).rejects.toMatchObject({ response: expect.objectContaining({ code: FULFILLMENT_MAINTENANCE_CODE }) });
-    expect(invoiceService.cancelInvoice).not.toHaveBeenCalled();
-    expect(shipmentService.forceShipment).not.toHaveBeenCalled();
-  });
-
-  it.each([
-    [InvoiceController, 'cancelInvoice'],
-    [ShipmentController, 'force'],
-  ])('allows only admin or master roles through the temporary %p.%s guard', (controller, method) => {
-    const handler = controller.prototype[method as keyof typeof controller.prototype];
-    const [Guard] = Reflect.getMetadata(GUARDS_METADATA, handler) as Array<
-      new () => {
-        canActivate(context: unknown): boolean;
-      }
-    >;
-    const guard = new Guard();
-    const contextFor = (roles?: string[]) =>
-      ({
-        switchToHttp: () => ({ getRequest: () => ({ user: roles ? { roles } : undefined }) }),
-      }) as never;
-
-    expect(guard.canActivate(contextFor(['admin']))).toBe(true);
-    expect(guard.canActivate(contextFor(['master']))).toBe(true);
-    expect(guard.canActivate(contextFor(['operator']))).toBe(false);
-    expect(guard.canActivate(contextFor())).toBe(false);
   });
 });

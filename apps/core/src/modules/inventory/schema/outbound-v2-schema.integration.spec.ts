@@ -2166,7 +2166,7 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
     });
   });
 
-  it('deduplicates explicitly routed outbox rows and leaves legacy topicless writes independent', async () => {
+  it('deduplicates same-key outbox rows across both writers and keeps distinct keys independent', async () => {
     await inRollbackTx(async (tx) => {
       const f = await fixture(tx);
       const dbService = {
@@ -2191,15 +2191,11 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
       const duplicate = await inventoryOutbox.enqueue(routed, tx);
       expect(duplicate?.id).toBe(first?.id);
 
-      const legacy = {
-        eventType: 'LegacyTest',
-        aggregateType: 'Fulfillment',
-        aggregateId: f.fulfillmentOrder.id,
-        partitionKey: f.fulfillmentOrder.id,
-        payload: {},
-      } as const;
-      await fulfillmentOutbox.enqueue(legacy, tx);
-      await fulfillmentOutbox.enqueue(legacy, tx);
+      // topicless(V1 expand 호환) 쓰기는 Task 25 에서 타입으로 금지됐다 — 여기서 증명할 수 있는
+      // 보완 성질은 "dedup 은 키 단위" 라는 것: 다른 키는 독립 행으로 남는다.
+      const distinctKey = `attempt-${randomUUID()}`;
+      const second = await fulfillmentOutbox.enqueue({ ...routed, idempotencyKey: distinctKey }, tx);
+      expect(second?.id).not.toBe(first?.id);
 
       const rows = await tx
         .select()
@@ -2212,16 +2208,16 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
         );
       expect(rows).toHaveLength(1);
 
-      const legacyRows = await tx
+      const distinctRows = await tx
         .select()
         .from(wmsTables.outboxEvents)
         .where(
           and(
-            eq(wmsTables.outboxEvents.aggregateId, f.fulfillmentOrder.id),
-            eq(wmsTables.outboxEvents.eventType, 'LegacyTest'),
+            eq(wmsTables.outboxEvents.aggregateId, f.shipment.id),
+            eq(wmsTables.outboxEvents.idempotencyKey, distinctKey),
           ),
         );
-      expect(legacyRows).toHaveLength(2);
+      expect(distinctRows).toHaveLength(1);
     });
   });
 

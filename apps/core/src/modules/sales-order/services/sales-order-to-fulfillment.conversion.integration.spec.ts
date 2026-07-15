@@ -89,7 +89,11 @@ describeIfDb('SO→FO 변환·상품매칭 (DB integration, rollback-only)', () 
       expect(payload.missingLines).toEqual([expect.objectContaining({ variantId, reason: 'NO_PRODUCT_SKU_MATCHING' })]);
 
       // 백로그 enqueue → processing 으로 만든 뒤 markAwaitingMatching.
-      await w.backlog.enqueueForSalesOrder(bg.salesOrderId, tx);
+      await w.backlog.enqueueForSalesOrder(
+        bg.salesOrderId,
+        { eventOccurredAt: new Date().toISOString(), isNewSalesOrder: true },
+        tx,
+      );
       await tx
         .update(wmsTables.fulfillmentOrderCreationBacklogs)
         .set({ status: 'processing' })
@@ -114,7 +118,11 @@ describeIfDb('SO→FO 변환·상품매칭 (DB integration, rollback-only)', () 
       const { skuId: skuForMatch } = await seedSku(tx, holderId);
 
       // 1b 상태 재현: enqueue → processing → awaiting_matching.
-      await w.backlog.enqueueForSalesOrder(bg.salesOrderId, tx);
+      await w.backlog.enqueueForSalesOrder(
+        bg.salesOrderId,
+        { eventOccurredAt: new Date().toISOString(), isNewSalesOrder: true },
+        tx,
+      );
       await tx
         .update(wmsTables.fulfillmentOrderCreationBacklogs)
         .set({ status: 'processing' })

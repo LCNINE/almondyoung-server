@@ -191,38 +191,27 @@ export class OutboxDispatcherService implements OnModuleInit {
           payload: event.payload as any,
           metadata: { partitionKey: event.partition_key },
         });
-      } else if (event.topic !== null) {
-        // Explicit topics never fall through to aggregate/event guessing. Keeping the row
-        // pending makes a bad producer configuration observable and retryable.
-        throw new Error(`Unknown explicit outbox topic: ${event.topic}`);
-      } else if (event.aggregate_type === 'Stock' || event.aggregate_type === 'ProductSellableQuantity') {
+      } else if (event.topic === INVENTORY_STREAM.topic.topic) {
         await this.inventoryPublisher.publishEvent({
           eventType: event.event_type as keyof InventoryEvents,
           aggregateId: event.aggregate_id,
           payload: event.payload as any,
           metadata: { partitionKey: event.partition_key },
         });
-      } else if (event.event_type === 'SalesOrderCancelled') {
+      } else if (event.topic === CORE_ORDER_STREAM.topic.topic) {
         // Core 아웃바운드: core.orders.events.v1 / SalesOrderCancelled
         // (Channel Adapter → Medusa 취소 동기화에 사용)
         await this.coreOrderPublisher.publishEvent({
-          eventType: 'SalesOrderCancelled',
+          eventType: event.event_type as keyof CoreOrderEvents,
           aggregateId: event.aggregate_id,
           payload: event.payload as unknown as SalesOrderCancelledPayload,
           metadata: { partitionKey: event.partition_key },
         });
-      } else if (event.event_type === 'OrderCancelled' || event.event_type === 'ORDER_CANCELLED') {
-        // 레거시 outbox 소진: 구형 payload는 OrderCancelledSchema 필수 필드(reason, cancelledBy 등)가
-        // 없어 Kafka 발행 시 검증 오류가 발생한다. Channel Adapter는 이미 core.orders.events.v1/
-        // SalesOrderCancelled 를 구독하므로 이 이벤트는 Kafka 미발행, published 처리한다.
-        this.logger.warn(`레거시 취소 이벤트 건너뜀: ${event.id} (${event.event_type}) — Kafka 미발행, published 처리`);
       } else {
-        await this.fulfillmentPublisher.publishEvent({
-          eventType: event.event_type as keyof FulfillmentEvents,
-          aggregateId: event.aggregate_id,
-          payload: event.payload as unknown as FulfillmentPayload,
-          metadata: { partitionKey: event.partition_key },
-        });
+        // topicless(V1 expand 호환) 폴백 라우팅은 Task 25 에서 제거됐다 — enqueue 가 topic 을
+        // 컴파일 타임에 강제하므로 새 row 는 여기 올 수 없고, 온다면 producer 설정 오류다.
+        // 재시도 소진 후 'failed' 로 남아 관측 가능하다.
+        throw new Error(`Unknown outbox topic: ${event.topic === null ? '(topicless legacy row)' : event.topic}`);
       }
 
       await this.db.db

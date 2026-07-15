@@ -29,7 +29,8 @@ export const almondyoungEnvSchema = z
     KAFKA_API_SECRET: z.string().optional(),
 
     // Fulfillment hard-cutover workflow gate
-    FULFILLMENT_WORKFLOW_MODE: z.enum(['legacy', 'maintenance', 'v2']).optional(),
+    // 'legacy' 는 V1 출고 경로와 함께 Task 25 에서 제거됐다. 옛 값은 여기서 부팅을 막는다.
+    FULFILLMENT_WORKFLOW_MODE: z.enum(['maintenance', 'v2']),
     FULFILLMENT_V2_CUTOVER_AT: optionalIsoTimestamp,
 
     // Elasticsearch (Catalog)
@@ -67,15 +68,6 @@ export const almondyoungEnvSchema = z
     path: ['AUTH_SECRET'],
   })
   .superRefine((data, ctx) => {
-    const allowsLegacyDefault = data.NODE_ENV === 'development' || data.NODE_ENV === 'test';
-    if (!allowsLegacyDefault && !data.FULFILLMENT_WORKFLOW_MODE) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'FULFILLMENT_WORKFLOW_MODE is required outside development and test',
-        path: ['FULFILLMENT_WORKFLOW_MODE'],
-      });
-    }
-
     if (data.FULFILLMENT_WORKFLOW_MODE === 'v2' && !data.FULFILLMENT_V2_CUTOVER_AT) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -83,12 +75,7 @@ export const almondyoungEnvSchema = z
         path: ['FULFILLMENT_V2_CUTOVER_AT'],
       });
     }
-  })
-  .transform((data) => ({
-    ...data,
-    // Local development and tests retain the characterized V1 behavior unless explicitly overridden.
-    FULFILLMENT_WORKFLOW_MODE: data.FULFILLMENT_WORKFLOW_MODE ?? ('legacy' as const),
-  }));
+  });
 
 export type AlmondyoungEnvConfig = z.infer<typeof almondyoungEnvSchema>;
 

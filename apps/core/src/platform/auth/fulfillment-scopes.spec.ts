@@ -1,7 +1,4 @@
-import { ConfigService } from '@nestjs/config';
 import { ScopeGuard } from '@app/authorization';
-import { ShipmentController } from '../../modules/fulfillment/controllers/shipment.controller';
-import { FulfillmentWorkflowGate } from '../../modules/fulfillment/services/fulfillment-workflow-gate.service';
 import { FULFILLMENT_ROLE_MAPPINGS, FULFILLMENT_SCOPE, FULFILLMENT_SCOPES } from './fulfillment-scopes';
 
 describe('fulfillment authorization contract', () => {
@@ -59,21 +56,5 @@ describe('fulfillment authorization contract', () => {
     }
     requiredScope = FULFILLMENT_SCOPE.TRACKING_INGEST;
     await expect(guard.canActivate(contextFor(['logistics_manager']))).resolves.toBe(false);
-  });
-
-  it('uses the JWT actor even if a legacy request body contains a forged operatorId', async () => {
-    const shipmentService = { forceShipment: jest.fn().mockResolvedValue(undefined) };
-    const workflowGate = new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'legacy' }));
-    const controller = new ShipmentController(shipmentService as never, workflowGate, {} as never);
-
-    await controller.force('11111111-1111-4111-8111-111111111111', { operatorId: 'forged-body-actor' } as never, {
-      id: 'jwt-actor',
-    });
-
-    expect(shipmentService.forceShipment).toHaveBeenCalledWith(
-      '11111111-1111-4111-8111-111111111111',
-      undefined,
-      'jwt-actor',
-    );
   });
 });

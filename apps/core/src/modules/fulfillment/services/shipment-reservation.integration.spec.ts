@@ -198,6 +198,24 @@ describeIfDb('V2 draft shipment partial reservation (DB integration)', () => {
     });
   });
 
+  // drop_ship 주문이 자사 shipment/예약을 만들지 않았음을 이 주문 범위에서 검증한다.
+  async function expectNoDropShipArtifacts(tx: DbTx, fulfillmentOrderId: string, skuId: string) {
+    const lines = await tx
+      .select({ id: wmsTables.shipmentLines.id })
+      .from(wmsTables.shipmentLines)
+      .innerJoin(
+        wmsTables.fulfillmentOrderItems,
+        eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+      )
+      .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId));
+    expect(lines).toHaveLength(0);
+    const reservations = await tx
+      .select({ id: wmsTables.stockReservations.id })
+      .from(wmsTables.stockReservations)
+      .where(eq(wmsTables.stockReservations.skuId, skuId));
+    expect(reservations).toHaveLength(0);
+  }
+
   it('keeps drop_ship on the direct route without a shipment or own-stock reservation', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await physicalOrder(tx, { quantity: 2, onHand: 2 });
@@ -205,9 +223,11 @@ describeIfDb('V2 draft shipment partial reservation (DB integration)', () => {
         { salesOrderId: fixture.salesOrderId, warehouseId: fixture.warehouseId, fulfillmentMode: 'drop_ship' },
         tx,
       );
+      if (!fo) throw new Error('expected a drop_ship fulfillment order');
       expect(fo).toMatchObject({ fulfillmentMode: 'drop_ship', status: 'ready' });
-      expect(await tx.select().from(wmsTables.shipments)).toHaveLength(0);
-      expect(await tx.select().from(wmsTables.stockReservations)).toHaveLength(0);
+      // 이 주문 범위로 좁혀 단언한다 — 전역 0-count 는 커밋형 픽스처를 남기는 다른 통합 스펙과
+      // 로컬 공유 DB 에서 병렬 실행될 때 간섭당한다(실측 플레이크).
+      await expectNoDropShipArtifacts(tx, fo.id, fixture.skuId);
     });
   });
 
@@ -217,9 +237,9 @@ describeIfDb('V2 draft shipment partial reservation (DB integration)', () => {
       await tx.update(wmsTables.skus).set({ stockType: 'drop_shipped' }).where(eq(wmsTables.skus.id, fixture.skuId));
 
       const fo = await wired.fulfillments.create({ salesOrderId: fixture.salesOrderId }, tx);
+      if (!fo) throw new Error('expected a drop_ship fulfillment order');
       expect(fo).toMatchObject({ fulfillmentMode: 'drop_ship', warehouseId: null, status: 'ready' });
-      expect(await tx.select().from(wmsTables.shipments)).toHaveLength(0);
-      expect(await tx.select().from(wmsTables.stockReservations)).toHaveLength(0);
+      await expectNoDropShipArtifacts(tx, fo.id, fixture.skuId);
     });
   });
 

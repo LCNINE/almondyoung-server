@@ -6,7 +6,6 @@ import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { DbTx } from '../../inventory/schema/inventory.schema';
 import { OutboundBatchV2Controller } from '../controllers/outbound-batch-v2.controller';
 import { OutboundBatchOrchestrator } from './outbound-batch-orchestrator.service';
-import { deriveOutboundBatchV2ReadSummary } from './outbound-batch.service';
 
 const UUIDS = {
   actor: '11111111-1111-4111-8111-111111111111',
@@ -99,21 +98,6 @@ function servicePolicy(service: OutboundBatchOrchestrator) {
 }
 
 describe('OutboundBatchOrchestrator policy', () => {
-  it('derives a safe active V2 summary for legacy reads without trusting stored totals', () => {
-    const summary = deriveOutboundBatchV2ReadSummary(
-      [
-        { workItemId: 'work-1', status: 'picking', shipmentLineId: 'line-1', lineQty: 2 },
-        { workItemId: 'work-1', status: 'picking', shipmentLineId: 'line-2', lineQty: 3 },
-        { workItemId: 'work-old', status: 'completed', shipmentLineId: 'line-old', lineQty: 99 },
-        { workItemId: 'work-out', status: 'excluded', shipmentLineId: 'line-out', lineQty: 99 },
-      ],
-      'created',
-    );
-
-    expect(summary).toEqual({ status: 'picking', totalItems: 2, totalQty: 5 });
-    expect(deriveOutboundBatchV2ReadSummary([], 'completed').status).toBe('completed');
-  });
-
   it('derives status without allowing excluded or short-pick items to close the batch', () => {
     const { service } = makeService();
     const derive = (items: Array<Record<string, unknown>>) =>
