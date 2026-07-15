@@ -1,4 +1,15 @@
-import { Body, Controller, Delete, Get, Headers, Param, Post, UnauthorizedException, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  ConflictException,
+  Controller,
+  Delete,
+  Get,
+  Headers,
+  Param,
+  Post,
+  UnauthorizedException,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiCreatedResponse, ApiOkResponse } from '@nestjs/swagger';
 import { RequireScopes, ScopeGuard, User } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
@@ -92,7 +103,14 @@ export class OutboundBatchV2Controller {
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @User() user: AuthenticatedUser,
   ) {
-    return this.batches.handoff(workItemId, dto, idempotencyKey ?? '', this.actor(user));
+    const actor = this.actor(user);
+    if (dto.claimType === 'picker') {
+      throw new ConflictException({
+        code: 'PICKER_HANDOFF_REQUIRES_STRATEGY_CONTEXT',
+        message: 'Picker handoff must use the picking strategy flow with plan and inventory-session custody context',
+      });
+    }
+    return this.batches.handoff(workItemId, dto, idempotencyKey ?? '', actor);
   }
 
   @Get('outbound-batches/:batchId/eligible-shipments')

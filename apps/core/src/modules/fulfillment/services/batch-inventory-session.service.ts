@@ -87,7 +87,7 @@ export class BatchInventorySessionService {
     private readonly faultInjector?: BatchInventorySessionFaultInjector,
   ) {}
 
-  async startSession(batchId: string, planId: string, tx?: DbTx): Promise<SessionRow> {
+  async startSession(batchId: string, planId: string, tx?: DbTx, actualActorId?: string): Promise<SessionRow> {
     return this.dbService.run(async (trx) => {
       let [plan] = await trx
         .select()
@@ -535,7 +535,7 @@ export class BatchInventorySessionService {
         'batch_inventory_session.start',
         'fulfillment',
         `Started inventory session ${session.id}`,
-        { userId: plan.createdBy },
+        { userId: actualActorId?.trim() || plan.createdBy },
         { batchId, planId, handedInQty, allocationIds: allocations.map((allocation) => allocation.id) },
         trx,
       );

@@ -47,6 +47,8 @@ import { InvoiceRecoveryWorker } from './services/invoice-recovery.worker';
 import { OutboundBatchOrchestrator } from './services/outbound-batch-orchestrator.service';
 import { BatchInventorySessionService } from './services/batch-inventory-session.service';
 import { BatchSessionRecoveryService } from './services/batch-session-recovery.service';
+import { DiscretePickingStrategy } from './picking/discrete-picking.strategy';
+import { PICKING_STRATEGIES, PickingStrategyRegistry } from './picking/picking-strategy.registry';
 
 // Controllers
 import { FulfillmentsController } from './controllers/fulfillments.controller';
@@ -139,6 +141,13 @@ import { OutboundBatchV2Controller } from './controllers/outbound-batch-v2.contr
     OutboundBatchOrchestrator,
     BatchInventorySessionService,
     BatchSessionRecoveryService,
+    DiscretePickingStrategy,
+    {
+      provide: PICKING_STRATEGIES,
+      useFactory: (discrete: DiscretePickingStrategy) => [discrete],
+      inject: [DiscretePickingStrategy],
+    },
+    PickingStrategyRegistry,
   ],
   exports: [
     FulfillmentProgressService,
@@ -151,6 +160,8 @@ import { OutboundBatchV2Controller } from './controllers/outbound-batch-v2.contr
     OutboundBatchOrchestrator,
     BatchInventorySessionService,
     BatchSessionRecoveryService,
+    DiscretePickingStrategy,
+    PickingStrategyRegistry,
   ],
 })
 export class FulfillmentModule {}

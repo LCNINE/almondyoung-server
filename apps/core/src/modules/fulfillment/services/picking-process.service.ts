@@ -1,10 +1,28 @@
-import { Injectable, Logger, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+  Optional,
+} from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { DbService } from '@app/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { BarcodeService, FOIScanResult, SkuScanResult } from '../../inventory/shared/services/barcode.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
+import { PickingStrategyRegistry } from '../picking/picking-strategy.registry';
+import {
+  CompletePickInput,
+  HandoffPickingInput,
+  PickingStrategy,
+  PickingStrategyName,
+  PlanPickingInput,
+  ScanPickingInput,
+  StartPickingInput,
+  UnpickShipmentInput,
+} from '../picking/picking-strategy.interface';
 
 export interface PickingOperation {
   batchId: string;
@@ -69,10 +87,88 @@ export class PickingProcessService {
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly barcodeService: BarcodeService,
     private readonly workflowGate: FulfillmentWorkflowGate,
+    @Optional() private readonly strategyRegistry?: PickingStrategyRegistry,
   ) {}
 
   private get db() {
     return this.dbService.db;
+  }
+
+  async plan(strategyName: PickingStrategyName, input: PlanPickingInput, tx?: DbTx) {
+    return this.dbService.run(async (trx) => {
+      const [batch] = await trx
+        .select({ warehouseId: wmsTables.outboundBatches.warehouseId })
+        .from(wmsTables.outboundBatches)
+        .where(eq(wmsTables.outboundBatches.id, input.batchId))
+        .limit(1);
+      if (!batch) throw new NotFoundException(`Outbound batch ${input.batchId} not found`);
+      const strategy = await this.requiredRegistry().resolveForWarehouse(strategyName, batch.warehouseId, trx);
+      return strategy.plan(input, trx);
+    }, tx);
+  }
+
+  async start(input: StartPickingInput, tx?: DbTx) {
+    return this.withPlanStrategy(input.batchId, input.planId, (strategy, trx) => strategy.start(input, trx), tx);
+  }
+
+  async scan(input: ScanPickingInput, tx?: DbTx) {
+    return this.withPlanStrategy(input.batchId, input.planId, (strategy, trx) => strategy.scan(input, trx), tx);
+  }
+
+  async handoff(input: HandoffPickingInput, tx?: DbTx) {
+    return this.withPlanStrategy(input.batchId, input.planId, (strategy, trx) => strategy.handoff(input, trx), tx);
+  }
+
+  async completePick(input: CompletePickInput, tx?: DbTx) {
+    return this.withPlanStrategy(input.batchId, input.planId, (strategy, trx) => strategy.completePick(input, trx), tx);
+  }
+
+  async unpickShipment(input: UnpickShipmentInput, tx?: DbTx) {
+    return this.withPlanStrategy(
+      input.batchId,
+      input.planId,
+      (strategy, trx) => strategy.unpickShipment(input, trx),
+      tx,
+    );
+  }
+
+  private withPlanStrategy<T>(
+    batchId: string,
+    planId: string,
+    execute: (strategy: PickingStrategy, tx: DbTx) => Promise<T>,
+    tx?: DbTx,
+  ): Promise<T> {
+    return this.dbService.run(async (trx) => {
+      const [identity] = await trx
+        .select({
+          batchId: wmsTables.pickingPlans.batchId,
+          strategy: wmsTables.pickingPlans.strategy,
+          warehouseId: wmsTables.outboundBatches.warehouseId,
+        })
+        .from(wmsTables.pickingPlans)
+        .innerJoin(wmsTables.outboundBatches, eq(wmsTables.outboundBatches.id, wmsTables.pickingPlans.batchId))
+        .where(eq(wmsTables.pickingPlans.id, planId))
+        .limit(1);
+      if (!identity) throw new NotFoundException(`Picking plan ${planId} not found`);
+      if (identity.batchId !== batchId) {
+        throw new ConflictException({
+          code: 'PICKING_PLAN_BATCH_MISMATCH',
+          message: `Picking plan ${planId} does not belong to batch ${batchId}`,
+        });
+      }
+      const strategy = await this.requiredRegistry().resolveForWarehouse(identity.strategy, identity.warehouseId, trx);
+      return execute(strategy, trx);
+    }, tx);
+  }
+
+  private requiredRegistry(): PickingStrategyRegistry {
+    if (!this.strategyRegistry) {
+      throw new ConflictException({
+        code: 'PICKING_STRATEGY_REGISTRY_UNAVAILABLE',
+        message: 'Durable picking strategies are not registered in this service wiring',
+      });
+    }
+    return this.strategyRegistry;
   }
 
   async getPickingOperations(batchId: string, tx?: DbTx): Promise<PickingOperation[]> {

@@ -1,4 +1,4 @@
-import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { GUARDS_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { REQUIRED_SCOPES_KEY } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
@@ -171,6 +171,28 @@ describe('OutboundBatchV2Controller contract', () => {
     expect(batches.claimPicker).toHaveBeenCalledWith(UUIDS.workItem, { expectedLeaseVersion: 0 }, 'key', {
       id: UUIDS.actor,
       roles: ['logistics_worker'],
+    });
+  });
+
+  it('fails closed for generic picker handoff while retaining packer handoff', async () => {
+    const batches = { handoff: jest.fn().mockResolvedValue({ ok: true }) };
+    const controller = new OutboundBatchV2Controller(batches as never);
+    const actor = { sub: UUIDS.actor, roles: ['logistics_manager'] };
+    const request = {
+      expectedLeaseVersion: 2,
+      targetWorkerId: UUIDS.other,
+      reason: 'shift change',
+    };
+
+    expect(() => controller.handoff(UUIDS.workItem, { ...request, claimType: 'picker' }, 'picker-key', actor)).toThrow(
+      ConflictException,
+    );
+    expect(batches.handoff).not.toHaveBeenCalled();
+
+    await controller.handoff(UUIDS.workItem, { ...request, claimType: 'packer' }, 'packer-key', actor);
+    expect(batches.handoff).toHaveBeenCalledWith(UUIDS.workItem, { ...request, claimType: 'packer' }, 'packer-key', {
+      id: UUIDS.actor,
+      roles: ['logistics_manager'],
     });
   });
 });
