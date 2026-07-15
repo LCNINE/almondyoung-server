@@ -4,7 +4,9 @@
 
 ## 진행 상태 (2026-07-16 기준)
 
-Task 1~23 완료(잔여 항목 포함), Task 24 는 **provider 미구현으로 블록**, Task 25 는 Task 24 에 연쇄 블록(미착수). 브랜치 `feat/outbound-v2-consolidation-backorder`.
+Task 1~23 완료, Task 24 는 **provider 미구현으로 블록**, **Task 25 는 착수 가능** (Task 24 에 연쇄 블록되지 않는다 — 아래). 브랜치 `feat/outbound-v2-consolidation-backorder`.
+
+**Task 25 는 Task 24 를 기다리지 않는다.** Task 24 의 커토버 의식(스냅샷·audit 산출물·watermark·관찰 기간)은 *보호할 V1 데이터가 있을 때* 필요한 절차인데 그런 데이터가 없다(2026-07-16 확인). 남는 선행 조건은 두 가지뿐이다: (1) V1 을 안 쓰는 코드를 먼저 배포하는 `deploy → migrate` 순서, (2) NOT NULL 강화 전에 규격 미달 행(예: `shipmentLineId IS NULL` 인 legacy 예약)을 지우는 cleanup. 둘 다 한진과 무관하다. 자세한 근거는 Task 25 절 참조.
 
 expand 마이그레이션과 배포는 적용됐다(2026-07-16 확인). 배포된 Core 는 `FULFILLMENT_WORKFLOW_MODE: 'legacy'` — 즉 **V1 이 현재 유일하게 살아있는 출고 경로**다.
 
@@ -900,7 +902,21 @@ V2 는 `shipment-reservation.service.ts:1123` 에서 `projected.status` 하나�
 
 **실행 난이도가 컬럼과 다르다.** PostgreSQL 에는 `ALTER TYPE ... DROP VALUE` 가 없다. 컬럼은 `DROP COLUMN` 한 줄이지만 enum 값 제거는 새 타입 생성 → `USING` 캐스트로 컬럼 전환 → 옛 타입 drop → rename 의 4단계이고 drizzle-kit 이 이를 깔끔히 뽑아주지 못한다. 생성 SQL 을 반드시 손으로 검토할 것.
 
-**이 Task 를 막는 것은 데이터가 아니라 배포된 코드다.** "V1 물류가 진지하게 쓰인 적 없어 데이터가 날아가도 무방하다"(2026-07-16 확인)는 사실이지만 Task 25 를 열지 않는다 — 플랜은 애초에 "V1 출고 이력 없음"을 전제로 설계됐다. 실제 블로커는 배포된 Core 가 `legacy` 모드로 **V1 을 실행 중**이라는 것이다(`fulfillment-workflow-gate.service.ts:87-89` 의 `shouldEnqueueFo` 가 legacy 에서 무조건 true, `fulfillments.service.ts:114-119` 가 모드로 분기). 지금 V1 컬럼/enum 을 드롭하면 주문 유입마다 런타임 에러가 난다. contract 의 `deploy → migrate` 순서(ADR-0005 §5)가 요구하는 "V1 컬럼을 안 쓰는 코드" 를 띄우려면 V2 가 그 자리를 채워야 하고, V2 는 송장 발행이 막혀 있다 — **한진 블로커가 Task 25 도 함께 막는다.**
+**이 Task 를 막는 것은 데이터가 아니다.** "V1 물류가 진지하게 쓰인 적 없어 데이터가 날아가도 무방하다"(2026-07-16 확인)는 사실이지만 그것만으로 Task 25 가 열리지는 않는다 — 플랜은 애초에 "V1 출고 이력 없음"을 전제로 설계됐다. 배포된 Core 가 `legacy` 모드로 **V1 을 실행 중**이므로(`fulfillment-workflow-gate.service.ts:87-89` 의 `shouldEnqueueFo` 가 legacy 에서 무조건 true, `fulfillments.service.ts:114-119` 가 모드로 분기), 지금 V1 컬럼/enum 을 드롭하면 주문 유입마다 런타임 에러가 난다. 그래서 contract 는 `deploy → migrate` 순서(ADR-0005 §5)를 지켜 V1 을 안 쓰는 코드를 먼저 띄워야 한다.
+
+**legacy 가 송장이 나오는 유일한 모드다 — 그리고 그 이유가 중요하다.**
+
+| 모드 | V1 `invoice.service` | V2 `invoice-orchestrator` |
+|---|---|---|
+| `legacy` | ✅ 발행됨 | ❌ 409 `FULFILLMENT_V2_NOT_ACTIVE` |
+| `maintenance` | ❌ 503 | ❌ 503 |
+| `v2` | ❌ 410 `FULFILLMENT_LEGACY_CLOSED` | ❌ `unsupported` (capability 게이트) |
+
+V1 이 되는 이유는 안전해서가 아니라 **계약 검사를 건너뛰기 때문이다** — `invoice.service.ts:158` 이 `provider.issueInvoice()` 를 capability 검사 없이 직접 부른다. 즉 V1 로 출고한다는 것은 V2 가 거부하는 위험(timeout 시 복구 불가능한 중복 송장)을 그대로 받는다는 뜻이다. **V1 은 안전한 폴백이 아니라 위험한데 라벨이 나오는 경로다.**
+
+**따라서 Task 25 를 여는 조건은 "한진" 이 아니라 "출고 능력이 필요한가" 다.** 필요하다면 한진 구현 **또는** V2 수동 발행 경로 둘 중 하나가 있어야 한다 — V1 의 `direct`(운영자가 번호 직접 입력, `invoice.service.ts:162`)/`self`(내부 발번, `:165`)는 provider 를 부르지 않으므로 capability 게이트의 적용 대상이 애초에 아닌데, V2 에는 이 경로가 없다(`shipment-invoice.dto.ts:9` 가 `@IsIn(['goodsflow','hanjin'])`). 벤더 의존이 없으므로 후자가 훨씬 가깝다.
+
+**결정 (2026-07-16): 한진이 들어오기 전까지 출고할 일이 없다. 따라서 Task 25 를 진행한다.** 출고 능력을 유지할 필요가 없으므로 한진도 V2 수동 발행 경로도 선행 조건이 아니다. 대신 **은퇴 완료 후 한진이 인도될 때까지 이 시스템은 어떤 라벨도 발행할 수 없다** — 이 상태를 감수하는 것이 위 결정의 내용이다. 한진 계약이 끝내 idempotency 를 노출하지 않으면 V2 수동 발행 경로가 유일한 출구가 되므로, 그때는 그것을 구현한다(이 결정으로 막히는 것은 없다 — 수동 경로는 언제든 추가 가능한 additive 작업이다).
 
 **Task 24 축소 가능성 (미결)**: V1 물류가 한 번도 쓰이지 않았다면 Task 24 의 커토버 의식 — 플랫폼 스냅샷, audit 산출물, allowlist cleanup, watermark, maintenance 윈도우 — 대부분이 *보호할 대상이 없는 것을 보호하는 절차*가 된다. 한진 블로커가 풀린 뒤 Task 24 착수 전에 이 축소를 먼저 검토할 것. 단 cleanup 의 "SHIP 이벤트 발견 시 abort" 는 전제를 **검증하는** 장치이므로 전제를 믿는 근거로 삼아 지우면 순환논법이 된다.
 
