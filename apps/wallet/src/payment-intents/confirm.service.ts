@@ -129,6 +129,19 @@ export class ConfirmService {
       });
     }
 
+    // 멤버십 결제(type: MEMBERSHIP_FEE)는 무통장(BANK_TRANSFER)만 허용한다. 프론트에서 카드/간편결제
+    // UI 를 숨기지만, API 직접 호출로 다른 결제수단을 실어 보내는 우회를 서버에서 차단한다.
+    // 무통장은 자동갱신이 불가해 멤버십은 1회결제로만 굴러가며, 정기결제(CMS 등)는 추후 별도 경로.
+    if (externalAmount > 0 && dto.paymentMethodId && intent.metadata?.type === 'MEMBERSHIP_FEE') {
+      const extMethod = await this.resolveExternalMethod(dto.paymentMethodId);
+      if (extMethod.type !== 'BANK_TRANSFER') {
+        throw new BadRequestException({
+          error: 'MEMBERSHIP_REQUIRES_BANK_TRANSFER',
+          message: 'Membership payments must be paid by bank transfer',
+        });
+      }
+    }
+
     // 6. userId check
     if (!intent.userId) {
       throw new BadRequestException({

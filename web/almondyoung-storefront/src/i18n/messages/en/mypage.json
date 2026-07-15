@@ -732,6 +732,7 @@
       "expectedEndDate": "Expected end date",
       "trialEndAutoStart": "Auto-billing starts after trial: {date}",
       "nextBillingNotice": "Your next billing date is {date}",
+      "membershipEndNotice": "Your membership ends on {date}",
       "trialEndAutoStartLabel": "Auto-billing starts after trial",
       "cartPriceUpdated": "Cart prices updated.",
       "paymentMethod": "Change payment method",
@@ -849,6 +850,8 @@
       "title": "Membership history",
       "subscriptionHistory": "Subscription history",
       "noSubscriptionHistory": "No subscription history.",
+      "loadMore": "Load more ({loaded}/{total})",
+      "loadingMore": "Loading...",
       "savingsTitle": "Savings record",
       "savingsTotal": "Total {amount} KRW",
       "savingsEmpty": "No savings yet.",
@@ -863,7 +866,9 @@
       "legacyHistory": "View previous Almondyoung Membership history",
       "joinAndBenefits": "Join Almondyoung Membership and see benefits",
       "subscribe": "Subscribe",
+      "viewBenefitsGuide": "See membership benefits",
       "cancelMembership": "Cancel Membership",
+      "cancelWarning": "Cancelling your membership removes all these benefits",
       "heroTitle": "Almondyoung Membership Service",
       "heroGrandOpen": "GRAND OPEN",
       "priceNoticeMonthlyYearly": "* Paid membership: 4,990 KRW / month, 49,900 KRW / year",
@@ -881,7 +886,8 @@
       "upcomingTitle1": "Coming soon: ",
       "upcomingTitle2": "Upcoming benefits",
       "upcomingDescription": "More benefits are on the way.",
-      "planNameDefault": "Annual"
+      "planNameDefault": "Annual",
+      "guideTitle": "ODOK Benefits"
     },
     "cancel": {
       "titleNoUsage": "No benefits used this month —",
@@ -893,8 +899,22 @@
       "etcPlaceholder": "Please enter a reason",
       "cancelButton": "Cancel",
       "confirmButton": "Confirm",
-      "processing": "Processing..."
-    }
+      "processing": "Processing...",
+      "titleUsedLine1": "You've already used this month's membership benefits.",
+      "titleUsedLine2": "No refund will be issued, and your membership stays active until the period ends.",
+      "refundAccountHeading": "Refund account",
+      "refundAccountNote": "Enter the account you’d like your refund sent to, and we’ll refund the full amount you paid.",
+      "bankPlaceholder": "Select bank",
+      "accountNumberPlaceholder": "Account number (digits only)",
+      "holderNamePlaceholder": "Account holder name",
+      "refundAccountIncomplete": "Please enter the bank, account number, and holder name.",
+      "next": "Next",
+      "back": "Back",
+      "refundStepTitle": "Confirm your refund details",
+      "stepReasonLabel": "Cancellation reason step",
+      "stepRefundLabel": "Refund details step"
+    },
+    "manageTitle": "Membership"
   },
   "orderActions": {
     "trackDelivery": "Track delivery",
@@ -978,7 +998,7 @@
     "plansLoadFailDescription": "Please try again later."
   },
   "membershipPaymentMethod": {
-    "pageTitle": "Manage membership payment method",
+    "pageTitle": "Payment method",
     "backAria": "Back",
     "currentCardTitle": "Current recurring payment method",
     "registeredCard": "Registered payment method",

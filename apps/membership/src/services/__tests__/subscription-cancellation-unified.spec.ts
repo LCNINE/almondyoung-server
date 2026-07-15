@@ -8,6 +8,8 @@ import { SubscriptionCancellationManager } from '../subscription/subscription-ca
 import { MembershipPolicyService } from '../membership-policy.service';
 import { MembershipEventPublisher } from '../membership-event.publisher';
 import { CancellationReasonReader } from '../subscription/cancellation-reason.reader';
+import { PaymentClientService } from '../billing/payment-client.service';
+import { BenefitReader } from '../benefit/benefit.reader';
 
 describe('SubscriptionCancellationService - Unified Cancellation', () => {
   let service: SubscriptionCancellationService;
@@ -62,6 +64,15 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
     findActiveReasons: jest.fn(),
   };
 
+  const mockPaymentClientService = {
+    refundByIntent: jest.fn().mockResolvedValue(undefined),
+    revokeBillingAgreement: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const mockBenefitReader = {
+    findCurrentCycleBenefit: jest.fn(),
+  };
+
   beforeEach(async () => {
     // 정책 기본값 설정
     mockPolicyService.getBooleanPolicy.mockResolvedValue(true);
@@ -103,6 +114,14 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
           provide: CancellationReasonReader,
           useValue: mockCancellationReasonReader,
         },
+        {
+          provide: PaymentClientService,
+          useValue: mockPaymentClientService,
+        },
+        {
+          provide: BenefitReader,
+          useValue: mockBenefitReader,
+        },
       ],
     }).compile();
 
@@ -128,7 +147,7 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
       );
     });
 
-    it('무료체험 중 취소 시 즉시 취소 + 환불을 반환해야 함', async () => {
+    it('이번 주기 혜택 미사용 시 즉시 취소 + 결제액 전액 환불 실행', async () => {
       // Given
       const userId = 'test_user_001';
       const email = 'test@example.com';
@@ -137,6 +156,8 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
         userId,
         planId: 'plan_001',
         billingDate: new Date().toISOString().split('T')[0],
+        lastPaymentIntentId: 'intent_001',
+        autoRenewal: false,
         status: 'ACTIVE',
         createdAt: new Date(),
       };
@@ -154,14 +175,10 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
         plan,
       });
 
-      // 정책 설정: 무료 체험 환불 활성화
-      mockPolicyService.getBooleanPolicy.mockResolvedValue(true); // TRIAL_REFUND_ENABLED
-      mockPolicyService.getNumberPolicy.mockResolvedValue(7); // TRIAL_DURATION_DAYS
-
-      mockCancellationManager.checkRefundEligibility.mockResolvedValue({
-        eligible: true,
-        reason: '무료 체험 기간 중 취소',
-        amount: 10000,
+      // 이번 주기 혜택 사용 이력 없음 → 환불 대상
+      mockBenefitReader.findCurrentCycleBenefit.mockResolvedValue({
+        orderCount: 0,
+        totalDiscountAmount: 0,
       });
       mockCancellationManager.cancelImmediately.mockResolvedValue({
         type: 'IMMEDIATE_CANCELLATION',
@@ -175,18 +192,22 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
       });
 
       // When
-      const result = await service.cancelSubscription(userId, email, 'TRIAL_PERIOD', '체험 후 결정');
+      const result = await service.cancelSubscription(userId, email, 'NO_LONGER_NEEDED', '체험 후 결정');
 
       // Then
       expect(result.type).toBe('IMMEDIATE_CANCELLATION');
-      expect(result.refundEligible).toBe(true);
-      if (result.type === 'IMMEDIATE_CANCELLATION') {
-        expect(result.refundAmount).toBe(10000);
-      }
       expect(result.status).toBe('CANCELLED');
+      // 결제액 전액(plan.price)이 lastPaymentIntentId 로 환불 요청되어야 함
+      expect(mockPaymentClientService.refundByIntent).toHaveBeenCalledWith(
+        'intent_001',
+        10000,
+        'NO_LONGER_NEEDED',
+        '체험 후 결정',
+        undefined,
+      );
     });
 
-    it('무료체험 후 취소 시 정기결제 중단을 반환해야 함', async () => {
+    it('이번 주기 혜택 사용 시 환불 없이 정기결제 중단만', async () => {
       // Given
       const userId = 'test_user_001';
       const email = 'test@example.com';
@@ -199,6 +220,8 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
         planId: 'plan_001',
         billingDate: billingDate.toISOString().split('T')[0],
         nextBillingDate: '2025-11-15',
+        lastPaymentIntentId: 'intent_001',
+        autoRenewal: true,
         status: 'ACTIVE',
         createdAt: billingDate,
       };
@@ -216,14 +239,10 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
         plan,
       });
 
-      // 정책 설정: 무료 체험 기간 지남
-      mockPolicyService.getNumberPolicy.mockResolvedValue(7); // TRIAL_DURATION_DAYS
-      mockPolicyService.getBooleanPolicy.mockResolvedValue(true);
-
-      mockCancellationManager.checkRefundEligibility.mockResolvedValue({
-        eligible: false,
-        reason: '무료 체험 기간이 지났습니다',
-        amount: 0,
+      // 이번 주기 혜택 사용 이력 있음 → 환불 불가
+      mockBenefitReader.findCurrentCycleBenefit.mockResolvedValue({
+        orderCount: 2,
+        totalDiscountAmount: 5000,
       });
       mockCancellationManager.cancelRecurringPayment.mockResolvedValue({
         type: 'RECURRING_CANCELLATION',
@@ -248,6 +267,71 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
         expect(result.nextBillingDate).toBeNull();
         expect(result.currentPeriodEndsAt).toBe('2025-11-15');
       }
+      // 혜택을 사용했으므로 환불은 실행되지 않아야 함
+      expect(mockPaymentClientService.refundByIntent).not.toHaveBeenCalled();
+    });
+
+    it('재가입한 두번째 멤버십은 현재 계약 billingDate 로만 혜택을 조회 → 이번 주기 미사용이면 전액 환불', async () => {
+      // Given: 과거 첫 멤버십에서 웰컴딜을 썼더라도, 두번째(재가입) 멤버십의 현재 주기엔
+      // 아무 할인 구매가 없다. 환불 판정은 lifetime 이 아니라 "현재 계약의 현재 주기"만 본다.
+      const userId = 'rejoin_user_001';
+      const email = 'rejoin@example.com';
+      const secondBillingDate = '2025-06-20'; // 재가입 계약의 새 billingDate
+      const contract = {
+        id: 'contract_second',
+        userId,
+        planId: 'plan_001',
+        billingDate: secondBillingDate,
+        lastPaymentIntentId: 'intent_second',
+        autoRenewal: false,
+        status: 'ACTIVE',
+        createdAt: new Date(),
+      };
+      const plan = {
+        id: 'plan_001',
+        tierId: 'tier_001',
+        price: 10000,
+        trialDays: 0,
+        durationDays: 30,
+      };
+
+      mockEntitlementService.checkAndUpdateSubscription.mockResolvedValue(true);
+      mockContractReader.findContractWithPlan.mockResolvedValue({ contract, plan });
+      // 두번째 멤버십 현재 주기엔 사용 이력 없음 (과거 웰컴딜은 다른 주기라 여기 안 잡힘)
+      mockBenefitReader.findCurrentCycleBenefit.mockResolvedValue({
+        orderCount: 0,
+        totalDiscountAmount: 0,
+      });
+      mockCancellationManager.cancelImmediately.mockResolvedValue({
+        type: 'IMMEDIATE_CANCELLATION',
+        contractId: 'contract_second',
+        status: 'CANCELLED',
+        cancelledAt: new Date(),
+        refundEligible: true,
+        refundAmount: 10000,
+        refundStatus: 'PENDING',
+        message: '',
+      });
+
+      // When
+      const result = await service.cancelSubscription(userId, email, 'NO_LONGER_NEEDED');
+
+      // Then
+      expect(result.type).toBe('IMMEDIATE_CANCELLATION');
+      // 혜택 조회는 현재(두번째) 계약의 billingDate 로만 이뤄져야 한다 (lifetime 조회가 아님)
+      expect(mockBenefitReader.findCurrentCycleBenefit).toHaveBeenCalledWith(
+        userId,
+        new Date(secondBillingDate),
+        'MONTHLY',
+      );
+      // 전액 환불이 두번째 멤버십의 intent 로 실행되어야 한다
+      expect(mockPaymentClientService.refundByIntent).toHaveBeenCalledWith(
+        'intent_second',
+        10000,
+        'NO_LONGER_NEEDED',
+        undefined,
+        undefined,
+      );
     });
   });
 });
