@@ -58,7 +58,7 @@ const SHIPPED: ShipmentShippedPayload = {
 };
 
 describe('shipment event channel ownership contract', () => {
-  it('preserves partial shipment truth instead of emitting a full-order shipped projection', async () => {
+  it('stores one inbox row per dispatch attempt, passing every order isPartial flag through unchanged', async () => {
     const accepted: Array<Record<string, unknown>> = [];
     const db = {
       insert: jest.fn((table: unknown) => {
@@ -83,14 +83,27 @@ describe('shipment event channel ownership contract', () => {
     expect(accepted[0]?.eventType).toBe('ShipmentShipped');
     expect(accepted[0]?.idempotencyKey).toBe(ATTEMPT_ID);
     const acceptedPayload = accepted[0]?.payload as ShipmentShippedPayload;
-    expect(acceptedPayload.orders).toEqual(
-      expect.arrayContaining([expect.objectContaining({ salesOrderId: NAVER_ORDER.salesOrderId, isPartial: true })]),
-    );
-    // That a partial dispatch never produces the v1 FulfillmentShipped this
-    // consumer would project is enforced Core-side by the fullyShipped gate in
-    // ShipmentDispatchService, and proven by the exhaustive outbox topology
-    // assertions in outbound-v2-*-scenarios.integration.spec.ts. Asserting it
-    // here against an already-pinned eventType could not fail.
+    // Both flags, not just the partial one: a consumer that hardcoded isPartial in
+    // either direction would still satisfy a one-sided arrayContaining check.
+    expect(
+      acceptedPayload.orders.map((order) => ({ salesOrderId: order.salesOrderId, isPartial: order.isPartial })),
+    ).toEqual([
+      { salesOrderId: NAVER_ORDER.salesOrderId, isPartial: true },
+      { salesOrderId: COUPANG_ORDER.salesOrderId, isPartial: false },
+    ]);
+    // Scope note: this proves the V2 inbox stores isPartial as sent — nothing more.
+    // It does NOT prove "a partial shipment is not a full order shipped". That guard is
+    // Core-side: the fullyShipped gate in ShipmentDispatchService
+    // (apps/core/src/modules/fulfillment/services/shipment-dispatch.service.ts:1154,
+    // `if (summary.fullyShipped && summary.salesOrderId && eventLine)`, where
+    // fullyShipped = outstandingQty === 0 && canceledQty === 0). It is owned and proven by
+    // outbound-v2-scenarios.integration.spec.ts '02. dispatches FOI 10 as 6/4 with two
+    // invoices and attempts': after the 6-of-10 partial dispatch, checkpoint() passes no
+    // fullyShippedFulfillmentOrderIds, so expectExactOutboxTopology's set-equality
+    //   expect(fulfillmentRows.map(encode).sort()).toEqual(expectedRows.map(encode).sort())
+    // pins the partial to exactly ShipmentShipped + FulfillmentProgressed and fails on any
+    // FulfillmentShipped row. Re-asserting that here against an already-pinned eventType
+    // could not fail.
   });
 
   it('derives partially_shipped, never shipped, from a partial Medusa shipment attempt', async () => {
@@ -129,12 +142,13 @@ describe('shipment event channel ownership contract', () => {
     );
   });
 
-  it('creates one operation per sales order and routes each operation to exactly one adapter', async () => {
+  it('fans one mixed-channel attempt out to one operation per sales order, each routed to exactly one adapter', async () => {
     const operations: Array<Record<string, unknown>> = [];
+    const onConflictDoNothing = jest.fn().mockResolvedValue(undefined);
     const insert = jest.fn(() => ({
       values: jest.fn((values: Array<Record<string, unknown>>) => {
         operations.push(...values);
-        return { onConflictDoNothing: jest.fn().mockResolvedValue(undefined) };
+        return { onConflictDoNothing };
       }),
     }));
     const naverExecute = jest.fn().mockResolvedValue({ success: true });
@@ -162,6 +176,16 @@ describe('shipment event channel ownership contract', () => {
       COUPANG_ORDER.salesOrderId,
     ]);
     expect(new Set(operations.map((operation) => operation.salesOrderId))).toHaveProperty('size', 2);
+    // Scope note: this insert is a mock, so the fan-out above is only the shape of a single
+    // in-memory call — it cannot prove a duplicate operation is impossible under replay or
+    // concurrency. What is provable here is that the write defers to the DB rather than
+    // blindly inserting: the operation insert must go through onConflictDoNothing().
+    // The guarantee itself is the uq_channel_dispatch_attempt_order_operation unique index
+    // on (dispatch_attempt_id, sales_order_id, operation) (apps/channel-adapter/src/schema.ts:344),
+    // owned by shipment-dispatch-persistence.integration.spec.ts 'enforces inbox idempotency
+    // and one operation per attempt/order/operation':
+    //   await expect(insertOperation(randomUUID(), operationInboxId)).rejects.toMatchObject({ code: '23505' });
+    expect(onConflictDoNothing).toHaveBeenCalledTimes(1);
 
     for (const [index, operation] of operations.entries()) {
       await workerInternals.executeOperation({

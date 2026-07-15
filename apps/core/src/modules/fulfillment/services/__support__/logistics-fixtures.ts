@@ -3,6 +3,7 @@ import { and, eq, inArray, or, sql } from 'drizzle-orm';
 import { wmsTables, DbTx } from '../../../inventory/schema/inventory.schema';
 import { InventoryCommandService } from '../../../inventory/core/services/inventory-command.service';
 import { FulfillmentInvariantService } from '../fulfillment-invariant.service';
+import { availableFromView } from './logistics-assertions';
 
 export async function seedWarehouseWithZone(tx: DbTx): Promise<{ warehouseId: string; locationId: string }> {
   const [wh] = await tx
@@ -238,10 +239,16 @@ export async function assertOutboundV2Checkpoint(tx: DbTx, checkpoint: OutboundV
 
   const onHandQty = Number(ledger?.qty ?? 0);
   const reservedQty = Number(reservations?.qty ?? 0);
+  // available 은 DB 가 계산한 값을 읽는다. `onHandQty - reservedQty` 로 TS 에서 재계산하면 바로 위
+  // 두 값의 항등식이 되어 독립적으로 실패할 수 없다 — 두 값이 이미 골든값으로 단언되는 이상
+  // 정보량이 0이고, available 회귀를 하나도 못 잡는다. 뷰는 available_qty 를
+  // on_hand − reserved − transit_out 으로 계산하므로, 뷰에서 읽으면 transit_out 누수와 뷰 산술
+  // 회귀를 실제로 검출한다. 이 값이 onHand/reserved 와 함께 움직이는지는 골든값이 앵커링한다.
+  const availableQty = await availableFromView(tx, checkpoint.skuId, checkpoint.warehouseId);
   expect({
     onHandQty,
     reservedQty,
-    availableQty: onHandQty - reservedQty,
+    availableQty,
     outboxCount: Number(outbox?.count ?? 0),
     inventoryOutboxCount: Number(inventoryOutbox?.count ?? 0),
     dispatchAttemptCount: Number(dispatchAttempts?.count ?? 0),

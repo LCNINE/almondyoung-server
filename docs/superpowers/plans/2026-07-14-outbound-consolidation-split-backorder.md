@@ -2,14 +2,21 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-## 진행 상태 (2026-07-15 기준)
+## 진행 상태 (2026-07-16 기준)
 
-Task 1~23 구현 완료, Task 24~25 미착수. 브랜치 `feat/outbound-v2-consolidation-backorder`.
+Task 1~23 완료(잔여 항목 포함), Task 24 는 **외부 의존으로 블록**, Task 25 미착수. 브랜치 `feat/outbound-v2-consolidation-backorder`.
+
+**Task 24 블로커 — provider 계약 미검증 (repo 안에서 풀 수 없음).**
+V2 invoice 를 발행할 수 있는 provider 가 없다. `goodsflow-delivery.provider.ts:30` 이 `issue: { safeToRepeat: false, lookupByIdempotencyKey: false }` 로 고정돼 있고, `invoice-orchestrator.service.ts:459` 는 둘 다 false 면 `unsupported` 를 던진다 — attempt 카운터보다 앞이라 **재시도 복구뿐 아니라 모든 발행이 거부된다**. Hanjin 은 크레덴셜이 있어도 비활성(`hanjin-delivery.provider.ts:87`). Task 24 의 "provider issue/void sandbox recovery drill complete" 게이트는 Goodsflow 가 idempotency-key 또는 key 조회 계약을 공개해야 열린다. 이 상태로 `v2` 를 켜면 송장을 못 받는 Draft shipment 만 쌓인다. capability 플래그를 손으로 true 로 바꾸는 것은 게이트 무력화이므로 금지.
+
+**Task 24 중 완료된 것**: expand 배포 배선. `FULFILLMENT_WORKFLOW_MODE` 가 배포 매니페스트에 없어서 이 브랜치를 배포하면 Core 가 부팅 실패했다(production 에서 필수 — `env.validation.ts:71`, 배포는 `NODE_ENV=production`). `deployments/lcnine/services/infra/services.ts` 의 Core `environment` 에 `legacy` 를 배선했고, 런북에 빠져 있던 expand 배포 절차와 증거표를 추가했다. 커밋 `85d37a4f3`.
+
+**expand 배포는 `migrate → deploy` 순서다** (contract 와 반대). ADR-0005 §5 의 `deploy → migrate` 는 contract 전용이고, expand 를 지키는 "additive 만" 컨벤션은 *새 schema 가 옛 코드를 안 깨는 것*만 보장한다. 반대 방향은 보장하지 않는데, 이 릴리스는 outbox 에 `topic`/`idempotency_key` 를 가르치고 outbox 는 V1 경로도 탄다.
 
 **체크 근거를 구분해서 읽어야 한다.**
 
 - **Task 1~22**: 체크 근거는 *각 Task 가 지정한 `Commit:` 메시지의 커밋이 실제로 존재한다*는 것뿐이다. 항목별 재검증은 하지 않았다. Task 23 리뷰에서 "지정 커밋이 있어도 항목이 실제로는 충족되지 않은" 사례가 두 건 나왔으므로(아래), 이 체크를 항목별 완료 증거로 신뢰하면 안 된다. 릴리스 게이트를 통과시키려면 Task 24 가 요구하는 실환경 증거로 다시 확인해야 한다.
-- **Task 23**: 코드 리뷰 + 로컬 실행으로 검증했다. 부분 충족 항목은 체크하지 않고 아래에 사유를 남겼다.
+- **Task 23**: 전 항목 완료. 잔여 5건(체크박스 4개)은 모두 *테스트가 초록인데 자기가 검증한다고 주장하는 것을 실제로는 검증하지 않는* 유형이었고 — 항등식 단언, 배포 설정 대신 테스트 자신의 복사본 검증, 3행만 해싱, 이름이 증명 범위를 초과 — 고친 뒤 **각각 가드를 일부러 부숴 red 를 확인하고 되돌리는 방식으로** 검증했다. 이 규율이 없으면 같은 함정에 다시 빠진다. 실제로 이 과정에서 사보타주 자체가 no-op 이거나(이미 0인 값에 `qty > 0` 조건) 엉뚱한 메서드에 주입돼 "초록"이 나온 사례가 두 번 있었다 — 사보타주가 red 를 만드는지부터 확인해야 증명이 성립한다.
 - **Release gate checklist**: 전부 미체크다. 로컬 스위트 통과는 첫 항목의 필요조건일 뿐이고, 나머지는 실환경 커토버(Task 24) 없이는 채울 수 없다.
 
 **Task 23 리뷰에서 발견돼 고친 것** (커밋 `85dc008bb`, `b24fe78bd`):
@@ -17,12 +24,15 @@ Task 1~23 구현 완료, Task 24~25 미착수. 브랜치 `feat/outbound-v2-conso
 - recall 의 데드락 수정이 short-pick 에 적용되지 않아 recall↔short-pick / short-pick↔short-pick 데드락이 남아 있었다. `shipment_operation_members.shipment_id` FK 가 KEY SHARE 를 잡는다는 사실이 누락된 결과다.
 - migration rehearsal 의 watermark 검증이 `isNewSalesOrder: false` 로 단락돼, cutover 비교 로직을 지워도 통과하는 상태였다. Task 24 의 "replay an older event and prove it cannot enqueue FO" 게이트가 이 테스트에 걸려 있었다.
 
-**후속 이슈로 남긴 것** (Task 23 범위, 커밋되지 않음):
+**후속 이슈로 남긴 것** (Task 23 범위):
 
 - 시나리오 14 가 실제 recall 이 만들 수 없는 상태를 손으로 심고 시작해 13→14 연쇄가 검증되지 않는다.
 - outbox topology 헬퍼 150줄이 세 스펙에 복붙돼 있다. `__support__/` 로 하이스팅해야 한다.
-- `protectedHashes` 가 보호 테이블 전체가 아니라 고정 ID 3행만 해싱한다.
 - 시나리오 06 의 이름과 실제 동작이 다르다(A 는 라벨 실패로 batch 진입 자체가 불가하므로 "sibling batch shipment" 가 아니다).
+- `ValidationPipe` 하드코딩 복사본이 네 스펙에 남아 있다(`shipment-planning.service.spec.ts:97`, `shipment.controller.spec.ts:187`, `tote.controller.spec.ts:174`, `consolidation.service.spec.ts:209`). `platform/http/validation-pipe.ts` import 로 교체하면 된다.
+- `apps/*/tsconfig.app.json` 은 `**/*spec.ts` 를 제외한다 — 스펙 타입체크에 이 config 를 쓰면 파일을 읽지도 않고 exit 0 이 난다. 스펙을 포함하는 program 은 루트 `tsconfig.json` 이다.
+
+`protectedHashes` 3행 해싱 건은 해소됐다 (위 Task 23 항목 참조).
 
 **Goal:** FO 중심의 단일 출고 경로를 shipment/attempt 중심 모델로 교체해 부분예약·백오더, Draft 분할/합배송, shipment 단위 송장, 세 가지 피킹 전략, 즉시 dispatch, short-pick 격리, recall/재출고를 수량 보존과 멱등성이 검증된 상태로 제공한다.
 
@@ -782,15 +792,15 @@ session handed-in
   15. Partial shipped + canceled remainder completes FO.
   16. Batch-controlled source rejects general move/transfer.
   17. Session crash recovery conserves quantity and dispatch remains idempotent.
-- [ ] At every scenario checkpoint assert FOI demand conservation, active line/reservation sum, on-hand/reserved/available, session conservation, attempt source/event cardinality and outbox count.
-      - 부분 충족. demand/line/reservation/on-hand/reserved/session/cardinality/outbox 는 실제로 단언한다 (outbox 는 count 가 아니라 집합 동등성이라 요구보다 강하다). 남은 두 가지: `available` 은 `onHand - reserved` 로 계산한 값을 같은 식으로 검산해 독립적으로 실패할 수 없다 — 판매가능 projection(`ProductSellableQuantityService`) 대조로 바꾸거나 파생값임을 명시해야 한다. 시나리오 12 는 batch close 뒤 checkpoint 가 없어 "close 가 double-consume 하지 않는다"가 `getBatch` 가 순수 read 라는 구현 지식에 의존한다.
+- [x] At every scenario checkpoint assert FOI demand conservation, active line/reservation sum, on-hand/reserved/available, session conservation, attempt source/event cardinality and outbox count.
+      - 두 결함을 닫았다. (1) `available` 이 `logistics-fixtures.ts` 에서 `onHandQty - reservedQty` 로 **TS 재계산**돼 같은 객체의 이미 단언된 두 값의 항등식이었다 — 정보량 0. 이제 `availableFromView` 로 DB 의 `stock_summary_view.available_qty` 를 읽는다. 뷰는 `on_hand − reserved − transit_out` 이라 TS 산술이 구조적으로 볼 수 없는 항을 포함한다. 실측: pending transfer(3) 상황에서 옛 산술은 `10`, 뷰는 `7` — 옛 단언은 틀린 available 을 초록으로 통과시켰다. `ProductSellableQuantityService` 대조는 채택하지 않았다 (variant 키 기반 cross-BC seam 이고, 이 불변식은 창고 단위다). (2) 시나리오 12 에 batch close(`getBatch`) 이후 checkpoint 를 추가했다. `getBatch` 가 원장을 건드리도록 사보타주하면 `onHandQty 0→1` 로 red 가 되는 것을 확인했고, 나머지 4 시나리오는 그대로 초록이라 blast radius 도 맞다.
 - [x] Add concurrency barriers for reserve/split/claim/last-scan dispatch/recall rather than relying on timing sleeps.
-- [ ] Add authorization matrix for worker, manager, unknown role, missing scope and forged body operator.
-      - 부분 충족. 5개 항목 모두 존재하고 실제 `ScopeGuard` 와 `@RequireScopes` 메타데이터를 검증한다. 다만 forged body operator 케이스가 `main.ts` 의 배포 `ValidationPipe` 를 쓰지 않고 같은 옵션을 로컬에서 재구성한다. `whitelist: false` 로 회귀해도 테스트는 초록으로 남는다 — 파이프 옵션을 공유 모듈로 빼서 양쪽이 같은 것을 쓰게 해야 한다.
-- [ ] Add migration rehearsal fixture: current schema data → expand → audit/cleanup → V2 create → verify; confirm SKU/SO/ledger hashes are unchanged and old orders are not replayed.
-      - 부분 충족. 실제 drizzle journal 을 V2 tag 에서 쪼개 current→expand 를 진짜로 태우고, "old orders are not replayed" 는 watermark 단락을 고쳐 이제 유효하다(무력화 시 실패 확인). 남은 것: `protectedHashes` 가 보호 테이블 전체가 아니라 픽스처 자신의 ID 로 skus/sales_orders/stock_ledgers 각 1행만 해싱한다. cleanup 이 건드리면 안 될 *다른* 행을 지우거나 바꿔도 보이지 않는다 — 테이블 단위 `md5(string_agg(...))` 로 바꿔야 요구를 충족한다.
-- [ ] Add channel contract assertions that partial shipment is not full order shipped and exactly one adapter handles each sales order.
-      - 부분 충족. "partial ≠ full order shipped" 의 실제 가드는 Core 의 `ShipmentDispatchService` fullyShipped 게이트이고, 이는 `outbound-v2-*-scenarios` 의 exhaustive outbox 집합 동등성이 증명한다 — 이 파일은 V2 inbox 가 `isPartial` 을 그대로 저장하는 pass-through 만 본다. "exactly one adapter" 도 insert 를 mock 해 메모리상에서만 증명하며, 실제 보장은 `uq_channel_dispatch_attempt_order_operation` 유니크 제약(`shipment-dispatch-persistence.integration.spec.ts` 가 커버)이다. 요구를 이 파일이 직접 증명하도록 하거나, 소유 스펙을 명시적으로 참조해야 한다.
+- [x] Add authorization matrix for worker, manager, unknown role, missing scope and forged body operator.
+      - 파이프 설정을 `apps/core/src/platform/http/validation-pipe.ts` (`GLOBAL_VALIDATION_PIPE_OPTIONS` / `createGlobalValidationPipe`) 로 하이스팅해 `main.ts` 와 스펙이 같은 객체를 쓴다. 옵션 값은 불변. 로컬 복사본은 충실하지도 않았다 — `forbidNonWhitelisted`/`disableErrorMessages`/`validationError` 를 누락해 스펙이 배포보다 좁은 설정을 검증하고 있었다. `whitelist: false` 로 회귀시키면 위조된 `performedBy` 가 DTO 까지 살아남아 red 가 되는 것을 확인했다(다른 17건은 초록 유지). 후속: `shipment-planning.service.spec.ts:97`, `shipment.controller.spec.ts:187`, `tote.controller.spec.ts:174`, `consolidation.service.spec.ts:209` 가 같은 하드코딩 복사본을 들고 있다 — 이제 import 한 줄로 고칠 수 있다.
+- [x] Add migration rehearsal fixture: current schema data → expand → audit/cleanup → V2 create → verify; confirm SKU/SO/ledger hashes are unchanged and old orders are not replayed.
+      - `protectedHashes` 를 테이블 단위 `md5(string_agg(md5(row) ORDER BY ...))` 로 바꾸고 `sales_order_lines` 를 추가했다 (cleanup 안전 경계가 "sales orders/lines" 보존을 약속하므로). 컬럼 제외는 expand 의 additive 기본값(`stock_ledgers.version`, `sales_order_lines.channel_*_id`) 뿐 — jsonb 에서 없는 키를 빼는 건 no-op 이라 expand 양쪽에서 같은 쿼리가 유효하다. **테이블 단위 해시만으로는 부족**해서 bystander 행(cleanup 그래프와 무관한 SKU/SO/line/ledger)을 픽스처에 심었다 — 픽스처가 각 보호 테이블에 1행씩만 갖고 있어서 table-wide 와 by-ID 의 검출력이 같았기 때문이다. 두 반쪽이 함께여야 성립한다. 검증: cleanup 이 bystander SKU 를 변조하도록 사보타주하니 `sku` digest 가 움직여 red. 발견: toolkit 자체가 이미 10개 보호 테이블을 트랜잭션 안에서 fingerprint 하므로(`toolkit.ts:41`), 스펙의 해시는 **toolkit 의 자기검사를 신뢰하지 않는 독립 검증**이 그 역할이다 — 그래서 red 증명도 toolkit self-check 를 실명시킨 상태에서 했다. V2 create 이후 비교는 픽스처가 보호 테이블에 정당하게 행을 추가하므로 그 직후 재기준선(`hashesAfterV2Seed`)과 비교한다.
+- [x] Add channel contract assertions that partial shipment is not full order shipped and exactly one adapter handles each sales order.
+      - 이름이 증명 범위를 넘어서던 것을 없앴다. "partial ≠ full order shipped" 는 소유 스펙 참조로 정리 — 실제 가드가 Core `shipment-dispatch.service.ts:1154` 의 fullyShipped 게이트이고 `outbound-v2-scenarios` 의 시나리오 02 가 집합 동등성으로 증명하므로, 이 파일은 그 사실을 file:line 과 함께 명시하고 자기 이름을 실제 동작(inbox pass-through)으로 좁혔다. 동시에 단언 자체도 강화 — 옛 단언은 `isPartial: true` 한쪽만 보는 `arrayContaining` 이라 consumer 가 값을 하드코딩해도 통과했고, 이제 두 주문의 true/false 를 모두 고정한다(하드코딩 사보타주로 red 확인). "exactly one adapter" 는 routing 절반이 이미 정직했다 — `getAdapter` 호출을 exact-array 로 고정해 broadcast 를 실제로 배제한다. 지속성 절반(중복 방지)만 `uq_channel_dispatch_attempt_order_operation` 소유 스펙 참조로 넘기고, `onConflictDoNothing` 호출을 단언해 그 위임이 공허하지 않게 했다(제거 시 red 확인).
 - [x] Run full suite serially: `yarn test:core:integration:local -- outbound-v2` plus targeted channel-adapter tests.
       - 로컬 실행 결과: DB 스위트 8 suites / 56 tests, 채널·권한 포함 관련 유닛 25 tests, 모두 통과. `build:core` / `build:channel-adapter` exit 0. 러너 명령은 npm 기준(`npm run ...`)이다 — 아래 verification command set 의 yarn 표기는 이 repo 와 맞지 않는다.
 - [x] Record local execution instructions and Docker requirement in `docs/local-dev.md`.

@@ -63,6 +63,11 @@ type LegacyIds = {
   skuId: string;
   locationId: string;
   salesOrderId: string;
+  // Bystander business data: protected rows with no link to the V1 cleanup graph.
+  // protectedHashes covers whole tables, so these are what make an over-broad
+  // DELETE observable — the fixture's own rows alone cannot show it.
+  bystanderSkuId: string;
+  bystanderSalesOrderId: string;
 };
 
 async function createRehearsalDatabase(): Promise<RehearsalDatabase> {
@@ -127,8 +132,11 @@ async function seedCurrentSchemaData(sql: Sql): Promise<LegacyIds> {
     skuId: randomUUID(),
     locationId: randomUUID(),
     salesOrderId: randomUUID(),
+    bystanderSkuId: randomUUID(),
+    bystanderSalesOrderId: randomUUID(),
   };
   const receiveJournalId = randomUUID();
+  const bystanderJournalId = randomUUID();
   await sql.begin(async (tx) => {
     await tx`INSERT INTO warehouses (id, name) VALUES (${ids.warehouseId}, 'V2 rehearsal warehouse')`;
     await tx`INSERT INTO holders (id, name) VALUES (${ids.holderId}, 'V2 rehearsal holder')`;
@@ -155,22 +163,69 @@ async function seedCurrentSchemaData(sql: Sql): Promise<LegacyIds> {
     await tx`INSERT INTO order_events (event_id, order_id, event_type, payload)
              VALUES (${randomUUID()}, ${ids.salesOrderId}, 'ORDER_CREATED',
                      '{"createdAt":"2026-07-13T00:00:00.000Z"}')`;
+
+    // Bystander rows. Nothing in seedLegacyCleanupGraph references these, so the
+    // allowlisted cleanup has no reason to touch them. They exist so the
+    // table-wide protected hashes have something to lose: with only the fixture's
+    // own SKU/SO/ledger present, "preserved" and "the cleanup graph was deleted"
+    // are indistinguishable.
+    await tx`INSERT INTO skus (id, holder_id, name, code)
+             VALUES (${ids.bystanderSkuId}, ${ids.holderId}, 'V2 rehearsal bystander SKU',
+                     ${`V2-BY-${ids.bystanderSkuId}`})`;
+    await tx`INSERT INTO stock_journals (id, source_type, idempotency_key)
+             VALUES (${bystanderJournalId}, 'RECEIPT', ${`receive-${ids.bystanderSkuId}`})`;
+    await tx`INSERT INTO stock_events
+             (journal_id, sku_id, to_warehouse_id, to_location_id, to_state, transition_type,
+              quantity, occurred_at, idempotency_key, event_status)
+             VALUES (${bystanderJournalId}, ${ids.bystanderSkuId}, ${ids.warehouseId}, ${ids.locationId},
+                     'ON_HAND', 'RECEIVE', 7, now(), ${`receive-event-${ids.bystanderSkuId}`}, 'POSTED')`;
+    await tx`INSERT INTO stock_ledgers (sku_id, warehouse_id, location_id, stock_state, qty)
+             VALUES (${ids.bystanderSkuId}, ${ids.warehouseId}, ${ids.locationId}, 'ON_HAND', 7)`;
+    await tx`INSERT INTO sales_orders
+             (id, channel_order_id, sales_channel, status, shipping_address, order_date, created_at)
+             VALUES (${ids.bystanderSalesOrderId}, ${`legacy-${ids.bystanderSalesOrderId}`}, 'medusa',
+                     'confirmed', '{"recipientName":"Bystander"}', '2026-07-13T00:00:00Z',
+                     '2026-07-13T00:00:00Z')`;
+    await tx`INSERT INTO sales_order_lines
+             (sales_order_id, variant_id, product_name, quantity)
+             VALUES (${ids.bystanderSalesOrderId}, ${randomUUID()}, 'Bystander protected product', 5)`;
+    await tx`INSERT INTO order_events (event_id, order_id, event_type, payload)
+             VALUES (${randomUUID()}, ${ids.bystanderSalesOrderId}, 'ORDER_CREATED',
+                     '{"createdAt":"2026-07-13T00:00:00.000Z"}')`;
   });
   return ids;
 }
 
-async function protectedHashes(sql: Sql, ids: LegacyIds) {
-  // The expand migration adds only stock_ledgers.version to these protected
-  // tables. Hash every pre-existing business column while excluding that
-  // additive schema default so value drift cannot hide behind a partial hash.
-  const [hashes] = await sql.unsafe<Array<{ sku: string; sales_order: string; ledger: string }>>(`
-    SELECT
-      (SELECT md5(to_jsonb(t)::text) FROM skus t WHERE id = '${ids.skuId}') AS sku,
-      (SELECT md5(to_jsonb(t)::text) FROM sales_orders t WHERE id = '${ids.salesOrderId}') AS sales_order,
-      (SELECT md5((to_jsonb(t) - 'version')::text) FROM stock_ledgers t
-        WHERE sku_id = '${ids.skuId}' AND warehouse_id = '${ids.warehouseId}'
-          AND location_id = '${ids.locationId}' AND stock_state = 'ON_HAND') AS ledger
-  `);
+// Fingerprint each protected table in full, not just the fixture's own rows. A
+// per-ID hash cannot see the failure this guards against — cleanup deleting or
+// mutating a row it was never allowed to touch — because the row it would lose
+// is not one of the IDs being hashed. Every row of every protected table is
+// covered, so any stray DELETE/UPDATE moves the digest.
+//
+// Aggregating with `ORDER BY h` over the per-row digests makes this a canonical
+// multiset fingerprint: order-independent, and no `id` column required.
+//
+// Column exclusions are the expand migration's additive schema defaults, which
+// legitimately appear between the pre-expand and post-expand snapshots:
+// stock_ledgers.version and sales_order_lines.channel_*_id. Subtracting a key
+// that does not exist yet is a no-op in jsonb, so the same query is valid on
+// both sides of the migration. Nothing else may drift.
+const PROTECTED_TABLE_FINGERPRINTS = {
+  sku: `SELECT md5(to_jsonb(t)::text) AS h FROM skus t`,
+  sales_order: `SELECT md5(to_jsonb(t)::text) AS h FROM sales_orders t`,
+  sales_order_line: `SELECT md5((to_jsonb(t) - 'channel_order_item_id' - 'channel_product_id')::text) AS h
+                       FROM sales_order_lines t`,
+  ledger: `SELECT md5((to_jsonb(t) - 'version')::text) AS h FROM stock_ledgers t`,
+} as const;
+
+type ProtectedHashes = Record<keyof typeof PROTECTED_TABLE_FINGERPRINTS, string>;
+
+async function protectedHashes(sql: Sql): Promise<ProtectedHashes> {
+  const projections = Object.entries(PROTECTED_TABLE_FINGERPRINTS)
+    .map(([alias, rowDigests]) => `(SELECT coalesce(md5(string_agg(h, '|' ORDER BY h)), 'empty')
+        FROM (${rowDigests}) s) AS ${alias}`)
+    .join(',\n      ');
+  const [hashes] = await sql.unsafe<Array<ProtectedHashes>>(`SELECT\n      ${projections}`);
   return hashes;
 }
 
@@ -228,10 +283,10 @@ describeIfDb('Outbound V2 real migration rehearsal (fresh PostgreSQL database)',
 
       const legacyIds = await seedCurrentSchemaData(database.client);
       await seedLegacyCleanupGraph(database, legacyIds);
-      const hashesBeforeExpand = await protectedHashes(database.client, legacyIds);
+      const hashesBeforeExpand = await protectedHashes(database.client);
 
       await migrate(database.db, { migrationsFolder: folders.expand });
-      expect(await protectedHashes(database.client, legacyIds)).toEqual(hashesBeforeExpand);
+      expect(await protectedHashes(database.client)).toEqual(hashesBeforeExpand);
 
       const [migrationJournal] = await database.client.unsafe<Array<{ rows: number; latest: string }>>(`
         SELECT count(*)::int AS rows, max(created_at)::text AS latest FROM drizzle.__drizzle_migrations
@@ -284,7 +339,7 @@ describeIfDb('Outbound V2 real migration rehearsal (fresh PostgreSQL database)',
         signingKey: SIGNING_KEY,
       });
       expect(Object.values(report.checks).every(Boolean)).toBe(true);
-      expect(await protectedHashes(database.client, legacyIds)).toEqual(hashesBeforeExpand);
+      expect(await protectedHashes(database.client)).toEqual(hashesBeforeExpand);
 
       const dbService = makeDbService(database.db);
       const logistics = wireLogistics(dbService, 'v2');
@@ -342,6 +397,12 @@ describeIfDb('Outbound V2 real migration rehearsal (fresh PostgreSQL database)',
         const salesOrder = await seedSalesOrder(tx as unknown as DbTx, { lines: [{ variantId, quantity: 2 }] });
         return { ...salesOrder, skuId: v2Sku.id };
       });
+      // Re-baseline. The V2 fixture above legitimately adds its own SKU, ledger and
+      // sales order to the protected tables, so it cannot be compared against the
+      // pre-expand digest. Everything after this point is V2 *processing* — backlog
+      // claim, FO/shipment/line/reservation creation — none of which may touch
+      // protected business data.
+      const hashesAfterV2Seed = await protectedHashes(database.client);
       const accepted = await backlogService.enqueueForSalesOrder(controlled.salesOrderId, {
         eventOccurredAt: '2026-07-14T00:00:01.000Z',
         isNewSalesOrder: true,
@@ -410,7 +471,7 @@ describeIfDb('Outbound V2 real migration rehearsal (fresh PostgreSQL database)',
         .from(wmsTables.fulfillmentOrderCreationBacklogs)
         .where(eq(wmsTables.fulfillmentOrderCreationBacklogs.salesOrderId, legacyIds.salesOrderId));
       expect(oldRows).toHaveLength(0);
-      expect(await protectedHashes(database.client, legacyIds)).toEqual(hashesBeforeExpand);
+      expect(await protectedHashes(database.client)).toEqual(hashesAfterV2Seed);
     } finally {
       await destroyRehearsalDatabase(database);
     }

@@ -977,6 +977,23 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
           .from(wmsTables.dispatchAttempts)
           .where(inArray(wmsTables.dispatchAttempts.shipmentId, [first.shipmentId, second.shipmentId])),
       ).toHaveLength(2);
+      // Re-assert the whole conservation set *after* the derived close, with the
+      // same golden values as before it. This scenario's name promises that batch
+      // close never double-consumes, but without this checkpoint that promise
+      // rested on knowing getBatch happens to be a pure read — an implementation
+      // detail, not an asserted property. Anything the close path consumes,
+      // re-settles or re-posts now moves one of these values.
+      await checkpoint(tx, world, {
+        onHandQty: 0,
+        reservedQty: 0,
+        outboxCount: 5,
+        inventoryOutboxCount: 2,
+        dispatchAttemptCount: 2,
+        dispatchSourceCount: 2,
+        shipEventCount: 2,
+        dispatchAttemptIds: [firstResult.dispatchAttemptId!, secondResult.dispatchAttemptId!],
+        fullyShippedFulfillmentOrderIds: [world.fulfillmentOrderId],
+      });
     });
   });
 

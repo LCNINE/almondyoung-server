@@ -1,5 +1,4 @@
 import { ScopeGuard } from '@app/authorization';
-import { ValidationPipe } from '@nestjs/common';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { Reflector } from '@nestjs/core';
 import { ConsolidationController } from '../controllers/consolidation.controller';
@@ -11,6 +10,7 @@ import { ShipmentTrackingController } from '../controllers/shipment-tracking.con
 import { ShipmentController } from '../controllers/shipment.controller';
 import { TransferReservationDto } from '../dto/transfer-reservation.dto';
 import { FULFILLMENT_ROLE_MAPPINGS, FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { createGlobalValidationPipe } from '../../../platform/http/validation-pipe';
 
 type ControllerEndpoint = {
   name: string;
@@ -140,7 +140,8 @@ describe('outbound V2 authorization matrix', () => {
       }),
     };
     const controller = new FulfillmentsController({} as never, reservations as never, {} as never);
-    const pipe = new ValidationPipe({ transform: true, whitelist: true });
+    // main.ts 가 설치하는 것과 동일한 pipe — 배포 설정이 회귀하면 이 스펙이 빨개진다.
+    const pipe = createGlobalValidationPipe();
     const dto = (await pipe.transform(
       {
         fromFulfillmentOrderItemId: 'foi-source',
