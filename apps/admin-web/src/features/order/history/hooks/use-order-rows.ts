@@ -3,9 +3,8 @@
 import { useMemo } from 'react';
 import { customerApi, orders } from '@/lib/api/domains';
 import { useVariantsBatch } from '@/lib/services/products';
-import { useCreateOutboundBatch } from '@/lib/services/orders';
 import type { SalesOrdersQuery } from '@/lib/types/dto/orders';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 export { filterRefundIssueRows } from './refund-filter.utils';
 
 /** 테이블에서 1행 = 주문 라인 1개 */
@@ -410,36 +409,6 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
       userMapQuery.refetch();
     },
   };
-}
-
-/** 선택된 주문 ID로 출고 배치를 생성하고 FO를 연결한다. */
-export function useCreatePickingLists() {
-  const queryClient = useQueryClient();
-  const createBatch = useCreateOutboundBatch();
-
-  return useMutation({
-    mutationFn: async (orderIds: string[]) => {
-      if (orderIds.length === 0) return [];
-      const batches = [];
-      const BATCH_SIZE = 20;
-
-      for (let i = 0; i < orderIds.length; i += BATCH_SIZE) {
-        const batchOrderIds = orderIds.slice(i, i + BATCH_SIZE);
-        const batch = await createBatch.mutateAsync({
-          pickingMethod: 'individual',
-          name: `피킹리스트-${new Date().toISOString().slice(0, 10)}-${Math.floor(i / BATCH_SIZE) + 1}`,
-          salesOrderIds: batchOrderIds,
-        });
-        batches.push(batch);
-      }
-
-      return batches;
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
-      void queryClient.invalidateQueries({ queryKey: ['outbound-batches'] });
-    },
-  });
 }
 
 // 하위 호환 - 모달 컴포넌트가 참조하는 타입 (as any 캐스팅으로 전달되므로 느슨하게 유지)

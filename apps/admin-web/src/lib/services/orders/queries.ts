@@ -48,21 +48,6 @@ export const useSalesOrderItems = (orderId: string) => {
 
 // ===== 출고 배치 관련 쿼리 (D2) =====
 
-export const useOutboundBatches = (warehouseId?: string) => {
-  return useQuery({
-    queryKey: orderQueryKeys.outboundBatchList(warehouseId),
-    queryFn: () => orders.outboundBatches.list(warehouseId),
-  });
-};
-
-export const useOutboundBatch = (id: string) => {
-  return useQuery({
-    queryKey: orderQueryKeys.outboundBatch(id),
-    queryFn: () => orders.outboundBatches.get(id),
-    enabled: !!id,
-  });
-};
-
 export const useOutboundBatchesV2 = (query: OutboundBatchV2ListQuery = {}) => {
   return useQuery({
     queryKey: orderQueryKeys.outboundBatchesV2(query),
@@ -92,23 +77,6 @@ export const useOutboundBatchWorkItems = (id: string) => {
     queryKey: orderQueryKeys.outboundBatchWorkItems(id),
     queryFn: () => orders.outboundBatches.getWorkItems(id),
     enabled: !!id,
-  });
-};
-
-export const useOutboundBatchPickingList = (id: string) => {
-  return useQuery({
-    queryKey: orderQueryKeys.outboundBatchPickingList(id),
-    queryFn: () => orders.outboundBatches.getPickingList(id),
-    enabled: !!id,
-  });
-};
-
-export const useAvailableFulfillmentOrders = (warehouseId: string) => {
-  return useQuery({
-    queryKey: orderQueryKeys.availableFulfillmentOrders(warehouseId),
-    queryFn: () =>
-      orders.outboundBatches.getAvailableFulfillmentOrders(warehouseId),
-    enabled: !!warehouseId,
   });
 };
 
@@ -200,54 +168,6 @@ export const useLocationOptimizationZones = () => {
   return useQuery({
     queryKey: orderQueryKeys.locationOptimizationZones,
     queryFn: () => orders.locationOptimization.getZones(),
-  });
-};
-
-// 피킹 관련 쿼리
-export const usePickings = () => {
-  return useQuery({
-    queryKey: orderQueryKeys.pickings,
-    queryFn: () => Promise.resolve([]), // picking은 세션/배치 단위라 목록 API 없음
-  });
-};
-
-export const usePicking = (id: string) => {
-  return useQuery({
-    queryKey: orderQueryKeys.picking(id),
-    queryFn: () => Promise.resolve({ id }),
-    enabled: !!id,
-  });
-};
-
-export const usePickingList = (orderId: string) => {
-  return useQuery({
-    queryKey: orderQueryKeys.pickingList(orderId),
-    queryFn: () => Promise.resolve([]),
-    enabled: !!orderId,
-  });
-};
-
-export const useBatchPickingOperations = (batchId: string) => {
-  return useQuery({
-    queryKey: orderQueryKeys.batchOperations(batchId),
-    queryFn: () => orders.picking.getBatchOperations(batchId),
-    enabled: !!batchId,
-  });
-};
-
-export const useBatchPickingProgress = (batchId: string) => {
-  return useQuery({
-    queryKey: orderQueryKeys.batchProgress(batchId),
-    queryFn: () => orders.picking.getBatchProgress(batchId),
-    enabled: !!batchId,
-  });
-};
-
-export const usePickingSession = (foId: string) => {
-  return useQuery({
-    queryKey: orderQueryKeys.pickingSession(foId),
-    queryFn: () => orders.picking.getPickingSession(foId),
-    enabled: !!foId,
   });
 };
 
@@ -425,21 +345,6 @@ export const useLegacyPurchaseOrder = (id: string) => {
 };
 
 // 송장 관련 쿼리
-export const useInvoices = () => {
-  return useQuery({
-    queryKey: orderQueryKeys.invoices,
-    queryFn: () => Promise.resolve([]), // 목록 API 없음 — FO 단위 발행 후 ID로 조회
-  });
-};
-
-export const useInvoice = (id: string) => {
-  return useQuery({
-    queryKey: orderQueryKeys.invoice(id),
-    queryFn: () => orders.invoices.getDetail(id),
-    enabled: !!id,
-  });
-};
-
 export const useInvoiceOperation = (operationId: string) => {
   return useQuery({
     queryKey: orderQueryKeys.invoiceOperation(operationId),

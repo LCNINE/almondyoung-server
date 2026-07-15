@@ -11,9 +11,6 @@ export const orderQueryKeys = {
   // 출고 배치 관련
   outboundBatches: ['outbound-batches'] as const,
   outboundBatchesV2Root: ['outbound-batches', 'v2'] as const,
-  outboundBatchList: (warehouseId?: string) =>
-    ['outbound-batches', 'list', warehouseId ?? ''] as const,
-  outboundBatch: (id: string) => ['outbound-batches', id] as const,
   outboundBatchesV2: (params?: object) =>
     [...orderQueryKeys.outboundBatchesV2Root, 'list', params ?? {}] as const,
   outboundBatchV2: (id: string) => ['outbound-batches', 'v2', id] as const,
@@ -21,20 +18,6 @@ export const orderQueryKeys = {
     ['outbound-batches', 'v2', id, 'eligible-shipments'] as const,
   outboundBatchWorkItems: (id: string) =>
     ['outbound-batches', 'v2', id, 'work-items'] as const,
-  outboundBatchPickingList: (id: string) =>
-    ['outbound-batches', id, 'picking-list'] as const,
-  availableFulfillmentOrders: (warehouseId: string) =>
-    ['outbound-batches', 'available', warehouseId] as const,
-
-  // 피킹 관련
-  pickings: ['pickings'] as const,
-  picking: (id: string) => ['pickings', id] as const,
-  pickingList: (orderId: string) => ['pickings', 'list', orderId] as const,
-  pickingSession: (foId: string) => ['pickings', 'session', foId] as const,
-  batchOperations: (batchId: string) =>
-    ['pickings', 'batch', batchId, 'operations'] as const,
-  batchProgress: (batchId: string) =>
-    ['pickings', 'batch', batchId, 'progress'] as const,
 
   // 이행 관련
   fulfillments: ['fulfillments'] as const,
@@ -93,7 +76,6 @@ export const orderQueryKeys = {
 
   // 송장 관련
   invoices: ['invoices'] as const,
-  invoice: (id: string) => ['invoices', id] as const,
   invoiceOperation: (id: string) => ['invoice-operations', id] as const,
 
   // 직배송 관련

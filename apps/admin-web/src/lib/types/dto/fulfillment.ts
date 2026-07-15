@@ -62,30 +62,6 @@ export interface ReservationSummary {
   requestedAt?: string | null;
 }
 
-export interface InvoiceSummary {
-  id: string;
-  invoiceNumber: string;
-  status: InvoiceStatus;
-  carrierCode: string | null;
-  issueMethod: InvoiceIssueMethod;
-}
-
-export type FulfillmentInvoiceSummary = InvoiceSummary;
-
-export interface ShipmentSummary {
-  id: string;
-  trackingNo: string;
-  carrier: string;
-  status: string;
-  eta: string | null;
-  invoiceUrl: string | null;
-}
-
-export interface BatchSummary {
-  id: string;
-  batchNumber: string;
-}
-
 /** GET /fulfillments 목록 / 상세 응답 (Core FulfillmentOrderResponseDto) */
 export interface FulfillmentOrder {
   id: string;
@@ -109,9 +85,6 @@ export interface FulfillmentOrder {
   labelNo: string | null;
   createdAt: string;
   updatedAt: string;
-  invoice: InvoiceSummary | null;
-  shipment?: ShipmentSummary | null;
-  batch?: BatchSummary | null;
 }
 
 /** GET /fulfillments/:id 상세 응답 (items, reservations, adminAvailableActions 포함) */
@@ -140,18 +113,6 @@ export interface ListFulfillmentsQuery {
 export type FulfillmentOrdersQuery = ListFulfillmentsQuery & {
   status?: FulfillmentOrderStatus;
 };
-
-/** POST /fulfillments/:id/reserve body */
-export interface ReserveRequest {
-  fulfillmentOrderItemId: string;
-  quantity: number;
-}
-
-/** POST /fulfillments/:id/unreserve body */
-export interface UnreserveRequest {
-  fulfillmentOrderItemId: string;
-  quantity: number;
-}
 
 /** POST /fulfillments/:id/transfer-reservation body */
 export interface TransferReservationRequest {
@@ -242,102 +203,6 @@ export type FulfillmentOrderListItem = FulfillmentOrderDetail;
 export interface FulfillmentOrdersListResponse {
   data: FulfillmentOrderListItem[];
   total: number;
-}
-
-// ===== Picking =====
-
-export interface BatchPickRequest {
-  batchId: string;
-  skuId: string;
-  pickedQty: number;
-  locationCode?: string;
-  pickerUserId?: string;
-}
-
-export interface PickIndividualItemRequest {
-  pickedQty: number;
-}
-
-export interface ScanBarcodeRequest {
-  barcode: string;
-  batchId?: string;
-  fulfillmentOrderId?: string;
-  warehouseId: string;
-  pickerUserId?: string;
-}
-
-export interface PickByBarcodeRequest {
-  barcode: string;
-  pickedQty: number;
-  batchId?: string;
-  fulfillmentOrderId?: string;
-  warehouseId: string;
-  pickerUserId?: string;
-  locationCode?: string;
-}
-
-export interface GenerateBarcodeRequest {
-  type: 'sku' | 'foi' | 'fo';
-  id: string;
-}
-
-// 백엔드 picking-process.service.ts 의 PickingOperation/PickingProgress/IndividualPickingSession 과 1:1
-export interface PickingOperationFoiDetail {
-  foiId: string;
-  fulfillmentOrderId: string;
-  salesOrderId: string | null;
-  salesOrderLineId: string | null;
-  requiredQty: number;
-  pickedQty: number;
-  remainingQty: number;
-}
-
-// SKU 단위로 집계된 배치 피킹 작업 (skuCode/skuName 은 백엔드 skus 조인으로 제공)
-export interface PickingOperation {
-  batchId: string;
-  skuId: string;
-  skuCode: string;
-  skuName: string;
-  locationCode?: string; // ⚠️ 현재 백엔드 미구현 — 항상 undefined
-  totalQty: number;
-  pickedQty: number;
-  remainingQty: number;
-  foiDetails: PickingOperationFoiDetail[];
-}
-
-export interface PickingProgress {
-  batchId: string;
-  totalSkus: number;
-  completedSkus: number;
-  totalItems: number;
-  pickedItems: number;
-  remainingItems: number;
-  completionPercentage: number;
-}
-
-export interface PickingSessionItem {
-  foiId: string;
-  skuId: string;
-  skuCode: string;
-  skuName: string;
-  requiredQty: number;
-  pickedQty: number;
-  locationCode?: string; // ⚠️ 현재 백엔드 미구현 — 항상 undefined
-  isCompleted: boolean;
-}
-
-// 개별 FO 피킹 세션 (POST /picking/fulfillment-orders/:id/start, GET .../session)
-export interface PickingSession {
-  fulfillmentOrderId: string;
-  items: PickingSessionItem[];
-  totalItems: number;
-  completedItems: number;
-  completionPercentage: number;
-}
-
-export interface GenerateBarcodeResponse {
-  barcode: string;
-  uri?: string;
 }
 
 // ===== Inspection =====
@@ -501,74 +366,6 @@ export interface QualityMetricsQuery {
   inspectorUserId?: string;
 }
 
-// ===== Invoice =====
-
-export type InvoiceIssueMethod = 'goodsflow' | 'hanjin' | 'direct' | 'self';
-export type InvoiceStatus = 'issued' | 'printed' | 'shipped' | 'canceled';
-
-export interface IssueInvoiceRequest {
-  fulfillmentOrderId: string;
-  carrierCode: string;
-  /** direct(직접 입력) 발행 시 필수 — 택배사 발급 실제 운송장 번호 */
-  invoiceNumber?: string;
-  recipientName: string;
-  recipientAddress: string;
-  recipientPhone: string;
-  senderName?: string;
-  senderPhone?: string;
-  deliveryMessage?: string;
-  issueMethod?: InvoiceIssueMethod;
-}
-
-export interface IssueInvoiceResponse {
-  invoiceId: string;
-}
-
-export interface PrintInvoicesRequest {
-  invoiceIds: string[];
-}
-
-export interface PrintInvoicesResponse {
-  printUri?: string;
-  message?: string;
-}
-
-export interface InvoiceDetail {
-  id: string;
-  fulfillmentOrderId: string;
-  carrierCode: string;
-  trackingNumber?: string;
-  issueMethod: InvoiceIssueMethod;
-  status: InvoiceStatus;
-  recipientName?: string;
-  recipientAddress?: string;
-  recipientPhone?: string;
-  printUri?: string;
-  issuedAt?: string;
-  printedAt?: string;
-  shippedAt?: string;
-  canceledAt?: string;
-  items: Array<{
-    skuId: string;
-    skuCode: string;
-    skuName: string;
-    quantity: number;
-  }>;
-}
-
-export interface TrackInvoiceResponse {
-  invoiceId: string;
-  trackingNumber: string;
-  carrierCode: string;
-  trackingStatus: string;
-  deliveryEvents: Array<{
-    time: string;
-    status: string;
-    location?: string;
-    description: string;
-  }>;
-}
-
 // ===== Outbound Batches (D2) =====
 
 export type OutboundBatchStatus =
@@ -576,84 +373,6 @@ export type OutboundBatchStatus =
   | 'picking'
   | 'completed'
   | 'canceled';
-export type PickingMethod = 'individual' | 'total_picking';
-
-export interface CreateOutboundBatchRequest {
-  warehouseId?: string;
-  pickingMethod: PickingMethod;
-  name?: string;
-  scheduledPickingAt?: string;
-  salesOrderIds?: string[];
-}
-
-export interface CreateOutboundBatchResponse {
-  batchId: string;
-  linkedFoCount: number;
-}
-
-export interface AddFOsToBatchRequest {
-  fulfillmentOrderIds: string[];
-}
-
-export interface OutboundBatch {
-  id: string;
-  name?: string;
-  warehouseId: string;
-  pickingMethod: PickingMethod;
-  status: OutboundBatchStatus;
-  totalItems: number;
-  totalQty: number;
-  scheduledPickingAt?: string;
-  createdAt: string;
-}
-
-export interface OutboundBatchFOItem {
-  id: string;
-  salesOrderId: string;
-  salesOrderLineId: string;
-  skuId: string;
-  qty: number;
-  pickedQty: number;
-}
-
-export interface OutboundBatchFO {
-  id: string;
-  status: FulfillmentOrderStatus;
-  priority: FulfillmentOrderPriority;
-  totalItems: number;
-  totalQty: number;
-  items: OutboundBatchFOItem[];
-}
-
-export interface OutboundBatchDetail extends OutboundBatch {
-  startedAt?: string;
-  completedAt?: string;
-  fulfillmentOrders: OutboundBatchFO[];
-}
-
-export interface PickingListAggregateItem {
-  skuId: string;
-  skuName: string;
-  locationCode?: string; // ⚠️ 항상 undefined — 서버 미구현
-  totalQty: number;
-  fulfillmentOrderItems: Array<{
-    foiId: string;
-    fulfillmentOrderId: string;
-    salesOrderId: string;
-    salesOrderLineId: string;
-    qty: number;
-    pickedQty: number;
-  }>;
-}
-
-export interface AvailableFulfillmentOrder {
-  id: string;
-  priority: FulfillmentOrderPriority;
-  fulfillmentMode: FulfillmentMode;
-  totalItems: number;
-  totalQty: number;
-  createdAt: string;
-}
 
 // ===== Direct Ship (D2) =====
 

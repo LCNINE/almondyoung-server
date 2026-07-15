@@ -202,18 +202,6 @@ export const fulfillmentOrder = {
     return response.data;
   },
 
-  // FOI 단위 재고 예약 (POST /fulfillments/:id/reserve)
-  reserveItem: async (
-    id: string,
-    data: { fulfillmentOrderItemId: string; quantity: number }
-  ): Promise<unknown> => {
-    const response = await client.post(
-      `${ALMONDYOUNG_API_BASE_URL}/fulfillments/${encodeURIComponent(id)}/reserve`,
-      data
-    );
-    return response.data;
-  },
-
   // Fulfillment Order 삭제 (legacy cancel)
   delete: async (id: string): Promise<DeleteFulfillmentOrderResponse> => {
     const response = await client.delete(

@@ -21,10 +21,7 @@ import {
 import { FoStatusBadge } from '@/components/table/table-cells/fulfillment';
 import { usePermission } from '@/hooks/use-permission';
 import { useFulfillmentOrder } from '@/lib/services/orders/queries';
-import {
-  useCancelFulfillment,
-  useReserveFulfillmentItem,
-} from '@/lib/services/orders/mutations';
+import { useCancelFulfillment } from '@/lib/services/orders/mutations';
 import { FULFILLMENT_SCOPES } from '@/lib/services/orders/operation-policy';
 import type {
   FulfillmentMode,
@@ -99,7 +96,6 @@ export function FulfillmentDetail({ id }: { id: string }) {
   const { hasScope, isPermissionLoading } = usePermission();
   const { data, isLoading } = useFulfillmentOrder(id);
   const cancelMutation = useCancelFulfillment();
-  const reserveMutation = useReserveFulfillmentItem();
   const canOperate =
     !isPermissionLoading && !!hasScope([FULFILLMENT_SCOPES.operate]);
 
@@ -137,19 +133,6 @@ export function FulfillmentDetail({ id }: { id: string }) {
       toast.success('출고주문이 취소되었습니다.');
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : '취소에 실패했습니다.');
-    }
-  };
-
-  const handleReserve = async (foiId: string, remaining: number) => {
-    try {
-      await reserveMutation.mutateAsync({
-        id,
-        fulfillmentOrderItemId: foiId,
-        quantity: remaining,
-      });
-      toast.success(`재고 ${remaining}개 예약 완료`);
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : '예약에 실패했습니다.');
     }
   };
 
@@ -232,54 +215,34 @@ export function FulfillmentDetail({ id }: { id: string }) {
                 <th className="py-2 pr-3">피킹</th>
                 <th className="py-2 pr-3">출고</th>
                 <th className="py-2 pr-3">상태</th>
-                <th className="py-2 pr-3" />
               </tr>
             </thead>
             <tbody>
-              {fo.items.map((item) => {
-                const remaining = item.qty - item.reservedQty;
-                const canReserve =
-                  canOperate &&
-                  remaining > 0 &&
-                  fo.adminAvailableActions.includes('reserve');
-                return (
-                  <tr key={item.id} className="border-b last:border-0">
-                    <td className="py-2 pr-3">
-                      <div className="flex flex-col">
-                        <span className="font-medium">{item.skuName}</span>
-                        <span className="font-mono text-xs text-gray-500">
-                          {item.skuCode}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-2 pr-3">{item.qty}</td>
-                    <td className="py-2 pr-3">{item.reservedQty}</td>
-                    <td className="py-2 pr-3">{item.pickedQty}</td>
-                    <td className="py-2 pr-3">{item.shippedQty}</td>
-                    <td className="py-2 pr-3">
-                      <span className="text-xs text-gray-600">
-                        {item.status}
+              {fo.items.map((item) => (
+                <tr key={item.id} className="border-b last:border-0">
+                  <td className="py-2 pr-3">
+                    <div className="flex flex-col">
+                      <span className="font-medium">{item.skuName}</span>
+                      <span className="font-mono text-xs text-gray-500">
+                        {item.skuCode}
                       </span>
-                    </td>
-                    <td className="py-2 pr-3 text-right">
-                      {canReserve && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleReserve(item.id, remaining)}
-                          disabled={reserveMutation.isPending}
-                        >
-                          예약 ({remaining})
-                        </Button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
+                    </div>
+                  </td>
+                  <td className="py-2 pr-3">{item.qty}</td>
+                  <td className="py-2 pr-3">{item.reservedQty}</td>
+                  <td className="py-2 pr-3">{item.pickedQty}</td>
+                  <td className="py-2 pr-3">{item.shippedQty}</td>
+                  <td className="py-2 pr-3">
+                    <span className="text-xs text-gray-600">
+                      {item.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
               {fo.items.length === 0 && (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={6}
                     className="py-6 text-center text-muted-foreground"
                   >
                     출고 라인이 없습니다.

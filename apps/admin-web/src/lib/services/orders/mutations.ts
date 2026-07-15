@@ -19,20 +19,9 @@ import type {
   ForceShipmentRequest,
   BulkApproveRequest,
   CompleteInspectionSessionRequest,
-  IssueInvoiceRequest,
-  PrintInvoicesRequest,
-  BatchPickRequest,
-  PickByBarcodeRequest,
-  PickIndividualItemRequest,
-  ScanBarcodeRequest,
-  GenerateBarcodeRequest,
-  CreateOutboundBatchRequest,
-  AddFOsToBatchRequest,
   ForwardDirectShipOrdersRequest,
   CompleteDirectShipOrdersRequest,
   CreateStandaloneFulfillmentRequest,
-  ReserveRequest,
-  UnreserveRequest,
   TransferReservationRequest,
   InspectByScanRequest,
   SplitShipmentRequest,
@@ -159,158 +148,6 @@ export const useAdminManualRefundComplete = () => {
   });
 };
 
-// 레거시 stub — D2 useCreateOutboundBatch로 대체됨
-
-export const useUpdateOutboundBatch = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: any }) =>
-      Promise.resolve({ id, ...data }),
-    onSuccess: (_, { id }) => {
-      queryClient.invalidateQueries({
-        queryKey: orderQueryKeys.outboundBatches,
-      });
-      queryClient.invalidateQueries({
-        queryKey: orderQueryKeys.outboundBatch(id),
-      });
-    },
-  });
-};
-
-export const useDeleteOutboundBatch = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (id: string) => {
-      void id;
-      return Promise.resolve();
-    },
-    onSuccess: (_, id) => {
-      queryClient.invalidateQueries({
-        queryKey: orderQueryKeys.outboundBatches,
-      });
-      queryClient.removeQueries({ queryKey: orderQueryKeys.outboundBatch(id) });
-    },
-  });
-};
-
-// ===== 피킹 관련 뮤테이션 =====
-
-export const useStartIndividualPicking = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (foId: string) => orders.picking.startIndividualPicking(foId),
-    onSuccess: (_, foId) => {
-      queryClient.invalidateQueries({
-        queryKey: orderQueryKeys.pickingSession(foId),
-      });
-    },
-  });
-};
-
-export const usePickIndividualItem = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      foiId,
-      data,
-    }: {
-      foiId: string;
-      data: PickIndividualItemRequest;
-    }) => orders.picking.pickIndividualItem(foiId, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: orderQueryKeys.pickings });
-    },
-  });
-};
-
-export const useCompleteIndividualPicking = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (foId: string) =>
-      orders.picking.completeIndividualPicking(foId),
-    onSuccess: (_, foId) => {
-      queryClient.invalidateQueries({
-        queryKey: orderQueryKeys.pickingSession(foId),
-      });
-    },
-  });
-};
-
-export const useResetPickingItem = () => {
-  return useMutation({
-    mutationFn: (foiId: string) => orders.picking.resetPickingForItem(foiId),
-  });
-};
-
-export const useBatchPick = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: BatchPickRequest) => orders.picking.batchPick(data),
-    onSuccess: (_data, variables) => {
-      // 피킹 반영 후 집계/진행률을 다시 불러와 화면(뱃지·진행률)이 갱신되도록 한다.
-      queryClient.invalidateQueries({
-        queryKey: orderQueryKeys.batchOperations(variables.batchId),
-      });
-      queryClient.invalidateQueries({
-        queryKey: orderQueryKeys.batchProgress(variables.batchId),
-      });
-    },
-  });
-};
-
-export const useScanBarcode = () => {
-  return useMutation({
-    mutationFn: (data: ScanBarcodeRequest) => orders.picking.scanBarcode(data),
-  });
-};
-
-export const usePickByBarcode = () => {
-  return useMutation({
-    mutationFn: (data: PickByBarcodeRequest) =>
-      orders.picking.pickByBarcodeScan(data),
-  });
-};
-
-export const useGenerateBarcode = () => {
-  return useMutation({
-    mutationFn: (data: GenerateBarcodeRequest) =>
-      orders.picking.generateBarcode(data),
-  });
-};
-
-// ===== 출고주문(FO) 액션 뮤테이션 =====
-
-// FO 상세/목록 캐시 무효화 공통 처리
-const useInvalidateFulfillment = () => {
-  const queryClient = useQueryClient();
-  return (id: string) => {
-    queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillment(id) });
-    queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillments });
-  };
-};
-
-export const useReserveFulfillmentItem = () => {
-  const invalidate = useInvalidateFulfillment();
-  return useMutation({
-    mutationFn: ({
-      id,
-      fulfillmentOrderItemId,
-      quantity,
-    }: {
-      id: string;
-      fulfillmentOrderItemId: string;
-      quantity: number;
-    }) =>
-      orders.fulfillmentOrder.reserveItem(id, {
-        fulfillmentOrderItemId,
-        quantity,
-      }),
-    onSuccess: (_, { id }) => invalidate(id),
-  });
-};
-
 // ===== 검수 관련 뮤테이션 =====
 
 export const useStartInspection = () => {
@@ -398,44 +235,6 @@ export const useBulkApprove = () => {
       orders.inspection.bulkApprove(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['inspection'] });
-    },
-  });
-};
-
-// ===== 송장 관련 뮤테이션 =====
-
-export const useIssueInvoice = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: IssueInvoiceRequest) => orders.invoices.issue(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: orderQueryKeys.invoices });
-    },
-  });
-};
-
-export const usePrintInvoices = () => {
-  return useMutation({
-    mutationFn: (data: PrintInvoicesRequest) => orders.invoices.print(data),
-  });
-};
-
-export const useMarkInvoiceShipped = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => orders.invoices.ship(id),
-    onSuccess: (_, id) => {
-      queryClient.invalidateQueries({ queryKey: orderQueryKeys.invoice(id) });
-    },
-  });
-};
-
-export const useCancelInvoice = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => orders.invoices.cancel(id),
-    onSuccess: (_, id) => {
-      queryClient.invalidateQueries({ queryKey: orderQueryKeys.invoice(id) });
     },
   });
 };
@@ -672,99 +471,6 @@ export const useCompleteMatching = () => {
   });
 };
 
-// ===== 출고 배치 뮤테이션 (D2) =====
-
-export const useCreateOutboundBatch = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: CreateOutboundBatchRequest) =>
-      orders.outboundBatches.create(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: orderQueryKeys.outboundBatches,
-      });
-    },
-  });
-};
-
-export const useAddFOsToBatch = (batchId: string) => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: AddFOsToBatchRequest) =>
-      orders.outboundBatches.addFulfillmentOrders(batchId, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: orderQueryKeys.outboundBatch(batchId),
-      });
-      queryClient.invalidateQueries({
-        queryKey: orderQueryKeys.outboundBatches,
-      });
-    },
-  });
-};
-
-export const useRemoveFOFromBatch = (batchId: string) => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (foId: string) =>
-      orders.outboundBatches.removeFulfillmentOrder(batchId, foId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: orderQueryKeys.outboundBatch(batchId),
-      });
-      queryClient.invalidateQueries({
-        queryKey: orderQueryKeys.outboundBatches,
-      });
-    },
-  });
-};
-
-export const useStartBatchPicking = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (batchId: string) =>
-      orders.outboundBatches.startPicking(batchId),
-    onSuccess: (_, batchId) => {
-      queryClient.invalidateQueries({
-        queryKey: orderQueryKeys.outboundBatch(batchId),
-      });
-      queryClient.invalidateQueries({
-        queryKey: orderQueryKeys.outboundBatches,
-      });
-    },
-  });
-};
-
-export const useCompleteBatch = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (batchId: string) => orders.outboundBatches.complete(batchId),
-    onSuccess: (_, batchId) => {
-      queryClient.invalidateQueries({
-        queryKey: orderQueryKeys.outboundBatch(batchId),
-      });
-      queryClient.invalidateQueries({
-        queryKey: orderQueryKeys.outboundBatches,
-      });
-    },
-  });
-};
-
-export const useCancelBatch = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (batchId: string) => orders.outboundBatches.cancel(batchId),
-    onSuccess: (_, batchId) => {
-      queryClient.invalidateQueries({
-        queryKey: orderQueryKeys.outboundBatch(batchId),
-      });
-      queryClient.invalidateQueries({
-        queryKey: orderQueryKeys.outboundBatches,
-      });
-    },
-  });
-};
-
 // ===== 직배송 뮤테이션 (D2) =====
 
 export const useForwardDirectShipOrders = () => {
@@ -840,42 +546,6 @@ export const useCreateFulfillmentOrder = () => {
       orders.fulfillmentOrder.createStandalone(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillments });
-    },
-  });
-};
-
-export const useCheckFulfillmentAvailability = (id: string) => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: () => orders.fulfillments.checkAvailability(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: orderQueryKeys.fulfillment(id),
-      });
-      queryClient.invalidateQueries({
-        queryKey: ['inventory', 'reservations'],
-      });
-    },
-  });
-};
-
-export const useReserveFulfillment = (id: string) => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: ReserveRequest) => orders.fulfillments.reserve(id, data),
-    onSuccess: () => {
-      invalidateFulfillment(queryClient, id);
-    },
-  });
-};
-
-export const useUnreserveFulfillment = (id: string) => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (data: UnreserveRequest) =>
-      orders.fulfillments.unreserve(id, data),
-    onSuccess: () => {
-      invalidateFulfillment(queryClient, id);
     },
   });
 };

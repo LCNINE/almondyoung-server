@@ -12,8 +12,6 @@ import type {
   FulfillmentOutboxEvent,
   ListFulfillmentsQuery,
   CreateFulfillmentOrderRequest,
-  ReserveRequest,
-  UnreserveRequest,
   TransferReservationRequest,
   TransferCandidate,
 } from '@/lib/types/dto/fulfillment';
@@ -42,29 +40,6 @@ export const fulfillmentsClient = {
     data: CreateFulfillmentOrderRequest
   ): Promise<FulfillmentOrder> => {
     const res = await client.post(BASE, data);
-    return res.data;
-  },
-
-  checkAvailability: async (id: string): Promise<unknown> => {
-    const res = await client.post(
-      `${BASE}/${encodeURIComponent(id)}/check-availability`
-    );
-    return res.data;
-  },
-
-  reserve: async (id: string, data: ReserveRequest): Promise<unknown> => {
-    const res = await client.post(
-      `${BASE}/${encodeURIComponent(id)}/reserve`,
-      data
-    );
-    return res.data;
-  },
-
-  unreserve: async (id: string, data: UnreserveRequest): Promise<unknown> => {
-    const res = await client.post(
-      `${BASE}/${encodeURIComponent(id)}/unreserve`,
-      data
-    );
     return res.data;
   },
 

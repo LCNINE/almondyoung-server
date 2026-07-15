@@ -17,14 +17,10 @@ export {
   useSalesOrder,
   useSalesOrderItems,
   // 출고 배치 (D2)
-  useOutboundBatches,
-  useOutboundBatch,
   useOutboundBatchesV2,
   useOutboundBatchV2,
   useOutboundBatchEligibleShipments,
   useOutboundBatchWorkItems,
-  useOutboundBatchPickingList,
-  useAvailableFulfillmentOrders,
   // 직배송 (D2)
   useDirectShipDashboard,
   useDirectShipCompanies,
@@ -39,13 +35,6 @@ export {
   useConsolidationRules,
   // 위치 최적화 (D2)
   useLocationOptimizationZones,
-  // 피킹
-  usePickings,
-  usePicking,
-  usePickingList,
-  useBatchPickingOperations,
-  useBatchPickingProgress,
-  usePickingSession,
   // 이행
   useFulfillments,
   useFulfillment,
@@ -64,8 +53,6 @@ export {
   useInspectionHistory,
   useQualityMetrics,
   // 송장
-  useInvoices,
-  useInvoice,
   useInvoiceOperation,
   // 레거시
   useDirectShips,
@@ -90,7 +77,6 @@ export {
   // 출고주문(FO) 액션
   useCreateFulfillmentOrder,
   useCancelFulfillment,
-  useReserveFulfillmentItem,
   useSplitShipment,
   useReviseShipmentRecipient,
   usePlanShipment,
@@ -104,12 +90,6 @@ export {
   useShipmentInspectionScan,
   useForceShipmentDispatch,
   // 출고 배치 (D2)
-  useCreateOutboundBatch,
-  useAddFOsToBatch,
-  useRemoveFOFromBatch,
-  useStartBatchPicking,
-  useCompleteBatch,
-  useCancelBatch,
   useCreateOutboundBatchV2,
   useAddShipmentToBatch,
   useExcludeShipmentFromBatch,
@@ -137,9 +117,6 @@ export {
   useAnalyzeConsolidation,
   useAutoConsolidate,
   // FO 액션 (Core /fulfillments canonical)
-  useCheckFulfillmentAvailability,
-  useReserveFulfillment,
-  useUnreserveFulfillment,
   useTransferFulfillmentReservation,
   useDeliverFulfillment,
 } from './mutations';
