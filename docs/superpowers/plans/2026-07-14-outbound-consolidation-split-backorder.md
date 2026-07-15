@@ -2,6 +2,28 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+## 진행 상태 (2026-07-15 기준)
+
+Task 1~23 구현 완료, Task 24~25 미착수. 브랜치 `feat/outbound-v2-consolidation-backorder`.
+
+**체크 근거를 구분해서 읽어야 한다.**
+
+- **Task 1~22**: 체크 근거는 *각 Task 가 지정한 `Commit:` 메시지의 커밋이 실제로 존재한다*는 것뿐이다. 항목별 재검증은 하지 않았다. Task 23 리뷰에서 "지정 커밋이 있어도 항목이 실제로는 충족되지 않은" 사례가 두 건 나왔으므로(아래), 이 체크를 항목별 완료 증거로 신뢰하면 안 된다. 릴리스 게이트를 통과시키려면 Task 24 가 요구하는 실환경 증거로 다시 확인해야 한다.
+- **Task 23**: 코드 리뷰 + 로컬 실행으로 검증했다. 부분 충족 항목은 체크하지 않고 아래에 사유를 남겼다.
+- **Release gate checklist**: 전부 미체크다. 로컬 스위트 통과는 첫 항목의 필요조건일 뿐이고, 나머지는 실환경 커토버(Task 24) 없이는 채울 수 없다.
+
+**Task 23 리뷰에서 발견돼 고친 것** (커밋 `85dc008bb`, `b24fe78bd`):
+
+- recall 의 데드락 수정이 short-pick 에 적용되지 않아 recall↔short-pick / short-pick↔short-pick 데드락이 남아 있었다. `shipment_operation_members.shipment_id` FK 가 KEY SHARE 를 잡는다는 사실이 누락된 결과다.
+- migration rehearsal 의 watermark 검증이 `isNewSalesOrder: false` 로 단락돼, cutover 비교 로직을 지워도 통과하는 상태였다. Task 24 의 "replay an older event and prove it cannot enqueue FO" 게이트가 이 테스트에 걸려 있었다.
+
+**후속 이슈로 남긴 것** (Task 23 범위, 커밋되지 않음):
+
+- 시나리오 14 가 실제 recall 이 만들 수 없는 상태를 손으로 심고 시작해 13→14 연쇄가 검증되지 않는다.
+- outbox topology 헬퍼 150줄이 세 스펙에 복붙돼 있다. `__support__/` 로 하이스팅해야 한다.
+- `protectedHashes` 가 보호 테이블 전체가 아니라 고정 ID 3행만 해싱한다.
+- 시나리오 06 의 이름과 실제 동작이 다르다(A 는 라벨 실패로 batch 진입 자체가 불가하므로 "sibling batch shipment" 가 아니다).
+
 **Goal:** FO 중심의 단일 출고 경로를 shipment/attempt 중심 모델로 교체해 부분예약·백오더, Draft 분할/합배송, shipment 단위 송장, 세 가지 피킹 전략, 즉시 dispatch, short-pick 격리, recall/재출고를 수량 보존과 멱등성이 검증된 상태로 제공한다.
 
 **Architecture:** SO/FO/FOI는 원수요와 정산 progress를, shipment/line/invoice/dispatch-attempt는 출고 truth를, reservation/picking/session/stock-ledger는 물리 재고 truth를 소유한다. Core command는 이 세 축을 한 transaction과 고정 잠금 순서로 조정하고, 외부 송장 API만 durable saga로 분리한다. 실제 V1 출고 이력이 없다는 전제에서 fulfillment 작업 데이터는 maintenance window에 명시적 allowlist로 제거하며 SKU/SO/stock ledger는 보존한다.
@@ -140,17 +162,17 @@ session handed-in
 - `FulfillmentWorkflowGate.shouldEnqueueFo(eventOccurredAt,isNewSalesOrder)` / `shouldRunFoCreation()` / `shouldRunReservationRetry()`
 - maintenance rejection: HTTP 503 with stable code `FULFILLMENT_MAINTENANCE`.
 
-- [ ] Add env validation and templates. In production, reject a missing/unknown mode and require a valid cutover timestamp in `v2`; make mode/watermark visible in startup logs and health details.
-- [ ] Add characterization tests for current FO creation, reservation retry, invoice void, force shipment, consolidation stub, FO completed/delivered semantics and drop-ship bypass before changing them.
-- [ ] Put the gate at backlog enqueue, service and worker boundaries, not only the controller, so event redelivery/cron/manual calls cannot bypass maintenance.
-- [ ] In `v2`, enqueue only when the SO was created by this event and domain time `payload.createdAt >= FULFILLMENT_V2_CUTOVER_AT`. Do not use the Kafka redelivery time as the cutoff. Existing SO redelivery may retry ownership grants but never creates a fulfillment backlog; a missing/unparseable domain time fails closed and emits an alert.
-- [ ] In maintenance, leave SO ingestion and general outbox dispatch alive while preventing backlog claims, retry candidates and all physical fulfillment writes.
-- [ ] Make the shared dispatcher skip/avoid leasing legacy and V2 fulfillment/shipment event rows in maintenance while continuing inventory/core-order topics. This preserves pending fulfillment rows for Task 4 cleanup without blocking unrelated outbox traffic.
-- [ ] Return 410 from the fake consolidation mutation until Task 11 replaces it. Remove `total_picking` from admin choices; keep the existing server rejection as defense in depth.
-- [ ] Add temporary admin/master protection to force dispatch, invoice void and consolidation mutation. Task 3 replaces this with scopes.
-- [ ] Verify: `npx jest --runInBand fulfillment-workflow-gate fulfillment-events.consumer fulfillment-order-reservation-retry`.
-- [ ] Build: `yarn build:core && yarn --cwd apps/admin-web type-check`.
-- [ ] Commit: `fix(fulfillment): gate legacy outbound mutations and workers`.
+- [x] Add env validation and templates. In production, reject a missing/unknown mode and require a valid cutover timestamp in `v2`; make mode/watermark visible in startup logs and health details.
+- [x] Add characterization tests for current FO creation, reservation retry, invoice void, force shipment, consolidation stub, FO completed/delivered semantics and drop-ship bypass before changing them.
+- [x] Put the gate at backlog enqueue, service and worker boundaries, not only the controller, so event redelivery/cron/manual calls cannot bypass maintenance.
+- [x] In `v2`, enqueue only when the SO was created by this event and domain time `payload.createdAt >= FULFILLMENT_V2_CUTOVER_AT`. Do not use the Kafka redelivery time as the cutoff. Existing SO redelivery may retry ownership grants but never creates a fulfillment backlog; a missing/unparseable domain time fails closed and emits an alert.
+- [x] In maintenance, leave SO ingestion and general outbox dispatch alive while preventing backlog claims, retry candidates and all physical fulfillment writes.
+- [x] Make the shared dispatcher skip/avoid leasing legacy and V2 fulfillment/shipment event rows in maintenance while continuing inventory/core-order topics. This preserves pending fulfillment rows for Task 4 cleanup without blocking unrelated outbox traffic.
+- [x] Return 410 from the fake consolidation mutation until Task 11 replaces it. Remove `total_picking` from admin choices; keep the existing server rejection as defense in depth.
+- [x] Add temporary admin/master protection to force dispatch, invoice void and consolidation mutation. Task 3 replaces this with scopes.
+- [x] Verify: `npx jest --runInBand fulfillment-workflow-gate fulfillment-events.consumer fulfillment-order-reservation-retry`.
+- [x] Build: `yarn build:core && yarn --cwd apps/admin-web type-check`.
+- [x] Commit: `fix(fulfillment): gate legacy outbound mutations and workers`.
 
 ### Task 2: V2 event contracts 선배포
 
@@ -167,12 +189,12 @@ session handed-in
 - `FULFILLMENT_V2_STREAM.topic.topic = 'fulfillments.events.v2'` with `FulfillmentProgressed`, `FulfillmentReopened`.
 - `ShipmentShipped` contains shipment/attempt/invoice data and orders grouped by `salesChannel/channelOrderId`; each line carries `shipmentLineId`, FOI/SO line IDs, `channelOrderItemId`, SKU and qty.
 
-- [ ] Write schema/parse tests first: reject duplicate/missing line identity, invalid qty and payloads without attempt/invoice identity.
-- [ ] Keep recipient/address PII out of shipment events. Fix partition keys to `shipmentId` for shipment stream and `fulfillmentOrderId` for fulfillment-v2.
-- [ ] Preserve v1 contracts as full-completion compatibility projections; add a test that a partial shipment cannot construct `FulfillmentShipped v1`.
-- [ ] Publish the package contract for Task 3 without registering a Core producer. Core outbox/schema changes wait for the Phase 1 expand deploy.
-- [ ] Verify: `npx jest --runInBand packages/event-contracts` and type-check/build the packages that consume the contracts.
-- [ ] Commit: `feat(events): add shipment and fulfillment progress streams`.
+- [x] Write schema/parse tests first: reject duplicate/missing line identity, invalid qty and payloads without attempt/invoice identity.
+- [x] Keep recipient/address PII out of shipment events. Fix partition keys to `shipmentId` for shipment stream and `fulfillmentOrderId` for fulfillment-v2.
+- [x] Preserve v1 contracts as full-completion compatibility projections; add a test that a partial shipment cannot construct `FulfillmentShipped v1`.
+- [x] Publish the package contract for Task 3 without registering a Core producer. Core outbox/schema changes wait for the Phase 1 expand deploy.
+- [x] Verify: `npx jest --runInBand packages/event-contracts` and type-check/build the packages that consume the contracts.
+- [x] Commit: `feat(events): add shipment and fulfillment progress streams`.
 
 ### Task 3: channel-adapter 선배포, 단일 채널 라우팅, 외부 ID 강제
 
@@ -199,18 +221,18 @@ session handed-in
 - Add `inbox_events.idempotency_key` and partial unique `(event_type,idempotency_key)`.
 - Add `channel_dispatch_operations` keyed by `(dispatchAttemptId,salesOrderId,operation)` with channel, external order ID, request snapshot, status `pending|succeeded|failed|manual_adjustment_required`, attempts/error/result timestamps.
 
-- [ ] Change v1 fulfillment handlers so `FulfillmentShipped` only enqueues Medusa/full-order projection and never calls Naver/Coupang. Remove the two-channel broadcast for shipped/cancelled.
-- [ ] New Kafka handlers only validate and durably insert inbox rows; they do not call channel APIs before inbox commit.
-- [ ] Expand one shipment event to one operation per order. Use an exhaustive routing map (`naver→naver_smartstore`, `coupang→coupang`, Medusa projection-only, unsupported 3PL→manual) and pass `channelOrderId` plus line `channelOrderItemId`; never substitute Core UUIDs.
-- [ ] Encode capability decisions explicitly. Unsupported partial-qty dispatch/recall/cancel becomes `manual_adjustment_required` with operator-visible reason, not a false success.
-- [ ] Implement Coupang/Naver translation tests with captured provider requests. Remove placeholder/fallback product/order identifiers.
-- [ ] Store Medusa shipment/attempt history as arrays and derived partial progress; do not overwrite scalar metadata on every split shipment. Recall marks the referenced attempt without deleting history.
-- [ ] Subscribe channel-adapter to shipment and fulfillment-v2 streams before any Core V2 producer is enabled.
-- [ ] Generate/review migration: `yarn db:generate:channel-adapter`.
-- [ ] Verify duplicate delivery, worker crash after one order succeeds, mixed-channel shipment, missing external IDs and unsupported recall cases.
-- [ ] Run: `npx jest --runInBand apps/channel-adapter/src/consumers apps/channel-adapter/src/services/shipment-dispatch-inbox.worker.spec.ts apps/channel-adapter/src/adapters/medusa/inbox-worker.service.spec.ts`.
-- [ ] Build: `yarn build:channel-adapter`.
-- [ ] Commit: `feat(channel-adapter): consume shipment attempts with single-channel routing`.
+- [x] Change v1 fulfillment handlers so `FulfillmentShipped` only enqueues Medusa/full-order projection and never calls Naver/Coupang. Remove the two-channel broadcast for shipped/cancelled.
+- [x] New Kafka handlers only validate and durably insert inbox rows; they do not call channel APIs before inbox commit.
+- [x] Expand one shipment event to one operation per order. Use an exhaustive routing map (`naver→naver_smartstore`, `coupang→coupang`, Medusa projection-only, unsupported 3PL→manual) and pass `channelOrderId` plus line `channelOrderItemId`; never substitute Core UUIDs.
+- [x] Encode capability decisions explicitly. Unsupported partial-qty dispatch/recall/cancel becomes `manual_adjustment_required` with operator-visible reason, not a false success.
+- [x] Implement Coupang/Naver translation tests with captured provider requests. Remove placeholder/fallback product/order identifiers.
+- [x] Store Medusa shipment/attempt history as arrays and derived partial progress; do not overwrite scalar metadata on every split shipment. Recall marks the referenced attempt without deleting history.
+- [x] Subscribe channel-adapter to shipment and fulfillment-v2 streams before any Core V2 producer is enabled.
+- [x] Generate/review migration: `yarn db:generate:channel-adapter`.
+- [x] Verify duplicate delivery, worker crash after one order succeeds, mixed-channel shipment, missing external IDs and unsupported recall cases.
+- [x] Run: `npx jest --runInBand apps/channel-adapter/src/consumers apps/channel-adapter/src/services/shipment-dispatch-inbox.worker.spec.ts apps/channel-adapter/src/adapters/medusa/inbox-worker.service.spec.ts`.
+- [x] Build: `yarn build:channel-adapter`.
+- [x] Commit: `feat(channel-adapter): consume shipment attempts with single-channel routing`.
 
 ### Task 4: hard-cutover audit/cleanup/verify 도구
 
@@ -229,15 +251,15 @@ session handed-in
 - `yarn fulfillment:v2:cleanup --audit "$AUDIT_PATH" --snapshot-id "$SNAPSHOT_ID" --execute`
 - `yarn fulfillment:v2:verify --audit "$AUDIT_PATH"`
 
-- [ ] Audit exact row counts/FK closure for backlog, FO-target reservations, tracking/lines/shipments, inspection issues, invoices, FO-batch links/batches, FOI/FO and pending legacy fulfillment outbox.
-- [ ] Enumerate affected `(warehouseId,skuId)` pairs and reservation quantities. Detect any shipment-linked SHIP journal/event and exit non-zero if at least one exists.
-- [ ] Write a signed/hashable JSON artifact with schema version, database identity, snapshot ID placeholder, counts and allowlist. Do not commit production artifacts.
-- [ ] Cleanup defaults to dry-run, requires the matching audit hash, explicit `--execute` and an advisory lock. Use ordered `DELETE` statements in one transaction; no table-wide stock reservation/outbox delete and no `TRUNCATE CASCADE`.
-- [ ] Keep sales orders/lines, master data, stock journals/events/ledgers, unrelated outbox/audit rows untouched. Add before/after checks that prove this.
-- [ ] Verify confirmed FO reservations are zero, affected stock reservation/ledger reconciliation has zero drift, legacy pending outbox cannot replay, and no backlog/order event with domain `payload.createdAt < cutoverAt` can recreate old FO.
-- [ ] Integration-test abort-on-SHIP, unrelated reservation/outbox preservation, rollback on mid-cleanup failure and idempotent verify.
-- [ ] Document maintenance entry/exit, platform snapshot evidence, consumer readiness, rollback boundary before first V2 row, and “V2 row exists → stop intake and repair in V2” rule.
-- [ ] Commit: `feat(fulfillment): add audited V2 cutover toolkit`.
+- [x] Audit exact row counts/FK closure for backlog, FO-target reservations, tracking/lines/shipments, inspection issues, invoices, FO-batch links/batches, FOI/FO and pending legacy fulfillment outbox.
+- [x] Enumerate affected `(warehouseId,skuId)` pairs and reservation quantities. Detect any shipment-linked SHIP journal/event and exit non-zero if at least one exists.
+- [x] Write a signed/hashable JSON artifact with schema version, database identity, snapshot ID placeholder, counts and allowlist. Do not commit production artifacts.
+- [x] Cleanup defaults to dry-run, requires the matching audit hash, explicit `--execute` and an advisory lock. Use ordered `DELETE` statements in one transaction; no table-wide stock reservation/outbox delete and no `TRUNCATE CASCADE`.
+- [x] Keep sales orders/lines, master data, stock journals/events/ledgers, unrelated outbox/audit rows untouched. Add before/after checks that prove this.
+- [x] Verify confirmed FO reservations are zero, affected stock reservation/ledger reconciliation has zero drift, legacy pending outbox cannot replay, and no backlog/order event with domain `payload.createdAt < cutoverAt` can recreate old FO.
+- [x] Integration-test abort-on-SHIP, unrelated reservation/outbox preservation, rollback on mid-cleanup failure and idempotent verify.
+- [x] Document maintenance entry/exit, platform snapshot evidence, consumer readiness, rollback boundary before first V2 row, and “V2 row exists → stop intake and repair in V2” rule.
+- [x] Commit: `feat(fulfillment): add audited V2 cutover toolkit`.
 
 ---
 
@@ -279,17 +301,17 @@ session handed-in
 - `totes` / `shipment_tote_assignments`
 - `dispatch_attempts` / `dispatch_attempt_sources`
 
-- [ ] Add all enums, FK actions, checks and partial uniques. Use `NULLS NOT DISTINCT` or a reviewed `COALESCE` expression unique for session balance grain.
-- [ ] Make a shipment have at most one active invoice and one active work item. Make `(shipmentId,attemptNo)` and attempt idempotency unique.
-- [ ] Add operation `idempotencyKey/requestHash` and before/after manifest snapshots so split/consolidation lineage can be replayed without reconstructing mutable rows.
-- [ ] Keep new required V2 links nullable in expand so the migration applies before cleanup; mark every temporary nullable field in code with a contract-removal reference.
-- [ ] Update relations and `wmsTables/wmsSchema` exports without deleting V1 relations yet. Model SO→FO as one-to-one in the V2 read path.
-- [ ] Make both outbox services accept explicit topic+idempotency key and make dispatcher route non-null topics to the two new typed publishers. A duplicate event key returns the existing outbox row. Keep aggregate/event fallback only for legacy topicless rows during expand; unknown non-null topics fail closed and remain retryable.
-- [ ] Register the new Core publishers only in this post-expand deploy, with V2 event writes still disabled by workflow mode.
-- [ ] Generate via `yarn db:generate:core`, review SQL and snapshot, then rehearse against a DB containing current fulfillment fixtures.
-- [ ] Test all check/unique constraints using real PostgreSQL, including two active invoices, two active work items, duplicate session NULL buckets and duplicate attempt numbers.
-- [ ] Run: `yarn test:core:integration:local -- outbound-v2-schema` and `yarn build:core`.
-- [ ] Commit: `feat(db): expand outbound V2 shipment and picking schema`.
+- [x] Add all enums, FK actions, checks and partial uniques. Use `NULLS NOT DISTINCT` or a reviewed `COALESCE` expression unique for session balance grain.
+- [x] Make a shipment have at most one active invoice and one active work item. Make `(shipmentId,attemptNo)` and attempt idempotency unique.
+- [x] Add operation `idempotencyKey/requestHash` and before/after manifest snapshots so split/consolidation lineage can be replayed without reconstructing mutable rows.
+- [x] Keep new required V2 links nullable in expand so the migration applies before cleanup; mark every temporary nullable field in code with a contract-removal reference.
+- [x] Update relations and `wmsTables/wmsSchema` exports without deleting V1 relations yet. Model SO→FO as one-to-one in the V2 read path.
+- [x] Make both outbox services accept explicit topic+idempotency key and make dispatcher route non-null topics to the two new typed publishers. A duplicate event key returns the existing outbox row. Keep aggregate/event fallback only for legacy topicless rows during expand; unknown non-null topics fail closed and remain retryable.
+- [x] Register the new Core publishers only in this post-expand deploy, with V2 event writes still disabled by workflow mode.
+- [x] Generate via `yarn db:generate:core`, review SQL and snapshot, then rehearse against a DB containing current fulfillment fixtures.
+- [x] Test all check/unique constraints using real PostgreSQL, including two active invoices, two active work items, duplicate session NULL buckets and duplicate attempt numbers.
+- [x] Run: `yarn test:core:integration:local -- outbound-v2-schema` and `yarn build:core`.
+- [x] Commit: `feat(db): expand outbound V2 shipment and picking schema`.
 
 ### Task 6: 외부 주문 line identity의 수집·보존
 
@@ -304,13 +326,13 @@ session handed-in
 - Modify: `apps/channel-adapter/src/services/order-collection/medusa-order.provider.ts`
 - Test: provider/publisher contract specs.
 
-- [ ] Widen the ingress contract so legacy/manual publishers may omit unavailable `orderItemId/channelProductId` instead of fabricating them. Carry present `OrderItem.orderItemId` to `sales_order_lines.channelOrderItemId` and `channelProductId` to its own field; do not derive both from one fallback value.
-- [ ] For trusted channel orders, reject duplicate item IDs inside an order and fail V2 Planned validation if a required external item ID is absent.
-- [ ] Legacy/manual orders may store null identity, but must never manufacture a provider identifier from `salesOrderLineId` or `channelOrderId`.
-- [ ] Add round-trip contract: provider payload → order event → Core SO line → `ShipmentShipped` line contains the same two external IDs.
-- [ ] Verify Medusa item ID, Naver product-order ID and Coupang order-item ID fixtures independently.
-- [ ] Run targeted publisher/provider/Core service tests and `yarn build:channel-adapter && yarn build:core`.
-- [ ] Commit: `feat(orders): preserve channel order item identity end to end`.
+- [x] Widen the ingress contract so legacy/manual publishers may omit unavailable `orderItemId/channelProductId` instead of fabricating them. Carry present `OrderItem.orderItemId` to `sales_order_lines.channelOrderItemId` and `channelProductId` to its own field; do not derive both from one fallback value.
+- [x] For trusted channel orders, reject duplicate item IDs inside an order and fail V2 Planned validation if a required external item ID is absent.
+- [x] Legacy/manual orders may store null identity, but must never manufacture a provider identifier from `salesOrderLineId` or `channelOrderId`.
+- [x] Add round-trip contract: provider payload → order event → Core SO line → `ShipmentShipped` line contains the same two external IDs.
+- [x] Verify Medusa item ID, Naver product-order ID and Coupang order-item ID fixtures independently.
+- [x] Run targeted publisher/provider/Core service tests and `yarn build:channel-adapter && yarn build:core`.
+- [x] Commit: `feat(orders): preserve channel order item identity end to end`.
 
 ### Task 7: fulfillment scopes, role bootstrap, 필수 audit
 
@@ -329,14 +351,14 @@ session handed-in
 - Modify: `scripts/seed-data/constants/uuids.ts`
 - Test: Core guard/bootstrap, authorization library, seed idempotency and strict audit specs.
 
-- [ ] Register the seven exact `fulfillment.*` scopes from the technical design.
-- [ ] Extend authorization bootstrap with ordered `roleMappings` so scopes are inserted before `logistics_worker/logistics_manager` mappings. Keep role assignment in user-service; Core stores only role-name→scope mapping.
-- [ ] Seed the two role definitions idempotently in both current reference seed paths. Do not assign them to users automatically.
-- [ ] Make unknown roles and missing mappings deny. Add tests that worker has only operate and manager has all seven scopes.
-- [ ] Add `AuditService.logRequired(...)` (or equivalent strict option) that propagates DB errors and accepts the caller transaction. Keep best-effort `log()` for unrelated legacy callers.
-- [ ] Apply `ScopeGuard`/`@RequireScopes` as each V2 controller is introduced. Remove the temporary admin guards only after equivalent scope tests are green.
-- [ ] Prove operator ID comes from JWT even if body contains a forged field; remove `operatorId/workerId` from risky command DTOs where identity is the authenticated actor.
-- [ ] Commit: `feat(auth): add fulfillment scopes and transactional audit`.
+- [x] Register the seven exact `fulfillment.*` scopes from the technical design.
+- [x] Extend authorization bootstrap with ordered `roleMappings` so scopes are inserted before `logistics_worker/logistics_manager` mappings. Keep role assignment in user-service; Core stores only role-name→scope mapping.
+- [x] Seed the two role definitions idempotently in both current reference seed paths. Do not assign them to users automatically.
+- [x] Make unknown roles and missing mappings deny. Add tests that worker has only operate and manager has all seven scopes.
+- [x] Add `AuditService.logRequired(...)` (or equivalent strict option) that propagates DB errors and accepts the caller transaction. Keep best-effort `log()` for unrelated legacy callers.
+- [x] Apply `ScopeGuard`/`@RequireScopes` as each V2 controller is introduced. Remove the temporary admin guards only after equivalent scope tests are green.
+- [x] Prove operator ID comes from JWT even if body contains a forged field; remove `operatorId/workerId` from risky command DTOs where identity is the authenticated actor.
+- [x] Commit: `feat(auth): add fulfillment scopes and transactional audit`.
 
 ### Task 8: OUTBOUND_REWORK, progress calculator, invariant/reconciliation 기반
 
@@ -351,14 +373,14 @@ session handed-in
 - Create: `apps/core/src/modules/fulfillment/services/fulfillment-reconciliation.service.ts`
 - Create: corresponding unit/integration specs.
 
-- [ ] Add system role `outbound_rework` and have warehouse bootstrap create exactly one active location per warehouse.
-- [ ] Reject rename, role change, deletion and deactivation of required system locations.
-- [ ] Implement pure FOI/FO progress projection for `created|partially_reserved|ready|processing|partially_shipped|completed|canceled|recovery_required`. Never derive delivered into FO status.
-- [ ] Implement transaction-time invariant checks over locked FOI/shipment/line/reservation/session rows.
-- [ ] Add scheduled/read-only reconciliation for FOI quantity, active lines, confirmed reservations, active invoice version, session conservation and dispatch source/event cardinality. Emit counts/IDs as metrics without auto-correcting.
-- [ ] Characterize recalled FO reopening and “shipped+canceled=qty means completed” in unit tests before any dispatch implementation.
-- [ ] Run targeted tests and `yarn test:core:integration:local -- fulfillment-invariant`.
-- [ ] Commit: `feat(fulfillment): add progress and outbound invariant foundation`.
+- [x] Add system role `outbound_rework` and have warehouse bootstrap create exactly one active location per warehouse.
+- [x] Reject rename, role change, deletion and deactivation of required system locations.
+- [x] Implement pure FOI/FO progress projection for `created|partially_reserved|ready|processing|partially_shipped|completed|canceled|recovery_required`. Never derive delivered into FO status.
+- [x] Implement transaction-time invariant checks over locked FOI/shipment/line/reservation/session rows.
+- [x] Add scheduled/read-only reconciliation for FOI quantity, active lines, confirmed reservations, active invoice version, session conservation and dispatch source/event cardinality. Emit counts/IDs as metrics without auto-correcting.
+- [x] Characterize recalled FO reopening and “shipped+canceled=qty means completed” in unit tests before any dispatch implementation.
+- [x] Run targeted tests and `yarn test:core:integration:local -- fulfillment-invariant`.
+- [x] Commit: `feat(fulfillment): add progress and outbound invariant foundation`.
 
 ---
 
@@ -384,15 +406,15 @@ session handed-in
 - `transfer(sourceLineId,targetLineId,qty,tx)`
 - `recompute(shipmentId,tx)`
 
-- [ ] In one transaction lock SO/FO, create FO/FOI, copy recipient snapshot to a Draft shipment, create all lines, compute profile compatibility and reserve `min(outstanding,reservable)`.
-- [ ] Reject physical FO without warehouse before opening the transaction. Preserve digital-only no-FO and drop-ship direct route.
-- [ ] Change reservation target to shipment line for V2 and set `requestedAt` for fairness. Do not dual-read FO-target reservations in V2.
-- [ ] Split reservation rows only when partial release/transfer needs it; preserve the original `requestedAt`, total confirmed quantity and deterministic oldest-first ordering.
-- [ ] Rewrite retry candidate selection around under-reserved active shipment lines, requested time and available stock. A retry may reserve a partial increment instead of all-or-zero.
-- [ ] Increment `reservationVersion` for every reservation-set mutation and recompute FO/shipment progress in the same transaction.
-- [ ] Test 10 requested/6 available, later +2 retry, concurrent retry, duplicate order event, missing warehouse, mixed profile Draft and drop-ship bypass.
-- [ ] Run: `yarn test:core:integration:local -- 'shipment-reservation|fulfillment-stock-allocation|sales-order-to-fulfillment'`.
-- [ ] Commit: `feat(fulfillment): create draft shipments with partial reservation`.
+- [x] In one transaction lock SO/FO, create FO/FOI, copy recipient snapshot to a Draft shipment, create all lines, compute profile compatibility and reserve `min(outstanding,reservable)`.
+- [x] Reject physical FO without warehouse before opening the transaction. Preserve digital-only no-FO and drop-ship direct route.
+- [x] Change reservation target to shipment line for V2 and set `requestedAt` for fairness. Do not dual-read FO-target reservations in V2.
+- [x] Split reservation rows only when partial release/transfer needs it; preserve the original `requestedAt`, total confirmed quantity and deterministic oldest-first ordering.
+- [x] Rewrite retry candidate selection around under-reserved active shipment lines, requested time and available stock. A retry may reserve a partial increment instead of all-or-zero.
+- [x] Increment `reservationVersion` for every reservation-set mutation and recompute FO/shipment progress in the same transaction.
+- [x] Test 10 requested/6 available, later +2 retry, concurrent retry, duplicate order event, missing warehouse, mixed profile Draft and drop-ship bypass.
+- [x] Run: `yarn test:core:integration:local -- 'shipment-reservation|fulfillment-stock-allocation|sales-order-to-fulfillment'`.
+- [x] Commit: `feat(fulfillment): create draft shipments with partial reservation`.
 
 ### Task 10: split, recipient revision, plan, outstanding cancellation
 
@@ -410,18 +432,18 @@ session handed-in
 
 - `createInitialDraft`, `split`, `reviseRecipient`, `plan`, `cancelOutstanding`.
 
-- [ ] Introduce a common command wrapper that claims `fulfillment_command_requests`, validates request hash, resolves JWT actor and returns stored result on replay.
-- [ ] Implement Draft-only split with deterministic locks, unreserved-first movement, optional reservation row split/transfer, manifest+reservation version increments and operation member lineage.
-- [ ] Reject split/revision if custody exists; require explicit unpick before changing picked/session-owned quantity.
-- [ ] Recipient revision requires reason; differing from order snapshot also requires override scope. Active invoice blocks direct edit and points the caller to void/reopen.
-- [ ] Planned gate requires one compatible shipping profile, complete line reservations, trusted channel item IDs where needed, recipient completeness and no stale plan/invoice.
-- [ ] Cancellation changes only outstanding active lines, releases matching reservations, increments `canceledQty` and recomputes FO. Partial shipped + canceled remainder must end completed.
-- [ ] Draft cancellation applies immediately. Planned/invoice/work-item or consolidated targets enter a durable reopen/replan operation; no manifest quantity changes until invoice void and batch exclusion/unpick complete. Tasks 12–14 attach the saga steps to this operation.
-- [ ] Record strict audit and shipment operation in the same transaction for every risk command.
-- [ ] Add read DTOs: FO detail returns progress+shipment list; shipment detail returns FO/SO origin per line, reservation, invoice history, work item and attempts. Do not embed a single “current shipment” in V1 DTO.
-- [ ] Test idempotency mismatch, concurrent split/cancel, 10→6/4 quantity conservation, mixed-profile plan rejection and forged operator body.
-- [ ] Run unit/integration/authorization tests and `yarn build:core`.
-- [ ] Commit: `feat(fulfillment): add shipment planning commands`.
+- [x] Introduce a common command wrapper that claims `fulfillment_command_requests`, validates request hash, resolves JWT actor and returns stored result on replay.
+- [x] Implement Draft-only split with deterministic locks, unreserved-first movement, optional reservation row split/transfer, manifest+reservation version increments and operation member lineage.
+- [x] Reject split/revision if custody exists; require explicit unpick before changing picked/session-owned quantity.
+- [x] Recipient revision requires reason; differing from order snapshot also requires override scope. Active invoice blocks direct edit and points the caller to void/reopen.
+- [x] Planned gate requires one compatible shipping profile, complete line reservations, trusted channel item IDs where needed, recipient completeness and no stale plan/invoice.
+- [x] Cancellation changes only outstanding active lines, releases matching reservations, increments `canceledQty` and recomputes FO. Partial shipped + canceled remainder must end completed.
+- [x] Draft cancellation applies immediately. Planned/invoice/work-item or consolidated targets enter a durable reopen/replan operation; no manifest quantity changes until invoice void and batch exclusion/unpick complete. Tasks 12–14 attach the saga steps to this operation.
+- [x] Record strict audit and shipment operation in the same transaction for every risk command.
+- [x] Add read DTOs: FO detail returns progress+shipment list; shipment detail returns FO/SO origin per line, reservation, invoice history, work item and attempts. Do not embed a single “current shipment” in V1 DTO.
+- [x] Test idempotency mismatch, concurrent split/cancel, 10→6/4 quantity conservation, mixed-profile plan rejection and forged operator body.
+- [x] Run unit/integration/authorization tests and `yarn build:core`.
+- [x] Commit: `feat(fulfillment): add shipment planning commands`.
 
 ### Task 11: 보수적 후보 조회와 explicit consolidation
 
@@ -433,15 +455,15 @@ session handed-in
 - Create: `apps/core/src/modules/fulfillment/services/consolidation.service.spec.ts`
 - Create: `apps/core/src/modules/fulfillment/services/consolidation.integration.spec.ts`
 
-- [ ] Delete all random/fake customer/address/weight generation and hardcoded reports. Candidate lookup is read-only and conservative.
-- [ ] Candidate query requires same warehouse, compatible profile, non-drop-ship, Draft-compatible status and recipient policy. Cross-channel is allowed only because dispatch remains grouped by each source order's sales channel.
-- [ ] Consolidation accepts whole source shipments only. Sort-lock every source and line, reject shipped/in-transit/delivered, and require completed unpick/batch exclusion/invoice void before activation.
-- [ ] Create a new Draft target, coalesce target lines by FOI when necessary, move reservations, supersede sources and store N→1 operation members plus before/after manifests.
-- [ ] Recipient override requires its scope/reason and persists the selected snapshot. Never silently choose the first source address.
-- [ ] If invoice void saga is pending/fails, return the durable operation and leave sources `recovery_required`; do not expose an active target.
-- [ ] Test two FO/one target, split lines merged back, source cancellation followed by replan, mixed channel, address mismatch, concurrent consolidation and replay.
-- [ ] Remove the Task 1 410 only when these tests and scope guards pass.
-- [ ] Commit: `feat(fulfillment): implement explicit shipment consolidation`.
+- [x] Delete all random/fake customer/address/weight generation and hardcoded reports. Candidate lookup is read-only and conservative.
+- [x] Candidate query requires same warehouse, compatible profile, non-drop-ship, Draft-compatible status and recipient policy. Cross-channel is allowed only because dispatch remains grouped by each source order's sales channel.
+- [x] Consolidation accepts whole source shipments only. Sort-lock every source and line, reject shipped/in-transit/delivered, and require completed unpick/batch exclusion/invoice void before activation.
+- [x] Create a new Draft target, coalesce target lines by FOI when necessary, move reservations, supersede sources and store N→1 operation members plus before/after manifests.
+- [x] Recipient override requires its scope/reason and persists the selected snapshot. Never silently choose the first source address.
+- [x] If invoice void saga is pending/fails, return the durable operation and leave sources `recovery_required`; do not expose an active target.
+- [x] Test two FO/one target, split lines merged back, source cancellation followed by replan, mixed channel, address mismatch, concurrent consolidation and replay.
+- [x] Remove the Task 1 410 only when these tests and scope guards pass.
+- [x] Commit: `feat(fulfillment): implement explicit shipment consolidation`.
 
 ---
 
@@ -461,17 +483,17 @@ session handed-in
 - Modify: `apps/core/src/modules/fulfillment/services/goodsflow-delivery.provider.ts`
 - Test: provider specs, orchestrator unit/integration/crash specs.
 
-- [ ] Build provider request only from a locked shipment manifest, recipient snapshot, delivery profile and external channel item identity. Store request hash, `manifestVersion` and `recipientHash`.
-- [ ] Issue flow: create/claim `invoice_operation(issue)` transactionally → call provider outside tx → create/update shipment-owned invoice and operation result transactionally.
-- [ ] Void flow follows the same pattern. A timeout/unknown response moves to retryable recovery; it never pretends the invoice is void.
-- [ ] On successful void, resume the waiting reopen/replan/consolidation/short-pick/recall operation by ID; never infer the next command from current mutable status alone.
-- [ ] Enforce one active invoice per shipment and reject dispatch when active invoice versions/hashes differ from shipment.
-- [ ] Recovery worker leases operations with `SKIP LOCKED`, bounded exponential retry and provider idempotency/query-before-repeat when supported.
-- [ ] Return 202+operation for pending work; same key returns the same operation. One invoice failure must not block other batch shipments.
-- [ ] Keep Goodsflow lookup/void compatibility only for existing labels until contract cleanup.
-- [ ] Test crash before/after provider call, provider success then DB failure, duplicate callback/retry, manifest changed during issue and void failure before consolidation.
-- [ ] Run provider sandbox issue/void rehearsal and record evidence in the cutover runbook.
-- [ ] Commit: `feat(fulfillment): move invoice lifecycle to shipment saga`.
+- [x] Build provider request only from a locked shipment manifest, recipient snapshot, delivery profile and external channel item identity. Store request hash, `manifestVersion` and `recipientHash`.
+- [x] Issue flow: create/claim `invoice_operation(issue)` transactionally → call provider outside tx → create/update shipment-owned invoice and operation result transactionally.
+- [x] Void flow follows the same pattern. A timeout/unknown response moves to retryable recovery; it never pretends the invoice is void.
+- [x] On successful void, resume the waiting reopen/replan/consolidation/short-pick/recall operation by ID; never infer the next command from current mutable status alone.
+- [x] Enforce one active invoice per shipment and reject dispatch when active invoice versions/hashes differ from shipment.
+- [x] Recovery worker leases operations with `SKIP LOCKED`, bounded exponential retry and provider idempotency/query-before-repeat when supported.
+- [x] Return 202+operation for pending work; same key returns the same operation. One invoice failure must not block other batch shipments.
+- [x] Keep Goodsflow lookup/void compatibility only for existing labels until contract cleanup.
+- [x] Test crash before/after provider call, provider success then DB failure, duplicate callback/retry, manifest changed during issue and void failure before consolidation.
+- [x] Run provider sandbox issue/void rehearsal and record evidence in the cutover runbook.
+- [x] Commit: `feat(fulfillment): move invoice lifecycle to shipment saga`.
 
 ---
 
@@ -495,15 +517,15 @@ session handed-in
 - Work item: `queued|picking|ready_to_pack|packing|completed|short_pick_recovery|excluded`.
 - Picker/packer claims have actor, lease/version, claimed/released timestamps; handoff is a durable operation, not a body-only worker change.
 
-- [ ] Create/add/remove batch commands around shipment work items. Planned, fully reserved, same-warehouse/profile/recipient/invoice-ready validation happens before a work item becomes active.
-- [ ] Derive batch totals/status from active work items; do not update `fulfillment_orders.batchId` or `fulfillment_order_batches` for V2.
-- [ ] Claim with compare-and-set lease version. Use JWT actor for self-claim; manager-authorized handoff may name the target worker but audit operator remains JWT actor.
-- [ ] Make add/remove/claim/handoff idempotent and return the work item plus command operation ID.
-- [ ] Exclusion is allowed only before dispatch and must preserve shipment reservation. If custody exists, exclusion delegates to Task 14 return/unpick.
-- [ ] After exclusion/unpick commits, resume any waiting reopen/replan or consolidation operation by its stored operation ID.
-- [ ] Add query APIs for eligible shipments, work items, claim state and recovery reason.
-- [ ] Test two-worker claim race, lease expiry, handoff replay, wrong warehouse, duplicate active work item and one failed shipment not closing the batch.
-- [ ] Commit: `feat(fulfillment): replace FO batch links with shipment work items`.
+- [x] Create/add/remove batch commands around shipment work items. Planned, fully reserved, same-warehouse/profile/recipient/invoice-ready validation happens before a work item becomes active.
+- [x] Derive batch totals/status from active work items; do not update `fulfillment_orders.batchId` or `fulfillment_order_batches` for V2.
+- [x] Claim with compare-and-set lease version. Use JWT actor for self-claim; manager-authorized handoff may name the target worker but audit operator remains JWT actor.
+- [x] Make add/remove/claim/handoff idempotent and return the work item plus command operation ID.
+- [x] Exclusion is allowed only before dispatch and must preserve shipment reservation. If custody exists, exclusion delegates to Task 14 return/unpick.
+- [x] After exclusion/unpick commits, resume any waiting reopen/replan or consolidation operation by its stored operation ID.
+- [x] Add query APIs for eligible shipments, work items, claim state and recovery reason.
+- [x] Test two-worker claim race, lease expiry, handoff replay, wrong warehouse, duplicate active work item and one failed shipment not closing the batch.
+- [x] Commit: `feat(fulfillment): replace FO batch links with shipment work items`.
 
 ### Task 14: Batch Inventory Session, movement guard, crash recovery
 
@@ -521,15 +543,15 @@ session handed-in
 
 - `startSession(batchId, planId)`, `moveCustody(...)`, `returnToSource(...)`, `settleForDispatch(...)`, `rebuildFromEvents(sessionId)`, `reconcile(sessionId)`.
 
-- [ ] At batch start lock each plan source bucket, revalidate stock/reservation/version and append handed-in session events/balances. Do not post stock ledger events.
-- [ ] Every custody mutation claims an idempotency key, locks/CAS-updates source and target balances, appends a session event and rechecks conservation.
-- [ ] Add custody-specific CHECKs: worker requires worker ref, tote requires tote ref, source/settled bucket requirements, nonnegative qty and valid shipment-line assignment.
-- [ ] Mark source SKU/location buckets batch-controlled while handed-in quantity remains. Apply the common guard to `moveInternal`, transfer execution, adjust-down and any general allocation path.
-- [ ] A different batch plan cannot allocate controlled stock. Reads expose controlled vs generally available quantities without changing the economic on-hand.
-- [ ] Recovery compares balance rows to the append-only session events and deterministically rebuilds or marks `recovery_required`; it never guesses a missing event.
-- [ ] Test crash between event/balance stages (same DB tx), repeated handoff, general move rejection, second-batch rejection, return-to-source and session total conservation.
-- [ ] Run: `yarn test:core:integration:local -- 'batch-inventory-session|move-internal|transfer'`.
-- [ ] Commit: `feat(inventory): add batch custody sessions and movement guards`.
+- [x] At batch start lock each plan source bucket, revalidate stock/reservation/version and append handed-in session events/balances. Do not post stock ledger events.
+- [x] Every custody mutation claims an idempotency key, locks/CAS-updates source and target balances, appends a session event and rechecks conservation.
+- [x] Add custody-specific CHECKs: worker requires worker ref, tote requires tote ref, source/settled bucket requirements, nonnegative qty and valid shipment-line assignment.
+- [x] Mark source SKU/location buckets batch-controlled while handed-in quantity remains. Apply the common guard to `moveInternal`, transfer execution, adjust-down and any general allocation path.
+- [x] A different batch plan cannot allocate controlled stock. Reads expose controlled vs generally available quantities without changing the economic on-hand.
+- [x] Recovery compares balance rows to the append-only session events and deterministically rebuilds or marks `recovery_required`; it never guesses a missing event.
+- [x] Test crash between event/balance stages (same DB tx), repeated handoff, general move rejection, second-batch rejection, return-to-source and session total conservation.
+- [x] Run: `yarn test:core:integration:local -- 'batch-inventory-session|move-internal|transfer'`.
+- [x] Commit: `feat(inventory): add batch custody sessions and movement guards`.
 
 ---
 
@@ -551,13 +573,13 @@ session handed-in
 - A strategy creates/revalidates plan+source allocation and translates scans into session custody events.
 - It does not write stock ledger, consume reservation, issue invoice, settle FO progress or publish shipment events.
 
-- [ ] Define `plan(batch,shipments)`, `start`, `scan`, `handoff`, `completePick`, `unpickShipment` and strategy capability metadata.
-- [ ] Require explicit warehouse strategy configuration; reject missing/unknown strategy. Do not hide a default in the registry.
-- [ ] Snapshot every member shipment's manifest/reservation versions. Invalidate a plan on version/source stock change.
-- [ ] Implement discrete custody with worker buckets; do not create tote entities for informal personal baskets.
-- [ ] Make all scans idempotent and ensure over-pick, wrong SKU/source/worker and stale claim fail before balance mutation.
-- [ ] Establish a reusable strategy contract fixture that checks source allocation, custody conservation, unpick and common inspection-ready output.
-- [ ] Commit: `feat(fulfillment): add discrete picking strategy contract`.
+- [x] Define `plan(batch,shipments)`, `start`, `scan`, `handoff`, `completePick`, `unpickShipment` and strategy capability metadata.
+- [x] Require explicit warehouse strategy configuration; reject missing/unknown strategy. Do not hide a default in the registry.
+- [x] Snapshot every member shipment's manifest/reservation versions. Invalidate a plan on version/source stock change.
+- [x] Implement discrete custody with worker buckets; do not create tote entities for informal personal baskets.
+- [x] Make all scans idempotent and ensure over-pick, wrong SKU/source/worker and stale claim fail before balance mutation.
+- [x] Establish a reusable strategy contract fixture that checks source allocation, custody conservation, unpick and common inspection-ready output.
+- [x] Commit: `feat(fulfillment): add discrete picking strategy contract`.
 
 ### Task 16: aggregate-then-sort 전략
 
@@ -568,12 +590,12 @@ session handed-in
 - Extend: `apps/core/src/modules/fulfillment/picking/picking-strategy.contract.spec.ts`
 - Modify: V2 picking DTO/controller files for bulk-cart and sort scans.
 
-- [ ] Aggregate source allocations into `BULK_CART` by SKU/source while retaining plan allocation lineage per shipment line.
-- [ ] Sort scans move exact quantities from bulk-cart to shipment-assigned sorting/packing custody; an unsorted remainder cannot become inspection-ready.
-- [ ] Handoff and crash recovery operate through session events only.
-- [ ] Test two shipments sharing SKU, partial sort, wrong destination, repeated scan, short source and one shipment isolation.
-- [ ] Run strategy contract for discrete and aggregate providers.
-- [ ] Commit: `feat(fulfillment): add aggregate then sort picking`.
+- [x] Aggregate source allocations into `BULK_CART` by SKU/source while retaining plan allocation lineage per shipment line.
+- [x] Sort scans move exact quantities from bulk-cart to shipment-assigned sorting/packing custody; an unsorted remainder cannot become inspection-ready.
+- [x] Handoff and crash recovery operate through session events only.
+- [x] Test two shipments sharing SKU, partial sort, wrong destination, repeated scan, short source and one shipment isolation.
+- [x] Run strategy contract for discrete and aggregate providers.
+- [x] Commit: `feat(fulfillment): add aggregate then sort picking`.
 
 ### Task 17: pick-to-tote 전략과 공통 packing 진입
 
@@ -585,13 +607,13 @@ session handed-in
 - Create: `apps/core/src/modules/fulfillment/dto/tote.dto.ts`
 - Extend: strategy contract and module registration.
 
-- [ ] Register/scan physical tote barcodes and allow multiple totes per shipment while preventing one active tote assignment from belonging to conflicting work.
-- [ ] Move source→TOTE→PACKING custody with exact shipment-line attribution and version checks.
-- [ ] Make tote release contingent on empty/settled balances; do not delete assignment history.
-- [ ] Normalize all three strategies to the same `ready_to_pack`/packing custody output consumed by inspection.
-- [ ] Run the full strategy contract against discrete, aggregate-then-sort and pick-to-tote.
-- [ ] Test one shipment/multiple totes, tote reuse race, cross-shipment scan and handoff.
-- [ ] Commit: `feat(fulfillment): add pick to tote strategy`.
+- [x] Register/scan physical tote barcodes and allow multiple totes per shipment while preventing one active tote assignment from belonging to conflicting work.
+- [x] Move source→TOTE→PACKING custody with exact shipment-line attribution and version checks.
+- [x] Make tote release contingent on empty/settled balances; do not delete assignment history.
+- [x] Normalize all three strategies to the same `ready_to_pack`/packing custody output consumed by inspection.
+- [x] Run the full strategy contract against discrete, aggregate-then-sort and pick-to-tote.
+- [x] Test one shipment/multiple totes, tote reuse race, cross-shipment scan and handoff.
+- [x] Commit: `feat(fulfillment): add pick to tote strategy`.
 
 ---
 
@@ -620,17 +642,17 @@ session handed-in
 6. update FOI shipped qty and FO/shipment progress;
 7. enqueue shipment-v1, fulfillment-v2 and eligible full-completion v1 projections.
 
-- [ ] Inspection scans update line progress and session custody. The last valid scan calls dispatch in the same command flow; batch close is not a dispatch trigger.
-- [ ] Force dispatch requires scope+reason, records forced quantities explicitly and follows the same attempt/ledger/reservation path.
-- [ ] Dispatch uses `picking_source_allocations/dispatch_attempt_sources`, never a new FIFO lookup.
-- [ ] Put `(attemptId,shipmentLineId,sourceLocationId)` event uniqueness and request idempotency behind DB constraints. A crash/retry cannot double SHIP.
-- [ ] Ensure each SHIP decreases on-hand/reserved equally and keeps available unchanged; already-settled session qty is never deducted at batch close.
-- [ ] Emit `ShipmentShipped` for every attempt, `FulfillmentProgressed` for affected FO and v1 `FulfillmentShipped` only when every FOI is fully shipped (`canceledQty=0`) and completion has not already been projected.
-- [ ] Use stable outbox keys: attempt ID for shipment shipped, `attemptId+foId` for progress, and `foId+fully-shipped` for the once-only v1 projection. Recall/delivery use their attempt/operation plus affected FO so transaction retries cannot create a second logical event.
-- [ ] Keep `FulfillmentsService.ship()` only for explicit direct-ship dispatch. Remove in-house V1 external-dispatch emission.
-- [ ] Test last-scan dispatch, concurrent last scans, forced dispatch authorization, stale invoice, two shipments completed at different times and outbox duplicate retry.
-- [ ] Run: `yarn test:core:integration:local -- 'shipment-dispatch|golden-path|outbound-batch-pick-ship'`.
-- [ ] Commit: `feat(fulfillment): dispatch shipment attempts from session allocations`.
+- [x] Inspection scans update line progress and session custody. The last valid scan calls dispatch in the same command flow; batch close is not a dispatch trigger.
+- [x] Force dispatch requires scope+reason, records forced quantities explicitly and follows the same attempt/ledger/reservation path.
+- [x] Dispatch uses `picking_source_allocations/dispatch_attempt_sources`, never a new FIFO lookup.
+- [x] Put `(attemptId,shipmentLineId,sourceLocationId)` event uniqueness and request idempotency behind DB constraints. A crash/retry cannot double SHIP.
+- [x] Ensure each SHIP decreases on-hand/reserved equally and keeps available unchanged; already-settled session qty is never deducted at batch close.
+- [x] Emit `ShipmentShipped` for every attempt, `FulfillmentProgressed` for affected FO and v1 `FulfillmentShipped` only when every FOI is fully shipped (`canceledQty=0`) and completion has not already been projected.
+- [x] Use stable outbox keys: attempt ID for shipment shipped, `attemptId+foId` for progress, and `foId+fully-shipped` for the once-only v1 projection. Recall/delivery use their attempt/operation plus affected FO so transaction retries cannot create a second logical event.
+- [x] Keep `FulfillmentsService.ship()` only for explicit direct-ship dispatch. Remove in-house V1 external-dispatch emission.
+- [x] Test last-scan dispatch, concurrent last scans, forced dispatch authorization, stale invoice, two shipments completed at different times and outbox duplicate retry.
+- [x] Run: `yarn test:core:integration:local -- 'shipment-dispatch|golden-path|outbound-batch-pick-ship'`.
+- [x] Commit: `feat(fulfillment): dispatch shipment attempts from session allocations`.
 
 ### Task 19: delivery projection, Core tracking, channel consumer end-to-end
 
@@ -642,13 +664,13 @@ session handed-in
 - Create/update: tracking query integration specs.
 - Extend: Task 3 channel consumer/worker and Medusa projection tests.
 
-- [ ] Update provider tracking by `dispatchAttemptId/providerEventId` idempotently and move only the referenced shipment through in-transit/delivered.
-- [ ] Emit `ShipmentDelivered` per attempt/shipment. Emit v1 `FulfillmentDelivered` only after an eligible full-shipped v1 projection exists and all its non-recalled shipped quantity is delivered; do not mark FO delivered/completed from carrier state.
-- [ ] Build customer tracking via `SO → FOI → shipment_line → shipment → dispatch_attempt/invoice/tracking`. A consolidated shipment appears on each related SO with only that SO's lines.
-- [ ] Return attempt history including recalled state; do not erase an old tracking number on redispatch.
-- [ ] Exercise Core outbox→Kafka contract→channel inbox→one adapter command end to end. Assert that mixed Naver/Coupang orders call their own adapter once each and never broadcast.
-- [ ] Add observability for pending/recovery/manual channel operations keyed by attempt and sales order.
-- [ ] Commit: `feat(orders): project shipment attempts into tracking and channels`.
+- [x] Update provider tracking by `dispatchAttemptId/providerEventId` idempotently and move only the referenced shipment through in-transit/delivered.
+- [x] Emit `ShipmentDelivered` per attempt/shipment. Emit v1 `FulfillmentDelivered` only after an eligible full-shipped v1 projection exists and all its non-recalled shipped quantity is delivered; do not mark FO delivered/completed from carrier state.
+- [x] Build customer tracking via `SO → FOI → shipment_line → shipment → dispatch_attempt/invoice/tracking`. A consolidated shipment appears on each related SO with only that SO's lines.
+- [x] Return attempt history including recalled state; do not erase an old tracking number on redispatch.
+- [x] Exercise Core outbox→Kafka contract→channel inbox→one adapter command end to end. Assert that mixed Naver/Coupang orders call their own adapter once each and never broadcast.
+- [x] Add observability for pending/recovery/manual channel operations keyed by attempt and sales order.
+- [x] Commit: `feat(orders): project shipment attempts into tracking and channels`.
 
 ---
 
@@ -663,13 +685,13 @@ session handed-in
 - Create: `apps/core/src/modules/fulfillment/services/shipment-short-pick.integration.spec.ts`
 - Modify: batch work-item/session/picking orchestrators.
 
-- [ ] Short-pick command locks only the affected work item/shipment lines and moves the work item to `short_pick_recovery`.
-- [ ] Return/adjust missing custody through explicit session events. Preserve good confirmed reservations; invalidate/retry only the short quantity.
-- [ ] Void the affected shipment invoice through the durable saga. Other ready shipments in the batch continue to inspection/dispatch.
-- [ ] When physical session balances are reconciled, return the affected shipment to Draft, increment versions, rebuild outstanding reservation demand and requeue fairly.
-- [ ] Require approved shortage/defect reason for any session conservation adjustment and strict audit it.
-- [ ] Test one short shipment plus one successful shipment, good-reservation preservation, invoice void failure, duplicate short report and session recovery.
-- [ ] Commit: `feat(fulfillment): isolate short picks without releasing good stock`.
+- [x] Short-pick command locks only the affected work item/shipment lines and moves the work item to `short_pick_recovery`.
+- [x] Return/adjust missing custody through explicit session events. Preserve good confirmed reservations; invalidate/retry only the short quantity.
+- [x] Void the affected shipment invoice through the durable saga. Other ready shipments in the batch continue to inspection/dispatch.
+- [x] When physical session balances are reconciled, return the affected shipment to Draft, increment versions, rebuild outstanding reservation demand and requeue fairly.
+- [x] Require approved shortage/defect reason for any session conservation adjustment and strict audit it.
+- [x] Test one short shipment plus one successful shipment, good-reservation preservation, invoice void failure, duplicate short report and session recovery.
+- [x] Commit: `feat(fulfillment): isolate short picks without releasing good stock`.
 
 ### Task 21: recall, 역분개, reopen, 재출고와 반품 eligibility
 
@@ -685,17 +707,17 @@ session handed-in
 - Modify: `apps/core/src/modules/sales-order/dto/store-return-request.dto.ts`
 - Modify: return request tests.
 
-- [ ] Add an inventory primitive that reverses each attempt SHIP source directly from null/economic-outside into the warehouse's `OUTBOUND_REWORK` location, links original/reversal events and rejects a second reversal.
-- [ ] Recall requires the exact attempt, `physicalRecoveryConfirmed=true`, scope, reason and an attempt that is shipped but not carrier-accepted/in-transit/delivered.
-- [ ] Saga order: durable recall op → invoice void → one DB transaction for reversal ledger, restored shipment-line reservation, cleared inspection/session state, Draft/version update, FOI shipped decrement/FO reopen, outbox and strict audit.
-- [ ] A void/reversal failure leaves `recovery_required` and is retryable from the same operation; never reopen FO before economic stock restoration succeeds.
-- [ ] Redispatch reuses the shipment but creates a new invoice and monotonically increasing attempt number. Old attempt/source/tracking remains immutable history.
-- [ ] Emit `ShipmentDispatchRecalled` and `FulfillmentReopened`; channel consumer maps unsupported external reversal to `manual_adjustment_required`.
-- [ ] Require new return requests to identify `shipmentLineId+dispatchAttemptId` and validate ownership, delivered non-recalled attempt and cumulative eligible qty. Keep old nullable rows readable.
-- [ ] When an approved customer return becomes a warehouse receipt, carry the line/attempt identity into receipt metadata; do not infer V2 eligibility from legacy `returns.shipmentId`.
-- [ ] Test recall available invariant, double/concurrent recall, provider void timeout, redispatch attempt 2, delivered/accepted recall rejection and recalled-attempt return rejection.
-- [ ] Run: `yarn test:core:integration:local -- 'shipment-recall|return-exchange|inventory-idempotency'`.
-- [ ] Commit: `feat(fulfillment): add dispatch recall and attempt-based returns`.
+- [x] Add an inventory primitive that reverses each attempt SHIP source directly from null/economic-outside into the warehouse's `OUTBOUND_REWORK` location, links original/reversal events and rejects a second reversal.
+- [x] Recall requires the exact attempt, `physicalRecoveryConfirmed=true`, scope, reason and an attempt that is shipped but not carrier-accepted/in-transit/delivered.
+- [x] Saga order: durable recall op → invoice void → one DB transaction for reversal ledger, restored shipment-line reservation, cleared inspection/session state, Draft/version update, FOI shipped decrement/FO reopen, outbox and strict audit.
+- [x] A void/reversal failure leaves `recovery_required` and is retryable from the same operation; never reopen FO before economic stock restoration succeeds.
+- [x] Redispatch reuses the shipment but creates a new invoice and monotonically increasing attempt number. Old attempt/source/tracking remains immutable history.
+- [x] Emit `ShipmentDispatchRecalled` and `FulfillmentReopened`; channel consumer maps unsupported external reversal to `manual_adjustment_required`.
+- [x] Require new return requests to identify `shipmentLineId+dispatchAttemptId` and validate ownership, delivered non-recalled attempt and cumulative eligible qty. Keep old nullable rows readable.
+- [x] When an approved customer return becomes a warehouse receipt, carry the line/attempt identity into receipt metadata; do not infer V2 eligibility from legacy `returns.shipmentId`.
+- [x] Test recall available invariant, double/concurrent recall, provider void timeout, redispatch attempt 2, delivered/accepted recall rejection and recalled-attempt return rejection.
+- [x] Run: `yarn test:core:integration:local -- 'shipment-recall|return-exchange|inventory-idempotency'`.
+- [x] Commit: `feat(fulfillment): add dispatch recall and attempt-based returns`.
 
 ---
 
@@ -720,16 +742,16 @@ session handed-in
 - Modify: `apps/admin-web/src/features/order/inspection/`
 - Modify: `apps/admin-web/src/features/cs/return-exchange/`
 
-- [ ] Replace FO-centric single-shipment assumptions with shipment list/detail, per-line reservation/progress and attempt/invoice history.
-- [ ] Add planner actions for split, consolidation, recipient override, plan, outstanding cancellation and reservation transfer with reason/case fields and generated idempotency key.
-- [ ] Surface operation `pending/recovery_required` and allow safe retry using the original key; do not optimistically display provider success.
-- [ ] Add batch strategy selection from explicit warehouse capabilities, shipment work item queue, picker/packer claim/handoff, tote scan and short-pick recovery.
-- [ ] Inspection shows session source/custody and makes force dispatch available only to scope-capable users.
-- [ ] Add recall confirmation requiring physical recovery, attempt selection and reason. Surface channel `manual_adjustment_required`.
-- [ ] Update return selection to delivered shipment lines/attempts and display remaining eligible qty.
-- [ ] Add component tests for permission hiding plus server-deny handling; UI hiding is not the authorization boundary.
-- [ ] Run: `yarn --cwd apps/admin-web lint && yarn --cwd apps/admin-web type-check && yarn --cwd apps/admin-web build`.
-- [ ] Commit: `feat(admin): add shipment planning and V2 picking operations`.
+- [x] Replace FO-centric single-shipment assumptions with shipment list/detail, per-line reservation/progress and attempt/invoice history.
+- [x] Add planner actions for split, consolidation, recipient override, plan, outstanding cancellation and reservation transfer with reason/case fields and generated idempotency key.
+- [x] Surface operation `pending/recovery_required` and allow safe retry using the original key; do not optimistically display provider success.
+- [x] Add batch strategy selection from explicit warehouse capabilities, shipment work item queue, picker/packer claim/handoff, tote scan and short-pick recovery.
+- [x] Inspection shows session source/custody and makes force dispatch available only to scope-capable users.
+- [x] Add recall confirmation requiring physical recovery, attempt selection and reason. Surface channel `manual_adjustment_required`.
+- [x] Update return selection to delivered shipment lines/attempts and display remaining eligible qty.
+- [x] Add component tests for permission hiding plus server-deny handling; UI hiding is not the authorization boundary.
+- [x] Run: `yarn --cwd apps/admin-web lint && yarn --cwd apps/admin-web type-check && yarn --cwd apps/admin-web build`.
+- [x] Commit: `feat(admin): add shipment planning and V2 picking operations`.
 
 ### Task 23: 17개 대표 시나리오와 비기능 release suite
 
@@ -742,7 +764,7 @@ session handed-in
 - Create: `apps/channel-adapter/src/consumers/shipment-events.contract.spec.ts`
 - Modify: `docs/local-dev.md`.
 
-- [ ] Implement these numbered, independently named cases:
+- [x] Implement these numbered, independently named cases:
   1. A reserved/B backordered split and A-first dispatch.
   2. FOI 10 split 6/4 with two invoices/attempts.
   3. Two FO shipments consolidate with new recipient, lineage and void.
@@ -761,13 +783,18 @@ session handed-in
   16. Batch-controlled source rejects general move/transfer.
   17. Session crash recovery conserves quantity and dispatch remains idempotent.
 - [ ] At every scenario checkpoint assert FOI demand conservation, active line/reservation sum, on-hand/reserved/available, session conservation, attempt source/event cardinality and outbox count.
-- [ ] Add concurrency barriers for reserve/split/claim/last-scan dispatch/recall rather than relying on timing sleeps.
+      - 부분 충족. demand/line/reservation/on-hand/reserved/session/cardinality/outbox 는 실제로 단언한다 (outbox 는 count 가 아니라 집합 동등성이라 요구보다 강하다). 남은 두 가지: `available` 은 `onHand - reserved` 로 계산한 값을 같은 식으로 검산해 독립적으로 실패할 수 없다 — 판매가능 projection(`ProductSellableQuantityService`) 대조로 바꾸거나 파생값임을 명시해야 한다. 시나리오 12 는 batch close 뒤 checkpoint 가 없어 "close 가 double-consume 하지 않는다"가 `getBatch` 가 순수 read 라는 구현 지식에 의존한다.
+- [x] Add concurrency barriers for reserve/split/claim/last-scan dispatch/recall rather than relying on timing sleeps.
 - [ ] Add authorization matrix for worker, manager, unknown role, missing scope and forged body operator.
+      - 부분 충족. 5개 항목 모두 존재하고 실제 `ScopeGuard` 와 `@RequireScopes` 메타데이터를 검증한다. 다만 forged body operator 케이스가 `main.ts` 의 배포 `ValidationPipe` 를 쓰지 않고 같은 옵션을 로컬에서 재구성한다. `whitelist: false` 로 회귀해도 테스트는 초록으로 남는다 — 파이프 옵션을 공유 모듈로 빼서 양쪽이 같은 것을 쓰게 해야 한다.
 - [ ] Add migration rehearsal fixture: current schema data → expand → audit/cleanup → V2 create → verify; confirm SKU/SO/ledger hashes are unchanged and old orders are not replayed.
+      - 부분 충족. 실제 drizzle journal 을 V2 tag 에서 쪼개 current→expand 를 진짜로 태우고, "old orders are not replayed" 는 watermark 단락을 고쳐 이제 유효하다(무력화 시 실패 확인). 남은 것: `protectedHashes` 가 보호 테이블 전체가 아니라 픽스처 자신의 ID 로 skus/sales_orders/stock_ledgers 각 1행만 해싱한다. cleanup 이 건드리면 안 될 *다른* 행을 지우거나 바꿔도 보이지 않는다 — 테이블 단위 `md5(string_agg(...))` 로 바꿔야 요구를 충족한다.
 - [ ] Add channel contract assertions that partial shipment is not full order shipped and exactly one adapter handles each sales order.
-- [ ] Run full suite serially: `yarn test:core:integration:local -- outbound-v2` plus targeted channel-adapter tests.
-- [ ] Record local execution instructions and Docker requirement in `docs/local-dev.md`.
-- [ ] Commit: `test(fulfillment): cover outbound V2 release scenarios`.
+      - 부분 충족. "partial ≠ full order shipped" 의 실제 가드는 Core 의 `ShipmentDispatchService` fullyShipped 게이트이고, 이는 `outbound-v2-*-scenarios` 의 exhaustive outbox 집합 동등성이 증명한다 — 이 파일은 V2 inbox 가 `isPartial` 을 그대로 저장하는 pass-through 만 본다. "exactly one adapter" 도 insert 를 mock 해 메모리상에서만 증명하며, 실제 보장은 `uq_channel_dispatch_attempt_order_operation` 유니크 제약(`shipment-dispatch-persistence.integration.spec.ts` 가 커버)이다. 요구를 이 파일이 직접 증명하도록 하거나, 소유 스펙을 명시적으로 참조해야 한다.
+- [x] Run full suite serially: `yarn test:core:integration:local -- outbound-v2` plus targeted channel-adapter tests.
+      - 로컬 실행 결과: DB 스위트 8 suites / 56 tests, 채널·권한 포함 관련 유닛 25 tests, 모두 통과. `build:core` / `build:channel-adapter` exit 0. 러너 명령은 npm 기준(`npm run ...`)이다 — 아래 verification command set 의 yarn 표기는 이 repo 와 맞지 않는다.
+- [x] Record local execution instructions and Docker requirement in `docs/local-dev.md`.
+- [x] Commit: `test(fulfillment): cover outbound V2 release scenarios`.
 
 ### Task 24: cutover rehearsal와 V2 producer activation
 
