@@ -4,10 +4,30 @@
 
 ## 진행 상태 (2026-07-16 기준)
 
-Task 1~23 완료(잔여 항목 포함), Task 24 는 **외부 의존으로 블록**, Task 25 미착수. 브랜치 `feat/outbound-v2-consolidation-backorder`.
+Task 1~23 완료(잔여 항목 포함), Task 24 는 **provider 미구현으로 블록**, Task 25 는 Task 24 에 연쇄 블록(미착수). 브랜치 `feat/outbound-v2-consolidation-backorder`.
 
-**Task 24 블로커 — provider 계약 미검증 (repo 안에서 풀 수 없음).**
-V2 invoice 를 발행할 수 있는 provider 가 없다. `goodsflow-delivery.provider.ts:30` 이 `issue: { safeToRepeat: false, lookupByIdempotencyKey: false }` 로 고정돼 있고, `invoice-orchestrator.service.ts:459` 는 둘 다 false 면 `unsupported` 를 던진다 — attempt 카운터보다 앞이라 **재시도 복구뿐 아니라 모든 발행이 거부된다**. Hanjin 은 크레덴셜이 있어도 비활성(`hanjin-delivery.provider.ts:87`). Task 24 의 "provider issue/void sandbox recovery drill complete" 게이트는 Goodsflow 가 idempotency-key 또는 key 조회 계약을 공개해야 열린다. 이 상태로 `v2` 를 켜면 송장을 못 받는 Draft shipment 만 쌓인다. capability 플래그를 손으로 true 로 바꾸는 것은 게이트 무력화이므로 금지.
+expand 마이그레이션과 배포는 적용됐다(2026-07-16 확인). 배포된 Core 는 `FULFILLMENT_WORKFLOW_MODE: 'legacy'` — 즉 **V1 이 현재 유일하게 살아있는 출고 경로**다.
+
+**Task 24 블로커 — V2 invoice 를 발행할 수 있는 provider 가 없다.**
+`invoice-orchestrator.service.ts:459` 는 `issue.safeToRepeat` 와 `issue.lookupByIdempotencyKey` 가 **둘 다 false 면** `unsupported` 를 던진다. 이 게이트는 attempt 카운터보다 앞이라 재시도 복구뿐 아니라 **모든 발행이 거부된다**. 이 상태로 `v2` 를 켜면 송장을 못 받는 Draft shipment 만 쌓인다. 게이트가 보는 것은 provider **이름이 아니라 capability 플래그**이므로, provider 를 갈아끼우는 것만으로는 열리지 않는다. capability 플래그를 손으로 true 로 바꾸는 것은 게이트 무력화이므로 금지.
+
+**결정 (2026-07-16): Goodsflow 를 쓰지 않고 한진택배 API 를 쓴다.** 스펙과 결정기록 어디에도 provider 선택이 적힌 적이 없다 — V1 코드에서 흘러온 사실상의 기본값이었으므로, 이 결정은 기존 결정을 뒤집는 게 아니라 빈칸을 채운다.
+
+이 결정은 블로커를 **해소하지 않고 이동시킨다**. 성격은 바뀐다: 벤더가 계약을 안 열어주는 문제(repo 밖) → 우리가 구현하면 되는 문제(repo 안, 단 공식 계약서 필요).
+
+- 배선은 이미 다 있다. schema enum(`invoice_method` 에 `hanjin`), V2 orchestrator(`ProviderName`, `:1118` 선택), V2 DTO(`shipment-invoice.dto.ts:10`), V1 전환 스위치(`invoice.service.ts` 의 `defaultIssueMethod`)까지 한진을 1급으로 다룬다.
+- 없는 것은 `HanjinDeliveryProvider` 본체뿐이다. 현재 fail-closed 스텁 — 모든 메서드가 `unsupported` 를 던지고, `isConfigured()` 가 `false` 를 하드코딩하며, capability 4개가 전부 false 다. 즉 **지금은 Goodsflow 보다 더 닫혀 있다** (Goodsflow 는 `void.lookupByServiceId: true` 라도 있었다).
+- 이건 사고가 아니라 의도다. 옛 스켈레톤이 **추정 endpoint** 를 호출하고 있었고, 추정 주소로 쏘다가 timeout 이 나면 중복 송장을 복구할 수 없어 통째로 걷어냈다(`hanjin-delivery.provider.ts:22-28`).
+
+**한진 구현의 선행 조건 — 공식 API 계약서가 다음 셋에 답해야 한다.** 이 답이 곧 capability 플래그 값이고, 플래그가 게이트를 연다.
+
+1. issue 요청에 클라이언트 멱등키를 실을 수 있는가 → `issue.safeToRepeat`
+2. timeout 후 그 키(또는 안정적 참조)로 발행 결과를 조회할 수 있는가 → `issue.lookupByIdempotencyKey`
+3. void 를 service id 로 조회/취소할 수 있는가 → `void.lookupByServiceId`
+
+**1·2 중 최소 하나가 참이어야 한다.** 둘 다 없으면 한진도 같은 벽이고, provider 교체로는 해결되지 않는다.
+
+**후속 결정 필요**: Goodsflow 를 코드에서 제거할지, enum·기존 행은 두고 신규 발행만 한진으로 돌릴지. 전자는 `invoice_method` enum 값 제거라 destructive — Task 25 로 미루는 게 자연스럽다(아래 "실측 결과" 참조).
 
 **Task 24 중 완료된 것**: expand 배포 배선. `FULFILLMENT_WORKFLOW_MODE` 가 배포 매니페스트에 없어서 이 브랜치를 배포하면 Core 가 부팅 실패했다(production 에서 필수 — `env.validation.ts:71`, 배포는 `NODE_ENV=production`). `deployments/lcnine/services/infra/services.ts` 의 Core `environment` 에 `legacy` 를 배선했고, 런북에 빠져 있던 expand 배포 절차와 증거표를 추가했다. 커밋 `85d37a4f3`.
 
@@ -26,13 +46,19 @@ V2 invoice 를 발행할 수 있는 provider 가 없다. `goodsflow-delivery.pro
 
 **후속 이슈로 남긴 것** (Task 23 범위):
 
-- 시나리오 14 가 실제 recall 이 만들 수 없는 상태를 손으로 심고 시작해 13→14 연쇄가 검증되지 않는다.
-- outbox topology 헬퍼 150줄이 세 스펙에 복붙돼 있다. `__support__/` 로 하이스팅해야 한다.
+- outbox topology 헬퍼 150줄이 세 스펙에 복붙돼 있다. `__support__/` 로 하이스팅해야 한다. (실측: `ExpectedOutboxTopology`/`expectExactOutboxTopology` 는 `outbound-v2-scenarios`·`outbound-v2-lifecycle-scenarios` 두 스펙에 동일 복붙, `outbound-v2-warehouse-scenarios` 는 카운트만 보는 약한 변형을 따로 들고 있다.)
 - 시나리오 06 의 이름과 실제 동작이 다르다(A 는 라벨 실패로 batch 진입 자체가 불가하므로 "sibling batch shipment" 가 아니다).
 - `ValidationPipe` 하드코딩 복사본이 네 스펙에 남아 있다(`shipment-planning.service.spec.ts:97`, `shipment.controller.spec.ts:187`, `tote.controller.spec.ts:174`, `consolidation.service.spec.ts:209`). `platform/http/validation-pipe.ts` import 로 교체하면 된다.
 - `apps/*/tsconfig.app.json` 은 `**/*spec.ts` 를 제외한다 — 스펙 타입체크에 이 config 를 쓰면 파일을 읽지도 않고 exit 0 이 난다. 스펙을 포함하는 program 은 루트 `tsconfig.json` 이다.
 
 `protectedHashes` 3행 해싱 건은 해소됐다 (위 Task 23 항목 참조).
+
+**시나리오 14 hand-seed 건은 해소됐다.** `seedRecalledAttemptHistory` 를 지우고 13 의 실제 연쇄(`planAndIssue → stageBatch → lastScan → recall`)로 attempt 1 을 만든 뒤 재출고한다. 검증은 사보타주 대조로 했다 — dispatch 가 work item 을 `completed` 대신 `packing` 으로 남기게 하면(재투입 시 `uq_outbound_work_item_active_shipment` 위반) **새 14 는 red, 옛 14 는 green** 이었다. 옛 14 의 shipment 는 batch 를 거친 적이 없어 work item 자체가 없었기 때문이다. 시나리오 13 도 green 이라 이 커버리지는 14 만 짊어진다.
+
+이 과정에서 같은 계열의 결함 두 건이 더 드러났다.
+
+- **v1 full-completion 투영의 once-only 성질이 재출고와 만나는 지점이 무검증이었다.** 키가 `${foId}:fully-shipped` 라 attempt 2 는 v1 `FulfillmentShipped` 를 다시 만들지 않는다 — 재출고 후 outbox 는 8 이 아니라 **7**. 옛 14 는 outbox 0 에서 시작해 선행 v1 행이 없었으므로 이 상호작용을 한 번도 건드리지 못했다. 이제 `expectExactOutboxTopology` 가 attempt 2 개에 v1 행 1 개로 고정한다.
+- **`shipment_tracking` immutability 단언이 존재할 수 없는 상태를 검증하고 있었다.** tracking 을 쓰는 프로덕션 경로는 `recordProviderEvent` 뿐이고 `in_transit`/`delivered` 만 받는데, recall 은 그 둘을 모두 거부한다(`shipment-recall.service.ts:201`). 즉 **recall 가능한 attempt 는 tracking 행을 가질 수 없다** — 옛 픽스처의 `status: 'shipped'` tracking 은 어떤 코드도 만들 수 없는 fiction 이었다. 단언은 "재출고가 옛 attempt 에 tracking 을 날조하지 않는다" 로 좁혔다. Task 21 의 "old attempt/source/tracking remains immutable history" 중 tracking 절반은 recall 경로에서는 검증 대상이 아니다 — 필요하다면 attempt 2 배송 후 webhook 시나리오로 따로 세워야 한다.
 
 **Goal:** FO 중심의 단일 출고 경로를 shipment/attempt 중심 모델로 교체해 부분예약·백오더, Draft 분할/합배송, shipment 단위 송장, 세 가지 피킹 전략, 즉시 dispatch, short-pick 격리, recall/재출고를 수량 보존과 멱등성이 검증된 상태로 제공한다.
 
@@ -835,6 +861,44 @@ session handed-in
 - Delete/replace V1-only fulfillment services/controllers/tests after usage scan.
 - Modify: Core/channel event registration and admin clients.
 - Update: `docs/runbooks/outbound-v2-cutover.md` and relevant API docs.
+
+#### 제거 범위 실측 (2026-07-16)
+
+아래 체크리스트가 적어둔 제거 목록은 **실제 사장 범위를 과소평가한다**. 코드에서 실측한 결과를 먼저 싣는다. 착수 시 이 표부터 재실측할 것 — 아래는 `5d6ebee94` 시점 기준이다.
+
+**enum 값이 컬럼보다 크다.** `fulfillment_status` 는 20개 값인데 V2 progress calculator(`fulfillment-progress.service.ts`)가 내는 것은 **8개**뿐이다: `created, partially_reserved, ready, processing, partially_shipped, completed, canceled, recovery_required`.
+
+죽는 값 **12개**: `reserving, unfulfillable, labeled, shipped, pending, allocated, picking, picked, inspecting, inspected, invoiced, forwarded`. 아래 체크리스트는 `picked/invoiced/shipped` **3개만** 지목한다.
+
+writer 전수 (전부 V1 서비스):
+
+| 값 | writer |
+|---|---|
+| `invoiced`, `picked` | `invoice.service.ts:191,433` |
+| `picking`, `picked` | `picking-process.service.ts:588,746` |
+| `allocated`, `ready`, `picking`, `picked` | `outbound-batch.service.ts:195,268,332,387,441,468` |
+| `shipped` | `outbound-consumption.service.ts:145` |
+| `unfulfillable` | `fulfillments.service.ts:690` |
+| `allocated` | `fulfillment-order-transaction.service.ts:118` |
+
+V2 는 `shipment-reservation.service.ts:1123` 에서 `projected.status` 하나로만 쓴다.
+
+주의할 값 둘:
+
+- **`forwarded` 는 안전하다.** `direct-ship.service.ts:302` 가 쓰는 것은 `fulfillmentOrders.status` 가 아니라 **`directShipStatus`** 컬럼(별도 `directShipStatusEnum`)이다. drop-ship 경로는 유지되지만 `fulfillment_status` 를 건드리지 않으므로 이 값은 죽는다.
+- **`reserving`/`unfulfillable`/`labeled` 는 writer 는 없는데 reader 가 남아 있다.** `store-sales-orders.service.ts:43`(`FO_PACKED_STATUSES`), 같은 파일 `:1000`, `sales-orders.service.ts:140`(`CANCELLABLE_FULFILLMENT_STATUSES`) 가 이 값으로 SO 상태를 분류한다. 값 제거 전에 이 read-side 부터 정리해야 한다.
+
+**`shipment_status`**: `'open'` 이 죽는다. 단 enum 주석(`inventory.schema.ts:62`)이 `in_transit`/`failed` 를 "DEAD 값(producer 0)" 으로 적어둔 것은 **낡았다 — Task 19 delivery projection 이 `in_transit` 을 되살렸다.** 이 주석이 가리키는 물류 하드닝 백로그(dev DB 복구 대기)와 대상 목록이 겹치므로, 두 작업을 합치되 목록은 다시 짤 것.
+
+**통째로 죽은 테이블**: `fulfillment_order_batches`. 비-spec 사용처 **0건** — `inventory.schema.ts` 의 정의/relations/`InferSelectModel` 타입에만 존재한다. 아래 체크리스트에 언급이 없다. 반면 `outbound_batches` 는 V2 orchestrator 가 계속 쓰므로 **살아남는다** (죽는 것은 batch 가 아니라 FO↔batch 링크).
+
+**`invoice_method`**: 위 Goodsflow→한진 결정에 따라 `'goodsflow'` 도 제거 후보. `'direct'`/`'self'` 는 V1 `invoice.service` 전용이라 같이 죽을 것으로 보이나, V2 에 자체발행 유스케이스가 있는지 스펙에 없다 — **결정 필요**.
+
+**실행 난이도가 컬럼과 다르다.** PostgreSQL 에는 `ALTER TYPE ... DROP VALUE` 가 없다. 컬럼은 `DROP COLUMN` 한 줄이지만 enum 값 제거는 새 타입 생성 → `USING` 캐스트로 컬럼 전환 → 옛 타입 drop → rename 의 4단계이고 drizzle-kit 이 이를 깔끔히 뽑아주지 못한다. 생성 SQL 을 반드시 손으로 검토할 것.
+
+**이 Task 를 막는 것은 데이터가 아니라 배포된 코드다.** "V1 물류가 진지하게 쓰인 적 없어 데이터가 날아가도 무방하다"(2026-07-16 확인)는 사실이지만 Task 25 를 열지 않는다 — 플랜은 애초에 "V1 출고 이력 없음"을 전제로 설계됐다. 실제 블로커는 배포된 Core 가 `legacy` 모드로 **V1 을 실행 중**이라는 것이다(`fulfillment-workflow-gate.service.ts:87-89` 의 `shouldEnqueueFo` 가 legacy 에서 무조건 true, `fulfillments.service.ts:114-119` 가 모드로 분기). 지금 V1 컬럼/enum 을 드롭하면 주문 유입마다 런타임 에러가 난다. contract 의 `deploy → migrate` 순서(ADR-0005 §5)가 요구하는 "V1 컬럼을 안 쓰는 코드" 를 띄우려면 V2 가 그 자리를 채워야 하고, V2 는 송장 발행이 막혀 있다 — **한진 블로커가 Task 25 도 함께 막는다.**
+
+**Task 24 축소 가능성 (미결)**: V1 물류가 한 번도 쓰이지 않았다면 Task 24 의 커토버 의식 — 플랫폼 스냅샷, audit 산출물, allowlist cleanup, watermark, maintenance 윈도우 — 대부분이 *보호할 대상이 없는 것을 보호하는 절차*가 된다. 한진 블로커가 풀린 뒤 Task 24 착수 전에 이 축소를 먼저 검토할 것. 단 cleanup 의 "SHIP 이벤트 발견 시 abort" 는 전제를 **검증하는** 장치이므로 전제를 믿는 근거로 삼아 지우면 순환논법이 된다.
 
 - [ ] Prove via production audit that no V1 writer/reader, pending V1 fulfillment outbox, FO-target reservation, `issuedForFO` ownership, `openedForFO` lookup or FO-batch link remains.
 - [ ] Make V2-required links NOT NULL where the final model requires them: shipment-line reservations, shipment-owned invoices, tracking attempt links for new tracking rows and outbox topic.
