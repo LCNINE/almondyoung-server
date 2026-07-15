@@ -3,6 +3,9 @@
 
 // 쿼리 키
 export * from './query-keys';
+export * from './idempotency';
+export * from './operation-policy';
+export { getServerDenyMessage, parseServerError } from '../../api/server-error';
 
 // 주문 액션 헬퍼
 export * from './order-actions';
@@ -16,6 +19,10 @@ export {
   // 출고 배치 (D2)
   useOutboundBatches,
   useOutboundBatch,
+  useOutboundBatchesV2,
+  useOutboundBatchV2,
+  useOutboundBatchEligibleShipments,
+  useOutboundBatchWorkItems,
   useOutboundBatchPickingList,
   useAvailableFulfillmentOrders,
   // 직배송 (D2)
@@ -25,6 +32,8 @@ export {
   useDirectShipCompanySummary,
   // 합포장 (D2)
   useConsolidationCandidates,
+  useShipmentConsolidationCandidates,
+  useConsolidationCandidatesV2,
   useConsolidationLive,
   useConsolidationSavings,
   useConsolidationRules,
@@ -44,6 +53,10 @@ export {
   useFulfillmentOrder,
   useFulfillmentOutboxEvents,
   useFulfillmentTransferCandidates,
+  useFulfillmentShipments,
+  useShipmentDetail,
+  useFulfillmentOperation,
+  useShipmentRecallOperation,
   useLegacyPurchaseOrders,
   useLegacyPurchaseOrder,
   // 검수
@@ -53,6 +66,7 @@ export {
   // 송장
   useInvoices,
   useInvoice,
+  useInvoiceOperation,
   // 레거시
   useDirectShips,
   useDirectShip,
@@ -77,6 +91,18 @@ export {
   useCreateFulfillmentOrder,
   useCancelFulfillment,
   useReserveFulfillmentItem,
+  useSplitShipment,
+  useReviseShipmentRecipient,
+  usePlanShipment,
+  useCancelShipmentOutstanding,
+  useRecallShipment,
+  useReportShipmentShortPick,
+  useCreateShipmentConsolidation,
+  useCreateConsolidation,
+  useIssueShipmentInvoice,
+  useVoidShipmentInvoice,
+  useShipmentInspectionScan,
+  useForceShipmentDispatch,
   // 출고 배치 (D2)
   useCreateOutboundBatch,
   useAddFOsToBatch,
@@ -84,6 +110,25 @@ export {
   useStartBatchPicking,
   useCompleteBatch,
   useCancelBatch,
+  useCreateOutboundBatchV2,
+  useAddShipmentToBatch,
+  useExcludeShipmentFromBatch,
+  useClaimBatchPicker,
+  useClaimBatchPacker,
+  useHandoffBatchWorkItem,
+  useCreatePickingPlan,
+  useStartPickingV2,
+  useDiscretePickingScan,
+  usePickingHandoff,
+  useCompletePickingV2,
+  useAggregateBulkCartScan,
+  useAggregateSortScan,
+  useAggregateCartHandoff,
+  useRegisterTote,
+  useAssignTote,
+  useToteScan,
+  useToteHandoff,
+  useReleaseTote,
   // 직배송 (D2)
   useForwardDirectShipOrders,
   useCompleteDirectShipOrders,

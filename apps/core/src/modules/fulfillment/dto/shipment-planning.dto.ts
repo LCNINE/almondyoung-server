@@ -185,6 +185,18 @@ export class ShipmentInvoiceHistoryResponseDto {
 
   @ApiProperty()
   trackingNo: string;
+
+  @ApiProperty({ nullable: true })
+  carrier: string | null;
+
+  @ApiProperty({ nullable: true })
+  manifestVersion: number | null;
+
+  @ApiProperty()
+  issuedAt: Date;
+
+  @ApiProperty({ nullable: true })
+  voidedAt: Date | null;
 }
 
 export class ShipmentWorkItemHistoryResponseDto {
@@ -204,6 +216,85 @@ export class ShipmentDispatchAttemptHistoryResponseDto {
 
   @ApiProperty()
   status: string;
+
+  @ApiProperty({ nullable: true })
+  invoiceId: string | null;
+
+  @ApiProperty({ nullable: true })
+  dispatchedAt: Date | null;
+
+  @ApiProperty({ nullable: true })
+  recalledAt: Date | null;
+
+  @ApiProperty({ nullable: true })
+  recoveryCode: string | null;
+
+  @ApiProperty({ type: [Object] })
+  sources: Array<{
+    id: string;
+    shipmentLineId: string;
+    sourceLocationId: string;
+    quantity: number;
+    stockEventId: string | null;
+  }>;
+
+  @ApiProperty({ type: [Object] })
+  trackingEvents: Array<{
+    id: string;
+    status: string;
+    location: string | null;
+    timestamp: Date;
+    providerEventId: string | null;
+  }>;
+}
+
+export class ShipmentOperationHistoryResponseDto {
+  @ApiProperty()
+  operationId: string;
+
+  @ApiProperty()
+  type: string;
+
+  @ApiProperty()
+  status: string;
+
+  @ApiProperty({ nullable: true })
+  lastError: string | null;
+
+  @ApiProperty()
+  createdAt: Date;
+
+  @ApiProperty({ nullable: true })
+  completedAt: Date | null;
+}
+
+export class ShipmentSummaryResponseDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  status: string;
+
+  @ApiProperty()
+  warehouseId: string;
+
+  @ApiProperty()
+  manifestVersion: number;
+
+  @ApiProperty()
+  reservationVersion: number;
+
+  @ApiProperty()
+  totalQty: number;
+
+  @ApiProperty()
+  reservedQty: number;
+
+  @ApiProperty()
+  inspectedQty: number;
+
+  @ApiProperty({ nullable: true })
+  recoveryCode: string | null;
 }
 
 export class ShipmentDetailResponseDto {
@@ -236,4 +327,36 @@ export class ShipmentDetailResponseDto {
 
   @ApiProperty({ type: [ShipmentDispatchAttemptHistoryResponseDto] })
   dispatchAttempts: ShipmentDispatchAttemptHistoryResponseDto[];
+
+  @ApiProperty({ type: [ShipmentOperationHistoryResponseDto] })
+  operations: ShipmentOperationHistoryResponseDto[];
+}
+
+export class FulfillmentOperationResponseDto {
+  @ApiProperty()
+  operationId: string;
+
+  @ApiProperty()
+  type: string;
+
+  @ApiProperty()
+  status: string;
+
+  @ApiProperty({ nullable: true })
+  resourceType: string | null;
+
+  @ApiProperty({ nullable: true })
+  resourceId: string | null;
+
+  @ApiProperty({ nullable: true })
+  lastError: string | null;
+
+  @ApiProperty({ nullable: true })
+  responseSnapshot: unknown;
+
+  @ApiProperty()
+  createdAt: Date;
+
+  @ApiProperty({ nullable: true })
+  completedAt: Date | null;
 }

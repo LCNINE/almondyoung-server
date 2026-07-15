@@ -8,6 +8,7 @@ export class WarehouseMapper {
       name: warehouse.name,
       location: warehouse.location,
       type: warehouse.type,
+      supportedPickingStrategies: warehouse.supportedPickingStrategies ?? [],
       createdAt: warehouse.createdAt.toISOString(),
       updatedAt: warehouse.updatedAt.toISOString(),
     };

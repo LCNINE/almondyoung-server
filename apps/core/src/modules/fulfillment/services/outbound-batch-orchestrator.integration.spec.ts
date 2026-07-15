@@ -736,7 +736,24 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       .update(wmsTables.outboundBatchWorkItems)
       .set({ status: 'completed', completedAt: new Date() })
       .where(eq(wmsTables.outboundBatchWorkItems.id, added.workItem.id));
-    expect(await services.batches.getBatch(batch.batchId)).toMatchObject({ status: 'completed' });
+    expect(await services.batches.getBatch(batch.batchId)).toMatchObject({
+      status: 'completed',
+      totalItems: 1,
+      totalQty: expect.any(Number),
+    });
+    expect(await services.batches.listBatches({ status: 'completed' })).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: batch.batchId,
+          status: 'completed',
+          totalItems: 1,
+          totalQty: expect.any(Number),
+        }),
+      ]),
+    );
+    expect((await services.batches.listBatches({ status: 'created' })).map((row) => row.id)).not.toContain(
+      batch.batchId,
+    );
     const legacyCompletedDetail = await wired.outboundBatch.getBatchDetail(batch.batchId);
     expect(legacyCompletedDetail).toMatchObject({ status: 'completed', totalItems: 0, totalQty: 0 });
     expect(legacyCompletedDetail.fulfillmentOrders).toEqual([

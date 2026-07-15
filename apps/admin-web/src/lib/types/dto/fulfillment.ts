@@ -24,7 +24,11 @@ export type FulfillmentOrderStatus =
   | 'completed'
   | 'canceled';
 
-export type DirectShipStatus = 'pending' | 'forwarded' | 'completed' | 'canceled';
+export type DirectShipStatus =
+  | 'pending'
+  | 'forwarded'
+  | 'completed'
+  | 'canceled';
 
 // ===== FO summary types (Core DTO 1:1 대응) =====
 
@@ -41,6 +45,7 @@ export interface FulfillmentOrderItem {
   reservedQty: number;
   pickedQty: number;
   shippedQty: number;
+  canceledQty?: number;
   status: string;
 }
 
@@ -53,6 +58,8 @@ export interface ReservationSummary {
   warehouseId: string;
   quantity: number;
   status: string;
+  shipmentLineId?: string | null;
+  requestedAt?: string | null;
 }
 
 export interface InvoiceSummary {
@@ -94,11 +101,11 @@ export interface FulfillmentOrder {
   totalQty: number;
   totalReservedQty: number;
   reservationFailureReason: string | null;
-  reservationFailureDetails?: unknown | null;
+  reservationFailureDetails?: unknown;
   allocatedAt: string | null;
   shippedAt: string | null;
   canceledAt: string | null;
-  shippingAddress?: unknown | null;
+  shippingAddress?: unknown;
   labelNo: string | null;
   createdAt: string;
   updatedAt: string;
@@ -113,6 +120,9 @@ export interface FulfillmentOrderDetail extends FulfillmentOrder {
   reservations: ReservationSummary[];
   adminAvailableActions: string[];
   blockedReasons: string[];
+  progress?: FulfillmentV2Progress;
+  /** V2는 하나의 FO에 여러 shipment가 존재하므로 이 목록을 기준으로 렌더한다. */
+  shipments?: FulfillmentShipmentSummary[];
 }
 
 /** GET /fulfillments 쿼리 파라미터 */
@@ -148,6 +158,9 @@ export interface TransferReservationRequest {
   fromFulfillmentOrderItemId: string;
   toFulfillmentOrderItemId: string;
   quantity: number;
+  reason?: string;
+  csCaseId?: string;
+  note?: string;
 }
 
 /** GET /fulfillments/:id/transfer-candidates 응답 항목 */
@@ -214,7 +227,7 @@ export interface UpdateFulfillmentPriorityRequest {
 export interface FulfillmentOutboxEvent {
   id: string;
   eventType: string;
-  status: 'pending' | 'processing' | 'published' | 'failed' | string;
+  status: string;
   attempts: number;
   nextAttemptAt: string | null;
   publishedAt: string | null;
@@ -843,4 +856,814 @@ export interface LocationOptimizationZone {
   type: string;
   priority: number;
   description: string;
+}
+
+// ===== Fulfillment V2 admin reads and commands =====
+
+export type FulfillmentOperationStatus =
+  | 'pending'
+  | 'in_progress'
+  | 'completed'
+  | 'succeeded'
+  | 'failed'
+  | 'recovery_required';
+
+export type PickingStrategyName =
+  | 'discrete'
+  | 'aggregate_then_sort'
+  | 'pick_to_tote';
+
+export interface FulfillmentV2ProgressItem {
+  id: string;
+  qty: number;
+  shippedQty: number;
+  canceledQty: number;
+  outstandingQty: number;
+  confirmedReservedQty: number;
+  activeLineQty: number;
+  processing: boolean;
+  recoveryRequired: boolean;
+  status: string;
+}
+
+export interface FulfillmentV2Progress {
+  status: string;
+  totalQty: number;
+  shippedQty: number;
+  canceledQty: number;
+  outstandingQty: number;
+  confirmedReservedQty: number;
+  items: FulfillmentV2ProgressItem[];
+}
+
+export interface FulfillmentShipmentSummary {
+  id: string;
+  status: string;
+  manifestVersion: number;
+  reservationVersion: number;
+  shippingProfileId: string | null;
+  qty: number;
+  reservedQty: number;
+}
+
+export interface ShipmentAdminSummary {
+  id: string;
+  status: string;
+  warehouseId: string;
+  manifestVersion: number;
+  reservationVersion: number;
+  totalQty: number;
+  reservedQty: number;
+  inspectedQty: number;
+  recoveryCode: string | null;
+}
+
+export interface ShipmentLineOrigin {
+  salesOrderLineId: string;
+  salesOrderId: string;
+  salesChannel: string;
+  channelOrderId: string;
+  channelOrderItemId: string | null;
+  channelProductId: string | null;
+}
+
+export interface ShipmentLineReservation {
+  id: string;
+  shipmentLineId: string | null;
+  quantity: number;
+  status: string;
+}
+
+export interface ShipmentAdminLine {
+  id: string;
+  fulfillmentOrderId: string;
+  fulfillmentOrderItemId: string;
+  skuId: string;
+  qty: number;
+  reservedQty: number;
+  inspectedQty: number;
+  lineVersion: number;
+  origin: ShipmentLineOrigin | null;
+  reservations: ShipmentLineReservation[];
+}
+
+export interface ShipmentInvoiceHistory {
+  id: string;
+  status: string;
+  trackingNo: string;
+  carrier: string | null;
+  manifestVersion: number | null;
+  issuedAt: string;
+  voidedAt: string | null;
+}
+
+export interface ShipmentTrackingEvent {
+  id: string;
+  status: string;
+  timestamp: string;
+  providerEventId: string | null;
+  location: string | null;
+}
+
+export interface ShipmentDispatchSource {
+  id: string;
+  shipmentLineId: string;
+  sourceLocationId: string;
+  quantity: number;
+  stockEventId: string | null;
+}
+
+export interface ShipmentDispatchAttemptHistory {
+  id: string;
+  attemptNo: number;
+  status: string;
+  invoiceId?: string | null;
+  dispatchedAt: string | null;
+  recalledAt: string | null;
+  recoveryCode: string | null;
+  sources: ShipmentDispatchSource[];
+  trackingEvents: ShipmentTrackingEvent[];
+}
+
+export interface ShipmentOperationHistory {
+  /** @deprecated use operationId; retained during the V2 UI rollout. */
+  id?: string;
+  operationId: string;
+  type: string;
+  status: FulfillmentOperationStatus;
+  reason?: string | null;
+  lastError?: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface ShipmentWorkItemHistory {
+  id: string;
+  status: string;
+  batchId?: string;
+  leaseVersion?: number;
+}
+
+export interface ShipmentAdminDetail {
+  id: string;
+  status: string;
+  warehouseId: string;
+  manifestVersion: number;
+  reservationVersion: number;
+  shippingProfileId?: string | null;
+  recipientSnapshot:
+    | FulfillmentShippingAddress
+    | Record<string, unknown>
+    | null;
+  recoveryCode?: string | null;
+  channelProjectionStatus?: string | null;
+  manualAdjustmentRequired?: boolean;
+  lines: ShipmentAdminLine[];
+  invoices: ShipmentInvoiceHistory[];
+  workItems: ShipmentWorkItemHistory[];
+  dispatchAttempts: ShipmentDispatchAttemptHistory[];
+  operations: ShipmentOperationHistory[];
+}
+
+export interface FulfillmentOperation<TSnapshot = unknown> {
+  operationId: string;
+  type: string;
+  status: FulfillmentOperationStatus;
+  resourceType: string | null;
+  resourceId: string | null;
+  lastError: string | null;
+  createdAt: string;
+  completedAt: string | null;
+  responseSnapshot?: TSnapshot | null;
+}
+
+export interface ShipmentCommandReason {
+  reason: string;
+  csCaseId?: string;
+  note?: string;
+}
+
+export interface ShipmentSplitMove {
+  shipmentLineId: string;
+  expectedLineVersion: number;
+  qty: number;
+  targetReservedQty?: number;
+}
+
+export interface SplitShipmentRequest extends ShipmentCommandReason {
+  expectedManifestVersion: number;
+  moves: ShipmentSplitMove[];
+}
+
+export interface ReviseShipmentRecipientRequest extends ShipmentCommandReason {
+  expectedManifestVersion: number;
+  recipientSnapshot: FulfillmentShippingAddress;
+}
+
+export interface PlanShipmentRequest {
+  shippingProfileId: string;
+  expectedManifestVersion: number;
+  expectedReservationVersion: number;
+}
+
+export interface CancelShipmentLineRequest {
+  shipmentLineId: string;
+  expectedLineVersion: number;
+  qty: number;
+}
+
+export interface CancelShipmentOutstandingRequest extends ShipmentCommandReason {
+  expectedManifestVersion: number;
+  lines: CancelShipmentLineRequest[];
+}
+
+export interface ShipmentPlanningCommandResponse {
+  operationId: string;
+  operationStatus?: 'pending' | 'completed';
+  shipment?: ShipmentAdminDetail | ShipmentAdminSummary;
+  source?: ShipmentAdminDetail | ShipmentAdminSummary;
+  target?: ShipmentAdminDetail | ShipmentAdminSummary;
+  shipmentId?: string;
+  manifestVersion?: number;
+}
+
+export interface ShipmentConsolidationCandidate {
+  shipmentId: string;
+  manifestVersion: number;
+  reservationVersion: number;
+  salesOrderIds: string[];
+  salesChannels: string[];
+  lineCount: number;
+  totalQty: number;
+}
+
+export interface ShipmentConsolidationCandidateGroup {
+  compatibilityKey: string;
+  warehouseId: string;
+  shippingProfileId: string;
+  recipientSnapshot: unknown;
+  shipments: ShipmentConsolidationCandidate[];
+}
+
+export interface ShipmentConsolidationCandidateQuery {
+  warehouseId: string;
+  sourceShipmentId?: string;
+}
+
+export interface ShipmentConsolidationSource {
+  shipmentId: string;
+  expectedManifestVersion: number;
+  expectedReservationVersion: number;
+}
+
+export interface CreateShipmentConsolidationRequest extends ShipmentCommandReason {
+  sources: ShipmentConsolidationSource[];
+  recipientSourceShipmentId?: string;
+  recipientSnapshot?: FulfillmentShippingAddress;
+}
+
+export interface ShipmentConsolidationResponse {
+  operationId: string;
+  operationStatus: 'pending' | 'completed';
+  sourceShipmentIds: string[];
+  targetShipmentId: string | null;
+  blockers?: Array<{ shipmentId: string; codes: string[] }>;
+  sources?: ShipmentAdminSummary[];
+  target?: ShipmentAdminSummary;
+  lineLineage?: Array<{
+    targetLineId: string;
+    fulfillmentOrderItemId: string;
+    sourceLineIds: string[];
+  }>;
+}
+
+export interface IssueShipmentInvoiceRequest extends ShipmentCommandReason {
+  expectedManifestVersion: number;
+  provider: 'goodsflow' | 'hanjin';
+  carrierCode: string;
+}
+
+export interface VoidShipmentInvoiceRequest extends ShipmentCommandReason {
+  resumeOperationId?: string;
+}
+
+export interface InvoiceOperation {
+  operationId: string;
+  shipmentId: string;
+  invoiceId: string | null;
+  operation: 'issue' | 'void';
+  status:
+    | 'pending'
+    | 'in_progress'
+    | 'succeeded'
+    | 'failed'
+    | 'recovery_required';
+  attempts: number;
+  resumeOperationId: string | null;
+  nextRetryAt: string | null;
+  lastError: string | null;
+}
+
+export type ShipmentRecallReason =
+  | 'carrier_handoff_failed'
+  | 'dispatch_mistake'
+  | 'address_correction'
+  | 'package_recovered';
+
+export interface RecallShipmentRequest {
+  dispatchAttemptId: string;
+  expectedManifestVersion: number;
+  physicalRecoveryConfirmed: true;
+  reason: ShipmentRecallReason;
+  csCaseId?: string;
+  note?: string;
+}
+
+export interface ShipmentRecallOperation {
+  operationId: string;
+  shipmentId: string;
+  dispatchAttemptId: string;
+  operationStatus: 'pending' | 'recovery_required' | 'completed';
+  invoiceOperationId: string | null;
+}
+
+export type ShipmentShortPickReason =
+  | 'inventory_shortage'
+  | 'item_damaged'
+  | 'quality_defect'
+  | 'expired_stock';
+
+export interface ShipmentShortPickLineRequest {
+  shipmentLineId: string;
+  sourceLocationId: string;
+  expectedLineVersion: number;
+  shortQty: number;
+}
+
+export interface ReportShipmentShortPickRequest {
+  workItemId: string;
+  expectedWorkItemLeaseVersion: number;
+  planId: string;
+  expectedPlanVersion: number;
+  sessionId: string;
+  expectedSessionVersion: number;
+  expectedManifestVersion: number;
+  lines: ShipmentShortPickLineRequest[];
+  reason: ShipmentShortPickReason;
+  csCaseId?: string;
+  note?: string;
+}
+
+export interface ShipmentShortPickOperation {
+  operationId: string;
+  shipmentId: string;
+  operationStatus: 'pending' | 'recovery_required' | 'completed';
+  invoiceOperationId: string | null;
+  workItemId: string;
+}
+
+export interface ShipmentInspectionScanRequest {
+  barcode: string;
+  quantity: number;
+}
+
+export type ForceShipmentDispatchRequest = ShipmentCommandReason;
+
+export interface OutboundBatchV2ListQuery {
+  warehouseId?: string;
+  status?: OutboundBatchStatus;
+}
+
+export interface CreateOutboundBatchV2Request {
+  warehouseId: string;
+  pickingMethod: 'individual';
+  name?: string;
+  scheduledPickingAt?: string;
+}
+
+export interface BatchClaimState {
+  state: 'unclaimed' | 'active' | 'expired' | 'released';
+  workerId: string | null;
+  claimedAt: string | null;
+  releasedAt: string | null;
+  leaseExpiresAt: string | null;
+}
+
+export interface OutboundBatchWorkItemV2 {
+  id: string;
+  batchId: string;
+  shipmentId: string;
+  status: string;
+  leaseVersion: number;
+  pickerId: string | null;
+  pickerClaimedAt: string | null;
+  pickerReleasedAt: string | null;
+  packerId: string | null;
+  packerClaimedAt: string | null;
+  packerReleasedAt: string | null;
+  handedOffAt: string | null;
+  completedAt: string | null;
+  leaseExpiresAt: string | null;
+  exclusionReason: string | null;
+  recoveryReason: string | null;
+  waitingOperationId: string | null;
+  pickerClaim: BatchClaimState;
+  packerClaim: BatchClaimState;
+}
+
+export interface EligibleShipmentV2 {
+  shipmentId: string;
+  warehouseId: string;
+  shippingProfileId: string;
+  manifestVersion: number;
+  reservationVersion: number;
+  recipientHash: string;
+  totalItems: number;
+  totalQty: number;
+  invoiceId: string;
+  trackingNo: string;
+}
+
+export interface PickingStrategyCapabilities {
+  name: PickingStrategyName;
+  requiresPhysicalTote: boolean;
+  supportsAggregateSourcePick: boolean;
+  inspectionReadyCustody: 'PACKING';
+  custodyFlow: string[];
+}
+
+export interface PickingPlanMember {
+  id: string;
+  shipmentId: string;
+  workItemId?: string;
+  status: string;
+}
+
+export interface PickingPlanAllocation {
+  id: string;
+  shipmentLineId: string;
+  skuId: string;
+  sourceLocationId: string;
+  quantity: number;
+}
+
+export interface PickingPlanSnapshot {
+  id: string;
+  batchId: string;
+  strategy: PickingStrategyName;
+  status: string;
+  version: number;
+  members: PickingPlanMember[];
+  allocations: PickingPlanAllocation[];
+}
+
+export interface InventorySessionBalance {
+  id: string;
+  shipmentLineId: string | null;
+  skuId: string;
+  sourceLocationId: string | null;
+  custodyType: string;
+  custodyRef: string | null;
+  quantity: number;
+}
+
+export interface InventorySessionSnapshot {
+  id: string;
+  status: string;
+  version: number;
+  handedInQty: number;
+  settledQty: number;
+  returnedQty: number;
+  shortageQty: number;
+  recoveryReason: string | null;
+  balances: InventorySessionBalance[];
+}
+
+export interface ToteAssignmentSnapshot {
+  id: string;
+  toteId: string;
+  toteBarcode: string;
+  shipmentId: string;
+  workItemId?: string;
+  toteStatus: string;
+  assignedBy: string;
+  assignedAt: string;
+  releasedAt: string | null;
+}
+
+export interface OutboundBatchV2 {
+  id: string;
+  batchNumber: string;
+  name: string;
+  warehouseId: string;
+  pickingMethod: string;
+  status: OutboundBatchStatus;
+  totalItems: number;
+  totalQty: number;
+  scheduledPickingAt?: string;
+  startedAt?: string;
+  completedAt?: string;
+  warehouse?: {
+    id: string;
+    name?: string;
+    supportedPickingStrategies: PickingStrategyName[];
+  };
+  workItems: OutboundBatchWorkItemV2[];
+  pickingPlan: PickingPlanSnapshot | null;
+  inventorySession: InventorySessionSnapshot | null;
+  toteAssignments: ToteAssignmentSnapshot[];
+}
+
+export interface OutboundBatchV2ListItem {
+  id: string;
+  batchNumber: string;
+  name: string;
+  warehouseId: string;
+  status: OutboundBatchStatus;
+  pickingMethod: string;
+  totalItems: number;
+  totalQty: number;
+  scheduledPickingAt: string | null;
+  createdAt: string;
+}
+
+export interface ClaimBatchWorkItemRequest {
+  expectedLeaseVersion: number;
+}
+
+export interface HandoffBatchWorkItemRequest extends ClaimBatchWorkItemRequest {
+  claimType: 'picker' | 'packer';
+  targetWorkerId: string;
+  reason: string;
+}
+
+export interface OutboundBatchCommandResponse {
+  operationId: string;
+  workItem: OutboundBatchWorkItemV2;
+}
+
+export interface CreatePickingPlanRequest {
+  strategy: PickingStrategyName;
+  batchId: string;
+  shipmentIds: string[];
+}
+
+export interface StartPickingV2Request {
+  batchId: string;
+  planId: string;
+}
+
+export interface DiscretePickingScanRequest {
+  batchId: string;
+  planId: string;
+  sessionId: string;
+  workItemId: string;
+  shipmentId: string;
+  shipmentLineId: string;
+  skuId: string;
+  sourceLocationId: string;
+  quantity: number;
+  expectedLeaseVersion: number;
+}
+
+export interface PickingHandoffRequest {
+  batchId: string;
+  planId: string;
+  sessionId: string;
+  workItemId: string;
+  shipmentId: string;
+  targetWorkerId: string;
+  expectedLeaseVersion: number;
+  reason: string;
+}
+
+export interface CompletePickingRequest {
+  batchId: string;
+  planId: string;
+  sessionId: string;
+  workItemId: string;
+  shipmentId: string;
+  expectedLeaseVersion: number;
+}
+
+export interface PickingPlanResult {
+  state: 'planned' | 'invalidated';
+  operationId: string;
+  planId: string;
+  batchId: string;
+  strategy?: PickingStrategyName;
+  version?: number;
+  shipmentIds?: string[];
+  allocationCount?: number;
+  totalQty?: number;
+  reason?: string;
+}
+
+export interface PickingStartResult {
+  state: 'started' | 'invalidated';
+  operationId: string;
+  planId: string;
+  batchId: string;
+  sessionId?: string;
+  status?: string;
+  reason?: string;
+}
+
+export interface PickingScanResult {
+  operationId: string;
+  planId: string;
+  sessionId: string;
+  workItemId: string;
+  shipmentId: string;
+  shipmentLineId: string;
+  skuId: string;
+  sourceLocationId: string;
+  quantity: number;
+  workerId: string;
+}
+
+export interface PickingHandoffResult {
+  operationId: string;
+  workItemId: string;
+  shipmentId: string;
+  workerId: string;
+  leaseVersion: number;
+  movedQty: number;
+}
+
+export interface InspectionReadyOutput {
+  operationId: string;
+  workItemId: string;
+  shipmentId: string;
+  custodyType: 'PACKING';
+  custodyRef: string;
+  lines: Array<{
+    shipmentLineId: string;
+    skuId: string;
+    sourceLocationId: string;
+    quantity: number;
+  }>;
+  totalQty: number;
+}
+
+export interface AggregateBulkCartScanRequest {
+  batchId: string;
+  planId: string;
+  sessionId: string;
+  skuId: string;
+  sourceLocationId: string;
+  cartId: string;
+  quantity: number;
+}
+
+export interface AggregateSortScanRequest {
+  batchId: string;
+  planId: string;
+  sessionId: string;
+  workItemId: string;
+  shipmentId: string;
+  shipmentLineId: string;
+  skuId: string;
+  cartId: string;
+  quantity: number;
+  expectedLeaseVersion: number;
+  destinationCustody: 'SORTING' | 'PACKING';
+}
+
+export interface AggregateCartHandoffRequest {
+  batchId: string;
+  planId: string;
+  sessionId: string;
+  expectedOwnerId: string;
+  targetWorkerId: string;
+  cartId: string;
+  reason: string;
+}
+
+export interface AggregateSourceScanResult {
+  operationId: string;
+  planId: string;
+  sessionId: string;
+  skuId: string;
+  sourceLocationId: string;
+  quantity: number;
+  cartRef: string;
+  workerId: string;
+}
+
+export interface AggregateSortScanResult {
+  operationId: string;
+  planId: string;
+  sessionId: string;
+  workItemId: string;
+  shipmentId: string;
+  shipmentLineId: string;
+  skuId: string;
+  quantity: number;
+  cartRef: string;
+  destinationCustody: 'SORTING' | 'PACKING';
+  destinationRef: string;
+  sourceMoves: Array<{ sourceLocationId: string; quantity: number }>;
+}
+
+export interface AggregateCartHandoffResult {
+  operationId: string;
+  sessionId: string;
+  sourceCartRef: string;
+  targetCartRef: string;
+  movedQty: number;
+}
+
+export interface RegisterToteRequest {
+  warehouseId: string;
+  toteBarcode: string;
+}
+
+export interface AssignToteRequest {
+  batchId: string;
+  planId: string;
+  sessionId: string;
+  workItemId: string;
+  shipmentId: string;
+  toteBarcode: string;
+  expectedLeaseVersion: number;
+}
+
+export interface ToteScanRequest extends AssignToteRequest {
+  shipmentLineId: string;
+  skuId: string;
+  sourceLocationId: string;
+  quantity: number;
+}
+
+export interface ToteHandoffRequest extends AssignToteRequest {
+  targetWorkItemId: string;
+  targetShipmentId: string;
+  targetExpectedLeaseVersion: number;
+  reason: string;
+}
+
+export interface ReleaseToteRequest extends AssignToteRequest {
+  reason: string;
+}
+
+export interface ToteRegistrationResult {
+  operationId: string;
+  toteId: string;
+  warehouseId: string;
+  toteBarcode: string;
+  status: 'available';
+  version: number;
+}
+
+export interface ToteAssignmentResult {
+  operationId: string;
+  assignmentId: string;
+  toteId: string;
+  toteBarcode: string;
+  shipmentId: string;
+  status: 'assigned';
+}
+
+export interface ToteScanResult extends PickingScanResult {
+  toteId: string;
+  toteBarcode: string;
+  toteRef: string;
+}
+
+export interface ToteHandoffResult {
+  operationId: string;
+  toteId: string;
+  toteBarcode: string;
+  sourceAssignmentId: string;
+  targetAssignmentId: string;
+  sourceShipmentId: string;
+  targetShipmentId: string;
+  status: 'assigned';
+}
+
+export interface ToteReleaseResult {
+  operationId: string;
+  assignmentId: string;
+  toteId: string;
+  toteBarcode: string;
+  shipmentId: string;
+  status: 'released';
+}
+
+export interface ReturnEligibilityItem {
+  salesOrderLineId: string;
+  shipmentId: string;
+  shipmentLineId: string;
+  dispatchAttemptId: string;
+  deliveredAt: string;
+  shippedQty: number;
+  claimedQty: number;
+  remainingEligibleQty: number;
+  salesOrderLineRemainingEligibleQty: number;
+}
+
+export interface ReturnEligibilityResponse {
+  orderId: string;
+  items: ReturnEligibilityItem[];
 }

@@ -35,7 +35,40 @@ import type {
   UnreserveRequest,
   TransferReservationRequest,
   InspectByScanRequest,
+  SplitShipmentRequest,
+  ReviseShipmentRecipientRequest,
+  PlanShipmentRequest,
+  CancelShipmentOutstandingRequest,
+  RecallShipmentRequest,
+  ReportShipmentShortPickRequest,
+  CreateShipmentConsolidationRequest,
+  IssueShipmentInvoiceRequest,
+  VoidShipmentInvoiceRequest,
+  ShipmentInspectionScanRequest,
+  ForceShipmentDispatchRequest,
+  CreateOutboundBatchV2Request,
+  ClaimBatchWorkItemRequest,
+  HandoffBatchWorkItemRequest,
+  CreatePickingPlanRequest,
+  StartPickingV2Request,
+  DiscretePickingScanRequest,
+  PickingHandoffRequest,
+  CompletePickingRequest,
+  AggregateBulkCartScanRequest,
+  AggregateSortScanRequest,
+  AggregateCartHandoffRequest,
+  RegisterToteRequest,
+  AssignToteRequest,
+  ToteScanRequest,
+  ToteHandoffRequest,
+  ReleaseToteRequest,
 } from '@/lib/types/dto/fulfillment';
+
+type OptionalIdempotencyKey = { idempotencyKey?: string };
+
+function commandKey(idempotencyKey?: string): string {
+  return idempotencyKey ?? crypto.randomUUID();
+}
 
 // 주문 관련 뮤테이션
 export const useCreateSalesOrder = () => {
@@ -149,7 +182,10 @@ export const useDeleteOutboundBatch = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) => Promise.resolve(),
+    mutationFn: (id: string) => {
+      void id;
+      return Promise.resolve();
+    },
     onSuccess: (_, id) => {
       queryClient.invalidateQueries({
         queryKey: orderQueryKeys.outboundBatches,
@@ -183,7 +219,7 @@ export const usePickIndividualItem = () => {
       foiId: string;
       data: PickIndividualItemRequest;
     }) => orders.picking.pickIndividualItem(foiId, data),
-    onSuccess: (_, { foiId }) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: orderQueryKeys.pickings });
     },
   });
@@ -786,7 +822,10 @@ export const useAutoConsolidate = () => {
 
 // ===== FO 액션 뮤테이션 (Core /fulfillments canonical API) =====
 
-function invalidateFulfillment(queryClient: ReturnType<typeof useQueryClient>, id: string) {
+function invalidateFulfillment(
+  queryClient: ReturnType<typeof useQueryClient>,
+  id: string
+) {
   queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillments });
   queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillment(id) });
   queryClient.invalidateQueries({ queryKey: orderQueryKeys.outboundBatches });
@@ -810,8 +849,12 @@ export const useCheckFulfillmentAvailability = (id: string) => {
   return useMutation({
     mutationFn: () => orders.fulfillments.checkAvailability(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillment(id) });
-      queryClient.invalidateQueries({ queryKey: ['inventory', 'reservations'] });
+      queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.fulfillment(id),
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['inventory', 'reservations'],
+      });
     },
   });
 };
@@ -829,7 +872,8 @@ export const useReserveFulfillment = (id: string) => {
 export const useUnreserveFulfillment = (id: string) => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: UnreserveRequest) => orders.fulfillments.unreserve(id, data),
+    mutationFn: (data: UnreserveRequest) =>
+      orders.fulfillments.unreserve(id, data),
     onSuccess: () => {
       invalidateFulfillment(queryClient, id);
     },
@@ -839,13 +883,482 @@ export const useUnreserveFulfillment = (id: string) => {
 export const useTransferFulfillmentReservation = (id: string) => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: TransferReservationRequest) =>
-      orders.fulfillments.transferReservation(id, data),
+    mutationFn: (
+      input:
+        | TransferReservationRequest
+        | ({ data: TransferReservationRequest } & OptionalIdempotencyKey)
+    ) => {
+      const wrapped = 'data' in input;
+      return orders.fulfillments.transferReservation(
+        id,
+        wrapped ? input.data : input,
+        commandKey(wrapped ? input.idempotencyKey : undefined)
+      );
+    },
     onSuccess: () => {
       invalidateFulfillment(queryClient, id);
     },
   });
 };
+
+// ===== Shipment planning / durable operations =====
+
+function invalidateShipment(
+  queryClient: ReturnType<typeof useQueryClient>,
+  shipmentId: string
+) {
+  queryClient.invalidateQueries({
+    queryKey: orderQueryKeys.shipment(shipmentId),
+  });
+  queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillments });
+  queryClient.invalidateQueries({ queryKey: orderQueryKeys.outboundBatches });
+}
+
+export const useSplitShipment = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      shipmentId,
+      data,
+      idempotencyKey,
+    }: {
+      shipmentId: string;
+      data: SplitShipmentRequest;
+      idempotencyKey?: string;
+    }) =>
+      orders.fulfillmentOrder.splitShipment(
+        shipmentId,
+        data,
+        commandKey(idempotencyKey)
+      ),
+    onSuccess: (_, { shipmentId }) =>
+      invalidateShipment(queryClient, shipmentId),
+  });
+};
+
+export const useReviseShipmentRecipient = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      shipmentId,
+      data,
+      idempotencyKey,
+    }: {
+      shipmentId: string;
+      data: ReviseShipmentRecipientRequest;
+      idempotencyKey?: string;
+    }) =>
+      orders.fulfillmentOrder.reviseShipmentRecipient(
+        shipmentId,
+        data,
+        commandKey(idempotencyKey)
+      ),
+    onSuccess: (_, { shipmentId }) =>
+      invalidateShipment(queryClient, shipmentId),
+  });
+};
+
+export const usePlanShipment = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      shipmentId,
+      data,
+      idempotencyKey,
+    }: {
+      shipmentId: string;
+      data: PlanShipmentRequest;
+      idempotencyKey?: string;
+    }) =>
+      orders.fulfillmentOrder.planShipment(
+        shipmentId,
+        data,
+        commandKey(idempotencyKey)
+      ),
+    onSuccess: (_, { shipmentId }) =>
+      invalidateShipment(queryClient, shipmentId),
+  });
+};
+
+export const useCancelShipmentOutstanding = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      shipmentId,
+      data,
+      idempotencyKey,
+    }: {
+      shipmentId: string;
+      data: CancelShipmentOutstandingRequest;
+      idempotencyKey?: string;
+    }) =>
+      orders.fulfillmentOrder.cancelShipmentOutstanding(
+        shipmentId,
+        data,
+        commandKey(idempotencyKey)
+      ),
+    onSuccess: (_, { shipmentId }) =>
+      invalidateShipment(queryClient, shipmentId),
+  });
+};
+
+export const useRecallShipment = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      shipmentId,
+      data,
+      idempotencyKey,
+    }: {
+      shipmentId: string;
+      data: RecallShipmentRequest;
+      idempotencyKey?: string;
+    }) =>
+      orders.fulfillmentOrder.recallShipment(
+        shipmentId,
+        data,
+        commandKey(idempotencyKey)
+      ),
+    onSuccess: (_, { shipmentId }) =>
+      invalidateShipment(queryClient, shipmentId),
+  });
+};
+
+export const useReportShipmentShortPick = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      shipmentId,
+      data,
+      idempotencyKey,
+    }: {
+      shipmentId: string;
+      data: ReportShipmentShortPickRequest;
+      idempotencyKey?: string;
+    }) =>
+      orders.fulfillmentOrder.reportShortPick(
+        shipmentId,
+        data,
+        commandKey(idempotencyKey)
+      ),
+    onSuccess: (_, { shipmentId }) =>
+      invalidateShipment(queryClient, shipmentId),
+  });
+};
+
+export const useCreateShipmentConsolidation = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      data,
+      idempotencyKey,
+    }: {
+      data: CreateShipmentConsolidationRequest;
+      idempotencyKey?: string;
+    }) =>
+      orders.consolidation.createShipmentConsolidation(
+        data,
+        commandKey(idempotencyKey)
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shipments'] });
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillments });
+    },
+  });
+};
+
+export const useCreateConsolidation = useCreateShipmentConsolidation;
+
+export const useIssueShipmentInvoice = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      shipmentId,
+      data,
+      idempotencyKey,
+    }: {
+      shipmentId: string;
+      data: IssueShipmentInvoiceRequest;
+      idempotencyKey?: string;
+    }) =>
+      orders.invoices.issueForShipment(
+        shipmentId,
+        data,
+        commandKey(idempotencyKey)
+      ),
+    onSuccess: (_, { shipmentId }) =>
+      invalidateShipment(queryClient, shipmentId),
+  });
+};
+
+export const useVoidShipmentInvoice = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      invoiceId,
+      data,
+      idempotencyKey,
+    }: {
+      invoiceId: string;
+      data: VoidShipmentInvoiceRequest;
+      idempotencyKey?: string;
+    }) =>
+      orders.invoices.voidShipmentInvoice(
+        invoiceId,
+        data,
+        commandKey(idempotencyKey)
+      ),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.invoices }),
+  });
+};
+
+export const useShipmentInspectionScan = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      shipmentId,
+      data,
+      idempotencyKey,
+    }: {
+      shipmentId: string;
+      data: ShipmentInspectionScanRequest;
+      idempotencyKey?: string;
+    }) =>
+      orders.inspection.scanShipment(
+        shipmentId,
+        data,
+        commandKey(idempotencyKey)
+      ),
+    onSuccess: (_, { shipmentId }) =>
+      invalidateShipment(queryClient, shipmentId),
+  });
+};
+
+export const useForceShipmentDispatch = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      shipmentId,
+      data,
+      idempotencyKey,
+    }: {
+      shipmentId: string;
+      data: ForceShipmentDispatchRequest;
+      idempotencyKey?: string;
+    }) =>
+      orders.inspection.forceShipmentDispatch(
+        shipmentId,
+        data,
+        commandKey(idempotencyKey)
+      ),
+    onSuccess: (_, { shipmentId }) =>
+      invalidateShipment(queryClient, shipmentId),
+  });
+};
+
+// ===== Outbound batch V2 / strategy picking =====
+
+function invalidateBatchV2(
+  queryClient: ReturnType<typeof useQueryClient>,
+  batchId: string
+) {
+  queryClient.invalidateQueries({
+    queryKey: orderQueryKeys.outboundBatchV2(batchId),
+  });
+  queryClient.invalidateQueries({
+    queryKey: orderQueryKeys.outboundBatchesV2Root,
+  });
+}
+
+export const useCreateOutboundBatchV2 = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      data,
+      idempotencyKey,
+    }: {
+      data: CreateOutboundBatchV2Request;
+      idempotencyKey?: string;
+    }) => orders.outboundBatches.createV2(data, commandKey(idempotencyKey)),
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.outboundBatchesV2Root,
+      }),
+  });
+};
+
+export const useAddShipmentToBatch = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      batchId,
+      shipmentId,
+      idempotencyKey,
+    }: {
+      batchId: string;
+      shipmentId: string;
+      idempotencyKey?: string;
+    }) =>
+      orders.outboundBatches.addShipment(
+        batchId,
+        shipmentId,
+        commandKey(idempotencyKey)
+      ),
+    onSuccess: (_, { batchId }) => invalidateBatchV2(queryClient, batchId),
+  });
+};
+
+export const useExcludeShipmentFromBatch = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      batchId,
+      shipmentId,
+      reason,
+      idempotencyKey,
+    }: {
+      batchId: string;
+      shipmentId: string;
+      reason: string;
+      idempotencyKey?: string;
+    }) =>
+      orders.outboundBatches.excludeShipment(
+        batchId,
+        shipmentId,
+        reason,
+        commandKey(idempotencyKey)
+      ),
+    onSuccess: (_, { batchId }) => invalidateBatchV2(queryClient, batchId),
+  });
+};
+
+function workItemClaimMutation(kind: 'picker' | 'packer') {
+  return () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+      mutationFn: ({
+        workItemId,
+        data,
+        idempotencyKey,
+      }: {
+        batchId: string;
+        workItemId: string;
+        data: ClaimBatchWorkItemRequest;
+        idempotencyKey?: string;
+      }) =>
+        kind === 'picker'
+          ? orders.outboundBatches.claimPicker(
+              workItemId,
+              data,
+              commandKey(idempotencyKey)
+            )
+          : orders.outboundBatches.claimPacker(
+              workItemId,
+              data,
+              commandKey(idempotencyKey)
+            ),
+      onSuccess: (_, { batchId }) => invalidateBatchV2(queryClient, batchId),
+    });
+  };
+}
+
+export const useClaimBatchPicker = workItemClaimMutation('picker');
+export const useClaimBatchPacker = workItemClaimMutation('packer');
+
+export const useHandoffBatchWorkItem = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      workItemId,
+      data,
+      idempotencyKey,
+    }: {
+      batchId: string;
+      workItemId: string;
+      data: HandoffBatchWorkItemRequest;
+      idempotencyKey?: string;
+    }) =>
+      orders.outboundBatches.handoffWorkItem(
+        workItemId,
+        data,
+        commandKey(idempotencyKey)
+      ),
+    onSuccess: (_, { batchId }) => invalidateBatchV2(queryClient, batchId),
+  });
+};
+
+function pickingMutation<T extends { batchId: string }>(
+  mutationFn: (data: T, key: string) => Promise<unknown>
+) {
+  return () => {
+    const queryClient = useQueryClient();
+    return useMutation({
+      mutationFn: ({
+        data,
+        idempotencyKey,
+      }: {
+        data: T;
+        idempotencyKey?: string;
+      }) => mutationFn(data, commandKey(idempotencyKey)),
+      onSuccess: (_, { data }) => invalidateBatchV2(queryClient, data.batchId),
+    });
+  };
+}
+
+export const useCreatePickingPlan = pickingMutation<CreatePickingPlanRequest>(
+  orders.picking.createPlan
+);
+export const useStartPickingV2 = pickingMutation<StartPickingV2Request>(
+  orders.picking.startV2
+);
+export const useDiscretePickingScan =
+  pickingMutation<DiscretePickingScanRequest>(orders.picking.scanV2);
+export const usePickingHandoff = pickingMutation<PickingHandoffRequest>(
+  orders.picking.handoffV2
+);
+export const useCompletePickingV2 = pickingMutation<CompletePickingRequest>(
+  orders.picking.completeV2
+);
+export const useAggregateBulkCartScan =
+  pickingMutation<AggregateBulkCartScanRequest>(
+    orders.picking.aggregateBulkCartScan
+  );
+export const useAggregateSortScan = pickingMutation<AggregateSortScanRequest>(
+  orders.picking.aggregateSortScan
+);
+export const useAggregateCartHandoff =
+  pickingMutation<AggregateCartHandoffRequest>(
+    orders.picking.aggregateCartHandoff
+  );
+export const useRegisterTote = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      data,
+      idempotencyKey,
+    }: {
+      data: RegisterToteRequest;
+      idempotencyKey?: string;
+    }) => orders.picking.registerTote(data, commandKey(idempotencyKey)),
+    onSuccess: () =>
+      queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.outboundBatchesV2Root,
+      }),
+  });
+};
+export const useAssignTote = pickingMutation<AssignToteRequest>(
+  orders.picking.assignTote
+);
+export const useToteScan = pickingMutation<ToteScanRequest>(
+  orders.picking.scanTote
+);
+export const useToteHandoff = pickingMutation<ToteHandoffRequest>(
+  orders.picking.handoffTote
+);
+export const useReleaseTote = pickingMutation<ReleaseToteRequest>(
+  orders.picking.releaseTote
+);
 
 export const useDeliverFulfillment = (id: string) => {
   const queryClient = useQueryClient();

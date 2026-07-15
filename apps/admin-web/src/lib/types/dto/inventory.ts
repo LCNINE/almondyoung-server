@@ -215,6 +215,9 @@ export interface WarehouseDto {
   type: 'domestic' | 'overseas' | 'bonded' | 'return';
   location: string;
   isActive?: boolean; // 스웨거에 없지만 기존 코드 호환성을 위해 유지
+  supportedPickingStrategies?: Array<
+    'discrete' | 'aggregate_then_sort' | 'pick_to_tote'
+  >;
   createdAt?: string;
   updatedAt?: string;
 }

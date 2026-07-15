@@ -25,6 +25,7 @@ import {
   StoreReturnRequestResponseDto,
   StoreOrderLinesResponseDto,
   StoreOrderLineDto,
+  StoreReturnEligibilityResponseDto,
 } from '../dto/store-return-request.dto';
 import { StoreCreateExchangeRequestDto, StoreExchangeRequestResponseDto } from '../dto/store-exchange-request.dto';
 import { WalletRefundClient, WalletRefundOutcome } from './wallet-refund.client';
@@ -87,6 +88,31 @@ export class StoreReturnExchangeService {
   ): Promise<StoreReturnRequestResponseDto> {
     const so = await this.findSoOrThrow(orderId);
     this.assertOwnership(so, customerId);
+    return this.createReturnRequestForActor(orderId, dto, {
+      customerId: so.customerId ?? null,
+      requestedBy: 'customer',
+      actorId: customerId,
+    });
+  }
+
+  async adminCreateReturnRequest(
+    orderId: string,
+    adminId: string,
+    dto: StoreCreateReturnRequestDto,
+  ): Promise<StoreReturnRequestResponseDto> {
+    const so = await this.findSoOrThrow(orderId);
+    return this.createReturnRequestForActor(orderId, dto, {
+      customerId: so.customerId ?? null,
+      requestedBy: 'admin',
+      actorId: adminId,
+    });
+  }
+
+  private async createReturnRequestForActor(
+    orderId: string,
+    dto: StoreCreateReturnRequestDto,
+    actor: { customerId: string | null; requestedBy: 'customer' | 'admin'; actorId: string },
+  ): Promise<StoreReturnRequestResponseDto> {
     await this.assertNoActiveReturnRequest(orderId);
 
     const lineIds = dto.lines.map((l) => l.salesOrderLineId);
@@ -103,7 +129,7 @@ export class StoreReturnExchangeService {
         .insert(returnExchangeTables.returnRequests)
         .values({
           salesOrderId: orderId,
-          customerId: so.customerId ?? null,
+          customerId: actor.customerId,
           status: 'requested',
           reasonCode: dto.reasonCode,
           reasonDetail: dto.reasonDetail ?? null,
@@ -131,8 +157,9 @@ export class StoreReturnExchangeService {
 
       await this.insertBusinessLink(tx, 'return_request', returnRequest.id, orderId, 'return_lifecycle_event', {
         event: 'return_requested',
-        requestedBy: 'customer',
-        customerId,
+        requestedBy: actor.requestedBy,
+        actorId: actor.actorId,
+        customerId: actor.customerId,
         timestamp: new Date().toISOString(),
       });
 
@@ -265,6 +292,175 @@ export class StoreReturnExchangeService {
         }),
       ),
     };
+  }
+
+  async getReturnEligibility(orderId: string, customerId: string): Promise<StoreReturnEligibilityResponseDto> {
+    const so = await this.findSoOrThrow(orderId);
+    this.assertOwnership(so, customerId);
+    return this.buildReturnEligibility(so.id);
+  }
+
+  async adminGetReturnEligibility(orderId: string): Promise<StoreReturnEligibilityResponseDto> {
+    const so = await this.findSoOrThrow(orderId);
+    return this.buildReturnEligibility(so.id);
+  }
+
+  async adminGetReturnEligibilityByChannelOrder(channelOrderId: string): Promise<StoreReturnEligibilityResponseDto> {
+    const so = await this.findSoByChannelOrderOrThrow(channelOrderId);
+    return this.buildReturnEligibility(so.id);
+  }
+
+  private async buildReturnEligibility(orderId: string): Promise<StoreReturnEligibilityResponseDto> {
+    const shipped = await this.db.db
+      .select({
+        salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
+        shipmentId: wmsTables.shipmentLines.shipmentId,
+        shipmentLineId: wmsTables.shipmentLines.id,
+        dispatchAttemptId: wmsTables.dispatchAttempts.id,
+        shippedQty: sum(wmsTables.dispatchAttemptSources.qty),
+      })
+      .from(wmsTables.dispatchAttemptSources)
+      .innerJoin(
+        wmsTables.dispatchAttempts,
+        eq(wmsTables.dispatchAttempts.id, wmsTables.dispatchAttemptSources.dispatchAttemptId),
+      )
+      .innerJoin(
+        wmsTables.shipmentLines,
+        eq(wmsTables.shipmentLines.id, wmsTables.dispatchAttemptSources.shipmentLineId),
+      )
+      .innerJoin(
+        wmsTables.fulfillmentOrderItems,
+        eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+      )
+      .where(
+        and(
+          eq(wmsTables.fulfillmentOrderItems.salesOrderId, orderId),
+          eq(wmsTables.dispatchAttempts.status, 'dispatched'),
+        ),
+      )
+      .groupBy(
+        wmsTables.fulfillmentOrderItems.salesOrderLineId,
+        wmsTables.shipmentLines.shipmentId,
+        wmsTables.shipmentLines.id,
+        wmsTables.dispatchAttempts.id,
+      );
+    const attemptIds = shipped.map((row) => row.dispatchAttemptId);
+    if (!attemptIds.length) return { orderId, items: [] };
+    const [deliveries, claims, exchangeClaims, salesOrderLines] = await Promise.all([
+      this.db.db
+        .select({
+          dispatchAttemptId: wmsTables.shipmentTracking.dispatchAttemptId,
+          deliveredAt: max(wmsTables.shipmentTracking.timestamp),
+        })
+        .from(wmsTables.shipmentTracking)
+        .where(
+          and(
+            inArray(wmsTables.shipmentTracking.dispatchAttemptId, attemptIds),
+            eq(wmsTables.shipmentTracking.status, 'delivered'),
+          ),
+        )
+        .groupBy(wmsTables.shipmentTracking.dispatchAttemptId),
+      this.db.db
+        .select({
+          salesOrderLineId: returnExchangeTables.returnRequestItems.salesOrderLineId,
+          shipmentLineId: returnExchangeTables.returnRequestItems.shipmentLineId,
+          dispatchAttemptId: returnExchangeTables.returnRequestItems.dispatchAttemptId,
+          quantity: returnExchangeTables.returnRequestItems.quantity,
+        })
+        .from(returnExchangeTables.returnRequestItems)
+        .innerJoin(
+          returnExchangeTables.returnRequests,
+          eq(returnExchangeTables.returnRequests.id, returnExchangeTables.returnRequestItems.returnRequestId),
+        )
+        .where(
+          and(
+            eq(returnExchangeTables.returnRequests.salesOrderId, orderId),
+            notInArray(returnExchangeTables.returnRequests.status, ['rejected', 'cancelled']),
+          ),
+        ),
+      this.db.db
+        .select({
+          salesOrderLineId: returnExchangeTables.exchangeRequestItems.salesOrderLineId,
+          quantity: sum(returnExchangeTables.exchangeRequestItems.quantity),
+        })
+        .from(returnExchangeTables.exchangeRequestItems)
+        .innerJoin(
+          returnExchangeTables.exchangeRequests,
+          eq(returnExchangeTables.exchangeRequests.id, returnExchangeTables.exchangeRequestItems.exchangeRequestId),
+        )
+        .where(
+          and(
+            eq(returnExchangeTables.exchangeRequests.salesOrderId, orderId),
+            inArray(returnExchangeTables.exchangeRequests.status, [...ACTIVE_EXCHANGE_STATUSES]),
+          ),
+        )
+        .groupBy(returnExchangeTables.exchangeRequestItems.salesOrderLineId),
+      this.db.db
+        .select({ id: wmsTables.salesOrderLines.id, quantity: wmsTables.salesOrderLines.quantity })
+        .from(wmsTables.salesOrderLines)
+        .where(eq(wmsTables.salesOrderLines.salesOrderId, orderId)),
+    ]);
+    const deliveredAtByAttempt = new Map(
+      deliveries
+        .filter((row): row is typeof row & { dispatchAttemptId: string; deliveredAt: Date } =>
+          Boolean(row.dispatchAttemptId && row.deliveredAt),
+        )
+        .map((row) => [row.dispatchAttemptId, row.deliveredAt]),
+    );
+    const claimedByGrain = new Map<string, number>();
+    const claimedBySalesOrderLine = new Map<string, number>();
+    for (const claim of claims) {
+      claimedBySalesOrderLine.set(
+        claim.salesOrderLineId,
+        (claimedBySalesOrderLine.get(claim.salesOrderLineId) ?? 0) + claim.quantity,
+      );
+      if (!claim.shipmentLineId || !claim.dispatchAttemptId) continue;
+      const key = `${claim.dispatchAttemptId}:${claim.shipmentLineId}`;
+      claimedByGrain.set(key, (claimedByGrain.get(key) ?? 0) + claim.quantity);
+    }
+    for (const claim of exchangeClaims) {
+      claimedBySalesOrderLine.set(
+        claim.salesOrderLineId,
+        (claimedBySalesOrderLine.get(claim.salesOrderLineId) ?? 0) + Number(claim.quantity ?? 0),
+      );
+    }
+    const purchasedBySalesOrderLine = new Map(salesOrderLines.map((line) => [line.id, line.quantity]));
+    return {
+      orderId,
+      items: shipped.flatMap((row) => {
+        if (!row.salesOrderLineId) return [];
+        const deliveredAt = deliveredAtByAttempt.get(row.dispatchAttemptId);
+        if (!deliveredAt) return [];
+        const shippedQty = Number(row.shippedQty ?? 0);
+        const claimedQty = claimedByGrain.get(`${row.dispatchAttemptId}:${row.shipmentLineId}`) ?? 0;
+        const salesOrderLineRemainingEligibleQty = Math.max(
+          0,
+          (purchasedBySalesOrderLine.get(row.salesOrderLineId) ?? 0) -
+            (claimedBySalesOrderLine.get(row.salesOrderLineId) ?? 0),
+        );
+        return [
+          {
+            salesOrderLineId: row.salesOrderLineId,
+            shipmentId: row.shipmentId,
+            shipmentLineId: row.shipmentLineId,
+            dispatchAttemptId: row.dispatchAttemptId,
+            deliveredAt,
+            shippedQty,
+            claimedQty,
+            remainingEligibleQty: Math.min(Math.max(0, shippedQty - claimedQty), salesOrderLineRemainingEligibleQty),
+            salesOrderLineRemainingEligibleQty,
+          },
+        ];
+      }),
+    };
+  }
+
+  async getReturnEligibilityByChannelOrder(
+    channelOrderId: string,
+    customerId: string,
+  ): Promise<StoreReturnEligibilityResponseDto> {
+    const so = await this.findSoByChannelOrderOrThrow(channelOrderId);
+    return this.getReturnEligibility(so.id, customerId);
   }
 
   async createReturnRequestByChannelOrder(

@@ -1,5 +1,6 @@
 import {
   Body,
+  BadRequestException,
   ConflictException,
   Controller,
   Delete,
@@ -7,6 +8,7 @@ import {
   Headers,
   Param,
   Post,
+  Query,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
@@ -23,6 +25,7 @@ import {
   OutboundBatchActor,
   OutboundBatchCommandResponseDto,
   OutboundBatchV2DetailDto,
+  OutboundBatchV2ListItemDto,
   OutboundBatchWorkItemResponseDto,
 } from '../dto/outbound-batch-v2.dto';
 import { OutboundBatchOrchestrator } from '../services/outbound-batch-orchestrator.service';
@@ -43,6 +46,16 @@ export class OutboundBatchV2Controller {
     @User() user: AuthenticatedUser,
   ) {
     return this.batches.createBatch(dto, idempotencyKey ?? '', this.actor(user));
+  }
+
+  @Get('outbound-batches/v2')
+  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
+  @ApiOkResponse({ type: [OutboundBatchV2ListItemDto] })
+  list(@Query('warehouseId') warehouseId?: string, @Query('status') status?: string) {
+    if (status && !['created', 'picking', 'completed', 'canceled'].includes(status)) {
+      throw new BadRequestException(`Unsupported outbound batch status: ${status}`);
+    }
+    return this.batches.listBatches({ warehouseId, status });
   }
 
   @Post('outbound-batches/:batchId/shipments/:shipmentId')

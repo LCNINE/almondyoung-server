@@ -67,10 +67,10 @@ import { ConsolidationController } from './controllers/consolidation.controller'
 import { DirectShipController } from './controllers/direct-ship.controller';
 import { InvoiceController } from './controllers/invoice.controller';
 import { LocationOptimizationController } from './controllers/location-optimization.controller';
-import { ShipmentPlanningController } from './controllers/shipment-planning.controller';
+import { FulfillmentOperationController, ShipmentPlanningController } from './controllers/shipment-planning.controller';
 import { ShipmentInvoiceController } from './controllers/shipment-invoice.controller';
 import { OutboundBatchV2Controller } from './controllers/outbound-batch-v2.controller';
-import { PickingV2Controller } from './controllers/picking-v2.controller';
+import { PickingCommandV2Controller, PickingV2Controller } from './controllers/picking-v2.controller';
 import { ToteController } from './controllers/tote.controller';
 import { ShipmentTrackingController } from './controllers/shipment-tracking.controller';
 import { ShipmentShortPickController } from './controllers/shipment-short-pick.controller';
@@ -109,6 +109,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     // Static V2 outbound-batch routes must be registered before the legacy `:id` reader.
     OutboundBatchV2Controller,
     PickingV2Controller,
+    PickingCommandV2Controller,
     ToteController,
     OutboundBatchController,
     PickingController,
@@ -118,6 +119,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     InvoiceController,
     LocationOptimizationController,
     ShipmentPlanningController,
+    FulfillmentOperationController,
     ShipmentInvoiceController,
     ShipmentTrackingController,
     ShipmentShortPickController,

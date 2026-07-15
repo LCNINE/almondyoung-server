@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, ConflictException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException, Logger, Optional } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { eq, and, asc, gt, ne, inArray, isNull, or } from 'drizzle-orm';
@@ -6,6 +6,7 @@ import { UnifiedReservationService } from '../../inventory/shared/services/unifi
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { PoliciesService } from './policies.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
+import { FulfillmentCommandService } from './fulfillment-command.service';
 
 @Injectable()
 export class FulfillmentReservationsFacade {
@@ -17,6 +18,7 @@ export class FulfillmentReservationsFacade {
     private readonly productSellableQuantity: ProductSellableQuantityService,
     private readonly policies: PoliciesService,
     private readonly workflowGate: FulfillmentWorkflowGate,
+    @Optional() private readonly commands?: FulfillmentCommandService,
   ) {}
 
   private readonly TERMINAL_STATUSES = ['shipped', 'completed', 'canceled'] as const;
@@ -32,11 +34,7 @@ export class FulfillmentReservationsFacade {
     this.RESERVATION_TRANSFER_ALLOWED_STATUS_LIST,
   );
 
-  async reserve(
-    urlFulfillmentOrderId: string,
-    dto: { fulfillmentOrderItemId: string; quantity: number },
-    tx?: DbTx,
-  ) {
+  async reserve(urlFulfillmentOrderId: string, dto: { fulfillmentOrderItemId: string; quantity: number }, tx?: DbTx) {
     this.workflowGate.assertMutationAllowed('reservation.reserve');
     return this.db.run(async (trx) => {
       if (dto.quantity <= 0) {
@@ -129,11 +127,7 @@ export class FulfillmentReservationsFacade {
     }, tx);
   }
 
-  async unreserve(
-    urlFulfillmentOrderId: string,
-    dto: { fulfillmentOrderItemId: string; quantity: number },
-    tx?: DbTx,
-  ) {
+  async unreserve(urlFulfillmentOrderId: string, dto: { fulfillmentOrderItemId: string; quantity: number }, tx?: DbTx) {
     this.workflowGate.assertMutationAllowed('reservation.unreserve');
     return this.db.run(async (trx) => {
       // 잠금 순서 컨벤션: FO(id asc) → FOI(id asc) → stock_reservations(createdAt, id asc)
@@ -239,10 +233,14 @@ export class FulfillmentReservationsFacade {
       quantity: number;
       /** 감사 추적용 — controller가 인증 사용자 id를 주입한다 (body에서 받지 않음) */
       performedBy?: string;
+      reason?: string;
+      csCaseId?: string;
+      note?: string;
     },
     tx?: DbTx,
+    skipWorkflowGate = false,
   ) {
-    this.workflowGate.assertMutationAllowed('reservation.transfer');
+    if (!skipWorkflowGate) this.workflowGate.assertMutationAllowed('reservation.transfer');
     return this.db.run(async (trx) => {
       if (dto.quantity <= 0) {
         throw new BadRequestException('이전 수량은 1 이상이어야 합니다.');
@@ -409,7 +407,9 @@ export class FulfillmentReservationsFacade {
         quantity: dto.quantity,
         fulfillmentOrderItemId: to.id,
         status: 'confirmed',
-        reason: `예약 이전: FOI ${from.id} → FOI ${to.id}${dto.performedBy ? ` (by ${dto.performedBy})` : ''}`,
+        reason: `${dto.reason?.trim() || `예약 이전: FOI ${from.id} → FOI ${to.id}`}${
+          dto.performedBy ? ` (by ${dto.performedBy})` : ''
+        }${dto.csCaseId ? ` [case:${dto.csCaseId}]` : ''}${dto.note ? ` — ${dto.note.trim()}` : ''}`,
       });
 
       // FOI reservedQty 업데이트 — from/to는 FOR UPDATE로 잠근 최신 값
@@ -436,6 +436,41 @@ export class FulfillmentReservationsFacade {
         }`,
       );
     }, tx);
+  }
+
+  async transferReservationCommand(
+    urlFulfillmentOrderId: string,
+    dto: {
+      fromFulfillmentOrderItemId: string;
+      toFulfillmentOrderItemId: string;
+      quantity: number;
+      performedBy: string;
+      reason?: string;
+      csCaseId?: string;
+      note?: string;
+    },
+    idempotencyKey: string,
+  ) {
+    this.workflowGate.assertV2MutationAllowed('reservation.transfer');
+    if (!this.commands) throw new Error('FulfillmentCommandService is required for V2 reservation transfer');
+    return this.commands.execute(
+      {
+        commandType: 'reservation.transfer',
+        idempotencyKey,
+        canonicalRequest: { fulfillmentOrderId: urlFulfillmentOrderId, ...dto },
+      },
+      async (tx, commandRequestId) => {
+        await this.transferReservation(urlFulfillmentOrderId, dto, tx, true);
+        const response = {
+          operationId: commandRequestId,
+          fulfillmentOrderId: urlFulfillmentOrderId,
+          fromFulfillmentOrderItemId: dto.fromFulfillmentOrderItemId,
+          toFulfillmentOrderItemId: dto.toFulfillmentOrderItemId,
+          quantity: dto.quantity,
+        };
+        return { response, resourceType: 'fulfillment_order', resourceId: urlFulfillmentOrderId };
+      },
+    );
   }
 
   /**
@@ -569,7 +604,8 @@ export class FulfillmentReservationsFacade {
   private async requiresStockReservation(variantId: string | null | undefined, trx: DbTx): Promise<boolean> {
     if (!variantId) return true;
 
-    const policy = await this.policies.getVariantPolicy(variantId, trx);
-    return policy.inventoryManagement;
+    const policy: unknown = await this.policies.getVariantPolicy(variantId, trx);
+    if (!policy || typeof policy !== 'object' || !('inventoryManagement' in policy)) return true;
+    return (policy as { inventoryManagement: unknown }).inventoryManagement === true;
   }
 }

@@ -183,6 +183,58 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
     });
   }
 
+  it('keeps customer ownership on Store reads while allowing the scoped Admin read path', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const graph = await seedDeliveredAttemptGraph(tx);
+      const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never);
+
+      await expect(service.getReturnEligibility(graph.salesOrderId, randomUUID())).rejects.toThrow(
+        /본인 주문만 접근할 수 있습니다/,
+      );
+      await expect(service.adminGetReturnEligibility(graph.salesOrderId)).resolves.toMatchObject({
+        orderId: graph.salesOrderId,
+        items: [
+          expect.objectContaining({
+            dispatchAttemptId: graph.attempts[0].id,
+            remainingEligibleQty: 1,
+          }),
+        ],
+      });
+    });
+  });
+
+  it('subtracts active exchange claims from the displayed sales-line return eligibility', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const graph = await seedDeliveredAttemptGraph(tx);
+      const [exchange] = await tx
+        .insert(returnExchangeTables.exchangeRequests)
+        .values({
+          salesOrderId: graph.salesOrderId,
+          customerId: graph.customerId,
+          status: 'approved',
+          reasonCode: 'other',
+        })
+        .returning();
+      await tx.insert(returnExchangeTables.exchangeRequestItems).values({
+        exchangeRequestId: exchange.id,
+        salesOrderLineId: graph.salesOrderLineId,
+        quantity: 1,
+      });
+      const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never);
+
+      const eligibility = await service.adminGetReturnEligibility(graph.salesOrderId);
+
+      expect(eligibility.items[0]).toMatchObject({
+        claimedQty: 0,
+        remainingEligibleQty: 0,
+        salesOrderLineRemainingEligibleQty: 0,
+      });
+      await expect(
+        service.adminCreateReturnRequest(graph.salesOrderId, 'admin-operator-1', createDto(graph)),
+      ).rejects.toThrow(/반품 가능 수량\(0\)/);
+    });
+  });
+
   it('permanently subtracts completed claims, while rejected/cancelled claims release eligibility', async () => {
     await inRollbackTx(db, async (tx) => {
       const graph = await seedDeliveredAttemptGraph(tx);
@@ -242,9 +294,76 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
       });
       const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never);
 
+      await expect(service.getReturnEligibility(graph.salesOrderId, graph.customerId)).resolves.toEqual({
+        orderId: graph.salesOrderId,
+        items: [
+          expect.objectContaining({
+            salesOrderLineId: graph.salesOrderLineId,
+            shipmentLineId: graph.shipmentLine.id,
+            dispatchAttemptId: graph.attempts[0].id,
+            shippedQty: 1,
+            claimedQty: 0,
+            remainingEligibleQty: 0,
+            salesOrderLineRemainingEligibleQty: 0,
+          }),
+        ],
+      });
+
       await expect(service.createReturnRequest(graph.salesOrderId, graph.customerId, createDto(graph))).rejects.toThrow(
         /누적 반품 가능 수량\(0\)/,
       );
+    });
+  });
+
+  it('exposes the shared sales-line cap across attempts and rejects an aggregate over-selection', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const graph = await seedDeliveredAttemptGraph(tx, 2);
+      const [legacyRequest] = await tx
+        .insert(returnExchangeTables.returnRequests)
+        .values({
+          salesOrderId: graph.salesOrderId,
+          customerId: graph.customerId,
+          status: 'completed',
+          reasonCode: 'defective',
+          completedAt: new Date('2026-07-15T04:00:00.000Z'),
+        })
+        .returning();
+      await tx.insert(returnExchangeTables.returnRequestItems).values({
+        returnRequestId: legacyRequest.id,
+        salesOrderLineId: graph.salesOrderLineId,
+        shipmentLineId: null,
+        dispatchAttemptId: null,
+        quantity: 1,
+      });
+      const service = new StoreReturnExchangeService({ db: tx } as never, { refundByIntent: jest.fn() } as never);
+
+      const eligibility = await service.getReturnEligibility(graph.salesOrderId, graph.customerId);
+      expect(eligibility.items).toHaveLength(2);
+      expect(eligibility.items).toEqual(
+        expect.arrayContaining(
+          graph.attempts.map((attempt) =>
+            expect.objectContaining({
+              dispatchAttemptId: attempt.id,
+              shippedQty: 1,
+              claimedQty: 0,
+              remainingEligibleQty: 1,
+              salesOrderLineRemainingEligibleQty: 1,
+            }),
+          ),
+        ),
+      );
+
+      await expect(
+        service.createReturnRequest(graph.salesOrderId, graph.customerId, {
+          reasonCode: 'defective',
+          lines: graph.attempts.map((attempt) => ({
+            salesOrderLineId: graph.salesOrderLineId,
+            shipmentLineId: graph.shipmentLine.id,
+            dispatchAttemptId: attempt.id,
+            quantity: 1,
+          })),
+        }),
+      ).rejects.toThrow(/누적 반품 가능 수량\(1\)/);
     });
   });
 
@@ -310,6 +429,28 @@ describeIfDb('Store return exact dispatch-attempt eligibility (DB integration)',
         .from(returnExchangeTables.returnRequestItems)
         .where(eq(returnExchangeTables.returnRequestItems.dispatchAttemptId, graph.attempts[0].id));
       expect(claims).toHaveLength(1);
+    } finally {
+      await cleanupCommittedGraph(graph);
+    }
+  });
+
+  it('allows an authenticated admin to create an exact-attempt return without customer impersonation', async () => {
+    const graph = await db.transaction((tx) => seedDeliveredAttemptGraph(tx as unknown as DbTx));
+    try {
+      const service = new StoreReturnExchangeService({ db } as never, { refundByIntent: jest.fn() } as never);
+
+      const created = await service.adminCreateReturnRequest(graph.salesOrderId, 'admin-operator-1', createDto(graph));
+
+      expect(created).toMatchObject({
+        salesOrderId: graph.salesOrderId,
+        items: [
+          {
+            shipmentLineId: graph.shipmentLine.id,
+            dispatchAttemptId: graph.attempts[0].id,
+            quantity: 1,
+          },
+        ],
+      });
     } finally {
       await cleanupCommittedGraph(graph);
     }

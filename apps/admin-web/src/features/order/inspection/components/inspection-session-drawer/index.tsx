@@ -22,7 +22,6 @@ import {
 } from '@/lib/services/orders/mutations';
 import type { InspectionSession } from '@/lib/types/dto/fulfillment';
 import { InspectItemDialog } from '../inspect-item-dialog';
-import { ForceShipmentDialog } from '../force-shipment-dialog';
 import { BulkApproveDialog } from '../bulk-approve-dialog';
 
 interface Props {
@@ -35,7 +34,6 @@ export function InspectionSessionDrawer({ session, foId, onClose }: Props) {
   const [inspectDialogFoiId, setInspectDialogFoiId] = useState<string | null>(
     null
   );
-  const [forceShipFoiId, setForceShipFoiId] = useState<string | null>(null);
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
   const [barcode, setBarcode] = useState('');
 
@@ -179,13 +177,6 @@ export function InspectionSessionDrawer({ session, foId, onClose }: Props) {
                     >
                       검수
                     </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setForceShipFoiId(item.foiId)}
-                    >
-                      강제출고
-                    </Button>
                   </div>
                 ))}
                 {currentSession.items.length === 0 && (
@@ -214,18 +205,6 @@ export function InspectionSessionDrawer({ session, foId, onClose }: Props) {
           inspectorUserId={currentSession.inspectorUserId}
           onClose={() => {
             setInspectDialogFoiId(null);
-            refetch();
-          }}
-        />
-      )}
-
-      {forceShipFoiId && (
-        <ForceShipmentDialog
-          sessionId={currentSession.id}
-          foiId={forceShipFoiId}
-          authorizedBy={currentSession.inspectorUserId}
-          onClose={() => {
-            setForceShipFoiId(null);
             refetch();
           }}
         />

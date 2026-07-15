@@ -11,18 +11,15 @@ import { orderQueryKeys } from './query-keys';
 import { orders } from '@/lib/api/domains';
 import type {
   MatchingsQuery,
-  MatchingsResponseDto,
-  MatchingDto,
-  VariantMatchingDto,
-  StockPolicyDto,
   VariantSkuLookupDto,
-  VariantSkuLookupResponseDto,
   OrderLinesQuery,
 } from '@/lib/types/dto/orders';
 import type {
   QualityMetricsQuery,
   ListFulfillmentsQuery,
   FulfillmentOrdersQuery,
+  ShipmentConsolidationCandidateQuery,
+  OutboundBatchV2ListQuery,
 } from '@/lib/types/dto/fulfillment';
 
 // 주문 관련 쿼리
@@ -62,6 +59,38 @@ export const useOutboundBatch = (id: string) => {
   return useQuery({
     queryKey: orderQueryKeys.outboundBatch(id),
     queryFn: () => orders.outboundBatches.get(id),
+    enabled: !!id,
+  });
+};
+
+export const useOutboundBatchesV2 = (query: OutboundBatchV2ListQuery = {}) => {
+  return useQuery({
+    queryKey: orderQueryKeys.outboundBatchesV2(query),
+    queryFn: () => orders.outboundBatches.listV2(query),
+    placeholderData: keepPreviousData,
+  });
+};
+
+export const useOutboundBatchV2 = (id: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.outboundBatchV2(id),
+    queryFn: () => orders.outboundBatches.getV2(id),
+    enabled: !!id,
+  });
+};
+
+export const useOutboundBatchEligibleShipments = (id: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.outboundBatchEligibleShipments(id),
+    queryFn: () => orders.outboundBatches.getEligibleShipments(id),
+    enabled: !!id,
+  });
+};
+
+export const useOutboundBatchWorkItems = (id: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.outboundBatchWorkItems(id),
+    queryFn: () => orders.outboundBatches.getWorkItems(id),
     enabled: !!id,
   });
 };
@@ -127,6 +156,17 @@ export const useConsolidationCandidates = (warehouseId: string) => {
     enabled: !!warehouseId,
   });
 };
+
+export const useShipmentConsolidationCandidates = (
+  query: ShipmentConsolidationCandidateQuery
+) =>
+  useQuery({
+    queryKey: orderQueryKeys.shipmentConsolidationCandidates(query),
+    queryFn: () => orders.consolidation.getShipmentCandidates(query),
+    enabled: !!query.warehouseId,
+  });
+
+export const useConsolidationCandidatesV2 = useShipmentConsolidationCandidates;
 
 export const useConsolidationLive = (warehouseId: string) => {
   return useQuery({
@@ -212,10 +252,13 @@ export const usePickingSession = (foId: string) => {
 };
 
 // 이행(출고주문) 관련 쿼리 — GET /fulfillments, GET /fulfillments/:id
-export const useFulfillmentOrders = (query: FulfillmentOrdersQuery | ListFulfillmentsQuery = {}) => {
+export const useFulfillmentOrders = (
+  query: FulfillmentOrdersQuery | ListFulfillmentsQuery = {}
+) => {
   return useQuery({
     queryKey: orderQueryKeys.fulfillmentsList(query),
-    queryFn: () => orders.fulfillmentOrder.list(query as FulfillmentOrdersQuery),
+    queryFn: () =>
+      orders.fulfillmentOrder.list(query as FulfillmentOrdersQuery),
     placeholderData: keepPreviousData,
   });
 };
@@ -238,6 +281,51 @@ export const useFulfillmentOutboxEvents = (id: string) => {
     queryKey: [...orderQueryKeys.fulfillment(id), 'outbox-events'],
     queryFn: () => orders.fulfillments.getOutboxEvents(id),
     enabled: !!id,
+  });
+};
+
+export const useFulfillmentShipments = (id: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.fulfillmentShipments(id),
+    queryFn: () => orders.fulfillmentOrder.getShipments(id),
+    enabled: !!id,
+  });
+};
+
+export const useShipmentDetail = (shipmentId: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.shipment(shipmentId),
+    queryFn: () => orders.fulfillmentOrder.getShipment(shipmentId),
+    enabled: !!shipmentId,
+  });
+};
+
+export const useFulfillmentOperation = (operationId: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.fulfillmentOperation(operationId),
+    queryFn: () => orders.fulfillmentOrder.getOperation(operationId),
+    enabled: !!operationId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === 'pending' ||
+        status === 'in_progress' ||
+        status === 'recovery_required'
+        ? 2_000
+        : false;
+    },
+  });
+};
+
+export const useShipmentRecallOperation = (operationId: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.shipmentRecallOperation(operationId),
+    queryFn: () => orders.fulfillmentOrder.getRecallOperation(operationId),
+    enabled: !!operationId,
+    refetchInterval: (query) =>
+      query.state.data?.operationStatus === 'pending' ||
+      query.state.data?.operationStatus === 'recovery_required'
+        ? 2_000
+        : false,
   });
 };
 
@@ -349,6 +437,22 @@ export const useInvoice = (id: string) => {
     queryKey: orderQueryKeys.invoice(id),
     queryFn: () => orders.invoices.getDetail(id),
     enabled: !!id,
+  });
+};
+
+export const useInvoiceOperation = (operationId: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.invoiceOperation(operationId),
+    queryFn: () => orders.invoices.getOperation(operationId),
+    enabled: !!operationId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === 'pending' ||
+        status === 'in_progress' ||
+        status === 'recovery_required'
+        ? 2_000
+        : false;
+    },
   });
 };
 

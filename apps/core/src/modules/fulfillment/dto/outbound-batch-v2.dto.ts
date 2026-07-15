@@ -133,4 +133,59 @@ export class OutboundBatchV2DetailDto {
   completedAt?: Date;
   @ApiProperty({ type: [OutboundBatchWorkItemResponseDto] })
   workItems: OutboundBatchWorkItemResponseDto[];
+
+  @ApiProperty({ type: Object })
+  warehouse: {
+    id: string;
+    name: string;
+    supportedPickingStrategies: Array<'discrete' | 'aggregate_then_sort' | 'pick_to_tote'>;
+  };
+
+  @ApiProperty({ type: Object, nullable: true })
+  pickingPlan: {
+    id: string;
+    strategy: string;
+    status: string;
+    version: number;
+    members: Array<Record<string, unknown>>;
+    allocations: Array<Record<string, unknown>>;
+  } | null;
+
+  @ApiProperty({ type: Object, nullable: true })
+  inventorySession: {
+    id: string;
+    status: string;
+    version: number;
+    handedInQty: number;
+    settledQty: number;
+    returnedQty: number;
+    shortageQty: number;
+    recoveryReason: string | null;
+    balances: Array<Record<string, unknown>>;
+  } | null;
+
+  @ApiProperty({ type: [Object] })
+  toteAssignments: Array<{
+    id: string;
+    shipmentId: string;
+    toteId: string;
+    toteBarcode: string;
+    toteStatus: string;
+    assignedBy: string;
+    assignedAt: Date;
+    releasedAt: Date | null;
+  }>;
+}
+
+export class OutboundBatchV2ListItemDto {
+  id: string;
+  batchNumber: string;
+  name: string;
+  warehouseId: string;
+  status: string;
+  pickingMethod: string;
+  totalItems: number;
+  totalQty: number;
+  scheduledPickingAt: Date | null;
+  createdAt: Date;
 }

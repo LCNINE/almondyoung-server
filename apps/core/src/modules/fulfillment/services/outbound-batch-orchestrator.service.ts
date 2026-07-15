@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
 import { DbService, InjectTypedDb } from '@app/db';
-import { and, asc, eq, gt, inArray, isNull, ne, notInArray, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, ne, notInArray, or, sql } from 'drizzle-orm';
 import {
   ClaimBatchWorkItemDto,
   CreateOutboundBatchV2Dto,
@@ -18,6 +18,7 @@ import {
   OutboundBatchActor,
   OutboundBatchCommandResponseDto,
   OutboundBatchV2DetailDto,
+  OutboundBatchV2ListItemDto,
   OutboundBatchWorkItemResponseDto,
 } from '../dto/outbound-batch-v2.dto';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -457,12 +458,90 @@ export class OutboundBatchOrchestrator {
       let totalQty = 0;
       for (const row of rows) {
         items.set(row.item.id, row.item);
-        if (!['completed', 'excluded'].includes(row.item.status) && row.lineQty != null) {
+        if (row.item.status !== 'excluded' && row.lineQty != null) {
           totalItems += 1;
           totalQty += row.lineQty;
         }
       }
       const workItems = [...items.values()];
+      const [warehouse, plan, inventorySession] = await Promise.all([
+        trx
+          .select({
+            id: wmsTables.warehouses.id,
+            name: wmsTables.warehouses.name,
+            supportedPickingStrategies: wmsTables.warehouses.supportedPickingStrategies,
+          })
+          .from(wmsTables.warehouses)
+          .where(eq(wmsTables.warehouses.id, batch.warehouseId))
+          .limit(1)
+          .then((found) => found[0]),
+        trx
+          .select()
+          .from(wmsTables.pickingPlans)
+          .where(eq(wmsTables.pickingPlans.batchId, batchId))
+          .orderBy(desc(wmsTables.pickingPlans.version))
+          .limit(1)
+          .then((found) => found[0]),
+        trx
+          .select()
+          .from(wmsTables.batchInventorySessions)
+          .where(
+            and(
+              eq(wmsTables.batchInventorySessions.batchId, batchId),
+              inArray(wmsTables.batchInventorySessions.status, ['active', 'recovery_required']),
+            ),
+          )
+          .limit(1)
+          .then((found) => found[0]),
+      ]);
+      if (!warehouse) throw new NotFoundException(`Warehouse ${batch.warehouseId} not found`);
+      const [members, allocations, balances] = await Promise.all([
+        plan
+          ? trx
+              .select()
+              .from(wmsTables.pickingPlanMembers)
+              .where(eq(wmsTables.pickingPlanMembers.planId, plan.id))
+              .orderBy(asc(wmsTables.pickingPlanMembers.shipmentId))
+          : [],
+        plan
+          ? trx
+              .select()
+              .from(wmsTables.pickingSourceAllocations)
+              .where(eq(wmsTables.pickingSourceAllocations.planId, plan.id))
+              .orderBy(
+                asc(wmsTables.pickingSourceAllocations.shipmentLineId),
+                asc(wmsTables.pickingSourceAllocations.sourceLocationId),
+              )
+          : [],
+        inventorySession
+          ? trx
+              .select()
+              .from(wmsTables.batchInventorySessionBalances)
+              .where(eq(wmsTables.batchInventorySessionBalances.sessionId, inventorySession.id))
+              .orderBy(asc(wmsTables.batchInventorySessionBalances.id))
+          : [],
+      ]);
+      const toteAssignments: Array<{
+        assignment: typeof wmsTables.shipmentToteAssignments.$inferSelect;
+        toteBarcode: string;
+        toteStatus: typeof wmsTables.totes.$inferSelect.status;
+      }> = workItems.length
+        ? await trx
+            .select({
+              assignment: wmsTables.shipmentToteAssignments,
+              toteBarcode: wmsTables.totes.barcode,
+              toteStatus: wmsTables.totes.status,
+            })
+            .from(wmsTables.shipmentToteAssignments)
+            .innerJoin(wmsTables.totes, eq(wmsTables.totes.id, wmsTables.shipmentToteAssignments.toteId))
+            .where(
+              inArray(
+                wmsTables.shipmentToteAssignments.shipmentId,
+                workItems.map((item) => item.shipmentId),
+              ),
+            )
+            .orderBy(asc(wmsTables.shipmentToteAssignments.assignedAt))
+        : [];
       return {
         id: batch.id,
         batchNumber: batch.batchNumber,
@@ -476,7 +555,88 @@ export class OutboundBatchOrchestrator {
         startedAt: batch.startedAt ?? undefined,
         completedAt: batch.completedAt ?? undefined,
         workItems: workItems.map((row) => this.workItemResponse(row)),
+        warehouse: {
+          ...warehouse,
+          supportedPickingStrategies: warehouse.supportedPickingStrategies ?? [],
+        },
+        pickingPlan: plan ? { ...plan, members, allocations } : null,
+        inventorySession: inventorySession ? { ...inventorySession, balances } : null,
+        toteAssignments: toteAssignments.map(({ assignment, toteBarcode, toteStatus }) => ({
+          ...assignment,
+          toteBarcode,
+          toteStatus,
+        })),
       };
+    }, tx);
+  }
+
+  async listBatches(
+    filters: { warehouseId?: string; status?: string },
+    tx?: DbTx,
+  ): Promise<OutboundBatchV2ListItemDto[]> {
+    return this.dbService.run(async (trx) => {
+      const batches = await trx
+        .select()
+        .from(wmsTables.outboundBatches)
+        .where(filters.warehouseId ? eq(wmsTables.outboundBatches.warehouseId, filters.warehouseId) : undefined)
+        .orderBy(desc(wmsTables.outboundBatches.createdAt), desc(wmsTables.outboundBatches.id));
+      if (!batches.length) return [];
+
+      const workloadRows = await trx
+        .select({ item: wmsTables.outboundBatchWorkItems, lineQty: wmsTables.shipmentLines.qty })
+        .from(wmsTables.outboundBatchWorkItems)
+        .leftJoin(
+          wmsTables.shipmentLines,
+          eq(wmsTables.shipmentLines.shipmentId, wmsTables.outboundBatchWorkItems.shipmentId),
+        )
+        .where(
+          inArray(
+            wmsTables.outboundBatchWorkItems.batchId,
+            batches.map((batch) => batch.id),
+          ),
+        )
+        .orderBy(
+          asc(wmsTables.outboundBatchWorkItems.batchId),
+          asc(wmsTables.outboundBatchWorkItems.createdAt),
+          asc(wmsTables.outboundBatchWorkItems.id),
+          asc(wmsTables.shipmentLines.id),
+        );
+      const workloadByBatch = new Map<
+        string,
+        { workItems: Map<string, WorkItemRow>; totalItems: number; totalQty: number }
+      >();
+      for (const { item, lineQty } of workloadRows) {
+        const workload = workloadByBatch.get(item.batchId) ?? {
+          workItems: new Map<string, WorkItemRow>(),
+          totalItems: 0,
+          totalQty: 0,
+        };
+        workload.workItems.set(item.id, item);
+        if (item.status !== 'excluded' && lineQty != null) {
+          workload.totalItems += 1;
+          workload.totalQty += lineQty;
+        }
+        workloadByBatch.set(item.batchId, workload);
+      }
+
+      return batches
+        .map((batch) => {
+          const workload = workloadByBatch.get(batch.id);
+          const workItems = [...(workload?.workItems.values() ?? [])];
+          return {
+            id: batch.id,
+            batchNumber: batch.batchNumber,
+            name: batch.name ?? '',
+            warehouseId: batch.warehouseId,
+            status: this.derivedBatchStatus(batch, workItems),
+            pickingMethod: batch.pickingMethod,
+            totalItems: workload?.totalItems ?? 0,
+            totalQty: workload?.totalQty ?? 0,
+            scheduledPickingAt: batch.scheduledPickingAt,
+            createdAt: batch.createdAt,
+          };
+        })
+        .filter((batch) => !filters.status || batch.status === filters.status);
     }, tx);
   }
 

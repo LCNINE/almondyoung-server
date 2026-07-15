@@ -19,12 +19,17 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { FoStatusBadge } from '@/components/table/table-cells/fulfillment';
+import { usePermission } from '@/hooks/use-permission';
 import { useFulfillmentOrder } from '@/lib/services/orders/queries';
 import {
   useCancelFulfillment,
   useReserveFulfillmentItem,
 } from '@/lib/services/orders/mutations';
-import type { FulfillmentMode, FulfillmentOrderPriority } from '@/lib/types/dto/fulfillment';
+import { FULFILLMENT_SCOPES } from '@/lib/services/orders/operation-policy';
+import type {
+  FulfillmentMode,
+  FulfillmentOrderPriority,
+} from '@/lib/types/dto/fulfillment';
 import { InventoryTab } from '../../detail/inventory-tab';
 import { ShipmentTab } from '../../detail/shipment-tab';
 import { DirectShipTab } from '../../detail/direct-ship-tab';
@@ -91,9 +96,12 @@ function ConfirmActionButton({
 }
 
 export function FulfillmentDetail({ id }: { id: string }) {
+  const { hasScope, isPermissionLoading } = usePermission();
   const { data, isLoading } = useFulfillmentOrder(id);
   const cancelMutation = useCancelFulfillment();
   const reserveMutation = useReserveFulfillmentItem();
+  const canOperate =
+    !isPermissionLoading && !!hasScope([FULFILLMENT_SCOPES.operate]);
 
   if (isLoading) {
     return (
@@ -107,7 +115,9 @@ export function FulfillmentDetail({ id }: { id: string }) {
     return (
       <Container className="divide-y-0">
         <Header title="출고주문 상세" />
-        <p className="p-6 text-sm text-muted-foreground">출고주문을 찾을 수 없습니다.</p>
+        <p className="p-6 text-sm text-muted-foreground">
+          출고주문을 찾을 수 없습니다.
+        </p>
       </Container>
     );
   }
@@ -150,14 +160,16 @@ export function FulfillmentDetail({ id }: { id: string }) {
         <div className="flex items-center justify-between p-3">
           <Header title="출고주문 상세" />
           <div className="flex gap-2">
-            <ConfirmActionButton
-              label="취소"
-              title="출고주문 취소"
-              description="이 출고주문을 취소하시겠습니까? 예약된 재고가 해제됩니다."
-              onConfirm={handleCancel}
-              disabled={isTerminal || cancelMutation.isPending}
-              variant="destructive"
-            />
+            {canOperate && !data.shipments && (
+              <ConfirmActionButton
+                label="취소"
+                title="출고주문 취소"
+                description="이 출고주문을 취소하시겠습니까? 예약된 재고가 해제됩니다."
+                onConfirm={handleCancel}
+                disabled={isTerminal || cancelMutation.isPending}
+                variant="destructive"
+              />
+            )}
           </div>
         </div>
 
@@ -173,7 +185,9 @@ export function FulfillmentDetail({ id }: { id: string }) {
         <InfoRow label="모드">
           {fo.fulfillmentMode ? MODE_LABEL[fo.fulfillmentMode] : '-'}
         </InfoRow>
-        <InfoRow label="우선순위">{PRIORITY_LABEL[fo.priority] ?? fo.priority}</InfoRow>
+        <InfoRow label="우선순위">
+          {PRIORITY_LABEL[fo.priority] ?? fo.priority}
+        </InfoRow>
         <InfoRow label="수량">
           아이템 {fo.totalItems} / 총 {fo.totalQty} / 예약 {fo.totalReservedQty}
         </InfoRow>
@@ -185,10 +199,17 @@ export function FulfillmentDetail({ id }: { id: string }) {
         <InfoRow label="생성일">
           {new Date(fo.createdAt).toLocaleString('ko-KR')}
         </InfoRow>
-        {fo.invoice && (
-          <InfoRow label="송장">
-            {fo.invoice.invoiceNumber} ({fo.invoice.status})
-            {fo.invoice.carrierCode ? ` · ${fo.invoice.carrierCode}` : ''}
+        {fo.shipments && (
+          <InfoRow label="V2 shipment">
+            {fo.shipments.length}건 · 단일 shipment/송장을 현재값으로 간주하지
+            않습니다.
+          </InfoRow>
+        )}
+        {fo.progress && (
+          <InfoRow label="이행 진행">
+            출고 {fo.progress.shippedQty} / 취소 {fo.progress.canceledQty} /
+            미처리 {fo.progress.outstandingQty}
+            {' · '}확정 예약 {fo.progress.confirmedReservedQty}
           </InfoRow>
         )}
         {fo.reservationFailureReason && (
@@ -217,13 +238,18 @@ export function FulfillmentDetail({ id }: { id: string }) {
             <tbody>
               {fo.items.map((item) => {
                 const remaining = item.qty - item.reservedQty;
-                const canReserve = remaining > 0 && fo.adminAvailableActions.includes('reserve');
+                const canReserve =
+                  canOperate &&
+                  remaining > 0 &&
+                  fo.adminAvailableActions.includes('reserve');
                 return (
                   <tr key={item.id} className="border-b last:border-0">
                     <td className="py-2 pr-3">
                       <div className="flex flex-col">
                         <span className="font-medium">{item.skuName}</span>
-                        <span className="font-mono text-xs text-gray-500">{item.skuCode}</span>
+                        <span className="font-mono text-xs text-gray-500">
+                          {item.skuCode}
+                        </span>
                       </div>
                     </td>
                     <td className="py-2 pr-3">{item.qty}</td>
@@ -231,7 +257,9 @@ export function FulfillmentDetail({ id }: { id: string }) {
                     <td className="py-2 pr-3">{item.pickedQty}</td>
                     <td className="py-2 pr-3">{item.shippedQty}</td>
                     <td className="py-2 pr-3">
-                      <span className="text-xs text-gray-600">{item.status}</span>
+                      <span className="text-xs text-gray-600">
+                        {item.status}
+                      </span>
                     </td>
                     <td className="py-2 pr-3 text-right">
                       {canReserve && (
@@ -250,7 +278,10 @@ export function FulfillmentDetail({ id }: { id: string }) {
               })}
               {fo.items.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="py-6 text-center text-muted-foreground">
+                  <td
+                    colSpan={7}
+                    className="py-6 text-center text-muted-foreground"
+                  >
                     출고 라인이 없습니다.
                   </td>
                 </tr>

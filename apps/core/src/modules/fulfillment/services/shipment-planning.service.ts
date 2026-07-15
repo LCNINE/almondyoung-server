@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectTypedDb, DbService } from '@app/db';
 import { AuthorizationService } from '@app/authorization';
-import { and, asc, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import {
@@ -16,6 +16,8 @@ import {
   ReviseShipmentRecipientDto,
   ShipmentPlanningActor,
   ShipmentDetailResponseDto,
+  ShipmentSummaryResponseDto,
+  FulfillmentOperationResponseDto,
   SplitShipmentDto,
 } from '../dto/shipment-planning.dto';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
@@ -848,7 +850,7 @@ export class ShipmentPlanningService {
     return this.dbService.run(async (trx) => {
       const aggregate = await this.loadAggregate(shipmentId, trx);
       const lineIds = aggregate.lines.map((line) => line.id);
-      const [reservations, invoices, workItems, attempts, origins] = await Promise.all([
+      const [reservations, invoices, workItems, attempts, origins, operations] = await Promise.all([
         lineIds.length
           ? trx
               .select()
@@ -872,7 +874,36 @@ export class ShipmentPlanningService {
           .where(eq(wmsTables.dispatchAttempts.shipmentId, shipmentId))
           .orderBy(asc(wmsTables.dispatchAttempts.attemptNo)),
         this.loadSalesOrderLineOrigins(aggregate.lines, trx),
+        trx
+          .select({
+            operationId: wmsTables.shipmentOperations.id,
+            type: wmsTables.shipmentOperations.type,
+            status: wmsTables.shipmentOperations.status,
+            lastError: wmsTables.shipmentOperations.lastError,
+            createdAt: wmsTables.shipmentOperations.createdAt,
+            completedAt: wmsTables.shipmentOperations.completedAt,
+          })
+          .from(wmsTables.shipmentOperationMembers)
+          .innerJoin(
+            wmsTables.shipmentOperations,
+            eq(wmsTables.shipmentOperations.id, wmsTables.shipmentOperationMembers.operationId),
+          )
+          .where(eq(wmsTables.shipmentOperationMembers.shipmentId, shipmentId))
+          .orderBy(asc(wmsTables.shipmentOperations.createdAt), asc(wmsTables.shipmentOperations.id)),
       ]);
+      const attemptIds = attempts.map((attempt) => attempt.id);
+      const attemptSources: Array<typeof wmsTables.dispatchAttemptSources.$inferSelect> = attemptIds.length
+        ? await trx
+            .select()
+            .from(wmsTables.dispatchAttemptSources)
+            .where(inArray(wmsTables.dispatchAttemptSources.dispatchAttemptId, attemptIds))
+            .orderBy(asc(wmsTables.dispatchAttemptSources.createdAt), asc(wmsTables.dispatchAttemptSources.id))
+        : [];
+      const trackingEvents = await trx
+        .select()
+        .from(wmsTables.shipmentTracking)
+        .where(eq(wmsTables.shipmentTracking.shipmentId, shipmentId))
+        .orderBy(asc(wmsTables.shipmentTracking.timestamp), asc(wmsTables.shipmentTracking.id));
       const originByLineId = new Map(origins.map((origin) => [origin.salesOrderLineId, origin]));
       const reservationByLine = new Map<string, typeof reservations>();
       for (const reservation of reservations) {
@@ -891,8 +922,123 @@ export class ShipmentPlanningService {
         })),
         invoices,
         workItems,
-        dispatchAttempts: attempts,
+        dispatchAttempts: attempts.map((attempt) => ({
+          ...attempt,
+          sources: attemptSources
+            .filter((source) => source.dispatchAttemptId === attempt.id)
+            .map((source) => ({ ...source, quantity: source.qty })),
+          trackingEvents: trackingEvents.filter((event) => event.dispatchAttemptId === attempt.id),
+        })),
+        operations,
       };
+    }, tx);
+  }
+
+  async getFulfillmentShipments(fulfillmentOrderId: string, tx?: DbTx): Promise<ShipmentSummaryResponseDto[]> {
+    return this.dbService.run(async (trx) => {
+      const [fulfillmentOrder] = await trx
+        .select({ id: wmsTables.fulfillmentOrders.id })
+        .from(wmsTables.fulfillmentOrders)
+        .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId))
+        .limit(1);
+      if (!fulfillmentOrder) throw new NotFoundException(`Fulfillment order ${fulfillmentOrderId} not found`);
+      const rows = await trx
+        .select({ shipment: wmsTables.shipments, line: wmsTables.shipmentLines })
+        .from(wmsTables.shipmentLines)
+        .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.shipmentLines.shipmentId))
+        .innerJoin(
+          wmsTables.fulfillmentOrderItems,
+          eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+        )
+        .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId))
+        .orderBy(asc(wmsTables.shipments.createdAt), asc(wmsTables.shipments.id), asc(wmsTables.shipmentLines.id));
+      const byShipment = new Map<string, ShipmentSummaryResponseDto>();
+      for (const { shipment, line } of rows) {
+        const summary = byShipment.get(shipment.id) ?? {
+          id: shipment.id,
+          status: shipment.status,
+          warehouseId: shipment.warehouseId,
+          manifestVersion: shipment.manifestVersion,
+          reservationVersion: shipment.reservationVersion,
+          totalQty: 0,
+          reservedQty: 0,
+          inspectedQty: 0,
+          recoveryCode: shipment.recoveryCode,
+        };
+        summary.totalQty += line.qty;
+        summary.reservedQty += line.reservedQty;
+        summary.inspectedQty += line.inspectedQty;
+        byShipment.set(shipment.id, summary);
+      }
+      return [...byShipment.values()];
+    }, tx);
+  }
+
+  async getOperation(operationId: string, tx?: DbTx): Promise<FulfillmentOperationResponseDto> {
+    return this.dbService.run(async (trx) => {
+      // Domain sagas take precedence over their completed command envelope so
+      // polling never hides a pending/recovery_required provider state.
+      const [shipmentOperation] = await trx
+        .select()
+        .from(wmsTables.shipmentOperations)
+        .where(eq(wmsTables.shipmentOperations.id, operationId))
+        .limit(1);
+      if (shipmentOperation) {
+        return {
+          operationId,
+          type: shipmentOperation.type,
+          status: shipmentOperation.status,
+          resourceType: 'shipment_operation',
+          resourceId: operationId,
+          lastError: shipmentOperation.lastError,
+          responseSnapshot: shipmentOperation.afterManifestSnapshot,
+          createdAt: shipmentOperation.createdAt,
+          completedAt: shipmentOperation.completedAt,
+        };
+      }
+      const [invoiceOperation] = await trx
+        .select()
+        .from(wmsTables.invoiceOperations)
+        .where(eq(wmsTables.invoiceOperations.id, operationId))
+        .limit(1);
+      if (invoiceOperation) {
+        return {
+          operationId,
+          type: `invoice.${invoiceOperation.operation}`,
+          status: invoiceOperation.status,
+          resourceType: 'invoice',
+          resourceId: invoiceOperation.invoiceId,
+          lastError: invoiceOperation.lastError,
+          responseSnapshot: invoiceOperation.providerResponse,
+          createdAt: invoiceOperation.createdAt,
+          completedAt: invoiceOperation.completedAt,
+        };
+      }
+      const [command] = await trx
+        .select()
+        .from(wmsTables.fulfillmentCommandRequests)
+        .where(
+          or(
+            eq(wmsTables.fulfillmentCommandRequests.id, operationId),
+            eq(wmsTables.fulfillmentCommandRequests.operationId, operationId),
+          ),
+        )
+        .orderBy(asc(wmsTables.fulfillmentCommandRequests.createdAt))
+        .limit(1);
+      if (command) {
+        return {
+          operationId,
+          type: command.commandType,
+          status: command.status,
+          resourceType: command.resourceType,
+          resourceId: command.resourceId,
+          lastError: command.lastError,
+          responseSnapshot: command.responseSnapshot,
+          createdAt: command.createdAt,
+          completedAt: command.completedAt,
+        };
+      }
+      throw new NotFoundException(`Fulfillment operation ${operationId} not found`);
     }, tx);
   }
 

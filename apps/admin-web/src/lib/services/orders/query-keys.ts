@@ -10,9 +10,17 @@ export const orderQueryKeys = {
 
   // 출고 배치 관련
   outboundBatches: ['outbound-batches'] as const,
+  outboundBatchesV2Root: ['outbound-batches', 'v2'] as const,
   outboundBatchList: (warehouseId?: string) =>
     ['outbound-batches', 'list', warehouseId ?? ''] as const,
   outboundBatch: (id: string) => ['outbound-batches', id] as const,
+  outboundBatchesV2: (params?: object) =>
+    [...orderQueryKeys.outboundBatchesV2Root, 'list', params ?? {}] as const,
+  outboundBatchV2: (id: string) => ['outbound-batches', 'v2', id] as const,
+  outboundBatchEligibleShipments: (id: string) =>
+    ['outbound-batches', 'v2', id, 'eligible-shipments'] as const,
+  outboundBatchWorkItems: (id: string) =>
+    ['outbound-batches', 'v2', id, 'work-items'] as const,
   outboundBatchPickingList: (id: string) =>
     ['outbound-batches', id, 'picking-list'] as const,
   availableFulfillmentOrders: (warehouseId: string) =>
@@ -33,6 +41,12 @@ export const orderQueryKeys = {
   fulfillmentsList: (params?: object) =>
     ['fulfillments', 'list', params ?? {}] as const,
   fulfillment: (id: string) => ['fulfillments', id] as const,
+  fulfillmentShipments: (id: string) =>
+    ['fulfillments', id, 'shipments'] as const,
+  shipment: (id: string) => ['shipments', id] as const,
+  fulfillmentOperation: (id: string) => ['fulfillment-operations', id] as const,
+  shipmentRecallOperation: (id: string) =>
+    ['shipment-recall-operations', id] as const,
   fulfillmentTransferCandidates: (id: string, fromFoiId: string) =>
     ['fulfillments', id, 'transfer-candidates', fromFoiId] as const,
   fulfillmentOrders: ['fulfillment-orders'] as const,
@@ -80,6 +94,7 @@ export const orderQueryKeys = {
   // 송장 관련
   invoices: ['invoices'] as const,
   invoice: (id: string) => ['invoices', id] as const,
+  invoiceOperation: (id: string) => ['invoice-operations', id] as const,
 
   // 직배송 관련
   directShipDashboard: ['direct-ship', 'dashboard'] as const,
@@ -95,6 +110,8 @@ export const orderQueryKeys = {
   // 합포장 관련
   consolidationCandidates: (warehouseId: string) =>
     ['consolidation', 'candidates', warehouseId] as const,
+  shipmentConsolidationCandidates: (params: object) =>
+    ['shipments', 'consolidation-candidates', params] as const,
   consolidationLive: (warehouseId: string) =>
     ['consolidation', 'live', warehouseId] as const,
   consolidationSavings: (warehouseId: string, days: number) =>

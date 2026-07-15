@@ -7,6 +7,7 @@ import {
   ReviseShipmentRecipientDto,
   ShipmentPlanningActor,
   ShipmentDetailResponseDto,
+  FulfillmentOperationResponseDto,
   SplitShipmentDto,
 } from '../dto/shipment-planning.dto';
 import { ShipmentPlanningService } from '../services/shipment-planning.service';
@@ -36,7 +37,7 @@ export class ShipmentPlanningController {
   }
 
   @Patch(':id/recipient')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
+  @RequireScopes(FULFILLMENT_SCOPE.SHIPMENT_OVERRIDE_RECIPIENT)
   reviseRecipient(
     @Param('id') shipmentId: string,
     @Body() dto: ReviseShipmentRecipientDto,
@@ -79,5 +80,18 @@ export class ShipmentPlanningController {
     const id = user?.userId ?? user?.id ?? user?.sub;
     if (!id) throw new UnauthorizedException('Authenticated actor is required');
     return { id, roles: Array.isArray(user?.roles) ? user.roles : [] };
+  }
+}
+
+@Controller('fulfillment-operations')
+@UseGuards(ScopeGuard)
+export class FulfillmentOperationController {
+  constructor(private readonly planning: ShipmentPlanningService) {}
+
+  @Get(':operationId')
+  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
+  @ApiOkResponse({ type: FulfillmentOperationResponseDto })
+  get(@Param('operationId') operationId: string): Promise<FulfillmentOperationResponseDto> {
+    return this.planning.getOperation(operationId);
   }
 }

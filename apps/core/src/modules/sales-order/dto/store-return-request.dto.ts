@@ -118,6 +118,35 @@ export class StoreReturnRequestResponseDto {
   createdAt: Date;
 }
 
+export class StoreReturnEligibilityItemDto {
+  @ApiProperty()
+  salesOrderLineId: string;
+  @ApiProperty()
+  shipmentId: string;
+  @ApiProperty()
+  shipmentLineId: string;
+  @ApiProperty()
+  dispatchAttemptId: string;
+  @ApiProperty()
+  deliveredAt: Date;
+  @ApiProperty()
+  shippedQty: number;
+  @ApiProperty()
+  claimedQty: number;
+  @ApiProperty()
+  remainingEligibleQty: number;
+  @ApiProperty({ description: 'legacy 및 다른 배송 시도 claim까지 반영한 주문 라인 전체 잔여 한도' })
+  salesOrderLineRemainingEligibleQty: number;
+}
+
+export class StoreReturnEligibilityResponseDto {
+  @ApiProperty()
+  orderId: string;
+
+  @ApiProperty({ type: [StoreReturnEligibilityItemDto] })
+  items: StoreReturnEligibilityItemDto[];
+}
+
 export class StoreOrderLineDto {
   @ApiProperty({ description: 'Core 판매 주문 라인 ID' })
   id: string;
