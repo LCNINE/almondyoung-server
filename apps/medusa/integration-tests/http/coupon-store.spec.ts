@@ -131,6 +131,38 @@ medusaIntegrationTestRunner({
       expect(claimCodes).not.toContain('CLAIMFULL');
     });
 
+    it('me/promotions excludes a coupon whose per-customer usage limit is used up (P2 used-coupon)', async () => {
+      const id = await createPromoRaw('USEDUP', { visibility: 'public' }, {
+        campaign: {
+          name: 'u',
+          campaign_identifier: `U_${seq}`,
+          budget: { type: 'use_by_attribute', attribute: 'customer_id', limit: 1 },
+        },
+      });
+      await linkCustomer(id);
+
+      // 사용 전: 목록에 노출
+      const before = await api.get('/store/customers/me/promotions', storeHeaders);
+      expect(before.data.promotions.map((p: any) => p.code)).toContain('USEDUP');
+
+      // 이 고객의 사용 1회 등록 → 1인당 한도(1) 소진
+      const query = getContainer().resolve(ContainerRegistrationKeys.QUERY) as any;
+      const { data: promos } = await query.graph({
+        entity: 'promotion',
+        fields: ['id', 'campaign.budget.id'],
+        filters: { id },
+      });
+      const budgetId = promos[0].campaign.budget.id as string;
+      const promotionModule = getContainer().resolve(Modules.PROMOTION) as any;
+      await promotionModule.createCampaignBudgetUsages([
+        { attribute_value: customerId, used: 1, budget_id: budgetId },
+      ]);
+
+      // 사용 후: 목록에서 제외
+      const after = await api.get('/store/customers/me/promotions', storeHeaders);
+      expect(after.data.promotions.map((p: any) => p.code)).not.toContain('USEDUP');
+    });
+
     it('customer can claim a claimable coupon; it then appears as assigned', async () => {
       const claimId = await createPromo('CLAIMME', { visibility: 'claimable' });
       const res0 = await claim(claimId);
