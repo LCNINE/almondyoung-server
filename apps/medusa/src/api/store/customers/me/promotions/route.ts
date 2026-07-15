@@ -1,5 +1,5 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
-import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../../../../../modules/promotion-meta';
 import PromotionMetaModuleService from '../../../../../modules/promotion-meta/service';
 import { toMetadataShape, meetsGroupRule } from '../../../../admin/promotions/helpers';
@@ -43,6 +43,11 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     'campaign.campaign_identifier',
     'campaign.starts_at',
     'campaign.ends_at',
+    'campaign.budget.id',
+    'campaign.budget.type',
+    'campaign.budget.limit',
+    'campaign.budget.used',
+    'campaign.budget.attribute',
     'application_method.id',
     'application_method.type',
     'application_method.value',
@@ -57,7 +62,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   //  고객에게 직접 발급된 프로모션 조회 (groups.id로 그룹 rule 검증에 활용)
   const { data: customers } = await query.graph({
     entity: 'customer',
-    fields: ['id', 'groups.id', ...promotionFields.map((f) => `promotions.${f}`)],
+    fields: ['id', 'email', 'groups.id', ...promotionFields.map((f) => `promotions.${f}`)],
     filters: { id: customerId },
   });
 
@@ -148,10 +153,45 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
 
   const assignedPromotionIds = new Set<string>();
   const customer = customers?.[0];
-  const assignedPromotions = (customer?.promotions || []).filter(isValidPromotion).map((promo: any) => {
-    assignedPromotionIds.add(promo.id);
-    return formatPromotion(promo, true);
-  });
+
+  // 사용 소진 쿠폰 제외 — 전역 usage 한도 소진(전원) + per-customer use_by_attribute 소진(본인).
+  // 이미 다 쓴 쿠폰이 "사용 가능"으로 목록에 남지 않도록 한다.
+  const customerEmail = customer?.email as string | undefined;
+  const attrBudgetIds = new Set<string>();
+  for (const p of [...(customer?.promotions ?? []), ...(allPromotions ?? [])]) {
+    const b = (p as any).campaign?.budget;
+    if (b?.id && b.type === 'use_by_attribute') attrBudgetIds.add(b.id);
+  }
+  const usedByBudgetId = new Map<string, number>();
+  if (attrBudgetIds.size > 0) {
+    const promotionModule = req.scope.resolve<any>(Modules.PROMOTION);
+    const attributeValues = [customerId, customerEmail].filter(Boolean) as string[];
+    const usages = await promotionModule.listCampaignBudgetUsages({
+      budget_id: [...attrBudgetIds],
+      attribute_value: attributeValues,
+    });
+    for (const u of usages) {
+      usedByBudgetId.set(
+        u.budget_id,
+        Math.max(usedByBudgetId.get(u.budget_id) ?? 0, Number(u.used ?? 0)),
+      );
+    }
+  }
+  const isUsageExhausted = (promo: any): boolean => {
+    const b = promo.campaign?.budget;
+    if (!b || b.limit == null) return false;
+    const limit = Number(b.limit);
+    if (b.type === 'usage') return Number(b.used ?? 0) >= limit;
+    if (b.type === 'use_by_attribute') return (usedByBudgetId.get(b.id) ?? 0) >= limit;
+    return false;
+  };
+
+  const assignedPromotions = (customer?.promotions || [])
+    .filter((promo: any) => isValidPromotion(promo) && !isUsageExhausted(promo))
+    .map((promo: any) => {
+      assignedPromotionIds.add(promo.id);
+      return formatPromotion(promo, true);
+    });
 
   const customerGroupIds = new Set<string>((customers?.[0]?.groups ?? []).map((g: any) => g.id));
 
@@ -160,6 +200,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     .filter((promo: any) =>
       !assignedPromotionIds.has(promo.id) &&
       isValidPromotion(promo) &&
+      !isUsageExhausted(promo) &&
       (visibilityById.get(promo.id) ?? 'public') === 'public' &&
       meetsGroupRule(promo, customerGroupIds)
     )
@@ -173,6 +214,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       isValidPromotion(promo) &&
       visibilityById.get(promo.id) === 'claimable' &&
       !isClaimExhausted(promo.id) &&
+      !isUsageExhausted(promo) &&
       meetsGroupRule(promo, customerGroupIds)
     )
     .slice(0, CLAIMABLE_LIMIT)
