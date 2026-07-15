@@ -42,7 +42,7 @@ CREATE TABLE "batch_inventory_session_balances" (
         ("batch_inventory_session_balances"."custody_type" = 'AT_SOURCE' AND "batch_inventory_session_balances"."source_location_id" IS NOT NULL AND "batch_inventory_session_balances"."custody_ref" IS NULL AND "batch_inventory_session_balances"."shipment_line_id" IS NULL)
         OR ("batch_inventory_session_balances"."custody_type" = 'BULK_CART' AND "batch_inventory_session_balances"."source_location_id" IS NOT NULL AND "batch_inventory_session_balances"."custody_ref" IS NOT NULL AND "batch_inventory_session_balances"."shipment_line_id" IS NULL)
         OR ("batch_inventory_session_balances"."custody_type" IN ('WORKER', 'TOTE', 'SORTING', 'PACKING', 'PACKED') AND "batch_inventory_session_balances"."source_location_id" IS NOT NULL AND "batch_inventory_session_balances"."custody_ref" IS NOT NULL AND "batch_inventory_session_balances"."shipment_line_id" IS NOT NULL)
-        OR ("batch_inventory_session_balances"."custody_type" IN ('RETURN_PENDING', 'SETTLED') AND "batch_inventory_session_balances"."source_location_id" IS NOT NULL AND "batch_inventory_session_balances"."shipment_line_id" IS NOT NULL)
+        OR ("batch_inventory_session_balances"."custody_type" IN ('RETURN_PENDING', 'SETTLED') AND "batch_inventory_session_balances"."source_location_id" IS NOT NULL AND "batch_inventory_session_balances"."custody_ref" IS NULL AND "batch_inventory_session_balances"."shipment_line_id" IS NOT NULL)
       ))
 );
 --> statement-breakpoint
@@ -72,7 +72,7 @@ CREATE TABLE "batch_inventory_session_events" (
           ("batch_inventory_session_events"."from_custody_type" = 'AT_SOURCE' AND "batch_inventory_session_events"."from_source_location_id" IS NOT NULL AND "batch_inventory_session_events"."from_custody_ref" IS NULL AND "batch_inventory_session_events"."from_shipment_line_id" IS NULL)
           OR ("batch_inventory_session_events"."from_custody_type" = 'BULK_CART' AND "batch_inventory_session_events"."from_source_location_id" IS NOT NULL AND "batch_inventory_session_events"."from_custody_ref" IS NOT NULL AND "batch_inventory_session_events"."from_shipment_line_id" IS NULL)
           OR ("batch_inventory_session_events"."from_custody_type" IN ('WORKER', 'TOTE', 'SORTING', 'PACKING', 'PACKED') AND "batch_inventory_session_events"."from_source_location_id" IS NOT NULL AND "batch_inventory_session_events"."from_custody_ref" IS NOT NULL AND "batch_inventory_session_events"."from_shipment_line_id" IS NOT NULL)
-          OR ("batch_inventory_session_events"."from_custody_type" IN ('RETURN_PENDING', 'SETTLED') AND "batch_inventory_session_events"."from_source_location_id" IS NOT NULL AND "batch_inventory_session_events"."from_shipment_line_id" IS NOT NULL)
+          OR ("batch_inventory_session_events"."from_custody_type" IN ('RETURN_PENDING', 'SETTLED') AND "batch_inventory_session_events"."from_source_location_id" IS NOT NULL AND "batch_inventory_session_events"."from_custody_ref" IS NULL AND "batch_inventory_session_events"."from_shipment_line_id" IS NOT NULL)
         ))
       )),
 	CONSTRAINT "ck_batch_inventory_session_events_to_grain" CHECK ((
@@ -81,7 +81,7 @@ CREATE TABLE "batch_inventory_session_events" (
           ("batch_inventory_session_events"."to_custody_type" = 'AT_SOURCE' AND "batch_inventory_session_events"."to_source_location_id" IS NOT NULL AND "batch_inventory_session_events"."to_custody_ref" IS NULL AND "batch_inventory_session_events"."to_shipment_line_id" IS NULL)
           OR ("batch_inventory_session_events"."to_custody_type" = 'BULK_CART' AND "batch_inventory_session_events"."to_source_location_id" IS NOT NULL AND "batch_inventory_session_events"."to_custody_ref" IS NOT NULL AND "batch_inventory_session_events"."to_shipment_line_id" IS NULL)
           OR ("batch_inventory_session_events"."to_custody_type" IN ('WORKER', 'TOTE', 'SORTING', 'PACKING', 'PACKED') AND "batch_inventory_session_events"."to_source_location_id" IS NOT NULL AND "batch_inventory_session_events"."to_custody_ref" IS NOT NULL AND "batch_inventory_session_events"."to_shipment_line_id" IS NOT NULL)
-          OR ("batch_inventory_session_events"."to_custody_type" IN ('RETURN_PENDING', 'SETTLED') AND "batch_inventory_session_events"."to_source_location_id" IS NOT NULL AND "batch_inventory_session_events"."to_shipment_line_id" IS NOT NULL)
+          OR ("batch_inventory_session_events"."to_custody_type" IN ('RETURN_PENDING', 'SETTLED') AND "batch_inventory_session_events"."to_source_location_id" IS NOT NULL AND "batch_inventory_session_events"."to_custody_ref" IS NULL AND "batch_inventory_session_events"."to_shipment_line_id" IS NOT NULL)
         ))
       ))
 );

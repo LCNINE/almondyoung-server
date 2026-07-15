@@ -2716,7 +2716,7 @@ export const batchInventorySessionBalances = pgTable(
         (${t.custodyType} = 'AT_SOURCE' AND ${t.sourceLocationId} IS NOT NULL AND ${t.custodyRef} IS NULL AND ${t.shipmentLineId} IS NULL)
         OR (${t.custodyType} = 'BULK_CART' AND ${t.sourceLocationId} IS NOT NULL AND ${t.custodyRef} IS NOT NULL AND ${t.shipmentLineId} IS NULL)
         OR (${t.custodyType} IN ('WORKER', 'TOTE', 'SORTING', 'PACKING', 'PACKED') AND ${t.sourceLocationId} IS NOT NULL AND ${t.custodyRef} IS NOT NULL AND ${t.shipmentLineId} IS NOT NULL)
-        OR (${t.custodyType} IN ('RETURN_PENDING', 'SETTLED') AND ${t.sourceLocationId} IS NOT NULL AND ${t.shipmentLineId} IS NOT NULL)
+        OR (${t.custodyType} IN ('RETURN_PENDING', 'SETTLED') AND ${t.sourceLocationId} IS NOT NULL AND ${t.custodyRef} IS NULL AND ${t.shipmentLineId} IS NOT NULL)
       )`,
     ),
   }),
@@ -2774,7 +2774,7 @@ export const batchInventorySessionEvents = pgTable(
           (${t.fromCustodyType} = 'AT_SOURCE' AND ${t.fromSourceLocationId} IS NOT NULL AND ${t.fromCustodyRef} IS NULL AND ${t.fromShipmentLineId} IS NULL)
           OR (${t.fromCustodyType} = 'BULK_CART' AND ${t.fromSourceLocationId} IS NOT NULL AND ${t.fromCustodyRef} IS NOT NULL AND ${t.fromShipmentLineId} IS NULL)
           OR (${t.fromCustodyType} IN ('WORKER', 'TOTE', 'SORTING', 'PACKING', 'PACKED') AND ${t.fromSourceLocationId} IS NOT NULL AND ${t.fromCustodyRef} IS NOT NULL AND ${t.fromShipmentLineId} IS NOT NULL)
-          OR (${t.fromCustodyType} IN ('RETURN_PENDING', 'SETTLED') AND ${t.fromSourceLocationId} IS NOT NULL AND ${t.fromShipmentLineId} IS NOT NULL)
+          OR (${t.fromCustodyType} IN ('RETURN_PENDING', 'SETTLED') AND ${t.fromSourceLocationId} IS NOT NULL AND ${t.fromCustodyRef} IS NULL AND ${t.fromShipmentLineId} IS NOT NULL)
         ))
       )`,
     ),
@@ -2786,7 +2786,7 @@ export const batchInventorySessionEvents = pgTable(
           (${t.toCustodyType} = 'AT_SOURCE' AND ${t.toSourceLocationId} IS NOT NULL AND ${t.toCustodyRef} IS NULL AND ${t.toShipmentLineId} IS NULL)
           OR (${t.toCustodyType} = 'BULK_CART' AND ${t.toSourceLocationId} IS NOT NULL AND ${t.toCustodyRef} IS NOT NULL AND ${t.toShipmentLineId} IS NULL)
           OR (${t.toCustodyType} IN ('WORKER', 'TOTE', 'SORTING', 'PACKING', 'PACKED') AND ${t.toSourceLocationId} IS NOT NULL AND ${t.toCustodyRef} IS NOT NULL AND ${t.toShipmentLineId} IS NOT NULL)
-          OR (${t.toCustodyType} IN ('RETURN_PENDING', 'SETTLED') AND ${t.toSourceLocationId} IS NOT NULL AND ${t.toShipmentLineId} IS NOT NULL)
+          OR (${t.toCustodyType} IN ('RETURN_PENDING', 'SETTLED') AND ${t.toSourceLocationId} IS NOT NULL AND ${t.toCustodyRef} IS NULL AND ${t.toShipmentLineId} IS NOT NULL)
         ))
       )`,
     ),

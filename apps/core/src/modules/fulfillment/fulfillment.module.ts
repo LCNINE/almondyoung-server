@@ -45,6 +45,8 @@ import { ShipmentPlanningService } from './services/shipment-planning.service';
 import { InvoiceOrchestrator } from './services/invoice-orchestrator.service';
 import { InvoiceRecoveryWorker } from './services/invoice-recovery.worker';
 import { OutboundBatchOrchestrator } from './services/outbound-batch-orchestrator.service';
+import { BatchInventorySessionService } from './services/batch-inventory-session.service';
+import { BatchSessionRecoveryService } from './services/batch-session-recovery.service';
 
 // Controllers
 import { FulfillmentsController } from './controllers/fulfillments.controller';
@@ -135,6 +137,8 @@ import { OutboundBatchV2Controller } from './controllers/outbound-batch-v2.contr
     InvoiceOrchestrator,
     InvoiceRecoveryWorker,
     OutboundBatchOrchestrator,
+    BatchInventorySessionService,
+    BatchSessionRecoveryService,
   ],
   exports: [
     FulfillmentProgressService,
@@ -145,6 +149,8 @@ import { OutboundBatchV2Controller } from './controllers/outbound-batch-v2.contr
     ShipmentPlanningService,
     InvoiceOrchestrator,
     OutboundBatchOrchestrator,
+    BatchInventorySessionService,
+    BatchSessionRecoveryService,
   ],
 })
 export class FulfillmentModule {}

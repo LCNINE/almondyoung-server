@@ -1307,6 +1307,18 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
         { sourceLocationId: f.location.id, custodyType: 'PACKED' as const, custodyRef: 'packed-missing-line' },
         { sourceLocationId: f.location.id, custodyType: 'RETURN_PENDING' as const },
         { sourceLocationId: f.location.id, custodyType: 'SETTLED' as const },
+        {
+          sourceLocationId: f.location.id,
+          custodyType: 'RETURN_PENDING' as const,
+          custodyRef: 'forbidden-return-ref',
+          shipmentLineId: f.shipmentLine.id,
+        },
+        {
+          sourceLocationId: f.location.id,
+          custodyType: 'SETTLED' as const,
+          custodyRef: 'forbidden-settled-ref',
+          shipmentLineId: f.shipmentLine.id,
+        },
       ];
       for (const grain of invalidCustodyGrains) {
         await expectViolation(
@@ -1551,6 +1563,38 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
             toCustodyType: 'PACKED',
             toCustodyRef: 'packed-2',
             toSourceLocationId: f.location.id,
+          }),
+        'ck_batch_inventory_session_events_to_grain',
+      );
+      await expectViolation(
+        tx,
+        (sp) =>
+          sp.insert(wmsTables.batchInventorySessionEvents).values({
+            sessionId: session.id,
+            idempotencyKey: randomUUID(),
+            eventType: 'return_pending_with_ref',
+            skuId: f.sku.id,
+            quantity: 1,
+            fromCustodyType: 'RETURN_PENDING',
+            fromCustodyRef: 'forbidden-return-ref',
+            fromSourceLocationId: f.location.id,
+            fromShipmentLineId: f.shipmentLine.id,
+          }),
+        'ck_batch_inventory_session_events_from_grain',
+      );
+      await expectViolation(
+        tx,
+        (sp) =>
+          sp.insert(wmsTables.batchInventorySessionEvents).values({
+            sessionId: session.id,
+            idempotencyKey: randomUUID(),
+            eventType: 'settled_with_ref',
+            skuId: f.sku.id,
+            quantity: 1,
+            toCustodyType: 'SETTLED',
+            toCustodyRef: 'forbidden-settled-ref',
+            toSourceLocationId: f.location.id,
+            toShipmentLineId: f.shipmentLine.id,
           }),
         'ck_batch_inventory_session_events_to_grain',
       );

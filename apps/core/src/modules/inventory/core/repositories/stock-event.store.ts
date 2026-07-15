@@ -1,16 +1,18 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
 import { DbService } from '@app/db';
-import { and, or, eq, lte, gte, isNull } from 'drizzle-orm';
+import { and, or, eq, lte, gte, isNull, inArray, ne } from 'drizzle-orm';
 import { sql } from 'drizzle-orm/sql';
 import { StockStateEnum } from '../../schema/enum-values';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 import { acquireStockAvailabilityLock } from '../../shared/locks/stock-availability-lock';
 import { assertReservationInvariant } from '../../shared/locks/reservation-invariant';
+import { BatchControlledStockGuard, BatchSessionDispatchAuthorization } from '../services/batch-controlled-stock.guard';
 
 // TransitionType alias for strong typing
 type TransitionType = (typeof wmsTables.stockEvents.$inferInsert)['transitionType'];
+type StockEventRow = typeof wmsTables.stockEvents.$inferSelect;
 
 type CreateEventInput = {
   journalId?: string;
@@ -30,6 +32,7 @@ type CreateEventInput = {
   occurredAt: Date; // 비즈니스 발생시각
   idempotencyKey?: string;
   reason?: string;
+  batchSessionDispatch?: BatchSessionDispatchAuthorization;
 };
 
 @Injectable()
@@ -39,6 +42,7 @@ export class StockEventStore {
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly productSellableQuantity: ProductSellableQuantityService,
+    private readonly batchControlledStock: BatchControlledStockGuard = new BatchControlledStockGuard(),
   ) {}
 
   private get db() {
@@ -51,6 +55,9 @@ export class StockEventStore {
 
   /** 이벤트 1건 생성 + 레저 프로젝션 갱신(동일 트랜잭션) */
   async createEvent(input: CreateEventInput, tx?: DbTx) {
+    if (input.batchSessionDispatch && !tx) {
+      throw new Error('batchSessionDispatch requires the caller dispatch transaction');
+    }
     return this.dbService.run(async (trx) => {
       // 1) 이벤트 삽입 (멱등키가 있으면 중복 방지)
       const [event] = await trx
@@ -80,10 +87,19 @@ export class StockEventStore {
           const existing = await trx.query.stockEvents.findFirst({
             where: (e, { eq }) => eq(e.idempotencyKey, input.idempotencyKey!),
           });
+          if (existing && input.batchSessionDispatch) {
+            await this.assertDispatchReplayAuthorization(input.batchSessionDispatch, existing, trx);
+          }
           return existing ?? null;
         }
         return null;
       }
+
+      // This repository is the final write boundary for stock ledger projection.
+      // Guard here (after the idempotency claim, before projection) so direct
+      // callers cannot bypass batch custody protection and exact replays remain
+      // no-ops even if availability changed after the original event.
+      await this.assertBatchControlledRemovalAllowed(event, input.batchSessionDispatch, trx);
 
       // 2) 레저 갱신 (from -= qty, to += qty)
       await this.applyProjection(trx, {
@@ -117,7 +133,6 @@ export class StockEventStore {
       toState: StockStateEnum | null;
       quantity: number;
     },
-    options?: { forbidNegative?: boolean },
   ) {
     const now = new Date();
 
@@ -319,6 +334,22 @@ export class StockEventStore {
         await assertReservationInvariant(trx, dec.skuId, dec.warehouseId, dec.quantity);
       }
 
+      // Warehouse-net-zero reversal can still move an exact source location.
+      // Batch custody is location-grained, so protect every reverse ON_HAND
+      // source even when the warehouse reservation invariant is exempt.
+      if (original.toState === 'ON_HAND' && original.toWarehouseId && original.toLocationId) {
+        await acquireStockAvailabilityLock(trx, original.skuId, original.toWarehouseId);
+        await this.batchControlledStock.assertRemovalAllowed(
+          {
+            skuId: original.skuId,
+            warehouseId: original.toWarehouseId,
+            sourceLocationId: original.toLocationId,
+            quantity: original.quantity,
+          },
+          trx,
+        );
+      }
+
       // 전이 타입 역매핑
       const reverseType = this.getReversalType(original.transitionType);
 
@@ -362,6 +393,265 @@ export class StockEventStore {
       this.logger.log(`Reversed event#${eventId} with new event#${rev.id} (${reverseType})`);
       return rev;
     }, tx);
+  }
+
+  private async assertBatchControlledRemovalAllowed(
+    event: StockEventRow,
+    authorization: BatchSessionDispatchAuthorization | undefined,
+    tx: DbTx,
+  ): Promise<void> {
+    if (event.fromState !== 'ON_HAND' || !event.fromWarehouseId || !event.fromLocationId) {
+      if (authorization) {
+        throw this.batchDispatchConflict(
+          'BATCH_DISPATCH_EVENT_MISMATCH',
+          'Dispatch authorization requires ON_HAND removal',
+        );
+      }
+      return;
+    }
+    if (authorization) {
+      await this.authorizeAndLinkBatchSessionDispatch(authorization, event, tx);
+      return;
+    }
+    await acquireStockAvailabilityLock(tx, event.skuId, event.fromWarehouseId);
+    await this.batchControlledStock.assertRemovalAllowed(
+      {
+        skuId: event.skuId,
+        warehouseId: event.fromWarehouseId,
+        sourceLocationId: event.fromLocationId,
+        quantity: event.quantity,
+      },
+      tx,
+    );
+  }
+
+  private async authorizeAndLinkBatchSessionDispatch(
+    authorization: BatchSessionDispatchAuthorization,
+    event: StockEventRow,
+    tx: DbTx,
+  ): Promise<void> {
+    const source = await this.lockDispatchSource(authorization.dispatchAttemptSourceId, tx);
+    if (
+      !source ||
+      source.stockEventId !== null ||
+      source.attemptStatus !== 'pending' ||
+      !source.attemptJournalId ||
+      source.attemptJournalId !== event.journalId ||
+      source.lineShipmentId !== source.attemptShipmentId ||
+      source.lineSkuId !== event.skuId ||
+      source.warehouseId !== event.fromWarehouseId ||
+      source.sourceLocationId !== event.fromLocationId ||
+      source.qty !== event.quantity ||
+      event.fromState !== 'ON_HAND' ||
+      event.toWarehouseId !== null ||
+      event.toLocationId !== null ||
+      event.toState !== null ||
+      event.transitionType !== 'SHIP'
+    ) {
+      throw this.batchDispatchConflict(
+        'BATCH_DISPATCH_SOURCE_MISMATCH',
+        'Dispatch authorization does not match the pending exact stock source',
+      );
+    }
+
+    // Canonical dispatch owns attempt/source before it reaches the stock
+    // boundary. Preserve that order here, then take the shared stock advisory
+    // lock; never take shipment/line locks from this low-level repository.
+    await acquireStockAvailabilityLock(tx, event.skuId, event.fromWarehouseId);
+    const availability = await this.batchControlledStock.getAvailability(
+      {
+        skuId: event.skuId,
+        warehouseId: event.fromWarehouseId,
+        sourceLocationId: event.fromLocationId,
+      },
+      tx,
+      { lock: true },
+    );
+    if (availability.onHandQty < event.quantity || availability.onHandQty < availability.batchControlledQty) {
+      throw this.batchDispatchConflict(
+        'BATCH_DISPATCH_STOCK_DRIFT',
+        'Controlled source ledger is insufficient or already below custody balance',
+      );
+    }
+
+    const [custody] = await tx
+      .select({ qty: sql<number>`coalesce(sum(${wmsTables.batchInventorySessionBalances.qty}), 0)::int` })
+      .from(wmsTables.batchInventorySessionBalances)
+      .innerJoin(
+        wmsTables.batchInventorySessions,
+        eq(wmsTables.batchInventorySessions.id, wmsTables.batchInventorySessionBalances.sessionId),
+      )
+      .where(
+        and(
+          eq(wmsTables.batchInventorySessions.id, authorization.sessionId),
+          eq(wmsTables.batchInventorySessions.status, 'active'),
+          eq(wmsTables.batchInventorySessionBalances.skuId, event.skuId),
+          eq(wmsTables.batchInventorySessionBalances.sourceLocationId, source.sourceLocationId),
+          eq(wmsTables.batchInventorySessionBalances.shipmentLineId, source.shipmentLineId),
+          ne(wmsTables.batchInventorySessionBalances.custodyType, 'SETTLED'),
+          inArray(wmsTables.batchInventorySessionBalances.custodyType, [
+            'WORKER',
+            'TOTE',
+            'SORTING',
+            'PACKING',
+            'PACKED',
+          ]),
+        ),
+      );
+    if (Number(custody?.qty ?? 0) !== event.quantity) {
+      throw this.batchDispatchConflict(
+        'BATCH_DISPATCH_CUSTODY_MISMATCH',
+        'Dispatch source is not backed by exact active shipment-line custody',
+      );
+    }
+
+    const [linked] = await tx
+      .update(wmsTables.dispatchAttemptSources)
+      .set({ stockEventId: event.id })
+      .where(
+        and(
+          eq(wmsTables.dispatchAttemptSources.id, authorization.dispatchAttemptSourceId),
+          isNull(wmsTables.dispatchAttemptSources.stockEventId),
+        ),
+      )
+      .returning({ id: wmsTables.dispatchAttemptSources.id });
+    if (!linked) {
+      throw this.batchDispatchConflict(
+        'BATCH_DISPATCH_SOURCE_ALREADY_USED',
+        'Dispatch source already owns a stock event',
+      );
+    }
+  }
+
+  private async assertDispatchReplayAuthorization(
+    authorization: BatchSessionDispatchAuthorization,
+    event: StockEventRow,
+    tx: DbTx,
+  ): Promise<void> {
+    const source = await this.lockDispatchSource(authorization.dispatchAttemptSourceId, tx);
+    if (
+      !source ||
+      source.stockEventId !== event.id ||
+      source.attemptJournalId !== event.journalId ||
+      source.lineShipmentId !== source.attemptShipmentId ||
+      source.lineSkuId !== event.skuId ||
+      source.warehouseId !== event.fromWarehouseId ||
+      source.sourceLocationId !== event.fromLocationId ||
+      source.qty !== event.quantity ||
+      event.fromState !== 'ON_HAND' ||
+      event.toWarehouseId !== null ||
+      event.toLocationId !== null ||
+      event.toState !== null ||
+      event.transitionType !== 'SHIP'
+    ) {
+      throw this.batchDispatchConflict(
+        'BATCH_DISPATCH_REPLAY_MISMATCH',
+        'Dispatch replay authorization does not own the existing stock event',
+      );
+    }
+
+    const [activeCustody] = await tx
+      .select({ id: wmsTables.batchInventorySessionBalances.id })
+      .from(wmsTables.batchInventorySessionBalances)
+      .innerJoin(
+        wmsTables.batchInventorySessions,
+        eq(wmsTables.batchInventorySessions.id, wmsTables.batchInventorySessionBalances.sessionId),
+      )
+      .where(
+        and(
+          eq(wmsTables.batchInventorySessions.id, authorization.sessionId),
+          eq(wmsTables.batchInventorySessions.status, 'active'),
+          eq(wmsTables.batchInventorySessionBalances.skuId, event.skuId),
+          eq(wmsTables.batchInventorySessionBalances.sourceLocationId, source.sourceLocationId),
+          eq(wmsTables.batchInventorySessionBalances.shipmentLineId, source.shipmentLineId),
+          ne(wmsTables.batchInventorySessionBalances.custodyType, 'SETTLED'),
+        ),
+      )
+      .limit(1);
+    const [settlement] = activeCustody
+      ? []
+      : await tx
+          .select({ id: wmsTables.batchInventorySessionEvents.id })
+          .from(wmsTables.batchInventorySessionEvents)
+          .where(
+            and(
+              eq(wmsTables.batchInventorySessionEvents.sessionId, authorization.sessionId),
+              eq(wmsTables.batchInventorySessionEvents.eventType, 'SETTLE_FOR_DISPATCH'),
+              sql`${wmsTables.batchInventorySessionEvents.payload}->>'dispatchAttemptSourceId' = ${authorization.dispatchAttemptSourceId}`,
+            ),
+          )
+          .limit(1);
+    if (!activeCustody && !settlement) {
+      throw this.batchDispatchConflict(
+        'BATCH_DISPATCH_SESSION_MISMATCH',
+        'Dispatch replay authorization belongs to another custody session',
+      );
+    }
+  }
+
+  private async lockDispatchSource(dispatchAttemptSourceId: string, tx: DbTx) {
+    const [identity] = await tx
+      .select({
+        id: wmsTables.dispatchAttemptSources.id,
+        dispatchAttemptId: wmsTables.dispatchAttemptSources.dispatchAttemptId,
+      })
+      .from(wmsTables.dispatchAttemptSources)
+      .where(eq(wmsTables.dispatchAttemptSources.id, dispatchAttemptSourceId))
+      .limit(1);
+    if (!identity) return null;
+
+    const [attempt] = await tx
+      .select({ id: wmsTables.dispatchAttempts.id })
+      .from(wmsTables.dispatchAttempts)
+      .where(eq(wmsTables.dispatchAttempts.id, identity.dispatchAttemptId))
+      .limit(1)
+      .for('update');
+    if (!attempt) return null;
+
+    const [lockedSource] = await tx
+      .select({ id: wmsTables.dispatchAttemptSources.id })
+      .from(wmsTables.dispatchAttemptSources)
+      .where(
+        and(
+          eq(wmsTables.dispatchAttemptSources.id, dispatchAttemptSourceId),
+          eq(wmsTables.dispatchAttemptSources.dispatchAttemptId, attempt.id),
+        ),
+      )
+      .limit(1)
+      .for('update');
+    if (!lockedSource) return null;
+
+    const [source] = await tx
+      .select({
+        id: wmsTables.dispatchAttemptSources.id,
+        qty: wmsTables.dispatchAttemptSources.qty,
+        sourceLocationId: wmsTables.dispatchAttemptSources.sourceLocationId,
+        shipmentLineId: wmsTables.dispatchAttemptSources.shipmentLineId,
+        stockEventId: wmsTables.dispatchAttemptSources.stockEventId,
+        attemptStatus: wmsTables.dispatchAttempts.status,
+        attemptJournalId: wmsTables.dispatchAttempts.stockJournalId,
+        attemptShipmentId: wmsTables.dispatchAttempts.shipmentId,
+        lineShipmentId: wmsTables.shipmentLines.shipmentId,
+        lineSkuId: wmsTables.shipmentLines.skuId,
+        warehouseId: wmsTables.shipments.warehouseId,
+      })
+      .from(wmsTables.dispatchAttemptSources)
+      .innerJoin(
+        wmsTables.dispatchAttempts,
+        eq(wmsTables.dispatchAttempts.id, wmsTables.dispatchAttemptSources.dispatchAttemptId),
+      )
+      .innerJoin(
+        wmsTables.shipmentLines,
+        eq(wmsTables.shipmentLines.id, wmsTables.dispatchAttemptSources.shipmentLineId),
+      )
+      .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.dispatchAttempts.shipmentId))
+      .where(eq(wmsTables.dispatchAttemptSources.id, dispatchAttemptSourceId))
+      .limit(1);
+    return source ?? null;
+  }
+
+  private batchDispatchConflict(code: string, message: string): ConflictException {
+    return new ConflictException({ code, message });
   }
 
   private getReversalType(t: TransitionType): TransitionType {

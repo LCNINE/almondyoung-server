@@ -4,9 +4,10 @@ import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { StockEventStore } from '../repositories/stock-event.store';
 import { OutboxService } from '../../shared/outbox/outbox.service';
 import { LocationService } from './location.service';
-import { eq, and, gt, desc } from 'drizzle-orm';
+import { eq, and, gt, asc } from 'drizzle-orm';
 import { acquireStockAvailabilityLock } from '../../shared/locks/stock-availability-lock';
 import { assertReservationInvariant } from '../../shared/locks/reservation-invariant';
+import { BatchControlledStockGuard, BatchSessionDispatchAuthorization } from './batch-controlled-stock.guard';
 
 @Injectable()
 export class InventoryCommandService {
@@ -17,6 +18,7 @@ export class InventoryCommandService {
     private readonly eventStore: StockEventStore,
     private readonly outboxService: OutboxService,
     private readonly locationService: LocationService,
+    private readonly batchControlledStock: BatchControlledStockGuard = new BatchControlledStockGuard(),
   ) {}
 
   async receive(
@@ -117,10 +119,14 @@ export class InventoryCommandService {
       idempotencyKey?: string;
       reason?: string;
       journalId?: string;
+      batchSessionDispatch?: BatchSessionDispatchAuthorization;
     },
     tx?: DbTx,
   ) {
     if (input.quantity <= 0) throw new BadRequestException('quantity must be positive');
+    if (input.batchSessionDispatch && !tx) {
+      throw new Error('batchSessionDispatch requires the caller dispatch transaction');
+    }
     const exec = async (trx: DbTx) => {
       // 1. SKU 정보 조회
       const sku = await trx.query.skus.findFirst({
@@ -158,6 +164,7 @@ export class InventoryCommandService {
           idempotencyKey: input.idempotencyKey,
           reason: input.reason,
           journalId: input.journalId,
+          batchSessionDispatch: input.batchSessionDispatch,
         },
         trx,
       );
@@ -167,26 +174,47 @@ export class InventoryCommandService {
       }
 
       // 4. Outbox에 이벤트 추가 ✅
-      await this.outboxService.enqueue(
-        {
-          eventType: 'StockShipped',
-          aggregateType: 'Stock',
-          aggregateId: event.id,
-          partitionKey: input.skuId,
-          payload: {
-            skuCode: sku.name,
-            skuId: input.skuId,
-            warehouseId: input.warehouseId,
-            locationId: input.locationId,
-            quantity: input.quantity,
-            afterQuantity: afterQuantity,
-            reason: input.reason,
-            journalId: input.journalId,
-            occurredAt: (input.occurredAt ?? new Date()).toISOString(),
-          },
+      const outboxEvent = {
+        eventType: 'StockShipped',
+        aggregateType: 'Stock',
+        aggregateId: event.id,
+        partitionKey: input.skuId,
+        payload: {
+          skuCode: sku.name,
+          skuId: input.skuId,
+          warehouseId: input.warehouseId,
+          locationId: input.locationId,
+          quantity: input.quantity,
+          afterQuantity: afterQuantity,
+          reason: input.reason,
+          journalId: input.journalId,
+          occurredAt: (input.occurredAt ?? new Date()).toISOString(),
         },
-        trx,
-      );
+      };
+      await (input.batchSessionDispatch
+        ? this.outboxService.enqueue(
+            {
+              eventType: 'StockShipped',
+              aggregateType: 'Stock',
+              aggregateId: event.id,
+              partitionKey: input.skuId,
+              topic: 'inventory.events.v1',
+              idempotencyKey: `stock-event:${event.id}`,
+              payload: {
+                stockEventId: event.id,
+                skuId: event.skuId,
+                skuCode: sku.name,
+                quantity: event.quantity,
+                warehouseId: event.fromWarehouseId!,
+                locationId: event.fromLocationId!,
+                outboundType: 'ORDER',
+                shippedAt: event.occurredAt.toISOString(),
+                reason: event.reason ?? undefined,
+              },
+            },
+            trx,
+          )
+        : this.outboxService.enqueue(outboxEvent, trx));
 
       this.logger.log(`SHIP: sku=${sku.name} qty=${input.quantity} (${currentQuantity} → ${afterQuantity})`);
 
@@ -397,7 +425,7 @@ export class InventoryCommandService {
       // 2. 위치 미지정 시 ON_HAND가 가장 많은 위치에서 차감
       let effectiveLocationId = input.locationId ?? null;
       if (!effectiveLocationId) {
-        const [candidate] = await trx
+        const candidates = await trx
           .select({ locationId: wmsTables.stockLedgers.locationId, qty: wmsTables.stockLedgers.qty })
           .from(wmsTables.stockLedgers)
           .where(
@@ -408,8 +436,25 @@ export class InventoryCommandService {
               gt(wmsTables.stockLedgers.qty, 0),
             ),
           )
-          .orderBy(desc(wmsTables.stockLedgers.qty))
-          .limit(1);
+          .orderBy(asc(wmsTables.stockLedgers.locationId));
+        let candidate: { locationId: string; generallyAvailableQty: number } | null = null;
+        for (const row of candidates) {
+          const availability = await this.batchControlledStock.getAvailability(
+            {
+              skuId: input.skuId,
+              warehouseId: input.warehouseId,
+              sourceLocationId: row.locationId,
+            },
+            trx,
+            { lock: true },
+          );
+          if (
+            availability.generallyAvailableQty >= input.quantity &&
+            (!candidate || availability.generallyAvailableQty > candidate.generallyAvailableQty)
+          ) {
+            candidate = { locationId: row.locationId, generallyAvailableQty: availability.generallyAvailableQty };
+          }
+        }
         if (!candidate) {
           throw new BadRequestException('차감할 ON_HAND 재고가 없습니다.');
         }

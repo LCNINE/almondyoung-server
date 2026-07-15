@@ -27,6 +27,7 @@ import { InventoryIdempotencyService } from './services/inventory-idempotency.se
 import { ReturnService } from './services/return.service';
 import { TransferService } from './services/transfer.service';
 import { HolderService } from './services/holder.service';
+import { BatchControlledStockGuard } from './services/batch-controlled-stock.guard';
 
 // Repository
 import { StockEventStore } from './repositories/stock-event.store';
@@ -62,6 +63,7 @@ import { OutboxService } from '../shared/outbox/outbox.service';
     ReturnService,
     TransferService,
     HolderService,
+    BatchControlledStockGuard,
     OutboxService,
   ],
   exports: [
@@ -76,6 +78,7 @@ import { OutboxService } from '../shared/outbox/outbox.service';
     ReturnService,
     TransferService,
     HolderService,
+    BatchControlledStockGuard,
     InventoryIdempotencyService,
     OutboxService,
   ],

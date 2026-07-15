@@ -6,6 +6,7 @@ import { MoveBatchDto } from '../dto/move-batch.dto';
 import { StockEventStore } from '../../core/repositories/stock-event.store';
 import { InventoryIdempotencyService } from '../../core/services/inventory-idempotency.service';
 import { and, eq } from 'drizzle-orm';
+import { acquireStockAvailabilityLocks } from '../../shared/locks/stock-availability-lock';
 
 @Injectable()
 export class MovementService {
@@ -52,6 +53,14 @@ export class MovementService {
         }
         if (line.quantity <= 0) throw new BadRequestException('quantity must be positive');
       }
+
+      // createEvent takes the same advisory lock as its final removal guard.
+      // Claim every source pair in canonical order up front so two multi-line
+      // moves submitted in opposite SKU order cannot deadlock mid-job.
+      await acquireStockAvailabilityLocks(
+        tx,
+        dto.lines.map((line) => ({ skuId: line.skuId, warehouseId })),
+      );
 
       const occurredAt = dto.occurredAt ? new Date(dto.occurredAt) : new Date();
       const [journal] = await tx
