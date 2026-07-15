@@ -29,7 +29,9 @@ export interface StartPickingInput {
   idempotencyKey: string;
 }
 
-export interface ScanPickingInput {
+export interface DiscreteScanPickingInput {
+  strategy?: 'discrete';
+  stage?: 'source';
   batchId: string;
   planId: string;
   sessionId: string;
@@ -43,6 +45,52 @@ export interface ScanPickingInput {
   expectedLeaseVersion: number;
   idempotencyKey: string;
 }
+
+export interface AggregateSourceScanInput {
+  strategy: 'aggregate_then_sort';
+  stage: 'bulk_collect';
+  batchId: string;
+  planId: string;
+  sessionId: string;
+  skuId: string;
+  sourceLocationId: string;
+  quantity: number;
+  cartId: string;
+  actor: PickingActor;
+  idempotencyKey: string;
+}
+
+export interface AggregateSortScanInput {
+  strategy: 'aggregate_then_sort';
+  stage: 'sort';
+  batchId: string;
+  planId: string;
+  sessionId: string;
+  workItemId: string;
+  shipmentId: string;
+  shipmentLineId: string;
+  skuId: string;
+  cartId: string;
+  quantity: number;
+  destinationCustody: 'SORTING' | 'PACKING';
+  actor: PickingActor;
+  expectedLeaseVersion: number;
+  idempotencyKey: string;
+}
+
+export interface AggregateCartHandoffInput {
+  batchId: string;
+  planId: string;
+  sessionId: string;
+  cartId: string;
+  expectedOwnerId: string;
+  targetWorkerId: string;
+  reason: string;
+  actor: PickingActor;
+  idempotencyKey: string;
+}
+
+export type ScanPickingInput = DiscreteScanPickingInput | AggregateSourceScanInput | AggregateSortScanInput;
 
 export interface HandoffPickingInput {
   batchId: string;
@@ -129,6 +177,42 @@ export interface PickingScanResult {
   workerId: string;
 }
 
+export interface AggregateSourceScanResult {
+  operationId: string;
+  planId: string;
+  sessionId: string;
+  skuId: string;
+  sourceLocationId: string;
+  quantity: number;
+  cartRef: string;
+  workerId: string;
+}
+
+export interface AggregateSortScanResult {
+  operationId: string;
+  planId: string;
+  sessionId: string;
+  workItemId: string;
+  shipmentId: string;
+  shipmentLineId: string;
+  skuId: string;
+  quantity: number;
+  cartRef: string;
+  destinationCustody: 'SORTING' | 'PACKING';
+  destinationRef: string;
+  sourceMoves: Array<{ sourceLocationId: string; quantity: number }>;
+}
+
+export type ScanPickingResult = PickingScanResult | AggregateSourceScanResult | AggregateSortScanResult;
+
+export interface AggregateCartHandoffResult {
+  operationId: string;
+  sessionId: string;
+  sourceCartRef: string;
+  targetCartRef: string;
+  movedQty: number;
+}
+
 export interface PickingHandoffResult {
   operationId: string;
   workItemId: string;
@@ -168,8 +252,14 @@ export interface PickingStrategy {
 
   plan(input: PlanPickingInput, tx?: DbTx): Promise<PickingPlanResult>;
   start(input: StartPickingInput, tx?: DbTx): Promise<PickingStartResult>;
-  scan(input: ScanPickingInput, tx?: DbTx): Promise<PickingScanResult>;
+  scan(input: ScanPickingInput, tx?: DbTx): Promise<ScanPickingResult>;
   handoff(input: HandoffPickingInput, tx?: DbTx): Promise<PickingHandoffResult>;
   completePick(input: CompletePickInput, tx?: DbTx): Promise<InspectionReadyOutput>;
   unpickShipment(input: UnpickShipmentInput, tx?: DbTx): Promise<UnpickShipmentResult>;
+}
+
+export interface AggregateThenSortStrategy extends PickingStrategy {
+  bulkCartScan(input: AggregateSourceScanInput, tx?: DbTx): Promise<AggregateSourceScanResult>;
+  sortScan(input: AggregateSortScanInput, tx?: DbTx): Promise<AggregateSortScanResult>;
+  cartHandoff(input: AggregateCartHandoffInput, tx?: DbTx): Promise<AggregateCartHandoffResult>;
 }

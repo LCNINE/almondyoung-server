@@ -32,6 +32,7 @@ export interface MoveBatchCustodyInput {
   quantity: number;
   from: BatchInventoryBucket;
   to: BatchInventoryBucket;
+  context?: Record<string, unknown>;
 }
 
 export interface ReturnBatchCustodyInput {
@@ -563,6 +564,7 @@ export class BatchInventorySessionService {
         quantity: input.quantity,
         from,
         to,
+        context: input.context,
       },
       tx,
     );
@@ -711,7 +713,7 @@ export class BatchInventorySessionService {
           toCustodyRef: input.to?.custodyRef,
           toSourceLocationId: input.to?.sourceLocationId,
           toShipmentLineId: input.to?.shipmentLineId,
-          payload: { sequence: session.version, requestHash: fingerprint, actorId: input.actorId, ...input.context },
+          payload: { ...input.context, sequence: session.version, requestHash: fingerprint, actorId: input.actorId },
         })
         .returning();
       await this.faultInjector?.afterEventAppended?.(input.eventType, input.sessionId, trx);

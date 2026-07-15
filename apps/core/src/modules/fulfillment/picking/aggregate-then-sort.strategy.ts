@@ -1,9 +1,9 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
-import { and, asc, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
+import { BatchControlledStockGuard } from '../../inventory/core/services/batch-controlled-stock.guard';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { acquireStockAvailabilityLock } from '../../inventory/shared/locks/stock-availability-lock';
-import { BatchControlledStockGuard } from '../../inventory/core/services/batch-controlled-stock.guard';
 import { BatchInventorySessionService } from '../services/batch-inventory-session.service';
 import { FulfillmentCommandService } from '../services/fulfillment-command.service';
 import { FulfillmentInvariantService } from '../services/fulfillment-invariant.service';
@@ -11,14 +11,20 @@ import { FulfillmentWorkflowGate } from '../services/fulfillment-workflow-gate.s
 import { InvoiceOrchestrator } from '../services/invoice-orchestrator.service';
 import { OutboundBatchOrchestrator } from '../services/outbound-batch-orchestrator.service';
 import {
+  AggregateCartHandoffInput,
+  AggregateCartHandoffResult,
+  AggregateSortScanInput,
+  AggregateSortScanResult,
+  AggregateSourceScanInput,
+  AggregateSourceScanResult,
+  AggregateThenSortStrategy,
   CompletePickInput,
   HandoffPickingInput,
   InspectionReadyOutput,
   PickingHandoffResult,
   PickingPlanResult,
-  PickingScanResult,
+  ScanPickingResult,
   PickingStartResult,
-  PickingStrategy,
   PlanPickingInput,
   ScanPickingInput,
   StartPickingInput,
@@ -29,9 +35,11 @@ import {
 type BatchRow = typeof wmsTables.outboundBatches.$inferSelect;
 type ShipmentRow = typeof wmsTables.shipments.$inferSelect;
 type WorkItemRow = typeof wmsTables.outboundBatchWorkItems.$inferSelect;
+type CustodyType = (typeof wmsTables.batchInventorySessionBalances.$inferSelect)['custodyType'];
 
 const ACTIVE_WORK_ITEM_STATUSES = ['queued', 'picking'] as const;
-const PACKING_REF_PREFIX = 'work-item:';
+const ASSIGNED_REF_PREFIX = 'work-item:';
+const BULK_CART_REF_PREFIX = 'bulk-cart:';
 
 interface LockedLine {
   id: string;
@@ -61,14 +69,27 @@ interface SourceCapacity {
   remainingQty: number;
 }
 
+interface ShipmentAllocation {
+  id: string;
+  shipmentLineId: string;
+  skuId: string;
+  sourceLocationId: string;
+  qty: number;
+}
+
 interface ShipmentCustodyBalance {
   id: string;
   skuId: string;
   sourceLocationId: string | null;
-  custodyType: (typeof wmsTables.batchInventorySessionBalances.$inferSelect)['custodyType'];
+  custodyType: CustodyType;
   custodyRef: string | null;
   shipmentLineId: string | null;
   qty: number;
+}
+
+interface GlobalCartBalance extends ShipmentCustodyBalance {
+  sessionId: string;
+  batchId: string;
 }
 
 function uniqueSorted(values: readonly string[]): string[] {
@@ -76,13 +97,13 @@ function uniqueSorted(values: readonly string[]): string[] {
 }
 
 @Injectable()
-export class DiscretePickingStrategy implements PickingStrategy {
+export class AggregateThenSortPickingStrategy implements AggregateThenSortStrategy {
   readonly capabilities = Object.freeze({
-    name: 'discrete' as const,
+    name: 'aggregate_then_sort' as const,
     requiresPhysicalTote: false,
-    supportsAggregateSourcePick: false,
+    supportsAggregateSourcePick: true,
     inspectionReadyCustody: 'PACKING' as const,
-    custodyFlow: Object.freeze(['AT_SOURCE', 'WORKER', 'PACKING']),
+    custodyFlow: Object.freeze(['AT_SOURCE', 'BULK_CART', 'SORTING', 'PACKING']),
   });
 
   constructor(
@@ -97,11 +118,11 @@ export class DiscretePickingStrategy implements PickingStrategy {
   ) {}
 
   async plan(input: PlanPickingInput, tx?: DbTx): Promise<PickingPlanResult> {
-    this.workflowGate.assertV2MutationAllowed('picking.discrete.plan');
+    this.workflowGate.assertV2MutationAllowed('picking.aggregate_then_sort.plan');
     const shipmentIds = this.requiredIds('shipmentIds', input.shipmentIds);
     return this.commands.execute<PickingPlanResult>(
       {
-        commandType: 'picking.discrete.plan',
+        commandType: 'picking.aggregate_then_sort.plan',
         idempotencyKey: input.idempotencyKey,
         canonicalRequest: {
           strategy: this.capabilities.name,
@@ -144,6 +165,7 @@ export class DiscretePickingStrategy implements PickingStrategy {
           }
           aggregateShipmentIds = storedShipmentIds;
         }
+
         let aggregate: LockedAggregate;
         try {
           aggregate = await this.lockAggregate(input.batchId, aggregateShipmentIds, trx);
@@ -201,30 +223,11 @@ export class DiscretePickingStrategy implements PickingStrategy {
             staleReason = this.errorMessage(error);
           }
           if (!staleReason) {
-            const [allocationSummary] = await trx
-              .select({
-                count: sql<number>`count(*)::int`,
-                totalQty: sql<number>`coalesce(sum(${wmsTables.pickingSourceAllocations.qty}), 0)::int`,
-              })
-              .from(wmsTables.pickingSourceAllocations)
-              .where(eq(wmsTables.pickingSourceAllocations.planId, openPlan.id));
-            const members = await trx
-              .select({ shipmentId: wmsTables.pickingPlanMembers.shipmentId })
-              .from(wmsTables.pickingPlanMembers)
-              .where(eq(wmsTables.pickingPlanMembers.planId, openPlan.id))
-              .orderBy(asc(wmsTables.pickingPlanMembers.shipmentId));
-            const response: PickingPlanResult = {
-              state: 'planned',
-              operationId: commandRequestId,
-              planId: openPlan.id,
-              batchId: input.batchId,
-              strategy: this.capabilities.name,
-              version: openPlan.version,
-              shipmentIds: members.map((member) => member.shipmentId),
-              allocationCount: Number(allocationSummary?.count ?? 0),
-              totalQty: Number(allocationSummary?.totalQty ?? 0),
+            return {
+              response: await this.plannedResult(openPlan, input.batchId, storedShipmentIds, commandRequestId, trx),
+              resourceType: 'picking_plan',
+              resourceId: openPlan.id,
             };
-            return { response, resourceType: 'picking_plan', resourceId: openPlan.id };
           }
           const response = await this.invalidateDraftPlan(
             openPlan.id,
@@ -238,7 +241,6 @@ export class DiscretePickingStrategy implements PickingStrategy {
 
         await this.assertWarehouseConfiguration(aggregate.batch.warehouseId, trx);
         await this.assertPlanningEligibility(aggregate, shipmentIds, trx);
-
         const capacities = await this.lockSourceCapacities(aggregate, trx);
         const allocations: Array<{
           shipmentLineId: string;
@@ -278,12 +280,7 @@ export class DiscretePickingStrategy implements PickingStrategy {
         const version = Number(versionRow?.version ?? 0) + 1;
         const [plan] = await trx
           .insert(wmsTables.pickingPlans)
-          .values({
-            batchId: input.batchId,
-            strategy: this.capabilities.name,
-            version,
-            createdBy: input.actorId,
-          })
+          .values({ batchId: input.batchId, strategy: this.capabilities.name, version, createdBy: input.actorId })
           .returning();
         const shipmentById = new Map(aggregate.shipments.map((shipment) => [shipment.id, shipment]));
         await trx.insert(wmsTables.pickingPlanMembers).values(
@@ -318,10 +315,10 @@ export class DiscretePickingStrategy implements PickingStrategy {
   }
 
   async start(input: StartPickingInput, tx?: DbTx): Promise<PickingStartResult> {
-    this.workflowGate.assertV2MutationAllowed('picking.discrete.start');
+    this.workflowGate.assertV2MutationAllowed('picking.aggregate_then_sort.start');
     return this.commands.execute<PickingStartResult>(
       {
-        commandType: 'picking.discrete.start',
+        commandType: 'picking.aggregate_then_sort.start',
         idempotencyKey: input.idempotencyKey,
         canonicalRequest: {
           strategy: this.capabilities.name,
@@ -340,28 +337,29 @@ export class DiscretePickingStrategy implements PickingStrategy {
         if (identity.strategy !== this.capabilities.name) {
           throw this.conflict('PICKING_STRATEGY_MISMATCH', `Picking plan ${input.planId} is ${identity.strategy}`);
         }
-
         if (identity.status === 'active') {
           const session = await this.sessions.startSession(input.batchId, input.planId, trx, input.actorId);
-          const response: PickingStartResult = {
-            state: 'started',
-            operationId: commandRequestId,
-            planId: input.planId,
-            sessionId: session.id,
-            batchId: input.batchId,
-            status: session.status,
+          return {
+            response: {
+              state: 'started',
+              operationId: commandRequestId,
+              planId: input.planId,
+              sessionId: session.id,
+              batchId: input.batchId,
+              status: session.status,
+            },
+            resourceType: 'batch_inventory_session',
+            resourceId: session.id,
           };
-          return { response, resourceType: 'batch_inventory_session', resourceId: session.id };
         }
         if (identity.status !== 'draft') {
           throw this.conflict('PICKING_PLAN_NOT_STARTABLE', `Picking plan ${input.planId} is ${identity.status}`);
         }
-
-        const memberRows = await trx
+        const members = await trx
           .select({ shipmentId: wmsTables.pickingPlanMembers.shipmentId })
           .from(wmsTables.pickingPlanMembers)
           .where(eq(wmsTables.pickingPlanMembers.planId, input.planId));
-        const shipmentIds = uniqueSorted(memberRows.map((member) => member.shipmentId));
+        const shipmentIds = uniqueSorted(members.map((member) => member.shipmentId));
         let invalidationReason: string | null = null;
         try {
           const aggregate = await this.lockAggregate(input.batchId, shipmentIds, trx);
@@ -369,18 +367,9 @@ export class DiscretePickingStrategy implements PickingStrategy {
           await this.assertPlanningEligibility(aggregate, shipmentIds, trx);
           invalidationReason = await this.planStalenessReason(input.planId, aggregate, trx);
         } catch (error) {
-          if (
-            !(
-              error instanceof BadRequestException ||
-              error instanceof ConflictException ||
-              error instanceof NotFoundException
-            )
-          ) {
-            throw error;
-          }
+          if (!this.isPlanValidationError(error)) throw error;
           invalidationReason = this.errorMessage(error);
         }
-
         if (invalidationReason) {
           const [invalidated] = await trx
             .update(wmsTables.pickingPlans)
@@ -398,116 +387,97 @@ export class DiscretePickingStrategy implements PickingStrategy {
               `Picking plan ${input.planId} changed while invalidating`,
             );
           }
-          const response: PickingStartResult = {
-            state: 'invalidated',
+          return {
+            response: {
+              state: 'invalidated',
+              operationId: commandRequestId,
+              planId: input.planId,
+              batchId: input.batchId,
+              reason: invalidationReason,
+            },
+            resourceType: 'picking_plan',
+            resourceId: input.planId,
+          };
+        }
+        const session = await this.sessions.startSession(input.batchId, input.planId, trx, input.actorId);
+        return {
+          response: {
+            state: 'started',
             operationId: commandRequestId,
             planId: input.planId,
+            sessionId: session.id,
             batchId: input.batchId,
-            reason: invalidationReason,
-          };
-          return { response, resourceType: 'picking_plan', resourceId: input.planId };
-        }
-
-        const session = await this.sessions.startSession(input.batchId, input.planId, trx, input.actorId);
-        const response: PickingStartResult = {
-          state: 'started',
-          operationId: commandRequestId,
-          planId: input.planId,
-          sessionId: session.id,
-          batchId: input.batchId,
-          status: session.status,
+            status: session.status,
+          },
+          resourceType: 'batch_inventory_session',
+          resourceId: session.id,
         };
-        return { response, resourceType: 'batch_inventory_session', resourceId: session.id };
       },
       tx,
     );
   }
 
-  async scan(input: ScanPickingInput, tx?: DbTx): Promise<PickingScanResult> {
-    if (input.strategy === 'aggregate_then_sort') {
-      throw new BadRequestException('Discrete picking accepts only strategy=discrete, stage=source scans');
+  async scan(input: ScanPickingInput, tx?: DbTx): Promise<ScanPickingResult> {
+    if (input.strategy !== this.capabilities.name) {
+      throw new BadRequestException('Aggregate picking requires strategy=aggregate_then_sort');
     }
-    this.workflowGate.assertV2MutationAllowed('picking.discrete.scan');
+    if (input.stage === 'bulk_collect') return this.bulkCartScan(input, tx);
+    if (input.stage === 'sort') return this.sortScan(input, tx);
+    throw new BadRequestException('Aggregate picking requires stage=bulk_collect or stage=sort');
+  }
+
+  async bulkCartScan(input: AggregateSourceScanInput, tx?: DbTx): Promise<AggregateSourceScanResult> {
+    if (input.strategy !== this.capabilities.name || input.stage !== 'bulk_collect') {
+      throw new BadRequestException('Bulk collection requires strategy=aggregate_then_sort, stage=bulk_collect');
+    }
+    this.workflowGate.assertV2MutationAllowed('picking.aggregate_then_sort.bulk_collect');
     this.assertPositiveQuantity(input.quantity);
-    return this.commands.execute(
+    const cartId = this.requiredCartId(input.cartId);
+    const cartRef = this.bulkCartRef(input.batchId, cartId, input.actor.id);
+    return this.commands.execute<AggregateSourceScanResult>(
       {
-        commandType: 'picking.discrete.scan',
+        commandType: 'picking.aggregate_then_sort.bulk_collect',
         idempotencyKey: input.idempotencyKey,
         canonicalRequest: {
           strategy: this.capabilities.name,
+          stage: 'bulk_collect',
           batchId: input.batchId,
           planId: input.planId,
           sessionId: input.sessionId,
-          workItemId: input.workItemId,
-          shipmentId: input.shipmentId,
-          shipmentLineId: input.shipmentLineId,
           skuId: input.skuId,
           sourceLocationId: input.sourceLocationId,
           quantity: input.quantity,
+          cartId,
           actorId: input.actor.id,
-          expectedLeaseVersion: input.expectedLeaseVersion,
-          stage: 'AT_SOURCE_TO_WORKER',
-          destinationRef: input.actor.id,
         },
       },
       async (trx, commandRequestId) => {
-        await this.lockAndAssertPickerClaim(
-          input.workItemId,
-          input.batchId,
-          input.shipmentId,
-          input.actor.id,
-          input.expectedLeaseVersion,
-          trx,
-        );
+        await this.acquireCartLock(cartId, trx);
         await this.assertActivePlanSession(input.planId, input.sessionId, input.batchId, trx);
-        const [line] = await trx
-          .select({ shipmentId: wmsTables.shipmentLines.shipmentId, skuId: wmsTables.shipmentLines.skuId })
-          .from(wmsTables.shipmentLines)
-          .where(eq(wmsTables.shipmentLines.id, input.shipmentLineId))
-          .limit(1);
-        if (!line || line.shipmentId !== input.shipmentId) {
-          throw this.conflict('PICKING_WRONG_SHIPMENT_LINE', 'Scanned shipment line does not belong to the work item');
-        }
-        if (line.skuId !== input.skuId) {
-          throw this.conflict('PICKING_WRONG_SKU', 'Scanned SKU does not match the shipment line');
-        }
-        const [allocation] = await trx
-          .select({ qty: wmsTables.pickingSourceAllocations.qty })
+        await this.assertCartOwnedBy(input.sessionId, input.batchId, cartId, input.actor.id, trx);
+
+        const [allocated] = await trx
+          .select({ qty: sql<number>`coalesce(sum(${wmsTables.pickingSourceAllocations.qty}), 0)::int` })
           .from(wmsTables.pickingSourceAllocations)
+          .innerJoin(
+            wmsTables.shipmentLines,
+            eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
+          )
           .where(
             and(
               eq(wmsTables.pickingSourceAllocations.planId, input.planId),
-              eq(wmsTables.pickingSourceAllocations.shipmentLineId, input.shipmentLineId),
               eq(wmsTables.pickingSourceAllocations.sourceLocationId, input.sourceLocationId),
-            ),
-          )
-          .limit(1);
-        if (!allocation) {
-          throw this.conflict('PICKING_WRONG_SOURCE', 'Shipment line is not allocated from the scanned source');
-        }
-        const [attributed] = await trx
-          .select({ qty: sql<number>`coalesce(sum(${wmsTables.batchInventorySessionBalances.qty}), 0)::int` })
-          .from(wmsTables.batchInventorySessionBalances)
-          .where(
-            and(
-              eq(wmsTables.batchInventorySessionBalances.sessionId, input.sessionId),
-              eq(wmsTables.batchInventorySessionBalances.shipmentLineId, input.shipmentLineId),
-              eq(wmsTables.batchInventorySessionBalances.sourceLocationId, input.sourceLocationId),
-              ne(wmsTables.batchInventorySessionBalances.custodyType, 'SETTLED'),
+              eq(wmsTables.shipmentLines.skuId, input.skuId),
             ),
           );
-        const alreadyAttributed = Number(attributed?.qty ?? 0);
-        if (alreadyAttributed + input.quantity > allocation.qty) {
-          throw this.conflict(
-            'PICKING_OVERPICK',
-            `Scan exceeds allocation remaining ${Math.max(0, allocation.qty - alreadyAttributed)}`,
-          );
+        if (Number(allocated?.qty ?? 0) <= 0) {
+          throw this.conflict('PICKING_WRONG_SOURCE', 'SKU/source is not allocated by this picking plan');
         }
 
         await this.sessions.moveCustody(
           {
             sessionId: input.sessionId,
-            idempotencyKey: `discrete-scan:${commandRequestId}`,
+            idempotencyKey: `aggregate-collect:${commandRequestId}`,
             actorId: input.actor.id,
             quantity: input.quantity,
             from: {
@@ -518,14 +488,165 @@ export class DiscretePickingStrategy implements PickingStrategy {
             to: {
               skuId: input.skuId,
               sourceLocationId: input.sourceLocationId,
-              custodyType: 'WORKER',
-              custodyRef: input.actor.id,
-              shipmentLineId: input.shipmentLineId,
+              custodyType: 'BULK_CART',
+              custodyRef: cartRef,
             },
           },
           trx,
         );
-        const response: PickingScanResult = {
+        const response: AggregateSourceScanResult = {
+          operationId: commandRequestId,
+          planId: input.planId,
+          sessionId: input.sessionId,
+          skuId: input.skuId,
+          sourceLocationId: input.sourceLocationId,
+          quantity: input.quantity,
+          cartRef,
+          workerId: input.actor.id,
+        };
+        return { response, resourceType: 'batch_inventory_session', resourceId: input.sessionId };
+      },
+      tx,
+    );
+  }
+
+  async sortScan(input: AggregateSortScanInput, tx?: DbTx): Promise<AggregateSortScanResult> {
+    if (input.strategy !== this.capabilities.name || input.stage !== 'sort') {
+      throw new BadRequestException('Sort scan requires strategy=aggregate_then_sort, stage=sort');
+    }
+    this.workflowGate.assertV2MutationAllowed('picking.aggregate_then_sort.sort');
+    this.assertPositiveQuantity(input.quantity);
+    const cartId = this.requiredCartId(input.cartId);
+    if (input.destinationCustody !== 'SORTING' && input.destinationCustody !== 'PACKING') {
+      throw new BadRequestException('destinationCustody must be SORTING or PACKING');
+    }
+    const cartRef = this.bulkCartRef(input.batchId, cartId, input.actor.id);
+    return this.commands.execute<AggregateSortScanResult>(
+      {
+        commandType: 'picking.aggregate_then_sort.sort',
+        idempotencyKey: input.idempotencyKey,
+        canonicalRequest: {
+          strategy: this.capabilities.name,
+          stage: 'sort',
+          batchId: input.batchId,
+          planId: input.planId,
+          sessionId: input.sessionId,
+          workItemId: input.workItemId,
+          shipmentId: input.shipmentId,
+          shipmentLineId: input.shipmentLineId,
+          skuId: input.skuId,
+          quantity: input.quantity,
+          cartId,
+          destinationCustody: input.destinationCustody,
+          actorId: input.actor.id,
+          expectedLeaseVersion: input.expectedLeaseVersion,
+        },
+      },
+      async (trx, commandRequestId) => {
+        await this.acquireCartLock(cartId, trx);
+        await this.lockAndAssertPickerClaim(
+          input.workItemId,
+          input.batchId,
+          input.shipmentId,
+          input.actor.id,
+          input.expectedLeaseVersion,
+          trx,
+        );
+        await this.assertActivePlanSession(input.planId, input.sessionId, input.batchId, trx);
+        await this.assertCartOwnedBy(input.sessionId, input.batchId, cartId, input.actor.id, trx, true);
+        const [line] = await trx
+          .select({ shipmentId: wmsTables.shipmentLines.shipmentId, skuId: wmsTables.shipmentLines.skuId })
+          .from(wmsTables.shipmentLines)
+          .where(eq(wmsTables.shipmentLines.id, input.shipmentLineId))
+          .limit(1);
+        if (!line || line.shipmentId !== input.shipmentId) {
+          throw this.conflict('PICKING_WRONG_SHIPMENT_LINE', 'Sort destination line does not belong to the work item');
+        }
+        if (line.skuId !== input.skuId) {
+          throw this.conflict('PICKING_WRONG_SKU', 'Sorted SKU does not match the shipment line');
+        }
+        const allocations = await this.loadLineAllocations(input.planId, input.shipmentLineId, trx);
+        const destinationRef =
+          input.destinationCustody === 'SORTING'
+            ? this.sortingRef(input.workItemId, input.actor.id)
+            : this.packingRef(input.workItemId);
+        const moves: Array<{ allocation: ShipmentAllocation; quantity: number; sourceBalanceId: string }> = [];
+        let remaining = input.quantity;
+        for (const allocation of allocations) {
+          const balances = await this.loadPositiveAllocationCustody(input.sessionId, allocation, trx);
+          const attributed = balances.reduce((sum, balance) => sum + balance.qty, 0);
+          if (
+            balances.some(
+              (balance) =>
+                !['SORTING', 'PACKING'].includes(balance.custodyType) ||
+                (balance.custodyType === 'SORTING' &&
+                  balance.custodyRef !== this.sortingRef(input.workItemId, input.actor.id)) ||
+                (balance.custodyType === 'PACKING' && balance.custodyRef !== this.packingRef(input.workItemId)),
+            )
+          ) {
+            throw this.conflict('PICKING_CUSTODY_OWNER_MISMATCH', 'Line custody belongs to another sort destination');
+          }
+          if (attributed > allocation.qty) {
+            throw this.conflict('PICKING_CUSTODY_OVERATTRIBUTED', 'Sorted custody exceeds its plan allocation');
+          }
+          const capacity = allocation.qty - attributed;
+          if (remaining === 0 || capacity === 0) continue;
+          const [bulk] = await trx
+            .select({
+              id: wmsTables.batchInventorySessionBalances.id,
+              qty: wmsTables.batchInventorySessionBalances.qty,
+            })
+            .from(wmsTables.batchInventorySessionBalances)
+            .where(
+              and(
+                eq(wmsTables.batchInventorySessionBalances.sessionId, input.sessionId),
+                eq(wmsTables.batchInventorySessionBalances.skuId, input.skuId),
+                eq(wmsTables.batchInventorySessionBalances.sourceLocationId, allocation.sourceLocationId),
+                eq(wmsTables.batchInventorySessionBalances.custodyType, 'BULK_CART'),
+                eq(wmsTables.batchInventorySessionBalances.custodyRef, cartRef),
+                isNull(wmsTables.batchInventorySessionBalances.shipmentLineId),
+                gt(wmsTables.batchInventorySessionBalances.qty, 0),
+              ),
+            )
+            .limit(1)
+            .for('update');
+          const quantity = Math.min(remaining, capacity, bulk?.qty ?? 0);
+          if (quantity > 0) {
+            moves.push({ allocation, quantity, sourceBalanceId: bulk.id });
+            remaining -= quantity;
+          }
+        }
+        if (remaining > 0) {
+          throw this.conflict(
+            'PICKING_SORT_SHORT',
+            `Cart custody or line allocation is short by ${remaining} for shipment line ${input.shipmentLineId}`,
+          );
+        }
+        for (const move of moves) {
+          await this.sessions.moveCustody(
+            {
+              sessionId: input.sessionId,
+              idempotencyKey: `aggregate-sort:${commandRequestId}:${move.sourceBalanceId}:${move.allocation.id}`,
+              actorId: input.actor.id,
+              quantity: move.quantity,
+              from: {
+                skuId: input.skuId,
+                sourceLocationId: move.allocation.sourceLocationId,
+                custodyType: 'BULK_CART',
+                custodyRef: cartRef,
+              },
+              to: {
+                skuId: input.skuId,
+                sourceLocationId: move.allocation.sourceLocationId,
+                custodyType: input.destinationCustody,
+                custodyRef: destinationRef,
+                shipmentLineId: input.shipmentLineId,
+              },
+            },
+            trx,
+          );
+        }
+        const response: AggregateSortScanResult = {
           operationId: commandRequestId,
           planId: input.planId,
           sessionId: input.sessionId,
@@ -533,9 +654,14 @@ export class DiscretePickingStrategy implements PickingStrategy {
           shipmentId: input.shipmentId,
           shipmentLineId: input.shipmentLineId,
           skuId: input.skuId,
-          sourceLocationId: input.sourceLocationId,
           quantity: input.quantity,
-          workerId: input.actor.id,
+          cartRef,
+          destinationCustody: input.destinationCustody,
+          destinationRef,
+          sourceMoves: moves.map((move) => ({
+            sourceLocationId: move.allocation.sourceLocationId,
+            quantity: move.quantity,
+          })),
         };
         return { response, resourceType: 'outbound_batch_work_item', resourceId: input.workItemId };
       },
@@ -543,11 +669,105 @@ export class DiscretePickingStrategy implements PickingStrategy {
     );
   }
 
-  async handoff(input: HandoffPickingInput, tx?: DbTx): Promise<PickingHandoffResult> {
-    this.workflowGate.assertV2MutationAllowed('picking.discrete.handoff');
-    return this.commands.execute(
+  async cartHandoff(input: AggregateCartHandoffInput, tx?: DbTx): Promise<AggregateCartHandoffResult> {
+    this.workflowGate.assertV2MutationAllowed('picking.aggregate_then_sort.cart_handoff');
+    const cartId = this.requiredCartId(input.cartId);
+    const reason = input.reason.trim();
+    if (!reason) throw new BadRequestException('reason is required');
+    if (reason.length > 500) throw new BadRequestException('reason must be at most 500 characters');
+    if (!input.actor.roles.some((role) => role === 'logistics_manager' || role === 'master')) {
+      throw this.conflict('AGGREGATE_CART_HANDOFF_FORBIDDEN', 'Cart handoff requires logistics_manager or master');
+    }
+    if (input.expectedOwnerId === input.targetWorkerId) {
+      throw new BadRequestException('Cart target worker must differ from its expected owner');
+    }
+    return this.commands.execute<AggregateCartHandoffResult>(
       {
-        commandType: 'picking.discrete.handoff',
+        commandType: 'picking.aggregate_then_sort.cart_handoff',
+        idempotencyKey: input.idempotencyKey,
+        canonicalRequest: {
+          strategy: this.capabilities.name,
+          batchId: input.batchId,
+          planId: input.planId,
+          sessionId: input.sessionId,
+          cartId,
+          expectedOwnerId: input.expectedOwnerId,
+          targetWorkerId: input.targetWorkerId,
+          reason,
+          actorId: input.actor.id,
+          actorRoles: [...input.actor.roles].sort(),
+        },
+      },
+      async (trx, commandRequestId) => {
+        if (!input.actor.roles.some((role) => role === 'logistics_manager' || role === 'master')) {
+          throw this.conflict('AGGREGATE_CART_HANDOFF_FORBIDDEN', 'Cart handoff requires logistics_manager or master');
+        }
+        await this.acquireCartLock(cartId, trx);
+        await this.assertActivePlanSession(input.planId, input.sessionId, input.batchId, trx);
+        await this.assertCartOwnedBy(input.sessionId, input.batchId, cartId, input.expectedOwnerId, trx, true);
+        const sourceCartRef = this.bulkCartRef(input.batchId, cartId, input.expectedOwnerId);
+        const targetCartRef = this.bulkCartRef(input.batchId, cartId, input.targetWorkerId);
+        const balances = await this.loadCartBalances(input.sessionId, input.batchId, cartId, trx);
+        if (!balances.length) {
+          throw this.conflict('AGGREGATE_CART_EMPTY', `Cart ${cartId} has no pooled custody to hand off`);
+        }
+        let movedQty = 0;
+        for (const balance of balances) {
+          if (!balance.sourceLocationId || balance.custodyRef !== sourceCartRef || balance.shipmentLineId) {
+            throw this.conflict('AGGREGATE_CART_OWNER_MISMATCH', `Cart balance ${balance.id} has mixed ownership`);
+          }
+          await this.sessions.moveCustody(
+            {
+              sessionId: input.sessionId,
+              idempotencyKey: `aggregate-cart-handoff:${commandRequestId}:${balance.id}`,
+              actorId: input.actor.id,
+              quantity: balance.qty,
+              from: {
+                skuId: balance.skuId,
+                sourceLocationId: balance.sourceLocationId,
+                custodyType: 'BULK_CART',
+                custodyRef: sourceCartRef,
+              },
+              to: {
+                skuId: balance.skuId,
+                sourceLocationId: balance.sourceLocationId,
+                custodyType: 'BULK_CART',
+                custodyRef: targetCartRef,
+              },
+              context: {
+                kind: 'aggregate_cart_handoff',
+                commandRequestId,
+                cartId,
+                fromWorkerId: input.expectedOwnerId,
+                targetWorkerId: input.targetWorkerId,
+                reason,
+              },
+            },
+            trx,
+          );
+          movedQty += balance.qty;
+        }
+        return {
+          response: {
+            operationId: commandRequestId,
+            sessionId: input.sessionId,
+            sourceCartRef,
+            targetCartRef,
+            movedQty,
+          },
+          resourceType: 'batch_inventory_session',
+          resourceId: input.sessionId,
+        };
+      },
+      tx,
+    );
+  }
+
+  async handoff(input: HandoffPickingInput, tx?: DbTx): Promise<PickingHandoffResult> {
+    this.workflowGate.assertV2MutationAllowed('picking.aggregate_then_sort.handoff');
+    return this.commands.execute<PickingHandoffResult>(
+      {
+        commandType: 'picking.aggregate_then_sort.handoff',
         idempotencyKey: input.idempotencyKey,
         canonicalRequest: {
           strategy: this.capabilities.name,
@@ -570,8 +790,7 @@ export class DiscretePickingStrategy implements PickingStrategy {
           throw this.conflict('PICKING_HANDOFF_NOT_ACTIVE', 'Work item has no active picker to hand off');
         }
         const oldOwnerId = item.pickerId;
-        const optimisticBalances = await this.loadPositiveShipmentCustody(input.sessionId, input.shipmentId, trx);
-        this.assertExclusiveWorkerCustody(optimisticBalances, oldOwnerId);
+        await this.assertAggregateAssignedCustody(input.sessionId, input.shipmentId, input.workItemId, oldOwnerId, trx);
         const handedOff = await this.batches.handoff(
           input.workItemId,
           {
@@ -580,7 +799,7 @@ export class DiscretePickingStrategy implements PickingStrategy {
             expectedLeaseVersion: input.expectedLeaseVersion,
             reason: input.reason,
           },
-          `discrete-handoff-claim:${commandRequestId}`,
+          `aggregate-handoff-claim:${commandRequestId}`,
           input.actor,
           trx,
         );
@@ -592,33 +811,36 @@ export class DiscretePickingStrategy implements PickingStrategy {
           throw this.conflict('PICKING_HANDOFF_STALE', 'Picker handoff returned an unexpected work item state');
         }
         await this.assertActivePlanSession(input.planId, input.sessionId, input.batchId, trx);
-        const balances = await this.loadPositiveShipmentCustody(input.sessionId, input.shipmentId, trx);
-        this.assertExclusiveWorkerCustody(balances, oldOwnerId);
-
+        const balances = await this.assertAggregateAssignedCustody(
+          input.sessionId,
+          input.shipmentId,
+          input.workItemId,
+          oldOwnerId,
+          trx,
+        );
         let movedQty = 0;
-        for (const balance of balances) {
-          if (oldOwnerId === input.targetWorkerId) continue;
-          if (!balance.sourceLocationId || !balance.custodyRef || !balance.shipmentLineId) {
-            throw this.conflict('PICKING_CUSTODY_CORRUPT', `Worker balance ${balance.id} is incomplete`);
+        for (const balance of balances.filter((row) => row.custodyType === 'SORTING')) {
+          if (!balance.sourceLocationId || !balance.shipmentLineId) {
+            throw this.conflict('PICKING_CUSTODY_CORRUPT', `Sorting balance ${balance.id} is incomplete`);
           }
           await this.sessions.moveCustody(
             {
               sessionId: input.sessionId,
-              idempotencyKey: `discrete-handoff:${commandRequestId}:${balance.id}`,
+              idempotencyKey: `aggregate-handoff:${commandRequestId}:${balance.id}`,
               actorId: input.actor.id,
               quantity: balance.qty,
               from: {
                 skuId: balance.skuId,
                 sourceLocationId: balance.sourceLocationId,
-                custodyType: 'WORKER',
-                custodyRef: oldOwnerId,
+                custodyType: 'SORTING',
+                custodyRef: this.sortingRef(input.workItemId, oldOwnerId),
                 shipmentLineId: balance.shipmentLineId,
               },
               to: {
                 skuId: balance.skuId,
                 sourceLocationId: balance.sourceLocationId,
-                custodyType: 'WORKER',
-                custodyRef: input.targetWorkerId,
+                custodyType: 'SORTING',
+                custodyRef: this.sortingRef(input.workItemId, input.targetWorkerId),
                 shipmentLineId: balance.shipmentLineId,
               },
             },
@@ -626,25 +848,28 @@ export class DiscretePickingStrategy implements PickingStrategy {
           );
           movedQty += balance.qty;
         }
-        const response: PickingHandoffResult = {
-          operationId: commandRequestId,
-          workItemId: input.workItemId,
-          shipmentId: input.shipmentId,
-          workerId: input.targetWorkerId,
-          leaseVersion: handedOff.workItem.leaseVersion,
-          movedQty,
+        return {
+          response: {
+            operationId: commandRequestId,
+            workItemId: input.workItemId,
+            shipmentId: input.shipmentId,
+            workerId: input.targetWorkerId,
+            leaseVersion: handedOff.workItem.leaseVersion,
+            movedQty,
+          },
+          resourceType: 'outbound_batch_work_item',
+          resourceId: input.workItemId,
         };
-        return { response, resourceType: 'outbound_batch_work_item', resourceId: input.workItemId };
       },
       tx,
     );
   }
 
   async completePick(input: CompletePickInput, tx?: DbTx): Promise<InspectionReadyOutput> {
-    this.workflowGate.assertV2MutationAllowed('picking.discrete.complete');
-    return this.commands.execute(
+    this.workflowGate.assertV2MutationAllowed('picking.aggregate_then_sort.complete');
+    return this.commands.execute<InspectionReadyOutput>(
       {
-        commandType: 'picking.discrete.complete',
+        commandType: 'picking.aggregate_then_sort.complete',
         idempotencyKey: input.idempotencyKey,
         canonicalRequest: {
           strategy: this.capabilities.name,
@@ -668,59 +893,49 @@ export class DiscretePickingStrategy implements PickingStrategy {
         );
         await this.assertActivePlanSession(input.planId, input.sessionId, input.batchId, trx);
         const allocations = await this.loadShipmentAllocations(input.planId, input.shipmentId, trx);
-        const packingRef = `${PACKING_REF_PREFIX}${input.workItemId}`;
+        const sortingRef = this.sortingRef(input.workItemId, input.actor.id);
+        const packingRef = this.packingRef(input.workItemId);
         for (const allocation of allocations) {
-          const balances = await trx
-            .select({
-              id: wmsTables.batchInventorySessionBalances.id,
-              custodyType: wmsTables.batchInventorySessionBalances.custodyType,
-              custodyRef: wmsTables.batchInventorySessionBalances.custodyRef,
-              qty: wmsTables.batchInventorySessionBalances.qty,
-            })
-            .from(wmsTables.batchInventorySessionBalances)
-            .where(
-              and(
-                eq(wmsTables.batchInventorySessionBalances.sessionId, input.sessionId),
-                eq(wmsTables.batchInventorySessionBalances.shipmentLineId, allocation.shipmentLineId),
-                eq(wmsTables.batchInventorySessionBalances.sourceLocationId, allocation.sourceLocationId),
-                ne(wmsTables.batchInventorySessionBalances.custodyType, 'SETTLED'),
-                gt(wmsTables.batchInventorySessionBalances.qty, 0),
-              ),
-            )
-            .orderBy(asc(wmsTables.batchInventorySessionBalances.id));
+          const balances = await this.loadPositiveAllocationCustody(input.sessionId, allocation, trx);
           const total = balances.reduce((sum, balance) => sum + balance.qty, 0);
-          const worker = balances.find(
-            (balance) => balance.custodyType === 'WORKER' && balance.custodyRef === input.actor.id,
-          );
-          if (total !== allocation.qty || worker?.qty !== allocation.qty || balances.length !== 1) {
+          if (
+            total !== allocation.qty ||
+            balances.some(
+              (balance) =>
+                (balance.custodyType !== 'SORTING' || balance.custodyRef !== sortingRef) &&
+                (balance.custodyType !== 'PACKING' || balance.custodyRef !== packingRef),
+            )
+          ) {
             throw this.conflict(
-              'PICKING_INCOMPLETE',
-              `Allocation ${allocation.shipmentLineId}/${allocation.sourceLocationId} is not fully held by the picker`,
+              'PICKING_UNSORTED_REMAINDER',
+              `Allocation ${allocation.shipmentLineId}/${allocation.sourceLocationId} is not fully sorted`,
             );
           }
-          await this.sessions.moveCustody(
-            {
-              sessionId: input.sessionId,
-              idempotencyKey: `discrete-complete:${commandRequestId}:${worker.id}`,
-              actorId: input.actor.id,
-              quantity: worker.qty,
-              from: {
-                skuId: allocation.skuId,
-                sourceLocationId: allocation.sourceLocationId,
-                custodyType: 'WORKER',
-                custodyRef: input.actor.id,
-                shipmentLineId: allocation.shipmentLineId,
+          for (const balance of balances.filter((row) => row.custodyType === 'SORTING')) {
+            await this.sessions.moveCustody(
+              {
+                sessionId: input.sessionId,
+                idempotencyKey: `aggregate-complete:${commandRequestId}:${balance.id}`,
+                actorId: input.actor.id,
+                quantity: balance.qty,
+                from: {
+                  skuId: allocation.skuId,
+                  sourceLocationId: allocation.sourceLocationId,
+                  custodyType: 'SORTING',
+                  custodyRef: sortingRef,
+                  shipmentLineId: allocation.shipmentLineId,
+                },
+                to: {
+                  skuId: allocation.skuId,
+                  sourceLocationId: allocation.sourceLocationId,
+                  custodyType: 'PACKING',
+                  custodyRef: packingRef,
+                  shipmentLineId: allocation.shipmentLineId,
+                },
               },
-              to: {
-                skuId: allocation.skuId,
-                sourceLocationId: allocation.sourceLocationId,
-                custodyType: 'PACKING',
-                custodyRef: packingRef,
-                shipmentLineId: allocation.shipmentLineId,
-              },
-            },
-            trx,
-          );
+              trx,
+            );
+          }
         }
 
         const now = await this.databaseNow(trx);
@@ -746,33 +961,35 @@ export class DiscretePickingStrategy implements PickingStrategy {
           )
           .returning({ id: wmsTables.outboundBatchWorkItems.id });
         if (!completed) throw this.conflict('PICKING_STALE_CLAIM', 'Picker claim changed while completing pick');
-
         const lines = allocations.map((allocation) => ({
           shipmentLineId: allocation.shipmentLineId,
           skuId: allocation.skuId,
           sourceLocationId: allocation.sourceLocationId,
           quantity: allocation.qty,
         }));
-        const response: InspectionReadyOutput = {
-          operationId: commandRequestId,
-          workItemId: input.workItemId,
-          shipmentId: input.shipmentId,
-          custodyType: 'PACKING',
-          custodyRef: packingRef,
-          lines,
-          totalQty: lines.reduce((total, line) => total + line.quantity, 0),
+        return {
+          response: {
+            operationId: commandRequestId,
+            workItemId: input.workItemId,
+            shipmentId: input.shipmentId,
+            custodyType: 'PACKING',
+            custodyRef: packingRef,
+            lines,
+            totalQty: lines.reduce((total, line) => total + line.quantity, 0),
+          },
+          resourceType: 'outbound_batch_work_item',
+          resourceId: input.workItemId,
         };
-        return { response, resourceType: 'outbound_batch_work_item', resourceId: input.workItemId };
       },
       tx,
     );
   }
 
   async unpickShipment(input: UnpickShipmentInput, tx?: DbTx): Promise<UnpickShipmentResult> {
-    this.workflowGate.assertV2MutationAllowed('picking.discrete.unpick');
-    return this.commands.execute(
+    this.workflowGate.assertV2MutationAllowed('picking.aggregate_then_sort.unpick');
+    return this.commands.execute<UnpickShipmentResult>(
       {
-        commandType: 'picking.discrete.unpick',
+        commandType: 'picking.aggregate_then_sort.unpick',
         idempotencyKey: input.idempotencyKey,
         canonicalRequest: {
           strategy: this.capabilities.name,
@@ -813,33 +1030,13 @@ export class DiscretePickingStrategy implements PickingStrategy {
           throw this.conflict('PICKING_NOT_UNPICKABLE', `Work item ${item.id} is ${item.status}`);
         }
 
-        const balances = await trx
-          .select({
-            id: wmsTables.batchInventorySessionBalances.id,
-            skuId: wmsTables.batchInventorySessionBalances.skuId,
-            sourceLocationId: wmsTables.batchInventorySessionBalances.sourceLocationId,
-            custodyType: wmsTables.batchInventorySessionBalances.custodyType,
-            custodyRef: wmsTables.batchInventorySessionBalances.custodyRef,
-            shipmentLineId: wmsTables.batchInventorySessionBalances.shipmentLineId,
-            qty: wmsTables.batchInventorySessionBalances.qty,
-          })
-          .from(wmsTables.batchInventorySessionBalances)
-          .innerJoin(
-            wmsTables.shipmentLines,
-            eq(wmsTables.shipmentLines.id, wmsTables.batchInventorySessionBalances.shipmentLineId),
-          )
-          .where(
-            and(
-              eq(wmsTables.batchInventorySessionBalances.sessionId, input.sessionId),
-              eq(wmsTables.shipmentLines.shipmentId, input.shipmentId),
-              gt(wmsTables.batchInventorySessionBalances.qty, 0),
-            ),
-          )
-          .orderBy(asc(wmsTables.batchInventorySessionBalances.id));
+        const balances = await this.loadPositiveShipmentCustody(input.sessionId, input.shipmentId, trx);
         const allocationByGrain = new Map(
           allocations.map((allocation) => [`${allocation.shipmentLineId}|${allocation.sourceLocationId}`, allocation]),
         );
         const attributedByGrain = new Map<string, number>();
+        const expectedSortingRef = this.sortingRef(input.workItemId, item.pickerId ?? input.actor.id);
+        const expectedPackingRef = this.packingRef(input.workItemId);
         for (const balance of balances) {
           const grain = `${balance.shipmentLineId ?? ''}|${balance.sourceLocationId ?? ''}`;
           const allocation = allocationByGrain.get(grain);
@@ -850,29 +1047,26 @@ export class DiscretePickingStrategy implements PickingStrategy {
           if ((attributedByGrain.get(grain) ?? 0) > allocation.qty) {
             throw this.conflict('PICKING_CUSTODY_OVERATTRIBUTED', `Balance grain ${grain} exceeds its allocation`);
           }
-        }
-        if (item.status === 'picking') {
-          if (balances.some((balance) => balance.custodyType !== 'WORKER' || balance.custodyRef !== input.actor.id)) {
-            throw this.conflict(
-              'PICKING_CUSTODY_OWNER_MISMATCH',
-              'Active pick custody must be held only by the current picker',
-            );
-          }
-        } else {
-          const packingRef = `${PACKING_REF_PREFIX}${input.workItemId}`;
           if (
-            balances.length !== allocations.length ||
-            balances.some((balance) => balance.custodyType !== 'PACKING' || balance.custodyRef !== packingRef) ||
+            (balance.custodyType !== 'SORTING' || balance.custodyRef !== expectedSortingRef) &&
+            (balance.custodyType !== 'PACKING' || balance.custodyRef !== expectedPackingRef)
+          ) {
+            throw this.conflict('PICKING_CUSTODY_OWNER_MISMATCH', `Balance ${balance.id} has unexpected custody`);
+          }
+        }
+        if (
+          item.status === 'ready_to_pack' &&
+          (balances.length === 0 ||
+            balances.some((balance) => balance.custodyType !== 'PACKING') ||
             allocations.some((allocation) => {
               const grain = `${allocation.shipmentLineId}|${allocation.sourceLocationId}`;
               return attributedByGrain.get(grain) !== allocation.qty;
-            })
-          ) {
-            throw this.conflict(
-              'PICKING_PACKING_CUSTODY_INCOMPLETE',
-              'Ready-to-pack custody must exactly match every plan allocation',
-            );
-          }
+            }))
+        ) {
+          throw this.conflict(
+            'PICKING_PACKING_CUSTODY_INCOMPLETE',
+            'Ready-to-pack custody must exactly match every plan allocation',
+          );
         }
         let returnedToSourceQty = 0;
         for (const balance of balances) {
@@ -882,7 +1076,7 @@ export class DiscretePickingStrategy implements PickingStrategy {
           await this.sessions.moveCustody(
             {
               sessionId: input.sessionId,
-              idempotencyKey: `discrete-unpick:${commandRequestId}:${balance.id}`,
+              idempotencyKey: `aggregate-unpick:${commandRequestId}:${balance.id}`,
               actorId: input.actor.id,
               quantity: balance.qty,
               from: {
@@ -920,14 +1114,17 @@ export class DiscretePickingStrategy implements PickingStrategy {
           )
           .returning({ id: wmsTables.outboundBatchWorkItems.id });
         if (!requeued) throw this.conflict('PICKING_STALE_CLAIM', 'Work item changed while unpicking');
-        const response: UnpickShipmentResult = {
-          operationId: commandRequestId,
-          workItemId: input.workItemId,
-          shipmentId: input.shipmentId,
-          status: 'queued',
-          returnedToSourceQty,
+        return {
+          response: {
+            operationId: commandRequestId,
+            workItemId: input.workItemId,
+            shipmentId: input.shipmentId,
+            status: 'queued',
+            returnedToSourceQty,
+          },
+          resourceType: 'outbound_batch_work_item',
+          resourceId: input.workItemId,
         };
-        return { response, resourceType: 'outbound_batch_work_item', resourceId: input.workItemId };
       },
       tx,
     );
@@ -949,11 +1146,8 @@ export class DiscretePickingStrategy implements PickingStrategy {
       .where(inArray(wmsTables.shipmentLines.shipmentId, requestedShipmentIds))
       .orderBy(asc(wmsTables.shipmentLines.id));
     if (!initialLines.length) throw new NotFoundException('Requested shipments have no lines');
-    const fulfillmentOrderIds = uniqueSorted(initialLines.map((line) => line.fulfillmentOrderId));
-    await this.invariant.assertFulfillmentOrders(fulfillmentOrderIds, tx);
+    await this.invariant.assertFulfillmentOrders(uniqueSorted(initialLines.map((line) => line.fulfillmentOrderId)), tx);
 
-    // The invariant owns the recursive FOI -> shipment -> line -> reservation -> invoice/work/session locks.
-    // The following rows are re-read for strategy-specific identity and then batch -> plan -> source follows.
     const shipments = await tx
       .select()
       .from(wmsTables.shipments)
@@ -997,7 +1191,6 @@ export class DiscretePickingStrategy implements PickingStrategy {
       )
       .orderBy(asc(wmsTables.outboundBatchWorkItems.id))
       .for('update');
-    // Match addShipment: recursive component/invoice -> batch/work items -> execution profile/SKU -> plan/source.
     if (profileIds.length) {
       await tx
         .select({ id: wmsTables.deliveryProfiles.id })
@@ -1148,9 +1341,7 @@ export class DiscretePickingStrategy implements PickingStrategy {
 
   private async lockSourceCapacities(aggregate: LockedAggregate, tx: DbTx): Promise<SourceCapacity[]> {
     const skuIds = uniqueSorted(aggregate.lines.map((line) => line.skuId));
-    for (const skuId of skuIds) {
-      await acquireStockAvailabilityLock(tx, skuId, aggregate.batch.warehouseId);
-    }
+    for (const skuId of skuIds) await acquireStockAvailabilityLock(tx, skuId, aggregate.batch.warehouseId);
     const ledgers = await tx
       .select({
         skuId: wmsTables.stockLedgers.skuId,
@@ -1200,7 +1391,7 @@ export class DiscretePickingStrategy implements PickingStrategy {
       .limit(1)
       .for('update');
     if (!plan || plan.batchId !== aggregate.batch.id || plan.strategy !== this.capabilities.name) {
-      return 'Picking plan identity no longer matches the discrete batch';
+      return 'Picking plan identity no longer matches the aggregate-then-sort batch';
     }
     if (plan.status !== 'draft') return `Picking plan is ${plan.status}`;
     const members = await tx
@@ -1274,7 +1465,6 @@ export class DiscretePickingStrategy implements PickingStrategy {
     ) {
       return 'Picking source allocation no longer exactly covers the shipment lines';
     }
-
     const sources = [...sourceGroups.values()].sort((left, right) =>
       `${left.skuId}|${left.sourceLocationId}`.localeCompare(`${right.skuId}|${right.sourceLocationId}`),
     );
@@ -1313,7 +1503,6 @@ export class DiscretePickingStrategy implements PickingStrategy {
     }
   }
 
-  /** Active custody trusts its immutable allocation; source ledger versions are a pre-HAND_IN gate only. */
   private async assertActivePlanSession(planId: string, sessionId: string, batchId: string, tx: DbTx): Promise<void> {
     const [plan] = await tx
       .select({
@@ -1326,7 +1515,10 @@ export class DiscretePickingStrategy implements PickingStrategy {
       .limit(1)
       .for('update');
     if (!plan || plan.batchId !== batchId || plan.strategy !== this.capabilities.name || plan.status !== 'active') {
-      throw this.conflict('PICKING_PLAN_NOT_ACTIVE', `Picking plan ${planId} is not an active discrete plan`);
+      throw this.conflict(
+        'PICKING_PLAN_NOT_ACTIVE',
+        `Picking plan ${planId} is not an active aggregate-then-sort plan`,
+      );
     }
     const [session] = await tx
       .select({ batchId: wmsTables.batchInventorySessions.batchId, status: wmsTables.batchInventorySessions.status })
@@ -1396,6 +1588,89 @@ export class DiscretePickingStrategy implements PickingStrategy {
     }
   }
 
+  private async loadLineAllocations(planId: string, shipmentLineId: string, tx: DbTx): Promise<ShipmentAllocation[]> {
+    const allocations = await tx
+      .select({
+        id: wmsTables.pickingSourceAllocations.id,
+        shipmentLineId: wmsTables.pickingSourceAllocations.shipmentLineId,
+        skuId: wmsTables.shipmentLines.skuId,
+        sourceLocationId: wmsTables.pickingSourceAllocations.sourceLocationId,
+        qty: wmsTables.pickingSourceAllocations.qty,
+      })
+      .from(wmsTables.pickingSourceAllocations)
+      .innerJoin(
+        wmsTables.shipmentLines,
+        eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
+      )
+      .where(
+        and(
+          eq(wmsTables.pickingSourceAllocations.planId, planId),
+          eq(wmsTables.pickingSourceAllocations.shipmentLineId, shipmentLineId),
+        ),
+      )
+      .orderBy(asc(wmsTables.pickingSourceAllocations.sourceLocationId), asc(wmsTables.pickingSourceAllocations.id));
+    if (!allocations.length) {
+      throw this.conflict('PICKING_SHIPMENT_LINE_NOT_IN_PLAN', `Shipment line ${shipmentLineId} has no allocation`);
+    }
+    return allocations;
+  }
+
+  private async loadShipmentAllocations(planId: string, shipmentId: string, tx: DbTx): Promise<ShipmentAllocation[]> {
+    const allocations = await tx
+      .select({
+        id: wmsTables.pickingSourceAllocations.id,
+        shipmentLineId: wmsTables.pickingSourceAllocations.shipmentLineId,
+        skuId: wmsTables.shipmentLines.skuId,
+        sourceLocationId: wmsTables.pickingSourceAllocations.sourceLocationId,
+        qty: wmsTables.pickingSourceAllocations.qty,
+      })
+      .from(wmsTables.pickingSourceAllocations)
+      .innerJoin(
+        wmsTables.shipmentLines,
+        eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
+      )
+      .where(
+        and(eq(wmsTables.pickingSourceAllocations.planId, planId), eq(wmsTables.shipmentLines.shipmentId, shipmentId)),
+      )
+      .orderBy(
+        asc(wmsTables.pickingSourceAllocations.shipmentLineId),
+        asc(wmsTables.pickingSourceAllocations.sourceLocationId),
+        asc(wmsTables.pickingSourceAllocations.id),
+      );
+    if (!allocations.length) {
+      throw this.conflict('PICKING_SHIPMENT_NOT_IN_PLAN', `Shipment ${shipmentId} has no plan allocation`);
+    }
+    return allocations;
+  }
+
+  private async loadPositiveAllocationCustody(
+    sessionId: string,
+    allocation: ShipmentAllocation,
+    tx: DbTx,
+  ): Promise<ShipmentCustodyBalance[]> {
+    return tx
+      .select({
+        id: wmsTables.batchInventorySessionBalances.id,
+        skuId: wmsTables.batchInventorySessionBalances.skuId,
+        sourceLocationId: wmsTables.batchInventorySessionBalances.sourceLocationId,
+        custodyType: wmsTables.batchInventorySessionBalances.custodyType,
+        custodyRef: wmsTables.batchInventorySessionBalances.custodyRef,
+        shipmentLineId: wmsTables.batchInventorySessionBalances.shipmentLineId,
+        qty: wmsTables.batchInventorySessionBalances.qty,
+      })
+      .from(wmsTables.batchInventorySessionBalances)
+      .where(
+        and(
+          eq(wmsTables.batchInventorySessionBalances.sessionId, sessionId),
+          eq(wmsTables.batchInventorySessionBalances.skuId, allocation.skuId),
+          eq(wmsTables.batchInventorySessionBalances.sourceLocationId, allocation.sourceLocationId),
+          eq(wmsTables.batchInventorySessionBalances.shipmentLineId, allocation.shipmentLineId),
+          gt(wmsTables.batchInventorySessionBalances.qty, 0),
+        ),
+      )
+      .orderBy(asc(wmsTables.batchInventorySessionBalances.id));
+  }
+
   private async loadPositiveShipmentCustody(
     sessionId: string,
     shipmentId: string,
@@ -1426,39 +1701,198 @@ export class DiscretePickingStrategy implements PickingStrategy {
       .orderBy(asc(wmsTables.batchInventorySessionBalances.id));
   }
 
-  private assertExclusiveWorkerCustody(balances: ShipmentCustodyBalance[], workerId: string): void {
-    if (balances.some((balance) => balance.custodyType !== 'WORKER' || balance.custodyRef !== workerId)) {
+  private async assertAggregateAssignedCustody(
+    sessionId: string,
+    shipmentId: string,
+    workItemId: string,
+    ownerId: string,
+    tx: DbTx,
+  ): Promise<ShipmentCustodyBalance[]> {
+    const balances = await this.loadPositiveShipmentCustody(sessionId, shipmentId, tx);
+    const sortingRef = this.sortingRef(workItemId, ownerId);
+    const packingRef = this.packingRef(workItemId);
+    if (
+      balances.some(
+        (balance) =>
+          (balance.custodyType !== 'SORTING' || balance.custodyRef !== sortingRef) &&
+          (balance.custodyType !== 'PACKING' || balance.custodyRef !== packingRef),
+      )
+    ) {
       throw this.conflict(
         'PICKING_CUSTODY_OWNER_MISMATCH',
-        `Shipment attributed custody must be exclusively WORKER custody owned by ${workerId}`,
+        `Shipment assigned custody is not owned by picker ${ownerId}`,
+      );
+    }
+    return balances;
+  }
+
+  private async acquireCartLock(cartId: string, tx: DbTx): Promise<void> {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`aggregate-cart:${cartId}`}, 0))`);
+  }
+
+  private async loadGlobalCartBalances(cartId: string, tx: DbTx): Promise<GlobalCartBalance[]> {
+    return tx
+      .select({
+        id: wmsTables.batchInventorySessionBalances.id,
+        sessionId: wmsTables.batchInventorySessionBalances.sessionId,
+        batchId: wmsTables.batchInventorySessions.batchId,
+        skuId: wmsTables.batchInventorySessionBalances.skuId,
+        sourceLocationId: wmsTables.batchInventorySessionBalances.sourceLocationId,
+        custodyType: wmsTables.batchInventorySessionBalances.custodyType,
+        custodyRef: wmsTables.batchInventorySessionBalances.custodyRef,
+        shipmentLineId: wmsTables.batchInventorySessionBalances.shipmentLineId,
+        qty: wmsTables.batchInventorySessionBalances.qty,
+      })
+      .from(wmsTables.batchInventorySessionBalances)
+      .innerJoin(
+        wmsTables.batchInventorySessions,
+        eq(wmsTables.batchInventorySessions.id, wmsTables.batchInventorySessionBalances.sessionId),
+      )
+      .where(
+        and(
+          eq(wmsTables.batchInventorySessionBalances.custodyType, 'BULK_CART'),
+          gt(wmsTables.batchInventorySessionBalances.qty, 0),
+          sql`split_part(${wmsTables.batchInventorySessionBalances.custodyRef}, ':', 3) = ${cartId}`,
+        ),
+      )
+      .orderBy(
+        asc(wmsTables.batchInventorySessionBalances.sessionId),
+        asc(wmsTables.batchInventorySessionBalances.skuId),
+        asc(wmsTables.batchInventorySessionBalances.sourceLocationId),
+        asc(wmsTables.batchInventorySessionBalances.id),
+      )
+      .for('update');
+  }
+
+  private async loadCartBalances(
+    sessionId: string,
+    batchId: string,
+    cartId: string,
+    tx: DbTx,
+  ): Promise<ShipmentCustodyBalance[]> {
+    const prefix = this.bulkCartPrefix(batchId, cartId);
+    return tx
+      .select({
+        id: wmsTables.batchInventorySessionBalances.id,
+        skuId: wmsTables.batchInventorySessionBalances.skuId,
+        sourceLocationId: wmsTables.batchInventorySessionBalances.sourceLocationId,
+        custodyType: wmsTables.batchInventorySessionBalances.custodyType,
+        custodyRef: wmsTables.batchInventorySessionBalances.custodyRef,
+        shipmentLineId: wmsTables.batchInventorySessionBalances.shipmentLineId,
+        qty: wmsTables.batchInventorySessionBalances.qty,
+      })
+      .from(wmsTables.batchInventorySessionBalances)
+      .where(
+        and(
+          eq(wmsTables.batchInventorySessionBalances.sessionId, sessionId),
+          eq(wmsTables.batchInventorySessionBalances.custodyType, 'BULK_CART'),
+          gt(wmsTables.batchInventorySessionBalances.qty, 0),
+          sql`left(${wmsTables.batchInventorySessionBalances.custodyRef}, ${prefix.length}) = ${prefix}`,
+        ),
+      )
+      .orderBy(
+        asc(wmsTables.batchInventorySessionBalances.skuId),
+        asc(wmsTables.batchInventorySessionBalances.sourceLocationId),
+        asc(wmsTables.batchInventorySessionBalances.id),
+      )
+      .for('update');
+  }
+
+  private async assertCartOwnedBy(
+    sessionId: string,
+    batchId: string,
+    cartId: string,
+    expectedOwnerId: string,
+    tx: DbTx,
+    requireNonEmpty = false,
+  ): Promise<void> {
+    const balances = await this.loadGlobalCartBalances(cartId, tx);
+    if (requireNonEmpty && !balances.length) {
+      throw this.conflict('AGGREGATE_CART_EMPTY', `Cart ${cartId} has no pooled custody`);
+    }
+    const expectedRef = this.bulkCartRef(batchId, cartId, expectedOwnerId);
+    if (
+      balances.some(
+        (balance) =>
+          balance.sessionId !== sessionId ||
+          balance.batchId !== batchId ||
+          balance.custodyRef !== expectedRef ||
+          balance.shipmentLineId !== null,
+      )
+    ) {
+      throw this.conflict(
+        'AGGREGATE_CART_IN_USE',
+        `Physical cart ${cartId} has positive custody in another session, batch, or owner scope`,
       );
     }
   }
 
-  private async loadShipmentAllocations(planId: string, shipmentId: string, tx: DbTx) {
-    const allocations = await tx
+  private bulkCartPrefix(batchId: string, cartId: string): string {
+    return `${BULK_CART_REF_PREFIX}${encodeURIComponent(batchId)}:${encodeURIComponent(cartId)}:`;
+  }
+
+  private bulkCartRef(batchId: string, cartId: string, workerId: string): string {
+    if (!workerId.trim()) throw new BadRequestException('workerId is required');
+    return `${this.bulkCartPrefix(batchId, cartId)}${encodeURIComponent(workerId)}`;
+  }
+
+  private sortingRef(workItemId: string, workerId: string): string {
+    return `sorting:${workItemId}:${workerId}`;
+  }
+
+  private packingRef(workItemId: string): string {
+    return `${ASSIGNED_REF_PREFIX}${workItemId}`;
+  }
+
+  private async plannedResult(
+    plan: typeof wmsTables.pickingPlans.$inferSelect,
+    batchId: string,
+    shipmentIds: string[],
+    operationId: string,
+    tx: DbTx,
+  ): Promise<PickingPlanResult> {
+    const [summary] = await tx
       .select({
-        shipmentLineId: wmsTables.pickingSourceAllocations.shipmentLineId,
-        skuId: wmsTables.shipmentLines.skuId,
-        sourceLocationId: wmsTables.pickingSourceAllocations.sourceLocationId,
-        qty: wmsTables.pickingSourceAllocations.qty,
+        count: sql<number>`count(*)::int`,
+        totalQty: sql<number>`coalesce(sum(${wmsTables.pickingSourceAllocations.qty}), 0)::int`,
       })
       .from(wmsTables.pickingSourceAllocations)
-      .innerJoin(
-        wmsTables.shipmentLines,
-        eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
-      )
+      .where(eq(wmsTables.pickingSourceAllocations.planId, plan.id));
+    return {
+      state: 'planned',
+      operationId,
+      planId: plan.id,
+      batchId,
+      strategy: this.capabilities.name,
+      version: plan.version,
+      shipmentIds,
+      allocationCount: Number(summary?.count ?? 0),
+      totalQty: Number(summary?.totalQty ?? 0),
+    };
+  }
+
+  private async invalidateDraftPlan(
+    planId: string,
+    batchId: string,
+    reason: string,
+    operationId: string,
+    tx: DbTx,
+  ): Promise<PickingPlanResult> {
+    const [invalidated] = await tx
+      .update(wmsTables.pickingPlans)
+      .set({ status: 'invalidated', invalidatedAt: sql`now()`, invalidationReason: reason, updatedAt: sql`now()` })
       .where(
-        and(eq(wmsTables.pickingSourceAllocations.planId, planId), eq(wmsTables.shipmentLines.shipmentId, shipmentId)),
+        and(
+          eq(wmsTables.pickingPlans.id, planId),
+          eq(wmsTables.pickingPlans.batchId, batchId),
+          eq(wmsTables.pickingPlans.status, 'draft'),
+        ),
       )
-      .orderBy(
-        asc(wmsTables.pickingSourceAllocations.shipmentLineId),
-        asc(wmsTables.pickingSourceAllocations.sourceLocationId),
-      );
-    if (!allocations.length) {
-      throw this.conflict('PICKING_SHIPMENT_NOT_IN_PLAN', `Shipment ${shipmentId} has no plan allocation`);
+      .returning({ id: wmsTables.pickingPlans.id });
+    if (!invalidated) {
+      throw this.conflict('PICKING_PLAN_STALE_VERSION', `Picking plan ${planId} changed while invalidating`);
     }
-    return allocations;
+    return { state: 'invalidated', operationId, planId, batchId, reason };
   }
 
   private assertRecipientComplete(value: unknown): void {
@@ -1501,6 +1935,14 @@ export class DiscretePickingStrategy implements PickingStrategy {
     return ids;
   }
 
+  private requiredCartId(value: string): string {
+    const cartId = value.trim();
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(cartId)) {
+      throw new BadRequestException('cartId must be 1-128 letters, digits, dots, underscores, or hyphens');
+    }
+    return cartId;
+  }
+
   private assertPositiveQuantity(quantity: number): void {
     if (!Number.isSafeInteger(quantity) || quantity <= 0) {
       throw new BadRequestException('quantity must be a positive integer');
@@ -1520,41 +1962,9 @@ export class DiscretePickingStrategy implements PickingStrategy {
     );
   }
 
-  private async invalidateDraftPlan(
-    planId: string,
-    batchId: string,
-    reason: string,
-    operationId: string,
-    tx: DbTx,
-  ): Promise<PickingPlanResult> {
-    const [invalidated] = await tx
-      .update(wmsTables.pickingPlans)
-      .set({
-        status: 'invalidated',
-        invalidatedAt: sql`now()`,
-        invalidationReason: reason,
-        updatedAt: sql`now()`,
-      })
-      .where(
-        and(
-          eq(wmsTables.pickingPlans.id, planId),
-          eq(wmsTables.pickingPlans.batchId, batchId),
-          eq(wmsTables.pickingPlans.status, 'draft'),
-        ),
-      )
-      .returning({ id: wmsTables.pickingPlans.id });
-    if (!invalidated) {
-      throw this.conflict('PICKING_PLAN_STALE_VERSION', `Draft plan ${planId} changed while invalidating`);
-    }
-    return { state: 'invalidated', operationId, planId, batchId, reason };
-  }
-
-  private errorMessage(error: BadRequestException | ConflictException | NotFoundException): string {
-    const response = error.getResponse();
-    if (typeof response === 'string') return response;
-    const message = (response as { message?: string | string[] }).message;
-    if (Array.isArray(message)) return message.join('; ');
-    return message ?? error.message;
+  private errorMessage(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    return 'Picking plan validation failed';
   }
 
   private conflict(code: string, message: string): ConflictException {

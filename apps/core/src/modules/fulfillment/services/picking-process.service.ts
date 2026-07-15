@@ -14,6 +14,13 @@ import { BarcodeService, FOIScanResult, SkuScanResult } from '../../inventory/sh
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { PickingStrategyRegistry } from '../picking/picking-strategy.registry';
 import {
+  AggregateCartHandoffInput,
+  AggregateCartHandoffResult,
+  AggregateSortScanInput,
+  AggregateSortScanResult,
+  AggregateSourceScanInput,
+  AggregateSourceScanResult,
+  AggregateThenSortStrategy,
   CompletePickInput,
   HandoffPickingInput,
   PickingStrategy,
@@ -23,6 +30,19 @@ import {
   StartPickingInput,
   UnpickShipmentInput,
 } from '../picking/picking-strategy.interface';
+
+function isAggregateThenSortStrategy(strategy: PickingStrategy): strategy is AggregateThenSortStrategy {
+  return (
+    strategy.capabilities.name === 'aggregate_then_sort' &&
+    strategy.capabilities.supportsAggregateSourcePick &&
+    'bulkCartScan' in strategy &&
+    typeof strategy.bulkCartScan === 'function' &&
+    'sortScan' in strategy &&
+    typeof strategy.sortScan === 'function' &&
+    'cartHandoff' in strategy &&
+    typeof strategy.cartHandoff === 'function'
+  );
+}
 
 export interface PickingOperation {
   batchId: string;
@@ -115,6 +135,33 @@ export class PickingProcessService {
     return this.withPlanStrategy(input.batchId, input.planId, (strategy, trx) => strategy.scan(input, trx), tx);
   }
 
+  async aggregateBulkCartScan(input: AggregateSourceScanInput, tx?: DbTx): Promise<AggregateSourceScanResult> {
+    return this.withAggregateThenSortStrategy(
+      input.batchId,
+      input.planId,
+      (strategy, trx) => strategy.bulkCartScan(input, trx),
+      tx,
+    );
+  }
+
+  async aggregateSortScan(input: AggregateSortScanInput, tx?: DbTx): Promise<AggregateSortScanResult> {
+    return this.withAggregateThenSortStrategy(
+      input.batchId,
+      input.planId,
+      (strategy, trx) => strategy.sortScan(input, trx),
+      tx,
+    );
+  }
+
+  async aggregateCartHandoff(input: AggregateCartHandoffInput, tx?: DbTx): Promise<AggregateCartHandoffResult> {
+    return this.withAggregateThenSortStrategy(
+      input.batchId,
+      input.planId,
+      (strategy, trx) => strategy.cartHandoff(input, trx),
+      tx,
+    );
+  }
+
   async handoff(input: HandoffPickingInput, tx?: DbTx) {
     return this.withPlanStrategy(input.batchId, input.planId, (strategy, trx) => strategy.handoff(input, trx), tx);
   }
@@ -159,6 +206,28 @@ export class PickingProcessService {
       const strategy = await this.requiredRegistry().resolveForWarehouse(identity.strategy, identity.warehouseId, trx);
       return execute(strategy, trx);
     }, tx);
+  }
+
+  private withAggregateThenSortStrategy<T>(
+    batchId: string,
+    planId: string,
+    execute: (strategy: AggregateThenSortStrategy, tx: DbTx) => Promise<T>,
+    tx?: DbTx,
+  ): Promise<T> {
+    return this.withPlanStrategy(
+      batchId,
+      planId,
+      (strategy, trx) => {
+        if (!isAggregateThenSortStrategy(strategy)) {
+          throw new ConflictException({
+            code: 'PICKING_PLAN_STRATEGY_MISMATCH',
+            message: `Picking plan ${planId} does not use aggregate_then_sort`,
+          });
+        }
+        return execute(strategy, trx);
+      },
+      tx,
+    );
   }
 
   private requiredRegistry(): PickingStrategyRegistry {

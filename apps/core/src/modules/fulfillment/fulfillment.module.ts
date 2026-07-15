@@ -49,6 +49,7 @@ import { BatchInventorySessionService } from './services/batch-inventory-session
 import { BatchSessionRecoveryService } from './services/batch-session-recovery.service';
 import { DiscretePickingStrategy } from './picking/discrete-picking.strategy';
 import { PICKING_STRATEGIES, PickingStrategyRegistry } from './picking/picking-strategy.registry';
+import { AggregateThenSortPickingStrategy } from './picking/aggregate-then-sort.strategy';
 
 // Controllers
 import { FulfillmentsController } from './controllers/fulfillments.controller';
@@ -63,6 +64,7 @@ import { LocationOptimizationController } from './controllers/location-optimizat
 import { ShipmentPlanningController } from './controllers/shipment-planning.controller';
 import { ShipmentInvoiceController } from './controllers/shipment-invoice.controller';
 import { OutboundBatchV2Controller } from './controllers/outbound-batch-v2.controller';
+import { PickingV2Controller } from './controllers/picking-v2.controller';
 
 @Module({
   imports: [
@@ -96,6 +98,7 @@ import { OutboundBatchV2Controller } from './controllers/outbound-batch-v2.contr
     FulfillmentOrderController,
     // Static V2 outbound-batch routes must be registered before the legacy `:id` reader.
     OutboundBatchV2Controller,
+    PickingV2Controller,
     OutboundBatchController,
     PickingController,
     ShipmentController,
@@ -142,10 +145,14 @@ import { OutboundBatchV2Controller } from './controllers/outbound-batch-v2.contr
     BatchInventorySessionService,
     BatchSessionRecoveryService,
     DiscretePickingStrategy,
+    AggregateThenSortPickingStrategy,
     {
       provide: PICKING_STRATEGIES,
-      useFactory: (discrete: DiscretePickingStrategy) => [discrete],
-      inject: [DiscretePickingStrategy],
+      useFactory: (discrete: DiscretePickingStrategy, aggregateThenSort: AggregateThenSortPickingStrategy) => [
+        discrete,
+        aggregateThenSort,
+      ],
+      inject: [DiscretePickingStrategy, AggregateThenSortPickingStrategy],
     },
     PickingStrategyRegistry,
   ],
@@ -161,6 +168,7 @@ import { OutboundBatchV2Controller } from './controllers/outbound-batch-v2.contr
     BatchInventorySessionService,
     BatchSessionRecoveryService,
     DiscretePickingStrategy,
+    AggregateThenSortPickingStrategy,
     PickingStrategyRegistry,
   ],
 })

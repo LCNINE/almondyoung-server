@@ -38,6 +38,8 @@ export interface PickingContractSnapshot {
   custody: {
     atSource: number;
     worker: number;
+    bulkCart: number;
+    sorting: number;
     packing: number;
     total: number;
     handedIn: number;
@@ -55,6 +57,7 @@ export interface PickingContractSnapshot {
 
 export interface PickingStrategyContractFixture {
   strategy: PickingStrategy;
+  pickShipmentA(): Promise<{ first: unknown; replay: unknown }>;
   snapshot(): PickingContractSnapshot;
 }
 
@@ -164,20 +167,20 @@ export function definePickingStrategyContract(label: string, createFixture: Pick
       await fixture.strategy.plan(planInput());
       await fixture.strategy.start(startInput());
 
-      const first = await fixture.strategy.scan(scanInput('A', 2, 'scan-a'));
-      const replay = await fixture.strategy.scan(scanInput('A', 2, 'scan-a'));
+      const { first, replay } = await fixture.pickShipmentA();
       const snapshot = fixture.snapshot();
 
       expect(replay).toEqual(first);
-      expect(snapshot.custody).toEqual({ atSource: 3, worker: 2, packing: 0, total: 5, handedIn: 5 });
       expect(snapshot.custody.total).toBe(snapshot.custody.handedIn);
+      expect(snapshot.custody.total).toBe(5);
+      expect(snapshot.custody.packing).toBe(0);
       expect(snapshot.physicalToteCount).toBe(0);
     });
 
     it('emits the common inspection-ready shape only after exact shipment picking', async () => {
       await fixture.strategy.plan(planInput());
       await fixture.strategy.start(startInput());
-      await fixture.strategy.scan(scanInput('A', 2, 'scan-a'));
+      await fixture.pickShipmentA();
 
       const result = await fixture.strategy.completePick(completeInput());
       const snapshot = fixture.snapshot();
@@ -198,14 +201,16 @@ export function definePickingStrategyContract(label: string, createFixture: Pick
         ],
         totalQty: 2,
       });
-      expect(snapshot.custody).toEqual({ atSource: 3, worker: 0, packing: 2, total: 5, handedIn: 5 });
+      expect(snapshot.custody.packing).toBe(2);
+      expect(snapshot.custody.total).toBe(5);
+      expect(snapshot.custody.handedIn).toBe(5);
       expect(snapshot.workItemStatuses[PICKING_CONTRACT_IDS.workItemA]).toBe('ready_to_pack');
     });
 
     it('unpick returns only the selected shipment to pooled source custody', async () => {
       await fixture.strategy.plan(planInput());
       await fixture.strategy.start(startInput());
-      await fixture.strategy.scan(scanInput('A', 2, 'scan-a'));
+      await fixture.pickShipmentA();
       await fixture.strategy.completePick(completeInput());
 
       const result = await fixture.strategy.unpickShipment(unpickInput());
@@ -218,7 +223,7 @@ export function definePickingStrategyContract(label: string, createFixture: Pick
         status: 'queued',
         returnedToSourceQty: 2,
       });
-      expect(snapshot.custody).toEqual({ atSource: 5, worker: 0, packing: 0, total: 5, handedIn: 5 });
+      expect(snapshot.custody).toMatchObject({ worker: 0, sorting: 0, packing: 0, total: 5, handedIn: 5 });
       expect(snapshot.workItemStatuses).toMatchObject({
         [PICKING_CONTRACT_IDS.workItemA]: 'queued',
         [PICKING_CONTRACT_IDS.workItemB]: 'picking',
@@ -228,7 +233,7 @@ export function definePickingStrategyContract(label: string, createFixture: Pick
     it('does not cross the economic inventory, reservation, invoice, progress, or event boundaries', async () => {
       await fixture.strategy.plan(planInput());
       await fixture.strategy.start(startInput());
-      await fixture.strategy.scan(scanInput('A', 2, 'scan-a'));
+      await fixture.pickShipmentA();
       await fixture.strategy.completePick(completeInput());
       await fixture.strategy.unpickShipment(unpickInput());
 
@@ -243,7 +248,7 @@ export function definePickingStrategyContract(label: string, createFixture: Pick
   });
 }
 
-type CustodyType = 'AT_SOURCE' | 'WORKER' | 'PACKING';
+type CustodyType = 'AT_SOURCE' | 'WORKER' | 'BULK_CART' | 'SORTING' | 'PACKING';
 
 interface CustodyBalance {
   id: string;
@@ -613,15 +618,31 @@ function createProductionDiscreteFixture(): PickingStrategyContractFixture {
 
   return {
     strategy,
+    pickShipmentA: async () => {
+      const input = scanInput('A', 2, 'scan-a');
+      const first = await strategy.scan(input);
+      const replay = await strategy.scan(input);
+      return { first, replay };
+    },
     snapshot: () => {
       const custodyTotal = (type: CustodyType) =>
         state.balances.filter((balance) => balance.custodyType === type).reduce((sum, balance) => sum + balance.qty, 0);
       const atSource = custodyTotal('AT_SOURCE');
       const worker = custodyTotal('WORKER');
+      const bulkCart = custodyTotal('BULK_CART');
+      const sorting = custodyTotal('SORTING');
       const packing = custodyTotal('PACKING');
       return {
         allocations: state.allocations.map((allocation) => ({ ...allocation })),
-        custody: { atSource, worker, packing, total: atSource + worker + packing, handedIn: state.handedIn },
+        custody: {
+          atSource,
+          worker,
+          bulkCart,
+          sorting,
+          packing,
+          total: atSource + worker + bulkCart + sorting + packing,
+          handedIn: state.handedIn,
+        },
         workItemStatuses: Object.fromEntries(
           Object.entries(state.workItems).map(([id, item]) => [id, item.status as string]),
         ),
