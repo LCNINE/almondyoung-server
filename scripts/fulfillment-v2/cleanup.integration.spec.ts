@@ -139,13 +139,17 @@ async function createFixture(): Promise<Fixture> {
       qty integer NOT NULL,
       PRIMARY KEY (sku_id, warehouse_id, location_id, stock_state)
     )`,
-    'CREATE TABLE audit_logs (id uuid PRIMARY KEY)',
+    // created_at mirrors the real tables: the toolkit scopes these append-only
+    // sinks to the audit instant, so a stub without it would not exercise that
+    // path.
+    'CREATE TABLE audit_logs (id uuid PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now())',
     `CREATE TABLE order_events (
       id uuid PRIMARY KEY,
       event_id text NOT NULL UNIQUE,
       order_id uuid NOT NULL REFERENCES sales_orders(id),
       event_type text NOT NULL,
-      payload jsonb NOT NULL
+      payload jsonb NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now()
     )`,
     `CREATE TABLE returns (
       id uuid PRIMARY KEY,
@@ -163,6 +167,7 @@ async function createFixture(): Promise<Fixture> {
     fulfillmentOrderId: randomUUID(),
     fulfillmentOrderItemId: randomUUID(),
     shipmentId: randomUUID(),
+    auditLogId: randomUUID(),
   };
   const batchId = randomUUID();
   const receiveJournalId = randomUUID();
@@ -226,6 +231,9 @@ async function createFixture(): Promise<Fixture> {
       `('${randomUUID()}', '${randomUUID()}', '${ids.salesOrderId}', 'ORDER_CREATED', ` +
       `' {"createdAt":"2026-07-13T00:00:00.000Z"}')`,
   );
+  // Pre-existing audit row: the append-only fingerprint is scoped to the audit
+  // instant, so drift can only be proven against a row that predates it.
+  await sql.unsafe(`INSERT INTO audit_logs VALUES ('${ids.auditLogId}')`);
   return { sql, schema, ids };
 }
 
@@ -362,6 +370,52 @@ describeIfDb('fulfillment V2 hard-cutover cleanup (DB integration)', () => {
       expect(unrelatedOutbox.rows).toBe(1);
       expect(replayableFulfillmentOutbox.rows).toBe(0);
       expect(protectedRows).toEqual({ orders: 1, events: 1, ledgers: 1 });
+    } finally {
+      await destroyFixture(fixture);
+    }
+  });
+
+  it('aborts before deletion when audited protected data is mutated after the signed audit', async () => {
+    const fixture = await createFixture();
+    try {
+      const artifact = await audit(fixture);
+      // Deleting a row that predates the audit is real drift, not an append.
+      await fixture.sql.unsafe(`DELETE FROM audit_logs WHERE id = '${fixture.ids.auditLogId}'`);
+
+      await expect(cleanup(fixture.sql, cleanupOptions(artifact))).rejects.toThrow(
+        'Live protected data no longer matches audited protectedFingerprints',
+      );
+
+      const [remaining] = await fixture.sql.unsafe<
+        Array<{ fulfillmentOrders: number; shipments: number; invoices: number }>
+      >(`
+        SELECT (SELECT count(*) FROM fulfillment_orders)::int AS "fulfillmentOrders",
+               (SELECT count(*) FROM shipments)::int AS shipments,
+               (SELECT count(*) FROM invoices)::int AS invoices
+      `);
+      expect(remaining).toEqual({ fulfillmentOrders: 1, shipments: 1, invoices: 1 });
+    } finally {
+      await destroyFixture(fixture);
+    }
+  });
+
+  it('tolerates an append to an append-only sink after the audit and still deletes', async () => {
+    const fixture = await createFixture();
+    try {
+      const artifact = await audit(fixture);
+      // Maintenance mode gates fulfillment writes only, so unrelated audit rows
+      // keep arriving during the cutover window. Aborting on those would
+      // livelock the runbook without protecting anything.
+      await fixture.sql.unsafe(`INSERT INTO audit_logs VALUES ('${randomUUID()}')`);
+
+      const deleted = await cleanup(fixture.sql, cleanupOptions(artifact));
+
+      expect(deleted['fulfillment-orders']).toBe(1);
+      const [remaining] = await fixture.sql.unsafe<Array<{ fulfillmentOrders: number; auditLogs: number }>>(`
+        SELECT (SELECT count(*) FROM fulfillment_orders)::int AS "fulfillmentOrders",
+               (SELECT count(*) FROM audit_logs)::int AS "auditLogs"
+      `);
+      expect(remaining).toEqual({ fulfillmentOrders: 0, auditLogs: 2 });
     } finally {
       await destroyFixture(fixture);
     }

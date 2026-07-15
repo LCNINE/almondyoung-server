@@ -51,6 +51,19 @@ const PROTECTED_TABLES = [
   'order_events',
 ] as const;
 
+/**
+ * Append-only sinks that legitimately keep growing during the cutover window.
+ * `audit_logs` is the whole Core app's audit sink and `order_events` keeps
+ * receiving SO intake, neither of which maintenance mode gates. Fingerprinting
+ * them whole would abort cleanup on any unrelated write and livelock the
+ * runbook. Scoping both the audited and the live side to rows at or below the
+ * audit instant still proves no pre-existing row was mutated or deleted, while
+ * tolerating honest appends. Only tables that are truly append-only belong
+ * here — `stock_ledgers` mutates in place, and a stock_events/stock_journals
+ * change mid-cutover is worth stopping for.
+ */
+const APPEND_ONLY_PROTECTED_TABLES = new Set<string>(['audit_logs', 'order_events']);
+
 const V2_ONLY_TABLES = [
   'fulfillment_command_requests',
   'shipment_operations',
@@ -361,6 +374,18 @@ function asNumber(value: unknown): number {
 function quoteIdentifier(identifier: string): string {
   if (!/^[a-z_][a-z0-9_]*$/.test(identifier)) throw new Error(`Unsafe SQL identifier: ${identifier}`);
   return `"${identifier}"`;
+}
+
+/**
+ * The audit instant reaches this predicate from a signed artifact, so it is
+ * already integrity-checked — but it is still interpolated into SQL. Validate
+ * the shape rather than trusting the artifact reader.
+ */
+function quoteInstant(instant: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d{1,6})?(\+\d{2}(:?\d{2})?|Z)?$/.test(instant)) {
+    throw new Error(`Unsafe SQL timestamp: ${instant}`);
+  }
+  return `'${instant}'`;
 }
 
 function legacyOutboxPredicate(alias = ''): string {
@@ -703,9 +728,33 @@ async function fingerprint(sql: QuerySql, table: string, predicate = 'TRUE'): Pr
   return { rows: asNumber(row.rows), digest: row.digest };
 }
 
-async function protectedFingerprints(sql: QuerySql): Promise<Record<string, Fingerprint>> {
+/**
+ * Report only the tables that actually drifted. Dumping both full maps makes an
+ * abort unreadable exactly when an operator is under cutover time pressure.
+ */
+function driftedFingerprints(audited: Record<string, Fingerprint>, live: Record<string, Fingerprint>): string[] {
+  const tables = [...new Set([...Object.keys(audited), ...Object.keys(live)])].sort();
+  return tables
+    .filter((table) => canonicalJson(audited[table] ?? null) !== canonicalJson(live[table] ?? null))
+    .map(
+      (table) =>
+        `${table}: audited=${canonicalJson(audited[table] ?? null)} live=${canonicalJson(live[table] ?? null)}`,
+    );
+}
+
+async function transactionInstant(sql: QuerySql): Promise<string> {
+  const [row] = await sql.unsafe<Array<{ instant: string }>>(`SELECT now()::text AS instant`);
+  return row.instant;
+}
+
+async function protectedFingerprints(sql: QuerySql, auditedAt: string): Promise<Record<string, Fingerprint>> {
   const fingerprints: Record<string, Fingerprint> = {};
-  for (const table of PROTECTED_TABLES) fingerprints[table] = await fingerprint(sql, table);
+  for (const table of PROTECTED_TABLES) {
+    const predicate = APPEND_ONLY_PROTECTED_TABLES.has(table)
+      ? `created_at <= ${quoteInstant(auditedAt)}::timestamptz`
+      : 'TRUE';
+    fingerprints[table] = await fingerprint(sql, table, predicate);
+  }
   fingerprints.unrelated_outbox_events = await fingerprint(
     sql,
     'outbox_events',
@@ -750,14 +799,21 @@ function collectBlockers(state: AuditState): string[] {
 
 export async function createAuditArtifact(sql: Sql, options: CreateAuditOptions): Promise<AuditArtifact> {
   const cutoverAt = requireCutoverAt(options.cutoverAt);
-  const snapshot = await sql.begin('ISOLATION LEVEL REPEATABLE READ READ ONLY', async (tx) => ({
-    state: await collectAuditState(tx, cutoverAt),
-    database: await databaseIdentity(tx),
-    protectedFingerprints: await protectedFingerprints(tx),
-  }));
+  const snapshot = await sql.begin('ISOLATION LEVEL REPEATABLE READ READ ONLY', async (tx) => {
+    // Take the boundary from the transaction snapshot, not the wall clock after
+    // it commits. Append-only fingerprints are scoped to this instant on both
+    // the audit and the cleanup side, so they must agree exactly.
+    const auditedAt = await transactionInstant(tx);
+    return {
+      auditedAt,
+      state: await collectAuditState(tx, cutoverAt),
+      database: await databaseIdentity(tx),
+      protectedFingerprints: await protectedFingerprints(tx, auditedAt),
+    };
+  });
   const body: AuditArtifactBody = {
     schemaVersion: AUDIT_SCHEMA_VERSION,
-    generatedAt: new Date().toISOString(),
+    generatedAt: snapshot.auditedAt,
     database: snapshot.database,
     workflowMode: options.workflowMode,
     cutoverAt,
@@ -857,7 +913,14 @@ export async function cleanup(sql: Sql, options: CleanupOptions): Promise<Record
     if (current.shipEvidence.journals > 0 || current.shipEvidence.events > 0) {
       throw new Error('SHIP evidence appeared after audit; cleanup aborted.');
     }
-    const before = await protectedFingerprints(tx);
+    const before = await protectedFingerprints(tx, options.artifact.generatedAt);
+    const drifted = driftedFingerprints(options.artifact.protectedFingerprints, before);
+    if (drifted.length > 0) {
+      throw new Error(
+        `Live protected data no longer matches audited protectedFingerprints; run a new audit and snapshot review. ` +
+          drifted.join('; '),
+      );
+    }
 
     const dryRunSavepoint = !options.execute;
     if (dryRunSavepoint) await tx.unsafe('SAVEPOINT fulfillment_v2_cleanup_dry_run');
@@ -868,11 +931,10 @@ export async function cleanup(sql: Sql, options: CleanupOptions): Promise<Record
         deleted[step.name] = result.count;
         if (options.failAfterStep === step.name) throw new Error(`Injected failure after ${step.name}`);
       }
-      const after = await protectedFingerprints(tx);
-      if (canonicalJson(before) !== canonicalJson(after)) {
-        throw new Error(
-          `Protected data changed during cleanup. before=${canonicalJson(before)} after=${canonicalJson(after)}`,
-        );
+      const after = await protectedFingerprints(tx, options.artifact.generatedAt);
+      const changed = driftedFingerprints(before, after);
+      if (changed.length > 0) {
+        throw new Error(`Protected data changed during cleanup. ${changed.join('; ')}`);
       }
 
       const postState = await collectAuditState(tx, options.artifact.cutoverAt);
