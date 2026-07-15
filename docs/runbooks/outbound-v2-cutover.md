@@ -53,12 +53,74 @@ Before the window:
 6. Prepare a random secret of at least 32 bytes as `FULFILLMENT_V2_AUDIT_SIGNING_KEY`. Every cleanup with `--execute`
    rejects an unsigned artifact, regardless of `NODE_ENV`. Store the secret outside the repository and release logs.
 
+## Deploy the expand release
+
+This deploy is additive and inert. It ships the V2 schema, the V2 code and the channel-adapter consumers while
+`FULFILLMENT_WORKFLOW_MODE` stays `legacy`, so no V2 code path executes. Nothing here is part of the maintenance window;
+run it earlier, on an ordinary day, and confirm the environment is healthy before scheduling the window.
+
+### Migrate before deploying, not after
+
+For this release the operator runs `db:migrate` **first** and `sst deploy` **second**. This is the opposite of the
+`deploy → migrate` habit, and the inversion is deliberate:
+
+- ADR-0005 §5 scopes `deploy → migrate` to the **contract** phase. Deploying first is what guarantees that the old code
+  which still selects a dropped column is already drained when `DROP COLUMN` runs.
+- The **expand** phase is protected by a different rule — "additive only" — which guarantees that a new schema does not
+  break old code. It says nothing about the reverse direction, and the reverse is what bites here: the expand release
+  teaches `outbox_events` writes to carry `topic`/`idempotency_key`, and the outbox is on the V1 path too. New code that
+  boots before its columns exist would break legacy outbound even with the mode set to `legacy`.
+- Migrating first leaves the old tasks meeting new nullable columns during the rolling deploy, which is exactly the case
+  the additive-only rule covers.
+
+Task 25's contract release reverses this back to `deploy → migrate`. Check which phase you are in before you start.
+
+There is no autodeploy (ADR-0005 §4), so `db:migrate` does not follow `sst deploy` on its own. Pairing them is the
+operator's responsibility.
+
+```bash
+sst shell --stage <stage> -- npm run db:migrate -- --deployment lcnine-services --yes
+sst deploy --stage <stage>
+```
+
+Verify the expand migration is additive before running it. `git diff --name-only <base>...HEAD -- 'apps/*/drizzle/*.sql'`
+lists the new files; each must contain only ADD COLUMN/TABLE/INDEX or NULLABLE FK statements. An index dropped and
+recreated inside the same release is additive in net effect; a drop of anything that exists on the base branch is not,
+and it does not belong in an expand release.
+
+### Consumer readiness comes from the mode, not from deploy order
+
+Core and channel-adapter live in the same SST app (`lcnine-services`), so `sst deploy` rolls out both at once and cannot
+order one before the other. The consumer-first requirement is satisfied anyway: channel-adapter subscribes to the
+shipment and fulfillment-v2 streams as soon as it is deployed, while Core in `legacy` mode is not a V2 producer at all.
+Producers begin only at the `v2` mode flip, which is a later, separate deploy.
+
+After the deploy, confirm before scheduling the window:
+
+- Core's startup log and `/health` detail report `mode=legacy`.
+- Channel-adapter consumer groups are ready on both streams, with no schema errors, and can persist inbox rows.
+- Legacy `FulfillmentShipped` no longer calls Naver or Coupang.
+
+### Roles live in a different deployment
+
+The two logistics role definitions are seeded into user-service, which `lcnine-auth` owns — not `lcnine-services`. Seed
+them on their own deployment and confirm Core holds only the role-name→scope mapping. Role *assignment* to real users
+stays a user-service administrator action and is never automated by this release.
+
+```bash
+sst shell --stage <stage> -- npm run db:seed:ref -- --deployment lcnine-auth --yes
+```
+
 ## Enter maintenance
 
 1. Stop upstream physical-order intake or activate the approved manual exception process. Maintenance keeps SO ingestion
    alive but deliberately does not backfill physical orders received during the window.
-2. Set `FULFILLMENT_WORKFLOW_MODE=maintenance` on every Core worker/API instance and restart or roll out the setting.
-3. Confirm all instances report maintenance mode and the same `FULFILLMENT_V2_CUTOVER_AT`.
+2. Set `FULFILLMENT_WORKFLOW_MODE` to `maintenance` in the Core `environment` block of
+   `deployments/lcnine/services/infra/services.ts`, then `sst deploy --stage <stage>`. The gate reads the mode once at
+   construction, so a rolling deploy — not a runtime toggle — is what applies it. Keeping the value in the manifest
+   rather than a secret is intentional: it is not sensitive, and every mode change stays reviewable in Git history.
+3. Confirm all instances report maintenance mode and the same `FULFILLMENT_V2_CUTOVER_AT`. A half-rolled deploy that
+   leaves one legacy task alive still accepts fulfillment mutations and invalidates the audit taken during the window.
 4. Confirm FO backlog enqueue/claim, reservation retry, fulfillment mutation, picking, inspection, invoice, and dispatch
    work are stopped. General order ingestion and non-fulfillment outbox publication may remain active.
 5. Wait for in-flight fulfillment DB transactions to finish. Do not wait for or publish legacy fulfillment outbox rows.
@@ -171,12 +233,17 @@ present because its official endpoint, authentication, idempotency and status co
 providers therefore fail closed for new V2 issuance until the above evidence exists. This is a release blocker, not a
 reason to mark a provider capability as supported in code.
 
-Then deploy/enable V2 Core with:
+Then enable V2 by setting both values in the Core `environment` block of
+`deployments/lcnine/services/infra/services.ts` and deploying:
 
 ```text
-FULFILLMENT_WORKFLOW_MODE=v2
-FULFILLMENT_V2_CUTOVER_AT=<the exact audited timestamp>
+FULFILLMENT_WORKFLOW_MODE: 'v2',
+FULFILLMENT_V2_CUTOVER_AT: '<the exact audited timestamp>',
 ```
+
+Set them together in one commit and one deploy. `v2` without a cutover timestamp fails env validation at startup, and a
+timestamp that differs from the audited one silently changes which orders enter V2 — the gate compares domain event time
+against this exact value.
 
 Confirm all instances report `v2`, channel-adapter consumers remain ready, and the first post-watermark owned physical
 order creates one FO plus its initial Draft shipment. Confirm a pre-watermark Kafka redelivery creates neither backlog nor
@@ -196,6 +263,87 @@ restore the V1 snapshot and do not switch mutation traffic back to V1. The rule 
 Keep V2 code deployed, return all Core instances to a non-mutating maintenance state, preserve provider/inbox/outbox
 evidence, and follow the V2 recovery/recall procedure for the affected operation. Snapshot restoration after this point
 would discard legitimate V2 stock and channel progress.
+
+## Evidence record
+
+Copy this section into the release ticket and fill it there. Do not commit a filled copy: the values below identify a
+live database and its snapshot, and the plan forbids environment audit artifacts in the repository. Keep the file paths,
+never the file contents.
+
+An empty cell is a blocker, not a formality — each row is the evidence for a release gate that cannot otherwise be
+checked. "Ran it and it looked fine" is not an entry.
+
+### Expand deploy
+
+| Field | Value |
+|---|---|
+| Stage / deployment | |
+| Release commit SHA | |
+| Migration files applied (Core) | |
+| Migration files applied (channel-adapter) | |
+| `db:migrate` ran before `sst deploy` (yes/no) | |
+| Core reports `mode=legacy` on all instances | |
+| Channel-adapter consumer groups ready on both streams | |
+| Legacy `FulfillmentShipped` proven not to call Naver/Coupang | |
+| user-service roles seeded (`lcnine-auth`) | |
+
+### Maintenance window
+
+| Field | Value |
+|---|---|
+| Window start / end (with timezone) | |
+| Operator running commands | |
+| Operator reviewing output | |
+| Intake stop method (halt or manual exception list) | |
+| All Core instances report `maintenance` | |
+| FO backlog / retry / mutation stop confirmed | |
+
+### Audit, snapshot, cleanup, verify
+
+| Field | Value |
+|---|---|
+| `FULFILLMENT_V2_CUTOVER_AT` (immutable, ISO) | |
+| Audit artifact path (outside repo) | |
+| Audit SHA-256 | |
+| Signature present (yes/no) | |
+| `shipEvidence.journals` / `shipEvidence.events` (both must be 0) | |
+| Blockers (must be empty) | |
+| Platform snapshot ID | |
+| Snapshot creation time / retention owner | |
+| Dry-run result path + outcome | |
+| Both operators approved dry-run | |
+| Cleanup result path + outcome | |
+| Protected-table hashes match before/after | |
+| Verify report #1 path | |
+| Verify report #2 path (idempotency re-run) | |
+
+### Provider issue/void rehearsal
+
+Every row must be satisfied by the production adapter against the provider sandbox. See the gate below for why this is
+currently a release blocker rather than a checklist item.
+
+| Field | Value |
+|---|---|
+| Provider / contract version | |
+| Issue idempotency key accepted, or lookup-by-key available | |
+| Void outcome distinguishable from timeout/unknown | |
+| 4xx / 408 / 429 / 5xx / timeout / malformed-success classification verified | |
+| Issue interrupted → recovery converged to one label | |
+| Void interrupted → recovery converged without early target exposure | |
+| Sandbox operation IDs / Core operation IDs | |
+| Two-person review | |
+
+### V2 activation
+
+| Field | Value |
+|---|---|
+| All instances report `v2` + the audited timestamp | |
+| First post-watermark order: FO + initial Draft created | |
+| Pre-watermark redelivery created neither backlog nor FO | |
+| SO identities / Draft lines / partial reservation verified | |
+| Outbox topic + channel consumer observability verified | |
+| Intake resumed at | |
+| Observation window agreed (duration, owner) | |
 
 ## Exit checklist
 

@@ -316,6 +316,15 @@ export function setup(infra: SharedInfra) {
     environment: {
       DATABASE_URL: dbUrl('core'),
       ...kafkaEnv('core', 'core-group'),
+      // 출고 워크플로 스위치. production 에서 미설정이면 startup 실패 — dev/test 만 legacy 기본을
+      // 허용한다 (apps/core/src/config/env.validation.ts). 조용한 legacy 폴백보다 부팅 실패가 낫다는
+      // 의도된 설계라, 이 줄을 지우면 Core 가 뜨지 않는다.
+      //
+      // 커토버가 이 값을 legacy → maintenance → v2 로 올린다. 각 전환마다 재배포가 필요하다
+      // (FulfillmentWorkflowGate 가 생성자에서 한 번만 읽음). v2 로 올릴 때는 cleanup 후 확정한
+      // 불변 ISO timestamp 를 FULFILLMENT_V2_CUTOVER_AT 로 함께 넣어야 한다.
+      // 절차: docs/runbooks/outbound-v2-cutover.md
+      FULFILLMENT_WORKFLOW_MODE: 'legacy',
       AUTH_SECRET: authSecret.value,
       JWT_ISSUER: 'almondyoung-auth',
       // OIDC: storefront/admin-web 의 RS256 토큰 검증용.
