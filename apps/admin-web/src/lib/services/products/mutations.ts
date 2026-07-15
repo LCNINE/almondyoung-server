@@ -246,6 +246,21 @@ export const useUpdateOverseas = (masterId: string, versionId: string | null) =>
   });
 };
 
+export const useUpdateRequiresMembership = (masterId: string, versionId: string | null) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (requiresMembership: boolean) =>
+      products.masters.updateRequiresMembership(masterId, requiresMembership),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.master(masterId) });
+      if (versionId) {
+        queryClient.invalidateQueries({ queryKey: productQueryKeys.versionDetail(masterId, versionId) });
+      }
+    },
+  });
+};
+
 /**
  * @deprecated use useUpdateMembershipPriceVisibility
  */

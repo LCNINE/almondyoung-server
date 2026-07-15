@@ -21,8 +21,9 @@ export const getProductForQuickAdd = async (
       query: {
         id: [productId],
         region_id: region.id,
+        // +metadata: 멤버십 전용 구매 게이트 판정용. 빠지면 비회원에게도 담기가 열린다.
         fields:
-          "*variants.calculated_price,+variants.inventory_quantity,*variants.options,+variants.manage_inventory,+variants.allow_backorder,+variants.metadata,*options",
+          "*variants.calculated_price,+variants.inventory_quantity,*variants.options,+variants.manage_inventory,+variants.allow_backorder,+variants.metadata,*options,+metadata",
       },
       headers,
     })

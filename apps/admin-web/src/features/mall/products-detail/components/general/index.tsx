@@ -25,6 +25,7 @@ import {
   useUpdateMembershipPriceVisibility,
   useUpdateMembersOnlyVisibility,
   useUpdateOverseas,
+  useUpdateRequiresMembership,
 } from '@/lib/services/products/mutations';
 import { useCategoryTree } from '@/lib/services/products/queries';
 import {
@@ -423,6 +424,7 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
     versionId
   );
   const updateOverseas = useUpdateOverseas(masterId, versionId);
+  const updateRequiresMembership = useUpdateRequiresMembership(masterId, versionId);
 
   const rows: { key: string; value: string }[] = [
     { key: '이름', value: data.name },
@@ -473,6 +475,18 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
             : '해외직구 설정을 해제했습니다.'
         ),
       onError: () => toast.error('해외직구 설정 변경에 실패했습니다.'),
+    });
+  }
+
+  function handleRequiresMembershipChange(checked: boolean) {
+    updateRequiresMembership.mutate(checked, {
+      onSuccess: () =>
+        toast.success(
+          checked
+            ? '멤버십 회원만 구매할 수 있습니다. 비회원·일반회원에게는 품절로 표시됩니다.'
+            : '멤버십 전용 구매를 해제했습니다.'
+        ),
+      onError: () => toast.error('멤버십 전용 구매 설정 변경에 실패했습니다.'),
     });
   }
 
@@ -549,6 +563,25 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
               checked={data.isVisibleToMembersOnly ?? false}
               onCheckedChange={handleMembersOnlyVisibilityChange}
               disabled={updateMembersOnlyVisibility.isPending}
+              className="data-[state=unchecked]:border-gray-300"
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex min-w-0 flex-col gap-1">
+              <Label htmlFor="product-detail-requires-membership">
+                멤버십 전용 구매
+              </Label>
+              <p className="text-xs text-gray-500">
+                멤버십 회원만 구매할 수 있습니다. 비회원과 일반회원에게는
+                품절로 표시됩니다. 상품 노출은 제한되지 않습니다.
+              </p>
+            </div>
+            <Switch
+              id="product-detail-requires-membership"
+              checked={data.requiresMembership ?? false}
+              onCheckedChange={handleRequiresMembershipChange}
+              disabled={updateRequiresMembership.isPending}
               className="data-[state=unchecked]:border-gray-300"
             />
           </div>
