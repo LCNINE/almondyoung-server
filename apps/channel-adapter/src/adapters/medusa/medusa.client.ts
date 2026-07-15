@@ -1952,20 +1952,22 @@ export class MedusaClient {
     } catch (error) {
       const fetchError = error as FetchError;
       const status = fetchError.status;
-      // 영구 실패(4xx, 429 제외)는 재시도해도 계속 실패 → throw 하지 않고 소진 처리.
-      // 재시도해봤자 inbox 재시도 5회 + 리컨실이 매일 무한 재구동하는 문제를 막는다.
+      // 실패는 절대 조용히 성공 처리하지 않는다 — throw 해서 inbox 가 failed 로 남기고
+      // 리컨실이 재구동하도록(발급 누락 가시화 + 복구). 예전엔 영구 4xx 를 {0,0} 으로
+      // 삼켰는데, 그러면 event 가 published 로 마킹돼 발급 실패가 영구 유실됐다.
       const isPermanent = typeof status === 'number' && status >= 400 && status < 500 && status !== 429;
       if (isPermanent) {
+        // 영구성 4xx(잘못된 요청/설정 오류 등)는 코드/설정 문제 신호 → ERROR 로 알린다.
         this.logger.error(
-          `issuePromotionsByTrigger permanent failure (customerId=${customerId}, trigger=${trigger}, status=${status}): ${fetchError.message} — 재시도 안 함`,
+          `issuePromotionsByTrigger permanent failure (customerId=${customerId}, trigger=${trigger}, status=${status}): ${fetchError.message}`,
         );
-        return { issued: 0, skipped: 0 };
+      } else {
+        // transient(5xx / 429 / 네트워크)
+        this.logger.warn(
+          `issuePromotionsByTrigger transient failure (customerId=${customerId}, trigger=${trigger}, status=${status ?? 'n/a'}): ${fetchError.message}`,
+        );
       }
-      // transient(5xx / 429 / 네트워크)만 throw → inbox 재시도 + 리컨실 재구동.
-      this.logger.warn(
-        `issuePromotionsByTrigger transient failure (customerId=${customerId}, trigger=${trigger}, status=${status ?? 'n/a'}): ${fetchError.message}`,
-      );
-      throw new Error(`Medusa issuePromotionsByTrigger failed: ${fetchError.message}`);
+      throw new Error(`Medusa issuePromotionsByTrigger failed (status=${status ?? 'n/a'}): ${fetchError.message}`);
     }
   }
 

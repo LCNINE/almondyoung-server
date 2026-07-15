@@ -89,22 +89,29 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       }
     }
 
+    let linkCreated = false;
     try {
       await (remoteLink as any).create([{
         [Modules.CUSTOMER]: { customer_id: customerId },
         [Modules.PROMOTION]: { promotion_id: promo.id },
       }]);
+      linkCreated = true;
       await promotionMetaService.recordIssue(customerId, promo.id, trigger);
       issued.push({ promotion_id: promo.id, code: promo.code });
     } catch (e: any) {
       const dupMsg = String(e?.message ?? '').toLowerCase();
       const isDuplicate = e?.code === '23505' || dupMsg.includes('unique') || dupMsg.includes('duplicate') || dupMsg.includes('already exists');
+      // 슬롯 반환은 링크가 생성되지 않은 경우에만 한다.
+      // 링크는 생겼는데 recordIssue 만 실패(transient)한 경우엔 슬롯을 유지해야
+      // issued_count 가 실제 링크 수와 정합 — 재시도는 recordIssue 만 멱등 보정한다.
+      // (링크가 이미 존재해 dup 인 경우는 이번 reserve 가 중복 카운트이므로 되돌린다.)
+      if (meta.max_claims != null && !linkCreated) {
+        await promotionMetaService.releaseClaimSlot(promo.id).catch(() => {});
+      }
       if (isDuplicate) {
-        if (meta.max_claims != null) await promotionMetaService.releaseClaimSlot(promo.id).catch(() => {});
         await promotionMetaService.recordIssue(customerId, promo.id, trigger).catch(() => {});
         skipped.push({ promotion_id: promo.id, reason: 'already_issued' });
       } else {
-        if (meta.max_claims != null) await promotionMetaService.releaseClaimSlot(promo.id).catch(() => {});
         // Transient DB/Link error → 500으로 올려서 channel-adapter가 재시도하게 함.
         // isAlreadyIssued 체크로 재시도는 멱등하게 처리됨.
         throw e;
