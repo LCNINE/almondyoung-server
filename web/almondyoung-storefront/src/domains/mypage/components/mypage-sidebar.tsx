@@ -16,10 +16,26 @@ export default function MypageSidebar({
   const pathname = usePathname()
   const normalizedPathname = pathname.replace(/^\/[a-z]{2}(\/|$)/, "/")
 
-  const isActive = (path: string) =>
-    path === "/mypage"
-      ? normalizedPathname === path
-      : normalizedPathname === path || normalizedPathname.startsWith(`${path}/`)
+  // 경로가 메뉴 path 에 매칭되면 그 길이를, 아니면 -1. (긴 매칭일수록 더 구체적)
+  const matchLen = (path: string): number => {
+    if (path === "/mypage") return normalizedPathname === path ? path.length : -1
+    return normalizedPathname === path ||
+      normalizedPathname.startsWith(`${path}/`)
+      ? path.length
+      : -1
+  }
+
+  // 여러 메뉴가 prefix 로 겹칠 때(예: /mypage/membership 와
+  // /mypage/membership/payment-method) 가장 구체적인 항목 하나만 활성 처리.
+  const activePath = SIDEBAR_SECTIONS.flatMap((section) => section.items).reduce(
+    (best, item) => {
+      const len = matchLen(item.path)
+      return len > best.len ? { path: item.path, len } : best
+    },
+    { path: "", len: -1 }
+  ).path
+
+  const isActive = (path: string) => path !== "" && path === activePath
 
   return (
     <nav
