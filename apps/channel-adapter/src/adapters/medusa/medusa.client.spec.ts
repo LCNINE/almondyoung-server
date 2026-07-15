@@ -5,6 +5,294 @@ jest.mock('./medusa-sdk.config', () => ({
 
 import { MedusaClient } from './medusa.client';
 
+function makeShippingProjectionClient(initialMetadata: Record<string, unknown>) {
+  let postedMetadata: Record<string, unknown> | undefined;
+  const fetch = jest.fn((_path: string, options: { method: string; body?: { metadata: Record<string, unknown> } }) => {
+    if (options.method === 'GET') return Promise.resolve({ order: { metadata: initialMetadata } });
+    if (!options.body) throw new Error('POST metadata body is required');
+
+    postedMetadata = options.body.metadata;
+    return Promise.resolve({ order: { metadata: postedMetadata } });
+  });
+  const client = Object.create(MedusaClient.prototype) as MedusaClient;
+  Object.defineProperties(client, {
+    sdk: { value: { client: { fetch } } },
+    logger: { value: { log: jest.fn(), warn: jest.fn(), error: jest.fn() } },
+  });
+  return { client, fetch, postedMetadata: () => postedMetadata };
+}
+
+function makeV2Dispatch(attemptNo: number, isPartial: boolean) {
+  const order = {
+    salesOrderId: '11111111-1111-4111-8111-111111111111',
+    fulfillmentOrderId: '22222222-2222-4222-8222-222222222222',
+    salesChannel: 'medusa' as const,
+    channelOrderId: 'order_medusa_projection',
+    isPartial,
+    lines: [
+      {
+        shipmentLineId: '33333333-3333-4333-8333-333333333333',
+        fulfillmentOrderItemId: '44444444-4444-4444-8444-444444444444',
+        salesOrderLineId: '55555555-5555-4555-8555-555555555555',
+        channelOrderItemId: 'item-1',
+        skuId: '66666666-6666-4666-8666-666666666666',
+        qty: 1,
+        isPartialQuantity: false,
+      },
+    ],
+  };
+  const payload = {
+    shipmentId: '77777777-7777-4777-8777-777777777777',
+    dispatchAttemptId:
+      attemptNo === 1 ? '88888888-8888-4888-8888-888888888888' : '99999999-9999-4999-8999-999999999999',
+    attemptNo,
+    warehouseId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    dispatchedAt: `2026-07-15T0${attemptNo}:00:00.000Z`,
+    invoice: {
+      invoiceId: attemptNo === 1 ? 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' : 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+      carrier: 'HANJIN' as const,
+      trackingNo: `TRACK-${attemptNo}`,
+    },
+    orders: [order],
+  };
+  return { order, payload };
+}
+
+describe('MedusaClient V1 shipping projection precedence', () => {
+  it('keeps an existing V1 delivered state when a late V2 dispatch performs metadata GET then POST', async () => {
+    const { client, fetch, postedMetadata } = makeShippingProjectionClient({
+      coreShippingStatus: 'delivered',
+      coreFulfillmentId: 'fo-v1',
+      coreDeliveredAt: '2026-07-15T00:30:00.000Z',
+    });
+    const dispatch = makeV2Dispatch(1, false);
+
+    await client.updateOrderShipmentAttemptProjection('order_medusa_projection', {
+      operation: 'dispatch',
+      payload: dispatch.payload,
+      order: dispatch.order,
+    });
+
+    expect(fetch).toHaveBeenNthCalledWith(1, '/admin/orders/order_medusa_projection', { method: 'GET' });
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      '/admin/orders/order_medusa_projection',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(postedMetadata()).toEqual(
+      expect.objectContaining({
+        coreShippingStatus: 'delivered',
+        coreShipmentAttempts: [expect.objectContaining({ dispatchAttemptId: dispatch.payload.dispatchAttemptId })],
+      }),
+    );
+  });
+
+  it('advances an all-recalled V2 history when a new higher attempt is dispatched', async () => {
+    const recalledAttempt = {
+      shipmentId: '77777777-7777-4777-8777-777777777777',
+      dispatchAttemptId: '88888888-8888-4888-8888-888888888888',
+      attemptNo: 1,
+      status: 'recalled',
+      isPartial: false,
+    };
+    const { client, fetch, postedMetadata } = makeShippingProjectionClient({
+      coreShippingStatus: 'recalled',
+      coreShipmentAttempts: [recalledAttempt],
+      coreShipments: [
+        {
+          shipmentId: recalledAttempt.shipmentId,
+          attemptIds: [recalledAttempt.dispatchAttemptId],
+          latestAttemptId: recalledAttempt.dispatchAttemptId,
+          status: 'recalled',
+        },
+      ],
+    });
+    const redispatch = makeV2Dispatch(2, false);
+
+    await client.updateOrderShipmentAttemptProjection('order_medusa_projection', {
+      operation: 'dispatch',
+      payload: redispatch.payload,
+      order: redispatch.order,
+    });
+
+    expect(fetch).toHaveBeenNthCalledWith(1, '/admin/orders/order_medusa_projection', { method: 'GET' });
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      '/admin/orders/order_medusa_projection',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(postedMetadata()).toEqual(
+      expect.objectContaining({
+        coreShippingStatus: 'shipped',
+        coreShipmentAttempts: [
+          recalledAttempt,
+          expect.objectContaining({
+            dispatchAttemptId: redispatch.payload.dispatchAttemptId,
+            attemptNo: 2,
+            status: 'shipped',
+          }),
+        ],
+      }),
+    );
+  });
+
+  it('promotes a partial V2 shipped projection when V1 full-completion delivered arrives', async () => {
+    const partialAttempt = {
+      shipmentId: '77777777-7777-4777-8777-777777777777',
+      dispatchAttemptId: '88888888-8888-4888-8888-888888888888',
+      attemptNo: 1,
+      status: 'shipped',
+      isPartial: true,
+    };
+    const { client, fetch, postedMetadata } = makeShippingProjectionClient({
+      coreShippingStatus: 'partially_shipped',
+      coreShipmentAttempts: [partialAttempt],
+    });
+
+    await client.updateOrderShippingProjection('order_medusa_projection', {
+      status: 'delivered',
+      fulfillmentId: 'fo-v1',
+      deliveredAt: '2026-07-15T03:00:00.000Z',
+    });
+
+    expect(fetch).toHaveBeenNthCalledWith(1, '/admin/orders/order_medusa_projection', { method: 'GET' });
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      '/admin/orders/order_medusa_projection',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(postedMetadata()).toEqual(
+      expect.objectContaining({
+        coreShippingStatus: 'delivered',
+        coreShipmentAttempts: [partialAttempt],
+        coreDeliveredAt: '2026-07-15T03:00:00.000Z',
+      }),
+    );
+  });
+
+  it('keeps recalled V2 state when a late V1 shipped event performs metadata GET then POST', async () => {
+    const attempts = [
+      {
+        shipmentId: 'shipment-1',
+        dispatchAttemptId: 'attempt-1',
+        attemptNo: 1,
+        status: 'recalled',
+        isPartial: false,
+      },
+    ];
+    const { client, fetch, postedMetadata } = makeShippingProjectionClient({
+      storefrontValue: 'keep-me',
+      coreShippingStatus: 'recalled',
+      coreShipmentAttempts: attempts,
+    });
+
+    await client.updateOrderShippingProjection('order_medusa_recalled', {
+      status: 'shipped',
+      fulfillmentId: 'fo-1',
+      carrier: 'HANJIN',
+      trackingNumber: 'TRACK-1',
+    });
+
+    expect(fetch).toHaveBeenNthCalledWith(1, '/admin/orders/order_medusa_recalled', { method: 'GET' });
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      '/admin/orders/order_medusa_recalled',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(postedMetadata()).toEqual(
+      expect.objectContaining({
+        storefrontValue: 'keep-me',
+        coreShippingStatus: 'recalled',
+        coreShipmentAttempts: attempts,
+        coreFulfillmentId: 'fo-1',
+        coreTrackingNumber: 'TRACK-1',
+      }),
+    );
+  });
+
+  it('keeps delivered V2 state when a late V1 shipped event performs metadata GET then POST', async () => {
+    const attempts = [
+      {
+        shipmentId: 'shipment-1',
+        dispatchAttemptId: 'attempt-1',
+        attemptNo: 1,
+        status: 'delivered',
+        isPartial: false,
+      },
+    ];
+    const { client, fetch, postedMetadata } = makeShippingProjectionClient({
+      coreShippingStatus: 'delivered',
+      coreShipmentAttempts: attempts,
+      coreDeliveredAt: '2026-07-15T03:00:00.000Z',
+    });
+
+    await client.updateOrderShippingProjection('order_medusa_delivered', {
+      status: 'shipped',
+      fulfillmentId: 'fo-1',
+      shippedAt: '2026-07-15T01:00:00.000Z',
+    });
+
+    expect(fetch).toHaveBeenNthCalledWith(1, '/admin/orders/order_medusa_delivered', { method: 'GET' });
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      '/admin/orders/order_medusa_delivered',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(postedMetadata()).toEqual(
+      expect.objectContaining({
+        coreShippingStatus: 'delivered',
+        coreShipmentAttempts: attempts,
+        coreDeliveredAt: '2026-07-15T03:00:00.000Z',
+      }),
+    );
+  });
+
+  it('also preserves a more advanced existing top-level state while V2 delivery projection is still lagging', async () => {
+    const { client, postedMetadata } = makeShippingProjectionClient({
+      coreShippingStatus: 'delivered',
+      coreShipmentAttempts: [
+        {
+          shipmentId: 'shipment-1',
+          dispatchAttemptId: 'attempt-1',
+          attemptNo: 1,
+          status: 'shipped',
+          isPartial: false,
+        },
+      ],
+    });
+
+    await client.updateOrderShippingProjection('order_medusa_lagging_v2', {
+      status: 'shipped',
+      fulfillmentId: 'fo-1',
+    });
+
+    expect(postedMetadata()).toEqual(expect.objectContaining({ coreShippingStatus: 'delivered' }));
+  });
+
+  it('keeps the existing V1-only projection behavior when no V2 attempt history exists', async () => {
+    const { client, fetch, postedMetadata } = makeShippingProjectionClient({ storefrontValue: 'keep-me' });
+
+    await client.updateOrderShippingProjection('order_medusa_v1_only', {
+      status: 'shipped',
+      fulfillmentId: 'fo-v1',
+      shippedAt: '2026-07-15T01:00:00.000Z',
+    });
+
+    expect(fetch).toHaveBeenNthCalledWith(1, '/admin/orders/order_medusa_v1_only', { method: 'GET' });
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      '/admin/orders/order_medusa_v1_only',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(postedMetadata()).toEqual({
+      storefrontValue: 'keep-me',
+      coreShippingStatus: 'shipped',
+      coreFulfillmentId: 'fo-v1',
+      coreShippedAt: '2026-07-15T01:00:00.000Z',
+    });
+  });
+});
+
 describe('MedusaClient shipment attempt projection', () => {
   it('keeps split shipment history as arrays and recalls only the referenced attempt', async () => {
     let metadata: Record<string, unknown> = {};

@@ -15,6 +15,7 @@ import { MedusaClient } from '../adapters/medusa/medusa.client';
 import { channelDispatchOperations, inboxEvents } from '../schema';
 import type { ChannelAdapterSchema, ChannelCommand, ChannelDispatchOperation } from '../types';
 import { getChannelFulfillmentCapabilities, ShipmentSalesChannel } from './channel-fulfillment-capabilities';
+import { withMedusaOrderProjectionLock } from './medusa-order-projection-lock';
 
 const OUTBOUND_INBOX_EVENT_TYPES = [
   'ShipmentShipped',
@@ -26,6 +27,24 @@ const OUTBOUND_INBOX_EVENT_TYPES = [
 type OutboundInboxEventType = (typeof OUTBOUND_INBOX_EVENT_TYPES)[number];
 type ShipmentInboxEventType = Extract<OutboundInboxEventType, `Shipment${string}`>;
 type DispatchOperationType = 'dispatch' | 'delivery' | 'recall';
+export type ChannelDispatchOperationObservationStatus =
+  | 'pending'
+  | 'succeeded'
+  | 'recovery_required'
+  | 'manual_adjustment_required';
+export interface ChannelDispatchOperationObservation {
+  dispatchAttemptId: string;
+  shipmentId: string;
+  salesOrderId: string;
+  operation: DispatchOperationType;
+  channel: string;
+  externalOrderId: string;
+  status: ChannelDispatchOperationObservationStatus;
+  attempts: number;
+  errorMessage: string | null;
+  lastAttemptAt: Date | null;
+  updatedAt: Date;
+}
 type ClaimedInboxEvent =
   | {
       id: string;
@@ -61,6 +80,41 @@ export class ShipmentDispatchInboxWorker {
     } finally {
       this.running = false;
     }
+  }
+
+  /**
+   * Operational read model for one attempt/order pair. This intentionally requires
+   * both identities so a consolidated shipment cannot hide one channel's pending,
+   * recovery, or manual operation behind another order's success.
+   */
+  async getOperationObservability(
+    dispatchAttemptId: string,
+    salesOrderId: string,
+  ): Promise<ChannelDispatchOperationObservation[]> {
+    const rows = await this.dbService.db
+      .select()
+      .from(channelDispatchOperations)
+      .where(
+        and(
+          eq(channelDispatchOperations.dispatchAttemptId, dispatchAttemptId),
+          eq(channelDispatchOperations.salesOrderId, salesOrderId),
+        ),
+      )
+      .orderBy(channelDispatchOperations.createdAt);
+
+    return rows.map((row) => ({
+      dispatchAttemptId: row.dispatchAttemptId!,
+      shipmentId: row.shipmentId!,
+      salesOrderId: row.salesOrderId,
+      operation: row.operation as DispatchOperationType,
+      channel: row.channel,
+      externalOrderId: row.externalOrderId,
+      status: this.observationStatus(row.status),
+      attempts: row.attempts,
+      errorMessage: row.errorMessage,
+      lastAttemptAt: row.lastAttemptAt,
+      updatedAt: row.updatedAt,
+    }));
   }
 
   /** Exposed for deterministic worker/crash tests and operator recovery tooling. */
@@ -190,12 +244,21 @@ export class ShipmentDispatchInboxWorker {
       .where(
         and(
           eq(channelDispatchOperations.dispatchAttemptId, payload.dispatchAttemptId),
+          eq(channelDispatchOperations.shipmentId, payload.shipmentId),
           eq(channelDispatchOperations.operation, 'dispatch'),
         ),
       );
 
     if (!previousDispatches.length) {
       throw new Error(`No dispatch operation exists for attempt ${payload.dispatchAttemptId}`);
+    }
+    const retryablePriorDispatch = previousDispatches.find((previous) =>
+      ['pending', 'processing', 'failed'].includes(previous.status),
+    );
+    if (retryablePriorDispatch) {
+      throw new Error(
+        `Dispatch operation ${retryablePriorDispatch.id} is not terminal for attempt ${payload.dispatchAttemptId}`,
+      );
     }
 
     await this.dbService.db
@@ -215,6 +278,11 @@ export class ShipmentDispatchInboxWorker {
             operation,
           ),
           requestSnapshot: { eventType, payload },
+          status: previous.status === 'manual_adjustment_required' ? 'manual_adjustment_required' : 'pending',
+          errorMessage:
+            previous.status === 'manual_adjustment_required'
+              ? `Prior dispatch requires manual adjustment: ${previous.errorMessage ?? 'no provider dispatch was applied'}`
+              : null,
         })),
       )
       .onConflictDoNothing();
@@ -343,7 +411,7 @@ export class ShipmentDispatchInboxWorker {
 
     if (operation.operation === 'delivery') {
       if (capabilities.route.kind === 'projection') {
-        await this.withMedusaOrderProjectionLock(operation.externalOrderId, () =>
+        await withMedusaOrderProjectionLock(this.dbService, operation.externalOrderId, () =>
           this.medusaClient.updateOrderShipmentAttemptProjection(operation.externalOrderId, {
             operation: 'delivery',
             payload: snapshot.payload as ShipmentDeliveredPayload,
@@ -354,7 +422,7 @@ export class ShipmentDispatchInboxWorker {
     }
 
     if (operation.operation === 'recall') {
-      await this.withMedusaOrderProjectionLock(operation.externalOrderId, () =>
+      await withMedusaOrderProjectionLock(this.dbService, operation.externalOrderId, () =>
         this.medusaClient.updateOrderShipmentAttemptProjection(operation.externalOrderId, {
           operation: 'recall',
           payload: snapshot.payload as ShipmentDispatchRecalledPayload,
@@ -379,7 +447,7 @@ export class ShipmentDispatchInboxWorker {
     if (invalidExternalIdentity) return { manual: true, reason: invalidExternalIdentity };
 
     if (capabilities.route.kind === 'projection') {
-      await this.withMedusaOrderProjectionLock(operation.externalOrderId, () =>
+      await withMedusaOrderProjectionLock(this.dbService, operation.externalOrderId, () =>
         this.medusaClient.updateOrderShipmentAttemptProjection(operation.externalOrderId, {
           operation: 'dispatch',
           payload: shipped,
@@ -443,13 +511,6 @@ export class ShipmentDispatchInboxWorker {
     return null;
   }
 
-  private async withMedusaOrderProjectionLock<T>(orderId: string, work: () => Promise<T>): Promise<T> {
-    return this.dbService.db.transaction(async (transaction) => {
-      await transaction.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${orderId}, 0))`);
-      return work();
-    });
-  }
-
   private operationForEvent(eventType: ShipmentInboxEventType): DispatchOperationType {
     switch (eventType) {
       case 'ShipmentShipped':
@@ -458,6 +519,19 @@ export class ShipmentDispatchInboxWorker {
         return 'delivery';
       case 'ShipmentDispatchRecalled':
         return 'recall';
+    }
+  }
+
+  private observationStatus(status: ChannelDispatchOperation['status']): ChannelDispatchOperationObservationStatus {
+    switch (status) {
+      case 'succeeded':
+        return 'succeeded';
+      case 'failed':
+        return 'recovery_required';
+      case 'manual_adjustment_required':
+        return 'manual_adjustment_required';
+      default:
+        return 'pending';
     }
   }
 }

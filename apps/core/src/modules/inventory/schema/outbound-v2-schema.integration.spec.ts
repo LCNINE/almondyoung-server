@@ -352,8 +352,24 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
     await inRollbackTx(async (tx) => {
       const f = await fixture(tx);
       const providerEventId = `provider-event-${randomUUID()}`;
+      const attempts = await tx
+        .insert(wmsTables.dispatchAttempts)
+        .values([
+          {
+            shipmentId: f.shipment.id,
+            attemptNo: 1,
+            idempotencyKey: `provider-attempt-1-${randomUUID()}`,
+          },
+          {
+            shipmentId: f.shipment.id,
+            attemptNo: 2,
+            idempotencyKey: `provider-attempt-2-${randomUUID()}`,
+          },
+        ])
+        .returning();
       await tx.insert(wmsTables.shipmentTracking).values({
         shipmentId: f.shipment.id,
+        dispatchAttemptId: attempts[0].id,
         status: 'in_transit',
         providerEventId,
       });
@@ -362,11 +378,36 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
         (sp) =>
           sp.insert(wmsTables.shipmentTracking).values({
             shipmentId: f.shipment.id,
+            dispatchAttemptId: attempts[0].id,
             status: 'delivered',
             providerEventId,
           }),
         'uq_shipment_tracking_provider_event',
       );
+      await expect(
+        tx.insert(wmsTables.shipmentTracking).values({
+          shipmentId: f.shipment.id,
+          dispatchAttemptId: attempts[1].id,
+          status: 'in_transit',
+          providerEventId,
+        }),
+      ).resolves.toBeDefined();
+
+      const legacyProviderEventId = `legacy-provider-event-${randomUUID()}`;
+      await expect(
+        tx.insert(wmsTables.shipmentTracking).values([
+          {
+            shipmentId: f.shipment.id,
+            status: 'in_transit',
+            providerEventId: legacyProviderEventId,
+          },
+          {
+            shipmentId: f.shipment.id,
+            status: 'delivered',
+            providerEventId: legacyProviderEventId,
+          },
+        ]),
+      ).resolves.toBeDefined();
     });
   });
 

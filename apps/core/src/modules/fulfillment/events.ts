@@ -3,9 +3,11 @@ import {
   FULFILLMENT_STREAM,
   FULFILLMENT_V2_STREAM,
   FulfillmentProgressedPayload,
+  FulfillmentDeliveredPayload,
   FulfillmentShippedPayload,
   FulfillmentV1CompletionSummary,
   SHIPMENT_STREAM,
+  ShipmentDeliveredPayload,
   ShipmentShippedPayload,
 } from '@packages/event-contracts/streams';
 
@@ -102,6 +104,38 @@ export function fulfillmentShippedV1OutboxEvent(
     aggregateId: completion.fulfillmentOrderId,
     partitionKey: completion.fulfillmentOrderId,
     idempotencyKey: `${completion.fulfillmentOrderId}:fully-shipped`,
+    payload: validPayload,
+  };
+}
+
+/** A carrier may send several delivered webhooks, but an attempt is delivered only once logically. */
+export function shipmentDeliveredOutboxEvent(
+  payload: ShipmentDeliveredPayload,
+): FulfillmentOutboxEvent<ShipmentDeliveredPayload> {
+  const validPayload = SHIPMENT_STREAM.events.ShipmentDelivered.schema!.parse(payload);
+  return {
+    topic: SHIPMENT_STREAM.topic.topic,
+    eventType: SHIPMENT_EVENTS.DELIVERED,
+    aggregateType: 'Shipment',
+    aggregateId: validPayload.shipmentId,
+    partitionKey: validPayload.shipmentId,
+    idempotencyKey: validPayload.dispatchAttemptId,
+    payload: validPayload,
+  };
+}
+
+/** V1 delivery is emitted only by the attempt that completes delivery evidence for the FO. */
+export function fulfillmentDeliveredV1OutboxEvent(
+  payload: FulfillmentDeliveredPayload,
+): FulfillmentOutboxEvent<FulfillmentDeliveredPayload> {
+  const validPayload = FULFILLMENT_STREAM.events.FulfillmentDelivered.schema!.parse(payload);
+  return {
+    topic: FULFILLMENT_STREAM.topic.topic,
+    eventType: FULFILLMENT_EVENTS.DELIVERED,
+    aggregateType: 'Fulfillment',
+    aggregateId: validPayload.fulfillmentId,
+    partitionKey: validPayload.fulfillmentId,
+    idempotencyKey: `${validPayload.fulfillmentId}:fully-delivered`,
     payload: validPayload,
   };
 }

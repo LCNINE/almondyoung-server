@@ -52,6 +52,7 @@ import { PICKING_STRATEGIES, PickingStrategyRegistry } from './picking/picking-s
 import { AggregateThenSortPickingStrategy } from './picking/aggregate-then-sort.strategy';
 import { PickToTotePickingStrategy } from './picking/pick-to-tote.strategy';
 import { ShipmentDispatchService } from './services/shipment-dispatch.service';
+import { ShipmentDeliveryTrackingService } from './services/shipment-delivery-tracking.service';
 
 // Controllers
 import { FulfillmentsController } from './controllers/fulfillments.controller';
@@ -68,6 +69,7 @@ import { ShipmentInvoiceController } from './controllers/shipment-invoice.contro
 import { OutboundBatchV2Controller } from './controllers/outbound-batch-v2.controller';
 import { PickingV2Controller } from './controllers/picking-v2.controller';
 import { ToteController } from './controllers/tote.controller';
+import { ShipmentTrackingController } from './controllers/shipment-tracking.controller';
 
 @Module({
   imports: [
@@ -112,6 +114,7 @@ import { ToteController } from './controllers/tote.controller';
     LocationOptimizationController,
     ShipmentPlanningController,
     ShipmentInvoiceController,
+    ShipmentTrackingController,
   ],
   providers: [
     // Outbox
@@ -133,6 +136,7 @@ import { ToteController } from './controllers/tote.controller';
     PickingProcessService,
     ShipmentService,
     ShipmentDispatchService,
+    ShipmentDeliveryTrackingService,
     ConsolidationService,
     DirectShipService,
     InvoiceService,

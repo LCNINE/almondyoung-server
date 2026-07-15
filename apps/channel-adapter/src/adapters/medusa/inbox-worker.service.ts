@@ -27,6 +27,7 @@ import {
   getChannelFulfillmentCapabilities,
   type ShipmentSalesChannel,
 } from '../../services/channel-fulfillment-capabilities';
+import { withMedusaOrderProjectionLock } from '../../services/medusa-order-projection-lock';
 
 const PRODUCT_MASTER_LIFECYCLE_EVENT_TYPES = ['ProductMasterActiveVersionChanged', 'ProductMasterDeleted'] as const;
 
@@ -424,13 +425,15 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
             break;
           }
 
-          await this.medusaClient.updateOrderShippingProjection(shippedMedusaOrderId, {
-            status: 'shipped',
-            fulfillmentId: shippedPayload.fulfillmentId,
-            carrier: shippedPayload.trackingInfo?.carrier,
-            trackingNumber: shippedPayload.trackingInfo?.trackingNumber,
-            shippedAt: shippedPayload.shippedAt,
-          });
+          await withMedusaOrderProjectionLock(this.dbService, shippedMedusaOrderId, () =>
+            this.medusaClient.updateOrderShippingProjection(shippedMedusaOrderId, {
+              status: 'shipped',
+              fulfillmentId: shippedPayload.fulfillmentId,
+              carrier: shippedPayload.trackingInfo?.carrier,
+              trackingNumber: shippedPayload.trackingInfo?.trackingNumber,
+              shippedAt: shippedPayload.shippedAt,
+            }),
+          );
           this.logger.log(
             `[CoreFulfillmentShipped] Medusa 배송 시작 동기화 완료: orderId=${shippedPayload.orderId}, medusaOrderId=${shippedMedusaOrderId}`,
           );
@@ -464,11 +467,13 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
             break;
           }
 
-          await this.medusaClient.updateOrderShippingProjection(deliveredMedusaOrderId, {
-            status: 'delivered',
-            fulfillmentId: deliveredPayload.fulfillmentId,
-            deliveredAt: deliveredPayload.deliveredAt,
-          });
+          await withMedusaOrderProjectionLock(this.dbService, deliveredMedusaOrderId, () =>
+            this.medusaClient.updateOrderShippingProjection(deliveredMedusaOrderId, {
+              status: 'delivered',
+              fulfillmentId: deliveredPayload.fulfillmentId,
+              deliveredAt: deliveredPayload.deliveredAt,
+            }),
+          );
           this.logger.log(
             `[CoreFulfillmentDelivered] Medusa 배송 완료 동기화 완료: orderId=${deliveredPayload.orderId}, medusaOrderId=${deliveredMedusaOrderId}`,
           );

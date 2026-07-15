@@ -8,6 +8,7 @@ export const FULFILLMENT_SCOPE = {
   DISPATCH_FORCE: 'fulfillment.dispatch.force',
   DISPATCH_RECALL: 'fulfillment.dispatch.recall',
   SHIPMENT_REOPEN: 'fulfillment.shipment.reopen',
+  TRACKING_INGEST: 'fulfillment.tracking.ingest',
 } as const;
 
 export type FulfillmentScope = (typeof FULFILLMENT_SCOPE)[keyof typeof FULFILLMENT_SCOPE];
@@ -48,9 +49,16 @@ export const FULFILLMENT_SCOPES: ScopeDefinition[] = [
     category: 'fulfillment',
     description: '잠긴 shipment 재개방 및 invoice void 연계',
   },
+  {
+    key: FULFILLMENT_SCOPE.TRACKING_INGEST,
+    category: 'fulfillment',
+    description: '신뢰된 배송사 tracking event 수신',
+  },
 ];
 
-const ALL_FULFILLMENT_SCOPE_KEYS = FULFILLMENT_SCOPES.map((scope) => scope.key);
+const LOGISTICS_MANAGER_SCOPE_KEYS = FULFILLMENT_SCOPES.map((scope) => scope.key).filter(
+  (scope) => scope !== FULFILLMENT_SCOPE.TRACKING_INGEST,
+);
 
 export const FULFILLMENT_ROLE_MAPPINGS: RoleScopeMappingDefinition[] = [
   {
@@ -59,6 +67,6 @@ export const FULFILLMENT_ROLE_MAPPINGS: RoleScopeMappingDefinition[] = [
   },
   {
     roleName: 'logistics_manager',
-    scopeKeys: ALL_FULFILLMENT_SCOPE_KEYS,
+    scopeKeys: LOGISTICS_MANAGER_SCOPE_KEYS,
   },
 ];

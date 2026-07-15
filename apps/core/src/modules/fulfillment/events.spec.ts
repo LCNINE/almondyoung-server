@@ -1,7 +1,9 @@
 import { FULFILLMENT_STREAM, FULFILLMENT_V2_STREAM, SHIPMENT_STREAM } from '@packages/event-contracts/streams';
 import {
   fulfillmentProgressedOutboxEvent,
+  fulfillmentDeliveredV1OutboxEvent,
   fulfillmentShippedV1OutboxEvent,
+  shipmentDeliveredOutboxEvent,
   shipmentShippedOutboxEvent,
 } from './events';
 
@@ -146,5 +148,41 @@ describe('Task 18 fulfillment outbox event contracts', () => {
 
   it('rejects PII additions before durable enqueue', () => {
     expect(() => shipmentShippedOutboxEvent({ ...shipmentPayload, recipientName: 'not-allowed' } as never)).toThrow();
+  });
+
+  it('builds attempt-stable shipment and FO delivery projections', () => {
+    const deliveredAt = '2026-07-15T04:05:06.000Z';
+    const shipmentDelivered = {
+      shipmentId,
+      dispatchAttemptId: attemptId,
+      attemptNo: 1,
+      providerEventId: 'provider-delivered-1',
+      deliveredAt,
+    };
+    expect(shipmentDeliveredOutboxEvent(shipmentDelivered)).toEqual({
+      topic: SHIPMENT_STREAM.topic.topic,
+      eventType: 'ShipmentDelivered',
+      aggregateType: 'Shipment',
+      aggregateId: shipmentId,
+      partitionKey: shipmentId,
+      idempotencyKey: attemptId,
+      payload: shipmentDelivered,
+    });
+
+    const fulfillmentDelivered = {
+      fulfillmentId: fulfillmentOrderId,
+      orderId: salesOrderId,
+      channelOrderId: 'NAVER-ORDER-1',
+      deliveredAt,
+    };
+    expect(fulfillmentDeliveredV1OutboxEvent(fulfillmentDelivered)).toEqual({
+      topic: FULFILLMENT_STREAM.topic.topic,
+      eventType: 'FulfillmentDelivered',
+      aggregateType: 'Fulfillment',
+      aggregateId: fulfillmentOrderId,
+      partitionKey: fulfillmentOrderId,
+      idempotencyKey: `${fulfillmentOrderId}:fully-delivered`,
+      payload: fulfillmentDelivered,
+    });
   });
 });

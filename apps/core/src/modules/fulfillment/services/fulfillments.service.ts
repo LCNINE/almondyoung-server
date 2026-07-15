@@ -1225,7 +1225,8 @@ export class FulfillmentsService {
 
       const now = new Date();
 
-      // 'completed' = delivered at FO level (FO_DELIVERED_STATUSES in store-sales-orders.service.ts)
+      // Legacy manual FO acknowledgement only. Carrier state is projected by
+      // ShipmentDeliveryTrackingService and must never drive this demand-settlement axis.
       await trx
         .update(wmsTables.fulfillmentOrders)
         .set({ status: 'completed', updatedAt: now })
@@ -1240,27 +1241,6 @@ export class FulfillmentsService {
       );
       if (sweptOnDelivered > 0) {
         this.logger.warn(`Delivered FO ${id} 에서 잔존 예약 ${sweptOnDelivered}건 sweep`);
-      }
-
-      // 배송 완료 시각을 shipment_tracking에 기록 → buildTrackingView()가 deliveredAt으로 노출
-      // 부분 unique 후 FO당 취소박스+활성박스 공존 가능 — 취소박스를 delivered 로 잘못 갱신하지 않도록 활성 최신만.
-      const [shipmentRow] = await trx
-        .select({ id: wmsTables.shipments.id })
-        .from(wmsTables.shipments)
-        .where(and(eq(wmsTables.shipments.openedForFulfillmentOrderId, id), ne(wmsTables.shipments.status, 'canceled')))
-        .orderBy(desc(wmsTables.shipments.createdAt))
-        .limit(1);
-
-      if (shipmentRow) {
-        await trx.insert(wmsTables.shipmentTracking).values({
-          shipmentId: shipmentRow.id,
-          status: 'delivered',
-          timestamp: now,
-        });
-        await trx
-          .update(wmsTables.shipments)
-          .set({ status: 'delivered', lastUpdated: now })
-          .where(eq(wmsTables.shipments.id, shipmentRow.id));
       }
 
       const [salesOrderRow] = fo.salesOrderId

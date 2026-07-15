@@ -291,7 +291,11 @@ describe('FulfillmentsService', () => {
       unifiedReservation as any,
       productSkuMapping as any,
       outbox as any,
-      { assertMutationAllowed: jest.fn(), assertOperationalMutationAllowed: jest.fn() } as any,
+      {
+        getMode: jest.fn().mockReturnValue('legacy'),
+        assertMutationAllowed: jest.fn(),
+        assertOperationalMutationAllowed: jest.fn(),
+      } as any,
       salesOrderAmendments as any,
     );
 
@@ -1165,7 +1169,9 @@ describe('FulfillmentsService', () => {
     it('이미 shipped인 FO는 idempotent return한다', async () => {
       const { service, reservationLifecycle, outbox } = makeService({
         fulfillmentOrders: [{ id: 'fo-already-shipped', salesOrderId, warehouseId, status: 'shipped' }],
-        fulfillmentOrderItems: [{ id: 'foi-1', fulfillmentOrderId: 'fo-already-shipped', skuId, qty: 2, reservedQty: 0, shippedQty: 2 }],
+        fulfillmentOrderItems: [
+          { id: 'foi-1', fulfillmentOrderId: 'fo-already-shipped', skuId, qty: 2, reservedQty: 0, shippedQty: 2 },
+        ],
         shipments: [{ fulfillmentOrderId: 'fo-already-shipped', carrier: 'CJ', trackingNo: 'TRK-X' }],
       });
 
@@ -1195,7 +1201,9 @@ describe('FulfillmentsService', () => {
     it('ready 상태 일반 FO는 ship이 ConflictException을 던진다', async () => {
       const { service } = makeService({
         fulfillmentOrders: [{ id: 'fo-ready', salesOrderId, warehouseId, status: 'ready' }],
-        fulfillmentOrderItems: [{ id: 'foi-1', fulfillmentOrderId: 'fo-ready', skuId, qty: 2, reservedQty: 2, shippedQty: 0 }],
+        fulfillmentOrderItems: [
+          { id: 'foi-1', fulfillmentOrderId: 'fo-ready', skuId, qty: 2, reservedQty: 2, shippedQty: 0 },
+        ],
       });
 
       await expect(service.ship('fo-ready')).rejects.toThrow(ConflictException);
@@ -1206,7 +1214,9 @@ describe('FulfillmentsService', () => {
       async (status) => {
         const { service } = makeService({
           fulfillmentOrders: [{ id: `fo-${status}`, salesOrderId, warehouseId, status }],
-          fulfillmentOrderItems: [{ id: 'foi-1', fulfillmentOrderId: `fo-${status}`, skuId, qty: 2, reservedQty: 2, shippedQty: 0 }],
+          fulfillmentOrderItems: [
+            { id: 'foi-1', fulfillmentOrderId: `fo-${status}`, skuId, qty: 2, reservedQty: 2, shippedQty: 0 },
+          ],
         });
 
         await expect(service.ship(`fo-${status}`)).rejects.toThrow(ConflictException);
@@ -1225,7 +1235,9 @@ describe('FulfillmentsService', () => {
             directShipStatus: 'forwarded',
           },
         ],
-        fulfillmentOrderItems: [{ id: 'foi-1', fulfillmentOrderId: 'fo-drop-guard', skuId, qty: 2, reservedQty: 0, shippedQty: 0 }],
+        fulfillmentOrderItems: [
+          { id: 'foi-1', fulfillmentOrderId: 'fo-drop-guard', skuId, qty: 2, reservedQty: 0, shippedQty: 0 },
+        ],
         shipments: [],
       });
 
@@ -1244,7 +1256,9 @@ describe('FulfillmentsService', () => {
             directShipStatus: 'forwarded',
           },
         ],
-        fulfillmentOrderItems: [{ id: 'foi-1', fulfillmentOrderId: 'fo-drop-forwarded', skuId, qty: 2, reservedQty: 0, shippedQty: 0 }],
+        fulfillmentOrderItems: [
+          { id: 'foi-1', fulfillmentOrderId: 'fo-drop-forwarded', skuId, qty: 2, reservedQty: 0, shippedQty: 0 },
+        ],
       });
 
       await expect(service.ship('fo-drop-forwarded')).resolves.toBeDefined();
@@ -1281,7 +1295,9 @@ describe('FulfillmentsService', () => {
           directShipStatus: 'forwarded',
         },
       ],
-      fulfillmentOrderItems: [{ id: 'foi-ship-1', fulfillmentOrderId: 'fo-ship-1', skuId, qty: 3, reservedQty: 0, shippedQty: 0 }],
+      fulfillmentOrderItems: [
+        { id: 'foi-ship-1', fulfillmentOrderId: 'fo-ship-1', skuId, qty: 3, reservedQty: 0, shippedQty: 0 },
+      ],
     });
 
     await service.ship('fo-ship-1');
@@ -1306,7 +1322,7 @@ describe('FulfillmentsService', () => {
     );
   });
 
-  it('markDelivered는 FulfillmentDelivered outbox 이벤트를 발행하고 shipment를 delivered로 업데이트한다', async () => {
+  it('legacy markDelivered는 FO 이벤트만 발행하고 attempt-owned shipment tracking을 만들지 않는다', async () => {
     const { service, outbox } = makeService({
       fulfillmentOrders: [{ id: 'fo-delivered-1', salesOrderId, warehouseId, status: 'shipped' }],
       shipments: [{ id: 'shipment-2', fulfillmentOrderId: 'fo-delivered-1', trackingNo: 'TRK-002', carrier: 'CJ' }],
@@ -1333,7 +1349,9 @@ describe('FulfillmentsService', () => {
             directShipStatus: 'forwarded',
           },
         ],
-        fulfillmentOrderItems: [{ id: 'foi-ship-1', fulfillmentOrderId: 'fo-ship-1', skuId, qty: 3, reservedQty: 0, shippedQty: 0 }],
+        fulfillmentOrderItems: [
+          { id: 'foi-ship-1', fulfillmentOrderId: 'fo-ship-1', skuId, qty: 3, reservedQty: 0, shippedQty: 0 },
+        ],
       });
 
       await service.ship('fo-ship-1');
@@ -1451,9 +1469,7 @@ describe('FulfillmentsService', () => {
       id: 'foi-detail',
       skuCode: 'SKU-001',
     });
-    expect(detail?.adminAvailableActions).toEqual(
-      expect.arrayContaining(['reserve', 'cancel']),
-    );
+    expect(detail?.adminAvailableActions).toEqual(expect.arrayContaining(['reserve', 'cancel']));
     expect(detail?.adminAvailableActions).not.toContain('ship');
     expect(detail?.adminAvailableActions).not.toContain('split');
   });

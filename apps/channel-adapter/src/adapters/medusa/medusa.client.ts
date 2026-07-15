@@ -14,6 +14,62 @@ import {
 import type { ProductSellableQuantityChangedPayload } from '@packages/event-contracts';
 import { LIFECYCLE_PAYMENT_STATUSES, PAYMENT_ACCEPTED_STATUSES } from './medusa-order-status';
 
+type CoreShippingProjectionStatus = 'partially_shipped' | 'shipped' | 'partially_delivered' | 'delivered' | 'recalled';
+
+const CORE_SHIPPING_STATUS_PRECEDENCE: Record<CoreShippingProjectionStatus, number> = {
+  partially_shipped: 1,
+  shipped: 2,
+  partially_delivered: 3,
+  delivered: 4,
+  recalled: 4,
+};
+
+function isCoreShippingProjectionStatus(value: unknown): value is CoreShippingProjectionStatus {
+  return typeof value === 'string' && value in CORE_SHIPPING_STATUS_PRECEDENCE;
+}
+
+function deriveCoreShippingStatus(attempts: Array<Record<string, unknown>>): CoreShippingProjectionStatus | null {
+  if (attempts.length === 0) return null;
+  const activeAttempts = attempts.filter((attempt) => attempt.status !== 'recalled');
+  if (activeAttempts.length === 0) return 'recalled';
+
+  const deliveredAttempts = activeAttempts.filter((attempt) => attempt.status === 'delivered');
+  const hasFullOrderAttempt = activeAttempts.some((attempt) => attempt.isPartial === false);
+  if (deliveredAttempts.length === activeAttempts.length) {
+    return hasFullOrderAttempt ? 'delivered' : 'partially_delivered';
+  }
+  return hasFullOrderAttempt ? 'shipped' : 'partially_shipped';
+}
+
+function mergeCoreShippingStatus(
+  writer: 'v1' | 'v2',
+  incoming: CoreShippingProjectionStatus,
+  attempts: Array<Record<string, unknown>>,
+  existing: unknown,
+): CoreShippingProjectionStatus {
+  const v2Status = deriveCoreShippingStatus(attempts);
+  if (!v2Status) return incoming;
+  // V1 full-completion may arrive before its constituent V2 events. Once the
+  // order reached delivered, neither writer may move the projection back.
+  if (existing === 'delivered') return 'delivered';
+
+  if (writer === 'v2') {
+    // Every other V2 transition is derived from the complete attempt array. This
+    // intentionally lets a new active attempt supersede an all-recalled history.
+    return v2Status;
+  }
+
+  const protectedStatus =
+    isCoreShippingProjectionStatus(existing) &&
+    !(existing === 'recalled' && v2Status !== 'recalled') &&
+    CORE_SHIPPING_STATUS_PRECEDENCE[existing] > CORE_SHIPPING_STATUS_PRECEDENCE[v2Status]
+      ? existing
+      : v2Status;
+  return CORE_SHIPPING_STATUS_PRECEDENCE[protectedStatus] >= CORE_SHIPPING_STATUS_PRECEDENCE[incoming]
+    ? protectedStatus
+    : incoming;
+}
+
 export interface MedusaOrder {
   id: string;
   status?: 'pending' | 'completed' | 'draft' | 'archived' | 'canceled' | 'requires_action';
@@ -1690,10 +1746,14 @@ export class MedusaClient {
         { method: 'GET' },
       );
       const existingMeta = (existing?.order?.metadata as Record<string, unknown>) ?? {};
+      const attempts = Array.isArray(existingMeta.coreShipmentAttempts)
+        ? (existingMeta.coreShipmentAttempts as Array<Record<string, unknown>>)
+        : [];
+      const projectedStatus = mergeCoreShippingStatus('v1', data.status, attempts, existingMeta.coreShippingStatus);
 
       const metadata: Record<string, unknown> = {
         ...existingMeta,
-        coreShippingStatus: data.status,
+        coreShippingStatus: projectedStatus,
         coreFulfillmentId: data.fulfillmentId,
       };
       if (data.carrier) metadata.coreCarrier = data.carrier;
@@ -1706,7 +1766,7 @@ export class MedusaClient {
         body: { metadata } as Record<string, unknown>,
       });
 
-      this.logger.log(`Updated Medusa order shipping projection: orderId=${orderId}, status=${data.status}`);
+      this.logger.log(`Updated Medusa order shipping projection: orderId=${orderId}, status=${projectedStatus}`);
     } catch (error) {
       const fetchError = error as FetchError;
       if (fetchError.status === 404) {
@@ -1879,17 +1939,12 @@ export class MedusaClient {
 
       const activeAttempts = attempts.filter((attempt) => attempt.status !== 'recalled');
       const deliveredAttempts = activeAttempts.filter((attempt) => attempt.status === 'delivered');
-      const hasFullOrderAttempt = activeAttempts.some((attempt) => attempt.isPartial === false);
-      const derivedStatus =
-        attempts.length > 0 && activeAttempts.length === 0
-          ? 'recalled'
-          : deliveredAttempts.length === activeAttempts.length && activeAttempts.length > 0
-            ? hasFullOrderAttempt
-              ? 'delivered'
-              : 'partially_delivered'
-            : hasFullOrderAttempt
-              ? 'shipped'
-              : 'partially_shipped';
+      const derivedStatus = mergeCoreShippingStatus(
+        'v2',
+        deriveCoreShippingStatus(attempts)!,
+        attempts,
+        existingMeta.coreShippingStatus,
+      );
 
       await this.sdk.client.fetch(`/admin/orders/${encodeURIComponent(orderId)}`, {
         method: 'POST',

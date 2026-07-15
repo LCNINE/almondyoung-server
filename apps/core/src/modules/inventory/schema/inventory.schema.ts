@@ -1609,7 +1609,7 @@ export const shipmentTracking = pgTable(
   (t) => ({
     idxTrackingAttempt: index('idx_shipment_tracking_attempt').on(t.dispatchAttemptId),
     uqProviderEvent: uniqueIndex('uq_shipment_tracking_provider_event')
-      .on(t.providerEventId)
+      .on(t.dispatchAttemptId, t.providerEventId)
       .where(sql`${t.providerEventId} IS NOT NULL`),
   }),
 );

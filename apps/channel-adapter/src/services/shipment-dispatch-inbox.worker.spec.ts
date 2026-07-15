@@ -170,6 +170,130 @@ describe('ShipmentDispatchInboxWorker routing', () => {
     expect(factory.getAdapter).not.toHaveBeenCalled();
   });
 
+  it('derives delivery only from an applied dispatch for the exact attempt and shipment', async () => {
+    const order = makeOrder('naver');
+    const previous = { ...makeOperation(order), status: 'succeeded' };
+    const conditions: unknown[] = [];
+    const inserted: Array<Record<string, unknown>> = [];
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          where: jest.fn((condition: unknown) => {
+            conditions.push(condition);
+            return Promise.resolve([previous]);
+          }),
+        })),
+      })),
+      insert: jest.fn(() => ({
+        values: jest.fn((values: Array<Record<string, unknown>>) => {
+          inserted.push(...values);
+          return { onConflictDoNothing: jest.fn().mockResolvedValue(undefined) };
+        }),
+      })),
+    };
+    const worker = new ShipmentDispatchInboxWorker(
+      { db } as any,
+      { getAdapter: jest.fn() } as any,
+      { updateOrderShipmentAttemptProjection: jest.fn() } as any,
+    );
+    const delivered = {
+      shipmentId: SHIPPED.shipmentId,
+      dispatchAttemptId: SHIPPED.dispatchAttemptId,
+      attemptNo: 1,
+      providerEventId: 'provider-event-1',
+      deliveredAt: '2026-07-14T01:00:00.000Z',
+    };
+
+    await (worker as any).ensureOperations('dddddddd-dddd-4ddd-8ddd-dddddddddddd', 'ShipmentDelivered', delivered);
+
+    expect(collectConditionValues(conditions[0])).toEqual(
+      expect.arrayContaining([SHIPPED.dispatchAttemptId, SHIPPED.shipmentId, 'dispatch']),
+    );
+    expect(inserted).toEqual([
+      expect.objectContaining({
+        dispatchAttemptId: SHIPPED.dispatchAttemptId,
+        shipmentId: SHIPPED.shipmentId,
+        salesOrderId: order.salesOrderId,
+        operation: 'delivery',
+        channel: 'naver',
+        externalOrderId: order.channelOrderId,
+      }),
+    ]);
+  });
+
+  it('terminally mirrors a manual prior dispatch instead of retrying delivery forever', async () => {
+    const order = makeOrder('naver');
+    const previous = {
+      ...makeOperation(order),
+      status: 'manual_adjustment_required',
+      errorMessage: 'provider dispatch must be entered by an operator',
+    };
+    const inserted: Array<Record<string, unknown>> = [];
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({ where: jest.fn().mockResolvedValue([previous]) })),
+      })),
+      insert: jest.fn(() => ({
+        values: jest.fn((values: Array<Record<string, unknown>>) => {
+          inserted.push(...values);
+          return { onConflictDoNothing: jest.fn().mockResolvedValue(undefined) };
+        }),
+      })),
+    };
+    const worker = new ShipmentDispatchInboxWorker(
+      { db } as any,
+      { getAdapter: jest.fn() } as any,
+      { updateOrderShipmentAttemptProjection: jest.fn() } as any,
+    );
+
+    await (worker as any).ensureOperations('inbox-delivery', 'ShipmentDelivered', {
+      shipmentId: SHIPPED.shipmentId,
+      dispatchAttemptId: SHIPPED.dispatchAttemptId,
+      attemptNo: 1,
+      providerEventId: 'provider-event-1',
+      deliveredAt: '2026-07-14T01:00:00.000Z',
+    });
+
+    expect(inserted).toEqual([
+      expect.objectContaining({
+        salesOrderId: order.salesOrderId,
+        operation: 'delivery',
+        status: 'manual_adjustment_required',
+        errorMessage: expect.stringContaining('provider dispatch must be entered by an operator'),
+      }),
+    ]);
+  });
+
+  it.each(['pending', 'processing', 'failed'])(
+    'keeps a %s prior dispatch retryable without creating a downstream operation',
+    async (status) => {
+      const previous = { ...makeOperation(makeOrder('naver')), status };
+      const insert = jest.fn();
+      const db = {
+        select: jest.fn(() => ({
+          from: jest.fn(() => ({ where: jest.fn().mockResolvedValue([previous]) })),
+        })),
+        insert,
+      };
+      const worker = new ShipmentDispatchInboxWorker(
+        { db } as any,
+        { getAdapter: jest.fn() } as any,
+        { updateOrderShipmentAttemptProjection: jest.fn() } as any,
+      );
+
+      await expect(
+        (worker as any).ensureOperations('inbox-delivery', 'ShipmentDelivered', {
+          shipmentId: SHIPPED.shipmentId,
+          dispatchAttemptId: SHIPPED.dispatchAttemptId,
+          attemptNo: 1,
+          providerEventId: 'provider-event-1',
+          deliveredAt: '2026-07-14T01:00:00.000Z',
+        }),
+      ).rejects.toThrow('is not terminal');
+      expect(insert).not.toHaveBeenCalled();
+    },
+  );
+
   it('projects Medusa shipment attempts without calling a legacy adapter', async () => {
     const { worker, factory, medusaClient } = makeWorker();
     const order = makeOrder('medusa', { channelOrderId: 'order_medusa_1', isPartial: true });
@@ -231,6 +355,57 @@ describe('ShipmentDispatchInboxWorker routing', () => {
     expect(transaction).toHaveBeenCalledTimes(1);
     expect(advisoryExecute).toHaveBeenCalledTimes(1);
     expect(medusaClient.updateOrderShipmentAttemptProjection).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ShipmentDispatchInboxWorker operation observability', () => {
+  it.each([
+    ['pending', 'pending'],
+    ['processing', 'pending'],
+    ['provider_acknowledged', 'pending'],
+    ['failed', 'recovery_required'],
+    ['manual_adjustment_required', 'manual_adjustment_required'],
+    ['succeeded', 'succeeded'],
+  ] as const)('maps durable %s state to operator status %s keyed by attempt and order', async (status, expected) => {
+    const order = makeOrder('naver');
+    const operation = {
+      ...makeOperation(order),
+      status,
+      attempts: 2,
+      errorMessage: status === 'failed' ? 'provider timeout' : null,
+      lastAttemptAt: new Date('2026-07-14T01:00:00.000Z'),
+      updatedAt: new Date('2026-07-14T01:01:00.000Z'),
+    };
+    const conditions: unknown[] = [];
+    const db = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          where: jest.fn((condition: unknown) => {
+            conditions.push(condition);
+            return { orderBy: jest.fn().mockResolvedValue([operation]) };
+          }),
+        })),
+      })),
+    };
+    const worker = new ShipmentDispatchInboxWorker(
+      { db } as any,
+      { getAdapter: jest.fn() } as any,
+      { updateOrderShipmentAttemptProjection: jest.fn() } as any,
+    );
+
+    const [observation] = await worker.getOperationObservability(SHIPPED.dispatchAttemptId, order.salesOrderId);
+
+    expect(collectConditionValues(conditions[0])).toEqual(
+      expect.arrayContaining([SHIPPED.dispatchAttemptId, order.salesOrderId]),
+    );
+    expect(observation).toEqual(
+      expect.objectContaining({
+        dispatchAttemptId: SHIPPED.dispatchAttemptId,
+        salesOrderId: order.salesOrderId,
+        status: expected,
+        attempts: 2,
+      }),
+    );
   });
 });
 
