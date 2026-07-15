@@ -1062,8 +1062,8 @@ V1 이 되는 이유는 안전해서가 아니라 **계약 검사를 건너뛰�
 - [ ] Remove or freeze V1-only summaries/ownership: FOI `pickedQty`, writable `reservedQty`, batch `assignedTo` and directly maintained batch totals. Replace remaining reads with reservation/work-item projections.
 - [ ] Remove old FO status writes (`picked/invoiced/shipped`), lazy shipment open-box creation, FIFO-at-dispatch consumption and V1 in-house dispatch paths.
 - [ ] Keep v1 fulfillment event contracts/projections only for explicitly documented full-completion consumers. Remove them only in a separately approved contract version.
-- [ ] Remove expand compatibility fallback from outbox topic routing and fail any topicless new write.
-      - 폴백 제거 자체는 지금 안전하다 (topicless 4,767 행이 전부 published 이고 dispatcher 는 pending 만 leasing 하므로 이미 도달 불가). 그러나 "fail any topicless new write" 는 **PR A 에서 12 곳의 호출부 수정 + 두 outbox 서비스의 topicless union 갈래 제거**가 실체다. 이것이 published 삭제와 `topic` NOT NULL 의 **선행 조건**이다 — 순서는 위 "outbox 4,767 행" 절 참조.
+- [x] Remove expand compatibility fallback from outbox topic routing and fail any topicless new write.
+      - **PR A 에서 완료 (2026-07-16, `a78e1d8d6`).** 호출부는 실측 13곳(목록의 12곳 + `inventory-command.service.ts` ship 비배치 갈래)이었고 전부 명시 topic+idempotencyKey 로 전환(폴백 목적지 보존). 두 outbox 서비스의 topicless union 갈래 제거로 새 topicless write 는 컴파일 실패(사보타주 확인). dispatcher 폴백은 fail-closed throw 로 대체하고 명시 분기를 5개 스트림으로 확장 — `inventory.events.v1`/`core.orders.events.v1` 명시 topic 이 "Unknown explicit topic" 으로 죽던 잠재 버그도 함께 해소. published 삭제와 `topic` NOT NULL(PR B)의 선행 조건 충족.
 - [ ] Generate/review migration and run it against the rehearsal snapshot plus populated V2 fixtures. Verify downgrade is intentionally unsupported after V2 data; recovery uses forward repair.
 - [ ] Run `rg` gates for every removed column/status/service, full Core/channel/admin builds, all V2 integration tests and schema reconciliation.
 - [ ] Commit: `refactor(fulfillment): remove legacy FO outbound contract`.
