@@ -152,6 +152,13 @@ export class ShipmentShortPickService {
               ),
             ),
         };
+        // Canonical order: shared shipment graph first, then durable
+        // intent/member, then work/plan/session/custody/totes. A member insert
+        // is not lock-free — its shipment FK takes KEY SHARE — so it must
+        // follow the FOI -> shipment -> line -> reservation graph order.
+        // Otherwise two distinct-key operations can each hold that FK lock
+        // while one owns the FOI row, forming FOI -> shipment vs shipment -> FOI.
+        await this.reservations.lockShipmentGraphForDispatch(shipmentId, tx);
         await tx.insert(wmsTables.shipmentOperations).values({
           id: operationId,
           type: 'short_pick',
@@ -172,9 +179,6 @@ export class ShipmentShortPickService {
           beforeManifestSnapshot: { expectedManifestVersion: dto.expectedManifestVersion },
         });
 
-        // Canonical order: durable intent/member (no domain row locks), shared
-        // shipment graph + invoice saga, then work/plan/session/custody/totes.
-        await this.reservations.lockShipmentGraphForDispatch(shipmentId, tx);
         const shipmentContext = await this.lockAndValidateShipment(shipmentId, dto, tx);
         const requestedByPair = new Map(
           dto.lines.map((line) => [`${line.shipmentLineId}:${line.sourceLocationId}`, line] as const),

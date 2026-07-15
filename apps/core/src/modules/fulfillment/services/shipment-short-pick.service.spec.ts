@@ -1,4 +1,4 @@
-import { DbTx } from '../../inventory/schema/inventory.schema';
+import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { ReportShipmentShortPickDto } from '../dto/shipment-short-pick.dto';
 import { ShipmentShortPickService } from './shipment-short-pick.service';
@@ -279,5 +279,36 @@ describe('ShipmentShortPickService', () => {
       'stop after lock-order proof',
     );
     expect(order).toEqual(['operation:locked', 'member:locked', 'graph:locked']);
+  });
+
+  it('owns the canonical shipment graph before inserting the member whose shipment FK takes KEY SHARE', async () => {
+    const { service, commands, reservations } = makeService();
+    const order: string[] = [];
+    const stopAfterMemberInsert = new Error('stop after lock-order proof');
+    reservations.lockShipmentGraphForDispatch.mockImplementation(() => {
+      order.push('canonical-graph');
+      return Promise.resolve();
+    });
+    const tx = {
+      insert: jest.fn((table: unknown) => {
+        if (table === wmsTables.shipmentOperationMembers) {
+          order.push('member-insert');
+          throw stopAfterMemberInsert;
+        }
+        return { values: () => Promise.resolve() };
+      }),
+    };
+    commands.execute.mockImplementation(
+      (_input: unknown, execute: (tx: unknown, commandRequestId: string, requestHash: string) => Promise<unknown>) =>
+        execute(tx, 'command-id', 'a'.repeat(64)),
+    );
+
+    await expect(
+      service.report('11111111-1111-4111-8111-111111111111', dto, 'short-pick-lock-order', {
+        id: '77777777-7777-4777-8777-777777777777',
+        roles: ['logistics_manager'],
+      }),
+    ).rejects.toBe(stopAfterMemberInsert);
+    expect(order).toEqual(['canonical-graph', 'member-insert']);
   });
 });

@@ -131,6 +131,13 @@ export class ShipmentRecallService {
           reason: dto.reason,
           actorId: actor.id,
         };
+        // Canonical order: shared shipment graph first, then durable
+        // intent/member, then work/plan/session/custody/totes. A member insert
+        // is not lock-free — its shipment FK takes KEY SHARE — so it must
+        // follow the FOI -> shipment -> line -> reservation graph order.
+        // Otherwise two distinct-key operations can each hold that FK lock
+        // while one owns the FOI row, forming FOI -> shipment vs shipment -> FOI.
+        await this.reservations.lockShipmentGraphForDispatch(shipmentId, tx);
         await tx.insert(wmsTables.shipmentOperations).values({
           id: operationId,
           type: 'recall',
@@ -150,7 +157,6 @@ export class ShipmentRecallService {
           beforeManifestVersion: dto.expectedManifestVersion,
         });
 
-        await this.reservations.lockShipmentGraphForDispatch(shipmentId, tx);
         const [shipment] = await tx
           .select()
           .from(wmsTables.shipments)
