@@ -2,6 +2,49 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+## 다음 세션 핸드오프 (2026-07-16 세션 종료 시점)
+
+> 이 절이 세션 간 인수인계 지점이다. 별도 핸드오프 문서를 만들지 않는다 — 이 플랜이 SoT 이고,
+> 사본을 두면 어긋난다(이번 세션에만 낡은 서술을 두 번 고쳤다). 작업이 끝나면 이 절을 지운다.
+
+**첫 행동: 미커밋 워킹트리를 처리할 것.** 12 개 파일에 PR A 의 일부(모드 제거)가 커밋되지 않은 채 남아 있다. **red 상태라 커밋하지 않았다** — `fulfillment-order-reservation-retry.worker.integration.spec.ts` 2 건이 실패한다. 이유는 결함이 아니라 아래 "A1/A2 분리 불가" 다. 둘 중 하나를 고르고 시작한다.
+
+- **이어받기** — 그대로 PR A 를 완성해 green 으로 만든 뒤 커밋.
+- **버리기** — `git checkout -- .` 후 깨끗하게 재시작. 근거가 이 플랜에 다 있어 재현 비용이 낮다(설계 결정은 아래에 적어뒀다).
+
+미커밋 변경에 담긴 **설계 결정 세 가지** (버리더라도 이 결정은 유효하다):
+
+1. `FulfillmentWorkflowMode` = `'maintenance' | 'v2'` — `legacy` 제거.
+2. **기본값을 만들지 않는다.** `legacy` 기본값은 "옛 안전 동작 유지" 를 뜻했는데 V1 이 없으면 어떤 기본값도 조용히 실제 운영 모드를 고르는 것이 된다. 미설정/옛 값은 게이트 생성자와 env 검증 양쪽에서 크게 실패한다. dev/test 예외도 없앴고, `.env.example` 두 개는 `v2` + epoch cutover 로 갱신했다(로컬은 "모든 주문이 커토버 이후" 가 맞다).
+3. 배포 매니페스트 → `v2` + `FULFILLMENT_V2_CUTOVER_AT`. **이 시각은 미확정이다** (아래 미결 참조).
+
+**PR A 작업 목록** (한 덩어리로 간다 — 쪼갤 수 없다):
+
+- V1 서비스 제거 ~4,600 줄: `invoice.service`(559) · `picking-process.service`(1,017) · `outbound-batch.service`(840) · `outbound-consumption.service`(175) · `shipment.service`(262) · `fulfillments.service`(1,742). **`fulfillments.service` 는 통째 삭제 불가** — drop-ship·digital-only 경로가 섞여 있어 정밀 수술이 필요하다. 각 서비스는 3~6 개 non-spec 파일이 참조한다.
+- outbox topicless 호출부 12 곳 + 두 outbox 서비스의 topicless union 갈래 제거 (파일별 건수는 "outbox 4,767 행" 절 참조).
+- V1 컨트롤러·모듈 배선·V1 스펙·admin-web V1 클라이언트.
+- 게이트 정리: V1 이 사라지면 `assertMutationAllowed` 와 `FULFILLMENT_LEGACY_CLOSED_CODE` 가 미사용이 되고, **`FULFILLMENT_V2_NOT_ACTIVE_CODE`(409) 분기는 이미 도달 불가**다(모드가 maintenance|v2 뿐이라 maintenance 에서 503 이 먼저 나간다). `fulfillment-workflow-gate.service.spec.ts` 에 이 사실이 주석으로 박혀 있다.
+
+**A1/A2 분리 불가 (실측).** `legacy` 만 제거하고 V1 코드를 남기면 V1 스펙이 통과할 수 없다 — 게이트에 막히거나 픽스처가 안 맞는다. 실제로 retry worker 스펙에서 `findCandidates` 가 v2 에서 `[]` 를 반환한다(Task 9 이 후보 선정을 shipment line 기준으로 바꿨는데 스펙은 V1 형태 픽스처를 심는다). ADR-0005 §5 의 2 PR 분할은 **코드(A1+A2 한 덩어리) → 배포 → 마이그레이션(B)** 이지, 코드 안을 다시 쪼개는 것이 아니다.
+
+**검증 레시피와 이 레포의 함정** (이번 세션에 값을 치르고 배운 것):
+
+- **타입체크를 절대 개수로 보지 말 것.** 루트 `tsconfig.json --noEmit` 은 **4,789 개**의 상시 에러를 낸다. 반드시 변경 전후를 대조해 *신규 0* 을 확인한다(`git stash` 로 HEAD 를 만들어 diff). `apps/*/tsconfig.app.json` 은 spec 을 제외하므로 스펙 검증에 쓰면 파일을 읽지도 않고 exit 0 이 난다 — 루트를 쓴다.
+- **lint 도 같은 방식.** `npm run lint` 는 전역 `--fix` 라 검증에 쓸 수 없다. 변경 파일만 `npx eslint`(--fix 없이) 후 HEAD 와 대조. 요약줄(`✖ N problems`)이 섞이지 않게 규칙 라인만 걸러야 한다.
+- **`rg -r` 주의.** `-r` 은 replace 다. `rg -rn`/`rg -ril` 처럼 붙여 쓰면 뒤 글자가 치환 문자열로 먹혀 출력이 조용히 거짓말을 한다. 이번 세션에 세 번 당했다.
+- **테스트 스위트**: `npm run test:core:integration:local -- outbound-v2` → 8 suites / 56 tests (Docker 필요). 러너는 npm 기준이다 — 아래 "Verification command set" 의 yarn 표기는 이 레포와 맞지 않는다.
+- **사보타주 규율**: 가드를 고쳤으면 일부러 부숴 red 를 확인하고 되돌린다. 단 **프로덕션 보안 설정을 약화시켜 재증명하지 말 것** — 이번에 `ValidationPipe` 의 `whitelist` 를 false 로 되돌리려다 막혔고, 그게 옳았다(이미 증명된 사실이라 불필요했다).
+
+**미결 2 건** (둘 다 사람이 정해야 한다):
+
+1. **`FULFILLMENT_V2_CUTOVER_AT` 확정.** 매니페스트에 `2026-07-16T00:00:00.000Z` 를 넣어뒀으나 임의값이다. 불변이고, 이 시각 이전 주문은 FO 가 생기지 않으며 자동 backfill 도 없다 — 한진 인도 후 그 주문들을 출고하려면 수동 처리 대상이 된다. **배포 전 확정.**
+2. **`invoice_method` 의 `direct`/`self` 유지 결정은 났다**(유지 — V2 수동 발행 경로의 착지점). 다만 그 수동 발행 경로 자체를 언제 만들지는 미정. 한진 계약이 idempotency 를 노출하지 않으면 이것이 유일한 출구가 된다.
+
+**이번 세션 커밋** (모두 `feat/outbound-v2-consolidation-backorder`, push 안 함):
+`372e17526` 시나리오 14 실제 recall · `aeea7aec7` Task 23 후속 3 건 · `59ce8f4ba` 한진 결정+Task 25 실측 · `5b977a0fc` Task 25 언블록 · `b44648b7b` live DB 실측.
+
+---
+
 ## 진행 상태 (2026-07-16 기준)
 
 Task 1~23 완료, Task 24 는 **provider 미구현으로 블록**, **Task 25 는 착수 가능** (Task 24 에 연쇄 블록되지 않는다 — 아래). 브랜치 `feat/outbound-v2-consolidation-backorder`.
