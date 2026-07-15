@@ -42,14 +42,7 @@ export async function CouponTemplate() {
         </p>
       </header>
 
-      {assignedCoupons.length === 0 ? (
-        <div className="flex min-h-[200px] flex-col items-center justify-center rounded-2xl border border-dashed border-stone-200 bg-stone-50 p-10 text-center">
-          <p className="text-base font-medium text-stone-500">
-            {t("emptyTitle")}
-          </p>
-          <p className="mt-1 text-sm text-stone-400">{t("emptyDescription")}</p>
-        </div>
-      ) : (
+      {assignedCoupons.length > 0 ? (
         <ul className="flex flex-col gap-3">
           {assignedCoupons.map((promo) => (
             <CouponCard
@@ -59,7 +52,15 @@ export async function CouponTemplate() {
             />
           ))}
         </ul>
-      )}
+      ) : claimableCoupons.length === 0 && publicCoupons.length === 0 ? (
+        // 발급받기/공개 쿠폰도 전무할 때만 "쿠폰 없음" 표기 — 아래 목록과의 모순 방지
+        <div className="flex min-h-[200px] flex-col items-center justify-center rounded-2xl border border-dashed border-stone-200 bg-stone-50 p-10 text-center">
+          <p className="text-base font-medium text-stone-500">
+            {t("emptyTitle")}
+          </p>
+          <p className="mt-1 text-sm text-stone-400">{t("emptyDescription")}</p>
+        </div>
+      ) : null}
 
       {claimableCoupons.length > 0 && (
         <div className="mt-8">

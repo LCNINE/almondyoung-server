@@ -164,5 +164,6 @@ export const claimCoupon = async (promotionId: string): Promise<void> => {
       method: "POST",
       headers,
     })
-    .catch(medusaError)
+    // 헤더는 있으나 토큰 만료된 401 도 UNAUTHORIZED digest 로 던져 토큰 복구 플로우를 태운다.
+    .catch(throwCouponError)
 }

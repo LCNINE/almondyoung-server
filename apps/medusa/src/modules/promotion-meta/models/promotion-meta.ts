@@ -16,6 +16,10 @@ const PromotionMeta = model
     },
   )
   .indexes([
+    // 주의: 실제 DB 인덱스는 마이그레이션에서 PARTIAL(`WHERE deleted_at IS NULL`)로 생성된다.
+    // DML DSL 이 partial 조건을 표현하지 못해 여기선 full unique 로만 선언된다.
+    // soft-delete 후 재생성(deleteByPromotionId → upsert)이 이 partial 조건에 의존하므로,
+    // 스키마를 재생성할 때 반드시 `WHERE deleted_at IS NULL` 을 보존해야 한다(full unique 로 바뀌면 재생성이 깨진다).
     { on: ['promotion_id'], name: 'idx_promotion_meta_promotion_id', unique: true },
   ]);
 

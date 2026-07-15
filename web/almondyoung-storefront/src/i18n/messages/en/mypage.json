@@ -54,6 +54,8 @@
     "unlimited": "No expiry",
     "percentDiscount": "{value}% off",
     "wonDiscount": "{value} KRW off",
+    "percentValue": "{value}%",
+    "amountValue": "{amount} KRW",
     "assignedSection": "My Assigned Coupons",
     "claimSection": "Available to Claim",
     "claimButton": "Claim",

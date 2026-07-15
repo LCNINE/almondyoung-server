@@ -52,5 +52,6 @@ export async function claimCoupon(promotionId: string): Promise<void> {
       method: "POST",
       headers,
     })
-    .catch(medusaError)
+    // 401 은 UNAUTHORIZED digest 로 던져 마이페이지 클레임도 토큰 복구 플로우를 태운다.
+    .catch(throwPromotionError)
 }
