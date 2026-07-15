@@ -3,12 +3,14 @@ import {
   FULFILLMENT_STREAM,
   FULFILLMENT_V2_STREAM,
   FulfillmentProgressedPayload,
+  FulfillmentReopenedPayload,
   FulfillmentDeliveredPayload,
   FulfillmentShippedPayload,
   FulfillmentV1CompletionSummary,
   SHIPMENT_STREAM,
   ShipmentDeliveredPayload,
   ShipmentShippedPayload,
+  ShipmentDispatchRecalledPayload,
 } from '@packages/event-contracts/streams';
 
 export const ORDER_EVENTS = {
@@ -84,6 +86,36 @@ export function fulfillmentProgressedOutboxEvent(
     aggregateId: validPayload.fulfillmentOrderId,
     partitionKey: validPayload.fulfillmentOrderId,
     idempotencyKey: `${validPayload.dispatchAttemptId}:${validPayload.fulfillmentOrderId}`,
+    payload: validPayload,
+  };
+}
+
+export function shipmentDispatchRecalledOutboxEvent(
+  payload: ShipmentDispatchRecalledPayload,
+): FulfillmentOutboxEvent<ShipmentDispatchRecalledPayload> {
+  const validPayload = SHIPMENT_STREAM.events.ShipmentDispatchRecalled.schema!.parse(payload);
+  return {
+    topic: SHIPMENT_STREAM.topic.topic,
+    eventType: SHIPMENT_EVENTS.DISPATCH_RECALLED,
+    aggregateType: 'Shipment',
+    aggregateId: validPayload.shipmentId,
+    partitionKey: validPayload.shipmentId,
+    idempotencyKey: validPayload.recallOperationId,
+    payload: validPayload,
+  };
+}
+
+export function fulfillmentReopenedOutboxEvent(
+  payload: FulfillmentReopenedPayload,
+): FulfillmentOutboxEvent<FulfillmentReopenedPayload> {
+  const validPayload = FULFILLMENT_V2_STREAM.events.FulfillmentReopened.schema!.parse(payload);
+  return {
+    topic: FULFILLMENT_V2_STREAM.topic.topic,
+    eventType: FULFILLMENT_V2_EVENTS.REOPENED,
+    aggregateType: 'FulfillmentOrder',
+    aggregateId: validPayload.fulfillmentOrderId,
+    partitionKey: validPayload.fulfillmentOrderId,
+    idempotencyKey: `${validPayload.recallOperationId}:${validPayload.fulfillmentOrderId}`,
     payload: validPayload,
   };
 }

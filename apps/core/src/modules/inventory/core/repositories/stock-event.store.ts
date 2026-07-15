@@ -14,6 +14,28 @@ import { BatchControlledStockGuard, BatchSessionDispatchAuthorization } from '..
 type TransitionType = (typeof wmsTables.stockEvents.$inferInsert)['transitionType'];
 type StockEventRow = typeof wmsTables.stockEvents.$inferSelect;
 
+export type ReverseShipmentDispatchEventInput = {
+  dispatchAttemptId: string;
+  dispatchAttemptSourceId: string;
+  originalShipEventId: string;
+  reversalJournalId: string;
+  recallOperationId: string;
+  toLocationId: string;
+  occurredAt: Date;
+  reason: string;
+};
+
+export type ShipmentDispatchEventReversal = {
+  dispatchAttemptSourceId: string;
+  shipmentLineId: string;
+  skuId: string;
+  warehouseId: string;
+  outboundReworkLocationId: string;
+  quantity: number;
+  originalEventId: string;
+  reversalEventId: string;
+};
+
 type CreateEventInput = {
   journalId?: string;
   skuId: string;
@@ -327,15 +349,247 @@ export class StockEventStore {
   // 정정(역분개)
   // -----------------------------
 
+  /**
+   * Reverse one exact shipment-dispatch source into OUTBOUND_REWORK.
+   *
+   * This deliberately does not publish a sellable projection. Recall restores
+   * the matching shipment-line reservation in the same caller transaction and
+   * publishes only after both on-hand and reserved have increased, preserving
+   * the available-quantity invariant.
+   */
+  async reverseShipmentDispatchEvent(
+    input: ReverseShipmentDispatchEventInput,
+    tx: DbTx,
+  ): Promise<ShipmentDispatchEventReversal> {
+    if (!tx) throw new Error('Shipment dispatch reversal requires the caller recall transaction');
+
+    const [attempt] = await tx
+      .select({
+        id: wmsTables.dispatchAttempts.id,
+        shipmentId: wmsTables.dispatchAttempts.shipmentId,
+        status: wmsTables.dispatchAttempts.status,
+        stockJournalId: wmsTables.dispatchAttempts.stockJournalId,
+        reversalJournalId: wmsTables.dispatchAttempts.reversalJournalId,
+      })
+      .from(wmsTables.dispatchAttempts)
+      .where(eq(wmsTables.dispatchAttempts.id, input.dispatchAttemptId))
+      .limit(1)
+      .for('update');
+    if (!attempt || !['dispatched', 'recovery_required'].includes(attempt.status)) {
+      throw this.shipmentDispatchReversalConflict(
+        'SHIPMENT_DISPATCH_REVERSAL_ATTEMPT_INVALID',
+        'Dispatch attempt is not eligible for stock reversal',
+      );
+    }
+    if (!attempt.stockJournalId || attempt.reversalJournalId) {
+      throw this.shipmentDispatchReversalConflict(
+        'SHIPMENT_DISPATCH_ALREADY_REVERSED',
+        'Dispatch attempt already owns a reversal journal or has no dispatch journal',
+      );
+    }
+
+    const [reversalJournal] = await tx
+      .select({
+        id: wmsTables.stockJournals.id,
+        sourceType: wmsTables.stockJournals.sourceType,
+        sourceId: wmsTables.stockJournals.sourceId,
+      })
+      .from(wmsTables.stockJournals)
+      .where(eq(wmsTables.stockJournals.id, input.reversalJournalId))
+      .limit(1)
+      .for('update');
+    if (
+      !reversalJournal ||
+      reversalJournal.sourceType !== 'SHIPMENT_RECALL' ||
+      reversalJournal.sourceId !== input.recallOperationId ||
+      reversalJournal.id === attempt.stockJournalId
+    ) {
+      throw this.shipmentDispatchReversalConflict(
+        'SHIPMENT_DISPATCH_REVERSAL_JOURNAL_INVALID',
+        'Reversal journal is not owned by the exact recall operation',
+      );
+    }
+
+    const [lockedSource] = await tx
+      .select({
+        id: wmsTables.dispatchAttemptSources.id,
+        dispatchAttemptId: wmsTables.dispatchAttemptSources.dispatchAttemptId,
+        shipmentLineId: wmsTables.dispatchAttemptSources.shipmentLineId,
+        sourceLocationId: wmsTables.dispatchAttemptSources.sourceLocationId,
+        qty: wmsTables.dispatchAttemptSources.qty,
+        stockEventId: wmsTables.dispatchAttemptSources.stockEventId,
+      })
+      .from(wmsTables.dispatchAttemptSources)
+      .where(
+        and(
+          eq(wmsTables.dispatchAttemptSources.id, input.dispatchAttemptSourceId),
+          eq(wmsTables.dispatchAttemptSources.dispatchAttemptId, attempt.id),
+        ),
+      )
+      .limit(1)
+      .for('update');
+    const [sourceIdentity] = lockedSource
+      ? await tx
+          .select({
+            lineShipmentId: wmsTables.shipmentLines.shipmentId,
+            skuId: wmsTables.shipmentLines.skuId,
+            warehouseId: wmsTables.shipments.warehouseId,
+          })
+          .from(wmsTables.shipmentLines)
+          .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.shipmentLines.shipmentId))
+          .where(eq(wmsTables.shipmentLines.id, lockedSource.shipmentLineId))
+          .limit(1)
+      : [];
+    const source = lockedSource && sourceIdentity ? { ...lockedSource, ...sourceIdentity } : null;
+    if (
+      !source ||
+      source.lineShipmentId !== attempt.shipmentId ||
+      !source.stockEventId ||
+      source.stockEventId !== input.originalShipEventId
+    ) {
+      throw this.shipmentDispatchReversalConflict(
+        'SHIPMENT_DISPATCH_REVERSAL_SOURCE_INVALID',
+        'Dispatch source does not belong to the exact attempt event',
+      );
+    }
+
+    const [original] = await tx
+      .select()
+      .from(wmsTables.stockEvents)
+      .where(eq(wmsTables.stockEvents.id, input.originalShipEventId))
+      .limit(1)
+      .for('update');
+    const [reworkLocation] = await tx
+      .select({ id: wmsTables.locations.id })
+      .from(wmsTables.locations)
+      .where(
+        and(
+          eq(wmsTables.locations.id, input.toLocationId),
+          eq(wmsTables.locations.warehouseId, source.warehouseId),
+          eq(wmsTables.locations.systemRole, 'outbound_rework'),
+          eq(wmsTables.locations.isSystem, true),
+          eq(wmsTables.locations.isActive, true),
+        ),
+      )
+      .limit(1);
+    if (!reworkLocation) {
+      throw this.shipmentDispatchReversalConflict(
+        'SHIPMENT_DISPATCH_REVERSAL_DESTINATION_INVALID',
+        'Stock reversal destination must be the active warehouse OUTBOUND_REWORK location',
+      );
+    }
+    if (
+      !original ||
+      original.journalId !== attempt.stockJournalId ||
+      original.skuId !== source.skuId ||
+      original.fromWarehouseId !== source.warehouseId ||
+      original.fromLocationId !== source.sourceLocationId ||
+      original.fromState !== 'ON_HAND' ||
+      original.toWarehouseId !== null ||
+      original.toLocationId !== null ||
+      original.toState !== null ||
+      original.transitionType !== 'SHIP' ||
+      original.quantity !== source.qty ||
+      original.eventStatus !== 'POSTED' ||
+      original.voidedByEventId !== null
+    ) {
+      throw this.shipmentDispatchReversalConflict(
+        'SHIPMENT_DISPATCH_REVERSAL_EVENT_INVALID',
+        'Original stock event is not the exact posted economic dispatch source',
+      );
+    }
+
+    const [existingReversal] = await tx
+      .select({ id: wmsTables.stockEvents.id })
+      .from(wmsTables.stockEvents)
+      .where(eq(wmsTables.stockEvents.reversalOfEventId, original.id))
+      .limit(1);
+    if (existingReversal) {
+      throw this.shipmentDispatchReversalConflict(
+        'SHIPMENT_DISPATCH_ALREADY_REVERSED',
+        'Dispatch stock event has already been reversed',
+      );
+    }
+
+    const [reversal] = await tx
+      .insert(wmsTables.stockEvents)
+      .values({
+        journalId: input.reversalJournalId,
+        skuId: original.skuId,
+        fromWarehouseId: null,
+        fromLocationId: null,
+        toWarehouseId: source.warehouseId,
+        toLocationId: reworkLocation.id,
+        fromState: null,
+        toState: 'ON_HAND',
+        transitionType: 'ADJUST_UP',
+        quantity: original.quantity,
+        occurredAt: input.occurredAt,
+        idempotencyKey: `recall:${input.recallOperationId}:${source.id}`,
+        eventStatus: 'POSTED',
+        reversalOfEventId: original.id,
+        reason: `Recall ${input.recallOperationId}: ${input.reason}`.slice(0, 255),
+      })
+      .returning();
+
+    await this.applyProjection(tx, {
+      skuId: reversal.skuId,
+      fromWarehouseId: reversal.fromWarehouseId,
+      fromLocationId: reversal.fromLocationId,
+      toWarehouseId: reversal.toWarehouseId,
+      toLocationId: reversal.toLocationId,
+      fromState: reversal.fromState,
+      toState: reversal.toState,
+      quantity: reversal.quantity,
+    });
+
+    this.logger.log(`Reversed dispatch event#${original.id} into OUTBOUND_REWORK with event#${reversal.id}`);
+    return {
+      dispatchAttemptSourceId: source.id,
+      shipmentLineId: source.shipmentLineId,
+      skuId: source.skuId,
+      warehouseId: source.warehouseId,
+      outboundReworkLocationId: reworkLocation.id,
+      quantity: source.qty,
+      originalEventId: original.id,
+      reversalEventId: reversal.id,
+    };
+  }
+
   /** 이벤트 역분개(취소): 원 이벤트의 효과를 상쇄하는 반대 이벤트 생성 */
   async reverseEvent(eventId: string, reason: string, tx?: DbTx) {
     return this.dbService.run(async (trx) => {
-      const original = await trx.query.stockEvents.findFirst({
-        where: eq(wmsTables.stockEvents.id, eventId),
-      });
+      const [original] = await trx
+        .select()
+        .from(wmsTables.stockEvents)
+        .where(eq(wmsTables.stockEvents.id, eventId))
+        .limit(1)
+        .for('update');
       if (!original) throw new BadRequestException(`Event ${eventId} not found`);
       if (original.eventStatus !== 'POSTED') {
         throw new BadRequestException('PENDING/VOIDED 이벤트는 역분개할 수 없습니다.');
+      }
+      const [dispatchSource] = await trx
+        .select({ id: wmsTables.dispatchAttemptSources.id })
+        .from(wmsTables.dispatchAttemptSources)
+        .where(eq(wmsTables.dispatchAttemptSources.stockEventId, original.id))
+        .limit(1);
+      if (dispatchSource) {
+        throw this.shipmentDispatchReversalConflict(
+          'SHIPMENT_DISPATCH_REVERSAL_REQUIRES_RECALL',
+          'Shipment dispatch events can only be reversed through the exact recall operation',
+        );
+      }
+      const [existingReversal] = await trx
+        .select({ id: wmsTables.stockEvents.id })
+        .from(wmsTables.stockEvents)
+        .where(eq(wmsTables.stockEvents.reversalOfEventId, original.id))
+        .limit(1);
+      if (existingReversal) {
+        throw this.shipmentDispatchReversalConflict(
+          'STOCK_EVENT_ALREADY_REVERSED',
+          `Event ${eventId} has already been reversed`,
+        );
       }
 
       // 역분개가 ON_HAND 를 순감소시키면(RECEIVE/ADJUST_UP 등 취소) 예약 불변식 가드.
@@ -663,6 +917,10 @@ export class StockEventStore {
   }
 
   private batchDispatchConflict(code: string, message: string): ConflictException {
+    return new ConflictException({ code, message });
+  }
+
+  private shipmentDispatchReversalConflict(code: string, message: string): ConflictException {
     return new ConflictException({ code, message });
   }
 

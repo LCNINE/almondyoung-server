@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
-import { StockEventStore } from '../repositories/stock-event.store';
+import { ShipmentDispatchEventReversal, StockEventStore } from '../repositories/stock-event.store';
 import { OutboxService } from '../../shared/outbox/outbox.service';
 import { LocationService } from './location.service';
 import { eq, and, gt, asc } from 'drizzle-orm';
@@ -226,6 +226,98 @@ export class InventoryCommandService {
       return { eventId: event?.id ?? null };
     };
     return this.dbService.run(exec, tx);
+  }
+
+  /**
+   * Reverse every exact stock source owned by a dispatch attempt. The caller
+   * must restore the matching shipment-line reservations and publish the final
+   * sellable projection in this same transaction.
+   */
+  async reverseShipmentDispatch(
+    input: {
+      dispatchAttemptId: string;
+      reversalJournalId: string;
+      recallOperationId: string;
+      actorId: string;
+      reason: string;
+      occurredAt?: Date;
+    },
+    tx: DbTx,
+  ): Promise<{
+    reversalJournalId: string;
+    sources: ShipmentDispatchEventReversal[];
+    affectedSkuIds: string[];
+  }> {
+    if (!tx) throw new Error('Shipment dispatch reversal requires the caller recall transaction');
+    if (!input.reason.trim()) throw new BadRequestException('reason is required');
+
+    const [journal] = await tx
+      .select({
+        id: wmsTables.stockJournals.id,
+        sourceType: wmsTables.stockJournals.sourceType,
+        sourceId: wmsTables.stockJournals.sourceId,
+        actorId: wmsTables.stockJournals.actorId,
+      })
+      .from(wmsTables.stockJournals)
+      .where(eq(wmsTables.stockJournals.id, input.reversalJournalId))
+      .limit(1);
+    if (
+      !journal ||
+      journal.sourceType !== 'SHIPMENT_RECALL' ||
+      journal.sourceId !== input.recallOperationId ||
+      journal.actorId !== input.actorId
+    ) {
+      throw new BadRequestException('Reversal journal is not owned by the exact recall operation and actor');
+    }
+
+    const [attemptWarehouse] = await tx
+      .select({ warehouseId: wmsTables.shipments.warehouseId })
+      .from(wmsTables.dispatchAttempts)
+      .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.dispatchAttempts.shipmentId))
+      .where(eq(wmsTables.dispatchAttempts.id, input.dispatchAttemptId))
+      .limit(1);
+    if (!attemptWarehouse) throw new BadRequestException('Dispatch attempt not found');
+    const reworkLocation = await this.locationService.getSystemLocationByRole(
+      attemptWarehouse.warehouseId,
+      'outbound_rework',
+      tx,
+    );
+    const sourceRows = await tx
+      .select({
+        id: wmsTables.dispatchAttemptSources.id,
+        stockEventId: wmsTables.dispatchAttemptSources.stockEventId,
+      })
+      .from(wmsTables.dispatchAttemptSources)
+      .where(eq(wmsTables.dispatchAttemptSources.dispatchAttemptId, input.dispatchAttemptId))
+      .orderBy(wmsTables.dispatchAttemptSources.id);
+    if (sourceRows.length === 0 || sourceRows.some((source) => !source.stockEventId)) {
+      throw new BadRequestException('Dispatch attempt does not own a complete set of stock source events');
+    }
+
+    const occurredAt = input.occurredAt ?? new Date();
+    const sources: ShipmentDispatchEventReversal[] = [];
+    for (const source of sourceRows) {
+      sources.push(
+        await this.eventStore.reverseShipmentDispatchEvent(
+          {
+            dispatchAttemptId: input.dispatchAttemptId,
+            dispatchAttemptSourceId: source.id,
+            originalShipEventId: source.stockEventId!,
+            reversalJournalId: input.reversalJournalId,
+            recallOperationId: input.recallOperationId,
+            toLocationId: reworkLocation.id,
+            occurredAt,
+            reason: input.reason.trim(),
+          },
+          tx,
+        ),
+      );
+    }
+    return {
+      reversalJournalId: input.reversalJournalId,
+      sources,
+      affectedSkuIds: [...new Set(sources.map((source) => source.skuId))].sort(),
+    };
   }
 
   async transferShip(

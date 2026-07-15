@@ -627,6 +627,133 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
     });
   });
 
+  it('redispatches the same recalled shipment as attempt 2 with a new invoice and immutable attempt-1 history', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await seedReadyShipment(tx);
+      const oldAttemptId = randomUUID();
+      const oldRecallOperationId = randomUUID();
+      const [oldInvoice] = await tx
+        .insert(wmsTables.invoices)
+        .values({
+          trackingNo: `OLD-${randomUUID()}`,
+          carrier: 'CJ',
+          issueMethod: 'self',
+          externalServiceId: `old-service-${randomUUID()}`,
+          issuedForFulfillmentOrderId: fixture.fulfillmentOrder.id,
+          shipmentId: fixture.shipment.id,
+          manifestVersion: fixture.shipment.manifestVersion,
+          recipientHash: canonicalShipmentRecipientHash(fixture.shipment.recipientSnapshot),
+          status: 'voided',
+          voidedAt: new Date('2026-07-15T01:00:00.000Z'),
+        })
+        .returning();
+      const [oldJournal] = await tx
+        .insert(wmsTables.stockJournals)
+        .values({
+          sourceType: 'SHIPMENT_DISPATCH_ATTEMPT',
+          sourceId: oldAttemptId,
+          idempotencyKey: `old-${randomUUID()}`,
+        })
+        .returning();
+      const [oldReversalJournal] = await tx
+        .insert(wmsTables.stockJournals)
+        .values({
+          sourceType: 'SHIPMENT_RECALL',
+          sourceId: oldRecallOperationId,
+          idempotencyKey: `old-recall-${randomUUID()}`,
+        })
+        .returning();
+      const dispatchedAt = new Date('2026-07-15T00:00:00.000Z');
+      const [oldAttempt] = await tx
+        .insert(wmsTables.dispatchAttempts)
+        .values({
+          id: oldAttemptId,
+          shipmentId: fixture.shipment.id,
+          attemptNo: 1,
+          status: 'recalled',
+          idempotencyKey: `old-attempt-${randomUUID()}`,
+          invoiceId: oldInvoice.id,
+          stockJournalId: oldJournal.id,
+          reversalJournalId: oldReversalJournal.id,
+          dispatchedAt,
+          recalledAt: new Date('2026-07-15T01:00:00.000Z'),
+        })
+        .returning();
+      const [oldEvent] = await tx
+        .insert(wmsTables.stockEvents)
+        .values({
+          journalId: oldJournal.id,
+          skuId: fixture.sku.id,
+          fromWarehouseId: fixture.warehouse.id,
+          fromLocationId: fixture.location.id,
+          fromState: 'ON_HAND',
+          transitionType: 'SHIP',
+          quantity: fixture.line.qty,
+          occurredAt: dispatchedAt,
+          idempotencyKey: `old-event-${randomUUID()}`,
+          eventStatus: 'POSTED',
+        })
+        .returning();
+      const [oldSource] = await tx
+        .insert(wmsTables.dispatchAttemptSources)
+        .values({
+          dispatchAttemptId: oldAttempt.id,
+          shipmentLineId: fixture.line.id,
+          sourceLocationId: fixture.location.id,
+          qty: fixture.line.qty,
+          stockEventId: oldEvent.id,
+        })
+        .returning();
+      const [oldTracking] = await tx
+        .insert(wmsTables.shipmentTracking)
+        .values({
+          shipmentId: fixture.shipment.id,
+          dispatchAttemptId: oldAttempt.id,
+          providerEventId: `old-tracking-${randomUUID()}`,
+          status: 'shipped',
+          timestamp: dispatchedAt,
+        })
+        .returning();
+
+      const result = await services(tx).inspectionScan(fixture.shipment.id, {
+        barcode: fixture.barcode,
+        quantity: 1,
+        actor: { id: fixture.actorId, roles: ['logistics_worker'] },
+        idempotencyKey: `redispatch-scan-${randomUUID()}`,
+      });
+
+      expect(result).toMatchObject({ status: 'shipped', attemptNo: 2 });
+      const attempts = await tx
+        .select()
+        .from(wmsTables.dispatchAttempts)
+        .where(eq(wmsTables.dispatchAttempts.shipmentId, fixture.shipment.id))
+        .orderBy(wmsTables.dispatchAttempts.attemptNo);
+      expect(attempts).toHaveLength(2);
+      expect(attempts[0]).toMatchObject({
+        id: oldAttempt.id,
+        attemptNo: 1,
+        status: 'recalled',
+        invoiceId: oldInvoice.id,
+      });
+      expect(attempts[1]).toMatchObject({
+        id: result.dispatchAttemptId,
+        attemptNo: 2,
+        status: 'dispatched',
+        invoiceId: fixture.invoice.id,
+      });
+      const [sourceAfter] = await tx
+        .select()
+        .from(wmsTables.dispatchAttemptSources)
+        .where(eq(wmsTables.dispatchAttemptSources.id, oldSource.id));
+      const [trackingAfter] = await tx
+        .select()
+        .from(wmsTables.shipmentTracking)
+        .where(eq(wmsTables.shipmentTracking.id, oldTracking.id));
+      expect(sourceAfter).toEqual(oldSource);
+      expect(trackingAfter).toEqual(oldTracking);
+    });
+  });
+
   it('replays the same last-scan command without a second attempt or SHIP event', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedReadyShipment(tx);

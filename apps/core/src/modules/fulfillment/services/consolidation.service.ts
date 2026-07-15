@@ -1034,7 +1034,12 @@ export class ConsolidationService {
       tx
         .select({ id: wmsTables.dispatchAttempts.id })
         .from(wmsTables.dispatchAttempts)
-        .where(eq(wmsTables.dispatchAttempts.shipmentId, aggregate.shipment.id))
+        .where(
+          and(
+            eq(wmsTables.dispatchAttempts.shipmentId, aggregate.shipment.id),
+            ne(wmsTables.dispatchAttempts.status, 'recalled'),
+          ),
+        )
         .limit(1),
     ]);
     const codes: string[] = [];

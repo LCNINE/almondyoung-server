@@ -497,7 +497,9 @@ export class ShipmentShortPickService {
     const dispatch = await tx
       .select({ id: wmsTables.dispatchAttempts.id })
       .from(wmsTables.dispatchAttempts)
-      .where(eq(wmsTables.dispatchAttempts.shipmentId, shipmentId))
+      .where(
+        and(eq(wmsTables.dispatchAttempts.shipmentId, shipmentId), ne(wmsTables.dispatchAttempts.status, 'recalled')),
+      )
       .limit(1)
       .for('update');
     if (dispatch.length)

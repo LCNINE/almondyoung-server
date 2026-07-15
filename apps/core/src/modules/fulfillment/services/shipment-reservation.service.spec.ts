@@ -1,5 +1,6 @@
 import { ConflictException } from '@nestjs/common';
 import {
+  assertExactRecallReservationEvidence,
   computePartialReservationQuantity,
   earliestReservationDemandAt,
   normalizeReservationDemandAt,
@@ -8,6 +9,52 @@ import {
 } from './shipment-reservation.service';
 
 describe('ShipmentReservationService allocation policy', () => {
+  const recallLine = {
+    id: 'line-1',
+    skuId: 'sku-1',
+    warehouseId: 'warehouse-1',
+    qty: 3,
+  };
+  const recallReservation = {
+    id: 'reservation-1',
+    targetType: 'SHIPMENT_LINE',
+    targetId: recallLine.id,
+    shipmentLineId: recallLine.id,
+    skuId: recallLine.skuId,
+    warehouseId: recallLine.warehouseId,
+    quantity: recallLine.qty,
+  };
+
+  it('rejects recalled dispatch reservation evidence with the wrong SKU', () => {
+    expect(() =>
+      assertExactRecallReservationEvidence(
+        'Dispatch attempt attempt-1',
+        [recallLine],
+        [{ ...recallReservation, skuId: 'sku-corrupt' }],
+      ),
+    ).toThrow(ConflictException);
+  });
+
+  it('rejects recalled dispatch reservation evidence with the wrong warehouse', () => {
+    expect(() =>
+      assertExactRecallReservationEvidence(
+        'Dispatch attempt attempt-1',
+        [recallLine],
+        [{ ...recallReservation, warehouseId: 'warehouse-corrupt' }],
+      ),
+    ).toThrow(ConflictException);
+  });
+
+  it('rejects an idempotent recall replay whose per-line quantity is not exact', () => {
+    expect(() =>
+      assertExactRecallReservationEvidence(
+        'Recall operation recall-1 replay',
+        [recallLine],
+        [{ ...recallReservation, quantity: recallLine.qty - 1 }],
+      ),
+    ).toThrow(ConflictException);
+  });
+
   it('reserves only the currently available part of a shipment-line shortage', () => {
     expect(
       computePartialReservationQuantity({

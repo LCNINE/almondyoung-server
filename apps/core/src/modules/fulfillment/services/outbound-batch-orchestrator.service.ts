@@ -788,7 +788,12 @@ export class OutboundBatchOrchestrator {
       tx
         .select({ id: wmsTables.dispatchAttempts.id })
         .from(wmsTables.dispatchAttempts)
-        .where(eq(wmsTables.dispatchAttempts.shipmentId, shipment.id))
+        .where(
+          and(
+            eq(wmsTables.dispatchAttempts.shipmentId, shipment.id),
+            ne(wmsTables.dispatchAttempts.status, 'recalled'),
+          ),
+        )
         .limit(1),
     ]);
     if (activeWork[0]) {
@@ -808,7 +813,12 @@ export class OutboundBatchOrchestrator {
       tx
         .select({ id: wmsTables.dispatchAttempts.id })
         .from(wmsTables.dispatchAttempts)
-        .where(eq(wmsTables.dispatchAttempts.shipmentId, aggregate.shipment.id))
+        .where(
+          and(
+            eq(wmsTables.dispatchAttempts.shipmentId, aggregate.shipment.id),
+            ne(wmsTables.dispatchAttempts.status, 'recalled'),
+          ),
+        )
         .limit(1),
       tx
         .select({ id: wmsTables.batchInventorySessionBalances.id })
@@ -1081,7 +1091,7 @@ export class OutboundBatchOrchestrator {
   private assertRecipientComplete(value: unknown): void {
     const recipient = (value ?? {}) as Record<string, unknown>;
     const missing = ['recipientName', 'phone', 'postalCode', 'roadAddress', 'detailAddress'].filter(
-      (key) => typeof recipient[key] !== 'string' || !(recipient[key] as string).trim(),
+      (key) => typeof recipient[key] !== 'string' || !recipient[key].trim(),
     );
     if (missing.length) {
       throw this.conflict('SHIPMENT_RECIPIENT_INCOMPLETE', `Missing recipient fields: ${missing.join(',')}`);

@@ -69,6 +69,17 @@ export type ShortPickReservationInvalidation = {
   replayed: boolean;
 };
 
+export type RecallReservationRestoration = {
+  shipmentId: string;
+  dispatchAttemptId: string;
+  recallOperationId: string;
+  restoredQuantity: number;
+  reservationIds: string[];
+  affectedSkuIds: string[];
+  reservationVersion: number;
+  replayed: boolean;
+};
+
 export function computePartialReservationQuantity(input: {
   requestedQty: number;
   outstandingQty: number;
@@ -106,9 +117,191 @@ export function planOldestReservationInvalidation(
   return plan;
 }
 
+type RecallReservationLineEvidence = {
+  id: string;
+  skuId: string;
+  warehouseId: string;
+  qty: number;
+};
+
+type RecallReservationRowEvidence = {
+  id: string;
+  targetType: string;
+  targetId: string;
+  shipmentLineId: string | null;
+  skuId: string;
+  warehouseId: string;
+  quantity: number;
+};
+
+export function assertExactRecallReservationEvidence(
+  evidenceLabel: string,
+  lines: readonly RecallReservationLineEvidence[],
+  reservations: readonly RecallReservationRowEvidence[],
+): void {
+  const linesById = new Map(lines.map((line) => [line.id, line]));
+  const quantityByLine = new Map<string, number>();
+
+  for (const reservation of reservations) {
+    const line = reservation.shipmentLineId ? linesById.get(reservation.shipmentLineId) : undefined;
+    if (
+      !line ||
+      reservation.targetType !== 'SHIPMENT_LINE' ||
+      reservation.targetId !== line.id ||
+      reservation.skuId !== line.skuId ||
+      reservation.warehouseId !== line.warehouseId
+    ) {
+      throw new ConflictException(
+        `${evidenceLabel} reservation ${reservation.id} ownership does not match its shipment line`,
+      );
+    }
+    quantityByLine.set(line.id, (quantityByLine.get(line.id) ?? 0) + reservation.quantity);
+  }
+
+  for (const line of lines) {
+    const actual = quantityByLine.get(line.id) ?? 0;
+    if (actual !== line.qty) {
+      throw new ConflictException(
+        `${evidenceLabel} reservation quantity is not exact for shipment line ${line.id}: expected ${line.qty}, found ${actual}`,
+      );
+    }
+  }
+}
+
 function assertPositiveInteger(name: string, value: number): void {
   if (!Number.isSafeInteger(value) || value <= 0) {
     throw new BadRequestException(`${name} must be a positive safe integer`);
+  }
+}
+
+async function lockConfirmedShipmentReservations(shipmentLineIds: readonly string[], tx: DbTx): Promise<void> {
+  // Canonical row-lock order is physical creation order then UUID. Fairness
+  // consumption order is a separate in-memory requestedAt/id ordering.
+  const ids = [...new Set(shipmentLineIds)].sort();
+  if (ids.length === 0) return;
+  const idList = sql.join(
+    ids.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+  await tx.execute(sql`
+    SELECT id
+      FROM stock_reservations
+     WHERE target_type = 'SHIPMENT_LINE'
+       AND shipment_line_id IN (${idList})
+       AND status = 'confirmed'
+     ORDER BY created_at, id
+     FOR UPDATE
+  `);
+}
+
+/**
+ * Locks the whole connected fulfillment/shipment graph for any command that
+ * will subsequently lock a dispatch attempt. Callers may discover their seed
+ * line optimistically, but must re-read and validate its identity after this
+ * helper returns.
+ */
+export async function lockShipmentConnectedComponentGraph(
+  tx: DbTx,
+  seedFulfillmentOrderItemIds: readonly string[],
+): Promise<void> {
+  const seedIds = [...new Set(seedFulfillmentOrderItemIds)].sort();
+  if (seedIds.length === 0) {
+    throw new ConflictException('Reservation component has no fulfillment-order-item seed');
+  }
+  const seedList = sql.join(
+    seedIds.map((id) => sql`${id}::uuid`),
+    sql`, `,
+  );
+  const loadConnectedFoiIds = async (): Promise<string[]> => {
+    const result = await tx.execute<{ id: string }>(sql`
+      WITH RECURSIVE connected_fois(id) AS (
+        SELECT id FROM fulfillment_order_items WHERE id IN (${seedList})
+        UNION
+        SELECT neighbor.id
+          FROM connected_fois connected
+          JOIN fulfillment_order_items anchor ON anchor.id = connected.id
+          JOIN LATERAL (
+            SELECT sibling.id
+              FROM fulfillment_order_items sibling
+             WHERE sibling.fulfillment_order_id = anchor.fulfillment_order_id
+            UNION
+            SELECT shipment_sibling.fulfillment_order_item_id
+              FROM shipment_lines member
+              JOIN shipment_lines shipment_sibling ON shipment_sibling.shipment_id = member.shipment_id
+             WHERE member.fulfillment_order_item_id = anchor.id
+          ) neighbor ON true
+      )
+      SELECT id FROM connected_fois ORDER BY id
+    `);
+    return (result as unknown as Array<{ id: string }>).map((row) => row.id);
+  };
+
+  const fulfillmentOrderItemIds = await loadConnectedFoiIds();
+  if (fulfillmentOrderItemIds.length === 0) {
+    throw new ConflictException('Reservation component disappeared while acquiring locks; retry the command');
+  }
+  const loadFoiMembership = (ids: readonly string[]) =>
+    tx
+      .select({
+        id: wmsTables.fulfillmentOrderItems.id,
+        fulfillmentOrderId: wmsTables.fulfillmentOrderItems.fulfillmentOrderId,
+      })
+      .from(wmsTables.fulfillmentOrderItems)
+      .where(inArray(wmsTables.fulfillmentOrderItems.id, [...ids]));
+  const membershipSignature = (
+    foiRows: Array<{ id: string; fulfillmentOrderId: string }>,
+    lineRows: Array<{ id: string; shipmentId: string; fulfillmentOrderItemId: string }>,
+  ): string =>
+    JSON.stringify({
+      fulfillmentOrderItems: foiRows.map((row) => `${row.id}:${row.fulfillmentOrderId}`).sort(),
+      shipmentLines: lineRows.map((row) => `${row.id}:${row.shipmentId}:${row.fulfillmentOrderItemId}`).sort(),
+    });
+  const initialFoiMembership = await loadFoiMembership(fulfillmentOrderItemIds);
+  const initialComponentLines = await tx
+    .select({
+      id: wmsTables.shipmentLines.id,
+      shipmentId: wmsTables.shipmentLines.shipmentId,
+      fulfillmentOrderItemId: wmsTables.shipmentLines.fulfillmentOrderItemId,
+    })
+    .from(wmsTables.shipmentLines)
+    .where(inArray(wmsTables.shipmentLines.fulfillmentOrderItemId, fulfillmentOrderItemIds));
+  const initialSignature = membershipSignature(initialFoiMembership, initialComponentLines);
+
+  for (const id of fulfillmentOrderItemIds) {
+    await tx.execute(sql`SELECT id FROM fulfillment_order_items WHERE id = ${id}::uuid FOR UPDATE`);
+  }
+
+  const componentLines = await tx
+    .select({ id: wmsTables.shipmentLines.id, shipmentId: wmsTables.shipmentLines.shipmentId })
+    .from(wmsTables.shipmentLines)
+    .where(inArray(wmsTables.shipmentLines.fulfillmentOrderItemId, fulfillmentOrderItemIds));
+  const shipmentIds = [...new Set(componentLines.map((row) => row.shipmentId))].sort();
+  for (const id of shipmentIds) {
+    await tx.execute(sql`SELECT id FROM shipments WHERE id = ${id}::uuid FOR UPDATE`);
+  }
+
+  const lineIds = [...new Set(componentLines.map((row) => row.id))].sort();
+  for (const id of lineIds) {
+    await tx.execute(sql`SELECT id FROM shipment_lines WHERE id = ${id}::uuid FOR UPDATE`);
+  }
+  await lockConfirmedShipmentReservations(lineIds, tx);
+
+  const stableFoiIds = await loadConnectedFoiIds();
+  const stableFoiMembership = await loadFoiMembership(stableFoiIds);
+  const stableComponentLines = await tx
+    .select({
+      id: wmsTables.shipmentLines.id,
+      shipmentId: wmsTables.shipmentLines.shipmentId,
+      fulfillmentOrderItemId: wmsTables.shipmentLines.fulfillmentOrderItemId,
+    })
+    .from(wmsTables.shipmentLines)
+    .where(inArray(wmsTables.shipmentLines.fulfillmentOrderItemId, stableFoiIds));
+  if (
+    stableFoiIds.length !== fulfillmentOrderItemIds.length ||
+    stableFoiIds.some((id, index) => id !== fulfillmentOrderItemIds[index]) ||
+    membershipSignature(stableFoiMembership, stableComponentLines) !== initialSignature
+  ) {
+    throw new ConflictException('Reservation component changed while acquiring locks; retry the command');
   }
 }
 
@@ -686,6 +879,132 @@ export class ShipmentReservationService {
     await this.recompute(shipmentId, tx);
   }
 
+  /**
+   * Recreate the exact claims consumed by one dispatch attempt after its stock
+   * has economically returned. The consumed rows remain immutable attempt-1
+   * evidence; newly inserted rows become the claims for a later redispatch.
+   * The caller owns the shipment graph and stock-availability locks.
+   */
+  async restoreForRecall(
+    shipmentId: string,
+    dispatchAttemptId: string,
+    recallOperationId: string,
+    tx: DbTx,
+  ): Promise<RecallReservationRestoration> {
+    if (!shipmentId || !dispatchAttemptId || !recallOperationId) {
+      throw new BadRequestException('shipmentId, dispatchAttemptId and recallOperationId are required');
+    }
+    const consumedReason = `shipment-dispatch:${dispatchAttemptId}`;
+    const restoredReason = `shipment-recall:${recallOperationId}`;
+    const lines = await tx
+      .select({
+        id: wmsTables.shipmentLines.id,
+        skuId: wmsTables.shipmentLines.skuId,
+        qty: wmsTables.shipmentLines.qty,
+        warehouseId: wmsTables.shipments.warehouseId,
+      })
+      .from(wmsTables.shipmentLines)
+      .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.shipmentLines.shipmentId))
+      .where(eq(wmsTables.shipmentLines.shipmentId, shipmentId))
+      .orderBy(asc(wmsTables.shipmentLines.id));
+    if (lines.length === 0) throw new NotFoundException(`Shipment ${shipmentId} has no lines`);
+    const lineIds = lines.map((line) => line.id);
+    await this.lockConfirmedReservations(lineIds, tx);
+    await tx
+      .select({ id: wmsTables.stockReservations.id })
+      .from(wmsTables.stockReservations)
+      .where(
+        and(
+          eq(wmsTables.stockReservations.status, 'released'),
+          eq(wmsTables.stockReservations.stateReason, consumedReason),
+        ),
+      )
+      .orderBy(asc(wmsTables.stockReservations.createdAt), asc(wmsTables.stockReservations.id))
+      .for('update');
+
+    const replay = await tx
+      .select()
+      .from(wmsTables.stockReservations)
+      .where(
+        and(
+          eq(wmsTables.stockReservations.status, 'confirmed'),
+          eq(wmsTables.stockReservations.stateReason, restoredReason),
+        ),
+      )
+      .orderBy(asc(wmsTables.stockReservations.createdAt), asc(wmsTables.stockReservations.id))
+      .for('update');
+    if (replay.length > 0) {
+      assertExactRecallReservationEvidence(`Recall operation ${recallOperationId} replay`, lines, replay);
+      return {
+        shipmentId,
+        dispatchAttemptId,
+        recallOperationId,
+        restoredQuantity: replay.reduce((sum, row) => sum + row.quantity, 0),
+        reservationIds: replay.map((row) => row.id),
+        affectedSkuIds: [...new Set(replay.map((row) => row.skuId))].sort(),
+        reservationVersion: await this.loadReservationVersion(shipmentId, tx),
+        replayed: true,
+      };
+    }
+
+    const consumed = await tx
+      .select()
+      .from(wmsTables.stockReservations)
+      .where(
+        and(
+          eq(wmsTables.stockReservations.status, 'released'),
+          eq(wmsTables.stockReservations.stateReason, consumedReason),
+        ),
+      )
+      .orderBy(asc(wmsTables.stockReservations.createdAt), asc(wmsTables.stockReservations.id));
+    assertExactRecallReservationEvidence(`Dispatch attempt ${dispatchAttemptId}`, lines, consumed);
+
+    const inserted = await tx
+      .insert(wmsTables.stockReservations)
+      .values(
+        consumed.map((row) => ({
+          targetType: 'SHIPMENT_LINE',
+          targetId: row.shipmentLineId!,
+          shipmentLineId: row.shipmentLineId!,
+          skuId: row.skuId,
+          warehouseId: row.warehouseId,
+          quantity: row.quantity,
+          status: 'confirmed' as const,
+          timeoutAt: row.timeoutAt,
+          reason: `Shipment dispatch recall ${recallOperationId}`,
+          requestedAt: row.requestedAt ?? row.createdAt,
+          stateReason: restoredReason,
+        })),
+      )
+      .returning({ id: wmsTables.stockReservations.id, skuId: wmsTables.stockReservations.skuId });
+    await tx
+      .update(wmsTables.shipmentLines)
+      .set({
+        reservedQty: sql`${wmsTables.shipmentLines.qty}`,
+        lineVersion: sql`${wmsTables.shipmentLines.lineVersion} + 1`,
+      })
+      .where(inArray(wmsTables.shipmentLines.id, lineIds));
+    await this.bumpReservationVersions([shipmentId], tx);
+    return {
+      shipmentId,
+      dispatchAttemptId,
+      recallOperationId,
+      restoredQuantity: consumed.reduce((sum, row) => sum + row.quantity, 0),
+      reservationIds: inserted.map((row) => row.id),
+      affectedSkuIds: [...new Set(inserted.map((row) => row.skuId))].sort(),
+      reservationVersion: await this.loadReservationVersion(shipmentId, tx),
+      replayed: false,
+    };
+  }
+
+  /** Final publication after stock reversal, reservation restoration and FO reopen. */
+  async finalizeRecallRestoration(shipmentId: string, affectedSkuIds: readonly string[], tx: DbTx): Promise<void> {
+    for (const skuId of [...new Set(affectedSkuIds)].sort()) {
+      await this.unifiedReservation.recalculateSellableForSku(skuId, tx);
+    }
+    await this.recompute(shipmentId, tx);
+  }
+
   /** Refresh V2 read models and run the locked-row invariant before commit. */
   async recompute(shipmentId: string, tx: DbTx): Promise<void> {
     const lines = await tx
@@ -896,23 +1215,7 @@ export class ShipmentReservationService {
   }
 
   private async lockConfirmedReservations(shipmentLineIds: readonly string[], tx: DbTx): Promise<void> {
-    // Canonical row-lock order is physical creation order then UUID. Fairness
-    // consumption order is a separate in-memory requestedAt/id ordering below.
-    const ids = [...new Set(shipmentLineIds)].sort();
-    if (ids.length === 0) return;
-    const idList = sql.join(
-      ids.map((id) => sql`${id}::uuid`),
-      sql`, `,
-    );
-    await tx.execute(sql`
-      SELECT id
-        FROM stock_reservations
-       WHERE target_type = 'SHIPMENT_LINE'
-         AND shipment_line_id IN (${idList})
-         AND status = 'confirmed'
-       ORDER BY created_at, id
-       FOR UPDATE
-    `);
+    await lockConfirmedShipmentReservations(shipmentLineIds, tx);
   }
 
   private async selectConfirmedReservations(shipmentLineId: string, tx: DbTx): Promise<ConfirmedReservation[]> {
@@ -933,102 +1236,10 @@ export class ShipmentReservationService {
   }
 
   private async lockConnectedComponents(contexts: readonly LineContext[], tx: DbTx): Promise<void> {
-    const seedIds = [...new Set(contexts.map((row) => row.fulfillmentOrderItemId))].sort();
-    const loadConnectedFoiIds = async (): Promise<string[]> => {
-      const seedList = sql.join(
-        seedIds.map((id) => sql`${id}::uuid`),
-        sql`, `,
-      );
-      const result = await tx.execute<{ id: string }>(sql`
-        WITH RECURSIVE connected_fois(id) AS (
-          SELECT id FROM fulfillment_order_items WHERE id IN (${seedList})
-          UNION
-          SELECT neighbor.id
-            FROM connected_fois connected
-            JOIN fulfillment_order_items anchor ON anchor.id = connected.id
-            JOIN LATERAL (
-              SELECT sibling.id
-                FROM fulfillment_order_items sibling
-               WHERE sibling.fulfillment_order_id = anchor.fulfillment_order_id
-              UNION
-              SELECT shipment_sibling.fulfillment_order_item_id
-                FROM shipment_lines member
-                JOIN shipment_lines shipment_sibling ON shipment_sibling.shipment_id = member.shipment_id
-               WHERE member.fulfillment_order_item_id = anchor.id
-            ) neighbor ON true
-        )
-        SELECT id FROM connected_fois ORDER BY id
-      `);
-      return (result as unknown as Array<{ id: string }>).map((row) => row.id);
-    };
-
-    const fulfillmentOrderItemIds = await loadConnectedFoiIds();
-    if (fulfillmentOrderItemIds.length === 0) {
-      throw new ConflictException('Reservation component disappeared while acquiring locks; retry the command');
-    }
-    const loadFoiMembership = (ids: readonly string[]) =>
-      tx
-        .select({
-          id: wmsTables.fulfillmentOrderItems.id,
-          fulfillmentOrderId: wmsTables.fulfillmentOrderItems.fulfillmentOrderId,
-        })
-        .from(wmsTables.fulfillmentOrderItems)
-        .where(inArray(wmsTables.fulfillmentOrderItems.id, [...ids]));
-    const membershipSignature = (
-      foiRows: Array<{ id: string; fulfillmentOrderId: string }>,
-      lineRows: Array<{ id: string; shipmentId: string; fulfillmentOrderItemId: string }>,
-    ): string =>
-      JSON.stringify({
-        fulfillmentOrderItems: foiRows.map((row) => `${row.id}:${row.fulfillmentOrderId}`).sort(),
-        shipmentLines: lineRows.map((row) => `${row.id}:${row.shipmentId}:${row.fulfillmentOrderItemId}`).sort(),
-      });
-    const initialFoiMembership = await loadFoiMembership(fulfillmentOrderItemIds);
-    const initialComponentLines = await tx
-      .select({
-        id: wmsTables.shipmentLines.id,
-        shipmentId: wmsTables.shipmentLines.shipmentId,
-        fulfillmentOrderItemId: wmsTables.shipmentLines.fulfillmentOrderItemId,
-      })
-      .from(wmsTables.shipmentLines)
-      .where(inArray(wmsTables.shipmentLines.fulfillmentOrderItemId, fulfillmentOrderItemIds));
-    const initialSignature = membershipSignature(initialFoiMembership, initialComponentLines);
-
-    for (const id of fulfillmentOrderItemIds) {
-      await tx.execute(sql`SELECT id FROM fulfillment_order_items WHERE id = ${id}::uuid FOR UPDATE`);
-    }
-
-    const componentLines = await tx
-      .select({ id: wmsTables.shipmentLines.id, shipmentId: wmsTables.shipmentLines.shipmentId })
-      .from(wmsTables.shipmentLines)
-      .where(inArray(wmsTables.shipmentLines.fulfillmentOrderItemId, fulfillmentOrderItemIds));
-    const shipmentIds = [...new Set(componentLines.map((row) => row.shipmentId))].sort();
-    for (const id of shipmentIds) {
-      await tx.execute(sql`SELECT id FROM shipments WHERE id = ${id}::uuid FOR UPDATE`);
-    }
-
-    const lineIds = [...new Set(componentLines.map((row) => row.id))].sort();
-    for (const id of lineIds) {
-      await tx.execute(sql`SELECT id FROM shipment_lines WHERE id = ${id}::uuid FOR UPDATE`);
-    }
-    await this.lockConfirmedReservations(lineIds, tx);
-
-    const stableFoiIds = await loadConnectedFoiIds();
-    const stableFoiMembership = await loadFoiMembership(stableFoiIds);
-    const stableComponentLines = await tx
-      .select({
-        id: wmsTables.shipmentLines.id,
-        shipmentId: wmsTables.shipmentLines.shipmentId,
-        fulfillmentOrderItemId: wmsTables.shipmentLines.fulfillmentOrderItemId,
-      })
-      .from(wmsTables.shipmentLines)
-      .where(inArray(wmsTables.shipmentLines.fulfillmentOrderItemId, stableFoiIds));
-    if (
-      stableFoiIds.length !== fulfillmentOrderItemIds.length ||
-      stableFoiIds.some((id, index) => id !== fulfillmentOrderItemIds[index]) ||
-      membershipSignature(stableFoiMembership, stableComponentLines) !== initialSignature
-    ) {
-      throw new ConflictException('Reservation component changed while acquiring locks; retry the command');
-    }
+    await lockShipmentConnectedComponentGraph(
+      tx,
+      contexts.map((row) => row.fulfillmentOrderItemId),
+    );
   }
 
   private assertStableContext(before: LineContext, after: LineContext): void {

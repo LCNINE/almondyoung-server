@@ -52,6 +52,31 @@ describe('collectFulfillmentInvariantViolations', () => {
     );
   });
 
+  it('excludes only exact dispatch-recall quarantine from active outstanding demand', () => {
+    const recall = validSnapshot();
+    recall.fulfillmentOrderItems[0] = {
+      ...recall.fulfillmentOrderItems[0],
+      qty: 7,
+      shippedQty: 7,
+      canceledQty: 0,
+    };
+    recall.shipmentLines[0].qty = 7;
+    recall.shipments[0] = {
+      ...recall.shipments[0],
+      status: 'recovery_required',
+      recoveryCode: 'DISPATCH_RECALL_PENDING',
+    };
+    recall.reservations = [];
+    expect(collectFulfillmentInvariantViolations(recall)).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: 'ACTIVE_LINE_QUANTITY' })]),
+    );
+
+    recall.shipments[0].recoveryCode = 'SHORT_PICK_PENDING';
+    expect(collectFulfillmentInvariantViolations(recall)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: 'ACTIVE_LINE_QUANTITY' })]),
+    );
+  });
+
   it('requires exact dispatch source quantity and a one-to-one linked stock event', () => {
     const snapshot = validSnapshot();
     snapshot.dispatchAttempts = [

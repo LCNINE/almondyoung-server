@@ -310,7 +310,7 @@ describe('ShipmentDispatchService', () => {
     expect(outbox.enqueue).toHaveBeenCalledTimes(2);
   });
 
-  it('uses exact allocation sources, deferred SHIP projection, session settlement, reservation consumption and typed outbox', async () => {
+  it('redispatches a recalled shipment with attempt 2, a new invoice, exact stock sources and typed outbox', async () => {
     const { service, inventory, sessions, shipmentReservations, invoices, outbox, audit } = makeService();
     const locked = aggregate({ lines: [line({ qty: 2, inspectedQty: 2, forced: true, lineVersion: 2 })] });
     const recipientHash = canonicalShipmentRecipientHash(locked.shipment.recipientSnapshot);
@@ -334,7 +334,7 @@ describe('ShipmentDispatchService', () => {
           qty: 2,
         },
       ],
-      [{ attemptNo: null }],
+      [{ attemptNo: 1 }],
       [{ ...line({ qty: 2, inspectedQty: 2 }), shippedQty: 0, canceledQty: 0 }],
       [{ fulfillmentOrderId: IDS.fo }],
       [{ id: IDS.fo, salesOrderId: IDS.so }],
@@ -393,7 +393,7 @@ describe('ShipmentDispatchService', () => {
       ],
     });
 
-    expect(result).toMatchObject({ status: 'shipped', attemptNo: 1 });
+    expect(result).toMatchObject({ status: 'shipped', attemptNo: 2 });
     expect(inventory.ship).toHaveBeenCalledWith(
       expect.objectContaining({
         skuId: IDS.sku,

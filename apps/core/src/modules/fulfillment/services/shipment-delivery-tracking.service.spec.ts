@@ -24,7 +24,8 @@ function makeHarness(selectResults: unknown[][], insertResults: unknown[][] = [[
       leftJoin: jest.fn(() => builder),
       where: jest.fn(() => builder),
       orderBy: jest.fn(() => builder),
-      limit: jest.fn(() => Promise.resolve(rows)),
+      limit: jest.fn(() => builder),
+      for: jest.fn(() => builder),
       then: (resolve: (value: unknown[]) => unknown, reject: (reason: unknown) => unknown) =>
         Promise.resolve(rows).then(resolve, reject),
     };
@@ -250,6 +251,66 @@ describe('ShipmentDeliveryTrackingService', () => {
     expect(insertedValues).toHaveLength(0);
     expect(updates).toHaveLength(0);
     expect(outbox.enqueue).not.toHaveBeenCalled();
+  });
+
+  it('records late carrier evidence during recall quarantine without projecting delivery', async () => {
+    const operationId = '77777777-7777-4777-8777-777777777777';
+    const recallPendingAttempt = {
+      ...attempt,
+      status: 'recovery_required',
+      recoveryCode: 'DISPATCH_RECALL_PENDING',
+    };
+    const operation = {
+      id: operationId,
+      type: 'recall',
+      status: 'pending',
+      beforeManifestSnapshot: { intent: { dispatchAttemptId: attemptId } },
+    };
+    const { service, outbox, updates, insertedValues, shipmentReservations } = makeHarness(
+      [
+        [],
+        [recallPendingAttempt],
+        [operation],
+        [operation],
+        [{ operationId }],
+        [recallPendingAttempt],
+        [{ status: 'recovery_required', recoveryCode: 'DISPATCH_RECALL_PENDING' }],
+        [{ id: attemptId }],
+      ],
+      [[{ id: 'tracking-recall-pending' }]],
+    );
+
+    await expect(
+      service.recordProviderEvent(attemptId, {
+        providerEventId: 'late-recall-carrier-progress',
+        status: 'in_transit',
+        occurredAt,
+      }),
+    ).resolves.toEqual({
+      shipmentId,
+      dispatchAttemptId: attemptId,
+      providerEventId: 'late-recall-carrier-progress',
+      status: 'in_transit',
+      replayed: false,
+    });
+
+    expect(insertedValues).toContainEqual({
+      table: wmsTables.shipmentTracking,
+      values: expect.objectContaining({ dispatchAttemptId: attemptId, status: 'in_transit' }),
+    });
+    expect(updates).toEqual([
+      {
+        table: wmsTables.dispatchAttempts,
+        values: expect.objectContaining({ carrierAcceptedAt: new Date(occurredAt) }),
+      },
+      {
+        table: wmsTables.shipmentOperations,
+        values: expect.objectContaining({ status: 'recovery_required' }),
+      },
+    ]);
+    expect(updates.some((update) => update.table === wmsTables.shipments)).toBe(false);
+    expect(outbox.enqueue).not.toHaveBeenCalled();
+    expect(shipmentReservations.lockShipmentGraphForDispatch).toHaveBeenCalledWith(shipmentId, expect.anything());
   });
 
   it('rejects carrier evidence whose occurrence time predates dispatch', async () => {

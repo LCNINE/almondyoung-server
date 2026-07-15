@@ -515,17 +515,13 @@ describeIfDb('InvoiceOrchestrator (DB integration)', () => {
         announceInvoiceAttempt();
         await (
           orchestrator as unknown as {
-            lockShortPickResumeOwnerIfApplicable(
+            lockRecoveryResumeOwnerIfApplicable(
               operationId: string,
               shipmentId: string,
               transaction: DbTx,
-            ): Promise<boolean>;
+            ): Promise<'short_pick' | 'recall' | null>;
           }
-        ).lockShortPickResumeOwnerIfApplicable(
-          shortPickOperationId,
-          fixture.shipment.shipmentId,
-          tx as unknown as DbTx,
-        );
+        ).lockRecoveryResumeOwnerIfApplicable(shortPickOperationId, fixture.shipment.shipmentId, tx as unknown as DbTx);
         await tx
           .select({ id: wmsTables.invoices.id })
           .from(wmsTables.invoices)

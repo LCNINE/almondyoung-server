@@ -105,6 +105,24 @@ describe('InvoiceOrchestrator provider crash recovery', () => {
     expect(shortPick.resumePending).toHaveBeenCalledWith('operation-1', tx);
   });
 
+  it('routes a succeeded recall invoice void to the exact recall operation', async () => {
+    const recall = { resumePending: jest.fn().mockResolvedValue(undefined) };
+    const moduleRef = { get: jest.fn(() => recall) };
+    const { service } = makeService(undefined, moduleRef);
+    const tx = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          where: jest.fn(() => ({ limit: jest.fn().mockResolvedValue([{ type: 'recall', status: 'pending' }]) })),
+        })),
+      })),
+    };
+
+    await (service as any).resumeWaitingOperation('recall-operation-1', tx);
+
+    expect(moduleRef.get).toHaveBeenCalledWith(expect.any(Function), { strict: false });
+    expect(recall.resumePending).toHaveBeenCalledWith('recall-operation-1', tx);
+  });
+
   it('durably stores provider success before finalizing the invoice', async () => {
     const { service, provider } = makeService();
     jest.spyOn(service as any, 'loadLeasedOperation').mockResolvedValue(operation());
@@ -182,9 +200,9 @@ describe('InvoiceOrchestrator provider crash recovery', () => {
     (service as any).dbService = {
       run: (fn: (tx: unknown) => unknown) => fn(transaction++ === 0 ? optimisticTx : finalTx),
     };
-    jest.spyOn(service as any, 'lockShortPickResumeOwnerIfApplicable').mockImplementation(async () => {
+    jest.spyOn(service as any, 'lockRecoveryResumeOwnerIfApplicable').mockImplementation(async () => {
       order.push('short-pick-owner');
-      return true;
+      return 'short_pick';
     });
     jest.spyOn(service as any, 'lockManifest').mockImplementation(async () => {
       order.push('manifest');
@@ -198,6 +216,61 @@ describe('InvoiceOrchestrator provider crash recovery', () => {
     await (service as any).finalizeProviderSuccess('operation-1');
 
     expect(order).toEqual(['short-pick-owner', 'manifest', 'invoice-operation', 'resume']);
+  });
+
+  it('locks the recall owner before manifest and invoice finalization rows', async () => {
+    const { service } = makeService();
+    const order: string[] = [];
+    const current = operation({
+      operation: 'void',
+      resumeOperationId: 'recall-1',
+      providerResponse: {},
+      providerRequest: {
+        kind: 'void',
+        provider: 'goodsflow',
+        externalServiceId: 'service-1',
+        operationContext: { operationId: 'operation-1', idempotencyKey: 'operation-1' },
+        commandContext,
+      },
+    });
+    const optimisticTx = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({ where: jest.fn(() => ({ limit: jest.fn().mockResolvedValue([current]) })) })),
+      })),
+    };
+    const finalTx = {
+      select: jest.fn(() => ({
+        from: jest.fn(() => ({
+          where: jest.fn(() => ({
+            limit: jest.fn(() => ({
+              for: jest.fn(async () => {
+                order.push('invoice-operation');
+                return [current];
+              }),
+            })),
+          })),
+        })),
+      })),
+      update: jest.fn(() => ({ set: jest.fn(() => ({ where: jest.fn().mockResolvedValue(undefined) })) })),
+    };
+    let transaction = 0;
+    (service as any).dbService = {
+      run: (fn: (tx: unknown) => unknown) => fn(transaction++ === 0 ? optimisticTx : finalTx),
+    };
+    jest.spyOn(service as any, 'lockRecoveryResumeOwnerIfApplicable').mockImplementation(async () => {
+      order.push('recall-owner');
+      return 'recall';
+    });
+    jest.spyOn(service as any, 'lockManifest').mockImplementation(async () => {
+      order.push('manifest');
+      return { shipment: { id: 'shipment-1' }, fulfillmentOrderIds: [] };
+    });
+    jest.spyOn(service as any, 'resumeWaitingOperation').mockImplementation(async () => order.push('recall-resume'));
+    jest.spyOn(service as any, 'auditOutcome').mockResolvedValue(undefined);
+
+    await (service as any).finalizeProviderSuccess('operation-1');
+
+    expect(order).toEqual(['recall-owner', 'manifest', 'invoice-operation', 'recall-resume']);
   });
 
   it('re-reads a durable provider response and schedules finalization retry even when provider repeat is unsupported', async () => {
@@ -294,6 +367,60 @@ describe('InvoiceOrchestrator provider crash recovery', () => {
       expect.any(DeliveryProviderError),
       tx,
     );
+  });
+
+  it('keeps a provider timeout on the same recall operation in recovery_required', async () => {
+    const recall = { markInvoiceRecoveryRequired: jest.fn().mockResolvedValue(undefined) };
+    const { service } = makeService(undefined, { get: jest.fn(() => recall) });
+    const current = operation({
+      operation: 'void',
+      resumeOperationId: 'recall-1',
+      attempts: 8,
+      providerRequest: {
+        kind: 'void',
+        provider: 'goodsflow',
+        externalServiceId: 'service-1',
+        operationContext: { operationId: 'operation-1', idempotencyKey: 'operation-1' },
+        commandContext,
+      },
+    });
+    const selectedRows = [
+      { rows: [{ type: 'recall' }] },
+      { rows: [{ type: 'recall' }] },
+      { rows: [{ shipmentId: current.shipmentId }] },
+      { rows: [{ id: current.invoiceId }] },
+      { rows: [current] },
+    ];
+    const updates: Array<Record<string, unknown>> = [];
+    const tx = {
+      select: jest.fn(() => {
+        const selected = selectedRows.shift() ?? { rows: [] };
+        return {
+          from: jest.fn(() => ({
+            where: jest.fn(() => ({
+              limit: jest.fn(() => ({
+                for: jest.fn().mockResolvedValue(selected.rows),
+                then: (resolve: (value: unknown[]) => unknown) => Promise.resolve(selected.rows).then(resolve),
+              })),
+            })),
+          })),
+        };
+      }),
+      update: jest.fn(() => ({
+        set: jest.fn((set: Record<string, unknown>) => {
+          updates.push(set);
+          return { where: jest.fn().mockResolvedValue(undefined) };
+        }),
+      })),
+    };
+    (service as any).dbService = { run: (fn: (trx: unknown) => unknown) => fn(tx) };
+    (service as any).audit = { logUserActionRequired: jest.fn().mockResolvedValue(undefined) };
+
+    await (service as any).recordFailure(current, new Error('provider timeout'));
+
+    expect(updates[0]).toMatchObject({ status: 'recovery_required' });
+    expect(updates[0].nextRetryAt).toBeInstanceOf(Date);
+    expect(recall.markInvoiceRecoveryRequired).toHaveBeenCalledWith('recall-1', expect.any(DeliveryProviderError), tx);
   });
 
   it('voids the local issuing placeholder when unsupported is known before any provider side effect', async () => {

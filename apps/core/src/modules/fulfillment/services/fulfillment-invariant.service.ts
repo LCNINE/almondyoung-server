@@ -33,7 +33,13 @@ export interface FulfillmentInvariantSnapshot {
     shippedQty: number;
     canceledQty: number;
   }>;
-  shipments: Array<{ id: string; warehouseId: string; status: string; manifestVersion: number }>;
+  shipments: Array<{
+    id: string;
+    warehouseId: string;
+    status: string;
+    manifestVersion: number;
+    recoveryCode?: string | null;
+  }>;
   shipmentLines: Array<{
     id: string;
     shipmentId: string;
@@ -119,7 +125,11 @@ export function collectFulfillmentInvariantViolations(
       snapshot.shipmentLines.filter(
         (line) =>
           line.fulfillmentOrderItemId === item.id &&
-          ACTIVE_SHIPMENT_STATUSES.has(shipmentById.get(line.shipmentId)?.status ?? ''),
+          ACTIVE_SHIPMENT_STATUSES.has(shipmentById.get(line.shipmentId)?.status ?? '') &&
+          !(
+            shipmentById.get(line.shipmentId)?.status === 'recovery_required' &&
+            shipmentById.get(line.shipmentId)?.recoveryCode === 'DISPATCH_RECALL_PENDING'
+          ),
       ),
       (line) => line.qty,
     );
@@ -364,6 +374,7 @@ export class FulfillmentInvariantService {
             id: wmsTables.shipments.id,
             warehouseId: wmsTables.shipments.warehouseId,
             status: wmsTables.shipments.status,
+            recoveryCode: wmsTables.shipments.recoveryCode,
             manifestVersion: wmsTables.shipments.manifestVersion,
           })
           .from(wmsTables.shipments)

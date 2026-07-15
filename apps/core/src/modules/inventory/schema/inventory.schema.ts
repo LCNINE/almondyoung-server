@@ -911,6 +911,9 @@ export const stockEvents = pgTable(
   },
   (t) => ({
     ixGrainTime: index('ix_stock_events_grain_time').on(t.skuId, t.fromWarehouseId, t.toWarehouseId, t.occurredAt),
+    uqReversalOfEvent: uniqueIndex('uq_stock_events_reversal_of_event')
+      .on(t.reversalOfEventId)
+      .where(sql`${t.reversalOfEventId} IS NOT NULL`),
     ckQtyPositive: check('ck_events_qty_positive', sql`${t.quantity} > 0`),
     ckStatesDifferent: check(
       'ck_events_states_diff',

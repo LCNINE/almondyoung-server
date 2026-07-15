@@ -342,6 +342,95 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
     expect(listSummary).toMatchObject({ status: 'picking', totalItems: 1, totalQty: 3 });
   });
 
+  it('allows a recalled dispatch history through batch add and exclusion while preserving the old attempt', async () => {
+    const fixture = await committedFixture({ quantity: 2 });
+    const attemptId = randomUUID();
+    const [dispatchJournal] = await db
+      .insert(wmsTables.stockJournals)
+      .values({
+        sourceType: 'SHIPMENT_DISPATCH_ATTEMPT',
+        sourceId: attemptId,
+        idempotencyKey: `history-${randomUUID()}`,
+      })
+      .returning();
+    const [reversalJournal] = await db
+      .insert(wmsTables.stockJournals)
+      .values({
+        sourceType: 'SHIPMENT_RECALL',
+        sourceId: randomUUID(),
+        idempotencyKey: `history-recall-${randomUUID()}`,
+      })
+      .returning();
+    const dispatchedAt = new Date('2026-07-15T00:00:00.000Z');
+    const [attempt] = await db
+      .insert(wmsTables.dispatchAttempts)
+      .values({
+        id: attemptId,
+        shipmentId: fixture.shipment.id,
+        attemptNo: 1,
+        status: 'recalled',
+        idempotencyKey: `history-attempt-${randomUUID()}`,
+        stockJournalId: dispatchJournal.id,
+        reversalJournalId: reversalJournal.id,
+        dispatchedAt,
+        recalledAt: new Date('2026-07-15T01:00:00.000Z'),
+      })
+      .returning();
+    const [shipEvent] = await db
+      .insert(wmsTables.stockEvents)
+      .values({
+        journalId: dispatchJournal.id,
+        skuId: fixture.skuId,
+        fromWarehouseId: fixture.warehouseId,
+        fromLocationId: fixture.locationId,
+        fromState: 'ON_HAND',
+        transitionType: 'SHIP',
+        quantity: fixture.line.qty,
+        occurredAt: dispatchedAt,
+        idempotencyKey: `history-event-${randomUUID()}`,
+        eventStatus: 'POSTED',
+      })
+      .returning();
+    const [source] = await db
+      .insert(wmsTables.dispatchAttemptSources)
+      .values({
+        dispatchAttemptId: attempt.id,
+        shipmentLineId: fixture.line.id,
+        sourceLocationId: fixture.locationId,
+        qty: fixture.line.qty,
+        stockEventId: shipEvent.id,
+      })
+      .returning();
+    const batch = await createBatch(fixture.warehouseId);
+
+    const added = await services.batches.addShipment(
+      batch.batchId,
+      fixture.shipment.id,
+      `recalled-add-${randomUUID()}`,
+      master,
+    );
+    const excluded = await services.batches.excludeShipment(
+      batch.batchId,
+      fixture.shipment.id,
+      { reason: 'replan elsewhere' },
+      `recalled-exclude-${randomUUID()}`,
+      master,
+    );
+
+    expect(added.workItem.status).toBe('queued');
+    expect(excluded.workItem.status).toBe('excluded');
+    const [attemptAfter] = await db
+      .select()
+      .from(wmsTables.dispatchAttempts)
+      .where(eq(wmsTables.dispatchAttempts.id, attempt.id));
+    const [sourceAfter] = await db
+      .select()
+      .from(wmsTables.dispatchAttemptSources)
+      .where(eq(wmsTables.dispatchAttemptSources.id, source.id));
+    expect(attemptAfter).toEqual(attempt);
+    expect(sourceAfter).toEqual(source);
+  });
+
   it('rejects a shipment from the wrong warehouse before creating a work item', async () => {
     const fixture = await committedFixture();
     const otherWarehouse = await db.transaction((tx) => seedWarehouseWithZone(tx as unknown as DbTx));

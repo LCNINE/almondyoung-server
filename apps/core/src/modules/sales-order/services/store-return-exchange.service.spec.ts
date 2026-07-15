@@ -9,6 +9,10 @@ const CUSTOMER_ID = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 const LINE_ID = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
 const RR_ID = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
 const ER_ID = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee';
+const SHIPMENT_ID = '11111111-1111-4111-8111-111111111111';
+const SHIPMENT_LINE_ID = '22222222-2222-4222-8222-222222222222';
+const DISPATCH_ATTEMPT_ID = '33333333-3333-4333-8333-333333333333';
+const FULFILLMENT_ORDER_ITEM_ID = '44444444-4444-4444-8444-444444444444';
 
 function makeSo(overrides: Record<string, unknown> = {}) {
   return {
@@ -58,6 +62,81 @@ function makeWalletClient() {
   return { refundByIntent: jest.fn() };
 }
 
+function terminalRows(rows: unknown[]): Record<string, unknown> {
+  const self: Record<string, unknown> = {
+    limit: (n: number) => Promise.resolve(rows.slice(0, n)),
+    offset: () => terminalRows(rows),
+    orderBy: () => terminalRows(rows),
+    where: () => terminalRows(rows),
+    innerJoin: () => terminalRows(rows),
+    leftJoin: () => terminalRows(rows),
+    groupBy: () => terminalRows(rows),
+    for: () => terminalRows(rows),
+    then: (resolve: (v: unknown[]) => unknown) => Promise.resolve(rows).then(resolve),
+  };
+  return self;
+}
+
+function makeEligibleReturnTxSelect(
+  createdItem: Record<string, unknown>,
+  options: {
+    attemptStatus?: string;
+    delivered?: boolean;
+    shippedQuantity?: number;
+    claimedQuantity?: number;
+    purchasedQuantity?: number;
+    salesOrderId?: string;
+    salesOrderLineId?: string;
+    callOrder?: string[];
+  } = {},
+) {
+  return jest.fn(() => ({
+    from: (table: unknown) => {
+      if (table === wmsTables.dispatchAttempts) options.callOrder?.push('attempt');
+      if (table === wmsTables.shipmentLines) options.callOrder?.push('line');
+      if (table === wmsTables.shipmentTracking) options.callOrder?.push('tracking');
+      if (table === wmsTables.dispatchAttemptSources) options.callOrder?.push('sources');
+      if (table === returnExchangeTables.returnRequestItems) options.callOrder?.push('claims/items');
+      if (table === wmsTables.dispatchAttempts) {
+        return terminalRows([
+          { id: DISPATCH_ATTEMPT_ID, shipmentId: SHIPMENT_ID, status: options.attemptStatus ?? 'dispatched' },
+        ]);
+      }
+      if (table === wmsTables.shipmentLines) {
+        return terminalRows([
+          {
+            id: SHIPMENT_LINE_ID,
+            shipmentId: SHIPMENT_ID,
+            fulfillmentOrderItemId: FULFILLMENT_ORDER_ITEM_ID,
+            salesOrderId: options.salesOrderId ?? ORDER_ID,
+            salesOrderLineId: options.salesOrderLineId ?? LINE_ID,
+          },
+        ]);
+      }
+      if (table === wmsTables.fulfillmentOrderItems) {
+        return terminalRows([{ id: FULFILLMENT_ORDER_ITEM_ID, fulfillmentOrderId: 'fo-1' }]);
+      }
+      if (table === wmsTables.salesOrderLines) {
+        return terminalRows([{ id: LINE_ID, quantity: options.purchasedQuantity ?? 5 }]);
+      }
+      if (table === wmsTables.shipmentTracking) {
+        return terminalRows(options.delivered === false ? [] : [{ id: 'delivered-event' }]);
+      }
+      if (table === wmsTables.dispatchAttemptSources) {
+        return terminalRows([{ quantity: String(options.shippedQuantity ?? 1) }]);
+      }
+      if (table === returnExchangeTables.returnRequestItems) {
+        return {
+          ...terminalRows([createdItem]),
+          // Eligibility aggregation sees no pre-existing exact-attempt claim.
+          innerJoin: () => terminalRows(options.claimedQuantity ? [{ quantity: String(options.claimedQuantity) }] : []),
+        };
+      }
+      return terminalRows([]);
+    },
+  }));
+}
+
 // ── Mock DB builder ───────────────────────────────────────────────────────────
 
 /**
@@ -72,25 +151,10 @@ function makeWalletClient() {
  */
 function makeMockDb(selectRowsFor: (table: unknown) => unknown[]) {
   // Terminal chain that holds a resolved row set and supports every tail call.
-  function terminal(rows: unknown[]): Record<string, unknown> {
-    const self: Record<string, unknown> = {
-      limit: (n: number) => Promise.resolve(rows.slice(0, n)),
-      offset: () => terminal(rows),
-      orderBy: () => terminal(rows),
-      where: () => terminal(rows),
-      innerJoin: () => terminal(rows),
-      leftJoin: () => terminal(rows),
-      groupBy: () => terminal(rows),
-      for: () => terminal(rows),
-      then: (resolve: (v: unknown[]) => unknown) => Promise.resolve(rows).then(resolve),
-    };
-    return self;
-  }
-
   // A chainable select mock.
   function makeSelect() {
     return jest.fn(() => ({
-      from: (table: unknown) => terminal(selectRowsFor(table)),
+      from: (table: unknown) => terminalRows(selectRowsFor(table)),
     }));
   }
 
@@ -117,6 +181,7 @@ function makeMockDb(selectRowsFor: (table: unknown) => unknown[]) {
     select: makeSelect(),
     update: makeUpdate(),
     insert: makeInsert(),
+    execute: jest.fn().mockResolvedValue([{ id: FULFILLMENT_ORDER_ITEM_ID }]),
   };
 
   const db = {
@@ -136,7 +201,14 @@ function makeMockDb(selectRowsFor: (table: unknown) => unknown[]) {
 
 describe('StoreReturnExchangeService.createReturnRequest', () => {
   const baseDto = {
-    lines: [{ salesOrderLineId: LINE_ID, quantity: 1 }],
+    lines: [
+      {
+        salesOrderLineId: LINE_ID,
+        shipmentLineId: SHIPMENT_LINE_ID,
+        dispatchAttemptId: DISPATCH_ATTEMPT_ID,
+        quantity: 1,
+      },
+    ],
     reasonCode: 'defective' as const,
   };
 
@@ -154,15 +226,13 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
 
     const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
 
-    await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(
-      BadRequestException,
-    );
+    await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(BadRequestException);
   });
 
   it('throws BadRequestException when requested quantity exceeds original line quantity', async () => {
     // Line exists with quantity 2; request asks for 5.
     // assertReturnQuantitiesAvailable: originalQty=2, claimedQty=0 → available=2 < 5 → throws.
-    const dto = { ...baseDto, lines: [{ salesOrderLineId: LINE_ID, quantity: 5 }] };
+    const dto = { ...baseDto, lines: [{ ...baseDto.lines[0], quantity: 5 }] };
 
     const mockDb = makeMockDb((table) => {
       if (table === inventoryTables.salesOrders) return [makeSo()];
@@ -175,14 +245,12 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
 
     const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
 
-    await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, dto)).rejects.toThrow(
-      BadRequestException,
-    );
+    await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, dto)).rejects.toThrow(BadRequestException);
   });
 
   it('throws BadRequestException when requested quantity exceeds remaining (original minus active claims)', async () => {
     // Original quantity 3; 2 already claimed; request asks for 2 → available=1 < 2.
-    const dto = { ...baseDto, lines: [{ salesOrderLineId: LINE_ID, quantity: 2 }] };
+    const dto = { ...baseDto, lines: [{ ...baseDto.lines[0], quantity: 2 }] };
 
     // The service makes two separate selects for assertReturnQuantitiesAvailable:
     //   1. from(salesOrderLines) → original quantities
@@ -203,24 +271,26 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
 
     const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
 
-    await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, dto)).rejects.toThrow(
-      BadRequestException,
-    );
+    await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, dto)).rejects.toThrow(BadRequestException);
   });
 
-  it('throws BadRequestException when FO exists but none has status completed (shipped-only)', async () => {
-    // SO status is NOT 'delivered'; FO only has status 'shipped' (not 'completed').
+  it('still rejects a partial order when the requested line does not have exact delivered-attempt evidence', async () => {
     const mockDb = makeMockDb((table) => {
       if (table === inventoryTables.salesOrders) return [makeSo({ status: 'shipped' })];
-      if (table === inventoryTables.fulfillmentOrders) return [{ id: 'fo-1', salesOrderId: ORDER_ID, status: 'shipped' }];
+      if (table === inventoryTables.fulfillmentOrders)
+        return [{ id: 'fo-1', salesOrderId: ORDER_ID, status: 'shipped' }];
+      if (table === returnExchangeTables.returnRequests) return [];
+      if (table === wmsTables.salesOrderLines) {
+        return [{ id: LINE_ID, salesOrderId: ORDER_ID, quantity: 1 }];
+      }
       return [];
     });
+    const tx = (mockDb as any)._tx;
+    tx.select = makeEligibleReturnTxSelect({}, { delivered: false });
 
     const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
 
-    await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(
-      BadRequestException,
-    );
+    await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(BadRequestException);
   });
 
   it('succeeds when SO status is delivered', async () => {
@@ -229,6 +299,8 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
       id: 'item-1',
       returnRequestId: RR_ID,
       salesOrderLineId: LINE_ID,
+      shipmentLineId: SHIPMENT_LINE_ID,
+      dispatchAttemptId: DISPATCH_ATTEMPT_ID,
       quantity: 1,
       reasonCode: null,
       createdAt: new Date('2026-06-01T00:00:00.000Z'),
@@ -257,25 +329,7 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
         return { returning: jest.fn().mockResolvedValue([]) };
       }),
     }));
-    tx.select = jest.fn(() => ({
-      from: (_t: unknown) => ({
-        where: (_cond: unknown) => ({
-          limit: (n: number) => Promise.resolve([createdItem].slice(0, n)),
-          then: (resolve: (v: unknown[]) => unknown) => Promise.resolve([createdItem]).then(resolve),
-          orderBy: () => ({
-            limit: (n: number) => Promise.resolve([createdItem].slice(0, n)),
-            offset: () => ({ limit: (n: number) => Promise.resolve([createdItem].slice(0, n)) }),
-          }),
-        }),
-        innerJoin: () => ({
-          where: (_c: unknown) => ({
-            groupBy: () => Promise.resolve([]),
-            then: (resolve: (v: unknown[]) => unknown) => Promise.resolve([]).then(resolve),
-          }),
-        }),
-        then: (resolve: (v: unknown[]) => unknown) => Promise.resolve([createdItem]).then(resolve),
-      }),
-    }));
+    tx.select = makeEligibleReturnTxSelect(createdItem);
 
     const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
 
@@ -288,12 +342,14 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
     expect(result.items[0].salesOrderLineId).toBe(LINE_ID);
   });
 
-  it('succeeds when SO status is not delivered but a FO has status completed', async () => {
+  it('allows an exact delivered attempt while the aggregate order/FO is still partial', async () => {
     const createdReturnRequest = makeReturnRequest();
     const createdItem = {
       id: 'item-1',
       returnRequestId: RR_ID,
       salesOrderLineId: LINE_ID,
+      shipmentLineId: SHIPMENT_LINE_ID,
+      dispatchAttemptId: DISPATCH_ATTEMPT_ID,
       quantity: 1,
       reasonCode: null,
       createdAt: new Date('2026-06-01T00:00:00.000Z'),
@@ -302,7 +358,7 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
     const mockDb = makeMockDb((table) => {
       if (table === inventoryTables.salesOrders) return [makeSo({ status: 'processing' })];
       if (table === inventoryTables.fulfillmentOrders)
-        return [{ id: 'fo-1', salesOrderId: ORDER_ID, status: 'completed' }];
+        return [{ id: 'fo-1', salesOrderId: ORDER_ID, status: 'shipped' }];
       if (table === returnExchangeTables.returnRequests) return [];
       if (table === wmsTables.salesOrderLines) return [{ id: LINE_ID, salesOrderId: ORDER_ID, quantity: 5 }];
       if (table === returnExchangeTables.returnRequestItems) return [];
@@ -318,21 +374,7 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
         return { returning: jest.fn().mockResolvedValue([]) };
       }),
     }));
-    tx.select = jest.fn(() => ({
-      from: (_t: unknown) => ({
-        where: (_cond: unknown) => ({
-          limit: (n: number) => Promise.resolve([createdItem].slice(0, n)),
-          then: (resolve: (v: unknown[]) => unknown) => Promise.resolve([createdItem]).then(resolve),
-        }),
-        innerJoin: () => ({
-          where: (_c: unknown) => ({
-            groupBy: () => Promise.resolve([]),
-            then: (resolve: (v: unknown[]) => unknown) => Promise.resolve([]).then(resolve),
-          }),
-        }),
-        then: (resolve: (v: unknown[]) => unknown) => Promise.resolve([createdItem]).then(resolve),
-      }),
-    }));
+    tx.select = makeEligibleReturnTxSelect(createdItem);
 
     const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
 
@@ -351,9 +393,76 @@ describe('StoreReturnExchangeService.createReturnRequest', () => {
 
     const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
 
-    await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(
-      ConflictException,
+    await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(ConflictException);
+  });
+
+  it('rejects a recalled exact dispatch attempt after locking its graph but before tracking state', async () => {
+    const callOrder: string[] = [];
+    const mockDb = makeMockDb(() => []);
+    const tx = (mockDb as any)._tx;
+    tx.select = makeEligibleReturnTxSelect({}, { attemptStatus: 'recalled', callOrder });
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
+
+    await expect((service as any).assertAttemptBasedReturnEligibility(ORDER_ID, baseDto.lines, tx)).rejects.toThrow(
+      /recalled/,
     );
+    expect(callOrder[0]).toBe('line');
+    expect(callOrder).toContain('attempt');
+    expect(callOrder).not.toContain('tracking');
+  });
+
+  it('rejects an attempt without delivered tracking evidence for that exact attempt', async () => {
+    const mockDb = makeMockDb(() => []);
+    const tx = (mockDb as any)._tx;
+    tx.select = makeEligibleReturnTxSelect({}, { delivered: false });
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
+
+    await expect((service as any).assertAttemptBasedReturnEligibility(ORDER_ID, baseDto.lines, tx)).rejects.toThrow(
+      /배송 완료된 시도/,
+    );
+  });
+
+  it('rejects shipment-line ownership mismatches even when the shipment attempt is delivered', async () => {
+    const mockDb = makeMockDb(() => []);
+    const tx = (mockDb as any)._tx;
+    tx.select = makeEligibleReturnTxSelect({}, { salesOrderId: 'other-order' });
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
+
+    await expect((service as any).assertAttemptBasedReturnEligibility(ORDER_ID, baseDto.lines, tx)).rejects.toThrow(
+      /소유 관계/,
+    );
+  });
+
+  it('locks the graph and purchased cap, then the attempt, before exact-grain claims', async () => {
+    const callOrder: string[] = [];
+    const mockDb = makeMockDb(() => []);
+    const tx = (mockDb as any)._tx;
+    tx.select = makeEligibleReturnTxSelect({}, { shippedQuantity: 2, claimedQuantity: 2, callOrder });
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
+
+    await expect((service as any).assertAttemptBasedReturnEligibility(ORDER_ID, baseDto.lines, tx)).rejects.toThrow(
+      /반품 가능 수량\(0\)/,
+    );
+    expect(callOrder[0]).toBe('line');
+    expect(callOrder.indexOf('line')).toBeLessThan(callOrder.indexOf('attempt'));
+    expect(callOrder.indexOf('claims/items')).toBeLessThan(callOrder.indexOf('attempt'));
+    expect(callOrder.indexOf('attempt')).toBeLessThan(callOrder.lastIndexOf('claims/items'));
+  });
+
+  it('keeps legacy active exchange claims in the SO-line shared availability gate', async () => {
+    const mockDb = makeMockDb((table) => {
+      if (table === inventoryTables.salesOrders) return [makeSo()];
+      if (table === returnExchangeTables.returnRequests) return [];
+      if (table === wmsTables.salesOrderLines) return [{ id: LINE_ID, salesOrderId: ORDER_ID, quantity: 1 }];
+      if (table === returnExchangeTables.returnRequestItems) return [];
+      if (table === returnExchangeTables.exchangeRequestItems) {
+        return [{ salesOrderLineId: LINE_ID, totalClaimed: '1' }];
+      }
+      return [];
+    });
+    const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
+
+    await expect(service.createReturnRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(/반품 가능 수량\(0\)/);
   });
 });
 
@@ -374,15 +483,29 @@ describe('StoreReturnExchangeService.createExchangeRequest', () => {
 
     const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
 
-    await expect(service.createExchangeRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(
-      ConflictException,
-    );
+    await expect(service.createExchangeRequest(ORDER_ID, CUSTOMER_ID, baseDto)).rejects.toThrow(ConflictException);
   });
 });
 
 // ── approveReturnRequest tests ────────────────────────────────────────────────
 
 describe('StoreReturnExchangeService.approveReturnRequest', () => {
+  it('keeps historical nullable line/attempt links readable', () => {
+    const service = new StoreReturnExchangeService({ db: {} } as any, makeWalletClient() as any);
+    const response = (service as any).toReturnResponseDto(makeReturnRequest(), [
+      {
+        salesOrderLineId: LINE_ID,
+        shipmentLineId: null,
+        dispatchAttemptId: null,
+        quantity: 1,
+      },
+    ]);
+
+    expect(response.items).toEqual([
+      expect.objectContaining({ shipmentLineId: null, dispatchAttemptId: null, quantity: 1 }),
+    ]);
+  });
+
   it('transitions from requested to approved and returns the updated row', async () => {
     const rr = makeReturnRequest({ status: 'requested' });
     const approvedRr = { ...rr, status: 'approved', decidedAt: new Date(), updatedAt: new Date() };
@@ -393,13 +516,14 @@ describe('StoreReturnExchangeService.approveReturnRequest', () => {
     });
 
     const tx = (mockDb as any)._tx;
+    const receiptItem = {
+      salesOrderLineId: LINE_ID,
+      shipmentLineId: SHIPMENT_LINE_ID,
+      dispatchAttemptId: DISPATCH_ATTEMPT_ID,
+      quantity: 1,
+    };
     tx.select = jest.fn(() => ({
-      from: (_t: unknown) => ({
-        where: (_cond: unknown) => ({
-          limit: (n: number) => Promise.resolve([rr].slice(0, n)),
-          then: (resolve: (v: unknown[]) => unknown) => Promise.resolve([rr]).then(resolve),
-        }),
-      }),
+      from: (table: unknown) => terminalRows(table === returnExchangeTables.returnRequests ? [rr] : [receiptItem]),
     }));
     tx.update = jest.fn(() => ({
       set: (_set: unknown) => ({
@@ -408,8 +532,9 @@ describe('StoreReturnExchangeService.approveReturnRequest', () => {
         }),
       }),
     }));
+    const insertValues = jest.fn().mockResolvedValue(undefined);
     tx.insert = jest.fn(() => ({
-      values: jest.fn().mockResolvedValue(undefined),
+      values: insertValues,
     }));
 
     const service = new StoreReturnExchangeService(mockDb as any, makeWalletClient() as any);
@@ -417,6 +542,14 @@ describe('StoreReturnExchangeService.approveReturnRequest', () => {
     const result = await service.approveReturnRequest(RR_ID, 'admin-1', 'looks good');
 
     expect(result.status).toBe('approved');
+    expect(insertValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({
+          returnReceiptItemsVersion: 1,
+          returnReceiptItems: [receiptItem],
+        }),
+      }),
+    );
   });
 
   it('throws ConflictException when status is already approved (not requested)', async () => {
@@ -1037,7 +1170,9 @@ describe('StoreReturnExchangeService.attemptReturnRefund (상태기계)', () => 
 describe('StoreReturnExchangeService.calculateReturnRefund (P1-10 기준 통일)', () => {
   // private 메서드 → 인스턴스 통해 호출 (기존 스펙의 private 접근 관행과 동일)
   function calc(service: StoreReturnExchangeService, ...args: unknown[]): number {
-    return (service as unknown as { calculateReturnRefund: (...a: unknown[]) => number }).calculateReturnRefund(...args);
+    return (service as unknown as { calculateReturnRefund: (...a: unknown[]) => number }).calculateReturnRefund(
+      ...args,
+    );
   }
 
   it('할인 라인 부분반품 시 분자도 totalPrice 기준으로 비례(과대환불 없음)', () => {

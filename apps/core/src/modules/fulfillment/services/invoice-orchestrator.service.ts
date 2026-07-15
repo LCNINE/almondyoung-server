@@ -25,6 +25,7 @@ import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentPlanningService } from './shipment-planning.service';
 import { ConsolidationService } from './consolidation.service';
 import { ShipmentShortPickService } from './shipment-short-pick.service';
+import { ShipmentRecallService } from './shipment-recall.service';
 
 const ACTIVE_INVOICE_STATUSES = ['issued', 'used', 'issuing', 'voiding', 'recovery_required'] as const;
 const TRUSTED_CHANNELS = new Set(['medusa', 'naver', 'coupang']);
@@ -246,7 +247,7 @@ export class InvoiceOrchestrator {
           .limit(1);
         if (!optimistic?.shipmentId) throw new NotFoundException(`Shipment-owned invoice ${invoiceId} not found`);
         if (dto.resumeOperationId) {
-          await this.lockShortPickResumeOwnerIfApplicable(dto.resumeOperationId, optimistic.shipmentId, trx);
+          await this.lockRecoveryResumeOwnerIfApplicable(dto.resumeOperationId, optimistic.shipmentId, trx);
         }
         const manifest = await this.lockManifest(optimistic.shipmentId, trx, [invoiceId]);
         const [invoice] = await trx
@@ -552,7 +553,7 @@ export class InvoiceOrchestrator {
     if (!optimistic || optimistic.status === 'succeeded') return;
     await this.dbService.run(async (tx) => {
       if (optimistic.resumeOperationId) {
-        await this.lockShortPickResumeOwnerIfApplicable(optimistic.resumeOperationId, optimistic.shipmentId, tx);
+        await this.lockRecoveryResumeOwnerIfApplicable(optimistic.resumeOperationId, optimistic.shipmentId, tx);
       }
       const manifest = await this.lockManifest(
         optimistic.shipmentId,
@@ -634,9 +635,9 @@ export class InvoiceOrchestrator {
         : new DeliveryProviderError(errorMessage(error), 'unknown_outcome', { cause: error });
     const provider = this.provider((operation.providerRequest as StoredProviderRequest).provider);
     await this.dbService.run(async (tx) => {
-      const shortPickResume = operation.resumeOperationId
-        ? await this.lockShortPickResumeOwnerIfApplicable(operation.resumeOperationId, operation.shipmentId, tx)
-        : false;
+      const recoveryResume = operation.resumeOperationId
+        ? await this.lockRecoveryResumeOwnerIfApplicable(operation.resumeOperationId, operation.shipmentId, tx)
+        : null;
       if (operation.invoiceId) {
         await tx
           .select({ id: wmsTables.invoices.id })
@@ -660,17 +661,18 @@ export class InvoiceOrchestrator {
           : provider.capabilities.void.lookupByServiceId || provider.capabilities.void.safeToRepeat;
       const definitive = normalized.outcome === 'definitive_rejection' || normalized.outcome === 'not_found';
       const retryable =
-        shortPickResume ||
+        recoveryResume !== null ||
         (current.attempts < MAX_ATTEMPTS &&
           (hasDurableProviderResponse ||
             (!definitive && normalized.outcome !== 'unsupported' && canRecoverExternalOutcome)));
-      const status = shortPickResume
-        ? 'recovery_required'
-        : hasDurableProviderResponse
+      const status =
+        recoveryResume !== null
           ? 'recovery_required'
-          : definitive || normalized.outcome === 'unsupported'
-            ? 'failed'
-            : 'recovery_required';
+          : hasDurableProviderResponse
+            ? 'recovery_required'
+            : definitive || normalized.outcome === 'unsupported'
+              ? 'failed'
+              : 'recovery_required';
       const issueSideEffectImpossible =
         current.operation === 'issue' &&
         !hasDurableProviderResponse &&
@@ -698,9 +700,14 @@ export class InvoiceOrchestrator {
         status,
         errorMessage(normalized),
       );
-      if (shortPickResume && current.resumeOperationId) {
+      if (recoveryResume === 'short_pick' && current.resumeOperationId) {
         await this.moduleRef
           .get(ShipmentShortPickService, { strict: false })
+          .markInvoiceRecoveryRequired(current.resumeOperationId, normalized, tx);
+      }
+      if (recoveryResume === 'recall' && current.resumeOperationId) {
+        await this.moduleRef
+          .get(ShipmentRecallService, { strict: false })
           .markInvoiceRecoveryRequired(current.resumeOperationId, normalized, tx);
       }
     });
@@ -1009,7 +1016,7 @@ export class InvoiceOrchestrator {
     if (!row || row.status !== 'pending') {
       throw this.conflict('INVOICE_RESUME_OPERATION_INVALID', 'Resume operation is not pending for this shipment');
     }
-    if (!['cancel', 'consolidate', 'short_pick'].includes(row.type)) {
+    if (!['cancel', 'consolidate', 'short_pick', 'recall'].includes(row.type)) {
       throw this.conflict(
         'INVOICE_RESUME_OPERATION_INVALID',
         `Invoice void resume handler for ${row.type} is not registered in this deployment`,
@@ -1018,23 +1025,18 @@ export class InvoiceOrchestrator {
     return row.type;
   }
 
-  /**
-   * A short-pick resume can lock shipment, invoice, work-item and custody rows.
-   * Acquire its immutable owner rows first so invoice finalization and recovery
-   * use the same root lock as a direct short-pick resume. Other resume types do
-   * not take these locks and retain their existing ordering.
-   */
-  private async lockShortPickResumeOwnerIfApplicable(
+  /** Acquire recovery saga ownership before either saga takes its shipment graph locks. */
+  private async lockRecoveryResumeOwnerIfApplicable(
     operationId: string,
     shipmentId: string,
     tx: DbTx,
-  ): Promise<boolean> {
+  ): Promise<'short_pick' | 'recall' | null> {
     const [optimistic] = await tx
       .select({ type: wmsTables.shipmentOperations.type })
       .from(wmsTables.shipmentOperations)
       .where(eq(wmsTables.shipmentOperations.id, operationId))
       .limit(1);
-    if (optimistic?.type !== 'short_pick') return false;
+    if (!optimistic || !['short_pick', 'recall'].includes(optimistic.type)) return null;
 
     const [operation] = await tx
       .select({ type: wmsTables.shipmentOperations.type })
@@ -1042,8 +1044,8 @@ export class InvoiceOrchestrator {
       .where(eq(wmsTables.shipmentOperations.id, operationId))
       .limit(1)
       .for('update');
-    if (!operation || operation.type !== 'short_pick') {
-      throw this.conflict('INVOICE_RESUME_OPERATION_INVALID', 'Short-pick resume operation changed while locking');
+    if (!operation || !['short_pick', 'recall'].includes(operation.type)) {
+      throw this.conflict('INVOICE_RESUME_OPERATION_INVALID', 'Recovery resume operation changed while locking');
     }
     const [sourceMember] = await tx
       .select({ shipmentId: wmsTables.shipmentOperationMembers.shipmentId })
@@ -1057,9 +1059,9 @@ export class InvoiceOrchestrator {
       .limit(1)
       .for('update');
     if (!sourceMember || sourceMember.shipmentId !== shipmentId) {
-      throw this.conflict('INVOICE_RESUME_OPERATION_INVALID', 'Short-pick resume operation does not own this shipment');
+      throw this.conflict('INVOICE_RESUME_OPERATION_INVALID', 'Recovery resume operation does not own this shipment');
     }
-    return true;
+    return operation.type as 'short_pick' | 'recall';
   }
 
   private async resumeWaitingOperation(operationId: string, tx: DbTx): Promise<void> {
@@ -1079,6 +1081,10 @@ export class InvoiceOrchestrator {
     }
     if (operation.type === 'short_pick') {
       await this.moduleRef.get(ShipmentShortPickService, { strict: false }).resumePending(operationId, tx);
+      return;
+    }
+    if (operation.type === 'recall') {
+      await this.moduleRef.get(ShipmentRecallService, { strict: false }).resumePending(operationId, tx);
       return;
     }
     throw new Error(`Unreachable invoice resume operation type ${operation.type}`);
