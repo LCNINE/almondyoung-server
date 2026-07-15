@@ -902,6 +902,61 @@ V2 는 `shipment-reservation.service.ts:1123` 에서 `projected.status` 하나�
 
 **실행 난이도가 컬럼과 다르다.** PostgreSQL 에는 `ALTER TYPE ... DROP VALUE` 가 없다. 컬럼은 `DROP COLUMN` 한 줄이지만 enum 값 제거는 새 타입 생성 → `USING` 캐스트로 컬럼 전환 → 옛 타입 drop → rename 의 4단계이고 drizzle-kit 이 이를 깔끔히 뽑아주지 못한다. 생성 SQL 을 반드시 손으로 검토할 것.
 
+#### live DB 실측 (2026-07-16)
+
+**접속**: DB 는 VPC private subnet 이라(`sst.aws.Postgres('Db', { vpc })`, `PubliclyAccessible: False`) 터널 없이는 못 붙는다. `deployments/lcnine/services` 에서 `npx sst tunnel --stage live` 를 띄운 뒤 RDS 엔드포인트로 직접 붙는다(localhost 아님). 자격증명은 Secrets Manager `lcnine-services-live-DbProxySecret-*`. **RDS 는 live 하나뿐 — dev 인스턴스는 없다** (`db:setup --stage dev` 가 가리키는 건 로컬 docker PG). 즉 이 판단에 필요한 DB 는 live 하나다.
+
+**출고가 한 번도 일어난 적이 없다는 것이 데이터로 확인됐다.** 전제가 아니라 사실이다.
+
+| 대상 | 행 수 |
+|---|---:|
+| SHIP 재고이벤트 | **0** |
+| `dispatch_attempts` | **0** |
+| `invoices` | **0** |
+| `shipments` | **0** |
+| `stock_reservations` | **0** |
+| `fulfillment_order_batches` | **0** |
+| `batch_id` 가 있는 FO | **0** |
+
+`fulfillment_order_batches` 드롭과 `invoices`/`shipments`/`stock_reservations`/`shipment_tracking` 의 NOT NULL 강화는 **행이 없어 공짜**다. Goodsflow(`issue_method`)·`shipment_status='open'` 을 쓰는 행도 0 이라 그 enum 값 제거도 막히지 않는다.
+
+**막는 것은 둘뿐이다.**
+
+- **`fulfillment_orders` 137 행, 그중 135 행이 사장 12 값**. FO 만 만들어지고 그 뒤로 아무 일도 없었다. cleanup allowlist 가 `fulfillment_orders` 를 포함하므로 cleanup 이 해소한다 → 그러면 FO status enum 수술도 공짜가 된다.
+- **`outbox_events.topic IS NULL` 4,767 행** — 이쪽이 진짜 문제다(아래).
+
+#### outbox 4,767 행 — 진짜 블로커와 정정된 순서
+
+전량이 **published** 이고, **명시적 topic 을 가진 행은 하나도 없다**(합계가 정확히 4,767). V2 이벤트가 한 번도 쓰인 적 없다는 뜻이며 shipments/invoices 0 과 일관된다.
+
+| aggregate_type / event_type | 행 수 | 폴백 라우팅 | 기간 |
+|---|---:|---|---|
+| `ProductSellableQuantity` / `ProductSellableQuantityChanged` | 3,380 | `inventory.events.v1` | 06-16 ~ **07-15** |
+| `order` / `ORDER_CREATED` | 1,293 | `fulfillment.events.v1` | 05-31 ~ **07-15** |
+| `Order` / `SalesOrderCancelled` | 92 | `core.orders.events.v1` | 06-02 ~ 07-14 |
+| `order` / `ORDER_CANCELLED` | 2 | (발행 안 함/스킵) | 06-01 |
+
+두 가지 사실이 따라온다.
+
+- **topicless 폴백 라우팅은 이미 도달 불가능한 코드다.** dispatcher 는 `pending` 만 leasing 하는데 topicless 가 전부 published 다. 즉 폴백 제거는 어느 경로를 택하든 지금 안전하다.
+- **published outbox 를 정리하는 로직이 레포에 없다** — 무한 누적 중이다.
+
+**결정 (2026-07-16): published 전량 삭제.** outbox 는 전달 큐지 기록부가 아니고(감사 추적은 `audit_logs`), 정리 로직이 없어 어차피 누적만 된다.
+
+**⚠️ 이 삭제는 단독으로 성립하지 않는다.** topicless 행이 **지금도 쓰이고 있다**(최신 07-15). `product-sellable-quantity.service.ts:322` 등이 `topic` 없이 `enqueue` 를 부른다 — topicless 호출부는 **4 파일 12 곳**: `inventory-command.service.ts`(3), `product-sellable-quantity.service.ts`(1), `fulfillments.service.ts`(3), `sales-orders.service.ts`(5). 오늘 지워도 내일 다시 쌓여(~110/일) NOT NULL 이 그때 깨진다. **타입 강제가 삭제의 선행 조건이다** — 두 outbox 서비스의 topicless union 갈래(`{ topic?: undefined }`)를 지워 컴파일러가 재발을 막아야 한다.
+
+**정정된 3 단계 순서:**
+
+1. **PR A** — V1 코드 제거 **+ 12 곳이 topic 을 넘기도록 수정 + topicless union 갈래 제거** → **배포**
+2. **운영자** — `DELETE FROM outbox_events WHERE status='published'` + FO cleanup (이 시점엔 새 topicless 가 안 생긴다)
+3. **PR B** — NOT NULL + 컬럼/테이블/enum 드롭 → **migrate**
+
+2 번을 마이그레이션에 넣을 수 없다 — CLAUDE.md 가 "자동 생성 SQL 의 `TRUNCATE CASCADE` 나 광범위 delete 를 허용하지 않는다" 고 못박는다. 운영자 단계로 분리한다.
+
+**A1(모드 제거)과 A2(V1 코드 삭제)는 분리할 수 없다.** V1 을 도달 불가능하게 만드는 순간 V1 스펙은 통과할 수 없다(게이트에 막히거나 픽스처가 안 맞는다). 실측: `legacy` 제거만 했을 때 `fulfillment-order-reservation-retry.worker.integration.spec.ts` 2 건이 red — `findCandidates` 가 v2 에서 `[]` 를 반환한다(Task 9 이 후보 선정을 shipment line 기준으로 바꿨는데 스펙은 V1 형태 픽스처를 심는다). 그러므로 PR A 는 모드+V1코드+outbox 를 한 덩어리로 간다.
+
+**미결: `FULFILLMENT_V2_CUTOVER_AT` 확정.** 불변값이고, 이 시각 이전 주문은 FO 가 생기지 않으며 자동 backfill 도 없다 — 한진 인도 후 출고하려 할 때 수동 처리 대상이 된다. 매니페스트에 `2026-07-16T00:00:00.000Z` 를 넣어뒀으나 **배포 전 확정 필요**.
+
 **이 Task 를 막는 것은 데이터가 아니다.** "V1 물류가 진지하게 쓰인 적 없어 데이터가 날아가도 무방하다"(2026-07-16 확인)는 사실이지만 그것만으로 Task 25 가 열리지는 않는다 — 플랜은 애초에 "V1 출고 이력 없음"을 전제로 설계됐다. 배포된 Core 가 `legacy` 모드로 **V1 을 실행 중**이므로(`fulfillment-workflow-gate.service.ts:87-89` 의 `shouldEnqueueFo` 가 legacy 에서 무조건 true, `fulfillments.service.ts:114-119` 가 모드로 분기), 지금 V1 컬럼/enum 을 드롭하면 주문 유입마다 런타임 에러가 난다. 그래서 contract 는 `deploy → migrate` 순서(ADR-0005 §5)를 지켜 V1 을 안 쓰는 코드를 먼저 띄워야 한다.
 
 **legacy 가 송장이 나오는 유일한 모드다 — 그리고 그 이유가 중요하다.**
@@ -927,6 +982,7 @@ V1 이 되는 이유는 안전해서가 아니라 **계약 검사를 건너뛰�
 - [ ] Remove old FO status writes (`picked/invoiced/shipped`), lazy shipment open-box creation, FIFO-at-dispatch consumption and V1 in-house dispatch paths.
 - [ ] Keep v1 fulfillment event contracts/projections only for explicitly documented full-completion consumers. Remove them only in a separately approved contract version.
 - [ ] Remove expand compatibility fallback from outbox topic routing and fail any topicless new write.
+      - 폴백 제거 자체는 지금 안전하다 (topicless 4,767 행이 전부 published 이고 dispatcher 는 pending 만 leasing 하므로 이미 도달 불가). 그러나 "fail any topicless new write" 는 **PR A 에서 12 곳의 호출부 수정 + 두 outbox 서비스의 topicless union 갈래 제거**가 실체다. 이것이 published 삭제와 `topic` NOT NULL 의 **선행 조건**이다 — 순서는 위 "outbox 4,767 행" 절 참조.
 - [ ] Generate/review migration and run it against the rehearsal snapshot plus populated V2 fixtures. Verify downgrade is intentionally unsupported after V2 data; recovery uses forward repair.
 - [ ] Run `rg` gates for every removed column/status/service, full Core/channel/admin builds, all V2 integration tests and schema reconciliation.
 - [ ] Commit: `refactor(fulfillment): remove legacy FO outbound contract`.
