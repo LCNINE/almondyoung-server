@@ -244,6 +244,36 @@ medusaIntegrationTestRunner({
       expect(res.data.cart.discount_total).toBeGreaterThan(0);
     });
 
+    it('gate: assigned_only coupon is BLOCKED when attached at CART CREATE time (bypass fix)', async () => {
+      seq++;
+      // 수정 전: POST /store/carts 는 게이트가 없어 promo_codes 로 미할당 쿠폰을 붙여 우회 가능.
+      // 수정 후: create 경로에도 게이트가 걸려 차단된다.
+      await createAssignedOnlyPromo(`GATECREATE_${seq}`);
+      const customerModule = getContainer().resolve(Modules.CUSTOMER);
+      const [cust] = await customerModule.createCustomers([{ email: `create${seq}@cart.test` }]);
+      const custHeaders = {
+        headers: {
+          'x-publishable-api-key': pk,
+          authorization: `Bearer ${jwt.sign(
+            { actor_id: cust.id, actor_type: 'customer', auth_identity_id: 'c', app_metadata: { customer_id: cust.id } },
+            jwtSecret,
+          )}`,
+        },
+      };
+      await expect(
+        api.post(
+          '/store/carts',
+          {
+            region_id: regionId,
+            sales_channel_id: salesChannelId,
+            items: [{ variant_id: variantId, quantity: 1 }],
+            promo_codes: [`GATECREATE_${seq}`],
+          },
+          custHeaders,
+        ),
+      ).rejects.toMatchObject({ response: { status: 400, data: { message: 'COUPON_NOT_ASSIGNED' } } });
+    });
+
     it('gate: normalized middleware enforces the gate even for a lowercase code (P2-4)', async () => {
       seq++;
       // assigned_only 쿠폰에 고객 미할당. 소문자 코드로 적용 시도.
