@@ -23,11 +23,22 @@ import {
   AggregateThenSortStrategy,
   CompletePickInput,
   HandoffPickingInput,
+  PickToToteStrategy,
   PickingStrategy,
   PickingStrategyName,
   PlanPickingInput,
   ScanPickingInput,
   StartPickingInput,
+  ToteAssignmentInput,
+  ToteAssignmentResult,
+  ToteHandoffInput,
+  ToteHandoffResult,
+  ToteRegistrationInput,
+  ToteRegistrationResult,
+  ToteReleaseInput,
+  ToteReleaseResult,
+  ToteScanPickingInput,
+  ToteScanResult,
   UnpickShipmentInput,
 } from '../picking/picking-strategy.interface';
 
@@ -41,6 +52,23 @@ function isAggregateThenSortStrategy(strategy: PickingStrategy): strategy is Agg
     typeof strategy.sortScan === 'function' &&
     'cartHandoff' in strategy &&
     typeof strategy.cartHandoff === 'function'
+  );
+}
+
+function isPickToToteStrategy(strategy: PickingStrategy): strategy is PickToToteStrategy {
+  return (
+    strategy.capabilities.name === 'pick_to_tote' &&
+    strategy.capabilities.requiresPhysicalTote &&
+    'registerTote' in strategy &&
+    typeof strategy.registerTote === 'function' &&
+    'assignTote' in strategy &&
+    typeof strategy.assignTote === 'function' &&
+    'toteScan' in strategy &&
+    typeof strategy.toteScan === 'function' &&
+    'toteHandoff' in strategy &&
+    typeof strategy.toteHandoff === 'function' &&
+    'releaseTote' in strategy &&
+    typeof strategy.releaseTote === 'function'
   );
 }
 
@@ -162,6 +190,55 @@ export class PickingProcessService {
     );
   }
 
+  async registerTote(input: ToteRegistrationInput, tx?: DbTx): Promise<ToteRegistrationResult> {
+    return this.dbService.run(async (trx) => {
+      const strategy = await this.requiredRegistry().resolveForWarehouse('pick_to_tote', input.warehouseId, trx);
+      if (!isPickToToteStrategy(strategy)) {
+        throw new ConflictException({
+          code: 'PICKING_STRATEGY_PROVIDER_MISMATCH',
+          message: 'The configured pick_to_tote provider does not expose tote operations',
+        });
+      }
+      return strategy.registerTote(input, trx);
+    }, tx);
+  }
+
+  async assignTote(input: ToteAssignmentInput, tx?: DbTx): Promise<ToteAssignmentResult> {
+    return this.withPickToToteStrategy(
+      input.batchId,
+      input.planId,
+      (strategy, trx) => strategy.assignTote(input, trx),
+      tx,
+    );
+  }
+
+  async toteScan(input: ToteScanPickingInput, tx?: DbTx): Promise<ToteScanResult> {
+    return this.withPickToToteStrategy(
+      input.batchId,
+      input.planId,
+      (strategy, trx) => strategy.toteScan(input, trx),
+      tx,
+    );
+  }
+
+  async toteHandoff(input: ToteHandoffInput, tx?: DbTx): Promise<ToteHandoffResult> {
+    return this.withPickToToteStrategy(
+      input.batchId,
+      input.planId,
+      (strategy, trx) => strategy.toteHandoff(input, trx),
+      tx,
+    );
+  }
+
+  async releaseTote(input: ToteReleaseInput, tx?: DbTx): Promise<ToteReleaseResult> {
+    return this.withPickToToteStrategy(
+      input.batchId,
+      input.planId,
+      (strategy, trx) => strategy.releaseTote(input, trx),
+      tx,
+    );
+  }
+
   async handoff(input: HandoffPickingInput, tx?: DbTx) {
     return this.withPlanStrategy(input.batchId, input.planId, (strategy, trx) => strategy.handoff(input, trx), tx);
   }
@@ -222,6 +299,28 @@ export class PickingProcessService {
           throw new ConflictException({
             code: 'PICKING_PLAN_STRATEGY_MISMATCH',
             message: `Picking plan ${planId} does not use aggregate_then_sort`,
+          });
+        }
+        return execute(strategy, trx);
+      },
+      tx,
+    );
+  }
+
+  private withPickToToteStrategy<T>(
+    batchId: string,
+    planId: string,
+    execute: (strategy: PickToToteStrategy, tx: DbTx) => Promise<T>,
+    tx?: DbTx,
+  ): Promise<T> {
+    return this.withPlanStrategy(
+      batchId,
+      planId,
+      (strategy, trx) => {
+        if (!isPickToToteStrategy(strategy)) {
+          throw new ConflictException({
+            code: 'PICKING_PLAN_STRATEGY_MISMATCH',
+            message: `Picking plan ${planId} does not use pick_to_tote`,
           });
         }
         return execute(strategy, trx);

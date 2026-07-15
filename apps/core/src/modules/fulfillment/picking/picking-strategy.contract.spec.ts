@@ -39,6 +39,7 @@ export interface PickingContractSnapshot {
     atSource: number;
     worker: number;
     bulkCart: number;
+    tote: number;
     sorting: number;
     packing: number;
     total: number;
@@ -174,7 +175,7 @@ export function definePickingStrategyContract(label: string, createFixture: Pick
       expect(snapshot.custody.total).toBe(snapshot.custody.handedIn);
       expect(snapshot.custody.total).toBe(5);
       expect(snapshot.custody.packing).toBe(0);
-      expect(snapshot.physicalToteCount).toBe(0);
+      expect(snapshot.physicalToteCount).toBe(fixture.strategy.capabilities.requiresPhysicalTote ? 1 : 0);
     });
 
     it('emits the common inspection-ready shape only after exact shipment picking', async () => {
@@ -248,7 +249,7 @@ export function definePickingStrategyContract(label: string, createFixture: Pick
   });
 }
 
-type CustodyType = 'AT_SOURCE' | 'WORKER' | 'BULK_CART' | 'SORTING' | 'PACKING';
+type CustodyType = 'AT_SOURCE' | 'WORKER' | 'BULK_CART' | 'TOTE' | 'SORTING' | 'PACKING';
 
 interface CustodyBalance {
   id: string;
@@ -630,6 +631,7 @@ function createProductionDiscreteFixture(): PickingStrategyContractFixture {
       const atSource = custodyTotal('AT_SOURCE');
       const worker = custodyTotal('WORKER');
       const bulkCart = custodyTotal('BULK_CART');
+      const tote = custodyTotal('TOTE');
       const sorting = custodyTotal('SORTING');
       const packing = custodyTotal('PACKING');
       return {
@@ -638,9 +640,10 @@ function createProductionDiscreteFixture(): PickingStrategyContractFixture {
           atSource,
           worker,
           bulkCart,
+          tote,
           sorting,
           packing,
-          total: atSource + worker + bulkCart + sorting + packing,
+          total: atSource + worker + bulkCart + tote + sorting + packing,
           handedIn: state.handedIn,
         },
         workItemStatuses: Object.fromEntries(

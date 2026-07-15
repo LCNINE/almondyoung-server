@@ -50,6 +50,7 @@ import { BatchSessionRecoveryService } from './services/batch-session-recovery.s
 import { DiscretePickingStrategy } from './picking/discrete-picking.strategy';
 import { PICKING_STRATEGIES, PickingStrategyRegistry } from './picking/picking-strategy.registry';
 import { AggregateThenSortPickingStrategy } from './picking/aggregate-then-sort.strategy';
+import { PickToTotePickingStrategy } from './picking/pick-to-tote.strategy';
 
 // Controllers
 import { FulfillmentsController } from './controllers/fulfillments.controller';
@@ -65,6 +66,7 @@ import { ShipmentPlanningController } from './controllers/shipment-planning.cont
 import { ShipmentInvoiceController } from './controllers/shipment-invoice.controller';
 import { OutboundBatchV2Controller } from './controllers/outbound-batch-v2.controller';
 import { PickingV2Controller } from './controllers/picking-v2.controller';
+import { ToteController } from './controllers/tote.controller';
 
 @Module({
   imports: [
@@ -99,6 +101,7 @@ import { PickingV2Controller } from './controllers/picking-v2.controller';
     // Static V2 outbound-batch routes must be registered before the legacy `:id` reader.
     OutboundBatchV2Controller,
     PickingV2Controller,
+    ToteController,
     OutboundBatchController,
     PickingController,
     ShipmentController,
@@ -146,13 +149,15 @@ import { PickingV2Controller } from './controllers/picking-v2.controller';
     BatchSessionRecoveryService,
     DiscretePickingStrategy,
     AggregateThenSortPickingStrategy,
+    PickToTotePickingStrategy,
     {
       provide: PICKING_STRATEGIES,
-      useFactory: (discrete: DiscretePickingStrategy, aggregateThenSort: AggregateThenSortPickingStrategy) => [
-        discrete,
-        aggregateThenSort,
-      ],
-      inject: [DiscretePickingStrategy, AggregateThenSortPickingStrategy],
+      useFactory: (
+        discrete: DiscretePickingStrategy,
+        aggregateThenSort: AggregateThenSortPickingStrategy,
+        pickToTote: PickToTotePickingStrategy,
+      ) => [discrete, aggregateThenSort, pickToTote],
+      inject: [DiscretePickingStrategy, AggregateThenSortPickingStrategy, PickToTotePickingStrategy],
     },
     PickingStrategyRegistry,
   ],
@@ -169,6 +174,7 @@ import { PickingV2Controller } from './controllers/picking-v2.controller';
     BatchSessionRecoveryService,
     DiscretePickingStrategy,
     AggregateThenSortPickingStrategy,
+    PickToTotePickingStrategy,
     PickingStrategyRegistry,
   ],
 })

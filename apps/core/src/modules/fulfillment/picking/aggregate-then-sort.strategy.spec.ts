@@ -847,6 +847,7 @@ function createProductionAggregateFixture(): PickingStrategyContractFixture {
           atSource,
           worker: 0,
           bulkCart,
+          tote: 0,
           sorting,
           packing,
           total: atSource + bulkCart + sorting + packing,

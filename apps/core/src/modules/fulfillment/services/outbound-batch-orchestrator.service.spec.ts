@@ -2,6 +2,7 @@ import { ConflictException, ForbiddenException, UnauthorizedException } from '@n
 import { GUARDS_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { REQUIRED_SCOPES_KEY } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { DbTx } from '../../inventory/schema/inventory.schema';
 import { OutboundBatchV2Controller } from '../controllers/outbound-batch-v2.controller';
 import { OutboundBatchOrchestrator } from './outbound-batch-orchestrator.service';
 import { deriveOutboundBatchV2ReadSummary } from './outbound-batch.service';
@@ -12,6 +13,33 @@ const UUIDS = {
   workItem: '33333333-3333-4333-8333-333333333333',
   batch: '44444444-4444-4444-8444-444444444444',
 };
+
+class QueryResult implements PromiseLike<unknown[]> {
+  constructor(private readonly rows: unknown[]) {}
+
+  from(): this {
+    return this;
+  }
+
+  innerJoin(): this {
+    return this;
+  }
+
+  where(): this {
+    return this;
+  }
+
+  limit(): Promise<unknown[]> {
+    return Promise.resolve(this.rows);
+  }
+
+  then<TResult1 = unknown[], TResult2 = never>(
+    onfulfilled?: ((value: unknown[]) => TResult1 | PromiseLike<TResult1>) | null,
+    onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+  ): PromiseLike<TResult1 | TResult2> {
+    return Promise.resolve(this.rows).then(onfulfilled, onrejected);
+  }
+}
 
 function workItem(overrides: Record<string, unknown> = {}) {
   return {
@@ -118,6 +146,42 @@ describe('OutboundBatchOrchestrator policy', () => {
     expect(() => (service as any).assertClaimable('picker', active, UUIDS.actor, now)).toThrow(
       expect.objectContaining({ response: expect.objectContaining({ code: 'WORK_ITEM_HANDOFF_REQUIRED' }) }),
     );
+  });
+
+  it('requires an active shipment tote assignment to be released before exclusion', async () => {
+    const { service } = makeService();
+    const queryResults = [[], [], [], [{ id: '66666666-6666-4666-8666-666666666666' }]];
+    const select = jest.fn(() => new QueryResult(queryResults.shift() ?? []));
+    const tx = {
+      select,
+    } as unknown as DbTx;
+    const policy = service as unknown as {
+      assertExcludable(
+        aggregate: {
+          shipment: { id: string; status: string };
+          lines: Array<{ id: string; inspectedQty: number }>;
+        },
+        transaction: DbTx,
+      ): Promise<void>;
+    };
+
+    let caught: unknown;
+    try {
+      await policy.assertExcludable(
+        {
+          shipment: { id: '55555555-5555-4555-8555-555555555555', status: 'ready' },
+          lines: [{ id: '77777777-7777-4777-8777-777777777777', inspectedQty: 0 }],
+        },
+        tx,
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ConflictException);
+    const response = (caught as ConflictException).getResponse();
+    const code = typeof response === 'object' && response !== null && 'code' in response ? response.code : response;
+    expect(code).toBe('WORK_ITEM_TOTE_RELEASE_REQUIRED');
+    expect(select).toHaveBeenCalledTimes(4);
   });
 
   it('rejects named handoff from a non-manager before claiming a command row', async () => {

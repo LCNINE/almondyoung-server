@@ -90,7 +90,50 @@ export interface AggregateCartHandoffInput {
   idempotencyKey: string;
 }
 
-export type ScanPickingInput = DiscreteScanPickingInput | AggregateSourceScanInput | AggregateSortScanInput;
+export interface ToteRegistrationInput {
+  warehouseId: string;
+  toteBarcode: string;
+  actor: PickingActor;
+  idempotencyKey: string;
+}
+
+export interface ToteAssignmentInput {
+  batchId: string;
+  planId: string;
+  sessionId: string;
+  workItemId: string;
+  shipmentId: string;
+  toteBarcode: string;
+  actor: PickingActor;
+  expectedLeaseVersion: number;
+  idempotencyKey: string;
+}
+
+export interface ToteScanPickingInput extends ToteAssignmentInput {
+  strategy: 'pick_to_tote';
+  stage: 'source';
+  shipmentLineId: string;
+  skuId: string;
+  sourceLocationId: string;
+  quantity: number;
+}
+
+export interface ToteReleaseInput extends ToteAssignmentInput {
+  reason: string;
+}
+
+export interface ToteHandoffInput extends ToteAssignmentInput {
+  targetWorkItemId: string;
+  targetShipmentId: string;
+  targetExpectedLeaseVersion: number;
+  reason: string;
+}
+
+export type ScanPickingInput =
+  | DiscreteScanPickingInput
+  | AggregateSourceScanInput
+  | AggregateSortScanInput
+  | ToteScanPickingInput;
 
 export interface HandoffPickingInput {
   batchId: string;
@@ -203,7 +246,55 @@ export interface AggregateSortScanResult {
   sourceMoves: Array<{ sourceLocationId: string; quantity: number }>;
 }
 
-export type ScanPickingResult = PickingScanResult | AggregateSourceScanResult | AggregateSortScanResult;
+export interface ToteRegistrationResult {
+  operationId: string;
+  toteId: string;
+  warehouseId: string;
+  toteBarcode: string;
+  status: 'available';
+  version: number;
+}
+
+export interface ToteAssignmentResult {
+  operationId: string;
+  assignmentId: string;
+  toteId: string;
+  toteBarcode: string;
+  shipmentId: string;
+  status: 'assigned';
+}
+
+export interface ToteReleaseResult {
+  operationId: string;
+  assignmentId: string;
+  toteId: string;
+  toteBarcode: string;
+  shipmentId: string;
+  status: 'released';
+}
+
+export interface ToteHandoffResult {
+  operationId: string;
+  toteId: string;
+  toteBarcode: string;
+  sourceAssignmentId: string;
+  targetAssignmentId: string;
+  sourceShipmentId: string;
+  targetShipmentId: string;
+  status: 'assigned';
+}
+
+export interface ToteScanResult extends PickingScanResult {
+  toteId: string;
+  toteBarcode: string;
+  toteRef: string;
+}
+
+export type ScanPickingResult =
+  | PickingScanResult
+  | AggregateSourceScanResult
+  | AggregateSortScanResult
+  | ToteScanResult;
 
 export interface AggregateCartHandoffResult {
   operationId: string;
@@ -256,6 +347,14 @@ export interface PickingStrategy {
   handoff(input: HandoffPickingInput, tx?: DbTx): Promise<PickingHandoffResult>;
   completePick(input: CompletePickInput, tx?: DbTx): Promise<InspectionReadyOutput>;
   unpickShipment(input: UnpickShipmentInput, tx?: DbTx): Promise<UnpickShipmentResult>;
+}
+
+export interface PickToToteStrategy extends PickingStrategy {
+  registerTote(input: ToteRegistrationInput, tx?: DbTx): Promise<ToteRegistrationResult>;
+  assignTote(input: ToteAssignmentInput, tx?: DbTx): Promise<ToteAssignmentResult>;
+  toteScan(input: ToteScanPickingInput, tx?: DbTx): Promise<ToteScanResult>;
+  toteHandoff(input: ToteHandoffInput, tx?: DbTx): Promise<ToteHandoffResult>;
+  releaseTote(input: ToteReleaseInput, tx?: DbTx): Promise<ToteReleaseResult>;
 }
 
 export interface AggregateThenSortStrategy extends PickingStrategy {

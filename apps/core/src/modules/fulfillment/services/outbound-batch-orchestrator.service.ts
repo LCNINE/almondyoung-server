@@ -804,7 +804,7 @@ export class OutboundBatchOrchestrator {
   }
 
   private async assertExcludable(aggregate: EligibilityAggregate, tx: DbTx): Promise<void> {
-    const [attempt, custody, plan] = await Promise.all([
+    const [attempt, custody, plan, toteAssignment] = await Promise.all([
       tx
         .select({ id: wmsTables.dispatchAttempts.id })
         .from(wmsTables.dispatchAttempts)
@@ -835,6 +835,16 @@ export class OutboundBatchOrchestrator {
           ),
         )
         .limit(1),
+      tx
+        .select({ id: wmsTables.shipmentToteAssignments.id })
+        .from(wmsTables.shipmentToteAssignments)
+        .where(
+          and(
+            eq(wmsTables.shipmentToteAssignments.shipmentId, aggregate.shipment.id),
+            isNull(wmsTables.shipmentToteAssignments.releasedAt),
+          ),
+        )
+        .limit(1),
     ]);
     if (attempt[0] || ['shipped', 'in_transit', 'delivered'].includes(aggregate.shipment.status)) {
       throw this.conflict('WORK_ITEM_DISPATCH_EXISTS', 'A dispatched shipment cannot be excluded from a batch');
@@ -843,6 +853,12 @@ export class OutboundBatchOrchestrator {
       throw this.conflict(
         'WORK_ITEM_UNPICK_REQUIRED',
         'Shipment custody must be returned by the batch inventory session before exclusion',
+      );
+    }
+    if (toteAssignment[0]) {
+      throw this.conflict(
+        'WORK_ITEM_TOTE_RELEASE_REQUIRED',
+        'Active physical tote assignments must be released before exclusion',
       );
     }
     if (plan[0]) {
