@@ -1,4 +1,5 @@
-import { BadRequestException, UnauthorizedException, ValidationPipe } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { createGlobalValidationPipe } from '../../../platform/http/validation-pipe';
 import { PATH_METADATA } from '@nestjs/common/constants';
 import { ScopeGuard } from '@app/authorization';
 import { Test } from '@nestjs/testing';
@@ -184,7 +185,7 @@ describe('ShipmentController V2 dispatch commands', () => {
   });
 
   it('strips forged operator identity from both request DTOs', async () => {
-    const pipe = new ValidationPipe({ transform: true, whitelist: true });
+    const pipe = createGlobalValidationPipe();
     const scan = (await pipe.transform(
       { barcode: 'SKU-001', quantity: 1, operatorId: 'forged', actor: { id: 'forged' } },
       { type: 'body', metatype: ShipmentInspectionScanDto },

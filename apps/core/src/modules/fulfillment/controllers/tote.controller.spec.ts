@@ -1,4 +1,5 @@
-import { BadRequestException, UnauthorizedException, ValidationPipe } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { createGlobalValidationPipe } from '../../../platform/http/validation-pipe';
 import { validateSync } from 'class-validator';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { AssignToteDto, RegisterToteDto, ReleaseToteDto, ToteHandoffDto, ToteScanDto } from '../dto/tote.dto';
@@ -171,7 +172,7 @@ describe('ToteController pick-to-tote contract', () => {
   });
 
   it('does not trust operator identity supplied in the request body', async () => {
-    const pipe = new ValidationPipe({ transform: true, whitelist: true });
+    const pipe = createGlobalValidationPipe();
     const transformed = (await pipe.transform(
       {
         ...assignment,

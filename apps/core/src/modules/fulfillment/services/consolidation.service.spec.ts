@@ -1,4 +1,5 @@
-import { NotFoundException, ValidationPipe } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
+import { createGlobalValidationPipe } from '../../../platform/http/validation-pipe';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { ScopeGuard } from '@app/authorization';
 import { PgDialect } from 'drizzle-orm/pg-core';
@@ -206,7 +207,7 @@ describe('ConsolidationService command boundary', () => {
   it('takes the actor from JWT and strips a forged body operator', async () => {
     const consolidation = { consolidate: jest.fn().mockResolvedValue({}) };
     const controller = new ConsolidationController(consolidation as never);
-    const pipe = new ValidationPipe({ transform: true, whitelist: true });
+    const pipe = createGlobalValidationPipe();
     const dto = (await pipe.transform(
       {
         sources: [

@@ -44,12 +44,16 @@ expand 마이그레이션과 배포는 적용됐다(2026-07-16 확인). 배포�
 - recall 의 데드락 수정이 short-pick 에 적용되지 않아 recall↔short-pick / short-pick↔short-pick 데드락이 남아 있었다. `shipment_operation_members.shipment_id` FK 가 KEY SHARE 를 잡는다는 사실이 누락된 결과다.
 - migration rehearsal 의 watermark 검증이 `isNewSalesOrder: false` 로 단락돼, cutover 비교 로직을 지워도 통과하는 상태였다. Task 24 의 "replay an older event and prove it cannot enqueue FO" 게이트가 이 테스트에 걸려 있었다.
 
-**후속 이슈로 남긴 것** (Task 23 범위):
+**Task 23 후속 이슈는 전부 해소됐다** (2026-07-16). 아래 두 항목은 남는 참고사항이다.
 
-- outbox topology 헬퍼 150줄이 세 스펙에 복붙돼 있다. `__support__/` 로 하이스팅해야 한다. (실측: `ExpectedOutboxTopology`/`expectExactOutboxTopology` 는 `outbound-v2-scenarios`·`outbound-v2-lifecycle-scenarios` 두 스펙에 동일 복붙, `outbound-v2-warehouse-scenarios` 는 카운트만 보는 약한 변형을 따로 들고 있다.)
-- 시나리오 06 의 이름과 실제 동작이 다르다(A 는 라벨 실패로 batch 진입 자체가 불가하므로 "sibling batch shipment" 가 아니다).
-- `ValidationPipe` 하드코딩 복사본이 네 스펙에 남아 있다(`shipment-planning.service.spec.ts:97`, `shipment.controller.spec.ts:187`, `tote.controller.spec.ts:174`, `consolidation.service.spec.ts:209`). `platform/http/validation-pipe.ts` import 로 교체하면 된다.
 - `apps/*/tsconfig.app.json` 은 `**/*spec.ts` 를 제외한다 — 스펙 타입체크에 이 config 를 쓰면 파일을 읽지도 않고 exit 0 이 난다. 스펙을 포함하는 program 은 루트 `tsconfig.json` 이다.
+- 루트 `tsconfig.json --noEmit` 은 현재 **4789 개의 상시 에러**를 낸다(레포 전역 debt). 변경 검증은 절대 개수가 아니라 *변경 전후 diff 로 신규 에러 0* 을 확인하는 방식이어야 한다.
+
+해소 내역:
+
+- **outbox topology 헬퍼 하이스팅.** `__support__/outbound-v2-outbox.ts` 로 올렸다(`expectExactOutboxTopology` + `ExpectedOutboxTopology` + 구조적 `OutboxTopologyWorld`). 실측 결과 "세 스펙"이 아니라 `outbound-v2-scenarios`·`outbound-v2-lifecycle-scenarios` 두 스펙에 150 줄이 `world` 타입명만 다른 채 완전 동일 복붙이었고, `outbound-v2-warehouse-scenarios` 는 카운트만 보는 별개의 약한 변형(`expectArtifactCardinality`)이라 그대로 뒀다 — 통합 대상이 아니다. 순 -276 줄.
+- **시나리오 06 이름.** `addShipment` 가 `assertDispatchableInvoice` 를 거쳐 `SHIPMENT_INVOICE_NOT_READY` 로 막으므로(`invoice-orchestrator.service.ts:432`, `outbound-batch-orchestrator.service.ts:967`) 발행 실패한 shipment 는 batch 에 **들어갈 수조차 없다** — "sibling batch shipment" 는 성립하지 않는 이름이었다. 이름을 실제 동작으로 좁히고, 그 배제 이유를 단언으로 못박았다(이름이 드리프트한 원인이 이 암묵적 가정이었다).
+- **`ValidationPipe` 하드코딩 복사본 4 건 제거.** 전부 `createGlobalValidationPipe()` 로 교체. 단 이 교체는 **동작상 no-op** 이다 — 옛 복사본과 정본의 차이는 `forbidNonWhitelisted: false`/`disableErrorMessages: false`(둘 다 Nest 기본값)와 cosmetic 한 `validationError` 뿐이고, 위조 필드를 실제로 거르는 `whitelist: true` 는 양쪽에 있었다. 얻는 것은 커버리지가 아니라 **drift 제거**(main.ts 가 바뀌면 스펙이 따라온다). 정본이 red 를 만든다는 증명은 Task 23 의 `outbound-v2-authorization.spec.ts` 하이스팅 때 이미 했으므로 반복하지 않는다 — 재증명하려고 `whitelist` 를 프로덕션에서 false 로 되돌리는 것은 보안 설정 약화이므로 하지 말 것.
 
 `protectedHashes` 3행 해싱 건은 해소됐다 (위 Task 23 항목 참조).
 

@@ -842,7 +842,11 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
     return { claim, completed, plan, sessionId: started.sessionId, toteIds };
   }
 
-  it('06 invoice issue failure is isolated while the sibling batch shipment dispatches through production services', async () => {
+  // Not a "sibling batch shipment" case: addShipment requires exactly one issued
+  // invoice (assertDispatchableInvoice), so the shipment whose issue failed can never
+  // enter a batch at all. The isolation under test is that its failure stays confined
+  // to its own invoice operation and leaves another shipment's issue→dispatch intact.
+  it('06 invoice issue failure confines itself to its own shipment while another shipment issues and dispatches', async () => {
     await inRollbackTx(db, async (tx) => {
       const world = await seedWorld(tx, [2, 2]);
       const provider = deliveryProvider();
@@ -878,6 +882,17 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
 
       const successWorld = { ...world, shipments: [world.shipments[1]] };
       const { batch, added } = await createBatchWithShipments(services, successWorld, manager);
+
+      // Pin the reason the failed shipment is absent from the batch. Without this the
+      // scenario silently assumes it, which is how the old name drifted to "sibling".
+      await expect(
+        services.batches.addShipment(
+          batch.batchId,
+          world.shipments[0].shipment.id,
+          `release-add-failed-${randomUUID()}`,
+          manager,
+        ),
+      ).rejects.toMatchObject({ response: { code: 'SHIPMENT_INVOICE_NOT_READY' } });
       const worker = { id: randomUUID(), roles: ['warehouse_worker'] };
       const picked = await totePick(services, successWorld, batch.batchId, added[0].workItem.id, worker, [1, 1]);
       const packed = await services.batches.claimPacker(

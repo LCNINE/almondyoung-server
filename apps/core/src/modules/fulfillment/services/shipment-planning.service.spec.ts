@@ -1,4 +1,4 @@
-import { ValidationPipe } from '@nestjs/common';
+import { createGlobalValidationPipe } from '../../../platform/http/validation-pipe';
 import { SplitShipmentDto } from '../dto/shipment-planning.dto';
 import { ShipmentPlanningController } from '../controllers/shipment-planning.controller';
 import { canonicalFulfillmentRequestHash } from './fulfillment-command.service';
@@ -94,7 +94,7 @@ describe('ShipmentPlanningService command boundary', () => {
   it('takes the operator identity from JWT and strips a forged body operator field', async () => {
     const planning = { split: jest.fn().mockResolvedValue({}) };
     const controller = new ShipmentPlanningController(planning as never);
-    const pipe = new ValidationPipe({ transform: true, whitelist: true });
+    const pipe = createGlobalValidationPipe();
     const dto = (await pipe.transform(
       {
         expectedManifestVersion: 1,
