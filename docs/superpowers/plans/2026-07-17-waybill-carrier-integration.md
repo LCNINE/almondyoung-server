@@ -185,7 +185,8 @@ git commit -m "feat(waybill): 한진 캐리어 설정 스키마 + 로더"
 - [ ] **Step 1: 인터페이스 파일 작성**
 
 ```ts
-import { carrierEnum } from '../../inventory/schema/inventory.schema';
+// 경로 주의: 이 파일은 fulfillment/waybill/carrier/ 에 있으므로 inventory 까지 3단계 상위(../../../).
+import { carrierEnum } from '../../../inventory/schema/inventory.schema';
 
 export type CarrierCode = (typeof carrierEnum.enumValues)[number];
 
