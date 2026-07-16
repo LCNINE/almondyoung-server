@@ -1077,6 +1077,50 @@ V1 이 되는 이유는 안전해서가 아니라 **계약 검사를 건너뛰�
 
 **Task 24 축소 가능성 (미결)**: V1 물류가 한 번도 쓰이지 않았다면 Task 24 의 커토버 의식 — 플랫폼 스냅샷, audit 산출물, allowlist cleanup, watermark, maintenance 윈도우 — 대부분이 *보호할 대상이 없는 것을 보호하는 절차*가 된다. 한진 블로커가 풀린 뒤 Task 24 착수 전에 이 축소를 먼저 검토할 것. 단 cleanup 의 "SHIP 이벤트 발견 시 abort" 는 전제를 **검증하는** 장치이므로 전제를 믿는 근거로 삼아 지우면 순환논법이 된다.
 
+#### PR B 확정 스코프 (2026-07-16 세션 3, 재실측 기반) — 아래 원 체크박스를 override 한다
+
+> **측정 정정.** 플랜의 원 제거 목록은 최종 V2 코드와 독립적으로 작성돼, "V1 dead" 로 지목한 여러 컬럼이
+> 실제로는 V2 가 쓰는 **LIVE** 임이 재실측으로 드러났다(Explore 감사). 아래가 확정 스코프다. 사용자 결정:
+> "live 환경 자체가 테스트 대상이라 안 쓰는 컬럼은 자유롭게 드롭", "enum 지금 정리", "goodsflow 는 외부
+> 요인으로 사용 불가 → 발행은 manual/self 지향", "묶음 1+2 로 간다(facade transfer 은퇴 포함)".
+
+**드롭 — 컬럼/테이블 (frozen: writer 없거나 상수만):**
+- `DROP TABLE fulfillment_order_batches` (non-spec 사용 0; spec 1건 `outbound-batch-orchestrator.integration.spec.ts:306` 정리). `outbound_batches` 는 **존치**(V2 가 씀).
+- `outbound_batches.assignedTo` (참조 0), `outbound_batches.totalItems`/`totalQty` (insert 시 `0` 상수만, reader 없음 — `outbound-batch-orchestrator.service.ts:109-110` insert key 제거).
+- `fulfillment_orders.batchId` (writer 0; `barcode.service.ts:160,227` SELECT projection + `:188,259` JS read 정리, relation 제거).
+- `fulfillment_order_items.pickedQty` (non-zero writer 0; `fulfillments.service.ts:168,186,461,494` insert key `=0` + `barcode.service.ts:159,243`·`fulfillments.service.ts:897,921` projection 제거, JS reader 정리).
+- `shipments.openedForFulfillmentOrderId` (V2 insert 안 함; `store-sales-orders.ts:1245` inArray reader 정리, relation 제거).
+
+**드롭 — enum 값 (PostgreSQL 은 `DROP VALUE` 없음 → 새 타입 생성 → `USING` 캐스트 → 옛 타입 drop → rename 4단계, 생성 SQL 손검토 필수):**
+- `fulfillment_status` **11값**: `reserving, unfulfillable, labeled, pending, allocated, picking, picked, inspecting, inspected, invoiced, forwarded`. **`shipped` 존치**(drop_ship `ship()`). SQL-side 블로커는 **`facade.ts:334`** 한 곳(`inArray` 에 `reserving`·`unfulfillable`) — 먼저 수정. TS pgEnum 배열(`inventory.schema.ts:176-198`) + Swagger(`fulfillment-order-response.dto.ts:165-183`) + `enum-values.ts:141` 트리밍. 나머지 9값은 JS-only 라 코드상 안 깨짐(위생 정리).
+- `invoice_method` **`'direct'`** (참조 0). `goodsflow`/`self`/`hanjin` 유지.
+- `shipment_status` **`'open'`** (writer 0 — V2 는 항상 명시 `'draft'`/`'canceled'`). column default(`inventory.schema.ts:1517`) → `'draft'` 로 변경 필수. `in_transit` 은 **존치**(Task 19 delivery projection 이 write, `shipment-delivery-tracking.service.ts:208`). 스키마 주석(62)이 in_transit 을 dead 라 한 것은 오류 — 정정.
+
+**NOT NULL:**
+- `outbox_events.topic` (PR A 가 topicless write 차단, cleanup 이 잔존행 0). `ck_outbox_routing_pair`(`inventory.schema.ts:1746-1748`) + dispatcher null-허용(`outbox-dispatcher.service.ts:96,164,214`) 동반 재검토.
+- `shipment_tracking.dispatchAttemptId` (코드-clean; `shipment-delivery-tracking.service.ts:163` 만 write, null 경로 없음).
+- `invoices.shipmentId` (production `invoice-orchestrator.service.ts:181` 항상 set; 픽스처 `logistics-fixtures.ts:111` 이 omit → 수정, live invoices 0 이라 legacy 없음).
+- `stock_reservations.shipmentLineId` — **묶음 2 (facade transfer 은퇴) 후에만.**
+
+**묶음 2 — V1 facade transfer 은퇴 (사용자 결정):**
+- `fulfillments.controller.ts:137` 라우트 + `FulfillmentReservationsFacade.transferReservationCommand`/`transferReservation` 제거. V2 대체재 `shipment-reservation.service.ts:656` (shipment-line ↔ shipment-line) 이미 존재. **창고간 재고이동과 무관** — facade transfer 는 same-warehouse 전용(`facade.ts:130-131` 이 cross-warehouse 거부)이고, 창고간 이동은 별도 서브시스템(`inventory/movement`, `transfer.controller`, `moveInternal`, `IN_TRANSFER` 상태)이 `MOVE` 이벤트 + available 풀 제외로 처리한다. 은퇴 후:
+  - `stock_reservations.shipmentLineId` NOT NULL
+  - `fulfillment_order_items.reservedQty` 드롭 (facade transfer 가 유일 writer 였음)
+- **선행 감사**: shipmentLineId NOT NULL 걸기 전, `targetType='FULFILLMENT_ORDER'` 예약을 만드는 **다른 살아있는 호출자가 없는지** 예약 생성 경로 전수 확인(`unified-reservation.service` 호출자 포함). facade transfer 외에 없어야 안전.
+
+**유지 — LIVE (V2 가 씀, 드롭 금지):**
+- `invoices.issuedForFulfillmentOrderId` — orchestrator:180 write + store-sales-orders:1254 read.
+- `shipments.openedBy`/`openedAt` — shipment-planning insert(376-377 등).
+- `stock_reservations.targetType`/`targetId` — V2 `'SHIPMENT_LINE'` write/discriminator.
+
+**후속 (별도 작업, PR B 아님):** goodsflow 코드(provider+wiring+DTO) 제거 + **self/manual 발행 경로 배선** — additive 기능. goodsflow 는 외부 요인으로 사용 불가라 발행은 manual/self 지향(사용자 결정). `self` enum 값은 이 작업 위해 유지. `idempotency_key` NOT NULL 여부도 이때 측정·결정(이번 측정 범위 밖). v1 fulfillment event contract/projection 은 원 체크박스대로 별도 승인 contract version 에서만 제거.
+
+---
+
+> 아래 원 체크박스는 **설계 시점 기준**이며 위 "PR B 확정 스코프" 가 override 한다 — 특히 `issuedForFO`·
+> `openedBy/At`·legacy reservation target(`targetType/Id`) 은 LIVE 라 드롭하지 않고, `reservedQty` 는 묶음 2
+> 로 드롭 가능해진다.
+
 - [ ] Prove via production audit that no V1 writer/reader, pending V1 fulfillment outbox, FO-target reservation, `issuedForFO` ownership, `openedForFO` lookup or FO-batch link remains.
 - [ ] Make V2-required links NOT NULL where the final model requires them: shipment-line reservations, shipment-owned invoices, tracking attempt links for new tracking rows and outbox topic.
 - [ ] Remove `fulfillment_orders.batchId`, `fulfillment_order_batches`, `invoices.issuedForFO`, `shipments.openedForFO/openedBy/openedAt` and legacy reservation target fields only after FK closure verification.
