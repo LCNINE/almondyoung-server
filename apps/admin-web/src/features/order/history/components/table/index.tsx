@@ -9,10 +9,7 @@ import type {
   SalesOrderBusinessTimelineItemDto,
   SalesOrdersQuery,
 } from '@/lib/types/dto/orders';
-import {
-  useSalesOrderRows,
-  useCreatePickingLists,
-} from '../../hooks/use-order-rows';
+import { useSalesOrderRows } from '../../hooks/use-order-rows';
 import { filterRefundIssueRows } from '../../hooks/refund-filter.utils';
 import type { OrderLineRow } from '../../hooks/use-order-rows';
 import { useSalesOrder, useAdminRetryRefund } from '@/lib/services/orders';
@@ -676,8 +673,6 @@ export default function OrderTable() {
   const isOrderSelectable = (r: OrderLineRow) =>
     r.isOrderFullyAllocated && r.orderStatus === 'confirmed';
 
-  const createPickingLists = useCreatePickingLists();
-
   /* 모달 상태 */
   const [showSplitModal, setShowSplitModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -688,61 +683,6 @@ export default function OrderTable() {
   const [showCancelModal, setShowCancelModal] = useState(false);
   const [showManualRefundModal, setShowManualRefundModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<OrderLineRow | null>(null);
-
-  /* 액션 */
-  const handleSelectedOutbound = useCallback(() => {
-    if (!selectedOrderIds.size) return;
-    createPickingLists.mutate(Array.from(selectedOrderIds), {
-      onSuccess: (batches) => {
-        const totalLinked = batches.reduce(
-          (sum, b) => sum + (b?.linkedFoCount ?? 0),
-          0
-        );
-        if (totalLinked > 0) {
-          toast.success(
-            `출고 지시 완료: ${totalLinked}건 주문처리가 배치에 할당됐습니다.`
-          );
-        } else {
-          toast.warning(
-            '배치가 생성됐지만 연결된 주문처리가 없습니다. 출고 가능 상태인지 확인하세요.'
-          );
-        }
-        window.open('/order/outbound-batches', '_blank');
-      },
-      onError: (err: Error) => {
-        toast.error(`출고 지시 실패: ${err.message ?? '알 수 없는 오류'}`);
-      },
-    });
-  }, [selectedOrderIds, createPickingLists]);
-
-  const handleBulkOutbound = useCallback(() => {
-    const readyOrderIds = Array.from(
-      new Set(
-        rows
-          .filter((r) => isOrderSelectable(r) && r.channel !== '3pl')
-          .map((r) => r.orderId)
-      )
-    );
-    if (!readyOrderIds.length) {
-      toast.info('출고 가능한 주문이 없습니다. (3PL 주문은 제외됩니다)');
-      return;
-    }
-    createPickingLists.mutate(readyOrderIds, {
-      onSuccess: (batches) => {
-        const totalLinked = batches.reduce(
-          (sum, b) => sum + (b?.linkedFoCount ?? 0),
-          0
-        );
-        toast.success(
-          `일괄 출고 지시 완료: ${totalLinked}건 주문처리가 배치에 할당됐습니다.`
-        );
-        window.open('/order/outbound-batches', '_blank');
-      },
-      onError: (err: Error) => {
-        toast.error(`일괄 출고 지시 실패: ${err.message ?? '알 수 없는 오류'}`);
-      },
-    });
-  }, [rows, createPickingLists]);
 
   /* 페이지네이션 */
   const [page, setPage] = useState(0); // 0-based index (DataTable 방식)
@@ -1092,22 +1032,6 @@ export default function OrderTable() {
               }}
             >
               엑셀 다운로드
-            </button>
-            <button
-              disabled={!selectedOrderIds.size || createPickingLists.isPending}
-              className="px-3 h-9 rounded bg-orange-500 text-white text-sm disabled:opacity-50 hover:bg-orange-600"
-              onClick={handleSelectedOutbound}
-            >
-              {createPickingLists.isPending
-                ? '처리 중...'
-                : `선택된 주문 출고 지시 (${selectedOrderIds.size})`}
-            </button>
-            <button
-              disabled={createPickingLists.isPending}
-              className="px-3 h-9 rounded bg-orange-400 text-white text-sm disabled:opacity-50 hover:bg-orange-500"
-              onClick={handleBulkOutbound}
-            >
-              일괄 출고 지시
             </button>
           </div>
         </div>

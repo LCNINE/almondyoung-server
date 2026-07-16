@@ -1,7 +1,9 @@
+import { randomUUID } from 'crypto';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { AnyTx, DbService, InjectTypedDb, TxFor } from '@app/db';
 import { and, desc, eq, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
+import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import { ProductSellableQuantityChangedPayload } from '@packages/event-contracts';
 import { MergedSchema } from '../../../../platform/database/merged-schema';
 import {
@@ -324,6 +326,10 @@ export class ProductSellableQuantityService {
 
       await this.outbox.enqueue(
         {
+          topic: INVENTORY_STREAM.topic.topic,
+          // 판매가능수량 변경은 variant 당 여러 번이 정당해 자연 멱등키가 없다 —
+          // 호출마다 고유 키로 topicless 시절의 무중복 동작을 유지한다.
+          idempotencyKey: `psq-changed:${projection.variantId}:${randomUUID()}`,
           eventType: 'ProductSellableQuantityChanged',
           aggregateType: 'ProductSellableQuantity',
           aggregateId: projection.variantId,

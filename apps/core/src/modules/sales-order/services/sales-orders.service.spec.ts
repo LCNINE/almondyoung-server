@@ -1,6 +1,235 @@
 import { wmsTables } from '../../inventory/schema/inventory.schema';
 import { SalesOrderAmendmentsService } from './sales-order-amendments.service';
 import { SalesOrdersService } from './sales-orders.service';
+import { ORDER_STREAM, SHIPMENT_STREAM, type OrderCreatedPayload } from '@packages/event-contracts/streams';
+
+describe('SalesOrdersService external order-line identity', () => {
+  const salesOrderId = '11111111-1111-4111-8111-111111111111';
+  const variantId = '22222222-2222-4222-8222-222222222222';
+
+  function payload(items: OrderCreatedPayload['items']): OrderCreatedPayload {
+    return {
+      orderId: 'event-order-1',
+      externalOrderId: 'channel-order-1',
+      salesChannel: 'naver',
+      customerId: null,
+      items,
+      totalAmount: 1000,
+      subtotalAmount: 1000,
+      shippingAmount: 0,
+      discountAmount: 0,
+      currency: 'KRW',
+      shippingAddress: {
+        recipientName: 'Recipient',
+        phone: '',
+        postalCode: '',
+        roadAddress: '',
+        detailAddress: '',
+      },
+      status: 'confirmed',
+      createdAt: '2026-07-14T01:00:00.000Z',
+    };
+  }
+
+  function item(overrides: Partial<OrderCreatedPayload['items'][number]> = {}) {
+    return {
+      orderItemId: 'naver-product-order-1',
+      channelProductId: 'naver-product-1',
+      skuId: variantId,
+      masterId: 'master-1',
+      versionId: 'version-1',
+      variantId,
+      productName: 'Product',
+      quantity: 1,
+      unitPrice: 1000,
+      totalPrice: 1000,
+      ...overrides,
+    };
+  }
+
+  function makeService() {
+    const state = {
+      salesOrders: [] as Array<Record<string, any>>,
+      salesOrderLines: [] as Array<Record<string, any>>,
+    };
+    const tx: any = {
+      insert: jest.fn((table: unknown) => ({
+        values: (values: Record<string, any> | Array<Record<string, any>>) => {
+          if (table === wmsTables.salesOrders) {
+            const row = { id: salesOrderId, ...(values as Record<string, any>) };
+            state.salesOrders.push(row);
+            return { returning: jest.fn().mockResolvedValue([row]) };
+          }
+          if (table === wmsTables.salesOrderLines) {
+            const rows = Array.isArray(values) ? values : [values];
+            state.salesOrderLines.push(
+              ...rows.map((row, index) => ({
+                id: `sales-order-line-${index + 1}`,
+                ...row,
+              })),
+            );
+          }
+          return Promise.resolve();
+        },
+      })),
+    };
+    const db = { run: jest.fn((fn: (trx: any) => unknown, explicitTx?: any) => fn(explicitTx ?? tx)) };
+    const policies = {
+      getVariantPolicy: jest.fn().mockResolvedValue({
+        inventoryManagement: false,
+        preStockSellable: false,
+        alwaysSellableZeroStock: false,
+      }),
+    };
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const service = new SalesOrdersService(
+      db as any,
+      policies as any,
+      outbox as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    return { service, state, tx };
+  }
+
+  it('round-trips provider IDs through OrderCreated, Core SO line, and ShipmentShipped', async () => {
+    const { service, state } = makeService();
+    const orderEvent = ORDER_STREAM.events.OrderCreated.schema!.parse(payload([item()]));
+
+    await service.createFromEvent(orderEvent);
+
+    expect(state.salesOrderLines[0]).toMatchObject({
+      channelOrderItemId: 'naver-product-order-1',
+      channelProductId: 'naver-product-1',
+    });
+
+    const shipmentEvent = {
+      shipmentId: '33333333-3333-4333-8333-333333333333',
+      dispatchAttemptId: '44444444-4444-4444-8444-444444444444',
+      attemptNo: 1,
+      warehouseId: '55555555-5555-4555-8555-555555555555',
+      dispatchedAt: '2026-07-14T02:00:00.000Z',
+      invoice: {
+        invoiceId: '66666666-6666-4666-8666-666666666666',
+        carrier: 'CJ' as const,
+        trackingNo: 'tracking-1',
+      },
+      orders: [
+        {
+          salesOrderId,
+          fulfillmentOrderId: '77777777-7777-4777-8777-777777777777',
+          salesChannel: 'naver' as const,
+          channelOrderId: 'channel-order-1',
+          isPartial: false,
+          lines: [
+            {
+              shipmentLineId: '88888888-8888-4888-8888-888888888888',
+              fulfillmentOrderItemId: '99999999-9999-4999-8999-999999999999',
+              salesOrderLineId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+              channelOrderItemId: state.salesOrderLines[0].channelOrderItemId,
+              skuId: variantId,
+              qty: 1,
+              isPartialQuantity: false,
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(SHIPMENT_STREAM.events.ShipmentShipped.schema!.parse(shipmentEvent)).toEqual(shipmentEvent);
+    expect(shipmentEvent.orders[0].lines[0].channelOrderItemId).toBe(orderEvent.items[0].orderItemId);
+    expect(state.salesOrderLines[0].channelProductId).toBe(orderEvent.items[0].channelProductId);
+  });
+
+  it('stores absent legacy/manual identity as null without using channelOrderId', async () => {
+    const { service, state } = makeService();
+
+    await service.create({
+      channelOrderId: 'must-not-be-a-line-id',
+      salesChannel: '3pl',
+      shippingAddress: {
+        recipientName: 'Recipient',
+        phone: '',
+        postalCode: '',
+        roadAddress: '',
+        detailAddress: '',
+      },
+      lines: [{ variantId, productName: 'Manual product', quantity: 1 }],
+    });
+
+    expect(state.salesOrderLines[0]).toMatchObject({
+      channelOrderItemId: null,
+      channelProductId: null,
+    });
+    expect(state.salesOrderLines[0].channelOrderItemId).not.toBe('must-not-be-a-line-id');
+  });
+
+  it.each([
+    {
+      name: 'order-item-only',
+      input: { orderItemId: 'provider-order-item-only', channelProductId: undefined },
+      stored: { channelOrderItemId: 'provider-order-item-only', channelProductId: null },
+    },
+    {
+      name: 'product-only',
+      input: { orderItemId: undefined, channelProductId: 'provider-product-only' },
+      stored: { channelOrderItemId: null, channelProductId: 'provider-product-only' },
+    },
+  ])('stores a present $name identity without copying it into the other field', async ({ input, stored }) => {
+    const { service, state } = makeService();
+
+    await service.createFromEvent(payload([item(input)]));
+
+    expect(state.salesOrderLines[0]).toMatchObject(stored);
+  });
+
+  it('rejects duplicate trusted channel order-item IDs before inserting the order', async () => {
+    const { service, state } = makeService();
+
+    await expect(
+      service.createFromEvent(
+        payload([
+          item(),
+          item({ channelProductId: 'different-product', variantId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }),
+        ]),
+      ),
+    ).rejects.toThrow('Duplicate channel order item ID');
+    expect(state.salesOrders).toHaveLength(0);
+  });
+
+  it('allows an expand-phase missing identity but blocks it at the V2 planning boundary', async () => {
+    const { service, state } = makeService();
+    const legacyItem = item({ orderItemId: undefined, channelProductId: undefined });
+
+    await service.createFromEvent(payload([legacyItem]));
+
+    expect(state.salesOrderLines[0]).toMatchObject({
+      channelOrderItemId: null,
+      channelProductId: null,
+    });
+    expect(() =>
+      service.assertV2PlanningExternalLineIdentity('naver', [
+        { id: state.salesOrderLines[0].id, channelOrderItemId: state.salesOrderLines[0].channelOrderItemId },
+      ]),
+    ).toThrow('V2 planning requires channelOrderItemId');
+    expect(() =>
+      service.assertV2PlanningExternalLineIdentity('3pl', [
+        { id: state.salesOrderLines[0].id, channelOrderItemId: null },
+      ]),
+    ).not.toThrow();
+    expect(() =>
+      service.assertV2PlanningExternalLineIdentity('naver', [
+        {
+          id: state.salesOrderLines[0].id,
+          channelOrderItemId: 'legacy-duplicated-id',
+          channelProductId: 'legacy-duplicated-id',
+        },
+      ]),
+    ).toThrow('trusted channelOrderItemId');
+  });
+});
 
 function collectSqlFragments(value: unknown, seen = new WeakSet<object>()): string[] {
   if (typeof value === 'string') return [value];
@@ -136,7 +365,10 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
       delete: jest.fn(() => ({ where: () => [] })),
     };
 
-    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) }, run: jest.fn((fn: any, t?: any) => t ? fn(t) : fn(tx)) };
+    const db = {
+      db: { ...tx, transaction: jest.fn((fn) => fn(tx)) },
+      run: jest.fn((fn: any, t?: any) => (t ? fn(t) : fn(tx))),
+    };
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const reservationLifecycle = {
       handleFulfillmentOrderStatusChange: jest.fn().mockResolvedValue(undefined),
@@ -175,7 +407,7 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
       cancelledBy: 'admin-1',
     });
 
-    expect(tx.execute).toHaveBeenCalledTimes(3); // SO FOR UPDATE + FO FOR UPDATE + FOI FOR UPDATE
+    expect(tx.execute).toHaveBeenCalledTimes(4); // SO lock + V2 history probe + FO/FOI locks
     expect(state.salesOrders[0].status).toBe('cancelled');
     expect(state.salesOrderLines).toEqual(originalLines);
     expect(state.salesOrderCancellations).toEqual([
@@ -245,7 +477,7 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
 
     await service.cancel(salesOrderId);
 
-    expect(tx.execute).toHaveBeenCalledTimes(1);
+    expect(tx.execute).toHaveBeenCalledTimes(2); // SO lock + V2 history probe
     expect(backlog.closeOpenForSalesOrder).toHaveBeenCalledWith(salesOrderId, tx);
     expect(state.salesOrderCancellations).toHaveLength(1);
     expect(outbox.enqueue).not.toHaveBeenCalled();
@@ -323,7 +555,10 @@ describe('SalesOrdersService.update accepted contract immutability', () => {
       })),
     };
 
-    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) }, run: jest.fn((fn: any, t?: any) => t ? fn(t) : fn(tx)) };
+    const db = {
+      db: { ...tx, transaction: jest.fn((fn) => fn(tx)) },
+      run: jest.fn((fn: any, t?: any) => (t ? fn(t) : fn(tx))),
+    };
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const service = new SalesOrdersService(
       db as any,
@@ -581,7 +816,10 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
       })),
     };
 
-    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) }, run: jest.fn((fn: any, t?: any) => t ? fn(t) : fn(tx)) };
+    const db = {
+      db: { ...tx, transaction: jest.fn((fn) => fn(tx)) },
+      run: jest.fn((fn: any, t?: any) => (t ? fn(t) : fn(tx))),
+    };
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const productSellableQuantity = { recalculateAndPublishForSku: jest.fn().mockResolvedValue(undefined) };
     const service = new SalesOrdersService(
@@ -666,12 +904,16 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
     ]);
     expect(outbox.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
-        eventType: expect.any(String),
+        eventType: 'SalesOrderCancelled',
         payload: expect.objectContaining({
-          orderCancellationId: 'cancellation-1',
+          orderId: salesOrderId,
+          channelOrderId: 'medusa_order_partial_1',
+          reason: 'CUSTOMER_REQUEST',
+          cancelledBy: 'admin-1',
           cancellationScope: 'partial',
           cancelledLines: [{ salesOrderLineId, quantity: 1 }],
-          walletRefundRef: 'wallet:refund:rf_partial_1',
+          refundRequired: false,
+          refundAmount: 5000,
         }),
       }),
       tx,
@@ -846,10 +1088,13 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
     ]);
     expect(outbox.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
+        eventType: 'SalesOrderCancelled',
         payload: expect.objectContaining({
-          orderCancellationId: 'cancellation-1',
-          postShipmentHandoffRefs: ['return:request:ret_partial_1'],
-          walletRefundRef: 'wallet:refund:rf_partial_shipped_1',
+          orderId: salesOrderId,
+          cancellationScope: 'partial',
+          cancelledLines: [{ salesOrderLineId, quantity: 1 }],
+          refundRequired: false,
+          refundAmount: 5000,
         }),
       }),
       expect.anything(),
@@ -956,9 +1201,12 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
     );
     expect(outbox.enqueue).toHaveBeenLastCalledWith(
       expect.objectContaining({
+        eventType: 'SalesOrderCancelled',
         payload: expect.objectContaining({
-          orderCancellationId: 'cancellation-2',
-          postShipmentHandoffRefs: ['return:request:ret_partial_2'],
+          orderId: salesOrderId,
+          cancellationScope: 'partial',
+          cancelledLines: [{ salesOrderLineId, quantity: 1 }],
+          refundRequired: false,
         }),
       }),
       expect.anything(),
@@ -1034,8 +1282,12 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
     ]);
     expect(outbox.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
+        eventType: 'SalesOrderCancelled',
         payload: expect.objectContaining({
-          postShipmentHandoffRefs: ['return:request:ret_fo_level_shipped'],
+          orderId: salesOrderId,
+          cancellationScope: 'partial',
+          cancelledLines: [{ salesOrderLineId, quantity: 1 }],
+          refundRequired: false,
         }),
       }),
       expect.anything(),
@@ -1112,8 +1364,12 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
     ]);
     expect(outbox.enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
+        eventType: 'SalesOrderCancelled',
         payload: expect.objectContaining({
-          postShipmentHandoffRefs: ['return:request:ret_fo_level_partial_counter'],
+          orderId: salesOrderId,
+          cancellationScope: 'partial',
+          cancelledLines: [{ salesOrderLineId, quantity: 1 }],
+          refundRequired: false,
         }),
       }),
       expect.anything(),
@@ -1378,7 +1634,10 @@ describe('SalesOrderAmendmentsService.create', () => {
       update: jest.fn(),
     };
 
-    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) }, run: jest.fn((fn: any, t?: any) => t ? fn(t) : fn(tx)) };
+    const db = {
+      db: { ...tx, transaction: jest.fn((fn) => fn(tx)) },
+      run: jest.fn((fn: any, t?: any) => (t ? fn(t) : fn(tx))),
+    };
     const service = new SalesOrderAmendmentsService(db as any);
 
     return { service, state, tx };
@@ -1524,7 +1783,10 @@ describe('SalesOrdersService business links', () => {
       })),
     };
 
-    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) }, run: jest.fn((fn: any, t?: any) => t ? fn(t) : fn(tx)) };
+    const db = {
+      db: { ...tx, transaction: jest.fn((fn) => fn(tx)) },
+      run: jest.fn((fn: any, t?: any) => (t ? fn(t) : fn(tx))),
+    };
     const service = new SalesOrdersService(db as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any);
 
     return { service, state, tx };
@@ -1661,11 +1923,13 @@ describe('SalesOrdersService.cancel full cancel shipped evidence guard', () => {
     return result;
   }
 
-  function makeService(options: {
-    foStatus?: string;
-    foShippedAt?: Date | null;
-    foiShippedQty?: number;
-  } = {}) {
+  function makeService(
+    options: {
+      foStatus?: string;
+      foShippedAt?: Date | null;
+      foiShippedQty?: number;
+    } = {},
+  ) {
     const { foStatus = 'ready', foShippedAt = null, foiShippedQty = 0 } = options;
 
     const fo = {
@@ -1691,7 +1955,16 @@ describe('SalesOrdersService.cancel full cancel shipped evidence guard', () => {
 
     const selectRowsFor = (table: unknown): any[] => {
       if (table === wmsTables.salesOrders) {
-        return [{ id: salesOrderId, status: 'confirmed', salesChannel: 'medusa', channelOrderId: 'ch-1', shippingAddress: {}, orderDate: new Date() }];
+        return [
+          {
+            id: salesOrderId,
+            status: 'confirmed',
+            salesChannel: 'medusa',
+            channelOrderId: 'ch-1',
+            shippingAddress: {},
+            orderDate: new Date(),
+          },
+        ];
       }
       if (table === wmsTables.salesOrderCancellations) return [];
       if (table === wmsTables.salesOrderLines) return [{ id: 'sol-guard-1', salesOrderId, quantity: 2 }];
@@ -1709,50 +1982,64 @@ describe('SalesOrdersService.cancel full cancel shipped evidence guard', () => {
         }),
       })),
       update: jest.fn(() => ({ set: () => ({ where: () => [] }) })),
-      insert: jest.fn(() => ({ values: () => ({ returning: jest.fn().mockResolvedValue([{ id: 'cancel-1', effects: [], metadata: {} }]) }) })),
+      insert: jest.fn(() => ({
+        values: () => ({ returning: jest.fn().mockResolvedValue([{ id: 'cancel-1', effects: [], metadata: {} }]) }),
+      })),
       delete: jest.fn(() => ({ where: () => [] })),
     };
 
-    const db = { db: { ...tx, transaction: jest.fn((fn) => fn(tx)) }, run: jest.fn((fn: any, t?: any) => t ? fn(t) : fn(tx)) };
+    const db = {
+      db: { ...tx, transaction: jest.fn((fn) => fn(tx)) },
+      run: jest.fn((fn: any, t?: any) => (t ? fn(t) : fn(tx))),
+    };
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
-    const library = { revokeOwnershipsForOrderDetailed: jest.fn().mockResolvedValue({ revokedCount: 0, ownershipIds: [] }) };
+    const library = {
+      revokeOwnershipsForOrderDetailed: jest.fn().mockResolvedValue({ revokedCount: 0, ownershipIds: [] }),
+    };
     const backlog = { closeOpenForSalesOrder: jest.fn().mockResolvedValue(0) };
     const reservationLifecycle = { handleFulfillmentOrderStatusChange: jest.fn().mockResolvedValue(undefined) };
 
     const service = new SalesOrdersService(
-      db as any, {} as any, outbox as any,
-      reservationLifecycle as any, {} as any, {} as any,
-      backlog as any, undefined, undefined, library as any,
+      db as any,
+      {} as any,
+      outbox as any,
+      reservationLifecycle as any,
+      {} as any,
+      {} as any,
+      backlog as any,
+      undefined,
+      undefined,
+      library as any,
     );
     return { service };
   }
 
   it('rejects full cancel when a fulfillment order has status shipped', async () => {
     const { service } = makeService({ foStatus: 'shipped' });
-    await expect(
-      service.cancel(salesOrderId, { reasonCode: 'CUSTOMER_REQUEST' }),
-    ).rejects.toThrow('출고 완료된 항목이 포함된 주문은 전체 취소를 할 수 없습니다');
+    await expect(service.cancel(salesOrderId, { reasonCode: 'CUSTOMER_REQUEST' })).rejects.toThrow(
+      '출고 완료된 항목이 포함된 주문은 전체 취소를 할 수 없습니다',
+    );
   });
 
   it('rejects full cancel when a fulfillment order has status completed', async () => {
     const { service } = makeService({ foStatus: 'completed' });
-    await expect(
-      service.cancel(salesOrderId, { reasonCode: 'CUSTOMER_REQUEST' }),
-    ).rejects.toThrow('출고 완료된 항목이 포함된 주문은 전체 취소를 할 수 없습니다');
+    await expect(service.cancel(salesOrderId, { reasonCode: 'CUSTOMER_REQUEST' })).rejects.toThrow(
+      '출고 완료된 항목이 포함된 주문은 전체 취소를 할 수 없습니다',
+    );
   });
 
   it('rejects full cancel when a fulfillment order has shippedAt set (status still ready)', async () => {
     const { service } = makeService({ foStatus: 'ready', foShippedAt: new Date('2026-05-30T10:00:00.000Z') });
-    await expect(
-      service.cancel(salesOrderId, { reasonCode: 'CUSTOMER_REQUEST' }),
-    ).rejects.toThrow('출고 완료된 항목이 포함된 주문은 전체 취소를 할 수 없습니다');
+    await expect(service.cancel(salesOrderId, { reasonCode: 'CUSTOMER_REQUEST' })).rejects.toThrow(
+      '출고 완료된 항목이 포함된 주문은 전체 취소를 할 수 없습니다',
+    );
   });
 
   it('rejects full cancel when a fulfillment order item has shippedQty > 0', async () => {
     const { service } = makeService({ foStatus: 'ready', foiShippedQty: 1 });
-    await expect(
-      service.cancel(salesOrderId, { reasonCode: 'CUSTOMER_REQUEST' }),
-    ).rejects.toThrow('출고 수량이 있는 항목이 포함되어 전체 취소를 할 수 없습니다');
+    await expect(service.cancel(salesOrderId, { reasonCode: 'CUSTOMER_REQUEST' })).rejects.toThrow(
+      '출고 수량이 있는 항목이 포함되어 전체 취소를 할 수 없습니다',
+    );
   });
 
   // happy path (ready FO, shippedQty=0 → cancel proceeds) is covered by the existing
@@ -1775,8 +2062,7 @@ describe('SalesOrdersService.confirm() state guard', () => {
       select: jest.fn(() => ({
         from: (table: unknown) => ({
           where: () => ({
-            limit: (n: number) =>
-              Promise.resolve(table === wmsTables.salesOrders ? state.salesOrders.slice(0, n) : []),
+            limit: (n: number) => Promise.resolve(table === wmsTables.salesOrders ? state.salesOrders.slice(0, n) : []),
           }),
         }),
       })),
@@ -1791,7 +2077,10 @@ describe('SalesOrdersService.confirm() state guard', () => {
       insert: jest.fn(() => ({ values: () => ({ returning: jest.fn().mockResolvedValue([]) }) })),
     };
 
-    const db = { db: { ...tx, transaction: jest.fn((fn: any) => fn(tx)) }, run: jest.fn((fn: any, t?: any) => t ? fn(t) : fn(tx)) };
+    const db = {
+      db: { ...tx, transaction: jest.fn((fn: any) => fn(tx)) },
+      run: jest.fn((fn: any, t?: any) => (t ? fn(t) : fn(tx))),
+    };
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
 
     const service = new SalesOrdersService(
@@ -1805,9 +2094,11 @@ describe('SalesOrdersService.confirm() state guard', () => {
     );
 
     // getOne calls complex multi-table queries; stub it to return the current state
-    jest.spyOn(service, 'getOne').mockImplementation(
-      async () => ({ id: salesOrderId, status: state.salesOrders[0]?.status ?? 'confirmed' } as any),
-    );
+    jest
+      .spyOn(service, 'getOne')
+      .mockImplementation(
+        async () => ({ id: salesOrderId, status: state.salesOrders[0]?.status ?? 'confirmed' }) as any,
+      );
 
     return { service, state, tx };
   }
@@ -1862,7 +2153,10 @@ describe('SalesOrdersService.confirm() state guard', () => {
         from: () => ({ where: () => ({ limit: () => Promise.resolve([]) }) }),
       })),
     };
-    const db = { db: { ...tx, transaction: jest.fn((fn: any) => fn(tx)) }, run: jest.fn((fn: any, t?: any) => t ? fn(t) : fn(tx)) };
+    const db = {
+      db: { ...tx, transaction: jest.fn((fn: any) => fn(tx)) },
+      run: jest.fn((fn: any, t?: any) => (t ? fn(t) : fn(tx))),
+    };
     const service = new SalesOrdersService(db as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any);
     const { NotFoundException } = await import('@nestjs/common');
     await expect(service.confirm('nonexistent-id')).rejects.toThrow(NotFoundException);
@@ -1903,18 +2197,25 @@ describe('SalesOrdersService.getStats() — 출고완료 FO 도출 (작업 15)',
         return [];
       };
       const b: any = {
-        from: (t: unknown) => { state.from = t; return b; },
-        innerJoin: (t: unknown) => { state.joins.push(t); return b; },
+        from: (t: unknown) => {
+          state.from = t;
+          return b;
+        },
+        innerJoin: (t: unknown) => {
+          state.joins.push(t);
+          return b;
+        },
         where: () => b,
-        groupBy: () => { state.grouped = true; return b; },
+        groupBy: () => {
+          state.grouped = true;
+          return b;
+        },
         then: (onF: any, onR: any) => Promise.resolve(resolveRows()).then(onF, onR),
       };
       return b;
     }
     const db = { db: { select: () => builder() } };
-    return new SalesOrdersService(
-      db as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any,
-    );
+    return new SalesOrdersService(db as any, {} as any, {} as any, {} as any, {} as any, {} as any, {} as any);
   }
 
   it('outboundComplete 는 FO 출고행 수이며 dead SO.status 합(processing/shipped/delivered)과 무관하다', async () => {

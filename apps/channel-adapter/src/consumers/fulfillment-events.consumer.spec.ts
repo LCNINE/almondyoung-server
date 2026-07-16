@@ -1,6 +1,10 @@
 import { FulfillmentEventsConsumer } from './fulfillment-events.consumer';
 import { inboxEvents } from '../schema';
-import type { FulfillmentShippedPayload, FulfillmentDeliveredPayload, SalesOrderCancelledPayload } from '@packages/event-contracts/streams';
+import type {
+  FulfillmentShippedPayload,
+  FulfillmentDeliveredPayload,
+  SalesOrderCancelledPayload,
+} from '@packages/event-contracts/streams';
 
 const SHIPPED_PAYLOAD: FulfillmentShippedPayload = {
   fulfillmentId: 'fo-001',
@@ -35,10 +39,7 @@ function makeService() {
   const insertMock = jest.fn().mockReturnValue({ values: valuesMock });
   const dbService = { db: { insert: insertMock } };
 
-  const service = new FulfillmentEventsConsumer(
-    {} as any, // channelAdapterFactory — 이 테스트에선 미사용
-    dbService as any,
-  );
+  const service = new FulfillmentEventsConsumer(dbService as any);
 
   return { service, insertMock, valuesMock };
 }
@@ -48,23 +49,15 @@ function makeServiceWithAdapter() {
   const insertMock = jest.fn().mockReturnValue({ values: valuesMock });
   const dbService = { db: { insert: insertMock } };
 
-  const executeCommandMock = jest.fn().mockResolvedValue({ success: true });
-  const channelAdapterFactory = {
-    getAdapter: jest.fn().mockReturnValue({ executeCommand: executeCommandMock }),
-  };
-
-  const service = new FulfillmentEventsConsumer(channelAdapterFactory as any, dbService as any);
-  return { service, insertMock, valuesMock, executeCommandMock };
+  const service = new FulfillmentEventsConsumer(dbService as any);
+  return { service, insertMock, valuesMock };
 }
 
 describe('FulfillmentEventsConsumer.handleFulfillmentShipped', () => {
-  it('채널 동기화 후 inbox_events에 CoreFulfillmentShipped 저장', async () => {
-    const { service, insertMock, valuesMock, executeCommandMock } = makeServiceWithAdapter();
+  it('외부 채널 명령 없이 inbox_events에 full-completion projection만 저장', async () => {
+    const { service, insertMock, valuesMock } = makeServiceWithAdapter();
     await service.handleFulfillmentShipped(SHIPPED_PAYLOAD, ENVELOPE);
 
-    expect(executeCommandMock).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'dispatch.ship', orderId: 'order-001' }),
-    );
     expect(insertMock).toHaveBeenCalledWith(inboxEvents);
     expect(valuesMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -76,11 +69,9 @@ describe('FulfillmentEventsConsumer.handleFulfillmentShipped', () => {
     );
   });
 
-  it('채널 어댑터 오류 시에도 inbox insert는 수행된다', async () => {
+  it('channel adapter factory 없이도 inbox insert를 수행한다', async () => {
     const { service, insertMock } = makeServiceWithAdapter();
-    // getAdapter를 throw하게 만들어도 내부에서 catch → inbox insert는 여전히 실행
-    const brokenService = new FulfillmentEventsConsumer({} as any, { db: { insert: insertMock } } as any);
-    await brokenService.handleFulfillmentShipped(SHIPPED_PAYLOAD, ENVELOPE);
+    await service.handleFulfillmentShipped(SHIPPED_PAYLOAD, ENVELOPE);
     expect(insertMock).toHaveBeenCalledWith(inboxEvents);
   });
 });

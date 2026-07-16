@@ -34,8 +34,11 @@ import {
   MEMBERSHIP_STREAM,
   USER_STREAM,
   PAYMENT_STREAM,
+  SHIPMENT_STREAM,
+  FULFILLMENT_V2_STREAM,
 } from '@packages/event-contracts/streams';
 import { FulfillmentEventsConsumer } from './consumers/fulfillment-events.consumer';
+import { ShipmentEventsConsumer } from './consumers/shipment-events.consumer';
 import { UserEventConsumer } from './consumers/user-event.consumer';
 import { PaymentEventsConsumer } from './consumers/payment-events.consumer';
 import * as schema from './schema';
@@ -61,6 +64,7 @@ import { PendingOrderService } from './services/pending-order.service';
 import { InboxService } from './services/inbox.service';
 import { OutboxDispatcherService } from './services/outbox-dispatcher.service';
 import { PollingChangeHashService } from './services/polling-change-hash.service';
+import { ShipmentDispatchInboxWorker } from './services/shipment-dispatch-inbox.worker';
 
 // PIM-Medusa 동기화 서비스
 // PIMCLIENT: Removed to enforce MSA boundary - no sync calls between internal services
@@ -83,6 +87,7 @@ import { MembershipDailySyncService } from './services/membership-daily-sync.ser
 import { CouponIssueReconciliationService } from './services/coupon-issue-reconciliation.service';
 import { InternalMembershipController } from './controllers/internal-membership.controller';
 import { OrderCollectionFailuresController } from './controllers/order-collection-failures.controller';
+import { ChannelDispatchOperationsController } from './controllers/channel-dispatch-operations.controller';
 import { CHANNEL_ORDER_PROVIDER } from './services/order-collection/channel-order-provider.interface';
 import { MedusaOrderProvider } from './services/order-collection/medusa-order.provider';
 import { OrderCollectionFailureService } from './services/order-collection/order-collection-failure.service';
@@ -121,6 +126,8 @@ import { OrderPollerOrchestrator } from './services/order-collection/order-polle
               MEMBERSHIP_STREAM,
               USER_STREAM,
               PAYMENT_STREAM,
+              SHIPMENT_STREAM,
+              FULFILLMENT_V2_STREAM,
             ],
             serviceName: 'channel-adapter',
             kafka: createKafkaConfigFromEnv()!,
@@ -138,6 +145,7 @@ import { OrderPollerOrchestrator } from './services/order-collection/order-polle
     SyncStatusController,
     InternalMembershipController,
     FulfillmentEventsConsumer,
+    ShipmentEventsConsumer,
     PimProductEventConsumer,
     PimCategoryConsumer,
     ProductSellableQuantityConsumer,
@@ -145,6 +153,7 @@ import { OrderPollerOrchestrator } from './services/order-collection/order-polle
     UserEventConsumer,
     PaymentEventsConsumer,
     OrderCollectionFailuresController,
+    ChannelDispatchOperationsController,
   ],
   providers: [
     ChannelAdapterService,
@@ -180,6 +189,7 @@ import { OrderPollerOrchestrator } from './services/order-collection/order-polle
     // Inbox/Outbox 패턴 서비스
     InboxService,
     OutboxDispatcherService,
+    ShipmentDispatchInboxWorker,
 
     // 폴링 dedupe (외부 데이터 변경 감지)
     PollingChangeHashService,

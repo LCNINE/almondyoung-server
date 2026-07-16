@@ -33,6 +33,7 @@ function buildTrx(opts: {
     },
     update: () => ({ set: () => ({ where: () => Promise.resolve(undefined) }) }),
     insert: () => ({ values: () => Promise.resolve(undefined) }),
+    execute: jest.fn().mockResolvedValue(undefined),
   };
   return trx as never;
 }

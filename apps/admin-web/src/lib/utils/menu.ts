@@ -158,11 +158,6 @@ export const mainMenus: MainMenu[] = [
             path: '/order/regional-invoice',
           },
           {
-            id: 'print-invoices-by-order',
-            title: '주문별 송장 출력',
-            path: '/order/print-invoices-by-order',
-          },
-          {
             id: 'shipment-round',
             title: '송장 출력 / 출고 회차별 조회',
             path: '/order/shipment-round',

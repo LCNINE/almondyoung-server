@@ -22,6 +22,7 @@ import {
   useCompleteExchange,
 } from '@/lib/services/return-exchange';
 import type { ExchangeRequest } from '@/lib/api/domains/return-exchange';
+import { getServerDenyMessage } from '@/lib/services/orders';
 
 const STATUS_LABELS: Record<ExchangeRequest['status'], string> = {
   requested: '신청',
@@ -35,7 +36,10 @@ const STATUS_LABELS: Record<ExchangeRequest['status'], string> = {
   cancelled: '취소',
 };
 
-const STATUS_VARIANTS: Record<ExchangeRequest['status'], 'default' | 'secondary' | 'destructive' | 'outline'> = {
+const STATUS_VARIANTS: Record<
+  ExchangeRequest['status'],
+  'default' | 'secondary' | 'destructive' | 'outline'
+> = {
   requested: 'default',
   approved: 'secondary',
   rejected: 'destructive',
@@ -55,7 +59,11 @@ interface Props {
 
 const PAGE_SIZE = 20;
 
-export function ExchangeRequestsTable({ statusFilter, page, onPageChange }: Props) {
+export function ExchangeRequestsTable({
+  statusFilter,
+  page,
+  onPageChange,
+}: Props) {
   const query = { status: statusFilter, page, limit: PAGE_SIZE };
   const { data, isLoading, isFetching } = useExchangeRequests(query);
 
@@ -72,8 +80,8 @@ export function ExchangeRequestsTable({ statusFilter, page, onPageChange }: Prop
     try {
       await fn();
       toast.success(`${label} 처리되었습니다.`);
-    } catch {
-      toast.error(`${label} 처리에 실패했습니다.`);
+    } catch (error) {
+      toast.error(getServerDenyMessage(error, `${label} 처리에 실패했습니다.`));
     }
   };
 
@@ -98,27 +106,42 @@ export function ExchangeRequestsTable({ statusFilter, page, onPageChange }: Prop
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                <TableCell
+                  colSpan={6}
+                  className="text-center text-muted-foreground py-8"
+                >
                   불러오는 중...
                 </TableCell>
               </TableRow>
             ) : items.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                <TableCell
+                  colSpan={6}
+                  className="text-center text-muted-foreground py-8"
+                >
                   교환 요청이 없습니다.
                 </TableCell>
               </TableRow>
             ) : (
               items.map(({ request }) => (
-                <TableRow key={request.id} className={isFetching ? 'opacity-60' : ''}>
-                  <TableCell className="font-mono text-xs">{request.id.slice(0, 8)}…</TableCell>
-                  <TableCell className="font-mono text-xs">{request.salesOrderId.slice(0, 8)}…</TableCell>
+                <TableRow
+                  key={request.id}
+                  className={isFetching ? 'opacity-60' : ''}
+                >
+                  <TableCell className="font-mono text-xs">
+                    {request.id.slice(0, 8)}…
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {request.salesOrderId.slice(0, 8)}…
+                  </TableCell>
                   <TableCell>
                     <Badge variant={STATUS_VARIANTS[request.status]}>
                       {STATUS_LABELS[request.status]}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-sm">{request.reasonCode}</TableCell>
+                  <TableCell className="text-sm">
+                    {request.reasonCode}
+                  </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {new Date(request.createdAt).toLocaleDateString('ko-KR')}
                   </TableCell>
@@ -129,10 +152,15 @@ export function ExchangeRequestsTable({ statusFilter, page, onPageChange }: Prop
                           <Button
                             size="sm"
                             variant="default"
-                            disabled={approve.isPending && confirmingId === request.id}
+                            disabled={
+                              approve.isPending && confirmingId === request.id
+                            }
                             onClick={() => {
                               setConfirmingId(request.id);
-                              act(() => approve.mutateAsync({ id: request.id }), '승인');
+                              act(
+                                () => approve.mutateAsync({ id: request.id }),
+                                '승인'
+                              );
                             }}
                           >
                             승인
@@ -140,10 +168,15 @@ export function ExchangeRequestsTable({ statusFilter, page, onPageChange }: Prop
                           <Button
                             size="sm"
                             variant="destructive"
-                            disabled={reject.isPending && confirmingId === request.id}
+                            disabled={
+                              reject.isPending && confirmingId === request.id
+                            }
                             onClick={() => {
                               setConfirmingId(request.id);
-                              act(() => reject.mutateAsync({ id: request.id }), '거절');
+                              act(
+                                () => reject.mutateAsync({ id: request.id }),
+                                '거절'
+                              );
                             }}
                           >
                             거절
@@ -155,7 +188,12 @@ export function ExchangeRequestsTable({ statusFilter, page, onPageChange }: Prop
                           size="sm"
                           variant="outline"
                           disabled={collectionPending.isPending}
-                          onClick={() => act(() => collectionPending.mutateAsync(request.id), '수거 대기')}
+                          onClick={() =>
+                            act(
+                              () => collectionPending.mutateAsync(request.id),
+                              '수거 대기'
+                            )
+                          }
                         >
                           수거 대기
                         </Button>
@@ -165,7 +203,12 @@ export function ExchangeRequestsTable({ statusFilter, page, onPageChange }: Prop
                           size="sm"
                           variant="outline"
                           disabled={collected.isPending}
-                          onClick={() => act(() => collected.mutateAsync(request.id), '수거 완료')}
+                          onClick={() =>
+                            act(
+                              () => collected.mutateAsync(request.id),
+                              '수거 완료'
+                            )
+                          }
                         >
                           수거 완료
                         </Button>
@@ -175,7 +218,12 @@ export function ExchangeRequestsTable({ statusFilter, page, onPageChange }: Prop
                           size="sm"
                           variant="outline"
                           disabled={inspected.isPending}
-                          onClick={() => act(() => inspected.mutateAsync(request.id), '검수 완료')}
+                          onClick={() =>
+                            act(
+                              () => inspected.mutateAsync(request.id),
+                              '검수 완료'
+                            )
+                          }
                         >
                           검수 완료
                         </Button>
@@ -185,7 +233,12 @@ export function ExchangeRequestsTable({ statusFilter, page, onPageChange }: Prop
                           size="sm"
                           variant="outline"
                           disabled={complete.isPending}
-                          onClick={() => act(() => complete.mutateAsync(request.id), '처리 완료')}
+                          onClick={() =>
+                            act(
+                              () => complete.mutateAsync(request.id),
+                              '처리 완료'
+                            )
+                          }
                         >
                           완료 처리
                         </Button>
@@ -202,11 +255,23 @@ export function ExchangeRequestsTable({ statusFilter, page, onPageChange }: Prop
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <span>총 {total}건</span>
           <div className="flex gap-2">
-            <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={page <= 1}
+              onClick={() => onPageChange(page - 1)}
+            >
               이전
             </Button>
-            <span className="self-center">{page} / {totalPages}</span>
-            <Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>
+            <span className="self-center">
+              {page} / {totalPages}
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={page >= totalPages}
+              onClick={() => onPageChange(page + 1)}
+            >
               다음
             </Button>
           </div>

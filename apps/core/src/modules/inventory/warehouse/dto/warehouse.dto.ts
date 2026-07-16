@@ -14,6 +14,13 @@ export class WarehouseDto {
   @ApiProperty({ description: '창고 타입', enum: warehouseTypeEnum.enumValues })
   type: (typeof warehouseTypeEnum.enumValues)[number];
 
+  @ApiProperty({
+    description: '창고가 명시적으로 지원하는 V2 피킹 전략. 미설정 창고는 빈 배열.',
+    enum: ['discrete', 'aggregate_then_sort', 'pick_to_tote'],
+    isArray: true,
+  })
+  supportedPickingStrategies: Array<'discrete' | 'aggregate_then_sort' | 'pick_to_tote'>;
+
   @ApiProperty({ description: '생성일시' })
   createdAt: string;
 

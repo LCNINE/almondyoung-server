@@ -17,6 +17,18 @@ import type {
   FulfillmentOrdersListResponse,
   FulfillmentOrdersQuery,
   CreateStandaloneFulfillmentRequest,
+  ShipmentAdminSummary,
+  ShipmentAdminDetail,
+  FulfillmentOperation,
+  SplitShipmentRequest,
+  ReviseShipmentRecipientRequest,
+  PlanShipmentRequest,
+  CancelShipmentOutstandingRequest,
+  ShipmentPlanningCommandResponse,
+  RecallShipmentRequest,
+  ShipmentRecallOperation,
+  ReportShipmentShortPickRequest,
+  ShipmentShortPickOperation,
 } from '../../../types/dto/fulfillment';
 import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import { client } from '../../client';
@@ -31,11 +43,14 @@ export const fulfillmentOrder = {
     params.set('limit', String(limit));
     // page 우선, 없으면 offset 사용
     const offset =
-      query.page != null ? Math.max(0, (query.page - 1) * limit) : query.offset ?? 0;
+      query.page != null
+        ? Math.max(0, (query.page - 1) * limit)
+        : (query.offset ?? 0);
     params.set('offset', String(offset));
     if (query.status) params.set('status', query.status);
     if (query.warehouseId) params.set('warehouseId', query.warehouseId);
-    if (query.fulfillmentMode) params.set('fulfillmentMode', query.fulfillmentMode);
+    if (query.fulfillmentMode)
+      params.set('fulfillmentMode', query.fulfillmentMode);
     if (query.salesOrderId) params.set('salesOrderId', query.salesOrderId);
     if (query.priority) params.set('priority', query.priority);
     const response = await client.get(
@@ -48,6 +63,114 @@ export const fulfillmentOrder = {
   getOne: async (id: string): Promise<FulfillmentOrderDetail> => {
     const response = await client.get(
       `${ALMONDYOUNG_API_BASE_URL}/fulfillments/${encodeURIComponent(id)}`
+    );
+    return response.data;
+  },
+
+  getShipments: async (id: string): Promise<ShipmentAdminSummary[]> => {
+    const response = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/fulfillments/${encodeURIComponent(id)}/shipments`
+    );
+    return response.data;
+  },
+
+  getShipment: async (shipmentId: string): Promise<ShipmentAdminDetail> => {
+    const response = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/shipments/${encodeURIComponent(shipmentId)}`
+    );
+    return response.data;
+  },
+
+  getOperation: async (operationId: string): Promise<FulfillmentOperation> => {
+    const response = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/fulfillment-operations/${encodeURIComponent(operationId)}`
+    );
+    return response.data;
+  },
+
+  splitShipment: async (
+    shipmentId: string,
+    data: SplitShipmentRequest,
+    idempotencyKey: string
+  ): Promise<ShipmentPlanningCommandResponse> => {
+    const response = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/shipments/${encodeURIComponent(shipmentId)}/splits`,
+      data,
+      { headers: { 'Idempotency-Key': idempotencyKey } }
+    );
+    return response.data;
+  },
+
+  reviseShipmentRecipient: async (
+    shipmentId: string,
+    data: ReviseShipmentRecipientRequest,
+    idempotencyKey: string
+  ): Promise<ShipmentPlanningCommandResponse> => {
+    const response = await client.patch(
+      `${ALMONDYOUNG_API_BASE_URL}/shipments/${encodeURIComponent(shipmentId)}/recipient`,
+      data,
+      { headers: { 'Idempotency-Key': idempotencyKey } }
+    );
+    return response.data;
+  },
+
+  planShipment: async (
+    shipmentId: string,
+    data: PlanShipmentRequest,
+    idempotencyKey: string
+  ): Promise<ShipmentPlanningCommandResponse> => {
+    const response = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/shipments/${encodeURIComponent(shipmentId)}/plan`,
+      data,
+      { headers: { 'Idempotency-Key': idempotencyKey } }
+    );
+    return response.data;
+  },
+
+  cancelShipmentOutstanding: async (
+    shipmentId: string,
+    data: CancelShipmentOutstandingRequest,
+    idempotencyKey: string
+  ): Promise<ShipmentPlanningCommandResponse> => {
+    const response = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/shipments/${encodeURIComponent(shipmentId)}/cancellations`,
+      data,
+      { headers: { 'Idempotency-Key': idempotencyKey } }
+    );
+    return response.data;
+  },
+
+  recallShipment: async (
+    shipmentId: string,
+    data: RecallShipmentRequest,
+    idempotencyKey: string
+  ): Promise<ShipmentRecallOperation> => {
+    const response = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/shipments/${encodeURIComponent(shipmentId)}/recalls`,
+      data,
+      { headers: { 'Idempotency-Key': idempotencyKey } }
+    );
+    return response.data;
+  },
+
+  getRecallOperation: async (
+    operationId: string
+  ): Promise<ShipmentRecallOperation> => {
+    const response = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/shipment-recall-operations/${encodeURIComponent(operationId)}`
+    );
+    return response.data;
+  },
+
+  reportShortPick: async (
+    shipmentId: string,
+    data: ReportShipmentShortPickRequest,
+    idempotencyKey: string
+  ): Promise<ShipmentShortPickOperation> => {
+    const response = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/shipments/${encodeURIComponent(shipmentId)}/short-picks`,
+      data,
+      { headers: { 'Idempotency-Key': idempotencyKey } }
     );
     return response.data;
   },
@@ -75,18 +198,6 @@ export const fulfillmentOrder = {
   cancel: async (id: string): Promise<FulfillmentOrderDetail> => {
     const response = await client.post(
       `${ALMONDYOUNG_API_BASE_URL}/fulfillments/${encodeURIComponent(id)}/cancel`
-    );
-    return response.data;
-  },
-
-  // FOI 단위 재고 예약 (POST /fulfillments/:id/reserve)
-  reserveItem: async (
-    id: string,
-    data: { fulfillmentOrderItemId: string; quantity: number }
-  ): Promise<unknown> => {
-    const response = await client.post(
-      `${ALMONDYOUNG_API_BASE_URL}/fulfillments/${encodeURIComponent(id)}/reserve`,
-      data
     );
     return response.data;
   },

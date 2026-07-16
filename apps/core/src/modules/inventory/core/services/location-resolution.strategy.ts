@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { and, asc, eq, gte } from 'drizzle-orm';
 import { wmsTables, DbTx } from '../../schema/inventory.schema';
 import { AllocationChunk, fifoAllocate } from './fifo-allocate';
+import { BatchControlledStockGuard } from './batch-controlled-stock.guard';
 
 /**
  * 출고 소진 시 "어느 로케이션에서 차감할 것인가" 를 정하는 교체 가능한 전략(seam).
@@ -25,6 +26,8 @@ export const LOCATION_RESOLUTION_STRATEGY = Symbol('LOCATION_RESOLUTION_STRATEGY
  */
 @Injectable()
 export class FifoLocationStrategy implements LocationResolutionStrategy {
+  constructor(private readonly batchControlledStock: BatchControlledStockGuard = new BatchControlledStockGuard()) {}
+
   async resolve(skuId: string, warehouseId: string, quantity: number, tx: DbTx): Promise<AllocationChunk[]> {
     const rows = await tx
       .select({
@@ -45,6 +48,15 @@ export class FifoLocationStrategy implements LocationResolutionStrategy {
       )
       .orderBy(asc(wmsTables.locations.fifoRank), asc(wmsTables.stockLedgers.updatedAt));
 
-    return fifoAllocate(rows, quantity);
+    const generallyAvailableRows: typeof rows = [];
+    for (const row of rows) {
+      const availability = await this.batchControlledStock.getAvailability(
+        { skuId, warehouseId, sourceLocationId: row.locationId },
+        tx,
+      );
+      generallyAvailableRows.push({ ...row, qty: availability.generallyAvailableQty });
+    }
+
+    return fifoAllocate(generallyAvailableRows, quantity);
   }
 }

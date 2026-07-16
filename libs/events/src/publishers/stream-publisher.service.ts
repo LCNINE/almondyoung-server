@@ -126,7 +126,11 @@ export class StreamPublisher<TEvents extends StreamEventTypes = StreamEventTypes
       metadata: params.metadata,
     };
 
-    await this.sendMessage(envelope, params.aggregateId);
+    const partitionKey = this.streamConfig.partitionKey?.(validatedPayload) ?? params.aggregateId;
+    if (typeof partitionKey !== 'string' || partitionKey.length === 0) {
+      throw new Error(`Stream ${this.streamConfig.topic.topic} resolved an invalid partition key`);
+    }
+    await this.sendMessage(envelope, partitionKey);
 
     // causedBy가 있으면 CAUSE 링크 기록
     if (params.causedBy && this.eventTrackingService) {

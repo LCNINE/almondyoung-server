@@ -5,6 +5,7 @@ import { wmsTables, wmsSchema, DbTx, MovementJob } from '../../schema/inventory.
 import { eq, and, desc, SQL, sql, getTableColumns } from 'drizzle-orm';
 import { StockEventService } from './stock-event.service';
 import { InventoryCommandService } from './inventory-command.service';
+import { acquireStockAvailabilityLocks } from '../../shared/locks/stock-availability-lock';
 
 /**
  * 창고 간/창고 내 재고 이동 서비스
@@ -156,6 +157,16 @@ export class TransferService {
       const isInterWarehouse = fromLocation.warehouseId !== toLocation.warehouseId;
 
       this.logger.log(`Transfer type: ${isInterWarehouse ? 'Inter-warehouse' : 'Intra-warehouse'}`);
+
+      // The stock-event boundary locks each (sku, source warehouse). Pre-lock
+      // the entire pending job in canonical order to avoid opposite-line-order
+      // deadlocks while retaining the repository-level fail-closed guard.
+      await acquireStockAvailabilityLocks(
+        trx,
+        lines
+          .filter((line) => !line.eventId)
+          .map((line) => ({ skuId: line.skuId, warehouseId: fromLocation.warehouseId })),
+      );
 
       let executed = 0;
       // 각 라인 실행

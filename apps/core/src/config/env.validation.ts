@@ -1,5 +1,10 @@
 import { z } from 'zod';
 
+const optionalIsoTimestamp = z.preprocess(
+  (value) => (value === '' ? undefined : value),
+  z.string().datetime({ offset: true }).optional(),
+);
+
 export const almondyoungEnvSchema = z
   .object({
     // Server
@@ -22,6 +27,11 @@ export const almondyoungEnvSchema = z
     KAFKA_GROUP_ID: z.string().optional(),
     KAFKA_API_KEY: z.string().optional(),
     KAFKA_API_SECRET: z.string().optional(),
+
+    // Fulfillment hard-cutover workflow gate
+    // 'legacy' 는 V1 출고 경로와 함께 Task 25 에서 제거됐다. 옛 값은 여기서 부팅을 막는다.
+    FULFILLMENT_WORKFLOW_MODE: z.enum(['maintenance', 'v2']),
+    FULFILLMENT_V2_CUTOVER_AT: optionalIsoTimestamp,
 
     // Elasticsearch (Catalog)
     ELASTICSEARCH_NODE: z.string().url().optional(),
@@ -56,6 +66,15 @@ export const almondyoungEnvSchema = z
   .refine((data) => !!data.AUTH_SECRET || !!data.OIDC_ISSUER_URL, {
     message: 'Either AUTH_SECRET (HS256) or OIDC_ISSUER_URL (RS256) must be set',
     path: ['AUTH_SECRET'],
+  })
+  .superRefine((data, ctx) => {
+    if (data.FULFILLMENT_WORKFLOW_MODE === 'v2' && !data.FULFILLMENT_V2_CUTOVER_AT) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'FULFILLMENT_V2_CUTOVER_AT is required when FULFILLMENT_WORKFLOW_MODE=v2',
+        path: ['FULFILLMENT_V2_CUTOVER_AT'],
+      });
+    }
   });
 
 export type AlmondyoungEnvConfig = z.infer<typeof almondyoungEnvSchema>;

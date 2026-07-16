@@ -1,15 +1,20 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, notInArray } from 'drizzle-orm';
 import { scopes, roleScopeMapping } from '../database/auth.schema';
 import { ScopeDefinition, UserWithRoles } from '../database/auth.types';
+import { AUTHORIZATION_OPTIONS } from '../constants';
+import type { AuthorizationModuleOptions, RoleScopeMappingDefinition } from './scope-bootstrap.service';
 
 @Injectable()
 export class AuthorizationService {
   private readonly logger = new Logger(AuthorizationService.name);
   private scopeCache = new Map<string, Set<string>>();
 
-  constructor(private readonly dbService: DbService) {}
+  constructor(
+    private readonly dbService: DbService,
+    @Inject(AUTHORIZATION_OPTIONS) private readonly options: AuthorizationModuleOptions,
+  ) {}
 
   private get db() {
     return this.dbService.db;
@@ -20,7 +25,20 @@ export class AuthorizationService {
       return new Set();
     }
 
-    const cacheKey = [...roleNames].sort().join(',');
+    // When a service declares authoritative role mappings, unregistered JWT
+    // role names must not inherit a stale/ad-hoc database mapping.
+    const configuredRoles = this.options.roleMappings
+      ? new Map(this.options.roleMappings.map((mapping) => [mapping.roleName, new Set(mapping.scopeKeys)]))
+      : undefined;
+    const acceptedRoleNames = configuredRoles
+      ? [...new Set(roleNames.filter((roleName) => configuredRoles.has(roleName)))]
+      : [...new Set(roleNames)];
+
+    if (acceptedRoleNames.length === 0) {
+      return new Set();
+    }
+
+    const cacheKey = acceptedRoleNames.sort().join(',');
 
     if (this.scopeCache.has(cacheKey)) {
       return this.scopeCache.get(cacheKey)!;
@@ -30,9 +48,14 @@ export class AuthorizationService {
       .select({ scopeKey: scopes.key })
       .from(roleScopeMapping)
       .innerJoin(scopes, eq(roleScopeMapping.scopeId, scopes.id))
-      .where(inArray(roleScopeMapping.roleName, roleNames));
+      .where(inArray(roleScopeMapping.roleName, acceptedRoleNames));
 
-    const scopeSet = new Set(result.map((r) => r.scopeKey));
+    const allowedScopeKeys = configuredRoles
+      ? new Set(acceptedRoleNames.flatMap((roleName) => [...configuredRoles.get(roleName)!]))
+      : undefined;
+    const scopeSet = new Set(
+      result.map((row) => row.scopeKey).filter((scopeKey) => !allowedScopeKeys || allowedScopeKeys.has(scopeKey)),
+    );
     this.scopeCache.set(cacheKey, scopeSet);
 
     return scopeSet;
@@ -60,6 +83,56 @@ export class AuthorizationService {
       );
       this.logger.log(`Registered ${newScopes.length} new scopes for ${microserviceName}`);
     }
+  }
+
+  /**
+   * Reconcile configured mappings to their exact scope sets.
+   *
+   * Scope bootstrap calls this only after every scope has been inserted. The
+   * reconciliation is transactional so a missing scope or partial write can
+   * never leave a role with an incomplete permission set.
+   */
+  async ensureRoleScopeMappings(roleMappings: RoleScopeMappingDefinition[]): Promise<void> {
+    const roleNames = roleMappings.map((mapping) => mapping.roleName);
+    if (new Set(roleNames).size !== roleNames.length) {
+      throw new Error('Duplicate role names are not allowed in authorization roleMappings');
+    }
+
+    const desiredScopeKeys = [...new Set(roleMappings.flatMap((mapping) => mapping.scopeKeys))];
+    const scopeRows =
+      desiredScopeKeys.length > 0
+        ? await this.db
+            .select({ id: scopes.id, key: scopes.key })
+            .from(scopes)
+            .where(inArray(scopes.key, desiredScopeKeys))
+        : [];
+    const scopeIdByKey = new Map(scopeRows.map((scope) => [scope.key, scope.id]));
+    const missingScopeKeys = desiredScopeKeys.filter((scopeKey) => !scopeIdByKey.has(scopeKey));
+
+    if (missingScopeKeys.length > 0) {
+      throw new Error(`Scopes not found for role mappings: ${missingScopeKeys.join(', ')}`);
+    }
+
+    await this.db.transaction(async (tx) => {
+      for (const mapping of roleMappings) {
+        const scopeIds = [...new Set(mapping.scopeKeys)].map((scopeKey) => scopeIdByKey.get(scopeKey)!);
+
+        if (scopeIds.length === 0) {
+          await tx.delete(roleScopeMapping).where(eq(roleScopeMapping.roleName, mapping.roleName));
+          continue;
+        }
+
+        await tx
+          .delete(roleScopeMapping)
+          .where(and(eq(roleScopeMapping.roleName, mapping.roleName), notInArray(roleScopeMapping.scopeId, scopeIds)));
+        await tx
+          .insert(roleScopeMapping)
+          .values(scopeIds.map((scopeId) => ({ roleName: mapping.roleName, scopeId })))
+          .onConflictDoNothing();
+      }
+    });
+
+    this.invalidateCache();
   }
 
   async ensureScopeMapping(roleName: string, scopeKey: string): Promise<void> {

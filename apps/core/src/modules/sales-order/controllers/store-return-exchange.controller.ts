@@ -2,7 +2,12 @@ import { Body, Controller, Get, HttpCode, Param, Post } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { User } from '@app/authorization';
 import { StoreReturnExchangeService } from '../services/store-return-exchange.service';
-import { StoreCreateReturnRequestDto, StoreReturnRequestResponseDto, StoreOrderLinesResponseDto } from '../dto/store-return-request.dto';
+import {
+  StoreCreateReturnRequestDto,
+  StoreReturnEligibilityResponseDto,
+  StoreReturnRequestResponseDto,
+  StoreOrderLinesResponseDto,
+} from '../dto/store-return-request.dto';
 import { StoreCreateExchangeRequestDto, StoreExchangeRequestResponseDto } from '../dto/store-exchange-request.dto';
 
 interface AuthenticatedCustomer {
@@ -49,6 +54,15 @@ export class StoreSalesOrderReturnExchangeController {
     return this.service.getReturnRequest(returnRequestId, customer.userId);
   }
 
+  @Get(':orderId/return-eligibility')
+  @ApiOperation({ summary: '배송 완료된 정확한 shipment line/dispatch attempt별 반품 가능 수량 조회' })
+  getReturnEligibility(
+    @Param('orderId') orderId: string,
+    @User() customer: AuthenticatedCustomer,
+  ): Promise<StoreReturnEligibilityResponseDto> {
+    return this.service.getReturnEligibility(orderId, customer.userId);
+  }
+
   @Get(':orderId/exchange-requests/:exchangeRequestId')
   @ApiOperation({ summary: '교환 신청 조회' })
   @ApiParam({ name: 'orderId', description: 'Core 판매주문 ID' })
@@ -70,6 +84,15 @@ export class StoreSalesOrderReturnExchangeController {
     @User() customer: AuthenticatedCustomer,
   ): Promise<StoreOrderLinesResponseDto> {
     return this.service.getOrderLinesByChannelOrder(channelOrderId, customer.userId);
+  }
+
+  @Get('by-channel-order/:channelOrderId/return-eligibility')
+  @ApiOperation({ summary: '채널 주문의 exact-attempt 반품 가능 수량 조회' })
+  getReturnEligibilityByChannelOrder(
+    @Param('channelOrderId') channelOrderId: string,
+    @User() customer: AuthenticatedCustomer,
+  ): Promise<StoreReturnEligibilityResponseDto> {
+    return this.service.getReturnEligibilityByChannelOrder(channelOrderId, customer.userId);
   }
 
   @Post('by-channel-order/:channelOrderId/return-requests')

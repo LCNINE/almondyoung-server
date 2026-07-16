@@ -3,6 +3,7 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema } from '../../schema/inventory.schema';
 import { TypedDatabase, DbService } from '@app/db';
 import { MetricsService } from './metrics.service';
+import { ConfigService } from '@nestjs/config';
 
 interface HealthCheckResult {
   status: 'healthy' | 'unhealthy';
@@ -27,6 +28,7 @@ export class HealthService {
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly metrics?: MetricsService,
+    private readonly config?: ConfigService,
   ) {}
 
   private get db() {
@@ -128,6 +130,17 @@ export class HealthService {
       };
       overallStatus = 'unhealthy';
     }
+
+    checks.fulfillmentWorkflow = {
+      status: 'healthy',
+      responseTime: 0,
+      details: {
+        // 폴백으로 모드 이름을 지어내지 않는다 — 미설정이면 부팅이 실패하므로 여기 도달할 수 없고,
+        // 도달한다면 그 사실 자체가 보고돼야 한다.
+        mode: this.config?.get<string>('FULFILLMENT_WORKFLOW_MODE') ?? 'unset',
+        cutoverAt: this.config?.get<string>('FULFILLMENT_V2_CUTOVER_AT') ?? null,
+      },
+    };
 
     return {
       status: overallStatus,

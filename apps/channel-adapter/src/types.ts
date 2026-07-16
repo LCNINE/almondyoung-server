@@ -11,6 +11,7 @@ import {
   pendingOrders,
   orderCollectionFailures,
   inboxEvents,
+  channelDispatchOperations,
   pimMedusaMappings,
   cafe24MemberMappings,
 } from './schema';
@@ -65,6 +66,18 @@ export type OrderCollectionFailureStatus = 'quarantined' | 'replayed' | 'closed_
 export type InboxEvent = InferSelectModel<typeof inboxEvents>;
 export type NewInboxEvent = InferInsertModel<typeof inboxEvents>;
 export type UpdateInboxEvent = Partial<Omit<NewInboxEvent, 'id' | 'createdAt'>>;
+
+// SHIPMENT DISPATCH OPERATIONS 타입 (shipment event → sales order별 외부 명령)
+export type ChannelDispatchOperation = InferSelectModel<typeof channelDispatchOperations>;
+export type NewChannelDispatchOperation = InferInsertModel<typeof channelDispatchOperations>;
+export type UpdateChannelDispatchOperation = Partial<Omit<NewChannelDispatchOperation, 'id' | 'createdAt'>>;
+export type ChannelDispatchOperationStatus =
+  | 'pending'
+  | 'processing'
+  | 'provider_acknowledged'
+  | 'succeeded'
+  | 'failed'
+  | 'manual_adjustment_required';
 
 // PIM-MEDUSA MAPPINGS 타입
 export type PimMedusaMapping = InferSelectModel<typeof pimMedusaMappings>;
@@ -388,6 +401,8 @@ export type ChannelCommand =
   // 발송 관리 (Dispatch Management)
   | {
       type: 'dispatch.ship'; // 발송 처리 (네이버/쿠팡: dispatch.confirm)
+      /** Stable request identity persisted before any provider call. */
+      idempotencyKey?: string;
       orderId: string;
       items?: Array<{ orderItemId: string; quantity: number }>;
       tracking: { companyCode: string; number: string };

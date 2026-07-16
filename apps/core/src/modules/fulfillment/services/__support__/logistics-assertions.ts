@@ -101,34 +101,6 @@ export async function assertStockConsistent(
   expect(await availableFromView(tx, args.skuId, args.warehouseId)).toBe(oh - args.reserved); // I2 — live VIEW 재계산 검증, base-table drift 는 미검출(위 availableFromView 주석 참고)
 }
 
-// I3(예약 3중 합): FO.totalReservedQty == Σ FOI.reservedQty == Σ confirmed 예약(targetId=FO).
-// 주의: 이 함수는 3자 "상호" 일치만 검증하며 절대값 앵커가 없다 — 세 값이 다같이 틀려도(예: 전부 0)
-// 이 함수 단독으로는 통과한다. 반드시 골든값을 쥔 assertStockConsistent(..., reserved: <골든값>)와
-// 짝지어 호출해서 절대값을 앵커링할 것.
-export async function assertFoReservationAgg(tx: DbTx, fulfillmentOrderId: string): Promise<void> {
-  const [fo] = await tx
-    .select({ total: wmsTables.fulfillmentOrders.totalReservedQty })
-    .from(wmsTables.fulfillmentOrders)
-    .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId));
-  const fois = await tx
-    .select({ r: wmsTables.fulfillmentOrderItems.reservedQty })
-    .from(wmsTables.fulfillmentOrderItems)
-    .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId));
-  const foiSum = fois.reduce((s, r) => s + r.r, 0);
-  const resRows = await tx
-    .select({ q: wmsTables.stockReservations.quantity })
-    .from(wmsTables.stockReservations)
-    .where(
-      and(
-        eq(wmsTables.stockReservations.targetId, fulfillmentOrderId),
-        eq(wmsTables.stockReservations.status, 'confirmed'),
-      ),
-    );
-  const resSum = resRows.reduce((s, r) => s + r.q, 0);
-  expect(fo.total).toBe(foiSum);
-  expect(fo.total).toBe(resSum);
-}
-
 // sumReceived/sumShipped 가 실제로 커버하는 이벤트 타입. 이 밖의 타입(ADJUST_DOWN/SCRAP 등)이
 // 섞이면 두 합계에서 조용히 누락되어 보존식이 거짓으로 통과할 수 있다 — assertConservation 가드용.
 const CONSERVATION_COVERED_TYPES = new Set(['RECEIVE', 'ADJUST_UP', 'SHIP']);

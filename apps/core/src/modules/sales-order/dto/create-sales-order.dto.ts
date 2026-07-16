@@ -18,6 +18,18 @@ import { CustomerDto } from './customer.dto';
 import { AddressDto } from './address.dto';
 
 export class CreateSalesOrderLineDto {
+  @ApiProperty({ description: '채널 주문 라인 ID', required: false })
+  @IsString()
+  @IsNotEmpty()
+  @IsOptional()
+  channelOrderItemId?: string;
+
+  @ApiProperty({ description: '채널 상품/옵션 ID', required: false })
+  @IsString()
+  @IsNotEmpty()
+  @IsOptional()
+  channelProductId?: string;
+
   @ApiProperty({ description: 'Product variant ID' })
   @IsUUID()
   @IsNotEmpty()

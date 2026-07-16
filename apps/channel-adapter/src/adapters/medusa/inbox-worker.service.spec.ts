@@ -86,6 +86,7 @@ describe('InboxWorkerService ProductSellableQuantityChanged handling', () => {
       {} as any,
       {} as any,
       {} as any,
+      {} as any,
       configService as any,
       { runWithChain: jest.fn((_chainId: string, _eventId: string, fn: () => Promise<void>) => fn()) } as any,
     );
@@ -116,9 +117,7 @@ describe('InboxWorkerService ProductSellableQuantityChanged handling', () => {
     await (service as any).doProcessInboxEvent(event);
 
     expect(syncService.handleProductSellableQuantityChanged).toHaveBeenCalledWith(payload);
-    expect(dbMock.updates).toEqual([
-      { status: 'published', publishedAt: new Date('2026-05-27T00:00:00.000Z') },
-    ]);
+    expect(dbMock.updates).toEqual([{ status: 'published', publishedAt: new Date('2026-05-27T00:00:00.000Z') }]);
   });
 
   it('keeps a Medusa API failure pending with exponential backoff so it can be retried', async () => {
@@ -386,5 +385,176 @@ describe('InboxWorkerService ProductSellableQuantityChanged handling', () => {
         errorMessage: 'Superseded by newer event (aggregateId: master-1)',
       },
     ]);
+  });
+});
+
+describe('InboxWorkerService V1 Medusa compatibility projection', () => {
+  it('uses the verified Medusa mapping instead of trusting an arbitrary payload channelOrderId', async () => {
+    const queryResults = [[], [{ channelOrderId: 'order_medusa_verified' }]];
+    const select = jest.fn(() => ({
+      from: jest.fn(() => ({
+        where: jest.fn(() => ({ limit: jest.fn(async () => queryResults.shift() ?? []) })),
+      })),
+    }));
+    const updates: Array<Record<string, unknown>> = [];
+    const update = jest.fn(() => ({
+      set: jest.fn((values: Record<string, unknown>) => ({
+        where: jest.fn(async () => {
+          updates.push(values);
+        }),
+      })),
+    }));
+    const lockExecute = jest.fn().mockResolvedValue([]);
+    const transaction = jest.fn(async (callback: (tx: { execute: typeof lockExecute }) => Promise<unknown>) =>
+      callback({ execute: lockExecute }),
+    );
+    const medusaClient = { updateOrderShippingProjection: jest.fn().mockResolvedValue(undefined) };
+    const service = new (InboxWorkerService as any)(
+      { db: { select, update, transaction } },
+      {},
+      {},
+      {},
+      medusaClient,
+      {},
+      {},
+      { get: jest.fn() },
+      { runWithChain: jest.fn() },
+    );
+
+    await service.doProcessInboxEvent({
+      id: 'inbox-v1-shipped',
+      eventType: 'CoreFulfillmentShipped',
+      aggregateId: '11111111-1111-4111-8111-111111111111',
+      payload: {
+        fulfillmentId: '22222222-2222-4222-8222-222222222222',
+        orderId: '11111111-1111-4111-8111-111111111111',
+        channelOrderId: 'naver-order-that-must-not-be-used',
+        trackingInfo: { carrier: 'HANJIN', trackingNumber: 'TRACK-1' },
+      },
+      attempts: 1,
+      createdAt: new Date('2026-07-14T00:00:00.000Z'),
+      metadata: {},
+    });
+
+    expect(medusaClient.updateOrderShippingProjection).toHaveBeenCalledWith(
+      'order_medusa_verified',
+      expect.objectContaining({ status: 'shipped' }),
+    );
+    expect(transaction).toHaveBeenCalledTimes(1);
+    expect(lockExecute).toHaveBeenCalledTimes(1);
+    expect(updates).toContainEqual(expect.objectContaining({ status: 'published' }));
+  });
+
+  it('takes the shared PostgreSQL order lock before the V1 delivered metadata projection', async () => {
+    const queryResults = [[], [{ channelOrderId: 'order_medusa_verified' }]];
+    const select = jest.fn(() => ({
+      from: jest.fn(() => ({
+        where: jest.fn(() => ({ limit: jest.fn(async () => queryResults.shift() ?? []) })),
+      })),
+    }));
+    const update = jest.fn(() => ({
+      set: jest.fn(() => ({ where: jest.fn().mockResolvedValue(undefined) })),
+    }));
+    const callOrder: string[] = [];
+    const transaction = jest.fn(async (callback: (tx: { execute: () => Promise<never[]> }) => Promise<unknown>) =>
+      callback({
+        execute: jest.fn(async () => {
+          callOrder.push('lock');
+          return [] as never[];
+        }),
+      }),
+    );
+    const medusaClient = {
+      updateOrderShippingProjection: jest.fn(async () => {
+        callOrder.push('projection');
+      }),
+    };
+    const service = new (InboxWorkerService as any)(
+      { db: { select, update, transaction } },
+      {},
+      {},
+      {},
+      medusaClient,
+      {},
+      {},
+      { get: jest.fn() },
+      { runWithChain: jest.fn() },
+    );
+
+    await service.doProcessInboxEvent({
+      id: 'inbox-v1-delivered',
+      eventType: 'CoreFulfillmentDelivered',
+      aggregateId: '11111111-1111-4111-8111-111111111111',
+      payload: {
+        fulfillmentId: '22222222-2222-4222-8222-222222222222',
+        orderId: '11111111-1111-4111-8111-111111111111',
+        deliveredAt: '2026-07-15T01:00:00.000Z',
+      },
+      attempts: 1,
+      createdAt: new Date('2026-07-15T01:00:00.000Z'),
+      metadata: {},
+    });
+
+    expect(callOrder).toEqual(['lock', 'projection']);
+    expect(transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('persists non-Medusa cancellation as a durable manual channel operation', async () => {
+    const queryResults = [[], [{ salesChannel: 'naver', channelOrderId: '1000000001' }]];
+    const select = jest.fn(() => ({
+      from: jest.fn(() => ({
+        where: jest.fn(() => ({ limit: jest.fn(async () => queryResults.shift() ?? []) })),
+      })),
+    }));
+    const updates: Array<Record<string, unknown>> = [];
+    const update = jest.fn(() => ({
+      set: jest.fn((values: Record<string, unknown>) => ({
+        where: jest.fn(async () => {
+          updates.push(values);
+        }),
+      })),
+    }));
+    const insertedOperations: Array<Record<string, unknown>> = [];
+    const insert = jest.fn(() => ({
+      values: jest.fn((values: Record<string, unknown>) => ({
+        onConflictDoNothing: jest.fn(async () => {
+          insertedOperations.push(values);
+        }),
+      })),
+    }));
+    const medusaClient = { cancelOrder: jest.fn() };
+    const service = new (InboxWorkerService as any)(
+      { db: { select, update, insert } },
+      {},
+      {},
+      {},
+      medusaClient,
+      {},
+      {},
+      { get: jest.fn() },
+      { runWithChain: jest.fn() },
+    );
+
+    await service.doProcessInboxEvent({
+      id: 'inbox-cancel',
+      eventType: 'CoreOrderCancelled',
+      aggregateId: '11111111-1111-4111-8111-111111111111',
+      payload: { orderId: '11111111-1111-4111-8111-111111111111' },
+      attempts: 1,
+      createdAt: new Date('2026-07-14T00:00:00.000Z'),
+      metadata: {},
+    });
+
+    expect(medusaClient.cancelOrder).not.toHaveBeenCalled();
+    expect(insertedOperations).toContainEqual(
+      expect.objectContaining({
+        operation: 'cancel',
+        channel: 'naver',
+        externalOrderId: '1000000001',
+        status: 'manual_adjustment_required',
+      }),
+    );
+    expect(updates).toContainEqual(expect.objectContaining({ status: 'published' }));
+    expect(updates).not.toContainEqual(expect.objectContaining({ status: 'pending' }));
   });
 });

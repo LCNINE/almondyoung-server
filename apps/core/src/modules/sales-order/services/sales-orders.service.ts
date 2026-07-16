@@ -1,9 +1,17 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Optional,
+} from '@nestjs/common';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import {
   eq,
+  asc,
   inArray,
   desc,
   and,
@@ -24,6 +32,8 @@ import { MetricsService } from '../../inventory/shared/services/metrics.service'
 import { ProductSkuMappingService } from '../../product-matching/services/product-sku-mapping.service';
 import { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
 import { LibraryService } from '../../library/services/library.service';
+import { randomUUID } from 'crypto';
+import { CORE_ORDER_STREAM, FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
 import { ORDER_EVENTS } from '../common/events';
 import { CreateSalesOrderDto } from '../dto/create-sales-order.dto';
 import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
@@ -31,8 +41,18 @@ import { SalesOrderFilterDto } from '../dto/sales-order-filter.dto';
 import { BusinessLinkReferenceDto, CreateBusinessLinkDto } from '../dto/create-business-link.dto';
 import { CancelSalesOrderDto } from '../dto/cancel-sales-order.dto';
 import { AddressDto } from '../dto/address.dto';
-import { OrderCreatedPayload, OrderModifiedPayload, OrderCancelledPayload, SalesOrderCancelledPayload, ShippingAddress, OrderItem } from '@packages/event-contracts';
+import {
+  OrderCreatedPayload,
+  OrderModifiedPayload,
+  OrderCancelledPayload,
+  SalesOrderCancelledPayload,
+  ShippingAddress,
+  OrderItem,
+} from '@packages/event-contracts';
 import { ProductSellableQuantityService } from '../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
+import { ModuleRef } from '@nestjs/core';
+import { ShipmentPlanningService } from '../../fulfillment/services/shipment-planning.service';
+import { canonicalFulfillmentRequestHash } from '../../fulfillment/services/fulfillment-command.service';
 
 type SalesOrderLineInsert = InferInsertModel<typeof wmsTables.salesOrderLines>;
 type BusinessLinkInsert = InferInsertModel<typeof wmsTables.businessLinks>;
@@ -63,7 +83,13 @@ type SalesOrderContractField =
   | 'items'
   | 'lines';
 type SalesOrderPatchInput = UpdateSalesOrderDto & Partial<Record<SalesOrderContractField, unknown>>;
-type CancelSalesOrderOptions = CancelSalesOrderDto;
+type CancelSalesOrderOptions = CancelSalesOrderDto & {
+  fulfillmentCommandContext?: {
+    idempotencyKey: string;
+    actorId: string;
+    actorRoles: string[];
+  };
+};
 type PartialCancellationLine = {
   salesOrderLineId: string;
   quantity: number;
@@ -76,29 +102,16 @@ type CancellationEffect = {
   count?: number;
   metadata?: Record<string, unknown>;
 };
-type FulfillmentAdjustmentEffect = CancellationEffect & {
-  type: 'adjusted_fulfillment_order_item';
-  targetType: 'fulfillment_order_item';
-  targetId: string;
-  metadata: {
-    fulfillmentOrderId: string;
-    salesOrderLineId: string;
-    skuId: string;
-    previousQty: number;
-    newQty: number;
-    quantityDelta: number;
-    previousReservedQty: number;
-    newReservedQty: number;
-    releasedReservationQty: number;
-    previousStatus: string;
-    newStatus: string;
-  };
-};
 type PostShipmentHandoffType = 'return' | 'recovery' | 'refund' | 'compensation';
 type PostShipmentHandoffOptions = NonNullable<CancelSalesOrderOptions['postShipmentHandoff']>;
 type PriorPartialCancellationContext = {
   cancelledByLine: Map<string, number>;
   preservedShippedByFulfillmentItem: Map<string, number>;
+};
+type V2PlanningSalesOrderLineIdentity = {
+  id: string;
+  channelOrderItemId: string | null;
+  channelProductId?: string | null;
 };
 
 const ACCEPTED_CONTRACT_CHANNELS = new Set(['medusa', 'naver', 'coupang']);
@@ -123,6 +136,7 @@ const WALLET_EFFECT_REF_TYPES = new Set([
 ]);
 const LOGISTICS_EFFECT_REF_TYPES = new Set(['return', 'return_handoff']);
 const OPERATIONS_EFFECT_REF_TYPES = new Set(['recovery_handoff', 'refund_policy_handoff', 'compensation_handoff']);
+const FULFILLMENT_SYSTEM_ACTOR_ID = '00000000-0000-4000-8000-000000000010';
 const OPEN_FULFILLMENT_BACKLOG_STATUSES = new Set(['pending', 'failed', 'processing', 'awaiting_matching']);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const CANCELLABLE_FULFILLMENT_STATUSES = new Set([
@@ -169,102 +183,113 @@ export class SalesOrdersService {
     @Optional() private readonly audit?: AuditService,
     @Optional() private readonly metrics?: MetricsService,
     @Optional() private readonly library?: LibraryService,
+    @Optional() private readonly moduleRef?: ModuleRef,
   ) {}
 
   async create(dto: CreateSalesOrderDto, tx?: DbTx) {
+    this.assertUniqueTrustedChannelOrderItemIds(dto.salesChannel, Array.isArray(dto.lines) ? dto.lines : []);
+
     const timer = this.metrics?.startOrderTimer('create');
 
-    return this.db.run(async (trx) => {
-      const [order] = await trx
-        .insert(wmsTables.salesOrders)
-        .values({
-          channelOrderId: dto.channelOrderId,
-          salesChannel: dto.salesChannel as 'naver' | 'medusa' | 'coupang' | '3pl',
-          status: 'pending' as const,
-          customerId: dto.customer?.id ?? null,
-          customerName: dto.customer?.name ?? null,
-          customerEmail: dto.customer?.email ?? null,
-          customerPhone: dto.customer?.phone ?? null,
-          shippingAddress: dto.shippingAddress as any,
-          shippingAddressHash: dto.shippingAddressHash ?? null,
-          totalAmount: dto.totalAmount ?? null,
-          shippingFee: dto.shippingFee ?? 0,
-          mergeGroupId: dto.mergeGroupId ?? null,
-          isMerged: false,
-          walletIntentId: dto.walletIntentId ?? null,
-          orderDate: new Date(dto.orderDate ?? Date.now()),
-          confirmedAt: null,
-          processedAt: null,
-        })
-        .returning();
+    return this.db
+      .run(async (trx) => {
+        const [order] = await trx
+          .insert(wmsTables.salesOrders)
+          .values({
+            channelOrderId: dto.channelOrderId,
+            salesChannel: dto.salesChannel as 'naver' | 'medusa' | 'coupang' | '3pl',
+            status: 'pending' as const,
+            customerId: dto.customer?.id ?? null,
+            customerName: dto.customer?.name ?? null,
+            customerEmail: dto.customer?.email ?? null,
+            customerPhone: dto.customer?.phone ?? null,
+            shippingAddress: dto.shippingAddress as any,
+            shippingAddressHash: dto.shippingAddressHash ?? null,
+            totalAmount: dto.totalAmount ?? null,
+            shippingFee: dto.shippingFee ?? 0,
+            mergeGroupId: dto.mergeGroupId ?? null,
+            isMerged: false,
+            walletIntentId: dto.walletIntentId ?? null,
+            orderDate: new Date(dto.orderDate ?? Date.now()),
+            confirmedAt: null,
+            processedAt: null,
+          })
+          .returning();
 
-      await this.outbox.enqueue(
-        {
-          eventType: ORDER_EVENTS.CREATED,
-          aggregateType: 'order',
-          aggregateId: order.id,
-          partitionKey: order.id,
-          payload: { orderId: order.id },
-        },
-        trx,
-      );
+        await this.outbox.enqueue(
+          {
+            // 역사적 폴백 목적지 보존: topicless 시절 dispatcher catch-all 이 이 이벤트를
+            // fulfillments.events.v1 로 실어 왔다. 재라우팅은 컨슈머 분석이 필요한 별도 결정.
+            topic: FULFILLMENT_STREAM.topic.topic,
+            idempotencyKey: `order-created:${order.id}`,
+            eventType: ORDER_EVENTS.CREATED,
+            aggregateType: 'order',
+            aggregateId: order.id,
+            partitionKey: order.id,
+            payload: { orderId: order.id },
+          },
+          trx,
+        );
 
-      const lines = Array.isArray(dto.lines) ? dto.lines : [];
-      if (lines.length > 0) {
-        const values: SalesOrderLineInsert[] = [];
-        for (const l of lines) {
-          const policy = await this.policies.getVariantPolicy(l.variantId, trx);
-          const acceptanceByPolicy =
-            !policy.inventoryManagement || policy.preStockSellable || policy.alwaysSellableZeroStock;
-          values.push({
-            salesOrderId: order.id,
-            variantId: l.variantId,
-            productMatchingId: l.productMatchingId ?? null,
-            productName: l.productName ?? '',
-            quantity: l.quantity,
-            unitPrice: l.unitPrice ?? null,
-            totalPrice: l.totalPrice ?? null,
-            fulfillmentKind: l.fulfillmentKind ?? null,
-            requiresShipping: l.requiresShipping ?? null,
-            status: 'pending',
-            suggestedQuantity: acceptanceByPolicy ? l.quantity : null,
-            unavailableSkuIds: null,
-            deductedAt: null,
-          });
+        const lines = Array.isArray(dto.lines) ? dto.lines : [];
+        if (lines.length > 0) {
+          const values: SalesOrderLineInsert[] = [];
+          for (const l of lines) {
+            const policy = await this.policies.getVariantPolicy(l.variantId, trx);
+            const acceptanceByPolicy =
+              !policy.inventoryManagement || policy.preStockSellable || policy.alwaysSellableZeroStock;
+            values.push({
+              salesOrderId: order.id,
+              channelOrderItemId: l.channelOrderItemId ?? null,
+              channelProductId: l.channelProductId ?? null,
+              variantId: l.variantId,
+              productMatchingId: l.productMatchingId ?? null,
+              productName: l.productName ?? '',
+              quantity: l.quantity,
+              unitPrice: l.unitPrice ?? null,
+              totalPrice: l.totalPrice ?? null,
+              fulfillmentKind: l.fulfillmentKind ?? null,
+              requiresShipping: l.requiresShipping ?? null,
+              status: 'pending',
+              suggestedQuantity: acceptanceByPolicy ? l.quantity : null,
+              unavailableSkuIds: null,
+              deductedAt: null,
+            });
+          }
+          await trx.insert(wmsTables.salesOrderLines).values(values);
         }
-        await trx.insert(wmsTables.salesOrderLines).values(values);
-      }
 
-      await this.audit?.logResourceChange(
-        'ORDER_CREATED',
-        'create',
-        'order',
-        'salesOrder',
-        order.id,
-        `Sales Order ${dto.channelOrderId || order.id}`,
-        undefined,
-        {
-          channelOrderId: order.channelOrderId,
-          salesChannel: order.salesChannel,
-          customerName: order.customerName,
-          totalAmount: order.totalAmount,
-          lineCount: lines.length,
-        },
-        undefined,
-        trx,
-      );
+        await this.audit?.logResourceChange(
+          'ORDER_CREATED',
+          'create',
+          'order',
+          'salesOrder',
+          order.id,
+          `Sales Order ${dto.channelOrderId || order.id}`,
+          undefined,
+          {
+            channelOrderId: order.channelOrderId,
+            salesChannel: order.salesChannel,
+            customerName: order.customerName,
+            totalAmount: order.totalAmount,
+            lineCount: lines.length,
+          },
+          undefined,
+          trx,
+        );
 
-      timer?.();
-      this.metrics?.incrementOrderCounter('created', order.salesChannel || 'unknown');
-      this.metrics?.incrementBusinessOperation('order', 'create', 'success');
+        timer?.();
+        this.metrics?.incrementOrderCounter('created', order.salesChannel || 'unknown');
+        this.metrics?.incrementBusinessOperation('order', 'create', 'success');
 
-      return order;
-    }, tx).catch((error) => {
-      timer?.();
-      this.metrics?.incrementErrorCounter('order', 'create_failed', 'high');
-      this.metrics?.incrementBusinessOperation('order', 'create', 'failure');
-      throw error;
-    });
+        return order;
+      }, tx)
+      .catch((error) => {
+        timer?.();
+        this.metrics?.incrementErrorCounter('order', 'create_failed', 'high');
+        this.metrics?.incrementBusinessOperation('order', 'create', 'failure');
+        throw error;
+      });
   }
 
   async update(id: string, dto: UpdateSalesOrderDto, tx?: DbTx) {
@@ -301,6 +326,10 @@ export class SalesOrdersService {
 
         await this.outbox.enqueue(
           {
+            // 역사적 폴백 목적지 보존 (위 ORDER_CREATED 참조). 수정 이벤트는 주문당 여러 번이
+            // 정당하므로 자연 멱등키가 없다 — 호출마다 고유 키로 topicless 시절의 무중복 동작 유지.
+            topic: FULFILLMENT_STREAM.topic.topic,
+            idempotencyKey: `order-modified:${id}:${randomUUID()}`,
             eventType: ORDER_EVENTS.MODIFIED,
             aggregateType: 'order',
             aggregateId: id,
@@ -342,9 +371,7 @@ export class SalesOrdersService {
       // 미래 값 부활 시 confirm 재진입을 막도록 방어적으로 존치한다.
       const NON_CONFIRMABLE = new Set(['cancelled', 'shipped', 'delivered', 'timeout', 'processing']);
       if (NON_CONFIRMABLE.has(salesOrder.status)) {
-        throw new ConflictException(
-          `Cannot confirm sales order ${id}: current status is '${salesOrder.status}'`,
-        );
+        throw new ConflictException(`Cannot confirm sales order ${id}: current status is '${salesOrder.status}'`);
       }
 
       // salesOrder.status === 'pending' — proceed with confirm
@@ -403,6 +430,19 @@ export class SalesOrdersService {
       }
 
       const isFullCancel = !this.hasPartialCancellationLines(options);
+      const replay = await this.findV2CancellationReplay(id, options, trx);
+      if (replay) {
+        if (replay.requestHash !== this.v2CancellationRequestHash(id, options)) {
+          throw new ConflictException({
+            code: 'FULFILLMENT_IDEMPOTENCY_MISMATCH',
+            message: 'Idempotency key was already used with a different cancellation request',
+          });
+        }
+        return this.getOne(id, trx);
+      }
+      if (await this.hasV2FulfillmentHistory(id, trx)) {
+        return this.cancelV2Outstanding(id, salesOrder, options, isFullCancel, trx);
+      }
       if (isFullCancel && (salesOrder.status === 'shipped' || salesOrder.status === 'delivered')) {
         throw new BadRequestException(
           '이미 출고/배송 완료된 주문은 전체 취소를 할 수 없습니다. 부분 취소로 진행해 주세요.',
@@ -466,7 +506,9 @@ export class SalesOrdersService {
         (fo) => fo.status === 'shipped' || fo.status === 'completed' || fo.shippedAt != null,
       );
       if (hasShippedFulfillment) {
-        throw new BadRequestException('출고 완료된 항목이 포함된 주문은 전체 취소를 할 수 없습니다. 부분 취소로 진행해 주세요.');
+        throw new BadRequestException(
+          '출고 완료된 항목이 포함된 주문은 전체 취소를 할 수 없습니다. 부분 취소로 진행해 주세요.',
+        );
       }
 
       if (fulfillmentOrders.length > 0) {
@@ -482,7 +524,9 @@ export class SalesOrdersService {
           )
           .limit(1);
         if (shippedItems.length > 0) {
-          throw new BadRequestException('출고 수량이 있는 항목이 포함되어 전체 취소를 할 수 없습니다. 부분 취소로 진행해 주세요.');
+          throw new BadRequestException(
+            '출고 수량이 있는 항목이 포함되어 전체 취소를 할 수 없습니다. 부분 취소로 진행해 주세요.',
+          );
         }
       }
 
@@ -576,6 +620,8 @@ export class SalesOrdersService {
 
       await this.outbox.enqueue(
         {
+          topic: CORE_ORDER_STREAM.topic.topic,
+          idempotencyKey: `so-cancelled:${cancellation.id}`,
           eventType: 'SalesOrderCancelled',
           aggregateType: 'Order',
           aggregateId: id,
@@ -618,6 +664,44 @@ export class SalesOrdersService {
       );
       return updated;
     }, explicitTx);
+  }
+
+  async validateCancellationReplay(
+    salesOrderId: string,
+    request: {
+      sourceKey: string;
+      reasonCode?: string;
+      reasonDetail?: string;
+      lines?: Array<{ salesOrderLineId: string; quantity: number }>;
+    },
+    tx?: DbTx,
+  ): Promise<boolean> {
+    const normalizedSourceKey = request.sourceKey.trim();
+    if (!normalizedSourceKey) return false;
+    return this.db.run(async (trx) => {
+      const rows = await trx
+        .select({ metadata: wmsTables.salesOrderCancellations.metadata })
+        .from(wmsTables.salesOrderCancellations)
+        .where(eq(wmsTables.salesOrderCancellations.salesOrderId, salesOrderId));
+      const replay = rows.find((row) => {
+        const metadata = (row.metadata ?? {}) as Record<string, unknown>;
+        return metadata.fulfillmentCommandSourceKey === normalizedSourceKey;
+      });
+      if (!replay) return false;
+      const metadata = (replay.metadata ?? {}) as Record<string, unknown>;
+      const requestHash = this.v2CancellationRequestHash(salesOrderId, {
+        reasonCode: request.reasonCode,
+        reasonDetail: request.reasonDetail,
+        lines: request.lines,
+      });
+      if (metadata.fulfillmentCommandRequestHash !== requestHash) {
+        throw new ConflictException({
+          code: 'FULFILLMENT_IDEMPOTENCY_MISMATCH',
+          message: 'Idempotency key was already used with a different cancellation request',
+        });
+      }
+      return true;
+    }, tx);
   }
 
   async getOne(id: string, tx?: DbTx) {
@@ -886,6 +970,30 @@ export class SalesOrdersService {
     return this.create(dto, tx);
   }
 
+  /**
+   * Task 10's V2 planning gate calls this before a trusted channel order can
+   * enter Planned. Expand-phase legacy rows remain readable/storable as null,
+   * but an internal ID must never be substituted for missing provider identity.
+   */
+  assertV2PlanningExternalLineIdentity(salesChannel: string, lines: V2PlanningSalesOrderLineIdentity[]): void {
+    if (!ACCEPTED_CONTRACT_CHANNELS.has(salesChannel)) {
+      return;
+    }
+
+    const missingLineIds = lines
+      .filter((line) => {
+        const itemId = line.channelOrderItemId?.trim();
+        const productId = line.channelProductId?.trim();
+        return !itemId || Boolean(productId && itemId === productId);
+      })
+      .map((line) => line.id);
+    if (missingLineIds.length > 0) {
+      throw new BadRequestException(
+        `V2 planning requires channelOrderItemId; trusted channelOrderItemId is missing for channel lines: ${missingLineIds.join(', ')}`,
+      );
+    }
+  }
+
   async updateFromEvent(id: string, changes: OrderModifiedPayload['changes'], tx?: DbTx) {
     return this.db.run(async (trx) => {
       this.logger.warn(
@@ -1091,6 +1199,8 @@ export class SalesOrdersService {
 
     await this.outbox.enqueue(
       {
+        topic: CORE_ORDER_STREAM.topic.topic,
+        idempotencyKey: `so-cancelled:${cancellation.id}`,
         eventType: 'SalesOrderCancelled',
         aggregateType: 'Order',
         aggregateId: salesOrderId,
@@ -1133,6 +1243,362 @@ export class SalesOrdersService {
     );
 
     return this.getOne(salesOrderId, trx);
+  }
+
+  private async hasV2FulfillmentHistory(salesOrderId: string, tx: DbTx): Promise<boolean> {
+    const rows = await tx.execute(sql`
+      SELECT s.id
+        FROM shipments s
+        JOIN shipment_lines sl ON sl.shipment_id = s.id
+        JOIN fulfillment_order_items foi ON foi.id = sl.fulfillment_order_item_id
+        JOIN fulfillment_orders fo ON fo.id = foi.fulfillment_order_id
+       WHERE fo.sales_order_id = ${salesOrderId}
+         AND s.opened_for_fulfillment_order_id IS NULL
+       LIMIT 1
+    `);
+    return Array.from(rows as unknown as ArrayLike<unknown>).length > 0;
+  }
+
+  /**
+   * V2 commercial cancellation seam. SO cancellation remains the commercial
+   * coordinator, while ShipmentPlanningService exclusively mutates outstanding
+   * physical demand. FOI.qty is never rewritten on this path.
+   */
+  private async cancelV2Outstanding(
+    salesOrderId: string,
+    salesOrder: typeof wmsTables.salesOrders.$inferSelect,
+    options: CancelSalesOrderOptions,
+    isFullCancel: boolean,
+    tx: DbTx,
+  ) {
+    const planning = this.moduleRef?.get(ShipmentPlanningService, { strict: false });
+    if (!planning) throw new Error('ShipmentPlanningService is required for V2 sales-order cancellation');
+
+    if (isFullCancel) {
+      const [existing] = await tx
+        .select({ id: wmsTables.salesOrderCancellations.id })
+        .from(wmsTables.salesOrderCancellations)
+        .where(
+          and(
+            eq(wmsTables.salesOrderCancellations.salesOrderId, salesOrderId),
+            eq(wmsTables.salesOrderCancellations.cancellationScope, 'full'),
+          ),
+        )
+        .limit(1);
+      if (existing) return this.getOne(salesOrderId, tx);
+    }
+
+    const salesOrderLines = await tx
+      .select()
+      .from(wmsTables.salesOrderLines)
+      .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrderId));
+    const fulfillmentItems = await tx
+      .select({
+        id: wmsTables.fulfillmentOrderItems.id,
+        qty: wmsTables.fulfillmentOrderItems.qty,
+        shippedQty: wmsTables.fulfillmentOrderItems.shippedQty,
+        canceledQty: wmsTables.fulfillmentOrderItems.canceledQty,
+        salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
+      })
+      .from(wmsTables.fulfillmentOrderItems)
+      .innerJoin(
+        wmsTables.fulfillmentOrders,
+        eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
+      )
+      .where(eq(wmsTables.fulfillmentOrders.salesOrderId, salesOrderId));
+    const prior = await this.loadPriorPartialCancellationContext(salesOrderId, tx);
+    const requestedSalesLines = isFullCancel
+      ? salesOrderLines.flatMap((line) => {
+          const items = fulfillmentItems.filter((item) => item.salesOrderLineId === line.id);
+          if (items.length === 0) {
+            if (line.fulfillmentKind === 'digital' || line.requiresShipping === false) return [];
+            throw new ConflictException(`V2 fulfillment item is missing for SalesOrder line ${line.id}`);
+          }
+          const outstandingSalesQuantities = items.map((item) => {
+            if (item.qty % line.quantity !== 0) {
+              throw new ConflictException(`Cannot derive V2 cancellation ratio for SalesOrder line ${line.id}`);
+            }
+            const ratio = item.qty / line.quantity;
+            const outstandingPhysicalQty = item.qty - item.shippedQty - item.canceledQty;
+            if (outstandingPhysicalQty % ratio !== 0) {
+              throw new ConflictException(`V2 progress is not aligned for SalesOrder line ${line.id}`);
+            }
+            return outstandingPhysicalQty / ratio;
+          });
+          if (new Set(outstandingSalesQuantities).size !== 1) {
+            throw new ConflictException(`V2 component progress is inconsistent for SalesOrder line ${line.id}`);
+          }
+          return [{ salesOrderLineId: line.id, quantity: outstandingSalesQuantities[0] }];
+        })
+      : this.normalizePartialCancellationLines(options.lines ?? []);
+    if (requestedSalesLines.every((line) => line.quantity === 0)) {
+      throw new BadRequestException('Sales order has no outstanding physical quantity to cancel');
+    }
+    const salesLineById = new Map(salesOrderLines.map((line) => [line.id, line]));
+    for (const request of requestedSalesLines) {
+      const line = salesLineById.get(request.salesOrderLineId);
+      if (!line)
+        throw new BadRequestException(
+          `Sales order line ${request.salesOrderLineId} does not belong to ${salesOrderId}`,
+        );
+      const remaining = line.quantity - (prior.cancelledByLine.get(line.id) ?? 0);
+      if (request.quantity > remaining) {
+        throw new BadRequestException(`Cancellation quantity ${request.quantity} exceeds remaining ${remaining}`);
+      }
+    }
+
+    const activeRows = await tx
+      .select({
+        shipmentId: wmsTables.shipments.id,
+        shipmentStatus: wmsTables.shipments.status,
+        manifestVersion: wmsTables.shipments.manifestVersion,
+        shipmentLineId: wmsTables.shipmentLines.id,
+        lineVersion: wmsTables.shipmentLines.lineVersion,
+        lineQty: wmsTables.shipmentLines.qty,
+        fulfillmentOrderItemId: wmsTables.fulfillmentOrderItems.id,
+        fulfillmentOrderItemQty: wmsTables.fulfillmentOrderItems.qty,
+        salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
+      })
+      .from(wmsTables.shipments)
+      .innerJoin(wmsTables.shipmentLines, eq(wmsTables.shipmentLines.shipmentId, wmsTables.shipments.id))
+      .innerJoin(
+        wmsTables.fulfillmentOrderItems,
+        eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+      )
+      .innerJoin(
+        wmsTables.fulfillmentOrders,
+        eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
+      )
+      .where(
+        and(
+          eq(wmsTables.fulfillmentOrders.salesOrderId, salesOrderId),
+          inArray(wmsTables.shipments.status, ['draft', 'planned', 'recovery_required']),
+        ),
+      )
+      .orderBy(asc(wmsTables.shipments.id), asc(wmsTables.shipmentLines.id));
+
+    const cancellationByShipment = new Map<
+      string,
+      { manifestVersion: number; lines: Array<{ shipmentLineId: string; expectedLineVersion: number; qty: number }> }
+    >();
+    for (const request of requestedSalesLines.filter((line) => line.quantity > 0)) {
+      const salesLine = salesLineById.get(request.salesOrderLineId)!;
+      const requestedItems = fulfillmentItems.filter((item) => item.salesOrderLineId === request.salesOrderLineId);
+      if (requestedItems.length === 0) {
+        if (salesLine.fulfillmentKind === 'digital' || salesLine.requiresShipping === false) continue;
+        throw new ConflictException(`V2 fulfillment item is missing for SalesOrder line ${salesLine.id}`);
+      }
+      for (const item of requestedItems) {
+        const originalFoiQty = item.qty;
+        if (originalFoiQty % salesLine.quantity !== 0) {
+          throw new ConflictException(`Cannot derive V2 cancellation ratio for SalesOrder line ${salesLine.id}`);
+        }
+        const requestedPhysicalQty = request.quantity * (originalFoiQty / salesLine.quantity);
+        const outstandingPhysicalQty = originalFoiQty - item.shippedQty - item.canceledQty;
+        if (requestedPhysicalQty > outstandingPhysicalQty) {
+          throw new BadRequestException(
+            `Cancellation for SalesOrder line ${salesLine.id} includes shipped or already canceled quantity; use recall or return`,
+          );
+        }
+        let remainingPhysicalQty = requestedPhysicalQty;
+        const rows = activeRows.filter((candidate) => candidate.fulfillmentOrderItemId === item.id);
+        const ordered = [...rows].sort((left, right) => {
+          const leftRank = left.shipmentStatus === 'draft' ? 0 : 1;
+          const rightRank = right.shipmentStatus === 'draft' ? 0 : 1;
+          return (
+            leftRank - rightRank ||
+            left.shipmentId.localeCompare(right.shipmentId) ||
+            left.shipmentLineId.localeCompare(right.shipmentLineId)
+          );
+        });
+        for (const row of ordered) {
+          if (remainingPhysicalQty === 0) break;
+          const qty = Math.min(remainingPhysicalQty, row.lineQty);
+          const group = cancellationByShipment.get(row.shipmentId) ?? {
+            manifestVersion: row.manifestVersion,
+            lines: [],
+          };
+          group.lines.push({ shipmentLineId: row.shipmentLineId, expectedLineVersion: row.lineVersion, qty });
+          cancellationByShipment.set(row.shipmentId, group);
+          remainingPhysicalQty -= qty;
+        }
+        if (remainingPhysicalQty > 0) {
+          throw new ConflictException(
+            `V2 outstanding line quantity is short by ${remainingPhysicalQty} for fulfillment item ${item.id}`,
+          );
+        }
+      }
+    }
+
+    const reason = options.reasonDetail?.trim() || options.reasonCode?.trim() || 'Sales order cancellation';
+    const sourceKey =
+      options.fulfillmentCommandContext?.idempotencyKey ||
+      (typeof options.metadata?.sourceEventId === 'string'
+        ? options.metadata.sourceEventId
+        : canonicalFulfillmentRequestHash({ salesOrderId, lines: requestedSalesLines, reason }).slice(0, 32));
+    const commandActor = options.fulfillmentCommandContext
+      ? {
+          id: options.fulfillmentCommandContext.actorId,
+          roles: options.fulfillmentCommandContext.actorRoles,
+        }
+      : { id: FULFILLMENT_SYSTEM_ACTOR_ID, roles: ['master'] };
+    const operationEffects: CancellationEffect[] = [];
+    for (const request of requestedSalesLines) {
+      const salesLine = salesLineById.get(request.salesOrderLineId)!;
+      if (
+        (salesLine.fulfillmentKind === 'digital' || salesLine.requiresShipping === false) &&
+        !fulfillmentItems.some((item) => item.salesOrderLineId === salesLine.id)
+      ) {
+        operationEffects.push({
+          type: 'no_physical_fulfillment_adjustment_required',
+          targetType: 'sales_order_line',
+          targetId: salesLine.id,
+          metadata: { cancelledQuantity: request.quantity, fulfillmentKind: 'digital' },
+        });
+      }
+    }
+    for (const [shipmentId, request] of [...cancellationByShipment.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+      const result = await planning.cancelOutstanding(
+        shipmentId,
+        {
+          expectedManifestVersion: request.manifestVersion,
+          lines: request.lines.sort((a, b) => a.shipmentLineId.localeCompare(b.shipmentLineId)),
+          reason,
+        },
+        `sales-order-cancel:${sourceKey}:${shipmentId}`,
+        commandActor,
+        tx,
+      );
+      operationEffects.push({
+        type: 'shipment_outstanding_cancellation',
+        targetType: 'shipment_operation',
+        targetId: result.operationId,
+        metadata: { shipmentId, operationStatus: result.operationStatus },
+      });
+    }
+
+    const walletRefundEffect = this.toWalletRefundEffect(options);
+    if (walletRefundEffect) operationEffects.push(walletRefundEffect);
+    if (isFullCancel) {
+      const closed = await this.closeOpenFulfillmentBacklogEffects(salesOrderId, tx);
+      operationEffects.push(
+        ...closed.backlogIds.map((id) => ({
+          type: 'closed_fulfillment_creation_backlog',
+          targetType: 'fulfillment_order_creation_backlog',
+          targetId: id,
+        })),
+      );
+      const revoked = await this.revokeDigitalOwnershipEffects(salesOrderId, options.reasonCode ?? null, tx);
+      operationEffects.push(
+        ...revoked.ownershipIds.map((id) => ({
+          type: 'revoked_digital_ownership',
+          targetType: 'digital_asset_ownership',
+          targetId: id,
+        })),
+      );
+    }
+
+    const occurredAt = options.occurredAt ? new Date(options.occurredAt) : new Date();
+    const cancellationScope = isFullCancel ? 'full' : 'partial';
+    const [cancellation] = await tx
+      .insert(wmsTables.salesOrderCancellations)
+      .values({
+        salesOrderId,
+        cancellationScope,
+        status: 'applied',
+        reasonCode: options.reasonCode ?? null,
+        reasonDetail: options.reasonDetail ?? null,
+        cancelledBy: options.cancelledBy ?? null,
+        effects: operationEffects,
+        metadata: {
+          ...(options.metadata ?? {}),
+          cancelledLines: requestedSalesLines,
+          fulfillmentCommandSourceKey: this.explicitV2CancellationSourceKey(options),
+          fulfillmentCommandRequestHash: this.v2CancellationRequestHash(salesOrderId, options),
+        },
+        occurredAt,
+      })
+      .returning();
+    if (isFullCancel) {
+      await tx
+        .update(wmsTables.salesOrders)
+        .set({ status: 'cancelled', updatedAt: new Date() })
+        .where(eq(wmsTables.salesOrders.id, salesOrderId));
+    }
+    await this.linkCancellationEffects(
+      salesOrderId,
+      cancellation.id,
+      cancellationScope,
+      operationEffects,
+      occurredAt,
+      tx,
+    );
+    await this.outbox.enqueue(
+      {
+        topic: CORE_ORDER_STREAM.topic.topic,
+        idempotencyKey: `so-cancelled:${cancellation.id}`,
+        eventType: 'SalesOrderCancelled',
+        aggregateType: 'Order',
+        aggregateId: salesOrderId,
+        partitionKey: salesOrderId,
+        payload: {
+          orderId: salesOrderId,
+          channelOrderId: salesOrder.channelOrderId,
+          reason: toCancelReason(options.reasonCode),
+          reasonDetail: options.reasonDetail,
+          cancelledBy: options.cancelledBy ?? 'system',
+          cancelledAt: occurredAt.toISOString(),
+          cancellationScope,
+          refundRequired: Boolean(salesOrder.walletIntentId && (salesOrder.totalAmount ?? 0) > 0),
+          cancelledLines: isFullCancel ? undefined : requestedSalesLines,
+        } satisfies SalesOrderCancelledPayload,
+      },
+      tx,
+    );
+    return this.getOne(salesOrderId, tx);
+  }
+
+  private explicitV2CancellationSourceKey(options: CancelSalesOrderOptions): string | undefined {
+    const idempotencyKey = options.fulfillmentCommandContext?.idempotencyKey?.trim();
+    if (idempotencyKey) return idempotencyKey;
+    return typeof options.metadata?.sourceEventId === 'string' && options.metadata.sourceEventId.trim()
+      ? options.metadata.sourceEventId.trim()
+      : undefined;
+  }
+
+  private v2CancellationRequestHash(salesOrderId: string, options: CancelSalesOrderOptions): string {
+    const lines = this.hasPartialCancellationLines(options)
+      ? this.normalizePartialCancellationLines(options.lines ?? []).sort((left, right) =>
+          left.salesOrderLineId.localeCompare(right.salesOrderLineId),
+        )
+      : undefined;
+    return canonicalFulfillmentRequestHash({
+      salesOrderId,
+      lines,
+      reasonCode: options.reasonCode?.trim() || undefined,
+      reasonDetail: options.reasonDetail?.trim() || undefined,
+    });
+  }
+
+  private async findV2CancellationReplay(
+    salesOrderId: string,
+    options: CancelSalesOrderOptions,
+    tx: DbTx,
+  ): Promise<{ requestHash: string } | undefined> {
+    const sourceKey = this.explicitV2CancellationSourceKey(options);
+    if (!sourceKey) return undefined;
+    const rows = await tx
+      .select({ metadata: wmsTables.salesOrderCancellations.metadata })
+      .from(wmsTables.salesOrderCancellations)
+      .where(eq(wmsTables.salesOrderCancellations.salesOrderId, salesOrderId));
+    for (const row of rows) {
+      const metadata = (row.metadata ?? {}) as Record<string, unknown>;
+      if (metadata.fulfillmentCommandSourceKey !== sourceKey) continue;
+      if (typeof metadata.fulfillmentCommandRequestHash === 'string') {
+        return { requestHash: metadata.fulfillmentCommandRequestHash };
+      }
+    }
+    return undefined;
   }
 
   private normalizePartialCancellationLines(lines: PartialCancellationLine[]): PartialCancellationLine[] {
@@ -1994,6 +2460,8 @@ export class SalesOrdersService {
 
   private convertOrderItems(items: OrderItem[]) {
     return items.map((item) => ({
+      channelOrderItemId: item.orderItemId,
+      channelProductId: item.channelProductId,
       variantId: item.variantId,
       productName: item.productName,
       quantity: item.quantity,
@@ -2002,5 +2470,26 @@ export class SalesOrdersService {
       fulfillmentKind: item.fulfillmentKind,
       requiresShipping: item.requiresShipping,
     }));
+  }
+
+  private assertUniqueTrustedChannelOrderItemIds(
+    salesChannel: string,
+    lines: Array<{ channelOrderItemId?: string }>,
+  ): void {
+    if (!ACCEPTED_CONTRACT_CHANNELS.has(salesChannel)) {
+      return;
+    }
+
+    const seen = new Set<string>();
+    for (const line of lines) {
+      const orderItemId = line.channelOrderItemId?.trim();
+      if (!orderItemId) {
+        continue;
+      }
+      if (seen.has(orderItemId)) {
+        throw new BadRequestException(`Duplicate channel order item ID in ${salesChannel} order: ${orderItemId}`);
+      }
+      seen.add(orderItemId);
+    }
   }
 }

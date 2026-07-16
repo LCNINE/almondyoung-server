@@ -1,23 +1,24 @@
-import { Controller, Get, Post, Body, Param, Query, BadRequestException } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
-import { User } from '@app/authorization';
+import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { ApiExtraModels, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { RequireScopes, ScopeGuard } from '@app/authorization';
+import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { FulfillmentsService } from '../services/fulfillments.service';
-import { FulfillmentReservationsFacade } from '../services/fulfillment-reservations.facade';
+import { ShipmentPlanningService } from '../services/shipment-planning.service';
 import { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
-import { CreateCompensationShipmentDto } from '../dto/create-compensation-shipment.dto';
-import { ReserveDto } from '../dto/reserve.dto';
-import { UnreserveDto } from '../dto/unreserve.dto';
-import { TransferReservationDto } from '../dto/transfer-reservation.dto';
-import { FulfillmentOrderResponseDto, FulfillmentOrderListResponseDto } from '../dto/fulfillment-order-response.dto';
-
-type AuthenticatedUser = { id?: string; userId?: string; sub?: string } | undefined;
+import {
+  FulfillmentOrderListResponseDto,
+  FulfillmentOrderResponseDto,
+  FulfillmentOrderV2ResponseDto,
+} from '../dto/fulfillment-order-response.dto';
+import { ShipmentSummaryResponseDto } from '../dto/shipment-planning.dto';
 
 @ApiTags('Fulfillments')
+@ApiExtraModels(FulfillmentOrderResponseDto, FulfillmentOrderV2ResponseDto)
 @Controller('fulfillments')
 export class FulfillmentsController {
   constructor(
     private readonly service: FulfillmentsService,
-    private readonly reservations: FulfillmentReservationsFacade,
+    private readonly shipmentPlanning: ShipmentPlanningService,
   ) {}
 
   @Post()
@@ -25,12 +26,6 @@ export class FulfillmentsController {
   @ApiResponse({ status: 201, description: '주문처리 생성 성공' })
   create(@Body() dto: CreateFulfillmentOrderDto) {
     return this.service.create(dto);
-  }
-
-  @Post('compensation-shipments')
-  @ApiOperation({ summary: 'Create or link a fulfillment-only CS compensation shipment' })
-  createCompensationShipment(@Body() dto: CreateCompensationShipmentDto, @User() user: AuthenticatedUser) {
-    return this.service.createCompensationShipment(dto, this.getUserId(user));
   }
 
   @Post(':id/deliver')
@@ -56,12 +51,21 @@ export class FulfillmentsController {
 
   @Get(':id')
   @ApiOperation({
-    summary: '주문처리 상세 조회 (items, reservations, batch, shipment, invoice, adminAvailableActions 포함)',
+    summary: '주문처리 상세 조회 (progress, shipments, items, reservations, adminAvailableActions 포함)',
   })
   @ApiParam({ name: 'id', description: '주문처리 ID' })
-  @ApiResponse({ status: 200, type: FulfillmentOrderResponseDto })
+  @ApiResponse({ status: 200, type: FulfillmentOrderV2ResponseDto })
   getOne(@Param('id') id: string) {
     return this.service.getOne(id);
+  }
+
+  @Get(':id/shipments')
+  @UseGuards(ScopeGuard)
+  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
+  @ApiOperation({ summary: 'V2 shipment 목록과 라인 진행 수량 조회' })
+  @ApiResponse({ status: 200, type: [ShipmentSummaryResponseDto] })
+  shipments(@Param('id') id: string): Promise<ShipmentSummaryResponseDto[]> {
+    return this.shipmentPlanning.getFulfillmentShipments(id);
   }
 
   @Get()
@@ -94,52 +98,4 @@ export class FulfillmentsController {
     });
   }
 
-  @Post(':id/check-availability')
-  @ApiOperation({ summary: '재고 가용성 확인' })
-  @ApiParam({ name: 'id', description: '주문처리 ID' })
-  checkAvailability(@Param('id') id: string) {
-    return this.service.checkAvailability(id);
-  }
-
-  @Post(':id/reserve')
-  @ApiOperation({ summary: '재고 예약' })
-  @ApiParam({ name: 'id', description: '주문처리 ID' })
-  @ApiBody({ type: ReserveDto })
-  reserve(@Param('id') id: string, @Body() dto: ReserveDto) {
-    return this.reservations.reserve(id, dto);
-  }
-
-  @Post(':id/unreserve')
-  @ApiOperation({ summary: '재고 예약 해제' })
-  @ApiParam({ name: 'id', description: '주문처리 ID' })
-  @ApiBody({ type: UnreserveDto })
-  unreserve(@Param('id') id: string, @Body() dto: UnreserveDto) {
-    return this.reservations.unreserve(id, dto);
-  }
-
-  @Post(':id/transfer-reservation')
-  @ApiOperation({ summary: '예약 이전 (같은 창고·같은 SKU FOI 간, cross-FO 허용, 작업 전 상태만)' })
-  @ApiParam({ name: 'id', description: '주문처리 ID' })
-  @ApiBody({ type: TransferReservationDto })
-  transfer(@Param('id') id: string, @Body() dto: TransferReservationDto, @User() user: AuthenticatedUser) {
-    return this.reservations.transferReservation(id, { ...dto, performedBy: this.getUserId(user) });
-  }
-
-  @Get(':id/transfer-candidates')
-  @ApiOperation({ summary: '예약 이전 대상 후보 조회 (같은 창고·같은 SKU, 작업 전 상태, 미예약 부족분 있는 FOI)' })
-  @ApiParam({ name: 'id', description: '주문처리 ID' })
-  @ApiQuery({ name: 'fromFulfillmentOrderItemId', required: true, type: String })
-  getTransferCandidates(
-    @Param('id') id: string,
-    @Query('fromFulfillmentOrderItemId') fromFulfillmentOrderItemId?: string,
-  ) {
-    if (!fromFulfillmentOrderItemId) {
-      throw new BadRequestException('fromFulfillmentOrderItemId is required');
-    }
-    return this.reservations.getTransferCandidates(id, fromFulfillmentOrderItemId);
-  }
-
-  private getUserId(user: AuthenticatedUser): string | undefined {
-    return user?.id ?? user?.userId ?? user?.sub;
-  }
 }

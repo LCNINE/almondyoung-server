@@ -1,0 +1,2 @@
+DROP INDEX "uq_shipment_tracking_provider_event";--> statement-breakpoint
+CREATE UNIQUE INDEX "uq_shipment_tracking_provider_event" ON "shipment_tracking" USING btree ("dispatch_attempt_id","provider_event_id") WHERE "shipment_tracking"."provider_event_id" IS NOT NULL;

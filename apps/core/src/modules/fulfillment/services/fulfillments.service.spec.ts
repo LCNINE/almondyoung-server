@@ -6,13 +6,9 @@ import { FulfillmentsService } from './fulfillments.service';
 describe('FulfillmentsService', () => {
   const salesOrderId = '11111111-1111-1111-1111-111111111111';
   const salesOrderLineId = '22222222-2222-2222-2222-222222222222';
-  const secondSalesOrderLineId = '22222222-2222-2222-2222-222222222223';
   const warehouseId = '33333333-3333-3333-3333-333333333333';
   const variantId = '44444444-4444-4444-4444-444444444444';
-  const secondVariantId = '44444444-4444-4444-4444-444444444445';
   const skuId = '55555555-5555-5555-5555-555555555555';
-  const snapshotSkuId = '55555555-5555-5555-5555-555555555556';
-  const mappingSnapshotId = '88888888-8888-8888-8888-888888888888';
   const voidVariantId = '66666666-6666-6666-6666-666666666666';
   const voidSalesOrderLineId = '77777777-7777-7777-7777-777777777777';
 
@@ -24,6 +20,7 @@ describe('FulfillmentsService', () => {
     fulfillmentOrders: Array<Record<string, any>>;
     fulfillmentOrderItems: Array<Record<string, any>>;
     shipments: Array<Record<string, any>>;
+    shipmentLines: Array<Record<string, any>>;
     reservations: Array<Record<string, any>>;
     salesOrderCancellations: Array<Record<string, any>>;
     salesOrderAmendments: Array<Record<string, any>>;
@@ -54,6 +51,7 @@ describe('FulfillmentsService', () => {
       if (table === wmsTables.fulfillmentOrders) return state.fulfillmentOrders;
       if (table === wmsTables.fulfillmentOrderItems) return state.fulfillmentOrderItems;
       if (table === wmsTables.shipments) return state.shipments;
+      if (table === wmsTables.shipmentLines) return state.shipmentLines;
       if (table === wmsTables.invoices) return [];
       if (table === wmsTables.salesOrderCancellations) return state.salesOrderCancellations;
       if (table === wmsTables.salesOrderAmendments) return state.salesOrderAmendments;
@@ -104,6 +102,22 @@ describe('FulfillmentsService', () => {
                   ...item,
                 }));
                 state.fulfillmentOrderItems.push(...inserted);
+                return inserted;
+              }
+
+              if (table === wmsTables.shipments) {
+                const row = { id: `shipment-${state.shipments.length + 1}`, ...value };
+                state.shipments.push(row);
+                return [row];
+              }
+
+              if (table === wmsTables.shipmentLines) {
+                const values = Array.isArray(value) ? value : [value];
+                const inserted = values.map((line, index) => ({
+                  id: `shipment-line-${state.shipmentLines.length + index + 1}`,
+                  ...line,
+                }));
+                state.shipmentLines.push(...inserted);
                 return inserted;
               }
 
@@ -171,6 +185,7 @@ describe('FulfillmentsService', () => {
       fulfillmentOrders: options.fulfillmentOrders ?? [],
       fulfillmentOrderItems: options.fulfillmentOrderItems ?? [],
       shipments: options.shipments ?? [],
+      shipmentLines: [],
       reservations: [],
       salesOrderCancellations: options.salesOrderCancellations ?? [],
       salesOrderAmendments: options.salesOrderAmendments ?? [],
@@ -207,91 +222,30 @@ describe('FulfillmentsService', () => {
           Promise.resolve(options.mappingSnapshots?.[requestedSnapshotId] ?? { mappings: [] }),
         ),
     };
-    const availability = {
-      getAvailableQuantity: jest.fn().mockResolvedValue(options.availableQty ?? 10),
-    };
-    const unifiedReservation = {
-      reserveStock: jest.fn().mockImplementation(async (dto) => {
-        if (options.reserveError) throw options.reserveError;
-        const reservation = {
-          id: `rsv-${state.reservations.length + 1}`,
-          ...dto,
-          status: 'confirmed',
-        };
-        state.reservations.push(reservation);
-        return reservation;
-      }),
-    };
     const reservationLifecycle = {
       handleFulfillmentOrderStatusChange: jest.fn().mockResolvedValue(undefined),
       releaseLeftoverReservations: jest.fn().mockResolvedValue(0),
     };
-    const policies = {
-      getVariantPolicy: jest.fn().mockResolvedValue(
-        options.policy ?? {
-          inventoryManagement: true,
-          preStockSellable: false,
-          alwaysSellableZeroStock: false,
-        },
-      ),
-      evaluateFulfillability: jest.fn(
-        (
-          policy: {
-            inventoryManagement: boolean;
-            preStockSellable: boolean;
-            alwaysSellableZeroStock: boolean;
-          },
-          onHandQty: number,
-          requestedQty: number,
-        ) => {
-          if (!policy.inventoryManagement) return true;
-          return onHandQty >= requestedQty;
-        },
-      ),
-    };
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
-    const salesOrderAmendments = {
-      create: jest.fn().mockImplementation(async (dto, operatorId) => {
-        const row = {
-          id: `amendment-${state.salesOrderAmendments.length + 1}`,
-          ...dto,
-          createdBy: operatorId ?? null,
-          occurredAt: dto.occurredAt ? new Date(dto.occurredAt) : new Date('2026-05-30T00:00:00.000Z'),
-          createdAt: new Date('2026-05-30T00:00:00.000Z'),
-          updatedAt: new Date('2026-05-30T00:00:00.000Z'),
-        };
-        state.salesOrderAmendments.push(row);
-        state.businessLinks.push({
-          id: `business-link-${state.businessLinks.length + 1}`,
-          sourceType: 'sales_order',
-          sourceId: dto.salesOrderId,
-          sourceExternalRef: null,
-          targetType: 'sales_order_amendment',
-          targetId: row.id,
-          targetExternalRef: null,
-          relationName: 'opened_amendment',
-          metadata: {
-            amendmentKind: dto.amendmentKind,
-            decision: dto.decision,
-            deltaTypes: dto.deltas.map((delta) => delta.type),
-          },
-          occurredAt: row.occurredAt,
-          createdAt: row.createdAt,
-          updatedAt: row.updatedAt,
-        });
-        return row;
-      }),
+    const shipmentReservation = {
+      reservePartial: jest.fn().mockResolvedValue({ mutated: false, reservedQty: 0 }),
+      recompute: jest.fn().mockResolvedValue(undefined),
+    };
+    const fulfillmentProgress = {
+      projectOrder: jest.fn().mockReturnValue({ status: 'created' }),
     };
 
     const service = new FulfillmentsService(
       db as any,
-      policies as any,
-      availability as any,
       reservationLifecycle as any,
-      unifiedReservation as any,
       productSkuMapping as any,
       outbox as any,
-      salesOrderAmendments as any,
+      {
+        assertV2MutationAllowed: jest.fn(),
+        assertOperationalMutationAllowed: jest.fn(),
+      } as any,
+      shipmentReservation as any,
+      fulfillmentProgress as any,
     );
 
     return {
@@ -299,12 +253,10 @@ describe('FulfillmentsService', () => {
       state,
       tx,
       productSkuMapping,
-      availability,
       reservationLifecycle,
-      unifiedReservation,
-      policies,
+      shipmentReservation,
+      fulfillmentProgress,
       outbox,
-      salesOrderAmendments,
     };
   }
 
@@ -394,7 +346,7 @@ describe('FulfillmentsService', () => {
   });
 
   it('salesOrderId에 대한 FO가 이미 있으면 새 FO를 만들지 않고 기존 FO를 반환한다', async () => {
-    const { service, state, productSkuMapping, unifiedReservation } = makeService({
+    const { service, state, productSkuMapping, shipmentReservation } = makeService({
       fulfillmentOrders: [
         {
           id: 'fo-existing-1',
@@ -411,66 +363,11 @@ describe('FulfillmentsService', () => {
     expect(state.fulfillmentOrders).toHaveLength(1);
     expect(state.fulfillmentOrderItems).toHaveLength(0);
     expect(productSkuMapping.getByVariant).not.toHaveBeenCalled();
-    expect(unifiedReservation.reserveStock).not.toHaveBeenCalled();
-  });
-
-  it('매칭은 있지만 재고 예약이 실패하면 FO와 item을 남기고 unfulfillable 상태로 둔다', async () => {
-    const { service, state, outbox } = makeService({
-      availableQty: 0,
-      reserveError: new ConflictException('Insufficient stock. Available: 0, Requested: 2'),
-    });
-
-    const result = await service.create({ salesOrderId, warehouseId });
-
-    expect(result).toMatchObject({
-      id: 'fo-1',
-      status: 'unfulfillable',
-      reservationFailureReason: 'RESERVATION_FAILED',
-    });
-    expect(state.fulfillmentOrderItems).toHaveLength(1);
-    expect(state.fulfillmentOrders[0].reservationFailureDetails.failedItems).toEqual([
-      expect.objectContaining({
-        fulfillmentOrderItemId: 'foi-1',
-        salesOrderLineId,
-        variantId,
-        skuId,
-        requiredQty: 2,
-        availableQty: 0,
-      }),
-    ]);
-    expect(outbox.enqueue.mock.calls.map(([event]) => event.eventType)).not.toContain('FulfillmentReady');
-  });
-
-  it('매칭과 재고가 충분하면 예약을 생성하고 FO를 ready로 전환한다', async () => {
-    const { service, state, unifiedReservation, outbox } = makeService();
-
-    const result = await service.create({ salesOrderId, warehouseId });
-
-    expect(result).toMatchObject({
-      id: 'fo-1',
-      status: 'ready',
-      totalReservedQty: 2,
-      reservationFailureReason: null,
-      reservationFailureDetails: null,
-    });
-    expect(state.fulfillmentOrderItems[0]).toMatchObject({ id: 'foi-1', skuId, qty: 2, reservedQty: 2 });
-    expect(unifiedReservation.reserveStock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        targetType: 'FULFILLMENT_ORDER',
-        targetId: 'fo-1',
-        fulfillmentOrderItemId: 'foi-1',
-        skuId,
-        warehouseId,
-        quantity: 2,
-      }),
-      expect.anything(),
-    );
-    // FulfillmentReady 는 구독 서비스가 없어 발행하지 않는다 (FO 상태는 ready 로 전환됨).
-    expect(outbox.enqueue.mock.calls.map(([event]) => event.eventType)).not.toContain('FulfillmentReady');
+    expect(shipmentReservation.reservePartial).not.toHaveBeenCalled();
   });
 
   it('부분 취소된 SalesOrder line 수량은 backlog retry의 FO 생성 수량에서 차감한다', async () => {
-    const { service, state, unifiedReservation } = makeService({
+    const { service, state, shipmentReservation } = makeService({
       lines: [
         {
           id: salesOrderLineId,
@@ -495,387 +392,26 @@ describe('FulfillmentsService', () => {
 
     const result = await service.create({ salesOrderId, warehouseId });
 
+    // V2 create 는 Draft shipment line 을 만들고 부분예약(reservePartial)에 위임한다 —
+    // FO 상태 투영은 reservePartial 내부 몫이므로(여기서는 목) row 는 created 로 남는다.
     expect(result).toMatchObject({
       id: 'fo-1',
-      status: 'ready',
-      totalReservedQty: 4,
+      status: 'created',
+      totalQty: 4,
     });
     expect(state.fulfillmentOrderItems[0]).toMatchObject({
       salesOrderLineId,
       skuId,
       qty: 4,
-      reservedQty: 4,
+      reservedQty: 0,
     });
-    expect(unifiedReservation.reserveStock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        quantity: 4,
-      }),
-      expect.anything(),
-    );
-  });
-
-  it('CS 보상 출고는 fulfillment-only amendment와 별도 FO를 만들고 원 SalesOrder line을 바꾸지 않는다', async () => {
-    const { service, state, unifiedReservation, salesOrderAmendments } = makeService();
-    const originalLines = state.salesOrderLines.map((line) => ({ ...line }));
-
-    const result = await service.createCompensationShipment(
-      {
-        salesOrderId,
-        warehouseId,
-        reasonCode: 'CS_COMPENSATION_GIFT',
-        fulfillmentInstruction: 'Ship free gift for CS compensation',
-        items: [{ variantId, quantity: 1, salesOrderLineId }],
-      },
-      '99999999-9999-9999-9999-999999999999',
-    );
-
-    expect(result.amendment).toMatchObject({
-      id: 'amendment-1',
-      salesOrderId,
-      amendmentKind: 'fulfillment_only',
-      decision: 'approved',
-      reasonCode: 'CS_COMPENSATION_GIFT',
-      deltas: [
-        expect.objectContaining({
-          type: 'fulfillment_only_correction',
-          salesOrderLineId,
-          fulfillmentInstruction: 'Ship free gift for CS compensation',
-        }),
-      ],
-    });
-    expect(result.fulfillmentOrder).toMatchObject({
-      id: 'fo-1',
-      salesOrderId: null,
-      status: 'ready',
-      totalQty: 2,
-      totalReservedQty: 2,
-    });
-    expect(state.fulfillmentOrderItems[0]).toMatchObject({
-      salesOrderId,
-      salesOrderLineId,
-      variantId,
-      skuId,
-      qty: 2,
-      reservedQty: 2,
-    });
-    expect(state.salesOrderLines).toEqual(originalLines);
-    expect(salesOrderAmendments.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        amendmentKind: 'fulfillment_only',
-        metadata: expect.objectContaining({
-          compensationShipment: expect.objectContaining({
-            fulfillmentOrderId: 'fo-1',
-            items: [{ variantId, quantity: 1, salesOrderLineId }],
-          }),
-        }),
-      }),
-      '99999999-9999-9999-9999-999999999999',
-      expect.anything(),
-    );
-    expect(unifiedReservation.reserveStock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        targetType: 'FULFILLMENT_ORDER',
-        targetId: 'fo-1',
-        fulfillmentOrderItemId: 'foi-1',
-        skuId,
-        warehouseId,
-        quantity: 2,
-      }),
-      expect.anything(),
-    );
-    expect(state.businessLinks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          sourceType: 'sales_order',
-          sourceId: salesOrderId,
-          targetType: 'sales_order_amendment',
-          targetId: 'amendment-1',
-          relationName: 'opened_amendment',
-        }),
-        expect.objectContaining({
-          sourceType: 'sales_order_amendment',
-          sourceId: 'amendment-1',
-          targetType: 'fulfillment_order',
-          targetId: 'fo-1',
-          relationName: 'caused_compensation_fulfillment',
-        }),
-        expect.objectContaining({
-          sourceType: 'sales_order',
-          sourceId: salesOrderId,
-          targetType: 'fulfillment_order',
-          targetId: 'fo-1',
-          relationName: 'caused_compensation_fulfillment',
-          metadata: expect.objectContaining({ amendmentId: 'amendment-1' }),
-        }),
-      ]),
-    );
-  });
-
-  it('CS 보상 출고는 참조한 원 주문 라인의 mapping snapshot을 우선 사용한다', async () => {
-    const { service, state, productSkuMapping, unifiedReservation } = makeService({
-      lines: [
-        {
-          id: salesOrderLineId,
-          salesOrderId,
-          variantId,
-          quantity: 1,
-          mappingSnapshotId,
-        },
-      ],
-      skus: [
-        { id: skuId, holderId: null },
-        { id: snapshotSkuId, holderId: null },
-      ],
-      links: [{ skuId, quantity: 9 }],
-      mappingSnapshots: {
-        [mappingSnapshotId]: {
-          mappings: [{ skuId: snapshotSkuId, quantity: 3 }],
-        },
-      },
-    });
-
-    const result = await service.createCompensationShipment({
-      salesOrderId,
-      warehouseId,
-      reasonCode: 'MISSED_ITEM',
-      items: [{ variantId, quantity: 2, salesOrderLineId }],
-    });
-
-    expect(result.fulfillmentOrder).toMatchObject({
-      id: 'fo-1',
-      status: 'ready',
-      totalQty: 6,
-      totalReservedQty: 6,
-    });
-    expect(productSkuMapping.getMappingSnapshot).toHaveBeenCalledWith(mappingSnapshotId, expect.anything());
-    expect(productSkuMapping.getByVariant).not.toHaveBeenCalled();
-    expect(state.fulfillmentOrderItems[0]).toMatchObject({
-      salesOrderId,
-      salesOrderLineId,
-      mappingSnapshotId,
-      variantId,
-      skuId: snapshotSkuId,
-      qty: 6,
-      reservedQty: 6,
-    });
-    expect(unifiedReservation.reserveStock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        fulfillmentOrderItemId: 'foi-1',
-        skuId: snapshotSkuId,
-        warehouseId,
-        quantity: 6,
-      }),
-      expect.anything(),
-    );
-  });
-
-  it('CS 보상 출고는 accepted 상태가 아닌 SalesOrder에는 만들 수 없다', async () => {
-    const { service, state, productSkuMapping } = makeService({ salesOrderStatus: 'pending' });
-
-    await expect(
-      service.createCompensationShipment({
-        salesOrderId,
-        warehouseId,
-        reasonCode: 'MISSED_ITEM',
-        items: [{ variantId, quantity: 1, salesOrderLineId }],
-      }),
-    ).rejects.toThrow(`Cannot create compensation shipment for SalesOrder ${salesOrderId} in status pending`);
-
-    expect(productSkuMapping.getByVariant).not.toHaveBeenCalled();
-    expect(productSkuMapping.getMappingSnapshot).not.toHaveBeenCalled();
-    expect(state.fulfillmentOrders).toHaveLength(0);
-    expect(state.fulfillmentOrderItems).toHaveLength(0);
-    expect(state.salesOrderAmendments).toHaveLength(0);
-    expect(state.businessLinks).toHaveLength(0);
-  });
-
-  it('CS 보상 출고는 참조한 원 주문 라인과 요청 variant가 다르면 snapshot을 사용하지 않는다', async () => {
-    const { service, state, productSkuMapping } = makeService({
-      lines: [
-        {
-          id: salesOrderLineId,
-          salesOrderId,
-          variantId,
-          quantity: 1,
-          mappingSnapshotId,
-        },
-      ],
-      mappingSnapshots: {
-        [mappingSnapshotId]: {
-          mappings: [{ skuId: snapshotSkuId, quantity: 1 }],
-        },
-      },
-    });
-
-    await expect(
-      service.createCompensationShipment({
-        salesOrderId,
-        warehouseId,
-        reasonCode: 'MISSED_ITEM',
-        items: [{ variantId: secondVariantId, quantity: 1, salesOrderLineId }],
-      }),
-    ).rejects.toThrow(
-      `Compensation item variant ${secondVariantId} does not match SalesOrder line ${salesOrderLineId} variant ${variantId}`,
-    );
-
-    expect(productSkuMapping.getMappingSnapshot).not.toHaveBeenCalled();
-    expect(productSkuMapping.getByVariant).not.toHaveBeenCalled();
-    expect(state.fulfillmentOrders).toHaveLength(0);
-    expect(state.fulfillmentOrderItems).toHaveLength(0);
-    expect(state.salesOrderAmendments).toHaveLength(0);
-    expect(state.businessLinks).toHaveLength(0);
-  });
-
-  it('CS 보상 출고는 새 FO 생성 전에 warehouse 존재 여부를 검증한다', async () => {
-    const missingWarehouseId = '99999999-9999-9999-9999-999999999999';
-    const { service, state, productSkuMapping } = makeService({ warehouses: [] });
-
-    await expect(
-      service.createCompensationShipment({
-        salesOrderId,
-        warehouseId: missingWarehouseId,
-        reasonCode: 'MISSED_ITEM',
-        items: [{ variantId, quantity: 1, salesOrderLineId }],
-      }),
-    ).rejects.toThrow(`Warehouse ${missingWarehouseId} not found`);
-
-    expect(productSkuMapping.getByVariant).not.toHaveBeenCalled();
-    expect(state.fulfillmentOrders).toHaveLength(0);
-    expect(state.fulfillmentOrderItems).toHaveLength(0);
-    expect(state.salesOrderAmendments).toHaveLength(0);
-    expect(state.businessLinks).toHaveLength(0);
-  });
-
-  it('CS 보상 출고는 여러 보상 라인을 amendment delta에 모두 남긴다', async () => {
-    const { service } = makeService({
-      lines: [
-        {
-          id: salesOrderLineId,
-          salesOrderId,
-          variantId,
-          quantity: 1,
-          mappingSnapshotId: null,
-        },
-        {
-          id: secondSalesOrderLineId,
-          salesOrderId,
-          variantId: secondVariantId,
-          quantity: 1,
-          mappingSnapshotId: null,
-        },
-      ],
-      matchingsByVariant: {
-        [variantId]: {
-          status: 'matched',
-          strategy: 'variant',
-          links: [{ skuId, quantity: 1 }],
-        },
-        [secondVariantId]: {
-          status: 'matched',
-          strategy: 'variant',
-          links: [{ skuId, quantity: 1 }],
-        },
-      },
-    });
-
-    const result = await service.createCompensationShipment({
-      salesOrderId,
-      warehouseId,
-      reasonCode: 'MISSED_ITEMS',
-      items: [
-        { variantId, quantity: 1, salesOrderLineId },
-        { variantId: secondVariantId, quantity: 2, salesOrderLineId: secondSalesOrderLineId },
-      ],
-    });
-
-    expect(result.amendment.deltas).toEqual([
-      expect.objectContaining({
-        type: 'fulfillment_only_correction',
-        salesOrderLineId,
-        metadata: { variantId, quantity: 1 },
-      }),
-      expect.objectContaining({
-        type: 'fulfillment_only_correction',
-        salesOrderLineId: secondSalesOrderLineId,
-        metadata: { variantId: secondVariantId, quantity: 2 },
-      }),
-    ]);
-  });
-
-  it('CS 보상 출고는 기존 FO를 amendment에 링크할 수 있다', async () => {
-    const { service, state, productSkuMapping, unifiedReservation } = makeService({
-      fulfillmentOrders: [
-        {
-          id: 'fo-existing-1',
-          salesOrderId: null,
-          warehouseId,
-          status: 'ready',
-          totalItems: 1,
-          totalQty: 1,
-        },
-      ],
-    });
-    const originalLines = state.salesOrderLines.map((line) => ({ ...line }));
-
-    const result = await service.createCompensationShipment({
-      salesOrderId,
-      fulfillmentOrderId: 'fo-existing-1',
-      reasonCode: 'MISSED_ITEM',
-    });
-
-    expect(result.fulfillmentOrder).toMatchObject({ id: 'fo-existing-1', status: 'ready' });
-    expect(state.fulfillmentOrders).toHaveLength(1);
-    expect(state.fulfillmentOrderItems).toHaveLength(0);
-    expect(state.salesOrderLines).toEqual(originalLines);
-    expect(productSkuMapping.getByVariant).not.toHaveBeenCalled();
-    expect(unifiedReservation.reserveStock).not.toHaveBeenCalled();
-    expect(state.businessLinks).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          sourceType: 'sales_order_amendment',
-          targetType: 'fulfillment_order',
-          targetId: 'fo-existing-1',
-          relationName: 'caused_compensation_fulfillment',
-        }),
-        expect.objectContaining({
-          sourceType: 'sales_order',
-          sourceId: salesOrderId,
-          targetType: 'fulfillment_order',
-          targetId: 'fo-existing-1',
-          relationName: 'caused_compensation_fulfillment',
-        }),
-      ]),
-    );
-  });
-
-  it('CS 보상 출고는 주문에 연결된 기존 FO를 링크하지 않는다', async () => {
-    const { service, state } = makeService({
-      fulfillmentOrders: [
-        {
-          id: 'fo-regular-1',
-          salesOrderId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-          warehouseId,
-          status: 'ready',
-          totalItems: 1,
-          totalQty: 1,
-        },
-      ],
-    });
-
-    await expect(
-      service.createCompensationShipment({
-        salesOrderId,
-        fulfillmentOrderId: 'fo-regular-1',
-        reasonCode: 'MISSED_ITEM',
-      }),
-    ).rejects.toThrow('Compensation shipment can only link standalone fulfillment orders');
-
-    expect(state.salesOrderAmendments).toHaveLength(0);
-    expect(state.businessLinks).toHaveLength(0);
+    expect(state.shipmentLines).toHaveLength(1);
+    expect(state.shipmentLines[0]).toMatchObject({ skuId, qty: 4 });
+    expect(shipmentReservation.reservePartial).toHaveBeenCalledWith(state.shipmentLines[0].id, 4, expect.anything());
   });
 
   it('matched + void line만 있는 sales order는 물리 FO가 필요 없다고 판별한다', async () => {
-    const { service, state, unifiedReservation, outbox } = makeService({
+    const { service, state, outbox } = makeService({
       matching: {
         status: 'matched',
         strategy: 'void',
@@ -887,7 +423,6 @@ describe('FulfillmentsService', () => {
 
     expect(state.fulfillmentOrders).toHaveLength(0);
     expect(state.fulfillmentOrderItems).toHaveLength(0);
-    expect(unifiedReservation.reserveStock).not.toHaveBeenCalled();
     expect(outbox.enqueue).not.toHaveBeenCalled();
   });
 
@@ -981,8 +516,8 @@ describe('FulfillmentsService', () => {
     await expect(service.requiresPhysicalFulfillmentOrder(salesOrderId)).resolves.toBe(true);
   });
 
-  it('matched + void sales order line은 물리 출고 item 없이 제외한다', async () => {
-    const { service, state, unifiedReservation, outbox } = makeService({
+  it('matched + void line만 있는 sales order는 placeholder FO 없이 null을 반환한다', async () => {
+    const { service, state, shipmentReservation, outbox } = makeService({
       matching: {
         status: 'matched',
         strategy: 'void',
@@ -992,21 +527,16 @@ describe('FulfillmentsService', () => {
 
     const result = await service.create({ salesOrderId, warehouseId });
 
-    expect(result).toMatchObject({
-      id: 'fo-1',
-      status: 'completed',
-      totalItems: 0,
-      totalQty: 0,
-      totalReservedQty: 0,
-    });
+    // V2 는 digital-only/void-matched 주문에 placeholder FO 를 만들지 않는다 (V1 의 completed 빈 FO 제거).
+    expect(result).toBeNull();
+    expect(state.fulfillmentOrders).toHaveLength(0);
     expect(state.fulfillmentOrderItems).toHaveLength(0);
-    expect(unifiedReservation.reserveStock).not.toHaveBeenCalled();
-    // FulfillmentCreated 는 구독 서비스가 없어 발행하지 않는다.
-    expect(outbox.enqueue.mock.calls.map(([event]) => event.eventType)).toEqual([]);
+    expect(shipmentReservation.reservePartial).not.toHaveBeenCalled();
+    expect(outbox.enqueue).not.toHaveBeenCalled();
   });
 
   it('matched + void line과 variant line이 섞인 주문은 물리 출고 item만 생성한다', async () => {
-    const { service, state, unifiedReservation } = makeService({
+    const { service, state, shipmentReservation } = makeService({
       lines: [
         {
           id: salesOrderLineId,
@@ -1041,10 +571,9 @@ describe('FulfillmentsService', () => {
 
     expect(result).toMatchObject({
       id: 'fo-1',
-      status: 'ready',
+      status: 'created',
       totalItems: 1,
       totalQty: 2,
-      totalReservedQty: 2,
     });
     expect(state.fulfillmentOrderItems).toHaveLength(1);
     expect(state.fulfillmentOrderItems[0]).toMatchObject({
@@ -1053,7 +582,7 @@ describe('FulfillmentsService', () => {
       skuId,
       qty: 2,
     });
-    expect(unifiedReservation.reserveStock).toHaveBeenCalledTimes(1);
+    expect(shipmentReservation.reservePartial).toHaveBeenCalledTimes(1);
   });
 
   it('void 매칭 라인과 미해결 라인이 섞이면 void 라인은 제외하고 남은 라인만 awaiting_matching 사유로 남긴다', async () => {
@@ -1099,33 +628,6 @@ describe('FulfillmentsService', () => {
     expect(state.fulfillmentOrderItems).toHaveLength(0);
   });
 
-  it('inventoryManagement=false variant는 물리 재고 예약 없이 ready로 전환한다', async () => {
-    const { service, state, availability, unifiedReservation, outbox } = makeService({
-      availableQty: 0,
-      reserveError: new ConflictException('reserve should not be called'),
-      policy: {
-        inventoryManagement: false,
-        preStockSellable: false,
-        alwaysSellableZeroStock: false,
-      },
-    });
-
-    const result = await service.create({ salesOrderId, warehouseId });
-
-    expect(result).toMatchObject({
-      id: 'fo-1',
-      status: 'ready',
-      totalReservedQty: 0,
-      reservationFailureReason: null,
-      reservationFailureDetails: null,
-    });
-    expect(state.fulfillmentOrderItems[0]).toMatchObject({ id: 'foi-1', skuId, qty: 2, reservedQty: 0 });
-    expect(availability.getAvailableQuantity).not.toHaveBeenCalled();
-    expect(unifiedReservation.reserveStock).not.toHaveBeenCalled();
-    // FulfillmentReady 는 구독 서비스가 없어 발행하지 않는다 (FO 상태는 ready 로 전환됨).
-    expect(outbox.enqueue.mock.calls.map(([event]) => event.eventType)).not.toContain('FulfillmentReady');
-  });
-
   it('sales order line 이 없으면 빈 FO를 만들지 않는다', async () => {
     const { service, state } = makeService({ lines: [] });
 
@@ -1164,7 +666,9 @@ describe('FulfillmentsService', () => {
     it('이미 shipped인 FO는 idempotent return한다', async () => {
       const { service, reservationLifecycle, outbox } = makeService({
         fulfillmentOrders: [{ id: 'fo-already-shipped', salesOrderId, warehouseId, status: 'shipped' }],
-        fulfillmentOrderItems: [{ id: 'foi-1', fulfillmentOrderId: 'fo-already-shipped', skuId, qty: 2, reservedQty: 0, shippedQty: 2 }],
+        fulfillmentOrderItems: [
+          { id: 'foi-1', fulfillmentOrderId: 'fo-already-shipped', skuId, qty: 2, reservedQty: 0, shippedQty: 2 },
+        ],
         shipments: [{ fulfillmentOrderId: 'fo-already-shipped', carrier: 'CJ', trackingNo: 'TRK-X' }],
       });
 
@@ -1194,7 +698,9 @@ describe('FulfillmentsService', () => {
     it('ready 상태 일반 FO는 ship이 ConflictException을 던진다', async () => {
       const { service } = makeService({
         fulfillmentOrders: [{ id: 'fo-ready', salesOrderId, warehouseId, status: 'ready' }],
-        fulfillmentOrderItems: [{ id: 'foi-1', fulfillmentOrderId: 'fo-ready', skuId, qty: 2, reservedQty: 2, shippedQty: 0 }],
+        fulfillmentOrderItems: [
+          { id: 'foi-1', fulfillmentOrderId: 'fo-ready', skuId, qty: 2, reservedQty: 2, shippedQty: 0 },
+        ],
       });
 
       await expect(service.ship('fo-ready')).rejects.toThrow(ConflictException);
@@ -1205,7 +711,9 @@ describe('FulfillmentsService', () => {
       async (status) => {
         const { service } = makeService({
           fulfillmentOrders: [{ id: `fo-${status}`, salesOrderId, warehouseId, status }],
-          fulfillmentOrderItems: [{ id: 'foi-1', fulfillmentOrderId: `fo-${status}`, skuId, qty: 2, reservedQty: 2, shippedQty: 0 }],
+          fulfillmentOrderItems: [
+            { id: 'foi-1', fulfillmentOrderId: `fo-${status}`, skuId, qty: 2, reservedQty: 2, shippedQty: 0 },
+          ],
         });
 
         await expect(service.ship(`fo-${status}`)).rejects.toThrow(ConflictException);
@@ -1224,7 +732,9 @@ describe('FulfillmentsService', () => {
             directShipStatus: 'forwarded',
           },
         ],
-        fulfillmentOrderItems: [{ id: 'foi-1', fulfillmentOrderId: 'fo-drop-guard', skuId, qty: 2, reservedQty: 0, shippedQty: 0 }],
+        fulfillmentOrderItems: [
+          { id: 'foi-1', fulfillmentOrderId: 'fo-drop-guard', skuId, qty: 2, reservedQty: 0, shippedQty: 0 },
+        ],
         shipments: [],
       });
 
@@ -1243,7 +753,9 @@ describe('FulfillmentsService', () => {
             directShipStatus: 'forwarded',
           },
         ],
-        fulfillmentOrderItems: [{ id: 'foi-1', fulfillmentOrderId: 'fo-drop-forwarded', skuId, qty: 2, reservedQty: 0, shippedQty: 0 }],
+        fulfillmentOrderItems: [
+          { id: 'foi-1', fulfillmentOrderId: 'fo-drop-forwarded', skuId, qty: 2, reservedQty: 0, shippedQty: 0 },
+        ],
       });
 
       await expect(service.ship('fo-drop-forwarded')).resolves.toBeDefined();
@@ -1280,7 +792,9 @@ describe('FulfillmentsService', () => {
           directShipStatus: 'forwarded',
         },
       ],
-      fulfillmentOrderItems: [{ id: 'foi-ship-1', fulfillmentOrderId: 'fo-ship-1', skuId, qty: 3, reservedQty: 0, shippedQty: 0 }],
+      fulfillmentOrderItems: [
+        { id: 'foi-ship-1', fulfillmentOrderId: 'fo-ship-1', skuId, qty: 3, reservedQty: 0, shippedQty: 0 },
+      ],
     });
 
     await service.ship('fo-ship-1');
@@ -1305,7 +819,7 @@ describe('FulfillmentsService', () => {
     );
   });
 
-  it('markDelivered는 FulfillmentDelivered outbox 이벤트를 발행하고 shipment를 delivered로 업데이트한다', async () => {
+  it('legacy markDelivered는 FO 이벤트만 발행하고 attempt-owned shipment tracking을 만들지 않는다', async () => {
     const { service, outbox } = makeService({
       fulfillmentOrders: [{ id: 'fo-delivered-1', salesOrderId, warehouseId, status: 'shipped' }],
       shipments: [{ id: 'shipment-2', fulfillmentOrderId: 'fo-delivered-1', trackingNo: 'TRK-002', carrier: 'CJ' }],
@@ -1332,7 +846,9 @@ describe('FulfillmentsService', () => {
             directShipStatus: 'forwarded',
           },
         ],
-        fulfillmentOrderItems: [{ id: 'foi-ship-1', fulfillmentOrderId: 'fo-ship-1', skuId, qty: 3, reservedQty: 0, shippedQty: 0 }],
+        fulfillmentOrderItems: [
+          { id: 'foi-ship-1', fulfillmentOrderId: 'fo-ship-1', skuId, qty: 3, reservedQty: 0, shippedQty: 0 },
+        ],
       });
 
       await service.ship('fo-ship-1');
@@ -1390,71 +906,6 @@ describe('FulfillmentsService', () => {
       'canceled',
       expect.anything(),
     );
-  });
-
-  it('getOne은 상세 운영 화면에 필요한 배송, 예약, 액션 정보를 반환한다', async () => {
-    const { service, tx } = makeService({
-      fulfillmentOrders: [
-        {
-          id: 'fo-detail',
-          salesOrderId,
-          warehouseId,
-          status: 'picked',
-          fulfillmentMode: 'in_house',
-          directShipStatus: null,
-          batchId: null,
-        },
-      ],
-      fulfillmentOrderItems: [
-        {
-          id: 'foi-detail',
-          fulfillmentOrderId: 'fo-detail',
-          salesOrderId,
-          salesOrderLineId,
-          variantId,
-          skuId,
-          skuCode: 'SKU-001',
-          skuName: '상세 테스트 SKU',
-          qty: 2,
-          reservedQty: 2,
-          pickedQty: 2,
-          shippedQty: 0,
-          status: 'picked',
-        },
-      ],
-      shipments: [
-        {
-          id: 'shipment-detail',
-          fulfillmentOrderId: 'fo-detail',
-          trackingNo: 'TRACK-001',
-          carrier: 'CJ',
-          status: 'ready',
-          eta: null,
-          invoiceUrl: null,
-        },
-      ],
-    });
-
-    const detail = await service.getOne('fo-detail', tx);
-
-    expect(detail?.id).toBe('fo-detail');
-    // trackingNo/carrier 출처는 이제 active invoice (shipments 컬럼 폐기) — mock invoice 없음 → null.
-    expect(detail?.shipment).toMatchObject({
-      id: 'shipment-detail',
-      trackingNo: null,
-    });
-    expect(detail?.batch).toBeNull();
-    expect(detail?.reservations).toHaveLength(0);
-    expect(detail?.blockedReasons).toHaveLength(0);
-    expect(detail?.items[0]).toMatchObject({
-      id: 'foi-detail',
-      skuCode: 'SKU-001',
-    });
-    expect(detail?.adminAvailableActions).toEqual(
-      expect.arrayContaining(['reserve', 'cancel']),
-    );
-    expect(detail?.adminAvailableActions).not.toContain('ship');
-    expect(detail?.adminAvailableActions).not.toContain('split');
   });
 
   describe('computeAdminAvailableActions / computeBlockedReasons', () => {
@@ -1524,23 +975,21 @@ describe('FulfillmentsService', () => {
       expect(detail?.adminAvailableActions).not.toContain('ship');
     });
 
-    it('ready 상태에서 ship이 없고 reserve/unreserve/transferReservation/cancel이 있다', async () => {
+    it('ready 상태에서 ship/split/reserve/unreserve/transfer 없이 cancel만 있다 (수동 예약 라우트 은퇴)', async () => {
       const { service, tx } = makeFoDetail('ready');
       const detail = await service.getOne('fo-action-test', tx);
       expect(detail?.adminAvailableActions).not.toContain('ship');
       expect(detail?.adminAvailableActions).not.toContain('split');
-      expect(detail?.adminAvailableActions).toEqual(
-        expect.arrayContaining(['reserve', 'unreserve', 'transferReservation', 'cancel']),
-      );
+      expect(detail?.adminAvailableActions).not.toContain('reserve');
+      expect(detail?.adminAvailableActions).not.toContain('unreserve');
+      expect(detail?.adminAvailableActions).not.toContain('transferReservation');
+      expect(detail?.adminAvailableActions).toEqual(['cancel']);
       expect(detail?.blockedReasons).toHaveLength(0);
     });
 
-    it('shipped item이 있으면 unreserve/transferReservation을 제거하고 SHIPPED_EVIDENCE를 추가한다', async () => {
+    it('shipped item이 있으면 SHIPPED_EVIDENCE를 추가한다 (cancel 은 유지)', async () => {
       const { service, tx } = makeFoDetail('ready', { shippedQty: 1 });
       const detail = await service.getOne('fo-action-test', tx);
-      expect(detail?.adminAvailableActions).not.toContain('unreserve');
-      expect(detail?.adminAvailableActions).not.toContain('transferReservation');
-      expect(detail?.adminAvailableActions).toContain('reserve');
       expect(detail?.adminAvailableActions).toContain('cancel');
       expect(detail?.blockedReasons).toContain('SHIPPED_EVIDENCE');
     });
@@ -1588,67 +1037,28 @@ describe('FulfillmentsService', () => {
     });
   });
 
-  describe('computeAdminAvailableActions (drop_ship 예약 가드)', () => {
-    const items = [{ shippedQty: 0 }];
-
-    it('drop_ship non-terminal FO는 reserve/transferReservation을 광고하지 않고 unreserve/cancel/forwardDropShip은 유지한다', () => {
+  describe('computeAdminAvailableActions (drop_ship 가드)', () => {
+    it('drop_ship non-terminal FO는 cancel/forwardDropShip을 광고한다', () => {
       const { service } = makeService();
-      const actions = (service as any)['computeAdminAvailableActions'](
-        { status: 'created', fulfillmentMode: 'drop_ship', directShipStatus: null },
-        items,
-      );
-      expect(actions).not.toContain('reserve');
-      expect(actions).not.toContain('transferReservation');
-      expect(actions).toContain('unreserve');
+      const actions = (service as any)['computeAdminAvailableActions']({
+        status: 'created',
+        fulfillmentMode: 'drop_ship',
+        directShipStatus: null,
+      });
       expect(actions).toContain('cancel');
       expect(actions).toContain('forwardDropShip');
     });
 
-    it('null-mode(in_house 기본) FO는 reserve를 광고한다 (회귀)', () => {
+    it('null-mode(in_house 기본) FO는 drop_ship 액션을 광고하지 않는다 (nullable mode 회귀)', () => {
       const { service } = makeService();
-      const actions = (service as any)['computeAdminAvailableActions'](
-        { status: 'created', fulfillmentMode: null, directShipStatus: null },
-        items,
-      );
-      expect(actions).toContain('reserve');
-      expect(actions).toContain('transferReservation'); // 'created'는 TRANSFER_ALLOWED
+      const actions = (service as any)['computeAdminAvailableActions']({
+        status: 'created',
+        fulfillmentMode: null,
+        directShipStatus: null,
+      });
+      expect(actions).toContain('cancel');
+      expect(actions).not.toContain('forwardDropShip');
+      expect(actions).not.toContain('completeDropShip');
     });
-
-    it('in_house 명시 FO는 reserve/transferReservation을 광고한다 (회귀)', () => {
-      const { service } = makeService();
-      const actions = (service as any)['computeAdminAvailableActions'](
-        { status: 'ready', fulfillmentMode: 'in_house', directShipStatus: null },
-        items,
-      );
-      expect(actions).toContain('reserve');
-      expect(actions).toContain('transferReservation');
-    });
-  });
-
-  it('checkAvailability는 현재 FO의 기존 예약 수량을 가용 수량으로 인정한다', async () => {
-    const { service, availability } = makeService({
-      availableQty: 0,
-      fulfillmentOrders: [
-        {
-          id: 'fo-ready-1',
-          salesOrderId,
-          warehouseId,
-          status: 'ready',
-        },
-      ],
-      fulfillmentOrderItems: [
-        {
-          id: 'foi-ready-1',
-          fulfillmentOrderId: 'fo-ready-1',
-          variantId,
-          skuId,
-          qty: 2,
-          reservedQty: 2,
-        },
-      ],
-    });
-
-    await expect(service.checkAvailability('fo-ready-1')).resolves.toEqual({ ready: true });
-    expect(availability.getAvailableQuantity).not.toHaveBeenCalled();
   });
 });

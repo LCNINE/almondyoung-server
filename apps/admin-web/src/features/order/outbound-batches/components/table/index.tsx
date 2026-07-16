@@ -1,15 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Select,
@@ -18,103 +11,128 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus } from 'lucide-react';
-import { useOutboundBatches } from '@/lib/services/orders';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { useWarehouses } from '@/lib/services/inventory/queries';
+import { usePermission } from '@/hooks/use-permission';
+import {
+  FULFILLMENT_SCOPES,
+  useOutboundBatchesV2,
+} from '@/lib/services/orders';
+import type { OutboundBatchV2ListItem } from '@/lib/types/dto/fulfillment';
 import { BatchStatusBadge } from '../batch-status-badge';
 import { CreateBatchDialog } from '../create-batch-dialog';
 import { BatchDetailDrawer } from '../batch-detail-drawer';
-import type { OutboundBatch } from '@/lib/types/dto/fulfillment';
-
-const PAGE_SIZE = 20;
-
-// ⚠️ 서버 priority 정렬이 알파벳 순(urgent>normal>high) — 의미상 순서와 다름
-const PRIORITY_ORDER: Record<string, number> = { urgent: 0, high: 1, normal: 2 };
+import { PermissionAction } from '../../../operation-access-feedback';
 
 export function OutboundBatchesTable() {
   const searchParams = useSearchParams();
+  const { hasScope, isPermissionLoading } = usePermission();
   const { data: warehouses = [] } = useWarehouses();
-  const [warehouseId, setWarehouseId] = useState<string>('all');
-  const { data: batches = [], isLoading } = useOutboundBatches(
-    warehouseId === 'all' ? undefined : warehouseId
-  );
+  const [warehouseId, setWarehouseId] = useState('all');
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null);
+  const {
+    data: batches = [],
+    isLoading,
+    error,
+  } = useOutboundBatchesV2({
+    warehouseId: warehouseId === 'all' ? undefined : warehouseId,
+  });
+  const canOperateWarehouse =
+    !isPermissionLoading && !!hasScope([FULFILLMENT_SCOPES.operate]);
 
-  const batchIdParam = searchParams.get('batchId');
   useEffect(() => {
-    if (batchIdParam) setSelectedBatchId(batchIdParam);
-  }, [batchIdParam]);
-
-  const sorted = [...batches].sort(
-    (a, b) => (PRIORITY_ORDER[a.status] ?? 9) - (PRIORITY_ORDER[b.status] ?? 9)
-  );
+    const batchId = searchParams.get('batchId');
+    if (batchId) setSelectedBatchId(batchId);
+  }, [searchParams]);
 
   return (
     <div className="flex flex-col gap-3 p-4">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Select value={warehouseId} onValueChange={setWarehouseId}>
-            <SelectTrigger className="w-44">
-              <SelectValue placeholder="전체 창고" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">전체 창고</SelectItem>
-              {warehouses.map((w) => (
-                <SelectItem key={w.id} value={w.id}>
-                  {w.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          <Plus className="mr-1.5 h-3.5 w-3.5" />
-          배치 생성
-        </Button>
+        <Select value={warehouseId} onValueChange={setWarehouseId}>
+          <SelectTrigger className="w-52">
+            <SelectValue placeholder="전체 창고" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">전체 창고</SelectItem>
+            {warehouses.map((warehouse) => (
+              <SelectItem key={warehouse.id} value={warehouse.id}>
+                {warehouse.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <PermissionAction allowed={canOperateWarehouse}>
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            배치 생성
+          </Button>
+        </PermissionAction>
       </div>
 
       {isLoading ? (
-        <p className="py-8 text-center text-sm text-muted-foreground">로딩 중...</p>
-      ) : sorted.length === 0 ? (
-        <p className="py-8 text-center text-sm text-muted-foreground">출고 배치가 없습니다.</p>
+        <p className="py-8 text-center text-sm text-muted-foreground">
+          V2 배치를 불러오는 중…
+        </p>
+      ) : error ? (
+        <p className="py-8 text-center text-sm text-destructive">
+          배치 목록을 불러오지 못했습니다.
+        </p>
+      ) : batches.length === 0 ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">
+          출고 배치가 없습니다.
+        </p>
       ) : (
         <div className="overflow-auto rounded border">
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>배치명</TableHead>
+                <TableHead>배치</TableHead>
                 <TableHead>상태</TableHead>
-                <TableHead>피킹 방식</TableHead>
+                <TableHead>창고</TableHead>
                 <TableHead className="text-right">라인</TableHead>
                 <TableHead className="text-right">수량</TableHead>
-                <TableHead>생성일</TableHead>
+                <TableHead>예정 시각</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {sorted.slice(0, PAGE_SIZE).map((batch: OutboundBatch) => (
+              {batches.map((batch: OutboundBatchV2ListItem) => (
                 <TableRow
                   key={batch.id}
                   className="cursor-pointer"
                   onClick={() => setSelectedBatchId(batch.id)}
                 >
-                  <TableCell className="font-medium">
-                    {batch.name ?? (
-                      <span className="font-mono text-xs text-muted-foreground">
-                        {batch.id.substring(0, 8)}…
-                      </span>
-                    )}
+                  <TableCell>
+                    <p className="font-medium">
+                      {batch.name || batch.batchNumber}
+                    </p>
+                    <p className="font-mono text-[10px] text-muted-foreground">
+                      {batch.id}
+                    </p>
                   </TableCell>
                   <TableCell>
                     <BatchStatusBadge status={batch.status} />
                   </TableCell>
-                  <TableCell>
-                    {batch.pickingMethod === 'individual' ? '개별' : '합산'}
+                  <TableCell className="font-mono text-xs">
+                    {batch.warehouseId}
                   </TableCell>
-                  <TableCell className="text-right">{batch.totalItems}</TableCell>
+                  <TableCell className="text-right">
+                    {batch.totalItems}
+                  </TableCell>
                   <TableCell className="text-right">{batch.totalQty}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {new Date(batch.createdAt).toLocaleDateString('ko-KR')}
+                  <TableCell className="text-xs text-muted-foreground">
+                    {batch.scheduledPickingAt
+                      ? new Date(batch.scheduledPickingAt).toLocaleString(
+                          'ko-KR'
+                        )
+                      : '미정'}
                   </TableCell>
                 </TableRow>
               ))}
@@ -123,16 +141,16 @@ export function OutboundBatchesTable() {
         </div>
       )}
 
-      <CreateBatchDialog open={createOpen} onOpenChange={setCreateOpen} />
-
+      {canOperateWarehouse && (
+        <CreateBatchDialog open={createOpen} onOpenChange={setCreateOpen} />
+      )}
       {selectedBatchId && (
         <BatchDetailDrawer
           batchId={selectedBatchId}
-          warehouseId={
-            batches.find((b: OutboundBatch) => b.id === selectedBatchId)?.warehouseId ?? ''
-          }
-          open={!!selectedBatchId}
-          onOpenChange={(open) => !open && setSelectedBatchId(null)}
+          open
+          onOpenChange={(open) => {
+            if (!open) setSelectedBatchId(null);
+          }}
         />
       )}
     </div>

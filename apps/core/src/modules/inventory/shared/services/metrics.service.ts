@@ -120,6 +120,15 @@ export class MetricsService implements OnModuleInit {
     registers: [register],
   });
 
+  // Fulfillment V2 row-crossing invariants. Resource IDs stay in the reconciliation
+  // report/log to avoid unbounded Prometheus label cardinality.
+  private readonly fulfillmentInvariantViolationsGauge = new Gauge({
+    name: 'wms_fulfillment_invariant_violations',
+    help: 'Number of read-only Fulfillment V2 reconciliation violations by invariant kind',
+    labelNames: ['kind'],
+    registers: [register],
+  });
+
   onModuleInit() {
     // 기본 시스템 메트릭 수집 시작
     collectDefaultMetrics({ register });
@@ -273,6 +282,12 @@ export class MetricsService implements OnModuleInit {
   /** 대사로 release 한 좀비 예약 누적 수. */
   incZombieReservationsHealed(count: number) {
     if (count > 0) this.zombieReservationsHealedCounter.inc(count);
+  }
+
+  setFulfillmentInvariantViolations(counts: Record<string, number>) {
+    for (const [kind, count] of Object.entries(counts)) {
+      this.fulfillmentInvariantViolationsGauge.set({ kind }, count);
+    }
   }
 
   /**

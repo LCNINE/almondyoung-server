@@ -2,11 +2,15 @@
 
 import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import { client } from '../../client';
+import type { ReturnEligibilityResponse } from '../../../types/dto/fulfillment';
 
 export interface ReturnRequestItem {
   id: string;
   returnRequestId: string;
   salesOrderLineId: string;
+  /** Legacy rows remain readable with nullable physical-attempt identity. */
+  shipmentLineId: string | null;
+  dispatchAttemptId: string | null;
   quantity: number;
   reasonCode: string | null;
   createdAt: string;
@@ -16,7 +20,16 @@ export interface ReturnRequest {
   id: string;
   salesOrderId: string;
   customerId: string | null;
-  status: 'requested' | 'approved' | 'rejected' | 'collection_pending' | 'collected' | 'inspected' | 'refund_pending' | 'completed' | 'cancelled';
+  status:
+    | 'requested'
+    | 'approved'
+    | 'rejected'
+    | 'collection_pending'
+    | 'collected'
+    | 'inspected'
+    | 'refund_pending'
+    | 'completed'
+    | 'cancelled';
   reasonCode: string;
   reasonDetail: string | null;
   adminNote: string | null;
@@ -45,7 +58,16 @@ export interface ExchangeRequest {
   id: string;
   salesOrderId: string;
   customerId: string | null;
-  status: 'requested' | 'approved' | 'rejected' | 'collection_pending' | 'collected' | 'inspected' | 'refund_pending' | 'completed' | 'cancelled';
+  status:
+    | 'requested'
+    | 'approved'
+    | 'rejected'
+    | 'collection_pending'
+    | 'collected'
+    | 'inspected'
+    | 'refund_pending'
+    | 'completed'
+    | 'cancelled';
   reasonCode: string;
   reasonDetail: string | null;
   adminNote: string | null;
@@ -77,6 +99,39 @@ export interface ReturnExchangeListQuery {
   limit?: number;
 }
 
+export interface CreateAdminReturnRequest {
+  orderId: string;
+  lines: Array<{
+    salesOrderLineId: string;
+    shipmentLineId: string;
+    dispatchAttemptId: string;
+    quantity: number;
+  }>;
+  reasonCode:
+    | 'defective'
+    | 'not_as_described'
+    | 'change_of_mind'
+    | 'wrong_item'
+    | 'damaged_in_shipping'
+    | 'other';
+  reasonDetail?: string;
+}
+
+export interface CreatedReturnRequestResponse {
+  id: string;
+  salesOrderId: string;
+  status: string;
+  reasonCode: string;
+  reasonDetail?: string;
+  items: Array<{
+    salesOrderLineId: string;
+    shipmentLineId: string | null;
+    dispatchAttemptId: string | null;
+    quantity: number;
+  }>;
+  createdAt: string;
+}
+
 function buildQs(params: ReturnExchangeListQuery): string {
   const sp = new URLSearchParams();
   const entries = params as Record<string, string | number | undefined>;
@@ -88,95 +143,186 @@ function buildQs(params: ReturnExchangeListQuery): string {
 }
 
 export const returnExchangeApi = {
+  createReturnRequest: async ({
+    orderId,
+    ...body
+  }: CreateAdminReturnRequest): Promise<CreatedReturnRequestResponse> => {
+    const res = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/sales-orders/${encodeURIComponent(orderId)}/return-requests`,
+      body
+    );
+    return res.data;
+  },
+
+  getReturnEligibility: async (
+    orderId: string
+  ): Promise<ReturnEligibilityResponse> => {
+    const res = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/sales-orders/${encodeURIComponent(orderId)}/return-eligibility`
+    );
+    return res.data;
+  },
+
+  getReturnEligibilityByChannelOrder: async (
+    channelOrderId: string
+  ): Promise<ReturnEligibilityResponse> => {
+    const res = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/sales-orders/by-channel-order/${encodeURIComponent(channelOrderId)}/return-eligibility`
+    );
+    return res.data;
+  },
+
   // ── Return Requests ──────────────────────────────────────────────────────
-  listReturnRequests: async (query: ReturnExchangeListQuery): Promise<ReturnRequestListResponse> => {
-    const res = await client.get(`${ALMONDYOUNG_API_BASE_URL}/admin/return-requests${buildQs(query)}`);
+  listReturnRequests: async (
+    query: ReturnExchangeListQuery
+  ): Promise<ReturnRequestListResponse> => {
+    const res = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/return-requests${buildQs(query)}`
+    );
     return res.data;
   },
 
   getReturnRequest: async (id: string): Promise<ReturnRequestWithItems> => {
-    const res = await client.get(`${ALMONDYOUNG_API_BASE_URL}/admin/return-requests/${id}`);
+    const res = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/return-requests/${id}`
+    );
     return res.data;
   },
 
-  approveReturn: async (id: string, adminNote?: string): Promise<ReturnRequest> => {
-    const res = await client.post(`${ALMONDYOUNG_API_BASE_URL}/admin/return-requests/${id}/approve`, { adminNote });
+  approveReturn: async (
+    id: string,
+    adminNote?: string
+  ): Promise<ReturnRequest> => {
+    const res = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/return-requests/${id}/approve`,
+      { adminNote }
+    );
     return res.data;
   },
 
-  rejectReturn: async (id: string, adminNote?: string): Promise<ReturnRequest> => {
-    const res = await client.post(`${ALMONDYOUNG_API_BASE_URL}/admin/return-requests/${id}/reject`, { adminNote });
+  rejectReturn: async (
+    id: string,
+    adminNote?: string
+  ): Promise<ReturnRequest> => {
+    const res = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/return-requests/${id}/reject`,
+      { adminNote }
+    );
     return res.data;
   },
 
   markReturnCollectionPending: async (id: string): Promise<ReturnRequest> => {
-    const res = await client.post(`${ALMONDYOUNG_API_BASE_URL}/admin/return-requests/${id}/collection-pending`);
+    const res = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/return-requests/${id}/collection-pending`
+    );
     return res.data;
   },
 
   markReturnCollected: async (id: string): Promise<ReturnRequest> => {
-    const res = await client.post(`${ALMONDYOUNG_API_BASE_URL}/admin/return-requests/${id}/collected`);
+    const res = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/return-requests/${id}/collected`
+    );
     return res.data;
   },
 
   markReturnInspected: async (id: string): Promise<ReturnRequest> => {
-    const res = await client.post(`${ALMONDYOUNG_API_BASE_URL}/admin/return-requests/${id}/inspected`);
+    const res = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/return-requests/${id}/inspected`
+    );
     return res.data;
   },
 
   completeReturn: async (id: string): Promise<ReturnRequest> => {
-    const res = await client.post(`${ALMONDYOUNG_API_BASE_URL}/admin/return-requests/${id}/complete`);
+    const res = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/return-requests/${id}/complete`
+    );
     return res.data;
   },
 
   retryReturnRefund: async (id: string): Promise<ReturnRequest> => {
-    const res = await client.post(`${ALMONDYOUNG_API_BASE_URL}/admin/return-requests/${id}/retry-refund`);
+    const res = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/return-requests/${id}/retry-refund`
+    );
     return res.data;
   },
 
-  manualCompleteReturn: async (id: string, adminNote?: string): Promise<ReturnRequest> => {
-    const res = await client.post(`${ALMONDYOUNG_API_BASE_URL}/admin/return-requests/${id}/manual-complete`, { adminNote });
+  manualCompleteReturn: async (
+    id: string,
+    adminNote?: string
+  ): Promise<ReturnRequest> => {
+    const res = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/return-requests/${id}/manual-complete`,
+      { adminNote }
+    );
     return res.data;
   },
 
   // ── Exchange Requests ────────────────────────────────────────────────────
-  listExchangeRequests: async (query: ReturnExchangeListQuery): Promise<ExchangeRequestListResponse> => {
-    const res = await client.get(`${ALMONDYOUNG_API_BASE_URL}/admin/exchange-requests${buildQs(query)}`);
+  listExchangeRequests: async (
+    query: ReturnExchangeListQuery
+  ): Promise<ExchangeRequestListResponse> => {
+    const res = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/exchange-requests${buildQs(query)}`
+    );
     return res.data;
   },
 
   getExchangeRequest: async (id: string): Promise<ExchangeRequestWithItems> => {
-    const res = await client.get(`${ALMONDYOUNG_API_BASE_URL}/admin/exchange-requests/${id}`);
+    const res = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/exchange-requests/${id}`
+    );
     return res.data;
   },
 
-  approveExchange: async (id: string, adminNote?: string): Promise<ExchangeRequest> => {
-    const res = await client.post(`${ALMONDYOUNG_API_BASE_URL}/admin/exchange-requests/${id}/approve`, { adminNote });
+  approveExchange: async (
+    id: string,
+    adminNote?: string
+  ): Promise<ExchangeRequest> => {
+    const res = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/exchange-requests/${id}/approve`,
+      { adminNote }
+    );
     return res.data;
   },
 
-  rejectExchange: async (id: string, adminNote?: string): Promise<ExchangeRequest> => {
-    const res = await client.post(`${ALMONDYOUNG_API_BASE_URL}/admin/exchange-requests/${id}/reject`, { adminNote });
+  rejectExchange: async (
+    id: string,
+    adminNote?: string
+  ): Promise<ExchangeRequest> => {
+    const res = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/exchange-requests/${id}/reject`,
+      { adminNote }
+    );
     return res.data;
   },
 
-  markExchangeCollectionPending: async (id: string): Promise<ExchangeRequest> => {
-    const res = await client.post(`${ALMONDYOUNG_API_BASE_URL}/admin/exchange-requests/${id}/collection-pending`);
+  markExchangeCollectionPending: async (
+    id: string
+  ): Promise<ExchangeRequest> => {
+    const res = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/exchange-requests/${id}/collection-pending`
+    );
     return res.data;
   },
 
   markExchangeCollected: async (id: string): Promise<ExchangeRequest> => {
-    const res = await client.post(`${ALMONDYOUNG_API_BASE_URL}/admin/exchange-requests/${id}/collected`);
+    const res = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/exchange-requests/${id}/collected`
+    );
     return res.data;
   },
 
   markExchangeInspected: async (id: string): Promise<ExchangeRequest> => {
-    const res = await client.post(`${ALMONDYOUNG_API_BASE_URL}/admin/exchange-requests/${id}/inspected`);
+    const res = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/exchange-requests/${id}/inspected`
+    );
     return res.data;
   },
 
   completeExchange: async (id: string): Promise<ExchangeRequest> => {
-    const res = await client.post(`${ALMONDYOUNG_API_BASE_URL}/admin/exchange-requests/${id}/complete`);
+    const res = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/admin/exchange-requests/${id}/complete`
+    );
     return res.data;
   },
 };
