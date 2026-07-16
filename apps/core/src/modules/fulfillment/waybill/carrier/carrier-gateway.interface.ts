@@ -6,14 +6,19 @@ export type CarrierCode = (typeof carrierEnum.enumValues)[number];
 export interface WaybillRequest {
   custOrdNo: string; // ≤30B, 우리 상관키(주문번호)
   recipient: {
-    name: string; zip: string; baseAddress: string; detailAddress: string;
-    tel?: string; mobile?: string; message?: string;
+    name: string;
+    zip: string;
+    baseAddress: string;
+    detailAddress: string;
+    tel?: string;
+    mobile?: string;
+    message?: string;
   };
   sender: { name: string; zip: string; baseAddress: string; detailAddress: string; tel?: string };
   items: Array<{ name: string; code?: string; quantity: number }>;
   commodityName: string; // comodityNm 요약(대표 상품명)
-  boxType: string;       // boxTypCd
-  payType: string;       // payTypCd
+  boxType: string; // boxTypCd
+  payType: string; // payTypCd
 }
 
 export interface AllocateResult {
