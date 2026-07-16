@@ -144,7 +144,11 @@ export async function findUnavailableLineItems(
       query: {
         id: productIds,
         region_id: region.id,
-        fields: "id",
+        // 카트 라인아이템의 variant 에는 Medusa 가 inventory_quantity 를 계산해 주지 않아
+        // 항상 품절로 잡힌다. 재고가 계산되는 /store/products 응답에서 variant 재고를 받아와
+        // 품절을 판정한다. (비회원 멤버십 전용 상품은 이 경로에서 재고 0 으로 마스킹돼 자동 품절)
+        fields:
+          "id,variants.id,+variants.inventory_quantity,+variants.manage_inventory,+variants.allow_backorder",
         limit: productIds.length,
       },
       headers,
@@ -153,12 +157,27 @@ export async function findUnavailableLineItems(
     .catch(() => ({ products: [] as HttpTypes.StoreProduct[] }))
 
   const publishedProductIds = new Set(products.map((product) => product.id))
+  // variant_id → 재고가 계산된 variant. 카트 라인아이템 variant 는 inventory_quantity 가 비어있으므로 사용하지 않는다.
+  const variantById = new Map<string, HttpTypes.StoreProductVariant>()
+  for (const product of products) {
+    for (const variant of product.variants ?? []) {
+      if (variant.id) {
+        variantById.set(variant.id, variant)
+      }
+    }
+  }
+
   // 판매중단(미게시) 이거나, 재고 기준 품절(수동 품절 포함)이면 구매 불가로 본다.
-  const unavailableItems = items.filter(
-    (item) =>
-      (item.product_id && !publishedProductIds.has(item.product_id)) ||
-      isVariantSoldOut(item.variant)
-  )
+  const unavailableItems = items.filter((item) => {
+    if (item.product_id && !publishedProductIds.has(item.product_id)) {
+      return true
+    }
+    // 재고가 계산된 variant 로 판정. 조회 실패 시에만 카트 라인아이템 variant 로 폴백.
+    const variant =
+      (item.variant_id ? variantById.get(item.variant_id) : undefined) ??
+      item.variant
+    return isVariantSoldOut(variant)
+  })
 
   const variantIds = Array.from(
     new Set(
