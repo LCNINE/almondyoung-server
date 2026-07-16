@@ -10,25 +10,25 @@ export class HanjinApiClient {
     private readonly signer: HanjinHmacSigner,
   ) {}
 
-  async post(host: HanjinHost, path: string, body: unknown): Promise<any> {
-    return this.request('POST', host, path, undefined, body);
+  async post<T = unknown>(host: HanjinHost, path: string, body: unknown): Promise<T> {
+    return this.request<T>('POST', host, path, undefined, body);
   }
 
-  async get(host: HanjinHost, path: string, query: Record<string, string> = {}): Promise<any> {
-    return this.request('GET', host, path, query, undefined);
+  async get<T = unknown>(host: HanjinHost, path: string, query: Record<string, string> = {}): Promise<T> {
+    return this.request<T>('GET', host, path, query, undefined);
   }
 
   private baseUrl(host: HanjinHost): string {
     return host === 'print' ? this.config.printBaseUrl : this.config.orderBaseUrl;
   }
 
-  private async request(
+  private async request<T>(
     method: 'GET' | 'POST',
     host: HanjinHost,
     path: string,
     query: Record<string, string> | undefined,
     body: unknown,
-  ): Promise<any> {
+  ): Promise<T> {
     const qs = query && Object.keys(query).length ? '?' + new URLSearchParams(query).toString() : '';
     const url = `${this.baseUrl(host)}${path}${qs}`;
     const headers = this.signer.sign(method, url); // 서명은 쿼리 포함 URL로
@@ -67,6 +67,7 @@ export class HanjinApiClient {
     }
 
     try {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return -- fetch's json() is untyped `any`; assignable to `T` with no cast
       return await response.json();
     } catch (error) {
       throw new CarrierError('Hanjin returned an invalid JSON response', 'unknown_outcome', {

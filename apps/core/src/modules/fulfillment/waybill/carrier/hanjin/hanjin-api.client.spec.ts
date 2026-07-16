@@ -39,7 +39,15 @@ describe('HanjinApiClient', () => {
     expect(headers.Authorization).toContain('client_id=HANJIN timestamp=20231009152839 signature=');
   });
 
-  it('get: print 호스트 + 쿼리 직렬화(서명은 쿼리 포함 URL로)', async () => {
+  it('get: print 호스트 라우팅 + 쿼리 직렬화(서명은 쿼리 포함 URL로)', async () => {
+    const spy = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ resultCode: 'OK' }), { status: 200 }));
+    await client().get('print', '/v1/wbl/HANJIN/x', { a: '1', b: '2' });
+    expect(spy.mock.calls[0][0]).toBe('https://ebbapd.hjt.co.kr/v1/wbl/HANJIN/x?a=1&b=2');
+  });
+
+  it('get: order 호스트 라우팅', async () => {
     const spy = jest
       .spyOn(global, 'fetch')
       .mockResolvedValue(new Response(JSON.stringify({ resultCode: 'OK' }), { status: 200 }));
