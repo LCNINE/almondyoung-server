@@ -66,8 +66,16 @@ describe('HanjinCarrierGateway.allocate', () => {
     );
   });
 
-  it('print-wbl ERROR-xx → CarrierError definitive_rejection', async () => {
+  it('print-wbl ERROR-xx → CarrierError definitive_rejection (구체 코드 보존)', async () => {
     const post = jest.fn().mockResolvedValue({ result_code: 'ERROR-04', result_message: '유효하지 않은 주소' });
+    await expect(gateway({ post }).allocate(req)).rejects.toMatchObject({
+      outcome: 'definitive_rejection',
+      details: { code: 'ERROR-04' },
+    });
+  });
+
+  it('print-wbl OK 인데 wbl_num 누락 → definitive_rejection code=no_wbl_num', async () => {
+    const post = jest.fn().mockResolvedValue({ result_code: 'OK' });
     await expect(gateway({ post }).allocate(req)).rejects.toMatchObject({
       outcome: 'definitive_rejection',
       details: { code: 'no_wbl_num' },

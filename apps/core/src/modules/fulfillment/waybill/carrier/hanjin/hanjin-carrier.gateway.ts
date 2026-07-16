@@ -109,7 +109,8 @@ export class HanjinCarrierGateway extends CarrierGateway {
       throw new CarrierError(
         `Hanjin print-wbl rejected: ${res?.result_code} - ${res?.result_message ?? ''}`,
         'definitive_rejection',
-        { carrier: 'hanjin', code: !res?.wbl_num ? 'no_wbl_num' : res.result_code },
+        // 구체 오류코드(ERROR-xx) 보존; OK 인데 wbl_num 만 없는 경우에만 no_wbl_num.
+        { carrier: 'hanjin', code: res?.result_code && res.result_code !== 'OK' ? res.result_code : 'no_wbl_num' },
       );
     }
     const labelData: Record<string, unknown> = {};
