@@ -130,6 +130,12 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
         // metadata: 멤버십가 공개 제한과 멤버십 회원 전용 노출 판정에 필요
         'metadata',
         'variants.*',
+        // inventory_quantity 는 파생 필드라 variants.* 에 안 딸려온다 — 명시하지 않으면
+        // 스토어프론트 품절 판정이 undefined→0 으로 떨어져 재고 있는 상품도 품절로 뜬다.
+        // (검색 경로 /store/products 와 동일하게 맞춘다)
+        'variants.inventory_quantity',
+        'variants.manage_inventory',
+        'variants.allow_backorder',
         'variants.calculated_price.*',
         'images.*',
       ],
