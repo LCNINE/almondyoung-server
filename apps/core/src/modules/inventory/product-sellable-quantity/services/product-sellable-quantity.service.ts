@@ -131,7 +131,10 @@ export class ProductSellableQuantityService {
           ? await trx
               .select({
                 skuId: stockSummary.skuId,
-                availableQuantity: sql<number>`GREATEST(COALESCE(SUM(${stockSummary.availableQty}), 0), 0)::int`,
+                // 창고별로 먼저 0 으로 자른 뒤 합산한다. 합산 후 자르면(GREATEST(SUM(..)))
+                // 한 창고의 음수 available(과다 예약/이동중)이 다른 창고의 실재고를 상쇄해
+                // 팔 수 있는 재고가 0 으로 사라진다.
+                availableQuantity: sql<number>`COALESCE(SUM(GREATEST(${stockSummary.availableQty}, 0)), 0)::int`,
               })
               .from(stockSummary)
               .where(inArray(stockSummary.skuId, skuIds))
