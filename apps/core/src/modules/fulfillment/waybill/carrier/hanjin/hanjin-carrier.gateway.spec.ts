@@ -126,3 +126,41 @@ describe('HanjinCarrierGateway.register', () => {
     });
   });
 });
+
+describe('HanjinCarrierGateway.track', () => {
+  it('wrkList → CarrierScan[] (statusCode 매핑)', async () => {
+    const post = jest.fn().mockResolvedValue({
+      resultCode: 'OK',
+      wblNo: '777',
+      wrkList: [
+        {
+          statusCode: '11',
+          statusName: '집하완료',
+          statusDate: '2023-07-29 19:10:00',
+          agencyName: '구로(집)',
+          description: 'x',
+        },
+        {
+          statusCode: '66',
+          statusName: '배송완료',
+          statusDate: '2023-07-30 15:20:00',
+          reasonCode: '01',
+          reasonMessage: '본인',
+        },
+      ],
+    });
+    const scans = await new HanjinCarrierGateway(config, { post } as any).track('777');
+    expect(scans).toHaveLength(2);
+    expect(scans[0]).toMatchObject({ statusCode: '11', status: 'in_transit' });
+    expect(scans[1]).toMatchObject({ statusCode: '66', status: 'delivered', reasonMessage: '본인' });
+    expect(post).toHaveBeenCalledWith('order', '/parcel-delivery/v1/tracking/tracking-wbl', {
+      custEdiCd: 'HANJIN',
+      wblNo: '777',
+    });
+  });
+
+  it('ERROR-01(스캔 없음) → 빈 배열', async () => {
+    const post = jest.fn().mockResolvedValue({ resultCode: 'ERROR-01', resultMessage: '존재하지 않는 운송장번호' });
+    expect(await new HanjinCarrierGateway(config, { post } as any).track('777')).toEqual([]);
+  });
+});

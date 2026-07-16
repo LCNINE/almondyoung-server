@@ -4,6 +4,8 @@ import {
   CarrierCode,
   CarrierError,
   CarrierGateway,
+  CarrierScan,
+  CarrierScanStatus,
   RegisterOutcome,
   WaybillRequest,
 } from '../carrier-gateway.interface';
@@ -40,6 +42,36 @@ interface PrintWblResponse {
 interface InsertOrderResponse {
   resultCode?: string;
   resultMessage?: string;
+}
+
+const STATUS_MAP: Record<string, CarrierScanStatus> = {
+  '01': 'pending',
+  '05': 'pending',
+  '07': 'in_transit',
+  '08': 'in_transit',
+  '11': 'in_transit',
+  '14': 'in_transit',
+  '31': 'in_transit',
+  '32': 'in_transit',
+  '63': 'in_transit',
+  '65': 'delivered',
+  '66': 'delivered',
+  '92': 'failed',
+  '03': 'canceled',
+};
+
+// tracking-wbl 응답(camelCase)
+interface TrackingWblItem {
+  statusCode?: string;
+  statusDate?: string;
+  agencyName?: string;
+  description?: string;
+  reasonCode?: string;
+  reasonMessage?: string;
+}
+interface TrackingWblResponse {
+  resultCode?: string;
+  wrkList?: TrackingWblItem[];
 }
 
 export class HanjinCarrierGateway extends CarrierGateway {
@@ -118,6 +150,24 @@ export class HanjinCarrierGateway extends CarrierGateway {
     if (res?.resultCode === 'OK') return { kind: 'registered' };
     if (res?.resultCode === 'ERROR-09') return { kind: 'already_registered' };
     return { kind: 'rejected', reason: `${res?.resultCode ?? 'UNKNOWN'}: ${res?.resultMessage ?? ''}`.trim() };
+  }
+
+  override async track(waybillNo: string): Promise<CarrierScan[]> {
+    const res = await this.client.post<TrackingWblResponse>('order', '/parcel-delivery/v1/tracking/tracking-wbl', {
+      custEdiCd: this.config.clientId,
+      wblNo: waybillNo,
+    });
+    if (res?.resultCode === 'ERROR-01') return [];
+    const list: TrackingWblItem[] = Array.isArray(res?.wrkList) ? res.wrkList : [];
+    return list.map((w) => ({
+      statusCode: String(w.statusCode ?? ''),
+      status: STATUS_MAP[String(w.statusCode)] ?? 'pending',
+      occurredAt: new Date(String(w.statusDate ?? '').replace(' ', 'T') + '+09:00'),
+      location: w.agencyName || undefined,
+      description: w.description || undefined,
+      reasonCode: w.reasonCode || undefined,
+      reasonMessage: w.reasonMessage || undefined,
+    }));
   }
 
   private kstDate(d: Date): string {
