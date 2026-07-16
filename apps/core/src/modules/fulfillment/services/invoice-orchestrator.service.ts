@@ -5,7 +5,9 @@ import { DbService, InjectTypedDb } from '@app/db';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import {
   InvoiceOperationResponseDto,
+  IssueManualInvoiceDto,
   IssueShipmentInvoiceDto,
+  ManualInvoiceResponseDto,
   ShipmentInvoiceActor,
   VoidShipmentInvoiceDto,
 } from '../dto/shipment-invoice.dto';
@@ -222,6 +224,88 @@ export class InvoiceOrchestrator {
       tx,
     );
     return this.getOperation(accepted.operationId, tx);
+  }
+
+  async issueManualInvoice(
+    shipmentId: string,
+    dto: IssueManualInvoiceDto,
+    idempotencyKey: string,
+    actor: ShipmentInvoiceActor,
+    tx?: DbTx,
+  ): Promise<ManualInvoiceResponseDto> {
+    this.workflowGate.assertV2MutationAllowed('shipment.invoice.issue');
+    const trackingNo = dto.trackingNo.trim();
+    if (!trackingNo) throw new BadRequestException('trackingNo is required');
+
+    return this.commands.execute<ManualInvoiceResponseDto>(
+      {
+        commandType: 'shipment.invoice.issue.manual',
+        idempotencyKey,
+        canonicalRequest: { actorId: actor.id, shipmentId, ...dto, trackingNo },
+      },
+      async (trx) => {
+        const manifest = await this.lockManifest(shipmentId, trx);
+        if (manifest.shipment.status !== 'planned') {
+          throw this.conflict('SHIPMENT_NOT_PLANNED', 'Only a Planned shipment can receive an invoice');
+        }
+        if (manifest.shipment.manifestVersion !== dto.expectedManifestVersion) {
+          throw this.conflict('SHIPMENT_STALE_MANIFEST_VERSION', 'Shipment manifest has changed');
+        }
+        await this.assertNoActiveInvoice(shipmentId, trx);
+        this.assertRecipientComplete(manifest.shipment.recipientSnapshot);
+        this.assertTrustedLineIdentity(manifest.lines);
+        // assertProfileComplete is intentionally NOT called: it requires carrierAccountRef
+        // (the goodsflow center code). A self invoice uses no carrier API, and requiring the
+        // now-dead goodsflow account would block the manual stopgap.
+
+        const recipientHash = canonicalShipmentRecipientHash(manifest.shipment.recipientSnapshot);
+        let invoice: typeof wmsTables.invoices.$inferSelect;
+        try {
+          [invoice] = await trx
+            .insert(wmsTables.invoices)
+            .values({
+              trackingNo,
+              carrier: dto.carrierCode,
+              issueMethod: 'self',
+              externalServiceId: null,
+              issuedForFulfillmentOrderId: manifest.fulfillmentOrderIds[0],
+              shipmentId,
+              manifestVersion: manifest.shipment.manifestVersion,
+              recipientHash,
+              status: 'issued',
+            })
+            .returning();
+        } catch (error) {
+          // drizzle-orm wraps the driver error in DrizzleQueryError and puts the real
+          // postgres.js PostgresError (code, constraint_name) on `.cause`; check both shapes.
+          const row = error as {
+            code?: string;
+            constraint_name?: string;
+            constraint?: string;
+            cause?: { code?: string; constraint_name?: string; constraint?: string };
+          };
+          const code = row.code ?? row.cause?.code;
+          const constraintName =
+            row.constraint_name ?? row.constraint ?? row.cause?.constraint_name ?? row.cause?.constraint;
+          if (code === '23505' && constraintName === 'invoices_tracking_no_unique') {
+            throw this.conflict('INVOICE_TRACKING_ALREADY_EXISTS', `Tracking number ${trackingNo} already exists`);
+          }
+          throw error;
+        }
+
+        const response = this.toManualInvoiceResponse(invoice);
+        await this.audit.logUserActionRequired(
+          'shipment.invoice.issue.manual',
+          'fulfillment',
+          `Manual invoice ${invoice.id} issued for shipment ${shipmentId}`,
+          { userId: actor.id },
+          { invoiceId: invoice.id, shipmentId, carrier: dto.carrierCode, trackingNo, reason: dto.reason ?? null },
+          trx,
+        );
+        return { response, resourceType: 'invoice', resourceId: invoice.id };
+      },
+      tx,
+    );
   }
 
   async void(
@@ -936,6 +1020,19 @@ export class InvoiceOrchestrator {
           price: line.unitPrice,
         })),
       },
+    };
+  }
+
+  private toManualInvoiceResponse(row: typeof wmsTables.invoices.$inferSelect): ManualInvoiceResponseDto {
+    return {
+      invoiceId: row.id,
+      shipmentId: row.shipmentId,
+      trackingNo: row.trackingNo,
+      carrier: row.carrier ?? '',
+      issueMethod: row.issueMethod,
+      status: row.status,
+      issuedAt: row.issuedAt.toISOString(),
+      voidedAt: row.voidedAt ? row.voidedAt.toISOString() : null,
     };
   }
 

@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength, Min } from 'class-validator';
+import { carrierValues, CarrierEnum } from '../../inventory/schema/enum-values';
 
 export class IssueShipmentInvoiceDto {
   @IsInt()
@@ -73,4 +74,52 @@ export class InvoiceOperationResponseDto {
 
   @ApiPropertyOptional({ nullable: true })
   lastError: string | null;
+}
+
+export class IssueManualInvoiceDto {
+  @IsInt()
+  @Min(1)
+  expectedManifestVersion: number;
+
+  @IsIn(carrierValues)
+  carrierCode: CarrierEnum;
+
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
+  trackingNo: string;
+
+  @IsString()
+  @IsOptional()
+  reason?: string;
+
+  @IsString()
+  @IsOptional()
+  note?: string;
+}
+
+export class ManualInvoiceResponseDto {
+  @ApiProperty()
+  invoiceId: string;
+
+  @ApiProperty()
+  shipmentId: string;
+
+  @ApiProperty()
+  trackingNo: string;
+
+  @ApiProperty()
+  carrier: string;
+
+  @ApiProperty({ enum: ['goodsflow', 'self', 'hanjin'] })
+  issueMethod: string;
+
+  @ApiProperty()
+  status: string;
+
+  @ApiProperty()
+  issuedAt: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  voidedAt: string | null;
 }

@@ -689,4 +689,86 @@ describeIfDb('InvoiceOrchestrator (DB integration)', () => {
     expect(rows.every((row) => row.status === 'in_progress')).toBe(true);
     await Promise.all(leased.map((operationId) => orchestrator.processLeasedOperation(operationId)));
   });
+
+  it('issues a self invoice synchronously and makes the shipment dispatchable', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await plannedFixture(tx);
+      const { orchestrator } = services();
+      const response = await orchestrator.issueManualInvoice(
+        fixture.shipment.shipmentId,
+        {
+          expectedManifestVersion: fixture.shipment.manifestVersion,
+          carrierCode: 'HANJIN',
+          trackingNo: `H-${randomUUID()}`,
+        },
+        `manual-issue-${randomUUID()}`,
+        actor,
+        tx,
+      );
+
+      expect(response).toMatchObject({
+        shipmentId: fixture.shipment.shipmentId,
+        carrier: 'HANJIN',
+        issueMethod: 'self',
+        status: 'issued',
+      });
+      const [invoice] = await tx.select().from(wmsTables.invoices).where(eq(wmsTables.invoices.id, response.invoiceId));
+      expect(invoice).toMatchObject({ issueMethod: 'self', status: 'issued', externalServiceId: null });
+
+      const operations = await tx
+        .select({ id: wmsTables.invoiceOperations.id })
+        .from(wmsTables.invoiceOperations)
+        .where(eq(wmsTables.invoiceOperations.invoiceId, response.invoiceId));
+      expect(operations).toHaveLength(0);
+
+      await expect(orchestrator.assertDispatchableInvoice(fixture.shipment.shipmentId, tx)).resolves.toMatchObject({
+        id: response.invoiceId,
+      });
+    });
+  });
+
+  it('rejects a duplicate tracking number', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixtureA = await plannedFixture(tx);
+      const fixtureB = await plannedFixture(tx);
+      const { orchestrator } = services();
+      const trackingNo = `DUP-${randomUUID()}`;
+      await orchestrator.issueManualInvoice(
+        fixtureA.shipment.shipmentId,
+        { expectedManifestVersion: fixtureA.shipment.manifestVersion, carrierCode: 'CJ', trackingNo },
+        `manual-issue-${randomUUID()}`,
+        actor,
+        tx,
+      );
+      await expect(
+        orchestrator.issueManualInvoice(
+          fixtureB.shipment.shipmentId,
+          { expectedManifestVersion: fixtureB.shipment.manifestVersion, carrierCode: 'CJ', trackingNo },
+          `manual-issue-${randomUUID()}`,
+          actor,
+          tx,
+        ),
+      ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'INVOICE_TRACKING_ALREADY_EXISTS' }) });
+    });
+  });
+
+  it('rejects a manual issue against a non-planned shipment', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await plannedFixture(tx);
+      const { orchestrator } = services();
+      await expect(
+        orchestrator.issueManualInvoice(
+          fixture.shipment.shipmentId,
+          {
+            expectedManifestVersion: fixture.shipment.manifestVersion + 1,
+            carrierCode: 'CJ',
+            trackingNo: `S-${randomUUID()}`,
+          },
+          `manual-issue-${randomUUID()}`,
+          actor,
+          tx,
+        ),
+      ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'SHIPMENT_STALE_MANIFEST_VERSION' }) });
+    });
+  });
 });
