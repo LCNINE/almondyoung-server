@@ -9,18 +9,105 @@
 >
 > 은퇴는 세 단계로 간다 (플랜 "outbox 4,767 행" 절의 정정된 순서):
 >
-> 1. **PR A 배포** — V1 코드 제거 + outbox topic/idempotencyKey 컴파일 강제.
->    배포 전 `FULFILLMENT_V2_CUTOVER_AT` 를 확정해 매니페스트에 넣는다(불변 — 이 시각 이전 주문은
->    FO 가 생기지 않고 자동 backfill 도 없다).
-> 2. **운영자 정리** — 새 topicless write 가 불가능해진 상태에서
->    `DELETE FROM outbox_events WHERE status='published'` + FO cleanup(아래 allowlist 절차).
->    이 삭제는 마이그레이션에 넣지 않는다(CLAUDE.md 의 광범위 delete 금지).
-> 3. **PR B `migrate`** — `topic`/`idempotency_key` NOT NULL 강화 + V1 컬럼/테이블/enum 드롭.
->    contract 이므로 반드시 deploy(1) 가 끝난 뒤에 migrate 한다 (ADR-0005 §5).
+> 1. ✅ **PR A 배포** — V1 코드 제거 + outbox topic/idempotencyKey 컴파일 강제.
+>    `FULFILLMENT_V2_CUTOVER_AT = 2026-07-16T00:00:00.000Z` 확정. **PR A 가 매니페스트를 `v2` 로 바꿔서
+>    배포가 maintenance 를 거치지 않고 v2 로 직행했다** — 이게 2번의 절차 선택을 바꿨다.
+> 2. ✅ **운영자 정리** — 배포가 v2 라 maintenance 를 요구하는 **본문 툴킷(audit/cleanup/verify)을 쓸 수
+>    없어**, 아래 **"v2-live 경량 cleanup"** 절의 raw SQL 로 실행했다. `topic IS NULL` published 4,902 행
+>    + FO 139 행 삭제, 게이트 통과. 이 삭제는 마이그레이션에 넣지 않는다(CLAUDE.md 의 광범위 delete 금지).
+> 3. **PR B — 배포 후 `migrate`** — `topic`/`idempotency_key` NOT NULL 강화 + V1 컬럼/테이블/enum 드롭.
+>    contract 이므로 PR B **자신의 코드**(TS `pgEnum` 트리밍, `facade.ts:334`)를 먼저 배포하고 migrate 한다
+>    (ADR-0005 §5). ← **남은 단계.**
 >
 > 이 릴리스 시점 실측(2026-07-16): 출고 이력 0 (SHIP 이벤트·dispatch_attempts·invoices·shipments
 > 전부 0 행), 따라서 본문의 스냅샷/워터마크/관찰기간 의식 대부분은 보호 대상이 없다. cleanup 의
-> "SHIP 이벤트 발견 시 중단" 가드는 그 전제를 **검증하는** 장치이므로 유지한다.
+> "SHIP 이벤트 발견 시 중단" 가드는 그 전제를 **검증하는** 장치이므로 유지한다(v2-live 절차도 이 게이트를
+> 그대로 수동 실행한다).
+
+## v2-live 경량 cleanup (2026-07-16 세션 3 실제 실행)
+
+> 본문 아래의 maintenance 툴킷(Enter maintenance → Audit → Cleanup → Verify)의 **대체 경로**다. 배포가
+> `v2` 로 직행했을 때만 쓴다. 툴킷은 `FULFILLMENT_WORKFLOW_MODE=maintenance` 를 강제하므로
+> (`scripts/fulfillment-v2/audit.ts`, `toolkit.ts` 의 "Cleanup is allowed only while ...maintenance") v2
+> 상태에선 실행 자체를 거부한다.
+
+**언제 이 경로를 쓰나 / 언제 못 쓰나.** 배포가 v2 인데 **V2 활동이 아직 0** 일 때만 안전하다. survey 에서
+`shipments`/`shipment_lines`/`stock_reservations` 중 하나라도 > 0 이면 **새 V2 주문이 이미 생긴 것**이라
+롤백 경계를 넘었고 이 raw-delete 는 정상 V2 데이터를 지울 위험이 있다 — 그 경우는 이 절차를 쓰지 말고
+v2→maintenance 로 잠깐 내려 조용히 시킨 뒤 본문 툴킷을 쓰거나, "Rollback and incident boundary" 절의
+"V2 row exists → repair in V2" 규칙을 따른다.
+
+**왜 raw-delete 가 안전했나 (세 근거).**
+
+1. **전제 검증(순환논법 회피)**: SHIP 게이트가 0 — 툴킷의 abort 쿼리와 동일한 검사를 수동으로 돌려
+   "V1 출고가 실제로 없었다"를 *믿는 게 아니라 확인*했다.
+2. **V1/V2 구분의 해소**: `fulfillment_orders` 에는 V1/V2 마커 컬럼이 없다(플랜대로 row 별 workflowVersion
+   없음). 하지만 survey 에서 `shipments=shipment_lines=reservations=0` → V2 는 아직 아무것도 안 만들었으므로
+   **존재하는 FO 전량이 V1**. 이 사실이 "전량 삭제"를 무모함이 아니라 정당한 선택으로 만든다.
+3. **DB 차원 트립와이어**: `shipment_lines.fulfillment_order_item_id` 가 `onDelete: 'restrict'` 다
+   (`inventory.schema.ts`). FOI 는 FO 에서 cascade 인데, 그 FOI 가 shipment_line 에 물리면 restrict 가
+   `DELETE FROM fulfillment_orders` 를 통째로 abort 시킨다. Task 9 가 FO+lines 를 한 트랜잭션에 만드므로
+   커밋된 V2 FO 는 항상 line 을 갖고 → 항상 보호된다. 즉 실수로 V2 주문을 지우는 것이 물리적으로 막힌다.
+
+### 절차
+
+`sst tunnel --stage live` 로 붙어 운영자가 직접 실행한다(로컬 아닌 RDS 엔드포인트, 자격증명은 Secrets
+Manager `lcnine-services-live-DbProxySecret-*`).
+
+**0. SHIP 게이트 — 삭제 전 반드시 둘 다 0.**
+
+```sql
+SELECT
+  (SELECT count(*) FROM stock_events   WHERE transition_type::text = 'SHIP')                AS ship_events,
+  (SELECT count(*) FROM stock_journals WHERE upper(coalesce(source_type,'')) = 'SHIPMENT')  AS shipment_journals;
+-- 0 이 아니면 STOP: V1 출고가 실제로 일어났다는 뜻 → 삭제는 실이력 파괴. 회계/업무 리뷰로.
+```
+
+**1. Survey (읽기 전용) — V2 활동이 0 인지, 삭제 대상 규모 확인.**
+
+```sql
+SELECT (SELECT count(*) FROM shipments)          AS shipments,
+       (SELECT count(*) FROM shipment_lines)     AS shipment_lines,
+       (SELECT count(*) FROM stock_reservations) AS reservations;   -- 셋 다 0 이어야 이 경로 사용 가능
+
+SELECT status, count(*) FROM fulfillment_orders GROUP BY status;    -- 삭제 대상 FO
+SELECT status, count(*) FROM outbox_events WHERE topic IS NULL GROUP BY status;  -- topicless(전부 published 여야)
+
+SELECT status, (created_at >= TIMESTAMPTZ '2026-07-16T00:00:00Z') AS after_cutover, count(*)
+FROM fulfillment_order_creation_backlogs GROUP BY 1,2;  -- recent-pending 있으면 새 주문일 수 있음 → 멈춤
+```
+
+**2. 삭제 (한 트랜잭션, rowcount 확인 후 COMMIT).**
+
+```sql
+BEGIN;
+DELETE FROM stock_reservations WHERE lower(target_type) = 'fulfillment_order';  -- V2는 shipment_line 타깃 → 전부 V1
+DELETE FROM fulfillment_order_creation_backlogs;                                 -- replay 방지 (recent-pending 없음 확인 후)
+DELETE FROM fulfillment_orders;                                                  -- FOI cascade 동반; V2 있으면 restrict 로 abort
+DELETE FROM outbox_events WHERE status = 'published' AND topic IS NULL;          -- v2 이벤트(topic 有)는 불변
+-- rowcount 가 survey 예상과 일치하면 COMMIT, 아니면 ROLLBACK.
+COMMIT;
+```
+
+`AND topic IS NULL` 은 라이브 v2 안전용이다(v2 published 를 건드리지 않고 topicless 만 제거 → NOT NULL 해제엔
+충분). 큐 위생으로 v2 published 까지 지우려면 그 절을 빼도 되지만 필수는 아니다.
+
+**3. PR B 게이트 검증 — 둘 다 통과해야 PR B 가능.**
+
+```sql
+SELECT count(*) FROM outbox_events WHERE topic IS NULL;   -- 0 → topic NOT NULL 가능
+SELECT DISTINCT status FROM fulfillment_orders;           -- 사장 11값 하나도 없어야 enum 드롭 가능
+```
+
+### 실행 결과 (2026-07-16 세션 3)
+
+- SHIP 게이트: `ship_events=0, shipment_journals=0` → 전제 검증 통과.
+- V2 활동: `shipments=0, shipment_lines=0, reservations=0` → 존재 FO 전량 V1 확정.
+- FO: **139 행 삭제** (137 `unfulfillable` + 2 `canceled`). 후자 2 는 `created_at >= cutover`(오늘) 이지만
+  shipments=0 이 V2 아님을 증명 — 배포 전 legacy 가 오늘 만든 V1 이다.
+- outbox: **4,902 행 삭제** (topicless, 전부 published — topicless pending/failed 0).
+- 게이트: `topic IS NULL` → 0, `fulfillment_orders` 전량 삭제로 사장 status 0. **PR B 선행 조건 충족.**
+- (row 수는 집계 사실이라 기록 가능. DB 식별자/스냅샷 ID/자격증명은 절대 커밋하지 않는다 — "Evidence record" 절 참조.)
 
 This runbook removes V1 fulfillment work data while preserving sales orders, master data, and the stock journal/event/ledger.
 It is a maintenance-window procedure, not an online migration. Never use it to convert or drain individual V1 rows.

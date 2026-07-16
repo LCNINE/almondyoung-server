@@ -7,18 +7,22 @@
 > 이 절이 세션 간 인수인계 지점이다. 별도 핸드오프 문서를 만들지 않는다 — 이 플랜이 SoT 이고,
 > 사본을 두면 어긋난다. 작업이 끝나면 이 절을 지운다.
 
-**PR A (V1 코드 제거 + outbox topic 강제) 는 코드·검증 완료.** 이전 세션의 미커밋 12 파일을 이어받아
-완성했다. 남은 것은 배포와 그 이후 단계다:
+**PR A 완료 · 배포 · 운영자 정리까지 끝났다 (2026-07-16 세션 3). 남은 것은 마지막 단계 PR B 하나다.**
 
-1. **배포 전 유일한 사람 결정: `FULFILLMENT_V2_CUTOVER_AT` 확정.** 매니페스트에
-   `2026-07-16T00:00:00.000Z` 가 잠정값으로 있다. 자연스러운 선택은 **v2 go-live(배포) 시각** —
-   cleanup 이 기존 FO 를 전부 지우므로 "cutover 이전 주문 = 수동 처리" 결정과 정합한다. 불변값이며
-   epoch 로 바꾸지 말 것: 이 타임스탬프는 DB 상태와 무관하게 옛 이벤트 재전달을 영구 불활성화하는
-   유일한 stateless 가드다(`shouldEnqueueFo` 의 도메인 시각 비교). 이번 세션에 사용자와 재확인한 결정.
-2. **배포** (`sst deploy`) — expand 마이그레이션은 이미 적용돼 있으므로 이 배포부터 topicless outbox
-   write 가 물리적으로 불가능해진다.
-3. **운영자 정리** — `DELETE FROM outbox_events WHERE status='published'` + FO cleanup (런북
-   allowlist 절차). 런북 머리에 "현행 절차" 배너를 넣어 legacy 시절 의식과 구분해 뒀다.
+1. ✅ **`FULFILLMENT_V2_CUTOVER_AT` = `2026-07-16T00:00:00.000Z` 확정.** 사용자 결정: "이전 FO 를 보존할
+   이유가 없다"(실제 쓰던 데이터가 아님) — 어느 값이든 무방하므로 매니페스트 잠정값을 그대로 굳혔다.
+   불변값이며 epoch 로 바꾸지 말 것: 이 타임스탬프는 DB 상태와 무관하게 옛 이벤트 재전달을 영구
+   불활성화하는 유일한 stateless 가드다(`shouldEnqueueFo` 의 도메인 시각 비교). 옛 주문 이벤트는
+   전부 이 시각 이전(05-31~07-15)이라 가드가 성립한다.
+2. ✅ **배포** (`sst deploy`) 완료 — PR A 가 매니페스트를 `legacy` → **`v2`** 로 바꿨으므로 이 배포로
+   Core 가 바로 v2 모드가 됐다(maintenance 를 거치지 않음 — 3번의 절차 선택에 영향). 이 배포부터
+   topicless outbox write 가 컴파일·물리 양쪽으로 불가능.
+3. ✅ **운영자 정리** 완료 — 배포가 v2 로 직행해 maintenance 를 요구하는 cleanup 툴킷을 쓸 수 없어,
+   **v2-live 경량 raw SQL 절차**로 했다(런북 "v2-live 경량 cleanup" 절에 전문 기록). 실측·결과:
+   SHIP 이벤트 0(전제 검증), V2 활동 0(shipments/shipment_lines/reservations 전부 0 → 존재 FO 전량이
+   V1 임이 증명됨), **FO 139 행 삭제**(137 `unfulfillable` + 2 `canceled` — 후자는 배포 전 legacy 가
+   오늘 만든 V1), **topicless published outbox 4,902 행 삭제**, 게이트 통과(`topic IS NULL`=0, FO 전량
+   삭제로 사장 status 0). 이로써 PR B 의 `topic` NOT NULL 과 enum 수술 선행 조건이 모두 충족됐다.
 4. **PR B** — `topic`/`idempotency_key` NOT NULL + V1 컬럼/테이블/enum 드롭 → **배포 → `migrate`**.
    "제거 범위 실측" 절의 표(사장 enum **11** 값, `fulfillment_order_batches` 등)가 그대로 PR B 의 사양이다.
    Goodsflow 코드 제거 여부(enum 값 `goodsflow` 포함)도 PR B 시점에 결정.
@@ -1045,9 +1049,9 @@ V2 는 `shipment-reservation.service.ts:1123` 에서 `projected.status` 하나�
 
 **정정된 3 단계 순서:**
 
-1. **PR A** — V1 코드 제거 **+ 12 곳이 topic 을 넘기도록 수정 + topicless union 갈래 제거** → **배포**
-2. **운영자** — `DELETE FROM outbox_events WHERE status='published'` + FO cleanup (이 시점엔 새 topicless 가 안 생긴다)
-3. **PR B** — NOT NULL + 컬럼/테이블/enum 드롭 → **migrate**
+1. ✅ **PR A** — V1 코드 제거 **+ 13 곳이 topic 을 넘기도록 수정 + topicless union 갈래 제거** → **배포**(v2 로 직행)
+2. ✅ **운영자** — `DELETE FROM outbox_events WHERE status='published' AND topic IS NULL` (4,902 행) + FO cleanup (139 행). 배포가 v2 라 툴킷 대신 **v2-live 경량 raw SQL**(런북 절)로 실행. 게이트 통과.
+3. **PR B** — NOT NULL + 컬럼/테이블/enum 드롭 → **배포 → migrate** (contract 이므로 코드가 먼저)
 
 2 번을 마이그레이션에 넣을 수 없다 — CLAUDE.md 가 "자동 생성 SQL 의 `TRUNCATE CASCADE` 나 광범위 delete 를 허용하지 않는다" 고 못박는다. 운영자 단계로 분리한다.
 
