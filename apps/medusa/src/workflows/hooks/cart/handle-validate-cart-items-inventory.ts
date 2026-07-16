@@ -3,7 +3,12 @@ import { addToCartWorkflow, createCartWorkflow } from '@medusajs/medusa/core-flo
 import { AddToCartWorkflowInputDTO, CreateCartWorkflowInputDTO } from '@medusajs/framework/types';
 import { ContainerRegistrationKeys, MedusaError, Modules } from '@medusajs/framework/utils';
 import type { IProductModuleService, ICartModuleService, ICustomerModuleService } from '@medusajs/framework/types';
-import { isRecord, isVisibleToMembersOnlyProduct, type MembershipProduct } from '../../../utils/membership-filter';
+import {
+  isRecord,
+  isVisibleToMembersOnlyProduct,
+  requiresMembershipToPurchase,
+  type MembershipProduct,
+} from '../../../utils/membership-filter';
 
 type CartInput = CreateCartWorkflowInputDTO | AddToCartWorkflowInputDTO;
 
@@ -74,6 +79,27 @@ const validateMembersOnlyProductVisibility = async (input: CartInput, container:
 
   if (!isMember) {
     throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '멤버십 회원 전용 상품입니다.');
+  }
+};
+
+/**
+ * 멤버십 전용 구매 상품(purchaseConstraint.requiresMembership)을 비회원·일반회원이 담는 걸 막는다.
+ * 상품 응답 미들웨어는 품절로 보이게만 할 뿐 실제 재고는 그대로라, API 직접 호출이 새어나간다.
+ */
+const validateMembersOnlyPurchase = async (input: CartInput, container: any, variants: any[]) => {
+  const hasMembersOnlyPurchase = variants.some((variant) =>
+    requiresMembershipToPurchase((variant.product ?? {}) as MembershipProduct),
+  );
+
+  if (!hasMembersOnlyPurchase) {
+    return;
+  }
+
+  const customerId = await resolveCartCustomerId(input, container);
+  const isMember = await resolveCustomerIsMembershipMember(container, customerId);
+
+  if (!isMember) {
+    throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '멤버십 회원만 구매할 수 있는 상품입니다.');
   }
 };
 
@@ -208,6 +234,9 @@ const handleValidateCartItemsInventory = async ({ input }: { input: CartInput },
 
   // 3. 멤버십 회원 전용 노출 상품 직접 담기 방어
   await validateMembersOnlyProductVisibility(input, container, variants);
+
+  // 4. 멤버십 전용 구매 상품 직접 담기 방어
+  await validateMembersOnlyPurchase(input, container, variants);
 };
 
 // 장바구니 생성 시 재고 검증
