@@ -102,22 +102,6 @@ export async function seedMatching(
   return { matchingId: matching.id };
 }
 
-// issueInvoice(tx 거부) 우회 — issued 인보이스 직접 seed. openBoxByScan 의 입구.
-export async function seedInvoiceIssued(
-  tx: DbTx,
-  args: { fulfillmentOrderId: string },
-): Promise<{ trackingNo: string }> {
-  const trackingNo = `IT-TRK-${randomUUID().slice(0, 8)}`;
-  await tx.insert(wmsTables.invoices).values({
-    trackingNo,
-    carrier: 'CJ',
-    issueMethod: 'self',
-    issuedForFulfillmentOrderId: args.fulfillmentOrderId,
-    status: 'issued',
-  });
-  return { trackingNo };
-}
-
 export interface OutboundV2Checkpoint {
   fulfillmentOrderIds: string[];
   skuId: string;

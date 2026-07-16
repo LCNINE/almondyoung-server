@@ -288,6 +288,13 @@
       "when": 1784107017948,
       "tag": "20260715091657_huge_phantom_reporter",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1784196606946,
+      "tag": "20260716101006_drop-legacy-fo-outbound-contract",
+      "breakpoints": true
     }
   ]
 }

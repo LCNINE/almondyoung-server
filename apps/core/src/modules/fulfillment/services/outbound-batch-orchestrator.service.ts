@@ -106,8 +106,6 @@ export class OutboundBatchOrchestrator {
             name: dto.name?.trim() || `Batch ${suffix}`,
             scheduledPickingAt: dto.scheduledPickingAt,
             status: 'created',
-            totalItems: 0,
-            totalQty: 0,
           })
           .returning();
         await this.auditCommand(trx, actor, 'outbound_batch.create', batch.id, {

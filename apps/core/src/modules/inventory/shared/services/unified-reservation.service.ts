@@ -6,13 +6,14 @@ import { ProductSellableQuantityService } from '../../product-sellable-quantity/
 import { acquireStockAvailabilityLock } from '../locks/stock-availability-lock';
 
 export interface ReserveStockDto {
-  targetType: 'FULFILLMENT_ORDER' | 'SHIPMENT_LINE';
+  // Task 25 contract: V2 예약은 shipment-line 단위만 (FO-target 생성 경로는 은퇴). shipmentLineId 필수.
+  targetType: 'SHIPMENT_LINE';
   targetId: string;
   skuId: string;
   warehouseId: string;
   quantity: number;
-  fulfillmentOrderItemId?: string; // FO 예약시 필요
-  shipmentLineId?: string;
+  fulfillmentOrderItemId?: string; // legacy FO 예약 호환 컬럼(nullable) — V2 는 미설정
+  shipmentLineId: string;
   requestedAt?: Date;
   /** Internal: the domain owner already holds the transaction advisory lock. */
   stockLockHeld?: boolean;
@@ -69,9 +70,6 @@ export class UnifiedReservationService {
         throw new BadRequestException(
           'SHIPMENT_LINE reservation requires matching shipmentLineId/requestedAt and cannot use fulfillmentOrderItemId',
         );
-      }
-      if (dto.targetType === 'FULFILLMENT_ORDER' && dto.shipmentLineId !== undefined) {
-        throw new BadRequestException('Legacy FULFILLMENT_ORDER reservation cannot reference a shipment line');
       }
 
       // 0. (sku,warehouse) 직렬화 — available 확인↔INSERT 사이 TOCTOU 차단

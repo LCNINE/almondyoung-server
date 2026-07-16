@@ -59,15 +59,16 @@ export const warehouseTypeEnum = pgEnum('warehouse_type', ['domestic', 'overseas
 export const reservationStatusEnum = pgEnum('reservation_status', ['pending', 'confirmed', 'released', 'active']);
 export const taskStatusEnum = pgEnum('task_status', ['created', 'picking', 'packed', 'shipped', 'canceled']);
 export const unavailableReasonEnum = pgEnum('unavailable_reason', ['pb', 'foreign', 'low_margin']);
-// DEAD 값(producer 0) — 제거 예정: dev DB 복구 후(현황판 작업8b). 'in_transit'·'failed'. 라이브: open/shipped/delivered/canceled. (delivery-provider의 DeliveryStatus는 별개 타입)
+// V1 'open'(lazy open-box) 은 Task 25 contract 에서 제거됨 — V2 shipment 는 항상 'draft' 로 시작한다.
+// 'in_transit'/'delivered' 는 LIVE (Task 19 delivery projection = shipment-delivery-tracking.service).
+// 'failed' 는 현재 producer 0 이나 향후 배송 실패 상태로 보존. (delivery-provider의 DeliveryStatus는 별개 타입)
 export const shipmentStatusEnum = pgEnum('shipment_status', [
-  'open',
   'shipped',
   'in_transit',
   'delivered',
   'failed',
   'canceled',
-  // Outbound V2 states. Legacy values remain until the contract migration (Task 25).
+  // Outbound V2 states.
   'draft',
   'planned',
   'superseded',
@@ -171,30 +172,19 @@ export const eventTypeOrderEnum = pgEnum('event_type_order', [
 ]);
 
 export const taskPriorityEnum = pgEnum('task_priority', ['normal', 'high', 'urgent']);
-// DEAD 값(producer 0) — 제거 예정: dev DB 복구 후(현황판 작업8b). 'reserving'·'labeled'·'inspecting'·'inspected'·'pending'.
-// (라이브: created/ready/unfulfillable/allocated/picking/picked/invoiced/shipped/completed/canceled/forwarded. 'inspected' 는 invoice.service.ts 게이트 reader 잔존이나 도달 불가)
+// Task 25 contract: V1 사장값 11개(reserving/unfulfillable/labeled/pending/allocated/picking/picked/
+// inspecting/inspected/invoiced/forwarded) 제거. V2 progress calculator(fulfillment-progress.service)가
+// 내는 8개 + drop_ship ship() 가 쓰는 'shipped' 만 남는다. (직배 상태는 별도 direct_ship_status enum)
 export const fulfillmentStatusEnum = pgEnum('fulfillment_status', [
   'created',
   'partially_reserved',
-  'reserving',
   'ready',
   'processing',
-  'unfulfillable',
-  'labeled',
   'shipped',
   'partially_shipped',
+  'completed',
   'canceled',
   'recovery_required',
-  // 에러 로그에서 필요한 추가 상태들
-  'pending',
-  'allocated',
-  'picking',
-  'picked',
-  'inspecting',
-  'inspected',
-  'invoiced',
-  'completed',
-  'forwarded',
 ]);
 export const fulfillmentModeEnum = pgEnum('fulfillment_mode', ['in_house', '3pl', 'drop_ship']);
 export const fulfillmentOrderCreationBacklogStatusEnum = pgEnum('fulfillment_order_creation_backlog_status', [
@@ -212,7 +202,8 @@ export const outboxStatusEnum = pgEnum('outbox_status', ['pending', 'published',
 export const pickingMethodEnum = pgEnum('picking_method', ['individual', 'total_picking']);
 export const pickingStrategyEnum = pgEnum('picking_strategy', ['discrete', 'aggregate_then_sort', 'pick_to_tote']);
 export const batchStatusEnum = pgEnum('batch_status', ['created', 'picking', 'completed', 'canceled']);
-export const invoiceMethodEnum = pgEnum('invoice_method', ['goodsflow', 'direct', 'self', 'hanjin']);
+// Task 25 contract: V1 전용 'direct'(운영자 번호 직입력) 제거. goodsflow(외부요인 사용불가·유지)·self(수동)·hanjin(향후).
+export const invoiceMethodEnum = pgEnum('invoice_method', ['goodsflow', 'self', 'hanjin']);
 export const invoiceStatusEnum = pgEnum('invoice_status', [
   'issued',
   'used',
@@ -1380,8 +1371,7 @@ export const fulfillmentOrders = pgTable(
     status: fulfillmentStatusEnum('status').notNull().default('created'),
     directShipStatus: directShipStatusEnum('direct_ship_status'),
 
-    // 배치 및 출고 관련 필드들
-    batchId: uuid('batch_id').references(() => outboundBatches.id, { onDelete: 'set null' }),
+    // 출고 관련 필드들 (batchId 는 Task 25 contract 에서 제거 — FO↔batch 링크 은퇴, batch 단위는 shipment)
     fulfillmentMode: fulfillmentModeEnum('fulfillment_mode'),
     priority: taskPriorityEnum('priority').notNull().default('normal'),
 
@@ -1462,8 +1452,10 @@ export const stockReservations = pgTable(
     fulfillmentOrderItemId: uuid('fulfillment_order_item_id').references(() => fulfillmentOrderItems.id, {
       onDelete: 'cascade',
     }),
-    // TODO(outbound-v2-contract Task 25): make shipmentLineId/requestedAt required after legacy FO reservations are removed.
-    shipmentLineId: uuid('shipment_line_id').references(() => shipmentLines.id, { onDelete: 'restrict' }),
+    // Task 25 contract: legacy FO-target 예약 제거 후 shipment-line 예약만 남아 NOT NULL 강제.
+    shipmentLineId: uuid('shipment_line_id')
+      .references(() => shipmentLines.id, { onDelete: 'restrict' })
+      .notNull(),
 
     // 예약 기본 정보
     skuId: uuid('sku_id')
@@ -1506,7 +1498,7 @@ export const shipments = pgTable(
   'shipments',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    // 박스 = 송장 한 장. 송장 스캔(open)에서 lazy 생성 (RFC §Phase 2 #6).
+    // 박스 = 송장 한 장. V2 shipment 은 planning 단계에서 'draft' 로 생성 (V1 lazy open-box·'open' 상태 은퇴, Task 25).
     warehouseId: uuid('warehouse_id')
       .references(() => warehouses.id, { onDelete: 'restrict' })
       .notNull(),
@@ -1514,7 +1506,7 @@ export const shipments = pgTable(
     openedForFulfillmentOrderId: uuid('opened_for_fulfillment_order_id').references(() => fulfillmentOrders.id, {
       onDelete: 'set null',
     }),
-    status: shipmentStatusEnum('status').notNull().default('open'),
+    status: shipmentStatusEnum('status').notNull().default('draft'),
     // TODO(outbound-v2-contract Task 25): require profile/recipient for planned V2 shipments.
     shippingProfileId: uuid('shipping_profile_id').references(() => deliveryProfiles.id, { onDelete: 'restrict' }),
     recipientSnapshot: jsonb('recipient_snapshot'),
@@ -1603,8 +1595,10 @@ export const shipmentTracking = pgTable(
     shipmentId: uuid('shipment_id')
       .references(() => shipments.id, { onDelete: 'cascade' })
       .notNull(),
-    // TODO(outbound-v2-contract Task 25): require dispatchAttemptId/providerEventId for V2 tracking events.
-    dispatchAttemptId: uuid('dispatch_attempt_id').references(() => dispatchAttempts.id, { onDelete: 'restrict' }),
+    // Task 25 contract: V2 tracking 행은 항상 dispatch attempt 에 연결 (shipment-delivery-tracking.service:163).
+    dispatchAttemptId: uuid('dispatch_attempt_id')
+      .references(() => dispatchAttempts.id, { onDelete: 'restrict' })
+      .notNull(),
     providerEventId: varchar('provider_event_id', { length: 255 }),
     status: shipmentStatusEnum('status').notNull(),
     location: varchar('location', { length: 255 }),
@@ -1722,9 +1716,10 @@ export const outboxEvents = pgTable(
   'outbox_events',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    // TODO(outbound-v2-contract Task 25): make topic required and remove aggregate/event fallback routing.
-    topic: varchar('topic', { length: 255 }),
-    idempotencyKey: varchar('idempotency_key', { length: 255 }),
+    // Task 25 contract: topic/idempotencyKey 필수. PR A 가 topicless write 를 컴파일 차단하고 fallback
+    // 라우팅을 제거했으며, 운영자 cleanup 이 legacy null-topic 행을 지웠다.
+    topic: varchar('topic', { length: 255 }).notNull(),
+    idempotencyKey: varchar('idempotency_key', { length: 255 }).notNull(),
     eventType: varchar('event_type', { length: 128 }).notNull(),
     aggregateType: varchar('aggregate_type', { length: 64 }).notNull(),
     aggregateId: uuid('aggregate_id').notNull(),
@@ -1740,13 +1735,9 @@ export const outboxEvents = pgTable(
   (t) => ({
     idxStatusNext: index('idx_outbox_status_next').on(t.status, t.nextAttemptAt),
     idxTopicStatusNext: index('idx_outbox_topic_status_next').on(t.topic, t.status, t.nextAttemptAt),
-    uqTopicEventIdempotency: uniqueIndex('uq_outbox_topic_event_idempotency')
-      .on(t.topic, t.eventType, t.idempotencyKey)
-      .where(sql`${t.topic} IS NOT NULL AND ${t.idempotencyKey} IS NOT NULL`),
-    ckOutboxRoutingPair: check(
-      'ck_outbox_routing_pair',
-      sql`(${t.topic} IS NULL AND ${t.idempotencyKey} IS NULL) OR (${t.topic} IS NOT NULL AND ${t.idempotencyKey} IS NOT NULL)`,
-    ),
+    // 두 컬럼이 이제 NOT NULL 이라 partial WHERE 는 항상 참 → 일반 unique 로 단순화.
+    // ck_outbox_routing_pair(both-null-or-both-set)는 NOT NULL 로 대체돼 제거.
+    uqTopicEventIdempotency: uniqueIndex('uq_outbox_topic_event_idempotency').on(t.topic, t.eventType, t.idempotencyKey),
   }),
 );
 
@@ -2262,12 +2253,8 @@ export const outboundBatches = pgTable(
     status: batchStatusEnum('status').notNull().default('created'),
     pickingMethod: pickingMethodEnum('picking_method').notNull(),
     cartCapacity: integer('cart_capacity'), // 토탈피킹 시 바구니 수
-    assignedTo: varchar('assigned_to', { length: 255 }), // 작업자 ID
-
-    // 에러 로그에서 필요한 추가 컬럼들
     name: varchar('name', { length: 255 }),
-    totalItems: integer('total_items').notNull().default(0),
-    totalQty: integer('total_qty').notNull().default(0),
+    // Task 25 contract: assignedTo/totalItems/totalQty 제거 (writer 0 또는 상수 insert 뿐, reader 없음).
     scheduledPickingAt: timestamp('scheduled_picking_at', { withTimezone: true }),
     startedAt: timestamp('started_at', { withTimezone: true }),
     canceledAt: timestamp('canceled_at', { withTimezone: true }),
@@ -2281,24 +2268,8 @@ export const outboundBatches = pgTable(
   }),
 );
 
-export const fulfillmentOrderBatches = pgTable(
-  'fulfillment_order_batches',
-  {
-    fulfillmentOrderId: uuid('fulfillment_order_id')
-      .references(() => fulfillmentOrders.id, { onDelete: 'cascade' })
-      .notNull(),
-    batchId: uuid('batch_id')
-      .references(() => outboundBatches.id, { onDelete: 'cascade' })
-      .notNull(),
-    assignedAt: timestamp('assigned_at', { withTimezone: true }).notNull().defaultNow(),
-    removedAt: timestamp('removed_at', { withTimezone: true }),
-    removeReason: varchar('remove_reason', { length: 255 }),
-  },
-  (t) => ({
-    pk: primaryKey(t.fulfillmentOrderId, t.batchId),
-    idxBatch: index('idx_fulfillment_order_batches_batch').on(t.batchId),
-  }),
-);
+// Task 25 contract: fulfillment_order_batches(FO↔batch 링크 테이블) 제거 — non-spec 사용 0.
+// V2 batch 단위는 FO 가 아니라 shipment 다(outbound_batch_work_items). outbound_batches 는 존치.
 
 /*───────────────────────────
  * INVOICE MANAGEMENT
@@ -2321,8 +2292,11 @@ export const invoices = pgTable(
     issuedForFulfillmentOrderId: uuid('issued_for_fulfillment_order_id')
       .references(() => fulfillmentOrders.id, { onDelete: 'cascade' })
       .notNull(),
-    // 박스 open(송장 스캔) 시 세팅. 선발급 동안 null. void 된 송장도 보존(이력).
-    shipmentId: uuid('shipment_id').references(() => shipments.id, { onDelete: 'set null' }),
+    // Task 25 contract: V2 invoice 는 항상 shipment 소유 (invoice-orchestrator:181). void 된 송장도 shipment 보존(이력).
+    // NOT NULL 이라 onDelete 를 set null → restrict (송장이 달린 shipment 는 삭제 불가; cleanup 은 invoice 를 먼저 지운다).
+    shipmentId: uuid('shipment_id')
+      .references(() => shipments.id, { onDelete: 'restrict' })
+      .notNull(),
     // TODO(outbound-v2-contract Task 25): require shipment/manifest/recipient hash for new V2 invoices.
     manifestVersion: integer('manifest_version'),
     recipientHash: varchar('recipient_hash', { length: 64 }),
@@ -3045,7 +3019,6 @@ export const wmsTables = {
   fulfillmentOrderItems,
   inspectionIssues,
   outboundBatches,
-  fulfillmentOrderBatches,
   invoices,
 
   // Outbound V2 expand model
@@ -3458,14 +3431,9 @@ export const fulfillmentOrdersRelations = relations(fulfillmentOrders, ({ one, m
     fields: [fulfillmentOrders.ownerId],
     references: [holders.id],
   }),
-  batch: one(outboundBatches, {
-    fields: [fulfillmentOrders.batchId],
-    references: [outboundBatches.id],
-  }),
   items: many(fulfillmentOrderItems),
   creationBacklogs: many(fulfillmentOrderCreationBacklogs),
   shipments: many(shipments),
-  fulfillmentOrderBatches: many(fulfillmentOrderBatches),
   invoices: many(invoices),
 }));
 
@@ -3502,22 +3470,9 @@ export const outboundBatchesRelations = relations(outboundBatches, ({ one, many 
     fields: [outboundBatches.warehouseId],
     references: [warehouses.id],
   }),
-  fulfillmentOrders: many(fulfillmentOrders),
-  fulfillmentOrderBatches: many(fulfillmentOrderBatches),
   workItems: many(outboundBatchWorkItems),
   pickingPlans: many(pickingPlans),
   inventorySessions: many(batchInventorySessions),
-}));
-
-export const fulfillmentOrderBatchesRelations = relations(fulfillmentOrderBatches, ({ one }) => ({
-  fulfillmentOrder: one(fulfillmentOrders, {
-    fields: [fulfillmentOrderBatches.fulfillmentOrderId],
-    references: [fulfillmentOrders.id],
-  }),
-  batch: one(outboundBatches, {
-    fields: [fulfillmentOrderBatches.batchId],
-    references: [outboundBatches.id],
-  }),
 }));
 
 // Shipment Relations
@@ -4098,7 +4053,6 @@ export const wmsRelations = {
 
   // Outbound Relations
   outboundBatchesRelations,
-  fulfillmentOrderBatchesRelations,
 
   // Shipment Relations
   shipmentsRelations,
@@ -4287,9 +4241,6 @@ export type NewFulfillmentOrderItem = InferInsertModel<typeof fulfillmentOrderIt
 
 export type OutboundBatch = InferSelectModel<typeof outboundBatches>;
 export type NewOutboundBatch = InferInsertModel<typeof outboundBatches>;
-
-export type FulfillmentOrderBatch = InferSelectModel<typeof fulfillmentOrderBatches>;
-export type NewFulfillmentOrderBatch = InferInsertModel<typeof fulfillmentOrderBatches>;
 
 // Shipment Types
 export type Shipment = InferSelectModel<typeof shipments>;

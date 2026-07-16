@@ -177,7 +177,7 @@ describeIfDb('ShipmentShortPickService (DB integration)', () => {
           salesOrderId: salesOrder.id,
           warehouseId,
           ownerId: holderId,
-          status: 'picking',
+          status: 'processing',
           fulfillmentMode: 'in_house',
           totalItems: 1,
           totalQty: 5,
