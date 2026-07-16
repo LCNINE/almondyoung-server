@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import * as postgres from 'postgres';
@@ -769,6 +769,70 @@ describeIfDb('InvoiceOrchestrator (DB integration)', () => {
           tx,
         ),
       ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'SHIPMENT_STALE_MANIFEST_VERSION' }) });
+    });
+  });
+
+  it('voids a self invoice and frees the shipment for re-issue', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await plannedFixture(tx);
+      const { orchestrator } = services();
+      const issued = await orchestrator.issueManualInvoice(
+        fixture.shipment.shipmentId,
+        {
+          expectedManifestVersion: fixture.shipment.manifestVersion,
+          carrierCode: 'HANJIN',
+          trackingNo: `H-${randomUUID()}`,
+        },
+        `manual-issue-${randomUUID()}`,
+        actor,
+        tx,
+      );
+
+      const voided = await orchestrator.voidManualInvoice(
+        issued.invoiceId,
+        { reason: 'typo' },
+        `manual-void-${randomUUID()}`,
+        actor,
+        tx,
+      );
+      expect(voided).toMatchObject({ invoiceId: issued.invoiceId, status: 'voided' });
+      expect(voided.voidedAt).not.toBeNull();
+
+      // re-issue on the same shipment now succeeds (active-invoice unique index freed)
+      const reissued = await orchestrator.issueManualInvoice(
+        fixture.shipment.shipmentId,
+        {
+          expectedManifestVersion: fixture.shipment.manifestVersion,
+          carrierCode: 'HANJIN',
+          trackingNo: `H-${randomUUID()}`,
+        },
+        `manual-issue-${randomUUID()}`,
+        actor,
+        tx,
+      );
+      expect(reissued.status).toBe('issued');
+    });
+  });
+
+  it('refuses to manually void a provider-issued invoice', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await plannedFixture(tx);
+      const { orchestrator } = services();
+      const accepted = await orchestrator.issueForShipment(
+        fixture.shipment.shipmentId,
+        {
+          expectedManifestVersion: fixture.shipment.manifestVersion,
+          provider: 'goodsflow',
+          carrierCode: 'CJ',
+          reason: 'label',
+        },
+        `provider-issue-${randomUUID()}`,
+        actor,
+        tx,
+      );
+      await expect(
+        orchestrator.voidManualInvoice(accepted.invoiceId as string, {}, `manual-void-${randomUUID()}`, actor, tx),
+      ).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 });

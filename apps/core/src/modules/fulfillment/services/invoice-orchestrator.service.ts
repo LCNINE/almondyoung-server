@@ -9,6 +9,7 @@ import {
   IssueShipmentInvoiceDto,
   ManualInvoiceResponseDto,
   ShipmentInvoiceActor,
+  VoidManualInvoiceDto,
   VoidShipmentInvoiceDto,
 } from '../dto/shipment-invoice.dto';
 import { carrierEnum, DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -356,7 +357,9 @@ export class InvoiceOrchestrator {
           );
         }
         if (invoice.issueMethod !== 'goodsflow' && invoice.issueMethod !== 'hanjin') {
-          throw new BadRequestException('Only provider-issued shipment invoices use the durable void saga');
+          throw new BadRequestException(
+            'Manually-issued (self) invoices must be voided through POST /invoices/:id/void-manual',
+          );
         }
         const resumeType = dto.resumeOperationId
           ? await this.assertResumeOperation(dto.resumeOperationId, manifest.shipment.id, trx)
@@ -420,6 +423,67 @@ export class InvoiceOrchestrator {
       tx,
     );
     return this.getOperation(accepted.operationId, tx);
+  }
+
+  async voidManualInvoice(
+    invoiceId: string,
+    dto: VoidManualInvoiceDto,
+    idempotencyKey: string,
+    actor: ShipmentInvoiceActor,
+    tx?: DbTx,
+  ): Promise<ManualInvoiceResponseDto> {
+    this.workflowGate.assertV2MutationAllowed('shipment.invoice.void');
+
+    return this.commands.execute<ManualInvoiceResponseDto>(
+      {
+        commandType: 'shipment.invoice.void.manual',
+        idempotencyKey,
+        canonicalRequest: { actorId: actor.id, invoiceId, ...dto },
+      },
+      async (trx) => {
+        const [invoice] = await trx
+          .select()
+          .from(wmsTables.invoices)
+          .where(eq(wmsTables.invoices.id, invoiceId))
+          .limit(1)
+          .for('update');
+        if (!invoice) throw new NotFoundException(`Invoice ${invoiceId} not found`);
+        if (invoice.issueMethod !== 'self') {
+          throw new BadRequestException('Provider-issued invoices must be voided through the durable void endpoint');
+        }
+        if (invoice.status !== 'issued') {
+          throw this.conflict(
+            'INVOICE_NOT_VOIDABLE',
+            `Invoice ${invoiceId} is ${invoice.status} and cannot be manually voided`,
+          );
+        }
+        const [shipment] = await trx
+          .select({ status: wmsTables.shipments.status })
+          .from(wmsTables.shipments)
+          .where(eq(wmsTables.shipments.id, invoice.shipmentId))
+          .limit(1);
+        if (!shipment || ['shipped', 'in_transit', 'delivered'].includes(shipment.status)) {
+          throw this.conflict('INVOICE_ALREADY_DISPATCHED', 'A dispatched manual invoice cannot be voided');
+        }
+
+        const [voided] = await trx
+          .update(wmsTables.invoices)
+          .set({ status: 'voided', voidedAt: new Date() })
+          .where(eq(wmsTables.invoices.id, invoiceId))
+          .returning();
+        const response = this.toManualInvoiceResponse(voided);
+        await this.audit.logUserActionRequired(
+          'shipment.invoice.void.manual',
+          'fulfillment',
+          `Manual invoice ${invoiceId} voided`,
+          { userId: actor.id },
+          { invoiceId, shipmentId: invoice.shipmentId, reason: dto.reason ?? null },
+          trx,
+        );
+        return { response, resourceType: 'invoice', resourceId: invoiceId };
+      },
+      tx,
+    );
   }
 
   async getOperation(operationId: string, tx?: DbTx): Promise<InvoiceOperationResponseDto> {

@@ -98,6 +98,16 @@ export class IssueManualInvoiceDto {
   note?: string;
 }
 
+export class VoidManualInvoiceDto {
+  @IsString()
+  @IsOptional()
+  reason?: string;
+
+  @IsString()
+  @IsOptional()
+  note?: string;
+}
+
 export class ManualInvoiceResponseDto {
   @ApiProperty()
   invoiceId: string;
