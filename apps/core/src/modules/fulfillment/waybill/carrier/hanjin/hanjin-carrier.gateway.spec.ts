@@ -70,7 +70,7 @@ describe('HanjinCarrierGateway.allocate', () => {
     const post = jest.fn().mockResolvedValue({ result_code: 'ERROR-04', result_message: '유효하지 않은 주소' });
     await expect(gateway({ post }).allocate(req)).rejects.toMatchObject({
       outcome: 'definitive_rejection',
-      details: { code: 'ERROR-04' },
+      details: { code: 'no_wbl_num' },
     });
   });
 
@@ -94,21 +94,30 @@ describe('HanjinCarrierGateway.register', () => {
     const g = new HanjinCarrierGateway(config, { post } as any, today);
     const out = await g.register('531647410114', req);
     expect(out).toEqual({ kind: 'registered' });
-    expect(post).toHaveBeenCalledWith(
-      'order',
-      '/parcel-delivery/v1/order/insert-order',
-      expect.objectContaining({
-        custEdiCd: 'HANJIN',
-        custOrdNo: 'SO-1',
-        wblNo: '531647410114',
-        svcCatCd: 'S',
-        cntractNo: '9117159',
-        pickupAskDt: '20231009',
-        payTypCd: 'PP',
-        boxTypCd: 'A',
-        comodityNm: '의류',
-      }),
-    );
+    expect(post).toHaveBeenCalledWith('order', '/parcel-delivery/v1/order/insert-order', {
+      custEdiCd: 'HANJIN',
+      custOrdNo: 'SO-1',
+      wblNo: '531647410114',
+      svcCatCd: 'S',
+      cntractNo: '9117159',
+      pickupAskDt: '20231009',
+      sndrZip: '08588',
+      sndrBaseAddr: '금천구',
+      sndrDtlAddr: '지점',
+      sndrNm: '창고',
+      sndrTelNo: '02-1',
+      rcvrZip: '04532',
+      rcvrBaseAddr: '서울시 중구 소공로 88',
+      rcvrDtlAddr: '999층',
+      rcvrNm: '김택배',
+      rcvrTelNo: '02-2',
+      rcvrMobileNo: '010-2',
+      rcvrAskCntent: '',
+      comodityNm: '의류',
+      payTypCd: 'PP',
+      boxTypCd: 'A',
+      comodityList: [{ comodityCd: 'A1', comodityNm: '의류', comodityCnt: '1' }],
+    });
   });
 
   it('insert-order ERROR-09(기등록) → already_registered (멱등 성공)', async () => {

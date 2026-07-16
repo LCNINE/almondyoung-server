@@ -109,7 +109,7 @@ export class HanjinCarrierGateway extends CarrierGateway {
       throw new CarrierError(
         `Hanjin print-wbl rejected: ${res?.result_code} - ${res?.result_message ?? ''}`,
         'definitive_rejection',
-        { carrier: 'hanjin', code: res?.result_code ?? 'no_wbl_num' },
+        { carrier: 'hanjin', code: !res?.wbl_num ? 'no_wbl_num' : res.result_code },
       );
     }
     const labelData: Record<string, unknown> = {};
