@@ -334,11 +334,13 @@ export interface HanjinSignerCredentials {
   secretKey: string;
 }
 
-export interface HanjinSignedHeaders {
+// type 별칭(인터페이스 아님): fetch(headers)가 HeadersInit(Record<string,string>)을 요구하는데
+// 인터페이스는 암묵 인덱스시그니처를 못 받아 TS2769 오버로드 불일치가 남. 균일 string 속성 type 은 할당 가능.
+export type HanjinSignedHeaders = {
   'Content-Type': string;
   'x-api-key': string;
   Authorization: string;
-}
+};
 
 export class HanjinHmacSigner {
   constructor(

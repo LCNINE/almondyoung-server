@@ -6,11 +6,13 @@ export interface HanjinSignerCredentials {
   secretKey: string;
 }
 
-export interface HanjinSignedHeaders {
+// type 별칭(인터페이스 아님): 균일 string 속성이라 Record<string,string>→HeadersInit 에 할당 가능
+// (인터페이스는 암묵 인덱스시그니처를 못 받아 fetch(headers) 오버로드가 불일치함)
+export type HanjinSignedHeaders = {
   'Content-Type': string;
   'x-api-key': string;
   Authorization: string;
-}
+};
 
 export class HanjinHmacSigner {
   constructor(
