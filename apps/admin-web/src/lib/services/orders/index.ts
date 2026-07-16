@@ -41,7 +41,6 @@ export {
   useFulfillmentOrders,
   useFulfillmentOrder,
   useFulfillmentOutboxEvents,
-  useFulfillmentTransferCandidates,
   useFulfillmentShipments,
   useShipmentDetail,
   useFulfillmentOperation,
@@ -117,7 +116,6 @@ export {
   useAnalyzeConsolidation,
   useAutoConsolidate,
   // FO 액션 (Core /fulfillments canonical)
-  useTransferFulfillmentReservation,
   useDeliverFulfillment,
 } from './mutations';
 

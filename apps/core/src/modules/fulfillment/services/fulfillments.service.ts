@@ -807,26 +807,20 @@ export class FulfillmentsService {
     }, tx);
   }
 
-  private computeAdminAvailableActions(
-    fo: { status: string; fulfillmentMode: string | null; directShipStatus: string | null | undefined },
-    items: Array<{ shippedQty: number }>,
-  ): string[] {
+  private computeAdminAvailableActions(fo: {
+    status: string;
+    fulfillmentMode: string | null;
+    directShipStatus: string | null | undefined;
+  }): string[] {
     const TERMINAL_STATUSES = ['shipped', 'completed', 'canceled'];
-    // 서버 불변식(FulfillmentReservationsFacade.RESERVATION_TRANSFER_ALLOWED_STATUSES)과 동일한 화이트리스트.
-    // 블랙리스트로 두면 pending/forwarded 등 enum의 나머지 상태에서 버튼은 노출되는데 서버는 409를 던진다.
-    const TRANSFER_ALLOWED_STATUSES = new Set(['created', 'reserving', 'ready', 'unfulfillable']);
     const isTerminal = TERMINAL_STATUSES.includes(fo.status);
-    const hasShippedItems = items.some((i) => i.shippedQty > 0);
     const actions: string[] = [];
 
-    // FO 단위 수동 reserve/unreserve 액션은 V1 예약 경로와 함께 Task 25 에서 라우트째 제거됐다 —
-    // V2 예약은 shipment line 단위로 자동(부분예약 + retry worker) 이다. 남는 수동 개입은 transfer 뿐.
-    // W6(직배 별도 엔티티 추출) 전까지의 방어선: drop_ship 은 타사 재고라 예약 주입(transfer)을 광고하지 않는다.
+    // FO 단위 수동 reserve/unreserve/transfer 액션은 V1 예약 경로와 함께 Task 25 에서 라우트째 제거됐다.
+    // V2 예약은 shipment line 단위로 자동(부분예약 + retry worker)이고, 재배치는 shipment-line transfer 로 한다.
+    // drop_ship 은 타사 재고라 재고 관련 액션을 광고하지 않는다(아래 forward/complete 만).
     const isDropShip = fo.fulfillmentMode === 'drop_ship';
     if (!isTerminal) {
-      if (!hasShippedItems && !isDropShip && TRANSFER_ALLOWED_STATUSES.has(fo.status)) {
-        actions.push('transferReservation');
-      }
       actions.push('cancel');
     }
     if (fo.status === 'shipped') {
@@ -906,7 +900,7 @@ export class FulfillmentsService {
 
     const itemIds = items.map((i) => i.id);
 
-    const adminAvailableActions = this.computeAdminAvailableActions(fulfillmentOrder, items);
+    const adminAvailableActions = this.computeAdminAvailableActions(fulfillmentOrder);
     const blockedReasons = this.computeBlockedReasons(fulfillmentOrder, items);
 
     // FOI 라인 + SKU 조인 (상세 화면 표시용)

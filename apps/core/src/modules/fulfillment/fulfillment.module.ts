@@ -23,7 +23,6 @@ import { OutboxDispatcherService } from './outbox/outbox-dispatcher.service';
 import { FulfillmentsService } from './services/fulfillments.service';
 import { FulfillmentOrderCreationBacklogWorker } from './services/fulfillment-order-creation-backlog.worker';
 import { FulfillmentOrderReservationRetryWorker } from './services/fulfillment-order-reservation-retry.worker';
-import { FulfillmentReservationsFacade } from './services/fulfillment-reservations.facade';
 import { AvailabilityService } from './services/availability.service';
 import { PoliciesService } from './services/policies.service';
 import { PickingProcessService } from './services/picking-process.service';
@@ -121,7 +120,6 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     FulfillmentsService,
     FulfillmentOrderCreationBacklogWorker,
     FulfillmentOrderReservationRetryWorker,
-    FulfillmentReservationsFacade,
     AvailabilityService,
     PoliciesService,
 

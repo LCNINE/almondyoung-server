@@ -22,7 +22,6 @@ import type {
   ForwardDirectShipOrdersRequest,
   CompleteDirectShipOrdersRequest,
   CreateStandaloneFulfillmentRequest,
-  TransferReservationRequest,
   InspectByScanRequest,
   SplitShipmentRequest,
   ReviseShipmentRecipientRequest,
@@ -52,8 +51,6 @@ import type {
   ToteHandoffRequest,
   ReleaseToteRequest,
 } from '@/lib/types/dto/fulfillment';
-
-type OptionalIdempotencyKey = { idempotencyKey?: string };
 
 function commandKey(idempotencyKey?: string): string {
   return idempotencyKey ?? crypto.randomUUID();
@@ -546,27 +543,6 @@ export const useCreateFulfillmentOrder = () => {
       orders.fulfillmentOrder.createStandalone(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillments });
-    },
-  });
-};
-
-export const useTransferFulfillmentReservation = (id: string) => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (
-      input:
-        | TransferReservationRequest
-        | ({ data: TransferReservationRequest } & OptionalIdempotencyKey)
-    ) => {
-      const wrapped = 'data' in input;
-      return orders.fulfillments.transferReservation(
-        id,
-        wrapped ? input.data : input,
-        commandKey(wrapped ? input.idempotencyKey : undefined)
-      );
-    },
-    onSuccess: () => {
-      invalidateFulfillment(queryClient, id);
     },
   });
 };

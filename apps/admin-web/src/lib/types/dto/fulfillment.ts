@@ -8,21 +8,14 @@ export type FulfillmentOrderPriority = 'normal' | 'high' | 'urgent';
 // 백엔드 fulfillmentStatusEnum 전체와 1:1 (inventory.schema.ts)
 export type FulfillmentOrderStatus =
   | 'created'
-  | 'reserving'
+  | 'partially_reserved'
   | 'ready'
-  | 'unfulfillable'
-  | 'labeled'
-  | 'pending'
-  | 'allocated'
-  | 'picking'
-  | 'picked'
-  | 'inspecting'
-  | 'inspected'
-  | 'invoiced'
-  | 'forwarded'
+  | 'processing'
+  | 'partially_shipped'
   | 'shipped'
   | 'completed'
-  | 'canceled';
+  | 'canceled'
+  | 'recovery_required';
 
 export type DirectShipStatus =
   | 'pending'
@@ -113,29 +106,6 @@ export interface ListFulfillmentsQuery {
 export type FulfillmentOrdersQuery = ListFulfillmentsQuery & {
   status?: FulfillmentOrderStatus;
 };
-
-/** POST /fulfillments/:id/transfer-reservation body */
-export interface TransferReservationRequest {
-  fromFulfillmentOrderItemId: string;
-  toFulfillmentOrderItemId: string;
-  quantity: number;
-  reason?: string;
-  csCaseId?: string;
-  note?: string;
-}
-
-/** GET /fulfillments/:id/transfer-candidates 응답 항목 */
-export interface TransferCandidate {
-  id: string;
-  fulfillmentOrderId: string;
-  fulfillmentOrderStatus: string;
-  salesOrderId: string | null;
-  skuId: string;
-  qty: number;
-  reservedQty: number;
-  shortage: number;
-  sameFulfillmentOrder: boolean;
-}
 
 export interface FulfillmentOrderItemInput {
   salesOrderId: string;

@@ -2,7 +2,6 @@ export const FULFILLMENT_SCOPES = {
   operate: 'fulfillment.warehouse.operate',
   consolidate: 'fulfillment.shipment.consolidate',
   overrideRecipient: 'fulfillment.shipment.override_recipient',
-  transferReservation: 'fulfillment.reservation.transfer',
   forceDispatch: 'fulfillment.dispatch.force',
   recall: 'fulfillment.dispatch.recall',
   reopen: 'fulfillment.shipment.reopen',
@@ -13,7 +12,6 @@ export type FulfillmentAdminAction =
   | 'reviseRecipient'
   | 'plan'
   | 'cancelOutstanding'
-  | 'transferReservation'
   | 'consolidate'
   | 'issueInvoice'
   | 'voidInvoice'
@@ -27,7 +25,6 @@ const ACTION_SCOPE: Record<FulfillmentAdminAction, string> = {
   reviseRecipient: FULFILLMENT_SCOPES.overrideRecipient,
   plan: FULFILLMENT_SCOPES.operate,
   cancelOutstanding: FULFILLMENT_SCOPES.operate,
-  transferReservation: FULFILLMENT_SCOPES.transferReservation,
   consolidate: FULFILLMENT_SCOPES.consolidate,
   issueInvoice: FULFILLMENT_SCOPES.operate,
   voidInvoice: FULFILLMENT_SCOPES.reopen,

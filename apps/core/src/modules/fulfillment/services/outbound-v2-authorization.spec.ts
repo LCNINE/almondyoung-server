@@ -2,15 +2,12 @@ import { ScopeGuard } from '@app/authorization';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { Reflector } from '@nestjs/core';
 import { ConsolidationController } from '../controllers/consolidation.controller';
-import { FulfillmentsController } from '../controllers/fulfillments.controller';
 import { ShipmentInvoiceController } from '../controllers/shipment-invoice.controller';
 import { ShipmentPlanningController } from '../controllers/shipment-planning.controller';
 import { ShipmentRecallController } from '../controllers/shipment-recall.controller';
 import { ShipmentTrackingController } from '../controllers/shipment-tracking.controller';
 import { ShipmentController } from '../controllers/shipment.controller';
-import { TransferReservationDto } from '../dto/transfer-reservation.dto';
 import { FULFILLMENT_ROLE_MAPPINGS, FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
-import { createGlobalValidationPipe } from '../../../platform/http/validation-pipe';
 
 type ControllerEndpoint = {
   name: string;
@@ -41,12 +38,6 @@ const AUTHORIZED_ENDPOINTS = [
     controller: ShipmentPlanningController,
     handlerName: 'reviseRecipient',
     scope: FULFILLMENT_SCOPE.SHIPMENT_OVERRIDE_RECIPIENT,
-  },
-  {
-    name: 'reservation transfer',
-    controller: FulfillmentsController,
-    handlerName: 'transfer',
-    scope: FULFILLMENT_SCOPE.RESERVATION_TRANSFER,
   },
   {
     name: 'forced dispatch',
@@ -131,38 +122,4 @@ describe('outbound V2 authorization matrix', () => {
     await expect(guard.canActivate(contextFor(forcedDispatch).context)).resolves.toBe(false);
   });
 
-  it('uses the JWT actor after the production whitelist removes a forged body operator', async () => {
-    let submittedCommand: unknown;
-    const reservations = {
-      transferReservationCommand: jest.fn((_id: string, command: unknown) => {
-        submittedCommand = command;
-        return Promise.resolve({ operationId: 'operation-1' });
-      }),
-    };
-    const controller = new FulfillmentsController({} as never, reservations as never, {} as never);
-    // main.ts 가 설치하는 것과 동일한 pipe — 배포 설정이 회귀하면 이 스펙이 빨개진다.
-    const pipe = createGlobalValidationPipe();
-    const dto = (await pipe.transform(
-      {
-        fromFulfillmentOrderItemId: 'foi-source',
-        toFulfillmentOrderItemId: 'foi-target',
-        quantity: 1,
-        reason: 'rebalance',
-        performedBy: 'forged-performer',
-        operatorId: 'forged-operator',
-      },
-      { type: 'body', metatype: TransferReservationDto },
-    )) as TransferReservationDto;
-
-    await controller.transfer('fulfillment-1', dto, 'transfer-key', { userId: 'jwt-actor' });
-
-    expect(dto).not.toHaveProperty('performedBy');
-    expect(dto).not.toHaveProperty('operatorId');
-    expect(reservations.transferReservationCommand).toHaveBeenCalledWith(
-      'fulfillment-1',
-      expect.objectContaining({ performedBy: 'jwt-actor' }),
-      'transfer-key',
-    );
-    expect(submittedCommand).not.toHaveProperty('operatorId');
-  });
 });

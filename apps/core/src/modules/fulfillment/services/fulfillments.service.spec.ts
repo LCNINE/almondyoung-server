@@ -975,21 +975,21 @@ describe('FulfillmentsService', () => {
       expect(detail?.adminAvailableActions).not.toContain('ship');
     });
 
-    it('ready 상태에서 ship/reserve/unreserve 없이 transferReservation/cancel만 있다 (수동 예약 라우트 은퇴)', async () => {
+    it('ready 상태에서 ship/split/reserve/unreserve/transfer 없이 cancel만 있다 (수동 예약 라우트 은퇴)', async () => {
       const { service, tx } = makeFoDetail('ready');
       const detail = await service.getOne('fo-action-test', tx);
       expect(detail?.adminAvailableActions).not.toContain('ship');
       expect(detail?.adminAvailableActions).not.toContain('split');
       expect(detail?.adminAvailableActions).not.toContain('reserve');
       expect(detail?.adminAvailableActions).not.toContain('unreserve');
-      expect(detail?.adminAvailableActions).toEqual(expect.arrayContaining(['transferReservation', 'cancel']));
+      expect(detail?.adminAvailableActions).not.toContain('transferReservation');
+      expect(detail?.adminAvailableActions).toEqual(['cancel']);
       expect(detail?.blockedReasons).toHaveLength(0);
     });
 
-    it('shipped item이 있으면 transferReservation을 제거하고 SHIPPED_EVIDENCE를 추가한다', async () => {
+    it('shipped item이 있으면 SHIPPED_EVIDENCE를 추가한다 (cancel 은 유지)', async () => {
       const { service, tx } = makeFoDetail('ready', { shippedQty: 1 });
       const detail = await service.getOne('fo-action-test', tx);
-      expect(detail?.adminAvailableActions).not.toContain('transferReservation');
       expect(detail?.adminAvailableActions).toContain('cancel');
       expect(detail?.blockedReasons).toContain('SHIPPED_EVIDENCE');
     });
@@ -1037,36 +1037,28 @@ describe('FulfillmentsService', () => {
     });
   });
 
-  describe('computeAdminAvailableActions (drop_ship 예약 가드)', () => {
-    const items = [{ shippedQty: 0 }];
-
-    it('drop_ship non-terminal FO는 transferReservation을 광고하지 않고 cancel/forwardDropShip은 유지한다', () => {
+  describe('computeAdminAvailableActions (drop_ship 가드)', () => {
+    it('drop_ship non-terminal FO는 cancel/forwardDropShip을 광고한다', () => {
       const { service } = makeService();
-      const actions = (service as any)['computeAdminAvailableActions'](
-        { status: 'created', fulfillmentMode: 'drop_ship', directShipStatus: null },
-        items,
-      );
-      expect(actions).not.toContain('transferReservation');
+      const actions = (service as any)['computeAdminAvailableActions']({
+        status: 'created',
+        fulfillmentMode: 'drop_ship',
+        directShipStatus: null,
+      });
       expect(actions).toContain('cancel');
       expect(actions).toContain('forwardDropShip');
     });
 
-    it('null-mode(in_house 기본) FO는 transferReservation을 광고한다 (회귀)', () => {
+    it('null-mode(in_house 기본) FO는 drop_ship 액션을 광고하지 않는다 (nullable mode 회귀)', () => {
       const { service } = makeService();
-      const actions = (service as any)['computeAdminAvailableActions'](
-        { status: 'created', fulfillmentMode: null, directShipStatus: null },
-        items,
-      );
-      expect(actions).toContain('transferReservation'); // 'created'는 TRANSFER_ALLOWED
-    });
-
-    it('in_house 명시 FO는 transferReservation을 광고한다 (회귀)', () => {
-      const { service } = makeService();
-      const actions = (service as any)['computeAdminAvailableActions'](
-        { status: 'ready', fulfillmentMode: 'in_house', directShipStatus: null },
-        items,
-      );
-      expect(actions).toContain('transferReservation');
+      const actions = (service as any)['computeAdminAvailableActions']({
+        status: 'created',
+        fulfillmentMode: null,
+        directShipStatus: null,
+      });
+      expect(actions).toContain('cancel');
+      expect(actions).not.toContain('forwardDropShip');
+      expect(actions).not.toContain('completeDropShip');
     });
   });
 });

@@ -15,7 +15,6 @@ import { BarcodeService } from '../../../inventory/shared/services/barcode.servi
 import { PoliciesService } from '../policies.service';
 import { AvailabilityService } from '../availability.service';
 import { FulfillmentsService } from '../fulfillments.service';
-import { FulfillmentReservationsFacade } from '../fulfillment-reservations.facade';
 import { FulfillmentOrderReservationRetryWorker } from '../fulfillment-order-reservation-retry.worker';
 import { FulfillmentWorkflowGate, type FulfillmentWorkflowMode } from '../fulfillment-workflow-gate.service';
 import { ConfigService } from '@nestjs/config';
@@ -57,7 +56,6 @@ export interface Wired {
   backlog: FulfillmentOrderCreationBacklogService;
   productSkuMapping: ProductSkuMappingService;
   fulfillments: FulfillmentsService;
-  reservationsFacade: FulfillmentReservationsFacade;
   shipmentReservations: ShipmentReservationService;
   retryWorker: FulfillmentOrderReservationRetryWorker;
   picking: PickingProcessService;
@@ -100,7 +98,6 @@ export function wireLogistics(
     shipmentReservations,
     progress,
   );
-  const reservationsFacade = new FulfillmentReservationsFacade(dbService, policies, workflowGate);
   const retryWorker = new FulfillmentOrderReservationRetryWorker(dbService, workflowGate, shipmentReservations);
   const picking = new PickingProcessService(dbService);
 
@@ -119,7 +116,6 @@ export function wireLogistics(
     backlog,
     productSkuMapping,
     fulfillments,
-    reservationsFacade,
     shipmentReservations,
     retryWorker,
     picking,

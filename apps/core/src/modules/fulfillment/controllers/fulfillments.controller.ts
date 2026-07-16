@@ -1,23 +1,10 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Param,
-  Query,
-  BadRequestException,
-  Headers,
-  UnauthorizedException,
-  UseGuards,
-} from '@nestjs/common';
-import { ApiBody, ApiExtraModels, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, User } from '@app/authorization';
+import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { ApiExtraModels, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { RequireScopes, ScopeGuard } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { FulfillmentsService } from '../services/fulfillments.service';
-import { FulfillmentReservationsFacade } from '../services/fulfillment-reservations.facade';
 import { ShipmentPlanningService } from '../services/shipment-planning.service';
 import { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
-import { TransferReservationDto } from '../dto/transfer-reservation.dto';
 import {
   FulfillmentOrderListResponseDto,
   FulfillmentOrderResponseDto,
@@ -25,15 +12,12 @@ import {
 } from '../dto/fulfillment-order-response.dto';
 import { ShipmentSummaryResponseDto } from '../dto/shipment-planning.dto';
 
-type AuthenticatedUser = { id?: string; userId?: string; sub?: string } | undefined;
-
 @ApiTags('Fulfillments')
 @ApiExtraModels(FulfillmentOrderResponseDto, FulfillmentOrderV2ResponseDto)
 @Controller('fulfillments')
 export class FulfillmentsController {
   constructor(
     private readonly service: FulfillmentsService,
-    private readonly reservations: FulfillmentReservationsFacade,
     private readonly shipmentPlanning: ShipmentPlanningService,
   ) {}
 
@@ -114,46 +98,4 @@ export class FulfillmentsController {
     });
   }
 
-  @Post(':id/transfer-reservation')
-  @UseGuards(ScopeGuard)
-  @RequireScopes(FULFILLMENT_SCOPE.RESERVATION_TRANSFER)
-  @ApiOperation({ summary: '예약 이전 (같은 창고·같은 SKU FOI 간, cross-FO 허용, 작업 전 상태만)' })
-  @ApiParam({ name: 'id', description: '주문처리 ID' })
-  @ApiBody({ type: TransferReservationDto })
-  transfer(
-    @Param('id') id: string,
-    @Body() dto: TransferReservationDto,
-    @Headers('idempotency-key') idempotencyKey: string | undefined,
-    @User() user: AuthenticatedUser,
-  ) {
-    const performedBy = this.getUserId(user);
-    if (!performedBy) throw new UnauthorizedException('Authenticated actor is required');
-    if (!idempotencyKey?.trim()) {
-      throw new BadRequestException({
-        code: 'FULFILLMENT_IDEMPOTENCY_KEY_REQUIRED',
-        message: 'Idempotency-Key is required for reservation transfer',
-      });
-    }
-    return this.reservations.transferReservationCommand(id, { ...dto, performedBy }, idempotencyKey);
-  }
-
-  @Get(':id/transfer-candidates')
-  @UseGuards(ScopeGuard)
-  @RequireScopes(FULFILLMENT_SCOPE.RESERVATION_TRANSFER)
-  @ApiOperation({ summary: '예약 이전 대상 후보 조회 (같은 창고·같은 SKU, 작업 전 상태, 미예약 부족분 있는 FOI)' })
-  @ApiParam({ name: 'id', description: '주문처리 ID' })
-  @ApiQuery({ name: 'fromFulfillmentOrderItemId', required: true, type: String })
-  getTransferCandidates(
-    @Param('id') id: string,
-    @Query('fromFulfillmentOrderItemId') fromFulfillmentOrderItemId?: string,
-  ) {
-    if (!fromFulfillmentOrderItemId) {
-      throw new BadRequestException('fromFulfillmentOrderItemId is required');
-    }
-    return this.reservations.getTransferCandidates(id, fromFulfillmentOrderItemId);
-  }
-
-  private getUserId(user: AuthenticatedUser): string | undefined {
-    return user?.id ?? user?.userId ?? user?.sub;
-  }
 }

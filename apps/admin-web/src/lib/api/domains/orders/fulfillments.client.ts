@@ -12,8 +12,6 @@ import type {
   FulfillmentOutboxEvent,
   ListFulfillmentsQuery,
   CreateFulfillmentOrderRequest,
-  TransferReservationRequest,
-  TransferCandidate,
 } from '@/lib/types/dto/fulfillment';
 
 const BASE = `${ALMONDYOUNG_API_BASE_URL}/fulfillments`;
@@ -40,36 +38,6 @@ export const fulfillmentsClient = {
     data: CreateFulfillmentOrderRequest
   ): Promise<FulfillmentOrder> => {
     const res = await client.post(BASE, data);
-    return res.data;
-  },
-
-  transferReservation: async (
-    id: string,
-    data: TransferReservationRequest,
-    idempotencyKey?: string
-  ): Promise<unknown> => {
-    const res = await client.post(
-      `${BASE}/${encodeURIComponent(id)}/transfer-reservation`,
-      data,
-      {
-        headers: idempotencyKey
-          ? { 'Idempotency-Key': idempotencyKey }
-          : undefined,
-      }
-    );
-    return res.data;
-  },
-
-  getTransferCandidates: async (
-    id: string,
-    fromFulfillmentOrderItemId: string
-  ): Promise<TransferCandidate[]> => {
-    const res = await client.get(
-      `${BASE}/${encodeURIComponent(id)}/transfer-candidates`,
-      {
-        params: { fromFulfillmentOrderItemId },
-      }
-    );
     return res.data;
   },
 

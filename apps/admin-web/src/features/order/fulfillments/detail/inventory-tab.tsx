@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import {
   Table,
   TableBody,
@@ -9,13 +8,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { AlertTriangle } from 'lucide-react';
-import { FULFILLMENT_SCOPES } from '@/lib/services/orders';
-import { usePermission } from '@/hooks/use-permission';
-import { TransferDialog } from './transfer-dialog';
 import type { FulfillmentOrderDetail } from '@/lib/types/dto/fulfillment';
 
 function truncateId(id: string) {
@@ -23,16 +18,6 @@ function truncateId(id: string) {
 }
 
 export function InventoryTab({ fo }: { fo: FulfillmentOrderDetail }) {
-  const { hasScope, isPermissionLoading } = usePermission();
-  const hasTransferScope =
-    !isPermissionLoading &&
-    !!hasScope([FULFILLMENT_SCOPES.transferReservation]);
-  const canTransfer =
-    hasTransferScope &&
-    fo.adminAvailableActions.includes('transferReservation');
-
-  const [transferOpen, setTransferOpen] = useState(false);
-
   return (
     <div className="flex flex-col gap-6 py-4">
       {/* blockedReasons */}
@@ -52,26 +37,7 @@ export function InventoryTab({ fo }: { fo: FulfillmentOrderDetail }) {
 
       {/* FOI별 예약 현황 */}
       <section>
-        <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-sm font-semibold">아이템별 예약 현황</h3>
-          <div className="flex gap-2">
-            {hasTransferScope && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setTransferOpen(true)}
-                disabled={!canTransfer}
-                title={
-                  !canTransfer
-                    ? '피킹이 시작된 출고주문은 예약을 이전할 수 없습니다. (허용 상태: created / reserving / ready / unfulfillable)'
-                    : undefined
-                }
-              >
-                예약 이전
-              </Button>
-            )}
-          </div>
-        </div>
+        <h3 className="mb-2 text-sm font-semibold">아이템별 예약 현황</h3>
 
         <div className="overflow-auto rounded border">
           <Table>
@@ -192,16 +158,6 @@ export function InventoryTab({ fo }: { fo: FulfillmentOrderDetail }) {
           </div>
         )}
       </section>
-
-      {hasTransferScope && (
-        <TransferDialog
-          foId={fo.id}
-          items={fo.items}
-          canTransfer={canTransfer}
-          open={transferOpen}
-          onOpenChange={setTransferOpen}
-        />
-      )}
     </div>
   );
 }

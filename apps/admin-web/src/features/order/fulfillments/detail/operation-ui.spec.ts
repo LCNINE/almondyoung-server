@@ -12,7 +12,6 @@ describe('fulfillment operation UI policy', () => {
     expect(canShowFulfillmentAction('plan', scopes)).toBe(true);
     expect(canShowFulfillmentAction('recall', scopes)).toBe(false);
     expect(canShowFulfillmentAction('consolidate', scopes)).toBe(false);
-    expect(canShowFulfillmentAction('transferReservation', scopes)).toBe(false);
   });
 
   it('does not treat client-side hiding as authorization and explains server 403/409 denials', () => {
