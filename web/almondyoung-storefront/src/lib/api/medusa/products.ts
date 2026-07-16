@@ -10,10 +10,12 @@ import { getRegion, retrieveRegion } from "./regions"
  * handle 로 조회할 때 붙일 방문자 무관 캐시 태그.
  * `/api/revalidate` 가 `product-{handle}` 로 무효화하므로 문자열/배열 모두 태그를 걸어야 한다.
  */
-export const toProductHandleTags = (handle: unknown): string[] => {
+const toProductHandleTags = (handle: unknown): string[] => {
   if (typeof handle === "string") return [`product-${handle}`]
   if (Array.isArray(handle)) {
-    return handle.filter((h): h is string => typeof h === "string" && h.length > 0).map((h) => `product-${h}`)
+    return handle
+      .filter((h): h is string => typeof h === "string" && h.length > 0)
+      .map((h) => `product-${h}`)
   }
   return []
 }
