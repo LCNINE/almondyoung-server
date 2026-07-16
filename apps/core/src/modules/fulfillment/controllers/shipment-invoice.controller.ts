@@ -11,12 +11,15 @@ import {
   Body,
 } from '@nestjs/common';
 import { RequireScopes, ScopeGuard, User } from '@app/authorization';
-import { ApiAcceptedResponse, ApiOkResponse } from '@nestjs/swagger';
+import { ApiAcceptedResponse, ApiCreatedResponse, ApiOkResponse } from '@nestjs/swagger';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import {
   InvoiceOperationResponseDto,
+  IssueManualInvoiceDto,
   IssueShipmentInvoiceDto,
+  ManualInvoiceResponseDto,
   ShipmentInvoiceActor,
+  VoidManualInvoiceDto,
   VoidShipmentInvoiceDto,
 } from '../dto/shipment-invoice.dto';
 import { InvoiceOrchestrator } from '../services/invoice-orchestrator.service';
@@ -59,6 +62,32 @@ export class ShipmentInvoiceController {
   @ApiOkResponse({ type: InvoiceOperationResponseDto })
   operation(@Param('operationId') operationId: string) {
     return this.invoices.getOperation(operationId);
+  }
+
+  @Post('shipments/:shipmentId/invoices/manual')
+  @HttpCode(HttpStatus.CREATED)
+  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
+  @ApiCreatedResponse({ type: ManualInvoiceResponseDto })
+  issueManual(
+    @Param('shipmentId') shipmentId: string,
+    @Body() dto: IssueManualInvoiceDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @User() user: AuthenticatedUser,
+  ) {
+    return this.invoices.issueManualInvoice(shipmentId, dto, idempotencyKey ?? '', this.actor(user));
+  }
+
+  @Post('invoices/:invoiceId/void-manual')
+  @HttpCode(HttpStatus.OK)
+  @RequireScopes(FULFILLMENT_SCOPE.SHIPMENT_REOPEN)
+  @ApiOkResponse({ type: ManualInvoiceResponseDto })
+  voidManual(
+    @Param('invoiceId') invoiceId: string,
+    @Body() dto: VoidManualInvoiceDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @User() user: AuthenticatedUser,
+  ) {
+    return this.invoices.voidManualInvoice(invoiceId, dto, idempotencyKey ?? '', this.actor(user));
   }
 
   private actor(user: AuthenticatedUser | undefined): ShipmentInvoiceActor {

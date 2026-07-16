@@ -667,4 +667,69 @@ describe('InvoiceOrchestrator provider crash recovery', () => {
       response: expect.objectContaining({ code: 'SHIPMENT_INVOICE_NOT_READY' }),
     });
   });
+
+  it('accepts dispatch for a self invoice without a provider service ID', async () => {
+    const { service } = makeService();
+    const recipientSnapshot = { recipientName: 'Recipient' };
+    const shipment = { id: 'shipment-1', manifestVersion: 3, recipientSnapshot };
+    const invoice = {
+      id: 'invoice-1',
+      shipmentId: 'shipment-1',
+      status: 'issued',
+      manifestVersion: 3,
+      recipientHash: canonicalShipmentRecipientHash(recipientSnapshot),
+      carrier: 'HANJIN',
+      issueMethod: 'self',
+      externalServiceId: null,
+      trackingNo: 'H1234567890',
+    };
+    const select = jest
+      .fn()
+      .mockReturnValueOnce({
+        from: jest.fn(() => ({
+          where: jest.fn(() => ({ limit: jest.fn().mockResolvedValue([shipment]) })),
+        })),
+      })
+      .mockReturnValueOnce({
+        from: jest.fn(() => ({ where: jest.fn().mockResolvedValue([invoice]) })),
+      });
+    (service as any).dbService = { run: (fn: (tx: unknown) => unknown) => fn({ select }) };
+
+    await expect(service.assertDispatchableInvoice('shipment-1')).resolves.toMatchObject({
+      id: 'invoice-1',
+      issueMethod: 'self',
+    });
+  });
+
+  it('still rejects a provider invoice that lacks a provider service ID', async () => {
+    const { service } = makeService();
+    const recipientSnapshot = { recipientName: 'Recipient' };
+    const shipment = { id: 'shipment-1', manifestVersion: 3, recipientSnapshot };
+    const invoice = {
+      id: 'invoice-1',
+      shipmentId: 'shipment-1',
+      status: 'issued',
+      manifestVersion: 3,
+      recipientHash: canonicalShipmentRecipientHash(recipientSnapshot),
+      carrier: 'CJ',
+      issueMethod: 'goodsflow',
+      externalServiceId: null,
+      trackingNo: 'tracking-1',
+    };
+    const select = jest
+      .fn()
+      .mockReturnValueOnce({
+        from: jest.fn(() => ({
+          where: jest.fn(() => ({ limit: jest.fn().mockResolvedValue([shipment]) })),
+        })),
+      })
+      .mockReturnValueOnce({
+        from: jest.fn(() => ({ where: jest.fn().mockResolvedValue([invoice]) })),
+      });
+    (service as any).dbService = { run: (fn: (tx: unknown) => unknown) => fn({ select }) };
+
+    await expect(service.assertDispatchableInvoice('shipment-1')).rejects.toMatchObject({
+      response: expect.objectContaining({ code: 'SHIPMENT_INVOICE_NOT_READY' }),
+    });
+  });
 });

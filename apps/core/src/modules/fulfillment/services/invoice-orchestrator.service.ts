@@ -5,8 +5,11 @@ import { DbService, InjectTypedDb } from '@app/db';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import {
   InvoiceOperationResponseDto,
+  IssueManualInvoiceDto,
   IssueShipmentInvoiceDto,
+  ManualInvoiceResponseDto,
   ShipmentInvoiceActor,
+  VoidManualInvoiceDto,
   VoidShipmentInvoiceDto,
 } from '../dto/shipment-invoice.dto';
 import { carrierEnum, DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -224,6 +227,95 @@ export class InvoiceOrchestrator {
     return this.getOperation(accepted.operationId, tx);
   }
 
+  async issueManualInvoice(
+    shipmentId: string,
+    dto: IssueManualInvoiceDto,
+    idempotencyKey: string,
+    actor: ShipmentInvoiceActor,
+    tx?: DbTx,
+  ): Promise<ManualInvoiceResponseDto> {
+    this.workflowGate.assertV2MutationAllowed('shipment.invoice.issue');
+    const trackingNo = dto.trackingNo.trim();
+    if (!trackingNo) throw new BadRequestException('trackingNo is required');
+
+    return this.commands.execute<ManualInvoiceResponseDto>(
+      {
+        commandType: 'shipment.invoice.issue.manual',
+        idempotencyKey,
+        canonicalRequest: { actorId: actor.id, shipmentId, ...dto, trackingNo },
+      },
+      async (trx) => {
+        const manifest = await this.lockManifest(shipmentId, trx);
+        if (manifest.shipment.status !== 'planned') {
+          throw this.conflict('SHIPMENT_NOT_PLANNED', 'Only a Planned shipment can receive an invoice');
+        }
+        if (manifest.shipment.manifestVersion !== dto.expectedManifestVersion) {
+          throw this.conflict('SHIPMENT_STALE_MANIFEST_VERSION', 'Shipment manifest has changed');
+        }
+        await this.assertNoActiveInvoice(shipmentId, trx);
+        this.assertRecipientComplete(manifest.shipment.recipientSnapshot);
+        this.assertTrustedLineIdentity(manifest.lines);
+        // assertProfileComplete is intentionally NOT called: it requires carrierAccountRef
+        // (the goodsflow center code). A self invoice uses no carrier API, and requiring the
+        // now-dead goodsflow account would block the manual stopgap.
+
+        const recipientHash = canonicalShipmentRecipientHash(manifest.shipment.recipientSnapshot);
+        let invoice: typeof wmsTables.invoices.$inferSelect;
+        try {
+          [invoice] = await trx
+            .insert(wmsTables.invoices)
+            .values({
+              trackingNo,
+              carrier: dto.carrierCode,
+              issueMethod: 'self',
+              externalServiceId: null,
+              issuedForFulfillmentOrderId: manifest.fulfillmentOrderIds[0],
+              shipmentId,
+              manifestVersion: manifest.shipment.manifestVersion,
+              recipientHash,
+              status: 'issued',
+            })
+            .returning();
+        } catch (error) {
+          // drizzle-orm wraps the driver error in DrizzleQueryError and puts the real
+          // postgres.js PostgresError (code, constraint_name) on `.cause`; check both shapes.
+          const row = error as {
+            code?: string;
+            constraint_name?: string;
+            constraint?: string;
+            cause?: { code?: string; constraint_name?: string; constraint?: string };
+          };
+          const code = row.code ?? row.cause?.code;
+          const constraintName =
+            row.constraint_name ?? row.constraint ?? row.cause?.constraint_name ?? row.cause?.constraint;
+          if (code === '23505' && constraintName === 'invoices_tracking_no_unique') {
+            throw this.conflict('INVOICE_TRACKING_ALREADY_EXISTS', `Tracking number ${trackingNo} already exists`);
+          }
+          throw error;
+        }
+
+        const response = this.toManualInvoiceResponse(invoice);
+        await this.audit.logUserActionRequired(
+          'shipment.invoice.issue.manual',
+          'fulfillment',
+          `Manual invoice ${invoice.id} issued for shipment ${shipmentId}`,
+          { userId: actor.id },
+          {
+            invoiceId: invoice.id,
+            shipmentId,
+            carrier: dto.carrierCode,
+            trackingNo,
+            reason: dto.reason ?? null,
+            note: dto.note ?? null,
+          },
+          trx,
+        );
+        return { response, resourceType: 'invoice', resourceId: invoice.id };
+      },
+      tx,
+    );
+  }
+
   async void(
     invoiceId: string,
     dto: VoidShipmentInvoiceDto,
@@ -272,7 +364,9 @@ export class InvoiceOrchestrator {
           );
         }
         if (invoice.issueMethod !== 'goodsflow' && invoice.issueMethod !== 'hanjin') {
-          throw new BadRequestException('Only provider-issued shipment invoices use the durable void saga');
+          throw new BadRequestException(
+            'Manually-issued (self) invoices must be voided through POST /invoices/:id/void-manual',
+          );
         }
         const resumeType = dto.resumeOperationId
           ? await this.assertResumeOperation(dto.resumeOperationId, manifest.shipment.id, trx)
@@ -336,6 +430,67 @@ export class InvoiceOrchestrator {
       tx,
     );
     return this.getOperation(accepted.operationId, tx);
+  }
+
+  async voidManualInvoice(
+    invoiceId: string,
+    dto: VoidManualInvoiceDto,
+    idempotencyKey: string,
+    actor: ShipmentInvoiceActor,
+    tx?: DbTx,
+  ): Promise<ManualInvoiceResponseDto> {
+    this.workflowGate.assertV2MutationAllowed('shipment.invoice.void');
+
+    return this.commands.execute<ManualInvoiceResponseDto>(
+      {
+        commandType: 'shipment.invoice.void.manual',
+        idempotencyKey,
+        canonicalRequest: { actorId: actor.id, invoiceId, ...dto },
+      },
+      async (trx) => {
+        const [invoice] = await trx
+          .select()
+          .from(wmsTables.invoices)
+          .where(eq(wmsTables.invoices.id, invoiceId))
+          .limit(1)
+          .for('update');
+        if (!invoice) throw new NotFoundException(`Invoice ${invoiceId} not found`);
+        if (invoice.issueMethod !== 'self') {
+          throw new BadRequestException('Provider-issued invoices must be voided through the durable void endpoint');
+        }
+        if (invoice.status !== 'issued') {
+          throw this.conflict(
+            'INVOICE_NOT_VOIDABLE',
+            `Invoice ${invoiceId} is ${invoice.status} and cannot be manually voided`,
+          );
+        }
+        const [shipment] = await trx
+          .select({ status: wmsTables.shipments.status })
+          .from(wmsTables.shipments)
+          .where(eq(wmsTables.shipments.id, invoice.shipmentId))
+          .limit(1);
+        if (!shipment || ['shipped', 'in_transit', 'delivered'].includes(shipment.status)) {
+          throw this.conflict('INVOICE_ALREADY_DISPATCHED', 'A dispatched manual invoice cannot be voided');
+        }
+
+        const [voided] = await trx
+          .update(wmsTables.invoices)
+          .set({ status: 'voided', voidedAt: new Date() })
+          .where(eq(wmsTables.invoices.id, invoiceId))
+          .returning();
+        const response = this.toManualInvoiceResponse(voided);
+        await this.audit.logUserActionRequired(
+          'shipment.invoice.void.manual',
+          'fulfillment',
+          `Manual invoice ${invoiceId} voided`,
+          { userId: actor.id },
+          { invoiceId, shipmentId: invoice.shipmentId, reason: dto.reason ?? null, note: dto.note ?? null },
+          trx,
+        );
+        return { response, resourceType: 'invoice', resourceId: invoiceId };
+      },
+      tx,
+    );
   }
 
   async getOperation(operationId: string, tx?: DbTx): Promise<InvoiceOperationResponseDto> {
@@ -432,15 +587,16 @@ export class InvoiceOrchestrator {
         throw this.conflict('SHIPMENT_INVOICE_NOT_READY', 'Shipment requires exactly one issued invoice');
       }
       const invoice = invoices[0];
+      const requiresProviderServiceId = invoice.issueMethod !== 'self';
       if (
         !invoice.carrier ||
-        !invoice.externalServiceId?.trim() ||
+        (requiresProviderServiceId && !invoice.externalServiceId?.trim()) ||
         !invoice.trackingNo.trim() ||
         invoice.trackingNo.startsWith('pending:')
       ) {
         throw this.conflict(
           'SHIPMENT_INVOICE_NOT_READY',
-          'Issued invoice requires carrier, provider service ID, and finalized tracking number',
+          'Issued invoice requires a carrier and a finalized tracking number (provider invoices also require a service ID)',
         );
       }
       const recipientHash = canonicalShipmentRecipientHash(shipment.recipientSnapshot);
@@ -935,6 +1091,19 @@ export class InvoiceOrchestrator {
           price: line.unitPrice,
         })),
       },
+    };
+  }
+
+  private toManualInvoiceResponse(row: typeof wmsTables.invoices.$inferSelect): ManualInvoiceResponseDto {
+    return {
+      invoiceId: row.id,
+      shipmentId: row.shipmentId,
+      trackingNo: row.trackingNo,
+      carrier: row.carrier ?? '',
+      issueMethod: row.issueMethod,
+      status: row.status,
+      issuedAt: row.issuedAt.toISOString(),
+      voidedAt: row.voidedAt ? row.voidedAt.toISOString() : null,
     };
   }
 
