@@ -300,7 +300,14 @@ export class InvoiceOrchestrator {
           'fulfillment',
           `Manual invoice ${invoice.id} issued for shipment ${shipmentId}`,
           { userId: actor.id },
-          { invoiceId: invoice.id, shipmentId, carrier: dto.carrierCode, trackingNo, reason: dto.reason ?? null },
+          {
+            invoiceId: invoice.id,
+            shipmentId,
+            carrier: dto.carrierCode,
+            trackingNo,
+            reason: dto.reason ?? null,
+            note: dto.note ?? null,
+          },
           trx,
         );
         return { response, resourceType: 'invoice', resourceId: invoice.id };
@@ -477,7 +484,7 @@ export class InvoiceOrchestrator {
           'fulfillment',
           `Manual invoice ${invoiceId} voided`,
           { userId: actor.id },
-          { invoiceId, shipmentId: invoice.shipmentId, reason: dto.reason ?? null },
+          { invoiceId, shipmentId: invoice.shipmentId, reason: dto.reason ?? null, note: dto.note ?? null },
           trx,
         );
         return { response, resourceType: 'invoice', resourceId: invoiceId };
