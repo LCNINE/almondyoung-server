@@ -5,7 +5,7 @@ import { ICartModuleService } from '@medusajs/framework/types';
 import { PROMOTION_META_MODULE } from '../../../modules/promotion-meta';
 import PromotionMetaModuleService from '../../../modules/promotion-meta/service';
 import { toMetadataShape } from '../../../api/admin/promotions/helpers';
-import { isOverseasProduct, type MembershipProduct } from '../../../utils/membership-filter';
+import { isOverseasProduct, requiresMembershipToPurchase, type MembershipProduct } from '../../../utils/membership-filter';
 // import { getInventoryValidationFailures } from '../../../utils/validate-inventory';
 
 const PERSONAL_CUSTOMS_CODE_PATTERN = /^[A-Za-z]\d{12}$/;
@@ -76,6 +76,31 @@ completeCartWorkflow.hooks.validate(async ({ cart }, { container }) => {
   const cartItems: Array<{
     variant?: { product?: (MembershipProduct & { tags?: Array<{ value?: string }> }) | null } | null;
   }> = fullCart?.items ?? [];
+
+  // 멤버십 전용 구매 상품 최종 방어 — 게이트 적용 전에 담아둔 카트, 담은 뒤 멤버십 만료를 잡는다.
+  const hasMembersOnlyPurchase = cartItems.some((item) => {
+    const product = item?.variant?.product;
+    return product ? requiresMembershipToPurchase(product as MembershipProduct) : false;
+  });
+
+  if (hasMembersOnlyPurchase) {
+    const membershipGroupId = process.env.MEDUSA_MEMBERSHIP_GROUP_ID?.trim();
+    let isMember = false;
+
+    if (cart.customer_id && membershipGroupId) {
+      const { data: memberCustomers } = await query.graph({
+        entity: 'customer',
+        fields: ['id', 'groups.id'],
+        filters: { id: cart.customer_id },
+      });
+      const groups: Array<{ id?: string }> = (memberCustomers?.[0] as any)?.groups ?? [];
+      isMember = groups.some((group) => group?.id === membershipGroupId);
+    }
+
+    if (!isMember) {
+      throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '멤버십 회원만 구매할 수 있는 상품입니다.');
+    }
+  }
 
   const hasOverseasProduct = cartItems.some((item) => {
     const product = item?.variant?.product;
