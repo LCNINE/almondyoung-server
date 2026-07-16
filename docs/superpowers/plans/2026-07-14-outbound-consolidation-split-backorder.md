@@ -7,7 +7,26 @@
 > 이 절이 세션 간 인수인계 지점이다. 별도 핸드오프 문서를 만들지 않는다 — 이 플랜이 SoT 이고,
 > 사본을 두면 어긋난다. 작업이 끝나면 이 절을 지운다.
 
-**PR A 완료 · 배포 · 운영자 정리까지 끝났다 (2026-07-16 세션 3). 남은 것은 마지막 단계 PR B 하나다.**
+**PR A · 배포 · 운영자 정리 · PR B 코드까지 끝났다 (2026-07-16 세션 3). 남은 것은 PR B 의 운영자 배포(`deploy → migrate`) 뿐이다.**
+
+> **PR B 코드 완료 (세션 3, 커밋 `6e97f8525`·`bfe519c25`·`089095cba`·`4a79d6794` 등).** 스코프는 아래
+> "PR B 확정 스코프" 블록 참조. 핵심 결과:
+> - **facade 예약 transfer 은퇴** → `shipmentLineId` NOT NULL 가능(마지막 null 생성자 제거).
+> - **스키마 contract**: `fulfillment_status` 11값·`invoice_method` 'direct'·`shipment_status` 'open' 드롭,
+>   `fulfillment_order_batches` 테이블·`fulfillmentOrders.batchId`·`outbound_batches` assignedTo/totals 드롭,
+>   NOT NULL 4종(outbox topic+idempotency_key·tracking.dispatchAttemptId·invoices.shipmentId·reservations.shipmentLineId).
+> - **마이그레이션 손검토 + 실측 버그 수정**: drizzle-kit 이 enum 타입 재생성 시 CHECK 제약을 처리 못 해
+>   `shipment_status <> text` 로 죽던 것을 shipments 두 CHECK 를 surgery 전후로 drop/re-add 해 해결. fresh DB
+>   42/42 적용, enum=9 확인.
+> - **검증**: build:core exit 0, 유닛 68 passed, outbound-v2 통합 **7 suites/52 passed**, schema+orchestrator 31 passed.
+> - **정정(구현 중 발견)**: `reservedQty`/`pickedQty`/`openedForFO` 는 live V2 read/write 라 드롭 안 함(defer,
+>   reservation/progress 통합 후속). `outbound-v2-migration-rehearsal` 스펙은 은퇴(삭제) — expand→cleanup
+>   커토버 리허설인데 커토버가 완료됐고 contract 이후엔 V1 'open' 시드가 불가(사용자 결정). cleanup 로직은
+>   `cleanup.integration.spec` 가 계속 커버.
+> - **남은 운영자 단계**: PR B 는 contract 이므로 **배포(코드 먼저) → `db:migrate`**(ADR-0005 §5). live DB 는
+>   운영자 cleanup 으로 affected 테이블이 0 행이라 USING 캐스트·NOT NULL 이 안전하다(세션 3 실측).
+> - **후속(별도)**: goodsflow 코드 제거 + self/manual 발행 경로, reservation/progress 모델 통합(reservedQty/
+>   pickedQty/openedForFO 정리), authorization 스펙의 forged-operator 커버리지 재배치.
 
 1. ✅ **`FULFILLMENT_V2_CUTOVER_AT` = `2026-07-16T00:00:00.000Z` 확정.** 사용자 결정: "이전 FO 를 보존할
    이유가 없다"(실제 쓰던 데이터가 아님) — 어느 값이든 무방하므로 매니페스트 잠정값을 그대로 굳혔다.
