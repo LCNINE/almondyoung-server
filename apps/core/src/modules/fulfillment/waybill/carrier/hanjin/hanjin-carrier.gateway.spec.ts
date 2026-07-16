@@ -86,3 +86,43 @@ describe('HanjinCarrierGateway.allocate', () => {
     expect(g.isConfigured()).toBe(true);
   });
 });
+
+describe('HanjinCarrierGateway.register', () => {
+  const today = () => new Date('2023-10-09T06:28:39Z');
+  it('insert-order OK → registered, order 호스트·svcCatCd=S·wblNo 전달', async () => {
+    const post = jest.fn().mockResolvedValue({ resultCode: 'OK', resultMessage: 'SUCCESS' });
+    const g = new HanjinCarrierGateway(config, { post } as any, today);
+    const out = await g.register('531647410114', req);
+    expect(out).toEqual({ kind: 'registered' });
+    expect(post).toHaveBeenCalledWith(
+      'order',
+      '/parcel-delivery/v1/order/insert-order',
+      expect.objectContaining({
+        custEdiCd: 'HANJIN',
+        custOrdNo: 'SO-1',
+        wblNo: '531647410114',
+        svcCatCd: 'S',
+        cntractNo: '9117159',
+        pickupAskDt: '20231009',
+        payTypCd: 'PP',
+        boxTypCd: 'A',
+        comodityNm: '의류',
+      }),
+    );
+  });
+
+  it('insert-order ERROR-09(기등록) → already_registered (멱등 성공)', async () => {
+    const post = jest.fn().mockResolvedValue({ resultCode: 'ERROR-09', resultMessage: '기등록 운송장번호' });
+    const g = new HanjinCarrierGateway(config, { post } as any, today);
+    expect(await g.register('531647410114', req)).toEqual({ kind: 'already_registered' });
+  });
+
+  it('insert-order ERROR-06 → rejected(reason)', async () => {
+    const post = jest.fn().mockResolvedValue({ resultCode: 'ERROR-06', resultMessage: '유효하지 않은 수하인 주소' });
+    const g = new HanjinCarrierGateway(config, { post } as any, today);
+    expect(await g.register('531647410114', req)).toEqual({
+      kind: 'rejected',
+      reason: 'ERROR-06: 유효하지 않은 수하인 주소',
+    });
+  });
+});

@@ -36,6 +36,12 @@ interface PrintWblResponse {
   [key: string]: unknown;
 }
 
+// insert-order 응답(camelCase)
+interface InsertOrderResponse {
+  resultCode?: string;
+  resultMessage?: string;
+}
+
 export class HanjinCarrierGateway extends CarrierGateway {
   override readonly carrier: CarrierCode = 'HANJIN';
   override readonly capabilities: CarrierCapabilities = Object.freeze({
@@ -48,6 +54,7 @@ export class HanjinCarrierGateway extends CarrierGateway {
   constructor(
     private readonly config: HanjinConfig,
     private readonly client: HanjinApiClient,
+    private readonly now: () => Date = () => new Date(),
   ) {
     super();
   }
@@ -78,7 +85,49 @@ export class HanjinCarrierGateway extends CarrierGateway {
     return { waybillNo: String(res.wbl_num), labelData };
   }
 
-  override register(): Promise<RegisterOutcome> {
-    throw new Error('not implemented — Task 6');
+  override async register(waybillNo: string, req: WaybillRequest): Promise<RegisterOutcome> {
+    const body = {
+      custEdiCd: this.config.clientId,
+      custOrdNo: req.custOrdNo,
+      wblNo: waybillNo,
+      svcCatCd: 'S',
+      cntractNo: this.config.contractNo,
+      pickupAskDt: this.kstDate(this.now()),
+      sndrZip: req.sender.zip,
+      sndrBaseAddr: req.sender.baseAddress,
+      sndrDtlAddr: req.sender.detailAddress,
+      sndrNm: req.sender.name,
+      sndrTelNo: req.sender.tel ?? '',
+      rcvrZip: req.recipient.zip,
+      rcvrBaseAddr: req.recipient.baseAddress,
+      rcvrDtlAddr: req.recipient.detailAddress,
+      rcvrNm: req.recipient.name,
+      rcvrTelNo: req.recipient.tel ?? '',
+      rcvrMobileNo: req.recipient.mobile ?? '',
+      rcvrAskCntent: req.recipient.message ?? '',
+      comodityNm: req.commodityName,
+      payTypCd: req.payType,
+      boxTypCd: req.boxType,
+      comodityList: req.items.map((it) => ({
+        comodityCd: it.code ?? '',
+        comodityNm: it.name,
+        comodityCnt: String(it.quantity),
+      })),
+    };
+    const res = await this.client.post<InsertOrderResponse>('order', '/parcel-delivery/v1/order/insert-order', body);
+    if (res?.resultCode === 'OK') return { kind: 'registered' };
+    if (res?.resultCode === 'ERROR-09') return { kind: 'already_registered' };
+    return { kind: 'rejected', reason: `${res?.resultCode ?? 'UNKNOWN'}: ${res?.resultMessage ?? ''}`.trim() };
+  }
+
+  private kstDate(d: Date): string {
+    const p = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(d);
+    const get = (t: Intl.DateTimeFormatPartTypes) => p.find((x) => x.type === t)!.value;
+    return `${get('year')}${get('month')}${get('day')}`;
   }
 }
