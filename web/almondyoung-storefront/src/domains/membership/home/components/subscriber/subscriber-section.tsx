@@ -24,6 +24,10 @@ import type {
 } from "@lib/types/dto/membership-savings"
 import type { PlanWithTier } from "@lib/types/membership"
 
+//  멤버십 해지 버튼 임시 숨김 (2026-07-16). 되돌리려면 true.
+// non-subscriber/index.tsx 에도 같은 플래그가 있으니 같이 되돌릴 것.
+const SHOW_MEMBERSHIP_CANCEL: boolean = false
+
 /**
  * 멤버십 가입자 전용 섹션
  *
@@ -127,19 +131,21 @@ export default function SubscriberSection({
             </a>
           )}
         </div>
-        {/* 해지 (파괴적 액션이라 리스트 밖, 눈에 덜 띄는 텍스트 버튼) */}
-        <div className="mt-6 flex flex-col items-start gap-2">
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            className="text-muted-foreground hover:text-foreground text-sm underline underline-offset-4 transition-colors"
-          >
-            {t("history.cancelMembership")}
-          </button>
-          <p className="text-muted-foreground text-xs">
-            {t("history.cancelWarning")}
-          </p>
-        </div>
+        {/* 해지 */}
+        {SHOW_MEMBERSHIP_CANCEL && (
+          <div className="mt-6 flex flex-col items-start gap-2">
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="text-muted-foreground hover:text-foreground text-sm underline underline-offset-4 transition-colors"
+            >
+              {t("history.cancelMembership")}
+            </button>
+            <p className="text-muted-foreground text-xs">
+              {t("history.cancelWarning")}
+            </p>
+          </div>
+        )}
       </div>
       <MembershipCancelModal
         open={open}

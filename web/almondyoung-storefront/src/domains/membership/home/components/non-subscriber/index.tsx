@@ -20,6 +20,10 @@ const LEGACY_URL =
   process.env.NEXT_PUBLIC_LEGACY_MEMBERSHIP_HISTORY_URL ??
   "https://almondyoung.com/myshop/mileage/historyList.html"
 
+//  멤버십 해지 버튼 임시 숨김 (2026-07-16). 되돌리려면 true.
+// subscriber/subscriber-section.tsx 에도 같은 플래그가 있으니 같이 되돌릴 것.
+const SHOW_MEMBERSHIP_CANCEL: boolean = false
+
 const STATUS_COLOR: Record<string, string> = {
   ACTIVE: "underline underline-offset-2 text-gray-900 font-medium",
   CANCELLED: "text-gray-400",
@@ -213,7 +217,7 @@ function HistoryCard({
             </div>
 
             {/* 정기결제 해지 버튼 */}
-            {canCancel && (
+            {SHOW_MEMBERSHIP_CANCEL && canCancel && (
               <div className="mt-3 border-t border-gray-200 pt-3">
                 <p className="mb-2 text-xs text-gray-500">
                   {isInTrial
