@@ -392,22 +392,8 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
           providerEventId,
         }),
       ).resolves.toBeDefined();
-
-      const legacyProviderEventId = `legacy-provider-event-${randomUUID()}`;
-      await expect(
-        tx.insert(wmsTables.shipmentTracking).values([
-          {
-            shipmentId: f.shipment.id,
-            status: 'in_transit',
-            providerEventId: legacyProviderEventId,
-          },
-          {
-            shipmentId: f.shipment.id,
-            status: 'delivered',
-            providerEventId: legacyProviderEventId,
-          },
-        ]),
-      ).resolves.toBeDefined();
+      // Task 25 contract: shipment_tracking.dispatch_attempt_id 는 NOT NULL — legacy NULL-identity tracking
+      // (옛 "NULL dispatchAttemptId 는 providerEventId 중복 허용")은 더 이상 성립하지 않으므로 제거.
     });
   });
 
@@ -506,9 +492,12 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
         'ck_shipments_reservation_version_positive',
       );
 
+      // Task 25 contract: shipment_line_id 는 NOT NULL — 예약은 shipment-line 단위. quantity/invalidation
+      // 체크를 태우려면 유효한 shipmentLineId 로 NOT NULL 을 먼저 통과시킨다.
       const reservationBase = {
-        targetType: 'FULFILLMENT_ORDER',
-        targetId: f.fulfillmentOrder.id,
+        targetType: 'SHIPMENT_LINE',
+        targetId: f.shipmentLine.id,
+        shipmentLineId: f.shipmentLine.id,
         skuId: f.sku.id,
         warehouseId: f.warehouse.id,
       };
@@ -543,6 +532,7 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
             trackingNo: `V2-INV-MANIFEST-${randomUUID()}`,
             issueMethod: 'self',
             issuedForFulfillmentOrderId: f.fulfillmentOrder.id,
+            shipmentId: f.shipment.id,
             manifestVersion: 0,
           }),
         'ck_invoices_manifest_version_positive',
@@ -554,6 +544,7 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
             trackingNo: `V2-INV-RECIPIENT-${randomUUID()}`,
             issueMethod: 'self',
             issuedForFulfillmentOrderId: f.fulfillmentOrder.id,
+            shipmentId: f.shipment.id,
             recipientHash: 'bad',
           }),
         'ck_invoices_recipient_hash',
@@ -564,6 +555,7 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
           trackingNo: `V2-INV-RECIPIENT-VALID-${randomUUID()}`,
           issueMethod: 'self',
           issuedForFulfillmentOrderId: f.fulfillmentOrder.id,
+          shipmentId: f.shipment.id,
           recipientHash: 'e'.repeat(64),
         })
         .returning();
@@ -2152,6 +2144,8 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
 
     await inRollbackTx(async (tx) => {
       const f = await fixture(tx);
+      // Task 25 contract: invoices.shipment_id 가 NOT NULL 이 되어 ck_invoices_recovery_state(recovery_required
+      // → shipment_id 필수)는 컬럼 NOT NULL 로 포섭됐다. shipment_id 누락은 NOT NULL 위반으로 먼저 막힌다.
       await expectViolation(
         tx,
         (sp) =>
@@ -2161,7 +2155,7 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
             issuedForFulfillmentOrderId: f.fulfillmentOrder.id,
             status: 'recovery_required',
           }),
-        'ck_invoices_recovery_state',
+        'shipment_id',
       );
     });
   });
@@ -2221,7 +2215,9 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
     });
   });
 
-  it('rejects half-specified explicit outbox routing at the database boundary', async () => {
+  it('rejects an outbox row missing idempotency_key at the database boundary', async () => {
+    // Task 25 contract: topic/idempotency_key 는 NOT NULL — 옛 ck_outbox_routing_pair(both-null-or-both-set)는
+    // NOT NULL 로 대체됐다. topic 만 있고 key 없는 half-specified 행은 idempotency_key NOT NULL 로 막힌다.
     await inRollbackTx(async (tx) => {
       const f = await fixture(tx);
       await expectViolation(
@@ -2235,7 +2231,7 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
             partitionKey: f.shipment.id,
             payload: {},
           }),
-        'ck_outbox_routing_pair',
+        'idempotency_key',
       );
     });
   });

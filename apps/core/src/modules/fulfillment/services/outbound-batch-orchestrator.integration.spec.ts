@@ -289,24 +289,12 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
     const detail = await services.batches.getBatch(created.batchId);
     expect(detail).toMatchObject({ status: 'created', totalItems: 1, totalQty: 3 });
     const [storedBatch] = await db
-      .select({
-        status: wmsTables.outboundBatches.status,
-        totalItems: wmsTables.outboundBatches.totalItems,
-        totalQty: wmsTables.outboundBatches.totalQty,
-      })
+      .select({ status: wmsTables.outboundBatches.status })
       .from(wmsTables.outboundBatches)
       .where(eq(wmsTables.outboundBatches.id, created.batchId));
-    expect(storedBatch).toEqual({ status: 'created', totalItems: 0, totalQty: 0 });
-    const [fo] = await db
-      .select({ batchId: wmsTables.fulfillmentOrders.batchId })
-      .from(wmsTables.fulfillmentOrders)
-      .where(eq(wmsTables.fulfillmentOrders.id, fixture.fulfillmentOrder.id));
-    const links = await db
-      .select()
-      .from(wmsTables.fulfillmentOrderBatches)
-      .where(eq(wmsTables.fulfillmentOrderBatches.batchId, created.batchId));
-    expect(fo.batchId).toBeNull();
-    expect(links).toHaveLength(0);
+    expect(storedBatch).toEqual({ status: 'created' });
+    // Task 25 contract: FO↔batch 링크 테이블(fulfillment_order_batches)과 fulfillmentOrders.batchId,
+    // outbound_batches.totalItems/totalQty 컬럼은 제거됨 — batch 단위는 FO 가 아니라 shipment(work item)다.
 
     await services.batches.claimPicker(
       added.workItem.id,
@@ -315,14 +303,10 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       { id: randomUUID(), roles: ['warehouse_worker'] },
     );
     const [storedAfterClaim] = await db
-      .select({
-        status: wmsTables.outboundBatches.status,
-        totalItems: wmsTables.outboundBatches.totalItems,
-        totalQty: wmsTables.outboundBatches.totalQty,
-      })
+      .select({ status: wmsTables.outboundBatches.status })
       .from(wmsTables.outboundBatches)
       .where(eq(wmsTables.outboundBatches.id, created.batchId));
-    expect(storedAfterClaim).toEqual({ status: 'created', totalItems: 0, totalQty: 0 });
+    expect(storedAfterClaim).toEqual({ status: 'created' });
   });
 
   it('allows a recalled dispatch history through batch add and exclusion while preserving the old attempt', async () => {

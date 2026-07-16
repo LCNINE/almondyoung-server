@@ -15,6 +15,8 @@ ALTER TABLE "invoices" ALTER COLUMN "issue_method" SET DATA TYPE text;--> statem
 DROP TYPE "public"."invoice_method";--> statement-breakpoint
 CREATE TYPE "public"."invoice_method" AS ENUM('goodsflow', 'self', 'hanjin');--> statement-breakpoint
 ALTER TABLE "invoices" ALTER COLUMN "issue_method" SET DATA TYPE "public"."invoice_method" USING "issue_method"::"public"."invoice_method";--> statement-breakpoint
+ALTER TABLE "shipments" DROP CONSTRAINT "ck_shipments_recovery_code";--> statement-breakpoint
+ALTER TABLE "shipments" DROP CONSTRAINT "ck_shipments_superseded_at";--> statement-breakpoint
 ALTER TABLE "shipment_tracking" ALTER COLUMN "status" SET DATA TYPE text;--> statement-breakpoint
 ALTER TABLE "shipments" ALTER COLUMN "status" SET DATA TYPE text;--> statement-breakpoint
 ALTER TABLE "shipments" ALTER COLUMN "status" SET DEFAULT 'draft'::text;--> statement-breakpoint
@@ -23,6 +25,8 @@ CREATE TYPE "public"."shipment_status" AS ENUM('shipped', 'in_transit', 'deliver
 ALTER TABLE "shipment_tracking" ALTER COLUMN "status" SET DATA TYPE "public"."shipment_status" USING "status"::"public"."shipment_status";--> statement-breakpoint
 ALTER TABLE "shipments" ALTER COLUMN "status" SET DEFAULT 'draft'::"public"."shipment_status";--> statement-breakpoint
 ALTER TABLE "shipments" ALTER COLUMN "status" SET DATA TYPE "public"."shipment_status" USING "status"::"public"."shipment_status";--> statement-breakpoint
+ALTER TABLE "shipments" ADD CONSTRAINT "ck_shipments_recovery_code" CHECK (((("status")::text <> 'recovery_required'::text) OR ("recovery_code" IS NOT NULL)));--> statement-breakpoint
+ALTER TABLE "shipments" ADD CONSTRAINT "ck_shipments_superseded_at" CHECK (((("status")::text <> 'superseded'::text) OR ("superseded_at" IS NOT NULL)));--> statement-breakpoint
 DROP INDEX "uq_outbox_topic_event_idempotency";--> statement-breakpoint
 ALTER TABLE "invoices" ALTER COLUMN "shipment_id" SET NOT NULL;--> statement-breakpoint
 ALTER TABLE "outbox_events" ALTER COLUMN "topic" SET NOT NULL;--> statement-breakpoint
