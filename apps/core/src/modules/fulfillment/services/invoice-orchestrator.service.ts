@@ -432,15 +432,16 @@ export class InvoiceOrchestrator {
         throw this.conflict('SHIPMENT_INVOICE_NOT_READY', 'Shipment requires exactly one issued invoice');
       }
       const invoice = invoices[0];
+      const requiresProviderServiceId = invoice.issueMethod !== 'self';
       if (
         !invoice.carrier ||
-        !invoice.externalServiceId?.trim() ||
+        (requiresProviderServiceId && !invoice.externalServiceId?.trim()) ||
         !invoice.trackingNo.trim() ||
         invoice.trackingNo.startsWith('pending:')
       ) {
         throw this.conflict(
           'SHIPMENT_INVOICE_NOT_READY',
-          'Issued invoice requires carrier, provider service ID, and finalized tracking number',
+          'Issued invoice requires a carrier and a finalized tracking number (provider invoices also require a service ID)',
         );
       }
       const recipientHash = canonicalShipmentRecipientHash(shipment.recipientSnapshot);
