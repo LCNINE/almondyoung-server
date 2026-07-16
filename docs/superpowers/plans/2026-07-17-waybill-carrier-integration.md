@@ -434,10 +434,17 @@ describe('HanjinApiClient', () => {
     expect(headers.Authorization).toContain('client_id=HANJIN timestamp=20231009152839 signature=');
   });
 
-  it('get: print 호스트 + 쿼리 직렬화(서명은 쿼리 포함 URL로)', async () => {
+  it('get: print 호스트 라우팅 + 쿼리 직렬화(서명은 쿼리 포함 URL로)', async () => {
     const spy = jest.spyOn(global, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ resultCode: 'OK' }), { status: 200 }),
     );
+    await client().get('print', '/v1/wbl/HANJIN/x', { a: '1', b: '2' });
+    // print 호스트(ebbapd)로 라우팅 + 쿼리 직렬화 동시 검증
+    expect(spy.mock.calls[0][0]).toBe('https://ebbapd.hjt.co.kr/v1/wbl/HANJIN/x?a=1&b=2');
+  });
+
+  it('get: order 호스트 라우팅', async () => {
+    const spy = jest.spyOn(global, 'fetch').mockResolvedValue(new Response(JSON.stringify({ resultCode: 'OK' }), { status: 200 }));
     await client().get('order', '/parcel-delivery/v1/customer/customer-check', { cntractNo: '9117159' });
     expect(spy.mock.calls[0][0]).toBe('https://api-stg.hanjin.com/parcel-delivery/v1/customer/customer-check?cntractNo=9117159');
   });
@@ -476,25 +483,26 @@ export class HanjinApiClient {
     private readonly signer: HanjinHmacSigner,
   ) {}
 
-  async post(host: HanjinHost, path: string, body: unknown): Promise<any> {
-    return this.request('POST', host, path, undefined, body);
+  // 제네릭 T: 호출부(게이트웨이)가 응답 shape 을 선언. any 금지 — 기본 unknown.
+  async post<T = unknown>(host: HanjinHost, path: string, body: unknown): Promise<T> {
+    return this.request<T>('POST', host, path, undefined, body);
   }
 
-  async get(host: HanjinHost, path: string, query: Record<string, string> = {}): Promise<any> {
-    return this.request('GET', host, path, query, undefined);
+  async get<T = unknown>(host: HanjinHost, path: string, query: Record<string, string> = {}): Promise<T> {
+    return this.request<T>('GET', host, path, query, undefined);
   }
 
   private baseUrl(host: HanjinHost): string {
     return host === 'print' ? this.config.printBaseUrl : this.config.orderBaseUrl;
   }
 
-  private async request(
+  private async request<T>(
     method: 'GET' | 'POST',
     host: HanjinHost,
     path: string,
     query: Record<string, string> | undefined,
     body: unknown,
-  ): Promise<any> {
+  ): Promise<T> {
     const qs = query && Object.keys(query).length ? '?' + new URLSearchParams(query).toString() : '';
     const url = `${this.baseUrl(host)}${path}${qs}`;
     const headers = this.signer.sign(method, url); // 서명은 쿼리 포함 URL로
@@ -635,6 +643,14 @@ const LABEL_FIELDS = [
   'dom_rgn','hub_cod','dom_mid','grp_rnk','es_nam','es_cod','prt_add',
 ] as const;
 
+// print-wbl 응답(snake_case). 분류필드는 인덱스 시그니처로 접근.
+interface PrintWblResponse {
+  result_code?: string;
+  result_message?: string;
+  wbl_num?: string | number;
+  [key: string]: unknown;
+}
+
 export class HanjinCarrierGateway extends CarrierGateway {
   override readonly carrier: CarrierCode = 'HANJIN';
   override readonly capabilities: CarrierCapabilities = Object.freeze({
@@ -661,7 +677,7 @@ export class HanjinCarrierGateway extends CarrierGateway {
       rcv_zip: req.recipient.zip,
       msg_key: req.custOrdNo,
     };
-    const res = await this.client.post('print', `/v1/wbl/${this.config.clientId}/print-wbl`, body);
+    const res = await this.client.post<PrintWblResponse>('print', `/v1/wbl/${this.config.clientId}/print-wbl`, body);
     if (res?.result_code !== 'OK' || !res?.wbl_num) {
       throw new CarrierError(
         `Hanjin print-wbl rejected: ${res?.result_code} - ${res?.result_message ?? ''}`,
@@ -740,7 +756,15 @@ Expected: FAIL (register가 'not implemented' throw + 생성자 3번째 인자 �
 
 - [ ] **Step 3: 구현 — 생성자에 clock 주입 + register/pickupAskDt**
 
-생성자에 `now` 추가하고 `register` 구현:
+생성자에 `now` 추가하고 `register` 구현. 먼저 모듈 스코프에 응답 타입 선언(PrintWblResponse 옆):
+
+```ts
+// insert-order 응답(camelCase)
+interface InsertOrderResponse {
+  resultCode?: string;
+  resultMessage?: string;
+}
+```
 
 ```ts
   constructor(
@@ -768,7 +792,7 @@ Expected: FAIL (register가 'not implemented' throw + 생성자 3번째 인자 �
       payTypCd: req.payType, boxTypCd: req.boxType,
       comodityList: req.items.map((it) => ({ comodityCd: it.code ?? '', comodityNm: it.name, comodityCnt: String(it.quantity) })),
     };
-    const res = await this.client.post('order', '/parcel-delivery/v1/order/insert-order', body);
+    const res = await this.client.post<InsertOrderResponse>('order', '/parcel-delivery/v1/order/insert-order', body);
     if (res?.resultCode === 'OK') return { kind: 'registered' };
     if (res?.resultCode === 'ERROR-09') return { kind: 'already_registered' };
     return { kind: 'rejected', reason: `${res?.resultCode ?? 'UNKNOWN'}: ${res?.resultMessage ?? ''}`.trim() };
@@ -847,13 +871,27 @@ const STATUS_MAP: Record<string, CarrierScanStatus> = {
   '92': 'failed', '03': 'canceled',
 };
 
+// tracking-wbl 응답(camelCase)
+interface TrackingWblItem {
+  statusCode?: string;
+  statusDate?: string;
+  agencyName?: string;
+  description?: string;
+  reasonCode?: string;
+  reasonMessage?: string;
+}
+interface TrackingWblResponse {
+  resultCode?: string;
+  wrkList?: TrackingWblItem[];
+}
+
 // (클래스 메서드로 추가)
   override async track(waybillNo: string): Promise<CarrierScan[]> {
-    const res = await this.client.post('order', '/parcel-delivery/v1/tracking/tracking-wbl', {
+    const res = await this.client.post<TrackingWblResponse>('order', '/parcel-delivery/v1/tracking/tracking-wbl', {
       custEdiCd: this.config.clientId, wblNo: waybillNo,
     });
     if (res?.resultCode === 'ERROR-01') return [];
-    const list: any[] = Array.isArray(res?.wrkList) ? res.wrkList : [];
+    const list: TrackingWblItem[] = Array.isArray(res?.wrkList) ? res.wrkList : [];
     return list.map((w) => ({
       statusCode: String(w.statusCode ?? ''),
       status: STATUS_MAP[String(w.statusCode)] ?? 'pending',
