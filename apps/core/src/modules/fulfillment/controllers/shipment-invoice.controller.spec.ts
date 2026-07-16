@@ -46,3 +46,33 @@ describe('ShipmentInvoiceController authorization contract', () => {
     expect(metadata(ShipmentInvoiceController.prototype.void)).toEqual([FULFILLMENT_SCOPE.SHIPMENT_REOPEN]);
   });
 });
+
+describe('ShipmentInvoiceController manual routes', () => {
+  function make() {
+    const invoices = {
+      issueManualInvoice: jest.fn().mockResolvedValue({ invoiceId: 'inv-1', status: 'issued' }),
+      voidManualInvoice: jest.fn().mockResolvedValue({ invoiceId: 'inv-1', status: 'voided' }),
+    };
+    const controller = new ShipmentInvoiceController(invoices as never);
+    return { controller, invoices };
+  }
+
+  it('delegates manual issue with the resolved actor and idempotency key', async () => {
+    const { controller, invoices } = make();
+    const dto = { expectedManifestVersion: 1, carrierCode: 'HANJIN', trackingNo: 'H1' } as never;
+    const result = await controller.issueManual('ship-1', dto, 'key-1', { userId: 'u-1', roles: ['master'] });
+    expect(result).toMatchObject({ invoiceId: 'inv-1', status: 'issued' });
+    expect(invoices.issueManualInvoice).toHaveBeenCalledWith('ship-1', dto, 'key-1', { id: 'u-1', roles: ['master'] });
+  });
+
+  it('defaults a missing idempotency key to empty string on void', async () => {
+    const { controller, invoices } = make();
+    await controller.voidManual('inv-1', {} as never, undefined, { userId: 'u-1', roles: [] });
+    expect(invoices.voidManualInvoice).toHaveBeenCalledWith('inv-1', {}, '', { id: 'u-1', roles: [] });
+  });
+
+  it('rejects an unauthenticated actor', () => {
+    const { controller } = make();
+    expect(() => controller.issueManual('ship-1', {} as never, 'key-1', {})).toThrow();
+  });
+});
