@@ -45,6 +45,7 @@ Core의 송장(invoice) 레이어는 **굿스플로 계약에 맞춰** 설계된
 | 캐리어 seam | 안 A — 2-step capability 포트(`allocate`/`register`). 크래시 안전성은 머신에 집중, 어댑터는 얇게. labelData는 carrier-tagged blob | 상태머신과 1:1, self/1-phase 캐리어 무마찰, 한진 필드가 포트에 안 샘 |
 | 캐리어 범위 | 한진 어댑터만 지금 구현. self/타캐리어는 인터페이스만 | YAGNI |
 | void | 로컬 void + 재발급. cancel-order 미구현 | 한진 S-flow는 API 취소 없음 |
+| 교착 해소 | `abandoned` 종료상태 신설. `pending` 포기=attempts CAP 자동/운영자(안전), `allocated` 포기=운영자 전용(이중등록 위험 인지+wblNo 기록) | stuck pending/allocated가 활성 슬롯 영구 점유 방지; allocated 자동 포기는 이중등록 재발 위험이라 금지 |
 | tracking | 포트에 `track()` 캡빌리티만. 폴러는 후속 | 발급 라이프사이클에 집중 |
 | 정명 | `invoice` → `waybill`. 오케스트레이터·워커·provider·굿스플로/한진 스텁·`invoiceOperations` 삭제 | 송장(세금계산서)과 혼동 제거, 백지 재구축 |
 | self 계승 | dispatch-gate self 완화·void 발송전 안전범위·`assertProfileComplete` 미적용을 새 모듈로 이관 | 이미 develop 동작 중, 회귀 금지 |
@@ -78,12 +79,16 @@ WaybillController
 ```ts
 // 삭제: invoiceStatusEnum, invoiceMethodEnum, invoiceOperationTypeEnum
 export const waybillStatusEnum = pgEnum('waybill_status', [
-  'pending',     // 행 생성, 외부 호출 전 (carrier 발급만; self는 안 거침)
+  // 활성(슬롯 점유)
+  'pending',     // 행 생성, 외부 호출 전 (carrier 발급만; manual은 안 거침)
   'allocated',   // 채번 완료(print-wbl), wblNo·labelData 저장 — 등록 전 (carrier 전용, transient)
-  'registered',  // 등록 완료(insert-order) 또는 self 수동 입력 — 디스패치 가능
+  'registered',  // 등록 완료(insert-order/already_registered) 또는 manual 수동 입력 — 디스패치 가능
   'used',        // 디스패치(출고)로 소비됨 — 기존 'used' 의미 유지(디스패치 흐름이 전이)
-  'voided',      // 취소 (로컬)
-  'failed',      // 확정 거절 (재시도 무의미) — 종료
+  // 종료(슬롯 해제)
+  'voided',      // registered 를 발송 전 취소 (로컬, 번호 판기)
+  'failed',      // 캐리어 확정 거절(rejected) — 재시도 무의미
+  'abandoned',   // 미상 결과(unknown_outcome) 지속으로 발급 포기. pending: attempts CAP 자동/운영자(안전).
+                 //   allocated: 운영자 전용(이중등록 위험 인지 + 미해결 wblNo 기록)
 ]);
 export const waybillSourceEnum = pgEnum('waybill_source', ['carrier', 'manual']);
 // carrier = 캐리어 API 채번(현재 한진), manual = 운영자 외부번호 수동 입력(구 'self')
@@ -110,10 +115,10 @@ export const waybillSourceEnum = pgEnum('waybill_source', ['carrier', 'manual'])
 | `createdAt`/`updatedAt` | timestamptz | |
 
 **제약**
-- `trackingNo` 부분 UNIQUE (`WHERE trackingNo IS NOT NULL`) — 멱등 앵커(재시도 시 동일 wblNo 재삽입 차단, ERROR-09와 양면 보장).
-- 활성 유니크: `uniqueIndex uq_waybills_shipment_active ON (shipmentId) WHERE status NOT IN ('voided','failed')` — shipment당 활성 운송장 1개(구 `uq_invoices_shipment_active` 계승, failed도 슬롯 해제).
+- `trackingNo` 부분 UNIQUE (`WHERE trackingNo IS NOT NULL AND status NOT IN ('voided','failed','abandoned')`) — **live 운송장 사이에서만** 유일. 멱등 앵커(재구동 시 동일 wblNo 재삽입 차단, ERROR-09와 양면 보장)이면서, 오void한 manual 번호 재등록은 허용(§11·#3). carrier 멱등은 행 내 재구동에 앵커하므로 종료 상태 제외가 안전.
+- 활성 유니크: `uniqueIndex uq_waybills_shipment_active ON (shipmentId) WHERE status NOT IN ('voided','failed','abandoned')` — shipment당 활성 운송장 1개. 종료 3상태 모두 슬롯 해제(교착 방지).
 - check: `status IN ('allocated','registered','used') → trackingNo IS NOT NULL`.
-- check: `source = 'manual' → status IN ('registered','used','voided')` (manual은 pending/allocated 거치지 않음).
+- check: `source = 'manual' → status IN ('registered','used','voided')` (manual은 외부 호출이 없어 pending/allocated/failed/abandoned 를 거치지 않음).
 
 ### 5.3 마이그레이션
 
@@ -192,13 +197,24 @@ headers:
 ## 8. 발급 상태머신 (`WaybillIssueMachine.drive`)
 
 ```
-pending    --allocate()-->  allocated   (wbl_num·labelData durable 저장; trackingNo UNIQUE)
-allocated  --register()-->  registered  (OK 또는 already_registered)
-allocated  --rejected--->   failed
-registered/used/voided/failed --> no-op (멱등)
+pending    --allocate OK----------->  allocated   (wbl_num·labelData durable 저장; trackingNo UNIQUE)
+pending    --allocate rejected----->  failed
+pending    --unknown_outcome------->  pending     (attempts++, 재구동)
+pending    --attempts≥CAP(unknown)->  abandoned   (자동, 안전) ── 운영자 포기도 가능
+allocated  --register OK/ERROR-09-->  registered  (already_registered = 멱등 성공)
+allocated  --register rejected----->  failed
+allocated  --unknown_outcome------->  allocated   (attempts++, 동일 wblNo 재구동 — 자동 포기 금지)
+allocated  --운영자 포기----------->  abandoned   (운영자 전용; 미해결 wblNo 기록 + 이중등록 경고)
+registered --markUsed(dispatch)---->  used
+registered --void(발송 전)--------->  voided
+registered/used/voided/failed/abandoned --> no-op (멱등)
 ```
 
-**핵심 불변식**: `allocate`로 받은 `wblNo`를 `register` **전에 durable 저장**(allocated 전이), 재구동은 **항상 저장된 동일 wblNo로** `register` 재시도, `already_registered`를 성공으로 처리. ⇒ 타임아웃으로 응답만 유실돼도 이중 등록 없음(한진 custOrdNo 미검사 quirk를 우회).
+**핵심 불변식**: `allocate`로 받은 `wblNo`를 `register` **전에 durable 저장**(allocated 전이), 재구동은 **항상 저장된 동일 wblNo로** `register` 재시도, `already_registered`(ERROR-09)를 성공으로 처리. ⇒ 타임아웃으로 응답만 유실돼도 이중 등록 없음(한진 custOrdNo 미검사 quirk를 우회).
+
+**포기(교착 해소)의 비대칭 — 불변식 유지의 핵심:**
+- **`pending` 포기는 안전 → 자동 허용.** allocate만 실패한 상태라 wblNo 없음·insert-order 미발송. 재발급하면 새 번호로 딱 한 건 등록됨(원래 print-wbl이 몰래 채번했더라도 미사용 누수 번호일 뿐, 이중 *배송* 없음). `attempts ≥ CAP`(config 상수, unknown_outcome 지속 시) → `abandoned` 자동 전이. 운영자 수동 포기도 가능.
+- **`allocated` 포기는 자동 금지 → 운영자 전용.** wblNo W 보유 + insert-order(W)가 unknown_outcome이면 **Hanjin이 W로 이미 등록했을 수 있음**. 자동으로 슬롯을 놓고 새 번호로 재발급하면 이중등록/이중집하 위험(custOrdNo 미검사). 게다가 tracking-wbl(W)는 스캔 전 ERROR-01이라 "등록됨/미등록" 구분 불가. 따라서 **CAP 미적용**(`allocated`는 attempts 무제한, 동일 W로 계속 재구동해 ERROR-09로 등록 확인이 정상 해소). 포기는 오직 운영자가 이중등록 위험을 인지한 명시 액션으로만 `abandoned` 전이하고, 미해결 wblNo + 경고를 감사로그에 기록(정산 대상).
 
 - 재시도 = `drive()` 재호출(같은 코드 경로). 각 전이는 저장 상태 + trackingNo UNIQUE로 가드.
 - **stuck 재구동**: `pending`/`allocated`로 오래 멈춘 행을 찾아 `drive()` 재호출 — 별도 리커버리 워커 없이 관리 액션 또는 경량 스케줄. (정상 발급과 동일 경로)
@@ -240,13 +256,15 @@ registered/used/voided/failed --> no-op (멱등)
 ## 10. 배치 / 부분실패 처리
 
 - `issueBatch`는 shipment별 `waybills` 행을 먼저 `pending`으로 **durable 생성**(부분실패 착지점 확보) → 한진 `print-wbls`(최대 100건)로 채번 → 건별 `wbl_num` 저장(allocated) → 건별 `insert-order`(register).
-- 응답은 **건별 결과**(shipmentId → registered/failed/사유). 실패 건은 waybill 행에 `failed`/`lastError`로 남아, 성공 건 재채번 없이 실패 건만 재구동 가능.
+- 응답은 **건별 결과**(shipmentId → registered/failed/pending/사유). 실패 건은 waybill 행에 `failed`/`lastError`로, 미완 건은 `pending`/`allocated`로 남아, 성공 건 재채번 없이 미완 건만 재구동 가능.
 - 100건 초과는 청크 분할. 일일 한도(ERROR-05) 도달 시 남은 건 `pending` 유지 + 사유 로깅(silent truncation 금지).
+- **동기 실행 시간 리스크(#2)**: 100건 배치 = print-wbls 1콜 + insert-order 최대 100콜을 한 HTTP 요청에서 처리 → 게이트웨이/LB 타임아웃(예 ALB 60s) 가능. durable 행이 correctness는 보장하나, **insert-order bounded 병렬(동시 N) + 시간예산 초과 시 미완 건을 `pending`/`allocated`로 조기 반환(→ stuck 재구동/폴로 마감)** 또는 동기 배치 크기 상한 중 하나를 **구현 플랜에서 확정**. 상세 정책은 플랜 소관.
 
 ## 11. 재발급 / void 라이프사이클
 
-- **void**: `registered`(발송 전) → `voided` + voidedAt. 외부 호출 없음(번호 판기). `used`(디스패치됨)·shipment `shipped/in_transit/delivered`면 거부(`WAYBILL_ALREADY_DISPATCHED`). 부분 유니크가 풀려 재발급 가능.
-- **reissue**: void + 새 발급을 한 트랜잭션/한 명령으로. 주소 변경(manifest/recipient 해시 불일치로 stale 감지)·오채번 정정 용도.
+- **void**: `registered`(발송 전) → `voided` + voidedAt. 외부 호출 없음(번호 판기). `used`(디스패치됨)·shipment `shipped/in_transit/delivered`면 거부(`WAYBILL_ALREADY_DISPATCHED`). 종료 상태라 활성 유니크가 풀려 재발급 가능.
+- **abandon**(§8): 교착 해소용 포기. `pending`은 attempts CAP로 **자동**(또는 운영자), `allocated`는 **운영자 전용**(이중등록 위험 인지 + 미해결 wblNo 기록). → `abandoned`. void와 마찬가지로 활성 슬롯을 해제해 재발급 경로를 연다.
+- **reissue**: 현재 활성 행을 void/abandon 후 새 발급을 **한 명령**으로. 시작점은 `registered`(주소 변경 stale·오채번 정정) 또는 `pending`/`allocated`(교착) 모두 가능. `allocated`발 reissue는 abandon의 운영자-전용·위험기록 규칙을 그대로 적용.
 - **stale 감지**: `assertDispatchable`이 저장 해시 vs 현재 shipment 비교(`SHIPMENT_INVOICE_STALE` 계승). 별도 `recovery_required` 상태 없이 파생 — stale이면 운영자가 reissue.
 
 ## 12. Consumer seam 마이그레이션
@@ -264,7 +282,9 @@ registered/used/voided/failed --> no-op (멱등)
 - **HanjinHmacSigner (유닛)**: 공식 예제 입력 → 예제 서명 소문자 hex 재현. GET(쿼리 포함)/POST(빈 쿼리) message 조합. KST timestamp.
 - **HanjinCarrierGateway (유닛, HTTP mock)**: allocate/register/track 필드 매핑; resultCode 정규화(OK/ERROR-09→already/거절/타임아웃→unknown).
 - **WaybillIssueMachine (통합)**: pending→allocated→registered happy; register 타임아웃 후 재구동이 동일 wblNo로 재시도해 already_registered→성공(이중등록 없음); allocate 후 크래시→재구동; rejected→failed.
-- **WaybillService**: registerManual(source='manual', registered 즉시, assertProfileComplete 미적용, carrierAccountRef 없는 프로필도 성공); void 발송전만; reissue 정정; 중복 trackingNo 거부.
+- **교착 해소 비대칭(핵심 회귀)**: `pending`에서 allocate unknown_outcome가 CAP 도달 → `abandoned` **자동** 전이, 이후 reissue 성공(이중배송 없음); `allocated`에서 register unknown_outcome 반복은 **자동 abandoned 안 됨**(attempts 무제한, 동일 wblNo 재구동 지속); `allocated` 운영자 abandon만 `abandoned` + 미해결 wblNo·경고 기록; 종료 3상태(voided/failed/abandoned)가 활성 슬롯 해제해 재발급 가능.
+- **trackingNo 유니크(#3)**: live 두 행 동일 trackingNo 거부; manual `registered`→`voided` 후 **같은 번호 재등록 성공**(voided 제외 확인).
+- **WaybillService**: registerManual(source='manual', registered 즉시, assertProfileComplete 미적용, carrierAccountRef 없는 프로필도 성공); void 발송전만; reissue 정정(registered발·allocated발); 중복 trackingNo 거부.
 - **assertDispatchable (회귀)**: registered+carrier+trackingNo+hash 일치→통과; manual/carrier 동일 가드(externalServiceId 폐지 확인); stale→거부.
 - **배치**: print-wbls 부분실패 → 성공 건 registered·실패 건 failed, 실패 건만 재구동.
 - **소비자 seam**: 디스패치·리콜·short-pick·배치·피킹이 WaybillService로 정상 동작(기존 통합 시나리오 이관).
