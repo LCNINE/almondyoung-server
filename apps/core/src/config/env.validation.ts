@@ -54,6 +54,19 @@ export const almondyoungEnvSchema = z
     HANJIN_SENDER_PHONE: z.string().optional(),
     HANJIN_TIMEOUT_MS: z.string().regex(/^\d+$/).optional(),
 
+    // Waybill(한진 self-print) — 신규 계약 (플랜 3에서 구 HANJIN_* 제거)
+    HANJIN_CLIENT_ID: z.string().optional(),
+    HANJIN_SECRET_KEY: z.string().optional(),
+    HANJIN_CONTRACT_NO: z.string().optional(),
+    HANJIN_ORDER_BASE_URL: z.string().url().optional(),
+    HANJIN_PRINT_BASE_URL: z.string().url().optional(),
+    HANJIN_SENDER_ZIP: z.string().optional(),
+    HANJIN_SENDER_BASE_ADDR: z.string().optional(),
+    HANJIN_SENDER_DTL_ADDR: z.string().optional(),
+    HANJIN_SENDER_TEL: z.string().optional(),
+    HANJIN_BOX_TYPE: z.string().optional(),
+    HANJIN_PAY_TYPE: z.string().optional(),
+
     // Wallet 서비스 (취소 후 자동 환불 연결)
     // 미설정 시 환불은 manual_pending 상태로 기록되며 운영자가 수동 처리한다.
     WALLET_BASE_URL: z.string().url().optional(),
