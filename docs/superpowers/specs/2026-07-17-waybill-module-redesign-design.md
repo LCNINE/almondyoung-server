@@ -51,6 +51,15 @@ Core의 송장(invoice) 레이어는 **굿스플로 계약에 맞춰** 설계된
 | self 계승 | dispatch-gate self 완화·void 발송전 안전범위·`assertProfileComplete` 미적용을 새 모듈로 이관 | 이미 develop 동작 중, 회귀 금지 |
 | 에러/레이어 | 새 모듈은 CLAUDE.md 정식 레이어(Controller→Service→Manager/Reader→Repository) + `@app/shared` 예외 준수 | 오케스트레이터의 ad-hoc `conflict()` 스타일은 계승 안 함(신규 모듈) |
 
+### 3.1 착수 전 미정사항 해소 (2026-07-17 확정 — 브레인스토밍)
+
+플랜 2 착수 전 열려 있던 4개 항목(구 §16 착수 전제)을 아래로 확정한다.
+
+1. **custOrdNo 파생규칙** — `'AY' + Crockford-base32(shipmentId의 16 UUID 바이트)` = 28자(≤30B). 결정적(재구동 시 동일값)·shipment와 1:1 유일(UUID 전단사)·분할배송에도 shipment별 고유. `waybills.custOrdNo`에 저장하고 대사는 저장값으로 조회(정산 실키는 wblNo=trackingNo). `AY` prefix는 한진 포털 식별용(장식적). 한진이 custOrdNo를 멱등 검사에 쓰지 않으므로(멱등 앵커는 wblNo UNIQUE + 행내 재구동) 유일성은 우리 대사 편의일 뿐.
+2. **송하인 + 박스/지불조건 소스** — `HanjinConfig`(`loadHanjinConfig`, 플랜 1 완료)가 이미 `sender{name,zip,baseAddress,detailAddress,tel}`·`boxType`(기본 `'A'`)·`payType`(기본 `'PP'`)를 `HANJIN_SENDER_*`/`HANJIN_BOX_TYPE`/`HANJIN_PAY_TYPE` env에서 로드. 플랜 2 조립부는 `config.sender/boxType/payType`을 그대로 소비(신규 config 없음). **단일 송하인 가정**(YAGNI); per-shipment 박스/지불 오버라이드 미도입; 다창고별 송하인은 후속(`warehouses` 확장, §17).
+3. **markUsed 계약** — `markUsed(shipmentId, tx?)`가 `registered → used` 전이를 캡슐화. 디스패치는 `invoices/waybills` 직접 write를 중단하고 dispatch tx 안에서 이 메서드를 호출(tx 전파). **멱등**(used→used no-op) + **엄격**: `status IN {registered, used}` 조건부 업데이트 후 활성 waybill 정확히 1행 영향이 아니면 도메인 예외(불변식 위반; `assertDispatchable`이 흐름을 선행 게이트). 구 `shipment-dispatch.service.ts`의 `invoices.status='used'` 직접 갱신을 대체.
+4. **스테이징 스모크 범위** — 테스트 서버가 dev key로 접근 가능. 플랜 2에 스모크 태스크 포함: `insert-order`+`tracking` body 매핑을 order 호스트(`api-stg.hanjin.com`)에 실검증. `print-wbl`(`ebbapd.hjt.co.kr`)은 dev key + 방화벽 IP 화이트리스트가 그 호스트를 커버하는지 착수 시 확인; 미커버면 print-wbl body는 문서 기반 + `smoke-pending` 게이트 + 리스크 플래그. 라이브 자격증명은 개발 완료 후 별건(플랜 2/3 범위 밖).
+
 ## 4. 아키텍처 개요
 
 위치: `apps/core/src/modules/fulfillment/waybill/`. `WaybillModule`을 `FulfillmentModule`이 import, `WaybillService` export.
@@ -104,7 +113,7 @@ export const waybillSourceEnum = pgEnum('waybill_source', ['carrier', 'manual'])
 | `carrier` | carrierEnum notNull | HANJIN 등 (기존 enum 재사용) |
 | `status` | waybillStatusEnum notNull default 'pending' | manual은 'registered'로 바로 insert |
 | `trackingNo` | varchar(128) | 운송장번호(wblNo). **allocated 이후 not-null + UNIQUE**. pending 단계엔 null |
-| `custOrdNo` | varchar(30) | 한진 상관키(주문번호). shipment/SO에서 파생(≤30B). carrier 발급 시 채움 |
+| `custOrdNo` | varchar(30) | 한진 상관키(주문번호). `'AY'+Crockford-base32(shipmentId 16B)`=28자(§3.1-1). carrier 발급 시 채움 |
 | `labelData` | jsonb | **carrier-tagged blob**. 한진 print-wbl 분류필드(터미널/집배점/배송사원/prt_add 등). manual은 null |
 | `manifestVersion` | integer notNull | 발급 시점 shipment manifest 버전(낙관적 정합) |
 | `recipientHash` | varchar(64) notNull | 발급 시점 수취인 스냅샷 해시(`canonicalShipmentRecipientHash`) |
@@ -236,7 +245,7 @@ registered/used/voided/failed/abandoned --> no-op (멱등)
 | `getActiveWaybill(shipmentId, tx?)` | invoices 직접쿼리 | 디스패치/플래닝/invariant/consolidation |
 
 - `issueForShipment`/`issueBatch`는 waybill 행을 `pending`으로 durable 생성한 뒤 `drive()`를 **요청 내 동기 실행**(carrier 발급 = print-wbl→insert-order 2-call), 결과는 registered 또는 failed. durable `pending` 행 덕분에 요청이 중간에 끊겨도 stuck 재구동으로 복구 가능. 대량 배치는 §10대로 청크·건별 결과.
-- `markUsed(shipmentId, tx)`: 디스패치(출고 확정) 흐름이 `registered → used` 전이를 이 메서드로 호출(테이블 직접 write 금지 — 전이를 모듈 안에 캡슐화). 구 코드가 dispatch에서 invoices.status를 직접 갱신하던 지점을 이 호출로 치환.
+- `markUsed(shipmentId, tx)`: 디스패치(출고 확정) 흐름이 `registered → used` 전이를 이 메서드로 호출(테이블 직접 write 금지 — 전이를 모듈 안에 캡슐화). 구 코드가 dispatch에서 invoices.status를 직접 갱신하던 지점을 이 호출로 치환. **멱등**(used→used no-op) + **엄격**(status∈{registered,used} 조건부 업데이트, 활성 waybill 정확히 1행 아니면 도메인 예외 — §3.1-3).
 - `registerManual`: source='manual'로 `registered` 즉시 insert(외부 호출 없음). 계승 가드: manifest/recipient 완비 + line identity만, **`assertProfileComplete`(구 goodsflow center code) 미적용**.
 - `assertDispatchable`: 활성 waybill 1개 + `status ∈ {registered, used}` + carrier 존재 + trackingNo non-empty + manifest/recipient hash 일치. **externalServiceId 요구 폐지**(한진엔 provider service id 없음; source 무관 동일 가드). — 구 `issueMethod !== 'self'` 분기가 사라지고 통일됨.
 
@@ -303,8 +312,9 @@ registered/used/voided/failed/abandoned --> no-op (멱등)
 
 - **착수 전 확보 필요(스펙에 없음)**: 운영 URL, 운영 인증키(client_id/api key/secret key), 운송장 **채번규칙**(전용 대역), 일일 한도/레이트리밋 수치, `print-wbl` 운영 **방화벽 IP 등록**. HMAC 알고리즘은 확보 완료(§7.1). 이들 없으면 어댑터를 운영에서 못 쓴다 → 스테이징으로 구현·검증하고 운영값은 배포 시 주입.
 - **print-wbl 번호 누수/한도**: §8 내재 한계. 관측·정산 필요.
-- **custOrdNo 파생 규칙**(≤30B, shipment/SO 상관) 확정 필요.
-- **박스/지불조건 기본값**(boxTypCd/payTypCd) 및 창고 송하인 주소 config 소스 확정 필요.
+- ✅ **custOrdNo 파생 규칙**: `'AY'+Crockford-base32(shipmentId 16B)`로 확정 (§3.1-1).
+- ✅ **박스/지불조건·송하인 소스**: `HanjinConfig`(env) 단일 송하인으로 확정 (§3.1-2).
+- **staging 스모크**: order 호스트(`api-stg.hanjin.com`)는 dev key로 실검증, `print-wbl`은 방화벽 IP 커버 확인 필요 (§3.1-4).
 - **소비자 seam 교체 폭이 넓음**(9개 파일) — 기존 통합 테스트로 회귀 고정.
 
 ## 17. 후속 (별도 설계)

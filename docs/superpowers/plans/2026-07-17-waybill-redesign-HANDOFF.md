@@ -66,12 +66,14 @@ spec §5·§8·§9·§10·§11 구현. writing-plans 로 상세 TDD 플랜 작�
 - **DTO + `WaybillController`**(§9.2) — 라우트 6개, `idempotency-key` 필수(`FulfillmentCommandService.commands.execute` 재사용).
 - **배치**(§10) — `issueBatch`: shipment별 waybill 행 durable 생성 → `print-wbls`(≤100) → 건별 register. **동기 실행 시간 리스크**: bounded 병렬 + 시간예산 조기반환 정책을 이 플랜에서 확정.
 
-## 4. 플랜 2 착수 시 확정할 미정 사항
+## 4. 플랜 2 착수 시 확정할 미정 사항 — ✅ 해소됨 (2026-07-17, spec §3.1)
 
-- **custOrdNo 파생규칙**(≤30B, shipment/SO 상관) — 예: SO번호 또는 shipmentId 축약.
-- **박스/지불조건 기본값** 및 창고 **송하인 주소** config 소스(현재 `HANJIN_BOX_TYPE`/`_PAY_TYPE`/`_SENDER_*` env 존재; `WaybillRequest` 로 어떻게 채울지).
-- **markUsed 통합**: dispatch 가 invoices.status 직접 갱신하던 걸 `markUsed(shipmentId)` 호출로(플랜 3에서 배선하지만 메서드는 플랜 2가 제공).
-- **스테이징 스모크**(HMAC 외 미검증): `register` body 필드명·`print-wbl` body 를 한진 스테이징에 실제로 쏴서 확인(골든 벡터 없음). print-wbl 운영은 **방화벽 IP 등록** 필요.
+4건 모두 브레인스토밍으로 확정, 설계 SoT는 **spec §3.1**. 요약:
+
+- **custOrdNo 파생규칙** → `'AY'+Crockford-base32(shipmentId 16B)`=28자(≤30B). 결정적·shipment 1:1·분할배송 고유. (§3.1-1)
+- **박스/지불조건·송하인 소스** → `HanjinConfig`(env) 단일 송하인. `loadHanjinConfig`가 이미 sender/boxType('A')/payType('PP') 로드 → 조립부가 소비만. per-shipment 오버라이드·다창고 송하인은 후속. (§3.1-2)
+- **markUsed 통합** → `markUsed(shipmentId, tx?)` 캡슐화, dispatch tx 안에서 호출. 멱등(used→used no-op)+엄격(status∈{registered,used}, 활성 1행 아니면 도메인 예외). (§3.1-3)
+- **스테이징 스모크** → dev key로 테스트 서버 접근 가능. order 호스트(insert-order/tracking) 실검증, `print-wbl`은 방화벽 IP 커버 착수 시 확인·미커버면 `smoke-pending` 게이트. 라이브 자격증명은 개발 완료 후 별건. (§3.1-4)
 
 ## 5. 플랜 3 (컷오버, contract) — 범위
 
