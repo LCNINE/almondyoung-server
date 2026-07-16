@@ -19,9 +19,13 @@
    write 가 물리적으로 불가능해진다.
 3. **운영자 정리** — `DELETE FROM outbox_events WHERE status='published'` + FO cleanup (런북
    allowlist 절차). 런북 머리에 "현행 절차" 배너를 넣어 legacy 시절 의식과 구분해 뒀다.
-4. **PR B** — `topic`/`idempotency_key` NOT NULL + V1 컬럼/테이블/enum 드롭 → `migrate`.
-   "제거 범위 실측" 절의 표(사장 enum 12 값, `fulfillment_order_batches` 등)가 그대로 PR B 의 사양이다.
+4. **PR B** — `topic`/`idempotency_key` NOT NULL + V1 컬럼/테이블/enum 드롭 → **배포 → `migrate`**.
+   "제거 범위 실측" 절의 표(사장 enum **11** 값, `fulfillment_order_batches` 등)가 그대로 PR B 의 사양이다.
    Goodsflow 코드 제거 여부(enum 값 `goodsflow` 포함)도 PR B 시점에 결정.
+   - PR B 는 migration 만이 아니라 **코드 변경도 포함한다**(TS `pgEnum` 트리밍, `fulfillment-reservations.facade.ts:334`).
+     따라서 contract 순서(ADR-0005 §5)에 따라 **PR B 자신의 코드를 먼저 배포한 뒤 migrate** 한다. 이 절의
+     3단계 요약이 "PR B → migrate" 로 줄여 적고 있으나 사이에 배포가 있다. PR A 배포가 migrate 직전
+     마지막 배포인 것이 아니므로, reader 정리를 PR A 로 앞당길 필요는 없다(세션 3 에서 한 번 오판했던 지점).
 
 **PR A 에서 원래 목록에 없던 실측/결정** (다음 세션이 알아야 할 것):
 
@@ -951,29 +955,42 @@ session handed-in
 
 #### 제거 범위 실측 (2026-07-16)
 
-아래 체크리스트가 적어둔 제거 목록은 **실제 사장 범위를 과소평가한다**. 코드에서 실측한 결과를 먼저 싣는다. 착수 시 이 표부터 재실측할 것 — 아래는 `5d6ebee94` 시점 기준이다.
+아래 체크리스트가 적어둔 제거 목록은 **실제 사장 범위를 과소평가한다**. 코드에서 실측한 결과를 먼저 싣는다. 최초 기록은 `5d6ebee94` 시점 기준이었고, **PR A 배포 직전(2026-07-16 세션 3)에 재실측해 아래에 반영했다** — 그 과정에서 최초 표의 오류 1건이 드러났다(`shipped`). 착수 시 다시 재실측할 것.
 
 **enum 값이 컬럼보다 크다.** `fulfillment_status` 는 20개 값인데 V2 progress calculator(`fulfillment-progress.service.ts`)가 내는 것은 **8개**뿐이다: `created, partially_reserved, ready, processing, partially_shipped, completed, canceled, recovery_required`.
 
-죽는 값 **12개**: `reserving, unfulfillable, labeled, shipped, pending, allocated, picking, picked, inspecting, inspected, invoiced, forwarded`. 아래 체크리스트는 `picked/invoiced/shipped` **3개만** 지목한다.
+죽는 값 **11개**: `reserving, unfulfillable, labeled, pending, allocated, picking, picked, inspecting, inspected, invoiced, forwarded`. 아래 체크리스트는 `picked/invoiced/shipped` **3개만** 지목하는데, 그중 `shipped` 는 지목 자체가 틀렸다.
 
-writer 전수 (전부 V1 서비스):
+> **정정 (2026-07-16 세션 3): `shipped` 는 사장 값이 아니다 — 12 → 11. 드롭 금지.**
+>
+> 최초 표는 `shipped` 의 writer 를 `outbound-consumption.service.ts:145`(V1, PR A 에서 제거됨) 하나로 봤다. **살아있는 writer 가 하나 더 있다**: `fulfillments.service.ts:600-641` 의 `ship()`. 615-618 행이 non-drop_ship 을 명시적으로 거부하는 **drop_ship 전용** 경로이고, 640 행이 `fulfillmentOrders.status = 'shipped'` 를 쓴다. `direct-ship.service.ts:334` → `DirectShipController`(`fulfillment.module.ts` 에 배선됨)로 외부 도달 가능하고, 게이트가 `assertOperationalMutationAllowed` 라 v2 모드에서 통과한다.
+>
+> 그리고 이 경로는 **이 플랜이 보존하기로 한 것**이다 — 구현 경계의 "`fulfillmentMode='drop_ship'` 은 기존 direct-ship 경로를 유지한다". `shipped` 를 드롭하면 보존 대상이 drop_ship 주문마다 죽는다.
+>
+> 연쇄로 풀리는 것: `shipped` 가 살면 SQL-side 사용처 셋이 그대로 안전하다 — `sales-orders.service.ts:935`(`inArray(status, ['shipped','completed'])`), `fulfillment-reservation-reconciliation.service.ts:44,77`(`TERMINAL_FO_STATUSES` 를 raw `sql` 로 `IN`), 그리고 위 `ship()` write.
 
-| 값 | writer |
-|---|---|
-| `invoiced`, `picked` | `invoice.service.ts:191,433` |
-| `picking`, `picked` | `picking-process.service.ts:588,746` |
-| `allocated`, `ready`, `picking`, `picked` | `outbound-batch.service.ts:195,268,332,387,441,468` |
-| `shipped` | `outbound-consumption.service.ts:145` |
-| `unfulfillable` | `fulfillments.service.ts:690` |
-| `allocated` | `fulfillment-order-transaction.service.ts:118` |
+writer 전수:
+
+| 값 | writer | PR B 처리 |
+|---|---|---|
+| `invoiced`, `picked` | `invoice.service.ts:191,433` | V1 — PR A 에서 제거됨 |
+| `picking`, `picked` | `picking-process.service.ts:588,746` | V1 — PR A 에서 제거됨 |
+| `allocated`, `ready`, `picking`, `picked` | `outbound-batch.service.ts:195,268,332,387,441,468` | V1 — PR A 에서 제거됨 |
+| `unfulfillable` | `fulfillments.service.ts:690` | V1 — PR A 에서 제거됨 |
+| `allocated` | `fulfillment-order-transaction.service.ts:118` | V1 — PR A 에서 제거됨 |
+| **`shipped`** | ~~`outbound-consumption.service.ts:145`~~ (V1, 제거됨) + **`fulfillments.service.ts:640` — drop_ship `ship()`, 존치** | **드롭 금지** (위 정정) |
 
 V2 는 `shipment-reservation.service.ts:1123` 에서 `projected.status` 하나로만 쓴다.
 
-주의할 값 둘:
+주의할 값들:
 
-- **`forwarded` 는 안전하다.** `direct-ship.service.ts:302` 가 쓰는 것은 `fulfillmentOrders.status` 가 아니라 **`directShipStatus`** 컬럼(별도 `directShipStatusEnum`)이다. drop-ship 경로는 유지되지만 `fulfillment_status` 를 건드리지 않으므로 이 값은 죽는다.
-- **`reserving`/`unfulfillable`/`labeled` 는 writer 는 없는데 reader 가 남아 있다.** `store-sales-orders.service.ts:43`(`FO_PACKED_STATUSES`), 같은 파일 `:1000`, `sales-orders.service.ts:140`(`CANCELLABLE_FULFILLMENT_STATUSES`) 가 이 값으로 SO 상태를 분류한다. 값 제거 전에 이 read-side 부터 정리해야 한다.
+- **`forwarded` 는 이 컬럼에서는 죽는다.** `direct-ship.service.ts:302` 가 쓰는 것은 `fulfillmentOrders.status` 가 아니라 **`directShipStatus`** 컬럼(별도 `directShipStatusEnum`)이다. drop-ship 경로는 유지되지만 `fulfillment_status` 를 건드리지 않으므로 이 값은 죽는다. SQL-side `forwarded` 는 전부 `directShipStatus` 쪽이고(`direct-ship.service.ts:302,323`), `fulfillmentOrders.status` 쪽 `forwarded` 는 JS-side 두 곳(`fulfillment-reservations.facade.ts:369`, `store-sales-orders.service.ts:43`)뿐이다.
+- **스키마 주석(`inventory.schema.ts:174-175`)은 양방향으로 낡았다 — 믿지 말고 위 표를 볼 것.** 주석은 `forwarded` 를 라이브로 적어두는데 이 컬럼에서는 틀렸고, `shipped` 를 라이브로 적은 것은 맞다. 주석이 가리키는 "dev DB 복구 후 제거" 백로그와 이 Task 의 대상이 겹치므로, 주석도 PR B 에서 함께 정리한다.
+- **`reserving`/`unfulfillable`/`labeled` 의 reader — 최초 기록의 "값 제거 전에 read-side 부터 정리해야 한다" 는 과했다 (2026-07-16 세션 3 정정).** 실측 결과 드롭을 실제로 막는 것은 **SQL-side 한 곳뿐**이다. JS-side 냐 SQL-side 냐가 갈림길이다 — `.has(fo.status)` 는 값이 사라지면 `false` 를 반환할 뿐이지만, `inArray(status, [...])` 는 리터럴이 Postgres 까지 가서 `invalid input value for enum` 으로 죽는다.
+  - **`fulfillment-reservations.facade.ts:334` — 유일한 실제 블로커.** `inArray(wmsTables.fulfillmentOrders.status, [...RESERVATION_TRANSFER_ALLOWED_STATUS_LIST])` 의 리스트(`:20-25`)에 `reserving`·`unfulfillable` 이 들어간다. 같은 상수가 `:307` 에서 `.has()` 로 JS-side 로도 쓰여서 정의만 보면 평범한 JS 배열로 보인다. 그리고 이건 **transfer 경로 — 핸드오프가 "남은 수동 개입은 transfer 뿐" 이라고 적은 존치 코드**다. **PR B 코드에 포함해 migrate 전에 배포할 것.**
+  - 나머지는 **전부 JS-side** 라 안 깨진다: `store-sales-orders.service.ts:42-44,997-1005`, `sales-orders.service.ts:142-154`(`CANCELLABLE_FULFILLMENT_STATUSES` 의 소비처 `:537,1159,1753,1774` 4곳 전부 `.has()`), `fulfillments.service.ts:612,699,814,817`, `fulfillment-reservations.facade.ts:307,360-372,393`. PR A 가 writer 를 지운 시점에 이미 도달 불가였다 — 정리는 위생 문제지 드롭의 선행 조건이 아니다.
+  - **동적 필터 `fulfillments.service.ts:1037-1039` 은 TS `pgEnum` 트리밍에 의존한다.** 가드 `isFulfillmentStatus`(`:32-33`)가 검증하는 것은 live PG 타입이 아니라 **드리즐 TS `enumValues`** 이고, 컨트롤러(`fulfillments.controller.ts:109`)는 DTO 검증 없이 raw `@Query('status')` 를 넘긴다. 같은 PR 에서 `inventory.schema.ts:176-198` 의 배열을 트리밍하면 자동 해소되지만, **트리밍을 빠뜨리면 `?status=picked` 가 Postgres 까지 도달한다.** `fulfillment-order-response.dto.ts:164-183` 의 Swagger enum 도 같이 좁힐 것 — 클라이언트에게 죽은 값을 보내라고 광고하는 문서다.
+  - 스펙 1건: `shipment-short-pick.integration.spec.ts:180` 이 `wmsTables.fulfillmentOrders` 에 `status: 'picking'` 을 insert — 드롭 후 red. (같은 파일 `:198` 의 `fulfillmentOrderItems.status` 는 별도 enum 이라 무관.)
 
 **`shipment_status`**: `'open'` 이 죽는다. 단 enum 주석(`inventory.schema.ts:62`)이 `in_transit`/`failed` 를 "DEAD 값(producer 0)" 으로 적어둔 것은 **낡았다 — Task 19 delivery projection 이 `in_transit` 을 되살렸다.** 이 주석이 가리키는 물류 하드닝 백로그(dev DB 복구 대기)와 대상 목록이 겹치므로, 두 작업을 합치되 목록은 다시 짤 것.
 
@@ -1060,7 +1077,7 @@ V1 이 되는 이유는 안전해서가 아니라 **계약 검사를 건너뛰�
 - [ ] Make V2-required links NOT NULL where the final model requires them: shipment-line reservations, shipment-owned invoices, tracking attempt links for new tracking rows and outbox topic.
 - [ ] Remove `fulfillment_orders.batchId`, `fulfillment_order_batches`, `invoices.issuedForFO`, `shipments.openedForFO/openedBy/openedAt` and legacy reservation target fields only after FK closure verification.
 - [ ] Remove or freeze V1-only summaries/ownership: FOI `pickedQty`, writable `reservedQty`, batch `assignedTo` and directly maintained batch totals. Replace remaining reads with reservation/work-item projections.
-- [ ] Remove old FO status writes (`picked/invoiced/shipped`), lazy shipment open-box creation, FIFO-at-dispatch consumption and V1 in-house dispatch paths.
+- [ ] Remove old FO status writes (`picked/invoiced` — **`shipped` 는 제외**: drop_ship `ship()` 이 살아있는 producer 다, "제거 범위 실측" 절의 2026-07-16 정정 참조), lazy shipment open-box creation, FIFO-at-dispatch consumption and V1 in-house dispatch paths.
 - [ ] Keep v1 fulfillment event contracts/projections only for explicitly documented full-completion consumers. Remove them only in a separately approved contract version.
 - [x] Remove expand compatibility fallback from outbox topic routing and fail any topicless new write.
       - **PR A 에서 완료 (2026-07-16, `a78e1d8d6`).** 호출부는 실측 13곳(목록의 12곳 + `inventory-command.service.ts` ship 비배치 갈래)이었고 전부 명시 topic+idempotencyKey 로 전환(폴백 목적지 보존). 두 outbox 서비스의 topicless union 갈래 제거로 새 topicless write 는 컴파일 실패(사보타주 확인). dispatcher 폴백은 fail-closed throw 로 대체하고 명시 분기를 5개 스트림으로 확장 — `inventory.events.v1`/`core.orders.events.v1` 명시 topic 이 "Unknown explicit topic" 으로 죽던 잠재 버그도 함께 해소. published 삭제와 `topic` NOT NULL(PR B)의 선행 조건 충족.
