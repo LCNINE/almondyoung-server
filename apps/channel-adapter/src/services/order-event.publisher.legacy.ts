@@ -28,6 +28,29 @@ export interface PublishResult {
   unmappedItems?: UnmappedItem[];
 }
 
+type ExternalLineIdentity = {
+  orderItemId?: string;
+  channelProductId?: string;
+  lookupId?: string;
+};
+
+function nonEmptyExternalId(value: string | undefined): string | undefined {
+  const normalized = value?.trim();
+  return normalized ? normalized : undefined;
+}
+
+function getExternalLineIdentity(orderEvent: InternalOrderEvent): ExternalLineIdentity {
+  const orderItemId = nonEmptyExternalId(orderEvent.externalProductOrderId);
+  const channelProductId = nonEmptyExternalId(orderEvent.productId);
+  return {
+    orderItemId,
+    channelProductId,
+    // This fallback is mapping lookup compatibility only. It is never copied to
+    // the independently meaningful channelProductId field.
+    lookupId: channelProductId ?? orderItemId,
+  };
+}
+
 @Injectable()
 export class OrderEventPublisher {
   private readonly logger = new Logger(OrderEventPublisher.name);
@@ -67,23 +90,25 @@ export class OrderEventPublisher {
   ): Promise<PublishResult> {
     const channelCode = this.channelListingClient.getChannelCodeFromType(channel);
 
-    // 채널 상품 ID 추출
-    const channelProductId = orderEvent.externalProductOrderId ?? orderEvent.externalOrderId;
+    const identity = getExternalLineIdentity(orderEvent);
+    if (!identity.lookupId) {
+      return { published: false, pendingReason: 'missing_external_product_identity', unmappedItems: [] };
+    }
 
     // 매핑 조회
-    const listing = await this.channelListingClient.lookupByChannelCode(channelCode, channelProductId);
+    const listing = await this.channelListingClient.lookupByChannelCode(channelCode, identity.lookupId);
 
     if (!listing) {
       // 매핑 없음 → 계류 필요
       const unmappedItems: UnmappedItem[] = [
         {
-          channelItemId: channelProductId,
+          channelItemId: identity.lookupId,
           channelItemName: orderEvent.productName ?? 'Unknown Product',
           channelOptionName: orderEvent.optionName,
         },
       ];
 
-      this.logger.warn(`⏸️ 미매핑 주문 계류: ${orderEvent.externalOrderId} - ${channelProductId}`);
+      this.logger.warn(`⏸️ 미매핑 주문 계류: ${orderEvent.externalOrderId} - ${identity.lookupId}`);
 
       return {
         published: false,
@@ -109,17 +134,17 @@ export class OrderEventPublisher {
     const salesChannel = this.mapChannelToSalesChannel(channel);
     const orderId = uuidv4();
 
-    const channelProductId = orderEvent.externalProductOrderId ?? orderEvent.externalOrderId;
+    const identity = getExternalLineIdentity(orderEvent);
 
     const items: OrderItem[] = [
       {
-        orderItemId: channelProductId,
+        ...(identity.orderItemId ? { orderItemId: identity.orderItemId } : {}),
         skuId: listing.variantId,
         masterId: listing.masterId,
         versionId: listing.versionId,
         variantId: listing.variantId,
         productName: listing.productName,
-        channelProductId,
+        ...(identity.channelProductId ? { channelProductId: identity.channelProductId } : {}),
         quantity: orderEvent.quantity ?? 1,
         unitPrice: orderEvent.priceAmount ?? 0,
         totalPrice: orderEvent.priceAmount ?? 0,
@@ -304,10 +329,15 @@ export class OrderEventPublisher {
     orderEvent: InternalOrderEvent,
     variantIdMapper?: (channelProductId: string) => Promise<LookupVariantResult | string | null>,
   ): Promise<OrderItem[]> {
-    const channelProductId = orderEvent.externalProductOrderId ?? orderEvent.externalOrderId;
+    const identity = getExternalLineIdentity(orderEvent);
+    const lookupId = identity.lookupId;
+
+    if (!lookupId) {
+      throw new Error(`Missing external product identity for ${orderEvent.externalOrderId}`);
+    }
 
     // variantId 매핑 시도
-    let skuId = channelProductId;
+    let skuId = lookupId;
     let variantId: string | undefined;
     let masterId: string | undefined;
     let versionId: string | undefined;
@@ -315,7 +345,7 @@ export class OrderEventPublisher {
 
     if (variantIdMapper) {
       try {
-        const mapped = await variantIdMapper(channelProductId);
+        const mapped = await variantIdMapper(lookupId);
         if (mapped) {
           if (typeof mapped === 'string') {
             variantId = mapped;
@@ -328,26 +358,26 @@ export class OrderEventPublisher {
             productName = mapped.productName;
           }
         } else {
-          this.logger.warn(`⚠️ variantId 매핑 실패: ${channelProductId}, 채널 ID 사용`);
+          this.logger.warn(`⚠️ variantId 매핑 실패: ${lookupId}, 채널 ID 사용`);
         }
       } catch (error) {
-        this.logger.error(`❌ variantId 매핑 오류: ${channelProductId}`, error.message);
+        this.logger.error(`❌ variantId 매핑 오류: ${lookupId}`, error.message);
       }
     }
 
     if (!variantId || !masterId || !versionId || !productName) {
-      throw new Error(`Missing required product mapping for ${channelProductId}`);
+      throw new Error(`Missing required product mapping for ${lookupId}`);
     }
 
     return [
       {
-        orderItemId: channelProductId,
+        ...(identity.orderItemId ? { orderItemId: identity.orderItemId } : {}),
         skuId,
         masterId,
         versionId,
         variantId,
         productName,
-        channelProductId,
+        ...(identity.channelProductId ? { channelProductId: identity.channelProductId } : {}),
         quantity: orderEvent.quantity ?? 1,
         unitPrice: orderEvent.priceAmount ?? 0,
         totalPrice: orderEvent.priceAmount ?? 0,

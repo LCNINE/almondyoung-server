@@ -34,7 +34,11 @@ describeIfDb('StockEventStore.reverseEvent lock+guard (DB integration, rollback-
     sql = postgres(DATABASE_URL as string, { max: 1 });
     db = drizzle(sql, { schema: wmsSchema });
 
-    const dbService = { db } as unknown as DbService<typeof wmsSchema>;
+    const dbService = {
+      db,
+      run: <T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> =>
+        tx ? fn(tx) : db.transaction((inner) => fn(inner as unknown as DbTx)),
+    } as unknown as DbService<typeof wmsSchema>;
     const outbox = new OutboxService(dbService);
     const sellable = new ProductSellableQuantityService(dbService as never, outbox);
     eventStore = new StockEventStore(dbService, sellable);

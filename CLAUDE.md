@@ -73,7 +73,7 @@ npm run test:bnpl:itdoc
 ```
 
 ### Database (Drizzle)
-Each service has its own schema and drizzle config. Workflow: edit `schema.ts` → generate SQL migration → migrate is applied by `db:setup` (dev) 또는 autodeploy workflow (배포).
+Each service has its own schema and drizzle config. Workflow: edit `schema.ts` → generate SQL migration → migrate is applied by `db:setup` (dev) 또는 사람이 `sst deploy` 와 짝지어 부르는 `db:migrate` (배포). **autodeploy 는 없다** — ADR-0005 §4 가 도입을 보류했다. drizzle 서비스는 container 자체 migration 도 없으므로, `db:migrate` 호출이 deploy 절차에서 누락되지 않게 하는 건 운영자 책임이다 (Medusa 만 예외로 container CMD 가 자체 migrate 를 부른다).
 ```bash
 # Generate a new migration from current schema.ts (--name is required)
 npm run db:generate:core -- --name <kebab-description>
@@ -124,7 +124,9 @@ npm run db:seed:demo  -- --stage <stage> --deployment <name> --yes  # demo- pref
 
 **PR 사이에 deploy 가 끝나야 한다** — PR #1 머지 직후 PR #2 머지를 연속으로 해버리면 한 deploy 안에 두 phase 가 묶여 컨벤션 무력화. 적어도 한 번의 deploy 완료가 PR 사이에 필요.
 
-autodeploy 의 `sst deploy → migrate` 순서가 contract phase 의 race (옛 task 가 destructive migration 만나는 사고) 를 자동으로 막는다. expand phase 의 race 는 컨벤션 (additive 만 expand) 이 막는다. 둘이 짝.
+**Contract phase 는 `sst deploy → migrate` 순서가 막는다** — 옛 task 가 destructive migration 을 만나는 사고 방지. autodeploy 가 없으므로 이 순서는 자동이 아니라 *운영자가 지키는 규율*이다 (ADR-0005 §5).
+
+**Expand phase 는 순서가 반대다: `migrate → deploy`.** "additive 만 expand" 컨벤션은 *새 schema 가 옛 코드를 안 깨는 것*만 보장하지, 그 반대 (새 코드가 옛 schema 를 만나는 것) 는 보장하지 않는다. 새 컬럼을 읽고 쓰는 코드가 컬럼보다 먼저 뜨면 깨진다. migrate 를 먼저 돌리면 rolling 중 옛 task 는 nullable 추가 컬럼을 무시하므로 안전하다. 두 phase 의 순서를 반대로 적용하지 말 것 — 어느 phase 인지 먼저 확인한다.
 
 ### Adding New Microservices/Libraries
 ```bash

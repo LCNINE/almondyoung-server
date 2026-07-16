@@ -13,6 +13,7 @@ import { MessageEnvelope } from '@packages/event-contracts/types';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { LibraryService } from '../../library/services/library.service';
 import { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
+import { FulfillmentWorkflowGate } from '../../fulfillment/services/fulfillment-workflow-gate.service';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { and, eq } from 'drizzle-orm';
 
@@ -34,6 +35,7 @@ export class OrderEventsConsumer {
     private readonly salesOrdersService: SalesOrdersService,
     private readonly libraryService: LibraryService,
     private readonly fulfillmentBacklog: FulfillmentOrderCreationBacklogService,
+    private readonly fulfillmentWorkflowGate: FulfillmentWorkflowGate,
     @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
   ) {}
@@ -101,7 +103,14 @@ export class OrderEventsConsumer {
         // grant 는 fail-closed 로 명시 가드 (미래의 미결제 채널 도입 대비).
         const isPaymentConfirmed = payload.status === 'confirmed';
         if (isPaymentConfirmed) {
-          await this.fulfillmentBacklog.enqueueForSalesOrder(salesOrder.id, tx);
+          const shouldEnqueueFo = this.fulfillmentWorkflowGate.shouldEnqueueFo(payload.createdAt, !existing);
+          if (shouldEnqueueFo) {
+            await this.fulfillmentBacklog.enqueueForSalesOrder(
+              salesOrder.id,
+              { eventOccurredAt: payload.createdAt, isNewSalesOrder: !existing },
+              tx,
+            );
+          }
           await this.libraryService.grantOwnershipsForOrder(salesOrder.id, tx);
         }
       });

@@ -1,12 +1,14 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
+import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
-import { StockEventStore } from '../repositories/stock-event.store';
+import { ShipmentDispatchEventReversal, StockEventStore } from '../repositories/stock-event.store';
 import { OutboxService } from '../../shared/outbox/outbox.service';
 import { LocationService } from './location.service';
-import { eq, and, gt, desc } from 'drizzle-orm';
+import { eq, and, gt, asc } from 'drizzle-orm';
 import { acquireStockAvailabilityLock } from '../../shared/locks/stock-availability-lock';
 import { assertReservationInvariant } from '../../shared/locks/reservation-invariant';
+import { BatchControlledStockGuard, BatchSessionDispatchAuthorization } from './batch-controlled-stock.guard';
 
 @Injectable()
 export class InventoryCommandService {
@@ -17,6 +19,7 @@ export class InventoryCommandService {
     private readonly eventStore: StockEventStore,
     private readonly outboxService: OutboxService,
     private readonly locationService: LocationService,
+    private readonly batchControlledStock: BatchControlledStockGuard = new BatchControlledStockGuard(),
   ) {}
 
   async receive(
@@ -81,6 +84,8 @@ export class InventoryCommandService {
       // 4. Outbox에 이벤트 추가
       await this.outboxService.enqueue(
         {
+          topic: INVENTORY_STREAM.topic.topic,
+          idempotencyKey: `stock-event:${event.id}`,
           eventType: 'StockReceived',
           aggregateType: 'Stock',
           aggregateId: event.id,
@@ -117,10 +122,18 @@ export class InventoryCommandService {
       idempotencyKey?: string;
       reason?: string;
       journalId?: string;
+      batchSessionDispatch?: BatchSessionDispatchAuthorization;
+      deferSellableProjection?: boolean;
     },
     tx?: DbTx,
   ) {
     if (input.quantity <= 0) throw new BadRequestException('quantity must be positive');
+    if (input.batchSessionDispatch && !tx) {
+      throw new Error('batchSessionDispatch requires the caller dispatch transaction');
+    }
+    if (input.deferSellableProjection && (!input.batchSessionDispatch || !tx)) {
+      throw new Error('deferSellableProjection is restricted to a caller-owned batch dispatch transaction');
+    }
     const exec = async (trx: DbTx) => {
       // 1. SKU 정보 조회
       const sku = await trx.query.skus.findFirst({
@@ -158,6 +171,8 @@ export class InventoryCommandService {
           idempotencyKey: input.idempotencyKey,
           reason: input.reason,
           journalId: input.journalId,
+          batchSessionDispatch: input.batchSessionDispatch,
+          deferSellableProjection: input.deferSellableProjection,
         },
         trx,
       );
@@ -167,32 +182,147 @@ export class InventoryCommandService {
       }
 
       // 4. Outbox에 이벤트 추가 ✅
-      await this.outboxService.enqueue(
-        {
-          eventType: 'StockShipped',
-          aggregateType: 'Stock',
-          aggregateId: event.id,
-          partitionKey: input.skuId,
-          payload: {
-            skuCode: sku.name,
-            skuId: input.skuId,
-            warehouseId: input.warehouseId,
-            locationId: input.locationId,
-            quantity: input.quantity,
-            afterQuantity: afterQuantity,
-            reason: input.reason,
-            journalId: input.journalId,
-            occurredAt: (input.occurredAt ?? new Date()).toISOString(),
-          },
+      const outboxEvent = {
+        topic: INVENTORY_STREAM.topic.topic,
+        idempotencyKey: `stock-event:${event.id}`,
+        eventType: 'StockShipped',
+        aggregateType: 'Stock',
+        aggregateId: event.id,
+        partitionKey: input.skuId,
+        payload: {
+          skuCode: sku.name,
+          skuId: input.skuId,
+          warehouseId: input.warehouseId,
+          locationId: input.locationId,
+          quantity: input.quantity,
+          afterQuantity: afterQuantity,
+          reason: input.reason,
+          journalId: input.journalId,
+          occurredAt: (input.occurredAt ?? new Date()).toISOString(),
         },
-        trx,
-      );
+      };
+      await (input.batchSessionDispatch
+        ? this.outboxService.enqueue(
+            {
+              eventType: 'StockShipped',
+              aggregateType: 'Stock',
+              aggregateId: event.id,
+              partitionKey: input.skuId,
+              topic: INVENTORY_STREAM.topic.topic,
+              idempotencyKey: `stock-event:${event.id}`,
+              payload: {
+                stockEventId: event.id,
+                skuId: event.skuId,
+                skuCode: sku.name,
+                quantity: event.quantity,
+                warehouseId: event.fromWarehouseId!,
+                locationId: event.fromLocationId!,
+                outboundType: 'ORDER',
+                shippedAt: event.occurredAt.toISOString(),
+                reason: event.reason ?? undefined,
+              },
+            },
+            trx,
+          )
+        : this.outboxService.enqueue(outboxEvent, trx));
 
       this.logger.log(`SHIP: sku=${sku.name} qty=${input.quantity} (${currentQuantity} → ${afterQuantity})`);
 
       return { eventId: event?.id ?? null };
     };
     return this.dbService.run(exec, tx);
+  }
+
+  /**
+   * Reverse every exact stock source owned by a dispatch attempt. The caller
+   * must restore the matching shipment-line reservations and publish the final
+   * sellable projection in this same transaction.
+   */
+  async reverseShipmentDispatch(
+    input: {
+      dispatchAttemptId: string;
+      reversalJournalId: string;
+      recallOperationId: string;
+      actorId: string;
+      reason: string;
+      occurredAt?: Date;
+    },
+    tx: DbTx,
+  ): Promise<{
+    reversalJournalId: string;
+    sources: ShipmentDispatchEventReversal[];
+    affectedSkuIds: string[];
+  }> {
+    if (!tx) throw new Error('Shipment dispatch reversal requires the caller recall transaction');
+    if (!input.reason.trim()) throw new BadRequestException('reason is required');
+
+    const [journal] = await tx
+      .select({
+        id: wmsTables.stockJournals.id,
+        sourceType: wmsTables.stockJournals.sourceType,
+        sourceId: wmsTables.stockJournals.sourceId,
+        actorId: wmsTables.stockJournals.actorId,
+      })
+      .from(wmsTables.stockJournals)
+      .where(eq(wmsTables.stockJournals.id, input.reversalJournalId))
+      .limit(1);
+    if (
+      !journal ||
+      journal.sourceType !== 'SHIPMENT_RECALL' ||
+      journal.sourceId !== input.recallOperationId ||
+      journal.actorId !== input.actorId
+    ) {
+      throw new BadRequestException('Reversal journal is not owned by the exact recall operation and actor');
+    }
+
+    const [attemptWarehouse] = await tx
+      .select({ warehouseId: wmsTables.shipments.warehouseId })
+      .from(wmsTables.dispatchAttempts)
+      .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.dispatchAttempts.shipmentId))
+      .where(eq(wmsTables.dispatchAttempts.id, input.dispatchAttemptId))
+      .limit(1);
+    if (!attemptWarehouse) throw new BadRequestException('Dispatch attempt not found');
+    const reworkLocation = await this.locationService.getSystemLocationByRole(
+      attemptWarehouse.warehouseId,
+      'outbound_rework',
+      tx,
+    );
+    const sourceRows = await tx
+      .select({
+        id: wmsTables.dispatchAttemptSources.id,
+        stockEventId: wmsTables.dispatchAttemptSources.stockEventId,
+      })
+      .from(wmsTables.dispatchAttemptSources)
+      .where(eq(wmsTables.dispatchAttemptSources.dispatchAttemptId, input.dispatchAttemptId))
+      .orderBy(wmsTables.dispatchAttemptSources.id);
+    if (sourceRows.length === 0 || sourceRows.some((source) => !source.stockEventId)) {
+      throw new BadRequestException('Dispatch attempt does not own a complete set of stock source events');
+    }
+
+    const occurredAt = input.occurredAt ?? new Date();
+    const sources: ShipmentDispatchEventReversal[] = [];
+    for (const source of sourceRows) {
+      sources.push(
+        await this.eventStore.reverseShipmentDispatchEvent(
+          {
+            dispatchAttemptId: input.dispatchAttemptId,
+            dispatchAttemptSourceId: source.id,
+            originalShipEventId: source.stockEventId!,
+            reversalJournalId: input.reversalJournalId,
+            recallOperationId: input.recallOperationId,
+            toLocationId: reworkLocation.id,
+            occurredAt,
+            reason: input.reason.trim(),
+          },
+          tx,
+        ),
+      );
+    }
+    return {
+      reversalJournalId: input.reversalJournalId,
+      sources,
+      affectedSkuIds: [...new Set(sources.map((source) => source.skuId))].sort(),
+    };
   }
 
   async transferShip(
@@ -341,6 +471,8 @@ export class InventoryCommandService {
       // 4. Outbox에 이벤트 추가 ✅
       await this.outboxService.enqueue(
         {
+          topic: INVENTORY_STREAM.topic.topic,
+          idempotencyKey: `stock-event:${event.id}`,
           eventType: 'StockAdjusted',
           aggregateType: 'Stock',
           aggregateId: event.id,
@@ -397,7 +529,7 @@ export class InventoryCommandService {
       // 2. 위치 미지정 시 ON_HAND가 가장 많은 위치에서 차감
       let effectiveLocationId = input.locationId ?? null;
       if (!effectiveLocationId) {
-        const [candidate] = await trx
+        const candidates = await trx
           .select({ locationId: wmsTables.stockLedgers.locationId, qty: wmsTables.stockLedgers.qty })
           .from(wmsTables.stockLedgers)
           .where(
@@ -408,8 +540,25 @@ export class InventoryCommandService {
               gt(wmsTables.stockLedgers.qty, 0),
             ),
           )
-          .orderBy(desc(wmsTables.stockLedgers.qty))
-          .limit(1);
+          .orderBy(asc(wmsTables.stockLedgers.locationId));
+        let candidate: { locationId: string; generallyAvailableQty: number } | null = null;
+        for (const row of candidates) {
+          const availability = await this.batchControlledStock.getAvailability(
+            {
+              skuId: input.skuId,
+              warehouseId: input.warehouseId,
+              sourceLocationId: row.locationId,
+            },
+            trx,
+            { lock: true },
+          );
+          if (
+            availability.generallyAvailableQty >= input.quantity &&
+            (!candidate || availability.generallyAvailableQty > candidate.generallyAvailableQty)
+          ) {
+            candidate = { locationId: row.locationId, generallyAvailableQty: availability.generallyAvailableQty };
+          }
+        }
         if (!candidate) {
           throw new BadRequestException('차감할 ON_HAND 재고가 없습니다.');
         }
@@ -463,6 +612,8 @@ export class InventoryCommandService {
       // 4. Outbox에 이벤트 추가 ✅
       await this.outboxService.enqueue(
         {
+          topic: INVENTORY_STREAM.topic.topic,
+          idempotencyKey: `stock-event:${event.id}`,
           eventType: 'StockAdjusted',
           aggregateType: 'Stock',
           aggregateId: event.id,

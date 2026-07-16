@@ -3,55 +3,55 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog';
-import { useForceShipment } from '@/lib/services/orders/mutations';
+  getServerDenyMessage,
+  parseServerError,
+  useForceShipmentDispatch,
+} from '@/lib/services/orders';
+import { inspectionServerDenyMessage } from '../../inspection-view-model';
+import { useWarehouseCommandRetry } from '../../../outbound-batches/warehouse-command-retry';
 
 interface Props {
-  sessionId: string;
-  foiId: string;
-  authorizedBy: string;
+  shipmentId: string;
   onClose: () => void;
 }
 
-export function ForceShipmentDialog({
-  sessionId,
-  foiId,
-  authorizedBy,
-  onClose,
-}: Props) {
+export function ForceShipmentDialog({ shipmentId, onClose }: Props) {
+  const mutation = useForceShipmentDispatch();
   const [reason, setReason] = useState('');
-  const [forceQty, setForceQty] = useState(1);
+  const [caseId, setCaseId] = useState('');
   const [note, setNote] = useState('');
+  const retry = useWarehouseCommandRetry();
 
-  const mutation = useForceShipment();
-
-  const handleSubmit = async () => {
-    if (!reason.trim()) {
-      toast.error('사유를 입력해주세요.');
-      return;
-    }
+  const submit = async () => {
+    const payload = {
+      reason: reason.trim(),
+      csCaseId: caseId.trim() || undefined,
+      note: note.trim() || undefined,
+    };
     try {
-      await mutation.mutateAsync({
-        sessionId,
-        foiId,
-        reason: reason.trim(),
-        authorizedBy,
-        forceQty,
-        note: note.trim() || undefined,
-      });
-      toast.success('강제 출고가 승인되었습니다.');
+      await retry.execute('force-dispatch', payload, (data, idempotencyKey) =>
+        mutation.mutateAsync({ shipmentId, data, idempotencyKey })
+      );
+      toast.success(
+        '강제 출고 명령을 접수했습니다. provider 반영 상태는 shipment에서 확인하세요.'
+      );
       onClose();
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : '강제 출고에 실패했습니다.');
+    } catch (error) {
+      const parsed = parseServerError(error);
+      toast.error(
+        inspectionServerDenyMessage(parsed) ?? getServerDenyMessage(error)
+      );
     }
   };
 
@@ -59,53 +59,51 @@ export function ForceShipmentDialog({
     <Dialog open onOpenChange={onClose}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>강제 출고 승인</DialogTitle>
+          <DialogTitle>Shipment 강제 출고</DialogTitle>
         </DialogHeader>
-
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1">
-            <Label>강제 출고 수량</Label>
+        <div className="space-y-3">
+          <p className="font-mono text-xs text-muted-foreground">
+            {shipmentId}
+          </p>
+          <div className="space-y-1">
+            <Label>사유</Label>
             <Input
-              type="number"
-              min={1}
-              value={forceQty}
-              onChange={(e) => setForceQty(Number(e.target.value))}
-            />
-          </div>
-          <div className="flex flex-col gap-1">
-            <Label>
-              사유 <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              placeholder="강제 출고 사유 입력"
               value={reason}
-              onChange={(e) => setReason(e.target.value)}
+              onChange={(event) => setReason(event.target.value)}
             />
           </div>
-          <div className="flex flex-col gap-1">
-            <Label>비고</Label>
+          <div className="space-y-1">
+            <Label>CS case ID</Label>
+            <Input
+              value={caseId}
+              onChange={(event) => setCaseId(event.target.value)}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label>메모</Label>
             <Textarea
-              placeholder="추가 메모 (선택)"
               value={note}
-              onChange={(e) => setNote(e.target.value)}
-              rows={2}
+              onChange={(event) => setNote(event.target.value)}
             />
           </div>
-          <p className="text-xs text-muted-foreground">
-            승인자: {authorizedBy}
+          <p className="text-xs text-destructive">
+            버튼 숨김은 편의 기능일 뿐이며 서버가 최종 authorization 경계입니다.
           </p>
         </div>
-
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             취소
           </Button>
           <Button
             variant="destructive"
-            onClick={handleSubmit}
-            disabled={mutation.isPending || !reason.trim()}
+            onClick={submit}
+            disabled={!reason.trim() || mutation.isPending}
           >
-            {mutation.isPending ? '처리 중…' : '강제 출고'}
+            {mutation.isPending
+              ? '서버 확인 중…'
+              : retry.hasPending('force-dispatch')
+                ? '원래 명령 재시도'
+                : '강제 출고'}
           </Button>
         </DialogFooter>
       </DialogContent>

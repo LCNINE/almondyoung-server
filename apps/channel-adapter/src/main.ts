@@ -12,14 +12,14 @@ import {
   INVENTORY_STREAM,
   PRODUCT_STREAM,
   MEMBERSHIP_STREAM,
+  SHIPMENT_STREAM,
+  FULFILLMENT_V2_STREAM,
 } from '@packages/event-contracts/streams';
 
 async function bootstrap() {
-  const app = await NestFactory.create<NestFastifyApplication>(
-    AdapterModule,
-    new FastifyAdapter(),
-    { bufferLogs: true },
-  );
+  const app = await NestFactory.create<NestFastifyApplication>(AdapterModule, new FastifyAdapter(), {
+    bufferLogs: true,
+  });
   app.useLogger(app.get(Logger));
 
   app.useGlobalPipes(new ValidationPipe());
@@ -81,14 +81,23 @@ async function bootstrap() {
     const groupId = process.env.KAFKA_GROUP_ID || fallbackGroupId;
 
     const consumerOptions = EventsModule.forConsumer({
-      streams: [FULFILLMENT_STREAM, PRODUCT_STREAM, INVENTORY_STREAM, MEMBERSHIP_STREAM],
+      streams: [
+        FULFILLMENT_STREAM,
+        FULFILLMENT_V2_STREAM,
+        SHIPMENT_STREAM,
+        PRODUCT_STREAM,
+        INVENTORY_STREAM,
+        MEMBERSHIP_STREAM,
+      ],
       groupId,
       kafka: createKafkaConfigFromEnv()!,
     });
 
     app.connectMicroservice(consumerOptions);
     await app.startAllMicroservices();
-    console.log(`Kafka Consumer connected: groupId=${groupId}, streams=fulfillment,product,inventory,membership`);
+    console.log(
+      `Kafka Consumer connected: groupId=${groupId}, streams=fulfillment,fulfillment-v2,shipment,product,inventory,membership`,
+    );
   }
 
   const port = process.env.PORT ?? 3003;

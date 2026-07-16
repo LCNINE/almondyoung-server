@@ -27,7 +27,10 @@ const OUTBOX_STATUS_LABELS: Record<string, string> = {
   skipped: '스킵',
 };
 
-const OUTBOX_STATUS_VARIANTS: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
+const OUTBOX_STATUS_VARIANTS: Record<
+  string,
+  'default' | 'secondary' | 'destructive' | 'outline'
+> = {
   pending: 'secondary',
   processing: 'secondary',
   published: 'default',
@@ -42,6 +45,8 @@ const FO_EVENT_LABELS: Record<string, string> = {
   FulfillmentShipped: '출고 완료',
   FulfillmentDelivered: '배송 완료',
   FulfillmentCancelled: '취소',
+  ShipmentDispatchRecalled: '출고 recall',
+  FulfillmentReopened: '미처리 수량 재개',
 };
 
 function formatDate(value: string | null | undefined) {
@@ -50,7 +55,11 @@ function formatDate(value: string | null | undefined) {
 }
 
 export function HistoryTab({ fo }: { fo: FulfillmentOrderDetail }) {
-  const { data: outboxEvents = [], isLoading, isError } = useFulfillmentOutboxEvents(fo.id);
+  const {
+    data: outboxEvents = [],
+    isLoading,
+    isError,
+  } = useFulfillmentOutboxEvents(fo.id);
   const timeline: TimelineEvent[] = [
     { label: '생성됨', at: fo.createdAt },
     { label: '할당됨', at: fo.allocatedAt },
@@ -59,7 +68,9 @@ export function HistoryTab({ fo }: { fo: FulfillmentOrderDetail }) {
   ].filter((event) => !!event.at);
 
   const failedOrRetrying = outboxEvents.filter(
-    (event) => event.status === 'failed' || (event.status === 'pending' && event.attempts > 0),
+    (event) =>
+      event.status === 'failed' ||
+      (event.status === 'pending' && event.attempts > 0)
   );
 
   return (
@@ -74,7 +85,9 @@ export function HistoryTab({ fo }: { fo: FulfillmentOrderDetail }) {
               <li key={event.label} className="mb-5 ml-4">
                 <div className="absolute -left-1.5 mt-1 h-3 w-3 rounded-full border border-background bg-muted-foreground/40" />
                 <p className="text-sm font-medium">{event.label}</p>
-                <time className="text-xs text-muted-foreground">{formatDate(event.at)}</time>
+                <time className="text-xs text-muted-foreground">
+                  {formatDate(event.at)}
+                </time>
               </li>
             ))}
           </ol>
@@ -84,8 +97,9 @@ export function HistoryTab({ fo }: { fo: FulfillmentOrderDetail }) {
       <section>
         <h3 className="mb-3 text-sm font-semibold">Core Outbox 이벤트</h3>
         <p className="mb-3 text-xs text-muted-foreground">
-          Core가 발행한 outbox 이벤트입니다. 발행 완료는 dispatcher가 이벤트를 전달했음을 의미하며,
-          channel-adapter 또는 Medusa projection 처리 완료를 보장하지는 않습니다.
+          Core가 발행한 outbox 이벤트입니다. 발행 완료는 dispatcher가 이벤트를
+          전달했음을 의미하며, channel-adapter 또는 Medusa projection 처리
+          완료를 보장하지는 않습니다.
         </p>
 
         {isError && (
@@ -93,7 +107,8 @@ export function HistoryTab({ fo }: { fo: FulfillmentOrderDetail }) {
             <AlertTriangle />
             <AlertTitle>이벤트 조회 실패</AlertTitle>
             <AlertDescription>
-              Core outbox 이벤트를 불러오지 못했습니다. 출고 상태와 채널 동기화 상태를 별도로 확인하세요.
+              Core outbox 이벤트를 불러오지 못했습니다. 출고 상태와 채널 동기화
+              상태를 별도로 확인하세요.
             </AlertDescription>
           </Alert>
         )}
@@ -103,7 +118,8 @@ export function HistoryTab({ fo }: { fo: FulfillmentOrderDetail }) {
             <AlertTriangle />
             <AlertTitle>운영 확인 필요</AlertTitle>
             <AlertDescription>
-              발행 실패 또는 재시도 중인 이벤트 {failedOrRetrying.length}건이 있습니다. outbox-dispatcher 로그를 확인하세요.
+              발행 실패 또는 재시도 중인 이벤트 {failedOrRetrying.length}건이
+              있습니다. outbox-dispatcher 로그를 확인하세요.
             </AlertDescription>
           </Alert>
         )}
@@ -122,13 +138,19 @@ export function HistoryTab({ fo }: { fo: FulfillmentOrderDetail }) {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
+                  <TableCell
+                    colSpan={5}
+                    className="py-6 text-center text-muted-foreground"
+                  >
                     이벤트를 불러오는 중입니다.
                   </TableCell>
                 </TableRow>
               ) : outboxEvents.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
+                  <TableCell
+                    colSpan={5}
+                    className="py-6 text-center text-muted-foreground"
+                  >
                     기록된 outbox 이벤트가 없습니다.
                   </TableCell>
                 </TableRow>
@@ -137,16 +159,26 @@ export function HistoryTab({ fo }: { fo: FulfillmentOrderDetail }) {
                   <TableRow key={event.id}>
                     <TableCell>
                       <div className="flex flex-col">
-                        <span className="text-sm">{FO_EVENT_LABELS[event.eventType] ?? event.eventType}</span>
-                        <span className="font-mono text-xs text-muted-foreground">{event.eventType}</span>
+                        <span className="text-sm">
+                          {FO_EVENT_LABELS[event.eventType] ?? event.eventType}
+                        </span>
+                        <span className="font-mono text-xs text-muted-foreground">
+                          {event.eventType}
+                        </span>
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={OUTBOX_STATUS_VARIANTS[event.status] ?? 'outline'}>
+                      <Badge
+                        variant={
+                          OUTBOX_STATUS_VARIANTS[event.status] ?? 'outline'
+                        }
+                      >
                         {OUTBOX_STATUS_LABELS[event.status] ?? event.status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right font-mono text-xs">{event.attempts}</TableCell>
+                    <TableCell className="text-right font-mono text-xs">
+                      {event.attempts}
+                    </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {event.publishedAt
                         ? formatDate(event.publishedAt)
@@ -154,7 +186,9 @@ export function HistoryTab({ fo }: { fo: FulfillmentOrderDetail }) {
                           ? `다음 재시도: ${formatDate(event.nextAttemptAt)}`
                           : '-'}
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{formatDate(event.createdAt)}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {formatDate(event.createdAt)}
+                    </TableCell>
                   </TableRow>
                 ))
               )}

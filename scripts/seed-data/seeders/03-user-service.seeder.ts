@@ -10,6 +10,45 @@ const logger = new Logger('User Service Seeder');
 
 const BCRYPT_COST = 10;
 
+export const USER_SERVICE_REFERENCE_ROLES = [
+  {
+    roleId: FIXED_UUIDS.ROLE_MASTER,
+    name: 'master',
+    description: '마스터',
+  },
+  {
+    roleId: FIXED_UUIDS.ROLE_ADMIN,
+    name: 'admin',
+    description: '관리자',
+  },
+  {
+    roleId: FIXED_UUIDS.ROLE_MEMBERSHIP,
+    name: 'membership',
+    description: '멤버십 회원',
+  },
+  {
+    roleId: FIXED_UUIDS.ROLE_USER,
+    name: 'user',
+    description: '일반 회원',
+  },
+  {
+    roleId: FIXED_UUIDS.ROLE_LOGISTICS_WORKER,
+    name: 'logistics_worker',
+    description: '물류 작업자',
+  },
+  {
+    roleId: FIXED_UUIDS.ROLE_LOGISTICS_MANAGER,
+    name: 'logistics_manager',
+    description: '물류 관리자',
+  },
+];
+
+export const USER_SERVICE_REFERENCE_ROLE_SCOPE_MAP: Record<string, string[]> = {
+  master: ['master'],
+  membership: ['user:read', 'user:modify'],
+  user: ['user:read', 'user:modify'],
+};
+
 export interface OAuthClientSeed {
   clientId: string;
   clientType: 'confidential' | 'public';
@@ -45,28 +84,7 @@ export async function seedUserService(
     // Step 1: Insert public.roles (admin, membership, user)
     logger.step(1, 6, 'Inserting public roles');
 
-    const roles = [
-      {
-        roleId: FIXED_UUIDS.ROLE_MASTER,
-        name: 'master',
-        description: '마스터',
-      },
-      {
-        roleId: FIXED_UUIDS.ROLE_ADMIN,
-        name: 'admin',
-        description: '관리자',
-      },
-      {
-        roleId: FIXED_UUIDS.ROLE_MEMBERSHIP,
-        name: 'membership',
-        description: '멤버십 회원',
-      },
-      {
-        roleId: FIXED_UUIDS.ROLE_USER,
-        name: 'user',
-        description: '일반 회원',
-      },
-    ];
+    const roles = USER_SERVICE_REFERENCE_ROLES;
 
     for (const role of roles) {
       await db.execute(sql`
@@ -109,40 +127,18 @@ export async function seedUserService(
     // Step 3: Upsert auth.role_scope_mapping (role_name 직접 사용)
     logger.step(3, 6, 'Upserting auth.role_scope_mapping');
 
-    const masterScopeKeys = ['master'];
-    for (const scopeKey of masterScopeKeys) {
-      await db.execute(sql`
-        INSERT INTO auth.role_scope_mapping (role_name, scope_id)
-        SELECT 'master', id FROM auth.scopes WHERE key = ${scopeKey}
-        ON CONFLICT (role_name, scope_id) DO NOTHING
-      `);
-    }
-
-    const adminScopeKeys = scopes.map(s => s.key).filter(k => k !== 'master');
-    for (const scopeKey of adminScopeKeys) {
-      await db.execute(sql`
-        INSERT INTO auth.role_scope_mapping (role_name, scope_id)
-        SELECT 'admin', id FROM auth.scopes WHERE key = ${scopeKey}
-        ON CONFLICT (role_name, scope_id) DO NOTHING
-      `);
-    }
-
-    const membershipScopeKeys = ['user:read', 'user:modify'];
-    for (const scopeKey of membershipScopeKeys) {
-      await db.execute(sql`
-        INSERT INTO auth.role_scope_mapping (role_name, scope_id)
-        SELECT 'membership', id FROM auth.scopes WHERE key = ${scopeKey}
-        ON CONFLICT (role_name, scope_id) DO NOTHING
-      `);
-    }
-
-    const userScopeKeys = ['user:read', 'user:modify'];
-    for (const scopeKey of userScopeKeys) {
-      await db.execute(sql`
-        INSERT INTO auth.role_scope_mapping (role_name, scope_id)
-        SELECT 'user', id FROM auth.scopes WHERE key = ${scopeKey}
-        ON CONFLICT (role_name, scope_id) DO NOTHING
-      `);
+    const roleScopeMap: Record<string, string[]> = {
+      ...USER_SERVICE_REFERENCE_ROLE_SCOPE_MAP,
+      admin: scopes.map((scope) => scope.key).filter((scopeKey) => scopeKey !== 'master'),
+    };
+    for (const [roleName, scopeKeys] of Object.entries(roleScopeMap)) {
+      for (const scopeKey of scopeKeys) {
+        await db.execute(sql`
+          INSERT INTO auth.role_scope_mapping (role_name, scope_id)
+          SELECT ${roleName}, id FROM auth.scopes WHERE key = ${scopeKey}
+          ON CONFLICT (role_name, scope_id) DO NOTHING
+        `);
+      }
     }
 
     logger.success('Upserted auth.role_scope_mapping');
@@ -221,13 +217,8 @@ export async function seedUserService(
       const clientsWithHashes = await Promise.all(
         options.oauthClients.map(async (seed) => {
           const isPublic = seed.clientType === 'public';
-          const plaintextSecret = isPublic
-            ? null
-            : seed.clientSecret ?? crypto.randomBytes(32).toString('base64url');
-          const secretHash = await bcrypt.hash(
-            plaintextSecret ?? crypto.randomBytes(32).toString('hex'),
-            BCRYPT_COST,
-          );
+          const plaintextSecret = isPublic ? null : (seed.clientSecret ?? crypto.randomBytes(32).toString('base64url'));
+          const secretHash = await bcrypt.hash(plaintextSecret ?? crypto.randomBytes(32).toString('hex'), BCRYPT_COST);
           return { seed, isPublic, plaintextSecret, secretHash };
         }),
       );

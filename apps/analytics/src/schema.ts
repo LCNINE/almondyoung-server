@@ -53,7 +53,7 @@ export const factOrderItems = pgTable(
     externalOrderId: varchar('external_order_id', { length: 255 }),
     salesChannel: varchar('sales_channel', { length: 50 }).notNull(),
     customerId: varchar('customer_id', { length: 255 }),
-    orderItemId: varchar('order_item_id', { length: 255 }).notNull(),
+    orderItemId: varchar('order_item_id', { length: 255 }),
     masterId: varchar('master_id', { length: 255 }).notNull(),
     versionId: varchar('version_id', { length: 255 }),
     variantId: varchar('variant_id', { length: 255 }),

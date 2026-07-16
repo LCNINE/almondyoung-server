@@ -2,6 +2,7 @@ import { OrderEventsConsumer } from './order-events.consumer';
 import type { SalesOrdersService } from '../services/sales-orders.service';
 import type { LibraryService } from '../../library/services/library.service';
 import type { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
+import type { FulfillmentWorkflowGate } from '../../fulfillment/services/fulfillment-workflow-gate.service';
 import type {
   OrderCancelledPayload,
   OrderCreatedPayload,
@@ -29,6 +30,7 @@ describe('OrderEventsConsumer', () => {
     backlog: jest.Mocked<
       Pick<FulfillmentOrderCreationBacklogService, 'enqueueForSalesOrder' | 'closeOpenForSalesOrder'>
     >;
+    workflowGate: jest.Mocked<Pick<FulfillmentWorkflowGate, 'shouldEnqueueFo'>>;
     txInserts: Array<{ table: unknown; values: unknown }>;
     // Rows returned by the businessLinks idempotency guard's `select(...)` lookup. Empty by
     // default (no existing link); push a row to simulate a refund link already recorded.
@@ -61,7 +63,7 @@ describe('OrderEventsConsumer', () => {
       }),
     };
     const dbService = {
-      run: jest.fn((fn: (tx: any) => Promise<unknown>, tx?: any) => tx ? fn(tx) : fn(fakeTx)),
+      run: jest.fn((fn: (tx: any) => Promise<unknown>, tx?: any) => (tx ? fn(tx) : fn(fakeTx))),
     };
     return {
       salesOrders: {
@@ -79,6 +81,9 @@ describe('OrderEventsConsumer', () => {
         enqueueForSalesOrder: jest.fn().mockResolvedValue({ id: 'backlog-1' }),
         closeOpenForSalesOrder: jest.fn().mockResolvedValue(0),
       } as any,
+      workflowGate: {
+        shouldEnqueueFo: jest.fn().mockReturnValue(true),
+      },
       txInserts,
       businessLinkRows,
       fakeTx,
@@ -91,6 +96,7 @@ describe('OrderEventsConsumer', () => {
       mocks.salesOrders as any,
       mocks.library as any,
       mocks.backlog as any,
+      mocks.workflowGate as any,
       mocks.dbService as any,
     );
   }
@@ -131,7 +137,11 @@ describe('OrderEventsConsumer', () => {
     await consumer.handleOrderCreated(makePayload(), envelope);
 
     expect(mocks.salesOrders.createFromEvent).toHaveBeenCalledTimes(1);
-    expect(mocks.backlog.enqueueForSalesOrder).toHaveBeenCalledWith('so-new-1', mocks.fakeTx);
+    expect(mocks.backlog.enqueueForSalesOrder).toHaveBeenCalledWith(
+      'so-new-1',
+      { eventOccurredAt: expect.any(String), isNewSalesOrder: true },
+      mocks.fakeTx,
+    );
     expect(mocks.library.grantOwnershipsForOrder).toHaveBeenCalledTimes(1);
     expect(mocks.library.grantOwnershipsForOrder).toHaveBeenCalledWith('so-new-1', mocks.fakeTx);
     expect(mocks.txInserts).toHaveLength(1); // orderEvents 로그
@@ -159,7 +169,11 @@ describe('OrderEventsConsumer', () => {
 
     expect(mocks.salesOrders.createFromEvent).not.toHaveBeenCalled();
     expect(mocks.txInserts).toHaveLength(0); // orderEvents insert 안 함
-    expect(mocks.backlog.enqueueForSalesOrder).toHaveBeenCalledWith('so-existing-1', mocks.fakeTx);
+    expect(mocks.backlog.enqueueForSalesOrder).toHaveBeenCalledWith(
+      'so-existing-1',
+      { eventOccurredAt: expect.any(String), isNewSalesOrder: false },
+      mocks.fakeTx,
+    );
     expect(mocks.library.grantOwnershipsForOrder).toHaveBeenCalledTimes(1);
     expect(mocks.library.grantOwnershipsForOrder).toHaveBeenCalledWith('so-existing-1', mocks.fakeTx);
   });
@@ -175,6 +189,34 @@ describe('OrderEventsConsumer', () => {
     expect(mocks.txInserts).toHaveLength(0);
     expect(mocks.backlog.enqueueForSalesOrder).not.toHaveBeenCalled();
     expect(mocks.library.grantOwnershipsForOrder).not.toHaveBeenCalled();
+  });
+
+  it('workflow gate가 enqueue를 닫아도 새 SO 수집과 ownership grant는 계속한다', async () => {
+    const mocks = makeMocks();
+    mocks.salesOrders.findByChannelOrderId.mockResolvedValue(undefined as any);
+    mocks.salesOrders.createFromEvent.mockResolvedValue({ id: 'so-maintenance-1' } as any);
+    mocks.workflowGate.shouldEnqueueFo.mockReturnValue(false);
+    const payload = makePayload({ createdAt: '2026-07-14T03:00:00.000Z' });
+
+    await makeConsumer(mocks).handleOrderCreated(payload, envelope);
+
+    expect(mocks.workflowGate.shouldEnqueueFo).toHaveBeenCalledWith(payload.createdAt, true);
+    expect(mocks.backlog.enqueueForSalesOrder).not.toHaveBeenCalled();
+    expect(mocks.salesOrders.createFromEvent).toHaveBeenCalledWith(payload, mocks.fakeTx);
+    expect(mocks.library.grantOwnershipsForOrder).toHaveBeenCalledWith('so-maintenance-1', mocks.fakeTx);
+  });
+
+  it('기존 SO redelivery는 gate에 isNew=false를 전달하고 backlog 없이 ownership만 자가치유한다', async () => {
+    const mocks = makeMocks();
+    mocks.salesOrders.findByChannelOrderId.mockResolvedValue({ id: 'so-v2-existing-1' } as any);
+    mocks.workflowGate.shouldEnqueueFo.mockReturnValue(false);
+    const payload = makePayload({ createdAt: '2026-07-14T03:00:00.000Z' });
+
+    await makeConsumer(mocks).handleOrderCreated(payload, envelope);
+
+    expect(mocks.workflowGate.shouldEnqueueFo).toHaveBeenCalledWith(payload.createdAt, false);
+    expect(mocks.backlog.enqueueForSalesOrder).not.toHaveBeenCalled();
+    expect(mocks.library.grantOwnershipsForOrder).toHaveBeenCalledWith('so-v2-existing-1', mocks.fakeTx);
   });
 
   it('grant 가 throw 하면 핸들러도 throw — tx rollback 보장 (같은 tx invariant)', async () => {

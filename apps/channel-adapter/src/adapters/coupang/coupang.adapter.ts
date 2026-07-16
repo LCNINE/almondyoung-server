@@ -255,6 +255,34 @@ export class CoupangAdapter implements ChannelAdapter {
     }
   }
 
+  async reconcileCommand(command: ChannelCommand): Promise<{ applied: boolean; evidence?: Record<string, unknown> }> {
+    if (command.type !== 'dispatch.ship' || !command.items?.length) return { applied: false };
+    if (!/^\d+$/.test(command.orderId)) return { applied: false };
+
+    const response = await this.coupangOrderClient.getSingleOrderSheetByOrderId(command.orderId);
+    const requestedVendorItemIds = new Set(command.items.map((item) => item.orderItemId));
+    const matchedVendorItemIds = new Set<string>();
+
+    for (const orderSheet of response.data ?? []) {
+      if (String(orderSheet.orderId) !== command.orderId || orderSheet.invoiceNumber !== command.tracking.number) {
+        continue;
+      }
+      for (const item of orderSheet.orderItems) {
+        const vendorItemId = String(item.vendorItemId);
+        if (requestedVendorItemIds.has(vendorItemId)) matchedVendorItemIds.add(vendorItemId);
+      }
+    }
+
+    return {
+      applied: [...requestedVendorItemIds].every((vendorItemId) => matchedVendorItemIds.has(vendorItemId)),
+      evidence: {
+        orderId: command.orderId,
+        trackingNumber: command.tracking.number,
+        matchedVendorItemIds: [...matchedVendorItemIds],
+      },
+    };
+  }
+
   async executeQuery(query: ChannelQuery): Promise<any> {
     try {
       switch (query.type) {
@@ -391,7 +419,8 @@ export class CoupangAdapter implements ChannelAdapter {
         const internalEvent: InternalOrderEvent = {
           channelType: 'coupang',
           externalOrderId: orderSheet.orderId.toString(),
-          externalProductOrderId: orderItem.vendorItemId.toString(),
+          externalProductOrderId: orderItem.orderItemId?.toString(),
+          productId: orderItem.vendorItemId.toString(),
           status: mapCoupangStatusToInternal(orderSheet.status),
           lastChangedType: 'ORDER_STATUS_CHANGED',
           lastChangedAt: orderSheet.orderedAt,
@@ -453,7 +482,8 @@ export class CoupangAdapter implements ChannelAdapter {
     const internalEvent: InternalOrderEvent = {
       channelType: 'coupang',
       externalOrderId: orderSheet.orderId.toString(),
-      externalProductOrderId: firstOrderItem.vendorItemId.toString(),
+      externalProductOrderId: firstOrderItem.orderItemId?.toString(),
+      productId: firstOrderItem.vendorItemId.toString(),
       status: mapCoupangStatusToInternal(orderSheet.status),
       lastChangedType: 'SINGLE_ORDER_QUERY', // 단건 조회임을 명시
       lastChangedAt: orderSheet.orderedAt,
@@ -1414,25 +1444,43 @@ export class CoupangAdapter implements ChannelAdapter {
     tracking: { companyCode: string; number: string },
     items?: Array<{ orderItemId: string; quantity: number }>,
   ): Promise<any[]> {
-    // TODO: 실제 구현 - 주문 관리 시스템에서 쿠팡 발주서 정보 조회
-    console.log('🔄 번역 중: 표준 주문 → 쿠팡 송장 DTO', {
-      orderId,
-      tracking,
-      items,
-    });
+    if (!/^\d+$/.test(orderId)) {
+      throw new Error(`쿠팡 외부 orderId가 필요합니다: ${orderId}`);
+    }
+    if (!items?.length) {
+      throw new Error('쿠팡 발송에는 channelOrderItemId가 한 개 이상 필요합니다');
+    }
 
-    // 임시 구현 (실제로는 주문 DB에서 shipmentBoxId, vendorItemId 등 조회)
-    return [
-      {
-        shipmentBoxId: parseInt(orderId.replace('ORDER_', ''), 10) || 12345,
-        orderId: parseInt(orderId.replace('ORDER_', ''), 10) || 67890,
-        vendorItemId: 11111,
-        deliveryCompanyCode: this.mapDeliveryCompanyCode(tracking.companyCode),
-        invoiceNumber: tracking.number,
-        splitShipping: false,
-        preSplitShipped: false,
-      },
-    ];
+    const requestedItemIds = new Set(
+      items.map(({ orderItemId }) => {
+        if (!/^\d+$/.test(orderItemId)) {
+          throw new Error(`쿠팡 외부 orderItemId가 필요합니다: ${orderItemId}`);
+        }
+        return Number(orderItemId);
+      }),
+    );
+    const response = await this.coupangOrderClient.getSingleOrderSheetByOrderId(orderId);
+    const matched = response.data.flatMap((orderSheet) =>
+      orderSheet.orderItems
+        .filter((item) => requestedItemIds.has(item.vendorItemId))
+        .map((item) => ({
+          shipmentBoxId: orderSheet.shipmentBoxId,
+          orderId: orderSheet.orderId,
+          vendorItemId: item.vendorItemId,
+          deliveryCompanyCode: this.mapDeliveryCompanyCode(tracking.companyCode),
+          invoiceNumber: tracking.number,
+          splitShipping: orderSheet.orderItems.length !== requestedItemIds.size,
+          preSplitShipped: false,
+        })),
+    );
+
+    if (matched.length !== requestedItemIds.size) {
+      const matchedIds = new Set(matched.map(({ vendorItemId }) => vendorItemId));
+      const missing = [...requestedItemIds].filter((itemId) => !matchedIds.has(itemId));
+      throw new Error(`쿠팡 주문 ${orderId}에서 orderItemId를 찾을 수 없습니다: ${missing.join(',')}`);
+    }
+
+    return matched;
   }
 
   /**

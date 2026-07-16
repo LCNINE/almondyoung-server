@@ -23,12 +23,7 @@ export class UserPurchaseAggregatesService {
     return tx ? fn(tx) : this.db.transaction(fn);
   }
 
-  async applyOrderCreated(
-    customerId: string | null,
-    items: OrderItem[],
-    occurredAt: Date,
-    tx?: DbTx,
-  ): Promise<void> {
+  async applyOrderCreated(customerId: string | null, items: OrderItem[], occurredAt: Date, tx?: DbTx): Promise<void> {
     if (!customerId || items.length === 0) {
       return;
     }
@@ -37,7 +32,7 @@ export class UserPurchaseAggregatesService {
       string,
       {
         masterId: string;
-        channelProductId: string;
+        channelProductId: string | null;
         quantity: number;
       }
     >();
@@ -50,7 +45,7 @@ export class UserPurchaseAggregatesService {
       } else {
         aggregated.set(key, {
           masterId: item.masterId,
-          channelProductId: item.channelProductId,
+          channelProductId: item.channelProductId ?? null,
           quantity: item.quantity,
         });
       }

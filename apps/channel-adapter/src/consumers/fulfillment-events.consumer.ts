@@ -1,42 +1,41 @@
 /**
  * Fulfillment Events Consumer
  *
- * WMS에서 발행하는 이행(Fulfillment) 이벤트를 구독하여
- * 해당 판매채널(네이버, 쿠팡)에 송장 정보 및 상태를 동기화합니다.
+ * V1 fulfillment 호환 이벤트를 구독해 full-order Medusa projection만 저장합니다.
+ * 외부 판매채널 발송은 shipment-events.consumer + durable worker가 단독 소유합니다.
  *
  * 이벤트 흐름:
- * WMS (FulfillmentShipped) → Kafka → Channel Adapter → 채널 API (송장 업데이트)
- * WMS (FulfillmentCancelled) → Kafka → Channel Adapter → 채널 API (취소 처리)
+ * WMS (FulfillmentShipped/Delivered) → Kafka → inbox → Medusa full-order projection
  */
 
 import { Controller, Logger, UseInterceptors } from '@nestjs/common';
 import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
-import { FulfillmentShippedPayload, FulfillmentCancelledPayload, FulfillmentDeliveredPayload, SalesOrderCancelledPayload } from '@packages/event-contracts/streams';
+import {
+  FulfillmentShippedPayload,
+  FulfillmentCancelledPayload,
+  FulfillmentDeliveredPayload,
+  SalesOrderCancelledPayload,
+} from '@packages/event-contracts/streams';
 import { MessageEnvelope } from '@packages/event-contracts/types';
 import { DbService } from '@app/db';
 import { inboxEvents } from '../schema';
 import type { ChannelAdapterSchema } from '../types';
-import { ChannelAdapterFactory } from '../adapters/channel-adapter.factory';
-
-type SalesChannel = 'naver' | 'coupang' | 'medusa' | '3pl';
 
 @Controller()
 @UseInterceptors(EventTypeGuard)
 export class FulfillmentEventsConsumer {
   private readonly logger = new Logger(FulfillmentEventsConsumer.name);
 
-  constructor(
-    private readonly channelAdapterFactory: ChannelAdapterFactory,
-    private readonly dbService: DbService<ChannelAdapterSchema>,
-  ) {
+  constructor(private readonly dbService: DbService<ChannelAdapterSchema>) {
     this.logger.log('🚚 FulfillmentEventsConsumer 초기화 완료');
   }
 
   /**
    * 출고 완료 이벤트 핸들러
    *
-   * WMS에서 FO가 출고 완료되면, 해당 채널에 송장 정보를 전달합니다.
+   * V1 이벤트는 FO 전체 완료의 Medusa 호환 projection만 담당한다.
+   * 실제 외부 채널 발송은 ShipmentShipped consumer가 소유한다.
    */
   @OnEvent('fulfillments.events.v1', 'FulfillmentShipped')
   async handleFulfillmentShipped(
@@ -50,8 +49,6 @@ export class FulfillmentEventsConsumer {
     });
 
     try {
-      await this.syncShipmentToChannels(payload);
-
       // Medusa projection: inbox에 저장 → InboxWorkerService가 Medusa order metadata 갱신
       // wms_order_mappings에서 medusa 채널 매핑이 없으면 InboxWorker가 조용히 스킵
       await this.dbService.db.insert(inboxEvents).values({
@@ -109,7 +106,10 @@ export class FulfillmentEventsConsumer {
 
       this.logger.log(`✅ [FulfillmentDelivered] Inbox 저장 완료: fulfillmentId=${payload.fulfillmentId}`);
     } catch (error) {
-      this.logger.error(`❌ [FulfillmentDelivered] Inbox 저장 실패: fulfillmentId=${payload.fulfillmentId}`, error.stack);
+      this.logger.error(
+        `❌ [FulfillmentDelivered] Inbox 저장 실패: fulfillmentId=${payload.fulfillmentId}`,
+        error.stack,
+      );
       throw error;
     }
   }
@@ -117,7 +117,8 @@ export class FulfillmentEventsConsumer {
   /**
    * 이행 취소 이벤트 핸들러
    *
-   * WMS에서 FO가 취소되면, 해당 채널에 취소 상태를 전달합니다.
+   * V1 fulfillment cancellation은 외부 채널 명령을 소유하지 않는다.
+   * 주문 취소 projection은 SalesOrderCancelled의 단일 채널 경로가 담당한다.
    */
   @OnEvent('fulfillments.events.v1', 'FulfillmentCancelled')
   async handleFulfillmentCancelled(
@@ -130,87 +131,9 @@ export class FulfillmentEventsConsumer {
       reason: payload.reason,
     });
 
-    try {
-      // 취소 상태를 채널에 전파
-      await this.syncCancellationToChannels(payload);
-
-      this.logger.log(`✅ [FulfillmentCancelled] Processed: fulfillmentId=${payload.fulfillmentId}`);
-    } catch (error) {
-      this.logger.error(`❌ [FulfillmentCancelled] Failed: fulfillmentId=${payload.fulfillmentId}`, error.stack);
-      throw error;
-    }
-  }
-
-  /**
-   * 출고 정보를 채널들에 동기화
-   */
-  private async syncShipmentToChannels(payload: FulfillmentShippedPayload): Promise<void> {
-    const channels: Array<'naver_smartstore' | 'coupang'> = ['naver_smartstore', 'coupang'];
-
-    const syncPromises = channels.map(async (channel) => {
-      try {
-        const adapter = this.channelAdapterFactory.getAdapter(channel);
-
-        // 발송 처리 명령 실행
-        const result = await adapter.executeCommand({
-          type: 'dispatch.ship',
-          orderId: payload.orderId,
-          tracking: {
-            companyCode: payload.trackingInfo.carrier,
-            number: payload.trackingInfo.trackingNumber,
-          },
-          dispatchedAt: payload.shippedAt,
-        });
-
-        if (result.success) {
-          this.logger.log(`✅ [${channel}] 송장 정보 동기화 성공: ${payload.orderId}`, {
-            trackingNumber: payload.trackingInfo.trackingNumber,
-          });
-        } else {
-          this.logger.warn(`⚠️ [${channel}] 송장 정보 동기화 실패: ${payload.orderId}`, { errors: result.errors });
-        }
-
-        return result;
-      } catch (error) {
-        this.logger.error(`❌ [${channel}] 송장 정보 동기화 오류: ${payload.orderId}`, error.message);
-        return { success: false, errors: [{ message: error.message }] };
-      }
-    });
-
-    await Promise.allSettled(syncPromises);
-  }
-
-  /**
-   * 취소 정보를 채널들에 동기화
-   */
-  private async syncCancellationToChannels(payload: FulfillmentCancelledPayload): Promise<void> {
-    const channels: Array<'naver_smartstore' | 'coupang'> = ['naver_smartstore', 'coupang'];
-
-    const syncPromises = channels.map(async (channel) => {
-      try {
-        const adapter = this.channelAdapterFactory.getAdapter(channel);
-
-        // 주문 취소 명령 실행
-        const result = await adapter.executeCommand({
-          type: 'order.cancel',
-          orderId: payload.orderId,
-          reason: payload.reasonDetail ?? payload.reason,
-        });
-
-        if (result.success) {
-          this.logger.log(`✅ [${channel}] 취소 상태 동기화 성공: ${payload.orderId}`);
-        } else {
-          this.logger.warn(`⚠️ [${channel}] 취소 상태 동기화 실패: ${payload.orderId}`, { errors: result.errors });
-        }
-
-        return result;
-      } catch (error) {
-        this.logger.error(`❌ [${channel}] 취소 상태 동기화 오류: ${payload.orderId}`, error.message);
-        return { success: false, errors: [{ message: error.message }] };
-      }
-    });
-
-    await Promise.allSettled(syncPromises);
+    this.logger.log(
+      `ℹ️ [FulfillmentCancelled] Compatibility event acknowledged without channel command: fulfillmentId=${payload.fulfillmentId}`,
+    );
   }
 
   /**
@@ -244,7 +167,9 @@ export class FulfillmentEventsConsumer {
 
     if (cancellationScope !== 'full') {
       // 부분취소: 외부채널/Medusa 자동 전파 없음 (정책 미확정). Core businessLink에 manual_pending 기록됨.
-      this.logger.log(`[SALES_ORDER_CANCELLED] 부분취소 - 외부채널 동기화 제외 (internal_manual_review_only): orderId=${orderId}`);
+      this.logger.log(
+        `[SALES_ORDER_CANCELLED] 부분취소 - 외부채널 동기화 제외 (internal_manual_review_only): orderId=${orderId}`,
+      );
       return;
     }
 

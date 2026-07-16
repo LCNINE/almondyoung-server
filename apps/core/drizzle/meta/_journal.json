@@ -260,6 +260,41 @@
       "when": 1783860615915,
       "tag": "20260712125015_add-return-refund-attempts",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1784030934519,
+      "tag": "20260714120854_certain_wendigo",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1784096021162,
+      "tag": "20260715061341_tracking-provider-attempt-idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1784098590087,
+      "tag": "20260715065630_dry_the_stranger",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1784107017948,
+      "tag": "20260715091657_huge_phantom_reporter",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1784196606946,
+      "tag": "20260716101006_drop-legacy-fo-outbound-contract",
+      "breakpoints": true
     }
   ]
 }

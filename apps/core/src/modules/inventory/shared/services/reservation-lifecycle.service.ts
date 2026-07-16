@@ -62,7 +62,8 @@ export class ReservationLifecycleService {
     reason: string,
     tx: DbTx,
   ): Promise<number> {
-    // 1. FO의 모든 예약 조회
+    // Legacy-only cleanup. V2 never dual-reads this FO target: shipment-line
+    // release/version/progress is owned by ShipmentReservationService.
     const reservations = await this.unifiedReservation.getReservationsByTarget(
       'FULFILLMENT_ORDER',
       fulfillmentOrderId,

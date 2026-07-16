@@ -6,12 +6,17 @@ import { ProductSellableQuantityService } from '../../product-sellable-quantity/
 import { acquireStockAvailabilityLock } from '../locks/stock-availability-lock';
 
 export interface ReserveStockDto {
-  targetType: 'FULFILLMENT_ORDER';
+  // Task 25 contract: V2 예약은 shipment-line 단위만 (FO-target 생성 경로는 은퇴). shipmentLineId 필수.
+  targetType: 'SHIPMENT_LINE';
   targetId: string;
   skuId: string;
   warehouseId: string;
   quantity: number;
-  fulfillmentOrderItemId?: string; // FO 예약시 필요
+  fulfillmentOrderItemId?: string; // legacy FO 예약 호환 컬럼(nullable) — V2 는 미설정
+  shipmentLineId: string;
+  requestedAt?: Date;
+  /** Internal: the domain owner already holds the transaction advisory lock. */
+  stockLockHeld?: boolean;
   timeoutAt?: Date;
   reason?: string;
 }
@@ -25,8 +30,10 @@ export interface Reservation {
   quantity: number;
   status: string;
   fulfillmentOrderItemId: string | null;
+  shipmentLineId: string | null;
   timeoutAt: Date | null;
   reason: string | null;
+  requestedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -56,8 +63,19 @@ export class UnifiedReservationService {
    */
   async reserveStock(dto: ReserveStockDto, tx?: DbTx): Promise<Reservation> {
     return this.db.run(async (trx) => {
+      if (
+        dto.targetType === 'SHIPMENT_LINE' &&
+        (dto.shipmentLineId !== dto.targetId || dto.fulfillmentOrderItemId !== undefined || !dto.requestedAt)
+      ) {
+        throw new BadRequestException(
+          'SHIPMENT_LINE reservation requires matching shipmentLineId/requestedAt and cannot use fulfillmentOrderItemId',
+        );
+      }
+
       // 0. (sku,warehouse) 직렬화 — available 확인↔INSERT 사이 TOCTOU 차단
-      await acquireStockAvailabilityLock(trx, dto.skuId, dto.warehouseId);
+      if (!dto.stockLockHeld) {
+        await acquireStockAvailabilityLock(trx, dto.skuId, dto.warehouseId);
+      }
 
       // 1. 사용가능한 재고 확인
       const availableStock = await this.getAvailableStock(dto.skuId, dto.warehouseId, trx);
@@ -76,9 +94,11 @@ export class UnifiedReservationService {
           warehouseId: dto.warehouseId,
           quantity: dto.quantity,
           fulfillmentOrderItemId: dto.fulfillmentOrderItemId,
+          shipmentLineId: dto.shipmentLineId,
           status: 'confirmed',
           timeoutAt: dto.timeoutAt,
           reason: dto.reason,
+          requestedAt: dto.requestedAt,
         })
         .returning();
 
@@ -112,6 +132,16 @@ export class UnifiedReservationService {
 
       this.logger.log(`Released reservation ${id}`);
     }, tx);
+  }
+
+  /** V2 callers already hold the `(sku, warehouse)` advisory lock before this read. */
+  async getAvailableQuantity(skuId: string, warehouseId: string, tx: DbTx): Promise<number> {
+    return this.getAvailableStock(skuId, warehouseId, tx);
+  }
+
+  /** Keep sellable projections in sync after a reservation-set mutation performed by a domain owner. */
+  async recalculateSellableForSku(skuId: string, tx: DbTx): Promise<void> {
+    await this.productSellableQuantity.recalculateAndPublishForSku(skuId, tx);
   }
 
   /**

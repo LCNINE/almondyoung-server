@@ -316,6 +316,19 @@ export function setup(infra: SharedInfra) {
     environment: {
       DATABASE_URL: dbUrl('core'),
       ...kafkaEnv('core', 'core-group'),
+      // 출고 워크플로 스위치. 값은 `maintenance | v2` 뿐이고 **기본값이 없다** — 미설정이면 어느
+      // 환경이든 startup 실패다 (apps/core/src/config/env.validation.ts). `legacy` 는 V1 출고 경로와
+      // 함께 Task 25 에서 제거됐으므로 옛 값을 넣으면 부팅하지 않는다. 이 줄을 지워도 마찬가지다.
+      // 전환에는 재배포가 필요하다 (FulfillmentWorkflowGate 가 생성자에서 한 번만 읽음).
+      // 절차: docs/runbooks/outbound-v2-cutover.md
+      FULFILLMENT_WORKFLOW_MODE: 'v2',
+      // 불변 커토버 시각. 이 시각 **이후에 생성된 새 주문만** FO + 최초 Draft shipment 를 만든다.
+      // 이전 주문은 Kafka 로 재전달돼도 backlog 를 만들지 않는다 (replay 가드 — 도메인 시각 기준이지
+      // 재전달 시각 기준이 아니다). 그러므로 이 값을 과거로 늘리면 가드가 무력화된다.
+      //
+      // ⚠️ 배포 전 확정 필요: 한 번 정하면 바꾸지 않는다. 이 시각 이전에 들어온 주문은 FO 가 없고
+      //    자동 backfill 도 하지 않으므로, 나중에 출고하려면 수동 예외 처리가 된다.
+      FULFILLMENT_V2_CUTOVER_AT: '2026-07-16T00:00:00.000Z',
       AUTH_SECRET: authSecret.value,
       JWT_ISSUER: 'almondyoung-auth',
       // OIDC: storefront/admin-web 의 RS256 토큰 검증용.

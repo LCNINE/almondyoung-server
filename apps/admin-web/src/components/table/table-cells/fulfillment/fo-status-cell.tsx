@@ -5,21 +5,14 @@ import { PlaceholderCell } from '../common/placeholder-cell';
 // FO 상태 → 한글 라벨 + 색상 클래스 매핑 (FulfillmentOrderStatus 전체)
 const FO_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   created: { label: '생성됨', className: 'bg-gray-100 text-gray-600' },
-  reserving: { label: '예약중', className: 'bg-blue-100 text-blue-700' },
+  partially_reserved: { label: '부분예약', className: 'bg-blue-100 text-blue-700' },
   ready: { label: '준비됨', className: 'bg-blue-100 text-blue-700' },
-  unfulfillable: { label: '처리불가', className: 'bg-red-100 text-red-700' },
-  labeled: { label: '라벨생성', className: 'bg-indigo-100 text-indigo-700' },
-  pending: { label: '대기', className: 'bg-gray-100 text-gray-600' },
-  allocated: { label: '배치할당', className: 'bg-violet-100 text-violet-700' },
-  picking: { label: '피킹중', className: 'bg-amber-100 text-amber-700' },
-  picked: { label: '피킹완료', className: 'bg-teal-100 text-teal-700' },
-  inspecting: { label: '검수중', className: 'bg-amber-100 text-amber-700' },
-  inspected: { label: '검수완료', className: 'bg-teal-100 text-teal-700' },
-  invoiced: { label: '송장발행', className: 'bg-cyan-100 text-cyan-700' },
+  processing: { label: '처리중', className: 'bg-amber-100 text-amber-700' },
+  partially_shipped: { label: '부분출고', className: 'bg-teal-100 text-teal-700' },
   shipped: { label: '출고완료', className: 'bg-green-100 text-green-700' },
   completed: { label: '완료', className: 'bg-green-100 text-green-700' },
-  forwarded: { label: '전달됨', className: 'bg-green-100 text-green-700' },
   canceled: { label: '취소됨', className: 'bg-red-100 text-red-700' },
+  recovery_required: { label: '복구필요', className: 'bg-red-100 text-red-700' },
 };
 
 export function FoStatusBadge({ status }: { status: string | null | undefined }) {

@@ -22,6 +22,9 @@ import {
 // =================================================================
 
 export const OrderItemSchema = z.object({
+  // Provider order-line identity. Older snapshots may omit this; in that case
+  // V2 planning must remain blocked instead of substituting vendorItemId.
+  orderItemId: z.number().optional(),
   vendorItemId: z.number(), // 옵션 ID
   vendorItemName: z.string(), // 노출상품명
   shippingCount: z.number().int().min(0), // 주문 수량

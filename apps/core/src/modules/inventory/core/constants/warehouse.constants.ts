@@ -21,6 +21,7 @@ export type WarehouseType = (typeof warehouseTypeEnum.enumValues)[number];
 export const SYSTEM_LOCATION_ROLES = {
   INBOUND_DEFAULT: 'inbound_default',
   RETURN_DEFAULT: 'return_default',
+  OUTBOUND_REWORK: 'outbound_rework',
 } as const;
 
 export const SYSTEM_LOCATION_DEFAULTS: Record<string, { code: string; displayName: string }> = {
@@ -31,5 +32,9 @@ export const SYSTEM_LOCATION_DEFAULTS: Record<string, { code: string; displayNam
   [SYSTEM_LOCATION_ROLES.RETURN_DEFAULT]: {
     code: 'zone-return-default',
     displayName: '반품 기본존',
+  },
+  [SYSTEM_LOCATION_ROLES.OUTBOUND_REWORK]: {
+    code: 'zone-outbound-rework',
+    displayName: '출고 재작업존',
   },
 };

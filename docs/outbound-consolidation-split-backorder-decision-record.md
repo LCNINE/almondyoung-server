@@ -661,21 +661,21 @@ FO 일부만 출고했는데 기존 consumer가 FO 전체 출고로 오인하지
 
 특히 현재 `openBoxByScan`, FO 기준 `issueInvoice`, FO 전체 예약을 소진하는 outbound consumption, FO를 직접 batch에 연결하는 구조는 목표 모델과 충돌할 가능성이 높다. 구현은 스키마만 보고 가능하다고 판단하지 말고 서비스의 암묵적 1:1 전제를 함께 제거해야 한다.
 
-## 구현 전 남은 기술 설계
+## 후속 기술 설계 확정 상태
 
-제품 결정은 충분히 정렬되었지만 다음은 코드 감사와 상세 설계에서 확정할 기술 항목이다.
+제품 결정 이후 남아 있던 다음 기술 항목은 [V2 기술 설계](./superpowers/specs/2026-07-14-outbound-consolidation-split-backorder-technical-design.md)에서 확정했다.
 
 1. 현재 `delivery_profiles`를 Shipping Profile로 확장할지 별도 모델이 필요한지
 2. shipment, work item, Batch Inventory Session과 dispatch attempt의 정확한 테이블 구조와 enum 이름
-3. 기존 reservation target을 무중단으로 shipment line 부분예약으로 옮기는 migration
+3. 기존 fulfillment 트랜잭션과 FO target reservation을 명시적으로 정리하고 shipment line 부분예약으로 hard cutover하는 migration
 4. FO/FOI 기존 상태와 consumer를 부분출고·정산 완료 의미로 전환하는 호환 계획
 5. 택배사 invoice 발급/void 외부 호출과 DB 상태 전이의 saga 및 복구 상태
 6. aggregate source bucket의 결정적 소비 순서와 동시성 잠금
 7. system location 비활성화와 batch-controlled stock 이동을 막는 구체적 constraint/service guard
 8. 기존 채널 이벤트 consumer가 부분출고를 전체출고로 해석하지 않게 하는 버전 전환
-9. 현재 데이터에 있는 열린 shipment/invoice/reservation의 expand-backfill-contract 전략
+9. 기존 shipment/invoice/reservation을 이관하지 않고 SKU/SO/stock ledger를 보존하는 explicit cleanup과 expand-contract 전략
 
-이들은 합의가 부족해 제품 방향이 열려 있는 질문이 아니라, 위 불변식을 만족시키는 구현 방법을 선택해야 하는 후속 작업이다.
+role의 정의·부여는 user-service를 SoT로 하고 Core는 `logistics_worker`/`logistics_manager`를 fulfillment scope에 매핑한다. mixed Shipping Profile은 Draft까지만 허용하며 Planned 전 profile별 shipment 분할을 강제한다. 정확한 table/column/enum 문자열은 위 의미와 불변식을 바꾸지 않는 범위에서 implementation plan에 위임한다.
 
 ## 초기 구현 비범위
 

@@ -14,29 +14,76 @@ import type {
   ConsolidationLiveOpportunities,
   ConsolidationSavingsProjection,
   ConsolidationRule,
+  ShipmentConsolidationCandidateGroup,
+  ShipmentConsolidationCandidateQuery,
+  CreateShipmentConsolidationRequest,
+  ShipmentConsolidationResponse,
 } from '@/lib/types/dto/fulfillment';
 
 const BASE = `${ALMONDYOUNG_API_BASE_URL}/consolidation`;
 
 export const consolidationClient = {
-  getCandidates: async (warehouseId: string): Promise<ConsolidationCandidate[]> => {
-    const res = await client.get(`${BASE}/candidates/${encodeURIComponent(warehouseId)}`);
+  getShipmentCandidates: async (
+    query: ShipmentConsolidationCandidateQuery
+  ): Promise<ShipmentConsolidationCandidateGroup[]> => {
+    const res = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/shipments/consolidation-candidates`,
+      {
+        params: query,
+      }
+    );
     return res.data;
   },
 
-  analyze: async (warehouseId: string): Promise<ConsolidationAnalysisResult> => {
-    const res = await client.post(`${BASE}/candidates/${encodeURIComponent(warehouseId)}/analyze`);
+  createShipmentConsolidation: async (
+    data: CreateShipmentConsolidationRequest,
+    idempotencyKey: string
+  ): Promise<ShipmentConsolidationResponse> => {
+    const res = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/shipments/consolidations`,
+      data,
+      { headers: { 'Idempotency-Key': idempotencyKey } }
+    );
+    return res.data;
+  },
+  getCandidates: async (
+    warehouseId: string
+  ): Promise<ConsolidationCandidate[]> => {
+    const res = await client.get(
+      `${BASE}/candidates/${encodeURIComponent(warehouseId)}`
+    );
     return res.data;
   },
 
-  autoConsolidate: async (groupId: string): Promise<{ message: string; fulfillmentOrderId: string; consolidatedOrders: string[] }> => {
+  analyze: async (
+    warehouseId: string
+  ): Promise<ConsolidationAnalysisResult> => {
+    const res = await client.post(
+      `${BASE}/candidates/${encodeURIComponent(warehouseId)}/analyze`
+    );
+    return res.data;
+  },
+
+  autoConsolidate: async (
+    groupId: string
+  ): Promise<{
+    message: string;
+    fulfillmentOrderId: string;
+    consolidatedOrders: string[];
+  }> => {
     // ⚠️ STUB — 서버에서 실제 머지 안 함
-    const res = await client.post(`${BASE}/groups/${encodeURIComponent(groupId)}/auto-consolidate`);
+    const res = await client.post(
+      `${BASE}/groups/${encodeURIComponent(groupId)}/auto-consolidate`
+    );
     return res.data;
   },
 
-  getLiveOpportunities: async (warehouseId: string): Promise<ConsolidationLiveOpportunities> => {
-    const res = await client.get(`${BASE}/opportunities/live/${encodeURIComponent(warehouseId)}`);
+  getLiveOpportunities: async (
+    warehouseId: string
+  ): Promise<ConsolidationLiveOpportunities> => {
+    const res = await client.get(
+      `${BASE}/opportunities/live/${encodeURIComponent(warehouseId)}`
+    );
     return res.data;
   },
 

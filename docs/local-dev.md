@@ -134,6 +134,29 @@ npm run test:core:integration:local -- receive.integration  # 특정 패턴만
 
 **SO×FO×출고 종단 스펙 (2026-07)**: `sales-order-to-fulfillment.conversion` / `fulfillment-stock-allocation` / `outbound-batch-pick-ship` / `so-to-ship.golden-path` 4개는 세 BC(sales-order·fulfillment·inventory)를 한 tx로 관통하는 종단 스펙이다. 공용 와이어링/픽스처/숫자 어서션은 `apps/core/src/modules/fulfillment/services/__support__/` 에 있다. 재고 숫자 정합성은 골든값 + 보존식 + 이벤트로그 대조(I1~I6, 설계 스펙 참고)로 검증한다. 실행 예: `npm run test:core:integration:local -- golden-path.integration`.
 
+### Outbound V2 release suite
+
+Outbound V2의 17개 대표 흐름, barrier 기반 동시성 경합, migration rehearsal은 실제 Core PostgreSQL을 사용한다. Docker daemon과 루트 `compose.yml`의 `postgres`가 필요하며 테스트는 반드시 serial(`--runInBand`)로 실행한다. 시간 지연에 기대는 sleep은 사용하지 않고 각 경합 지점의 lock/barrier가 양쪽 작업의 진입을 확인한다.
+
+```bash
+# compose 기동 + Core migration + 모든 outbound-v2 DB suite
+npm run test:core:integration:local -- outbound-v2
+
+# 권한 행렬(worker/manager/unknown/missing scope/forged operator)은 DB 없이 별도 실행
+npx jest --runInBand apps/core/src/modules/fulfillment/services/outbound-v2-authorization.spec.ts
+
+# partial shipment 및 sales-order별 단일 adapter routing 계약
+npx jest --runInBand apps/channel-adapter/src/consumers/shipment-events.contract.spec.ts
+```
+
+DB suite는 아래를 포함한다.
+
+- `outbound-v2-*-scenarios.integration.spec.ts`: 번호 1~17을 계획/통합(1~5), warehouse 작업(6~10), dispatch lifecycle(11~15), recovery(16~17)로 나눠 실행하며 각 checkpoint에서 FOI demand, 활성 shipment line/reservation, on-hand/reserved/available, session 수량, dispatch source/event, outbox 보존식을 검증한다.
+- `outbound-v2-concurrency.integration.spec.ts`: reserve/split/claim/last-scan dispatch/recall 경합의 exactly-once 결과.
+- `outbound-v2-migration-rehearsal.integration.spec.ts`: 기존 행의 SKU/SO/ledger hash를 기록한 뒤 expand 상태에서 signed audit/allowlisted cleanup/verify/V2 create를 실행하고 hash 불변 및 cutover 이전 주문 미재생을 확인한다.
+
+실패 시 첫 번째 깨진 보존식과 scenario 번호를 먼저 확인한다. commit형 concurrency fixture가 중간에 강제 종료되어 행을 남겼다면 `docker compose down -v` 후 다시 실행한다. release 증거에는 위 세 명령, Docker/DB 이미지 버전, commit SHA를 함께 기록한다.
+
 **커밋형 caveat**: `unified-reservation.service.lock.integration.spec.ts`(동시 락)·`store-return-exchange.refund.integration.spec.ts` 2개는 롤백 불가라 unique 접미사 행을 남긴다. pristine 이 필요하면 `docker compose down -v && docker compose up -d` 후 `npm run db:migrate:local`.
 
 ## 아직 로컬화 안 된 것
