@@ -809,6 +809,7 @@ git commit -m "refactor(waybill): InvoiceOrchestrator·recovery worker·delivery
 ### Task 12: 스키마 드롭 (contract phase — DB)
 
 **Files:**
+- Modify: `apps/core/src/modules/fulfillment/services/fulfillment-command.service.ts`, `shipment-planning.service.ts`, `shipment-short-pick.service.ts`, `outbound-batch-orchestrator.service.ts` (+ 해당 spec) — 잔여 dead read 제거(Step 0)
 - Modify: `apps/core/src/modules/inventory/schema/inventory.schema.ts`
 - Modify: `wmsTables` 등록부(schema barrel; `grep -rn "invoices" apps/core/src/modules/inventory/schema`)
 - Create: `apps/core/drizzle/<timestamp>_drop-invoices.sql` (generate)
@@ -816,6 +817,16 @@ git commit -m "refactor(waybill): InvoiceOrchestrator·recovery worker·delivery
 **Interfaces:**
 - `invoices`·`invoiceOperations` 테이블 + `invoiceStatusEnum`/`invoiceMethodEnum`/`invoiceOperationTypeEnum`/`invoiceOperationStatusEnum` + `invoicesRelations`/`invoiceOperationsRelations` 제거. `wmsTables`에서 등록 해제.
 - **+ `dispatch_attempts.invoice_id` 컬럼 드롭(contract)**: Task 4가 `waybill_id`(expand)를 추가했고 Task 5가 그리로 write 전환했으므로, 이 시점에 구 `invoice_id`는 write 0·read 0. `dispatchAttempts`에서 `invoiceId` 컬럼 정의 제거. **이게 invoices 테이블 드롭의 전제**(FK `onDelete:'restrict'` 잔존 시 DROP TABLE invoices 실패).
+
+- [ ] **Step 0: 잔여 dead 프로덕션 read 제거 (스키마 드롭 전제)**
+
+Task 11이 남긴 4개 프로덕션 read가 아직 `wmsTables.invoices`/`invoiceOperations`를 읽는다 — 테이블 드롭 시 컴파일 파손하므로 **먼저 제거**. 각 read는 이제 **항상 빈/null 결과**를 내므로, 읽기를 그 상수로 치환(동작 불변):
+- `fulfillment-command.service.ts:~81` — `resourceType: 'invoice_operation'` 분기(도달불가 dead ternary): 분기 자체 제거.
+- `shipment-planning.service.ts:~1007` — `invoiceOperations` fallback SELECT(항상 miss): 읽기 제거, fallthrough 유지.
+- `shipment-short-pick.service.ts:~891` — `invoiceOperations` SELECT id → `invoiceOperationId` 응답 필드 산출(항상 null): 읽기 제거하고 `invoiceOperationId: null` 리터럴로 치환(**admin-web 호환 위해 DTO 필드는 유지**). 아울러 t11-low: spec-only caller만 남은 public `markInvoiceRecoveryRequired`(+ 그 spec 케이스)를 grep 재확인 후 제거(프로덕션 caller 0이면).
+- `outbound-batch-orchestrator.service.ts:~1060` — cancel-guard의 `invoices` SELECT(항상 empty=no-op): 그 guard leg 제거(cancel-resume가 invoice state로 블록되지 않음 — sync waybill-void 붕괴로 이미 무의미).
+
+Run: `npx tsc -p apps/core/tsconfig.app.json --noEmit` (exit 0) + 영향 spec 그린 확인(`test:core:integration:local -- "(shipment-short-pick|shipment-planning|outbound-batch)"`). 이후 `grep -rn "wmsTables.invoices\|wmsTables.invoiceOperations" apps/core/src/modules/fulfillment --include=*.ts | grep -v spec` = **빈 결과**여야 Step 1 진행.
 
 - [ ] **Step 1: 스키마에서 invoice 정의 제거**
 
@@ -834,12 +845,19 @@ Expected: exit 0 / 성공.
 - [ ] **Step 4: 커밋 (schema + migration + meta 단일 커밋)**
 
 ```bash
+# Step 0(잔여 read 제거) + Step 1~2(스키마/마이그레이션)를 한 커밋으로 — 코드 정리가 드롭의 전제라 결합.
 git add apps/core/src/modules/inventory/schema/inventory.schema.ts \
-        apps/core/drizzle/
-git commit -m "feat(waybill)!: invoices·invoiceOperations 테이블/enum 드롭(contract phase)
+        apps/core/drizzle/ \
+        apps/core/src/modules/fulfillment/services/fulfillment-command.service.ts \
+        apps/core/src/modules/fulfillment/services/shipment-planning.service.ts \
+        apps/core/src/modules/fulfillment/services/shipment-short-pick.service.ts \
+        apps/core/src/modules/fulfillment/services/outbound-batch-orchestrator.service.ts \
+        apps/core/src/modules/fulfillment/services/*.spec.ts
+git commit -m "feat(waybill)!: invoices·invoiceOperations 테이블/enum 드롭 + 잔여 dead read 제거(contract phase)
 
 배포 순서: sst deploy(구 task 종료) → db:migrate. autodeploy 없음 — 운영자 규율."
 ```
+(주의: `services/*.spec.ts` 글롭이 의도한 spec만 잡는지 `git status`로 확인 — 무관 spec이 딸려오면 명시 경로로 좁힌다.)
 
 > **배포 노트(운영자):** destructive contract phase다. 실 데이터 없으나 순서 규율 준수 — **`sst deploy` 완료 후 `db:migrate`**. 옛 task가 destructive migration을 먼저 만나면 사고.
 
