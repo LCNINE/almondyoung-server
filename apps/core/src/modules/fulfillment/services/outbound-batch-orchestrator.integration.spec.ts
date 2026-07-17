@@ -920,13 +920,19 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       .where(eq(wmsTables.outboundBatchWorkItems.id, added.workItem.id));
     expect(waiting.waitingOperationId).toBe(cancellation.operationId);
 
-    // resumeWaitingOperationIfReady 의 cancel 분기는 여전히 wmsTables.invoices 를 직접 조회한다(플랜3 Task 4
-    // 스코프 밖 — assertEligible/.invoiceId 트레이스와 무관한 별도 소비처). eligibleFixture 가 더 이상 invoice
-    // row 를 만들지 않으므로 그 게이트는 처음부터 열려 있다 — 별도 void 스텝 불필요.
+    // 플랜3: cancelOutstanding 의 resume 분기(exclusion 이 트리거)는 assertNoActiveWaybill 게이트를 통과해야 한다
+    // (구 invoice-active 게이트의 waybill 등가물). eligibleFixture 가 dispatchable 을 위해 registered waybill 을
+    // 심으므로("remove one item after label void" 의도대로) exclusion 전에 그 활성 waybill 을 void 한다.
+    await services.waybills.void(
+      fixture.waybill.id,
+      { reason: 'void active label before cancelling one item' },
+      `resume-waybill-void-${randomUUID()}`,
+      master,
+    );
     const excluded = await services.batches.excludeShipment(
       batch.batchId,
       fixture.shipment.id,
-      { reason: 'no blocking invoice — resume should proceed immediately' },
+      { reason: 'label voided — resume should proceed immediately' },
       `resume-exclude-${randomUUID()}`,
       master,
     );
