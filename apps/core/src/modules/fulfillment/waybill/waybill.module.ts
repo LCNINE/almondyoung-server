@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { FulfillmentModule } from '../fulfillment.module';
+import { FulfillmentCommandModule } from '../fulfillment-command.module';
 import { HANJIN_CONFIG } from './waybill.tokens';
 import { CarrierGatewayRegistry } from './carrier/carrier-gateway.registry';
 import { buildCarrierGatewayRegistry, buildHanjinConfig } from './carrier/hanjin/carrier-gateway.factory';
@@ -11,8 +11,8 @@ import { WaybillService } from './waybill.service';
 import { WaybillController } from './waybill.controller';
 
 @Module({
-  // FulfillmentCommandService 획득 목적(WaybillManager 의존성). 플랜 3 에서 방향 반전 예정 — 이 플랜에선 하지 않음.
-  imports: [FulfillmentModule],
+  // FulfillmentCommandService(WaybillManager 의존) 획득. 방향 반전 완료 — FulfillmentModule 이 WaybillModule 을 import(spec §12.1).
+  imports: [FulfillmentCommandModule],
   controllers: [WaybillController],
   providers: [
     { provide: HANJIN_CONFIG, useFactory: buildHanjinConfig },

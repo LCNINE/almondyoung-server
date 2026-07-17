@@ -14,6 +14,8 @@ import { SalesOrderModule } from '../sales-order/sales-order.module';
 import { ProductSellableQuantityModule } from '../inventory/product-sellable-quantity/product-sellable-quantity.module';
 import { WarehouseModule } from '../inventory/warehouse/warehouse.module';
 import { FulfillmentOrderCreationBacklogModule } from './backlog/fulfillment-order-creation-backlog.module';
+import { FulfillmentCommandModule } from './fulfillment-command.module';
+import { WaybillModule } from './waybill/waybill.module';
 
 // Outbox
 import { OutboxService } from './outbox/outbox.service';
@@ -34,7 +36,6 @@ import { FulfillmentProgressService } from './services/fulfillment-progress.serv
 import { FulfillmentInvariantService } from './services/fulfillment-invariant.service';
 import { FulfillmentReconciliationService } from './services/fulfillment-reconciliation.service';
 import { ShipmentReservationService } from './services/shipment-reservation.service';
-import { FulfillmentCommandService } from './services/fulfillment-command.service';
 import { ShipmentPlanningService } from './services/shipment-planning.service';
 import { InvoiceOrchestrator } from './services/invoice-orchestrator.service';
 import { InvoiceRecoveryWorker } from './services/invoice-recovery.worker';
@@ -92,6 +93,11 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
 
     WarehouseModule,
     FulfillmentOrderCreationBacklogModule,
+
+    // FulfillmentCommandService(fulfillment/waybill 양쪽 공유)
+    FulfillmentCommandModule,
+    // WaybillService(운송장 발급/조회) — 방향 반전: FulfillmentModule → WaybillModule(spec §12.1)
+    WaybillModule,
   ],
   controllers: [
     FulfillmentsController,
@@ -138,7 +144,6 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     FulfillmentInvariantService,
     FulfillmentReconciliationService,
     ShipmentReservationService,
-    FulfillmentCommandService,
     ShipmentPlanningService,
     InvoiceOrchestrator,
     InvoiceRecoveryWorker,
@@ -164,7 +169,6 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     FulfillmentInvariantService,
     FulfillmentReconciliationService,
     ShipmentReservationService,
-    FulfillmentCommandService,
     ShipmentPlanningService,
     InvoiceOrchestrator,
     OutboundBatchOrchestrator,
