@@ -238,7 +238,8 @@ registered/used/voided/failed/abandoned --> no-op (멱등)
 | `issueForShipment(shipmentId, opts, idemKey, actor, tx?)` | `issueForShipment` | 피킹 전략, 컨트롤러 |
 | `issueBatch(shipmentIds[], opts, idemKey, actor)` | (신규; print-wbls 배치) | 배치 오케스트레이터 |
 | `registerManual(shipmentId, {carrier, trackingNo, ...}, idemKey, actor, tx?)` | `issueManualInvoice` (self 계승) | 컨트롤러 |
-| `void(shipmentId|waybillId, {reason}, idemKey, actor, tx?)` | `void`/`voidManualInvoice` 통합 | 리콜, short-pick, 컨트롤러 |
+| `void(waybillId, {reason}, idemKey, actor, tx?)` | `void`(발송 전)/`voidManualInvoice` 통합 | short-pick, 컨트롤러 |
+| `voidForRecall(shipmentId, {reason}, idemKey, actor, tx)` | `void`의 recall-only 예외 branch | 리콜 |
 | `reissue(shipmentId, opts, idemKey, actor, tx?)` | (신규; void→새 발급 원자화) | 컨트롤러 |
 | `assertDispatchable(shipmentId, tx?)` | `assertDispatchableInvoice` | 디스패치, 피킹, 배치 |
 | `markUsed(shipmentId, tx?)` | dispatch의 invoices.status 직접 갱신 | 디스패치(출고 확정) |
@@ -248,6 +249,7 @@ registered/used/voided/failed/abandoned --> no-op (멱등)
 - `markUsed(shipmentId, tx)`: 디스패치(출고 확정) 흐름이 `registered → used` 전이를 이 메서드로 호출(테이블 직접 write 금지 — 전이를 모듈 안에 캡슐화). 구 코드가 dispatch에서 invoices.status를 직접 갱신하던 지점을 이 호출로 치환. **멱등**(used→used no-op) + **엄격**(status∈{registered,used} 조건부 업데이트, 활성 waybill 정확히 1행 아니면 도메인 예외 — §3.1-3).
 - `registerManual`: source='manual'로 `registered` 즉시 insert(외부 호출 없음). 계승 가드: manifest/recipient 완비 + line identity만, **`assertProfileComplete`(구 goodsflow center code) 미적용**.
 - `assertDispatchable`: 활성 waybill 1개 + `status ∈ {registered, used}` + carrier 존재 + trackingNo non-empty + manifest/recipient hash 일치. **externalServiceId 요구 폐지**(한진엔 provider service id 없음; source 무관 동일 가드). — 구 `issueMethod !== 'self'` 분기가 사라지고 통일됨.
+- **`void` vs `voidForRecall` (2026-07-17 브레인스토밍 확정)**: `void`는 **발송 전(`registered`)만** 허용하는 strict 계약 — `used`(디스패치됨)면 `WAYBILL_ALREADY_DISPATCHED` 거부. short-pick·취소 등 "발송 전 되돌리기" 소비자가 이 안전장치를 공유한다. 반면 **recall은 정의상 발송 후(`used`) 운송장을 되돌리므로** strict `void`로는 불가능. 구 `InvoiceOrchestrator.void`가 `resumeType === 'recall'`일 때만 열어주던 예외 branch를 **별도 메서드 `voidForRecall`로 명시화**: `used → voided` CAS 전이(recall 스코프), 활성 waybill을 shipmentId로 조회. tx-local(carrier HTTP 없음 — Hanjin 게이트웨이는 `cancel` 미구현, recall은 택배사 인수 전에만 허용). 이로써 일반 `void`의 strict 가드를 모든 다른 소비자에 대해 유지하면서 recall만 좁게 예외.
 
 ### 9.2 `WaybillController`
 
@@ -272,15 +274,55 @@ registered/used/voided/failed/abandoned --> no-op (멱등)
 ## 11. 재발급 / void 라이프사이클
 
 - **void**: `registered`(발송 전) → `voided` + voidedAt. 외부 호출 없음(번호 판기). `used`(디스패치됨)·shipment `shipped/in_transit/delivered`면 거부(`WAYBILL_ALREADY_DISPATCHED`). 종료 상태라 활성 유니크가 풀려 재발급 가능.
+- **voidForRecall** (recall 전용): `used`(디스패치됨) → `voided` CAS 전이. 일반 `void`의 `WAYBILL_ALREADY_DISPATCHED` 가드를 recall 스코프에서만 우회 — 구 `void`의 `resumeType === 'recall'` 예외 branch를 명시 메서드로 승격. carrier HTTP 없음(§9.1). recall은 이 전이 후 같은 tx에서 재고/예약 역전을 수행(§12 recall 붕괴). `voided` 종료 상태로 활성 슬롯이 풀려 재발송 가능.
 - **abandon**(§8): 교착 해소용 포기. `pending`은 attempts CAP로 **자동**(또는 운영자), `allocated`는 **운영자 전용**(이중등록 위험 인지 + 미해결 wblNo 기록). → `abandoned`. void와 마찬가지로 활성 슬롯을 해제해 재발급 경로를 연다.
 - **reissue**: 현재 활성 행을 void/abandon 후 새 발급을 **한 명령**으로. 시작점은 `registered`(주소 변경 stale·오채번 정정) 또는 `pending`/`allocated`(교착) 모두 가능. `allocated`발 reissue는 abandon의 운영자-전용·위험기록 규칙을 그대로 적용.
 - **stale 감지**: `assertDispatchable`이 저장 해시 vs 현재 shipment 비교(`SHIPMENT_INVOICE_STALE` 계승). 별도 `recovery_required` 상태 없이 파생 — stale이면 운영자가 reissue.
 
-## 12. Consumer seam 마이그레이션
+## 12. Consumer seam 마이그레이션 (= 플랜 3 컷오버)
 
 `InvoiceOrchestrator` 주입 소비자 → `WaybillService` 주입 교체 + 메서드명 매핑(§9.1). `wmsTables.invoices` 직접쿼리 → `getActiveWaybill`/read-model 치환. forwardRef는 기존과 동일 지점 유지(shipment-recall, shipment-short-pick).
 
 대상: `shipment-dispatch.service.ts`, `shipment-recall.service.ts`, `shipment-short-pick.service.ts`, `outbound-batch-orchestrator.service.ts`, `picking/{discrete,aggregate-then-sort,pick-to-tote}.strategy.ts`, `controllers/shipment-invoice.controller.ts`(→ WaybillController), `fulfillment.module.ts`. `fulfillment-invariant.service.ts`·`consolidation.service.ts`·`shipment-planning.service.ts`의 invoices 읽기 치환.
+
+### 12.1 모듈 순환 해소 — `FulfillmentCommandModule` 추출
+
+플랜 2에서 `WaybillModule → FulfillmentModule`(FulfillmentCommandService 획득). 플랜 3에서 dispatch가 WaybillService를 소비하면 `FulfillmentModule → WaybillModule` 이 필요 → **순환**. `FulfillmentCommandService`의 생성자 의존성은 **global `DbService` 하나뿐**(실측 확인)이므로 dependency-free 소형 모듈로 추출:
+
+```ts
+@Module({ providers: [FulfillmentCommandService], exports: [FulfillmentCommandService] })
+export class FulfillmentCommandModule {}   // imports: [] — DbService는 global
+```
+
+- `FulfillmentModule`: provider/export에서 `FulfillmentCommandService` 제거 + `FulfillmentCommandModule` import(내부 소비자 ~10곳 무영향, 재-export로 흡수).
+- `WaybillModule`: `imports: [FulfillmentModule]` → `imports: [FulfillmentCommandModule]`. 무거운 FulfillmentModule(Kafka·SalesOrder 등) 커플링 제거 + 순환 예방.
+- 이후 `FulfillmentModule`이 `WaybillModule`을 import(spec §4 방향). 양쪽이 dependency-free `FulfillmentCommandModule`만 공유 → 무순환.
+- 대안(forwardRef, 토큰+provider)은 커플링을 남기거나 불필요한 간접층 → 채택 안 함.
+
+### 12.2 recall 동기 붕괴
+
+구 recall은 **async 2-트랜잭션 saga**: report(void를 invoiceOperations 큐잉 → pending 반환) → recovery worker가 void 완료 시 `resumeWaitingOperation → recall.resumePending`(별도 tx, 재고 역전). 이 2단계는 **구 async void의 부산물** — 실물 회수 확인(`physicalRecoveryConfirmed`)은 report 시점에 이미 필수(비즈니스 "나중에 확인" 단계 아님). 플랜 3에서 async infra(invoiceOperations·recovery worker)가 삭제되고 `voidForRecall`이 동기·tx-local이므로 **한 트랜잭션으로 붕괴**:
+
+- **report**: `shipmentOperations` 레코드 생성(그대로) → `voidForRecall(shipmentId, tx)`(used→voided) → `resumePendingInTransaction(operationId, tx)`(재고/예약 역전) **인라인**, 모두 command tx 안. 동기 완료.
+- **살아남는 것**: recall의 durable operation 레코드는 `shipmentOperations`/`shipmentOperationMembers`(≠ 드롭 대상 `invoiceOperations`) → 상태 엔드포인트(`shipment-recall-operations/:id`)·`resumePendingInTransaction` 역전 로직 **그대로 재사용**.
+- **사라지는 것**: `invoiceOperationId` 추적, async 트리거 경로(`resumeWaitingOperation`).
+- **클라이언트 영향 최소**: report가 완료된 operation 반환(구: pending). 상태 엔드포인트 유지 → 폴링 시 즉시 `done`. carrier 라벨 취소(Hanjin `cancel` 미구현)는 **후속 티켓**으로 분리(recall은 택배사 인수 전에만 허용되어 무손 성립).
+
+### 12.3 소비자별 주의점
+
+- **`shipment-dispatch.service.ts`**: `assertDispatchableInvoice`→`assertDispatchable`; `invoices.status='used'` 직접갱신→`markUsed`. **seam 순서 계약(필수)**: 한 tx에서 `assertDispatchable(shipmentId, tx)` **직후** `markUsed(shipmentId, tx)`(markUsed는 staleness 재검 안 함). 구 `dispatchLocked` staleness 재검(`canonicalShipmentRecipientHash` — 삭제됨)은 assertDispatchable이 이미 검사하므로 그 반환행 신뢰/재검 제거.
+- **`shipment-short-pick.service.ts`**: 이미 pre-dispatch(`issued`)만 void하고 `used` 자체 거부 → **무변경 호환**. 주입만 WaybillService로 교체(일반 `void` 사용).
+- **`outbound-batch-orchestrator.service.ts`**: 배치 발급→`issueBatch`. **+ 부수 수정**: `isActiveWorkItemUniqueViolation`(약 1312행)이 top-level `.code`만 검사(drizzle 0.44.7 잠재버그) → waybill.manager의 `isUniqueViolation`(`.cause` 5-deep) 이식.
+- **`picking/{discrete,aggregate-then-sort,pick-to-tote}.strategy.ts`**: 선발급 `issueForShipment`는 carrier HTTP 동기수행 → **피킹 tx 밖**에서 호출(tx 안이면 HTTP-in-tx). 발급 지점을 tx 경계 밖으로 조정.
+- **`controllers/shipment-invoice.controller.ts` → 삭제**(신 `WaybillController` 대체, 이미 구현). 라우트 경로 변경(`/shipments/:id/waybills` 등) → admin-web 등 클라이언트 영향 확인.
+- **읽기 치환**: `fulfillment-invariant.service.ts`·`consolidation.service.ts`·`shipment-planning.service.ts`의 `wmsTables.invoices` 직접 read → `getActiveWaybill(shipmentId, tx)`.
+
+### 12.4 삭제 / env / 배포 순서
+
+- **삭제(코드)**: `invoice-orchestrator.service.ts`, `invoice-recovery.worker.ts`, `delivery-provider.interface.ts`, `goodsflow-delivery.provider.ts`, `hanjin-delivery.provider.ts`, `dto/shipment-invoice.dto.ts`, 구 `shipment-invoice.controller.ts`(+각 spec).
+- **삭제(스키마)**: `invoices`·`invoiceOperations` 테이블, invoice enum 4종, 관련 relations, `wmsTables` 등록. `db:generate:core -- --name drop-invoices`. **destructive contract phase** — 실 데이터 없음이나 순서 규율: **`sst deploy → db:migrate`**(옛 task가 destructive migration 만나면 사고, autodeploy 없으니 운영자 규율).
+- **env**(`config/env.validation.ts`): **죽은 키만** 제거(delivery-provider era `HANJIN_API_URL`·`HANJIN_CUSTOMER_CODE`·`HANJIN_SENDER_CODE`·`HANJIN_PICKUP_SITE_CODE`·`HANJIN_SENDER_PHONE` + 구 goodsflow). **유지**: `HANJIN_API_KEY`·`HANJIN_TIMEOUT_MS`·`HANJIN_SENDER_NAME`(신 `loadHanjinConfig` 재사용) + 신 키 전부.
+- **테스트**: 구 invoice-path 테스트(`invoice-orchestrator.integration.spec` 등) 삭제/재작성. outbound 흐름 통합(dispatch/recall/short-pick/batch/consolidation/invariant)은 invoice 시드→**waybill 시드 rewire**(플랜 2 `__support__/waybill-fixtures.ts` 재사용)로 green 유지.
 
 ## 13. 에러 처리
 
