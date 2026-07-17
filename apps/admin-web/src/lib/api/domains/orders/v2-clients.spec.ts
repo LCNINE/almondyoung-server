@@ -13,7 +13,6 @@ jest.mock('../../client', () => ({
 
 import { client } from '../../client';
 import { fulfillmentOrder } from './fulfillment-order.client';
-import { invoicesClient } from './invoices.client';
 import { outboundBatchesClient } from './outbound-batches.client';
 import { pickingClient } from './picking.client';
 
@@ -56,23 +55,13 @@ describe('fulfillment V2 typed clients', () => {
     );
   });
 
-  it('reuses the caller-owned key for planning, invoice, batch, and picking commands', async () => {
+  it('reuses the caller-owned key for planning, batch, and picking commands', async () => {
     await fulfillmentOrder.planShipment(
       'shipment-1',
       {
         shippingProfileId: '10000000-0000-4000-8000-000000000001',
         expectedManifestVersion: 2,
         expectedReservationVersion: 3,
-      },
-      KEY
-    );
-    await invoicesClient.issueForShipment(
-      'shipment-1',
-      {
-        expectedManifestVersion: 2,
-        provider: 'goodsflow',
-        carrierCode: 'CJ',
-        reason: 'dispatch',
       },
       KEY
     );
@@ -96,18 +85,12 @@ describe('fulfillment V2 typed clients', () => {
     );
     expect(mockedClient.post).toHaveBeenNthCalledWith(
       2,
-      '/core/shipments/shipment-1/invoices',
-      expect.any(Object),
-      config
-    );
-    expect(mockedClient.post).toHaveBeenNthCalledWith(
-      3,
       '/core/outbound-batches/v2',
       expect.any(Object),
       config
     );
     expect(mockedClient.post).toHaveBeenNthCalledWith(
-      4,
+      3,
       '/core/picking/v2/plans',
       expect.any(Object),
       config

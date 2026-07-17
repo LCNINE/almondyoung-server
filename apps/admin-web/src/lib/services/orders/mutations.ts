@@ -30,8 +30,6 @@ import type {
   RecallShipmentRequest,
   ReportShipmentShortPickRequest,
   CreateShipmentConsolidationRequest,
-  IssueShipmentInvoiceRequest,
-  VoidShipmentInvoiceRequest,
   ShipmentInspectionScanRequest,
   ForceShipmentDispatchRequest,
   CreateOutboundBatchV2Request,
@@ -714,50 +712,6 @@ export const useCreateShipmentConsolidation = () => {
 };
 
 export const useCreateConsolidation = useCreateShipmentConsolidation;
-
-export const useIssueShipmentInvoice = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      shipmentId,
-      data,
-      idempotencyKey,
-    }: {
-      shipmentId: string;
-      data: IssueShipmentInvoiceRequest;
-      idempotencyKey?: string;
-    }) =>
-      orders.invoices.issueForShipment(
-        shipmentId,
-        data,
-        commandKey(idempotencyKey)
-      ),
-    onSuccess: (_, { shipmentId }) =>
-      invalidateShipment(queryClient, shipmentId),
-  });
-};
-
-export const useVoidShipmentInvoice = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({
-      invoiceId,
-      data,
-      idempotencyKey,
-    }: {
-      invoiceId: string;
-      data: VoidShipmentInvoiceRequest;
-      idempotencyKey?: string;
-    }) =>
-      orders.invoices.voidShipmentInvoice(
-        invoiceId,
-        data,
-        commandKey(idempotencyKey)
-      ),
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: orderQueryKeys.invoices }),
-  });
-};
 
 export const useShipmentInspectionScan = () => {
   const queryClient = useQueryClient();

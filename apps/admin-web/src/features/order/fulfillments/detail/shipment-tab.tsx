@@ -56,7 +56,7 @@ function when(value: string | null | undefined) {
 
 function ShipmentDetailView({ shipment }: { shipment: ShipmentAdminDetail }) {
   const operations = shipment.operations ?? [];
-  const invoices = shipment.invoices ?? [];
+  const waybills = shipment.waybills ?? [];
   const attempts = shipment.dispatchAttempts ?? [];
   const channelDispatch = useChannelDispatchViewModel(shipment);
 
@@ -147,28 +147,28 @@ function ShipmentDetailView({ shipment }: { shipment: ShipmentAdminDetail }) {
 
       <section>
         <h3 className="mb-2 text-sm font-semibold">
-          송장 이력 ({invoices.length})
+          운송장 이력 ({waybills.length})
         </h3>
-        {invoices.length === 0 ? (
+        {waybills.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            발행된 송장이 없습니다.
+            발행된 운송장이 없습니다.
           </p>
         ) : (
           <div className="divide-y rounded-md border text-sm">
-            {invoices.map((invoice) => (
-              <div key={invoice.id} className="grid gap-2 p-3 sm:grid-cols-4">
-                <span className="font-mono text-xs">{shortId(invoice.id)}</span>
+            {waybills.map((waybill) => (
+              <div key={waybill.id} className="grid gap-2 p-3 sm:grid-cols-4">
+                <span className="font-mono text-xs">{shortId(waybill.id)}</span>
                 <span className="font-mono text-xs">
-                  {invoice.trackingNo || '-'}
+                  {waybill.trackingNo || '-'}
                 </span>
                 <Badge
-                  variant={STATUS_VARIANT(invoice.status)}
+                  variant={STATUS_VARIANT(waybill.status)}
                   className="w-fit"
                 >
-                  {invoice.status}
+                  {waybill.status}
                 </Badge>
                 <span className="text-xs text-muted-foreground">
-                  발행 {when(invoice.issuedAt)} · void {when(invoice.voidedAt)}
+                  발행 {when(waybill.issuedAt)} · void {when(waybill.voidedAt)}
                 </span>
               </div>
             ))}

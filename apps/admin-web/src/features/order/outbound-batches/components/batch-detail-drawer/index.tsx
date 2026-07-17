@@ -214,7 +214,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Shipment</TableHead>
-                        <TableHead>Invoice</TableHead>
+                        <TableHead>Waybill</TableHead>
                         <TableHead className="text-right">수량</TableHead>
                         {canOperateWarehouse && <TableHead />}
                       </TableRow>
