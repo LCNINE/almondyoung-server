@@ -1,13 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { ConflictError } from '@app/shared';
+import { BadRequestError, ConflictError } from '@app/shared';
 import { DbService, InjectTypedDb } from '@app/db';
-import { inventorySchema } from '../../inventory/schema/inventory.schema';
+import { DbTx, inventorySchema } from '../../inventory/schema/inventory.schema';
 import { FulfillmentCommandService } from '../services/fulfillment-command.service';
 import { HANJIN_CONFIG } from './waybill.tokens';
 import type { HanjinConfig } from './carrier/hanjin/hanjin.config';
 import type { CarrierCode } from './carrier/carrier-gateway.interface';
 import { CarrierGatewayRegistry } from './carrier/carrier-gateway.registry';
-import { assembleWaybillRequest } from './waybill-request.assembler';
+import { assembleWaybillRequest, parseRecipient } from './waybill-request.assembler';
 import { WaybillIssueMachine } from './waybill-issue.machine';
 import { WaybillReader } from './waybill.reader';
 import { WaybillRepository } from './waybill.repository';
@@ -97,4 +97,70 @@ export class WaybillManager {
 
     return this.machine.drive(waybillId, request);
   }
+
+  // 수기(오프라인) 운송장 등록: 외부 캐리어 호출 없음, 즉시 registered. tx? 를 받는다 — 외부 I/O 가 없어
+  // 호출자 tx 안에 자연스럽게 합류할 수 있다(issueForShipment 와의 차이점).
+  // 계승: assertRecipientComplete(parseRecipient)는 적용, assertProfileComplete(goodsflow carrierAccountRef)는
+  // 적용하지 않는다 — manual 은 캐리어 API 를 쓰지 않으므로 그 계정 완비 여부와 무관하다.
+  async registerManual(
+    shipmentId: string,
+    dto: { carrier: CarrierCode; trackingNo: string; expectedManifestVersion: number; reason?: string },
+    idempotencyKey: string,
+    actor: Actor,
+    tx?: DbTx,
+  ): Promise<WaybillRow> {
+    const trackingNo = dto.trackingNo.trim();
+    if (!trackingNo) throw new BadRequestError(`${WAYBILL.ERROR.NOT_DISPATCHABLE}: trackingNo required`);
+    return this.commands.execute<WaybillRow>(
+      {
+        commandType: 'shipment.waybill.register-manual',
+        idempotencyKey,
+        canonicalRequest: { actorId: actor.id, shipmentId, ...dto },
+      },
+      async (trx) => {
+        const ctx = await this.reader.loadIssueContext(trx, shipmentId);
+        if (ctx.status !== 'planned') {
+          throw new ConflictError(`${WAYBILL.ERROR.NOT_DISPATCHABLE}: shipment ${ctx.status}`);
+        }
+        if (ctx.manifestVersion !== dto.expectedManifestVersion) {
+          throw new ConflictError(
+            `${WAYBILL.ERROR.STALE_MANIFEST_VERSION}: ${ctx.manifestVersion} != ${dto.expectedManifestVersion}`,
+          );
+        }
+        parseRecipient(ctx.recipientSnapshot); // WAYBILL_RECIPIENT_INCOMPLETE 던짐(반환값은 사용하지 않음)
+        if (await this.reader.getActiveWaybill(trx, shipmentId)) {
+          throw new ConflictError(`${WAYBILL.ERROR.ACTIVE_EXISTS}: ${shipmentId}`);
+        }
+        let row: WaybillRow;
+        try {
+          row = await this.repo.insertManualRegistered(trx, {
+            shipmentId,
+            carrier: dto.carrier,
+            trackingNo,
+            manifestVersion: ctx.manifestVersion,
+            recipientHash: this.reader.recipientHashOf(ctx.recipientSnapshot),
+          });
+        } catch (e) {
+          if (isUniqueViolation(e)) throw new ConflictError(`${WAYBILL.ERROR.TRACKING_EXISTS}: ${trackingNo}`);
+          throw e;
+        }
+        return { response: row, resourceType: 'waybill', resourceId: row.id };
+      },
+      tx,
+    );
+  }
+}
+
+// drizzle-orm 0.44.x 는 driver 에러를 DrizzleQueryError 로 감싼다 — 실제 postgres.js PostgresError(code,
+// constraint_name)는 최상위가 아니라 `.cause` 체인에 있다(Task 1 의 waybill.constraints.integration.spec.ts
+// expectConstraintViolation 과 동일 이슈). 최상위 `.code` 만 보면 여기서 잡히지 않고 500 으로 새어나간다 —
+// 최대 5단계까지 `.cause` 를 따라 내려가며 unique_violation(23505) 을 찾는다.
+function isUniqueViolation(e: unknown): boolean {
+  let current: unknown = e;
+  for (let depth = 0; current != null && depth < 5; depth += 1) {
+    const row = current as { code?: string; cause?: unknown };
+    if (row.code === '23505') return true;
+    current = row.cause;
+  }
+  return false;
 }

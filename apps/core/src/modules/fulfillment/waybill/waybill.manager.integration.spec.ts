@@ -129,4 +129,50 @@ describeIfDb('WaybillManager.issueForShipment (DB integration)', () => {
       ),
     ).rejects.toThrow(/WAYBILL_ACTIVE_EXISTS/);
   });
+
+  describe('registerManual', () => {
+    it('registers a manual waybill immediately without carrier calls or profile completeness', async () => {
+      const seed = await db.transaction((tx) => seedPlannedShipmentForWaybill(tx as never, deps));
+      // 게이트웨이가 던지도록 해도 manual 은 호출 안 함을 증명
+      const gw = fakeCarrierGateway({
+        allocate: () => {
+          throw new Error('should not be called');
+        },
+      });
+      const mgr = manager(new CarrierGatewayRegistry([gw]));
+      const wb = await mgr.registerManual(
+        seed.shipmentId,
+        {
+          carrier: 'HANJIN',
+          trackingNo: `MANUAL-${randomUUID().slice(0, 8)}`,
+          expectedManifestVersion: seed.manifestVersion,
+        },
+        `idem-${randomUUID()}`,
+        actor,
+      );
+      expect(wb.source).toBe('manual');
+      expect(wb.status).toBe('registered');
+    });
+
+    it('rejects a duplicate live tracking number', async () => {
+      const seed = await db.transaction((tx) => seedPlannedShipmentForWaybill(tx as never, deps));
+      const seed2 = await db.transaction((tx) => seedPlannedShipmentForWaybill(tx as never, deps));
+      const mgr = manager(new CarrierGatewayRegistry([fakeCarrierGateway()]));
+      const tn = `MANUAL-${randomUUID().slice(0, 8)}`;
+      await mgr.registerManual(
+        seed.shipmentId,
+        { carrier: 'HANJIN', trackingNo: tn, expectedManifestVersion: seed.manifestVersion },
+        `idem-${randomUUID()}`,
+        actor,
+      );
+      await expect(
+        mgr.registerManual(
+          seed2.shipmentId,
+          { carrier: 'HANJIN', trackingNo: tn, expectedManifestVersion: seed2.manifestVersion },
+          `idem-${randomUUID()}`,
+          actor,
+        ),
+      ).rejects.toThrow(/WAYBILL_TRACKING_EXISTS/);
+    });
+  });
 });
