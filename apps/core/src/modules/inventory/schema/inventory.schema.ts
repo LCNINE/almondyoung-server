@@ -2923,6 +2923,8 @@ export const dispatchAttempts = pgTable(
     idempotencyKey: varchar('idempotency_key', { length: 255 }).notNull(),
     // TODO(outbound-v2-contract Task 25): require invoice and dispatch journal once V1 dispatch rows are absent.
     invoiceId: uuid('invoice_id').references(() => invoices.id, { onDelete: 'restrict' }),
+    // waybill 모듈 컷오버(플랜3 Task 4): invoice_id 를 대체 — Task 12에서 invoice_id 드롭.
+    waybillId: uuid('waybill_id').references(() => waybills.id, { onDelete: 'restrict' }),
     stockJournalId: uuid('stock_journal_id').references(() => stockJournals.id, { onDelete: 'restrict' }),
     reversalJournalId: uuid('reversal_journal_id').references(() => stockJournals.id, { onDelete: 'restrict' }),
     dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),

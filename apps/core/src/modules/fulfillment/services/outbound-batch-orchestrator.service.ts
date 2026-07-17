@@ -7,6 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
+import { ApplicationException } from '@app/shared';
 import { DbService, InjectTypedDb } from '@app/db';
 import { and, asc, desc, eq, gt, inArray, isNull, ne, notInArray, or, sql } from 'drizzle-orm';
 import {
@@ -26,9 +27,10 @@ import { AuditService } from '../../inventory/shared/services/audit.service';
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
-import { InvoiceOrchestrator, canonicalShipmentRecipientHash } from './invoice-orchestrator.service';
+import { canonicalShipmentRecipientHash } from './invoice-orchestrator.service';
 import { ShipmentPlanningService } from './shipment-planning.service';
 import { ConsolidationService } from './consolidation.service';
+import { WaybillService } from '../waybill/waybill.service';
 
 const ACTIVE_WORK_ITEM_STATUSES = ['queued', 'picking', 'ready_to_pack', 'packing', 'short_pick_recovery'] as const;
 const TERMINAL_FOR_BATCH_STATUSES = ['completed', 'excluded'] as const;
@@ -63,7 +65,7 @@ export class OutboundBatchOrchestrator {
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly commands: FulfillmentCommandService,
     private readonly invariant: FulfillmentInvariantService,
-    private readonly invoices: InvoiceOrchestrator,
+    private readonly waybills: WaybillService,
     private readonly audit: AuditService,
     private readonly workflowGate: FulfillmentWorkflowGate,
     private readonly moduleRef: ModuleRef,
@@ -163,7 +165,7 @@ export class OutboundBatchOrchestrator {
           commandRequestId,
           batchId,
           shipmentId,
-          invoiceId: eligible.invoiceId,
+          waybillId: eligible.waybillId,
           manifestVersion: aggregate.shipment.manifestVersion,
           reservationVersion: aggregate.shipment.reservationVersion,
         });
@@ -399,14 +401,17 @@ export class OutboundBatchOrchestrator {
             recipientHash: canonicalShipmentRecipientHash(aggregate.shipment.recipientSnapshot),
             totalItems: aggregate.lines.length,
             totalQty: aggregate.lines.reduce((total, line) => total + line.qty, 0),
-            invoiceId: eligible.invoiceId,
+            waybillId: eligible.waybillId,
             trackingNo: eligible.trackingNo,
           });
         } catch (error) {
           if (
             error instanceof BadRequestException ||
             error instanceof ConflictException ||
-            error instanceof NotFoundException
+            error instanceof NotFoundException ||
+            // WaybillService.assertDispatchable (플랜3) 은 @app/shared 의 도메인 예외를 던진다(Nest 예외가 아님) —
+            // 후보 shipment 가 아직 dispatchable 하지 않을 뿐이므로 eligible 목록에서 조용히 제외한다.
+            error instanceof ApplicationException
           ) {
             continue;
           }
@@ -833,7 +838,7 @@ export class OutboundBatchOrchestrator {
     aggregate: EligibilityAggregate,
     tx: DbTx,
     lockExecutionInputs = true,
-  ): Promise<{ invoiceId: string; trackingNo: string }> {
+  ): Promise<{ waybillId: string; trackingNo: string }> {
     const shipment = aggregate.shipment;
     if (shipment.status !== 'planned') {
       throw this.conflict('SHIPMENT_NOT_PLANNED', `Shipment ${shipment.id} must be Planned before batching`);
@@ -962,8 +967,8 @@ export class OutboundBatchOrchestrator {
     }
 
     // assertFulfillmentOrders locked invoice rows before this validation, closing the add-vs-void TOCTOU window.
-    const invoice = await this.invoices.assertDispatchableInvoice(shipment.id, tx);
-    return { invoiceId: invoice.id, trackingNo: invoice.trackingNo };
+    const waybill = await this.waybills.assertDispatchable(shipment.id, tx);
+    return { waybillId: waybill.id, trackingNo: waybill.trackingNo ?? '' };
   }
 
   private async assertExcludable(aggregate: EligibilityAggregate, tx: DbTx): Promise<void> {
@@ -1310,12 +1315,20 @@ export class OutboundBatchOrchestrator {
   }
 
   private isActiveWorkItemUniqueViolation(error: unknown): boolean {
-    const row = error as { code?: string; constraint_name?: string; constraint?: string };
-    return (
-      row?.code === '23505' &&
-      (row.constraint_name === 'uq_outbound_work_item_active_shipment' ||
-        row.constraint === 'uq_outbound_work_item_active_shipment')
-    );
+    // drizzle 0.44.x 는 driver 에러를 DrizzleQueryError 로 감싼다 — code/constraint_name 은 .cause 체인에 있다.
+    let current: unknown = error;
+    for (let depth = 0; current != null && depth < 5; depth += 1) {
+      const row = current as { code?: string; constraint_name?: string; constraint?: string; cause?: unknown };
+      if (
+        row.code === '23505' &&
+        (row.constraint_name === 'uq_outbound_work_item_active_shipment' ||
+          row.constraint === 'uq_outbound_work_item_active_shipment')
+      ) {
+        return true;
+      }
+      current = row.cause;
+    }
+    return false;
   }
 
   private staleLease(workItemId: string): ConflictException {

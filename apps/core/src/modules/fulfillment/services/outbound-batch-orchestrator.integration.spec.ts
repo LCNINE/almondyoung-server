@@ -18,12 +18,18 @@ import {
   wireLogistics,
   Wired,
 } from './__support__';
-import { FulfillmentCommandService } from './fulfillment-command.service';
+import { canonicalFulfillmentRequestHash, FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
-import { canonicalShipmentRecipientHash, InvoiceOrchestrator } from './invoice-orchestrator.service';
 import { OutboundBatchOrchestrator } from './outbound-batch-orchestrator.service';
 import { ShipmentPlanningService } from './shipment-planning.service';
+import { CarrierGatewayRegistry } from '../waybill/carrier/carrier-gateway.registry';
+import type { HanjinConfig } from '../waybill/carrier/hanjin/hanjin.config';
+import { WaybillIssueMachine } from '../waybill/waybill-issue.machine';
+import { WaybillManager } from '../waybill/waybill.manager';
+import { WaybillReader } from '../waybill/waybill.reader';
+import { WaybillRepository } from '../waybill/waybill.repository';
+import { WaybillService } from '../waybill/waybill.service';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -33,6 +39,19 @@ const RECIPIENT = {
   postalCode: '01234',
   roadAddress: 'Seoul integration road 1',
   detailAddress: '101',
+};
+// assertDispatchable(읽기 전용)만 소비 — carrier I/O 로 이어지는 필드는 실제로 쓰이지 않는다(더미 값).
+const HANJIN_TEST_CONFIG: HanjinConfig = {
+  clientId: 'CID',
+  apiKey: 'AK',
+  secretKey: 'SK',
+  contractNo: 'CN',
+  orderBaseUrl: 'https://o',
+  printBaseUrl: 'https://p',
+  timeoutMs: 15000,
+  sender: { name: '보내는이', zip: '06236', baseAddress: '테헤란로 1', detailAddress: '10층', tel: '02-100-2000' },
+  boxType: 'A',
+  payType: 'PP',
 };
 
 type Database = PostgresJsDatabase<typeof wmsSchema>;
@@ -65,19 +84,6 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
     await Promise.all([client.end(), concurrentClient.end()]);
   });
 
-  function fakeProvider() {
-    return {
-      maxRequestDurationMs: 1_000,
-      capabilities: {
-        issue: { safeToRepeat: true, lookupByIdempotencyKey: false },
-        void: { safeToRepeat: false, lookupByServiceId: true },
-      },
-      issueInvoice: jest.fn(),
-      cancelInvoice: jest.fn(),
-      queryInvoice: jest.fn(),
-    };
-  }
-
   function makeServices(database: Database, logistics: Wired, auditOverride?: AuditService) {
     const dbService = makeDbService(database);
     const commands = new FulfillmentCommandService(dbService);
@@ -101,27 +107,30 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
         return { resumePending: jest.fn().mockResolvedValue(undefined) };
       }),
     };
-    const provider = fakeProvider();
-    const invoices = new InvoiceOrchestrator(
-      dbService,
+    // WaybillService(assertDispatchable, 읽기 전용)만 소비 — carrier registry/issue machine 은 구조적 의존일 뿐
+    // 이 테스트 경로에서 호출되지 않는다(empty registry 로 충분, waybill.manager.integration.spec.ts 패턴 미러).
+    const waybillRepo = new WaybillRepository(dbService);
+    const waybillRegistry = new CarrierGatewayRegistry([]);
+    const waybillManager = new WaybillManager(
+      new WaybillReader(dbService),
+      waybillRepo,
+      new WaybillIssueMachine(waybillRepo, waybillRegistry, dbService),
+      waybillRegistry,
       commands,
-      invariant,
-      audit,
-      provider as never,
-      provider as never,
-      workflowGate,
-      moduleRef as never,
+      HANJIN_TEST_CONFIG,
+      dbService,
     );
+    const waybills = new WaybillService(waybillManager);
     const batches = new OutboundBatchOrchestrator(
       dbService,
       commands,
       invariant,
-      invoices,
+      waybills,
       audit,
       workflowGate,
       moduleRef as never,
     );
-    return { batches, planning, invoices, commands, invariant, audit, moduleRef };
+    return { batches, planning, waybills, commands, invariant, audit, moduleRef };
   }
 
   async function eligibleFixture(tx: DbTx, options: { quantity?: number; warehouse?: WarehouseFixture } = {}) {
@@ -195,18 +204,16 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       .select()
       .from(wmsTables.shipments)
       .where(eq(wmsTables.shipments.id, shipmentBeforePlan.id));
-    const [invoice] = await tx
-      .insert(wmsTables.invoices)
+    const [waybill] = await tx
+      .insert(wmsTables.waybills)
       .values({
-        trackingNo: `batch-tracking-${randomUUID()}`,
-        carrier: 'CJ',
-        issueMethod: 'self',
-        externalServiceId: `batch-service-${randomUUID()}`,
-        issuedForFulfillmentOrderId: fulfillmentOrder.id,
         shipmentId: shipment.id,
+        source: 'manual',
+        carrier: 'HANJIN',
+        status: 'registered',
+        trackingNo: `batch-tracking-${randomUUID()}`,
         manifestVersion: shipment.manifestVersion,
-        recipientHash: canonicalShipmentRecipientHash(shipment.recipientSnapshot),
-        status: 'issued',
+        recipientHash: canonicalFulfillmentRequestHash(shipment.recipientSnapshot),
       })
       .returning();
     const reservations = await tx
@@ -228,7 +235,7 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       item: line.item,
       line: line.line,
       shipment,
-      invoice,
+      waybill,
       reservations,
     };
   }
@@ -251,7 +258,7 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
     return typeof response === 'object' && response !== null ? (response as { code?: string }).code : undefined;
   }
 
-  it('creates, adds, and replays a batch using real reservation, profile, recipient, and invoice eligibility', async () => {
+  it('creates, adds, and replays a batch using real reservation, profile, recipient, and waybill eligibility', async () => {
     const fixture = await committedFixture({ quantity: 3 });
     const createKey = `batch-create-replay-${randomUUID()}`;
     const createRequest = {
@@ -271,7 +278,7 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       expect.objectContaining({
         shipmentId: fixture.shipment.id,
         shippingProfileId: fixture.profile.id,
-        invoiceId: fixture.invoice.id,
+        waybillId: fixture.waybill.id,
         totalQty: 3,
       }),
     );
@@ -410,13 +417,13 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
     expect(items).toHaveLength(0);
   });
 
-  it('rejects partial or mismatched reservations, SKU profile drift, stale invoice, and existing dispatch', async () => {
+  it('rejects partial or mismatched reservations, SKU profile drift, stale waybill, and existing dispatch', async () => {
     const warehouse = await db.transaction((tx) => seedWarehouseWithZone(tx as unknown as DbTx));
     const otherWarehouse = await db.transaction((tx) => seedWarehouseWithZone(tx as unknown as DbTx));
     const partial = await committedFixture({ quantity: 2, warehouse });
     const reservationMismatch = await committedFixture({ quantity: 2, warehouse });
     const profileDrift = await committedFixture({ quantity: 2, warehouse });
-    const staleInvoice = await committedFixture({ quantity: 2, warehouse });
+    const staleWaybill = await committedFixture({ quantity: 2, warehouse });
     const dispatched = await committedFixture({ quantity: 2, warehouse });
     const batch = await createBatch(warehouse.warehouseId);
 
@@ -430,9 +437,9 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       .where(eq(wmsTables.stockReservations.id, reservationMismatch.reservations[0].id));
     await db.update(wmsTables.skus).set({ deliveryProfileId: null }).where(eq(wmsTables.skus.id, profileDrift.skuId));
     await db
-      .update(wmsTables.invoices)
+      .update(wmsTables.waybills)
       .set({ recipientHash: 'f'.repeat(64) })
-      .where(eq(wmsTables.invoices.id, staleInvoice.invoice.id));
+      .where(eq(wmsTables.waybills.id, staleWaybill.waybill.id));
     await db.insert(wmsTables.dispatchAttempts).values({
       shipmentId: dispatched.shipment.id,
       attemptNo: 1,
@@ -448,7 +455,6 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
         key: 'reservation-identity',
       },
       { fixture: profileDrift, code: 'SHIPMENT_PROFILE_INCOMPATIBLE', key: 'profile' },
-      { fixture: staleInvoice, code: 'SHIPMENT_INVOICE_STALE', key: 'invoice' },
       { fixture: dispatched, code: 'SHIPMENT_DISPATCH_EXISTS', key: 'dispatch' },
     ];
     for (const testCase of cases) {
@@ -461,6 +467,16 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
         ),
       ).rejects.toMatchObject({ response: expect.objectContaining({ code: testCase.code }) });
     }
+    // WaybillService.assertDispatchable 은 @app/shared 의 ConflictError 를 던진다(Nest ConflictException 이 아님) —
+    // .response.code 가 아니라 message 접두사로 코드를 실어보낸다(WaybillManager#assertDispatchable, WAYBILL.ERROR.STALE).
+    await expect(
+      services.batches.addShipment(
+        batch.batchId,
+        staleWaybill.shipment.id,
+        `eligibility-waybill-${randomUUID()}`,
+        master,
+      ),
+    ).rejects.toThrow(/WAYBILL_STALE/);
     expect(await services.batches.getWorkItems(batch.batchId)).toHaveLength(0);
     expect(await services.batches.getEligibleShipments(batch.batchId)).toHaveLength(0);
   });
@@ -904,14 +920,13 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       .where(eq(wmsTables.outboundBatchWorkItems.id, added.workItem.id));
     expect(waiting.waitingOperationId).toBe(cancellation.operationId);
 
-    await db
-      .update(wmsTables.invoices)
-      .set({ status: 'voided', voidedAt: new Date() })
-      .where(eq(wmsTables.invoices.id, fixture.invoice.id));
+    // resumeWaitingOperationIfReady 의 cancel 분기는 여전히 wmsTables.invoices 를 직접 조회한다(플랜3 Task 4
+    // 스코프 밖 — assertEligible/.invoiceId 트레이스와 무관한 별도 소비처). eligibleFixture 가 더 이상 invoice
+    // row 를 만들지 않으므로 그 게이트는 처음부터 열려 있다 — 별도 void 스텝 불필요.
     const excluded = await services.batches.excludeShipment(
       batch.batchId,
       fixture.shipment.id,
-      { reason: 'invoice void completed' },
+      { reason: 'no blocking invoice — resume should proceed immediately' },
       `resume-exclude-${randomUUID()}`,
       master,
     );

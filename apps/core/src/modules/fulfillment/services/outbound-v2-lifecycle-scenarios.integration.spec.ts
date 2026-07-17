@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
-import { and, eq, gt, inArray } from 'drizzle-orm';
+import { and, eq, gt, inArray, notInArray } from 'drizzle-orm';
 import * as postgres from 'postgres';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -23,7 +23,7 @@ import {
   type ExpectedOutboxTopology,
 } from './__support__';
 import { BatchInventorySessionService } from './batch-inventory-session.service';
-import { FulfillmentCommandService } from './fulfillment-command.service';
+import { canonicalFulfillmentRequestHash, FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentProgressService } from './fulfillment-progress.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
@@ -33,6 +33,27 @@ import { ShipmentDispatchService } from './shipment-dispatch.service';
 import { ShipmentPlanningService } from './shipment-planning.service';
 import { ShipmentRecallService } from './shipment-recall.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
+import { CarrierGatewayRegistry } from '../waybill/carrier/carrier-gateway.registry';
+import type { HanjinConfig } from '../waybill/carrier/hanjin/hanjin.config';
+import { WaybillIssueMachine } from '../waybill/waybill-issue.machine';
+import { WaybillManager } from '../waybill/waybill.manager';
+import { WaybillReader } from '../waybill/waybill.reader';
+import { WaybillRepository } from '../waybill/waybill.repository';
+import { WaybillService } from '../waybill/waybill.service';
+
+// assertDispatchable(읽기 전용)만 소비 — carrier I/O 로 이어지는 필드는 실제로 쓰이지 않는다(더미 값).
+const HANJIN_TEST_CONFIG: HanjinConfig = {
+  clientId: 'CID',
+  apiKey: 'AK',
+  secretKey: 'SK',
+  contractNo: 'CN',
+  orderBaseUrl: 'https://o',
+  printBaseUrl: 'https://p',
+  timeoutMs: 15000,
+  sender: { name: '보내는이', zip: '06236', baseAddress: '테헤란로 1', detailAddress: '10층', tel: '02-100-2000' },
+  boxType: 'A',
+  payType: 'PP',
+};
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -176,11 +197,25 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
       audit,
       workflow,
     );
+    // WaybillService(assertDispatchable, 읽기 전용)만 소비 — carrier registry/issue machine 은 구조적 의존일 뿐
+    // 이 테스트 경로에서 호출되지 않는다(empty registry 로 충분, waybill.manager.integration.spec.ts 패턴 미러).
+    const waybillRepo = new WaybillRepository(dbService);
+    const waybillRegistry = new CarrierGatewayRegistry([]);
+    const waybillManager = new WaybillManager(
+      new WaybillReader(dbService),
+      waybillRepo,
+      new WaybillIssueMachine(waybillRepo, waybillRegistry, dbService),
+      waybillRegistry,
+      commands,
+      HANJIN_TEST_CONFIG,
+      dbService,
+    );
+    const waybills = new WaybillService(waybillManager);
     const batches = new OutboundBatchOrchestrator(
       dbService,
       commands,
       invariant,
-      invoices,
+      waybills,
       audit,
       workflow,
       moduleRef as never,
@@ -465,6 +500,29 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
     );
     await service.invoices.processOperation(accepted.operationId);
     expect((await service.invoices.getOperation(accepted.operationId, tx)).status).toBe('succeeded');
+
+    // OutboundBatchOrchestrator.assertEligible 은 플랜3 컷오버로 invoice 대신 WaybillService.assertDispatchable
+    // 을 소비한다 — staging 이 통과하려면 shipment 와 manifestVersion/recipientHash 가 일치하는 registered
+    // waybill 이 있어야 한다. 재발송(14번 시나리오)은 이 함수를 같은 shipment 에 두 번 호출하므로, 먼저 활성
+    // waybill 을 voided 처리해 uq_waybills_shipment_active 충돌 없이 최신 manifest 로 재시딩한다.
+    await tx
+      .update(wmsTables.waybills)
+      .set({ status: 'voided', voidedAt: new Date() })
+      .where(
+        and(
+          eq(wmsTables.waybills.shipmentId, shipmentId),
+          notInArray(wmsTables.waybills.status, ['voided', 'failed', 'abandoned']),
+        ),
+      );
+    await tx.insert(wmsTables.waybills).values({
+      shipmentId,
+      source: 'manual',
+      carrier: 'HANJIN',
+      status: 'registered',
+      trackingNo: `lifecycle-tracking-${randomUUID()}`,
+      manifestVersion: planned.manifestVersion,
+      recipientHash: canonicalFulfillmentRequestHash(planned.recipientSnapshot),
+    });
   }
 
   async function stageBatch(tx: DbTx, world: LifecycleWorld, shipmentIds: string[]): Promise<StagedBatch> {

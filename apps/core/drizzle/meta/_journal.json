@@ -302,6 +302,13 @@
       "when": 1784253402196,
       "tag": "20260717015642_add-waybills",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1784272881573,
+      "tag": "20260717072121_add-dispatch-attempts-waybill-id",
+      "breakpoints": true
     }
   ]
 }
