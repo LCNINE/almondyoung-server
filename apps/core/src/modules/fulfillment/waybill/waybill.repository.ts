@@ -104,6 +104,18 @@ export class WaybillRepository {
     return rows.length === 1;
   }
 
+  // recall 전용: used → voided. casToUsed 처럼 count-return(엄격 검증용) — 호출자(voidForRecall)가
+  // affected !== 1 이면 예외를 던진다. WHERE 는 shipmentId + status='used' 만 매칭(registered 는 매칭 안 함 —
+  // 그건 일반 casToVoided/void 의 영역).
+  async casUsedToVoided(trx: DbTx, shipmentId: string, voidedAt: Date): Promise<number> {
+    const rows = await trx
+      .update(T)
+      .set({ status: 'voided', voidedAt, updatedAt: new Date() })
+      .where(and(eq(T.shipmentId, shipmentId), eq(T.status, 'used')))
+      .returning({ id: T.id });
+    return rows.length;
+  }
+
   async casToAbandoned(trx: DbTx, id: string, fromStatus: 'pending' | 'allocated'): Promise<boolean> {
     const rows = await trx
       .update(T)

@@ -252,6 +252,41 @@ export class WaybillManager {
     );
   }
 
+  // recall 전용: 발송된(used) 운송장을 voided 로 되돌린다. 일반 void 의 WAYBILL_ALREADY_DISPATCHED
+  // strict 가드를 recall 스코프에서만 우회한다(spec §9.1·§12.2). tx-local — carrier HTTP 없음.
+  async voidForRecall(
+    shipmentId: string,
+    dto: { reason: string },
+    idempotencyKey: string,
+    actor: Actor,
+    tx?: DbTx,
+  ): Promise<WaybillRow> {
+    return this.commands.execute<WaybillRow>(
+      {
+        commandType: 'shipment.waybill.void-for-recall',
+        idempotencyKey,
+        canonicalRequest: { actorId: actor.id, shipmentId, ...dto },
+      },
+      async (trx) => {
+        const active = await this.reader.getActiveWaybill(trx, shipmentId);
+        if (!active) throw new NotFoundError(`${WAYBILL.ERROR.NOT_FOUND}: ${shipmentId}`);
+        const affected = await this.repo.casUsedToVoided(trx, shipmentId, new Date());
+        if (affected !== 1) {
+          throw new ConflictError(
+            `${WAYBILL.ERROR.NOT_DISPATCHABLE}: voidForRecall affected ${affected} rows for ${shipmentId}`,
+          );
+        }
+        // 방금 voided 로 CAS 한 행은 getActiveWaybill(TERMINAL 제외)에 안 잡히므로 id 로 직접 재조회.
+        // void 와 달리 여기서는 undefined 를 throw 로 먼저 좁히므로(위 라인) as WaybillRow 캐스팅이 불필요
+        // (@typescript-eslint/no-unnecessary-type-assertion) — narrowing 된 voided 를 그대로 반환한다.
+        const voided = await this.repo.findById(trx, active.id);
+        if (!voided) throw new Error(`voidForRecall: waybill ${active.id} vanished after CAS`);
+        return { response: voided, resourceType: 'waybill', resourceId: active.id };
+      },
+      tx,
+    );
+  }
+
   // 활성 waybill 을 void 후 새로 발급(§11) — 원자적 한 커맨드처럼 호출자에게 노출.
   // carrier I/O 포함(issueForShipment 경유) → tx? 를 받지 않는다.
   async reissue(shipmentId: string, opts: IssueOpts, idempotencyKey: string, actor: Actor): Promise<WaybillRow> {

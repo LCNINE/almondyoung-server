@@ -314,6 +314,50 @@ describeIfDb('WaybillManager.issueForShipment (DB integration)', () => {
     });
   });
 
+  describe('voidForRecall', () => {
+    it('voidForRecall: used 운송장을 voided 로 전이한다', async () => {
+      const mgr = manager(new CarrierGatewayRegistry([fakeCarrierGateway()]));
+      const seed = await db.transaction((tx) => seedPlannedShipmentForWaybill(tx as never, deps));
+      const wb = await mgr.registerManual(
+        seed.shipmentId,
+        {
+          carrier: 'HANJIN',
+          trackingNo: `M-${randomUUID().slice(0, 8)}`,
+          expectedManifestVersion: seed.manifestVersion,
+        },
+        `idem-${randomUUID()}`,
+        actor,
+      );
+      await db.update(wmsTables.waybills).set({ status: 'used' }).where(eq(wmsTables.waybills.id, wb.id));
+
+      const out = await mgr.voidForRecall(seed.shipmentId, { reason: 'recall_test' }, `idem-${randomUUID()}`, actor);
+
+      expect(out.status).toBe('voided');
+      const [row] = await db.select().from(wmsTables.waybills).where(eq(wmsTables.waybills.id, wb.id));
+      expect(row.status).toBe('voided');
+      expect(row.voidedAt).not.toBeNull();
+    });
+
+    it('voidForRecall: 활성 used 운송장이 없으면 NOT_DISPATCHABLE 로 거부한다', async () => {
+      const mgr = manager(new CarrierGatewayRegistry([fakeCarrierGateway()]));
+      const seed = await db.transaction((tx) => seedPlannedShipmentForWaybill(tx as never, deps));
+      // registered(발송 전) 상태만 존재 → used 아님
+      await mgr.registerManual(
+        seed.shipmentId,
+        {
+          carrier: 'HANJIN',
+          trackingNo: `M-${randomUUID().slice(0, 8)}`,
+          expectedManifestVersion: seed.manifestVersion,
+        },
+        `idem-${randomUUID()}`,
+        actor,
+      );
+      await expect(mgr.voidForRecall(seed.shipmentId, { reason: 'x' }, `idem-${randomUUID()}`, actor)).rejects.toThrow(
+        /WAYBILL_NOT_DISPATCHABLE/,
+      );
+    });
+  });
+
   describe('issueBatch', () => {
     it('issues multiple shipments and returns per-item results', async () => {
       const s1 = await db.transaction((tx) => seedPlannedShipmentForWaybill(tx as never, deps));

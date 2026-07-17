@@ -47,6 +47,16 @@ export class WaybillService {
     return toView(await this.manager.void(waybillId, dto, idemKey, actor, tx));
   }
 
+  async voidForRecall(
+    shipmentId: string,
+    dto: { reason: string },
+    idemKey: string,
+    actor: Actor,
+    tx?: DbTx,
+  ): Promise<WaybillView> {
+    return toView(await this.manager.voidForRecall(shipmentId, dto, idemKey, actor, tx));
+  }
+
   async reissue(shipmentId: string, opts: IssueOpts, idemKey: string, actor: Actor): Promise<WaybillView> {
     return toView(await this.manager.reissue(shipmentId, opts, idemKey, actor));
   }

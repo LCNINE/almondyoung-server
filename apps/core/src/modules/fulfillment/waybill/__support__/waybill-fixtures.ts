@@ -13,11 +13,12 @@ import {
   seedWarehouseWithZone,
   wireLogistics,
 } from '../../services/__support__';
-import { FulfillmentCommandService } from '../../services/fulfillment-command.service';
+import { canonicalFulfillmentRequestHash, FulfillmentCommandService } from '../../services/fulfillment-command.service';
 import { FulfillmentInvariantService } from '../../services/fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from '../../services/fulfillment-workflow-gate.service';
 import { ShipmentPlanningService } from '../../services/shipment-planning.service';
 import type { AllocateResult, CarrierGateway, RegisterOutcome } from '../carrier/carrier-gateway.interface';
+import type { WaybillRow } from '../waybill.types';
 
 export const WAYBILL_RECIPIENT = {
   recipientName: '수취인 통합',
@@ -143,6 +144,32 @@ export async function seedPlannedShipmentForWaybill(tx: DbTx, deps: SeedDeps) {
     manifestVersion: planned.shipment.manifestVersion,
     recipientSnapshot: planned.shipment.recipientSnapshot,
   };
+}
+
+// planned shipment 에 대해 registered→used 운송장 1행을 직접 시드한다(발송 시뮬레이션, Task 7 recall 통합테스트가 재사용).
+// tx 는 이 파일의 다른 시드 함수(seedPlannedShipmentForWaybill)와 동일하게 DbTx — 호출자는 db.transaction((tx) =>
+// ...(tx as never)) 패턴으로 넘긴다. recipientHash 는 canonicalFulfillmentRequestHash(WAYBILL_RECIPIENT) 로 계산해야
+// assertDispatchable 의 recipient 일치 검사를 통과한다(플랜 2 불변식) — waybill.reader.ts#recipientHashOf 가 쓰는
+// 것과 동일한 해시 함수(waybill 모듈 canonical import 경로)다.
+export async function seedUsedWaybillForShipment(
+  tx: DbTx,
+  shipmentId: string,
+  manifestVersion: number,
+  opts: { carrier?: 'HANJIN'; trackingNo?: string } = {},
+): Promise<WaybillRow> {
+  const [row] = await tx
+    .insert(wmsTables.waybills)
+    .values({
+      shipmentId,
+      source: 'manual',
+      carrier: opts.carrier ?? 'HANJIN',
+      status: 'used',
+      trackingNo: opts.trackingNo ?? `used-${randomUUID().slice(0, 8)}`,
+      manifestVersion,
+      recipientHash: canonicalFulfillmentRequestHash(WAYBILL_RECIPIENT),
+    })
+    .returning();
+  return row;
 }
 
 export function fakeCarrierGateway(over: Partial<CarrierGateway> = {}): CarrierGateway {
