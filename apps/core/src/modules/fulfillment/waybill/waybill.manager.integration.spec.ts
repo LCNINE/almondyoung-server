@@ -289,4 +289,45 @@ describeIfDb('WaybillManager.issueForShipment (DB integration)', () => {
       await expect(mgr.markUsed(seed.shipmentId)).rejects.toThrow(/WAYBILL_NOT_DISPATCHABLE/);
     });
   });
+
+  describe('issueBatch', () => {
+    it('issues multiple shipments and returns per-item results', async () => {
+      const s1 = await db.transaction((tx) => seedPlannedShipmentForWaybill(tx as never, deps));
+      const s2 = await db.transaction((tx) => seedPlannedShipmentForWaybill(tx as never, deps));
+      const mgr = manager(new CarrierGatewayRegistry([fakeCarrierGateway()]));
+      const results = await mgr.issueBatch(
+        [s1.shipmentId, s2.shipmentId],
+        { carrier: 'HANJIN' },
+        `batch-${randomUUID()}`,
+        actor,
+      );
+      expect(results).toHaveLength(2);
+      expect(results.map((r) => r.shipmentId)).toEqual([s1.shipmentId, s2.shipmentId]);
+      expect(results.every((r) => r.status === 'registered')).toBe(true);
+    });
+
+    it('records a per-item reason on failure without aborting the batch', async () => {
+      const s1 = await db.transaction((tx) => seedPlannedShipmentForWaybill(tx as never, deps));
+      const s2 = await db.transaction((tx) => seedPlannedShipmentForWaybill(tx as never, deps));
+      let call = 0;
+      const gw = fakeCarrierGateway({
+        allocate: () => {
+          call += 1;
+          if (call === 1) throw new CarrierError('x', 'definitive_rejection', { code: 'ERROR-05' });
+          return Promise.resolve({ waybillNo: `WBL-${randomUUID().slice(0, 8)}`, labelData: {} });
+        },
+      });
+      const mgr = manager(new CarrierGatewayRegistry([gw]));
+      const results = await mgr.issueBatch(
+        [s1.shipmentId, s2.shipmentId],
+        { carrier: 'HANJIN' },
+        `batch-${randomUUID()}`,
+        actor,
+      );
+      expect(results).toHaveLength(2);
+      const failed = results.filter((r) => r.status === 'failed');
+      expect(failed).toHaveLength(1);
+      expect(failed[0].reason).toContain('ERROR-05');
+    });
+  });
 });

@@ -13,7 +13,7 @@ import { WaybillIssueMachine } from './waybill-issue.machine';
 import { WaybillReader } from './waybill.reader';
 import { WaybillRepository } from './waybill.repository';
 import { WAYBILL } from './waybill.constants';
-import type { WaybillRow } from './waybill.types';
+import type { BatchResultItem, WaybillRow } from './waybill.types';
 
 export interface IssueOpts {
   carrier: CarrierCode;
@@ -97,6 +97,66 @@ export class WaybillManager {
       });
 
     return this.machine.drive(waybillId, request);
+  }
+
+  // 배치 발급(§10): 버전 인자 없음 — shipment 별 CURRENT manifestVersion 을 그때그때 읽어 issueForShipment 에
+  // 넘긴다(입력 시점 버전을 배치가 미리 고정하지 않음). WAYBILL.BATCH_CONCURRENCY bounded 병렬 워커 풀 +
+  // BATCH_TIME_BUDGET_MS 시간예산: 데드라인을 넘긴 미착수 shipment 는 조기반환하되 status:'pending',
+  // reason:'time-budget-exceeded' 로 기록한다(silent truncation 금지 — 입력 shipmentId 전부가 출력에 나타나야 함).
+  // 개별 shipment 실패는 catch 로 흡수해 나머지 배치 진행을 막지 않는다. 반환 순서 = 입력 shipmentIds 순서.
+  async issueBatch(
+    shipmentIds: string[],
+    opts: { carrier: CarrierCode },
+    idempotencyKey: string,
+    actor: Actor,
+  ): Promise<BatchResultItem[]> {
+    const deadline = Date.now() + WAYBILL.BATCH_TIME_BUDGET_MS;
+    const results = new Map<string, BatchResultItem>();
+    const queue = [...shipmentIds];
+
+    const runOne = async (shipmentId: string): Promise<void> => {
+      if (Date.now() >= deadline) {
+        results.set(shipmentId, { shipmentId, status: 'pending', trackingNo: null, reason: 'time-budget-exceeded' });
+        return;
+      }
+      try {
+        const ctx = await this.dbService.run((trx) => this.reader.loadIssueContext(trx, shipmentId));
+        const wb = await this.issueForShipment(
+          shipmentId,
+          { carrier: opts.carrier, expectedManifestVersion: ctx.manifestVersion },
+          `${idempotencyKey}:${shipmentId}`,
+          actor,
+        );
+        results.set(shipmentId, { shipmentId, status: wb.status, trackingNo: wb.trackingNo, reason: wb.lastError });
+      } catch (e) {
+        results.set(shipmentId, {
+          shipmentId,
+          status: 'failed',
+          trackingNo: null,
+          reason: e instanceof Error ? e.message : String(e),
+        });
+      }
+    };
+
+    // bounded 병렬 워커 풀: 공유 큐를 각 워커가 shift() 로 소진. 큐가 비면 워커 종료.
+    const workerCount = Math.min(WAYBILL.BATCH_CONCURRENCY, queue.length);
+    const workers = Array.from({ length: workerCount }, async () => {
+      for (;;) {
+        const next = queue.shift();
+        if (next === undefined) return;
+        await runOne(next);
+      }
+    });
+    await Promise.all(workers);
+
+    // 방어적 처리: 워커 풀은 정상적으로 큐를 완전히 소진하므로 여기 도달할 항목은 없어야 하지만,
+    // 예기치 못한 워커 조기종료로 큐에 미착수건이 남는 경우에도 silent truncation 을 방지한다.
+    for (const id of queue) {
+      results.set(id, { shipmentId: id, status: 'pending', trackingNo: null, reason: 'time-budget-exceeded' });
+    }
+    return shipmentIds.map(
+      (id) => results.get(id) ?? { shipmentId: id, status: 'pending', trackingNo: null, reason: 'not-processed' },
+    );
   }
 
   // 수기(오프라인) 운송장 등록: 외부 캐리어 호출 없음, 즉시 registered. tx? 를 받는다 — 외부 I/O 가 없어
