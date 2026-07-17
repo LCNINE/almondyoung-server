@@ -219,8 +219,9 @@ export class ShipmentDispatchAttemptHistoryResponseDto {
   @ApiProperty()
   status: string;
 
+  // Task 12(contract): dispatch_attempts.invoice_id 드롭 — waybill_id 로 대체. admin-web 소비 필드명 변경 필요(follow-up).
   @ApiProperty({ nullable: true })
-  invoiceId: string | null;
+  waybillId: string | null;
 
   @ApiProperty({ nullable: true })
   dispatchedAt: Date | null;

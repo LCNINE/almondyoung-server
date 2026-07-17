@@ -309,6 +309,20 @@
       "when": 1784272881573,
       "tag": "20260717072121_add-dispatch-attempts-waybill-id",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1784290577725,
+      "tag": "20260717121617_drop-dispatch-attempts-invoice-id",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1784290811317,
+      "tag": "20260717122011_drop-invoices",
+      "breakpoints": true
     }
   ]
 }
