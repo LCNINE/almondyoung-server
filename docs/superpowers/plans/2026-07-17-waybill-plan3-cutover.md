@@ -810,6 +810,10 @@ git commit -m "refactor(waybill): InvoiceOrchestrator·recovery worker·delivery
 
 Task 12 착수 시 pre-drop grep이 fulfillment 밖의 라이브 소비자를 발견 — `sales-order/services/store-sales-orders.service.ts`가 고객 배송추적에서 `invoices`의 carrier/trackingNo를 읽는다(원 조사 누락). 스키마 드롭 전 waybills로 재배선 필수. 상세 태스크: `.superpowers/sdd/task-12a-brief.md`(V2=`attempt.waybillId`, legacy=shipmentId 키; `StoreShipmentDto.dispatchAttempts[].invoiceId`는 고객 대면 DTO — 개명/보존 판단 + client 후속; + dead enum export·outbound-v2-schema spec·fulfillments spec 정리). Task 12 Step 0(fulfillment dead read)은 별도 커밋 `0aba4716f` 완료.
 
+### Task 12b: fulfillment-reconciliation raw-SQL 쿼리 rewire — 삽입(실행 중 발견)
+
+Task 12 재시도 시 두 번째 missed 소비자 발견 — `fulfillment-reconciliation.service.ts`가 **원시 SQL**(`sql\`FROM invoices i JOIN shipments\``)로 invoices를 읽는다(Drizzle grep이 못 잡음; 야간 @Cron, 드롭 후 매일 `relation "invoices" does not exist`). fulfillment-invariant의 `ACTIVE_INVOICE_VERSION` 불변식의 raw-SQL 쌍둥이(같은 kind 라벨 공유). 상세: `.superpowers/sdd/task-12b-brief.md`(invoices→waybills, `status NOT IN (voided,failed,abandoned)`, kind 라벨 유지). **교훈: grep 게이트에 원시 SQL 문자열 패턴도 포함해야 함.**
+
 ### Task 12: 스키마 드롭 (contract phase — DB)
 
 **Files:**
