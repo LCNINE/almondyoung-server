@@ -3,7 +3,6 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
-  forwardRef,
   Inject,
   Injectable,
   NotFoundException,
@@ -25,9 +24,9 @@ import {
 } from '../dto/shipment-recall.dto';
 import { fulfillmentReopenedOutboxEvent, shipmentDispatchRecalledOutboxEvent } from '../events';
 import { OutboxService } from '../outbox/outbox.service';
+import { WaybillService } from '../waybill/waybill.service';
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
-import { InvoiceOrchestrator } from './invoice-orchestrator.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
 
 type RecallIntent = {
@@ -36,7 +35,6 @@ type RecallIntent = {
   shipmentId: string;
   dispatchAttemptId: string;
   attemptNo: number;
-  invoiceId: string;
   expectedManifestVersion: number;
   physicalRecoveryConfirmed: true;
   reason: ShipmentRecallReason;
@@ -91,7 +89,7 @@ export class ShipmentRecallService {
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly commands: FulfillmentCommandService,
     private readonly authorization: AuthorizationService,
-    @Inject(forwardRef(() => InvoiceOrchestrator)) private readonly invoices: InvoiceOrchestrator,
+    private readonly waybills: WaybillService,
     @Inject(InventoryCommandService) private readonly inventory: RecallInventoryPort,
     @Inject(ShipmentReservationService) private readonly reservations: RecallReservationPort,
     private readonly outbox: OutboxService,
@@ -183,7 +181,7 @@ export class ShipmentRecallService {
         if (attempt.status !== 'dispatched') {
           throw this.conflict('SHIPMENT_RECALL_ATTEMPT_NOT_DISPATCHED', `Dispatch attempt is ${attempt.status}`);
         }
-        if (!attempt.invoiceId || !attempt.stockJournalId || !attempt.dispatchedAt) {
+        if (!attempt.waybillId || !attempt.stockJournalId || !attempt.dispatchedAt) {
           throw this.conflict(
             'SHIPMENT_RECALL_ATTEMPT_INCOMPLETE',
             'Dispatch attempt lacks immutable dispatch evidence',
@@ -204,20 +202,17 @@ export class ShipmentRecallService {
             'In-transit or delivered tracking evidence forbids recall',
           );
         }
-        const [invoice] = await tx
-          .select()
-          .from(wmsTables.invoices)
-          .where(eq(wmsTables.invoices.id, attempt.invoiceId))
-          .limit(1)
-          .for('update');
-        if (!invoice || invoice.shipmentId !== shipmentId || invoice.status !== 'used') {
+        // 발송 증거: 활성 waybill 이 반드시 used 여야 한다(구 invoice=used 게이트의 계승). voidForRecall 이
+        // shipmentId 로 다시 찾으므로 여기선 상태 확인만 한다(attempt.waybillId 로 로드하지 않는다).
+        const activeWaybill = await this.waybills.getActiveWaybill(shipmentId, tx);
+        if (!activeWaybill || activeWaybill.status !== 'used') {
           throw this.conflict(
-            'SHIPMENT_RECALL_INVOICE_NOT_USED',
-            'Exact attempt invoice is not the used shipment invoice',
+            'SHIPMENT_RECALL_WAYBILL_NOT_USED',
+            'Active shipment waybill is not the used dispatch waybill',
           );
         }
 
-        const intent: RecallIntent = { ...initialIntent, attemptNo: attempt.attemptNo, invoiceId: invoice.id };
+        const intent: RecallIntent = { ...initialIntent, attemptNo: attempt.attemptNo };
         const before = { shipment, attempt, intent };
         await tx
           .update(wmsTables.shipmentOperations)
@@ -234,18 +229,8 @@ export class ShipmentRecallService {
             ),
           );
 
-        const invoiceOperation = await this.invoices.void(
-          invoice.id,
-          {
-            reason: `shipment_recall:${dto.reason}`,
-            resumeOperationId: operationId,
-            csCaseId: dto.csCaseId,
-            note: dto.note,
-          },
-          `${idempotencyKey}:invoice-void`,
-          actor,
-          tx,
-        );
+        // 검역: attempt/shipment 를 recovery_required 로 CAS 한다. resumePendingInTransaction 의 시작 게이트가
+        // 이 상태를 요구하므로 voidForRecall·역전보다 먼저 수행한다.
         const now = new Date();
         const [quarantinedAttempt] = await tx
           .update(wmsTables.dispatchAttempts)
@@ -261,6 +246,15 @@ export class ShipmentRecallService {
           .where(and(eq(wmsTables.shipments.id, shipmentId), eq(wmsTables.shipments.status, 'shipped')))
           .returning({ id: wmsTables.shipments.id });
         if (!quarantinedShipment) throw this.conflict('SHIPMENT_RECALL_SHIPMENT_CHANGED', 'Shipment changed');
+
+        // waybill used→voided. 동기 tx-local(carrier HTTP 없음) — 구 async invoice void saga 를 대체한다.
+        await this.waybills.voidForRecall(
+          shipmentId,
+          { reason: `shipment_recall:${dto.reason}` },
+          `${idempotencyKey}:waybill-void`,
+          actor,
+          tx,
+        );
         await this.audit.logUserActionRequired(
           'shipment.dispatch.recall.requested',
           'fulfillment',
@@ -271,19 +265,22 @@ export class ShipmentRecallService {
             shipmentId,
             dispatchAttemptId: attempt.id,
             attemptNo: attempt.attemptNo,
-            invoiceId: invoice.id,
-            invoiceOperationId: invoiceOperation.operationId,
             physicalRecoveryConfirmed: true,
             reason: dto.reason,
           },
           tx,
         );
+
+        // voidForRecall 이 동기 완료(waybill=voided)했으므로 같은 tx 에서 재고 역전을 인라인 실행 → 동기 완료.
+        // 구 구조에선 recovery worker 가 나중에 부르던 것을 report 가 직접 호출한다.
+        await this.resumePendingInTransaction(operationId, tx);
+
         const response: ShipmentRecallResponseDto = {
           operationId,
           shipmentId,
           dispatchAttemptId: attempt.id,
-          operationStatus: 'pending',
-          invoiceOperationId: invoiceOperation.operationId,
+          operationStatus: 'completed',
+          invoiceOperationId: null,
         };
         return { response, resourceType: 'shipment_operation', resourceId: operationId, operationId };
       },
@@ -369,15 +366,8 @@ export class ShipmentRecallService {
     if (blockingTracking.length) {
       throw this.conflict('SHIPMENT_RECALL_CARRIER_PROGRESS_EXISTS', 'Carrier progress appeared during recovery');
     }
-    const [invoice] = await tx
-      .select()
-      .from(wmsTables.invoices)
-      .where(eq(wmsTables.invoices.id, intent.invoiceId))
-      .limit(1)
-      .for('update');
-    if (!invoice || invoice.shipmentId !== intent.shipmentId || invoice.status !== 'voided') {
-      throw this.conflict('SHIPMENT_RECALL_INVOICE_NOT_VOIDED', 'Recall cannot reopen before exact invoice void');
-    }
+    // waybill void 게이트는 여기서 재확인하지 않는다 — report 가 같은 tx 에서 voidForRecall(used→voided)을
+    // 방금 성공시킨 뒤 이 메서드를 인라인 호출하므로 이미 voided 가 보장된다(구 invoice.status='voided' 게이트 대체).
 
     const recalledAt = new Date();
     const reversalJournalId = randomUUID();
@@ -561,7 +551,6 @@ export class ShipmentRecallService {
         shipmentId: intent.shipmentId,
         dispatchAttemptId: intent.dispatchAttemptId,
         attemptNo: intent.attemptNo,
-        invoiceId: intent.invoiceId,
         reversalJournalId,
         originalStockEventIds: reversal.sources.map((source) => source.originalEventId),
         reversalStockEventIds: reversal.sources.map((source) => source.reversalEventId),
@@ -629,11 +618,7 @@ export class ShipmentRecallService {
         .limit(1);
       if (!operation) throw new NotFoundException(`Recall operation ${operationId} not found`);
       const intent = this.intent(operation.snapshot);
-      const [invoiceOperation] = await trx
-        .select({ id: wmsTables.invoiceOperations.id })
-        .from(wmsTables.invoiceOperations)
-        .where(eq(wmsTables.invoiceOperations.resumeOperationId, operationId))
-        .limit(1);
+      // recall 은 더 이상 invoiceOperations 를 만들지 않는다(동기 붕괴). DTO 하위호환을 위해 필드는 유지하되 항상 null.
       return {
         operationId,
         shipmentId: intent.shipmentId,
@@ -644,7 +629,7 @@ export class ShipmentRecallService {
             : operation.status === 'recovery_required'
               ? 'recovery_required'
               : 'pending',
-        invoiceOperationId: invoiceOperation?.id ?? null,
+        invoiceOperationId: null,
       };
     }, tx);
   }
@@ -690,8 +675,7 @@ export class ShipmentRecallService {
     if (
       candidate?.intent?.kind !== 'shipment_recall' ||
       candidate.intent.operationId === undefined ||
-      candidate.intent.attemptNo === undefined ||
-      candidate.intent.invoiceId === undefined
+      candidate.intent.attemptNo === undefined
     ) {
       throw new Error('Shipment recall operation intent is missing or incomplete');
     }

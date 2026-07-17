@@ -12,12 +12,23 @@ import { OutboxService as InventoryOutboxService } from '../../inventory/shared/
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { UnifiedReservationService } from '../../inventory/shared/services/unified-reservation.service';
 import { OutboxService as FulfillmentOutboxService } from '../outbox/outbox.service';
-import { FulfillmentInvariantService } from './fulfillment-invariant.service';
+import { CarrierGatewayRegistry } from '../waybill/carrier/carrier-gateway.registry';
+import type { HanjinConfig } from '../waybill/carrier/hanjin/hanjin.config';
+import { WaybillIssueMachine } from '../waybill/waybill-issue.machine';
+import { WaybillManager } from '../waybill/waybill.manager';
+import { WaybillReader } from '../waybill/waybill.reader';
+import { WaybillRepository } from '../waybill/waybill.repository';
+import { WaybillService } from '../waybill/waybill.service';
+import {
+  fakeCarrierGateway,
+  seedUsedWaybillForShipment,
+  WAYBILL_RECIPIENT,
+} from '../waybill/__support__/waybill-fixtures';
+import { makeDbService } from './__support__';
 import { FulfillmentCommandService } from './fulfillment-command.service';
-import { InvoiceOrchestrator } from './invoice-orchestrator.service';
+import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentProgressService } from './fulfillment-progress.service';
 import { ShipmentRecallService } from './shipment-recall.service';
-import { ShipmentDeliveryTrackingService } from './shipment-delivery-tracking.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -31,7 +42,6 @@ type RecallFixture = {
   dispatchSource: typeof wmsTables.dispatchAttemptSources.$inferSelect;
   fulfillmentOrder: typeof wmsTables.fulfillmentOrders.$inferSelect;
   holder: typeof wmsTables.holders.$inferSelect;
-  invoice: typeof wmsTables.invoices.$inferSelect;
   item: typeof wmsTables.fulfillmentOrderItems.$inferSelect;
   line: typeof wmsTables.shipmentLines.$inferSelect;
   operationId: string;
@@ -44,7 +54,11 @@ type RecallFixture = {
   sourceLocation: typeof wmsTables.locations.$inferSelect;
   tracking: typeof wmsTables.shipmentTracking.$inferSelect;
   warehouse: typeof wmsTables.warehouses.$inferSelect;
+  waybill: typeof wmsTables.waybills.$inferSelect;
 };
+
+// voidForRecall/getActiveWaybill 은 carrier config 를 쓰지 않는다(HTTP 없음) — 최소 stub 으로 충분.
+const HANJIN_STUB = {} as HanjinConfig;
 
 describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
   jest.setTimeout(120_000);
@@ -53,18 +67,12 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
   let dbService: DbService<typeof wmsSchema>;
   let reservations: ShipmentReservationService;
   let service: ShipmentRecallService;
-  let reportService: ShipmentRecallService;
-  let invoiceOrchestrator: InvoiceOrchestrator;
   const cleanupFixtures: RecallFixture[] = [];
 
   beforeAll(() => {
     client = postgres(DATABASE_URL as string, { max: 6 });
     db = drizzle(client, { schema: wmsSchema });
-    dbService = {
-      db,
-      run: <T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> =>
-        tx ? fn(tx) : db.transaction((inner) => fn(inner as unknown as DbTx)),
-    } as unknown as DbService<typeof wmsSchema>;
+    dbService = makeDbService(db);
     const inventoryOutbox = new InventoryOutboxService(dbService);
     const sellable = new ProductSellableQuantityService(dbService as never, inventoryOutbox);
     const eventStore = new StockEventStore(dbService, sellable);
@@ -80,47 +88,31 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
       new FulfillmentProgressService(),
       new FulfillmentInvariantService(),
     );
+    // report 가 소비하는 실제 WaybillService(getActiveWaybill + voidForRecall). registry/machine/config 는
+    // recall 경로에서 실행되지 않으므로(carrier HTTP 없음) fake gateway + stub config 로 배선한다.
+    const registry = new CarrierGatewayRegistry([fakeCarrierGateway()]);
+    const waybillRepo = new WaybillRepository(dbService);
+    const waybills = new WaybillService(
+      new WaybillManager(
+        new WaybillReader(dbService),
+        waybillRepo,
+        new WaybillIssueMachine(waybillRepo, registry, dbService),
+        registry,
+        new FulfillmentCommandService(dbService),
+        HANJIN_STUB,
+        dbService,
+      ),
+    );
     service = new ShipmentRecallService(
       dbService,
-      {} as never,
-      {} as never,
-      {} as never,
-      inventory,
-      reservations,
-      new FulfillmentOutboxService(dbService),
-      new AuditService(dbService),
-      {} as never,
-    );
-    reportService = new ShipmentRecallService(
-      dbService,
       new FulfillmentCommandService(dbService),
-      {} as never,
-      { void: jest.fn(() => Promise.resolve({ operationId: randomUUID() })) } as never,
+      {} as never, // authorization — actor.roles=['master'] 로 우회
+      waybills,
       inventory,
       reservations,
       new FulfillmentOutboxService(dbService),
       new AuditService(dbService),
       { assertV2MutationAllowed: jest.fn() } as never,
-    );
-    const provider = {
-      maxRequestDurationMs: 1_000,
-      capabilities: {
-        issue: { safeToRepeat: true, lookupByIdempotencyKey: false },
-        void: { safeToRepeat: true, lookupByServiceId: false },
-      },
-      issueInvoice: jest.fn(),
-      cancelInvoice: jest.fn(),
-      queryInvoice: jest.fn(),
-    };
-    invoiceOrchestrator = new InvoiceOrchestrator(
-      dbService,
-      new FulfillmentCommandService(dbService),
-      new FulfillmentInvariantService(),
-      new AuditService(dbService),
-      provider as never,
-      provider as never,
-      { assertV2MutationAllowed: jest.fn() } as never,
-      { get: jest.fn(() => service) } as never,
     );
   });
 
@@ -132,25 +124,28 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
     }
   });
 
-  async function seedRecallPending(tx: DbTx, quantity = 3) {
+  // 발송 완료(DISPATCHED) 상태를 시드: shipment=shipped + dispatch_attempts(status=dispatched,
+  // waybill_id·stock_journal_id·dispatched_at set) + waybill=used(seedUsedWaybillForShipment). report 가
+  // 진입점이므로 shipmentOperations/Members 는 시드하지 않는다(report 가 생성). 역전(resumePending) 이 재사용하는
+  // dispatchAttemptSources/stockEvents/consumedReservation 는 그대로 시드.
+  async function seedDispatchedRecallable(tx: DbTx, quantity = 3) {
     const suffix = randomUUID();
     const actorId = randomUUID();
-    const operationId = randomUUID();
     const attemptId = randomUUID();
     const dispatchedAt = new Date('2026-07-15T08:00:00.000Z');
     const [warehouse] = await tx
       .insert(wmsTables.warehouses)
-      .values({ name: `recall-saga-wh-${suffix}` })
+      .values({ name: `recall-wh-${suffix}` })
       .returning();
     const [sourceLocation] = await tx
       .insert(wmsTables.locations)
-      .values({ warehouseId: warehouse.id, code: `recall-saga-source-${suffix}`, locationType: 'zone' })
+      .values({ warehouseId: warehouse.id, code: `recall-source-${suffix}`, locationType: 'zone' })
       .returning();
     const [reworkLocation] = await tx
       .insert(wmsTables.locations)
       .values({
         warehouseId: warehouse.id,
-        code: `recall-saga-rework-${suffix}`,
+        code: `recall-rework-${suffix}`,
         locationType: 'zone',
         isSystem: true,
         systemRole: 'outbound_rework',
@@ -159,16 +154,16 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
       .returning();
     const [holder] = await tx
       .insert(wmsTables.holders)
-      .values({ name: `recall-saga-holder-${suffix}` })
+      .values({ name: `recall-holder-${suffix}` })
       .returning();
     const [sku] = await tx
       .insert(wmsTables.skus)
-      .values({ name: 'Recall Saga SKU', code: `RECALL-SAGA-${suffix}`, holderId: holder.id })
+      .values({ name: 'Recall SKU', code: `RECALL-${suffix}`, holderId: holder.id })
       .returning();
     const [profile] = await tx
       .insert(wmsTables.deliveryProfiles)
       .values({
-        name: `recall-saga-profile-${suffix}`,
+        name: `recall-profile-${suffix}`,
         sourceType: 'in_house',
         senderSnapshot: { name: 'Recall sender' },
         originAddressSnapshot: { address: 'Origin' },
@@ -179,7 +174,7 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
     const [salesOrder] = await tx
       .insert(wmsTables.salesOrders)
       .values({
-        channelOrderId: `recall-saga-order-${suffix}`,
+        channelOrderId: `recall-order-${suffix}`,
         salesChannel: 'medusa',
         shippingAddress: {},
         orderDate: new Date(),
@@ -212,9 +207,8 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
       .values({
         warehouseId: warehouse.id,
         openedForFulfillmentOrderId: fulfillmentOrder.id,
-        status: 'recovery_required',
-        recoveryCode: 'DISPATCH_RECALL_PENDING',
-        recipientSnapshot: { name: 'Recall' },
+        status: 'shipped',
+        recipientSnapshot: WAYBILL_RECIPIENT,
         shippingProfileId: profile.id,
         manifestVersion: 4,
         reservationVersion: 2,
@@ -233,27 +227,15 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
         forced: true,
       })
       .returning();
-    const [invoice] = await tx
-      .insert(wmsTables.invoices)
-      .values({
-        trackingNo: `recall-saga-tracking-${suffix}`,
-        carrier: 'CJ',
-        issueMethod: 'goodsflow',
-        externalServiceId: `recall-saga-service-${suffix}`,
-        issuedForFulfillmentOrderId: fulfillmentOrder.id,
-        shipmentId: shipment.id,
-        manifestVersion: shipment.manifestVersion,
-        recipientHash: 'a'.repeat(64),
-        status: 'voided',
-        voidedAt: new Date(),
-      })
-      .returning();
+    // Task 2 헬퍼 실사용 — used 운송장 1행(source='manual', status='used', trackingNo present,
+    // recipientHash=hash(WAYBILL_RECIPIENT)). 이 태스크가 헬퍼의 제약 충족을 처음 검증한다(t2-m1).
+    const waybill = await seedUsedWaybillForShipment(tx, shipment.id, shipment.manifestVersion);
     const [dispatchJournal] = await tx
       .insert(wmsTables.stockJournals)
       .values({
         sourceType: 'SHIPMENT_DISPATCH_ATTEMPT',
         sourceId: attemptId,
-        idempotencyKey: `recall-saga-dispatch-journal-${suffix}`,
+        idempotencyKey: `recall-dispatch-journal-${suffix}`,
         actorId,
       })
       .returning();
@@ -263,10 +245,9 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
         id: attemptId,
         shipmentId: shipment.id,
         attemptNo: 1,
-        status: 'recovery_required',
-        recoveryCode: 'DISPATCH_RECALL_PENDING',
-        idempotencyKey: `recall-saga-attempt-${suffix}`,
-        invoiceId: invoice.id,
+        status: 'dispatched',
+        idempotencyKey: `recall-attempt-${suffix}`,
+        waybillId: waybill.id,
         stockJournalId: dispatchJournal.id,
         dispatchedAt,
       })
@@ -282,7 +263,7 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
         transitionType: 'SHIP',
         quantity,
         occurredAt: dispatchedAt,
-        idempotencyKey: `recall-saga-event-${suffix}`,
+        idempotencyKey: `recall-event-${suffix}`,
         eventStatus: 'POSTED',
       })
       .returning();
@@ -301,40 +282,11 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
       .values({
         shipmentId: shipment.id,
         dispatchAttemptId: attempt.id,
-        providerEventId: `recall-saga-tracking-event-${suffix}`,
+        providerEventId: `recall-tracking-event-${suffix}`,
         status: 'shipped',
         timestamp: dispatchedAt,
       })
       .returning();
-    const intent = {
-      kind: 'shipment_recall',
-      operationId,
-      shipmentId: shipment.id,
-      dispatchAttemptId: attempt.id,
-      attemptNo: attempt.attemptNo,
-      invoiceId: invoice.id,
-      expectedManifestVersion: shipment.manifestVersion,
-      physicalRecoveryConfirmed: true,
-      reason: 'package_recovered',
-      actorId,
-    };
-    await tx.insert(wmsTables.shipmentOperations).values({
-      id: operationId,
-      type: 'recall',
-      status: 'pending',
-      operatorId: actorId,
-      reason: 'package_recovered',
-      idempotencyKey: `recall-saga-operation-${suffix}`,
-      requestHash: 'b'.repeat(64),
-      beforeManifestSnapshot: { intent },
-    });
-    await tx.insert(wmsTables.shipmentOperationMembers).values({
-      operationId,
-      shipmentId: shipment.id,
-      role: 'source',
-      beforeManifestVersion: shipment.manifestVersion,
-      beforeManifestSnapshot: { intent },
-    });
     const [consumedReservation] = await tx
       .insert(wmsTables.stockReservations)
       .values({
@@ -350,7 +302,7 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
         invalidatedAt: dispatchedAt,
       })
       .returning();
-    const fixture = {
+    const fixture: RecallFixture = {
       actorId,
       attempt,
       consumedReservation,
@@ -358,10 +310,11 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
       dispatchSource,
       fulfillmentOrder,
       holder,
-      invoice,
       item,
       line,
-      operationId,
+      // report 성공 시 실제 operationId 로 덮어쓴다. 거부 경로에선 operation 이 생성되지 않으므로
+      // 아무 것도 매칭하지 않는 placeholder UUID 를 둔다(cleanup 의 uuid 파라미터 유효성 보장).
+      operationId: randomUUID(),
       profile,
       quantity,
       reworkLocation,
@@ -371,6 +324,7 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
       salesOrder,
       tracking,
       warehouse,
+      waybill,
     };
     cleanupFixtures.push(fixture);
     return fixture;
@@ -389,12 +343,13 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
             fixture.sku.id,
           ]),
         );
-      await tx
-        .delete(wmsTables.invoiceOperations)
-        .where(eq(wmsTables.invoiceOperations.shipmentId, fixture.shipment.id));
+      // report 의 outer command(operationId 컬럼) + inner voidForRecall command(resourceId=waybill.id) 둘 다 제거.
       await tx
         .delete(wmsTables.fulfillmentCommandRequests)
         .where(eq(wmsTables.fulfillmentCommandRequests.operationId, fixture.operationId));
+      await tx
+        .delete(wmsTables.fulfillmentCommandRequests)
+        .where(eq(wmsTables.fulfillmentCommandRequests.resourceId, fixture.waybill.id));
       await tx
         .delete(wmsTables.shipmentOperationMembers)
         .where(eq(wmsTables.shipmentOperationMembers.operationId, fixture.operationId));
@@ -416,7 +371,7 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
       if (!journalIds.includes(fixture.dispatchJournal.id)) journalIds.push(fixture.dispatchJournal.id);
 
       await tx.delete(wmsTables.dispatchAttempts).where(eq(wmsTables.dispatchAttempts.id, fixture.attempt.id));
-      await tx.delete(wmsTables.invoices).where(eq(wmsTables.invoices.id, fixture.invoice.id));
+      await tx.delete(wmsTables.waybills).where(eq(wmsTables.waybills.shipmentId, fixture.shipment.id));
       await tx.delete(wmsTables.stockEvents).where(eq(wmsTables.stockEvents.skuId, fixture.sku.id));
       await tx.delete(wmsTables.stockLedgers).where(eq(wmsTables.stockLedgers.skuId, fixture.sku.id));
       if (journalIds.length > 0) {
@@ -437,15 +392,25 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
     });
   }
 
-  it('atomically reverses stock, clones the consumed reservation and reopens demand without erasing history', async () => {
-    const fixture = await db.transaction((tx) => seedRecallPending(tx as unknown as DbTx));
+  it('recalls a dispatched shipment synchronously: voids the used waybill, reverses stock and reopens demand', async () => {
+    const fixture = await db.transaction((tx) => seedDispatchedRecallable(tx as unknown as DbTx));
 
-    const responses = await Promise.all([
-      service.resumePending(fixture.operationId),
-      service.resumePending(fixture.operationId),
-    ]);
-    expect(responses.every((response) => response.operationStatus === 'completed')).toBe(true);
+    const idempotencyKey = `recall-happy-${randomUUID()}`;
+    const reportBody = {
+      dispatchAttemptId: fixture.attempt.id,
+      expectedManifestVersion: fixture.shipment.manifestVersion,
+      physicalRecoveryConfirmed: true as const,
+      reason: 'package_recovered' as const,
+    };
+    const reported = await service.report(fixture.shipment.id, fixture.attempt.id, reportBody, idempotencyKey, {
+      id: fixture.actorId,
+      roles: ['master'],
+    });
+    fixture.operationId = reported.operationId;
+    // 구 async saga 는 pending 을 반환했다 — 새 동기 붕괴는 report 반환 시점에 이미 completed.
+    expect(reported.operationStatus).toBe('completed');
 
+    const [waybill] = await db.select().from(wmsTables.waybills).where(eq(wmsTables.waybills.id, fixture.waybill.id));
     const [shipment] = await db
       .select()
       .from(wmsTables.shipments)
@@ -466,6 +431,8 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
       .select()
       .from(wmsTables.fulfillmentOrders)
       .where(eq(wmsTables.fulfillmentOrders.id, fixture.fulfillmentOrder.id));
+    expect(waybill).toMatchObject({ status: 'voided' });
+    expect(waybill.voidedAt).not.toBeNull();
     expect(shipment).toMatchObject({ status: 'draft', recoveryCode: null, manifestVersion: 5, shippedAt: null });
     expect(attempt).toMatchObject({ status: 'recalled', recoveryCode: null });
     expect(attempt.reversalJournalId).not.toBeNull();
@@ -473,11 +440,11 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
     expect(item.shippedQty).toBe(0);
     expect(fo).toMatchObject({ status: 'ready', shippedAt: null, totalReservedQty: fixture.quantity });
 
-    const reservations = await db
+    const reservationRows = await db
       .select()
       .from(wmsTables.stockReservations)
       .where(eq(wmsTables.stockReservations.shipmentLineId, fixture.line.id));
-    expect(reservations).toEqual(
+    expect(reservationRows).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           id: fixture.consumedReservation.id,
@@ -491,6 +458,11 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
         }),
       ]),
     );
+    const reversals = await db
+      .select({ id: wmsTables.stockEvents.id })
+      .from(wmsTables.stockEvents)
+      .where(eq(wmsTables.stockEvents.reversalOfEventId, fixture.dispatchSource.stockEventId!));
+    expect(reversals.length).toBeGreaterThan(0);
     const [availability] = await db
       .select({
         qty: drizzleSql<number>`
@@ -511,330 +483,72 @@ describeIfDb('ShipmentRecallService (PostgreSQL integration)', () => {
       .from(wmsTables.outboxEvents)
       .where(eq(wmsTables.outboxEvents.aggregateId, fixture.fulfillmentOrder.id));
     expect(fulfillmentEvents).toEqual(expect.arrayContaining([{ eventType: 'FulfillmentReopened' }]));
-    const [oldSource] = await db
-      .select()
-      .from(wmsTables.dispatchAttemptSources)
-      .where(eq(wmsTables.dispatchAttemptSources.id, fixture.dispatchSource.id));
-    const [oldTracking] = await db
-      .select()
-      .from(wmsTables.shipmentTracking)
-      .where(eq(wmsTables.shipmentTracking.id, fixture.tracking.id));
-    expect(oldSource).toMatchObject({
-      dispatchAttemptId: fixture.attempt.id,
-      shipmentLineId: fixture.line.id,
-      sourceLocationId: fixture.dispatchSource.sourceLocationId,
-      qty: fixture.quantity,
-      stockEventId: fixture.dispatchSource.stockEventId,
+
+    // 멱등: 같은 Idempotency-Key 로 재보고하면 command 계층이 캐시된 completed 응답을 돌려주고 부작용을 중복하지 않는다.
+    const replay = await service.report(fixture.shipment.id, fixture.attempt.id, reportBody, idempotencyKey, {
+      id: fixture.actorId,
+      roles: ['master'],
     });
-    expect(oldTracking).toMatchObject({
-      dispatchAttemptId: fixture.attempt.id,
-      providerEventId: fixture.tracking.providerEventId,
-      status: 'shipped',
-    });
+    expect(replay.operationId).toBe(reported.operationId);
+    expect(replay.operationStatus).toBe('completed');
+    const [itemAfterReplay] = await db
+      .select({ shippedQty: wmsTables.fulfillmentOrderItems.shippedQty })
+      .from(wmsTables.fulfillmentOrderItems)
+      .where(eq(wmsTables.fulfillmentOrderItems.id, fixture.item.id));
+    expect(itemAfterReplay.shippedQty).toBe(0);
   });
 
   it.each([
     ['carrier accepted', 'accepted'],
     ['in-transit evidence', 'in_transit'],
     ['delivered evidence', 'delivered'],
-  ] as const)('rejects recall when the exact attempt has %s', async (_label, evidence) => {
-    const fixture = await db.transaction((tx) => seedRecallPending(tx as unknown as DbTx));
-    await db
-      .update(wmsTables.shipments)
-      .set({ status: 'shipped', recoveryCode: null })
-      .where(eq(wmsTables.shipments.id, fixture.shipment.id));
-    await db
-      .update(wmsTables.dispatchAttempts)
-      .set({
-        status: 'dispatched',
-        recoveryCode: null,
-        ...(evidence === 'accepted' ? { carrierAcceptedAt: new Date('2026-07-15T08:30:00.000Z') } : {}),
-      })
-      .where(eq(wmsTables.dispatchAttempts.id, fixture.attempt.id));
-    await db
-      .update(wmsTables.invoices)
-      .set({ status: 'used', voidedAt: null })
-      .where(eq(wmsTables.invoices.id, fixture.invoice.id));
-    if (evidence !== 'accepted') {
-      await db.insert(wmsTables.shipmentTracking).values({
-        shipmentId: fixture.shipment.id,
-        dispatchAttemptId: fixture.attempt.id,
-        providerEventId: `${evidence}-${randomUUID()}`,
-        status: evidence,
-        timestamp: new Date('2026-07-15T08:30:00.000Z'),
-      });
-    }
-
-    await expect(
-      reportService.report(
-        fixture.shipment.id,
-        fixture.attempt.id,
-        {
+  ] as const)(
+    'rejects recall when the exact attempt has %s and leaves the used waybill intact',
+    async (_label, evidence) => {
+      const fixture = await db.transaction((tx) => seedDispatchedRecallable(tx as unknown as DbTx));
+      if (evidence === 'accepted') {
+        await db
+          .update(wmsTables.dispatchAttempts)
+          .set({ carrierAcceptedAt: new Date('2026-07-15T08:30:00.000Z') })
+          .where(eq(wmsTables.dispatchAttempts.id, fixture.attempt.id));
+      } else {
+        await db.insert(wmsTables.shipmentTracking).values({
+          shipmentId: fixture.shipment.id,
           dispatchAttemptId: fixture.attempt.id,
-          expectedManifestVersion: fixture.shipment.manifestVersion,
-          physicalRecoveryConfirmed: true,
-          reason: 'package_recovered',
-        },
-        `recall-rejected-${evidence}-${randomUUID()}`,
-        { id: fixture.actorId, roles: ['master'] },
-      ),
-    ).rejects.toThrow(/Carrier|carrier|transit|delivered/);
-    const reversals = await db
-      .select({ id: wmsTables.stockEvents.id })
-      .from(wmsTables.stockEvents)
-      .where(eq(wmsTables.stockEvents.reversalOfEventId, fixture.dispatchSource.stockEventId!));
-    expect(reversals).toHaveLength(0);
-    const [item] = await db
-      .select({ shippedQty: wmsTables.fulfillmentOrderItems.shippedQty })
-      .from(wmsTables.fulfillmentOrderItems)
-      .where(eq(wmsTables.fulfillmentOrderItems.id, fixture.item.id));
-    expect(item.shippedQty).toBe(fixture.quantity);
-  });
-
-  it('keeps provider void failure on the same operation without reversing stock or reopening FO demand', async () => {
-    const fixture = await db.transaction((tx) => seedRecallPending(tx as unknown as DbTx));
-
-    await db.transaction((tx) =>
-      service.markInvoiceRecoveryRequired(
-        fixture.operationId,
-        new Error('provider void timeout'),
-        tx as unknown as DbTx,
-      ),
-    );
-
-    const [operation] = await db
-      .select()
-      .from(wmsTables.shipmentOperations)
-      .where(eq(wmsTables.shipmentOperations.id, fixture.operationId));
-    const [item] = await db
-      .select()
-      .from(wmsTables.fulfillmentOrderItems)
-      .where(eq(wmsTables.fulfillmentOrderItems.id, fixture.item.id));
-    const reversals = await db
-      .select({ id: wmsTables.stockEvents.id })
-      .from(wmsTables.stockEvents)
-      .where(eq(wmsTables.stockEvents.reversalOfEventId, fixture.dispatchSource.stockEventId!));
-    const reservations = await db
-      .select()
-      .from(wmsTables.stockReservations)
-      .where(eq(wmsTables.stockReservations.shipmentLineId, fixture.line.id));
-    expect(operation).toMatchObject({ status: 'recovery_required', lastError: 'provider void timeout' });
-    expect(item.shippedQty).toBe(fixture.quantity);
-    expect(reversals).toHaveLength(0);
-    expect(reservations).toEqual([
-      expect.objectContaining({
-        id: fixture.consumedReservation.id,
-        status: 'released',
-        stateReason: `shipment-dispatch:${fixture.attempt.id}`,
-      }),
-    ]);
-  });
-
-  it('blocks invoice resume when carrier progress arrives after report quarantine', async () => {
-    const fixture = await db.transaction((tx) => seedRecallPending(tx as unknown as DbTx));
-    await db.transaction(async (tx) => {
-      await tx
-        .delete(wmsTables.shipmentOperationMembers)
-        .where(eq(wmsTables.shipmentOperationMembers.operationId, fixture.operationId));
-      await tx.delete(wmsTables.shipmentOperations).where(eq(wmsTables.shipmentOperations.id, fixture.operationId));
-      await tx
-        .update(wmsTables.shipments)
-        .set({ status: 'shipped', recoveryCode: null })
-        .where(eq(wmsTables.shipments.id, fixture.shipment.id));
-      await tx
-        .update(wmsTables.dispatchAttempts)
-        .set({ status: 'dispatched', recoveryCode: null })
-        .where(eq(wmsTables.dispatchAttempts.id, fixture.attempt.id));
-      await tx
-        .update(wmsTables.invoices)
-        .set({ status: 'used', voidedAt: null })
-        .where(eq(wmsTables.invoices.id, fixture.invoice.id));
-    });
-
-    const carrierEventId = `recall-late-carrier-progress-${randomUUID()}`;
-    let announceTrackingBeforeGraph!: () => void;
-    const trackingBeforeGraph = new Promise<void>((resolve) => {
-      announceTrackingBeforeGraph = resolve;
-    });
-    let allowTrackingGraph!: () => void;
-    const trackingGraphAllowed = new Promise<void>((resolve) => {
-      allowTrackingGraph = resolve;
-    });
-    let firstGraphEntry = true;
-    const barrierTrackingService = new ShipmentDeliveryTrackingService(
-      dbService,
-      new FulfillmentOutboxService(dbService),
-      { assertV2MutationAllowed: jest.fn() } as never,
-      {
-        lockShipmentGraphForDispatch: async (shipmentId: string, tx: DbTx) => {
-          if (firstGraphEntry) {
-            firstGraphEntry = false;
-            announceTrackingBeforeGraph();
-            await trackingGraphAllowed;
-          }
-          await reservations.lockShipmentGraphForDispatch(shipmentId, tx);
-        },
-      } as ShipmentReservationService,
-    );
-    const trackingPromise = barrierTrackingService.recordProviderEvent(fixture.attempt.id, {
-      providerEventId: carrierEventId,
-      status: 'in_transit',
-      occurredAt: '2026-07-15T09:00:00.000Z',
-    });
-    await trackingBeforeGraph;
-
-    let reported: Awaited<ReturnType<ShipmentRecallService['report']>>;
-    try {
-      reported = await reportService.report(
-        fixture.shipment.id,
-        fixture.attempt.id,
-        {
-          dispatchAttemptId: fixture.attempt.id,
-          expectedManifestVersion: fixture.shipment.manifestVersion,
-          physicalRecoveryConfirmed: true,
-          reason: 'package_recovered',
-        },
-        `recall-late-carrier-${randomUUID()}`,
-        { id: fixture.actorId, roles: ['master'] },
-      );
-      fixture.operationId = reported.operationId;
-    } finally {
-      allowTrackingGraph();
-    }
-    await trackingPromise;
-
-    await db
-      .update(wmsTables.invoices)
-      .set({ status: 'voiding', voidedAt: null })
-      .where(eq(wmsTables.invoices.id, fixture.invoice.id));
-    const invoiceOperationId = randomUUID();
-    await db.insert(wmsTables.invoiceOperations).values({
-      id: invoiceOperationId,
-      shipmentId: fixture.shipment.id,
-      invoiceId: fixture.invoice.id,
-      resumeOperationId: reported.operationId,
-      operation: 'void',
-      idempotencyKey: `worker-recall-late-carrier-${randomUUID()}`,
-      requestHash: 'd'.repeat(64),
-      manifestVersion: fixture.shipment.manifestVersion,
-      recipientHash: 'a'.repeat(64),
-      status: 'in_progress',
-      providerRequest: {
-        kind: 'void',
-        provider: 'goodsflow',
-        externalServiceId: fixture.invoice.externalServiceId,
-        operationContext: { operationId: invoiceOperationId, idempotencyKey: invoiceOperationId },
-        commandContext: {
-          actorId: fixture.actorId,
-          reason: 'package_recovered',
-          csCaseId: null,
-          note: null,
-        },
-      },
-      providerResponse: {},
-      attempts: 1,
-    });
-
-    await expect(
-      (
-        invoiceOrchestrator as unknown as {
-          finalizeProviderSuccess(operationId: string): Promise<void>;
-        }
-      ).finalizeProviderSuccess(invoiceOperationId),
-    ).rejects.toThrow(/Carrier|carrier/);
-
-    const [operation] = await db
-      .select()
-      .from(wmsTables.shipmentOperations)
-      .where(eq(wmsTables.shipmentOperations.id, reported.operationId));
-    const [attempt] = await db
-      .select()
-      .from(wmsTables.dispatchAttempts)
-      .where(eq(wmsTables.dispatchAttempts.id, fixture.attempt.id));
-    const [shipment] = await db
-      .select()
-      .from(wmsTables.shipments)
-      .where(eq(wmsTables.shipments.id, fixture.shipment.id));
-    const tracking = await db
-      .select()
-      .from(wmsTables.shipmentTracking)
-      .where(eq(wmsTables.shipmentTracking.providerEventId, carrierEventId));
-    const reversals = await db
-      .select({ id: wmsTables.stockEvents.id })
-      .from(wmsTables.stockEvents)
-      .where(eq(wmsTables.stockEvents.reversalOfEventId, fixture.dispatchSource.stockEventId!));
-    expect(operation).toMatchObject({ status: 'recovery_required' });
-    expect(operation.lastError).toContain('Carrier in_transit evidence');
-    expect(attempt).toMatchObject({
-      status: 'recovery_required',
-      recoveryCode: 'DISPATCH_RECALL_PENDING',
-      carrierAcceptedAt: new Date('2026-07-15T09:00:00.000Z'),
-    });
-    expect(shipment).toMatchObject({ status: 'recovery_required', recoveryCode: 'DISPATCH_RECALL_PENDING' });
-    expect(tracking).toEqual([
-      expect.objectContaining({
-        dispatchAttemptId: fixture.attempt.id,
-        status: 'in_transit',
-        providerEventId: carrierEventId,
-      }),
-    ]);
-    expect(reversals).toHaveLength(0);
-  });
-
-  it('finalizes the provider void and resumes the same recall operation through the invoice worker boundary', async () => {
-    const fixture = await db.transaction((tx) => seedRecallPending(tx as unknown as DbTx));
-    await db
-      .update(wmsTables.invoices)
-      .set({ status: 'voiding', voidedAt: null })
-      .where(eq(wmsTables.invoices.id, fixture.invoice.id));
-    const invoiceOperationId = randomUUID();
-    await db.insert(wmsTables.invoiceOperations).values({
-      id: invoiceOperationId,
-      shipmentId: fixture.shipment.id,
-      invoiceId: fixture.invoice.id,
-      resumeOperationId: fixture.operationId,
-      operation: 'void',
-      idempotencyKey: `worker-recall-${randomUUID()}`,
-      requestHash: 'c'.repeat(64),
-      manifestVersion: fixture.shipment.manifestVersion,
-      recipientHash: 'a'.repeat(64),
-      status: 'in_progress',
-      providerRequest: {
-        kind: 'void',
-        provider: 'goodsflow',
-        externalServiceId: fixture.invoice.externalServiceId,
-        operationContext: { operationId: invoiceOperationId, idempotencyKey: invoiceOperationId },
-        commandContext: {
-          actorId: fixture.actorId,
-          reason: 'package_recovered',
-          csCaseId: null,
-          note: null,
-        },
-      },
-      providerResponse: {},
-      attempts: 1,
-    });
-
-    await (
-      invoiceOrchestrator as unknown as {
-        finalizeProviderSuccess(operationId: string): Promise<void>;
+          providerEventId: `${evidence}-${randomUUID()}`,
+          status: evidence,
+          timestamp: new Date('2026-07-15T08:30:00.000Z'),
+        });
       }
-    ).finalizeProviderSuccess(invoiceOperationId);
 
-    const [operation] = await db
-      .select()
-      .from(wmsTables.shipmentOperations)
-      .where(eq(wmsTables.shipmentOperations.id, fixture.operationId));
-    const [invoiceOperation] = await db
-      .select()
-      .from(wmsTables.invoiceOperations)
-      .where(eq(wmsTables.invoiceOperations.id, invoiceOperationId));
-    const [shipment] = await db
-      .select()
-      .from(wmsTables.shipments)
-      .where(eq(wmsTables.shipments.id, fixture.shipment.id));
-    expect(operation.status).toBe('completed');
-    expect(invoiceOperation.status).toBe('succeeded');
-    expect(shipment.status).toBe('draft');
-  });
+      await expect(
+        service.report(
+          fixture.shipment.id,
+          fixture.attempt.id,
+          {
+            dispatchAttemptId: fixture.attempt.id,
+            expectedManifestVersion: fixture.shipment.manifestVersion,
+            physicalRecoveryConfirmed: true,
+            reason: 'package_recovered',
+          },
+          `recall-rejected-${evidence}-${randomUUID()}`,
+          { id: fixture.actorId, roles: ['master'] },
+        ),
+      ).rejects.toThrow(/Carrier|carrier|transit|delivered/);
+
+      const [waybill] = await db.select().from(wmsTables.waybills).where(eq(wmsTables.waybills.id, fixture.waybill.id));
+      expect(waybill.status).toBe('used');
+      expect(waybill.voidedAt).toBeNull();
+      const reversals = await db
+        .select({ id: wmsTables.stockEvents.id })
+        .from(wmsTables.stockEvents)
+        .where(eq(wmsTables.stockEvents.reversalOfEventId, fixture.dispatchSource.stockEventId!));
+      expect(reversals).toHaveLength(0);
+      const [item] = await db
+        .select({ shippedQty: wmsTables.fulfillmentOrderItems.shippedQty })
+        .from(wmsTables.fulfillmentOrderItems)
+        .where(eq(wmsTables.fulfillmentOrderItems.id, fixture.item.id));
+      expect(item.shippedQty).toBe(fixture.quantity);
+    },
+  );
 });
