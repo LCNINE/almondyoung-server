@@ -909,7 +909,7 @@ describe('StoreSalesOrdersService', () => {
             shipmentId: shipment.id,
             attemptNo: 1,
             status: 'recalled',
-            invoiceId: 'invoice-1',
+            waybillId: 'waybill-1',
             dispatchedAt: oldDispatchedAt,
             carrierAcceptedAt: null,
             recalledAt,
@@ -919,15 +919,15 @@ describe('StoreSalesOrdersService', () => {
             shipmentId: shipment.id,
             attemptNo: 2,
             status: 'dispatched',
-            invoiceId: 'invoice-2',
+            waybillId: 'waybill-2',
             dispatchedAt: newDispatchedAt,
             carrierAcceptedAt: newDispatchedAt,
             recalledAt: null,
           },
         ],
         [
-          { id: 'invoice-1', carrier: 'CJ', trackingNo: 'OLD-TRACKING' },
-          { id: 'invoice-2', carrier: 'HANJIN', trackingNo: 'NEW-TRACKING' },
+          { id: 'waybill-1', shipmentId: shipment.id, status: 'voided', carrier: 'CJ', trackingNo: 'OLD-TRACKING' },
+          { id: 'waybill-2', shipmentId: shipment.id, status: 'used', carrier: 'HANJIN', trackingNo: 'NEW-TRACKING' },
         ],
         [
           {
@@ -973,12 +973,14 @@ describe('StoreSalesOrdersService', () => {
           attemptNo: 1,
           recalled: true,
           recalledAt,
+          waybillId: 'waybill-1',
           trackingNumber: 'OLD-TRACKING',
         }),
         expect.objectContaining({
           dispatchAttemptId: 'attempt-2',
           attemptNo: 2,
           recalled: false,
+          waybillId: 'waybill-2',
           trackingNumber: 'NEW-TRACKING',
         }),
       ]);
@@ -1005,13 +1007,13 @@ describe('StoreSalesOrdersService', () => {
             shipmentId: shipment.id,
             attemptNo: 1,
             status: 'pending',
-            invoiceId: 'invoice-pending',
+            waybillId: 'waybill-pending',
             dispatchedAt: null,
             carrierAcceptedAt: null,
             recalledAt: null,
           },
         ],
-        [{ id: 'invoice-pending', carrier: 'CJ', trackingNo: 'PENDING-TRACKING' }],
+        [{ id: 'waybill-pending', shipmentId: shipment.id, status: 'allocated', carrier: 'CJ', trackingNo: 'PENDING-TRACKING' }],
         [],
         [{ id: 'sol-completed', channelOrderItemId: null }],
       ]);
@@ -1023,7 +1025,7 @@ describe('StoreSalesOrdersService', () => {
       expect(result.shipments[0].deliveredAt).toBeNull();
     });
 
-    it('attempt가 없는 legacy line shipment의 flat tracking에는 voided 송장이 아니라 active 송장을 쓴다', async () => {
+    it('attempt가 없는 legacy line shipment의 flat tracking에는 종료된 운송장이 아니라 활성 운송장을 쓴다', async () => {
       const service = makeTrackingService([
         [makeSo()],
         [fo('fo-legacy-line')],
@@ -1041,14 +1043,14 @@ describe('StoreSalesOrdersService', () => {
         [],
         [
           {
-            id: 'invoice-voided',
+            id: 'waybill-voided',
             shipmentId: shipment.id,
             status: 'voided',
             carrier: 'CJ',
             trackingNo: 'VOIDED-TRACKING',
           },
           {
-            id: 'invoice-active',
+            id: 'waybill-active',
             shipmentId: shipment.id,
             status: 'used',
             carrier: 'HANJIN',
@@ -1085,8 +1087,9 @@ describe('StoreSalesOrdersService', () => {
         ],
         [
           {
-            id: 'legacy-invoice',
-            issuedForFulfillmentOrderId: 'legacy-fo',
+            id: 'legacy-waybill',
+            shipmentId: 'legacy-shipment',
+            status: 'used',
             carrier: 'CJ',
             trackingNo: 'LEGACY-TRACKING',
           },
@@ -1115,33 +1118,7 @@ describe('StoreSalesOrdersService', () => {
       expect(result.shipments[0].trackingEvents).toHaveLength(1);
     });
 
-    it('shipment가 아직 없는 선발급 legacy FO invoice도 fallback으로 읽는다', async () => {
-      const service = makeTrackingService([
-        [makeSo()],
-        [fo('legacy-invoice-fo', { shippedAt: null })],
-        [],
-        [],
-        [
-          {
-            id: 'legacy-issued-invoice',
-            issuedForFulfillmentOrderId: 'legacy-invoice-fo',
-            carrier: 'CJ',
-            trackingNo: 'PREISSUED-TRACKING',
-          },
-        ],
-      ]);
-
-      const result = await service.getTracking(SO_ID, CUSTOMER_ID);
-
-      expect(result.status).toBe('preparing');
-      expect(result.shipments).toEqual([
-        expect.objectContaining({
-          shipmentId: null,
-          fulfillmentOrderId: 'legacy-invoice-fo',
-          trackingNumber: 'PREISSUED-TRACKING',
-          status: 'created',
-        }),
-      ]);
-    });
+    // NOTE: 구 legacy 빌더의 "shipment 없는 선발급 invoice" fallback 은 waybill 모델에서 제거됨 —
+    // waybills 는 shipmentId(notNull) 로만 존재하므로 shipment-less 운송장 표시 경로가 구조적으로 사라졌다.
   });
 });

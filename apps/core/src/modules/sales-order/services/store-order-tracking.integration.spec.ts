@@ -56,7 +56,7 @@ describeIfDb('Store order tracking V2 graph (DB integration, rollback-only)', ()
     return { salesOrderId, salesOrderLineId: lineIds[0], fulfillmentOrder, item };
   }
 
-  it('합배송 line subset과 recalled→redispatch invoice history를 두 SO에 보존하고 FO completed를 delivered로 보지 않는다', async () => {
+  it('합배송 line subset과 recalled→redispatch 운송장 history를 두 SO에 보존하고 FO completed를 delivered로 보지 않는다', async () => {
     await inRollbackTx(db, async (tx) => {
       const customerId = randomUUID();
       const { warehouseId } = await seedWarehouseWithZone(tx);
@@ -82,27 +82,29 @@ describeIfDb('Store order tracking V2 graph (DB integration, rollback-only)', ()
           },
         ])
         .returning();
-      const [invoice] = await tx
-        .insert(wmsTables.invoices)
+      const [waybill] = await tx
+        .insert(wmsTables.waybills)
         .values({
           trackingNo: `OLD-TRACK-${randomUUID()}`,
           carrier: 'CJ',
-          issueMethod: 'self',
-          issuedForFulfillmentOrderId: first.fulfillmentOrder.id,
+          source: 'carrier',
           shipmentId: shipment.id,
           status: 'voided',
+          manifestVersion: 1,
+          recipientHash: 'a'.repeat(64),
           voidedAt: new Date('2026-07-14T02:00:00Z'),
         })
         .returning();
-      const [redispatchInvoice] = await tx
-        .insert(wmsTables.invoices)
+      const [redispatchWaybill] = await tx
+        .insert(wmsTables.waybills)
         .values({
           trackingNo: `NEW-TRACK-${randomUUID()}`,
           carrier: 'HANJIN',
-          issueMethod: 'self',
-          issuedForFulfillmentOrderId: second.fulfillmentOrder.id,
+          source: 'carrier',
           shipmentId: shipment.id,
           status: 'used',
+          manifestVersion: 1,
+          recipientHash: 'a'.repeat(64),
         })
         .returning();
       const journals = await tx
@@ -124,7 +126,7 @@ describeIfDb('Store order tracking V2 graph (DB integration, rollback-only)', ()
             attemptNo: 1,
             status: 'recalled',
             idempotencyKey: `tracking-it-1-${randomUUID()}`,
-            invoiceId: invoice.id,
+            waybillId: waybill.id,
             stockJournalId: journals[0].id,
             reversalJournalId: journals[1].id,
             dispatchedAt,
@@ -135,7 +137,7 @@ describeIfDb('Store order tracking V2 graph (DB integration, rollback-only)', ()
             attemptNo: 2,
             status: 'dispatched',
             idempotencyKey: `tracking-it-2-${randomUUID()}`,
-            invoiceId: redispatchInvoice.id,
+            waybillId: redispatchWaybill.id,
             stockJournalId: journals[2].id,
             dispatchedAt: redispatchedAt,
           },
@@ -181,24 +183,42 @@ describeIfDb('Store order tracking V2 graph (DB integration, rollback-only)', ()
         }),
       ]);
       expect(firstView.shipments[0]).toMatchObject({
-        trackingNumber: redispatchInvoice.trackingNo,
+        trackingNumber: redispatchWaybill.trackingNo,
         carrier: 'HANJIN',
         status: 'in_transit',
       });
       expect(firstView.shipments[0].dispatchAttempts).toEqual([
-        expect.objectContaining({ attemptNo: 1, recalled: true, trackingNumber: invoice.trackingNo, recalledAt }),
+        expect.objectContaining({
+          attemptNo: 1,
+          recalled: true,
+          waybillId: waybill.id,
+          carrier: 'CJ',
+          trackingNumber: waybill.trackingNo,
+          recalledAt,
+        }),
         expect.objectContaining({
           attemptNo: 2,
           recalled: false,
-          trackingNumber: redispatchInvoice.trackingNo,
+          waybillId: redispatchWaybill.id,
+          carrier: 'HANJIN',
+          trackingNumber: redispatchWaybill.trackingNo,
         }),
       ]);
       expect(secondView.shipments[0].dispatchAttempts).toEqual([
-        expect.objectContaining({ attemptNo: 1, recalled: true, trackingNumber: invoice.trackingNo, recalledAt }),
+        expect.objectContaining({
+          attemptNo: 1,
+          recalled: true,
+          waybillId: waybill.id,
+          carrier: 'CJ',
+          trackingNumber: waybill.trackingNo,
+          recalledAt,
+        }),
         expect.objectContaining({
           attemptNo: 2,
           recalled: false,
-          trackingNumber: redispatchInvoice.trackingNo,
+          waybillId: redispatchWaybill.id,
+          carrier: 'HANJIN',
+          trackingNumber: redispatchWaybill.trackingNo,
         }),
       ]);
     });

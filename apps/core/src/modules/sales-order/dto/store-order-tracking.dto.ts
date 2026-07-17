@@ -44,8 +44,8 @@ export class StoreDispatchAttemptDto {
   @ApiProperty({ description: '회수된 출고 시도인지 여부' })
   recalled: boolean;
 
-  @ApiPropertyOptional({ description: '송장 ID' })
-  invoiceId: string | null;
+  @ApiPropertyOptional({ description: '운송장 ID' })
+  waybillId: string | null;
 
   @ApiProperty({ description: '택배사 코드', example: 'CJ' })
   carrier: string;

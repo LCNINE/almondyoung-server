@@ -52,7 +52,6 @@ describe('FulfillmentsService', () => {
       if (table === wmsTables.fulfillmentOrderItems) return state.fulfillmentOrderItems;
       if (table === wmsTables.shipments) return state.shipments;
       if (table === wmsTables.shipmentLines) return state.shipmentLines;
-      if (table === wmsTables.invoices) return [];
       if (table === wmsTables.salesOrderCancellations) return state.salesOrderCancellations;
       if (table === wmsTables.salesOrderAmendments) return state.salesOrderAmendments;
       if (table === wmsTables.businessLinks) return state.businessLinks;
