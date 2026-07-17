@@ -206,6 +206,57 @@ export class WaybillManager {
     }
     return this.issueForShipment(shipmentId, opts, `${idempotencyKey}:issue`, actor);
   }
+
+  // 플랜 3(dispatch) 진입점: 활성 waybill 이 있고 registered/used 이며 carrier+trackingNo 가 채워져 있고
+  // 현재 shipment 의 manifestVersion/recipientHash 와 일치해야 통과. externalServiceId 요구는 의도적으로 없음
+  // (한진에는 그런 provider service id 개념이 없다 — carrier/manual 두 source 모두 동일 기준으로 통일, §9.1).
+  async assertDispatchable(shipmentId: string, tx?: DbTx): Promise<WaybillRow> {
+    return this.dbService.run(async (trx) => {
+      const [shipment] = await trx
+        .select({
+          manifestVersion: inventoryTables.shipments.manifestVersion,
+          recipientSnapshot: inventoryTables.shipments.recipientSnapshot,
+        })
+        .from(inventoryTables.shipments)
+        .where(eq(inventoryTables.shipments.id, shipmentId))
+        .limit(1);
+      if (!shipment) throw new NotFoundError(`${WAYBILL.ERROR.SHIPMENT_NOT_FOUND}: ${shipmentId}`);
+      const wb = await this.reader.getActiveWaybill(trx, shipmentId);
+      if (!wb || !['registered', 'used'].includes(wb.status)) {
+        throw new ConflictError(
+          `${WAYBILL.ERROR.NOT_DISPATCHABLE}: shipment ${shipmentId} needs one registered waybill`,
+        );
+      }
+      if (!wb.carrier || !wb.trackingNo?.trim()) {
+        throw new ConflictError(`${WAYBILL.ERROR.NOT_DISPATCHABLE}: waybill missing carrier or tracking number`);
+      }
+      if (
+        wb.manifestVersion !== shipment.manifestVersion ||
+        wb.recipientHash !== this.reader.recipientHashOf(shipment.recipientSnapshot)
+      ) {
+        throw new ConflictError(`${WAYBILL.ERROR.STALE}: waybill does not match shipment manifest/recipient`);
+      }
+      return wb;
+    }, tx);
+  }
+
+  // registered/used → used. casToUsed(Task 4) 의 WHERE 가 {registered, used} 를 모두 매칭하므로
+  // used→used 재호출도 count 1 로 통과(멱등). 매칭 0행(활성 waybill 없음/이미 종료)이면 엄격하게 예외.
+  async markUsed(shipmentId: string, tx?: DbTx): Promise<void> {
+    await this.dbService.run(async (trx) => {
+      const affected = await this.repo.casToUsed(trx, shipmentId);
+      if (affected !== 1) {
+        throw new ConflictError(
+          `${WAYBILL.ERROR.NOT_DISPATCHABLE}: markUsed affected ${affected} rows for ${shipmentId}`,
+        );
+      }
+    }, tx);
+  }
+
+  async getActiveWaybill(shipmentId: string, tx?: DbTx): Promise<WaybillRow | null> {
+    const wb = await this.dbService.run((trx) => this.reader.getActiveWaybill(trx, shipmentId), tx);
+    return wb ?? null;
+  }
 }
 
 // drizzle-orm 0.44.x 는 driver 에러를 DrizzleQueryError 로 감싼다 — 실제 postgres.js PostgresError(code,

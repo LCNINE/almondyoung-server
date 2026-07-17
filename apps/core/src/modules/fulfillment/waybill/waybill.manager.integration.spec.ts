@@ -8,6 +8,7 @@ import {
   seedPlannedShipmentForWaybill,
   fakeCarrierGateway,
   makeSeedDeps,
+  WAYBILL_RECIPIENT,
   type SeedDeps,
 } from './__support__/waybill-fixtures';
 import { CarrierGatewayRegistry } from './carrier/carrier-gateway.registry';
@@ -237,6 +238,55 @@ describeIfDb('WaybillManager.issueForShipment (DB integration)', () => {
       expect(second.status).toBe('registered');
       const [old] = await db.select().from(wmsTables.waybills).where(eq(wmsTables.waybills.id, first.id));
       expect(old.status).toBe('voided');
+    });
+  });
+
+  describe('seam: assertDispatchable + markUsed', () => {
+    async function registered(mgr: WaybillManager) {
+      const seed = await db.transaction((tx) => seedPlannedShipmentForWaybill(tx as never, deps));
+      const wb = await mgr.registerManual(
+        seed.shipmentId,
+        {
+          carrier: 'HANJIN',
+          trackingNo: `M-${randomUUID().slice(0, 8)}`,
+          expectedManifestVersion: seed.manifestVersion,
+        },
+        `idem-${randomUUID()}`,
+        actor,
+      );
+      return { seed, wb };
+    }
+
+    it('assertDispatchable returns the active registered waybill', async () => {
+      const mgr = manager(new CarrierGatewayRegistry([fakeCarrierGateway()]));
+      const { seed, wb } = await registered(mgr);
+      const got = await mgr.assertDispatchable(seed.shipmentId);
+      expect(got.id).toBe(wb.id);
+    });
+
+    it('assertDispatchable rejects a stale recipient hash', async () => {
+      const mgr = manager(new CarrierGatewayRegistry([fakeCarrierGateway()]));
+      const { seed } = await registered(mgr);
+      await db
+        .update(wmsTables.shipments)
+        .set({ recipientSnapshot: { ...WAYBILL_RECIPIENT, detailAddress: 'CHANGED' } })
+        .where(eq(wmsTables.shipments.id, seed.shipmentId));
+      await expect(mgr.assertDispatchable(seed.shipmentId)).rejects.toThrow(/WAYBILL_STALE/);
+    });
+
+    it('markUsed transitions registered→used and is idempotent', async () => {
+      const mgr = manager(new CarrierGatewayRegistry([fakeCarrierGateway()]));
+      const { seed, wb } = await registered(mgr);
+      await mgr.markUsed(seed.shipmentId);
+      await mgr.markUsed(seed.shipmentId); // 멱등
+      const [row] = await db.select().from(wmsTables.waybills).where(eq(wmsTables.waybills.id, wb.id));
+      expect(row.status).toBe('used');
+    });
+
+    it('markUsed throws when no dispatchable waybill', async () => {
+      const mgr = manager(new CarrierGatewayRegistry([fakeCarrierGateway()]));
+      const seed = await db.transaction((tx) => seedPlannedShipmentForWaybill(tx as never, deps));
+      await expect(mgr.markUsed(seed.shipmentId)).rejects.toThrow(/WAYBILL_NOT_DISPATCHABLE/);
     });
   });
 });
