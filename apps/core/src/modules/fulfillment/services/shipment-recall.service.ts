@@ -288,16 +288,6 @@ export class ShipmentRecallService {
     return this.currentResponse(accepted.operationId);
   }
 
-  async resumePending(operationId: string, tx?: DbTx): Promise<ShipmentRecallResponseDto> {
-    if (tx) return this.resumePendingInTransaction(operationId, tx);
-    try {
-      return await this.dbService.run((trx) => this.resumePendingInTransaction(operationId, trx));
-    } catch (error) {
-      await this.dbService.run((trx) => this.markRecoveryRequired(operationId, error, trx));
-      throw error;
-    }
-  }
-
   private async resumePendingInTransaction(operationId: string, tx: DbTx): Promise<ShipmentRecallResponseDto> {
     const [operation] = await tx
       .select()
@@ -563,47 +553,8 @@ export class ShipmentRecallService {
     return this.currentResponse(operationId, tx);
   }
 
-  async markInvoiceRecoveryRequired(operationId: string, error: unknown, tx: DbTx): Promise<void> {
-    await this.markRecoveryRequired(operationId, error, tx);
-  }
-
   getOperation(operationId: string): Promise<ShipmentRecallResponseDto> {
     return this.currentResponse(operationId);
-  }
-
-  private async markRecoveryRequired(operationId: string, error: unknown, tx: DbTx): Promise<void> {
-    const message = error instanceof Error ? error.message : String(error);
-    const [operation] = await tx
-      .select({
-        status: wmsTables.shipmentOperations.status,
-        snapshot: wmsTables.shipmentOperations.beforeManifestSnapshot,
-      })
-      .from(wmsTables.shipmentOperations)
-      .where(and(eq(wmsTables.shipmentOperations.id, operationId), eq(wmsTables.shipmentOperations.type, 'recall')))
-      .limit(1)
-      .for('update');
-    if (!operation || operation.status === 'completed') return;
-    const intent = this.intent(operation.snapshot);
-    await tx
-      .update(wmsTables.shipmentOperations)
-      .set({ status: 'recovery_required', lastError: message })
-      .where(eq(wmsTables.shipmentOperations.id, operationId));
-    await tx
-      .update(wmsTables.shipments)
-      .set({ status: 'recovery_required', recoveryCode: 'DISPATCH_RECALL_PENDING', lastUpdated: new Date() })
-      .where(eq(wmsTables.shipments.id, intent.shipmentId));
-    await tx
-      .update(wmsTables.dispatchAttempts)
-      .set({ status: 'recovery_required', recoveryCode: 'DISPATCH_RECALL_PENDING', updatedAt: new Date() })
-      .where(eq(wmsTables.dispatchAttempts.id, intent.dispatchAttemptId));
-    await this.audit.logUserActionRequired(
-      'shipment.dispatch.recall.recovery_required',
-      'fulfillment',
-      `Recall operation ${operationId} requires recovery`,
-      { userId: intent.actorId },
-      { operationId, shipmentId: intent.shipmentId, dispatchAttemptId: intent.dispatchAttemptId, error: message },
-      tx,
-    );
   }
 
   private async currentResponse(operationId: string, tx?: DbTx): Promise<ShipmentRecallResponseDto> {

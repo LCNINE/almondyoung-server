@@ -24,10 +24,9 @@ import {
 } from '../dto/outbound-batch-v2.dto';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
-import { FulfillmentCommandService } from './fulfillment-command.service';
+import { canonicalFulfillmentRequestHash, FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
-import { canonicalShipmentRecipientHash } from './invoice-orchestrator.service';
 import { ShipmentPlanningService } from './shipment-planning.service';
 import { ConsolidationService } from './consolidation.service';
 import { WaybillService } from '../waybill/waybill.service';
@@ -398,7 +397,7 @@ export class OutboundBatchOrchestrator {
             shippingProfileId: aggregate.shipment.shippingProfileId!,
             manifestVersion: aggregate.shipment.manifestVersion,
             reservationVersion: aggregate.shipment.reservationVersion,
-            recipientHash: canonicalShipmentRecipientHash(aggregate.shipment.recipientSnapshot),
+            recipientHash: canonicalFulfillmentRequestHash(aggregate.shipment.recipientSnapshot),
             totalItems: aggregate.lines.length,
             totalQty: aggregate.lines.reduce((total, line) => total + line.qty, 0),
             waybillId: eligible.waybillId,

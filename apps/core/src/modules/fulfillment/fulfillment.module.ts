@@ -30,15 +30,11 @@ import { PoliciesService } from './services/policies.service';
 import { PickingProcessService } from './services/picking-process.service';
 import { ConsolidationService } from './services/consolidation.service';
 import { DirectShipService } from './services/direct-ship.service';
-import { GoodsflowDeliveryProvider } from './services/goodsflow-delivery.provider';
-import { HanjinDeliveryProvider } from './services/hanjin-delivery.provider';
 import { FulfillmentProgressService } from './services/fulfillment-progress.service';
 import { FulfillmentInvariantService } from './services/fulfillment-invariant.service';
 import { FulfillmentReconciliationService } from './services/fulfillment-reconciliation.service';
 import { ShipmentReservationService } from './services/shipment-reservation.service';
 import { ShipmentPlanningService } from './services/shipment-planning.service';
-import { InvoiceOrchestrator } from './services/invoice-orchestrator.service';
-import { InvoiceRecoveryWorker } from './services/invoice-recovery.worker';
 import { OutboundBatchOrchestrator } from './services/outbound-batch-orchestrator.service';
 import { BatchInventorySessionService } from './services/batch-inventory-session.service';
 import { BatchSessionRecoveryService } from './services/batch-session-recovery.service';
@@ -136,15 +132,11 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ToteLifecycleService,
     ConsolidationService,
     DirectShipService,
-    GoodsflowDeliveryProvider,
-    HanjinDeliveryProvider,
     FulfillmentProgressService,
     FulfillmentInvariantService,
     FulfillmentReconciliationService,
     ShipmentReservationService,
     ShipmentPlanningService,
-    InvoiceOrchestrator,
-    InvoiceRecoveryWorker,
     OutboundBatchOrchestrator,
     BatchInventorySessionService,
     BatchSessionRecoveryService,
@@ -168,7 +160,6 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     FulfillmentReconciliationService,
     ShipmentReservationService,
     ShipmentPlanningService,
-    InvoiceOrchestrator,
     OutboundBatchOrchestrator,
     BatchInventorySessionService,
     BatchSessionRecoveryService,
