@@ -867,7 +867,7 @@ git commit -m "feat(waybill)!: invoices·invoiceOperations 테이블/enum 드롭
 ```
 (주의: `services/*.spec.ts` 글롭이 의도한 spec만 잡는지 `git status`로 확인 — 무관 spec이 딸려오면 명시 경로로 좁힌다.)
 
-> **배포 노트(운영자):** destructive contract phase다. 실 데이터 없으나 순서 규율 준수 — **`sst deploy` 완료 후 `db:migrate`**. 옛 task가 destructive migration을 먼저 만나면 사고.
+> **배포 노트(운영자) — ⚠️ 최종 리뷰 정정:** 이 브랜치(plan1~3 미머지)는 **expand(waybills 생성 + `dispatch_attempts.waybill_id` 추가) + contract(`invoice_id`·`invoices`/`invoiceOperations` 드롭)를 한 배포에 번들**한다. 순수 contract 컨벤션(`sst deploy → db:migrate`)은 이 세트엔 맞지 않다 — 신 코드가 waybills 스키마를 **요구**하므로 `deploy → migrate`면 rolling 중 새 task가 migrate 완료 전까지 dispatch/recall/short-pick/reconciliation/store-tracking 전부 에러. **→ `db:migrate → sst deploy` 순서로**(옛 in-flight task만 드롭된 invoices를 만나 깨지고 자기치유; CLAUDE.md "expand phase는 migrate→deploy" 규칙과 일치). **실 데이터 없어 데이터 손실 0**, 저활동 fulfillment 윈도우 권장. + **client PR 동반 필수**(admin-web 라우트/필드 + storefront StoreShipmentDto) — 백엔드 단독 배포 금지.
 
 ---
 
