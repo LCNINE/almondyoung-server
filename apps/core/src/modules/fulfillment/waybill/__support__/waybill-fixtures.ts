@@ -1,7 +1,22 @@
 import { randomUUID } from 'crypto';
 import { eq } from 'drizzle-orm';
-import { DbTx, wmsTables } from '../../../inventory/schema/inventory.schema';
-import { seedHolder, seedMatching, seedSalesOrder, seedSku, seedWarehouseWithZone } from '../../services/__support__';
+import { ConfigService } from '@nestjs/config';
+import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
+import { DbTx, wmsSchema, wmsTables } from '../../../inventory/schema/inventory.schema';
+import { AuditService } from '../../../inventory/shared/services/audit.service';
+import {
+  makeDbService,
+  seedHolder,
+  seedMatching,
+  seedSalesOrder,
+  seedSku,
+  seedWarehouseWithZone,
+  wireLogistics,
+} from '../../services/__support__';
+import { FulfillmentCommandService } from '../../services/fulfillment-command.service';
+import { FulfillmentInvariantService } from '../../services/fulfillment-invariant.service';
+import { FulfillmentWorkflowGate } from '../../services/fulfillment-workflow-gate.service';
+import { ShipmentPlanningService } from '../../services/shipment-planning.service';
 import type { AllocateResult, CarrierGateway, RegisterOutcome } from '../carrier/carrier-gateway.interface';
 
 export const WAYBILL_RECIPIENT = {
@@ -14,7 +29,8 @@ export const WAYBILL_RECIPIENT = {
 };
 
 // deps.fulfillments = wired.fulfillments, deps.plan 은 wiring 이 노출하지 않는 ShipmentPlanningService 인스턴스를
-// 호출자가 별도 구성해 넘긴다(호출자 = 통합 spec 의 services() 헬퍼, invoice-orchestrator.integration.spec.ts 패턴 미러).
+// 필요로 한다(호출자 = 통합 spec 의 services() 헬퍼, invoice-orchestrator.integration.spec.ts 패턴 미러).
+// makeSeedDeps() 가 이 조립을 한 곳에서 제공한다 — 여러 waybill integration spec 이 중복 없이 재사용한다.
 export interface SeedDeps {
   fulfillments: { create(args: { salesOrderId: string; warehouseId: string }, tx: DbTx): Promise<unknown> };
   plan(
@@ -24,6 +40,38 @@ export interface SeedDeps {
     actor: { id: string; roles: string[] },
     tx: DbTx,
   ): Promise<{ shipment: { shipmentId: string; manifestVersion: number; recipientSnapshot: unknown } }>;
+}
+
+// Wired(wireLogistics 반환)는 ShipmentPlanningService 를 노출하지 않는다(logistics-wiring.ts 확인됨) —
+// invoice-orchestrator.integration.spec.ts 의 services() 헬퍼와 동일하게 로컬 조립한다.
+// waybill integration spec 들이 공통으로 재사용하는 SeedDeps 팩토리.
+export function makeSeedDeps(db: PostgresJsDatabase<typeof wmsSchema>): SeedDeps {
+  const svc = makeDbService(db);
+  const wired = wireLogistics(svc, 'v2');
+  const workflowGate = new FulfillmentWorkflowGate(
+    new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2', FULFILLMENT_V2_CUTOVER_AT: new Date().toISOString() }),
+  );
+  const commands = new FulfillmentCommandService(svc);
+  const invariant = new FulfillmentInvariantService();
+  const planning = new ShipmentPlanningService(
+    svc,
+    commands,
+    wired.shipmentReservations,
+    invariant,
+    new AuditService(svc),
+    { getScopesByRoles: () => Promise.resolve(new Set(['master'])) } as never,
+    workflowGate,
+  );
+  return {
+    fulfillments: wired.fulfillments,
+    plan: (
+      id: string,
+      opts: { shippingProfileId: string; expectedManifestVersion: number; expectedReservationVersion: number },
+      idem: string,
+      actor: { id: string; roles: string[] },
+      tx: DbTx,
+    ) => planning.plan(id, opts, idem, actor, tx),
+  } as unknown as SeedDeps;
 }
 
 export async function seedPlannedShipmentForWaybill(tx: DbTx, deps: SeedDeps) {
