@@ -16,6 +16,7 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 import { ProductMatchingModule } from './modules/product-matching/product-matching.module';
 import { SalesOrderModule } from './modules/sales-order/sales-order.module';
 import { FulfillmentModule } from './modules/fulfillment/fulfillment.module';
+import { WaybillModule } from './modules/fulfillment/waybill/waybill.module';
 import { LibraryModule } from './modules/library/library.module';
 import { CustomerServiceModule } from './modules/customer-service/customer-service.module';
 
@@ -45,6 +46,7 @@ import { CustomerServiceModule } from './modules/customer-service/customer-servi
     ProductMatchingModule,
     SalesOrderModule,
     FulfillmentModule,
+    WaybillModule,
     LibraryModule,
     CustomerServiceModule,
   ],
