@@ -14,6 +14,8 @@ import { SalesOrderModule } from '../sales-order/sales-order.module';
 import { ProductSellableQuantityModule } from '../inventory/product-sellable-quantity/product-sellable-quantity.module';
 import { WarehouseModule } from '../inventory/warehouse/warehouse.module';
 import { FulfillmentOrderCreationBacklogModule } from './backlog/fulfillment-order-creation-backlog.module';
+import { FulfillmentCommandModule } from './fulfillment-command.module';
+import { WaybillModule } from './waybill/waybill.module';
 
 // Outbox
 import { OutboxService } from './outbox/outbox.service';
@@ -28,16 +30,11 @@ import { PoliciesService } from './services/policies.service';
 import { PickingProcessService } from './services/picking-process.service';
 import { ConsolidationService } from './services/consolidation.service';
 import { DirectShipService } from './services/direct-ship.service';
-import { GoodsflowDeliveryProvider } from './services/goodsflow-delivery.provider';
-import { HanjinDeliveryProvider } from './services/hanjin-delivery.provider';
 import { FulfillmentProgressService } from './services/fulfillment-progress.service';
 import { FulfillmentInvariantService } from './services/fulfillment-invariant.service';
 import { FulfillmentReconciliationService } from './services/fulfillment-reconciliation.service';
 import { ShipmentReservationService } from './services/shipment-reservation.service';
-import { FulfillmentCommandService } from './services/fulfillment-command.service';
 import { ShipmentPlanningService } from './services/shipment-planning.service';
-import { InvoiceOrchestrator } from './services/invoice-orchestrator.service';
-import { InvoiceRecoveryWorker } from './services/invoice-recovery.worker';
 import { OutboundBatchOrchestrator } from './services/outbound-batch-orchestrator.service';
 import { BatchInventorySessionService } from './services/batch-inventory-session.service';
 import { BatchSessionRecoveryService } from './services/batch-session-recovery.service';
@@ -58,7 +55,6 @@ import { ConsolidationController } from './controllers/consolidation.controller'
 import { DirectShipController } from './controllers/direct-ship.controller';
 import { LocationOptimizationController } from './controllers/location-optimization.controller';
 import { FulfillmentOperationController, ShipmentPlanningController } from './controllers/shipment-planning.controller';
-import { ShipmentInvoiceController } from './controllers/shipment-invoice.controller';
 import { OutboundBatchV2Controller } from './controllers/outbound-batch-v2.controller';
 import { PickingCommandV2Controller, PickingV2Controller } from './controllers/picking-v2.controller';
 import { ToteController } from './controllers/tote.controller';
@@ -92,6 +88,11 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
 
     WarehouseModule,
     FulfillmentOrderCreationBacklogModule,
+
+    // FulfillmentCommandService(fulfillment/waybill 양쪽 공유)
+    FulfillmentCommandModule,
+    // WaybillService(운송장 발급/조회) — 방향 반전: FulfillmentModule → WaybillModule(spec §12.1)
+    WaybillModule,
   ],
   controllers: [
     FulfillmentsController,
@@ -105,7 +106,6 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     LocationOptimizationController,
     ShipmentPlanningController,
     FulfillmentOperationController,
-    ShipmentInvoiceController,
     ShipmentTrackingController,
     ShipmentShortPickController,
     ShipmentRecallController,
@@ -132,16 +132,11 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ToteLifecycleService,
     ConsolidationService,
     DirectShipService,
-    GoodsflowDeliveryProvider,
-    HanjinDeliveryProvider,
     FulfillmentProgressService,
     FulfillmentInvariantService,
     FulfillmentReconciliationService,
     ShipmentReservationService,
-    FulfillmentCommandService,
     ShipmentPlanningService,
-    InvoiceOrchestrator,
-    InvoiceRecoveryWorker,
     OutboundBatchOrchestrator,
     BatchInventorySessionService,
     BatchSessionRecoveryService,
@@ -164,9 +159,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     FulfillmentInvariantService,
     FulfillmentReconciliationService,
     ShipmentReservationService,
-    FulfillmentCommandService,
     ShipmentPlanningService,
-    InvoiceOrchestrator,
     OutboundBatchOrchestrator,
     BatchInventorySessionService,
     BatchSessionRecoveryService,

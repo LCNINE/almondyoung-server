@@ -72,10 +72,6 @@ export const orderQueryKeys = {
   qualityMetrics: (query: Record<string, any>) =>
     ['inspection', 'metrics', 'quality', query] as const,
 
-  // 송장 관련
-  invoices: ['invoices'] as const,
-  invoiceOperation: (id: string) => ['invoice-operations', id] as const,
-
   // 직배송 관련
   directShipDashboard: ['direct-ship', 'dashboard'] as const,
   directShipCompanies: ['direct-ship', 'companies'] as const,

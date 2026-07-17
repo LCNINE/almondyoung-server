@@ -19,7 +19,7 @@ import {
   Wired,
 } from './__support__';
 import { ConsolidationService } from './consolidation.service';
-import { FulfillmentCommandService } from './fulfillment-command.service';
+import { canonicalFulfillmentRequestHash, FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentPlanningService } from './shipment-planning.service';
@@ -517,22 +517,22 @@ describeIfDb('V2 explicit shipment consolidation (DB integration)', () => {
         .update(wmsTables.shipments)
         .set({ status: 'planned' })
         .where(eq(wmsTables.shipments.id, first.shipment.id));
-      const [invoice] = await tx
-        .insert(wmsTables.invoices)
+      const [waybill] = await tx
+        .insert(wmsTables.waybills)
         .values({
-          trackingNo: `consolidation-invoice-${randomUUID()}`,
-          issueMethod: 'self',
-          issuedForFulfillmentOrderId: first.fulfillmentOrderId,
           shipmentId: first.shipment.id,
+          source: 'manual',
+          carrier: 'HANJIN',
+          status: 'registered',
+          trackingNo: `consolidation-waybill-${randomUUID()}`,
           manifestVersion: first.shipment.manifestVersion,
-          recipientHash: 'a'.repeat(64),
-          status: 'issued',
+          recipientHash: canonicalFulfillmentRequestHash(first.shipment.recipientSnapshot),
         })
         .returning();
       const dto = {
         sources: requestFor(first, second),
         recipientSourceShipmentId: first.shipment.id,
-        reason: 'wait for invoice void',
+        reason: 'wait for waybill void',
       };
       const key = `pending-consolidation-${randomUUID()}`;
       const pending = await consolidation.consolidate(dto, key, actor, tx);
@@ -568,9 +568,9 @@ describeIfDb('V2 explicit shipment consolidation (DB integration)', () => {
       expect(waitingOrders.every((order) => order.status === 'recovery_required')).toBe(true);
 
       await tx
-        .update(wmsTables.invoices)
+        .update(wmsTables.waybills)
         .set({ status: 'voided', voidedAt: new Date() })
-        .where(eq(wmsTables.invoices.id, invoice.id));
+        .where(eq(wmsTables.waybills.id, waybill.id));
       const completed = await consolidation.resumePending(pending.operationId, tx);
       expect(completed).toMatchObject({
         operationId: pending.operationId,

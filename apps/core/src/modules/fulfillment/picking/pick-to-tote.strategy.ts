@@ -9,8 +9,8 @@ import { BatchInventorySessionService } from '../services/batch-inventory-sessio
 import { FulfillmentCommandService } from '../services/fulfillment-command.service';
 import { FulfillmentInvariantService } from '../services/fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from '../services/fulfillment-workflow-gate.service';
-import { InvoiceOrchestrator } from '../services/invoice-orchestrator.service';
 import { OutboundBatchOrchestrator } from '../services/outbound-batch-orchestrator.service';
+import { WaybillService } from '../waybill/waybill.service';
 import {
   CompletePickInput,
   HandoffPickingInput,
@@ -104,7 +104,7 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
     private readonly invariant: FulfillmentInvariantService,
     private readonly sessions: BatchInventorySessionService,
     private readonly controlledStock: BatchControlledStockGuard,
-    private readonly invoices: InvoiceOrchestrator,
+    private readonly waybills: WaybillService,
     private readonly batches: OutboundBatchOrchestrator,
     private readonly audit: AuditService,
   ) {}
@@ -1480,7 +1480,7 @@ export class PickToTotePickingStrategy implements PickToToteStrategy {
           `Shipment ${shipment.id} must contain only uninspected, fully reserved physical lines`,
         );
       }
-      await this.invoices.assertDispatchableInvoice(shipment.id, tx);
+      await this.waybills.assertDispatchable(shipment.id, tx);
     }
     const lineIds = aggregate.lines.map((line) => line.id);
     const reservations = await tx

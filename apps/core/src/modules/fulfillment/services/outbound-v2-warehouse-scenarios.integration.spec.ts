@@ -21,11 +21,10 @@ import { PickToTotePickingStrategy } from '../picking/pick-to-tote.strategy';
 import { PickingStrategyRegistry } from '../picking/picking-strategy.registry';
 import { inRollbackTx, makeDb, seedHolder, seedSku, seedWarehouseWithZone } from './__support__';
 import { BatchInventorySessionService } from './batch-inventory-session.service';
-import { FulfillmentCommandService } from './fulfillment-command.service';
+import { canonicalFulfillmentRequestHash, FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentProgressService } from './fulfillment-progress.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
-import { canonicalShipmentRecipientHash, InvoiceOrchestrator } from './invoice-orchestrator.service';
 import { OutboundBatchOrchestrator } from './outbound-batch-orchestrator.service';
 import { PickingProcessService } from './picking-process.service';
 import { ShipmentDispatchService } from './shipment-dispatch.service';
@@ -33,6 +32,13 @@ import { ShipmentPlanningService } from './shipment-planning.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
 import { ShipmentShortPickService } from './shipment-short-pick.service';
 import { ToteLifecycleService } from './tote-lifecycle.service';
+import { CarrierGatewayRegistry } from '../waybill/carrier/carrier-gateway.registry';
+import type { HanjinConfig } from '../waybill/carrier/hanjin/hanjin.config';
+import { WaybillIssueMachine } from '../waybill/waybill-issue.machine';
+import { WaybillManager } from '../waybill/waybill.manager';
+import { WaybillReader } from '../waybill/waybill.reader';
+import { WaybillRepository } from '../waybill/waybill.repository';
+import { WaybillService } from '../waybill/waybill.service';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -46,6 +52,20 @@ const RECIPIENT = {
 
 type Database = PostgresJsDatabase<typeof wmsSchema>;
 type Actor = { id: string; roles: string[] };
+
+// assertDispatchable/void(읽기+CAS)만 소비 — carrier I/O 로 이어지는 필드는 이 경로들에서 쓰이지 않는다(더미).
+const HANJIN_TEST_CONFIG: HanjinConfig = {
+  clientId: 'CID',
+  apiKey: 'AK',
+  secretKey: 'SK',
+  contractNo: 'CN',
+  orderBaseUrl: 'https://o',
+  printBaseUrl: 'https://p',
+  timeoutMs: 15000,
+  sender: { name: '보내는이', zip: '06236', baseAddress: '테헤란로 1', detailAddress: '10층', tel: '02-100-2000' },
+  boxType: 'A',
+  payType: 'PP',
+};
 
 interface SeededShipment {
   variantId: string;
@@ -92,24 +112,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
     } as unknown as DbService<typeof wmsSchema>;
   }
 
-  function deliveryProvider() {
-    return {
-      maxRequestDurationMs: 1_000,
-      capabilities: {
-        issue: { safeToRepeat: true, lookupByIdempotencyKey: false },
-        void: { safeToRepeat: false, lookupByServiceId: true },
-      },
-      issueInvoice: jest.fn().mockResolvedValue({
-        serviceId: `service-${randomUUID()}`,
-        invoiceNumber: `tracking-${randomUUID()}`,
-        carrierCode: 'CJ',
-      }),
-      cancelInvoice: jest.fn().mockResolvedValue(undefined),
-      queryInvoice: jest.fn().mockResolvedValue({ status: 'not_found' }),
-    };
-  }
-
-  function makeServices(tx: DbTx, provider = deliveryProvider()) {
+  function makeServices(tx: DbTx) {
     const dbService = ambientDbService(tx);
     const commands = new FulfillmentCommandService(dbService);
     const invariant = new FulfillmentInvariantService();
@@ -125,21 +128,27 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
         () => resumeTarget.shortPick ?? ({ resumePending: jest.fn().mockResolvedValue(undefined) } as never),
       ),
     };
-    const invoices = new InvoiceOrchestrator(
-      dbService,
-      commands,
-      invariant,
-      audit,
-      provider as never,
-      provider as never,
-      workflow,
-      moduleRef as never,
+    // 플랜3: batch add·dispatch·picking 은 assertDispatchable/markUsed 를, short-pick 은 getActiveWaybill/void
+    // 를 소비한다(모두 실제 WaybillService). registry/issue machine 은 이 경로들에서 실행되지 않지만 구조적
+    // 의존이라 empty registry + issue machine + HANJIN stub 으로 배선한다(batch-orchestrator.integration 패턴).
+    const waybillRepo = new WaybillRepository(dbService);
+    const waybillRegistry = new CarrierGatewayRegistry([]);
+    const waybills = new WaybillService(
+      new WaybillManager(
+        new WaybillReader(dbService),
+        waybillRepo,
+        new WaybillIssueMachine(waybillRepo, waybillRegistry, dbService),
+        waybillRegistry,
+        commands,
+        HANJIN_TEST_CONFIG,
+        dbService,
+      ),
     );
     const batches = new OutboundBatchOrchestrator(
       dbService,
       commands,
       invariant,
-      invoices,
+      waybills,
       audit,
       workflow,
       moduleRef as never,
@@ -151,7 +160,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       invariant,
       sessions,
       controlled,
-      invoices,
+      waybills,
       batches,
     );
     const discrete = new DiscretePickingStrategy(
@@ -161,7 +170,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       invariant,
       sessions,
       controlled,
-      invoices,
+      waybills,
       batches,
     );
     const tote = new PickToTotePickingStrategy(
@@ -171,7 +180,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       invariant,
       sessions,
       controlled,
-      invoices,
+      waybills,
       batches,
       audit,
     );
@@ -211,7 +220,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       authorization as never,
       audit,
       workflow,
-      invoices,
+      waybills,
       sessions,
       shipmentReservations,
       planning,
@@ -223,13 +232,13 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       inventory,
       sessions,
       shipmentReservations,
-      invoices,
+      waybills,
       new BarcodeService(dbService),
       new FulfillmentOutboxService(dbService),
       audit,
       workflow,
     );
-    return { batches, dispatch, invoices, picking, sessions, shortPick: resumeTarget.shortPick, provider };
+    return { batches, dispatch, waybills, picking, sessions, shortPick: resumeTarget.shortPick };
   }
 
   async function seedWorld(
@@ -367,19 +376,28 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
     } satisfies WarehouseWorld;
   }
 
-  async function seedIssuedInvoices(tx: DbTx, world: WarehouseWorld) {
-    for (const member of world.shipments) {
-      await tx.insert(wmsTables.invoices).values({
+  // 플랜3: batch add 는 issued invoice 대신 registered waybill 을 게이트한다(assertDispatchable). shipment 와
+  // manifestVersion/recipientHash 가 일치하는 registered waybill 을 1행 시드한다.
+  async function seedRegisteredWaybill(tx: DbTx, shipmentId: string) {
+    const [shipment] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, shipmentId));
+    const [waybill] = await tx
+      .insert(wmsTables.waybills)
+      .values({
+        shipmentId,
+        source: 'manual',
+        carrier: 'HANJIN',
+        status: 'registered',
         trackingNo: `release-tracking-${randomUUID()}`,
-        carrier: 'CJ',
-        issueMethod: 'goodsflow',
-        externalServiceId: `release-service-${randomUUID()}`,
-        issuedForFulfillmentOrderId: member.fulfillmentOrder.id,
-        shipmentId: member.shipment.id,
-        manifestVersion: member.shipment.manifestVersion,
-        recipientHash: canonicalShipmentRecipientHash(RECIPIENT),
-        status: 'issued',
-      });
+        manifestVersion: shipment.manifestVersion,
+        recipientHash: canonicalFulfillmentRequestHash(shipment.recipientSnapshot),
+      })
+      .returning();
+    return waybill;
+  }
+
+  async function seedRegisteredWaybills(tx: DbTx, world: WarehouseWorld) {
+    for (const member of world.shipments) {
+      await seedRegisteredWaybill(tx, member.shipment.id);
     }
   }
 
@@ -842,49 +860,22 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
     return { claim, completed, plan, sessionId: started.sessionId, toteIds };
   }
 
-  // Not a "sibling batch shipment" case: addShipment requires exactly one issued
-  // invoice (assertDispatchableInvoice), so the shipment whose issue failed can never
-  // enter a batch at all. The isolation under test is that its failure stays confined
-  // to its own invoice operation and leaves another shipment's issue→dispatch intact.
-  it('06 invoice issue failure confines itself to its own shipment while another shipment issues and dispatches', async () => {
+  // 플랜3 컷오버: batch add 는 issued invoice 대신 WaybillService.assertDispatchable(registered waybill)를
+  // 게이트한다. dispatchable waybill 이 없는 shipment 는 batch 에 진입조차 못 한다 — 그 실패가 자기 shipment 에
+  // 국한되고 다른 shipment 의 등록→발송을 방해하지 않음을 고정한다(구 invoice-issue 실패 격리의 waybill 등가물).
+  it('06 a shipment without a dispatchable waybill stays out of the batch while another registers and dispatches', async () => {
     await inRollbackTx(db, async (tx) => {
       const world = await seedWorld(tx, [2, 2]);
-      const provider = deliveryProvider();
-      provider.issueInvoice
-        .mockRejectedValueOnce(new Error('provider unavailable for shipment A'))
-        .mockResolvedValueOnce({
-          serviceId: `service-${randomUUID()}`,
-          invoiceNumber: `tracking-${randomUUID()}`,
-          carrierCode: 'CJ',
-        });
-      const services = makeServices(tx, provider);
+      // shipment B(index 1)만 registered waybill 을 갖는다 — A(index 0)는 dispatchable waybill 이 없다.
+      await seedRegisteredWaybill(tx, world.shipments[1].shipment.id);
+      const services = makeServices(tx);
       const manager = { id: randomUUID(), roles: ['master'] };
-      const issueOperations: Array<Awaited<ReturnType<InvoiceOrchestrator['issueForShipment']>>> = [];
-      for (const member of world.shipments) {
-        issueOperations.push(
-          await services.invoices.issueForShipment(
-            member.shipment.id,
-            {
-              expectedManifestVersion: member.shipment.manifestVersion,
-              provider: 'goodsflow',
-              carrierCode: 'CJ',
-              reason: 'release suite label',
-            },
-            `release-issue-${randomUUID()}`,
-            manager,
-          ),
-        );
-      }
-      const failed = await services.invoices.processOperation(issueOperations[0].operationId);
-      const succeeded = await services.invoices.processOperation(issueOperations[1].operationId);
-      expect(failed.status).not.toBe('succeeded');
-      expect(succeeded.status).toBe('succeeded');
 
       const successWorld = { ...world, shipments: [world.shipments[1]] };
       const { batch, added } = await createBatchWithShipments(services, successWorld, manager);
 
-      // Pin the reason the failed shipment is absent from the batch. Without this the
-      // scenario silently assumes it, which is how the old name drifted to "sibling".
+      // A 는 dispatchable waybill 이 없어 batch add 자체가 막힌다. WaybillService.assertDispatchable 은 @app/shared
+      // ConflictError 를 던진다(Nest .response.code 아님) — message 접두사로 WAYBILL_NOT_DISPATCHABLE 를 싣는다.
       await expect(
         services.batches.addShipment(
           batch.batchId,
@@ -892,7 +883,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
           `release-add-failed-${randomUUID()}`,
           manager,
         ),
-      ).rejects.toMatchObject({ response: { code: 'SHIPMENT_INVOICE_NOT_READY' } });
+      ).rejects.toThrow(/WAYBILL_NOT_DISPATCHABLE/);
       const worker = { id: randomUUID(), roles: ['warehouse_worker'] };
       const picked = await totePick(services, successWorld, batch.batchId, added[0].workItem.id, worker, [1, 1]);
       const packed = await services.batches.claimPacker(
@@ -925,19 +916,6 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       expect(packed.workItem.status).toBe('packing');
       expect(dispatched).toMatchObject({ status: 'shipped', attemptNo: 1 });
 
-      const operations = await tx
-        .select({
-          id: wmsTables.invoiceOperations.id,
-          status: wmsTables.invoiceOperations.status,
-          lastError: wmsTables.invoiceOperations.lastError,
-        })
-        .from(wmsTables.invoiceOperations)
-        .where(
-          inArray(
-            wmsTables.invoiceOperations.id,
-            issueOperations.map((operation) => operation.operationId),
-          ),
-        );
       const attempts = await tx
         .select()
         .from(wmsTables.dispatchAttempts)
@@ -962,11 +940,18 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
         .select({ qty: wmsTables.batchInventorySessionBalances.qty })
         .from(wmsTables.batchInventorySessionBalances)
         .where(eq(wmsTables.batchInventorySessionBalances.sessionId, picked.sessionId));
-      const failedOperation = operations.find((operation) => operation.id === issueOperations[0].operationId);
-      const succeededOperation = operations.find((operation) => operation.id === issueOperations[1].operationId);
-      expect(failedOperation?.status).toBe('recovery_required');
-      expect(failedOperation?.lastError).toContain('provider unavailable for shipment A');
-      expect(succeededOperation?.status).toBe('succeeded');
+      // 격리 증거(waybill 등가물): A 는 dispatchable waybill 이 없어 waybill 행 자체가 없고, B 의 registered
+      // waybill 은 dispatch 로 used 로 전이했다. A 의 실패는 B 의 등록→발송에 전혀 번지지 않았다.
+      const waybillsA = await tx
+        .select()
+        .from(wmsTables.waybills)
+        .where(eq(wmsTables.waybills.shipmentId, world.shipments[0].shipment.id));
+      const [waybillB] = await tx
+        .select()
+        .from(wmsTables.waybills)
+        .where(eq(wmsTables.waybills.shipmentId, world.shipments[1].shipment.id));
+      expect(waybillsA).toHaveLength(0);
+      expect(waybillB).toMatchObject({ status: 'used' });
       expect(attempts).toHaveLength(1);
       expect(sources).toEqual([expect.objectContaining({ shipmentLineId: world.shipments[1].line.id, qty: 2 })]);
       expect(shipEvents).toEqual([expect.objectContaining({ transitionType: 'SHIP', quantity: 2 })]);
@@ -998,7 +983,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
   it('07 discrete multi-worker claim, manager handoff, and packer claim use the production lease workflow', async () => {
     await inRollbackTx(db, async (tx) => {
       const world = await seedWorld(tx, [2], ['discrete']);
-      await seedIssuedInvoices(tx, world);
+      await seedRegisteredWaybills(tx, world);
       const services = makeServices(tx);
       const manager = { id: randomUUID(), roles: ['master'] };
       const workerA = { id: randomUUID(), roles: ['warehouse_worker'] };
@@ -1064,7 +1049,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
   it('08 aggregate collect/sort completes with source-bucket and session quantity conservation', async () => {
     await inRollbackTx(db, async (tx) => {
       const world = await seedWorld(tx, [4], ['aggregate_then_sort']);
-      await seedIssuedInvoices(tx, world);
+      await seedRegisteredWaybills(tx, world);
       const services = makeServices(tx);
       const manager = { id: randomUUID(), roles: ['master'] };
       const worker = { id: randomUUID(), roles: ['warehouse_worker'] };
@@ -1112,7 +1097,7 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
   it('09 pick-to-tote scans one shipment across multiple physical totes and consolidates custody for packing', async () => {
     await inRollbackTx(db, async (tx) => {
       const world = await seedWorld(tx, [4], ['pick_to_tote']);
-      await seedIssuedInvoices(tx, world);
+      await seedRegisteredWaybills(tx, world);
       const services = makeServices(tx);
       const manager = { id: randomUUID(), roles: ['master'] };
       const worker = { id: randomUUID(), roles: ['warehouse_worker'] };
@@ -1155,9 +1140,8 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
   it('10 short pick isolates one shipment and preserves its sibling reservation and active work', async () => {
     await inRollbackTx(db, async (tx) => {
       const world = await seedWorld(tx, [5, 5], ['aggregate_then_sort']);
-      await seedIssuedInvoices(tx, world);
-      const provider = deliveryProvider();
-      const services = makeServices(tx, provider);
+      await seedRegisteredWaybills(tx, world);
+      const services = makeServices(tx);
       const manager = { id: randomUUID(), roles: ['master'] };
       const worker = { id: randomUUID(), roles: ['master', 'warehouse_worker'] };
       const { batch, added } = await createBatchWithShipments(services, world, manager);
@@ -1219,12 +1203,14 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
         `short-pick-report-${randomUUID()}`,
         worker,
       );
+      // 플랜3: short-pick.report 는 동기 완료 — registered waybill 을 report tx 안에서 void 하고 인라인 finalize
+      // 한다. 구 async invoice-void→resume(invoiceOperationId 추적) 2단계는 사라졌다.
       expect(reported).toMatchObject({
         shipmentId: world.shipments[0].shipment.id,
-        operationStatus: 'pending',
+        operationStatus: 'completed',
         workItemId: added[0].workItem.id,
       });
-      expect(reported.invoiceOperationId).not.toBeNull();
+      expect(reported.invoiceOperationId).toBeNull();
 
       const reservationsA = await tx
         .select()
@@ -1242,8 +1228,13 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
       );
       expect(reservationsB).toEqual([expect.objectContaining({ status: 'confirmed', quantity: 5 })]);
 
-      const completedInvoice = await services.invoices.processOperation(reported.invoiceOperationId!);
-      expect(completedInvoice.status).toBe('succeeded');
+      // 동기 end-state: report tx 안에서 A 의 registered waybill 이 이미 voided 로 종결됐다(구 invoice void 등가물).
+      const [waybillA] = await tx
+        .select()
+        .from(wmsTables.waybills)
+        .where(eq(wmsTables.waybills.shipmentId, world.shipments[0].shipment.id));
+      expect(waybillA).toMatchObject({ status: 'voided' });
+      expect(waybillA.voidedAt).not.toBeNull();
       const [shipmentA] = await tx
         .select()
         .from(wmsTables.shipments)
@@ -1282,7 +1273,6 @@ describeIfDb('Outbound V2 warehouse release scenarios 06-10', () => {
         balanceQty: 5,
       });
       expect(operation).toMatchObject({ status: 'completed', lastError: null });
-      expect(provider.cancelInvoice).toHaveBeenCalledTimes(1);
       await expectCoreCheckpoint(tx, world, { onHandQty: 10, reservedQty: 9, availableQty: 1 });
       await expectArtifactCardinality(tx, world);
     });

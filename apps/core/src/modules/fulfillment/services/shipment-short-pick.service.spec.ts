@@ -33,7 +33,7 @@ function makeService(overrides: Record<string, unknown> = {}) {
   const authorization = { getScopesByRoles: jest.fn().mockResolvedValue(new Set([FULFILLMENT_SCOPE.SHIPMENT_REOPEN])) };
   const audit = { logUserActionRequired: jest.fn().mockResolvedValue(undefined) };
   const workflowGate = { assertV2MutationAllowed: jest.fn() };
-  const invoices = { void: jest.fn() };
+  const waybills = { void: jest.fn(), getActiveWaybill: jest.fn().mockResolvedValue(null) };
   const session = {
     approveShortage: jest.fn().mockResolvedValue(undefined),
     returnShortPickCustody: jest.fn().mockResolvedValue(undefined),
@@ -50,7 +50,7 @@ function makeService(overrides: Record<string, unknown> = {}) {
     authorization,
     audit,
     workflowGate,
-    invoices,
+    waybills,
     session,
     reservations,
     planning,
@@ -63,7 +63,7 @@ function makeService(overrides: Record<string, unknown> = {}) {
     dependencies.authorization as never,
     dependencies.audit as never,
     dependencies.workflowGate as never,
-    dependencies.invoices as never,
+    dependencies.waybills as never,
     dependencies.session as never,
     dependencies.reservations as never,
     dependencies.planning as never,
@@ -204,26 +204,6 @@ describe('ShipmentShortPickService', () => {
       rejected = error;
     }
     expect(rejected).toMatchObject({ response: { code: 'SHORT_PICK_SESSION_PLAN_MISMATCH' } });
-  });
-
-  it('does not overwrite a concurrently completed operation with recovery_required', async () => {
-    const { service, audit } = makeService();
-    const update = jest.fn();
-    const tx = {
-      select: jest.fn(
-        () => new QueryResult([{ operatorId: '77777777-7777-4777-8777-777777777777', status: 'completed' }]),
-      ),
-      update,
-    } as unknown as DbTx;
-
-    await service.markInvoiceRecoveryRequired(
-      '88888888-8888-4888-8888-888888888888',
-      new Error('late invoice callback'),
-      tx,
-    );
-
-    expect(update).not.toHaveBeenCalled();
-    expect(audit.logUserActionRequired).not.toHaveBeenCalled();
   });
 
   it('locks the short-pick operation before entering the shipment reservation graph on resume', async () => {

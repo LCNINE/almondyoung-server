@@ -636,13 +636,13 @@ export interface ShipmentAdminLine {
   reservations: ShipmentLineReservation[];
 }
 
-export interface ShipmentInvoiceHistory {
+export interface ShipmentWaybillHistory {
   id: string;
   status: string;
-  trackingNo: string;
-  carrier: string | null;
-  manifestVersion: number | null;
-  issuedAt: string;
+  trackingNo: string | null;
+  carrier: string;
+  manifestVersion: number;
+  issuedAt: string | null;
   voidedAt: string | null;
 }
 
@@ -666,7 +666,7 @@ export interface ShipmentDispatchAttemptHistory {
   id: string;
   attemptNo: number;
   status: string;
-  invoiceId?: string | null;
+  waybillId?: string | null;
   dispatchedAt: string | null;
   recalledAt: string | null;
   recoveryCode: string | null;
@@ -708,7 +708,7 @@ export interface ShipmentAdminDetail {
   channelProjectionStatus?: string | null;
   manualAdjustmentRequired?: boolean;
   lines: ShipmentAdminLine[];
-  invoices: ShipmentInvoiceHistory[];
+  waybills: ShipmentWaybillHistory[];
   workItems: ShipmentWorkItemHistory[];
   dispatchAttempts: ShipmentDispatchAttemptHistory[];
   operations: ShipmentOperationHistory[];
@@ -824,33 +824,6 @@ export interface ShipmentConsolidationResponse {
     fulfillmentOrderItemId: string;
     sourceLineIds: string[];
   }>;
-}
-
-export interface IssueShipmentInvoiceRequest extends ShipmentCommandReason {
-  expectedManifestVersion: number;
-  provider: 'goodsflow' | 'hanjin';
-  carrierCode: string;
-}
-
-export interface VoidShipmentInvoiceRequest extends ShipmentCommandReason {
-  resumeOperationId?: string;
-}
-
-export interface InvoiceOperation {
-  operationId: string;
-  shipmentId: string;
-  invoiceId: string | null;
-  operation: 'issue' | 'void';
-  status:
-    | 'pending'
-    | 'in_progress'
-    | 'succeeded'
-    | 'failed'
-    | 'recovery_required';
-  attempts: number;
-  resumeOperationId: string | null;
-  nextRetryAt: string | null;
-  lastError: string | null;
 }
 
 export type ShipmentRecallReason =
@@ -969,7 +942,7 @@ export interface EligibleShipmentV2 {
   recipientHash: string;
   totalItems: number;
   totalQty: number;
-  invoiceId: string;
+  waybillId: string;
   trackingNo: string;
 }
 

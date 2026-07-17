@@ -328,23 +328,6 @@ export const useLegacyPurchaseOrder = (id: string) => {
   });
 };
 
-// 송장 관련 쿼리
-export const useInvoiceOperation = (operationId: string) => {
-  return useQuery({
-    queryKey: orderQueryKeys.invoiceOperation(operationId),
-    queryFn: () => orders.invoices.getOperation(operationId),
-    enabled: !!operationId,
-    refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      return status === 'pending' ||
-        status === 'in_progress' ||
-        status === 'recovery_required'
-        ? 2_000
-        : false;
-    },
-  });
-};
-
 // 레거시 직접 배송 쿼리 (호환성)
 export const useDirectShips = () => {
   return useQuery({

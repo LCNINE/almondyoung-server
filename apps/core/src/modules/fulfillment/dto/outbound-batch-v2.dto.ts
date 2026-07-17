@@ -112,7 +112,7 @@ export class EligibleShipmentResponseDto {
   recipientHash: string;
   totalItems: number;
   totalQty: number;
-  invoiceId: string;
+  waybillId: string;
   trackingNo: string;
 }
 

@@ -119,12 +119,12 @@ export class FulfillmentReconciliationService {
         FROM stock_reservations r
        WHERE r.status = 'confirmed' AND r.fulfillment_order_item_id IS NOT NULL AND r.shipment_line_id IS NULL
       UNION ALL
-      SELECT 'ACTIVE_INVOICE_VERSION', i.id::text,
-             concat('invoiceManifest=', coalesce(i.manifest_version::text, 'null'),
+      SELECT 'ACTIVE_INVOICE_VERSION', w.id::text,
+             concat('waybillManifest=', coalesce(w.manifest_version::text, 'null'),
                     ', shipmentManifest=', s.manifest_version)
-        FROM invoices i
-        JOIN shipments s ON s.id = i.shipment_id
-       WHERE i.status <> 'voided' AND i.manifest_version IS DISTINCT FROM s.manifest_version
+        FROM waybills w
+        JOIN shipments s ON s.id = w.shipment_id
+       WHERE w.status NOT IN ('voided', 'failed', 'abandoned') AND w.manifest_version IS DISTINCT FROM s.manifest_version
       UNION ALL
       SELECT 'SESSION_CONSERVATION', bis.id::text,
              concat('handedIn=', bis.handed_in_qty, ', remaining=', coalesce(sr.qty, 0),

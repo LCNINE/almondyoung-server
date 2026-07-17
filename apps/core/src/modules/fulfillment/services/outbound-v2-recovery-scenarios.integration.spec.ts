@@ -23,10 +23,14 @@ import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentProgressService } from './fulfillment-progress.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
-import { InvoiceOrchestrator, canonicalShipmentRecipientHash } from './invoice-orchestrator.service';
+import { canonicalFulfillmentRequestHash } from './fulfillment-command.service';
 import { ShipmentDispatchService } from './shipment-dispatch.service';
 import { OutboundBatchOrchestrator } from './outbound-batch-orchestrator.service';
 import { DiscretePickingStrategy } from '../picking/discrete-picking.strategy';
+import { WaybillManager } from '../waybill/waybill.manager';
+import { WaybillReader } from '../waybill/waybill.reader';
+import { WaybillRepository } from '../waybill/waybill.repository';
+import { WaybillService } from '../waybill/waybill.service';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -118,15 +122,19 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
       new FulfillmentInvariantService(),
     );
     const audit = new AuditService(dbService);
-    const invoices = new InvoiceOrchestrator(
-      dbService,
-      new FulfillmentCommandService(dbService),
-      new FulfillmentInvariantService(),
-      audit,
-      {} as never,
-      {} as never,
-      workflow,
-      {} as never,
+    // dispatch 는 WaybillService.assertDispatchable/markUsed(읽기+CAS)만 소비한다 — carrier registry/issue
+    // machine/commands/config 는 이 경로에서 호출되지 않아 stub 으로 충분(shipment-dispatch.integration.spec 패턴).
+    const waybillRepo = new WaybillRepository(dbService);
+    const waybills = new WaybillService(
+      new WaybillManager(
+        new WaybillReader(dbService),
+        waybillRepo,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        dbService,
+      ),
     );
     return new ShipmentDispatchService(
       dbService,
@@ -134,7 +142,7 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
       inventory,
       new BatchInventorySessionService(dbService, guard, audit),
       reservations,
-      invoices,
+      waybills,
       new BarcodeService(dbService),
       fulfillmentOutbox,
       audit,
@@ -283,18 +291,18 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
         sourceStockVersion: ledger.version,
       })
       .returning();
-    const [invoice] = await tx
-      .insert(wmsTables.invoices)
+    // 플랜3: dispatch 는 issued invoice 대신 registered waybill 을 소비한다(assertDispatchable→markUsed).
+    // manifestVersion/recipientHash 가 shipment 와 일치해야 assertDispatchable 을 통과한다.
+    const [waybill] = await tx
+      .insert(wmsTables.waybills)
       .values({
-        trackingNo: `RECOVERY-TRACK-${suffix}`,
-        carrier: 'CJ',
-        issueMethod: 'self',
-        externalServiceId: `recovery-service-${suffix}`,
-        issuedForFulfillmentOrderId: fulfillmentOrder.id,
         shipmentId: shipment.id,
+        source: 'manual',
+        carrier: 'HANJIN',
+        status: 'registered',
+        trackingNo: `RECOVERY-TRACK-${suffix}`,
         manifestVersion: shipment.manifestVersion,
-        recipientHash: canonicalShipmentRecipientHash(recipientSnapshot),
-        status: 'issued',
+        recipientHash: canonicalFulfillmentRequestHash(recipientSnapshot),
       })
       .returning();
     return {
@@ -302,7 +310,7 @@ describeIfDb('Outbound V2 recovery release scenarios 16-17 (PostgreSQL integrati
       barcode,
       batch,
       fulfillmentOrder,
-      invoice,
+      waybill,
       item,
       ledger,
       line,

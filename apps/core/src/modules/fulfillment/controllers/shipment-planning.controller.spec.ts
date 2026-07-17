@@ -7,7 +7,7 @@ describe('Shipment planning read contract', () => {
       getShipmentDetail: jest.fn().mockResolvedValue({
         id: 'shipment-1',
         lines: [{ id: 'line-1', reservedQty: 2, inspectedQty: 1, lineVersion: 3 }],
-        invoices: [],
+        waybills: [],
         dispatchAttempts: [],
         operations: [{ operationId: 'operation-1', status: 'recovery_required', lastError: 'provider timeout' }],
       }),
