@@ -39,19 +39,9 @@ export const almondyoungEnvSchema = z
     ELASTICSEARCH_PASSWORD: z.string().optional(),
     FILE_SERVICE_URL: z.string().url().optional(),
 
-    // Goodsflow (Fulfillment) — 한진 전환 후 기존 invoice 조회/취소 호환용으로만 유지
-    GOODSFLOW_API_URL: z.string().url().optional(),
-    GOODSFLOW_API_KEY: z.string().optional(),
-    GOODSFLOW_CENTER_CODE: z.string().optional(),
-
     // 한진택배 (Fulfillment) — 계약 승인 전까지 미설정. 미설정 시 hanjin 발행은 503 반환.
-    HANJIN_API_URL: z.string().url().optional(),
     HANJIN_API_KEY: z.string().optional(),
-    HANJIN_CUSTOMER_CODE: z.string().optional(),
-    HANJIN_SENDER_CODE: z.string().optional(),
-    HANJIN_PICKUP_SITE_CODE: z.string().optional(),
     HANJIN_SENDER_NAME: z.string().optional(),
-    HANJIN_SENDER_PHONE: z.string().optional(),
     HANJIN_TIMEOUT_MS: z.string().regex(/^\d+$/).optional(),
 
     // Waybill(한진 self-print) — 신규 계약 (플랜 3에서 구 HANJIN_* 제거)
