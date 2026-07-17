@@ -33,7 +33,7 @@ function makeService(overrides: Record<string, unknown> = {}) {
   const authorization = { getScopesByRoles: jest.fn().mockResolvedValue(new Set([FULFILLMENT_SCOPE.SHIPMENT_REOPEN])) };
   const audit = { logUserActionRequired: jest.fn().mockResolvedValue(undefined) };
   const workflowGate = { assertV2MutationAllowed: jest.fn() };
-  const invoices = { void: jest.fn() };
+  const waybills = { void: jest.fn(), getActiveWaybill: jest.fn().mockResolvedValue(null) };
   const session = {
     approveShortage: jest.fn().mockResolvedValue(undefined),
     returnShortPickCustody: jest.fn().mockResolvedValue(undefined),
@@ -50,7 +50,7 @@ function makeService(overrides: Record<string, unknown> = {}) {
     authorization,
     audit,
     workflowGate,
-    invoices,
+    waybills,
     session,
     reservations,
     planning,
@@ -63,7 +63,7 @@ function makeService(overrides: Record<string, unknown> = {}) {
     dependencies.authorization as never,
     dependencies.audit as never,
     dependencies.workflowGate as never,
-    dependencies.invoices as never,
+    dependencies.waybills as never,
     dependencies.session as never,
     dependencies.reservations as never,
     dependencies.planning as never,
