@@ -175,4 +175,68 @@ describeIfDb('WaybillManager.issueForShipment (DB integration)', () => {
       ).rejects.toThrow(/WAYBILL_TRACKING_EXISTS/);
     });
   });
+
+  describe('void + reissue', () => {
+    it('voids a registered waybill before dispatch', async () => {
+      const seed = await db.transaction((tx) => seedPlannedShipmentForWaybill(tx as never, deps));
+      const mgr = manager(new CarrierGatewayRegistry([fakeCarrierGateway()]));
+      const wb = await mgr.registerManual(
+        seed.shipmentId,
+        {
+          carrier: 'HANJIN',
+          trackingNo: `M-${randomUUID().slice(0, 8)}`,
+          expectedManifestVersion: seed.manifestVersion,
+        },
+        `idem-${randomUUID()}`,
+        actor,
+      );
+      const voided = await mgr.void(wb.id, { reason: 'wrong address' }, `idem-${randomUUID()}`, actor);
+      expect(voided.status).toBe('voided');
+      expect(voided.voidedAt).toBeTruthy();
+    });
+
+    it('rejects voiding a used waybill', async () => {
+      const seed = await db.transaction((tx) => seedPlannedShipmentForWaybill(tx as never, deps));
+      const mgr = manager(new CarrierGatewayRegistry([fakeCarrierGateway()]));
+      const wb = await mgr.registerManual(
+        seed.shipmentId,
+        {
+          carrier: 'HANJIN',
+          trackingNo: `M-${randomUUID().slice(0, 8)}`,
+          expectedManifestVersion: seed.manifestVersion,
+        },
+        `idem-${randomUUID()}`,
+        actor,
+      );
+      await db.update(wmsTables.waybills).set({ status: 'used' }).where(eq(wmsTables.waybills.id, wb.id));
+      await expect(mgr.void(wb.id, { reason: 'x' }, `idem-${randomUUID()}`, actor)).rejects.toThrow(
+        /WAYBILL_ALREADY_DISPATCHED/,
+      );
+    });
+
+    it('reissue voids the active waybill and issues a fresh one', async () => {
+      const seed = await db.transaction((tx) => seedPlannedShipmentForWaybill(tx as never, deps));
+      const mgr = manager(new CarrierGatewayRegistry([fakeCarrierGateway()]));
+      const first = await mgr.registerManual(
+        seed.shipmentId,
+        {
+          carrier: 'HANJIN',
+          trackingNo: `M-${randomUUID().slice(0, 8)}`,
+          expectedManifestVersion: seed.manifestVersion,
+        },
+        `idem-${randomUUID()}`,
+        actor,
+      );
+      const second = await mgr.reissue(
+        seed.shipmentId,
+        { carrier: 'HANJIN', expectedManifestVersion: seed.manifestVersion },
+        `idem-${randomUUID()}`,
+        actor,
+      );
+      expect(second.id).not.toBe(first.id);
+      expect(second.status).toBe('registered');
+      const [old] = await db.select().from(wmsTables.waybills).where(eq(wmsTables.waybills.id, first.id));
+      expect(old.status).toBe('voided');
+    });
+  });
 });

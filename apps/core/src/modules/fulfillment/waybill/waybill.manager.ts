@@ -1,7 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { BadRequestError, ConflictError } from '@app/shared';
+import { eq } from 'drizzle-orm';
+import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { DbService, InjectTypedDb } from '@app/db';
-import { DbTx, inventorySchema } from '../../inventory/schema/inventory.schema';
+import { DbTx, inventorySchema, inventoryTables } from '../../inventory/schema/inventory.schema';
 import { FulfillmentCommandService } from '../services/fulfillment-command.service';
 import { HANJIN_CONFIG } from './waybill.tokens';
 import type { HanjinConfig } from './carrier/hanjin/hanjin.config';
@@ -148,6 +149,62 @@ export class WaybillManager {
       },
       tx,
     );
+  }
+
+  // 발송 전 로컬 취소. 외부 캐리어 호출 없음 — used(이미 사용) 또는 shipment 가 발송 이후 상태면 거부.
+  // 순서 중요: used/발송이후 체크가 !== 'registered' 체크보다 먼저 — used 는 ALREADY_DISPATCHED 로 보고해야 하고
+  // NOT_VOIDABLE 로 뭉뚱그리면 안 된다(브리프 명시).
+  async void(
+    waybillId: string,
+    dto: { reason: string },
+    idempotencyKey: string,
+    actor: Actor,
+    tx?: DbTx,
+  ): Promise<WaybillRow> {
+    return this.commands.execute<WaybillRow>(
+      {
+        commandType: 'shipment.waybill.void',
+        idempotencyKey,
+        canonicalRequest: { actorId: actor.id, waybillId, ...dto },
+      },
+      async (trx) => {
+        const wb = await this.repo.findById(trx, waybillId);
+        if (!wb) throw new NotFoundError(`${WAYBILL.ERROR.NOT_FOUND}: ${waybillId}`);
+        const [shipment] = await trx
+          .select({ status: inventoryTables.shipments.status })
+          .from(inventoryTables.shipments)
+          .where(eq(inventoryTables.shipments.id, wb.shipmentId))
+          .limit(1);
+        if (wb.status === 'used' || (shipment && ['shipped', 'in_transit', 'delivered'].includes(shipment.status))) {
+          throw new ConflictError(`${WAYBILL.ERROR.ALREADY_DISPATCHED}: ${waybillId}`);
+        }
+        if (wb.status !== 'registered') {
+          throw new ConflictError(`${WAYBILL.ERROR.NOT_VOIDABLE}: ${waybillId} is ${wb.status}`);
+        }
+        const ok = await this.repo.casToVoided(trx, waybillId, new Date());
+        if (!ok) throw new ConflictError(`${WAYBILL.ERROR.NOT_VOIDABLE}: ${waybillId} changed concurrently`);
+        const row = await this.repo.findById(trx, waybillId);
+        // waybills 는 hard-delete 경로가 없다 — 방금 CAS 로 성공적으로 voided 처리한 같은 트랜잭션 안에서
+        // 재조회이므로 undefined 일 수 없다. findById 시그니처가 넓어(단건 조회 재사용) 여기서만 좁힌다.
+        return { response: row as WaybillRow, resourceType: 'waybill', resourceId: waybillId };
+      },
+      tx,
+    );
+  }
+
+  // 활성 waybill 을 void 후 새로 발급(§11) — 원자적 한 커맨드처럼 호출자에게 노출.
+  // carrier I/O 포함(issueForShipment 경유) → tx? 를 받지 않는다.
+  async reissue(shipmentId: string, opts: IssueOpts, idempotencyKey: string, actor: Actor): Promise<WaybillRow> {
+    const active = await this.dbService.run((trx) => this.reader.getActiveWaybill(trx, shipmentId));
+    if (active && active.status === 'registered') {
+      await this.void(active.id, { reason: 'reissue' }, `${idempotencyKey}:void`, actor);
+    } else if (active) {
+      // pending/allocated 교착 상태의 waybill 은 운영자 전용 abandon 경로로만 해제(§11) — reissue 로 우회 금지.
+      throw new ConflictError(
+        `${WAYBILL.ERROR.ABANDON_NOT_ALLOWED}: active waybill is ${active.status}; operator abandon required before reissue`,
+      );
+    }
+    return this.issueForShipment(shipmentId, opts, `${idempotencyKey}:issue`, actor);
   }
 }
 
