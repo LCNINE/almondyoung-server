@@ -239,6 +239,30 @@ describeIfDb('WaybillManager.issueForShipment (DB integration)', () => {
       const [old] = await db.select().from(wmsTables.waybills).where(eq(wmsTables.waybills.id, first.id));
       expect(old.status).toBe('voided');
     });
+
+    it('reissue over a used active waybill rejects with ALREADY_DISPATCHED (not ABANDON_NOT_ALLOWED)', async () => {
+      const seed = await db.transaction((tx) => seedPlannedShipmentForWaybill(tx as never, deps));
+      const mgr = manager(new CarrierGatewayRegistry([fakeCarrierGateway()]));
+      const wb = await mgr.registerManual(
+        seed.shipmentId,
+        {
+          carrier: 'HANJIN',
+          trackingNo: `M-${randomUUID().slice(0, 8)}`,
+          expectedManifestVersion: seed.manifestVersion,
+        },
+        `idem-${randomUUID()}`,
+        actor,
+      );
+      await db.update(wmsTables.waybills).set({ status: 'used' }).where(eq(wmsTables.waybills.id, wb.id));
+      await expect(
+        mgr.reissue(
+          seed.shipmentId,
+          { carrier: 'HANJIN', expectedManifestVersion: seed.manifestVersion },
+          `idem-${randomUUID()}`,
+          actor,
+        ),
+      ).rejects.toThrow(/WAYBILL_ALREADY_DISPATCHED/);
+    });
   });
 
   describe('seam: assertDispatchable + markUsed', () => {

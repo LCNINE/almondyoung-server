@@ -84,17 +84,13 @@ export class WaybillRepository {
   }
 
   // 활성 waybill 을 registered/used → used. 멱등(used→used 매칭) + 엄격(0행이면 호출자가 예외).
+  // DISPATCHABLE({registered,used})는 TERMINAL({voided,failed,abandoned})와 서로소이므로 notInArray(TERMINAL)
+  // 은 no-op — inArray(DISPATCHABLE) 하나로 충분(중복 가드 제거, 최종리뷰 하드닝 #5).
   async casToUsed(trx: DbTx, shipmentId: string): Promise<number> {
     const rows = await trx
       .update(T)
       .set({ status: 'used', updatedAt: new Date() })
-      .where(
-        and(
-          eq(T.shipmentId, shipmentId),
-          inArray(T.status, [...WAYBILL_DISPATCHABLE_STATUSES]),
-          notInArray(T.status, [...WAYBILL_TERMINAL_STATUSES]),
-        ),
-      )
+      .where(and(eq(T.shipmentId, shipmentId), inArray(T.status, [...WAYBILL_DISPATCHABLE_STATUSES])))
       .returning({ id: T.id });
     return rows.length;
   }

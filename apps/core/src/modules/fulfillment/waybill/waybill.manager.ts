@@ -12,7 +12,7 @@ import { assembleWaybillRequest, parseRecipient } from './waybill-request.assemb
 import { WaybillIssueMachine } from './waybill-issue.machine';
 import { WaybillReader } from './waybill.reader';
 import { WaybillRepository } from './waybill.repository';
-import { WAYBILL } from './waybill.constants';
+import { WAYBILL, WAYBILL_DISPATCHABLE_STATUSES } from './waybill.constants';
 import type { BatchResultItem, WaybillRow } from './waybill.types';
 
 export interface IssueOpts {
@@ -258,6 +258,10 @@ export class WaybillManager {
     const active = await this.dbService.run((trx) => this.reader.getActiveWaybill(trx, shipmentId));
     if (active && active.status === 'registered') {
       await this.void(active.id, { reason: 'reissue' }, `${idempotencyKey}:void`, actor);
+    } else if (active && active.status === 'used') {
+      // 이미 발송에 쓰인 waybill 은 void 불가 대상과 동일하게 ALREADY_DISPATCHED — ABANDON_NOT_ALLOWED 로
+      // 뭉뚱그리면 안 된다(§11, void 의 순서 원칙과 동일한 이유. 최종리뷰 하드닝 #3).
+      throw new ConflictError(`${WAYBILL.ERROR.ALREADY_DISPATCHED}: active waybill ${active.id} is used`);
     } else if (active) {
       // pending/allocated 교착 상태의 waybill 은 운영자 전용 abandon 경로로만 해제(§11) — reissue 로 우회 금지.
       throw new ConflictError(
@@ -282,7 +286,7 @@ export class WaybillManager {
         .limit(1);
       if (!shipment) throw new NotFoundError(`${WAYBILL.ERROR.SHIPMENT_NOT_FOUND}: ${shipmentId}`);
       const wb = await this.reader.getActiveWaybill(trx, shipmentId);
-      if (!wb || !['registered', 'used'].includes(wb.status)) {
+      if (!wb || !WAYBILL_DISPATCHABLE_STATUSES.some((s) => s === wb.status)) {
         throw new ConflictError(
           `${WAYBILL.ERROR.NOT_DISPATCHABLE}: shipment ${shipmentId} needs one registered waybill`,
         );
@@ -302,6 +306,11 @@ export class WaybillManager {
 
   // registered/used → used. casToUsed(Task 4) 의 WHERE 가 {registered, used} 를 모두 매칭하므로
   // used→used 재호출도 count 1 로 통과(멱등). 매칭 0행(활성 waybill 없음/이미 종료)이면 엄격하게 예외.
+  //
+  // 중요(seam, 최종리뷰 하드닝 #1): markUsed 는 manifest/recipient staleness 를 재검증하지 않는다 —
+  // 그 검증은 assertDispatchable 의 책임이다. 호출자(플랜 3 dispatch)는 반드시 같은 트랜잭션 안에서
+  // assertDispatchable(shipmentId, tx) 를 먼저 호출한 직후 markUsed(shipmentId, tx) 를 호출해야 한다.
+  // 이 순서를 어기면(assertDispatchable 없이 markUsed 만 호출) stale waybill 이 그대로 used 처리될 수 있다.
   async markUsed(shipmentId: string, tx?: DbTx): Promise<void> {
     await this.dbService.run(async (trx) => {
       const affected = await this.repo.casToUsed(trx, shipmentId);

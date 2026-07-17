@@ -82,6 +82,7 @@ spec §5·§8·§9·§10·§11 구현. writing-plans 로 상세 TDD 플랜 작�
 - **소비자 rewire**(InvoiceOrchestrator 주입 → WaybillService): `services/{shipment-dispatch, shipment-recall, shipment-short-pick, outbound-batch-orchestrator}.ts`, `picking/{discrete-picking, aggregate-then-sort, pick-to-tote}.strategy.ts`, `controllers/shipment-invoice.controller.ts`(→ WaybillController), `fulfillment.module.ts`. `wmsTables.invoices` 직접 read → `getActiveWaybill` (`fulfillment-invariant`·`consolidation`·`shipment-planning`).
 - **삭제**: `invoice-orchestrator.service.ts`, `invoice-recovery.worker.ts`, `delivery-provider.interface.ts`, `goodsflow-delivery.provider*.ts`, `hanjin-delivery.provider*.ts`, `dto/shipment-invoice.dto.ts`, 구 `shipment-invoice.controller.ts`, `invoices`/`invoiceOperations` 테이블 + 구 invoice enum + 구 goodsflow/hanjin env.
 - **계승 필수(회귀 금지)**: 어제 머지된 self 경로(dispatch-gate self 완화·void 발송전 안전범위·`assertProfileComplete` 미적용)를 `registerManual` 로. 기존 outbound 통합 테스트로 무회귀 고정.
+- **seam 순서(최종리뷰 하드닝)**: dispatch must call assertDispatchable → markUsed in one tx (markUsed doesn't re-check staleness).
 
 ## 6. 교훈 / 주의 (플랜 2·3에 그대로 적용)
 

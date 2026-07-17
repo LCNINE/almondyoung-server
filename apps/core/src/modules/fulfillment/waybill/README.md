@@ -38,16 +38,20 @@ Controller → Service → Manager → Reader / Repository
 ## 상태머신 (`WaybillIssueMachine`)
 
 ```
-pending ──allocate(print-wbl)──▶ allocated ──register(insert-order)──▶ registered ──markUsed──▶ used
-   │                                  │                                     │
-   │ unknown_outcome × 5 시도         │ unknown_outcome(무제한, 자동포기 금지)│ void(발송 전만)
-   ▼                                  ▼                                     ▼
-abandoned                    (drive 재호출로 계속 재시도)                 voided
-   │
-   │ definitive_rejection(즉시)
-   ▼
-failed
+pending ──allocate(print-wbl) 성공──▶ allocated ──register(insert-order) 성공──▶ registered ──markUsed──▶ used
+   │                                      │                                          │
+   │ unknown_outcome × 5 시도             │ unknown_outcome(무제한, 자동포기 금지 —  │ void(발송 전만)
+   ▼                                      │ drive 재호출로 계속 재시도)              ▼
+abandoned (종료, pending 전용)            ▼                                     voided (종료)
+                                    (allocated 유지 — 종료 아님)
+
+pending ──definitive_rejection(즉시)──▶ failed (종료)
+allocated ──definitive_rejection(즉시)──▶ failed (종료)
 ```
+
+`failed`와 `abandoned`는 서로 독립된 종료 상태다 — `abandoned`(pending 전용, CAP 초과 자동포기)에서 `failed`로
+가는 전이는 없다. `failed`는 `pending`/`allocated` 각각에서 `definitive_rejection` 이 발생했을 때 직접
+도달한다.
 
 - `drive(waybillId, req, tx?)` 는 저장된 행을 최종 상태(`registered`/`failed`/`abandoned`/정지된 `pending`)까지
   진행시킨다. 캐리어 HTTP 호출은 트랜잭션 밖에서, 각 상태 전이는 짧은 CAS 트랜잭션(`casToAllocated`/
@@ -69,7 +73,8 @@ picking/recall/short-pick/planning/invariant/consolidation)도 호출하지 않�
 - `assertDispatchable(shipmentId, tx?)` — 발송 가능 여부 검증(`registered`/`used` + carrier/trackingNo +
   manifestVersion/recipientHash 일치). 불일치 시 `WAYBILL_NOT_DISPATCHABLE`/`WAYBILL_STALE`.
 - `markUsed(shipmentId, tx?)` — `registered`/`used` → `used`. `used`→`used` 재호출도 멱등 성공(카운트 1개
-  매칭), 매칭 0행이면 엄격하게 예외.
+  매칭), 매칭 0행이면 엄격하게 예외. **dispatch 는 `assertDispatchable → markUsed` 를 한 tx 안에서 순서대로
+  호출해야 한다**(`markUsed` 자체는 staleness 를 재검증하지 않는다).
 - `getActiveWaybill(shipmentId, tx?)` — 활성(비종료) 운송장 1건 조회.
 - `issueBatch(shipmentIds, opts, idemKey, actor)` — bounded 병렬(§10, `WAYBILL.BATCH_CONCURRENCY`=8) +
   시간예산(`WAYBILL.BATCH_TIME_BUDGET_MS`=45s) 조기반환. 입력 shipmentId 전부가 출력에 나타난다(silent
