@@ -2,7 +2,6 @@
 import { ForbiddenException } from '@nestjs/common';
 import { SCOPE_AUTHORIZATION_DECISION_BRAND } from '@app/authorization';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
-import { canonicalShipmentRecipientHash } from './invoice-orchestrator.service';
 import { ShipmentDispatchService } from './shipment-dispatch.service';
 
 const FORCE_AUTHORIZATION = Object.freeze({
@@ -22,7 +21,7 @@ const IDS = {
   warehouse: '00000000-0000-4000-8000-000000000008',
   source: '00000000-0000-4000-8000-000000000009',
   extraSource: '00000000-0000-4000-8000-000000000011',
-  invoice: '00000000-0000-4000-8000-00000000000a',
+  waybill: '00000000-0000-4000-8000-00000000000a',
   session: '00000000-0000-4000-8000-00000000000b',
   workItem: '00000000-0000-4000-8000-00000000000c',
   batch: '00000000-0000-4000-8000-00000000000d',
@@ -115,13 +114,13 @@ function aggregate(overrides: Record<string, unknown> = {}) {
       recipientSnapshot: { recipientName: 'Test' },
     },
     lines: [line()],
-    invoice: {
-      id: IDS.invoice,
+    waybill: {
+      id: IDS.waybill,
       shipmentId: IDS.shipment,
-      status: 'issued',
-      carrier: 'CJ',
+      source: 'manual',
+      status: 'registered',
+      carrier: 'HANJIN',
       trackingNo: 'TRACK-1',
-      externalServiceId: 'provider-1',
       manifestVersion: 1,
       recipientHash: 'a'.repeat(64),
     },
@@ -168,7 +167,10 @@ function makeService() {
     consumeForDispatch: jest.fn().mockResolvedValue({ affectedSkuIds: [IDS.sku] }),
     finalizeDispatchConsumption: jest.fn().mockResolvedValue(undefined),
   };
-  const invoices = { assertDispatchableInvoice: jest.fn() };
+  const waybills = {
+    assertDispatchable: jest.fn().mockResolvedValue(undefined),
+    markUsed: jest.fn().mockResolvedValue(undefined),
+  };
   const barcode = { parseBarcode: jest.fn() };
   const outbox = { enqueue: jest.fn().mockResolvedValue({}) };
   const audit = { logUserActionRequired: jest.fn().mockResolvedValue(undefined) };
@@ -179,13 +181,13 @@ function makeService() {
     inventory as any,
     sessions as any,
     shipmentReservations as any,
-    invoices as any,
+    waybills as any,
     barcode as any,
     outbox as any,
     audit as any,
     workflowGate as any,
   );
-  return { service, tx, commands, inventory, sessions, shipmentReservations, invoices, outbox, audit };
+  return { service, tx, commands, inventory, sessions, shipmentReservations, waybills, outbox, audit };
 }
 
 describe('ShipmentDispatchService', () => {
@@ -284,7 +286,6 @@ describe('ShipmentDispatchService', () => {
 
     await (service as any).emitDispatchEvents(
       locked,
-      locked.invoice,
       IDS.extraSource,
       1,
       new Date('2026-07-15T00:00:00.000Z'),
@@ -310,15 +311,10 @@ describe('ShipmentDispatchService', () => {
     expect(outbox.enqueue).toHaveBeenCalledTimes(2);
   });
 
-  it('redispatches a recalled shipment with attempt 2, a new invoice, exact stock sources and typed outbox', async () => {
-    const { service, inventory, sessions, shipmentReservations, invoices, outbox, audit } = makeService();
+  it('redispatches a recalled shipment with attempt 2, a new waybill, exact stock sources and typed outbox', async () => {
+    const { service, inventory, sessions, shipmentReservations, waybills, outbox, audit } = makeService();
     const locked = aggregate({ lines: [line({ qty: 2, inspectedQty: 2, forced: true, lineVersion: 2 })] });
-    const recipientHash = canonicalShipmentRecipientHash(locked.shipment.recipientSnapshot);
-    invoices.assertDispatchableInvoice.mockResolvedValue({
-      ...locked.invoice,
-      recipientHash,
-    });
-    locked.invoice.recipientHash = recipientHash;
+    const recipientHash = locked.waybill.recipientHash;
 
     const queryRows = [
       [{ shipmentLineId: IDS.line, sourceLocationId: IDS.source, qty: 2 }],
@@ -434,8 +430,8 @@ describe('ShipmentDispatchService', () => {
         },
         shipmentId: IDS.shipment,
         fulfillmentOrderIds: [IDS.fo],
-        invoice: expect.objectContaining({
-          invoiceId: IDS.invoice,
+        waybill: expect.objectContaining({
+          waybillId: IDS.waybill,
           manifestVersion: 1,
           recipientHash,
         }),
@@ -460,12 +456,18 @@ describe('ShipmentDispatchService', () => {
         }),
         stateTransitions: expect.arrayContaining([
           { resource: 'shipment', id: IDS.shipment, from: 'planned', to: 'shipped' },
-          { resource: 'invoice', id: IDS.invoice, from: 'issued', to: 'used' },
+          { resource: 'waybill', id: IDS.waybill, from: 'registered', to: 'used' },
           { resource: 'work_item', id: IDS.workItem, from: 'packing', to: 'completed' },
           expect.objectContaining({ resource: 'dispatch_attempt', id: result.dispatchAttemptId, to: 'dispatched' }),
         ]),
       }),
       tx,
+    );
+    // seam 순서: assertDispatchable 가 markUsed 보다 먼저 호출된다(둘 다 같은 tx).
+    expect(waybills.assertDispatchable).toHaveBeenCalledWith(IDS.shipment, tx);
+    expect(waybills.markUsed).toHaveBeenCalledWith(IDS.shipment, tx);
+    expect(waybills.assertDispatchable.mock.invocationCallOrder[0]).toBeLessThan(
+      waybills.markUsed.mock.invocationCallOrder[0],
     );
   });
 
@@ -497,11 +499,8 @@ describe('ShipmentDispatchService', () => {
       },
     },
   ])('rejects target-line custody with $caseName before creating a dispatch attempt', async ({ extraBalance }) => {
-    const { service, inventory, invoices } = makeService();
+    const { service, inventory } = makeService();
     const locked = aggregate({ lines: [line({ qty: 2, inspectedQty: 2 })] });
-    const recipientHash = canonicalShipmentRecipientHash(locked.shipment.recipientSnapshot);
-    invoices.assertDispatchableInvoice.mockResolvedValue({ ...locked.invoice, recipientHash });
-    locked.invoice.recipientHash = recipientHash;
     const queryRows = [
       [{ shipmentLineId: IDS.line, sourceLocationId: IDS.source, qty: 2 }],
       [
@@ -532,16 +531,16 @@ describe('ShipmentDispatchService', () => {
     expect(tx.insert).not.toHaveBeenCalled();
   });
 
-  it('fails on a stale invoice before any economic effect', async () => {
-    const { service, inventory, shipmentReservations, invoices } = makeService();
-    invoices.assertDispatchableInvoice.mockRejectedValue(new Error('stale invoice'));
+  it('fails on a stale waybill before any economic effect', async () => {
+    const { service, inventory, shipmentReservations, waybills } = makeService();
+    waybills.assertDispatchable.mockRejectedValue(new Error('WAYBILL_STALE: waybill does not match shipment'));
     await expect(
       (service as any).dispatchLocked(
         aggregate({ lines: [line({ qty: 2, inspectedQty: 2 })] }),
         { id: IDS.actor, roles: ['logistics_worker'] },
         {},
       ),
-    ).rejects.toThrow('stale invoice');
+    ).rejects.toThrow(/WAYBILL_STALE/);
     expect(inventory.ship).not.toHaveBeenCalled();
     expect(shipmentReservations.consumeForDispatch).not.toHaveBeenCalled();
   });
