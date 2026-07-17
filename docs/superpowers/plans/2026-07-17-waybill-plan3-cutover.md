@@ -206,7 +206,6 @@ async voidForRecall(
           `${WAYBILL.ERROR.NOT_DISPATCHABLE}: voidForRecall affected ${affected} rows for ${shipmentId}`,
         );
       }
-      const row = await this.reader.getActiveWaybill(trx, shipmentId);
       // 방금 voided 로 CAS 한 행은 getActiveWaybill(TERMINAL 제외)에 안 잡히므로 id 로 직접 재조회.
       const voided = await this.repo.findById(trx, active.id);
       if (!voided) throw new Error(`voidForRecall: waybill ${active.id} vanished after CAS`);
@@ -216,7 +215,7 @@ async voidForRecall(
   );
 }
 ```
-(`this.reader`·`this.repo`·`this.commands`는 기존 주입 필드. `NotFoundError`/`ConflictError`는 `:3`에서 import됨. `void` 변수 `row`는 위에서 안 쓰이므로 제거 — 실제 반환은 `voided`. 위 스니펫은 그렇게 정리돼 있다.)
+(`this.reader`·`this.repo`·`this.commands`는 기존 주입 필드. `NotFoundError`/`ConflictError`는 `:3`에서 import됨. `findById`가 넓은 시그니처라 `as WaybillRow`로 좁힘 — 기존 `void`의 동일 패턴을 따른다.)
 
 - [ ] **Step 5: service passthrough 추가**
 
