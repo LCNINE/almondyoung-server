@@ -59,7 +59,6 @@ import { ConsolidationController } from './controllers/consolidation.controller'
 import { DirectShipController } from './controllers/direct-ship.controller';
 import { LocationOptimizationController } from './controllers/location-optimization.controller';
 import { FulfillmentOperationController, ShipmentPlanningController } from './controllers/shipment-planning.controller';
-import { ShipmentInvoiceController } from './controllers/shipment-invoice.controller';
 import { OutboundBatchV2Controller } from './controllers/outbound-batch-v2.controller';
 import { PickingCommandV2Controller, PickingV2Controller } from './controllers/picking-v2.controller';
 import { ToteController } from './controllers/tote.controller';
@@ -111,7 +110,6 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     LocationOptimizationController,
     ShipmentPlanningController,
     FulfillmentOperationController,
-    ShipmentInvoiceController,
     ShipmentTrackingController,
     ShipmentShortPickController,
     ShipmentRecallController,

@@ -2,11 +2,11 @@ import { ScopeGuard } from '@app/authorization';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { Reflector } from '@nestjs/core';
 import { ConsolidationController } from '../controllers/consolidation.controller';
-import { ShipmentInvoiceController } from '../controllers/shipment-invoice.controller';
 import { ShipmentPlanningController } from '../controllers/shipment-planning.controller';
 import { ShipmentRecallController } from '../controllers/shipment-recall.controller';
 import { ShipmentTrackingController } from '../controllers/shipment-tracking.controller';
 import { ShipmentController } from '../controllers/shipment.controller';
+import { WaybillController } from '../waybill/waybill.controller';
 import { FULFILLMENT_ROLE_MAPPINGS, FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 
 type ControllerEndpoint = {
@@ -52,8 +52,8 @@ const AUTHORIZED_ENDPOINTS = [
     scope: FULFILLMENT_SCOPE.DISPATCH_RECALL,
   },
   {
-    name: 'invoice void/reopen',
-    controller: ShipmentInvoiceController,
+    name: 'waybill void/reopen',
+    controller: WaybillController,
     handlerName: 'void',
     scope: FULFILLMENT_SCOPE.SHIPMENT_REOPEN,
   },
