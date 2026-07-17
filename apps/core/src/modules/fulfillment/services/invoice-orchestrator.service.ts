@@ -913,7 +913,13 @@ export class InvoiceOrchestrator {
     ignoredInvoiceIds: readonly string[] = [],
   ): Promise<LockedManifest> {
     const optimistic = await this.loadManifest(shipmentId, tx);
-    await this.invariant.assertFulfillmentOrders(optimistic.fulfillmentOrderIds, tx, { ignoredInvoiceIds });
+    // assertFulfillmentOrders now reads wmsTables.waybills (Task 8 rewire), not wmsTables.invoices — its
+    // ignoredWaybillIds option filters waybill rows. This orchestrator still operates on the legacy invoices
+    // table and never creates a waybill row, so passing invoice ids here is inert (they match no waybill.id);
+    // kept for interface compatibility until invoice-orchestrator retires (구 invoice drop, Task 9+).
+    await this.invariant.assertFulfillmentOrders(optimistic.fulfillmentOrderIds, tx, {
+      ignoredWaybillIds: ignoredInvoiceIds,
+    });
     await this.lockExecutionInputs(optimistic, tx);
     const locked = await this.loadManifest(shipmentId, tx);
     if (

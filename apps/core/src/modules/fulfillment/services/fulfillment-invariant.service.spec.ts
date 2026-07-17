@@ -22,7 +22,7 @@ const validSnapshot = (): FulfillmentInvariantSnapshot => ({
       quantity: 4,
     },
   ],
-  invoices: [{ id: 'invoice-1', shipmentId: 'shipment-1', manifestVersion: 3, status: 'issued' }],
+  waybills: [{ id: 'waybill-1', shipmentId: 'shipment-1', manifestVersion: 3, status: 'registered' }],
   sessions: [{ id: 'session-1', handedInQty: 7, settledQty: 2, returnedQty: 1, shortageQty: 1 }],
   sessionBalances: [{ id: 'balance-1', sessionId: 'session-1', custodyType: 'PACKING', qty: 3 }],
   dispatchAttempts: [],
@@ -35,11 +35,11 @@ describe('collectFulfillmentInvariantViolations', () => {
     expect(collectFulfillmentInvariantViolations(validSnapshot())).toEqual([]);
   });
 
-  it('detects FOI active-line, planned reservation, invoice and session drift together', () => {
+  it('detects FOI active-line, planned reservation, waybill and session drift together', () => {
     const snapshot = validSnapshot();
     snapshot.shipmentLines[0].qty = 6;
     snapshot.shipments[0].status = 'planned';
-    snapshot.invoices[0].manifestVersion = 2;
+    snapshot.waybills[0].manifestVersion = 2;
     snapshot.sessions[0].handedInQty = 8;
 
     expect(collectFulfillmentInvariantViolations(snapshot).map((violation) => violation.kind)).toEqual(

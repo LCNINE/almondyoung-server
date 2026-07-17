@@ -1,9 +1,12 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { asc, inArray, or, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
+import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 
 const ACTIVE_SHIPMENT_STATUSES = new Set(['draft', 'planned', 'recovery_required']);
-const ACTIVE_INVOICE_STATUSES = new Set(['issued', 'used', 'issuing', 'voiding', 'recovery_required']);
+// 활성 waybill = 종료 3상태(voided/failed/abandoned) 아닌 모든 상태(waybills 테이블 uq_waybills_shipment_active 와 동치).
+// 구 "활성 invoice(status ∈ allowlist)" 의 의미를 waybill 기준(terminal 제외)으로 보존 치환.
+const WAYBILL_TERMINAL_STATUS_SET = new Set<string>(WAYBILL_TERMINAL_STATUSES);
 const SETTLED_ATTEMPT_STATUSES = new Set(['dispatched', 'recalled']);
 
 export const FULFILLMENT_INVARIANT_KINDS = [
@@ -55,7 +58,7 @@ export interface FulfillmentInvariantSnapshot {
     status: string;
     quantity: number;
   }>;
-  invoices: Array<{
+  waybills: Array<{
     id: string;
     shipmentId: string | null;
     manifestVersion: number | null;
@@ -180,14 +183,14 @@ export function collectFulfillmentInvariantViolations(
     }
   }
 
-  for (const invoice of snapshot.invoices) {
-    if (!invoice.shipmentId || !ACTIVE_INVOICE_STATUSES.has(invoice.status)) continue;
-    const shipment = shipmentById.get(invoice.shipmentId);
-    if (!shipment || invoice.manifestVersion !== shipment.manifestVersion) {
+  for (const waybill of snapshot.waybills) {
+    if (!waybill.shipmentId || WAYBILL_TERMINAL_STATUS_SET.has(waybill.status)) continue;
+    const shipment = shipmentById.get(waybill.shipmentId);
+    if (!shipment || waybill.manifestVersion !== shipment.manifestVersion) {
       violations.push({
         kind: 'ACTIVE_INVOICE_VERSION',
-        resourceId: invoice.id,
-        message: `invoiceManifest=${invoice.manifestVersion ?? 'null'}, shipmentManifest=${shipment?.manifestVersion ?? 'missing'}`,
+        resourceId: waybill.id,
+        message: `invoiceManifest=${waybill.manifestVersion ?? 'null'}, shipmentManifest=${shipment?.manifestVersion ?? 'missing'}`,
       });
     }
   }
@@ -285,7 +288,7 @@ export class FulfillmentInvariantService {
   async assertFulfillmentOrders(
     fulfillmentOrderIds: readonly string[],
     tx: DbTx,
-    options: { ignoredInvoiceIds?: readonly string[] } = {},
+    options: { ignoredWaybillIds?: readonly string[] } = {},
   ): Promise<void> {
     const ids = [...new Set(fulfillmentOrderIds)].sort();
     if (ids.length === 0) throw new NotFoundException('No fulfillment orders supplied for invariant check');
@@ -440,17 +443,17 @@ export class FulfillmentInvariantService {
       .orderBy(asc(wmsTables.stockReservations.createdAt), asc(wmsTables.stockReservations.id))
       .for('update');
 
-    const invoices = shipmentIds.length
+    const waybills = shipmentIds.length
       ? await tx
           .select({
-            id: wmsTables.invoices.id,
-            shipmentId: wmsTables.invoices.shipmentId,
-            manifestVersion: wmsTables.invoices.manifestVersion,
-            status: wmsTables.invoices.status,
+            id: wmsTables.waybills.id,
+            shipmentId: wmsTables.waybills.shipmentId,
+            manifestVersion: wmsTables.waybills.manifestVersion,
+            status: wmsTables.waybills.status,
           })
-          .from(wmsTables.invoices)
-          .where(inArray(wmsTables.invoices.shipmentId, shipmentIds))
-          .orderBy(asc(wmsTables.invoices.id))
+          .from(wmsTables.waybills)
+          .where(inArray(wmsTables.waybills.shipmentId, shipmentIds))
+          .orderBy(asc(wmsTables.waybills.id))
           .for('update')
       : [];
     const workItems = shipmentIds.length
@@ -540,13 +543,13 @@ export class FulfillmentInvariantService {
           .for('update')
       : [];
 
-    const ignoredInvoiceIds = new Set(options.ignoredInvoiceIds ?? []);
+    const ignoredWaybillIds = new Set(options.ignoredWaybillIds ?? []);
     const violations = collectFulfillmentInvariantViolations({
       fulfillmentOrderItems,
       shipments,
       shipmentLines,
       reservations,
-      invoices: invoices.filter((invoice) => !ignoredInvoiceIds.has(invoice.id)),
+      waybills: waybills.filter((waybill) => !ignoredWaybillIds.has(waybill.id)),
       sessions,
       sessionBalances,
       dispatchAttempts,

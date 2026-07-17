@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectTypedDb, DbService } from '@app/db';
 import { AuthorizationService } from '@app/authorization';
-import { and, asc, eq, gt, inArray, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, ne, notInArray, or, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import {
@@ -21,12 +21,12 @@ import {
   SplitShipmentDto,
 } from '../dto/shipment-planning.dto';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
 
-const ACTIVE_INVOICE_STATUSES = ['issued', 'used', 'issuing', 'voiding', 'recovery_required'] as const;
 const ACTIVE_WORK_ITEM_STATUSES = ['queued', 'picking', 'ready_to_pack', 'packing', 'short_pick_recovery'] as const;
 const TRUSTED_CHANNELS = new Set(['medusa', 'naver', 'coupang']);
 
@@ -314,7 +314,7 @@ export class ShipmentPlanningService {
           throw this.conflict('SHIPMENT_NOT_DRAFT', `Shipment ${shipmentId} must be Draft to split`);
         }
         await this.assertNoCustodyOrActiveWork(aggregate, tx);
-        await this.assertNoActiveInvoice(shipmentId, tx);
+        await this.assertNoActiveWaybill(shipmentId, tx);
 
         const lineById = new Map(aggregate.lines.map((line) => [line.id, line]));
         const selected = moves.map((move) => {
@@ -466,7 +466,7 @@ export class ShipmentPlanningService {
           throw this.conflict('SHIPMENT_REOPEN_REQUIRED', 'Recipient can only be revised on a Draft shipment');
         }
         await this.assertNoCustodyOrActiveWork(aggregate, tx);
-        await this.assertNoActiveInvoice(shipmentId, tx);
+        await this.assertNoActiveWaybill(shipmentId, tx);
 
         if (this.sameJson(aggregate.shipment.recipientSnapshot, dto.recipientSnapshot)) {
           throw new BadRequestException('Recipient snapshot is unchanged');
@@ -533,7 +533,7 @@ export class ShipmentPlanningService {
           throw this.conflict('SHIPMENT_NOT_DRAFT', `Shipment ${shipmentId} must be Draft to plan`);
         }
         await this.assertNoCustodyOrActiveWork(aggregate, tx);
-        await this.assertNoActiveInvoice(shipmentId, tx);
+        await this.assertNoActiveWaybill(shipmentId, tx);
         await this.assertNoActivePickingPlan(shipmentId, tx);
         this.assertRecipientComplete(aggregate.shipment.recipientSnapshot);
         await this.assertPlanProfile(aggregate, dto.shippingProfileId, tx);
@@ -791,7 +791,7 @@ export class ShipmentPlanningService {
         return { request, line };
       });
 
-      await this.assertNoActiveInvoice(pending.shipmentId, trx);
+      await this.assertNoActiveWaybill(pending.shipmentId, trx);
       await this.assertNoCustodyOrActiveWork(aggregate, trx);
       await this.assertNoActivePickingPlan(pending.shipmentId, trx);
       await trx
@@ -850,7 +850,7 @@ export class ShipmentPlanningService {
     return this.dbService.run(async (trx) => {
       const aggregate = await this.loadAggregate(shipmentId, trx);
       const lineIds = aggregate.lines.map((line) => line.id);
-      const [reservations, invoices, workItems, attempts, origins, operations] = await Promise.all([
+      const [reservations, waybills, workItems, attempts, origins, operations] = await Promise.all([
         lineIds.length
           ? trx
               .select()
@@ -859,10 +859,18 @@ export class ShipmentPlanningService {
               .orderBy(asc(wmsTables.stockReservations.createdAt), asc(wmsTables.stockReservations.id))
           : [],
         trx
-          .select()
-          .from(wmsTables.invoices)
-          .where(eq(wmsTables.invoices.shipmentId, shipmentId))
-          .orderBy(asc(wmsTables.invoices.createdAt)),
+          .select({
+            id: wmsTables.waybills.id,
+            status: wmsTables.waybills.status,
+            trackingNo: wmsTables.waybills.trackingNo,
+            carrier: wmsTables.waybills.carrier,
+            manifestVersion: wmsTables.waybills.manifestVersion,
+            issuedAt: wmsTables.waybills.issuedAt,
+            voidedAt: wmsTables.waybills.voidedAt,
+          })
+          .from(wmsTables.waybills)
+          .where(eq(wmsTables.waybills.shipmentId, shipmentId))
+          .orderBy(asc(wmsTables.waybills.createdAt)),
         trx
           .select()
           .from(wmsTables.outboundBatchWorkItems)
@@ -920,7 +928,7 @@ export class ShipmentPlanningService {
           origin: line.salesOrderLineId ? (originByLineId.get(line.salesOrderLineId) ?? null) : null,
           reservations: reservationByLine.get(line.id) ?? [],
         })),
-        invoices,
+        waybills,
         workItems,
         dispatchAttempts: attempts.map((attempt) => ({
           ...attempt,
@@ -1314,18 +1322,19 @@ export class ShipmentPlanningService {
     return result;
   }
 
-  private async assertNoActiveInvoice(shipmentId: string, tx: DbTx): Promise<void> {
-    const [invoice] = await tx
-      .select({ id: wmsTables.invoices.id, status: wmsTables.invoices.status })
-      .from(wmsTables.invoices)
+  // 'SHIPMENT_ACTIVE_INVOICE' 코드 문자열은 운영/클라이언트 의미 보존을 위해 유지(데이터소스만 waybill 로 전환).
+  private async assertNoActiveWaybill(shipmentId: string, tx: DbTx): Promise<void> {
+    const [waybill] = await tx
+      .select({ id: wmsTables.waybills.id, status: wmsTables.waybills.status })
+      .from(wmsTables.waybills)
       .where(
         and(
-          eq(wmsTables.invoices.shipmentId, shipmentId),
-          inArray(wmsTables.invoices.status, [...ACTIVE_INVOICE_STATUSES]),
+          eq(wmsTables.waybills.shipmentId, shipmentId),
+          notInArray(wmsTables.waybills.status, [...WAYBILL_TERMINAL_STATUSES]),
         ),
       )
       .limit(1);
-    if (invoice) throw this.conflict('SHIPMENT_ACTIVE_INVOICE', `Void active invoice ${invoice.id} before editing`);
+    if (waybill) throw this.conflict('SHIPMENT_ACTIVE_INVOICE', `Void active waybill ${waybill.id} before editing`);
   }
 
   private async assertNoCustodyOrActiveWork(aggregate: ShipmentAggregate, tx: DbTx): Promise<void> {
@@ -1542,14 +1551,14 @@ export class ShipmentPlanningService {
   private async requiresDurableReplan(aggregate: ShipmentAggregate, tx: DbTx): Promise<boolean> {
     if (aggregate.shipment.status !== 'draft') return true;
     if (aggregate.lines.some((line) => line.inspectedQty > 0)) return true;
-    const [invoice, workItem, consolidation, pickingPlan, sessionBalance] = await Promise.all([
+    const [waybill, workItem, consolidation, pickingPlan, sessionBalance] = await Promise.all([
       tx
-        .select({ id: wmsTables.invoices.id })
-        .from(wmsTables.invoices)
+        .select({ id: wmsTables.waybills.id })
+        .from(wmsTables.waybills)
         .where(
           and(
-            eq(wmsTables.invoices.shipmentId, aggregate.shipment.id),
-            inArray(wmsTables.invoices.status, [...ACTIVE_INVOICE_STATUSES]),
+            eq(wmsTables.waybills.shipmentId, aggregate.shipment.id),
+            notInArray(wmsTables.waybills.status, [...WAYBILL_TERMINAL_STATUSES]),
           ),
         )
         .limit(1),
@@ -1606,7 +1615,7 @@ export class ShipmentPlanningService {
         )
         .limit(1),
     ]);
-    return Boolean(invoice[0] || workItem[0] || consolidation[0] || pickingPlan[0] || sessionBalance[0]);
+    return Boolean(waybill[0] || workItem[0] || consolidation[0] || pickingPlan[0] || sessionBalance[0]);
   }
 
   private assertRecipientComplete(value: unknown): void {
