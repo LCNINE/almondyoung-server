@@ -2478,6 +2478,65 @@ export const invoiceOperations = pgTable(
   }),
 );
 
+export const waybillStatusEnum = pgEnum('waybill_status', [
+  'pending',
+  'allocated',
+  'registered',
+  'used',
+  'voided',
+  'failed',
+  'abandoned',
+]);
+export const waybillSourceEnum = pgEnum('waybill_source', ['carrier', 'manual']);
+
+export const waybills = pgTable(
+  'waybills',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    shipmentId: uuid('shipment_id')
+      .references(() => shipments.id, { onDelete: 'restrict' })
+      .notNull(),
+    source: waybillSourceEnum('source').notNull(),
+    carrier: carrierEnum('carrier').notNull(),
+    status: waybillStatusEnum('status').notNull().default('pending'),
+    trackingNo: varchar('tracking_no', { length: 128 }),
+    custOrdNo: varchar('cust_ord_no', { length: 30 }),
+    labelData: jsonb('label_data'),
+    manifestVersion: integer('manifest_version').notNull(),
+    recipientHash: varchar('recipient_hash', { length: 64 }).notNull(),
+    lastError: text('last_error'),
+    attempts: integer('attempts').notNull().default(0),
+    issuedAt: timestamp('issued_at', { withTimezone: true }),
+    voidedAt: timestamp('voided_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxShipment: index('idx_waybills_shipment').on(t.shipmentId),
+    idxStatus: index('idx_waybills_status').on(t.status),
+    idxTrackingNo: index('idx_waybills_tracking_no').on(t.trackingNo),
+    // shipment 당 활성 운송장 1개. 종료 3상태(voided/failed/abandoned) 슬롯 해제.
+    uqActivePerShipment: uniqueIndex('uq_waybills_shipment_active')
+      .on(t.shipmentId)
+      .where(sql`${t.status} NOT IN ('voided', 'failed', 'abandoned')`),
+    // live 운송장 사이에서만 trackingNo 유일(멱등 앵커). 종료 상태 제외라 오void 번호 재등록 허용.
+    uqLiveTrackingNo: uniqueIndex('uq_waybills_tracking_live')
+      .on(t.trackingNo)
+      .where(sql`${t.trackingNo} IS NOT NULL AND ${t.status} NOT IN ('voided', 'failed', 'abandoned')`),
+    ckTrackingPresent: check(
+      'ck_waybills_tracking_present',
+      sql`${t.status} NOT IN ('allocated', 'registered', 'used') OR ${t.trackingNo} IS NOT NULL`,
+    ),
+    ckManualStatus: check(
+      'ck_waybills_manual_status',
+      sql`${t.source} <> 'manual' OR ${t.status} IN ('registered', 'used', 'voided')`,
+    ),
+    ckAttempts: check('ck_waybills_attempts', sql`${t.attempts} >= 0`),
+    ckRecipientHash: check('ck_waybills_recipient_hash', sql`length(${t.recipientHash}) = 64`),
+    ckManifestVersion: check('ck_waybills_manifest_version', sql`${t.manifestVersion} > 0`),
+  }),
+);
+
 export const outboundBatchWorkItems = pgTable(
   'outbound_batch_work_items',
   {
@@ -3020,6 +3079,7 @@ export const wmsTables = {
   inspectionIssues,
   outboundBatches,
   invoices,
+  waybills,
 
   // Outbound V2 expand model
   fulfillmentCommandRequests,
@@ -4335,6 +4395,10 @@ export type NewProductSkuMappingSnapshot = InferInsertModel<typeof productSkuMap
 // Invoice Types
 export type Invoice = InferSelectModel<typeof invoices>;
 export type NewInvoice = InferInsertModel<typeof invoices>;
+
+// Waybill Types
+export type Waybill = InferSelectModel<typeof waybills>;
+export type NewWaybill = InferInsertModel<typeof waybills>;
 
 // Outbound V2 expand model types
 export type FulfillmentCommandRequest = InferSelectModel<typeof fulfillmentCommandRequests>;

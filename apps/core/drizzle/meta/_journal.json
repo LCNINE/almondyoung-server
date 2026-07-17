@@ -295,6 +295,13 @@
       "when": 1784196606946,
       "tag": "20260716101006_drop-legacy-fo-outbound-contract",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1784253402196,
+      "tag": "20260717015642_add-waybills",
+      "breakpoints": true
     }
   ]
 }
