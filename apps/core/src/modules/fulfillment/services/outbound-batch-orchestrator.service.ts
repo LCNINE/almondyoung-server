@@ -9,7 +9,7 @@ import {
 import { ModuleRef } from '@nestjs/core';
 import { ApplicationException } from '@app/shared';
 import { DbService, InjectTypedDb } from '@app/db';
-import { and, asc, desc, eq, gt, inArray, isNull, ne, notInArray, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 import {
   ClaimBatchWorkItemDto,
   CreateOutboundBatchV2Dto,
@@ -1057,14 +1057,7 @@ export class OutboundBatchOrchestrator {
         );
       }
       if (operation.type === 'cancel') {
-        const [invoice, plan, custody] = await Promise.all([
-          trx
-            .select({ id: wmsTables.invoices.id })
-            .from(wmsTables.invoices)
-            .where(
-              and(eq(wmsTables.invoices.shipmentId, shipmentId), notInArray(wmsTables.invoices.status, ['voided'])),
-            )
-            .limit(1),
+        const [plan, custody] = await Promise.all([
           trx
             .select({ id: wmsTables.pickingPlans.id })
             .from(wmsTables.pickingPlanMembers)
@@ -1093,7 +1086,7 @@ export class OutboundBatchOrchestrator {
             )
             .limit(1),
         ]);
-        if (invoice[0] || plan[0] || custody[0]) return;
+        if (plan[0] || custody[0]) return;
         await this.moduleRef
           .get(ShipmentPlanningService, { strict: false })
           .resumePendingCancellation(operationId, trx);

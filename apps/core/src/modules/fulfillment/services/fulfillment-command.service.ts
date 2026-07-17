@@ -78,11 +78,9 @@ export class FulfillmentCommandService {
 
         if (result.operationId) {
           const operationTable =
-            result.resourceType === 'invoice_operation'
-              ? wmsTables.invoiceOperations
-              : result.resourceType === 'shipment_operation' || result.resourceType === 'shipment'
-                ? wmsTables.shipmentOperations
-                : null;
+            result.resourceType === 'shipment_operation' || result.resourceType === 'shipment'
+              ? wmsTables.shipmentOperations
+              : null;
           if (!operationTable) {
             throw new Error(`Unsupported operation resource type: ${result.resourceType}`);
           }

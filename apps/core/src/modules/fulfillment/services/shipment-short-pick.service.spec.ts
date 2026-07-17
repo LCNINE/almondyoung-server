@@ -206,26 +206,6 @@ describe('ShipmentShortPickService', () => {
     expect(rejected).toMatchObject({ response: { code: 'SHORT_PICK_SESSION_PLAN_MISMATCH' } });
   });
 
-  it('does not overwrite a concurrently completed operation with recovery_required', async () => {
-    const { service, audit } = makeService();
-    const update = jest.fn();
-    const tx = {
-      select: jest.fn(
-        () => new QueryResult([{ operatorId: '77777777-7777-4777-8777-777777777777', status: 'completed' }]),
-      ),
-      update,
-    } as unknown as DbTx;
-
-    await service.markInvoiceRecoveryRequired(
-      '88888888-8888-4888-8888-888888888888',
-      new Error('late invoice callback'),
-      tx,
-    );
-
-    expect(update).not.toHaveBeenCalled();
-    expect(audit.logUserActionRequired).not.toHaveBeenCalled();
-  });
-
   it('locks the short-pick operation before entering the shipment reservation graph on resume', async () => {
     const order: string[] = [];
     const operationId = '88888888-8888-4888-8888-888888888888';

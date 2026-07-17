@@ -456,10 +456,6 @@ export class ShipmentShortPickService {
     return this.currentResponse(operationId, undefined, tx);
   }
 
-  async markInvoiceRecoveryRequired(operationId: string, error: unknown, tx: DbTx): Promise<void> {
-    await this.markRecoveryRequired(operationId, error, tx);
-  }
-
   private async lockAndValidateShipment(shipmentId: string, dto: ReportShipmentShortPickDto, tx: DbTx) {
     const [shipment] = await tx
       .select()
@@ -888,11 +884,6 @@ export class ShipmentShortPickService {
         if (fallback) return fallback;
         throw new NotFoundException(`Short pick operation ${operationId} not found`);
       }
-      const [invoiceOperation] = await trx
-        .select({ id: wmsTables.invoiceOperations.id })
-        .from(wmsTables.invoiceOperations)
-        .where(eq(wmsTables.invoiceOperations.resumeOperationId, operationId))
-        .limit(1);
       const intentRow = await trx
         .select({ snapshot: wmsTables.shipmentOperations.beforeManifestSnapshot })
         .from(wmsTables.shipmentOperations)
@@ -908,7 +899,7 @@ export class ShipmentShortPickService {
             : row.status === 'recovery_required'
               ? 'recovery_required'
               : 'pending',
-        invoiceOperationId: invoiceOperation?.id ?? null,
+        invoiceOperationId: null,
         workItemId: intent.workItemId,
       };
     }, tx);

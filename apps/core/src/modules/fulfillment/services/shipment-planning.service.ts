@@ -1004,24 +1004,6 @@ export class ShipmentPlanningService {
           completedAt: shipmentOperation.completedAt,
         };
       }
-      const [invoiceOperation] = await trx
-        .select()
-        .from(wmsTables.invoiceOperations)
-        .where(eq(wmsTables.invoiceOperations.id, operationId))
-        .limit(1);
-      if (invoiceOperation) {
-        return {
-          operationId,
-          type: `invoice.${invoiceOperation.operation}`,
-          status: invoiceOperation.status,
-          resourceType: 'invoice',
-          resourceId: invoiceOperation.invoiceId,
-          lastError: invoiceOperation.lastError,
-          responseSnapshot: invoiceOperation.providerResponse,
-          createdAt: invoiceOperation.createdAt,
-          completedAt: invoiceOperation.completedAt,
-        };
-      }
       const [command] = await trx
         .select()
         .from(wmsTables.fulfillmentCommandRequests)
