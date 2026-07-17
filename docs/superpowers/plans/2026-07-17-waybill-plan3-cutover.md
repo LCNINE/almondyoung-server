@@ -328,15 +328,32 @@ git commit -m "refactor(waybill): picking 3전략 assertDispatchableInvoice→Wa
 
 ---
 
-### Task 4: outbound-batch rewire + `isActiveWorkItemUniqueViolation` `.cause` fix
+### Task 4: outbound-batch rewire + `dispatch_attempts.waybill_id` expand + `isActiveWorkItemUniqueViolation` `.cause` fix
 
 **Files:**
+- Modify: `apps/core/src/modules/inventory/schema/inventory.schema.ts`
+- Create: `apps/core/drizzle/<ts>_add-dispatch-attempts-waybill-id.sql` (generate)
 - Modify: `apps/core/src/modules/fulfillment/services/outbound-batch-orchestrator.service.ts`
 - Test: `apps/core/src/modules/fulfillment/services/outbound-batch-orchestrator.integration.spec.ts`
 
 **Interfaces:**
 - Consumes: `WaybillService.assertDispatchable(shipmentId, tx): Promise<WaybillRow>`(반환행에 `id`,`trackingNo`).
-- Produces: 없음. (`assertEligible` 반환 `{invoiceId, trackingNo}` → `{waybillId, trackingNo}`; downstream 사용처는 Step 3에서 확인·정정.)
+- Produces: `dispatchAttempts.waybillId`(신규 nullable FK → `waybills.id`, `onDelete:'restrict'`) — dispatch attempt이 "어느 운송장으로 발송됐는지" 기록. **이것이 구 `dispatch_attempts.invoice_id`(invoices FK)를 대체**한다(확정: 2026-07-17 사용자 결정 = waybillId 재지정). Task 5(dispatch write)·Task 7(recall read)·Task 12(invoice_id drop)이 이 컬럼에 의존.
+
+> **결정 배경**: `dispatch_attempts.invoice_id`(nullable FK→invoices, CHECK 무관, onDelete restrict)가 invoices 드롭을 막는다. 사용자 결정으로 **`waybill_id`(FK→waybills)로 재지정**해 dispatch↔운송장 감사 연결을 보존한다. **expand-contract**: 이 태스크가 `waybill_id` 추가(expand, additive — 비대화식 generate), Task 12가 `invoice_id` 드롭(contract). 통합 러너(`test-core-integration-local.sh`)가 실행 전 `drizzle-kit migrate`를 자동 호출하므로 생성한 마이그레이션은 로컬 테스트 DB에 자동 적용된다(수동 적용 불필요).
+
+- [ ] **Step 0: `dispatch_attempts.waybill_id` 컬럼 추가 (expand)**
+
+`inventory.schema.ts`의 `dispatchAttempts` 정의에서 `invoiceId` 컬럼(약 `:2925`, `invoice_id uuid FK→invoices`) **바로 아래**에 신규 컬럼 추가(invoice_id는 아직 유지 — Task 12에서 드롭):
+```ts
+waybillId: uuid('waybill_id').references(() => waybills.id, { onDelete: 'restrict' }),
+```
+(`waybills`는 같은 파일 `:2492`에 이미 정의됨.)
+
+- [ ] **Step 0b: 마이그레이션 생성 (additive, 비대화식)**
+
+Run: `npm run db:generate:core -- --name add-dispatch-attempts-waybill-id`
+생성 SQL이 `ALTER TABLE "dispatch_attempts" ADD COLUMN "waybill_id" uuid ... REFERENCES "waybills"("id") ...` 인지 확인(순수 additive — DROP 없음, 인터랙티브 rename 프롬프트 없음). Run: `npx tsc -p apps/core/tsconfig.app.json --noEmit` (exit 0).
 
 - [ ] **Step 1: `assertDispatchableInvoice` → `assertDispatchable` 스왑**
 
@@ -351,7 +368,7 @@ return { invoiceId: invoice.id, trackingNo: invoice.trackingNo };
 const waybill = await this.waybills.assertDispatchable(shipment.id, tx);
 return { waybillId: waybill.id, trackingNo: waybill.trackingNo ?? '' };
 ```
-3. `assertEligible` 반환 타입(`:836`) `{ invoiceId: string; trackingNo: string }` → `{ waybillId: string; trackingNo: string }`. 호출처(`:145`,`:392`)에서 `invoiceId`를 소비하는 지점을 grep(`\.invoiceId`)해 `waybillId`로 정정하거나(단순 저장이면) 미사용이면 필드 제거. **주의**: `dispatchAttempts` 등에 `invoiceId`를 기록하던 지점이 있으면 Task 5(dispatch)·Task 11(schema)와 정합 필요 — batch가 attempt를 만들지 않으면 무관.
+3. `assertEligible` 반환 타입(`:836`) `{ invoiceId: string; trackingNo: string }` → `{ waybillId: string; trackingNo: string }`. 호출처(`:166`,`:402`)에서 `invoiceId: eligible.invoiceId`를 소비하는 지점을 추적: 이는 `dispatch_attempts` insert의 `invoiceId` 필드로 흘러들어간다(dispatch_attempts만이 invoice_id FK를 갖는다). 이를 `waybillId: eligible.waybillId`로 바꿔 **Step 0에서 추가한 `dispatch_attempts.waybill_id`에 write**. `invoiceId` 필드 write는 제거(구 invoice_id 컬럼은 Task 12에서 드롭되나 이 시점엔 nullable로 남아 무해). 만약 `eligible.invoiceId`가 dispatch_attempts가 아닌 다른 곳으로 흐르면(예: 로깅) 그 지점도 waybillId로 정정하거나 미사용이면 제거. grep `\.invoiceId` 로 이 파일 내 모든 소비처를 훑어 누락 없이 전환.
 
 - [ ] **Step 2: `isActiveWorkItemUniqueViolation` `.cause` walker로 교체**
 
@@ -404,9 +421,11 @@ Expected: exit 0.
 - [ ] **Step 5: 커밋**
 
 ```bash
-git add apps/core/src/modules/fulfillment/services/outbound-batch-orchestrator.service.ts \
+git add apps/core/src/modules/inventory/schema/inventory.schema.ts \
+        apps/core/drizzle/ \
+        apps/core/src/modules/fulfillment/services/outbound-batch-orchestrator.service.ts \
         apps/core/src/modules/fulfillment/services/outbound-batch-orchestrator.integration.spec.ts
-git commit -m "refactor(waybill): outbound-batch assertDispatchable 전환 + isActiveWorkItemUniqueViolation .cause 5-deep fix"
+git commit -m "refactor(waybill): outbound-batch assertDispatchable 전환 + dispatch_attempts.waybill_id expand + isActiveWorkItemUniqueViolation .cause 5-deep fix"
 ```
 
 ---
@@ -418,10 +437,10 @@ git commit -m "refactor(waybill): outbound-batch assertDispatchable 전환 + isA
 - Test: `apps/core/src/modules/fulfillment/services/shipment-dispatch.integration.spec.ts`
 
 **Interfaces:**
-- Consumes: `WaybillService.assertDispatchable(shipmentId, tx): Promise<WaybillRow>`, `WaybillService.markUsed(shipmentId, tx): Promise<void>`, `WaybillService.getActiveWaybill(shipmentId, tx)`.
-- Produces: 없음.
+- Consumes: `WaybillService.assertDispatchable(shipmentId, tx): Promise<WaybillRow>`, `WaybillService.markUsed(shipmentId, tx): Promise<void>`, `WaybillService.getActiveWaybill(shipmentId, tx)`. `dispatchAttempts.waybillId`(Task 4 신설 컬럼).
+- Produces: dispatch attempt 생성 시 `dispatch_attempts.waybill_id`에 `aggregate.waybill.id` write(구 `invoice_id` write 대체). Task 7(recall)이 이 값을 발송증거로 읽는다.
 
-**배경(실측):** dispatch의 InvoiceOrchestrator 결합은 **단 한 호출** `assertDispatchableInvoice`(`:609`). 추가로 (a) `lockAggregate`의 직접 invoice 읽기(`:357-369`, `aggregate.invoice` 구성), (b) `invoices.status='used'` 직접 갱신(`:782-785`), (c) staleness 재검(`:613-618`, `canonicalShipmentRecipientHash` import `:32`), (d) `invoice.id !== aggregate.invoice.id` 가드(`:610`).
+**배경(실측):** dispatch의 InvoiceOrchestrator 결합은 **단 한 호출** `assertDispatchableInvoice`(`:609`). 추가로 (a) `lockAggregate`의 직접 invoice 읽기(`:357-369`, `aggregate.invoice` 구성), (b) `invoices.status='used'` 직접 갱신(`:782-785`), (c) staleness 재검(`:613-618`, `canonicalShipmentRecipientHash` import `:32`), (d) `invoice.id !== aggregate.invoice.id` 가드(`:610`), (e) dispatch attempt insert 시 `invoiceId: invoice.id` write(`:701`,`:852`) → `waybillId: aggregate.waybill.id`로 치환(Step 5b).
 
 **타깃 종단 상태:** `assertDispatchable`이 staleness·활성-1개·carrier·trackingNo를 모두 내부 검사하므로, dispatch는 (a) lockAggregate에서 invoice 읽기를 waybill 읽기로 바꾸거나 제거하고, (b) `status='used'` 직접갱신을 `markUsed(shipmentId, tx)`로 치환하며(assertDispatchable 직후 같은 tx — seam 순서 계약), (c) 중복 staleness 재검(613-618)과 (d) invoice.id 비교(610)를 제거(assertDispatchable이 대체).
 
@@ -463,6 +482,14 @@ await tx.update(wmsTables.invoices).set({ status: 'used' }).where(...);
 await this.waybills.markUsed(aggregate.shipment.id, tx);
 ```
 `assertDispatchable`과 `markUsed`가 한 tx 안 연속이 되도록 배치(assertDispatchable → … → markUsed). 둘 사이에 재고/아이템 증분이 있어도 무방하나, markUsed 전에 assertDispatchable이 반드시 선행돼야 한다.
+
+- [ ] **Step 5b: dispatch attempt의 `waybill_id` write**
+
+dispatch attempt(`dispatch_attempts`) insert 시 `invoiceId: invoice.id`를 기록하던 지점(`:701`, `:852` — grep `invoiceId: invoice.id` / `invoiceId:`로 이 파일 내 전 dispatch_attempts insert 확인)을 `waybillId: aggregate.waybill.id`로 치환. 구 `invoiceId` 필드 write는 제거(invoice_id 컬럼은 Task 12에서 드롭되나 지금은 nullable로 무해). Step 1의 통합테스트에 `dispatch_attempts.waybill_id`가 발송된 waybill.id와 일치하는지 단언 추가:
+```ts
+const [att] = await db.select().from(wmsTables.dispatchAttempts).where(eq(wmsTables.dispatchAttempts.shipmentId, shipmentId));
+expect(att.waybillId).toBe(wb.id);
+```
 
 - [ ] **Step 6: 잔여 참조 정리**
 
@@ -544,8 +571,9 @@ git commit -m "refactor(waybill): short-pick → WaybillService.void(동기), in
 - Test: `apps/core/src/modules/fulfillment/services/shipment-recall.integration.spec.ts`
 
 **Interfaces:**
-- Consumes: `WaybillService.voidForRecall(shipmentId, {reason}, idemKey, actor, tx)`(used→voided, 동기 tx-local), `getActiveWaybill`. Task 2 헬퍼 `seedUsedWaybillForShipment`.
+- Consumes: `WaybillService.voidForRecall(shipmentId, {reason}, idemKey, actor, tx)`(used→voided, 동기 tx-local), `getActiveWaybill`. Task 2 헬퍼 `seedUsedWaybillForShipment`. `dispatchAttempts.waybillId`(Task 4 신설, Task 5가 write) — 발송증거 read.
 - Produces: 없음.
+- **Task 2 Minor(t2-m1) 해소**: 이 태스크가 `seedUsedWaybillForShipment`를 실사용해야 한다(Step 1) — 헬퍼의 정확성(recipientHash·제약 충족)이 여기서 처음 검증된다.
 
 **배경(실측):** recall `report`(`:102`)는 `shipment=shipped`+`attempt=dispatched`+invoice=`used`일 때만 진행, `this.invoices.void(invoice.id, {reason, resumeOperationId, csCaseId, note}, idemKey, actor, tx)`(`:237-248`)를 부른다. 구 void가 async라 recovery worker가 나중에 `resumePendingInTransaction`(`:304`, 재고/예약 역전)을 트리거. recall operation 레코드는 `shipmentOperations`/`shipmentOperationMembers`(생존). `physicalRecoveryConfirmed`는 report 시점 필수(`:702`) → 2단계는 순수 async 부산물.
 
@@ -568,9 +596,11 @@ Expected: FAIL.
 - [ ] **Step 4: report의 void → voidForRecall + 인라인 역전**
 
 `:207-291` `report`의 `commands.execute` 핸들러에서:
-- invoice 상태 확인(`:209-218` `wmsTables.invoices` 읽기 + `SHIPMENT_RECALL_INVOICE_NOT_USED`)을 활성 waybill 읽기(`used` 확인)로 치환. `used`가 아니면 계승 코드로 거부.
+- **발송증거 검사(`:186`)**: `if (!attempt.invoiceId || !attempt.stockJournalId || !attempt.dispatchedAt)` → `if (!attempt.waybillId || !attempt.stockJournalId || !attempt.dispatchedAt)` (Task 4 신설 `dispatch_attempts.waybill_id`, Task 5가 write). attempt select에 `waybillId` 컬럼 포함되게 조정.
+- invoice 상태 확인(`:209-218` `wmsTables.invoices` 읽기 + `SHIPMENT_RECALL_INVOICE_NOT_USED`)을 활성 waybill 읽기(`used` 확인)로 치환. `used`가 아니면 계승 코드로 거부. **구 `attempt.invoiceId`로 invoice를 로드(`:210`)하던 것은 제거** — voidForRecall(shipmentId)가 waybill을 shipmentId로 찾으므로 attempt.invoiceId로 조회 불필요.
 - `:237-248` `this.invoices.void(invoice.id, {...}, tx)` → `await this.waybills.voidForRecall(shipmentId, { reason: \`shipment_recall:${dto.reason}\` }, \`${idempotencyKey}:waybill-void\`, actor, tx);`
 - voidForRecall이 동기 완료(waybill=voided)이므로, **같은 tx에서** 역전을 인라인 실행: `await this.resumePendingInTransaction(operationId, tx);`(현재 worker가 부르던 것을 report가 직접 호출). `resumePendingInTransaction`의 시작부 게이트 `invoice.status !== 'voided'`(`:378-380`)는 waybill=voided 확인으로 바꾸거나(방금 voidForRecall 성공했으므로) 제거.
+- `RecallIntent.invoiceId`(`:39`,`:220`,`:274`,`:375`,`:564`,`:694`) 추적 제거 — recall은 이제 shipmentId로 동작하므로 intent에 invoiceId 불필요. `:375`가 intent.invoiceId로 invoice voided 게이트를 재확인하던 것도 제거(voidForRecall이 이미 voided 보장).
 - `invoiceOperationId`(`:241`,`:275`,`:286`) 추적 제거. `shipmentOperations` 레코드 업데이트(`:223-233`, pending→완료)는 유지하되 동기 완료 상태로 마감.
 
 - [ ] **Step 5: async 트리거 잔재 제거**
@@ -785,15 +815,16 @@ git commit -m "refactor(waybill): InvoiceOrchestrator·recovery worker·delivery
 
 **Interfaces:**
 - `invoices`·`invoiceOperations` 테이블 + `invoiceStatusEnum`/`invoiceMethodEnum`/`invoiceOperationTypeEnum`/`invoiceOperationStatusEnum` + `invoicesRelations`/`invoiceOperationsRelations` 제거. `wmsTables`에서 등록 해제.
+- **+ `dispatch_attempts.invoice_id` 컬럼 드롭(contract)**: Task 4가 `waybill_id`(expand)를 추가했고 Task 5가 그리로 write 전환했으므로, 이 시점에 구 `invoice_id`는 write 0·read 0. `dispatchAttempts`에서 `invoiceId` 컬럼 정의 제거. **이게 invoices 테이블 드롭의 전제**(FK `onDelete:'restrict'` 잔존 시 DROP TABLE invoices 실패).
 
 - [ ] **Step 1: 스키마에서 invoice 정의 제거**
 
-`inventory.schema.ts`에서 `invoices`·`invoiceOperations` `pgTable`, 4개 enum, 2개 relations를 삭제. `wmsTables`(schema 객체)에서 `invoices`/`invoiceOperations` 키 제거. 잔여 참조(`typeof wmsTables.invoices.$inferSelect` 등)가 남지 않았는지 확인(Task 5~9에서 제거됨).
+`inventory.schema.ts`에서 `invoices`·`invoiceOperations` `pgTable`, 4개 enum, 2개 relations를 삭제. `dispatchAttempts`에서 `invoiceId: uuid('invoice_id').references(() => invoices.id, ...)` 컬럼도 제거(`waybill_id`는 유지). `wmsTables`(schema 객체)에서 `invoices`/`invoiceOperations` 키 제거. 잔여 참조(`typeof wmsTables.invoices.$inferSelect`, `dispatchAttempts.invoiceId` 등)가 남지 않았는지 확인(Task 5~9에서 제거됨).
 
 - [ ] **Step 2: 마이그레이션 생성**
 
 Run: `npm run db:generate:core -- --name drop-invoices`
-생성된 `apps/core/drizzle/<ts>_drop-invoices.sql` 검토: `DROP TABLE invoice_operations; DROP TABLE invoices; DROP TYPE ...;` 형태 확인. FK 순서(invoiceOperations→invoices) 주의. 잘못됐으면 `git rm` 후 schema 고치고 재생성(적용된 적 없으므로 안전).
+생성된 `apps/core/drizzle/<ts>_drop-invoices.sql` 검토: `ALTER TABLE dispatch_attempts DROP COLUMN invoice_id; DROP TABLE invoice_operations; DROP TABLE invoices; DROP TYPE ...;` 형태 확인(컬럼 드롭이 테이블 드롭보다 먼저 — FK 해제). FK 순서(invoiceOperations→invoices, dispatch_attempts→invoices) 주의. 잘못됐으면 `git rm` 후 schema 고치고 재생성(적용된 적 없으므로 안전).
 
 - [ ] **Step 3: tsc·빌드**
 
