@@ -12,9 +12,6 @@ describe('fulfillment V2 query keys', () => {
       'shipment-1',
     ]);
     expect(orderQueryKeys.fulfillmentOperation('operation-1')).not.toEqual(
-      orderQueryKeys.invoiceOperation('operation-1')
-    );
-    expect(orderQueryKeys.invoiceOperation('operation-1')).not.toEqual(
       orderQueryKeys.shipmentRecallOperation('operation-1')
     );
   });

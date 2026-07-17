@@ -8,17 +8,17 @@ import {
 } from '@nestjs/common';
 import { AuthorizationService } from '@app/authorization';
 import { DbService, InjectTypedDb } from '@app/db';
-import { and, asc, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, ne, notInArray, sql } from 'drizzle-orm';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { ConsolidationActor, ConsolidationSourceDto, CreateConsolidationDto } from '../dto/consolidation.dto';
+import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
 
-const ACTIVE_INVOICE_STATUSES = ['issued', 'used', 'issuing', 'voiding', 'recovery_required'] as const;
 const TERMINAL_OR_UNSAFE_SOURCE_STATUSES = new Set([
   'open',
   'shipped',
@@ -988,14 +988,14 @@ export class ConsolidationService {
 
   private async loadBlockers(aggregate: ShipmentAggregate, tx: DbTx): Promise<string[]> {
     const lineIds = aggregate.lines.map((line) => line.id);
-    const [invoice, workItem, custody, pickingPlan, attempt] = await Promise.all([
+    const [waybill, workItem, custody, pickingPlan, attempt] = await Promise.all([
       tx
-        .select({ id: wmsTables.invoices.id })
-        .from(wmsTables.invoices)
+        .select({ id: wmsTables.waybills.id })
+        .from(wmsTables.waybills)
         .where(
           and(
-            eq(wmsTables.invoices.shipmentId, aggregate.shipment.id),
-            inArray(wmsTables.invoices.status, [...ACTIVE_INVOICE_STATUSES]),
+            eq(wmsTables.waybills.shipmentId, aggregate.shipment.id),
+            notInArray(wmsTables.waybills.status, [...WAYBILL_TERMINAL_STATUSES]),
           ),
         )
         .limit(1),
@@ -1043,7 +1043,8 @@ export class ConsolidationService {
         .limit(1),
     ]);
     const codes: string[] = [];
-    if (invoice[0]) codes.push('ACTIVE_INVOICE');
+    // 'ACTIVE_INVOICE' 문자열은 운영/클라이언트 의미 보존을 위해 유지(데이터소스만 waybill 로 전환).
+    if (waybill[0]) codes.push('ACTIVE_INVOICE');
     if (workItem[0]) codes.push('ACTIVE_WORK_ITEM');
     if (custody[0] || aggregate.lines.some((line) => line.inspectedQty > 0)) codes.push('CUSTODY_REQUIRES_UNPICK');
     if (pickingPlan[0]) codes.push('ACTIVE_PICKING_PLAN');

@@ -141,52 +141,6 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
     return { ...f, fulfillmentOrderItem, shipmentLine, secondLocation };
   }
 
-  it('allows only one active invoice for a shipment while retaining voided history', async () => {
-    await inRollbackTx(async (tx) => {
-      const f = await fixture(tx);
-      await tx.insert(wmsTables.invoices).values({
-        trackingNo: `V2-INV-A-${randomUUID()}`,
-        issueMethod: 'self',
-        issuedForFulfillmentOrderId: f.fulfillmentOrder.id,
-        shipmentId: f.shipment.id,
-        status: 'issued',
-      });
-
-      await expectViolation(
-        tx,
-        (sp) =>
-          sp.insert(wmsTables.invoices).values({
-            trackingNo: `V2-INV-B-${randomUUID()}`,
-            issueMethod: 'self',
-            issuedForFulfillmentOrderId: f.fulfillmentOrder.id,
-            shipmentId: f.shipment.id,
-            status: 'issuing',
-          }),
-        'uq_invoices_shipment_active',
-      );
-    });
-
-    await inRollbackTx(async (tx) => {
-      const f = await fixture(tx);
-      await tx.insert(wmsTables.invoices).values({
-        trackingNo: `V2-INV-VOID-${randomUUID()}`,
-        issueMethod: 'self',
-        issuedForFulfillmentOrderId: f.fulfillmentOrder.id,
-        shipmentId: f.shipment.id,
-        status: 'voided',
-      });
-      await expect(
-        tx.insert(wmsTables.invoices).values({
-          trackingNo: `V2-INV-ACTIVE-${randomUUID()}`,
-          issueMethod: 'self',
-          issuedForFulfillmentOrderId: f.fulfillmentOrder.id,
-          shipmentId: f.shipment.id,
-          status: 'issued',
-        }),
-      ).resolves.toBeDefined();
-    });
-  });
-
   it('allows only one active work item per shipment', async () => {
     await inRollbackTx(async (tx) => {
       const f = await fixture(tx);
@@ -525,42 +479,6 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
         'ck_stock_ledgers_version_positive',
       );
 
-      await expectViolation(
-        tx,
-        (sp) =>
-          sp.insert(wmsTables.invoices).values({
-            trackingNo: `V2-INV-MANIFEST-${randomUUID()}`,
-            issueMethod: 'self',
-            issuedForFulfillmentOrderId: f.fulfillmentOrder.id,
-            shipmentId: f.shipment.id,
-            manifestVersion: 0,
-          }),
-        'ck_invoices_manifest_version_positive',
-      );
-      await expectViolation(
-        tx,
-        (sp) =>
-          sp.insert(wmsTables.invoices).values({
-            trackingNo: `V2-INV-RECIPIENT-${randomUUID()}`,
-            issueMethod: 'self',
-            issuedForFulfillmentOrderId: f.fulfillmentOrder.id,
-            shipmentId: f.shipment.id,
-            recipientHash: 'bad',
-          }),
-        'ck_invoices_recipient_hash',
-      );
-      const [recipientInvoice] = await tx
-        .insert(wmsTables.invoices)
-        .values({
-          trackingNo: `V2-INV-RECIPIENT-VALID-${randomUUID()}`,
-          issueMethod: 'self',
-          issuedForFulfillmentOrderId: f.fulfillmentOrder.id,
-          shipmentId: f.shipment.id,
-          recipientHash: 'e'.repeat(64),
-        })
-        .returning();
-      expect(recipientInvoice.recipientHash).toBe('e'.repeat(64));
-
       const [returnRequest] = await tx
         .insert(returnExchangeTables.returnRequests)
         .values({ salesOrderId: f.salesOrder.id, reasonCode: 'other' })
@@ -829,106 +747,6 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
         'ck_shipment_operation_member_versions',
       );
 
-      const invoiceOperationBase = {
-        shipmentId: f.shipment.id,
-        operation: 'issue' as const,
-        idempotencyKey: randomUUID(),
-        requestHash: 'c'.repeat(64),
-        manifestVersion: 1,
-        recipientHash: 'd'.repeat(64),
-        providerRequest: { shipmentId: f.shipment.id },
-        resumeOperationId: resumeOperation.id,
-      };
-      const [invoiceOperation] = await tx.insert(wmsTables.invoiceOperations).values(invoiceOperationBase).returning();
-      expect(invoiceOperation.providerRequest).toEqual({ shipmentId: f.shipment.id });
-      await expectViolation(
-        tx,
-        (sp) => sp.insert(wmsTables.invoiceOperations).values(invoiceOperationBase),
-        'uq_invoice_operation_idempotency',
-      );
-      await expectViolation(
-        tx,
-        (sp) =>
-          sp.insert(wmsTables.invoiceOperations).values({
-            ...invoiceOperationBase,
-            idempotencyKey: randomUUID(),
-            attempts: -1,
-          }),
-        'ck_invoice_operations_attempts',
-      );
-      await expectViolation(
-        tx,
-        (sp) =>
-          sp.insert(wmsTables.invoiceOperations).values({
-            ...invoiceOperationBase,
-            idempotencyKey: randomUUID(),
-            requestHash: 'bad',
-          }),
-        'ck_invoice_operation_request_hash',
-      );
-      await expectViolation(
-        tx,
-        (sp) =>
-          sp.insert(wmsTables.invoiceOperations).values({
-            ...invoiceOperationBase,
-            idempotencyKey: randomUUID(),
-            manifestVersion: 0,
-          }),
-        'ck_invoice_operation_manifest_version',
-      );
-      await expectViolation(
-        tx,
-        (sp) =>
-          sp.insert(wmsTables.invoiceOperations).values({
-            ...invoiceOperationBase,
-            idempotencyKey: randomUUID(),
-            recipientHash: 'bad',
-          }),
-        'ck_invoice_operation_recipient_hash',
-      );
-      await expectViolation(
-        tx,
-        (sp) =>
-          sp.insert(wmsTables.invoiceOperations).values({
-            ...invoiceOperationBase,
-            idempotencyKey: randomUUID(),
-            providerRequest: null as never,
-          }),
-        'provider_request',
-      );
-      await expectViolation(
-        tx,
-        (sp) =>
-          sp.insert(wmsTables.invoiceOperations).values({
-            ...invoiceOperationBase,
-            idempotencyKey: randomUUID(),
-            resumeOperationId: randomUUID(),
-          }),
-        'invoice_operations_resume_operation_id',
-      );
-      for (const status of ['failed', 'recovery_required'] as const) {
-        await expectViolation(
-          tx,
-          (sp) =>
-            sp.insert(wmsTables.invoiceOperations).values({
-              ...invoiceOperationBase,
-              idempotencyKey: randomUUID(),
-              status,
-            }),
-          'ck_invoice_operation_error_context',
-        );
-      }
-      await expectViolation(
-        tx,
-        (sp) =>
-          sp.insert(wmsTables.invoiceOperations).values({
-            ...invoiceOperationBase,
-            idempotencyKey: randomUUID(),
-            status: 'succeeded',
-          }),
-        'ck_invoice_operation_completion',
-      );
-
       await expectViolation(
         tx,
         (sp) =>
@@ -1043,7 +861,7 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
       await expectViolation(
         tx,
         (sp) => sp.delete(wmsTables.shipmentOperations).where(eq(wmsTables.shipmentOperations.id, resumeOperation.id)),
-        /(?:invoice_operations_resume_operation_id|outbound_batch_work_items_waiting_operation_id)/,
+        'outbound_batch_work_items_waiting_operation_id',
       );
 
       const [plan] = await tx
@@ -2139,23 +1957,6 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
         tx,
         (sp) => sp.insert(wmsTables.shipments).values({ warehouseId: f.warehouse.id, status: 'superseded' }),
         'ck_shipments_superseded_at',
-      );
-    });
-
-    await inRollbackTx(async (tx) => {
-      const f = await fixture(tx);
-      // Task 25 contract: invoices.shipment_id 가 NOT NULL 이 되어 ck_invoices_recovery_state(recovery_required
-      // → shipment_id 필수)는 컬럼 NOT NULL 로 포섭됐다. shipment_id 누락은 NOT NULL 위반으로 먼저 막힌다.
-      await expectViolation(
-        tx,
-        (sp) =>
-          sp.insert(wmsTables.invoices).values({
-            trackingNo: `V2-INV-RECOVERY-${randomUUID()}`,
-            issueMethod: 'self',
-            issuedForFulfillmentOrderId: f.fulfillmentOrder.id,
-            status: 'recovery_required',
-          }),
-        'shipment_id',
       );
     });
   });

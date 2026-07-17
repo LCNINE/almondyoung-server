@@ -3,7 +3,6 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
-  forwardRef,
   Inject,
   Injectable,
   NotFoundException,
@@ -23,14 +22,13 @@ import {
 } from '../dto/shipment-short-pick.dto';
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
-import { InvoiceOrchestrator } from './invoice-orchestrator.service';
 import { BatchInventorySessionService, BatchInventoryBucket } from './batch-inventory-session.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
 import { ShipmentPlanningService } from './shipment-planning.service';
 import { ToteLifecycleService } from './tote-lifecycle.service';
+import { WaybillService } from '../waybill/waybill.service';
 
 const SHORT_PICK_WORK_ITEM_STATUSES = ['picking', 'ready_to_pack', 'packing', 'completed'] as const;
-const SHORT_PICK_ACTIVE_INVOICE_STATUSES = ['issued', 'used', 'issuing', 'voiding', 'recovery_required'] as const;
 
 type ShortPickLineIntent = {
   shipmentLineId: string;
@@ -111,7 +109,7 @@ export class ShipmentShortPickService {
     private readonly authorization: AuthorizationService,
     private readonly audit: AuditService,
     private readonly workflowGate: FulfillmentWorkflowGate,
-    @Inject(forwardRef(() => InvoiceOrchestrator)) private readonly invoices: InvoiceOrchestrator,
+    private readonly waybills: WaybillService,
     @Inject(BatchInventorySessionService) private readonly session: ShortPickSessionPort,
     @Inject(ShipmentReservationService) private readonly reservations: ShortPickReservationPort,
     @Inject(ShipmentPlanningService) private readonly planning: ShortPickPlanningPort,
@@ -194,46 +192,29 @@ export class ShipmentShortPickService {
             allocationQty: allocation.qty,
           };
         });
-        const activeInvoices = await tx
-          .select({ id: wmsTables.invoices.id, status: wmsTables.invoices.status })
-          .from(wmsTables.invoices)
-          .where(
-            and(
-              eq(wmsTables.invoices.shipmentId, shipmentId),
-              inArray(wmsTables.invoices.status, [...SHORT_PICK_ACTIVE_INVOICE_STATUSES]),
-            ),
-          )
-          .orderBy(asc(wmsTables.invoices.id))
-          .for('update');
-        if (activeInvoices.length > 1) {
-          throw this.conflict('SHORT_PICK_INVOICE_AMBIGUOUS', 'Shipment has multiple active invoices');
+        // 활성 waybill(TERMINAL 제외 — DB uq_waybills_shipment_active 로 shipment 당 최대 1행)을 읽는다.
+        // 별도 FOR UPDATE 잠금은 불필요: 이 report tx 는 이미 shipment 그래프를 잠갔고(lockAndValidateShipment
+        // FOR UPDATE + lockShipmentGraphForDispatch), void 의 casToVoided WHERE 가 최종 원자성을 보장한다.
+        const activeWaybill = await this.waybills.getActiveWaybill(shipmentId, tx);
+        if (activeWaybill?.status === 'used') {
+          throw this.conflict('SHORT_PICK_DISPATCH_EXISTS', 'A used waybill cannot enter short-pick recovery');
         }
-        const invoice = activeInvoices[0];
-        if (invoice?.status === 'used') {
-          throw this.conflict('SHORT_PICK_DISPATCH_EXISTS', 'A used invoice cannot enter short-pick recovery');
-        }
-        let invoiceOperationId: string | null = null;
-        if (invoice?.status === 'issued') {
-          // The exact void operation is durably owned by InvoiceOrchestrator. Any
-          // retry after this command commits must lease that same operation; a
-          // second short-pick report must never infer or create another void.
-          const invoiceOperation = await this.invoices.void(
-            invoice.id,
-            {
-              reason: `short_pick:${dto.reason}`,
-              resumeOperationId: operationId,
-              csCaseId: dto.csCaseId,
-              note: dto.note,
-            },
-            `${idempotencyKey}:invoice-void`,
+        if (activeWaybill?.status === 'registered') {
+          // 발송 전(registered) waybill 은 동기 tx-local 로 void 된다(carrier HTTP 없음). void 가 이 report tx
+          // 안에서 완료되므로 short-pick 은 인라인으로 finalize 된다 — 구 invoice-void → resume 비동기 saga
+          // (invoiceOperationId 추적/finalize 게이트)가 단일 tx 로 붕괴한다.
+          await this.waybills.void(
+            activeWaybill.id,
+            { reason: `short_pick:${dto.reason}` },
+            `${idempotencyKey}:waybill-void`,
             actor,
             tx,
           );
-          invoiceOperationId = invoiceOperation.operationId;
-        } else if (invoice) {
+        } else if (activeWaybill) {
+          // pending/allocated 등 발급 진행 중 waybill: 발송 전 취소 불가 상태 → 계승 코드 유지(클라이언트 계약).
           throw this.conflict(
             'SHORT_PICK_INVOICE_NOT_VOIDABLE',
-            `Invoice ${invoice.id} is ${invoice.status}; retry its existing durable invoice operation first`,
+            `Waybill ${activeWaybill.id} is ${activeWaybill.status}; resolve it before short-pick recovery`,
           );
         }
         const physicalContext = await this.lockAndValidatePhysical(shipmentId, dto, tx);
@@ -293,19 +274,15 @@ export class ShipmentShortPickService {
           tx,
         );
 
-        let operationStatus: ShipmentShortPickResponseDto['operationStatus'];
-        if (!invoiceOperationId) {
-          await this.resumePending(operationId, tx);
-          operationStatus = 'completed';
-        } else {
-          operationStatus = 'pending';
-        }
+        // void 가 동기이므로 활성 waybill 은 이 tx 안에서 이미 voided 상태다 — 인라인으로 즉시 finalize 한다.
+        // 구 세계의 pending→async-void→resume 2단계는 더 이상 존재하지 않는다(invoiceOperationId 없음).
+        await this.resumePending(operationId, tx);
         return {
           response: {
             operationId,
             shipmentId,
-            operationStatus,
-            invoiceOperationId,
+            operationStatus: 'completed' as const,
+            invoiceOperationId: null,
             workItemId: dto.workItemId,
           },
           resourceType: 'shipment_operation',
@@ -368,17 +345,15 @@ export class ShipmentShortPickService {
       .limit(1)
       .for('update');
     if (!shipment) throw new NotFoundException(`Shipment ${intent.shipmentId} not found`);
-    const activeInvoices = await tx
-      .select({ id: wmsTables.invoices.id, status: wmsTables.invoices.status })
-      .from(wmsTables.invoices)
-      .where(and(eq(wmsTables.invoices.shipmentId, intent.shipmentId), ne(wmsTables.invoices.status, 'voided')))
-      .orderBy(asc(wmsTables.invoices.id))
-      .for('update');
+    // finalize 게이트: 활성 waybill 이 남아있으면 안 된다(report tx 에서 void 로 이미 종료되었어야 함).
+    // 구 게이트(async invoice void 가 착지했는지 확인)의 동기 등가물 — void 가 report tx 안에서 완료되므로
+    // 인라인 resume 시점엔 항상 null. 외부에서 직접 resume 을 호출하는 경로에 대한 방어로 유지한다.
+    const activeWaybill = await this.waybills.getActiveWaybill(intent.shipmentId, tx);
     if (shipment.status !== 'recovery_required' || shipment.recoveryCode !== 'SHORT_PICK_PENDING') {
       throw this.conflict('SHORT_PICK_SHIPMENT_NOT_RECOVERING', 'Shipment is not in exact short-pick recovery state');
     }
-    if (activeInvoices.length) {
-      throw this.conflict('SHORT_PICK_INVOICE_NOT_VOIDED', 'Short-pick recovery cannot finalize before invoice void');
+    if (activeWaybill) {
+      throw this.conflict('SHORT_PICK_INVOICE_NOT_VOIDED', 'Short-pick recovery cannot finalize before waybill void');
     }
     const [workItem] = await tx
       .select({
@@ -479,10 +454,6 @@ export class ShipmentShortPickService {
       tx,
     );
     return this.currentResponse(operationId, undefined, tx);
-  }
-
-  async markInvoiceRecoveryRequired(operationId: string, error: unknown, tx: DbTx): Promise<void> {
-    await this.markRecoveryRequired(operationId, error, tx);
   }
 
   private async lockAndValidateShipment(shipmentId: string, dto: ReportShipmentShortPickDto, tx: DbTx) {
@@ -913,11 +884,6 @@ export class ShipmentShortPickService {
         if (fallback) return fallback;
         throw new NotFoundException(`Short pick operation ${operationId} not found`);
       }
-      const [invoiceOperation] = await trx
-        .select({ id: wmsTables.invoiceOperations.id })
-        .from(wmsTables.invoiceOperations)
-        .where(eq(wmsTables.invoiceOperations.resumeOperationId, operationId))
-        .limit(1);
       const intentRow = await trx
         .select({ snapshot: wmsTables.shipmentOperations.beforeManifestSnapshot })
         .from(wmsTables.shipmentOperations)
@@ -933,7 +899,7 @@ export class ShipmentShortPickService {
             : row.status === 'recovery_required'
               ? 'recovery_required'
               : 'pending',
-        invoiceOperationId: invoiceOperation?.id ?? null,
+        invoiceOperationId: null,
         workItemId: intent.workItemId,
       };
     }, tx);

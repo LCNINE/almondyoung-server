@@ -17,13 +17,16 @@ import {
   wireLogistics,
 } from './__support__';
 import { BatchInventorySessionService } from './batch-inventory-session.service';
-import { FulfillmentCommandService } from './fulfillment-command.service';
+import { canonicalFulfillmentRequestHash, FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
-import { canonicalShipmentRecipientHash, InvoiceOrchestrator } from './invoice-orchestrator.service';
 import { ShipmentPlanningService } from './shipment-planning.service';
 import { ShipmentShortPickService } from './shipment-short-pick.service';
 import { ToteLifecycleService } from './tote-lifecycle.service';
+import { WaybillService } from '../waybill/waybill.service';
+import { WaybillManager } from '../waybill/waybill.manager';
+import { WaybillReader } from '../waybill/waybill.reader';
+import { WaybillRepository } from '../waybill/waybill.repository';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -60,23 +63,7 @@ describeIfDb('ShipmentShortPickService (DB integration)', () => {
     } as unknown as DbService<typeof wmsSchema>;
   }
 
-  function provider() {
-    return {
-      maxRequestDurationMs: 1_000,
-      capabilities: {
-        issue: { safeToRepeat: true, lookupByIdempotencyKey: false },
-        void: { safeToRepeat: false, lookupByServiceId: true },
-      },
-      issueInvoice: jest.fn(),
-      cancelInvoice: jest.fn().mockResolvedValue(undefined),
-      queryInvoice: jest.fn().mockResolvedValue({
-        status: 'found',
-        tracking: { status: 'canceled' },
-      }),
-    };
-  }
-
-  function services(tx: DbTx, deliveryProvider = provider()) {
+  function services(tx: DbTx) {
     const dbService = ambientDbService(tx);
     const workflowGate = new FulfillmentWorkflowGate(
       new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2', FULFILLMENT_V2_CUTOVER_AT: new Date().toISOString() }),
@@ -96,35 +83,37 @@ describeIfDb('ShipmentShortPickService (DB integration)', () => {
       workflowGate,
     );
     const sessions = new BatchInventorySessionService(dbService, new BatchControlledStockGuard(), audit);
-    let shortPick!: ShipmentShortPickService;
-    const moduleRef = { get: jest.fn(() => shortPick) };
-    const invoices = new InvoiceOrchestrator(
-      dbService,
-      commands,
-      invariant,
-      audit,
-      deliveryProvider as never,
-      deliveryProvider as never,
-      workflowGate,
-      moduleRef as never,
+    // short-pick 은 WaybillService.getActiveWaybill(읽기) + void(commands.execute→CAS, tx-local 동기)만 소비한다 —
+    // carrier registry/issue machine/config 는 이 경로에서 호출되지 않아 stub 으로 충분. 단, void 가 commands.execute 를
+    // 쓰므로 commands 는 실제 인스턴스여야 한다(dispatch spec 의 stub commands 와 다른 지점).
+    const waybills = new WaybillService(
+      new WaybillManager(
+        new WaybillReader(dbService),
+        new WaybillRepository(dbService),
+        {} as never,
+        {} as never,
+        commands,
+        {} as never,
+        dbService,
+      ),
     );
     const totes = new ToteLifecycleService(dbService);
-    shortPick = new ShipmentShortPickService(
+    const shortPick = new ShipmentShortPickService(
       dbService,
       commands,
       authorization as never,
       audit,
       workflowGate,
-      invoices,
+      waybills,
       sessions,
       logistics.shipmentReservations,
       planning,
       totes,
     );
-    return { shortPick, invoices, sessions, planning, logistics, deliveryProvider, moduleRef };
+    return { shortPick, waybills, sessions, planning, logistics };
   }
 
-  async function sharedBatchFixture(tx: DbTx, options: { invoiceA?: boolean; invoiceB?: boolean } = {}) {
+  async function sharedBatchFixture(tx: DbTx, options: { waybillA?: boolean; waybillB?: boolean } = {}) {
     const actor = { id: randomUUID(), roles: ['master'] };
     const { warehouseId, locationId } = await seedWarehouseWithZone(tx);
     const { holderId } = await seedHolder(tx);
@@ -301,25 +290,25 @@ describeIfDb('ShipmentShortPickService (DB integration)', () => {
       .values({ shipmentId: a.shipment.id, toteId: tote.id, assignedBy: actor.id })
       .returning();
 
-    const seedInvoice = async (member: typeof a, suffix: string) => {
-      const [invoice] = await tx
-        .insert(wmsTables.invoices)
+    // 신 세계: invoice(issued) 대신 registered waybill 을 시드한다. void 는 tx-local 동기이므로 short-pick 이
+    // report tx 안에서 이 waybill 을 voided 로 전이시킨다. source=manual(즉시 registered, ckManualStatus 통과).
+    const seedWaybill = async (member: typeof a, suffix: string) => {
+      const [waybill] = await tx
+        .insert(wmsTables.waybills)
         .values({
-          trackingNo: `short-pick-${suffix}-${randomUUID()}`,
-          carrier: 'CJ',
-          issueMethod: 'goodsflow',
-          externalServiceId: `service-${suffix}-${randomUUID()}`,
-          issuedForFulfillmentOrderId: member.fulfillmentOrder.id,
           shipmentId: member.shipment.id,
+          source: 'manual',
+          carrier: 'HANJIN',
+          status: 'registered',
+          trackingNo: `short-pick-${suffix}-${randomUUID()}`,
           manifestVersion: member.shipment.manifestVersion,
-          recipientHash: canonicalShipmentRecipientHash(RECIPIENT),
-          status: 'issued',
+          recipientHash: canonicalFulfillmentRequestHash(RECIPIENT),
         })
         .returning();
-      return invoice;
+      return waybill;
     };
-    const invoiceA = options.invoiceA === false ? undefined : await seedInvoice(a, 'a');
-    const invoiceB = options.invoiceB === false ? undefined : await seedInvoice(b, 'b');
+    const waybillA = options.waybillA === false ? undefined : await seedWaybill(a, 'a');
+    const waybillB = options.waybillB === false ? undefined : await seedWaybill(b, 'b');
     const dto = {
       workItemId: workA.id,
       expectedWorkItemLeaseVersion: workA.leaseVersion,
@@ -352,14 +341,14 @@ describeIfDb('ShipmentShortPickService (DB integration)', () => {
       session,
       tote,
       toteAssignment,
-      invoiceA,
-      invoiceB,
+      waybillA,
+      waybillB,
       dto,
       ...wired,
     };
   }
 
-  it('isolates A, preserves B and good reservation quantity, then resumes the exact issued-invoice void saga', async () => {
+  it('voids the registered waybill and finalizes short-pick recovery inline, preserving the sibling', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await sharedBatchFixture(tx);
       const idempotencyKey = `short-pick-success-${randomUUID()}`;
@@ -377,13 +366,29 @@ describeIfDb('ShipmentShortPickService (DB integration)', () => {
         fixture.actor,
       );
 
+      // 신 세계: void 가 동기 tx-local 이므로 report tx 안에서 즉시 완료 → operationStatus 'completed',
+      // invoiceOperationId 없음(async saga 붕괴). 별도 processOperation 호출 없이 shipment 가 draft 로 finalize.
       expect(duplicate).toEqual(reported);
       expect(reported).toMatchObject({
         shipmentId: fixture.a.shipment.id,
-        operationStatus: 'pending',
+        operationStatus: 'completed',
         workItemId: fixture.workA.id,
       });
-      expect(reported.invoiceOperationId).not.toBeNull();
+      expect(reported.invoiceOperationId).toBeNull();
+
+      // 활성 waybill A 는 report tx 안에서 voided 로 전이. B 의 waybill 은 무손상(registered).
+      const [waybillA] = await tx
+        .select()
+        .from(wmsTables.waybills)
+        .where(eq(wmsTables.waybills.id, fixture.waybillA!.id));
+      const [waybillB] = await tx
+        .select()
+        .from(wmsTables.waybills)
+        .where(eq(wmsTables.waybills.id, fixture.waybillB!.id));
+      expect(waybillA.status).toBe('voided');
+      expect(waybillA.voidedAt).not.toBeNull();
+      expect(waybillB.status).toBe('registered');
+
       const reservationsA = await tx
         .select()
         .from(wmsTables.stockReservations)
@@ -415,31 +420,12 @@ describeIfDb('ShipmentShortPickService (DB integration)', () => {
         .from(wmsTables.batchInventorySessionBalances)
         .where(eq(wmsTables.batchInventorySessionBalances.sessionId, fixture.session.id));
       expect(Number(remainingPool.qty)).toBe(5);
-      const [recoveringWorkA] = await tx
-        .select()
-        .from(wmsTables.outboundBatchWorkItems)
-        .where(eq(wmsTables.outboundBatchWorkItems.id, fixture.workA.id));
-      const [readyWorkB] = await tx
-        .select()
-        .from(wmsTables.outboundBatchWorkItems)
-        .where(eq(wmsTables.outboundBatchWorkItems.id, fixture.workB.id));
-      expect(recoveringWorkA).toMatchObject({
-        status: 'short_pick_recovery',
-        waitingOperationId: reported.operationId,
-        leaseVersion: 2,
-        pickerId: null,
-      });
-      expect(readyWorkB).toMatchObject({ status: 'ready_to_pack', leaseVersion: 1 });
       const [releasedTote] = await tx
         .select()
         .from(wmsTables.shipmentToteAssignments)
         .where(eq(wmsTables.shipmentToteAssignments.id, fixture.toteAssignment.id));
       expect(releasedTote.releasedAt).not.toBeNull();
 
-      const completedInvoice = await fixture.invoices.processOperation(reported.invoiceOperationId!);
-
-      expect(completedInvoice).toMatchObject({ operationId: reported.invoiceOperationId, status: 'succeeded' });
-      expect(fixture.deliveryProvider.cancelInvoice).toHaveBeenCalledTimes(1);
       const [shipmentA] = await tx
         .select()
         .from(wmsTables.shipments)
@@ -474,10 +460,6 @@ describeIfDb('ShipmentShortPickService (DB integration)', () => {
             eq(wmsTables.pickingPlanMembers.shipmentId, fixture.b.shipment.id),
           ),
         );
-      const [invoiceB] = await tx
-        .select()
-        .from(wmsTables.invoices)
-        .where(eq(wmsTables.invoices.id, fixture.invoiceB!.id));
       const [shortOperation] = await tx
         .select()
         .from(wmsTables.shipmentOperations)
@@ -500,88 +482,63 @@ describeIfDb('ShipmentShortPickService (DB integration)', () => {
       expect(shipmentB).toMatchObject({ status: 'planned', manifestVersion: 1, reservationVersion: 1 });
       expect(stillReadyWorkB).toMatchObject({ status: 'ready_to_pack', leaseVersion: 1 });
       expect(memberB.retiredAt).toBeNull();
-      expect(invoiceB.status).toBe('issued');
     });
   });
 
-  it('keeps provider void failure retryable on the same invoice operation and resumes after its retry', async () => {
+  it('rejects short-pick when the active waybill is already dispatched (used)', async () => {
     await inRollbackTx(db, async (tx) => {
-      const deliveryProvider = provider();
-      deliveryProvider.cancelInvoice.mockRejectedValueOnce(new Error('provider timeout'));
       const fixture = await sharedBatchFixture(tx);
-      // Replace only the saga/service graph while retaining the exact seeded batch.
-      const retryServices = services(tx, deliveryProvider);
-      const reported = await retryServices.shortPick.report(
-        fixture.a.shipment.id,
-        fixture.dto,
-        `short-pick-failure-${randomUUID()}`,
-        fixture.actor,
-      );
-
-      await retryServices.invoices.processOperation(reported.invoiceOperationId!);
-      const [failedInvoiceOperation] = await tx
-        .select()
-        .from(wmsTables.invoiceOperations)
-        .where(eq(wmsTables.invoiceOperations.id, reported.invoiceOperationId!));
-      const [recoveringShortOperation] = await tx
-        .select()
-        .from(wmsTables.shipmentOperations)
-        .where(eq(wmsTables.shipmentOperations.id, reported.operationId));
-      const [recoveringShipment] = await tx
-        .select()
-        .from(wmsTables.shipments)
-        .where(eq(wmsTables.shipments.id, fixture.a.shipment.id));
-      expect(failedInvoiceOperation).toMatchObject({ status: 'recovery_required', attempts: 1 });
-      expect(failedInvoiceOperation.nextRetryAt).not.toBeNull();
-      expect(recoveringShortOperation.status).toBe('recovery_required');
-      expect(recoveringShipment).toMatchObject({
-        status: 'recovery_required',
-        recoveryCode: 'SHORT_PICK_PENDING',
-      });
-
+      // used waybill = 이미 발송에 사용된 운송장 → short-pick(발송 전 전용) 거부. void 의 ALREADY_DISPATCHED 계약과
+      // 동치인 상위 게이트: SHORT_PICK_DISPATCH_EXISTS 로 물리 변경 전에 조기 거부.
       await tx
-        .update(wmsTables.invoiceOperations)
-        .set({ nextRetryAt: new Date(0) })
-        .where(eq(wmsTables.invoiceOperations.id, reported.invoiceOperationId!));
-      const retried = await retryServices.invoices.processOperation(reported.invoiceOperationId!);
-      const invoiceOperations = await tx
-        .select()
-        .from(wmsTables.invoiceOperations)
-        .where(eq(wmsTables.invoiceOperations.resumeOperationId, reported.operationId));
-      const [completedShipment] = await tx
+        .update(wmsTables.waybills)
+        .set({ status: 'used' })
+        .where(eq(wmsTables.waybills.id, fixture.waybillA!.id));
+
+      await expect(
+        fixture.shortPick.report(fixture.a.shipment.id, fixture.dto, `short-pick-used-${randomUUID()}`, fixture.actor),
+      ).rejects.toMatchObject({ response: { code: 'SHORT_PICK_DISPATCH_EXISTS' } });
+
+      const [shipment] = await tx
         .select()
         .from(wmsTables.shipments)
         .where(eq(wmsTables.shipments.id, fixture.a.shipment.id));
-      const [completedShortOperation] = await tx
+      const [waybill] = await tx
+        .select()
+        .from(wmsTables.waybills)
+        .where(eq(wmsTables.waybills.id, fixture.waybillA!.id));
+      const operations = await tx
         .select()
         .from(wmsTables.shipmentOperations)
-        .where(eq(wmsTables.shipmentOperations.id, reported.operationId));
-
-      expect(retried).toMatchObject({ operationId: reported.invoiceOperationId, status: 'succeeded', attempts: 2 });
-      expect(invoiceOperations).toHaveLength(1);
-      expect(invoiceOperations[0].id).toBe(reported.invoiceOperationId);
-      expect(deliveryProvider.cancelInvoice).toHaveBeenCalledTimes(1);
-      expect(deliveryProvider.queryInvoice).toHaveBeenCalledTimes(1);
-      expect(completedShipment.status).toBe('draft');
-      expect(completedShortOperation.status).toBe('completed');
+        .where(eq(wmsTables.shipmentOperations.type, 'short_pick'));
+      expect(shipment).toMatchObject({ status: 'planned', recoveryCode: null });
+      expect(waybill.status).toBe('used');
+      expect(operations).toHaveLength(0);
     });
   });
 
-  it.each(['issuing', 'voiding', 'recovery_required'] as const)(
-    'rejects an active %s invoice before physical mutation',
-    async (invoiceStatus) => {
+  it.each(['pending', 'allocated'] as const)(
+    'rejects an active %s waybill before physical mutation',
+    async (waybillStatus) => {
       await inRollbackTx(db, async (tx) => {
-        const fixture = await sharedBatchFixture(tx);
-        await tx
-          .update(wmsTables.invoices)
-          .set({ status: invoiceStatus })
-          .where(eq(wmsTables.invoices.id, fixture.invoiceA!.id));
+        // manual source 는 ckManualStatus 상 registered/used/voided 만 허용 → pending/allocated 는 carrier source 로 시드.
+        // allocated 는 ckTrackingPresent 상 trackingNo 필요, pending 은 null 허용.
+        const fixture = await sharedBatchFixture(tx, { waybillA: false });
+        await tx.insert(wmsTables.waybills).values({
+          shipmentId: fixture.a.shipment.id,
+          source: 'carrier',
+          carrier: 'HANJIN',
+          status: waybillStatus,
+          trackingNo: waybillStatus === 'pending' ? null : `short-pick-carrier-${randomUUID()}`,
+          manifestVersion: fixture.a.shipment.manifestVersion,
+          recipientHash: canonicalFulfillmentRequestHash(RECIPIENT),
+        });
 
         await expect(
           fixture.shortPick.report(
             fixture.a.shipment.id,
             fixture.dto,
-            `short-pick-nonvoidable-${invoiceStatus}-${randomUUID()}`,
+            `short-pick-nonvoidable-${waybillStatus}-${randomUUID()}`,
             fixture.actor,
           ),
         ).rejects.toMatchObject({ response: { code: 'SHORT_PICK_INVOICE_NOT_VOIDABLE' } });
@@ -731,13 +688,15 @@ describeIfDb('ShipmentShortPickService (DB integration)', () => {
       const planning = { retirePickingPlanMemberForShortPick: jest.fn().mockResolvedValue(undefined) };
       const totes = { releaseEmptyAssignmentsForShipment: jest.fn().mockResolvedValue(undefined) };
       const audit = { logUserActionRequired: jest.fn().mockResolvedValue(undefined) };
+      // resume 게이트가 활성 waybill 이 남지 않았음을 확인한다 — 이 시나리오는 waybill 을 시드하지 않으므로 null.
+      const waybills = { getActiveWaybill: jest.fn().mockResolvedValue(null) };
       const service = new ShipmentShortPickService(
         dbService,
         {} as never,
         {} as never,
         audit as never,
         {} as never,
-        {} as never,
+        waybills as never,
         {} as never,
         reservations as never,
         planning as never,

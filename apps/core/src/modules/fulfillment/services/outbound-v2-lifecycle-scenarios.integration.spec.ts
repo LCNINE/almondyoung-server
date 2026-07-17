@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
-import { and, eq, gt, inArray } from 'drizzle-orm';
+import { and, eq, gt, inArray, notInArray } from 'drizzle-orm';
 import * as postgres from 'postgres';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -23,16 +23,36 @@ import {
   type ExpectedOutboxTopology,
 } from './__support__';
 import { BatchInventorySessionService } from './batch-inventory-session.service';
-import { FulfillmentCommandService } from './fulfillment-command.service';
+import { canonicalFulfillmentRequestHash, FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentProgressService } from './fulfillment-progress.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
-import { InvoiceOrchestrator } from './invoice-orchestrator.service';
 import { OutboundBatchOrchestrator } from './outbound-batch-orchestrator.service';
 import { ShipmentDispatchService } from './shipment-dispatch.service';
 import { ShipmentPlanningService } from './shipment-planning.service';
 import { ShipmentRecallService } from './shipment-recall.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
+import { CarrierGatewayRegistry } from '../waybill/carrier/carrier-gateway.registry';
+import type { HanjinConfig } from '../waybill/carrier/hanjin/hanjin.config';
+import { WaybillIssueMachine } from '../waybill/waybill-issue.machine';
+import { WaybillManager } from '../waybill/waybill.manager';
+import { WaybillReader } from '../waybill/waybill.reader';
+import { WaybillRepository } from '../waybill/waybill.repository';
+import { WaybillService } from '../waybill/waybill.service';
+
+// assertDispatchable(읽기 전용)만 소비 — carrier I/O 로 이어지는 필드는 실제로 쓰이지 않는다(더미 값).
+const HANJIN_TEST_CONFIG: HanjinConfig = {
+  clientId: 'CID',
+  apiKey: 'AK',
+  secretKey: 'SK',
+  contractNo: 'CN',
+  orderBaseUrl: 'https://o',
+  printBaseUrl: 'https://p',
+  timeoutMs: 15000,
+  sender: { name: '보내는이', zip: '06236', baseAddress: '테헤란로 1', detailAddress: '10층', tel: '02-100-2000' },
+  boxType: 'A',
+  payType: 'PP',
+};
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -116,22 +136,6 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
       authorization,
       workflow,
     );
-    const provider = {
-      maxRequestDurationMs: 1_000,
-      capabilities: {
-        issue: { safeToRepeat: true, lookupByIdempotencyKey: false },
-        void: { safeToRepeat: true, lookupByServiceId: true },
-      },
-      issueInvoice: jest.fn().mockImplementation(() =>
-        Promise.resolve({
-          serviceId: `lifecycle-service-${randomUUID()}`,
-          invoiceNumber: `lifecycle-tracking-${randomUUID()}`,
-          carrierCode: 'CJ',
-        }),
-      ),
-      cancelInvoice: jest.fn().mockResolvedValue(undefined),
-      queryInvoice: jest.fn().mockResolvedValue({ status: 'found', tracking: { status: 'canceled' } }),
-    };
     const serviceRefs: { recall?: ShipmentRecallService } = {};
     const moduleRef = {
       get: jest.fn((token: unknown) => {
@@ -140,23 +144,28 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
         return { resumePending: jest.fn().mockResolvedValue(undefined) };
       }),
     };
-    const invoices = new InvoiceOrchestrator(
-      dbService,
-      commands,
-      invariant,
-      audit,
-      provider as never,
-      provider as never,
-      workflow,
-      moduleRef as never,
-    );
     const sessions = new BatchInventorySessionService(dbService, controlled, audit);
     const fulfillmentOutbox = new FulfillmentOutboxService(dbService);
+    // 플랜3: dispatch(assertDispatchable/markUsed)·recall(getActiveWaybill/voidForRecall) 둘 다 실제
+    // WaybillService 를 소비한다. registry/machine 은 이 경로들에서 실행되지 않지만(carrier HTTP 없음) 구조적
+    // 의존이므로 empty registry + issue machine 으로 배선한다(waybill.manager.integration.spec.ts 패턴).
+    const waybillRepo = new WaybillRepository(dbService);
+    const waybillRegistry = new CarrierGatewayRegistry([]);
+    const waybillManager = new WaybillManager(
+      new WaybillReader(dbService),
+      waybillRepo,
+      new WaybillIssueMachine(waybillRepo, waybillRegistry, dbService),
+      waybillRegistry,
+      commands,
+      HANJIN_TEST_CONFIG,
+      dbService,
+    );
+    const waybills = new WaybillService(waybillManager);
     const recall = new ShipmentRecallService(
       dbService,
       commands,
       authorization,
-      invoices,
+      waybills,
       inventory,
       reservations,
       fulfillmentOutbox,
@@ -170,7 +179,7 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
       inventory,
       sessions,
       reservations,
-      invoices,
+      waybills,
       new BarcodeService(dbService),
       fulfillmentOutbox,
       audit,
@@ -180,12 +189,12 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
       dbService,
       commands,
       invariant,
-      invoices,
+      waybills,
       audit,
       workflow,
       moduleRef as never,
     );
-    return { batches, dispatch, invoices, planning, recall, reservations };
+    return { batches, dispatch, waybills, planning, recall, reservations };
   }
 
   async function seedWorld(tx: DbTx, quantity = 2, onHand = quantity): Promise<LifecycleWorld> {
@@ -451,20 +460,29 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
       tx,
     );
     const [planned] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, shipmentId));
-    const accepted = await service.invoices.issueForShipment(
+
+    // 플랜3 컷오버: dispatch/batch 는 invoice 대신 WaybillService.assertDispatchable 를 소비한다 — shipment 와
+    // manifestVersion/recipientHash 가 일치하는 registered waybill 이 있어야 통과한다. 재발송(14번 시나리오)은
+    // 이 함수를 같은 shipment 에 두 번 호출하므로, 먼저 활성 waybill 을 voided 처리해 uq_waybills_shipment_active
+    // 충돌 없이 최신 manifest 로 재시딩한다.
+    await tx
+      .update(wmsTables.waybills)
+      .set({ status: 'voided', voidedAt: new Date() })
+      .where(
+        and(
+          eq(wmsTables.waybills.shipmentId, shipmentId),
+          notInArray(wmsTables.waybills.status, ['voided', 'failed', 'abandoned']),
+        ),
+      );
+    await tx.insert(wmsTables.waybills).values({
       shipmentId,
-      {
-        expectedManifestVersion: planned.manifestVersion,
-        provider: 'goodsflow',
-        carrierCode: 'CJ',
-        reason: 'lifecycle release label',
-      },
-      `lifecycle-issue-${randomUUID()}`,
-      actor,
-      tx,
-    );
-    await service.invoices.processOperation(accepted.operationId);
-    expect((await service.invoices.getOperation(accepted.operationId, tx)).status).toBe('succeeded');
+      source: 'manual',
+      carrier: 'HANJIN',
+      status: 'registered',
+      trackingNo: `lifecycle-tracking-${randomUUID()}`,
+      manifestVersion: planned.manifestVersion,
+      recipientHash: canonicalFulfillmentRequestHash(planned.recipientSnapshot),
+    });
   }
 
   async function stageBatch(tx: DbTx, world: LifecycleWorld, shipmentIds: string[]): Promise<StagedBatch> {
@@ -597,6 +615,8 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
   async function recall(tx: DbTx, shipmentId: string, dispatchAttemptId: string) {
     const service = services(tx);
     const [shipment] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, shipmentId));
+    // 플랜3: recall.report 는 동기다 — waybill used→voided + 재고 역전을 report tx 안에서 인라인 완료한다.
+    // 구 async invoice-void→resume(invoiceOperationId 추적) 2단계는 사라졌다.
     const reported = await service.recall.report(
       shipmentId,
       dispatchAttemptId,
@@ -609,11 +629,9 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
       `lifecycle-recall-${randomUUID()}`,
       actor,
     );
-    expect(reported.operationStatus).toBe('pending');
-    await service.invoices.processOperation(reported.invoiceOperationId!);
-    const completed = await service.recall.resumePending(reported.operationId, tx);
-    expect(completed.operationStatus).toBe('completed');
-    return completed;
+    expect(reported.operationStatus).toBe('completed');
+    expect(reported.invoiceOperationId).toBeNull();
+    return reported;
   }
 
   it('11. last inspection scan auto-dispatches and posts the ledger immediately', async () => {
@@ -801,7 +819,7 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
     });
   });
 
-  it('14. recalled shipment redispatches with a new invoice and immutable attempt 1', async () => {
+  it('14. recalled shipment redispatches with a new waybill and immutable attempt 1', async () => {
     await inRollbackTx(db, async (tx) => {
       const world = await seedWorld(tx, 3, 3);
       const item = world.items[0];
@@ -888,7 +906,9 @@ describeIfDb('Outbound V2 lifecycle release scenarios', () => {
           .from(wmsTables.shipmentTracking)
           .where(eq(wmsTables.shipmentTracking.dispatchAttemptId, first.dispatchAttemptId!)),
       ).toEqual([]);
-      expect(attempts[1].invoiceId).not.toBe(attempts[0].invoiceId);
+      // 플랜3: 발송 증거는 invoice_id 가 아니라 waybill_id 다. attempt1 의 waybill 은 recall 로 voided 되고
+      // attempt2 는 재발급된 별개의 registered→used waybill 을 참조한다.
+      expect(attempts[1].waybillId).not.toBe(attempts[0].waybillId);
     });
   });
 

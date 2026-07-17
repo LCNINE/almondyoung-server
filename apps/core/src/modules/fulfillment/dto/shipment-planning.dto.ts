@@ -176,24 +176,26 @@ export class ShipmentLineDetailResponseDto {
   reservations: ShipmentLineReservationResponseDto[];
 }
 
-export class ShipmentInvoiceHistoryResponseDto {
+// 구 ShipmentInvoiceHistoryResponseDto → waybill 소비처 전환(Task 8). 필드는 wmsTables.waybills 컬럼과 맞춤
+// (trackingNo 는 waybill 이 pending/allocated 상태일 때 null 가능 — invoices 와 달리 not-null 아님).
+export class ShipmentWaybillHistoryResponseDto {
   @ApiProperty()
   id: string;
 
   @ApiProperty()
   status: string;
 
-  @ApiProperty()
-  trackingNo: string;
-
   @ApiProperty({ nullable: true })
-  carrier: string | null;
-
-  @ApiProperty({ nullable: true })
-  manifestVersion: number | null;
+  trackingNo: string | null;
 
   @ApiProperty()
-  issuedAt: Date;
+  carrier: string;
+
+  @ApiProperty()
+  manifestVersion: number;
+
+  @ApiProperty({ nullable: true })
+  issuedAt: Date | null;
 
   @ApiProperty({ nullable: true })
   voidedAt: Date | null;
@@ -217,8 +219,9 @@ export class ShipmentDispatchAttemptHistoryResponseDto {
   @ApiProperty()
   status: string;
 
+  // Task 12(contract): dispatch_attempts.invoice_id 드롭 — waybill_id 로 대체. admin-web 소비 필드명 변경 필요(follow-up).
   @ApiProperty({ nullable: true })
-  invoiceId: string | null;
+  waybillId: string | null;
 
   @ApiProperty({ nullable: true })
   dispatchedAt: Date | null;
@@ -319,8 +322,9 @@ export class ShipmentDetailResponseDto {
   @ApiProperty({ type: [ShipmentLineDetailResponseDto] })
   lines: ShipmentLineDetailResponseDto[];
 
-  @ApiProperty({ type: [ShipmentInvoiceHistoryResponseDto] })
-  invoices: ShipmentInvoiceHistoryResponseDto[];
+  // Task 8: invoices → waybills. admin-web 소비 필드명 변경 필요 — Task 9 클라이언트 확인과 함께 follow-up.
+  @ApiProperty({ type: [ShipmentWaybillHistoryResponseDto] })
+  waybills: ShipmentWaybillHistoryResponseDto[];
 
   @ApiProperty({ type: [ShipmentWorkItemHistoryResponseDto] })
   workItems: ShipmentWorkItemHistoryResponseDto[];

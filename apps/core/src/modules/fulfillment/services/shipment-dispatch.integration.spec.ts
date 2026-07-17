@@ -23,9 +23,13 @@ import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentProgressService } from './fulfillment-progress.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
-import { InvoiceOrchestrator, canonicalShipmentRecipientHash } from './invoice-orchestrator.service';
+import { canonicalFulfillmentRequestHash } from './fulfillment-command.service';
 import { ShipmentDispatchService } from './shipment-dispatch.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
+import { WaybillService } from '../waybill/waybill.service';
+import { WaybillManager } from '../waybill/waybill.manager';
+import { WaybillReader } from '../waybill/waybill.reader';
+import { WaybillRepository } from '../waybill/waybill.repository';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -72,15 +76,19 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
       new FulfillmentInvariantService(),
     );
     const audit = new AuditService(dbService);
-    const invoices = new InvoiceOrchestrator(
-      dbService,
-      new FulfillmentCommandService(dbService),
-      new FulfillmentInvariantService(),
-      audit,
-      {} as never,
-      {} as never,
-      workflow,
-      {} as never,
+    // dispatch 는 WaybillService.assertDispatchable/markUsed(읽기+CAS)만 소비한다 — carrier registry/issue
+    // machine/commands/config 는 이 경로에서 호출되지 않아 stub 으로 충분(waybill.manager.integration.spec 패턴).
+    const waybillRepo = new WaybillRepository(dbService);
+    const waybills = new WaybillService(
+      new WaybillManager(
+        new WaybillReader(dbService),
+        waybillRepo,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        dbService,
+      ),
     );
     return new ShipmentDispatchService(
       dbService,
@@ -88,7 +96,7 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
       inventory,
       new BatchInventorySessionService(dbService, controlled, audit),
       shipmentReservations,
-      invoices,
+      waybills,
       new BarcodeService(dbService),
       fulfillmentOutbox,
       audit,
@@ -273,18 +281,16 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
         qty: 1,
       },
     ]);
-    const [invoice] = await tx
-      .insert(wmsTables.invoices)
+    const [waybill] = await tx
+      .insert(wmsTables.waybills)
       .values({
-        trackingNo: `TRACK-${suffix}`,
-        carrier: 'CJ',
-        issueMethod: 'self',
-        externalServiceId: `service-${suffix}`,
-        issuedForFulfillmentOrderId: fulfillmentOrder.id,
         shipmentId: shipment.id,
+        source: 'manual',
+        carrier: 'HANJIN',
+        status: 'registered',
+        trackingNo: `TRACK-${suffix}`,
         manifestVersion: shipment.manifestVersion,
-        recipientHash: canonicalShipmentRecipientHash(recipientSnapshot),
-        status: 'issued',
+        recipientHash: canonicalFulfillmentRequestHash(recipientSnapshot),
       })
       .returning();
     return {
@@ -293,7 +299,7 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
       batch,
       fulfillmentOrder,
       holder,
-      invoice,
+      waybill,
       item,
       ledger,
       line,
@@ -377,7 +383,7 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
       await tx
         .delete(wmsTables.stockReservations)
         .where(eq(wmsTables.stockReservations.shipmentLineId, fixture.line.id));
-      await tx.delete(wmsTables.invoices).where(eq(wmsTables.invoices.id, fixture.invoice.id));
+      await tx.delete(wmsTables.waybills).where(eq(wmsTables.waybills.shipmentId, fixture.shipment.id));
       await tx.delete(wmsTables.shipmentLines).where(eq(wmsTables.shipmentLines.id, fixture.line.id));
       await tx.delete(wmsTables.shipments).where(eq(wmsTables.shipments.id, fixture.shipment.id));
       await tx.delete(wmsTables.fulfillmentOrderItems).where(eq(wmsTables.fulfillmentOrderItems.id, fixture.item.id));
@@ -526,21 +532,19 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
         qty: quantity - 1,
       },
     ]);
-    const [invoice] = await tx
-      .insert(wmsTables.invoices)
+    const [waybill] = await tx
+      .insert(wmsTables.waybills)
       .values({
-        trackingNo: `TRACK-${suffix}`,
-        carrier: 'CJ',
-        issueMethod: 'self',
-        externalServiceId: `service-${suffix}`,
-        issuedForFulfillmentOrderId: base.fulfillmentOrder.id,
         shipmentId: shipment.id,
+        source: 'manual',
+        carrier: 'HANJIN',
+        status: 'registered',
+        trackingNo: `TRACK-${suffix}`,
         manifestVersion: shipment.manifestVersion,
-        recipientHash: canonicalShipmentRecipientHash(shipment.recipientSnapshot),
-        status: 'issued',
+        recipientHash: canonicalFulfillmentRequestHash(shipment.recipientSnapshot),
       })
       .returning();
-    return { invoice, line, session, shipment };
+    return { waybill, line, session, shipment };
   }
 
   it('commits the last scan, exact-source SHIP, reservation/session settlement, progress and outbox atomically', async () => {
@@ -593,6 +597,10 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
         .select()
         .from(wmsTables.batchInventorySessions)
         .where(eq(wmsTables.batchInventorySessions.id, fixture.session.id));
+      const [waybill] = await tx
+        .select()
+        .from(wmsTables.waybills)
+        .where(eq(wmsTables.waybills.shipmentId, fixture.shipment.id));
       const events = await tx
         .select()
         .from(wmsTables.outboxEvents)
@@ -615,7 +623,10 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
         stateReason: `shipment-dispatch:${result.dispatchAttemptId}`,
       });
       expect(ledger.qty).toBe(0);
-      expect(attempt).toMatchObject({ status: 'dispatched', invoiceId: fixture.invoice.id });
+      // dispatch 는 assertDispatchable→markUsed seam 을 태워 활성 waybill 을 used 로 전이시키고,
+      // dispatch attempt 는 그 waybill 을 발송증거로 기록한다(구 invoice_id write 대체).
+      expect(waybill).toMatchObject({ id: fixture.waybill.id, status: 'used' });
+      expect(attempt).toMatchObject({ status: 'dispatched', waybillId: fixture.waybill.id });
       expect(source).toMatchObject({ shipmentLineId: fixture.line.id, qty: 2 });
       expect(typeof source.stockEventId).toBe('string');
       expect(session).toMatchObject({ status: 'settled', settledQty: 2 });
@@ -627,23 +638,23 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
     });
   });
 
-  it('redispatches the same recalled shipment as attempt 2 with a new invoice and immutable attempt-1 history', async () => {
+  it('redispatches the same recalled shipment as attempt 2 with a new waybill and immutable attempt-1 history', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedReadyShipment(tx);
       const oldAttemptId = randomUUID();
       const oldRecallOperationId = randomUUID();
-      const [oldInvoice] = await tx
-        .insert(wmsTables.invoices)
+      // 이전 발송의 waybill 은 recall 로 voided(종료) 상태 — 활성-유니크 제약과 무관하므로 fixture 의
+      // registered waybill 과 공존한다. 옛 attempt 는 이 voided waybill 을 발송증거로 참조한다.
+      const [oldWaybill] = await tx
+        .insert(wmsTables.waybills)
         .values({
-          trackingNo: `OLD-${randomUUID()}`,
-          carrier: 'CJ',
-          issueMethod: 'self',
-          externalServiceId: `old-service-${randomUUID()}`,
-          issuedForFulfillmentOrderId: fixture.fulfillmentOrder.id,
           shipmentId: fixture.shipment.id,
-          manifestVersion: fixture.shipment.manifestVersion,
-          recipientHash: canonicalShipmentRecipientHash(fixture.shipment.recipientSnapshot),
+          source: 'manual',
+          carrier: 'HANJIN',
           status: 'voided',
+          trackingNo: `OLD-${randomUUID()}`,
+          manifestVersion: fixture.shipment.manifestVersion,
+          recipientHash: canonicalFulfillmentRequestHash(fixture.shipment.recipientSnapshot),
           voidedAt: new Date('2026-07-15T01:00:00.000Z'),
         })
         .returning();
@@ -672,7 +683,7 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
           attemptNo: 1,
           status: 'recalled',
           idempotencyKey: `old-attempt-${randomUUID()}`,
-          invoiceId: oldInvoice.id,
+          waybillId: oldWaybill.id,
           stockJournalId: oldJournal.id,
           reversalJournalId: oldReversalJournal.id,
           dispatchedAt,
@@ -733,13 +744,13 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
         id: oldAttempt.id,
         attemptNo: 1,
         status: 'recalled',
-        invoiceId: oldInvoice.id,
+        waybillId: oldWaybill.id,
       });
       expect(attempts[1]).toMatchObject({
         id: result.dispatchAttemptId,
         attemptNo: 2,
         status: 'dispatched',
-        invoiceId: fixture.invoice.id,
+        waybillId: fixture.waybill.id,
       });
       const [sourceAfter] = await tx
         .select()
@@ -921,16 +932,17 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
     }
   });
 
-  it('rolls back inspection custody and every economic effect when the current invoice is stale', async () => {
+  it('rolls back inspection custody and every economic effect when the active waybill is stale', async () => {
     const fixture = await db.transaction((tx) => seedReadyShipment(tx as unknown as DbTx));
-    const commandKey = `dispatch-stale-invoice-${randomUUID()}`;
+    const commandKey = `dispatch-stale-waybill-${randomUUID()}`;
     const commandDb = isolatedDb(`dispatch-stale-${randomUUID()}`);
 
     try {
+      // 활성 waybill 의 recipientHash 를 shipment 와 어긋나게 만들어 assertDispatchable 이 WAYBILL_STALE 로 막게 한다.
       await db
-        .update(wmsTables.invoices)
-        .set({ manifestVersion: fixture.shipment.manifestVersion + 1 })
-        .where(eq(wmsTables.invoices.id, fixture.invoice.id));
+        .update(wmsTables.waybills)
+        .set({ recipientHash: 'b'.repeat(64) })
+        .where(eq(wmsTables.waybills.id, fixture.waybill.id));
 
       const loadSnapshot = async () => {
         const [line] = await db
@@ -1023,7 +1035,8 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
           actor: { id: fixture.actorId, roles: ['logistics_worker'] },
           idempotencyKey: commandKey,
         }),
-      ).rejects.toMatchObject({ response: { code: 'SHIPMENT_INVOICE_STALE' } });
+        // WaybillService 는 @app/shared ConflictError(message 에 코드 prefix)를 던진다 — Nest .response.code 아님.
+      ).rejects.toThrow(/WAYBILL_STALE/);
       const after = await loadSnapshot();
 
       expect(before).toMatchObject({

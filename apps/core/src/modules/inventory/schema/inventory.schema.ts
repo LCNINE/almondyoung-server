@@ -202,17 +202,6 @@ export const outboxStatusEnum = pgEnum('outbox_status', ['pending', 'published',
 export const pickingMethodEnum = pgEnum('picking_method', ['individual', 'total_picking']);
 export const pickingStrategyEnum = pgEnum('picking_strategy', ['discrete', 'aggregate_then_sort', 'pick_to_tote']);
 export const batchStatusEnum = pgEnum('batch_status', ['created', 'picking', 'completed', 'canceled']);
-// Task 25 contract: V1 전용 'direct'(운영자 번호 직입력) 제거. goodsflow(외부요인 사용불가·유지)·self(수동)·hanjin(향후).
-export const invoiceMethodEnum = pgEnum('invoice_method', ['goodsflow', 'self', 'hanjin']);
-export const invoiceStatusEnum = pgEnum('invoice_status', [
-  'issued',
-  'used',
-  'voided',
-  'issuing',
-  'voiding',
-  'recovery_required',
-]);
-
 // Outbound V2 expand enums. These are additive and intentionally coexist with V1 enums until Task 25.
 export const fulfillmentCommandRequestStatusEnum = pgEnum('fulfillment_command_request_status', [
   'pending',
@@ -237,14 +226,6 @@ export const shipmentOperationStatusEnum = pgEnum('shipment_operation_status', [
   'recovery_required',
 ]);
 export const shipmentOperationMemberRoleEnum = pgEnum('shipment_operation_member_role', ['source', 'target']);
-export const invoiceOperationTypeEnum = pgEnum('invoice_operation_type', ['issue', 'void']);
-export const invoiceOperationStatusEnum = pgEnum('invoice_operation_status', [
-  'pending',
-  'in_progress',
-  'succeeded',
-  'failed',
-  'recovery_required',
-]);
 export const outboundBatchWorkItemStatusEnum = pgEnum('outbound_batch_work_item_status', [
   'queued',
   'picking',
@@ -2272,63 +2253,6 @@ export const outboundBatches = pgTable(
 // V2 batch 단위는 FO 가 아니라 shipment 다(outbound_batch_work_items). outbound_batches 는 존치.
 
 /*───────────────────────────
- * INVOICE MANAGEMENT
- *──────────────────────────*/
-
-export const invoices = pgTable(
-  'invoices',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    // 운송장번호 = 택배사 API 발급 번호 (구 invoiceNumber).
-    trackingNo: varchar('tracking_no', { length: 128 }).notNull().unique(),
-    // 구 carrierCode(varchar) → carrierEnum.
-    carrier: carrierEnum('carrier'),
-    issueMethod: invoiceMethodEnum('issue_method').notNull(),
-    // 구 goodsflowServiceId — goodsflow/hanjin 공용 외부 service id.
-    externalServiceId: varchar('external_service_id', { length: 255 }),
-    // 선발급(미리 출력) 추적용 — 발급 시점의 FO.
-    // TODO(outbound-v2-contract Task 25): remove after all V1 issued-for-FO ownership is gone.
-    // Kept required during expand so deployed V1 readers retain their current type/behavior.
-    issuedForFulfillmentOrderId: uuid('issued_for_fulfillment_order_id')
-      .references(() => fulfillmentOrders.id, { onDelete: 'cascade' })
-      .notNull(),
-    // Task 25 contract: V2 invoice 는 항상 shipment 소유 (invoice-orchestrator:181). void 된 송장도 shipment 보존(이력).
-    // NOT NULL 이라 onDelete 를 set null → restrict (송장이 달린 shipment 는 삭제 불가; cleanup 은 invoice 를 먼저 지운다).
-    shipmentId: uuid('shipment_id')
-      .references(() => shipments.id, { onDelete: 'restrict' })
-      .notNull(),
-    // TODO(outbound-v2-contract Task 25): require shipment/manifest/recipient hash for new V2 invoices.
-    manifestVersion: integer('manifest_version'),
-    recipientHash: varchar('recipient_hash', { length: 64 }),
-    status: invoiceStatusEnum('status').notNull().default('issued'),
-    issuedAt: timestamp('issued_at', { withTimezone: true }).notNull().defaultNow(),
-    voidedAt: timestamp('voided_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    idxIssuedForFo: index('idx_invoices_issued_for_fo').on(t.issuedForFulfillmentOrderId),
-    idxTrackingNo: index('idx_invoices_tracking_no').on(t.trackingNo),
-    idxStatus: index('idx_invoices_status').on(t.status),
-    idxShipment: index('idx_invoices_shipment').on(t.shipmentId),
-    uqActivePerShipment: uniqueIndex('uq_invoices_shipment_active')
-      .on(t.shipmentId)
-      .where(sql`${t.status} <> 'voided'`),
-    ckInvoiceManifestVersion: check(
-      'ck_invoices_manifest_version_positive',
-      sql`${t.manifestVersion} IS NULL OR ${t.manifestVersion} > 0`,
-    ),
-    ckInvoiceRecipientHash: check(
-      'ck_invoices_recipient_hash',
-      sql`${t.recipientHash} IS NULL OR length(${t.recipientHash}) = 64`,
-    ),
-    ckInvoiceRecoveryState: check(
-      'ck_invoices_recovery_state',
-      sql`${t.status}::text <> 'recovery_required' OR ${t.shipmentId} IS NOT NULL`,
-    ),
-  }),
-);
-
-/*───────────────────────────
  * OUTBOUND V2 EXPAND MODEL
  * Additive foundation for idempotent shipment planning, custody and dispatch.
  *──────────────────────────*/
@@ -2343,9 +2267,8 @@ export const fulfillmentCommandRequests = pgTable(
     status: fulfillmentCommandRequestStatusEnum('status').notNull().default('pending'),
     resourceType: varchar('resource_type', { length: 64 }),
     resourceId: uuid('resource_id'),
-    // Polymorphic correlation to shipment_operations or invoice_operations. A single
-    // PostgreSQL FK cannot target both operation tables, so command handlers validate
-    // operationId against resourceType inside their transaction.
+    // Polymorphic correlation to shipment_operations (구 invoice_operations 대상은 contract phase 에서 드롭됨).
+    // command handlers validate operationId against resourceType inside their transaction.
     operationId: uuid('operation_id'),
     attemptId: uuid('attempt_id').references(() => dispatchAttempts.id, { onDelete: 'restrict' }),
     responseSnapshot: jsonb('response_snapshot'),
@@ -2434,47 +2357,62 @@ export const shipmentOperationMembers = pgTable(
   }),
 );
 
-export const invoiceOperations = pgTable(
-  'invoice_operations',
+export const waybillStatusEnum = pgEnum('waybill_status', [
+  'pending',
+  'allocated',
+  'registered',
+  'used',
+  'voided',
+  'failed',
+  'abandoned',
+]);
+export const waybillSourceEnum = pgEnum('waybill_source', ['carrier', 'manual']);
+
+export const waybills = pgTable(
+  'waybills',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     shipmentId: uuid('shipment_id')
       .references(() => shipments.id, { onDelete: 'restrict' })
       .notNull(),
-    invoiceId: uuid('invoice_id').references(() => invoices.id, { onDelete: 'restrict' }),
-    resumeOperationId: uuid('resume_operation_id').references(() => shipmentOperations.id, { onDelete: 'restrict' }),
-    operation: invoiceOperationTypeEnum('operation').notNull(),
-    idempotencyKey: varchar('idempotency_key', { length: 255 }).notNull(),
-    requestHash: varchar('request_hash', { length: 64 }).notNull(),
+    source: waybillSourceEnum('source').notNull(),
+    carrier: carrierEnum('carrier').notNull(),
+    status: waybillStatusEnum('status').notNull().default('pending'),
+    trackingNo: varchar('tracking_no', { length: 128 }),
+    custOrdNo: varchar('cust_ord_no', { length: 30 }),
+    labelData: jsonb('label_data'),
     manifestVersion: integer('manifest_version').notNull(),
     recipientHash: varchar('recipient_hash', { length: 64 }).notNull(),
-    status: invoiceOperationStatusEnum('status').notNull().default('pending'),
-    providerRequest: jsonb('provider_request').notNull(),
-    providerResponse: jsonb('provider_response'),
-    attempts: integer('attempts').notNull().default(0),
     lastError: text('last_error'),
-    nextRetryAt: timestamp('next_retry_at', { withTimezone: true }),
+    attempts: integer('attempts').notNull().default(0),
+    issuedAt: timestamp('issued_at', { withTimezone: true }),
+    voidedAt: timestamp('voided_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-    completedAt: timestamp('completed_at', { withTimezone: true }),
   },
   (t) => ({
-    uqInvoiceOperationIdempotency: unique('uq_invoice_operation_idempotency').on(t.operation, t.idempotencyKey),
-    idxInvoiceOperationShipment: index('idx_invoice_operations_shipment').on(t.shipmentId),
-    idxInvoiceOperationResume: index('idx_invoice_operations_resume_operation').on(t.resumeOperationId),
-    idxInvoiceOperationRetry: index('idx_invoice_operations_retry').on(t.status, t.nextRetryAt),
-    ckInvoiceOperationAttempts: check('ck_invoice_operations_attempts', sql`${t.attempts} >= 0`),
-    ckInvoiceOperationRequestHash: check('ck_invoice_operation_request_hash', sql`length(${t.requestHash}) = 64`),
-    ckInvoiceOperationManifestVersion: check('ck_invoice_operation_manifest_version', sql`${t.manifestVersion} > 0`),
-    ckInvoiceOperationRecipientHash: check('ck_invoice_operation_recipient_hash', sql`length(${t.recipientHash}) = 64`),
-    ckInvoiceOperationCompletion: check(
-      'ck_invoice_operation_completion',
-      sql`${t.status} <> 'succeeded' OR (${t.invoiceId} IS NOT NULL AND ${t.completedAt} IS NOT NULL)`,
+    idxShipment: index('idx_waybills_shipment').on(t.shipmentId),
+    idxStatus: index('idx_waybills_status').on(t.status),
+    idxTrackingNo: index('idx_waybills_tracking_no').on(t.trackingNo),
+    // shipment 당 활성 운송장 1개. 종료 3상태(voided/failed/abandoned) 슬롯 해제.
+    uqActivePerShipment: uniqueIndex('uq_waybills_shipment_active')
+      .on(t.shipmentId)
+      .where(sql`${t.status} NOT IN ('voided', 'failed', 'abandoned')`),
+    // live 운송장 사이에서만 trackingNo 유일(멱등 앵커). 종료 상태 제외라 오void 번호 재등록 허용.
+    uqLiveTrackingNo: uniqueIndex('uq_waybills_tracking_live')
+      .on(t.trackingNo)
+      .where(sql`${t.trackingNo} IS NOT NULL AND ${t.status} NOT IN ('voided', 'failed', 'abandoned')`),
+    ckTrackingPresent: check(
+      'ck_waybills_tracking_present',
+      sql`${t.status} NOT IN ('allocated', 'registered', 'used') OR ${t.trackingNo} IS NOT NULL`,
     ),
-    ckInvoiceOperationErrorContext: check(
-      'ck_invoice_operation_error_context',
-      sql`${t.status} NOT IN ('failed', 'recovery_required') OR ${t.lastError} IS NOT NULL`,
+    ckManualStatus: check(
+      'ck_waybills_manual_status',
+      sql`${t.source} <> 'manual' OR ${t.status} IN ('registered', 'used', 'voided')`,
     ),
+    ckAttempts: check('ck_waybills_attempts', sql`${t.attempts} >= 0`),
+    ckRecipientHash: check('ck_waybills_recipient_hash', sql`length(${t.recipientHash}) = 64`),
+    ckManifestVersion: check('ck_waybills_manifest_version', sql`${t.manifestVersion} > 0`),
   }),
 );
 
@@ -2862,8 +2800,8 @@ export const dispatchAttempts = pgTable(
     attemptNo: integer('attempt_no').notNull(),
     status: dispatchAttemptStatusEnum('status').notNull().default('pending'),
     idempotencyKey: varchar('idempotency_key', { length: 255 }).notNull(),
-    // TODO(outbound-v2-contract Task 25): require invoice and dispatch journal once V1 dispatch rows are absent.
-    invoiceId: uuid('invoice_id').references(() => invoices.id, { onDelete: 'restrict' }),
+    // waybill 모듈 컷오버(플랜3): 구 invoice_id 를 대체. Task 12에서 invoice_id 컬럼 드롭 완료.
+    waybillId: uuid('waybill_id').references(() => waybills.id, { onDelete: 'restrict' }),
     stockJournalId: uuid('stock_journal_id').references(() => stockJournals.id, { onDelete: 'restrict' }),
     reversalJournalId: uuid('reversal_journal_id').references(() => stockJournals.id, { onDelete: 'restrict' }),
     dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
@@ -3019,13 +2957,12 @@ export const wmsTables = {
   fulfillmentOrderItems,
   inspectionIssues,
   outboundBatches,
-  invoices,
+  waybills,
 
   // Outbound V2 expand model
   fulfillmentCommandRequests,
   shipmentOperations,
   shipmentOperationMembers,
-  invoiceOperations,
   outboundBatchWorkItems,
   pickingPlans,
   pickingPlanMembers,
@@ -3434,7 +3371,6 @@ export const fulfillmentOrdersRelations = relations(fulfillmentOrders, ({ one, m
   items: many(fulfillmentOrderItems),
   creationBacklogs: many(fulfillmentOrderCreationBacklogs),
   shipments: many(shipments),
-  invoices: many(invoices),
 }));
 
 export const fulfillmentOrderCreationBacklogsRelations = relations(fulfillmentOrderCreationBacklogs, ({ one }) => ({
@@ -3492,9 +3428,7 @@ export const shipmentsRelations = relations(shipments, ({ one, many }) => ({
   lines: many(shipmentLines),
   shipmentTracking: many(shipmentTracking),
   returns: many(returns),
-  invoices: many(invoices),
   operationMembers: many(shipmentOperationMembers),
-  invoiceOperations: many(invoiceOperations),
   workItems: many(outboundBatchWorkItems),
   pickingPlanMembers: many(pickingPlanMembers),
   toteAssignments: many(shipmentToteAssignments),
@@ -3550,20 +3484,6 @@ export const returnsRelations = relations(returns, ({ one }) => ({
   }),
 }));
 
-// Invoice Relations
-export const invoicesRelations = relations(invoices, ({ one, many }) => ({
-  fulfillmentOrder: one(fulfillmentOrders, {
-    fields: [invoices.issuedForFulfillmentOrderId],
-    references: [fulfillmentOrders.id],
-  }),
-  shipment: one(shipments, {
-    fields: [invoices.shipmentId],
-    references: [shipments.id],
-  }),
-  operations: many(invoiceOperations),
-  dispatchAttempts: many(dispatchAttempts),
-}));
-
 export const fulfillmentCommandRequestsRelations = relations(fulfillmentCommandRequests, ({ one }) => ({
   attempt: one(dispatchAttempts, {
     fields: [fulfillmentCommandRequests.attemptId],
@@ -3573,7 +3493,6 @@ export const fulfillmentCommandRequestsRelations = relations(fulfillmentCommandR
 
 export const shipmentOperationsRelations = relations(shipmentOperations, ({ many }) => ({
   members: many(shipmentOperationMembers),
-  resumingInvoiceOperations: many(invoiceOperations),
   waitingWorkItems: many(outboundBatchWorkItems),
 }));
 
@@ -3585,21 +3504,6 @@ export const shipmentOperationMembersRelations = relations(shipmentOperationMemb
   shipment: one(shipments, {
     fields: [shipmentOperationMembers.shipmentId],
     references: [shipments.id],
-  }),
-}));
-
-export const invoiceOperationsRelations = relations(invoiceOperations, ({ one }) => ({
-  shipment: one(shipments, {
-    fields: [invoiceOperations.shipmentId],
-    references: [shipments.id],
-  }),
-  invoice: one(invoices, {
-    fields: [invoiceOperations.invoiceId],
-    references: [invoices.id],
-  }),
-  resumeOperation: one(shipmentOperations, {
-    fields: [invoiceOperations.resumeOperationId],
-    references: [shipmentOperations.id],
   }),
 }));
 
@@ -3735,10 +3639,6 @@ export const dispatchAttemptsRelations = relations(dispatchAttempts, ({ one, man
   shipment: one(shipments, {
     fields: [dispatchAttempts.shipmentId],
     references: [shipments.id],
-  }),
-  invoice: one(invoices, {
-    fields: [dispatchAttempts.invoiceId],
-    references: [invoices.id],
   }),
   stockJournal: one(stockJournals, {
     fields: [dispatchAttempts.stockJournalId],
@@ -4060,14 +3960,10 @@ export const wmsRelations = {
   shipmentTrackingRelations,
   returnsRelations,
 
-  // Invoice Relations
-  invoicesRelations,
-
   // Outbound V2 Relations
   fulfillmentCommandRequestsRelations,
   shipmentOperationsRelations,
   shipmentOperationMembersRelations,
-  invoiceOperationsRelations,
   outboundBatchWorkItemsRelations,
   pickingPlansRelations,
   pickingPlanMembersRelations,
@@ -4332,9 +4228,9 @@ export type NewProductSkuMappingItem = InferInsertModel<typeof productSkuMapping
 export type ProductSkuMappingSnapshot = InferSelectModel<typeof productSkuMappingSnapshots>;
 export type NewProductSkuMappingSnapshot = InferInsertModel<typeof productSkuMappingSnapshots>;
 
-// Invoice Types
-export type Invoice = InferSelectModel<typeof invoices>;
-export type NewInvoice = InferInsertModel<typeof invoices>;
+// Waybill Types
+export type Waybill = InferSelectModel<typeof waybills>;
+export type NewWaybill = InferInsertModel<typeof waybills>;
 
 // Outbound V2 expand model types
 export type FulfillmentCommandRequest = InferSelectModel<typeof fulfillmentCommandRequests>;
@@ -4343,8 +4239,6 @@ export type ShipmentOperation = InferSelectModel<typeof shipmentOperations>;
 export type NewShipmentOperation = InferInsertModel<typeof shipmentOperations>;
 export type ShipmentOperationMember = InferSelectModel<typeof shipmentOperationMembers>;
 export type NewShipmentOperationMember = InferInsertModel<typeof shipmentOperationMembers>;
-export type InvoiceOperation = InferSelectModel<typeof invoiceOperations>;
-export type NewInvoiceOperation = InferInsertModel<typeof invoiceOperations>;
 export type OutboundBatchWorkItem = InferSelectModel<typeof outboundBatchWorkItems>;
 export type NewOutboundBatchWorkItem = InferInsertModel<typeof outboundBatchWorkItems>;
 export type PickingPlan = InferSelectModel<typeof pickingPlans>;

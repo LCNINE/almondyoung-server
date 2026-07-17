@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { InjectTypedDb } from '@app/db';
-import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne, notInArray, sql } from 'drizzle-orm';
 import {
   inventorySchema,
   inventoryTables,
@@ -9,6 +9,7 @@ import {
   DbTx,
   wmsTables,
 } from '../../inventory/schema/inventory.schema';
+import { WAYBILL_TERMINAL_STATUSES } from '../../fulfillment/waybill/waybill.constants';
 import { calculatePartialCancellationRefund } from './partial-cancellation-refund-calculator';
 import {
   RefundSummaryDto,
@@ -1084,13 +1085,15 @@ export class StoreSalesOrdersService {
       .select()
       .from(inventoryTables.dispatchAttempts)
       .where(inArray(inventoryTables.dispatchAttempts.shipmentId, [...visibleShipmentIds]));
-    const invoiceRows =
+    // waybills 는 shipmentId 로 키잉된다(invoice 처럼 issuedForFulfillmentOrderId 없음). 상태 무필터로
+    // 전량 로드해 attempt 별 자기 운송장(회수된 voided 포함)까지 이력을 보존한다 — 활성 필터는 fallback 에서만.
+    const waybillRows =
       visibleShipmentIds.size > 0
         ? await this.db.db
             .select()
-            .from(inventoryTables.invoices)
-            .where(inArray(inventoryTables.invoices.shipmentId, [...visibleShipmentIds]))
-            .orderBy(desc(inventoryTables.invoices.createdAt))
+            .from(inventoryTables.waybills)
+            .where(inArray(inventoryTables.waybills.shipmentId, [...visibleShipmentIds]))
+            .orderBy(desc(inventoryTables.waybills.createdAt))
         : [];
     const trackingRows =
       visibleShipmentIds.size > 0
@@ -1113,7 +1116,7 @@ export class StoreSalesOrdersService {
 
     const fulfillmentOrderItemById = new Map(fulfillmentOrderItems.map((item) => [item.id, item]));
     const salesOrderLineById = new Map(salesOrderLines.map((line) => [line.id, line]));
-    const invoiceById = new Map(invoiceRows.map((invoice) => [invoice.id, invoice]));
+    const waybillById = new Map(waybillRows.map((waybill) => [waybill.id, waybill]));
     const trackingByAttempt = new Map<string, typeof trackingRows>();
     const legacyTrackingByShipment = new Map<string, typeof trackingRows>();
     for (const tracking of trackingRows) {
@@ -1152,9 +1155,9 @@ export class StoreSalesOrdersService {
           .filter((attempt) => attempt.shipmentId === shipment.id)
           .sort((a, b) => a.attemptNo - b.attemptNo)
           .map((attempt) => {
-            const invoice = attempt.invoiceId ? invoiceById.get(attempt.invoiceId) : undefined;
-            const carrier = normalizeCarrierCode(invoice?.carrier ?? null);
-            const trackingNumber = invoice?.trackingNo ?? '';
+            const waybill = attempt.waybillId ? waybillById.get(attempt.waybillId) : undefined;
+            const carrier = normalizeCarrierCode(waybill?.carrier ?? null);
+            const trackingNumber = waybill?.trackingNo ?? '';
             const events = (trackingByAttempt.get(attempt.id) ?? [])
               .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
               .map((event) => ({
@@ -1167,7 +1170,7 @@ export class StoreSalesOrdersService {
               attemptNo: attempt.attemptNo,
               status: deriveAttemptTrackingStatus(attempt.status, events),
               recalled: attempt.status === 'recalled',
-              invoiceId: invoice?.id ?? null,
+              waybillId: waybill?.id ?? null,
               carrier,
               carrierName: CARRIER_NAMES[carrier] ?? carrier,
               trackingNumber,
@@ -1192,13 +1195,11 @@ export class StoreSalesOrdersService {
         const deliveredEvent = [...(currentAttempt?.trackingEvents ?? [])]
           .reverse()
           .find((event) => event.status === 'delivered');
-        const legacyInvoice =
+        const legacyWaybill =
           attemptDtos.length === 0
-            ? invoiceRows.find(
-                (invoice) => invoice.shipmentId === shipment.id && ['issued', 'used'].includes(invoice.status),
-              )
+            ? waybillRows.find((waybill) => waybill.shipmentId === shipment.id && isActiveWaybillStatus(waybill.status))
             : undefined;
-        const legacyCarrier = normalizeCarrierCode(legacyInvoice?.carrier ?? null);
+        const legacyCarrier = normalizeCarrierCode(legacyWaybill?.carrier ?? null);
         const legacyTrackingEvents =
           attemptDtos.length === 0
             ? (legacyTrackingByShipment.get(shipment.id) ?? [])
@@ -1216,10 +1217,10 @@ export class StoreSalesOrdersService {
           fulfillmentOrderIds,
           carrier: currentAttempt?.carrier ?? legacyCarrier,
           carrierName: currentAttempt?.carrierName ?? CARRIER_NAMES[legacyCarrier] ?? legacyCarrier,
-          trackingNumber: currentAttempt?.trackingNumber ?? legacyInvoice?.trackingNo ?? '',
+          trackingNumber: currentAttempt?.trackingNumber ?? legacyWaybill?.trackingNo ?? '',
           trackingUrl:
             currentAttempt?.trackingUrl ??
-            (legacyInvoice?.trackingNo ? buildTrackingUrl(legacyCarrier, legacyInvoice.trackingNo) : null),
+            (legacyWaybill?.trackingNo ? buildTrackingUrl(legacyCarrier, legacyWaybill.trackingNo) : null),
           status: currentAttempt?.status ?? (attemptDtos.length === 0 ? shipment.status : 'preparing'),
           shippedAt: currentAttempt?.dispatchedAt ?? (attemptDtos.length === 0 ? shipment.shippedAt : null),
           deliveredAt: deliveredEvent?.timestamp ?? (attemptDtos.length === 0 ? (shipment.deliveredAt ?? null) : null),
@@ -1246,40 +1247,42 @@ export class StoreSalesOrdersService {
           ne(inventoryTables.shipments.status, 'canceled'),
         ),
       );
-    const invoiceRows = await this.db.db
-      .select()
-      .from(inventoryTables.invoices)
-      .where(
-        and(
-          inArray(inventoryTables.invoices.issuedForFulfillmentOrderId, foIds),
-          inArray(inventoryTables.invoices.status, ['issued', 'used']),
-        ),
-      )
-      .orderBy(desc(inventoryTables.invoices.createdAt));
+    // waybills 는 shipmentId 키 — 이미 openedForFulfillmentOrderId 로 조회한 shipmentRows 의 id 로 활성 운송장을 읽는다.
+    // (invoice 의 issuedForFulfillmentOrderId 키 조회를 대체. waybill 은 shipment 없이 존재할 수 없으므로 shipment-less DTO 는 없다.)
+    const shipmentIds = shipmentRows.map((shipment) => shipment.id);
+    const waybillRows =
+      shipmentIds.length > 0
+        ? await this.db.db
+            .select()
+            .from(inventoryTables.waybills)
+            .where(
+              and(
+                inArray(inventoryTables.waybills.shipmentId, shipmentIds),
+                notInArray(inventoryTables.waybills.status, [...WAYBILL_TERMINAL_STATUSES]),
+              ),
+            )
+            .orderBy(desc(inventoryTables.waybills.createdAt))
+        : [];
     const trackingRows =
       shipmentRows.length > 0
         ? await this.db.db
             .select()
             .from(inventoryTables.shipmentTracking)
-            .where(
-              inArray(
-                inventoryTables.shipmentTracking.shipmentId,
-                shipmentRows.map((shipment) => shipment.id),
-              ),
-            )
+            .where(inArray(inventoryTables.shipmentTracking.shipmentId, shipmentIds))
         : [];
-    const invoiceByFo = new Map<string, (typeof invoiceRows)[0]>();
-    for (const invoice of invoiceRows) {
-      if (!invoiceByFo.has(invoice.issuedForFulfillmentOrderId)) {
-        invoiceByFo.set(invoice.issuedForFulfillmentOrderId, invoice);
+    // shipment 당 활성 운송장은 uq_waybills_shipment_active 로 1개. createdAt desc 첫 행을 취한다.
+    const waybillByShipment = new Map<string, (typeof waybillRows)[number]>();
+    for (const waybill of waybillRows) {
+      if (!waybillByShipment.has(waybill.shipmentId)) {
+        waybillByShipment.set(waybill.shipmentId, waybill);
       }
     }
 
-    const shipmentDtos = shipmentRows.flatMap((shipment) => {
+    return shipmentRows.flatMap((shipment) => {
       if (!shipment.openedForFulfillmentOrderId) return [];
-      const invoice = invoiceByFo.get(shipment.openedForFulfillmentOrderId);
-      const carrier = normalizeCarrierCode(invoice?.carrier ?? null);
-      const trackingNumber = invoice?.trackingNo ?? '';
+      const waybill = waybillByShipment.get(shipment.id);
+      const carrier = normalizeCarrierCode(waybill?.carrier ?? null);
+      const trackingNumber = waybill?.trackingNo ?? '';
       const trackingEvents = trackingRows
         .filter((event) => event.shipmentId === shipment.id)
         .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
@@ -1303,30 +1306,6 @@ export class StoreSalesOrdersService {
         },
       ];
     });
-    const shipmentFoIds = new Set(shipmentDtos.map((shipment) => shipment.fulfillmentOrderId));
-    const foById = new Map(fos.map((fo) => [fo.id, fo]));
-    const invoiceOnlyDtos: StoreShipmentDto[] = [];
-    for (const [fulfillmentOrderId, invoice] of invoiceByFo) {
-      if (shipmentFoIds.has(fulfillmentOrderId)) continue;
-      const carrier = normalizeCarrierCode(invoice.carrier ?? null);
-      invoiceOnlyDtos.push({
-        shipmentId: null,
-        fulfillmentOrderId,
-        fulfillmentOrderIds: [fulfillmentOrderId],
-        carrier,
-        carrierName: CARRIER_NAMES[carrier] ?? carrier,
-        trackingNumber: invoice.trackingNo,
-        trackingUrl: buildTrackingUrl(carrier, invoice.trackingNo),
-        status: 'created',
-        shippedAt: foById.get(fulfillmentOrderId)?.shippedAt ?? null,
-        deliveredAt: null,
-        eta: null,
-        trackingEvents: [],
-        lines: [],
-        dispatchAttempts: [],
-      });
-    }
-    return [...shipmentDtos, ...invoiceOnlyDtos];
   }
 }
 
@@ -1367,6 +1346,11 @@ function computeLineHash(lines: Array<{ salesOrderLineId: string; quantity: numb
     .map((l) => `${l.salesOrderLineId}:${l.quantity}`)
     .join(',');
   return createHash('sha256').update(sorted).digest('hex').slice(0, 12);
+}
+
+// waybill 종료(슬롯 해제) 상태를 제외한 활성 여부. inventory.schema uq_waybills_shipment_active WHERE 와 동치.
+function isActiveWaybillStatus(status: string): boolean {
+  return !(WAYBILL_TERMINAL_STATUSES as readonly string[]).includes(status);
 }
 
 const CARRIER_NAMES: Record<string, string> = {

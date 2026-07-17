@@ -16,7 +16,7 @@ import { BatchControlledStockGuard } from '../../inventory/core/services/batch-c
 import { OutboxService as InventoryOutboxService } from '../../inventory/shared/outbox/outbox.service';
 import { OutboxService as FulfillmentOutboxService } from '../outbox/outbox.service';
 import { makeDbService, wireLogistics } from './__support__';
-import { FulfillmentCommandService } from './fulfillment-command.service';
+import { canonicalFulfillmentRequestHash, FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentProgressService } from './fulfillment-progress.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
@@ -24,9 +24,12 @@ import { ShipmentPlanningService } from './shipment-planning.service';
 import { OutboundBatchOrchestrator } from './outbound-batch-orchestrator.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
 import { BatchInventorySessionService } from './batch-inventory-session.service';
-import { InvoiceOrchestrator, canonicalShipmentRecipientHash } from './invoice-orchestrator.service';
 import { ShipmentDispatchService } from './shipment-dispatch.service';
 import { ShipmentRecallService } from './shipment-recall.service';
+import { WaybillManager } from '../waybill/waybill.manager';
+import { WaybillReader } from '../waybill/waybill.reader';
+import { WaybillRepository } from '../waybill/waybill.repository';
+import { WaybillService } from '../waybill/waybill.service';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -353,15 +356,19 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       new FulfillmentInvariantService(),
     );
     const audit = new AuditService(dbService);
-    const invoices = new InvoiceOrchestrator(
-      dbService,
-      new FulfillmentCommandService(dbService),
-      new FulfillmentInvariantService(),
-      audit,
-      {} as never,
-      {} as never,
-      workflow,
-      {} as never,
+    // dispatch 는 WaybillService.assertDispatchable/markUsed 만 소비 — machine/registry/commands/config 는
+    // 이 경로에서 호출되지 않아 stub 으로 충분(shipment-dispatch.integration.spec 패턴).
+    const waybillRepo = new WaybillRepository(dbService);
+    const waybills = new WaybillService(
+      new WaybillManager(
+        new WaybillReader(dbService),
+        waybillRepo,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        dbService,
+      ),
     );
     return new ShipmentDispatchService(
       dbService,
@@ -369,7 +376,7 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       inventory,
       new BatchInventorySessionService(dbService, controlled, audit),
       reservations,
-      invoices,
+      waybills,
       new BarcodeService(dbService),
       fulfillmentOutbox,
       audit,
@@ -393,13 +400,27 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       new FulfillmentProgressService(),
       new FulfillmentInvariantService(),
     );
+    // recall 은 실제 WaybillService.getActiveWaybill + voidForRecall(commands+repo+reader)를 소비한다 —
+    // machine/registry/config 는 voidForRecall 경로에서 실행되지 않아 stub(shipment-recall.integration.spec 패턴).
+    const waybillRepo = new WaybillRepository(dbService);
+    const waybills = new WaybillService(
+      new WaybillManager(
+        new WaybillReader(dbService),
+        waybillRepo,
+        {} as never,
+        {} as never,
+        new FulfillmentCommandService(dbService),
+        {} as never,
+        dbService,
+      ),
+    );
     return new ShipmentRecallService(
       dbService,
       new FulfillmentCommandService(dbService),
       {
         getScopesByRoles: () => Promise.resolve(new Set(grantRecallScope ? [FULFILLMENT_SCOPE.DISPATCH_RECALL] : [])),
       } as never,
-      { void: jest.fn(() => Promise.resolve({ operationId: randomUUID() })) } as never,
+      waybills,
       inventory,
       reservations,
       new FulfillmentOutboxService(dbService),
@@ -594,18 +615,18 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
           qty: 1,
         },
       ]);
-      const [invoice] = await tx
-        .insert(wmsTables.invoices)
+      // 플랜3: dispatch 는 registered waybill 을 소비한다(assertDispatchable→markUsed). recall 은 그 used
+      // waybill 을 voidForRecall 로 되돌린다. manifestVersion/recipientHash 가 shipment 와 일치해야 통과.
+      const [waybill] = await tx
+        .insert(wmsTables.waybills)
         .values({
-          trackingNo: `V2-TRACK-${suffix}`,
-          carrier: 'CJ',
-          issueMethod: 'self',
-          externalServiceId: `v2-service-${suffix}`,
-          issuedForFulfillmentOrderId: fulfillmentOrder.id,
           shipmentId: shipment.id,
+          source: 'manual',
+          carrier: 'HANJIN',
+          status: 'registered',
+          trackingNo: `V2-TRACK-${suffix}`,
           manifestVersion: shipment.manifestVersion,
-          recipientHash: canonicalShipmentRecipientHash(recipientSnapshot),
-          status: 'issued',
+          recipientHash: canonicalFulfillmentRequestHash(recipientSnapshot),
         })
         .returning();
       return {
@@ -614,7 +635,7 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
         batch,
         fulfillmentOrder,
         holder,
-        invoice,
+        waybill,
         item,
         ledger,
         line,
@@ -721,7 +742,7 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       await tx
         .delete(wmsTables.stockReservations)
         .where(eq(wmsTables.stockReservations.shipmentLineId, fixture.line.id));
-      await tx.delete(wmsTables.invoices).where(eq(wmsTables.invoices.id, fixture.invoice.id));
+      await tx.delete(wmsTables.waybills).where(eq(wmsTables.waybills.shipmentId, fixture.shipment.id));
       await tx.delete(wmsTables.shipmentLines).where(eq(wmsTables.shipmentLines.id, fixture.line.id));
       await tx.delete(wmsTables.shipments).where(eq(wmsTables.shipments.id, fixture.shipment.id));
       await tx.delete(wmsTables.fulfillmentOrderItems).where(eq(wmsTables.fulfillmentOrderItems.id, fixture.item.id));
@@ -1052,15 +1073,20 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       });
       expect(recallResults.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
       expect(recallResults.filter((result) => result.status === 'rejected')).toHaveLength(1);
-      expect(recallResults.map(conflictCode).filter(Boolean)).toEqual(['SHIPMENT_RECALL_NOT_SHIPPED']);
+      // 플랜3: recall.report 가 동기 완료하며 manifestVersion 을 인라인으로 올린다 — 패자는 (구 async 모델의
+      // recovery_required 상태로 인한 NOT_SHIPPED 대신) 먼저 stale manifest 가드에 걸린다. report 는 manifest
+      // 검사(line 165)를 status 검사(line 168)보다 먼저 하므로 결정적이다.
+      expect(recallResults.map(conflictCode).filter(Boolean)).toEqual(['SHIPMENT_RECALL_STALE_MANIFEST']);
       const acceptedRecall = recallResults.find(
         (result): result is PromiseFulfilledResult<Awaited<ReturnType<ShipmentRecallService['report']>>> =>
           result.status === 'fulfilled',
       )!;
+      // 플랜3: recall.report 는 동기 완료 — 승자는 구 async saga 의 pending 이 아니라 즉시 completed 를 돌려준다.
       expect(acceptedRecall.value).toMatchObject({
         shipmentId: fixture.shipment.id,
         dispatchAttemptId: attempts[0].id,
-        operationStatus: 'pending',
+        operationStatus: 'completed',
+        invoiceOperationId: null,
       });
       const reportOperations = await db
         .select()
@@ -1069,14 +1095,14 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       expect(reportOperations).toHaveLength(1);
       const operationId = reportOperations[0].id;
       expect(operationId).toBe(acceptedRecall.value.operationId);
+      // 플랜3: recall intent 는 발송 증거로 invoice_id 를 더 이상 싣지 않는다(waybill 이 증거) — 식별 필드만 유지.
       const snapshot = reportOperations[0].beforeManifestSnapshot as {
-        intent: { shipmentId: string; dispatchAttemptId: string; attemptNo: number; invoiceId: string };
+        intent: { shipmentId: string; dispatchAttemptId: string; attemptNo: number };
       };
       expect(snapshot.intent).toMatchObject({
         shipmentId: fixture.shipment.id,
         dispatchAttemptId: attempts[0].id,
         attemptNo: attempts[0].attemptNo,
-        invoiceId: fixture.invoice.id,
       });
       const operationMembers = await db
         .select()
@@ -1090,13 +1116,14 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       expect(reportCommands).toHaveLength(1);
       expect(reportCommands[0]).toMatchObject({ status: 'completed', operationId });
 
-      await db
-        .update(wmsTables.invoices)
-        .set({ status: 'voided' })
-        .where(eq(wmsTables.invoices.id, fixture.invoice.id));
-      const resumed = await recallService(db).resumePending(operationId);
-      expect(resumed).toMatchObject({ operationId, operationStatus: 'completed' });
-      expect(await recallService(db).resumePending(operationId)).toEqual(resumed);
+      // 플랜3: report tx 안에서 voidForRecall 이 used→voided 로 이미 붕괴했다 — 구 async invoice-void→resume
+      // 2단계 대신 여기서 waybill 의 종결 상태와 재고 역전 결과(아래)를 동기 end-state 로 직접 확인한다.
+      const [voidedWaybill] = await db
+        .select()
+        .from(wmsTables.waybills)
+        .where(eq(wmsTables.waybills.shipmentId, fixture.shipment.id));
+      expect(voidedWaybill).toMatchObject({ id: fixture.waybill.id, status: 'voided' });
+      expect(voidedWaybill.voidedAt).not.toBeNull();
       const [recalledAttempt] = await db
         .select()
         .from(wmsTables.dispatchAttempts)

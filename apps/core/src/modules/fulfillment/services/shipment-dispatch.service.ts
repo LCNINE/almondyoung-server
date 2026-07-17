@@ -14,7 +14,7 @@ import {
   ShipmentEventOrder,
   ShipmentShippedPayload,
 } from '@packages/event-contracts/streams';
-import { and, asc, eq, inArray, isNull, max, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, max, notInArray, sql } from 'drizzle-orm';
 import { InventoryCommandService } from '../../inventory/core/services/inventory-command.service';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
@@ -29,11 +29,12 @@ import { OutboxService } from '../outbox/outbox.service';
 import { BatchInventorySessionService } from './batch-inventory-session.service';
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
-import { InvoiceOrchestrator, canonicalShipmentRecipientHash } from './invoice-orchestrator.service';
 import { ShipmentReservationService } from './shipment-reservation.service';
+import { WaybillService } from '../waybill/waybill.service';
+import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
+import type { WaybillRow } from '../waybill/waybill.types';
 import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 
-const ACTIVE_INVOICE_STATUSES = ['issued', 'used', 'issuing', 'voiding', 'recovery_required'] as const;
 const TRUSTED_CHANNEL_DISPATCH_SALES_CHANNELS = new Set(['medusa', 'naver', 'coupang']);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -70,13 +71,12 @@ export interface ShipmentDispatchResponse {
 
 type ShipmentRow = typeof wmsTables.shipments.$inferSelect;
 type ShipmentLineRow = typeof wmsTables.shipmentLines.$inferSelect;
-type InvoiceRow = typeof wmsTables.invoices.$inferSelect;
 type SessionRow = typeof wmsTables.batchInventorySessions.$inferSelect;
 
 interface LockedDispatchAggregate {
   shipment: ShipmentRow;
   lines: ShipmentLineRow[];
-  invoice: InvoiceRow;
+  waybill: WaybillRow;
   session: SessionRow;
   workItem: typeof wmsTables.outboundBatchWorkItems.$inferSelect;
   planId: string;
@@ -156,7 +156,7 @@ export class ShipmentDispatchService {
     private readonly inventory: InventoryCommandService,
     private readonly sessions: BatchInventorySessionService,
     private readonly shipmentReservations: ShipmentReservationService,
-    private readonly invoices: InvoiceOrchestrator,
+    private readonly waybills: WaybillService,
     private readonly barcode: BarcodeService,
     private readonly outbox: OutboxService,
     private readonly audit: AuditService,
@@ -354,19 +354,21 @@ export class ShipmentDispatchService {
     const planId = this.payloadString(handIn?.payload, 'planId');
     if (!planId) throw this.conflict('SHIPMENT_SESSION_PLAN_MISSING', 'Session has no immutable picking plan identity');
 
-    const invoices = await tx
+    // 활성 waybill 을 FOR UPDATE 로 잠근다 — dispatch 가 markUsed 로 이 행을 갱신하므로 concurrent void/reissue
+    // 와 직렬화돼야 한다. staleness/carrier/trackingNo 검증은 dispatchLocked 의 assertDispatchable 이 담당.
+    const activeWaybills = await tx
       .select()
-      .from(wmsTables.invoices)
+      .from(wmsTables.waybills)
       .where(
         and(
-          eq(wmsTables.invoices.shipmentId, shipmentId),
-          inArray(wmsTables.invoices.status, [...ACTIVE_INVOICE_STATUSES]),
+          eq(wmsTables.waybills.shipmentId, shipmentId),
+          notInArray(wmsTables.waybills.status, [...WAYBILL_TERMINAL_STATUSES]),
         ),
       )
-      .orderBy(asc(wmsTables.invoices.id))
+      .orderBy(asc(wmsTables.waybills.id))
       .for('update');
-    if (invoices.length !== 1)
-      throw this.conflict('SHIPMENT_INVOICE_NOT_READY', 'Shipment requires one active invoice');
+    if (activeWaybills.length !== 1)
+      throw this.conflict('SHIPMENT_INVOICE_NOT_READY', 'Shipment requires one active waybill');
 
     const [workItem] = await tx
       .select()
@@ -466,7 +468,7 @@ export class ShipmentDispatchService {
       .orderBy(asc(wmsTables.dispatchAttempts.attemptNo), asc(wmsTables.dispatchAttempts.id))
       .for('update');
 
-    return { shipment, lines, workItem, session, invoice: invoices[0], planId };
+    return { shipment, lines, workItem, session, waybill: activeWaybills[0], planId };
   }
 
   private assertDispatchCandidate(
@@ -606,16 +608,9 @@ export class ShipmentDispatchService {
     if (!force && aggregate.lines.some((line) => line.inspectedQty !== line.qty)) {
       throw this.conflict('SHIPMENT_INSPECTION_INCOMPLETE', 'Every shipment line must be inspected');
     }
-    const invoice = await this.invoices.assertDispatchableInvoice(aggregate.shipment.id, tx);
-    if (invoice.id !== aggregate.invoice.id) {
-      throw this.conflict('SHIPMENT_INVOICE_CHANGED', 'Active invoice changed while dispatch was locked');
-    }
-    if (
-      invoice.manifestVersion !== aggregate.shipment.manifestVersion ||
-      invoice.recipientHash !== canonicalShipmentRecipientHash(aggregate.shipment.recipientSnapshot)
-    ) {
-      throw this.conflict('SHIPMENT_INVOICE_STALE', 'Invoice manifest or recipient does not match shipment');
-    }
+    // assertDispatchable 이 활성-1개·carrier·trackingNo·manifest/recipient staleness 를 모두 내부 검사한다.
+    // 구 invoice.id 비교와 중복 staleness 재검은 불필요 — 제거. seam 순서 계약상 markUsed 보다 반드시 선행한다.
+    await this.waybills.assertDispatchable(aggregate.shipment.id, tx);
 
     const allocations = await tx
       .select({
@@ -698,7 +693,7 @@ export class ShipmentDispatchService {
       attemptNo,
       status: 'pending',
       idempotencyKey: attemptKey,
-      invoiceId: invoice.id,
+      waybillId: aggregate.waybill.id,
       stockJournalId: journalId,
     });
 
@@ -779,10 +774,9 @@ export class ShipmentDispatchService {
     );
     await this.incrementFulfillmentItems(aggregate.lines, dispatchedAt, tx);
 
-    await tx
-      .update(wmsTables.invoices)
-      .set({ status: 'used' })
-      .where(and(eq(wmsTables.invoices.id, invoice.id), inArray(wmsTables.invoices.status, ['issued', 'used'])));
+    // seam 순서: dispatchLocked 상단의 assertDispatchable 이 이미 staleness 를 검증했으므로 여기서는 CAS 만.
+    // markUsed 는 staleness 를 재검하지 않는다(registered/used → used 엄격 CAS).
+    await this.waybills.markUsed(aggregate.shipment.id, tx);
     await tx
       .update(wmsTables.shipments)
       .set({ status: 'shipped', shippedAt: dispatchedAt, lastUpdated: dispatchedAt })
@@ -808,16 +802,7 @@ export class ShipmentDispatchService {
       }
     }
 
-    await this.emitDispatchEvents(
-      aggregate,
-      invoice,
-      attemptId,
-      attemptNo,
-      dispatchedAt,
-      eventIdentities,
-      summaries,
-      tx,
-    );
+    await this.emitDispatchEvents(aggregate, attemptId, attemptNo, dispatchedAt, eventIdentities, summaries, tx);
     await this.audit.logUserActionRequired(
       'shipment.dispatch',
       'fulfillment',
@@ -848,10 +833,10 @@ export class ShipmentDispatchService {
           dispatchAttemptId: attemptId,
           fulfillmentOrderIds: summaries.map((summary) => summary.fulfillmentOrderId),
           shipmentManifestVersion: aggregate.shipment.manifestVersion,
-          invoice: {
-            invoiceId: invoice.id,
-            manifestVersion: invoice.manifestVersion,
-            recipientHash: invoice.recipientHash,
+          waybill: {
+            waybillId: aggregate.waybill.id,
+            manifestVersion: aggregate.waybill.manifestVersion,
+            recipientHash: aggregate.waybill.recipientHash,
           },
           beforeLineManifest: force.beforeLineManifest,
           afterLineManifest: this.dispatchLineManifest(aggregate.lines),
@@ -867,7 +852,7 @@ export class ShipmentDispatchService {
           },
           stateTransitions: [
             { resource: 'shipment', id: aggregate.shipment.id, from: aggregate.shipment.status, to: 'shipped' },
-            { resource: 'invoice', id: invoice.id, from: invoice.status, to: 'used' },
+            { resource: 'waybill', id: aggregate.waybill.id, from: aggregate.waybill.status, to: 'used' },
             { resource: 'work_item', id: aggregate.workItem.id, from: aggregate.workItem.status, to: 'completed' },
             { resource: 'dispatch_attempt', id: attemptId, from: 'absent', via: 'pending', to: 'dispatched' },
           ],
@@ -1090,7 +1075,6 @@ export class ShipmentDispatchService {
 
   private async emitDispatchEvents(
     aggregate: LockedDispatchAggregate,
-    invoice: InvoiceRow,
     attemptId: string,
     attemptNo: number,
     dispatchedAt: Date,
@@ -1098,7 +1082,12 @@ export class ShipmentDispatchService {
     summaries: FulfillmentSummary[],
     tx: DbTx,
   ): Promise<void> {
-    if (!invoice.carrier) throw this.conflict('SHIPMENT_INVOICE_NOT_READY', 'Dispatch invoice carrier is missing');
+    // assertDispatchable 이 carrier/trackingNo 존재를 이미 보장하지만, 이벤트 계약(non-null trackingNo)을 위해
+    // 여기서 타입을 좁힌다. waybill.carrier 는 not-null 이라 별도 가드 불필요(구 invoice 는 그 반대였다).
+    const waybill = aggregate.waybill;
+    if (!waybill.trackingNo) {
+      throw this.conflict('SHIPMENT_INVOICE_NOT_READY', 'Dispatch waybill tracking number is missing');
+    }
     const summaryByFo = new Map(summaries.map((summary) => [summary.fulfillmentOrderId, summary]));
     const orders: ShipmentEventOrder[] = [];
     for (const fulfillmentOrderId of [...new Set(lines.map((line) => line.fulfillmentOrderId))].sort()) {
@@ -1133,7 +1122,7 @@ export class ShipmentDispatchService {
       attemptNo,
       warehouseId: aggregate.shipment.warehouseId,
       dispatchedAt: dispatchedAt.toISOString(),
-      invoice: { invoiceId: invoice.id, carrier: invoice.carrier, trackingNo: invoice.trackingNo },
+      invoice: { invoiceId: waybill.id, carrier: waybill.carrier, trackingNo: waybill.trackingNo },
       orders,
     };
     await this.outbox.enqueue(shipmentShippedOutboxEvent(shipmentPayload), tx);
@@ -1156,7 +1145,7 @@ export class ShipmentDispatchService {
           fulfillmentId: summary.fulfillmentOrderId,
           orderId: summary.salesOrderId,
           channelOrderId: eventLine.channelOrderId,
-          trackingInfo: { carrier: invoice.carrier, trackingNumber: invoice.trackingNo },
+          trackingInfo: { carrier: waybill.carrier, trackingNumber: waybill.trackingNo },
           shippedAt: dispatchedAt.toISOString(),
           shippedItems: summary.items.map((item) => ({
             fulfillmentItemId: item.id,

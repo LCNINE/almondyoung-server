@@ -13,8 +13,6 @@ export type FulfillmentAdminAction =
   | 'plan'
   | 'cancelOutstanding'
   | 'consolidate'
-  | 'issueInvoice'
-  | 'voidInvoice'
   | 'forceDispatch'
   | 'recall'
   | 'pick'
@@ -26,8 +24,6 @@ const ACTION_SCOPE: Record<FulfillmentAdminAction, string> = {
   plan: FULFILLMENT_SCOPES.operate,
   cancelOutstanding: FULFILLMENT_SCOPES.operate,
   consolidate: FULFILLMENT_SCOPES.consolidate,
-  issueInvoice: FULFILLMENT_SCOPES.operate,
-  voidInvoice: FULFILLMENT_SCOPES.reopen,
   forceDispatch: FULFILLMENT_SCOPES.forceDispatch,
   recall: FULFILLMENT_SCOPES.recall,
   pick: FULFILLMENT_SCOPES.operate,
