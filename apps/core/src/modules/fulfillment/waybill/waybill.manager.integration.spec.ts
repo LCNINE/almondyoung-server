@@ -329,5 +329,29 @@ describeIfDb('WaybillManager.issueForShipment (DB integration)', () => {
       expect(failed).toHaveLength(1);
       expect(failed[0].reason).toContain('ERROR-05');
     });
+
+    // 위 'records a per-item reason on failure' 는 definitive_rejection 이 machine.driveAllocate 내부에서 잡혀
+    // durable 'failed' 행으로 남는 케이스라 issueForShipment 가 정상 resolve 하고, runOne 의 SUCCESS 분기(wb.status
+    // 읽기)만 exercise 한다 — runOne 자신의 try/catch 는 검증되지 않는다. 여기서는 존재하지 않는 shipmentId 로
+    // loadIssueContext(reader) 가 진짜 throw(NotFoundError/SHIPMENT_NOT_FOUND) 하게 만들어 runOne 의 catch 분기를
+    // 직접 태운다: 배치가 중단되지 않고, 그 항목만 status:'failed' + reason 에 에러 메시지가 남아야 한다(§10).
+    it('catches a genuinely thrown exception mid-batch without aborting it', async () => {
+      const s1 = await db.transaction((tx) => seedPlannedShipmentForWaybill(tx as never, deps));
+      const bogusShipmentId = randomUUID();
+      const mgr = manager(new CarrierGatewayRegistry([fakeCarrierGateway()]));
+      const results = await mgr.issueBatch(
+        [s1.shipmentId, bogusShipmentId],
+        { carrier: 'HANJIN' },
+        `batch-${randomUUID()}`,
+        actor,
+      );
+      expect(results).toHaveLength(2);
+      expect(results.map((r) => r.shipmentId)).toEqual([s1.shipmentId, bogusShipmentId]);
+      const [validResult, bogusResult] = results;
+      expect(validResult.status).toBe('registered');
+      expect(bogusResult.status).toBe('failed');
+      expect(bogusResult.trackingNo).toBeNull();
+      expect(bogusResult.reason).toContain('WAYBILL_SHIPMENT_NOT_FOUND');
+    });
   });
 });
