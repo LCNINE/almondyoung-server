@@ -13,10 +13,10 @@ import { WAYBILL_TERMINAL_STATUSES } from '../../fulfillment/waybill/waybill.con
 import { calculatePartialCancellationRefund } from './partial-cancellation-refund-calculator';
 import {
   RefundSummaryDto,
+  ShipmentProgressDto,
   StoreCancelOrderDto,
   StoreCancelUnavailableReason,
   StoreClaimStatus,
-  StoreFulfillmentStatus,
   StoreOrderAction,
   StoreOrderActionsResponseDto,
   StoreRefundStatus,
@@ -24,9 +24,15 @@ import {
 import { StoreOrderTrackingResponseDto, StoreShipmentDto } from '../dto/store-order-tracking.dto';
 import { SalesOrdersService } from './sales-orders.service';
 import { WalletRefundClient } from './wallet-refund.client';
+import {
+  deriveFulfillmentPhase,
+  isPickingStarted,
+  hasShippedEvidence as hasShippedEvidenceFrom,
+  PhaseFoRow,
+  FulfillmentPhaseInput,
+} from './fulfillment-phase';
 
 type SalesOrderRow = typeof inventoryTables.salesOrders.$inferSelect;
-type FoRow = { status: string; shippedAt: Date | null };
 
 const CHANNEL_CANCEL_URLS: Record<string, { cancelUrl: string; returnUrl: string }> = {
   naver: {
@@ -38,11 +44,6 @@ const CHANNEL_CANCEL_URLS: Record<string, { cancelUrl: string; returnUrl: string
     returnUrl: 'https://mc.coupang.com/ssr/desktop/order/list',
   },
 };
-
-const FO_DELIVERED_STATUSES = new Set(['completed']);
-const FO_SHIPPED_STATUSES = new Set(['shipped', 'completed']);
-const FO_PACKED_STATUSES = new Set(['picked', 'inspecting', 'invoiced', 'labeled', 'forwarded']);
-const FO_PICKING_STATUSES = new Set(['picking', 'allocated']);
 
 const ACTIVE_RETURN_STATUSES = [
   'requested',
@@ -471,16 +472,11 @@ export class StoreSalesOrdersService {
     so: SalesOrderRow,
     overrideRefundStatus?: StoreRefundStatus,
   ): Promise<StoreOrderActionsResponseDto> {
-    const fos = await this.db.db
-      .select({
-        status: inventoryTables.fulfillmentOrders.status,
-        shippedAt: inventoryTables.fulfillmentOrders.shippedAt,
-      })
-      .from(inventoryTables.fulfillmentOrders)
-      .where(eq(inventoryTables.fulfillmentOrders.salesOrderId, so.id));
-
-    const fulfillmentStatus = this.deriveFulfillmentStatus(fos);
-    const hasShippedEvidence = this.hasShippedEvidence(fos);
+    const foRows = await this.loadFoRows(so.id);
+    const phaseInput = await this.loadFulfillmentPhaseInput(so.id, foRows);
+    const { phase: fulfillmentStatus, progress } = deriveFulfillmentPhase(phaseInput);
+    const shipmentProgress: ShipmentProgressDto | undefined = progress.total > 0 ? progress : undefined;
+    const hasShippedEvidence = hasShippedEvidenceFrom(phaseInput);
     const isChannelOrder = so.salesChannel !== 'medusa';
 
     const availableActions: StoreOrderAction[] = [];
@@ -614,7 +610,7 @@ export class StoreSalesOrdersService {
     } else if (isChannelOrder) {
       availableActions.push('receipt');
       cancelUnavailableReason = 'channel_order';
-    } else if (fulfillmentStatus === 'picking' || fulfillmentStatus === 'packed') {
+    } else if (isPickingStarted(foRows)) {
       // 피킹 시작 이후 고객 셀프 취소 불가 — 고객센터 문의 안내
       availableActions.push('receipt');
       cancelUnavailableReason = 'already_processing';
@@ -628,6 +624,7 @@ export class StoreSalesOrdersService {
       channelOrderId: so.channelOrderId,
       orderStatus: so.status,
       fulfillmentStatus,
+      shipmentProgress,
       refundStatus,
       refundSummary,
       claimStatus,
@@ -662,20 +659,16 @@ export class StoreSalesOrdersService {
       throw new BadRequestException(`${so.salesChannel} 채널 주문은 해당 채널에서 직접 취소해 주세요.`);
     }
 
-    const fos = await this.db.db
-      .select({
-        status: inventoryTables.fulfillmentOrders.status,
-        shippedAt: inventoryTables.fulfillmentOrders.shippedAt,
-      })
-      .from(inventoryTables.fulfillmentOrders)
-      .where(eq(inventoryTables.fulfillmentOrders.salesOrderId, so.id));
-
-    const fulfillmentStatus = this.deriveFulfillmentStatus(fos);
+    const foRows = await this.loadFoRows(so.id);
+    const phaseInput = await this.loadFulfillmentPhaseInput(so.id, foRows);
     const hasV2Outstanding = await this.hasV2OutstandingShipment(so.id);
-    if (fulfillmentStatus === 'picking' || fulfillmentStatus === 'packed') {
+    if (isPickingStarted(foRows)) {
       throw new BadRequestException('피킹이 시작된 주문은 직접 취소할 수 없습니다. 고객센터로 문의해 주세요.');
     }
-    if (!hasV2Outstanding && (this.hasShippedEvidence(fos) || so.status === 'shipped' || so.status === 'delivered')) {
+    if (
+      !hasV2Outstanding &&
+      (hasShippedEvidenceFrom(phaseInput) || so.status === 'shipped' || so.status === 'delivered')
+    ) {
       throw new BadRequestException('이미 출고된 주문은 취소할 수 없습니다.');
     }
 
@@ -990,20 +983,47 @@ export class StoreSalesOrdersService {
     }
   }
 
-  private deriveFulfillmentStatus(fos: FoRow[]): StoreFulfillmentStatus {
-    if (fos.length === 0) return 'not_created';
-    const active = fos.filter((fo) => fo.status !== 'canceled');
-    if (active.length === 0) return 'canceled';
-    if (active.some((fo) => FO_DELIVERED_STATUSES.has(fo.status))) return 'delivered';
-    if (active.some((fo) => FO_SHIPPED_STATUSES.has(fo.status) || fo.shippedAt != null)) return 'shipped';
-    if (active.some((fo) => FO_PACKED_STATUSES.has(fo.status))) return 'packed';
-    if (active.some((fo) => FO_PICKING_STATUSES.has(fo.status))) return 'picking';
-    if (active.some((fo) => fo.status === 'unfulfillable' || fo.status === 'reserving')) return 'awaiting_matching';
-    return 'created';
+  private async loadFoRows(salesOrderId: string): Promise<PhaseFoRow[]> {
+    return this.db.db
+      .select({
+        status: inventoryTables.fulfillmentOrders.status,
+        directShipStatus: inventoryTables.fulfillmentOrders.directShipStatus,
+        fulfillmentMode: inventoryTables.fulfillmentOrders.fulfillmentMode,
+      })
+      .from(inventoryTables.fulfillmentOrders)
+      .where(eq(inventoryTables.fulfillmentOrders.salesOrderId, salesOrderId));
   }
 
-  private hasShippedEvidence(fos: FoRow[]): boolean {
-    return fos.some((fo) => FO_SHIPPED_STATUSES.has(fo.status) || fo.shippedAt != null);
+  private async loadFulfillmentPhaseInput(salesOrderId: string, foRows: PhaseFoRow[]): Promise<FulfillmentPhaseInput> {
+    const foCount = foRows.length;
+    const allFoCanceled = foCount > 0 && foRows.every((fo) => fo.status === 'canceled');
+    const dropShipStatuses = foRows
+      .filter(
+        (fo) => fo.fulfillmentMode === 'drop_ship' && fo.directShipStatus != null && fo.directShipStatus !== 'canceled',
+      )
+      .map((fo) => fo.directShipStatus as string);
+
+    // 출고 이동 상자는 dispatch 트랜잭션에서 반드시 FO 를 partially_shipped/completed/shipped 로 만든다.
+    // 그 흔적이 없으면 활성 상자는 전부 준비중이므로 상자 로드를 생략한다.
+    const anyFoiShipped = foRows.some(
+      (fo) => fo.status === 'shipped' || fo.status === 'partially_shipped' || fo.status === 'completed',
+    );
+    const activeShipmentStatuses = anyFoiShipped ? await this.loadActiveShipmentStatuses(salesOrderId) : [];
+
+    return { foCount, allFoCanceled, activeShipmentStatuses, dropShipStatuses, anyFoiShipped };
+  }
+
+  private async loadActiveShipmentStatuses(salesOrderId: string): Promise<string[]> {
+    const rows = await this.db.db.execute(sql`
+      SELECT DISTINCT s.id, s.status
+        FROM shipments s
+        JOIN shipment_lines sl ON sl.shipment_id = s.id
+        JOIN fulfillment_order_items foi ON foi.id = sl.fulfillment_order_item_id
+        JOIN fulfillment_orders fo ON fo.id = foi.fulfillment_order_id
+       WHERE fo.sales_order_id = ${salesOrderId}
+         AND s.status NOT IN ('canceled', 'superseded')
+    `);
+    return Array.from(rows as unknown as ArrayLike<{ status: string }>).map((r) => r.status);
   }
 
   // ── Tracking ──────────────────────────────────────────────────────────────
