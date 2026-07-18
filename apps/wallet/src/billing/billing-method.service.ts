@@ -3,7 +3,6 @@ import { DbService } from '@app/db';
 import { and, desc, eq, inArray, ne } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { WalletSchema, billingAgreements, billingMethods, cmsAgreements, cmsMembers, paymentMethods } from '../schema';
-import { isCmsAgreementRegistered } from '../cms/cms-agreement-status';
 import { BillingMethod, CmsAgreementRecord, CmsMember } from '../types';
 import { CmsApiClient } from '../cms/cms-api.client';
 
@@ -233,7 +232,7 @@ export class BillingMethodService {
       const cmsMemberStatus = member?.status ?? 'PENDING';
       const agreementStatus = agreement?.status ?? null;
       const isSelectableForRecurringBilling =
-        method.status === 'ACTIVE' && cmsMemberStatus === 'REGISTERED' && isCmsAgreementRegistered(agreementStatus);
+        method.status === 'ACTIVE' && cmsMemberStatus === 'REGISTERED' && agreementStatus === '등록';
 
       return {
         billingMethodId: method.id,
@@ -266,7 +265,7 @@ export class BillingMethodService {
     if (cmsMemberStatus === 'FAILED') return '심사 실패';
     if (cmsMemberStatus === 'PENDING') return '심사 중';
     if (cmsMemberStatus === 'REGISTERED') {
-      if (isCmsAgreementRegistered(agreementStatus)) return '사용 가능';
+      if (agreementStatus === '등록') return '사용 가능';
       return '동의자료 확인 필요';
     }
     return '알 수 없음';
