@@ -661,15 +661,11 @@ export class StoreSalesOrdersService {
 
     const foRows = await this.loadFoRows(so.id);
     const phaseInput = await this.loadFulfillmentPhaseInput(so.id, foRows);
-    const hasV2Outstanding = await this.hasV2OutstandingShipment(so.id);
+    if (hasShippedEvidenceFrom(phaseInput)) {
+      throw new BadRequestException('이미 출고된 주문은 취소할 수 없습니다. 고객센터로 문의해 주세요.');
+    }
     if (isPickingStarted(foRows)) {
       throw new BadRequestException('피킹이 시작된 주문은 직접 취소할 수 없습니다. 고객센터로 문의해 주세요.');
-    }
-    if (
-      !hasV2Outstanding &&
-      (hasShippedEvidenceFrom(phaseInput) || so.status === 'shipped' || so.status === 'delivered')
-    ) {
-      throw new BadRequestException('이미 출고된 주문은 취소할 수 없습니다.');
     }
 
     await this.salesOrdersService.cancel(so.id, {
@@ -714,21 +710,6 @@ export class StoreSalesOrdersService {
       }
       return this.requestWalletRefundAfterCancel(so, dto, { ...options, correlationId, tx });
     });
-  }
-
-  private async hasV2OutstandingShipment(salesOrderId: string): Promise<boolean> {
-    const rows = await this.db.db.execute(sql`
-      SELECT s.id
-        FROM shipments s
-        JOIN shipment_lines sl ON sl.shipment_id = s.id
-        JOIN fulfillment_order_items foi ON foi.id = sl.fulfillment_order_item_id
-        JOIN fulfillment_orders fo ON fo.id = foi.fulfillment_order_id
-       WHERE fo.sales_order_id = ${salesOrderId}
-         AND s.opened_for_fulfillment_order_id IS NULL
-         AND s.status IN ('draft', 'planned', 'recovery_required')
-       LIMIT 1
-    `);
-    return Array.from(rows as unknown as ArrayLike<unknown>).length > 0;
   }
 
   /**

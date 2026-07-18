@@ -300,14 +300,30 @@ describe('StoreSalesOrdersService', () => {
       expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
     });
 
-    it('V2 Draft outstanding이 남아 있으면 부분 출고 증거가 있어도 잔여 취소를 coordinator에 위임한다', async () => {
+    it('피킹 시작(FO processing) 주문은 셀프 취소 시 400', async () => {
+      const { service, salesOrdersServiceMock } = makeContext({ fos: [{ status: 'processing' }] });
+      await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow(
+        '피킹이 시작된',
+      );
+      expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
+    });
+
+    it('부분 출고(상자 shipped) 주문은 셀프 취소 시 400', async () => {
       const { service, salesOrdersServiceMock } = makeContext({
-        so: makeSo({ status: 'shipped' }),
-        fos: [{ status: 'shipped' }],
-        activeShipmentStatuses: ['draft'],
+        fos: [{ status: 'partially_shipped' }],
+        activeShipmentStatuses: ['shipped', 'draft'],
       });
-      await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).resolves.toBeDefined();
+      await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow(
+        '이미 출고',
+      );
+      expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
+    });
+
+    it('준비중(FO ready, 미피킹) 주문은 셀프 취소 성공', async () => {
+      const { service, salesOrdersServiceMock } = makeContext({ fos: [{ status: 'ready' }] });
+      const r = await service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {});
       expect(salesOrdersServiceMock.cancel).toHaveBeenCalled();
+      expect(r.orderStatus).toBe('cancelled');
     });
 
     it('동일 취소 key replay는 cancelled status guard보다 먼저 stored view를 반환한다', async () => {
