@@ -3,22 +3,20 @@
 import { LanguageSwitcher } from "@/components/layout/header/language-switcher"
 import { useCart } from "@/contexts/cart-context"
 import { useUser } from "@/contexts/user-context"
-import { useSearchSheetStore } from "@hooks/ui/use-search-sheet-store"
-import { Search, ShoppingCart, User } from "lucide-react"
+import { cn } from "@/lib/utils"
+import { ShoppingCart, User } from "lucide-react"
 import { useTranslations } from "next-intl"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 // import { Bell } from "lucide-react"
 
-export function AccountMenu() {
+export function AccountMenu({ tone = "light" }: { tone?: "light" | "dark" }) {
   const { countryCode } = useParams()
   const { user } = useUser()
   const { itemCount: cartItemCount } = useCart()
   const t = useTranslations("account")
   // todo: 알림 기능 활성화 시 복구
   // const hasNotification = true
-
-  const { onOpen } = useSearchSheetStore()
 
   return (
     <div className="flex items-center gap-[clamp(0.5px,2vw,1.5rem)]">
@@ -27,29 +25,22 @@ export function AccountMenu() {
         <LanguageSwitcher variant="iconButton" />
       </div>
 
-      {/* 모바일 검색 */}
-      <div className="flex md:hidden">
-        <AccountMenuItem
-          onClick={onOpen}
-          icon={<Search className="h-6 w-6 md:h-8 md:w-8" color="white" />}
-          label={t("search")}
-        />
-      </div>
-
       {/* 장바구니 */}
       <AccountMenuItem
         href={`/${countryCode}/cart`}
-        icon={<ShoppingCart className="h-6 w-6 md:h-8 md:w-8" color="white" />}
+        icon={<ShoppingCart className="h-6 w-6 md:h-8 md:w-8" />}
         label={t("cart")}
         badgeCount={cartItemCount}
+        tone={tone}
       />
 
       {/* 로그인 / 마이페이지 */}
       <div className="hidden md:flex">
         <AccountMenuItem
           href={user ? `/${countryCode}/mypage` : `/${countryCode}/login`}
-          icon={<User className="h-6 w-6 md:h-8 md:w-8" color="white" />}
+          icon={<User className="h-6 w-6 md:h-8 md:w-8" />}
           label={user ? t("myPage") : t("login")}
+          tone={tone}
         />
       </div>
 
@@ -71,6 +62,7 @@ interface AccountMenuItemProps {
   badgeCount?: number
   showDot?: boolean // 알림용 점 표시 여부 추가
   onClick?: () => void
+  tone?: "light" | "dark"
 }
 
 function AccountMenuItem({
@@ -80,6 +72,7 @@ function AccountMenuItem({
   badgeCount,
   showDot,
   onClick,
+  tone = "light",
 }: AccountMenuItemProps) {
   const displayBadge =
     badgeCount && badgeCount > 0 ? (badgeCount > 99 ? "99+" : badgeCount) : null
@@ -113,7 +106,10 @@ function AccountMenuItem({
       return (
         <Link
           href={href ?? ""}
-          className="flex flex-col items-center gap-1 text-white"
+          className={cn(
+            "flex flex-col items-center gap-1",
+            tone === "dark" ? "text-gray-700" : "text-white"
+          )}
         >
           {content}
         </Link>
@@ -123,7 +119,10 @@ function AccountMenuItem({
       return (
         <button
           onClick={onClick}
-          className="flex cursor-pointer flex-col items-center gap-1 text-white"
+          className={cn(
+            "flex cursor-pointer flex-col items-center gap-1",
+            tone === "dark" ? "text-gray-700" : "text-white"
+          )}
           type="button"
         >
           {content}

@@ -3,6 +3,9 @@
 
 // 쿼리 키
 export * from './query-keys';
+export * from './idempotency';
+export * from './operation-policy';
+export { getServerDenyMessage, parseServerError } from '../../api/server-error';
 
 // 주문 액션 헬퍼
 export * from './order-actions';
@@ -14,10 +17,10 @@ export {
   useSalesOrder,
   useSalesOrderItems,
   // 출고 배치 (D2)
-  useOutboundBatches,
-  useOutboundBatch,
-  useOutboundBatchPickingList,
-  useAvailableFulfillmentOrders,
+  useOutboundBatchesV2,
+  useOutboundBatchV2,
+  useOutboundBatchEligibleShipments,
+  useOutboundBatchWorkItems,
   // 직배송 (D2)
   useDirectShipDashboard,
   useDirectShipCompanies,
@@ -25,34 +28,29 @@ export {
   useDirectShipCompanySummary,
   // 합포장 (D2)
   useConsolidationCandidates,
+  useShipmentConsolidationCandidates,
+  useConsolidationCandidatesV2,
   useConsolidationLive,
   useConsolidationSavings,
   useConsolidationRules,
   // 위치 최적화 (D2)
   useLocationOptimizationZones,
-  // 피킹
-  usePickings,
-  usePicking,
-  usePickingList,
-  useBatchPickingOperations,
-  useBatchPickingProgress,
-  usePickingSession,
   // 이행
   useFulfillments,
   useFulfillment,
   useFulfillmentOrders,
   useFulfillmentOrder,
   useFulfillmentOutboxEvents,
-  useFulfillmentTransferCandidates,
+  useFulfillmentShipments,
+  useShipmentDetail,
+  useFulfillmentOperation,
+  useShipmentRecallOperation,
   useLegacyPurchaseOrders,
   useLegacyPurchaseOrder,
   // 검수
   useInspectionSummary,
   useInspectionHistory,
   useQualityMetrics,
-  // 송장
-  useInvoices,
-  useInvoice,
   // 레거시
   useDirectShips,
   useDirectShip,
@@ -75,16 +73,37 @@ export {
   useAdminManualRefundComplete,
   // 출고주문(FO) 액션
   useCreateFulfillmentOrder,
-  useShipFulfillment,
   useCancelFulfillment,
-  useReserveFulfillmentItem,
+  useSplitShipment,
+  useReviseShipmentRecipient,
+  usePlanShipment,
+  useCancelShipmentOutstanding,
+  useRecallShipment,
+  useReportShipmentShortPick,
+  useCreateShipmentConsolidation,
+  useCreateConsolidation,
+  useShipmentInspectionScan,
+  useForceShipmentDispatch,
   // 출고 배치 (D2)
-  useCreateOutboundBatch,
-  useAddFOsToBatch,
-  useRemoveFOFromBatch,
-  useStartBatchPicking,
-  useCompleteBatch,
-  useCancelBatch,
+  useCreateOutboundBatchV2,
+  useAddShipmentToBatch,
+  useExcludeShipmentFromBatch,
+  useClaimBatchPicker,
+  useClaimBatchPacker,
+  useHandoffBatchWorkItem,
+  useCreatePickingPlan,
+  useStartPickingV2,
+  useDiscretePickingScan,
+  usePickingHandoff,
+  useCompletePickingV2,
+  useAggregateBulkCartScan,
+  useAggregateSortScan,
+  useAggregateCartHandoff,
+  useRegisterTote,
+  useAssignTote,
+  useToteScan,
+  useToteHandoff,
+  useReleaseTote,
   // 직배송 (D2)
   useForwardDirectShipOrders,
   useCompleteDirectShipOrders,
@@ -93,12 +112,6 @@ export {
   useAnalyzeConsolidation,
   useAutoConsolidate,
   // FO 액션 (Core /fulfillments canonical)
-  useSplitFulfillmentOrder,
-  useCheckFulfillmentAvailability,
-  useReserveFulfillment,
-  useUnreserveFulfillment,
-  useTransferFulfillmentReservation,
-  useAssignFulfillmentShipment,
   useDeliverFulfillment,
 } from './mutations';
 

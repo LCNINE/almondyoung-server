@@ -38,6 +38,13 @@ export interface ChannelAdapter {
   executeCommand(command: ChannelCommand): Promise<SyncResult>;
 
   /**
+   * Read provider state before retrying a mutation whose previous response may have
+   * been lost. Implementations must only report applied when provider identity and
+   * tracking facts exactly match the command.
+   */
+  reconcileCommand?(command: ChannelCommand): Promise<{ applied: boolean; evidence?: Record<string, unknown> }>;
+
+  /**
    * 조회성 작업을 처리 (CQRS 패턴 적용)
    * 상태를 변경하지 않는 조회 작업들을 별도로 분리
    */

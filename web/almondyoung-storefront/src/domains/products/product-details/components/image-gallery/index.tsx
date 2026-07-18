@@ -6,6 +6,8 @@ import Image from "next/image"
 import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
 import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
+import { SoldOutOverlay } from "@/components/products/sold-out-overlay"
+import { calculateStockStatus } from "@/domains/products/components/product-card/quantity/stock-status"
 
 type Props = {
   product: HttpTypes.StoreProduct
@@ -21,6 +23,7 @@ export function ImageGallery({ product }: Props) {
 
   const [selectedIndex, setSelectedIndex] = useState(0)
   const selectedImage = images[selectedIndex]
+  const isSoldOut = calculateStockStatus(product).kind === "soldOut"
 
   if (images.length === 0) {
     return (
@@ -75,6 +78,13 @@ export function ImageGallery({ product }: Props) {
             quality={100}
             className="object-cover"
             priority
+          />
+        )}
+        {isSoldOut && (
+          <SoldOutOverlay
+            variants={product.variants}
+            size="detail"
+            className="rounded-lg"
           />
         )}
       </div>

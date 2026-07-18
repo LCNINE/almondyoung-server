@@ -53,6 +53,10 @@ MEMBERSHIP_SERVICE_URL=http://localhost:3050
 NOTIFICATION_SERVICE_URL=http://localhost:3060
 CHANNEL_ADAPTER_SERVICE_URL=http://localhost:3070
 
+# === Admin 서버 전용: 채널 출고 반영 상태 조회 ===
+# channel-adapter와 동일한 값이어야 하며 브라우저에 노출되는 NEXT_PUBLIC_*로 설정하면 안 됩니다.
+CHANNEL_ADAPTER_INTERNAL_KEY=replace-with-a-server-only-secret
+
 # === Development Settings ===
 NODE_ENV=development
 ```
@@ -76,6 +80,7 @@ src/
 ## 🔌 API 클라이언트 구조
 
 ### 서비스별 API 클라이언트
+
 - **WMS Service** (포트 3010) - 창고 관리 시스템
 - **PIM Service** (포트 3020) - 상품 정보 관리
 - **User Service** (포트 3030) - 사용자 관리
@@ -83,7 +88,6 @@ src/
 - **Membership Service** (포트 3050) - 멤버십 관리
 - **Notification Service** (포트 3060) - 알림 관리
 - **Channel Adapter Service** (포트 3070) - 채널 어댑터
-
 
 ## 🎨 사용 가능한 컴포넌트
 

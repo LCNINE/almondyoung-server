@@ -1,7 +1,7 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx, LocationRack, LocationColumn, Location } from '../../schema/inventory.schema';
-import { TypedDatabase, DbService } from '@app/db';
+import { DbService } from '@app/db';
 import { eq, and, like, desc, asc, count, sql } from 'drizzle-orm';
 import {
   CreateColumnDto,
@@ -10,11 +10,10 @@ import {
   AddCustomBinDto,
   LocationCreateResultDto,
 } from '../dto/location-create.dto';
-import { UpdateLocationDto, UpdateColumnDto, UpdateRackDto, ExtendRackBinsDto } from '../dto/location-update.dto';
+import { UpdateLocationDto, UpdateColumnDto, UpdateRackDto } from '../dto/location-update.dto';
 import { LocationQueryDto } from '../dto/location-query.dto';
 import { SystemLocationRole } from '../types';
 import { SYSTEM_LOCATION_DEFAULTS } from '../constants/warehouse.constants';
-import { StandardLocationResponseDto, ZoneLocationResponseDto } from '../dto';
 
 @Injectable()
 export class LocationService {
@@ -32,15 +31,12 @@ export class LocationService {
 
     await this.dbService.run(async (trx) => {
       for (const role of roles) {
-        const [exists] = await trx
-          .select()
-          .from(wmsTables.locations)
-          .where(and(eq(wmsTables.locations.warehouseId, warehouseId), eq(wmsTables.locations.systemRole, role)))
-          .limit(1);
-
-        if (!exists) {
-          const def = SYSTEM_LOCATION_DEFAULTS[role];
-          await trx.insert(wmsTables.locations).values({
+        const def = SYSTEM_LOCATION_DEFAULTS[role];
+        // (warehouse_id, system_role) unique 제약이 동시 bootstrap에서도 role당 한 행만
+        // 남긴다. onConflictDoNothing 후 다시 잠가 비활성 legacy 행도 반드시 복구한다.
+        await trx
+          .insert(wmsTables.locations)
+          .values({
             warehouseId,
             code: def.code,
             displayName: def.displayName,
@@ -50,8 +46,25 @@ export class LocationService {
             isSystem: true,
             systemRole: role,
             isActive: true,
-          });
-          this.logger.log(`System location created for ${warehouseId}: ${role}`);
+          })
+          .onConflictDoNothing();
+
+        const [location] = await trx
+          .select()
+          .from(wmsTables.locations)
+          .where(and(eq(wmsTables.locations.warehouseId, warehouseId), eq(wmsTables.locations.systemRole, role)))
+          .for('update')
+          .limit(1);
+
+        if (!location) {
+          throw new Error(`System location bootstrap failed for role ${role} in warehouse ${warehouseId}`);
+        }
+        if (!location.isActive) {
+          await trx
+            .update(wmsTables.locations)
+            .set({ isActive: true, updatedAt: new Date() })
+            .where(eq(wmsTables.locations.id, location.id));
+          this.logger.warn(`Inactive system location reactivated for ${warehouseId}: ${role}`);
         }
       }
     }, tx);
@@ -370,8 +383,8 @@ export class LocationService {
   }
 
   async getLocationById(locationId: string, tx?: DbTx): Promise<Location> {
-    return await this.dbService.run(async (tx) => {
-      const [result] = await this.db
+    return await this.dbService.run(async (trx) => {
+      const [result] = await trx
         .select()
         .from(wmsTables.locations)
         .where(eq(wmsTables.locations.id, locationId))
@@ -403,10 +416,29 @@ export class LocationService {
     };
 
     if (existing.isSystem) {
+      const requested = dto as UpdateLocationDto & {
+        code?: string;
+        systemRole?: SystemLocationRole | null;
+        isSystem?: boolean;
+        locationType?: 'standard' | 'zone';
+      };
+      if (
+        (requested.code !== undefined && requested.code !== existing.code) ||
+        (dto.displayName !== undefined && dto.displayName !== existing.displayName)
+      ) {
+        throw new BadRequestException('Required system location cannot be renamed');
+      }
+      if (requested.systemRole !== undefined && requested.systemRole !== existing.systemRole) {
+        throw new BadRequestException('Required system location role cannot be changed');
+      }
+      if (requested.isSystem === false || (requested.locationType && requested.locationType !== 'zone')) {
+        throw new BadRequestException('Required system location identity cannot be changed');
+      }
+      if (dto.isActive === false) {
+        throw new BadRequestException('Required system location cannot be deactivated');
+      }
       payload = {
-        displayName: dto.displayName,
         notes: dto.notes,
-        isActive: dto.isActive,
         capacityLimit: dto.capacityLimit,
         fifoRank: dto.fifoRank,
         isExpirySeparated: dto.isExpirySeparated,

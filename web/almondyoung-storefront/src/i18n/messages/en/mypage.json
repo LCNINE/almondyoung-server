@@ -1,5 +1,6 @@
 {
   "section": {
+    "shopping": "Shopping Activity",
     "orderShipping": "Orders & Shipping",
     "accountManagement": "Account",
     "benefits": "Benefits & Services"
@@ -40,7 +41,8 @@
     "wish": "Wishlist",
     "rebuy": "Frequent",
     "recent": "Recently Viewed",
-    "customInfo": "Preferences"
+    "customInfo": "Preferences",
+    "allMenu": "All menu"
   },
   "coupon": {
     "myCoupons": "My Coupons",
@@ -148,7 +150,9 @@
     "pointTitle": "Almondyoung Points",
     "pointAriaLabel": "View Almondyoung points",
     "settings": "Settings",
-    "won": "KRW"
+    "won": "KRW",
+    "benefitActive": "Benefits active",
+    "membershipJoinCta": "Join membership benefits"
   },
   "shipping": {
     "title": "In Transit",
@@ -157,7 +161,10 @@
     "emptyDescription": "Place a new order to see items here.",
     "shopNow": "Start shopping",
     "orderNumber": "Order #{number}",
-    "detailAriaLabel": "View details"
+    "detailAriaLabel": "View details",
+    "orderTitle": "Orders",
+    "trackButton": "Track",
+    "trackToast": "Order tracking is coming soon. Please contact customer support."
   },
   "banner": {
     "savingsThisMonth": "You saved <strong>{amount} KRW</strong> this month!",
@@ -184,9 +191,78 @@
     "orderTitle": "No order history",
     "orderDescription": "Start your first order.",
     "orderPeriodTitle": "No orders in the selected period",
+    "orderSearchTitle": "No results found",
+    "orderSearchDescription": "Try a different search term",
     "orderPeriodDescription": "Try a different period."
   },
   "account": {
+    "accountInfo": {
+      "title": "Account Info",
+      "securityGroup": "Account security",
+      "profileGroup": "My information",
+      "password": "Password",
+      "email": "Email",
+      "phone": "Phone",
+      "name": "Name",
+      "nickname": "Nickname",
+      "birthday": "Date of birth",
+      "loginId": "ID",
+      "verifyNeeded": "Verification needed",
+      "verified": "Verified",
+      "verifiedToast": "Your email has been verified.",
+      "editField": {
+        "editTitle": "Edit {label}",
+        "save": "Save",
+        "saving": "Saving...",
+        "cancel": "Cancel",
+        "saved": "Saved.",
+        "failed": "Failed to save. Please try again later.",
+        "nameRequired": "Please enter your name.",
+        "nicknameRequired": "Please enter a nickname.",
+        "birthdayInvalid": "Enter 8 digits for your date of birth. (e.g. 19941024)"
+      },
+      "verifyDialog": {
+        "title": "Verify your email",
+        "description": "We will send a verification link to {email}. Verifying your email helps secure your account and keeps you informed with important Almond Young updates.",
+        "sendLink": "Send link",
+        "cancel": "Cancel",
+        "sentTitle": "Check your inbox",
+        "sentDescription": "We sent a verification link to {email}. Click the link in the email to verify this email address.",
+        "done": "Done",
+        "sendFailed": "Failed to send the verification email. Please try again later."
+      },
+      "phoneDialog": {
+        "introTitle": "Let's verify it's you first",
+        "introDescription": "A quick check is needed before changing your info.",
+        "sendCodeSms": "Get code via SMS",
+        "codeTitle": "Enter the code we just sent",
+        "codeDescription": "To protect your account, enter the code sent to {phone}. The code expires 3 minutes after sending.",
+        "submit": "Submit",
+        "resendCode": "Resend code",
+        "changeTitle": "Change your phone number",
+        "changeDescription": "SMS or data charges may apply.",
+        "next": "Next",
+        "sendCodeEmail": "Get code via email",
+        "codeDescriptionEmail": "To protect your account, enter the code sent to {email}. The code expires 3 minutes after sending.",
+        "codeSentHint": "We sent a verification code to protect your account. It expires in 3 minutes."
+      },
+      "gateDialog": {
+        "introTitle": "Verify it's you before changing your password",
+        "introDescription": "Complete verification by receiving a code via SMS or email.",
+        "sendCodeSms": "Get code via SMS",
+        "sendCodeEmail": "Get code via email",
+        "codeTitle": "Enter the code we just sent",
+        "codeDescriptionSms": "To protect your account, enter the code sent to {phone}. The code expires 3 minutes after sending.",
+        "codeDescriptionEmail": "To protect your account, enter the code sent to {email}. The code expires 3 minutes after sending.",
+        "submit": "Verify and continue",
+        "verifying": "Verifying...",
+        "resendCode": "Resend code",
+        "expired": "The code has expired",
+        "resendCountdown": "You can resend in {timer}s.",
+        "noPhone": "No registered phone number.",
+        "codeSentHint": "We sent a verification code to protect your account. It expires in 3 minutes."
+      }
+    },
     "labels": {
       "email": "Email",
       "name": "Name",
@@ -416,7 +492,13 @@
       "items": "{count} items",
       "totalQuantity": "Total quantity {count}",
       "productSuffix": "and {count} more",
-      "defaultProductName": "Item"
+      "defaultProductName": "Item",
+      "searchPlaceholder": "Search your ordered products",
+      "clearSearch": "Clear search",
+      "searchResultCount": "{count} results for ‘{q}’",
+      "prevPage": "Previous",
+      "nextPage": "Next",
+      "recent6m": "Last 6 months"
     },
     "filter": {
       "label": "Filter",
@@ -443,7 +525,8 @@
       "cancelSuccessManual": "Order cancelled. Refund will be processed by customer support.",
       "cancelError": "An error occurred during cancellation.",
       "contactCs": "Contact Support",
-      "bankTransferCancelGuide": "To cancel a bank transfer order, please contact customer support.",
+      "bankTransferCancelGuide": "To cancel or refund a bank transfer order, please use the ‘Request refund’ button.",
+      "bankTransferRefundNotice": "Unpaid orders are automatically canceled after the deposit deadline (7 days). To cancel or refund after deposit, enter your refund account (bank, account number, account holder) via ‘Request refund’. After admin review, the refund is sent to that account (about 2 business days). The account holder name must match exactly.",
       "download": "Download"
     },
     "delivery": {
@@ -559,6 +642,14 @@
         "failed": "Refund issue"
       }
     },
+    "cashReceipt": {
+      "sectionTitle": "Cash Receipt",
+      "typeLabel": "Type",
+      "typeIncome": "Income deduction",
+      "typeExpense": "Expense proof",
+      "issueNumber": "Issue No.",
+      "viewReceipt": "View receipt"
+    },
     "cancelDialog": {
       "reasonLabel": "Cancellation Reason",
       "otherPlaceholder": "Please enter your cancellation reason (up to 500 characters)",
@@ -569,6 +660,37 @@
         "DELAY": "Delivery delay",
         "OTHER": "Other"
       }
+    },
+    "refundRequest": {
+      "trigger": "Request refund",
+      "title": "Refund account",
+      "description": "Enter the account to receive the refund. After admin review, the refund is sent to this account (about 2 business days). The account holder name must match exactly.",
+      "bank": "Bank",
+      "bankPlaceholder": "Select bank",
+      "accountNumber": "Account number",
+      "accountNumberPlaceholder": "Digits only",
+      "holderName": "Account holder",
+      "holderNamePlaceholder": "Account holder name",
+      "reason": "Reason (optional)",
+      "reasonPlaceholder": "Enter a reason",
+      "cancel": "Cancel",
+      "submit": "Request refund",
+      "submitting": "Submitting...",
+      "success": "Your refund request has been received and will be processed after review.",
+      "error": "Failed to submit refund request. Please try again.",
+      "requested": "Refund requested · pending",
+      "refunded": "Refunded"
+    },
+    "depositAccount": {
+      "title": "Deposit account",
+      "bank": "Bank",
+      "accountNumber": "Account number",
+      "copy": "Copy",
+      "copied": "Account number copied.",
+      "holder": "Account holder",
+      "amount": "Deposit amount",
+      "dueDate": "Deposit deadline",
+      "notice": "Please deposit to the account below. The depositor name does not need to match. Automatic confirmation after deposit may take some time; shipping proceeds once confirmed."
     }
   },
   "membership": {
@@ -610,6 +732,7 @@
       "expectedEndDate": "Expected end date",
       "trialEndAutoStart": "Auto-billing starts after trial: {date}",
       "nextBillingNotice": "Your next billing date is {date}",
+      "membershipEndNotice": "Your membership ends on {date}",
       "trialEndAutoStartLabel": "Auto-billing starts after trial",
       "cartPriceUpdated": "Cart prices updated.",
       "paymentMethod": "Change payment method",
@@ -727,6 +850,8 @@
       "title": "Membership history",
       "subscriptionHistory": "Subscription history",
       "noSubscriptionHistory": "No subscription history.",
+      "loadMore": "Load more ({loaded}/{total})",
+      "loadingMore": "Loading...",
       "savingsTitle": "Savings record",
       "savingsTotal": "Total {amount} KRW",
       "savingsEmpty": "No savings yet.",
@@ -738,10 +863,12 @@
       "adjGrantedByAdmin": "Admin granted +{days} days",
       "adjExtended": "+{days} days extended",
       "adjReduced": "-{days} days deducted",
-      "legacyHistory": "View previous Almondyoung membership history",
+      "legacyHistory": "View previous Almondyoung Membership history",
       "joinAndBenefits": "Join Almondyoung Membership and see benefits",
       "subscribe": "Subscribe",
-      "cancelMembership": "Cancel membership",
+      "viewBenefitsGuide": "See membership benefits",
+      "cancelMembership": "Cancel Membership",
+      "cancelWarning": "Cancelling your membership removes all these benefits",
       "heroTitle": "Almondyoung Membership Service",
       "heroGrandOpen": "GRAND OPEN",
       "priceNoticeMonthlyYearly": "* Paid membership: 4,990 KRW / month, 49,900 KRW / year",
@@ -759,7 +886,8 @@
       "upcomingTitle1": "Coming soon: ",
       "upcomingTitle2": "Upcoming benefits",
       "upcomingDescription": "More benefits are on the way.",
-      "planNameDefault": "Annual"
+      "planNameDefault": "Annual",
+      "guideTitle": "ODOK Benefits"
     },
     "cancel": {
       "titleNoUsage": "No benefits used this month —",
@@ -771,8 +899,22 @@
       "etcPlaceholder": "Please enter a reason",
       "cancelButton": "Cancel",
       "confirmButton": "Confirm",
-      "processing": "Processing..."
-    }
+      "processing": "Processing...",
+      "titleUsedLine1": "You've already used this month's membership benefits.",
+      "titleUsedLine2": "No refund will be issued, and your membership stays active until the period ends.",
+      "refundAccountHeading": "Refund account",
+      "refundAccountNote": "Enter the account you’d like your refund sent to, and we’ll refund the full amount you paid.",
+      "bankPlaceholder": "Select bank",
+      "accountNumberPlaceholder": "Account number (digits only)",
+      "holderNamePlaceholder": "Account holder name",
+      "refundAccountIncomplete": "Please enter the bank, account number, and holder name.",
+      "next": "Next",
+      "back": "Back",
+      "refundStepTitle": "Confirm your refund details",
+      "stepReasonLabel": "Cancellation reason step",
+      "stepRefundLabel": "Refund details step"
+    },
+    "manageTitle": "Membership"
   },
   "orderActions": {
     "trackDelivery": "Track delivery",
@@ -856,7 +998,7 @@
     "plansLoadFailDescription": "Please try again later."
   },
   "membershipPaymentMethod": {
-    "pageTitle": "Manage membership payment method",
+    "pageTitle": "Payment method",
     "backAria": "Back",
     "currentCardTitle": "Current recurring payment method",
     "registeredCard": "Registered payment method",
@@ -1034,5 +1176,14 @@
       "small": "2–3 staff (Small)",
       "large": "4+ staff (Medium/Large)"
     }
+  },
+  "frequent": {
+    "title": "Frequently Used",
+    "viewAll": "View all",
+    "orderList": "Orders",
+    "wish": "Wishlist",
+    "review": "Reviews",
+    "myInfo": "My Info",
+    "cs": "Support"
   }
 }

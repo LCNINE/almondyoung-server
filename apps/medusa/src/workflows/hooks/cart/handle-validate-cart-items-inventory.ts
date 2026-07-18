@@ -3,7 +3,12 @@ import { addToCartWorkflow, createCartWorkflow } from '@medusajs/medusa/core-flo
 import { AddToCartWorkflowInputDTO, CreateCartWorkflowInputDTO } from '@medusajs/framework/types';
 import { ContainerRegistrationKeys, MedusaError, Modules } from '@medusajs/framework/utils';
 import type { IProductModuleService, ICartModuleService, ICustomerModuleService } from '@medusajs/framework/types';
-import { isRecord, isVisibleToMembersOnlyProduct, type MembershipProduct } from '../../../utils/membership-filter';
+import {
+  isRecord,
+  isVisibleToMembersOnlyProduct,
+  requiresMembershipToPurchase,
+  type MembershipProduct,
+} from '../../../utils/membership-filter';
 
 type CartInput = CreateCartWorkflowInputDTO | AddToCartWorkflowInputDTO;
 
@@ -78,29 +83,92 @@ const validateMembersOnlyProductVisibility = async (input: CartInput, container:
 };
 
 /**
- * 웰컴 멤버십 상품 구매 자격 검증
+ * 멤버십 전용 구매 상품(purchaseConstraint.requiresMembership)을 비회원·일반회원이 담는 걸 막는다.
+ * 상품 응답 미들웨어는 품절로 보이게만 할 뿐 실제 재고는 그대로라, API 직접 호출이 새어나간다.
  */
-const validateWelcomeMembership = async (input: AddToCartWorkflowInputDTO, container: any, variants: any[]) => {
-  const hasWelcomeMembershipItem = variants.some((variant) => {
+const validateMembersOnlyPurchase = async (input: CartInput, container: any, variants: any[]) => {
+  const hasMembersOnlyPurchase = variants.some((variant) =>
+    requiresMembershipToPurchase((variant.product ?? {}) as MembershipProduct),
+  );
+
+  if (!hasMembersOnlyPurchase) {
+    return;
+  }
+
+  const customerId = await resolveCartCustomerId(input, container);
+  const isMember = await resolveCustomerIsMembershipMember(container, customerId);
+
+  if (!isMember) {
+    throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '멤버십 회원만 구매할 수 있는 상품입니다.');
+  }
+};
+
+const collectWelcomeVariantIds = (variants: any[], into: Set<string>) => {
+  for (const variant of variants) {
     const tags: Array<{ value: string }> = variant.product?.tags ?? [];
-    return tags.some((tag) => tag.value === WELCOME_MEMBERSHIP_TAG);
-  });
+    if (tags.some((tag) => tag.value === WELCOME_MEMBERSHIP_TAG)) {
+      into.add(variant.id);
+    }
+  }
+};
 
-  if (!hasWelcomeMembershipItem) return;
+/**
+ * 웰컴 멤버십 상품 구매 자격 + 수량 검증
+ * - 유저당 평생 1회(welcomeMembershipEligibility) 정책이므로,
+ *   이번 요청 + 기존 장바구니의 웰컴 상품 수량 합이 1을 넘으면 차단.
+ * - createCart(cart_id 없음)와 addToCart 모두에서 실행된다.
+ */
+const validateWelcomeMembership = async (input: CartInput, container: any, variants: any[]) => {
+  const welcomeVariantIds = new Set<string>();
+  collectWelcomeVariantIds(variants, welcomeVariantIds);
 
-  // 웰컴 멤버십 상품이 포함되어 있음 → 고객 자격 확인
-  const cartModule: ICartModuleService = container.resolve(Modules.CART);
-  const cart = await cartModule.retrieveCart(input.cart_id, {
-    select: ['customer_id'],
-  });
+  if (welcomeVariantIds.size === 0) return;
 
-  if (!cart?.customer_id) {
+  // 1. 수량 검증: 요청 아이템 + 기존 장바구니 아이템의 웰컴 수량 합계
+  const requestedItems = (input.items ?? []) as ValidItem;
+  let welcomeQuantity = requestedItems
+    .filter((item) => welcomeVariantIds.has(item.variant_id))
+    .reduce((sum, item) => sum + Number(item.quantity ?? 1), 0);
+
+  if ('cart_id' in input && input.cart_id) {
+    const cartModule: ICartModuleService = container.resolve(Modules.CART);
+    const cart = await cartModule.retrieveCart(input.cart_id, {
+      relations: ['items'],
+    });
+    const existingItems = (cart?.items ?? []).filter((item: any) => item.variant_id);
+
+    // 기존 아이템 중 이번 요청에 없던 variant는 태그를 따로 조회
+    const unknownVariantIds = existingItems
+      .map((item: any) => item.variant_id as string)
+      .filter((id: string) => !variants.some((variant) => variant.id === id));
+    if (unknownVariantIds.length > 0) {
+      const productModule: IProductModuleService = container.resolve(Modules.PRODUCT);
+      const extraVariants = await productModule.listProductVariants(
+        { id: unknownVariantIds },
+        { relations: ['product', 'product.tags'] },
+      );
+      collectWelcomeVariantIds(extraVariants, welcomeVariantIds);
+    }
+
+    welcomeQuantity += existingItems
+      .filter((item: any) => welcomeVariantIds.has(item.variant_id))
+      .reduce((sum: number, item: any) => sum + Number(item.quantity ?? 0), 0);
+  }
+
+  if (welcomeQuantity > 1) {
+    throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '웰컴 멤버십 상품은 1인당 1개 구매 가능합니다.');
+  }
+
+  // 2. 고객 자격 확인
+  const customerId = await resolveCartCustomerId(input, container);
+
+  if (!customerId) {
     throw new MedusaError(MedusaError.Types.NOT_ALLOWED, '웰컴 멤버십 상품은 로그인 후 구매하실 수 있습니다.');
   }
 
   // Medusa customer → almond user_id 매핑
   const customerModule: ICustomerModuleService = container.resolve(Modules.CUSTOMER);
-  const customer = await customerModule.retrieveCustomer(cart.customer_id, {
+  const customer = await customerModule.retrieveCustomer(customerId, {
     select: ['metadata'],
   });
   const userId = (customer?.metadata as Record<string, unknown> | null)?.almond_user_id as string | undefined;
@@ -161,13 +229,14 @@ const handleValidateCartItemsInventory = async ({ input }: { input: CartInput },
   // TEMP: 재고 부족 주문 차단을 장바구니 플로우에서 임시 비활성화.
   // await validateInventoryForItems({ items: validItems, variants }, container);
 
-  // 2. 웰컴 멤버십 자격 검증 (addToCart인 경우만 - cart_id가 있음)
-  if ('cart_id' in input && input.cart_id) {
-    await validateWelcomeMembership(input, container, variants);
-  }
+  // 2. 웰컴 멤버십 수량/자격 검증 (createCart + addToCart 모두)
+  await validateWelcomeMembership(input, container, variants);
 
   // 3. 멤버십 회원 전용 노출 상품 직접 담기 방어
   await validateMembersOnlyProductVisibility(input, container, variants);
+
+  // 4. 멤버십 전용 구매 상품 직접 담기 방어
+  await validateMembersOnlyPurchase(input, container, variants);
 };
 
 // 장바구니 생성 시 재고 검증

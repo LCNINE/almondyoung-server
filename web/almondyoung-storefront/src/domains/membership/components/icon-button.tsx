@@ -20,7 +20,7 @@ export function IconTextButton({
       type="button"
       onClick={onClick}
       className={clsx(
-        "flex items-center justify-center gap-1 rounded-[5px] border border-zinc-400 bg-white py-3 pr-3 pl-4 font-['Noto_Sans_KR'] text-sm leading-5 font-normal text-zinc-800 transition hover:bg-zinc-50 active:bg-zinc-100",
+        "text-foreground hover:bg-muted flex items-center justify-between gap-1 rounded-lg border border-border bg-white px-4 py-3.5 text-sm font-medium transition-colors",
         {
           "w-full": size === "full",
           "self-stretch": size === "full",
@@ -28,7 +28,7 @@ export function IconTextButton({
       )}
     >
       <span>{label}</span>
-      <ChevronRight className="h-5 w-5 text-gray-400" aria-hidden="true" />
+      <ChevronRight className="text-muted-foreground h-4 w-4" aria-hidden="true" />
     </button>
   )
 }

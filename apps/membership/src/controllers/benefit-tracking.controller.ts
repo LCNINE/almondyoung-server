@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Body, Query } from '@nestjs/common';
+import { Public } from '@app/authorization';
 import { BenefitTrackingService } from '../services/benefit-tracking.service';
 import { RecordDiscountDto, CycleBenefitDto } from '../shared/dto/benefit-tracking.dto';
 
@@ -8,8 +9,9 @@ export class BenefitTrackingController {
 
   /**
    * 내부 API: 혜택 기록
-   * 외부 시스템에서 주문 완료 시 호출
+   * 외부 시스템(Medusa order.placed subscriber)에서 JWT 없이 호출 → @Public 필수.
    */
+  @Public()
   @Post('internal/record')
   async recordDiscount(@Body() dto: RecordDiscountDto) {
     try {
@@ -26,8 +28,9 @@ export class BenefitTrackingController {
 
   /**
    * 내부 API: 혜택 취소
-   * 외부 시스템에서 주문 취소 시 호출
+   * 외부 시스템(Medusa order.canceled subscriber)에서 JWT 없이 호출 → @Public 필수.
    */
+  @Public()
   @Post('internal/cancel')
   async cancelDiscount(@Body('orderId') orderId: string) {
     try {

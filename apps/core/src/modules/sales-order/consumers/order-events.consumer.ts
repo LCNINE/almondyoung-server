@@ -1,9 +1,9 @@
-import { Controller, Logger, NotFoundException, UseInterceptors } from '@nestjs/common';
+import { Controller, Logger, NotFoundException, BadRequestException, UseInterceptors } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
-import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
+import { OnEvent, EventPayload, EventEnvelope, RetryPolicy } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
-import {
+import type {
   OrderCreatedPayload,
   OrderCancelledPayload,
   OrderModifiedPayload,
@@ -13,6 +13,7 @@ import { MessageEnvelope } from '@packages/event-contracts/types';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { LibraryService } from '../../library/services/library.service';
 import { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
+import { FulfillmentWorkflowGate } from '../../fulfillment/services/fulfillment-workflow-gate.service';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import { and, eq } from 'drizzle-orm';
 
@@ -34,6 +35,7 @@ export class OrderEventsConsumer {
     private readonly salesOrdersService: SalesOrdersService,
     private readonly libraryService: LibraryService,
     private readonly fulfillmentBacklog: FulfillmentOrderCreationBacklogService,
+    private readonly fulfillmentWorkflowGate: FulfillmentWorkflowGate,
     @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
   ) {}
@@ -65,6 +67,7 @@ export class OrderEventsConsumer {
   }
 
   @OnEvent('orders.events.v1', 'OrderCreated')
+  @RetryPolicy({ maxRetries: 5, backoff: 'exponential', initialDelayMs: 1000, maxDelayMs: 15000 })
   async handleOrderCreated(
     @EventPayload() payload: OrderCreatedPayload,
     @EventEnvelope() envelope: MessageEnvelope<OrderCreatedPayload>,
@@ -100,7 +103,14 @@ export class OrderEventsConsumer {
         // grant 는 fail-closed 로 명시 가드 (미래의 미결제 채널 도입 대비).
         const isPaymentConfirmed = payload.status === 'confirmed';
         if (isPaymentConfirmed) {
-          await this.fulfillmentBacklog.enqueueForSalesOrder(salesOrder.id, tx);
+          const shouldEnqueueFo = this.fulfillmentWorkflowGate.shouldEnqueueFo(payload.createdAt, !existing);
+          if (shouldEnqueueFo) {
+            await this.fulfillmentBacklog.enqueueForSalesOrder(
+              salesOrder.id,
+              { eventOccurredAt: payload.createdAt, isNewSalesOrder: !existing },
+              tx,
+            );
+          }
           await this.libraryService.grantOwnershipsForOrder(salesOrder.id, tx);
         }
       });
@@ -111,6 +121,7 @@ export class OrderEventsConsumer {
   }
 
   @OnEvent('orders.events.v1', 'OrderCancelled')
+  @RetryPolicy({ nonRetryableErrors: [NotFoundException, BadRequestException] })
   async handleOrderCancelled(
     @EventPayload() payload: OrderCancelledPayload,
     @EventEnvelope() envelope: MessageEnvelope<OrderCancelledPayload>,
@@ -197,6 +208,7 @@ export class OrderEventsConsumer {
   }
 
   @OnEvent('orders.events.v1', 'OrderRefundCreated')
+  @RetryPolicy({ nonRetryableErrors: [NotFoundException] })
   async handleOrderRefundCreated(
     @EventPayload() payload: OrderRefundCreatedPayload,
     @EventEnvelope() envelope: MessageEnvelope<OrderRefundCreatedPayload>,

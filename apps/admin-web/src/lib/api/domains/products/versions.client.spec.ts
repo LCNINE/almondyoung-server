@@ -3,6 +3,7 @@ import { client } from '../../client';
 
 jest.mock('../../client', () => ({
   client: {
+    get: jest.fn(),
     put: jest.fn(),
     patch: jest.fn(),
     delete: jest.fn(),
@@ -90,6 +91,24 @@ describe('versionsClient lifecycle actions', () => {
 
     expect(client.delete).toHaveBeenCalledWith(
       expect.stringContaining('/masters/master-1/versions/version-1')
+    );
+  });
+});
+
+describe('versionsClient.listMyDrafts', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.mocked(client.get).mockResolvedValue({
+      data: { data: [], total: 0, page: 1, limit: 20 },
+    });
+  });
+
+  it('lists my drafts through the versions/my-drafts endpoint with query params', async () => {
+    await versionsClient.listMyDrafts({ page: 2, q: '가방', sort: 'updatedAt', order: 'desc' });
+
+    expect(client.get).toHaveBeenCalledWith(
+      expect.stringContaining('/versions/my-drafts'),
+      { params: { page: 2, limit: undefined, q: '가방', sort: 'updatedAt', order: 'desc' } },
     );
   });
 });

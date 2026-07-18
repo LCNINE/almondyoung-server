@@ -19,6 +19,7 @@ import {
   index,
   uniqueIndex,
   check,
+  foreignKey,
   AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { authorizationSchema } from '@app/authorization';
@@ -42,8 +43,8 @@ export const transitionTypeEnum = pgEnum('transition_type', [
   'MOVE', // 이동 (창고내/창고간 통합)
 
   // 품질 관리
-  'MARK_DEFECT', // ON_HAND → DEFECTIVE (불량 지정)
-  'REWORK_GOOD', // DEFECTIVE → ON_HAND (불량 양품화)
+  'MARK_DEFECT', // ON_HAND → DEFECTIVE (불량 지정) — DEAD(producer 0, 작업4 이후), 제거 예정: dev DB 복구 후(현황판 작업8b)
+  'REWORK_GOOD', // DEFECTIVE → ON_HAND (불량 양품화) — DEAD(producer 0, 작업4 이후), 제거 예정: dev DB 복구 후(현황판 작업8b)
   'SCRAP', // (ON_HAND|DEFECTIVE) → null (폐기)
 
   // 수동 조정 (reason 필드로 상세 사유 기록)
@@ -51,45 +52,28 @@ export const transitionTypeEnum = pgEnum('transition_type', [
   'ADJUST_DOWN', // ON_HAND → null (재고 감소)
 ]);
 
-// 확장된 이벤트 타입
-export const eventTypeEnum = pgEnum('event_type', [
-  // 입고 관련
-  'IN', // 일반 입고
-  'IN_DOMESTIC', // 국내 거래처 입고
-  'IN_OVERSEAS', // 해외 거래처 입고
-  'IN_RETURN', // 반품 입고
-
-  // 출고 관련
-  'OUT', // 일반 출고
-  'OUT_ORDER', // 주문 출고
-  'OUT_DAMAGE', // 파손 출고
-  'OUT_LOSS', // 분실 출고
-  'OUT_DISPOSAL', // 폐기 출고
-
-  // 이동 관련
-  'MOVE', // 일반 이동
-  'MOVE_INTER_WAREHOUSE', // 창고 간 이동
-  'MOVE_INTRA_WAREHOUSE', // 창고 내 이동
-
-  // 조정 관련
-  'ADJUST', // 일반 조정
-  'ADJUST_MANUAL', // 관리자 수동 조정
-  'ADJUST_INVENTORY', // 재고 실사 조정
-
-  // 예약 관련
-  'RESERVE',
-  'CONFIRM',
-  'RELEASE',
-  'CANCEL',
-]);
-
 // 창고 타입 추가
 export const warehouseTypeEnum = pgEnum('warehouse_type', ['domestic', 'overseas', 'bonded', 'return']);
 
+// DEAD 값(producer 0) — 제거 예정: dev DB 복구 후(현황판 작업8b). 'pending'(컬럼 default이나 실 insert는 항상 'confirmed')·'active'. 라이브: confirmed/released.
 export const reservationStatusEnum = pgEnum('reservation_status', ['pending', 'confirmed', 'released', 'active']);
 export const taskStatusEnum = pgEnum('task_status', ['created', 'picking', 'packed', 'shipped', 'canceled']);
 export const unavailableReasonEnum = pgEnum('unavailable_reason', ['pb', 'foreign', 'low_margin']);
-export const shipmentStatusEnum = pgEnum('shipment_status', ['created', 'in_transit', 'delivered', 'failed']);
+// V1 'open'(lazy open-box) 은 Task 25 contract 에서 제거됨 — V2 shipment 는 항상 'draft' 로 시작한다.
+// 'in_transit'/'delivered' 는 LIVE (Task 19 delivery projection = shipment-delivery-tracking.service).
+// 'failed' 는 현재 producer 0 이나 향후 배송 실패 상태로 보존. (delivery-provider의 DeliveryStatus는 별개 타입)
+export const shipmentStatusEnum = pgEnum('shipment_status', [
+  'shipped',
+  'in_transit',
+  'delivered',
+  'failed',
+  'canceled',
+  // Outbound V2 states.
+  'draft',
+  'planned',
+  'superseded',
+  'recovery_required',
+]);
 export const carrierEnum = pgEnum('carrier', ['CJ', 'HANJIN', 'LOTTE', 'LOGEN', 'KDEXP', 'CJGLS']);
 export const returnStatusEnum = pgEnum('return_status', [
   'requested',
@@ -144,15 +128,22 @@ export const inboundWorkTypeEnum = pgEnum('inbound_work_type', ['INBOUND', 'PUTA
 
 export const locationTypeEnum = pgEnum('location_type', ['standard', 'zone']);
 // 시스템 로케이션 역할(enum)
-export const systemLocationRoleEnum = pgEnum('system_location_role', ['inbound_default', 'return_default']);
+export const systemLocationRoleEnum = pgEnum('system_location_role', [
+  'inbound_default',
+  'return_default',
+  'outbound_rework',
+]);
 
 // 주문 관련 enum 추가
 export const orderStatusEnum = pgEnum('order_status', [
   'pending', // 주문 생성 (결제 대기)
   'confirmed', // 주문 확정 (결제 완료)
-  'processing', // 처리 중 (일괄주문확정 완료)
-  'shipped', // 출고 완료
-  'delivered', // 배송 완료
+  // DEAD 값(producer 0, 작업 15) — SO 출고/배송 진실은 FO(fulfillmentOrders.status + shippedAt)
+  // 도출이 SoT 다(ADR-0017). SO.status 의 실 전이는 pending→confirmed→cancelled 뿐이다(timeout 도 현재 producer 0 인 예약 값).
+  // 재사용 금지. 물리 제거(pgEnum recast)는 destructive·저가치라 비목표(구 8b 판례).
+  'processing', // [DEAD] 미사용 — 도달 불가
+  'shipped', // [DEAD] 미사용 — FO 도출로 대체
+  'delivered', // [DEAD] 미사용 — FO 도출로 대체
   'cancelled', // 취소
   'timeout', // 타임아웃
 ]);
@@ -181,24 +172,19 @@ export const eventTypeOrderEnum = pgEnum('event_type_order', [
 ]);
 
 export const taskPriorityEnum = pgEnum('task_priority', ['normal', 'high', 'urgent']);
+// Task 25 contract: V1 사장값 11개(reserving/unfulfillable/labeled/pending/allocated/picking/picked/
+// inspecting/inspected/invoiced/forwarded) 제거. V2 progress calculator(fulfillment-progress.service)가
+// 내는 8개 + drop_ship ship() 가 쓰는 'shipped' 만 남는다. (직배 상태는 별도 direct_ship_status enum)
 export const fulfillmentStatusEnum = pgEnum('fulfillment_status', [
   'created',
-  'reserving',
+  'partially_reserved',
   'ready',
-  'unfulfillable',
-  'labeled',
+  'processing',
   'shipped',
-  'canceled',
-  // 에러 로그에서 필요한 추가 상태들
-  'pending',
-  'allocated',
-  'picking',
-  'picked',
-  'inspecting',
-  'inspected',
-  'invoiced',
+  'partially_shipped',
   'completed',
-  'forwarded',
+  'canceled',
+  'recovery_required',
 ]);
 export const fulfillmentModeEnum = pgEnum('fulfillment_mode', ['in_house', '3pl', 'drop_ship']);
 export const fulfillmentOrderCreationBacklogStatusEnum = pgEnum('fulfillment_order_creation_backlog_status', [
@@ -214,9 +200,72 @@ export const outboxStatusEnum = pgEnum('outbox_status', ['pending', 'published',
 
 // FOI 기반 확장 enums
 export const pickingMethodEnum = pgEnum('picking_method', ['individual', 'total_picking']);
+export const pickingStrategyEnum = pgEnum('picking_strategy', ['discrete', 'aggregate_then_sort', 'pick_to_tote']);
 export const batchStatusEnum = pgEnum('batch_status', ['created', 'picking', 'completed', 'canceled']);
-export const invoiceMethodEnum = pgEnum('invoice_method', ['goodsflow', 'direct', 'self', 'hanjin']);
-export const invoiceStatusEnum = pgEnum('invoice_status', ['issued', 'printed', 'shipped', 'canceled']);
+// Outbound V2 expand enums. These are additive and intentionally coexist with V1 enums until Task 25.
+export const fulfillmentCommandRequestStatusEnum = pgEnum('fulfillment_command_request_status', [
+  'pending',
+  'completed',
+  'failed',
+]);
+export const shipmentOperationTypeEnum = pgEnum('shipment_operation_type', [
+  'split',
+  'consolidate',
+  'recipient_revision',
+  'cancel',
+  'reopen',
+  'plan',
+  'replan',
+  'short_pick',
+  'recall',
+]);
+export const shipmentOperationStatusEnum = pgEnum('shipment_operation_status', [
+  'pending',
+  'completed',
+  'failed',
+  'recovery_required',
+]);
+export const shipmentOperationMemberRoleEnum = pgEnum('shipment_operation_member_role', ['source', 'target']);
+export const outboundBatchWorkItemStatusEnum = pgEnum('outbound_batch_work_item_status', [
+  'queued',
+  'picking',
+  'ready_to_pack',
+  'packing',
+  'completed',
+  'short_pick_recovery',
+  'excluded',
+]);
+export const pickingPlanStatusEnum = pgEnum('picking_plan_status', [
+  'draft',
+  'active',
+  'invalidated',
+  'completed',
+  'canceled',
+]);
+export const batchInventorySessionStatusEnum = pgEnum('batch_inventory_session_status', [
+  'active',
+  'settled',
+  'recovery_required',
+  'canceled',
+]);
+export const batchInventoryCustodyTypeEnum = pgEnum('batch_inventory_custody_type', [
+  'AT_SOURCE',
+  'WORKER',
+  'BULK_CART',
+  'TOTE',
+  'SORTING',
+  'PACKING',
+  'PACKED',
+  'RETURN_PENDING',
+  'SETTLED',
+]);
+export const toteStatusEnum = pgEnum('tote_status', ['available', 'in_use', 'damaged', 'retired']);
+export const dispatchAttemptStatusEnum = pgEnum('dispatch_attempt_status', [
+  'pending',
+  'dispatched',
+  'recalled',
+  'recovery_required',
+]);
 
 // Audit system enums
 export const auditEventTypeEnum = pgEnum('audit_event_type', [
@@ -652,6 +701,13 @@ export const deliveryProfiles = pgTable('delivery_profiles', {
   name: varchar('name', { length: 128 }).notNull(),
   sourceType: sourceTypeEnum('source_type').notNull(),
   avgDeliveryDays: integer('avg_delivery_days'),
+  // TODO(outbound-v2-contract Task 25): require execution snapshots/modes for profiles used by planned shipments.
+  senderSnapshot: jsonb('sender_snapshot'),
+  originAddressSnapshot: jsonb('origin_address_snapshot'),
+  returnAddressSnapshot: jsonb('return_address_snapshot'),
+  carrierAccountRef: varchar('carrier_account_ref', { length: 255 }),
+  supportedFulfillmentModes: fulfillmentModeEnum('supported_fulfillment_modes').array(),
+  handlingFlags: jsonb('handling_flags'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -662,6 +718,8 @@ export const warehouses = pgTable('warehouses', {
   name: varchar('name', { length: 128 }).notNull(),
   type: warehouseTypeEnum('type').notNull().default('domestic'), // 창고 타입 추가
   location: varchar('location', { length: 256 }),
+  // TODO(outbound-v2-contract Task 25): require explicit configuration; null means V2 planning must reject.
+  supportedPickingStrategies: pickingStrategyEnum('supported_picking_strategies').array(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
@@ -759,6 +817,29 @@ export const locations = pgTable(
 // indexes moved into table definitions above
 
 /*───────────────────────────
+ * REQUEST IDEMPOTENCY (P2-4)
+ * 입고/이동 요청 전체의 멱등 기록. 이벤트 레벨 stock_events.idempotency_key 와 별개의
+ * 요청(핸들러) 레벨 방어 — 스펙 docs/superpowers/specs/2026-07-09-inbound-movement-idempotency-design.md §4.1
+ *──────────────────────────*/
+export const inventoryIdempotencyRequests = pgTable(
+  'inventory_idempotency_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    endpoint: varchar('endpoint', { length: 64 }).notNull(),
+    key: varchar('key', { length: 128 }).notNull(),
+    // SHA-256(JSON.stringify(dto)) hex — 키 오용(같은 키, 다른 본문) 감지
+    requestHash: varchar('request_hash', { length: 64 }).notNull(),
+    // null = 처리 중(커밋 전에는 외부 미관찰). 완료 시 핸들러 반환값 저장
+    response: jsonb('response'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqEndpointKey: uniqueIndex('uq_inv_idem_requests_endpoint_key').on(t.endpoint, t.key),
+    idxCreatedAt: index('idx_inv_idem_requests_created_at').on(t.createdAt),
+  }),
+);
+
+/*───────────────────────────
  * STOCK LEDGER
  *──────────────────────────*/
 export const stockJournals = pgTable('stock_journals', {
@@ -802,6 +883,9 @@ export const stockEvents = pgTable(
   },
   (t) => ({
     ixGrainTime: index('ix_stock_events_grain_time').on(t.skuId, t.fromWarehouseId, t.toWarehouseId, t.occurredAt),
+    uqReversalOfEvent: uniqueIndex('uq_stock_events_reversal_of_event')
+      .on(t.reversalOfEventId)
+      .where(sql`${t.reversalOfEventId} IS NOT NULL`),
     ckQtyPositive: check('ck_events_qty_positive', sql`${t.quantity} > 0`),
     ckStatesDifferent: check(
       'ck_events_states_diff',
@@ -835,11 +919,13 @@ export const stockLedgers = pgTable(
       .references(() => locations.id),
     stockState: stockStateEnum('stock_state').notNull(),
     qty: integer('qty').notNull().default(0),
+    version: integer('version').notNull().default(1),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     pk: primaryKey({ columns: [t.skuId, t.warehouseId, t.locationId, t.stockState] }),
     ckNonNegative: check('ck_ledgers_non_negative', sql`${t.qty} >= 0`),
+    ckVersionPositive: check('ck_stock_ledgers_version_positive', sql`${t.version} > 0`),
     ixLookup: index('ix_ledgers_lookup').on(t.skuId, t.warehouseId, t.locationId, t.stockState),
   }),
 );
@@ -1083,6 +1169,10 @@ export const salesOrderLines = pgTable(
     fulfillmentKind: varchar('fulfillment_kind', { length: 16 }), // 'physical' | 'digital' | null
     requiresShipping: boolean('requires_shipping'), // null = 물리로 간주
 
+    // TODO(outbound-v2-contract Task 25): trusted post-cutover channel orders require channelOrderItemId.
+    channelOrderItemId: varchar('channel_order_item_id', { length: 255 }),
+    channelProductId: varchar('channel_product_id', { length: 255 }),
+
     status: orderItemStatusEnum('status').notNull().default('pending'),
     suggestedQuantity: integer('suggested_quantity'), // 부분 수량 제안
     unavailableSkuIds: json('unavailable_sku_ids'), // 부족한 SKU 정보
@@ -1095,6 +1185,11 @@ export const salesOrderLines = pgTable(
   (t) => ({
     idxMappingSnapshot: index('idx_sales_order_lines_snapshot').on(t.mappingSnapshotId),
     idxVariant: index('idx_sales_order_lines_variant').on(t.variantId),
+    idxChannelOrderItem: index('idx_sales_order_lines_channel_order_item').on(t.channelOrderItemId),
+    idxChannelProduct: index('idx_sales_order_lines_channel_product').on(t.channelProductId),
+    uqSalesOrderChannelItem: uniqueIndex('uq_sales_order_lines_order_channel_item')
+      .on(t.salesOrderId, t.channelOrderItemId)
+      .where(sql`${t.channelOrderItemId} IS NOT NULL`),
   }),
 );
 
@@ -1240,50 +1335,52 @@ export const mergeGroups = pgTable('merge_groups', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-/*───────────────────────────
- * stock_events.eventType: 'OUT' (주문 출고), 'IN' (입고), 'ADJUST' (조정) 등
- * stock_events.reason: 'ORDER_FULFILLED', 'MANUAL_ADJUST' 등
- * stock_events.orderId: 주문 연결
- *──────────────────────────*/
-
 // Fulfillment Orders (FO)
-export const fulfillmentOrders = pgTable('fulfillment_orders', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  salesOrderId: uuid('sales_order_id').references(() => salesOrders.id, { onDelete: 'cascade' }),
-  warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'set null' }),
-  ownerId: uuid('owner_id').references(() => holders.id, { onDelete: 'set null' }),
-  status: fulfillmentStatusEnum('status').notNull().default('created'),
-  directShipStatus: directShipStatusEnum('direct_ship_status'),
+export const fulfillmentOrders = pgTable(
+  'fulfillment_orders',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    salesOrderId: uuid('sales_order_id').references(() => salesOrders.id, { onDelete: 'cascade' }),
+    warehouseId: uuid('warehouse_id').references(() => warehouses.id, { onDelete: 'set null' }),
+    ownerId: uuid('owner_id').references(() => holders.id, { onDelete: 'set null' }),
+    status: fulfillmentStatusEnum('status').notNull().default('created'),
+    directShipStatus: directShipStatusEnum('direct_ship_status'),
 
-  // 배치 및 출고 관련 필드들
-  batchId: uuid('batch_id').references(() => outboundBatches.id, { onDelete: 'set null' }),
-  fulfillmentMode: fulfillmentModeEnum('fulfillment_mode'),
-  priority: taskPriorityEnum('priority').notNull().default('normal'),
+    // 출고 관련 필드들 (batchId 는 Task 25 contract 에서 제거 — FO↔batch 링크 은퇴, batch 단위는 shipment)
+    fulfillmentMode: fulfillmentModeEnum('fulfillment_mode'),
+    priority: taskPriorityEnum('priority').notNull().default('normal'),
 
-  // 수량 관련 필드들
-  totalItems: integer('total_items').notNull().default(0),
-  totalQty: integer('total_qty').notNull().default(0),
-  totalReservedQty: integer('total_reserved_qty').notNull().default(0),
-  reservationFailureReason: text('reservation_failure_reason'),
-  reservationFailureDetails: jsonb('reservation_failure_details'),
+    // 수량 관련 필드들
+    totalItems: integer('total_items').notNull().default(0),
+    totalQty: integer('total_qty').notNull().default(0),
+    totalReservedQty: integer('total_reserved_qty').notNull().default(0),
+    reservationFailureReason: text('reservation_failure_reason'),
+    reservationFailureDetails: jsonb('reservation_failure_details'),
 
-  // 타임스탬프 필드들
-  allocatedAt: timestamp('allocated_at', { withTimezone: true }),
-  shippedAt: timestamp('shipped_at', { withTimezone: true }),
-  canceledAt: timestamp('canceled_at', { withTimezone: true }),
+    // 타임스탬프 필드들
+    allocatedAt: timestamp('allocated_at', { withTimezone: true }),
+    shippedAt: timestamp('shipped_at', { withTimezone: true }),
+    canceledAt: timestamp('canceled_at', { withTimezone: true }),
 
-  shippingAddress: json('shipping_address'),
+    shippingAddress: json('shipping_address'),
 
-  // TODO: 송화인(발송인) 정보 추가 필요
-  // - 주문 출고 시 salesOrder.channelId로 PIM의 channel 조회
-  // - channel.config.sender가 있으면 senderAddress로 사용
-  // - sender 구조: { name, phone, zipcode, address, detailAddress }
-  // 예: senderAddress: json('sender_address'),
+    // TODO: 송화인(발송인) 정보 추가 필요
+    // - 주문 출고 시 salesOrder.channelId로 PIM의 channel 조회
+    // - channel.config.sender가 있으면 senderAddress로 사용
+    // - sender 구조: { name, phone, zipcode, address, detailAddress }
+    // 예: senderAddress: json('sender_address'),
 
-  labelNo: varchar('label_no', { length: 64 }),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
+    labelNo: varchar('label_no', { length: 64 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    // SO:FO 0..1:0..1 강제. standalone/보상 FO(salesOrderId=null)는 자연 제외.
+    uqSalesOrder: uniqueIndex('uq_fulfillment_orders_sales_order')
+      .on(t.salesOrderId)
+      .where(sql`${t.salesOrderId} IS NOT NULL`),
+  }),
+);
 
 export const fulfillmentOrderCreationBacklogs = pgTable(
   'fulfillment_order_creation_backlogs',
@@ -1314,23 +1411,6 @@ export const fulfillmentOrderCreationBacklogs = pgTable(
   }),
 );
 
-export const fulfillmentOrderLines = pgTable('fulfillment_order_lines', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  fulfillmentOrderId: uuid('fulfillment_order_id')
-    .references(() => fulfillmentOrders.id, { onDelete: 'cascade' })
-    .notNull(),
-  skuId: uuid('sku_id')
-    .references(() => skus.id, { onDelete: 'restrict' })
-    .notNull(),
-  quantity: integer('quantity').notNull(),
-  reservedQty: integer('reserved_qty').notNull().default(0),
-  pickedQty: integer('picked_qty').notNull().default(0),
-  shippedQty: integer('shipped_qty').notNull().default(0),
-  status: varchar('status', { length: 32 }).notNull().default('pending'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
-
 /*───────────────────────────
  * RESERVATIONS
  *──────────────────────────*/
@@ -1340,13 +1420,17 @@ export const stockReservations = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
 
     // 통합 예약 대상 정보
-    targetType: varchar('target_type', { length: 50 }).notNull(), // 'FULFILLMENT_ORDER' | 'MOVEMENT_TASK'
-    targetId: uuid('target_id').notNull(), // FO ID 또는 Movement Task ID
+    targetType: varchar('target_type', { length: 50 }).notNull(), // 'FULFILLMENT_ORDER' 만 사용 (구 이동작업 예약 타입 제거)
+    targetId: uuid('target_id').notNull(), // FO ID
 
     // 기존 FO 호환성을 위해 유지 (nullable로 변경)
     fulfillmentOrderItemId: uuid('fulfillment_order_item_id').references(() => fulfillmentOrderItems.id, {
       onDelete: 'cascade',
     }),
+    // Task 25 contract: legacy FO-target 예약 제거 후 shipment-line 예약만 남아 NOT NULL 강제.
+    shipmentLineId: uuid('shipment_line_id')
+      .references(() => shipmentLines.id, { onDelete: 'restrict' })
+      .notNull(),
 
     // 예약 기본 정보
     skuId: uuid('sku_id')
@@ -1361,6 +1445,9 @@ export const stockReservations = pgTable(
     // 예약 메타 정보
     timeoutAt: timestamp('timeout_at', { withTimezone: true }),
     reason: text('reason'), // 예약 사유
+    requestedAt: timestamp('requested_at', { withTimezone: true }),
+    stateReason: varchar('state_reason', { length: 128 }),
+    invalidatedAt: timestamp('invalidated_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -1369,86 +1456,15 @@ export const stockReservations = pgTable(
     targetIdx: index('stock_reservations_target_idx').on(t.targetType, t.targetId),
     skuWarehouseIdx: index('stock_reservations_sku_warehouse_idx').on(t.skuId, t.warehouseId),
     statusIdx: index('stock_reservations_status_idx').on(t.status),
+    shipmentLineIdx: index('idx_stock_reservations_shipment_line').on(t.shipmentLineId),
+    requestedAtIdx: index('idx_stock_reservations_requested_at').on(t.requestedAt),
+    ckReservationQuantityPositive: check('ck_stock_reservations_quantity_positive', sql`${t.quantity} > 0`),
+    ckReservationInvalidation: check(
+      'ck_stock_reservations_invalidation',
+      sql`${t.invalidatedAt} IS NULL OR ${t.stateReason} IS NOT NULL`,
+    ),
   }),
 );
-
-/*───────────────────────────
- * OUTBOUND TASKS
- *──────────────────────────*/
-export const outboundTasks = pgTable('outbound_tasks', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  warehouseId: uuid('warehouse_id')
-    .references(() => warehouses.id)
-    .notNull(),
-  mergeGroupId: varchar('merge_group_id', { length: 64 }).references(() => mergeGroups.id, { onDelete: 'set null' }), // 합배송 그룹 참조
-  status: taskStatusEnum('status').notNull().default('created'),
-  priority: taskPriorityEnum('priority').notNull().default('normal'),
-
-  totalItems: integer('total_items').notNull().default(0), // 총 품목 수
-  totalQuantity: integer('total_quantity').notNull().default(0), // 총 수량
-
-  assignedTo: uuid('assigned_to'), // 작업자 ID
-  requiresGiftWrap: boolean('requires_gift_wrap').notNull().default(false), // 선물포장 필요
-  temperatureControlled: boolean('temperature_controlled').notNull().default(false), // 온도 제어 필요
-
-  unavailableReason: unavailableReasonEnum('unavailable_reason'),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-});
-
-// 바구니와 주문 연결 테이블 추가
-export const outboundTaskOrders = pgTable(
-  'outbound_task_orders',
-  {
-    taskId: uuid('task_id')
-      .references(() => outboundTasks.id, { onDelete: 'cascade' })
-      .notNull(),
-    orderId: uuid('order_id')
-      .references(() => salesOrders.id, { onDelete: 'cascade' })
-      .notNull(),
-
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    pk: primaryKey(t.taskId, t.orderId),
-  }),
-);
-
-// outbound_task_items 수정
-export const outboundTaskItems = pgTable(
-  'outbound_task_items',
-  {
-    taskId: uuid('task_id')
-      .references(() => outboundTasks.id, { onDelete: 'cascade' })
-      .notNull(),
-    skuId: uuid('sku_id')
-      .references(() => skus.id)
-      .notNull(),
-
-    quantityPending: integer('quantity_pending').notNull().default(0),
-    quantityPicking: integer('quantity_picking').notNull().default(0),
-    quantityPicked: integer('quantity_picked').notNull().default(0),
-
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    pk: primaryKey(t.taskId, t.skuId),
-  }),
-);
-
-export const outboundTaskLines = pgTable('outbound_task_lines', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  taskId: uuid('task_id')
-    .references(() => outboundTasks.id, { onDelete: 'cascade' })
-    .notNull(),
-  skuId: uuid('sku_id')
-    .references(() => skus.id, { onDelete: 'restrict' })
-    .notNull(),
-  quantity: integer('quantity').notNull(),
-  locationId: uuid('location_id').references(() => locations.id, { onDelete: 'set null' }),
-  scannedBarcode: varchar('scanned_barcode', { length: 64 }),
-  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
 
 /*───────────────────────────
  * SHIPMENTS
@@ -1457,30 +1473,119 @@ export const shipments = pgTable(
   'shipments',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    trackingNo: varchar('tracking_no', { length: 64 }).notNull(),
-    carrier: carrierEnum('carrier').notNull().default('CJ'),
-    status: shipmentStatusEnum('status').notNull().default('created'),
-    eta: timestamp('eta', { withTimezone: true }),
-    splitStatus: boolean('split_status').notNull().default(false),
-    invoiceUrl: varchar('invoice_url', { length: 512 }),
-    fulfillmentOrderId: uuid('fulfillment_order_id').references(() => fulfillmentOrders.id, { onDelete: 'set null' }),
+    // 박스 = 송장 한 장. V2 shipment 은 planning 단계에서 'draft' 로 생성 (V1 lazy open-box·'open' 상태 은퇴, Task 25).
+    warehouseId: uuid('warehouse_id')
+      .references(() => warehouses.id, { onDelete: 'restrict' })
+      .notNull(),
+    // 자동완료 판정 기준 FO. FO↔상자 M:N 허용(B 에서 shipments unique drop). nullable: 합배송에서 미설정.
+    openedForFulfillmentOrderId: uuid('opened_for_fulfillment_order_id').references(() => fulfillmentOrders.id, {
+      onDelete: 'set null',
+    }),
+    status: shipmentStatusEnum('status').notNull().default('draft'),
+    // TODO(outbound-v2-contract Task 25): require profile/recipient for planned V2 shipments.
+    shippingProfileId: uuid('shipping_profile_id').references(() => deliveryProfiles.id, { onDelete: 'restrict' }),
+    recipientSnapshot: jsonb('recipient_snapshot'),
+    manifestVersion: integer('manifest_version').notNull().default(1),
+    reservationVersion: integer('reservation_version').notNull().default(1),
+    openedBy: uuid('opened_by'),
+    openedAt: timestamp('opened_at', { withTimezone: true }).notNull().defaultNow(),
+    plannedAt: timestamp('planned_at', { withTimezone: true }),
+    shippedAt: timestamp('shipped_at', { withTimezone: true }),
+    deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+    supersededAt: timestamp('superseded_at', { withTimezone: true }),
+    recoveryCode: varchar('recovery_code', { length: 128 }),
     lastUpdated: timestamp('last_updated', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    uqFulfillmentOrder: unique('uq_shipments_fulfillment_order_id').on(t.fulfillmentOrderId),
+    // 전수(취소 포함) FO 조회용.
+    idxOpenedForFo: index('idx_shipments_opened_for_fo').on(t.openedForFulfillmentOrderId),
+    idxShippingProfile: index('idx_shipments_shipping_profile').on(t.shippingProfileId),
+    idxWarehouseStatus: index('idx_shipments_warehouse_status').on(t.warehouseId, t.status),
+    ckManifestVersionPositive: check('ck_shipments_manifest_version_positive', sql`${t.manifestVersion} > 0`),
+    ckReservationVersionPositive: check('ck_shipments_reservation_version_positive', sql`${t.reservationVersion} > 0`),
+    ckShipmentRecoveryCode: check(
+      'ck_shipments_recovery_code',
+      sql`${t.status}::text <> 'recovery_required' OR ${t.recoveryCode} IS NOT NULL`,
+    ),
+    ckShipmentSupersededAt: check(
+      'ck_shipments_superseded_at',
+      sql`${t.status}::text <> 'superseded' OR ${t.supersededAt} IS NOT NULL`,
+    ),
   }),
 );
 
-export const shipmentTracking = pgTable('shipment_tracking', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  shipmentId: uuid('shipment_id')
-    .references(() => shipments.id, { onDelete: 'cascade' })
-    .notNull(),
-  status: shipmentStatusEnum('status').notNull(),
-  location: varchar('location', { length: 255 }),
-  timestamp: timestamp('timestamp', { withTimezone: true }).notNull().defaultNow(),
-});
+/**
+ * 상자 라인(shipment_line) — 한 상자에 담긴 출고 라인 (Phase 1, additive).
+ * source 출고주문 라인(FOI)을 참조한다. 현재는 FO 1:1 이라 상자당 그 FO 의 FOI 를 미러하지만,
+ * 모델 자체는 FO↔상자 M:N(송장분할·합배송)을 표현할 수 있다(흐름 구현은 후속).
+ * `consumeShipment(shipmentId)` 가 라인별로 FIFO 차감 + 예약 소진의 단위로 쓴다.
+ */
+export const shipmentLines = pgTable(
+  'shipment_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    shipmentId: uuid('shipment_id')
+      .references(() => shipments.id, { onDelete: 'cascade' })
+      .notNull(),
+    fulfillmentOrderItemId: uuid('fulfillment_order_item_id')
+      .references(() => fulfillmentOrderItems.id, { onDelete: 'restrict' })
+      .notNull(),
+    // 원장 차감용 denormalize (FOI 의 skuId 와 동일). 라인만으로 SHIP 이벤트를 만들 수 있게.
+    skuId: uuid('sku_id')
+      .references(() => skus.id, { onDelete: 'restrict' })
+      .notNull(),
+    qty: integer('qty').notNull(),
+    reservedQty: integer('reserved_qty').notNull().default(0),
+    inspectedQty: integer('inspected_qty').notNull().default(0),
+    lineVersion: integer('line_version').notNull().default(1),
+    createdFromLineId: uuid('created_from_line_id').references((): AnyPgColumn => shipmentLines.id, {
+      onDelete: 'set null',
+    }),
+    forced: boolean('forced').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxShipment: index('idx_shipment_lines_shipment').on(t.shipmentId),
+    // 상자당 FOI 1행 — 멱등 ensure(onConflictDoNothing)의 근거. M:N end-state 에서도 성립.
+    uqShipmentFoi: unique('uq_shipment_lines_shipment_foi').on(t.shipmentId, t.fulfillmentOrderItemId),
+    ckQtyPositive: check('ck_shipment_lines_qty_positive', sql`${t.qty} > 0`),
+    ckInspectedRange: check(
+      'ck_shipment_lines_inspected_range',
+      sql`${t.inspectedQty} >= 0 AND ${t.inspectedQty} <= ${t.qty}`,
+    ),
+    ckReservedRange: check(
+      'ck_shipment_lines_reserved_range',
+      sql`${t.reservedQty} >= 0 AND ${t.reservedQty} <= ${t.qty}`,
+    ),
+    ckLineVersionPositive: check('ck_shipment_lines_line_version_positive', sql`${t.lineVersion} > 0`),
+    idxCreatedFromLine: index('idx_shipment_lines_created_from_line').on(t.createdFromLineId),
+  }),
+);
+
+export const shipmentTracking = pgTable(
+  'shipment_tracking',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    shipmentId: uuid('shipment_id')
+      .references(() => shipments.id, { onDelete: 'cascade' })
+      .notNull(),
+    // Task 25 contract: V2 tracking 행은 항상 dispatch attempt 에 연결 (shipment-delivery-tracking.service:163).
+    dispatchAttemptId: uuid('dispatch_attempt_id')
+      .references(() => dispatchAttempts.id, { onDelete: 'restrict' })
+      .notNull(),
+    providerEventId: varchar('provider_event_id', { length: 255 }),
+    status: shipmentStatusEnum('status').notNull(),
+    location: varchar('location', { length: 255 }),
+    timestamp: timestamp('timestamp', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxTrackingAttempt: index('idx_shipment_tracking_attempt').on(t.dispatchAttemptId),
+    uqProviderEvent: uniqueIndex('uq_shipment_tracking_provider_event')
+      .on(t.dispatchAttemptId, t.providerEventId)
+      .where(sql`${t.providerEventId} IS NOT NULL`),
+  }),
+);
 
 /*───────────────────────────
  * SALES VARIANT POLICIES
@@ -1586,6 +1691,10 @@ export const outboxEvents = pgTable(
   'outbox_events',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    // Task 25 contract: topic/idempotencyKey 필수. PR A 가 topicless write 를 컴파일 차단하고 fallback
+    // 라우팅을 제거했으며, 운영자 cleanup 이 legacy null-topic 행을 지웠다.
+    topic: varchar('topic', { length: 255 }).notNull(),
+    idempotencyKey: varchar('idempotency_key', { length: 255 }).notNull(),
     eventType: varchar('event_type', { length: 128 }).notNull(),
     aggregateType: varchar('aggregate_type', { length: 64 }).notNull(),
     aggregateId: uuid('aggregate_id').notNull(),
@@ -1600,6 +1709,10 @@ export const outboxEvents = pgTable(
   },
   (t) => ({
     idxStatusNext: index('idx_outbox_status_next').on(t.status, t.nextAttemptAt),
+    idxTopicStatusNext: index('idx_outbox_topic_status_next').on(t.topic, t.status, t.nextAttemptAt),
+    // 두 컬럼이 이제 NOT NULL 이라 partial WHERE 는 항상 참 → 일반 unique 로 단순화.
+    // ck_outbox_routing_pair(both-null-or-both-set)는 NOT NULL 로 대체돼 제거.
+    uqTopicEventIdempotency: uniqueIndex('uq_outbox_topic_event_idempotency').on(t.topic, t.eventType, t.idempotencyKey),
   }),
 );
 
@@ -1714,6 +1827,9 @@ export const stocktakingLines = pgTable(
     idxStocktakingLineSession: index('idx_stocktaking_line_session').on(t.sessionId),
     idxStocktakingLineSku: index('idx_stocktaking_line_sku').on(t.skuId),
     idxStocktakingLineLocation: index('idx_stocktaking_line_location').on(t.locationId),
+    uqStocktakingLine: unique('uq_stocktaking_line_session_sku_location')
+      .on(t.sessionId, t.skuId, t.locationId)
+      .nullsNotDistinct(),
   }),
 );
 
@@ -1738,6 +1854,7 @@ export const stocktakingAdjustments = pgTable(
   (t) => ({
     idxAdjustmentSession: index('idx_adjustment_session').on(t.sessionId),
     idxAdjustmentLine: index('idx_adjustment_line').on(t.lineId),
+    uqStocktakingAdjustmentLine: unique('uq_stocktaking_adjustment_line').on(t.lineId),
   }),
 );
 
@@ -2043,6 +2160,7 @@ export const fulfillmentOrderItems = pgTable(
     reservedQty: integer('reserved_qty').notNull().default(0),
     pickedQty: integer('picked_qty').notNull().default(0),
     shippedQty: integer('shipped_qty').notNull().default(0),
+    canceledQty: integer('canceled_qty').notNull().default(0),
     status: varchar('status', { length: 32 }).notNull().default('pending'),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -2053,64 +2171,21 @@ export const fulfillmentOrderItems = pgTable(
     idxSalesOrder: index('idx_fulfillment_order_items_so').on(t.salesOrderId),
     idxSku: index('idx_fulfillment_order_items_sku').on(t.skuId),
     idxVariant: index('idx_fulfillment_order_items_variant').on(t.variantId),
+    ckQtyPositive: check('ck_fulfillment_order_items_qty_positive', sql`${t.qty} > 0`),
+    ckProgressNonnegative: check(
+      'ck_fulfillment_order_items_progress_nonnegative',
+      sql`${t.reservedQty} >= 0 AND ${t.pickedQty} >= 0 AND ${t.shippedQty} >= 0 AND ${t.canceledQty} >= 0`,
+    ),
+    ckSettledWithinQty: check(
+      'ck_fulfillment_order_items_settled_within_qty',
+      sql`${t.shippedQty} + ${t.canceledQty} <= ${t.qty}`,
+    ),
   }),
 );
 
 /*───────────────────────────
- * INSPECTION (검수) — 영속화 테이블 3종
+ * INSPECTION (검수) — inspection_issues 만 영속(세션/아이템 폐기, 박스 라인으로 흡수)
  *──────────────────────────*/
-
-// 검수 세션 (FO 단위). status/type 는 varchar (FOI status 컨벤션 따름)
-export const inspectionSessions = pgTable(
-  'inspection_sessions',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    fulfillmentOrderId: uuid('fulfillment_order_id')
-      .references(() => fulfillmentOrders.id, { onDelete: 'cascade' })
-      .notNull(),
-    type: varchar('type', { length: 16 }).notNull().default('individual'), // individual | batch
-    status: varchar('status', { length: 16 }).notNull().default('active'), // active | completed | paused
-    inspectorUserId: varchar('inspector_user_id', { length: 255 }),
-    totalItems: integer('total_items').notNull().default(0),
-    inspectedItems: integer('inspected_items').notNull().default(0),
-    completedItems: integer('completed_items').notNull().default(0),
-    issues: integer('issues').notNull().default(0),
-    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
-    completedAt: timestamp('completed_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    idxFulfillmentOrder: index('idx_inspection_sessions_fo').on(t.fulfillmentOrderId),
-    idxStatus: index('idx_inspection_sessions_status').on(t.status),
-  }),
-);
-
-// 검수 아이템 (세션 × FOI). 세션 내 FOI 당 1행 (upsert)
-export const inspectionItems = pgTable(
-  'inspection_items',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    sessionId: uuid('session_id')
-      .references(() => inspectionSessions.id, { onDelete: 'cascade' })
-      .notNull(),
-    foiId: uuid('foi_id')
-      .references(() => fulfillmentOrderItems.id, { onDelete: 'cascade' })
-      .notNull(),
-    inspectedQty: integer('inspected_qty').notNull().default(0),
-    approvedQty: integer('approved_qty').notNull().default(0),
-    rejectedQty: integer('rejected_qty').notNull().default(0),
-    status: varchar('status', { length: 16 }).notNull().default('pending'), // pending | inspecting | approved | rejected | partial
-    lastInspectedAt: timestamp('last_inspected_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    idxSession: index('idx_inspection_items_session').on(t.sessionId),
-    idxFoi: index('idx_inspection_items_foi').on(t.foiId),
-    uqSessionFoi: unique('uq_inspection_items_session_foi').on(t.sessionId, t.foiId),
-  }),
-);
 
 // 검수 이슈 (불량/수량불일치 등). FOI 단위 누적 기록
 export const inspectionIssues = pgTable(
@@ -2120,7 +2195,8 @@ export const inspectionIssues = pgTable(
     foiId: uuid('foi_id')
       .references(() => fulfillmentOrderItems.id, { onDelete: 'cascade' })
       .notNull(),
-    sessionId: uuid('session_id').references(() => inspectionSessions.id, { onDelete: 'set null' }),
+    // 구 sessionId(→inspection_sessions, 폐기) → 박스 참조.
+    shipmentId: uuid('shipment_id').references(() => shipments.id, { onDelete: 'set null' }),
     type: varchar('type', { length: 32 }).notNull(), // quantity_mismatch | quality_issue | damage | wrong_item | other
     severity: varchar('severity', { length: 16 }).notNull(), // minor | major | critical
     description: text('description').notNull().default(''),
@@ -2133,7 +2209,7 @@ export const inspectionIssues = pgTable(
   },
   (t) => ({
     idxFoi: index('idx_inspection_issues_foi').on(t.foiId),
-    idxSession: index('idx_inspection_issues_session').on(t.sessionId),
+    idxShipment: index('idx_inspection_issues_shipment').on(t.shipmentId),
   }),
 );
 
@@ -2152,12 +2228,8 @@ export const outboundBatches = pgTable(
     status: batchStatusEnum('status').notNull().default('created'),
     pickingMethod: pickingMethodEnum('picking_method').notNull(),
     cartCapacity: integer('cart_capacity'), // 토탈피킹 시 바구니 수
-    assignedTo: varchar('assigned_to', { length: 255 }), // 작업자 ID
-
-    // 에러 로그에서 필요한 추가 컬럼들
     name: varchar('name', { length: 255 }),
-    totalItems: integer('total_items').notNull().default(0),
-    totalQty: integer('total_qty').notNull().default(0),
+    // Task 25 contract: assignedTo/totalItems/totalQty 제거 (writer 0 또는 상수 insert 뿐, reader 없음).
     scheduledPickingAt: timestamp('scheduled_picking_at', { withTimezone: true }),
     startedAt: timestamp('started_at', { withTimezone: true }),
     canceledAt: timestamp('canceled_at', { withTimezone: true }),
@@ -2171,57 +2243,638 @@ export const outboundBatches = pgTable(
   }),
 );
 
-export const fulfillmentOrderBatches = pgTable(
-  'fulfillment_order_batches',
+// Task 25 contract: fulfillment_order_batches(FO↔batch 링크 테이블) 제거 — non-spec 사용 0.
+// V2 batch 단위는 FO 가 아니라 shipment 다(outbound_batch_work_items). outbound_batches 는 존치.
+
+/*───────────────────────────
+ * OUTBOUND V2 EXPAND MODEL
+ * Additive foundation for idempotent shipment planning, custody and dispatch.
+ *──────────────────────────*/
+
+export const fulfillmentCommandRequests = pgTable(
+  'fulfillment_command_requests',
   {
-    fulfillmentOrderId: uuid('fulfillment_order_id')
-      .references(() => fulfillmentOrders.id, { onDelete: 'cascade' })
-      .notNull(),
-    batchId: uuid('batch_id')
-      .references(() => outboundBatches.id, { onDelete: 'cascade' })
-      .notNull(),
-    assignedAt: timestamp('assigned_at', { withTimezone: true }).notNull().defaultNow(),
-    removedAt: timestamp('removed_at', { withTimezone: true }),
-    removeReason: varchar('remove_reason', { length: 255 }),
+    id: uuid('id').primaryKey().defaultRandom(),
+    commandType: varchar('command_type', { length: 128 }).notNull(),
+    idempotencyKey: varchar('idempotency_key', { length: 255 }).notNull(),
+    requestHash: varchar('request_hash', { length: 64 }).notNull(),
+    status: fulfillmentCommandRequestStatusEnum('status').notNull().default('pending'),
+    resourceType: varchar('resource_type', { length: 64 }),
+    resourceId: uuid('resource_id'),
+    // Polymorphic correlation to shipment_operations (구 invoice_operations 대상은 contract phase 에서 드롭됨).
+    // command handlers validate operationId against resourceType inside their transaction.
+    operationId: uuid('operation_id'),
+    attemptId: uuid('attempt_id').references(() => dispatchAttempts.id, { onDelete: 'restrict' }),
+    responseSnapshot: jsonb('response_snapshot'),
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
   },
   (t) => ({
-    pk: primaryKey(t.fulfillmentOrderId, t.batchId),
-    idxBatch: index('idx_fulfillment_order_batches_batch').on(t.batchId),
+    uqCommandIdempotency: unique('uq_fulfillment_command_idempotency').on(t.commandType, t.idempotencyKey),
+    idxCommandStatus: index('idx_fulfillment_command_status').on(t.status, t.createdAt),
+    idxCommandOperation: index('idx_fulfillment_command_operation').on(t.operationId),
+    idxCommandAttempt: index('idx_fulfillment_command_attempt').on(t.attemptId),
+    ckCommandRequestHash: check('ck_fulfillment_command_request_hash', sql`length(${t.requestHash}) = 64`),
+    ckCommandCompletion: check(
+      'ck_fulfillment_command_completion',
+      sql`${t.status} <> 'completed' OR (${t.completedAt} IS NOT NULL AND ${t.responseSnapshot} IS NOT NULL)`,
+    ),
+    ckCommandFailure: check(
+      'ck_fulfillment_command_failure',
+      sql`${t.status} <> 'failed' OR ${t.lastError} IS NOT NULL`,
+    ),
   }),
 );
 
-/*───────────────────────────
- * INVOICE MANAGEMENT
- *──────────────────────────*/
-
-export const invoices = pgTable(
-  'invoices',
+export const shipmentOperations = pgTable(
+  'shipment_operations',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    fulfillmentOrderId: uuid('fulfillment_order_id')
-      .references(() => fulfillmentOrders.id, { onDelete: 'cascade' })
+    type: shipmentOperationTypeEnum('type').notNull(),
+    status: shipmentOperationStatusEnum('status').notNull().default('pending'),
+    operatorId: uuid('operator_id').notNull(),
+    reason: varchar('reason', { length: 255 }).notNull(),
+    csCaseId: uuid('cs_case_id'),
+    note: text('note'),
+    idempotencyKey: varchar('idempotency_key', { length: 255 }).notNull(),
+    requestHash: varchar('request_hash', { length: 64 }).notNull(),
+    beforeManifestSnapshot: jsonb('before_manifest_snapshot'),
+    afterManifestSnapshot: jsonb('after_manifest_snapshot'),
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (t) => ({
+    uqShipmentOperationIdempotency: unique('uq_shipment_operation_idempotency').on(t.type, t.idempotencyKey),
+    // Allows immutable picking-plan retirement history to prove that its owner
+    // is the exact shipment operation/type pair, not merely an arbitrary UUID.
+    uqShipmentOperationIdType: unique('uq_shipment_operations_id_type').on(t.id, t.type),
+    idxShipmentOperationStatus: index('idx_shipment_operation_status').on(t.status, t.createdAt),
+    ckShipmentOperationRequestHash: check('ck_shipment_operation_request_hash', sql`length(${t.requestHash}) = 64`),
+    ckShipmentOperationCompletion: check(
+      'ck_shipment_operation_completion',
+      sql`${t.status} <> 'completed' OR ${t.completedAt} IS NOT NULL`,
+    ),
+    ckShipmentOperationErrorContext: check(
+      'ck_shipment_operation_error_context',
+      sql`${t.status} NOT IN ('failed', 'recovery_required') OR ${t.lastError} IS NOT NULL`,
+    ),
+  }),
+);
+
+export const shipmentOperationMembers = pgTable(
+  'shipment_operation_members',
+  {
+    operationId: uuid('operation_id')
+      .references(() => shipmentOperations.id, { onDelete: 'restrict' })
       .notNull(),
-    invoiceNumber: varchar('invoice_number', { length: 128 }).notNull().unique(),
-    carrierCode: varchar('carrier_code', { length: 32 }),
-    issueMethod: invoiceMethodEnum('issue_method').notNull(),
-    // 기술부채: 컬럼명은 goodsflow 시절 명명이지만 실제로는 모든 외부 배송 provider(goodsflow/hanjin)의
-    // external service id 공용 저장소. rename 은 expand-contract 3 PR 비용이라 보류 (ADR-0005 §5).
-    goodsflowServiceId: varchar('goodsflow_service_id', { length: 255 }),
-    status: invoiceStatusEnum('status').notNull().default('issued'),
-    issuedAt: timestamp('issued_at', { withTimezone: true }).notNull().defaultNow(),
-    printedAt: timestamp('printed_at', { withTimezone: true }),
-    shippedAt: timestamp('shipped_at', { withTimezone: true }),
+    shipmentId: uuid('shipment_id')
+      .references(() => shipments.id, { onDelete: 'restrict' })
+      .notNull(),
+    role: shipmentOperationMemberRoleEnum('role').notNull(),
+    beforeManifestVersion: integer('before_manifest_version'),
+    afterManifestVersion: integer('after_manifest_version'),
+    beforeManifestSnapshot: jsonb('before_manifest_snapshot'),
+    afterManifestSnapshot: jsonb('after_manifest_snapshot'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    idxFulfillmentOrder: index('idx_invoices_fo').on(t.fulfillmentOrderId),
-    idxInvoiceNumber: index('idx_invoices_number').on(t.invoiceNumber),
-    idxStatus: index('idx_invoices_status').on(t.status),
-    // FO 당 활성(미취소) invoice 1개 보장 — 동시 발행 race 의 DB 레벨 방어선.
-    // canceled 는 제외하므로 취소 후 재발행이 가능하다.
-    uqActivePerFo: uniqueIndex('uq_invoices_fo_active')
-      .on(t.fulfillmentOrderId)
-      .where(sql`${t.status} <> 'canceled'`),
+    pk: primaryKey(t.operationId, t.shipmentId, t.role),
+    idxShipmentOperationMemberShipment: index('idx_shipment_operation_members_shipment').on(t.shipmentId),
+    ckShipmentOperationVersions: check(
+      'ck_shipment_operation_member_versions',
+      sql`(${t.beforeManifestVersion} IS NULL OR ${t.beforeManifestVersion} > 0)
+        AND (${t.afterManifestVersion} IS NULL OR ${t.afterManifestVersion} > 0)`,
+    ),
+  }),
+);
+
+export const waybillStatusEnum = pgEnum('waybill_status', [
+  'pending',
+  'allocated',
+  'registered',
+  'used',
+  'voided',
+  'failed',
+  'abandoned',
+]);
+export const waybillSourceEnum = pgEnum('waybill_source', ['carrier', 'manual']);
+
+export const waybills = pgTable(
+  'waybills',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    shipmentId: uuid('shipment_id')
+      .references(() => shipments.id, { onDelete: 'restrict' })
+      .notNull(),
+    source: waybillSourceEnum('source').notNull(),
+    carrier: carrierEnum('carrier').notNull(),
+    status: waybillStatusEnum('status').notNull().default('pending'),
+    trackingNo: varchar('tracking_no', { length: 128 }),
+    custOrdNo: varchar('cust_ord_no', { length: 30 }),
+    labelData: jsonb('label_data'),
+    manifestVersion: integer('manifest_version').notNull(),
+    recipientHash: varchar('recipient_hash', { length: 64 }).notNull(),
+    lastError: text('last_error'),
+    attempts: integer('attempts').notNull().default(0),
+    issuedAt: timestamp('issued_at', { withTimezone: true }),
+    voidedAt: timestamp('voided_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxShipment: index('idx_waybills_shipment').on(t.shipmentId),
+    idxStatus: index('idx_waybills_status').on(t.status),
+    idxTrackingNo: index('idx_waybills_tracking_no').on(t.trackingNo),
+    // shipment 당 활성 운송장 1개. 종료 3상태(voided/failed/abandoned) 슬롯 해제.
+    uqActivePerShipment: uniqueIndex('uq_waybills_shipment_active')
+      .on(t.shipmentId)
+      .where(sql`${t.status} NOT IN ('voided', 'failed', 'abandoned')`),
+    // live 운송장 사이에서만 trackingNo 유일(멱등 앵커). 종료 상태 제외라 오void 번호 재등록 허용.
+    uqLiveTrackingNo: uniqueIndex('uq_waybills_tracking_live')
+      .on(t.trackingNo)
+      .where(sql`${t.trackingNo} IS NOT NULL AND ${t.status} NOT IN ('voided', 'failed', 'abandoned')`),
+    ckTrackingPresent: check(
+      'ck_waybills_tracking_present',
+      sql`${t.status} NOT IN ('allocated', 'registered', 'used') OR ${t.trackingNo} IS NOT NULL`,
+    ),
+    ckManualStatus: check(
+      'ck_waybills_manual_status',
+      sql`${t.source} <> 'manual' OR ${t.status} IN ('registered', 'used', 'voided')`,
+    ),
+    ckAttempts: check('ck_waybills_attempts', sql`${t.attempts} >= 0`),
+    ckRecipientHash: check('ck_waybills_recipient_hash', sql`length(${t.recipientHash}) = 64`),
+    ckManifestVersion: check('ck_waybills_manifest_version', sql`${t.manifestVersion} > 0`),
+  }),
+);
+
+export const outboundBatchWorkItems = pgTable(
+  'outbound_batch_work_items',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    batchId: uuid('batch_id')
+      .references(() => outboundBatches.id, { onDelete: 'restrict' })
+      .notNull(),
+    shipmentId: uuid('shipment_id')
+      .references(() => shipments.id, { onDelete: 'restrict' })
+      .notNull(),
+    status: outboundBatchWorkItemStatusEnum('status').notNull().default('queued'),
+    pickerId: uuid('picker_id'),
+    pickerClaimedAt: timestamp('picker_claimed_at', { withTimezone: true }),
+    pickerReleasedAt: timestamp('picker_released_at', { withTimezone: true }),
+    packerId: uuid('packer_id'),
+    packerClaimedAt: timestamp('packer_claimed_at', { withTimezone: true }),
+    packerReleasedAt: timestamp('packer_released_at', { withTimezone: true }),
+    handedOffAt: timestamp('handed_off_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+    leaseVersion: integer('lease_version').notNull().default(0),
+    exclusionReason: text('exclusion_reason'),
+    recoveryReason: text('recovery_reason'),
+    waitingOperationId: uuid('waiting_operation_id').references(() => shipmentOperations.id, {
+      onDelete: 'restrict',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqActiveWorkItemPerShipment: uniqueIndex('uq_outbound_work_item_active_shipment')
+      .on(t.shipmentId)
+      .where(sql`${t.status} NOT IN ('completed', 'excluded')`),
+    idxOutboundWorkItemBatchStatus: index('idx_outbound_work_items_batch_status').on(t.batchId, t.status),
+    idxOutboundWorkItemWaitingOperation: index('idx_outbound_work_items_waiting_operation').on(t.waitingOperationId),
+    ckOutboundWorkItemLeaseVersion: check('ck_outbound_work_items_lease_version', sql`${t.leaseVersion} >= 0`),
+    ckOutboundWorkItemExclusion: check(
+      'ck_outbound_work_items_exclusion',
+      sql`${t.status} <> 'excluded' OR ${t.exclusionReason} IS NOT NULL`,
+    ),
+    ckOutboundWorkItemRecovery: check(
+      'ck_outbound_work_items_recovery',
+      sql`${t.status} <> 'short_pick_recovery' OR ${t.recoveryReason} IS NOT NULL`,
+    ),
+    ckOutboundWorkItemCompletion: check(
+      'ck_outbound_work_items_completion',
+      sql`${t.status} <> 'completed' OR ${t.completedAt} IS NOT NULL`,
+    ),
+    ckOutboundWorkItemPickerRelease: check(
+      'ck_outbound_work_items_picker_release',
+      sql`${t.pickerReleasedAt} IS NULL OR (${t.pickerClaimedAt} IS NOT NULL AND ${t.pickerReleasedAt} >= ${t.pickerClaimedAt})`,
+    ),
+    ckOutboundWorkItemPackerRelease: check(
+      'ck_outbound_work_items_packer_release',
+      sql`${t.packerReleasedAt} IS NULL OR (${t.packerClaimedAt} IS NOT NULL AND ${t.packerReleasedAt} >= ${t.packerClaimedAt})`,
+    ),
+  }),
+);
+
+export const pickingPlans = pgTable(
+  'picking_plans',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    batchId: uuid('batch_id')
+      .references(() => outboundBatches.id, { onDelete: 'restrict' })
+      .notNull(),
+    // Task 15 validates that this strategy belongs to the warehouse capability array.
+    strategy: pickingStrategyEnum('strategy').notNull(),
+    status: pickingPlanStatusEnum('status').notNull().default('draft'),
+    version: integer('version').notNull().default(1),
+    createdBy: uuid('created_by').notNull(),
+    invalidatedAt: timestamp('invalidated_at', { withTimezone: true }),
+    invalidationReason: text('invalidation_reason'),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqPickingPlanVersion: unique('uq_picking_plans_batch_version').on(t.batchId, t.version),
+    idxPickingPlanStatus: index('idx_picking_plans_batch_status').on(t.batchId, t.status),
+    ckPickingPlanVersion: check('ck_picking_plans_version_positive', sql`${t.version} > 0`),
+    ckPickingPlanInvalidation: check(
+      'ck_picking_plans_invalidation',
+      sql`${t.status} <> 'invalidated' OR (${t.invalidatedAt} IS NOT NULL AND ${t.invalidationReason} IS NOT NULL)`,
+    ),
+  }),
+);
+
+export const pickingPlanMembers = pgTable(
+  'picking_plan_members',
+  {
+    planId: uuid('plan_id')
+      .references(() => pickingPlans.id, { onDelete: 'restrict' })
+      .notNull(),
+    shipmentId: uuid('shipment_id')
+      .references(() => shipments.id, { onDelete: 'restrict' })
+      .notNull(),
+    manifestVersion: integer('manifest_version').notNull(),
+    reservationVersion: integer('reservation_version').notNull(),
+    retiredAt: timestamp('retired_at', { withTimezone: true }),
+    retireReason: text('retire_reason'),
+    retiredByOperationId: uuid('retired_by_operation_id'),
+    retiredByOperationType: shipmentOperationTypeEnum('retired_by_operation_type'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey(t.planId, t.shipmentId),
+    idxPickingPlanMemberShipment: index('idx_picking_plan_members_shipment').on(t.shipmentId),
+    idxActivePickingPlanMemberShipment: index('idx_picking_plan_members_active_shipment')
+      .on(t.shipmentId)
+      .where(sql`${t.retiredAt} IS NULL`),
+    fkPickingPlanMemberRetirementOperation: foreignKey({
+      name: 'fk_picking_plan_member_retirement_operation',
+      columns: [t.retiredByOperationId, t.retiredByOperationType],
+      foreignColumns: [shipmentOperations.id, shipmentOperations.type],
+    }).onDelete('restrict'),
+    ckPickingPlanMemberVersions: check(
+      'ck_picking_plan_member_versions',
+      sql`${t.manifestVersion} > 0 AND ${t.reservationVersion} > 0`,
+    ),
+    ckPickingPlanMemberRetirement: check(
+      'ck_picking_plan_member_retirement',
+      sql`(
+        ${t.retiredAt} IS NULL
+        AND ${t.retireReason} IS NULL
+        AND ${t.retiredByOperationId} IS NULL
+        AND ${t.retiredByOperationType} IS NULL
+      ) OR (
+        ${t.retiredAt} IS NOT NULL
+        AND ${t.retireReason} IS NOT NULL
+        AND length(btrim(${t.retireReason})) > 0
+        AND ${t.retiredByOperationId} IS NOT NULL
+        AND ${t.retiredByOperationType} IS NOT NULL
+        AND ${t.retiredByOperationType} = 'short_pick'
+        AND ${t.retiredAt} >= ${t.createdAt}
+      )`,
+    ),
+  }),
+);
+
+export const pickingSourceAllocations = pgTable(
+  'picking_source_allocations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    planId: uuid('plan_id')
+      .references(() => pickingPlans.id, { onDelete: 'restrict' })
+      .notNull(),
+    shipmentLineId: uuid('shipment_line_id')
+      .references(() => shipmentLines.id, { onDelete: 'restrict' })
+      .notNull(),
+    sourceLocationId: uuid('source_location_id')
+      .references(() => locations.id, { onDelete: 'restrict' })
+      .notNull(),
+    qty: integer('qty').notNull(),
+    sourceStockVersion: integer('source_stock_version').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqPickingSourceGrain: unique('uq_picking_source_allocations_grain').on(
+      t.planId,
+      t.shipmentLineId,
+      t.sourceLocationId,
+    ),
+    idxPickingAllocationLine: index('idx_picking_source_allocations_line').on(t.shipmentLineId),
+    ckPickingAllocationQty: check('ck_picking_source_allocations_qty_positive', sql`${t.qty} > 0`),
+    ckPickingAllocationStockVersion: check(
+      'ck_picking_source_allocations_stock_version',
+      sql`${t.sourceStockVersion} > 0`,
+    ),
+  }),
+);
+
+export const batchInventorySessions = pgTable(
+  'batch_inventory_sessions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    batchId: uuid('batch_id')
+      .references(() => outboundBatches.id, { onDelete: 'restrict' })
+      .notNull(),
+    status: batchInventorySessionStatusEnum('status').notNull().default('active'),
+    version: integer('version').notNull().default(1),
+    handedInQty: integer('handed_in_qty').notNull().default(0),
+    settledQty: integer('settled_qty').notNull().default(0),
+    returnedQty: integer('returned_qty').notNull().default(0),
+    shortageQty: integer('shortage_qty').notNull().default(0),
+    recoveryReason: text('recovery_reason'),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqActiveSessionPerBatch: uniqueIndex('uq_batch_inventory_sessions_active_batch')
+      .on(t.batchId)
+      .where(sql`${t.status} IN ('active', 'recovery_required')`),
+    idxBatchInventorySessionStatus: index('idx_batch_inventory_sessions_status').on(t.status, t.startedAt),
+    ckBatchInventorySessionVersion: check('ck_batch_inventory_sessions_version_positive', sql`${t.version} > 0`),
+    ckBatchInventorySessionQuantities: check(
+      'ck_batch_inventory_sessions_quantities',
+      sql`${t.handedInQty} >= 0 AND ${t.settledQty} >= 0 AND ${t.returnedQty} >= 0 AND ${t.shortageQty} >= 0`,
+    ),
+    ckBatchInventorySessionSettlement: check(
+      'ck_batch_inventory_sessions_settlement',
+      sql`${t.settledQty} + ${t.returnedQty} + ${t.shortageQty} <= ${t.handedInQty}`,
+    ),
+    ckBatchInventorySessionRecovery: check(
+      'ck_batch_inventory_sessions_recovery',
+      sql`${t.status} <> 'recovery_required' OR ${t.recoveryReason} IS NOT NULL`,
+    ),
+  }),
+);
+
+export const batchInventorySessionBalances = pgTable(
+  'batch_inventory_session_balances',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    sessionId: uuid('session_id')
+      .references(() => batchInventorySessions.id, { onDelete: 'restrict' })
+      .notNull(),
+    skuId: uuid('sku_id')
+      .references(() => skus.id, { onDelete: 'restrict' })
+      .notNull(),
+    sourceLocationId: uuid('source_location_id').references(() => locations.id, { onDelete: 'restrict' }),
+    custodyType: batchInventoryCustodyTypeEnum('custody_type').notNull(),
+    custodyRef: varchar('custody_ref', { length: 255 }),
+    shipmentLineId: uuid('shipment_line_id').references(() => shipmentLines.id, { onDelete: 'restrict' }),
+    qty: integer('qty').notNull().default(0),
+    version: integer('version').notNull().default(1),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqBatchInventoryBalanceGrain: unique('uq_batch_inventory_session_balance_grain')
+      .on(t.sessionId, t.skuId, t.sourceLocationId, t.custodyType, t.custodyRef, t.shipmentLineId)
+      .nullsNotDistinct(),
+    idxBatchInventoryBalanceSession: index('idx_batch_inventory_session_balances_session').on(
+      t.sessionId,
+      t.custodyType,
+    ),
+    idxBatchInventoryBalanceShipmentLine: index('idx_batch_inventory_session_balances_line').on(t.shipmentLineId),
+    ckBatchInventoryBalanceQty: check('ck_batch_inventory_session_balances_qty', sql`${t.qty} >= 0`),
+    ckBatchInventoryBalanceVersion: check('ck_batch_inventory_session_balances_version', sql`${t.version} > 0`),
+    ckBatchInventoryBalanceCustody: check(
+      'ck_batch_inventory_session_balances_custody',
+      sql`(
+        (${t.custodyType} = 'AT_SOURCE' AND ${t.sourceLocationId} IS NOT NULL AND ${t.custodyRef} IS NULL AND ${t.shipmentLineId} IS NULL)
+        OR (${t.custodyType} = 'BULK_CART' AND ${t.sourceLocationId} IS NOT NULL AND ${t.custodyRef} IS NOT NULL AND ${t.shipmentLineId} IS NULL)
+        OR (${t.custodyType} IN ('WORKER', 'TOTE', 'SORTING', 'PACKING', 'PACKED') AND ${t.sourceLocationId} IS NOT NULL AND ${t.custodyRef} IS NOT NULL AND ${t.shipmentLineId} IS NOT NULL)
+        OR (${t.custodyType} IN ('RETURN_PENDING', 'SETTLED') AND ${t.sourceLocationId} IS NOT NULL AND ${t.custodyRef} IS NULL AND ${t.shipmentLineId} IS NOT NULL)
+      )`,
+    ),
+  }),
+);
+
+export const batchInventorySessionEvents = pgTable(
+  'batch_inventory_session_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    sessionId: uuid('session_id')
+      .references(() => batchInventorySessions.id, { onDelete: 'restrict' })
+      .notNull(),
+    idempotencyKey: varchar('idempotency_key', { length: 255 }).notNull(),
+    eventType: varchar('event_type', { length: 64 }).notNull(),
+    skuId: uuid('sku_id')
+      .references(() => skus.id, { onDelete: 'restrict' })
+      .notNull(),
+    quantity: integer('quantity').notNull(),
+    fromCustodyType: batchInventoryCustodyTypeEnum('from_custody_type'),
+    fromCustodyRef: varchar('from_custody_ref', { length: 255 }),
+    fromSourceLocationId: uuid('from_source_location_id').references(() => locations.id, { onDelete: 'restrict' }),
+    fromShipmentLineId: uuid('from_shipment_line_id').references(() => shipmentLines.id, { onDelete: 'restrict' }),
+    toCustodyType: batchInventoryCustodyTypeEnum('to_custody_type'),
+    toCustodyRef: varchar('to_custody_ref', { length: 255 }),
+    toSourceLocationId: uuid('to_source_location_id').references(() => locations.id, { onDelete: 'restrict' }),
+    toShipmentLineId: uuid('to_shipment_line_id').references(() => shipmentLines.id, { onDelete: 'restrict' }),
+    payload: jsonb('payload'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqBatchInventorySessionEventIdempotency: unique('uq_batch_inventory_session_event_idempotency').on(
+      t.sessionId,
+      t.idempotencyKey,
+    ),
+    idxBatchInventorySessionEventFromLocation: index('idx_batch_inventory_session_events_from_location').on(
+      t.fromSourceLocationId,
+    ),
+    idxBatchInventorySessionEventToLocation: index('idx_batch_inventory_session_events_to_location').on(
+      t.toSourceLocationId,
+    ),
+    idxBatchInventorySessionEventFromLine: index('idx_batch_inventory_session_events_from_line').on(
+      t.fromShipmentLineId,
+    ),
+    idxBatchInventorySessionEventToLine: index('idx_batch_inventory_session_events_to_line').on(t.toShipmentLineId),
+    ckBatchInventorySessionEventQty: check('ck_batch_inventory_session_events_qty_positive', sql`${t.quantity} > 0`),
+    ckBatchInventorySessionEventSides: check(
+      'ck_batch_inventory_session_events_sides',
+      sql`${t.fromCustodyType} IS NOT NULL OR ${t.toCustodyType} IS NOT NULL`,
+    ),
+    ckBatchInventorySessionEventFromGrain: check(
+      'ck_batch_inventory_session_events_from_grain',
+      sql`(
+        (${t.fromCustodyType} IS NULL AND ${t.fromSourceLocationId} IS NULL AND ${t.fromCustodyRef} IS NULL AND ${t.fromShipmentLineId} IS NULL)
+        OR (${t.fromCustodyType} IS NOT NULL AND (
+          (${t.fromCustodyType} = 'AT_SOURCE' AND ${t.fromSourceLocationId} IS NOT NULL AND ${t.fromCustodyRef} IS NULL AND ${t.fromShipmentLineId} IS NULL)
+          OR (${t.fromCustodyType} = 'BULK_CART' AND ${t.fromSourceLocationId} IS NOT NULL AND ${t.fromCustodyRef} IS NOT NULL AND ${t.fromShipmentLineId} IS NULL)
+          OR (${t.fromCustodyType} IN ('WORKER', 'TOTE', 'SORTING', 'PACKING', 'PACKED') AND ${t.fromSourceLocationId} IS NOT NULL AND ${t.fromCustodyRef} IS NOT NULL AND ${t.fromShipmentLineId} IS NOT NULL)
+          OR (${t.fromCustodyType} IN ('RETURN_PENDING', 'SETTLED') AND ${t.fromSourceLocationId} IS NOT NULL AND ${t.fromCustodyRef} IS NULL AND ${t.fromShipmentLineId} IS NOT NULL)
+        ))
+      )`,
+    ),
+    ckBatchInventorySessionEventToGrain: check(
+      'ck_batch_inventory_session_events_to_grain',
+      sql`(
+        (${t.toCustodyType} IS NULL AND ${t.toSourceLocationId} IS NULL AND ${t.toCustodyRef} IS NULL AND ${t.toShipmentLineId} IS NULL)
+        OR (${t.toCustodyType} IS NOT NULL AND (
+          (${t.toCustodyType} = 'AT_SOURCE' AND ${t.toSourceLocationId} IS NOT NULL AND ${t.toCustodyRef} IS NULL AND ${t.toShipmentLineId} IS NULL)
+          OR (${t.toCustodyType} = 'BULK_CART' AND ${t.toSourceLocationId} IS NOT NULL AND ${t.toCustodyRef} IS NOT NULL AND ${t.toShipmentLineId} IS NULL)
+          OR (${t.toCustodyType} IN ('WORKER', 'TOTE', 'SORTING', 'PACKING', 'PACKED') AND ${t.toSourceLocationId} IS NOT NULL AND ${t.toCustodyRef} IS NOT NULL AND ${t.toShipmentLineId} IS NOT NULL)
+          OR (${t.toCustodyType} IN ('RETURN_PENDING', 'SETTLED') AND ${t.toSourceLocationId} IS NOT NULL AND ${t.toCustodyRef} IS NULL AND ${t.toShipmentLineId} IS NOT NULL)
+        ))
+      )`,
+    ),
+  }),
+);
+
+export const totes = pgTable(
+  'totes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    warehouseId: uuid('warehouse_id')
+      .references(() => warehouses.id, { onDelete: 'restrict' })
+      .notNull(),
+    barcode: varchar('barcode', { length: 128 }).notNull(),
+    status: toteStatusEnum('status').notNull().default('available'),
+    version: integer('version').notNull().default(1),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqToteBarcode: unique('uq_totes_barcode').on(t.barcode),
+    idxToteWarehouseStatus: index('idx_totes_warehouse_status').on(t.warehouseId, t.status),
+    ckToteVersion: check('ck_totes_version_positive', sql`${t.version} > 0`),
+  }),
+);
+
+export const shipmentToteAssignments = pgTable(
+  'shipment_tote_assignments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    shipmentId: uuid('shipment_id')
+      .references(() => shipments.id, { onDelete: 'restrict' })
+      .notNull(),
+    toteId: uuid('tote_id')
+      .references(() => totes.id, { onDelete: 'restrict' })
+      .notNull(),
+    assignedBy: uuid('assigned_by').notNull(),
+    assignedAt: timestamp('assigned_at', { withTimezone: true }).notNull().defaultNow(),
+    releasedAt: timestamp('released_at', { withTimezone: true }),
+  },
+  (t) => ({
+    uqActiveToteAssignment: uniqueIndex('uq_shipment_tote_assignments_active_tote')
+      .on(t.toteId)
+      .where(sql`${t.releasedAt} IS NULL`),
+    uqActiveShipmentToteAssignment: uniqueIndex('uq_shipment_tote_assignments_active_pair')
+      .on(t.shipmentId, t.toteId)
+      .where(sql`${t.releasedAt} IS NULL`),
+    idxShipmentToteAssignmentShipment: index('idx_shipment_tote_assignments_shipment').on(t.shipmentId),
+    ckShipmentToteRelease: check(
+      'ck_shipment_tote_assignments_release',
+      sql`${t.releasedAt} IS NULL OR ${t.releasedAt} >= ${t.assignedAt}`,
+    ),
+  }),
+);
+
+export const dispatchAttempts = pgTable(
+  'dispatch_attempts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    shipmentId: uuid('shipment_id')
+      .references(() => shipments.id, { onDelete: 'restrict' })
+      .notNull(),
+    attemptNo: integer('attempt_no').notNull(),
+    status: dispatchAttemptStatusEnum('status').notNull().default('pending'),
+    idempotencyKey: varchar('idempotency_key', { length: 255 }).notNull(),
+    // waybill 모듈 컷오버(플랜3): 구 invoice_id 를 대체. Task 12에서 invoice_id 컬럼 드롭 완료.
+    waybillId: uuid('waybill_id').references(() => waybills.id, { onDelete: 'restrict' }),
+    stockJournalId: uuid('stock_journal_id').references(() => stockJournals.id, { onDelete: 'restrict' }),
+    reversalJournalId: uuid('reversal_journal_id').references(() => stockJournals.id, { onDelete: 'restrict' }),
+    dispatchedAt: timestamp('dispatched_at', { withTimezone: true }),
+    carrierAcceptedAt: timestamp('carrier_accepted_at', { withTimezone: true }),
+    recalledAt: timestamp('recalled_at', { withTimezone: true }),
+    recoveryCode: varchar('recovery_code', { length: 128 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqDispatchAttemptNo: unique('uq_dispatch_attempts_shipment_attempt').on(t.shipmentId, t.attemptNo),
+    uqDispatchAttemptIdempotency: unique('uq_dispatch_attempts_idempotency').on(t.idempotencyKey),
+    uqDispatchAttemptJournal: uniqueIndex('uq_dispatch_attempts_stock_journal')
+      .on(t.stockJournalId)
+      .where(sql`${t.stockJournalId} IS NOT NULL`),
+    uqDispatchAttemptReversalJournal: uniqueIndex('uq_dispatch_attempts_reversal_journal')
+      .on(t.reversalJournalId)
+      .where(sql`${t.reversalJournalId} IS NOT NULL`),
+    idxDispatchAttemptShipmentStatus: index('idx_dispatch_attempts_shipment_status').on(t.shipmentId, t.status),
+    ckDispatchAttemptNo: check('ck_dispatch_attempts_attempt_no_positive', sql`${t.attemptNo} > 0`),
+    ckDispatchAttemptDispatched: check(
+      'ck_dispatch_attempts_dispatched_at',
+      sql`${t.status} NOT IN ('dispatched', 'recalled') OR (${t.dispatchedAt} IS NOT NULL AND ${t.stockJournalId} IS NOT NULL)`,
+    ),
+    ckDispatchAttemptRecalled: check(
+      'ck_dispatch_attempts_recalled_at',
+      sql`${t.status} <> 'recalled' OR (${t.recalledAt} IS NOT NULL AND ${t.reversalJournalId} IS NOT NULL)`,
+    ),
+    ckDispatchAttemptDistinctJournals: check(
+      'ck_dispatch_attempts_distinct_journals',
+      sql`${t.stockJournalId} IS NULL OR ${t.reversalJournalId} IS NULL OR ${t.stockJournalId} <> ${t.reversalJournalId}`,
+    ),
+    ckDispatchAttemptRecallChronology: check(
+      'ck_dispatch_attempts_recall_chronology',
+      sql`${t.status} <> 'recalled' OR ${t.recalledAt} >= ${t.dispatchedAt}`,
+    ),
+    ckDispatchAttemptRecallCarrier: check(
+      'ck_dispatch_attempts_recall_carrier',
+      sql`${t.status} <> 'recalled' OR ${t.carrierAcceptedAt} IS NULL`,
+    ),
+    ckDispatchAttemptCarrierAcceptance: check(
+      'ck_dispatch_attempts_carrier_acceptance',
+      sql`${t.carrierAcceptedAt} IS NULL OR (${t.dispatchedAt} IS NOT NULL AND ${t.carrierAcceptedAt} >= ${t.dispatchedAt})`,
+    ),
+    ckDispatchAttemptRecovery: check(
+      'ck_dispatch_attempts_recovery_code',
+      sql`${t.status} <> 'recovery_required' OR ${t.recoveryCode} IS NOT NULL`,
+    ),
+  }),
+);
+
+export const dispatchAttemptSources = pgTable(
+  'dispatch_attempt_sources',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    dispatchAttemptId: uuid('dispatch_attempt_id')
+      .references(() => dispatchAttempts.id, { onDelete: 'restrict' })
+      .notNull(),
+    shipmentLineId: uuid('shipment_line_id')
+      .references(() => shipmentLines.id, { onDelete: 'restrict' })
+      .notNull(),
+    sourceLocationId: uuid('source_location_id')
+      .references(() => locations.id, { onDelete: 'restrict' })
+      .notNull(),
+    qty: integer('qty').notNull(),
+    stockEventId: uuid('stock_event_id').references(() => stockEvents.id, { onDelete: 'restrict' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqDispatchAttemptSource: unique('uq_dispatch_attempt_sources_grain').on(
+      t.dispatchAttemptId,
+      t.shipmentLineId,
+      t.sourceLocationId,
+    ),
+    uqDispatchAttemptStockEvent: uniqueIndex('uq_dispatch_attempt_sources_stock_event')
+      .on(t.stockEventId)
+      .where(sql`${t.stockEventId} IS NOT NULL`),
+    idxDispatchAttemptSourceLine: index('idx_dispatch_attempt_sources_line').on(t.shipmentLineId),
+    ckDispatchAttemptSourceQty: check('ck_dispatch_attempt_sources_qty_positive', sql`${t.qty} > 0`),
   }),
 );
 
@@ -2263,12 +2916,8 @@ export const wmsTables = {
   stockReservations,
   fulfillmentOrders,
   fulfillmentOrderCreationBacklogs,
-  fulfillmentOrderLines,
-  outboundTasks,
-  outboundTaskOrders,
-  outboundTaskItems,
-  outboundTaskLines,
   shipments,
+  shipmentLines,
   shipmentTracking,
   returns,
   returnItems,
@@ -2288,6 +2937,7 @@ export const wmsTables = {
   movementWorkLogs,
   auditLogs,
   outboxEvents,
+  inventoryIdempotencyRequests,
 
   // Stocktaking
   stocktakingSessions,
@@ -2299,12 +2949,25 @@ export const wmsTables = {
   productSkuMappingItems,
   productSkuMappingSnapshots,
   fulfillmentOrderItems,
-  inspectionSessions,
-  inspectionItems,
   inspectionIssues,
   outboundBatches,
-  fulfillmentOrderBatches,
-  invoices,
+  waybills,
+
+  // Outbound V2 expand model
+  fulfillmentCommandRequests,
+  shipmentOperations,
+  shipmentOperationMembers,
+  outboundBatchWorkItems,
+  pickingPlans,
+  pickingPlanMembers,
+  pickingSourceAllocations,
+  batchInventorySessions,
+  batchInventorySessionBalances,
+  batchInventorySessionEvents,
+  totes,
+  shipmentToteAssignments,
+  dispatchAttempts,
+  dispatchAttemptSources,
 } as const;
 
 /*───────────────────────────
@@ -2356,6 +3019,7 @@ export const categoriesRelations = relations(categories, ({ many }) => ({
 
 export const deliveryProfilesRelations = relations(deliveryProfiles, ({ many }) => ({
   skus: many(skus),
+  shipments: many(shipments),
 }));
 
 // SKU Relations (핵심)
@@ -2401,10 +3065,7 @@ export const skusRelations = relations(skus, ({ one, many }) => ({
   stockLedgers: many(stockLedgers),
   stockReservations: many(stockReservations),
   // Order relations
-  fulfillmentOrderLines: many(fulfillmentOrderLines),
   fulfillmentOrderItems: many(fulfillmentOrderItems),
-  outboundTaskItems: many(outboundTaskItems),
-  outboundTaskLines: many(outboundTaskLines),
   // Purchase/Inbound relations
   purchaseOrderLines: many(purchaseOrderLines),
   purchaseOrderCart: many(purchaseOrderCart),
@@ -2493,7 +3154,6 @@ export const warehousesRelations = relations(warehouses, ({ many }) => ({
   stockLedgers: many(stockLedgers),
   stockReservations: many(stockReservations),
   fulfillmentOrders: many(fulfillmentOrders),
-  outboundTasks: many(outboundTasks),
   outboundBatches: many(outboundBatches),
   movementJobs: many(movementJobs),
   inboundReceipts: many(inboundReceipts),
@@ -2510,6 +3170,8 @@ export const warehousesRelations = relations(warehouses, ({ many }) => ({
   productSkuMappings: many(productSkuMappings),
   productSkuMappingSnapshots: many(productSkuMappingSnapshots),
   settings: many(settings),
+  shipments: many(shipments),
+  totes: many(totes),
 }));
 
 export const locationColumnsRelations = relations(locationColumns, ({ one, many }) => ({
@@ -2542,7 +3204,6 @@ export const locationsRelations = relations(locations, ({ one, many }) => ({
   inboundReceipts: many(inboundReceipts),
   inboundReceiptLines: many(inboundReceiptLines),
   movementJobLines: many(movementJobLines),
-  outboundTaskLines: many(outboundTaskLines),
   skusPrimary: many(skus, {
     relationName: 'primaryLocation',
   }),
@@ -2555,6 +3216,11 @@ export const locationsRelations = relations(locations, ({ one, many }) => ({
   skuMovementsTo: many(skuLocationMovements, {
     relationName: 'movementTo',
   }),
+  pickingSourceAllocations: many(pickingSourceAllocations),
+  batchInventorySessionBalances: many(batchInventorySessionBalances),
+  batchInventorySessionEventsFrom: many(batchInventorySessionEvents, { relationName: 'sessionEventFromSource' }),
+  batchInventorySessionEventsTo: many(batchInventorySessionEvents, { relationName: 'sessionEventToSource' }),
+  dispatchAttemptSources: many(dispatchAttemptSources),
 }));
 
 // Stock Relations
@@ -2562,6 +3228,8 @@ export const stockJournalsRelations = relations(stockJournals, ({ many }) => ({
   stockEvents: many(stockEvents),
   movementJobs: many(movementJobs),
   inboundReceipts: many(inboundReceipts),
+  dispatchAttempts: many(dispatchAttempts, { relationName: 'dispatchJournal' }),
+  dispatchAttemptReversals: many(dispatchAttempts, { relationName: 'reversalJournal' }),
 }));
 
 export const stockEventsRelations = relations(stockEvents, ({ one }) => ({
@@ -2589,6 +3257,7 @@ export const stockEventsRelations = relations(stockEvents, ({ one }) => ({
     fields: [stockEvents.toLocationId],
     references: [locations.id],
   }),
+  dispatchAttemptSource: one(dispatchAttemptSources),
 }));
 
 export const stockLedgersRelations = relations(stockLedgers, ({ one }) => ({
@@ -2619,6 +3288,10 @@ export const stockReservationsRelations = relations(stockReservations, ({ one })
     fields: [stockReservations.fulfillmentOrderItemId],
     references: [fulfillmentOrderItems.id],
   }),
+  shipmentLine: one(shipmentLines, {
+    fields: [stockReservations.shipmentLineId],
+    references: [shipmentLines.id],
+  }),
 }));
 
 // Product Matching Relations
@@ -2639,13 +3312,14 @@ export const productVariantSkuLinksRelations = relations(productVariantSkuLinks,
 }));
 
 // Sales Order Relations
-export const salesOrdersRelations = relations(salesOrders, ({ many }) => ({
+export const salesOrdersRelations = relations(salesOrders, ({ one, many }) => ({
   lines: many(salesOrderLines),
+  fulfillmentOrder: one(fulfillmentOrders),
+  // V1 compatibility relation; remove when all readers use the one-to-one relation above (Task 25).
   fulfillmentOrders: many(fulfillmentOrders),
   fulfillmentOrderCreationBacklogs: many(fulfillmentOrderCreationBacklogs),
   orderEvents: many(orderEvents),
   cancellations: many(salesOrderCancellations),
-  outboundTaskOrders: many(outboundTaskOrders),
   returns: many(returns),
 }));
 
@@ -2674,10 +3348,6 @@ export const salesOrderCancellationsRelations = relations(salesOrderCancellation
   }),
 }));
 
-export const mergeGroupsRelations = relations(mergeGroups, ({ many }) => ({
-  outboundTasks: many(outboundTasks),
-}));
-
 // Fulfillment Order Relations
 export const fulfillmentOrdersRelations = relations(fulfillmentOrders, ({ one, many }) => ({
   salesOrder: one(salesOrders, {
@@ -2692,16 +3362,9 @@ export const fulfillmentOrdersRelations = relations(fulfillmentOrders, ({ one, m
     fields: [fulfillmentOrders.ownerId],
     references: [holders.id],
   }),
-  batch: one(outboundBatches, {
-    fields: [fulfillmentOrders.batchId],
-    references: [outboundBatches.id],
-  }),
-  lines: many(fulfillmentOrderLines),
   items: many(fulfillmentOrderItems),
   creationBacklogs: many(fulfillmentOrderCreationBacklogs),
   shipments: many(shipments),
-  fulfillmentOrderBatches: many(fulfillmentOrderBatches),
-  invoices: many(invoices),
 }));
 
 export const fulfillmentOrderCreationBacklogsRelations = relations(fulfillmentOrderCreationBacklogs, ({ one }) => ({
@@ -2712,17 +3375,6 @@ export const fulfillmentOrderCreationBacklogsRelations = relations(fulfillmentOr
   fulfillmentOrder: one(fulfillmentOrders, {
     fields: [fulfillmentOrderCreationBacklogs.fulfillmentOrderId],
     references: [fulfillmentOrders.id],
-  }),
-}));
-
-export const fulfillmentOrderLinesRelations = relations(fulfillmentOrderLines, ({ one }) => ({
-  fulfillmentOrder: one(fulfillmentOrders, {
-    fields: [fulfillmentOrderLines.fulfillmentOrderId],
-    references: [fulfillmentOrders.id],
-  }),
-  sku: one(skus, {
-    fields: [fulfillmentOrderLines.skuId],
-    references: [skus.id],
   }),
 }));
 
@@ -2740,58 +3392,7 @@ export const fulfillmentOrderItemsRelations = relations(fulfillmentOrderItems, (
     references: [productSkuMappingSnapshots.id],
   }),
   stockReservations: many(stockReservations),
-}));
-
-// Outbound Relations
-export const outboundTasksRelations = relations(outboundTasks, ({ one, many }) => ({
-  warehouse: one(warehouses, {
-    fields: [outboundTasks.warehouseId],
-    references: [warehouses.id],
-  }),
-  mergeGroup: one(mergeGroups, {
-    fields: [outboundTasks.mergeGroupId],
-    references: [mergeGroups.id],
-  }),
-  outboundTaskOrders: many(outboundTaskOrders),
-  outboundTaskItems: many(outboundTaskItems),
-  outboundTaskLines: many(outboundTaskLines),
-}));
-
-export const outboundTaskOrdersRelations = relations(outboundTaskOrders, ({ one }) => ({
-  task: one(outboundTasks, {
-    fields: [outboundTaskOrders.taskId],
-    references: [outboundTasks.id],
-  }),
-  order: one(salesOrders, {
-    fields: [outboundTaskOrders.orderId],
-    references: [salesOrders.id],
-  }),
-}));
-
-export const outboundTaskItemsRelations = relations(outboundTaskItems, ({ one }) => ({
-  task: one(outboundTasks, {
-    fields: [outboundTaskItems.taskId],
-    references: [outboundTasks.id],
-  }),
-  sku: one(skus, {
-    fields: [outboundTaskItems.skuId],
-    references: [skus.id],
-  }),
-}));
-
-export const outboundTaskLinesRelations = relations(outboundTaskLines, ({ one }) => ({
-  task: one(outboundTasks, {
-    fields: [outboundTaskLines.taskId],
-    references: [outboundTasks.id],
-  }),
-  sku: one(skus, {
-    fields: [outboundTaskLines.skuId],
-    references: [skus.id],
-  }),
-  location: one(locations, {
-    fields: [outboundTaskLines.locationId],
-    references: [locations.id],
-  }),
+  shipmentLines: many(shipmentLines),
 }));
 
 export const outboundBatchesRelations = relations(outboundBatches, ({ one, many }) => ({
@@ -2799,35 +3400,70 @@ export const outboundBatchesRelations = relations(outboundBatches, ({ one, many 
     fields: [outboundBatches.warehouseId],
     references: [warehouses.id],
   }),
-  fulfillmentOrders: many(fulfillmentOrders),
-  fulfillmentOrderBatches: many(fulfillmentOrderBatches),
-}));
-
-export const fulfillmentOrderBatchesRelations = relations(fulfillmentOrderBatches, ({ one }) => ({
-  fulfillmentOrder: one(fulfillmentOrders, {
-    fields: [fulfillmentOrderBatches.fulfillmentOrderId],
-    references: [fulfillmentOrders.id],
-  }),
-  batch: one(outboundBatches, {
-    fields: [fulfillmentOrderBatches.batchId],
-    references: [outboundBatches.id],
-  }),
+  workItems: many(outboundBatchWorkItems),
+  pickingPlans: many(pickingPlans),
+  inventorySessions: many(batchInventorySessions),
 }));
 
 // Shipment Relations
 export const shipmentsRelations = relations(shipments, ({ one, many }) => ({
   fulfillmentOrder: one(fulfillmentOrders, {
-    fields: [shipments.fulfillmentOrderId],
+    fields: [shipments.openedForFulfillmentOrderId],
     references: [fulfillmentOrders.id],
   }),
+  warehouse: one(warehouses, {
+    fields: [shipments.warehouseId],
+    references: [warehouses.id],
+  }),
+  shippingProfile: one(deliveryProfiles, {
+    fields: [shipments.shippingProfileId],
+    references: [deliveryProfiles.id],
+  }),
+  lines: many(shipmentLines),
   shipmentTracking: many(shipmentTracking),
   returns: many(returns),
+  operationMembers: many(shipmentOperationMembers),
+  workItems: many(outboundBatchWorkItems),
+  pickingPlanMembers: many(pickingPlanMembers),
+  toteAssignments: many(shipmentToteAssignments),
+  dispatchAttempts: many(dispatchAttempts),
+}));
+
+export const shipmentLinesRelations = relations(shipmentLines, ({ one, many }) => ({
+  shipment: one(shipments, {
+    fields: [shipmentLines.shipmentId],
+    references: [shipments.id],
+  }),
+  fulfillmentOrderItem: one(fulfillmentOrderItems, {
+    fields: [shipmentLines.fulfillmentOrderItemId],
+    references: [fulfillmentOrderItems.id],
+  }),
+  sku: one(skus, {
+    fields: [shipmentLines.skuId],
+    references: [skus.id],
+  }),
+  createdFromLine: one(shipmentLines, {
+    fields: [shipmentLines.createdFromLineId],
+    references: [shipmentLines.id],
+    relationName: 'shipmentLineLineage',
+  }),
+  splitLines: many(shipmentLines, { relationName: 'shipmentLineLineage' }),
+  reservations: many(stockReservations),
+  pickingAllocations: many(pickingSourceAllocations),
+  sessionBalances: many(batchInventorySessionBalances),
+  sessionEventsFrom: many(batchInventorySessionEvents, { relationName: 'sessionEventFromLine' }),
+  sessionEventsTo: many(batchInventorySessionEvents, { relationName: 'sessionEventToLine' }),
+  dispatchSources: many(dispatchAttemptSources),
 }));
 
 export const shipmentTrackingRelations = relations(shipmentTracking, ({ one }) => ({
   shipment: one(shipments, {
     fields: [shipmentTracking.shipmentId],
     references: [shipments.id],
+  }),
+  dispatchAttempt: one(dispatchAttempts, {
+    fields: [shipmentTracking.dispatchAttemptId],
+    references: [dispatchAttempts.id],
   }),
 }));
 
@@ -2842,11 +3478,193 @@ export const returnsRelations = relations(returns, ({ one }) => ({
   }),
 }));
 
-// Invoice Relations
-export const invoicesRelations = relations(invoices, ({ one }) => ({
-  fulfillmentOrder: one(fulfillmentOrders, {
-    fields: [invoices.fulfillmentOrderId],
-    references: [fulfillmentOrders.id],
+export const fulfillmentCommandRequestsRelations = relations(fulfillmentCommandRequests, ({ one }) => ({
+  attempt: one(dispatchAttempts, {
+    fields: [fulfillmentCommandRequests.attemptId],
+    references: [dispatchAttempts.id],
+  }),
+}));
+
+export const shipmentOperationsRelations = relations(shipmentOperations, ({ many }) => ({
+  members: many(shipmentOperationMembers),
+  waitingWorkItems: many(outboundBatchWorkItems),
+}));
+
+export const shipmentOperationMembersRelations = relations(shipmentOperationMembers, ({ one }) => ({
+  operation: one(shipmentOperations, {
+    fields: [shipmentOperationMembers.operationId],
+    references: [shipmentOperations.id],
+  }),
+  shipment: one(shipments, {
+    fields: [shipmentOperationMembers.shipmentId],
+    references: [shipments.id],
+  }),
+}));
+
+export const outboundBatchWorkItemsRelations = relations(outboundBatchWorkItems, ({ one }) => ({
+  batch: one(outboundBatches, {
+    fields: [outboundBatchWorkItems.batchId],
+    references: [outboundBatches.id],
+  }),
+  shipment: one(shipments, {
+    fields: [outboundBatchWorkItems.shipmentId],
+    references: [shipments.id],
+  }),
+  waitingOperation: one(shipmentOperations, {
+    fields: [outboundBatchWorkItems.waitingOperationId],
+    references: [shipmentOperations.id],
+  }),
+}));
+
+export const pickingPlansRelations = relations(pickingPlans, ({ one, many }) => ({
+  batch: one(outboundBatches, {
+    fields: [pickingPlans.batchId],
+    references: [outboundBatches.id],
+  }),
+  members: many(pickingPlanMembers),
+  allocations: many(pickingSourceAllocations),
+}));
+
+export const pickingPlanMembersRelations = relations(pickingPlanMembers, ({ one }) => ({
+  plan: one(pickingPlans, {
+    fields: [pickingPlanMembers.planId],
+    references: [pickingPlans.id],
+  }),
+  shipment: one(shipments, {
+    fields: [pickingPlanMembers.shipmentId],
+    references: [shipments.id],
+  }),
+}));
+
+export const pickingSourceAllocationsRelations = relations(pickingSourceAllocations, ({ one }) => ({
+  plan: one(pickingPlans, {
+    fields: [pickingSourceAllocations.planId],
+    references: [pickingPlans.id],
+  }),
+  shipmentLine: one(shipmentLines, {
+    fields: [pickingSourceAllocations.shipmentLineId],
+    references: [shipmentLines.id],
+  }),
+  sourceLocation: one(locations, {
+    fields: [pickingSourceAllocations.sourceLocationId],
+    references: [locations.id],
+  }),
+}));
+
+export const batchInventorySessionsRelations = relations(batchInventorySessions, ({ one, many }) => ({
+  batch: one(outboundBatches, {
+    fields: [batchInventorySessions.batchId],
+    references: [outboundBatches.id],
+  }),
+  balances: many(batchInventorySessionBalances),
+  events: many(batchInventorySessionEvents),
+}));
+
+export const batchInventorySessionBalancesRelations = relations(batchInventorySessionBalances, ({ one }) => ({
+  session: one(batchInventorySessions, {
+    fields: [batchInventorySessionBalances.sessionId],
+    references: [batchInventorySessions.id],
+  }),
+  sku: one(skus, {
+    fields: [batchInventorySessionBalances.skuId],
+    references: [skus.id],
+  }),
+  sourceLocation: one(locations, {
+    fields: [batchInventorySessionBalances.sourceLocationId],
+    references: [locations.id],
+  }),
+  shipmentLine: one(shipmentLines, {
+    fields: [batchInventorySessionBalances.shipmentLineId],
+    references: [shipmentLines.id],
+  }),
+}));
+
+export const batchInventorySessionEventsRelations = relations(batchInventorySessionEvents, ({ one }) => ({
+  session: one(batchInventorySessions, {
+    fields: [batchInventorySessionEvents.sessionId],
+    references: [batchInventorySessions.id],
+  }),
+  sku: one(skus, {
+    fields: [batchInventorySessionEvents.skuId],
+    references: [skus.id],
+  }),
+  fromSourceLocation: one(locations, {
+    fields: [batchInventorySessionEvents.fromSourceLocationId],
+    references: [locations.id],
+    relationName: 'sessionEventFromSource',
+  }),
+  toSourceLocation: one(locations, {
+    fields: [batchInventorySessionEvents.toSourceLocationId],
+    references: [locations.id],
+    relationName: 'sessionEventToSource',
+  }),
+  fromShipmentLine: one(shipmentLines, {
+    fields: [batchInventorySessionEvents.fromShipmentLineId],
+    references: [shipmentLines.id],
+    relationName: 'sessionEventFromLine',
+  }),
+  toShipmentLine: one(shipmentLines, {
+    fields: [batchInventorySessionEvents.toShipmentLineId],
+    references: [shipmentLines.id],
+    relationName: 'sessionEventToLine',
+  }),
+}));
+
+export const totesRelations = relations(totes, ({ one, many }) => ({
+  warehouse: one(warehouses, {
+    fields: [totes.warehouseId],
+    references: [warehouses.id],
+  }),
+  assignments: many(shipmentToteAssignments),
+}));
+
+export const shipmentToteAssignmentsRelations = relations(shipmentToteAssignments, ({ one }) => ({
+  shipment: one(shipments, {
+    fields: [shipmentToteAssignments.shipmentId],
+    references: [shipments.id],
+  }),
+  tote: one(totes, {
+    fields: [shipmentToteAssignments.toteId],
+    references: [totes.id],
+  }),
+}));
+
+export const dispatchAttemptsRelations = relations(dispatchAttempts, ({ one, many }) => ({
+  shipment: one(shipments, {
+    fields: [dispatchAttempts.shipmentId],
+    references: [shipments.id],
+  }),
+  stockJournal: one(stockJournals, {
+    fields: [dispatchAttempts.stockJournalId],
+    references: [stockJournals.id],
+    relationName: 'dispatchJournal',
+  }),
+  reversalJournal: one(stockJournals, {
+    fields: [dispatchAttempts.reversalJournalId],
+    references: [stockJournals.id],
+    relationName: 'reversalJournal',
+  }),
+  tracking: many(shipmentTracking),
+  sources: many(dispatchAttemptSources),
+  commandRequests: many(fulfillmentCommandRequests),
+}));
+
+export const dispatchAttemptSourcesRelations = relations(dispatchAttemptSources, ({ one }) => ({
+  dispatchAttempt: one(dispatchAttempts, {
+    fields: [dispatchAttemptSources.dispatchAttemptId],
+    references: [dispatchAttempts.id],
+  }),
+  shipmentLine: one(shipmentLines, {
+    fields: [dispatchAttemptSources.shipmentLineId],
+    references: [shipmentLines.id],
+  }),
+  sourceLocation: one(locations, {
+    fields: [dispatchAttemptSources.sourceLocationId],
+    references: [locations.id],
+  }),
+  stockEvent: one(stockEvents, {
+    fields: [dispatchAttemptSources.stockEventId],
+    references: [stockEvents.id],
   }),
 }));
 
@@ -3121,29 +3939,36 @@ export const wmsRelations = {
   salesOrderLinesRelations,
   orderEventsRelations,
   salesOrderCancellationsRelations,
-  mergeGroupsRelations,
 
   // Fulfillment Order Relations
   fulfillmentOrdersRelations,
   fulfillmentOrderCreationBacklogsRelations,
-  fulfillmentOrderLinesRelations,
   fulfillmentOrderItemsRelations,
 
   // Outbound Relations
-  outboundTasksRelations,
-  outboundTaskOrdersRelations,
-  outboundTaskItemsRelations,
-  outboundTaskLinesRelations,
   outboundBatchesRelations,
-  fulfillmentOrderBatchesRelations,
 
   // Shipment Relations
   shipmentsRelations,
+  shipmentLinesRelations,
   shipmentTrackingRelations,
   returnsRelations,
 
-  // Invoice Relations
-  invoicesRelations,
+  // Outbound V2 Relations
+  fulfillmentCommandRequestsRelations,
+  shipmentOperationsRelations,
+  shipmentOperationMembersRelations,
+  outboundBatchWorkItemsRelations,
+  pickingPlansRelations,
+  pickingPlanMembersRelations,
+  pickingSourceAllocationsRelations,
+  batchInventorySessionsRelations,
+  batchInventorySessionBalancesRelations,
+  batchInventorySessionEventsRelations,
+  totesRelations,
+  shipmentToteAssignmentsRelations,
+  dispatchAttemptsRelations,
+  dispatchAttemptSourcesRelations,
 
   // Purchase Order Relations
   purchaseOrdersRelations,
@@ -3301,34 +4126,18 @@ export type NewFulfillmentOrder = InferInsertModel<typeof fulfillmentOrders>;
 export type FulfillmentOrderCreationBacklog = InferSelectModel<typeof fulfillmentOrderCreationBacklogs>;
 export type NewFulfillmentOrderCreationBacklog = InferInsertModel<typeof fulfillmentOrderCreationBacklogs>;
 
-export type FulfillmentOrderLine = InferSelectModel<typeof fulfillmentOrderLines>;
-export type NewFulfillmentOrderLine = InferInsertModel<typeof fulfillmentOrderLines>;
-
 export type FulfillmentOrderItem = InferSelectModel<typeof fulfillmentOrderItems>;
 export type NewFulfillmentOrderItem = InferInsertModel<typeof fulfillmentOrderItems>;
-
-// Outbound Types
-export type OutboundTask = InferSelectModel<typeof outboundTasks>;
-export type NewOutboundTask = InferInsertModel<typeof outboundTasks>;
-
-export type OutboundTaskOrder = InferSelectModel<typeof outboundTaskOrders>;
-export type NewOutboundTaskOrder = InferInsertModel<typeof outboundTaskOrders>;
-
-export type OutboundTaskItem = InferSelectModel<typeof outboundTaskItems>;
-export type NewOutboundTaskItem = InferInsertModel<typeof outboundTaskItems>;
-
-export type OutboundTaskLine = InferSelectModel<typeof outboundTaskLines>;
-export type NewOutboundTaskLine = InferInsertModel<typeof outboundTaskLines>;
 
 export type OutboundBatch = InferSelectModel<typeof outboundBatches>;
 export type NewOutboundBatch = InferInsertModel<typeof outboundBatches>;
 
-export type FulfillmentOrderBatch = InferSelectModel<typeof fulfillmentOrderBatches>;
-export type NewFulfillmentOrderBatch = InferInsertModel<typeof fulfillmentOrderBatches>;
-
 // Shipment Types
 export type Shipment = InferSelectModel<typeof shipments>;
 export type NewShipment = InferInsertModel<typeof shipments>;
+
+export type ShipmentLine = InferSelectModel<typeof shipmentLines>;
+export type NewShipmentLine = InferInsertModel<typeof shipmentLines>;
 
 export type ShipmentTracking = InferSelectModel<typeof shipmentTracking>;
 export type NewShipmentTracking = InferInsertModel<typeof shipmentTracking>;
@@ -3413,9 +4222,39 @@ export type NewProductSkuMappingItem = InferInsertModel<typeof productSkuMapping
 export type ProductSkuMappingSnapshot = InferSelectModel<typeof productSkuMappingSnapshots>;
 export type NewProductSkuMappingSnapshot = InferInsertModel<typeof productSkuMappingSnapshots>;
 
-// Invoice Types
-export type Invoice = InferSelectModel<typeof invoices>;
-export type NewInvoice = InferInsertModel<typeof invoices>;
+// Waybill Types
+export type Waybill = InferSelectModel<typeof waybills>;
+export type NewWaybill = InferInsertModel<typeof waybills>;
+
+// Outbound V2 expand model types
+export type FulfillmentCommandRequest = InferSelectModel<typeof fulfillmentCommandRequests>;
+export type NewFulfillmentCommandRequest = InferInsertModel<typeof fulfillmentCommandRequests>;
+export type ShipmentOperation = InferSelectModel<typeof shipmentOperations>;
+export type NewShipmentOperation = InferInsertModel<typeof shipmentOperations>;
+export type ShipmentOperationMember = InferSelectModel<typeof shipmentOperationMembers>;
+export type NewShipmentOperationMember = InferInsertModel<typeof shipmentOperationMembers>;
+export type OutboundBatchWorkItem = InferSelectModel<typeof outboundBatchWorkItems>;
+export type NewOutboundBatchWorkItem = InferInsertModel<typeof outboundBatchWorkItems>;
+export type PickingPlan = InferSelectModel<typeof pickingPlans>;
+export type NewPickingPlan = InferInsertModel<typeof pickingPlans>;
+export type PickingPlanMember = InferSelectModel<typeof pickingPlanMembers>;
+export type NewPickingPlanMember = InferInsertModel<typeof pickingPlanMembers>;
+export type PickingSourceAllocation = InferSelectModel<typeof pickingSourceAllocations>;
+export type NewPickingSourceAllocation = InferInsertModel<typeof pickingSourceAllocations>;
+export type BatchInventorySession = InferSelectModel<typeof batchInventorySessions>;
+export type NewBatchInventorySession = InferInsertModel<typeof batchInventorySessions>;
+export type BatchInventorySessionBalance = InferSelectModel<typeof batchInventorySessionBalances>;
+export type NewBatchInventorySessionBalance = InferInsertModel<typeof batchInventorySessionBalances>;
+export type BatchInventorySessionEvent = InferSelectModel<typeof batchInventorySessionEvents>;
+export type NewBatchInventorySessionEvent = InferInsertModel<typeof batchInventorySessionEvents>;
+export type Tote = InferSelectModel<typeof totes>;
+export type NewTote = InferInsertModel<typeof totes>;
+export type ShipmentToteAssignment = InferSelectModel<typeof shipmentToteAssignments>;
+export type NewShipmentToteAssignment = InferInsertModel<typeof shipmentToteAssignments>;
+export type DispatchAttempt = InferSelectModel<typeof dispatchAttempts>;
+export type NewDispatchAttempt = InferInsertModel<typeof dispatchAttempts>;
+export type DispatchAttemptSource = InferSelectModel<typeof dispatchAttemptSources>;
+export type NewDispatchAttemptSource = InferInsertModel<typeof dispatchAttemptSources>;
 
 /*───────────────────────────
  * BC-aliased exports (monolith)
@@ -3471,6 +4310,8 @@ export const exchangeReasonCodeEnum = pgEnum('exchange_reason_code', [
   'other',
 ]);
 
+export const returnRefundAttemptStatusEnum = pgEnum('return_refund_attempt_status', ['pending', 'succeeded', 'failed']);
+
 export const returnRequests = pgTable(
   'return_requests',
   {
@@ -3505,6 +4346,9 @@ export const returnRequestItems = pgTable(
       .references(() => returnRequests.id, { onDelete: 'cascade' })
       .notNull(),
     salesOrderLineId: uuid('sales_order_line_id').notNull(),
+    // TODO(outbound-v2-contract Task 25): require both links for post-cutover physical returns.
+    shipmentLineId: uuid('shipment_line_id').references(() => shipmentLines.id, { onDelete: 'restrict' }),
+    dispatchAttemptId: uuid('dispatch_attempt_id').references(() => dispatchAttempts.id, { onDelete: 'restrict' }),
     quantity: integer('quantity').notNull(),
     reasonCode: returnReasonCodeEnum('reason_code'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -3512,6 +4356,36 @@ export const returnRequestItems = pgTable(
   (t) => ({
     idxReturnRequestItemsRequest: index('idx_return_request_items_request').on(t.returnRequestId),
     idxReturnRequestItemsOrderLine: index('idx_return_request_items_order_line').on(t.salesOrderLineId),
+    idxReturnRequestItemsShipmentLine: index('idx_return_request_items_shipment_line').on(t.shipmentLineId),
+    idxReturnRequestItemsDispatchAttempt: index('idx_return_request_items_dispatch_attempt').on(t.dispatchAttemptId),
+    ckReturnRequestItemQuantity: check('ck_return_request_items_quantity_positive', sql`${t.quantity} > 0`),
+  }),
+);
+
+export const returnRefundAttempts = pgTable(
+  'return_refund_attempts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    returnRequestId: uuid('return_request_id')
+      .references(() => returnRequests.id, { onDelete: 'cascade' })
+      .notNull(),
+    attemptNumber: integer('attempt_number').notNull(),
+    // = correlationId = Wallet Idempotency-Key. 시도별 결정적 key 의 단일 진실(SoT).
+    idempotencyKey: text('idempotency_key').notNull(),
+    // Wallet body 의 SoT — 재사용(재생) 시 동일 amount 강제 (body-hash 일치).
+    amount: integer('amount').notNull(),
+    status: returnRefundAttemptStatusEnum('status').notNull().default('pending'),
+    walletOutcome: jsonb('wallet_outcome'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqReturnRefundAttemptNumber: unique('uq_return_refund_attempt_number').on(t.returnRequestId, t.attemptNumber),
+    // 불변식: 반품당 in-flight(pending) attempt 최대 1개 — Phase A 의 "pending 재사용" 규칙을 DB 로 강제
+    uqReturnRefundAttemptPending: uniqueIndex('uq_return_refund_attempt_pending')
+      .on(t.returnRequestId)
+      .where(sql`${t.status} = 'pending'`),
+    idxReturnRefundAttemptsRequest: index('idx_return_refund_attempts_request').on(t.returnRequestId),
   }),
 );
 
@@ -3562,6 +4436,7 @@ export const returnExchangeTables = {
   returnRequestItems,
   exchangeRequests,
   exchangeRequestItems,
+  returnRefundAttempts,
 } as const;
 
 export const returnExchangeSchema = {
@@ -3574,6 +4449,9 @@ export type NewReturnRequest = InferInsertModel<typeof returnRequests>;
 
 export type ReturnRequestItem = InferSelectModel<typeof returnRequestItems>;
 export type NewReturnRequestItem = InferInsertModel<typeof returnRequestItems>;
+
+export type ReturnRefundAttempt = InferSelectModel<typeof returnRefundAttempts>;
+export type NewReturnRefundAttempt = InferInsertModel<typeof returnRefundAttempts>;
 
 // Exchange Request Types
 export type ExchangeRequest = InferSelectModel<typeof exchangeRequests>;

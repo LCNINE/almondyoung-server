@@ -1,10 +1,10 @@
 import { CanActivate, createParamDecorator, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { Request } from 'express';
+import { FastifyRequest } from 'fastify';
 
 export const UserId = createParamDecorator((_: unknown, ctx: ExecutionContext): string => {
-  const req = ctx.switchToHttp().getRequest<Request & { userId: string }>();
+  const req = ctx.switchToHttp().getRequest<FastifyRequest & { userId: string }>();
   return req.userId;
 });
 
@@ -16,7 +16,7 @@ export class JwtUserGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<Request>();
+    const request = context.switchToHttp().getRequest<FastifyRequest>();
     const token = this.extractBearerToken(request);
 
     if (!token) {
@@ -31,14 +31,14 @@ export class JwtUserGuard implements CanActivate {
         throw new UnauthorizedException('Invalid token payload');
       }
 
-      (request as Request & { userId: string }).userId = payload.sub;
+      (request as FastifyRequest & { userId: string }).userId = payload.sub;
       return true;
     } catch {
       throw new UnauthorizedException('Invalid or expired token');
     }
   }
 
-  private extractBearerToken(request: Request): string | null {
+  private extractBearerToken(request: FastifyRequest): string | null {
     const auth = request.headers.authorization;
     if (!auth?.startsWith('Bearer ')) return null;
     return auth.slice(7);

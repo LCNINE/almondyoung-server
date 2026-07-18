@@ -12,7 +12,7 @@ export default function UpcomingBenefitsSection() {
       <div className="mb-8 flex flex-col items-center gap-4">
         <h2 className="text-center text-2xl font-bold md:text-3xl">
           <span className="text-white">{t("upcomingTitle1")}</span>
-          <span className="text-[#f29219]">{t("upcomingTitle2")}</span>
+          <span className="text-[#ff6600]">{t("upcomingTitle2")}</span>
         </h2>
         <p className="text-center text-sm text-white/60">
           {t("upcomingDescription")}

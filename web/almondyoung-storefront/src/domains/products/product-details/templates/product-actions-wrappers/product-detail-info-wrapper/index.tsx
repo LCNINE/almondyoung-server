@@ -1,4 +1,5 @@
 import { getProductDetailByMasterId } from "@/lib/api/pim/products"
+import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { HttpTypes } from "@medusajs/types"
 import { ProductDetailInfo } from "../../../components/product-detail-info"
 
@@ -33,7 +34,9 @@ export async function ProductDetailInfoWrapper({ pricedProduct }: Props) {
     },
   ]
 
-  const detailImageUrls: string[] = detailImages.map((img) => img.url)
+  const detailImageUrls: string[] = detailImages
+    .map((img) => getThumbnailUrl(img.url))
+    .filter(Boolean)
 
   return (
     <>

@@ -95,6 +95,10 @@ export const GatewayEventType = {
   INTENT_CAPTURED: 'payment.intent.captured',
   // 무통장입금 입금 대기 진입 — Medusa 가 주문을 '입금확인중' 으로 선생성하도록 트리거.
   INTENT_AWAITING_DEPOSIT: 'payment.intent.awaiting_deposit',
+  // 무통장 환불 '신청'(REQUESTED) — Medusa 주문에 refund_status='requested' marker 를 달아
+  // 승인 전까지 WMS 수집/발송에서 제외(휴먼 에러 방지). 거절 시 marker 해제.
+  INTENT_REFUND_REQUESTED: 'payment.intent.refund_requested',
+  INTENT_REFUND_REQUEST_REJECTED: 'payment.intent.refund_request_rejected',
   CHARGE_AUTHORIZED: 'gateway.charge.authorized',
   CHARGE_CAPTURED: 'gateway.charge.captured',
   CHARGE_FAILED: 'gateway.charge.failed',

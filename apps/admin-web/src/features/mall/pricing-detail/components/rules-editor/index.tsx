@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Save, Trash2, Plus } from 'lucide-react';
+import { toast } from 'sonner';
 import { RuleRow } from './rule-row';
+import type { ScopeTargetVariant } from './rule-scope-target';
 import { DeleteRulesDialog } from '../delete-rules-dialog';
 import type {
   PricingRulesResponseDto,
@@ -12,13 +13,8 @@ import type {
   PricingLayer,
   ReplacePricingRulesDto,
 } from '@/lib/types/dto/products';
-import { toServerScale } from '@/lib/services/products/transformers';
-
-const LAYER_TABS: { value: PricingLayer; label: string }[] = [
-  { value: 'base_price', label: '기준가' },
-  { value: 'membership_price', label: '멤버십가' },
-  { value: 'tiered_price', label: '수량별 가격' },
-];
+import type { ProductOptionGroup } from '@/lib/services/products/products-detail.types';
+import { hasRuleMissingScopeTarget } from '../../pricing-detail-model';
 
 function rulesFromResponse(rules: PricingRulesResponseDto): {
   base: PricingRuleInput[];
@@ -57,11 +53,22 @@ interface Props {
   readonly: boolean;
   isSaving: boolean;
   isDeleting: boolean;
+  optionGroups: ProductOptionGroup[];
+  variantOptions: ScopeTargetVariant[];
   onSave: (dto: ReplacePricingRulesDto) => void;
   onDelete: () => void;
 }
 
-export function RulesEditor({ rules, readonly, isSaving, isDeleting, onSave, onDelete }: Props) {
+export function RulesEditor({
+  rules,
+  readonly,
+  isSaving,
+  isDeleting,
+  optionGroups,
+  variantOptions,
+  onSave,
+  onDelete,
+}: Props) {
   const [base, setBase] = useState<PricingRuleInput[]>([]);
   const [membership, setMembership] = useState<PricingRuleInput[]>([]);
   const [tiered, setTiered] = useState<PricingRuleInput[]>([]);
@@ -114,6 +121,10 @@ export function RulesEditor({ rules, readonly, isSaving, isDeleting, onSave, onD
   const tm = makeMutators(tiered, setTiered, 'tiered_price');
 
   const handleSave = () => {
+    if (hasRuleMissingScopeTarget([...base, ...membership, ...tiered])) {
+      toast.error('옵션값·옵션조합 범위의 룰은 적용 대상을 1개 이상 선택해주세요.');
+      return;
+    }
     onSave({ basePriceRules: base, membershipPriceRules: membership, tieredPriceRules: tiered });
   };
 
@@ -146,6 +157,8 @@ export function RulesEditor({ rules, readonly, isSaving, isDeleting, onSave, onD
                 total={arr.length}
                 layer={layer}
                 readonly={readonly}
+                optionGroups={optionGroups}
+                variantOptions={variantOptions}
                 onChange={mutators.onChange}
                 onMoveUp={mutators.onMoveUp}
                 onMoveDown={mutators.onMoveDown}
@@ -193,20 +206,20 @@ export function RulesEditor({ rules, readonly, isSaving, isDeleting, onSave, onD
         )}
       </div>
 
-      <Tabs defaultValue="base_price" className="px-4 pb-4">
-        <TabsList>
-          {LAYER_TABS.map((t) => (
-            <TabsTrigger key={t.value} value={t.value}>
-              {t.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-        <TabsContent value="base_price">{renderTable(base, 'base_price', bm)}</TabsContent>
-        <TabsContent value="membership_price">
+      <div className="flex flex-col gap-6 px-4 pb-4">
+        <section>
+          <h3 className="mb-2 text-sm font-semibold">기준가</h3>
+          {renderTable(base, 'base_price', bm)}
+        </section>
+        <section>
+          <h3 className="mb-2 text-sm font-semibold">멤버십가</h3>
           {renderTable(membership, 'membership_price', mm)}
-        </TabsContent>
-        <TabsContent value="tiered_price">{renderTable(tiered, 'tiered_price', tm)}</TabsContent>
-      </Tabs>
+        </section>
+        <section>
+          <h3 className="mb-2 text-sm font-semibold">수량별 가격</h3>
+          {renderTable(tiered, 'tiered_price', tm)}
+        </section>
+      </div>
 
       <DeleteRulesDialog
         open={deleteOpen}

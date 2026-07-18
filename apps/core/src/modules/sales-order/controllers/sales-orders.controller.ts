@@ -1,15 +1,26 @@
-import { Controller, Get, Post, Patch, Body, Param, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Headers,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { User } from '@app/authorization';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { SalesOrderAmendmentsService } from '../services/sales-order-amendments.service';
 import { StoreSalesOrdersService } from '../services/store-sales-orders.service';
 import { CreateSalesOrderDto } from '../dto/create-sales-order.dto';
 import { UpdateSalesOrderDto } from '../dto/update-sales-order.dto';
-import { MergeSalesOrdersDto } from '../dto/merge-sales-orders.dto';
 import { SalesOrderResponseDto } from '../dto/sales-order-response.dto';
 import { SalesOrderFilterDto } from '../dto/sales-order-filter.dto';
 import { CreateBusinessLinkDto } from '../dto/create-business-link.dto';
-import { CancelSalesOrderDto } from '../dto/cancel-sales-order.dto';
+import { CancelSalesOrderDto, CancelByIntentDto } from '../dto/cancel-sales-order.dto';
 
 @ApiTags('Sales Orders')
 @Controller('sales-orders')
@@ -47,11 +58,38 @@ export class SalesOrdersController {
   @ApiOperation({ summary: '판매 주문 취소 (관리자 경로 — Wallet 환불 포함)' })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
   @ApiResponse({ status: 200, description: '취소 성공. { status, refundStatus } 반환' })
-  cancel(@Param('id') id: string, @Body() dto: CancelSalesOrderDto = {}) {
+  cancel(
+    @Param('id') id: string,
+    @Body() dto: CancelSalesOrderDto = {},
+    @Headers('idempotency-key') idempotencyKey?: string,
+    @User() user?: { userId?: string; id?: string; sub?: string; roles?: string[] },
+  ) {
+    const actorId = user?.userId ?? user?.id ?? user?.sub;
+    if (!idempotencyKey?.trim()) {
+      throw new BadRequestException('Idempotency-Key header is required');
+    }
+    if (!actorId) {
+      throw new UnauthorizedException('Authenticated actor is required');
+    }
     return this.storeSalesOrders.adminCancelRequest(id, {
       reasonCode: dto.reasonCode,
       reasonDetail: dto.reasonDetail,
       lines: dto.lines,
+      fulfillmentCommandContext: {
+        idempotencyKey: idempotencyKey.trim(),
+        actorId,
+        actorRoles: Array.isArray(user?.roles) ? user.roles : [],
+      },
+    });
+  }
+
+  @Post('cancel-by-intent')
+  @ApiOperation({ summary: '환불 완료된 결제의 주문 취소 (재환불 없음) — Wallet 환불 승인 후 호출' })
+  @ApiResponse({ status: 201, description: '{ status, skipped? } 반환' })
+  cancelByIntent(@Body() dto: CancelByIntentDto) {
+    return this.storeSalesOrders.cancelByWalletIntentAfterRefund(dto.intentId, {
+      reasonCode: dto.reasonCode,
+      amount: dto.amount,
     });
   }
 
@@ -68,13 +106,6 @@ export class SalesOrdersController {
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
   listAmendments(@Param('id') id: string) {
     return this.amendments.listForSalesOrder(id);
-  }
-
-  @Post('merge')
-  @ApiOperation({ summary: '판매 주문 병합', description: '여러 판매 주문을 하나로 병합합니다.' })
-  @ApiResponse({ status: 201, description: '판매 주문 병합 성공' })
-  merge(@Body() dto: MergeSalesOrdersDto) {
-    return this.service.merge(dto);
   }
 
   @Get('stats')

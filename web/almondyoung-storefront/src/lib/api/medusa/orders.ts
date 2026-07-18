@@ -51,10 +51,12 @@ export async function getOrders(params?: {
   dateFrom?: string
   /** ISO 8601 datetime string — 이 날짜 이전 주문만 조회 */
   dateTo?: string
+  /** 상품명 검색어 — 주문 아이템 title 부분일치 */
+  q?: string
 }): Promise<HttpTypes.StoreOrderListResponse | null> {
   const filters: HttpTypes.StoreOrderFilters & Record<string, unknown> = {
     fields:
-      "id,display_id,status,fulfillment_status,payment_status,created_at,updated_at,total,currency_code,metadata,*items,*items.variant,*items.variant.product,*payment_collections,*payment_collections.payment_sessions",
+      "id,display_id,status,fulfillment_status,payment_status,created_at,updated_at,total,currency_code,metadata,*items,*items.variant,*items.variant.product,*payment_collections,*payment_collections.payment_sessions,+payment_collections.payment_sessions.data",
     order: "-created_at",
   }
 
@@ -77,6 +79,10 @@ export async function getOrders(params?: {
     filters["created_at"] = dateFilter
   }
 
+  if (params?.q) {
+    filters["q"] = params.q
+  }
+
   const authHeaders = await getAuthHeaders()
 
   if (!authHeaders) return null
@@ -84,8 +90,19 @@ export async function getOrders(params?: {
   const headers = { ...authHeaders }
 
   try {
-    const res = await sdk.store.order.list(filters, headers)
-    // res: HttpTypes.StoreOrderListResponse
+    // 표준 /store/orders 는 쿼리 validator 가 strict 라 created_at/q 필터를 거부한다.
+    // 기간·검색 필터가 있을 때만 커스텀 /store/orders-list 로 우회
+    // (getOrdersListWorkflow + 본인주문 스코핑, 기간·상품명검색 지원).
+    // 필터 없는 일반 조회는 검증된 표준 엔드포인트를 그대로 써서 새 라우트 의존을 최소화한다.
+    const useCustomRoute = Boolean(
+      params?.dateFrom || params?.dateTo || params?.q
+    )
+    const res = useCustomRoute
+      ? await sdk.client.fetch<HttpTypes.StoreOrderListResponse>(
+          "/store/orders-list",
+          { method: "GET", query: filters, headers }
+        )
+      : await sdk.store.order.list(filters, headers)
     return res
   } catch (error) {
     await handleMedusaAuthError(error)
@@ -111,7 +128,12 @@ export async function getOrder(
     // +items.requires_shipping/product_type: 디지털 판별(다운로드 CTA·배송정보 숨김)에 필요 — 기본 필드에 없어 명시 요청
     .retrieve(
       orderId,
-      { fields: "+metadata,+items.requires_shipping,+items.product_type" },
+      {
+        // +payment_collections.payment_sessions: 세션 data.intentId(wallet 결제 intent)로
+        // 현금영수증(GET /v1/cash-receipts?intentId=)을 조회하기 위함.
+        fields:
+          "+metadata,+items.requires_shipping,+items.product_type,+payment_collections.payment_sessions.data",
+      },
       headers
     )
     .then(({ order }) => order)

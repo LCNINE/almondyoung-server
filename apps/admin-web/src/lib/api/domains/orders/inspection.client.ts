@@ -17,11 +17,38 @@ import type {
   QualityMetrics,
   ScanInspectionRequest,
   InspectByScanRequest,
+  ShipmentInspectionScanRequest,
+  ForceShipmentDispatchRequest,
 } from '@/lib/types/dto/fulfillment';
 
 const BASE = `${ALMONDYOUNG_API_BASE_URL}/inspection`;
 
 export const inspectionClient = {
+  scanShipment: async (
+    shipmentId: string,
+    data: ShipmentInspectionScanRequest,
+    idempotencyKey: string
+  ): Promise<unknown> => {
+    const res = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/shipments/${encodeURIComponent(shipmentId)}/inspection-scans`,
+      data,
+      { headers: { 'Idempotency-Key': idempotencyKey } }
+    );
+    return res.data;
+  },
+
+  forceShipmentDispatch: async (
+    shipmentId: string,
+    data: ForceShipmentDispatchRequest,
+    idempotencyKey: string
+  ): Promise<unknown> => {
+    const res = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/shipments/${encodeURIComponent(shipmentId)}/force-dispatch`,
+      data,
+      { headers: { 'Idempotency-Key': idempotencyKey } }
+    );
+    return res.data;
+  },
   startSession: async (
     data: StartInspectionRequest
   ): Promise<InspectionSession> => {

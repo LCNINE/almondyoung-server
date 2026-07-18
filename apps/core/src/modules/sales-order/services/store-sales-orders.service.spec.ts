@@ -36,16 +36,42 @@ function makeSo(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeContext(options: {
-  so?: ReturnType<typeof makeSo>;
-  fos?: { status: string; shippedAt: Date | null }[];
-  walletOutcome?: WalletRefundOutcome;
-  cancelError?: Error;
-  businessLinkError?: Error;
-} = {}) {
+function makeContext(
+  options: {
+    so?: ReturnType<typeof makeSo>;
+    fos?: { status: string; directShipStatus?: string | null; fulfillmentMode?: string | null }[];
+    activeShipmentStatuses?: string[];
+    walletOutcome?: WalletRefundOutcome;
+    cancelError?: Error;
+    businessLinkError?: Error;
+    cancellationReplay?: boolean;
+    replayError?: Error;
+  } = {},
+) {
   const so = options.so ?? makeSo();
-  const fos = options.fos ?? [];
-  const walletOutcome = options.walletOutcome ?? { kind: 'success', refunds: [{ refundId: 'rf-001', intentId: WALLET_INTENT_ID, status: 'SUCCEEDED', amount: 50000, currency: 'KRW', reasonCode: null, reasonMessage: null, manualConfirmable: false }] };
+  const fos = (options.fos ?? []).map((fo) => ({
+    directShipStatus: null,
+    fulfillmentMode: null,
+    shippedAt: null,
+    ...fo,
+  }));
+  const walletOutcome = options.walletOutcome ?? {
+    kind: 'success',
+    refunds: [
+      {
+        refundId: 'rf-001',
+        intentId: WALLET_INTENT_ID,
+        status: 'SUCCEEDED',
+        amount: 50000,
+        currency: 'KRW',
+        reasonCode: null,
+        reasonMessage: null,
+        manualConfirmable: false,
+      },
+    ],
+  };
+  let recordedRefundMetadata: Record<string, unknown> | undefined;
+  let transactionTail = Promise.resolve();
 
   // Each where() call gets a fresh mock object so we can distinguish:
   //   call 0: findSoOrThrow — limit().then() → [so]
@@ -56,6 +82,9 @@ function makeContext(options: {
   let whereCallIndex = 0;
   const dbMock = {
     db: {
+      execute: jest
+        .fn()
+        .mockResolvedValue((options.activeShipmentStatuses ?? []).map((status) => ({ id: `sh-${status}`, status }))),
       select: jest.fn().mockImplementation(() => ({
         from: jest.fn().mockImplementation(() => ({
           where: jest.fn().mockImplementation(() => {
@@ -66,6 +95,7 @@ function makeContext(options: {
               }),
               then: jest.fn((fn: (r: unknown[]) => unknown) => fn(fos)),
               orderBy: jest.fn().mockReturnValue({
+                then: jest.fn((fn: (r: unknown[]) => unknown) => fn([])),
                 limit: jest.fn().mockReturnValue({
                   then: jest.fn((fn: (r: unknown[]) => unknown) => fn([])),
                 }),
@@ -74,6 +104,23 @@ function makeContext(options: {
           }),
         })),
       })),
+      transaction: jest.fn((fn: (tx: unknown) => Promise<unknown>) => {
+        let executeCount = 0;
+        const tx = {
+          execute: jest.fn(() => {
+            executeCount += 1;
+            return Promise.resolve(
+              executeCount === 2 && recordedRefundMetadata ? [{ metadata: recordedRefundMetadata }] : [],
+            );
+          }),
+        };
+        const result = transactionTail.then(() => fn(tx));
+        transactionTail = result.then(
+          () => undefined,
+          () => undefined,
+        );
+        return result;
+      }),
     },
   };
 
@@ -83,7 +130,13 @@ function makeContext(options: {
       : jest.fn().mockResolvedValue(undefined),
     createBusinessLink: options.businessLinkError
       ? jest.fn().mockRejectedValue(options.businessLinkError)
-      : jest.fn().mockResolvedValue(undefined),
+      : jest.fn().mockImplementation((_salesOrderId: string, dto: { metadata?: Record<string, unknown> }) => {
+          recordedRefundMetadata = dto.metadata;
+          return Promise.resolve(undefined);
+        }),
+    validateCancellationReplay: options.replayError
+      ? jest.fn().mockRejectedValue(options.replayError)
+      : jest.fn().mockResolvedValue(options.cancellationReplay ?? false),
   };
 
   const walletClientMock: Partial<WalletRefundClient> = {
@@ -128,7 +181,18 @@ describe('StoreSalesOrdersService', () => {
       const { service } = makeContext({
         walletOutcome: {
           kind: 'partial_pending',
-          refunds: [{ refundId: 'rf-002', intentId: WALLET_INTENT_ID, status: 'PENDING', amount: 50000, currency: 'KRW', reasonCode: null, reasonMessage: null, manualConfirmable: true }],
+          refunds: [
+            {
+              refundId: 'rf-002',
+              intentId: WALLET_INTENT_ID,
+              status: 'PENDING',
+              amount: 50000,
+              currency: 'KRW',
+              reasonCode: null,
+              reasonMessage: null,
+              manualConfirmable: true,
+            },
+          ],
         },
       });
       const result = await service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {});
@@ -146,7 +210,11 @@ describe('StoreSalesOrdersService', () => {
 
     it('Wallet이 already_refunded 반환 시 refundStatus=succeeded (이미 환불 완료)', async () => {
       const { service } = makeContext({
-        walletOutcome: { kind: 'already_refunded', errorCode: 'REFUND_AMOUNT_EXCEEDS_AVAILABLE', errorMessage: '환불 가능 금액 초과' },
+        walletOutcome: {
+          kind: 'already_refunded',
+          errorCode: 'REFUND_AMOUNT_EXCEEDS_AVAILABLE',
+          errorMessage: '환불 가능 금액 초과',
+        },
       });
       const result = await service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {});
       expect(result.refundStatus).toBe('succeeded');
@@ -164,6 +232,15 @@ describe('StoreSalesOrdersService', () => {
     it('Wallet 서비스 unavailable 시 refundStatus=manual_pending (취소는 유지)', async () => {
       const { service } = makeContext({
         walletOutcome: { kind: 'wallet_unavailable', errorMessage: 'Connection refused' },
+      });
+      const result = await service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {});
+      expect(result.refundStatus).toBe('manual_pending');
+      expect(result.orderStatus).toBe('cancelled');
+    });
+
+    it('Wallet이 in_flight 반환 시 refundStatus=manual_pending (취소는 유지, 이중환불 없음)', async () => {
+      const { service } = makeContext({
+        walletOutcome: { kind: 'in_flight', errorCode: 'IDEMPOTENCY_KEY_IN_FLIGHT', errorMessage: 'in progress' },
       });
       const result = await service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {});
       expect(result.refundStatus).toBe('manual_pending');
@@ -215,28 +292,92 @@ describe('StoreSalesOrdersService', () => {
       );
     });
 
-    it('피킹 중(picking) 주문은 고객 직접 취소 불가 (400)', async () => {
-      const { service, salesOrdersServiceMock } = makeContext({ fos: [{ status: 'picking', shippedAt: null }] });
-      await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow(
-        '피킹이 시작된 주문은 직접 취소할 수 없습니다.',
-      );
-      expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
-    });
-
-    it('피킹 완료(picked) 주문은 고객 직접 취소 불가 (400)', async () => {
-      const { service, salesOrdersServiceMock } = makeContext({ fos: [{ status: 'picked', shippedAt: null }] });
-      await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow(
-        '피킹이 시작된 주문은 직접 취소할 수 없습니다.',
-      );
-      expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
-    });
-
     it('출고증거(shippedAt) 있는 주문은 고객 직접 취소 불가 (400)', async () => {
-      const { service, salesOrdersServiceMock } = makeContext({ fos: [{ status: 'shipped', shippedAt: new Date() }] });
+      const { service, salesOrdersServiceMock } = makeContext({ fos: [{ status: 'shipped' }] });
       await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow(
         '이미 출고된 주문은 취소할 수 없습니다.',
       );
       expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
+    });
+
+    it('피킹 시작(FO processing) 주문은 셀프 취소 시 400', async () => {
+      const { service, salesOrdersServiceMock } = makeContext({ fos: [{ status: 'processing' }] });
+      await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow(
+        '피킹이 시작된',
+      );
+      expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
+    });
+
+    it('부분 출고(상자 shipped) 주문은 셀프 취소 시 400', async () => {
+      const { service, salesOrdersServiceMock } = makeContext({
+        fos: [{ status: 'partially_shipped' }],
+        activeShipmentStatuses: ['shipped', 'draft'],
+      });
+      await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow(
+        '이미 출고',
+      );
+      expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
+    });
+
+    it('준비중(FO ready, 미피킹) 주문은 셀프 취소 성공', async () => {
+      const { service, salesOrdersServiceMock } = makeContext({ fos: [{ status: 'ready' }] });
+      const r = await service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {});
+      expect(salesOrdersServiceMock.cancel).toHaveBeenCalled();
+      expect(r.orderStatus).toBe('cancelled');
+    });
+
+    it('동일 취소 key replay는 cancelled status guard보다 먼저 stored view를 반환한다', async () => {
+      const { service, salesOrdersServiceMock, walletClientMock } = makeContext({
+        so: makeSo({ status: 'cancelled' }),
+        cancellationReplay: true,
+      });
+      const context = { idempotencyKey: 'same-key', actorId: CUSTOMER_ID, actorRoles: ['customer'] };
+      await expect(
+        service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {}, context),
+      ).resolves.toBeDefined();
+      expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
+      expect(walletClientMock.refundByIntent).not.toHaveBeenCalled();
+    });
+
+    it('동일 취소 key에 다른 hash면 replay shortcut 없이 mismatch를 전파한다', async () => {
+      const mismatch = new Error('FULFILLMENT_IDEMPOTENCY_MISMATCH');
+      const { service } = makeContext({ so: makeSo({ status: 'cancelled' }), replayError: mismatch });
+      const context = { idempotencyKey: 'reused-key', actorId: CUSTOMER_ID, actorRoles: ['customer'] };
+      await expect(
+        service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, { reasonCode: 'OTHER' }, context),
+      ).rejects.toThrow('FULFILLMENT_IDEMPOTENCY_MISMATCH');
+    });
+
+    it('동일 key 동시 환불은 DB claim을 재생해 Wallet을 정확히 한 번만 호출한다', async () => {
+      const { service, salesOrdersServiceMock, walletClientMock } = makeContext();
+      const once = service as unknown as {
+        requestWalletRefundOnce: (
+          so: ReturnType<typeof makeSo>,
+          dto: Record<string, never>,
+          idempotencyKey: string,
+          options: { attemptType: 'initial'; actor: 'customer' },
+        ) => Promise<string>;
+      };
+
+      const results = await Promise.all([
+        once.requestWalletRefundOnce(makeSo(), {}, 'same-concurrent-key', {
+          attemptType: 'initial',
+          actor: 'customer',
+        }),
+        once.requestWalletRefundOnce(makeSo(), {}, 'same-concurrent-key', {
+          attemptType: 'initial',
+          actor: 'customer',
+        }),
+      ]);
+
+      expect(results).toEqual(['succeeded', 'succeeded']);
+      expect(walletClientMock.refundByIntent).toHaveBeenCalledTimes(1);
+      expect(salesOrdersServiceMock.createBusinessLink).toHaveBeenCalledTimes(1);
+      expect(walletClientMock.refundByIntent).toHaveBeenCalledWith(
+        WALLET_INTENT_ID,
+        50000,
+        expect.objectContaining({ correlationId: expect.stringMatching(/^cancel:so-001:initial:[a-f0-9]{32}$/) }),
+      );
     });
 
     it('주문을 찾을 수 없을 때 404', async () => {
@@ -254,6 +395,56 @@ describe('StoreSalesOrdersService', () => {
       await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('getActionsByChannelOrderBatch', () => {
+    // makeContext 는 findSoOrThrow(limit) 전제라, builder 를 직접 await 하는 배치 쿼리용 mock 을 따로 만든다.
+    function makeBatchContext(sos: ReturnType<typeof makeSo>[]) {
+      let whereCallIndex = 0;
+      const dbMock = {
+        db: {
+          select: jest.fn().mockImplementation(() => ({
+            from: jest.fn().mockImplementation(() => ({
+              where: jest.fn().mockImplementation(() => {
+                const idx = whereCallIndex++;
+                return {
+                  // idx 0: 배치 SO 조회, idx 1+: SO별 FO 조회(빈 목록)
+                  then: jest.fn((fn: (r: unknown[]) => unknown) => fn(idx === 0 ? sos : [])),
+                  limit: jest.fn().mockReturnValue({
+                    then: jest.fn((fn: (r: unknown[]) => unknown) => fn([])),
+                  }),
+                };
+              }),
+            })),
+          })),
+        },
+      };
+      const service = new StoreSalesOrdersService(
+        dbMock as any,
+        { cancel: jest.fn(), createBusinessLink: jest.fn() } as any,
+        { refundByIntent: jest.fn() } as any,
+      );
+      return { service, dbMock };
+    }
+
+    it('DB가 반환한 본인 주문만 SO별 액션 뷰로 매핑한다 (미수집 id는 제외)', async () => {
+      const { service } = makeBatchContext([
+        makeSo({ walletIntentId: null }),
+        makeSo({ id: 'so-002', channelOrderId: 'medusa-order-002', walletIntentId: null }),
+      ]);
+      const result = await service.getActionsByChannelOrderBatch(
+        [CHANNEL_ORDER_ID, 'medusa-order-002', 'medusa-order-unknown'],
+        CUSTOMER_ID,
+      );
+      expect(result.map((r) => r.channelOrderId)).toEqual([CHANNEL_ORDER_ID, 'medusa-order-002']);
+      expect(result[0].availableActions).toContain('cancel');
+    });
+
+    it('빈 id 목록이면 DB 조회 없이 빈 배열을 반환한다', async () => {
+      const { service, dbMock } = makeBatchContext([]);
+      await expect(service.getActionsByChannelOrderBatch([], CUSTOMER_ID)).resolves.toEqual([]);
+      expect(dbMock.db.select).not.toHaveBeenCalled();
     });
   });
 
@@ -286,7 +477,8 @@ describe('StoreSalesOrdersService', () => {
     it('SO status=delivered이면 return/exchange 가능', async () => {
       const { service } = makeContext({
         so: makeSo({ status: 'delivered' }),
-        fos: [{ status: 'completed', shippedAt: new Date() }],
+        fos: [{ status: 'completed' }],
+        activeShipmentStatuses: ['delivered'],
       });
       const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
       expect(result.availableActions).toContain('return');
@@ -298,7 +490,8 @@ describe('StoreSalesOrdersService', () => {
     it('FO status=completed(delivered)이면 return/exchange 가능', async () => {
       const { service } = makeContext({
         so: makeSo({ status: 'shipped' }),
-        fos: [{ status: 'completed', shippedAt: new Date() }],
+        fos: [{ status: 'completed' }],
+        activeShipmentStatuses: ['delivered'],
       });
       const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
       expect(result.availableActions).toContain('return');
@@ -308,26 +501,13 @@ describe('StoreSalesOrdersService', () => {
     it('배송중(shipped, FO=shipped)이면 return/exchange 불가', async () => {
       const { service } = makeContext({
         so: makeSo({ status: 'shipped' }),
-        fos: [{ status: 'shipped', shippedAt: new Date() }],
+        fos: [{ status: 'shipped' }],
+        activeShipmentStatuses: ['shipped'],
       });
       const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
       expect(result.availableActions).not.toContain('return');
       expect(result.availableActions).not.toContain('exchange');
       expect(result.availableActions).toContain('track');
-    });
-
-    it('FO가 picking 상태이면 cancel 액션 없음, cancelUnavailableReason=already_processing', async () => {
-      const { service } = makeContext({ fos: [{ status: 'picking', shippedAt: null }] });
-      const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-      expect(result.availableActions).not.toContain('cancel');
-      expect(result.cancelUnavailableReason).toBe('already_processing');
-    });
-
-    it('FO가 packed 상태(picked)이면 cancel 액션 없음, cancelUnavailableReason=already_processing', async () => {
-      const { service } = makeContext({ fos: [{ status: 'picked', shippedAt: null }] });
-      const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-      expect(result.availableActions).not.toContain('cancel');
-      expect(result.cancelUnavailableReason).toBe('already_processing');
     });
 
     it('FO가 없거나 created 상태이면 cancel 가능', async () => {
@@ -340,36 +520,113 @@ describe('StoreSalesOrdersService', () => {
     it('배송완료라도 FO에 출고증거만 있고(shipped) SO가 delivered 아니면 return/exchange 불가', async () => {
       const { service } = makeContext({
         so: makeSo({ status: 'processing' }),
-        fos: [{ status: 'shipped', shippedAt: new Date() }],
+        fos: [{ status: 'shipped' }],
+        activeShipmentStatuses: ['shipped'],
       });
       const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
       expect(result.availableActions).not.toContain('return');
       expect(result.availableActions).not.toContain('exchange');
     });
+
+    describe('buildActionsView fulfillmentStatus (V2)', () => {
+      it('FO 없음 → not_created', async () => {
+        const { service } = makeContext({ fos: [] });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('not_created');
+      });
+      it('FO ready, 상자 미로드 → preparing', async () => {
+        const { service } = makeContext({ fos: [{ status: 'ready' }] });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('preparing');
+        expect(r.availableActions).toContain('cancel');
+      });
+      it('FO processing → preparing + already_processing (셀프취소 불가)', async () => {
+        const { service } = makeContext({ fos: [{ status: 'processing' }] });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('preparing');
+        expect(r.availableActions).not.toContain('cancel');
+        expect(r.cancelUnavailableReason).toBe('already_processing');
+      });
+      it('FO partially_shipped + 상자 shipped → shipping + already_shipped', async () => {
+        const { service } = makeContext({
+          fos: [{ status: 'partially_shipped' }],
+          activeShipmentStatuses: ['shipped', 'draft'],
+        });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('shipping');
+        expect(r.shipmentProgress).toEqual({ total: 2, shipped: 1, delivered: 0 });
+        expect(r.availableActions).not.toContain('cancel');
+        expect(r.cancelUnavailableReason).toBe('already_shipped');
+      });
+      it('FO completed + 상자 전량 delivered → delivered + 반품/교환 노출', async () => {
+        const { service } = makeContext({ fos: [{ status: 'completed' }], activeShipmentStatuses: ['delivered'] });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('delivered');
+        expect(r.availableActions).toEqual(expect.arrayContaining(['return', 'exchange']));
+      });
+      it('부분 배송 + 잔여 상자 recovery_required → shipping + already_shipped (마스킹 방지)', async () => {
+        const { service } = makeContext({
+          fos: [{ status: 'recovery_required' }],
+          activeShipmentStatuses: ['delivered', 'recovery_required'],
+        });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('shipping');
+        expect(r.availableActions).not.toContain('cancel');
+        expect(r.cancelUnavailableReason).toBe('already_shipped');
+      });
+      it('recovery_required 이나 출고된 박스 없음 → preparing + cancel 가능', async () => {
+        const { service } = makeContext({
+          fos: [{ status: 'recovery_required' }],
+          activeShipmentStatuses: ['recovery_required'],
+        });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('preparing');
+        expect(r.availableActions).toContain('cancel');
+      });
+      it('직배(drop_ship) forwarded → shipping (loader dropShipStatuses 추출)', async () => {
+        const { service } = makeContext({
+          fos: [{ status: 'ready', fulfillmentMode: 'drop_ship', directShipStatus: 'forwarded' }],
+        });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('shipping');
+        expect(r.availableActions).not.toContain('cancel');
+      });
+      it('직배 completed → delivered', async () => {
+        const { service } = makeContext({
+          fos: [{ status: 'ready', fulfillmentMode: 'drop_ship', directShipStatus: 'completed' }],
+        });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('delivered');
+      });
+    });
   });
 
   // adminCancelRequest mock: SO를 항상 반환 (부분취소 시 두 번 조회됨)
-  function makeAdminContext(options: {
-    so?: ReturnType<typeof makeSo>;
-    walletOutcome?: WalletRefundOutcome;
-    cancelError?: Error;
-    orderLines?: Array<{ id: string; quantity: number; unitPrice: number | null }>;
-  } = {}) {
+  function makeAdminContext(
+    options: {
+      so?: ReturnType<typeof makeSo>;
+      walletOutcome?: WalletRefundOutcome;
+      cancelError?: Error;
+      orderLines?: Array<{ id: string; quantity: number; unitPrice: number | null }>;
+    } = {},
+  ) {
     const so = options.so ?? makeSo();
     // Default order lines matching the cancelled line in tests
     const orderLines = options.orderLines ?? [{ id: 'line-001', quantity: 2, unitPrice: 25000 }];
     const walletOutcome = options.walletOutcome ?? {
       kind: 'success',
-      refunds: [{
-        refundId: 'rf-001',
-        intentId: WALLET_INTENT_ID,
-        status: 'SUCCEEDED',
-        amount: 50000,
-        currency: 'KRW',
-        reasonCode: null,
-        reasonMessage: null,
-        manualConfirmable: false,
-      }],
+      refunds: [
+        {
+          refundId: 'rf-001',
+          intentId: WALLET_INTENT_ID,
+          status: 'SUCCEEDED',
+          amount: 50000,
+          currency: 'KRW',
+          reasonCode: null,
+          reasonMessage: null,
+          manualConfirmable: false,
+        },
+      ],
     };
 
     const dbMock = {
@@ -512,29 +769,34 @@ describe('StoreSalesOrdersService', () => {
   });
 
   // retryWalletRefund mock: cancelled SO + businessLinks를 상태별로 제어
-  function makeRetryContext(options: {
-    so?: ReturnType<typeof makeSo>;
-    currentRefundStatus?: string;
-    walletOutcome?: WalletRefundOutcome;
-  } = {}) {
+  function makeRetryContext(
+    options: {
+      so?: ReturnType<typeof makeSo>;
+      currentRefundStatus?: string;
+      walletOutcome?: WalletRefundOutcome;
+    } = {},
+  ) {
     const so = options.so ?? makeSo({ status: 'cancelled' });
     const walletOutcome = options.walletOutcome ?? {
       kind: 'success',
-      refunds: [{
-        refundId: 'rf-002',
-        intentId: WALLET_INTENT_ID,
-        status: 'SUCCEEDED',
-        amount: 50000,
-        currency: 'KRW',
-        reasonCode: null,
-        reasonMessage: null,
-        manualConfirmable: false,
-      }],
+      refunds: [
+        {
+          refundId: 'rf-002',
+          intentId: WALLET_INTENT_ID,
+          status: 'SUCCEEDED',
+          amount: 50000,
+          currency: 'KRW',
+          reasonCode: null,
+          reasonMessage: null,
+          manualConfirmable: false,
+        },
+      ],
     };
 
-    const refundLink = options.currentRefundStatus !== undefined
-      ? { metadata: { refundStatus: options.currentRefundStatus } }
-      : undefined;
+    const refundLink =
+      options.currentRefundStatus !== undefined
+        ? { metadata: { refundStatus: options.currentRefundStatus } }
+        : undefined;
 
     const dbMock = {
       db: {
@@ -652,5 +914,288 @@ describe('StoreSalesOrdersService', () => {
       const { service } = makeRetryContext({ so: makeSo({ status: 'confirmed' }) });
       await expect(service.retryWalletRefund(SO_ID)).rejects.toThrow('취소된 주문에만 환불 재시도를 할 수 있습니다.');
     });
+  });
+
+  describe('tracking query V2 graph', () => {
+    function makeTrackingService(rowsBySelect: unknown[][]) {
+      let call = 0;
+      const dbMock = {
+        db: {
+          select: jest.fn().mockImplementation(() => ({
+            from: jest.fn().mockImplementation(() => ({
+              where: jest.fn().mockImplementation(() => {
+                const rows = rowsBySelect[call++] ?? [];
+                const promise = Promise.resolve(rows);
+                return {
+                  then: promise.then.bind(promise),
+                  limit: jest.fn().mockReturnValue(promise),
+                  orderBy: jest.fn().mockReturnValue(promise),
+                };
+              }),
+            })),
+          })),
+        },
+      };
+      return new StoreSalesOrdersService(dbMock as never, {} as never, {} as WalletRefundClient);
+    }
+
+    const fo = (id: string, overrides: Record<string, unknown> = {}) => ({
+      id,
+      salesOrderId: SO_ID,
+      status: 'shipped',
+      shippedAt: new Date('2026-07-14T00:00:00Z'),
+      ...overrides,
+    });
+    const item = (id: string, fulfillmentOrderId: string, salesOrderLineId: string) => ({
+      id,
+      fulfillmentOrderId,
+      salesOrderId: SO_ID,
+      salesOrderLineId,
+    });
+    const shipment = { id: 'shipment-shared', status: 'in_transit' };
+
+    it('합배송 shipment에서 해당 SO line만 보여주고 recalled attempt와 재출고 tracking을 모두 보존한다', async () => {
+      const oldDispatchedAt = new Date('2026-07-14T01:00:00Z');
+      const recalledAt = new Date('2026-07-14T02:00:00Z');
+      const newDispatchedAt = new Date('2026-07-14T03:00:00Z');
+      const service = makeTrackingService([
+        [makeSo()],
+        [fo('fo-1')],
+        [item('foi-1', 'fo-1', 'sol-1')],
+        [
+          {
+            id: 'shipment-line-own',
+            shipmentId: shipment.id,
+            fulfillmentOrderItemId: 'foi-1',
+            skuId: 'sku-1',
+            qty: 2,
+          },
+        ],
+        [shipment],
+        [
+          {
+            id: 'attempt-1',
+            shipmentId: shipment.id,
+            attemptNo: 1,
+            status: 'recalled',
+            waybillId: 'waybill-1',
+            dispatchedAt: oldDispatchedAt,
+            carrierAcceptedAt: null,
+            recalledAt,
+          },
+          {
+            id: 'attempt-2',
+            shipmentId: shipment.id,
+            attemptNo: 2,
+            status: 'dispatched',
+            waybillId: 'waybill-2',
+            dispatchedAt: newDispatchedAt,
+            carrierAcceptedAt: newDispatchedAt,
+            recalledAt: null,
+          },
+        ],
+        [
+          { id: 'waybill-1', shipmentId: shipment.id, status: 'voided', carrier: 'CJ', trackingNo: 'OLD-TRACKING' },
+          { id: 'waybill-2', shipmentId: shipment.id, status: 'used', carrier: 'HANJIN', trackingNo: 'NEW-TRACKING' },
+        ],
+        [
+          {
+            shipmentId: shipment.id,
+            dispatchAttemptId: 'attempt-1',
+            status: 'delivered',
+            location: 'old destination',
+            timestamp: new Date('2026-07-14T02:30:00Z'),
+          },
+          {
+            shipmentId: shipment.id,
+            dispatchAttemptId: 'attempt-2',
+            status: 'in_transit',
+            location: 'new hub',
+            timestamp: new Date('2026-07-14T04:00:00Z'),
+          },
+        ],
+        [{ id: 'sol-1', channelOrderItemId: 'channel-item-1' }],
+      ]);
+
+      const result = await service.getTracking(SO_ID, CUSTOMER_ID);
+
+      expect(result.status).toBe('shipping');
+      expect(result.shipments).toHaveLength(1);
+      expect(result.shipments[0]).toMatchObject({
+        shipmentId: shipment.id,
+        fulfillmentOrderIds: ['fo-1'],
+        trackingNumber: 'NEW-TRACKING',
+        status: 'in_transit',
+        lines: [
+          {
+            shipmentLineId: 'shipment-line-own',
+            fulfillmentOrderItemId: 'foi-1',
+            salesOrderLineId: 'sol-1',
+            channelOrderItemId: 'channel-item-1',
+            quantity: 2,
+          },
+        ],
+      });
+      expect(result.shipments[0].dispatchAttempts).toEqual([
+        expect.objectContaining({
+          dispatchAttemptId: 'attempt-1',
+          attemptNo: 1,
+          recalled: true,
+          recalledAt,
+          waybillId: 'waybill-1',
+          trackingNumber: 'OLD-TRACKING',
+        }),
+        expect.objectContaining({
+          dispatchAttemptId: 'attempt-2',
+          attemptNo: 2,
+          recalled: false,
+          waybillId: 'waybill-2',
+          trackingNumber: 'NEW-TRACKING',
+        }),
+      ]);
+    });
+
+    it('FO completed 상태만으로 delivered를 만들지 않고 최신 carrier attempt evidence를 사용한다', async () => {
+      const service = makeTrackingService([
+        [makeSo()],
+        [fo('fo-completed', { status: 'completed' })],
+        [item('foi-completed', 'fo-completed', 'sol-completed')],
+        [
+          {
+            id: 'shipment-line-completed',
+            shipmentId: shipment.id,
+            fulfillmentOrderItemId: 'foi-completed',
+            skuId: 'sku-1',
+            qty: 1,
+          },
+        ],
+        [shipment],
+        [
+          {
+            id: 'attempt-pending',
+            shipmentId: shipment.id,
+            attemptNo: 1,
+            status: 'pending',
+            waybillId: 'waybill-pending',
+            dispatchedAt: null,
+            carrierAcceptedAt: null,
+            recalledAt: null,
+          },
+        ],
+        [
+          {
+            id: 'waybill-pending',
+            shipmentId: shipment.id,
+            status: 'allocated',
+            carrier: 'CJ',
+            trackingNo: 'PENDING-TRACKING',
+          },
+        ],
+        [],
+        [{ id: 'sol-completed', channelOrderItemId: null }],
+      ]);
+
+      const result = await service.getTracking(SO_ID, CUSTOMER_ID);
+
+      expect(result.status).toBe('preparing');
+      expect(result.shipments[0].status).toBe('pending');
+      expect(result.shipments[0].deliveredAt).toBeNull();
+    });
+
+    it('attempt가 없는 legacy line shipment의 flat tracking에는 종료된 운송장이 아니라 활성 운송장을 쓴다', async () => {
+      const service = makeTrackingService([
+        [makeSo()],
+        [fo('fo-legacy-line')],
+        [item('foi-legacy-line', 'fo-legacy-line', 'sol-legacy-line')],
+        [
+          {
+            id: 'shipment-line-legacy',
+            shipmentId: shipment.id,
+            fulfillmentOrderItemId: 'foi-legacy-line',
+            skuId: 'sku-1',
+            qty: 1,
+          },
+        ],
+        [{ ...shipment, status: 'shipped', shippedAt: new Date('2026-07-14T01:00:00Z'), deliveredAt: null }],
+        [],
+        [
+          {
+            id: 'waybill-voided',
+            shipmentId: shipment.id,
+            status: 'voided',
+            carrier: 'CJ',
+            trackingNo: 'VOIDED-TRACKING',
+          },
+          {
+            id: 'waybill-active',
+            shipmentId: shipment.id,
+            status: 'used',
+            carrier: 'HANJIN',
+            trackingNo: 'ACTIVE-TRACKING',
+          },
+        ],
+        [],
+        [{ id: 'sol-legacy-line', channelOrderItemId: null }],
+      ]);
+
+      const result = await service.getTracking(SO_ID, CUSTOMER_ID);
+
+      expect(result.shipments[0]).toMatchObject({
+        trackingNumber: 'ACTIVE-TRACKING',
+        carrier: 'HANJIN',
+        dispatchAttempts: [],
+      });
+    });
+
+    it('V2 shipment line이 없는 legacy FO-header shipment를 fallback으로 읽는다', async () => {
+      const deliveredAt = new Date('2026-07-14T05:00:00Z');
+      const service = makeTrackingService([
+        [makeSo()],
+        [fo('legacy-fo')],
+        [],
+        [
+          {
+            id: 'legacy-shipment',
+            openedForFulfillmentOrderId: 'legacy-fo',
+            status: 'delivered',
+            shippedAt: new Date('2026-07-14T01:00:00Z'),
+            deliveredAt,
+          },
+        ],
+        [
+          {
+            id: 'legacy-waybill',
+            shipmentId: 'legacy-shipment',
+            status: 'used',
+            carrier: 'CJ',
+            trackingNo: 'LEGACY-TRACKING',
+          },
+        ],
+        [
+          {
+            shipmentId: 'legacy-shipment',
+            dispatchAttemptId: null,
+            status: 'delivered',
+            location: 'legacy destination',
+            timestamp: deliveredAt,
+          },
+        ],
+      ]);
+
+      const result = await service.getTracking(SO_ID, CUSTOMER_ID);
+
+      expect(result.status).toBe('delivered');
+      expect(result.shipments[0]).toMatchObject({
+        shipmentId: 'legacy-shipment',
+        fulfillmentOrderId: 'legacy-fo',
+        trackingNumber: 'LEGACY-TRACKING',
+        lines: [],
+        dispatchAttempts: [],
+      });
+      expect(result.shipments[0].trackingEvents).toHaveLength(1);
+    });
+
+    // NOTE: 구 legacy 빌더의 "shipment 없는 선발급 invoice" fallback 은 waybill 모델에서 제거됨 —
+    // waybills 는 shipmentId(notNull) 로만 존재하므로 shipment-less 운송장 표시 경로가 구조적으로 사라졌다.
   });
 });

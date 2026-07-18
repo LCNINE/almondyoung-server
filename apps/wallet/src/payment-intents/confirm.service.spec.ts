@@ -6,14 +6,16 @@ import { ConfirmService } from './confirm.service';
 // hold and an abandoned Toss charge. The customer now retries WITHOUT applying
 // points (external-only). The stale POINTS hold must still be released.
 
-function makeIntent(overrides: Partial<{ status: string; payableAmount: number }> = {}) {
+function makeIntent(
+  overrides: Partial<{ status: string; payableAmount: number; metadata: Record<string, unknown> }> = {},
+) {
   return {
     id: 'intent-1',
     status: overrides.status ?? 'REQUIRES_ACTION',
     userId: 'user-1',
     currency: 'KRW',
     payableAmount: overrides.payableAmount ?? 51170,
-    metadata: {},
+    metadata: overrides.metadata ?? {},
     version: 1,
   };
 }
@@ -42,7 +44,7 @@ function makeContext(
     providerActionMode?: 'interactive' | 'offline-wait';
     authorizeResult?: { status: string; nextAction?: Record<string, unknown> };
     methodType?: string;
-    intent?: Partial<{ status: string; payableAmount: number }>;
+    intent?: Partial<{ status: string; payableAmount: number; metadata: Record<string, unknown> }>;
     stalePointsCharge?: {
       id: string;
       intentId: string;
@@ -259,5 +261,29 @@ describe('ConfirmService', () => {
     const setArgs = updateSet.mock.calls.map((c) => c[0]);
     expect(setArgs).toContainEqual(expect.objectContaining({ expiresAt: expect.any(Date) }));
     expect(setArgs).not.toContainEqual(expect.objectContaining({ actionExpiresAt: expect.any(Date) }));
+  });
+
+  it('rejects a non-bank-transfer method for a MEMBERSHIP_FEE intent (API-level bypass guard)', async () => {
+    const { service } = makeContext({
+      methodType: 'TOSS',
+      intent: { metadata: { type: 'MEMBERSHIP_FEE' } },
+    });
+
+    await expect(
+      service.confirm('intent-1', { paymentMethodId: 'pm-ext', pointsToApply: 0 }, 'corr-1'),
+    ).rejects.toMatchObject({ response: { error: 'MEMBERSHIP_REQUIRES_BANK_TRANSFER' } });
+  });
+
+  it('allows bank transfer for a MEMBERSHIP_FEE intent', async () => {
+    const { service } = makeContext({
+      providerActionMode: 'offline-wait',
+      authorizeResult: { status: 'REQUIRES_ACTION', nextAction: { type: 'BANK_TRANSFER_PENDING' } },
+      methodType: 'BANK_TRANSFER',
+      intent: { metadata: { type: 'MEMBERSHIP_FEE' } },
+    });
+
+    await expect(
+      service.confirm('intent-1', { paymentMethodId: 'pm-ext', pointsToApply: 0 }, 'corr-1'),
+    ).resolves.toBeDefined();
   });
 });

@@ -1,10 +1,24 @@
 "use server"
 
 import { sdk } from "@/lib/config/medusa"
-import { getAuthHeaders, getCacheOptions } from "@lib/data/cookies"
+import { getAuthHeaders, getMembershipAwareCacheTags } from "@lib/data/cookies"
 import type { HttpTypes } from "@medusajs/types"
 import type { ProductSortBy, ProductSortOrder } from "@/lib/types/common/filter"
 import { getRegion, retrieveRegion } from "./regions"
+
+/**
+ * handle 로 조회할 때 붙일 방문자 무관 캐시 태그.
+ * `/api/revalidate` 가 `product-{handle}` 로 무효화하므로 문자열/배열 모두 태그를 걸어야 한다.
+ */
+const toProductHandleTags = (handle: unknown): string[] => {
+  if (typeof handle === "string") return [`product-${handle}`]
+  if (Array.isArray(handle)) {
+    return handle
+      .filter((h): h is string => typeof h === "string" && h.length > 0)
+      .map((h) => `product-${h}`)
+  }
+  return []
+}
 
 export const getProductForQuickAdd = async (
   productId: string,
@@ -21,8 +35,9 @@ export const getProductForQuickAdd = async (
       query: {
         id: [productId],
         region_id: region.id,
+        // +metadata: 멤버십 전용 구매 게이트 판정용. 빠지면 비회원에게도 담기가 열린다.
         fields:
-          "*variants.calculated_price,+variants.inventory_quantity,*variants.options,+variants.manage_inventory,+variants.allow_backorder,*options",
+          "*variants.calculated_price,+variants.inventory_quantity,*variants.options,+variants.manage_inventory,+variants.allow_backorder,+variants.metadata,*options,+metadata",
       },
       headers,
     })
@@ -72,16 +87,13 @@ export const listProducts = async ({
     ...(await getAuthHeaders()),
   }
 
-  // handle 조회 시 방문자 무관 태그를 추가해 재고 변경 시 revalidateTag 로 무효화 가능하게.
-  const cacheOptions = await getCacheOptions("products")
-  const handleTag =
-    typeof queryParams?.handle === "string"
-      ? [`product-${queryParams.handle}`]
-      : []
-  const tags = [
-    ...("tags" in cacheOptions ? cacheOptions.tags : []),
-    ...handleTag,
-  ]
+  // 목록 태그는 멤버십/로그인 상태별로 분리(회원/비회원 캐시 격리).
+  // handle 조회 시엔 방문자 무관 태그를 추가해 재고 변경 시 revalidateTag 로 무효화 가능하게.
+  // 검색·카테고리는 handle 을 배열로 넘기므로 각각에 태그를 건다 — 안 그러면 방문자별 태그만
+  // 남아 백엔드가 무효화할 수단이 없어 TTL(1시간) 만료까지 stale 해진다.
+  const listTags = await getMembershipAwareCacheTags("products")
+  const handleTag = toProductHandleTags(queryParams?.handle)
+  const tags = [...listTags, ...handleTag]
   const next = {
     ...(tags.length ? { tags } : {}),
     revalidate: 3600,
@@ -97,7 +109,7 @@ export const listProducts = async ({
           offset,
           region_id: region?.id,
           fields:
-            "*variants.calculated_price,+variants.inventory_quantity,+variants.manage_inventory,+variants.allow_backorder,*variants.options,*variants.images,+metadata,+tags,",
+            "*variants.calculated_price,+variants.inventory_quantity,+variants.manage_inventory,+variants.allow_backorder,+variants.metadata,*variants.options,*variants.images,+metadata,+tags,",
           ...queryParams,
         },
         headers,
@@ -173,8 +185,9 @@ export const listProductsSorted = async ({
     ...(await getAuthHeaders()),
   }
 
+  const listTags = await getMembershipAwareCacheTags("products")
   const next = {
-    ...(await getCacheOptions("products")),
+    ...(listTags.length ? { tags: listTags } : {}),
     revalidate: 3600,
   }
 

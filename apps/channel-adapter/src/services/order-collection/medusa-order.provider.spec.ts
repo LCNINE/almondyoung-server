@@ -61,6 +61,53 @@ describe('MedusaOrderProvider', () => {
         totalAmount: 12000,
       },
     });
+    expect(result.orders[0].createPayload.items[0]).toMatchObject({
+      orderItemId: 'item_1',
+      channelProductId: 'variant_1',
+    });
+    expect(ORDER_STREAM.events.OrderCreated.schema!.parse(result.orders[0].createPayload)).toEqual(
+      result.orders[0].createPayload,
+    );
+  });
+
+  it('does not manufacture a Medusa channelProductId from the line item ID', async () => {
+    const provider = new MedusaOrderProvider({
+      listOrders: jest.fn().mockResolvedValue([
+        {
+          id: 'order_without_variant_id',
+          payment_status: 'authorized',
+          currency_code: 'KRW',
+          total: 1000,
+          subtotal: 1000,
+          shipping_total: 0,
+          discount_total: 0,
+          created_at: '2026-07-14T01:00:00.000Z',
+          updated_at: '2026-07-14T01:05:00.000Z',
+          items: [
+            {
+              id: 'item_without_variant_id',
+              title: 'Legacy product',
+              quantity: 1,
+              unit_price: 1000,
+              variant: {
+                metadata: { pimVariantId: 'pim-variant-1' },
+                product: { metadata: { pimMasterId: 'master-1', pimVersionId: 'version-1' } },
+              },
+            },
+          ],
+          shipping_address: {},
+        },
+      ]),
+    } as any);
+
+    const result = await provider.fetchOrders(null);
+    const item = result.orders[0].createPayload.items[0];
+
+    expect(item).toMatchObject({ orderItemId: 'item_without_variant_id' });
+    expect(item).not.toHaveProperty('channelProductId');
+    expect(ORDER_STREAM.events.OrderCreated.schema!.parse(result.orders[0].createPayload)).toEqual(
+      result.orders[0].createPayload,
+    );
   });
 
   it('수집 시 라인의 fulfillmentKind/requiresShipping 을 보존한다 (디지털 라인은 requiresShipping=false)', async () => {
@@ -99,12 +146,24 @@ describe('MedusaOrderProvider', () => {
               variant: {
                 metadata: { pimVariantId: 'pv_dig' },
                 product: {
-                  metadata: { pimMasterId: 'm2', pimVersionId: 'ver2', fulfillmentKind: 'digital', requiresShipping: false },
+                  metadata: {
+                    pimMasterId: 'm2',
+                    pimVersionId: 'ver2',
+                    fulfillmentKind: 'digital',
+                    requiresShipping: false,
+                  },
                 },
               },
             },
           ],
-          shipping_address: { first_name: 'Jane', last_name: 'Kim', phone: '010', postal_code: '12345', address_1: 'Seoul', address_2: '' },
+          shipping_address: {
+            first_name: 'Jane',
+            last_name: 'Kim',
+            phone: '010',
+            postal_code: '12345',
+            address_1: 'Seoul',
+            address_2: '',
+          },
         },
       ]),
     } as any);
@@ -195,14 +254,38 @@ describe('MedusaOrderProvider', () => {
         },
       },
     ],
-    shipping_address: { first_name: 'Jane', last_name: 'Kim', phone: '010-0000-0000', postal_code: '12345', address_1: 'Seoul', address_2: '' },
+    shipping_address: {
+      first_name: 'Jane',
+      last_name: 'Kim',
+      phone: '010-0000-0000',
+      postal_code: '12345',
+      address_1: 'Seoul',
+      address_2: '',
+    },
     ...overrides,
   });
 
   it('무통장 입금대기(awaiting_deposit + authorized) 주문은 수집(OrderCreated)에서 제외한다', async () => {
     const provider = new MedusaOrderProvider({
+      listOrders: jest
+        .fn()
+        .mockResolvedValue([
+          bankTransferOrder({ payment_status: 'authorized', metadata: { bank_transfer_status: 'awaiting_deposit' } }),
+        ]),
+    } as any);
+
+    const result = await provider.fetchOrders(null);
+
+    expect(result.orders).toHaveLength(0);
+    expect(result.failures).toHaveLength(0);
+    expect(result.lifecycleEvents ?? []).toHaveLength(0);
+  });
+
+  it('환불 신청(refund_status=requested) 주문은 승인 전이라 수집(OrderCreated)에서 제외한다', async () => {
+    const provider = new MedusaOrderProvider({
       listOrders: jest.fn().mockResolvedValue([
-        bankTransferOrder({ payment_status: 'authorized', metadata: { bank_transfer_status: 'awaiting_deposit' } }),
+        // 입금까지 완료(captured)됐어도 고객이 환불을 신청한 상태면 출고하면 안 됨
+        bankTransferOrder({ payment_status: 'captured', metadata: { refund_status: 'requested' } }),
       ]),
     } as any);
 

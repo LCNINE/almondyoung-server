@@ -168,6 +168,37 @@ describe('ProductVersionReadLoader', () => {
     expect(conditionContains(condition, productMasterVersions.deletedAt)).toBe(true);
   });
 
+  it('getViewableVersion returns the top-ranked version (active first, draft-only falls back to draft)', async () => {
+    const loader = new ProductVersionReadLoader();
+    // 정렬은 DB(orderBy)가 하므로 fixture 는 이미 랭킹된 첫 행을 반환한다고 가정.
+    const draftOnly = makeSelectTx({
+      versions: [{ product_master_versions: { id: 'version-draft', masterId: 'master-1', status: 'draft' } }],
+    });
+
+    await expect(loader.getViewableVersion(draftOnly as any, 'master-1')).resolves.toEqual({
+      id: 'version-draft',
+      masterId: 'master-1',
+      status: 'draft',
+    });
+
+    const condition = getChain(draftOnly, productMasterVersions).where.mock.calls[0][0];
+    // status 필터는 걸지 않는다(draft 도 허용) — soft-delete 스코프만 확인.
+    expect(conditionContains(condition, productMasterVersions.masterId)).toBe(true);
+    expect(conditionContains(condition, 'master-1')).toBe(true);
+    expect(conditionContains(condition, productMasters.deletedAt)).toBe(true);
+    expect(conditionContains(condition, productMasterVersions.deletedAt)).toBe(true);
+    expect(conditionContains(condition, 'active')).toBe(false);
+  });
+
+  it('getViewableVersion throws when the master has no version at all', async () => {
+    const loader = new ProductVersionReadLoader();
+    const empty = makeSelectTx({ versions: [] });
+
+    await expect(loader.getViewableVersion(empty as any, 'master-1')).rejects.toThrow(
+      'No version found for master master-1',
+    );
+  });
+
   it('loads categories scoped by masterId and versionId and preserves isPrimary', async () => {
     const loader = new ProductVersionReadLoader();
     const tx = makeSelectTx({

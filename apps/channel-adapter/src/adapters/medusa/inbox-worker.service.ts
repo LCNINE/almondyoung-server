@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
-import { inboxEvents, wmsOrderMappings } from '../../schema';
+import { channelDispatchOperations, inboxEvents, wmsOrderMappings } from '../../schema';
 import { eq, and, gt, inArray, sql } from 'drizzle-orm';
 import { v7 } from 'uuid';
 import { PimMedusaSyncService } from './pim-medusa-sync.service';
@@ -23,6 +23,11 @@ import type {
   Cafe24UnlinkedPayload,
   UserEmailVerifiedPayload,
 } from '@packages/event-contracts/streams/user.stream';
+import {
+  getChannelFulfillmentCapabilities,
+  type ShipmentSalesChannel,
+} from '../../services/channel-fulfillment-capabilities';
+import { withMedusaOrderProjectionLock } from '../../services/medusa-order-projection-lock';
 
 const PRODUCT_MASTER_LIFECYCLE_EVENT_TYPES = ['ProductMasterActiveVersionChanged', 'ProductMasterDeleted'] as const;
 
@@ -366,7 +371,9 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
 
         case 'Cafe24Linked': {
           const linkedPayload: Cafe24LinkedPayload = event.payload;
-          const { active, remainingDays } = await this.almondAuthClient.getMembershipDetail(linkedPayload.cafe24MemberId);
+          const { active, remainingDays } = await this.almondAuthClient.getMembershipDetail(
+            linkedPayload.cafe24MemberId,
+          );
           // 뉴 아몬드영(membership service + Medusa)이 SSOT.
           // Firebase가 활성이면 멤버십 서비스에 구독 지급 → MembershipStatusChanged 이벤트 → Medusa 동기화 (기존 경로).
           // Firebase가 비활성이거나 이미 활성 구독이 있으면 no-op.
@@ -394,8 +401,8 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
 
         case 'CoreFulfillmentShipped': {
           // Core WMS에서 FO가 출고 완료됐을 때 Medusa order metadata를 shipped로 갱신.
-          // payload.channelOrderId를 우선 사용하고 없으면 wms_order_mappings를 조회한다.
-          // 둘 다 없으면 Medusa 채널 주문이 아닌 것이므로 스킵.
+          // Core order id를 Medusa 채널 매핑으로 역조회한다. payload.channelOrderId는
+          // Naver/Coupang 외부 ID일 수도 있으므로 Medusa ID로 신뢰하지 않는다.
           const shippedPayload = event.payload as {
             fulfillmentId: string;
             orderId: string;
@@ -404,33 +411,29 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
             shippedAt?: string;
           };
 
-          let shippedMedusaOrderId = shippedPayload.channelOrderId ?? null;
-          if (!shippedMedusaOrderId) {
-            const [shippedMapping] = await this.dbService.db
-              .select({ channelOrderId: wmsOrderMappings.channelOrderId })
-              .from(wmsOrderMappings)
-              .where(
-                and(
-                  eq(wmsOrderMappings.wmsOrderId, shippedPayload.orderId),
-                  eq(wmsOrderMappings.salesChannel, 'medusa'),
-                ),
-              )
-              .limit(1);
-            shippedMedusaOrderId = shippedMapping?.channelOrderId ?? null;
-          }
+          const [shippedMapping] = await this.dbService.db
+            .select({ channelOrderId: wmsOrderMappings.channelOrderId })
+            .from(wmsOrderMappings)
+            .where(
+              and(eq(wmsOrderMappings.wmsOrderId, shippedPayload.orderId), eq(wmsOrderMappings.salesChannel, 'medusa')),
+            )
+            .limit(1);
+          const shippedMedusaOrderId = shippedMapping?.channelOrderId ?? null;
 
           if (!shippedMedusaOrderId) {
             this.logger.debug(`[CoreFulfillmentShipped] Medusa 매핑 없음, 스킵: orderId=${shippedPayload.orderId}`);
             break;
           }
 
-          await this.medusaClient.updateOrderShippingProjection(shippedMedusaOrderId, {
-            status: 'shipped',
-            fulfillmentId: shippedPayload.fulfillmentId,
-            carrier: shippedPayload.trackingInfo?.carrier,
-            trackingNumber: shippedPayload.trackingInfo?.trackingNumber,
-            shippedAt: shippedPayload.shippedAt,
-          });
+          await withMedusaOrderProjectionLock(this.dbService, shippedMedusaOrderId, () =>
+            this.medusaClient.updateOrderShippingProjection(shippedMedusaOrderId, {
+              status: 'shipped',
+              fulfillmentId: shippedPayload.fulfillmentId,
+              carrier: shippedPayload.trackingInfo?.carrier,
+              trackingNumber: shippedPayload.trackingInfo?.trackingNumber,
+              shippedAt: shippedPayload.shippedAt,
+            }),
+          );
           this.logger.log(
             `[CoreFulfillmentShipped] Medusa 배송 시작 동기화 완료: orderId=${shippedPayload.orderId}, medusaOrderId=${shippedMedusaOrderId}`,
           );
@@ -439,7 +442,7 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
 
         case 'CoreFulfillmentDelivered': {
           // Core WMS에서 FO 배송 완료 시 Medusa order metadata를 delivered로 갱신.
-          // payload.channelOrderId를 우선 사용하고 없으면 wms_order_mappings를 조회한다.
+          // Core order id를 실제 Medusa 채널 매핑으로 역조회한다.
           const deliveredPayload = event.payload as {
             fulfillmentId: string;
             orderId: string;
@@ -447,31 +450,30 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
             deliveredAt?: string;
           };
 
-          let deliveredMedusaOrderId = deliveredPayload.channelOrderId ?? null;
-          if (!deliveredMedusaOrderId) {
-            const [deliveredMapping] = await this.dbService.db
-              .select({ channelOrderId: wmsOrderMappings.channelOrderId })
-              .from(wmsOrderMappings)
-              .where(
-                and(
-                  eq(wmsOrderMappings.wmsOrderId, deliveredPayload.orderId),
-                  eq(wmsOrderMappings.salesChannel, 'medusa'),
-                ),
-              )
-              .limit(1);
-            deliveredMedusaOrderId = deliveredMapping?.channelOrderId ?? null;
-          }
+          const [deliveredMapping] = await this.dbService.db
+            .select({ channelOrderId: wmsOrderMappings.channelOrderId })
+            .from(wmsOrderMappings)
+            .where(
+              and(
+                eq(wmsOrderMappings.wmsOrderId, deliveredPayload.orderId),
+                eq(wmsOrderMappings.salesChannel, 'medusa'),
+              ),
+            )
+            .limit(1);
+          const deliveredMedusaOrderId = deliveredMapping?.channelOrderId ?? null;
 
           if (!deliveredMedusaOrderId) {
             this.logger.debug(`[CoreFulfillmentDelivered] Medusa 매핑 없음, 스킵: orderId=${deliveredPayload.orderId}`);
             break;
           }
 
-          await this.medusaClient.updateOrderShippingProjection(deliveredMedusaOrderId, {
-            status: 'delivered',
-            fulfillmentId: deliveredPayload.fulfillmentId,
-            deliveredAt: deliveredPayload.deliveredAt,
-          });
+          await withMedusaOrderProjectionLock(this.dbService, deliveredMedusaOrderId, () =>
+            this.medusaClient.updateOrderShippingProjection(deliveredMedusaOrderId, {
+              status: 'delivered',
+              fulfillmentId: deliveredPayload.fulfillmentId,
+              deliveredAt: deliveredPayload.deliveredAt,
+            }),
+          );
           this.logger.log(
             `[CoreFulfillmentDelivered] Medusa 배송 완료 동기화 완료: orderId=${deliveredPayload.orderId}, medusaOrderId=${deliveredMedusaOrderId}`,
           );
@@ -480,28 +482,47 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
 
         case 'CoreOrderCancelled': {
           // Core(WMS)가 주문을 취소했을 때 Medusa order도 canceled로 동기화한다.
-          // SalesOrderCancelledPayload.channelOrderId(Medusa order ID)로 wms_order_mappings를 조회.
-          // channelOrderId가 없는 구 이벤트는 wmsOrderId fallback으로 조회(하위 호환).
+          // channelOrderId는 외부 채널에 따라 의미가 달라질 수 있으므로 Core order id와
+          // salesChannel='medusa' 매핑을 함께 확인한 경우에만 Medusa를 호출한다.
           const cancelPayload: { orderId: string; channelOrderId?: string } = event.payload;
 
-          const medusaOrderId = cancelPayload.channelOrderId ?? null;
           const [mapping] = await this.dbService.db
-            .select({ channelOrderId: wmsOrderMappings.channelOrderId })
+            .select({
+              salesChannel: wmsOrderMappings.salesChannel,
+              channelOrderId: wmsOrderMappings.channelOrderId,
+            })
             .from(wmsOrderMappings)
-            .where(
-              and(
-                medusaOrderId
-                  ? eq(wmsOrderMappings.channelOrderId, medusaOrderId)
-                  : eq(wmsOrderMappings.wmsOrderId, cancelPayload.orderId),
-                eq(wmsOrderMappings.salesChannel, 'medusa'),
-              ),
-            )
+            .where(eq(wmsOrderMappings.wmsOrderId, cancelPayload.orderId))
             .limit(1);
 
           if (!mapping) {
             this.logger.debug(
-              `[CoreOrderCancelled] Medusa 매핑 없음, 취소 동기화 스킵: orderId=${cancelPayload.orderId}, channelOrderId=${medusaOrderId}`,
+              `[CoreOrderCancelled] Medusa 매핑 없음, 취소 동기화 스킵: orderId=${cancelPayload.orderId}`,
             );
+            break;
+          }
+
+          const capabilities = getChannelFulfillmentCapabilities(mapping.salesChannel as ShipmentSalesChannel);
+          if (mapping.salesChannel !== 'medusa' || !capabilities?.automatedCancellation) {
+            const reason = `${mapping.salesChannel} order cancellation requires manual channel adjustment`;
+            await this.dbService.db
+              .insert(channelDispatchOperations)
+              .values({
+                inboxEventId: eventId,
+                dispatchAttemptId: null,
+                shipmentId: null,
+                salesOrderId: cancelPayload.orderId,
+                operation: 'cancel',
+                channel: mapping.salesChannel,
+                externalOrderId: mapping.channelOrderId,
+                providerIdempotencyKey: `cancel:${eventId}:${cancelPayload.orderId}`,
+                requestSnapshot: { eventType, payload: cancelPayload },
+                status: 'manual_adjustment_required',
+                errorMessage: reason,
+                updatedAt: new Date(),
+              })
+              .onConflictDoNothing();
+            this.logger.warn(`${reason}: ${mapping.channelOrderId}`);
             break;
           }
 

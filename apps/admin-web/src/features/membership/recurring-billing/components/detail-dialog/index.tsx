@@ -11,10 +11,12 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { AdminRecurringBillingRow } from '@/lib/types/dto/wallet';
 import { AdminRecurringContractSummary } from '@/lib/types/dto/membership';
+import { UserInfo } from '@/hooks/use-user-names';
 
 type Props = {
   row: AdminRecurringBillingRow | null;
   contract?: AdminRecurringContractSummary;
+  userInfo?: UserInfo;
   open: boolean;
   onClose: () => void;
 };
@@ -104,7 +106,7 @@ function formatDate(str: string | null | undefined): string {
   });
 }
 
-export function RecurringBillingDetailDialog({ row, contract, open, onClose }: Props) {
+export function RecurringBillingDetailDialog({ row, contract, userInfo, open, onClose }: Props) {
   if (!row) return null;
 
   const ps = row.providerState;
@@ -119,6 +121,24 @@ export function RecurringBillingDetailDialog({ row, contract, open, onClose }: P
         <div className="space-y-5">
           <section className="space-y-2">
             <h3 className="text-sm font-semibold text-muted-foreground">고객 정보</h3>
+            <InfoRow
+              label="로그인 아이디"
+              value={
+                userInfo?.loginId ? (
+                  <Link
+                    href={`/customer-window/${row.userId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-primary hover:underline"
+                  >
+                    {userInfo.loginId}
+                  </Link>
+                ) : (
+                  '-'
+                )
+              }
+            />
+            <InfoRow label="성명" value={userInfo?.username || '-'} />
             <InfoRow
               label="고객 ID"
               value={

@@ -5,7 +5,7 @@ import { client } from '../../client';
 import type {
   ReservationDto,
   ReservationSummaryDto,
-  ExpireStaleReservationsResponseDto,
+  ReconcileReservationsResponseDto,
   ReservationTargetType,
 } from '../../../types/dto/inventory';
 
@@ -46,9 +46,9 @@ export const reservationsClient = {
     );
   },
 
-  expireStaleReservations: async (): Promise<ExpireStaleReservationsResponseDto> => {
+  reconcileReservations: async (): Promise<ReconcileReservationsResponseDto> => {
     const response = await client.post(
-      `${ALMONDYOUNG_API_BASE_URL}/inventory/reservations/expire-stale`
+      `${ALMONDYOUNG_API_BASE_URL}/inventory/reservations/reconcile`
     );
     return response.data;
   },

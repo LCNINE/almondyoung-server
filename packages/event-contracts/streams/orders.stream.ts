@@ -12,13 +12,20 @@ import { z } from 'zod';
 export type FulfillmentKind = 'physical' | 'digital';
 
 export interface OrderItem {
-  orderItemId: string;
+  /**
+   * Provider-owned identity for one concrete order line/quantity.
+   *
+   * Optional during the expand phase because legacy/manual producers may not
+   * have captured it. Producers must not substitute an internal line/order ID.
+   */
+  orderItemId?: string;
   skuId: string;
   masterId: string;
   versionId: string;
   variantId: string;
   productName: string;
-  channelProductId: string;
+  /** Provider-owned listing/product/option identity, independent of orderItemId. */
+  channelProductId?: string;
   quantity: number;
   unitPrice: number;
   totalPrice: number;
@@ -41,14 +48,7 @@ export interface ShippingAddress {
 
 export type SalesChannel = 'medusa' | 'naver' | 'coupang' | '3pl';
 
-export type OrderStatus =
-  | 'pending'
-  | 'confirmed'
-  | 'processing'
-  | 'shipped'
-  | 'delivered'
-  | 'cancelled'
-  | 'timeout';
+export type OrderStatus = 'pending' | 'confirmed' | 'processing' | 'shipped' | 'delivered' | 'cancelled' | 'timeout';
 
 // ===== Event Payloads =====
 
@@ -103,12 +103,7 @@ export interface OrderModifiedPayload {
  */
 export interface OrderCancelledPayload {
   orderId: string;
-  reason:
-  | 'CUSTOMER_REQUEST'
-  | 'OUT_OF_STOCK'
-  | 'PAYMENT_FAILED'
-  | 'ADMIN_CANCEL'
-  | 'TIMEOUT';
+  reason: 'CUSTOMER_REQUEST' | 'OUT_OF_STOCK' | 'PAYMENT_FAILED' | 'ADMIN_CANCEL' | 'TIMEOUT';
   reasonDetail?: string;
   cancelledBy: string;
   cancelledAt: string;
@@ -188,16 +183,24 @@ export interface OrderMergedPayload {
 // ===== Zod 스키마 정의 =====
 
 const SalesChannelSchema = z.enum(['medusa', 'naver', 'coupang', '3pl']);
-const OrderStatusSchema = z.enum(['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled', 'timeout']);
+const OrderStatusSchema = z.enum([
+  'pending',
+  'confirmed',
+  'processing',
+  'shipped',
+  'delivered',
+  'cancelled',
+  'timeout',
+]);
 
 const OrderItemSchema = z.object({
-  orderItemId: z.string().min(1),
+  orderItemId: z.string().trim().min(1).optional(),
   skuId: z.string().min(1),
   masterId: z.string().min(1),
   versionId: z.string().min(1),
   variantId: z.string().min(1),
   productName: z.string().min(1),
-  channelProductId: z.string().min(1),
+  channelProductId: z.string().trim().min(1).optional(),
   quantity: z.number().int().positive(),
   unitPrice: z.number().nonnegative(),
   totalPrice: z.number().nonnegative(),
@@ -252,12 +255,16 @@ const OrderCancelledSchema = z.object({
   cancelledAt: z.string().datetime(),
   refundRequired: z.boolean(),
   refundAmount: z.number().nonnegative().optional(),
-  stockRestorationResults: z.array(z.object({
-    orderItemId: z.string().min(1),
-    skuId: z.string().min(1),
-    restoredQty: z.number().int().nonnegative(),
-    stockEventId: z.string().optional(),
-  })).optional(),
+  stockRestorationResults: z
+    .array(
+      z.object({
+        orderItemId: z.string().min(1),
+        skuId: z.string().min(1),
+        restoredQty: z.number().int().nonnegative(),
+        stockEventId: z.string().optional(),
+      }),
+    )
+    .optional(),
 });
 
 const OrderPaymentCompletedSchema = z.object({
@@ -271,13 +278,15 @@ const OrderPaymentCompletedSchema = z.object({
 const OrderReturnRequestedSchema = z.object({
   orderId: z.string().min(1),
   returnId: z.string().min(1),
-  items: z.array(z.object({
-    orderItemId: z.string().min(1),
-    skuId: z.string().min(1),
-    quantity: z.number().int().positive(),
-    reason: z.enum(['DEFECTIVE', 'WRONG_ITEM', 'CUSTOMER_CHANGED_MIND', 'SIZE_NOT_FIT']),
-    reasonDetail: z.string().optional(),
-  })),
+  items: z.array(
+    z.object({
+      orderItemId: z.string().min(1),
+      skuId: z.string().min(1),
+      quantity: z.number().int().positive(),
+      reason: z.enum(['DEFECTIVE', 'WRONG_ITEM', 'CUSTOMER_CHANGED_MIND', 'SIZE_NOT_FIT']),
+      reasonDetail: z.string().optional(),
+    }),
+  ),
   requestedBy: z.enum(['CUSTOMER', 'ADMIN']),
   requestedAt: z.string().datetime(),
   note: z.string().optional(),
@@ -315,12 +324,7 @@ export interface SalesOrderCancelledPayload {
   /** Core SalesOrder.channelOrderId (Medusa: 'order_xxx', Naver/Coupang: 채널 주문번호).
    *  채널어댑터가 wms_order_mappings를 조회할 때 사용한다. */
   channelOrderId?: string;
-  reason:
-  | 'CUSTOMER_REQUEST'
-  | 'OUT_OF_STOCK'
-  | 'PAYMENT_FAILED'
-  | 'ADMIN_CANCEL'
-  | 'TIMEOUT';
+  reason: 'CUSTOMER_REQUEST' | 'OUT_OF_STOCK' | 'PAYMENT_FAILED' | 'ADMIN_CANCEL' | 'TIMEOUT';
   reasonDetail?: string;
   cancelledBy: string;
   cancelledAt: string;
@@ -351,16 +355,24 @@ const SalesOrderCancelledSchema = z.object({
   cancellationScope: z.enum(['full', 'partial']),
   refundRequired: z.boolean(),
   refundAmount: z.number().nonnegative().optional(),
-  cancelledLines: z.array(z.object({
-    salesOrderLineId: z.string().min(1),
-    quantity: z.number().int().positive(),
-  })).optional(),
-  stockRestorationResults: z.array(z.object({
-    orderItemId: z.string().min(1),
-    skuId: z.string().min(1),
-    restoredQty: z.number().int().nonnegative(),
-    stockEventId: z.string().optional(),
-  })).optional(),
+  cancelledLines: z
+    .array(
+      z.object({
+        salesOrderLineId: z.string().min(1),
+        quantity: z.number().int().positive(),
+      }),
+    )
+    .optional(),
+  stockRestorationResults: z
+    .array(
+      z.object({
+        orderItemId: z.string().min(1),
+        skuId: z.string().min(1),
+        restoredQty: z.number().int().nonnegative(),
+        stockEventId: z.string().optional(),
+      }),
+    )
+    .optional(),
 });
 
 // ===== Stream Config (타입 안전 버전) =====
@@ -373,9 +385,18 @@ export const ORDER_STREAM = stream({
     OrderCreated: event<'OrderCreated', OrderCreatedPayload>('OrderCreated', OrderCreatedSchema),
     OrderModified: event<'OrderModified', OrderModifiedPayload>('OrderModified', OrderModifiedSchema),
     OrderCancelled: event<'OrderCancelled', OrderCancelledPayload>('OrderCancelled', OrderCancelledSchema),
-    OrderPaymentCompleted: event<'OrderPaymentCompleted', OrderPaymentCompletedPayload>('OrderPaymentCompleted', OrderPaymentCompletedSchema),
-    OrderReturnRequested: event<'OrderReturnRequested', OrderReturnRequestedPayload>('OrderReturnRequested', OrderReturnRequestedSchema),
-    OrderRefundCreated: event<'OrderRefundCreated', OrderRefundCreatedPayload>('OrderRefundCreated', OrderRefundCreatedSchema),
+    OrderPaymentCompleted: event<'OrderPaymentCompleted', OrderPaymentCompletedPayload>(
+      'OrderPaymentCompleted',
+      OrderPaymentCompletedSchema,
+    ),
+    OrderReturnRequested: event<'OrderReturnRequested', OrderReturnRequestedPayload>(
+      'OrderReturnRequested',
+      OrderReturnRequestedSchema,
+    ),
+    OrderRefundCreated: event<'OrderRefundCreated', OrderRefundCreatedPayload>(
+      'OrderRefundCreated',
+      OrderRefundCreatedSchema,
+    ),
     OrderMerged: event<'OrderMerged', OrderMergedPayload>('OrderMerged', OrderMergedSchema),
   },
 });
@@ -390,7 +411,10 @@ export const CORE_ORDER_STREAM = stream({
   partitions: 12,
   aggregateType: 'Order',
   events: {
-    SalesOrderCancelled: event<'SalesOrderCancelled', SalesOrderCancelledPayload>('SalesOrderCancelled', SalesOrderCancelledSchema),
+    SalesOrderCancelled: event<'SalesOrderCancelled', SalesOrderCancelledPayload>(
+      'SalesOrderCancelled',
+      SalesOrderCancelledSchema,
+    ),
   },
 });
 

@@ -1,6 +1,5 @@
 import './tracing';
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import fastifyCookie from '@fastify/cookie';
@@ -10,6 +9,7 @@ import { EventsModule } from '@app/events';
 import { GlobalExceptionFilter } from '@app/shared';
 import { ORDER_STREAM } from '@packages/event-contracts';
 import { AppModule } from './app.module';
+import { createGlobalValidationPipe } from './platform/http/validation-pipe';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
@@ -43,23 +43,15 @@ async function bootstrap() {
       done();
     });
 
-  // Global pipes & filters
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      transform: true,
-      forbidNonWhitelisted: false,
-      disableErrorMessages: false,
-      validationError: { target: false, value: false },
-    }),
-  );
+  // Global pipes & filters — 설정 본체는 platform/http/validation-pipe.ts 가 소유한다.
+  app.useGlobalPipes(createGlobalValidationPipe());
   app.useGlobalFilters(new GlobalExceptionFilter());
 
   // CORS
   app.enableCors({
     origin: true,
     credentials: true,
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Cookie', 'Set-Cookie'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Cookie', 'Set-Cookie', 'Idempotency-Key'],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     exposedHeaders: ['Set-Cookie'],
   });

@@ -100,6 +100,18 @@ export const salesOrders = {
     return response.data;
   },
 
+  // 환불 완료된 결제의 주문 취소 (재환불 없음) — 무통장 환불신청 승인 후 호출
+  cancelSalesOrderByIntent: async (
+    intentId: string,
+    body?: { reasonCode?: string; amount?: number }
+  ): Promise<{ status: string; skipped?: string }> => {
+    const response = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/sales-orders/cancel-by-intent`,
+      { intentId, ...body }
+    );
+    return response.data;
+  },
+
   // 관리자 주문 취소 + Wallet 자동 환불 (새 엔드포인트)
   adminCancelSalesOrder: async (
     id: string,

@@ -49,6 +49,8 @@ export type ProductMasterDetail = {
   isOverseas?: boolean | null;
   hideMembershipPriceForNonMembers?: boolean | null;
   isVisibleToMembersOnly?: boolean | null;
+  /** 멤버십 전용 구매 제약. null 이면 제약 없음. */
+  purchaseConstraint?: { requiresMembership: boolean; lifetimeQuantityLimit: number | null } | null;
   /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly: boolean | null;
   fulfillmentKind?: 'physical' | 'digital' | null;
@@ -146,6 +148,8 @@ export type MasterVersionDetailDto = {
   isOverseas?: boolean | null;
   hideMembershipPriceForNonMembers?: boolean | null;
   isVisibleToMembersOnly?: boolean | null;
+  /** 멤버십 전용 구매 제약. null 이면 제약 없음. */
+  purchaseConstraint?: { requiresMembership: boolean; lifetimeQuantityLimit: number | null } | null;
   /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly: boolean | null;
   fulfillmentKind?: 'physical' | 'digital' | null;

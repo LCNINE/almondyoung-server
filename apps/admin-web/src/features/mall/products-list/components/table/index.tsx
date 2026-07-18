@@ -1,6 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import {
+  selectedIdsFromRowSelection,
+  reconcileSelectedSnapshots,
+  type SelectedProductSnapshot,
+} from './products-list-selection-model';
 import { useMastersSummary } from '@/lib/services/products/queries';
 import { useDataTable } from '@/hooks/use-data-table';
 import { useProductsListTableColumns } from '@/hooks/table/columns/use-products-list-table-columns';
@@ -13,11 +18,14 @@ import {
   BulkActionModal,
   type BulkActionType,
 } from '@/features/mall/bulk/components/bulk-action-modal';
+import { BulkPolicyModal } from '@/features/mall/bulk/components/bulk-policy-modal';
+import { SelectedProductsModal } from '../selected-products-modal';
 
 const PAGE_SIZE = 20;
 
 export function ProductsListTable() {
   const [modalAction, setModalAction] = useState<BulkActionType | null>(null);
+  const [policyOpen, setPolicyOpen] = useState(false);
 
   const { searchParams: query } = useProductsListTableQuery({
     pageSize: PAGE_SIZE,
@@ -35,21 +43,65 @@ export function ProductsListTable() {
     enableRowSelection: true,
   });
 
-  const selectedIds = table
-    .getSelectedRowModel()
-    .rows.map((r) => r.original.masterId);
+  console.log('data:', data);
+
+  const [selectedItems, setSelectedItems] = useState<
+    Record<string, SelectedProductSnapshot>
+  >({});
+
+  const rowSelection = table.getState().rowSelection;
+  const selectedIds = selectedIdsFromRowSelection(rowSelection);
+
+  // 스냅샷(selectedItems)은 effect 로 한 틱 늦게 갱신되므로, 표시용 목록은 현재
+  // 선택 상태로 즉시 필터해 개별 해제가 프레임 지연 없이 반영되도록 한다.
+  const selectedItemsList = Object.values(selectedItems).filter(
+    (it) => rowSelection[it.masterId]
+  );
+
+  // 선택되는 순간 그 행은 반드시 현재 페이지에 로드돼 있으므로,
+  // 이름/썸네일 스냅샷을 담아 교차 페이지/필터에서도 목록을 보여줄 수 있게 한다.
+  useEffect(() => {
+    const currentRows: SelectedProductSnapshot[] = (data?.data ?? []).map(
+      (r) => ({
+        masterId: r.masterId,
+        name: r.name,
+        thumbnail: r.thumbnail ?? null,
+        hideMembershipPriceForNonMembers: r.hideMembershipPriceForNonMembers,
+        isVisibleToMembersOnly: r.isVisibleToMembersOnly,
+        isOverseas: r.isOverseas,
+      })
+    );
+    setSelectedItems((prev) => {
+      const { changed, next } = reconcileSelectedSnapshots(
+        prev,
+        rowSelection,
+        currentRows
+      );
+      return changed ? next : prev;
+    });
+  }, [rowSelection, data]);
 
   function handleSuccess() {
     table.resetRowSelection();
+    setSelectedItems({});
   }
 
   return (
     <div>
       {selectedIds.length > 0 && (
         <div className="fixed z-50 flex items-center gap-2 p-2 pl-4 -translate-x-1/2 border rounded-lg shadow-lg bottom-6 left-1/2 bg-background">
-          <span className="text-sm text-muted-foreground whitespace-nowrap">
-            {selectedIds.length}개 선택됨
-          </span>
+          <SelectedProductsModal
+            items={selectedItemsList}
+            count={selectedIds.length}
+            onRemove={(masterId) =>
+              table.setRowSelection((prev) => {
+                const next = { ...prev };
+                delete next[masterId];
+                return next;
+              })
+            }
+            onClearAll={() => table.resetRowSelection()}
+          />
           <Button size="sm" variant="outline">
             <Download className="w-3 h-3 mr-1" />
             엑셀 다운로드
@@ -64,17 +116,17 @@ export function ProductsListTable() {
           <Button
             size="sm"
             variant="outline"
+            onClick={() => setPolicyOpen(true)}
+          >
+            운영 노출 정책 변경
+          </Button>
+          <Button
+            size="sm"
+            variant="destructive"
             onClick={() => setModalAction('delete')}
           >
             <Trash2 className="w-3 h-3 mr-1" />
             선택 삭제
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => table.resetRowSelection()}
-          >
-            선택 해제
           </Button>
         </div>
       )}
@@ -87,6 +139,11 @@ export function ProductsListTable() {
         pageSize={PAGE_SIZE}
         filters={filters}
         search
+        orderBy={[
+          { key: 'createdAt', label: '등록일' },
+          { key: 'name', label: '상품명' },
+          { key: 'updatedAt', label: '수정일' },
+        ]}
         navigateTo={(row) =>
           // active 버전이 없는 상품은 GET /masters/:id 가 404 — versionId 로 직접 조회한다.
           row.original.status === 'active'
@@ -101,6 +158,15 @@ export function ProductsListTable() {
         onOpenChange={(open) => !open && setModalAction(null)}
         action={modalAction}
         selectedIds={selectedIds}
+        selectedItems={selectedItemsList}
+        onSuccess={handleSuccess}
+      />
+
+      <BulkPolicyModal
+        open={policyOpen}
+        onOpenChange={setPolicyOpen}
+        selectedIds={selectedIds}
+        selectedItems={selectedItemsList}
         onSuccess={handleSuccess}
       />
     </div>

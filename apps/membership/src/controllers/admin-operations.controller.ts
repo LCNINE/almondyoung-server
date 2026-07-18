@@ -50,7 +50,6 @@ import { JwtAuthGuard, User } from '@app/authorization';
 import { SubscriptionService } from '../services/subscription.service';
 /**
  * 관리자 운영 컨트롤러
- * 🚨 [주의] 현재 개발용 임시 인증 가드(DevAuthGuard)를 사용하고 있습니다.
  */
 @ApiTags('admin')
 @Controller('admin')

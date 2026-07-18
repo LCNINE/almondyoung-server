@@ -1,6 +1,6 @@
-import { Controller, Logger, UseFilters, UseInterceptors } from '@nestjs/common';
+import { Controller, Logger, UseInterceptors } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
-import { EventPayload, EventEnvelope, OnEvent, EventsExceptionFilter } from '@app/events';
+import { EventPayload, EventEnvelope, OnEvent } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { OrderCreatedPayload } from '@packages/event-contracts/streams/orders.stream';
 import { DomainEvent } from '@packages/event-contracts/types';
@@ -12,7 +12,6 @@ import { analyticsSchema } from '../../../schema';
 import { DbService } from '@app/db';
 
 @Controller()
-@UseFilters(EventsExceptionFilter)
 @UseInterceptors(EventTypeGuard)
 export class OrderEventsConsumer {
   private readonly logger = new Logger(OrderEventsConsumer.name);
@@ -40,8 +39,11 @@ export class OrderEventsConsumer {
   ) {
     this.logger.log(`OrderCreated received: ${payload.orderId}`);
     await this.inTx(async (tx) => {
-      const seeds = await this.orderFactsService.recordOrderCreated(envelope, payload, tx);
-      await this.orderAggregatesService.applyOrderCreated(seeds, tx);
+      const result = await this.orderFactsService.recordOrderCreated(envelope, payload, tx);
+      if (!result.claimed) {
+        return;
+      }
+      await this.orderAggregatesService.applyOrderCreated(result.seeds, tx);
       await this.userPurchaseAggregatesService.applyOrderCreated(
         payload.customerId,
         payload.items,

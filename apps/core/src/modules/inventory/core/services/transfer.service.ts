@@ -5,6 +5,7 @@ import { wmsTables, wmsSchema, DbTx, MovementJob } from '../../schema/inventory.
 import { eq, and, desc, SQL, sql, getTableColumns } from 'drizzle-orm';
 import { StockEventService } from './stock-event.service';
 import { InventoryCommandService } from './inventory-command.service';
+import { acquireStockAvailabilityLocks } from '../../shared/locks/stock-availability-lock';
 
 /**
  * 창고 간/창고 내 재고 이동 서비스
@@ -119,10 +120,12 @@ export class TransferService {
     return this.dbService.run(async (trx) => {
       this.logger.log(`Executing transfer job ${params.jobId}`);
 
-      // Job 조회
-      const movementJob = await trx.query.movementJobs.findFirst({
-        where: eq(wmsTables.movementJobs.id, params.jobId),
-      });
+      // Job 헤더를 FOR UPDATE 로 잠가 같은 jobId 동시 실행을 직렬화 (이중출고 방지)
+      const [movementJob] = await trx
+        .select()
+        .from(wmsTables.movementJobs)
+        .where(eq(wmsTables.movementJobs.id, params.jobId))
+        .for('update');
 
       if (!movementJob) {
         throw new NotFoundException(`Movement job ${params.jobId} not found`);
@@ -155,10 +158,26 @@ export class TransferService {
 
       this.logger.log(`Transfer type: ${isInterWarehouse ? 'Inter-warehouse' : 'Intra-warehouse'}`);
 
+      // The stock-event boundary locks each (sku, source warehouse). Pre-lock
+      // the entire pending job in canonical order to avoid opposite-line-order
+      // deadlocks while retaining the repository-level fail-closed guard.
+      await acquireStockAvailabilityLocks(
+        trx,
+        lines
+          .filter((line) => !line.eventId)
+          .map((line) => ({ skuId: line.skuId, warehouseId: fromLocation.warehouseId })),
+      );
+
+      let executed = 0;
       // 각 라인 실행
       for (const line of lines) {
         if (!line.fromLocationId || !line.toLocationId) {
           throw new BadRequestException(`Line ${line.id} has invalid location IDs`);
+        }
+
+        // 이미 실행된 라인은 skip — 기완료 잡 재-PATCH(더블클릭/재시도) 시 이중출고 방지
+        if (line.eventId) {
+          continue;
         }
 
         if (isInterWarehouse) {
@@ -236,13 +255,14 @@ export class TransferService {
 
           this.logger.log(`Executed intra-warehouse move for line ${line.id}: ${result.eventId}`);
         }
+        executed++;
       }
 
       this.logger.log(`Transfer job ${params.jobId} execution completed`);
 
       return {
         jobId: params.jobId,
-        linesExecuted: lines.length,
+        linesExecuted: executed,
       };
     }, tx);
   }

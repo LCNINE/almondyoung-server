@@ -7,14 +7,24 @@ import type { BaseUserInfo, UUID } from './common';
 interface User extends BaseUserInfo {}
 
 // ===== 관리자 관련 =====
+// 초기 비밀번호는 서버가 랜덤 생성한다 (POST /admin/auth 응답의 initialPassword) — password 입력란 없음.
 interface CreateAdminAccountDto {
-  name: string;
+  username: string;
   nickname: string;
   loginId: string;
   email: string;
-  password: string;
   roleId: string;
-  phone_number: string;
+  phone_number?: string;
+}
+
+interface CreateAdminAccountResult {
+  user: {
+    id: string;
+    loginId: string;
+    email: string;
+    username: string;
+  };
+  initialPassword: string;
 }
 
 interface UserRolesResponseDto {
@@ -127,6 +137,7 @@ interface UpdateMyProfileDto {
 
 export type {
   CreateAdminAccountDto,
+  CreateAdminAccountResult,
   User,
   UserRolesResponseDto,
   AdminUsersQuery,

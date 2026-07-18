@@ -39,6 +39,7 @@ import {
   useMedusaOrderById,
 } from '@/lib/services/medusa-customers';
 import type { AdminOrder } from '@/lib/api/domains/medusa';
+import { AdminCashReceiptSection } from '../admin-cash-receipt-section';
 import {
   formatDateTime,
   computeDateRange,
@@ -170,8 +171,8 @@ function AmountRow({
   );
 }
 
-/** 주문 상세 다이얼로그 (단건 조회로 라인 아이템/배송지/금액 표시) */
-function OrderDetailDialog({
+/** 주문 상세 다이얼로그 (단건 조회로 라인 아이템/배송지/금액 + 현금영수증 표시) */
+export function OrderDetailDialog({
   orderId,
   onClose,
 }: {
@@ -182,6 +183,12 @@ function OrderDetailDialog({
   const order = data?.order;
   const currency = order?.currency_code;
   const address = order?.shipping_address;
+  // 현금영수증 조회용 wallet intentId — 결제 세션 data 에 들어있음.
+  const intentId = (
+    order?.payment_collections?.[0]?.payment_sessions?.[0]?.data as
+      | Record<string, unknown>
+      | undefined
+  )?.intentId as string | undefined;
 
   return (
     <Dialog open={!!orderId} onOpenChange={(open) => !open && onClose()}>
@@ -338,6 +345,8 @@ function OrderDetailDialog({
                 </div>
               </section>
             )}
+
+            <AdminCashReceiptSection intentId={intentId} />
           </div>
         )}
       </DialogContent>

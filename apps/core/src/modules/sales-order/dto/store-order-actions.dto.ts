@@ -1,17 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { ArrayMaxSize, ArrayNotEmpty, IsArray, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export type StoreOrderAction = 'cancel' | 'track' | 'return' | 'exchange' | 'receipt';
 
 export type StoreFulfillmentStatus =
-  | 'not_created'
-  | 'awaiting_matching'
-  | 'created'
-  | 'picking'
-  | 'packed'
-  | 'shipped'
-  | 'delivered'
-  | 'canceled';
+  | 'not_created' // FO 없음 = 결제완료·출고대기
+  | 'preparing' // 상품 준비 중 (예약/피킹/패킹/복구 흡수)
+  | 'shipping' // 배송 중 (하나 이상 상자 이동)
+  | 'delivered' // 배송 완료 (모든 활성 상자 배송완료)
+  | 'canceled'; // 이행 취소 (모든 FO canceled)
 
 export type StoreRefundStatus = 'none' | 'pending' | 'manual_pending' | 'succeeded' | 'failed';
 
@@ -27,6 +24,18 @@ export type StoreClaimStatus =
   | 'exchange_requested'
   | 'returning'
   | 'completed';
+
+/** 분할/합배송 진행 요약 (활성 상자 수 기준). */
+export class ShipmentProgressDto {
+  @ApiProperty({ description: '활성 상자 수 (canceled/superseded 제외)' })
+  total: number;
+
+  @ApiProperty({ description: '이동한 상자 수 (배송중+배송완료)' })
+  shipped: number;
+
+  @ApiProperty({ description: '배송완료 상자 수' })
+  delivered: number;
+}
 
 /**
  * 고객에게 노출할 환불 요약 정보.
@@ -68,9 +77,12 @@ export class StoreOrderActionsResponseDto {
   orderStatus: string;
 
   @ApiProperty({
-    enum: ['not_created', 'awaiting_matching', 'created', 'picking', 'packed', 'shipped', 'delivered', 'canceled'],
+    enum: ['not_created', 'preparing', 'shipping', 'delivered', 'canceled'],
   })
   fulfillmentStatus: StoreFulfillmentStatus;
+
+  @ApiPropertyOptional({ type: ShipmentProgressDto, description: '분할/합배송 진행 요약 (활성 상자 0개면 생략)' })
+  shipmentProgress?: ShipmentProgressDto;
 
   @ApiProperty({ enum: ['none', 'pending', 'manual_pending', 'succeeded', 'failed'] })
   refundStatus: StoreRefundStatus;
@@ -102,6 +114,20 @@ export class StoreOrderActionsResponseDto {
     cancelUrl?: string;
     returnUrl?: string;
   };
+}
+
+export class StoreBatchOrderActionsRequestDto {
+  @ApiProperty({
+    description: 'Medusa 주문 ID 목록 (한 페이지 분량)',
+    type: String,
+    isArray: true,
+    example: ['order_01ABC', 'order_01DEF'],
+  })
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  channelOrderIds: string[];
 }
 
 export class StoreCancelOrderDto {

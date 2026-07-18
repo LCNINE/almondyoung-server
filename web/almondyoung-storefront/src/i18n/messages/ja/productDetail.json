@@ -74,6 +74,10 @@
   "options": {
     "selectPlaceholder": "オプションを選択してください",
     "soldOut": "売り切れ",
+    "soldOutTemporary": "一時品切れ",
+    "restockExpected": "再入荷 : {date} 予定",
+    "restockApproximate": "入荷予定日はおおよその目安で、実際の入荷日と異なる場合があります",
+    "restockInfoLabel": "入荷予定日について",
     "outOfStockSuffix": "({value} 売り切れ)",
     "defaultLabel": "基本オプション",
     "directInput": "直接入力",
@@ -88,7 +92,8 @@
     "sheetTitle": "オプション選択",
     "optionSelectTitle": "{title} 選択",
     "soldOutToast": "選択されたオプションは在庫切れのため追加できません。",
-    "soldOutToastNamed": "「{option}」は在庫切れのため追加できません。"
+    "soldOutToastNamed": "「{option}」は在庫切れのため追加できません。",
+    "optionPriceExtra": "(+{amount}ウォン)"
   },
   "cartModal": {
     "addingTitle": "カートに追加中",
@@ -102,6 +107,7 @@
   },
   "price": {
     "won": "ウォン",
+    "priceFrom": "~",
     "membershipBadgeLabel": "メンバー割引価格",
     "membershipOnlyPrice": "メンバーシップ会員のみ表示",
     "memberSavings": "メンバーシップ加入で {amount}ウォン節約"

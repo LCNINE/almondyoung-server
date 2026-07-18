@@ -21,8 +21,11 @@ export const productQueryKeys = {
   masters: ['masters'] as const,
   mastersList: (query: Record<string, any>) =>
     [...productQueryKeys.masters, 'list', query] as const,
+  // 모든 summary-list 쿼리를 한 번에 무효화할 때 쓴다
+  mastersSummaryLists: () =>
+    [...productQueryKeys.masters, 'summary-list'] as const,
   mastersSummaryList: (query: Record<string, any>) =>
-    [...productQueryKeys.masters, 'summary-list', query] as const,
+    [...productQueryKeys.mastersSummaryLists(), query] as const,
   mastersBatch: (ids: string[]) =>
     [
       ...productQueryKeys.masters,
@@ -32,6 +35,8 @@ export const productQueryKeys = {
   master: (id: string) => [...productQueryKeys.masters, id] as const,
   masterPricePreview: (id: string) =>
     [...productQueryKeys.master(id), 'price-preview'] as const,
+  myDrafts: (query: Record<string, any>) =>
+    ['product-versions', 'my-drafts', query] as const,
 
   // 제품 변형 관련
   variants: ['variants'] as const,
@@ -157,4 +162,11 @@ export const productQueryKeys = {
   pendingApprovals: ['approval', 'pending'] as const,
   approvalHistory: (masterId: string) =>
     ['approval', 'history', masterId] as const,
+
+  // 대량등록(엑셀 임포트) 관련
+  productImports: ['product-imports'] as const,
+  productImportsList: (page: number) =>
+    [...productQueryKeys.productImports, 'list', page] as const,
+  productImport: (sessionId: string) =>
+    [...productQueryKeys.productImports, sessionId] as const,
 } as const;

@@ -28,12 +28,24 @@ export type UserServiceSeedConfig = {
   oauthClients?: OAuthClientSeed[];
 };
 
-const ROLES = [
+export const USER_SERVICE_REFERENCE_ROLES = [
   { roleId: FIXED_UUIDS.ROLE_MASTER, name: 'master', description: '마스터' },
   { roleId: FIXED_UUIDS.ROLE_ADMIN, name: 'admin', description: '관리자' },
   { roleId: FIXED_UUIDS.ROLE_MEMBERSHIP, name: 'membership', description: '멤버십 회원' },
   { roleId: FIXED_UUIDS.ROLE_USER, name: 'user', description: '일반 회원' },
+  {
+    roleId: FIXED_UUIDS.ROLE_LOGISTICS_WORKER,
+    name: 'logistics_worker',
+    description: '물류 작업자',
+  },
+  {
+    roleId: FIXED_UUIDS.ROLE_LOGISTICS_MANAGER,
+    name: 'logistics_manager',
+    description: '물류 관리자',
+  },
 ];
+
+const ROLES = USER_SERVICE_REFERENCE_ROLES;
 
 const SCOPES = [
   { key: 'master', description: '마스터 권한', microservice_name: 'user-service' },
@@ -50,12 +62,14 @@ const SCOPES = [
   { key: 'admin:logs:read', description: '관리자 - 로그 조회', microservice_name: 'user-service' },
 ];
 
-const ROLE_SCOPE_MAP: Record<string, string[]> = {
+export const USER_SERVICE_REFERENCE_ROLE_SCOPE_MAP: Record<string, string[]> = {
   master: ['master'],
   admin: SCOPES.map((s) => s.key).filter((k) => k !== 'master'),
   membership: ['user:read', 'user:modify'],
   user: ['user:read', 'user:modify'],
 };
+
+const ROLE_SCOPE_MAP = USER_SERVICE_REFERENCE_ROLE_SCOPE_MAP;
 
 export class UserServiceSeedStep extends SeedStep {
   readonly groups = ['baseline'] as const;
@@ -82,9 +96,7 @@ export class UserServiceSeedStep extends SeedStep {
 
     // Role-scope mappings: count total expected vs existing
     const expectedMappings = Object.values(ROLE_SCOPE_MAP).reduce((sum, keys) => sum + keys.length, 0);
-    const existingMappingRows = await this.client.unsafe(
-      `SELECT count(*)::int as count FROM auth.role_scope_mapping`,
-    );
+    const existingMappingRows = await this.client.unsafe(`SELECT count(*)::int as count FROM auth.role_scope_mapping`);
     const existingMappingCount = existingMappingRows[0].count;
 
     // Admin user
@@ -112,10 +124,13 @@ export class UserServiceSeedStep extends SeedStep {
         [expectedIds],
       );
       const byId = new Map<string, { redirect_uris: string[]; post_logout_redirect_uris: string[] | null }>(
-        existingRows.map((r) => [r.client_id as string, {
-          redirect_uris: (r.redirect_uris as string[]) ?? [],
-          post_logout_redirect_uris: (r.post_logout_redirect_uris as string[] | null) ?? null,
-        }]),
+        existingRows.map((r) => [
+          r.client_id as string,
+          {
+            redirect_uris: (r.redirect_uris as string[]) ?? [],
+            post_logout_redirect_uris: (r.post_logout_redirect_uris as string[] | null) ?? null,
+          },
+        ]),
       );
       for (const seed of this.oauthClients) {
         const existing = byId.get(seed.clientId);
@@ -128,8 +143,8 @@ export class UserServiceSeedStep extends SeedStep {
         const postLogout = seed.postLogoutRedirectUris ?? [];
         const postLogoutOk =
           postLogout.length === 0 ||
-          (existing.post_logout_redirect_uris ?? []).length > 0 &&
-            postLogout.every((u) => (existing.post_logout_redirect_uris ?? []).includes(u));
+          ((existing.post_logout_redirect_uris ?? []).length > 0 &&
+            postLogout.every((u) => (existing.post_logout_redirect_uris ?? []).includes(u)));
         if (!redirectsOk || !postLogoutOk) {
           oauthMissing++;
           oauthMissingDetails.push(`${seed.clientId} (uri drift)`);
@@ -170,18 +185,18 @@ export class UserServiceSeedStep extends SeedStep {
         expected: expectedAdminRoles.length,
         existing: expectedAdminRoles.length - missingAdminRoles.length,
         missing: missingAdminRoles.length,
-        missingDetails: missingAdminRoles.map(
-          (id) => ROLES.find((r) => r.roleId === id)?.name ?? id,
-        ),
+        missingDetails: missingAdminRoles.map((id) => ROLES.find((r) => r.roleId === id)?.name ?? id),
       },
       ...(this.oauthClients.length > 0
-        ? [{
-            entity: 'oauth_clients',
-            expected: this.oauthClients.length,
-            existing: this.oauthClients.length - oauthMissing,
-            missing: oauthMissing,
-            missingDetails: oauthMissing > 0 ? oauthMissingDetails : undefined,
-          }]
+        ? [
+            {
+              entity: 'oauth_clients',
+              expected: this.oauthClients.length,
+              existing: this.oauthClients.length - oauthMissing,
+              missing: oauthMissing,
+              missingDetails: oauthMissing > 0 ? oauthMissingDetails : undefined,
+            },
+          ]
         : []),
     ];
 
@@ -192,9 +207,7 @@ export class UserServiceSeedStep extends SeedStep {
       service: 'User Service',
       items,
       isFullySeeded,
-      summary: isFullySeeded
-        ? 'All User Service seed data present'
-        : `${totalMissing} missing record(s)`,
+      summary: isFullySeeded ? 'All User Service seed data present' : `${totalMissing} missing record(s)`,
     };
   }
 
@@ -284,14 +297,9 @@ export class UserServiceSeedStep extends SeedStep {
         this.logger.step(7, totalSteps, 'Upserting OAuth clients');
         for (const seed of this.oauthClients) {
           const isPublic = seed.clientType === 'public';
-          const plaintextSecret = isPublic
-            ? null
-            : seed.clientSecret ?? crypto.randomBytes(32).toString('base64url');
+          const plaintextSecret = isPublic ? null : (seed.clientSecret ?? crypto.randomBytes(32).toString('base64url'));
           // public client 는 secret 미사용이지만 schema NOT NULL 만족용 dummy hash. confidential 은 진짜 hash.
-          const secretHash = await bcrypt.hash(
-            plaintextSecret ?? crypto.randomBytes(32).toString('hex'),
-            10,
-          );
+          const secretHash = await bcrypt.hash(plaintextSecret ?? crypto.randomBytes(32).toString('hex'), 10);
 
           await this.db.execute(sql`
             INSERT INTO oauth_clients (
@@ -330,7 +338,13 @@ export class UserServiceSeedStep extends SeedStep {
       return { service: 'User Service', success: true, itemsApplied, duration: Date.now() - start };
     } catch (error: any) {
       this.logger.error('User Service seeding failed', error);
-      return { service: 'User Service', success: false, itemsApplied, duration: Date.now() - start, error: error.message };
+      return {
+        service: 'User Service',
+        success: false,
+        itemsApplied,
+        duration: Date.now() - start,
+        error: error.message,
+      };
     }
   }
 }

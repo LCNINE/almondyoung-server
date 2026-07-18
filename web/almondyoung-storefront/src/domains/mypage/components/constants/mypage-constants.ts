@@ -20,10 +20,18 @@ export const MENU_ITEMS: MenuItem[] = [
   { label: "mypage.menu.exchangeLong2", icon: "🔄", path: "/mypage/exchange" },
   { label: "mypage.menu.review", icon: "⭐", path: "/mypage/reviews" },
   { label: "mypage.menu.membership", icon: "💎", path: "/mypage/membership" },
-  { label: "mypage.menu.payment", icon: "💳", path: "/mypage/membership/payment-method" },
+  {
+    label: "mypage.menu.payment",
+    icon: "💳",
+    path: "/mypage/membership/payment-method",
+  },
   { label: "mypage.menu.point", icon: "💰", path: "/mypage/point" },
   { label: "mypage.menu.profile", icon: "👤", path: "/mypage/account/profile" },
-  { label: "mypage.menu.password", icon: "🔒", path: "/mypage/account/password" },
+  {
+    label: "mypage.menu.password",
+    icon: "🔒",
+    path: "/mypage/account/password",
+  },
   {
     label: "mypage.menu.cafe24",
     icon: "🔗",
@@ -38,7 +46,11 @@ export const MENU_SECTIONS: MenuSection[] = [
   {
     title: "mypage.section.orderShipping",
     items: [
-      { label: "mypage.menu.orderList", icon: "📦", path: "/mypage/order/list" },
+      {
+        label: "mypage.menu.orderList",
+        icon: "📦",
+        path: "/mypage/order/list",
+      },
       {
         label: "mypage.menu.orderLegacy",
         icon: "🧾",
@@ -51,10 +63,26 @@ export const MENU_SECTIONS: MenuSection[] = [
   {
     title: "mypage.section.accountManagement",
     items: [
-      { label: "mypage.menu.profile", icon: "👤", path: "/mypage/account/profile" },
-      { label: "mypage.menu.password", icon: "🔒", path: "/mypage/account/password" },
-      { label: "mypage.menu.orderLegacyShort", icon: "🔗", path: "/mypage/account/cafe24" },
-      { label: "mypage.menu.shopSetting", icon: "👀", path: "/mypage/shop-setting" },
+      {
+        label: "mypage.menu.profile",
+        icon: "👤",
+        path: "/mypage/account/profile",
+      },
+      {
+        label: "mypage.menu.password",
+        icon: "🔒",
+        path: "/mypage/account/password",
+      },
+      {
+        label: "mypage.menu.orderLegacyShort",
+        icon: "🔗",
+        path: "/mypage/account/cafe24",
+      },
+      {
+        label: "mypage.menu.shopSetting",
+        icon: "👀",
+        path: "/mypage/shop-setting",
+      },
       { label: "mypage.menu.business", icon: "💼", path: "/mypage/business" },
       {
         label: "mypage.menu.withdraw",
@@ -67,10 +95,18 @@ export const MENU_SECTIONS: MenuSection[] = [
   {
     title: "mypage.section.benefits",
     items: [
-      { label: "mypage.menu.membership", icon: "💎", path: "/mypage/membership" },
+      {
+        label: "mypage.menu.membership",
+        icon: "💎",
+        path: "/mypage/membership",
+      },
       { label: "mypage.menu.point", icon: "💰", path: "/mypage/point" },
       { label: "mypage.menu.coupon", icon: "🏷️", path: "/mypage/coupons" },
-      { label: "mypage.menu.payment", icon: "💳", path: "/mypage/membership/payment-method" },
+      {
+        label: "mypage.menu.payment",
+        icon: "💳",
+        path: "/mypage/membership/payment-method",
+      },
       { label: "mypage.menu.review", icon: "⭐", path: "/mypage/reviews" },
       { label: "mypage.menu.inquiries", icon: "❓", path: "/mypage/inquiries" },
     ],
@@ -200,6 +236,88 @@ export const SIDEBAR_MENU_ITEMS = [
     label: "mypage.menu.business",
     hasSubMenu: false,
     path: "/mypage/business",
+  },
+]
+
+/** 데스크탑 사이드바 */
+export const SIDEBAR_SECTIONS: {
+  title: string
+  items: { id: string; label: string; path: string }[]
+}[] = [
+  {
+    title: "mypage.section.shopping",
+    items: [
+      { id: "order", label: "mypage.menu.order", path: "/mypage/order/list" },
+      {
+        id: "legacy-order",
+        label: "mypage.menu.orderLegacy",
+        path: "/mypage/order/legacy",
+      },
+      { id: "return", label: "mypage.menu.exchange", path: "/mypage/exchange" },
+      {
+        id: "download",
+        label: "mypage.menu.download",
+        path: "/mypage/download",
+      },
+      { id: "wishlist", label: "mypage.menu.wish", path: "/mypage/wish" },
+      { id: "frequent", label: "mypage.menu.rebuy", path: "/mypage/rebuy" },
+      { id: "recent", label: "mypage.menu.recent", path: "/mypage/recent" },
+    ],
+  },
+  {
+    title: "mypage.section.benefits",
+    items: [
+      {
+        id: "membership",
+        label: "mypage.menu.membership",
+        path: "/mypage/membership",
+      },
+      { id: "point", label: "mypage.menu.point", path: "/mypage/point" },
+      { id: "coupon", label: "mypage.menu.coupon", path: "/mypage/coupons" },
+      {
+        id: "payment",
+        label: "mypage.menu.payment",
+        path: "/mypage/membership/payment-method",
+      },
+      { id: "review", label: "mypage.menu.review", path: "/mypage/reviews" },
+      // {
+      //   id: "inquiries",
+      //   label: "mypage.menu.inquiries",
+      //   path: "/mypage/inquiries",
+      // },
+    ],
+  },
+  {
+    title: "mypage.section.accountManagement",
+    items: [
+      {
+        id: "account-profile",
+        label: "mypage.menu.profile",
+        path: "/mypage/account/profile",
+      },
+      // 비밀번호 변경은 회원정보 수정 페이지의 계정 정보 카드에서 진입
+      {
+        id: "account-cafe24",
+        label: "mypage.menu.cafe24",
+        path: "/mypage/account/cafe24",
+      },
+      // TODO: 맞춤 기능 출시되면 주석 해제
+      // {
+      //   id: "shopSettings",
+      //   label: "mypage.menu.shopSetting",
+      //   path: "/mypage/shop-setting",
+      // },
+      {
+        id: "business",
+        label: "mypage.menu.business",
+        path: "/mypage/business",
+      },
+      {
+        id: "account-withdraw",
+        label: "mypage.menu.withdraw",
+        path: "/mypage/account/withdraw",
+      },
+    ],
   },
 ]
 

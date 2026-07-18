@@ -1,22 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-export class InvoiceSummaryDto {
-  @ApiProperty()
-  id: string;
-
-  @ApiProperty()
-  invoiceNumber: string;
-
-  @ApiProperty({ enum: ['issued', 'printed', 'shipped', 'canceled'] })
-  status: string;
-
-  @ApiProperty({ nullable: true })
-  carrierCode: string | null;
-
-  @ApiProperty({ enum: ['goodsflow', 'hanjin', 'direct', 'self'] })
-  issueMethod: string;
-}
-
 export class FulfillmentOrderItemDto {
   @ApiProperty({ description: 'Fulfillment Order Item ID' })
   id: string;
@@ -45,6 +28,9 @@ export class FulfillmentOrderItemDto {
   @ApiProperty({ description: '출고 수량' })
   shippedQty: number;
 
+  @ApiProperty({ description: '취소 정산 수량' })
+  canceledQty: number;
+
   @ApiProperty({ description: 'FOI 상태 (pending/shipped/approved/rejected/partial 등)' })
   status: string;
 
@@ -62,8 +48,11 @@ export class ReservationSummaryDto {
   @ApiProperty()
   id: string;
 
-  @ApiProperty({ nullable: true })
-  fulfillmentOrderItemId: string | null;
+  @ApiProperty({ nullable: true, required: false })
+  fulfillmentOrderItemId?: string | null;
+
+  @ApiProperty({ nullable: true, required: false })
+  shipmentLineId?: string | null;
 
   @ApiProperty()
   skuId: string;
@@ -76,34 +65,87 @@ export class ReservationSummaryDto {
 
   @ApiProperty()
   status: string;
+
+  @ApiProperty({ nullable: true, required: false })
+  requestedAt?: Date | null;
 }
 
-export class ShipmentSummaryDto {
+export class FulfillmentV2ProgressItemDto {
   @ApiProperty()
   id: string;
 
   @ApiProperty()
-  trackingNo: string;
+  qty: number;
 
   @ApiProperty()
-  carrier: string;
+  shippedQty: number;
+
+  @ApiProperty()
+  canceledQty: number;
+
+  @ApiProperty()
+  outstandingQty: number;
+
+  @ApiProperty()
+  confirmedReservedQty: number;
+
+  @ApiProperty()
+  activeLineQty: number;
+
+  @ApiProperty()
+  processing: boolean;
+
+  @ApiProperty()
+  recoveryRequired: boolean;
+
+  @ApiProperty()
+  status: string;
+}
+
+export class FulfillmentV2ProgressDto {
+  @ApiProperty()
+  status: string;
+
+  @ApiProperty()
+  totalQty: number;
+
+  @ApiProperty()
+  shippedQty: number;
+
+  @ApiProperty()
+  canceledQty: number;
+
+  @ApiProperty()
+  outstandingQty: number;
+
+  @ApiProperty()
+  confirmedReservedQty: number;
+
+  @ApiProperty({ type: [FulfillmentV2ProgressItemDto] })
+  items: FulfillmentV2ProgressItemDto[];
+}
+
+export class FulfillmentV2ShipmentSummaryDto {
+  @ApiProperty()
+  id: string;
 
   @ApiProperty()
   status: string;
 
-  @ApiProperty({ nullable: true })
-  eta: Date | null;
-
-  @ApiProperty({ nullable: true })
-  invoiceUrl: string | null;
-}
-
-export class BatchSummaryDto {
   @ApiProperty()
-  id: string;
+  manifestVersion: number;
 
   @ApiProperty()
-  batchNumber: string;
+  reservationVersion: number;
+
+  @ApiProperty({ nullable: true })
+  shippingProfileId: string | null;
+
+  @ApiProperty()
+  qty: number;
+
+  @ApiProperty()
+  reservedQty: number;
 }
 
 export class FulfillmentOrderResponseDto {
@@ -189,15 +231,6 @@ export class FulfillmentOrderResponseDto {
   @ApiProperty()
   updatedAt: Date;
 
-  @ApiProperty({ type: InvoiceSummaryDto, nullable: true })
-  invoice: InvoiceSummaryDto | null;
-
-  @ApiProperty({ type: ShipmentSummaryDto, nullable: true, required: false })
-  shipment?: ShipmentSummaryDto | null;
-
-  @ApiProperty({ type: BatchSummaryDto, nullable: true, required: false })
-  batch?: BatchSummaryDto | null;
-
   @ApiProperty({
     description: 'FOI 라인 (상세 조회 시에만 포함)',
     type: [FulfillmentOrderItemDto],
@@ -217,6 +250,52 @@ export class FulfillmentOrderResponseDto {
 
   @ApiProperty({ description: '관리자 액션 차단 사유', type: [String], required: false })
   blockedReasons?: string[];
+
+  @ApiProperty({ description: 'V2 demand-settlement progress', type: FulfillmentV2ProgressDto, required: false })
+  progress?: FulfillmentV2ProgressDto;
+
+  @ApiProperty({
+    description: 'V2 shipment 목록. 단일 current shipment를 가정하지 않는다.',
+    type: [FulfillmentV2ShipmentSummaryDto],
+    required: false,
+  })
+  shipments?: FulfillmentV2ShipmentSummaryDto[];
+}
+
+/** V2 read contract deliberately has no singular `shipment` or `invoice`. */
+export class FulfillmentOrderV2ResponseDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty({ nullable: true })
+  salesOrderId: string | null;
+
+  @ApiProperty({ nullable: true })
+  warehouseId: string | null;
+
+  @ApiProperty()
+  status: string;
+
+  @ApiProperty()
+  totalItems: number;
+
+  @ApiProperty()
+  totalQty: number;
+
+  @ApiProperty()
+  totalReservedQty: number;
+
+  @ApiProperty({ type: FulfillmentV2ProgressDto })
+  progress: FulfillmentV2ProgressDto;
+
+  @ApiProperty({ type: [FulfillmentV2ShipmentSummaryDto] })
+  shipments: FulfillmentV2ShipmentSummaryDto[];
+
+  @ApiProperty({ type: [FulfillmentOrderItemDto] })
+  items: FulfillmentOrderItemDto[];
+
+  @ApiProperty({ type: [ReservationSummaryDto] })
+  reservations: ReservationSummaryDto[];
 }
 
 export class FulfillmentOrderListResponseDto {

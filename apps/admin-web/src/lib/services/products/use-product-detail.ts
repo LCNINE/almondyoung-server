@@ -35,6 +35,8 @@ export type ProductDetailView = {
   isOverseas: boolean | null;
   hideMembershipPriceForNonMembers: boolean | null;
   isVisibleToMembersOnly: boolean | null;
+  /** 멤버십 전용 구매 여부 — 비회원·일반회원에게 품절로 표시. 노출 제한 아님. */
+  requiresMembership: boolean | null;
   /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly: boolean | null;
   fulfillmentKind: 'physical' | 'digital' | null;
@@ -71,6 +73,7 @@ function fromMaster(master: ProductMasterDetail): ProductDetailView {
     hideMembershipPriceForNonMembers:
       master.hideMembershipPriceForNonMembers ?? master.isMembershipOnly,
     isVisibleToMembersOnly: master.isVisibleToMembersOnly ?? false,
+    requiresMembership: master.purchaseConstraint?.requiresMembership ?? false,
     isMembershipOnly:
       master.hideMembershipPriceForNonMembers ?? master.isMembershipOnly,
     fulfillmentKind: master.fulfillmentKind ?? null,
@@ -102,6 +105,7 @@ function fromVersion(detail: MasterVersionDetailDto): ProductDetailView {
     hideMembershipPriceForNonMembers:
       detail.hideMembershipPriceForNonMembers ?? detail.isMembershipOnly,
     isVisibleToMembersOnly: detail.isVisibleToMembersOnly ?? false,
+    requiresMembership: detail.purchaseConstraint?.requiresMembership ?? false,
     isMembershipOnly:
       detail.hideMembershipPriceForNonMembers ?? detail.isMembershipOnly,
     fulfillmentKind: detail.fulfillmentKind ?? null,

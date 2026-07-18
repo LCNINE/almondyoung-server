@@ -1,4 +1,4 @@
-import type { VariantDto } from '@/lib/types/dto/products';
+import type { PricingRuleInput, VariantDto } from '@/lib/types/dto/products';
 
 export type PricingVariant = {
   id: string;
@@ -52,4 +52,16 @@ export function getValidPricingVariantId(
 ): string {
   if (!variantId) return '';
   return variants.some((variant) => variant.id === variantId) ? variantId : '';
+}
+
+/**
+ * 옵션값/옵션조합 범위의 룰은 적용 대상(scopeTargetIds)이 1개 이상 있어야 저장된다.
+ * 하나라도 대상이 비어 있으면 true — 저장을 막고 사용자에게 안내하기 위한 가드.
+ */
+export function hasRuleMissingScopeTarget(rules: PricingRuleInput[]): boolean {
+  return rules.some(
+    (rule) =>
+      (rule.scopeType === 'with_option' || rule.scopeType === 'variants') &&
+      (rule.scopeTargetIds === undefined || rule.scopeTargetIds.length === 0)
+  );
 }

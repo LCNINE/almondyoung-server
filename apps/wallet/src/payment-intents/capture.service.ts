@@ -74,6 +74,9 @@ export class CaptureService {
             payableAmount: totalCaptured,
             currency: authorizeCharges[0].currency,
             occurredAt: now,
+            // 무통장(가상계좌) 웹훅 자동확인 등 비동기 캡처에서도 후속 도메인이 결제 종류를
+            // 식별할 수 있도록 intent.metadata 를 전파한다 (membership 컨슈머가 type=MEMBERSHIP_FEE 로 필터).
+            extra: { metadata: intentInfo.metadata ?? null },
           }),
         },
       });
@@ -196,14 +199,16 @@ export class CaptureService {
     }
   }
 
-  private async getIntentInfo(intentId: string): Promise<{ userId: string | null } | null> {
+  private async getIntentInfo(
+    intentId: string,
+  ): Promise<{ userId: string | null; metadata: Record<string, unknown> } | null> {
     const rows = await this.dbService.db
-      .select({ userId: paymentIntents.userId })
+      .select({ userId: paymentIntents.userId, metadata: paymentIntents.metadata })
       .from(paymentIntents)
       .where(eq(paymentIntents.id, intentId))
       .limit(1);
     const row = rows[0];
     if (!row) return null;
-    return { userId: row.userId };
+    return { userId: row.userId, metadata: row.metadata };
   }
 }

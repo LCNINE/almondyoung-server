@@ -34,6 +34,10 @@ const REFUND_EVENT_TYPES = new Set([
   'gateway.charge.refunded',
 ]);
 
+// 무통장 환불 '신청'(REQUESTED) — 주문에 refund_status marker 를 달아/떼어 WMS 수집/발송 게이트를 제어.
+const REFUND_REQUESTED_EVENT_TYPES = new Set(['payment.intent.refund_requested']);
+const REFUND_REQUEST_CLEARED_EVENT_TYPES = new Set(['payment.intent.refund_request_rejected']);
+
 export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
   const body = req.body as Record<string, unknown>;
 
@@ -81,6 +85,10 @@ export const POST = async (req: MedusaRequest, res: MedusaResponse) => {
       await handleCancelProjection(req.scope, intentId, messageId, logger);
     } else if (REFUND_EVENT_TYPES.has(effectiveEventType)) {
       await handleRefundProjection(req.scope, intentId, amount, messageId, channelOrderId, logger);
+    } else if (REFUND_REQUESTED_EVENT_TYPES.has(effectiveEventType)) {
+      await handleRefundRequestFlag(req.scope, intentId, 'requested', messageId, logger);
+    } else if (REFUND_REQUEST_CLEARED_EVENT_TYPES.has(effectiveEventType)) {
+      await handleRefundRequestFlag(req.scope, intentId, null, messageId, logger);
     } else {
       logger.debug(`[payment-events] Unhandled eventType=${effectiveEventType}, intentId=${intentId}`);
     }
@@ -373,6 +381,59 @@ export async function handleRefundProjection(
       );
     }
   }
+}
+
+/**
+ * 무통장 환불 '신청'(REQUESTED)/'거절' 을 주문 metadata.refund_status 로 투영한다.
+ *
+ * 목적: 고객이 환불을 신청한(아직 승인 전) 무통장 주문이 WMS 수집/발송 파이프라인에 태워져
+ * 실수로 출고되는 것을 막는다. channel-adapter 의 수집 게이트(medusa-order.provider)가 이
+ * marker 를 보고 신규 수집을 제외한다. bank_transfer_status='awaiting_deposit' 와 동일한 패턴.
+ *
+ *  - value='requested' (신청): marker 설정 → 수집 제외
+ *  - value=null       (거절): marker 해제 → 다시 수집 대상
+ * 승인 시엔 별도 marker 해제가 없다 — 환불이 실행돼 주문은 계속 제외 상태로 남는 것이 맞다.
+ *
+ * intentId → order 역추적은 resolveOrderIdForIntent 재사용. 주문이 아직 없으면(선생성 전) no-op.
+ * 멱등: 목표 상태와 같으면 skip.
+ */
+export async function handleRefundRequestFlag(
+  scope: any,
+  intentId: string,
+  value: 'requested' | null,
+  messageId: string,
+  logger: { info: Function; warn: Function; debug: Function; error: Function },
+) {
+  const orderId = await resolveOrderIdForIntent(scope, intentId);
+  if (!orderId) {
+    // 무통장 환불신청은 CAPTURED intent 에서만 가능 = 이미 주문 존재가 보장되지만, 방어적으로
+    // 주문이 없으면(멤버십/빌링 intent 등 Medusa 주문 없음) terminal no-op → 200, 재시도 안 함.
+    logger.info(
+      `[payment-events] handleRefundRequestFlag: no order for intentId=${intentId}, skipping (value=${value}, messageId=${messageId})`,
+    );
+    return;
+  }
+  const orderModule = scope.resolve(Modules.ORDER);
+  const order = (await orderModule.retrieveOrder(orderId, { select: ['id', 'metadata'] })) as
+    | { id: string; metadata?: Record<string, unknown> | null }
+    | null;
+  if (!order) {
+    throw new Error(
+      `[payment-events] handleRefundRequestFlag: retrieveOrder returned empty for order ${orderId} intentId=${intentId}`,
+    );
+  }
+  const meta = (order.metadata as Record<string, unknown>) ?? {};
+  const current = (meta.refund_status as string | null | undefined) ?? null;
+  if (current === value) {
+    logger.debug(
+      `[payment-events] handleRefundRequestFlag: order ${orderId} already refund_status=${value}, skipping (intentId=${intentId})`,
+    );
+    return;
+  }
+  await orderModule.updateOrders([{ id: orderId, metadata: { ...meta, refund_status: value } }]);
+  logger.info(
+    `[payment-events] handleRefundRequestFlag: order ${orderId} refund_status=${value} (intentId=${intentId})`,
+  );
 }
 
 /**

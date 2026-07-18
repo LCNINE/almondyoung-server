@@ -5,6 +5,9 @@ import { getBackendAuthCookie } from '@/lib/auth/session-cookies';
 import { buildReturnUrl } from '@/lib/return-url';
 import { createWebLogger } from '@packages/web-observability';
 
+// 쿠키 기반 + 동적 승인 처리라 CloudFront/Next 캐시 금지 (stale HTML/청크 방지).
+export const dynamic = 'force-dynamic';
+
 interface Props {
   params: Promise<{ intentId: string }>;
   searchParams: Promise<{ paymentKey?: string; orderId?: string; amount?: string; region?: string }>;
@@ -65,15 +68,25 @@ export default async function TossCompletePage({ params, searchParams }: Props) 
         status: 'succeeded',
       });
       if (result.metadata?.billingMode === 'recurring') {
-        const billingMethods = await getBillingMethods(await getBackendAuthCookie());
-        if (billingMethods.length === 0) {
-          logger.info('wallet.toss_complete.billing_setup_required', {
-            attributes: {
-              intent_id: intentId,
-              order_id: orderId,
-            },
+        // 승인은 이미 끝났다. billing-method 조회 실패가 결제 성공을 뒤집으면 안 되므로
+        // 조회 오류는 삼키고 successUrl 로 진행한다 (billing-setup 은 재진입에서 처리 가능).
+        try {
+          const billingMethods = await getBillingMethods(await getBackendAuthCookie());
+          if (billingMethods.length === 0) {
+            logger.info('wallet.toss_complete.billing_setup_required', {
+              attributes: {
+                intent_id: intentId,
+                order_id: orderId,
+              },
+            });
+            redirect(`/pay/${intentId}/billing-setup?provider=TOSS&returnUrl=${encodeURIComponent(successUrl)}`);
+          }
+        } catch (e) {
+          if (isRedirectError(e)) throw e;
+          logger.error('wallet.toss_complete.billing_methods_lookup_failed', {
+            error: e,
+            attributes: { intent_id: intentId, order_id: orderId },
           });
-          redirect(`/pay/${intentId}/billing-setup?provider=TOSS&returnUrl=${encodeURIComponent(successUrl)}`);
         }
       }
       redirect(successUrl);

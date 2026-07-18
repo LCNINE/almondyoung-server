@@ -17,9 +17,14 @@ import {
   CORE_ORDER_STREAM,
   CoreOrderEvents,
   SalesOrderCancelledPayload,
+  SHIPMENT_STREAM,
+  ShipmentEvents,
+  FULFILLMENT_V2_STREAM,
+  FulfillmentV2Events,
 } from '@packages/event-contracts/streams';
 import { wmsTables, wmsSchema } from '../../inventory/schema/inventory.schema';
-import { eq, and, lte, sql, inArray } from 'drizzle-orm';
+import { eq, and, sql, inArray } from 'drizzle-orm';
+import { FulfillmentWorkflowGate } from '../services/fulfillment-workflow-gate.service';
 
 type FulfillmentPayload =
   | FulfillmentCreatedPayload
@@ -52,6 +57,11 @@ export class OutboxDispatcherService implements OnModuleInit {
     private readonly inventoryPublisher: StreamPublisher<InventoryEvents>,
     @InjectStreamPublisher(CORE_ORDER_STREAM.topic.topic)
     private readonly coreOrderPublisher: StreamPublisher<CoreOrderEvents>,
+    @InjectStreamPublisher(SHIPMENT_STREAM.topic.topic)
+    private readonly shipmentPublisher: StreamPublisher<ShipmentEvents>,
+    @InjectStreamPublisher(FULFILLMENT_V2_STREAM.topic.topic)
+    private readonly fulfillmentV2Publisher: StreamPublisher<FulfillmentV2Events>,
+    private readonly workflowGate: FulfillmentWorkflowGate,
   ) {}
 
   onModuleInit() {
@@ -70,10 +80,20 @@ export class OutboxDispatcherService implements OnModuleInit {
     try {
       const batchSize = 100;
       let processedCount = 0;
+      const fulfillmentEventFilter = this.workflowGate.shouldDispatchFulfillmentEvents()
+        ? sql``
+        : sql`
+            AND LOWER(aggregate_type) NOT IN ('fulfillment', 'fulfillment_order', 'fulfillmentorder', 'shipment')
+            AND LOWER(event_type) NOT LIKE 'fulfillment%'
+            AND LOWER(event_type) NOT LIKE 'shipment%'
+            AND topic IS DISTINCT FROM ${SHIPMENT_STREAM.topic.topic}
+            AND topic IS DISTINCT FROM ${FULFILLMENT_V2_STREAM.topic.topic}
+          `;
 
       const events = await this.db.db.transaction(async (tx) => {
         const pendingEvents = await tx.execute<{
           id: string;
+          topic: string | null;
           event_type: string;
           aggregate_type: string;
           aggregate_id: string;
@@ -83,6 +103,7 @@ export class OutboxDispatcherService implements OnModuleInit {
         }>(sql`
           SELECT
             id,
+            topic,
             event_type,
             aggregate_type,
             aggregate_id,
@@ -92,6 +113,7 @@ export class OutboxDispatcherService implements OnModuleInit {
           FROM ${wmsTables.outboxEvents}
           WHERE status = 'pending'
             AND next_attempt_at <= NOW()
+            ${fulfillmentEventFilter}
           ORDER BY created_at ASC
           LIMIT ${batchSize}
           FOR UPDATE SKIP LOCKED
@@ -139,6 +161,7 @@ export class OutboxDispatcherService implements OnModuleInit {
 
   private async publishEvent(event: {
     id: string;
+    topic: string | null;
     event_type: string;
     aggregate_type: string;
     aggregate_id: string;
@@ -147,39 +170,48 @@ export class OutboxDispatcherService implements OnModuleInit {
     attempts: number;
   }) {
     try {
-      if (event.aggregate_type === 'Stock' || event.aggregate_type === 'ProductSellableQuantity') {
-        await this.inventoryPublisher.publishEvent({
-          eventType: event.event_type as keyof InventoryEvents,
-          aggregateId: event.aggregate_id,
-          payload: event.payload as any,
-          metadata: { partitionKey: event.partition_key },
-        });
-      } else if (event.event_type === 'SalesOrderCancelled') {
-        // Core 아웃바운드: core.orders.events.v1 / SalesOrderCancelled
-        // (Channel Adapter → Medusa 취소 동기화에 사용)
-        await this.coreOrderPublisher.publishEvent({
-          eventType: 'SalesOrderCancelled',
-          aggregateId: event.aggregate_id,
-          payload: event.payload as unknown as SalesOrderCancelledPayload,
-          metadata: { partitionKey: event.partition_key },
-        });
-      } else if (
-        event.event_type === 'OrderCancelled' ||
-        event.event_type === 'ORDER_CANCELLED'
-      ) {
-        // 레거시 outbox 소진: 구형 payload는 OrderCancelledSchema 필수 필드(reason, cancelledBy 등)가
-        // 없어 Kafka 발행 시 검증 오류가 발생한다. Channel Adapter는 이미 core.orders.events.v1/
-        // SalesOrderCancelled 를 구독하므로 이 이벤트는 Kafka 미발행, published 처리한다.
-        this.logger.warn(
-          `레거시 취소 이벤트 건너뜀: ${event.id} (${event.event_type}) — Kafka 미발행, published 처리`,
-        );
-      } else {
+      if (event.topic === FULFILLMENT_STREAM.topic.topic) {
         await this.fulfillmentPublisher.publishEvent({
           eventType: event.event_type as keyof FulfillmentEvents,
           aggregateId: event.aggregate_id,
           payload: event.payload as unknown as FulfillmentPayload,
           metadata: { partitionKey: event.partition_key },
         });
+      } else if (event.topic === SHIPMENT_STREAM.topic.topic) {
+        await this.shipmentPublisher.publishEvent({
+          eventType: event.event_type as keyof ShipmentEvents,
+          aggregateId: event.aggregate_id,
+          payload: event.payload as any,
+          metadata: { partitionKey: event.partition_key },
+        });
+      } else if (event.topic === FULFILLMENT_V2_STREAM.topic.topic) {
+        await this.fulfillmentV2Publisher.publishEvent({
+          eventType: event.event_type as keyof FulfillmentV2Events,
+          aggregateId: event.aggregate_id,
+          payload: event.payload as any,
+          metadata: { partitionKey: event.partition_key },
+        });
+      } else if (event.topic === INVENTORY_STREAM.topic.topic) {
+        await this.inventoryPublisher.publishEvent({
+          eventType: event.event_type as keyof InventoryEvents,
+          aggregateId: event.aggregate_id,
+          payload: event.payload as any,
+          metadata: { partitionKey: event.partition_key },
+        });
+      } else if (event.topic === CORE_ORDER_STREAM.topic.topic) {
+        // Core 아웃바운드: core.orders.events.v1 / SalesOrderCancelled
+        // (Channel Adapter → Medusa 취소 동기화에 사용)
+        await this.coreOrderPublisher.publishEvent({
+          eventType: event.event_type as keyof CoreOrderEvents,
+          aggregateId: event.aggregate_id,
+          payload: event.payload as unknown as SalesOrderCancelledPayload,
+          metadata: { partitionKey: event.partition_key },
+        });
+      } else {
+        // topicless(V1 expand 호환) 폴백 라우팅은 Task 25 에서 제거됐다 — enqueue 가 topic 을
+        // 컴파일 타임에 강제하므로 새 row 는 여기 올 수 없고, 온다면 producer 설정 오류다.
+        // 재시도 소진 후 'failed' 로 남아 관측 가능하다.
+        throw new Error(`Unknown outbox topic: ${event.topic === null ? '(topicless legacy row)' : event.topic}`);
       }
 
       await this.db.db

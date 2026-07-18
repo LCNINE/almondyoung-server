@@ -25,7 +25,7 @@ export default function BenefitOverviewSection({
         </Badge>
         <h2 className="text-center text-2xl font-bold md:text-3xl">
           <span className="text-white">{t("overviewTitle1")}</span>
-          <span className="text-[#f29219]">{t("overviewTitle2")}</span>
+          <span className="text-[#ff6600]">{t("overviewTitle2")}</span>
         </h2>
         <p className="text-center text-sm text-white/60">
           {t("overviewHint1")}

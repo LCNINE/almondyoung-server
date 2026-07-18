@@ -255,7 +255,7 @@ export function Notice() {
               key={item.id}
               type="button"
               onClick={() => setSelectedNoticeId(item.id)}
-              className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:text-[#f29219]"
+              className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:text-[#ff6600]"
             >
               <div className="flex-1 min-w-0">
                 <div className="mb-1">

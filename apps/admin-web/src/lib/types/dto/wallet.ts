@@ -9,6 +9,8 @@ export interface PaymentIntentListItem {
   refundedAmount?: number;
   userId: string | null;
   paymentMethodType: string | null;
+  /** 토스 가상계좌 발급 건 여부. BANK_TRANSFER 일 때만 의미 있음 (구 직접입금 건과 구분). */
+  tossVirtualAccount: boolean;
   createdAt: string;
 }
 
@@ -21,6 +23,8 @@ export interface PaymentIntentDetail {
   refundedAmount?: number;
   userId: string | null;
   paymentMethodId: string | null;
+  /** 토스 가상계좌 발급 건 여부. BANK_TRANSFER 일 때만 의미 있음 (구 직접입금 건과 구분). */
+  tossVirtualAccount: boolean;
   clientSecret: string;
   returnUrl: string | null;
   metadata: Record<string, unknown>;
@@ -129,6 +133,25 @@ export interface PendingBankTransferDto {
   bankName: string | null;
   accountNumber: string | null;
   accountHolder: string | null;
+  /** 토스 가상계좌 발급 건 여부 (false = 구 국민은행 직접입금 건) */
+  tossVirtualAccount: boolean;
+  createdAt: string;
+}
+
+export interface RefundRequestDto {
+  id: string;
+  intentId: string;
+  chargeId: string;
+  userId: string | null;
+  amount: number;
+  currency: string;
+  bankCode: string;
+  bankName: string | null;
+  accountNumber: string;
+  holderName: string;
+  status: 'REQUESTED' | 'APPROVED' | 'REJECTED' | 'CANCELED';
+  reason: string | null;
+  adminNote: string | null;
   createdAt: string;
 }
 
@@ -176,6 +199,8 @@ export interface PaymentIntentListQuery {
   page?: number;
   limit?: number;
   q?: string;
+  /** 구매자 이름 검색을 user-service에서 해석한 userId 목록(콤마 구분) */
+  userIds?: string;
   status?: string;
   paymentMethodType?: string;
   dateFrom?: string;
@@ -349,4 +374,26 @@ export interface AdminRecurringBillingListQuery {
   transactionId?: string;
   paymentIntentId?: string;
   providerType?: 'CMS_BATCH' | 'TOSS_BILLING' | 'NICEPAY_BILLING';
+}
+
+// ── 현금영수증 (관리자) ──────────────────────────────────────────────────────
+export type AdminCashReceiptType = '소득공제' | '지출증빙';
+
+export interface AdminCashReceiptDto {
+  id: string;
+  intentId: string;
+  type: AdminCashReceiptType;
+  status: 'ISSUED' | 'CANCELED' | 'FAILED';
+  amount: number;
+  currency: string;
+  receiptUrl: string | null;
+  issueNumber: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+}
+
+export interface IssueCashReceiptPayload {
+  intentId: string;
+  type: AdminCashReceiptType;
+  customerIdentityNumber: string;
 }

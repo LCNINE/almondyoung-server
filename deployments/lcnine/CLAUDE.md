@@ -19,7 +19,7 @@
 `platform/infra/shared.ts`
 
 - **VPC** (`sst.aws.Vpc`, bastion 상시 ON — `sst tunnel` 로 IdP DB 등 내부 자원 시딩/점검용. t4g.nano 월 ~$3).
-- **Redpanda 1-노드 Kafka**: EC2 `t4g.micro` (ARM AL2023) + EBS gp3 10GB(영속). Cloud Map A 레코드 `Redpanda.<stage>.lcnine-platform.sst:9092` 로 VPC 내부 DNS 공개. PLAINTEXT.
+- **Redpanda 1-노드 Kafka**: EC2 `t4g.micro` (ARM AL2023, private subnet — 퍼블릭 IP 비용 제거, 이미지 pull 은 NAT 경유) + EBS gp3 10GB(영속). Cloud Map A 레코드 `Redpanda.<stage>.lcnine-platform.sst:9092` 로 VPC 내부 DNS 공개. PLAINTEXT.
   - Fargate/EFS 는 Seastar AIO 미지원이라 EC2+EBS 선택. 단일 노드라 인스턴스/AZ 장애 시 짧은 다운타임 — application 레이어 transactional outbox 가 재시도로 흡수.
   - bootstrap: `redpanda.cloud-init.sh` (EBS 포맷/마운트 + Docker + systemd unit, `__REDPANDA_ADVERTISE_DNS__` 치환).
   - 인스턴스 라이프사이클 보강 사항(systemd bootstrap 분리 / snapshot 경유 교체 / AMI pin) 은 [`platform/REDPANDA_HARDENING.md`](platform/REDPANDA_HARDENING.md) 참조.
@@ -54,8 +54,9 @@ SSM publish:
 `services/infra/shared.ts`
 
 - platform VPC + Kafka 를 SSM 으로 가져옴.
-- 자체 소유: `Postgres("Db")`, `Redis("Redis")` (ElastiCache Serverless), **wildcard ALB** (`*.dev.lcnine-dev.com` 또는 `*.almondyoung-next.com`).
-- 한 Postgres 인스턴스에 서비스별 논리 DB(`dbUrl("analytics")` 등)로 분리. Redis 도 DB 인덱스로 분리.
+- 자체 소유: `Postgres("Db")` (db.t4g.small), **wildcard ALB** (`*.dev.lcnine-dev.com` 또는 `*.almondyoung-next.com`).
+- 한 Postgres 인스턴스에 서비스별 논리 DB(`dbUrl("analytics")` 등)로 분리.
+- Redis: ElastiCache 제거됨 (비용). 유일 컨슈머였던 Medusa 는 태스크 내 valkey 사이드카(localhost)를 쓴다.
 - `createService()` 헬퍼: ECS Fargate Service + ALB 룰. `transform.listenerRule` 로 hostHeader 조건을 직접 덮어써 wildcard ALB 한 대에 host 기반 멀티플렉싱.
 
 `services/infra/services.ts` — 배포 서비스 목록:
@@ -70,8 +71,8 @@ SSM publish:
 | UgcService | `ugc.…` | 3030 | |
 | Wallet | `wallet.…` | 3000 | Toss/Nicepay, Medusa 결제 webhook |
 | FileService | `file.…` | 3000 | S3 (`almondyoung-demo`) |
-| Search | `search.…` | 3000 | AWS OpenSearch Service Domain (VPC, 단일 AZ, t3.small.search) — `services/infra/shared.ts` 에서 owned |
-| Medusa | `medusa.…` | 9000 | DB+Redis link, 600s grace, IdP `AUTH_SECRET` 으로 JWT verify |
+| Search | `search.…` | 3000 | 백엔드는 Railway OpenSearch (AWS OpenSearch 도메인은 비용절감으로 제거) |
+| Medusa | `medusa.…` | 9000 | DB link + valkey 사이드카(redis://localhost), 600s grace, IdP `AUTH_SECRET` 으로 JWT verify |
 | AdminWeb | `admin.…` | — | Next.js / OpenNext / CloudFront |
 | WalletWeb | `wallet-web.…` | — | Next.js / OpenNext / CloudFront |
 | Storefront | `www.…` | — | Next.js / OpenNext / CloudFront. Medusa STORE_CORS에 등록된 슬롯 |

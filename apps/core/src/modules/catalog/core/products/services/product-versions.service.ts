@@ -2,7 +2,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { DbService, InjectDb } from '@app/db';
 import { NotFoundError } from '@app/shared';
 import { InjectStreamPublisher, OutboxPublisher, StreamPublisher } from '@app/events';
-import { ProductEvents, PRODUCT_STREAM, ProductSnapshot } from '@packages/event-contracts';
+import { ProductEvents, PRODUCT_STREAM, type ProductSnapshot } from '@packages/event-contracts';
 import { PricingValidatorService } from '../../pricing/pricing-validator.service';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
 import { ProductReadAssembler } from '../assemblers/product-read.assembler';
@@ -19,12 +19,12 @@ import {
 import {
   type PimSchema,
   productMasters,
-  productMasterCategories,
   productCategories,
+  productMasterCategories,
   productMasterVersions,
-  productMasterOptionGroups,
   productOptionGroups,
   productOptionValues,
+  productMasterOptionGroups,
   productMasterVariants,
   productMasterPricingRules,
   productOptionGroupDisplays,
@@ -41,7 +41,8 @@ import {
 import { productMatchings, productVariantSkuLinks } from '../../../../inventory/schema/inventory.schema';
 import { productVariantDigitalAssetLinks } from '../../../../library/schema/library.schema';
 import { ProductSellableQuantityService } from '../../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
-import { eq, and, sql, max as drizzleMax, isNull, inArray, asc, desc } from 'drizzle-orm';
+import { ProductPurchaseConstraintsService } from './product-purchase-constraints.service';
+import { eq, and, sql, max as drizzleMax, isNull, inArray, asc, desc, ilike, count } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 import { deleteEntitiesIfUnmapped } from '../../version-isolation/delete-if-unmapped';
 
@@ -60,6 +61,7 @@ export class ProductVersionsService {
     private readonly priceCacheService: VariantPriceCacheService,
     private readonly variantAssetLinkService: VariantAssetLinkService,
     private readonly productSellableQuantity: ProductSellableQuantityService,
+    private readonly purchaseConstraints: ProductPurchaseConstraintsService,
   ) {}
 
   async getVersionTree(masterId: string, tx?: DbTransaction): Promise<VersionTreeNode[]> {
@@ -695,6 +697,29 @@ export class ProductVersionsService {
   }
 
   /**
+   * 멤버십 전용 구매 여부 변경 — draft 없이 active 버전을 직접 수정하고 채널에 재싱크.
+   * 값이 별도 테이블이라 updateExposurePolicy 의 단일 UPDATE 에는 얹지 못한다.
+   * lifetimeQuantityLimit 은 보존 — 이 토글이 구매수량 제한을 지우면 안 된다.
+   */
+  async updateRequiresMembership(masterId: string, requiresMembership: boolean, tx?: DbTransaction): Promise<void> {
+    return this.db.run(async (tx) => {
+      const activeVersion = await this.getActiveVersion(masterId, tx);
+      const current = await this.purchaseConstraints.getForVersion(masterId, activeVersion.id, tx);
+
+      await this.purchaseConstraints.upsertForVersion(
+        masterId,
+        activeVersion.id,
+        { requiresMembership, lifetimeQuantityLimit: current?.lifetimeQuantityLimit ?? null },
+        tx,
+      );
+
+      await this._emitActiveVersionChangedEvent(activeVersion, null, 'published', tx);
+
+      this.logger.log(`updateRequiresMembership: master=${masterId} requiresMembership=${requiresMembership}`);
+    }, tx);
+  }
+
+  /**
    * 해외직구 여부 변경 — draft 없이 active 버전을 직접 수정하고 채널에 재싱크.
    */
   async updateOverseas(masterId: string, isOverseas: boolean, tx?: DbTransaction): Promise<void> {
@@ -710,6 +735,44 @@ export class ProductVersionsService {
       await this._emitActiveVersionChangedEvent(patchedVersion, null, 'published', tx);
 
       this.logger.log(`updateOverseas: master=${masterId} isOverseas=${isOverseas}`);
+    }, tx);
+  }
+
+  /**
+   * 운영 노출 정책(멤버십가 비공개/회원 전용 노출/해외직구)을 한 번의 UPDATE + 한 번의
+   * 이벤트로 반영한다. undefined 아닌 필드만 변경. draft 없이 active 버전 직접 수정 후 채널 재싱크.
+   */
+  async updateExposurePolicy(
+    masterId: string,
+    patch: {
+      hideMembershipPriceForNonMembers?: boolean;
+      isVisibleToMembersOnly?: boolean;
+      isOverseas?: boolean;
+    },
+    tx?: DbTransaction,
+  ): Promise<void> {
+    return this.db.run(async (tx) => {
+      const activeVersion = await this.getActiveVersion(masterId, tx);
+
+      const set: Partial<typeof productMasterVersions.$inferInsert> = { updatedAt: new Date() };
+      if (patch.hideMembershipPriceForNonMembers !== undefined) {
+        set.hideMembershipPriceForNonMembers = patch.hideMembershipPriceForNonMembers;
+        set.isMembershipOnly = patch.hideMembershipPriceForNonMembers; // deprecated 컬럼 미러 (단건 경로와 동일)
+      }
+      if (patch.isVisibleToMembersOnly !== undefined) {
+        set.isVisibleToMembersOnly = patch.isVisibleToMembersOnly;
+      }
+      if (patch.isOverseas !== undefined) {
+        set.isOverseas = patch.isOverseas;
+      }
+
+      await tx.update(productMasterVersions).set(set).where(eq(productMasterVersions.id, activeVersion.id));
+
+      // 스냅샷은 _emit 내부에서 같은 tx로 UPDATE 이후의 DB 상태를 다시 조회해 조립하므로,
+      // 갱신 전 activeVersion 객체를 그대로 넘겨도 새 값이 반영된다 (단건 경로와 동일).
+      await this._emitActiveVersionChangedEvent(activeVersion, null, 'published', tx);
+
+      this.logger.log(`updateExposurePolicy: master=${masterId} patch=${JSON.stringify(patch)}`);
     }, tx);
   }
 
@@ -764,6 +827,81 @@ export class ProductVersionsService {
         page,
         limit,
       };
+    }, tx);
+  }
+
+  async getMyDraftVersions(
+    userId: string,
+    filters?: {
+      page?: number;
+      limit?: number;
+      q?: string;
+      sort?: 'updatedAt' | 'createdAt';
+      order?: 'asc' | 'desc';
+    },
+    tx?: DbTransaction,
+  ): Promise<{
+    data: Array<{
+      masterId: string;
+      versionId: string;
+      name: string;
+      thumbnail: string | null;
+      brand: string | null;
+      productType: string;
+      createdAt: Date;
+      updatedAt: Date;
+    }>;
+    total: number;
+    page: number;
+    limit: number;
+  }> {
+    const page = filters?.page ?? 1;
+    const limit = filters?.limit ?? 20;
+    const offset = (page - 1) * limit;
+
+    const sortColumn =
+      filters?.sort === 'createdAt' ? productMasterVersions.createdAt : productMasterVersions.updatedAt;
+    const orderFn = filters?.order === 'asc' ? asc : desc;
+
+    // and() 는 undefined 조건을 자동으로 무시한다.
+    const whereClause = and(
+      eq(productMasterVersions.status, 'draft'),
+      eq(productMasterVersions.draftOwnerId, userId),
+      isNull(productMasterVersions.deletedAt),
+      isNull(productMasters.deletedAt),
+      filters?.q ? ilike(productMasterVersions.name, `%${filters.q}%`) : undefined,
+    );
+
+    return this.db.run(async (tx) => {
+      const rows = await tx
+        .select({
+          masterId: productMasterVersions.masterId,
+          versionId: productMasterVersions.id,
+          name: productMasterVersions.name,
+          thumbnail: productImages.fileId,
+          brand: productMasterVersions.brand,
+          productType: productMasterVersions.productType,
+          createdAt: productMasterVersions.createdAt,
+          updatedAt: productMasterVersions.updatedAt,
+        })
+        .from(productMasterVersions)
+        .innerJoin(productMasters, eq(productMasters.id, productMasterVersions.masterId))
+        .leftJoin(
+          productImages,
+          and(eq(productImages.versionId, productMasterVersions.id), eq(productImages.isPrimary, true)),
+        )
+        .where(whereClause)
+        .orderBy(orderFn(sortColumn))
+        .limit(limit)
+        .offset(offset);
+
+      const [{ value: total }] = await tx
+        .select({ value: count() })
+        .from(productMasterVersions)
+        .innerJoin(productMasters, eq(productMasters.id, productMasterVersions.masterId))
+        .where(whereClause);
+
+      return { data: rows, total: Number(total), page, limit };
     }, tx);
   }
 
@@ -845,7 +983,7 @@ export class ProductVersionsService {
     });
 
     if (!version) {
-      throw new NotFoundError(`Version ${versionId} not found`);
+      throw new NotFoundException(`Version ${versionId} not found`);
     }
 
     const categories = await this._buildCategoryTree(masterId, versionId, tx);

@@ -374,7 +374,7 @@ export class OrderPollerOrchestrator {
           externalOrderId: item.externalOrderId,
           sourceUpdatedAt: item.sourceUpdatedAt,
           reason: COLLECTED_ORDER_MODIFICATION_NOT_ACCEPTED,
-          affectedLineIds: item.changes.items.map((line) => line.orderItemId),
+          affectedLineIds: item.changes.items.flatMap((line) => (line.orderItemId ? [line.orderItemId] : [])),
           rawOrder: {
             externalOrderId: item.externalOrderId,
             wmsOrderId: mapping[0].wmsOrderId,

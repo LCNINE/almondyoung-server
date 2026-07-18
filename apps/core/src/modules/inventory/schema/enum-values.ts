@@ -4,7 +4,6 @@ import {
   eventStatusEnum,
   stockStateEnum,
   transitionTypeEnum,
-  eventTypeEnum,
   warehouseTypeEnum,
   reservationStatusEnum,
   taskStatusEnum,
@@ -37,8 +36,6 @@ import {
   outboxStatusEnum,
   pickingMethodEnum,
   batchStatusEnum,
-  invoiceMethodEnum,
-  invoiceStatusEnum,
   auditEventTypeEnum,
   auditSeverityEnum,
 } from './inventory.schema';
@@ -57,9 +54,6 @@ export type StockStateEnum = (typeof stockStateValues)[number];
 
 export const transitionTypeValues = transitionTypeEnum.enumValues;
 export type TransitionTypeEnum = (typeof transitionTypeValues)[number];
-
-export const eventTypeValues = eventTypeEnum.enumValues;
-export type EventTypeEnum = (typeof eventTypeValues)[number];
 
 export const warehouseTypeValues = warehouseTypeEnum.enumValues;
 export type WarehouseTypeEnum = (typeof warehouseTypeValues)[number];
@@ -156,12 +150,6 @@ export type PickingMethodEnum = (typeof pickingMethodValues)[number];
 
 export const batchStatusValues = batchStatusEnum.enumValues;
 export type BatchStatusEnum = (typeof batchStatusValues)[number];
-
-export const invoiceMethodValues = invoiceMethodEnum.enumValues;
-export type InvoiceMethodEnum = (typeof invoiceMethodValues)[number];
-
-export const invoiceStatusValues = invoiceStatusEnum.enumValues;
-export type InvoiceStatusEnum = (typeof invoiceStatusValues)[number];
 
 export const auditEventTypeValues = auditEventTypeEnum.enumValues;
 export type AuditEventTypeEnum = (typeof auditEventTypeValues)[number];

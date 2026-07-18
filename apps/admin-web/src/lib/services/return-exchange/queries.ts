@@ -1,7 +1,10 @@
 'use client';
 
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { returnExchangeApi, type ReturnExchangeListQuery } from '@/lib/api/domains/return-exchange';
+import {
+  returnExchangeApi,
+  type ReturnExchangeListQuery,
+} from '@/lib/api/domains/return-exchange';
 import { returnExchangeQueryKeys } from './query-keys';
 
 export const useReturnRequests = (query: ReturnExchangeListQuery) => {
@@ -10,6 +13,24 @@ export const useReturnRequests = (query: ReturnExchangeListQuery) => {
     queryFn: () => returnExchangeApi.listReturnRequests(query),
     staleTime: 30 * 1000,
     placeholderData: keepPreviousData,
+  });
+};
+
+export const useReturnEligibility = (orderId: string) => {
+  return useQuery({
+    queryKey: returnExchangeQueryKeys.returnEligibility(orderId),
+    queryFn: () => returnExchangeApi.getReturnEligibility(orderId),
+    enabled: !!orderId,
+  });
+};
+
+export const useChannelOrderReturnEligibility = (channelOrderId: string) => {
+  return useQuery({
+    queryKey:
+      returnExchangeQueryKeys.channelOrderReturnEligibility(channelOrderId),
+    queryFn: () =>
+      returnExchangeApi.getReturnEligibilityByChannelOrder(channelOrderId),
+    enabled: !!channelOrderId,
   });
 };
 

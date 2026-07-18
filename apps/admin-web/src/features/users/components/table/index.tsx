@@ -9,6 +9,7 @@ import { useUserTableQuery } from '@/hooks/table/query/use-user-table-query';
 import { DataTable } from '@/components/data-table';
 import { Button } from '@/components/ui/button';
 import { BulkRoleModal } from '../bulk-role-modal';
+import { CreateAdminDialog } from '../create-admin-dialog';
 
 const PAGE_SIZE = 20;
 
@@ -20,6 +21,7 @@ export function UserTable() {
   const filters = useUserTableFilters();
 
   const [modalOpen, setModalOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const { table } = useDataTable({
     data: data?.data ?? [],
@@ -39,6 +41,11 @@ export function UserTable() {
 
   return (
     <div>
+      <div className="flex justify-end p-2">
+        <Button size="sm" onClick={() => setCreateOpen(true)}>
+          관리자 추가
+        </Button>
+      </div>
       {selectedUserIds.length > 0 && (
         <div className="flex items-center gap-2 p-3 border-b bg-muted/50">
           <span className="text-sm text-muted-foreground">
@@ -78,6 +85,7 @@ export function UserTable() {
         selectedUserIds={selectedUserIds}
         onSuccess={handleSuccess}
       />
+      <CreateAdminDialog open={createOpen} onOpenChange={setCreateOpen} />
     </div>
   );
 }

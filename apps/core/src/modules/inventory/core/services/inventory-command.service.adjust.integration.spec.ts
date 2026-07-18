@@ -137,4 +137,45 @@ describeIfDb('InventoryCommandService adjust (DB integration, rollback-only)', (
       ).rejects.toThrow(BadRequestException);
     });
   });
+
+  it('예약 초과 adjustDown 은 409 로 거부된다', async () => {
+    await inRollbackTx(async (tx) => {
+      const { warehouse, sku } = await createFixture(tx);
+      await command.adjustUp({ skuId: sku.id, warehouseId: warehouse.id, quantity: 10 }, tx);
+      await tx.insert(wmsTables.stockReservations).values({
+        targetType: 'FULFILLMENT_ORDER',
+        targetId: randomUUID(),
+        skuId: sku.id,
+        warehouseId: warehouse.id,
+        quantity: 6,
+        status: 'confirmed',
+      });
+      await expect(command.adjustDown({ skuId: sku.id, warehouseId: warehouse.id, quantity: 5 }, tx)).rejects.toThrow(
+        /예약된 재고/,
+      );
+      // 4 까지는 허용 (10-4=6 >= 6)
+      await expect(
+        command.adjustDown({ skuId: sku.id, warehouseId: warehouse.id, quantity: 4 }, tx),
+      ).resolves.toBeDefined();
+    });
+  });
+
+  it('bypassReservationGuard=true 면 예약 초과여도 적용된다', async () => {
+    await inRollbackTx(async (tx) => {
+      const { warehouse, sku } = await createFixture(tx);
+      await command.adjustUp({ skuId: sku.id, warehouseId: warehouse.id, quantity: 10 }, tx);
+      await tx.insert(wmsTables.stockReservations).values({
+        targetType: 'FULFILLMENT_ORDER',
+        targetId: randomUUID(),
+        skuId: sku.id,
+        warehouseId: warehouse.id,
+        quantity: 10,
+        status: 'confirmed',
+      });
+      await expect(
+        command.adjustDown({ skuId: sku.id, warehouseId: warehouse.id, quantity: 5, bypassReservationGuard: true }, tx),
+      ).resolves.toBeDefined();
+      expect(await onHandTotal(tx, sku.id, warehouse.id)).toBe(5); // 실물 반영
+    });
+  });
 });

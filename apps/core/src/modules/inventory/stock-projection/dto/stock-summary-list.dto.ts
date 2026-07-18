@@ -1,4 +1,4 @@
-import { IsUUID, IsOptional } from 'class-validator';
+import { IsUUID, IsOptional, IsString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { PaginationQueryDto } from '../../shared/dto';
 
@@ -12,6 +12,11 @@ export class GetStockSummaryListQueryDto extends PaginationQueryDto {
   @IsUUID()
   @IsOptional()
   warehouseId?: string;
+
+  @ApiProperty({ description: 'SKU 이름 검색어 (부분일치)', required: false })
+  @IsString()
+  @IsOptional()
+  search?: string;
 }
 
 export class StockSummaryListItemDto {

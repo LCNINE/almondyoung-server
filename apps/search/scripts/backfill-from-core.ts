@@ -38,6 +38,7 @@ type ActiveVersionRow = {
   description: string | null;
   brand: string | null;
   status: 'draft' | 'inactive' | 'active';
+  isVisibleToMembersOnly: boolean;
   updatedAt: Date;
 };
 
@@ -215,6 +216,7 @@ async function fetchActiveVersionsBatch(
       description: productMasterVersions.description,
       brand: productMasterVersions.brand,
       status: productMasterVersions.status,
+      isVisibleToMembersOnly: productMasterVersions.isVisibleToMembersOnly,
       updatedAt: productMasterVersions.updatedAt,
     })
     .from(productMasterVersions)
@@ -383,6 +385,7 @@ function buildDocuments(
       min_membership_price: prices?.minMembershipPrice ?? null,
       max_membership_price: prices?.maxMembershipPrice ?? null,
       status: row.status,
+      is_visible_to_members_only: row.isVisibleToMembersOnly ?? false,
       changed_at: updatedAtIso,
       updated_at: updatedAtIso,
     };

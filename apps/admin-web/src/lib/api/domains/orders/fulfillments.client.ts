@@ -12,12 +12,6 @@ import type {
   FulfillmentOutboxEvent,
   ListFulfillmentsQuery,
   CreateFulfillmentOrderRequest,
-  SplitFulfillmentOrderRequest,
-  ReserveRequest,
-  UnreserveRequest,
-  TransferReservationRequest,
-  TransferCandidate,
-  AssignShipmentRequest,
 } from '@/lib/types/dto/fulfillment';
 
 const BASE = `${ALMONDYOUNG_API_BASE_URL}/fulfillments`;
@@ -34,57 +28,16 @@ export const fulfillmentsClient = {
   },
 
   getOutboxEvents: async (id: string): Promise<FulfillmentOutboxEvent[]> => {
-    const res = await client.get(`${BASE}/${encodeURIComponent(id)}/outbox-events`);
+    const res = await client.get(
+      `${BASE}/${encodeURIComponent(id)}/outbox-events`
+    );
     return res.data;
   },
 
-  create: async (data: CreateFulfillmentOrderRequest): Promise<FulfillmentOrder> => {
+  create: async (
+    data: CreateFulfillmentOrderRequest
+  ): Promise<FulfillmentOrder> => {
     const res = await client.post(BASE, data);
-    return res.data;
-  },
-
-  split: async (id: string, data: SplitFulfillmentOrderRequest): Promise<FulfillmentOrder> => {
-    const res = await client.post(`${BASE}/${encodeURIComponent(id)}/split`, data);
-    return res.data;
-  },
-
-  checkAvailability: async (id: string): Promise<unknown> => {
-    const res = await client.post(`${BASE}/${encodeURIComponent(id)}/check-availability`);
-    return res.data;
-  },
-
-  reserve: async (id: string, data: ReserveRequest): Promise<unknown> => {
-    const res = await client.post(`${BASE}/${encodeURIComponent(id)}/reserve`, data);
-    return res.data;
-  },
-
-  unreserve: async (id: string, data: UnreserveRequest): Promise<unknown> => {
-    const res = await client.post(`${BASE}/${encodeURIComponent(id)}/unreserve`, data);
-    return res.data;
-  },
-
-  transferReservation: async (id: string, data: TransferReservationRequest): Promise<unknown> => {
-    const res = await client.post(`${BASE}/${encodeURIComponent(id)}/transfer-reservation`, data);
-    return res.data;
-  },
-
-  getTransferCandidates: async (
-    id: string,
-    fromFulfillmentOrderItemId: string,
-  ): Promise<TransferCandidate[]> => {
-    const res = await client.get(`${BASE}/${encodeURIComponent(id)}/transfer-candidates`, {
-      params: { fromFulfillmentOrderItemId },
-    });
-    return res.data;
-  },
-
-  assignShipment: async (id: string, data: AssignShipmentRequest): Promise<unknown> => {
-    const res = await client.post(`${BASE}/${encodeURIComponent(id)}/assign-shipment`, data);
-    return res.data;
-  },
-
-  ship: async (id: string): Promise<unknown> => {
-    const res = await client.post(`${BASE}/${encodeURIComponent(id)}/ship`);
     return res.data;
   },
 

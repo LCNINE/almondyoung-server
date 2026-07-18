@@ -1,4 +1,6 @@
 import { addToCart, createBuyNowCart } from "@lib/api/medusa/cart"
+import { isInsufficientInventoryError } from "@lib/utils/cart-availability"
+import { useTranslations } from "next-intl"
 import { useState } from "react"
 import { toast } from "sonner"
 
@@ -20,6 +22,18 @@ interface CreateBuyNowCartParams {
 
 export function useAddToCart() {
   const [isLoading, setIsLoading] = useState(false)
+  const t = useTranslations("productDetail.options")
+
+  // 백엔드 원문 에러(영문 Medusa 메시지: 재고부족, sales channel-재고위치 미연결 등)를
+  // 그대로 노출하지 않는다. 재고부족은 품절 안내로, 그 외는 일반 실패 문구로 치환.
+  // 단, 웰컴 멤버십 구매 제한/멤버십 전용 상품 등 백엔드가 한글로 던진 메시지는
+  // 사용자용으로 작성된 것이므로 그대로 노출한다. 디버깅용으로 원문은 콘솔에 남긴다.
+  const toCartError = (message: string) => {
+    if (isInsufficientInventoryError(message)) return t("soldOutToast")
+    console.error("[useAddToCart] 장바구니 담기 실패:", message)
+    if (/[가-힣]/.test(message)) return message
+    return t("addCartFail")
+  }
 
   const addToCartAction = async ({
     variantId,
@@ -35,7 +49,7 @@ export function useAddToCart() {
       })
 
       if (result.error) {
-        toast.error(result.error)
+        toast.error(toCartError(result.error))
         return { success: false, error: result.error }
       }
 
@@ -61,7 +75,7 @@ export function useAddToCart() {
       })
 
       if (result.error) {
-        toast.error(result.error)
+        toast.error(toCartError(result.error))
         return { success: false, error: result.error }
       }
 
