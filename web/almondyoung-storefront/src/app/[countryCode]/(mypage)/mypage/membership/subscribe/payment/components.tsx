@@ -38,7 +38,8 @@ import type {
 } from "@lib/types/dto/wallet"
 import { Calendar, Check, CreditCard, Gift } from "lucide-react"
 import { useParams, useRouter } from "next/navigation"
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useState, useTransition } from "react"
+import { useTranslations } from "next-intl"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 import { z } from "zod"
@@ -173,80 +174,98 @@ export function MembershipForm({
     defaultValues: formDefaultValues,
   })
 
-  async function onSubmit(data: z.infer<typeof subscriptionSchema>) {
-    try {
-      if (!user) {
-        toast.error("로그인이 필요합니다.")
-        return
-      }
-      if (!data.subscriptionType) {
-        toast.error("구독 유형을 선택해주세요.")
-        return
-      }
+  const [isSubmitting, startTransition] = useTransition()
+  // 가입 결과 토스트는 payment-method 화면과 동일 메시지라 같은 키를 공유한다.
+  const tPm = useTranslations("mypage.membershipPaymentMethod")
 
-      const selectedPlanId =
-        data.subscriptionType === "monthly"
-          ? monthlyPlan.plan.id
-          : yearlyPlan.plan.id
-
-      const billingMode = data.billingMode
-
-      if (selectedBillingMethodId) {
-        const attemptId = crypto.randomUUID()
-        await subscribeWithBillingMethod(
-          selectedPlanId,
-          selectedBillingMethodId,
-          billingMode,
-          attemptId
-        )
-        if (billingMode === "recurring") {
-          const trialMsg =
-            totalTrialDays > 0
-              ? `${totalTrialDays}일 무료 체험이 시작되었습니다! 체험 종료 후 자동으로 결제됩니다.`
-              : "정기결제가 시작되었습니다."
-          toast.success(trialMsg)
-        } else {
-          toast.success("멤버십 가입이 완료되었습니다.")
+  function onSubmit(data: z.infer<typeof subscriptionSchema>) {
+    // 인증 필요한 Server Action 호출은 startTransition 안에서 실행해야
+    // catch에서 re-throw한 UNAUTHORIZED가 error.tsx로 전파돼 토큰 복구가 동작한다.
+    startTransition(async () => {
+      try {
+        if (!user) {
+          toast.error("로그인이 필요합니다.")
+          return
         }
-        router.push(`/${countryCode}/mypage/membership/subscribe/success`)
-      } else {
-        // 신규 결제수단: 정기결제는 자동이체 수단 먼저 등록 필요, 한번만결제는 wallet-web으로 바로 이동
-        if (billingMode === "recurring") {
-          toast.info("정기결제를 시작하려면 먼저 자동이체 수단을 등록해주세요.")
-          router.push(
-            `/${countryCode}/mypage/membership/payment-method?redirect=subscribe&planId=${selectedPlanId}`
-          )
-        } else {
-          const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
-          const { intentId } = await createMembershipCheckoutIntent(
+        if (!data.subscriptionType) {
+          toast.error("구독 유형을 선택해주세요.")
+          return
+        }
+
+        const selectedPlanId =
+          data.subscriptionType === "monthly"
+            ? monthlyPlan.plan.id
+            : yearlyPlan.plan.id
+
+        const billingMode = data.billingMode
+
+        if (selectedBillingMethodId) {
+          const attemptId = crypto.randomUUID()
+          const res = await subscribeWithBillingMethod(
             selectedPlanId,
-            returnUrl,
-            "one_time"
+            selectedBillingMethodId,
+            billingMode,
+            attemptId
           )
-          setPendingPaymentMode("membership", {
-            planId: selectedPlanId,
-            billingMode: "one_time",
-          })
-          const walletWebUrl =
-            process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
-          window.location.href = `${walletWebUrl}/pay/${intentId}?region=${countryCode}`
+          if (billingMode === "recurring") {
+            // 재가입자는 backend가 무료체험을 제거하므로 실제 적용된 일수로 안내한다.
+            const appliedTrialDays = res.effectiveTrialDays ?? 0
+            toast.success(
+              appliedTrialDays > 0
+                ? tPm("trialStartedSuccess", { days: appliedTrialDays })
+                : tPm("recurringStartedSuccess")
+            )
+          } else {
+            toast.success("멤버십 가입이 완료되었습니다.")
+          }
+          router.push(`/${countryCode}/mypage/membership/subscribe/success`)
+        } else {
+          // 신규 결제수단: 정기결제는 자동이체 수단 먼저 등록 필요, 한번만결제는 wallet-web으로 바로 이동
+          if (billingMode === "recurring") {
+            toast.info(
+              "정기결제를 시작하려면 먼저 자동이체 수단을 등록해주세요."
+            )
+            router.push(
+              `/${countryCode}/mypage/membership/payment-method?redirect=subscribe&planId=${selectedPlanId}`
+            )
+          } else {
+            const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
+            const { intentId } = await createMembershipCheckoutIntent(
+              selectedPlanId,
+              returnUrl,
+              "one_time"
+            )
+            setPendingPaymentMode("membership", {
+              planId: selectedPlanId,
+              billingMode: "one_time",
+            })
+            const walletWebUrl =
+              process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
+            window.location.href = `${walletWebUrl}/pay/${intentId}?region=${countryCode}`
+          }
         }
+      } catch (error) {
+        // UNAUTHORIZED(토큰 만료)는 삼키지 않고 re-throw → error.tsx가 토큰 복구 처리
+        const err = error as Error & { digest?: string; status?: number }
+        if (
+          err?.digest === "UNAUTHORIZED" ||
+          err?.message === "UNAUTHORIZED" ||
+          err?.status === 401
+        ) {
+          throw error
+        }
+        if (error instanceof HttpApiError) {
+          toast.error(error.message)
+        } else {
+          toast.error(
+            error instanceof Error
+              ? error.message
+              : "멤버십 등록에 실패했습니다."
+          )
+        }
+        console.error(error)
       }
-    } catch (error) {
-      // UNAUTHORIZED(토큰 만료)는 삼키지 않고 re-throw → error.tsx가 토큰 복구 처리
-      const err = error as Error & { digest?: string; status?: number }
-      if (err?.digest === "UNAUTHORIZED" || err?.message === "UNAUTHORIZED" || err?.status === 401) {
-        throw error
-      }
-      if (error instanceof HttpApiError) {
-        toast.error(error.message)
-      } else {
-        toast.error(
-          error instanceof Error ? error.message : "멤버십 등록에 실패했습니다."
-        )
-      }
-      console.error(error)
-    }
+    })
   }
 
   const discountCount = discountBenefits.length
@@ -265,7 +284,8 @@ export function MembershipForm({
   const selectedPlan = subscriptionType === "yearly" ? yearlyPlan : monthlyPlan
   const totalTrialDays =
     billingMode === "recurring"
-      ? (selectedPlan?.plan?.trialDays ?? 0) + trialBenefits.reduce((acc, cur) => acc + cur.days, 0)
+      ? (selectedPlan?.plan?.trialDays ?? 0) +
+        trialBenefits.reduce((acc, cur) => acc + cur.days, 0)
       : 0
 
   useEffect(() => {
@@ -522,7 +542,9 @@ export function MembershipForm({
             <CardContent>
               {totalTrialDays !== 0 && (
                 <>
-                  <h3 className="mb-2 text-base font-bold text-[#1a1c20]">무료 기간</h3>
+                  <h3 className="mb-2 text-base font-bold text-[#1a1c20]">
+                    무료 기간
+                  </h3>
                   <Table>
                     <TableBody>
                       {trialBenefits.map((trialBenefit) => (
@@ -670,14 +692,14 @@ export function MembershipForm({
           disabled={
             !form.watch("agreement") ||
             !form.watch("subscriptionType") ||
-            form.formState.isSubmitting ||
+            isSubmitting ||
             (billingMode === "recurring" &&
               !selectedBillingMethodId &&
               hasPendingMethods)
           }
           type="submit"
         >
-          {form.formState.isSubmitting ? (
+          {isSubmitting ? (
             <span className="flex items-center gap-2">
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
               처리중...
@@ -780,7 +802,7 @@ const AgreementRow: React.FC<AgreementRowProps> = ({
           e.preventDefault()
           setIsDialogOpen(true)
         }}
-        className="text-primary shrink-0 whitespace-nowrap text-xs font-semibold underline underline-offset-2"
+        className="text-primary shrink-0 text-xs font-semibold whitespace-nowrap underline underline-offset-2"
       >
         전문 보기
       </button>
@@ -838,7 +860,9 @@ function TermsAndConditions({
       </div>
 
       <div>
-        <h2 className="mb-2 text-base font-bold text-[#1a1c20]">결제 목적 및 내용</h2>
+        <h2 className="mb-2 text-base font-bold text-[#1a1c20]">
+          결제 목적 및 내용
+        </h2>
         <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
           <li>
             본 서비스는 매월 정기적인 금액 결제를 통해 서비스 구독 및 제공을
@@ -849,7 +873,9 @@ function TermsAndConditions({
       </div>
 
       <div>
-        <h2 className="mb-2 text-base font-bold text-[#1a1c20]">결제 주기 및 금액</h2>
+        <h2 className="mb-2 text-base font-bold text-[#1a1c20]">
+          결제 주기 및 금액
+        </h2>
         <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
           <li>
             결제 주기: 매월 구독 기간이 하루 남았을 때 1회 (정기결제 기준)
@@ -863,7 +889,9 @@ function TermsAndConditions({
       </div>
 
       <div>
-        <h2 className="mb-2 text-base font-bold text-[#1a1c20]">결제 정보 수집 항목</h2>
+        <h2 className="mb-2 text-base font-bold text-[#1a1c20]">
+          결제 정보 수집 항목
+        </h2>
         <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
           <li>결제자 정보: 이름, 연락처, 생년월일</li>
           <li>
@@ -874,7 +902,9 @@ function TermsAndConditions({
       </div>
 
       <div>
-        <h2 className="mb-2 text-base font-bold text-[#1a1c20]">동의 철회 및 변경</h2>
+        <h2 className="mb-2 text-base font-bold text-[#1a1c20]">
+          동의 철회 및 변경
+        </h2>
         <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
           <li>
             귀하는 언제든 동의를 철회하거나 결제 정보를 변경할 권리가 있습니다.
@@ -904,14 +934,18 @@ function TermsAndConditions({
       <div>
         <h2 className="mb-2 text-base font-bold text-[#1a1c20]">환불 정책</h2>
 
-        <h3 className="mt-4 mb-1.5 text-sm font-bold text-[#1a1c20]">제 1조 목적</h3>
+        <h3 className="mt-4 mb-1.5 text-sm font-bold text-[#1a1c20]">
+          제 1조 목적
+        </h3>
         <p>
           본 약관은 아몬드영 멤버십 서비스(이하 &quot;서비스&quot;)를 이용함에
           있어 회원과 회사 간의 권리·의무 및 책임 사항을 규정함을 목적으로
           합니다.
         </p>
 
-        <h3 className="mt-4 mb-1.5 text-sm font-bold text-[#1a1c20]">제 2조 환불 불가 정책</h3>
+        <h3 className="mt-4 mb-1.5 text-sm font-bold text-[#1a1c20]">
+          제 2조 환불 불가 정책
+        </h3>
         <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
           <li>
             본 서비스는 구독형 서비스로, 서비스 제공이 개시된 이후에는 환불이
@@ -941,7 +975,9 @@ function TermsAndConditions({
           </li>
         </ul>
 
-        <h3 className="mt-4 mb-1.5 text-sm font-bold text-[#1a1c20]">제 4조 회원의 동의</h3>
+        <h3 className="mt-4 mb-1.5 text-sm font-bold text-[#1a1c20]">
+          제 4조 회원의 동의
+        </h3>
         <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
           <li>
             회원은 구독 결제를 진행함으로써 본 약관에 동의한 것으로 간주됩니다.
