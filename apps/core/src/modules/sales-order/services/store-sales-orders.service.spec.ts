@@ -548,6 +548,25 @@ describe('StoreSalesOrdersService', () => {
         expect(r.fulfillmentStatus).toBe('delivered');
         expect(r.availableActions).toEqual(expect.arrayContaining(['return', 'exchange']));
       });
+      it('부분 배송 + 잔여 상자 recovery_required → shipping + already_shipped (마스킹 방지)', async () => {
+        const { service } = makeContext({
+          fos: [{ status: 'recovery_required' }],
+          activeShipmentStatuses: ['delivered', 'recovery_required'],
+        });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('shipping');
+        expect(r.availableActions).not.toContain('cancel');
+        expect(r.cancelUnavailableReason).toBe('already_shipped');
+      });
+      it('recovery_required 이나 출고된 박스 없음 → preparing + cancel 가능', async () => {
+        const { service } = makeContext({
+          fos: [{ status: 'recovery_required' }],
+          activeShipmentStatuses: ['recovery_required'],
+        });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('preparing');
+        expect(r.availableActions).toContain('cancel');
+      });
     });
   });
 

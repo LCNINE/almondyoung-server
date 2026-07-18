@@ -1003,12 +1003,18 @@ export class StoreSalesOrdersService {
       )
       .map((fo) => fo.directShipStatus as string);
 
-    // 출고 이동 상자는 dispatch 트랜잭션에서 반드시 FO 를 partially_shipped/completed/shipped 로 만든다.
-    // 그 흔적이 없으면 활성 상자는 전부 준비중이므로 상자 로드를 생략한다.
-    const anyFoiShipped = foRows.some(
+    // 확실히 출고된 FO.
+    const definitelyShipped = foRows.some(
       (fo) => fo.status === 'shipped' || fo.status === 'partially_shipped' || fo.status === 'completed',
     );
-    const activeShipmentStatuses = anyFoiShipped ? await this.loadActiveShipmentStatuses(salesOrderId) : [];
+    // recovery_required 는 shippedQty>0 를 가릴 수 있어(progress projector 가 recovery 를 먼저 판정)
+    // 반드시 상자를 로드해 이미 배송된 박스를 확인해야 한다.
+    const maybeMaskedByRecovery = foRows.some((fo) => fo.status === 'recovery_required');
+    const activeShipmentStatuses =
+      definitelyShipped || maybeMaskedByRecovery ? await this.loadActiveShipmentStatuses(salesOrderId) : [];
+
+    const movedShipmentStatuses = new Set(['shipped', 'in_transit', 'delivered']);
+    const anyFoiShipped = definitelyShipped || activeShipmentStatuses.some((s) => movedShipmentStatuses.has(s));
 
     return { foCount, allFoCanceled, activeShipmentStatuses, dropShipStatuses, anyFoiShipped };
   }
