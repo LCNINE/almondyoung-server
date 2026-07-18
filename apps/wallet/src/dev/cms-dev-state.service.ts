@@ -2,7 +2,6 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { desc, eq } from 'drizzle-orm';
 import { WalletSchema, billingMethods, cmsAgreements, cmsMembers } from '../schema';
-import { isCmsAgreementRegistered } from '../cms/cms-agreement-status';
 import { CmsMember } from '../types';
 
 export interface DevCmsStateResponseDto {
@@ -203,7 +202,7 @@ export class CmsDevStateService {
     const agreementStatus = latestAgreement?.status ?? null;
     const billingMethodStatus = bm?.status ?? null;
     const isSelectableForRecurringBilling =
-      billingMethodStatus === 'ACTIVE' && member.status === 'REGISTERED' && isCmsAgreementRegistered(agreementStatus);
+      billingMethodStatus === 'ACTIVE' && member.status === 'REGISTERED' && agreementStatus === '등록';
 
     return {
       cmsMember: {
