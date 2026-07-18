@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { eq, and, lte, lt, notInArray, isNull, not, exists } from 'drizzle-orm';
+import { eq, and, lte, lt, notInArray, isNull, isNotNull, not, exists } from 'drizzle-orm';
 import { subDays, parseISO, format } from 'date-fns';
 import * as schema from '../../shared/schemas/entities/schema';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
@@ -72,6 +72,8 @@ export class BillingReader {
           eq(schema.subscriptionContracts.isVoided, false),
           eq(schema.subscriptionContracts.autoRenewal, true),
           eq(schema.subscriptionContracts.billingInProgress, false),
+          // 취소·만료 계약은 청구 대상에서 제외(정리 누락에 대한 방어선)
+          notInArray(schema.subscriptionContracts.status, ['CANCELLED', 'EXPIRED']),
           isNull(schema.subscriptionEntitlement.pausedAt),
           lte(schema.subscriptionContracts.nextBillingDate, date),
           // dunning 처리 중인 계약은 dunning 스케줄러가 담당 — 메인 스케줄러 제외
@@ -139,6 +141,8 @@ export class BillingReader {
           eq(schema.subscriptionEntitlement.isCurrent, true),
           eq(schema.subscriptionContracts.autoRenewal, false),
           eq(schema.subscriptionContracts.isVoided, false),
+          // 일시정지 중엔 endsAt 이 동결된 채 지나갈 수 있다 — 재개 시 정지 일수만큼 연장되므로 만료 대상이 아니다.
+          isNull(schema.subscriptionEntitlement.pausedAt),
           lt(schema.subscriptionEntitlement.endsAt, today),
           notInArray(schema.subscriptionContracts.status, ['EXPIRED', 'CANCELLED']),
         ),
@@ -175,6 +179,7 @@ export class BillingReader {
           eq(schema.subscriptionContracts.autoRenewal, true),
           eq(schema.subscriptionContracts.isVoided, false),
           eq(schema.subscriptionContracts.billingInProgress, false),
+          isNull(schema.subscriptionEntitlement.pausedAt),
           lt(schema.subscriptionEntitlement.endsAt, graceDate),
           notInArray(schema.subscriptionContracts.status, ['EXPIRED', 'CANCELLED']),
           isNull(schema.membershipDunningQueue.id),
@@ -183,9 +188,61 @@ export class BillingReader {
   }
 
   /**
-   * 계약 ID로 계약 조회
+   * reconciliation 대상 조회: billingInProgress=true 인 채 임계 시간(threshold)을 넘긴 계약.
+   * 결과 이벤트를 오래 못 받은 건이므로 저장된 멱등키로 wallet 권위 상태를 되물어야 한다.
    */
-  async findContractById(contractId: string): Promise<DueContract | null> {
+  async findStuckBillingForReconcile(
+    threshold: Date,
+  ): Promise<{ contractId: string; idempotencyKey: string }[]> {
+    const rows = await this.dbService.db
+      .select({
+        contractId: schema.subscriptionContracts.id,
+        idempotencyKey: schema.subscriptionContracts.billingIdempotencyKey,
+      })
+      .from(schema.subscriptionContracts)
+      .where(
+        and(
+          eq(schema.subscriptionContracts.billingInProgress, true),
+          lt(schema.subscriptionContracts.billingStartedAt, threshold),
+          isNotNull(schema.subscriptionContracts.billingIdempotencyKey),
+        ),
+      );
+    return rows
+      .filter((r): r is { contractId: string; idempotencyKey: string } => r.idempotencyKey !== null);
+  }
+
+  /**
+   * 계약의 현재 더닝 재시도 횟수 조회 (없으면 0).
+   * 결제 멱등키 nonce로 사용해 재시도마다 새 커맨드가 되도록 한다.
+   */
+  /** 계약의 dunning(결제 실패 재시도 대기) 항목 조회. 없으면 null. */
+  async findDunningByContractId(contractId: string): Promise<{
+    attempts: number;
+    maxAttempts: number;
+    nextRetryAt: Date;
+    lastErrorCode: string | null;
+    lastErrorMessage: string | null;
+  } | null> {
+    const [row] = await this.dbService.db
+      .select({
+        attempts: schema.membershipDunningQueue.attempts,
+        maxAttempts: schema.membershipDunningQueue.maxAttempts,
+        nextRetryAt: schema.membershipDunningQueue.nextRetryAt,
+        lastErrorCode: schema.membershipDunningQueue.lastErrorCode,
+        lastErrorMessage: schema.membershipDunningQueue.lastErrorMessage,
+      })
+      .from(schema.membershipDunningQueue)
+      .where(eq(schema.membershipDunningQueue.contractId, contractId))
+      .limit(1);
+    return row ?? null;
+  }
+
+  /**
+   * 계약 ID로 계약 조회 (수동 재시도 검증에 필요한 상태 필드 포함)
+   */
+  async findContractById(
+    contractId: string,
+  ): Promise<(DueContract & { status: string; autoRenewal: boolean; billingInProgress: boolean }) | null> {
     const [contract] = await this.dbService.db
       .select({
         id: schema.subscriptionContracts.id,
@@ -195,6 +252,9 @@ export class BillingReader {
         paymentProfileId: schema.subscriptionContracts.paymentProfileId,
         isPastDue: schema.subscriptionContracts.isPastDue,
         billingRetryCount: schema.subscriptionContracts.billingRetryCount,
+        status: schema.subscriptionContracts.status,
+        autoRenewal: schema.subscriptionContracts.autoRenewal,
+        billingInProgress: schema.subscriptionContracts.billingInProgress,
       })
       .from(schema.subscriptionContracts)
       .where(eq(schema.subscriptionContracts.id, contractId))

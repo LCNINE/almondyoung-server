@@ -186,6 +186,25 @@ client.interceptors.response.use(
       config.retryDelay = globalConfig.retryDelay;
     }
 
+    // 멱등 보장이 없는 변경 요청(Idempotency-Key 없는 POST/PUT/PATCH/DELETE)은 재시도하지 않는다.
+    // 서버가 이미 처리(환불/청구 등)한 뒤 5xx/타임아웃이 나면 재시도가 이중 처리를 유발하기 때문.
+    // 멱등 키를 실은 요청(예: wallet 도메인)은 서버 멱등 처리에 기대 재시도를 허용한다.
+    const method = (config.method ?? 'get').toLowerCase();
+    const headers = (config.headers ?? {}) as Record<string, unknown>;
+    const hasIdempotencyKey = Boolean(headers['Idempotency-Key'] ?? headers['idempotency-key']);
+    if (['post', 'put', 'patch', 'delete'].includes(method) && !hasIdempotencyKey) {
+      const data = err.response?.data as { message?: string | string[] } | undefined;
+      const message =
+        (Array.isArray(data?.message) ? data.message.join('\n') : data?.message) ||
+        err.message ||
+        '요청 처리 중 오류가 발생했습니다.';
+      throw new CustomError({
+        message,
+        statusCode: err.response?.status || 500,
+        response: err.response?.data,
+      });
+    }
+
     // 재시도 횟수 체크 — 소진 시에도 서버 메시지를 보존해 던진다
     if (config.retry <= 0) {
       const data = err.response?.data as

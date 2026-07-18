@@ -51,15 +51,64 @@ export class SubscriptionService {
   /**
    * 현재 구독 상태 조회
    *
-   * ✅ 흐름만 표현: "권한 조회"
+   * 스토어프론트가 기대하는 평탄한 형태로 반환한다(중첩 {entitlement,contract,...} 를 그대로 내려주면
+   * 톱레벨 status/autoRenewal 등이 undefined 라 가입자 화면 전체가 차단된다).
+   * status 는 raw(ACTIVE/CANCELLED/EXPIRED)로 두고 — 정기해지(RECURRING_CANCELLED)는 잔여기간 동안
+   * status=ACTIVE 를 유지해야 회원 화면에 도달한다 — autoRenewal/pausedAt 를 별도로 노출해 프론트가
+   * "해지 예정"·"일시정지" 라벨을 표시한다.
    */
   async getCurrentSubscriptionDetails(userId: string) {
     const data = await this.entitlementService.getUserEntitlement(userId);
     if (!data) return null;
+
+    const { entitlement, contract, plan, tier } = data;
+    // 고객 노출은 보수적으로: 결제 재시도 내부값(횟수/다음시각/사유)은 노출하지 않고
+    // "결제 확인 필요" 여부만 boolean 으로 내려준다.
+    const paymentActionNeeded = (await this.billingReader.findDunningByContractId(contract.id)) !== null;
+    const tierDto = tier
+      ? {
+          id: tier.id,
+          code: tier.code,
+          // tiers 테이블에 name 컬럼이 없다 — 프론트가 code/기본값으로 폴백하므로 null 로 내려준다.
+          name: null as string | null,
+          priorityLevel: tier.priorityLevel,
+          createdAt: tier.createdAt,
+          updatedAt: tier.updatedAt,
+        }
+      : null;
+
     return {
-      ...data,
-      billingDate: data.contract.billingDate ?? null,
-      nextBillingDate: data.contract.nextBillingDate ?? null,
+      id: contract.id,
+      userId: contract.userId,
+      planId: contract.planId,
+      status: contract.status,
+      autoRenewal: contract.autoRenewal,
+      pausedAt: entitlement.pausedAt ?? null,
+      recurringCancelledAt: contract.recurringCancelledAt ?? null,
+      paymentActionNeeded,
+      startDate: entitlement.startsAt,
+      endDate: entitlement.endsAt,
+      currentPeriodStart: entitlement.startsAt,
+      currentPeriodEnd: entitlement.endsAt,
+      billingDate: contract.billingDate ?? null,
+      nextBillingDate: contract.nextBillingDate ?? null,
+      createdAt: contract.createdAt,
+      updatedAt: contract.updatedAt,
+      plan: plan
+        ? {
+            id: plan.id,
+            tierId: plan.tierId,
+            price: plan.price,
+            currency: plan.currency,
+            durationDays: plan.durationDays,
+            trialDays: plan.trialDays,
+            isActive: plan.isActive,
+            createdAt: plan.createdAt,
+            updatedAt: plan.updatedAt,
+            tier: tierDto,
+          }
+        : null,
+      tier: tierDto,
     };
   }
 
@@ -227,6 +276,27 @@ export class SubscriptionService {
       userId,
       current.contract,
       current.tier.id,
+      newPlanDetails.plan,
+      newPlanDetails.tier,
+      current.tier.priorityLevel,
+    );
+  }
+
+  /**
+   * 구독 다운그레이드
+   *
+   * ✅ 흐름만 표현: "현재 구독 조회 → 새 플랜 조회 → 다운그레이드 실행"
+   */
+  async downgradeSubscription(userId: string, newPlanId: string) {
+    const current = await this.entitlementService.getUserEntitlement(userId);
+    if (!current) throw new SubscriptionNotFoundException();
+
+    const newPlanDetails = await this.planService.getPlanDetails(newPlanId);
+    if (!newPlanDetails) throw new PlanNotFoundException();
+
+    return this.subscriptionManager.downgradeSubscription(
+      userId,
+      current.contract,
       newPlanDetails.plan,
       newPlanDetails.tier,
       current.tier.priorityLevel,
@@ -424,7 +494,11 @@ export class SubscriptionService {
       userId,
       planDetails.plan,
       planDetails.tier,
-      { initialPaymentIntentId },
+      {
+        initialPaymentIntentId,
+        // one_time 첫 결제 금액을 함께 넘겨야 creator가 billingEvents에 CHARGE_SUCCESS를 남긴다(결제내역 누락 방지).
+        initialPaymentAmount: billingMode === 'one_time' ? planDetails.plan.price : undefined,
+      },
       billingMode,
     );
 

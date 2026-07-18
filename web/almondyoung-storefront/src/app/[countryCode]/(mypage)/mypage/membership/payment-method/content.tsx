@@ -131,44 +131,55 @@ export default function MembershipPaymentMethodContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const handleChangeMethod = async (billingMethodId: string) => {
-    if (!agreement || isChanging) return
+  const handleChangeMethod = (billingMethodId: string) => {
+    if (!agreement || isChanging || isActionPending) return
+    const currentAgreement = agreement
 
-    try {
-      setIsChanging(billingMethodId)
-      await updateBillingAgreementMethod(agreement.id, billingMethodId)
-      toast.success(t("changeSuccess"))
-      setAgreement({ ...agreement, billingMethodId })
-    } catch {
-      toast.error(t("changeFail"))
-    } finally {
-      setIsChanging(null)
-    }
+    // 인증 필요한 Server Action 호출은 startActionTransition 안에서 실행해야
+    // re-throw한 UNAUTHORIZED가 error.tsx로 전파돼 토큰 복구가 동작한다.
+    startActionTransition(async () => {
+      try {
+        setIsChanging(billingMethodId)
+        await updateBillingAgreementMethod(currentAgreement.id, billingMethodId)
+        toast.success(t("changeSuccess"))
+        setAgreement({ ...currentAgreement, billingMethodId })
+      } catch (error) {
+        if (isUnauthorizedError(error)) throw error
+        toast.error(t("changeFail"))
+      } finally {
+        setIsChanging(null)
+      }
+    })
   }
 
-  const handleSubscribeWithMethod = async (billingMethodId: string) => {
-    if (!planId || isChanging) return
+  const handleSubscribeWithMethod = (billingMethodId: string) => {
+    if (!planId || isChanging || isActionPending) return
+    const currentPlanId = planId
 
-    try {
-      setIsChanging(billingMethodId)
-      const res = await subscribeWithBillingMethod(
-        planId,
-        billingMethodId,
-        "recurring",
-        crypto.randomUUID()
-      )
-      // 재가입자는 무료체험이 적용되지 않으므로 실제 적용된 일수로 안내한다.
-      toast.success(
-        (res.effectiveTrialDays ?? 0) > 0
-          ? t("trialStartedSuccess")
-          : t("recurringStartedSuccess")
-      )
-      router.push(`/${countryCode}/mypage/membership/subscribe/success`)
-    } catch {
-      toast.error(t("subscribeFail"))
-    } finally {
-      setIsChanging(null)
-    }
+    startActionTransition(async () => {
+      try {
+        setIsChanging(billingMethodId)
+        const res = await subscribeWithBillingMethod(
+          currentPlanId,
+          billingMethodId,
+          "recurring",
+          crypto.randomUUID()
+        )
+        // 재가입자는 무료체험이 적용되지 않으므로 실제 적용된 일수로 안내한다.
+        const appliedTrialDays = res.effectiveTrialDays ?? 0
+        toast.success(
+          appliedTrialDays > 0
+            ? t("trialStartedSuccess", { days: appliedTrialDays })
+            : t("recurringStartedSuccess")
+        )
+        router.push(`/${countryCode}/mypage/membership/subscribe/success`)
+      } catch (error) {
+        if (isUnauthorizedError(error)) throw error
+        toast.error(t("subscribeFail"))
+      } finally {
+        setIsChanging(null)
+      }
+    })
   }
 
   const isUnauthorizedError = (error: unknown) => {
@@ -222,22 +233,26 @@ export default function MembershipPaymentMethodContent() {
     })
   }
 
+  const pushToCmsRegistration = () => {
+    // CMS 자동이체 등록 위저드로 이동. openWizard=cms 로 위저드 자동 오픈,
+    // returnTo 파라미터로 등록 완료 후 멤버십 결제수단 화면으로 복귀.
+    const returnTo = encodeURIComponent(
+      window.location.pathname + window.location.search
+    )
+    router.push(
+      `/${countryCode}/mypage/payment?openWizard=cms&returnTo=${returnTo}`
+    )
+  }
+
   const handleRegisterNewCard = () => {
-    const walletWebUrl =
-      process.env.NEXT_PUBLIC_WALLET_WEB_URL ?? "http://localhost:3200"
-    const returnUrl = window.location.href
-    const params = new URLSearchParams({ returnUrl })
-    if (agreement?.id) params.set("agreementId", agreement.id)
-    window.location.href = `${walletWebUrl}/billing-change?${params}`
+    // 정기결제는 효성 CMS 자동이체로만 운영하므로 신규 등록도 CMS 자동이체 위저드로 보낸다.
+    // (카드 빌링 provider는 현재 미등록 상태라 등록해도 정기결제에 사용할 수 없음)
+    pushToCmsRegistration()
   }
 
   const handleRegisterCmsBankAccount = () => {
     // 실패한 CMS 계좌 재등록 — 은행계좌 등록 흐름이 있는 결제 관리 페이지로 이동
-    // returnTo 파라미터로 등록 완료 후 멤버십 결제수단 화면으로 복귀
-    const returnTo = encodeURIComponent(
-      window.location.pathname + window.location.search
-    )
-    router.push(`/${countryCode}/mypage/payment?returnTo=${returnTo}`)
+    pushToCmsRegistration()
   }
 
   const handleReregisterFailedMethod = (billingMethodId: string) => {
@@ -700,7 +715,7 @@ export default function MembershipPaymentMethodContent() {
         {/* 새 카드 등록 CTA — 콘텐츠 영역 하단에 고정 */}
         <div className="mt-auto pt-8">
           <button
-            className="bg-primary hover:bg-[#e14d00] w-full rounded-lg px-4 py-3.5 text-center text-base font-semibold text-white transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e14d00] disabled:cursor-not-allowed disabled:opacity-50"
+            className="bg-primary w-full rounded-lg px-4 py-3.5 text-center text-base font-semibold text-white transition-colors hover:bg-[#e14d00] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e14d00] disabled:cursor-not-allowed disabled:opacity-50"
             onClick={handleRegisterNewCard}
             disabled={!!isChanging || isActionPending}
           >

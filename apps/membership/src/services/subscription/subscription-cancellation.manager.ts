@@ -120,13 +120,16 @@ export class SubscriptionCancellationManager {
         );
       }
 
-      // 4. 계약 상태 업데이트
+      // 4. 계약 상태 업데이트 — 완전 취소이므로 정기결제 축(autoRenewal/nextBillingDate)도 반드시 꺼준다.
+      // (안 그러면 status=CANCELLED 라도 findDueContracts 가 다시 청구 대상으로 잡는다)
       await tx
         .update(schema.subscriptionContracts)
         .set({
           status: 'CANCELLED',
           cancelledAt: new Date(),
           cancellationReasonCode: reasonCode,
+          autoRenewal: false,
+          nextBillingDate: null,
           refundRequested: eligibility.eligible,
           refundRequestedAt: eligibility.eligible ? new Date() : null,
           eligibleRefundAmount: eligibility.amount,
@@ -135,8 +138,11 @@ export class SubscriptionCancellationManager {
         })
         .where(eq(schema.subscriptionContracts.id, contract.id));
 
-      // 5. Entitlement 종료
+      // 5. Entitlement 종료 + dunning 잔여 제거(해지 후 재청구 방지)
       await this.terminateEntitlement(tx, userId, batch.id);
+      await tx
+        .delete(schema.membershipDunningQueue)
+        .where(eq(schema.membershipDunningQueue.contractId, contract.id));
 
       return {
         type: 'IMMEDIATE_CANCELLATION',
@@ -315,13 +321,15 @@ export class SubscriptionCancellationManager {
         );
       }
 
-      // 5. 계약 상태 업데이트
+      // 5. 계약 상태 업데이트 — 강제 취소도 정기결제 축을 반드시 꺼준다(재청구 방지).
       await tx
         .update(schema.subscriptionContracts)
         .set({
           status: 'CANCELLED',
           cancelledAt: new Date(),
           cancellationReasonCode: 'ADMIN_FORCED',
+          autoRenewal: false,
+          nextBillingDate: null,
           refundRequested: refundAmount > 0,
           refundRequestedAt: refundAmount > 0 ? new Date() : null,
           eligibleRefundAmount: refundAmount,
@@ -330,8 +338,11 @@ export class SubscriptionCancellationManager {
         })
         .where(eq(schema.subscriptionContracts.id, contract.id));
 
-      // 6. Entitlement 종료
+      // 6. Entitlement 종료 + dunning 잔여 제거(환불 후 재청구 방지)
       await this.terminateEntitlement(tx, contract.userId, batch.id);
+      await tx
+        .delete(schema.membershipDunningQueue)
+        .where(eq(schema.membershipDunningQueue.contractId, contract.id));
 
       return {
         contractId: contract.id,

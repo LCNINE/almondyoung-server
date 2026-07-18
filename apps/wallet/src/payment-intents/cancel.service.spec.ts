@@ -48,4 +48,16 @@ describe('CancelService', () => {
       expect.objectContaining({ reasonCode: 'USER_CANCELED', triggeredByType: 'USER' }),
     );
   });
+
+  it('구독 청구 intent 취소 시 subscriberRef/Type 을 CANCELED 이벤트 payload 에 실어 membership 이 라우팅하게 한다', async () => {
+    // Finding 2: 취소 이벤트에 subscriber 정보가 없으면 membership 이 어느 계약인지 몰라 billingInProgress 를
+    // 해제하지 못한다. intent.metadata 의 subscriberRef/Type 을 성공/실패 경로와 동일하게 payload 에 실어준다.
+    const intent = { ...makeIntent(), metadata: { subscriberRef: 'contract-9', subscriberType: 'MEMBERSHIP', purpose: 'SUBSCRIPTION' } };
+    const { service, stateTransitionService } = makeContext();
+
+    await service.cancel(intent as never, 'corr-1');
+
+    const opts = stateTransitionService.transitionIntent.mock.calls[0][2];
+    expect(opts.outboxEvent.payload).toMatchObject({ subscriberRef: 'contract-9', subscriberType: 'MEMBERSHIP' });
+  });
 });

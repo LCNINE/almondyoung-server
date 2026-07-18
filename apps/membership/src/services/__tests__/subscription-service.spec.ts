@@ -7,6 +7,8 @@ import { SubscriptionCreator } from '../subscription/subscription.creator';
 import { SubscriptionManager } from '../subscription/subscription.manager';
 import { MembershipEventPublisher } from '../membership-event.publisher';
 import { PaymentClientService } from '../billing/payment-client.service';
+import { BillingManager } from '../billing/billing.manager';
+import { BillingReader } from '../billing/billing.reader';
 
 describe('SubscriptionService - Layer Refactoring', () => {
   let service: SubscriptionService;
@@ -36,12 +38,22 @@ describe('SubscriptionService - Layer Refactoring', () => {
   };
 
   const mockMembershipEventPublisher = {
-    publishStatusChanged: jest.fn(),
+    publishStatusChanged: jest.fn().mockResolvedValue(undefined),
   };
 
   const mockPaymentClientService = {
     createMembershipCheckoutIntent: jest.fn(),
     getWalletPaymentIntent: jest.fn(),
+    directCharge: jest.fn(),
+  };
+
+  const mockBillingManager = {
+    processSingleBilling: jest.fn(),
+  };
+
+  const mockBillingReader = {
+    findContractById: jest.fn(),
+    findDunningByContractId: jest.fn().mockResolvedValue(null),
   };
 
   beforeEach(async () => {
@@ -75,6 +87,14 @@ describe('SubscriptionService - Layer Refactoring', () => {
         {
           provide: PaymentClientService,
           useValue: mockPaymentClientService,
+        },
+        {
+          provide: BillingManager,
+          useValue: mockBillingManager,
+        },
+        {
+          provide: BillingReader,
+          useValue: mockBillingReader,
         },
       ],
     }).compile();
@@ -116,6 +136,7 @@ describe('SubscriptionService - Layer Refactoring', () => {
         { id: planId, price: 10000, durationDays: 30 },
         { id: 'tier_001', code: 'PREMIUM' },
         {},
+        'one_time',
       );
       expect(mockMembershipEventPublisher.publishStatusChanged).toHaveBeenCalled();
     });
@@ -169,15 +190,57 @@ describe('SubscriptionService - Layer Refactoring', () => {
       const userId = 'test_user_001';
 
       mockEntitlementService.getUserEntitlement.mockResolvedValue({
-        entitlement: { id: 'entitlement_001' },
-        contract: { id: 'contract_001' },
+        entitlement: { id: 'entitlement_001', startsAt: '2026-06-01', endsAt: '2026-07-01', pausedAt: null },
+        contract: {
+          id: 'contract_001',
+          userId,
+          planId: 'plan_001',
+          status: 'ACTIVE',
+          autoRenewal: true,
+          billingDate: null,
+          nextBillingDate: '2026-07-01',
+          recurringCancelledAt: null,
+        },
+        plan: { id: 'plan_001', tierId: 'tier_001', price: 10000, currency: 'KRW', durationDays: 30, trialDays: 0, isActive: true },
+        tier: { id: 'tier_001', code: 'GOLD', name: 'Gold', priorityLevel: 1 },
       });
 
       // When
       const result = await service.getCurrentSubscriptionDetails(userId);
 
-      // Then
-      expect(result).toHaveProperty('entitlement');
+      // Then: 평탄한 형태로 톱레벨 status/autoRenewal 이 노출된다
+      expect(result).toMatchObject({
+        id: 'contract_001',
+        status: 'ACTIVE',
+        autoRenewal: true,
+        endDate: '2026-07-01',
+        paymentActionNeeded: false,
+      });
+      expect(result?.tier).toMatchObject({ code: 'GOLD' });
+    });
+
+    it('dunning 항목이 있으면 paymentActionNeeded=true, 내부값은 노출 안 함', async () => {
+      mockEntitlementService.getUserEntitlement.mockResolvedValue({
+        entitlement: { id: 'e1', startsAt: '2026-06-01', endsAt: '2026-07-01', pausedAt: null },
+        contract: { id: 'c1', userId: 'u1', planId: 'p1', status: 'ACTIVE', autoRenewal: true, billingDate: null, nextBillingDate: '2026-07-01', recurringCancelledAt: null },
+        plan: { id: 'p1', tierId: 't1', price: 10000, currency: 'KRW', durationDays: 30, trialDays: 0, isActive: true },
+        tier: { id: 't1', code: 'GOLD', priorityLevel: 1 },
+      });
+      mockBillingReader.findDunningByContractId.mockResolvedValueOnce({
+        attempts: 2,
+        maxAttempts: 3,
+        nextRetryAt: new Date('2026-07-05T00:00:00Z'),
+        lastErrorCode: 'INSUFFICIENT_FUNDS',
+        lastErrorMessage: '잔액 부족',
+      });
+
+      const result = await service.getCurrentSubscriptionDetails('u1');
+
+      expect(result?.paymentActionNeeded).toBe(true);
+      // 더닝 내부값은 고객 응답에 노출되지 않는다
+      expect(result).not.toHaveProperty('attempts');
+      expect(result).not.toHaveProperty('nextRetryAt');
+      expect(result).not.toHaveProperty('lastErrorCode');
     });
   });
 

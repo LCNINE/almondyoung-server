@@ -1,9 +1,10 @@
 import { Controller, Post, Body, HttpCode, HttpStatus, Logger } from '@nestjs/common';
-import { Public } from '@app/authorization';
+import { MembershipInternalAuth } from '../shared/decorators/internal-auth.decorator';
 import { AdminOperationsService } from '../services/admin-operations.service';
 import { EntitlementService } from '../services/entitlement.service';
 
 @Controller('internal')
+@MembershipInternalAuth()
 export class InternalMembershipController {
   private readonly logger = new Logger(InternalMembershipController.name);
 
@@ -16,7 +17,6 @@ export class InternalMembershipController {
    * 시스템 내부 전용 구독 지급 엔드포인트 (channel-adapter → membership 서비스 간 호출)
    * 이미 활성 구독이 있으면 no-op으로 처리한다.
    */
-  @Public()
   @Post('grant')
   @HttpCode(HttpStatus.OK)
   async internalGrant(@Body() body: { userId: string; days: number; memo?: string }) {
@@ -40,7 +40,6 @@ export class InternalMembershipController {
    * 주어진 userId 중 멤버십 활성(현재 권한 + 미만료)인 userId만 반환.
    * channel-adapter 일일 정합성 크론이 메두사 고객 그룹 add/remove 판정에 사용한다.
    */
-  @Public()
   @Post('memberships/active')
   @HttpCode(HttpStatus.OK)
   async getActiveMemberships(@Body() body: { userIds: string[] }): Promise<{ activeUserIds: string[] }> {

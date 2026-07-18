@@ -187,7 +187,36 @@ export class PaymentClientService {
     }
   }
 
-  async createBillingAgreement(userId: string, contractId: string, billingMethodId?: string): Promise<void> {
+  /**
+   * 빌링 멱등키로 wallet intent 권위 상태를 조회한다(reconciliation 용).
+   * intent 가 아직 없으면(커맨드 유실 등) null 을 반환한다.
+   */
+  async getWalletIntentByIdempotencyKey(idempotencyKey: string): Promise<WalletPaymentIntentResponse | null> {
+    const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get<WalletPaymentIntentResponse>(`${walletApiUrl}/v1/payment-intents/by-idempotency-key`, {
+          params: { key: idempotencyKey },
+          headers: { Authorization: `Bearer ${walletApiKey}` },
+        }),
+      );
+      return response.data;
+    } catch (error) {
+      if (error.response?.status === 404) {
+        return null; // intent 미생성 = 커맨드가 wallet 에 도달/처리되지 않음
+      }
+      this.logger.error(`Failed to get wallet intent by idempotencyKey ${idempotencyKey}: ${error.message}`);
+      throw new Error(`Wallet intent lookup by idempotencyKey failed: ${error.message}`);
+    }
+  }
+
+  async createBillingAgreement(
+    userId: string,
+    contractId: string,
+    billingMethodId?: string,
+    idempotencyKey?: string,
+  ): Promise<void> {
     const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
 
     await firstValueFrom(
@@ -203,7 +232,7 @@ export class PaymentClientService {
           headers: {
             Authorization: `Bearer ${walletApiKey}`,
             'Content-Type': 'application/json',
-            'Idempotency-Key': `membership:billing-agreement:${userId}:${contractId}`,
+            'Idempotency-Key': idempotencyKey ?? `membership:billing-agreement:${userId}:${contractId}`,
           },
         },
       ),

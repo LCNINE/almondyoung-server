@@ -56,9 +56,12 @@ import { MembershipPolicyService } from './services/membership-policy.service';
 import { SavingsService } from './services/savings/savings.service';
 import { SavingsReader } from './services/savings/savings.reader';
 import { MembershipEventPublisher } from './services/membership-event.publisher';
+import { AdminIdempotencyService } from './shared/idempotency/admin-idempotency.service';
+import { AdminIdempotencyInterceptor } from './shared/idempotency/admin-idempotency.interceptor';
 import { AuthorizationModule } from '@app/authorization';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtAuthGuard } from '@app/authorization';
+import { InternalApiKeyGuard } from './shared/guards/internal-api-key.guard';
 
 @Module({
   imports: [
@@ -107,6 +110,7 @@ import { JwtAuthGuard } from '@app/authorization';
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
     },
+    InternalApiKeyGuard,
     // Business Layer (Services)
     PlanService,
     AdminOperationsService,
@@ -147,6 +151,9 @@ import { JwtAuthGuard } from '@app/authorization';
     MembershipEventPublisher,
     WalletCommandPublisher,
     WelcomeMembershipService,
+    // 관리자 운영 액션 멱등성
+    AdminIdempotencyService,
+    AdminIdempotencyInterceptor,
   ],
 })
 export class AppModule {}

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import Link from 'next/link';
 import { toast } from 'sonner';
 import { Crown, CalendarClock, SlidersHorizontal } from 'lucide-react';
 import {
@@ -606,13 +607,20 @@ function BillingTab({
 }) {
   const { data: events, isLoading } = useMemberBillingEvents(userId);
   const retryBillingMutation = useRetryBilling();
+  const [retryConfirmOpen, setRetryConfirmOpen] = useState(false);
 
   const handleRetry = async () => {
     try {
-      await retryBillingMutation.mutateAsync(contractId);
-      toast.success('결제 재시도 요청이 전송되었습니다.');
+      const result = await retryBillingMutation.mutateAsync(contractId);
+      if (result.success) {
+        toast.success('결제 재시도 요청이 전송되었습니다.');
+      } else {
+        toast.error(result.errorMessage ?? result.errorCode ?? '결제 재시도가 처리되지 않았습니다.');
+      }
     } catch {
       toast.error('결제 재시도에 실패했습니다.');
+    } finally {
+      setRetryConfirmOpen(false);
     }
   };
 
@@ -625,7 +633,7 @@ function BillingTab({
           <Button
             size="sm"
             variant="outline"
-            onClick={handleRetry}
+            onClick={() => setRetryConfirmOpen(true)}
             disabled={retryBillingMutation.isPending}
             className="text-xs h-7"
           >
@@ -633,6 +641,48 @@ function BillingTab({
           </Button>
         </div>
       )}
+      <Dialog
+        open={retryConfirmOpen}
+        onOpenChange={(o) => {
+          if (!o && !retryBillingMutation.isPending) setRetryConfirmOpen(false);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>결제 수동 재시도</DialogTitle>
+            <DialogDescription>
+              회원의 등록된 결제수단으로 즉시 실제 청구가 발행됩니다. 대상을
+              확인한 후 진행해주세요.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-md bg-muted p-3 text-xs space-y-1">
+            <p>
+              회원 ID: <span className="font-mono">{userId}</span>
+            </p>
+            <p>
+              계약 ID: <span className="font-mono">{contractId}</span>
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={retryBillingMutation.isPending}
+              onClick={() => setRetryConfirmOpen(false)}
+            >
+              취소
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={retryBillingMutation.isPending}
+              onClick={handleRetry}
+            >
+              {retryBillingMutation.isPending ? '청구 중...' : '즉시 청구'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Card className="py-0 overflow-hidden">
         <Table>
           <TableHeader>
@@ -641,13 +691,14 @@ function BillingTab({
               <TableHead>상태</TableHead>
               <TableHead className="text-right">결제액</TableHead>
               <TableHead>오류</TableHead>
+              <TableHead>결제 상세</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {!events?.length ? (
               <TableRow>
                 <TableCell
-                  colSpan={4}
+                  colSpan={5}
                   className="py-8 text-center text-muted-foreground"
                 >
                   결제 기록이 없습니다.
@@ -671,6 +722,20 @@ function BillingTab({
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {ev.errorCode ?? '-'}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {ev.paymentIntentId ? (
+                        <Link
+                          href={`/payments/${ev.paymentIntentId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-primary hover:underline"
+                        >
+                          wallet 상세
+                        </Link>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
                     </TableCell>
                   </TableRow>
                 );

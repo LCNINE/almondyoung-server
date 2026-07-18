@@ -15,10 +15,12 @@ export class SubscriptionContractReader {
    * 활성 계약 조회
    */
   async findActiveContract(userId: string): Promise<Contract | null> {
+    // ACTIVE 계약이 복수인 창(재가입)에서 임의 선택 방지 — 최신 1건
     const [contract] = await this.dbService.db
       .select()
       .from(schema.subscriptionContracts)
       .where(and(eq(schema.subscriptionContracts.userId, userId), eq(schema.subscriptionContracts.status, 'ACTIVE')))
+      .orderBy(desc(schema.subscriptionContracts.createdAt), desc(schema.subscriptionContracts.id))
       .limit(1);
 
     return contract || null;

@@ -4,7 +4,7 @@ import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { BillingChargePayload } from '@packages/event-contracts/streams/wallet-command.stream';
 import { DomainEvent } from '@packages/event-contracts/types';
 import { DbService } from '@app/db';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { WalletSchema, paymentIntents, outboxEvents, IntentPurpose } from '../schema';
 import { BillingAgreementService } from '../billing/billing-agreement.service';
@@ -190,6 +190,15 @@ export class BillingChargeConsumer {
           });
           return;
         }
+
+        case 'CANCELED':
+          // 이 키의 intent 는 이미 취소됨. 취소된 주기의 재청구는 membership 이 새 멱등키로 발행하므로
+          // 정상 흐름에선 이 분기에 도달하지 않는다. 도달했다면 소각된 키의 재발행이므로 silent default
+          // 대신 명시 로그로 진단 가능하게 한다.
+          this.logger.warn(
+            `[BillingCharge] 이미 취소된 intent 키 재수신 — skip (intentId=${existingId}, key=${payload.idempotencyKey})`,
+          );
+          return;
 
         default:
           this.logger.warn(
@@ -401,16 +410,30 @@ export class BillingChargeConsumer {
       }
 
       case 'PENDING': {
-        // CMS 배치: charge → PENDING, intent → PENDING_SETTLEMENT
-        await this.chargesService.updateStatus(chargeId, 'PENDING', {
-          providerTransactionId: result.providerTransactionId,
-          responsePayload: result.raw,
-        });
+        // CMS 배치: charge → PENDING, intent → PENDING_SETTLEMENT.
+        // 두 전이를 한 트랜잭션으로 묶어 중간 크래시 시 charge=PENDING / intent=PROCESSING 분열을 막는다.
+        await this.dbService.db.transaction(async (tx) => {
+          await this.chargesService.updateStatus(
+            chargeId,
+            'PENDING',
+            {
+              providerTransactionId: result.providerTransactionId,
+              responsePayload: result.raw,
+            },
+            tx,
+          );
 
-        await this.stateTransitionService.transitionIntent(intentId, 'PENDING_SETTLEMENT', {
-          correlationId,
-          reasonCode: 'PENDING_SETTLEMENT',
-          reasonMessage: 'Awaiting external settlement result (CMS batch)',
+          await this.stateTransitionService.transitionIntent(
+            intentId,
+            'PENDING_SETTLEMENT',
+            {
+              correlationId,
+              reasonCode: 'PENDING_SETTLEMENT',
+              reasonMessage: 'Awaiting external settlement result (CMS batch)',
+            },
+            undefined,
+            tx,
+          );
         });
 
         this.logger.log(
@@ -495,7 +518,9 @@ export class BillingChargeConsumer {
         buildOutboxInsertValues({
           eventType: GatewayEventType.INTENT_FAILED,
           aggregateType: GATEWAY_AGGREGATE_TYPE,
-          aggregateId: intentId ?? `billing-charge:${payload.idempotencyKey}`,
+          // aggregate_id 는 uuid 컬럼이라 intent 가 없을 땐 문자열 키를 넣을 수 없다(22P02).
+          // 합성 UUID 를 쓰되, 구독자 라우팅/멱등은 partitionKey 와 payload.intentId 로 처리한다.
+          aggregateId: intentId ?? randomUUID(),
           partitionKey: `${payload.subscriberType}:${payload.subscriberRef}`,
           payload: {
             // intent 생성 전 실패(agreement/method 부재)는 intentId가 없으므로 멱등 키로 안정 키를 내려준다.
