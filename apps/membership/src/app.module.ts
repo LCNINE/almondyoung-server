@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { LoggerModule } from 'nestjs-pino';
 import { loggerConfig } from '@app/shared/observability/logger.config';
 import { HttpModule } from '@nestjs/axios';
+import { ScheduleModule } from '@nestjs/schedule';
 import { DbModule } from '@app/db';
 import { EventsModule, EventTraceApiModule } from '@app/events';
 import { MEMBERSHIP_STREAM, PAYMENT_STREAM } from '@packages/event-contracts/streams';
@@ -72,6 +73,7 @@ import { JwtAuthGuard } from '@app/authorization';
       scopes: [],
     }),
     HttpModule,
+    ScheduleModule.forRoot(),
     DbModule.forRoot({
       config: {
         connectionString: process.env.DATABASE_URL || '',

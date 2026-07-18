@@ -1,8 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { DbService } from '@app/db';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { WalletSchema, billingMethods, cmsAgreements, cmsMembers } from '../schema';
+import { CMS_AGREEMENT_REGISTERED_STATUSES } from './cms-agreement-status';
 import { BillingMethod, CmsMember } from '../types';
 import { CmsApiClient } from './cms-api.client';
 import { BillingMethodService } from '../billing/billing-method.service';
@@ -214,7 +215,12 @@ export class CmsMemberService {
       await tx
         .update(cmsAgreements)
         .set({ status: '변경됨', updatedAt: new Date() })
-        .where(and(eq(cmsAgreements.cmsMemberId, cmsMember.cmsMemberId), eq(cmsAgreements.status, '등록')));
+        .where(
+          and(
+            eq(cmsAgreements.cmsMemberId, cmsMember.cmsMemberId),
+            inArray(cmsAgreements.status, [...CMS_AGREEMENT_REGISTERED_STATUSES]),
+          ),
+        );
     });
 
     return { ...cmsMember, status: 'PENDING' };
