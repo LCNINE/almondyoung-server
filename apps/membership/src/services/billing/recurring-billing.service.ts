@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { format } from 'date-fns';
 import { BillingReader } from './billing.reader';
 import { BillingManager, BillingResult } from './billing.manager';
@@ -29,10 +29,9 @@ export class RecurringBillingService {
   ) {}
 
   /**
-   * 매 5분마다 정기결제 스케줄러 실행 (테스트용)
-   * 프로덕션에서는 EVERY_DAY_AT_9AM으로 변경
+   * 매일 09시 정기결제 스케줄러 실행
    */
-  @Cron('*/1 * * * *') // 매 1분마다 실행
+  @Cron(CronExpression.EVERY_DAY_AT_9AM)
   async runDailyBillingScheduler(): Promise<void> {
     this.logger.log('Starting daily billing scheduler...');
 
