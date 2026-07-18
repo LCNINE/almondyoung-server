@@ -76,13 +76,30 @@ export class ProductPurchaseConstraintsService {
     input: UpsertPurchaseConstraintDto,
     tx?: DbTransaction,
   ): Promise<PurchaseConstraintReadModel | null> {
-    this.assertValidInput(input);
-
     return this.db.run(async (tx) => {
       await this.assertDraftVersion(masterId, versionId, tx);
 
+      return this.upsertForVersion(masterId, versionId, input, tx);
+    }, tx);
+  }
+
+  /**
+   * draft 검사 없는 upsert. active 버전 직접 토글(운영 정책) 전용이고 이벤트는 호출자가 발행한다.
+   * draft 편집은 upsertForDraft 를 쓸 것.
+   */
+  async upsertForVersion(
+    masterId: string,
+    versionId: string,
+    input: UpsertPurchaseConstraintDto,
+    tx?: DbTransaction,
+  ): Promise<PurchaseConstraintReadModel | null> {
+    this.assertValidInput(input);
+
+    return this.db.run(async (tx) => {
+      await this.assertVersionBelongsToMaster(masterId, versionId, tx);
+
       if (this.isDeleteIntent(input)) {
-        await this.deleteForDraft(masterId, versionId, tx);
+        await this.deleteForVersion(masterId, versionId, tx);
         return null;
       }
 
@@ -166,6 +183,13 @@ export class ProductPurchaseConstraintsService {
     await this.db.run(async (tx) => {
       await this.assertDraftVersion(masterId, versionId, tx);
 
+      await this.deleteForVersion(masterId, versionId, tx);
+    }, tx);
+  }
+
+  /** draft 여부를 묻지 않는 삭제. upsertForVersion 과 짝. */
+  async deleteForVersion(masterId: string, versionId: string, tx?: DbTransaction): Promise<void> {
+    await this.db.run(async (tx) => {
       const mapping = await this.getMapping(masterId, versionId, tx);
       if (!mapping) {
         return;

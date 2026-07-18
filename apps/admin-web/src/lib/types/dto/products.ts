@@ -130,6 +130,13 @@ export interface MastersQuery {
   status?: ProductStatus;
   /** active(기본): active 버전만 / active-or-inactive: active 우선, 없으면 최신 inactive 포함 / all: draft만 있는 상품 포함 */
   mode?: 'active' | 'active-or-inactive' | 'all';
+  productType?: 'regular_sale' | 'limited_edition';
+  approvalStatus?: 'draft' | 'pending' | 'approved' | 'rejected';
+  /** 등록일 범위 시작(ISO). product_masters.createdAt 기준 */
+  createdFrom?: string;
+  createdTo?: string;
+  sort?: 'createdAt' | 'name' | 'updatedAt';
+  order?: 'asc' | 'desc';
   limit?: number;
   page?: number;
 }
@@ -168,11 +175,15 @@ export interface MasterSummaryDto {
   isVisibleToMembersOnly: boolean;
   /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly: boolean;
+  /** 해외직구 상품 여부 — 체크아웃 시 개인통관고유부호 필수. (목록 API가 이미 반환) */
+  isOverseas: boolean;
   status: ProductStatus;
   createdAt: string;
   optionGroupNames: string[];
   variantCount: number;
   priceSummary: PriceSummaryDto | null;
+  /** active 버전 품목 기준 품절 집계. none=판매가능, partial=부분품절, all=전체품절. */
+  soldOutState: 'none' | 'partial' | 'all';
 }
 
 export interface MasterSummaryListResponseDto {
@@ -830,6 +841,33 @@ export interface CreateDraftVersionDto {
   copyMappings?: boolean;
 }
 
+export interface MyDraftListItem {
+  masterId: string;
+  versionId: string;
+  name: string;
+  thumbnail: string | null;
+  brand: string | null;
+  productType: string;
+  status: 'draft';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MyDraftsQuery {
+  page?: number;
+  limit?: number;
+  q?: string;
+  sort?: 'updatedAt' | 'createdAt';
+  order?: 'asc' | 'desc';
+}
+
+export interface MyDraftsResponse {
+  data: MyDraftListItem[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 // ===== 채널 리스팅 =====
 
 export interface ChannelListingDto {
@@ -953,13 +991,17 @@ export interface BulkUpdateResultDto {
   failed?: BulkUpdateFailureDto[];
 }
 
-// ===== CSV 관련 =====
+export interface BulkUpdatePolicyDto {
+  productIds: string[];
+  hideMembershipPriceForNonMembers?: boolean;
+  isVisibleToMembersOnly?: boolean;
+  isOverseas?: boolean;
+}
 
-export interface CsvImportResultDto {
-  success: boolean;
-  imported: number;
-  failed: number;
-  errors: string[];
+// POST /masters/bulk/policy 응답 모양 (products 없음).
+export interface BulkPolicyResultDto {
+  updated: number;
+  failed?: BulkUpdateFailureDto[];
 }
 
 // ===== 감사 로그 관련 =====

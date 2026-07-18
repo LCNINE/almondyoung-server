@@ -39,7 +39,7 @@ export const PAYMENT_PROVIDER_DESCRIPTORS = {
   BANK_TRANSFER: {
     code: 'BANK_TRANSFER',
     displayName: '무통장입금',
-    description: '계좌 무통장 입금 (수동 확인)',
+    description: '토스 가상계좌',
     defaultEnabled: true,
     defaultSortOrder: 30,
     kind: 'gateway',

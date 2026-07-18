@@ -7,6 +7,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   Min,
   ValidateNested,
@@ -19,6 +20,14 @@ export class StoreCreateReturnRequestLineDto {
   @IsString()
   @IsNotEmpty()
   salesOrderLineId: string;
+
+  @ApiProperty({ description: '배송 라인 ID (실제 배송 시도 기준 반품 eligibility grain)' })
+  @IsUUID()
+  shipmentLineId: string;
+
+  @ApiProperty({ description: '배송 완료된 정확한 dispatch attempt ID' })
+  @IsUUID()
+  dispatchAttemptId: string;
 
   @ApiProperty({ description: '반품 수량', minimum: 1 })
   @IsInt()
@@ -76,6 +85,12 @@ export class StoreReturnRequestItemDto {
   @ApiProperty({ description: '판매 주문 라인 ID' })
   salesOrderLineId: string;
 
+  @ApiPropertyOptional({ description: '배송 라인 ID (legacy 반품 행은 null)' })
+  shipmentLineId?: string | null;
+
+  @ApiPropertyOptional({ description: '배송 시도 ID (legacy 반품 행은 null)' })
+  dispatchAttemptId?: string | null;
+
   @ApiProperty({ description: '반품 수량' })
   quantity: number;
 }
@@ -101,6 +116,35 @@ export class StoreReturnRequestResponseDto {
 
   @ApiProperty({ description: '생성 일시' })
   createdAt: Date;
+}
+
+export class StoreReturnEligibilityItemDto {
+  @ApiProperty()
+  salesOrderLineId: string;
+  @ApiProperty()
+  shipmentId: string;
+  @ApiProperty()
+  shipmentLineId: string;
+  @ApiProperty()
+  dispatchAttemptId: string;
+  @ApiProperty()
+  deliveredAt: Date;
+  @ApiProperty()
+  shippedQty: number;
+  @ApiProperty()
+  claimedQty: number;
+  @ApiProperty()
+  remainingEligibleQty: number;
+  @ApiProperty({ description: 'legacy 및 다른 배송 시도 claim까지 반영한 주문 라인 전체 잔여 한도' })
+  salesOrderLineRemainingEligibleQty: number;
+}
+
+export class StoreReturnEligibilityResponseDto {
+  @ApiProperty()
+  orderId: string;
+
+  @ApiProperty({ type: [StoreReturnEligibilityItemDto] })
+  items: StoreReturnEligibilityItemDto[];
 }
 
 export class StoreOrderLineDto {

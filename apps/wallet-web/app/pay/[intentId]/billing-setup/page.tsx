@@ -4,6 +4,8 @@ import { isAccessTokenUsable, selfOrigin } from '@/lib/auth/access-token';
 import { SESSION_COOKIE_NAMES } from '@/lib/auth/session-cookies';
 import { BillingSetupForm } from './billing-setup-form';
 
+export const dynamic = 'force-dynamic';
+
 interface Props {
   params: Promise<{ intentId: string }>;
   searchParams: Promise<{ returnUrl?: string; fail?: string; msg?: string; mode?: string }>;

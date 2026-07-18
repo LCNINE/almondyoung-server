@@ -1,6 +1,12 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { randomUUID } from 'crypto';
-import { and, eq, inArray, sum } from 'drizzle-orm';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { and, asc, desc, eq, inArray, max, notInArray, sum } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { InjectTypedDb } from '@app/db';
 import {
@@ -12,18 +18,19 @@ import {
   ReturnRequestItem,
   ExchangeRequest,
   ExchangeRequestItem,
+  DbTx,
 } from '../../inventory/schema/inventory.schema';
 import {
   StoreCreateReturnRequestDto,
   StoreReturnRequestResponseDto,
   StoreOrderLinesResponseDto,
   StoreOrderLineDto,
+  StoreReturnEligibilityResponseDto,
 } from '../dto/store-return-request.dto';
-import {
-  StoreCreateExchangeRequestDto,
-  StoreExchangeRequestResponseDto,
-} from '../dto/store-exchange-request.dto';
-import { WalletRefundClient } from './wallet-refund.client';
+import { StoreCreateExchangeRequestDto, StoreExchangeRequestResponseDto } from '../dto/store-exchange-request.dto';
+import { WalletRefundClient, WalletRefundOutcome } from './wallet-refund.client';
+import { classifyRefundOutcome } from './return-refund-classification';
+import { lockShipmentConnectedComponentGraph } from '../../fulfillment/services/shipment-reservation.service';
 
 type SalesOrderRow = typeof inventoryTables.salesOrders.$inferSelect;
 type ReturnRequestRow = typeof returnExchangeTables.returnRequests.$inferSelect;
@@ -42,8 +49,22 @@ export interface ExchangeRequestWithItems {
 }
 
 // Active statuses that block creating a new request for the same order
-const ACTIVE_RETURN_STATUSES = ['requested', 'approved', 'collection_pending', 'collected', 'inspected', 'refund_pending'] as const;
-const ACTIVE_EXCHANGE_STATUSES = ['requested', 'approved', 'collection_pending', 'collected', 'inspected', 'refund_pending'] as const;
+const ACTIVE_RETURN_STATUSES = [
+  'requested',
+  'approved',
+  'collection_pending',
+  'collected',
+  'inspected',
+  'refund_pending',
+] as const;
+const ACTIVE_EXCHANGE_STATUSES = [
+  'requested',
+  'approved',
+  'collection_pending',
+  'collected',
+  'inspected',
+  'refund_pending',
+] as const;
 
 // Statuses where FO is considered fully delivered
 const FO_DELIVERED_STATUSES = new Set(['completed']);
@@ -67,7 +88,31 @@ export class StoreReturnExchangeService {
   ): Promise<StoreReturnRequestResponseDto> {
     const so = await this.findSoOrThrow(orderId);
     this.assertOwnership(so, customerId);
-    await this.assertOrderDelivered(orderId, so);
+    return this.createReturnRequestForActor(orderId, dto, {
+      customerId: so.customerId ?? null,
+      requestedBy: 'customer',
+      actorId: customerId,
+    });
+  }
+
+  async adminCreateReturnRequest(
+    orderId: string,
+    adminId: string,
+    dto: StoreCreateReturnRequestDto,
+  ): Promise<StoreReturnRequestResponseDto> {
+    const so = await this.findSoOrThrow(orderId);
+    return this.createReturnRequestForActor(orderId, dto, {
+      customerId: so.customerId ?? null,
+      requestedBy: 'admin',
+      actorId: adminId,
+    });
+  }
+
+  private async createReturnRequestForActor(
+    orderId: string,
+    dto: StoreCreateReturnRequestDto,
+    actor: { customerId: string | null; requestedBy: 'customer' | 'admin'; actorId: string },
+  ): Promise<StoreReturnRequestResponseDto> {
     await this.assertNoActiveReturnRequest(orderId);
 
     const lineIds = dto.lines.map((l) => l.salesOrderLineId);
@@ -75,11 +120,16 @@ export class StoreReturnExchangeService {
     await this.assertReturnQuantitiesAvailable(lineIds, dto.lines);
 
     return this.db.db.transaction(async (tx) => {
+      // The attempt rows are locked before the cumulative claim is re-read. Two
+      // concurrent requests for the same delivered attempt therefore cannot both
+      // consume the same remaining quantity.
+      await this.assertAttemptBasedReturnEligibility(orderId, dto.lines, tx as unknown as DbTx);
+
       const [returnRequest] = await tx
         .insert(returnExchangeTables.returnRequests)
         .values({
           salesOrderId: orderId,
-          customerId: so.customerId ?? null,
+          customerId: actor.customerId,
           status: 'requested',
           reasonCode: dto.reasonCode,
           reasonDetail: dto.reasonDetail ?? null,
@@ -93,6 +143,8 @@ export class StoreReturnExchangeService {
         dto.lines.map((line) => ({
           returnRequestId: returnRequest.id,
           salesOrderLineId: line.salesOrderLineId,
+          shipmentLineId: line.shipmentLineId,
+          dispatchAttemptId: line.dispatchAttemptId,
           quantity: line.quantity,
           reasonCode: (line.reasonCode as typeof dto.reasonCode) ?? null,
         })),
@@ -105,8 +157,9 @@ export class StoreReturnExchangeService {
 
       await this.insertBusinessLink(tx, 'return_request', returnRequest.id, orderId, 'return_lifecycle_event', {
         event: 'return_requested',
-        requestedBy: 'customer',
-        customerId,
+        requestedBy: actor.requestedBy,
+        actorId: actor.actorId,
+        customerId: actor.customerId,
         timestamp: new Date().toISOString(),
       });
 
@@ -215,10 +268,7 @@ export class StoreReturnExchangeService {
 
   // ── by-channel-order variants (storefront uses Medusa order ID) ──────────
 
-  async getOrderLinesByChannelOrder(
-    channelOrderId: string,
-    customerId: string,
-  ): Promise<StoreOrderLinesResponseDto> {
+  async getOrderLinesByChannelOrder(channelOrderId: string, customerId: string): Promise<StoreOrderLinesResponseDto> {
     const so = await this.findSoByChannelOrderOrThrow(channelOrderId);
     this.assertOwnership(so, customerId);
 
@@ -231,15 +281,186 @@ export class StoreReturnExchangeService {
       orderId: so.id,
       channelOrderId: so.channelOrderId,
       orderStatus: so.status,
-      lines: lines.map((l): StoreOrderLineDto => ({
-        id: l.id,
-        productName: l.productName,
-        quantity: l.quantity,
-        unitPrice: l.unitPrice ?? null,
-        totalPrice: l.totalPrice ?? null,
-        variantId: l.variantId,
-      })),
+      lines: lines.map(
+        (l): StoreOrderLineDto => ({
+          id: l.id,
+          productName: l.productName,
+          quantity: l.quantity,
+          unitPrice: l.unitPrice ?? null,
+          totalPrice: l.totalPrice ?? null,
+          variantId: l.variantId,
+        }),
+      ),
     };
+  }
+
+  async getReturnEligibility(orderId: string, customerId: string): Promise<StoreReturnEligibilityResponseDto> {
+    const so = await this.findSoOrThrow(orderId);
+    this.assertOwnership(so, customerId);
+    return this.buildReturnEligibility(so.id);
+  }
+
+  async adminGetReturnEligibility(orderId: string): Promise<StoreReturnEligibilityResponseDto> {
+    const so = await this.findSoOrThrow(orderId);
+    return this.buildReturnEligibility(so.id);
+  }
+
+  async adminGetReturnEligibilityByChannelOrder(channelOrderId: string): Promise<StoreReturnEligibilityResponseDto> {
+    const so = await this.findSoByChannelOrderOrThrow(channelOrderId);
+    return this.buildReturnEligibility(so.id);
+  }
+
+  private async buildReturnEligibility(orderId: string): Promise<StoreReturnEligibilityResponseDto> {
+    const shipped = await this.db.db
+      .select({
+        salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
+        shipmentId: wmsTables.shipmentLines.shipmentId,
+        shipmentLineId: wmsTables.shipmentLines.id,
+        dispatchAttemptId: wmsTables.dispatchAttempts.id,
+        shippedQty: sum(wmsTables.dispatchAttemptSources.qty),
+      })
+      .from(wmsTables.dispatchAttemptSources)
+      .innerJoin(
+        wmsTables.dispatchAttempts,
+        eq(wmsTables.dispatchAttempts.id, wmsTables.dispatchAttemptSources.dispatchAttemptId),
+      )
+      .innerJoin(
+        wmsTables.shipmentLines,
+        eq(wmsTables.shipmentLines.id, wmsTables.dispatchAttemptSources.shipmentLineId),
+      )
+      .innerJoin(
+        wmsTables.fulfillmentOrderItems,
+        eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+      )
+      .where(
+        and(
+          eq(wmsTables.fulfillmentOrderItems.salesOrderId, orderId),
+          eq(wmsTables.dispatchAttempts.status, 'dispatched'),
+        ),
+      )
+      .groupBy(
+        wmsTables.fulfillmentOrderItems.salesOrderLineId,
+        wmsTables.shipmentLines.shipmentId,
+        wmsTables.shipmentLines.id,
+        wmsTables.dispatchAttempts.id,
+      );
+    const attemptIds = shipped.map((row) => row.dispatchAttemptId);
+    if (!attemptIds.length) return { orderId, items: [] };
+    const [deliveries, claims, exchangeClaims, salesOrderLines] = await Promise.all([
+      this.db.db
+        .select({
+          dispatchAttemptId: wmsTables.shipmentTracking.dispatchAttemptId,
+          deliveredAt: max(wmsTables.shipmentTracking.timestamp),
+        })
+        .from(wmsTables.shipmentTracking)
+        .where(
+          and(
+            inArray(wmsTables.shipmentTracking.dispatchAttemptId, attemptIds),
+            eq(wmsTables.shipmentTracking.status, 'delivered'),
+          ),
+        )
+        .groupBy(wmsTables.shipmentTracking.dispatchAttemptId),
+      this.db.db
+        .select({
+          salesOrderLineId: returnExchangeTables.returnRequestItems.salesOrderLineId,
+          shipmentLineId: returnExchangeTables.returnRequestItems.shipmentLineId,
+          dispatchAttemptId: returnExchangeTables.returnRequestItems.dispatchAttemptId,
+          quantity: returnExchangeTables.returnRequestItems.quantity,
+        })
+        .from(returnExchangeTables.returnRequestItems)
+        .innerJoin(
+          returnExchangeTables.returnRequests,
+          eq(returnExchangeTables.returnRequests.id, returnExchangeTables.returnRequestItems.returnRequestId),
+        )
+        .where(
+          and(
+            eq(returnExchangeTables.returnRequests.salesOrderId, orderId),
+            notInArray(returnExchangeTables.returnRequests.status, ['rejected', 'cancelled']),
+          ),
+        ),
+      this.db.db
+        .select({
+          salesOrderLineId: returnExchangeTables.exchangeRequestItems.salesOrderLineId,
+          quantity: sum(returnExchangeTables.exchangeRequestItems.quantity),
+        })
+        .from(returnExchangeTables.exchangeRequestItems)
+        .innerJoin(
+          returnExchangeTables.exchangeRequests,
+          eq(returnExchangeTables.exchangeRequests.id, returnExchangeTables.exchangeRequestItems.exchangeRequestId),
+        )
+        .where(
+          and(
+            eq(returnExchangeTables.exchangeRequests.salesOrderId, orderId),
+            inArray(returnExchangeTables.exchangeRequests.status, [...ACTIVE_EXCHANGE_STATUSES]),
+          ),
+        )
+        .groupBy(returnExchangeTables.exchangeRequestItems.salesOrderLineId),
+      this.db.db
+        .select({ id: wmsTables.salesOrderLines.id, quantity: wmsTables.salesOrderLines.quantity })
+        .from(wmsTables.salesOrderLines)
+        .where(eq(wmsTables.salesOrderLines.salesOrderId, orderId)),
+    ]);
+    const deliveredAtByAttempt = new Map(
+      deliveries
+        .filter((row): row is typeof row & { dispatchAttemptId: string; deliveredAt: Date } =>
+          Boolean(row.dispatchAttemptId && row.deliveredAt),
+        )
+        .map((row) => [row.dispatchAttemptId, row.deliveredAt]),
+    );
+    const claimedByGrain = new Map<string, number>();
+    const claimedBySalesOrderLine = new Map<string, number>();
+    for (const claim of claims) {
+      claimedBySalesOrderLine.set(
+        claim.salesOrderLineId,
+        (claimedBySalesOrderLine.get(claim.salesOrderLineId) ?? 0) + claim.quantity,
+      );
+      if (!claim.shipmentLineId || !claim.dispatchAttemptId) continue;
+      const key = `${claim.dispatchAttemptId}:${claim.shipmentLineId}`;
+      claimedByGrain.set(key, (claimedByGrain.get(key) ?? 0) + claim.quantity);
+    }
+    for (const claim of exchangeClaims) {
+      claimedBySalesOrderLine.set(
+        claim.salesOrderLineId,
+        (claimedBySalesOrderLine.get(claim.salesOrderLineId) ?? 0) + Number(claim.quantity ?? 0),
+      );
+    }
+    const purchasedBySalesOrderLine = new Map(salesOrderLines.map((line) => [line.id, line.quantity]));
+    return {
+      orderId,
+      items: shipped.flatMap((row) => {
+        if (!row.salesOrderLineId) return [];
+        const deliveredAt = deliveredAtByAttempt.get(row.dispatchAttemptId);
+        if (!deliveredAt) return [];
+        const shippedQty = Number(row.shippedQty ?? 0);
+        const claimedQty = claimedByGrain.get(`${row.dispatchAttemptId}:${row.shipmentLineId}`) ?? 0;
+        const salesOrderLineRemainingEligibleQty = Math.max(
+          0,
+          (purchasedBySalesOrderLine.get(row.salesOrderLineId) ?? 0) -
+            (claimedBySalesOrderLine.get(row.salesOrderLineId) ?? 0),
+        );
+        return [
+          {
+            salesOrderLineId: row.salesOrderLineId,
+            shipmentId: row.shipmentId,
+            shipmentLineId: row.shipmentLineId,
+            dispatchAttemptId: row.dispatchAttemptId,
+            deliveredAt,
+            shippedQty,
+            claimedQty,
+            remainingEligibleQty: Math.min(Math.max(0, shippedQty - claimedQty), salesOrderLineRemainingEligibleQty),
+            salesOrderLineRemainingEligibleQty,
+          },
+        ];
+      }),
+    };
+  }
+
+  async getReturnEligibilityByChannelOrder(
+    channelOrderId: string,
+    customerId: string,
+  ): Promise<StoreReturnEligibilityResponseDto> {
+    const so = await this.findSoByChannelOrderOrThrow(channelOrderId);
+    return this.getReturnEligibility(so.id, customerId);
   }
 
   async createReturnRequestByChannelOrder(
@@ -289,6 +510,16 @@ export class StoreReturnExchangeService {
         throw new ConflictException(`반품 요청 상태가 'requested'가 아닙니다. 현재 상태: ${rr.status}`);
       }
 
+      const returnReceiptItems = await tx
+        .select({
+          salesOrderLineId: returnExchangeTables.returnRequestItems.salesOrderLineId,
+          shipmentLineId: returnExchangeTables.returnRequestItems.shipmentLineId,
+          dispatchAttemptId: returnExchangeTables.returnRequestItems.dispatchAttemptId,
+          quantity: returnExchangeTables.returnRequestItems.quantity,
+        })
+        .from(returnExchangeTables.returnRequestItems)
+        .where(eq(returnExchangeTables.returnRequestItems.returnRequestId, returnRequestId));
+
       const [updated] = await tx
         .update(returnExchangeTables.returnRequests)
         .set({ status: 'approved', decidedAt: new Date(), adminNote: adminNote ?? null, updatedAt: new Date() })
@@ -299,6 +530,8 @@ export class StoreReturnExchangeService {
         event: 'return_approved',
         adminId,
         adminNote: adminNote ?? null,
+        returnReceiptItemsVersion: 1,
+        returnReceiptItems,
         timestamp: new Date().toISOString(),
       });
 
@@ -400,111 +633,169 @@ export class StoreReturnExchangeService {
   }
 
   async completeReturnRequest(returnRequestId: string, adminId: string): Promise<ReturnRequest> {
-    const salesOrder = await this.db.db
-      .select({
-        id: wmsTables.salesOrders.id,
-        walletIntentId: wmsTables.salesOrders.walletIntentId,
-        totalAmount: wmsTables.salesOrders.totalAmount,
-        shippingFee: wmsTables.salesOrders.shippingFee,
-      })
-      .from(wmsTables.salesOrders)
-      .innerJoin(returnExchangeTables.returnRequests, eq(returnExchangeTables.returnRequests.salesOrderId, wmsTables.salesOrders.id))
-      .where(eq(returnExchangeTables.returnRequests.id, returnRequestId))
-      .limit(1)
-      .then((r) => r[0]);
-
-    const [allOrderLines, returnItems] = await Promise.all([
-      this.db.db
-        .select({
-          id: wmsTables.salesOrderLines.id,
-          quantity: wmsTables.salesOrderLines.quantity,
-          unitPrice: wmsTables.salesOrderLines.unitPrice,
-          totalPrice: wmsTables.salesOrderLines.totalPrice,
-        })
-        .from(wmsTables.salesOrderLines)
-        .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrder!.id)),
-      this.db.db
-        .select({
-          salesOrderLineId: returnExchangeTables.returnRequestItems.salesOrderLineId,
-          quantity: returnExchangeTables.returnRequestItems.quantity,
-          unitPrice: wmsTables.salesOrderLines.unitPrice,
-        })
-        .from(returnExchangeTables.returnRequestItems)
-        .leftJoin(wmsTables.salesOrderLines, eq(returnExchangeTables.returnRequestItems.salesOrderLineId, wmsTables.salesOrderLines.id))
-        .where(eq(returnExchangeTables.returnRequestItems.returnRequestId, returnRequestId)),
-    ]);
-
-    const refundAmount = this.calculateReturnRefund(
-      returnItems,
-      allOrderLines,
-      salesOrder?.totalAmount ?? null,
-      salesOrder?.shippingFee ?? 0,
-    );
-    // 환불할 금액이 없으면 즉시 완료. 있으면 refund_pending 경유 후 Wallet 성공 시 completed.
-    const immediateComplete = refundAmount <= 0;
-    const needsRefund = !immediateComplete && !!salesOrder?.walletIntentId;
-
-    // Phase 1: inspected → refund_pending (or completed when no refund needed)
-    const updatedRequest = await this.db.db.transaction(async (tx) => {
-      const rr = await this.findReturnRequestOrThrow(returnRequestId, tx);
+    // Phase 1: inspected → refund_pending (or completed). 금액 계산도 tx 내에서.
+    const phase1 = await this.db.db.transaction(async (tx) => {
+      const rr = await this.findReturnRequestOrThrow(returnRequestId, tx, { forUpdate: true });
       if (rr.status !== 'inspected') {
         throw new ConflictException(`반품 요청 상태가 'inspected'가 아닙니다. 현재 상태: ${rr.status}`);
       }
+
+      const salesOrder = await tx
+        .select({
+          id: wmsTables.salesOrders.id,
+          walletIntentId: wmsTables.salesOrders.walletIntentId,
+          totalAmount: wmsTables.salesOrders.totalAmount,
+          shippingFee: wmsTables.salesOrders.shippingFee,
+        })
+        .from(wmsTables.salesOrders)
+        .where(eq(wmsTables.salesOrders.id, rr.salesOrderId))
+        .limit(1)
+        .then((r) => r[0]);
+
+      const refundAmount = salesOrder ? await this.computeReturnRefundAmount(returnRequestId, salesOrder, tx) : 0;
+      const immediateComplete = refundAmount <= 0;
+      const needsRefund = !immediateComplete && !!salesOrder?.walletIntentId;
 
       const now = new Date();
       const nextStatus = immediateComplete ? 'completed' : 'refund_pending';
       const [result] = await tx
         .update(returnExchangeTables.returnRequests)
-        .set({
-          status: nextStatus,
-          ...(immediateComplete ? { completedAt: now } : {}),
-          updatedAt: now,
-        })
+        .set({ status: nextStatus, ...(immediateComplete ? { completedAt: now } : {}), updatedAt: now })
         .where(eq(returnExchangeTables.returnRequests.id, returnRequestId))
         .returning();
-
       await this.insertBusinessLink(tx, 'return_request', returnRequestId, rr.salesOrderId, 'return_lifecycle_event', {
         event: immediateComplete ? 'return_completed' : 'return_refund_pending',
         adminId,
         timestamp: now.toISOString(),
       });
 
-      return result;
-    });
-
-    if (immediateComplete || !needsRefund) {
       if (!immediateComplete && salesOrder && !salesOrder.walletIntentId) {
         this.logger.warn(
           `[ReturnRefund] No walletIntentId for SO ${salesOrder.id}, return ${returnRequestId}. Manual refund required.`,
         );
       }
-      return updatedRequest;
+      return { updatedRequest: result, immediateComplete, needsRefund };
+    });
+
+    if (phase1.immediateComplete || !phase1.needsRefund) {
+      return phase1.updatedRequest;
     }
 
-    // Phase 2: Wallet 환불 시도. 성공 시 completed, 실패 시 refund_pending 유지 (수동 처리 필요)
-    const correlationId = `return:${returnRequestId}:refund`;
+    // Phase 2+: 통합 상태기계 (intent-first attempt 행 + 결정적 key)
+    return this.attemptReturnRefund(returnRequestId, adminId);
+  }
+
+  /**
+   * refund_pending 반품을 Wallet 환불로 종결(성공)하거나 재시도 가능 상태로 유지한다.
+   * intent-first attempt 행이 idempotency key·amount 의 SoT (규율 2). 초회·재시도 공용.
+   *
+   * Phase A(tx, FOR UPDATE): 행 잠금 + pending attempt 재사용 or 신규 attempt INSERT (Wallet 호출 전 durable)
+   * Phase B(tx 밖): attempt 행의 key·amount 로 Wallet 호출
+   * Phase C(tx, FOR UPDATE): classifyRefundOutcome 로 attempt 행 + 반품 상태 전이
+   */
+  private async attemptReturnRefund(returnRequestId: string, adminId: string): Promise<ReturnRequest> {
+    // ── Phase A ──────────────────────────────────────────────────────────────
+    const claim = await this.db.db.transaction(async (tx) => {
+      const rr = await this.findReturnRequestOrThrow(returnRequestId, tx, { forUpdate: true });
+      if (rr.status === 'completed') {
+        return { done: rr, attempt: null, walletIntentId: null as string | null };
+      }
+      if (rr.status !== 'refund_pending') {
+        throw new ConflictException(`환불 시도는 'refund_pending' 상태에서만 가능합니다. 현재 상태: ${rr.status}`);
+      }
+
+      const salesOrder = await tx
+        .select({
+          id: wmsTables.salesOrders.id,
+          walletIntentId: wmsTables.salesOrders.walletIntentId,
+          totalAmount: wmsTables.salesOrders.totalAmount,
+          shippingFee: wmsTables.salesOrders.shippingFee,
+        })
+        .from(wmsTables.salesOrders)
+        .where(eq(wmsTables.salesOrders.id, rr.salesOrderId))
+        .limit(1)
+        .then((r) => r[0]);
+
+      if (!salesOrder?.walletIntentId) {
+        throw new BadRequestException('walletIntentId가 없어 환불이 불가합니다. 수동 완료를 사용하세요.');
+      }
+
+      // pending attempt 재사용 (복구/in-flight) — 같은 key·amount (규율 2)
+      const pending = await tx
+        .select()
+        .from(returnExchangeTables.returnRefundAttempts)
+        .where(
+          and(
+            eq(returnExchangeTables.returnRefundAttempts.returnRequestId, returnRequestId),
+            eq(returnExchangeTables.returnRefundAttempts.status, 'pending'),
+          ),
+        )
+        .orderBy(desc(returnExchangeTables.returnRefundAttempts.attemptNumber))
+        .limit(1)
+        .then((r) => r[0]);
+
+      if (pending) {
+        return { done: null, attempt: pending, walletIntentId: salesOrder.walletIntentId };
+      }
+
+      // 신규 attempt (N = max+1) — 규율 1: pending 없을 때만(직전 확정 failed 또는 최초)
+      const amount = await this.computeReturnRefundAmount(returnRequestId, salesOrder, tx);
+      if (amount <= 0) {
+        throw new BadRequestException('환불 금액이 0원 이하입니다. 수동 완료를 사용하세요.');
+      }
+      const maxRow = await tx
+        .select({ maxN: max(returnExchangeTables.returnRefundAttempts.attemptNumber) })
+        .from(returnExchangeTables.returnRefundAttempts)
+        .where(eq(returnExchangeTables.returnRefundAttempts.returnRequestId, returnRequestId))
+        .then((r) => r[0]);
+      const attemptNumber = (maxRow?.maxN ?? 0) + 1;
+      const idempotencyKey = `return:${returnRequestId}:refund:${attemptNumber}`;
+      const [attempt] = await tx
+        .insert(returnExchangeTables.returnRefundAttempts)
+        .values({ returnRequestId, attemptNumber, idempotencyKey, amount, status: 'pending' })
+        .returning();
+      return { done: null, attempt, walletIntentId: salesOrder.walletIntentId };
+    });
+
+    if (claim.done) return claim.done;
+    const attempt = claim.attempt;
+
+    // ── Phase B (tx 밖) ────────────────────────────────────────────────────────
+    let outcome: WalletRefundOutcome;
     try {
-      const outcome = await this.walletRefundClient.refundByIntent(salesOrder!.walletIntentId!, refundAmount, {
+      outcome = await this.walletRefundClient.refundByIntent(claim.walletIntentId, attempt.amount, {
         reasonCode: 'RETURN_COMPLETED',
-        correlationId,
+        correlationId: attempt.idempotencyKey,
       });
+    } catch (err) {
+      // 네트워크 예외 등 = 불확정. attempt pending 유지 → 같은 key 재생 (규율 1).
+      this.logger.error(
+        `[ReturnRefund] Wallet call threw for return ${returnRequestId} attempt ${attempt.attemptNumber}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return this.db.db.transaction((tx) => this.findReturnRequestOrThrow(returnRequestId, tx));
+    }
 
-      // partial_pending = 무통장 등 비동기 처리 중 → 실제 환불 완료 아님. success만 completed 허용.
-      const refundSucceeded = outcome.kind === 'success';
-      await this.db.db.insert(wmsTables.businessLinks).values({
-        sourceType: 'return_request',
-        sourceId: returnRequestId,
-        targetType: 'wallet_refund',
-        targetExternalRef: refundSucceeded || outcome.kind === 'partial_pending'
-          ? `wallet:refund:${outcome.refunds?.[0]?.refundId ?? correlationId}`
-          : `wallet:intent:${salesOrder!.walletIntentId}`,
-        relationName: 'return_linked_wallet_refund',
-        metadata: { outcome: outcome.kind, amount: refundAmount, correlationId },
-      });
+    // ── Phase C ──────────────────────────────────────────────────────────────
+    const decision = classifyRefundOutcome(outcome);
+    return this.db.db.transaction(async (tx) => {
+      const rr = await this.findReturnRequestOrThrow(returnRequestId, tx, { forUpdate: true });
+      await this.insertRefundAuditLink(tx, returnRequestId, attempt, outcome, adminId);
 
-      if (refundSucceeded) {
+      const walletOutcomeMeta = {
+        kind: outcome.kind,
+        errorCode: 'errorCode' in outcome ? outcome.errorCode : undefined,
+      };
+
+      if (decision === 'succeeded') {
+        await tx
+          .update(returnExchangeTables.returnRefundAttempts)
+          .set({ status: 'succeeded', walletOutcome: walletOutcomeMeta, updatedAt: new Date() })
+          .where(eq(returnExchangeTables.returnRefundAttempts.id, attempt.id));
+        if (rr.status === 'completed') return rr; // 경합: 이미 완료
         const now = new Date();
-        const [completed] = await this.db.db
+        const [completed] = await tx
           .update(returnExchangeTables.returnRequests)
           .set({ status: 'completed', completedAt: now, updatedAt: now })
           .where(eq(returnExchangeTables.returnRequests.id, returnRequestId))
@@ -512,22 +803,33 @@ export class StoreReturnExchangeService {
         return completed;
       }
 
-      if (outcome.kind === 'partial_pending') {
-        this.logger.warn(
-          `[ReturnRefund] Wallet refund partial_pending for return ${returnRequestId}. Manual confirmation required.`,
-        );
-      } else {
+      if (decision === 'failed') {
+        // 경합 방어: 동시 success 가 이미 완료시킨 attempt 를 stale failed 로 뒤집지 않는다
+        // (뒤집으면 다음 재시도가 N+1 새 key 로 이중환불 경로를 연다). Phase C 는 return_request
+        // FOR UPDATE 로 직렬화 → rr.status==='completed' 확인이 "first terminal wins" 를 보장.
+        if (rr.status === 'completed') return rr;
+        // 확정 실패 → attempt 닫음 (다음 재시도가 N+1). RR refund_pending 유지.
+        await tx
+          .update(returnExchangeTables.returnRefundAttempts)
+          .set({ status: 'failed', walletOutcome: walletOutcomeMeta, updatedAt: new Date() })
+          .where(eq(returnExchangeTables.returnRefundAttempts.id, attempt.id));
         this.logger.error(
-          `[ReturnRefund] Wallet refund ${outcome.kind} for return ${returnRequestId}. Staying refund_pending for manual resolution.`,
+          `[ReturnRefund] Determinate failure for return ${returnRequestId} attempt ${attempt.attemptNumber}: ${JSON.stringify(walletOutcomeMeta)}`,
         );
+        return rr;
       }
-      return updatedRequest;
-    } catch (err) {
-      this.logger.error(
-        `[ReturnRefund] Wallet refund threw for return ${returnRequestId}: ${err instanceof Error ? err.message : String(err)}`,
+
+      // decision === 'pending' — 불확정. attempt pending 유지(같은 key 재생), RR refund_pending 유지.
+      if (rr.status === 'completed') return rr; // 경합: 동시 success 완료분을 덮어쓰지 않음
+      await tx
+        .update(returnExchangeTables.returnRefundAttempts)
+        .set({ walletOutcome: walletOutcomeMeta, updatedAt: new Date() })
+        .where(eq(returnExchangeTables.returnRefundAttempts.id, attempt.id));
+      this.logger.warn(
+        `[ReturnRefund] Indeterminate outcome for return ${returnRequestId} attempt ${attempt.attemptNumber} (${outcome.kind}). Staying refund_pending; same key retries.`,
       );
-      return updatedRequest;
-    }
+      return rr;
+    });
   }
 
   // ── Admin: state transitions (exchange) ──────────────────────────────────
@@ -545,11 +847,18 @@ export class StoreReturnExchangeService {
         .where(eq(returnExchangeTables.exchangeRequests.id, exchangeRequestId))
         .returning();
 
-      await this.insertBusinessLink(tx, 'exchange_request', exchangeRequestId, er.salesOrderId, 'exchange_lifecycle_event', {
-        event: 'exchange_collection_pending',
-        adminId,
-        timestamp: new Date().toISOString(),
-      });
+      await this.insertBusinessLink(
+        tx,
+        'exchange_request',
+        exchangeRequestId,
+        er.salesOrderId,
+        'exchange_lifecycle_event',
+        {
+          event: 'exchange_collection_pending',
+          adminId,
+          timestamp: new Date().toISOString(),
+        },
+      );
 
       return updated;
     });
@@ -568,17 +877,28 @@ export class StoreReturnExchangeService {
         .where(eq(returnExchangeTables.exchangeRequests.id, exchangeRequestId))
         .returning();
 
-      await this.insertBusinessLink(tx, 'exchange_request', exchangeRequestId, er.salesOrderId, 'exchange_lifecycle_event', {
-        event: 'exchange_collected',
-        adminId,
-        timestamp: new Date().toISOString(),
-      });
+      await this.insertBusinessLink(
+        tx,
+        'exchange_request',
+        exchangeRequestId,
+        er.salesOrderId,
+        'exchange_lifecycle_event',
+        {
+          event: 'exchange_collected',
+          adminId,
+          timestamp: new Date().toISOString(),
+        },
+      );
 
       return updated;
     });
   }
 
-  async approveExchangeRequest(exchangeRequestId: string, adminId: string, adminNote?: string): Promise<ExchangeRequest> {
+  async approveExchangeRequest(
+    exchangeRequestId: string,
+    adminId: string,
+    adminNote?: string,
+  ): Promise<ExchangeRequest> {
     return this.db.db.transaction(async (tx) => {
       const er = await this.findExchangeRequestOrThrow(exchangeRequestId, tx);
       if (er.status !== 'requested') {
@@ -591,18 +911,29 @@ export class StoreReturnExchangeService {
         .where(eq(returnExchangeTables.exchangeRequests.id, exchangeRequestId))
         .returning();
 
-      await this.insertBusinessLink(tx, 'exchange_request', exchangeRequestId, er.salesOrderId, 'exchange_lifecycle_event', {
-        event: 'exchange_approved',
-        adminId,
-        adminNote: adminNote ?? null,
-        timestamp: new Date().toISOString(),
-      });
+      await this.insertBusinessLink(
+        tx,
+        'exchange_request',
+        exchangeRequestId,
+        er.salesOrderId,
+        'exchange_lifecycle_event',
+        {
+          event: 'exchange_approved',
+          adminId,
+          adminNote: adminNote ?? null,
+          timestamp: new Date().toISOString(),
+        },
+      );
 
       return updated;
     });
   }
 
-  async rejectExchangeRequest(exchangeRequestId: string, adminId: string, adminNote?: string): Promise<ExchangeRequest> {
+  async rejectExchangeRequest(
+    exchangeRequestId: string,
+    adminId: string,
+    adminNote?: string,
+  ): Promise<ExchangeRequest> {
     return this.db.db.transaction(async (tx) => {
       const er = await this.findExchangeRequestOrThrow(exchangeRequestId, tx);
       if (er.status !== 'requested') {
@@ -615,12 +946,19 @@ export class StoreReturnExchangeService {
         .where(eq(returnExchangeTables.exchangeRequests.id, exchangeRequestId))
         .returning();
 
-      await this.insertBusinessLink(tx, 'exchange_request', exchangeRequestId, er.salesOrderId, 'exchange_lifecycle_event', {
-        event: 'exchange_rejected',
-        adminId,
-        adminNote: adminNote ?? null,
-        timestamp: new Date().toISOString(),
-      });
+      await this.insertBusinessLink(
+        tx,
+        'exchange_request',
+        exchangeRequestId,
+        er.salesOrderId,
+        'exchange_lifecycle_event',
+        {
+          event: 'exchange_rejected',
+          adminId,
+          adminNote: adminNote ?? null,
+          timestamp: new Date().toISOString(),
+        },
+      );
 
       return updated;
     });
@@ -639,11 +977,18 @@ export class StoreReturnExchangeService {
         .where(eq(returnExchangeTables.exchangeRequests.id, exchangeRequestId))
         .returning();
 
-      await this.insertBusinessLink(tx, 'exchange_request', exchangeRequestId, er.salesOrderId, 'exchange_lifecycle_event', {
-        event: 'exchange_inspected',
-        adminId,
-        timestamp: new Date().toISOString(),
-      });
+      await this.insertBusinessLink(
+        tx,
+        'exchange_request',
+        exchangeRequestId,
+        er.salesOrderId,
+        'exchange_lifecycle_event',
+        {
+          event: 'exchange_inspected',
+          adminId,
+          timestamp: new Date().toISOString(),
+        },
+      );
 
       return updated;
     });
@@ -665,106 +1010,8 @@ export class StoreReturnExchangeService {
     if (rr.status !== 'refund_pending') {
       throw new ConflictException(`환불 재시도는 'refund_pending' 상태에서만 가능합니다. 현재 상태: ${rr.status}`);
     }
-
-    const salesOrder = await this.db.db
-      .select({
-        id: wmsTables.salesOrders.id,
-        walletIntentId: wmsTables.salesOrders.walletIntentId,
-        totalAmount: wmsTables.salesOrders.totalAmount,
-        shippingFee: wmsTables.salesOrders.shippingFee,
-      })
-      .from(wmsTables.salesOrders)
-      .where(eq(wmsTables.salesOrders.id, rr.salesOrderId))
-      .limit(1)
-      .then((r) => r[0]);
-
-    if (!salesOrder?.walletIntentId) {
-      throw new BadRequestException('walletIntentId가 없어 환불 재시도가 불가합니다. 수동 완료를 사용하세요.');
-    }
-
-    const [allOrderLines, returnItems] = await Promise.all([
-      this.db.db
-        .select({
-          id: wmsTables.salesOrderLines.id,
-          quantity: wmsTables.salesOrderLines.quantity,
-          unitPrice: wmsTables.salesOrderLines.unitPrice,
-          totalPrice: wmsTables.salesOrderLines.totalPrice,
-        })
-        .from(wmsTables.salesOrderLines)
-        .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrder.id)),
-      this.db.db
-        .select({
-          salesOrderLineId: returnExchangeTables.returnRequestItems.salesOrderLineId,
-          quantity: returnExchangeTables.returnRequestItems.quantity,
-          unitPrice: wmsTables.salesOrderLines.unitPrice,
-        })
-        .from(returnExchangeTables.returnRequestItems)
-        .leftJoin(wmsTables.salesOrderLines, eq(returnExchangeTables.returnRequestItems.salesOrderLineId, wmsTables.salesOrderLines.id))
-        .where(eq(returnExchangeTables.returnRequestItems.returnRequestId, returnRequestId)),
-    ]);
-
-    const refundAmount = this.calculateReturnRefund(
-      returnItems,
-      allOrderLines,
-      salesOrder.totalAmount,
-      salesOrder.shippingFee,
-    );
-    if (refundAmount <= 0) {
-      throw new BadRequestException('환불 금액이 0원 이하입니다. 수동 완료를 사용하세요.');
-    }
-
-    // UUID로 재시도마다 고유한 correlation ID 생성.
-    // 카운트 기반 key는 동시 재시도 시 같은 번호가 나와 Wallet이 첫 실패 응답을 재생할 수 있음.
-    const priorAttempts = await this.db.db
-      .select({ id: wmsTables.businessLinks.id })
-      .from(wmsTables.businessLinks)
-      .where(
-        and(
-          eq(wmsTables.businessLinks.sourceType, 'return_request'),
-          eq(wmsTables.businessLinks.sourceId, returnRequestId),
-          eq(wmsTables.businessLinks.relationName, 'return_linked_wallet_refund'),
-        ),
-      )
-      .then((r) => r.length);
-    const attemptN = priorAttempts + 1;
-    const correlationId = `return:${returnRequestId}:refund:retry:${randomUUID()}`;
-    try {
-      const outcome = await this.walletRefundClient.refundByIntent(salesOrder.walletIntentId, refundAmount, {
-        reasonCode: 'RETURN_COMPLETED',
-        correlationId,
-      });
-
-      await this.db.db.insert(wmsTables.businessLinks).values({
-        sourceType: 'return_request',
-        sourceId: returnRequestId,
-        targetType: 'wallet_refund',
-        targetExternalRef: outcome.kind === 'success' || outcome.kind === 'partial_pending'
-          ? `wallet:refund:${outcome.refunds?.[0]?.refundId ?? correlationId}`
-          : `wallet:intent:${salesOrder.walletIntentId}`,
-        relationName: 'return_linked_wallet_refund',
-        metadata: { outcome: outcome.kind, amount: refundAmount, correlationId, retriedBy: adminId, attemptN },
-      });
-
-      if (outcome.kind === 'success') {
-        const now = new Date();
-        const [completed] = await this.db.db
-          .update(returnExchangeTables.returnRequests)
-          .set({ status: 'completed', completedAt: now, updatedAt: now })
-          .where(eq(returnExchangeTables.returnRequests.id, returnRequestId))
-          .returning();
-        return completed;
-      }
-
-      this.logger.warn(
-        `[ReturnRefund] Retry ${outcome.kind} for return ${returnRequestId}. Staying refund_pending.`,
-      );
-      return rr;
-    } catch (err) {
-      this.logger.error(
-        `[ReturnRefund] Retry threw for return ${returnRequestId}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      return rr;
-    }
+    // walletIntentId·금액 가드는 attemptReturnRefund Phase A 가 수행(BadRequestException).
+    return this.attemptReturnRefund(returnRequestId, adminId);
   }
 
   /**
@@ -809,11 +1056,18 @@ export class StoreReturnExchangeService {
         .where(eq(returnExchangeTables.exchangeRequests.id, exchangeRequestId))
         .returning();
 
-      await this.insertBusinessLink(tx, 'exchange_request', exchangeRequestId, er.salesOrderId, 'exchange_lifecycle_event', {
-        event: 'exchange_completed',
-        adminId,
-        timestamp: new Date().toISOString(),
-      });
+      await this.insertBusinessLink(
+        tx,
+        'exchange_request',
+        exchangeRequestId,
+        er.salesOrderId,
+        'exchange_lifecycle_event',
+        {
+          event: 'exchange_completed',
+          adminId,
+          timestamp: new Date().toISOString(),
+        },
+      );
 
       return updated;
     });
@@ -980,13 +1234,13 @@ export class StoreReturnExchangeService {
   private async findReturnRequestOrThrow(
     returnRequestId: string,
     tx: Parameters<Parameters<typeof this.db.db.transaction>[0]>[0],
+    opts?: { forUpdate?: boolean },
   ): Promise<ReturnRequestRow> {
-    const rr = await tx
+    const base = tx
       .select()
       .from(returnExchangeTables.returnRequests)
-      .where(eq(returnExchangeTables.returnRequests.id, returnRequestId))
-      .limit(1)
-      .then((r) => r[0]);
+      .where(eq(returnExchangeTables.returnRequests.id, returnRequestId));
+    const rr = await (opts?.forUpdate ? base.for('update') : base).limit(1).then((r) => r[0]);
 
     if (!rr) throw new NotFoundException(`반품 요청을 찾을 수 없습니다: ${returnRequestId}`);
     return rr;
@@ -1068,19 +1322,243 @@ export class StoreReturnExchangeService {
     const rows = await this.db.db
       .select({ id: wmsTables.salesOrderLines.id })
       .from(wmsTables.salesOrderLines)
-      .where(
-        and(
-          eq(wmsTables.salesOrderLines.salesOrderId, orderId),
-          inArray(wmsTables.salesOrderLines.id, lineIds),
-        ),
-      );
+      .where(and(eq(wmsTables.salesOrderLines.salesOrderId, orderId), inArray(wmsTables.salesOrderLines.id, lineIds)));
 
     const foundIds = new Set(rows.map((r) => r.id));
     const invalid = lineIds.filter((id) => !foundIds.has(id));
     if (invalid.length > 0) {
-      throw new BadRequestException(
-        `다음 주문 라인이 해당 주문에 속하지 않습니다: ${invalid.join(', ')}`,
+      throw new BadRequestException(`다음 주문 라인이 해당 주문에 속하지 않습니다: ${invalid.join(', ')}`);
+    }
+  }
+
+  /**
+   * New customer returns are eligible at the immutable physical dispatch grain,
+   * not from the legacy `returns.shipmentId` header or a mutable shipment state.
+   *
+   * Eligible quantity = the quantity actually shipped for
+   * (dispatchAttemptId, shipmentLineId) - every historical claim except rejected/cancelled.
+   * Completed/refunded requests remain consumed forever. Active legacy exchange
+   * claims are handled by `assertReturnQuantitiesAvailable` at the SO-line pool.
+   */
+  private async assertAttemptBasedReturnEligibility(
+    orderId: string,
+    requestedLines: StoreCreateReturnRequestDto['lines'],
+    tx: DbTx,
+  ): Promise<void> {
+    const requestedByGrain = new Map<
+      string,
+      { shipmentLineId: string; dispatchAttemptId: string; salesOrderLineId: string; quantity: number }
+    >();
+    for (const line of requestedLines) {
+      const key = `${line.dispatchAttemptId}:${line.shipmentLineId}`;
+      const existing = requestedByGrain.get(key);
+      if (existing && existing.salesOrderLineId !== line.salesOrderLineId) {
+        throw new BadRequestException(
+          `같은 배송 라인을 서로 다른 주문 라인으로 반품할 수 없습니다: ${line.shipmentLineId}`,
+        );
+      }
+      requestedByGrain.set(key, {
+        shipmentLineId: line.shipmentLineId,
+        dispatchAttemptId: line.dispatchAttemptId,
+        salesOrderLineId: line.salesOrderLineId,
+        quantity: (existing?.quantity ?? 0) + line.quantity,
+      });
+    }
+
+    // Discover immutable graph seeds without a row lock. Every identity field
+    // is re-read after the connected component is locked below.
+    const requestedShipmentLineIds = [...new Set([...requestedByGrain.values()].map((line) => line.shipmentLineId))];
+    const optimisticLines = await tx
+      .select({
+        id: wmsTables.shipmentLines.id,
+        shipmentId: wmsTables.shipmentLines.shipmentId,
+        fulfillmentOrderItemId: wmsTables.shipmentLines.fulfillmentOrderItemId,
+        salesOrderId: wmsTables.fulfillmentOrderItems.salesOrderId,
+        salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
+      })
+      .from(wmsTables.shipmentLines)
+      .innerJoin(
+        wmsTables.fulfillmentOrderItems,
+        eq(wmsTables.shipmentLines.fulfillmentOrderItemId, wmsTables.fulfillmentOrderItems.id),
+      )
+      .where(inArray(wmsTables.shipmentLines.id, requestedShipmentLineIds));
+    if (optimisticLines.length !== requestedShipmentLineIds.length) {
+      throw new BadRequestException('요청한 배송 라인 중 존재하지 않는 라인이 있습니다.');
+    }
+    const optimisticById = new Map(optimisticLines.map((line) => [line.id, line]));
+    for (const line of requestedByGrain.values()) {
+      const optimistic = optimisticById.get(line.shipmentLineId);
+      if (!optimistic || optimistic.salesOrderId !== orderId || optimistic.salesOrderLineId !== line.salesOrderLineId) {
+        throw new BadRequestException(`배송 라인 ${line.shipmentLineId}과 주문 라인의 소유 관계가 일치하지 않습니다.`);
+      }
+    }
+
+    // Recall, dispatch, reservation mutation, and return claim all share this
+    // graph-first order. Attempts are never locked before their owning graph.
+    await lockShipmentConnectedComponentGraph(
+      tx,
+      optimisticLines.map((line) => line.fulfillmentOrderItemId),
+    );
+    await this.assertPurchasedQuantityReturnCap(requestedLines, tx);
+
+    const attempts = new Map<string, typeof wmsTables.dispatchAttempts.$inferSelect>();
+    const attemptIds = [...new Set(requestedLines.map((line) => line.dispatchAttemptId))].sort();
+    for (const attemptId of attemptIds) {
+      const [attempt] = await tx
+        .select()
+        .from(wmsTables.dispatchAttempts)
+        .where(eq(wmsTables.dispatchAttempts.id, attemptId))
+        .for('update')
+        .limit(1);
+      if (!attempt) {
+        throw new BadRequestException(`배송 시도를 찾을 수 없습니다: ${attemptId}`);
+      }
+      attempts.set(attemptId, attempt);
+    }
+
+    for (const line of requestedByGrain.values()) {
+      const attempt = attempts.get(line.dispatchAttemptId)!;
+      if (attempt.status !== 'dispatched') {
+        const suffix =
+          attempt.status === 'recalled' ? '회수(recalled)된 배송 시도입니다.' : `상태가 '${attempt.status}'입니다.`;
+        throw new BadRequestException(`반품할 수 없는 배송 시도 ${attempt.id}: ${suffix}`);
+      }
+
+      const [shipmentLine] = await tx
+        .select({
+          id: wmsTables.shipmentLines.id,
+          shipmentId: wmsTables.shipmentLines.shipmentId,
+          fulfillmentOrderItemId: wmsTables.shipmentLines.fulfillmentOrderItemId,
+          salesOrderId: wmsTables.fulfillmentOrderItems.salesOrderId,
+          salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
+        })
+        .from(wmsTables.shipmentLines)
+        .innerJoin(
+          wmsTables.fulfillmentOrderItems,
+          eq(wmsTables.shipmentLines.fulfillmentOrderItemId, wmsTables.fulfillmentOrderItems.id),
+        )
+        .where(eq(wmsTables.shipmentLines.id, line.shipmentLineId))
+        .limit(1);
+      const optimisticLine = optimisticById.get(line.shipmentLineId);
+      if (
+        !shipmentLine ||
+        !optimisticLine ||
+        shipmentLine.shipmentId !== optimisticLine.shipmentId ||
+        shipmentLine.fulfillmentOrderItemId !== optimisticLine.fulfillmentOrderItemId ||
+        shipmentLine.salesOrderId !== optimisticLine.salesOrderId ||
+        shipmentLine.salesOrderLineId !== optimisticLine.salesOrderLineId ||
+        shipmentLine.shipmentId !== attempt.shipmentId ||
+        shipmentLine.salesOrderId !== orderId ||
+        shipmentLine.salesOrderLineId !== line.salesOrderLineId
+      ) {
+        throw new BadRequestException(
+          `배송 라인 ${line.shipmentLineId}과 주문 라인/배송 시도의 소유 관계가 일치하지 않습니다.`,
+        );
+      }
+
+      const [delivered] = await tx
+        .select({ id: wmsTables.shipmentTracking.id })
+        .from(wmsTables.shipmentTracking)
+        .where(
+          and(
+            eq(wmsTables.shipmentTracking.shipmentId, attempt.shipmentId),
+            eq(wmsTables.shipmentTracking.dispatchAttemptId, attempt.id),
+            eq(wmsTables.shipmentTracking.status, 'delivered'),
+          ),
+        )
+        .limit(1);
+      if (!delivered) {
+        throw new BadRequestException(`배송 완료된 시도만 반품할 수 있습니다: ${attempt.id}`);
+      }
+
+      const [shipped] = await tx
+        .select({ quantity: sum(wmsTables.dispatchAttemptSources.qty) })
+        .from(wmsTables.dispatchAttemptSources)
+        .where(
+          and(
+            eq(wmsTables.dispatchAttemptSources.dispatchAttemptId, attempt.id),
+            eq(wmsTables.dispatchAttemptSources.shipmentLineId, shipmentLine.id),
+          ),
+        );
+      const eligibleQuantity = Number(shipped?.quantity ?? 0);
+      if (eligibleQuantity <= 0) {
+        throw new BadRequestException(`배송 시도에 귀속된 실제 출고 수량이 없습니다: ${attempt.id}/${shipmentLine.id}`);
+      }
+
+      const [claimed] = await tx
+        .select({ quantity: sum(returnExchangeTables.returnRequestItems.quantity) })
+        .from(returnExchangeTables.returnRequestItems)
+        .innerJoin(
+          returnExchangeTables.returnRequests,
+          eq(returnExchangeTables.returnRequestItems.returnRequestId, returnExchangeTables.returnRequests.id),
+        )
+        .where(
+          and(
+            eq(returnExchangeTables.returnRequestItems.shipmentLineId, shipmentLine.id),
+            eq(returnExchangeTables.returnRequestItems.dispatchAttemptId, attempt.id),
+            notInArray(returnExchangeTables.returnRequests.status, ['rejected', 'cancelled']),
+          ),
+        );
+      const claimedQuantity = Number(claimed?.quantity ?? 0);
+      const remainingQuantity = eligibleQuantity - claimedQuantity;
+      if (line.quantity > remainingQuantity) {
+        throw new BadRequestException(
+          `배송 시도 ${attempt.id}의 라인 ${shipmentLine.id} 반품 가능 수량(${remainingQuantity})을 초과하였습니다. (요청: ${line.quantity})`,
+        );
+      }
+    }
+  }
+
+  /**
+   * The attempt grain prevents claiming one physical dispatch twice, while this
+   * conservative sales-line cap protects the purchased total across attempts
+   * and nullable legacy rows. Completed/refunded claims remain consumed.
+   */
+  private async assertPurchasedQuantityReturnCap(
+    requestedLines: StoreCreateReturnRequestDto['lines'],
+    tx: DbTx,
+  ): Promise<void> {
+    const requestedBySalesLine = new Map<string, number>();
+    for (const line of requestedLines) {
+      requestedBySalesLine.set(
+        line.salesOrderLineId,
+        (requestedBySalesLine.get(line.salesOrderLineId) ?? 0) + line.quantity,
       );
+    }
+
+    for (const salesOrderLineId of [...requestedBySalesLine.keys()].sort()) {
+      const [salesOrderLine] = await tx
+        .select({ id: wmsTables.salesOrderLines.id, quantity: wmsTables.salesOrderLines.quantity })
+        .from(wmsTables.salesOrderLines)
+        .where(eq(wmsTables.salesOrderLines.id, salesOrderLineId))
+        .orderBy(asc(wmsTables.salesOrderLines.id))
+        .for('update')
+        .limit(1);
+      if (!salesOrderLine) {
+        throw new BadRequestException(`주문 라인을 찾을 수 없습니다: ${salesOrderLineId}`);
+      }
+
+      const [claimed] = await tx
+        .select({ quantity: sum(returnExchangeTables.returnRequestItems.quantity) })
+        .from(returnExchangeTables.returnRequestItems)
+        .innerJoin(
+          returnExchangeTables.returnRequests,
+          eq(returnExchangeTables.returnRequestItems.returnRequestId, returnExchangeTables.returnRequests.id),
+        )
+        .where(
+          and(
+            eq(returnExchangeTables.returnRequestItems.salesOrderLineId, salesOrderLineId),
+            notInArray(returnExchangeTables.returnRequests.status, ['rejected', 'cancelled']),
+          ),
+        );
+      const claimedQuantity = Number(claimed?.quantity ?? 0);
+      const remainingQuantity = salesOrderLine.quantity - claimedQuantity;
+      const requestedQuantity = requestedBySalesLine.get(salesOrderLineId)!;
+      if (requestedQuantity > remainingQuantity) {
+        throw new BadRequestException(
+          `주문 라인 ${salesOrderLineId}의 누적 반품 가능 수량(${remainingQuantity})을 초과하였습니다. (요청: ${requestedQuantity})`,
+        );
+      }
     }
   }
 
@@ -1272,10 +1750,75 @@ export class StoreReturnExchangeService {
       reasonDetail: returnRequest.reasonDetail ?? undefined,
       items: items.map((item) => ({
         salesOrderLineId: item.salesOrderLineId,
+        shipmentLineId: item.shipmentLineId,
+        dispatchAttemptId: item.dispatchAttemptId,
         quantity: item.quantity,
       })),
       createdAt: returnRequest.createdAt,
     };
+  }
+
+  /** 반품 환불 금액 계산 — 주문/라인/반품라인을 로드해 calculateReturnRefund 위임. tx 컨텍스트 전용. */
+  private async computeReturnRefundAmount(
+    returnRequestId: string,
+    salesOrder: { id: string; totalAmount: number | null; shippingFee: number },
+    tx: Parameters<Parameters<typeof this.db.db.transaction>[0]>[0],
+  ): Promise<number> {
+    const [allOrderLines, returnItems] = await Promise.all([
+      tx
+        .select({
+          id: wmsTables.salesOrderLines.id,
+          quantity: wmsTables.salesOrderLines.quantity,
+          unitPrice: wmsTables.salesOrderLines.unitPrice,
+          totalPrice: wmsTables.salesOrderLines.totalPrice,
+        })
+        .from(wmsTables.salesOrderLines)
+        .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrder.id)),
+      tx
+        .select({
+          salesOrderLineId: returnExchangeTables.returnRequestItems.salesOrderLineId,
+          quantity: returnExchangeTables.returnRequestItems.quantity,
+          unitPrice: wmsTables.salesOrderLines.unitPrice,
+        })
+        .from(returnExchangeTables.returnRequestItems)
+        .leftJoin(
+          wmsTables.salesOrderLines,
+          eq(returnExchangeTables.returnRequestItems.salesOrderLineId, wmsTables.salesOrderLines.id),
+        )
+        .where(eq(returnExchangeTables.returnRequestItems.returnRequestId, returnRequestId)),
+    ]);
+    return this.calculateReturnRefund(
+      returnItems,
+      allOrderLines,
+      salesOrder.totalAmount ?? null,
+      salesOrder.shippingFee ?? 0,
+    );
+  }
+
+  /** 환불 시도 감사 로그 (기존 return_linked_wallet_refund businessLink 연속 — 상태 SoT 는 attempt 행). */
+  private async insertRefundAuditLink(
+    tx: Parameters<Parameters<typeof this.db.db.transaction>[0]>[0],
+    returnRequestId: string,
+    attempt: { idempotencyKey: string; amount: number; attemptNumber: number },
+    outcome: WalletRefundOutcome,
+    adminId: string,
+  ): Promise<void> {
+    const refundId =
+      outcome.kind === 'success' || outcome.kind === 'partial_pending' ? outcome.refunds?.[0]?.refundId : undefined;
+    await tx.insert(wmsTables.businessLinks).values({
+      sourceType: 'return_request',
+      sourceId: returnRequestId,
+      targetType: 'wallet_refund',
+      targetExternalRef: refundId ? `wallet:refund:${refundId}` : `wallet:key:${attempt.idempotencyKey}`,
+      relationName: 'return_linked_wallet_refund',
+      metadata: {
+        outcome: outcome.kind,
+        amount: attempt.amount,
+        correlationId: attempt.idempotencyKey,
+        attemptN: attempt.attemptNumber,
+        retriedBy: adminId,
+      },
+    });
   }
 
   /**
@@ -1304,15 +1847,20 @@ export class StoreReturnExchangeService {
       return orderTotal;
     }
 
-    // totalPrice 또는 unitPrice × quantity를 라인 무게로 사용
-    const allLinesTotals = allLines.reduce((acc, l) => acc + (l.totalPrice ?? (l.unitPrice ?? 0) * l.quantity), 0);
+    // totalPrice 또는 unitPrice × quantity를 라인 무게로 사용 (분모·분자 동일 기준)
+    const lineWeight = (l: { unitPrice: number | null; quantity: number; totalPrice: number | null }): number =>
+      l.totalPrice ?? (l.unitPrice ?? 0) * l.quantity;
+
+    const allLinesTotals = allLines.reduce((acc, l) => acc + lineWeight(l), 0);
     if (allLinesTotals <= 0) {
       return returnItems.reduce((acc, item) => acc + item.quantity * (item.unitPrice ?? 0), 0);
     }
 
     const returnedLinesTotals = allLines.reduce((acc, l) => {
       const returnQty = returnQtyByLineId.get(l.id) ?? 0;
-      return acc + returnQty * (l.unitPrice ?? 0);
+      if (returnQty <= 0 || l.quantity <= 0) return acc;
+      // 라인 무게를 반품수량 비율로 배분 (할인 포함 기준)
+      return acc + (lineWeight(l) * returnQty) / l.quantity;
     }, 0);
 
     const productSubtotal = Math.max(0, orderTotal - orderShippingFee);

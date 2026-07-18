@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils"
 import { FEATURES } from "@/lib/config/features"
 import { useScrollSpyWindow } from "@/hooks/use-scroll-spy-window"
 import { usePathname, useSearchParams } from "next/navigation"
-import { useCallback, useEffect, useMemo, useRef } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useTranslations } from "next-intl"
 
 export type SectionTab = "detail" | "review" | "qna"
@@ -13,7 +13,7 @@ export type SectionTab = "detail" | "review" | "qna"
 const VALID_TABS: SectionTab[] = FEATURES.qna
   ? ["detail", "review", "qna"]
   : ["detail", "review"]
-const NAV_OFFSET = 56
+const DEFAULT_SECTION_OFFSET = 160
 
 interface SectionTabsProps {
   reviewCountSlot?: React.ReactNode
@@ -32,7 +32,25 @@ export function SectionTabs({
   const tabParam = searchParams.get("tab") as SectionTab | null
 
   const tabIds = useMemo(() => VALID_TABS, [])
-  const activeIdRaw = useScrollSpyWindow(tabIds, { topOffset: NAV_OFFSET + 8 })
+
+  const navRef = useRef<HTMLElement>(null)
+  const [sectionOffset, setSectionOffset] = useState(DEFAULT_SECTION_OFFSET)
+
+  useEffect(() => {
+    const measure = () => {
+      const headerH = document.getElementById("site-header")?.offsetHeight ?? 0
+      const navH = navRef.current?.offsetHeight ?? 0
+      const root = document.documentElement.style
+      root.setProperty("--pdp-header-h", `${headerH}px`)
+      root.setProperty("--pdp-section-offset", `${headerH + navH}px`)
+      setSectionOffset(headerH + navH)
+    }
+    measure()
+    window.addEventListener("resize", measure)
+    return () => window.removeEventListener("resize", measure)
+  }, [])
+
+  const activeIdRaw = useScrollSpyWindow(tabIds, { topOffset: sectionOffset })
   const activeTab: SectionTab =
     activeIdRaw && (VALID_TABS as string[]).includes(activeIdRaw)
       ? (activeIdRaw as SectionTab)
@@ -95,15 +113,16 @@ export function SectionTabs({
     cn(
       "flex-1 cursor-pointer border-0 border-b-2 px-4 py-3 text-sm font-bold transition-colors focus-visible:outline-none lg:text-base",
       active
-        ? "border-b-[#f29219] text-[#f29219]"
+        ? "border-b-[#ff6600] text-[#ff6600]"
         : "border-b-transparent text-[#666666] hover:text-[#333333]"
     )
 
   return (
     <div className="w-full">
       <nav
+        ref={navRef}
         aria-label={t("ariaLabel")}
-        className="sticky top-0 z-10 mb-8 flex h-auto w-full border-b border-[#e5e5e5] bg-white"
+        className="sticky top-(--pdp-header-h) z-10 mb-8 flex h-auto w-full border-b border-[#e5e5e5] bg-white"
       >
         <button
           type="button"

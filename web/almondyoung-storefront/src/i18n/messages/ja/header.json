@@ -1,7 +1,9 @@
 {
   "utility": {
     "shipping": "注文・配送",
-    "support": "カスタマーサポート"
+    "support": "カスタマーサポート",
+    "login": "ログイン",
+    "signup": "会員登録"
   },
   "userInfo": {
     "logout": "ログアウト"

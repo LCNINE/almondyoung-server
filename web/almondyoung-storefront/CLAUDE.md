@@ -2,6 +2,16 @@
 
 이 문서는 Claude Code가 이 프로젝트에서 작업할 때 참고하는 가이드라인입니다.
 
+## 디자인 시스템 (UI 작업 시 필독)
+
+**UI(컴포넌트·화면·스타일)를 만들거나 수정할 때는 반드시 [`DESIGN.md`](./DESIGN.md)를 먼저 읽고 그 규격(Karrot/Seed Design 기반)을 따른다.** 색·라운드·보더·포커스링은 `src/styles/globals.css`의 CSS 변수에 이미 매핑돼 있으니 하드코딩 hex 대신 시맨틱 유틸을 쓴다.
+
+- Primary/브랜드 `#ff6600` = `bg-primary`/`text-primary` (CTA·활성에만 아껴 사용)
+- 텍스트 `text-foreground`(#1a1c20, 순수검정 금지) · 보조 `text-muted-foreground`
+- 면 `bg-muted`(#f7f8f9)·`bg-secondary`(#f3f4f5) · 보더 `border-border`(#dcdee3)
+- 4px 그리드, radius 8/12/16/24px, 그림자 3단계, 스프링 모션 금지
+- 옛 오렌지 `#f29219` 신규 사용 금지 (전부 `#ff6600`로 이관 완료)
+
 ## 프로젝트 개요
 
 - **프로젝트명**: 아몬드영 스토어프론트 (medusa-next)
@@ -473,6 +483,28 @@ ICU MessageFormat 에서 single quote `'` 는 placeholder 이스케이프 문자
 - 헤더(`main-header`)와 모바일 카테고리 시트에 `<LanguageSwitcher />` 가 이미 있으므로 새 페이지에서 별도 배치 불필요
 - 신규 페이지/컴포넌트에 텍스트를 추가하면 **항상** 해당 namespace 의 ko/en/ja 3개 파일에 키 추가 후 `t()` 로 참조
 - 기존 페이지에 텍스트를 새로 넣을 때도 같은 namespace 파일 안에 추가 (예: `messages/{ko,en,ja}/productDetail.json` 의 `summary.*` 에 새 키 더하기)
+
+## 로컬 캐시 2겹 (데이터 바꿨는데 스토어프론트에 반영 안 될 때)
+
+Medusa 데이터(재고·`manage_inventory`·variant `metadata` 등)를 DB에서 직접 바꿨는데 스토어프론트에 안 뜨면, **캐시가 두 겹**이라서다. 둘 다 비워야 반영된다.
+
+1. **Medusa Redis 응답 캐시** (`@medusajs/caching-redis`, 로컬 `almondyoung-server-redis-1`, 키 프리픽스 `mc:`). 앱이 쓰는 쿼리(`limit`/`offset` 포함) 결과가 통째로 캐싱된다. **주의**: 캐시 키는 쿼리 문자열별이라, `curl`로 단순 쿼리(limit 없이) 때리면 캐시 미스로 최신이 나와 "DB엔 반영됐네" 착각하기 쉽다 — 실제 앱 경로(limit/offset 포함)가 stale 인 것.
+2. **Next.js fetch 캐시** (storefront 상품 fetch `revalidate: 3600`). turbopack dev 는 이걸 **메모리**에 들고 있어 서버 재시작 전엔 잘 안 비워진다.
+
+반영 순서 (Medusa 먼저, 그다음 Next):
+
+```bash
+# 1) Medusa 응답 캐시 flush (DB에서 재계산하게)
+redis-cli -n 0 --scan --pattern 'mc:*' | xargs -r redis-cli -n 0 del
+
+# 2) storefront 해당 상품 캐시 무효화 (handle = 스토어프론트 URL 의 UUID = Medusa handle)
+curl -s -X POST http://localhost:8000/api/revalidate \
+  -H 'content-type: application/json' \
+  -H "x-revalidate-secret: $REVALIDATE_SECRET" \
+  -d '{"handle":"<product-handle>"}'
+```
+
+`REVALIDATE_SECRET` 은 `.env.local` 참고. 2)로도 안 되면 turbopack in-memory fetch 캐시라 **storefront dev 서버 재시작**(`npm run dev`)이 확실하다. (운영에선 이 revalidate 를 channel-adapter 가 재고 변경 이벤트 때 자동 호출한다 — `src/app/api/revalidate/route.ts` 주석 참고.)
 
 ## 경로 Alias
 

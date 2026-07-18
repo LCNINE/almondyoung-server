@@ -20,7 +20,6 @@ import {
 } from '@/components/ui/table';
 import { useTableRowSelection } from '@/features/order/hooks/use-table-row-selection';
 import { Clock, Printer } from 'lucide-react';
-import Link from 'next/link';
 import { toast } from 'sonner';
 
 interface OrderRow {
@@ -243,19 +242,8 @@ export default function OrderShipmentRoundTable() {
                   </TableCell>
 
                   {/* 회차 */}
-                  <TableCell className="text-center border border-gray-200 px-2 py-2">
-                    <Button
-                      asChild
-                      className="underline underline-offset-2 cursor-pointer text-gray-900 text-xs "
-                      variant="link"
-                      size="sm"
-                    >
-                      <Link
-                        href={`/order/print-invoices-by-order?shippingBatch=${row.shippingBatch}&orderId=${row.orderId}&modal=true`}
-                      >
-                        {row.shippingBatch}회차
-                      </Link>
-                    </Button>
+                  <TableCell className="text-center border border-gray-200 px-2 py-2 text-gray-900 text-xs">
+                    {row.shippingBatch}회차
                   </TableCell>
 
                   {/* 판매처 분류 */}

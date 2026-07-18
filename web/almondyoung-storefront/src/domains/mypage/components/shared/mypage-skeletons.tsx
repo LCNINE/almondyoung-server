@@ -1,105 +1,79 @@
 import { Skeleton } from "@/components/ui/skeleton"
 
 /**
- * 배송 중 상품 섹션 스켈레톤 (데스크탑)
+ * 마이페이지 홈(데스크탑)에 임베드되는 주문목록 스켈레톤.
+ * OrderList(embedded) 레이아웃과 맞춘다: 타이틀 + 검색 + 기간 pill + 주문 카드.
  */
-export function ShippingItemsSkeleton() {
+export function MypageHomeOrderListSkeleton() {
   return (
-    <section
-      aria-labelledby="shipping-items-heading"
-      className="bg-background mt-6 rounded-lg p-8"
-    >
-      <div className="mb-4 flex items-center justify-between">
-        <Skeleton className="h-5 w-28" />
-        <Skeleton className="h-4 w-16" />
+    <div className="md:bg-transparent">
+      {/* 타이틀 + 검색 + 기간 pill */}
+      <div className="space-y-3">
+        <Skeleton className="h-7 w-32" />
+        <Skeleton className="h-11 w-full max-w-xl rounded-lg" />
+        <div className="flex gap-2">
+          {Array.from({ length: 5 }).map((_, index) => (
+            <Skeleton
+              key={`order-period-${index}`}
+              className="h-7 w-16 rounded-full"
+            />
+          ))}
+        </div>
       </div>
-      <div className="space-y-4">
+
+      {/* 주문 카드 */}
+      <section className="mt-4 space-y-6">
         {Array.from({ length: 3 }).map((_, index) => (
-          <div key={`shipping-skeleton-${index}`} className="flex gap-4">
-            <Skeleton className="h-20 w-20 rounded-md" />
-            <div className="flex flex-1 flex-col gap-2">
-              <Skeleton className="h-4 w-2/3" />
-              <Skeleton className="h-3 w-1/3" />
-              <Skeleton className="h-3 w-1/2" />
+          <div
+            key={`order-card-skeleton-${index}`}
+            className="rounded-[10px] border border-gray-200 bg-white p-5"
+          >
+            <div className="mb-5 flex items-start justify-between">
+              <div className="space-y-1">
+                <Skeleton className="h-5 w-28" />
+                <Skeleton className="h-4 w-24" />
+              </div>
+              <Skeleton className="h-4 w-20" />
             </div>
-            <Skeleton className="h-8 w-20 rounded-md" />
+            <Skeleton className="mb-3 h-5 w-24" />
+            <div className="flex items-start gap-4">
+              <Skeleton className="h-20 w-20 rounded-md" />
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-4 w-2/3" />
+                <Skeleton className="h-3 w-1/3" />
+              </div>
+              <div className="hidden w-40 flex-col gap-2 md:flex">
+                <Skeleton className="h-9 w-full rounded-md" />
+                <Skeleton className="h-9 w-full rounded-md" />
+              </div>
+            </div>
           </div>
         ))}
-      </div>
-    </section>
+      </section>
+    </div>
   )
 }
 
 /**
- * 결제 정보 섹션 스켈레톤 (데스크탑)
- */
-export function PaymentInfoSkeleton() {
-  return (
-    <section className="self-stretch bg-white">
-      <div className="flex flex-col items-center justify-center gap-4 py-6 pl-7">
-        <Skeleton className="h-6 w-32" />
-        <Skeleton className="h-4 w-40" />
-        <Skeleton className="h-6 w-24" />
-        <Skeleton className="h-8 w-48 rounded-[5px]" />
-      </div>
-    </section>
-  )
-}
-
-/**
- * 절약 배너 스켈레톤 (모바일)
- */
-export function SavingsBannerSkeleton() {
-  return (
-    <section className="flex items-center justify-between rounded-lg bg-yellow-100 p-3">
-      <div className="flex items-center gap-2">
-        <Skeleton className="h-5 w-12 rounded bg-purple-200" />
-        <Skeleton className="h-4 w-40" />
-      </div>
-      <Skeleton className="h-5 w-5" />
-    </section>
-  )
-}
-
-/**
- * 포인트 배너 스켈레톤 (모바일)
- */
-export function PointsBannerSkeleton() {
-  return (
-    <section className="flex w-full items-center justify-between rounded-[10px] bg-white px-4 py-3.5 shadow-sm">
-      <Skeleton className="h-3 w-32" />
-      <div className="flex items-center gap-2">
-        <Skeleton className="h-3 w-12" />
-        <Skeleton className="h-4 w-20" />
-        <Skeleton className="h-4 w-4 rounded-full" />
-      </div>
-    </section>
-  )
-}
-
-/**
- * 배송 상태 카드 스켈레톤 (모바일)
+ * 주문 내역 가로 카드 스켈레톤 (모바일)
  */
 export function ShippingStatusSkeleton() {
   return (
     <section className="flex w-full flex-col gap-3">
-      <h2 className="text-base font-bold text-black">배송 중 상품</h2>
-      <div className="flex flex-col gap-4 rounded-[10px] border-[0.5px] border-[#d9d9d9] bg-white px-4 py-3.5">
-        <div className="flex flex-col gap-4">
-          {Array.from({ length: 2 }).map((_, index) => (
-            <div
-              key={`shipping-mobile-skeleton-${index}`}
-              className="flex items-center gap-4"
-            >
-              <Skeleton className="h-[45px] w-11 rounded-[5px]" />
-              <div className="flex flex-1 flex-col gap-2">
-                <Skeleton className="h-3 w-2/3" />
-                <Skeleton className="h-4 w-1/2" />
-              </div>
-              <Skeleton className="h-6 w-6 rounded-full" />
-            </div>
-          ))}
-        </div>
+      <div className="flex items-center justify-between">
+        <Skeleton className="h-5 w-20" />
+        <Skeleton className="h-4 w-14" />
+      </div>
+      <div className="-mx-6 flex gap-3 overflow-hidden px-6">
+        {Array.from({ length: 3 }).map((_, index) => (
+          <div
+            key={`shipping-mobile-skeleton-${index}`}
+            className="w-[160px] shrink-0 rounded-lg border border-[#ececec] bg-white p-3.5"
+          >
+            <Skeleton className="mb-2 h-4 w-2/3" />
+            <Skeleton className="aspect-square w-full rounded-md" />
+          </div>
+        ))}
       </div>
     </section>
   )

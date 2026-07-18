@@ -1,7 +1,27 @@
 import { StoreCartAddress } from "@medusajs/types"
-import type { FormattedAddress } from "./types"
+import type { FormattedAddress, ShippingMemo } from "./types"
 import { formatPhoneNumber } from "@/lib/utils/format-phone-number"
 import { buildAddressLine } from "@/lib/utils/address-line"
+
+// cart.metadata 에 저장된 배송메모를 ShippingMemo 형태로 읽는다. 저장값이 없으면 빈 메모.
+export const readShippingMemo = (
+  metadata: Record<string, unknown> | null | undefined
+): ShippingMemo => ({
+  type: (metadata?.shipping_memo_type as string) || "",
+  custom: (metadata?.shipping_memo_custom as string) || "",
+  hasEntrance: (metadata?.has_entrance as boolean) || false,
+  entrancePassword: (metadata?.entrance_password as string) || "",
+})
+
+// 두 배송메모가 완전히 같은지 비교한다. 카트에 이미 같은 값이 있으면 결제 시 재저장을 건너뛰는 데 쓴다.
+export const isSameShippingMemo = (
+  a: ShippingMemo,
+  b: ShippingMemo
+): boolean =>
+  a.type === b.type &&
+  a.custom === b.custom &&
+  a.hasEntrance === b.hasEntrance &&
+  a.entrancePassword === b.entrancePassword
 
 export const isValidAddress = (address: StoreCartAddress | null): boolean => {
   if (!address) return false

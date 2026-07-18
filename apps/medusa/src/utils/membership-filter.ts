@@ -5,6 +5,8 @@ export type ProductMetadata = {
   hideMembershipPriceForNonMembers?: boolean | string;
   isVisibleToMembersOnly?: boolean | string;
   isOverseas?: boolean | string;
+  /** core purchaseConstraint 스냅샷 (pim-to-medusa.transformer 가 채움) */
+  pimPurchaseConstraint?: { requiresMembership?: boolean | string; lifetimeQuantityLimit?: number | null } | null;
   /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly?: boolean | string;
   [key: string]: unknown;
@@ -54,6 +56,59 @@ export const isVisibleToMembersOnlyProduct = (product: MembershipProduct): boole
 
 export const isOverseasProduct = (product: MembershipProduct): boolean => {
   return product.metadata?.isOverseas === true || product.metadata?.isOverseas === 'true';
+};
+
+/**
+ * 멤버십 회원만 구매 가능한 상품인지 판정한다.
+ * isVisibleToMembersOnly(노출 차단)와 달리 비회원에게도 보이되 구매만 막는다.
+ * metadata 없는 응답은 게이트가 안 걸린다(fail-open) — 조회 fields 에 metadata 필수.
+ */
+export const requiresMembershipToPurchase = (product: MembershipProduct): boolean => {
+  const constraint = product.metadata?.pimPurchaseConstraint;
+  if (!isRecord(constraint)) {
+    return false;
+  }
+
+  return constraint.requiresMembership === true || constraint.requiresMembership === 'true';
+};
+
+/**
+ * 비회원 응답에서 variant 를 품절 상태로 덮는다. 스토어프론트 품절 판정이 세 값의 조합이라 하나라도 빠지면 판매 가능이 된다.
+ * 재입고 예정일도 지운다 — 멤버십 회원 전용 정보.
+ */
+const gateVariantForNonMember = (variant: ProductVariant): ProductVariant => {
+  const gated: ProductVariant = {
+    ...variant,
+    manage_inventory: true,
+    allow_backorder: false,
+    inventory_quantity: 0,
+  };
+
+  if (isRecord(variant.metadata)) {
+    const metadata = { ...variant.metadata };
+    delete metadata.inboundDate;
+    delete metadata.inboundApproximate;
+    gated.metadata = metadata;
+  }
+
+  return gated;
+};
+
+/**
+ * 멤버십 전용 구매 상품을 비회원에게 품절로 보인다. 회원 응답은 그대로 둔다.
+ * 응답 변형이라 표시만 막는다 — 장바구니 API 직접 호출은 못 막는다.
+ */
+export const applyPurchaseGateForNonMember = (product: MembershipProduct, isMember: boolean): MembershipProduct => {
+  if (isMember || !requiresMembershipToPurchase(product)) {
+    return product;
+  }
+
+  const variants = Array.isArray(product.variants) ? product.variants.map(gateVariantForNonMember) : product.variants;
+
+  return {
+    ...product,
+    variants,
+  };
 };
 
 export const filterProductsForMemberState = (products: MembershipProduct[], isMember: boolean): MembershipProduct[] => {
@@ -126,14 +181,17 @@ export const transformStoreProductsPayload = (payload: unknown, isMember: boolea
   if (Array.isArray(payload.products)) {
     next = { ...payload };
     const products = payload.products.filter((item): item is MembershipProduct => isRecord(item));
-    next.products = filterProductsForMemberState(products, isMember).map((item) =>
-      applyMembershipPriceVisibility(item, isMember),
-    );
+    next.products = filterProductsForMemberState(products, isMember)
+      .map((item) => applyMembershipPriceVisibility(item, isMember))
+      .map((item) => applyPurchaseGateForNonMember(item, isMember));
   }
 
   if (isRecord(payload.product)) {
     next = next ?? { ...payload };
-    next.product = applyMembershipPriceVisibility(payload.product as MembershipProduct, isMember);
+    next.product = applyPurchaseGateForNonMember(
+      applyMembershipPriceVisibility(payload.product as MembershipProduct, isMember),
+      isMember,
+    );
   }
 
   return next ?? payload;

@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { createColumnHelper } from '@tanstack/react-table';
+import { useUserNames } from '@/hooks/use-user-names';
 import { useDataTable } from '@/hooks/use-data-table';
 import { DataTable } from '@/components/data-table';
 import { Badge } from '@/components/ui/badge';
@@ -177,13 +179,36 @@ export function RecurringContractsView({ query }: Props) {
     [contractsRes?.data, agreementStateMap]
   );
 
+  const userIds = useMemo(
+    () => [...new Set(rows.map((r) => r.userId).filter(Boolean))],
+    [rows]
+  );
+  const userMap = useUserNames(userIds);
+
   const columns = useMemo(
     () => [
       columnHelper.accessor('userId', {
-        header: '고객 ID',
-        cell: (info) => (
-          <span className="font-mono text-xs">{info.getValue()}</span>
-        ),
+        header: '고객',
+        cell: (info) => {
+          const id = info.getValue();
+          if (!id) return <span className="text-muted-foreground text-sm">-</span>;
+          const user = userMap[id];
+          return (
+            <div className="flex flex-col">
+              <Link
+                href={`/customer-window/${id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-primary text-xs hover:underline"
+              >
+                {user?.loginId || `${id.slice(0, 8)}...`}
+              </Link>
+              {user?.username && (
+                <span className="text-muted-foreground text-xs">{user.username}</span>
+              )}
+            </div>
+          );
+        },
       }),
       columnHelper.accessor('contractId', {
         header: '계약 ID',
@@ -245,7 +270,7 @@ export function RecurringContractsView({ query }: Props) {
         ),
       }),
     ],
-    []
+    [userMap]
   );
 
   const { table } = useDataTable({
@@ -279,6 +304,8 @@ export function RecurringContractsView({ query }: Props) {
             <div className="space-y-2 text-sm">
               {[
                 ['계약 ID', detailRow.contractId],
+                ['로그인 아이디', userMap[detailRow.userId]?.loginId ?? '-'],
+                ['성명', userMap[detailRow.userId]?.username ?? '-'],
                 ['고객 ID', detailRow.userId],
                 ['티어', detailRow.tierCode],
                 ['계약 상태', detailRow.status],

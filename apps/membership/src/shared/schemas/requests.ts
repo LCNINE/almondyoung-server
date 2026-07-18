@@ -97,6 +97,14 @@ export const CancelSubscriptionRequestSchema = z.object({
   reasonText: z.string().optional(),
   reason: z.string().optional(), // 하위 호환성
   effectiveDate: z.iso.datetime({ error: '유효한 날짜 형식이어야 합니다' }).optional(),
+  // 무통장(가상계좌) 결제 환불 시 필수 — 이 계좌로 자동 송금된다. 카드 결제는 불필요.
+  refundReceiveAccount: z
+    .object({
+      bank: z.string(), // 토스 2자리 은행코드
+      accountNumber: z.string(),
+      holderName: z.string(),
+    })
+    .optional(),
 });
 
 export const ResumeSubscriptionRequestSchema = z.object({

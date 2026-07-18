@@ -190,6 +190,139 @@
       "when": 1782450861633,
       "tag": "20260626051421_add-is-overseas-column",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1782724835281,
+      "tag": "20260629092035_add-shipment-lines-and-opened-by",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1782824163708,
+      "tag": "20260630125603_cluster-a-box-workflow",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1782834857406,
+      "tag": "20260630155417_shipments-active-unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1782860068391,
+      "tag": "20260630225428_cluster-b-fo-identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1783371698629,
+      "tag": "20260706210138_add-draft-owner-id-index",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1783531080084,
+      "tag": "20260708171800_stocktaking-uniques",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1783578271732,
+      "tag": "20260709062431_add-inventory-idempotency-requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1783666275331,
+      "tag": "20260710065115_add-product-import-session",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1783703898853,
+      "tag": "20260710171818_drop-outbound-task-and-event-type",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1783860615915,
+      "tag": "20260712125015_add-return-refund-attempts",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1784030934519,
+      "tag": "20260714120854_certain_wendigo",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1784096021162,
+      "tag": "20260715061341_tracking-provider-attempt-idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1784098590087,
+      "tag": "20260715065630_dry_the_stranger",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1784107017948,
+      "tag": "20260715091657_huge_phantom_reporter",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1784196606946,
+      "tag": "20260716101006_drop-legacy-fo-outbound-contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1784253402196,
+      "tag": "20260717015642_add-waybills",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1784272881573,
+      "tag": "20260717072121_add-dispatch-attempts-waybill-id",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1784290577725,
+      "tag": "20260717121617_drop-dispatch-attempts-invoice-id",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1784290811317,
+      "tag": "20260717122011_drop-invoices",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,5 @@
 import { Transform, Type } from 'class-transformer';
-import { IsArray, IsEnum, IsInt, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsArray, IsBoolean, IsEnum, IsInt, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export const SEARCH_SORT_VALUES = ['relevance', 'newest', 'price_asc', 'price_desc', 'review'] as const;
 
@@ -60,4 +60,11 @@ export class ProductSearchQueryDto {
   @Max(100)
   @Type(() => Number)
   size: number = 20;
+
+  // 멤버십 회원이면 true — 멤버십 전용 노출 상품을 결과/집계에 포함한다.
+  // 생략/false 면 fail-closed 로 멤버십 전용 상품을 제외(비회원 취급).
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  includeMembersOnly?: boolean;
 }

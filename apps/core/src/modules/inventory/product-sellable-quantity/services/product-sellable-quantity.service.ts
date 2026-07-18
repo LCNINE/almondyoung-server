@@ -1,7 +1,9 @@
+import { randomUUID } from 'crypto';
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { AnyTx, DbService, InjectTypedDb, TxFor } from '@app/db';
 import { and, desc, eq, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
+import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import { ProductSellableQuantityChangedPayload } from '@packages/event-contracts';
 import { MergedSchema } from '../../../../platform/database/merged-schema';
 import {
@@ -19,6 +21,11 @@ import {
 } from './product-sellable-quantity.calculator';
 
 type MergedTx = TxFor<MergedSchema>;
+
+export type SoldOutState = 'none' | 'partial' | 'all';
+
+// 목록의 품절 배지로 집계할 '실제 품절' 사유. 설정 미완(매칭없음 등)/판매기간/비활성은 제외.
+const SOLD_OUT_REASONS = new Set(['MANUAL_OUT_OF_STOCK', 'INSUFFICIENT_COMPONENT_STOCK']);
 
 @Injectable()
 export class ProductSellableQuantityService {
@@ -126,7 +133,10 @@ export class ProductSellableQuantityService {
           ? await trx
               .select({
                 skuId: stockSummary.skuId,
-                availableQuantity: sql<number>`GREATEST(COALESCE(SUM(${stockSummary.availableQty}), 0), 0)::int`,
+                // 창고별로 먼저 0 으로 자른 뒤 합산한다. 합산 후 자르면(GREATEST(SUM(..)))
+                // 한 창고의 음수 available(과다 예약/이동중)이 다른 창고의 실재고를 상쇄해
+                // 팔 수 있는 재고가 0 으로 사라진다.
+                availableQuantity: sql<number>`COALESCE(SUM(GREATEST(${stockSummary.availableQty}, 0)), 0)::int`,
               })
               .from(stockSummary)
               .where(inArray(stockSummary.skuId, skuIds))
@@ -199,6 +209,66 @@ export class ProductSellableQuantityService {
     }, tx as MergedTx | undefined);
   }
 
+  /**
+   * versionId별 품절 상태를 실시간 계산한다 (상품 목록 요약용).
+   * 각 version 의 품목을 모아 getByVariantIds 로 한 번에 판정(품목 수 무관 상수 쿼리)한 뒤
+   * version 기준으로 집계한다.
+   * 품절성 사유(수동품절/재고부족)만 세고, 매칭없음 등 설정 미완은 제외한다.
+   * - 'all': 모든 품목이 품절 (전체 품절)
+   * - 'partial': 일부 품목만 품절 (부분 품절)
+   * - 'none': 품절인 품목 없음 / 품목 없음
+   * 판정 결과가 없는 version 은 Map 에 담기지 않으므로 호출부에서 'none' 으로 취급한다.
+   */
+  async getSoldOutStateByVersionIds(
+    versionIds: string[],
+    tx?: AnyTx,
+  ): Promise<Map<string, SoldOutState>> {
+    const uniqueVersionIds = [...new Set(versionIds.filter(Boolean))];
+    const result = new Map<string, SoldOutState>();
+
+    if (uniqueVersionIds.length === 0) {
+      return result;
+    }
+
+    return this.dbService.run(async (trx) => {
+      const variantRows = await trx
+        .select({
+          variantId: productMasterVariants.variantId,
+          versionId: productMasterVariants.versionId,
+        })
+        .from(productMasterVariants)
+        .where(inArray(productMasterVariants.versionId, uniqueVersionIds));
+
+      if (variantRows.length === 0) {
+        return result;
+      }
+
+      // 품목→목록 versionId 매핑 (getByVariantIds 가 내부적으로 active 버전을 다시 풀지만,
+      // 목록에 뜬 version 기준으로 집계해야 하므로 여기서 잡은 versionId 를 쓴다)
+      const versionIdByVariant = new Map(variantRows.map((row) => [row.variantId, row.versionId]));
+      const projections = await this.getByVariantIds([...versionIdByVariant.keys()], trx);
+
+      // 실제 '품절성' 사유만 품절로 집계한다. 매칭없음/판매기간아님/비활성 같은
+      // '설정 미완/판매 안 함' 상태는 품절이 아니므로 제외한다
+      // (예: 선판매 켰지만 매칭 전 → MATCHING_MISSING → 품절 아님).
+      const agg = new Map<string, { total: number; soldOut: number }>();
+      for (const projection of projections) {
+        const versionId = versionIdByVariant.get(projection.variantId);
+        if (!versionId) continue;
+        const bucket = agg.get(versionId) ?? { total: 0, soldOut: 0 };
+        bucket.total += 1;
+        if (SOLD_OUT_REASONS.has(projection.reason)) bucket.soldOut += 1;
+        agg.set(versionId, bucket);
+      }
+
+      for (const [versionId, { total, soldOut }] of agg) {
+        result.set(versionId, soldOut === 0 ? 'none' : soldOut === total ? 'all' : 'partial');
+      }
+
+      return result;
+    }, tx as MergedTx | undefined);
+  }
+
   async recalculateAndPublishForVariant(
     variantId: string,
     tx?: AnyTx,
@@ -256,6 +326,10 @@ export class ProductSellableQuantityService {
 
       await this.outbox.enqueue(
         {
+          topic: INVENTORY_STREAM.topic.topic,
+          // 판매가능수량 변경은 variant 당 여러 번이 정당해 자연 멱등키가 없다 —
+          // 호출마다 고유 키로 topicless 시절의 무중복 동작을 유지한다.
+          idempotencyKey: `psq-changed:${projection.variantId}:${randomUUID()}`,
           eventType: 'ProductSellableQuantityChanged',
           aggregateType: 'ProductSellableQuantity',
           aggregateId: projection.variantId,

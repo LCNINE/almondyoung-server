@@ -15,6 +15,7 @@ import type {
   CreateIntentRequestDto,
   CreateIntentResponseDto,
   IntentDto,
+  IssuedCashReceiptDto,
   OnboardHmsBnplResponse,
   PointsBalanceDto,
   PointsEventRowDto,
@@ -523,6 +524,21 @@ export async function getIntent(intentId: string): Promise<IntentDto> {
   })
 }
 
+/** 주문(intent)의 발급된 현금영수증 목록. 실패/미발급이면 빈 배열 (주문상세 표시용). */
+export async function getCashReceipts(
+  intentId: string
+): Promise<IssuedCashReceiptDto[]> {
+  try {
+    return await api<IssuedCashReceiptDto[]>("wallet", "/v1/cash-receipts", {
+      method: "GET",
+      params: { intentId },
+      withAuth: true,
+    })
+  } catch {
+    return []
+  }
+}
+
 // ==========================================
 // 결제 비밀번호 (PIN) 관련 API
 // ==========================================
@@ -721,4 +737,73 @@ export async function updateTaxInvoice({
     body: data,
     withAuth: true,
   })
+}
+
+export interface BankTransferDepositAccount {
+  bankName: string | null
+  accountNumber: string | null
+  accountHolder: string | null
+  dueDate: string | null
+  amount: number
+  currency: string
+}
+
+/**
+ * 무통장(가상계좌) 입금 안내 계좌 조회. wallet-web 결제화면을 벗어난 뒤에도
+ * 주문내역에서 입금 계좌를 다시 확인할 수 있도록 한다. 대상 아니면 null.
+ */
+export async function getBankTransferDepositAccount(
+  intentId: string
+): Promise<BankTransferDepositAccount | null> {
+  try {
+    return await api<BankTransferDepositAccount | null>(
+      "wallet",
+      `/v1/payment-intents/${intentId}/deposit-account`,
+      { method: "GET", withAuth: true }
+    )
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 무통장(가상계좌) 환불 요청 제출. bankCode 는 토스 2자리 은행코드.
+ * 실제 환불은 관리자 승인 시 실행된다.
+ */
+/**
+ * 해당 주문(intentId)에 대기중(REQUESTED)인 환불 요청이 있는지 조회. 없으면 null.
+ * 주문내역에서 '환불 신청됨' 상태 표시 + 중복 신청 버튼 숨김에 사용.
+ */
+export async function getActiveRefundRequest(
+  intentId: string
+): Promise<{ id: string; status: string } | null> {
+  try {
+    return await api<{ id: string; status: string } | null>(
+      "wallet",
+      `/v1/refund-requests/by-intent/${intentId}`,
+      { method: "GET", withAuth: true }
+    )
+  } catch {
+    return null
+  }
+}
+
+export async function submitRefundRequest(body: {
+  intentId: string
+  bankCode: string
+  bankName?: string
+  accountNumber: string
+  holderName: string
+  reason?: string
+}): Promise<{ id: string; status: string }> {
+  return await api<{ id: string; status: string }>(
+    "wallet",
+    "/v1/refund-requests",
+    {
+      method: "POST",
+      body,
+      withAuth: true,
+      headers: { "Idempotency-Key": crypto.randomUUID() },
+    }
+  )
 }

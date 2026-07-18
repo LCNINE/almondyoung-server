@@ -11,18 +11,15 @@ import { orderQueryKeys } from './query-keys';
 import { orders } from '@/lib/api/domains';
 import type {
   MatchingsQuery,
-  MatchingsResponseDto,
-  MatchingDto,
-  VariantMatchingDto,
-  StockPolicyDto,
   VariantSkuLookupDto,
-  VariantSkuLookupResponseDto,
   OrderLinesQuery,
 } from '@/lib/types/dto/orders';
 import type {
   QualityMetricsQuery,
   ListFulfillmentsQuery,
   FulfillmentOrdersQuery,
+  ShipmentConsolidationCandidateQuery,
+  OutboundBatchV2ListQuery,
 } from '@/lib/types/dto/fulfillment';
 
 // 주문 관련 쿼리
@@ -51,35 +48,35 @@ export const useSalesOrderItems = (orderId: string) => {
 
 // ===== 출고 배치 관련 쿼리 (D2) =====
 
-export const useOutboundBatches = (warehouseId?: string) => {
+export const useOutboundBatchesV2 = (query: OutboundBatchV2ListQuery = {}) => {
   return useQuery({
-    queryKey: orderQueryKeys.outboundBatchList(warehouseId),
-    queryFn: () => orders.outboundBatches.list(warehouseId),
+    queryKey: orderQueryKeys.outboundBatchesV2(query),
+    queryFn: () => orders.outboundBatches.listV2(query),
+    placeholderData: keepPreviousData,
   });
 };
 
-export const useOutboundBatch = (id: string) => {
+export const useOutboundBatchV2 = (id: string) => {
   return useQuery({
-    queryKey: orderQueryKeys.outboundBatch(id),
-    queryFn: () => orders.outboundBatches.get(id),
+    queryKey: orderQueryKeys.outboundBatchV2(id),
+    queryFn: () => orders.outboundBatches.getV2(id),
     enabled: !!id,
   });
 };
 
-export const useOutboundBatchPickingList = (id: string) => {
+export const useOutboundBatchEligibleShipments = (id: string) => {
   return useQuery({
-    queryKey: orderQueryKeys.outboundBatchPickingList(id),
-    queryFn: () => orders.outboundBatches.getPickingList(id),
+    queryKey: orderQueryKeys.outboundBatchEligibleShipments(id),
+    queryFn: () => orders.outboundBatches.getEligibleShipments(id),
     enabled: !!id,
   });
 };
 
-export const useAvailableFulfillmentOrders = (warehouseId: string) => {
+export const useOutboundBatchWorkItems = (id: string) => {
   return useQuery({
-    queryKey: orderQueryKeys.availableFulfillmentOrders(warehouseId),
-    queryFn: () =>
-      orders.outboundBatches.getAvailableFulfillmentOrders(warehouseId),
-    enabled: !!warehouseId,
+    queryKey: orderQueryKeys.outboundBatchWorkItems(id),
+    queryFn: () => orders.outboundBatches.getWorkItems(id),
+    enabled: !!id,
   });
 };
 
@@ -128,6 +125,17 @@ export const useConsolidationCandidates = (warehouseId: string) => {
   });
 };
 
+export const useShipmentConsolidationCandidates = (
+  query: ShipmentConsolidationCandidateQuery
+) =>
+  useQuery({
+    queryKey: orderQueryKeys.shipmentConsolidationCandidates(query),
+    queryFn: () => orders.consolidation.getShipmentCandidates(query),
+    enabled: !!query.warehouseId,
+  });
+
+export const useConsolidationCandidatesV2 = useShipmentConsolidationCandidates;
+
 export const useConsolidationLive = (warehouseId: string) => {
   return useQuery({
     queryKey: orderQueryKeys.consolidationLive(warehouseId),
@@ -163,59 +171,14 @@ export const useLocationOptimizationZones = () => {
   });
 };
 
-// 피킹 관련 쿼리
-export const usePickings = () => {
-  return useQuery({
-    queryKey: orderQueryKeys.pickings,
-    queryFn: () => Promise.resolve([]), // picking은 세션/배치 단위라 목록 API 없음
-  });
-};
-
-export const usePicking = (id: string) => {
-  return useQuery({
-    queryKey: orderQueryKeys.picking(id),
-    queryFn: () => Promise.resolve({ id }),
-    enabled: !!id,
-  });
-};
-
-export const usePickingList = (orderId: string) => {
-  return useQuery({
-    queryKey: orderQueryKeys.pickingList(orderId),
-    queryFn: () => Promise.resolve([]),
-    enabled: !!orderId,
-  });
-};
-
-export const useBatchPickingOperations = (batchId: string) => {
-  return useQuery({
-    queryKey: orderQueryKeys.batchOperations(batchId),
-    queryFn: () => orders.picking.getBatchOperations(batchId),
-    enabled: !!batchId,
-  });
-};
-
-export const useBatchPickingProgress = (batchId: string) => {
-  return useQuery({
-    queryKey: orderQueryKeys.batchProgress(batchId),
-    queryFn: () => orders.picking.getBatchProgress(batchId),
-    enabled: !!batchId,
-  });
-};
-
-export const usePickingSession = (foId: string) => {
-  return useQuery({
-    queryKey: orderQueryKeys.pickingSession(foId),
-    queryFn: () => orders.picking.getPickingSession(foId),
-    enabled: !!foId,
-  });
-};
-
 // 이행(출고주문) 관련 쿼리 — GET /fulfillments, GET /fulfillments/:id
-export const useFulfillmentOrders = (query: FulfillmentOrdersQuery | ListFulfillmentsQuery = {}) => {
+export const useFulfillmentOrders = (
+  query: FulfillmentOrdersQuery | ListFulfillmentsQuery = {}
+) => {
   return useQuery({
     queryKey: orderQueryKeys.fulfillmentsList(query),
-    queryFn: () => orders.fulfillmentOrder.list(query as FulfillmentOrdersQuery),
+    queryFn: () =>
+      orders.fulfillmentOrder.list(query as FulfillmentOrdersQuery),
     placeholderData: keepPreviousData,
   });
 };
@@ -241,19 +204,48 @@ export const useFulfillmentOutboxEvents = (id: string) => {
   });
 };
 
-/** 예약 이전 대상 후보 조회 — 같은 창고·같은 SKU, 작업 전 상태, 부족분 있는 FOI (cross-FO 포함) */
-export const useFulfillmentTransferCandidates = (
-  foId: string,
-  fromFoiId?: string
-) => {
+export const useFulfillmentShipments = (id: string) => {
   return useQuery({
-    queryKey: orderQueryKeys.fulfillmentTransferCandidates(
-      foId,
-      fromFoiId ?? ''
-    ),
-    queryFn: () =>
-      orders.fulfillments.getTransferCandidates(foId, fromFoiId ?? ''),
-    enabled: !!foId && !!fromFoiId,
+    queryKey: orderQueryKeys.fulfillmentShipments(id),
+    queryFn: () => orders.fulfillmentOrder.getShipments(id),
+    enabled: !!id,
+  });
+};
+
+export const useShipmentDetail = (shipmentId: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.shipment(shipmentId),
+    queryFn: () => orders.fulfillmentOrder.getShipment(shipmentId),
+    enabled: !!shipmentId,
+  });
+};
+
+export const useFulfillmentOperation = (operationId: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.fulfillmentOperation(operationId),
+    queryFn: () => orders.fulfillmentOrder.getOperation(operationId),
+    enabled: !!operationId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === 'pending' ||
+        status === 'in_progress' ||
+        status === 'recovery_required'
+        ? 2_000
+        : false;
+    },
+  });
+};
+
+export const useShipmentRecallOperation = (operationId: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.shipmentRecallOperation(operationId),
+    queryFn: () => orders.fulfillmentOrder.getRecallOperation(operationId),
+    enabled: !!operationId,
+    refetchInterval: (query) =>
+      query.state.data?.operationStatus === 'pending' ||
+      query.state.data?.operationStatus === 'recovery_required'
+        ? 2_000
+        : false,
   });
 };
 
@@ -332,22 +324,6 @@ export const useLegacyPurchaseOrder = (id: string) => {
   return useQuery({
     queryKey: orderQueryKeys.purchaseOrder(id),
     queryFn: () => Promise.resolve({ id }),
-    enabled: !!id,
-  });
-};
-
-// 송장 관련 쿼리
-export const useInvoices = () => {
-  return useQuery({
-    queryKey: orderQueryKeys.invoices,
-    queryFn: () => Promise.resolve([]), // 목록 API 없음 — FO 단위 발행 후 ID로 조회
-  });
-};
-
-export const useInvoice = (id: string) => {
-  return useQuery({
-    queryKey: orderQueryKeys.invoice(id),
-    queryFn: () => orders.invoices.getDetail(id),
     enabled: !!id,
   });
 };

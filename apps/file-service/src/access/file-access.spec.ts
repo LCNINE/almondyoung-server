@@ -56,9 +56,9 @@ describe('FileAccess', () => {
     repo = module.get(FileRepository) as jest.Mocked<FileRepository>;
     authorization = module.get(AuthorizationService) as jest.Mocked<AuthorizationService>;
 
-    authorization.hasScope.mockImplementation(async (user: JwtPayload, scope: string) =>
-      (user.roles ?? []).includes(scope),
-    );
+    // 실제 authz DB 에는 'master' 역할→스코프 매핑이 시드돼 있지 않다.
+    // master 통과는 roles.includes('master') 단락 경로로만 동작해야 한다.
+    authorization.hasScope.mockResolvedValue(false);
   });
 
   describe('loadReadable', () => {

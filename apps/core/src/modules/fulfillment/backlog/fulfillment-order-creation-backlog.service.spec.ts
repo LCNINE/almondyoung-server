@@ -25,11 +25,16 @@ describe('FulfillmentOrderCreationBacklogService', () => {
       },
       run: jest.fn((fn: (t: any) => any, aTx?: any) => fn(aTx ?? tx)),
     };
+    const workflowGate = {
+      shouldEnqueueFo: jest.fn().mockReturnValue(true),
+      shouldRunFoCreation: jest.fn().mockReturnValue(true),
+    };
 
     return {
-      service: new FulfillmentOrderCreationBacklogService(dbService as never),
+      service: new FulfillmentOrderCreationBacklogService(dbService as never, workflowGate as never),
       tx,
       updates,
+      workflowGate,
     };
   }
 
@@ -91,5 +96,19 @@ describe('FulfillmentOrderCreationBacklogService', () => {
     const whereSql = normalizeSql(updates[0].where);
     expect(whereSql).toMatch(/"sales_order_id"\s*=\s*\$\d+/);
     expect(whereSql).toMatch(/"status"\s+in\s+\(\$\d+,\s*\$\d+,\s*\$\d+,\s*\$\d+\)/i);
+  });
+
+  it('does not enqueue or claim backlog rows when the workflow gate is closed', async () => {
+    const { service, workflowGate } = makeService();
+    workflowGate.shouldEnqueueFo.mockReturnValue(false);
+    workflowGate.shouldRunFoCreation.mockReturnValue(false);
+
+    await expect(
+      service.enqueueForSalesOrder('sales-order-1', {
+        eventOccurredAt: '2026-07-14T03:00:00.000Z',
+        isNewSalesOrder: true,
+      }),
+    ).resolves.toBeUndefined();
+    await expect(service.claimPending()).resolves.toEqual([]);
   });
 });

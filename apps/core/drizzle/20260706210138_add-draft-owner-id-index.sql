@@ -1,0 +1,1 @@
+CREATE INDEX "idx_versions_draft_owner" ON "product_master_versions" USING btree ("draft_owner_id");

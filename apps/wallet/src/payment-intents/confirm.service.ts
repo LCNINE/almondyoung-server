@@ -16,6 +16,8 @@ import {
 import { ChargePlan, ChargeSlot } from './charge-plan';
 import { ChargeResult } from '../providers/payment-provider.interface';
 
+type CashReceiptRequest = { type: '소득공제' | '지출증빙'; customerIdentityNumber: string };
+
 interface Phase1Result {
   plan: ChargePlan;
   userId: string;
@@ -43,7 +45,7 @@ export class ConfirmService {
 
   async confirm(
     intentId: string,
-    dto: { paymentMethodId?: string; pointsToApply?: number },
+    dto: { paymentMethodId?: string; pointsToApply?: number; cashReceipt?: CashReceiptRequest },
     correlationId: string,
   ): Promise<{ nextAction?: Record<string, unknown> }> {
     let phase1: Phase1Result | null = null;
@@ -60,7 +62,7 @@ export class ConfirmService {
 
   private async phase1Setup(
     intentId: string,
-    dto: { paymentMethodId?: string; pointsToApply?: number },
+    dto: { paymentMethodId?: string; pointsToApply?: number; cashReceipt?: CashReceiptRequest },
     correlationId: string,
     tx: DbTx,
   ): Promise<Phase1Result | null> {
@@ -74,6 +76,15 @@ export class ConfirmService {
     }
 
     const pointsToApply = dto.pointsToApply ?? 0;
+
+    // 멤버십 결제(type: MEMBERSHIP_FEE)에는 포인트 사용 불가. 프론트에서 포인트 UI 를 숨기지만
+    // API 직접 호출로 pointsToApply 를 실어 보내는 우회를 서버에서 차단한다.
+    if (pointsToApply > 0 && intent.metadata?.type === 'MEMBERSHIP_FEE') {
+      throw new BadRequestException({
+        error: 'POINTS_NOT_APPLICABLE_TO_MEMBERSHIP',
+        message: 'Points cannot be applied to a membership payment',
+      });
+    }
 
     if (intent.payableAmount === 0) {
       if (pointsToApply > 0) {
@@ -116,6 +127,19 @@ export class ConfirmService {
         error: 'PAYMENT_METHOD_REQUIRED',
         message: 'A payment method ID is required when points do not cover the full amount',
       });
+    }
+
+    // 멤버십 결제(type: MEMBERSHIP_FEE)는 무통장(BANK_TRANSFER)만 허용한다. 프론트에서 카드/간편결제
+    // UI 를 숨기지만, API 직접 호출로 다른 결제수단을 실어 보내는 우회를 서버에서 차단한다.
+    // 무통장은 자동갱신이 불가해 멤버십은 1회결제로만 굴러가며, 정기결제(CMS 등)는 추후 별도 경로.
+    if (externalAmount > 0 && dto.paymentMethodId && intent.metadata?.type === 'MEMBERSHIP_FEE') {
+      const extMethod = await this.resolveExternalMethod(dto.paymentMethodId);
+      if (extMethod.type !== 'BANK_TRANSFER') {
+        throw new BadRequestException({
+          error: 'MEMBERSHIP_REQUIRES_BANK_TRANSFER',
+          message: 'Membership payments must be paid by bank transfer',
+        });
+      }
     }
 
     // 6. userId check
@@ -187,11 +211,16 @@ export class ConfirmService {
     }
 
     // 9. Set intent.paymentMethodId and transition to PROCESSING
+    // 현금영수증 신청이 있으면 metadata 에 저장 — 무통장 입금확인(confirmDeposit) 완료 시 자동 발급에 사용.
     const intentPaymentMethodId = plan.primary.paymentMethodId;
+    const nextMetadata = dto.cashReceipt
+      ? { ...(intent.metadata ?? {}), cashReceipt: dto.cashReceipt }
+      : undefined;
     await tx
       .update(paymentIntents)
       .set({
         paymentMethodId: intentPaymentMethodId,
+        ...(nextMetadata ? { metadata: nextMetadata } : {}),
         version: sql`${paymentIntents.version} + 1`,
         updatedAt: new Date(),
       })

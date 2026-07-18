@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 8000",
+    "dev": "next dev -p 8002",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
@@ -72,6 +72,7 @@
     "next": "^15.5.7",
     "next-themes": "^0.4.6",
     "node-fetch": "^3.3.2",
+    "radix-ui": "^1.6.2",
     "react": "19.1.0",
     "react-daum-postcode": "^4.0.0",
     "react-day-picker": "^9.10.0",

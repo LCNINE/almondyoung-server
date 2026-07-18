@@ -102,6 +102,32 @@ export class BusinessLicensesService {
 
     return result ?? null;
   }
+
+  /**
+   * 사용자가 지출증빙 현금영수증 등에서 입력한 사업자번호를, 기존 사업자정보의 번호가 비어있을 때만 채운다.
+   */
+  async fillMyBusinessNumberIfEmpty(userId: string, businessNumber: string): Promise<{ saved: boolean }> {
+    const digits = businessNumber.replace(/\D/g, '');
+    if (digits.length !== 10) {
+      throw new BadRequestException('사업자등록번호는 10자리여야 합니다.');
+    }
+
+    const license = await this.findBusinessLicenseByUserId(userId);
+    if (!license) return { saved: false }; // 등록 정보 없음 — 제약상 대표자명/파일이 필요해 생성은 하지 않음
+    if (license.businessNumber?.trim()) return { saved: false }; // 이미 값 있음 — 덮어쓰지 않음
+
+    try {
+      await this.dbService.db
+        .update(businessLicenses)
+        .set({ businessNumber: digits, updatedAt: new Date() })
+        .where(eq(businessLicenses.id, license.id));
+      return { saved: true };
+    } catch (error) {
+      // 사업자번호 unique 위반(23505) 등 — 저장만 실패, 예외를 위로 던지지 않는다.
+      if ((error as { code?: string })?.code === '23505') return { saved: false };
+      throw error;
+    }
+  }
   /**
    * 사업자 정보 외부 조회 (국세청 상태조회).
    *

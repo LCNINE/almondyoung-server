@@ -23,7 +23,7 @@ import type {
  */
 export async function getCurrentSubscription(): Promise<SubscriptionDetailsDto | null> {
   try {
-    return await api<SubscriptionDetailsDto>(
+    const raw = await api<Record<string, unknown>>(
       "membership",
       `/subscriptions/current`,
       {
@@ -31,11 +31,52 @@ export async function getCurrentSubscription(): Promise<SubscriptionDetailsDto |
         cache: "no-store",
       }
     )
+    return normalizeCurrentSubscription(raw)
   } catch (error) {
+    console.error("에러에러:", error)
     if (error instanceof HttpApiError && error.status === 404) {
       return null
     }
     throw error
+  }
+}
+
+/**
+ * 멤버십 서비스의 `/subscriptions/current` 응답은 `{ entitlement, contract, plan, tier }`
+ * 중첩 구조라 status/기간이 contract·entitlement 안에 들어있다. 스토어프론트는 flat
+ * `SubscriptionDetailsDto`(top-level status/endDate 등)를 기대하므로 여기서 평탄화한다.
+ * 이미 flat(top-level status)인 응답은 그대로 통과 → 백엔드 응답 형태가 바뀌어도 안전.
+ */
+function normalizeCurrentSubscription(
+  raw: Record<string, unknown> | null | undefined
+): SubscriptionDetailsDto | null {
+  if (!raw) return null
+  // 이미 평탄한 응답
+  if (typeof raw.status === "string")
+    return raw as unknown as SubscriptionDetailsDto
+
+  const contract = (raw.contract ?? {}) as Record<string, unknown>
+  const entitlement = (raw.entitlement ?? {}) as Record<string, unknown>
+  if (!contract.status) return null
+
+  const pick = (v: unknown) => (typeof v === "string" ? v : null)
+
+  return {
+    id: (contract.id as string) ?? "",
+    userId: (contract.userId as string) ?? "",
+    planId: (contract.planId as string) ?? "",
+    status: contract.status as SubscriptionDetailsDto["status"],
+    startDate: pick(entitlement.startsAt) ?? "",
+    endDate: pick(entitlement.endsAt),
+    createdAt: pick(contract.createdAt) ?? "",
+    updatedAt: pick(contract.updatedAt) ?? "",
+    billingDate: pick(raw.billingDate) ?? pick(contract.billingDate),
+    nextBillingDate:
+      pick(raw.nextBillingDate) ?? pick(contract.nextBillingDate),
+    currentPeriodStart: pick(entitlement.startsAt),
+    currentPeriodEnd: pick(entitlement.endsAt),
+    plan: raw.plan as SubscriptionDetailsDto["plan"],
+    tier: raw.tier as SubscriptionDetailsDto["tier"],
   }
 }
 
@@ -48,6 +89,29 @@ export async function getSubscriptionHistory(): Promise<
   return await api<SubscriptionHistoryItemDto[]>(
     "membership",
     `/subscriptions/history`,
+    {
+      method: "GET",
+      withAuth: true,
+      cache: "no-store",
+    }
+  )
+}
+
+export interface SubscriptionHistoryPageDto {
+  items: SubscriptionHistoryItemDto[]
+  total: number
+}
+
+/**
+ * 구독 이력 조회
+ */
+export async function getSubscriptionHistoryPaged(
+  limit: number,
+  offset: number
+): Promise<SubscriptionHistoryPageDto> {
+  return await api<SubscriptionHistoryPageDto>(
+    "membership",
+    `/subscriptions/history/paged?limit=${limit}&offset=${offset}`,
     {
       method: "GET",
       withAuth: true,
@@ -83,11 +147,16 @@ export async function getCancellationReasons(): Promise<
  */
 export async function cancelSubscription(
   reasonCode: string,
-  reasonText?: string
+  reasonText?: string,
+  refundReceiveAccount?: {
+    bank: string
+    accountNumber: string
+    holderName: string
+  }
 ) {
   return await api("membership", "/subscriptions/cancel", {
     method: "POST",
-    body: { reasonCode, reasonText },
+    body: { reasonCode, reasonText, refundReceiveAccount },
     withAuth: true,
     cache: "no-store",
   })
@@ -254,7 +323,9 @@ export async function createMembershipCheckoutIntent(
     }
     // 기타 에러: plain Error로 변환하여 Next.js Server Action 직렬화 문제 방지
     throw new Error(
-      error instanceof Error ? error.message : "멤버십 결제 준비에 실패했습니다."
+      error instanceof Error
+        ? error.message
+        : "멤버십 결제 준비에 실패했습니다."
     )
   }
 }
@@ -265,8 +336,8 @@ export async function createMembershipCheckoutIntent(
 export async function subscribeWithBillingMethod(
   planId: string,
   billingMethodId: string,
-  billingMode: 'one_time' | 'recurring' = 'one_time',
-  checkoutAttemptId?: string,
+  billingMode: "one_time" | "recurring" = "one_time",
+  checkoutAttemptId?: string
 ): Promise<{ contractId: string; effectiveTrialDays?: number }> {
   return await api<{ contractId: string; effectiveTrialDays?: number }>(
     "membership",

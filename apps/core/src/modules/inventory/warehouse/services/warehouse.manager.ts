@@ -99,12 +99,22 @@ export class WarehouseManager {
               type: data.type,
               location: data.location,
             });
+            await this.locationService.ensureSystemLocations(data.id, trx);
           });
           this.logger.log(`기본 창고 생성: ${data.name}`);
         }
       }
+
+      // 기존 custom warehouse도 신규 system role이 추가된 배포 직후 바로 bootstrap한다.
+      // unique (warehouse_id, system_role) + LocationService 잠금이 role당 활성 한 개로 수렴시킨다.
+      const warehouses = await this.reader.findAll();
+      for (const warehouse of warehouses) {
+        await this.locationService.ensureSystemLocations(warehouse.id);
+      }
     } catch (error) {
       this.logger.error('기본 창고 생성 중 오류 발생:', error);
+      // 필수 system location이 없는 창고로 서비스를 시작하지 않도록 bootstrap 실패를 숨기지 않는다.
+      throw error;
     }
   }
 }

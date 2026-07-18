@@ -1,28 +1,39 @@
 import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { InjectTypedDb } from '@app/db';
-import { and, desc, eq, inArray } from 'drizzle-orm';
-import { inventorySchema, inventoryTables, returnExchangeTables, wmsTables } from '../../inventory/schema/inventory.schema';
+import { and, desc, eq, inArray, ne, notInArray, sql } from 'drizzle-orm';
+import {
+  inventorySchema,
+  inventoryTables,
+  returnExchangeTables,
+  DbTx,
+  wmsTables,
+} from '../../inventory/schema/inventory.schema';
+import { WAYBILL_TERMINAL_STATUSES } from '../../fulfillment/waybill/waybill.constants';
 import { calculatePartialCancellationRefund } from './partial-cancellation-refund-calculator';
 import {
   RefundSummaryDto,
+  ShipmentProgressDto,
   StoreCancelOrderDto,
   StoreCancelUnavailableReason,
   StoreClaimStatus,
-  StoreFulfillmentStatus,
   StoreOrderAction,
   StoreOrderActionsResponseDto,
   StoreRefundStatus,
 } from '../dto/store-order-actions.dto';
-import {
-  StoreOrderTrackingResponseDto,
-  StoreShipmentDto,
-} from '../dto/store-order-tracking.dto';
+import { StoreOrderTrackingResponseDto, StoreShipmentDto } from '../dto/store-order-tracking.dto';
 import { SalesOrdersService } from './sales-orders.service';
 import { WalletRefundClient } from './wallet-refund.client';
+import {
+  deriveFulfillmentPhase,
+  isPickingStarted,
+  hasShippedEvidence as hasShippedEvidenceFrom,
+  MOVED_SHIPMENT_STATUSES,
+  PhaseFoRow,
+  FulfillmentPhaseInput,
+} from './fulfillment-phase';
 
 type SalesOrderRow = typeof inventoryTables.salesOrders.$inferSelect;
-type FoRow = { status: string; shippedAt: Date | null };
 
 const CHANNEL_CANCEL_URLS: Record<string, { cancelUrl: string; returnUrl: string }> = {
   naver: {
@@ -35,13 +46,22 @@ const CHANNEL_CANCEL_URLS: Record<string, { cancelUrl: string; returnUrl: string
   },
 };
 
-const FO_DELIVERED_STATUSES = new Set(['completed']);
-const FO_SHIPPED_STATUSES = new Set(['shipped', 'completed']);
-const FO_PACKED_STATUSES = new Set(['picked', 'inspecting', 'invoiced', 'labeled', 'forwarded']);
-const FO_PICKING_STATUSES = new Set(['picking', 'allocated']);
-
-const ACTIVE_RETURN_STATUSES = ['requested', 'approved', 'collection_pending', 'collected', 'inspected', 'refund_pending'] as const;
-const ACTIVE_EXCHANGE_STATUSES = ['requested', 'approved', 'collection_pending', 'collected', 'inspected', 'refund_pending'] as const;
+const ACTIVE_RETURN_STATUSES = [
+  'requested',
+  'approved',
+  'collection_pending',
+  'collected',
+  'inspected',
+  'refund_pending',
+] as const;
+const ACTIVE_EXCHANGE_STATUSES = [
+  'requested',
+  'approved',
+  'collection_pending',
+  'collected',
+  'inspected',
+  'refund_pending',
+] as const;
 const VALID_REFUND_STATUSES = new Set<StoreRefundStatus>(['none', 'pending', 'manual_pending', 'succeeded', 'failed']);
 
 @Injectable()
@@ -49,7 +69,8 @@ export class StoreSalesOrdersService {
   private readonly logger = new Logger(StoreSalesOrdersService.name);
 
   constructor(
-    @InjectTypedDb<typeof inventorySchema>() private readonly db: { db: import('drizzle-orm/postgres-js').PostgresJsDatabase<typeof inventorySchema> },
+    @InjectTypedDb<typeof inventorySchema>()
+    private readonly db: { db: import('drizzle-orm/postgres-js').PostgresJsDatabase<typeof inventorySchema> },
     private readonly salesOrdersService: SalesOrdersService,
     private readonly walletRefundClient: WalletRefundClient,
   ) {}
@@ -61,9 +82,14 @@ export class StoreSalesOrdersService {
     return this.buildActionsView(so);
   }
 
-  async cancelRequest(orderId: string, customerId: string, dto: StoreCancelOrderDto): Promise<StoreOrderActionsResponseDto> {
+  async cancelRequest(
+    orderId: string,
+    customerId: string,
+    dto: StoreCancelOrderDto,
+    fulfillmentCommandContext?: { idempotencyKey: string; actorId: string; actorRoles: string[] },
+  ): Promise<StoreOrderActionsResponseDto> {
     const so = await this.findSoOrThrow({ id: orderId }, customerId);
-    return this.processCancelRequest(so, customerId, dto);
+    return this.processCancelRequest(so, customerId, dto, fulfillmentCommandContext);
   }
 
   /**
@@ -74,9 +100,26 @@ export class StoreSalesOrdersService {
    */
   async adminCancelRequest(
     orderId: string,
-    dto: { reasonCode?: string; reasonDetail?: string; lines?: Array<{ salesOrderLineId: string; quantity: number }> },
+    dto: {
+      reasonCode?: string;
+      reasonDetail?: string;
+      lines?: Array<{ salesOrderLineId: string; quantity: number }>;
+      fulfillmentCommandContext?: { idempotencyKey: string; actorId: string; actorRoles: string[] };
+    },
   ): Promise<{ status: string; refundStatus: string; refundEstimateAmount?: number; manualReason?: string | null }> {
     const so = await this.findSoOrThrow({ id: orderId });
+    if (
+      dto.fulfillmentCommandContext &&
+      (await this.salesOrdersService.validateCancellationReplay(so.id, {
+        sourceKey: dto.fulfillmentCommandContext.idempotencyKey,
+        reasonCode: dto.reasonCode,
+        reasonDetail: dto.reasonDetail,
+        lines: dto.lines,
+      }))
+    ) {
+      const replay = await this.buildActionsView(so);
+      return { status: so.status, refundStatus: replay.refundStatus };
+    }
     if (so.status === 'cancelled') throw new BadRequestException('이미 취소된 주문입니다.');
     if (so.status === 'timeout') throw new BadRequestException('타임아웃된 주문은 취소할 수 없습니다.');
 
@@ -85,6 +128,7 @@ export class StoreSalesOrdersService {
       reasonDetail: dto.reasonDetail,
       lines: dto.lines,
       cancelledBy: 'admin',
+      fulfillmentCommandContext: dto.fulfillmentCommandContext,
     });
 
     if (dto.lines && dto.lines.length > 0) {
@@ -133,13 +177,68 @@ export class StoreSalesOrdersService {
       };
     }
 
-    const refundStatus = await this.requestWalletRefundAfterCancel(
-      { ...so, status: 'cancelled' } as SalesOrderRow,
-      { reasonCode: dto.reasonCode },
-      { actor: 'admin', attemptType: 'initial' },
-    );
+    const refundOptions = { actor: 'admin' as const, attemptType: 'initial' as const };
+    const refundStatus = dto.fulfillmentCommandContext
+      ? await this.requestWalletRefundOnce(
+          { ...so, status: 'cancelled' } as SalesOrderRow,
+          { reasonCode: dto.reasonCode },
+          dto.fulfillmentCommandContext.idempotencyKey,
+          refundOptions,
+        )
+      : await this.requestWalletRefundAfterCancel(
+          { ...so, status: 'cancelled' } as SalesOrderRow,
+          { reasonCode: dto.reasonCode },
+          refundOptions,
+        );
 
     return { status: 'cancelled', refundStatus };
+  }
+
+  /**
+   * Wallet 에서 이미 환불이 완료된 결제(무통장 환불신청 승인 등)의 주문을 취소한다.
+   * core→wallet 재환불 없이 sales_order 취소 + 재고 복원만 수행하고, walletRefund effect 를
+   * SUCCEEDED 로 기록해 감사 타임라인에 남긴다. walletIntentId 로 medusa 주문을 찾으며,
+   * 없거나(직접결제 등) 이미 취소/출고면 멱등 처리한다.
+   */
+  async cancelByWalletIntentAfterRefund(
+    intentId: string,
+    opts: { reasonCode?: string; amount?: number } = {},
+  ): Promise<{ status: string; skipped?: string }> {
+    const so = await this.db.db
+      .select()
+      .from(inventoryTables.salesOrders)
+      .where(
+        and(
+          eq(inventoryTables.salesOrders.walletIntentId, intentId),
+          eq(inventoryTables.salesOrders.salesChannel, 'medusa'),
+        ),
+      )
+      .limit(1)
+      .then((r) => r[0]);
+
+    if (!so) return { status: 'skipped', skipped: 'no_sales_order' };
+    if (so.status === 'cancelled') return { status: 'cancelled', skipped: 'already_cancelled' };
+    if (so.status === 'shipped' || so.status === 'delivered') {
+      this.logger.warn(
+        `[cancelByWalletIntentAfterRefund] SO ${so.id} already ${so.status} (intent=${intentId}). 환불은 완료됐으나 출고 이후라 취소 스킵.`,
+      );
+      return { status: so.status, skipped: 'already_shipped' };
+    }
+
+    await this.salesOrdersService.cancel(so.id, {
+      reasonCode: opts.reasonCode ?? 'CUSTOMER_REFUND_REQUEST',
+      cancelledBy: 'admin:refund-approval',
+      walletRefund: {
+        externalRef: `wallet:refund:intent:${intentId}`,
+        refundStatus: 'SUCCEEDED',
+        ...(opts.amount ? { amount: opts.amount } : {}),
+      },
+    });
+
+    this.logger.log(
+      `[cancelByWalletIntentAfterRefund] SO ${so.id} cancelled (intent=${intentId}, refund already done in wallet)`,
+    );
+    return { status: 'cancelled' };
   }
 
   /**
@@ -197,10 +296,12 @@ export class StoreSalesOrdersService {
               })
               .map((r) => (r.metadata as Record<string, unknown>).completedRefundLinkId as string),
           );
-          return rows.find((r) => {
-            const m = r.metadata as Record<string, unknown>;
-            return m?.refundStatus === 'manual_pending' && !completedIds.has(r.id);
-          }) ?? null;
+          return (
+            rows.find((r) => {
+              const m = r.metadata as Record<string, unknown>;
+              return m?.refundStatus === 'manual_pending' && !completedIds.has(r.id);
+            }) ?? null
+          );
         });
     })();
 
@@ -289,10 +390,14 @@ export class StoreSalesOrdersService {
     }
 
     // failed 또는 링크 없음 → 새 per-attempt key로 실제 PG 재호출
-    const refundStatus = await this.requestWalletRefundAfterCancel(so, {}, {
-      attemptType: 'retry',
-      actor: 'admin',
-    });
+    const refundStatus = await this.requestWalletRefundAfterCancel(
+      so,
+      {},
+      {
+        attemptType: 'retry',
+        actor: 'admin',
+      },
+    );
     return { refundStatus };
   }
 
@@ -303,13 +408,38 @@ export class StoreSalesOrdersService {
     return this.buildActionsView(so);
   }
 
+  /**
+   * 주문목록 페이지용 배치 조회
+   */
+  async getActionsByChannelOrderBatch(
+    channelOrderIds: string[],
+    customerId: string,
+  ): Promise<StoreOrderActionsResponseDto[]> {
+    if (channelOrderIds.length === 0) return [];
+
+    const sos = await this.db.db
+      .select()
+      .from(inventoryTables.salesOrders)
+      .where(
+        and(
+          inArray(inventoryTables.salesOrders.channelOrderId, channelOrderIds),
+          eq(inventoryTables.salesOrders.salesChannel, 'medusa'),
+          eq(inventoryTables.salesOrders.customerId, customerId),
+        ),
+      );
+
+    // SO당 select 1~3개 × 페이지(≤100건 제한) Promise.all. 느려지면 buildActionsView 쿼리 배치화.
+    return Promise.all(sos.map((so) => this.buildActionsView(so)));
+  }
+
   async cancelRequestByChannelOrder(
     channelOrderId: string,
     customerId: string,
     dto: StoreCancelOrderDto,
+    fulfillmentCommandContext?: { idempotencyKey: string; actorId: string; actorRoles: string[] },
   ): Promise<StoreOrderActionsResponseDto> {
     const so = await this.findSoOrThrow({ channelOrderId, salesChannel: 'medusa' }, customerId);
-    return this.processCancelRequest(so, customerId, dto);
+    return this.processCancelRequest(so, customerId, dto, fulfillmentCommandContext);
   }
 
   // ── Private 헬퍼 ─────────────────────────────────────────────────────────
@@ -334,18 +464,20 @@ export class StoreSalesOrdersService {
       .then((r) => r[0]);
 
     if (!so) throw new NotFoundException('주문을 찾을 수 없습니다.');
-    if (customerId !== undefined && so.customerId !== customerId) throw new ForbiddenException('본인 주문만 접근할 수 있습니다.');
+    if (customerId !== undefined && so.customerId !== customerId)
+      throw new ForbiddenException('본인 주문만 접근할 수 있습니다.');
     return so;
   }
 
-  private async buildActionsView(so: SalesOrderRow, overrideRefundStatus?: StoreRefundStatus): Promise<StoreOrderActionsResponseDto> {
-    const fos = await this.db.db
-      .select({ status: inventoryTables.fulfillmentOrders.status, shippedAt: inventoryTables.fulfillmentOrders.shippedAt })
-      .from(inventoryTables.fulfillmentOrders)
-      .where(eq(inventoryTables.fulfillmentOrders.salesOrderId, so.id));
-
-    const fulfillmentStatus = this.deriveFulfillmentStatus(fos);
-    const hasShippedEvidence = this.hasShippedEvidence(fos);
+  private async buildActionsView(
+    so: SalesOrderRow,
+    overrideRefundStatus?: StoreRefundStatus,
+  ): Promise<StoreOrderActionsResponseDto> {
+    const foRows = await this.loadFoRows(so.id);
+    const phaseInput = await this.loadFulfillmentPhaseInput(so.id, foRows);
+    const { phase: fulfillmentStatus, progress } = deriveFulfillmentPhase(phaseInput);
+    const shipmentProgress: ShipmentProgressDto | undefined = progress.total > 0 ? progress : undefined;
+    const hasShippedEvidence = hasShippedEvidenceFrom(phaseInput);
     const isChannelOrder = so.salesChannel !== 'medusa';
 
     const availableActions: StoreOrderAction[] = [];
@@ -355,8 +487,8 @@ export class StoreSalesOrdersService {
     let refundSummary: RefundSummaryDto | undefined;
 
     // cancellation_linked_wallet_refund 조회: 취소된 주문 + 부분취소(manual_pending) 모두 해당
-    const needsRefundLookup = (so.status === 'cancelled' && !overrideRefundStatus) ||
-      (so.status !== 'cancelled' && so.walletIntentId);
+    const needsRefundLookup =
+      (so.status === 'cancelled' && !overrideRefundStatus) || (so.status !== 'cancelled' && so.walletIntentId);
 
     if (needsRefundLookup) {
       const refundLinks = await this.db.db
@@ -380,16 +512,18 @@ export class StoreSalesOrdersService {
       if (so.status === 'cancelled' && !overrideRefundStatus) {
         if (latestLink) {
           const stored = (latestLink.metadata as Record<string, unknown>)?.refundStatus;
-          refundStatus = (typeof stored === 'string' && VALID_REFUND_STATUSES.has(stored as StoreRefundStatus))
-            ? (stored as StoreRefundStatus)
-            : 'pending';
+          refundStatus =
+            typeof stored === 'string' && VALID_REFUND_STATUSES.has(stored as StoreRefundStatus)
+              ? (stored as StoreRefundStatus)
+              : 'pending';
         } else {
           refundStatus = so.walletIntentId ? 'pending' : 'none';
         }
       }
 
       // refundSummary 조립: 취소/부분취소 모두 지원
-      const summaryLink = latestLink ??
+      const summaryLink =
+        latestLink ??
         // 아직 cancelled가 아닌 주문에서 manual_pending 부분취소 링크 탐색
         refundLinks.find((r) => {
           const m = r.metadata as Record<string, unknown>;
@@ -398,9 +532,12 @@ export class StoreSalesOrdersService {
 
       if (summaryLink) {
         const m = summaryLink.metadata as Record<string, unknown>;
-        const summaryStatus = (typeof m?.refundStatus === 'string' && VALID_REFUND_STATUSES.has(m.refundStatus as StoreRefundStatus))
-          ? (m.refundStatus as StoreRefundStatus)
-          : (refundStatus !== 'none' ? refundStatus : undefined);
+        const summaryStatus =
+          typeof m?.refundStatus === 'string' && VALID_REFUND_STATUSES.has(m.refundStatus as StoreRefundStatus)
+            ? (m.refundStatus as StoreRefundStatus)
+            : refundStatus !== 'none'
+              ? refundStatus
+              : undefined;
 
         if (summaryStatus && summaryStatus !== 'none') {
           // 부분취소(manual_pending)는 refundEstimateAmount, 전체취소는 amount
@@ -433,12 +570,12 @@ export class StoreSalesOrdersService {
     } else if (so.status === 'cancelled') {
       availableActions.push('receipt');
       cancelUnavailableReason = 'already_cancelled';
-    } else if (hasShippedEvidence || so.status === 'shipped' || so.status === 'delivered') {
+    } else if (hasShippedEvidence) {
       availableActions.push('track');
       availableActions.push('receipt');
       cancelUnavailableReason = 'already_shipped';
       // return/exchange: 배송완료 상태 + 진행 중인 claim 없을 때만 허용
-      const isDelivered = so.status === 'delivered' || fulfillmentStatus === 'delivered';
+      const isDelivered = fulfillmentStatus === 'delivered';
       if (isDelivered) {
         const [activeReturn, activeExchange] = await Promise.all([
           this.db.db
@@ -474,7 +611,7 @@ export class StoreSalesOrdersService {
     } else if (isChannelOrder) {
       availableActions.push('receipt');
       cancelUnavailableReason = 'channel_order';
-    } else if (fulfillmentStatus === 'picking' || fulfillmentStatus === 'packed') {
+    } else if (isPickingStarted(foRows)) {
       // 피킹 시작 이후 고객 셀프 취소 불가 — 고객센터 문의 안내
       availableActions.push('receipt');
       cancelUnavailableReason = 'already_processing';
@@ -488,6 +625,7 @@ export class StoreSalesOrdersService {
       channelOrderId: so.channelOrderId,
       orderStatus: so.status,
       fulfillmentStatus,
+      shipmentProgress,
       refundStatus,
       refundSummary,
       claimStatus,
@@ -496,9 +634,7 @@ export class StoreSalesOrdersService {
       // 현재는 결제확인된 주문(authorized/captured)만 수집되므로 walletIntentId가 있으면 항상 paid.
       // 무통장입금 도입 시 Wallet intent status를 확인해 'awaiting_payment'로 분기한다.
       paymentStatus: so.walletIntentId ? 'paid' : undefined,
-      channelInfo: isChannelOrder
-        ? { channel: so.salesChannel, ...CHANNEL_CANCEL_URLS[so.salesChannel] }
-        : undefined,
+      channelInfo: isChannelOrder ? { channel: so.salesChannel, ...CHANNEL_CANCEL_URLS[so.salesChannel] } : undefined,
     };
   }
 
@@ -506,34 +642,75 @@ export class StoreSalesOrdersService {
     so: SalesOrderRow,
     customerId: string,
     dto: StoreCancelOrderDto,
+    fulfillmentCommandContext?: { idempotencyKey: string; actorId: string; actorRoles: string[] },
   ): Promise<StoreOrderActionsResponseDto> {
+    if (
+      fulfillmentCommandContext &&
+      (await this.salesOrdersService.validateCancellationReplay(so.id, {
+        sourceKey: fulfillmentCommandContext.idempotencyKey,
+        reasonCode: dto.reasonCode,
+        reasonDetail: dto.reasonDetail,
+      }))
+    ) {
+      return this.buildActionsView(so);
+    }
     if (so.status === 'cancelled') throw new BadRequestException('이미 취소된 주문입니다.');
     if (so.status === 'timeout') throw new BadRequestException('타임아웃된 주문은 취소할 수 없습니다.');
     if (so.salesChannel !== 'medusa') {
       throw new BadRequestException(`${so.salesChannel} 채널 주문은 해당 채널에서 직접 취소해 주세요.`);
     }
 
-    const fos = await this.db.db
-      .select({ status: inventoryTables.fulfillmentOrders.status, shippedAt: inventoryTables.fulfillmentOrders.shippedAt })
-      .from(inventoryTables.fulfillmentOrders)
-      .where(eq(inventoryTables.fulfillmentOrders.salesOrderId, so.id));
-
-    const fulfillmentStatus = this.deriveFulfillmentStatus(fos);
-    if (fulfillmentStatus === 'picking' || fulfillmentStatus === 'packed') {
-      throw new BadRequestException('피킹이 시작된 주문은 직접 취소할 수 없습니다. 고객센터로 문의해 주세요.');
+    const foRows = await this.loadFoRows(so.id);
+    const phaseInput = await this.loadFulfillmentPhaseInput(so.id, foRows);
+    if (hasShippedEvidenceFrom(phaseInput)) {
+      throw new BadRequestException('이미 출고된 주문은 취소할 수 없습니다. 고객센터로 문의해 주세요.');
     }
-    if (this.hasShippedEvidence(fos) || so.status === 'shipped' || so.status === 'delivered') {
-      throw new BadRequestException('이미 출고된 주문은 취소할 수 없습니다.');
+    if (isPickingStarted(foRows)) {
+      throw new BadRequestException('피킹이 시작된 주문은 직접 취소할 수 없습니다. 고객센터로 문의해 주세요.');
     }
 
     await this.salesOrdersService.cancel(so.id, {
       reasonCode: dto.reasonCode,
       reasonDetail: dto.reasonDetail,
       cancelledBy: `customer:${customerId}`,
+      fulfillmentCommandContext,
     });
 
-    const refundStatus = await this.requestWalletRefundAfterCancel(so, dto, { actor: 'customer', attemptType: 'initial' });
+    const refundOptions = { actor: 'customer' as const, attemptType: 'initial' as const };
+    const refundStatus = fulfillmentCommandContext
+      ? await this.requestWalletRefundOnce(so, dto, fulfillmentCommandContext.idempotencyKey, refundOptions)
+      : await this.requestWalletRefundAfterCancel(so, dto, refundOptions);
     return this.buildActionsView({ ...so, status: 'cancelled' }, refundStatus);
+  }
+
+  private async requestWalletRefundOnce(
+    so: SalesOrderRow,
+    dto: StoreCancelOrderDto,
+    idempotencyKey: string,
+    options: { attemptType: 'initial'; actor: 'customer' | 'admin' },
+  ): Promise<StoreRefundStatus> {
+    const keyDigest = createHash('sha256').update(idempotencyKey.trim()).digest('hex').slice(0, 32);
+    const correlationId = `cancel:${so.id}:initial:${keyDigest}`;
+    return this.db.db.transaction(async (rawTx) => {
+      const tx = rawTx as unknown as DbTx;
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${correlationId}, 0))`);
+      const rows = await tx.execute(sql`
+        SELECT metadata
+          FROM business_links
+         WHERE source_type = 'sales_order'
+           AND source_id = ${so.id}
+           AND relation_name = 'cancellation_linked_wallet_refund'
+           AND metadata->>'correlationId' = ${correlationId}
+         ORDER BY created_at DESC
+         LIMIT 1
+      `);
+      const existing = Array.from(rows as unknown as ArrayLike<{ metadata?: Record<string, unknown> }>)[0];
+      const storedStatus = existing?.metadata?.refundStatus;
+      if (typeof storedStatus === 'string' && VALID_REFUND_STATUSES.has(storedStatus as StoreRefundStatus)) {
+        return storedStatus as StoreRefundStatus;
+      }
+      return this.requestWalletRefundAfterCancel(so, dto, { ...options, correlationId, tx });
+    });
   }
 
   /**
@@ -553,6 +730,7 @@ export class StoreSalesOrdersService {
       correlationId?: string;
       amountOverride?: number;
       extraMetadata?: Record<string, unknown>;
+      tx?: DbTx;
     },
   ): Promise<StoreRefundStatus> {
     const attemptType = options?.attemptType ?? 'initial';
@@ -563,14 +741,18 @@ export class StoreSalesOrdersService {
         `[WalletRefund] No walletIntentId for SO ${so.id} (channelOrderId=${so.channelOrderId}). ` +
           'Refund must be processed manually.',
       );
-      await this.recordWalletRefundLink(so.id, {
-        refundStatus: 'manual_pending',
-        note: 'walletIntentId가 없어 수동 처리 필요',
-        reasonCode: dto.reasonCode,
-        attemptType,
-        actor,
-        extraMetadata: options?.extraMetadata,
-      });
+      await this.recordWalletRefundLink(
+        so.id,
+        {
+          refundStatus: 'manual_pending',
+          note: 'walletIntentId가 없어 수동 처리 필요',
+          reasonCode: dto.reasonCode,
+          attemptType,
+          actor,
+          extraMetadata: options?.extraMetadata,
+        },
+        options?.tx,
+      );
       return 'manual_pending';
     }
 
@@ -578,19 +760,21 @@ export class StoreSalesOrdersService {
     const amount = options?.amountOverride ?? so.totalAmount;
 
     if (!amount || amount <= 0) {
-      this.logger.warn(
-        `[WalletRefund] SO ${so.id} has invalid amount=${amount}. Skipping auto-refund.`,
+      this.logger.warn(`[WalletRefund] SO ${so.id} has invalid amount=${amount}. Skipping auto-refund.`);
+      await this.recordWalletRefundLink(
+        so.id,
+        {
+          refundStatus: 'manual_pending',
+          note: `amount=${amount} 이 유효하지 않아 수동 처리 필요`,
+          intentId: so.walletIntentId,
+          reasonCode: dto.reasonCode,
+          attemptType,
+          actor,
+          correlationId,
+          extraMetadata: options?.extraMetadata,
+        },
+        options?.tx,
       );
-      await this.recordWalletRefundLink(so.id, {
-        refundStatus: 'manual_pending',
-        note: `amount=${amount} 이 유효하지 않아 수동 처리 필요`,
-        intentId: so.walletIntentId,
-        reasonCode: dto.reasonCode,
-        attemptType,
-        actor,
-        correlationId,
-        extraMetadata: options?.extraMetadata,
-      });
       return 'manual_pending';
     }
 
@@ -603,79 +787,117 @@ export class StoreSalesOrdersService {
     switch (outcome.kind) {
       case 'success': {
         const refundId = outcome.refunds[0]?.refundId;
-        await this.recordWalletRefundLink(so.id, {
-          refundStatus: 'succeeded',
-          intentId: so.walletIntentId,
-          refundId,
-          amount,
-          reasonCode: dto.reasonCode,
-          attemptType,
-          actor,
-          correlationId,
-          extraMetadata: options?.extraMetadata,
-        });
+        await this.recordWalletRefundLink(
+          so.id,
+          {
+            refundStatus: 'succeeded',
+            intentId: so.walletIntentId,
+            refundId,
+            amount,
+            reasonCode: dto.reasonCode,
+            attemptType,
+            actor,
+            correlationId,
+            extraMetadata: options?.extraMetadata,
+          },
+          options?.tx,
+        );
         return 'succeeded';
       }
       case 'partial_pending': {
         const refundId = outcome.refunds[0]?.refundId;
-        await this.recordWalletRefundLink(so.id, {
-          refundStatus: 'pending',
-          intentId: so.walletIntentId,
-          refundId,
-          amount,
-          note: '무통장 입금 또는 비동기 처리 중 — Wallet에서 확인 필요',
-          reasonCode: dto.reasonCode,
-          attemptType,
-          actor,
-          correlationId,
-          extraMetadata: options?.extraMetadata,
-        });
+        await this.recordWalletRefundLink(
+          so.id,
+          {
+            refundStatus: 'pending',
+            intentId: so.walletIntentId,
+            refundId,
+            amount,
+            note: '무통장 입금 또는 비동기 처리 중 — Wallet에서 확인 필요',
+            reasonCode: dto.reasonCode,
+            attemptType,
+            actor,
+            correlationId,
+            extraMetadata: options?.extraMetadata,
+          },
+          options?.tx,
+        );
         return 'pending';
       }
       case 'already_refunded': {
-        await this.recordWalletRefundLink(so.id, {
-          refundStatus: 'succeeded',
-          intentId: so.walletIntentId,
-          amount,
-          note: `이미 환불 완료 (Wallet: ${outcome.errorCode})`,
-          reasonCode: dto.reasonCode,
-          attemptType,
-          actor,
-          correlationId,
-          errorCode: outcome.errorCode,
-          errorMessage: outcome.errorMessage,
-          extraMetadata: options?.extraMetadata,
-        });
+        await this.recordWalletRefundLink(
+          so.id,
+          {
+            refundStatus: 'succeeded',
+            intentId: so.walletIntentId,
+            amount,
+            note: `이미 환불 완료 (Wallet: ${outcome.errorCode})`,
+            reasonCode: dto.reasonCode,
+            attemptType,
+            actor,
+            correlationId,
+            errorCode: outcome.errorCode,
+            errorMessage: outcome.errorMessage,
+            extraMetadata: options?.extraMetadata,
+          },
+          options?.tx,
+        );
         return 'succeeded';
       }
       case 'failed': {
-        await this.recordWalletRefundLink(so.id, {
-          refundStatus: 'failed',
-          intentId: so.walletIntentId,
-          amount,
-          note: `Wallet 환불 실패: ${outcome.errorCode} — ${outcome.errorMessage}`,
-          reasonCode: dto.reasonCode,
-          attemptType,
-          actor,
-          correlationId,
-          errorCode: outcome.errorCode,
-          errorMessage: outcome.errorMessage,
-          extraMetadata: options?.extraMetadata,
-        });
+        await this.recordWalletRefundLink(
+          so.id,
+          {
+            refundStatus: 'failed',
+            intentId: so.walletIntentId,
+            amount,
+            note: `Wallet 환불 실패: ${outcome.errorCode} — ${outcome.errorMessage}`,
+            reasonCode: dto.reasonCode,
+            attemptType,
+            actor,
+            correlationId,
+            errorCode: outcome.errorCode,
+            errorMessage: outcome.errorMessage,
+            extraMetadata: options?.extraMetadata,
+          },
+          options?.tx,
+        );
         return 'failed';
       }
       case 'wallet_unavailable': {
-        await this.recordWalletRefundLink(so.id, {
-          refundStatus: 'manual_pending',
-          intentId: so.walletIntentId,
-          amount,
-          note: `Wallet 연결 불가: ${outcome.errorMessage}`,
-          reasonCode: dto.reasonCode,
-          attemptType,
-          actor,
-          correlationId,
-          extraMetadata: options?.extraMetadata,
-        });
+        await this.recordWalletRefundLink(
+          so.id,
+          {
+            refundStatus: 'manual_pending',
+            intentId: so.walletIntentId,
+            amount,
+            note: `Wallet 연결 불가: ${outcome.errorMessage}`,
+            reasonCode: dto.reasonCode,
+            attemptType,
+            actor,
+            correlationId,
+            extraMetadata: options?.extraMetadata,
+          },
+          options?.tx,
+        );
+        return 'manual_pending';
+      }
+      case 'in_flight': {
+        await this.recordWalletRefundLink(
+          so.id,
+          {
+            refundStatus: 'manual_pending',
+            intentId: so.walletIntentId,
+            amount,
+            note: `환불 처리 중(Idempotency in-flight): ${outcome.errorMessage}`,
+            reasonCode: dto.reasonCode,
+            attemptType,
+            actor,
+            correlationId,
+            extraMetadata: options?.extraMetadata,
+          },
+          options?.tx,
+        );
         return 'manual_pending';
       }
       case 'no_intent_id':
@@ -701,54 +923,94 @@ export class StoreSalesOrdersService {
       errorMessage?: string;
       extraMetadata?: Record<string, unknown>;
     },
+    tx?: DbTx,
   ): Promise<void> {
     try {
-      await this.salesOrdersService.createBusinessLink(salesOrderId, {
-        relationName: 'cancellation_linked_wallet_refund',
-        target: {
-          type: 'wallet_refund',
-          externalRef: info.refundId
-            ? `wallet:refund:${info.refundId}`
-            : info.intentId
-              ? `wallet:intent:${info.intentId}`
-              : `wallet:manual:${salesOrderId}`,
+      await this.salesOrdersService.createBusinessLink(
+        salesOrderId,
+        {
+          relationName: 'cancellation_linked_wallet_refund',
+          target: {
+            type: 'wallet_refund',
+            externalRef: info.refundId
+              ? `wallet:refund:${info.refundId}`
+              : info.intentId
+                ? `wallet:intent:${info.intentId}`
+                : `wallet:manual:${salesOrderId}`,
+          },
+          metadata: {
+            refundStatus: info.refundStatus,
+            intentId: info.intentId ?? null,
+            refundId: info.refundId ?? null,
+            amount: info.amount ?? null,
+            reasonCode: info.reasonCode ?? null,
+            note: info.note ?? null,
+            attemptType: info.attemptType ?? null,
+            actor: info.actor ?? null,
+            correlationId: info.correlationId ?? null,
+            errorCode: info.errorCode ?? null,
+            errorMessage: info.errorMessage ?? null,
+            ...(info.extraMetadata ?? {}),
+          },
         },
-        metadata: {
-          refundStatus: info.refundStatus,
-          intentId: info.intentId ?? null,
-          refundId: info.refundId ?? null,
-          amount: info.amount ?? null,
-          reasonCode: info.reasonCode ?? null,
-          note: info.note ?? null,
-          attemptType: info.attemptType ?? null,
-          actor: info.actor ?? null,
-          correlationId: info.correlationId ?? null,
-          errorCode: info.errorCode ?? null,
-          errorMessage: info.errorMessage ?? null,
-          ...(info.extraMetadata ?? {}),
-        },
-      });
+        tx,
+      );
     } catch (err) {
-      // business link 기록 실패는 취소/환불 결과에 영향을 주지 않는다
+      // A keyed single-flight must persist its replay result before releasing
+      // the advisory lock. The stable Wallet correlation makes a retry safe.
+      if (tx) throw err;
+      // Legacy/unkeyed callers retain the historical best-effort timeline behavior.
       const message = err instanceof Error ? err.message : String(err);
       this.logger.error(`[WalletRefund] Failed to record business link for SO ${salesOrderId}: ${message}`);
     }
   }
 
-  private deriveFulfillmentStatus(fos: FoRow[]): StoreFulfillmentStatus {
-    if (fos.length === 0) return 'not_created';
-    const active = fos.filter((fo) => fo.status !== 'canceled');
-    if (active.length === 0) return 'canceled';
-    if (active.some((fo) => FO_DELIVERED_STATUSES.has(fo.status))) return 'delivered';
-    if (active.some((fo) => FO_SHIPPED_STATUSES.has(fo.status) || fo.shippedAt != null)) return 'shipped';
-    if (active.some((fo) => FO_PACKED_STATUSES.has(fo.status))) return 'packed';
-    if (active.some((fo) => FO_PICKING_STATUSES.has(fo.status))) return 'picking';
-    if (active.some((fo) => fo.status === 'unfulfillable' || fo.status === 'reserving')) return 'awaiting_matching';
-    return 'created';
+  private async loadFoRows(salesOrderId: string): Promise<PhaseFoRow[]> {
+    return this.db.db
+      .select({
+        status: inventoryTables.fulfillmentOrders.status,
+        directShipStatus: inventoryTables.fulfillmentOrders.directShipStatus,
+        fulfillmentMode: inventoryTables.fulfillmentOrders.fulfillmentMode,
+      })
+      .from(inventoryTables.fulfillmentOrders)
+      .where(eq(inventoryTables.fulfillmentOrders.salesOrderId, salesOrderId));
   }
 
-  private hasShippedEvidence(fos: FoRow[]): boolean {
-    return fos.some((fo) => FO_SHIPPED_STATUSES.has(fo.status) || fo.shippedAt != null);
+  private async loadFulfillmentPhaseInput(salesOrderId: string, foRows: PhaseFoRow[]): Promise<FulfillmentPhaseInput> {
+    const foCount = foRows.length;
+    const allFoCanceled = foCount > 0 && foRows.every((fo) => fo.status === 'canceled');
+    const dropShipStatuses = foRows
+      .filter(
+        (fo) => fo.fulfillmentMode === 'drop_ship' && fo.directShipStatus != null && fo.directShipStatus !== 'canceled',
+      )
+      .map((fo) => fo.directShipStatus as string);
+
+    // 확실히 출고된 FO.
+    const definitelyShipped = foRows.some(
+      (fo) => fo.status === 'shipped' || fo.status === 'partially_shipped' || fo.status === 'completed',
+    );
+    // recovery_required 는 shippedQty>0 를 가릴 수 있어(progress projector 가 recovery 를 먼저 판정)
+    // 반드시 상자를 로드해 이미 배송된 박스를 확인해야 한다.
+    const maybeMaskedByRecovery = foRows.some((fo) => fo.status === 'recovery_required');
+    const activeShipmentStatuses =
+      definitelyShipped || maybeMaskedByRecovery ? await this.loadActiveShipmentStatuses(salesOrderId) : [];
+
+    const anyFoiShipped = definitelyShipped || activeShipmentStatuses.some((s) => MOVED_SHIPMENT_STATUSES.has(s));
+
+    return { foCount, allFoCanceled, activeShipmentStatuses, dropShipStatuses, anyFoiShipped };
+  }
+
+  private async loadActiveShipmentStatuses(salesOrderId: string): Promise<string[]> {
+    const rows = await this.db.db.execute(sql`
+      SELECT DISTINCT s.id, s.status
+        FROM shipments s
+        JOIN shipment_lines sl ON sl.shipment_id = s.id
+        JOIN fulfillment_order_items foi ON foi.id = sl.fulfillment_order_item_id
+        JOIN fulfillment_orders fo ON fo.id = foi.fulfillment_order_id
+       WHERE fo.sales_order_id = ${salesOrderId}
+         AND s.status NOT IN ('canceled', 'superseded')
+    `);
+    return Array.from(rows as unknown as ArrayLike<{ status: string }>).map((r) => r.status);
   }
 
   // ── Tracking ──────────────────────────────────────────────────────────────
@@ -781,89 +1043,31 @@ export class StoreSalesOrdersService {
       };
     }
 
-    // shipments + 연결된 tracking 이벤트 조회
-    const shipmentRows = await this.db.db
+    const fulfillmentOrderItems = await this.db.db
       .select()
-      .from(inventoryTables.shipments)
-      .where(inArray(inventoryTables.shipments.fulfillmentOrderId, foIds));
-
-    const shipmentIds = shipmentRows.map((s) => s.id);
-    const trackingEvents =
-      shipmentIds.length > 0
-        ? await this.db.db
-            .select()
-            .from(inventoryTables.shipmentTracking)
-            .where(inArray(inventoryTables.shipmentTracking.shipmentId, shipmentIds))
-        : [];
-
-    // invoices에서 송장번호/carrier 보완 (shipments에 없는 경우 대비)
-    const invoiceRows = await this.db.db
-      .select()
-      .from(inventoryTables.invoices)
+      .from(inventoryTables.fulfillmentOrderItems)
       .where(
         and(
-          inArray(inventoryTables.invoices.fulfillmentOrderId, foIds),
-          inArray(inventoryTables.invoices.status, ['shipped', 'printed', 'issued']),
+          inArray(inventoryTables.fulfillmentOrderItems.fulfillmentOrderId, foIds),
+          eq(inventoryTables.fulfillmentOrderItems.salesOrderId, so.id),
         ),
       );
 
-    // FO별 invoice 맵
-    const invoiceByFo = new Map(invoiceRows.map((inv) => [inv.fulfillmentOrderId, inv]));
-    // shipment별 tracking 이벤트 맵
-    const eventsByShipment = new Map<string, typeof trackingEvents>();
-    for (const evt of trackingEvents) {
-      const list = eventsByShipment.get(evt.shipmentId) ?? [];
-      list.push(evt);
-      eventsByShipment.set(evt.shipmentId, list);
-    }
+    const fulfillmentOrderItemIds = fulfillmentOrderItems.map((item) => item.id);
+    const shipmentLineRows =
+      fulfillmentOrderItemIds.length > 0
+        ? await this.db.db
+            .select()
+            .from(inventoryTables.shipmentLines)
+            .where(inArray(inventoryTables.shipmentLines.fulfillmentOrderItemId, fulfillmentOrderItemIds))
+        : [];
 
-    // shipments로 배송 정보 조립. shipments가 없으면 invoices로 대체
-    const foById = new Map(fos.map((fo) => [fo.id, fo]));
-    const shipmentDtos: StoreShipmentDto[] = [];
+    const shipmentDtos =
+      shipmentLineRows.length > 0
+        ? await this.buildV2TrackingShipments(fulfillmentOrderItems, shipmentLineRows)
+        : await this.buildLegacyTrackingShipments(fos);
 
-    if (shipmentRows.length > 0) {
-      for (const s of shipmentRows) {
-        if (!s.fulfillmentOrderId) continue;
-        const fo = foById.get(s.fulfillmentOrderId);
-        const events = (eventsByShipment.get(s.id) ?? [])
-          .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
-          .map((e) => ({ status: e.status, location: e.location ?? null, timestamp: e.timestamp }));
-        const delivered = events.find((e) => e.status === 'delivered');
-
-        shipmentDtos.push({
-          fulfillmentOrderId: s.fulfillmentOrderId,
-          carrier: s.carrier,
-          carrierName: CARRIER_NAMES[s.carrier] ?? s.carrier,
-          trackingNumber: s.trackingNo,
-          trackingUrl: buildTrackingUrl(s.carrier, s.trackingNo) ?? s.invoiceUrl ?? null,
-          status: s.status,
-          shippedAt: fo?.shippedAt ?? null,
-          deliveredAt: delivered?.timestamp ?? null,
-          eta: s.eta ?? null,
-          trackingEvents: events,
-        });
-      }
-    } else {
-      // shipments 없음 → invoices에서 기본 정보 조립
-      for (const [foId, inv] of invoiceByFo) {
-        const fo = foById.get(foId);
-        const carrier = normalizeCarrierCode(inv.carrierCode);
-        shipmentDtos.push({
-          fulfillmentOrderId: foId,
-          carrier,
-          carrierName: CARRIER_NAMES[carrier] ?? carrier,
-          trackingNumber: inv.invoiceNumber,
-          trackingUrl: buildTrackingUrl(carrier, inv.invoiceNumber),
-          status: inv.status === 'shipped' ? 'in_transit' : 'created',
-          shippedAt: fo?.shippedAt ?? inv.shippedAt ?? null,
-          deliveredAt: null,
-          eta: null,
-          trackingEvents: [],
-        });
-      }
-    }
-
-    const overallStatus = deriveOverallTrackingStatus(shipmentDtos, fos);
+    const overallStatus = deriveOverallTrackingStatus(shipmentDtos);
 
     return {
       orderId: so.id,
@@ -871,6 +1075,244 @@ export class StoreSalesOrdersService {
       status: overallStatus,
       shipments: shipmentDtos,
     };
+  }
+
+  private async buildV2TrackingShipments(
+    fulfillmentOrderItems: Array<typeof inventoryTables.fulfillmentOrderItems.$inferSelect>,
+    shipmentLineRows: Array<typeof inventoryTables.shipmentLines.$inferSelect>,
+  ): Promise<StoreShipmentDto[]> {
+    const shipmentIds = [...new Set(shipmentLineRows.map((line) => line.shipmentId))];
+    const shipmentRows = await this.db.db
+      .select()
+      .from(inventoryTables.shipments)
+      .where(and(inArray(inventoryTables.shipments.id, shipmentIds), ne(inventoryTables.shipments.status, 'canceled')));
+    const visibleShipmentIds = new Set(shipmentRows.map((shipment) => shipment.id));
+
+    const dispatchAttempts = await this.db.db
+      .select()
+      .from(inventoryTables.dispatchAttempts)
+      .where(inArray(inventoryTables.dispatchAttempts.shipmentId, [...visibleShipmentIds]));
+    // waybills 는 shipmentId 로 키잉된다(invoice 처럼 issuedForFulfillmentOrderId 없음). 상태 무필터로
+    // 전량 로드해 attempt 별 자기 운송장(회수된 voided 포함)까지 이력을 보존한다 — 활성 필터는 fallback 에서만.
+    const waybillRows =
+      visibleShipmentIds.size > 0
+        ? await this.db.db
+            .select()
+            .from(inventoryTables.waybills)
+            .where(inArray(inventoryTables.waybills.shipmentId, [...visibleShipmentIds]))
+            .orderBy(desc(inventoryTables.waybills.createdAt))
+        : [];
+    const trackingRows =
+      visibleShipmentIds.size > 0
+        ? await this.db.db
+            .select()
+            .from(inventoryTables.shipmentTracking)
+            .where(inArray(inventoryTables.shipmentTracking.shipmentId, [...visibleShipmentIds]))
+        : [];
+
+    const salesOrderLineIds = [
+      ...new Set(fulfillmentOrderItems.flatMap((item) => (item.salesOrderLineId ? [item.salesOrderLineId] : []))),
+    ];
+    const salesOrderLines =
+      salesOrderLineIds.length > 0
+        ? await this.db.db
+            .select()
+            .from(inventoryTables.salesOrderLines)
+            .where(inArray(inventoryTables.salesOrderLines.id, salesOrderLineIds))
+        : [];
+
+    const fulfillmentOrderItemById = new Map(fulfillmentOrderItems.map((item) => [item.id, item]));
+    const salesOrderLineById = new Map(salesOrderLines.map((line) => [line.id, line]));
+    const waybillById = new Map(waybillRows.map((waybill) => [waybill.id, waybill]));
+    const trackingByAttempt = new Map<string, typeof trackingRows>();
+    const legacyTrackingByShipment = new Map<string, typeof trackingRows>();
+    for (const tracking of trackingRows) {
+      if (!tracking.dispatchAttemptId) {
+        const rows = legacyTrackingByShipment.get(tracking.shipmentId) ?? [];
+        rows.push(tracking);
+        legacyTrackingByShipment.set(tracking.shipmentId, rows);
+        continue;
+      }
+      const rows = trackingByAttempt.get(tracking.dispatchAttemptId) ?? [];
+      rows.push(tracking);
+      trackingByAttempt.set(tracking.dispatchAttemptId, rows);
+    }
+
+    return shipmentRows
+      .map((shipment): StoreShipmentDto | null => {
+        const lines = shipmentLineRows
+          .filter((line) => line.shipmentId === shipment.id)
+          .flatMap((line) => {
+            const item = fulfillmentOrderItemById.get(line.fulfillmentOrderItemId);
+            if (!item?.salesOrderLineId) return [];
+            return [
+              {
+                shipmentLineId: line.id,
+                fulfillmentOrderItemId: item.id,
+                salesOrderLineId: item.salesOrderLineId,
+                channelOrderItemId: salesOrderLineById.get(item.salesOrderLineId)?.channelOrderItemId ?? null,
+                skuId: line.skuId,
+                quantity: line.qty,
+              },
+            ];
+          });
+        if (lines.length === 0) return null;
+
+        const attemptDtos = dispatchAttempts
+          .filter((attempt) => attempt.shipmentId === shipment.id)
+          .sort((a, b) => a.attemptNo - b.attemptNo)
+          .map((attempt) => {
+            const waybill = attempt.waybillId ? waybillById.get(attempt.waybillId) : undefined;
+            const carrier = normalizeCarrierCode(waybill?.carrier ?? null);
+            const trackingNumber = waybill?.trackingNo ?? '';
+            const events = (trackingByAttempt.get(attempt.id) ?? [])
+              .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+              .map((event) => ({
+                status: event.status,
+                location: event.location ?? null,
+                timestamp: event.timestamp,
+              }));
+            return {
+              dispatchAttemptId: attempt.id,
+              attemptNo: attempt.attemptNo,
+              status: deriveAttemptTrackingStatus(attempt.status, events),
+              recalled: attempt.status === 'recalled',
+              waybillId: waybill?.id ?? null,
+              carrier,
+              carrierName: CARRIER_NAMES[carrier] ?? carrier,
+              trackingNumber,
+              trackingUrl: trackingNumber ? buildTrackingUrl(carrier, trackingNumber) : null,
+              dispatchedAt: attempt.dispatchedAt,
+              carrierAcceptedAt: attempt.carrierAcceptedAt,
+              recalledAt: attempt.recalledAt,
+              trackingEvents: events,
+            };
+          });
+        const currentAttempt = [...attemptDtos].reverse().find((attempt) => !attempt.recalled);
+        const fulfillmentOrderIds = [
+          ...new Set(
+            shipmentLineRows
+              .filter((line) => line.shipmentId === shipment.id)
+              .flatMap((line) => {
+                const item = fulfillmentOrderItemById.get(line.fulfillmentOrderItemId);
+                return item ? [item.fulfillmentOrderId] : [];
+              }),
+          ),
+        ];
+        const deliveredEvent = [...(currentAttempt?.trackingEvents ?? [])]
+          .reverse()
+          .find((event) => event.status === 'delivered');
+        const legacyWaybill =
+          attemptDtos.length === 0
+            ? waybillRows.find((waybill) => waybill.shipmentId === shipment.id && isActiveWaybillStatus(waybill.status))
+            : undefined;
+        const legacyCarrier = normalizeCarrierCode(legacyWaybill?.carrier ?? null);
+        const legacyTrackingEvents =
+          attemptDtos.length === 0
+            ? (legacyTrackingByShipment.get(shipment.id) ?? [])
+                .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+                .map((event) => ({
+                  status: event.status,
+                  location: event.location ?? null,
+                  timestamp: event.timestamp,
+                }))
+            : [];
+
+        return {
+          shipmentId: shipment.id,
+          fulfillmentOrderId: fulfillmentOrderIds[0],
+          fulfillmentOrderIds,
+          carrier: currentAttempt?.carrier ?? legacyCarrier,
+          carrierName: currentAttempt?.carrierName ?? CARRIER_NAMES[legacyCarrier] ?? legacyCarrier,
+          trackingNumber: currentAttempt?.trackingNumber ?? legacyWaybill?.trackingNo ?? '',
+          trackingUrl:
+            currentAttempt?.trackingUrl ??
+            (legacyWaybill?.trackingNo ? buildTrackingUrl(legacyCarrier, legacyWaybill.trackingNo) : null),
+          status: currentAttempt?.status ?? (attemptDtos.length === 0 ? shipment.status : 'preparing'),
+          shippedAt: currentAttempt?.dispatchedAt ?? (attemptDtos.length === 0 ? shipment.shippedAt : null),
+          deliveredAt: deliveredEvent?.timestamp ?? (attemptDtos.length === 0 ? (shipment.deliveredAt ?? null) : null),
+          eta: null,
+          trackingEvents: currentAttempt?.trackingEvents ?? legacyTrackingEvents,
+          lines,
+          dispatchAttempts: attemptDtos,
+        };
+      })
+      .filter((shipment): shipment is StoreShipmentDto => shipment !== null)
+      .sort((a, b) => (a.shipmentId ?? '').localeCompare(b.shipmentId ?? ''));
+  }
+
+  private async buildLegacyTrackingShipments(
+    fos: Array<typeof inventoryTables.fulfillmentOrders.$inferSelect>,
+  ): Promise<StoreShipmentDto[]> {
+    const foIds = fos.map((fo) => fo.id);
+    const shipmentRows = await this.db.db
+      .select()
+      .from(inventoryTables.shipments)
+      .where(
+        and(
+          inArray(inventoryTables.shipments.openedForFulfillmentOrderId, foIds),
+          ne(inventoryTables.shipments.status, 'canceled'),
+        ),
+      );
+    // waybills 는 shipmentId 키 — 이미 openedForFulfillmentOrderId 로 조회한 shipmentRows 의 id 로 활성 운송장을 읽는다.
+    // (invoice 의 issuedForFulfillmentOrderId 키 조회를 대체. waybill 은 shipment 없이 존재할 수 없으므로 shipment-less DTO 는 없다.)
+    const shipmentIds = shipmentRows.map((shipment) => shipment.id);
+    const waybillRows =
+      shipmentIds.length > 0
+        ? await this.db.db
+            .select()
+            .from(inventoryTables.waybills)
+            .where(
+              and(
+                inArray(inventoryTables.waybills.shipmentId, shipmentIds),
+                notInArray(inventoryTables.waybills.status, [...WAYBILL_TERMINAL_STATUSES]),
+              ),
+            )
+            .orderBy(desc(inventoryTables.waybills.createdAt))
+        : [];
+    const trackingRows =
+      shipmentRows.length > 0
+        ? await this.db.db
+            .select()
+            .from(inventoryTables.shipmentTracking)
+            .where(inArray(inventoryTables.shipmentTracking.shipmentId, shipmentIds))
+        : [];
+    // shipment 당 활성 운송장은 uq_waybills_shipment_active 로 1개. createdAt desc 첫 행을 취한다.
+    const waybillByShipment = new Map<string, (typeof waybillRows)[number]>();
+    for (const waybill of waybillRows) {
+      if (!waybillByShipment.has(waybill.shipmentId)) {
+        waybillByShipment.set(waybill.shipmentId, waybill);
+      }
+    }
+
+    return shipmentRows.flatMap((shipment) => {
+      if (!shipment.openedForFulfillmentOrderId) return [];
+      const waybill = waybillByShipment.get(shipment.id);
+      const carrier = normalizeCarrierCode(waybill?.carrier ?? null);
+      const trackingNumber = waybill?.trackingNo ?? '';
+      const trackingEvents = trackingRows
+        .filter((event) => event.shipmentId === shipment.id)
+        .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())
+        .map((event) => ({ status: event.status, location: event.location ?? null, timestamp: event.timestamp }));
+      return [
+        {
+          shipmentId: shipment.id,
+          fulfillmentOrderId: shipment.openedForFulfillmentOrderId,
+          fulfillmentOrderIds: [shipment.openedForFulfillmentOrderId],
+          carrier,
+          carrierName: CARRIER_NAMES[carrier] ?? carrier,
+          trackingNumber,
+          trackingUrl: trackingNumber ? buildTrackingUrl(carrier, trackingNumber) : null,
+          status: shipment.status,
+          shippedAt: shipment.shippedAt,
+          deliveredAt: shipment.deliveredAt,
+          eta: null,
+          trackingEvents,
+          lines: [],
+          dispatchAttempts: [],
+        },
+      ];
+    });
   }
 }
 
@@ -913,6 +1355,11 @@ function computeLineHash(lines: Array<{ salesOrderLineId: string; quantity: numb
   return createHash('sha256').update(sorted).digest('hex').slice(0, 12);
 }
 
+// waybill 종료(슬롯 해제) 상태를 제외한 활성 여부. inventory.schema uq_waybills_shipment_active WHERE 와 동치.
+function isActiveWaybillStatus(status: string): boolean {
+  return !(WAYBILL_TERMINAL_STATUSES as readonly string[]).includes(status);
+}
+
 const CARRIER_NAMES: Record<string, string> = {
   CJ: 'CJ대한통운',
   HANJIN: '한진택배',
@@ -924,12 +1371,25 @@ const CARRIER_NAMES: Record<string, string> = {
 
 // Invoice carrierCode 필드는 varchar라 실제 값이 다양할 수 있음 — canonical 코드로 정규화
 const CARRIER_CODE_ALIASES: Record<string, string> = {
-  'CJ대한통운': 'CJ', 'CJ 대한통운': 'CJ', cj: 'CJ',
-  한진택배: 'HANJIN', 한진: 'HANJIN', hanjin: 'HANJIN',
-  롯데택배: 'LOTTE', 롯데: 'LOTTE', '롯데글로벌로지스': 'LOTTE', lotte: 'LOTTE',
-  로젠택배: 'LOGEN', 로젠: 'LOGEN', logen: 'LOGEN',
-  경동택배: 'KDEXP', 경동: 'KDEXP', kdexp: 'KDEXP',
-  'CJ-GLS': 'CJGLS', 'CJ GLS': 'CJGLS', cjgls: 'CJGLS',
+  CJ대한통운: 'CJ',
+  'CJ 대한통운': 'CJ',
+  cj: 'CJ',
+  한진택배: 'HANJIN',
+  한진: 'HANJIN',
+  hanjin: 'HANJIN',
+  롯데택배: 'LOTTE',
+  롯데: 'LOTTE',
+  롯데글로벌로지스: 'LOTTE',
+  lotte: 'LOTTE',
+  로젠택배: 'LOGEN',
+  로젠: 'LOGEN',
+  logen: 'LOGEN',
+  경동택배: 'KDEXP',
+  경동: 'KDEXP',
+  kdexp: 'KDEXP',
+  'CJ-GLS': 'CJGLS',
+  'CJ GLS': 'CJGLS',
+  cjgls: 'CJGLS',
 };
 
 function normalizeCarrierCode(raw: string | null | undefined): string {
@@ -960,17 +1420,21 @@ function buildTrackingUrl(carrier: string, trackingNo: string): string | null {
   }
 }
 
+function deriveAttemptTrackingStatus(attemptStatus: string, events: Array<{ status: string }>): string {
+  if (attemptStatus === 'recalled') return 'recalled';
+  if (attemptStatus === 'recovery_required') return 'recovery_required';
+  if (events.some((event) => event.status === 'delivered')) return 'delivered';
+  if (events.some((event) => event.status === 'in_transit')) return 'in_transit';
+  if (events.some((event) => event.status === 'shipped')) return 'shipped';
+  if (attemptStatus === 'dispatched') return 'shipped';
+  return 'pending';
+}
+
 function deriveOverallTrackingStatus(
   shipments: StoreShipmentDto[],
-  fos: { status: string; shippedAt: Date | null }[],
 ): 'not_shipped' | 'preparing' | 'shipping' | 'delivered' {
-  // FO completed 상태가 배송완료의 최우선 근거
-  if (fos.some((fo) => FO_DELIVERED_STATUSES.has(fo.status))) return 'delivered';
-  if (shipments.length === 0) {
-    const hasShipped = fos.some((fo) => fo.status === 'shipped' || fo.shippedAt != null);
-    return hasShipped ? 'shipping' : 'preparing';
-  }
+  if (shipments.length === 0) return 'preparing';
   if (shipments.every((s) => s.status === 'delivered')) return 'delivered';
-  if (shipments.some((s) => s.status === 'in_transit' || s.shippedAt != null)) return 'shipping';
+  if (shipments.some((s) => ['shipped', 'in_transit', 'delivered'].includes(s.status))) return 'shipping';
   return 'preparing';
 }

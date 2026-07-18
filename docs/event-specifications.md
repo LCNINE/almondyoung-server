@@ -485,64 +485,21 @@ interface OrderPaymentCompletePayload {
 **파티션 수**: 6
 **파일 경로**: `libs/shared/src/streams/fulfillments.stream.ts`
 
-#### 4.1 `FulfillmentCreated`
+#### 4.1 `FulfillmentCreated` — **미발행 (은퇴)**
 
-이행 주문 생성
-
-**발행자**: WMS (Fulfillments Service)
-
-**구독자**:
-- **Notification**: 이행 생성 알림 (내부용)
-
-**페이로드**: (기존 정의됨)
-```typescript
-interface FulfillmentCreatedPayload {
-  fulfillmentId: string;
-  fulfillmentNo: string;
-  orderId: string;
-  mode: 'in_house' | '3pl' | 'drop_ship';
-  warehouseId?: string;
-  items: FulfillmentItem[];
-  createdAt: string;
-}
-```
+> **정정 (2026-07-18):** 구독자가 없어 발행하지 않는다 (`fulfillments.service.ts` — "아무도 구독하지 않는 이벤트는 발행하지 않는다"). 이벤트 상수만 잔존. FO 생성 사실은 Core API 조회로 확인한다.
 
 ---
 
-#### 4.2 `FulfillmentReady`
+#### 4.2 `FulfillmentReady` — **미발행 (은퇴)**
 
-출고 준비 완료 (피킹 완료)
-
-**발행자**: WMS
-
-**구독자**:
-- **Notification**: 피킹 완료 알림
+> **정정 (2026-07-18):** 4.1 과 동일 사유로 발행하지 않는다.
 
 ---
 
-#### 4.3 `FulfillmentLabeled`
+#### 4.3 `FulfillmentLabeled` — **미발행 (은퇴)**
 
-송장 출력 완료
-
-**발행자**: WMS
-
-**구독자**:
-- **Channel Adapter**: 채널에 송장 번호 전송 (필수)
-- **Notification**: 송장 출력 알림
-
-**페이로드**: (기존 정의됨)
-```typescript
-interface FulfillmentLabeledPayload {
-  fulfillmentId: string;
-  orderId: string;
-  trackingInfo: {
-    carrier: 'CJ' | 'HANJIN' | 'LOTTE' | 'LOGEN' | 'KDEXP' | 'CJGLS';
-    trackingNumber: string;
-    invoiceUrl?: string;
-  };
-  labeledAt: string;
-}
-```
+> **정정 (2026-07-18):** producer 없음. 구 invoice(송장 출력) 모델은 운송장(waybill) 레이어로 재설계되었고, 송장/추적 정보는 출고 시 `FulfillmentShipped`(4.4)·`ShipmentShipped` 페이로드에 실린다.
 
 ---
 
@@ -550,12 +507,14 @@ interface FulfillmentLabeledPayload {
 
 출고 완료 (배송 시작)
 
-**발행자**: WMS
+**발행자**: Core (shipment dispatch)
 
 **구독자**:
 - **Channel Adapter**: 채널에 배송 시작 알림 (필수)
 - **Notification**: 고객에게 배송 시작 알림
 - **Main Server**: 주문 상태 업데이트
+
+> **정정 (2026-07-18, outbound V2):** V1 이벤트로서 **FO 전량 출고 시에만** 1회 발행된다. 출고 시도 단위의 이벤트는 `ShipmentShipped`(`shipments.events.v1` — SHIPMENT_STREAM), FO 진행 상황은 `FulfillmentProgressed`(FULFILLMENT_V2_STREAM)가 매 dispatch 마다 발행된다 (`packages/event-contracts/streams/` 참조 — 본 명세서에 아직 절 없음). 페이로드의 `invoice` 필드명은 waybill 개명 후에도 와이어 호환을 위해 유지된다.
 
 ---
 

@@ -42,6 +42,14 @@ export class PaymentIntentsController {
     return this.toResponse(intent);
   }
 
+  @Get(':id/deposit-account')
+  @WalletJwtAuth()
+  @ApiOperation({ summary: '무통장(가상계좌) 입금 안내 계좌 조회 (고객)' })
+  async depositAccount(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    if (!req.jwtUserId) throw new ForbiddenException('JWT authentication required');
+    return this.service.getBankTransferDepositAccount(id, req.jwtUserId);
+  }
+
   @Post(':id/confirm')
   @HttpCode(200)
   @WalletJwtAuth()

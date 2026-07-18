@@ -132,9 +132,11 @@ export function ProductSection<T extends TabItem>({
   return (
     <div className="w-full">
       <Header className="mb-6">
-        <Title className="md:flex-1 md:text-center">{title}</Title>
-        {moreHref && <MoreButton href={moreHref} />}
-        {headerExtra}
+        <Title className="flex-1 md:text-center">{title}</Title>
+        <div className="flex items-center gap-1">
+          {moreHref && <MoreButton href={moreHref} />}
+          {headerExtra}
+        </div>
       </Header>
 
       {hideTabs ? (

@@ -1,3 +1,4 @@
+import { ConflictError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
 import { Injectable, Logger } from '@nestjs/common';
 import { userServiceSchema, UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
@@ -6,6 +7,7 @@ import * as bcrypt from 'bcrypt';
 import { UsersService } from '../../users/users.service';
 import { CreateAccountDto } from './dto/create-account-dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { generateInitialPassword } from './lib/generate-initial-password';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { and, eq, isNotNull, lt } from 'drizzle-orm';
 
@@ -22,48 +24,28 @@ export class AuthService {
   }
 
   async createAccount(createAccountDto: CreateAccountDto, tx?: DbTransaction) {
-    const client = this.getClient(tx);
+    const { loginId, email } = createAccountDto;
 
-    const { loginId, password, roleId, phone_number, email } = createAccountDto;
-
-    let existingUser;
-    existingUser = await this.usersService.findUserByLoginId(loginId);
-
-    if (existingUser) {
-      throw new Error('This user already exists.');
+    if (await this.usersService.findUserByLoginId(loginId)) {
+      throw new ConflictError('이미 존재하는 로그인 ID 입니다.');
     }
-    existingUser = await this.usersService.findUserByEmail(email);
-    if (existingUser) {
-      throw new Error('This user already exists.');
+    if (await this.usersService.findUserByEmail(email)) {
+      throw new ConflictError('이미 존재하는 이메일 입니다.');
     }
 
     if (tx) {
-      // 이미 트랜잭션이 있으면 그대로 사용
       return this._createAccountWithTransaction(createAccountDto, tx);
-    } else {
-      // 트랜잭션이 없으면 새로 생성
-      return await this.dbService.db.transaction(async (newTx) => {
-        return this._createAccountWithTransaction(createAccountDto, newTx);
-      });
     }
-
-    // await this.eventPublisher.publishEvent('USER_UPDATED', {
-    //     userId,
-    //     ...updateUserDto,
-    //   });
-
-    return; // 추후 프론트엔드에서 메두사  http://localhost:9000/auth/user/my-auth/register 호출해서 메두사에도 등록해줘야함
+    return this.dbService.db.transaction((newTx) => this._createAccountWithTransaction(createAccountDto, newTx));
   }
 
-  private async _createAccountWithTransaction(createAccountDto: CreateAccountDto, tx?: DbTransaction) {
+  private async _createAccountWithTransaction(createAccountDto: CreateAccountDto, tx: DbTransaction) {
     const client = this.getClient(tx);
+    const { loginId, roleId, phone_number, email, username, nickname } = createAccountDto;
 
-    const { loginId, password, roleId, phone_number, email, username, nickname } = createAccountDto;
+    const initialPassword = generateInitialPassword();
+    const hash = await bcrypt.hash(initialPassword, 10);
 
-    const saltOrRounds = 10;
-    const hash = await bcrypt.hash(password, saltOrRounds);
-
-    // 유저 생성
     const [user] = await client
       .insert(userServiceSchema.users)
       .values({
@@ -72,23 +54,18 @@ export class AuthService {
         loginId,
         password: hash,
         isEmailVerified: true,
+        mustChangePassword: true,
         email,
       })
       .returning();
 
-    // 유저 역할(등급) 할당
     await this.usersService.assignUserRole(user.id, roleId, tx);
+    await this.usersService.updateMyProfile(user.id, { phoneNumber: phone_number }, tx);
 
-    // 유저 프로필 생성
-    await this.usersService.updateMyProfile(
-      user.id,
-      {
-        phoneNumber: phone_number,
-      },
-      tx,
-    );
-
-    return user;
+    return {
+      user: { id: user.id, loginId: user.loginId, email: user.email, username: user.username },
+      initialPassword,
+    };
   }
 
   async changePassword(changePasswordDto: ChangePasswordDto) {

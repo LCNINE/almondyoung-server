@@ -74,7 +74,7 @@ export default function CheckoutFailPage() {
         <div className="space-y-3">
           <button
             onClick={handleRetry}
-            className="w-full rounded-lg bg-[#F29219] py-3 font-medium text-white transition-colors hover:bg-[#e08219]"
+            className="w-full rounded-lg bg-[#ff6600] py-3 font-medium text-white transition-colors hover:bg-[#e14d00]"
           >
             {t("retry")}
           </button>

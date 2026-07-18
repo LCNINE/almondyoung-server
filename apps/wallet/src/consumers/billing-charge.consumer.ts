@@ -1,5 +1,5 @@
-import { Controller, Logger, UseFilters, UseInterceptors } from '@nestjs/common';
-import { OnEvent, EventPayload, EventEnvelope, EventsExceptionFilter } from '@app/events';
+import { Controller, Logger, UseInterceptors } from '@nestjs/common';
+import { OnEvent, EventPayload, EventEnvelope } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { BillingChargePayload } from '@packages/event-contracts/streams/wallet-command.stream';
 import { DomainEvent } from '@packages/event-contracts/types';
@@ -24,7 +24,6 @@ import { PaymentProvider, ChargeResult } from '../providers/payment-provider.int
 const DEFAULT_INTENT_EXPIRY_MINUTES = 60 * 24; // 24 hours
 
 @Controller()
-@UseFilters(EventsExceptionFilter)
 @UseInterceptors(EventTypeGuard)
 export class BillingChargeConsumer {
   private readonly logger = new Logger(BillingChargeConsumer.name);

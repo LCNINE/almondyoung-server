@@ -42,6 +42,7 @@ import type {
   BulkUpdateDto,
   BulkDeleteDto,
   BulkRestoreDto,
+  BulkUpdatePolicyDto,
 } from '@/lib/types/dto/products';
 import type {
   BulkUpdateProductVariantDto,
@@ -236,6 +237,21 @@ export const useUpdateOverseas = (masterId: string, versionId: string | null) =>
   return useMutation({
     mutationFn: (isOverseas: boolean) =>
       products.masters.updateOverseas(masterId, isOverseas),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.master(masterId) });
+      if (versionId) {
+        queryClient.invalidateQueries({ queryKey: productQueryKeys.versionDetail(masterId, versionId) });
+      }
+    },
+  });
+};
+
+export const useUpdateRequiresMembership = (masterId: string, versionId: string | null) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (requiresMembership: boolean) =>
+      products.masters.updateRequiresMembership(masterId, requiresMembership),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: productQueryKeys.master(masterId) });
       if (versionId) {
@@ -920,13 +936,10 @@ export const useBulkRestoreMasters = () => {
   });
 };
 
-// ===== CSV =====
-
-export const useCsvBulkImport = () => {
+export const useBulkUpdatePolicy = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ file, userId }: { file: File; userId: string }) =>
-      products.csv.bulkImport(file, userId),
+    mutationFn: (dto: BulkUpdatePolicyDto) => products.bulk.policy(dto),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: productQueryKeys.masters });
     },
@@ -1003,6 +1016,42 @@ export const useDeleteNotice = () => {
       products.notices.remove(id, deletedBy),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: productQueryKeys.notices });
+    },
+  });
+};
+
+// ===== 대량등록(엑셀 임포트) 뮤테이션 =====
+
+/** 워크북 검증(무상태 프리뷰) */
+export const useValidateImport = () => {
+  return useMutation({
+    mutationFn: (file: File) => products.productImport.validate(file),
+  });
+};
+
+/** 워크북 커밋(세션 + draft 상품 일괄 생성) */
+export const useCommitImport = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => products.productImport.commit(file),
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.productImports,
+      });
+    },
+  });
+};
+
+/** 세션 draft 일괄 게시 */
+export const usePublishSession = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (sessionId: string) =>
+      products.productImport.publish(sessionId),
+    onSuccess: (_res, sessionId) => {
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.productImport(sessionId),
+      });
     },
   });
 };

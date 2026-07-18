@@ -46,43 +46,7 @@ export class AuditService {
    */
   async log(data: AuditLogData, context?: AuditContext, tx?: DbTx): Promise<void> {
     try {
-      const db = tx || this.db;
-
-      await db.insert(wmsTables.auditLogs).values({
-        eventType: data.eventType,
-        severity: data.severity || 'INFO',
-        action: data.action,
-        module: data.module,
-        description: data.description,
-
-        resourceType: data.resourceType,
-        resourceId: data.resourceId,
-        resourceName: data.resourceName,
-
-        changesBefore: data.changesBefore,
-        changesAfter: data.changesAfter,
-
-        metadata: data.metadata,
-        errorMessage: data.errorMessage,
-        stackTrace: data.stackTrace,
-
-        userId: context?.userId,
-        userAgent: context?.userAgent,
-        ipAddress: context?.ipAddress,
-        correlationId: context?.correlationId,
-
-        timestamp: nowSeoul(),
-      });
-
-      // 로컬 로그도 함께 남김
-      const logLevel = this.mapSeverityToLogLevel(data.severity || 'INFO');
-      this.logger[logLevel](`[AUDIT] ${data.module}.${data.action} - ${data.description || data.eventType}`, {
-        eventType: data.eventType,
-        resourceType: data.resourceType,
-        resourceId: data.resourceId,
-        userId: context?.userId,
-        correlationId: context?.correlationId,
-      });
+      await this.write(data, context, tx ?? this.db);
     } catch (error) {
       // 감사 로그 실패는 시스템을 중단시키지 않음
       this.logger.error('Failed to write audit log:', error, {
@@ -90,6 +54,44 @@ export class AuditService {
         context: context,
       });
     }
+  }
+
+  /**
+   * 위험 명령용 필수 감사 로그.
+   *
+   * 호출자가 소유한 domain transaction만 허용하며 DB 오류를 그대로
+   * 전파한다. 따라서 operation lineage와 USER_ACTION audit가 함께 commit
+   * 되거나 함께 rollback 된다.
+   */
+  async logRequired(data: AuditLogData, context: AuditContext | undefined, tx: DbTx): Promise<void> {
+    if (!tx) {
+      throw new Error('AuditService.logRequired requires the caller transaction');
+    }
+
+    await this.write(data, context, tx);
+  }
+
+  /** JWT에서 얻은 actor identity를 요구하는 위험 사용자 명령용 helper. */
+  async logUserActionRequired(
+    action: string,
+    module: string,
+    description: string,
+    context: AuditContext & { userId: string },
+    metadata: Record<string, any> | undefined,
+    tx: DbTx,
+  ): Promise<void> {
+    await this.logRequired(
+      {
+        eventType: 'USER_ACTION',
+        severity: 'INFO',
+        action,
+        module,
+        description,
+        metadata,
+      },
+      context,
+      tx,
+    );
   }
 
   /**
@@ -280,6 +282,43 @@ export class AuditService {
       .orderBy(desc(wmsTables.auditLogs.timestamp))
       .limit(params.limit || 100)
       .offset(params.offset || 0);
+  }
+
+  private async write(data: AuditLogData, context: AuditContext | undefined, db: DbTx | typeof this.db): Promise<void> {
+    await db.insert(wmsTables.auditLogs).values({
+      eventType: data.eventType,
+      severity: data.severity || 'INFO',
+      action: data.action,
+      module: data.module,
+      description: data.description,
+
+      resourceType: data.resourceType,
+      resourceId: data.resourceId,
+      resourceName: data.resourceName,
+
+      changesBefore: data.changesBefore,
+      changesAfter: data.changesAfter,
+
+      metadata: data.metadata,
+      errorMessage: data.errorMessage,
+      stackTrace: data.stackTrace,
+
+      userId: context?.userId,
+      userAgent: context?.userAgent,
+      ipAddress: context?.ipAddress,
+      correlationId: context?.correlationId,
+
+      timestamp: nowSeoul(),
+    });
+
+    const logLevel = this.mapSeverityToLogLevel(data.severity || 'INFO');
+    this.logger[logLevel](`[AUDIT] ${data.module}.${data.action} - ${data.description || data.eventType}`, {
+      eventType: data.eventType,
+      resourceType: data.resourceType,
+      resourceId: data.resourceId,
+      userId: context?.userId,
+      correlationId: context?.correlationId,
+    });
   }
 
   /**

@@ -32,6 +32,30 @@ export interface PublishResult {
   unmappedItems?: UnmappedItem[];
 }
 
+type ExternalLineIdentity = {
+  orderItemId?: string;
+  channelProductId?: string;
+  lookupId?: string;
+};
+
+function nonEmptyExternalId(value: string | undefined): string | undefined {
+  const normalized = value?.trim();
+  return normalized ? normalized : undefined;
+}
+
+function getExternalLineIdentity(orderEvent: InternalOrderEvent): ExternalLineIdentity {
+  const orderItemId = nonEmptyExternalId(orderEvent.externalProductOrderId);
+  const channelProductId = nonEmptyExternalId(orderEvent.productId);
+  return {
+    orderItemId,
+    channelProductId,
+    // Lookup compatibility is not persisted as provider identity. Older events
+    // may only carry their order-line ID, so it can still locate a mapping while
+    // channelProductId remains absent and V2 planning stays blocked.
+    lookupId: channelProductId ?? orderItemId,
+  };
+}
+
 @Injectable()
 export class OrderEventPublisher {
   private readonly logger = new Logger(OrderEventPublisher.name);
@@ -75,23 +99,25 @@ export class OrderEventPublisher {
   ): Promise<PublishResult> {
     const channelCode = this.channelListingClient.getChannelCodeFromType(channel);
 
-    // 채널 상품 ID 추출
-    const channelProductId = orderEvent.externalProductOrderId ?? orderEvent.externalOrderId;
+    const identity = getExternalLineIdentity(orderEvent);
+    if (!identity.lookupId) {
+      return { published: false, pendingReason: 'missing_external_product_identity', unmappedItems: [] };
+    }
 
     // 매핑 조회
-    const listing = await this.channelListingClient.lookupByChannelCode(channelCode, channelProductId);
+    const listing = await this.channelListingClient.lookupByChannelCode(channelCode, identity.lookupId);
 
     if (!listing) {
       // 매핑 없음 → 계류 필요
       const unmappedItems: UnmappedItem[] = [
         {
-          channelItemId: channelProductId,
+          channelItemId: identity.lookupId,
           channelItemName: orderEvent.productName ?? 'Unknown Product',
           channelOptionName: orderEvent.optionName,
         },
       ];
 
-      this.logger.warn(`⏸️ 미매핑 주문 계류: ${orderEvent.externalOrderId} - ${channelProductId}`);
+      this.logger.warn(`⏸️ 미매핑 주문 계류: ${orderEvent.externalOrderId} - ${identity.lookupId}`);
 
       return {
         published: false,
@@ -118,17 +144,17 @@ export class OrderEventPublisher {
     const salesChannel = this.mapChannelToSalesChannel(channel);
     const orderId = uuidv4();
 
-    const channelProductId = orderEvent.externalProductOrderId ?? orderEvent.externalOrderId;
+    const identity = getExternalLineIdentity(orderEvent);
 
     const items: OrderItem[] = [
       {
-        orderItemId: channelProductId,
+        ...(identity.orderItemId ? { orderItemId: identity.orderItemId } : {}),
         skuId: listing.variantId,
         masterId: listing.masterId,
         versionId: listing.versionId,
         variantId: listing.variantId,
         productName: listing.productName,
-        channelProductId,
+        ...(identity.channelProductId ? { channelProductId: identity.channelProductId } : {}),
         quantity: orderEvent.quantity ?? 1,
         unitPrice: orderEvent.priceAmount ?? 0,
         totalPrice: orderEvent.priceAmount ?? 0,

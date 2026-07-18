@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 import * as schema from '../../shared/schemas/entities/schema';
-import { eq, and, desc, inArray } from 'drizzle-orm';
+import { eq, and, desc, inArray, count } from 'drizzle-orm';
 
 type Contract = typeof schema.subscriptionContracts.$inferSelect;
 type Plan = typeof schema.plan.$inferSelect;
@@ -102,6 +102,37 @@ export class SubscriptionContractReader {
   }
 
   /**
+   * 멤버십 기록조회
+   */
+  async findContractsByUserIdWithPlanPaged(userId: string, limit: number, offset: number) {
+    return await this.dbService.db
+      .select({
+        contract: schema.subscriptionContracts,
+        plan: schema.plan,
+        tier: schema.tiers,
+      })
+      .from(schema.subscriptionContracts)
+      .innerJoin(schema.plan, eq(schema.subscriptionContracts.planId, schema.plan.id))
+      .leftJoin(schema.tiers, eq(schema.plan.tierId, schema.tiers.id))
+      .where(eq(schema.subscriptionContracts.userId, userId))
+      .orderBy(desc(schema.subscriptionContracts.createdAt))
+      .limit(limit)
+      .offset(offset);
+  }
+
+  /**
+   * 사용자의 전체 계약 이력 건수 조회
+   */
+  async countContractsByUserId(userId: string): Promise<number> {
+    const [row] = await this.dbService.db
+      .select({ value: count() })
+      .from(schema.subscriptionContracts)
+      .where(eq(schema.subscriptionContracts.userId, userId));
+
+    return row?.value ?? 0;
+  }
+
+  /**
    * 사용자의 구독 기간 조정 이벤트 조회 (ENTITLEMENT_EXTENDED / ENTITLEMENT_REDUCED)
    */
   async findAdjustmentEventsByUserId(userId: string) {
@@ -111,7 +142,11 @@ export class SubscriptionContractReader {
       .where(
         and(
           eq(schema.subscriptionContractEvents.userId, userId),
-          inArray(schema.subscriptionContractEvents.eventType, ['ENTITLEMENT_EXTENDED', 'ENTITLEMENT_REDUCED', 'GRANTED_BY_ADMIN']),
+          inArray(schema.subscriptionContractEvents.eventType, [
+            'ENTITLEMENT_EXTENDED',
+            'ENTITLEMENT_REDUCED',
+            'GRANTED_BY_ADMIN',
+          ]),
         ),
       )
       .orderBy(desc(schema.subscriptionContractEvents.createdAt));

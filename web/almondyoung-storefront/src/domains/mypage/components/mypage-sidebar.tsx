@@ -1,150 +1,81 @@
 "use client"
 
-import React, { useState } from "react"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
-import { usePathname } from "next/navigation"
-import { ChevronDown } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { useTranslations } from "next-intl"
+import { usePathname } from "next/navigation"
 
-import { SIDEBAR_MENU_ITEMS } from "./constants/mypage-constants"
-import type { MenuItem } from "../types/sidebar-types"
+import { SIDEBAR_SECTIONS } from "./constants/mypage-constants"
 
 export default function MypageSidebar({
-  menuItems = SIDEBAR_MENU_ITEMS,
   className = "",
 }: {
-  menuItems?: MenuItem[]
   className?: string
 }) {
   const t = useTranslations()
   const pathname = usePathname()
   const normalizedPathname = pathname.replace(/^\/[a-z]{2}(\/|$)/, "/")
 
-  const isActive = (path: string, exact = false) => {
-    if (exact || path === "/mypage") {
-      return normalizedPathname === path
-    }
-    return (
-      normalizedPathname === path || normalizedPathname.startsWith(`${path}/`)
-    )
+  // 경로가 메뉴 path 에 매칭되면 그 길이를, 아니면 -1. (긴 매칭일수록 더 구체적)
+  const matchLen = (path: string): number => {
+    if (path === "/mypage") return normalizedPathname === path ? path.length : -1
+    return normalizedPathname === path ||
+      normalizedPathname.startsWith(`${path}/`)
+      ? path.length
+      : -1
   }
 
-  const hasActiveSubItem = (item: MenuItem) =>
-    item.subItems?.some((sub) => isActive(sub.path)) ?? false
+  // 여러 메뉴가 prefix 로 겹칠 때(예: /mypage/membership 와
+  // /mypage/membership/payment-method) 가장 구체적인 항목 하나만 활성 처리.
+  const activePath = SIDEBAR_SECTIONS.flatMap((section) => section.items).reduce(
+    (best, item) => {
+      const len = matchLen(item.path)
+      return len > best.len ? { path: item.path, len } : best
+    },
+    { path: "", len: -1 }
+  ).path
 
-  const [expandedSections, setExpandedSections] = useState<
-    Record<string, boolean>
-  >(() => {
-    const initial: Record<string, boolean> = {}
-    menuItems.forEach((item) => {
-      if (item.hasSubMenu && item.subItems?.some((sub) => isActive(sub.path))) {
-        initial[item.label] = true
-      }
-    })
-    return initial
-  })
-
-  const toggleSection = (label: string) => {
-    setExpandedSections((prev) => ({
-      ...prev,
-      [label]: !prev[label],
-    }))
-  }
+  const isActive = (path: string) => path !== "" && path === activePath
 
   return (
-    <aside
-      className={`hidden w-[260px] shrink-0 rounded-xl border border-gray-200 bg-white md:block ${className}`}
-      aria-label="마이페이지 내비게이션"
+    <nav
+      className={cn("hidden md:block", className)}
+      aria-label={t("mypage.menu.mypage")}
     >
-      <nav>
-        <ul className="flex flex-col divide-y divide-gray-200">
-          {menuItems.map((item) => {
-            const isExpanded = expandedSections[item.label] ?? false
-            const hasSub = item.hasSubMenu
+      <LocalizedClientLink
+        href="/mypage"
+        className="block pb-2 text-2xl font-bold text-gray-900"
+      >
+        {t("mypage.menu.mypage")}
+      </LocalizedClientLink>
 
-            return (
+      {SIDEBAR_SECTIONS.map((section) => (
+        <div
+          key={section.title}
+          className="py-5 border-b border-gray-200 last:border-b-0"
+        >
+          <h3 className="text-[15px] font-bold text-gray-900">
+            {t(section.title)}
+          </h3>
+          <ul className="mt-3 space-y-3">
+            {section.items.map((item) => (
               <li key={item.id}>
-                {/* 메인 메뉴 */}
-                {hasSub ? (
-                  <button
-                    type="button"
-                    className="group flex w-full items-center justify-between px-6 py-4 text-left transition-colors"
-                    onClick={() => toggleSection(item.label)}
-                    aria-expanded={isExpanded}
-                    aria-controls={`submenu-${item.id}`}
-                  >
-                    <span
-                      className={`group-hover:text-yellow-30 text-[18px] font-semibold transition-colors ${
-                        hasActiveSubItem(item)
-                          ? "text-yellow-30"
-                          : "text-gray-800"
-                      }`}
-                    >
-                      {t(item.label)}
-                    </span>
-                    <span
-                      className={`text-gray-400 transition-transform duration-200 ease-out ${
-                        isExpanded ? "rotate-180" : ""
-                      }`}
-                    >
-                      <ChevronDown size={20} />
-                    </span>
-                  </button>
-                ) : (
-                  item.path && (
-                    <LocalizedClientLink
-                      href={item.path}
-                      className="group block px-6 py-4 transition-colors"
-                    >
-                      <span
-                        className={`text-[18px] font-semibold transition-colors ${
-                          isActive(item.path)
-                            ? "text-yellow-30"
-                            : "text-gray-800"
-                        } group-hover:text-yellow-30`}
-                      >
-                        {t(item.label)}
-                      </span>
-                    </LocalizedClientLink>
-                  )
-                )}
-
-                {/* 서브 메뉴 */}
-                {hasSub && isExpanded && (
-                  <ul
-                    id={`submenu-${item.id}`}
-                    className="border-t border-gray-100 pt-1 pb-2"
-                  >
-                    {item.subItems?.map((subItem) => {
-                      const active = isActive(subItem.path)
-                      return (
-                        <li key={subItem.id}>
-                          <LocalizedClientLink
-                            href={subItem.path}
-                            className={`relative block border-l-2 py-2.5 pr-6 pl-6 transition-colors duration-150 ${
-                              active
-                                ? "text-yellow-30 border-yellow-500"
-                                : "hover:text-yellow-30 border-transparent"
-                            }`}
-                          >
-                            <span
-                              className={`text-[15px] leading-snug ${
-                                active ? "font-medium" : "font-normal"
-                              }`}
-                            >
-                              {t(subItem.label)}
-                            </span>
-                          </LocalizedClientLink>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                )}
+                <LocalizedClientLink
+                  href={item.path}
+                  className={cn(
+                    "text-[13px] transition-colors",
+                    isActive(item.path)
+                      ? "text-yellow-30 font-semibold"
+                      : "hover:text-yellow-30 text-gray-600"
+                  )}
+                >
+                  {t(item.label)}
+                </LocalizedClientLink>
               </li>
-            )
-          })}
-        </ul>
-      </nav>
-    </aside>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </nav>
   )
 }

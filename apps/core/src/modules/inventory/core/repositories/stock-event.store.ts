@@ -1,14 +1,40 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
 import { DbService } from '@app/db';
-import { and, or, eq, lte, gte, isNull } from 'drizzle-orm';
+import { and, or, eq, lte, gte, isNull, inArray, ne } from 'drizzle-orm';
 import { sql } from 'drizzle-orm/sql';
 import { StockStateEnum } from '../../schema/enum-values';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
+import { acquireStockAvailabilityLock } from '../../shared/locks/stock-availability-lock';
+import { assertReservationInvariant } from '../../shared/locks/reservation-invariant';
+import { BatchControlledStockGuard, BatchSessionDispatchAuthorization } from '../services/batch-controlled-stock.guard';
 
 // TransitionType alias for strong typing
 type TransitionType = (typeof wmsTables.stockEvents.$inferInsert)['transitionType'];
+type StockEventRow = typeof wmsTables.stockEvents.$inferSelect;
+
+export type ReverseShipmentDispatchEventInput = {
+  dispatchAttemptId: string;
+  dispatchAttemptSourceId: string;
+  originalShipEventId: string;
+  reversalJournalId: string;
+  recallOperationId: string;
+  toLocationId: string;
+  occurredAt: Date;
+  reason: string;
+};
+
+export type ShipmentDispatchEventReversal = {
+  dispatchAttemptSourceId: string;
+  shipmentLineId: string;
+  skuId: string;
+  warehouseId: string;
+  outboundReworkLocationId: string;
+  quantity: number;
+  originalEventId: string;
+  reversalEventId: string;
+};
 
 type CreateEventInput = {
   journalId?: string;
@@ -28,6 +54,14 @@ type CreateEventInput = {
   occurredAt: Date; // 비즈니스 발생시각
   idempotencyKey?: string;
   reason?: string;
+  batchSessionDispatch?: BatchSessionDispatchAuthorization;
+  /**
+   * A shipment dispatch removes the matching reservation in the same caller
+   * transaction. Publishing between the ledger decrement and that release
+   * would expose a transient, incorrect sellable quantity, so the dispatch
+   * owner publishes once after both mutations are complete.
+   */
+  deferSellableProjection?: boolean;
 };
 
 @Injectable()
@@ -37,6 +71,7 @@ export class StockEventStore {
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>,
     private readonly productSellableQuantity: ProductSellableQuantityService,
+    private readonly batchControlledStock: BatchControlledStockGuard = new BatchControlledStockGuard(),
   ) {}
 
   private get db() {
@@ -49,6 +84,12 @@ export class StockEventStore {
 
   /** 이벤트 1건 생성 + 레저 프로젝션 갱신(동일 트랜잭션) */
   async createEvent(input: CreateEventInput, tx?: DbTx) {
+    if (input.batchSessionDispatch && !tx) {
+      throw new Error('batchSessionDispatch requires the caller dispatch transaction');
+    }
+    if (input.deferSellableProjection && (!input.batchSessionDispatch || !tx)) {
+      throw new Error('deferSellableProjection is restricted to a caller-owned batch dispatch transaction');
+    }
     return this.dbService.run(async (trx) => {
       // 1) 이벤트 삽입 (멱등키가 있으면 중복 방지)
       const [event] = await trx
@@ -78,10 +119,19 @@ export class StockEventStore {
           const existing = await trx.query.stockEvents.findFirst({
             where: (e, { eq }) => eq(e.idempotencyKey, input.idempotencyKey!),
           });
+          if (existing && input.batchSessionDispatch) {
+            await this.assertDispatchReplayAuthorization(input.batchSessionDispatch, existing, trx);
+          }
           return existing ?? null;
         }
         return null;
       }
+
+      // This repository is the final write boundary for stock ledger projection.
+      // Guard here (after the idempotency claim, before projection) so direct
+      // callers cannot bypass batch custody protection and exact replays remain
+      // no-ops even if availability changed after the original event.
+      await this.assertBatchControlledRemovalAllowed(event, input.batchSessionDispatch, trx);
 
       // 2) 레저 갱신 (from -= qty, to += qty)
       await this.applyProjection(trx, {
@@ -95,7 +145,9 @@ export class StockEventStore {
         quantity: event.quantity,
       });
 
-      await this.productSellableQuantity.recalculateAndPublishForSku(event.skuId, trx);
+      if (!input.deferSellableProjection) {
+        await this.productSellableQuantity.recalculateAndPublishForSku(event.skuId, trx);
+      }
 
       this.logger.debug(`Created ${event.transitionType} ev#${event.id} sku=${event.skuId} qty=${event.quantity}`);
       return event;
@@ -115,7 +167,6 @@ export class StockEventStore {
       toState: StockStateEnum | null;
       quantity: number;
     },
-    options?: { forbidNegative?: boolean },
   ) {
     const now = new Date();
 
@@ -130,6 +181,7 @@ export class StockEventStore {
         .update(wmsTables.stockLedgers)
         .set({
           qty: sql`${wmsTables.stockLedgers.qty} - ${params.quantity}`,
+          version: sql`${wmsTables.stockLedgers.version} + 1`,
           updatedAt: now,
         })
         .where(
@@ -172,6 +224,7 @@ export class StockEventStore {
           ],
           set: {
             qty: sql`${wmsTables.stockLedgers.qty} + ${params.quantity}`,
+            version: sql`${wmsTables.stockLedgers.version} + 1`,
             updatedAt: now,
           },
         });
@@ -296,15 +349,271 @@ export class StockEventStore {
   // 정정(역분개)
   // -----------------------------
 
+  /**
+   * Reverse one exact shipment-dispatch source into OUTBOUND_REWORK.
+   *
+   * This deliberately does not publish a sellable projection. Recall restores
+   * the matching shipment-line reservation in the same caller transaction and
+   * publishes only after both on-hand and reserved have increased, preserving
+   * the available-quantity invariant.
+   */
+  async reverseShipmentDispatchEvent(
+    input: ReverseShipmentDispatchEventInput,
+    tx: DbTx,
+  ): Promise<ShipmentDispatchEventReversal> {
+    if (!tx) throw new Error('Shipment dispatch reversal requires the caller recall transaction');
+
+    const [attempt] = await tx
+      .select({
+        id: wmsTables.dispatchAttempts.id,
+        shipmentId: wmsTables.dispatchAttempts.shipmentId,
+        status: wmsTables.dispatchAttempts.status,
+        stockJournalId: wmsTables.dispatchAttempts.stockJournalId,
+        reversalJournalId: wmsTables.dispatchAttempts.reversalJournalId,
+      })
+      .from(wmsTables.dispatchAttempts)
+      .where(eq(wmsTables.dispatchAttempts.id, input.dispatchAttemptId))
+      .limit(1)
+      .for('update');
+    if (!attempt || !['dispatched', 'recovery_required'].includes(attempt.status)) {
+      throw this.shipmentDispatchReversalConflict(
+        'SHIPMENT_DISPATCH_REVERSAL_ATTEMPT_INVALID',
+        'Dispatch attempt is not eligible for stock reversal',
+      );
+    }
+    if (!attempt.stockJournalId || attempt.reversalJournalId) {
+      throw this.shipmentDispatchReversalConflict(
+        'SHIPMENT_DISPATCH_ALREADY_REVERSED',
+        'Dispatch attempt already owns a reversal journal or has no dispatch journal',
+      );
+    }
+
+    const [reversalJournal] = await tx
+      .select({
+        id: wmsTables.stockJournals.id,
+        sourceType: wmsTables.stockJournals.sourceType,
+        sourceId: wmsTables.stockJournals.sourceId,
+      })
+      .from(wmsTables.stockJournals)
+      .where(eq(wmsTables.stockJournals.id, input.reversalJournalId))
+      .limit(1)
+      .for('update');
+    if (
+      !reversalJournal ||
+      reversalJournal.sourceType !== 'SHIPMENT_RECALL' ||
+      reversalJournal.sourceId !== input.recallOperationId ||
+      reversalJournal.id === attempt.stockJournalId
+    ) {
+      throw this.shipmentDispatchReversalConflict(
+        'SHIPMENT_DISPATCH_REVERSAL_JOURNAL_INVALID',
+        'Reversal journal is not owned by the exact recall operation',
+      );
+    }
+
+    const [lockedSource] = await tx
+      .select({
+        id: wmsTables.dispatchAttemptSources.id,
+        dispatchAttemptId: wmsTables.dispatchAttemptSources.dispatchAttemptId,
+        shipmentLineId: wmsTables.dispatchAttemptSources.shipmentLineId,
+        sourceLocationId: wmsTables.dispatchAttemptSources.sourceLocationId,
+        qty: wmsTables.dispatchAttemptSources.qty,
+        stockEventId: wmsTables.dispatchAttemptSources.stockEventId,
+      })
+      .from(wmsTables.dispatchAttemptSources)
+      .where(
+        and(
+          eq(wmsTables.dispatchAttemptSources.id, input.dispatchAttemptSourceId),
+          eq(wmsTables.dispatchAttemptSources.dispatchAttemptId, attempt.id),
+        ),
+      )
+      .limit(1)
+      .for('update');
+    const [sourceIdentity] = lockedSource
+      ? await tx
+          .select({
+            lineShipmentId: wmsTables.shipmentLines.shipmentId,
+            skuId: wmsTables.shipmentLines.skuId,
+            warehouseId: wmsTables.shipments.warehouseId,
+          })
+          .from(wmsTables.shipmentLines)
+          .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.shipmentLines.shipmentId))
+          .where(eq(wmsTables.shipmentLines.id, lockedSource.shipmentLineId))
+          .limit(1)
+      : [];
+    const source = lockedSource && sourceIdentity ? { ...lockedSource, ...sourceIdentity } : null;
+    if (
+      !source ||
+      source.lineShipmentId !== attempt.shipmentId ||
+      !source.stockEventId ||
+      source.stockEventId !== input.originalShipEventId
+    ) {
+      throw this.shipmentDispatchReversalConflict(
+        'SHIPMENT_DISPATCH_REVERSAL_SOURCE_INVALID',
+        'Dispatch source does not belong to the exact attempt event',
+      );
+    }
+
+    const [original] = await tx
+      .select()
+      .from(wmsTables.stockEvents)
+      .where(eq(wmsTables.stockEvents.id, input.originalShipEventId))
+      .limit(1)
+      .for('update');
+    const [reworkLocation] = await tx
+      .select({ id: wmsTables.locations.id })
+      .from(wmsTables.locations)
+      .where(
+        and(
+          eq(wmsTables.locations.id, input.toLocationId),
+          eq(wmsTables.locations.warehouseId, source.warehouseId),
+          eq(wmsTables.locations.systemRole, 'outbound_rework'),
+          eq(wmsTables.locations.isSystem, true),
+          eq(wmsTables.locations.isActive, true),
+        ),
+      )
+      .limit(1);
+    if (!reworkLocation) {
+      throw this.shipmentDispatchReversalConflict(
+        'SHIPMENT_DISPATCH_REVERSAL_DESTINATION_INVALID',
+        'Stock reversal destination must be the active warehouse OUTBOUND_REWORK location',
+      );
+    }
+    if (
+      !original ||
+      original.journalId !== attempt.stockJournalId ||
+      original.skuId !== source.skuId ||
+      original.fromWarehouseId !== source.warehouseId ||
+      original.fromLocationId !== source.sourceLocationId ||
+      original.fromState !== 'ON_HAND' ||
+      original.toWarehouseId !== null ||
+      original.toLocationId !== null ||
+      original.toState !== null ||
+      original.transitionType !== 'SHIP' ||
+      original.quantity !== source.qty ||
+      original.eventStatus !== 'POSTED' ||
+      original.voidedByEventId !== null
+    ) {
+      throw this.shipmentDispatchReversalConflict(
+        'SHIPMENT_DISPATCH_REVERSAL_EVENT_INVALID',
+        'Original stock event is not the exact posted economic dispatch source',
+      );
+    }
+
+    const [existingReversal] = await tx
+      .select({ id: wmsTables.stockEvents.id })
+      .from(wmsTables.stockEvents)
+      .where(eq(wmsTables.stockEvents.reversalOfEventId, original.id))
+      .limit(1);
+    if (existingReversal) {
+      throw this.shipmentDispatchReversalConflict(
+        'SHIPMENT_DISPATCH_ALREADY_REVERSED',
+        'Dispatch stock event has already been reversed',
+      );
+    }
+
+    const [reversal] = await tx
+      .insert(wmsTables.stockEvents)
+      .values({
+        journalId: input.reversalJournalId,
+        skuId: original.skuId,
+        fromWarehouseId: null,
+        fromLocationId: null,
+        toWarehouseId: source.warehouseId,
+        toLocationId: reworkLocation.id,
+        fromState: null,
+        toState: 'ON_HAND',
+        transitionType: 'ADJUST_UP',
+        quantity: original.quantity,
+        occurredAt: input.occurredAt,
+        idempotencyKey: `recall:${input.recallOperationId}:${source.id}`,
+        eventStatus: 'POSTED',
+        reversalOfEventId: original.id,
+        reason: `Recall ${input.recallOperationId}: ${input.reason}`.slice(0, 255),
+      })
+      .returning();
+
+    await this.applyProjection(tx, {
+      skuId: reversal.skuId,
+      fromWarehouseId: reversal.fromWarehouseId,
+      fromLocationId: reversal.fromLocationId,
+      toWarehouseId: reversal.toWarehouseId,
+      toLocationId: reversal.toLocationId,
+      fromState: reversal.fromState,
+      toState: reversal.toState,
+      quantity: reversal.quantity,
+    });
+
+    this.logger.log(`Reversed dispatch event#${original.id} into OUTBOUND_REWORK with event#${reversal.id}`);
+    return {
+      dispatchAttemptSourceId: source.id,
+      shipmentLineId: source.shipmentLineId,
+      skuId: source.skuId,
+      warehouseId: source.warehouseId,
+      outboundReworkLocationId: reworkLocation.id,
+      quantity: source.qty,
+      originalEventId: original.id,
+      reversalEventId: reversal.id,
+    };
+  }
+
   /** 이벤트 역분개(취소): 원 이벤트의 효과를 상쇄하는 반대 이벤트 생성 */
   async reverseEvent(eventId: string, reason: string, tx?: DbTx) {
     return this.dbService.run(async (trx) => {
-      const original = await trx.query.stockEvents.findFirst({
-        where: eq(wmsTables.stockEvents.id, eventId),
-      });
+      const [original] = await trx
+        .select()
+        .from(wmsTables.stockEvents)
+        .where(eq(wmsTables.stockEvents.id, eventId))
+        .limit(1)
+        .for('update');
       if (!original) throw new BadRequestException(`Event ${eventId} not found`);
       if (original.eventStatus !== 'POSTED') {
         throw new BadRequestException('PENDING/VOIDED 이벤트는 역분개할 수 없습니다.');
+      }
+      const [dispatchSource] = await trx
+        .select({ id: wmsTables.dispatchAttemptSources.id })
+        .from(wmsTables.dispatchAttemptSources)
+        .where(eq(wmsTables.dispatchAttemptSources.stockEventId, original.id))
+        .limit(1);
+      if (dispatchSource) {
+        throw this.shipmentDispatchReversalConflict(
+          'SHIPMENT_DISPATCH_REVERSAL_REQUIRES_RECALL',
+          'Shipment dispatch events can only be reversed through the exact recall operation',
+        );
+      }
+      const [existingReversal] = await trx
+        .select({ id: wmsTables.stockEvents.id })
+        .from(wmsTables.stockEvents)
+        .where(eq(wmsTables.stockEvents.reversalOfEventId, original.id))
+        .limit(1);
+      if (existingReversal) {
+        throw this.shipmentDispatchReversalConflict(
+          'STOCK_EVENT_ALREADY_REVERSED',
+          `Event ${eventId} has already been reversed`,
+        );
+      }
+
+      // 역분개가 ON_HAND 를 순감소시키면(RECEIVE/ADJUST_UP 등 취소) 예약 불변식 가드.
+      // 락·가드는 감소 방향만 — 증가·창고내이동(net-0)은 면제(작업 10 §5 락 면제 경로와 일관).
+      const dec = reversalOnHandDecrement(original);
+      if (dec) {
+        await acquireStockAvailabilityLock(trx, dec.skuId, dec.warehouseId);
+        await assertReservationInvariant(trx, dec.skuId, dec.warehouseId, dec.quantity);
+      }
+
+      // Warehouse-net-zero reversal can still move an exact source location.
+      // Batch custody is location-grained, so protect every reverse ON_HAND
+      // source even when the warehouse reservation invariant is exempt.
+      if (original.toState === 'ON_HAND' && original.toWarehouseId && original.toLocationId) {
+        await acquireStockAvailabilityLock(trx, original.skuId, original.toWarehouseId);
+        await this.batchControlledStock.assertRemovalAllowed(
+          {
+            skuId: original.skuId,
+            warehouseId: original.toWarehouseId,
+            sourceLocationId: original.toLocationId,
+            quantity: original.quantity,
+          },
+          trx,
+        );
       }
 
       // 전이 타입 역매핑
@@ -352,6 +661,269 @@ export class StockEventStore {
     }, tx);
   }
 
+  private async assertBatchControlledRemovalAllowed(
+    event: StockEventRow,
+    authorization: BatchSessionDispatchAuthorization | undefined,
+    tx: DbTx,
+  ): Promise<void> {
+    if (event.fromState !== 'ON_HAND' || !event.fromWarehouseId || !event.fromLocationId) {
+      if (authorization) {
+        throw this.batchDispatchConflict(
+          'BATCH_DISPATCH_EVENT_MISMATCH',
+          'Dispatch authorization requires ON_HAND removal',
+        );
+      }
+      return;
+    }
+    if (authorization) {
+      await this.authorizeAndLinkBatchSessionDispatch(authorization, event, tx);
+      return;
+    }
+    await acquireStockAvailabilityLock(tx, event.skuId, event.fromWarehouseId);
+    await this.batchControlledStock.assertRemovalAllowed(
+      {
+        skuId: event.skuId,
+        warehouseId: event.fromWarehouseId,
+        sourceLocationId: event.fromLocationId,
+        quantity: event.quantity,
+      },
+      tx,
+    );
+  }
+
+  private async authorizeAndLinkBatchSessionDispatch(
+    authorization: BatchSessionDispatchAuthorization,
+    event: StockEventRow,
+    tx: DbTx,
+  ): Promise<void> {
+    const source = await this.lockDispatchSource(authorization.dispatchAttemptSourceId, tx);
+    if (
+      !source ||
+      source.stockEventId !== null ||
+      source.attemptStatus !== 'pending' ||
+      !source.attemptJournalId ||
+      source.attemptJournalId !== event.journalId ||
+      source.lineShipmentId !== source.attemptShipmentId ||
+      source.lineSkuId !== event.skuId ||
+      source.warehouseId !== event.fromWarehouseId ||
+      source.sourceLocationId !== event.fromLocationId ||
+      source.qty !== event.quantity ||
+      event.fromState !== 'ON_HAND' ||
+      event.toWarehouseId !== null ||
+      event.toLocationId !== null ||
+      event.toState !== null ||
+      event.transitionType !== 'SHIP'
+    ) {
+      throw this.batchDispatchConflict(
+        'BATCH_DISPATCH_SOURCE_MISMATCH',
+        'Dispatch authorization does not match the pending exact stock source',
+      );
+    }
+
+    // Canonical dispatch owns attempt/source before it reaches the stock
+    // boundary. Preserve that order here, then take the shared stock advisory
+    // lock; never take shipment/line locks from this low-level repository.
+    await acquireStockAvailabilityLock(tx, event.skuId, event.fromWarehouseId);
+    const availability = await this.batchControlledStock.getAvailability(
+      {
+        skuId: event.skuId,
+        warehouseId: event.fromWarehouseId,
+        sourceLocationId: event.fromLocationId,
+      },
+      tx,
+      { lock: true },
+    );
+    if (availability.onHandQty < event.quantity || availability.onHandQty < availability.batchControlledQty) {
+      throw this.batchDispatchConflict(
+        'BATCH_DISPATCH_STOCK_DRIFT',
+        'Controlled source ledger is insufficient or already below custody balance',
+      );
+    }
+
+    const [custody] = await tx
+      .select({ qty: sql<number>`coalesce(sum(${wmsTables.batchInventorySessionBalances.qty}), 0)::int` })
+      .from(wmsTables.batchInventorySessionBalances)
+      .innerJoin(
+        wmsTables.batchInventorySessions,
+        eq(wmsTables.batchInventorySessions.id, wmsTables.batchInventorySessionBalances.sessionId),
+      )
+      .where(
+        and(
+          eq(wmsTables.batchInventorySessions.id, authorization.sessionId),
+          eq(wmsTables.batchInventorySessions.status, 'active'),
+          eq(wmsTables.batchInventorySessionBalances.skuId, event.skuId),
+          eq(wmsTables.batchInventorySessionBalances.sourceLocationId, source.sourceLocationId),
+          eq(wmsTables.batchInventorySessionBalances.shipmentLineId, source.shipmentLineId),
+          ne(wmsTables.batchInventorySessionBalances.custodyType, 'SETTLED'),
+          inArray(wmsTables.batchInventorySessionBalances.custodyType, [
+            'WORKER',
+            'TOTE',
+            'SORTING',
+            'PACKING',
+            'PACKED',
+          ]),
+        ),
+      );
+    if (Number(custody?.qty ?? 0) !== event.quantity) {
+      throw this.batchDispatchConflict(
+        'BATCH_DISPATCH_CUSTODY_MISMATCH',
+        'Dispatch source is not backed by exact active shipment-line custody',
+      );
+    }
+
+    const [linked] = await tx
+      .update(wmsTables.dispatchAttemptSources)
+      .set({ stockEventId: event.id })
+      .where(
+        and(
+          eq(wmsTables.dispatchAttemptSources.id, authorization.dispatchAttemptSourceId),
+          isNull(wmsTables.dispatchAttemptSources.stockEventId),
+        ),
+      )
+      .returning({ id: wmsTables.dispatchAttemptSources.id });
+    if (!linked) {
+      throw this.batchDispatchConflict(
+        'BATCH_DISPATCH_SOURCE_ALREADY_USED',
+        'Dispatch source already owns a stock event',
+      );
+    }
+  }
+
+  private async assertDispatchReplayAuthorization(
+    authorization: BatchSessionDispatchAuthorization,
+    event: StockEventRow,
+    tx: DbTx,
+  ): Promise<void> {
+    const source = await this.lockDispatchSource(authorization.dispatchAttemptSourceId, tx);
+    if (
+      !source ||
+      source.stockEventId !== event.id ||
+      source.attemptJournalId !== event.journalId ||
+      source.lineShipmentId !== source.attemptShipmentId ||
+      source.lineSkuId !== event.skuId ||
+      source.warehouseId !== event.fromWarehouseId ||
+      source.sourceLocationId !== event.fromLocationId ||
+      source.qty !== event.quantity ||
+      event.fromState !== 'ON_HAND' ||
+      event.toWarehouseId !== null ||
+      event.toLocationId !== null ||
+      event.toState !== null ||
+      event.transitionType !== 'SHIP'
+    ) {
+      throw this.batchDispatchConflict(
+        'BATCH_DISPATCH_REPLAY_MISMATCH',
+        'Dispatch replay authorization does not own the existing stock event',
+      );
+    }
+
+    const [activeCustody] = await tx
+      .select({ id: wmsTables.batchInventorySessionBalances.id })
+      .from(wmsTables.batchInventorySessionBalances)
+      .innerJoin(
+        wmsTables.batchInventorySessions,
+        eq(wmsTables.batchInventorySessions.id, wmsTables.batchInventorySessionBalances.sessionId),
+      )
+      .where(
+        and(
+          eq(wmsTables.batchInventorySessions.id, authorization.sessionId),
+          eq(wmsTables.batchInventorySessions.status, 'active'),
+          eq(wmsTables.batchInventorySessionBalances.skuId, event.skuId),
+          eq(wmsTables.batchInventorySessionBalances.sourceLocationId, source.sourceLocationId),
+          eq(wmsTables.batchInventorySessionBalances.shipmentLineId, source.shipmentLineId),
+          ne(wmsTables.batchInventorySessionBalances.custodyType, 'SETTLED'),
+        ),
+      )
+      .limit(1);
+    const [settlement] = activeCustody
+      ? []
+      : await tx
+          .select({ id: wmsTables.batchInventorySessionEvents.id })
+          .from(wmsTables.batchInventorySessionEvents)
+          .where(
+            and(
+              eq(wmsTables.batchInventorySessionEvents.sessionId, authorization.sessionId),
+              eq(wmsTables.batchInventorySessionEvents.eventType, 'SETTLE_FOR_DISPATCH'),
+              sql`${wmsTables.batchInventorySessionEvents.payload}->>'dispatchAttemptSourceId' = ${authorization.dispatchAttemptSourceId}`,
+            ),
+          )
+          .limit(1);
+    if (!activeCustody && !settlement) {
+      throw this.batchDispatchConflict(
+        'BATCH_DISPATCH_SESSION_MISMATCH',
+        'Dispatch replay authorization belongs to another custody session',
+      );
+    }
+  }
+
+  private async lockDispatchSource(dispatchAttemptSourceId: string, tx: DbTx) {
+    const [identity] = await tx
+      .select({
+        id: wmsTables.dispatchAttemptSources.id,
+        dispatchAttemptId: wmsTables.dispatchAttemptSources.dispatchAttemptId,
+      })
+      .from(wmsTables.dispatchAttemptSources)
+      .where(eq(wmsTables.dispatchAttemptSources.id, dispatchAttemptSourceId))
+      .limit(1);
+    if (!identity) return null;
+
+    const [attempt] = await tx
+      .select({ id: wmsTables.dispatchAttempts.id })
+      .from(wmsTables.dispatchAttempts)
+      .where(eq(wmsTables.dispatchAttempts.id, identity.dispatchAttemptId))
+      .limit(1)
+      .for('update');
+    if (!attempt) return null;
+
+    const [lockedSource] = await tx
+      .select({ id: wmsTables.dispatchAttemptSources.id })
+      .from(wmsTables.dispatchAttemptSources)
+      .where(
+        and(
+          eq(wmsTables.dispatchAttemptSources.id, dispatchAttemptSourceId),
+          eq(wmsTables.dispatchAttemptSources.dispatchAttemptId, attempt.id),
+        ),
+      )
+      .limit(1)
+      .for('update');
+    if (!lockedSource) return null;
+
+    const [source] = await tx
+      .select({
+        id: wmsTables.dispatchAttemptSources.id,
+        qty: wmsTables.dispatchAttemptSources.qty,
+        sourceLocationId: wmsTables.dispatchAttemptSources.sourceLocationId,
+        shipmentLineId: wmsTables.dispatchAttemptSources.shipmentLineId,
+        stockEventId: wmsTables.dispatchAttemptSources.stockEventId,
+        attemptStatus: wmsTables.dispatchAttempts.status,
+        attemptJournalId: wmsTables.dispatchAttempts.stockJournalId,
+        attemptShipmentId: wmsTables.dispatchAttempts.shipmentId,
+        lineShipmentId: wmsTables.shipmentLines.shipmentId,
+        lineSkuId: wmsTables.shipmentLines.skuId,
+        warehouseId: wmsTables.shipments.warehouseId,
+      })
+      .from(wmsTables.dispatchAttemptSources)
+      .innerJoin(
+        wmsTables.dispatchAttempts,
+        eq(wmsTables.dispatchAttempts.id, wmsTables.dispatchAttemptSources.dispatchAttemptId),
+      )
+      .innerJoin(
+        wmsTables.shipmentLines,
+        eq(wmsTables.shipmentLines.id, wmsTables.dispatchAttemptSources.shipmentLineId),
+      )
+      .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.dispatchAttempts.shipmentId))
+      .where(eq(wmsTables.dispatchAttemptSources.id, dispatchAttemptSourceId))
+      .limit(1);
+    return source ?? null;
+  }
+
+  private batchDispatchConflict(code: string, message: string): ConflictException {
+    return new ConflictException({ code, message });
+  }
+
+  private shipmentDispatchReversalConflict(code: string, message: string): ConflictException {
+    return new ConflictException({ code, message });
+  }
+
   private getReversalType(t: TransitionType): TransitionType {
     const map: Record<TransitionType, TransitionType> = {
       // 기본 흐름
@@ -370,4 +942,23 @@ export class StockEventStore {
     } as const;
     return map[t] ?? 'ADJUST_DOWN';
   }
+}
+
+/**
+ * 역분개가 창고 ON_HAND 를 순감소시키는지 판정.
+ * reverseEvent 는 원 이벤트의 to-측을 from-측(감소)으로 반전한다. 따라서 ON_HAND 순감소 창고 =
+ * original.toWarehouseId (original.toState === 'ON_HAND' 일 때). 창고내 이동(from==to, 양쪽 ON_HAND)은
+ * 순변화 0 → 제외. 증가/비-ON_HAND 방향(SHIP·ADJUST_DOWN·SCRAP 역분개 등)은 null → 락·가드 면제.
+ */
+export function reversalOnHandDecrement(original: {
+  skuId: string;
+  fromWarehouseId: string | null;
+  toWarehouseId: string | null;
+  fromState: StockStateEnum | null;
+  toState: StockStateEnum | null;
+  quantity: number;
+}): { skuId: string; warehouseId: string; quantity: number } | null {
+  if (original.toState !== 'ON_HAND' || original.toWarehouseId == null) return null;
+  if (original.fromState === 'ON_HAND' && original.fromWarehouseId === original.toWarehouseId) return null;
+  return { skuId: original.skuId, warehouseId: original.toWarehouseId, quantity: original.quantity };
 }

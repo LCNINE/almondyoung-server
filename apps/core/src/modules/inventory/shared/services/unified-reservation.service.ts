@@ -1,16 +1,22 @@
 import { Injectable, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
-import { eq, and, inArray, sum, sql, lt, isNotNull } from 'drizzle-orm';
+import { eq, and, sum, sql } from 'drizzle-orm';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
+import { acquireStockAvailabilityLock } from '../locks/stock-availability-lock';
 
 export interface ReserveStockDto {
-  targetType: 'FULFILLMENT_ORDER' | 'MOVEMENT_TASK';
+  // Task 25 contract: V2 예약은 shipment-line 단위만 (FO-target 생성 경로는 은퇴). shipmentLineId 필수.
+  targetType: 'SHIPMENT_LINE';
   targetId: string;
   skuId: string;
   warehouseId: string;
   quantity: number;
-  fulfillmentOrderItemId?: string; // FO 예약시 필요
+  fulfillmentOrderItemId?: string; // legacy FO 예약 호환 컬럼(nullable) — V2 는 미설정
+  shipmentLineId: string;
+  requestedAt?: Date;
+  /** Internal: the domain owner already holds the transaction advisory lock. */
+  stockLockHeld?: boolean;
   timeoutAt?: Date;
   reason?: string;
 }
@@ -24,8 +30,10 @@ export interface Reservation {
   quantity: number;
   status: string;
   fulfillmentOrderItemId: string | null;
+  shipmentLineId: string | null;
   timeoutAt: Date | null;
   reason: string | null;
+  requestedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -55,6 +63,20 @@ export class UnifiedReservationService {
    */
   async reserveStock(dto: ReserveStockDto, tx?: DbTx): Promise<Reservation> {
     return this.db.run(async (trx) => {
+      if (
+        dto.targetType === 'SHIPMENT_LINE' &&
+        (dto.shipmentLineId !== dto.targetId || dto.fulfillmentOrderItemId !== undefined || !dto.requestedAt)
+      ) {
+        throw new BadRequestException(
+          'SHIPMENT_LINE reservation requires matching shipmentLineId/requestedAt and cannot use fulfillmentOrderItemId',
+        );
+      }
+
+      // 0. (sku,warehouse) 직렬화 — available 확인↔INSERT 사이 TOCTOU 차단
+      if (!dto.stockLockHeld) {
+        await acquireStockAvailabilityLock(trx, dto.skuId, dto.warehouseId);
+      }
+
       // 1. 사용가능한 재고 확인
       const availableStock = await this.getAvailableStock(dto.skuId, dto.warehouseId, trx);
 
@@ -72,9 +94,11 @@ export class UnifiedReservationService {
           warehouseId: dto.warehouseId,
           quantity: dto.quantity,
           fulfillmentOrderItemId: dto.fulfillmentOrderItemId,
+          shipmentLineId: dto.shipmentLineId,
           status: 'confirmed',
           timeoutAt: dto.timeoutAt,
           reason: dto.reason,
+          requestedAt: dto.requestedAt,
         })
         .returning();
 
@@ -110,46 +134,14 @@ export class UnifiedReservationService {
     }, tx);
   }
 
-  /**
-   * 예약 이전 (FO간, Task간)
-   */
-  async transferReservation(
-    fromReservationId: string,
-    toTargetType: 'FULFILLMENT_ORDER' | 'MOVEMENT_TASK',
-    toTargetId: string,
-    tx?: DbTx,
-  ): Promise<Reservation> {
-    return this.db.run(async (trx) => {
-      // 기존 예약 해제
-      await this.releaseReservation(fromReservationId, trx);
+  /** V2 callers already hold the `(sku, warehouse)` advisory lock before this read. */
+  async getAvailableQuantity(skuId: string, warehouseId: string, tx: DbTx): Promise<number> {
+    return this.getAvailableStock(skuId, warehouseId, tx);
+  }
 
-      // 기존 예약 정보 조회
-      const oldReservation = await trx.query.stockReservations.findFirst({
-        where: eq(wmsTables.stockReservations.id, fromReservationId),
-      });
-
-      if (!oldReservation) {
-        throw new BadRequestException(`Reservation ${fromReservationId} not found`);
-      }
-
-      // 새 예약 생성
-      const newReservation = await this.reserveStock(
-        {
-          targetType: toTargetType,
-          targetId: toTargetId,
-          skuId: oldReservation.skuId,
-          warehouseId: oldReservation.warehouseId,
-          quantity: oldReservation.quantity,
-          fulfillmentOrderItemId: oldReservation.fulfillmentOrderItemId || undefined,
-          reason: `Transferred from ${oldReservation.targetType}:${oldReservation.targetId}`,
-        },
-        trx,
-      );
-
-      this.logger.log(`Transferred reservation ${fromReservationId} to ${toTargetType}:${toTargetId}`);
-
-      return newReservation;
-    }, tx);
+  /** Keep sellable projections in sync after a reservation-set mutation performed by a domain owner. */
+  async recalculateSellableForSku(skuId: string, tx: DbTx): Promise<void> {
+    await this.productSellableQuantity.recalculateAndPublishForSku(skuId, tx);
   }
 
   /**
@@ -257,55 +249,16 @@ export class UnifiedReservationService {
   private async getAvailableStock(skuId: string, warehouseId: string, tx?: DbTx): Promise<number> {
     const db = tx ?? this.db.db;
 
-    // ON_HAND 재고 조회
-    const onHandResult = await db
-      .select({ quantity: sum(wmsTables.stockLedgers.qty) })
-      .from(wmsTables.stockLedgers)
-      .where(
-        and(
-          eq(wmsTables.stockLedgers.skuId, skuId),
-          eq(wmsTables.stockLedgers.warehouseId, warehouseId),
-          eq(wmsTables.stockLedgers.stockState, 'ON_HAND'),
-        ),
-      );
-
-    const onHand = Number(onHandResult[0]?.quantity || 0);
-
-    // 예약된 수량 조회
-    const reserved = await this.getTotalReservedQuantity(skuId, warehouseId, tx);
-
-    return onHand - reserved;
-  }
-
-  /**
-   * 예약 만료 처리 (배치 작업용)
-   */
-  async releaseExpiredReservations(tx?: DbTx): Promise<number> {
-    return this.db.run(async (trx) => {
-      const now = new Date();
-
-      const result = await trx
-        .update(wmsTables.stockReservations)
-        .set({
-          status: 'released',
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(wmsTables.stockReservations.status, 'confirmed'),
-            isNotNull(wmsTables.stockReservations.timeoutAt),
-            lt(wmsTables.stockReservations.timeoutAt, now),
-          ),
-        )
-        .returning();
-
-      const skuIds = [...new Set(result.map((reservation) => reservation.skuId))];
-      for (const skuId of skuIds) {
-        await this.productSellableQuantity.recalculateAndPublishForSku(skuId, trx);
-      }
-
-      this.logger.log(`Released ${result.length} expired reservations`);
-      return result.length;
-    }, tx);
+    // 단일 스냅샷: on_hand 와 reserved 를 한 statement 로 계산 → READ COMMITTED 에서 SHIP 소진 등
+    // 비-락 경로가 두 읽기 사이 커밋될 때의 torn read(초과예약) 차단.
+    const rows = (await db.execute(sql`
+      SELECT
+        COALESCE((SELECT SUM(qty) FROM stock_ledgers
+                   WHERE sku_id = ${skuId} AND warehouse_id = ${warehouseId} AND stock_state = 'ON_HAND'), 0)
+        - COALESCE((SELECT SUM(quantity) FROM stock_reservations
+                     WHERE sku_id = ${skuId} AND warehouse_id = ${warehouseId} AND status = 'confirmed'), 0)
+          AS available
+    `)) as unknown as { available: number | string }[];
+    return Number(rows[0]?.available ?? 0);
   }
 }

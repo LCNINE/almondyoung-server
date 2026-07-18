@@ -1,7 +1,9 @@
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
-import { OrderList } from "@/domains/order/list/components/order-list"
-import { getOrders } from "@/lib/api/medusa/orders"
-import { getOrderActionsByMedusaId, type StoreOrderActionsResponse } from "@/lib/api/orders/store-orders"
+import {
+  getOrderListPageData,
+  sanitizeOrderListParams,
+} from "@/domains/order/list/get-order-list-data"
+import { OrderList } from "@/domains/order/list/order-list"
 import { WithHeaderLayout } from "@components/layout"
 import { Metadata } from "next"
 import { getTranslations } from "next-intl/server"
@@ -11,23 +13,14 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: t("orderList") }
 }
 
-const INITIAL_LIMIT = 20
-
-export default async function OrderListPage() {
+export default async function OrderListPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string; period?: string; q?: string }>
+}) {
   const t = await getTranslations("mypage.menu")
-  const ordersData = await getOrders({ limit: INITIAL_LIMIT, offset: 0 })
-
-  // Core 액션을 병렬로 조회. 실패한 주문은 null로 처리해 렌더를 블로킹하지 않음.
-  const orders = ordersData?.orders ?? []
-  const actionsResults = await Promise.allSettled(
-    orders.map((o) => getOrderActionsByMedusaId(o.id))
-  )
-  const actionsMap: Record<string, StoreOrderActionsResponse> = {}
-  actionsResults.forEach((result, idx) => {
-    if (result.status === "fulfilled" && orders[idx]) {
-      actionsMap[orders[idx]!.id] = result.value
-    }
-  })
+  const params = sanitizeOrderListParams(await searchParams)
+  const data = await getOrderListPageData(params)
 
   return (
     <WithHeaderLayout
@@ -40,11 +33,15 @@ export default async function OrderListPage() {
     >
       <MypageLayout>
         <OrderList
-          initialOrders={orders}
-          initialCount={ordersData?.count ?? 0}
-          initialLimit={INITIAL_LIMIT}
-          hasError={ordersData === null}
-          initialActionsMap={actionsMap}
+          orders={data.orders}
+          page={data.page}
+          pageCount={data.pageCount}
+          period={data.period}
+          q={data.q}
+          count={data.count}
+          actionsMap={data.actionsMap}
+          refundMap={data.refundMap}
+          hasError={data.hasError}
         />
       </MypageLayout>
     </WithHeaderLayout>

@@ -6,7 +6,7 @@ export type LocationType = 'standard' | 'zone';
 /**
  * 시스템 로케이션 역할 타입
  */
-export type SystemLocationRole = 'inbound_default' | 'return_default';
+export type SystemLocationRole = 'inbound_default' | 'return_default' | 'outbound_rework';
 
 /**
  * 공통 로케이션 식별자 인터페이스

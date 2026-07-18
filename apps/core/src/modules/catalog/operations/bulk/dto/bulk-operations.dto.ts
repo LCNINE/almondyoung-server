@@ -1,4 +1,4 @@
-import { IsArray, IsString, IsOptional, IsEnum, IsInt, Min } from 'class-validator';
+import { IsArray, IsString, IsOptional, IsEnum, IsInt, IsBoolean, Min } from 'class-validator';
 
 export class BulkUpdateDto {
   @IsArray()
@@ -37,4 +37,22 @@ export class BulkRestoreDto {
   @IsArray()
   @IsString({ each: true })
   productIds: string[];
+}
+
+export class BulkPolicyDto {
+  @IsArray()
+  @IsString({ each: true })
+  productIds: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  hideMembershipPriceForNonMembers?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isVisibleToMembersOnly?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  isOverseas?: boolean;
 }

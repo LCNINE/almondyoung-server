@@ -10,17 +10,32 @@ import { getRemainingDays } from '@/lib/utils/membership';
 
 const columnHelper = createColumnHelper<AdminMemberListItem>();
 
-const statusConfig: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
+const statusConfig: Record<
+  string,
+  {
+    label: string;
+    variant: 'default' | 'secondary' | 'destructive' | 'outline';
+  }
+> = {
   ACTIVE: { label: '활성화', variant: 'default' },
   PAUSED: { label: '일시정지', variant: 'secondary' },
   CANCELLED: { label: '해지', variant: 'destructive' },
   EXPIRED: { label: '만료', variant: 'outline' },
 };
 
-function formatDateRange(startsAt: string | null, endsAt: string | null): string {
+function formatDateRange(
+  startsAt: string | null,
+  endsAt: string | null
+): string {
   if (!startsAt && !endsAt) return '-';
   const fmt = (d: string | null) =>
-    d ? new Date(d).toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' }) : '-';
+    d
+      ? new Date(d).toLocaleDateString('ko-KR', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        })
+      : '-';
   return `${fmt(startsAt)} ~ ${fmt(endsAt)}`;
 }
 
@@ -37,7 +52,10 @@ type UseColumnsOptions = {
   userMap?: Record<string, UserInfo>;
 };
 
-export const useMembershipMemberTableColumns = ({ onEdit, userMap = {} }: UseColumnsOptions = {}) => {
+export const useMembershipMemberTableColumns = ({
+  onEdit,
+  userMap = {},
+}: UseColumnsOptions = {}) => {
   return useMemo(
     () => [
       columnHelper.accessor('userId', {
@@ -50,7 +68,7 @@ export const useMembershipMemberTableColumns = ({ onEdit, userMap = {} }: UseCol
               href={`/customer-window/${userId}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="font-medium text-primary text-xs hover:underline"
+              className="text-xs font-medium text-primary hover:underline"
             >
               {loginId || userId}
             </Link>
@@ -62,7 +80,9 @@ export const useMembershipMemberTableColumns = ({ onEdit, userMap = {} }: UseCol
         header: '성명',
         cell: ({ row }) => (
           <span className="text-sm">
-            {userMap[row.original.userId]?.username ?? <span className="text-muted-foreground">-</span>}
+            {userMap[row.original.userId]?.username ?? (
+              <span className="text-muted-foreground">-</span>
+            )}
           </span>
         ),
       }),
@@ -70,14 +90,19 @@ export const useMembershipMemberTableColumns = ({ onEdit, userMap = {} }: UseCol
         id: 'remainingDays',
         header: '남은 구독 기간',
         cell: ({ row }) => (
-          <span className="text-sm">{getRemainingDays(row.original.endsAt)}</span>
+          <span className="text-sm">
+            {getRemainingDays(row.original.endsAt)}
+          </span>
         ),
       }),
       columnHelper.accessor('status', {
         header: '상태',
         cell: ({ getValue }) => {
           const status = getValue();
-          const config = statusConfig[status] ?? { label: status, variant: 'outline' as const };
+          const config = statusConfig[status] ?? {
+            label: status,
+            variant: 'outline' as const,
+          };
           return <Badge variant={config.variant}>{config.label}</Badge>;
         },
       }),
@@ -113,7 +138,7 @@ export const useMembershipMemberTableColumns = ({ onEdit, userMap = {} }: UseCol
           <Button
             size="sm"
             variant="outline"
-            className="h-7 text-xs"
+            className="text-xs h-7"
             onClick={() => onEdit?.(row.original)}
           >
             수정
@@ -121,6 +146,6 @@ export const useMembershipMemberTableColumns = ({ onEdit, userMap = {} }: UseCol
         ),
       }),
     ],
-    [onEdit, userMap],
+    [onEdit, userMap]
   );
 };

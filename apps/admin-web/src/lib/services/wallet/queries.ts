@@ -14,12 +14,16 @@ import { walletQueryKeys } from './query-keys';
 
 // ── Payment Intents ────────────────────────────────────────────────────────
 
-export const usePaymentIntentList = (query: PaymentIntentListQuery) => {
+export const usePaymentIntentList = (
+  query: PaymentIntentListQuery,
+  options?: { enabled?: boolean },
+) => {
   return useQuery({
     queryKey: walletQueryKeys.intentList(query),
     queryFn: () => walletApi.listPaymentIntents(query),
     staleTime: 30 * 1000,
     placeholderData: keepPreviousData,
+    enabled: options?.enabled ?? true,
   });
 };
 
@@ -45,6 +49,17 @@ export const useRefundList = (query: RefundListQuery) => {
   return useQuery({
     queryKey: walletQueryKeys.refundList(query),
     queryFn: () => walletApi.listRefunds(query),
+    staleTime: 30 * 1000,
+    placeholderData: keepPreviousData,
+  });
+};
+
+// ── Refund Requests (무통장 환불 요청 큐) ────────────────────────────────────
+
+export const useRefundRequests = (page?: number, limit?: number) => {
+  return useQuery({
+    queryKey: walletQueryKeys.refundRequestList(page, limit),
+    queryFn: () => walletApi.listRefundRequests(page, limit),
     staleTime: 30 * 1000,
     placeholderData: keepPreviousData,
   });

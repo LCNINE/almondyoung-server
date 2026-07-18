@@ -1,5 +1,5 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
-import { ContainerRegistrationKeys, isPresent, QueryContext } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, getVariantAvailability, isPresent, QueryContext } from '@medusajs/framework/utils';
 import { PRODUCT_SORTING_MODULE } from '../../../modules/product-sorting';
 import {
   filterProductsForMemberState,
@@ -144,6 +144,32 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       productIds.map((id) => productMap.get(id)).filter(Boolean) as MembershipProduct[],
       isMember,
     );
+
+    // inventory_quantity 는 query.graph 파생 필드로 안 나온다. 판매채널 재고를 별도 계산해
+    // manage_inventory variant 에 붙인다 (core /store/products 의
+    // wrapVariantsWithInventoryQuantityForSalesChannel 과 동일 로직). 안 붙이면 스토어프론트
+    // 품절 판정이 undefined→0 으로 떨어져 재고 있는 상품도 회원에게 품절로 뜬다.
+    const salesChannelIds =
+      (req as unknown as { publishable_key_context?: { sales_channel_ids?: string[] } }).publishable_key_context
+        ?.sales_channel_ids ?? [];
+    const salesChannelId = salesChannelIds.length === 1 ? salesChannelIds[0] : undefined;
+    const allVariants = sorted.flatMap((p) => (Array.isArray(p.variants) ? p.variants : [])) as Array<{
+      id?: string;
+      manage_inventory?: boolean;
+      inventory_quantity?: number;
+    }>;
+    const variantIds = allVariants.map((v) => v.id).filter((id): id is string => typeof id === 'string');
+    if (salesChannelId && variantIds.length > 0) {
+      const availability = await getVariantAvailability(query, {
+        variant_ids: variantIds,
+        sales_channel_id: salesChannelId,
+      });
+      for (const variant of allVariants) {
+        if (variant.manage_inventory && variant.id) {
+          variant.inventory_quantity = availability[variant.id]?.availability ?? 0;
+        }
+      }
+    }
 
     res.json({ products: sorted, count: totalCount });
   } catch (error: unknown) {

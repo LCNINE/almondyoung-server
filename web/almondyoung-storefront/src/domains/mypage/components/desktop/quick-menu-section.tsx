@@ -39,7 +39,7 @@ export function QuickMenuSection() {
               <li key={item.label}>
                 <LocalizedClientLink
                   href={item.href}
-                  className="flex w-full flex-col items-center gap-2 transition-opacity hover:opacity-70"
+                  className="flex w-full flex-col items-center gap-2 rounded-lg py-2 transition-colors hover:bg-gray-50"
                 >
                   <div className="flex h-10 w-10 items-center justify-center">
                     {item.icon}

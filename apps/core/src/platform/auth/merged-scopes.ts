@@ -1,4 +1,5 @@
 import { ScopeDefinition } from '@app/authorization';
+import { FULFILLMENT_SCOPES } from './fulfillment-scopes';
 
 /**
  * 모든 BC의 스코프를 병합한다.
@@ -8,5 +9,5 @@ import { ScopeDefinition } from '@app/authorization';
 export const ALL_SCOPES: ScopeDefinition[] = [
   // Catalog scopes (향후 추가)
   // Inventory scopes (향후 추가)
-  // Fulfillment scopes (향후 추가)
+  ...FULFILLMENT_SCOPES,
 ];

@@ -3,7 +3,7 @@ import { type SubscriberConfig, type SubscriberArgs } from '@medusajs/medusa';
 
 const MEMBERSHIP_SERVICE_URL = process.env.MEMBERSHIP_SERVICE_URL || 'http://localhost:3040';
 
-type OrderItem = {
+export type OrderItem = {
   id: string;
   unit_price: number;
   compare_at_unit_price: number | null;
@@ -43,7 +43,7 @@ async function getOrderWithPricing(orderId: string, container: any): Promise<Ord
   return (data?.[0] as OrderData) ?? null;
 }
 
-function calculateMembershipDiscount(items: OrderItem[]): number {
+export function calculateMembershipDiscount(items: OrderItem[]): number {
   return items.reduce((acc, item) => {
     const compareAt = item.compare_at_unit_price;
     if (compareAt != null && compareAt > item.unit_price) {
@@ -78,17 +78,28 @@ export default async function handleMembershipBenefitOrder({ event, container }:
         return;
       }
 
-      await fetch(`${MEMBERSHIP_SERVICE_URL}/membership/benefits/internal/record`, {
+      const recordRes = await fetch(`${MEMBERSHIP_SERVICE_URL}/membership/benefits/internal/record`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           orderId,
           userId,
           membershipDiscountAmount: Math.round(discountAmount),
-          orderDate: order.created_at,
+          // created_at 은 PG 포맷("...306+00", 공백/offset)으로 올 수 있어 membership 의
+          // z.string().datetime()(T+Z 요구)에서 400 이 난다. ISO 로 정규화한다.
+          orderDate: new Date(order.created_at).toISOString(),
         }),
         signal: AbortSignal.timeout(5000),
       });
+
+      // 응답을 확인하지 않으면 401/500 이 조용히 삼켜져 혜택이 영영 기록되지 않는다.
+      if (!recordRes.ok) {
+        const body = await recordRes.text().catch(() => '');
+        logger.error(
+          `[MembershipBenefit] record failed (${recordRes.status}) userId=${userId} orderId=${orderId}: ${body.slice(0, 300)}`,
+        );
+        return;
+      }
 
       logger.info(
         `[MembershipBenefit] Recorded discount: userId=${userId}, orderId=${orderId}, amount=${discountAmount}`,

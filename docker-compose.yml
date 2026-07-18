@@ -1,0 +1,52 @@
+# 로컬 개발 인프라 (dev 스테이지 제거 후 사내 노트북 로컬 개발용)
+# 사용법: docker compose up -d
+# 앱들은 npm 으로 직접 띄운다 — 여기엔 인프라(postgres/redis/kafka)만 둔다.
+# 자세한 절차: docs/local-dev.md
+services:
+  postgres:
+    image: postgres:16
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - local_postgres_data:/var/lib/postgresql/data
+      - ./scripts/local/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+
+  redis:
+    image: redis:7
+    ports:
+      - '6379:6379'
+    volumes:
+      - local_redis_data:/data
+
+  # apps/medusa/docker-compose.yml 에서 검증된 구성 그대로 복사
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.3
+    ports:
+      - '2181:2181'
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.3
+    ports:
+      - '9092:9092'
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+    depends_on:
+      - zookeeper
+
+volumes:
+  local_postgres_data:
+  local_redis_data:

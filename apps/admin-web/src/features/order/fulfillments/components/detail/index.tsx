@@ -19,15 +19,15 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { FoStatusBadge } from '@/components/table/table-cells/fulfillment';
+import { usePermission } from '@/hooks/use-permission';
 import { useFulfillmentOrder } from '@/lib/services/orders/queries';
-import {
-  useShipFulfillment,
-  useCancelFulfillment,
-  useReserveFulfillmentItem,
-} from '@/lib/services/orders/mutations';
-import type { FulfillmentMode, FulfillmentOrderPriority } from '@/lib/types/dto/fulfillment';
+import { useCancelFulfillment } from '@/lib/services/orders/mutations';
+import { FULFILLMENT_SCOPES } from '@/lib/services/orders/operation-policy';
+import type {
+  FulfillmentMode,
+  FulfillmentOrderPriority,
+} from '@/lib/types/dto/fulfillment';
 import { InventoryTab } from '../../detail/inventory-tab';
-import { SplitTab } from '../../detail/split-tab';
 import { ShipmentTab } from '../../detail/shipment-tab';
 import { DirectShipTab } from '../../detail/direct-ship-tab';
 import { HistoryTab } from '../../detail/history-tab';
@@ -93,10 +93,11 @@ function ConfirmActionButton({
 }
 
 export function FulfillmentDetail({ id }: { id: string }) {
+  const { hasScope, isPermissionLoading } = usePermission();
   const { data, isLoading } = useFulfillmentOrder(id);
-  const shipMutation = useShipFulfillment();
   const cancelMutation = useCancelFulfillment();
-  const reserveMutation = useReserveFulfillmentItem();
+  const canOperate =
+    !isPermissionLoading && !!hasScope([FULFILLMENT_SCOPES.operate]);
 
   if (isLoading) {
     return (
@@ -110,7 +111,9 @@ export function FulfillmentDetail({ id }: { id: string }) {
     return (
       <Container className="divide-y-0">
         <Header title="출고주문 상세" />
-        <p className="p-6 text-sm text-muted-foreground">출고주문을 찾을 수 없습니다.</p>
+        <p className="p-6 text-sm text-muted-foreground">
+          출고주문을 찾을 수 없습니다.
+        </p>
       </Container>
     );
   }
@@ -124,34 +127,12 @@ export function FulfillmentDetail({ id }: { id: string }) {
     blockedReasons: data.blockedReasons ?? [],
   };
 
-  const handleShip = async () => {
-    try {
-      await shipMutation.mutateAsync(id);
-      toast.success('출고 처리되었습니다.');
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : '출고 처리에 실패했습니다.');
-    }
-  };
-
   const handleCancel = async () => {
     try {
       await cancelMutation.mutateAsync(id);
       toast.success('출고주문이 취소되었습니다.');
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : '취소에 실패했습니다.');
-    }
-  };
-
-  const handleReserve = async (foiId: string, remaining: number) => {
-    try {
-      await reserveMutation.mutateAsync({
-        id,
-        fulfillmentOrderItemId: foiId,
-        quantity: remaining,
-      });
-      toast.success(`재고 ${remaining}개 예약 완료`);
-    } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : '예약에 실패했습니다.');
     }
   };
 
@@ -162,21 +143,16 @@ export function FulfillmentDetail({ id }: { id: string }) {
         <div className="flex items-center justify-between p-3">
           <Header title="출고주문 상세" />
           <div className="flex gap-2">
-            <ConfirmActionButton
-              label="출고"
-              title="출고 처리"
-              description="이 출고주문을 출고 처리하시겠습니까? 모든 라인이 배송 상태로 전환됩니다."
-              onConfirm={handleShip}
-              disabled={isTerminal || shipMutation.isPending}
-            />
-            <ConfirmActionButton
-              label="취소"
-              title="출고주문 취소"
-              description="이 출고주문을 취소하시겠습니까? 예약된 재고가 해제됩니다."
-              onConfirm={handleCancel}
-              disabled={isTerminal || cancelMutation.isPending}
-              variant="destructive"
-            />
+            {canOperate && !data.shipments && (
+              <ConfirmActionButton
+                label="취소"
+                title="출고주문 취소"
+                description="이 출고주문을 취소하시겠습니까? 예약된 재고가 해제됩니다."
+                onConfirm={handleCancel}
+                disabled={isTerminal || cancelMutation.isPending}
+                variant="destructive"
+              />
+            )}
           </div>
         </div>
 
@@ -192,7 +168,9 @@ export function FulfillmentDetail({ id }: { id: string }) {
         <InfoRow label="모드">
           {fo.fulfillmentMode ? MODE_LABEL[fo.fulfillmentMode] : '-'}
         </InfoRow>
-        <InfoRow label="우선순위">{PRIORITY_LABEL[fo.priority] ?? fo.priority}</InfoRow>
+        <InfoRow label="우선순위">
+          {PRIORITY_LABEL[fo.priority] ?? fo.priority}
+        </InfoRow>
         <InfoRow label="수량">
           아이템 {fo.totalItems} / 총 {fo.totalQty} / 예약 {fo.totalReservedQty}
         </InfoRow>
@@ -204,10 +182,17 @@ export function FulfillmentDetail({ id }: { id: string }) {
         <InfoRow label="생성일">
           {new Date(fo.createdAt).toLocaleString('ko-KR')}
         </InfoRow>
-        {fo.invoice && (
-          <InfoRow label="송장">
-            {fo.invoice.invoiceNumber} ({fo.invoice.status})
-            {fo.invoice.carrierCode ? ` · ${fo.invoice.carrierCode}` : ''}
+        {fo.shipments && (
+          <InfoRow label="V2 shipment">
+            {fo.shipments.length}건 · 단일 shipment/송장을 현재값으로 간주하지
+            않습니다.
+          </InfoRow>
+        )}
+        {fo.progress && (
+          <InfoRow label="이행 진행">
+            출고 {fo.progress.shippedQty} / 취소 {fo.progress.canceledQty} /
+            미처리 {fo.progress.outstandingQty}
+            {' · '}확정 예약 {fo.progress.confirmedReservedQty}
           </InfoRow>
         )}
         {fo.reservationFailureReason && (
@@ -230,46 +215,36 @@ export function FulfillmentDetail({ id }: { id: string }) {
                 <th className="py-2 pr-3">피킹</th>
                 <th className="py-2 pr-3">출고</th>
                 <th className="py-2 pr-3">상태</th>
-                <th className="py-2 pr-3" />
               </tr>
             </thead>
             <tbody>
-              {fo.items.map((item) => {
-                const remaining = item.qty - item.reservedQty;
-                const canReserve = remaining > 0 && !isTerminal;
-                return (
-                  <tr key={item.id} className="border-b last:border-0">
-                    <td className="py-2 pr-3">
-                      <div className="flex flex-col">
-                        <span className="font-medium">{item.skuName}</span>
-                        <span className="font-mono text-xs text-gray-500">{item.skuCode}</span>
-                      </div>
-                    </td>
-                    <td className="py-2 pr-3">{item.qty}</td>
-                    <td className="py-2 pr-3">{item.reservedQty}</td>
-                    <td className="py-2 pr-3">{item.pickedQty}</td>
-                    <td className="py-2 pr-3">{item.shippedQty}</td>
-                    <td className="py-2 pr-3">
-                      <span className="text-xs text-gray-600">{item.status}</span>
-                    </td>
-                    <td className="py-2 pr-3 text-right">
-                      {canReserve && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleReserve(item.id, remaining)}
-                          disabled={reserveMutation.isPending}
-                        >
-                          예약 ({remaining})
-                        </Button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
+              {fo.items.map((item) => (
+                <tr key={item.id} className="border-b last:border-0">
+                  <td className="py-2 pr-3">
+                    <div className="flex flex-col">
+                      <span className="font-medium">{item.skuName}</span>
+                      <span className="font-mono text-xs text-gray-500">
+                        {item.skuCode}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="py-2 pr-3">{item.qty}</td>
+                  <td className="py-2 pr-3">{item.reservedQty}</td>
+                  <td className="py-2 pr-3">{item.pickedQty}</td>
+                  <td className="py-2 pr-3">{item.shippedQty}</td>
+                  <td className="py-2 pr-3">
+                    <span className="text-xs text-gray-600">
+                      {item.status}
+                    </span>
+                  </td>
+                </tr>
+              ))}
               {fo.items.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="py-6 text-center text-muted-foreground">
+                  <td
+                    colSpan={6}
+                    className="py-6 text-center text-muted-foreground"
+                  >
                     출고 라인이 없습니다.
                   </td>
                 </tr>
@@ -285,7 +260,6 @@ export function FulfillmentDetail({ id }: { id: string }) {
           <Tabs defaultValue="inventory" className="w-full">
             <TabsList className="flex h-auto flex-wrap justify-start">
               <TabsTrigger value="inventory">재고</TabsTrigger>
-              <TabsTrigger value="split">분할</TabsTrigger>
               <TabsTrigger value="shipment">배송</TabsTrigger>
               {fo.fulfillmentMode === 'drop_ship' && (
                 <TabsTrigger value="direct-ship">직배</TabsTrigger>
@@ -294,9 +268,6 @@ export function FulfillmentDetail({ id }: { id: string }) {
             </TabsList>
             <TabsContent value="inventory">
               <InventoryTab fo={fo} />
-            </TabsContent>
-            <TabsContent value="split">
-              <SplitTab fo={fo} />
             </TabsContent>
             <TabsContent value="shipment">
               <ShipmentTab fo={fo} />

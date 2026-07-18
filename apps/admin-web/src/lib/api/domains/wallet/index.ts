@@ -9,6 +9,7 @@ import {
   RefundListQuery,
   StateTransitionDto,
   PendingBankTransferDto,
+  RefundRequestDto,
   PointsBalanceDto,
   PointsEventDto,
   PointsStatsDto,
@@ -25,6 +26,8 @@ import {
   UpdateRegionPayload,
   RegionMethodMatrixResponse,
   PutRegionMethodItem,
+  AdminCashReceiptDto,
+  IssueCashReceiptPayload,
 } from '@/lib/types/dto/wallet';
 import { client } from '../../client';
 
@@ -47,6 +50,26 @@ function idempotencyConfig() {
 }
 
 export const walletApi = {
+  // ── Cash Receipts (현금영수증, 관리자) ─────────────────────────────────────
+
+  getCashReceipts: async (intentId: string): Promise<AdminCashReceiptDto[]> => {
+    const res = await client.get(
+      `${BASE}/v1/admin/cash-receipts?intentId=${encodeURIComponent(intentId)}`
+    );
+    return res.data;
+  },
+
+  issueCashReceipt: async (
+    payload: IssueCashReceiptPayload
+  ): Promise<AdminCashReceiptDto> => {
+    const res = await client.post(
+      `${BASE}/v1/admin/cash-receipts`,
+      payload,
+      idempotencyConfig()
+    );
+    return res.data;
+  },
+
   // ── Payment Intents ──────────────────────────────────────────────────────
 
   listPaymentIntents: async (
@@ -98,6 +121,7 @@ export const walletApi = {
       amount: number;
       reasonCode?: string;
       reasonMessage?: string;
+      refundReceiveAccount?: { bank: string; accountNumber: string; holderName: string };
     }
   ): Promise<RefundDto> => {
     const res = await client.post(
@@ -153,6 +177,25 @@ export const walletApi = {
       { depositorNote },
       { headers: { 'Idempotency-Key': crypto.randomUUID() } }
     );
+  },
+
+  // ── Refund requests (무통장 환불 요청 큐) ──────────────────────────────────
+  listRefundRequests: async (page?: number, limit?: number): Promise<PaginatedResponse<RefundRequestDto>> => {
+    const qs = buildQueryString({ page, limit });
+    const res = await client.get(`${BASE}/v1/admin/refund-requests${qs ? `?${qs}` : ''}`);
+    return res.data;
+  },
+
+  approveRefundRequest: async (id: string, adminNote?: string): Promise<void> => {
+    await client.post(
+      `${BASE}/v1/admin/refund-requests/${id}/approve`,
+      { adminNote },
+      { headers: { 'Idempotency-Key': crypto.randomUUID() } }
+    );
+  },
+
+  rejectRefundRequest: async (id: string, adminNote?: string): Promise<void> => {
+    await client.post(`${BASE}/v1/admin/refund-requests/${id}/reject`, { adminNote });
   },
 
   // ── Points ───────────────────────────────────────────────────────────────

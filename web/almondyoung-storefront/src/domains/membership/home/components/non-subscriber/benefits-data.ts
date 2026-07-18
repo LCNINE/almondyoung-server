@@ -2,14 +2,14 @@ import { useTranslations } from "next-intl"
 import type { BenefitDetail, FAQItem } from "./benefit.types"
 
 const CURRENT_BENEFIT_KEYS = [
-  "benefit01",
+  // "benefit01", // 웰컴 멤버십 보류 — 재노출 시 주석 해제
   "benefit02",
   "benefit03",
   "benefit04",
   "benefit05",
-  "benefit06",
+  // "benefit06", // 렌탈서비스 보류 — 재노출 시 주석 해제
   "benefit07",
-  "benefit08",
+  // "benefit08", // ponytail: 이달의 쿠폰 혜택 임시 숨김 — 재노출 시 주석 해제
 ] as const
 
 const UPCOMING_BENEFIT_KEYS = [

@@ -1,6 +1,6 @@
 // apps/notification/src/shared/filters/exeption.filter.ts
 import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus, Logger } from '@nestjs/common';
-import { Response } from 'express';
+import { FastifyReply, FastifyRequest } from 'fastify';
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -8,8 +8,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
-    const response = ctx.getResponse<Response>();
-    const request = ctx.getRequest();
+    const response = ctx.getResponse<FastifyReply>();
+    const request = ctx.getRequest<FastifyRequest>();
 
     const status = exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
 
@@ -24,6 +24,6 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     this.logger.error(`${request.method} ${request.url}`, exception instanceof Error ? exception.stack : exception);
 
-    response.status(status).json(errorResponse);
+    response.status(status).send(errorResponse);
   }
 }

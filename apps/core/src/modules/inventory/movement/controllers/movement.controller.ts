@@ -2,29 +2,13 @@ import { Controller, Post, Body, Get, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { MovementService } from '../services/movement.service';
 import { MoveBatchDto } from '../dto/move-batch.dto';
-import { InterWarehouseTransferDto } from '../dto/inter-warehouse-transfer.dto';
 import { MovementJobWithLinesDto, MovementHistoryResponseDto } from '../dto/movement-response.dto';
-import { MovementJobMapper, MovementJobLineMapper, MovementWorkLogMapper } from '../mappers/movement.mapper';
+import { MovementJobMapper, MovementWorkLogMapper } from '../mappers/movement.mapper';
 
 @ApiTags('Movement')
 @Controller('movement')
 export class MovementController {
   constructor(private readonly movementService: MovementService) {}
-
-  @Post('inter-warehouse')
-  @ApiOperation({ summary: '창고간 이동 시작' })
-  @ApiResponse({ status: 201, description: '이동 작업 ID를 반환합니다.' })
-  async createInterWarehouseTransfer(@Body() dto: InterWarehouseTransferDto): Promise<{ jobId: string }> {
-    return this.movementService.createInterWarehouseTransfer(dto);
-  }
-
-  @Post('jobs/:jobId/complete')
-  @ApiOperation({ summary: '창고간 이동 완료 처리' })
-  @ApiResponse({ status: 200, description: '이동 완료 및 destination plan 활성화.' })
-  async completeInterWarehouseMovement(@Param('jobId') jobId: string): Promise<{ message: string }> {
-    await this.movementService.completeInterWarehouseMovement(jobId);
-    return { message: 'Inter-warehouse movement completed' };
-  }
 
   @Post('move')
   @ApiOperation({ summary: '동일 창고 내 즉시 이동(배치)' })

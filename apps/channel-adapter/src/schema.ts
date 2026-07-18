@@ -12,6 +12,7 @@ import {
   uniqueIndex,
   index, // ← index 추가
   primaryKey,
+  check,
 } from 'drizzle-orm/pg-core';
 
 import { sql } from 'drizzle-orm';
@@ -266,6 +267,7 @@ export const inboxEvents = pgTable(
 
     // 이벤트 식별
     eventType: varchar('event_type', { length: 100 }).notNull(), // 'ProductMasterActiveVersionChanged' 등
+    idempotencyKey: varchar('idempotency_key', { length: 255 }),
     aggregateType: varchar('aggregate_type', { length: 50 }).notNull().default('ChannelAdapter'),
     aggregateId: varchar('aggregate_id', { length: 255 }).notNull(), // 채널별 주문/상품 ID (varchar)
     partitionKey: varchar('partition_key', { length: 255 }).notNull(), // Kafka 파티션 키
@@ -296,6 +298,79 @@ export const inboxEvents = pgTable(
     // 파티션 키 인덱스
     index('idx_inbox_partition_key').on(table.partitionKey),
     index('idx_inbox_aggregate_event_occurred').on(table.aggregateId, table.eventOccurredAt),
+    uniqueIndex('uq_inbox_event_idempotency')
+      .on(table.eventType, table.idempotencyKey)
+      .where(sql`${table.idempotencyKey} is not null`),
+  ],
+);
+
+/**
+ * A durable, per-sales-order record of work derived from shipment events.
+ *
+ * An inbox event may contain multiple source orders (for a consolidated shipment).
+ * Persisting one operation for each order before making provider calls lets a retry
+ * resume only the unfinished channel operation instead of broadcasting the event.
+ */
+export const channelDispatchOperations = pgTable(
+  'channel_dispatch_operations',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    inboxEventId: uuid('inbox_event_id')
+      .notNull()
+      .references(() => inboxEvents.id, { onDelete: 'restrict' }),
+    dispatchAttemptId: uuid('dispatch_attempt_id'),
+    shipmentId: uuid('shipment_id'),
+    salesOrderId: uuid('sales_order_id').notNull(),
+    operation: varchar('operation', { length: 30 }).notNull(),
+    channel: varchar('channel', { length: 50 }).notNull(),
+    externalOrderId: varchar('external_order_id', { length: 255 }).notNull(),
+    providerIdempotencyKey: varchar('provider_idempotency_key', { length: 255 }).notNull(),
+    requestSnapshot: jsonb('request_snapshot').$type<Record<string, unknown>>().notNull(),
+    status: varchar('status', { length: 40 }).notNull().default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    errorMessage: text('error_message'),
+    resultSnapshot: jsonb('result_snapshot').$type<Record<string, unknown>>(),
+    lastAttemptAt: timestamp('last_attempt_at'),
+    processingStartedAt: timestamp('processing_started_at'),
+    leaseExpiresAt: timestamp('lease_expires_at'),
+    providerAcknowledgedAt: timestamp('provider_acknowledged_at'),
+    succeededAt: timestamp('succeeded_at'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('uq_channel_dispatch_attempt_order_operation').on(
+      table.dispatchAttemptId,
+      table.salesOrderId,
+      table.operation,
+    ),
+    uniqueIndex('uq_channel_dispatch_inbox_order_operation').on(
+      table.inboxEventId,
+      table.salesOrderId,
+      table.operation,
+    ),
+    uniqueIndex('uq_channel_dispatch_cancel_order')
+      .on(table.salesOrderId, table.operation)
+      .where(sql`${table.operation} = 'cancel'`),
+    index('idx_channel_dispatch_status_created').on(table.status, table.createdAt),
+    index('idx_channel_dispatch_status_lease').on(table.status, table.leaseExpiresAt),
+    index('idx_channel_dispatch_attempt').on(table.dispatchAttemptId),
+    check('chk_channel_dispatch_operation', sql`${table.operation} in ('dispatch', 'delivery', 'recall', 'cancel')`),
+    check(
+      'chk_channel_dispatch_status',
+      sql`${table.status} in ('pending', 'processing', 'provider_acknowledged', 'succeeded', 'failed', 'manual_adjustment_required')`,
+    ),
+    check('chk_channel_dispatch_attempts_nonnegative', sql`${table.attempts} >= 0`),
+    check(
+      'chk_channel_dispatch_identity_shape',
+      sql`(
+        (${table.operation} = 'cancel' and ${table.dispatchAttemptId} is null and ${table.shipmentId} is null)
+        or
+        (${table.operation} <> 'cancel' and ${table.dispatchAttemptId} is not null and ${table.shipmentId} is not null)
+      )`,
+    ),
   ],
 );
 
@@ -467,6 +542,7 @@ export const channelAdapterSchema = {
   pendingOrders,
   orderCollectionFailures,
   inboxEvents,
+  channelDispatchOperations,
   pimMedusaMappings,
   migrationProgress,
   migrationFailures,
