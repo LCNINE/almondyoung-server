@@ -195,10 +195,11 @@ return this.service.doSomething(dto);
 
 ### Inventory (구 WMS) Rules
 
-Inventory 모듈은 **event sourcing** 으로 재고를 관리한다 (apps/core/src/modules/inventory):
-- `stock_events` — immutable event log (source of truth)
-- `stock_summary` — projection with optimistic locking (`version` field)
-- Event types: `IN`, `OUT`, `ADJUST`, `MOVE`, `RESERVE`, `CONFIRM`, `RELEASE`, `CANCEL`
+Inventory 모듈은 **append-only 원장**으로 재고를 관리한다 (apps/core/src/modules/inventory):
+- `stock_events` — immutable transition log (source of truth). `transition_type`: `RECEIVE`, `SHIP`, `MOVE`, `SCRAP`, `ADJUST_UP`, `ADJUST_DOWN` (+`MARK_DEFECT`/`REWORK_GOOD` 는 DEAD, producer 0)
+- `stock_ledgers` — grain 별 현재 잔량, optimistic locking (`version` field)
+- `stock_summary_view` — `stock_ledgers` 실시간 집계 **Postgres VIEW** (테이블 아님)
+- **예약은 원장 이벤트가 아니다.** `stock_reservations` 행 상태 전이(`confirmed` → `released`)로 다루며, 예약 대상은 상자 라인(`targetType='SHIPMENT_LINE'`)이다. 가용재고 = ON_HAND 원장 합 − confirmed 예약 합.
 
 **Transaction Propagation** (strict rule — see `docs/adr/0025-single-transaction-runner.md`):
 ```typescript

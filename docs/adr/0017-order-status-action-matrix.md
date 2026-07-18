@@ -11,11 +11,13 @@ Core의 판매주문(`sales_orders.status`)과 Wallet의 환불(`refunds.status`
 | 레이어 | 소유자 | 상태값 |
 |--------|--------|--------|
 | Core `sales_orders.status` | Core | `pending`, `confirmed`, `processing`, `shipped`, `delivered`, `cancelled`, `timeout` |
-| Core `fulfillmentOrders.status` | Core | `created`, `allocating`, `picking`, `picked`, `invoiced`, `shipped`, `completed`, `canceled`, ... |
+| Core `fulfillmentOrders.status` | Core | `created`, `partially_reserved`, `ready`, `processing`, `shipped`, `partially_shipped`, `completed`, `canceled`, `recovery_required` |
 | Wallet `refunds.status` | Wallet | `PENDING`, `SUCCEEDED`, `FAILED` |
 | 표시 상태 (derived) | API layer | 아래 정의 |
 
 > **작업 15 (2026-07-13) 정정 (D2):** `sales_orders.status` 의 `processing / shipped / delivered` 는 enum 정의만 존재하고 **producer 가 0** 이다(전이시키는 코드 없음). SO 의 출고/배송 진실은 저장 상태가 아니라 **`fulfillmentOrders.status` + `shippedAt` 에서 도출**하는 것이 SoT 다 — 고객 배송조회(`deriveOverallTrackingStatus`)·관리자 표시(`deriveFulfillmentStatus`)·`getStats().outboundComplete` 전부 FO 에서 도출한다. SO 저장 상태의 실 lifecycle 는 `pending → confirmed → cancelled` 이다(`timeout` 도 현재 producer 0 인 예약 값). 세 dead 값의 물리 제거는 비목표(마커로 재사용 잠금).
+
+> **정정 (2026-07-18, outbound V2):** `fulfillmentOrders.status` 행은 구 V1 값(`allocating`/`picking`/`picked`/`invoiced` 등)을 나열하고 있었으나 Task 25 에서 제거되어, 위 표를 현행 enum(`created, partially_reserved, ready, processing, shipped, partially_shipped, completed, canceled, recovery_required`)으로 갱신했다. `shipped` 는 drop-ship 경로에서만 직접 기록되고, 창고 경로의 FO 진행 상태는 상자 라인 예약/출고 수량에서 파생 계산된다.
 
 ## 표시 상태 정의 (고객·관리자 공통)
 

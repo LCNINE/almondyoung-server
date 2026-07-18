@@ -169,21 +169,21 @@
 - _Avoid_: 직배주문을 박스/상자로 보기, 직배 종결 시 재고원장을 소진하기.
 
 ### 재고예약 (Reservation)
-- 정의: 특정 출고주문 또는 이동 작업을 위해 SKU 의 판매 가능 재고 일부를 점유하는 행위.
+- 정의: 특정 **상자 라인(shipment_line)** 을 위해 SKU 의 판매 가능 재고 일부를 점유하는 행위. 예약 행(`stock_reservations`)은 상자 라인에 바인딩되며(`shipmentLineId` NOT NULL, `targetType='SHIPMENT_LINE'`), 출고주문(FO)·FOI 의 예약 상태(`partially_reserved`/`ready`)는 라인 예약량에서 **파생 계산**되는 projection 이다. (구 이동작업 예약 타입, FO 직접 예약은 제거됨.)
 - 재고예약 성공은 출고주문 생성의 필수 성공 조건이 아니다. 출고주문은 매칭된 SKU 구성으로 생성되고, 재고 부족은 재고예약 단계의 실패/대기 상태로 표현한다.
-- **예약의 종결은 두 가지로 구분한다 (구현됨 — ADR-0027).** **소진(consume)**: 출고로 실제 나감 → 재고원장 on_hand 영구 차감(SHIP 이벤트 append) + 예약 닫힘. **환원(release)**: 취소/만료로 안 나감 → on_hand 유지 + 예약만 닫힘(다시 가용). 출고 소진은 `OutboundConsumptionService.consumeShipment`(박스 전 라인 검수 자동완료 트리거)가 수행한다 — 과거의 "출고 시 release 만 되어 on_hand 가 안 줄던 누수"(`docs/inventory-ledger-binding-review.md` §3)는 해소됨.
+- **예약의 종결은 두 가지로 구분한다 (구현됨 — ADR-0027).** **소진(consume)**: 출고로 실제 나감 → 재고원장 on_hand 영구 차감(SHIP 이벤트 append) + 예약 닫힘. **환원(release)**: 취소/만료로 안 나감 → on_hand 유지 + 예약만 닫힘(다시 가용). 출고 소진은 `ShipmentDispatchService`(박스 전 라인 검수 자동완료가 dispatch 를 트리거, 예약 consume 은 `ShipmentReservationService.consumeForDispatch`)가 수행한다 — 과거의 "출고 시 release 만 되어 on_hand 가 안 줄던 누수"(`docs/inventory-ledger-binding-review.md` §3)는 해소됨.
 - _Avoid_: 출고주문 생성 실패와 재고예약 실패를 같은 사건으로 취급하기, 출고 시 예약을 소진이 아니라 환원으로 처리하기.
 
-### 출고작업 (Outbound Task)
-- 정의: 물류팀이 매일 임의 시각에 **재고예약(할당)에 성공한 출고주문들을 모아** 만드는 창고 피킹/포장 작업 묶음. 한 출고작업은 여러 출고주문을 포함하고, 출고주문별로 작업자가 추적된다.
-- 작업 방식 두 가지. **개별피킹**(현행): 출고주문을 하나씩 — 송장 한 장 집어 바구니에 담고 포장대에서 상품 바코드로 검수·포장 (현행 구현: 송장 스캔 = 박스 open, 출고 종결은 박스 전 라인 검수 자동완료 — `상자(Shipment)·운송장번호` 항목 참조). **토탈피킹**(*도입 예정, 미구현*): 번호 붙은 바구니가 달린 피킹 카트로 출고작업 하나(=바구니 수만큼의 출고주문)를 한 번에 처리 — 단말기가 SKU 단위로 병합한 리스트와 로케이션을 지시하고, 작업자가 한 SKU 를 여러 바구니(=출고주문)에 분배한다.
+### 출고작업 (Outbound Batch)
+- 정의: 물류팀이 매일 임의 시각에 **전량 재고예약을 마치고 출고예정(`planned`) 상태가 된 상자(shipment)들을 모아** 만드는 창고 피킹/포장 작업 묶음. 구현 엔티티는 `outbound_batches`(헤더) + `outbound_batch_work_items`(상자별 작업 행, `queued→picking→ready_to_pack→packing→completed`) — 한 출고작업은 여러 상자를 포함하고, 상자별 작업 행에 피킹/패킹 작업자가 추적된다. (구 `outbound_tasks` 계열 테이블·"출고주문을 모은다"는 모델은 은퇴 — 편입 단위는 FO 가 아니라 상자다.)
+- 작업 방식 두 가지 (전략 seam `PickingStrategyRegistry` 로 구현됨). **개별피킹**(`discrete`): 상자를 하나씩 — 송장 한 장 집어 바구니에 담고 포장대에서 상품 바코드로 검수·포장 (출고 종결은 박스 전 라인 검수 자동완료 — `상자(Shipment)·운송장` 항목 참조). **토탈피킹**(`pick_to_tote`·`aggregate_then_sort`): 번호 붙은 바구니가 달린 피킹 카트로 출고작업 하나(=바구니 수만큼의 상자)를 한 번에 처리 — 단말기가 SKU 단위로 병합한 리스트와 로케이션을 지시하고, 작업자가 한 SKU 를 여러 바구니(=상자)에 분배한다.
 - 현재 구조가 토탈피킹 도입을 막지 않아야 한다 (로케이션 결정 전략 seam 으로 흡수 — `docs/inventory-ledger-binding-review.md`).
 - **강제출고 (forced shipment)**: 수량이 많은 상품(예: 50개 단위로 주문, 한 주문에 수백 개)은 작업자가 갯수만 대략 확인하고 해당 상품 또는 박스 전체를 **직권으로 검수완료** 처리하는 기능. 물류팀 현장 용어. 작업자 누구나 가능, 사유 입력 없음 — 데이터상 `shipment_line.forced` 플래그만 남긴다.
 
-### 상자 (Shipment) · 운송장번호 (Invoice)  *(구현됨 — 단 송장분할·합배송 흐름은 미구현, 모델(M:N)만 개방)*
-- **상자(shipment)** = 물리적 택배 상자 하나 = 송장(라벨) 한 장. **출고 종결(재고 소진)의 단위.** 상자 라벨(송장)을 스캔하면 박스가 **open** 되고(출고 아님), 그 박스의 모든 라인이 **검수 완료되면 자동으로**(자동완료) 출고 처리되어 재고원장 on_hand 가 그만큼 차감된다. 출고 트리거는 작업자의 명시적 출고 동작이 아니라 검수 완료다(물류팀 요구). 막힌 박스의 유일한 override 는 강제출고.
+### 상자 (Shipment) · 운송장 (Waybill)  *(구현됨 — 단 송장분할·합배송 흐름은 미구현, 모델(M:N)만 개방)*
+- **상자(shipment)** = 물리적 택배 상자 하나 = 송장(라벨) 한 장. **출고 종결(재고 소진)의 단위.** 상자 라벨(송장)을 스캔하면 검수가 시작되고(출고 아님), 그 박스의 모든 라인이 **검수 완료되면 자동으로**(자동완료) 출고 처리되어 재고원장 on_hand 가 그만큼 차감된다. (V1 의 박스 `open` 상태는 제거됨 — V2 shipment 는 `draft→planned→shipped` 로만 전이.) 출고 트리거는 작업자의 명시적 출고 동작이 아니라 검수 완료다(물류팀 요구). 막힌 박스의 유일한 override 는 강제출고.
 - **상자 라인(shipment_line)** = `{shipmentId, fulfillmentOrderItemId, skuId, qty}`. source 출고주문 라인(FOI)을 참조하는 게 **출고주문 ↔ 상자 M:N** 의 join 메커니즘이다. 한 **출고주문(FO)이 여러 상자로 나뉘면 송장분할**(지금 필요) — FOI ↔ shipment_line 이 모두 1:1 대응이어도 FO 의 라인들이 여러 상자로 분배되면 송장분할이고, 한 FOI 라인의 *수량까지* 여러 상자에 걸치는 건 모델이 함께 허용하는 하위 케이스(`shipment_line.qty` + `unique(shipmentId, foiId)` 가 같은 FOI 의 여러 상자 등장을 허용). 한 상자에 여러 출고주문의 라인이 모이면 **합배송**(*나중 필요, 모델만 열어둠*).
-- **운송장번호(invoice)** = 택배사 API 로 발급받는 운송장번호. 상자 1:N invoice 로 **발급 이력**을 남기되(요금은 실배송 기준이라 미사용 발급을 추궁하지 않음) 복잡한 정합 모듈은 두지 않는다. 활성 운송장번호 1개.
+- **운송장(waybill)** = 택배사 API 로 발급받는 운송장번호. 상자 1:N waybill 로 **발급 이력**을 남기되(요금은 실배송 기준이라 미사용 발급을 추궁하지 않음) 복잡한 정합 모듈은 두지 않는다. 활성 운송장 1개(partial unique). 구 명칭 **invoice** 는 DB 에서 제거 완료(`dispatch_attempts.waybill_id` 가 구 `invoice_id` 대체)이나, 이벤트 페이로드의 `invoice` 필드와 `SHIPMENT_INVOICE_NOT_READY` 에러코드에는 잔존한다.
 - _Avoid_: 출고주문을 박스로 보기, 운송장번호를 상자의 string 컬럼 하나로 박기, 송장분할을 출고주문 분할로 처리하기.
 
 ### 주문 전환 용어

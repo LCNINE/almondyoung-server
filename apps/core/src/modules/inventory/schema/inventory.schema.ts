@@ -1335,12 +1335,6 @@ export const mergeGroups = pgTable('merge_groups', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-/*───────────────────────────
- * stock_events.eventType: 'OUT' (주문 출고), 'IN' (입고), 'ADJUST' (조정) 등
- * stock_events.reason: 'ORDER_FULFILLED', 'MANUAL_ADJUST' 등
- * stock_events.orderId: 주문 연결
- *──────────────────────────*/
-
 // Fulfillment Orders (FO)
 export const fulfillmentOrders = pgTable(
   'fulfillment_orders',
