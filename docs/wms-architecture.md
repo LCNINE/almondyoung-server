@@ -1,5 +1,8 @@
 # WMS 마이크로서비스 구조 및 구현 현황
 
+> **[역사적 문서 — 현행 아님 (2026-07-18 표기)]** 본 문서가 다루는 독립 `apps/wms` 앱은 Core 통합으로 소멸했다. 해당 도메인은 `apps/core/src/modules/{inventory,fulfillment,sales-order}` 로 이전됐고, 재고 원장은 `stock_events(transition_type: RECEIVE/SHIP/MOVE/SCRAP/ADJUST_UP/ADJUST_DOWN)` + `stock_ledgers` + `stock_summary_view`(VIEW), 출고작업은 `outbound_batches`+`outbound_batch_work_items` 로 재설계됐다 (`outbound_tasks` 계열 테이블 드롭). 현행 구조는 루트 `CLAUDE.md`·`CONTEXT.md`·ADR-0027(outbound) 참조.
+
+
 본 문서는 `apps/wms` 마이크로서비스의 전체 구조, 데이터 모델, 주요 API, 구현 범위와 리스크, 개선 로드맵을 정리합니다. 운영/개발자가 빠르게 전반을 파악하고, 후속 확장 작업의 기준으로 삼는 것을 목표로 합니다.
 
 ## 개요

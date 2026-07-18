@@ -65,10 +65,11 @@ allocated ──definitive_rejection(즉시)──▶ failed (종료)
 - 운영자 전용 수동 abandon(교착 상태의 `allocated` 강제 해제) 엔드포인트는 이번 플랜 범위 밖이다(§11 은
   operator-only 로 명시했으나 본 플랜은 `drive` 재구동만 제공).
 
-## Seam (플랜 3 소비자 진입점, §9.1)
+## Seam (소비자 진입점, §9.1)
 
-`WaybillService` 가 노출하는 다음 메서드는 이번 플랜에서 **구현만** 되었고, 아직 어떤 소비자(dispatch/
-picking/recall/short-pick/planning/invariant/consolidation)도 호출하지 않는다:
+`WaybillService` 가 노출하는 다음 메서드는 플랜 3 rewire 완료로 실제 소비자들이 호출한다 —
+`assertDispatchable` 은 dispatch(`shipment-dispatch.service.ts`)·피킹 전략 3종·batch orchestrator 가,
+`markUsed` 는 dispatch 트랜잭션이, `getActiveWaybill` 은 recall/short-pick 이 사용한다:
 
 - `assertDispatchable(shipmentId, tx?)` — 발송 가능 여부 검증(`registered`/`used` + carrier/trackingNo +
   manifestVersion/recipientHash 일치). 불일치 시 `WAYBILL_NOT_DISPATCHABLE`/`WAYBILL_STALE`.
@@ -114,9 +115,10 @@ CI 아님 — 사람이 dev key 를 손에 쥐고 직접 실행하는 스크립�
    손으로 우회해야 한다.
 2. **라이브 자격증명은 개발 완료 후 별건** — 이 플랜에서 다루는 `HANJIN_*` 은 dev/staging key 다. 운영
    트래픽에 쓸 라이브 자격증명 발급·전환은 명시적으로 범위 밖이며 개발 완료 후 후속 작업이다.
-3. **플랜 3 소비자 rewire 미완** — 위 Seam 섹션의 메서드들은 구현되어 있지만 dispatch/picking/recall/
-   short-pick/planning/invariant/consolidation 등 어떤 소비자 모듈도 아직 이들을 호출하지 않는다. 구 invoice
-   DROP, `FulfillmentCommandService` 추출을 통한 모듈 방향 반전도 플랜 3 범위다.
+3. ~~플랜 3 소비자 rewire 미완~~ — **해소됨.** Seam 메서드들은 dispatch/피킹 전략/recall/short-pick/batch
+   orchestrator 에 rewire 완료, 구 `invoice_id` 컬럼 DROP(`dispatch_attempts.waybill_id` 대체) 및
+   `FulfillmentCommandService` 추출도 완료. 단 이벤트 페이로드의 `invoice` 필드명과
+   `SHIPMENT_INVOICE_NOT_READY` 에러코드는 와이어 계약 호환을 위해 잔존한다.
 4. **Task 12 의 live-DI-in-sandbox residual** — `WaybillModule` 의 런타임 DI(`Test.createTestingModule({
    imports: [WaybillModule] }).compile()` 후 `moduleRef.get(WaybillService)`)는 이 개발 샌드박스에서 끝까지
    검증되지 않았다. 원인은 두 가지 모두 `WaybillModule` 자체와 무관한 선행 이슈: (a) `FulfillmentModule` →
