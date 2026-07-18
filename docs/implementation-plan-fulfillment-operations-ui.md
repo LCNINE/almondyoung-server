@@ -1,5 +1,8 @@
 # 출고 운영 화면 구현 계획 (출고주문 / 피킹 / 검수 / FO 수동 생성)
 
+> **[역사적 문서 — Outbound V2 로 대체됨 (2026-07-18 표기)]** 본 계획이 완료한 V1 모델(FO status `allocated/picking/picked/inspecting/invoiced` 상태머신, inspection 세션, invoice 발급)은 이후 Outbound V2 재설계로 대체됐다. 현행: FO 상태는 상자 라인 예약/출고량 파생(`created/partially_reserved/ready/…`), 검수·출고는 shipment `inspection-scans` 자동 dispatch, 송장은 waybill 레이어. `docs/outbound-consolidation-split-backorder-decision-record.md`·ADR-0027(outbound) 참조.
+
+
 > 상태: **전체 Phase(0~4) 완료 — 코드/마이그레이션/dev DB 적용/바코드 E2E/커밋 완료**
 > 작성일: 2026-06-09 / 진행: 2026-06-09 (Phase 2→1→4→3 일괄)
 > 대상 앱: `apps/core` (백엔드), `apps/admin-web` (프론트)

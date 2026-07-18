@@ -5,6 +5,8 @@
 >
 > 표기: **✅검증** = 감사 후 코드를 직접 열어 재확인한 항목. 나머지는 감사 보고 기준(착수 시 현장 재확인).
 > 상태: ⬜ 미착수 / 🟨 진행 / 🟩 완료 / ⏸ 보류(사유 명기)
+>
+> **주의 (2026-07-18 표기):** 본 감사(07-08)는 **Outbound V2 재설계(07-14 설계기준선 이후 구현) 이전** 코드를 대상으로 한다. fulfillment/출고 측 file:line 참조 중 `invoice.service.ts`·`openBoxByScan`·`outbound-consumption.service.ts` 등은 V2 컷오버로 **삭제/대체**되었다 (현행: `shipment-planning/dispatch/reservation`, `waybill/`, `outbound-batch-orchestrator`). 해당 항목의 결함 서술은 당시 기준 기록으로 읽을 것. inventory 측(movement/stocktaking/예약 TOCTOU 등) 참조는 대체로 유효하다.
 
 ## 스프린트 목표
 

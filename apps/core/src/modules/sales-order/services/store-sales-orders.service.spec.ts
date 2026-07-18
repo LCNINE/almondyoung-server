@@ -39,17 +39,22 @@ function makeSo(overrides: Record<string, unknown> = {}) {
 function makeContext(
   options: {
     so?: ReturnType<typeof makeSo>;
-    fos?: { status: string; shippedAt: Date | null }[];
+    fos?: { status: string; directShipStatus?: string | null; fulfillmentMode?: string | null }[];
+    activeShipmentStatuses?: string[];
     walletOutcome?: WalletRefundOutcome;
     cancelError?: Error;
     businessLinkError?: Error;
-    v2Outstanding?: boolean;
     cancellationReplay?: boolean;
     replayError?: Error;
   } = {},
 ) {
   const so = options.so ?? makeSo();
-  const fos = options.fos ?? [];
+  const fos = (options.fos ?? []).map((fo) => ({
+    directShipStatus: null,
+    fulfillmentMode: null,
+    shippedAt: null,
+    ...fo,
+  }));
   const walletOutcome = options.walletOutcome ?? {
     kind: 'success',
     refunds: [
@@ -77,7 +82,9 @@ function makeContext(
   let whereCallIndex = 0;
   const dbMock = {
     db: {
-      execute: jest.fn().mockResolvedValue(options.v2Outstanding ? [{ id: 'v2-shipment' }] : []),
+      execute: jest
+        .fn()
+        .mockResolvedValue((options.activeShipmentStatuses ?? []).map((status) => ({ id: `sh-${status}`, status }))),
       select: jest.fn().mockImplementation(() => ({
         from: jest.fn().mockImplementation(() => ({
           where: jest.fn().mockImplementation(() => {
@@ -285,38 +292,38 @@ describe('StoreSalesOrdersService', () => {
       );
     });
 
-    it('피킹 중(picking) 주문은 고객 직접 취소 불가 (400)', async () => {
-      const { service, salesOrdersServiceMock } = makeContext({ fos: [{ status: 'picking', shippedAt: null }] });
-      await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow(
-        '피킹이 시작된 주문은 직접 취소할 수 없습니다.',
-      );
-      expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
-    });
-
-    it('피킹 완료(picked) 주문은 고객 직접 취소 불가 (400)', async () => {
-      const { service, salesOrdersServiceMock } = makeContext({ fos: [{ status: 'picked', shippedAt: null }] });
-      await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow(
-        '피킹이 시작된 주문은 직접 취소할 수 없습니다.',
-      );
-      expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
-    });
-
     it('출고증거(shippedAt) 있는 주문은 고객 직접 취소 불가 (400)', async () => {
-      const { service, salesOrdersServiceMock } = makeContext({ fos: [{ status: 'shipped', shippedAt: new Date() }] });
+      const { service, salesOrdersServiceMock } = makeContext({ fos: [{ status: 'shipped' }] });
       await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow(
         '이미 출고된 주문은 취소할 수 없습니다.',
       );
       expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
     });
 
-    it('V2 Draft outstanding이 남아 있으면 부분 출고 증거가 있어도 잔여 취소를 coordinator에 위임한다', async () => {
+    it('피킹 시작(FO processing) 주문은 셀프 취소 시 400', async () => {
+      const { service, salesOrdersServiceMock } = makeContext({ fos: [{ status: 'processing' }] });
+      await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow(
+        '피킹이 시작된',
+      );
+      expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
+    });
+
+    it('부분 출고(상자 shipped) 주문은 셀프 취소 시 400', async () => {
       const { service, salesOrdersServiceMock } = makeContext({
-        so: makeSo({ status: 'shipped' }),
-        fos: [{ status: 'shipped', shippedAt: new Date() }],
-        v2Outstanding: true,
+        fos: [{ status: 'partially_shipped' }],
+        activeShipmentStatuses: ['shipped', 'draft'],
       });
-      await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).resolves.toBeDefined();
+      await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow(
+        '이미 출고',
+      );
+      expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
+    });
+
+    it('준비중(FO ready, 미피킹) 주문은 셀프 취소 성공', async () => {
+      const { service, salesOrdersServiceMock } = makeContext({ fos: [{ status: 'ready' }] });
+      const r = await service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {});
       expect(salesOrdersServiceMock.cancel).toHaveBeenCalled();
+      expect(r.orderStatus).toBe('cancelled');
     });
 
     it('동일 취소 key replay는 cancelled status guard보다 먼저 stored view를 반환한다', async () => {
@@ -431,7 +438,7 @@ describe('StoreSalesOrdersService', () => {
         CUSTOMER_ID,
       );
       expect(result.map((r) => r.channelOrderId)).toEqual([CHANNEL_ORDER_ID, 'medusa-order-002']);
-      expect(result[0]!.availableActions).toContain('cancel');
+      expect(result[0].availableActions).toContain('cancel');
     });
 
     it('빈 id 목록이면 DB 조회 없이 빈 배열을 반환한다', async () => {
@@ -470,7 +477,8 @@ describe('StoreSalesOrdersService', () => {
     it('SO status=delivered이면 return/exchange 가능', async () => {
       const { service } = makeContext({
         so: makeSo({ status: 'delivered' }),
-        fos: [{ status: 'completed', shippedAt: new Date() }],
+        fos: [{ status: 'completed' }],
+        activeShipmentStatuses: ['delivered'],
       });
       const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
       expect(result.availableActions).toContain('return');
@@ -482,7 +490,8 @@ describe('StoreSalesOrdersService', () => {
     it('FO status=completed(delivered)이면 return/exchange 가능', async () => {
       const { service } = makeContext({
         so: makeSo({ status: 'shipped' }),
-        fos: [{ status: 'completed', shippedAt: new Date() }],
+        fos: [{ status: 'completed' }],
+        activeShipmentStatuses: ['delivered'],
       });
       const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
       expect(result.availableActions).toContain('return');
@@ -492,26 +501,13 @@ describe('StoreSalesOrdersService', () => {
     it('배송중(shipped, FO=shipped)이면 return/exchange 불가', async () => {
       const { service } = makeContext({
         so: makeSo({ status: 'shipped' }),
-        fos: [{ status: 'shipped', shippedAt: new Date() }],
+        fos: [{ status: 'shipped' }],
+        activeShipmentStatuses: ['shipped'],
       });
       const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
       expect(result.availableActions).not.toContain('return');
       expect(result.availableActions).not.toContain('exchange');
       expect(result.availableActions).toContain('track');
-    });
-
-    it('FO가 picking 상태이면 cancel 액션 없음, cancelUnavailableReason=already_processing', async () => {
-      const { service } = makeContext({ fos: [{ status: 'picking', shippedAt: null }] });
-      const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-      expect(result.availableActions).not.toContain('cancel');
-      expect(result.cancelUnavailableReason).toBe('already_processing');
-    });
-
-    it('FO가 packed 상태(picked)이면 cancel 액션 없음, cancelUnavailableReason=already_processing', async () => {
-      const { service } = makeContext({ fos: [{ status: 'picked', shippedAt: null }] });
-      const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-      expect(result.availableActions).not.toContain('cancel');
-      expect(result.cancelUnavailableReason).toBe('already_processing');
     });
 
     it('FO가 없거나 created 상태이면 cancel 가능', async () => {
@@ -524,11 +520,84 @@ describe('StoreSalesOrdersService', () => {
     it('배송완료라도 FO에 출고증거만 있고(shipped) SO가 delivered 아니면 return/exchange 불가', async () => {
       const { service } = makeContext({
         so: makeSo({ status: 'processing' }),
-        fos: [{ status: 'shipped', shippedAt: new Date() }],
+        fos: [{ status: 'shipped' }],
+        activeShipmentStatuses: ['shipped'],
       });
       const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
       expect(result.availableActions).not.toContain('return');
       expect(result.availableActions).not.toContain('exchange');
+    });
+
+    describe('buildActionsView fulfillmentStatus (V2)', () => {
+      it('FO 없음 → not_created', async () => {
+        const { service } = makeContext({ fos: [] });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('not_created');
+      });
+      it('FO ready, 상자 미로드 → preparing', async () => {
+        const { service } = makeContext({ fos: [{ status: 'ready' }] });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('preparing');
+        expect(r.availableActions).toContain('cancel');
+      });
+      it('FO processing → preparing + already_processing (셀프취소 불가)', async () => {
+        const { service } = makeContext({ fos: [{ status: 'processing' }] });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('preparing');
+        expect(r.availableActions).not.toContain('cancel');
+        expect(r.cancelUnavailableReason).toBe('already_processing');
+      });
+      it('FO partially_shipped + 상자 shipped → shipping + already_shipped', async () => {
+        const { service } = makeContext({
+          fos: [{ status: 'partially_shipped' }],
+          activeShipmentStatuses: ['shipped', 'draft'],
+        });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('shipping');
+        expect(r.shipmentProgress).toEqual({ total: 2, shipped: 1, delivered: 0 });
+        expect(r.availableActions).not.toContain('cancel');
+        expect(r.cancelUnavailableReason).toBe('already_shipped');
+      });
+      it('FO completed + 상자 전량 delivered → delivered + 반품/교환 노출', async () => {
+        const { service } = makeContext({ fos: [{ status: 'completed' }], activeShipmentStatuses: ['delivered'] });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('delivered');
+        expect(r.availableActions).toEqual(expect.arrayContaining(['return', 'exchange']));
+      });
+      it('부분 배송 + 잔여 상자 recovery_required → shipping + already_shipped (마스킹 방지)', async () => {
+        const { service } = makeContext({
+          fos: [{ status: 'recovery_required' }],
+          activeShipmentStatuses: ['delivered', 'recovery_required'],
+        });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('shipping');
+        expect(r.availableActions).not.toContain('cancel');
+        expect(r.cancelUnavailableReason).toBe('already_shipped');
+      });
+      it('recovery_required 이나 출고된 박스 없음 → preparing + cancel 가능', async () => {
+        const { service } = makeContext({
+          fos: [{ status: 'recovery_required' }],
+          activeShipmentStatuses: ['recovery_required'],
+        });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('preparing');
+        expect(r.availableActions).toContain('cancel');
+      });
+      it('직배(drop_ship) forwarded → shipping (loader dropShipStatuses 추출)', async () => {
+        const { service } = makeContext({
+          fos: [{ status: 'ready', fulfillmentMode: 'drop_ship', directShipStatus: 'forwarded' }],
+        });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('shipping');
+        expect(r.availableActions).not.toContain('cancel');
+      });
+      it('직배 completed → delivered', async () => {
+        const { service } = makeContext({
+          fos: [{ status: 'ready', fulfillmentMode: 'drop_ship', directShipStatus: 'completed' }],
+        });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('delivered');
+      });
     });
   });
 
@@ -1013,7 +1082,15 @@ describe('StoreSalesOrdersService', () => {
             recalledAt: null,
           },
         ],
-        [{ id: 'waybill-pending', shipmentId: shipment.id, status: 'allocated', carrier: 'CJ', trackingNo: 'PENDING-TRACKING' }],
+        [
+          {
+            id: 'waybill-pending',
+            shipmentId: shipment.id,
+            status: 'allocated',
+            carrier: 'CJ',
+            trackingNo: 'PENDING-TRACKING',
+          },
+        ],
         [],
         [{ id: 'sol-completed', channelOrderItemId: null }],
       ]);

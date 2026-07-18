@@ -5,9 +5,10 @@
  *
  * 테이블:
  *   fulfillment_orders, fulfillment_order_items,
- *   outbound_batches, outbound_batch_items,
- *   outbound_tasks, outbound_task_orders, outbound_task_items, outbound_task_lines,
- *   shipments, invoices,
- *   outbox_events
+ *   fulfillment_order_creation_backlogs, fulfillment_command_requests,
+ *   outbound_batches, outbound_batch_work_items,
+ *   shipments, shipment_lines, waybills, dispatch_attempts, dispatch_attempt_sources,
+ *   picking_plans, picking_plan_members, picking_source_allocations,
+ *   outbox_events 외
  */
 export { inventorySchema as fulfillmentSchema } from '../../inventory/schema/inventory.schema';
