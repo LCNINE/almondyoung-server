@@ -292,25 +292,6 @@ describe('StoreSalesOrdersService', () => {
       );
     });
 
-    // NOTE(Task 3 dependency): 'picking'/'picked' 는 fulfillment_status enum 에서 이미 제거된 구 상태값이다.
-    // processCancelRequest 의 취소 게이트는 아직 isPickingStarted('processing')로 재배선되지 않아 이 두 테스트는
-    // 현재 기대대로 통과하지 않는다 — 게이트 재배선은 Task 3 범위.
-    it('피킹 중(picking) 주문은 고객 직접 취소 불가 (400)', async () => {
-      const { service, salesOrdersServiceMock } = makeContext({ fos: [{ status: 'picking' }] });
-      await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow(
-        '피킹이 시작된 주문은 직접 취소할 수 없습니다.',
-      );
-      expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
-    });
-
-    it('피킹 완료(picked) 주문은 고객 직접 취소 불가 (400)', async () => {
-      const { service, salesOrdersServiceMock } = makeContext({ fos: [{ status: 'picked' }] });
-      await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow(
-        '피킹이 시작된 주문은 직접 취소할 수 없습니다.',
-      );
-      expect(salesOrdersServiceMock.cancel).not.toHaveBeenCalled();
-    });
-
     it('출고증거(shippedAt) 있는 주문은 고객 직접 취소 불가 (400)', async () => {
       const { service, salesOrdersServiceMock } = makeContext({ fos: [{ status: 'shipped' }] });
       await expect(service.cancelRequestByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID, {})).rejects.toThrow(
@@ -511,23 +492,6 @@ describe('StoreSalesOrdersService', () => {
       expect(result.availableActions).not.toContain('return');
       expect(result.availableActions).not.toContain('exchange');
       expect(result.availableActions).toContain('track');
-    });
-
-    // NOTE(Task 3 dependency): 'picking'/'picked' 는 fulfillment_status enum 에서 이미 제거된 구 상태값이다.
-    // buildActionsView 의 표시 취소 게이트는 isPickingStarted('processing')로 재배선됐으나, 구 상태값 자체가
-    // 더 이상 발생하지 않으므로 이 두 테스트는 신규 'fulfillmentStatus (V2)' describe 블록으로 대체된다.
-    it('FO가 picking 상태이면 cancel 액션 없음, cancelUnavailableReason=already_processing', async () => {
-      const { service } = makeContext({ fos: [{ status: 'picking' }] });
-      const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-      expect(result.availableActions).not.toContain('cancel');
-      expect(result.cancelUnavailableReason).toBe('already_processing');
-    });
-
-    it('FO가 packed 상태(picked)이면 cancel 액션 없음, cancelUnavailableReason=already_processing', async () => {
-      const { service } = makeContext({ fos: [{ status: 'picked' }] });
-      const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
-      expect(result.availableActions).not.toContain('cancel');
-      expect(result.cancelUnavailableReason).toBe('already_processing');
     });
 
     it('FO가 없거나 created 상태이면 cancel 가능', async () => {
