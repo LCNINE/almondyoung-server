@@ -110,14 +110,25 @@ interface FulfillmentPhaseResult {
 
 ## 5. 액션 게이트 변경
 
-**`hasShippedEvidence` 재정의** — 부분 출고를 출고 증거로 인정(사용자 결정 3):
+취소·반품·교환 게이트는 세 지점에서 제거 대상 `picking`/`packed` 값 또는 부정확한 출고 신호에 의존한다. 전부 V2 소스로 재배선한다.
+
+**(a) `hasShippedEvidence` 재정의** — 부분 출고를 출고 증거로 인정(사용자 결정 3):
 - 하나 이상 활성 상자가 이동 status(`shipped`/`in_transit`/`delivered`), **또는**
 - 하나 이상 FOI `shippedQty > 0`, **또는**
 - 직배 FO `directShipStatus ∈ {forwarded, completed}`.
 
-부분 출고 시 FO `shippedAt` 은 null 이라 기존 신호로는 놓치던 것을, 상자 이동 status + FOI shippedQty 로 정확히 잡는다. 서버측 최종 취소 가드(FOI `shippedQty` 검사)와 판정 기준이 일치 → "취소 가능하다고 안내 후 실패" UX 제거. 출고 증거가 있으면 `cancelUnavailableReason = 'already_shipped'`, `track`/`receipt` 액션 제공(현행 유지).
+부분 출고 시 FO `shippedAt` 은 null 이라 기존 신호로는 놓치던 것을, 상자 이동 status + FOI shippedQty 로 정확히 잡는다.
 
-**반품/교환 게이트**: 대표 상태 `delivered`(= 모든 활성 유닛 배송완료)일 때만 (`:581` 유지, 이제 정확). 출고 직후 반품 버튼 노출 버그 해소.
+**(b) "피킹 시작" 판정 신규 헬퍼 `isPickingStarted(fos)`** — 제거되는 `picking`/`packed` 표시값을 대신할 V2 등가물. V2 에서 "피킹/패킹 시작"은 FO status `processing` 이다 (`fulfillment-progress.service.ts:24` "Picking, packing or inspection has begun"). 따라서 `isPickingStarted = fos.some(fo => fo.status === 'processing')`. 표시(`fulfillmentStatus`)는 `processing` 을 `preparing` 으로 흡수해 고객에게 내부 단계를 숨기지만, **취소 게이트는 raw FO status 를 읽어** "피킹 시작 후 셀프 취소 불가" 정책을 그대로 보존한다.
+
+**(c) 취소 게이트 정책 (customer self-cancel)** — 우선순위 순:
+1. `hasShippedEvidence` → `already_shipped` 로 차단 (사용자 결정 3: 하나라도 출고되면 셀프 취소 불가, CS 안내). **`hasV2OutstandingShipment` 예외 제거** — 현행(`:678`)은 활성 미출고 상자가 있으면 다른 상자가 출고됐어도 셀프 취소를 허용하는데, 이는 결정 3 과 정면 배치되므로 제거한다. `hasV2OutstandingShipment` 메서드(`:726`)는 이 제거로 미사용이 되어 함께 삭제.
+2. `isPickingStarted` → `already_processing` 로 차단 ("피킹 시작 후 CS 문의", `:617` 표시 게이트 · `:675` throw 게이트 모두 이 헬퍼로 교체).
+3. 그 외(`preparing` 이면서 미피킹, 즉 FO `created`/`partially_reserved`/`ready`) → 셀프 취소 허용.
+
+`:678` 의 `so.status === 'shipped' || 'delivered'` 약한 폴백은 선행 작업 15 가 dead 로 확정한 값이라 함께 제거(도출은 FO/shipment 로 완결).
+
+**(d) 반품/교환 게이트**: 대표 상태 `delivered`(= 모든 활성 유닛 배송완료)일 때만 (`:581` 유지, 이제 정확). 출고 직후 반품 버튼 노출 버그 해소.
 
 ## 6. 데이터 로딩 / 성능
 
@@ -141,8 +152,9 @@ interface FulfillmentPhaseResult {
 
 - 삭제: `FO_DELIVERED_STATUSES`, `FO_SHIPPED_STATUSES`, `FO_PACKED_STATUSES`, `FO_PICKING_STATUSES` (`:42-45`).
 - 교체: `deriveFulfillmentStatus`(`:993`), `hasShippedEvidence`(`:1005`) → §4·§5 순수 함수 + 서비스 로딩 헬퍼.
-- `buildActionsView`(`:474`) 쿼리 확장 + short-circuit.
-- `so.status === 'shipped' || so.status === 'delivered'` 약한 폴백(`:678`)은 선행 작업 15 가 dead 로 확정한 값이라 제거(도출은 FO/shipment 로 완결).
+- 신규: `isPickingStarted(fos)` 헬퍼(§5b).
+- `buildActionsView`(`:474`) 쿼리 확장 + short-circuit; `:617` 표시 취소 게이트를 `isPickingStarted` 로 교체.
+- `processCancelRequest`(`:673-680`): `picking`/`packed` throw 게이트 → §5c 정책으로 재작성. `hasV2OutstandingShipment`(`:726`) 메서드 삭제, `so.status === 'shipped'||'delivered'` 폴백(`:678`) 제거.
 
 ## 9. 테스트
 
@@ -166,3 +178,4 @@ interface FulfillmentPhaseResult {
 
 - **직배 `completed` → `delivered` 간주 (확인 요청).** 직배는 배송 추적 웹훅이 없어 "업체 발송완료"를 배송완료로 간주하지 않으면 반품/교환 게이트가 영영 안 열린다. 본 설계는 `directShipStatus='completed'` 를 `delivered` 로 간주한다. 이 간주가 부적절하면(예: 직배는 반품/교환을 채널/CS 로만) 이 매핑만 조정하고 직배 유닛을 delivered 집계에서 빼면 된다.
 - storefront 매핑 변경 PR 은 Core 배포와 순서 조율(신규 enum 을 옛 storefront 가 만나면 `?? status` 폴백 여부에 따라 raw 값 노출 가능). 옛 값 제거이므로 Core 먼저 배포 시 옛 storefront 가 신규 값을 모른다 — storefront 를 먼저 관용(tolerant)하게 배포하거나 동시 배포.
+- **범위 밖 관찰(별건):** `cancelByWalletIntentAfterRefund`(`:219`)의 `so.status === 'shipped' || 'delivered'` 출고-가드는 dead SO.status 값(작업 15)이라 실효가 없다 — 즉 admin 환불승인 취소 경로에 사실상 출고 가드가 없다. 고객 표시 버그와 별개 정책 문제라 본 작업에서 고치지 않고 기록만 한다(수정하려면 이 경로가 출고완료 주문을 만났을 때의 정책 결정 필요).
