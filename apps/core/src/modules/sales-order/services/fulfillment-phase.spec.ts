@@ -1,7 +1,19 @@
-import { deriveFulfillmentPhase, isPickingStarted, hasShippedEvidence, FulfillmentPhaseInput } from './fulfillment-phase';
+import {
+  deriveFulfillmentPhase,
+  isPickingStarted,
+  hasShippedEvidence,
+  FulfillmentPhaseInput,
+} from './fulfillment-phase';
 
 function input(over: Partial<FulfillmentPhaseInput> = {}): FulfillmentPhaseInput {
-  return { foCount: 1, allFoCanceled: false, activeShipmentStatuses: [], dropShipStatuses: [], anyFoiShipped: false, ...over };
+  return {
+    foCount: 1,
+    allFoCanceled: false,
+    activeShipmentStatuses: [],
+    dropShipStatuses: [],
+    anyFoiShipped: false,
+    ...over,
+  };
 }
 
 describe('deriveFulfillmentPhase', () => {
