@@ -138,7 +138,9 @@ interface FulfillmentPhaseResult {
 
 **N+1 주의**: `buildActionsView` 는 배치 액션 엔드포인트에서 SO당 `Promise.all`(≤100건, `:429-430`)로 호출된다. 상자 조인 추가는 SO당 쿼리를 늘린다. 기존 코드가 이미 남긴 precedent("느려지면 buildActionsView 쿼리 배치화", `:429`)를 따라 **이번엔 SO당 로딩 유지**하되, 아래 short-circuit 으로 다수 케이스에서 상자 로딩을 건너뛴다:
 
-- FO status 가 전부 출고-이전(`created/partially_reserved/ready/processing`)이고 FOI `shippedQty=0` 이면 상자 로딩 없이 `preparing` 확정 (delivered/shipping 은 상자를 봐야만 구분되므로, 출고가 시작된 주문에서만 상자 로딩).
+- **load 조건**: FO status 에 `shipped`/`partially_shipped`/`completed`(= 확실히 출고됨) **또는 `recovery_required`** 가 하나라도 있을 때만 활성 상자 상태를 로드한다. 그 외(전부 `created/partially_reserved/ready/processing`)면 로딩 없이 `preparing` 확정.
+- **`recovery_required` 를 반드시 포함해야 하는 이유**: FO progress projector 는 `recoveryRequired` 를 `shippedQty>0` 보다 **먼저** 판정한다(`fulfillment-progress.service.ts`). 따라서 한 FOI 가 이미 한 wave 를 배송완료(`shippedQty>0`)했어도, 다른 활성 상자 라인이 `recovery_required`(short-pick/recall 등 운영자 해소 대기)면 FO status 가 `recovery_required` 로 투영되어 `{shipped,partially_shipped,completed}` 근사에서 **출고 증거가 가려진다.** 이 경우 상자를 로드해야 이미 배송된 박스(`delivered`/`shipped`)가 `activeShipmentStatuses` 에 드러난다.
+- **`anyFoiShipped` 산출**: 확실히 출고됨(FO ∈ {shipped,partially_shipped,completed}) 이거나, 로드된 활성 상자에 이동 status(`shipped`/`in_transit`/`delivered`)가 있으면 true. 로드하지 않은 경우(위 load 조건 불충족)는 이동 박스가 존재할 수 없으므로 false. (dispatch 가 `shippedQty` 증가와 shipment `shipped` 전이를 한 트랜잭션에서 처리하므로 "이동 박스 존재 ⟺ FOI shipped" 가 성립 — 별도 FOI 쿼리 불필요.)
 
 `buildTrackingView` 와의 공통 로딩(FO→FOI→shipment_lines→shipments)은 private 헬퍼로 추출해 두 경로가 공유한다.
 

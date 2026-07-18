@@ -280,7 +280,8 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: `deriveFulfillmentPhase`, `isPickingStarted`, `hasShippedEvidence`, `PhaseFoRow`, `FulfillmentPhaseInput` (Task 1).
-- Produces:
+- Produces (Task 3 도 재사용):
+  - `private loadFoRows(salesOrderId: string): Promise<PhaseFoRow[]>`
   - `private loadFulfillmentPhaseInput(salesOrderId: string, foRows: PhaseFoRow[]): Promise<FulfillmentPhaseInput>`
   - `private loadActiveShipmentStatuses(salesOrderId: string): Promise<string[]>`
   - `buildActionsView` 가 `fulfillmentStatus`(5값) + `shipmentProgress` 를 반환.
@@ -381,15 +382,7 @@ import {
 
 `buildActionsView` 의 FO 로드(현재 `:474-483`)를 교체:
 ```typescript
-    const foRows: PhaseFoRow[] = await this.db.db
-      .select({
-        status: inventoryTables.fulfillmentOrders.status,
-        directShipStatus: inventoryTables.fulfillmentOrders.directShipStatus,
-        fulfillmentMode: inventoryTables.fulfillmentOrders.fulfillmentMode,
-      })
-      .from(inventoryTables.fulfillmentOrders)
-      .where(eq(inventoryTables.fulfillmentOrders.salesOrderId, so.id));
-
+    const foRows = await this.loadFoRows(so.id);
     const phaseInput = await this.loadFulfillmentPhaseInput(so.id, foRows);
     const { phase: fulfillmentStatus, progress } = deriveFulfillmentPhase(phaseInput);
     const shipmentProgress = progress.total > 0 ? progress : undefined;
@@ -419,8 +412,19 @@ DTO 반환 객체(현재 `:626-635` 부근)에 `shipmentProgress` 추가:
 ```
 `buildActionsView` 안 `hasShippedEvidence` 를 쓰던 분기(현재 `:576` `else if (hasShippedEvidence)`)는 지역 변수명이 동일하므로 그대로 동작. `deriveFulfillmentStatus`(`:993`)와 `hasShippedEvidence`(`:1005`) 구 메서드는 삭제.
 
-로더 두 개를 `buildActionsView` 아래(private 영역)에 추가:
+로더 세 개를 `buildActionsView` 아래(private 영역)에 추가:
 ```typescript
+  private async loadFoRows(salesOrderId: string): Promise<PhaseFoRow[]> {
+    return this.db.db
+      .select({
+        status: inventoryTables.fulfillmentOrders.status,
+        directShipStatus: inventoryTables.fulfillmentOrders.directShipStatus,
+        fulfillmentMode: inventoryTables.fulfillmentOrders.fulfillmentMode,
+      })
+      .from(inventoryTables.fulfillmentOrders)
+      .where(eq(inventoryTables.fulfillmentOrders.salesOrderId, salesOrderId));
+  }
+
   private async loadFulfillmentPhaseInput(salesOrderId: string, foRows: PhaseFoRow[]): Promise<FulfillmentPhaseInput> {
     const foCount = foRows.length;
     const allFoCanceled = foCount > 0 && foRows.every((fo) => fo.status === 'canceled');
@@ -517,17 +521,9 @@ Expected: FAIL (구 게이트가 `processing`/`partially_shipped` 를 다루지 
 
 - [ ] **Step 2: processCancelRequest 게이트 재작성 + hasV2OutstandingShipment 삭제**
 
-`processCancelRequest` 의 FO 로드·게이트(현재 `:665-680`)를 교체:
+`processCancelRequest` 의 FO 로드·게이트(현재 `:665-680`)를 교체 (Task 2 의 `loadFoRows`/`loadFulfillmentPhaseInput` 재사용):
 ```typescript
-    const foRows: PhaseFoRow[] = await this.db.db
-      .select({
-        status: inventoryTables.fulfillmentOrders.status,
-        directShipStatus: inventoryTables.fulfillmentOrders.directShipStatus,
-        fulfillmentMode: inventoryTables.fulfillmentOrders.fulfillmentMode,
-      })
-      .from(inventoryTables.fulfillmentOrders)
-      .where(eq(inventoryTables.fulfillmentOrders.salesOrderId, so.id));
-
+    const foRows = await this.loadFoRows(so.id);
     const phaseInput = await this.loadFulfillmentPhaseInput(so.id, foRows);
     if (hasShippedEvidenceFrom(phaseInput)) {
       throw new BadRequestException('이미 출고된 주문은 취소할 수 없습니다. 고객센터로 문의해 주세요.');
