@@ -66,31 +66,13 @@ export class PauseManager {
         })
         .returning();
 
-      // 2. 일시정지 기간 계산
+      // 2. 계획된 일시정지 기간(감사/표시용). 실제 종료일 연장은 재개 시 '실제 정지된 일수'로 적용한다.
+      // (여기서 미리 연장하면 조기 재개 시 회수하지 못해 무료 연장 익스플로잇이 된다)
       const pauseDurationDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
 
-      // 3. 기존 권한 종료일에 일시정지 기간만큼 연장
-      const originalEndsAt = new Date(entitlement.endsAt);
-      const adjustedEndsAt = addDays(originalEndsAt, pauseDurationDays);
-
-      // 4. 정기결제 연동: Contract의 nextBillingDate도 연장
-      const [contract] = await tx
-        .select()
-        .from(schema.subscriptionContracts)
-        .where(eq(schema.subscriptionContracts.userId, userId))
-        .limit(1);
-
-      if (contract && contract.nextBillingDate) {
-        const originalNextBillingDate = new Date(contract.nextBillingDate);
-        const adjustedNextBillingDate = addDays(originalNextBillingDate, pauseDurationDays);
-
-        await tx
-          .update(schema.subscriptionContracts)
-          .set({
-            nextBillingDate: adjustedNextBillingDate.toISOString().split('T')[0],
-          })
-          .where(eq(schema.subscriptionContracts.id, contract.id));
-      }
+      // 3. 종료일은 동결(연장하지 않음). 일시정지 중에는 findDueContracts 가 pausedAt 로 청구를 막으므로
+      // nextBillingDate 도 건드리지 않는다 — 재개 시 실제 정지 일수만큼 endsAt·nextBillingDate 를 함께 밀어준다.
+      const frozenEndsAt = new Date(entitlement.endsAt);
 
       // 5. pause_events 레코드 생성
       const [pauseEvent] = await tx
@@ -124,12 +106,12 @@ export class PauseManager {
         })
         .where(eq(schema.subscriptionEntitlement.id, entitlement.id));
 
-      // 8. 새로운 entitlement 생성 (일시정지 상태 + 연장된 종료일)
+      // 8. 새로운 entitlement 생성 (일시정지 상태 + 동결된 종료일)
       await tx.insert(schema.subscriptionEntitlement).values({
         userId,
         tierId: entitlement.tierId,
         startsAt: entitlement.startsAt,
-        endsAt: adjustedEndsAt.toISOString().split('T')[0],
+        endsAt: frozenEndsAt.toISOString().split('T')[0],
         isCurrent: true,
         sourceBatchId: eventBatch.id,
         pausedAt: now,
@@ -137,7 +119,7 @@ export class PauseManager {
 
       return {
         pauseEventId: pauseEvent.id,
-        adjustedEndsAt: adjustedEndsAt.toISOString().split('T')[0],
+        adjustedEndsAt: frozenEndsAt.toISOString().split('T')[0],
         pauseDurationDays,
       };
     });
@@ -152,6 +134,11 @@ export class PauseManager {
   async resumePause(userId: string, entitlement: any): Promise<ResumeResult> {
     return this.dbService.db.transaction(async (tx: DrizzleTransaction) => {
       const now = new Date();
+
+      // 실제 정지된 일수만큼만 종료일을 연장한다(조기 재개면 그만큼 적게 연장 → 무료 연장 방지).
+      const pausedAt = entitlement.pausedAt ? new Date(entitlement.pausedAt) : now;
+      const actualPausedDays = Math.max(0, differenceInDays(now, pausedAt));
+      const resumedEndsAt = addDays(new Date(entitlement.endsAt), actualPausedDays);
 
       // 1. 이벤트 배치 생성
       const [eventBatch] = await tx
@@ -172,18 +159,33 @@ export class PauseManager {
         })
         .where(eq(schema.subscriptionEntitlement.id, entitlement.id));
 
-      // 3. 새로운 entitlement 생성 (일시정지 해제)
+      // 3. 새로운 entitlement 생성 (일시정지 해제 + 실제 정지 일수만큼 연장된 종료일)
       await tx.insert(schema.subscriptionEntitlement).values({
         userId,
         tierId: entitlement.tierId,
         startsAt: entitlement.startsAt,
-        endsAt: entitlement.endsAt, // 종료일은 이미 일시정지 시 연장됨
+        endsAt: resumedEndsAt.toISOString().split('T')[0],
         isCurrent: true,
         sourceBatchId: eventBatch.id,
         pausedAt: null, // 일시정지 해제
       });
 
-      // 4. pause_events에 RESUME 이벤트 기록
+      // 4. 정기결제 연동: 정지 중 밀린 만큼 nextBillingDate 도 함께 이동(재개 즉시 청구되는 것 방지)
+      const [contract] = await tx
+        .select()
+        .from(schema.subscriptionContracts)
+        .where(eq(schema.subscriptionContracts.userId, userId))
+        .limit(1);
+
+      if (contract && contract.nextBillingDate && actualPausedDays > 0) {
+        const shiftedNextBillingDate = addDays(new Date(contract.nextBillingDate), actualPausedDays);
+        await tx
+          .update(schema.subscriptionContracts)
+          .set({ nextBillingDate: shiftedNextBillingDate.toISOString().split('T')[0] })
+          .where(eq(schema.subscriptionContracts.id, contract.id));
+      }
+
+      // 5. pause_events에 RESUME 이벤트 기록
       const [resumeEvent] = await tx
         .insert(schema.pauseEvents)
         .values({
@@ -197,7 +199,7 @@ export class PauseManager {
 
       return {
         resumeEventId: resumeEvent.id,
-        endsAt: entitlement.endsAt,
+        endsAt: resumedEndsAt.toISOString().split('T')[0],
       };
     });
   }

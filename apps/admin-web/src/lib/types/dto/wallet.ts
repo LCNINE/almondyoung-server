@@ -357,7 +357,7 @@ export interface AdminRecurringBillingOverview {
 export interface AdminRecurringBillingListQuery {
   page?: number;
   limit?: number;
-  view?: 'needs-action' | 'members' | 'withdrawals' | 'contracts';
+  view?: 'needs-action' | 'members' | 'withdrawals' | 'contracts' | 'stuck' | 'dunning';
   dateType?: 'updatedAt' | 'createdAt' | 'paymentDate' | 'nextBillingDate';
   dateFrom?: string;
   dateTo?: string;

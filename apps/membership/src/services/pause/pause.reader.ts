@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { eq, and, desc, isNull } from 'drizzle-orm';
+import { eq, and, desc, isNull, isNotNull, lte } from 'drizzle-orm';
 import * as schema from '../../shared/schemas/entities/schema';
 import { membershipSchema } from '../../shared/schemas/entities/schema';
 
@@ -58,6 +58,39 @@ export class PauseReader {
     return this.dbService.db.query.subscriptionEntitlement.findFirst({
       where: and(eq(schema.subscriptionEntitlement.userId, userId), eq(schema.subscriptionEntitlement.isCurrent, true)),
     });
+  }
+
+  /**
+   * 자동 재개 대상 조회: 현재 일시정지 중이고 일시정지 종료일이 지난 권한.
+   * entitlement.pausedAt(START 시각)과 pause_events.effectiveAt를 매칭해 현재 일시정지의 종료일을 본다.
+   */
+  async findEntitlementsDueForAutoResume(today: string) {
+    return this.dbService.db
+      .select({
+        id: schema.subscriptionEntitlement.id,
+        userId: schema.subscriptionEntitlement.userId,
+        tierId: schema.subscriptionEntitlement.tierId,
+        startsAt: schema.subscriptionEntitlement.startsAt,
+        endsAt: schema.subscriptionEntitlement.endsAt,
+        pausedAt: schema.subscriptionEntitlement.pausedAt,
+      })
+      .from(schema.subscriptionEntitlement)
+      .innerJoin(
+        schema.pauseEvents,
+        and(
+          eq(schema.pauseEvents.userId, schema.subscriptionEntitlement.userId),
+          eq(schema.pauseEvents.eventType, 'START'),
+          eq(schema.pauseEvents.effectiveAt, schema.subscriptionEntitlement.pausedAt),
+        ),
+      )
+      .innerJoin(schema.pauseEventDetails, eq(schema.pauseEventDetails.pauseEventId, schema.pauseEvents.id))
+      .where(
+        and(
+          eq(schema.subscriptionEntitlement.isCurrent, true),
+          isNotNull(schema.subscriptionEntitlement.pausedAt),
+          lte(schema.pauseEventDetails.endsAt, today),
+        ),
+      );
   }
 
   /**

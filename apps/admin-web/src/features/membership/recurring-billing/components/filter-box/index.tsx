@@ -11,7 +11,7 @@ import {
   FormDateRangePicker,
 } from '@/components/common/form';
 import { Button } from '@/components/ui/button';
-import { DatePreset, DATE_PRESET_OPTIONS, computeDateRange } from '@/lib/utils/date';
+import { DatePreset, DATE_PRESET_OPTIONS, computeDateRange, toLocalDateString } from '@/lib/utils/date';
 import { AdminRecurringBillingListQuery } from '@/lib/types/dto/wallet';
 
 type View = NonNullable<AdminRecurringBillingListQuery['view']>;
@@ -23,6 +23,8 @@ const TABS: { value: View; label: string }[] = [
   { value: 'members', label: '결제수단 심사' },
   { value: 'withdrawals', label: '정기 출금' },
   { value: 'contracts', label: '계약 상태' },
+  { value: 'stuck', label: '선점 고착' },
+  { value: 'dunning', label: '재시도 대기' },
 ];
 
 const DATE_TYPE_OPTIONS_BY_VIEW: Record<View, { value: DateType; label: string }[]> = {
@@ -40,6 +42,9 @@ const DATE_TYPE_OPTIONS_BY_VIEW: Record<View, { value: DateType; label: string }
     { value: 'nextBillingDate', label: '다음 결제일' },
     { value: 'createdAt', label: '계약 생성일' },
   ],
+  // stuck/dunning 뷰는 자체 엔드포인트라 date/search 필터를 쓰지 않음(타입 충족용 최소값)
+  stuck: [{ value: 'updatedAt', label: '최근 갱신일' }],
+  dunning: [{ value: 'updatedAt', label: '최근 갱신일' }],
 };
 
 const CMS_MEMBER_STATUS_OPTIONS: { value: string; label: string }[] = [
@@ -175,6 +180,14 @@ export function RecurringBillingFilterBox() {
         ))}
       </div>
 
+      {currentView === 'stuck' || currentView === 'dunning' ? (
+        <p className="text-sm text-muted-foreground">
+          {currentView === 'stuck'
+            ? '48시간 이상 선점(billingInProgress) 고착된 전체 계약입니다. 별도 필터는 적용되지 않습니다.'
+            : '결제 실패로 자동 재시도 대기 중인 전체 계약입니다. 별도 필터는 적용되지 않습니다.'}
+        </p>
+      ) : (
+      <>
       <div className="flex flex-wrap items-start gap-4">
         <div className="w-36 shrink-0">
           <FormField label="일자 기준" direction="horizontal">
@@ -210,8 +223,8 @@ export function RecurringBillingFilterBox() {
               onChange={(range) =>
                 setFilters((p) => ({
                   ...p,
-                  dateFrom: range?.from ? range.from.toISOString().slice(0, 10) : '',
-                  dateTo: range?.to ? range.to.toISOString().slice(0, 10) : '',
+                  dateFrom: range?.from ? toLocalDateString(range.from) : '',
+                  dateTo: range?.to ? toLocalDateString(range.to) : '',
                 }))
               }
             />
@@ -278,6 +291,8 @@ export function RecurringBillingFilterBox() {
           초기화
         </Button>
       </div>
+      </>
+      )}
     </div>
   );
 }

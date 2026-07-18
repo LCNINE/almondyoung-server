@@ -22,6 +22,10 @@ export class BillingAgreementService {
   ): Promise<BillingAgreement> {
     await this.billingMethodService.assertSelectableForRecurringBilling(userId, billingMethodId);
 
+    // subscriberRef(=계약 id)는 계약당 재사용된다. 정기결제 해지가 남긴 REVOKED 행이
+    // uq_billing_agreements_subscriber (subscriber_type, subscriber_ref) 비-partial 유니크 인덱스와 충돌해
+    // 평범한 INSERT 는 유니크 위반(→500)이 된다. 같은 subscriber 조합이 있으면 그 행을 ACTIVE 로 되살리는
+    // upsert 로 처리해 관리자 자동갱신 재활성(같은 계약 id 재사용)을 지원한다.
     const rows = await this.dbService.db
       .insert(billingAgreements)
       .values({
@@ -30,6 +34,10 @@ export class BillingAgreementService {
         subscriberRef,
         subscriberType,
         status: 'ACTIVE',
+      })
+      .onConflictDoUpdate({
+        target: [billingAgreements.subscriberType, billingAgreements.subscriberRef],
+        set: { userId, billingMethodId, status: 'ACTIVE', updatedAt: new Date() },
       })
       .returning();
 

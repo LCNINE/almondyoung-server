@@ -2,7 +2,8 @@ import { BillingAgreementService } from './billing-agreement.service';
 
 function makeDb(rows: Record<string, unknown>[] = []) {
   const returning = jest.fn().mockResolvedValue(rows);
-  const values = jest.fn().mockReturnValue({ returning });
+  const onConflictDoUpdate = jest.fn().mockReturnValue({ returning });
+  const values = jest.fn().mockReturnValue({ returning, onConflictDoUpdate });
   const insert = jest.fn().mockReturnValue({ values });
   const set = jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ returning }) });
   const update = jest.fn().mockReturnValue({ set });
@@ -12,7 +13,7 @@ function makeDb(rows: Record<string, unknown>[] = []) {
 
   return {
     db: { insert, update, select },
-    spies: { insert, update, returning },
+    spies: { insert, update, returning, onConflictDoUpdate, values },
   };
 }
 
@@ -98,5 +99,22 @@ describe('BillingAgreementService recurring billing method guards', () => {
 
     expect(billingMethodService.assertSelectableForRecurringBilling).toHaveBeenCalledWith('user-1', 'method-2');
     expect(db.spies.update).toHaveBeenCalled();
+  });
+
+  it('create 는 subscriber 충돌 시 REVOKED 행을 ACTIVE 로 되살리는 upsert 를 쓴다', async () => {
+    const db = makeDb([agreement]);
+    const billingMethodService = {
+      assertSelectableForRecurringBilling: jest.fn().mockResolvedValue({ id: 'method-1' }),
+      findLatestSelectableForRecurringBilling: jest.fn(),
+    };
+    const service = new BillingAgreementService(db as never, billingMethodService as never);
+
+    await service.create('user-1', 'method-1', 'sub-1', 'membership');
+
+    expect(db.spies.onConflictDoUpdate).toHaveBeenCalledTimes(1);
+    const arg = db.spies.onConflictDoUpdate.mock.calls[0][0];
+    expect(arg.set).toMatchObject({ status: 'ACTIVE', billingMethodId: 'method-1', userId: 'user-1' });
+    expect(Array.isArray(arg.target)).toBe(true);
+    expect(arg.target).toHaveLength(2);
   });
 });

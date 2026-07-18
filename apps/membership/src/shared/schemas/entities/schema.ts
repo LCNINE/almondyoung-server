@@ -154,6 +154,8 @@ export const subscriptionContracts = pgTable(
     billingInProgress: boolean('billing_in_progress').notNull().default(false),
     // billingInProgress=true로 전환된 시각. updatedAt은 다른 업데이트에 의해 덮힐 수 있어 별도 컬럼으로 관리
     billingStartedAt: timestamp('billing_started_at', { withTimezone: true }),
+    // 진행 중 청구에 사용한 wallet 멱등키. 결과 이벤트 유실 시 이 키로 wallet 권위 상태를 되물어(reconcile) 락을 스스로 해소한다.
+    billingIdempotencyKey: text('billing_idempotency_key'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [index('idx_subscription_billing_date').on(table.billingDate)],
@@ -398,7 +400,7 @@ export const billingEvents = pgTable(
     contractId: uuid('contract_id')
       .notNull()
       .references(() => subscriptionContracts.id),
-    eventType: text('event_type').notNull(), // CHARGE_ATTEMPT, CHARGE_SUCCESS, CHARGE_FAIL
+    eventType: text('event_type').notNull(), // CHARGE_ATTEMPT, CHARGE_SUCCESS, CHARGE_FAIL, CHARGE_CANCELED
     attemptNo: integer('attempt_no'),
     amount: integer('amount'),
     paymentIntentId: text('payment_intent_id'), // wallet intentId — 결과 이벤트 재전달 멱등 키
@@ -410,6 +412,8 @@ export const billingEvents = pgTable(
     index('idx_billing_events_contract').on(table.contractId),
     // 결과 이벤트 재전달 멱등: 같은 intent의 동일 결과를 한 번만 기록 (payment_intent_id NULL은 중복 허용)
     uniqueIndex('uq_billing_events_intent_result').on(table.contractId, table.paymentIntentId, table.eventType),
+    // 계약 간 intent 재사용(replay) 차단: 한 intent 의 동일 결과는 전체에서 한 번만 — 같은 결제로 새 계약을 재발급하지 못한다
+    uniqueIndex('uq_billing_events_intent_event').on(table.paymentIntentId, table.eventType),
   ],
 );
 
@@ -542,6 +546,27 @@ export const welcomeMembershipEligibility = pgTable(
   (table) => [index('idx_wm_eligibility_has_purchased').on(table.hasPurchased)],
 );
 
+// 관리자 운영 액션(계약/권한 변경) 멱등성 — wallet의 결제 멱등과 책임 분리.
+// force-cancel / retryBilling / grant / adjust / setAutoRenewal 의 더블클릭·재시도·중복탭 중복 실행 방지.
+export const adminOperationStatusEnum = pgEnum('admin_operation_status', ['PROCESSING', 'COMPLETED', 'FAILED']);
+
+export const adminOperationKeys = pgTable(
+  'admin_operation_keys',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    operation: text('operation').notNull(), // 'force-cancel' | 'retry-billing' | 'grant' | 'adjust' | 'set-auto-renewal'
+    key: text('key').notNull(), // 클라이언트 Idempotency-Key
+    requestHash: text('request_hash').notNull(), // sha256(정규화된 요청 본문) — 같은 키 다른 본문 충돌 감지
+    status: adminOperationStatusEnum('status').notNull().default('PROCESSING'),
+    responseJson: jsonb('response_json'),
+    errorJson: jsonb('error_json'),
+    lockedUntil: timestamp('locked_until', { withTimezone: true }).notNull(), // PROCESSING 점유 만료(크래시 복구)
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (table) => [uniqueIndex('uq_admin_operation_keys_op_key').on(table.operation, table.key)],
+);
+
 // ===============================
 // 전체 스키마 객체 Export (Drizzle ORM 규칙)
 // ===============================
@@ -564,6 +589,7 @@ export const membershipSchema = {
   membershipCycleBenefits,
   membershipDiscountEvents,
   welcomeMembershipEligibility,
+  adminOperationKeys,
 
   // Relations
   tiersRelations,

@@ -12,7 +12,7 @@ import {
   FormDateRangePicker,
 } from '@/components/common/form';
 import { Button } from '@/components/ui/button';
-import { DatePreset, DATE_PRESET_OPTIONS, computeDateRange } from '@/lib/utils/date';
+import { DatePreset, DATE_PRESET_OPTIONS, computeDateRange, toLocalDateString } from '@/lib/utils/date';
 
 type StatusOption = '' | 'ACTIVE' | 'PAUSED' | 'RECURRING_CANCELLED' | 'EXPIRED' | 'CANCELLED';
 type SearchType = 'userId' | 'member';
@@ -121,8 +121,8 @@ export function MembershipMemberFilterBox() {
               onChange={(range) =>
                 setFilters((p) => ({
                   ...p,
-                  dateFrom: range?.from ? range.from.toISOString().slice(0, 10) : '',
-                  dateTo: range?.to ? range.to.toISOString().slice(0, 10) : '',
+                  dateFrom: range?.from ? toLocalDateString(range.from) : '',
+                  dateTo: range?.to ? toLocalDateString(range.to) : '',
                 }))
               }
             />

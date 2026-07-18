@@ -113,17 +113,15 @@ export class SubscriptionCancellationService {
       }
     }
 
-    // 정기결제 계약이면 billing_agreement 회수 (즉시취소/정기중단 공통)
-    if (result.type === 'RECURRING_CANCELLATION' || data.contract.autoRenewal) {
-      this.paymentClientService
-        .revokeBillingAgreement(data.contract.id)
-        .catch((err: Error) =>
-          this.logger.error(
-            `billing_agreement revoke 실패 (contractId=${data.contract.id}): ${err?.message}`,
-            err?.stack,
-          ),
-        );
-    }
+    // 즉시취소·정기해지 모두 향후 자동청구가 없으므로 wallet billing_agreement 를 해지한다(재청구 원천 차단).
+    this.paymentClientService
+      .revokeBillingAgreement(data.contract.id)
+      .catch((err: Error) =>
+        this.logger.error(
+          `billing_agreement revoke 실패 (contractId=${data.contract.id}): ${err?.message}`,
+          err?.stack,
+        ),
+      );
 
     await this.membershipEventPublisher.publishStatusChanged({
       userId,
@@ -212,6 +210,16 @@ export class SubscriptionCancellationService {
       partialRefundAmount,
       refundReason,
     );
+
+    // 강제 취소도 향후 자동청구가 없으므로 wallet billing_agreement 를 해지한다(재청구 원천 차단).
+    this.paymentClientService
+      .revokeBillingAgreement(contract.id)
+      .catch((err: Error) =>
+        this.logger.error(
+          `billing_agreement revoke 실패 (contractId=${contract.id}): ${err?.message}`,
+          err?.stack,
+        ),
+      );
 
     // 취소 이벤트 발행 (Medusa 고객 그룹 제거용)
     await this.membershipEventPublisher.publishStatusChanged({

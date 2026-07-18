@@ -18,6 +18,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
+import { IdempotentAdminOp } from '../shared/idempotency/idempotent-admin-op.decorator';
 import { AdminOperationsService } from '../services/admin-operations.service';
 import { AdminMembersReader } from '../services/admin/admin-members.reader';
 import { SubscriptionCancellationService } from '../services/subscription-cancellation.service';
@@ -47,13 +48,16 @@ import {
   AdminSubscribeUserRequestDto,
 } from '../shared/dto/request.dto';
 import { JwtAuthGuard, User } from '@app/authorization';
+import { MembershipAdminAuth } from '../shared/decorators/admin-auth.decorator';
 import { SubscriptionService } from '../services/subscription.service';
 /**
  * 관리자 운영 컨트롤러
+ *
+ * 인증은 전역 JwtAuthGuard 가 담당하고, 여기서는 admin/master 역할 인가를 강제한다.
  */
 @ApiTags('admin')
 @Controller('admin')
-@UseGuards(JwtAuthGuard) // 모든 API에 관리자 인증 가드 적용
+@MembershipAdminAuth()
 @UseFilters(SubscriptionExceptionFilter)
 export class AdminOperationsController {
   private readonly logger = new Logger(AdminOperationsController.name);
@@ -70,6 +74,11 @@ export class AdminOperationsController {
     const msg = error instanceof Error ? error.message : String(error);
     const contextInfo = context ? ` (${context})` : '';
     this.logger.error(`❌ ${operation} 실패${contextInfo}:`, msg);
+
+    // 서비스가 이미 상태코드를 결정한 예외(SubscriptionException 등)는 그대로 전달한다.
+    if (error instanceof HttpException) {
+      throw error;
+    }
 
     if (msg.includes('not found') || msg.includes('찾을 수 없')) {
       throw new HttpException(`요청한 리소스를 찾을 수 없습니다.`, HttpStatus.NOT_FOUND);
@@ -389,6 +398,7 @@ export class AdminOperationsController {
     type: ErrorResponseDto,
   })
   @UseGuards(JwtAuthGuard)
+  @IdempotentAdminOp('adjust')
   async adjustUserEntitlement(@User('userId') userId: string, @Body() dto: ExtendEntitlementRequestDto) {
     try {
       const adminId = userId;
@@ -578,6 +588,7 @@ export class AdminOperationsController {
     type: ErrorResponseDto,
   })
   @UseGuards(JwtAuthGuard)
+  @IdempotentAdminOp('force-cancel')
   async forceCancelSubscription(
     @User('userId') userId: string,
     @Param('contractId') contractId: string,
@@ -606,6 +617,12 @@ export class AdminOperationsController {
       this.handleError(error, '강제 구독 취소');
     }
   }
+
+  // 관리자 무상 플랜 변경(comp)은 별도 설계가 필요해 아직 노출하지 않는다.
+  // subscriptionManager.upgrade/downgrade 는 planId·권한만 바꾸고 정기결제 축(nextBillingDate/billingDate/
+  // autoRenewal/agreement)과 감사 주체(ADMIN)를 정리하지 않아, 정기결제 회원에게 쓰면 기존 청구일에
+  // 새 플랜 가격으로 청구되는 오청구가 난다. "무상 comp"인지 "즉시 유료 변경"인지 의미도 분리해야 한다.
+  // → 청구축 재설정 + 감사주체 + admin-web UI 를 갖춘 전용 comp 경로로 구현 예정.
 
   /**
    * 여러 사용자의 멤버십 정보 일괄 조회
@@ -658,6 +675,7 @@ export class AdminOperationsController {
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: '관리자 직접 구독 지급 (일수 + 메모)' })
   @UseGuards(JwtAuthGuard)
+  @IdempotentAdminOp('grant')
   async grantSubscriptionByDays(
     @User('userId') adminId: string,
     @Param('userId') userId: string,
@@ -682,6 +700,7 @@ export class AdminOperationsController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '결제 수동 재시도' })
   @UseGuards(JwtAuthGuard)
+  @IdempotentAdminOp('retry-billing')
   async retryBilling(@User('userId') adminId: string, @Param('contractId') contractId: string) {
     try {
       const result = await this.adminOperationsService.retryBillingForContract(contractId);
@@ -717,7 +736,7 @@ export class AdminOperationsController {
       const result = await this.adminOperationsService.getMembersList({
         page: page ? Number(page) : 1,
         limit: limit ? Number(limit) : 20,
-        status: status as 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'EXPIRED' | undefined,
+        status: status as 'ACTIVE' | 'PAUSED' | 'CANCELLED' | 'EXPIRED' | 'RECURRING_CANCELLED' | undefined,
         q,
         userIds: normalizedUserIds,
         dateFrom,
@@ -836,17 +855,14 @@ export class AdminOperationsController {
   @Put('contracts/:contractId/auto-renewal')
   @ApiOperation({ summary: '자동 연장 설정 변경' })
   @UseGuards(JwtAuthGuard)
+  @IdempotentAdminOp('set-auto-renewal')
   async setAutoRenewal(
     @User('userId') adminId: string,
     @Param('contractId') contractId: string,
     @Body('autoRenewal') autoRenewal: boolean,
   ) {
-    try {
-      await this.adminOperationsService.setAutoRenewal(contractId, autoRenewal, adminId);
-      return { success: true, data: { contractId, autoRenewal } };
-    } catch (error) {
-      this.handleError(error, '자동 연장 설정 변경', contractId);
-    }
+    await this.adminOperationsService.setAutoRenewal(contractId, autoRenewal, adminId);
+    return { success: true, data: { contractId, autoRenewal } };
   }
 
   /**
@@ -917,6 +933,21 @@ export class AdminOperationsController {
       return await this.adminMembersReader.findStuckBillingContracts(hours);
     } catch (error) {
       this.handleError(error, '결제 대기 장기화 계약 조회');
+    }
+  }
+
+  /**
+   * 결제 실패 재시도 대기(dunning) 계약 목록 — 운영자 결제실패 대응용.
+   * GET /admin/dunning
+   */
+  @Get('dunning')
+  @ApiOperation({ summary: '결제 실패 재시도 대기(dunning) 계약 목록' })
+  @UseGuards(JwtAuthGuard)
+  async getDunningList() {
+    try {
+      return await this.adminMembersReader.findDunningList();
+    } catch (error) {
+      this.handleError(error, 'dunning 목록 조회');
     }
   }
 

@@ -3,6 +3,7 @@ import { ContainerRegistrationKeys, MedusaError, Modules } from '@medusajs/frame
 import { confirmPurchaseWorkflow } from '../../../../../workflows/orders/workflows/confirm-purchase-workflow';
 
 const MEMBERSHIP_SERVICE_URL = process.env.MEMBERSHIP_SERVICE_URL || 'http://localhost:3040';
+const MEMBERSHIP_INTERNAL_KEY = process.env.MEMBERSHIP_INTERNAL_KEY || '';
 
 const WELCOME_MEMBERSHIP_TAG = 'welcome-membership';
 
@@ -34,7 +35,10 @@ async function markWelcomeMembershipPurchased(
 
     await fetch(`${MEMBERSHIP_SERVICE_URL}/welcome-membership/eligibility/${userId}/purchased`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${MEMBERSHIP_INTERNAL_KEY}`,
+      },
       body: JSON.stringify({ orderId }),
       signal: AbortSignal.timeout(5000),
     });

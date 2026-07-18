@@ -14,9 +14,14 @@ export const DATE_PRESET_OPTIONS = [
   { value: 'custom', label: '임의기간' },
 ];
 
+/** 로컬(KST) 기준 yyyy-MM-dd. toISOString은 UTC라 KST 자정이 전날로 밀린다. */
+export function toLocalDateString(d: Date): string {
+  return format(d, 'yyyy-MM-dd');
+}
+
 export function computeDateRange(preset: DatePreset): { from: string; to: string } | null {
   const now = new Date();
-  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  const fmt = toLocalDateString;
   switch (preset) {
     case 'today':
       return { from: fmt(startOfDay(now)), to: fmt(endOfDay(now)) };

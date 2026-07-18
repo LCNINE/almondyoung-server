@@ -110,24 +110,13 @@ export class CaptureService {
         `PARTIALLY_CAPTURED: intentId=${intentId}, succeeded=${succeededCount}/${totalCount}. Manual resolution required.`,
       );
     } else {
-      // All failed → FAILED
-      await this.stateTransitionService.transitionIntent(intentId, 'FAILED', {
-        correlationId,
-        reasonCode: 'CAPTURE_FAILED',
-        reasonMessage: 'All capture attempts failed',
-        outboxEvent: {
-          eventType: GatewayEventType.INTENT_FAILED,
-          aggregateType: GATEWAY_AGGREGATE_TYPE,
-          aggregateId: intentId,
-          payload: buildPaymentIntentEventPayload({
-            intentId,
-            userId,
-            status: 'FAILED',
-            payableAmount: totalCaptured,
-            currency: authorizeCharges[0].currency,
-            occurredAt: now,
-          }),
-        },
+      // 전 leg 실패. AUTHORIZED(돈 확정)에서 FAILED는 불법 전이 + 오보고이므로 전이하지 않고 에러만 올린다(수동 해소).
+      this.logger.error(
+        `CAPTURE_ALL_FAILED: intentId=${intentId}, 0/${totalCount} captured. Intent는 AUTHORIZED로 유지(수동 해소 필요).`,
+      );
+      throw new UnprocessableEntityException({
+        error: 'CAPTURE_ALL_FAILED',
+        message: `All ${totalCount} capture attempts failed for intent ${intentId}. Manual resolution required.`,
       });
     }
   }
@@ -144,16 +133,32 @@ export class CaptureService {
       return false;
     }
 
-    const captureCharge = await this.chargesService.create({
-      intentId,
-      paymentMethodId: method.id,
-      amount: authorizeCharge.amount,
-      currency: authorizeCharge.currency,
-      operation: 'CAPTURE',
-      status: 'CREATED',
-      providerIdempotencyKey: this.chargesService.generateIdempotencyKey(authorizeCharge.id, 'CAPTURE'),
-      requestPayload: { intentId, authorizeChargeId: authorizeCharge.id },
-    });
+    // 결정론적 멱등키 — 재시도/동시 실행 시 재INSERT(23505) 대신 기존 charge 재사용
+    const idempotencyKey = this.chargesService.generateIdempotencyKey(authorizeCharge.id, 'CAPTURE');
+    let captureCharge = await this.chargesService.findByProviderIdempotencyKey(idempotencyKey);
+    if (captureCharge?.status === 'SUCCEEDED') {
+      return true; // 이미 캡처됨 — 멱등 skip
+    }
+    if (!captureCharge) {
+      try {
+        captureCharge = await this.chargesService.create({
+          intentId,
+          paymentMethodId: method.id,
+          amount: authorizeCharge.amount,
+          currency: authorizeCharge.currency,
+          operation: 'CAPTURE',
+          status: 'CREATED',
+          providerIdempotencyKey: idempotencyKey,
+          requestPayload: { intentId, authorizeChargeId: authorizeCharge.id },
+        });
+      } catch (err) {
+        if ((err as { code?: string })?.code !== '23505') throw err;
+        // 동시 INSERT 경쟁 → 기존 row 재사용
+        captureCharge = await this.chargesService.findByProviderIdempotencyKey(idempotencyKey);
+        if (!captureCharge) throw err;
+        if (captureCharge.status === 'SUCCEEDED') return true;
+      }
+    }
 
     const provider = this.providerRegistry.getProviderOrThrow(method.type);
 
@@ -187,6 +192,9 @@ export class CaptureService {
         providerTransactionId:
           providerResult.providerTransactionId ?? authorizeCharge.providerTransactionId ?? undefined,
         responsePayload: providerResult.raw,
+        // 재시도로 기존 FAILED charge 를 재사용해 성공한 경우 과거 실패 사유를 지운다
+        errorCode: null,
+        errorMessage: null,
       });
       return true;
     } else {

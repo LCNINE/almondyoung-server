@@ -1,4 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { format } from 'date-fns';
 import { PauseReader } from './pause/pause.reader';
 import { PauseManager } from './pause/pause.manager';
 import { MembershipEventPublisher } from './membership-event.publisher';
@@ -17,11 +19,46 @@ export type { PauseHistoryItem } from './pause/pause.reader';
  */
 @Injectable()
 export class PauseService {
+  private readonly logger = new Logger(PauseService.name);
+
   constructor(
     private readonly pauseReader: PauseReader,
     private readonly pauseManager: PauseManager,
     private readonly membershipEventPublisher: MembershipEventPublisher,
   ) {}
+
+  /**
+   * 일시정지 자동 재개 (매시간)
+   *
+   * 일시정지 종료일이 지난 권한을 자동으로 재개한다. 이 스케줄러가 없으면
+   * 사용자가 수동 재개하지 않는 한 일시정지가 풀리지 않아 정기결제도 영구 중단된다.
+   */
+  @Cron(CronExpression.EVERY_HOUR)
+  async autoResumeExpiredPauses(): Promise<void> {
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const due = await this.pauseReader.findEntitlementsDueForAutoResume(today);
+    if (due.length === 0) return;
+
+    this.logger.log(`일시정지 자동 재개 대상 ${due.length}건`);
+    for (const entitlement of due) {
+      try {
+        await this.pauseManager.resumePause(entitlement.userId, entitlement);
+        await this.membershipEventPublisher
+          .publishStatusChanged({
+            userId: entitlement.userId,
+            status: 'RESUMED',
+            occurredAt: new Date().toISOString(),
+          })
+          .catch((e: unknown) =>
+            this.logger.warn(`RESUMED 이벤트 발행 실패 (userId=${entitlement.userId}): ${e instanceof Error ? e.message : String(e)}`),
+          );
+      } catch (err) {
+        this.logger.error(
+          `일시정지 자동 재개 실패 (userId=${entitlement.userId}): ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+  }
 
   /**
    * 구독 일시정지

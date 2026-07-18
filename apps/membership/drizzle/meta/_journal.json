@@ -29,6 +29,27 @@
       "when": 1782722464813,
       "tag": "20260629084104_add-billing-event-payment-intent-id",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1782808544672,
+      "tag": "20260630083544_add-admin-operation-idempotency",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1782961218685,
+      "tag": "20260702030018_add-billing-idempotency-key",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783398483900,
+      "tag": "20260707042803_block-billing-intent-replay",
+      "breakpoints": true
     }
   ]
 }

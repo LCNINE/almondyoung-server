@@ -22,6 +22,16 @@ export class ChargesService {
     return rows[0] ?? null;
   }
 
+  async findByProviderIdempotencyKey(key: string, tx?: DbTx): Promise<Charge | null> {
+    const db = tx ?? this.dbService.db;
+    const rows = await (db as typeof this.dbService.db)
+      .select()
+      .from(charges)
+      .where(eq(charges.providerIdempotencyKey, key))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
   async findActiveByIntentAndOperation(
     intentId: string,
     operation: ChargeOperation,
@@ -111,8 +121,8 @@ export class ChargesService {
     status: ChargeStatus,
     extra?: {
       providerTransactionId?: string;
-      errorCode?: string;
-      errorMessage?: string;
+      errorCode?: string | null;
+      errorMessage?: string | null;
       responsePayload?: Record<string, unknown>;
     },
     tx?: DbTx,

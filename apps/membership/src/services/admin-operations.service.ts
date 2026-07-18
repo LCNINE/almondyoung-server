@@ -155,22 +155,31 @@ export class AdminOperationsService {
     const paymentRef = await this.adminMembersReader.findContractPaymentRef(contractId);
     if (!paymentRef?.lastPaymentIntentId) return events;
 
+    const synthetic = await this.buildSyntheticInitialEvent(contractId, paymentRef.lastPaymentIntentId);
+    return synthetic ? [synthetic, ...events] : events;
+  }
+
+  // wallet intent로 legacy 최초 결제를 합성. userId/contractId 경로가 공유.
+  private async buildSyntheticInitialEvent(
+    contractId: string,
+    lastPaymentIntentId: string,
+  ): Promise<BillingEventItem | null> {
     try {
-      const intent = await this.paymentClientService.getWalletPaymentIntent(paymentRef.lastPaymentIntentId);
+      const intent = await this.paymentClientService.getWalletPaymentIntent(lastPaymentIntentId);
       const succeeded = intent.status === 'AUTHORIZED' || intent.status === 'CAPTURED';
-      const initialEvent: BillingEventItem = {
+      return {
         id: intent.id,
         contractId,
         eventType: succeeded ? 'CHARGE_SUCCESS' : intent.status === 'FAILED' ? 'CHARGE_FAIL' : 'CHARGE_ATTEMPT',
         attemptNo: 1,
         amount: intent.payableAmount ?? null,
+        paymentIntentId: intent.id,
         errorCode: null,
         errorMessage: null,
         createdAt: intent.createdAt,
       };
-      return [initialEvent, ...events];
     } catch {
-      return events;
+      return null;
     }
   }
 
@@ -179,7 +188,20 @@ export class AdminOperationsService {
   }
 
   async getMemberBillingEventsByUserId(userId: string): Promise<BillingEventItem[]> {
-    return this.adminMembersReader.findBillingEventsByUserId(userId);
+    const events = await this.adminMembersReader.findBillingEventsByUserId(userId);
+
+    // 계약별로 최초 결제(attemptNo=1)가 없으면 legacy 호환 합성 이벤트를 앞에 붙인다(contractId 경로와 동일).
+    const contractsWithInitial = new Set(events.filter((e) => e.attemptNo === 1).map((e) => e.contractId));
+    const paymentRefs = await this.adminMembersReader.findContractPaymentRefsByUserId(userId);
+
+    const synthetic: BillingEventItem[] = [];
+    for (const ref of paymentRefs) {
+      if (contractsWithInitial.has(ref.contractId) || !ref.lastPaymentIntentId) continue;
+      const ev = await this.buildSyntheticInitialEvent(ref.contractId, ref.lastPaymentIntentId);
+      if (ev) synthetic.push(ev);
+    }
+    if (synthetic.length === 0) return events;
+    return [...synthetic, ...events].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   }
 
   async getMemberContractEventsByUserId(userId: string): Promise<ContractEventItem[]> {

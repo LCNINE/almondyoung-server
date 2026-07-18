@@ -90,6 +90,10 @@ export const PauseSubscriptionRequestSchema = z
   .refine((data) => new Date(data.startDate) < new Date(data.endDate), {
     message: '시작일은 종료일보다 이전이어야 합니다',
     path: ['startDate'],
+  })
+  .refine((data) => new Date(data.endDate) > new Date(), {
+    message: '일시정지 종료일은 미래여야 합니다',
+    path: ['endDate'],
   });
 
 export const CancelSubscriptionRequestSchema = z.object({

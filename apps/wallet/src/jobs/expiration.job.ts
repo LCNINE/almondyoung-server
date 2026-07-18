@@ -9,6 +9,7 @@ import {
   GATEWAY_AGGREGATE_TYPE,
   GatewayEventType,
   buildPaymentIntentEventPayload,
+  subscriberExtraFromMetadata,
 } from '../messaging/gateway-event.builder';
 
 const DEFAULT_EXPIRATION_CRON = '*/10 * * * *';
@@ -64,6 +65,8 @@ export class ExpirationJob {
         userId: paymentIntents.userId,
         currency: paymentIntents.currency,
         payableAmount: paymentIntents.payableAmount,
+        // 정산대기 intent 만료 취소 시 membership 라우팅용 subscriber 정보를 CANCELED 이벤트에 실으려면 필요(Finding 2).
+        metadata: paymentIntents.metadata,
       })
       .from(paymentIntents)
       .where(
@@ -103,6 +106,8 @@ export class ExpirationJob {
               status: 'CANCELED',
               payableAmount: intent.payableAmount,
               currency: intent.currency,
+              // 정산대기 intent 가 만료로 취소돼도 membership 이 선점을 해제하도록 subscriber 정보를 실어준다(Finding 2).
+              extra: subscriberExtraFromMetadata(intent.metadata),
             }),
           },
         });

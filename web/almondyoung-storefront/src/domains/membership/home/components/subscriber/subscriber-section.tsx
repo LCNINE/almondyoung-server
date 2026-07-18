@@ -1,7 +1,7 @@
 "use client"
 
 import { useParams, useRouter } from "next/navigation"
-import { useMemo, useState } from "react"
+import { useMemo, useState, useTransition } from "react"
 import { ChevronRight, ExternalLink } from "lucide-react"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { useTranslations } from "next-intl"
@@ -66,7 +66,7 @@ export default function SubscriberSection({
   hasCafe24Link,
 }: SubscriberSectionProps) {
   const [open, setOpen] = useState(false)
-  const [isCancelling, setIsCancelling] = useState(false)
+  const [isCancelling, startTransition] = useTransition()
   const router = useRouter()
   const params = useParams()
   const countryCode = (params?.countryCode as string) ?? "kr"
@@ -153,25 +153,34 @@ export default function SubscriberSection({
         reasons={hasCancellationReasons ? cancellationReasons : []}
         isSubmitting={isCancelling}
         refundEligible={refundEligible}
-        onConfirm={async ({ reasonCode, reasonText, refundReceiveAccount }) => {
-          try {
-            setIsCancelling(true)
-            await cancelSubscription(
-              reasonCode,
-              reasonText,
-              refundReceiveAccount
-            )
-            setOpen(false)
-            router.push(`/${countryCode}/mypage/membership`)
-            pollCartRefreshUntilGroupRemoved(() => {
-              toast.success(t("billing.cartPriceUpdated"))
-              router.refresh()
-            })
-          } catch (error) {
-            console.error("멤버십 해지 실패:", error)
-          } finally {
-            setIsCancelling(false)
-          }
+        onConfirm={({ reasonCode, reasonText, refundReceiveAccount }) => {
+          // 인증 필요한 Server Action 호출은 startTransition 안에서 실행해야
+          // re-throw한 UNAUTHORIZED가 error.tsx로 전파돼 토큰 복구가 동작한다.
+          startTransition(async () => {
+            try {
+              await cancelSubscription(
+                reasonCode,
+                reasonText,
+                refundReceiveAccount
+              )
+              setOpen(false)
+              router.push(`/${countryCode}/mypage/membership`)
+              pollCartRefreshUntilGroupRemoved(() => {
+                toast.success(t("billing.cartPriceUpdated"))
+                router.refresh()
+              })
+            } catch (error) {
+              const err = error as Error & { digest?: string }
+              // UNAUTHORIZED는 re-throw → error.tsx 토큰 복구
+              if (
+                err?.digest === "UNAUTHORIZED" ||
+                err?.message === "UNAUTHORIZED"
+              )
+                throw error
+              console.error("멤버십 해지 실패:", error)
+              toast.error(t("history.cancelFailed"))
+            }
+          })
         }}
       />
     </>
