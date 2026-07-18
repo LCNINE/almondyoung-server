@@ -25,12 +25,7 @@ export type StoreClaimStatus =
   | 'returning'
   | 'completed';
 
-/**
- * 고객에게 노출할 환불 요약 정보.
- *
- * Core가 Wallet 상태와 businessLinks를 조합해 생성한다.
- * 내부 에러 코드, provider raw error, PG transaction key 등 운영 민감 정보는 포함하지 않는다.
- */
+/** 분할/합배송 진행 요약 (활성 상자 수 기준). */
 export class ShipmentProgressDto {
   @ApiProperty({ description: '활성 상자 수 (canceled/superseded 제외)' })
   total: number;
@@ -42,6 +37,12 @@ export class ShipmentProgressDto {
   delivered: number;
 }
 
+/**
+ * 고객에게 노출할 환불 요약 정보.
+ *
+ * Core가 Wallet 상태와 businessLinks를 조합해 생성한다.
+ * 내부 에러 코드, provider raw error, PG transaction key 등 운영 민감 정보는 포함하지 않는다.
+ */
 export class RefundSummaryDto {
   @ApiProperty({ enum: ['none', 'pending', 'manual_pending', 'succeeded', 'failed'] })
   status: StoreRefundStatus;

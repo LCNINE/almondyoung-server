@@ -24,12 +24,12 @@ export interface FulfillmentPhaseResult {
 
 type UnitPhase = 'preparing' | 'shipping' | 'delivered';
 
-const MOVED_SHIPMENT_STATUSES = new Set(['shipped', 'in_transit', 'delivered']);
+export const MOVED_SHIPMENT_STATUSES = new Set(['shipped', 'in_transit', 'delivered', 'failed']);
 const MOVED_DROPSHIP_STATUSES = new Set(['forwarded', 'completed']);
 
 function shipmentUnitPhase(status: string): UnitPhase {
   if (status === 'delivered') return 'delivered';
-  if (status === 'shipped' || status === 'in_transit') return 'shipping';
+  if (status === 'shipped' || status === 'in_transit' || status === 'failed') return 'shipping';
   return 'preparing'; // draft, planned, recovery_required
 }
 

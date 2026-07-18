@@ -28,6 +28,7 @@ import {
   deriveFulfillmentPhase,
   isPickingStarted,
   hasShippedEvidence as hasShippedEvidenceFrom,
+  MOVED_SHIPMENT_STATUSES,
   PhaseFoRow,
   FulfillmentPhaseInput,
 } from './fulfillment-phase';
@@ -994,8 +995,7 @@ export class StoreSalesOrdersService {
     const activeShipmentStatuses =
       definitelyShipped || maybeMaskedByRecovery ? await this.loadActiveShipmentStatuses(salesOrderId) : [];
 
-    const movedShipmentStatuses = new Set(['shipped', 'in_transit', 'delivered']);
-    const anyFoiShipped = definitelyShipped || activeShipmentStatuses.some((s) => movedShipmentStatuses.has(s));
+    const anyFoiShipped = definitelyShipped || activeShipmentStatuses.some((s) => MOVED_SHIPMENT_STATUSES.has(s));
 
     return { foCount, allFoCanceled, activeShipmentStatuses, dropShipStatuses, anyFoiShipped };
   }

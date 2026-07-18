@@ -583,6 +583,21 @@ describe('StoreSalesOrdersService', () => {
         expect(r.fulfillmentStatus).toBe('preparing');
         expect(r.availableActions).toContain('cancel');
       });
+      it('직배(drop_ship) forwarded → shipping (loader dropShipStatuses 추출)', async () => {
+        const { service } = makeContext({
+          fos: [{ status: 'ready', fulfillmentMode: 'drop_ship', directShipStatus: 'forwarded' }],
+        });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('shipping');
+        expect(r.availableActions).not.toContain('cancel');
+      });
+      it('직배 completed → delivered', async () => {
+        const { service } = makeContext({
+          fos: [{ status: 'ready', fulfillmentMode: 'drop_ship', directShipStatus: 'completed' }],
+        });
+        const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(r.fulfillmentStatus).toBe('delivered');
+      });
     });
   });
 
