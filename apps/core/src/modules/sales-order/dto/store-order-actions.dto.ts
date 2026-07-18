@@ -4,14 +4,11 @@ import { ArrayMaxSize, ArrayNotEmpty, IsArray, IsIn, IsOptional, IsString, MaxLe
 export type StoreOrderAction = 'cancel' | 'track' | 'return' | 'exchange' | 'receipt';
 
 export type StoreFulfillmentStatus =
-  | 'not_created'
-  | 'awaiting_matching'
-  | 'created'
-  | 'picking'
-  | 'packed'
-  | 'shipped'
-  | 'delivered'
-  | 'canceled';
+  | 'not_created' // FO 없음 = 결제완료·출고대기
+  | 'preparing' // 상품 준비 중 (예약/피킹/패킹/복구 흡수)
+  | 'shipping' // 배송 중 (하나 이상 상자 이동)
+  | 'delivered' // 배송 완료 (모든 활성 상자 배송완료)
+  | 'canceled'; // 이행 취소 (모든 FO canceled)
 
 export type StoreRefundStatus = 'none' | 'pending' | 'manual_pending' | 'succeeded' | 'failed';
 
@@ -34,6 +31,17 @@ export type StoreClaimStatus =
  * Core가 Wallet 상태와 businessLinks를 조합해 생성한다.
  * 내부 에러 코드, provider raw error, PG transaction key 등 운영 민감 정보는 포함하지 않는다.
  */
+export class ShipmentProgressDto {
+  @ApiProperty({ description: '활성 상자 수 (canceled/superseded 제외)' })
+  total: number;
+
+  @ApiProperty({ description: '이동한 상자 수 (배송중+배송완료)' })
+  shipped: number;
+
+  @ApiProperty({ description: '배송완료 상자 수' })
+  delivered: number;
+}
+
 export class RefundSummaryDto {
   @ApiProperty({ enum: ['none', 'pending', 'manual_pending', 'succeeded', 'failed'] })
   status: StoreRefundStatus;
@@ -68,9 +76,12 @@ export class StoreOrderActionsResponseDto {
   orderStatus: string;
 
   @ApiProperty({
-    enum: ['not_created', 'awaiting_matching', 'created', 'picking', 'packed', 'shipped', 'delivered', 'canceled'],
+    enum: ['not_created', 'preparing', 'shipping', 'delivered', 'canceled'],
   })
   fulfillmentStatus: StoreFulfillmentStatus;
+
+  @ApiPropertyOptional({ type: ShipmentProgressDto, description: '분할/합배송 진행 요약 (활성 상자 0개면 생략)' })
+  shipmentProgress?: ShipmentProgressDto;
 
   @ApiProperty({ enum: ['none', 'pending', 'manual_pending', 'succeeded', 'failed'] })
   refundStatus: StoreRefundStatus;
