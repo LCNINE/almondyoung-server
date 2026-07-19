@@ -1329,3 +1329,55 @@ export interface ReturnEligibilityResponse {
   orderId: string;
   items: ReturnEligibilityItem[];
 }
+
+// ===== Waybill (운송장) =====
+
+export type CarrierCode =
+  | 'CJ'
+  | 'HANJIN'
+  | 'LOTTE'
+  | 'LOGEN'
+  | 'KDEXP'
+  | 'CJGLS';
+
+export interface WaybillResponse {
+  id: string;
+  shipmentId: string;
+  source: 'carrier' | 'manual' | string;
+  carrier: string;
+  status: string;
+  trackingNo: string | null;
+  custOrdNo: string | null;
+  manifestVersion: number;
+  issuedAt: string | null;
+  voidedAt: string | null;
+  lastError: string | null;
+}
+
+export interface IssueWaybillRequest {
+  carrier: CarrierCode;
+  expectedManifestVersion: number;
+}
+
+export interface RegisterManualWaybillRequest {
+  carrier: CarrierCode;
+  expectedManifestVersion: number;
+  trackingNo: string;
+  reason?: string;
+}
+
+export interface IssueBatchWaybillRequest {
+  shipmentIds: string[];
+  carrier: CarrierCode;
+}
+
+export interface VoidWaybillRequest {
+  reason: string;
+}
+
+export interface BatchResultItem {
+  shipmentId: string;
+  status: string; // registered | failed | pending | allocated
+  trackingNo: string | null;
+  reason: string | null;
+}

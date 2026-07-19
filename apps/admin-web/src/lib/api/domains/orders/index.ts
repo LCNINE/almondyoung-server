@@ -11,6 +11,7 @@ import { directShipClient } from './direct-ship.client';
 import { consolidationClient } from './consolidation.client';
 import { locationOptimizationClient } from './location-optimization.client';
 import { matchingClient } from '../matching/matching.client';
+import { waybillsClient } from './waybills.client';
 
 export const orders = {
   salesOrders,
@@ -23,6 +24,7 @@ export const orders = {
   consolidation: consolidationClient,
   locationOptimization: locationOptimizationClient,
   matching: matchingClient,
+  waybills: waybillsClient,
 };
 
 export { salesOrders } from './sales-orders.client';
@@ -34,3 +36,4 @@ export { outboundBatchesClient } from './outbound-batches.client';
 export { directShipClient } from './direct-ship.client';
 export { consolidationClient } from './consolidation.client';
 export { locationOptimizationClient } from './location-optimization.client';
+export { waybillsClient } from './waybills.client';
