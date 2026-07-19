@@ -194,7 +194,7 @@ export function setup(infra: SharedInfra) {
   // 반배포(프론트 ON·서버 OFF → PENDING 계좌 가입 400 전멸)를 피한다 — 한 상수에서 파생한다.
   // NEXT_PUBLIC_* 는 storefront 빌드타임 주입이므로 값 변경 시 storefront 재배포가 필요하다.
   // 활성화는 이 값을 'true' 로 바꾸는 것으로 일원화한다(현재 미개통).
-  const invoiceBillingEnabled = 'false';
+  const invoiceBillingEnabled = 'true';
 
   // 앱별 env (프리픽스 부여). 태스크에는 담당 앱 것만 병합해 넘긴다.
   const analyticsEnv = withPrefix('ANALYTICS', {
