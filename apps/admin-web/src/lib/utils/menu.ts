@@ -168,6 +168,11 @@ export const mainMenus: MainMenu[] = [
             path: '/order/picking-list',
           },
           {
+            id: 'waybill-issue',
+            title: '운송장 발급',
+            path: '/order/waybill-issue',
+          },
+          {
             id: 'inspection-dispatch',
             title: '검수발송',
             path: '/order/inspection',

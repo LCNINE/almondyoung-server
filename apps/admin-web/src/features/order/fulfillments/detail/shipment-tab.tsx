@@ -29,6 +29,7 @@ import {
   ChannelDispatchAttemptStatus,
 } from './channel-dispatch-status';
 import { ShipmentActions } from './shipment-actions';
+import { WaybillActions } from './waybill-actions';
 
 const STATUS_VARIANT = (
   status: string
@@ -149,6 +150,7 @@ function ShipmentDetailView({ shipment }: { shipment: ShipmentAdminDetail }) {
         <h3 className="mb-2 text-sm font-semibold">
           운송장 이력 ({waybills.length})
         </h3>
+        <WaybillActions shipment={shipment} />
         {waybills.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             발행된 운송장이 없습니다.
