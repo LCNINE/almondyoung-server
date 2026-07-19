@@ -21,7 +21,6 @@ export interface PaymentCapturedPayload {
   createdAt: string; // ISO 8601
 }
 
-
 export interface PaymentRefundRequestPayload {
   refundId: string;
   userId: string;
@@ -292,6 +291,96 @@ export interface TaxInvoiceCancelledPayload {
   reasonDetail?: string;
   cancelledBy?: string;
   cancelledAt: string;
+}
+
+// ==========================================
+// 인보이스(ADR-0027) — wallet 이 발행하는 정기결제 청구 결과. subscriber 는 이 이벤트만 구독한다.
+// eventType 은 도트 표기('invoice.paid' 등) — wallet outbox dispatcher 가 그대로 messageType 으로 싣는다.
+// ==========================================
+
+export interface InvoicePaidPayload {
+  invoiceId: string;
+  subscriberType: string;
+  subscriberRef: string;
+  periodStart: string;
+  periodEnd: string;
+  amount: number;
+  currency: string;
+  /** 성공한 시도 intent. 재발행(자가치유) 시 빈 문자열일 수 있다. */
+  intentId: string;
+  paidAt: string;
+  occurredAt: string;
+}
+
+export interface InvoicePaymentFailedPayload {
+  invoiceId: string;
+  subscriberType: string;
+  subscriberRef: string;
+  attemptCount: number;
+  maxAttempts: number;
+  nextAttemptAt: string;
+  errorCode: string | null;
+  errorMessage: string | null;
+  intentId: string | null;
+  occurredAt: string;
+}
+
+export interface InvoiceUncollectiblePayload {
+  invoiceId: string;
+  subscriberType: string;
+  subscriberRef: string;
+  periodStart: string;
+  periodEnd: string;
+  errorCode: string | null;
+  errorMessage: string | null;
+  intentId: string | null;
+  occurredAt: string;
+}
+
+export interface MandateRejectedPayload {
+  /** 인보이스 생성 전 결제수단 부재로 거절되면 null */
+  invoiceId: string | null;
+  billingMethodId: string | null;
+  subscriberType: string;
+  subscriberRef: string;
+  reasonCode: string | null;
+  reason: string | null;
+  /** invoiceId 가 null 인 경우의 안정 멱등 키(CreateInvoice idempotencyKey) */
+  idempotencyKey?: string;
+  occurredAt: string;
+}
+
+export interface InvoiceVoidedPayload {
+  invoiceId: string;
+  subscriberType: string;
+  subscriberRef: string;
+  periodStart: string;
+  periodEnd: string;
+  reason: string | null;
+  intentId: string | null;
+  occurredAt: string;
+}
+
+// ==========================================
+// payment.intent.* — wallet outbox dispatcher 가 결제 인텐트 상태 전이마다 발행하는 도트-표기 이벤트.
+// 발행측 상수는 apps/wallet 의 GatewayEventType(gateway-event.builder.ts) 이며 이 계약과 문자열이 일치한다.
+// 소비: channel-adapter(Medusa 전달), membership 레거시 CHARGE 경로(billing-result.consumer).
+// payload 는 buildPaymentIntentEventPayload 공통 형태 + 인텐트별 extra(구독 라우팅 subscriberRef/Type 등)라
+// passthrough 로 확장 필드를 보존한다.
+// ==========================================
+
+export interface PaymentIntentEventPayload {
+  intentId: string;
+  userId: string;
+  status: string;
+  payableAmount: number;
+  currency: string;
+  occurredAt: string;
+  /** 정기결제 청구 인텐트의 구독 라우팅(intent.metadata 에서 승격) — 구독과 무관하면 없음 */
+  subscriberRef?: string;
+  subscriberType?: string;
+  purpose?: string;
+  [key: string]: unknown;
 }
 
 // ==========================================
@@ -583,115 +672,203 @@ const TaxInvoiceCancelledSchema = z.object({
 // 3. Stream Config (Unified)
 // ==========================================
 
+// 인보이스(ADR-0027) 스키마
+const InvoicePaidSchema = z.object({
+  invoiceId: z.string().min(1),
+  subscriberType: z.string().min(1),
+  subscriberRef: z.string().min(1),
+  periodStart: z.string().min(1),
+  periodEnd: z.string().min(1),
+  amount: z.number().int().nonnegative(),
+  currency: z.string().min(1),
+  intentId: z.string(),
+  paidAt: z.string().min(1),
+  occurredAt: z.string().min(1),
+});
+
+const InvoicePaymentFailedSchema = z.object({
+  invoiceId: z.string().min(1),
+  subscriberType: z.string().min(1),
+  subscriberRef: z.string().min(1),
+  attemptCount: z.number().int().nonnegative(),
+  maxAttempts: z.number().int().positive(),
+  nextAttemptAt: z.string().min(1),
+  errorCode: z.string().nullable(),
+  errorMessage: z.string().nullable(),
+  intentId: z.string().nullable(),
+  occurredAt: z.string().min(1),
+});
+
+const InvoiceUncollectibleSchema = z.object({
+  invoiceId: z.string().min(1),
+  subscriberType: z.string().min(1),
+  subscriberRef: z.string().min(1),
+  periodStart: z.string().min(1),
+  periodEnd: z.string().min(1),
+  errorCode: z.string().nullable(),
+  errorMessage: z.string().nullable(),
+  intentId: z.string().nullable(),
+  occurredAt: z.string().min(1),
+});
+
+const MandateRejectedSchema = z.object({
+  invoiceId: z.string().nullable(),
+  billingMethodId: z.string().nullable(),
+  subscriberType: z.string().min(1),
+  subscriberRef: z.string().min(1),
+  reasonCode: z.string().nullable(),
+  reason: z.string().nullable(),
+  idempotencyKey: z.string().optional(),
+  occurredAt: z.string().min(1),
+});
+
+const InvoiceVoidedSchema = z.object({
+  invoiceId: z.string().min(1),
+  subscriberType: z.string().min(1),
+  subscriberRef: z.string().min(1),
+  periodStart: z.string().min(1),
+  periodEnd: z.string().min(1),
+  reason: z.string().nullable(),
+  intentId: z.string().nullable(),
+  occurredAt: z.string().min(1),
+});
+
+// payment.intent.* 공통 스키마.
+// 이 이벤트 계열은 계약화 이전부터 wallet outbox 로 발행돼 channel-adapter(→Medusa 주문 흐름) 등이
+// validateOnConsume 로 소비하고 있었다. 계약 등록만으로 소비검증이 켜져 라이브 주문 트래픽이 DLQ 로
+// 새는 회귀를 막기 위해, 스키마는 의도적으로 관대하게(전 필드 optional + passthrough) 둔다.
+// 기대 형태는 위 PaymentIntentEventPayload 인터페이스가 문서화한다.
+// 런타임은 관대하게(전 필드 optional) 검증하되, 소비자 타입 힌트는 위 인터페이스로 rich 하게 유지한다.
+const PaymentIntentEventSchema = z
+  .object({
+    intentId: z.string().optional(),
+    userId: z.string().optional(),
+    status: z.string().optional(),
+    payableAmount: z.number().optional(),
+    currency: z.string().optional(),
+    occurredAt: z.string().optional(),
+    subscriberRef: z.string().optional(),
+    subscriberType: z.string().optional(),
+    purpose: z.string().optional(),
+  })
+  .catchall(z.unknown()) as unknown as z.ZodType<PaymentIntentEventPayload>;
+
 export const PAYMENT_STREAM = stream({
   topic: 'payments.events.v1',
   partitions: 6,
   aggregateType: 'Payment',
   events: {
     // --- Core Payment Events (SoT) ---
-    PaymentCaptured: event<'PaymentCaptured', PaymentCapturedPayload>(
-      'PaymentCaptured',
-      PaymentCapturedSchema,
-    ),
-    PaymentRefundRequest: event<
+    PaymentCaptured: event<'PaymentCaptured', PaymentCapturedPayload>('PaymentCaptured', PaymentCapturedSchema),
+    PaymentRefundRequest: event<'PaymentRefundRequest', PaymentRefundRequestPayload>(
       'PaymentRefundRequest',
-      PaymentRefundRequestPayload
-    >('PaymentRefundRequest', PaymentRefundRequestSchema),
-    PaymentRefundCompleted: event<
+      PaymentRefundRequestSchema,
+    ),
+    PaymentRefundCompleted: event<'PaymentRefundCompleted', PaymentRefundCompletedPayload>(
       'PaymentRefundCompleted',
-      PaymentRefundCompletedPayload
-    >('PaymentRefundCompleted', PaymentRefundCompletedSchema),
+      PaymentRefundCompletedSchema,
+    ),
 
     // --- Imported Payment Events ---
     PaymentAuthorized: event<'PaymentAuthorized', PaymentAuthorizedPayload>(
       'PaymentAuthorized',
       PaymentAuthorizedSchema,
     ),
-    PaymentFailed: event<'PaymentFailed', PaymentFailedPayload>(
-      'PaymentFailed',
-      PaymentFailedSchema,
-    ),
-    PaymentCancelled: event<'PaymentCancelled', PaymentCancelledPayload>(
-      'PaymentCancelled',
-      PaymentCancelledSchema,
-    ),
+    PaymentFailed: event<'PaymentFailed', PaymentFailedPayload>('PaymentFailed', PaymentFailedSchema),
+    PaymentCancelled: event<'PaymentCancelled', PaymentCancelledPayload>('PaymentCancelled', PaymentCancelledSchema),
 
     // --- Imported Refund Events (Intermediate States) ---
     // RefundRequested, RefundCompleted는 위 SoT 이벤트로 대체
-    RefundApproved: event<'RefundApproved', RefundApprovedPayload>(
-      'RefundApproved',
-      RefundApprovedSchema,
-    ),
-    RefundRejected: event<'RefundRejected', RefundRejectedPayload>(
-      'RefundRejected',
-      RefundRejectedSchema,
-    ),
-    RefundFailed: event<'RefundFailed', RefundFailedPayload>(
-      'RefundFailed',
-      RefundFailedSchema,
-    ),
+    RefundApproved: event<'RefundApproved', RefundApprovedPayload>('RefundApproved', RefundApprovedSchema),
+    RefundRejected: event<'RefundRejected', RefundRejectedPayload>('RefundRejected', RefundRejectedSchema),
+    RefundFailed: event<'RefundFailed', RefundFailedPayload>('RefundFailed', RefundFailedSchema),
 
     // --- BNPL Events ---
     BnplAccountCreated: event<'BnplAccountCreated', BnplAccountCreatedPayload>(
       'BnplAccountCreated',
       BnplAccountCreatedSchema,
     ),
-    BnplCreditUsed: event<'BnplCreditUsed', BnplCreditUsedPayload>(
-      'BnplCreditUsed',
-      BnplCreditUsedSchema,
-    ),
-    BnplPurchaseCompleted: event<
+    BnplCreditUsed: event<'BnplCreditUsed', BnplCreditUsedPayload>('BnplCreditUsed', BnplCreditUsedSchema),
+    BnplPurchaseCompleted: event<'BnplPurchaseCompleted', BnplPurchaseCompletedPayload>(
       'BnplPurchaseCompleted',
-      BnplPurchaseCompletedPayload
-    >('BnplPurchaseCompleted', BnplPurchaseCompletedSchema),
-    BnplRepaymentSuccess: event<
+      BnplPurchaseCompletedSchema,
+    ),
+    BnplRepaymentSuccess: event<'BnplRepaymentSuccess', BnplRepaymentSuccessPayload>(
       'BnplRepaymentSuccess',
-      BnplRepaymentSuccessPayload
-    >('BnplRepaymentSuccess', BnplRepaymentSuccessSchema),
-    BnplRepaymentFailed: event<
+      BnplRepaymentSuccessSchema,
+    ),
+    BnplRepaymentFailed: event<'BnplRepaymentFailed', BnplRepaymentFailedPayload>(
       'BnplRepaymentFailed',
-      BnplRepaymentFailedPayload
-    >('BnplRepaymentFailed', BnplRepaymentFailedSchema),
-    BnplSettlementCompleted: event<
+      BnplRepaymentFailedSchema,
+    ),
+    BnplSettlementCompleted: event<'BnplSettlementCompleted', BnplSettlementCompletedPayload>(
       'BnplSettlementCompleted',
-      BnplSettlementCompletedPayload
-    >('BnplSettlementCompleted', BnplSettlementCompletedSchema),
-    BnplSettlementFailed: event<
+      BnplSettlementCompletedSchema,
+    ),
+    BnplSettlementFailed: event<'BnplSettlementFailed', BnplSettlementFailedPayload>(
       'BnplSettlementFailed',
-      BnplSettlementFailedPayload
-    >('BnplSettlementFailed', BnplSettlementFailedSchema),
+      BnplSettlementFailedSchema,
+    ),
 
     // --- Point Events ---
-    PointsEarned: event<'PointsEarned', PointsEarnedPayload>(
-      'PointsEarned',
-      PointsEarnedSchema,
-    ),
-    PointsRedeemed: event<'PointsRedeemed', PointsRedeemedPayload>(
-      'PointsRedeemed',
-      PointsRedeemedSchema,
-    ),
-    PointsCancelled: event<'PointsCancelled', PointsCancelledPayload>(
-      'PointsCancelled',
-      PointsCancelledSchema,
-    ),
-    PointsExpired: event<'PointsExpired', PointsExpiredPayload>(
-      'PointsExpired',
-      PointsExpiredSchema,
-    ),
+    PointsEarned: event<'PointsEarned', PointsEarnedPayload>('PointsEarned', PointsEarnedSchema),
+    PointsRedeemed: event<'PointsRedeemed', PointsRedeemedPayload>('PointsRedeemed', PointsRedeemedSchema),
+    PointsCancelled: event<'PointsCancelled', PointsCancelledPayload>('PointsCancelled', PointsCancelledSchema),
+    PointsExpired: event<'PointsExpired', PointsExpiredPayload>('PointsExpired', PointsExpiredSchema),
 
     // --- Tax Invoice Events ---
-    TaxInvoiceIssued: event<'TaxInvoiceIssued', TaxInvoiceIssuedPayload>(
-      'TaxInvoiceIssued',
-      TaxInvoiceIssuedSchema,
-    ),
-    TaxInvoiceFailed: event<'TaxInvoiceFailed', TaxInvoiceFailedPayload>(
-      'TaxInvoiceFailed',
-      TaxInvoiceFailedSchema,
-    ),
-    TaxInvoiceCancelled: event<
+    TaxInvoiceIssued: event<'TaxInvoiceIssued', TaxInvoiceIssuedPayload>('TaxInvoiceIssued', TaxInvoiceIssuedSchema),
+    TaxInvoiceFailed: event<'TaxInvoiceFailed', TaxInvoiceFailedPayload>('TaxInvoiceFailed', TaxInvoiceFailedSchema),
+    TaxInvoiceCancelled: event<'TaxInvoiceCancelled', TaxInvoiceCancelledPayload>(
       'TaxInvoiceCancelled',
-      TaxInvoiceCancelledPayload
-    >('TaxInvoiceCancelled', TaxInvoiceCancelledSchema),
+      TaxInvoiceCancelledSchema,
+    ),
+    // --- Invoice Events (ADR-0027, wallet 발행) ---
+    'invoice.paid': event<'invoice.paid', InvoicePaidPayload>('invoice.paid', InvoicePaidSchema),
+    'invoice.payment_failed': event<'invoice.payment_failed', InvoicePaymentFailedPayload>(
+      'invoice.payment_failed',
+      InvoicePaymentFailedSchema,
+    ),
+    'invoice.uncollectible': event<'invoice.uncollectible', InvoiceUncollectiblePayload>(
+      'invoice.uncollectible',
+      InvoiceUncollectibleSchema,
+    ),
+    'mandate.rejected': event<'mandate.rejected', MandateRejectedPayload>('mandate.rejected', MandateRejectedSchema),
+    'invoice.voided': event<'invoice.voided', InvoiceVoidedPayload>('invoice.voided', InvoiceVoidedSchema),
+
+    // --- Payment Intent Events (wallet outbox dispatcher, 도트 표기) ---
+    'payment.intent.created': event<'payment.intent.created', PaymentIntentEventPayload>(
+      'payment.intent.created',
+      PaymentIntentEventSchema,
+    ),
+    'payment.intent.authorized': event<'payment.intent.authorized', PaymentIntentEventPayload>(
+      'payment.intent.authorized',
+      PaymentIntentEventSchema,
+    ),
+    'payment.intent.succeeded': event<'payment.intent.succeeded', PaymentIntentEventPayload>(
+      'payment.intent.succeeded',
+      PaymentIntentEventSchema,
+    ),
+    'payment.intent.captured': event<'payment.intent.captured', PaymentIntentEventPayload>(
+      'payment.intent.captured',
+      PaymentIntentEventSchema,
+    ),
+    'payment.intent.partially_captured': event<'payment.intent.partially_captured', PaymentIntentEventPayload>(
+      'payment.intent.partially_captured',
+      PaymentIntentEventSchema,
+    ),
+    'payment.intent.failed': event<'payment.intent.failed', PaymentIntentEventPayload>(
+      'payment.intent.failed',
+      PaymentIntentEventSchema,
+    ),
+    'payment.intent.canceled': event<'payment.intent.canceled', PaymentIntentEventPayload>(
+      'payment.intent.canceled',
+      PaymentIntentEventSchema,
+    ),
+    'payment.intent.awaiting_deposit': event<'payment.intent.awaiting_deposit', PaymentIntentEventPayload>(
+      'payment.intent.awaiting_deposit',
+      PaymentIntentEventSchema,
+    ),
   },
 });
 

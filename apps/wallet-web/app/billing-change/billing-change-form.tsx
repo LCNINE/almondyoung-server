@@ -11,6 +11,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { CreditCard, AlertCircle, CheckCircle2, ChevronLeft } from 'lucide-react';
 import { CMS_BANKS, getBankName } from '@/lib/cms-banks';
 import { CmsSignaturePad } from '@/components/cms-signature-pad';
+import { isValidPayerNumber } from '@/lib/payer-number';
+import { buildReturnUrl } from '@/lib/return-url';
 
 interface BillingChangeFormProps {
   returnUrl: string;
@@ -30,6 +32,8 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
   const [error, setError] = useState<string | null>(initialError ?? null);
   const [done, setDone] = useState(false);
   const [agreementUploadFailed, setAgreementUploadFailed] = useState(false);
+  // 신규 등록 시 백엔드가 반환한 새 결제수단 id — 복귀 후 선적용 자동가입이 이 수단을 쓰도록 returnUrl 에 싣는다.
+  const [newBillingMethodId, setNewBillingMethodId] = useState<string | null>(null);
 
   const [paymentCompany, setPaymentCompany] = useState('');
   const [payerName, setPayerName] = useState('');
@@ -51,6 +55,11 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
   const handleDetailsSubmit = (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
+    // §5-2 형식검증: 사업자번호 체크섬 / 생년월일 범위. 효성 D+1 Q201(불일치) 전에 오타 차단.
+    if (!isValidPayerNumber(payerNumber)) {
+      setError('생년월일(개인 6자리) 또는 사업자등록번호(법인 10자리)를 정확히 입력해주세요.');
+      return;
+    }
     setConsentPersonalInfo(false);
     setConsentThirdParty(false);
     setStep('consent');
@@ -72,7 +81,11 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
         : `/api/billing/cms-update-with-agreement/${billingMethodId}`;
       const method = isRegister ? 'POST' : 'PUT';
       const res = await fetch(url, { method, credentials: 'include', body: formData });
-      const data = (await res.json().catch(() => ({}))) as { error?: string; agreementUploadFailed?: boolean };
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        agreementUploadFailed?: boolean;
+        id?: string;
+      };
       if (!res.ok) {
         setError(data.error ?? (isRegister ? '계좌 등록에 실패했습니다.' : '계좌 변경에 실패했습니다.'));
         setStep('details');
@@ -81,6 +94,8 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
       if (data.agreementUploadFailed) {
         setAgreementUploadFailed(true);
       }
+      // 신규 등록 응답의 새 id 만 실어 보낸다(변경은 기존 수단이라 auto-subscribe 가 이미 알고 있음).
+      if (isRegister && data.id) setNewBillingMethodId(data.id);
       setDone(true);
     } catch {
       setError(isRegister ? '계좌 등록 중 오류가 발생했습니다.' : '계좌 변경 중 오류가 발생했습니다.');
@@ -112,12 +127,21 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
                 <p className={`mt-1 text-xs ${agreementUploadFailed ? 'text-amber-700' : 'text-emerald-700'}`}>
                   {agreementUploadFailed
                     ? '동의자료 등록에 실패했습니다. 관리자가 수동으로 처리해야 정기결제가 가능해집니다. 고객센터에 문의해주세요.'
-                    : `효성 CMS 심사 후 1~2 영업일 내 최종 확정됩니다.${isRegister ? ' 등록 완료 시 정기결제가 자동으로 시작됩니다.' : ' 다음 결제부터 새 계좌로 자동 출금됩니다.'}`}
+                    : `효성 CMS 심사 후 1~2 영업일 내 최종 확정됩니다.${isRegister ? ' 확인 버튼을 눌러 돌아간 화면에서 멤버십 가입을 마무리해 주세요 — 가입 후에는 심사 승인과 함께 결제가 자동 출금됩니다.' : ' 다음 결제부터 새 계좌로 자동 출금됩니다.'} 은행에서 오는 ‘자동이체 등록 접수’ 안내(문자 등)는 최종 승인이 아니며, 최종 결과는 결제수단 관리 화면에서 확인할 수 있습니다.`}
                 </p>
               </div>
             </CardContent>
           </Card>
-          <Button onClick={() => router.replace(returnUrlWithFlag)} className="w-full h-11 font-semibold">
+          <Button
+            onClick={() =>
+              router.replace(
+                newBillingMethodId
+                  ? buildReturnUrl(returnUrlWithFlag, { billingMethodId: newBillingMethodId })
+                  : returnUrlWithFlag,
+              )
+            }
+            className="w-full h-11 font-semibold"
+          >
             확인
           </Button>
         </div>
@@ -368,6 +392,22 @@ export function BillingChangeForm({ returnUrl, billingMethodId, initialError }: 
                   inputMode="numeric"
                   required
                 />
+              </div>
+
+              {/* §5-1 등록 전 확인 안내 — 실측 최대 실패군(Q201 본인정보 불일치) 예방 */}
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                <p className="mb-1 font-semibold text-amber-900">등록 전에 꼭 확인하세요</p>
+                <p>
+                  자동이체는 은행에 등록된 <strong>계좌주 본인 정보로만</strong> 등록됩니다.
+                </p>
+                <ul className="mt-1.5 list-disc space-y-0.5 pl-4">
+                  <li>예금주 성함이 신청 계좌의 실제 예금주와 같아야 합니다.</li>
+                  <li>생년월일(개인) 또는 사업자등록번호(법인)가 그 계좌 등록정보와 일치해야 합니다.</li>
+                  <li>본인 명의가 아닌 계좌(가족 계좌 등)로는 등록되지 않습니다.</li>
+                </ul>
+                <p className="mt-1.5">
+                  정보가 다르면 은행 확인 단계에서 <strong>등록이 거절</strong>되며, 다시 등록하셔야 합니다.
+                </p>
               </div>
 
               {error && (

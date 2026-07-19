@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { AdminRecurringBillingRow } from '@/lib/types/dto/wallet';
+import { cmsFailureReason } from '@/lib/utils/cms-failure-reason';
 import { UserInfo } from '@/hooks/use-user-names';
 
 const columnHelper = createColumnHelper<AdminRecurringBillingRow>();
@@ -133,6 +134,14 @@ export const useRecurringBillingTableColumns = ({
         cell: ({ row }) => {
           const r = row.original;
           const ps = r.providerState;
+          // 출금/결제 이슈 row는 해당 상태를 우선 표시한다. 회원등록(cmsMemberStatus)이 REGISTERED여도
+          // 출금 실패를 "사용 가능"으로 가리지 않도록 issueType 기준으로 우선순위를 잡는다.
+          if (r.issueType === 'PROVIDER_CHARGE' && ps?.withdrawalStatus) {
+            return <span className="text-sm">{withdrawalStatusLabel(ps.withdrawalStatus)}</span>;
+          }
+          if (r.issueType === 'PAYMENT_INTENT' && r.paymentIntentStatus) {
+            return <span className="text-sm">{intentStatusLabel(r.paymentIntentStatus)}</span>;
+          }
           if (ps?.cmsMemberStatus) {
             return <span className="text-sm">{cmsMemberStatusLabel(ps.cmsMemberStatus)}</span>;
           }
@@ -149,11 +158,15 @@ export const useRecurringBillingTableColumns = ({
         id: 'resultMessage',
         header: '실패 사유',
         cell: ({ row }) => {
-          const msg = row.original.providerState?.resultMessage;
-          if (!msg) return <span className="text-muted-foreground text-sm">-</span>;
-          const truncated = msg.length > 40 ? `${msg.slice(0, 40)}...` : msg;
+          const ps = row.original.providerState;
+          // Q-코드 매핑은 회원등록 실패(cmsMemberStatus=FAILED)에만. 출금 실패 등 다른 코드 체계에는 적용하지 않는다.
+          const reason = ps?.cmsMemberStatus === 'FAILED' ? cmsFailureReason(ps?.resultCode) : undefined;
+          const display = reason ?? ps?.resultMessage;
+          if (!display) return <span className="text-muted-foreground text-sm">-</span>;
+          const truncated = display.length > 40 ? `${display.slice(0, 40)}...` : display;
+          const tooltip = [ps?.resultCode, ps?.resultMessage].filter(Boolean).join(' · ');
           return (
-            <span className="text-sm" title={msg}>
+            <span className="text-sm" title={tooltip || display}>
               {truncated}
             </span>
           );

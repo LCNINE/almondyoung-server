@@ -17,9 +17,7 @@ interface IntentEventPayload {
 export class BillingResultConsumer {
   private readonly logger = new Logger(BillingResultConsumer.name);
 
-  constructor(
-    private readonly billingOutcomeHandler: BillingOutcomeHandler,
-  ) {}
+  constructor(private readonly billingOutcomeHandler: BillingOutcomeHandler) {}
 
   @OnEvent('payments.events.v1', 'payment.intent.authorized')
   async onIntentAuthorized(@EventPayload() payload: IntentEventPayload) {

@@ -19,8 +19,9 @@ export class BillingAgreementService {
     billingMethodId: string,
     subscriberRef: string,
     subscriberType: string,
+    opts?: { allowPendingMandate?: boolean },
   ): Promise<BillingAgreement> {
-    await this.billingMethodService.assertSelectableForRecurringBilling(userId, billingMethodId);
+    await this.billingMethodService.assertSelectableForRecurringBilling(userId, billingMethodId, opts);
 
     // subscriberRef(=계약 id)는 계약당 재사용된다. 정기결제 해지가 남긴 REVOKED 행이
     // uq_billing_agreements_subscriber (subscriber_type, subscriber_ref) 비-partial 유니크 인덱스와 충돌해

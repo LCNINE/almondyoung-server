@@ -29,6 +29,7 @@ import {
   createMembershipCheckoutIntent,
 } from "@lib/api/membership"
 import { setPendingPaymentMode } from "@lib/utils/checkout-intent-map"
+import { isInvoiceBillingEnabled } from "@lib/utils/invoice-billing"
 import { cn } from "@lib/utils"
 import { providerLabel } from "@lib/utils/billing-provider"
 import { useUser } from "@/contexts/user-context"
@@ -38,7 +39,7 @@ import type {
 } from "@lib/types/dto/wallet"
 import { Calendar, Check, CreditCard, Gift } from "lucide-react"
 import { useParams, useRouter } from "next/navigation"
-import React, { useEffect, useState, useTransition } from "react"
+import React, { useEffect, useMemo, useState, useTransition } from "react"
 import { useTranslations } from "next-intl"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
@@ -47,9 +48,10 @@ import { z } from "zod"
 // 순수 UI용 타입 정의
 type SubscriptionType = "monthly" | "yearly" | null
 
-// 정기결제(CMS 자동이체) 일시 비활성화 스위치. CMS 재개 시 true 로 되돌리면 원복.
-// ponytail: 연간구독 선택 시 정기결제가 비활성화되던 로직을 항상 적용하는 단일 플래그.
-const RECURRING_ENABLED = false
+// 정기결제(CMS 자동이체) 개통 여부 = 인보이스(선적용) 정기결제 플래그와 연동한다.
+// 플래그가 켜지면 월간 정기가입(선적용 인보이스 경로)이 폼에서 열리고, 꺼지면 one_time 만 노출한다.
+// (연간구독은 별도로 always one_time — recurringDisabled 에서 처리.)
+const RECURRING_ENABLED = isInvoiceBillingEnabled()
 
 type MemberBenefitCommon = {
   id: string
@@ -72,19 +74,23 @@ type MembershipDiscountBenefit = MemberBenefitCommon & {
 
 type MemberBenefit = MembershipTrialBenefit | MembershipDiscountBenefit
 
-const subscriptionSchema = z.object({
-  subscriptionType: z
-    .enum(["monthly", "yearly"])
-    .optional()
-    .refine((val) => val === "monthly" || val === "yearly", {
-      message: "구독 유형을 선택해주세요",
+// 검증 메시지는 사용자 노출 문구라 호출부에서 i18n 메시지를 주입한다(CLAUDE.md zod 빌더 패턴).
+const buildSubscriptionSchema = (m: { selectType: string; agreeTerms: string }) =>
+  z.object({
+    subscriptionType: z
+      .enum(["monthly", "yearly"])
+      .optional()
+      .refine((val) => val === "monthly" || val === "yearly", {
+        message: m.selectType,
+      }),
+    billingMode: z.enum(["recurring", "one_time"]),
+    discountBenefitId: z.string().optional(),
+    agreement: z.boolean().refine((value) => value === true, {
+      message: m.agreeTerms,
     }),
-  billingMode: z.enum(["recurring", "one_time"]),
-  discountBenefitId: z.string().optional(),
-  agreement: z.boolean().refine((value) => value === true, {
-    message: "약관에 동의해주세요",
-  }),
-})
+  })
+
+type SubscriptionFormValues = z.infer<ReturnType<typeof buildSubscriptionSchema>>
 
 type MembershipFormProps = {
   monthlyPlan: {
@@ -136,7 +142,10 @@ export function MembershipForm({
   >(null)
 
   useEffect(() => {
-    Promise.all([getBillingMethods(), getCmsBillingMethodStatuses()])
+    Promise.all([
+      getBillingMethods({ includePendingMandate: isInvoiceBillingEnabled() }),
+      getCmsBillingMethodStatuses(),
+    ])
       .then(([methods, cmsStatuses]) => {
         setBillingMethods(methods.filter((m) => m.status === "ACTIVE"))
         setCmsBillingStatuses(cmsStatuses)
@@ -168,17 +177,22 @@ export function MembershipForm({
     agreement: false,
   }
 
-  const form = useForm<z.infer<typeof subscriptionSchema>>({
+  // 가입 결과 토스트/검증 메시지는 payment-method 화면과 동일 문구라 같은 네임스페이스를 공유한다.
+  const tPm = useTranslations("mypage.membershipPaymentMethod")
+  const subscriptionSchema = useMemo(
+    () => buildSubscriptionSchema({ selectType: tPm("selectSubscriptionType"), agreeTerms: tPm("agreeTermsRequired") }),
+    [tPm]
+  )
+
+  const form = useForm<SubscriptionFormValues>({
     mode: "onChange",
     resolver: zodResolver(subscriptionSchema),
     defaultValues: formDefaultValues,
   })
 
   const [isSubmitting, startTransition] = useTransition()
-  // 가입 결과 토스트는 payment-method 화면과 동일 메시지라 같은 키를 공유한다.
-  const tPm = useTranslations("mypage.membershipPaymentMethod")
 
-  function onSubmit(data: z.infer<typeof subscriptionSchema>) {
+  function onSubmit(data: SubscriptionFormValues) {
     // 인증 필요한 Server Action 호출은 startTransition 안에서 실행해야
     // catch에서 re-throw한 UNAUTHORIZED가 error.tsx로 전파돼 토큰 복구가 동작한다.
     startTransition(async () => {
@@ -269,9 +283,12 @@ export function MembershipForm({
   }
 
   const discountCount = discountBenefits.length
+  const invoiceBillingEnabled = isInvoiceBillingEnabled()
   const hasPendingMethods = cmsBillingStatuses.some(
     (s) => s.cmsMemberStatus === "PENDING"
   )
+  // 선적용(인보이스 경로)이 켜지면 심사 중 계좌도 가입 가능 — PENDING 이 제출을 막지 않는다.
+  const pendingBlocksSubmit = hasPendingMethods && !invoiceBillingEnabled
 
   const billingMode = form.watch("billingMode")
   const subscriptionType = form.watch("subscriptionType")
@@ -301,20 +318,18 @@ export function MembershipForm({
   }, [recurringDisabled, form])
 
   function getSubmitButtonLabel() {
-    if (!subscriptionType) return "구독 유형을 선택하세요"
-    if (!form.watch("agreement")) return "약관에 동의해주세요"
+    if (!form.watch("agreement")) return tPm("agreeTermsRequired")
 
     if (billingMode === "recurring") {
       if (selectedBillingMethodId) {
-        const trialLabel =
-          totalTrialDays > 0 ? `${totalTrialDays}일 무료체험` : "정기결제"
-        return `${trialLabel} 시작하기`
+        return totalTrialDays > 0 ? tPm("startWithTrial", { days: totalTrialDays }) : tPm("startRecurring")
       }
-      if (hasPendingMethods) return "심사 완료 후 정기결제 가능"
-      return "자동이체 계좌 심사 신청하기"
+      if (pendingBlocksSubmit) return tPm("recurringAfterReview")
+      return invoiceBillingEnabled ? tPm("registerAndStart") : tPm("applyAutoDebitReview")
     }
 
-    return `${firstPrice.toLocaleString()}원 결제하기`
+    if (selectedBillingMethodId) return tPm("subscribeWithThisMethod")
+    return tPm("payWithNewMethod")
   }
   const hasPrice = subscriptionType == "monthly" || subscriptionType == "yearly"
   let firstPrice =
@@ -428,16 +443,31 @@ export function MembershipForm({
                         </button>
                         {!recurringDisabled && field.value === "recurring" && (
                           <p className="rounded-md border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-700">
-                            새 자동이체 계좌를 등록하는 경우 효성 CMS 심사에{" "}
-                            <strong>1~2영업일</strong>이 걸립니다. 즉시
-                            이용하려면 &apos;한번만 결제&apos;를 선택해 주세요.
+                            {invoiceBillingEnabled ? (
+                              <>
+                                가입 즉시 멤버십이 적용됩니다. 새 자동이체 계좌는
+                                은행 확인(1~2영업일) 후 첫 결제가 출금되며, 확인이
+                                거절되면 멤버십이 해지될 수 있습니다.
+                              </>
+                            ) : (
+                              <>
+                                새 자동이체 계좌를 등록하는 경우 효성 CMS 심사에{" "}
+                                <strong>1~2영업일</strong>이 걸립니다. 즉시
+                                이용하려면 &apos;한번만 결제&apos;를 선택해 주세요.
+                              </>
+                            )}
                           </p>
                         )}
-                        {subscriptionType === "yearly" && (
-                          <p className="text-muted-foreground px-1 text-xs">
+                        {subscriptionType === "yearly" ? (
+                          <p className="text-muted-foreground text-xs px-1">
                             연간 플랜은 1회 결제만 지원합니다.
                           </p>
-                        )}
+                        ) : !RECURRING_ENABLED ? (
+                          <p className="text-muted-foreground text-xs px-1">
+                            현재 정기결제는 준비 중입니다. 한번만 결제로 이용해
+                            주세요.
+                          </p>
+                        ) : null}
                         <button
                           type="button"
                           className={cn(
@@ -502,6 +532,11 @@ export function MembershipForm({
                     <span className="w-fit rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500">
                       {providerLabel(method.providerType)}
                     </span>
+                    {method.cmsMemberStatus === "PENDING" && (
+                      <span className="w-fit rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                        은행 확인 중 · 가입 즉시 적용, 승인 후 출금
+                      </span>
+                    )}
                   </div>
                   {selectedBillingMethodId === method.id && (
                     <span className="text-primary text-xs font-semibold">
@@ -521,7 +556,9 @@ export function MembershipForm({
               >
                 <CreditCard className="h-5 w-5 shrink-0 text-gray-400" />
                 <p className="text-sm text-gray-600">
-                  새 자동이체 계좌 심사 신청 후 시작
+                  {invoiceBillingEnabled
+                    ? "새 자동이체 계좌 등록 후 바로 시작"
+                    : "새 자동이체 계좌 심사 신청 후 시작"}
                 </p>
                 {selectedBillingMethodId === null && (
                   <span className="text-primary ml-auto text-xs font-semibold">
@@ -695,7 +732,7 @@ export function MembershipForm({
             isSubmitting ||
             (billingMode === "recurring" &&
               !selectedBillingMethodId &&
-              hasPendingMethods)
+              pendingBlocksSubmit)
           }
           type="submit"
         >

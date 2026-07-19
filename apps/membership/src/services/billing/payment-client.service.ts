@@ -81,6 +81,32 @@ export interface MembershipCheckoutIntentResponse {
   intentId: string;
 }
 
+/** wallet 인보이스 권위 상태(ADR-0027 reconciliation 조회 응답). */
+export interface WalletInvoiceResponse {
+  invoiceId: string;
+  status:
+    | 'DRAFT'
+    | 'OPEN'
+    | 'MANDATE_PENDING'
+    | 'ATTEMPTING'
+    | 'PAST_DUE'
+    | 'PAID'
+    | 'UNCOLLECTIBLE'
+    | 'MANDATE_REJECTED'
+    | 'VOID';
+  subscriberType: string;
+  subscriberRef: string;
+  periodStart: string;
+  periodEnd: string;
+  amount: number;
+  currency: string;
+  intentId: string | null;
+  attemptCount: number;
+  maxAttempts: number;
+  errorCode: string | null;
+  reason: string | null;
+}
+
 // // 멤버십 서버의 스케줄러 로직 (수정 제안)
 
 // // 1. 만료된 멤버십 조회
@@ -211,11 +237,36 @@ export class PaymentClientService {
     }
   }
 
+  /**
+   * 인보이스 멱등키로 wallet 인보이스 권위 상태를 조회한다(ADR-0027 reconciliation).
+   * 인보이스가 아직 없으면(커맨드 유실/미발행) null 을 반환한다.
+   */
+  async getWalletInvoiceByIdempotencyKey(idempotencyKey: string): Promise<WalletInvoiceResponse | null> {
+    const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.get<WalletInvoiceResponse>(`${walletApiUrl}/v1/invoices/by-idempotency-key`, {
+          params: { key: idempotencyKey },
+          headers: { Authorization: `Bearer ${walletApiKey}` },
+        }),
+      );
+      return response.data;
+    } catch (error) {
+      if (error.response?.status === 404) {
+        return null; // 인보이스 미발행 = 커맨드가 wallet 에 도달/처리되지 않음
+      }
+      this.logger.error(`Failed to get wallet invoice by idempotencyKey ${idempotencyKey}: ${error.message}`);
+      throw new Error(`Wallet invoice lookup by idempotencyKey failed: ${error.message}`);
+    }
+  }
+
   async createBillingAgreement(
     userId: string,
     contractId: string,
     billingMethodId?: string,
     idempotencyKey?: string,
+    opts?: { allowPendingMandate?: boolean },
   ): Promise<void> {
     const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
 
@@ -227,6 +278,8 @@ export class PaymentClientService {
           subscriberRef: contractId,
           subscriberType: 'MEMBERSHIP',
           ...(billingMethodId ? { billingMethodId } : {}),
+          // ADR-0027 선적용: 인보이스 경로는 CMS 심사 중 계좌도 정기결제 수단으로 허용
+          ...(opts?.allowPendingMandate ? { allowPendingMandate: true } : {}),
         },
         {
           headers: {
@@ -292,7 +345,8 @@ export class PaymentClientService {
   }): Promise<{ intentId: string; status: string }> {
     const { url: walletApiUrl, key: walletApiKey } = this.getWalletConfig();
 
-    const idempotencyKey = params.idempotencyKey ?? `membership:direct-charge:${params.userId}:${params.billingMethodId}:${params.amount}`;
+    const idempotencyKey =
+      params.idempotencyKey ?? `membership:direct-charge:${params.userId}:${params.billingMethodId}:${params.amount}`;
 
     const response = await firstValueFrom(
       this.httpService.post<{ intentId: string; status: string }>(

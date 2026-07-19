@@ -200,6 +200,18 @@ export const useRetryBilling = () => {
   });
 };
 
+// INVOICE 계약 강제 정합화 — 성공 시 멤버십 캐시 + 인보이스 목록(walletApi) 캐시를 함께 무효화.
+export const useReconcileInvoice = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (contractId: string) => membershipApi.reconcileInvoice(contractId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: membershipQueryKeys.all });
+      queryClient.invalidateQueries({ queryKey: ['recurring-invoices'] });
+    },
+  });
+};
+
 export function useRecurringBillingOverview() {
   return useQuery({
     queryKey: membershipQueryKeys.recurringBillingOverview(),

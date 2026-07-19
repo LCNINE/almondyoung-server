@@ -17,7 +17,9 @@ export function DunningView() {
   return (
     <div className="space-y-3">
       <p className="text-sm text-muted-foreground">
-        결제가 실패해 자동 재시도(dunning) 대기 중인 계약입니다. 스케줄러가 다음 재시도 시각에 자동으로 재청구합니다.
+        결제가 실패해 자동 재시도(dunning) 대기 중인 <strong>레거시(CHARGE) 경로</strong> 계약입니다. 스케줄러가 다음
+        재시도 시각에 자동으로 재청구합니다. 인보이스 경로 계약의 재시도는 이 큐를 쓰지 않습니다 — [인보이스] 탭의
+        &lsquo;결제 실패&rsquo; 상태를 확인하세요.
       </p>
 
       {isLoading ? (

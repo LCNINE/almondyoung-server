@@ -190,6 +190,12 @@ export function setup(infra: SharedInfra) {
   const withPrefix = (prefix: string, env: Record<string, $util.Output<string> | string>) =>
     Object.fromEntries(Object.entries(env).map(([k, v]) => [`${prefix}__${k}`, v]));
 
+  // 멤버십 인보이스(선적용) 정기결제 게이트. 서버(membership)와 프론트(storefront)가 같은 값이어야
+  // 반배포(프론트 ON·서버 OFF → PENDING 계좌 가입 400 전멸)를 피한다 — 한 상수에서 파생한다.
+  // NEXT_PUBLIC_* 는 storefront 빌드타임 주입이므로 값 변경 시 storefront 재배포가 필요하다.
+  // 활성화는 이 값을 'true' 로 바꾸는 것으로 일원화한다(현재 미개통).
+  const invoiceBillingEnabled = 'false';
+
   // 앱별 env (프리픽스 부여). 태스크에는 담당 앱 것만 병합해 넘긴다.
   const analyticsEnv = withPrefix('ANALYTICS', {
     DATABASE_URL: dbUrl('analytics'),
@@ -229,6 +235,7 @@ export function setup(infra: SharedInfra) {
     WALLET_API_KEY: walletApiKey.value,
     WALLET_API_URL: url('wallet'),
     MEMBERSHIP_INTERNAL_KEY: membershipInternalKey.value,
+    MEMBERSHIP_INVOICE_BILLING_ENABLED: invoiceBillingEnabled,
     OIDC_ISSUER_URL: idpUserServiceUrl,
   });
   const notificationEnv = withPrefix('NOTIFICATION', {
@@ -679,6 +686,7 @@ export function setup(infra: SharedInfra) {
       NEXT_PUBLIC_BASE_URL: storefrontUrl,
       NEXT_PUBLIC_DEFAULT_REGION: 'kr',
       NEXT_PUBLIC_WALLET_WEB_URL: url('wallet-web'),
+      NEXT_PUBLIC_MEMBERSHIP_INVOICE_BILLING_ENABLED: invoiceBillingEnabled,
       NEXT_PUBLIC_MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
       NEXT_PUBLIC_BACKEND_DOMAIN: backendRootDomain,
       BACKEND_DOMAIN: backendRootDomain,
@@ -722,6 +730,16 @@ export function setup(infra: SharedInfra) {
       WALLET_API_URL: url('wallet'),
       WALLET_API_KEY: walletApiKey.value,
       TOSS_CLIENT_KEY: tossClientKey.value,
+      // storefront 복귀 URL 오픈 리다이렉트 allowlist. CMS 등록/변경 후 returnUrl(=storefront 절대 URL)로
+      // 복귀할 때 허용 origin 을 제한한다. Medusa STORE_CORS 와 동일한 신뢰 origin 을 유지하되,
+      // live 는 apex(baseDomain)가 정식 도메인이고 www 는 거기로 301 redirect 라 apex origin 도 포함한다.
+      WALLET_ALLOWED_RETURN_ORIGINS: [
+        url('www'),
+        ...(isDev ? [] : [`https://${baseDomain}`]),
+        'https://almondyoung.com',
+        'https://www.almondyoung.com',
+        'http://localhost:8001',
+      ].join(','),
       // OIDC (wallet-web RP). client_id 는 시더와 동일하게 'wallet-web'.
       OIDC_ISSUER_URL: idpUserServiceUrl,
       OIDC_AUTHORIZATION_URL: $interpolate`${idpAuthWebUrl}/oauth/authorize`,

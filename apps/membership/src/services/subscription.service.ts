@@ -14,6 +14,8 @@ import { MembershipEventPublisher } from './membership-event.publisher';
 import { PaymentClientService, WalletPaymentIntentResponse } from './billing/payment-client.service';
 import { BillingManager } from './billing/billing.manager';
 import { BillingReader } from './billing/billing.reader';
+import { InvoiceBillingManager } from './billing/invoice-billing.manager';
+import { ConfigService } from '@nestjs/config';
 import { format } from 'date-fns';
 
 /**
@@ -46,7 +48,14 @@ export class SubscriptionService {
     private readonly paymentClientService: PaymentClientService,
     private readonly billingManager: BillingManager,
     private readonly billingReader: BillingReader,
+    private readonly invoiceBillingManager: InvoiceBillingManager,
+    private readonly configService: ConfigService,
   ) {}
+
+  /** ADR-0027 Phase 2 dual-path flag — 신규 정기 가입에만 적용, 기존 계약 경로는 불변. */
+  private isInvoiceBillingEnabled(): boolean {
+    return this.configService.get<string>('MEMBERSHIP_INVOICE_BILLING_ENABLED') === 'true';
+  }
 
   /**
    * 현재 구독 상태 조회
@@ -62,9 +71,11 @@ export class SubscriptionService {
     if (!data) return null;
 
     const { entitlement, contract, plan, tier } = data;
-    // 고객 노출은 보수적으로: 결제 재시도 내부값(횟수/다음시각/사유)은 노출하지 않고
-    // "결제 확인 필요" 여부만 boolean 으로 내려준다.
-    const paymentActionNeeded = (await this.billingReader.findDunningByContractId(contract.id)) !== null;
+    // 고객에겐 "결제 확인 필요" boolean 만 노출. 연체 신호는 레거시=dunning 큐,
+    // 인보이스 경로=isPastDue(인보이스 경로에서만 신뢰 — 레거시 잔재값 방지).
+    const paymentActionNeeded =
+      (contract.billingPath === 'INVOICE' && contract.isPastDue) ||
+      (await this.billingReader.findDunningByContractId(contract.id)) !== null;
     const tierDto = tier
       ? {
           id: tier.id,
@@ -490,6 +501,9 @@ export class SubscriptionService {
       initialPaymentIntentId = chargeResult.intentId;
     }
 
+    // ADR-0027 Phase 2 dual-path: 플래그가 켜진 동안의 신규 정기 가입만 인보이스(선적용) 경로.
+    const invoicePath = billingMode === 'recurring' && this.isInvoiceBillingEnabled();
+
     const result = await this.subscriptionCreator.createNewSubscription(
       userId,
       planDetails.plan,
@@ -500,11 +514,14 @@ export class SubscriptionService {
         initialPaymentAmount: billingMode === 'one_time' ? planDetails.plan.price : undefined,
       },
       billingMode,
+      false,
+      invoicePath ? 'INVOICE' : 'CHARGE',
     );
 
     if (billingMode === 'recurring') {
       try {
-        await this.createBillingAgreementWithRetry(userId, result.contractId, billingMethodId);
+        // 인보이스 경로는 CMS 심사 중(PENDING) 계좌도 허용(선적용) — 승인 대기는 wallet 인보이스가 흡수.
+        await this.createBillingAgreementWithRetry(userId, result.contractId, billingMethodId, 2, invoicePath);
       } catch (err: unknown) {
         this.logger.error(
           `billing_agreement 생성 실패 — 구독 보상 처리 시작 (userId=${userId}, contractId=${result.contractId})`,
@@ -523,7 +540,9 @@ export class SubscriptionService {
       const dueContract = await this.billingReader.findContractById(result.contractId);
       const today = format(new Date(), 'yyyy-MM-dd');
       if (dueContract?.nextBillingDate && dueContract.nextBillingDate <= today) {
-        const billingResult = await this.billingManager.processSingleBilling(dueContract);
+        const billingResult = invoicePath
+          ? await this.invoiceBillingManager.issueInvoiceForContract(dueContract, billingMethodId)
+          : await this.billingManager.processSingleBilling(dueContract);
         if (!billingResult.success) {
           this.logger.error(
             `가입 즉시 첫 결제 발행 실패 (contractId=${result.contractId}): ${billingResult.errorMessage ?? billingResult.errorCode}`,
@@ -554,11 +573,14 @@ export class SubscriptionService {
     contractId: string,
     billingMethodId?: string,
     maxAttempts = 2,
+    allowPendingMandate = false,
   ): Promise<void> {
     let lastError: unknown;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
-        await this.paymentClientService.createBillingAgreement(userId, contractId, billingMethodId);
+        await this.paymentClientService.createBillingAgreement(userId, contractId, billingMethodId, undefined, {
+          allowPendingMandate,
+        });
         return;
       } catch (err: unknown) {
         lastError = err;
@@ -578,6 +600,14 @@ export class SubscriptionService {
    * 관리자 직접 구독 등록 (무료체험 미적용, 즉시 결제 없음)
    */
   async adminCreateSubscription(userId: string, planId: string, billingMode: 'one_time' | 'recurring') {
+    // 관리자 직접 등록은 결제수단·약정을 입력받지 않으므로 recurring 계약을 완결할 수 없다.
+    // 그대로 두면 결제수단 없는 ACTIVE 계약이 만들어져 스케줄러에서 발산한다 — 명시적으로 거부한다.
+    // 정기결제는 고객이 결제수단을 등록해야 하고, 관리자 무상 부여는 grant(구독 지급)를 사용한다.
+    if (billingMode === 'recurring') {
+      throw new SubscriptionBadRequestException(
+        '관리자 직접 등록은 정기결제(recurring)를 지원하지 않습니다. one_time 으로 등록하거나 구독 지급(grant)을 사용하세요.',
+      );
+    }
     const [existing, planDetails] = await Promise.all([
       this.entitlementService.getUserEntitlement(userId),
       this.planService.getPlanDetails(planId),

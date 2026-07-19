@@ -16,6 +16,7 @@ import type {
   CreateIntentResponseDto,
   IntentDto,
   IssuedCashReceiptDto,
+  MyInvoiceDto,
   OnboardHmsBnplResponse,
   PointsBalanceDto,
   PointsEventRowDto,
@@ -25,6 +26,7 @@ import type {
 } from "@lib/types/dto/wallet"
 import { api } from "../api"
 import { HttpApiError } from "../api-error"
+import { isValidPayerNumber } from "@lib/utils/payer-number"
 
 const DEFAULT_BNPL_PROFILE_COOKIE = "wallet_default_bnpl_profile_id"
 
@@ -135,9 +137,13 @@ export async function getApickAccount(bankCode: string, accountNumber: string) {
 /**
  * 내 빌링 수단(정기결제 카드) 목록 조회
  */
-export async function getBillingMethods(): Promise<BillingMethodDto[]> {
+export async function getBillingMethods(opts?: {
+  /** ADR-0027 선적용: 심사 중(PENDING) CMS 수단 포함 — 인보이스 경로 정기가입 전용 */
+  includePendingMandate?: boolean
+}): Promise<BillingMethodDto[]> {
+  const qs = opts?.includePendingMandate ? "?includePendingMandate=true" : ""
   try {
-    return await api<BillingMethodDto[]>("wallet", "/v1/billing-methods", {
+    return await api<BillingMethodDto[]>("wallet", `/v1/billing-methods${qs}`, {
       method: "GET",
       cache: "no-store",
       withAuth: true,
@@ -190,6 +196,37 @@ export async function getCmsBillingMethodStatuses(): Promise<
   } catch {
     return []
   }
+}
+
+/**
+ * 고객 본인 멤버십 인보이스 목록 조회 (구독 계약이 없으면 빈 배열)
+ */
+export async function getMyInvoices(): Promise<MyInvoiceDto[]> {
+  try {
+    return await api<MyInvoiceDto[]>("wallet", "/v1/me/invoices", {
+      method: "GET",
+      cache: "no-store",
+      withAuth: true,
+    })
+  } catch {
+    return []
+  }
+}
+
+/**
+ * 미납(PAST_DUE) 인보이스 즉시 재시도. mutation 이므로 UNAUTHORIZED 는 re-throw 해 error.tsx 로 전파.
+ */
+export async function retryInvoicePaymentAction(
+  invoiceId: string
+): Promise<{ invoiceId: string; retried: boolean }> {
+  return await api<{ invoiceId: string; retried: boolean }>(
+    "wallet",
+    `/v1/me/invoices/${invoiceId}/retry`,
+    {
+      method: "POST",
+      withAuth: true,
+    }
+  )
 }
 
 /**
@@ -332,6 +369,14 @@ export async function onboardHmsBnpl(
       return {
         success: false,
         message: "계좌 등록 정보 형식이 올바르지 않습니다.",
+      }
+    }
+
+    if (!isValidPayerNumber(payerNumber)) {
+      return {
+        success: false,
+        message:
+          "생년월일 또는 사업자등록번호가 올바르지 않습니다. 다시 확인해주세요.",
       }
     }
 

@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import Image from "next/image"
+import { PartyPopper } from "lucide-react"
 import { getTranslations } from "next-intl/server"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { CartRefresher } from "./cart-refresher"
@@ -32,13 +32,7 @@ export default async function MembershipSuccessScreen() {
               aria-labelledby="welcome-title"
               className="flex flex-col items-center gap-4 text-center"
             >
-              <Image
-                className="h-20 w-20"
-                src="https://placehold.co/80x80"
-                alt={t("celebrationAlt")}
-                width={80}
-                height={80}
-              />
+              <PartyPopper className="h-20 w-20 text-amber-500" aria-hidden="true" />
               <h2
                 id="welcome-title"
                 className="text-3xl leading-snug text-black"
@@ -50,62 +44,6 @@ export default async function MembershipSuccessScreen() {
                 <br />
                 {t("welcomeLine3")}
               </h2>
-            </section>
-
-            <section aria-labelledby="recommend-links-title">
-              <h3 id="recommend-links-title" className="sr-only">
-                {t("recommendLinksTitle")}
-              </h3>
-
-              <div className="mx-auto flex gap-4 px-6 py-4">
-                <a
-                  href="#"
-                  className="flex w-32 shrink-0 flex-col gap-4 rounded-lg border border-gray-300 p-3.5"
-                >
-                  <p className="text-base leading-5 font-medium text-black">
-                    {t("welcomeDeal")}
-                  </p>
-                  <Image
-                    className="h-28 w-full rounded object-cover"
-                    src="https://placehold.co/111x111"
-                    alt=""
-                    width={111}
-                    height={111}
-                  />
-                </a>
-
-                <a
-                  href="#"
-                  className="flex w-32 shrink-0 flex-col gap-4 rounded-lg border border-gray-300 p-3.5"
-                >
-                  <p className="text-base leading-5 font-medium text-black">
-                    {t("exclusiveProducts")}
-                  </p>
-                  <Image
-                    className="h-28 w-full rounded object-cover"
-                    src="https://placehold.co/111x111"
-                    alt=""
-                    width={111}
-                    height={111}
-                  />
-                </a>
-
-                <a
-                  href="#"
-                  className="flex w-32 shrink-0 flex-col gap-9 rounded-lg border border-gray-300 p-3.5"
-                >
-                  <p className="text-base leading-5 font-medium text-black">
-                    {t("downloadDaview")}
-                  </p>
-                  <Image
-                    className="h-28 w-full rounded object-cover"
-                    src="https://placehold.co/111x111"
-                    alt=""
-                    width={111}
-                    height={111}
-                  />
-                </a>
-              </div>
             </section>
           </div>
         </div>

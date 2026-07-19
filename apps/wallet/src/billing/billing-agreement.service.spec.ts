@@ -39,8 +39,23 @@ describe('BillingAgreementService recurring billing method guards', () => {
 
     await service.create('user-1', 'method-1', 'sub-1', 'membership');
 
-    expect(billingMethodService.assertSelectableForRecurringBilling).toHaveBeenCalledWith('user-1', 'method-1');
+    expect(billingMethodService.assertSelectableForRecurringBilling).toHaveBeenCalledWith('user-1', 'method-1', undefined);
     expect(db.spies.insert).toHaveBeenCalled();
+  });
+
+  it('선적용(allowPendingMandate) 옵션을 selectability 검증까지 전달한다', async () => {
+    const db = makeDb([agreement]);
+    const billingMethodService = {
+      assertSelectableForRecurringBilling: jest.fn().mockResolvedValue({ id: 'method-1' }),
+      findLatestSelectableForRecurringBilling: jest.fn(),
+    };
+    const service = new BillingAgreementService(db as never, billingMethodService as never);
+
+    await service.create('user-1', 'method-1', 'sub-1', 'membership', { allowPendingMandate: true });
+
+    expect(billingMethodService.assertSelectableForRecurringBilling).toHaveBeenCalledWith('user-1', 'method-1', {
+      allowPendingMandate: true,
+    });
   });
 
   it('rejects explicit create when CMS method is not selectable', async () => {
@@ -71,6 +86,7 @@ describe('BillingAgreementService recurring billing method guards', () => {
     expect(billingMethodService.assertSelectableForRecurringBilling).toHaveBeenCalledWith(
       'user-1',
       'method-selectable',
+      undefined,
     );
   });
 
