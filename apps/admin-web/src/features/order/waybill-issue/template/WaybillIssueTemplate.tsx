@@ -24,6 +24,9 @@ import {
   createIdempotentCommand,
   getServerDenyMessage,
   isCarrierSupported,
+  isWaybillFailed,
+  isWaybillIssued,
+  isWaybillPendingIssue,
   useBatchIssueWaybills,
   useFulfillmentShipments,
   useFulfillments,
@@ -64,10 +67,12 @@ export default function WaybillIssueTemplate() {
         idempotencyKey: key,
       });
       setResults(res);
-      const failed = res.filter((r) => r.status === 'failed').length;
-      toast[failed ? 'warning' : 'success'](
-        `일괄 발급 완료 — 총 ${res.length}건, 실패 ${failed}건.`
-      );
+      const issued = res.filter((r) => isWaybillIssued(r.status)).length;
+      const pending = res.filter((r) => isWaybillPendingIssue(r.status)).length;
+      const failed = res.filter((r) => isWaybillFailed(r.status)).length;
+      const summary = `일괄 발급 — 총 ${res.length}건 (완료 ${issued}, 진행중 ${pending}, 실패 ${failed}).`;
+      if (pending || failed) toast.warning(summary);
+      else toast.success(summary);
     } catch (error) {
       toast.error(getServerDenyMessage(error, '일괄 발급 요청 실패'));
     }

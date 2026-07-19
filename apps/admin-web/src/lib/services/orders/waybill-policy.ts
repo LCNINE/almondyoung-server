@@ -32,3 +32,6 @@ export function isWaybillPendingIssue(
 export function isWaybillFailed(status: string | null | undefined): boolean {
   return status === 'failed' || status === 'abandoned';
 }
+
+// 'voided' 는 의도적으로 미분류 — 발급 플로우 엔드포인트는 절대 반환하지 않으며
+// (별도의 void 액션에서만 발생) 위 세 predicate 어디에도 매칭되지 않는다.

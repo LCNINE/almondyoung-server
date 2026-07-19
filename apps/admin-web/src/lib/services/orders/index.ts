@@ -44,7 +44,6 @@ export {
   useFulfillmentOutboxEvents,
   useFulfillmentShipments,
   useShipmentDetail,
-  useActiveWaybill,
   useFulfillmentOperation,
   useShipmentRecallOperation,
   useLegacyPurchaseOrders,

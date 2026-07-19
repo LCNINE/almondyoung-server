@@ -27,8 +27,6 @@ export const orderQueryKeys = {
   fulfillmentShipments: (id: string) =>
     ['fulfillments', id, 'shipments'] as const,
   shipment: (id: string) => ['shipments', id] as const,
-  activeWaybill: (shipmentId: string) =>
-    ['shipments', shipmentId, 'waybill'] as const,
   fulfillmentOperation: (id: string) => ['fulfillment-operations', id] as const,
   shipmentRecallOperation: (id: string) =>
     ['shipment-recall-operations', id] as const,
