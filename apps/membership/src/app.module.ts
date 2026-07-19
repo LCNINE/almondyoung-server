@@ -52,6 +52,9 @@ import { WelcomeMembershipService } from './services/welcome-membership.service'
 import { BillingManager } from './services/billing/billing.manager';
 import { BillingReader } from './services/billing/billing.reader';
 import { BillingOutcomeHandler } from './services/billing/billing-outcome.handler';
+import { InvoiceBillingManager } from './services/billing/invoice-billing.manager';
+import { InvoiceOutcomeHandler } from './services/billing/invoice-outcome.handler';
+import { InvoiceResultConsumer } from './consumers/invoice-result.consumer';
 import { MembershipPolicyService } from './services/membership-policy.service';
 import { SavingsService } from './services/savings/savings.service';
 import { SavingsReader } from './services/savings/savings.reader';
@@ -88,10 +91,18 @@ import { InternalApiKeyGuard } from './shared/guards/internal-api-key.guard';
       serviceName: 'membership',
       enableDLQ: true,
     }),
+    // 컨슈머 인프라(DLQ) — poison message 가 파티션을 재전달 루프로 정체시키지 않게 한다.
+    EventsModule.forConsumerModule({
+      streams: [PAYMENT_STREAM],
+      groupId: process.env.KAFKA_GROUP_ID || 'membership-consumer',
+      enableAutoDLQ: true,
+      validation: { validateOnConsume: false },
+    }),
     EventTraceApiModule,
   ],
   controllers: [
     BillingResultConsumer,
+    InvoiceResultConsumer,
     MembershipCheckoutConsumer,
     MembershipRefundConsumer,
     BillingController,
@@ -144,6 +155,9 @@ import { InternalApiKeyGuard } from './shared/guards/internal-api-key.guard';
     BillingOutcomeHandler,
     RecurringBillingService,
     BillingReader,
+    // ADR-0027 인보이스(선적용) 경로
+    InvoiceBillingManager,
+    InvoiceOutcomeHandler,
     // Policy Layer (하드코딩 테이블)
     MembershipPolicyService,
     // Infrastructure

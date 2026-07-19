@@ -22,6 +22,7 @@ import type {
   MonthlySavingsDto,
   RangeSavingsDto,
 } from "@lib/types/dto/membership-savings"
+import MembershipInvoicesSection from "./membership-invoices-section"
 import type { PlanWithTier } from "@lib/types/membership"
 
 //  멤버십 해지 버튼 임시 숨김 (2026-07-16). 되돌리려면 true.
@@ -98,6 +99,8 @@ export default function SubscriberSection({
           currentBenefit={currentBenefit}
         />
       </MembershipStatusSection>
+      {/* 정기결제 청구/미납 내역 (구독 계약이 없으면 자체적으로 숨김) */}
+      <MembershipInvoicesSection />
       {/* 하단 액션 그룹 */}
       <div className="mt-6">
         {/* 설정 리스트: 행마다 카드를 두르지 않고 카드 하나를 hairline 으로 나눈다 */}

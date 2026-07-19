@@ -178,11 +178,21 @@ export class PauseManager {
         .limit(1);
 
       if (contract && contract.nextBillingDate && actualPausedDays > 0) {
-        const shiftedNextBillingDate = addDays(new Date(contract.nextBillingDate), actualPausedDays);
-        await tx
-          .update(schema.subscriptionContracts)
-          .set({ nextBillingDate: shiftedNextBillingDate.toISOString().split('T')[0] })
-          .where(eq(schema.subscriptionContracts.id, contract.id));
+        const today = now.toISOString().split('T')[0];
+        const currentPeriodUnpaid = contract.nextBillingDate <= today;
+        // INVOICE 경로에서 현재 주기가 미결(nextBillingDate<=today)이면 nextBillingDate 를 밀지
+        // 않는다. 미결 주기는 이미 인보이스가 발행돼 있고, 그 멱등키는 periodStart(=nextBillingDate)
+        // 로 만들어졌다. 여기서 shift 하면 다음 스케줄러가 다른 멱등키로 같은 주기에 두 번째
+        // 인보이스를 발행해 이중 출금된다. 정지 보상은 entitlement.endsAt(위 3번)에 이미 반영됐고,
+        // nextBillingDate 는 invoice.paid 가 미래로 전진시킨 뒤에만(=아래 else) 밀 수 있다.
+        const skipShift = contract.billingPath === 'INVOICE' && currentPeriodUnpaid;
+        if (!skipShift) {
+          const shiftedNextBillingDate = addDays(new Date(contract.nextBillingDate), actualPausedDays);
+          await tx
+            .update(schema.subscriptionContracts)
+            .set({ nextBillingDate: shiftedNextBillingDate.toISOString().split('T')[0] })
+            .where(eq(schema.subscriptionContracts.id, contract.id));
+        }
       }
 
       // 5. pause_events에 RESUME 이벤트 기록

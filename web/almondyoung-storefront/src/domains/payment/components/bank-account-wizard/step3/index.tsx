@@ -140,6 +140,32 @@ export default function BankAgreementStep({
         </div>
       </section>
 
+      {/* 등록 전 확인 안내 — 실측 최대 실패군(Q201 본인정보 불일치) 예방 */}
+      <section className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3">
+        <p className="text-sm font-semibold text-amber-900">
+          등록 전에 꼭 확인하세요
+        </p>
+        <p className="mt-1 text-xs leading-relaxed text-amber-800">
+          자동이체는 은행에 등록된 <strong>계좌주 본인 정보로만</strong>{" "}
+          등록됩니다.
+        </p>
+        <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-relaxed text-amber-800">
+          <li>
+            <strong>예금주 성함</strong>이 신청 계좌의 실제 예금주와 같아야 합니다.
+          </li>
+          <li>
+            <strong>생년월일</strong>(개인) 또는{" "}
+            <strong>사업자등록번호</strong>(사업자)가 그 계좌에 등록된 정보와
+            일치해야 합니다.
+          </li>
+          <li>본인 명의가 아닌 계좌(가족 계좌 등)로는 등록되지 않습니다.</li>
+        </ul>
+        <p className="mt-2 text-xs leading-relaxed text-amber-800">
+          정보가 다르면 은행 확인 단계에서 <strong>등록이 거절</strong>되며, 다시
+          등록하셔야 합니다.
+        </p>
+      </section>
+
       {/* 약관 동의 섹션 */}
       <section className="mt-4">
         {agreements.slice(2, 5).map((agreement) => (
@@ -204,9 +230,9 @@ export default function BankAgreementStep({
           </Button>
         </div>
 
-        {/* 심사 안내 */}
+        {/* 심사 안내 — 접수(SMS)와 최종 승인 구분 */}
         <p className="text-xs leading-relaxed text-gray-500">
-          제출 후 계좌 심사가 진행됩니다. 심사 완료 전에는 자동이체 결제가 진행되지 않으며, 심사 결과는 결제수단 관리 화면에서 확인할 수 있습니다.
+          제출 후 은행 확인(1~2 영업일)이 진행됩니다. 은행에서 보내는 ‘자동이체 등록 접수’ 안내(문자 등)는 최종 승인이 아니며, 최종 결과는 결제수단 관리 화면에서 확인할 수 있습니다. 심사 완료 전에는 자동이체 결제가 진행되지 않습니다.
         </p>
 
         {/* 신청 버튼 */}

@@ -2,7 +2,7 @@ import { CmsSettlementPollerService } from './cms-settlement-poller.service';
 
 // W2: 정산 폴러가 이미 종료(취소/실패)된 intent를 정산성공으로 되살리지 않는지 검증.
 
-function makePoller(intentStatus: string) {
+function makePoller(intentStatus: string, invoiceId: string | null = null) {
   const mockTx = {
     update: jest.fn().mockReturnThis(),
     set: jest.fn().mockReturnThis(),
@@ -26,8 +26,13 @@ function makePoller(intentStatus: string) {
       userId: 'user-1',
       payableAmount: 29900,
       currency: 'KRW',
+      invoiceId,
       metadata: {},
     }),
+  };
+  const invoiceOutcomeService = {
+    markPaid: jest.fn().mockResolvedValue(undefined),
+    registerAttemptFailure: jest.fn().mockResolvedValue(undefined),
   };
   const poller = new CmsSettlementPollerService(
     dbService as never,
@@ -36,8 +41,9 @@ function makePoller(intentStatus: string) {
     stateTransitionService as never,
     autoCaptureService as never,
     paymentIntentsService as never,
+    invoiceOutcomeService as never,
   );
-  return { poller, db, mockTx, chargesService, stateTransitionService, autoCaptureService };
+  return { poller, db, mockTx, chargesService, stateTransitionService, autoCaptureService, invoiceOutcomeService };
 }
 
 const withdrawal = {
@@ -81,6 +87,24 @@ describe('CmsSettlementPollerService.handleWithdrawalSuccess (W2 reconcile guard
     );
     expect(autoCaptureService.attemptAutoCapture).toHaveBeenCalled();
   });
+
+  it('인보이스 연결 intent 정산 성공 → invoice markPaid 훅 호출', async () => {
+    const { poller, invoiceOutcomeService } = makePoller('PENDING_SETTLEMENT', 'inv-1');
+
+    await (poller as never as { handleWithdrawalSuccess: (w: unknown, a: unknown) => Promise<void> })
+      .handleWithdrawalSuccess(withdrawal, apiData);
+
+    expect(invoiceOutcomeService.markPaid).toHaveBeenCalledWith('inv-1', 'intent-1');
+  });
+
+  it('인보이스 미연결 intent(레거시 경로)는 invoice 훅을 타지 않음', async () => {
+    const { poller, invoiceOutcomeService } = makePoller('PENDING_SETTLEMENT');
+
+    await (poller as never as { handleWithdrawalSuccess: (w: unknown, a: unknown) => Promise<void> })
+      .handleWithdrawalSuccess(withdrawal, apiData);
+
+    expect(invoiceOutcomeService.markPaid).not.toHaveBeenCalled();
+  });
 });
 
 // 실패 경로도 성공 경로와 대칭: withdrawal·charge·intent 를 한 tx 로 묶어 부분커밋 고아를 막고,
@@ -115,5 +139,14 @@ describe('CmsSettlementPollerService.handleWithdrawalFailure (single-tx + termin
     expect(db.transaction).not.toHaveBeenCalled();
     expect(chargesService.updateStatus).not.toHaveBeenCalled();
     expect(stateTransitionService.transitionIntent).not.toHaveBeenCalled();
+  });
+
+  it('인보이스 연결 intent 정산 실패 → invoice 실패 집계 훅 호출', async () => {
+    const { poller, invoiceOutcomeService } = makePoller('PENDING_SETTLEMENT', 'inv-1');
+
+    await (poller as never as { handleWithdrawalFailure: (w: unknown, a: unknown) => Promise<void> })
+      .handleWithdrawalFailure(withdrawal, failApiData);
+
+    expect(invoiceOutcomeService.registerAttemptFailure).toHaveBeenCalledWith('inv-1', 'intent-1', '9999', '잔액부족');
   });
 });

@@ -9,11 +9,12 @@
 
 import { Injectable, Logger, Inject } from '@nestjs/common';
 import { ClientKafka } from '@nestjs/microservices';
+import { Kafka } from 'kafkajs';
 import { firstValueFrom } from 'rxjs';
-import { MessageEnvelope } from '@packages/event-contracts/types';
+import { MessageEnvelope, KafkaConfig } from '@packages/event-contracts/types';
 import { getDLQTopicName } from '@packages/event-contracts/types';
 import { generateMessageId } from '../utils/message-id.util';
-import { DLQMessage } from './dlq.types';
+import { DLQMessage, BatchReprocessResult } from './dlq.types';
 import { dlqMessagesTotal, dlqSendFailuresTotal } from './dlq.metrics';
 
 @Injectable()
@@ -201,6 +202,97 @@ export class DLQHandler {
 
       throw error;
     }
+  }
+
+  /**
+   * DLQ 토픽을 드레인하며 각 메시지를 원본 토픽으로 재발행한다(관리자 수동 트리거용).
+   *
+   * 안정 컨슈머 그룹(`${dlqTopic}.reprocessor`) + autoCommit 이라, 재실행하면 이미 드레인한 오프셋은
+   * 건너뛰고 새로 쌓인 DLQ 메시지만 처리한다(무한 재처리 방지). 재발행 후에도 실패하면 새 DLQ 메시지로
+   * 다시 쌓이고 다음 드레인에서 잡힌다 — 소비 핸들러가 멱등이라 재전달은 안전하다.
+   *
+   * idleMs 동안 새 메시지가 없거나 maxMessages 에 도달하면 종료한다.
+   */
+  async drainAndReprocess(params: {
+    dlqTopic: string;
+    kafka: KafkaConfig;
+    maxMessages?: number;
+    idleMs?: number;
+  }): Promise<BatchReprocessResult & { scanned: number }> {
+    const maxMessages = params.maxMessages ?? 500;
+    const idleMs = params.idleMs ?? 3000;
+    const result: BatchReprocessResult & { scanned: number } = {
+      total: 0,
+      succeeded: 0,
+      failed: 0,
+      errors: [],
+      scanned: 0,
+    };
+
+    const client = new Kafka({
+      clientId: `${params.kafka.clientId}-dlq-reprocess`,
+      brokers: params.kafka.brokers,
+      ssl: params.kafka.ssl,
+      // KafkaConfig.sasl 은 createKafkaConfigFromEnv 가 채우는 plain/oauthbearer 뿐 — kafkajs 와 호환.
+      sasl: params.kafka.sasl as any,
+      retry: params.kafka.retry,
+    });
+    const consumer = client.consumer({ groupId: `${params.dlqTopic}.reprocessor` });
+
+    await consumer.connect();
+    try {
+      await consumer.subscribe({ topic: params.dlqTopic, fromBeginning: true });
+
+      await new Promise<void>((resolve, reject) => {
+        let idleTimer: ReturnType<typeof setTimeout>;
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          clearTimeout(idleTimer);
+          resolve();
+        };
+        const armIdle = () => {
+          clearTimeout(idleTimer);
+          idleTimer = setTimeout(finish, idleMs);
+        };
+        armIdle();
+
+        consumer
+          .run({
+            autoCommit: true,
+            eachMessage: async ({ message }) => {
+              if (done) return;
+              armIdle();
+              result.scanned++;
+              result.total++;
+              let dlqMessageId = '(unparsed)';
+              try {
+                const dlqMessage = JSON.parse(message.value?.toString() ?? '{}') as DLQMessage;
+                dlqMessageId = dlqMessage.dlqMessageId ?? dlqMessageId;
+                await this.reprocessDLQ({ dlqTopic: params.dlqTopic, dlqMessage });
+                result.succeeded++;
+              } catch (error) {
+                result.failed++;
+                result.errors.push({
+                  dlqMessageId,
+                  error: error instanceof Error ? error.message : String(error),
+                });
+              }
+              if (result.scanned >= maxMessages) finish();
+            },
+          })
+          .catch(reject);
+      });
+    } finally {
+      await consumer.disconnect();
+    }
+
+    this.logger.log(
+      `♻️  DLQ 드레인 완료: topic=${params.dlqTopic}, scanned=${result.scanned}, ` +
+        `reprocessed=${result.succeeded}, failed=${result.failed}`,
+    );
+    return result;
   }
 
   /**

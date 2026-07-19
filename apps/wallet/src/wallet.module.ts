@@ -119,6 +119,14 @@ import { CmsRegistrationService } from './cms/cms-registration.service';
 import { CmsBatchProvider } from './cms/cms-batch.provider';
 import { CmsSettlementPollerService } from './cms/cms-settlement-poller.service';
 
+// Invoices (ADR-0027 — 인보이스 기반 정기결제)
+import { InvoiceOutcomeService } from './invoices/invoice-outcome.service';
+import { InvoiceExecutorService } from './invoices/invoice-executor.service';
+import { InvoiceCommandConsumer } from './invoices/invoice-command.consumer';
+import { InvoiceController } from './invoices/invoice.controller';
+import { MyInvoiceController } from './invoices/my-invoice.controller';
+import { InvoiceQueryService } from './invoices/invoice-query.service';
+
 // Dev helpers (dev/test only — ENABLE_DEV_CMS_HELPERS=true + NODE_ENV !== 'production')
 import { CmsDevController } from './dev/cms-dev.controller';
 import { CmsDevStateService } from './dev/cms-dev-state.service';
@@ -399,8 +407,11 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     CheckoutSessionController,
     CmsAgreementController,
     RecurringBillingAdminController,
+    InvoiceController,
+    MyInvoiceController,
     UgcCommandConsumer,
     BillingChargeConsumer,
+    InvoiceCommandConsumer,
     ...(devHelpersEnabled ? [CmsDevController] : []),
   ],
   providers: [
@@ -502,6 +513,11 @@ async function resolveCanActivate(result: boolean | Promise<boolean> | unknown):
     CmsRegistrationService,
     CmsBatchProvider,
     CmsSettlementPollerService,
+
+    // Invoices (ADR-0027)
+    InvoiceOutcomeService,
+    InvoiceQueryService,
+    InvoiceExecutorService,
 
     // Dev helpers (conditional — only when ENABLE_DEV_CMS_HELPERS=true + non-production)
     ...(devHelpersEnabled ? [CmsDevStateService] : []),

@@ -9,6 +9,8 @@ import { MembershipEventPublisher } from '../membership-event.publisher';
 import { PaymentClientService } from '../billing/payment-client.service';
 import { BillingManager } from '../billing/billing.manager';
 import { BillingReader } from '../billing/billing.reader';
+import { InvoiceBillingManager } from '../billing/invoice-billing.manager';
+import { ConfigService } from '@nestjs/config';
 
 describe('SubscriptionService - Layer Refactoring', () => {
   let service: SubscriptionService;
@@ -56,6 +58,15 @@ describe('SubscriptionService - Layer Refactoring', () => {
     findDunningByContractId: jest.fn().mockResolvedValue(null),
   };
 
+  const mockInvoiceBillingManager = {
+    issueInvoiceForContract: jest.fn().mockResolvedValue({ success: true }),
+    voidInvoicesForContract: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const mockConfigService = {
+    get: jest.fn().mockReturnValue(undefined),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -95,6 +106,14 @@ describe('SubscriptionService - Layer Refactoring', () => {
         {
           provide: BillingReader,
           useValue: mockBillingReader,
+        },
+        {
+          provide: InvoiceBillingManager,
+          useValue: mockInvoiceBillingManager,
+        },
+        {
+          provide: ConfigService,
+          useValue: mockConfigService,
         },
       ],
     }).compile();
@@ -241,6 +260,28 @@ describe('SubscriptionService - Layer Refactoring', () => {
       expect(result).not.toHaveProperty('attempts');
       expect(result).not.toHaveProperty('nextRetryAt');
       expect(result).not.toHaveProperty('lastErrorCode');
+    });
+  });
+
+  describe('adminCreateSubscription', () => {
+    it('recurring 은 결제수단/약정 없이 완결 불가라 거부한다', async () => {
+      await expect(service.adminCreateSubscription('u1', 'plan_001', 'recurring')).rejects.toThrow();
+      // 계약을 만들지 않아야 한다
+      expect(mockSubscriptionCreator.createNewSubscription).not.toHaveBeenCalled();
+    });
+
+    it('one_time 은 계약을 생성한다', async () => {
+      mockEntitlementService.getUserEntitlement.mockResolvedValue(null);
+      mockPlanService.getPlanDetails.mockResolvedValue({
+        plan: { id: 'plan_001', price: 10000, durationDays: 30, isActive: true },
+        tier: { id: 'tier_001', code: 'GOLD' },
+      });
+      mockSubscriptionCreator.createNewSubscription.mockResolvedValue({ contractId: 'c1' });
+
+      const result = await service.adminCreateSubscription('u1', 'plan_001', 'one_time');
+
+      expect(result).toEqual({ contractId: 'c1' });
+      expect(mockSubscriptionCreator.createNewSubscription).toHaveBeenCalled();
     });
   });
 

@@ -110,28 +110,8 @@ export class CmsBatchProvider implements PaymentProvider {
     // 5. transactionId 생성 (chargeId 기반 결정론적 — 재시도 시 동일 ID 보장)
     const transactionId = this.generateTransactionId(params.chargeId);
 
-    // 6. 효성 출금신청 API 호출
-    const result = await this.cmsApi.requestWithdrawal({
-      transactionId,
-      memberId: member.cmsMemberId,
-      paymentDate,
-      callAmount: params.amount,
-    });
-
-    if (!result.ok) {
-      // 5xx: throw to trigger DLQ retry
-      if (result.statusCode >= 500) {
-        throw new Error(`CMS withdrawal API 5xx: ${result.error.code} ${result.error.message}`);
-      }
-      // 4xx / business error: immediate failure
-      return {
-        status: 'FAILED',
-        errorCode: result.error.code,
-        errorMessage: result.error.message,
-      };
-    }
-
-    // 7. cms_withdrawals 레코드 생성
+    // 6. write-ahead: 효성 호출 전에 행을 기록한다 — 호출 후 기록하면 타임아웃/크래시 시
+    //    로컬에 없는 유령 출금이 생겨 재시도가 이중 출금이 된다. 접수 여부는 폴러가 판정.
     await this.dbService.db.insert(cmsWithdrawals).values({
       cmsMemberId: member.cmsMemberId,
       transactionId,
@@ -141,6 +121,39 @@ export class CmsBatchProvider implements PaymentProvider {
       amount: params.amount,
       status: 'REQUESTED',
     });
+
+    // 7. 효성 출금신청 API 호출
+    const result = await this.cmsApi.requestWithdrawal({
+      transactionId,
+      memberId: member.cmsMemberId,
+      paymentDate,
+      callAmount: params.amount,
+    });
+
+    if (!result.ok) {
+      // 5xx/네트워크: 접수 여부 불명 — 행을 남기고 PENDING. 폴러가 정산 또는 404 실패로 확정한다.
+      if (result.statusCode >= 500) {
+        this.logger.warn(
+          `[CmsBatchProvider] requestWithdrawal ambiguous (${result.statusCode} ${result.error.code}) — poller will settle txId=${transactionId}`,
+        );
+        return { status: 'PENDING', providerTransactionId: transactionId, raw: {} };
+      }
+      // 4xx / business error: 확정 거절 — write-ahead 행 정리 후 즉시 실패
+      await this.dbService.db
+        .update(cmsWithdrawals)
+        .set({
+          status: 'DELETED',
+          resultCode: result.error.code,
+          resultMessage: `요청 거절: ${result.error.message}`,
+          updatedAt: new Date(),
+        })
+        .where(eq(cmsWithdrawals.transactionId, transactionId));
+      return {
+        status: 'FAILED',
+        errorCode: result.error.code,
+        errorMessage: result.error.message,
+      };
+    }
 
     // 8. return PENDING (배치 결과 대기)
     return {

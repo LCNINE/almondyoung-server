@@ -339,6 +339,17 @@ export const membershipApi = {
     return res.data;
   },
 
+  // INVOICE 계약 강제 정합화 — wallet 인보이스 권위 상태를 즉시 되물어 구독(자격)↔인보이스(결제) 발산 해소.
+  reconcileInvoice: async (
+    contractId: string
+  ): Promise<{ contractId: string; periodStart: string; invoiceStatus: string | null }> => {
+    const res = await client.post(
+      `${MEMBERSHIP_SERVICE_BASE_URL}/admin/billing/reconcile-invoice/${encodeURIComponent(contractId)}`,
+      null
+    );
+    return res.data?.data ?? res.data;
+  },
+
   grantSubscriptionByDays: async (
     userId: string,
     days: number,

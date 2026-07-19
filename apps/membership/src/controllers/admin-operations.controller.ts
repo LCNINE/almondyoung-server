@@ -16,7 +16,11 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
+import { DLQHandler, createKafkaConfigFromEnv, getDLQTopicName } from '@app/events';
+import { PAYMENT_STREAM } from '@packages/event-contracts/streams/payment.stream';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
 import { IdempotentAdminOp } from '../shared/idempotency/idempotent-admin-op.decorator';
 import { AdminOperationsService } from '../services/admin-operations.service';
@@ -68,6 +72,7 @@ export class AdminOperationsController {
     private readonly cancellationService: SubscriptionCancellationService,
     private readonly contractEventManager: ContractEventManager,
     private readonly adminMembersReader: AdminMembersReader,
+    @Optional() private readonly dlqHandler?: DLQHandler,
   ) {}
 
   private handleError(error: unknown, operation: string, context?: string): never {
@@ -711,6 +716,26 @@ export class AdminOperationsController {
   }
 
   /**
+   * INVOICE 계약 강제 정합화 — wallet 인보이스 권위 상태를 즉시 되물어 구독(자격)↔인보이스(결제)
+   * 발산을 해소한다. 이벤트 유실로 선지급 자격이 미회수된 계약을 관리자가 30분 크론 없이 바로 확정.
+   *
+   * POST /admin/billing/reconcile-invoice/:contractId
+   */
+  @Post('billing/reconcile-invoice/:contractId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'INVOICE 계약 강제 정합화 (구독↔인보이스 대조)' })
+  @UseGuards(JwtAuthGuard)
+  async reconcileInvoice(@User('userId') adminId: string, @Param('contractId') contractId: string) {
+    this.logger.log(`인보이스 강제 정합화 요청: ${contractId} (관리자: ${adminId})`);
+    try {
+      const result = await this.adminOperationsService.reconcileInvoiceForContract(contractId);
+      return { success: true, data: result };
+    } catch (error) {
+      this.handleError(error, '인보이스 강제 정합화', contractId);
+    }
+  }
+
+  /**
    * 멤버십 회원 목록 조회 (관리자 어드민용)
    *
    * GET /admin/members?page=1&limit=20&status=ACTIVE&q=userId&dateFrom=&dateTo=
@@ -973,6 +998,40 @@ export class AdminOperationsController {
       return await this.adminMembersReader.resetBillingInProgress(contractId, adminId, reason.trim());
     } catch (error) {
       this.handleError(error, '결제 대기 플래그 해제');
+    }
+  }
+
+  /**
+   * 결제 이벤트 DLQ 재구동 — 포이즌/일시장애로 DLQ 에 쌓인 payments.events.v1 메시지를 원본 토픽으로 재발행.
+   * 안정 컨슈머 그룹으로 이미 드레인한 오프셋은 건너뛰므로 반복 호출해도 새 메시지만 처리한다.
+   *
+   * POST /admin/dlq/reprocess  { topic?, maxMessages? }
+   */
+  @Post('dlq/reprocess')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '결제 이벤트 DLQ 재구동 (원본 토픽으로 재발행)' })
+  @UseGuards(JwtAuthGuard)
+  async reprocessDlq(@Body('topic') topic?: string, @Body('maxMessages') maxMessages?: number) {
+    if (!this.dlqHandler) {
+      throw new ServiceUnavailableException('DLQ 핸들러가 활성화돼 있지 않습니다.');
+    }
+    const kafka = createKafkaConfigFromEnv();
+    if (!kafka) {
+      throw new ServiceUnavailableException('KAFKA_BROKERS 미설정 — DLQ 재구동 불가.');
+    }
+    const originalTopic = topic?.trim() || PAYMENT_STREAM.topic.topic;
+    const dlqTopic = getDLQTopicName(originalTopic);
+    this.logger.log(`DLQ 재구동 요청: ${dlqTopic}`);
+    try {
+      const result = await this.dlqHandler.drainAndReprocess({
+        dlqTopic,
+        kafka,
+        maxMessages: maxMessages && maxMessages > 0 ? Number(maxMessages) : undefined,
+      });
+      this.logger.log(`✅ DLQ 재구동 완료: ${dlqTopic} → ${JSON.stringify(result)}`);
+      return { success: true, data: { dlqTopic, ...result } };
+    } catch (error) {
+      this.handleError(error, 'DLQ 재구동', dlqTopic);
     }
   }
 }
