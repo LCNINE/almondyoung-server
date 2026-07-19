@@ -14,9 +14,11 @@ import { PlanReader } from '../../src/services/plan/plan.reader';
 import { PlanManager } from '../../src/services/plan/plan.manager';
 import { PaymentClientService } from '../../src/services/billing/payment-client.service';
 import { BillingOutcomeHandler } from '../../src/services/billing/billing-outcome.handler';
+import { InvoiceOutcomeHandler } from '../../src/services/billing/invoice-outcome.handler';
 import { ContractEventManager } from '../../src/services/subscription/contract-event.manager';
 import { MembershipEventPublisher } from '../../src/services/membership-event.publisher';
 import { WalletCommandPublisher } from '../../src/services/billing/wallet-command.publisher';
+import { InvoiceBillingManager } from '../../src/services/billing/invoice-billing.manager';
 import { MembershipPolicyService } from '../../src/services/membership-policy.service';
 import { membershipSchema, type MembershipSchema } from '../../src/shared/schemas/entities/schema';
 import * as schema from '../../src/shared/schemas/entities/schema';
@@ -67,6 +69,17 @@ describe('Recurring Billing & Pause Integration Tests', () => {
         BillingReader,
         BillingManager,
         BillingOutcomeHandler,
+        // pause 테스트는 인보이스 결과를 다루지 않으므로 mock — RecurringBillingService 의존만 채운다.
+        {
+          provide: InvoiceOutcomeHandler,
+          useValue: {
+            handlePaid: jest.fn(),
+            handlePaymentFailed: jest.fn(),
+            handleUncollectible: jest.fn(),
+            handleVoided: jest.fn(),
+            handleMandateRejected: jest.fn(),
+          },
+        },
         ContractEventManager,
         {
           provide: MembershipEventPublisher,
@@ -74,8 +87,13 @@ describe('Recurring Billing & Pause Integration Tests', () => {
         },
         {
           provide: WalletCommandPublisher,
-          useValue: { publishBillingCharge: jest.fn().mockResolvedValue(undefined) },
+          useValue: {
+            publishBillingCharge: jest.fn().mockResolvedValue(undefined),
+            publishCreateInvoice: jest.fn().mockResolvedValue(undefined),
+            publishVoidInvoice: jest.fn().mockResolvedValue(undefined),
+          },
         },
+        InvoiceBillingManager,
         MembershipPolicyService,
         PauseService,
         PauseReader,
@@ -259,54 +277,47 @@ describe('Recurring Billing & Pause Integration Tests', () => {
   });
 
   describe('정기결제 처리', () => {
-    it('✅ 정상 결제 성공 - 권한 연장 및 다음 결제일 설정', async () => {
+    it('✅ 정상 결제 - BillingCharge 커맨드 발행(비동기 모델)', async () => {
+      // 신모델: processSingleBilling 은 동기 결제/intent 생성을 하지 않고 BillingCharge 커맨드를 발행하고
+      // billingInProgress 락을 건다. 권한 연장·nextBillingDate 전진·lastPaymentIntentId 는 wallet 결과
+      // 이벤트를 받은 BillingOutcomeHandler 가 처리한다(별도 스펙에서 검증).
       const contract = await billingReader.findContractById(testContractId);
       expect(contract).toBeDefined();
 
       const result = await billingManager.processSingleBilling(contract!);
 
       expect(result.success).toBe(true);
-      expect(result.paymentIntentId).toBe('mock-intent-id');
-      expect(result.paymentAttemptId).toBe('mock-transaction-id');
+      expect(result.contractId).toBe(testContractId);
 
-      // Contract 상태 확인
       const [updatedContract] = await dbService.db
         .select()
         .from(schema.subscriptionContracts)
         .where(eq(schema.subscriptionContracts.id, testContractId));
 
-      expect(updatedContract.isPastDue).toBe(false);
-      expect(updatedContract.billingRetryCount).toBe(0);
-      expect(updatedContract.lastPaymentIntentId).toBe('mock-intent-id');
-
-      // nextBillingDate가 30일 후로 설정되었는지 확인
-      const expectedNextBilling = format(addDays(new Date(), 30), 'yyyy-MM-dd');
-      expect(updatedContract.nextBillingDate).toBe(expectedNextBilling);
+      // 커맨드 발행 후 결과 이벤트 전까지 락 유지
+      expect(updatedContract.billingInProgress).toBe(true);
     });
 
-    it('❌ 비활성화된 플랜은 결제 실패', async () => {
+    it('✅ 비활성화된 플랜은 결제 실패 결과 반환(throw 아님)', async () => {
       // 플랜 비활성화
-      await dbService.db
-        .update(schema.plan)
-        .set({
-          isActive: false,
-        })
-        .where(eq(schema.plan.id, testPlanId));
+      await dbService.db.update(schema.plan).set({ isActive: false }).where(eq(schema.plan.id, testPlanId));
 
       const contract = await billingReader.findContractById(testContractId);
 
-      await expect(billingManager.processSingleBilling(contract!)).rejects.toThrow('Plan is not active');
+      // 신모델: 배치 처리라 예외를 던지지 않고 실패 결과를 반환한다(한 계약 실패가 배치를 멈추지 않게).
+      const result = await billingManager.processSingleBilling(contract!);
+      expect(result.success).toBe(false);
+      expect(result.errorCode).toBe('BILLING_COMMAND_FAILED');
+      expect(result.errorMessage).toContain('Plan is not active');
 
       // 플랜 다시 활성화 (다른 테스트 영향 방지)
-      await dbService.db
-        .update(schema.plan)
-        .set({
-          isActive: true,
-        })
-        .where(eq(schema.plan.id, testPlanId));
+      await dbService.db.update(schema.plan).set({ isActive: true }).where(eq(schema.plan.id, testPlanId));
     });
 
-    it('✅ 결제 실패 - Dunning 큐 추가', async () => {
+    // 결제 실패→dunning 은 이제 wallet 결과 이벤트를 받은 BillingOutcomeHandler 가 처리한다(비동기).
+    // processSingleBilling 은 커맨드만 발행하므로 동기 실패코드/dunning 을 여기서 검증할 수 없다.
+    // dunning 적립은 billing-outcome 계열 스펙에서 검증한다. recurring 실결제 경로 개통 후 재작성.
+    it.skip('✅ 결제 실패 - Dunning 큐 추가 (비동기 outcome 경로로 이관)', async () => {
       // Payment Client Mock을 실패로 변경
       jest.spyOn(paymentClient, 'processPayment').mockResolvedValueOnce({
         success: false,
@@ -424,6 +435,56 @@ describe('Recurring Billing & Pause Integration Tests', () => {
         .from(schema.subscriptionContracts)
         .where(eq(schema.subscriptionContracts.userId, testUserId));
       expect(resumedContract.nextBillingDate).toBe(format(addDays(new Date(originalNextBillingDate!), 10), 'yyyy-MM-dd'));
+    });
+
+    it('✅ INVOICE 경로 미결 주기는 재개 시 nextBillingDate 를 밀지 않는다(이중 인보이스 방지)', async () => {
+      // 현재 주기가 미결(nextBillingDate<=today)인 INVOICE 계약: shift 하면 멱등키가 바뀌어
+      // 같은 주기에 두 번째 인보이스가 발행되고 이중 출금된다. periodStart 보존이 정답.
+      const today = format(new Date(), 'yyyy-MM-dd');
+      await dbService.db
+        .update(schema.subscriptionContracts)
+        .set({ billingPath: 'INVOICE', nextBillingDate: today })
+        .where(eq(schema.subscriptionContracts.id, testContractId));
+
+      const [entitlement] = await dbService.db
+        .select()
+        .from(schema.subscriptionEntitlement)
+        .where(
+          and(
+            eq(schema.subscriptionEntitlement.userId, testUserId),
+            eq(schema.subscriptionEntitlement.isCurrent, true),
+          ),
+        );
+
+      await pauseManager.startPause(testUserId, entitlement, new Date(), addDays(new Date(), 30));
+
+      const [paused] = await dbService.db
+        .select()
+        .from(schema.subscriptionEntitlement)
+        .where(
+          and(
+            eq(schema.subscriptionEntitlement.userId, testUserId),
+            eq(schema.subscriptionEntitlement.isCurrent, true),
+          ),
+        );
+      // 실제 10일 정지 상황을 만든다.
+      await dbService.db
+        .update(schema.subscriptionEntitlement)
+        .set({ pausedAt: addDays(new Date(), -10) })
+        .where(eq(schema.subscriptionEntitlement.id, paused.id));
+      const [backdated] = await dbService.db
+        .select()
+        .from(schema.subscriptionEntitlement)
+        .where(eq(schema.subscriptionEntitlement.id, paused.id));
+
+      await pauseManager.resumePause(testUserId, backdated);
+
+      const [resumedContract] = await dbService.db
+        .select()
+        .from(schema.subscriptionContracts)
+        .where(eq(schema.subscriptionContracts.id, testContractId));
+      // nextBillingDate 는 그대로(미결 주기 periodStart 보존) — entitlement 만 정지분 연장.
+      expect(resumedContract.nextBillingDate).toBe(today);
     });
 
     it('✅ 일시정지 중에는 정기결제 대상에서 제외', async () => {

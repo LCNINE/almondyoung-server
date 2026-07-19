@@ -6,6 +6,8 @@ import { WalletSchema, billingAgreements, billingMethods, cmsAgreements, cmsMemb
 import { isCmsAgreementRegistered } from '../cms/cms-agreement-status';
 import { BillingMethod, CmsAgreementRecord, CmsMember } from '../types';
 import { CmsApiClient } from '../cms/cms-api.client';
+import { interpretLiveCmsMemberStatus } from '../cms/cms-member-status';
+import { CmsOperationError } from '../cms/cms-errors';
 
 export interface CmsBillingMethodStatusRow {
   billingMethodId: string;
@@ -86,6 +88,8 @@ export class BillingMethodService {
       .then((rows) => rows[0]);
 
     if (cmsMember?.cmsMemberId && cmsMember.status !== 'DELETED') {
+      await this.guardAgainstStaleRegisteredDeletion(cmsMember);
+
       const result = await this.cmsApi.deleteMember(cmsMember.cmsMemberId);
       if (!result.ok) {
         this.logger.error(`CMS member deletion failed: ${result.error.code} ${result.error.message}`);
@@ -111,6 +115,44 @@ export class BillingMethodService {
           .where(eq(cmsMembers.id, cmsMember.id));
       }
     });
+  }
+
+  /**
+   * 삭제 가드 (ADR-0027 §5-4). deleteMember 는 효성 자동이체 약정 자체를 지운다.
+   * 저장된 상태가 stale(실패/심사중)인데 효성 실측이 REGISTERED 면, 사용자가
+   * "실패한 줄 알고" 정상 등록된 계좌를 오삭제하려는 상황이다. 최신 상태로 갱신한 뒤
+   * 삭제를 막아 재확인을 유도한다. 효성 조회 실패(점검/장애) 시엔 저장 상태 기준으로 진행한다.
+   */
+  private async guardAgainstStaleRegisteredDeletion(cmsMember: CmsMember): Promise<void> {
+    if (cmsMember.status === 'REGISTERED') return; // 이미 등록된 걸 알고 지우는 정상 흐름
+
+    const live = await this.cmsApi.getMember(cmsMember.cmsMemberId);
+    if (!live.ok) {
+      this.logger.warn(
+        `CMS status re-check failed before deletion (${cmsMember.cmsMemberId}): ${live.error.code} — proceeding on stored status ${cmsMember.status}`,
+      );
+      return;
+    }
+
+    if (interpretLiveCmsMemberStatus(live.data.member.status) !== 'REGISTERED') return;
+
+    // stale 발산 감지: 저장은 non-REGISTERED, 효성 실측은 REGISTERED.
+    const resultCode = live.data.member.result?.code ?? null;
+    const resultMessage = live.data.member.result?.message ?? null;
+    await this.dbService.db
+      .update(cmsMembers)
+      .set({ status: 'REGISTERED', resultCode, resultMessage, updatedAt: new Date() })
+      .where(eq(cmsMembers.id, cmsMember.id));
+
+    this.logger.warn(
+      `Blocked stale deletion of REGISTERED CMS member ${cmsMember.cmsMemberId} (stored=${cmsMember.status}, live=REGISTERED)`,
+    );
+    throw new CmsOperationError(
+      'CMS_MEMBER_DELETE_BLOCKED_REGISTERED',
+      '이 계좌는 은행 심사를 통과해 정상 등록되어 있습니다. 최신 상태로 갱신했으니, 삭제하시려면 다시 확인 후 시도해주세요.',
+      409,
+      `stored=${cmsMember.status} live=REGISTERED`,
+    );
   }
 
   async getBillingKey(billingMethodId: string): Promise<string> {
@@ -148,7 +190,11 @@ export class BillingMethodService {
       .where(and(eq(billingMethods.userId, userId), eq(billingMethods.status, 'ACTIVE')));
   }
 
-  async assertSelectableForRecurringBilling(userId: string, billingMethodId: string): Promise<BillingMethod> {
+  async assertSelectableForRecurringBilling(
+    userId: string,
+    billingMethodId: string,
+    opts?: { allowPendingMandate?: boolean },
+  ): Promise<BillingMethod> {
     const method = await this.findById(billingMethodId);
     if (!method || method.userId !== userId || method.status !== 'ACTIVE') {
       throw new Error('billing method not found or inactive');
@@ -160,6 +206,16 @@ export class BillingMethodService {
 
     const statuses = await this.getUserCmsBillingMethodStatuses(userId);
     const status = statuses.find((row) => row.billingMethodId === billingMethodId);
+
+    // 선적용: 심사 중(PENDING) 계좌 허용 — 대기는 인보이스가 흡수, 거절은 mandate.rejected 로 회수.
+    // FAILED/DELETED 는 거부.
+    if (opts?.allowPendingMandate) {
+      if (!status || status.cmsMemberStatus === 'FAILED' || status.cmsMemberStatus === 'DELETED') {
+        throw new Error('CMS billing method is not ready for recurring billing');
+      }
+      return method;
+    }
+
     if (!status?.isSelectableForRecurringBilling) {
       throw new Error('CMS billing method is not ready for recurring billing');
     }

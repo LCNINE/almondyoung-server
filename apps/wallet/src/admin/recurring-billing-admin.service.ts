@@ -11,6 +11,7 @@ import {
   cmsMembers,
   cmsWithdrawals,
   paymentIntents,
+  invoices,
 } from '../schema';
 import { CmsMemberPollerService } from '../cms/cms-member-poller.service';
 import { CmsSettlementPollerService } from '../cms/cms-settlement-poller.service';
@@ -19,6 +20,8 @@ import {
   AdminRecurringBillingOverviewDto,
   AdminRecurringBillingRowDto,
   AdminRecurringBillingIssueType,
+  AdminInvoiceListQueryDto,
+  AdminInvoiceRowDto,
 } from './dto/admin-recurring-billing.dto';
 import { PaginatedResponseDto } from '@app/shared';
 
@@ -88,9 +91,7 @@ type AgreementStatusSnapshot = Pick<typeof cmsAgreements.$inferSelect, 'status' 
 export function aggregateAgreementStatus(agreements: AgreementStatusSnapshot[]): string | null {
   if (agreements.length === 0) return null;
 
-  return agreements.reduce((latest, agreement) =>
-    agreement.createdAt > latest.createdAt ? agreement : latest,
-  ).status;
+  return agreements.reduce((latest, agreement) => (agreement.createdAt > latest.createdAt ? agreement : latest)).status;
 }
 
 // ─── Service ─────────────────────────────────────────────────────────────────
@@ -111,15 +112,28 @@ export class RecurringBillingAdminService {
 
   async getOverview(): Promise<AdminRecurringBillingOverviewDto> {
     // needsAction count는 listNeedsAction과 동일한 데이터 소스에서 가져와야 카드 숫자와 목록이 일치한다.
-    const [needsActionRows, memberPendingResult, memberFailedResult, withdrawalRequestedResult, withdrawalProcessingResult, withdrawalFailedResult] =
-      await Promise.all([
-        this.fetchNeedsActionRows(),
-        this.db.select({ value: count() }).from(cmsMembers).where(eq(cmsMembers.status, 'PENDING')),
-        this.db.select({ value: count() }).from(cmsMembers).where(eq(cmsMembers.status, 'FAILED')),
-        this.db.select({ value: count() }).from(cmsWithdrawals).where(eq(cmsWithdrawals.status, 'REQUESTED')),
-        this.db.select({ value: count() }).from(cmsWithdrawals).where(eq(cmsWithdrawals.status, 'PROCESSING')),
-        this.db.select({ value: count() }).from(cmsWithdrawals).where(eq(cmsWithdrawals.status, 'FAILED')),
-      ]);
+    const [
+      needsActionRows,
+      memberPendingResult,
+      memberFailedResult,
+      withdrawalRequestedResult,
+      withdrawalProcessingResult,
+      withdrawalFailedResult,
+      invoicePastDueResult,
+      invoiceUncollectibleResult,
+      invoiceMandateRejectedResult,
+    ] = await Promise.all([
+      this.fetchNeedsActionRows(),
+      this.db.select({ value: count() }).from(cmsMembers).where(eq(cmsMembers.status, 'PENDING')),
+      this.db.select({ value: count() }).from(cmsMembers).where(eq(cmsMembers.status, 'FAILED')),
+      this.db.select({ value: count() }).from(cmsWithdrawals).where(eq(cmsWithdrawals.status, 'REQUESTED')),
+      this.db.select({ value: count() }).from(cmsWithdrawals).where(eq(cmsWithdrawals.status, 'PROCESSING')),
+      this.db.select({ value: count() }).from(cmsWithdrawals).where(eq(cmsWithdrawals.status, 'FAILED')),
+      // 인보이스 모델의 미수 지표(ADR-0027 §6): 재시도 중(PAST_DUE)·최종 미수(UNCOLLECTIBLE)·계좌 거절(MANDATE_REJECTED)
+      this.db.select({ value: count() }).from(invoices).where(eq(invoices.status, 'PAST_DUE')),
+      this.db.select({ value: count() }).from(invoices).where(eq(invoices.status, 'UNCOLLECTIBLE')),
+      this.db.select({ value: count() }).from(invoices).where(eq(invoices.status, 'MANDATE_REJECTED')),
+    ]);
 
     return {
       needsAction: needsActionRows.length,
@@ -128,6 +142,9 @@ export class RecurringBillingAdminService {
       withdrawalRequested: withdrawalRequestedResult[0]?.value ?? 0,
       settlementPending: withdrawalProcessingResult[0]?.value ?? 0,
       withdrawalFailed: withdrawalFailedResult[0]?.value ?? 0,
+      invoicePastDue: invoicePastDueResult[0]?.value ?? 0,
+      invoiceUncollectible: invoiceUncollectibleResult[0]?.value ?? 0,
+      invoiceMandateRejected: invoiceMandateRejectedResult[0]?.value ?? 0,
     };
   }
 
@@ -573,6 +590,67 @@ export class RecurringBillingAdminService {
         updatedAt: r.billingAgreement.updatedAt.toISOString(),
       };
     });
+
+    return { data, total, page, limit };
+  }
+
+  // ── invoices view (ADR-0027) ─────────────────────────────────────────────────
+
+  /** 인보이스가 청구 1건의 권위 상태(SoT) — 관리자 뷰/수동 집행 판단의 기준 목록. */
+  async listInvoices(query: AdminInvoiceListQueryDto): Promise<PaginatedResponseDto<AdminInvoiceRowDto>> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const offset = (page - 1) * limit;
+
+    const conditions: SQL[] = [];
+    if (query.status) conditions.push(eq(invoices.status, query.status));
+    if (query.subscriberRef) conditions.push(eq(invoices.subscriberRef, query.subscriberRef));
+    if (query.userId) conditions.push(eq(billingMethods.userId, query.userId));
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [totalResult, rows] = await Promise.all([
+      this.db
+        .select({ value: count() })
+        .from(invoices)
+        .leftJoin(billingMethods, eq(billingMethods.id, invoices.billingMethodId))
+        .where(whereClause),
+      this.db
+        .select({ invoice: invoices, billingMethod: billingMethods })
+        .from(invoices)
+        .leftJoin(billingMethods, eq(billingMethods.id, invoices.billingMethodId))
+        .where(whereClause)
+        .orderBy(desc(invoices.createdAt))
+        .limit(limit)
+        .offset(offset),
+    ]);
+
+    const total = totalResult[0]?.value ?? 0;
+    const data = rows.map(
+      (r): AdminInvoiceRowDto => ({
+        id: r.invoice.id,
+        status: r.invoice.status,
+        subscriberType: r.invoice.subscriberType,
+        subscriberRef: r.invoice.subscriberRef,
+        userId: r.billingMethod?.userId ?? null,
+        billingMethodId: r.invoice.billingMethodId,
+        billingMethodDisplayName: r.billingMethod?.displayName ?? null,
+        amountDue: r.invoice.amountDue,
+        currency: r.invoice.currency,
+        periodStart: r.invoice.periodStart,
+        periodEnd: r.invoice.periodEnd,
+        dueDate: r.invoice.dueDate,
+        attemptCount: r.invoice.attemptCount,
+        maxAttempts: r.invoice.maxAttempts,
+        nextAttemptAt: r.invoice.nextAttemptAt?.toISOString() ?? null,
+        finalizedAt: r.invoice.finalizedAt?.toISOString() ?? null,
+        isExecutable: ['OPEN', 'MANDATE_PENDING', 'PAST_DUE'].includes(r.invoice.status),
+        lastErrorCode: typeof r.invoice.metadata.lastErrorCode === 'string' ? r.invoice.metadata.lastErrorCode : null,
+        lastErrorMessage:
+          typeof r.invoice.metadata.lastErrorMessage === 'string' ? r.invoice.metadata.lastErrorMessage : null,
+        createdAt: r.invoice.createdAt.toISOString(),
+        updatedAt: r.invoice.updatedAt.toISOString(),
+      }),
+    );
 
     return { data, total, page, limit };
   }

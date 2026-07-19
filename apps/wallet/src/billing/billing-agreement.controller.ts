@@ -30,7 +30,9 @@ export class BillingAgreementController {
   async create(@Body() dto: CreateBillingAgreementDto): Promise<BillingAgreementResponseDto> {
     try {
       const agreement = dto.billingMethodId
-        ? await this.service.create(dto.userId, dto.billingMethodId, dto.subscriberRef, dto.subscriberType)
+        ? await this.service.create(dto.userId, dto.billingMethodId, dto.subscriberRef, dto.subscriberType, {
+            allowPendingMandate: dto.allowPendingMandate ?? false,
+          })
         : await this.service.createWithAutoMethod(dto.userId, dto.subscriberRef, dto.subscriberType);
       return this.toResponse(agreement);
     } catch (e: any) {

@@ -16,6 +16,7 @@ import {
   subscriberExtraFromMetadata,
 } from '../messaging/gateway-event.builder';
 import { PaymentIntentsService } from '../payment-intents/payment-intents.service';
+import { InvoiceOutcomeService } from '../invoices/invoice-outcome.service';
 
 @Injectable()
 export class CmsSettlementPollerService {
@@ -28,6 +29,7 @@ export class CmsSettlementPollerService {
     private readonly stateTransitionService: StateTransitionService,
     private readonly autoCaptureService: AutoCaptureService,
     private readonly paymentIntentsService: PaymentIntentsService,
+    private readonly invoiceOutcomeService: InvoiceOutcomeService,
   ) {}
 
   /**
@@ -42,10 +44,7 @@ export class CmsSettlementPollerService {
       .select()
       .from(cmsWithdrawals)
       .where(
-        and(
-          inArray(cmsWithdrawals.status, ['REQUESTED', 'PROCESSING']),
-          lte(cmsWithdrawals.paymentDate, yesterday),
-        ),
+        and(inArray(cmsWithdrawals.status, ['REQUESTED', 'PROCESSING']), lte(cmsWithdrawals.paymentDate, yesterday)),
       );
 
     if (pendingWithdrawals.length === 0) return;
@@ -65,11 +64,7 @@ export class CmsSettlementPollerService {
    * 특정 cms_withdrawal UUID로 단건 폴링 (admin trigger).
    */
   async pollWithdrawalById(id: string): Promise<void> {
-    const rows = await this.dbService.db
-      .select()
-      .from(cmsWithdrawals)
-      .where(eq(cmsWithdrawals.id, id))
-      .limit(1);
+    const rows = await this.dbService.db.select().from(cmsWithdrawals).where(eq(cmsWithdrawals.id, id)).limit(1);
     const withdrawal = rows[0];
     if (!withdrawal) throw new Error('CMS withdrawal not found: ' + id);
     await this.processWithdrawal(withdrawal);
@@ -78,6 +73,15 @@ export class CmsSettlementPollerService {
   private async processWithdrawal(withdrawal: CmsWithdrawal): Promise<void> {
     const result = await this.cmsApi.getWithdrawal(withdrawal.transactionId);
     if (!result.ok) {
+      // write-ahead 행인데 효성에 없다(404) = 접수 유실. 폴은 D+1 이후라 지연이 아니므로 실패 확정.
+      if (result.statusCode === 404) {
+        this.logger.warn(`CMS withdrawal ${withdrawal.transactionId} not found at provider — treating as lost request`);
+        await this.handleWithdrawalFailure(withdrawal, {
+          status: '출금실패',
+          result: { code: 'CMS_NOT_ACCEPTED', message: '효성에 접수되지 않은 출금 요청(유실)' },
+        });
+        return;
+      }
       this.logger.warn(
         `CMS withdrawal query failed for ${withdrawal.transactionId}: ${result.error.code} ${result.error.message}`,
       );
@@ -104,10 +108,7 @@ export class CmsSettlementPollerService {
     // 그 외(출금대기 등): 다음 주기에 재조회
   }
 
-  private async handleWithdrawalSuccess(
-    withdrawal: CmsWithdrawal,
-    apiData: CmsPaymentData,
-  ): Promise<void> {
+  private async handleWithdrawalSuccess(withdrawal: CmsWithdrawal, apiData: CmsPaymentData): Promise<void> {
     const correlationId = `cms-poller:${withdrawal.transactionId}`;
     const now = new Date().toISOString();
 
@@ -139,7 +140,7 @@ export class CmsSettlementPollerService {
       return;
     }
 
-    const intentMeta = (intent.metadata as Record<string, unknown>) ?? {};
+    const intentMeta = intent.metadata ?? {};
 
     // withdrawal·charge·intent 전이를 한 트랜잭션으로 묶어 부분커밋 분열(예: charge만 SUCCEEDED)을 막는다.
     await this.dbService.db.transaction(async (tx) => {
@@ -196,13 +197,15 @@ export class CmsSettlementPollerService {
     // 4. auto-capture 시도
     await this.autoCaptureService.attemptAutoCapture(withdrawal.intentId, correlationId);
 
+    // 5. 인보이스 기반 청구면 PAID 확정 + invoice.paid 발행(누락 시 stale reconcile 이 복구).
+    if (intent.invoiceId) {
+      await this.invoiceOutcomeService.markPaid(intent.invoiceId, intent.id);
+    }
+
     this.logger.log(`CMS withdrawal ${withdrawal.transactionId} succeeded → intent ${withdrawal.intentId} AUTHORIZED`);
   }
 
-  private async handleWithdrawalFailure(
-    withdrawal: CmsWithdrawal,
-    apiData: CmsPaymentData,
-  ): Promise<void> {
+  private async handleWithdrawalFailure(withdrawal: CmsWithdrawal, apiData: CmsPaymentData): Promise<void> {
     const correlationId = `cms-poller:${withdrawal.transactionId}`;
     const now = new Date().toISOString();
 
@@ -239,7 +242,7 @@ export class CmsSettlementPollerService {
       return;
     }
 
-    const intentMeta = (intent.metadata as Record<string, unknown>) ?? {};
+    const intentMeta = intent.metadata ?? {};
 
     // 성공 경로와 대칭 — 한 tx로 묶어 부분커밋 고아(withdrawal=FAILED인데 intent는 PENDING_SETTLEMENT stuck) 방지
     await this.dbService.db.transaction(async (tx) => {
@@ -298,7 +301,16 @@ export class CmsSettlementPollerService {
       );
     });
 
+    // 인보이스 기반 청구면 실패를 집계(PAST_DUE/UNCOLLECTIBLE 전이 + invoice.* 발행).
+    if (intent.invoiceId) {
+      await this.invoiceOutcomeService.registerAttemptFailure(
+        intent.invoiceId,
+        intent.id,
+        apiData.result?.code ?? 'CMS_WITHDRAWAL_FAILED',
+        apiData.result?.message ?? 'CMS withdrawal failed',
+      );
+    }
+
     this.logger.warn(`CMS withdrawal ${withdrawal.transactionId} failed → intent ${withdrawal.intentId} FAILED`);
   }
-
 }

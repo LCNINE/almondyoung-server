@@ -1,0 +1,1 @@
+ALTER TABLE "subscription_contracts" ADD COLUMN "billing_path" text DEFAULT 'CHARGE' NOT NULL;

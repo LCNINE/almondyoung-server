@@ -25,6 +25,8 @@ import {
   pointHolds,
   providerWebhookReceipts,
   refunds,
+  invoices,
+  subscriptionBillingMethods,
   refundRequests,
   cashReceipts,
 } from './schema';
@@ -124,3 +126,9 @@ export type UpdateCmsWithdrawal = Partial<Omit<NewCmsWithdrawal, 'id' | 'created
 export type CmsAgreementRecord = InferSelectModel<typeof cmsAgreements>;
 export type NewCmsAgreementRecord = InferInsertModel<typeof cmsAgreements>;
 export type UpdateCmsAgreementRecord = Partial<Omit<NewCmsAgreementRecord, 'id' | 'createdAt' | 'updatedAt'>>;
+
+export type Invoice = InferSelectModel<typeof invoices>;
+export type NewInvoice = InferInsertModel<typeof invoices>;
+
+export type SubscriptionBillingMethod = InferSelectModel<typeof subscriptionBillingMethods>;
+export type NewSubscriptionBillingMethod = InferInsertModel<typeof subscriptionBillingMethods>;

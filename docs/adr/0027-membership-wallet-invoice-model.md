@@ -109,7 +109,7 @@ DRAFT ─▶ OPEN ─▶ MANDATE_PENDING ─▶ ATTEMPTING ─▶ PAID (terminal
              │        │  └───(승인 전 재시도, 더닝 아님)
              │        ▼                  ▼
              │   MANDATE_REJECTED    PAST_DUE ─▶ (재시도 소진) ─▶ UNCOLLECTIBLE (terminal)
-             │     (terminal)                          
+             │     (terminal)
              └─▶ VOID (terminal; 구독 취소/무효화)
 ```
 
@@ -145,6 +145,8 @@ subscription_billing_method
 - **replace가 아니라 append + soft-revoke**: 결제수단 변경 = 옛 것 `REVOKED`, 새 것 추가. 이력 보존 → 관리자 조회/감사.
 - **백업결제**: PRIMARY 실패 시 `priority` 순으로 BACKUP 시도. (Phase 4)
 - `billing_agreements`는 이 테이블로 대체하거나, 당분간 병존 후 흡수.
+
+> **현재 배선 상태(정정)**: `subscription_billing_methods` 테이블·enum(role/status)은 Phase 1 에서 additive shadow schema 로만 생성됐고 **아직 어떤 코드 경로에도 배선되지 않았다**. 결제수단은 여전히 `billing_agreements`(구독당 1개, 유니크)로만 동작하며, 1:다·append+soft-revoke·백업 폴백은 Phase 4 과제다. 초기 PR 설명의 "결제수단 1:N + soft-revoke 완료"는 과장으로, 실제 완료된 것은 스키마 예약뿐이다.
 
 ### 3-4. membership 쪽 변경 (제거가 핵심)
 
@@ -344,6 +346,13 @@ CMS_BATCH 삭제는 효성 `deleteMember`로 약정을 지운다. 위험은 "등
 - wallet: 인보이스 집행기(MANDATE_PENDING 대기 → 승인 후 ATTEMPTING → 정산). `invoice.*` 이벤트 발행.
 - membership: `invoice.paid/failed/uncollectible`, `mandate.rejected` 구독 + 자격 연장/회수.
 - 신규 가입만 이 경로로. 라이브 recurring 데이터가 없으니 병행 리스크 최소.
+- 구현 확정(2026-07-08): flag = `MEMBERSHIP_INVOICE_BILLING_ENABLED` env. 경로는 계약 생성 시점에
+  `subscription_contracts.billing_path`('CHARGE'|'INVOICE') 로 고정 — flag 토글이 진행 중 계약에 영향 없음.
+  인보이스 경로의 intent 는 metadata 에 subscriberRef/Type 을 싣지 않는다(레거시 `payment.intent.*`
+  컨슈머와의 이중 처리 차단; 결과 라우팅은 `invoice.*` 이벤트 전담). 선적용 자격 연장은 인보이스 발행
+  시점(가입·갱신 공통)에 periodEnd 까지 미리 수행하고, `invoice.paid` 는 보장 연장 + nextBillingDate 전진.
+  nextBillingDate 는 paid 전까지 전진하지 않으므로 일일 스케줄러의 재발행(멱등키 dedupe)이 커맨드 유실
+  reconcile 을 겸한다.
 
 **Phase 3 — 더닝/락 이관(contract)**
 - membership `membership_dunning_queue`·`billingInProgress`·`billingIdempotencyKey` 제거. 더닝을 wallet 인보이스 재시도로 완전 이관.
@@ -359,7 +368,7 @@ CMS_BATCH 삭제는 효성 `deleteMember`로 약정을 지운다. 위험은 "등
 ## 10. 리스크 · 미결 질문
 
 1. **더닝 소유 이동**: 더닝 정책(72h×3)이 membership→wallet로 옮겨간다. wallet이 subscriber별 더닝 정책을 알아야 하나? → 인보이스 생성 시 membership이 재시도 정책(maxAttempts·intervalHours)을 파라미터로 실어주면 wallet은 정책 무지 유지 가능. (경계 보존)
-2. **MANDATE_PENDING 재시도 상한**: 승인이 영영 안 나면(효성 무응답) 무한 대기 방지 위해 mandate 대기 타임아웃(예: 5영업일) → `MANDATE_REJECTED` 강등 규칙 필요.
+2. **MANDATE_PENDING 재시도 상한**: 승인이 영영 안 나면(효성 무응답) 무한 대기 방지 위해 mandate 대기 타임아웃(예: 5영업일) → `MANDATE_REJECTED` 강등 규칙 필요. → Phase 2 구현: due_date + 7일(달력일) 초과 시 `MANDATE_REJECTED(reasonCode=MANDATE_TIMEOUT)`.
 3. **실명조회 API 부재 시**: Q201/Q101의 "형식은 맞는데 불일치"는 사전검증만으로 못 막음 → 선적용 한 달 손해 일부 잔존(수용 범위, 실측 실패 절대량 작음).
 4. **membership이 여전히 가벼운 오케스트레이터인가**: 인보이스 생성 타이밍(주기 크론)은 membership에 남는다. 이건 "언제 청구할지=구독 스케줄" 이라 membership 책임이 맞다. 집행(어떻게 받아낼지)만 wallet.
 

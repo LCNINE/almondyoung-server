@@ -10,6 +10,7 @@ import { MembershipEventPublisher } from '../membership-event.publisher';
 import { CancellationReasonReader } from '../subscription/cancellation-reason.reader';
 import { PaymentClientService } from '../billing/payment-client.service';
 import { BenefitReader } from '../benefit/benefit.reader';
+import { InvoiceBillingManager } from '../billing/invoice-billing.manager';
 
 describe('SubscriptionCancellationService - Unified Cancellation', () => {
   let service: SubscriptionCancellationService;
@@ -121,6 +122,12 @@ describe('SubscriptionCancellationService - Unified Cancellation', () => {
         {
           provide: BenefitReader,
           useValue: mockBenefitReader,
+        },
+        {
+          provide: InvoiceBillingManager,
+          useValue: {
+            voidInvoicesForContract: jest.fn().mockResolvedValue(undefined),
+          },
         },
       ],
     }).compile();

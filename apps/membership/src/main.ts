@@ -8,6 +8,8 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import fastifyCookie from '@fastify/cookie';
 import { ZodValidationPipe } from 'nestjs-zod';
 import { GlobalExceptionFilter } from '@app/shared/filters/http-exception.filter';
+import { EventsModule } from '@app/events';
+import { PAYMENT_STREAM } from '@packages/event-contracts/streams';
 
 /**
  * 애플리케이션 부트스트랩 함수
@@ -96,6 +98,15 @@ async function bootstrap(): Promise<void> {
   }
 
   app.useGlobalFilters(new GlobalExceptionFilter());
+
+  // Kafka 컨슈머 연결 — @OnEvent 소비는 이 microservice 가 있어야 동작한다(forRoot 는 프로듀서 전용).
+  app.connectMicroservice(
+    EventsModule.forConsumer({
+      streams: [PAYMENT_STREAM],
+      groupId: process.env.KAFKA_GROUP_ID || 'membership-consumer',
+    }),
+  );
+  await app.startAllMicroservices();
 
   const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
   await app.listen(port, '0.0.0.0');

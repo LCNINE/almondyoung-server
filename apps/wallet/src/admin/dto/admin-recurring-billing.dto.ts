@@ -58,6 +58,10 @@ export class AdminRecurringBillingOverviewDto {
   withdrawalRequested: number;
   settlementPending: number;
   withdrawalFailed: number;
+  /** 인보이스 미수 지표(ADR-0027 §6) */
+  invoicePastDue: number;
+  invoiceUncollectible: number;
+  invoiceMandateRejected: number;
 }
 
 export type AdminRecurringBillingIssueType =
@@ -96,6 +100,60 @@ export class AdminRecurringBillingRowDto {
     resultMessage?: string | null;
     rawStatus?: string | null;
   };
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ─── 인보이스(ADR-0027) 뷰 ────────────────────────────────────────────────────
+
+export const ADMIN_INVOICE_STATUSES = [
+  'DRAFT',
+  'OPEN',
+  'MANDATE_PENDING',
+  'ATTEMPTING',
+  'PAST_DUE',
+  'PAID',
+  'UNCOLLECTIBLE',
+  'MANDATE_REJECTED',
+  'VOID',
+] as const;
+
+export class AdminInvoiceListQueryDto extends PaginationQueryDto {
+  @IsOptional()
+  @IsEnum(ADMIN_INVOICE_STATUSES)
+  status?: (typeof ADMIN_INVOICE_STATUSES)[number];
+
+  @IsOptional()
+  @IsString()
+  subscriberRef?: string;
+
+  @IsOptional()
+  @IsString()
+  userId?: string;
+}
+
+export class AdminInvoiceRowDto {
+  id: string;
+  status: (typeof ADMIN_INVOICE_STATUSES)[number];
+  subscriberType: string;
+  subscriberRef: string;
+  userId: string | null;
+  billingMethodId: string;
+  billingMethodDisplayName: string | null;
+  amountDue: number;
+  currency: string;
+  periodStart: string;
+  periodEnd: string;
+  dueDate: string;
+  attemptCount: number;
+  maxAttempts: number;
+  nextAttemptAt: string | null;
+  finalizedAt: string | null;
+  /** OPEN/MANDATE_PENDING/PAST_DUE — 관리자 수동 집행 가능 상태 */
+  isExecutable: boolean;
+  /** 마지막 실패/거절 사유 (invoice metadata — 재시도 실패·심사 거절 시 기록) */
+  lastErrorCode: string | null;
+  lastErrorMessage: string | null;
   createdAt: string;
   updatedAt: string;
 }

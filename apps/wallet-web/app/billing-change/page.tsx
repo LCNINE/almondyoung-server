@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { getBillingMethods } from '@/lib/wallet-api';
 import { isAccessTokenUsable, selfOrigin } from '@/lib/auth/access-token';
 import { SESSION_COOKIE_NAMES, getBackendAuthCookie } from '@/lib/auth/session-cookies';
+import { safeReturnUrl } from '@/lib/return-url';
 import { BillingChangeForm } from './billing-change-form';
 
 export const dynamic = 'force-dynamic';
@@ -38,7 +39,7 @@ export default async function BillingChangePage({ searchParams }: Props) {
 
   return (
     <BillingChangeForm
-      returnUrl={returnUrl ? decodeURIComponent(returnUrl) : '/'}
+      returnUrl={safeReturnUrl(returnUrl)}
       billingMethodId={cmsBillingMethod?.id}
       initialError={initialError}
     />
