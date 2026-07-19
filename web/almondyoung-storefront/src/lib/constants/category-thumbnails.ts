@@ -50,7 +50,7 @@ export const CATEGORY_FALLBACK_THUMBNAILS: Record<string, string> = {
   // 니들 (cafe24-cat-262)
   pcat_01KT8J0YGJ7AQ0QRZGJG6728D3: "019df04e-06c0-7684-91ab-105b9a69f5e5",
   // 색소 (cafe24-cat-263)
-  pcat_01KT8J0YCAK3XS68585AHZ6ZM6: "019df04f-95c1-70ae-9766-1a07783f2175",
+  pcat_01KT8J0YCAK3XS68585AHZ6ZM6: "019df023-238e-7e9d-ab8a-cba6ddd4dd9d",
   // 엠보&수지펜 (cafe24-cat-264)
   pcat_01KT8J0YDJSD0H2MAWKKTS46BV: "019df04e-2048-71e0-92bc-accc43ac0890",
   // 머신 (cafe24-cat-265)
