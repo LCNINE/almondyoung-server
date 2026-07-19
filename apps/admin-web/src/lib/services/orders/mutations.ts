@@ -48,6 +48,10 @@ import type {
   ToteScanRequest,
   ToteHandoffRequest,
   ReleaseToteRequest,
+  IssueWaybillRequest,
+  RegisterManualWaybillRequest,
+  IssueBatchWaybillRequest,
+  VoidWaybillRequest,
 } from '@/lib/types/dto/fulfillment';
 
 function commandKey(idempotencyKey?: string): string {
@@ -983,3 +987,86 @@ export const useCancelFulfillment = (boundId?: string) => {
     },
   });
 };
+
+// ===== Waybill (운송장) 발급 =====
+
+export const useIssueWaybill = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      shipmentId,
+      data,
+      idempotencyKey,
+    }: {
+      shipmentId: string;
+      data: IssueWaybillRequest;
+      idempotencyKey?: string;
+    }) => orders.waybills.issue(shipmentId, data, commandKey(idempotencyKey)),
+    onSuccess: (_, { shipmentId }) =>
+      invalidateShipment(queryClient, shipmentId),
+  });
+};
+
+export const useRegisterManualWaybill = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      shipmentId,
+      data,
+      idempotencyKey,
+    }: {
+      shipmentId: string;
+      data: RegisterManualWaybillRequest;
+      idempotencyKey?: string;
+    }) => orders.waybills.manual(shipmentId, data, commandKey(idempotencyKey)),
+    onSuccess: (_, { shipmentId }) =>
+      invalidateShipment(queryClient, shipmentId),
+  });
+};
+
+export const useReissueWaybill = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      shipmentId,
+      data,
+      idempotencyKey,
+    }: {
+      shipmentId: string;
+      data: IssueWaybillRequest;
+      idempotencyKey?: string;
+    }) => orders.waybills.reissue(shipmentId, data, commandKey(idempotencyKey)),
+    onSuccess: (_, { shipmentId }) =>
+      invalidateShipment(queryClient, shipmentId),
+  });
+};
+
+export const useVoidWaybill = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      waybillId,
+      data,
+      idempotencyKey,
+    }: {
+      waybillId: string;
+      shipmentId?: string;
+      data: VoidWaybillRequest;
+      idempotencyKey?: string;
+    }) => orders.waybills.void(waybillId, data, commandKey(idempotencyKey)),
+    onSuccess: (_, vars) => {
+      if (vars.shipmentId) invalidateShipment(queryClient, vars.shipmentId);
+    },
+  });
+};
+
+export const useBatchIssueWaybills = () =>
+  useMutation({
+    mutationFn: ({
+      data,
+      idempotencyKey,
+    }: {
+      data: IssueBatchWaybillRequest;
+      idempotencyKey?: string;
+    }) => orders.waybills.batch(data, commandKey(idempotencyKey)),
+  });

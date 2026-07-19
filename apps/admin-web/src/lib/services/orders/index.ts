@@ -5,6 +5,7 @@
 export * from './query-keys';
 export * from './idempotency';
 export * from './operation-policy';
+export * from './waybill-policy';
 export { getServerDenyMessage, parseServerError } from '../../api/server-error';
 
 // 주문 액션 헬퍼
@@ -43,6 +44,7 @@ export {
   useFulfillmentOutboxEvents,
   useFulfillmentShipments,
   useShipmentDetail,
+  useActiveWaybill,
   useFulfillmentOperation,
   useShipmentRecallOperation,
   useLegacyPurchaseOrders,
@@ -113,6 +115,12 @@ export {
   useAutoConsolidate,
   // FO 액션 (Core /fulfillments canonical)
   useDeliverFulfillment,
+  // 운송장(waybill) 발급
+  useIssueWaybill,
+  useRegisterManualWaybill,
+  useReissueWaybill,
+  useVoidWaybill,
+  useBatchIssueWaybills,
 } from './mutations';
 
 // 데이터 변환 함수들 (주문 전용)

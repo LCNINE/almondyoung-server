@@ -220,6 +220,14 @@ export const useShipmentDetail = (shipmentId: string) => {
   });
 };
 
+// 활성 운송장 조회 — 발급 후 종결 상태(registered/used) 확인 폴링용.
+export const useActiveWaybill = (shipmentId: string, enabled = true) =>
+  useQuery({
+    queryKey: orderQueryKeys.activeWaybill(shipmentId),
+    queryFn: () => orders.waybills.getActive(shipmentId),
+    enabled: enabled && !!shipmentId,
+  });
+
 export const useFulfillmentOperation = (operationId: string) => {
   return useQuery({
     queryKey: orderQueryKeys.fulfillmentOperation(operationId),
