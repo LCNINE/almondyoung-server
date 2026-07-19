@@ -72,6 +72,7 @@ export function WaybillActions({
   const [trackingNo, setTrackingNo] = useState('');
   const [reason, setReason] = useState('');
   const [lastKey, setLastKey] = useState<string | null>(null);
+  const [lastKind, setLastKind] = useState<'issue' | 'reissue' | 'manual' | null>(null);
   const [pendingNotice, setPendingNotice] = useState<string | null>(null);
 
   const operate =
@@ -91,6 +92,7 @@ export function WaybillActions({
     setTrackingNo('');
     setReason('');
     setLastKey(null);
+    setLastKind(null);
     setPendingNotice(null);
     setAction('issue');
   };
@@ -106,6 +108,7 @@ export function WaybillActions({
         `발급이 아직 종결되지 않았습니다 (${status}). 동일 키로 안전하게 재시도할 수 있습니다.`
       );
       toast.info('발급 진행 중입니다. 서버 종결 전에는 성공으로 표시하지 않습니다.');
+      setAction(null);
     } else {
       toast.error(`발급 실패 상태 (${status ?? 'unknown'}).`);
       setPendingNotice(null);
@@ -120,6 +123,7 @@ export function WaybillActions({
     const key = createIdempotentCommand({}, originalKey ?? undefined)
       .idempotencyKey;
     setLastKey(key);
+    setLastKind(kind);
     try {
       const data = {
         carrier,
@@ -137,7 +141,7 @@ export function WaybillActions({
     }
   };
 
-  const runManual = async () => {
+  const runManual = async (originalKey?: string) => {
     if (!isCarrierSupported(carrier)) {
       toast.error('현재 지원되는 택배사는 HANJIN 뿐입니다.');
       return;
@@ -146,7 +150,10 @@ export function WaybillActions({
       toast.error('운송장 번호를 입력하세요.');
       return;
     }
-    const key = createIdempotentCommand({}).idempotencyKey;
+    const key = createIdempotentCommand({}, originalKey ?? undefined)
+      .idempotencyKey;
+    setLastKey(key);
+    setLastKind('manual');
     try {
       const result = await manual.mutateAsync({
         shipmentId: shipment.id,
@@ -210,6 +217,9 @@ export function WaybillActions({
             onClick={() => {
               setTrackingNo('');
               setReason('');
+              setLastKey(null);
+              setLastKind(null);
+              setPendingNotice(null);
               setAction('manual');
             }}
           >
@@ -223,6 +233,7 @@ export function WaybillActions({
             onClick={() => {
               setCarrier('HANJIN');
               setLastKey(null);
+              setLastKind(null);
               setPendingNotice(null);
               setAction('reissue');
             }}
@@ -253,9 +264,13 @@ export function WaybillActions({
               size="sm"
               variant="outline"
               disabled={busy || !lastKey}
-              onClick={() =>
-                runIssueLike(action === 'reissue' ? 'reissue' : 'issue', lastKey ?? undefined)
-              }
+              onClick={() => {
+                if (lastKind === 'manual') return runManual(lastKey ?? undefined);
+                return runIssueLike(
+                  lastKind === 'reissue' ? 'reissue' : 'issue',
+                  lastKey ?? undefined
+                );
+              }}
             >
               동일 키로 안전 재시도
             </Button>
