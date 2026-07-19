@@ -9,7 +9,7 @@ import fastifyMultipart from '@fastify/multipart';
 import { Logger } from 'nestjs-pino';
 import { WalletModule } from './wallet.module';
 import { EventsModule } from '@app/events';
-import { UGC_COMMAND_STREAM } from '@packages/event-contracts/streams';
+import { UGC_COMMAND_STREAM, WALLET_COMMAND_STREAM } from '@packages/event-contracts/streams';
 
 function normalizeOrigin(value: string): string {
   return value.trim().replace(/\/+$/, '');
@@ -72,7 +72,7 @@ async function bootstrap() {
 
   app.connectMicroservice(
     EventsModule.forConsumer({
-      streams: [UGC_COMMAND_STREAM],
+      streams: [UGC_COMMAND_STREAM, WALLET_COMMAND_STREAM],
       groupId: process.env.KAFKA_GROUP_ID || 'wallet-consumer',
     }),
   );

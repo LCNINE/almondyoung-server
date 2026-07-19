@@ -77,6 +77,11 @@ export class AdminOperationsService {
     return this.recurringBillingService.retryContractBilling(contractId);
   }
 
+  /** INVOICE 계약 즉시 권위 정합화(구독↔인보이스 발산 해소). 30분 크론을 기다리지 않는다. */
+  async reconcileInvoiceForContract(contractId: string) {
+    return this.recurringBillingService.reconcileInvoiceForContract(contractId);
+  }
+
   async getAllTiersWithPlans() {
     return this.planService.getAllTiersWithPlans();
   }

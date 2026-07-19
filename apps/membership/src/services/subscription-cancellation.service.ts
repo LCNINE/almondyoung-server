@@ -11,6 +11,7 @@ import { MembershipEventPublisher } from './membership-event.publisher';
 import { PaymentClientService } from './billing/payment-client.service';
 import { BenefitReader } from './benefit/benefit.reader';
 import { RefundEligibility } from './subscription/subscription-cancellation.manager';
+import { InvoiceBillingManager } from './billing/invoice-billing.manager';
 
 type RefundReceiveAccount = { bank: string; accountNumber: string; holderName: string };
 
@@ -50,6 +51,7 @@ export class SubscriptionCancellationService {
     private readonly membershipEventPublisher: MembershipEventPublisher,
     private readonly paymentClientService: PaymentClientService,
     private readonly benefitReader: BenefitReader,
+    private readonly invoiceBillingManager: InvoiceBillingManager,
   ) {}
 
   /**
@@ -122,6 +124,12 @@ export class SubscriptionCancellationService {
           err?.stack,
         ),
       );
+
+    // 즉시취소(자격 회수)만 인보이스를 무효화한다 — 해지예약은 자격이 유지되는 기간의 수금이
+    // 계속돼야 하므로 void 하면 30일 무료가 된다.
+    if (data.contract.billingPath === 'INVOICE' && result.type === 'IMMEDIATE_CANCELLATION') {
+      await this.invoiceBillingManager.voidInvoicesForContract(data.contract.id, 'SUBSCRIPTION_CANCELLED');
+    }
 
     await this.membershipEventPublisher.publishStatusChanged({
       userId,
@@ -215,11 +223,13 @@ export class SubscriptionCancellationService {
     this.paymentClientService
       .revokeBillingAgreement(contract.id)
       .catch((err: Error) =>
-        this.logger.error(
-          `billing_agreement revoke 실패 (contractId=${contract.id}): ${err?.message}`,
-          err?.stack,
-        ),
+        this.logger.error(`billing_agreement revoke 실패 (contractId=${contract.id}): ${err?.message}`, err?.stack),
       );
+
+    // 인보이스 경로(ADR-0027) 계약이면 열린 인보이스도 무효화 — 취소 뒤 출금 방지.
+    if (contract.billingPath === 'INVOICE') {
+      await this.invoiceBillingManager.voidInvoicesForContract(contract.id, 'SUBSCRIPTION_FORCE_CANCELLED');
+    }
 
     // 취소 이벤트 발행 (Medusa 고객 그룹 제거용)
     await this.membershipEventPublisher.publishStatusChanged({

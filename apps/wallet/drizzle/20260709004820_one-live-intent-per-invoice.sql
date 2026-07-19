@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "uq_payment_intents_live_invoice" ON "payment_intents" USING btree ("invoice_id") WHERE "payment_intents"."invoice_id" IS NOT NULL AND "payment_intents"."status" IN ('CREATED', 'PROCESSING', 'PENDING_SETTLEMENT');

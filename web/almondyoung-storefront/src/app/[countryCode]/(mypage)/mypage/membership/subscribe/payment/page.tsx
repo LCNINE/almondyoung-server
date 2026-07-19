@@ -60,7 +60,7 @@ export default async function MembershipFormPage() {
         showDesktopHeader: true,
         showMobileHeader: false,
         showMobileSubBackHeader: true,
-        mobileSubBackHeaderTitle: "멤버십 구독",
+        mobileSubBackHeaderTitle: t("pageTitle"),
       }}
     >
       <MypageLayout>

@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { AdminRecurringBillingRow } from '@/lib/types/dto/wallet';
 import { AdminRecurringContractSummary } from '@/lib/types/dto/membership';
+import { cmsFailureReason } from '@/lib/utils/cms-failure-reason';
 import { UserInfo } from '@/hooks/use-user-names';
 
 type Props = {
@@ -210,6 +211,9 @@ export function RecurringBillingDetailDialog({ row, contract, userInfo, open, on
           {(ps?.resultCode || ps?.resultMessage) && (
             <section className="space-y-2">
               <h3 className="text-sm font-semibold text-muted-foreground">실패 사유</h3>
+              {ps.cmsMemberStatus === 'FAILED' && cmsFailureReason(ps.resultCode) && (
+                <InfoRow label="안내" value={cmsFailureReason(ps.resultCode)} />
+              )}
               {ps.resultCode && <InfoRow label="결과 코드" value={ps.resultCode} />}
               {ps.resultMessage && <InfoRow label="결과 메시지" value={ps.resultMessage} />}
             </section>

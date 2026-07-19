@@ -52,6 +52,25 @@ export function RecurringBillingSummaryCards({ overview }: SummaryCardsProps) {
       query: 'view=withdrawals&withdrawalStatus=FAILED&page=1',
       accent: true,
     },
+    // 인보이스 미수 지표(ADR-0027 §6) — 인보이스 탭의 해당 상태로 이동
+    {
+      label: '결제 실패(재시도 중)',
+      count: overview.invoicePastDue,
+      query: 'view=invoices&status=PAST_DUE&page=1',
+      accent: true,
+    },
+    {
+      label: '미수 확정',
+      count: overview.invoiceUncollectible,
+      query: 'view=invoices&status=UNCOLLECTIBLE&page=1',
+      accent: true,
+    },
+    {
+      label: '계좌 심사 거절',
+      count: overview.invoiceMandateRejected,
+      query: 'view=invoices&status=MANDATE_REJECTED&page=1',
+      accent: true,
+    },
   ];
 
   const handleClick = (query: string) => {

@@ -1,4 +1,8 @@
 import z from "zod"
+import {
+  isValidBirthDateYYMMDD,
+  isValidBusinessRegistrationNumber,
+} from "@lib/utils/payer-number"
 
 const payerNumberSchema = z
   .string()
@@ -7,6 +11,17 @@ const payerNumberSchema = z
   .refine((value) => /^(\d{6}|\d{10})$/.test(value), {
     message: "생년월일 6자리 또는 사업자번호 10자리를 입력해주세요",
   })
+  .refine(
+    (value) =>
+      value.length === 6
+        ? isValidBirthDateYYMMDD(value)
+        : isValidBusinessRegistrationNumber(value),
+    {
+      // 형식(자릿수)은 통과했으나 생년월일 범위/사업자번호 체크섬이 틀린 경우.
+      message:
+        "생년월일 또는 사업자등록번호가 올바르지 않습니다. 다시 확인해주세요",
+    }
+  )
 
 export const paymentMethodFormSchema = z
   .object({

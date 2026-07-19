@@ -13,6 +13,8 @@ export interface DueContract {
   paymentProfileId: string | null;
   isPastDue: boolean;
   billingRetryCount: number;
+  /** ADR-0027 dual-path: 'CHARGE'(레거시) | 'INVOICE'(선적용 인보이스) */
+  billingPath: string;
 }
 
 export interface DunningItem {
@@ -58,6 +60,7 @@ export class BillingReader {
         paymentProfileId: schema.subscriptionContracts.paymentProfileId,
         isPastDue: schema.subscriptionContracts.isPastDue,
         billingRetryCount: schema.subscriptionContracts.billingRetryCount,
+        billingPath: schema.subscriptionContracts.billingPath,
       })
       .from(schema.subscriptionContracts)
       .innerJoin(
@@ -191,9 +194,7 @@ export class BillingReader {
    * reconciliation 대상 조회: billingInProgress=true 인 채 임계 시간(threshold)을 넘긴 계약.
    * 결과 이벤트를 오래 못 받은 건이므로 저장된 멱등키로 wallet 권위 상태를 되물어야 한다.
    */
-  async findStuckBillingForReconcile(
-    threshold: Date,
-  ): Promise<{ contractId: string; idempotencyKey: string }[]> {
+  async findStuckBillingForReconcile(threshold: Date): Promise<{ contractId: string; idempotencyKey: string }[]> {
     const rows = await this.dbService.db
       .select({
         contractId: schema.subscriptionContracts.id,
@@ -207,8 +208,40 @@ export class BillingReader {
           isNotNull(schema.subscriptionContracts.billingIdempotencyKey),
         ),
       );
-    return rows
-      .filter((r): r is { contractId: string; idempotencyKey: string } => r.idempotencyKey !== null);
+    return rows.filter((r): r is { contractId: string; idempotencyKey: string } => r.idempotencyKey !== null);
+  }
+
+  /**
+   * INVOICE 경로 reconciliation 대상 조회: 현재 주기 인보이스가 아직 결제 확정되지 않은
+   * 활성 인보이스 계약. paid 는 nextBillingDate 를 periodEnd(미래)로 전진시키므로 nextBillingDate<=today
+   * 는 "이번 주기 미확정" 을 뜻한다 — 이 계약들의 멱등키로 wallet 인보이스 권위 상태를 되묻는다.
+   * (INVOICE 경로는 billingInProgress 락을 쓰지 않아 findStuckBillingForReconcile 이 커버하지 못한다.)
+   */
+  async findInvoiceContractsForReconcile(today: string): Promise<{ contractId: string; periodStart: string }[]> {
+    const rows = await this.dbService.db
+      .select({
+        contractId: schema.subscriptionContracts.id,
+        periodStart: schema.subscriptionContracts.nextBillingDate,
+      })
+      .from(schema.subscriptionContracts)
+      .innerJoin(
+        schema.subscriptionEntitlement,
+        and(
+          eq(schema.subscriptionEntitlement.userId, schema.subscriptionContracts.userId),
+          eq(schema.subscriptionEntitlement.isCurrent, true),
+        ),
+      )
+      .where(
+        and(
+          eq(schema.subscriptionContracts.billingPath, 'INVOICE'),
+          eq(schema.subscriptionContracts.isVoided, false),
+          notInArray(schema.subscriptionContracts.status, ['CANCELLED', 'EXPIRED']),
+          isNull(schema.subscriptionEntitlement.pausedAt),
+          isNotNull(schema.subscriptionContracts.nextBillingDate),
+          lte(schema.subscriptionContracts.nextBillingDate, today),
+        ),
+      );
+    return rows.filter((r): r is { contractId: string; periodStart: string } => r.periodStart !== null);
   }
 
   /**
@@ -252,6 +285,7 @@ export class BillingReader {
         paymentProfileId: schema.subscriptionContracts.paymentProfileId,
         isPastDue: schema.subscriptionContracts.isPastDue,
         billingRetryCount: schema.subscriptionContracts.billingRetryCount,
+        billingPath: schema.subscriptionContracts.billingPath,
         status: schema.subscriptionContracts.status,
         autoRenewal: schema.subscriptionContracts.autoRenewal,
         billingInProgress: schema.subscriptionContracts.billingInProgress,
