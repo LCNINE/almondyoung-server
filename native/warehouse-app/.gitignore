@@ -27,3 +27,10 @@ coverage
 src-tauri/target
 src-tauri/gen
 .env.local
+
+# Root .gitignore has bare `*.png` and `public` rules (for test screenshots /
+# other apps' Gatsby/Next output) that would otherwise silently drop this
+# project's own scaffold assets. Re-include them so the tree is self-contained.
+!src/assets/*.png
+!/public/
+!/public/**
