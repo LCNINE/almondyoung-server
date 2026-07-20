@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
+import { Copy } from '@/components/admin-ui-experimental/common/copy/copy';
 import { Spinner } from '@/components/ui/spinner';
 import { Button } from '@/components/ui/button';
 import {
@@ -47,16 +48,39 @@ function KVRow({
   );
 }
 
+function MonoWithCopy({ value }: { value: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="font-mono text-xs break-all">{value}</span>
+      <Copy content={value} className="shrink-0 text-muted-foreground" />
+    </span>
+  );
+}
+
 function BasicInfoContent({ intentId }: { intentId: string }) {
   const { data } = usePaymentIntentDetail(intentId);
+
+  // TODO: AUTHORIZE charge 1건 기준. 분할결제로 PG charge 가 여러 건이 되면
+  // 이 자리를 목록으로 바꿔야 한다.
+  const pgCharge = data.charges.find(
+    (c: ChargeDto) => c.operation === 'AUTHORIZE' && c.providerTransactionId
+  );
 
   return (
     <div>
       <KVRow label="ID">
         <span className="font-mono text-xs">{data.id}</span>
       </KVRow>
+      {pgCharge && (
+        <KVRow label="토스 주문번호">
+          <MonoWithCopy value={pgCharge.id.replace(/-/g, '')} />
+        </KVRow>
+      )}
       <KVRow label="상태">
-        <StatusBadgeCell value={data.displayStatus ?? data.status} type="intent" />
+        <StatusBadgeCell
+          value={data.displayStatus ?? data.status}
+          type="intent"
+        />
       </KVRow>
       <KVRow label="결제 금액">
         <AmountCell
@@ -250,7 +274,10 @@ function ChargesTableContent({ intentId }: { intentId: string }) {
             data.charges.map((c: ChargeDto) => (
               <tr key={c.id} className="border-b">
                 <td className="px-4 py-2 font-mono text-xs">
-                  {c.id.slice(0, 8)}...
+                  <span className="inline-flex items-center gap-1">
+                    {c.id.slice(0, 8)}...
+                    <Copy content={c.id} className="text-muted-foreground" />
+                  </span>
                 </td>
                 <td className="px-4 py-2">{c.operation}</td>
                 <td className="px-4 py-2 font-mono text-right">
@@ -288,7 +315,17 @@ function ChargesTable({ intentId }: { intentId: string }) {
   );
 }
 
-function RefundConfirmButton({ refundId, intentId, amount, currency }: { refundId: string; intentId: string; amount: number; currency: string }) {
+function RefundConfirmButton({
+  refundId,
+  intentId,
+  amount,
+  currency,
+}: {
+  refundId: string;
+  intentId: string;
+  amount: number;
+  currency: string;
+}) {
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
   const mutation = useMutation({
@@ -296,8 +333,12 @@ function RefundConfirmButton({ refundId, intentId, amount, currency }: { refundI
     onSuccess: () => {
       toast.success('환불 완료 처리되었습니다.');
       setOpen(false);
-      queryClient.invalidateQueries({ queryKey: walletQueryKeys.intentDetail(intentId) });
-      queryClient.invalidateQueries({ queryKey: walletQueryKeys.stateTransitions(intentId) });
+      queryClient.invalidateQueries({
+        queryKey: walletQueryKeys.intentDetail(intentId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: walletQueryKeys.stateTransitions(intentId),
+      });
       queryClient.invalidateQueries({ queryKey: walletQueryKeys.refunds() });
     },
     onError: () => toast.error('완료 처리 중 오류가 발생했습니다.'),
@@ -305,7 +346,12 @@ function RefundConfirmButton({ refundId, intentId, amount, currency }: { refundI
 
   return (
     <>
-      <Button size="sm" variant="outline" className="h-6 text-xs" onClick={() => setOpen(true)}>
+      <Button
+        size="sm"
+        variant="outline"
+        className="h-6 text-xs"
+        onClick={() => setOpen(true)}
+      >
         완료 처리
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
@@ -314,12 +360,30 @@ function RefundConfirmButton({ refundId, intentId, amount, currency }: { refundI
             <DialogTitle>수동 환불 완료 처리</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 text-sm">
-            <p>환불 금액 <span className="font-semibold">{amount.toLocaleString('ko-KR')} {currency}</span>을 실제로 고객 계좌에 송금했습니까?</p>
-            <p className="text-amber-700 bg-amber-50 rounded p-2 text-xs">실제 송금이 완료된 경우에만 처리하세요. 이 작업은 되돌릴 수 없습니다.</p>
+            <p>
+              환불 금액{' '}
+              <span className="font-semibold">
+                {amount.toLocaleString('ko-KR')} {currency}
+              </span>
+              을 실제로 고객 계좌에 송금했습니까?
+            </p>
+            <p className="p-2 text-xs rounded text-amber-700 bg-amber-50">
+              실제 송금이 완료된 경우에만 처리하세요. 이 작업은 되돌릴 수
+              없습니다.
+            </p>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)} disabled={mutation.isPending}>취소</Button>
-            <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+            <Button
+              variant="outline"
+              onClick={() => setOpen(false)}
+              disabled={mutation.isPending}
+            >
+              취소
+            </Button>
+            <Button
+              onClick={() => mutation.mutate()}
+              disabled={mutation.isPending}
+            >
               {mutation.isPending ? '처리 중...' : '송금 완료 확인'}
             </Button>
           </DialogFooter>
@@ -370,7 +434,12 @@ function RefundsTableContent({ intentId }: { intentId: string }) {
                 </td>
                 <td className="px-4 py-2">
                   {r.manualConfirmable && (
-                    <RefundConfirmButton refundId={r.id} intentId={intentId} amount={r.amount} currency={r.currency} />
+                    <RefundConfirmButton
+                      refundId={r.id}
+                      intentId={intentId}
+                      amount={r.amount}
+                      currency={r.currency}
+                    />
                   )}
                 </td>
               </tr>
@@ -379,7 +448,10 @@ function RefundsTableContent({ intentId }: { intentId: string }) {
         </tbody>
       </table>
       {data.refunds.some((r: RefundDto) => r.manualConfirmable) && (
-        <p className="px-4 py-2 text-xs text-amber-600">수동 송금 대기 중인 환불이 있습니다. 실제 송금 완료 후 “완료 처리” 버튼을 눌러주세요.</p>
+        <p className="px-4 py-2 text-xs text-amber-600">
+          수동 송금 대기 중인 환불이 있습니다. 실제 송금 완료 후 “완료 처리”
+          버튼을 눌러주세요.
+        </p>
       )}
     </div>
   );
