@@ -668,7 +668,14 @@ export function setup(infra: SharedInfra) {
       ? { name: domain('www') }
       : {
           name: baseDomain,
-          redirects: [domain('www')],
+          redirects: [
+            domain('www'), // www.almondyoung.com → apex
+            // 옛 도메인 흡수: almondyoung-next.com / www → almondyoung.com 로 301.
+            // SST 가 리다이렉트용 ACM 인증서 + S3/CloudFront + Route53 레코드를
+            // almondyoung-next.com zone 에 자동 생성한다 (경로 보존, 쿼리스트링 드롭).
+            'almondyoung-next.com',
+            'www.almondyoung-next.com',
+          ],
           // 기존 hosted zone 에 ACM 검증 CNAME(www 인증서 잔재 등)이 이미 있어
           // Route53 record 생성이 충돌하므로 덮어쓰기 허용.
           dns: sst.aws.dns({ override: true }),
