@@ -102,6 +102,7 @@
     "start:analytics:prod": "node dist/apps/analytics/main.js",
     "start:channel-adapter": "nest start channel-adapter",
     "start:channel-adapter:dev": "./scripts/with-ipv4.sh dotenv -e apps/channel-adapter/.env nest start channel-adapter --watch",
+    "start:channel-adapter:local": "./scripts/with-ipv4.sh dotenv -e apps/channel-adapter/.env.local -e apps/channel-adapter/.env nest start channel-adapter --watch",
     "start:channel-adapter:prod": "node dist/apps/channel-adapter/main.js",
     "start:debug": "npm run start:main:debug",
     "start:dev": "npm run start:main:dev",
