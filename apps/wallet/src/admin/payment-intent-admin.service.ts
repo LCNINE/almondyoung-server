@@ -195,7 +195,13 @@ export class PaymentIntentAdminService {
       currency: c.currency,
       operation: c.operation,
       status: c.status,
-      providerTransactionId: c.providerTransactionId ?? null,
+      // 구 데이터 폴백: REQUIRES_ACTION 저장 시 컬럼을 안 채우던 시절 건은
+      // paymentKey 가 responsePayload 스냅샷에만 남아 있다.
+      providerTransactionId:
+        c.providerTransactionId ??
+        (typeof (c.responsePayload as { paymentKey?: unknown } | null)?.paymentKey === 'string'
+          ? ((c.responsePayload as { paymentKey: string }).paymentKey)
+          : null),
       errorCode: c.errorCode ?? null,
       errorMessage: c.errorMessage ?? null,
       createdAt: c.createdAt,

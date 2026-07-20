@@ -507,6 +507,11 @@ export class ConfirmService {
 
       case 'REQUIRES_ACTION': {
         await this.chargesService.updateStatus(primaryChargeId, 'REQUIRES_ACTION', {
+          // 가상계좌 발급처럼 REQUIRES_ACTION 단계에서 이미 PG 키가 나오는 경우가 있다.
+          // 여기서 안 넣으면 컬럼이 영영 null 로 남아 PG 대사 때 charge 를 못 찾는다.
+          ...(result.providerTransactionId !== undefined
+            ? { providerTransactionId: result.providerTransactionId }
+            : {}),
           responsePayload: { ...(result.raw ?? {}), nextAction: result.nextAction },
         });
 

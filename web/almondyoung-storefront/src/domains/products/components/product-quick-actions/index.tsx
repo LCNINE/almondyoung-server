@@ -173,7 +173,7 @@ export function ProductQuickActions({
       countryCode={countryCode}
       isWelcomeMembership={isWelcomeMembership}
     />
-    <div className="absolute right-2 bottom-2 flex flex-col items-end gap-1.5">
+    <div className="absolute right-2 bottom-2 z-10 flex flex-col items-end gap-1.5">
       {/* 찜하기 버튼 - 모바일에서는 항상 표시, 데스크탑에서는 호버 시 표시 */}
       <Button
         variant="ghost"
