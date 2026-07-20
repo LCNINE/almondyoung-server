@@ -15,6 +15,7 @@ vi.mock('@tauri-apps/plugin-http', () => ({
   ),
 }));
 
+import { fetch } from '@tauri-apps/plugin-http';
 import { exchangeCode } from './login';
 
 describe('exchangeCode', () => {
@@ -29,5 +30,12 @@ describe('exchangeCode', () => {
     expect(set.accessToken).toBe('A');
     expect(set.refreshToken).toBe('R');
     expect(set.expiresAt).toBe(t0 + 3600 * 1000);
+
+    const call = vi.mocked(fetch).mock.calls[0];
+    expect(call[0]).toBe('https://a/token');
+    expect(call[1]?.method).toBe('POST');
+    expect(String(call[1]?.body)).toContain('grant_type=authorization_code');
+    expect(String(call[1]?.body)).toContain('code=CODE');
+    expect(String(call[1]?.body)).toContain('code_verifier=V');
   });
 });

@@ -2,12 +2,7 @@ import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { generatePkce, randomUrlSafe } from './pkce';
-import {
-  discover,
-  buildAuthorizeUrl,
-  parseCallback,
-  type OidcEndpoints,
-} from './oidc';
+import { discover, buildAuthorizeUrl, parseCallback } from './oidc';
 import { oidcConfig } from '../../app/config';
 import type { TokenSet } from './tokenStore';
 import type { createTokenManager } from './tokenManager';
@@ -55,32 +50,42 @@ export async function exchangeCode(p: {
 export async function login(deps: {
   manager: ReturnType<typeof createTokenManager>;
 }): Promise<void> {
-  const endpoints = (await discover(
-    oidcConfig.issuer,
-    getJson
-  )) as OidcEndpoints;
+  const endpoints = await discover(oidcConfig.issuer, getJson);
   const { verifier, challenge } = await generatePkce();
   const state = randomUrlSafe(32);
   const nonce = randomUrlSafe(32);
 
+  let resolveCode!: (code: string) => void;
+  let rejectCode!: (err: unknown) => void;
   const codePromise = new Promise<string>((resolve, reject) => {
-    onOpenUrl((urls) => {
-      try {
-        const { code, state: got } = parseCallback(urls[0]);
-        if (got !== state) return reject(new Error('state mismatch'));
-        resolve(code);
-      } catch (e) {
-        reject(e);
-      }
-    });
+    resolveCode = resolve;
+    rejectCode = reject;
   });
 
-  await openUrl(buildAuthorizeUrl(oidcConfig, { state, nonce, challenge }));
-  const code = await codePromise;
-  const tokens = await exchangeCode({
-    tokenEndpoint: endpoints.token_endpoint,
-    code,
-    verifier,
+  // Register the deep-link listener BEFORE opening the browser, and capture the
+  // unlisten fn so it is torn down when the flow settles. Otherwise a listener
+  // leaks on every login attempt, and a stale/abandoned attempt could later
+  // fire and overwrite the token store with an outdated session's tokens.
+  const unlisten = await onOpenUrl((urls) => {
+    try {
+      const { code, state: got } = parseCallback(urls[0]);
+      if (got !== state) return rejectCode(new Error('state mismatch'));
+      resolveCode(code);
+    } catch (e) {
+      rejectCode(e);
+    }
   });
-  await deps.manager.set(tokens);
+
+  try {
+    await openUrl(buildAuthorizeUrl(oidcConfig, { state, nonce, challenge }));
+    const code = await codePromise;
+    const tokens = await exchangeCode({
+      tokenEndpoint: endpoints.token_endpoint,
+      code,
+      verifier,
+    });
+    await deps.manager.set(tokens);
+  } finally {
+    unlisten();
+  }
 }
