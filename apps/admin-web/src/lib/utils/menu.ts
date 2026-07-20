@@ -78,20 +78,8 @@ export const mainMenus: MainMenu[] = [
     id: 'account-management',
     title: '채널/고객 관리',
     icon: 'Building2',
-    defaultPath: '/account/sales-channel', // 첫 번째 페이지
+    defaultPath: '/account/customer', // 첫 번째 페이지
     children: [
-      {
-        id: 'sales-channel',
-        title: '판매처 관리(채널정보)',
-        path: '/account/sales-channel',
-        children: [
-          {
-            id: 'medusa-customers',
-            title: '메두사 고객',
-            path: '/account/sales-channel/medusa-customers',
-          },
-        ],
-      },
       {
         id: 'customer',
         title: '고객 관리',
@@ -102,6 +90,18 @@ export const mainMenus: MainMenu[] = [
             path: '/account/customer',
           },
           { id: 'blacklist', title: '블랙리스트', path: '/account/blacklist' },
+        ],
+      },
+      {
+        id: 'sales-channel',
+        title: '판매처 관리(채널정보)',
+        path: '/account/sales-channel',
+        children: [
+          {
+            id: 'medusa-customers',
+            title: '메두사 고객',
+            path: '/account/sales-channel/medusa-customers',
+          },
         ],
       },
     ],
