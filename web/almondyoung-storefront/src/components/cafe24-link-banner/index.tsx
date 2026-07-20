@@ -10,7 +10,7 @@ import { CustomButton } from "@/components/shared/custom-buttons"
 import { Button } from "@/components/ui/button"
 import { getCafe24LinkInfo } from "@/lib/api/users/cafe24"
 
-const CAFE24_MIGRATOR_BASE = "https://almondyoung.com/migrator/confirm.html"
+const CAFE24_MIGRATOR_BASE = "https://lcnine.cafe24.com/migrator/confirm.html"
 const STORAGE_KEY = "home:cafe24-link-banner:v1:hideUntil"
 
 interface Cafe24LinkBannerProps {

@@ -25,7 +25,7 @@
     rootDataset.redirectTo ||
     config.redirectTo ||
     '';
-  const apiBase = 'https://user.almondyoung-next.com';
+  const apiBase = 'https://user.almondyoung.com';
   const memberInfoPath = '/cafe24/member-info';
 
   const memberInfoUrl = resolveApiUrl(apiBase, memberInfoPath);
@@ -275,6 +275,6 @@
     const query = window.location.search || '';
     const hash = window.location.hash || '';
     const returnUrl = `${path}${query}${hash}`;
-    return `https://almondyoung.com/member/login.html?returnUrl=${encodeURIComponent(returnUrl)}`;
+    return `https://lcnine.cafe24.com/member/login.html?returnUrl=${encodeURIComponent(returnUrl)}`;
   }
 })();
