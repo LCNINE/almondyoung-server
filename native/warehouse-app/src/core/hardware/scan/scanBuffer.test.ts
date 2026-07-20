@@ -38,4 +38,14 @@ describe('createScanBuffer', () => {
     b.feed('Q', 15);
     expect(b.feed('Tab', 20)).toBe('XYZQ');
   });
+
+  it('ignores non-single-character keys (modifiers) mid-burst', () => {
+    const b = createScanBuffer();
+    b.feed('9', 0);
+    b.feed('9', 10);
+    b.feed('Shift', 20); // multi-char key name → ignored, must not accumulate
+    b.feed('1', 30);
+    b.feed('2', 40);
+    expect(b.feed('Enter', 50)).toBe('9912');
+  });
 });
