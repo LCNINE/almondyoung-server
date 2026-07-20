@@ -39,12 +39,14 @@ export class MembershipMedusaSyncService {
       // almond_user_id로 찾은 고객의 이메일이 멤버십 이메일과 다르면 유령 고객
       // (동일 almond_user_id를 가진 비활성/구버전 고객이 먼저 조회될 수 있음)
       let ghostCustomerId: string | null = null;
+      let matchedByUserId: typeof customer = null;
       if (customer && email && customer.email !== email) {
         this.logger.warn(
           `almond_user_id(${userId})로 찾은 고객(${customer.id}, email=${customer.email})이 ` +
           `멤버십 이메일(${email})과 불일치 → 유령 고객으로 판단, email fallback 사용`,
         );
         ghostCustomerId = customer.id;
+        matchedByUserId = customer;
         customer = null;
       }
 
@@ -74,6 +76,20 @@ export class MembershipMedusaSyncService {
               );
           }
         }
+      }
+
+      // 유령 판정은 "동일 almond_user_id 를 가진 구버전 고객" 을 걸러내려는 것이고, 그 전제는
+      // 올바른 고객이 email 로 따로 존재한다는 것이다. fallback 이 아무도 못 찾았다면 전제가 틀린
+      // 것 — 유령이 아니라 단순 이메일 드리프트(cafe24 이관, Medusa 쪽 직접 수정 등)다.
+      // almond_user_id 는 정확한 식별자이므로 이 경우 원래 매칭으로 복귀한다. 버리면 정상 회원이
+      // 그룹에 영영 못 들어간다.
+      if (!customer && matchedByUserId) {
+        this.logger.warn(
+          `email(${email}) fallback 실패 → almond_user_id 매칭 고객(${matchedByUserId.id}, ` +
+          `email=${matchedByUserId.email}) 으로 복귀. 이메일 드리프트로 판단.`,
+        );
+        customer = matchedByUserId;
+        ghostCustomerId = null;
       }
 
       if (!customer) {
