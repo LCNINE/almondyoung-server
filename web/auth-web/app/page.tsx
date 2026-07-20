@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { AccountList } from "@/components/account-list";
+import { ReloginNotice } from "@/components/relogin-notice";
 import { Button } from "@/components/ui/button";
 import { listAccounts } from "@/lib/account-store";
 import { hasIdpRefreshToken } from "@/lib/idp-session";
@@ -43,6 +44,7 @@ export default async function AccountHubPage({
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-md flex-col gap-6 px-6 py-12">
+      <ReloginNotice />
       <header className="flex flex-col gap-2">
         <h1 className="text-2xl font-semibold">계정 선택</h1>
         <p className="text-sm text-muted-foreground">
