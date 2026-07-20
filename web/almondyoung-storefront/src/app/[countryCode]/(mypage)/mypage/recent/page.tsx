@@ -1,4 +1,6 @@
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
+import { retrieveCustomer } from "@lib/api/medusa/customer"
+import { isMembershipGroup } from "@lib/utils/membership-group"
 import { WithHeaderLayout } from "@components/layout"
 import { getTranslations } from "next-intl/server"
 import { fetchRecentViewItems } from "domains/recent-views/actions"
@@ -22,7 +24,11 @@ export default async function RecentPage({
   const { page } = await searchParams
   const currentPage = Math.max(1, parseInt(page || "1", 10))
 
-  const items = await fetchRecentViewItems(countryCode, 100)
+  const [items, customer] = await Promise.all([
+    fetchRecentViewItems(countryCode, 100),
+    retrieveCustomer().catch(() => null),
+  ])
+
   return (
     <WithHeaderLayout
       config={{
@@ -37,6 +43,7 @@ export default async function RecentPage({
           countryCode={countryCode}
           items={items}
           currentPage={currentPage}
+          isMembership={isMembershipGroup(customer?.groups)}
         />
       </MypageLayout>
     </WithHeaderLayout>

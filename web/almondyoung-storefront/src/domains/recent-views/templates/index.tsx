@@ -2,7 +2,6 @@
 
 import { SharedPagination } from "@/components/shared/pagination"
 import { PageTitle } from "@/components/shared/page-title"
-import { useMembership } from "@/contexts/membership-context"
 import ProductCard from "domains/products/components/product-card"
 import { getIsMembershipOnly } from "@/lib/utils/product-card"
 import type { RecentViewProductItem } from "@/lib/types/ui/recent-views"
@@ -17,15 +16,16 @@ interface RecentViewsTemplateProps {
   countryCode: string
   items: RecentViewProductItem[]
   currentPage: number
+  isMembership: boolean
 }
 
 export function RecentViewsTemplate({
   countryCode,
   items,
   currentPage,
+  isMembership,
 }: RecentViewsTemplateProps) {
   const router = useRouter()
-  const { isMembershipPricing } = useMembership()
   const [excludeSoldout, setExcludeSoldout] = useState(false)
 
   const filteredItems = useMemo(() => {
@@ -96,7 +96,7 @@ export function RecentViewsTemplate({
                 key={item.id}
                 product={item}
                 countryCode={countryCode}
-                isMembership={isMembershipPricing}
+                isMembership={isMembership}
                 isMembershipOnly={getIsMembershipOnly(item)}
               />
             ))}

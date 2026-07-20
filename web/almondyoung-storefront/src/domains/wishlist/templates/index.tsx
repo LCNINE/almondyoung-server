@@ -2,7 +2,6 @@
 
 import { SharedPagination } from "@/components/shared/pagination"
 import { PageTitle } from "@/components/shared/page-title"
-import { useMembership } from "@/contexts/membership-context"
 import ProductCard from "domains/products/components/product-card"
 import { getIsMembershipOnly } from "@/lib/utils/product-card"
 import type { WishlistProductItem } from "@/lib/types/ui/wishlist"
@@ -18,6 +17,7 @@ interface WishlistTemplateProps {
   items: WishlistProductItem[]
   initialQuery: string
   currentPage: number
+  isMembership: boolean
 }
 
 export function WishlistTemplate({
@@ -25,9 +25,9 @@ export function WishlistTemplate({
   items,
   initialQuery,
   currentPage,
+  isMembership,
 }: WishlistTemplateProps) {
   const router = useRouter()
-  const { isMembershipPricing } = useMembership()
   const [excludeSoldout, setExcludeSoldout] = useState(false)
 
   const filteredItems = useMemo(() => {
@@ -116,7 +116,7 @@ export function WishlistTemplate({
                 key={item.id}
                 product={item}
                 countryCode={countryCode}
-                isMembership={isMembershipPricing}
+                isMembership={isMembership}
                 isMembershipOnly={getIsMembershipOnly(item)}
                 isWishlisted={true}
               />
