@@ -1,5 +1,3 @@
-import type { MembershipTier } from "@/contexts/membership-context"
-
 export interface QuickLink {
   label: string
   icon: string
@@ -97,12 +95,4 @@ export interface OrderItem {
   status: OrderStatus
   statusLabel: string
   thumbnailUrl: string
-}
-
-/**
- * 멤버십 데이터 (SSR에서 전달)
- */
-export interface MembershipData {
-  isMembershipPricing: boolean
-  tier?: MembershipTier
 }

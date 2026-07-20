@@ -1,6 +1,8 @@
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { fetchWishlistItems } from "@/domains/wishlist/actions"
 import { WishlistTemplate } from "@/domains/wishlist/templates"
+import { retrieveCustomer } from "@lib/api/medusa/customer"
+import { isMembershipGroup } from "@lib/utils/membership-group"
 import { WithHeaderLayout } from "@components/layout"
 import { getTranslations } from "next-intl/server"
 
@@ -19,7 +21,10 @@ export default async function WishPage({ params, searchParams }: WishPageProps) 
   const { countryCode } = await params
   const { q, page } = await searchParams
 
-  const items = await fetchWishlistItems(countryCode, q || undefined)
+  const [items, customer] = await Promise.all([
+    fetchWishlistItems(countryCode, q || undefined),
+    retrieveCustomer().catch(() => null),
+  ])
   const currentPage = Number(page) || 1
 
   return (
@@ -37,6 +42,7 @@ export default async function WishPage({ params, searchParams }: WishPageProps) 
           items={items}
           initialQuery={q || ""}
           currentPage={currentPage}
+          isMembership={isMembershipGroup(customer?.groups)}
         />
       </MypageLayout>
     </WithHeaderLayout>

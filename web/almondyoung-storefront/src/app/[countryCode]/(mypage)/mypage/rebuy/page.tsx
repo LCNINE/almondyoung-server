@@ -1,6 +1,8 @@
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { fetchFrequentProducts } from "@/domains/frequent-products/actions"
 import { FrequentProductsTemplate } from "@/domains/frequent-products/templates"
+import { retrieveCustomer } from "@lib/api/medusa/customer"
+import { isMembershipGroup } from "@lib/utils/membership-group"
 import { WithHeaderLayout } from "@components/layout"
 import { Metadata } from "next"
 import { getTranslations } from "next-intl/server"
@@ -30,11 +32,10 @@ export default async function RebuyPage({
   const { page } = await searchParams
   const currentPage = Math.max(1, parseInt(page || "1", 10))
 
-  const data = await fetchFrequentProducts(
-    countryCode,
-    currentPage,
-    ITEMS_PER_PAGE
-  )
+  const [data, customer] = await Promise.all([
+    fetchFrequentProducts(countryCode, currentPage, ITEMS_PER_PAGE),
+    retrieveCustomer().catch(() => null),
+  ])
 
   return (
     <WithHeaderLayout
@@ -46,7 +47,11 @@ export default async function RebuyPage({
       }}
     >
       <MypageLayout>
-        <FrequentProductsTemplate countryCode={countryCode} data={data} />
+        <FrequentProductsTemplate
+          countryCode={countryCode}
+          data={data}
+          isMembership={isMembershipGroup(customer?.groups)}
+        />
       </MypageLayout>
     </WithHeaderLayout>
   )

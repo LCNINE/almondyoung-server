@@ -2,7 +2,6 @@
 
 import { SharedPagination } from "@/components/shared/pagination"
 import { PageTitle } from "@/components/shared/page-title"
-import { useMembership } from "@/contexts/membership-context"
 import ProductCard from "domains/products/components/product-card"
 import { getIsMembershipOnly } from "@/lib/utils/product-card"
 import type { FrequentProductsPage } from "@/lib/types/ui/frequent-products"
@@ -15,15 +14,16 @@ import { Label } from "@/components/ui/label"
 interface FrequentProductsTemplateProps {
   countryCode: string
   data: FrequentProductsPage
+  isMembership: boolean
 }
 
 export function FrequentProductsTemplate({
   countryCode,
   data,
+  isMembership,
 }: FrequentProductsTemplateProps) {
   const { items, total, page: currentPage, limit } = data
   const router = useRouter()
-  const { isMembershipPricing } = useMembership()
   const [excludeSoldout, setExcludeSoldout] = useState(false)
 
   const displayItems = useMemo(() => {
@@ -94,7 +94,7 @@ export function FrequentProductsTemplate({
                 key={item.id}
                 product={item}
                 countryCode={countryCode}
-                isMembership={isMembershipPricing}
+                isMembership={isMembership}
                 isMembershipOnly={getIsMembershipOnly(item)}
               />
             ))}
