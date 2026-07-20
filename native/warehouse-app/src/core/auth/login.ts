@@ -47,6 +47,38 @@ export async function exchangeCode(p: {
   };
 }
 
+export async function refreshTokens(p: {
+  tokenEndpoint: string;
+  refreshToken: string;
+  now?: () => number;
+}): Promise<TokenSet> {
+  const now = p.now ?? (() => Date.now());
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: p.refreshToken,
+    client_id: oidcConfig.clientId,
+  });
+  const res = await tauriFetch(p.tokenEndpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  });
+  if (!res.ok) throw new Error(`token refresh failed: ${res.status}`);
+  const j = (await res.json()) as {
+    access_token: string;
+    refresh_token?: string;
+    id_token?: string;
+    expires_in: number;
+  };
+  return {
+    accessToken: j.access_token,
+    // Refresh responses may omit a new refresh token (no rotation) — keep the old one.
+    refreshToken: j.refresh_token ?? p.refreshToken,
+    idToken: j.id_token,
+    expiresAt: now() + j.expires_in * 1000,
+  };
+}
+
 export async function login(deps: {
   manager: ReturnType<typeof createTokenManager>;
 }): Promise<void> {

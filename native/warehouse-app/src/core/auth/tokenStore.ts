@@ -27,12 +27,18 @@ const VAULT = 'almondwms.hold';
 const CLIENT = 'auth';
 const KEY = 'tokenSet';
 
+// SECURITY — PLACEHOLDER, deferred hardening (see ledger/spec): this vault
+// password is a source-visible literal, which defeats the encrypted vault. It
+// MUST be replaced by a device-derived key (the Rust-side argon2 stronghold
+// init, deferred to the dev box) before this persists real refresh tokens.
+const VAULT_PASSWORD = 'almondwms';
+
 export function createStrongholdTokenStore(): TokenStore {
   let cached: Stronghold | null = null;
   async function hold(): Promise<{ store: Store; sh: Stronghold }> {
     if (!cached) {
       const path = await join(await appDataDir(), VAULT);
-      cached = await Stronghold.load(path, 'almondwms'); // vault password
+      cached = await Stronghold.load(path, VAULT_PASSWORD); // vault password
     }
     let client: Client;
     try {
