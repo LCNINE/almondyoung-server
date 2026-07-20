@@ -2142,6 +2142,16 @@ export class MedusaClient {
 
   async addCustomerToGroup(customerId: string, groupId: string): Promise<void> {
     try {
+      // 이미 소속된 고객을 다시 add 해도 Medusa 는 거부하지 않고 link 행을 하나 더 만든다
+      // (customer_group_customer 에 (customer_id, customer_group_id) 유니크 제약이 없음).
+      // MembershipDailySyncService 가 매일 전체 회원을 add 하므로 확인 없이 부르면
+      // 회원당 하루 한 행씩 무한히 쌓인다. 호출부가 둘이라 여기서 한 번만 막는다.
+      const { customer } = await this.sdk.admin.customer.retrieve(customerId, { fields: 'id,*groups' });
+      if (customer?.groups?.some((group) => group.id === groupId)) {
+        this.logger.debug(`Customer ${customerId} already in group ${groupId}, skipping add`);
+        return;
+      }
+
       await this.sdk.admin.customer.batchCustomerGroups(customerId, {
         add: [groupId],
       });
