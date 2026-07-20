@@ -911,3 +911,34 @@ describe('MedusaClient.removeProductFromPriceList', () => {
     });
   });
 });
+
+describe('MedusaClient.addCustomerToGroup', () => {
+  const GROUP = 'cusgroup_membership';
+
+  function makeClient(groups: { id: string }[]) {
+    const retrieve = jest.fn().mockResolvedValue({ customer: { id: 'cus_1', groups } });
+    const batchCustomerGroups = jest.fn().mockResolvedValue({});
+    const client = Object.create(MedusaClient.prototype) as MedusaClient;
+    (client as any).sdk = { admin: { customer: { retrieve, batchCustomerGroups } } };
+    (client as any).logger = { log: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() };
+    return { client, retrieve, batchCustomerGroups };
+  }
+
+  // 이미 소속인데 add 를 또 부르면 Medusa 가 link 행을 하나 더 만든다 (유니크 제약 없음).
+  // 일일 정합성 크론이 매일 전체 회원을 돌기 때문에, 이 가드가 없으면 하루 한 행씩 쌓인다.
+  it('skips the add when the customer already belongs to the group so links cannot pile up', async () => {
+    const { client, batchCustomerGroups } = makeClient([{ id: GROUP }]);
+
+    await client.addCustomerToGroup('cus_1', GROUP);
+
+    expect(batchCustomerGroups).not.toHaveBeenCalled();
+  });
+
+  it('adds the customer when not yet in the group', async () => {
+    const { client, batchCustomerGroups } = makeClient([{ id: 'cusgroup_other' }]);
+
+    await client.addCustomerToGroup('cus_1', GROUP);
+
+    expect(batchCustomerGroups).toHaveBeenCalledWith('cus_1', { add: [GROUP] });
+  });
+});
