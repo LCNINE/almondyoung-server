@@ -1,7 +1,8 @@
 "use server"
 
 import { sdk } from "@/lib/config/medusa"
-import { getAuthHeaders, getMembershipAwareCacheTags } from "@lib/data/cookies"
+import { getAuthHeaders } from "@lib/data/cookies"
+import { getMembershipAwareCacheTags } from "@lib/data/membership-cache-tags"
 import type { HttpTypes } from "@medusajs/types"
 import type { ProductSortBy, ProductSortOrder } from "@/lib/types/common/filter"
 import { getRegion, retrieveRegion } from "./regions"

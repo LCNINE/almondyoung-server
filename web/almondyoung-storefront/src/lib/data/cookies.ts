@@ -121,38 +121,6 @@ export const getCacheOptions = async (
   return { tags: [`${cacheTag}`] }
 }
 
-// 캐시 키 분할용 비암호화 해시(djb2) — 보안 용도가 아니라 버킷 구분용
-const hashToken = (token: string): string => {
-  let h = 5381
-  for (let i = 0; i < token.length; i++) {
-    h = (h * 33) ^ token.charCodeAt(i)
-  }
-  return (h >>> 0).toString(36)
-}
-
-/**
- * 멤버십/로그인 상태에 따라 응답이 달라지는 목록(상품 등)용 캐시 태그.
- *
- * 기본 방문자별 태그(`${tag}-${_medusa_cache_id}`)에 인증 주체 세그먼트를 덧붙여,
- * 회원/비회원 그리고 서로 다른 계정이 같은 캐시 버킷을 공유하지 않게 한다.
- * 로그인/로그아웃 시 `_medusa_jwt` 가 바뀌므로 자동으로 다른 버킷을 읽는다
- * (예: 회원으로 채워진 버킷을 로그아웃 후 계속 서빙하던 문제 방지).
- */
-export const getMembershipAwareCacheTags = async (
-  tag: string
-): Promise<string[]> => {
-  const base = await getCacheTag(tag)
-  if (!base) {
-    return []
-  }
-
-  const auth = await getAuthHeaders()
-  const token = auth?.authorization?.replace(/^Bearer\s+/i, "")
-  const segment = token ? `m${hashToken(token)}` : "anon"
-
-  return [`${base}-${segment}`]
-}
-
 export const setMedusaAuthToken = async (token: string) => {
   const cookies = await nextCookies()
   {
