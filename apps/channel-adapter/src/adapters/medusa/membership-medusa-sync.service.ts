@@ -89,7 +89,6 @@ export class MembershipMedusaSyncService {
           `email=${matchedByUserId.email}) 으로 복귀. 이메일 드리프트로 판단.`,
         );
         customer = matchedByUserId;
-        ghostCustomerId = null;
       }
 
       if (!customer) {
