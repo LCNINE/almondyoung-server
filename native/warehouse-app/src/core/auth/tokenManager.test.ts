@@ -18,9 +18,9 @@ function memoryStore(initial: TokenSet | null): TokenStore {
 const valid: TokenSet = {
   accessToken: 'A',
   refreshToken: 'R',
-  expiresAt: 10_000,
+  expiresAt: 120_000,
 };
-const expired: TokenSet = { ...valid, accessToken: 'OLD', expiresAt: 1_000 };
+const expired: TokenSet = { ...valid, accessToken: 'OLD', expiresAt: 70_000 };
 
 describe('createTokenManager', () => {
   it('returns the current access token when still valid', async () => {
@@ -28,7 +28,7 @@ describe('createTokenManager', () => {
     const m = createTokenManager({
       store: memoryStore(valid),
       refresh,
-      now: () => 5_000,
+      now: () => 60_000,
     });
     expect(await m.getAccessToken()).toBe('A');
     expect(refresh).not.toHaveBeenCalled();
@@ -41,7 +41,7 @@ describe('createTokenManager', () => {
       refreshToken: 'R2',
       expiresAt: 20_000,
     }));
-    const m = createTokenManager({ store, refresh, now: () => 5_000 });
+    const m = createTokenManager({ store, refresh, now: () => 60_000 });
     expect(await m.getAccessToken()).toBe('NEW');
     expect(refresh).toHaveBeenCalledWith('R');
     expect((await store.load())?.refreshToken).toBe('R2');
@@ -53,7 +53,7 @@ describe('createTokenManager', () => {
     const m = createTokenManager({
       store: memoryStore(expired),
       refresh,
-      now: () => 5_000,
+      now: () => 60_000,
     });
     const p1 = m.getAccessToken();
     const p2 = m.getAccessToken();

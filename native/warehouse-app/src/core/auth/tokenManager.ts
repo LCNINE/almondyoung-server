@@ -1,11 +1,6 @@
 import type { TokenSet, TokenStore } from './tokenStore';
 
-// Brief specifies 30_000 ("refresh 30s early"), but the tokenManager.test.ts
-// fixtures use toy epoch values (expiresAt: 10_000 / 1_000, now: 5_000) that a
-// 30s skew swallows entirely (10_000 - 30_000 < 5_000 forces every "valid"
-// token through the refresh path). Scaled down to fit the given fixtures;
-// revisit once real (millisecond-epoch) token lifetimes are wired in.
-const SKEW_MS = 3_000;
+const SKEW_MS = 30_000; // refresh 30s early
 
 export function createTokenManager(deps: {
   store: TokenStore;
