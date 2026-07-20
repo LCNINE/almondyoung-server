@@ -33,7 +33,7 @@ export function setup(opts?: { baseDomain?: string }) {
   });
 
   // ─── Domain helper ───
-  const baseDomain = opts?.baseDomain ?? (isDev ? 'lcnine-dev.com' : 'almondyoung-next.com');
+  const baseDomain = opts?.baseDomain ?? (isDev ? 'lcnine-dev.com' : 'almondyoung.com');
   const domain = (slug: string) => (isDev ? `${slug}.dev.${baseDomain}` : `${slug}.${baseDomain}`);
   const url = (slug: string) => `https://${domain(slug)}`;
 

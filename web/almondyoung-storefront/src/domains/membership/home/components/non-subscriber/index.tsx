@@ -6,7 +6,7 @@ import MembershipBenefitsGuide from "./membership-benefits-guide"
 
 const LEGACY_URL =
   process.env.NEXT_PUBLIC_LEGACY_MEMBERSHIP_HISTORY_URL ??
-  "https://almondyoung.com/myshop/mileage/historyList.html"
+  "https://lcnine.cafe24.com/myshop/mileage/historyList.html"
 
 /** 카드/버튼 없이 텍스트 링크 한 줄 */
 const ROW =
