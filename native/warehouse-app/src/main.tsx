@@ -6,6 +6,7 @@ import { App } from './app/App';
 import { resolveProfile, type Profile } from './app/profile';
 import { StationHome } from './profiles/station/StationHome';
 import { HandheldHome } from './profiles/handheld/HandheldHome';
+import { ScanProvider } from './core/hardware/scan/ScanProvider';
 
 // platform() is synchronous in plugin-os v2, so profile resolution needs no
 // async bootstrap — it runs inline before the initial render.
@@ -14,6 +15,8 @@ const home = profile === 'station' ? <StationHome /> : <HandheldHome />;
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App>{home}</App>
+    <ScanProvider>
+      <App>{home}</App>
+    </ScanProvider>
   </StrictMode>
 );
