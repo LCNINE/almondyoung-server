@@ -1,3 +1,4 @@
+import { invoke } from '@tauri-apps/api/core';
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { openUrl } from '@tauri-apps/plugin-opener';
@@ -13,17 +14,22 @@ async function getJson(url: string): Promise<unknown> {
   return res.json();
 }
 
+export async function discoverEndpoints() {
+  return discover(oidcConfig.issuer, getJson);
+}
+
 export async function exchangeCode(p: {
   tokenEndpoint: string;
   code: string;
   verifier: string;
+  redirectUri: string;
   now?: () => number;
 }): Promise<TokenSet> {
   const now = p.now ?? (() => Date.now());
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
     code: p.code,
-    redirect_uri: oidcConfig.redirectUri,
+    redirect_uri: p.redirectUri,
     client_id: oidcConfig.clientId,
     code_verifier: p.verifier,
   });
@@ -79,7 +85,7 @@ export async function refreshTokens(p: {
   };
 }
 
-export async function login(deps: {
+export async function loginWithDeepLink(deps: {
   manager: ReturnType<typeof createTokenManager>;
 }): Promise<void> {
   const endpoints = await discover(oidcConfig.issuer, getJson);
@@ -115,9 +121,35 @@ export async function login(deps: {
       tokenEndpoint: endpoints.token_endpoint,
       code,
       verifier,
+      redirectUri: oidcConfig.redirectUri,
     });
     await deps.manager.set(tokens);
   } finally {
     unlisten();
   }
+}
+
+export async function loginWithLoopback(deps: {
+  manager: ReturnType<typeof createTokenManager>;
+}): Promise<void> {
+  const endpoints = await discoverEndpoints();
+  const { verifier, challenge } = await generatePkce();
+  const state = randomUrlSafe(32);
+  const nonce = randomUrlSafe(32);
+
+  const { port } = await invoke<{ port: number }>('oauth_loopback_start');
+  const redirectUri = `http://127.0.0.1:${port}/callback`;
+
+  await openUrl(buildAuthorizeUrl({ ...oidcConfig, redirectUri }, { state, nonce, challenge }));
+
+  const cb = await invoke<{ code: string; state: string }>('oauth_loopback_wait', { port });
+  if (cb.state !== state) throw new Error('state mismatch');
+
+  const tokens = await exchangeCode({
+    tokenEndpoint: endpoints.token_endpoint,
+    code: cb.code,
+    verifier,
+    redirectUri,
+  });
+  await deps.manager.set(tokens);
 }
