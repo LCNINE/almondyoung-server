@@ -99,12 +99,12 @@ Actual credential entry happens in the **system browser** (loopback OIDC), so th
 ### Logout & 401 handling
 
 - **Logout**: a button in `DiagnosticsScreen` (and, if useful, the `<App>` shell header) → `session.logout()` → state change → the guard redirects to `/login`.
-- **Session invalidation**: a failed refresh (expired/revoked refresh token) makes `getAccessToken()` throw → session transitions to unauthenticated → guard redirects to `/login`. OIDC `end_session` is deferred.
+- **Session invalidation**: at **startup**, `bootstrap()` maps any `getAccessToken()` failure (no token, or a rejected refresh) to unauthenticated → guard shows `/login`. **Mid-session**, `session.getAccessToken()` is a bare delegate: a refresh failure surfaces the error to the caller but does **not** auto-flip the session in v1 — routing an in-session 401/refresh-failure back to `/login` is part of the deferred data-layer "401 → force logout" policy (see Out of scope). (This is dormant in v1: no post-bootstrap code calls `session.getAccessToken()` yet.) OIDC `end_session` is deferred.
 - **API 401 with a valid-looking token** (backend rejects, e.g. the `warehouse` role isn't accepted yet): v1 **surfaces it as an error message** and does not force a logout, to avoid a login loop. A global "401 → force logout" policy is deferred to a data-layer enhancement.
 
 ### `DiagnosticsScreen` refactor
 
-Remove the ad-hoc `createStrongholdTokenStore` / `createTokenManager` / `loginWithLoopback` wiring from `onLogin`. Diagnostics keeps its hardware harness (scan list, camera scan, test print) and gains a **session-status line + Logout button** that read the shared session from context. It becomes the `/diagnostics` route.
+Remove the ad-hoc `createStrongholdTokenStore` / `createTokenManager` / `loginWithLoopback` wiring from `onLogin`. Diagnostics keeps its hardware harness (scan list, camera scan, test print) and gains a **session-status line + Logout button** that read the shared session from context. It becomes the `/diagnostics` route. The route wrapper (`DiagnosticsRoute`) also renders a **back-to-home `<Link to="/">`** so `/diagnostics` is not a dead-end (the profile home has no other return path, and the station profile has no hardware back button).
 
 ## Testing
 
