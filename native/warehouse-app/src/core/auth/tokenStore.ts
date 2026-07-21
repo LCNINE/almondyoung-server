@@ -38,27 +38,50 @@ export function createStrongholdTokenStore(
 ): TokenStore {
   let cached: Stronghold | null = null;
   let cachedClient: Client | null = null;
+  let opening: Promise<{ store: Store; sh: Stronghold }> | null = null;
   async function hold(): Promise<{ store: Store; sh: Stronghold }> {
-    if (!cached) {
-      onStep('6a resolve path…');
-      const path = await join(await appDataDir(), VAULT);
-      onStep(`6b Stronghold.load (open vault ${path})…`);
-      cached = await Stronghold.load(path, VAULT_PASSWORD); // vault password
+    if (cached && cachedClient) {
+      return { store: cachedClient.getStore(), sh: cached };
     }
-    // Load-or-create the client ONCE and reuse it. Re-calling loadClient on an
-    // already-loaded Stronghold throws ("client already loaded"), and a bare
-    // catch would then createClient a fresh EMPTY client — losing a just-saved
-    // token on the next read (→ getAccessToken sees null → "not authenticated").
-    if (!cachedClient) {
-      try {
-        onStep('6c loadClient…');
-        cachedClient = await cached.loadClient(CLIENT);
-      } catch (e) {
-        onStep(`6c createClient (loadClient: ${String(e)})…`);
-        cachedClient = await cached.createClient(CLIENT);
-      }
+    // Single-flight the vault open + client load. Concurrent callers MUST share
+    // ONE Stronghold.load: the plugin's `initialize` command REPLACES the
+    // per-path Stronghold in its collection, so a second concurrent open (e.g.
+    // React StrictMode double-invoking bootstrap, or a bootstrap load racing a
+    // login save) discards the client this loadClient/createClient populated —
+    // and the next get/insert/save then throws ClientDataNotPresent
+    // ("error loading client data; no data present"). A bare `if (!cached)`
+    // guard is not concurrency-safe because the check precedes the await.
+    if (!opening) {
+      opening = (async () => {
+        if (!cached) {
+          onStep('6a resolve path…');
+          const path = await join(await appDataDir(), VAULT);
+          onStep(`6b Stronghold.load (open vault ${path})…`);
+          cached = await Stronghold.load(path, VAULT_PASSWORD); // vault password
+        }
+        // Load-or-create the client ONCE and reuse it. Re-calling loadClient on
+        // an already-loaded Stronghold throws ("client already loaded"), and a
+        // bare catch would then createClient a fresh EMPTY client — losing a
+        // just-saved token on the next read (→ getAccessToken sees null →
+        // "not authenticated").
+        if (!cachedClient) {
+          try {
+            onStep('6c loadClient…');
+            cachedClient = await cached.loadClient(CLIENT);
+          } catch (e) {
+            onStep(`6c createClient (loadClient: ${String(e)})…`);
+            cachedClient = await cached.createClient(CLIENT);
+          }
+        }
+        return { store: cachedClient.getStore(), sh: cached };
+      })().finally(() => {
+        // Clear the in-flight latch so a failed open (thrown above) can be
+        // retried by the next call; a successful open is served by the fast
+        // path at the top from now on.
+        opening = null;
+      });
     }
-    return { store: cachedClient.getStore(), sh: cached };
+    return opening;
   }
   return {
     async load() {
