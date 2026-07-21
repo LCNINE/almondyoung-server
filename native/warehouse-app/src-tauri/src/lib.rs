@@ -1,6 +1,13 @@
+mod oauth_loopback;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
+    .manage(oauth_loopback::LoopbackState::default())
+    .invoke_handler(tauri::generate_handler![
+      oauth_loopback::oauth_loopback_start,
+      oauth_loopback::oauth_loopback_wait
+    ])
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
