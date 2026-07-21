@@ -16,6 +16,12 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   const customerId = req.params.id;
   const { trigger } = req.body as { trigger: AutoIssueTrigger };
 
+  // 트리거 자동발급 전면 차단. COUPON_AUTO_ISSUE_ENABLED=true 로만 켠다.
+  // 200 + empty 로 응답해 channel-adapter 가 published 로 마킹하고 재시도하지 않게 한다.
+  if (process.env.COUPON_AUTO_ISSUE_ENABLED !== 'true') {
+    return res.status(200).json({ issued: [], skipped: [] });
+  }
+
   if (!trigger || !VALID_TRIGGERS.includes(trigger)) {
     throw new MedusaError(
       MedusaError.Types.INVALID_DATA,
