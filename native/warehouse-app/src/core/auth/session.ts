@@ -41,6 +41,9 @@ export function createSession(deps: {
       }
     },
     isAuthenticated: () => authed,
+    // Bare delegate: a mid-session refresh failure surfaces to the caller but
+    // does NOT flip `authed` here — only bootstrap() maps a failure to logged-out.
+    // Mid-session "401 → force logout" is the deferred data-layer policy (see spec §"Logout & 401").
     getAccessToken: () => deps.manager.getAccessToken(),
     async login(onStep) {
       await deps.runLogin(deps.manager, onStep);
