@@ -2216,10 +2216,23 @@ export class MedusaClient {
       return { issued, skipped };
     } catch (error) {
       const fetchError = error as FetchError;
-      this.logger.warn(
-        `issuePromotionsByTrigger failed (customerId=${customerId}, trigger=${trigger}): ${fetchError.message}`,
-      );
-      throw new Error(`Medusa issuePromotionsByTrigger failed: ${fetchError.message}`);
+      const status = fetchError.status;
+      // 실패는 절대 조용히 성공 처리하지 않는다 — throw 해서 inbox 가 failed 로 남기고
+      // 리컨실이 재구동하도록(발급 누락 가시화 + 복구). 예전엔 영구 4xx 를 {0,0} 으로
+      // 삼켰는데, 그러면 event 가 published 로 마킹돼 발급 실패가 영구 유실됐다.
+      const isPermanent = typeof status === 'number' && status >= 400 && status < 500 && status !== 429;
+      if (isPermanent) {
+        // 영구성 4xx(잘못된 요청/설정 오류 등)는 코드/설정 문제 신호 → ERROR 로 알린다.
+        this.logger.error(
+          `issuePromotionsByTrigger permanent failure (customerId=${customerId}, trigger=${trigger}, status=${status}): ${fetchError.message}`,
+        );
+      } else {
+        // transient(5xx / 429 / 네트워크)
+        this.logger.warn(
+          `issuePromotionsByTrigger transient failure (customerId=${customerId}, trigger=${trigger}, status=${status ?? 'n/a'}): ${fetchError.message}`,
+        );
+      }
+      throw new Error(`Medusa issuePromotionsByTrigger failed (status=${status ?? 'n/a'}): ${fetchError.message}`);
     }
   }
 

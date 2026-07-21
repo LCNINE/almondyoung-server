@@ -38,8 +38,8 @@ export const AUTO_ISSUE_TRIGGER_LABELS: Record<AutoIssueTrigger, string> = {
 export interface CouponMeta {
   name: string | undefined;
   maxDiscountAmount: number | null;
-  maxUsesPerCustomer: number | null;
   maxClaims: number | null;
+  issuedCount: number | null;
   createdBy: string | undefined;
   visibility: 'public' | 'claimable' | 'assigned_only';
   autoIssueTrigger: AutoIssueTrigger | null;
@@ -50,8 +50,8 @@ export function getCouponMeta(coupon: MedusaPromotion): CouponMeta {
   return {
     name: meta.name as string | undefined,
     maxDiscountAmount: meta.max_discount_amount != null ? Number(meta.max_discount_amount) : null,
-    maxUsesPerCustomer: meta.max_uses_per_customer != null ? Number(meta.max_uses_per_customer) : null,
     maxClaims: meta.max_claims != null ? Number(meta.max_claims) : null,
+    issuedCount: meta.issued_count != null ? Number(meta.issued_count) : null,
     createdBy: meta.created_by as string | undefined,
     visibility: (meta.visibility as 'public' | 'claimable' | 'assigned_only') ?? 'public',
     autoIssueTrigger: (meta.auto_issue_trigger as AutoIssueTrigger) ?? null,
@@ -67,6 +67,12 @@ export function StatusBadge({ status }: { status: string }) {
 }
 
 export const TARGET_ATTR_LABEL: Record<string, string> = {
+  // Medusa dotted 경로(현행 저장 형식)
+  'items.product.id': '특정 상품',
+  'items.product.categories.id': '특정 카테고리',
+  'items.product.collection_id': '특정 컬렉션',
+  'items.product.type_id': '특정 상품 유형',
+  // 레거시 플랫 키(과거 저장분 표시 호환)
   product_id: '특정 상품',
   product_category_id: '특정 카테고리',
   product_collection_id: '특정 컬렉션',

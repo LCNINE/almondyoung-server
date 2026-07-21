@@ -4,6 +4,13 @@ import { sdk } from "@/lib/config/medusa"
 import { getAuthHeaders } from "@lib/data/cookies"
 import type { PromotionsResponseDto } from "@lib/types/dto/promotion"
 import medusaError from "@lib/utils/medusa-error"
+import { ApiAuthError } from "@lib/api/api-error"
+
+/** 401은 error.tsx 토큰 복구가 인식하도록 digest를 실어 던진다. 그 외는 medusaError. */
+function throwPromotionError(error: any): never {
+  if (error?.status === 401) throw new ApiAuthError()
+  medusaError(error)
+}
 
 /**
  * 내 프로모션(쿠폰) 목록 조회
@@ -28,7 +35,7 @@ export async function getMyPromotions(params?: {
       headers,
       cache: "no-store",
     })
-    .catch(medusaError)
+    .catch(throwPromotionError)
 }
 
 /**
@@ -45,5 +52,6 @@ export async function claimCoupon(promotionId: string): Promise<void> {
       method: "POST",
       headers,
     })
-    .catch(medusaError)
+    // 401 은 UNAUTHORIZED digest 로 던져 마이페이지 클레임도 토큰 복구 플로우를 태운다.
+    .catch(throwPromotionError)
 }
