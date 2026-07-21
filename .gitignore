@@ -429,3 +429,10 @@ apps/medusa/docs/llms_full.md
 # sst
 .sst
 .open-next
+
+# 로컬 임시 데이터/스크립트 (커밋 대상 아님)
+*_excelUploadProduct_*.csv
+__pycache__/
+scripts/_tmp-*
+scripts/crawl_hwabang_to_cafe24.py
+scripts/check-membership-group.ts
