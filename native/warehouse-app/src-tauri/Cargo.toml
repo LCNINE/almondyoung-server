@@ -1,0 +1,39 @@
+[package]
+name = "app"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+license = ""
+repository = ""
+edition = "2021"
+rust-version = "1.77.2"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "2.11.3", features = [] }
+tauri-plugin-log = "2"
+tauri-plugin-os = "2"
+tauri-plugin-http = "2"
+tauri-plugin-deep-link = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-stronghold = "2"
+rust-argon2 = "2"
+tokio = { version = "1", features = ["time", "sync"] }
+
+# `tauri dev` builds in the dev profile, which leaves dependencies unoptimized
+# (opt-level 0). stronghold's snapshot crypto (open/save) is then ~40s per call
+# — see the login Diagnostics steps 6b/6e. Optimize dependencies (not our own
+# crate, which stays fast to rebuild) so those drop to ~1s.
+[profile.dev.package."*"]
+opt-level = 3
