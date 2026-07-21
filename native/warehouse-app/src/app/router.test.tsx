@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { RouterProvider } from '@tanstack/react-router';
 import { SessionProvider } from './session-context';
+import { ScanProvider } from '../core/hardware/scan/ScanProvider';
 import { createAppRouter } from './router';
 import type { Session } from '../core/auth/session';
 
@@ -73,5 +75,36 @@ describe('router guard integration', () => {
     expect(
       await screen.findByRole('button', { name: /^login$/i })
     ).toBeInTheDocument();
+  });
+
+  it('closes the diagnostics dead-end: home -> diagnostics -> home', async () => {
+    const { session, setAuthed } = makeStub();
+    setAuthed(true);
+    const user = userEvent.setup();
+    // DiagnosticsScreen calls useScanner(), which requires a ScanProvider in
+    // the tree — renderApp() above doesn't include one, so this case renders
+    // locally instead of reusing that helper.
+    render(
+      <SessionProvider session={session}>
+        <ScanProvider>
+          <RouterProvider router={createAppRouter(session)} />
+        </ScanProvider>
+      </SessionProvider>
+    );
+
+    expect(await screen.findByText('Station profile')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('link', { name: /diagnostics/i }));
+
+    expect(
+      await screen.findByRole('heading', { name: /diagnostics/i })
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole('link', { name: /home/i })
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('link', { name: /home/i }));
+
+    expect(await screen.findByText('Station profile')).toBeInTheDocument();
   });
 });
