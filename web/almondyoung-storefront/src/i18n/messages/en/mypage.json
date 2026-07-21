@@ -63,6 +63,16 @@
     "claimed": "Claimed",
     "copyAria": "Copy coupon code",
     "publicSection": "Public Coupons",
+    "tabMine": "My Coupons",
+    "tabClaim": "Get Coupons",
+    "tabExpired": "Expired",
+    "sortDiscount": "Highest discount",
+    "sortMinOrder": "Lowest min. order",
+    "expiredBadge": "Expired",
+    "expiredNotice": "Coupons expired within the last month.",
+    "emptyMine": "You have no coupons",
+    "emptyClaim": "No coupons available to get",
+    "emptyExpired": "No expired coupons",
     "toasts": {
       "claimSuccess": "Coupon claimed successfully.",
       "claimFailed": "Failed to claim the coupon. Please try again later."

@@ -40,6 +40,41 @@ function formatDiscount(coupon: MedusaPromotion) {
   return `${m.value.toLocaleString('ko-KR')}원`;
 }
 
+const VISIBILITY_LABEL: Record<string, { label: string; cls: string }> = {
+  public: { label: '공개', cls: 'bg-slate-100 text-slate-600' },
+  claimable: { label: '발급받기', cls: 'bg-blue-100 text-blue-700' },
+  assigned_only: { label: '지정발급', cls: 'bg-purple-100 text-purple-700' },
+};
+
+function VisibilityBadge({ visibility }: { visibility: string }) {
+  const v = VISIBILITY_LABEL[visibility] ?? VISIBILITY_LABEL.public;
+  return (
+    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${v.cls}`}>
+      {v.label}
+    </span>
+  );
+}
+
+function IssuanceCell({ issued, max }: { issued: number | null; max: number | null }) {
+  // issued_count 는 발급 수량 한도(max_claims)가 설정된 경우에만 정확히 집계된다.
+  // 한도가 없으면 0으로 남으므로 수치를 표기하지 않는다(오표기 방지).
+  // 실제 발급 고객은 행의 "현황" 버튼으로 확인.
+  if (max == null) return <span className="text-muted-foreground">—</span>;
+
+  const issuedN = issued ?? 0;
+  const pct = max > 0 ? Math.min(100, Math.round((issuedN / max) * 100)) : 0;
+  return (
+    <div className="flex flex-col gap-1 min-w-[90px]">
+      <span className="text-xs tabular-nums">
+        발급 {issuedN.toLocaleString('ko-KR')}/{max.toLocaleString('ko-KR')}
+      </span>
+      <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+        <div className="h-full bg-orange-500" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
 function formatConditions(coupon: MedusaPromotion) {
   const parts: string[] = [];
   const minOrder = coupon.rules?.find((r) => r.attribute === 'subtotal' && r.operator === 'gte');
@@ -76,7 +111,7 @@ interface CouponRowProps {
 
 function CouponRow({ coupon, onDetail, onAssign, onViewCustomers, onToggleStatus, onDelete, isToggling, isDeleting }: CouponRowProps) {
   const canToggle = coupon.status === 'active' || coupon.status === 'inactive' || coupon.status === 'draft';
-  const { name } = getCouponMeta(coupon);
+  const { name, visibility, maxClaims, issuedCount } = getCouponMeta(coupon);
 
   return (
     <tr className="border-b last:border-0 hover:bg-muted/30 transition-colors">
@@ -102,11 +137,17 @@ function CouponRow({ coupon, onDetail, onAssign, onViewCustomers, onToggleStatus
           </span>
         </div>
       </td>
+      <td className="px-4 py-3">
+        <VisibilityBadge visibility={visibility} />
+      </td>
       <td className="px-4 py-3 text-sm text-muted-foreground">
         {formatConditions(coupon)}
       </td>
       <td className="px-4 py-3 text-sm text-muted-foreground">
         {formatPeriod(coupon)}
+      </td>
+      <td className="px-4 py-3">
+        <IssuanceCell issued={issuedCount} max={maxClaims} />
       </td>
       <td className="px-4 py-3">
         <StatusBadge status={coupon.status} />
@@ -336,8 +377,10 @@ export default function MarketingCouponsTemplate() {
                   <tr className="border-b bg-muted/40 text-xs text-muted-foreground">
                     <th className="px-4 py-2.5 text-left font-medium">코드</th>
                     <th className="px-4 py-2.5 text-left font-medium">할인</th>
+                    <th className="px-4 py-2.5 text-left font-medium">발급방식</th>
                     <th className="px-4 py-2.5 text-left font-medium">사용 조건</th>
                     <th className="px-4 py-2.5 text-left font-medium">유효 기간</th>
+                    <th className="px-4 py-2.5 text-left font-medium">발급 현황</th>
                     <th className="px-4 py-2.5 text-left font-medium">상태</th>
                     <th className="px-4 py-2.5 text-left font-medium">액션</th>
                   </tr>
