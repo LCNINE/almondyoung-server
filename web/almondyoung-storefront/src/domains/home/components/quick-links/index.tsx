@@ -18,7 +18,7 @@ const ALMOND_YOUNG_PLAY_IMAGE_URL =
   "https://almondyoung-public.s3.ap-northeast-2.amazonaws.com/storefront/quick-links/amdp-logo-white.png"
 const CATEGORY_ICON_BASE_URL =
   "https://almondyoung-public.s3.ap-northeast-2.amazonaws.com/storefront/category-icons"
-const CATEGORY_ICON_VERSION = "20260703-2"
+const CATEGORY_ICON_VERSION = "20260720-2"
 
 const CATEGORY_ICON_URLS: Record<string, string> = {
   "lash-perm": `${CATEGORY_ICON_BASE_URL}/lash-perm.png?v=${CATEGORY_ICON_VERSION}`,
