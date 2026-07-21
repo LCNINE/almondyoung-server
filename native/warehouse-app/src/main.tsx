@@ -1,26 +1,46 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { platform } from '@tauri-apps/plugin-os';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { RouterProvider } from '@tanstack/react-router';
 import './index.css';
-import { App } from './app/App';
-import { resolveProfile, type Profile } from './app/profile';
-import { StationHome } from './profiles/station/StationHome';
-import { HandheldHome } from './profiles/handheld/HandheldHome';
-import { ScanProvider } from './core/hardware/scan/ScanProvider';
 import { queryClient } from './core/data/queryClient';
+import { ScanProvider } from './core/hardware/scan/ScanProvider';
+import { SessionProvider } from './app/session-context';
+import { Bootstrap } from './app/Bootstrap';
+import { createSession } from './core/auth/session';
+import { createTokenManager } from './core/auth/tokenManager';
+import { createStrongholdTokenStore } from './core/auth/tokenStore';
+import {
+  loginWithLoopback,
+  refreshTokens,
+  discoverEndpoints,
+} from './core/auth/login';
+import { createAppRouter } from './app/router';
 
-// platform() is synchronous in plugin-os v2, so profile resolution needs no
-// async bootstrap — it runs inline before the initial render.
-const profile: Profile = resolveProfile(platform());
-const home = profile === 'station' ? <StationHome /> : <HandheldHome />;
+const store = createStrongholdTokenStore();
+const manager = createTokenManager({
+  store,
+  refresh: async (refreshToken) => {
+    const eps = await discoverEndpoints();
+    return refreshTokens({ tokenEndpoint: eps.token_endpoint, refreshToken });
+  },
+});
+const session = createSession({
+  manager,
+  runLogin: (m, onStep) => loginWithLoopback({ manager: m, onStep }),
+});
+const router = createAppRouter(session);
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <ScanProvider>
-        <App>{home}</App>
-      </ScanProvider>
+      <SessionProvider session={session}>
+        <ScanProvider>
+          <Bootstrap session={session}>
+            <RouterProvider router={router} />
+          </Bootstrap>
+        </ScanProvider>
+      </SessionProvider>
     </QueryClientProvider>
   </StrictMode>
 );
