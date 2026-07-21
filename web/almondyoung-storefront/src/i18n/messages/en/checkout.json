@@ -158,6 +158,7 @@
     "zero": "0 KRW",
     "amountMinusWon": "-{amount} KRW",
     "couponLabel": "Coupon",
+    "notApplicable": "Conditions not met",
     "available": "Available",
     "availableCount": "Available ({count})",
     "percentDiscount": "{value}% off",
@@ -198,6 +199,7 @@
       "couponApplyFailed": "Failed to apply the coupon. Please try again later.",
       "couponLimitExceeded": "You have reached the usage limit for this coupon.",
       "couponNotAssigned": "This coupon is only available for customers it was issued to.",
+      "couponRemoveFailed": "Failed to remove the coupon. Please try again later.",
       "claimAndApplyFailed": "Failed to claim the coupon. Please try again later.",
       "claimSuccessApplyFailed": "Coupon claimed, but it could not be applied to the current cart. Check your coupons page to use it."
     }

@@ -15,7 +15,9 @@ export const perCustomerLimitMiddleware = async (req: any, res: any, next: any) 
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
   const promotionMetaService = req.scope.resolve(PROMOTION_META_MODULE);
 
-  for (const code of promoCodes) {
+  for (const rawCode of promoCodes) {
+    // 코드는 대문자 저장이 규약 — preview(toUpperCase)와 게이트 조회를 일치시킨다.
+    const code = rawCode.trim().toUpperCase();
     const { data: promotions } = await query.graph({
       entity: 'promotion',
       fields: ['id'],
@@ -30,8 +32,10 @@ export const perCustomerLimitMiddleware = async (req: any, res: any, next: any) 
 
     if (metaShape?.visibility === 'assigned_only' || metaShape?.visibility === 'claimable') {
       if (!customerId) {
+        // message는 머신 토큰 — 스토어프론트가 로케일별 문구로 매핑한다.
+        // (Medusa JS SDK FetchError는 code를 버리고 message만 보존하므로 message에 토큰을 싣는다.)
         return res.status(400).json({
-          message: '이 쿠폰은 발급된 고객만 사용할 수 있습니다.',
+          message: 'COUPON_NOT_ASSIGNED',
           code: 'COUPON_NOT_ASSIGNED',
         });
       }
@@ -42,8 +46,10 @@ export const perCustomerLimitMiddleware = async (req: any, res: any, next: any) 
       });
       const isAssigned = (customers?.[0]?.promotions ?? []).some((p: any) => p.id === promotion.id);
       if (!isAssigned) {
+        // message는 머신 토큰 — 스토어프론트가 로케일별 문구로 매핑한다.
+        // (Medusa JS SDK FetchError는 code를 버리고 message만 보존하므로 message에 토큰을 싣는다.)
         return res.status(400).json({
-          message: '이 쿠폰은 발급된 고객만 사용할 수 있습니다.',
+          message: 'COUPON_NOT_ASSIGNED',
           code: 'COUPON_NOT_ASSIGNED',
         });
       }

@@ -54,6 +54,26 @@ export default defineMiddlewares({
       method: 'GET',
       middlewares: membershipPriceVisibilityMiddlewares,
     },
+    // assigned_only/claimable 게이트는 promo_codes 를 받는 모든 카트 경로에 걸어야 한다.
+    // 기본 Medusa 의 POST /store/carts(create) 와 POST /store/carts/:id(update) 도
+    // body.promo_codes 를 updateCartPromotionsWorkflow 로 적용하므로, /promotions 만
+    // 막으면 카트 생성/수정 시점에 미할당 쿠폰을 붙여 게이트를 우회할 수 있다.
+    {
+      matcher: '/store/carts',
+      method: 'POST',
+      middlewares: [
+        authenticate('customer', ['session', 'bearer'], { allowUnauthenticated: true }),
+        perCustomerLimitMiddleware,
+      ],
+    },
+    {
+      matcher: '/store/carts/:id',
+      method: 'POST',
+      middlewares: [
+        authenticate('customer', ['session', 'bearer'], { allowUnauthenticated: true }),
+        perCustomerLimitMiddleware,
+      ],
+    },
     {
       matcher: '/store/carts/:id/promotions',
       method: 'POST',

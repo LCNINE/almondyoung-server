@@ -54,6 +54,8 @@
     "unlimited": "期間無制限",
     "percentDiscount": "{value}% 割引",
     "wonDiscount": "{value} ウォン割引",
+    "percentValue": "{value}%",
+    "amountValue": "{amount}ウォン",
     "assignedSection": "発行済みクーポン",
     "claimSection": "受け取り可能なクーポン",
     "claimButton": "受け取る",

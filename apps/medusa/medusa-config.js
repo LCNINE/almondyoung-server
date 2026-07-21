@@ -181,18 +181,22 @@ module.exports = defineConfig({
     {
       resolve: '@medusajs/medusa/promotion',
     },
-    {
-      resolve: '@medusajs/medusa/event-bus-redis',
-      options: {
-        redisUrl: process.env.REDIS_URL,
-        queueOptions: {
-          prefix: '{medusa-events}',
+    // 통합테스트(TEST_TYPE)에서는 redis/BullMQ 대신 in-memory 로컬 이벤트 버스 사용
+    // (redis 커넥션 라이프사이클 레이스 회피). 운영/개발은 항상 redis.
+    process.env.TEST_TYPE
+      ? { key: 'event_bus', resolve: '@medusajs/event-bus-local' }
+      : {
+          resolve: '@medusajs/medusa/event-bus-redis',
+          options: {
+            redisUrl: process.env.REDIS_URL,
+            queueOptions: {
+              prefix: '{medusa-events}',
+            },
+            workerOptions: {
+              prefix: '{medusa-events}',
+            },
+          },
         },
-        workerOptions: {
-          prefix: '{medusa-events}',
-        },
-      },
-    },
     {
       resolve: '@medusajs/medusa/workflow-engine-redis',
       options: {

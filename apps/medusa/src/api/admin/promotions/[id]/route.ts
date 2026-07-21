@@ -15,7 +15,8 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
 }
 
 export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
-  const { additional_data, ...rest } = req.validatedBody as PromotionMutationBody;
+  // validatedBody는 Medusa 코어 validator 미들웨어가 채운다. 미적용 시 body로 폴백해 크래시 방지.
+  const { additional_data, ...rest } = (req.validatedBody ?? req.body) as PromotionMutationBody;
   const promotionMetadata = extractMetaFromAdditionalData(additional_data);
 
   await updatePromotionsWorkflow(req.scope).run({
@@ -39,6 +40,8 @@ export async function DELETE(req: AuthenticatedMedusaRequest, res: MedusaRespons
 
   const promotionMetaService = req.scope.resolve<PromotionMetaModuleService>(PROMOTION_META_MODULE);
   await promotionMetaService.deleteByPromotionId(id);
+  // 발급 로그 고아 로우 정리 (링크는 deletePromotionsWorkflow 가 cascade 처리)
+  await promotionMetaService.removeAllIssueLogs(id).catch(() => {});
 
   return res.status(200).json({ id, object: 'promotion', deleted: true });
 }

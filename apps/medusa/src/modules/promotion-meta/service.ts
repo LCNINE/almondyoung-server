@@ -61,8 +61,33 @@ class PromotionMetaModuleService extends MedusaService({ PromotionMeta, Promotio
     try {
       await (this as any).createPromotionIssueLogs({ customer_id: customerId, promotion_id: promotionId, trigger });
     } catch (e: any) {
-      const isDuplicate = e?.code === '23505' || e?.message?.includes('unique') || e?.message?.includes('duplicate');
+      // MedusaService는 unique 위반을 "... already exists" 메시지로 감싸므로 pg 23505 매칭만으론 부족하다.
+      const msg = String(e?.message ?? '').toLowerCase();
+      const isDuplicate =
+        e?.code === '23505' ||
+        msg.includes('unique') ||
+        msg.includes('duplicate') ||
+        msg.includes('already exists');
       if (!isDuplicate) throw e;
+    }
+  }
+
+  /**
+   * 회수 시 발급 로그를 soft-delete 한다. partial unique index(deleted_at IS NULL)가
+   * 재발급을 허용하도록 — 그렇지 않으면 자동발급 dedup(isAlreadyIssued)이 영구 skip 한다.
+   */
+  async removeIssueLog(customerId: string, promotionId: string): Promise<void> {
+    const records = await (this as any).listPromotionIssueLogs({ customer_id: customerId, promotion_id: promotionId });
+    if (records.length > 0) {
+      await (this as any).deletePromotionIssueLogs(records.map((r: any) => r.id));
+    }
+  }
+
+  /** 프로모션 삭제 시 발급 로그 전체 정리(고아 로우 방지). */
+  async removeAllIssueLogs(promotionId: string): Promise<void> {
+    const records = await (this as any).listPromotionIssueLogs({ promotion_id: promotionId });
+    if (records.length > 0) {
+      await (this as any).deletePromotionIssueLogs(records.map((r: any) => r.id));
     }
   }
 
@@ -98,6 +123,16 @@ class PromotionMetaModuleService extends MedusaService({ PromotionMeta, Promotio
     await em.execute(
       `UPDATE "promotion_meta" SET "issued_count" = "issued_count" + 1 WHERE "promotion_id" = ?`,
       [promotionId],
+    );
+  }
+
+  /** issued_count 를 실제 링크 수로 정합화(backfill). 음수는 0으로 보정. */
+  async setIssuedCount(promotionId: string, count: number): Promise<void> {
+    const safe = Math.max(0, Math.floor(count));
+    const em = (this as any).baseRepository_.manager_;
+    await em.execute(
+      `UPDATE "promotion_meta" SET "issued_count" = ? WHERE "promotion_id" = ?`,
+      [safe, promotionId],
     );
   }
 }

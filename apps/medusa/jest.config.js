@@ -17,6 +17,8 @@ module.exports = {
   modulePathIgnorePatterns: ['dist/', '<rootDir>/.medusa/'],
   setupFiles: ['./integration-tests/setup.js'],
   moduleNameMapper: {
+    // tsconfig baseUrl(".") 로 해석되는 bare `src/*` import 를 jest 에서도 해석
+    '^src/(.*)$': '<rootDir>/src/$1',
     '^@medusa$': '<rootDir>/src',
     '^@medusa/(.*)$': '<rootDir>/src/$1',
     '^@modules/(.*)$': '<rootDir>/src/modules/$1',

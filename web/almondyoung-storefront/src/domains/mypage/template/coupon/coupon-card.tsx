@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react"
 import type { Promotion } from "@/lib/types/ui/promotion"
+import { formatPrice } from "@/lib/utils/price-utils"
 import { Copy, Check } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { useRouter } from "next/navigation"
@@ -36,7 +37,12 @@ export function CouponCard({
         setClaimed(true)
         toast.success(t("toasts.claimSuccess"))
         router.refresh()
-      } catch {
+      } catch (error: unknown) {
+        const err = error as Error & { digest?: string }
+        // UNAUTHORIZED는 삼키지 않고 re-throw → error.tsx 토큰 복구 처리
+        if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
+          throw error
+        }
         toast.error(t("toasts.claimFailed"))
       }
     })
@@ -44,8 +50,10 @@ export function CouponCard({
 
   const discountLabel =
     promo.application_method?.type === "percentage"
-      ? `${promo.application_method.value}%`
-      : `${(promo.application_method?.value ?? 0).toLocaleString("ko-KR")}원`
+      ? t("percentValue", { value: promo.application_method.value })
+      : t("amountValue", {
+          amount: formatPrice(promo.application_method?.value ?? 0),
+        })
 
   return (
     <li className="relative overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-sm">

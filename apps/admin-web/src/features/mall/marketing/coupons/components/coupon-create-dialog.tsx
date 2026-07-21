@@ -47,6 +47,14 @@ function generateCode() {
 
 type TargetAttribute = 'product_id' | 'product_category_id' | 'product_collection_id';
 
+// Medusa 라인아이템 컨텍스트가 노출하는 실제 경로로 매핑한다.
+// 플랫 키(product_category_id 등)는 라인아이템에 없어 룰이 절대 매칭되지 않음.
+const TARGET_ATTR_TO_MEDUSA: Record<TargetAttribute, PromotionTargetRule['attribute']> = {
+  product_id: 'items.product.id',
+  product_category_id: 'items.product.categories.id',
+  product_collection_id: 'items.product.collection_id',
+};
+
 interface SelectedItem {
   id: string;
   label: string;
@@ -191,20 +199,21 @@ export function CouponCreateDialog({
     if (discountType === 'percentage' && (value as number) > 100) return;
     if (targetType === 'items' && targetItems.length === 0) return;
 
+    // 1인당 한도는 campaign budget(use_by_attribute)로만 관리 — promotion_meta 컬럼은 제거됨
     const additional_data: Record<string, unknown> = {};
     if (trimmedName) additional_data.name = trimmedName;
-    if (maxUsesPerCustomer) additional_data.max_uses_per_customer = Number(maxUsesPerCustomer);
     if (visibility === 'claimable' && maxClaims) additional_data.max_claims = Number(maxClaims);
     if (me) additional_data.created_by = me.email || me.username;
     additional_data.visibility = visibility;
     if (autoIssueTrigger) additional_data.auto_issue_trigger = autoIssueTrigger;
 
     const hasCampaign = startsAt || endsAt || usageLimit || spendLimit || maxUsesPerCustomer;
-    const campaignIdentifier = `CAMP_${code.trim().toUpperCase()}`;
+    // 코드 재사용(삭제 후 재생성) 시 campaign_identifier 충돌 방지
+    const campaignIdentifier = `CAMP_${code.trim().toUpperCase()}_${Date.now()}`;
 
     const targetRules: PromotionTargetRule[] | undefined =
       targetType === 'items' && targetItems.length > 0
-        ? [{ attribute: targetAttribute, operator: 'in', values: targetItems.map((i) => i.id) }]
+        ? [{ attribute: TARGET_ATTR_TO_MEDUSA[targetAttribute], operator: 'in', values: targetItems.map((i) => i.id) }]
         : undefined;
 
     const promotionRules = [
@@ -222,7 +231,7 @@ export function CouponCreateDialog({
       : usageLimit
       ? { type: 'usage' as const, limit: Number(usageLimit) }
       : spendLimit
-      ? { type: 'spend' as const, limit: Number(spendLimit) }
+      ? { type: 'spend' as const, limit: Number(spendLimit), currency_code: 'krw' }
       : undefined;
 
     try {
@@ -230,6 +239,8 @@ export function CouponCreateDialog({
         code: code.trim().toUpperCase(),
         type: 'standard',
         is_automatic: false,
+        // draft는 체크아웃에서 적용 안 됨
+        status: 'active',
         application_method: {
           type: discountType,
           value: value as number,
@@ -456,6 +467,12 @@ export function CouponCreateDialog({
             </div>
           </div>
 
+          <p className="text-xs text-muted-foreground">
+            세 한도는 캠페인 예산을 공유해 <b>동시에 설정할 수 없습니다</b>. 일반적으로 프로모션은
+            &lsquo;1인당 사용 제한&rsquo; 또는 &lsquo;총 사용 횟수(선착순)&rsquo; 중 하나를 씁니다.
+            발급받기(claimable) 쿠폰의 &lsquo;총 발급 수량&rsquo;은 <b>발급</b> 상한이라 위 <b>사용</b> 한도와 별개로 함께 설정할 수 있습니다.
+          </p>
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label>총 사용 횟수 제한</Label>
@@ -613,47 +630,6 @@ export function CouponCreateDialog({
             {autoIssueTrigger && (
               <p className="text-xs text-muted-foreground">
                 조건 충족 고객에게 시스템이 자동으로 발급합니다.
-              </p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label>발급 방식</Label>
-            <Select value={visibility} onValueChange={(v) => setVisibility(v as 'public' | 'claimable' | 'assigned_only')}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="public">공개 — 모든 로그인 고객에게 노출</SelectItem>
-                <SelectItem value="claimable">발급받기 — 고객이 직접 발급받아야 사용 가능</SelectItem>
-                <SelectItem value="assigned_only">발급 고객 전용 — 관리자가 발급한 고객만 사용 가능</SelectItem>
-              </SelectContent>
-            </Select>
-            {visibility === 'claimable' && (
-              <p className="text-xs text-muted-foreground">
-                {'마이페이지에서 "발급받기" 버튼으로 고객이 직접 발급받을 수 있습니다.'}
-              </p>
-            )}
-            {visibility === 'claimable' && (
-              <div className="mt-3 space-y-2">
-                <Label>총 발급 가능 수량</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={maxClaims}
-                  onChange={(e) => setMaxClaims(e.target.value ? Number(e.target.value) : '')}
-                  placeholder="예: 100 (비워두면 무제한)"
-                />
-                {!!maxClaims && (
-                  <p className="text-xs text-muted-foreground">
-                    최대 {maxClaims.toLocaleString('ko-KR')}명까지 발급받을 수 있습니다.
-                  </p>
-                )}
-              </div>
-            )}
-            {visibility === 'assigned_only' && (
-              <p className="text-xs text-muted-foreground">
-                고객 발급 탭에서 직접 발급한 고객만 마이페이지에서 보이고 사용할 수 있습니다.
               </p>
             )}
           </div>
