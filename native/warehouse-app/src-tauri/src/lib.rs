@@ -11,12 +11,17 @@ pub fn run() {
     .plugin(
             tauri_plugin_stronghold::Builder::new(|pass| {
                 use argon2::{hash_raw, Config, Variant, Version};
+                // Phase 0/1a: the vault password is a source-visible placeholder,
+                // so KDF strength secures nothing real yet. Keep these LOW so the
+                // unoptimized `tauri dev` (debug) build stays fast — argon2 runs on
+                // every vault open AND save. Raise to release-tuned values together
+                // with the later device-derived-key hardening.
                 let config = Config {
                     variant: Variant::Argon2id,
                     version: Version::Version13,
-                    lanes: 4,
-                    mem_cost: 10_000,
-                    time_cost: 10,
+                    lanes: 1,
+                    mem_cost: 4096,
+                    time_cost: 2,
                     ..Default::default()
                 };
                 // Phase 0 placeholder static salt — a device-derived key is a later

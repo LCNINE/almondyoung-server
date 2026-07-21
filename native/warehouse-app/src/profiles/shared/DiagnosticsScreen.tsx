@@ -24,7 +24,7 @@ export function DiagnosticsScreen() {
   async function onLogin() {
     setStatus('logging in…');
     try {
-      const store = createStrongholdTokenStore();
+      const store = createStrongholdTokenStore(setStatus);
       const manager = createTokenManager({
         store,
         refresh: async (refreshToken) => {
@@ -32,12 +32,13 @@ export function DiagnosticsScreen() {
           return refreshTokens({ tokenEndpoint: eps.token_endpoint, refreshToken });
         },
       });
-      await loginWithLoopback({ manager });
+      await loginWithLoopback({ manager, onStep: setStatus });
       const client = createApiClient({
         baseUrl: oidcConfig.issuer,
         getToken: () => manager.getAccessToken(),
         authMode: 'bearer',
       });
+      setStatus('7/7 fetching userinfo…');
       const info = await client.request<{ sub?: string; email?: string }>({
         path: '/oauth/userinfo',
       });

@@ -131,25 +131,36 @@ export async function loginWithDeepLink(deps: {
 
 export async function loginWithLoopback(deps: {
   manager: ReturnType<typeof createTokenManager>;
+  onStep?: (step: string) => void;
 }): Promise<void> {
+  const step = deps.onStep ?? (() => {});
+
+  step('1/6 discovering…');
   const endpoints = await discoverEndpoints();
   const { verifier, challenge } = await generatePkce();
   const state = randomUrlSafe(32);
   const nonce = randomUrlSafe(32);
 
+  step('2/6 starting loopback listener…');
   const { port } = await invoke<{ port: number }>('oauth_loopback_start');
   const redirectUri = `http://127.0.0.1:${port}/callback`;
 
+  step(`3/6 opening browser (redirect ${redirectUri})…`);
   await openUrl(buildAuthorizeUrl({ ...oidcConfig, redirectUri }, { state, nonce, challenge }));
 
+  step('4/6 waiting for browser callback…');
   const cb = await invoke<{ code: string; state: string }>('oauth_loopback_wait', { port });
   if (cb.state !== state) throw new Error('state mismatch');
 
+  step('5/6 exchanging code for tokens…');
   const tokens = await exchangeCode({
     tokenEndpoint: endpoints.token_endpoint,
     code: cb.code,
     verifier,
     redirectUri,
   });
+
+  step('6/6 saving tokens…');
   await deps.manager.set(tokens);
+  step('tokens saved');
 }
