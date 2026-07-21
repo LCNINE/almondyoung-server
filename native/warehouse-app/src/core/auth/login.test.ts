@@ -23,12 +23,13 @@ beforeEach(() => {
 });
 
 describe('exchangeCode', () => {
-  it('maps the token response to a TokenSet with expiresAt', async () => {
+  it('sends the given redirect_uri and maps the token response', async () => {
     const t0 = 1_000_000;
     const set = await exchangeCode({
       tokenEndpoint: 'https://a/token',
       code: 'CODE',
       verifier: 'V',
+      redirectUri: 'http://127.0.0.1:5000/callback',
       now: () => t0,
     });
     expect(set.accessToken).toBe('A');
@@ -41,6 +42,9 @@ describe('exchangeCode', () => {
     expect(String(call[1]?.body)).toContain('grant_type=authorization_code');
     expect(String(call[1]?.body)).toContain('code=CODE');
     expect(String(call[1]?.body)).toContain('code_verifier=V');
+    expect(String(call[1]?.body)).toContain(
+      'redirect_uri=http%3A%2F%2F127.0.0.1%3A5000%2Fcallback'
+    );
   });
 });
 
