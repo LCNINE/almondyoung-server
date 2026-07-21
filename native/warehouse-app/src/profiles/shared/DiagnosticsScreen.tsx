@@ -5,12 +5,47 @@ import { useScanner, useScanEmit } from '../../core/hardware/scan/useScanner';
 import { scanWithCamera } from '../../core/hardware/scan/camera';
 import { renderTestLabel } from '../../core/hardware/print/zpl';
 import type { ScanEvent } from '../../core/hardware/scan/ScanProvider';
+import {
+  loginWithLoopback,
+  refreshTokens,
+  discoverEndpoints,
+} from '../../core/auth/login';
+import { createStrongholdTokenStore } from '../../core/auth/tokenStore';
+import { createTokenManager } from '../../core/auth/tokenManager';
+import { createApiClient } from '../../core/data/httpClient';
+import { oidcConfig } from '../../app/config';
 
 export function DiagnosticsScreen() {
   const [scans, setScans] = useState<ScanEvent[]>([]);
   const [status, setStatus] = useState('');
   const emit = useScanEmit();
   useScanner((e) => setScans((s) => [e, ...s].slice(0, 20)));
+
+  async function onLogin() {
+    setStatus('logging in…');
+    try {
+      const store = createStrongholdTokenStore();
+      const manager = createTokenManager({
+        store,
+        refresh: async (refreshToken) => {
+          const eps = await discoverEndpoints();
+          return refreshTokens({ tokenEndpoint: eps.token_endpoint, refreshToken });
+        },
+      });
+      await loginWithLoopback({ manager });
+      const client = createApiClient({
+        baseUrl: oidcConfig.issuer,
+        getToken: () => manager.getAccessToken(),
+        authMode: 'bearer',
+      });
+      const info = await client.request<{ sub?: string; email?: string }>({
+        path: '/oauth/userinfo',
+      });
+      setStatus(`logged in: sub=${info.sub ?? '?'} email=${info.email ?? '?'}`);
+    } catch (e) {
+      setStatus(`login error: ${String(e)}`);
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -57,6 +92,13 @@ export function DiagnosticsScreen() {
           }}
         >
           Test print
+        </Button>
+      </section>
+
+      <section>
+        <h2 className="font-medium">Auth</h2>
+        <Button className="mt-2" onClick={onLogin}>
+          Login
         </Button>
       </section>
 

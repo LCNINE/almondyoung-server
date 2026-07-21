@@ -17,5 +17,8 @@ describe('DiagnosticsScreen', () => {
     expect(
       screen.getByRole('button', { name: /test print/i })
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /^login$/i })
+    ).toBeInTheDocument();
   });
 });
