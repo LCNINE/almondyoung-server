@@ -436,3 +436,6 @@ __pycache__/
 scripts/_tmp-*
 scripts/crawl_hwabang_to_cafe24.py
 scripts/check-membership-group.ts
+
+# 효성에프엠에스 계약 문서 (저작권상 저장소에 올리지 않음, 로컬 보관)
+apps/wallet/docs/FMS-TE-0046(Web_API-배치CMS).md
