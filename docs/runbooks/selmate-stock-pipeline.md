@@ -38,6 +38,8 @@ Medusa: variant.metadata.inboundDate / inboundApproximate
 
 **핵심 매칭 다리**: 셀메이트 `상품코드(카페)`(cafe24 코드, 예 `P0000GYJ`) = Medusa `variant.barcode` 앞 8자. 이걸로 창고 sku ↔ 판매 variant 를 자동 연결한다 (창고/판매가 코드 체계가 달라 이 다리 없이는 매칭 불가).
 
+**카페코드가 뭔지** — 셀메이트가 관리하는 코드가 아니라 **두 시스템이 같은 조상(cafe24)을 가졌다는 흔적**이다. Medusa 상품은 cafe24 에서 이관돼 `variant.barcode` 에 그 코드가 남았고, 셀메이트는 `상품코드(카페)` 컬럼에 참조용으로 들고 있다. 그래서 **cafe24 이후 셀메이트에만 추가된 상품은 이 값이 비어 있는 게 정상**이다 (2026-07-21 기준 4,002행). 이런 건 카페코드로는 영영 못 붙으므로 `옵션코드`(규칙 C)나 수동 매칭이 필요하다.
+
 카페코드는 **상품** 단위라, 옵션이 여러 개인 상품은 카페코드 하나에 variant 가 여러 개 걸린다. 이때는 **옵션명**으로 한 번 더 가른다 (②의 규칙 B).
 
 ## 사전 준비 (공통)
@@ -75,6 +77,24 @@ bash scripts/sellmate/run.sh live recalc-sellable .
 - A-3 이 발행하는 `ProductSellableQuantityChanged` 가 **품절 반영의 유일한 경로**다: `channel-adapter` 의 `ProductSellableQuantityConsumer` → `inbox_events` → `InboxWorkerService` → Medusa. (`StockReceived`/`StockAdjusted` 등은 Kafka 로 나가지만 컨슈머가 없다.)
 - 멱등: A-1 은 code 기준 upsert, A-2 는 delta=0 이면 no-op, A-3 은 프로젝션이 이전과 같으면 publish 스킵. 같은 파일을 여러 번 돌려도 안전하다.
 - A-2 는 단일 트랜잭션 + advisory lock + `FOR UPDATE` 라 부분 반영이 없다.
+
+### ⚠️ A-3 는 배치로 돈다 — 한 트랜잭션에 몰지 말 것
+
+`ProductSellableQuantityService.recalculateAndPublishForVariants()` 는 **넘긴 목록 전체를 트랜잭션 하나로** 처리한다 (`dbService.run` 이 루프를 통째로 감쌈). 원래 이벤트 하나당 variant 몇 개를 다루는 함수라, 수만 개를 그대로 넘기면:
+
+- 끝까지 가야 커밋 → 중간에 끊기면 **전부 롤백**
+- 진행률이 밖에서 안 보임 (`product_sellable_quantity_projections` 가 그대로)
+- live 에 장시간 트랜잭션 → vacuum·DDL 이 막히고 `idle in transaction` 이 쌓임
+
+그래서 `recalc-sellable.ts` 가 `RECALC_CHUNK`(기본 200) 단위로 잘라 넘긴다. 배치마다 독립 트랜잭션이라 끊겨도 그때까지는 남고, 진행률·처리속도·남은시간이 찍힌다. **이 배치 구조를 되돌리지 말 것.**
+
+특정 건만 다시 계산하려면 `VARIANT_IDS` 로 지정한다 (복구용):
+
+```bash
+VARIANT_IDS="uuid1,uuid2" npx tsx scripts/sellmate/recalc-sellable.ts
+```
+
+실측(2026-07-21 live): 초당 약 5.6건, 19,000건에 약 1시간.
 
 ### ⚠️ `SINCE_HOURS` 함정
 
@@ -127,11 +147,27 @@ CORE_DB_URL="postgresql://postgres:<pw>@<live-host>:5432/core?sslmode=require" \
 
 | 규칙 | 조건 | 비고 |
 |------|------|------|
+| **C** | 셀메이트 `옵션코드` == Medusa `variant.title` (`ON01043` 형식) | **가장 정확. 이름을 안 본다** |
 | **A** | 카페코드 하나에 셀메이트 옵션 1개 **&** Medusa variant 1개 | 옵션 모호성 0 |
 | **B** | 카페코드에 여러 개가 걸릴 때, **옵션명이 양쪽에서 각각 유일하게** 하나씩 대응 | 옵션 상품 대부분이 여기 |
 
+**규칙 C (옵션코드)** — CSV 다운로드 시 `옵션코드` 컬럼을 포함시켜야 쓸 수 있다 (셀메이트 엑셀 양식 설정에서 추가). 2026-07-21 기준 카페코드 교차검증에서 **불일치 0건**. 다만 Medusa 27,068 variant 중 `ON*` title 을 가진 건 **501개뿐**이라 만능 키가 아니라 래쉬 계열 전용 다리다. 있으면 최우선으로 쓰고, 없으면 A/B 로 내려간다.
+
 - B 에서 비교하는 Medusa 옵션명은 `variant.title`(=`ON00804` 같은 내부코드) 이 **아니라** `product_option_value` 조합(예 `J / 0.10 / 7mm`) 이다. 셀메이트 `옵션명` 과 대조된다.
-- 셀메이트 `단일상품`/`단일옵션`/`없음` ↔ Medusa `기본 품목` 으로 정규화. 그 외 정규화는 공백·대소문자만 — 더 느슨하게 풀면 오매칭이 곧 품절이다.
+- 셀메이트 `단일상품`/`단일옵션`/`없음` ↔ Medusa **`기본 옵션값`**. (`variant.title` 은 `기본 품목` 이지만 B 가 비교하는 `option_value` 는 `기본 옵션값` 이다 — 헷갈리기 쉽다.)
+
+**B 의 옵션명 정규화 — 여기까지만 한다:**
+
+| 정규화 | 예 | 근거 |
+|--------|-----|------|
+| 구분자 `,` `/` 공백 | `골드,소형` ↔ `골드 / 소형` | 같은 값을 다르게 이었을 뿐 |
+| 토큰 순서 무시 | `0.20,13mm` ↔ `13mm / 0.20` | 〃 |
+| 한자·깨진문자(`?`) 제거 | `핑크 粉色` ↔ `핑크` | 셀메이트가 중국 공급처 원문을 병기. CP949 로 내보내며 `?` 로 깨진다 (셀메이트에 UTF-8 내보내기 옵션은 없다) |
+| **`컬` 접미 제거** | `J,0.15,9mm` ↔ `J컬 / 9mm / 0.15` | 래쉬 도메인에서 `J` = `J컬` (같은 컬 종류) |
+
+**하지 않는 정규화** — `0.15mm`→`0.15`, `대형`→`대` 같은 단위·축약 제거는 안 한다. `8mm`↔`8` 오매칭이 곧 잘못된 품절이라 이득 대비 위험이 크다.
+
+⚠️ **한자 제거 정규식은 코드포인트 escape 로만 쓸 것.** 리터럴로 `豈-﫿` 를 쓰면 겉보기가 똑같은 **U+8C48**(일반 한자)이 섞여 범위가 `U+8C48–U+FAFF` 가 되고, **한글 전체(U+AC00–U+D7A3)를 삼킨다**. 2026-07-21 이 버그로 `밍크 C/0.15/12mm` 가 `C / 0.15 / 12mm` 와 매칭되는 걸 측정 단계에서 잡았다 (적용 전이라 피해 없음). 정규화 함수에는 **한글 보존 / 한자 제거 assert 를 반드시 남긴다.**
 - 한 variant 에 셀메이트 SKU 가 둘 이상 걸리면 **양쪽 다 버린다**. 어느 쪽이 맞는지 알 수 없는데 재고를 잘못 붙이면 되돌리기 비싸다.
 - Medusa variant 1개인데 셀메이트 옵션이 여러 개인 카페코드도 이 규칙에 걸려 제외된다 (2026-07-21 기준 약 1,500건). 수동 매칭 대상.
 
@@ -151,6 +187,34 @@ CORE_DB_URL=...core MEDUSA_DB_URL=...medusa \
 - ⚠️ **후속 recalc(sellable)·Kafka 발행은 안 한다** — 매칭의 Medusa 재고 반영(품절/선판매)은 별도. 매칭 후 **Ⓐ A-3 `recalc-sellable` 을 넉넉한 `SINCE_HOURS` 로 다시 돌려야** 품절이 실제로 반영된다. 입고예정 표시(③)는 links 만으로 동작.
 - 멱등: 이미 matched 는 pending 조회에서 자동 제외. 대량은 300건씩 배치 커밋(timeout 회피).
 - **분석 전용**: `match-dryrun.ts` 는 매칭 가능 규모만 측정(쓰기 없음). 매칭률/미매칭 원인 확인용.
+
+### ②-B ★ 매칭 직후 반드시: 한국상품 `always_sellable_zero_stock` 적용
+
+**이걸 빼먹으면 한국상품이 재고 0 인 순간 전부 품절된다.** 매칭 스크립트는 이 플래그를 켜지 않는다.
+
+정책은 "**한국상품은 재고 0 이어도 계속 판매, 해외(중국 등)만 품절**" 이다. 국내는 조달이 빨라서다. 그런데 **한국/해외 구분은 셀메이트에만 있는 정보**라 Core 스키마에 없다 — 그래서 코드가 아니라 **이 런북의 절차**로 유지한다. CSV 를 받을 때마다 다시 걸어야 한다.
+
+```bash
+# 1) 셀메이트에서 CSV 를 두 벌 받는다 — 한국 / 한국·한국직배 제외(=해외)
+#    (둘의 옵션정보일련번호는 겹치지 않고 합치면 전체가 된다)
+
+# 2) 매칭된 variant 중 한국 CSV 에 있는 것만 골라 플래그 ON
+#    kr-variant-ids.txt = 한국 CSV 의 옵션정보일련번호 → skus.code 조인으로 얻은 variant_id 목록
+psql "$CORE_DB_URL" <<'SQL'
+CREATE TEMP TABLE kr(variant_id uuid);
+\copy kr FROM 'kr-variant-ids.txt'
+BEGIN;
+UPDATE product_matchings SET always_sellable_zero_stock=true, updated_at=now()
+ WHERE variant_id IN (SELECT variant_id FROM kr) AND status='matched' AND NOT always_sellable_zero_stock;
+UPDATE sales_variant_policies SET always_sellable_zero_stock=true, updated_at=now()
+ WHERE variant_id IN (SELECT variant_id FROM kr) AND NOT always_sellable_zero_stock;
+COMMIT;
+SQL
+```
+
+계산기 순서상 `always_sellable_zero_stock` 이 `pre_stock_sellable` 보다 **먼저** 평가된다. 둘 다 무한판매로 가지만 의미가 다르다 — **"항상 판매"는 `always_sellable_zero_stock`, "입고 전 선판매"는 `pre_stock_sellable`.** 한국상품 정책은 전자다. 매칭이 켜는 값(`pre_stock_sellable=false`)과 충돌하지 않는다.
+
+미매칭(`pending`) 상품은 `MATCHING_PENDING` 이라 어차피 비-게이팅이므로 플래그가 없어도 팔린다. **문제는 새로 매칭되는 순간**이다 — 그래서 매칭할 때마다 이 절차를 같이 돌린다.
 
 ### 미매칭이 남는 이유
 
@@ -179,13 +243,16 @@ CORE_DB_URL=...core MEDUSA_API_URL=... MEDUSA_API_KEY=... \
 
 ## 실행 순서 (전체 반영)
 
-1. 터널 + CSV 준비
+1. 터널 + CSV 준비 — **한국 / 해외 두 벌**, `옵션코드` 컬럼 포함해서 받을 것
 2. `Ⓐ import-products` → `sync-stock` → `recalc-sellable` → 재고 동기화 + 이벤트 발행
 3. `① import-inbound-plans --apply`  → core 입고예정
 4. `② match-sku-to-variant` — `--rule A --apply` → `--rule B --report` 검토 → `--limit 20 --apply` 검증(admin "매칭됨" 확인) → 전체 `--apply`
-5. **매칭이 붙었으면 `Ⓐ A-3 recalc-sellable` 재실행** (`SINCE_HOURS` 넉넉히) → 신규 매칭분 품절 반영
-6. `③ sync-restock-to-medusa --apply` → Medusa metadata
-7. (선택) 스토어프론트 재배포 — restock-notice UI 변경이 있을 때만
+5. **`②-B` 한국상품 `always_sellable_zero_stock` 적용** ← 빼먹으면 한국상품이 품절된다
+6. **`Ⓐ A-3 recalc-sellable` 재실행** (`SINCE_HOURS` 넉넉히) → 신규 매칭분 품절 반영
+7. `③ sync-restock-to-medusa --apply` → Medusa metadata
+8. (선택) 스토어프론트 재배포 — restock-notice UI 변경이 있을 때만
+
+**4→5→6 은 세트다.** 4 만 하고 5 를 빼면 한국상품이 품절되고, 6 을 빼면 아무것도 반영되지 않는다.
 
 **일일 운영은 Ⓐ 만** 돌리면 된다 (주문수집과 같이). ①②③ 은 입고예정/신규매칭이 생겼을 때.
 

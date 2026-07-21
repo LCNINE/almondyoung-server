@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { notFound } from "next/navigation"
 import type { SortOptions } from "@/domains/category/components/refinement-list/sort-products"
 import { CategoryTemplate } from "@/domains/category/templates"
 import { siteConfig } from "@/lib/config/site"
@@ -58,6 +59,11 @@ export default async function CategoryPage(props: Params) {
   const { sortBy } = searchParams
 
   const category = await getCategoryByHandle(params.segments)
+
+  // 이 가드가 없으면 categoryIds가 undefined 로 흘러가 category_id 필터 없이 전체 상품이 노출된다.
+  if (!category) {
+    notFound()
+  }
 
   return (
     <CategoryTemplate
