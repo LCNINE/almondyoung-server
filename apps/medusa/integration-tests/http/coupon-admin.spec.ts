@@ -7,7 +7,9 @@ jest.setTimeout(120 * 1000);
 
 medusaIntegrationTestRunner({
   inApp: true,
-  env: {},
+  // 트리거 자동발급은 프로덕션 기본 OFF(COUPON_AUTO_ISSUE_ENABLED). 이 스펙은
+  // 발급 메커니즘 자체를 검증하므로 플래그를 켜고 돌린다.
+  env: { COUPON_AUTO_ISSUE_ENABLED: 'true' },
   // 매 테스트 DB teardown 이 redis/BullMQ 커넥션을 닫아 async 워크플로와 레이스 →
   // teardown 을 끄고 테스트마다 고유 식별자로 격리한다.
   disableAutoTeardown: true,
