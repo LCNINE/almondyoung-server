@@ -6,6 +6,10 @@ import { HomeQuickLinks } from "../components/quick-links"
 import { HomeSection } from "../components/shared/home-section"
 import { CategoryBestProductsWrapper } from "./best-categories"
 import { InterestCategoriesSlot } from "./interest-categories"
+import {
+  SHOWCASE_CATEGORIES,
+  ShowcaseCategoryWrapper,
+} from "./showcase-categories"
 // import { WelcomeDealWrapper } from "./welcome-deals" // 웰컴딜 보류로 홈 섹션 숨김
 
 import MembershipBanner from "../components/banner/membership-banner"
@@ -155,6 +159,17 @@ export async function HomeLogoutTemplate({
           </Suspense>
         </ErrorBoundary>
       </HomeSection>
+
+      {/* 캔바 디자인 / 클래스 — 루트 카테고리 통째로 한 줄씩 */}
+      {SHOWCASE_CATEGORIES.map((c) => (
+        <HomeSection key={c.handle}>
+          <ErrorBoundary fallback={null}>
+            <Suspense fallback={<MainSectionSkeleton />}>
+              <ShowcaseCategoryWrapper countryCode={countryCode} {...c} />
+            </Suspense>
+          </ErrorBoundary>
+        </HomeSection>
+      ))}
 
       {/* 멤버쉽 배너 */}
       <MembershipBanner />
