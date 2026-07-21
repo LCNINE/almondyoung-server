@@ -20,7 +20,7 @@ pub fn parse_callback_request_line(line: &str) -> Result<(String, String), Strin
         }
     }
     match (code, state) {
-        (Some(c), Some(s)) => Ok((c, s)),
+        (Some(c), Some(s)) if !c.is_empty() && !s.is_empty() => Ok((c, s)),
         _ => Err("callback missing code/state".into()),
     }
 }
@@ -94,10 +94,17 @@ pub async fn oauth_loopback_start(
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
     let (tx, rx) = oneshot::channel();
     // Blocking accept on a dedicated thread; deliver the parsed result via the channel.
-    // If the user abandons login, this thread lingers on accept() until process exit
-    // — acceptable for Phase 1a (the command below still times out at 120s).
     std::thread::spawn(move || {
         let _ = tx.send(accept_one(&listener));
+    });
+    // Watchdog: if nobody connects within 120s (matching oauth_loopback_wait's own
+    // timeout), nudge the still-blocked accept() with a dummy connection so its
+    // thread can read garbage, fail to parse, and exit — freeing the thread and port.
+    // On a completed login the listener is already dropped, so this connect just
+    // fails harmlessly (nothing bound to `port` anymore).
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(120));
+        let _ = std::net::TcpStream::connect(("127.0.0.1", port));
     });
     state
         .pending
@@ -170,6 +177,11 @@ mod tests {
     #[test]
     fn errors_when_code_or_state_missing() {
         assert!(parse_callback_request_line("GET /callback?code=abc HTTP/1.1").is_err());
+    }
+
+    #[test]
+    fn errors_on_empty_code_or_state() {
+        assert!(parse_callback_request_line("GET /callback?code=&state=xyz HTTP/1.1").is_err());
     }
 
     #[test]
