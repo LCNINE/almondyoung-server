@@ -38,6 +38,8 @@ Medusa: variant.metadata.inboundDate / inboundApproximate
 
 **핵심 매칭 다리**: 셀메이트 `상품코드(카페)`(cafe24 코드, 예 `P0000GYJ`) = Medusa `variant.barcode` 앞 8자. 이걸로 창고 sku ↔ 판매 variant 를 자동 연결한다 (창고/판매가 코드 체계가 달라 이 다리 없이는 매칭 불가).
 
+카페코드는 **상품** 단위라, 옵션이 여러 개인 상품은 카페코드 하나에 variant 가 여러 개 걸린다. 이때는 **옵션명**으로 한 번 더 가른다 (②의 규칙 B).
+
 ## 사전 준비 (공통)
 
 - **live RDS 터널**: `cd deployments/lcnine/services && npx sst tunnel --stage live` (sudo, 유지)
@@ -115,18 +117,51 @@ CORE_DB_URL="postgresql://postgres:<pw>@<live-host>:5432/core?sslmode=require" \
 
 ## ② SKU 매칭 — `apps/channel-adapter/scripts/match-sku-to-variant.ts`
 
-셀메이트 sku 를 Medusa 판매 variant 에 "SKU 구성 매칭"(admin 의 그것과 동일하게 3테이블) 으로 연결. 단일옵션 상품만 (옵션 모호성 0).
+셀메이트 sku 를 Medusa 판매 variant 에 "SKU 구성 매칭"(admin 의 그것과 동일하게 3테이블) 으로 연결.
+
+**매칭이 왜 중요한가**: 매칭이 안 붙은 variant 는 `manage_inventory=false` 로 남아 **재고와 무관하게 무한정 팔린다** (`NON_STOCK_GATED_REASONS` 의 `MATCHING_MISSING`). 품절 처리가 도는 유일한 조건이 매칭이다.
+
+### 매칭 규칙
+
+둘 다 **카페코드로 후보를 먼저 좁힌 뒤** 판정한다. 전역 상품명 매칭은 하지 않는다 — 다른 상품끼리 옵션명이 겹치면 멀쩡한 상품이 품절돼 버린다.
+
+| 규칙 | 조건 | 비고 |
+|------|------|------|
+| **A** | 카페코드 하나에 셀메이트 옵션 1개 **&** Medusa variant 1개 | 옵션 모호성 0 |
+| **B** | 카페코드에 여러 개가 걸릴 때, **옵션명이 양쪽에서 각각 유일하게** 하나씩 대응 | 옵션 상품 대부분이 여기 |
+
+- B 에서 비교하는 Medusa 옵션명은 `variant.title`(=`ON00804` 같은 내부코드) 이 **아니라** `product_option_value` 조합(예 `J / 0.10 / 7mm`) 이다. 셀메이트 `옵션명` 과 대조된다.
+- 셀메이트 `단일상품`/`단일옵션`/`없음` ↔ Medusa `기본 품목` 으로 정규화. 그 외 정규화는 공백·대소문자만 — 더 느슨하게 풀면 오매칭이 곧 품절이다.
+- 한 variant 에 셀메이트 SKU 가 둘 이상 걸리면 **양쪽 다 버린다**. 어느 쪽이 맞는지 알 수 없는데 재고를 잘못 붙이면 되돌리기 비싸다.
+- Medusa variant 1개인데 셀메이트 옵션이 여러 개인 카페코드도 이 규칙에 걸려 제외된다 (2026-07-21 기준 약 1,500건). 수동 매칭 대상.
 
 ```bash
 CORE_DB_URL=...core MEDUSA_DB_URL=...medusa \
-  npx ts-node -r tsconfig-paths/register apps/channel-adapter/scripts/match-sku-to-variant.ts <csv> [--limit N] [--apply]
+  npx ts-node -r tsconfig-paths/register apps/channel-adapter/scripts/match-sku-to-variant.ts <csv> \
+    [--rule A|B|AB] [--limit N] [--report out.csv] [--apply]
 ```
 
-- 기본 dry-run. `--limit N` 으로 소량 검증 후 전체 `--apply`.
-- 변경 테이블: `product_matchings`(strategy='variant', status='matched'), `product_variant_sku_links`(insert), `sales_variant_policies`(선판매 정책 upsert).
-- ⚠️ **후속 recalc(sellable)·Kafka 발행은 안 한다** — 매칭의 Medusa 재고 반영(품절/선판매)은 별도. 입고예정 표시(③)는 links 만으로 동작.
+- 기본 dry-run(rollback), 기본 `--rule AB`.
+- `--report out.csv` 로 대상 전체를 CSV 덤프 (rule/상품명/양쪽 옵션명/현재재고 포함). **apply 전에 재고 있는 행 위주로 눈으로 훑을 것** — 재고 0 은 틀려도 품절, 재고 있는 걸 잘못 붙이면 멀쩡한 상품이 죽는다.
+- 권장 순서: `--rule A --apply` (리스크 0) → `--rule B --report` 로 검토 → `--rule B --limit 20 --apply` 검증 → `--rule B --apply`.
+- 실행하면 매칭 건수와 함께 **"그중 재고 0 이하 N개가 품절 전환"** 을 찍는다. 이 숫자가 이번 실행의 실제 영향 규모다.
+- 변경 테이블: `product_matchings`(strategy='variant', status='matched'), `product_variant_sku_links`(insert), `sales_variant_policies`(정책 upsert).
+- ⚠️ **`pre_stock_sellable` 은 false 로 쓴다. 절대 true 로 되돌리지 말 것.** 계산기(`product-sellable-quantity.calculator.ts`) 순서가 `재고>0 → SELLABLE` / `preStockSellable → PRE_STOCK_SELLABLE(무한판매)` / `else → 품절` 이라, 이 값이 true 면 **재고 0 일 때만** 발동해서 정확히 품절시키려는 케이스를 무력화한다. `PRE_STOCK_SELLABLE` 은 `NON_STOCK_GATED_REASONS` 에 있어 Medusa `manage_inventory=false` 로 이어진다.
+  - 2026-07-21 이전 버전은 매칭마다 `true` 를 박았다. 그래서 **매칭이 붙어 있는데도 품절이 안 걸리는** 상태가 17,420건 누적됐다. 선판매는 상품별로 사람이 admin 에서 켜는 것이지 매칭의 부수효과가 아니다.
+- ⚠️ **후속 recalc(sellable)·Kafka 발행은 안 한다** — 매칭의 Medusa 재고 반영(품절/선판매)은 별도. 매칭 후 **Ⓐ A-3 `recalc-sellable` 을 넉넉한 `SINCE_HOURS` 로 다시 돌려야** 품절이 실제로 반영된다. 입고예정 표시(③)는 links 만으로 동작.
 - 멱등: 이미 matched 는 pending 조회에서 자동 제외. 대량은 300건씩 배치 커밋(timeout 회피).
 - **분석 전용**: `match-dryrun.ts` 는 매칭 가능 규모만 측정(쓰기 없음). 매칭률/미매칭 원인 확인용.
+
+### 미매칭이 남는 이유
+
+dry-run 이 찍는 `skip` 카운터로 원인이 갈린다:
+
+| 사유 | 뜻 | 대응 |
+|------|-----|------|
+| `이미매칭` | 정상. pending 아님 | — |
+| `옵션명_해소실패` | 카페코드는 잡히나 옵션명이 양쪽에서 안 맞음 | 옵션명 정리 또는 admin 수동 매칭 |
+| `카페코드_medusa에없음` | 셀메이트에만 있는 상품 / Medusa 미등록 | 상품 등록 여부 확인 |
+| `sku_없음` | 바코드가 `sku_barcodes` 에 없음 | **Ⓐ A-1 `import-products` 를 먼저 돌렸는지 확인** |
 
 ## ③ 입고예정 → Medusa — `apps/channel-adapter/scripts/sync-restock-to-medusa.ts`
 
@@ -147,9 +182,10 @@ CORE_DB_URL=...core MEDUSA_API_URL=... MEDUSA_API_KEY=... \
 1. 터널 + CSV 준비
 2. `Ⓐ import-products` → `sync-stock` → `recalc-sellable` → 재고 동기화 + 이벤트 발행
 3. `① import-inbound-plans --apply`  → core 입고예정
-4. `② match-sku-to-variant --limit 3 --apply` → 검증(admin "매칭됨" 확인) → `--apply` 전체
-5. `③ sync-restock-to-medusa --apply` → Medusa metadata
-6. (선택) 스토어프론트 재배포 — restock-notice UI 변경이 있을 때만
+4. `② match-sku-to-variant` — `--rule A --apply` → `--rule B --report` 검토 → `--limit 20 --apply` 검증(admin "매칭됨" 확인) → 전체 `--apply`
+5. **매칭이 붙었으면 `Ⓐ A-3 recalc-sellable` 재실행** (`SINCE_HOURS` 넉넉히) → 신규 매칭분 품절 반영
+6. `③ sync-restock-to-medusa --apply` → Medusa metadata
+7. (선택) 스토어프론트 재배포 — restock-notice UI 변경이 있을 때만
 
 **일일 운영은 Ⓐ 만** 돌리면 된다 (주문수집과 같이). ①②③ 은 입고예정/신규매칭이 생겼을 때.
 
@@ -160,6 +196,8 @@ CORE_DB_URL=...core MEDUSA_API_URL=... MEDUSA_API_KEY=... \
 - "셀메이트 재고 동기화 돌려줘 `<csv>`" → Ⓐ (A-1→A-2→A-3, A-3 까지 반드시 같이)
 - "셀메이트 입고예정 CSV `<경로>` core 에 반영해줘" → ①
 - "셀메이트 sku 매칭 돌려줘 (소량 먼저)" → ②
+- "셀메이트 매칭 리포트 뽑아줘 `<csv>`" → ② dry-run + `--report`, 쓰기 없음
+- "품절 처리 안 되는 상품 매칭 붙여줘 `<csv>`" → ② `--rule A --apply` → `--rule B` 리포트 검토 → apply → **Ⓐ A-3 recalc-sellable 까지**
 - "입고예정 Medusa 에 동기화해줘" → ③
 - "셀메이트 재고 파이프라인 전체 돌려줘 `<csv>`" → Ⓐ①②③ 순서대로 (각 단계 dry-run→검증→apply)
 
