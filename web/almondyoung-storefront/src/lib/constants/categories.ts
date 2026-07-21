@@ -56,12 +56,14 @@ export const FIXED_CATEGORIES = [
     name: "노몬드",
     handle: "cafe24-cat-495",
   },
-  {
-    key: "shop-meal",
-    id: "pcat_01KT8J0Z8XVAYFQ8EF965GSTWM",
-    name: "샵간편식",
-    handle: "cafe24-cat-618",
-  },
+  // 가격설정·배송비 별도설정 미지원으로 판매중지 → 홈 노출만 임시 제거.
+  // 기능 구현되면 이 블록 주석 해제하면 복구됨 (아이콘/i18n/썸네일 맵은 그대로 남겨둠).
+  // {
+  //   key: "shop-meal",
+  //   id: "pcat_01KT8J0Z8XVAYFQ8EF965GSTWM",
+  //   name: "샵간편식",
+  //   handle: "cafe24-cat-618",
+  // },
 ] as const
 
 export type FixedCategory = (typeof FIXED_CATEGORIES)[number]
