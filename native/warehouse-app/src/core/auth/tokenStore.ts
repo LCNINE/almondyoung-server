@@ -33,20 +33,32 @@ const KEY = 'tokenSet';
 // init, deferred to the dev box) before this persists real refresh tokens.
 const VAULT_PASSWORD = 'almondwms';
 
-export function createStrongholdTokenStore(): TokenStore {
+export function createStrongholdTokenStore(
+  onStep: (s: string) => void = () => {}
+): TokenStore {
   let cached: Stronghold | null = null;
+  let cachedClient: Client | null = null;
   async function hold(): Promise<{ store: Store; sh: Stronghold }> {
     if (!cached) {
+      onStep('6a resolve path…');
       const path = await join(await appDataDir(), VAULT);
+      onStep(`6b Stronghold.load (open vault ${path})…`);
       cached = await Stronghold.load(path, VAULT_PASSWORD); // vault password
     }
-    let client: Client;
-    try {
-      client = await cached.loadClient(CLIENT);
-    } catch {
-      client = await cached.createClient(CLIENT);
+    // Load-or-create the client ONCE and reuse it. Re-calling loadClient on an
+    // already-loaded Stronghold throws ("client already loaded"), and a bare
+    // catch would then createClient a fresh EMPTY client — losing a just-saved
+    // token on the next read (→ getAccessToken sees null → "not authenticated").
+    if (!cachedClient) {
+      try {
+        onStep('6c loadClient…');
+        cachedClient = await cached.loadClient(CLIENT);
+      } catch (e) {
+        onStep(`6c createClient (loadClient: ${String(e)})…`);
+        cachedClient = await cached.createClient(CLIENT);
+      }
     }
-    return { store: client.getStore(), sh: cached };
+    return { store: cachedClient.getStore(), sh: cached };
   }
   return {
     async load() {
@@ -57,11 +69,14 @@ export function createStrongholdTokenStore(): TokenStore {
     },
     async save(t) {
       const { store, sh } = await hold();
+      onStep('6d insert…');
       await store.insert(
         KEY,
         Array.from(new TextEncoder().encode(JSON.stringify(t)))
       );
+      onStep('6e snapshot save…');
       await sh.save();
+      onStep('6f stronghold done');
     },
     async clear() {
       const { store, sh } = await hold();

@@ -8,9 +8,15 @@
   "permissions": [
     "core:default",
     "os:default",
-    "http:default",
     "deep-link:default",
     "opener:default",
-    "stronghold:default"
+    "stronghold:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://user.almondyoung.com/*" },
+        { "url": "https://core.almondyoung.com/*" }
+      ]
+    }
   ]
 }
