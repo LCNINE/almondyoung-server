@@ -74,81 +74,6 @@ const templates = [
     }
   },
   {
-    templateKey: 'USER_FIND_ID_EMAIL',
-    name: 'ID 찾기',
-    category: 'SYSTEM',
-    contents: {
-      EMAIL: {
-        ko: {
-          subject: '[아몬드영] 아이디 찾기 결과',
-          body: `안녕하세요,
-
-요청하신 아이디 찾기 결과를 안내드립니다.
-
-등록된 아이디: {{loginId}}
-
-감사합니다.
-아몬드영 팀`
-        }
-      }
-    },
-    variablesSchema: {
-      loginId: { type: 'string', required: true, description: '로그인 ID' }
-    }
-  },
-  {
-    templateKey: 'USER_FIND_ID_SMS',
-    name: 'ID 찾기 (SMS)',
-    category: 'SYSTEM',
-    contents: {
-      SMS: {
-        ko: {
-          body: `[아몬드영] 아이디 찾기 결과\n등록된 아이디: {{loginId}}`
-        }
-      }
-    },
-    variablesSchema: {
-      loginId: { type: 'string', required: true, description: '로그인 ID' }
-    }
-  },
-  {
-    templateKey: 'USER_RESET_PASSWORD_EMAIL',
-    name: '비밀번호 재설정',
-    category: 'SYSTEM',
-    contents: {
-      EMAIL: {
-        ko: {
-          subject: '[아몬드영] 비밀번호 재설정',
-          body: `안녕하세요,
-
-비밀번호 재설정을 위한 링크를 안내드립니다.
-
-아래 링크를 클릭하여 새 비밀번호를 설정해주세요:
-{{resetUrl}}
-
-감사합니다.
-아몬드영 팀`
-        }
-      }
-    },
-    variablesSchema: {
-      resetUrl: { type: 'string', required: true, description: '비밀번호 재설정 링크' }
-    }
-  },
-  {
-    templateKey: 'USER_RESET_PASSWORD_SMS',
-    name: '비밀번호 재설정 (SMS)',
-    category: 'SYSTEM',
-    contents: {
-      SMS: {
-        ko: {
-          body: `[아몬드영] 비밀번호 재설정이 요청되었습니다.\n본인 인증 완료 후 새 비밀번호를 설정해주세요.`
-        }
-      }
-    },
-    variablesSchema: {}
-  },
-  {
     templateKey: 'ORDER_CREATED_EMAIL',
     name: '주문 생성 알림',
     category: 'TRANSACTIONAL',
@@ -260,24 +185,6 @@ const eventMappings = [
     templateKey: 'USER_PASSWORD_CHANGED_EMAIL',
     category: 'SYSTEM',
     defaultChannels: ['EMAIL'],
-    priority: 'HIGH'
-  },
-  {
-    eventKey: 'USER_FIND_ID',
-    name: '아이디 찾기',
-    description: '아이디 찾기 결과 알림',
-    templateKey: 'USER_FIND_ID_SMS',
-    category: 'SYSTEM',
-    defaultChannels: ['SMS'],
-    priority: 'HIGH'
-  },
-  {
-    eventKey: 'USER_RESET_PASSWORD',
-    name: '비밀번호 재설정',
-    description: '비밀번호 재설정 알림',
-    templateKey: 'USER_RESET_PASSWORD_SMS',
-    category: 'SYSTEM',
-    defaultChannels: ['SMS'],
     priority: 'HIGH'
   },
   {

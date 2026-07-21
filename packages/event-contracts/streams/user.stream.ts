@@ -84,15 +84,6 @@ export interface UserPermanentDeletedPayload {
   deletedAt: string; // ISO 8601
 }
 
-export interface UserFindIdPayload {
-  phoneNumber: string;
-  loginId: string;
-}
-
-export interface UserResetPasswordPayload {
-  phoneNumber: string;
-}
-
 export interface BusinessLicenseApprovedPayload {
   userId: string;
   email: string;
@@ -200,15 +191,6 @@ const UserPermanentDeletedSchema = z.object({
   deletedAt: z.string().datetime(),
 });
 
-const UserFindIdSchema = z.object({
-  phoneNumber: z.string().min(1),
-  loginId: z.string().min(1),
-});
-
-const UserResetPasswordSchema = z.object({
-  phoneNumber: z.string().min(1),
-});
-
 const BusinessLicenseApprovedSchema = z.object({
   userId: z.string().min(1),
   email: z.string().email(),
@@ -265,8 +247,6 @@ export const USER_STREAM = stream({
     UserDeleted: event<'UserDeleted', UserDeletedPayload>('UserDeleted', UserDeletedSchema),
     UserDormantConverted: event<'UserDormantConverted', UserDormantConvertedPayload>('UserDormantConverted', UserDormantConvertedSchema),
     UserPermanentDeleted: event<'UserPermanentDeleted', UserPermanentDeletedPayload>('UserPermanentDeleted', UserPermanentDeletedSchema),
-    UserFindId: event<'UserFindId', UserFindIdPayload>('UserFindId', UserFindIdSchema),
-    UserResetPassword: event<'UserResetPassword', UserResetPasswordPayload>('UserResetPassword', UserResetPasswordSchema),
     BusinessLicenseApproved: event<'BusinessLicenseApproved', BusinessLicenseApprovedPayload>('BusinessLicenseApproved', BusinessLicenseApprovedSchema),
     Cafe24Linked: event<'Cafe24Linked', Cafe24LinkedPayload>('Cafe24Linked', Cafe24LinkedSchema),
     Cafe24Unlinked: event<'Cafe24Unlinked', Cafe24UnlinkedPayload>('Cafe24Unlinked', Cafe24UnlinkedSchema),

@@ -38,11 +38,13 @@ const TEMPLATES = [
     key: 'USER_VERIFICATION_EMAIL',
     name: '회원가입 이메일 인증',
     subject: '[아몬드영] 이메일 인증을 완료해 주세요',
-    vars: { name: 'string', verificationUrl: 'string' },
+    // 변수명은 user-event.consumer 가 실제로 넘기는 것과 일치해야 한다
+    // (name, email, verificationToken, callbackUrl, redirectTo). 링크는 callbackUrl.
+    vars: { name: 'string', callbackUrl: 'string' },
     body: layout({
       heading: '이메일 인증을 완료해 주세요',
       intro: '{{name}}님, 아몬드영 회원가입을 환영합니다!<br/>아래 버튼을 눌러 이메일 인증을 완료해 주세요.',
-      highlight: button('이메일 인증하기', '{{verificationUrl}}'),
+      highlight: button('이메일 인증하기', '{{callbackUrl}}'),
       outro: '이 링크는 24시간 내에 만료됩니다. 본인이 요청하지 않았다면 이 메일을 무시하셔도 됩니다.',
     }),
   },
@@ -69,30 +71,6 @@ const TEMPLATES = [
         '{{name}}님, 안녕하세요.<br/>회원님의 비밀번호가 변경되었습니다. 계정 정보를 확인하시려면 아래 버튼을 눌러 주세요.',
       highlight: button('계정 페이지', '{{accountUrl}}'),
       outro: '본인이 요청한 변경이 아니라면, 보안을 위해 즉시 고객센터로 연락해 주세요.',
-    }),
-  },
-  {
-    key: 'USER_FIND_ID_EMAIL',
-    name: '아이디 찾기',
-    subject: '[아몬드영] 아이디 찾기 결과',
-    vars: { name: 'string', loginId: 'string' },
-    body: layout({
-      heading: '아이디 찾기 결과',
-      intro: '{{name}}님, 안녕하세요.<br/>회원님의 아이디는 아래와 같습니다.',
-      highlight: codeBox('{{loginId}}', { size: 24, spacing: 1 }),
-      outro: '본인이 요청하지 않았다면 이 메일을 무시하셔도 됩니다.',
-    }),
-  },
-  {
-    key: 'USER_RESET_PASSWORD_EMAIL',
-    name: '비밀번호 재설정',
-    subject: '[아몬드영] 비밀번호 재설정',
-    vars: { name: 'string', resetUrl: 'string' },
-    body: layout({
-      heading: '비밀번호를 재설정해 주세요',
-      intro: '{{name}}님, 안녕하세요.<br/>아래 버튼을 눌러 새 비밀번호를 설정해 주세요.',
-      highlight: button('비밀번호 재설정', '{{resetUrl}}'),
-      outro: '이 링크는 30분 내에 만료됩니다. 본인이 요청하지 않았다면 이 메일을 무시하셔도 됩니다.',
     }),
   },
   {
