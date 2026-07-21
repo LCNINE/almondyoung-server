@@ -47,6 +47,9 @@ async function main() {
   const svc = new ProductSellableQuantityService(dbService, outbox);
 
   try {
+    // 두 갈래를 합친다. 재고가 바뀐 것뿐 아니라 **새로 매칭된** variant 도 재계산 대상이다 —
+    // 매칭 직후엔 재고 변동(stock_events)이 없어서 첫 갈래만으로는 안 잡히고,
+    // 그러면 매칭해놓고도 Medusa 품절이 영영 반영되지 않는다.
     const rows = await dbService.db.execute<{ variant_id: string }>(sql`
       SELECT DISTINCT pm.variant_id
       FROM stock_events se
@@ -54,9 +57,14 @@ async function main() {
       JOIN product_matchings pm ON pm.id = l.product_matching_id
       WHERE se.reason = 'sellmate-sync'
         AND se.occurred_at >= now() - make_interval(hours => ${SINCE_HOURS})
+      UNION
+      SELECT DISTINCT pm.variant_id
+      FROM product_matchings pm
+      WHERE pm.status = 'matched'
+        AND pm.updated_at >= now() - make_interval(hours => ${SINCE_HOURS})
     `);
     const variantIds = rows.map((r) => r.variant_id);
-    console.log(`📊 최근 ${SINCE_HOURS}시간 sellmate-sync 로 재고 바뀐 매칭 variant: ${variantIds.length}개`);
+    console.log(`📊 최근 ${SINCE_HOURS}시간 재고변동 + 신규매칭 variant: ${variantIds.length}개`);
 
     if (variantIds.length === 0) {
       console.log('✅ 재계산할 variant 없음.');
