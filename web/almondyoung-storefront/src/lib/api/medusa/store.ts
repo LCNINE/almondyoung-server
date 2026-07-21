@@ -167,3 +167,41 @@ export const claimCoupon = async (promotionId: string): Promise<void> => {
     // 헤더는 있으나 토큰 만료된 401 도 UNAUTHORIZED digest 로 던져 토큰 복구 플로우를 태운다.
     .catch(throwCouponError)
 }
+
+export type CouponEventCoupon = {
+  promotion_id: string
+  code: string
+  discount: {
+    type: string
+    value: number
+    target_type: string
+    currency_code?: string
+  } | null
+  expires_at: string | null
+  state: { kind: "claimable" | "claimed" | "usable" | "blocked"; reason?: string }
+}
+
+export type CouponEventResult = {
+  event: {
+    slug: string
+    title: string
+    description: string | null
+    banner_image_url: string | null
+    starts_at: string | null
+    ends_at: string | null
+    active: boolean
+  }
+  coupons: CouponEventCoupon[]
+}
+
+/** 쿠폰 이벤트(배너용 쿠폰 묶음) 조회. 인증 선택 — 로그인 시 발급 상태 반영. */
+export const getCouponEvent = async (slug: string): Promise<CouponEventResult> => {
+  const headers = {
+    ...(await getAuthHeaders()),
+    "x-publishable-api-key": process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY!,
+  }
+  return sdk.client.fetch<CouponEventResult>(
+    `/store/events/${encodeURIComponent(slug)}`,
+    { method: "GET", headers, cache: "no-store" }
+  )
+}
