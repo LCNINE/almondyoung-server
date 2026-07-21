@@ -63,8 +63,17 @@ async function main() {
       WHERE pm.status = 'matched'
         AND pm.updated_at >= now() - make_interval(hours => ${SINCE_HOURS})
     `);
-    const variantIds = rows.map((r) => r.variant_id);
-    console.log(`📊 최근 ${SINCE_HOURS}시간 재고변동 + 신규매칭 variant: ${variantIds.length}개`);
+    // VARIANT_IDS 가 주어지면 그것만 (콤마 구분). 특정 건 복구용.
+    const explicit = (process.env.VARIANT_IDS ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const variantIds = explicit.length ? explicit : rows.map((r) => r.variant_id);
+    console.log(
+      explicit.length
+        ? `📊 VARIANT_IDS 지정: ${variantIds.length}개`
+        : `📊 최근 ${SINCE_HOURS}시간 재고변동 + 신규매칭 variant: ${variantIds.length}개`,
+    );
 
     if (variantIds.length === 0) {
       console.log('✅ 재계산할 variant 없음.');
@@ -77,11 +86,31 @@ async function main() {
       return;
     }
 
-    const results = await svc.recalculateAndPublishForVariants(variantIds);
-    const published = results.filter((r) => r.published).length;
-    const missing = results.filter((r) => r.projection === null).length;
+    // ⚠️ recalculateAndPublishForVariants 는 넘긴 목록 전체를 **트랜잭션 하나**로 처리한다
+    // (product-sellable-quantity.service.ts 의 dbService.run 이 루프를 통째로 감싼다).
+    // 원래 이벤트 하나당 variant 몇 개를 다루는 함수라, 수만 개를 그대로 넘기면
+    // ① 끝까지 가야 커밋 → 중간에 끊기면 전부 롤백 ② 진행률이 안 보임
+    // ③ live 에 장시간 트랜잭션이 걸려 vacuum·DDL 이 막힌다.
+    // 그래서 여기서 잘라 넘긴다 — 배치마다 독립 트랜잭션이라 끊겨도 그때까지가 남는다.
+    const CHUNK = Number(process.env.RECALC_CHUNK || 200);
+    let published = 0;
+    let missing = 0;
+    let done = 0;
+    const startedAt = Date.now();
+    for (let i = 0; i < variantIds.length; i += CHUNK) {
+      const batch = variantIds.slice(i, i + CHUNK);
+      const results = await svc.recalculateAndPublishForVariants(batch);
+      published += results.filter((r) => r.published).length;
+      missing += results.filter((r) => r.projection === null).length;
+      done += results.length;
+      const rate = done / Math.max(1, (Date.now() - startedAt) / 1000);
+      const etaMin = Math.round((variantIds.length - done) / Math.max(rate, 0.001) / 60);
+      console.log(
+        `  진행 ${done}/${variantIds.length} (발행 ${published}) — ${rate.toFixed(1)}건/초, 남은시간 약 ${etaMin}분`,
+      );
+    }
     console.log(
-      `\n✅ 재계산 완료: ${results.length}개 variant | 변경·발행 ${published}건 | 변동없음 ${results.length - published - missing}건 | variant 없음 ${missing}건`,
+      `\n✅ 재계산 완료: ${done}개 variant | 변경·발행 ${published}건 | 변동없음 ${done - published - missing}건 | variant 없음 ${missing}건`,
     );
     console.log('   (발행분은 live core outbox 디스패처가 Kafka 로 전송)');
   } finally {
