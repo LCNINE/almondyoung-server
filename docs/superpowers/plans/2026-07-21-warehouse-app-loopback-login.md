@@ -118,8 +118,8 @@ mod oauth_loopback;
 
 - [ ] **Step 3: Run the Rust tests to verify they fail**
 
-Run: `. "$HOME/.cargo/env" && cd native/warehouse-app/src-tauri && cargo test parse_callback 2>&1 | tail -20`
-Expected: FAIL — tests panic on `not implemented` / `unimplemented!()`.
+Run: `. "$HOME/.cargo/env" && cd native/warehouse-app/src-tauri && cargo test oauth_loopback 2>&1 | tail -20`
+Expected: FAIL — tests panic on `not implemented` / `unimplemented!()`. (Test names are `oauth_loopback::tests::*`; filter on `oauth_loopback`, not `parse_callback`.)
 
 - [ ] **Step 4: Implement the parser**
 
