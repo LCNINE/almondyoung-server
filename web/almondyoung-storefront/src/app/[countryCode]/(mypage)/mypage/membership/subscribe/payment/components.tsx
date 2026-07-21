@@ -234,14 +234,17 @@ export function MembershipForm({
           }
           router.push(`/${countryCode}/mypage/membership/subscribe/success`)
         } else {
-          // 신규 결제수단: 정기결제는 자동이체 수단 먼저 등록 필요, 한번만결제는 wallet-web으로 바로 이동
+          // 신규 결제수단: 정기결제는 자동이체 등록(wallet-web) 후 자동 가입, 한번만결제는 wallet-web으로 바로 이동
           if (billingMode === "recurring") {
-            toast.info(
-              "정기결제를 시작하려면 먼저 자동이체 수단을 등록해주세요."
-            )
-            router.push(
-              `/${countryCode}/mypage/membership/payment-method?redirect=subscribe&planId=${selectedPlanId}`
-            )
+            // 최초 정기결제 가입: 빈 결제수단 목록 페이지를 거치지 않고 자동이체 등록 화면(wallet-web)으로
+            // 바로 보낸다. 등록을 마치면 결제수단 페이지로 복귀(cardChanged=1)하면서 방금 등록한 수단으로
+            // 정기결제 가입이 자동 완료된다(payment-method/content.tsx 의 autoSubscribeOnLoad).
+            const returnUrl = `${window.location.origin}/${countryCode}/mypage/membership/payment-method?redirect=subscribe&planId=${selectedPlanId}`
+            const walletWebUrl =
+              process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
+            window.location.href = `${walletWebUrl}/billing-change?returnUrl=${encodeURIComponent(
+              returnUrl
+            )}`
           } else {
             const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
             const { intentId } = await createMembershipCheckoutIntent(
@@ -665,18 +668,28 @@ export function MembershipForm({
             <CardTitle>결제 확인</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* 요약 */}
+            {/* 요약 — 선택한 플랜 + 결제 방식(정기결제/1회 결제)을 그대로 반영한다 */}
             <div className="flex items-center justify-between">
               <span className="text-sm text-gray-600">
                 {hasPrice
-                  ? subscriptionType === "monthly"
-                    ? "월간 구독 · 1회 결제"
-                    : "연간 구독 · 1회 결제"
+                  ? `${
+                      subscriptionType === "monthly" ? "월간 구독" : "연간 구독"
+                    } · ${
+                      billingMode === "recurring"
+                        ? "정기결제 (매월 자동결제)"
+                        : "1회 결제"
+                    }`
                   : "구독 유형을 선택하세요"}
               </span>
               {hasPrice && (
                 <span className="text-lg font-bold">
                   {finalPrice.toLocaleString()}원
+                  {billingMode === "recurring" && (
+                    <span className="text-xs font-normal text-gray-500">
+                      {" "}
+                      / 월
+                    </span>
+                  )}
                 </span>
               )}
             </div>
@@ -692,18 +705,43 @@ export function MembershipForm({
                 결제 · 환불 안내
               </summary>
               <ul className="mt-2 list-disc space-y-1 pl-4">
-                <li>1회 결제로, 자동결제는 진행되지 않습니다.</li>
-                <li>
-                  결제 즉시 이용이 시작되며,{" "}
-                  <span className="font-medium text-gray-700">
-                    이용 시작 후 환불은 불가
-                  </span>
-                  합니다.
-                </li>
-                <li>
-                  서비스 장애 등 정상 이용이 어려운 경우 일부 환불이 검토될 수
-                  있습니다.
-                </li>
+                {billingMode === "recurring" ? (
+                  <>
+                    <li>
+                      등록하신 자동이체 수단으로 매월 자동 결제되며, 해지 전까지
+                      갱신됩니다.
+                    </li>
+                    <li>
+                      가입 즉시 이용이 시작되며,{" "}
+                      <span className="font-medium text-gray-700">
+                        이용 시작 후 환불은 불가
+                      </span>
+                      합니다.
+                    </li>
+                    <li>
+                      다음 결제일 전에 해지하면 이후 결제는 청구되지 않습니다.
+                    </li>
+                    <li>
+                      서비스 장애 등 정상 이용이 어려운 경우 일부 환불이 검토될
+                      수 있습니다.
+                    </li>
+                  </>
+                ) : (
+                  <>
+                    <li>1회 결제로, 자동결제는 진행되지 않습니다.</li>
+                    <li>
+                      결제 즉시 이용이 시작되며,{" "}
+                      <span className="font-medium text-gray-700">
+                        이용 시작 후 환불은 불가
+                      </span>
+                      합니다.
+                    </li>
+                    <li>
+                      서비스 장애 등 정상 이용이 어려운 경우 일부 환불이 검토될
+                      수 있습니다.
+                    </li>
+                  </>
+                )}
               </ul>
             </details>
 
@@ -717,6 +755,7 @@ export function MembershipForm({
                   onChange={field.onChange}
                   monthlyPrice={monthlyPlan.plan.price}
                   yearlyPrice={yearlyPlan.plan.price}
+                  billingMode={billingMode}
                 />
               )}
             />
@@ -808,6 +847,7 @@ interface AgreementRowProps {
   onChange: (checked: boolean) => void
   monthlyPrice: number
   yearlyPrice: number
+  billingMode: "recurring" | "one_time"
 }
 
 const AgreementRow: React.FC<AgreementRowProps> = ({
@@ -815,6 +855,7 @@ const AgreementRow: React.FC<AgreementRowProps> = ({
   onChange,
   monthlyPrice,
   yearlyPrice,
+  billingMode,
 }) => {
   const [isDialogOpen, setIsDialogOpen] = useState(false)
 
@@ -858,6 +899,7 @@ const AgreementRow: React.FC<AgreementRowProps> = ({
             <TermsAndConditions
               monthlyPrice={monthlyPrice}
               yearlyPrice={yearlyPrice}
+              billingMode={billingMode}
             />
           </div>
           <DialogFooter className="p-4">
@@ -880,19 +922,25 @@ const AgreementRow: React.FC<AgreementRowProps> = ({
 function TermsAndConditions({
   monthlyPrice,
   yearlyPrice,
+  billingMode,
 }: {
   monthlyPrice: number
   yearlyPrice: number
+  billingMode: "recurring" | "one_time"
 }) {
+  const isRecurring = billingMode === "recurring"
   return (
     <div className="space-y-6 text-sm leading-[19px] text-[#555d6d]">
       <div>
         <h1 className="mb-2 text-lg font-bold text-[#1a1c20]">
-          정기 자동 결제 및 이용 약관 동의서
+          {isRecurring
+            ? "정기 자동 결제 및 이용 약관 동의서"
+            : "멤버십 이용 및 환불 약관 동의서"}
         </h1>
         <p>
-          본 동의서는 귀하의 정기 결제 서비스 이용과 관련하여 법적 보호 및
-          명확한 이용 조건을 제공하기 위해 작성되었습니다.
+          {isRecurring
+            ? "본 동의서는 귀하의 정기 결제 서비스 이용과 관련하여 법적 보호 및 명확한 이용 조건을 제공하기 위해 작성되었습니다."
+            : "본 동의서는 귀하의 멤버십 1회 결제 이용과 관련하여 법적 보호 및 명확한 이용 조건을 제공하기 위해 작성되었습니다."}
         </p>
       </div>
 
@@ -901,11 +949,23 @@ function TermsAndConditions({
           결제 목적 및 내용
         </h2>
         <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
-          <li>
-            본 서비스는 매월 정기적인 금액 결제를 통해 서비스 구독 및 제공을
-            목적으로 합니다.
-          </li>
-          <li>자동이체(CMS)를 통해 진행됩니다.</li>
+          {isRecurring ? (
+            <>
+              <li>
+                본 서비스는 매월 정기적인 금액 결제를 통해 서비스 구독 및 제공을
+                목적으로 합니다.
+              </li>
+              <li>자동이체(CMS)를 통해 진행됩니다.</li>
+            </>
+          ) : (
+            <>
+              <li>
+                본 서비스는 1회 결제를 통해 선택하신 기간의 멤버십 구독 및 제공을
+                목적으로 합니다.
+              </li>
+              <li>결제는 신용·체크카드 등 선택하신 결제수단으로 진행됩니다.</li>
+            </>
+          )}
         </ul>
       </div>
 
@@ -914,14 +974,29 @@ function TermsAndConditions({
           결제 주기 및 금액
         </h2>
         <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
-          <li>
-            결제 주기: 매월 구독 기간이 하루 남았을 때 1회 (정기결제 기준)
-          </li>
-          <li>
-            결제 금액: 월간 정기결제 {monthlyPrice.toLocaleString()}원 / 연간
-            1회 결제 {yearlyPrice.toLocaleString()}원
-          </li>
-          <li>결제 금액은 동의 없이 변경되지 않습니다.</li>
+          {isRecurring ? (
+            <>
+              <li>
+                결제 주기: 매월 구독 기간이 하루 남았을 때 1회 (정기결제 기준)
+              </li>
+              <li>
+                결제 금액: 월간 정기결제 {monthlyPrice.toLocaleString()}원 / 연간
+                1회 결제 {yearlyPrice.toLocaleString()}원
+              </li>
+              <li>결제 금액은 동의 없이 변경되지 않습니다.</li>
+            </>
+          ) : (
+            <>
+              <li>
+                결제 주기: 가입 시 1회 결제 (자동 갱신 없음). 구독 만료 시 계속
+                이용하려면 재결제가 필요합니다.
+              </li>
+              <li>
+                결제 금액: 월간 구독 {monthlyPrice.toLocaleString()}원 / 연간
+                구독 {yearlyPrice.toLocaleString()}원
+              </li>
+            </>
+          )}
         </ul>
       </div>
 
@@ -930,41 +1005,67 @@ function TermsAndConditions({
           결제 정보 수집 항목
         </h2>
         <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
-          <li>결제자 정보: 이름, 연락처, 생년월일</li>
-          <li>
-            결제 수단 정보: 계좌번호, 은행명, 예금주명, 생년월일(개인) 또는
-            사업자번호(법인)
-          </li>
+          {isRecurring ? (
+            <>
+              <li>결제자 정보: 이름, 연락처, 생년월일</li>
+              <li>
+                결제 수단 정보: 계좌번호, 은행명, 예금주명, 생년월일(개인) 또는
+                사업자번호(법인)
+              </li>
+            </>
+          ) : (
+            <>
+              <li>결제자 정보: 이름, 연락처</li>
+              <li>
+                결제 수단 정보는 결제대행사(PG)를 통해 안전하게 처리되며 회사는
+                카드번호 등 민감정보를 보관하지 않습니다.
+              </li>
+            </>
+          )}
         </ul>
       </div>
 
-      <div>
-        <h2 className="mb-2 text-base font-bold text-[#1a1c20]">
-          동의 철회 및 변경
-        </h2>
-        <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
-          <li>
-            귀하는 언제든 동의를 철회하거나 결제 정보를 변경할 권리가 있습니다.
-          </li>
-          <li>
-            고객센터(1877-7184)로 연락 또는 아몬드영 홈페이지를 통해 해지가
-            가능합니다.
-          </li>
-          <li>
-            철회 이후 결제된 금액은 환불되지 않으며, 해당 월의 서비스는
-            정상적으로 유지됩니다.
-          </li>
-        </ul>
-      </div>
+      {isRecurring && (
+        <div>
+          <h2 className="mb-2 text-base font-bold text-[#1a1c20]">
+            동의 철회 및 변경
+          </h2>
+          <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
+            <li>
+              귀하는 언제든 동의를 철회하거나 결제 정보를 변경할 권리가 있습니다.
+            </li>
+            <li>
+              고객센터(1877-7184)로 연락 또는 아몬드영 홈페이지를 통해 해지가
+              가능합니다.
+            </li>
+            <li>
+              철회 이후 결제된 금액은 환불되지 않으며, 해당 월의 서비스는
+              정상적으로 유지됩니다.
+            </li>
+          </ul>
+        </div>
+      )}
 
       <div>
         <h2 className="mb-2 text-base font-bold text-[#1a1c20]">유의사항</h2>
         <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
-          <li>결제 실패 시 서비스 이용이 제한될 수 있습니다.</li>
-          <li>
-            사전 고지 없이 결제 수단이 유효하지 않을 경우, 결제 처리가 진행되지
-            않을 수 있습니다.
-          </li>
+          {isRecurring ? (
+            <>
+              <li>결제 실패 시 서비스 이용이 제한될 수 있습니다.</li>
+              <li>
+                사전 고지 없이 결제 수단이 유효하지 않을 경우, 결제 처리가
+                진행되지 않을 수 있습니다.
+              </li>
+            </>
+          ) : (
+            <>
+              <li>1회 결제 상품으로 자동 갱신·정기 출금이 발생하지 않습니다.</li>
+              <li>
+                구독 기간이 만료되면 멤버십 혜택이 종료되며, 계속 이용하려면 다시
+                결제해야 합니다.
+              </li>
+            </>
+          )}
         </ul>
       </div>
 
@@ -992,24 +1093,41 @@ function TermsAndConditions({
             서비스 장애, 기술적 오류 등으로 정상 이용이 어려운 경우, 이용하지
             못한 기간에 대해 예외적으로 환불이 검토될 수 있습니다.
           </li>
-          <li>
-            정기결제는 매월 자동 갱신되며, 회원이 해지를 요청하지 않는 한 갱신된
-            결제 건에 대해 환불이 제공되지 않습니다.
-          </li>
+          {isRecurring && (
+            <li>
+              정기결제는 매월 자동 갱신되며, 회원이 해지를 요청하지 않는 한 갱신된
+              결제 건에 대해 환불이 제공되지 않습니다.
+            </li>
+          )}
         </ul>
 
         <h3 className="mt-4 mb-1.5 text-sm font-bold text-[#1a1c20]">
-          제 3조 구독 해지 및 갱신
+          {isRecurring ? "제 3조 구독 해지 및 갱신" : "제 3조 구독 기간"}
         </h3>
         <ul className="list-disc space-y-1.5 pl-5 marker:text-[#b0b3ba]">
-          <li>
-            회원은 언제든지 구독을 해지할 수 있으며, 해지 요청은 다음 결제일
-            전에 완료되어야 합니다.
-          </li>
-          <li>
-            해지 요청이 이루어지지 않은 경우, 서비스는 자동으로 갱신되며 결제가
-            처리됩니다.
-          </li>
+          {isRecurring ? (
+            <>
+              <li>
+                회원은 언제든지 구독을 해지할 수 있으며, 해지 요청은 다음 결제일
+                전에 완료되어야 합니다.
+              </li>
+              <li>
+                해지 요청이 이루어지지 않은 경우, 서비스는 자동으로 갱신되며
+                결제가 처리됩니다.
+              </li>
+            </>
+          ) : (
+            <>
+              <li>
+                1회 결제 구독은 결제한 기간 동안만 유효하며 자동으로 갱신되지
+                않습니다.
+              </li>
+              <li>
+                구독 만료 후 계속 이용을 원하는 경우 새로 결제하여 이용할 수
+                있습니다.
+              </li>
+            </>
+          )}
         </ul>
 
         <h3 className="mt-4 mb-1.5 text-sm font-bold text-[#1a1c20]">
