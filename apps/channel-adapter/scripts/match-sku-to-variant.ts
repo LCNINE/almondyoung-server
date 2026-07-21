@@ -49,10 +49,15 @@ const onlyOne = <T>(xs: T[]): T | undefined => (xs.length === 1 ? xs[0] : undefi
 
 /**
  * 복합 옵션명을 조각 집합으로. 셀메이트는 `,`, Medusa 는 ` / ` 로 잇고 순서도 다르다
- * (`더마웨이브 s380,(증정)고주파크림` ↔ `(증정)고주파크림 / 더마웨이브 s380`).
+ * (`JC컬,0.15,13mm` ↔ `JC컬 / 0.15 / 13mm`, `더마웨이브 s380,(증정)고주파크림` ↔ 역순).
+ *
+ * 조각 자체는 건드리지 않는다 — 구분자와 순서만 흡수한다. `JC컬` ≠ `C컬`, `0.15` ≠ `0.20` 이 유지된다.
+ * `0.15mm`→`0.15`, `C컬`→`C` 같은 단위·접미 제거는 일부러 하지 않는다: 얻는 건 적고
+ * (`8mm`↔`8`, `대형`↔`대`) 오매칭이 곧 잘못된 품절로 이어진다.
  */
 const optSet = (s: string) =>
   [...new Set((s ?? '').split(/[,/]/).map(optKey).filter(Boolean))].sort().join('|');
+const sellmateOptSet = (s: string) => optSet(SELLMATE_SINGLE.has((s ?? '').trim()) ? MEDUSA_SINGLE : s);
 
 /**
  * 규칙 A 는 옵션명을 안 보고 1:1 이면 붙인다. 그런데 카페코드 하나에 창고/판매가
@@ -99,7 +104,7 @@ async function main() {
       const option = g(d, '옵션명');
       const row: SmRow = {
         barcode,
-        optKey: sellmateOptKey(option),
+        optKey: sellmateOptSet(option),
         name: g(d, '상품명'),
         option,
         stock: Number(onlyDigits(g(d, '현재재고')) || 0),
@@ -166,7 +171,7 @@ async function main() {
         } else {
           const smSameOpt = rows.filter((r) => r.optKey === sm.optKey);
           cand = smSameOpt.length === 1
-            ? onlyOne(med.filter((m) => optKey(m.opt_label ?? '') === sm.optKey))
+            ? onlyOne(med.filter((m) => optSet(m.opt_label ?? '') === sm.optKey))
             : undefined;
           matchedRule = 'B';
         }
