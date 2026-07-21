@@ -3,7 +3,7 @@
 import { CustomButton } from "@/components/shared/custom-buttons"
 import { useParams, useSearchParams } from "next/navigation"
 
-const CAFE24_MIGRATOR_BASE = "https://almondyoung.com/migrator/confirm.html"
+const CAFE24_MIGRATOR_BASE = "https://lcnine.cafe24.com/migrator/confirm.html"
 
 interface LegacyAccountMigrationCardProps {
   variant?: "signup" | "login"

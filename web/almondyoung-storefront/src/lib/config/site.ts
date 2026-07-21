@@ -1,7 +1,7 @@
 export const siteConfig = {
   appName: "아몬드영",
   appDescription: "세상의 모든 미용재료가 있는 곳 - 아몬드영",
-  domainName: "almondyoung-next.com", // 추후 almondyoung.com로 변경할 것
+  domainName: "almondyoung.com",
   supportEmail: "hello@lcnine.kr",
   auth: {
     loginUrl: "/login",

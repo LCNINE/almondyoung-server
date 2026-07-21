@@ -57,7 +57,7 @@ const ROW =
 
 const LEGACY_URL =
   process.env.NEXT_PUBLIC_LEGACY_MEMBERSHIP_HISTORY_URL ??
-  "https://almondyoung.com/myshop/mileage/historyList.html"
+  "https://lcnine.cafe24.com/myshop/mileage/historyList.html"
 
 export default function SubscriberSection({
   membershipData,

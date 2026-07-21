@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog"
 import { getCafe24LinkInfo } from "@/lib/api/users/cafe24"
 
-const CAFE24_MIGRATOR_BASE = "https://almondyoung.com/migrator/confirm.html"
+const CAFE24_MIGRATOR_BASE = "https://lcnine.cafe24.com/migrator/confirm.html"
 const STORAGE_KEY = "notice:cafe24-link:v1:hideUntil"
 
 interface Cafe24LinkPopupProps {

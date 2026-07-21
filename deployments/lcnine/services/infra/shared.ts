@@ -33,7 +33,7 @@ export function setup(opts?: { baseDomain?: string }) {
   });
 
   // ─── Domain helper ───
-  const baseDomain = opts?.baseDomain ?? (isDev ? 'lcnine-dev.com' : 'almondyoung-next.com');
+  const baseDomain = opts?.baseDomain ?? (isDev ? 'lcnine-dev.com' : 'almondyoung.com');
   const domain = (slug: string) => (isDev ? `${slug}.dev.${baseDomain}` : `${slug}.${baseDomain}`);
   const url = (slug: string) => `https://${domain(slug)}`;
 
@@ -44,7 +44,11 @@ export function setup(opts?: { baseDomain?: string }) {
 
   const alb = new sst.aws.Alb('SharedAlb', {
     vpc,
-    domain: { name: wildcardDomain },
+    // `*.almondyoung.com` 인증서의 ACM 검증 CNAME(`_xxx.almondyoung.com`)은 apex `almondyoung.com`
+    // 인증서(Storefront)와 **동일 레코드를 공유**한다 — ACM 은 도메인과 그 wildcard 에 같은 검증
+    // 레코드를 발급하기 때문. Storefront 는 `override:true`(upsert)로 그 레코드를 쓰므로, 이쪽도
+    // override 로 맞춰야 create 충돌(InvalidChangeBatch: "already exists")을 피한다.
+    domain: { name: wildcardDomain, dns: sst.aws.dns({ override: true }) },
     listeners: [
       { port: 80, protocol: 'http' },
       { port: 443, protocol: 'https' },

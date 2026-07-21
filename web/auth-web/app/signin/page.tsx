@@ -1,3 +1,4 @@
+import { ReloginNotice } from "@/components/relogin-notice";
 import { SignInForm } from "@/components/signin-form";
 import { sanitizeRedirectTo } from "@/lib/redirect";
 
@@ -25,6 +26,7 @@ export default async function SignInPage({
 
   return (
     <main className="mx-auto flex min-h-svh w-full max-w-md flex-col gap-6 px-6 py-12">
+      <ReloginNotice />
       <header className="flex flex-col gap-2">
         <h1 className="text-2xl font-semibold">
           {isReauth ? "비밀번호 재입력" : "로그인"}
