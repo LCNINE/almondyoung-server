@@ -6,6 +6,8 @@
   "couponGroupRestricted": "This coupon is only available to eligible customers.",
   "couponNotStarted": "This coupon is not yet available for claiming.",
   "couponNotAssigned": "This coupon is only available to customers it was issued to.",
+  "couponExhausted": "All coupons have been claimed.",
+  "usableNow": "Ready to use right away",
   "discountPercent": "{value}% off",
   "discountAmount": "{amount} KRW off",
   "expiresAt": "Valid until {date}",

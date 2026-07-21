@@ -1,11 +1,8 @@
-import Link from "next/link"
 import type { Metadata } from "next"
 import { getTranslations } from "next-intl/server"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { previewCouponCode } from "@/lib/api/medusa/store"
+import { previewCouponCode, type CouponPreviewResult } from "@/lib/api/medusa/store"
 import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
-import { CouponClaimButton } from "./_components/coupon-claim-button"
+import { CouponClaimButton, type CouponClaimState } from "./_components/coupon-claim-button"
 
 interface PageProps {
   params: Promise<{ countryCode: string }>
@@ -17,6 +14,37 @@ export async function generateMetadata(): Promise<Metadata> {
   return { title: t("pageTitle") }
 }
 
+// preview 결과 → 발급 버튼 상태. 쿠폰 정보(카드)를 그릴 수 있는 경우엔 카드 + 버튼을,
+// 쿠폰 정보 자체가 없는 종결 사유(존재하지 않음/비활성/기간 등)는 메시지만 보여준다.
+function resolveClaimState(
+  result: CouponPreviewResult,
+  countryCode: string,
+  code: string
+): CouponClaimState | null {
+  if (result.valid) {
+    if (result.is_assigned) return { kind: "claimed" }
+    if (result.claimable && result.promotion) {
+      return { kind: "claimable", promotionId: result.promotion.promotion_id_to_claim ?? result.promotion.id }
+    }
+    return { kind: "usable" }
+  }
+
+  switch (result.reason) {
+    case "LOGIN_REQUIRED": {
+      // code는 개별 인코딩 — &/# 포함 코드가 로그인 왕복 후 절단되지 않도록.
+      const target = `/${countryCode}/coupons/claim?code=${encodeURIComponent(code)}`
+      return { kind: "login", loginHref: `/${countryCode}/login?redirect_to=${encodeURIComponent(target)}` }
+    }
+    case "COUPON_GROUP_RESTRICTED":
+      return { kind: "blocked", reason: "group_restricted" }
+    case "COUPON_NOT_ASSIGNED":
+      return { kind: "blocked", reason: "not_assigned" }
+    default:
+      // 쿠폰 카드 정보가 없는 종결 사유 → 메시지 화면
+      return null
+  }
+}
+
 export default async function CouponClaimPage({ params, searchParams }: PageProps) {
   const { countryCode } = await params
   const { code } = await searchParams
@@ -26,43 +54,29 @@ export default async function CouponClaimPage({ params, searchParams }: PageProp
     return <ErrorState message={t("couponNotFound")} />
   }
 
-  let result
+  let result: CouponPreviewResult
   try {
     result = await previewCouponCode(code)
   } catch {
     return <ErrorState message={t("couponNotFound")} />
   }
 
-  const { valid, reason, claimable, is_assigned, promotion } = result
+  const state = resolveClaimState(result, countryCode, code)
 
-  if (!valid || !promotion) {
-    if (reason === "LOGIN_REQUIRED") {
-      // code는 개별 인코딩 — &/# 포함 코드가 로그인 왕복 후 절단되지 않도록.
-      const loginHref = `/${countryCode}/login?redirect_to=${encodeURIComponent(`/${countryCode}/coupons/claim?code=${encodeURIComponent(code)}`)}`
-      return (
-        <PageShell>
-          <div className="text-center space-y-4">
-            <p className="text-sm text-muted-foreground">{t("hint")}</p>
-            <a href={loginHref}>
-              <Button className="w-full" size="lg">{t("loginToClaim")}</Button>
-            </a>
-          </div>
-        </PageShell>
-      )
-    }
-
+  // 카드로 보여줄 쿠폰 정보가 없으면 사유 메시지만
+  if (!state || !result.promotion) {
     const message =
-      reason === "COUPON_EXPIRED" ? t("couponExpired")
-      : reason === "COUPON_INACTIVE" ? t("couponInactive")
-      : reason === "COUPON_NOT_STARTED" ? t("couponNotStarted")
-      : reason === "COUPON_GROUP_RESTRICTED" ? t("couponGroupRestricted")
-      : reason === "COUPON_NOT_ASSIGNED" ? t("couponNotAssigned")
+      result.reason === "COUPON_EXPIRED" ? t("couponExpired")
+      : result.reason === "COUPON_INACTIVE" ? t("couponInactive")
+      : result.reason === "COUPON_NOT_STARTED" ? t("couponNotStarted")
+      : result.reason === "COUPON_GROUP_RESTRICTED" ? t("couponGroupRestricted")
+      : result.reason === "COUPON_NOT_ASSIGNED" ? t("couponNotAssigned")
       : t("couponNotFound")
-
     return <ErrorState message={message} />
   }
 
-  const { discount, expires_at, promotion_id_to_claim } = promotion
+  const { promotion } = result
+  const { discount, expires_at } = promotion
 
   const discountLabel = discount
     ? discount.type === "percentage"
@@ -73,8 +87,6 @@ export default async function CouponClaimPage({ params, searchParams }: PageProp
   const expiryLabel = expires_at
     ? t("expiresAt", { date: formatDate(expires_at, DATE_FORMATS.KO_DOT) })
     : t("unlimited")
-
-  const promotionIdForClaim = promotion_id_to_claim ?? promotion.id
 
   return (
     <PageShell>
@@ -90,20 +102,7 @@ export default async function CouponClaimPage({ params, searchParams }: PageProp
       </div>
 
       <div className="space-y-3">
-        {is_assigned ? (
-          <>
-            <div className="flex justify-center">
-              <Badge variant="secondary" className="px-4 py-1.5 text-sm">
-                {t("alreadyClaimed")}
-              </Badge>
-            </div>
-            <Link href={`/${countryCode}/mypage/coupons`}>
-              <Button variant="outline" className="w-full">{t("goToCoupons")}</Button>
-            </Link>
-          </>
-        ) : claimable ? (
-          <CouponClaimButton promotionId={promotionIdForClaim} countryCode={countryCode} />
-        ) : null}
+        <CouponClaimButton countryCode={countryCode} state={state} />
       </div>
 
       <p className="text-xs text-center text-muted-foreground">{t("hint")}</p>

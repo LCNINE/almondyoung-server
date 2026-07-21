@@ -105,6 +105,17 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     return true;
   };
 
+  // 최소 주문 금액(subtotal gte rule) 추출 — 마이페이지 "최소주문금액 낮은순" 정렬용.
+  const minOrderAmount = (promo: any): number | null => {
+    const rule = (promo.rules ?? []).find(
+      (r: any) => r.attribute === 'subtotal' && r.operator === 'gte',
+    );
+    if (!rule) return null;
+    const raw = rule.values?.[0];
+    const val = Number(typeof raw === 'string' ? raw : raw?.value);
+    return Number.isFinite(val) ? val : null;
+  };
+
   const formatPromotion = (promo: any, isAssigned: boolean) => ({
     id: promo.id,
     code: promo.code,
@@ -113,6 +124,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     is_automatic: promo.is_automatic,
     is_assigned: isAssigned,
     metadata: promo.metadata ?? null,
+    min_order_amount: minOrderAmount(promo),
     visibility: visibilityById.get(promo.id) ?? 'public',
     application_method: promo.application_method
       ? {
@@ -220,6 +232,21 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     .slice(0, CLAIMABLE_LIMIT)
     .map((promo: any) => formatPromotion(promo, false));
 
+  // 만료 쿠폰: 고객에게 발급됐던(assigned) 쿠폰 중 캠페인 종료일이 지난 것, 최근 30일 이내.
+  // 최근 만료순, 최대 50개.
+  const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+  const expiredCutoff = new Date(now.getTime() - THIRTY_DAYS_MS);
+  const expiredPromotions = (customer?.promotions ?? [])
+    .filter((promo: any) => {
+      if (promo.is_automatic) return false;
+      const endsAt = promo.campaign?.ends_at ? new Date(promo.campaign.ends_at) : null;
+      if (!endsAt) return false;
+      return endsAt < now && endsAt >= expiredCutoff;
+    })
+    .sort((a: any, b: any) => new Date(b.campaign.ends_at).getTime() - new Date(a.campaign.ends_at).getTime())
+    .slice(0, 50)
+    .map((promo: any) => formatPromotion(promo, true));
+
   // 합치기: 직접 발급된 것 먼저, 그 다음 일반 프로모션
   const combinedPromotions = [...assignedPromotions, ...publicPromotions];
 
@@ -229,6 +256,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
   return res.status(200).json({
     promotions: paginatedPromotions,
     claimable_promotions: claimablePromotions,
+    expired_promotions: expiredPromotions,
     count: combinedPromotions.length,
     offset,
     limit,
