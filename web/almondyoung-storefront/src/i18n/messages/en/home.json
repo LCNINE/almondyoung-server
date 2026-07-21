@@ -27,6 +27,10 @@
     "emptyDescription": "No products are registered in this category.",
     "interestTitleSuffix": "Best"
   },
+  "showcase": {
+    "canva": "Canva Design",
+    "class": "Classes"
+  },
   "cafe24Link": {
     "mobileText": "Connect your existing Almondyoung account",
     "desktopTitle": "Link your Cafe24 account for more benefits",

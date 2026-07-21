@@ -27,6 +27,10 @@
     "emptyDescription": "このカテゴリには登録された商品がありません。",
     "interestTitleSuffix": "ベスト"
   },
+  "showcase": {
+    "canva": "Canvaデザイン",
+    "class": "クラス"
+  },
   "cafe24Link": {
     "mobileText": "旧アーモンドヤングアカウントを連携しましょう",
     "desktopTitle": "Cafe24アカウントを連携してより多くの特典を",

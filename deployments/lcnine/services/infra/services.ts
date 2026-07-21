@@ -510,12 +510,7 @@ export function setup(infra: SharedInfra) {
         'http://localhost:8001',
       ].join(','),
       ADMIN_CORS: [url('medusa'), 'http://localhost:9000'].join(','),
-      AUTH_CORS: [
-        url('medusa'),
-        storefrontUrl,
-        url('www'),
-        'http://localhost:8001',
-      ].join(','),
+      AUTH_CORS: [url('medusa'), storefrontUrl, url('www'), 'http://localhost:8001'].join(','),
       // Internal service URLs
       FRONTEND_URL: storefrontUrl,
       USER_SERVICE_URL: idpUserServiceUrl,
@@ -625,9 +620,7 @@ export function setup(infra: SharedInfra) {
   // dev(.dev.lcnine-dev.com)엔 정부기관이 올 일이 없어 !isDev 로만 켠다.
   // 표준 로깅은 CloudFront 가 ACL 로 객체를 전달하므로 버킷에 ACL 이 켜져 있어야 한다
   // (sst.aws.Bucket 은 BucketOwnerEnforced=ACL off) → raw BucketV2 + BucketOwnerPreferred.
-  let storefrontCdnTransform:
-    | ((cdnArgs: Record<string, any>) => void)
-    | undefined;
+  let storefrontCdnTransform: ((cdnArgs: Record<string, any>) => void) | undefined;
   if (!isDev) {
     const logBucket = new aws.s3.BucketV2('StorefrontAccessLogs', { forceDestroy: true });
     new aws.s3.BucketOwnershipControls('StorefrontAccessLogsOwnership', {
@@ -761,4 +754,30 @@ export function setup(infra: SharedInfra) {
       GRAFANA_OTLP_TOKEN: grafanaCloudWebOtlpToken.value,
     },
   });
+
+  // ─── Railway 커스텀 도메인 (link.almondyoung.com) ───
+  // SST 가 만드는 자원이 아니라 Railway 에 떠 있는 외부 서비스를 가리키는 DNS 만 여기서 소유한다.
+  // Railway 프로젝트를 지우면 이 블록도 같이 지울 것.
+  if (!isDev) {
+    const zoneId = aws.route53.getZoneOutput({ name: baseDomain, privateZone: false }).zoneId;
+
+    new aws.route53.Record('RailwayLinkCname', {
+      zoneId,
+      name: `link.${baseDomain}`,
+      type: 'CNAME',
+      ttl: 300,
+      records: ['vuip635e.up.railway.app'],
+      allowOverwrite: true,
+    });
+
+    // Railway 도메인 소유권 검증용. 검증이 끝나도 Railway 가 재확인하므로 지우지 말 것.
+    new aws.route53.Record('RailwayLinkVerifyTxt', {
+      zoneId,
+      name: `_railway-verify.link.${baseDomain}`,
+      type: 'TXT',
+      ttl: 300,
+      records: ['railway-verify=12d119033fd5d4cc58f221860d3ef098b307412ee63eb4c6c47d0a5842a77d22'],
+      allowOverwrite: true,
+    });
+  }
 }
