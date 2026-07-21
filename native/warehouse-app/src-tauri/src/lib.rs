@@ -8,6 +8,11 @@ pub fn run() {
       oauth_loopback::oauth_loopback_start,
       oauth_loopback::oauth_loopback_wait
     ])
+    .plugin(tauri_plugin_stronghold::Builder::new(|pass| todo!()).build())
+    .plugin(tauri_plugin_opener::init())
+    .plugin(tauri_plugin_deep_link::init())
+    .plugin(tauri_plugin_http::init())
+    .plugin(tauri_plugin_os::init())
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
