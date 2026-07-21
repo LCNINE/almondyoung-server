@@ -1,27 +1,13 @@
-import { useState } from 'react';
+import { Link } from '@tanstack/react-router';
 import { Button } from '../../core/design/Button';
-import { DiagnosticsScreen } from '../shared/DiagnosticsScreen';
 
 export function HandheldHome() {
-  const [showDiagnostics, setShowDiagnostics] = useState(false);
-
-  if (showDiagnostics) {
-    return (
-      <div data-testid="handheld-home">
-        <Button className="mb-4" onClick={() => setShowDiagnostics(false)}>
-          Back
-        </Button>
-        <DiagnosticsScreen />
-      </div>
-    );
-  }
-
   return (
-    <div data-testid="handheld-home">
-      Handheld profile
-      <Button className="mt-4" onClick={() => setShowDiagnostics(true)}>
-        Diagnostics
-      </Button>
+    <div data-testid="handheld-home" className="space-y-4">
+      <p>Handheld profile</p>
+      <Link to="/diagnostics">
+        <Button>Diagnostics</Button>
+      </Link>
     </div>
   );
 }
