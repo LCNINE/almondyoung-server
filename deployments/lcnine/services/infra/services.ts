@@ -779,5 +779,40 @@ export function setup(infra: SharedInfra) {
       records: ['railway-verify=12d119033fd5d4cc58f221860d3ef098b307412ee63eb4c6c47d0a5842a77d22'],
       allowOverwrite: true,
     });
+
+    // ─── Resend 발신 도메인 (mail.almondyoung.com) ───
+    // notification 서비스가 RESEND_FROM=noreply@mail.<baseDomain> 로 발송한다 (위 notificationEnv).
+    // 이 3개 레코드가 없으면 Resend 가 도메인 검증을 잃고 발송이 전부 거부되므로 코드와 함께 소유한다.
+    // apex(almondyoung.com)용 Resend 레코드는 별도 수동 등록분이라 여기 없음 — 정리 시 같이 옮길 것.
+    // DKIM 공개키는 Resend 가 도메인별로 발급한 고유값이라 도메인을 재생성하면 바뀐다.
+    new aws.route53.Record('ResendMailDkim', {
+      zoneId,
+      name: `resend._domainkey.mail.${baseDomain}`,
+      type: 'TXT',
+      ttl: 300,
+      records: [
+        'p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDVYvocLaRfOxlYYKHRsPV5j8L8U0Bs0gz7DfkxAhVXUy58NKX1D5JxO4HFUkC5YIvMxFOeAGD9kK0dYN9WREUTkngic94ddqL2y09F+8bXxWJveqyy4SxfvRrSPaboeNEFH4wHndddIc28MpT2GXVACtlFfRtLuWHe0yuk8FYCTQIDAQAB',
+      ],
+      allowOverwrite: true,
+    });
+
+    // 반송/피드백 수신용. feedback-smtp 호스트는 Resend 도메인의 리전에 묶인다 (현재 ap-northeast-1).
+    new aws.route53.Record('ResendMailMx', {
+      zoneId,
+      name: `send.mail.${baseDomain}`,
+      type: 'MX',
+      ttl: 300,
+      records: ['10 feedback-smtp.ap-northeast-1.amazonses.com'],
+      allowOverwrite: true,
+    });
+
+    new aws.route53.Record('ResendMailSpf', {
+      zoneId,
+      name: `send.mail.${baseDomain}`,
+      type: 'TXT',
+      ttl: 300,
+      records: ['v=spf1 include:amazonses.com ~all'],
+      allowOverwrite: true,
+    });
   }
 }
