@@ -27,6 +27,8 @@ export type CouponClaimState =
 interface CouponClaimButtonProps {
   countryCode: string
   state: CouponClaimState
+  // compact: 이벤트 목록 등 좁은 셀에서 상태 라벨만 간결히 노출(내 쿠폰함 링크 생략)
+  compact?: boolean
 }
 
 // 발급 불가 사유 → 안내 메시지 키. 기존 reason 문구를 그대로 토스트로 재사용한다.
@@ -49,7 +51,7 @@ async function tryRestoreTokenAndRedirect(countryCode: string): Promise<void> {
   window.location.href = `/${countryCode}/login?redirect_to=${redirectTo}`
 }
 
-export function CouponClaimButton({ countryCode, state }: CouponClaimButtonProps) {
+export function CouponClaimButton({ countryCode, state, compact = false }: CouponClaimButtonProps) {
   const t = useTranslations("couponClaim")
   const [isPending, startTransition] = useTransition()
   const [claimed, setClaimed] = useState(false)
@@ -60,8 +62,15 @@ export function CouponClaimButton({ countryCode, state }: CouponClaimButtonProps
     </Link>
   )
 
+  const statusPill = (label: string) => (
+    <span className="inline-flex w-full items-center justify-center rounded-full bg-secondary px-3 py-1.5 text-xs text-muted-foreground">
+      {label}
+    </span>
+  )
+
   // 발급 완료 (이번 클릭으로 방금 발급받음)
   if (claimed) {
+    if (compact) return statusPill(t("claimed"))
     return (
       <div className="space-y-3">
         <div className="flex flex-col items-center gap-2 py-2">
@@ -100,6 +109,7 @@ export function CouponClaimButton({ countryCode, state }: CouponClaimButtonProps
     }
 
     case "claimed":
+      if (compact) return statusPill(t("alreadyClaimed"))
       return (
         <div className="space-y-3">
           <div className="flex justify-center">
@@ -112,6 +122,7 @@ export function CouponClaimButton({ countryCode, state }: CouponClaimButtonProps
       )
 
     case "usable":
+      if (compact) return statusPill(t("usableNow"))
       return (
         <div className="space-y-3">
           <div className="flex justify-center">
