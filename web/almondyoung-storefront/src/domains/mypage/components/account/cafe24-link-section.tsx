@@ -45,7 +45,7 @@ import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 import { toast } from "sonner"
 
 const CAFE24_MIGRATOR_BASE =
-  "https://almondyoung.com/migrator/confirm.html"
+  "https://lcnine.cafe24.com/migrator/confirm.html"
 
 const KEY_I18N: Record<Cafe24MigrationKey, string> = {
   email: "email",

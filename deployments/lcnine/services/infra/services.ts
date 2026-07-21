@@ -504,17 +504,16 @@ export function setup(infra: SharedInfra) {
       MEDUSA_API_KEY: medusaApiKey.value,
       // CORS
       STORE_CORS: [
+        // 컷오버 후 storefront 정식 origin = apex(almondyoung.com). www 는 apex 로 301.
         storefrontUrl,
-        'https://almondyoung.com',
-        'https://www.almondyoung.com',
+        url('www'),
         'http://localhost:8001',
       ].join(','),
       ADMIN_CORS: [url('medusa'), 'http://localhost:9000'].join(','),
       AUTH_CORS: [
         url('medusa'),
         storefrontUrl,
-        'https://almondyoung.com',
-        'https://www.almondyoung.com',
+        url('www'),
         'http://localhost:8001',
       ].join(','),
       // Internal service URLs
@@ -662,14 +661,21 @@ export function setup(infra: SharedInfra) {
     // arm64(Graviton) Lambda — server 함수 ~20% 저렴. 문제 시 이 줄만 지우면 x86 복귀.
     // (image optimizer 는 SST 가 항상 arm64 로 빌드.)
     server: { architecture: 'arm64' },
-    // apex(almondyoung-next.com)를 정식 도메인으로, www 는 거기로 301 리다이렉트.
+    // apex(almondyoung.com)를 정식 도메인으로, www 는 거기로 301 리다이렉트.
     // (site.ts canonical + sitemap 이 apex 기준이라 일치시킴.) dev 는 baseDomain 이
     // lcnine-dev.com 공용 루트라 점유하면 안 되므로 그대로 www 만 쓴다.
     domain: isDev
       ? { name: domain('www') }
       : {
           name: baseDomain,
-          redirects: [domain('www')],
+          redirects: [
+            domain('www'), // www.almondyoung.com → apex
+            // 옛 도메인 흡수: almondyoung-next.com / www → almondyoung.com 로 301.
+            // SST 가 리다이렉트용 ACM 인증서 + S3/CloudFront + Route53 레코드를
+            // almondyoung-next.com zone 에 자동 생성한다 (경로 보존, 쿼리스트링 드롭).
+            'almondyoung-next.com',
+            'www.almondyoung-next.com',
+          ],
           // 기존 hosted zone 에 ACM 검증 CNAME(www 인증서 잔재 등)이 이미 있어
           // Route53 record 생성이 충돌하므로 덮어쓰기 허용.
           dns: sst.aws.dns({ override: true }),
@@ -706,8 +712,8 @@ export function setup(infra: SharedInfra) {
       PARENT_COOKIE_SECURE: 'true',
       PARENT_COOKIE_SAMESITE: 'lax',
       // 레거시 cafe24 마이페이지 redirect.
-      NEXT_PUBLIC_LEGACY_ORDER_LIST_URL: 'https://almondyoung.com/myshop/order/list.html',
-      NEXT_PUBLIC_LEGACY_MEMBERSHIP_HISTORY_URL: 'https://almondyoung.com/myshop/mileage/historyList.html',
+      NEXT_PUBLIC_LEGACY_ORDER_LIST_URL: 'https://lcnine.cafe24.com/myshop/order/list.html',
+      NEXT_PUBLIC_LEGACY_MEMBERSHIP_HISTORY_URL: 'https://lcnine.cafe24.com/myshop/mileage/historyList.html',
       // OTEL: Lambda(VPC 밖)라 Alloy 우회, Grafana Cloud OTLP 게이트웨이로 직접 전송.
       OTEL_SERVICE_NAME: 'almondyoung-storefront',
       OTEL_EXPORTER_OTLP_ENDPOINT: grafanaCloudOtlpEndpoint.value,
@@ -736,8 +742,6 @@ export function setup(infra: SharedInfra) {
       WALLET_ALLOWED_RETURN_ORIGINS: [
         url('www'),
         ...(isDev ? [] : [`https://${baseDomain}`]),
-        'https://almondyoung.com',
-        'https://www.almondyoung.com',
         'http://localhost:8001',
       ].join(','),
       // OIDC (wallet-web RP). client_id 는 시더와 동일하게 'wallet-web'.
