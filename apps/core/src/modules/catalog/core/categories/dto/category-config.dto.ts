@@ -93,7 +93,7 @@ export class UpdateSeoConfigDto {
   @ApiProperty({
     description: '브라우저 제목',
     required: false,
-    example: '뷰티 제품 - 알몬드영',
+    example: '뷰티 제품 - 아몬드영',
   })
   @IsOptional()
   @IsString()
@@ -102,7 +102,7 @@ export class UpdateSeoConfigDto {
   @ApiProperty({
     description: 'Meta 작성자',
     required: false,
-    example: '알몬드영',
+    example: '아몬드영',
   })
   @IsOptional()
   @IsString()

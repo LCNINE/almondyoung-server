@@ -671,4 +671,47 @@ describe('MedusaOrderProvider', () => {
     expect(result.failures).toHaveLength(0);
     expect(result.lifecycleEvents ?? []).toHaveLength(0);
   });
+
+  // 주문 확인 메일의 수신자는 이 필드 하나에만 의존한다. notification 서비스에는
+  // customerId → email 조회 경로가 없어서, 여기서 빠지면 메일이 조용히 전부 실패한다.
+  it('carries the Medusa order email into the OrderCreated payload', async () => {
+    const provider = new MedusaOrderProvider({
+      listOrders: jest.fn().mockResolvedValue([
+        {
+          id: 'order_email_1',
+          payment_status: 'authorized',
+          email: 'buyer@example.com',
+          currency_code: 'KRW',
+          total: 1000,
+          subtotal: 1000,
+          shipping_total: 0,
+          discount_total: 0,
+          created_at: '2026-05-26T01:00:00.000Z',
+          updated_at: '2026-05-26T01:05:00.000Z',
+          items: [
+            {
+              id: 'item_1',
+              title: 'Product',
+              quantity: 1,
+              unit_price: 1000,
+              variant_id: 'variant_1',
+              variant: {
+                metadata: { pimVariantId: 'pim_variant_1' },
+                product: { metadata: { pimMasterId: 'master_1', pimVersionId: 'version_1' } },
+              },
+            },
+          ],
+          shipping_address: { first_name: 'Jane', last_name: 'Kim' },
+        },
+      ]),
+    } as any);
+
+    const result = await provider.fetchOrders(null);
+
+    expect(result.orders[0].createPayload.email).toBe('buyer@example.com');
+    // 계약(zod)도 통과해야 컨슈머까지 살아서 도착한다.
+    expect(ORDER_STREAM.events.OrderCreated.schema!.parse(result.orders[0].createPayload)).toMatchObject({
+      email: 'buyer@example.com',
+    });
+  });
 });

@@ -151,6 +151,7 @@ export class MedusaOrderProvider implements ReplayableChannelOrderProvider {
       externalOrderId: order.id,
       salesChannel: 'medusa',
       customerId,
+      ...(order.email ? { email: order.email } : {}),
       ...(walletIntentId ? { walletIntentId } : {}),
       items,
       totalAmount: order.total ?? 0,

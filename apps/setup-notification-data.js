@@ -18,10 +18,10 @@ const templates = [
     contents: {
       EMAIL: {
         ko: {
-          subject: '[알몬드영] 이메일 인증을 완료해주세요',
+          subject: '[아몬드영] 이메일 인증을 완료해주세요',
           body: `안녕하세요 {{name}}님,
 
-알몬드영 회원가입을 환영합니다!
+아몬드영 회원가입을 환영합니다!
 
 아래 링크를 클릭하여 이메일 인증을 완료해주세요:
 {{callbackUrl}}
@@ -29,7 +29,7 @@ const templates = [
 인증 후 {{redirectTo}}로 이동됩니다.
 
 감사합니다.
-알몬드영 팀`
+아몬드영 팀`
         }
       }
     },
@@ -80,7 +80,7 @@ const templates = [
     contents: {
       EMAIL: {
         ko: {
-          subject: '[알몬드영] 아이디 찾기 결과',
+          subject: '[아몬드영] 아이디 찾기 결과',
           body: `안녕하세요,
 
 요청하신 아이디 찾기 결과를 안내드립니다.
@@ -88,7 +88,7 @@ const templates = [
 등록된 아이디: {{loginId}}
 
 감사합니다.
-알몬드영 팀`
+아몬드영 팀`
         }
       }
     },
@@ -103,7 +103,7 @@ const templates = [
     contents: {
       SMS: {
         ko: {
-          body: `[알몬드영] 아이디 찾기 결과\n등록된 아이디: {{loginId}}`
+          body: `[아몬드영] 아이디 찾기 결과\n등록된 아이디: {{loginId}}`
         }
       }
     },
@@ -118,7 +118,7 @@ const templates = [
     contents: {
       EMAIL: {
         ko: {
-          subject: '[알몬드영] 비밀번호 재설정',
+          subject: '[아몬드영] 비밀번호 재설정',
           body: `안녕하세요,
 
 비밀번호 재설정을 위한 링크를 안내드립니다.
@@ -127,7 +127,7 @@ const templates = [
 {{resetUrl}}
 
 감사합니다.
-알몬드영 팀`
+아몬드영 팀`
         }
       }
     },
@@ -142,7 +142,7 @@ const templates = [
     contents: {
       SMS: {
         ko: {
-          body: `[알몬드영] 비밀번호 재설정이 요청되었습니다.\n본인 인증 완료 후 새 비밀번호를 설정해주세요.`
+          body: `[아몬드영] 비밀번호 재설정이 요청되었습니다.\n본인 인증 완료 후 새 비밀번호를 설정해주세요.`
         }
       }
     },
@@ -155,7 +155,7 @@ const templates = [
     contents: {
       EMAIL: {
         ko: {
-          subject: '[알몬드영] 주문이 접수되었습니다',
+          subject: '[아몬드영] 주문이 접수되었습니다',
           body: `안녕하세요 {{name}}님,
 
 주문이 성공적으로 접수되었습니다.
@@ -164,7 +164,7 @@ const templates = [
 주문금액: {{total}}원
 
 감사합니다.
-알몬드영 팀`
+아몬드영 팀`
         }
       }
     },
@@ -181,7 +181,7 @@ const templates = [
     contents: {
       EMAIL: {
         ko: {
-          subject: '[알몬드영] 결제가 완료되었습니다',
+          subject: '[아몬드영] 결제가 완료되었습니다',
           body: `안녕하세요 {{name}}님,
 
 결제가 성공적으로 완료되었습니다.
@@ -190,7 +190,7 @@ const templates = [
 결제금액: {{amount}}원
 
 감사합니다.
-알몬드영 팀`
+아몬드영 팀`
         }
       }
     },
@@ -207,7 +207,7 @@ const templates = [
     contents: {
       EMAIL: {
         ko: {
-          subject: '[알몬드영] 특별 할인 이벤트!',
+          subject: '[아몬드영] 특별 할인 이벤트!',
           body: `안녕하세요 {{name}}님,
 
 특별 할인 이벤트를 진행합니다!
@@ -219,7 +219,7 @@ const templates = [
 {{promotionUrl}}
 
 감사합니다.
-알몬드영 팀`
+아몬드영 팀`
         }
       }
     },
