@@ -64,6 +64,7 @@ export interface OrderCreatedPayload {
    * 비-로그인 외부 채널(Naver/Coupang) 또는 미링크 고객은 null. (core sales_orders.customer_id 는 nullable uuid)
    */
   customerId: string | null;
+  email?: string;
   /** almond-payment(Wallet) 결제 인텐트 ID. Medusa 주문에만 존재; 다른 채널은 undefined. */
   walletIntentId?: string;
 
@@ -223,6 +224,7 @@ const OrderCreatedSchema = z.object({
   externalOrderId: z.string().optional(),
   salesChannel: SalesChannelSchema,
   customerId: z.string().min(1).nullable(),
+  email: z.string().email().optional(),
   walletIntentId: z.string().optional(),
   items: z.array(OrderItemSchema),
   totalAmount: z.number().nonnegative(),

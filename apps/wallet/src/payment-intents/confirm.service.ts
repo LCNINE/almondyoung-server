@@ -535,6 +535,23 @@ export class ConfirmService {
                 status: 'AWAITING_DEPOSIT',
                 payableAmount: phase1.payableAmount,
                 currency: phase1.currency,
+                // notification 이 입금 안내 메일을 보내려면 계좌/기한/수신자가 이벤트에 실려야 한다.
+                // (notification 에는 intent 조회 경로가 없다 — 이벤트가 유일한 정보원)
+                // email 키가 흐름마다 다르다: 멤버십은 metadata.email, 상품주문은 metadata.customerEmail.
+                extra: {
+                  ...(result.nextAction?.type === 'BANK_TRANSFER_PENDING'
+                    ? {
+                        bankName: result.nextAction.bankName,
+                        accountNumber: result.nextAction.accountNumber,
+                        accountHolder: result.nextAction.accountHolder,
+                        dueDate: result.nextAction.dueDate,
+                      }
+                    : {}),
+                  ...(this.resolveNotifyEmail(phase1.metadata)
+                    ? { email: this.resolveNotifyEmail(phase1.metadata) }
+                    : {}),
+                  ...(phase1.metadata?.customerName ? { customerName: phase1.metadata.customerName } : {}),
+                },
               }),
             },
           });
@@ -696,6 +713,16 @@ export class ConfirmService {
     const raw = Number(process.env.WALLET_BANK_TRANSFER_DEPOSIT_WINDOW_HOURS);
     const hours = Number.isFinite(raw) && raw > 0 ? raw : ConfirmService.DEFAULT_DEPOSIT_WINDOW_HOURS;
     return hours * 60 * 60_000;
+  }
+
+  /**
+   * 알림 수신자 이메일. 결제 생성 경로마다 metadata 키가 달라 둘 다 본다
+   * (멤버십=email, 상품주문=customerEmail). 새 경로가 세 번째 이름을 쓰기 시작하면
+   * 여기만 늘리면 되지만, 근본적으로는 생성 시점에 하나로 정규화하는 편이 낫다.
+   */
+  private resolveNotifyEmail(metadata?: Record<string, unknown>): string | undefined {
+    const email = metadata?.email ?? metadata?.customerEmail;
+    return typeof email === 'string' && email.includes('@') ? email : undefined;
   }
 
   private async stampDepositExpiry(intentId: string): Promise<void> {

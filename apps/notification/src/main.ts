@@ -45,7 +45,7 @@ async function bootstrap() {
   // Swagger 설정
   const config = new DocumentBuilder()
     .setTitle('Notification Service API')
-    .setDescription('알몬드영 알림 서비스 API 문서')
+    .setDescription('아몬드영 알림 서비스 API 문서')
     .setVersion('1.0')
     .addTag('templates', '템플릿 관리')
     .addTag('notifications', '알림 발송')

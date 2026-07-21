@@ -8,6 +8,7 @@ import { NotificationDispatcherService } from '../services/notification-dispatch
 import { EventMappingService } from '../../shared/services/event-mapping.service';
 import { NotificationCategory } from '../../shared/enums';
 import { SendNotificationDto } from '../dto/send-notification.dto';
+import { formatAmount } from '../../shared/utils/template-helpers';
 
 /**
  * Order Service 이벤트 컨슈머
@@ -55,10 +56,9 @@ export class OrderEventConsumer {
         correlationId: envelope.correlationId,
         priority: eventMapping.priority as any,
         variables: {
-          orderId: payload.orderId,
-          totalAmount: payload.totalAmount,
-          currency: payload.currency,
-          customerEmail: payload.customerId, // TODO: 실제 email 조회 필요
+          name: payload.shippingAddress?.recipientName ?? '고객',
+          orderNumber: payload.externalOrderId ?? payload.orderId,
+          total: formatAmount(payload.totalAmount),
         },
       };
       await this.notificationDispatcherService.send(sendDto);

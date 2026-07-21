@@ -25,6 +25,7 @@ import { NotificationDispatcherService } from '../services/notification-dispatch
 import { EventMappingService } from '../../shared/services/event-mapping.service';
 import { NotificationCategory } from '../../shared/enums';
 import { SendNotificationDto } from '../dto/send-notification.dto';
+import { formatAmount, formatDueDate } from '../../shared/utils/template-helpers';
 
 /**
  * Payment Service 이벤트 컨슈머
@@ -706,6 +707,63 @@ export class WalletEventConsumer {
       this.logger.log(`[Event] Dispatched TAX_INVOICE_CANCELLED notification for ${payload.customerId}`);
     } catch (error) {
       this.logger.error(`[Event] Failed to process TAX_INVOICE_CANCELLED notification: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * 무통장(가상계좌) 발급 직후 입금 안내 메일.
+   *
+   * wallet 이 intent 를 AWAITING_DEPOSIT 으로 전이하면서 발행한다(confirm.service).
+   * 이 메일이 없으면 고객이 결제창을 닫는 순간 입금할 계좌를 다시 볼 방법이 없다.
+   *
+   * 수신자(email)와 계좌 정보는 반드시 이벤트 payload 로 와야 한다 —
+   * notification 에는 wallet intent 조회 경로가 없다.
+   */
+  @OnEvent('payments.events.v1', 'payment.intent.awaiting_deposit')
+  async onIntentAwaitingDeposit(
+    @EventEnvelope() envelope: DomainEvent<Record<string, any>>,
+    @EventPayload() payload: Record<string, any>,
+  ) {
+    this.logger.log(
+      `[Event] Received IntentAwaitingDeposit: ${payload.intentId} (correlationId: ${envelope.correlationId})`,
+    );
+    try {
+      // 이메일이 없는 결제 경로(카드 즉시결제 등 일부)는 보낼 대상이 없다. 조용히 스킵.
+      if (!payload.email) {
+        this.logger.warn(`Skipping BANK_TRANSFER_ISSUED: no email (intent ${payload.intentId})`);
+        return;
+      }
+
+      const eventMapping = await this.eventMappingService.getEventMapping('BANK_TRANSFER_ISSUED');
+      if (!eventMapping || !eventMapping.isActive) {
+        this.logger.warn(`Event mapping for BANK_TRANSFER_ISSUED not found or inactive.`);
+        return;
+      }
+
+      const sendDto: SendNotificationDto = {
+        userId: payload.userId,
+        channels: eventMapping.defaultChannels as any,
+        category: eventMapping.category as NotificationCategory,
+        templateKey: eventMapping.templateKey,
+        eventKey: eventMapping.eventKey,
+        payload: payload,
+        correlationId: envelope.correlationId,
+        priority: eventMapping.priority as any,
+        // 키 이름은 BANK_TRANSFER_ISSUED_EMAIL 템플릿의 {{...}} 와 정확히 일치해야 한다.
+        variables: {
+          name: payload.customerName ?? '고객',
+          bankName: payload.bankName ?? '-',
+          accountNumber: payload.accountNumber ?? '-',
+          accountHolder: payload.accountHolder ?? '-',
+          amount: formatAmount(payload.payableAmount),
+          dueDate: formatDueDate(payload.dueDate),
+        },
+      };
+      await this.notificationDispatcherService.send(sendDto);
+      this.logger.log(`[Event] Dispatched BANK_TRANSFER_ISSUED notification for ${payload.userId}`);
+    } catch (error) {
+      this.logger.error(`[Event] Failed to process BANK_TRANSFER_ISSUED notification: ${error.message}`, error.stack);
       throw error;
     }
   }
