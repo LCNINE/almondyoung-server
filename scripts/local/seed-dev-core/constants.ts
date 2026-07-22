@@ -4,6 +4,21 @@
  *
  * 창고 UUID 2개는 scripts/seeding/constants/uuids.ts 의 FIXED_UUIDS 와 동일한 값이라
  * 라이브/기존 시드와 창고 식별자가 어긋나지 않는다.
+ *
+ * **UUID 접두(첫 세그먼트) 레지스트리 — 이 파일이 SoT.** 새 시드 모듈을 추가할 때 여기 표에
+ * 없는 다음 접두를 골라 쓰고, 이 목록에 한 줄 추가할 것. 각 모듈 파일의 주석은 이 레지스트리를
+ * 가리키기만 하고 값을 다시 나열하지 않는다 (한쪽만 갱신되고 어긋나는 사고 방지).
+ *
+ *   019d0001 — constants.ts   SEED_IDS.warehouse*
+ *   019d0002 — constants.ts   SEED_IDS.loc*(기본 존 8개)
+ *   019d0003 — constants.ts   SEED_IDS.holder*
+ *   019d0004 — constants.ts   SEED_IDS.deliveryProfile
+ *   019d0005 — constants.ts   SEED_RACK_LOCATIONS (랙/빈 6개)
+ *   019d0006 — constants.ts   SEED_SKUS (SKU 20개)
+ *   019d0007 — orders.ts      variantIdFor (variant id 10개)
+ *   019d0008 — shipments.ts   SEED_ACTOR (시드 작업자 신원)
+ *   019d0009 — bulk.ts        bulkLocationId (벌크 로케이션 50개)
+ *   019d000a — bulk.ts        bulkSkuId (벌크 SKU 300개)
  */
 export const SEED_IDS = {
   warehouseBucheon: '019d0001-0001-7000-a000-000000000001',

@@ -47,6 +47,9 @@ AWS dev 스테이지가 제거되어, 개발은 사내 노트북에서 로컬 �
    KAFKA_BROKERS=localhost:9092    # KAFKA_API_KEY/SECRET 는 삭제 또는 주석
    REDIS_URL=redis://localhost:6379
    ```
+   core 를 warehouse-app 등 클라이언트 개발용으로 **단독** 띄울 거라면 `.../core` 가 아니라
+   `.../dev_core` 를 써야 한다 — 아래 "core 단독 개발 + `dev_core` 시드" 절 참고. `core` 로 잘못
+   맞추면 시드가 없는 빈 DB 라 재고조회가 원인 신호 없이 텅 비어 보인다.
    전체 필수 키 목록의 SoT 는 `deployments/lcnine/{services,auth}/infra/services.ts` 의 각 서비스 `environment` 블록 — `.env` 가 안 맞으면 여기와 대조할 것. 시크릿 값은 `sst secret list --stage dev` 로 조회.
 6. **스키마 마이그레이션**
    ```bash
@@ -139,12 +142,23 @@ npm run start:main:dev               # core :3100
   재고조회·실사·이동·입고(inventory 모듈)는 scope 게이트가 없어 로그인만 되면 동작한다.
 - 시드는 결정론적이다. SKU 코드 `DEV-SKU-0001…`, 바코드 `88000000001…`, 주문번호 `DEV-ORDER-0001…`
   이 리셋해도 그대로라 종이에 적어두고 스캔 테스트에 쓸 수 있다.
+- **시드 로직을 바꾼 뒤 검증**: `npm run test:seed-dev-core:integration` 이 `scripts/local/seed-dev-core/`
+  전체(스코프·마스터데이터·재고·입고·주문·`--bulk`)를 실제로 리셋해가며 검증한다. 리셋 스크립트를 셸아웃으로
+  두 번(기본 + `--bulk`) 부르므로 `--runInBand` 로 직렬 실행되고, 로컬 `dev_core` 를 실제로 drop/create 한다.
 - warehouse-app 은 기본이 로컬 core 다. 라이브로 붙으려면
   `cd native/warehouse-app && npm run tauri:dev:live`.
-- **쓰기 워크플로우 후 outbox 를 확인할 때 `StockReceived` 26건은 예외다.** 확인 대상은 `public.outbox_events`
-  (`apps/core/src/modules/inventory/schema/inventory.schema.ts` 의 inventory 전용 outbox)다 — 같은 이름의
-  `event.outbox_events`(`libs/events` 범용 outbox, `pgSchema('event')`)도 `dev_core` 안에 따로 존재하지만
-  core 의 쓰기는 거기 쌓이지 않는다. 잘못 짚으면 조용히 0건이 나와 "outbox 가 깨끗하다"는 착각을 준다.
+- **`SEED_DEV_CORE_URL` 을 기본값(`localhost:5432/dev_core`)과 다르게 주면 확인 프롬프트가 뜬다.**
+  `sst tunnel` 이 떠 있으면 guard 를 통과하는 `localhost` 가 실제로는 라이브 클러스터일 수 있어서다
+  (guard.ts 는 호스트/DB이름만 보고, tunnel 여부는 못 본다). `yes` 를 입력해야 진행하며, 비대화식
+  stdin(파이프/CI)에서는 안전 측으로 즉시 거부하고 hang 하지 않는다 — `npm run test:seed-dev-core:integration`
+  은 이 변수를 기본값과 동일한 문자열로 설정해서 부르므로 프롬프트 자체를 타지 않는다.
+- **쓰기 워크플로우 후 outbox 를 확인할 때 `StockReceived` 26건은 예외다.** inventory/fulfillment 쓰기의
+  확인 대상은 `public.outbox_events`(`apps/core/src/modules/inventory/schema/inventory.schema.ts` 의
+  inventory 전용 outbox)다 — 같은 이름의 `event.outbox_events`(`libs/events` 범용 outbox, `pgSchema('event')`)도
+  `dev_core` 안에 따로 존재하지만 inventory/fulfillment 의 쓰기는 거기 쌓이지 않는다. (catalog 모듈은
+  다르다 — `product-masters.service.ts`/`product-versions.service.ts`/`categories.service.ts` 는
+  `OutboxPublisher.saveEvent` 로 실제로 `event.outbox_events` 에 쓴다. PIM 쪽 outbox 를 볼 땐 이 절이
+  아니라 그 테이블을 봐야 한다.) 잘못 짚으면 조용히 0건이 나와 "outbox 가 깨끗하다"는 착각을 준다.
   ```sql
   SELECT count(*) FROM public.outbox_events WHERE event_type = 'StockReceived';
   -- → 26

@@ -5,7 +5,8 @@ import { SEED_IDS, SEED_SKUS } from './constants';
 
 const ORDER_COUNT = 10;
 
-/** variant id 도 결정론 — 매칭 재현과 URL 안정성을 위해.
+/** variant id 도 결정론 — 매칭 재현과 URL 안정성을 위해. 이 파일이 쓰는 UUID 접두(019d0007)의
+ * 전체 할당 목록은 constants.ts 상단 레지스트리 참고.
  * 마지막 세그먼트는 SEED_SKUS 와 동일한 이유로 8자리 zero-padding(00000000+seq)을 써서
  * 12자리(8-4-4-4-12 UUID 포맷)를 맞춘다 — 브리프 원안의 7자리 padding(0000000+seq)은
  * 11자리라 postgres uuid 파싱을 통과하지 못한다. */

@@ -1,5 +1,6 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
 import * as postgres from 'postgres';
+import * as readline from 'readline/promises';
 import { ConfigService } from '@nestjs/config';
 import { DbTx, wmsSchema } from '../../../apps/core/src/modules/inventory/schema/inventory.schema';
 import {
@@ -17,7 +18,8 @@ import { FulfillmentInvariantService } from '../../../apps/core/src/modules/fulf
 import { FulfillmentWorkflowGate } from '../../../apps/core/src/modules/fulfillment/services/fulfillment-workflow-gate.service';
 import { ShipmentPlanningService } from '../../../apps/core/src/modules/fulfillment/services/shipment-planning.service';
 import { FULFILLMENT_SCOPES } from '../../../apps/core/src/platform/auth/fulfillment-scopes';
-import { recreateDatabase, resolveSeedUrl, runCoreMigrations } from './database';
+import { DEFAULT_SEED_URL, recreateDatabase, resolveSeedUrl, runCoreMigrations } from './database';
+import { assertLocalDevCoreUrl } from './guard';
 import { bootstrapScopes } from './scopes';
 import { seedMasterData } from './master-data';
 import { seedStock } from './stock';
@@ -26,9 +28,57 @@ import { seedOrders } from './orders';
 import { planShipments } from './shipments';
 import { seedBulk } from './bulk';
 
+/**
+ * 이 스크립트의 유일한 의도된 대상은 DEFAULT_SEED_URL(localhost:5432/dev_core) 이다.
+ * `sst tunnel` 이 떠 있으면 guard.ts 의 호스트/DB이름 검사를 통과하면서도 localhost 가
+ * 실제로는 라이브 클러스터를 가리킬 수 있다 — 그 경우 DROP 은 원격에서 조용한 no-op 이고
+ * CREATE + 마이그레이션은 라이브 클러스터에 새 DB 를 만들어버린다(아무것도 지우진 않지만 의도한
+ * 격리보다 약하다). 기본값과 다른 대상일 때만 사람에게 명시적으로 되묻는다.
+ *
+ * 비대화식 stdin(파이프/리다이렉트/CI)에서는 프롬프트에 답할 수 없으므로 **안전 측으로
+ * 즉시 거부**한다 — hang 되지 않고 바로 에러를 던진다. seed.integration.spec.ts 는
+ * SEED_DEV_CORE_URL 을 DEFAULT_SEED_URL 과 똑같은 문자열로 설정해 호출하므로 이 함수가
+ * 아예 이 분기를 타지 않고 즉시 리턴한다 — --runInBand 로 돌려도 멈추지 않는다.
+ */
+async function confirmNonDefaultTarget(url: string): Promise<void> {
+  if (url === DEFAULT_SEED_URL) {
+    return;
+  }
+
+  console.log('⚠️  SEED_DEV_CORE_URL 이 기본값과 다릅니다.');
+  console.log(`   대상: ${url}`);
+  console.log(`   기본값(이 설계가 의도하는 유일한 대상): ${DEFAULT_SEED_URL}`);
+  console.log('   이 명령은 위 대상에 DROP DATABASE → CREATE DATABASE → 전체 마이그레이션을 수행합니다.');
+  console.log('   sst tunnel 이 떠 있다면 이 호스트가 라이브 클러스터를 가리킬 수 있습니다 (guard.ts 참고).');
+
+  if (!process.stdin.isTTY) {
+    throw new Error(
+      '[seed-dev-core] 비대화식 환경(파이프/리다이렉트/CI)에서는 기본값과 다른 대상을 확인 없이 ' +
+        '진행할 수 없어 중단합니다. 인터랙티브 터미널에서 다시 실행해 프롬프트에 답하세요.',
+    );
+  }
+
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  let answer: string;
+  try {
+    answer = await rl.question("정말로 위 대상에 대해 진행하려면 'yes' 를 입력하세요: ");
+  } finally {
+    rl.close();
+  }
+
+  if (answer.trim().toLowerCase() !== 'yes') {
+    throw new Error("[seed-dev-core] 'yes' 확인을 받지 못해 중단합니다.");
+  }
+}
+
 async function main(): Promise<void> {
   const bulk = process.argv.includes('--bulk');
   const url = resolveSeedUrl();
+  // recreateDatabase/runCoreMigrations 도 각자 다시 검증하지만(중첩 방어), 이 스크립트가 여는
+  // client 자체는 그 검증에 의존하지 않고 여기서 직접 확인한다 — 나중에 호출 순서가 바뀌어도
+  // 안전하도록.
+  assertLocalDevCoreUrl(url);
+  await confirmNonDefaultTarget(url);
 
   console.log(`── 1/4 dev_core 재생성 (${url})`);
   await recreateDatabase(url);

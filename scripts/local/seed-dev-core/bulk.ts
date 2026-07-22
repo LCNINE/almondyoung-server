@@ -17,15 +17,15 @@ function chunk<T>(items: T[], size: number): T[][] {
   return chunks;
 }
 
-// constants.ts 의 SEED_IDS/SEED_RACK_LOCATIONS/SEED_SKUS 는 019d0001~019d0006 을,
-// orders.ts/shipments.ts 는 019d0007~019d0008 을 이미 쓴다 — 벌크는 그 다음 두 접두
-// (019d0009, 019d000a) 를 쓴다.
+// 이 파일이 쓰는 UUID 접두(019d0009, 019d000a) 의 전체 할당 목록은 constants.ts 상단
+// 레지스트리 참고 — 새 접두가 필요하면 그 레지스트리를 갱신할 것, 여기 다시 나열하지 않는다.
 const BULK_LOCATION_ID_PREFIX = '019d0009';
 const BULK_SKU_ID_PREFIX = '019d000a';
 
 // SEED_SKUS/SEED_RACK_LOCATIONS 와 동일한 이유로 각 세그먼트에 padStart 를 쓴다 —
 // 리터럴 템플릿은 seq 자릿수가 늘어나는 순간(여기서는 300건 중 세 자리를 넘는 인덱스)
-// 8-4-4-4-12 자릿수가 밀려 깨진다. seq 는 4자리 padStart 라 999건까지 안전하다.
+// 8-4-4-4-12 자릿수가 밀려 깨진다. seq 는 4자리 padStart 라 9999건까지 안전하다
+// (999 는 code 의 3자리 padStart(`B-${seq}`) 쪽 한도).
 function bulkLocationId(index: number): string {
   const seq = String(index + 1).padStart(4, '0');
   return `${BULK_LOCATION_ID_PREFIX}-${seq}-7000-a000-00000000${seq}`;

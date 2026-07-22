@@ -33,7 +33,9 @@ describe('assertLocalDevCoreUrl', () => {
 
   it('?host= 로 실제 접속 호스트를 덮어쓰려는 URL 을 거부한다', () => {
     expect(() =>
-      assertLocalDevCoreUrl('postgresql://postgres:postgres@localhost:5432/dev_core?host=some-remote.rds.amazonaws.com'),
+      assertLocalDevCoreUrl(
+        'postgresql://postgres:postgres@localhost:5432/dev_core?host=some-remote.rds.amazonaws.com',
+      ),
     ).toThrow(/쿼리 문자열/);
   });
 

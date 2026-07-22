@@ -5,7 +5,8 @@ import { SEED_IDS } from './constants';
 
 /**
  * 시드 작업자 신원. core 는 operator_id 에 FK 를 걸지 않으므로 (스펙 §4.4)
- * 고정 UUID 를 써도 무방하고, 결정론 규약상 그래야 한다.
+ * 고정 UUID 를 써도 무방하고, 결정론 규약상 그래야 한다. 이 파일이 쓰는 UUID 접두(019d0008)의
+ * 전체 할당 목록은 constants.ts 상단 레지스트리 참고.
  */
 export const SEED_ACTOR = { id: '019d0008-0001-7000-a000-000000000001', roles: ['master'] };
 

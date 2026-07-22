@@ -27,8 +27,11 @@ describeIfSeedDb('dev_core 시드', () => {
   });
 
   it('scope 와 role→scope 매핑이 채워진다', async () => {
+    // 정확히 8개를 어서션한다 — apps/core/src/platform/auth/fulfillment-scopes.ts 의
+    // FULFILLMENT_SCOPES 를 리터럴로 옮겨 적은 개수다(import 하지 않음: ALL_SCOPES 에서
+    // 스코프 하나가 빠지는 회귀는 `> 0` 로는 못 잡는다).
     const scopeCountRows = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM auth.scopes`);
-    expect(scopeCountRows[0].n).toBeGreaterThan(0);
+    expect(scopeCountRows[0].n).toBe(8);
 
     const roleScopeRows = await db.execute<{ role_name: string; scope_key: string }>(sql`
       SELECT rsm.role_name, s.key AS scope_key
@@ -535,5 +538,49 @@ describeIfSeedDb('dev_core 시드 --bulk', () => {
 
     const locations = await db.select({ n: sql<number>`count(*)::int` }).from(wmsTables.locations);
     expect(Number(locations[0].n)).toBe(64);
+  });
+
+  // 아래 리터럴은 bulk.ts 를 읽고 손으로 계산한 값이다 — bulk.ts 의 BULK_LOCATION_ID_PREFIX/
+  // BULK_SKU_ID_PREFIX/bulkLocationId/bulkSkuId 를 import 해서 기대값을 다시 계산하면, 그
+  // 계산 로직 자체가 잘못됐을 때도(예: bulkSkuId 가 defaultRandom() 으로 되돌아가거나 접두가
+  // 어긋나는 회귀) 테스트가 그대로 통과해버려 결정론 회귀를 잡지 못한다. 이 id/코드/바코드가
+  // 리셋마다 그대로인 것 자체가 이 브랜치의 목적(인쇄된 벌크 바코드·북마크된 SKU URL 생존)이다.
+  it('벌크 SKU/로케이션 첫·끝 항목이 결정론적 id·code·바코드로 들어간다', async () => {
+    const firstLocation = await db.select().from(wmsTables.locations).where(eq(wmsTables.locations.code, 'B-001'));
+    expect(firstLocation).toHaveLength(1);
+    expect(firstLocation[0].id).toBe('019d0009-0001-7000-a000-000000000001');
+
+    const lastLocation = await db.select().from(wmsTables.locations).where(eq(wmsTables.locations.code, 'B-050'));
+    expect(lastLocation).toHaveLength(1);
+    expect(lastLocation[0].id).toBe('019d0009-0050-7000-a000-000000000050');
+
+    const firstSku = await db.select().from(wmsTables.skus).where(eq(wmsTables.skus.code, 'BULK-SKU-0001'));
+    expect(firstSku).toHaveLength(1);
+    expect(firstSku[0].id).toBe('019d000a-0001-7000-a000-000000000001');
+
+    const lastSku = await db.select().from(wmsTables.skus).where(eq(wmsTables.skus.code, 'BULK-SKU-0300'));
+    expect(lastSku).toHaveLength(1);
+    expect(lastSku[0].id).toBe('019d000a-0300-7000-a000-000000000300');
+
+    const firstBarcode = await db
+      .select()
+      .from(wmsTables.skuBarcodes)
+      .where(eq(wmsTables.skuBarcodes.skuId, firstSku[0].id));
+    expect(firstBarcode).toHaveLength(1);
+    expect(firstBarcode[0].barcode).toBe('88100000001');
+    expect(firstBarcode[0].isPrimary).toBe(true);
+
+    const lastBarcode = await db
+      .select()
+      .from(wmsTables.skuBarcodes)
+      .where(eq(wmsTables.skuBarcodes.skuId, lastSku[0].id));
+    expect(lastBarcode).toHaveLength(1);
+    expect(lastBarcode[0].barcode).toBe('88100000300');
+    expect(lastBarcode[0].isPrimary).toBe(true);
+
+    // 300개 SKU 각각 바코드 1개 = 총 300건. skuBarcodes insert 가 통째로 빠지거나 일부만
+    // 들어가는 회귀(개수 드리프트)를 잡는다.
+    const barcodeCount = await db.select({ n: sql<number>`count(*)::int` }).from(wmsTables.skuBarcodes);
+    expect(Number(barcodeCount[0].n)).toBe(320); // 기본 시드 20 + 벌크 300
   });
 });
