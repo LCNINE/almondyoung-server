@@ -1,8 +1,9 @@
 import { execFileSync } from 'child_process';
 import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { wmsSchema, wmsTables } from '../../../apps/core/src/modules/inventory/schema/inventory.schema';
+import { SEED_SKUS } from './constants';
 
 const SEED_URL = process.env.SEED_DEV_CORE_URL;
 const describeIfSeedDb = SEED_URL ? describe : describe.skip;
@@ -169,5 +170,33 @@ describeIfSeedDb('dev_core 시드', () => {
     ];
     expect(barcodes.map((b) => b.barcode)).toEqual(expectedBarcodes);
     expect(new Set(barcodes.map((b) => b.barcode)).size).toBe(20); // 바코드 유일성 (더블체크)
+  });
+
+  it('재고가 원장과 이벤트 양쪽에 정합하게 들어간다', async () => {
+    const ledgers = await db
+      .select({
+        skuId: wmsTables.stockLedgers.skuId,
+        qty: wmsTables.stockLedgers.qty,
+        locationId: wmsTables.stockLedgers.locationId,
+      })
+      .from(wmsTables.stockLedgers)
+      .where(eq(wmsTables.stockLedgers.stockState, 'ON_HAND'));
+
+    // 재고 0 SKU 2건은 원장 행이 아예 없다.
+    const skuIdsWithStock = new Set(ledgers.map((row) => row.skuId));
+    expect(skuIdsWithStock.has(SEED_SKUS[0].id)).toBe(false);
+    expect(skuIdsWithStock.has(SEED_SKUS[1].id)).toBe(false);
+    expect(skuIdsWithStock.size).toBe(18);
+
+    // 다중 로케이션 분산 SKU 는 원장 행이 2개 이상이다.
+    const rowsForSpread = ledgers.filter((row) => row.skuId === SEED_SKUS[19].id);
+    expect(rowsForSpread.length).toBeGreaterThan(1);
+
+    // RECEIVE 이벤트 수 == 원장 행 수 (직접 insert 로 만들지 않았다는 증거)
+    const receiveEvents = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(wmsTables.stockEvents)
+      .where(eq(wmsTables.stockEvents.transitionType, 'RECEIVE'));
+    expect(Number(receiveEvents[0].n)).toBe(ledgers.length);
   });
 });
