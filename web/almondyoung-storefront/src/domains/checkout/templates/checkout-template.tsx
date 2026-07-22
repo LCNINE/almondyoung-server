@@ -1,6 +1,6 @@
 "use client"
 
-import { Banknote, Coins, Info } from "lucide-react"
+import { Banknote, Clock, Coins, Info } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { CustomsCodeSection } from "@/domains/checkout/components/sections/customs-code"
 import { DiscountSection } from "@/domains/checkout/components/sections/discount"
@@ -378,6 +378,12 @@ export default function CheckoutTemplate({
                 <Banknote className="mt-0.5 size-5 shrink-0 text-[#ff6600]" />
                 <p className="text-sm leading-relaxed text-gray-700 lg:text-[15px]">
                   {tNotice("bankTransfer")}
+                </p>
+              </div>
+              <div className="flex items-start gap-2.5">
+                <Clock className="mt-0.5 size-5 shrink-0 text-[#ff6600]" />
+                <p className="text-sm leading-relaxed text-gray-700 lg:text-[15px]">
+                  {tNotice("bankTransferDelay")}
                 </p>
               </div>
               <div className="flex items-start gap-2.5">

@@ -695,6 +695,7 @@
     },
     "depositAccount": {
       "title": "Deposit account",
+      "confirmDelay": "Deposits are confirmed automatically and may take up to about 10 minutes.",
       "bank": "Bank",
       "accountNumber": "Account number",
       "copy": "Copy",
@@ -1018,6 +1019,7 @@
     "welcomeStrong": "Almondyoung Membership",
     "welcomeLineSuffix": " has",
     "welcomeLine3": "started.",
+    "depositConfirmNotice": "Deposit confirmation is automatic and may take up to about 10 minutes. Your membership benefits begin once confirmed.",
     "recommendLinksTitle": "Membership recommendations",
     "welcomeDeal": "Browse the 100 KRW welcome deal",
     "exclusiveProducts": "Browse membership deals",
@@ -1034,6 +1036,7 @@
   },
   "membershipPaymentMethod": {
     "pageTitle": "Payment method",
+    "bankTransferDelay": "If you pay by bank transfer, deposit confirmation can take up to about 10 minutes. Your membership starts as soon as it's confirmed.",
     "backAria": "Back",
     "currentCardTitle": "Current recurring payment method",
     "registeredCard": "Registered payment method",

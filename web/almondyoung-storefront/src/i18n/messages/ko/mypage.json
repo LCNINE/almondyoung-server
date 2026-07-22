@@ -695,6 +695,7 @@
     },
     "depositAccount": {
       "title": "입금 계좌 안내",
+      "confirmDelay": "입금 확인은 자동으로 처리되며 최대 10분 정도 소요될 수 있어요.",
       "bank": "은행",
       "accountNumber": "계좌번호",
       "copy": "복사",
@@ -1030,6 +1031,7 @@
     "welcomeStrong": "아몬드영 멤버십",
     "welcomeLineSuffix": "이",
     "welcomeLine3": "시작되었습니다.",
+    "depositConfirmNotice": "입금 확인은 자동으로 처리되며 최대 10분 정도 소요될 수 있어요. 확인되면 멤버십 혜택이 시작됩니다.",
     "recommendLinksTitle": "멤버십 추천 링크",
     "welcomeDeal": "100원 웰컴딜 둘러보기",
     "exclusiveProducts": "멤버십 혜택 상품 둘러보기",
@@ -1046,6 +1048,7 @@
   },
   "membershipPaymentMethod": {
     "pageTitle": "결제 수단 관리",
+    "bankTransferDelay": "무통장입금으로 결제하시면 입금 확인까지 최대 10분 정도 소요될 수 있어요. 확인되면 멤버십이 바로 시작됩니다.",
     "backAria": "뒤로 가기",
     "currentCardTitle": "현재 정기결제 수단",
     "registeredCard": "등록된 결제수단",

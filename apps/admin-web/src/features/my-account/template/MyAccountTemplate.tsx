@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -42,7 +43,11 @@ const passwordSchema = z
     newPassword: z
       .string()
       .min(8, '새 비밀번호는 최소 8자 이상이어야 합니다.')
-      .max(100, '비밀번호가 너무 깁니다.'),
+      .max(20, '새 비밀번호는 최대 20자 이하여야 합니다.')
+      .regex(
+        /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]).+$/,
+        '영문·숫자·특수문자를 각각 1개 이상 포함해야 합니다.'
+      ),
     confirmPassword: z.string().min(1, '비밀번호 확인을 입력해주세요.'),
   })
   .refine((d) => d.newPassword === d.confirmPassword, {
@@ -276,8 +281,14 @@ function SecuritySection() {
       });
       toast.success('비밀번호가 변경되었습니다.');
       form.reset();
-    } catch {
-      toast.error('비밀번호 변경에 실패했습니다. 현재 비밀번호를 확인해주세요.');
+    } catch (error) {
+      // 인터셉터가 4xx 서버 메시지를 CustomError.message 로 보존해 던진다 —
+      // 그대로 노출해야 "현재 비번 불일치 / 조합 규칙 위반" 등 원인이 사용자에게 보인다.
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : '비밀번호 변경에 실패했습니다.'
+      );
     }
   };
 
@@ -314,8 +325,15 @@ function SecuritySection() {
                 <FormItem>
                   <FormLabel>새 비밀번호</FormLabel>
                   <FormControl>
-                    <Input type="password" placeholder="8자 이상 입력" {...field} />
+                    <Input
+                      type="password"
+                      placeholder="영문·숫자·특수문자 포함 8~20자"
+                      {...field}
+                    />
                   </FormControl>
+                  <FormDescription>
+                    영문·숫자·특수문자를 각각 1개 이상 포함해 8~20자로 입력하세요.
+                  </FormDescription>
                   <FormMessage />
                 </FormItem>
               )}
