@@ -1,11 +1,10 @@
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import type { DbService } from '@app/db';
-// 배럴(@app/authorization)은 passport/jwks-rsa 까지 끌어와 스크립트 기동이 느려진다. 필요한 것만 깊은 경로로.
-import { AuthorizationService } from '@app/authorization/services/authorization.service';
+import { AuthorizationService } from '@app/authorization';
 import { ALL_SCOPES } from '../../../apps/core/src/platform/auth/merged-scopes';
 import { FULFILLMENT_ROLE_MAPPINGS } from '../../../apps/core/src/platform/auth/fulfillment-scopes';
 import { wmsSchema } from '../../../apps/core/src/modules/inventory/schema/inventory.schema';
-import { makeDbService } from '../../../apps/core/src/modules/fulfillment/services/__support__';
+import { makeDbService } from '../../../apps/core/src/modules/fulfillment/services/__support__/logistics-wiring';
 
 /**
  * core 의 ScopeBootstrapService 가 부팅 시 하는 일과 동일하다.

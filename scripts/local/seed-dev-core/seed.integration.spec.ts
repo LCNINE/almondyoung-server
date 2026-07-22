@@ -27,13 +27,35 @@ describeIfSeedDb('dev_core 시드', () => {
   });
 
   it('scope 와 role→scope 매핑이 채워진다', async () => {
-    const scopeRows = await db.execute(sql`SELECT count(*)::int AS n FROM auth.scopes`);
-    expect(Number((scopeRows as unknown as Array<{ n: number }>)[0].n)).toBeGreaterThan(0);
+    const scopeCountRows = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM auth.scopes`);
+    expect(scopeCountRows[0].n).toBeGreaterThan(0);
 
-    const mappingRows = await db.execute(
-      sql`SELECT role_name FROM auth.role_scope_mapping GROUP BY role_name ORDER BY role_name`,
-    );
-    const roles = (mappingRows as unknown as Array<{ role_name: string }>).map((row) => row.role_name);
-    expect(roles).toEqual(['logistics_manager', 'logistics_worker']);
+    const roleScopeRows = await db.execute<{ role_name: string; scope_key: string }>(sql`
+      SELECT rsm.role_name, s.key AS scope_key
+      FROM auth.role_scope_mapping rsm
+      JOIN auth.scopes s ON s.id = rsm.scope_id
+      ORDER BY rsm.role_name, s.key
+    `);
+
+    const scopeKeysByRole = new Map<string, string[]>();
+    for (const row of roleScopeRows) {
+      const scopeKeys = scopeKeysByRole.get(row.role_name) ?? [];
+      scopeKeys.push(row.scope_key);
+      scopeKeysByRole.set(row.role_name, scopeKeys);
+    }
+
+    // 기대값은 apps/core/src/platform/auth/fulfillment-scopes.ts 의 FULFILLMENT_ROLE_MAPPINGS 를
+    // import 하지 않고 여기 직접 적는다 — 검증 대상 상수를 그대로 가져와 비교하면 그 상수 자체가
+    // 잘못됐을 때도 테스트가 통과해버려 회귀를 잡지 못한다.
+    expect(scopeKeysByRole.get('logistics_worker')).toEqual(['fulfillment.warehouse.operate']);
+    expect(scopeKeysByRole.get('logistics_manager')).toEqual([
+      'fulfillment.dispatch.force',
+      'fulfillment.dispatch.recall',
+      'fulfillment.reservation.transfer',
+      'fulfillment.shipment.consolidate',
+      'fulfillment.shipment.override_recipient',
+      'fulfillment.shipment.reopen',
+      'fulfillment.warehouse.operate',
+    ]);
   });
 });
