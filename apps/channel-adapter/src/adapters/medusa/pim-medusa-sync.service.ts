@@ -341,19 +341,23 @@ export class PimMedusaSyncService {
           .map((s) => s.trim())
           .filter(Boolean),
       );
-      const explicitSkipSlugs = new Set(
-        (process.env.SKIP_ATTACH_CATEGORY_SLUGS || '')
+      const explicitSkipSlugs = new Set([
+        // 전 상품이 붙는 카테고리라 attach 하면 row lock 으로 동기화가 직렬화된다.
+        // storefront 는 이 카테고리를 상품 목록으로 쓰지 않으므로 계속 제외.
+        'cafe24-cat-499', // 전체상품 보기
+        ...(process.env.SKIP_ATTACH_CATEGORY_SLUGS || '')
           .split(',')
           .map((s) => s.trim())
           .filter(Boolean),
-      );
+      ]);
       const isAttachable = (pimCategoryId: string) => {
         if (referencedAsParent.has(pimCategoryId)) return false; // non-leaf
         if (explicitSkipIds.has(pimCategoryId)) return false;
         const c = allSnapshotCats.find((x) => x.id === pimCategoryId);
         if (!c) return true;
-        if (c.parentId == null) return false; // root
-        if (c.slug && explicitSkipSlugs.has(c.slug)) return false; // 환경변수로 명시 제외 (예: 전체상품 보기)
+        // 자식 없는 카테고리는 그 자체가 leaf 다. 예전엔 root 를 통째로 제외해서
+        // 상품이 어디에도 attach 되지 않아 카테고리가 빈 채로 노출됐다 (예: 퍼마블렌드).
+        if (c.slug && explicitSkipSlugs.has(c.slug)) return false;
         return true;
       };
       const attachableCategories = medusaCategories.filter((c) => isAttachable(c.pimCategoryId));

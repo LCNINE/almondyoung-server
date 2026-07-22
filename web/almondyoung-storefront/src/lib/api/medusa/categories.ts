@@ -47,6 +47,7 @@ export const getCategoryByHandle = async (categoryHandle: string[]) => {
         query: {
           // fields: "*category_children, *products",
           fields: "*category_children",
+          include_descendants_tree: true,
           handle,
         },
         cache: "no-store",
