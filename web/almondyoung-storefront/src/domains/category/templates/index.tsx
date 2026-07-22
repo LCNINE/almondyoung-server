@@ -11,6 +11,8 @@ import { ErrorBoundary } from "@/components/shared/error-boundary"
 import { collectCategoryIds } from "@/lib/utils/collect-category-ids"
 import { normalizeCategorySort } from "../utils/sort-mapping"
 
+const ALL_PRODUCTS_CATEGORY_HANDLE = "cafe24-cat-499"
+
 export function CategoryTemplate({
   sortBy,
   countryCode,
@@ -72,7 +74,11 @@ export function CategoryTemplate({
             <CategoryProducts
               sortBy={sort}
               countryCode={countryCode}
-              categoryIds={category ? collectCategoryIds(category) : undefined}
+              categoryIds={
+                category && category.handle !== ALL_PRODUCTS_CATEGORY_HANDLE
+                  ? collectCategoryIds(category)
+                  : undefined
+              }
             />
           </Suspense>
         </ErrorBoundary>
