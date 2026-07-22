@@ -55,6 +55,7 @@ export default async function CategoryProducts({
         countryCode,
         queryParams: {
           limit: PRODUCT_LIMIT,
+          order: "-created_at",
           category_id: categoryIds,
           collection_id: collectionId ? [collectionId] : undefined,
           id: productsIds,
