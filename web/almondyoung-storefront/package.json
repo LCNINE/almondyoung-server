@@ -28,7 +28,6 @@
     "@opentelemetry/sdk-metrics": "^2.6.0",
     "@opentelemetry/sdk-node": "^0.214.0",
     "@opentelemetry/sdk-trace-base": "^2.6.0",
-    "@packages/product-description": "file:../../packages/product-description",
     "@packages/web-observability": "file:../../packages/web-observability",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
