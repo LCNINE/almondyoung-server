@@ -9,7 +9,7 @@ interface SubCategoryNavProps {
   parentHandle?: string
 }
 
-// 동기 소스(metadata/폴백 맵)로 못 찾으면 PIM API 폴백까지 시도(서버 컴포넌트 전용).
+// 동기 소스(metadata/폴백 맵)로 못 찾으면 PIM API 폴백까지 시도
 async function resolveThumbnail(
   category: StoreProductCategoryTree
 ): Promise<string | null> {

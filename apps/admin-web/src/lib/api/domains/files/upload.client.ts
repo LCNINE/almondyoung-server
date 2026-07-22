@@ -24,6 +24,7 @@ export type FileSignedUrlResponse = {
 
 export const DIGITAL_ASSET_FILE_CONTEXT_ID = 'digital-asset-file';
 export const PRODUCT_IMAGE_CONTEXT_ID = 'product-image';
+export const CATEGORY_IMAGE_CONTEXT_ID = 'category-image';
 export { PRODUCT_DESCRIPTION_IMAGE_CONTEXT_ID };
 
 type UploadFileOptions = {

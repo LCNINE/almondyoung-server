@@ -638,6 +638,8 @@ export class MedusaClient {
       pimSlug: categorySnapshot.slug,
       pimVisibility: categorySnapshot.visibility,
       pimShowOnMainCategory: categorySnapshot.showOnMainCategory,
+      // storefront가 category.metadata.thumbnail 을 읽는다
+      thumbnail: categorySnapshot.thumbnail ?? null,
     };
 
     let parentMedusaId: string | undefined;
@@ -677,7 +679,6 @@ export class MedusaClient {
         is_internal: false,
         is_active: isActive,
         parent_category_id: parentMedusaId,
-        ...(categorySnapshot.thumbnail && { thumbnail: categorySnapshot.thumbnail }),
         ...(categorySnapshot.sortOrder != null && { rank: categorySnapshot.sortOrder }),
         metadata: {
           ...(existing.metadata || {}),
@@ -704,7 +705,6 @@ export class MedusaClient {
       is_internal: false,
       is_active: isActive,
       parent_category_id: parentMedusaId,
-      ...(categorySnapshot.thumbnail && { thumbnail: categorySnapshot.thumbnail }),
       ...(categorySnapshot.sortOrder != null && { rank: categorySnapshot.sortOrder }),
       metadata: {
         ...pimMetadata,

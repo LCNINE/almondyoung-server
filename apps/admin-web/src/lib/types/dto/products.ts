@@ -39,6 +39,8 @@ export interface CategoryDto {
   level?: number;
   sortOrder?: number;
   isActive: boolean;
+  /** 대표 이미지의 fileId (URL 아님). 없으면 null. */
+  thumbnail?: string | null;
   createdAt: string;
   updatedAt: string;
   children?: CategoryDto[];

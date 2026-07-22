@@ -64,11 +64,22 @@ function parseHtmlTable(text: string): string[][] {
     const tdRe = /<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;
     const cells: string[] = [];
     let td: RegExpExecArray | null;
-    while ((td = tdRe.exec(tr[1]))) cells.push(stripCell(td[1]));
+    while ((td = tdRe.exec(tr[1]))) cells.push(unarmor(stripCell(td[1])));
     if (cells.length) rows.push(cells);
   }
   return rows;
 }
+
+/**
+ * 셀메이트 CSV 내보내기는 코드/바코드를 엑셀이 숫자로 바꾸지 못하게 `="P0000EXQ"` 로 감싼다.
+ * 이걸 안 벗기면 그 문자열이 그대로 저장돼(`="12687220000"`), 특히 상품코드가 빈 행은
+ * 전부 `=""` 라는 **하나의 그룹**으로 뭉쳐 서로 다른 상품이 섞인다. (2026-07-22 live 에서 확인)
+ */
+export const unarmor = (s: string): string => {
+  const m = /^="(.*)"$/s.exec(s);
+  return m ? m[1].trim() : s;
+};
+if (unarmor('="12687220000"') !== '12687220000' || unarmor('=""') !== '') throw new Error('unarmor 깨짐');
 
 // ── 파일 → 2차원 배열 ──────────────────────────────────────────────────────────
 export async function readRows(file: string): Promise<string[][]> {
@@ -79,7 +90,7 @@ export async function readRows(file: string): Promise<string[][]> {
     // CSV 는 utf-8 가정, 깨지면 euc-kr 재시도
     let text = buf.toString('utf-8');
     if (text.includes('�')) text = iconv.decode(buf, SELLMATE_ENCODING);
-    return Papa.parse<string[]>(text, { skipEmptyLines: true }).data;
+    return Papa.parse<string[]>(text, { skipEmptyLines: true }).data.map((r) => r.map(unarmor));
   }
 
   // 시그니처로 실제 포맷 판별
